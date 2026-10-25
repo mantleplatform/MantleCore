@@ -1,6 +1,6 @@
 # Shared files: a PR may change a copy (see SharedFiles.json) only to what its home in
-# GhzGarage/mantle holds, on mantle main or on the branch of a mantle PR named in this PR's
-# body with a line "Mantle-PR: GhzGarage/mantle#123" (one line per mantle PR).
+# mantleplatform/mantle holds, on mantle main or on the branch of a mantle PR named in this PR's
+# body with a line "Mantle-PR: mantleplatform/mantle#123" (one line per mantle PR).
 name: Shared files
 
 on:
@@ -33,7 +33,7 @@ jobs:
       - name: Check out mantle main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: GhzGarage/mantle
+          repository: mantleplatform/mantle
           token: ${{ secrets.MANTLE_READ_TOKEN }}
           path: mantle
           lfs: false
@@ -50,13 +50,13 @@ jobs:
           set -euo pipefail
           roots="--home-root $GITHUB_WORKSPACE/mantle"
           numbers=$(printf '%s\n' "$PR_BODY" | tr -d '\r' \
-            | grep -oiE '^[[:space:]]*Mantle-PR:[[:space:]]*GhzGarage/mantle#[0-9]+' \
+            | grep -oiE '^[[:space:]]*Mantle-PR:[[:space:]]*mantleplatform/mantle#[0-9]+' \
             | grep -oE '[0-9]+$' | sort -un || true)
           for n in $numbers; do
             git -C mantle fetch --no-tags --depth=1 origin "pull/$n/head:refs/remotes/pr/$n"
             git -C mantle worktree add --detach "$GITHUB_WORKSPACE/mantle-pr-$n" "refs/remotes/pr/$n"
             roots="$roots --home-root $GITHUB_WORKSPACE/mantle-pr-$n"
-            echo "Also comparing against GhzGarage/mantle#$n"
+            echo "Also comparing against mantleplatform/mantle#$n"
           done
           echo "roots=$roots" >> "$GITHUB_OUTPUT"
       - name: Check the copies this PR changes
