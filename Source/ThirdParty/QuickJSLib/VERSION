@@ -1,0 +1,64 @@
+quickjs-ng
+==========
+
+Upstream:     https://github.com/quickjs-ng/quickjs
+Tag:          v0.16.2
+Commit:       1ab8676f4b6d6d669baeb5f21790fb9734636a20
+Retrieved:    2026-09-12
+License:      MIT (LICENSE)
+
+Retrieval command:
+
+    git clone --depth 1 --branch v0.16.2 https://github.com/quickjs-ng/quickjs.git
+
+Upstream is a flat repository (no include/src split); this vendoring keeps that
+flat layout under upstream/ rather than inventing one, so a future re-copy is a
+straight file-list diff against CMakeLists.txt's `qjs_sources`, not archaeology.
+
+Vendored (under upstream/; pristine except the sandbox patches listed in
+patches/README.txt, each hunk marked MANTLE) -- exactly CMakeLists.txt's `qjs_sources`
+when QJS_BUILD_LIBC is OFF, plus the headers they transitively #include:
+    quickjs.c, dtoa.c, libregexp.c, libunicode.c
+    quickjs.h, quickjs-atom.h, quickjs-opcode.h, quickjs-c-atomics.h
+    cutils.h, list.h, dtoa.h
+    libregexp.h, libregexp-opcode.h
+    libunicode.h, libunicode-table.h
+    builtin-array-fromasync.h, builtin-iterator-zip-keyed.h, builtin-iterator-zip.h
+    (these builtin-*.h files are precompiled-bytecode headers for Array.fromAsync
+    and iterator helpers that quickjs.c #includes directly; they are not optional)
+
+Deliberately NOT vendored, not merely excluded from the .Build.cs:
+    quickjs-libc.c, quickjs-libc.h
+        This is where `std`, file access and process spawning live -- exactly the
+        OS-facing surface T4.8 exists to keep out of the shipped client. Luau's
+        analogous exclusion (CodeGen) is a whole directory that was pruned from the
+        tree entirely rather than merely left out of the module's source list, so
+        the same policy is applied here: the file is not present to be picked up by
+        a future glob. QuickJSLib.Build.cs still carries a comment naming this file
+        and why, so a reader who goes looking for "where is quickjs-libc excluded"
+        finds the answer even though there is nothing left to grep for in upstream/.
+    qjs.c, qjsc.c, qjs-wasi-reactor.c
+        The CLI / bytecode-compiler executables. Pull in quickjs-libc.c and are not
+        part of an embedded library.
+    api-test.c, ctest.c, cxxtest.c, fuzz.c, lre-test.c, run-test262.c,
+    unicode_gen.c, unicode_gen_def.h
+        Upstream's own test/fuzz/codegen harnesses.
+    gen/, test262/, tests/, docs/, examples/
+        Generated CLI sources, the test262 conformance suite, upstream's own
+        tests, docs and example programs.
+    .git/, .github/, .gitattributes, .gitignore, .gitmodules, CMakeLists.txt,
+    meson.build, meson_options.txt, Makefile, README.md, SECURITY.md, amalgam.js,
+    *.man, *.js (repl.js, standalone.js, builtin-*.js sources for the *.h above),
+    gc-stress-skip.txt, tests.conf, test262*.conf, test262_errors.txt,
+    unicode_download.sh, update-version.sh
+        Build/CI/doc plumbing for upstream's own CMake/Meson build, superseded
+        here by QuickJSLib.Build.cs, or the human-authored JS source whose
+        precompiled-bytecode headers (builtin-*.h) are vendored above instead.
+
+Compiled by QuickJSLib.Build.cs: quickjs.c, dtoa.c, libregexp.c, libunicode.c.
+Never compiled: quickjs-libc.c (not vendored -- see above).
+
+To update: re-run the retrieval command against the new tag, diff `qjs_sources`
+in the new CMakeLists.txt against the list above, re-copy, and replay anything in
+patches/ in order (see patches/README.txt; the UE build itself needed none, the
+creator-script sandbox needs them).

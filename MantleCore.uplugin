@@ -1,0 +1,146 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"EngineVersion": "5.8.0",
+	"FriendlyName": "Mantle Core",
+	"Description": "Build, test and publish worlds, avatars and items for Mantle.",
+	"Category": "Mantle",
+	"CreatedBy": "Joshua Eger",
+	"CreatedByURL": "",
+	"DocsURL": "https://mantleplatform.com/docs/creators/plugin/",
+	"SupportURL": "",
+	"FabURL": "com.epicgames.launcher://ue/Fab/product/0ab720ef-e3da-4dc7-81ee-7eafb573c6bc",
+	"CanContainContent": true,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "MantleRuntime",
+			"Type": "Runtime",
+			"LoadingPhase": "PreDefault",
+			"PlatformAllowList": [ "Win64" ],
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "MantleScriptTools",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [ "Win64" ],
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "LuauLib",
+			"Type": "Runtime",
+			"LoadingPhase": "None",
+			"PlatformAllowList": [ "Win64" ],
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "QuickJSLib",
+			"Type": "Runtime",
+			"LoadingPhase": "None",
+			"PlatformAllowList": [ "Win64" ],
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "PocketPyLib",
+			"Type": "Runtime",
+			"LoadingPhase": "None",
+			"PlatformAllowList": [ "Win64" ],
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "MantleEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [ "Win64" ]
+		},
+		{
+			"Name": "MantleAgentTools",
+			"Type": "Editor",
+			"LoadingPhase": "None",
+			"PlatformAllowList": [ "Win64" ]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "GLTFExporter",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "IKRig",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "MetaHumanCharacter",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "MetaHumanCoreTech",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "MetaHumanSDK",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "GeometryScripting",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "ChaosOutfitAsset",
+			"Enabled": true,
+			"TargetAllowList": [ "Editor" ]
+		},
+		{
+			"Name": "ChaosClothAssetEditorCore",
+			"Enabled": true,
+			"TargetAllowList": [ "Editor" ]
+		},
+		{
+			"Name": "HairStrands",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "ToolsetRegistry",
+			"Enabled": false,
+			"Optional": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		}
+	]
+}

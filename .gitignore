@@ -1,0 +1,5 @@
+# Unreal build output: never committed, and left out of the Fab zip.
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/

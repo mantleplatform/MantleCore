@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "id": "sports",
+  "name": "Sports car",
+  "description": "A low, fast, stiffly sprung car: sports cars, supercars and race cars. Plenty of torque to the rear wheels, so it needs a steady foot, and it sits low enough to feel very quick.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. The driver sits 46.8 cm behind the steering wheel hub, here on a 262 cm wheelbase with the seat 42 cm behind the middle. Rear drive, stiff springs, a low centre of mass, high torque.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "car",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 34,
+    "trackWidth": 168,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 4,
+    "max": 6
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 262,
+      "track": 168,
+      "wheelRadius": 34,
+      "wheelWidth": 28,
+      "axles": [
+        { "steer": true, "drive": false },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 450, "width": 190, "height": 58, "groundClearance": 14 },
+    "centerOfMass": [0, 0, 38],
+    "seat": {
+      "location": [-42, -37, 58],
+      "steeringWheel": { "location": [4.8, -37, 61], "radius": 19 }
+    }
+  },
+  "derive": {
+    "stability": 1.15,
+    "cameraArmPerLength": 0.63,
+    "cameraHeightPerHeight": 1.1
+  },
+  "defaults": {
+    "mass": 1400,
+    "maxSpeed": 6000,
+    "dragCoefficient": 0.32,
+    "frontalArea": 2.0,
+    "engine": {
+      "maxTorque": 900,
+      "maxRPM": 8000,
+      "idleRPM": 900,
+      "torqueCurve": [[0, 0.5], [2500, 0.85], [5500, 1], [8000, 0.8]]
+    },
+    "transmission": {
+      "gearRatios": [4.1, 2.6, 1.8, 1.35, 1.05, 0.85],
+      "reverseRatio": 3.8,
+      "finalDrive": 3.0,
+      "changeUpRPM": 7000,
+      "changeDownRPM": 2500
+    },
+    "suspension": {
+      "maxRaise": 8,
+      "maxDrop": 8,
+      "springRate": 400,
+      "springPreload": 80,
+      "damping": 0.6
+    },
+    "steering": {
+      "maxAngle": 38,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 4500,
+      "handbrakeTorque": 7000
+    },
+    "tires": {
+      "friction": 4.0
+    },
+    "camera": {
+      "armLength": 400,
+      "height": 140
+    }
+  },
+  "ranges": {
+    "mass": [900, 2000],
+    "maxSpeed": [3500, 8500],
+    "dragCoefficient": [0.2, 0.45],
+    "engine/maxTorque": [400, 1800],
+    "engine/maxRPM": [5000, 10000],
+    "engine/idleRPM": [600, 1200],
+    "suspension/maxRaise": [3, 15],
+    "suspension/maxDrop": [3, 15],
+    "suspension/springRate": [200, 900],
+    "suspension/damping": [0.3, 0.9],
+    "steering/maxAngle": [25, 50],
+    "brakes/brakeTorque": [1500, 8000],
+    "tires/friction": [2, 5],
+    "wheels/*/radius": [28, 40]
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "comment": "No base avatars are configured. Accounts have no saved avatar until a player explicitly selects a published avatar item.",
+  "avatars": []
+}

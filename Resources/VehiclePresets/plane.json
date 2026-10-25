@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "id": "plane",
+  "name": "Plane",
+  "description": "A single-seat propeller plane on tricycle gear: it takes off from a runway, banks on its ailerons, and flies level on its own near cruising speed.",
+  "comment": "A vehicle preset (#728, the flight port): see sedan.json for the format. A fixed-wing plane. movementType plane is the Plane movement type, which builds no engine, clutch or transmission: the wheels are undriven landing gear and the aerofoils and the thruster fly it. The engine and transmission under defaults are inert, there only because a vehicle document requires them, and so is the mains axle's drive flag (the reader wants one driven wheel; the definition clears it). layout.axles is tricycle gear: axle 0 is one steered wheel on the centreline (wheel_f, axle centreline), axle 1 the pair of mains (wheel_rl, wheel_rr), 46 cm behind the centre of mass. chassis.body is the fuselage and body.x says where its middle is (a plane's fuselage is not centred on its landing gear). chassis.aircraft is the rest of the airframe, model space, cm, +X forward: wing, tailplane and fin each give their span (the fin its height), chord, x (the aerofoil's quarter-chord line, where its bone hinges and its lift acts), z (not the fin, which stands on the fuselage), the aerofoil's area in m^2 (the wing's both halves together) and its camber, largest control angle and stall angle in degrees; the wing is two blocks, one per aileron bone, the tailplane turns whole on the elevator and the fin on the rudder. engines is the count (1 or 2), each engine's thrust in N at full throttle and the propeller hub's x; propeller its radius and rpm; airSpeedLimit the most it may fly in cm/s; controls where the pilot's hands hold the throttle (left) and the stick (right). Taken from the P-38 flown in the flight port: 7000 kg, a 20 m^2 wing of 4.2 degrees of aileron (the P-38's 12 rolled this plane at 170 degrees a second with D held all the way, which the owner found far too easy: the steady roll rate at cruise speed, as measured in flight, is in proportion to the aileron's angle, 87 degrees a second at 6, so 4.2 gives about 60, a full roll in 6 seconds; the aileron does not enter the trim), a 3 m^2 elevator of 20 and a 3 m^2 fin of 10 (the P-38's two rudders as one), a 200 m/s limit, its gear's brake and steering lock and its camera, with one centreline engine of 40 kN in place of its pair of 10 kN (twice their total, for a brisker take-off) and its wing 12 cm behind the centre of mass. The tailplane's camber trims it: the elevator input is the control angle over 20 degrees and the camber adds to it, so -4 degrees (the P-38's was -2) puts the elevator at centre for level flight at cruiseSpeed, 70 m/s at 37 percent throttle, which is cruiseThrottle: the throttle the pilot's W and S (the triggers) return to when let go in the air. schema/validate.py solves that from the numbers here (the engine's own aerofoil lift and drag, thrust and fuselage drag, MantleChassisDefinitions.cpp has the arithmetic) and holds cruiseThrottle within 0.02 of the throttle level flight at cruiseSpeed needs, and the elevator within 0.05 of centre at cruiseSpeed, within 0.15 from 63 to 77 m/s and within the stick's 0.5 from 59.5 to 91 m/s. The derive block is a plane's own: no stability target (it flies), and a chase camera that grows with the airframe (an arm of 1 cm per cm of fuselage, a height of a fifth), since a pilot is not what the camera frames.",
+  "movementType": "plane",
+  "publishable": true,
+  "type": "plane",
+  "seats": {
+    "driver": "pilot"
+  },
+  "fit": {
+    "wheelRadius": 40,
+    "trackWidth": 320,
+    "minScale": 0.7,
+    "maxScale": 1.15
+  },
+  "wheels": {
+    "min": 3,
+    "max": 3
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 380,
+      "track": 320,
+      "wheelRadius": 40,
+      "wheelWidth": 28,
+      "axles": [
+        { "steer": true, "drive": false, "centreline": true },
+        { "steer": false, "drive": true }
+      ]
+    },
+    "body": { "length": 1150, "width": 110, "height": 160, "groundClearance": 120, "x": -335 },
+    "centerOfMass": [-144, 0, 210],
+    "seat": {
+      "location": [-75, 0, 263]
+    },
+    "aircraft": {
+      "wing": { "span": 1450, "chord": 138, "x": -156, "z": 252, "area": 20, "camber": 5, "maxControlAngle": 4.2, "stallAngle": 20 },
+      "tailplane": { "span": 400, "chord": 75, "x": -835, "z": 195, "area": 3, "camber": -4, "maxControlAngle": 20, "stallAngle": 20 },
+      "fin": { "height": 200, "chord": 150, "x": -797.5, "area": 3, "maxControlAngle": 10, "stallAngle": 20 },
+      "engines": { "count": 1, "thrust": 40000, "x": 250 },
+      "propeller": { "radius": 110, "rpm": 1200 },
+      "airSpeedLimit": 20000,
+      "cruiseSpeed": 7000,
+      "cruiseThrottle": 0.37,
+      "controls": { "throttle": [-21, -14, 270], "stick": [-21, 12, 270] }
+    }
+  },
+  "derive": {
+    "stability": 0,
+    "cameraArmPerLength": 1,
+    "cameraHeightPerHeight": 0.2
+  },
+  "defaults": {
+    "mass": 7000,
+    "maxSpeed": 12000,
+    "dragCoefficient": 0.3,
+    "frontalArea": 1.76,
+    "engine": {
+      "maxTorque": 300,
+      "maxRPM": 3000,
+      "idleRPM": 600,
+      "torqueCurve": [[0, 0.6], [1500, 1], [3000, 0.8]]
+    },
+    "transmission": {
+      "gearRatios": [1.0],
+      "reverseRatio": 1.0,
+      "finalDrive": 1.0,
+      "changeUpRPM": 2500,
+      "changeDownRPM": 1000
+    },
+    "suspension": {
+      "maxRaise": 10,
+      "maxDrop": 15,
+      "springRate": 1600,
+      "springPreload": 450,
+      "damping": 0.85
+    },
+    "steering": {
+      "maxAngle": 25,
+      "ackermann": false
+    },
+    "brakes": {
+      "brakeTorque": 4000,
+      "handbrakeTorque": 4000
+    },
+    "tires": {
+      "friction": 2
+    },
+    "camera": {
+      "armLength": 1800,
+      "height": 150
+    }
+  },
+  "ranges": {
+    "mass": [2000, 12000],
+    "maxSpeed": [6000, 12000],
+    "dragCoefficient": [0.1, 0.6],
+    "engine/maxTorque": [100, 2000],
+    "engine/maxRPM": [2000, 6000],
+    "engine/idleRPM": [400, 1000],
+    "suspension/maxRaise": [3, 30],
+    "suspension/maxDrop": [3, 30],
+    "suspension/springRate": [400, 4000],
+    "suspension/damping": [0.3, 0.95],
+    "steering/maxAngle": [10, 45],
+    "brakes/brakeTorque": [1000, 12000],
+    "tires/friction": [1, 5],
+    "wheels/*/radius": [25, 60]
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "placeId": "plc_template01",
+
+  "revision": {
+    "number": 1,
+    "notes": "Starting point for a new place.",
+    "state": "draft"
+  },
+
+  "metadata": {
+    "name": "Untitled place",
+    "description": "A baseplate, a spawn point, and a sun. Build from here.",
+    "authorId": "usr_template"
+  },
+
+  "settings": {
+    "maxPlayers": 16,
+    "gravity": 980.0,
+    "ambientLight": [0.1, 0.11, 0.14],
+    "respawnMode": "nearest",
+    "streamingDistance": 15000
+  },
+
+  "assets": [
+    { "id": "ast_cube", "kind": "StaticMesh", "hash": "md5:00000000000000000000000000000001", "bytes": 16384 },
+    { "id": "ast_mat_basic", "kind": "Material", "hash": "md5:00000000000000000000000000000002", "bytes": 16384 }
+  ],
+
+  "entities": [
+    {
+      "id": "ent_baseplate",
+      "type": "StaticMesh",
+      "name": "Baseplate",
+      "parent": null,
+      "transform": {
+        "location": [0, 0, -50],
+        "rotation": [0, 0, 0],
+        "scale": [50, 50, 1]
+      },
+      "properties": {
+        "mesh": "ast_cube",
+        "materials": ["ast_mat_basic"],
+        "collision": "blocking",
+        "castShadow": false
+      },
+      "tags": ["ground"]
+    },
+    {
+      "id": "ent_spawn",
+      "type": "PlayerStart",
+      "name": "Spawn",
+      "parent": null,
+      "transform": {
+        "location": [0, 0, 100],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      },
+      "properties": {}
+    },
+    {
+      "id": "ent_sun",
+      "type": "DirectionalLight",
+      "name": "Sun",
+      "parent": null,
+      "transform": {
+        "location": [0, 0, 2000],
+        "rotation": [-46, 35, 0],
+        "scale": [1, 1, 1]
+      },
+      "properties": {
+        "intensity": 3.5,
+        "color": [1.0, 0.97, 0.92],
+        "castShadow": true
+      }
+    }
+  ]
+}

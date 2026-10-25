@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "id": "pickup",
+  "name": "Pickup / SUV",
+  "description": "A tall road vehicle with long suspension: pickups, SUVs and vans. It rides high, and the long travel soaks up rough ground.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. Sized so the real-scale Vol 2 SUV of the owner's Fab test pack comes out at about 1.0 and the undersized Vol 1 pickup at about 1.2.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "car",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 37,
+    "trackWidth": 160,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 4,
+    "max": 6
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 310,
+      "track": 160,
+      "wheelRadius": 37,
+      "wheelWidth": 26,
+      "axles": [
+        { "steer": true, "drive": true },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 540, "width": 195, "height": 78, "groundClearance": 36 },
+    "centerOfMass": [0, 0, 54],
+    "seat": {
+      "location": [-5, -38, 100],
+      "steeringWheel": { "location": [41.8, -38, 103], "radius": 20 }
+    }
+  },
+  "derive": {
+    "stability": 1.15,
+    "cameraArmPerLength": 0.63,
+    "cameraHeightPerHeight": 1.1
+  },
+  "defaults": {
+    "mass": 2000,
+    "maxSpeed": 3800,
+    "dragCoefficient": 0.4,
+    "frontalArea": 3,
+    "engine": {
+      "maxTorque": 800,
+      "maxRPM": 6000,
+      "idleRPM": 800,
+      "torqueCurve": [[0, 0.6], [1500, 0.9], [3500, 1], [6000, 0.75]]
+    },
+    "transmission": {
+      "gearRatios": [4.25, 2.52, 1.66, 1.22, 1.0],
+      "reverseRatio": 4.04,
+      "finalDrive": 3.4,
+      "changeUpRPM": 5200,
+      "changeDownRPM": 1800
+    },
+    "suspension": {
+      "maxRaise": 20,
+      "maxDrop": 20,
+      "springRate": 300,
+      "springPreload": 100,
+      "damping": 0.5
+    },
+    "steering": {
+      "maxAngle": 40,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 3500,
+      "handbrakeTorque": 6000
+    },
+    "tires": {
+      "friction": 3.5
+    },
+    "camera": {
+      "armLength": 550,
+      "height": 200
+    }
+  },
+  "ranges": {
+    "mass": [1500, 3500],
+    "maxSpeed": [2000, 5500],
+    "dragCoefficient": [0.3, 0.7],
+    "engine/maxTorque": [300, 1500],
+    "engine/maxRPM": [3500, 7000],
+    "engine/idleRPM": [500, 1100],
+    "suspension/maxRaise": [5, 35],
+    "suspension/maxDrop": [5, 35],
+    "suspension/springRate": [100, 1000],
+    "suspension/damping": [0.2, 0.9],
+    "steering/maxAngle": [25, 50],
+    "brakes/brakeTorque": [1500, 8000],
+    "tires/friction": [1.5, 5],
+    "wheels/*/radius": [30, 55]
+  }
+}

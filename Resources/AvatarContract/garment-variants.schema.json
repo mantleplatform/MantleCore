@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mantle.dev/schema/avatar/garment-variants.schema.json",
+  "title": "One clothing item's authored garment variants",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "policy", "defaultVariant", "variants"],
+  "x-maxSerializedBytes": 24576,
+  "properties": {
+    "version": {"const": 1},
+    "policy": {"const": "body-rms-v1"},
+    "defaultVariant": {"$ref": "#/$defs/variantId"},
+    "variants": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/inputVariant"}}
+  },
+  "$defs": {
+    "variantId": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$"},
+    "assetId": {"type": "string", "pattern": "^ast_u[0-9a-f]{32}$"},
+    "material": {
+      "type": "object", "additionalProperties": false, "required": ["albedoAssetId"],
+      "properties": {
+        "albedoAssetId": {"$ref": "#/$defs/assetId"},
+        "normalAssetId": {"$ref": "#/$defs/assetId"},
+        "ormAssetId": {"$ref": "#/$defs/assetId"},
+        "role": {"enum": ["", "other"]}
+      }
+    },
+    "inputVariant": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "meshAssetId", "sourceShapeAssetId", "materials"],
+      "properties": {
+        "id": {"$ref": "#/$defs/variantId"},
+        "meshAssetId": {"$ref": "#/$defs/assetId"},
+        "sourceShapeAssetId": {"$ref": "#/$defs/assetId"},
+        "faceMeshAssetId": {"$ref": "#/$defs/assetId"},
+        "coverageAssetId": {"$ref": "#/$defs/assetId"},
+        "nativeSourceSize": {"type": "string", "maxLength": 64, "pattern": "^[^\\x00-\\x1f\\x7f]*$"},
+        "materials": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"$ref": "#/$defs/material"}}
+      }
+    }
+  },
+  "$comment": "Only top/bottom/footwear items take this envelope. IDs are unique and defaultVariant exists. Top-level asset/material fields exactly match the default. Every variant's approved owner-claimed mesh must be cooked against its exact current canonical source shape. These cross-field and cooked-binary checks are enforced by the API. Selection minimizes mean squared difference of actual approved canonical body positions; exact ties use the lexically first variant ID. nativeSourceSize is provenance only. Resolved catalog/batch variants replace asset IDs with mesh/sourceShape/faceMesh/coverage immutable cooked refs and resolved materials."
+}

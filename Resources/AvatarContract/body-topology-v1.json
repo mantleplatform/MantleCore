@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "vertexCount": 8568,
+  "triangleCount": 15196,
+  "uvHash": "4514a950",
+  "uvHashDefinition": "FCrc::MemCrc32 (CRC-32) chained from 0 over the LOD's render vertices in order: round(u * 2048) then round(v * 2048) of UV0, each a little-endian int32",
+  "positionsHash": "229fb234",
+  "positionsHashDefinition": "FCrc::MemCrc32 (CRC-32) from 0 over the reference LOD's positions as little-endian float32 x, y, z per vertex, in order; identifies the reference body, not part of compatibility",
+  "referenceAsset": "Current unclothed full-converter Ada body (MetaHuman preset Ada, UE 5.8.3)",
+  "referenceLOD": 0,
+  "generator": "Production MHSource removes semantic clothing selections on a distinct copy before native Optimized Medium build; full Analyze+Convert followed by CurrentBodyLayoutDiagnostic",
+  "verifiedAgainst": {
+    "preset": "/MetaHumanCharacter/Optional/Presets/Bo.Bo",
+    "vertexCount": 8568,
+    "triangleCount": 15196,
+    "uvHash": "4514a950",
+    "positionsHash": "e93141c3",
+    "correspondence": "complete oriented UV/connectivity bijection at every LOD; identity vertex mapping"
+  },
+  "lods": [
+    {
+      "lod": 0,
+      "vertexCount": 8568,
+      "triangleCount": 15196,
+      "uvHash": "4514a950",
+      "positionsHash": "229fb234",
+      "verifiedPositionsHash": "e93141c3"
+    },
+    {
+      "lod": 1,
+      "vertexCount": 3974,
+      "triangleCount": 6632,
+      "uvHash": "6c8790dc",
+      "positionsHash": "32279001",
+      "verifiedPositionsHash": "bd0f9fef"
+    },
+    {
+      "lod": 2,
+      "vertexCount": 1239,
+      "triangleCount": 1952,
+      "uvHash": "f5edc1bc",
+      "positionsHash": "5286d945",
+      "verifiedPositionsHash": "a6027976"
+    }
+  ],
+  "completeness": "Native RenderData and SourceModel triangle geometry bijection against exports at all three LODs; no missing or extra triangles; body triangle z-interval union covers its entire occupied span and canonical 70\u201380 cm core band."
+}

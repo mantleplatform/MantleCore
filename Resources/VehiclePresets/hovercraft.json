@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "id": "hovercraft",
+  "name": "Hovercraft",
+  "description": "A small two-seat hovercraft: it floats a hand's width over the ground on its skirt, a fan at the back pushes it, and it turns with the fan's vanes and its fin. It drives like a car, but slides wide in turns.",
+  "comment": "A vehicle preset (#728, #793): see sedan.json for the format. movementType hover is the Hover movement type (FMantleVehicleHover): no wheels, engine or gearbox. Lift is four pads, Chaos Modular suspensions with no wheel under them (Epic's quickstart: a suspension without wheels acts like a hovercraft skirt), one at each of the layout's wheel points on the hull's underside. The layout's wheels are those four points and nothing else: the document needs a steered and a driven wheel (its reader's rule), so it lists them, and the definition (UMantleVehicleHoverDefinition) turns them into pads and drives none; they are never drawn. The pads stand at 0.8 of the hull's length and width (320 and 176 cm on the 400 x 220 cm hull, validate.py). Each pushes from chassis.hovercraft.pads.travel (50 cm) below it, harder as it comes down, so it rests where its share of the weight is its stiffness times the compression: 600 kg on four pads at the 30 cm hover height (body.groundClearance) is 1470 N each over 20 cm, 7350 N/m, and a spring rate unit is 222 N/m (measured), so springRate is 33.1 (validate.py holds it within 1 percent of that). The fan pushes 2000 N (a third of the weight) from its pod behind the hull, at the centre of mass's height give or take 10 cm, so it barely pitches the hull; its push falls off with speed to nothing at defaults.maxSpeed (25 m/s), so with the hull's drag the hovercraft tops out near 20 m/s (73 km/h; validate.py solves it), and its reverse vanes push half of it backwards (S: a brake while it moves forward, which fades out as it stops, then reverse). Its vanes turn the push up to 25 degrees either way on A and D, so it turns at walking pace while the fan pushes; the fin's rudder (0.8 m^2, 20 degrees) turns it at speed. Nothing grips the ground, so the hover chassis damps its sideways slide and its spin (1.5 and 2 per second, at most 4 m/s^2 and 180 degrees/s^2) while a pad touches the ground, and Space drops the skirt: a brake of 2 per second, at most 5 m/s^2, which also holds it parked. The skirt is drawn 8 cm off the ground and 10 cm wider than the hull, the fan pod and the fin on the root; only the hull collides. engine, transmission, suspension, steering, brakes and tires are the document's and drive nothing (the definition has no wheels); the camera, mass, drag and maxSpeed are the hovercraft's own.",
+  "movementType": "hover",
+  "publishable": true,
+  "type": "hovercraft",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 20,
+    "trackWidth": 176,
+    "minScale": 0.8,
+    "maxScale": 1.35
+  },
+  "wheels": {
+    "min": 4,
+    "max": 4
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 320,
+      "track": 176,
+      "wheelRadius": 20,
+      "wheelWidth": 10,
+      "axles": [
+        { "steer": true, "drive": false },
+        { "steer": false, "drive": true }
+      ]
+    },
+    "body": { "length": 400, "width": 220, "height": 60, "groundClearance": 30 },
+    "centerOfMass": [0, 0, 50],
+    "seat": {
+      "location": [30, -40, 96],
+      "steeringWheel": { "location": [76.8, -40, 99], "radius": 18 }
+    },
+    "hovercraft": {
+      "pads": { "travel": 50, "raise": 10, "springRate": 33.1, "damping": 0.6 },
+      "fan": { "thrust": 2000, "reverseShare": 0.5, "vectorAngle": 25, "x": -220, "z": 60, "length": 40, "width": 60, "height": 40 },
+      "fin": { "x": -175, "height": 100, "chord": 50, "area": 0.8, "maxControlAngle": 20, "stallAngle": 20 },
+      "skirt": { "overhang": 10, "gap": 8 },
+      "damping": { "lateral": 1.5, "maxLateralAccel": 400, "yaw": 2, "maxYawAccel": 180, "skirtBrake": 2, "maxSkirtBrakeAccel": 500 }
+    }
+  },
+  "derive": {
+    "stability": 1.15,
+    "cameraArmPerLength": 0.63,
+    "cameraHeightPerHeight": 1.1
+  },
+  "defaults": {
+    "mass": 600,
+    "maxSpeed": 2500,
+    "dragCoefficient": 0.5,
+    "frontalArea": 2,
+    "engine": {
+      "maxTorque": 300,
+      "maxRPM": 3000,
+      "idleRPM": 600,
+      "torqueCurve": [[0, 0.6], [1500, 1], [3000, 0.8]]
+    },
+    "transmission": {
+      "gearRatios": [1.0],
+      "reverseRatio": 1.0,
+      "finalDrive": 1.0,
+      "changeUpRPM": 2500,
+      "changeDownRPM": 1000
+    },
+    "suspension": {
+      "maxRaise": 10,
+      "maxDrop": 10,
+      "springRate": 400,
+      "springPreload": 100,
+      "damping": 0.5
+    },
+    "steering": {
+      "maxAngle": 10,
+      "ackermann": false
+    },
+    "brakes": {
+      "brakeTorque": 1500,
+      "handbrakeTorque": 3000
+    },
+    "tires": {
+      "friction": 2
+    },
+    "camera": {
+      "armLength": 500,
+      "height": 170
+    }
+  },
+  "ranges": {
+    "mass": [300, 1500],
+    "maxSpeed": [1500, 4000],
+    "dragCoefficient": [0.2, 0.8],
+    "engine/maxTorque": [100, 2000],
+    "engine/maxRPM": [2000, 6000],
+    "engine/idleRPM": [400, 1000],
+    "suspension/maxRaise": [3, 20],
+    "suspension/maxDrop": [3, 20],
+    "suspension/springRate": [100, 3000],
+    "suspension/damping": [0.3, 0.95],
+    "steering/maxAngle": [5, 45],
+    "brakes/brakeTorque": [500, 12000],
+    "tires/friction": [1, 5],
+    "wheels/*/radius": [10, 40]
+  }
+}

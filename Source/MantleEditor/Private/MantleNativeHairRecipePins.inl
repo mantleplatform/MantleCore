@@ -1,0 +1,51 @@
+// Copyright Joshua Eger. All Rights Reserved.
+// Exact read-only native shader dependency pins.
+static const TMap<FString,FString>& NativeHairRecipePins()
+{
+    static const TMap<FString,FString> Pins = {
+        {TEXT("/Game/MetaHumans/Common/Materials/M_hair_v4"),TEXT("e5b81d86993ed5596426bbadd2acbdb9021bd5d3bbd75c19255eae065c55c16e")},
+        {TEXT("/Game/MetaHumans/Common/Materials/MF_RedHairBoost"),TEXT("b89a59d90227345f39e27a0a9327b0ca7d037a2021c9a6fc9f464cf0e05d7417")},
+        {TEXT("/Game/MetaHumans/Common/Materials/MF_Hair_ColorBlending"),TEXT("3e9b5be70cce643dd5e26ba6b4fd774fd1809bb0717da573f2d4032fe4d47a8f")},
+        {TEXT("/Game/MetaHumans/Common/Materials/MF_Hair_Color"),TEXT("3ab92487a3c1e10e8af7aa5913188fef9308eabbd44baab58a2b1327bb911422")},
+        {TEXT("/Game/MetaHumans/Common/Materials/MF_Variation"),TEXT("07c7f72ac80297672f21f06e67aad943a900480028b9241b463bb2441f36d60b")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions02/Lerp_Multiple_Float"),TEXT("e913cfc57bf0b5cf27f44213de3f5af6d84fb721e5ba7b4494f10541923ad892")},
+        {TEXT("/Game/MetaHumans/Common/Materials/MF_Hair_SecondaryColors"),TEXT("b1710ac4494f980898a47743f511c3599d56e6223143b3d920bab54ff50d89e7")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions01/ImageAdjustment/CheapContrast"),TEXT("6b582665d7b8f420bb892d5957f3f0ba5ed2aecc6e0183718ce551b15265a591")},
+        {TEXT("/Game/MetaHumans/Common/Materials/MF_Hair_SaltAndPeper"),TEXT("a83be09dfc4967e21b5d94eea9612e752adcbc3f5928e36b238cd183e1725a9b")},
+        {TEXT("/Game/MetaHumans/Common/Materials/MF_YCbCr2RGB"),TEXT("4c487867e6ff09eeffc28a19ebfe6d72a05a5a8da7ebc58a0d1aa9e3c85d7625")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions02/Utility/MakeFloat3"),TEXT("2a6545af56b7c8372148b6676cf6143354ff61a2d53f6633ff8ff30b4bd6b23f")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions02/Utility/BreakOutFloat3Components"),TEXT("ac57e83ad42c05d5388f4aacdac275b895d3f2fa75d7b0567e2c9172e6dc8228")},
+        {TEXT("/Game/MetaHumans/Common/Materials/MF_YCbCrAdjustments_BoostRedness"),TEXT("b0e93f224b3d8fdaf6c5aed6a9956f3a26e5cee2dbc0ca4ab35059a8b7d93831")},
+        {TEXT("/Game/MetaHumans/Common/Materials/MF_RGB2YCbCr"),TEXT("2b8146336c654d798bccd9800ecbbb2ebda2d1ad8a5292012b5d610061c039b6")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions02/Utility/DitherTemporalAA"),TEXT("e92577ec6d1ede4570eb7c8520ac63e82890cb7335cc9e389503406d145b72a7")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions02/Texturing/ScreenAlignedPixelToPixelUVs"),TEXT("d638888e5a3e28978b6576afc79ff5b3dd123a06ac716e99a77ca5b4196d75e8")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions01/Coordinates/WorldUnitsInPixel"),TEXT("6c0dad3709b5a31f8ff8aa9e3a17ac795a4f4d1a0c852af9cb3b9fba85c1626d")},
+        {TEXT("/Game/MetaHumans/Common/Materials/M_Facial_Hair"),TEXT("fb7007acffd8cd903e24bd5a6b84be6f0968c968eee9198eaf110b1d093848a5")},
+        {TEXT("/Game/MetaHumans/Common/Materials/MF_HairAnisotropic"),TEXT("14c6ef4fe6852e23f25da7c799346e92c1e6f9336a4e2afa2455b66de88c5fa3")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions02/Math/Pi"),TEXT("230b8d229531e5b3d47827e53f06d63bbf572b7d1430ce1c98aa599fe48f82f2")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions02/Math/CreateThirdOrthogonalVector"),TEXT("d2818fb2f1ee1df9e474a51688c13569aa80dadde67b371015c4a85b539a5624")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions02/SafeNormalize"),TEXT("a42108b4959b5d30250555283beb596f1ee21208ab36d779b736e76a7d1e4cf3")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions01/Gradient/LinearGradient"),TEXT("2b2511ef16622a88c15292668f91d126c31df0d3b20a9fdad5d2f30097618c37")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions02/SmoothStep"),TEXT("6738a8b58e1f9b0448ac3b2c50f8ee621fb1870a0c2693542d7ea06ec83d6aa5")},
+        {TEXT("/MetaHumanCharacter/Materials/M_hair_v4"),TEXT("485635a6cc5385d66e740391a857c31ddcb9161496bfb9d7704ea57e08442933")},
+        {TEXT("/MetaHumanCharacter/Materials/MF_RedHairBoost"),TEXT("45653f8d1cb69957cf749f8235ce0fb363e7a5d1891c28993b84926c78b0a6a6")},
+        {TEXT("/MetaHumanCharacter/Materials/MF_Hair_ColorBlending"),TEXT("7a7706bbfca7b883777c05cec30ff527ccc192ba15077a12506160d3bd4a850e")},
+        {TEXT("/MetaHumanCharacter/Materials/MF_Hair_Color"),TEXT("a21dbf077bf91dd1a27362965fb415ee88edc0547ff932df00ae25c090aab799")},
+        {TEXT("/MetaHumanCharacter/Materials/MF_Variation"),TEXT("61a54faa4ddab03afab00a681a30e133eb0229bad69f7b1d70b18a9e1dd50b2d")},
+        {TEXT("/MetaHumanCharacter/Materials/MF_Hair_SecondaryColors"),TEXT("a699c81c5995e6b9206092d41654dafa4f4a971d7a27d996e4e2f0b15f068e03")},
+        {TEXT("/MetaHumanCharacter/Materials/MF_Hair_SaltAndPeper"),TEXT("564e72fdc10f9299b31b37772a0aacba488b5e518d5689d01c84e74d8ca4942d")},
+        {TEXT("/MetaHumanCharacter/Materials/MF_YCbCr2RGB"),TEXT("447b10b317f003fee31f6417692a0f3d94a033a17b881d1d0bcee846c6003db6")},
+        {TEXT("/MetaHumanCharacter/Materials/MF_YCbCrAdjustments_BoostRedness"),TEXT("5e0035f33778e057cc1b4f7b95578ea1a3e1fde7924b87beb022dc40713a5b0d")},
+        {TEXT("/MetaHumanCharacter/Materials/MF_RGB2YCbCr"),TEXT("a97371ab773aa951ce70df3f966db0308dc5efeeea74864a478b8ecca07215f5")},
+        {TEXT("/MetaHumanCharacter/Materials/M_Facial_Hair"),TEXT("c36ea4b22094f512dd1c4a89ffbebe7b60f19fb74e638a2e7db244c7054a0b8d")},
+        {TEXT("/MetaHumanCharacter/Materials/MF_HairAnisotropic"),TEXT("12ddcf107f58cdc776e6dd707354dc43787cbbd89f463703d10549460646885a")},
+        {TEXT("/MetaHumanCharacter/Textures/T_TilingNoise_005"),TEXT("020196682af181335c8173d238e846155c4944293c3874b7c1d8bdc8aa887ed9")},
+        // Exact stock function/texture closure already pinned for the fixed native hair graph.
+        {TEXT("/MetaHumanCharacter/Textures/T_Black_Linear"),TEXT("d6801d7b2547829bc81e2364cda343c0ae9d3d0c5ad6ec3a24f2d9ea3486c7a8")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions02/Math/TimeWithSpeedVariable"),TEXT("129bb428e9555c3348bfed064fb6e07a7023e38a7063dbe3c9b122212322ef02")},
+        {TEXT("/Engine/Functions/Engine_MaterialFunctions02/Utility/MakeFloat2"),TEXT("8782ac42ee1309d78cd136b5a69f77859f975042f5b0950497a438eb16e1b029")},
+        {TEXT("/Engine/EngineResources/DefaultTexture"),TEXT("6edb1645c555b8bf70d22ebe86150d3051c1df401e9533cae9671d6ec1439235")},
+        {TEXT("/Engine/EngineMaterials/Good64x64TilingNoiseHighFreq"),TEXT("884b42980b4d74df58ba1fa73bfc2e9e28498c5a43ae14cda247ea4db26e65f5")},
+    };
+    return Pins;
+}

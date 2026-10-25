@@ -1,0 +1,76 @@
+{
+  "comment": "Files this plugin needs whose one home is the mantle repo (the game). The plugin keeps a copy of each, and mantle's tools/copies/check_copies.py fails when a copy differs from its home, is missing, or has no home. Home paths are relative to the mantle repo, copy paths to this plugin. To change one of these files, change its home in mantle, then copy it here (check_copies.py --sync does both folders at once).",
+  "copies": [
+    {
+      "home": "schema/avatar",
+      "copy": "Resources/AvatarContract",
+      "files": [
+        "base-avatars.json",
+        "body-layout-v1.json",
+        "body-topology-v1.json",
+        "clothing-color.schema.json",
+        "garment-variants.schema.json",
+        "limits.json",
+        "skeleton-metahuman-face-v1.json",
+        "skeleton-metahuman-v1.json",
+        "skeleton-ue4mannequin-v1.json",
+        "skeleton-ue5mannequin-v1.json",
+        "skeleton-uefn-v1.json",
+        "skeleton-uefnmannequin-v1.json"
+      ]
+    },
+    {
+      "home": "schema/vehicle-presets",
+      "copy": "Resources/VehiclePresets"
+    },
+    {
+      "home": "schema/script/generated",
+      "copy": "Resources/ScriptApi",
+      "files": [
+        "mantle_api.json",
+        "mantle.d.luau",
+        "mantle.d.ts",
+        "mantle.pyi"
+      ]
+    },
+    {
+      "home": "client/Source/MantleGameRuntime",
+      "copy": "Source/MantleRuntime",
+      "exclude": [
+        "*.Build.cs",
+        "Private/MantleGameRuntimeModule.cpp",
+        "Private/MantleRuntimeModule.cpp"
+      ]
+    },
+    {
+      "home": "client/Source/MantleGameScriptTools",
+      "copy": "Source/MantleScriptTools",
+      "exclude": [
+        "*.Build.cs",
+        "Private/MantleGameScriptToolsModule.cpp",
+        "Private/MantleScriptToolsModule.cpp"
+      ]
+    },
+    {
+      "home": "client/Source/ThirdParty/MantleGameLuauLib",
+      "copy": "Source/ThirdParty/LuauLib",
+      "exclude": [
+        "*.Build.cs"
+      ]
+    },
+    {
+      "home": "client/Source/ThirdParty/MantleGameQuickJSLib",
+      "copy": "Source/ThirdParty/QuickJSLib",
+      "exclude": [
+        "*.Build.cs"
+      ]
+    },
+    {
+      "home": "client/Source/ThirdParty/MantleGamePocketPyLib",
+      "copy": "Source/ThirdParty/PocketPyLib",
+      "exclude": [
+        "*.Build.cs"
+      ]
+    }
+  ]
+}

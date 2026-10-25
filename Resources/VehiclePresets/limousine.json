@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "id": "limousine",
+  "name": "Limousine",
+  "description": "A long, heavy luxury car: limousines, stretched cars, hearses and long wheelbase saloons. The driver sits at the front, and it rides soft and turns wide.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. A sedan's wheels (so the fit sizes a model the same way, from radius and track, never from the length) on a 450 cm wheelbase. The driver sits 89 cm ahead of the middle, as far back from the front axle as the sedan's, and the chassis is heavier and softer sprung.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "car",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 32,
+    "trackWidth": 165,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 4,
+    "max": 6
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 450,
+      "track": 165,
+      "wheelRadius": 32,
+      "wheelWidth": 21,
+      "axles": [
+        { "steer": true, "drive": false },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 640, "width": 190, "height": 72, "groundClearance": 20 },
+    "centerOfMass": [0, 0, 46],
+    "seat": {
+      "location": [89, -36, 76],
+      "steeringWheel": { "location": [135.8, -36, 79], "radius": 19 }
+    }
+  },
+  "derive": {
+    "stability": 1.15,
+    "cameraArmPerLength": 0.63,
+    "cameraHeightPerHeight": 1.1
+  },
+  "defaults": {
+    "mass": 2400,
+    "maxSpeed": 4000,
+    "dragCoefficient": 0.34,
+    "frontalArea": 2.9,
+    "engine": {
+      "maxTorque": 800,
+      "maxRPM": 6000,
+      "idleRPM": 800,
+      "torqueCurve": [[0, 0.55], [1800, 0.85], [3500, 1], [6000, 0.8]]
+    },
+    "transmission": {
+      "gearRatios": [4.0, 2.4, 1.6, 1.2, 0.95],
+      "reverseRatio": 3.9,
+      "finalDrive": 3.0,
+      "changeUpRPM": 5100,
+      "changeDownRPM": 1800
+    },
+    "suspension": {
+      "maxRaise": 14,
+      "maxDrop": 14,
+      "springRate": 200,
+      "springPreload": 60,
+      "damping": 0.45
+    },
+    "steering": {
+      "maxAngle": 32,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 3500,
+      "handbrakeTorque": 6000
+    },
+    "tires": {
+      "friction": 3.0
+    },
+    "camera": {
+      "armLength": 520,
+      "height": 180
+    }
+  },
+  "ranges": {
+    "mass": [1600, 3500],
+    "maxSpeed": [2000, 5500],
+    "dragCoefficient": [0.25, 0.55],
+    "engine/maxTorque": [400, 1400],
+    "engine/maxRPM": [4000, 8000],
+    "engine/idleRPM": [500, 1100],
+    "suspension/maxRaise": [5, 30],
+    "suspension/maxDrop": [5, 30],
+    "suspension/springRate": [100, 600],
+    "suspension/damping": [0.2, 0.9],
+    "steering/maxAngle": [20, 45],
+    "brakes/brakeTorque": [1500, 7000],
+    "tires/friction": [1.5, 5],
+    "wheels/*/radius": [24, 42]
+  }
+}

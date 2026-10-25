@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mantle.dev/schema/avatar/clothing-color.schema.json",
+  "title": "Creator-declared clothing colour regions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "mode",
+    "maskAssetId",
+    "regions"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "mode": {
+      "const": "masked_luminance_v1"
+    },
+    "maskAssetId": {
+      "type": "string",
+      "pattern": "^ast_u[0-9a-f]{32}$"
+    },
+    "regions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "label",
+          "channel",
+          "defaultColor",
+          "referenceLuminance"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "channel": {
+            "enum": [
+              "r",
+              "g",
+              "b"
+            ]
+          },
+          "defaultColor": {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "referenceLuminance": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          }
+        }
+      }
+    }
+  },
+  "$comment": "Only top/bottom/footwear material sections can opt in. The API additionally requires an approved creator-claimed linear data mask, unique IDs/channels per section, at most 8 logical region IDs per item, and coherent IDs/labels/default colours across internal garment variants. Reference luminance is measured from the authored albedo under the selected UV0 mask channel. This fixed colour remap retains albedo luminance detail, normal/surface textures and unmasked trim; it does not transport or reproduce arbitrary native material graphs. Empty wearer colours retain authored albedo exactly. A region with no luminance information needs explicitly authored neutral albedo/reference data before it can be offered. No mask-painting tool or scalar control is implied.",
+  "x-maxItemRegions": 8
+}

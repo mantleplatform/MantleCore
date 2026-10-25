@@ -1,0 +1,92 @@
+Luau
+====
+
+Upstream:     https://github.com/luau-lang/luau
+Tag:          0.738
+Commit:       c54f558b4d5748ab0658610b8ce0c432053e41eb
+Retrieved:    2026-09-12
+License:      MIT (LICENSE) plus the original Lua 5.1 MIT notice (LICENSE-lua.txt),
+              since Luau is a fork of Lua 5.1.
+
+Retrieval command:
+
+    git clone --depth 1 --branch 0.738 https://github.com/luau-lang/luau.git
+
+Vendored (pristine, under upstream/):
+    Ast/        (include/ + src/)
+    Bytecode/   BytecodeBuilder.h + BytecodeBuilder.cpp only (see below) --
+                Compiler/src/Compiler.cpp and friends #include
+                "Luau/BytecodeBuilder.h"; this directory did not exist as a
+                separate target when T4.2/T4.8 were written, it has since been
+                split out of Compiler upstream. Vendored as a required
+                dependency of Compiler, pruned to exactly the one translation
+                unit that dependency needs.
+    Compiler/   (include/ + src/)
+    VM/         (include/ + src/)
+    Common/     (include/ + required src/, except TimeTrace.cpp below)
+
+Pruned from Common/ specifically:
+    src/TimeTrace.cpp
+        Optional profiling support. When LUAU_ENABLE_TIME_TRACE is enabled it opens and
+        writes `trace.json`; that is a filesystem capability outside Mantle's WIT surface.
+        The header remains because Parser.cpp and Compiler.cpp include it, but its macros
+        compile to no-ops when time tracing is disabled (as it is here), so no implementation
+        or file symbol is needed.
+
+Pruned from Bytecode/ specifically, because BytecodeBuilder.{h,cpp} do not
+transitively need them (verified by grepping their #includes) and they exist
+only to serve upstream's CLI dump/analysis tools this vendoring never builds:
+    include/Luau/BytecodeCallInliner.h, BytecodeDump.h, BytecodeGraph.h,
+        BytecodeOps.h, BytecodeValidation.h, Sccp.h
+    src/BytecodeDump.cpp, BytecodeGraph.cpp, BytecodeGraphParser.h,
+        BytecodeGraphSerializer.h, Sccp.cpp
+This is a stronger exclusion than the usual "leave it out of the .Build.cs":
+UnrealBuildTool compiles every .cpp/.c it finds anywhere under a module's own
+directory tree, with no per-file exclusion list in ModuleRules, so a file
+merely "not referenced" is still auto-discovered and built. The only reliable
+way to keep an unwanted translation unit out is to not have it in the tree at
+all -- the same reasoning CodeGen's full removal below already applies.
+
+Pruned entirely, not vendored (see MantleCore.uplugin ticket T4.8 for rationale):
+    CodeGen/    the native code generator (JIT). Never needed and never compiled;
+                pruned from the tree rather than merely excluded from the .Build.cs,
+                so the symbols do not exist in the repository to be picked up by a
+                future glob or a careless "just add the whole folder" edit.
+    CLI/        the luau/luau-compile/luau-bytecode/luau-reduce command-line tools.
+    Analysis/   luau-analyze's type checker -- not needed to run scripts.
+    Config/     .luaurc config file parsing for the analysis/CLI tools above.
+    Require/    the CLI's require()-from-disk implementation -- filesystem access,
+                exactly the kind of OS-facing code this vendoring must not carry.
+    Inliner/    a CodeGen-only optimisation pass.
+    tests/      upstream's own unit test suite (needs doctest, GTest-style).
+    bench/      microbenchmarks.
+    fuzz/       fuzzing harnesses.
+    extern/     third-party deps of the CLI/REPL only (isocline line editor, doctest).
+    tools/      misc offline tooling.
+    .github/, .clang-format, .editorconfig, CMakeLists.txt, CMakePresets.json,
+    Sources.cmake, Makefile, CONTRIBUTING.md, README.md, SECURITY.md, .git/
+                build/CI/doc plumbing for upstream's own CMake build, superseded
+                here by LuauLib.Build.cs.
+
+Compiled by LuauLib.Build.cs (see that file for the full reasoning). UBT
+auto-discovers every .cpp under the module directory, so this list is simply
+everything left in upstream/ after the pruning above -- there is nothing left
+in the tree that is NOT meant to be compiled:
+    Common/src/BytecodeWire.cpp
+    Common/src/StringUtils.cpp             (TimeTrace.cpp deliberately absent; see above)
+    Ast/src/*.cpp
+    Bytecode/src/BytecodeBuilder.cpp   (the only Bytecode/src file vendored)
+    Compiler/src/*.cpp
+    VM/src/*.cpp                       (Luau's VM ships no io library and a
+                                        deliberately restricted os library with no
+                                        os.execute/os.remove/os.getenv -- there is
+                                        no OS-facing translation unit to exclude
+                                        inside VM/src the way quickjs-libc.c must be
+                                        excluded from QuickJS)
+
+Never compiled, and not vendored, for the reasons above:
+    CodeGen (JIT), CLI, REPL, luau-analyze, Require (filesystem), tests, benchmarks.
+
+To update: re-run the retrieval command against the new tag, diff the file lists
+above against Sources.cmake in the new checkout, re-copy, and replay anything in
+patches/ (empty at this vendoring -- no UE-specific patch was needed).

@@ -1,0 +1,129 @@
+# Release: package and check the Fab zip, then attach it to a GitHub release.
+#
+# Push a tag v<VersionName> (for example v0.1.0) to make a release. Run the workflow by hand
+# (Actions > Release > Run workflow) for a dry run: the same checks and zip, uploaded as a
+# workflow artifact instead of a release.
+#
+# Fab has no publisher API, so the last step is by hand: paste the release's zip link into the Fab
+# publishing portal. Fab needs a link that works without sign-in, which works because this repo is
+# public.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package and check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      name: ${{ steps.package.outputs.name }}
+      version: ${{ steps.package.outputs.version }}
+    env:
+      # The tag to compare with VersionName; empty for a dry run.
+      TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+    steps:
+      - name: Check out (with LFS, for the IK assets)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: true
+
+      - name: Check the plugin
+        run: python3 .github/scripts/fab_release.py check ${TAG:+--tag "$TAG"}
+
+      - name: Package the Fab zip and check its contents
+        id: package
+        run: python3 .github/scripts/fab_release.py package --out "$RUNNER_TEMP/dist" ${TAG:+--tag "$TAG"}
+
+      - name: Upload the zip
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: ${{ steps.package.outputs.zip }}
+          if-no-files-found: error
+          retention-days: 14
+
+  # Compile proof: RunUAT BuildPlugin on the zip's source (Fab Technical Requirements 4.3.6.2.b,
+  # issue 950 step 4). A failed compile blocks the release.
+  # Runner: a second runner on the Windows builder, registered to this repo only (label
+  # mantlecore-buildplugin, folder C:\actions-runner-mantlecore, service
+  # actions.runner.GhzGarage-MantleCore.mantlecore-buildplugin, account NETWORK SERVICE). The
+  # builder's other runner serves GhzGarage/mantle and is separate.
+  # UE_ROOT (repo variable MANTLECORE_UE_ROOT) must be an installed (Launcher) UE 5.8, the kind
+  # Fab compiles against: on an installed engine BuildPlugin always builds as Rocket.
+  # This job runs on a self-hosted runner, so never trigger this workflow on pull_request once the
+  # repo is public: a fork's pull request could then run code on the builder.
+  buildplugin:
+    name: BuildPlugin (UE 5.8, Win64)
+    needs: package
+    runs-on: [self-hosted, Windows, X64, mantlecore-buildplugin]
+    timeout-minutes: 60
+    env:
+      UE_ROOT: ${{ vars.MANTLECORE_UE_ROOT || 'C:\Program Files\Epic Games\UE_5.8' }}
+    steps:
+      - name: Download the zip
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.package.outputs.name }}
+          path: ${{ runner.temp }}\zip
+
+      - name: Unpack (and check the engine is an installed UE 5.8)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath "$env:UE_ROOT\Engine\Build\InstalledBuild.txt")) { throw "$env:UE_ROOT is not an installed engine (no Engine\Build\InstalledBuild.txt)" }
+          $version = Get-Content -Raw "$env:UE_ROOT\Engine\Build\Build.version" | ConvertFrom-Json
+          if ("$($version.MajorVersion).$($version.MinorVersion)" -ne '5.8') { throw "$env:UE_ROOT is UE $($version.MajorVersion).$($version.MinorVersion), not 5.8" }
+          Write-Output "Engine: $env:UE_ROOT (UE $($version.MajorVersion).$($version.MinorVersion).$($version.PatchVersion), installed)"
+          $src = Join-Path $env:RUNNER_TEMP 'src'
+          Remove-Item -Recurse -Force $src -ErrorAction SilentlyContinue
+          Expand-Archive -Path (Join-Path $env:RUNNER_TEMP 'zip\${{ needs.package.outputs.name }}') -DestinationPath $src
+
+      - name: RunUAT BuildPlugin
+        shell: pwsh
+        run: |
+          $plugin = Join-Path $env:RUNNER_TEMP 'src\MantleCore\MantleCore.uplugin'
+          $package = Join-Path $env:RUNNER_TEMP 'BuildPluginPackage'
+          Remove-Item -Recurse -Force $package -ErrorAction SilentlyContinue
+          & "$env:UE_ROOT\Engine\Build\BatchFiles\RunUAT.bat" BuildPlugin "-Plugin=$plugin" "-Package=$package" -TargetPlatforms=Win64
+          if ($LASTEXITCODE -ne 0) { throw "BuildPlugin failed with exit code $LASTEXITCODE" }
+
+  release:
+    name: GitHub release
+    needs: [package, buildplugin]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download the zip
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.package.outputs.name }}
+          path: dist
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          NAME: ${{ needs.package.outputs.name }}
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          cat > notes.md <<EOF
+          Mantle Core $VERSION for Unreal Engine 5.8 (Win64).
+
+          **Fab:** in the Fab publishing portal, add a Project Version for UE 5.8 and paste the link to \`$NAME\` below. Fab downloads it without signing in, so this works only while the repo is public.
+          EOF
+          gh release create "$TAG" "dist/$NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "Mantle Core $VERSION" --notes-file notes.md

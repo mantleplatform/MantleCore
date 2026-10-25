@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "id": "sedan",
+  "name": "Sedan",
+  "description": "A four-door road car: hatchbacks, saloons, coupes and estates. Handles like a sports car, a little softer.",
+  "comment": "A vehicle preset (#728): the starting point a creator picks before choosing their mesh. defaults is a vehicle document fragment (schema/vehicle.schema.json) the plugin writes into a new vehicle; ranges narrows placeAssets.vehicle.ranges in schema/avatar/limits.json for a vehicle built from this preset, by the same paths, and never widens them. fit sizes the creator's mesh for the 165.6 cm Mantle character: one uniform scale from the mesh's wheel radius and track width (wheel-centre to wheel-centre across an axle) against these typical values, never from the wheelbase, so a stretched limousine keeps its length. Values are tuned against the owner's Fab test pack, where the real-scale Vol 2 sedan comes out at about 1.0.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "car",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 32,
+    "trackWidth": 165,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 4,
+    "max": 6
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 273,
+      "track": 165,
+      "wheelRadius": 32,
+      "wheelWidth": 21,
+      "axles": [
+        { "steer": true, "drive": false },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 470, "width": 182, "height": 70, "groundClearance": 20 },
+    "centerOfMass": [0, 0, 46],
+    "seat": {
+      "location": [0, -36, 76],
+      "steeringWheel": { "location": [46.8, -36, 79], "radius": 19 }
+    }
+  },
+  "derive": {
+    "stability": 1.15,
+    "cameraArmPerLength": 0.63,
+    "cameraHeightPerHeight": 1.1
+  },
+  "defaults": {
+    "mass": 1500,
+    "maxSpeed": 4500,
+    "dragCoefficient": 0.31,
+    "frontalArea": 2.6,
+    "engine": {
+      "maxTorque": 675,
+      "maxRPM": 7000,
+      "idleRPM": 900,
+      "torqueCurve": [[0, 0.5], [2000, 0.8], [4500, 1], [7000, 0.8]]
+    },
+    "transmission": {
+      "gearRatios": [4.25, 2.52, 1.66, 1.22, 1.0],
+      "reverseRatio": 4.04,
+      "finalDrive": 2.81,
+      "changeUpRPM": 6000,
+      "changeDownRPM": 2000
+    },
+    "suspension": {
+      "maxRaise": 10,
+      "maxDrop": 10,
+      "springRate": 250,
+      "springPreload": 50,
+      "damping": 0.5
+    },
+    "steering": {
+      "maxAngle": 40,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 3000,
+      "handbrakeTorque": 6000
+    },
+    "tires": {
+      "friction": 3.5
+    },
+    "camera": {
+      "armLength": 420,
+      "height": 160
+    }
+  },
+  "ranges": {
+    "mass": [900, 2200],
+    "maxSpeed": [2500, 6500],
+    "dragCoefficient": [0.2, 0.5],
+    "engine/maxTorque": [200, 1200],
+    "engine/maxRPM": [4000, 9000],
+    "engine/idleRPM": [600, 1200],
+    "suspension/maxRaise": [3, 20],
+    "suspension/maxDrop": [3, 20],
+    "suspension/springRate": [100, 800],
+    "suspension/damping": [0.2, 0.9],
+    "steering/maxAngle": [25, 50],
+    "brakes/brakeTorque": [1000, 6000],
+    "tires/friction": [1.5, 5],
+    "wheels/*/radius": [22, 45]
+  }
+}

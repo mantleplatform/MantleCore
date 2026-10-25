@@ -1,0 +1,1205 @@
+{
+  "avatarBounds": {
+    "heightMinCm": 151.1,
+    "heightMaxCm": 218.1,
+    "widthMaxCm": 171.7,
+    "depthMaxCm": 64.3,
+    "measured": {
+      "rule": "The compatibility envelope retains 0.85 x lower-reference standing height for heightMin, 1.15 x upper-reference standing height for heightMax, and 1.5 x upper-reference body width and depth for the maxima. Standing height is the face mesh's top; width is the body's X extent (A-pose arm span), depth its Y extent; reference pose, cm.",
+      "method": "lod0_render",
+      "sourceStatus": "Re-measurement requires four explicit source package paths.",
+      "upper": {
+        "heightCm": 189.7,
+        "widthCm": 114.5,
+        "depthCm": 42.9
+      },
+      "lower": {
+        "heightCm": 177.7,
+        "widthCm": 103.4,
+        "depthCm": 40.3
+      }
+    }
+  },
+  "characterScale": {
+    "driverStandingHeightCm": 165.6,
+    "driverEyeHeightCm": 155.9,
+    "minStandingHeightCm": 150,
+    "maxStandingHeightCm": 210,
+    "comment": "#581: the character's gameplay size follows its avatar. The server scales the hidden driver (SKM_UEFN_Mannequin), its hitboxes (PA_UEFN_Mannequin), the capsule and the eye uniformly by s = clamp(bodyMetrics.standingHeightCm x heightPct / 100, minStandingHeightCm, maxStandingHeightCm) / driverStandingHeightCm, from the avatar item's metrics it fetches itself; an item without metrics plays at s = heightPct / 100, and a place with settings.avatarHeight uniform at s = 1. driverStandingHeightCm is the top of SKM_UEFN_Mannequin in its reference pose (its imported bounds, 165.57 cm). The mannequin has no eye bones (its head joint is at 152.0 cm): driverEyeHeightCm is the mean of the two reference eyes normalized to the driver's scale (156.4 cm and 155.4 cm; each is within 0.5 cm), the server's eye and the first-person camera at s = 1. The client mirrors these values in FMantleCharacterScale."
+  },
+  "version": 1,
+  "comment": "Avatar catalog contract, read by the backend (go:embed), the cook worker, the plugin and the client. everything, avatarBounds included (see sourceStatus), is hand-maintained and cross-checked by schema/validate.py against avatar.schema.json, the palettes, the empty base-avatars.json registry and the skeleton fixtures.",
+  "skin": {
+    "comment": "Descriptor v8 skin choices (#742). faceTextures are the curated MetaHuman HF_index values a descriptor's appearance.skin.faceTexture may name (-1 means none); bodyTextureCount is the number of MetaHuman BodyTextureIndex values (0..bodyTextureCount-1; -1 means none).",
+    "faceTextures": [1, 3, 21, 40, 51, 55, 70, 73, 75, 79, 92, 117, 123, 135, 140, 145],
+    "bodyTextureCount": 9
+  },
+  "descriptor": {
+    "schema": "avatar.schema.json",
+    "schemaVersion": 9,
+    "wearingMaxEntries": 24,
+    "heightPct": {
+      "min": 95,
+      "max": 105,
+      "default": 100
+    },
+    "weight": {
+      "min": -100,
+      "max": 100,
+      "default": 0
+    },
+    "muscle": {
+      "min": -100,
+      "max": 100,
+      "default": 0
+    },
+    "chest": {
+      "min": -100,
+      "max": 100,
+      "default": 0
+    },
+    "hips": {
+      "min": -100,
+      "max": 100,
+      "default": 0
+    },
+    "idPatterns": {
+      "item": "^itm_u[0-9a-f]{32}$",
+      "skinTone": "^tone_[0-9]{2}$",
+      "eyeColor": "^eye_[0-9]{2}$"
+    }
+  },
+  "slotGroups": [
+    {
+      "id": "body",
+      "descriptorField": "body",
+      "comment": "One of each: the avatar item, two palette ids and the height."
+    },
+    {
+      "id": "wear",
+      "descriptorField": "wearing",
+      "comment": "Skinned garments; only on garment-compatible avatars (see compatibility)."
+    },
+    {
+      "id": "accessory",
+      "descriptorField": "wearing",
+      "comment": "Rigid meshes on sockets; any avatar of a supported appearance skeleton."
+    },
+    {
+      "id": "emotes",
+      "descriptorField": "emotes",
+      "comment": "Item ids of slot emote, played on the UEFN driver."
+    },
+    {
+      "id": "overlays",
+      "descriptorField": "appearance.skin",
+      "comment": "#736: scar and tattoo overlay items. Not worn: a descriptor names one by itemId on appearance.skin.{body,face}.{scar,tattoo}, and the slot must match that layer."
+    }
+  ],
+  "slots": [
+    {
+      "id": "avatar",
+      "group": "body",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "body_mesh",
+      "itemClass": "avatar_body",
+      "descriptorField": "body.avatarItemId",
+      "comment": "BodyMesh (+ FaceMesh) built from an explicitly selected avatar item."
+    },
+    {
+      "id": "skin_tone",
+      "group": "body",
+      "cap": 1,
+      "source": "palette",
+      "mechanism": "skin_tint",
+      "palette": "skin-tones.json",
+      "descriptorField": "body.skinToneId",
+      "comment": "Recolour of the avatar's skin sections: the baked MetaHuman post-bake parameters on MetaHuman avatars, M_MantleAvatar SkinTint otherwise."
+    },
+    {
+      "id": "eye_color",
+      "group": "body",
+      "cap": 1,
+      "source": "palette",
+      "mechanism": "eye_tint",
+      "palette": "eye-colors.json",
+      "descriptorField": "body.eyeColorId",
+      "comment": "Iris recolour of the avatar's eyes sections: the baked MetaHuman Iris Color Multiply, or M_MantleEye EyeTint through the iris mask."
+    },
+    {
+      "id": "height",
+      "group": "body",
+      "cap": 1,
+      "source": "slider",
+      "mechanism": "component_scale",
+      "descriptorField": "body.heightPct",
+      "comment": "Uniform scale of the visible components, clients only; range in descriptor.heightPct."
+    },
+    {
+      "id": "weight",
+      "group": "body",
+      "cap": 1,
+      "source": "slider",
+      "mechanism": "body_offsets",
+      "descriptorField": "body.weight",
+      "comment": "Body weight, -100..100 (0 = the body as uploaded); applies to converted avatars only, an As-Is avatar's is 0; range in descriptor.weight."
+    },
+    {
+      "id": "muscle",
+      "group": "body",
+      "cap": 1,
+      "source": "slider",
+      "mechanism": "body_offsets",
+      "descriptorField": "body.muscle",
+      "comment": "Muscle, -100..100 (0 = the body as uploaded); applies to converted avatars only, an As-Is avatar's is 0; range in descriptor.muscle."
+    },
+    {
+      "id": "chest",
+      "group": "body",
+      "cap": 1,
+      "source": "slider",
+      "mechanism": "body_offsets",
+      "descriptorField": "body.chest",
+      "comment": "Chest size, -100..100 (0 = the body as uploaded); applies to converted avatars only, an As-Is avatar's is 0; range in descriptor.chest."
+    },
+    {
+      "id": "hips",
+      "group": "body",
+      "cap": 1,
+      "source": "slider",
+      "mechanism": "body_offsets",
+      "descriptorField": "body.hips",
+      "comment": "Hip width, -100..100 (0 = the body as uploaded); applies to converted avatars only, an As-Is avatar's is 0; range in descriptor.hips."
+    },
+    {
+      "id": "hair",
+      "group": "wear",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "garment_component",
+      "itemClass": "skinned_garment"
+    },
+    {
+      "id": "eyebrows",
+      "group": "wear",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "garment_component",
+      "itemClass": "skinned_garment",
+      "comment": "Worn alongside hair and built the way hair is (contentLimits.skinned_garment.hair.slots)."
+    },
+    {
+      "id": "eyelashes",
+      "group": "wear",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "garment_component",
+      "itemClass": "skinned_garment",
+      "comment": "Worn alongside hair and built the way hair is (contentLimits.skinned_garment.hair.slots)."
+    },
+    {
+      "id": "facial_hair",
+      "group": "wear",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "garment_component",
+      "itemClass": "skinned_garment",
+      "comment": "Beards and moustaches. Worn alongside hair and built the way hair is (contentLimits.skinned_garment.hair.slots)."
+    },
+    {
+      "id": "top",
+      "group": "wear",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "garment_component",
+      "itemClass": "skinned_garment"
+    },
+    {
+      "id": "bottom",
+      "group": "wear",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "garment_component",
+      "itemClass": "skinned_garment"
+    },
+    {
+      "id": "footwear",
+      "group": "wear",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "garment_component",
+      "itemClass": "skinned_garment"
+    },
+    {
+      "id": "nails",
+      "group": "wear",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "garment_component",
+      "itemClass": "skinned_garment",
+      "comment": "Shaped press-on nails (#740). Overlay only: never body-tracking and never body-covering, so it neither hides nor sinks the fingertips."
+    },
+    {
+      "id": "acc_hat",
+      "group": "accessory",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "socket",
+      "itemClass": "rigid_accessory",
+      "socket": "acc_hat",
+      "socketBone": "head"
+    },
+    {
+      "id": "acc_face",
+      "group": "accessory",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "socket",
+      "itemClass": "rigid_accessory",
+      "socket": "acc_face",
+      "socketBone": "head"
+    },
+    {
+      "id": "acc_neck",
+      "group": "accessory",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "socket",
+      "itemClass": "rigid_accessory",
+      "socket": "acc_neck",
+      "socketBone": "neck_01"
+    },
+    {
+      "id": "acc_shoulder_l",
+      "group": "accessory",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "socket",
+      "itemClass": "rigid_accessory",
+      "socket": "acc_shoulder_l",
+      "socketBone": "clavicle_l"
+    },
+    {
+      "id": "acc_shoulder_r",
+      "group": "accessory",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "socket",
+      "itemClass": "rigid_accessory",
+      "socket": "acc_shoulder_r",
+      "socketBone": "clavicle_r"
+    },
+    {
+      "id": "acc_front",
+      "group": "accessory",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "socket",
+      "itemClass": "rigid_accessory",
+      "socket": "acc_front",
+      "socketBone": "spine_04"
+    },
+    {
+      "id": "acc_back",
+      "group": "accessory",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "socket",
+      "itemClass": "rigid_accessory",
+      "socket": "acc_back",
+      "socketBone": "spine_03"
+    },
+    {
+      "id": "acc_waist",
+      "group": "accessory",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "socket",
+      "itemClass": "rigid_accessory",
+      "socket": "acc_waist",
+      "socketBone": "pelvis"
+    },
+    {
+      "id": "emote",
+      "group": "emotes",
+      "cap": 8,
+      "source": "item",
+      "mechanism": "clip_node",
+      "itemClass": "emote",
+      "descriptorField": "emotes"
+    },
+    {
+      "id": "scar_body",
+      "group": "overlays",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "skin_overlay",
+      "itemClass": "overlay",
+      "descriptorField": "appearance.skin.body.scar"
+    },
+    {
+      "id": "scar_face",
+      "group": "overlays",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "skin_overlay",
+      "itemClass": "overlay",
+      "descriptorField": "appearance.skin.face.scar"
+    },
+    {
+      "id": "tattoo_body",
+      "group": "overlays",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "skin_overlay",
+      "itemClass": "overlay",
+      "descriptorField": "appearance.skin.body.tattoo"
+    },
+    {
+      "id": "tattoo_face",
+      "group": "overlays",
+      "cap": 1,
+      "source": "item",
+      "mechanism": "skin_overlay",
+      "itemClass": "overlay",
+      "descriptorField": "appearance.skin.face.tattoo"
+    }
+  ],
+  "accessoryTotalCap": 8,
+  "toolSockets": [
+    {
+      "socket": "hand_rSocket",
+      "socketBone": "hand_r",
+      "unitScale": true
+    }
+  ],
+  "toolSocketsComment": "#585: sockets an avatar item may override in its sockets map besides the accessory slots' sockets. hand_rSocket carries every held tool and gun, and the body IK puts it on the driver's weapon_r. An override is refused past the accessory socket overrides' bounds (50 cm, 180 degrees); with unitScale its scale stays 1, since a scaled socket scales the tool it carries; it hangs from socketBone on every appearance skeleton's fixture (schema/validate.py), and an override that names a bone must name that one. POST /avatar/items and the plugin's socket override check both read this list.",
+  "compatibility": {
+    "group": "wear",
+    "requiresAvatarFlag": "garmentCompatible",
+    "rule": "wearing may hold wear-group items only if the worn avatar is garmentCompatible (its body has an LOD at the reference topology, body-topology-v1.json). The server rejects the combination naming the slot; the client sets those items aside (still owned, still in the outfit) when the player switches to an incompatible avatar."
+  },
+  "skeletons": [
+    {
+      "id": "uefn",
+      "role": "animation",
+      "fixture": "skeleton-uefn-v1.json",
+      "fixtureLabel": "uefn",
+      "comment": "The hidden driver; emotes validate against it. Never an appearance skeleton."
+    },
+    {
+      "id": "metahuman",
+      "role": "appearance",
+      "fixture": "skeleton-metahuman-v1.json",
+      "fixtureLabel": "metahuman",
+      "comment": "Primary appearance skeleton: MetaHuman bodies, body shapes and skinned garments. Carries the reference topology."
+    },
+    {
+      "id": "ue5mannequin",
+      "role": "appearance",
+      "fixture": "skeleton-ue5mannequin-v1.json",
+      "fixtureLabel": "ue5mannequin",
+      "comment": "Secondary appearance skeleton: the UE5 Mannequin (SK_Mannequin, the 5.4+ skeleton with its correctives), for stylized and Fab characters. No reference topology, so never garment-compatible; no face, so jawBone defaults to none. #594: its fixture ends with an optional jaw bone under head (not a required bone): the plugin keeps the jaw the creator picks as it, and such an avatar declares jawBone jaw. #595: after the jaw come the optional secondary motion slots (contentLimits.avatar_body.secondaryMotion), not required bones either. A skin that uses only bones this skeleton shares with metahuman is identified as metahuman (the class order); its weapon_*, ik_*, interaction, center_of_mass, jaw and dyn_* bones are its own."
+    },
+    {
+      "id": "ue4mannequin",
+      "role": "appearance",
+      "fixture": "skeleton-ue4mannequin-v1.json",
+      "fixtureLabel": "ue4mannequin",
+      "comment": "Third appearance skeleton (#593): the UE4 Mannequin (SK_UE4_Mannequin, as the Game Animation Sample ships it), common on Fab. It has no spine_04, spine_05, neck_02 or metacarpals: the clavicles and neck_01 hang from spine_03, head from neck_01 and the fingers from the hand, so a body on it never fits the metahuman or ue5mannequin hierarchy (and theirs never fit it without folding bones away). Like ue5mannequin: no reference topology, so never garment-compatible; no face; an optional jaw bone under head and then #595's optional secondary motion slots, last in its fixture and not required bones. Its acc_front and acc_back sockets sit on spine_02 and spine_01, the bones at the UE5 Mannequin's spine_04 and spine_03 heights."
+    },
+    {
+      "id": "uefnmannequin",
+      "role": "appearance",
+      "fixture": "skeleton-uefnmannequin-v1.json",
+      "fixtureLabel": "uefnmannequin",
+      "comment": "Fourth appearance skeleton (#609): the UEFN Mannequin, the driver's own skeleton (SK_UEFN_Mannequin's 91 bones; the appearance copy SK_UEFN_Mannequin_Avatar adds the sockets and the optional slots), common for Fortnite-style characters on Fab. A body on it needs no pose translation: its retargeter maps every chain onto the same chain of the same IK rig with no retarget pose offsets. Its hierarchy is the UE5 Mannequin's without the correctives, interaction and center_of_mass, plus four bones no other supported skeleton has (attach, props_root, prop_01, poi); those four identify a body as uefnmannequin, and it is last in the class order, so a skin that carries none of them keeps the skeleton it had before #609 (metahuman or ue5mannequin). Like ue5mannequin: no reference topology, so never garment-compatible; no face; an optional jaw bone under head and then #595's optional secondary motion slots, last in its fixture and not required bones. Not the uefn skeleton: that one is the hidden driver's and the emotes', never an appearance skeleton."
+    },
+    {
+      "id": "metahuman_face",
+      "role": "face",
+      "fixture": "skeleton-metahuman-face-v1.json",
+      "fixtureLabel": "metahuman-face",
+      "comment": "The optional face of a metahuman avatar. The fixture labels itself metahuman-face; the contract id (MSK1 header, limits, backend) is metahuman_face."
+    }
+  ],
+  "sectionRoles": [
+    {
+      "id": "skin",
+      "comment": "Takes the skin tone."
+    },
+    {
+      "id": "eyes",
+      "comment": "Takes the eye colour on the iris."
+    },
+    {
+      "id": "other",
+      "comment": "Rendered as authored."
+    },
+    {
+      "id": "hair_cards",
+      "comment": "Hair items only (skinned_garment.hair.slots): a groom's cards. The section's albedo is the cards attribute atlas (coverage in R, depth in G, seed in B), its normal the cards tangent atlas (tangent in RGB, CoordU in A), both data, and it carries hairColor, the linear RGB the hair is drawn in (#325, #326)."
+    }
+  ],
+  "contentLimits": {
+    "avatar_body": {
+      "maxTriangles": 20000,
+      "maxSections": 8,
+      "maxInfluencesPerVertex": 8,
+      "boneIndexBits": 16,
+      "skeletons": [
+        "metahuman",
+        "ue5mannequin",
+        "ue4mannequin",
+        "uefnmannequin"
+      ],
+      "referencePose": "required",
+      "morphTargets": false,
+      "textures": {
+        "albedoMax": 2048,
+        "normalMax": 2048,
+        "ormMax": 2048
+      },
+      "bounds": "avatarBounds",
+      "feetAtOriginToleranceCm": 10,
+      "boundsComment": "The cook checks the reference-pose bounds of the body mesh: lowest vertex within feetAtOriginToleranceCm of z = 0, top at most avatarBounds.heightMaxCm, X extent at most widthMaxCm, Y extent at most depthMaxCm. A MetaHuman body ends at the neck, so the minimum standing height (avatarBounds.heightMinCm) is checked when the item is created, over the body and its face together (cook.CheckAvatarHeight); a ue5mannequin, ue4mannequin or uefnmannequin body has no separate face and is checked in full at cook.",
+      "requiredBones": {
+        "metahuman": [
+          "root",
+          "pelvis",
+          "spine_01",
+          "spine_02",
+          "spine_03",
+          "spine_04",
+          "spine_05",
+          "neck_01",
+          "head",
+          "clavicle_l",
+          "upperarm_l",
+          "lowerarm_l",
+          "hand_l",
+          "clavicle_r",
+          "upperarm_r",
+          "lowerarm_r",
+          "hand_r",
+          "thigh_l",
+          "calf_l",
+          "foot_l",
+          "ball_l",
+          "thigh_r",
+          "calf_r",
+          "foot_r",
+          "ball_r"
+        ],
+        "ue5mannequin": [
+          "root",
+          "pelvis",
+          "spine_01",
+          "spine_02",
+          "spine_03",
+          "spine_04",
+          "spine_05",
+          "neck_01",
+          "head",
+          "clavicle_l",
+          "upperarm_l",
+          "lowerarm_l",
+          "hand_l",
+          "clavicle_r",
+          "upperarm_r",
+          "lowerarm_r",
+          "hand_r",
+          "thigh_l",
+          "calf_l",
+          "foot_l",
+          "ball_l",
+          "thigh_r",
+          "calf_r",
+          "foot_r",
+          "ball_r"
+        ],
+        "ue4mannequin": [
+          "root",
+          "pelvis",
+          "spine_01",
+          "spine_02",
+          "spine_03",
+          "neck_01",
+          "head",
+          "clavicle_l",
+          "upperarm_l",
+          "lowerarm_l",
+          "hand_l",
+          "clavicle_r",
+          "upperarm_r",
+          "lowerarm_r",
+          "hand_r",
+          "thigh_l",
+          "calf_l",
+          "foot_l",
+          "ball_l",
+          "thigh_r",
+          "calf_r",
+          "foot_r",
+          "ball_r"
+        ],
+        "uefnmannequin": [
+          "root",
+          "pelvis",
+          "spine_01",
+          "spine_02",
+          "spine_03",
+          "spine_04",
+          "spine_05",
+          "neck_01",
+          "head",
+          "clavicle_l",
+          "upperarm_l",
+          "lowerarm_l",
+          "hand_l",
+          "clavicle_r",
+          "upperarm_r",
+          "lowerarm_r",
+          "hand_r",
+          "thigh_l",
+          "calf_l",
+          "foot_l",
+          "ball_l",
+          "thigh_r",
+          "calf_r",
+          "foot_r",
+          "ball_r"
+        ]
+      },
+      "requiredBonesComment": "#582: the bones an avatar body must carry on its skeleton, the union of what the retargeter's IK rig chains use (Root, Spine, Neck, Head, the clavicles, arms, legs and toes of GASP's rigs, whose goals are hand_l/r and foot_l/r), the accessory and tool sockets (skeleton fixture sockets: head, neck_01, clavicle_l/r, spine_03, spine_04, pelvis, hand_r; on ue4mannequin spine_01 and spine_02 for spine_03 and spine_04) and the chain directions checked below. #593: the UE4 Mannequin's spine ends at spine_03, so its list has no spine_04 or spine_05. #609: the UEFN Mannequin's list is the UE5 Mannequin's (its IK rig is IK_UEFN_Mannequin, the driver's, whose chains use the same bones); attach, props_root, prop_01 and poi, which identify it, are not required. The cook refuses a body missing any of them, naming every one missing (the plugin's validation mirrors it with the same wording, #582's editor half). Eye bones are not required: a MetaHuman body's eyes are on its face (metrics.eyeBones).",
+      "referencePoseShape": {
+        "chainToleranceDegrees": 20,
+        "boneScaleTolerance": 0.01,
+        "comment": "#582: the reference pose must be the skeleton's own. Every bone's local scale in the reference pose is within 1 +- boneScaleTolerance on each axis, and each chain of the skeleton fixture's referencePose.chains (upperarm to lowerarm, lowerarm to hand, thigh to calf, calf to foot, left and right, and pelvis to the top spine bone: spine_05, or spine_03 on the UE4 Mannequin, #593) points within chainToleranceDegrees of the direction recorded there, so a T-pose or arms-down body is refused (the retarget pose offsets are authored for the A-pose). A skeleton fixture without referencePose.chains gets the scale rule only. 20 degrees is the starting value (#582): tune it on genuine sample avatars and test uploads."
+      },
+      "metrics": {
+        "eyeBones": [
+          "FACIAL_L_Eye",
+          "FACIAL_R_Eye"
+        ],
+        "comment": "#582: body measurements the cook derives from the reference pose (component space, cm) and POST /avatar/items stores on the avatar item as bodyMetrics, for normalisation (#581), retarget profiles and IK. standingHeightCm is the top of the mesh (the body's, or on a MetaHuman avatar the higher of the body and its face, set at item creation); eyeHeightCm is the mean height of the eyeBones present, from the face on a MetaHuman avatar, absent when there are none; pelvisHeightCm is pelvis's height; armLengthCm is upperarm to lowerarm plus lowerarm to hand (the Arm chain, shoulder to wrist) and legLengthCm thigh to calf plus calf to foot (the Leg chain, hip to ankle), each the mean of left and right; shoulderWidthCm is upperarm_l to upperarm_r and hipWidthCm thigh_l to thigh_r. Rounded to 0.1 cm."
+      },
+      "jawBone": "optional; must exist in the avatar's skeleton",
+      "secondaryMotion": {
+        "skeletons": ["ue5mannequin", "ue4mannequin", "uefnmannequin"],
+        "chains": [
+          {"id": "chest_l", "bones": ["dyn_chest_l"], "defaultPreset": "chest"},
+          {"id": "chest_r", "bones": ["dyn_chest_r"], "defaultPreset": "chest"},
+          {"id": "hair_a", "bones": ["dyn_hair_a_01", "dyn_hair_a_02", "dyn_hair_a_03", "dyn_hair_a_04"], "defaultPreset": "hair"},
+          {"id": "hair_b", "bones": ["dyn_hair_b_01", "dyn_hair_b_02", "dyn_hair_b_03", "dyn_hair_b_04"], "defaultPreset": "hair"},
+          {"id": "hair_c", "bones": ["dyn_hair_c_01", "dyn_hair_c_02", "dyn_hair_c_03", "dyn_hair_c_04"], "defaultPreset": "hair"},
+          {"id": "hair_d", "bones": ["dyn_hair_d_01", "dyn_hair_d_02", "dyn_hair_d_03", "dyn_hair_d_04"], "defaultPreset": "hair"},
+          {"id": "hair_e", "bones": ["dyn_hair_e_01", "dyn_hair_e_02", "dyn_hair_e_03", "dyn_hair_e_04"], "defaultPreset": "hair"},
+          {"id": "hair_f", "bones": ["dyn_hair_f_01", "dyn_hair_f_02", "dyn_hair_f_03", "dyn_hair_f_04"], "defaultPreset": "hair"},
+          {"id": "back", "bones": ["dyn_back_01", "dyn_back_02", "dyn_back_03", "dyn_back_04"], "defaultPreset": "cloth"},
+          {"id": "cloth_a", "bones": ["dyn_cloth_a_01", "dyn_cloth_a_02", "dyn_cloth_a_03"], "defaultPreset": "cloth"},
+          {"id": "cloth_b", "bones": ["dyn_cloth_b_01", "dyn_cloth_b_02", "dyn_cloth_b_03"], "defaultPreset": "cloth"},
+          {"id": "cloth_c", "bones": ["dyn_cloth_c_01", "dyn_cloth_c_02", "dyn_cloth_c_03"], "defaultPreset": "cloth"},
+          {"id": "cloth_d", "bones": ["dyn_cloth_d_01", "dyn_cloth_d_02", "dyn_cloth_d_03"], "defaultPreset": "cloth"},
+          {"id": "tail", "bones": ["dyn_tail_01", "dyn_tail_02", "dyn_tail_03", "dyn_tail_04"], "defaultPreset": "tail"}
+        ],
+        "presets": [
+          {"id": "hair", "stiffness": 120, "damping": 9, "gravity": 60, "maxAngleDegrees": 50},
+          {"id": "chest", "stiffness": 350, "damping": 14, "gravity": 30, "maxAngleDegrees": 12},
+          {"id": "cloth", "stiffness": 160, "damping": 11, "gravity": 80, "maxAngleDegrees": 40},
+          {"id": "tail", "stiffness": 90, "damping": 7, "gravity": 40, "maxAngleDegrees": 60}
+        ],
+        "comment": "#595: standard optional dynamic bone slots for secondary motion (hair, chest, cloth, tail). Each chain's bones are on every skeleton in skeletons, last in its fixture after the jaw slot, in this order, each under the one before; the chain's first bone hangs from spine_04 (chest) or spine_05 (back) on ue5mannequin and uefnmannequin (#609), spine_03 on ue4mannequin, head (hair) and pelvis (cloth, tail) on all three. The metahuman skeleton has none: it is the shared body and garment skeleton, and a MetaHuman Creator body carries no such bones. Like the jaw slot, no slot bone is a required bone, and the plugin keeps a creator's bone as one only when the creator maps it (a chain maps in order: a shorter chain fills the first slots, the bones past the last slot fold into it); an unmapped bone folds (#592). An avatar item's secondaryMotion maps each mapped chain id to a preset id (absent: the chain's defaultPreset); POST /avatar/items refuses an unknown chain or preset, and a chain whose first bone the cooked body lacks. The client simulates them on the visible body only (a spring per bone toward its animated pose, relative to its moving target: stiffness 1/s^2, damping 1/s, gravity cm/s^2, a small bias since the reference pose already hangs, maxAngleDegrees from the animated direction); never on a dedicated server, never on the driver or hitboxes. The client keeps its copy of the chains and presets equal to these."
+      },
+      "socketOverrides": "optional; the accessory sockets and toolSockets; refused, not clamped, past the bounds",
+      "face": "avatar_face",
+      "dna": {
+        "optional": true,
+        "skeletons": [
+          "metahuman"
+        ],
+        "maxBytes": 8388608,
+        "comment": "The body's DNA (behaviour layer) as a content-addressed .dna blob; the cook worker size-checks it and never parses it. A DNA fits only its own body."
+      }
+    },
+    "avatar_face": {
+      "maxTriangles": 10000,
+      "maxSections": 12,
+      "maxInfluencesPerVertex": 8,
+      "boneIndexBits": 16,
+      "skeletons": [
+        "metahuman_face"
+      ],
+      "avatarSkeletons": [
+        "metahuman"
+      ],
+      "referencePose": "required",
+      "morphTargets": false,
+      "textures": {
+        "albedoMax": 2048,
+        "normalMax": 2048,
+        "ormMax": 2048
+      },
+      "jawBoneDefault": "FACIAL_C_Jaw"
+    },
+    "rigid_accessory": {
+      "format": "MRM2",
+      "maxTriangles": 4000,
+      "maxMaterials": 1,
+      "textures": {
+        "albedoMax": 1024,
+        "normalMax": 1024
+      },
+      "pivot": "socket",
+      "boundsPerSlot": {
+        "acc_hat": {
+          "maxDimensionCm": 60,
+          "maxReachCm": 50
+        },
+        "acc_face": {
+          "maxDimensionCm": 35,
+          "maxReachCm": 30
+        },
+        "acc_neck": {
+          "maxDimensionCm": 45,
+          "maxReachCm": 35
+        },
+        "acc_shoulder_l": {
+          "maxDimensionCm": 40,
+          "maxReachCm": 40
+        },
+        "acc_shoulder_r": {
+          "maxDimensionCm": 40,
+          "maxReachCm": 40
+        },
+        "acc_front": {
+          "maxDimensionCm": 60,
+          "maxReachCm": 50
+        },
+        "acc_back": {
+          "maxDimensionCm": 80,
+          "maxReachCm": 70
+        },
+        "acc_waist": {
+          "maxDimensionCm": 70,
+          "maxReachCm": 55
+        }
+      },
+      "boundsPerSlotComment": "From a 189.7 cm avatar body reference (114.5 cm A-pose span, 42.9 cm deep): orientation-free, so they hold whatever the socket's axes are. maxDimensionCm caps the longest edge of the cooked mesh's bounding box (MRM2 since F2 #336; an MRM1 cooked before still passes); maxReachCm caps the farthest box corner from the pivot (the socket). A hat about a head and a half wide, a back item smaller than the torso is tall, a waist item no wider than the hips plus a hand. Checked by POST /avatar/items through cook.CheckAccessoryBounds on the asset's cookInfo. The user adjusts the numbers."
+    },
+    "skinned_garment": {
+      "comment": "Tops, bottoms, footwear, hair, eyebrows, eyelashes and facial hair (hair converted from MetaHuman grooms included).",
+      "maxTriangles": 6000,
+      "maxSections": 4,
+      "maxInfluencesPerVertex": 8,
+      "boneIndexBits": 16,
+      "skeletons": [
+        "metahuman"
+      ],
+      "referencePose": "forbidden",
+      "morphTargets": false,
+      "textures": {
+        "albedoMax": 2048,
+        "normalMax": 2048
+      },
+      "hair": {
+        "slots": [
+          "hair",
+          "eyebrows",
+          "eyelashes",
+          "facial_hair"
+        ],
+        "slotsComment": "Hair, eyebrow, eyelash and facial-hair card items: four slots, one item each, all worn together. Every rule here and the client's hair path apply to each of them alike.",
+        "maxTrianglesPerSlot": {
+          "hair": 14000,
+          "facial_hair": 5000,
+          "eyebrows": 3000,
+          "eyelashes": 2000
+        },
+        "trianglesComment": "Per-slot triangle caps for every LOD; other garments keep skinned_garment.maxTriangles. These four caps total 24000, preserving the complete avatar's 104000-triangle maximum. Existing LOD generation fractions and monotonic limits still apply.",
+        "maxTexturesPerItem": 4,
+        "maxTextureSize": 2048,
+        "gpuFormats": {
+          "rgb": "BC1",
+          "singleChannel": "BC4",
+          "twoChannel": "BC5"
+        },
+        "mips": true,
+        "maxGpuBytesPerItem": 25165824,
+        "budgetComment": "At most 4 distinct textures per hair item, each at most 2048 x 2048, budgeted as BC-compressed with mips, about 24 MB of GPU memory per item at full resolution. POST /avatar/items refuses an over-budget item naming the texture and the limit (a per-item rule: the cook sees one texture at a time).",
+        "cardData": {
+          "glTF": {
+            "rootUV": "_MANTLE_HAIR_ROOT_UV",
+            "coordU": "_MANTLE_HAIR_COORD_U"
+          },
+          "msk1": "flag bit 4: per vertex root U, root V, CoordU as float16 (6 bytes), after the skin weights of each LOD",
+          "comment": "Optional per-vertex card data for hair card meshes (root-to-tip colour in MetaHuman's hair material, #325/#326); other meshes carry none."
+        }
+      },
+      "sourceBodyShape": "required: the body_shape it was authored on; the garment's bind pose must match that shape's reference pose",
+      "bindPoseTolerance": {
+        "translationCm": 0.5,
+        "rotationDegrees": 1.0,
+        "comment": "Every bone that carries weight: the garment's bind pose (inverse of its glTF inverse-bind matrix, component space) against the source body shape's reference pose composed to component space."
+      },
+      "sourceFace": "uploaded at the face's reference-topology LOD when one exists; improves the collar fit, not part of compatibility",
+      "sectionsIdentifiedBy": "material_name",
+      "coverage": {
+        "replaces": "hide regions: there is no hides list and no region ids",
+        "kind": "per_vertex_bitset",
+        "over": "reference_topology",
+        "bitCountFrom": {
+          "file": "body-topology-v1.json",
+          "field": "vertexCount"
+        },
+        "bitOrder": "bit i is reference vertex i, least significant bit first within each byte",
+        "computedAtUpload": "a reference vertex is covered when a garment vertex lies within uploadThresholdCm outside it on the authoring body",
+        "uploadThresholdCm": 3.0,
+        "perWearer": "the client recomputes coverage from the fitted garment over the wearer; the upload bits are the fallback and the catalog preview",
+        "union": "over all worn garments",
+        "dropTriangleWhen": "all three vertices covered",
+        "seamShrinkCm": 0.8
+      },
+      "longGarment": {
+        "rule": "hem below the knee: any garment vertex lower than the source body shape's knee joints in its reference pose",
+        "kneeBones": [
+          "calf_l",
+          "calf_r"
+        ],
+        "action": "flag",
+        "itemField": "mayClipInMotion",
+        "comment": "Long garments are accepted with a visible flag: the cook sets MSK1 flag bit 3 on a garment with a hem below the knee, and POST /avatar/items stores it on the item as mayClipInMotion (footwear excepted, below the knee by nature), which the item's API object carries and the plugin shows. Nothing is refused for it."
+      }
+    },
+    "body_shape": {
+      "format": "MBS1",
+      "topology": "body-topology-v1.json",
+      "skeletons": [
+        "metahuman"
+      ],
+      "referencePose": "required",
+      "contents": "positions in reference-topology order, reference pose, RBF interpolation data",
+      "warpWeights": "required: the cook refuses a body shape without the plugin's RBF weights (the MANTLE_body_shape glTF extension, MBS1 flag bit 0), and a garment whose body shape has none",
+      "dedupe": "content hash",
+      "warpPointCount": 750,
+      "warpPointCountComment": "Placeholder: a point-count sweep (500 / 750 / 1,000) decides the value.",
+      "maxWarpPointCount": 1500,
+      "maxWarpPointCountComment": "Hard cap on the RBF sample count an upload may carry ((S + 4)^2 float32 weights: 9.0 MB at 1,500), whatever warpPointCount is set to."
+    },
+    "emote": {
+      "format": "MAN1",
+      "maxDurationSeconds": 30,
+      "frameRate": 30,
+      "skeletons": [
+        "uefn"
+      ],
+      "maxRootTranslationCm": 50,
+      "rootTranslationRule": "the root bone's farthest distance from its first key, cm",
+      "requiredBones": [
+        "pelvis"
+      ],
+      "maxEvents": 64,
+      "events": [
+        "footstep_l",
+        "footstep_r",
+        "impact",
+        "loop_start"
+      ],
+      "eventsComment": "The MAN1 event allowlist. Any other name is refused at cook.",
+      "maxCookedBytes": 524288
+    },
+    "overlay": {
+      "textures": {
+        "albedoMax": 1024,
+        "normalMax": 1024
+      },
+      "squarePowerOfTwo": true,
+      "normalSlots": [
+        "scar_body",
+        "scar_face"
+      ],
+      "comment": "#736: an overlay item's mask is a required texture asset (textureAssetId) and its normal an optional one (normalAssetId, scar slots only). Both are square, a power of two and at most albedoMax / normalMax; the mask's painted content is one channel. No mesh."
+    },
+    "thumbnail": {
+      "format": "png",
+      "width": 512,
+      "height": 512,
+      "comment": "Rendered by the plugin (full body for avatars); moderated as an image."
+    },
+    "any_upload": {
+      "maxBytes": 67108864,
+      "maxTextureSize": 2048
+    }
+  },
+  "lods": {
+    "maxLods": 3,
+    "appliesTo": [
+      "avatar_body",
+      "avatar_face",
+      "skinned_garment"
+    ],
+    "eachAtMostPrevious": true,
+    "eachAtMostClassLimit": true,
+    "targetFractions": [
+      1.0,
+      0.5,
+      0.25
+    ],
+    "screenSizes": [
+      1.0,
+      0.35,
+      0.15
+    ],
+    "glTF": "one mesh per LOD, each placed by its own node named LOD0, LOD1, LOD2 with the one skin; an upload with a single mesh node is one LOD whatever the node is called",
+    "comment": "Generated by the plugin at upload: the editor's skeletal mesh reduction at targetFractions of LOD0's triangles, skin weights kept, LOD0's sections. Hair and body shapes stay one LOD. Rigid accessories preserve authored static LODs through placeAssets.staticMesh.lods/MRM2, additionally bounded by rigid_accessory mesh and slot limits. The worker checks each LOD's triangle count is at most the previous LOD's and at most the class's maxTriangles, and that a lower LOD draws only LOD0's materials. screenSizes is where the client switches to each LOD (FSkeletalMeshLODInfo::ScreenSize, mirrored by FMantleRuntimeSkeletalMeshBuilder and held equal by Mantle.Avatar.SkeletalMeshBuilder.LODScreenSizesMatchSchema)."
+  },
+  "clientCache": {
+    "perPlayerMB": 128,
+    "totalMB": 1024,
+    "comment": "The client's cosmetic cache (FMantleCosmeticCache): perPlayerMB bounds what one look may hold in memory (decoded and built meshes, textures at their GPU size, fitted garments), loaded in priority order (the avatar, then the worn slots in slot order; what does not fit is left off and logged). totalMB is what the cache keeps across every look before it evicts what no look uses, least recently used first. The client mirrors both as FMantleCosmeticCacheSettings defaults (Mantle.Avatar.CosmeticCache.LimitsMatchSchema) and reads [Mantle.CosmeticCache] PerPlayerBudgetMB and TotalBudgetMB from the game ini over them."
+  },
+  "placeAssets": {
+    "comment": "Creator-uploaded place assets (#252 slice S2: static meshes plus baked PBR materials, F1 #335; sounds, #324). The same reader set as the rest of this file (backend go:embed copies, the cook worker, the plugin's Check this place, schema/validate.py), so the plugin warns and the worker refuses with the same numbers. Texture pixels and bytes are the upload-wide contentLimits.any_upload.maxTextureSize and maxBytes, named below rather than repeated. F0 (#334) may retune the values.",
+    "staticMesh": {
+      "format": "MRM2",
+      "maxTriangles": 500000,
+      "maxVertices": 1500000,
+      "maxSections": 8,
+      "lods": {
+        "maxLods": 3,
+        "maxTriangles": [
+          500000,
+          250000,
+          125000
+        ],
+        "eachAtMostPrevious": true,
+        "defaultScreenSizes": [
+          1.0,
+          0.35,
+          0.15
+        ],
+        "comment": "Authored LODs (#470): the plugin uploads the mesh's own LOD1 and LOD2 (render data, the mesh's screen sizes) as glTF meshes on nodes named LOD0, LOD1, LOD2 (the skinned lods.glTF convention), leaving off with a warning a LOD past maxTriangles[i], with more triangles than the LOD before it, drawing a material LOD0 does not, or after one it left off. The worker refuses the same; MRM2 carries them in its LODS extension block, which a client from before #470 skips (it draws LOD0). defaultScreenSizes apply to an upload with LOD nodes but no screen sizes."
+      },
+      "collision": {
+        "maxPrimitives": 64,
+        "maxConvexHulls": 64,
+        "maxHullVertices": 255,
+        "maxTotalHullVertices": 8192,
+        "comment": "Simple collision (#470): the mesh's boxes, spheres and capsules (maxPrimitives together) and convex hulls, in the GLB's MANTLE_static_mesh extension and MRM2's COLL block, which the client builds into the body setup in place of complex-as-simple. The plugin leaves a mesh's simple collision off with a warning when it is past these caps (the mesh then collides with its triangles, as before #470); the worker refuses it. A mesh whose collision complexity is Use Complex As Simple sends none."
+      },
+      "comment": "One uploaded static mesh: LOD0 plus up to two authored LODs, and its simple collision when it has one. maxTriangles and maxVertices equal the cook's MaxTriangles and MaxVertices (backend/internal/cook/gltf.go, held equal by a Go test) and apply to every LOD; maxSections is the number of material slots, i.e. MRM2 section table entries (the format's own structural cap is 64)."
+    },
+    "sound": {
+      "format": "MAU1",
+      "source": "wav",
+      "wavFormat": 1,
+      "bitsPerSample": 16,
+      "channels": [
+        1,
+        2
+      ],
+      "minSampleRate": 22050,
+      "maxSampleRate": 48000,
+      "maxDurationSeconds": 60,
+      "maxSourceBytes": 12582912,
+      "maxPlaceDecodedBytes": 67108864,
+      "comment": "One creator sound (#324; 60 s and the place budget adopted as defaults). The plugin uploads a canonical WAV (RIFF/WAVE, format 1 PCM, 16-bit, mono or stereo); the cook worker parses it and stores MAU1 (backend/internal/cook/sound.go), so clients never parse the source format. maxSourceBytes (12 MiB) is the upload cap, equal to assets.MaxSoundBytes (held equal by a Go test) and room for a canonical WAV of the longest stereo 48 kHz sound. A sound's decoded size is its PCM16 samples, frames x channels x 2 bytes (MAU1's samples block, the cook's cookInfo.decodedBytes); maxPlaceDecodedBytes (64 MiB) caps the sum over the distinct sounds a place uses, checked by the plugin's Check this place."
+    },
+    "skeletalMesh": {
+      "format": "MSK1",
+      "role": 3,
+      "maxTriangles": 100000,
+      "maxSections": 8,
+      "maxBones": 256,
+      "maxInfluencesPerVertex": 8,
+      "comment": "One uploaded skeletal mesh on its own skeleton (#469): a skinned GLB cooked to MSK1 with role 3 (place skeletal mesh), its bone table and reference pose embedded, and its skeleton hash (cook.SkeletonHash: skel_ + 16 hex digits of the SHA-256 over each bone's lower-cased name, a zero byte and its parent index) in the skeleton field. One LOD. The plugin keeps the eight heaviest influences of a vertex and renormalises them (#484); the cook refuses more. maxTriangles is a starting value the owner may retune."
+    },
+    "animClip": {
+      "format": "MAN1",
+      "maxDurationSeconds": 60,
+      "maxFrameRate": 60,
+      "maxBones": 256,
+      "maxCookedBytes": 8388608,
+      "comment": "One uploaded animation clip for a place skeletal mesh (#469): MAN1 with flag bit 0, carrying the bone table of the skeleton it was authored on and that table's skeleton hash, which the cook recomputes and must match. Tracks name bones of that table. A clip plays only on a mesh with the same skeleton hash. No events. maxCookedBytes (8 MiB) is the canonical re-encoding's size."
+    },
+    "heightfield": {
+      "format": "MHF1",
+      "minSize": 2,
+      "maxSize": 2049,
+      "minSpacingCm": 1,
+      "maxSpacingCm": 10000,
+      "maxHeightScaleCm": 100,
+      "maxHeightOffsetCm": 10000000,
+      "maxSourceBytes": 8396838,
+      "comment": "One Terrain's heights (#466): a grid of 16-bit samples, row-major, 2 to 2049 on a side (a 2 km landscape at 1 m is 2017 or 2049 samples; the plugin resamples a larger landscape down). The plugin writes MHF1 itself (backend/internal/cook/heightfield.go has the layout) and the cook worker checks every field against these numbers and stores the canonical encoding. A sample's height is heightOffset + value x heightScale cm, and spacing is the cm between samples along X and Y, in the Terrain entity's space. maxSourceBytes is exactly MHF1's 36-byte header plus a 2049 x 2049 grid of 2-byte samples (validate.py and the cook's contract check hold it so), the upload cap for kind heightfield. A Terrain's paint layers ride in one RGBA texture upload (R is layer 0 to A is layer 3), held to the upload-wide texture limits like any other."
+    },
+    "material": {
+      "schema": "material.schema.json",
+      "master": "M_MantlePlace",
+      "alphaModes": [
+        "opaque",
+        "mask",
+        "blend",
+        "additive"
+      ],
+      "shadings": {
+        "default": "M_MantlePlace",
+        "carPaint": "M_MantlePlace_CarPaint"
+      },
+      "textureSlots": {
+        "baseColor": {
+          "colorSpace": "srgb",
+          "layout": "rgb",
+          "layoutWithAlpha": "rgba"
+        },
+        "normal": {
+          "colorSpace": "linear",
+          "layout": "twoChannel"
+        },
+        "orm": {
+          "colorSpace": "linear",
+          "layout": "rgb"
+        },
+        "emissive": {
+          "colorSpace": "srgb",
+          "layout": "rgb"
+        }
+      },
+      "comment": "A material asset is a JSON document validated against schema/material.schema.json (closed): the glTF metallic-roughness subset GLTFExporter bakes any material graph down to, rebuilt on the client as an instance of M_MantlePlace, one master material cooked into the client with static switches for the three alpha modes and one- or two-sided (six permutations). shadings maps the schema's shading enum to the cooked master each one builds on: carPaint (#487) is M_MantlePlace_CarPaint, a clear-coat sibling with the same parameters plus flakes and a livery layer, opaque and one-sided only (validate.py checks the keys against the schema). textureSlots' keys are the schema's textures properties (validate.py checks it). baseColor uses layoutWithAlpha when the material's alphaMode is mask or blend. The orm texture is glTF's packing: R occlusion, G roughness, B metallic."
+    },
+    "textures": {
+      "maxSizeFrom": "contentLimits.any_upload.maxTextureSize",
+      "maxBytesFrom": "contentLimits.any_upload.maxBytes",
+      "mips": true,
+      "gpuFormats": {
+        "rgb": "BC1",
+        "rgba": "BC3",
+        "singleChannel": "BC4",
+        "twoChannel": "BC5"
+      },
+      "comment": "Texture memory (FAB_ASSETS_252.md section 10 decision 3): the cook worker encodes BC1/BC3/BC4/BC5 with a full mip chain, in-house with no new dependency, for places and avatars alike (F9 #343); the client uploads the blocks as they are. layout names in material.textureSlots map to these formats. BC7 is not taken. The upload itself stays PNG or JPEG within maxSizeFrom on a side; the moderation classifier's own 8 MiB image cap (assets.MaxScreenedImageBytes) applies on top of maxBytesFrom."
+    },
+    "vehicle": {
+      "format": "MVH1",
+      "schema": "vehicle.schema.json",
+      "body": {
+        "format": "MSK1",
+        "role": 4,
+        "skeleton": "vehicle",
+        "maxTriangles": 200000,
+        "maxSections": 8,
+        "maxBones": 128,
+        "maxInfluencesPerVertex": 4
+      },
+      "minWheels": 2,
+      "maxWheels": 8,
+      "maxTorqueCurvePoints": 16,
+      "maxSteeringCurvePoints": 8,
+      "maxGears": 8,
+      "maxCollisionBoxes": 8,
+      "wheelMinVertices": 8,
+      "maxLinkageRules": 64,
+      "maxParts": 16,
+      "maxSeatExits": 4,
+      "contactReach": 150,
+      "wheelHandTolerance": 5,
+      "maxAerofoils": 8,
+      "maxThrusters": 4,
+      "maxSpinBones": 8,
+      "maxRotors": 4,
+      "minHoverPads": 3,
+      "maxHoverPads": 8,
+      "ranges": {
+        "mass": [50, 20000],
+        "maxSpeed": [100, 12000],
+        "centerOfMass/*": [-1000, 1000],
+        "dragCoefficient": [0, 2],
+        "frontalArea": [0, 20],
+        "engine/maxTorque": [10, 5000],
+        "engine/maxRPM": [1000, 20000],
+        "engine/idleRPM": [300, 5000],
+        "engine/torqueCurve/*/0": [0, 20000],
+        "engine/torqueCurve/*/1": [0, 1],
+        "transmission/gearRatios/*": [0.1, 10],
+        "transmission/reverseRatio": [0.1, 10],
+        "transmission/finalDrive": [0.1, 10],
+        "transmission/changeUpRPM": [500, 20000],
+        "transmission/changeDownRPM": [300, 20000],
+        "suspension/maxRaise": [0, 50],
+        "suspension/maxDrop": [0, 50],
+        "suspension/springRate": [1, 5000],
+        "suspension/springPreload": [0, 5000],
+        "suspension/damping": [0, 1],
+        "steering/maxAngle": [5, 70],
+        "steering/speedCurve/*/0": [0, 200],
+        "steering/speedCurve/*/1": [0.1, 1],
+        "brakes/brakeTorque": [0, 20000],
+        "brakes/handbrakeTorque": [0, 20000],
+        "tires/friction": [0.1, 5],
+        "tires/rearFriction": [0.1, 10],
+        "wheels/*/radius": [5, 150],
+        "wheels/*/width": [2, 100],
+        "seat/location/*": [-1000, 1000],
+        "seat/weaponArc/yawMin": [-180, 180],
+        "seat/weaponArc/yawMax": [-180, 180],
+        "seat/weaponArc/pitchMin": [-90, 90],
+        "seat/weaponArc/pitchMax": [-90, 90],
+        "seat/steeringWheel/location/*": [-1000, 1000],
+        "seat/steeringWheel/rotation/*": [-180, 180],
+        "seat/steeringWheel/radius": [10, 30],
+        "seat/door/pivot/*": [-1000, 1000],
+        "seat/door/axis/*": [-1, 1],
+        "seat/door/scale": [-2, 2],
+        "seat/pelvis/location/*": [-1000, 1000],
+        "seat/pelvis/rotation/*": [-180, 180],
+        "seat/hands/left/location/*": [-1000, 1000],
+        "seat/hands/left/rotation/*": [-180, 180],
+        "seat/hands/right/location/*": [-1000, 1000],
+        "seat/hands/right/rotation/*": [-180, 180],
+        "seat/feet/left/location/*": [-1000, 1000],
+        "seat/feet/left/rotation/*": [-180, 180],
+        "seat/feet/right/location/*": [-1000, 1000],
+        "seat/feet/right/rotation/*": [-180, 180],
+        "seat/exits/*/location/*": [-1000, 1000],
+        "seat/exits/*/yaw": [-180, 180],
+        "passengerSeat/location/*": [-1000, 1000],
+        "passengerSeat/weaponArc/yawMin": [-180, 180],
+        "passengerSeat/weaponArc/yawMax": [-180, 180],
+        "passengerSeat/weaponArc/pitchMin": [-90, 90],
+        "passengerSeat/weaponArc/pitchMax": [-90, 90],
+        "passengerSeat/door/pivot/*": [-1000, 1000],
+        "passengerSeat/door/axis/*": [-1, 1],
+        "passengerSeat/door/scale": [-2, 2],
+        "passengerSeat/pelvis/location/*": [-1000, 1000],
+        "passengerSeat/pelvis/rotation/*": [-180, 180],
+        "passengerSeat/hands/left/location/*": [-1000, 1000],
+        "passengerSeat/hands/left/rotation/*": [-180, 180],
+        "passengerSeat/hands/right/location/*": [-1000, 1000],
+        "passengerSeat/hands/right/rotation/*": [-180, 180],
+        "passengerSeat/feet/left/location/*": [-1000, 1000],
+        "passengerSeat/feet/left/rotation/*": [-180, 180],
+        "passengerSeat/feet/right/location/*": [-1000, 1000],
+        "passengerSeat/feet/right/rotation/*": [-180, 180],
+        "passengerSeat/exits/*/location/*": [-1000, 1000],
+        "passengerSeat/exits/*/yaw": [-180, 180],
+        "trunk/lid/pivot/*": [-1000, 1000],
+        "trunk/lid/axis/*": [-1, 1],
+        "trunk/lid/scale": [-2, 2],
+        "trunk/stand/*": [-1000, 1000],
+        "trunk/yaw": [-180, 180],
+        "camera/armLength": [100, 3000],
+        "camera/height": [0, 1000],
+        "collision/*/center/*": [-1000, 1000],
+        "collision/*/extent/*": [1, 1000],
+        "paint/color/*": [0, 1],
+        "paint/metallic": [0, 1],
+        "paint/roughness": [0, 1],
+        "paint/flakeDensity": [0, 1],
+        "paint/flakeSize": [0.01, 1],
+        "paint/flakeTint/*": [0, 1],
+        "paint/clearCoat": [0, 1],
+        "paint/clearCoatRoughness": [0, 1],
+        "liveryUV": [0, 0],
+        "defaultLivery": [0, 7],
+        "linkage/*/weight": [0, 1],
+        "parts/*/location/*": [-1000, 1000],
+        "parts/*/rotation/*": [-1, 1],
+        "parts/*/scale/*": [-100, 100],
+        "parts/*/paintSlots/*": [0, 7],
+        "seat/exitSideDistance": [0, 1000],
+        "seat/rider/handlebar/left/location/*": [-1000, 1000],
+        "seat/rider/handlebar/right/location/*": [-1000, 1000],
+        "seat/rider/footPegs/left/location/*": [-1000, 1000],
+        "seat/rider/footPegs/right/location/*": [-1000, 1000],
+        "seat/rider/pelvisOffset/*": [-100, 100],
+        "seat/rider/stopPelvisShift/*": [-100, 100],
+        "seat/rider/kneeSplayDegrees": [-30, 45],
+        "seat/rider/rearTireFriction": [0.1, 20],
+        "seat/rider/rearBrakeTorque": [0, 20000],
+        "seat/rider/rotationControl/torqueRotationDamping": [0, 100],
+        "seat/rider/rotationControl/rollControlScaling": [0, 10],
+        "seat/rider/rotationControl/rollMaxAngle": [0, 90],
+        "seat/rider/rotationControl/pitchControlScaling": [0, 10],
+        "seat/rider/rotationControl/pitchMaxAngle": [0, 90],
+        "seat/rider/rotationControl/rotationStiffness": [0, 1000],
+        "seat/rider/rotationControl/rotationDamping": [0, 1000],
+        "seat/rider/rotationControl/maxAccel": [0, 1000],
+        "seat/rider/rotationControl/autoCentreRollStrength": [0, 10],
+        "seat/rider/rotationControl/autoCentrePitchStrength": [0, 10],
+        "seat/rider/rotationControl/autoCentreYawStrength": [0, 10],
+        "camera/boomLocation/*": [-1000, 1000],
+        "flight/airSpeedLimit": [500, 60000],
+        "flight/cruiseThrottle": [0, 1],
+        "flight/pitchAuthority": [0, 1],
+        "flight/throttleLeverRate": [0.05, 20],
+        "flight/linearDamping": [0, 5],
+        "flight/angularDamping": [0, 5],
+        "flight/aerofoils/*/location/*": [-1000, 1000],
+        "flight/aerofoils/*/area": [0.01, 500],
+        "flight/aerofoils/*/camber": [-30, 30],
+        "flight/aerofoils/*/maxControlAngle": [0, 60],
+        "flight/aerofoils/*/stallAngle": [1, 90],
+        "flight/thrusters/*/location/*": [-1000, 1000],
+        "flight/thrusters/*/direction/*": [-1, 1],
+        "flight/thrusters/*/maxThrust": [0, 2000000],
+        "flight/spinBones/*/axis/*": [-1, 1],
+        "flight/spinBones/*/rpm": [-10000, 10000],
+        "flight/pilotGrips/left/location/*": [-1000, 1000],
+        "flight/pilotGrips/right/location/*": [-1000, 1000],
+        "helicopter/airSpeedLimit": [500, 60000],
+        "helicopter/hoverCollective": [0.05, 1],
+        "helicopter/throttleLeverRate": [0.05, 20],
+        "helicopter/linearDamping": [0, 5],
+        "helicopter/angularDamping": [0, 5],
+        "helicopter/rotors/*/location/*": [-1000, 1000],
+        "helicopter/rotors/*/axis/*": [-1, 1],
+        "helicopter/rotors/*/maxThrust": [0, 2000000],
+        "helicopter/rotors/*/pitchAcceleration": [0, 20],
+        "helicopter/rotors/*/rollAcceleration": [0, 20],
+        "helicopter/rotors/*/yawAcceleration": [0, 20],
+        "helicopter/rotors/*/stabilityStiffness": [0, 50],
+        "helicopter/rotors/*/stabilityDamping": [0, 50],
+        "helicopter/rotors/*/stabilityMaxAcceleration": [0, 50],
+        "helicopter/spinBones/*/axis/*": [-1, 1],
+        "helicopter/spinBones/*/rpm": [-10000, 10000],
+        "helicopter/pilotGrips/left/location/*": [-1000, 1000],
+        "helicopter/pilotGrips/right/location/*": [-1000, 1000],
+        "hover/pads/*/location/*": [-1000, 1000],
+        "hover/pads/*/maxRaise": [0, 100],
+        "hover/pads/*/maxDrop": [0, 200],
+        "hover/pads/*/springRate": [0, 1000],
+        "hover/pads/*/springDamping": [0, 1],
+        "hover/thruster/location/*": [-1000, 1000],
+        "hover/thruster/direction/*": [-1, 1],
+        "hover/thruster/maxThrust": [0, 500000],
+        "hover/thruster/reverseShare": [0, 1],
+        "hover/thruster/vectorAngle": [0, 45],
+        "hover/thruster/topSpeed": [0, 12000],
+        "hover/thruster/brakeFade": [1, 1000],
+        "hover/rudder/location/*": [-1000, 1000],
+        "hover/rudder/area": [0.01, 50],
+        "hover/rudder/camber": [-30, 30],
+        "hover/rudder/maxControlAngle": [0, 60],
+        "hover/rudder/stallAngle": [1, 90],
+        "hover/damping/lateralPerSecond": [0, 50],
+        "hover/damping/maxLateralAccel": [0, 5000],
+        "hover/damping/yawPerSecond": [0, 50],
+        "hover/damping/maxYawAccel": [0, 5000],
+        "hover/damping/skirtBrakePerSecond": [0, 50],
+        "hover/damping/maxSkirtBrakeAccel": [0, 5000],
+        "hover/angularDamping": [0, 5]
+      },
+      "comment": "A creator-published vehicle (#435): one binary glTF whose skinned body has a bone at every wheel centre, with the vehicle document (schema/vehicle.schema.json) at extras.mantleVehicle. The cook worker writes MVH1 (backend/internal/cook/vehicle.go): the resolved document, then the body as MSK1 role 4 on its own bone table (skeleton 'vehicle', reference pose included; distinct from the place skeletal mesh role 3). body caps the mesh; minWheels to maxWheels, maxTorqueCurvePoints, maxGears and maxCollisionBoxes are the document's array sizes; ranges is every number the document may hold, by path (* for any array item), and each is the schema's minimum and maximum there (validate.py checks both ways). A wheel's radius and width come from the body vertices weighted only to its bone when there are at least wheelMinVertices of them; otherwise the document gives them. maxLinkageRules caps the document's linkage (the aim, stretch and copy rules that move a body's suspension bones after its wheels, #435 b). maxParts caps the document's parts (#435 item 2: static meshes uploaded beside the vehicle, each riding a bone of the body, drawn only): a body shell, glass, an interior, lights and bumpers, and a tire each on up to eight wheels fit in 16; each part is one more mesh component per car, and a place may park 32 cars. A part's materials list is at most placeAssets.staticMesh.maxSections long, one per slot of its mesh. A seat's contact points (#612: pelvis, hands, feet and exits, in the vehicle's own space) hold at most maxSeatExits exits; a pelvis, hand or foot target in the body's space (no bone) is at most contactReach cm from its seat's location, and a hand holding the steering wheel (hands.kind wheel) is within wheelHandTolerance cm of the rim. maxAerofoils, maxThrusters, maxSpinBones (a flight or helicopter block), maxRotors and minHoverPads to maxHoverPads (a hover block) cap the non-wheeled kinds' arrays (#821); every number in those blocks, the rider's and the camera boom's has its ranges entry like any other. The plugin's Convert vehicle command applies the same numbers."
+    },
+    "livery": {
+      "maxLiveries": 8,
+      "role": "color",
+      "layout": "rgba",
+      "maxSizeFrom": "contentLimits.any_upload.maxTextureSize",
+      "alphaRequired": false,
+      "uvChannels": [0],
+      "comment": "A creator vehicle's liveries (#488): uploaded textures (kind texture, no kind of their own) with role color, cooked to the layout's BC3 with alpha as coverage (the paint shows where a livery is clear), laid over the paint and under the clear coat of the vehicle's paint sections through the car-paint master's Livery, LiveryOpacity and LiveryUV1 parameters. maxLiveries is vehicle.schema.json's liveries maxItems and defaultLivery's maximum plus one; uvChannels are the values liveryUV takes (validate.py checks all three). A livery's pixel size is the one upload-wide texture rule (maxSizeFrom, #452): the plugin downscales a larger one with a warning. alphaRequired false: a livery without alpha covers its whole UV layout, which Check this place warns about; the cook worker refuses one only when this is true. The worker holds each livery to the vehicle uploader's claims, kind texture and role color; a VehicleSpawn's livery and Vehicles.SetLivery pick by index from the vehicle's own list, so a player never names a texture."
+    }
+  }
+}

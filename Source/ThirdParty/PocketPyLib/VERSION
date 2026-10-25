@@ -1,0 +1,420 @@
+PocketPy v2.2.0 (MIT)
+
+Upstream: https://github.com/pocketpy/pocketpy
+Tag:      v2.2.0
+Commit:   6cbece9ebc98c19fa2c189dc6963b421c22c40ae (Wed Sep 2 17:48:37 2026 +0800)
+Retrieved: 2026-09-19, ported into Mantle from the ScriptLab sandbox's already-vetted vendoring
+           at D:\UEProjects\ScriptTesting\Plugins\ScriptLab\Source\ThirdParty\PocketPyLib (see
+           its own VERSION for the original retrieval provenance: the T-Python evaluation clone
+           at D:\UEProjects\ScriptLabTools\python\pocketpy, full upstream clone, tag v2.2.0, via
+           `python amalgamate.py`, upstream's own amalgamation script; no manual editing of the
+           generated output beyond the patches below).
+
+Files vendored: exactly the two amalgamation outputs,
+  upstream/pocketpy.h  (as produced by amalgamate.py, plus the patches below)
+  upstream/pocketpy.c  (as produced by amalgamate.py, plus the patches below)
+No other upstream file (CMakeLists.txt, src/, src2/, python/, plugins/, tests/, benchmarks/,
+3rd/ submodules) is vendored; the amalgamation is a complete, self-contained translation unit
+per upstream's own documented workflow (see the ScriptLab evaluation's EVALUATION.md at
+D:\UEProjects\ScriptLabTools\python\EVALUATION.md, "Build: MSVC cl.exe, plain sources" section,
+for the proof this compiles as-is under cl.exe with only compiler defines, no source edits,
+prior to the patches below -- and see the ticket report for the Linux/clang confirmation).
+
+Mantle patch 21's compiler transaction includes compiler-local ownership of
+unpublished GC-managed string/default literal values: failure releases those
+values and any transaction-created admitted heap backing immediately, while
+success transfers them to ordinary CodeObject/GC reachability. Generic heap and
+collector policy remain unchanged.
+
+Defines this module compiles with (see PocketPyLib.Build.cs):
+  PK_ENABLE_OS=0            -- sandboxing: os.c and common/socket.c (and open()) are not
+                                compiled into the amalgamation at all (verified by the lab's
+                                EVALUATION.md section 3: no filesystem/socket code linked in).
+  PK_ENABLE_WATCHDOG=1      -- enables py_watchdog_begin/py_watchdog_end, used as a wall-clock
+                                BACKSTOP (250ms per top-level resume, matching the lab's own
+                                budget -- see MantlePocketPy.cpp's RunBudgeted()) for anything
+                                patch 2's per-opcode counter can't see, e.g. a long blocking
+                                native call. The primary budget is patch 2, not this.
+  PK_ENABLE_THREADS=0       -- no OS thread affinity; Mantle drives every VM from the game
+                                thread only, exactly like the Luau and QuickJS VMs.
+
+Patch 1 (see patches/ and the "MANTLE PATCH" markers inside upstream/pocketpy.h): ~15 lines,
+forward-declaring three allocator hook functions (MantlePocketPy_Malloc/Realloc/Free,
+implemented in PocketPyLib/Private/MantlePocketPyAlloc.c) so PK_MALLOC/PK_REALLOC/PK_FREE --
+defined as function-like macros by PocketPyLib.Build.cs, pocketpy's own documented extension
+point for a custom allocator -- have a visible C11 prototype before pocketpy.c's translation
+unit uses them. PocketPy's public API has no *runtime* allocator-callback parameter (unlike
+Luau's `lua_newstate(allocator, ud)`), only this compile-time macro seam, so a prototype has to
+live somewhere in scope; pocketpy.h (included at the top of pocketpy.c) is that place. No other
+line of pocketpy.h was touched for this patch. Identical in shape to the lab's own patch,
+renamed Lab* -> Mantle* (the include is now "MantlePocketPyHooks.h", not "PocketPyHooks.h").
+
+Patch 2 (see patches/ and the "MANTLE PATCH" markers inside upstream/pocketpy.c's
+VM__run_top_frame, at the __NEXT_STEP label): ~10 lines, a deterministic per-opcode
+instruction-budget interrupt. NOT part of the lab's own vendoring -- added after the hosted
+integration build (2026-09-20) showed a runaway `while True: total = total + 1` Python script
+freeze the whole game thread on frame 0. MantlePocketPy.cpp originally metered budget through
+py_sys_settrace's TRACE_EVENT_LINE, which only fires on a *source line* change; that loop's
+bytecode never crossed one, so the budget never fired, and even when a trace-hook-raised
+exception did occur nothing checked for it before the next opcode ran. The patch increments
+MantlePocketPy_OpCount[vm] every opcode and polls MantlePocketPy_Interrupt (a host-installed
+function pointer, both declared in Public/MantlePocketPyHooks.h) once every
+MANTLE_POCKETPY_INTERRUPT_PERIOD opcodes; a false return raises a RuntimeError and
+`goto __ERROR` right there, in the same opcode, the same way the existing PK_ENABLE_WATCHDOG
+block a few lines below it already does for a wall-clock timeout. py_sys_settrace is no longer
+called by MantlePocketPy.cpp at all (it costs a source-location lookup on every opcode).
+
+A separate generator patch was considered and rejected, carried over unchanged from the lab's own evaluation:
+a `pk_generator_send` entry point so a suspended generator could be resumed with a value (to
+support CPython-style `x = yield expr`). `yield` is a STATEMENT in PocketPy's grammar, not an
+expression -- `x = yield expr` does not parse at all (only bare `yield expr` and `yield from
+expr` statements do). MantlePocketPy.cpp's task/signal waiting never needs a value fed back
+through the yield expression in the first place; see its "Wait tokens" section for the exact
+idiom scripts use instead (`t = task.wait(1); yield t; elapsed = t.result`). Plain `py_next()`
+(equivalent to CPython's `gen.send(None)`) is sufficient to drive every generator this binding
+uses.
+
+Not vendored / not enabled: no threading, no os/socket modules, no `open()`. PK_ENABLE_OS=0
+excludes filesystem and socket code from the build entirely (compile-time guarantee, not a
+runtime check), matching the sandboxing shape LuauLib and QuickJSLib already use.
+
+Linux: the amalgamation is the same C11 translation unit on every platform. PocketPyLib.Build.cs
+sets CStandard = C11 (matching QuickJSLib's C17 pattern for _Alignas/_Static_assert) and adds
+_GNU_SOURCE=1 on UnrealPlatformGroup.Unix so the vendored source sees the ordinary POSIX
+declarations UE's cross-toolchain otherwise hides under a strict C11 feature profile, exactly
+the reason QuickJSLib does the same (see QuickJSLib.Build.cs's comment). No further patch was
+needed for clang; see the ticket's READY message for what the operator still needs to verify in
+Epic's UE 5.8 Linux container.
+
+Patch 3 (#123, upstream/pocketpy.h and upstream/pocketpy.c): optional per-VM import policy
+checked before cached module lookup, plus validation of object.__new__'s type receiver.
+The default NULL policy preserves upstream bootstrap/compile-only behavior. The initialized
+Mantle binding installs its standard-module allowlist, removes dynamic-code/GC/VM controls
+and native-class enumeration, and roots private binding objects through gc_mark rather than
+an exposed builtins dictionary. See patches/README.txt and MantlePocketPySandboxTest.cpp.
+
+Patch 4 (#123, upstream/pocketpy.h comments and upstream/pocketpy.c): native callable
+receiver ownership retained across aliases, constructors, bound/unbound methods, properties,
+signature-bound functions, and bytecode/public-call fast paths. Unrelated native types now
+reject before userdata access or allocation. Native static/module functions and trusted raw
+C calls retain their existing behavior; there is no TValue layout change. Registered type
+roots keep signature-bound class ownership alive across GC. The Mantle binding also validates
+host-minted handle pointer identity before dereferencing userdata. See patches/README.txt
+for inspected dispatch paths, lifetime/inheritance reasoning, and bounded review limitations.
+
+Patch 5 (#123, upstream/pocketpy.c): initialize exception-frame locals/globals to nil before
+optional debugger capture. The GC always traverses both fields; c11_vector__emplace returns
+uninitialized storage. This fixes the full-suite GC crash caused by retained exception frames
+without an active debugger. See patches/README.txt and the initialized exception/GC regression.
+
+Patch 6 (#156, upstream/pocketpy.h and upstream/pocketpy.c): collectible unregistered host
+modules with stable module-owned reference cells, canonical frame module/globals pointers,
+and explicit frame/function/type GC module edges. Native/imported modules keep the upstream
+registry behavior. This fixes same-ID reload aborts and dangling references into deleted
+host instances without mutating retained old globals. Types remain VM-rooted upstream;
+classless retired modules can be collected. See patches/README.txt for lifetime details.
+
+Patch 7 (#153, upstream/pocketpy.c and MantlePocketPyCheckedAlloc): checked size
+arithmetic and a failure-atomic vector reserve foundation. Existing void reserve
+callers keep their minimum-capacity policy and abort-on-failure contract; the
+production allocator remains soft-capped. Explicit status propagation through all
+callers, allocator headers/quotas, compiler/VM/host unwind and fault reporting is
+still required before any hard allocation denial. This patch is not a hard cap.
+
+Patch 8 (#159 / #153, upstream/pocketpy.c and MantlePocketPyCheckedAlloc): checked
+vector growth/append planning and failure-atomic extension. list.extend(self) uses
+an original source offset rebased after any allocation move. Legacy operations
+preserve valid growth policy, nonpositive extend no-op and fatal failure behavior.
+No quota denial or broad compiler/VM exception propagation is enabled.
+
+#158 diagnostics (upstream/pocketpy.c and native hooks): opt-in root/graph/small-sweep/
+large-sweep phase observations, entirely compiled out of Shipping. Existing whole-GC timing,
+collection policy and budget charges remain unchanged. See patches/GC-DIAGNOSTICS.md.
+Additive small-sweep detail records count block states, object categories, allocator/accounting
+calls, pool scan/release times and sparse destructor-time subsets (cadence 256). Fixed POD,
+same opt-in/Shipping exclusion, no collection or charging policy change.
+Selected destructor samples now include nested original-owner charge/libc-free interval
+sums, maxima and counts; only these selected frees take clocks. Allocator backend unchanged.
+
+Patch 9 (#160 / #153): preflight string addition/repetition and list repetition
+before result allocation or copying. String bounds include actual object/string
+headers and NUL; wide repeat counts and the list's incremental growth schedule
+are checked without narrowing or allocation. Empty/nonpositive repeats return
+immediately. Existing ValueError reporting can allocate; this is not a hard cap.
+
+Patch 10 (#153): typed vector push/insert snapshot operands once before realloc
+or memmove; production macros consume checked operations and retain fatal legacy
+failure. Copy/emplace use failure-atomic storage primitives, without changing
+uninitialized emplace or independent-copy ownership contracts. Native interior
+list references and bounded moving/poisoned allocator tests cover the alias fix.
+No quota denial, collector retry, or recoverable VM error propagation is enabled.
+
+Patch 11 (#153): host-private canonical exact-int root insertion and VM-independent
+discard. Discard bypasses Python hash/equality, preserves retval/exception and
+compacts/rebuilds existing storage without allocation or deallocation. Generic
+dict APIs are unchanged. Actual binding Root/Unroot consume the private pair;
+callable destruction no longer switches VM selection. Non-Shipping bounded
+root/collision/compaction tests count allocator entries, not net byte changes.
+Root creation retains fatal allocation behavior; this is a retirement prerequisite,
+not a hard cap, global denying allocator or terminal fault propagation.
+
+Patch 12 (#158): dictionaries co-allocate entries and indices in one separately
+owned block. Checked dict-specific construction/growth/copy preserves original
+allocator ownership, index widths, capacity progression and object/pool layouts.
+Legacy failure remains fatal; GC policy, CPU attribution and budgets unchanged.
+See patches/DICT-STORAGE.md for ownership, peak-memory and validation contracts.
+
+Patch 13 (#153): internal allocation-terminal FrameResult propagation from native
+and nested VM calls through generator/exec/vectorcall boundaries. The result
+unwinds only the current VM invocation without a Python exception, traceback
+allocation, abort or longjmp; the outer host checkpoint consumes the fixed POD
+fatal and validates exact generation ownership. Terminal selection itself also
+requires that copied identity to match the active current quota cell, so a
+queued sibling/stale fatal cannot poison setup or dispatch in another generation.
+Production allocator denial and
+upstream caller conversion remain disabled. See patches/README.txt item 16.
+
+Patch 14 (#153): the non-recursive native representation family
+(`float/object/type/str/bytes/function/module.__repr__` and `Enum.__str__`) uses
+admitted explicit-result construction, atomic char/C-string/float/pointer/
+quoted writes and unpublished-on-failure submit. Denial returns through the
+allocation-independent terminal result, not a Python exception. Fixed-buffer
+injected failures and a tiny-quota initialized regression cover state
+preservation, exact-owner retirement and sibling continuation. Other sbuf,
+c11_string and managed-string callers remain legacy; production PK allocator
+wrappers remain globally non-denying. See patches/STRING-BUFFER-FALLIBLE.md;
+#153 remains open.
+The follow-up converts only closed padding operations (`str.zfill/ljust/rjust`):
+wide widths and exact byte totals are preflighted, storage reserves once, and
+sign/source/padding plus logical length publish together. Join/mod/format remain
+legacy because they iterate or dispatch user code. Bounded injected and
+initialized terminal/sibling diagnostics are documented in the same ledger.
+
+Patch 15 (#153): managed-heap arena/large-object admitted tracking prerequisite.
+Non-dict objects gain an internal checked explicit-result allocator whose small
+arenas are intrusive and whose large-object metadata is max-aligned/coallocated,
+so successful admission never needs an aborting tracking-vector allocation.
+Legacy vectors/wrappers and every production constructor remain unchanged and
+globally non-denying. Sweep/destruction/usage reporting cover both sets; exact
+allocation-header ownership survives sibling-current free. slots==-1 and all
+py_newstrn/v caller conversion remain out of scope. See
+patches/MANAGED-HEAP-FALLIBLE.md; #153 remains incomplete.
+
+Patch 16 (#153): additive admitted `py_trynewstrn`/`py_trynewstrv` plus the
+first closed creator-reachable native leaf set. Inline 15-byte and managed
+16-byte publication are failure-atomic; embedded/trailing NULs are retained.
+Converted string operations and existing try-sbuf submitters return allocation
+denial through the exact-generation terminal, with detached sbuf storage always
+freed. Legacy constructors and aggregate/cache/compiler/module/host/error paths
+remain unchanged and globally non-denying. See
+patches/MANAGED-STRING-FALLIBLE.md; #153 remains incomplete.
+The bounded join follow-up converts only `str.join`: its single iterator root is
+restored on every exit, sbuf construction/writes/publication are fallible, and
+ordinary iterator/type exceptions remain catchable. Modest long/NUL payloads
+cover success plus exact-owner ctor, growth and managed-publication denial;
+format/percent and other aggregate families remain legacy.
+The bounded split follow-up converts only the runtime's existing no-maxsplit
+`str.split`/`str.splitlines` family. Exact admitted span and list backing plans,
+fallible element strings, and publish-last list construction preserve retval and
+roots on denial. Existing whitespace/newline/keepends and argc>2 TypeError
+semantics remain unchanged. The one legacy `c11_sv__split` package-parser caller
+stays outside this import/module-excluded slice. See
+patches/STRING-BUFFER-FALLIBLE.md; #153 remains incomplete.
+
+Patch 17 (#153): additive admitted `py_trynewbytesn` and the smallest closed
+core bytes family. Existing bytes list/tuple construction, string encode, bytes
+concat and bytes slicing allocate/fill privately and publish retval only after
+success; decode retains its already-admitted managed-string path and preserves
+every explicit input byte, including malformed UTF-8 and NUL. Checked concat
+sizing and exact slice counting remove unchecked addition and aborting temporary
+vector growth. Root-only diagnostics cover injected backing failure after real
+reservation, real object/payload quota denial, unchanged outputs/stack/sibling,
+exact owner terminal retirement, and healthy continuation. The vendored runtime
+has no bytes repeat binding, so no capability is added. Base64 was converted by
+a later follow-up; current inventory finds no reachable LZ4/binary-IO result
+path, while pickle is policy-blocked. The legacy `py_newbytes` remains; see
+patches/MANAGED-BYTES-FALLIBLE.md. #153 remains incomplete.
+The bounded byte-literal follow-up converts only runtime `OP_BUILD_BYTES`: an
+admitted local result is filled before the operand stack advances, and denial
+routes through the existing exact-generation terminal discriminator. A modest
+literal is compiled before a quota clamp, then real opcode execution verifies
+restored SP, unchanged retval/sibling/accounting, noncatchable owner retirement,
+and healthy embedded-NUL/malformed literals in the surviving sibling. Compiler
+and token vectors are unchanged. Base64 is converted; current inventory finds
+LZ4/binary IO absent and pickle/stdc policy-blocked.
+
+#158 additive binding diagnostic mode: -MantleScriptBenchGcTotalsOnly only under
+the validated existing benchmark flag retains the original whole-GC observer,
+omits unavailable detail records, and labels whole receipts. Detail remains the
+default; Shipping excludes the mode. Collection and CPU charging are unchanged.
+
+Patch 18 (#153): additive admitted constructor substrate. Explicit-result
+`c11_string__try_new/new2/new3` preserve caller outputs and use admitted direct
+or fallible-sbuf storage, including the runtime's custom format specifiers.
+`py_trynewobject` publishes TValue/userdata together, and the managed-heap try
+path now pre-admits a slots==-1 object's initial NameDict table, rolling it back
+if object/arena allocation fails. It rejects sentinel, negative, and unregistered
+type indexes before allocation; callers still own registered-type layout/dtor
+compatibility. Legacy constructors and all production callers remain unchanged.
+Supported-reachable dict-backed callers are generic instances, type/reload, and
+module/bootstrap/cache; OS path creation is compile-excluded and pickle
+deserialization policy-blocked. Bounded root diagnostics cover repeated first/
+second-stage denial, injected backing failure, retry, accounting/output/retval/SP atomicity,
+exact owner identity, and sibling-current GC/teardown. Current active-build
+inventory has no reachable LZ4 or binary-IO byte-result path; pickle/stdc remain
+policy-blocked. Broad production PK allocation is still soft and #153 remains
+incomplete. See patches/CONSTRUCTOR-SUBSTRATE-FALLIBLE.md.
+
+Patch 19 (#153): the first production compiler ownership transaction is now
+explicit-result and failure-atomic. `SourceData__try_rcnew` admits the refcounted
+object, filename, CR/BOM-normalized source sbuf (including submit NUL), and the
+complete line-start capacity plan before publication. `_py_compile` returns the
+exact-generation fixed allocation fatal without constructing a Python exception;
+ordinary lexer/compiler errors still construct `SyntaxError`. Bounded root
+diagnostics cover every allocation stage, repeated quota denial, object/filename
+backing failure, retry, embedded/trailing NUL and normalization behavior,
+output/retval/SP/accounting preservation, exact ownership, owner retirement and
+sibling continuation. The lexer/compiler/CodeObject vectors and other legacy
+`SourceData__rcnew` call sites still abort/soft-allocate on later failures; broad
+PK allocation remains soft. See patches/SOURCE-DATA-FALLIBLE.md; #153 remains
+incomplete.
+
+Patch 20 (#153): `_py_compile` extends its admitted compiler-entry transaction
+through the lexer token and indentation queues and directly owned literal
+payload buffers. Every queue reserve and payload ctor/growth/submit is
+explicit-result; failure destroys unpublished tokens and payloads, restores all
+native accounting, leaves caller outputs/retval/SP untouched, and preserves the
+fixed exact-generation terminal rather than creating a Python exception.
+Ordinary lexer/compiler failures remain `SyntaxError`. Native-signature
+bootstrap retains the legacy aborting lexer mode. Deterministic root diagnostics
+deny all seven reachable stages twice, retry, verify exact allocation ownership,
+and exercise production owner retirement plus sibling continuation. Compiler/
+CodeObject vectors and the broader excluded families remain unchanged. See
+patches/LEXER-QUEUE-FALLIBLE.md; #153 remains incomplete.
+
+Patch 21 (#153): public in-memory compilation now owns an admitted staged
+CodeObject/codegen transaction covering names, contexts, blocks, paired
+bytecode metadata, constants, function declarations, and CodeObject/FuncDecl
+var/name/arg/kwarg vectors. Failure latches the fixed exact-generation terminal,
+rolls back unpublished output and all native ownership, and preserves ordinary
+SyntaxError behavior. Native-signature compilation and deserialization remain
+legacy; parser AST/raw vectors are converted by Patch 22. Modules/imports,
+serialization, and global allocator policy remain unchanged. Root diagnostics
+and one initialized host automation cover
+repeated denial, retry, owner retirement, and sibling continuation. See
+patches/COMPILER-CODEGEN-FALLIBLE.md; #153 remains incomplete.
+
+Patch 22 (#153): public in-memory compilation extends the existing compiler
+transaction through parser-owned expression nodes, sequence child arrays,
+expression stacks, call argument/keyword vectors, and comparison/match patch
+vectors. Denial is failure-atomic, latches the fixed exact-generation terminal,
+and destroys unpublished trees and temporaries exactly once without changing
+output, retval, stack or accounting. Native-signature compilation remains on
+legacy allocation. Deterministic root diagnostics deny all twelve object,
+array, and vector initial/growth stages twice, retry, distinguish ordinary
+SyntaxError, and an initialized host regression
+verifies exact-owner retirement with sibling continuation. Parser global-name
+maps and import buffers, modules/bootstrap/cache, generic constructors,
+PushValue, traceback/error formatting, serialization/deserialization and the
+global allocator policy remain unchanged. See
+patches/PARSER-STORAGE-FALLIBLE.md; #153 remains incomplete.
+
+Patch 23 (#153): the admitted public compiler transaction now covers initial
+capacity and growth for `Ctx.global_names`, `CodeObject.varnames_inv` and
+`names_inv`, and `FuncDecl.kw_to_index`. Compiler-local insert planning reserves
+paired name/keyword vectors and maps before atomic publication, preserving the
+fixed exact-generation allocation fatal and full transaction rollback. Root
+diagnostics deny all eight initial/growth stages twice, retry, validate exact
+ownership, vector/map agreement, output/retval/SP/accounting preservation and
+ordinary SyntaxError distinction; the initialized production denial now enters
+through the first inverse map and retains exact-owner retirement plus sibling
+continuation. Generic smallmaps, native signatures, debugger and pickle/
+CodeObject deserialization, imports/package buffers, context string dedup and
+global allocator policy remain unchanged. See
+patches/COMPILER-SMALLMAP-FALLIBLE.md; #153 remains incomplete.
+
+Patch 24 (#153): additive NameDict reserve/rehash/set and public try-set/emplace
+seams preserve exact allocation-generation ownership and failure atomicity. A
+generic managed-object transaction now commits or discards admitted unpublished
+objects with GC-list, counter, arena, destructor and accounting safety; compiler
+managed-value rollback shares the primitive. Root diagnostics cover repeated
+initial/rehash denial, retry, absent attributes, output/retval/SP/accounting,
+retired-owner rejection, sibling survival and ordinary AttributeError
+distinction. A persistent internal transaction pin survives repeated
+destructor-nested sweeps; a custom armed destructor collects twice and verifies
+one destructor/block return plus exact pool, counter and accounting restoration.
+No production compound constructor, module/import/cache, host PushValue/root/
+callback path, error/traceback path, global denial or capability is converted.
+See patches/NAMEDICT-SUBSTRATE-FALLIBLE.md; #153 remains incomplete.
+
+Patch 25 (#153): `OP_LOAD_FUNCTION` publishes an admitted Function only after
+its closure snapshot and recursive self binding succeed. `FuncDecl` carries an
+already-interned recursive name from both compiler construction and serialized
+declaration loading, so the opcode performs no name-table allocation after
+managed-object admission. Function rollback is destructor-armed and balances
+the declaration reference and private NameDict exactly once. The ordinary
+special-locals RuntimeError and legacy public constructors remain unchanged.
+Root diagnostics construct real Functions through ctor/rollback across
+object/header/item/growth denial; initialized automation also covers a
+first-use nested lambda. Type/class creation, modules/imports and global
+allocation policy remain out of scope. See
+patches/FUNCTION-CLOSURE-FALLIBLE.md; #153 remains incomplete.
+
+Patch 26 (#153): the four literal bytecodes BUILD_TUPLE, BUILD_LIST,
+BUILD_DICT and BUILD_SLICE now use additive admitted constructors and keep
+their operand-stack publication delayed until construction succeeds. Dict
+literal insertion owns an unpublished ManagedHeapObjectTxn and roots that dict
+only while Python hash/equality may re-enter; backing growth and rehash retain
+the original storage allocation owner. Legacy constructor and dict-mutation
+APIs remain unchanged. The bounded root diagnostic repeats object/backing/
+growth/rehash denial and retry; the initialized sandbox wrapper checks owner
+and sibling continuity. See patches/CONTAINER-BYTECODE-FALLIBLE.md; #153
+remains incomplete.
+
+Patch 26 follow-up (#153): admitted-object rollback now records a collection epoch for
+its gc-counter credit, preventing a discard after explicit/automatic GC from
+debiting a later allocation while preserving exact no-GC rollback. Admitted
+dict rehash uses its first cached probe/hash to avoid replaying Python
+__hash__/__eq__, and py_trynewlistn clears publicly visible slots. Diagnostics
+and initialized automation cover exact denial restoration, temporary cleanup,
+forced-GC real-literal failure, collision callback counts, a diagnostics-only
+exact admitted fail-site marker for all four production BUILD opcode terminal
+paths, and exact owner/sibling continuity. See
+patches/CONTAINER-BYTECODE-FALLIBLE.md; #153 remains incomplete.
+
+Patch 27 (#153): first-seen source identifiers and fixed compiler names `self`
+and `_` in the admitted public compiler use a size-checked, quota-admitted
+name-table transaction. Allocation and losing-race cleanup occur outside the
+process-global table lock; denial leaves the compiler output unchanged and
+reaches the existing exact-owner terminal. Published buckets retain VM
+accounting but detach from temporary instance cells because the table owns them
+until process finalization. `FuncDecl.recursive_name` is established before
+declaration publication. Deterministic root diagnostics cover overflow,
+empty-bucket denial/retry, collisions, named functions, nested lambdas,
+first-time fixed-name denial/retry and full state/accounting invariants. Legacy
+name APIs, runtime attributes, type/class compilation, imports/modules,
+serialization/deserialization and global quota policy are unchanged. See
+patches/COMPILER-NAME-INTERN-FALLIBLE.md; #153 remains incomplete.
+
+Patch 35 (#153): Mantle's host `PushVector`, `PushHandle`, recursive `PushValue`,
+callback arguments and signal-wake arguments now use admitted constructors and
+propagate an exact current-cell allocation terminal without publishing partial
+userdata, weak-cache entries, arrays, maps or tuples. An additive admitted dict
+setter backs failure-atomic host map growth. Recursive conversion reuses one
+provisional identity per new handle and defers weak-cache/provenance publication
+until the whole outer value commits. Initialized ROOT diagnostics cover Vector3,
+handle, managed string, nested map/list, fifth-entry dict growth, callback tuple
+and signal tuple denial, plus nested duplicate-handle rollback and clean retry,
+with exact-owner retirement, fatal drain, sibling survival and task cleanup.
+Root-table insertion remains unchanged. See patches/HOST-PUSHVALUE-FALLIBLE.md;
+#153 remains incomplete.
+
+Patch 36 (#163): Linux/Clang dedicated-server toolchain compatibility, no semantic
+change. `pk__try_name_key_txn` (Patch 13) used `INT_MAX` without `#include
+<limits.h>`, visible transitively before but not on the dedicated Ubuntu builder's
+Clang; added the include. The color32 ANSI-wrapper diagnostic built five
+`c11_color32` union literals with single braces, tripping -Wmissing-braces
+(project-wide -Werror); double-braced them to match the neighboring vec2/vec3
+literals. `Dict__try_get_index`'s upstream `__RESTART:` label was directly
+followed by a declaration, legal only from C23 while this module builds C11;
+added an empty statement after the label. See patches/README.txt item 36.

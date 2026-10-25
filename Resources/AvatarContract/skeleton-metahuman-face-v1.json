@@ -1,0 +1,3508 @@
+{
+  "version": 1,
+  "skeleton": "metahuman-face",
+  "asset": "/Game/Avatars/Skeletons/Face_Archetype_Skeleton",
+  "bones": [
+    {
+      "name": "root",
+      "parent": -1
+    },
+    {
+      "name": "pelvis",
+      "parent": 0
+    },
+    {
+      "name": "spine_01",
+      "parent": 1
+    },
+    {
+      "name": "spine_02",
+      "parent": 2
+    },
+    {
+      "name": "spine_03",
+      "parent": 3
+    },
+    {
+      "name": "spine_04",
+      "parent": 4
+    },
+    {
+      "name": "spine_05",
+      "parent": 5
+    },
+    {
+      "name": "clavicle_pec_l",
+      "parent": 6
+    },
+    {
+      "name": "clavicle_pec_r",
+      "parent": 6
+    },
+    {
+      "name": "spine_04_latissimus_l",
+      "parent": 6
+    },
+    {
+      "name": "spine_04_latissimus_r",
+      "parent": 6
+    },
+    {
+      "name": "clavicle_l",
+      "parent": 6
+    },
+    {
+      "name": "clavicle_out_l",
+      "parent": 11
+    },
+    {
+      "name": "clavicle_scap_l",
+      "parent": 11
+    },
+    {
+      "name": "upperarm_l",
+      "parent": 11
+    },
+    {
+      "name": "upperarm_correctiveRoot_l",
+      "parent": 14
+    },
+    {
+      "name": "upperarm_out_l",
+      "parent": 15
+    },
+    {
+      "name": "upperarm_fwd_l",
+      "parent": 15
+    },
+    {
+      "name": "upperarm_in_l",
+      "parent": 15
+    },
+    {
+      "name": "upperarm_bck_l",
+      "parent": 15
+    },
+    {
+      "name": "clavicle_r",
+      "parent": 6
+    },
+    {
+      "name": "clavicle_out_r",
+      "parent": 20
+    },
+    {
+      "name": "clavicle_scap_r",
+      "parent": 20
+    },
+    {
+      "name": "upperarm_r",
+      "parent": 20
+    },
+    {
+      "name": "upperarm_correctiveRoot_r",
+      "parent": 23
+    },
+    {
+      "name": "upperarm_out_r",
+      "parent": 24
+    },
+    {
+      "name": "upperarm_fwd_r",
+      "parent": 24
+    },
+    {
+      "name": "upperarm_in_r",
+      "parent": 24
+    },
+    {
+      "name": "upperarm_bck_r",
+      "parent": 24
+    },
+    {
+      "name": "neck_01",
+      "parent": 6
+    },
+    {
+      "name": "neck_02",
+      "parent": 29
+    },
+    {
+      "name": "head",
+      "parent": 30
+    },
+    {
+      "name": "FACIAL_C_FacialRoot",
+      "parent": 31
+    },
+    {
+      "name": "FACIAL_L_ForeheadMid",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadMid15",
+      "parent": 33
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadMid16",
+      "parent": 33
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadMid17",
+      "parent": 33
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadMid18",
+      "parent": 33
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadMid19",
+      "parent": 33
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadMid21",
+      "parent": 33
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadMid20",
+      "parent": 33
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadMid22",
+      "parent": 33
+    },
+    {
+      "name": "FACIAL_L_ForeheadMid2",
+      "parent": 33
+    },
+    {
+      "name": "FACIAL_L_ForeheadMid1",
+      "parent": 33
+    },
+    {
+      "name": "FACIAL_C_Skull",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_LowerLipRotation",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_MouthLower",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_R_LipLower",
+      "parent": 46
+    },
+    {
+      "name": "FACIAL_R_LipLower2",
+      "parent": 47
+    },
+    {
+      "name": "FACIAL_R_LipLower3",
+      "parent": 47
+    },
+    {
+      "name": "FACIAL_R_LipLower1",
+      "parent": 47
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower8",
+      "parent": 47
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower10",
+      "parent": 47
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower13",
+      "parent": 47
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower12",
+      "parent": 47
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower15",
+      "parent": 47
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower14",
+      "parent": 47
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower11",
+      "parent": 47
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower7",
+      "parent": 47
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower9",
+      "parent": 47
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower6",
+      "parent": 47
+    },
+    {
+      "name": "FACIAL_L_LipLowerOuter",
+      "parent": 46
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower21",
+      "parent": 61
+    },
+    {
+      "name": "FACIAL_L_LipLowerOuter3",
+      "parent": 61
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower24",
+      "parent": 61
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower20",
+      "parent": 61
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower16",
+      "parent": 61
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower19",
+      "parent": 61
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower18",
+      "parent": 61
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower23",
+      "parent": 61
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower22",
+      "parent": 61
+    },
+    {
+      "name": "FACIAL_L_LipLowerOuter1",
+      "parent": 61
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower17",
+      "parent": 61
+    },
+    {
+      "name": "FACIAL_L_LipLowerOuter2",
+      "parent": 61
+    },
+    {
+      "name": "FACIAL_R_LipLowerOuter",
+      "parent": 46
+    },
+    {
+      "name": "FACIAL_R_LipLowerOuter1",
+      "parent": 74
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower20",
+      "parent": 74
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower21",
+      "parent": 74
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower22",
+      "parent": 74
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower23",
+      "parent": 74
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower24",
+      "parent": 74
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower19",
+      "parent": 74
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower18",
+      "parent": 74
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower17",
+      "parent": 74
+    },
+    {
+      "name": "FACIAL_R_LipLowerOuter2",
+      "parent": 74
+    },
+    {
+      "name": "FACIAL_R_LipLowerOuter3",
+      "parent": 74
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower16",
+      "parent": 74
+    },
+    {
+      "name": "FACIAL_L_LipLower",
+      "parent": 46
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower7",
+      "parent": 87
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower9",
+      "parent": 87
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower8",
+      "parent": 87
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower13",
+      "parent": 87
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower12",
+      "parent": 87
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower11",
+      "parent": 87
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower15",
+      "parent": 87
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower14",
+      "parent": 87
+    },
+    {
+      "name": "FACIAL_L_LipLower2",
+      "parent": 87
+    },
+    {
+      "name": "FACIAL_L_LipLower3",
+      "parent": 87
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower10",
+      "parent": 87
+    },
+    {
+      "name": "FACIAL_L_LipLower1",
+      "parent": 87
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower6",
+      "parent": 87
+    },
+    {
+      "name": "FACIAL_C_LipLower",
+      "parent": 46
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower4",
+      "parent": 101
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower3",
+      "parent": 101
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower2",
+      "parent": 101
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower1",
+      "parent": 101
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLower5",
+      "parent": 101
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower1",
+      "parent": 101
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower3",
+      "parent": 101
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower2",
+      "parent": 101
+    },
+    {
+      "name": "FACIAL_C_LipLower3",
+      "parent": 101
+    },
+    {
+      "name": "FACIAL_C_LipLower2",
+      "parent": 101
+    },
+    {
+      "name": "FACIAL_C_LipLower1",
+      "parent": 101
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower5",
+      "parent": 101
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLower4",
+      "parent": 101
+    },
+    {
+      "name": "FACIAL_C_TeethLower",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_C_Tongue1",
+      "parent": 115
+    },
+    {
+      "name": "FACIAL_C_TongueUpper1",
+      "parent": 116
+    },
+    {
+      "name": "FACIAL_C_Tongue2",
+      "parent": 116
+    },
+    {
+      "name": "FACIAL_C_Tongue3",
+      "parent": 118
+    },
+    {
+      "name": "FACIAL_C_TongueUpper3",
+      "parent": 119
+    },
+    {
+      "name": "FACIAL_R_TongueSide3",
+      "parent": 119
+    },
+    {
+      "name": "FACIAL_C_TongueLower3",
+      "parent": 119
+    },
+    {
+      "name": "FACIAL_C_Tongue4",
+      "parent": 119
+    },
+    {
+      "name": "FACIAL_L_TongueSide4",
+      "parent": 123
+    },
+    {
+      "name": "FACIAL_R_TongueSide4",
+      "parent": 123
+    },
+    {
+      "name": "FACIAL_L_TongueSide3",
+      "parent": 119
+    },
+    {
+      "name": "FACIAL_R_TongueSide2",
+      "parent": 118
+    },
+    {
+      "name": "FACIAL_C_TongueUpper2",
+      "parent": 118
+    },
+    {
+      "name": "FACIAL_L_TongueSide2",
+      "parent": 118
+    },
+    {
+      "name": "FACIAL_R_TongueSide1",
+      "parent": 116
+    },
+    {
+      "name": "FACIAL_L_TongueSide1",
+      "parent": 116
+    },
+    {
+      "name": "FACIAL_C_LipLowerSkin",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_L_12IPV_MouthInteriorLower1",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLowerOuterSkin3",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLowerSkin",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_R_LipLowerSkin",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_C_12IPV_LipLowerSkin1",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_L_LipLowerSkin",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_C_12IPV_LipLowerSkin2",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_R_12IPV_MouthInteriorLower2",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLowerOuterSkin1",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLowerOuterSkin2",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipLowerOuterSkin3",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLowerOuterSkin2",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLowerOuterSkin1",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_L_LipLowerOuterSkin",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_L_12IPV_MouthInteriorLower2",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_R_LipLowerOuterSkin",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_R_12IPV_MouthInteriorLower1",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipLowerSkin",
+      "parent": 45
+    },
+    {
+      "name": "FACIAL_L_EyesackUpper",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyesackUpper3",
+      "parent": 151
+    },
+    {
+      "name": "FACIAL_L_EyesackUpper2",
+      "parent": 151
+    },
+    {
+      "name": "FACIAL_L_EyesackUpper1",
+      "parent": 151
+    },
+    {
+      "name": "FACIAL_L_12IPV_NoseBridge1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NoseBridge2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_Jaw",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_ChinS1",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_ChinS3",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_ChinS2",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_ChinS4",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_ChinS4",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_Chin2",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_Chin3",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_Chin1",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_ChinSide",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_Chin2",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_Jawline",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Jawline6",
+      "parent": 168
+    },
+    {
+      "name": "FACIAL_L_12IPV_Jawline5",
+      "parent": 168
+    },
+    {
+      "name": "FACIAL_L_Jawline1",
+      "parent": 168
+    },
+    {
+      "name": "FACIAL_L_Jawline2",
+      "parent": 168
+    },
+    {
+      "name": "FACIAL_L_12IPV_Jawline4",
+      "parent": 168
+    },
+    {
+      "name": "FACIAL_L_12IPV_Jawline3",
+      "parent": 168
+    },
+    {
+      "name": "FACIAL_R_12IPV_Chin12",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_Chin10",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_C_Jawline",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_Jawline",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_Jawline4",
+      "parent": 178
+    },
+    {
+      "name": "FACIAL_R_12IPV_Jawline5",
+      "parent": 178
+    },
+    {
+      "name": "FACIAL_R_12IPV_Jawline3",
+      "parent": 178
+    },
+    {
+      "name": "FACIAL_R_Jawline2",
+      "parent": 178
+    },
+    {
+      "name": "FACIAL_R_12IPV_Jawline6",
+      "parent": 178
+    },
+    {
+      "name": "FACIAL_R_Jawline1",
+      "parent": 178
+    },
+    {
+      "name": "FACIAL_R_12IPV_Jawline2",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_Jawline1",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_ChinSide",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_ChinS3",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_ChinS2",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_ChinS1",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_C_12IPV_Chin3",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_C_12IPV_Chin4",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_C_Chin",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_Chin2",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_Chin1",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_Chin7",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_Chin6",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_Chin5",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_Chin9",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_Chin8",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_Chin11",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_Chin14",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_12IPV_Chin13",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Jawline1",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Jawline2",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_Chin1",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_R_Chin3",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Chin5",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Chin7",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Chin6",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Chin1",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Chin2",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Chin9",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Chin8",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Chin14",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Chin11",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Chin10",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Chin13",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_12IPV_Chin12",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_C_Chin1",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_C_Chin3",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_C_Chin2",
+      "parent": 157
+    },
+    {
+      "name": "FACIAL_L_CheekOuter",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_CheekOuter1",
+      "parent": 223
+    },
+    {
+      "name": "FACIAL_L_CheekOuter3",
+      "parent": 223
+    },
+    {
+      "name": "FACIAL_L_CheekOuter2",
+      "parent": 223
+    },
+    {
+      "name": "FACIAL_R_ForeheadIn",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_ForeheadInA1",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_ForeheadInA3",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_ForeheadInA2",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn6",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn7",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn4",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn5",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn2",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn3",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn1",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn8",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn9",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_ForeheadInB1",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_ForeheadInB2",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn14",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn10",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn11",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn12",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadIn13",
+      "parent": 227
+    },
+    {
+      "name": "FACIAL_R_EyelidUpperA",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyelidUpperA1",
+      "parent": 247
+    },
+    {
+      "name": "FACIAL_R_EyelashesUpperA1",
+      "parent": 248
+    },
+    {
+      "name": "FACIAL_R_EyelidUpperA3",
+      "parent": 247
+    },
+    {
+      "name": "FACIAL_R_EyelashesUpperA3",
+      "parent": 250
+    },
+    {
+      "name": "FACIAL_R_EyelidUpperA2",
+      "parent": 247
+    },
+    {
+      "name": "FACIAL_R_EyelashesUpperA2",
+      "parent": 252
+    },
+    {
+      "name": "FACIAL_L_EyelidLowerA",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyelidLowerA2",
+      "parent": 254
+    },
+    {
+      "name": "FACIAL_L_EyelidLowerA1",
+      "parent": 254
+    },
+    {
+      "name": "FACIAL_L_EyelidLowerA3",
+      "parent": 254
+    },
+    {
+      "name": "FACIAL_C_MouthUpper",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_LipUpper",
+      "parent": 258
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper15",
+      "parent": 259
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper6",
+      "parent": 259
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper7",
+      "parent": 259
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper9",
+      "parent": 259
+    },
+    {
+      "name": "FACIAL_L_LipUpper1",
+      "parent": 259
+    },
+    {
+      "name": "FACIAL_L_LipUpper3",
+      "parent": 259
+    },
+    {
+      "name": "FACIAL_L_LipUpper2",
+      "parent": 259
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper14",
+      "parent": 259
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper10",
+      "parent": 259
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper11",
+      "parent": 259
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper12",
+      "parent": 259
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper13",
+      "parent": 259
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper8",
+      "parent": 259
+    },
+    {
+      "name": "FACIAL_C_LipUpper",
+      "parent": 258
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper4",
+      "parent": 273
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper5",
+      "parent": 273
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper2",
+      "parent": 273
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper3",
+      "parent": 273
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper1",
+      "parent": 273
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper1",
+      "parent": 273
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper2",
+      "parent": 273
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper3",
+      "parent": 273
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper4",
+      "parent": 273
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper5",
+      "parent": 273
+    },
+    {
+      "name": "FACIAL_C_LipUpper2",
+      "parent": 273
+    },
+    {
+      "name": "FACIAL_C_LipUpper3",
+      "parent": 273
+    },
+    {
+      "name": "FACIAL_C_LipUpper1",
+      "parent": 273
+    },
+    {
+      "name": "FACIAL_L_LipCorner",
+      "parent": 258
+    },
+    {
+      "name": "FACIAL_L_LipCorner2",
+      "parent": 287
+    },
+    {
+      "name": "FACIAL_L_LipCorner3",
+      "parent": 287
+    },
+    {
+      "name": "FACIAL_L_LipCorner1",
+      "parent": 287
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipCorner2",
+      "parent": 287
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipCorner3",
+      "parent": 287
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipCorner1",
+      "parent": 287
+    },
+    {
+      "name": "FACIAL_R_LipUpperOuter",
+      "parent": 258
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper18",
+      "parent": 294
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper19",
+      "parent": 294
+    },
+    {
+      "name": "FACIAL_R_LipUpperOuter1",
+      "parent": 294
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper23",
+      "parent": 294
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper22",
+      "parent": 294
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper20",
+      "parent": 294
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper24",
+      "parent": 294
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper21",
+      "parent": 294
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper16",
+      "parent": 294
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper17",
+      "parent": 294
+    },
+    {
+      "name": "FACIAL_R_LipUpperOuter3",
+      "parent": 294
+    },
+    {
+      "name": "FACIAL_R_LipUpperOuter2",
+      "parent": 294
+    },
+    {
+      "name": "FACIAL_R_LipUpper",
+      "parent": 258
+    },
+    {
+      "name": "FACIAL_R_LipUpper3",
+      "parent": 307
+    },
+    {
+      "name": "FACIAL_R_LipUpper2",
+      "parent": 307
+    },
+    {
+      "name": "FACIAL_R_LipUpper1",
+      "parent": 307
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper6",
+      "parent": 307
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper7",
+      "parent": 307
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper8",
+      "parent": 307
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper9",
+      "parent": 307
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper12",
+      "parent": 307
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper13",
+      "parent": 307
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper10",
+      "parent": 307
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper15",
+      "parent": 307
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper11",
+      "parent": 307
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpper14",
+      "parent": 307
+    },
+    {
+      "name": "FACIAL_L_LipUpperOuter",
+      "parent": 258
+    },
+    {
+      "name": "FACIAL_L_LipUpperOuter1",
+      "parent": 321
+    },
+    {
+      "name": "FACIAL_L_LipUpperOuter3",
+      "parent": 321
+    },
+    {
+      "name": "FACIAL_L_LipUpperOuter2",
+      "parent": 321
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper16",
+      "parent": 321
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper17",
+      "parent": 321
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper18",
+      "parent": 321
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper19",
+      "parent": 321
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper24",
+      "parent": 321
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper21",
+      "parent": 321
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper20",
+      "parent": 321
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper23",
+      "parent": 321
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpper22",
+      "parent": 321
+    },
+    {
+      "name": "FACIAL_R_LipCorner",
+      "parent": 258
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipCorner1",
+      "parent": 334
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipCorner2",
+      "parent": 334
+    },
+    {
+      "name": "FACIAL_R_LipCorner1",
+      "parent": 334
+    },
+    {
+      "name": "FACIAL_R_LipCorner2",
+      "parent": 334
+    },
+    {
+      "name": "FACIAL_R_LipCorner3",
+      "parent": 334
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipCorner3",
+      "parent": 334
+    },
+    {
+      "name": "FACIAL_C_Forehead",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_Forehead6",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_R_12IPV_Forehead5",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_R_12IPV_Forehead3",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_R_12IPV_Forehead2",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_R_12IPV_Forehead1",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_R_Forehead1",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_R_Forehead2",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_R_Forehead3",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_R_12IPV_Forehead4",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_C_12IPV_Forehead2",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_C_12IPV_Forehead3",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_C_12IPV_Forehead6",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_L_Forehead3",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_C_12IPV_Forehead4",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_C_12IPV_Forehead5",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_C_Forehead1",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_C_Forehead3",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_C_Forehead2",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_C_12IPV_Forehead1",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_L_Forehead2",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_L_Forehead1",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_L_12IPV_Forehead5",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_L_12IPV_Forehead1",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_L_12IPV_Forehead3",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_L_12IPV_Forehead4",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_L_12IPV_Forehead6",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_L_12IPV_Forehead2",
+      "parent": 341
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadSkin5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_ForeheadOut",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_ForeheadOutA1",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadOut32",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadOut30",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadOut31",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadOut29",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadOut28",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadOut25",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadOut24",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadOut27",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadOut26",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadOut23",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_R_ForeheadOutA2",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_R_ForeheadOutB2",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_R_ForeheadOutB1",
+      "parent": 370
+    },
+    {
+      "name": "FACIAL_L_12IPV_Hair1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyeCornerOuter",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyeCornerOuter2",
+      "parent": 386
+    },
+    {
+      "name": "FACIAL_L_EyeCornerOuter1",
+      "parent": 386
+    },
+    {
+      "name": "FACIAL_L_EyelashesCornerOuter1",
+      "parent": 388
+    },
+    {
+      "name": "FACIAL_L_12IPV_UnderChin4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyelidLowerB",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyelidLowerB3",
+      "parent": 391
+    },
+    {
+      "name": "FACIAL_L_EyelidLowerB1",
+      "parent": 391
+    },
+    {
+      "name": "FACIAL_L_EyelidLowerB2",
+      "parent": 391
+    },
+    {
+      "name": "FACIAL_R_NasolabialBulge1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_NasolabialBulge",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_NasolabialBulge2",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_R_NasolabialBulge3",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB10",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB11",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB2",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB5",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB12",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB1",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB3",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB4",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB6",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB7",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB8",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB9",
+      "parent": 396
+    },
+    {
+      "name": "FACIAL_L_EyelidUpperA",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyelidUpperA3",
+      "parent": 411
+    },
+    {
+      "name": "FACIAL_L_EyelashesUpperA3",
+      "parent": 412
+    },
+    {
+      "name": "FACIAL_L_EyelidUpperA2",
+      "parent": 411
+    },
+    {
+      "name": "FACIAL_L_EyelashesUpperA2",
+      "parent": 414
+    },
+    {
+      "name": "FACIAL_L_EyelidUpperA1",
+      "parent": 411
+    },
+    {
+      "name": "FACIAL_L_EyelashesUpperA1",
+      "parent": 416
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpperOuterSkin1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpperOuterSkin2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_Sideburn2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_Sideburn3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_NasolabialBulge",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB12",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_L_NasolabialBulge2",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB10",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB11",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB6",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB7",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB4",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB5",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB3",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB1",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB2",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB8",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB9",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_L_NasolabialBulge3",
+      "parent": 422
+    },
+    {
+      "name": "FACIAL_R_Sideburn1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_Sideburn6",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB15",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_Sideburn4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_Sideburn5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_LipUpperSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_Nose",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_NoseLower",
+      "parent": 443
+    },
+    {
+      "name": "FACIAL_R_NostrilThickness3",
+      "parent": 444
+    },
+    {
+      "name": "FACIAL_L_NostrilThickness3",
+      "parent": 444
+    },
+    {
+      "name": "FACIAL_C_12IPV_NoseL2",
+      "parent": 444
+    },
+    {
+      "name": "FACIAL_C_12IPV_NoseL1",
+      "parent": 444
+    },
+    {
+      "name": "FACIAL_R_Nostril",
+      "parent": 443
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril3",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_NostrilThickness1",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_NostrilThickness2",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril1",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril2",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril8",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril9",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril11",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril10",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril13",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril12",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril14",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril5",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril4",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril7",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_R_12IPV_Nostril6",
+      "parent": 449
+    },
+    {
+      "name": "FACIAL_C_NoseTip",
+      "parent": 443
+    },
+    {
+      "name": "FACIAL_C_12IPV_NoseTip3",
+      "parent": 466
+    },
+    {
+      "name": "FACIAL_C_12IPV_NoseTip2",
+      "parent": 466
+    },
+    {
+      "name": "FACIAL_R_12IPV_NoseTip2",
+      "parent": 466
+    },
+    {
+      "name": "FACIAL_R_12IPV_NoseTip1",
+      "parent": 466
+    },
+    {
+      "name": "FACIAL_C_12IPV_NoseTip1",
+      "parent": 466
+    },
+    {
+      "name": "FACIAL_L_12IPV_NoseTip1",
+      "parent": 466
+    },
+    {
+      "name": "FACIAL_L_12IPV_NoseTip2",
+      "parent": 466
+    },
+    {
+      "name": "FACIAL_L_12IPV_NoseTip3",
+      "parent": 466
+    },
+    {
+      "name": "FACIAL_R_12IPV_NoseTip3",
+      "parent": 466
+    },
+    {
+      "name": "FACIAL_L_Nostril",
+      "parent": 443
+    },
+    {
+      "name": "FACIAL_L_NostrilThickness2",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril13",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril12",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril11",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril10",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril14",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril8",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril7",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril6",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril5",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril4",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril3",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril2",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril1",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_12IPV_Nostril9",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_L_NostrilThickness1",
+      "parent": 476
+    },
+    {
+      "name": "FACIAL_R_Masseter",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_Eye",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyeParallel",
+      "parent": 494
+    },
+    {
+      "name": "FACIAL_L_Pupil",
+      "parent": 495
+    },
+    {
+      "name": "FACIAL_L_Temple",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairC4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_CheekLower",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_CheekL4",
+      "parent": 499
+    },
+    {
+      "name": "FACIAL_L_12IPV_CheekL1",
+      "parent": 499
+    },
+    {
+      "name": "FACIAL_L_12IPV_CheekL3",
+      "parent": 499
+    },
+    {
+      "name": "FACIAL_L_12IPV_CheekL2",
+      "parent": 499
+    },
+    {
+      "name": "FACIAL_L_CheekLower2",
+      "parent": 499
+    },
+    {
+      "name": "FACIAL_L_CheekLower1",
+      "parent": 499
+    },
+    {
+      "name": "FACIAL_R_12IPV_MouthInteriorUpper1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_MouthInteriorUpper2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_12IPV_NoseBridge2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_12IPV_NoseBridge1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_Ear",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_Ear1",
+      "parent": 510
+    },
+    {
+      "name": "FACIAL_R_Ear3",
+      "parent": 510
+    },
+    {
+      "name": "FACIAL_R_Ear2",
+      "parent": 510
+    },
+    {
+      "name": "FACIAL_R_Ear4",
+      "parent": 510
+    },
+    {
+      "name": "FACIAL_L_EyeCornerInner",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyeCornerInner1",
+      "parent": 515
+    },
+    {
+      "name": "FACIAL_L_EyeCornerInner2",
+      "parent": 515
+    },
+    {
+      "name": "FACIAL_R_12IPV_EyeCornerO1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairC4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairC2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairC3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairC1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_UnderChin1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_UnderChin2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_UnderChin3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_UnderChin5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_UnderChin6",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_Eye",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyeParallel",
+      "parent": 528
+    },
+    {
+      "name": "FACIAL_R_Pupil",
+      "parent": 529
+    },
+    {
+      "name": "FACIAL_L_CheekOuter4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyesackUpper4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_TeethUpper",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_ForeheadOut",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadOut29",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadOut28",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadOut26",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadOut25",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadOut24",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadOut23",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadOut27",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_L_ForeheadOutA2",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_L_ForeheadOutB1",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_L_ForeheadOutB2",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_L_ForeheadOutA1",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadOut30",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadOut31",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadOut32",
+      "parent": 534
+    },
+    {
+      "name": "FACIAL_R_EyesackUpper",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyesackUpper1",
+      "parent": 549
+    },
+    {
+      "name": "FACIAL_R_EyesackUpper3",
+      "parent": 549
+    },
+    {
+      "name": "FACIAL_R_EyesackUpper2",
+      "parent": 549
+    },
+    {
+      "name": "FACIAL_R_LipUpperOuterSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyelidUpperFurrow",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyelidUpperFurrow2",
+      "parent": 554
+    },
+    {
+      "name": "FACIAL_L_EyelidUpperFurrow3",
+      "parent": 554
+    },
+    {
+      "name": "FACIAL_L_EyelidUpperFurrow1",
+      "parent": 554
+    },
+    {
+      "name": "FACIAL_R_EyelidUpperFurrow",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyelidUpperFurrow1",
+      "parent": 558
+    },
+    {
+      "name": "FACIAL_R_EyelidUpperFurrow3",
+      "parent": 558
+    },
+    {
+      "name": "FACIAL_R_EyelidUpperFurrow2",
+      "parent": 558
+    },
+    {
+      "name": "FACIAL_R_CheekOuter",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_CheekOuter3",
+      "parent": 562
+    },
+    {
+      "name": "FACIAL_R_CheekOuter2",
+      "parent": 562
+    },
+    {
+      "name": "FACIAL_R_CheekOuter1",
+      "parent": 562
+    },
+    {
+      "name": "FACIAL_R_CheekInner",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_CheekInner1",
+      "parent": 566
+    },
+    {
+      "name": "FACIAL_R_CheekInner2",
+      "parent": 566
+    },
+    {
+      "name": "FACIAL_R_CheekInner3",
+      "parent": 566
+    },
+    {
+      "name": "FACIAL_R_CheekInner4",
+      "parent": 566
+    },
+    {
+      "name": "FACIAL_R_EyeCornerOuter",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyeCornerOuter1",
+      "parent": 571
+    },
+    {
+      "name": "FACIAL_R_EyelashesCornerOuter1",
+      "parent": 572
+    },
+    {
+      "name": "FACIAL_R_EyeCornerOuter2",
+      "parent": 571
+    },
+    {
+      "name": "FACIAL_L_NasolabialBulge1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_JawRecess",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyesackLower",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyesackLower2",
+      "parent": 577
+    },
+    {
+      "name": "FACIAL_R_EyesackLower1",
+      "parent": 577
+    },
+    {
+      "name": "FACIAL_R_12IPV_EyesackL8",
+      "parent": 577
+    },
+    {
+      "name": "FACIAL_R_12IPV_EyesackL2",
+      "parent": 577
+    },
+    {
+      "name": "FACIAL_R_12IPV_EyesackL3",
+      "parent": 577
+    },
+    {
+      "name": "FACIAL_R_12IPV_EyesackL1",
+      "parent": 577
+    },
+    {
+      "name": "FACIAL_R_12IPV_EyesackL6",
+      "parent": 577
+    },
+    {
+      "name": "FACIAL_R_12IPV_EyesackL7",
+      "parent": 577
+    },
+    {
+      "name": "FACIAL_R_12IPV_EyesackL4",
+      "parent": 577
+    },
+    {
+      "name": "FACIAL_R_12IPV_EyesackL5",
+      "parent": 577
+    },
+    {
+      "name": "FACIAL_C_NoseBridge",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_CheekLower",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_CheekL4",
+      "parent": 589
+    },
+    {
+      "name": "FACIAL_R_12IPV_CheekL2",
+      "parent": 589
+    },
+    {
+      "name": "FACIAL_R_12IPV_CheekL1",
+      "parent": 589
+    },
+    {
+      "name": "FACIAL_R_12IPV_CheekL3",
+      "parent": 589
+    },
+    {
+      "name": "FACIAL_R_CheekLower1",
+      "parent": 589
+    },
+    {
+      "name": "FACIAL_R_CheekLower2",
+      "parent": 589
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB13",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_JawBulge",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_NasolabialFurrow",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_MouthInteriorUpper1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadSkin2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadSkin3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadSkin1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadSkin6",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadSkin4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NoseUpper1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NoseUpper3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NoseUpper2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NoseUpper5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NoseUpper4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NoseUpper6",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_LipUpperSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_CheekOuter1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_CheekOuter4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NoseBridge2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_CheekOuter4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_CheekOuter2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_CheekOuter3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_CheekOuter1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_CheekOuter2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_CheekOuter3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairA2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairA3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_ForeheadSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairA6",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairA4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairA5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialB14",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyesackLower",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_EyesackL1",
+      "parent": 628
+    },
+    {
+      "name": "FACIAL_L_12IPV_EyesackL2",
+      "parent": 628
+    },
+    {
+      "name": "FACIAL_L_12IPV_EyesackL3",
+      "parent": 628
+    },
+    {
+      "name": "FACIAL_L_12IPV_EyesackL4",
+      "parent": 628
+    },
+    {
+      "name": "FACIAL_L_12IPV_EyesackL5",
+      "parent": 628
+    },
+    {
+      "name": "FACIAL_L_12IPV_EyesackL6",
+      "parent": 628
+    },
+    {
+      "name": "FACIAL_L_12IPV_EyesackL7",
+      "parent": 628
+    },
+    {
+      "name": "FACIAL_L_12IPV_EyesackL8",
+      "parent": 628
+    },
+    {
+      "name": "FACIAL_L_EyesackLower2",
+      "parent": 628
+    },
+    {
+      "name": "FACIAL_L_EyesackLower1",
+      "parent": 628
+    },
+    {
+      "name": "FACIAL_L_Masseter",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_ForeheadOutSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB13",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_ForeheadIn",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn6",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn14",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn12",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn13",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn10",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn11",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_ForeheadInB2",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_ForeheadInB1",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_ForeheadInA3",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_ForeheadInA2",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_ForeheadInA1",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn4",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn5",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn7",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn1",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn2",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn3",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn8",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadIn9",
+      "parent": 642
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialF8",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairA1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialF3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_ForeheadMid",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadMid22",
+      "parent": 665
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadMid21",
+      "parent": 665
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadMid20",
+      "parent": 665
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadMid18",
+      "parent": 665
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadMid19",
+      "parent": 665
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadMid16",
+      "parent": 665
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadMid17",
+      "parent": 665
+    },
+    {
+      "name": "FACIAL_R_12IPV_ForeheadMid15",
+      "parent": 665
+    },
+    {
+      "name": "FACIAL_R_ForeheadMid1",
+      "parent": 665
+    },
+    {
+      "name": "FACIAL_R_ForeheadMid2",
+      "parent": 665
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB14",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialB15",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyeCornerInner",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyeCornerInner2",
+      "parent": 678
+    },
+    {
+      "name": "FACIAL_R_EyeCornerInner1",
+      "parent": 678
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialF2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_ForeheadInSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_Hair1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_UnderChin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_Ear",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_Ear1",
+      "parent": 685
+    },
+    {
+      "name": "FACIAL_L_Ear3",
+      "parent": 685
+    },
+    {
+      "name": "FACIAL_L_Ear2",
+      "parent": 685
+    },
+    {
+      "name": "FACIAL_L_Ear4",
+      "parent": 685
+    },
+    {
+      "name": "FACIAL_L_12IPV_NoseUpper6",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NoseUpper5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NoseUpper4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NoseUpper3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NoseUpper2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NoseUpper1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_UnderChin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_JawRecess",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_JawBulge",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_LipUpperSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairB3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairB2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairB1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairB5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairB4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_Sideburn4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_Sideburn5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_Sideburn6",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_Sideburn1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_Sideburn2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_Sideburn3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_12IPV_LipUpperSkin1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_12IPV_LipUpperSkin2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_NasolabialFurrow",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_Temple4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_LipUpperOuterSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_Temple1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_Temple2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_Temple3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NoseBridge1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_NoseBridge",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairA4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairA5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairA6",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_CheekOuter4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairA1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairA2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairA3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_Temple2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_Temple3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_Temple1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_Temple4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_UnderChin3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_UnderChin1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_UnderChin6",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_UnderChin4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_UnderChin5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpperSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_NoseUpper",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_NoseUpper",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyelidUpperB",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_EyelidUpperB2",
+      "parent": 740
+    },
+    {
+      "name": "FACIAL_L_EyelidUpperB3",
+      "parent": 740
+    },
+    {
+      "name": "FACIAL_L_EyelidUpperB1",
+      "parent": 740
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialF1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyelidLowerB",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyelidLowerB3",
+      "parent": 745
+    },
+    {
+      "name": "FACIAL_R_EyelidLowerB2",
+      "parent": 745
+    },
+    {
+      "name": "FACIAL_R_EyelidLowerB1",
+      "parent": 745
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialF6",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialF7",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialF4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialF5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_MouthInteriorUpper2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_CheekInner",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_CheekInner2",
+      "parent": 754
+    },
+    {
+      "name": "FACIAL_L_CheekInner3",
+      "parent": 754
+    },
+    {
+      "name": "FACIAL_L_CheekInner1",
+      "parent": 754
+    },
+    {
+      "name": "FACIAL_L_CheekInner4",
+      "parent": 754
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialF9",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_EyeCornerO2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_EyeCornerO1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_Hair1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_Hair3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_Hair2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_Hair5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_Hair4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_Hair6",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_ForeheadMidSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadSkin4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadSkin5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadSkin6",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadSkin1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadSkin2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_ForeheadSkin3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyelidLowerA",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyelidLowerA2",
+      "parent": 775
+    },
+    {
+      "name": "FACIAL_R_EyelidLowerA3",
+      "parent": 775
+    },
+    {
+      "name": "FACIAL_R_EyelidLowerA1",
+      "parent": 775
+    },
+    {
+      "name": "FACIAL_C_NoseUpper",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairC1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairC2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_HairC3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_ForeheadOutSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_EyeCornerO2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyelidUpperB",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyelidUpperB1",
+      "parent": 785
+    },
+    {
+      "name": "FACIAL_R_EyelidUpperB2",
+      "parent": 785
+    },
+    {
+      "name": "FACIAL_R_EyelidUpperB3",
+      "parent": 785
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpperOuterSkin2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_LipUpperOuterSkin1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_12IPV_NoseUpper2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_12IPV_NoseUpper1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_LipUpperSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairB1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairB3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairB2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairB5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_HairB4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_Temple",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_NasolabialF9",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_UnderChin2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_ForeheadInSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_ForeheadMidSkin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_NoseBridge",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_UnderChin",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialF6",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialF7",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialF8",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_EyesackU0",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialF4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialF5",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_EyesackUpper4",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_L_12IPV_EyesackU0",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialF1",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialF2",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_R_12IPV_NasolabialF3",
+      "parent": 32
+    },
+    {
+      "name": "FACIAL_C_Neck2Root",
+      "parent": 30
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckBackA1",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckBackA2",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_C_12IPV_AdamsA2",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_C_12IPV_AdamsA1",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_R_NeckBackA",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckA5",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckA2",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckA3",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckA1",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckA6",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckA4",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckA5",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_L_NeckBackA",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_C_NeckBackA",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_C_12IPV_NeckBackA1",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_C_12IPV_NeckBackA2",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckBackA2",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckBackA1",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckA4",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckA6",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckA1",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckA2",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckA3",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_C_AdamsApple",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_L_NeckA1",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_L_NeckA3",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_L_NeckA2",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_R_NeckA3",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_R_NeckA2",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_R_NeckA1",
+      "parent": 817
+    },
+    {
+      "name": "FACIAL_C_Neck1Root",
+      "parent": 29
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckB5",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckB4",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckB7",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckB6",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckB3",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckB6",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckB4",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_R_NeckBackB",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_C_12IPV_NeckB1",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_C_12IPV_NeckB2",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckB5",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckBackB2",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckBackB1",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_L_NeckBackB",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_C_NeckBackB",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_L_NeckB1",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_L_NeckB2",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_R_NeckB2",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_R_NeckB1",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckB7",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_R_12IPV_NeckB3",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckBackB1",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_L_12IPV_NeckBackB2",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_C_12IPV_NeckBackB1",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_C_12IPV_NeckBackB2",
+      "parent": 848
+    },
+    {
+      "name": "FACIAL_C_NeckB",
+      "parent": 848
+    }
+  ],
+  "sockets": []
+}

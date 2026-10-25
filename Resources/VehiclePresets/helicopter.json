@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "id": "helicopter",
+  "name": "Helicopter",
+  "description": "A single-seat light helicopter on skids: its main rotor lifts it straight up, it leans the way it flies, and it holds its height and stays level when the controls are let go.",
+  "comment": "A vehicle preset (#728, #793): see sedan.json for the format and plane.json for a flier's (the inert engine and transmission, the drive flag the reader wants and the derive block are as there). movementType helicopter is the Helicopter movement type: the main rotor's module (UMantleVehicleSimRotorComponent) lifts the helicopter along its up at the collective, turns it on the cyclic (pitch and roll) and the tail (yaw), and its stability assist levels it and damps its turning. The skids are the layout: two axles, a pair each, 240 cm apart and 220 cm across, small hidden wheels that are always braked (the axles' handbrake), so the helicopter stands, lands and never rolls, while the wheels still tell the crash rules and the throttle when it is on the ground; the grey body draws a skid tube along each pair on two cross-tubes. chassis.body is the cabin, its middle 40 cm ahead of the centre of mass, and chassis.helicopter the rest (FMantleChassisHelicopter): the main rotor's hub stands over the centre of mass 350 cm up, 107 cm above the seat, on a mast from the cabin's top; its 10.7 m disc carries 2500 kg, 27.8 kg/m^2 (#793: 15 to 50); its thrust is 1.6 times the weight (#793), 39.2 kN, so the collective that holds the weight is 24.5 / 39.2 = 0.625, hoverCollective, which is what the pilot's W and S work about once in the air (validate.py holds it within 0.005 of the weight over the thrust). The tail boom runs 520 cm back from the cabin's rear end, the fin stands on its end, and the 1.6 m tail rotor turns on its left side 655 cm behind the mast, 40 cm clear of the main disc's 615 cm reach, and 59 cm off the ground with the helicopter tipped 8 degrees nose-up on its rear skid ends. The rigid body's linear damping (0.1, MantleChassisDefinitions) is the rotor's own drag: a drift dies away in about ten seconds and the helicopter tops out near 50 m/s leaning its whole way; airSpeedLimit is the hard limit. The derive block is the plane's: no stability target (it flies) and a chase camera that grows with the cabin.",
+  "movementType": "helicopter",
+  "publishable": true,
+  "type": "helicopter",
+  "seats": {
+    "driver": "pilot"
+  },
+  "fit": {
+    "wheelRadius": 20,
+    "trackWidth": 220,
+    "minScale": 0.75,
+    "maxScale": 1.3
+  },
+  "wheels": {
+    "min": 4,
+    "max": 4
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 240,
+      "track": 220,
+      "wheelRadius": 20,
+      "wheelWidth": 10,
+      "axles": [
+        { "steer": true, "drive": false, "handbrake": true },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 420, "width": 150, "height": 190, "groundClearance": 70, "x": 40 },
+    "centerOfMass": [0, 0, 140],
+    "seat": {
+      "location": [130, 0, 243]
+    },
+    "helicopter": {
+      "rotor": { "diameter": 1070, "z": 350, "thrust": 39200, "rpm": 300 },
+      "tailBoom": { "length": 520, "width": 40, "height": 45, "z": 215 },
+      "tailRotor": { "diameter": 160, "rpm": 1500 },
+      "fin": { "height": 110, "chord": 70 },
+      "hoverCollective": 0.625,
+      "airSpeedLimit": 7000,
+      "controls": { "collective": [184, -14, 250], "cyclic": [184, 12, 250] }
+    }
+  },
+  "derive": {
+    "stability": 0,
+    "cameraArmPerLength": 1,
+    "cameraHeightPerHeight": 0.2
+  },
+  "defaults": {
+    "mass": 2500,
+    "maxSpeed": 7000,
+    "dragCoefficient": 0.4,
+    "frontalArea": 2.5,
+    "engine": {
+      "maxTorque": 300,
+      "maxRPM": 3000,
+      "idleRPM": 600,
+      "torqueCurve": [[0, 0.6], [1500, 1], [3000, 0.8]]
+    },
+    "transmission": {
+      "gearRatios": [1.0],
+      "reverseRatio": 1.0,
+      "finalDrive": 1.0,
+      "changeUpRPM": 2500,
+      "changeDownRPM": 1000
+    },
+    "suspension": {
+      "maxRaise": 6,
+      "maxDrop": 6,
+      "springRate": 800,
+      "springPreload": 250,
+      "damping": 0.9
+    },
+    "steering": {
+      "maxAngle": 10,
+      "ackermann": false
+    },
+    "brakes": {
+      "brakeTorque": 3000,
+      "handbrakeTorque": 6000
+    },
+    "tires": {
+      "friction": 2
+    },
+    "camera": {
+      "armLength": 1600,
+      "height": 250
+    }
+  },
+  "ranges": {
+    "mass": [1000, 6000],
+    "maxSpeed": [3000, 12000],
+    "dragCoefficient": [0.1, 0.8],
+    "engine/maxTorque": [100, 2000],
+    "engine/maxRPM": [2000, 6000],
+    "engine/idleRPM": [400, 1000],
+    "suspension/maxRaise": [3, 20],
+    "suspension/maxDrop": [3, 20],
+    "suspension/springRate": [200, 3000],
+    "suspension/damping": [0.3, 0.95],
+    "steering/maxAngle": [5, 45],
+    "brakes/brakeTorque": [1000, 12000],
+    "tires/friction": [1, 5],
+    "wheels/*/radius": [10, 40]
+  }
+}

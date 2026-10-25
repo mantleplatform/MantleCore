@@ -1,0 +1,73 @@
+# Shared files: a PR may change a copy (see SharedFiles.json) only to what its home in
+# GhzGarage/mantle holds, on mantle main or on the branch of a mantle PR named in this PR's
+# body with a line "Mantle-PR: GhzGarage/mantle#123" (one line per mantle PR).
+name: Shared files
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited] # edited: changing the Mantle-PR lines re-runs it
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shared-files-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  copies:
+    name: Copies match their home in mantle
+    # Fork PRs get no secrets, so they cannot read mantle; review their copy changes by hand.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GIT_LFS_SKIP_SMUDGE: '1'
+    steps:
+      - name: Check out this PR
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: core
+          fetch-depth: 0
+          lfs: false
+      - name: Check out mantle main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: GhzGarage/mantle
+          token: ${{ secrets.MANTLE_READ_TOKEN }}
+          path: mantle
+          lfs: false
+          sparse-checkout: |
+            tools/copies
+            schema
+            client/Source
+      - name: Check out the mantle PRs this PR names
+        id: prs
+        shell: bash
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          roots="--home-root $GITHUB_WORKSPACE/mantle"
+          numbers=$(printf '%s\n' "$PR_BODY" | tr -d '\r' \
+            | grep -oiE '^[[:space:]]*Mantle-PR:[[:space:]]*GhzGarage/mantle#[0-9]+' \
+            | grep -oE '[0-9]+$' | sort -un || true)
+          for n in $numbers; do
+            git -C mantle fetch --no-tags --depth=1 origin "pull/$n/head:refs/remotes/pr/$n"
+            git -C mantle worktree add --detach "$GITHUB_WORKSPACE/mantle-pr-$n" "refs/remotes/pr/$n"
+            roots="$roots --home-root $GITHUB_WORKSPACE/mantle-pr-$n"
+            echo "Also comparing against GhzGarage/mantle#$n"
+          done
+          echo "roots=$roots" >> "$GITHUB_OUTPUT"
+      - name: Check the copies this PR changes
+        working-directory: core
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          ROOTS: ${{ steps.prs.outputs.roots }}
+        run: |
+          set -euo pipefail
+          git diff --name-only --no-renames "$BASE...HEAD" > "$RUNNER_TEMP/changed.txt"
+          # shellcheck disable=SC2086 # ROOTS is a list of --home-root flags
+          python3 "$GITHUB_WORKSPACE/mantle/tools/copies/check_copies.py" \
+            --manifest SharedFiles.json $ROOTS --only-from "$RUNNER_TEMP/changed.txt"

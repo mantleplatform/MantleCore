@@ -1,0 +1,163 @@
+diff --git a/quickjs.c b/quickjs.c
+index 91661ab0..57bbc62c 100644
+--- a/quickjs.c
++++ b/quickjs.c
+@@ -617,6 +617,11 @@ struct JSContext {
+                              const char *input, size_t input_len,
+                              const char *filename, int line, int flags, int scope_idx);
+     void *user_opaque;
++    /* MANTLE (#386): set once by JS_MantleDenyStringCodeGeneration(), never
++       cleared. When true, JS_EvalObject() refuses every string-to-code request
++       made from running JS (eval, Function and every function-kind constructor);
++       the embedder's own JS_Eval() calls are unaffected. */
++    bool mantle_deny_string_codegen;
+ };
+ 
+ typedef union JSFloat64Union {
+@@ -38262,6 +38267,14 @@ static JSValue JS_EvalObject(JSContext *ctx, JSValueConst this_obj,
+ 
+     if (!JS_IsString(val))
+         return js_dup(val);
++    /* MANTLE (#386): the one funnel every JS-reachable string-to-code path
++       goes through -- direct eval (OP_eval, OP_apply_eval), indirect eval
++       (js_global_eval) and js_function_constructor, which backs Function,
++       GeneratorFunction, AsyncFunction and AsyncGeneratorFunction alike.
++       Refusing here, per realm, cannot be walked around by reaching one of
++       those constructors through a prototype chain. */
++    if (unlikely(ctx->mantle_deny_string_codegen))
++        return JS_ThrowTypeError(ctx, "code generation from strings is disabled");
+     str = JS_ToCStringLen(ctx, &len, val);
+     if (!str)
+         return JS_EXCEPTION;
+@@ -42976,6 +42989,9 @@ static int JS_CopySubArray(JSContext *ctx,
+     }
+ 
+     for (i = 0; i < count; ) {
++        /* MANTLE (#386): count is a user-controlled array-like length */
++        if (js_poll_interrupts(ctx))
++            goto exception;
+         if (dir < 0) {
+             from = from_pos + count - i - 1;
+             to = to_pos + count - i - 1;
+@@ -43399,6 +43415,9 @@ static JSValue js_array_concat(JSContext *ctx, JSValueConst this_val,
+                 goto exception;
+             }
+             for (k = 0; k < len; k++, n++) {
++                /* MANTLE (#386): len is a user-controlled array-like length */
++                if (js_poll_interrupts(ctx))
++                    goto exception;
+                 res = JS_TryGetPropertyInt64(ctx, e, k, &val);
+                 if (res < 0)
+                     goto exception;
+@@ -43752,6 +43771,9 @@ static JSValue js_array_fill(JSContext *ctx, JSValueConst this_val,
+ 
+     /* XXX: should special case fast arrays */
+     while (start < end) {
++        /* MANTLE (#386): end is a user-controlled array-like length */
++        if (js_poll_interrupts(ctx))
++            goto exception;
+         if (JS_SetPropertyInt64(ctx, obj, start, js_dup(argv[0])) < 0)
+             goto exception;
+         start++;
+@@ -44046,6 +44068,10 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
+     string_buffer_init(ctx, b, 0);
+ 
+     for(i = 0; i < n; i++) {
++        /* MANTLE (#386): n is a user-controlled array-like length; with an
++           empty separator and holes nothing is allocated per iteration */
++        if (js_poll_interrupts(ctx))
++            goto fail;
+         if (i > 0) {
+             if (c >= 0) {
+                 string_buffer_putc8(b, c);
+@@ -44224,6 +44250,9 @@ static JSValue js_array_reverse(JSContext *ctx, JSValueConst this_val,
+     }
+ 
+     for (l = 0, h = len - 1; l < h; l++, h--) {
++        /* MANTLE (#386): len is a user-controlled array-like length */
++        if (js_poll_interrupts(ctx))
++            goto exception;
+         l_present = JS_TryGetPropertyInt64(ctx, obj, l, &lval);
+         if (l_present < 0)
+             goto exception;
+@@ -44378,6 +44407,9 @@ static JSValue js_array_slice(JSContext *ctx, JSValueConst this_val,
+     }
+     /* Copy the remaining elements if any (handle case of inherited properties) */
+     for (; k < final; k++, n++) {
++        /* MANTLE (#386): final is bounded only by a user-controlled length */
++        if (js_poll_interrupts(ctx))
++            goto exception;
+         kPresent = JS_TryGetPropertyInt64(ctx, obj, k, &val);
+         if (kPresent < 0)
+             goto exception;
+@@ -44398,6 +44430,9 @@ static JSValue js_array_slice(JSContext *ctx, JSValueConst this_val,
+                 goto exception;
+ 
+             for (k = len; k-- > new_len; ) {
++                /* MANTLE (#386): see above */
++                if (js_poll_interrupts(ctx))
++                    goto exception;
+                 if (JS_DeletePropertyInt64(ctx, obj, k, JS_PROP_THROW) < 0)
+                     goto exception;
+             }
+@@ -44547,6 +44582,9 @@ static int64_t JS_FlattenIntoArray(JSContext *ctx, JSValueConst target,
+     }
+ 
+     for (sourceIndex = 0; sourceIndex < sourceLen; sourceIndex++) {
++        /* MANTLE (#386): sourceLen is a user-controlled array-like length */
++        if (js_poll_interrupts(ctx))
++            return -1;
+         present = JS_TryGetPropertyInt64(ctx, source, sourceIndex, &element);
+         if (present < 0)
+             return -1;
+@@ -44730,6 +44768,10 @@ static JSValue js_array_sort(JSContext *ctx, JSValueConst this_val,
+ 
+     /* XXX: should special case fast arrays */
+     for (i = 0; i < len; i++) {
++        /* MANTLE (#386): len is a user-controlled array-like length and
++           holes grow nothing */
++        if (js_poll_interrupts(ctx))
++            goto exception;
+         if (pos >= array_size) {
+             size_t new_size;
+             ValueSlot *new_array;
+@@ -44777,6 +44819,9 @@ static JSValue js_array_sort(JSContext *ctx, JSValueConst this_val,
+             goto fail;
+     }
+     for (; i < len; i++) {
++        /* MANTLE (#386): see above */
++        if (js_poll_interrupts(ctx))
++            goto fail;
+         if (JS_DeletePropertyInt64(ctx, obj, i, JS_PROP_THROW) < 0)
+             goto fail;
+     }
+@@ -58404,6 +58449,13 @@ int JS_AddIntrinsicEval(JSContext *ctx)
+     return 0;
+ }
+ 
++/* MANTLE (#386): see JSContext.mantle_deny_string_codegen. One-way on purpose:
++   nothing can re-enable string code generation on a context once denied. */
++void JS_MantleDenyStringCodeGeneration(JSContext *ctx)
++{
++    ctx->mantle_deny_string_codegen = true;
++}
++
+ /* BigInt */
+ 
+ static JSValue JS_ToBigIntCtorFree(JSContext *ctx, JSValue val)
+diff --git a/quickjs.h b/quickjs.h
+index a7807798..739cf614 100644
+--- a/quickjs.h
++++ b/quickjs.h
+@@ -560,6 +560,11 @@ JS_EXTERN int JS_AddIntrinsicWeakRef(JSContext *ctx);
+ JS_EXTERN int JS_AddPerformance(JSContext *ctx);
+ JS_EXTERN int JS_AddIntrinsicDOMException(JSContext *ctx);
+ JS_EXTERN int JS_AddIntrinsicAToB(JSContext *ctx);
++/* MANTLE (#386, see ../patches/README.txt): from this call on, every
++   string-to-code request made by JS running in ctx (eval, Function and the
++   generator/async function constructors) throws a TypeError. The embedder's
++   own JS_Eval()/JS_Eval2() calls on ctx keep working. Cannot be undone. */
++JS_EXTERN void JS_MantleDenyStringCodeGeneration(JSContext *ctx);
+ 
+ /* for equality comparisons and sameness */
+ JS_EXTERN int JS_IsEqual(JSContext *ctx, JSValueConst op1, JSValueConst op2);

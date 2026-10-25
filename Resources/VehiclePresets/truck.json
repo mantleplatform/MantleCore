@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "id": "truck",
+  "name": "Truck",
+  "description": "A large, heavy road vehicle: box trucks, delivery vans, campervans and small buses. Slow to pull away, firmly sprung, with a high chase camera.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. Sized so the real-scale Fab box truck of the owner's test pack (wheel radius about 44.6, track about 170) and campervan (radius about 39, track about 160) come out near 1.0.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "truck",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 42,
+    "trackWidth": 168,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 4,
+    "max": 8
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 350,
+      "track": 168,
+      "wheelRadius": 42,
+      "wheelWidth": 28,
+      "axles": [
+        { "steer": true, "drive": false },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 640, "width": 205, "height": 96, "groundClearance": 48 },
+    "centerOfMass": [0, 0, 61],
+    "seat": {
+      "location": [73.2, -42, 130],
+      "steeringWheel": { "location": [120, -42, 133], "radius": 21 }
+    }
+  },
+  "derive": {
+    "stability": 0.95,
+    "cameraArmPerLength": 0.83,
+    "cameraHeightPerHeight": 1.82
+  },
+  "defaults": {
+    "mass": 4000,
+    "maxSpeed": 3000,
+    "dragCoefficient": 0.6,
+    "frontalArea": 5,
+    "engine": {
+      "maxTorque": 2000,
+      "maxRPM": 3500,
+      "idleRPM": 600,
+      "torqueCurve": [[0, 0.6], [1000, 0.9], [2000, 1], [3500, 0.75]]
+    },
+    "transmission": {
+      "gearRatios": [5.5, 3.2, 2, 1.4, 1.0],
+      "reverseRatio": 5,
+      "finalDrive": 4.1,
+      "changeUpRPM": 3000,
+      "changeDownRPM": 1200
+    },
+    "suspension": {
+      "maxRaise": 15,
+      "maxDrop": 15,
+      "springRate": 800,
+      "springPreload": 200,
+      "damping": 0.75
+    },
+    "steering": {
+      "maxAngle": 35,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 6000,
+      "handbrakeTorque": 8000
+    },
+    "tires": {
+      "friction": 3.5
+    },
+    "camera": {
+      "armLength": 750,
+      "height": 280
+    }
+  },
+  "ranges": {
+    "mass": [2500, 8000],
+    "maxSpeed": [1500, 4500],
+    "dragCoefficient": [0.4, 1],
+    "engine/maxTorque": [800, 4000],
+    "engine/maxRPM": [2500, 5000],
+    "engine/idleRPM": [400, 900],
+    "suspension/maxRaise": [5, 40],
+    "suspension/maxDrop": [5, 40],
+    "suspension/springRate": [200, 1500],
+    "suspension/damping": [0.2, 0.9],
+    "steering/maxAngle": [20, 45],
+    "brakes/brakeTorque": [3000, 12000],
+    "tires/friction": [1.5, 5],
+    "wheels/*/radius": [34, 60]
+  }
+}

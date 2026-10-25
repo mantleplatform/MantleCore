@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "id": "sixwheeler",
+  "name": "Six-wheeler",
+  "description": "A big heavy lorry on three axles: dump trucks, army trucks, tankers and tow trucks. Very heavy and slow to pull away, it pulls on its two rear axles and turns wide, with a high chase camera.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. Three axles: a steered front axle and a tandem pair 140 cm apart at the rear, both driven (a 6x6 or lorry bogie). Axle positions are shares of the 560 cm wheelbase, so the middle axle at 0.75 sits 140 cm ahead of the rearmost. Wheels 6 to 8, because a lorry with duals has more than a pair per axle.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "truck",
+  "seats": {
+    "driver": "car",
+    "passenger": "car"
+  },
+  "fit": {
+    "wheelRadius": 46,
+    "trackWidth": 180,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 6,
+    "max": 8
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 560,
+      "track": 180,
+      "wheelRadius": 46,
+      "wheelWidth": 30,
+      "axles": [
+        { "steer": true, "drive": false },
+        { "steer": false, "drive": true, "handbrake": true, "position": 0.75 },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 820, "width": 225, "height": 110, "groundClearance": 56 },
+    "centerOfMass": [-45, 0, 80],
+    "seat": {
+      "location": [178, -42, 138],
+      "steeringWheel": { "location": [224.8, -42, 141], "radius": 22 }
+    }
+  },
+  "derive": {
+    "stability": 0.95,
+    "cameraArmPerLength": 0.83,
+    "cameraHeightPerHeight": 1.82
+  },
+  "defaults": {
+    "mass": 9000,
+    "maxSpeed": 2600,
+    "dragCoefficient": 0.7,
+    "frontalArea": 7,
+    "engine": {
+      "maxTorque": 3500,
+      "maxRPM": 3200,
+      "idleRPM": 600,
+      "torqueCurve": [[0, 0.6], [1000, 0.9], [1800, 1], [3200, 0.7]]
+    },
+    "transmission": {
+      "gearRatios": [6.0, 3.6, 2.3, 1.6, 1.0],
+      "reverseRatio": 5.5,
+      "finalDrive": 4.8,
+      "changeUpRPM": 2700,
+      "changeDownRPM": 1100
+    },
+    "suspension": {
+      "maxRaise": 15,
+      "maxDrop": 15,
+      "springRate": 1000,
+      "springPreload": 300,
+      "damping": 0.8
+    },
+    "steering": {
+      "maxAngle": 30,
+      "ackermann": true
+    },
+    "brakes": {
+      "brakeTorque": 9000,
+      "handbrakeTorque": 12000
+    },
+    "tires": {
+      "friction": 3.5
+    },
+    "camera": {
+      "armLength": 900,
+      "height": 320
+    }
+  },
+  "ranges": {
+    "mass": [6000, 16000],
+    "maxSpeed": [1500, 4000],
+    "dragCoefficient": [0.5, 1.1],
+    "engine/maxTorque": [2000, 5000],
+    "engine/maxRPM": [2500, 4500],
+    "engine/idleRPM": [400, 900],
+    "suspension/maxRaise": [5, 40],
+    "suspension/maxDrop": [5, 40],
+    "suspension/springRate": [400, 2000],
+    "suspension/damping": [0.3, 0.95],
+    "steering/maxAngle": [18, 40],
+    "brakes/brakeTorque": [5000, 16000],
+    "tires/friction": [1.5, 5],
+    "wheels/*/radius": [36, 60]
+  }
+}

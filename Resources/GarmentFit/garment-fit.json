@@ -1,0 +1,5 @@
+{
+  "comment": "Plugin-only (not part of the synced avatar contract). Garment variants (clothing from a MetaHuman Outfit) are fitted to Epic's fixed compatibility bodies, made in memory: <sex>_<entry>, so female med_nrw is f_med_nrw (the variant id). Entries are srt|med|tal then unw|nrw|ovw; at most 8 (the backend's variant limit). The plugin picks female or male from the Outfit's own authored size bodies: male only when closer to the male body than the female one by more than sexMarginCm, else female.",
+  "bodyTypes": ["med_unw", "med_nrw", "med_ovw"],
+  "sexMarginCm": 0.25
+}

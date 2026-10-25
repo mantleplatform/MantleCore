@@ -1,0 +1,15 @@
+TypeScript 6.0.3
+Source: https://registry.npmjs.org/typescript/-/typescript-6.0.3.tgz
+Retrieved: 2026-09-13
+Package SHA-256: 33CD0EE1BEAA8C9E9D15A9DA836C62DDEA4C34A42D7C2D349DBC80D94165D22A
+typescript.js SHA-256: 569177652966BD528C319171C7DD22860DBF72BDE116CBC4F644F1D02BB12E39
+License: Apache-2.0 (LICENSE.txt)
+
+Vendored files:
+- typescript.js: the environment-neutral compiler API bundle used by the Mantle Editor.
+- LICENSE.txt: upstream Apache-2.0 license.
+- ThirdPartyNoticeText.txt: upstream third-party notices.
+
+Everything else in the npm package is intentionally omitted. Mantle transpiles a single
+in-memory authoring source through ts.transpileModule; it does not run tsc/tsserver, read a
+tsconfig, resolve modules, or load the TypeScript standard-library declaration files.

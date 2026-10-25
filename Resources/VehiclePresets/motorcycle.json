@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "id": "motorcycle",
+  "name": "Motorcycle",
+  "description": "A two-wheeled bike: motorcycles, scooters and dirt bikes. The rider leans into turns and the bike holds itself upright, so it steers by the front fork.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. A two-wheeler (#553): layout.centreline puts one wheel on each axle at Y 0 (bones wheel_f and wheel_r), and track is then only the fit's nominal width, kept equal to fit.trackWidth and the body's width, never used to place a wheel. The steered front wheel hangs under a fork bone (fork_f) that the front wheel's SteerBone yaws. seats.driver motorcycle plays the bike rider clip set; the seat sits on the centreline (Y 0), has no steeringWheel, and chassis.rider holds the rest of the rider: the handlebar grips (on the fork bone) and foot pegs (on the root bone) as [x, y, z] in the chassis frame with the left grip and peg on -Y, pelvisOffset, stopPelvisShift and kneeSplayDegrees as FMantleVehicleSeat's RiderPelvisOffset, RiderStopPelvisShift and RiderKneeSplayDegrees, rearTireFriction and rearBrakeTorque for the rear wheel (the document holds one of each, which the front wheel gets), and rotationControl, ChaosVehicles' arcade balance (FMantleVehicleRotationControl's keys, by the same names, torqueControl switching all of it on). Modelled on the tuned test bike with a 95 cm saddle, 140 cm wheelbase, and its numbers taken as they are in a frame with the ground at Z 0 and the wheelbase centred on X 0. The centre of mass sits just above the wheel centres, inside the body box.",
+  "movementType": "wheeled",
+  "publishable": true,
+  "type": "motorcycle",
+  "seats": {
+    "driver": "motorcycle"
+  },
+  "fit": {
+    "wheelRadius": 35,
+    "trackWidth": 40,
+    "minScale": 0.5,
+    "maxScale": 2
+  },
+  "wheels": {
+    "min": 2,
+    "max": 2
+  },
+  "chassis": {
+    "layout": {
+      "wheelbase": 140,
+      "track": 40,
+      "wheelRadius": 35,
+      "wheelWidth": 30,
+      "centreline": true,
+      "axles": [
+        { "steer": true, "drive": false },
+        { "steer": false, "drive": true, "handbrake": true }
+      ]
+    },
+    "body": { "length": 180, "width": 40, "height": 45, "groundClearance": 35 },
+    "centerOfMass": [0, 0, 38],
+    "seat": {
+      "location": [-1.4, 0, 89.4]
+    },
+    "rider": {
+      "handlebar": { "left": [43.3, -23, 133.2], "right": [43.3, 23, 133.2] },
+      "footPegs": { "left": [-3, -19.9, 55.6], "right": [-3, 19.9, 55.6] },
+      "pelvisOffset": [0, 0, 18.9],
+      "stopPelvisShift": [0, 12, -24],
+      "kneeSplayDegrees": 8,
+      "rearTireFriction": 8,
+      "rearBrakeTorque": 1220,
+      "rotationControl": {
+        "torqueControl": true,
+        "torqueRotationDamping": 15,
+        "targetRotation": true,
+        "rollVsSpeed": true,
+        "rollControlScaling": 1,
+        "rollMaxAngle": 35,
+        "rotationStiffness": 100,
+        "rotationDamping": 10,
+        "maxAccel": 100,
+        "autoCentreRollStrength": 1
+      }
+    }
+  },
+  "derive": {
+    "stability": 0,
+    "cameraArmPerLength": 0.63,
+    "cameraHeightPerHeight": 1.1
+  },
+  "defaults": {
+    "mass": 350,
+    "maxSpeed": 4000,
+    "dragCoefficient": 0.31,
+    "frontalArea": 1.72,
+    "engine": {
+      "maxTorque": 549,
+      "maxRPM": 7000,
+      "idleRPM": 900,
+      "torqueCurve": [[0, 0.5], [2000, 0.8], [4500, 1], [7000, 0.8]]
+    },
+    "transmission": {
+      "gearRatios": [4.25, 2.52, 1.66, 1.22, 1.0],
+      "reverseRatio": 4.04,
+      "finalDrive": 2.81,
+      "changeUpRPM": 6000,
+      "changeDownRPM": 2000
+    },
+    "suspension": {
+      "maxRaise": 8.1,
+      "maxDrop": 8.1,
+      "springRate": 307,
+      "springPreload": 50,
+      "damping": 0.5
+    },
+    "steering": {
+      "maxAngle": 40,
+      "ackermann": false
+    },
+    "brakes": {
+      "brakeTorque": 3662,
+      "handbrakeTorque": 1220
+    },
+    "tires": {
+      "friction": 4
+    },
+    "camera": {
+      "armLength": 380,
+      "height": 130
+    }
+  },
+  "ranges": {
+    "mass": [150, 700],
+    "maxSpeed": [2000, 6500],
+    "dragCoefficient": [0.2, 0.6],
+    "engine/maxTorque": [100, 900],
+    "engine/maxRPM": [4000, 12000],
+    "engine/idleRPM": [600, 1200],
+    "suspension/maxRaise": [3, 20],
+    "suspension/maxDrop": [3, 20],
+    "suspension/springRate": [100, 800],
+    "suspension/damping": [0.2, 0.9],
+    "steering/maxAngle": [20, 50],
+    "brakes/brakeTorque": [500, 6000],
+    "tires/friction": [1.5, 5],
+    "wheels/*/radius": [25, 45]
+  }
+}

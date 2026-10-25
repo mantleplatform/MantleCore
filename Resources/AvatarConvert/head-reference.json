@@ -1,0 +1,7 @@
+{
+  "comment": "The reference head hats are fitted to (FMantleHeadFit): the cranium of the Mantle neutral MetaHuman (MH_MantleNeutral body + face, LOD0 bind pose), as a box in the acc_hat socket's frame (cm; X up from the head joint, Y front-back, Z side to side; ears left out, so Z is the skull's width; the front (+Y) is the forehead, not the nose). An avatar upload maps this box onto its own head's to set its acc_hat socket. Measured with the MeasureHead agent tool, 2026-10-14; re-measured without ears and with the forehead as the front 2026-10-19.",
+  "cranium": {
+    "min": [0.03, -8.01, -7.41],
+    "max": [16.88, 10.86, 7.49]
+  }
+}
