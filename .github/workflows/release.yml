@@ -58,8 +58,8 @@ jobs:
   # issue 950 step 4). A failed compile blocks the release.
   # Runner: a second runner on the Windows builder, registered to this repo only (label
   # mantlecore-buildplugin, folder C:\actions-runner-mantlecore, service
-  # actions.runner.GhzGarage-MantleCore.mantlecore-buildplugin, account NETWORK SERVICE). The
-  # builder's other runner serves GhzGarage/mantle and is separate.
+  # actions.runner.mantleplatform-MantleCore.mantlecore-buildplugin, account NETWORK SERVICE). The
+  # builder's other runner serves mantleplatform/mantle and is separate.
   # UE_ROOT (repo variable MANTLECORE_UE_ROOT) must be an installed (Launcher) UE 5.8, the kind
   # Fab compiles against: on an installed engine BuildPlugin always builds as Rocket.
   # This job runs on a self-hosted runner, so never trigger this workflow on pull_request once the
