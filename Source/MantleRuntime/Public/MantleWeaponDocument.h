@@ -256,6 +256,15 @@ enum class EMantleWeaponDocInterp : uint8
 	Count
 };
 
+/** schema equipStyle: how a weapon paired with a shield is drawn and put away (the pair's anim set lists the clips by these names). */
+enum class EMantleWeaponDocEquipStyle : uint8
+{
+	Hip,
+	Back,
+	Overhead,
+	Count
+};
+
 /** schema x-holds (#840; x-archetypes before it, whose rows are the firearm holds'): what the client's animation set for a
  *  hold does. */
 struct FMantleWeaponDocHoldInfo
@@ -288,6 +297,8 @@ struct FMantleWeaponDocHoldInfo
 	/** The points a document must place, and those it may. */
 	TArray<EMantleWeaponDocSocket> Sockets;
 	TArray<EMantleWeaponDocSocket> OptionalSockets;
+	/** schema x-equipStyles: the equipStyle values the hold has, the first its default; empty: the hold has none. */
+	TArray<EMantleWeaponDocEquipStyle> EquipStyles;
 };
 
 /** The pre-#840 name: an archetype's entry is its firearm hold's. */
@@ -696,6 +707,8 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<bool> bTwoHanded;
 	/** Unset: the hold's (GetEffects). */
 	TMantleWeaponDocValue<EMantleWeaponDocEffects> Effects;
+	/** Unset: the hold's default style (the first of its EquipStyles). Played only while paired with a shield. */
+	TMantleWeaponDocValue<EMantleWeaponDocEquipStyle> EquipStyle;
 	/** sRGB. */
 	TMantleWeaponDocValue<FColor> Color{ FColor(40, 110, 160) };
 	/** #904: sRGB, multiplied into the element's effects; only where the weapon has an element (GetElement). Unset: the element's own colours. */
@@ -861,6 +874,7 @@ public:
 	static const TCHAR* ReloadStyleName(EMantleWeaponDocReloadStyle Style);
 	static const TCHAR* EffectsName(EMantleWeaponDocEffects Effects);
 	static const TCHAR* UseStyleName(EMantleWeaponDocUseStyle Style);
+	static const TCHAR* EquipStyleName(EMantleWeaponDocEquipStyle Style);
 	static const TCHAR* ConsumableEffectName(EMantleWeaponDocConsumableEffect Effect);
 
 	/** #904: Effects is an element (not one of the firearms' rifle, pistol and shotgun). */

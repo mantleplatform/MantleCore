@@ -45,10 +45,12 @@ namespace MantleWeaponDocumentPrivate
 	// #840: version 2's fields, which a version-1 document has none of.
 	const TCHAR* const GWeaponDocV2Fields[] = {
 		TEXT("hold"), TEXT("delivery"), TEXT("charge"), TEXT("block"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"),
-		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable")
+		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle")
 	};
 	// #1025: consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
 	const TCHAR* const GWeaponDocUseStyleNames[] = { TEXT("eatDrink"), TEXT("use") };
+	// equipStyle: how a weapon paired with a shield is drawn.
+	const TCHAR* const GWeaponDocEquipStyleNames[] = { TEXT("hip"), TEXT("back"), TEXT("overhead") };
 	const TCHAR* const GWeaponDocConsumableEffectNames[] = { TEXT("heal"), TEXT("none") };
 	const TCHAR* const GWeaponDocUseRefused[] = {
 		TEXT("fire"), TEXT("attachments"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil")
@@ -76,6 +78,7 @@ namespace MantleWeaponDocumentPrivate
 	static_assert(WeaponDocCount(GWeaponDocSocketNames) == static_cast<int32>(EMantleWeaponDocSocket::Count), "one name per socket");
 	static_assert(WeaponDocCount(GWeaponDocInterpNames) == static_cast<int32>(EMantleWeaponDocInterp::Count), "one name per interpolation");
 	static_assert(WeaponDocCount(GWeaponDocUseStyleNames) == static_cast<int32>(EMantleWeaponDocUseStyle::Count), "one name per use style");
+	static_assert(WeaponDocCount(GWeaponDocEquipStyleNames) == static_cast<int32>(EMantleWeaponDocEquipStyle::Count), "one name per equip style");
 	static_assert(WeaponDocCount(GWeaponDocConsumableEffectNames) == static_cast<int32>(EMantleWeaponDocConsumableEffect::Count), "one name per consumable effect");
 
 	/** Names[Index], or "" past the table. */
@@ -358,15 +361,23 @@ namespace MantleWeaponDocumentPrivate
 		// lmg
 		Table.Add(WeaponDocFirearm(EStyle::Magazine, true, EEffects::Rifle,
 			{ ERole::Bolt, ERole::Trigger, ERole::Feed, ERole::Magazine, ERole::MagazineRelease }, MagazineActions));
-		// melee_1h
-		Table.Add(WeaponDocHold(false, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
-			{ ESocket::GripR, ESocket::EdgeBase, ESocket::EdgeTip }, { ESocket::GripL }));
+		// melee_1h: with a shield, the sword is drawn from the hip or the back (x-equipStyles).
+		{
+			FMantleWeaponDocHoldInfo Sword = WeaponDocHold(false, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
+				{ ESocket::GripR, ESocket::EdgeBase, ESocket::EdgeTip }, { ESocket::GripL });
+			Sword.EquipStyles = { EMantleWeaponDocEquipStyle::Hip, EMantleWeaponDocEquipStyle::Back };
+			Table.Add(Sword);
+		}
 		// melee_2h
 		Table.Add(WeaponDocHold(true, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
 			{ ESocket::GripR, ESocket::GripL, ESocket::EdgeBase, ESocket::EdgeTip }, {}));
-		// spear
-		Table.Add(WeaponDocHold(true, SpearActions, { EDelivery::Sweep, EDelivery::Projectile }, ECharge::Optional, { EResource::None }, EBlock::Optional,
-			{ ESocket::GripR, ESocket::GripL, ESocket::Tip, ESocket::EdgeBase }, { ESocket::EdgeTip }));
+		// spear: with a shield, drawn from the back (x-equipStyles).
+		{
+			FMantleWeaponDocHoldInfo Spear = WeaponDocHold(true, SpearActions, { EDelivery::Sweep, EDelivery::Projectile }, ECharge::Optional, { EResource::None }, EBlock::Optional,
+				{ ESocket::GripR, ESocket::GripL, ESocket::Tip, ESocket::EdgeBase }, { ESocket::EdgeTip });
+			Spear.EquipStyles = { EMantleWeaponDocEquipStyle::Back };
+			Table.Add(Spear);
+		}
 		// staff
 		Table.Add(WeaponDocHold(true, { EAction::Equip, EAction::Holster, EAction::Idle, EAction::Cast, EAction::Heavy },
 			{ EDelivery::Projectile, EDelivery::Beam }, ECharge::Optional, { EResource::Charges, EResource::None }, EBlock::None,
@@ -1485,7 +1496,7 @@ namespace MantleWeaponDocumentPrivate
 		{
 			const FString Path;
 			Keys(Root, Path,
-				{ TEXT("schemaVersion"), TEXT("name"), TEXT("archetype"), TEXT("hold"), TEXT("delivery"), TEXT("twoHanded"), TEXT("effects"),
+				{ TEXT("schemaVersion"), TEXT("name"), TEXT("archetype"), TEXT("hold"), TEXT("delivery"), TEXT("twoHanded"), TEXT("effects"), TEXT("equipStyle"),
 				  TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
 				  TEXT("charge"), TEXT("magazine"), TEXT("reload"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"),
 				  TEXT("consumable"), TEXT("block"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
@@ -1555,6 +1566,7 @@ namespace MantleWeaponDocumentPrivate
 			}
 			OptBoolean(Root, Path, TEXT("twoHanded"), Out.bTwoHanded);
 			OptChoice(Root, Path, TEXT("effects"), GWeaponDocEffectsNames, Out.Effects);
+			OptChoice(Root, Path, TEXT("equipStyle"), GWeaponDocEquipStyleNames, Out.EquipStyle);
 			OptColor(Root, TEXT("color"), Out.Color);
 			OptColor(Root, TEXT("effectsColor"), Out.EffectsColor);
 			if (const TSharedPtr<FJsonValue> Mesh = Field(Root, TEXT("mesh")))
@@ -2300,6 +2312,10 @@ namespace MantleWeaponDocumentPrivate
 			{
 				WeaponDocPut(Node, TEXT("effects"), WeaponDocStringNode(WeaponDocNameAt(GWeaponDocEffectsNames, static_cast<int32>(D.Effects.Value))));
 			}
+			if (D.EquipStyle.bSet)
+			{
+				WeaponDocPut(Node, TEXT("equipStyle"), WeaponDocStringNode(WeaponDocNameAt(GWeaponDocEquipStyleNames, static_cast<int32>(D.EquipStyle.Value))));
+			}
 			if (D.Color.bSet)
 			{
 				WeaponDocPut(Node, TEXT("color"), WeaponDocNumbersNode({ static_cast<double>(D.Color.Value.R), static_cast<double>(D.Color.Value.G),
@@ -2555,6 +2571,13 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 	{
 		R.Add(TEXT("twoHanded"), TEXT("mantle"), FString::Printf(TEXT("is false, but a %s is held in both hands (its clips put the left hand on the weapon): drop twoHanded, or pick a one-handed hold (pistol, revolver)"),
 			Hold));
+	}
+	// How a paired weapon is drawn (x-equipStyles): only a hold that has styles takes the field, and only its own.
+	if (D.EquipStyle.bSet && !Info.EquipStyles.Contains(D.EquipStyle.Value))
+	{
+		R.Add(TEXT("equipStyle"), TEXT("mantle"), Info.EquipStyles.Num() == 0
+			? FString::Printf(TEXT("a %s has no equip styles: drop equipStyle"), Hold)
+			: FString::Printf(TEXT("is %s, which a %s does not have: pick one of its styles"), FMantleWeaponDocument::EquipStyleName(D.EquipStyle.Value), Hold));
 	}
 	const bool bHoldAllowsGripL = Info.Sockets.Contains(EMantleWeaponDocSocket::GripL) || Info.OptionalSockets.Contains(EMantleWeaponDocSocket::GripL);
 	const bool bOneHandOnly = !Info.bTwoHanded && !bHoldAllowsGripL && D.bTwoHanded.bSet && D.bTwoHanded.Value;
@@ -3056,6 +3079,11 @@ const TCHAR* FMantleWeaponDocument::ReloadStyleName(const EMantleWeaponDocReload
 const TCHAR* FMantleWeaponDocument::UseStyleName(const EMantleWeaponDocUseStyle Style)
 {
 	return MantleWeaponDocumentPrivate::WeaponDocNameAt(MantleWeaponDocumentPrivate::GWeaponDocUseStyleNames, static_cast<int32>(Style));
+}
+
+const TCHAR* FMantleWeaponDocument::EquipStyleName(const EMantleWeaponDocEquipStyle Style)
+{
+	return MantleWeaponDocumentPrivate::WeaponDocNameAt(MantleWeaponDocumentPrivate::GWeaponDocEquipStyleNames, static_cast<int32>(Style));
 }
 
 const TCHAR* FMantleWeaponDocument::ConsumableEffectName(const EMantleWeaponDocConsumableEffect Effect)
