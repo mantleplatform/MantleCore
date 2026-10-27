@@ -485,6 +485,13 @@ struct FMantleSettings
 	 * occupied seat takes it. On unless the file sets settings.carjacking to false.
 	 */
 	bool bCarjacking = true;
+	/**
+	 * settings.maxCarriedTools: how many Tools each player's Backpack holds (Fists not counted), 1 to 64; 32 unless the file sets it.
+	 * A full Backpack's pickups offer a swap (allowToolSwap) or say it is full.
+	 */
+	int32 MaxCarriedTools = 32;
+	/** settings.allowToolSwap: whether a full Backpack's pickup swaps the weapon in hand for it. On unless the file sets it to false. */
+	bool bAllowToolSwap = true;
 	/** The place's default look (#532). Empty when the file has no settings.environment. */
 	FMantleEnvironmentSettings Environment;
 	/** The place's Water Zone (#997). Unset when the file has no settings.water. */

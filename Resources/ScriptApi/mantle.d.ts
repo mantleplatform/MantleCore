@@ -498,12 +498,20 @@ interface BackpackService {
 	clear(player: Player): number;
 	/** Put the Tool in this Backpack slot in the player's hands. Slots count from 0, so the hotbar key 1 is slot 0. Returns false when the slot is empty or the player is dead. (server only) */
 	equipSlot(player: Player, slot: number): boolean;
+	/** How many Tools the player's Backpack holds (fists not counted): the place's settings.maxCarriedTools (32 unless the place sets it) until a script calls SetCapacity. Answers while the player is respawning too. (server only) */
+	getCapacity(player: Player): number;
+	/** Whether a full Backpack's pickup swaps the weapon in the player's hand for it: the place's settings.allowToolSwap (true unless the place turns it off) until a script calls SetSwapAllowed. (server only) */
+	getSwapAllowed(player: Player): boolean;
 	/** The ids of the Tools in the player's Backpack, in slot order. Fists, which every player always has, is never listed. Empty while the player has no character (respawning). (server only) */
 	getTools(player: Player): (string)[];
 	/** Give the player a weapon this place stores: item is the library item id Storage:Get returns for one of the place's storage names. Returns the new Tool's stable id. Errors for anything else -- an asset id, an object path, an item the place does not store, or a vehicle. Also errors if the stored weapon has not finished preparing or the player cannot receive it. (server only) */
 	grant(player: Player, item: string): string;
 	/** Take the Tool with this id out of the player's Backpack (unequipping it first). Returns false when the player does not have it. Fists can never be removed. (server only) */
 	remove(player: Player, toolId: string): boolean;
+	/** Set how many Tools the player's Backpack holds, a whole number from 1 to 64 (fists not counted). It lasts for the rest of the session, through respawns. Lowering it below what the player carries keeps every Tool they have; it only stops new ones until they are under it. With a full Backpack a pickup offers to swap the weapon in hand for it (see SetSwapAllowed), or shows "Backpack full". (server only) */
+	setCapacity(player: Player, capacity: number): void;
+	/** Turn full-Backpack swaps on or off for the player. On, a pickup with a full Backpack and a weapon in hand reads "Swap <held> for <new>": one kneel puts the held weapon on the floor and the new one in the hand. Off (or with bare hands), the prompt shows "Backpack full" and does nothing. It lasts for the rest of the session, through respawns. (server only) */
+	setSwapAllowed(player: Player, allowed: boolean): void;
 	/** Paint one of the player's weapons: color is "#RRGGBB", the same format as Vehicles:SetPaintColor. Every player sees the new colour. Returns false when the player does not have that Tool or it is not a weapon. (server only) */
 	setWeaponColor(player: Player, toolId: string, color: string): boolean;
 }

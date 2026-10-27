@@ -288,6 +288,8 @@ struct FMantleWeaponDocHoldInfo
 	/** The points a document must place, and those it may. */
 	TArray<EMantleWeaponDocSocket> Sockets;
 	TArray<EMantleWeaponDocSocket> OptionalSockets;
+	/** The equip style ids available to this hold, in order; the first is the default. Empty means no style selection. */
+	TArray<FString> EquipStyles;
 };
 
 /** The pre-#840 name: an archetype's entry is its firearm hold's. */
@@ -696,6 +698,8 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<bool> bTwoHanded;
 	/** Unset: the hold's (GetEffects). */
 	TMantleWeaponDocValue<EMantleWeaponDocEffects> Effects;
+	/** Unset: the first style in the hold's x-equipStyles (equipStyle is a creator selection, not an asset path). */
+	TMantleWeaponDocValue<FString> EquipStyle;
 	/** sRGB. */
 	TMantleWeaponDocValue<FColor> Color{ FColor(40, 110, 160) };
 	/** #904: sRGB, multiplied into the element's effects; only where the weapon has an element (GetElement). Unset: the element's own colours. */
