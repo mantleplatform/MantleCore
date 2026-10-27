@@ -3411,7 +3411,8 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			Ctx, *SettingsObj,
 			{ TEXT("maxPlayers"), TEXT("gravity"), TEXT("skybox"), TEXT("ambientLight"),
 			  TEXT("respawnMode"), TEXT("streamingDistance"), TEXT("allowCommunityServers"),
-			  TEXT("allowPrivateServers"), TEXT("avatarHeight"), TEXT("environment"), TEXT("carjacking"), TEXT("water") },
+			  TEXT("allowPrivateServers"), TEXT("avatarHeight"), TEXT("environment"), TEXT("carjacking"), TEXT("water"),
+			  TEXT("maxCarriedTools"), TEXT("allowToolSwap") },
 			TEXT("/settings"));
 
 		double MaxPlayers = Place.Settings.MaxPlayers;
@@ -3445,6 +3446,20 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		}
 		// Typed, so a string such as "off" is refused rather than read as a boolean.
 		ReadStrictOptionalBool(Ctx, *SettingsObj, TEXT("carjacking"), TEXT("/settings"), Place.Settings.bCarjacking);
+		// How many Tools a Backpack holds (Fists not counted): a whole number 1 to 64, the schema's range.
+		if (const TSharedPtr<FJsonValue> MaxCarried = (*SettingsObj)->TryGetField(TEXT("maxCarriedTools")))
+		{
+			const double Value = MaxCarried->Type == EJson::Number ? MaxCarried->AsNumber() : -1.0;
+			if (MaxCarried->Type != EJson::Number || Value != FMath::FloorToDouble(Value) || Value < 1.0 || Value > 64.0)
+			{
+				Ctx.Fail(TEXT("/settings/maxCarriedTools"), TEXT("must be a whole number from 1 to 64"));
+			}
+			else
+			{
+				Place.Settings.MaxCarriedTools = static_cast<int32>(Value);
+			}
+		}
+		ReadStrictOptionalBool(Ctx, *SettingsObj, TEXT("allowToolSwap"), TEXT("/settings"), Place.Settings.bAllowToolSwap);
 		ReadEnvironmentSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Environment);
 		ReadWaterZone(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Water);
 
