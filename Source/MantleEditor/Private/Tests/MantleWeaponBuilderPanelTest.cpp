@@ -137,6 +137,7 @@ bool FMantleWeaponBuilderPanelSourceCopyTest::RunTest(const FString& Parameters)
 	UMantleWeaponSource* Destination = NewObject<UMantleWeaponSource>(GetTransientPackage());
 	Source->DisplayName = TEXT("Typed source copy");
 	Source->Hold = EMantleWeaponHold::Bow;
+	Source->EquipStyle = TEXT("bow_equip_04");
 	Source->Model = FSoftObjectPath(TEXT("/Game/Test/SourceBow.SourceBow"));
 	Source->MagazineSections.Add(TSoftObjectPtr<UObject>(FSoftObjectPath(TEXT("/Game/Test/SourceQuiver.SourceQuiver"))));
 	Source->FitScale = 1.27f;
@@ -270,6 +271,7 @@ bool FMantleWeaponBuilderPanelSaveReopenTest::RunTest(const FString& Parameters)
 	Builder->bNameEdited = true;
 	Builder->Working->Tuning = DefaultTuning(EMantleWeaponHold::Melee1h);
 	Builder->Working->Tuning.Damage = 31.5f;
+	Builder->Working->EquipStyle = TEXT("overhead");
 	Builder->Working->Sweep.Reach = 123.f;
 	Builder->Working->Sweep.ComboCount = 4;
 	FMantleWeaponSourceAttachment& Detail = Builder->Working->Attachments.AddDefaulted_GetRef();
@@ -316,6 +318,7 @@ bool FMantleWeaponBuilderPanelSaveReopenTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("opening the saved source restores the existing asset identity"), ReopenedBuilder->CreatedSafeName,
 		SafeAssetName(ReloadedAsset->DisplayName));
 	TestTrue(TEXT("the reopened wizard keeps the saved source path"), ReopenedBuilder->SourceAssetPath == FSoftObjectPath(ReloadedAsset));
+	TestEqual(TEXT("the reopened wizard keeps the selected equip style"), ReopenedBuilder->Working->EquipStyle, FName(TEXT("overhead")));
 	TestTrue(TEXT("the loaded source name remains marked as edited in the wizard"), ReopenedBuilder->bNameEdited);
 	TestTrue(TEXT("opening a saved source requires Create before Test locally is ready"), !ReopenedBuilder->CanTestLocally());
 	for (TFieldIterator<FProperty> Property(UMantleWeaponSource::StaticClass(), EFieldIteratorFlags::ExcludeSuper); Property; ++Property)

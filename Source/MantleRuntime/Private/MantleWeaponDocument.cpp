@@ -45,10 +45,14 @@ namespace MantleWeaponDocumentPrivate
 	// #840: version 2's fields, which a version-1 document has none of.
 	const TCHAR* const GWeaponDocV2Fields[] = {
 		TEXT("hold"), TEXT("delivery"), TEXT("charge"), TEXT("block"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"),
-		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable")
+		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle")
 	};
 	// #1025: consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
 	const TCHAR* const GWeaponDocUseStyleNames[] = { TEXT("eatDrink"), TEXT("use") };
+	// equipStyle: a shipped hold's named draw/put-away option.
+	const TCHAR* const GWeaponDocEquipStyleNames[] = {
+		TEXT("hip"), TEXT("back"), TEXT("overhead"), TEXT("bow_equip_01"), TEXT("bow_equip_02"), TEXT("bow_equip_03"), TEXT("bow_equip_04")
+	};
 	const TCHAR* const GWeaponDocConsumableEffectNames[] = { TEXT("heal"), TEXT("none") };
 	const TCHAR* const GWeaponDocUseRefused[] = {
 		TEXT("fire"), TEXT("attachments"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil")
@@ -358,15 +362,23 @@ namespace MantleWeaponDocumentPrivate
 		// lmg
 		Table.Add(WeaponDocFirearm(EStyle::Magazine, true, EEffects::Rifle,
 			{ ERole::Bolt, ERole::Trigger, ERole::Feed, ERole::Magazine, ERole::MagazineRelease }, MagazineActions));
-		// melee_1h
-		Table.Add(WeaponDocHold(false, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
-			{ ESocket::GripR, ESocket::EdgeBase, ESocket::EdgeTip }, { ESocket::GripL }));
+		// melee_1h: used by the SwordShield pair clip set's hip/back equip styles.
+		{
+			FMantleWeaponDocHoldInfo Sword = WeaponDocHold(false, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
+				{ ESocket::GripR, ESocket::EdgeBase, ESocket::EdgeTip }, { ESocket::GripL });
+			Sword.EquipStyles = { TEXT("hip"), TEXT("back"), TEXT("overhead") };
+			Table.Add(Sword);
+		}
 		// melee_2h
 		Table.Add(WeaponDocHold(true, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
 			{ ESocket::GripR, ESocket::GripL, ESocket::EdgeBase, ESocket::EdgeTip }, {}));
-		// spear
-		Table.Add(WeaponDocHold(true, SpearActions, { EDelivery::Sweep, EDelivery::Projectile }, ECharge::Optional, { EResource::None }, EBlock::Optional,
-			{ ESocket::GripR, ESocket::GripL, ESocket::Tip, ESocket::EdgeBase }, { ESocket::EdgeTip }));
+		// spear: the SpearShield pair clip set has one approved equip style, the back draw.
+		{
+			FMantleWeaponDocHoldInfo Spear = WeaponDocHold(true, SpearActions, { EDelivery::Sweep, EDelivery::Projectile }, ECharge::Optional,
+				{ EResource::None }, EBlock::Optional, { ESocket::GripR, ESocket::GripL, ESocket::Tip, ESocket::EdgeBase }, { ESocket::EdgeTip });
+			Spear.EquipStyles = { TEXT("back") };
+			Table.Add(Spear);
+		}
 		// staff
 		Table.Add(WeaponDocHold(true, { EAction::Equip, EAction::Holster, EAction::Idle, EAction::Cast, EAction::Heavy },
 			{ EDelivery::Projectile, EDelivery::Beam }, ECharge::Optional, { EResource::Charges, EResource::None }, EBlock::None,
@@ -379,6 +391,7 @@ namespace MantleWeaponDocumentPrivate
 			Bow.bHasReloadStyle = true;
 			Bow.ReloadStyle = EStyle::Magazine;
 			Bow.StowedRoles = { ERole::Arrow };
+			Bow.EquipStyles = { TEXT("back"), TEXT("bow_equip_01"), TEXT("bow_equip_02"), TEXT("bow_equip_03"), TEXT("bow_equip_04") };
 			Table.Add(Bow);
 		}
 		// unarmed (#897): a fist weapon worn on the hand (knuckles, claws, a gauntlet), its mesh required like any; empty hands
@@ -1486,7 +1499,7 @@ namespace MantleWeaponDocumentPrivate
 			const FString Path;
 			Keys(Root, Path,
 				{ TEXT("schemaVersion"), TEXT("name"), TEXT("archetype"), TEXT("hold"), TEXT("delivery"), TEXT("twoHanded"), TEXT("effects"),
-				  TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
+				  TEXT("equipStyle"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
 				  TEXT("charge"), TEXT("magazine"), TEXT("reload"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"),
 				  TEXT("consumable"), TEXT("block"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
 				{ TEXT("schemaVersion"), TEXT("name") });
@@ -1555,6 +1568,7 @@ namespace MantleWeaponDocumentPrivate
 			}
 			OptBoolean(Root, Path, TEXT("twoHanded"), Out.bTwoHanded);
 			OptChoice(Root, Path, TEXT("effects"), GWeaponDocEffectsNames, Out.Effects);
+			OptText(Root, Path, TEXT("equipStyle"), EWeaponDocText::Any, Out.EquipStyle);
 			OptColor(Root, TEXT("color"), Out.Color);
 			OptColor(Root, TEXT("effectsColor"), Out.EffectsColor);
 			if (const TSharedPtr<FJsonValue> Mesh = Field(Root, TEXT("mesh")))
@@ -2300,6 +2314,10 @@ namespace MantleWeaponDocumentPrivate
 			{
 				WeaponDocPut(Node, TEXT("effects"), WeaponDocStringNode(WeaponDocNameAt(GWeaponDocEffectsNames, static_cast<int32>(D.Effects.Value))));
 			}
+			if (D.EquipStyle.bSet)
+			{
+				WeaponDocPut(Node, TEXT("equipStyle"), WeaponDocStringNode(D.EquipStyle.Value));
+			}
 			if (D.Color.bSet)
 			{
 				WeaponDocPut(Node, TEXT("color"), WeaponDocNumbersNode({ static_cast<double>(D.Color.Value.R), static_cast<double>(D.Color.Value.G),
@@ -2723,6 +2741,37 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		{
 			R.Add(TEXT("effects"), TEXT("mantle"), FString::Printf(TEXT("is %s, an element, but a %s with delivery %s shoots nothing: drop effects"),
 				Effects, Hold, DeliveryName(D.GetDelivery())));
+		}
+	}
+	// Equip style: validate the global id first, then the selected hold's available styles. SwordShield's choices are
+	// reachable through a melee_1h document; spear has only its back draw; Bow styles apply to its own draw.
+	if (D.EquipStyle.bSet)
+	{
+		const FString& Style = D.EquipStyle.Value;
+		bool bKnownStyle = false;
+		for (const TCHAR* Name : GWeaponDocEquipStyleNames)
+		{
+			if (Style == Name)
+			{
+				bKnownStyle = true;
+				break;
+			}
+		}
+		if (!bKnownStyle)
+		{
+			TArray<FString> KnownStyles;
+			for (const TCHAR* Name : GWeaponDocEquipStyleNames)
+			{
+				KnownStyles.Add(Name);
+			}
+			R.Add(TEXT("equipStyle"), TEXT("enum"), FString::Printf(TEXT("is %s: use one of %s"), *Style, *FString::Join(KnownStyles, TEXT(", "))));
+		}
+		else if (!Info.EquipStyles.Contains(Style))
+		{
+			R.Add(TEXT("equipStyle"), TEXT("mantle"), Info.EquipStyles.IsEmpty()
+				? FString::Printf(TEXT("a %s has no equip styles: drop equipStyle"), Hold)
+				: FString::Printf(TEXT("is %s, which a %s does not have: pick one of %s"), *Style, Hold,
+					*FString::Join(Info.EquipStyles, TEXT(", "))));
 		}
 	}
 	EMantleWeaponDocEffects Element = EMantleWeaponDocEffects::Arcane;

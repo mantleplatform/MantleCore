@@ -173,6 +173,67 @@ bool FMantleWeaponBuilderV2CombinationsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2EquipStylesTest, "Mantle.Editor.WeaponBuilderV2.EquipStylesExportAndValidate", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2EquipStylesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!TestNotNull(TEXT("equip style fixture cube"), Cube)) return false;
+
+	auto ExportAndRead = [this, Cube](EMantleWeaponHold Hold, FName Style, const FString& Expected, const TCHAR* Label)
+	{
+		FIsolatedExport Fixture;
+		UMantleWeaponSource* Input = Source(Hold, Fixture.Name, Cube);
+		Input->EquipStyle = Style;
+		TArray<FText> Messages;
+		if (!TestTrue(*FString::Printf(TEXT("%s exports"), Label), FMantleWeaponBuilderExport::Export(*Input, Messages)))
+		{
+			for (const FText& Message : Messages) AddError(Message.ToString());
+			return;
+		}
+		FMantleWeaponDesc Desc;
+		FString Error;
+		if (!TestTrue(*FString::Printf(TEXT("%s saved document parses"), Label), Read(Fixture, Desc, Error)))
+		{
+			AddError(Error);
+			return;
+		}
+		if (Expected.IsEmpty())
+		{
+			TestFalse(*FString::Printf(TEXT("%s leaves the first hold style as default"), Label), Desc.EquipStyle.bSet);
+		}
+		else
+		{
+			TestTrue(*FString::Printf(TEXT("%s writes an explicit style"), Label), Desc.EquipStyle.bSet);
+			TestEqual(*FString::Printf(TEXT("%s keeps its style id"), Label), Desc.EquipStyle.Value, Expected);
+		}
+	};
+
+	ExportAndRead(EMantleWeaponHold::Melee1h, FName(TEXT("hip")), TEXT("hip"), TEXT("SwordShield hip draw"));
+	ExportAndRead(EMantleWeaponHold::Melee1h, FName(TEXT("back")), TEXT("back"), TEXT("SwordShield back draw"));
+	ExportAndRead(EMantleWeaponHold::Melee1h, FName(TEXT("overhead")), TEXT("overhead"), TEXT("SwordShield overhead flourish"));
+	ExportAndRead(EMantleWeaponHold::Spear, FName(TEXT("back")), TEXT("back"), TEXT("SpearShield back draw"));
+	ExportAndRead(EMantleWeaponHold::Bow, FName(TEXT("back")), TEXT("back"), TEXT("Bow back draw"));
+	ExportAndRead(EMantleWeaponHold::Bow, FName(TEXT("bow_equip_01")), TEXT("bow_equip_01"), TEXT("Bow Equip 01"));
+	ExportAndRead(EMantleWeaponHold::Bow, FName(TEXT("bow_equip_02")), TEXT("bow_equip_02"), TEXT("Bow Equip 02"));
+	ExportAndRead(EMantleWeaponHold::Bow, FName(TEXT("bow_equip_03")), TEXT("bow_equip_03"), TEXT("Bow Equip 03"));
+	ExportAndRead(EMantleWeaponHold::Bow, FName(TEXT("bow_equip_04")), TEXT("bow_equip_04"), TEXT("Bow Equip 04"));
+	ExportAndRead(EMantleWeaponHold::Melee1h, NAME_None, TEXT(""), TEXT("SwordShield default"));
+	ExportAndRead(EMantleWeaponHold::Bow, NAME_None, TEXT(""), TEXT("Bow default"));
+
+	UMantleWeaponSource* InvalidSpear = Source(EMantleWeaponHold::Spear, TEXT("InvalidSpearStyle"), Cube);
+	InvalidSpear->EquipStyle = TEXT("hip");
+	FMantleWeaponDesc Refused;
+	TArray<FText> Messages;
+	TestFalse(TEXT("Spear rejects a SwordShield-only hip style"), FMantleWeaponBuilderExport::BuildDocument(
+		*InvalidSpear, RequiredPoints(EMantleWeaponHold::Spear), TEXT("Spear"), Refused, Messages));
+	TestTrue(TEXT("the hold-specific refusal explains the invalid choice"), Messages.ContainsByPredicate([](const FText& Message)
+	{
+		return Message.ToString().Contains(TEXT("does not offer"));
+	}));
+	return true;
+}
+
 // A staff's held beam that also throws spells writes both blocks, with or without a charge (aim and hold), and the document
 // reader takes it.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffSpellsBesideBeamTest, "Mantle.Editor.WeaponBuilderV2.StaffSpellsBesideBeam", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -449,6 +510,7 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	auto Changed = [&](const TCHAR* Label) { TestFalse(Label, EditSignature(*Input) == Baseline); };
 	Input->Delivery = EMantleWeaponSourceDelivery::Beam; Changed(TEXT("delivery changes signature")); Input->Delivery = EMantleWeaponSourceDelivery::Default;
 	Input->Resource = EMantleWeaponSourceResource::None; Changed(TEXT("resource changes signature")); Input->Resource = EMantleWeaponSourceResource::Default;
+	Input->EquipStyle = TEXT("back"); Changed(TEXT("equip style changes signature")); Input->EquipStyle = NAME_None;
 	Input->bOverrideStyle = true; Changed(TEXT("style choice changes signature")); Input->bOverrideStyle = false;
 	Input->bOverrideColor = true; Changed(TEXT("color choice changes signature")); Input->bOverrideColor = false;
 	Input->Model = FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")); Changed(TEXT("selected asset changes signature")); Input->Model.Reset();

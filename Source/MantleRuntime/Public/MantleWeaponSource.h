@@ -214,6 +214,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	EMantleWeaponHold Hold = EMantleWeaponHold::Rifle;
 
+	/** The selected draw style for this hold; unset uses the first style in the hold's animation set. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	FName EquipStyle = NAME_None;
+
 	/** The creator's UStaticMesh or USkeletalMesh. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	TSoftObjectPtr<UObject> Model;

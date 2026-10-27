@@ -147,6 +147,18 @@ namespace MantleWeaponBuilderPanelPrivate
 		return FText::GetEmpty();
 	}
 
+	FText EquipStyleLabel(const FString& Style)
+	{
+		if (Style == TEXT("hip")) return LOCTEXT("EquipStyleHip", "Hip draw");
+		if (Style == TEXT("back")) return LOCTEXT("EquipStyleBack", "Back draw");
+		if (Style == TEXT("overhead")) return LOCTEXT("EquipStyleOverhead", "Overhead flourish");
+		if (Style == TEXT("bow_equip_01")) return LOCTEXT("EquipStyleBow01", "Equip 01");
+		if (Style == TEXT("bow_equip_02")) return LOCTEXT("EquipStyleBow02", "Equip 02");
+		if (Style == TEXT("bow_equip_03")) return LOCTEXT("EquipStyleBow03", "Equip 03");
+		if (Style == TEXT("bow_equip_04")) return LOCTEXT("EquipStyleBow04", "Equip 04");
+		return FText::FromString(Style);
+	}
+
 	FText BuilderHoldBlurb(EMantleWeaponHold Hold)
 	{
 		switch (Hold)
@@ -640,6 +652,7 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->Style = HoldInfo(Hold).bHasEffects
 		? static_cast<EMantleWeaponSourceStyle>(HoldInfo(Hold).Effects)
 		: Hold == EMantleWeaponHold::Staff ? EMantleWeaponSourceStyle::Arcane : EMantleWeaponSourceStyle::Generic;
+	Working->EquipStyle = NAME_None;
 	Working->bOverrideColor = false;
 	Working->Color = FColor(40, 110, 160);
 	Working->Charge = FMantleWeaponSourceCharge();
@@ -1534,6 +1547,21 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 	}
 
 	AddHeading(LOCTEXT("DeliveryHeading", "How it works"));
+	if (Info.EquipStyles.Num() > 1)
+	{
+		TArray<TPair<FName, FText>> EquipStyles;
+		const FString& DefaultStyle = Info.EquipStyles[0];
+		EquipStyles.Emplace(NAME_None, FText::Format(LOCTEXT("EquipStyleDefault", "Hold default ({0})"), EquipStyleLabel(DefaultStyle)));
+		for (const FString& Style : Info.EquipStyles)
+		{
+			EquipStyles.Emplace(FName(*Style), EquipStyleLabel(Style));
+		}
+		const FText EquipStyleTip = Working->Hold == EMantleWeaponHold::Bow
+			? LOCTEXT("EquipStyleBowTip", "The normal draw comes from the back. Equip 01–04 play after that draw; the standard back holster and carry are kept.")
+			: LOCTEXT("EquipStyleMeleeTip", "When paired with a shield, choose the sword's hip draw, back draw or overhead flourish. The hip draw is the default.");
+		AddRow(LOCTEXT("EquipStyle", "Draw style"), EquipStyleTip,
+			MakeChoiceControl<FName>(EquipStyles, [this] { return Working->EquipStyle; }, [this](FName Value) { Working->EquipStyle = Value; }));
+	}
 	if (Deliveries.Num() > 2)
 	{
 		// #905: SetDelivery starts a gun's beam or launched round from usable numbers, and keeps the effect style one the attack can use.
