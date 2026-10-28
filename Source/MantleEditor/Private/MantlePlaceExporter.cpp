@@ -1301,7 +1301,7 @@ namespace
 namespace MantlePlaceExporterSkips
 {
 	/** Whether Actor is a placed particle actor (an Emitter, a Niagara Actor) that FMantleEffectExport::Translate carries at least one emitter of. */
-	bool IsTranslatableParticleActor(const AActor* Actor);
+	bool IsTranslatableParticleActor(const AActor* Actor, TArray<FString>* OutDroppedReasons = nullptr);
 }
 
 /**
@@ -2078,7 +2078,7 @@ namespace MantlePlaceExporterSkips
 		return Fx && !Fx->IsEditorOnly() && !Fx->HasAnyFlags(RF_Transient) ? Fx : nullptr;
 	}
 
-	bool IsTranslatableParticleActor(const AActor* Actor)
+	bool IsTranslatableParticleActor(const AActor* Actor, TArray<FString>* OutDroppedReasons)
 	{
 		const UFXSystemComponent* Fx = ParticleRoot(Actor);
 		if (!Fx)
@@ -2088,6 +2088,20 @@ namespace MantlePlaceExporterSkips
 		TArray<TSharedPtr<FJsonObject>> Emitters;
 		FMantleCoverage Discarded;
 		FMantleEffectExport::Translate(Fx, FString(), Discarded, Emitters);
+		// Why the translator left emitters out (a mesh emitter, a ribbon, a Niagara system), each reason once, for the skip's message.
+		if (OutDroppedReasons)
+		{
+			if (const FMantleCoverageCategory* Particles = Discarded.Find(MantleCoverageCategory::Particles))
+			{
+				for (const FMantleCoverageExample& Example : Particles->Get(EMantleCoverageOutcome::Dropped).Examples)
+				{
+					if (!Example.Detail.IsEmpty())
+					{
+						OutDroppedReasons->AddUnique(Example.Detail);
+					}
+				}
+			}
+		}
 		return Emitters.Num() > 0;
 	}
 }
@@ -2211,13 +2225,31 @@ bool FMantlePlaceExporter::DescribeSkippedActor(const AActor* Actor, FSkippedAct
 	// A placed particle actor whose system Mantle cannot carry (every Niagara system today, and a Cascade one with nothing it maps).
 	if (const UFXSystemComponent* Fx = ParticleRoot(Actor))
 	{
-		if (!IsTranslatableParticleActor(Actor))
+		TArray<FString> Reasons;
+		if (!IsTranslatableParticleActor(Actor, &Reasons))
 		{
+			Out.Category = MantleCoverageCategory::Particles;
+			if (Reasons.Num() > 0)
+			{
+				// The translator's own reasons (a mesh emitter, a ribbon, an attractor, Niagara), so the creator sees which part it is.
+				const UFXSystemAsset* Asset = Fx->GetFXSystemAsset();
+				const FString Described = Asset ? FString::Printf(TEXT("%s, '%s'"), *Class->GetName(), *Asset->GetName()) : Class->GetName();
+				Out.What = FString::Printf(TEXT("is a particle effect (%s) that Mantle can't carry (%s), so it is left out of the place."),
+					*Described, *FString::Join(Reasons, TEXT("; ")));
+				bool bSpritesOnly = false;
+				for (const FString& Reason : Reasons)
+				{
+					bSpritesOnly |= Reason.Contains(TEXT("only sprite emitters"));
+				}
+				Out.Remedy = bSpritesOnly
+					? TEXT("Only sprite emitters carry over, and the rest of the place publishes without this one. Fine if players won't miss it. Otherwise use a Mantle Effect actor.")
+					: TEXT("Fine if players won't miss it. Otherwise use a Mantle Effect actor.");
+				return true;
+			}
 			const bool bNiagara = IsOrDerivesFromClassNamed(Fx->GetClass(), TEXT("NiagaraComponent"));
 			Out.What = FString::Printf(TEXT("is a particle effect (%s) whose particles Mantle can't carry%s, so it is left out of the place."),
 				*Class->GetName(), bNiagara ? TEXT(" yet (a Niagara system)") : TEXT(""));
 			Out.Remedy = TEXT("Fine if players won't miss it. Otherwise use a Mantle Effect actor.");
-			Out.Category = MantleCoverageCategory::Particles;
 			return true;
 		}
 	}
