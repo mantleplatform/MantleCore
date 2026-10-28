@@ -213,7 +213,9 @@ namespace MantleWeaponBuilderPanelPrivate
 		if (Look == TEXT("chargedBlast")) return LOCTEXT("HoldLookChargedBlast", "Charged blast");
 		if (Look == TEXT("handFireballHeld")) return LOCTEXT("HoldLookHandFireballHeld", "Fireball held in the left hand");
 		if (Look == TEXT("skyCall")) return LOCTEXT("HoldLookSkyCall", "Sky call");
+		if (Look == TEXT("groundChannel")) return LOCTEXT("HoldLookGroundChannel", "Beam from the planted staff");
 		if (Look == TEXT("whirlCharge")) return LOCTEXT("HoldLookWhirlCharge", "Whirl charge");
+		if (Look == TEXT("whirlBeam")) return LOCTEXT("HoldLookWhirlBeam", "Whirl beam");
 		return FText::FromString(Look);
 	}
 
@@ -1755,9 +1757,9 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 			LOCTEXT("TapLookTip", "What a tap casts: a bolt from the staff's head (taps in a row take turns between three swings), a fireball from the left hand, or the aimed shock cast at once."),
 			MakeChoiceControl<FName>(TapLooks, [this] { return Working->TapLook; }, [this](FName Value) { Working->TapLook = Value; }),
 			[this] { return MantleWeaponBuilderLogic::StaffCastsSpells(*Working) ? EVisibility::Visible : EVisibility::Collapsed; });
-		// The hold looks follow the beam and the charge: beam only with a beam, the charge looks only with a charged attack on.
+		// The hold looks follow the beam and the charge: the beam looks only with a beam, the charge looks only with a charged attack on.
 		AddRowWhen(LOCTEXT("HoldLook", "Hold"),
-			LOCTEXT("HoldLookTip", "What holding the attack button does, aiming or not: channel the beam (a staff with a beam), or charge a stronger spell (needs the charged attack on): a charged blast, a fireball held in the left hand, a sky call or a whirl."),
+			LOCTEXT("HoldLookTip", "What holding the attack button does, aiming or not: channel the beam (a staff with a beam: thrust forward, from the staff planted in a crouch, or whirled overhead), or charge a stronger spell (needs the charged attack on): a charged blast, a fireball held in the left hand, a sky call or a whirl."),
 			MakeLiveChoiceControl<FName>([this]
 			{
 				TArray<TPair<FName, FText>> HoldLooks;

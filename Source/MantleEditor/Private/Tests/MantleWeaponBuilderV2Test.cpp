@@ -448,8 +448,9 @@ bool FMantleWeaponBuilderV2TapLookTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-// Round 4 step 2: the hold look is written as holdLook on a staff. The panel offers beam only with a beam and the charge looks only with a
-// charged attack on (and spells to charge); a look that stops being offered is cleared; the reader takes what the builder writes.
+// Round 4 step 2: the hold look is written as holdLook on a staff. The panel offers the beam looks (step 3: beam, groundChannel, whirlBeam) only
+// with a beam and the charge looks only with a charged attack on (and spells to charge); a look that stops being offered is cleared; the reader
+// takes what the builder writes.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2HoldLookTest, "Mantle.Editor.WeaponBuilderV2.HoldLook", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FMantleWeaponBuilderV2HoldLookTest::RunTest(const FString& Parameters)
 {
@@ -469,9 +470,11 @@ bool FMantleWeaponBuilderV2HoldLookTest::RunTest(const FString& Parameters)
 		FString(TEXT("chargedBlast,handFireballHeld,skyCall,whirlCharge")));
 	TestEqual(TEXT("spells without a charge: nothing to hold for"), Offered(*Staff(EMantleWeaponSourceDelivery::Projectile, false, false, NAME_None)), FString());
 	TestEqual(TEXT("a beam with spells and a charge: all"), Offered(*Staff(EMantleWeaponSourceDelivery::Beam, true, true, NAME_None)),
-		FString(TEXT("beam,chargedBlast,handFireballHeld,skyCall,whirlCharge")));
-	TestEqual(TEXT("a beam with spells, no charge: the beam"), Offered(*Staff(EMantleWeaponSourceDelivery::Beam, true, false, NAME_None)), FString(TEXT("beam")));
-	TestEqual(TEXT("a beam alone, charge or not: the beam"), Offered(*Staff(EMantleWeaponSourceDelivery::Beam, false, true, NAME_None)), FString(TEXT("beam")));
+		FString(TEXT("beam,chargedBlast,handFireballHeld,skyCall,groundChannel,whirlCharge,whirlBeam")));
+	TestEqual(TEXT("a beam with spells, no charge: the beam looks"), Offered(*Staff(EMantleWeaponSourceDelivery::Beam, true, false, NAME_None)),
+		FString(TEXT("beam,groundChannel,whirlBeam")));
+	TestEqual(TEXT("a beam alone, charge or not: the beam looks"), Offered(*Staff(EMantleWeaponSourceDelivery::Beam, false, true, NAME_None)),
+		FString(TEXT("beam,groundChannel,whirlBeam")));
 	TestEqual(TEXT("a sword offers none"), Offered(*Source(EMantleWeaponHold::Melee1h, TEXT("Sword"), nullptr)), FString());
 
 	// A look that stops being offered is cleared.
@@ -486,6 +489,13 @@ bool FMantleWeaponBuilderV2HoldLookTest::RunTest(const FString& Parameters)
 	Both->Delivery = EMantleWeaponSourceDelivery::Projectile;
 	MantleWeaponBuilderLogic::DropInvalidLooks(*Both);
 	TestTrue(TEXT("the beam look goes when the staff has no beam"), Both->HoldLook.IsNone());
+	// Round 4 step 3: the other beam looks the same way.
+	UMantleWeaponSource* Whirl = Staff(EMantleWeaponSourceDelivery::Beam, false, false, TEXT("whirlBeam"));
+	MantleWeaponBuilderLogic::DropInvalidLooks(*Whirl);
+	TestTrue(TEXT("a beam-only staff keeps the whirl beam"), Whirl->HoldLook == FName(TEXT("whirlBeam")));
+	Whirl->Delivery = EMantleWeaponSourceDelivery::Projectile;
+	MantleWeaponBuilderLogic::DropInvalidLooks(*Whirl);
+	TestTrue(TEXT("and drops it with the beam"), Whirl->HoldLook.IsNone());
 
 	// What the builder writes, the reader takes.
 	auto Build = [](UMantleWeaponSource& Input, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
@@ -507,12 +517,16 @@ bool FMantleWeaponBuilderV2HoldLookTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("with the same look"), Again.HoldLook.bSet && Again.HoldLook.Value == Look);
 		}
 	}
-	UMantleWeaponSource* BeamStaff = Staff(EMantleWeaponSourceDelivery::Beam, true, true, TEXT("beam"));
-	if (TestTrue(TEXT("a beam staff with the beam hold builds"), Build(*BeamStaff, Desc, Messages)))
+	// Round 4 step 3: the ground channel and the whirl beam build the same way as the beam.
+	for (const TCHAR* Look : { TEXT("beam"), TEXT("groundChannel"), TEXT("whirlBeam") })
 	{
-		TestTrue(TEXT("and writes it"), Desc.HoldLook.bSet && Desc.HoldLook.Value == TEXT("beam"));
-		TArray<FMantleWeaponDocError> Errors;
-		TestTrue(TEXT("which the reader takes"), FMantleWeaponDocument::Validate(Desc, Errors));
+		UMantleWeaponSource* BeamStaff = Staff(EMantleWeaponSourceDelivery::Beam, true, true, Look);
+		if (TestTrue(*FString::Printf(TEXT("a beam staff with the %s hold builds"), Look), Build(*BeamStaff, Desc, Messages)))
+		{
+			TestTrue(*FString::Printf(TEXT("and writes %s"), Look), Desc.HoldLook.bSet && Desc.HoldLook.Value == Look);
+			TArray<FMantleWeaponDocError> Errors;
+			TestTrue(TEXT("which the reader takes"), FMantleWeaponDocument::Validate(Desc, Errors));
+		}
 	}
 	UMantleWeaponSource* None = Staff(EMantleWeaponSourceDelivery::Projectile, false, true, NAME_None);
 	if (TestTrue(TEXT("a staff with no hold look picked builds"), Build(*None, Desc, Messages)))

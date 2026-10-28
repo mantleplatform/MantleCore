@@ -304,7 +304,7 @@ struct FMantleWeaponDocHoldInfo
 	TArray<FString> ShootingStyles;
 	/** Round 4 step 2: the tap looks (x-tapLooks) of a hold whose tap can look more than one way (the staff), the default first. Empty: no choice. */
 	TArray<FString> TapLooks;
-	/** Round 4 step 2: the hold looks built so far (x-holdLooks) of a hold whose hold can look more than one way (the staff), the default first
+	/** Round 4 step 2: the hold looks (x-holdLooks) of a hold whose hold can look more than one way (the staff), the default first
 	 *  (a staff's real default is beam when it has a beam block, else chargedBlast: see GetBeamLooks). Empty: no choice. */
 	TArray<FString> HoldLooks;
 };
@@ -885,9 +885,6 @@ public:
 
 	/** #1025: what a consumable (delivery use) refuses, the top-level keys of a weapon's numbers and attachments (its mesh shows alone). */
 	static TConstArrayView<const TCHAR*> GetUseRefusedFields();
-
-	/** Round 4 step 2: schema x-holdLooksLater, the hold looks that come in a later update (refused until then). */
-	static TConstArrayView<const TCHAR*> GetLaterHoldLooks();
 
 	/** Round 4 step 2: schema x-beamLooks, the hold looks that channel the staff's beam (they need its beam block; the others charge). */
 	static TConstArrayView<const TCHAR*> GetBeamLooks();

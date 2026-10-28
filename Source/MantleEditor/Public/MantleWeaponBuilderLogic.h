@@ -57,8 +57,9 @@ namespace MantleWeaponBuilderLogic
 	/** Round 4 step 2: the staff has a beam (its beam block): the beam delivery. */
 	MANTLEEDITOR_API bool StaffHasBeam(const UMantleWeaponSource& Source);
 
-	/** Round 4 step 2: the hold looks the panel offers a staff now, in the document's spellings: beam only with a beam, the charge looks only with a
-	 *  charged attack on and spells to charge. A staff with only a beam offers beam alone. */
+	/** Round 4 step 2: the hold looks the panel offers a staff now, in the document's spellings: the beam looks (beam, and step 3's groundChannel and
+	 *  whirlBeam) only with a beam, the charge looks only with a charged attack on and spells to charge. A staff with only a beam offers the beam
+	 *  looks alone. */
 	MANTLEEDITOR_API TArray<FString> OfferedHoldLooks(const UMantleWeaponSource& Source);
 
 	/** Round 4 step 2: clears a tap look or hold look the source no longer offers (after the delivery, the spells or the charge changed), so the
