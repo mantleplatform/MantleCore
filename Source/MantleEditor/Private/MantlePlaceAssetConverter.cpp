@@ -65,7 +65,7 @@
 namespace MantlePlaceAssetConverterPrivate
 {
 	/** Bump this whenever how a conversion is written changes, so stale caches are rebuilt. */
-	const TCHAR* const CacheVersion = TEXT("f5-v17");
+	const TCHAR* const CacheVersion = TEXT("f5-v19");
 
 	const TCHAR* const ConversionRemedy = TEXT("It still publishes. Nothing to do unless it matters to how your place looks.");
 
@@ -1797,6 +1797,38 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 	Options->DefaultMaterialBakeSize.X = Settings.DefaultBakeSize;
 	Options->DefaultMaterialBakeSize.Y = Settings.DefaultBakeSize;
 	Options->DefaultMaterialBakeSize.bAutoDetect = true;
+
+	// Auto-detect bakes each input at its textures' largest size; MaterialBaking crashes the editor when that is more than a render target
+	// holds (SrcPitch > DstPitch). So size the bake ourselves whenever a texture is too big or its size cannot be trusted.
+	{
+		const int32 MaxBake = FMath::Max(1, Settings.MaxBakeSize);
+		const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Material);
+		TArray<FIntPoint> TextureSizes;
+		FString Sizes;
+		for (const TWeakObjectPtr<UTexture>& Weak : Analysis.Textures)
+		{
+			const UTexture* Texture = Weak.Get();
+			const FIntPoint Size = Texture ? FIntPoint(FMath::CeilToInt(Texture->GetSurfaceWidth()), FMath::CeilToInt(Texture->GetSurfaceHeight())) : FIntPoint::ZeroValue;
+			const FIntPoint Source = FMantlePlaceAssets::TextureSize(Texture);
+			Sizes += FString::Printf(TEXT(" %s=%dx%d(source %dx%d)"), Texture ? *Texture->GetName() : TEXT("none"), Size.X, Size.Y, Source.X, Source.Y);
+			TextureSizes.Add(Size);
+		}
+		int32 Fallback = 0;
+		const bool bOverride = ChooseFixedBakeSize(TextureSizes, Settings, Fallback);
+		int32 Largest = 0;
+		for (const FIntPoint& Size : TextureSizes)
+		{
+			Largest = FMath::Max3(Largest, Size.X, Size.Y);
+		}
+		if (bOverride)
+		{
+			Options->DefaultMaterialBakeSize.X = Fallback;
+			Options->DefaultMaterialBakeSize.Y = Fallback;
+			Options->DefaultMaterialBakeSize.bAutoDetect = false;
+		}
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: baking at %s%d (largest texture %d, cap %d);%s"), *Material->GetName(),
+			bOverride ? TEXT("fixed ") : TEXT("auto-detected, default "), bOverride ? Fallback : Settings.DefaultBakeSize, Largest, MaxBake, *Sizes);
+	}
 	Options->TextureImageFormat = EGLTFTextureImageFormat::PNG;
 	Options->bExportTextureTransforms = true;
 	Options->bExportLightmaps = false;
@@ -1831,6 +1863,22 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 		return false;
 	}
 	return true;
+}
+
+bool FMantleGltfMaterialFlattener::ChooseFixedBakeSize(const TArray<FIntPoint>& TextureSizes, const FMantleFlattenSettings& Settings, int32& OutSize)
+{
+	const int32 MaxBake = FMath::Max(1, Settings.MaxBakeSize);
+	const auto PowerOfTwoBelow = [](int32 Value) { return static_cast<int32>(FMath::RoundUpToPowerOfTwo(static_cast<uint32>(Value) + 1) / 2); };
+	bool bTooBig = false;
+	bool bUnknown = false;
+	for (const FIntPoint& Size : TextureSizes)
+	{
+		bUnknown = bUnknown || Size.X <= 0 || Size.Y <= 0;
+		bTooBig = bTooBig || Size.X > MaxBake || Size.Y > MaxBake;
+	}
+	// A texture too big for a bake is still big: bake at the most we publish. One with no readable size says nothing, so use the default.
+	OutSize = PowerOfTwoBelow(bTooBig ? MaxBake : FMath::Clamp(Settings.DefaultBakeSize, 1, MaxBake));
+	return bTooBig || bUnknown;
 }
 
 bool FMantleGltfMaterialFlattener::CanBakeTextures() const
@@ -3328,7 +3376,9 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, F
 	FMantleGlbDocument Flattened;
 	TArray<FString> Messages;
 	FString FlattenError;
-	if (Flattener->Flatten(Neutral.IsValid() ? Neutral.Get() : Material, Settings, Flattened, Messages, FlattenError))
+	FMantleFlattenSettings FlattenSettings = Settings;
+	FlattenSettings.MaxBakeSize = Limits.MaxTextureSize;
+	if (Flattener->Flatten(Neutral.IsValid() ? Neutral.Get() : Material, FlattenSettings, Flattened, Messages, FlattenError))
 	{
 		for (const FString& Message : Messages)
 		{

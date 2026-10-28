@@ -652,6 +652,12 @@ struct MANTLEEDITOR_API FMantleFlattenSettings
 {
 	/** Bake size for inputs with no texture to size from; inputs with textures bake at their largest texture's size (then capped). */
 	int32 DefaultBakeSize = 1024;
+
+	/**
+	 * The largest side a bake may use. A material with a texture bigger than this (or one whose size cannot be read) is baked at
+	 * DefaultBakeSize or this, never at the texture's size: Unreal's bake crashes the editor when asked for more than its render target holds.
+	 */
+	int32 MaxBakeSize = 2048;
 };
 
 /**
@@ -690,6 +696,12 @@ public:
 		TArray<FString>& OutMessages, FString& OutError) override;
 	virtual FString Describe() const override;
 	virtual bool CanBakeTextures() const override;
+
+	/**
+	 * True when auto-detect must be switched off for a material whose textures are TextureSizes: one is bigger than Settings.MaxBakeSize
+	 * or has no readable size. OutSize is then the power-of-two side to bake at (the default size, held to the cap).
+	 */
+	static bool ChooseFixedBakeSize(const TArray<FIntPoint>& TextureSizes, const FMantleFlattenSettings& Settings, int32& OutSize);
 };
 
 /** What a Convert did: for the progress panel, the log and the cache test. */
