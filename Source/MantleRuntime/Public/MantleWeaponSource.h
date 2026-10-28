@@ -223,7 +223,7 @@ public:
 	FName DodgeStyle = NAME_None;
 
 	/** Round 3: the selected combo for a hold with more than one (a sword beside a shield, knuckles, a two-handed spear); unset uses the hold's first. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mantle")
+	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName ComboSet = NAME_None;
 
 	/** The creator's UStaticMesh or USkeletalMesh. */
