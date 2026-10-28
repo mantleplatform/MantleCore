@@ -23,6 +23,7 @@
 #include "Particles/ParticleSystem.h"
 #include "Particles/ParticleSystemComponent.h"
 #include "Particles/Spawn/ParticleModuleSpawn.h"
+#include "Particles/TypeData/ParticleModuleTypeDataMesh.h"
 #include "Sound/AmbientSound.h"
 #include "Sound/SoundCue.h"
 #include "Sound/SoundNodeWavePlayer.h"
@@ -143,9 +144,9 @@ namespace MantlePlaceSkipTestPrivate
 	}
 
 	/** A Cascade system with one sprite emitter the particle translation carries. */
-	UParticleSystem* MakeSprayHeadSystem()
+	UParticleSystem* MakeSprayHeadSystem(const FName Name = NAME_None)
 	{
-		UParticleSystem* System = NewObject<UParticleSystem>(GetTransientPackage());
+		UParticleSystem* System = NewObject<UParticleSystem>(GetTransientPackage(), Name);
 		UParticleSpriteEmitter* Emitter = NewObject<UParticleSpriteEmitter>(System);
 		UParticleLODLevel* Lod = NewObject<UParticleLODLevel>(Emitter);
 		Lod->Level = 0;
@@ -281,6 +282,56 @@ bool FMantlePlaceSkipParticleActorsTest::RunTest(const FString& Parameters)
 	else
 	{
 		AddWarning(TEXT("This build has no Niagara plugin, so the Niagara Actor case was not run."));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePlaceSkipParticleReasonTest,
+	"Mantle.Editor.PlaceSkip.ParticleActorSaysWhyItIsSkipped",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePlaceSkipParticleReasonTest::RunTest(const FString& Parameters)
+{
+	using namespace MantlePlaceSkipTestPrivate;
+	FSkipWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+
+	// An Emitter whose only emitter is a mesh emitter (the trailer's waterfall foam): skipped, with the translator's reason and the system's name.
+	const FName FoamName = MakeUniqueObjectName(GetTransientPackage(), UParticleSystem::StaticClass(), TEXT("P_Foam_Heavy"));
+	UParticleSystem* FoamSystem = MakeSprayHeadSystem(FoamName);
+	FoamSystem->Emitters[0]->GetLODLevel(0)->TypeDataModule = NewObject<UParticleModuleTypeDataMesh>(FoamSystem);
+	AEmitter* Foam = Fixture.World->SpawnActor<AEmitter>(FVector(0.0, 0.0, 100.0), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("the foam emitter"), Foam) || !TestNotNull(TEXT("its component"), Foam->GetParticleSystemComponent()))
+	{
+		return false;
+	}
+	Foam->GetParticleSystemComponent()->Template = FoamSystem;
+	FMantlePlaceExporter::FSkippedActor Skipped;
+	if (TestTrue(TEXT("the foam is skipped"), FMantlePlaceExporter::DescribeSkippedActor(Foam, Skipped)))
+	{
+		TestTrue(TEXT("and says it is a mesh emitter"), Skipped.What.Contains(TEXT("a mesh emitter")));
+		TestTrue(TEXT("and names the particle system"), Skipped.What.Contains(TEXT("P_Foam_Heavy")));
+		TestTrue(TEXT("and the remedy says only sprite emitters carry over"), Skipped.Remedy.Contains(TEXT("Only sprite emitters")));
+		TestEqual(TEXT("under Particles"), Skipped.Category, FString(MantleCoverageCategory::Particles));
+	}
+
+	// An Emitter with no system has no reason to give: the general wording stays.
+	AEmitter* Empty = Fixture.World->SpawnActor<AEmitter>(FVector(500.0, 0.0, 100.0), FRotator::ZeroRotator);
+	if (TestNotNull(TEXT("the empty emitter"), Empty) && TestTrue(TEXT("it is skipped"), FMantlePlaceExporter::DescribeSkippedActor(Empty, Skipped)))
+	{
+		TestTrue(TEXT("with the general wording"), Skipped.What.Contains(TEXT("whose particles Mantle can't carry")));
+	}
+
+	// A sprite emitter still translates: not skipped.
+	AEmitter* Spray = Fixture.World->SpawnActor<AEmitter>(FVector(1000.0, 0.0, 100.0), FRotator::ZeroRotator);
+	if (TestNotNull(TEXT("the spray emitter"), Spray) && TestNotNull(TEXT("its component"), Spray->GetParticleSystemComponent()))
+	{
+		Spray->GetParticleSystemComponent()->Template = MakeSprayHeadSystem();
+		TestFalse(TEXT("a sprite emitter is not skipped"), FMantlePlaceExporter::DescribeSkippedActor(Spray, Skipped));
 	}
 	return true;
 }
