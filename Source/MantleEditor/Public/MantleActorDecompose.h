@@ -59,6 +59,13 @@ public:
 	/** The mirrored copy of Source for Scale (FMantleMirrorBake, cached, so Gather, Check and Export agree). Not needed for a null mesh or a scale above zero. */
 	static FMantleMirrorResult ResolveMirror(UStaticMesh* Source, const FVector& Scale);
 
+	/**
+	 * The mirror a Group actor (a Blueprint prefab) carries in a negative scale on its root: -1 on each negative axis, 1 on the
+	 * others, or all 1 when it has none, or has child actors (their transforms would need mirroring too, which a place can't carry).
+	 * Export publishes the group at the positive scale and mirrors its parts (CollectPrefabParts) instead.
+	 */
+	static FVector GroupMirrorSigns(const AActor* Actor);
+
 	/** ResolveMirror for a static mesh actor, by the scale Export publishes it at (FMantlePlaceExporter::PublishedTransform). Not needed for anything else. */
 	static FMantleMirrorResult MirrorForActor(const AActor* Actor);
 

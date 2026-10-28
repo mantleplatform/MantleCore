@@ -103,6 +103,22 @@ FMantleMirrorResult FMantleActorDecompose::ResolveMirror(UStaticMesh* Source, co
 	return Result;
 }
 
+FVector FMantleActorDecompose::GroupMirrorSigns(const AActor* Actor)
+{
+	TArray<AActor*> Children;
+	if (!Actor || !Actor->GetRootComponent())
+	{
+		return FVector::OneVector;
+	}
+	Actor->GetAttachedActors(Children);
+	const FVector Scale = FMantlePlaceExporter::PublishedTransform(Actor).GetScale3D();
+	if (!HasNegativeAxis(Scale) || Children.Num() > 0)
+	{
+		return FVector::OneVector;
+	}
+	return FVector(Scale.X < 0.0 ? -1.0 : 1.0, Scale.Y < 0.0 ? -1.0 : 1.0, Scale.Z < 0.0 ? -1.0 : 1.0);
+}
+
 FMantleMirrorResult FMantleActorDecompose::MirrorForActor(const AActor* Actor)
 {
 	const AStaticMeshActor* MeshActor = Cast<AStaticMeshActor>(Actor);

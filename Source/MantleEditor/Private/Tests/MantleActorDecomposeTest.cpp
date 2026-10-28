@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleActorDecompose.h"
 #include "MantleCoverage.h"
+#include "MantleMirrorBake.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceValidator.h"
 
@@ -574,6 +575,41 @@ bool FMantleDecomposeMirroredPlayerStartTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("at the positive scale"), Entity->Transform.GetScale3D().Equals(FVector(0.25, 1.0, 1.0), 0.0001));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleDecomposeMirroredGroupTest,
+	"Mantle.Editor.Decompose.MirroredGroupMirrorsItsParts",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleDecomposeMirroredGroupTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleActorDecomposeTestPrivate;
+	const FVector Signs(-1.0, 1.0, 1.0);
+
+	// A part at (10, 20, 30) yawed 30 degrees and scaled (1, 2, 3), seen in a space mirrored on X.
+	const FTransform Part(FRotator(0.0, 30.0, 0.0), FVector(10.0, 20.0, 30.0), FVector(1.0, 2.0, 3.0));
+	const FTransform Reflected = FMantleMirrorBake::ReflectTransform(Part, Signs);
+	TestTrue(TEXT("the location is mirrored"), Reflected.GetLocation().Equals(FVector(-10.0, 20.0, 30.0), 0.0001));
+	TestTrue(TEXT("the scale is kept"), Reflected.GetScale3D().Equals(FVector(1.0, 2.0, 3.0), 0.0001));
+	TestTrue(TEXT("the yaw is reflected"), FMath::IsNearlyEqual(Reflected.Rotator().Yaw, -30.0, 0.001));
+	// Mirror twice: back where it was.
+	TestTrue(TEXT("mirroring twice is the identity"), FMantleMirrorBake::ReflectTransform(Reflected, Signs).Equals(Part, 0.0001));
+
+	FDecomposeWorld Fixture;
+	AActor* Group = Fixture.World->SpawnActor<AActor>();
+	if (!TestNotNull(TEXT("the actor spawned"), Group))
+	{
+		return false;
+	}
+	USceneComponent* Root = NewObject<USceneComponent>(Group, TEXT("Root"));
+	Group->SetRootComponent(Root);
+	Root->RegisterComponent();
+	Group->SetActorScale3D(FVector(-1.0, 1.0, 1.0));
+	TestTrue(TEXT("a negative root scale gives the mirror"), FMantleActorDecompose::GroupMirrorSigns(Group).Equals(Signs, 0.0001));
+	Group->SetActorScale3D(FVector(2.0, 1.0, 1.0));
+	TestTrue(TEXT("a positive one gives none"), FMantleActorDecompose::GroupMirrorSigns(Group).Equals(FVector::OneVector, 0.0001));
 	return true;
 }
 

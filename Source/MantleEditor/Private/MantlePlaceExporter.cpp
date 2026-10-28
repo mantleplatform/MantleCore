@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceExporter.h"
 #include "MantleActorDecompose.h"
+#include "MantleMirrorBake.h"
 #include "MantleApiManifest.h"
 #include "MantleAssetLibrary.h"
 #include "MantleConstraint.h"
@@ -3160,6 +3161,10 @@ void FMantlePlaceExporter::CollectPrefabParts(
 	// builder puts a child at (its transform) * (its group's), so this is what lands it where the
 	// editor shows it, whatever sockets and scales lie between.
 	const FTransform RootWorld = Root->GetComponentTransform();
+	// A negative scale on the group's root: the group publishes at the positive scale and each part is placed in mirrored space (M C M),
+	// its mesh mirrored by the same axes on top of its own negative ones.
+	const FVector GroupSigns = FMantleActorDecompose::GroupMirrorSigns(Actor);
+	const bool bGroupMirrored = GroupSigns != FVector::OneVector;
 	TArray<UActorComponent*> Components;
 	Actor->GetComponents(Components);
 	for (const UActorComponent* Component : Components)
@@ -3181,6 +3186,10 @@ void FMantlePlaceExporter::CollectPrefabParts(
 				Part.Component = Scene;
 				Part.Type = EMantleEntityType::Effect;
 				Part.Transform = Scene == Root ? FTransform::Identity : Scene->GetComponentTransform().GetRelativeTransform(RootWorld);
+				if (bGroupMirrored)
+				{
+					Part.Transform = FMantleMirrorBake::ReflectTransform(Part.Transform, GroupSigns);
+				}
 				Part.EffectProperties = Emitters[EmitterIndex];
 				Part.EffectIndex = EmitterIndex;
 			}
@@ -3246,18 +3255,24 @@ void FMantlePlaceExporter::CollectPrefabParts(
 			Part.Component = Scene;
 			Part.Type = Type;
 			Part.Transform = Scene == Root ? FTransform::Identity : Scene->GetComponentTransform().GetRelativeTransform(RootWorld);
-			// #628: a mirrored mesh publishes as the mirrored copy at the positive scale; one that can't be copied is left out.
-			if (const UStaticMeshComponent* MirroredSource = Type == EMantleEntityType::StaticMesh ? Cast<UStaticMeshComponent>(Scene) : nullptr;
-				MirroredSource && FMantleActorDecompose::HasNegativeAxis(Part.Transform.GetScale3D()))
+			if (bGroupMirrored)
 			{
-				const FMantleMirrorResult Mirror = FMantleActorDecompose::ResolveMirror(MirroredSource->GetStaticMesh(), Part.Transform.GetScale3D());
+				Part.Transform = FMantleMirrorBake::ReflectTransform(Part.Transform, GroupSigns);
+			}
+			// #628: a mirrored mesh publishes as the mirrored copy at the positive scale; one that can't be copied is left out.
+			// The mesh's mirror is its own negative axes and the group's.
+			const FVector MeshScale = Part.Transform.GetScale3D() * GroupSigns;
+			if (const UStaticMeshComponent* MirroredSource = Type == EMantleEntityType::StaticMesh ? Cast<UStaticMeshComponent>(Scene) : nullptr;
+				MirroredSource && FMantleActorDecompose::HasNegativeAxis(MeshScale))
+			{
+				const FMantleMirrorResult Mirror = FMantleActorDecompose::ResolveMirror(MirroredSource->GetStaticMesh(), MeshScale);
 				if (!Mirror.bOk)
 				{
 					if (OutUnsupported)
 					{
 						OutUnsupported->Add(FMantleUnpublishedPart{
 							FString::Printf(TEXT("has a static mesh component ('%s') with a scale of %s, and a mirrored copy of its mesh could not be made (%s), so it is left out."),
-								*Scene->GetName(), *Part.Transform.GetScale3D().ToString(), *Mirror.Why),
+								*Scene->GetName(), *MeshScale.ToString(), *Mirror.Why),
 							TEXT("Use a mesh mirrored in your modelling tool, or a positive scale."),
 							/*bBlocksPublish*/ false, MantleCoverageCategory::StaticMeshes });
 					}
@@ -3826,6 +3841,13 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				TEXT("baked a mirrored copy of its mesh (a negative scale), placed at the positive scale."));
 		}
 
+		// A mirrored group's parts carry the mirror (CollectPrefabParts), so the group itself publishes at the positive scale.
+		if (Type == EMantleEntityType::Group && FMantleActorDecompose::GroupMirrorSigns(Actor) != FVector::OneVector)
+		{
+			UnmirroredActors.Add(Actor);
+			Result.Coverage.Add(MantleCoverageCategory::StaticMeshes, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
+				TEXT("a prefab with a negative scale is published at the positive scale, with its parts mirrored."));
+		}
 		// A player start has no shape to mirror: it publishes at the positive scale, and its facing is its rotation.
 		if (Type == EMantleEntityType::PlayerStart && FMantleActorDecompose::HasNegativeAxis(PublishedTransform(Actor).GetScale3D()))
 		{
