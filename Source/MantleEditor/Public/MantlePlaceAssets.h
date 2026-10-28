@@ -161,6 +161,9 @@ struct MANTLEEDITOR_API FMantleMaterialFidelity2
 	double NormalScale = 1.0;
 	bool bNormalFoamDropped = false;
 
+	/** Several moving samples of one texture blended into the normal (a flow function's layers): the fastest is carried, the others and their UV offsets are not. */
+	bool bNormalLayersMerged = false;
+
 	/** wind: SimpleGrassWind on World Position Offset, its constant intensity and speed, and its weight (vertexColorR, uvV, uniform). */
 	bool bWind = false;
 	double WindIntensity = 0.0;

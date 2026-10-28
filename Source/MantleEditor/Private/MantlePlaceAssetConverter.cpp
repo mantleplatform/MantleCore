@@ -3921,6 +3921,10 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 				// A panned normal seen through function calls and Lerps against a flat normal keeps the strength they gave.
 				Doc.NormalScale = FMath::Clamp(Fidelity.NormalScale, 0.0, 10.0);
 			}
+			if (Fidelity.bNormalLayersMerged)
+			{
+				Warn(TEXT("two flowing layers of its normal are kept as one (the fastest), so the water's motion is simpler than the source's."));
+			}
 			if (Fidelity.bNormalFoamDropped)
 			{
 				Warn(TEXT("a foam mask on its normal is dropped, so the normal map keeps moving but the foam's flattening does not show."));

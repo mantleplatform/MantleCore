@@ -657,6 +657,9 @@ namespace MantlePlaceAssetsPrivate
 		double Tiling[2] = { 1.0, 1.0 };
 		double Speed[2] = { 0.0, 0.0 };
 
+		/** A constant added to the UVs (read only where the sample is one of several blended; it is not carried). */
+		double Offset[2] = { 0.0, 0.0 };
+
 		/** The functions the read went through to reach the sample: dependencies of the material, as its own graph's are. */
 		TArray<const UObject*> Functions;
 	};
@@ -726,7 +729,7 @@ namespace MantlePlaceAssetsPrivate
 	struct FGraphReader
 	{
 		const UMaterialInterface* Context = nullptr;
-		int32 Budget = 512;
+		int32 Budget = 2048;
 
 		/** A Panner was read (a pan with no speed is still a pan, as it always was), and the functions entered. */
 		bool bPanner = false;
@@ -1198,9 +1201,11 @@ namespace MantlePlaceAssetsPrivate
 
 	/**
 	 * A sample's UVs as the first UV set times a tiling plus Time times a speed (a Panner, or Time times a constant added on), with no
-	 * offset: the tiling and the speed, each per axis. Speeds past the schema's bound are refused.
+	 * offset (unless bAllowOffset, which reads it into OutOffset): the tiling and the speed, each per axis. Speeds past the schema's
+	 * bound are refused.
 	 */
-	bool ReadUvs(FGraphReader& Reader, const FExpressionInput& Coordinates, const uint32 ConstCoordinate, const FCallStack& Calls, double (&OutTiling)[2], double (&OutSpeed)[2])
+	bool ReadUvs(FGraphReader& Reader, const FExpressionInput& Coordinates, const uint32 ConstCoordinate, const FCallStack& Calls, const bool bAllowOffset,
+		double (&OutTiling)[2], double (&OutSpeed)[2], double (&OutOffset)[2])
 	{
 		FUvValue Value;
 		if (Coordinates.Expression)
@@ -1225,21 +1230,23 @@ namespace MantlePlaceAssetsPrivate
 		for (int32 Axis = 0; Axis < 2; ++Axis)
 		{
 			const FUvLane Lane = Value.Lane(Axis);
-			if (Lane.Uv == 0.0 || Lane.Axis != Axis || Lane.C != 0.0 || FMath::Abs(Lane.T) > MaxPanSpeed)
+			if (Lane.Uv == 0.0 || Lane.Axis != Axis || (Lane.C != 0.0 && !bAllowOffset) || FMath::Abs(Lane.T) > MaxPanSpeed)
 			{
 				return false;
 			}
 			OutTiling[Axis] = Lane.Uv;
 			OutSpeed[Axis] = Lane.T;
+			OutOffset[Axis] = Lane.C;
 		}
 		return true;
 	}
 
 	/**
 	 * The sample Node is, when it is a Texture Sample of a 2D texture (its own, or a Texture Object a function input or a parameter gives)
-	 * whose UVs move: through a Panner, or by Time. A sample whose UVs do not move is not one.
+	 * whose UVs move: through a Panner, or by Time. A sample whose UVs do not move is not one. A constant added to its UVs is refused
+	 * (it would not be carried), unless bAllowOffset (the sample is one of several blended; the caller decides).
 	 */
-	bool RecogniseMovingSample(const FWalk& Walk, FGraphReader& Reader, const FGraphNode& Node, FRecognisedSample& Out)
+	bool RecogniseMovingSample(const FWalk& Walk, FGraphReader& Reader, const FGraphNode& Node, FRecognisedSample& Out, const bool bAllowOffset = false)
 	{
 		const UMaterialExpressionTextureSample* Sample = PlainSampleClass(Node.Expression);
 		if (!Sample)
@@ -1266,7 +1273,7 @@ namespace MantlePlaceAssetsPrivate
 		Found.Channel = OutputChannel(Sample, Node.Output);
 		Found.Texture = Texture;
 		Reader.bPanner = false;
-		if (!ReadUvs(Reader, Sample->Coordinates, Sample->ConstCoordinate, Node.Calls, Found.Tiling, Found.Speed))
+		if (!ReadUvs(Reader, Sample->Coordinates, Sample->ConstCoordinate, Node.Calls, bAllowOffset, Found.Tiling, Found.Speed, Found.Offset))
 		{
 			return false;
 		}
@@ -1412,15 +1419,99 @@ namespace MantlePlaceAssetsPrivate
 	}
 
 	/**
+	 * Every moving sample Node reaches through the nodes that only combine them (Add, Subtract, Multiply, Append, Component Mask,
+	 * Normalize; function calls are followed by Resolve). An operand that is a constant is skipped. False when any operand is
+	 * neither, or a sample that is not a moving one (a still sample among moving ones is refused).
+	 */
+	bool CollectMovingSamples(const FWalk& Walk, FGraphReader& Reader, const FGraphNode& Node, TArray<FRecognisedSample>& Found, const int32 Depth)
+	{
+		if (Depth > 8)
+		{
+			return false;
+		}
+		if (PlainSampleClass(Node.Expression))
+		{
+			FRecognisedSample Sample;
+			if (!RecogniseMovingSample(Walk, Reader, Node, Sample, true))
+			{
+				return false;
+			}
+			for (const FRecognisedSample& Seen : Found)
+			{
+				if (Seen.Sample == Sample.Sample)
+				{
+					return true;
+				}
+			}
+			Found.Add(Sample);
+			return true;
+		}
+		const FExpressionInput* Operands[2] = { nullptr, nullptr };
+		if (const UMaterialExpressionAdd* Add = Cast<UMaterialExpressionAdd>(Node.Expression))
+		{
+			Operands[0] = &Add->A;
+			Operands[1] = &Add->B;
+		}
+		else if (const UMaterialExpressionSubtract* Subtract = Cast<UMaterialExpressionSubtract>(Node.Expression))
+		{
+			Operands[0] = &Subtract->A;
+			Operands[1] = &Subtract->B;
+		}
+		else if (const UMaterialExpressionMultiply* Multiply = Cast<UMaterialExpressionMultiply>(Node.Expression))
+		{
+			Operands[0] = &Multiply->A;
+			Operands[1] = &Multiply->B;
+		}
+		else if (const UMaterialExpressionAppendVector* Append = Cast<UMaterialExpressionAppendVector>(Node.Expression))
+		{
+			Operands[0] = &Append->A;
+			Operands[1] = &Append->B;
+		}
+		else if (const UMaterialExpressionComponentMask* Mask = Cast<UMaterialExpressionComponentMask>(Node.Expression))
+		{
+			Operands[0] = &Mask->Input;
+		}
+		else if (const UMaterialExpressionNormalize* Normalize = Cast<UMaterialExpressionNormalize>(Node.Expression))
+		{
+			Operands[0] = &Normalize->VectorInput;
+		}
+		else
+		{
+			return false;
+		}
+		for (const FExpressionInput* Operand : Operands)
+		{
+			if (!Operand || !Operand->Expression)
+			{
+				continue;
+			}
+			FUvValue Constant;
+			if (Reader.Number(Operand, false, 0.0, Node.Calls, Constant) && Constant.Lane(0).IsConstant())
+			{
+				continue;
+			}
+			FGraphNode Child;
+			if (!Reader.Resolve(Operand, Node.Calls, Child) || !CollectMovingSamples(Walk, Reader, Child, Found, Depth + 1))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
 	 * The normal output read as one moving sample of a normal map, through what only changes how strong it is or where it comes from:
 	 * Normalize, function calls (the sample may be inside a function, its texture, tiling and speed given by the call's inputs), and a
 	 * Lerp against a flat normal.
 	 *  - Lerp(flat, X, constant) is X at that strength, and Lerp(X, flat, constant) is X at one minus it: OutScale, the document's normalScale.
 	 *  - Lerp(X, flat, mask) by anything that is not a constant (a foam mask over the water) is followed on its X side, and says so
 	 *    (bOutFoamDropped): the foam is not carried, and the water under it moves as it did.
-	 * Two samples blended (a Lerp of two normals, as a flow map's two phases are), or anything else, is refused.
+	 * Moving samples of one texture combined by Add, Subtract, Multiply, Append, Component Mask or Normalize (what a blend function
+	 * does, seen through its calls, not by its name) are carried as the one that moves fastest, its UV offset dropped, and say so
+	 * (bOutMerged). Samples of different textures, a still sample among moving ones, a Lerp of two normals (a flow map's two phases
+	 * crossfaded by a clock), or anything else, are refused.
 	 */
-	bool RecogniseNormal(const FWalk& Walk, const FExpressionInput* Input, FRecognisedSample& Out, double& OutScale, bool& bOutFoamDropped)
+	bool RecogniseNormal(const FWalk& Walk, const FExpressionInput* Input, FRecognisedSample& Out, double& OutScale, bool& bOutFoamDropped, bool& bOutMerged)
 	{
 		FGraphReader Reader;
 		Reader.Context = Walk.Context;
@@ -1473,13 +1564,35 @@ namespace MantlePlaceAssetsPrivate
 				}
 				continue;
 			}
-			if (RecogniseMovingSample(Walk, Reader, Node, Out) && ReadsColour(Out))
+			// One moving sample, or several of one texture blended (a flow function's two layers): the fastest stands for them.
+			TArray<FRecognisedSample> Found;
+			if (!CollectMovingSamples(Walk, Reader, Node, Found, 0) || Found.Num() == 0)
 			{
-				OutScale = Scale;
-				bOutFoamDropped = bFoamDropped;
-				return true;
+				return false;
 			}
-			return false;
+			const FRecognisedSample* Fastest = &Found[0];
+			for (const FRecognisedSample& Candidate : Found)
+			{
+				if (!ReadsColour(Candidate) || Candidate.Texture != Found[0].Texture)
+				{
+					return false;
+				}
+				if (FMath::Square(Candidate.Speed[0]) + FMath::Square(Candidate.Speed[1]) > FMath::Square(Fastest->Speed[0]) + FMath::Square(Fastest->Speed[1]))
+				{
+					Fastest = &Candidate;
+				}
+			}
+			// A constant added to the UVs is not carried: it is only let go where another layer is blended in, which is said.
+			if (Found.Num() == 1 && (Fastest->Offset[0] != 0.0 || Fastest->Offset[1] != 0.0))
+			{
+				return false;
+			}
+			Out = *Fastest;
+			Out.Functions = Reader.Functions;
+			OutScale = Scale;
+			bOutFoamDropped = bFoamDropped;
+			bOutMerged = Found.Num() > 1;
+			return true;
 		}
 		return false;
 	}
@@ -3495,11 +3608,13 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		// lerped over it is dropped and said (bNormalFoamDropped).
 		double NormalScale = 1.0;
 		bool bNormalFoamDropped = false;
-		if (bLit && !IsCarried(MP_Normal) && IsConnected(Roots.Normal) && RecogniseNormal(Walk, Roots.Normal, Panned, NormalScale, bNormalFoamDropped))
+		bool bNormalMerged = false;
+		if (bLit && !IsCarried(MP_Normal) && IsConnected(Roots.Normal) && RecogniseNormal(Walk, Roots.Normal, Panned, NormalScale, bNormalFoamDropped, bNormalMerged))
 		{
 			CarryPanned(1, Panned);
 			Fidelity.NormalScale = NormalScale;
 			Fidelity.bNormalFoamDropped = bNormalFoamDropped;
+			Fidelity.bNormalLayersMerged = bNormalMerged;
 			Carry({ MP_Normal });
 		}
 		if (bCarries && !IsCarried(MP_EmissiveColor) && RecognisePanned(Walk, Roots.Emissive, Panned))
@@ -3891,7 +4006,7 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 	switch (Loss)
 	{
 	case EMantleMaterialLoss::Animation:
-		return TEXT("time-based animation will be frozen (panners, flipbooks and Time nodes stop moving; only a Panner, or Time times a constant speed, straight into a texture's UVs, that texture straight into an output, keeps moving; a function call, a Normalize or a Lerp against a flat normal may sit between the texture and the Normal output).");
+		return TEXT("time-based animation will be frozen (panners, flipbooks and Time nodes stop moving; only a Panner, or Time times a constant speed, straight into a texture's UVs, that texture straight into an output, keeps moving; a function call, a Normalize or a Lerp against a flat normal may sit between the texture and the Normal output, and moving samples of one texture blended there are kept as the fastest one: two flowing layers kept as one).");
 	case EMantleMaterialLoss::WorldPositionOffset:
 		return TEXT("world position offset (wind or vertex animation) is dropped, so the mesh will not sway or move (only the engine's SimpleGrassWind with constant intensity and speed is kept).");
 	case EMantleMaterialLoss::WorldAligned:
@@ -4209,6 +4324,12 @@ void FMantlePlaceAssets::CheckMaterial(const UMaterialInterface* Material, const
 	{
 		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
 			FString::Printf(TEXT("%s: a foam mask on its normal is dropped, so the normal map keeps moving but the foam's flattening does not show."), *Subject),
+			LossRemedy });
+	}
+	if (Analysis.Fidelity2.bNormalLayersMerged)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("%s: two flowing layers kept as one: its normal blends several moving samples of one texture, and Mantle keeps the fastest."), *Subject),
 			LossRemedy });
 	}
 	if (Analysis.Fidelity2.Glass.bFound)

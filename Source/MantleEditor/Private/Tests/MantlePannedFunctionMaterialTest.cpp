@@ -5,6 +5,7 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionAppendVector.h"
+#include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionConstant2Vector.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
@@ -16,6 +17,9 @@
 #include "Materials/MaterialExpressionNormalize.h"
 #include "Materials/MaterialExpressionPanner.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionStaticBool.h"
+#include "Materials/MaterialExpressionStaticBoolParameter.h"
+#include "Materials/MaterialExpressionStaticSwitch.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureObjectParameter.h"
 #include "Materials/MaterialExpressionTextureSample.h"
@@ -461,6 +465,223 @@ bool FMantlePannedFunctionDepthTest::RunTest(const FString& Parameters)
 	Recursive->GetEditorOnlyData()->Normal.Connect(0, AddCall(Recursive, Loop));
 	const FMantleMaterialAnalysis Looped = FMantlePlaceAssets::AnalyzeMaterial(Recursive);
 	TestFalse(TEXT("a function that calls itself is refused"), Looped.Fidelity2.bPanning[1]);
+	return true;
+}
+
+namespace MantlePannedFlowTestPrivate
+{
+	using namespace MantlePannedFunctionTestPrivate;
+
+	/** MF_NormalBlend, cut down: Append(RG of (A + B), B of A), the output of two inputs. */
+	UMaterialFunction* MakeBlendFunction()
+	{
+		UMaterialFunction* Function = NewObject<UMaterialFunction>(GetTransientPackage());
+		UMaterialExpressionFunctionInput* A = AddInput(Function, TEXT("A"), FunctionInput_Vector3, 0.0f);
+		UMaterialExpressionFunctionInput* B = AddInput(Function, TEXT("B"), FunctionInput_Vector3, 0.0f);
+		UMaterialExpressionAdd* Sum = AddNode<UMaterialExpressionAdd>(Function);
+		Sum->A.Connect(0, A);
+		Sum->B.Connect(0, B);
+		UMaterialExpressionComponentMask* Xy = AddNode<UMaterialExpressionComponentMask>(Function);
+		Xy->R = true;
+		Xy->G = true;
+		Xy->B = false;
+		Xy->A = false;
+		Xy->Input.Connect(0, Sum);
+		UMaterialExpressionComponentMask* Z = AddNode<UMaterialExpressionComponentMask>(Function);
+		Z->R = false;
+		Z->G = false;
+		Z->B = true;
+		Z->A = false;
+		Z->Input.Connect(0, A);
+		UMaterialExpressionAppendVector* Joined = AddNode<UMaterialExpressionAppendVector>(Function);
+		Joined->A.Connect(0, Xy);
+		Joined->B.Connect(0, Z);
+		UMaterialExpressionFunctionOutput* Output = AddNode<UMaterialExpressionFunctionOutput>(Function);
+		Output->OutputName = TEXT("Result");
+		Output->Id = FGuid::NewGuid();
+		Output->A.Connect(0, Joined);
+		return Function;
+	}
+
+	/** One of the flow function's samples: the Texture input, UVs panned by Speed x the clock. */
+	UMaterialExpressionTextureSample* AddFlowSample(UMaterialFunction* Function, UMaterialExpression* Texture, UMaterialExpression* Clock, UMaterialExpression* Coordinates,
+		const float SpeedX, const float SpeedY)
+	{
+		UMaterialExpressionPanner* Panner = AddNode<UMaterialExpressionPanner>(Function);
+		Panner->SpeedX = SpeedX;
+		Panner->SpeedY = SpeedY;
+		Panner->Coordinate.Connect(0, Coordinates);
+		Panner->Time.Connect(0, Clock);
+		UMaterialExpressionTextureSample* Sample = AddNode<UMaterialExpressionTextureSample>(Function);
+		Sample->TextureObject.Connect(0, Texture);
+		Sample->Coordinates.Connect(0, Panner);
+		return Sample;
+	}
+
+	UMaterialExpressionMaterialFunctionCall* AddBlend(UMaterialFunction* Function, UMaterialFunction* Blend, UMaterialExpression* A, UMaterialExpression* B)
+	{
+		UMaterialExpressionMaterialFunctionCall* Call = AddNode<UMaterialExpressionMaterialFunctionCall>(Function);
+		Call->SetMaterialFunction(Blend);
+		ConnectCallInput(Call, TEXT("A"), A);
+		ConnectCallInput(Call, TEXT("B"), B);
+		return Call;
+	}
+
+	/**
+	 * MF_RiverMotionNormal as it was dumped: inputs Direction (static bool), Time, Texture and Input Coordinates (none used as defaults); the
+	 * Panners' Time is the Time node times the Time input; four samples of the Texture input, the second of each pair on the coordinates
+	 * plus (0.4, 0.35); a blend function for each pair; a static switch on Direction picks the pair (true: the Y pair).
+	 */
+	UMaterialFunction* MakeRiverFunction(UMaterialFunction* Blend)
+	{
+		UMaterialFunction* Function = NewObject<UMaterialFunction>(GetTransientPackage());
+		UMaterialExpressionFunctionInput* Direction = AddInput(Function, TEXT("Direction X or Y"), FunctionInput_StaticBool, 0.0f);
+		UMaterialExpressionFunctionInput* TimeInput = AddInput(Function, TEXT("Time"), FunctionInput_Scalar, 0.0f);
+		UMaterialExpressionFunctionInput* Texture = AddInput(Function, TEXT("Texture"), FunctionInput_Texture2D, 0.0f);
+		UMaterialExpressionFunctionInput* Coordinates = AddInput(Function, TEXT("Input Coordinates"), FunctionInput_Vector2, 0.0f);
+		Direction->bUsePreviewValueAsDefault = false;
+		TimeInput->bUsePreviewValueAsDefault = false;
+		Texture->bUsePreviewValueAsDefault = false;
+		Coordinates->bUsePreviewValueAsDefault = false;
+
+		UMaterialExpressionMultiply* Clock = AddNode<UMaterialExpressionMultiply>(Function);
+		Clock->A.Connect(0, AddNode<UMaterialExpressionTime>(Function));
+		Clock->B.Connect(0, TimeInput);
+		UMaterialExpressionAdd* Shifted = AddNode<UMaterialExpressionAdd>(Function);
+		Shifted->A.Connect(0, Coordinates);
+		Shifted->B.Connect(0, AddPair(Function, 0.4f, 0.35f));
+
+		UMaterialExpressionTextureSample* Y1 = AddFlowSample(Function, Texture, Clock, Coordinates, -0.02f, 0.5f);
+		UMaterialExpressionTextureSample* Y2 = AddFlowSample(Function, Texture, Clock, Shifted, 0.02f, 0.25f);
+		UMaterialExpressionTextureSample* X1 = AddFlowSample(Function, Texture, Clock, Coordinates, 0.5f, -0.02f);
+		UMaterialExpressionTextureSample* X2 = AddFlowSample(Function, Texture, Clock, Shifted, 0.25f, 0.02f);
+
+		UMaterialExpressionStaticSwitch* Pick = AddNode<UMaterialExpressionStaticSwitch>(Function);
+		Pick->Value.Connect(0, Direction);
+		Pick->A.Connect(0, AddBlend(Function, Blend, Y1, Y2));
+		Pick->B.Connect(0, AddBlend(Function, Blend, X1, X2));
+		UMaterialExpressionFunctionOutput* Output = AddNode<UMaterialExpressionFunctionOutput>(Function);
+		Output->OutputName = TEXT("Normal");
+		Output->Id = FGuid::NewGuid();
+		Output->A.Connect(0, Pick);
+		return Function;
+	}
+
+	/** A material whose Normal is a call of the river function as MM_Waterfall makes it; Direction is the node given. */
+	UMaterial* NewRiver(UMaterialFunction* River, UTexture* Texture, UMaterialExpression* (*MakeDirection)(UMaterial*))
+	{
+		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
+		UMaterialExpressionMaterialFunctionCall* Call = AddCall(Material, River);
+		UMaterialExpressionMultiply* Reversed = AddNode<UMaterialExpressionMultiply>(Material);
+		Reversed->A.Connect(0, AddScalar(Material, TEXT("Flow Speed"), 1.0f));
+		Reversed->B.Connect(0, AddNumber(Material, -1.0f));
+		UMaterialExpressionTextureObjectParameter* Map = AddNode<UMaterialExpressionTextureObjectParameter>(Material);
+		Map->ParameterName = TEXT("Normal Map");
+		Map->Texture = Texture;
+		UMaterialExpressionAppendVector* Tiles = AddNode<UMaterialExpressionAppendVector>(Material);
+		Tiles->A.Connect(0, AddScalar(Material, TEXT("Normal X Tile"), 2.0f));
+		Tiles->B.Connect(0, AddScalar(Material, TEXT("Normal Y Tile"), 3.0f));
+		UMaterialExpressionMultiply* Scaled = AddNode<UMaterialExpressionMultiply>(Material);
+		Scaled->A.Connect(0, Tiles);
+		Scaled->B.Connect(0, AddNode<UMaterialExpressionTextureCoordinate>(Material));
+		ConnectCallInput(Call, TEXT("Direction X or Y"), MakeDirection(Material));
+		ConnectCallInput(Call, TEXT("Time"), Reversed);
+		ConnectCallInput(Call, TEXT("Texture"), Map);
+		ConnectCallInput(Call, TEXT("Input Coordinates"), Scaled);
+		Material->GetEditorOnlyData()->Normal.Connect(0, Call);
+		return Material;
+	}
+
+	UMaterialExpression* MakeYDirection(UMaterial* Material)
+	{
+		UMaterialExpressionStaticBool* Bool = AddNode<UMaterialExpressionStaticBool>(Material);
+		Bool->Value = true;
+		return Bool;
+	}
+
+	UMaterialExpression* MakeXParameter(UMaterial* Material)
+	{
+		UMaterialExpressionStaticBoolParameter* Bool = AddNode<UMaterialExpressionStaticBoolParameter>(Material);
+		Bool->ParameterName = TEXT("Direction");
+		Bool->DefaultValue = false;
+		return Bool;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePannedFlowLayersTest,
+	"Mantle.Editor.PannedMaterial.FlowLayersKeptAsOne",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePannedFlowLayersTest::RunTest(const FString& Parameters)
+{
+	using namespace MantlePannedFlowTestPrivate;
+
+	UTexture2D* Normal = UTexture2D::CreateTransient(4, 4);
+	UMaterialFunction* River = MakeRiverFunction(MakeBlendFunction());
+
+	// Direction true (a Static Bool node): the Y pair; its faster layer is (-0.02, 0.5) x the clock's -1.
+	const FMantleMaterialAnalysis Y = FMantlePlaceAssets::AnalyzeMaterial(NewRiver(River, Normal, MakeYDirection));
+	if (TestTrue(TEXT("the Y pair is carried as one panned source"), Y.Fidelity2.HasSource(1) && Y.Fidelity2.bPanning[1]))
+	{
+		TestTrue(TEXT("of the texture the function's input gives"), Y.Fidelity2.SourceTextures[1].Get() == Normal);
+		TestEqual(TEXT("speed u: the faster layer, reversed"), Y.Fidelity2.Panning[1][0], 0.02, 1.0e-6);
+		TestEqual(TEXT("speed v"), Y.Fidelity2.Panning[1][1], -0.5, 1.0e-6);
+		TestEqual(TEXT("tiling u"), Y.Fidelity2.SourceTiling[1][0], 2.0, 1.0e-6);
+		TestEqual(TEXT("tiling v"), Y.Fidelity2.SourceTiling[1][1], 3.0, 1.0e-6);
+		TestEqual(TEXT("at full strength"), Y.Fidelity2.NormalScale, 1.0, 1.0e-6);
+		TestTrue(TEXT("two flowing layers kept as one is said"), Y.Fidelity2.bNormalLayersMerged);
+	}
+	TestFalse(TEXT("the flow is not a frozen animation"), Y.Has(EMantleMaterialLoss::Animation));
+	TestTrue(TEXT("the function is a dependency"), DependsOn(Y, River));
+
+	// Direction a Static Bool Parameter left at false: the X pair, (0.5, -0.02) x -1.
+	const FMantleMaterialAnalysis X = FMantlePlaceAssets::AnalyzeMaterial(NewRiver(River, Normal, MakeXParameter));
+	if (TestTrue(TEXT("the X pair is carried as one panned source"), X.Fidelity2.bPanning[1]))
+	{
+		TestEqual(TEXT("speed u"), X.Fidelity2.Panning[1][0], -0.5, 1.0e-6);
+		TestEqual(TEXT("speed v"), X.Fidelity2.Panning[1][1], 0.02, 1.0e-6);
+		TestTrue(TEXT("two flowing layers kept as one is said"), X.Fidelity2.bNormalLayersMerged);
+	}
+
+	// Blends outside a function, and what is refused.
+	UTexture2D* Other = UTexture2D::CreateTransient(4, 4);
+	auto Blended = [](UTexture* First, UTexture* Second, const bool bSecondMoves, const bool bOffset)
+	{
+		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
+		UMaterialExpressionPanner* Fast = AddPanner(Material, 0.0f, 0.4f);
+		UMaterialExpressionPanner* Slow = AddPanner(Material, 0.0f, 0.1f);
+		if (bOffset)
+		{
+			UMaterialExpressionAdd* Shifted = AddNode<UMaterialExpressionAdd>(Material);
+			Shifted->A.Connect(0, AddNode<UMaterialExpressionTextureCoordinate>(Material));
+			Shifted->B.Connect(0, AddPair(Material, 0.4f, 0.35f));
+			Slow->Coordinate.Connect(0, Shifted);
+		}
+		UMaterialExpressionAdd* Sum = AddNode<UMaterialExpressionAdd>(Material);
+		Sum->A.Connect(0, AddSample(Material, First, Fast));
+		Sum->B.Connect(0, AddSample(Material, Second, bSecondMoves ? static_cast<UMaterialExpression*>(Slow) : nullptr));
+		Material->GetEditorOnlyData()->Normal.Connect(0, Sum);
+		return Material;
+	};
+
+	const FMantleMaterialAnalysis Same = FMantlePlaceAssets::AnalyzeMaterial(Blended(Normal, Normal, true, true));
+	if (TestTrue(TEXT("two moving samples of one texture are one"), Same.Fidelity2.bPanning[1] && Same.Fidelity2.bNormalLayersMerged))
+	{
+		TestEqual(TEXT("the faster stands for them"), Same.Fidelity2.Panning[1][1], 0.4, 1.0e-6);
+	}
+	TestFalse(TEXT("two textures are refused"), FMantlePlaceAssets::AnalyzeMaterial(Blended(Normal, Other, true, false)).Fidelity2.bPanning[1]);
+	TestFalse(TEXT("a still sample among them is refused"), FMantlePlaceAssets::AnalyzeMaterial(Blended(Normal, Normal, false, false)).Fidelity2.bPanning[1]);
+
+	// One sample whose UVs have an offset added: the offset would be dropped with nothing to say so, so it is refused.
+	UMaterial* Offset = NewObject<UMaterial>(GetTransientPackage());
+	UMaterialExpressionAdd* Shifted = AddNode<UMaterialExpressionAdd>(Offset);
+	Shifted->A.Connect(0, AddNode<UMaterialExpressionTextureCoordinate>(Offset));
+	Shifted->B.Connect(0, AddPair(Offset, 0.4f, 0.35f));
+	UMaterialExpressionPanner* Moving = AddPanner(Offset, 0.0f, 0.4f);
+	Moving->Coordinate.Connect(0, Shifted);
+	Offset->GetEditorOnlyData()->Normal.Connect(0, AddSample(Offset, Normal, Moving));
+	TestFalse(TEXT("a lone sample with a UV offset is refused"), FMantlePlaceAssets::AnalyzeMaterial(Offset).Fidelity2.bPanning[1]);
 	return true;
 }
 
