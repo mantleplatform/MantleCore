@@ -720,7 +720,7 @@ bool FMantleDecomposeMirroredGroupGatherTest::RunTest(const FString& Parameters)
 	// Publish gathers the level, then exports it against what it gathered; an export that wrote a mesh the gather did not
 	// hold makes publish gather again ("the level kept changing"). So the mirrored copy a group part uses is gathered, and
 	// gathering and exporting again finds the same copy, not a new one.
-	const FMantlePlaceDependencies First = FMantlePlaceAssets::Gather(Fixture.World);
+	const FMantlePlaceDependencies First = FMantlePlaceDependencies::Gather(Fixture.World);
 	FVector PositiveScale;
 	FString Why;
 	UStaticMesh* Copy = FMantleMirrorBake::MirroredCopy(Cube, FVector(-1.0, 1.0, 1.0), PositiveScale, Why);
@@ -733,7 +733,7 @@ bool FMantleDecomposeMirroredGroupGatherTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("and the unmirrored mesh is not what the group publishes"), First.Meshes.ContainsByPredicate([Cube](const FMantleGatheredMesh& Mesh) { return Mesh.Mesh.Get() == Cube; }));
 
 	FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
-	const FMantlePlaceDependencies Second = FMantlePlaceAssets::Gather(Fixture.World);
+	const FMantlePlaceDependencies Second = FMantlePlaceDependencies::Gather(Fixture.World);
 	TestEqual(TEXT("gathering again finds the same meshes"), Second.Meshes.Num(), First.Meshes.Num());
 	if (Gathered)
 	{
