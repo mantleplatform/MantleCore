@@ -3916,6 +3916,15 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 			{
 				Doc.NormalScale = FMath::Clamp(Fidelity.Water.NormalScale, 0.0, 10.0);
 			}
+			else
+			{
+				// A panned normal seen through function calls and Lerps against a flat normal keeps the strength they gave.
+				Doc.NormalScale = FMath::Clamp(Fidelity.NormalScale, 0.0, 10.0);
+			}
+			if (Fidelity.bNormalFoamDropped)
+			{
+				Warn(TEXT("a foam mask on its normal is dropped, so the normal map keeps moving but the foam's flattening does not show."));
+			}
 		}
 	}
 	else if (Normal.IsSet() && AddImage(Normal, EMantlePlaceTextureSlot::Normal, false))

@@ -40,13 +40,19 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialExpression.h"
 #include "Materials/MaterialExpressionBumpOffset.h"
+#include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionAppendVector.h"
 #include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionConstant2Vector.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
+#include "Materials/MaterialExpressionDivide.h"
 #include "Materials/MaterialExpressionFunctionInput.h"
+#include "Materials/MaterialExpressionFunctionOutput.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionNormalize.h"
 #include "Materials/MaterialExpressionOneMinus.h"
 #include "Materials/MaterialExpressionPanner.h"
 #include "Materials/MaterialExpressionPerInstanceCustomData.h"
@@ -55,14 +61,18 @@
 #include "Materials/MaterialExpressionReroute.h"
 #include "Materials/MaterialExpressionRotator.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionStaticBool.h"
+#include "Materials/MaterialExpressionStaticBoolParameter.h"
 #include "Materials/MaterialExpressionStaticSwitch.h"
 #include "Materials/MaterialExpressionStaticSwitchParameter.h"
+#include "Materials/MaterialExpressionSubtract.h"
 #include "Materials/MaterialExpressionTextureBase.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureSample.h"
 #include "Materials/MaterialExpressionTextureSampleParameter.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialExpressionTime.h"
+#include "Materials/MaterialExpressionTransform.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "Materials/MaterialExpressionVertexColor.h"
 #include "Materials/MaterialExpressionWorldPosition.h"
@@ -646,14 +656,643 @@ namespace MantlePlaceAssetsPrivate
 		UTexture* Texture = nullptr;
 		double Tiling[2] = { 1.0, 1.0 };
 		double Speed[2] = { 0.0, 0.0 };
+
+		/** The functions the read went through to reach the sample: dependencies of the material, as its own graph's are. */
+		TArray<const UObject*> Functions;
+	};
+
+	// ---- A panned sample's UVs, seen through function calls ------------------------------------------------
+
+	/** The calls whose functions a read is inside, outermost first; empty in the material's own graph. */
+	using FCallStack = TArray<const UMaterialExpressionMaterialFunctionCall*>;
+
+	/** How many functions deep a read goes (a flow function that calls a helper that calls another is three). */
+	constexpr int32 MaxCallDepth = 6;
+
+	/** One number of a UV: Uv times the first UV set's U or V (Axis 0 or 1; -1 when it has none), plus T times Time, plus C. */
+	struct FUvLane
+	{
+		double Uv = 0.0;
+		int32 Axis = -1;
+		double T = 0.0;
+		double C = 0.0;
+
+		bool IsConstant() const
+		{
+			return Uv == 0.0 && T == 0.0;
+		}
+
+		FUvLane Scaled(const double Factor) const
+		{
+			FUvLane Out = *this;
+			Out.Uv *= Factor;
+			Out.T *= Factor;
+			Out.C *= Factor;
+			return Out;
+		}
+	};
+
+	/** One to four lanes; a scalar (one lane) broadcasts against a wider value, and a lane past the end of a wider one is 0. */
+	struct FUvValue
+	{
+		FUvLane V[4];
+		int32 N = 1;
+
+		FUvLane Lane(const int32 Index) const
+		{
+			if (N == 1)
+			{
+				return V[0];
+			}
+			return Index < N ? V[Index] : FUvLane();
+		}
+	};
+
+	/** A node the read has arrived at, and the calls (functions) it is inside. */
+	struct FGraphNode
+	{
+		const UMaterialExpression* Expression = nullptr;
+		int32 Output = 0;
+		FCallStack Calls;
 	};
 
 	/**
-	 * Input reads a Texture Sample of a 2D texture (its own, not a Texture Object input): on plain UVs
-	 * (bPanned false) or through a Panner with no Time or Speed input (bPanned true).
+	 * Reads UVs as numbers that are linear in the first UV set and Time (UVs times a tiling, plus Time times a speed), and follows an
+	 * output through the nodes that only pass a value on: reroutes, static switches (by the instance's setting, or by a static bool a
+	 * function call gives) and function calls (into the function's output, and from a function input out to the call's input, or to
+	 * the input's own default). Numbers come from constants, scalar and vector parameters (as the context sets them), Add, Subtract,
+	 * Multiply, Divide, Component Mask, Append, Texture Coordinate, Time and a Panner. Anything else ends the read.
+	 */
+	struct FGraphReader
+	{
+		const UMaterialInterface* Context = nullptr;
+		int32 Budget = 512;
+
+		/** A Panner was read (a pan with no speed is still a pan, as it always was), and the functions entered. */
+		bool bPanner = false;
+		TArray<const UObject*> Functions;
+
+		static void ApplyMask(FUvValue& Value, const bool bR, const bool bG, const bool bB, const bool bA)
+		{
+			FUvValue Masked;
+			Masked.N = 0;
+			const bool Keep[4] = { bR, bG, bB, bA };
+			for (int32 Lane = 0; Lane < 4; ++Lane)
+			{
+				if (Keep[Lane])
+				{
+					Masked.V[Masked.N++] = Value.Lane(Lane);
+				}
+			}
+			if (Masked.N > 0)
+			{
+				Value = Masked;
+			}
+		}
+
+		bool StaticSwitchSetting(const UMaterialExpressionStaticSwitchParameter* Parameter) const
+		{
+			bool bValue = Parameter->DefaultValue != 0;
+			bool bSet = false;
+			FGuid Guid;
+			if (Context && Context->GetStaticSwitchParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(Parameter->ParameterName)), bSet, Guid))
+			{
+				bValue = bSet;
+			}
+			return bValue;
+		}
+
+		/**
+		 * The node Input really reads, in the calls it is inside: through reroutes, static switches and function calls. A function
+		 * input that nothing is connected to ends the read there (its default is Value's to read). False when nothing is connected,
+		 * the function is missing, it is called from itself, or it is deeper than MaxCallDepth.
+		 */
+		bool Resolve(const FExpressionInput* Input, FCallStack Calls, FGraphNode& Out)
+		{
+			for (int32 Step = 0; Step < 64; ++Step)
+			{
+				if (--Budget < 0 || !Input || !Input->Expression)
+				{
+					return false;
+				}
+				const UMaterialExpression* Expression = Input->Expression;
+				const int32 Output = Input->OutputIndex;
+				if (const UMaterialExpressionReroute* Reroute = Cast<UMaterialExpressionReroute>(Expression))
+				{
+					Input = &Reroute->Input;
+					continue;
+				}
+				if (const UMaterialExpressionFunctionInput* Declared = Cast<UMaterialExpressionFunctionInput>(Expression))
+				{
+					if (Calls.Num() == 0)
+					{
+						return false;
+					}
+					const FFunctionExpressionInput* Given = nullptr;
+					for (const FFunctionExpressionInput& Candidate : Calls.Last()->FunctionInputs)
+					{
+						if (Candidate.ExpressionInput.Get() == Declared || Candidate.Input.InputName == Declared->InputName)
+						{
+							Given = &Candidate;
+							break;
+						}
+					}
+					if (Given && Given->Input.Expression)
+					{
+						// Out of the function, to what the call connects to the input.
+						Calls.RemoveAt(Calls.Num() - 1);
+						Input = &Given->Input;
+						continue;
+					}
+					if (Declared->bUsePreviewValueAsDefault && Declared->Preview.Expression)
+					{
+						Input = &Declared->Preview;
+						continue;
+					}
+					Out.Expression = Declared;
+					Out.Output = Output;
+					Out.Calls = Calls;
+					return true;
+				}
+				if (const UMaterialExpressionMaterialFunctionCall* Call = Cast<UMaterialExpressionMaterialFunctionCall>(Expression))
+				{
+					if (!Call->MaterialFunction || !Call->FunctionOutputs.IsValidIndex(Output) || !Call->FunctionOutputs[Output].ExpressionOutput
+						|| Calls.Num() >= MaxCallDepth)
+					{
+						return false;
+					}
+					for (const UMaterialExpressionMaterialFunctionCall* Open : Calls)
+					{
+						if (Open->MaterialFunction == Call->MaterialFunction)
+						{
+							return false;
+						}
+					}
+					const UObject* Entered = Call->MaterialFunction.Get();
+					Functions.AddUnique(Entered);
+					Calls.Add(Call);
+					Input = &Call->FunctionOutputs[Output].ExpressionOutput->A;
+					continue;
+				}
+				if (const UMaterialExpressionStaticSwitchParameter* SwitchParameter = Cast<UMaterialExpressionStaticSwitchParameter>(Expression))
+				{
+					Input = StaticSwitchSetting(SwitchParameter) ? &SwitchParameter->A : &SwitchParameter->B;
+					continue;
+				}
+				if (const UMaterialExpressionStaticSwitch* Switch = Cast<UMaterialExpressionStaticSwitch>(Expression))
+				{
+					bool bValue = Switch->DefaultValue != 0;
+					if (Switch->Value.Expression && !Bool(&Switch->Value, Calls, bValue))
+					{
+						return false;
+					}
+					Input = bValue ? &Switch->A : &Switch->B;
+					continue;
+				}
+				Out.Expression = Expression;
+				Out.Output = Output;
+				Out.Calls = Calls;
+				return true;
+			}
+			return false;
+		}
+
+		/** A static bool: a Static Bool, a Static Bool Parameter as the context sets it, or a function input's own default. */
+		bool Bool(const FExpressionInput* Input, const FCallStack& Calls, bool& Out)
+		{
+			FGraphNode Node;
+			if (!Resolve(Input, Calls, Node))
+			{
+				return false;
+			}
+			if (const UMaterialExpressionStaticBool* Constant = Cast<UMaterialExpressionStaticBool>(Node.Expression))
+			{
+				Out = Constant->Value != 0;
+				return true;
+			}
+			if (const UMaterialExpressionStaticBoolParameter* Parameter = Cast<UMaterialExpressionStaticBoolParameter>(Node.Expression))
+			{
+				bool bValue = Parameter->DefaultValue != 0;
+				bool bSet = false;
+				FGuid Guid;
+				if (Context && Context->GetStaticSwitchParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(Parameter->ParameterName)), bSet, Guid))
+				{
+					bValue = bSet;
+				}
+				Out = bValue;
+				return true;
+			}
+			if (const UMaterialExpressionFunctionInput* Declared = Cast<UMaterialExpressionFunctionInput>(Node.Expression))
+			{
+				if (!Declared->bUsePreviewValueAsDefault)
+				{
+					return false;
+				}
+				Out = Declared->PreviewValue.X != 0.0f;
+				return true;
+			}
+			return false;
+		}
+
+		/** Input as lanes; unconnected, the constant when there is one (a Multiply's ConstB). */
+		bool Number(const FExpressionInput* Input, const bool bHasConstant, const double Constant, const FCallStack& Calls, FUvValue& Out)
+		{
+			if (!Input || !Input->Expression)
+			{
+				if (!bHasConstant)
+				{
+					return false;
+				}
+				Out = FUvValue();
+				Out.V[0].C = Constant;
+				return true;
+			}
+			FGraphNode Node;
+			if (!Resolve(Input, Calls, Node) || !Evaluate(Node, Out))
+			{
+				return false;
+			}
+			if (Node.Expression->Outputs.IsValidIndex(Node.Output))
+			{
+				const FExpressionOutput& Pin = Node.Expression->Outputs[Node.Output];
+				if (Pin.Mask)
+				{
+					ApplyMask(Out, Pin.MaskR != 0, Pin.MaskG != 0, Pin.MaskB != 0, Pin.MaskA != 0);
+				}
+			}
+			return true;
+		}
+
+		/** Two numbers combined lane by lane: Kind 0 adds, 1 subtracts, 2 multiplies (one side per lane must be a constant), 3 divides (by a constant). */
+		bool Combine(const FExpressionInput* A, const double ConstA, const FExpressionInput* B, const double ConstB, const FCallStack& Calls, const int32 Kind,
+			FUvValue& Out)
+		{
+			FUvValue Left, Right;
+			if (!Number(A, true, ConstA, Calls, Left) || !Number(B, true, ConstB, Calls, Right))
+			{
+				return false;
+			}
+			Out = FUvValue();
+			Out.N = FMath::Max(Left.N, Right.N);
+			for (int32 Index = 0; Index < Out.N; ++Index)
+			{
+				const FUvLane L = Left.Lane(Index);
+				const FUvLane R = Right.Lane(Index);
+				if (Kind <= 1)
+				{
+					const double Sign = Kind == 0 ? 1.0 : -1.0;
+					if (L.Uv != 0.0 && R.Uv != 0.0 && L.Axis != R.Axis)
+					{
+						return false;
+					}
+					FUvLane Sum;
+					Sum.Uv = L.Uv + Sign * R.Uv;
+					Sum.Axis = L.Uv != 0.0 ? L.Axis : R.Axis;
+					Sum.T = L.T + Sign * R.T;
+					Sum.C = L.C + Sign * R.C;
+					Out.V[Index] = Sum;
+				}
+				else if (Kind == 3)
+				{
+					if (!R.IsConstant() || FMath::Abs(R.C) <= UE_DOUBLE_SMALL_NUMBER)
+					{
+						return false;
+					}
+					Out.V[Index] = L.Scaled(1.0 / R.C);
+				}
+				else if (R.IsConstant())
+				{
+					Out.V[Index] = L.Scaled(R.C);
+				}
+				else if (L.IsConstant())
+				{
+					Out.V[Index] = R.Scaled(L.C);
+				}
+				else
+				{
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/** The node's own value (its output pin's mask is applied by Number). */
+		bool Evaluate(const FGraphNode& Node, FUvValue& Out)
+		{
+			if (--Budget < 0)
+			{
+				return false;
+			}
+			const UMaterialExpression* Expression = Node.Expression;
+			const FCallStack& Calls = Node.Calls;
+			Out = FUvValue();
+			if (const UMaterialExpressionConstant* Constant = Cast<UMaterialExpressionConstant>(Expression))
+			{
+				Out.V[0].C = Constant->R;
+				return true;
+			}
+			if (const UMaterialExpressionConstant2Vector* Constant2 = Cast<UMaterialExpressionConstant2Vector>(Expression))
+			{
+				Out.N = 2;
+				Out.V[0].C = Constant2->R;
+				Out.V[1].C = Constant2->G;
+				return true;
+			}
+			if (const UMaterialExpressionConstant3Vector* Constant3 = Cast<UMaterialExpressionConstant3Vector>(Expression))
+			{
+				Out.N = 3;
+				Out.V[0].C = Constant3->Constant.R;
+				Out.V[1].C = Constant3->Constant.G;
+				Out.V[2].C = Constant3->Constant.B;
+				return true;
+			}
+			if (const UMaterialExpressionScalarParameter* Scalar = Cast<UMaterialExpressionScalarParameter>(Expression))
+			{
+				float Value = Scalar->DefaultValue;
+				float Set = 0.0f;
+				if (Context && Context->GetScalarParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(Scalar->ParameterName)), Set))
+				{
+					Value = Set;
+				}
+				Out.V[0].C = Value;
+				return true;
+			}
+			if (const UMaterialExpressionVectorParameter* VectorParameter = Cast<UMaterialExpressionVectorParameter>(Expression))
+			{
+				FLinearColor Colour = VectorParameter->DefaultValue;
+				if (Context)
+				{
+					Context->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(VectorParameter->ParameterName)), Colour);
+				}
+				Out.N = 4;
+				Out.V[0].C = Colour.R;
+				Out.V[1].C = Colour.G;
+				Out.V[2].C = Colour.B;
+				Out.V[3].C = Colour.A;
+				return true;
+			}
+			if (const UMaterialExpressionFunctionInput* Declared = Cast<UMaterialExpressionFunctionInput>(Expression))
+			{
+				// Nothing is connected to it (Resolve went on otherwise): its own default.
+				if (!Declared->bUsePreviewValueAsDefault)
+				{
+					return false;
+				}
+				const FVector4f& Value = Declared->PreviewValue;
+				switch (Declared->InputType)
+				{
+				case FunctionInput_Scalar:
+					Out.N = 1;
+					break;
+				case FunctionInput_Vector2:
+					Out.N = 2;
+					break;
+				case FunctionInput_Vector3:
+					Out.N = 3;
+					break;
+				case FunctionInput_Vector4:
+					Out.N = 4;
+					break;
+				default:
+					return false;
+				}
+				const double Components[4] = { Value.X, Value.Y, Value.Z, Value.W };
+				for (int32 Lane = 0; Lane < Out.N; ++Lane)
+				{
+					Out.V[Lane].C = Components[Lane];
+				}
+				return true;
+			}
+			if (const UMaterialExpressionTextureCoordinate* TexCoord = Cast<UMaterialExpressionTextureCoordinate>(Expression))
+			{
+				if (TexCoord->CoordinateIndex != 0 || TexCoord->UnMirrorU || TexCoord->UnMirrorV)
+				{
+					return false;
+				}
+				Out.N = 2;
+				Out.V[0].Uv = TexCoord->UTiling;
+				Out.V[0].Axis = 0;
+				Out.V[1].Uv = TexCoord->VTiling;
+				Out.V[1].Axis = 1;
+				return true;
+			}
+			if (const UMaterialExpressionTime* Time = Cast<UMaterialExpressionTime>(Expression))
+			{
+				if (Time->bOverride_Period && Time->Period > 0.0f)
+				{
+					return false;
+				}
+				Out.V[0].T = 1.0;
+				return true;
+			}
+			if (const UMaterialExpressionAdd* Add = Cast<UMaterialExpressionAdd>(Expression))
+			{
+				return Combine(&Add->A, Add->ConstA, &Add->B, Add->ConstB, Calls, 0, Out);
+			}
+			if (const UMaterialExpressionSubtract* Subtract = Cast<UMaterialExpressionSubtract>(Expression))
+			{
+				return Combine(&Subtract->A, Subtract->ConstA, &Subtract->B, Subtract->ConstB, Calls, 1, Out);
+			}
+			if (const UMaterialExpressionMultiply* Multiply = Cast<UMaterialExpressionMultiply>(Expression))
+			{
+				return Combine(&Multiply->A, Multiply->ConstA, &Multiply->B, Multiply->ConstB, Calls, 2, Out);
+			}
+			if (const UMaterialExpressionDivide* Divide = Cast<UMaterialExpressionDivide>(Expression))
+			{
+				return Combine(&Divide->A, Divide->ConstA, &Divide->B, Divide->ConstB, Calls, 3, Out);
+			}
+			if (const UMaterialExpressionComponentMask* Mask = Cast<UMaterialExpressionComponentMask>(Expression))
+			{
+				if (!Number(&Mask->Input, false, 0.0, Calls, Out))
+				{
+					return false;
+				}
+				ApplyMask(Out, Mask->R != 0, Mask->G != 0, Mask->B != 0, Mask->A != 0);
+				return true;
+			}
+			if (const UMaterialExpressionAppendVector* Append = Cast<UMaterialExpressionAppendVector>(Expression))
+			{
+				FUvValue Left, Right;
+				if (!Number(&Append->A, false, 0.0, Calls, Left) || !Number(&Append->B, false, 0.0, Calls, Right) || Left.N + Right.N > 4)
+				{
+					return false;
+				}
+				Out.N = Left.N + Right.N;
+				for (int32 Lane = 0; Lane < Left.N; ++Lane)
+				{
+					Out.V[Lane] = Left.V[Lane];
+				}
+				for (int32 Lane = 0; Lane < Right.N; ++Lane)
+				{
+					Out.V[Left.N + Lane] = Right.V[Lane];
+				}
+				return true;
+			}
+			if (const UMaterialExpressionPanner* Panner = Cast<UMaterialExpressionPanner>(Expression))
+			{
+				// Coordinate + Time x Speed. Unconnected: the first UV set, the game's Time, and the node's own speed.
+				FUvValue Coordinate, Speed, Clock;
+				if (Panner->Coordinate.Expression)
+				{
+					if (!Number(&Panner->Coordinate, false, 0.0, Calls, Coordinate))
+					{
+						return false;
+					}
+				}
+				else if (Panner->ConstCoordinate == 0)
+				{
+					Coordinate.N = 2;
+					Coordinate.V[0].Uv = 1.0;
+					Coordinate.V[0].Axis = 0;
+					Coordinate.V[1].Uv = 1.0;
+					Coordinate.V[1].Axis = 1;
+				}
+				else
+				{
+					return false;
+				}
+				if (Panner->Speed.Expression)
+				{
+					if (!Number(&Panner->Speed, false, 0.0, Calls, Speed))
+					{
+						return false;
+					}
+				}
+				else
+				{
+					Speed.N = 2;
+					Speed.V[0].C = Panner->SpeedX;
+					Speed.V[1].C = Panner->SpeedY;
+				}
+				if (Panner->Time.Expression)
+				{
+					// A Time node here is the game's time, the same as leaving it unconnected.
+					if (!Number(&Panner->Time, false, 0.0, Calls, Clock) || Clock.Lane(0).Uv != 0.0)
+					{
+						return false;
+					}
+				}
+				else
+				{
+					Clock.V[0].T = 1.0;
+				}
+				const FUvLane Time0 = Clock.Lane(0);
+				Out.N = 2;
+				for (int32 Lane = 0; Lane < 2; ++Lane)
+				{
+					const FUvLane Rate = Speed.Lane(Lane);
+					if (!Rate.IsConstant())
+					{
+						return false;
+					}
+					Out.V[Lane] = Coordinate.Lane(Lane);
+					Out.V[Lane].T += Time0.T * Rate.C;
+					Out.V[Lane].C += Time0.C * Rate.C;
+				}
+				bPanner = true;
+				return true;
+			}
+			return false;
+		}
+	};
+
+	/**
+	 * A sample's UVs as the first UV set times a tiling plus Time times a speed (a Panner, or Time times a constant added on), with no
+	 * offset: the tiling and the speed, each per axis. Speeds past the schema's bound are refused.
+	 */
+	bool ReadUvs(FGraphReader& Reader, const FExpressionInput& Coordinates, const uint32 ConstCoordinate, const FCallStack& Calls, double (&OutTiling)[2], double (&OutSpeed)[2])
+	{
+		FUvValue Value;
+		if (Coordinates.Expression)
+		{
+			if (!Reader.Number(&Coordinates, false, 0.0, Calls, Value) || Value.N < 2)
+			{
+				return false;
+			}
+		}
+		else if (ConstCoordinate == 0)
+		{
+			Value.N = 2;
+			Value.V[0].Uv = 1.0;
+			Value.V[0].Axis = 0;
+			Value.V[1].Uv = 1.0;
+			Value.V[1].Axis = 1;
+		}
+		else
+		{
+			return false;
+		}
+		for (int32 Axis = 0; Axis < 2; ++Axis)
+		{
+			const FUvLane Lane = Value.Lane(Axis);
+			if (Lane.Uv == 0.0 || Lane.Axis != Axis || Lane.C != 0.0 || FMath::Abs(Lane.T) > MaxPanSpeed)
+			{
+				return false;
+			}
+			OutTiling[Axis] = Lane.Uv;
+			OutSpeed[Axis] = Lane.T;
+		}
+		return true;
+	}
+
+	/**
+	 * The sample Node is, when it is a Texture Sample of a 2D texture (its own, or a Texture Object a function input or a parameter gives)
+	 * whose UVs move: through a Panner, or by Time. A sample whose UVs do not move is not one.
+	 */
+	bool RecogniseMovingSample(const FWalk& Walk, FGraphReader& Reader, const FGraphNode& Node, FRecognisedSample& Out)
+	{
+		const UMaterialExpressionTextureSample* Sample = PlainSampleClass(Node.Expression);
+		if (!Sample)
+		{
+			return false;
+		}
+		UTexture2D* Texture = nullptr;
+		if (Sample->TextureObject.Expression)
+		{
+			FGraphNode Object;
+			const UMaterialExpressionTextureBase* Source = Reader.Resolve(&Sample->TextureObject, Node.Calls, Object) ? Cast<UMaterialExpressionTextureBase>(Object.Expression) : nullptr;
+			Texture = Source ? Cast<UTexture2D>(Walk.ResolveTexture(Source)) : nullptr;
+		}
+		else
+		{
+			Texture = Cast<UTexture2D>(Walk.ResolveTexture(Sample));
+		}
+		if (!Texture)
+		{
+			return false;
+		}
+		FRecognisedSample Found;
+		Found.Sample = Sample;
+		Found.Channel = OutputChannel(Sample, Node.Output);
+		Found.Texture = Texture;
+		Reader.bPanner = false;
+		if (!ReadUvs(Reader, Sample->Coordinates, Sample->ConstCoordinate, Node.Calls, Found.Tiling, Found.Speed))
+		{
+			return false;
+		}
+		if (!Reader.bPanner && Found.Speed[0] == 0.0 && Found.Speed[1] == 0.0)
+		{
+			return false;
+		}
+		Found.Functions = Reader.Functions;
+		Out = Found;
+		return true;
+	}
+
+	/**
+	 * Input reads a Texture Sample of a 2D texture (its own, not a Texture Object input): on plain UVs (bPanned false), or (bPanned true)
+	 * with UVs that move: a Panner, or Time times a constant speed, with a tiling and, through function calls, scalar parameters and
+	 * constants for the speed and the tiling.
 	 */
 	bool RecogniseSample(const FWalk& Walk, const FExpressionInput* Input, const bool bPanned, FRecognisedSample& Out)
 	{
+		if (bPanned)
+		{
+			FGraphReader Reader;
+			Reader.Context = Walk.Context;
+			FGraphNode Node;
+			return Reader.Resolve(Input, FCallStack(), Node) && RecogniseMovingSample(Walk, Reader, Node, Out);
+		}
 		int32 Output = 0;
 		const UMaterialExpressionTextureSample* Sample = PlainSampleClass(Follow(Input, Output));
 		if (!Sample || Sample->TextureObject.Expression)
@@ -669,19 +1308,7 @@ namespace MantlePlaceAssetsPrivate
 		Out.Sample = Sample;
 		Out.Channel = OutputChannel(Sample, Output);
 		Out.Texture = Texture;
-		if (!bPanned)
-		{
-			return FirstUVTiling(Sample->Coordinates, Sample->ConstCoordinate, Out.Tiling);
-		}
-		int32 PannerOutput = 0;
-		const UMaterialExpressionPanner* Panner = Cast<UMaterialExpressionPanner>(Follow(&Sample->Coordinates, PannerOutput));
-		if (!Panner || Panner->Time.Expression || Panner->Speed.Expression || FMath::Abs(Panner->SpeedX) > MaxPanSpeed || FMath::Abs(Panner->SpeedY) > MaxPanSpeed)
-		{
-			return false;
-		}
-		Out.Speed[0] = Panner->SpeedX;
-		Out.Speed[1] = Panner->SpeedY;
-		return FirstUVTiling(Panner->Coordinate, Panner->ConstCoordinate, Out.Tiling);
+		return FirstUVTiling(Sample->Coordinates, Sample->ConstCoordinate, Out.Tiling);
 	}
 
 	/** The one vertex-colour channel Input reads ('r', 'g', 'b', 'a'): an output of Vertex Color, or a one-channel Component Mask of it. */
@@ -766,6 +1393,95 @@ namespace MantlePlaceAssetsPrivate
 	bool RecognisePanned(const FWalk& Walk, const FExpressionInput* Input, FRecognisedSample& Out)
 	{
 		return IsConnected(Input) && RecogniseSample(Walk, Input, true, Out) && ReadsColour(Out);
+	}
+
+	/** A flat tangent-space normal: the constant (0, 0, 1), or a Transform of one. */
+	bool IsFlatNormal(FGraphReader& Reader, const FExpressionInput* Input, const FCallStack& Calls)
+	{
+		FGraphNode Node;
+		if (!Reader.Resolve(Input, Calls, Node))
+		{
+			return false;
+		}
+		if (const UMaterialExpressionTransform* Transform = Cast<UMaterialExpressionTransform>(Node.Expression))
+		{
+			return IsFlatNormal(Reader, &Transform->Input, Node.Calls);
+		}
+		const UMaterialExpressionConstant3Vector* Constant = Cast<UMaterialExpressionConstant3Vector>(Node.Expression);
+		return Constant && Constant->Constant.R == 0.0f && Constant->Constant.G == 0.0f && Constant->Constant.B == 1.0f;
+	}
+
+	/**
+	 * The normal output read as one moving sample of a normal map, through what only changes how strong it is or where it comes from:
+	 * Normalize, function calls (the sample may be inside a function, its texture, tiling and speed given by the call's inputs), and a
+	 * Lerp against a flat normal.
+	 *  - Lerp(flat, X, constant) is X at that strength, and Lerp(X, flat, constant) is X at one minus it: OutScale, the document's normalScale.
+	 *  - Lerp(X, flat, mask) by anything that is not a constant (a foam mask over the water) is followed on its X side, and says so
+	 *    (bOutFoamDropped): the foam is not carried, and the water under it moves as it did.
+	 * Two samples blended (a Lerp of two normals, as a flow map's two phases are), or anything else, is refused.
+	 */
+	bool RecogniseNormal(const FWalk& Walk, const FExpressionInput* Input, FRecognisedSample& Out, double& OutScale, bool& bOutFoamDropped)
+	{
+		FGraphReader Reader;
+		Reader.Context = Walk.Context;
+		FCallStack Calls;
+		double Scale = 1.0;
+		bool bFoamDropped = false;
+		for (int32 Step = 0; Step < 8; ++Step)
+		{
+			FGraphNode Node;
+			if (!Reader.Resolve(Input, Calls, Node))
+			{
+				return false;
+			}
+			Calls = Node.Calls;
+			if (const UMaterialExpressionNormalize* Normalize = Cast<UMaterialExpressionNormalize>(Node.Expression))
+			{
+				Input = &Normalize->VectorInput;
+				continue;
+			}
+			if (const UMaterialExpressionLinearInterpolate* Lerp = Cast<UMaterialExpressionLinearInterpolate>(Node.Expression))
+			{
+				const bool bFlatA = IsFlatNormal(Reader, &Lerp->A, Calls);
+				const bool bFlatB = IsFlatNormal(Reader, &Lerp->B, Calls);
+				if (bFlatA == bFlatB)
+				{
+					return false;
+				}
+				FUvValue Alpha;
+				const bool bConstant = Reader.Number(&Lerp->Alpha, true, Lerp->ConstAlpha, Calls, Alpha) && Alpha.Lane(0).IsConstant();
+				if (bFlatA)
+				{
+					if (!bConstant)
+					{
+						return false;
+					}
+					Scale *= Alpha.Lane(0).C;
+					Input = &Lerp->B;
+				}
+				else
+				{
+					if (bConstant)
+					{
+						Scale *= 1.0 - Alpha.Lane(0).C;
+					}
+					else
+					{
+						bFoamDropped = true;
+					}
+					Input = &Lerp->A;
+				}
+				continue;
+			}
+			if (RecogniseMovingSample(Walk, Reader, Node, Out) && ReadsColour(Out))
+			{
+				OutScale = Scale;
+				bOutFoamDropped = bFoamDropped;
+				return true;
+			}
+			return false;
+		}
+		return false;
 	}
 
 	/** wind: World Position Offset = SimpleGrassWind(constant intensity and speed, a recognised weight), nothing added. */
@@ -2751,6 +3467,11 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 			Fidelity.Panning[Slot][0] = Sample.Speed[0];
 			Fidelity.Panning[Slot][1] = Sample.Speed[1];
 			Walk.AddTexture(Sample.Texture);
+			// A sample read inside a function: the function is a dependency too (editing it changes the bake).
+			for (const UObject* Function : Sample.Functions)
+			{
+				Walk.AddDependency(Function);
+			}
 		};
 		FRecognisedSample Panned;
 		if (bLit && !IsCarried(MP_BaseColor) && RecognisePanned(Walk, Roots.BaseColor, Panned))
@@ -2769,9 +3490,16 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 				}
 			}
 		}
-		if (bLit && !IsCarried(MP_Normal) && RecognisePanned(Walk, Roots.Normal, Panned))
+		// The normal may be one moving sample of a normal map seen through function calls, Normalize and Lerps against a flat normal
+		// (the Stylized Village waterfall's MF_RiverMotionNormal): the strength those give is the document's normalScale, and a foam mask
+		// lerped over it is dropped and said (bNormalFoamDropped).
+		double NormalScale = 1.0;
+		bool bNormalFoamDropped = false;
+		if (bLit && !IsCarried(MP_Normal) && IsConnected(Roots.Normal) && RecogniseNormal(Walk, Roots.Normal, Panned, NormalScale, bNormalFoamDropped))
 		{
 			CarryPanned(1, Panned);
+			Fidelity.NormalScale = NormalScale;
+			Fidelity.bNormalFoamDropped = bNormalFoamDropped;
 			Carry({ MP_Normal });
 		}
 		if (bCarries && !IsCarried(MP_EmissiveColor) && RecognisePanned(Walk, Roots.Emissive, Panned))
@@ -3163,7 +3891,7 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 	switch (Loss)
 	{
 	case EMantleMaterialLoss::Animation:
-		return TEXT("time-based animation will be frozen (panners, flipbooks and Time nodes stop moving; only a Panner straight into a texture's UVs, that texture straight into an output, keeps moving).");
+		return TEXT("time-based animation will be frozen (panners, flipbooks and Time nodes stop moving; only a Panner, or Time times a constant speed, straight into a texture's UVs, that texture straight into an output, keeps moving; a function call, a Normalize or a Lerp against a flat normal may sit between the texture and the Normal output).");
 	case EMantleMaterialLoss::WorldPositionOffset:
 		return TEXT("world position offset (wind or vertex animation) is dropped, so the mesh will not sway or move (only the engine's SimpleGrassWind with constant intensity and speed is kept).");
 	case EMantleMaterialLoss::WorldAligned:
@@ -3475,6 +4203,12 @@ void FMantlePlaceAssets::CheckMaterial(const UMaterialInterface* Material, const
 	{
 		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
 			FString::Printf(TEXT("%s: its Fresnel rim glow is dropped, so the edges no longer glow brighter than the face (the baked glow is seen face-on, where a Fresnel is 0)."), *Subject),
+			LossRemedy });
+	}
+	if (Analysis.Fidelity2.bNormalFoamDropped)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("%s: a foam mask on its normal is dropped, so the normal map keeps moving but the foam's flattening does not show."), *Subject),
 			LossRemedy });
 	}
 	if (Analysis.Fidelity2.Glass.bFound)

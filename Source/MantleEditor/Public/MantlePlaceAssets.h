@@ -153,6 +153,14 @@ struct MANTLEEDITOR_API FMantleMaterialFidelity2
 	bool bPanning[4] = { false, false, false, false };
 	double Panning[4][2] = { { 0.0, 0.0 }, { 0.0, 0.0 }, { 0.0, 0.0 }, { 0.0, 0.0 } };
 
+	/**
+	 * The normal slot's panned source, seen through function calls, Normalize and Lerps against a flat normal: the strength those
+	 * give (the document's normalScale), and bNormalFoamDropped when a Lerp toward a flat normal by a mask that is not a constant
+	 * (a foam mask) was followed on its water side, so the foam is not carried.
+	 */
+	double NormalScale = 1.0;
+	bool bNormalFoamDropped = false;
+
 	/** wind: SimpleGrassWind on World Position Offset, its constant intensity and speed, and its weight (vertexColorR, uvV, uniform). */
 	bool bWind = false;
 	double WindIntensity = 0.0;
