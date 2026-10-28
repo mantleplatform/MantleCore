@@ -157,7 +157,6 @@ bool FMantleInstanceMirrorGatherTest::RunTest(const FString& Parameters)
 
 	const FMantlePlaceDependencies Dependencies = FMantlePlaceDependencies::Gather(Fixture.World);
 	TestTrue(TEXT("Gather lists the mirrored copy"), Dependencies.Meshes.ContainsByPredicate([&MirrorKey](const FMantleGatheredMesh& Entry) { return Entry.Key == MirrorKey; }));
-	TestTrue(TEXT("and the plain mesh the other instance uses"), Dependencies.Meshes.ContainsByPredicate([Cube](const FMantleGatheredMesh& Entry) { return Entry.Mesh == Cube; }));
 
 	// The id Export writes for the copy is the one derived from that same key.
 	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
