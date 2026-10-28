@@ -1,5 +1,8 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCoverage.h"
+#include "MantleActorDecompose.h"
+#include "MantleMirrorBake.h"
+#include "MantlePlaceAssets.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceValidator.h"
 
@@ -119,6 +122,48 @@ bool FMantleInstanceMirrorTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("in one set for the plain cube and one for the mirrored copy"), Sets, 2);
 	TestEqual(TEXT("two are reported as approximated"), Result.Coverage.Count(MantleCoverageCategory::StaticMeshes, EOutcome::Approximated), static_cast<int64>(2));
 	TestEqual(TEXT("and the zero-scale one as dropped"), Result.Coverage.Count(MantleCoverageCategory::StaticMeshes, EOutcome::Dropped), static_cast<int64>(1));
+	return true;
+}
+
+// The publish uploads what Gather lists, and Export refuses a place that names an asset nobody uploaded: so the mirrored copy an
+// instance is placed with has to be gathered under the key Export references (it was not, and every such publish failed).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleInstanceMirrorGatherTest,
+	"Mantle.Editor.PlaceExporter.GatherListsMirroredInstanceMesh",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleInstanceMirrorGatherTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleInstanceMirrorTestPrivate;
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!Cube)
+	{
+		AddWarning(TEXT("the engine cube did not load; skipped"));
+		return true;
+	}
+	FMantleMirrorBake::ClearCache();
+	FInstanceWorld Fixture;
+	if (!TestNotNull(TEXT("the instances spawned"), SpawnInstances(Fixture.World, Cube, { FVector(1.0, 1.0, 1.0), FVector(-1.0, 1.0, 1.0) })))
+	{
+		return false;
+	}
+
+	const FMantleMirrorResult Mirror = FMantleActorDecompose::ResolveMirror(Cube, FVector(-1.0, 1.0, 1.0));
+	if (!TestTrue(TEXT("the mirrored copy was made"), Mirror.bOk))
+	{
+		return false;
+	}
+	const FString MirrorKey = FMantlePlaceAssets::MeshKey(Mirror.Mesh);
+
+	const FMantlePlaceDependencies Dependencies = FMantlePlaceDependencies::Gather(Fixture.World);
+	TestTrue(TEXT("Gather lists the mirrored copy"), Dependencies.Meshes.ContainsByPredicate([&MirrorKey](const FMantleGatheredMesh& Entry) { return Entry.Key == MirrorKey; }));
+	TestTrue(TEXT("and the plain mesh the other instance uses"), Dependencies.Meshes.ContainsByPredicate([Cube](const FMantleGatheredMesh& Entry) { return Entry.Mesh == Cube; }));
+
+	// The id Export writes for the copy is the one derived from that same key.
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	const FString MirrorId = FMantlePlaceAssets::ProvisionalId(MirrorKey);
+	TestTrue(TEXT("Export references the key Gather listed"), Result.Place.Assets.ContainsByPredicate([&MirrorId](const FMantleAssetRef& Ref) { return Ref.Id == MirrorId; }));
+	FMantleMirrorBake::ClearCache();
 	return true;
 }
 

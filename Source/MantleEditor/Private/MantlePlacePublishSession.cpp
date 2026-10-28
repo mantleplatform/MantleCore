@@ -630,12 +630,20 @@ EMantlePlaceExportOutcome FMantleLevelPublishSource::Export(const FMantlePlaceAs
 	{
 		Recorded.Add(Pair.Value.Id);
 	}
+	bool bMissing = false;
 	for (const FMantleAssetRef& Ref : Exported.Place.Assets)
 	{
 		if (MantlePlacePublishSessionPrivate::IsUploadedAssetId(Ref.Id) && !Recorded.Contains(Ref.Id))
 		{
-			return EMantlePlaceExportOutcome::NeedsNewAssets;
+			// Name it: a later "level kept changing" failure then says which asset Gather never saw.
+			UE_LOG(LogMantle, Display, TEXT("MANTLE_PUBLISH asset %s (kind %d, hash %s) was exported but not uploaded; gathering again"),
+				*Ref.Id, static_cast<int32>(Ref.Kind), *Ref.Hash);
+			bMissing = true;
 		}
+	}
+	if (bMissing)
+	{
+		return EMantlePlaceExportOutcome::NeedsNewAssets;
 	}
 	OutPlaceJson = FMantlePlaceExporter::ToJson(Exported.Place);
 

@@ -2382,6 +2382,13 @@ FMantlePlaceDependencies FMantlePlaceDependencies::Gather(UWorld* World)
 	{
 		const AActor* Owner = Component->GetOwner();
 		Out.AddComponent(Component, Owner->GetActorLabel());
+		// The mirrored copies Export places negative-scale instances with (GhzGarage/mantle#818), the same ones, so they upload too.
+		TArray<UStaticMesh*> Mirrors;
+		FMantlePlaceExporter::CollectInstanceMirrors(Component, Mirrors);
+		for (UStaticMesh* Mirrored : Mirrors)
+		{
+			Out.AddComponent(Component, Owner->GetActorLabel(), Mirrored);
+		}
 	}
 	// Spline meshes baked into static meshes, where Export writes them (#628): they upload like any project mesh.
 	Out.AddSplineMeshes(World);

@@ -3013,6 +3013,24 @@ namespace
 		return Normalized;
 	}
 
+	/** What Export does with one instance of an instanced mesh, by its normalised scale. Gather asks the same question, so they agree. */
+	enum class EExporterInstanceKind : uint8 { Plain, Mirrored, Flat };
+
+	EExporterInstanceKind ExporterClassifyInstance(const FVector& NormalizedScale)
+	{
+		if (NormalizedScale.GetMin() < 0.0)
+		{
+			return EExporterInstanceKind::Mirrored;
+		}
+		return NormalizedScale.GetMin() < GExporterMinInstanceScale ? EExporterInstanceKind::Flat : EExporterInstanceKind::Plain;
+	}
+
+	/** The set of negative axes of a mirrored instance's scale: the key of its mirrored copy. */
+	int32 ExporterMirrorMask(const FVector& Scale)
+	{
+		return (Scale.X < 0.0 ? 1 : 0) | (Scale.Y < 0.0 ? 2 : 0) | (Scale.Z < 0.0 ? 4 : 0);
+	}
+
 	/** Content in game: something a player could see (a visible primitive or light) or touch. */
 	bool ExporterIsGameContent(const UActorComponent* Component)
 	{
@@ -3168,6 +3186,48 @@ TArray<UInstancedStaticMeshComponent*> FMantlePlaceExporter::CollectInstanceSour
 		}
 	}
 	return Sources;
+}
+
+void FMantlePlaceExporter::CollectInstanceMirrors(const UInstancedStaticMeshComponent* Component, TArray<UStaticMesh*>& OutMirrors)
+{
+	OutMirrors.Reset();
+	UStaticMesh* Source = Component ? Component->GetStaticMesh() : nullptr;
+	if (!Source)
+	{
+		return;
+	}
+	TSet<int32> Seen;
+	const int32 Count = Component->GetInstanceCount();
+	for (int32 InstanceIndex = 0; InstanceIndex < Count; ++InstanceIndex)
+	{
+		FTransform Instance;
+		if (!Component->GetInstanceTransform(InstanceIndex, Instance, /*bWorldSpace*/ true))
+		{
+			continue;
+		}
+		const FVector Scale = ExporterNormalizeInstance(Instance).GetScale3D();
+		switch (ExporterClassifyInstance(Scale))
+		{
+		case EExporterInstanceKind::Plain:
+			break;
+		case EExporterInstanceKind::Mirrored:
+		{
+			bool bAlreadySeen = false;
+			Seen.Add(ExporterMirrorMask(Scale), &bAlreadySeen);
+			if (!bAlreadySeen)
+			{
+				const FMantleMirrorResult Mirror = FMantleActorDecompose::ResolveMirror(Source, Scale);
+				if (Mirror.bOk)
+				{
+					OutMirrors.AddUnique(Mirror.Mesh);
+				}
+			}
+			break;
+		}
+		case EExporterInstanceKind::Flat:
+			break;
+		}
+	}
 }
 
 void FMantlePlaceExporter::CollectPrefabParts(
@@ -4208,9 +4268,10 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				}
 				const FTransform Normalized = ExporterNormalizeInstance(Instance);
 				const FVector Scale = Normalized.GetScale3D();
-				if (Scale.GetMin() < 0.0)
+				const EExporterInstanceKind Kind = ExporterClassifyInstance(Scale);
+				if (Kind == EExporterInstanceKind::Mirrored)
 				{
-					const int32 Mask = (Scale.X < 0.0 ? 1 : 0) | (Scale.Y < 0.0 ? 2 : 0) | (Scale.Z < 0.0 ? 4 : 0);
+					const int32 Mask = ExporterMirrorMask(Scale);
 					FMirroredGroup* Mirrored = MirrorGroups.Find(Mask);
 					if (!Mirrored && !MirrorFailures.Contains(Mask))
 					{
@@ -4235,7 +4296,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 					Groups[Mirrored->Group].WorldInstances.Add(Placed);
 					++MirroredCount;
 				}
-				else if (Scale.GetMin() < GExporterMinInstanceScale)
+				else if (Kind == EExporterInstanceKind::Flat)
 				{
 					++FlatCount;
 				}

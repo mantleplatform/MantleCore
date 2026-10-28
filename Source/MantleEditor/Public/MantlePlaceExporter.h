@@ -600,6 +600,14 @@ public:
 	static TArray<UInstancedStaticMeshComponent*> CollectInstanceSources(UWorld* World);
 
 	/**
+	 * The meshes Export places Component's instances with besides its own: the cached mirrored copy
+	 * (FMantleActorDecompose::ResolveMirror) for each set of negative axes among its instances, classified
+	 * as Export does (instances scaled to zero or whose copy could not be made are left out). Gather uploads
+	 * these.  Export always references the component's own mesh too, so Gather adds that as well.
+	 */
+	static void CollectInstanceMirrors(const UInstancedStaticMeshComponent* Component, TArray<UStaticMesh*>& OutMirrors);
+
+	/**
 	 * An actor ClassifyActor cannot express whose content is only exported instanced meshes (a PCG
 	 * volume or partition actor, a Blueprint of instanced props, a place imported back into a
 	 * level). Export writes its instances and not the actor, and neither Export nor Check reports it
