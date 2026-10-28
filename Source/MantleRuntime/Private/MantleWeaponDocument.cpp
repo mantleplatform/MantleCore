@@ -64,6 +64,11 @@ namespace MantleWeaponDocumentPrivate
 	const TCHAR* const GWeaponDocQuiverNames[] = { TEXT("back"), TEXT("hip"), TEXT("side") };
 	// style (Round 3): how a bow is held to shoot (B is not built).
 	const TCHAR* const GWeaponDocShootingStyleNames[] = { TEXT("a"), TEXT("c") };
+	// The Round 3 names match exactly, as the schema's enums do (TArray<FString>::Contains ignores case).
+	bool WeaponDocHasName(const TArray<FString>& Names, const FString& Name)
+	{
+		return Names.ContainsByPredicate([&Name](const FString& Known) { return Known.Equals(Name, ESearchCase::CaseSensitive); });
+	}
 	const TCHAR* const GWeaponDocConsumableEffectNames[] = { TEXT("heal"), TEXT("none") };
 	const TCHAR* const GWeaponDocUseRefused[] = {
 		TEXT("fire"), TEXT("attachments"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil")
@@ -2914,11 +2919,11 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		{
 			KnownSets.Add(Name);
 		}
-		if (!KnownSets.Contains(Set))
+		if (!WeaponDocHasName(KnownSets, Set))
 		{
 			R.Add(TEXT("comboSet"), TEXT("enum"), FString::Printf(TEXT("is %s: use one of %s"), *Set, *FString::Join(KnownSets, TEXT(", "))));
 		}
-		else if (!Info.ComboSets.Contains(Set))
+		else if (!WeaponDocHasName(Info.ComboSets, Set))
 		{
 			R.Add(TEXT("comboSet"), TEXT("mantle"), Info.ComboSets.IsEmpty()
 				? FString::Printf(TEXT("a %s has one combo: drop comboSet"), Hold)
@@ -2935,11 +2940,11 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		{
 			KnownPositions.Add(Name);
 		}
-		if (!KnownPositions.Contains(Position))
+		if (!WeaponDocHasName(KnownPositions, Position))
 		{
 			R.Add(TEXT("quiver"), TEXT("enum"), FString::Printf(TEXT("is %s: use one of %s"), *Position, *FString::Join(KnownPositions, TEXT(", "))));
 		}
-		else if (!Info.Quivers.Contains(Position))
+		else if (!WeaponDocHasName(Info.Quivers, Position))
 		{
 			R.Add(TEXT("quiver"), TEXT("mantle"), Info.Quivers.IsEmpty()
 				? FString::Printf(TEXT("a %s has no quiver to place: drop quiver"), Hold)
@@ -2956,11 +2961,11 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		{
 			KnownStyles.Add(Name);
 		}
-		if (!KnownStyles.Contains(Style))
+		if (!WeaponDocHasName(KnownStyles, Style))
 		{
 			R.Add(TEXT("style"), TEXT("enum"), FString::Printf(TEXT("is %s: use one of %s"), *Style, *FString::Join(KnownStyles, TEXT(", "))));
 		}
-		else if (!Info.ShootingStyles.Contains(Style))
+		else if (!WeaponDocHasName(Info.ShootingStyles, Style))
 		{
 			R.Add(TEXT("style"), TEXT("mantle"), Info.ShootingStyles.IsEmpty()
 				? FString::Printf(TEXT("a %s has one way to hold it: drop style"), Hold)
