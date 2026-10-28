@@ -4006,7 +4006,7 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 	switch (Loss)
 	{
 	case EMantleMaterialLoss::Animation:
-		return TEXT("time-based animation will be frozen (panners, flipbooks and Time nodes stop moving; only a Panner, or Time times a constant speed, straight into a texture's UVs, that texture straight into an output, keeps moving; a function call, a Normalize or a Lerp against a flat normal may sit between the texture and the Normal output, and moving samples of one texture blended there are kept as the fastest one: two flowing layers kept as one).");
+		return TEXT("time-based animation will be frozen (panners, flipbooks and Time nodes stop moving; a texture that simply scrolls at a constant speed keeps moving, also inside a material function; several scrolling layers of one normal map are kept as the fastest one).");
 	case EMantleMaterialLoss::WorldPositionOffset:
 		return TEXT("world position offset (wind or vertex animation) is dropped, so the mesh will not sway or move (only the engine's SimpleGrassWind with constant intensity and speed is kept).");
 	case EMantleMaterialLoss::WorldAligned:
