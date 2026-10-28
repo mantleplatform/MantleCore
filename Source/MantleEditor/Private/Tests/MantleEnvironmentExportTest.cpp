@@ -1045,6 +1045,28 @@ bool FMantleEnvironmentSunShadeTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("under open sky the sun reaches the points"), FMantleEnvironmentExport::IsShadedFromSun(Test.World, TowardSun, Points));
 	TestFalse(TEXT("and with no points there is nothing to shade"), FMantleEnvironmentExport::IsShadedFromSun(Test.World, TowardSun, TArray<FVector>()));
 
+	// A hill far off in the sun's way, and a tree-sized block near it with the sky open above: neither encloses the points.
+	AStaticMeshActor* Hill = Test.World->SpawnActor<AStaticMeshActor>(TowardSun * 20000.0, FRotator::ZeroRotator);
+	AStaticMeshActor* Tree = Test.World->SpawnActor<AStaticMeshActor>(TowardSun * 1000.0, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("a hill"), Hill) || !TestNotNull(TEXT("a tree"), Tree))
+	{
+		return false;
+	}
+	for (AStaticMeshActor* Blocker : { Hill, Tree })
+	{
+		Blocker->SetMobility(EComponentMobility::Movable);
+		UStaticMeshComponent* BlockerMesh = Blocker->GetStaticMeshComponent();
+		BlockerMesh->SetStaticMesh(Cube);
+		BlockerMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		BlockerMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	}
+	Hill->SetActorScale3D(FVector(100.0));
+	Tree->SetActorScale3D(FVector(3.0));
+	TestFalse(TEXT("a hill far off in the sun's way does not shade the points"), FMantleEnvironmentExport::IsShadedFromSun(Test.World, TowardSun, Points));
+	Hill->Destroy();
+	TestFalse(TEXT("nor does a tree near them with open sky above"), FMantleEnvironmentExport::IsShadedFromSun(Test.World, TowardSun, Points));
+	Tree->Destroy();
+
 	// A flat roof, a hundred metres wide, six metres up.
 	AStaticMeshActor* Roof = Test.World->SpawnActor<AStaticMeshActor>(FVector(0.0, 0.0, 600.0), FRotator::ZeroRotator);
 	if (!TestNotNull(TEXT("a roof"), Roof))

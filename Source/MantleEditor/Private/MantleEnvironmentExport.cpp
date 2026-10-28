@@ -67,8 +67,17 @@ namespace MantleEnvironmentExportPrivate
 	/** How far above a spawn point the sun's way is traced from, in cm: about a player's eye. */
 	constexpr double SunProbeHeight = 150.0;
 
-	/** How far the sun's way is traced, in cm: past any level's roof. */
-	constexpr double SunProbeDistance = 500000.0;
+	/**
+	 * How far the sun's way is traced, in cm: a ceiling or a room's wall. A blocker farther off is a tree, a house or a hill in the
+	 * distance, which shades a street for a while but does not enclose the spawn point, so the level is still sunlit.
+	 */
+	constexpr double SunProbeDistance = 3000.0;
+
+	/** How far to the sides of a spawn point the other probes start from, in cm: about a player's shoulder width and a half. */
+	constexpr double SunProbeSpread = 100.0;
+
+	/** The share of a spawn point's probes that must be blocked, sun's way and straight up, for the point to be shaded. */
+	constexpr double SunProbeBlockedShare = 0.75;
 
 	/** The names a bucket lists, at most this many a sentence. */
 	constexpr int32 MaxNamesListed = 6;
@@ -1221,16 +1230,31 @@ bool FMantleEnvironmentExport::IsShadedFromSun(UWorld* World, const FVector& Tow
 		return false;
 	}
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(MantleSunProbe), /*bTraceComplex*/ true);
-	for (const FVector& Point : Points)
+	const auto IsBlocked = [World, &Params](const FVector& Start, const FVector& Way)
 	{
-		const FVector Start = Point + FVector(0.0, 0.0, SunProbeHeight);
 		FHitResult Hit;
-		if (!World->LineTraceSingleByChannel(Hit, Start, Start + Direction * SunProbeDistance, ECC_Visibility, Params))
+		if (!World->LineTraceSingleByChannel(Hit, Start, Start + Way * SunProbeDistance, ECC_Visibility, Params))
 		{
 			return false;
 		}
 		const UPrimitiveComponent* Blocker = Hit.GetComponent();
-		if (!Blocker || !Blocker->IsVisible() || !CastsShadowInPlace(Blocker))
+		return Blocker && Blocker->IsVisible() && CastsShadowInPlace(Blocker);
+	};
+	// A sealed room, a cave or a roof blocks the sun's way and the sky above too; a tree beside an open street blocks only the first.
+	const FVector Offsets[5] = { FVector::ZeroVector, FVector(SunProbeSpread, 0.0, 0.0), FVector(-SunProbeSpread, 0.0, 0.0),
+		FVector(0.0, SunProbeSpread, 0.0), FVector(0.0, -SunProbeSpread, 0.0) };
+	for (const FVector& Point : Points)
+	{
+		int32 Blocked = 0;
+		for (const FVector& Offset : Offsets)
+		{
+			const FVector Start = Point + Offset + FVector(0.0, 0.0, SunProbeHeight);
+			if (IsBlocked(Start, Direction) && IsBlocked(Start, FVector::UpVector))
+			{
+				++Blocked;
+			}
+		}
+		if (Blocked < SunProbeBlockedShare * UE_ARRAY_COUNT(Offsets))
 		{
 			return false;
 		}
