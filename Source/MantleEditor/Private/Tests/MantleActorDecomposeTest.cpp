@@ -21,6 +21,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
+#include "GameFramework/PlayerStart.h"
 #include "GameFramework/RotatingMovementComponent.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/AutomationTest.h"
@@ -541,6 +542,38 @@ bool FMantleDecomposeMirrorTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("at the positive scale"), Entity->Transform.GetScale3D().Equals(FVector::OneVector, 0.0001));
 	}
 	TestEqual(TEXT("and reported as approximated"), Result.Coverage.Count(MantleCoverageCategory::StaticMeshes, EOutcome::Approximated), static_cast<int64>(1));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleDecomposeMirroredPlayerStartTest,
+	"Mantle.Editor.Decompose.MirroredPlayerStartIsAccepted",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleDecomposeMirroredPlayerStartTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleActorDecomposeTestPrivate;
+	FDecomposeWorld Fixture;
+	APlayerStart* Start = Fixture.World->SpawnActor<APlayerStart>();
+	if (!TestNotNull(TEXT("the player start spawned"), Start))
+	{
+		return false;
+	}
+	Start->SetActorLabel(TEXT("MirroredStart"));
+	Start->SetActorScale3D(FVector(-0.25, 1.0, 1.0));
+
+	const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(Fixture.World);
+	TestFalse(TEXT("a negative scale on a spawn point is not an error"), Validation.Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+	{
+		return Issue.Actor == TEXT("MirroredStart") && Issue.Severity == EMantleIssueSeverity::Error;
+	}));
+
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	const FMantleEntity* Entity = Result.Place.Entities.FindByPredicate([](const FMantleEntity& Candidate) { return Candidate.Name == TEXT("MirroredStart"); });
+	if (TestNotNull(TEXT("it is exported"), Entity))
+	{
+		TestTrue(TEXT("at the positive scale"), Entity->Transform.GetScale3D().Equals(FVector(0.25, 1.0, 1.0), 0.0001));
+	}
 	return true;
 }
 

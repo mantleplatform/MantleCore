@@ -3711,8 +3711,8 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	TArray<const AActor*> Exportable;
 	TMap<const AActor*, TArray<MantlePlaceExporterPrefab::FExportedPart>> PartsByActor;
 	TMap<const AActor*, FMantleMirrorResult> MirrorByActor;
-	// #818: decals published at the positive scale of the negative one they have.
-	TSet<const AActor*> UnmirroredDecals;
+	// #818: decals (and player starts) published at the positive scale of the negative one they have.
+	TSet<const AActor*> UnmirroredActors;
 	int32 EffectParts = 0;
 	int32 ReflectionProbes = 0;
 	int32 Texts = 0;
@@ -3826,10 +3826,18 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				TEXT("baked a mirrored copy of its mesh (a negative scale), placed at the positive scale."));
 		}
 
+		// A player start has no shape to mirror: it publishes at the positive scale, and its facing is its rotation.
+		if (Type == EMantleEntityType::PlayerStart && FMantleActorDecompose::HasNegativeAxis(PublishedTransform(Actor).GetScale3D()))
+		{
+			UnmirroredActors.Add(Actor);
+			Result.Coverage.Add(MantleCoverageCategory::OtherComponents, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
+				TEXT("a player start with a negative scale is placed at the positive scale."));
+		}
+
 		// #818: a decal with a negative scale publishes at the positive scale: Mantle places it unmirrored.
 		if (Type == EMantleEntityType::Decal && FMantleActorDecompose::HasNegativeAxis(PublishedTransform(Actor).GetScale3D()))
 		{
-			UnmirroredDecals.Add(Actor);
+			UnmirroredActors.Add(Actor);
 			Result.Coverage.Add(MantleCoverageCategory::Decals, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
 				TEXT("has a negative scale, so it is placed at the positive scale: its picture is not mirrored."));
 		}
@@ -3955,7 +3963,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		{
 			Entity.Transform.SetScale3D(ActorMirror->PositiveScale);
 		}
-		if (UnmirroredDecals.Contains(Actor))
+		if (UnmirroredActors.Contains(Actor))
 		{
 			Entity.Transform.SetScale3D(Entity.Transform.GetScale3D().GetAbs());
 		}

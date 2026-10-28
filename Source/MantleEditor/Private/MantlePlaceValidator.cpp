@@ -1079,6 +1079,11 @@ namespace
 				TEXT("Fine if the mirroring does not matter. Otherwise mirror the decal's texture and use a positive scale.") });
 			PublishedScale = PublishedScale.GetAbs();
 		}
+		// A player start has no shape to mirror: it publishes at the positive scale, which the export's coverage report says too.
+		if (Type == EMantleEntityType::PlayerStart)
+		{
+			PublishedScale = PublishedScale.GetAbs();
+		}
 		ValidatorCheckScale(Label, FString(), PublishedScale, Result);
 
 		FMantleEntity Values;
