@@ -65,7 +65,7 @@
 namespace MantlePlaceAssetConverterPrivate
 {
 	/** Bump this whenever how a conversion is written changes, so stale caches are rebuilt. */
-	const TCHAR* const CacheVersion = TEXT("f5-v14");
+	const TCHAR* const CacheVersion = TEXT("f5-v16");
 
 	const TCHAR* const ConversionRemedy = TEXT("It still publishes. Nothing to do unless it matters to how your place looks.");
 
