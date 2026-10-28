@@ -161,6 +161,8 @@ declare extern type Player with
 	CrouchEnabled: boolean?
 	--- How fast the character moves while crouched, in centimetres per second (225 unless a script changes it; it scales with WalkSpeed until you set it). nil while the player has no character. Setting it (server only) clamps to 0..1500 and lasts for the rest of the session, through respawns.
 	CrouchSpeed: number?
+	--- Whether the player can dodge and roll (true unless a script changes it); nil while the player has no character. Setting it (server only) to false makes the dodge key (Left Alt, gamepad B tap) do nothing; a dodge already under way plays out. It lasts for the rest of the session, through respawns.
+	DodgeEnabled: boolean?
 	--- How much health a character out of breath loses each second, dealt once a second and tagged "Drown" (10 unless a script changes it). It goes past Armor and Shield, and nobody is credited for the kill. 0 lets a character stay under forever once its breath is gone. nil while the player has no character. Setting it (server only) clamps to 0..10000 and lasts for the rest of the session. Only counts while BreathEnabled is true.
 	DrownDamage: number?
 	--- The character's health, from 0 to MaxHealth; nil while the player has no character. Weapons and TakeDamage lower this same value. Setting it (server only) clamps to 0..MaxHealth, and 0 kills the character with no killer. Setting it on a dead player, or one driving a vehicle, does nothing: use Respawn to bring a player back.
@@ -233,10 +235,14 @@ declare extern type Player with
 	Damaged: Signal<(Player, number, string, Player?)>
 	--- The player's character died, on the server and on every client. killer is the player whose damage finished it (a weapon, or TakeDamage with a source); nil for falling out of the world, Kill, Health set to 0, or their own damage. damageType is the tag of the killing hit ("Bullet", "Melee", "Explosion", ..., or your own); "Generic" when nothing named one.
 	Died: Signal<(Player, Player?, string)>
+	--- The player dodged (roll false: one tap of the dodge key) or rolled (roll true: a double tap), on the server, as it starts. For the first half second of it nothing hurts them. DodgeEnabled false stops the key; a firearm, or a weapon with no dodge animation, never dodges.
+	Dodged: Signal<(Player, boolean)>
 	--- The character's health changed: damage, healing, Health set, or a respawn's refill. Fires on the server and on every client.
 	HealthChanged: Signal<(Player, number, number)>
 	--- The character's Breath reached 0: from now on it takes DrownDamage every second until it surfaces. Fires on the server and on every client.
 	OutOfBreath: Signal<(Player)>
+	--- The player's guard parried a melee hit, on the server: the hit landed in the first 0.3 seconds after they raised the guard (once per raise, and only when the guard had been down for half a second before it). The hit does no damage, and the attacker is thrown back and cannot attack, block or dodge until they recover. attacker is the player whose swing was parried, nil when it has none. Guns, spells and explosions are never parried.
+	Parried: Signal<(Player, Player?)>
 	--- The character was knocked down (Ragdoll, a hard hit, a blast, or being thrown off a vehicle). Fires on the server and on every client.
 	Ragdolled: Signal<(Player)>
 	--- A knocked-down character stood back up (its time ended or Recover was called). It does not fire if the character died while down: Died does. Fires on the server and on every client.
@@ -249,6 +255,10 @@ declare extern type Player with
 	SprintStopped: Signal<(Player)>
 	--- The character's Stamina changed: sprinting, resting, a jump's cost or a script setting it. It reports steps of about half a percent of MaxStamina, not every frame. Fires on the server and on every client while StaminaEnabled is true.
 	StaminaChanged: Signal<(Player, number, number)>
+	--- The player's stun is over, on the server: it ran out, or a knockdown, a death or putting the weapon away ended it early.
+	StunEnded: Signal<(Player)>
+	--- The player's guard was broken into a stun, on the server: until StunEnded they cannot move, attack or block, but can still look around, and hits still hurt them. A weapon whose stunSeconds is 0, or a hold with no stun animation, breaks the guard without a stun and does not fire this.
+	Stunned: Signal<(Player)>
 	--- Hold the player crouched (true) or standing (false) whatever they press, until ReleaseCrouch. A player held crouched can still walk (sprinting is off while crouched); one held standing cannot crouch or slide. CrouchEnabled false wins over a crouch hold. Returns false when the player has no character on foot. The hold ends with the character: a respawn gives the key back. (server only)
 	function ForceCrouch(self, crouched: boolean): boolean
 	--- Raise the character's health by amount, up to MaxHealth. Never brings a dead character back (use Respawn). Returns false when the player has no character on foot, is dead, or is already at full health. (server only)
