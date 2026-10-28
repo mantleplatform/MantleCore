@@ -222,6 +222,18 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName DodgeStyle = NAME_None;
 
+	/** Round 3: the selected combo for a hold with more than one (a sword beside a shield, knuckles, a two-handed spear); unset uses the hold's first. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	FName ComboSet = NAME_None;
+
+	/** Round 3: where a bow's hand goes for the next arrow (back, hip or side); unset uses the hold's first, back. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	FName Quiver = NAME_None;
+
+	/** Round 3: how a bow is held to shoot (the document's style: a or c); unset uses the hold's first, a. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	FName ShootingStyle = NAME_None;
+
 	/** The creator's UStaticMesh or USkeletalMesh. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	TSoftObjectPtr<UObject> Model;
@@ -261,6 +273,16 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bBreakOnHeavy = true;
 	/** Seconds a broken guard stuns the holder (0 to 5); 0 keeps the short guard break. */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 5.0)) float StunSeconds = 1.5f;
+	/** Round 3: a bow's bash on the Melee key: on by default; off, the Melee key does nothing with this bow. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") bool bBash = true;
+	/** Round 3: damage of each hit of the bash (the bare-hands punch's 20). */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 1000.0)) float BashDamage = 20.0f;
+	/** Round 3 step 12: a shield's throw that returns (guard + Melee): off by default. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") bool bShieldThrow = false;
+	/** Round 3 step 12: how far out the thrown shield flies before it comes back, cm (100 to 3000). */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 100.0, ClampMax = 3000.0)) float ShieldThrowRange = 1000.0f;
+	/** Round 3 step 12: damage to each target the thrown shield hits (once per throw). */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 1000.0)) float ShieldThrowDamage = 25.0f;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceProjectile Projectile;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceSweep Sweep;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceBeam Beam;

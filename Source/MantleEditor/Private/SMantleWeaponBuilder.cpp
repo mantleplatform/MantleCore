@@ -168,6 +168,36 @@ namespace MantleWeaponBuilderPanelPrivate
 		return FText::FromString(Style);
 	}
 
+	FText ComboSetLabel(const FString& Set)
+	{
+		if (Set == TEXT("chop")) return LOCTEXT("ComboSetChop", "Chop and stab");
+		if (Set == TEXT("spin")) return LOCTEXT("ComboSetSpin", "Spin");
+		if (Set == TEXT("second")) return LOCTEXT("ComboSetSecond", "Second chain");
+		if (Set == TEXT("punches")) return LOCTEXT("ComboSetPunches", "Punches");
+		if (Set == TEXT("overhand")) return LOCTEXT("ComboSetOverhand", "Overhand");
+		if (Set == TEXT("hammer")) return LOCTEXT("ComboSetHammer", "Hammer");
+		if (Set == TEXT("jab_cross")) return LOCTEXT("ComboSetJabCross", "Jab and cross");
+		if (Set == TEXT("quick")) return LOCTEXT("ComboSetQuick", "Quick");
+		if (Set == TEXT("long")) return LOCTEXT("ComboSetLong", "Long");
+		if (Set == TEXT("lunge")) return LOCTEXT("ComboSetLunge", "Lunge");
+		return FText::FromString(Set);
+	}
+
+	FText QuiverLabel(const FString& Position)
+	{
+		if (Position == TEXT("back")) return LOCTEXT("QuiverBack", "Over the shoulder");
+		if (Position == TEXT("hip")) return LOCTEXT("QuiverHip", "At the hip");
+		if (Position == TEXT("side")) return LOCTEXT("QuiverSide", "At the side");
+		return FText::FromString(Position);
+	}
+
+	FText ShootingStyleLabel(const FString& Style)
+	{
+		if (Style == TEXT("a")) return LOCTEXT("ShootingStyleA", "Classic archer");
+		if (Style == TEXT("c")) return LOCTEXT("ShootingStyleC", "Held flat, like a crossbow");
+		return FText::FromString(Style);
+	}
+
 	FText BuilderHoldBlurb(EMantleWeaponHold Hold)
 	{
 		switch (Hold)
@@ -663,6 +693,9 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 		: Hold == EMantleWeaponHold::Staff ? EMantleWeaponSourceStyle::Arcane : EMantleWeaponSourceStyle::Generic;
 	Working->EquipStyle = NAME_None;
 	Working->DodgeStyle = NAME_None;
+	Working->ComboSet = NAME_None;
+	Working->Quiver = NAME_None;
+	Working->ShootingStyle = NAME_None;
 	Working->bOverrideColor = false;
 	Working->Color = FColor(40, 110, 160);
 	Working->Charge = FMantleWeaponSourceCharge();
@@ -674,6 +707,11 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->bBlock = HoldInfo(Hold).BlockRule == EMantleWeaponDocBlockRule::Required;
 	Working->bBreakOnHeavy = true;
 	Working->StunSeconds = 1.5f;
+	Working->bBash = true;
+	Working->BashDamage = 20.f;
+	Working->bShieldThrow = false;
+	Working->ShieldThrowRange = 1000.f;
+	Working->ShieldThrowDamage = 25.f;
 	Working->Projectile = FMantleWeaponSourceProjectile();
 	Working->Sweep = FMantleWeaponSourceSweep();
 	Working->Beam = FMantleWeaponSourceBeam();
@@ -946,6 +984,11 @@ FText SMantleWeaponBuilder::SummaryText() const
 	}
 	if (Working->bOverrideStyle) Lines.Add(FString::Printf(TEXT("Effect style: %s"), *StyleLabel(Working->Style).ToString()));
 	if (!Working->DodgeStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Dodge: %s"), *DodgeStyleLabel(Working->DodgeStyle.ToString()).ToString()));
+	if (!Working->ComboSet.IsNone()) Lines.Add(FString::Printf(TEXT("Combo: %s"), *ComboSetLabel(Working->ComboSet.ToString()).ToString()));
+	if (HoldInfo(Working->Hold).bHasBash && !Working->bBash) Lines.Add(TEXT("Bash: off"));
+	if (HoldInfo(Working->Hold).bHasShieldThrow && Working->bShieldThrow) Lines.Add(TEXT("Throw: on"));
+	if (!Working->Quiver.IsNone()) Lines.Add(FString::Printf(TEXT("Quiver: %s"), *QuiverLabel(Working->Quiver.ToString()).ToString()));
+	if (!Working->ShootingStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Shooting style: %s"), *ShootingStyleLabel(Working->ShootingStyle.ToString()).ToString()));
 	if (Working->Parts.Num() > 0) Lines.Add(FString::Printf(TEXT("Moving parts: %d"), Working->Parts.Num()));
 	if (Working->Attachments.Num() > 0) Lines.Add(FString::Printf(TEXT("Fixed details: %d"), Working->Attachments.Num()));
 	if (!Working->FireSound.IsNull() || !Working->FireSuppressedSound.IsNull()) Lines.Add(TEXT("Custom sound: set"));
@@ -1593,6 +1636,49 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		AddRow(LOCTEXT("DodgeStyle", "Dodge"), DodgeStyleTip,
 			MakeChoiceControl<FName>(DodgeStyles, [this] { return Working->DodgeStyle; }, [this](FName Value) { Working->DodgeStyle = Value; }));
 	}
+	// Round 3: the combo where the hold has more than one chain of attacks.
+	if (Info.ComboSets.Num() > 1)
+	{
+		TArray<TPair<FName, FText>> ComboSets;
+		ComboSets.Emplace(NAME_None, FText::Format(LOCTEXT("ComboSetDefault", "Hold default ({0})"), ComboSetLabel(Info.ComboSets[0])));
+		for (const FString& Set : Info.ComboSets)
+		{
+			ComboSets.Emplace(FName(*Set), ComboSetLabel(Set));
+		}
+		const FText ComboSetTip = Working->Hold == EMantleWeaponHold::Unarmed
+			? LOCTEXT("ComboSetUnarmedTip", "The chain of attacks: punches (the default), an overhand chain, a hammer chain or a quick jab and cross. Empty hands always punch.")
+			: Working->Hold == EMantleWeaponHold::Spear
+				? LOCTEXT("ComboSetSpearTip", "The chain of attacks: quick (the default), long or lunge. It plays when the spear is held without a shield.")
+				: LOCTEXT("ComboSetSwordTip", "The chain of attacks: chop and stab (the default), spin or a second chain. It plays while the sword is paired with a shield; a lone sword has one chain.");
+		AddRow(LOCTEXT("ComboSet", "Combo"), ComboSetTip,
+			MakeChoiceControl<FName>(ComboSets, [this] { return Working->ComboSet; }, [this](FName Value) { Working->ComboSet = Value; }));
+	}
+	// Round 3: where the bow's hand goes for the next arrow.
+	if (Info.Quivers.Num() > 1)
+	{
+		TArray<TPair<FName, FText>> Quivers;
+		Quivers.Emplace(NAME_None, FText::Format(LOCTEXT("QuiverDefault", "Hold default ({0})"), QuiverLabel(Info.Quivers[0])));
+		for (const FString& Position : Info.Quivers)
+		{
+			Quivers.Emplace(FName(*Position), QuiverLabel(Position));
+		}
+		AddRow(LOCTEXT("Quiver", "Quiver"),
+			LOCTEXT("QuiverTip", "Where the archer's hand goes for the next arrow: over the shoulder (the default), at the hip or at the side. The nock animation follows it, standing and crouched."),
+			MakeChoiceControl<FName>(Quivers, [this] { return Working->Quiver; }, [this](FName Value) { Working->Quiver = Value; }));
+	}
+	// Round 3: how the archer holds the bow to shoot.
+	if (Info.ShootingStyles.Num() > 1)
+	{
+		TArray<TPair<FName, FText>> Styles;
+		Styles.Emplace(NAME_None, FText::Format(LOCTEXT("ShootingStyleDefault", "Hold default ({0})"), ShootingStyleLabel(Info.ShootingStyles[0])));
+		for (const FString& Style : Info.ShootingStyles)
+		{
+			Styles.Emplace(FName(*Style), ShootingStyleLabel(Style));
+		}
+		AddRow(LOCTEXT("ShootingStyle", "Shooting style"),
+			LOCTEXT("ShootingStyleTip", "How the archer holds the bow to shoot: the classic archer (the default), side-on with the string at the cheek, or held flat at chest height like a crossbow. The aim, draw and release follow it, standing and crouched."),
+			MakeChoiceControl<FName>(Styles, [this] { return Working->ShootingStyle; }, [this](FName Value) { Working->ShootingStyle = Value; }));
+	}
 	if (Deliveries.Num() > 2)
 	{
 		// #905: SetDelivery starts a gun's beam or launched round from usable numbers, and keeps the effect style one the attack can use.
@@ -1784,6 +1870,30 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		LOCTEXT("StunSecondsTip", "How long a player whose guard is broken is stunned: they cannot move, attack or block, and hits still hurt. 0 gives the short guard break with no stun."),
 		0.f, 5.f, 0.1f, [this] { return Working->StunSeconds; }, [this](float V) { Working->StunSeconds = FMath::Clamp(V, 0.f, 5.f); },
 		[this, CanBlock] { return CanBlock() && Working->bBlock && Working->bBreakOnHeavy ? EVisibility::Visible : EVisibility::Collapsed; });
+	// Round 3: a bow swings itself on the Melee key (a three-hit bash), on by default.
+	const TFunction<bool()> CanBash = [this] { return HoldInfo(Working->Hold).bHasBash; };
+	AddToggleWhen(LOCTEXT("Bash", "Bash with the Melee key"),
+		LOCTEXT("BashTip", "The bow swings in a three-hit bash on the Melee key, and a running one when the player runs. Off, the Melee key does nothing with this bow."),
+		[this] { return Working->bBash; }, [this](bool V) { Working->bBash = V; },
+		[CanBash] { return CanBash() ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
+	AddFloatWhen(LOCTEXT("BashDamage", "Bash damage (0–1000 per hit)"),
+		LOCTEXT("BashDamageTip", "How much each hit of the bash hurts. 20 is the bare-hands punch."),
+		0.f, 1000.f, 1.f, [this] { return Working->BashDamage; }, [this](float V) { Working->BashDamage = FMath::Clamp(V, 0.f, 1000.f); },
+		[this, CanBash] { return CanBash() && Working->bBash ? EVisibility::Visible : EVisibility::Collapsed; });
+	// Round 3 step 12: a shield may be thrown with guard + Melee and comes back to the hand, off by default.
+	const TFunction<bool()> CanThrowShield = [this] { return HoldInfo(Working->Hold).bHasShieldThrow; };
+	AddToggleWhen(LOCTEXT("ShieldThrow", "Throw with guard + Melee"),
+		LOCTEXT("ShieldThrowTip", "With the guard up, a tap of the Melee key throws the shield and holding it aims the throw; the shield flies out and comes back to the hand. Off, guard + Melee bashes."),
+		[this] { return Working->bShieldThrow; }, [this](bool V) { Working->bShieldThrow = V; },
+		[CanThrowShield] { return CanThrowShield() ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
+	AddFloatWhen(LOCTEXT("ShieldThrowRange", "Throw range (100–3000 cm)"),
+		LOCTEXT("ShieldThrowRangeTip", "How far the shield flies before it turns back (it stops sooner at a wall or what you aim at). 1000 is 10 m."),
+		100.f, 3000.f, 10.f, [this] { return Working->ShieldThrowRange; }, [this](float V) { Working->ShieldThrowRange = FMath::Clamp(V, 100.f, 3000.f); },
+		[this, CanThrowShield] { return CanThrowShield() && Working->bShieldThrow ? EVisibility::Visible : EVisibility::Collapsed; });
+	AddFloatWhen(LOCTEXT("ShieldThrowDamage", "Throw damage (0–1000)"),
+		LOCTEXT("ShieldThrowDamageTip", "How much the thrown shield hurts each player it hits (once per throw)."),
+		0.f, 1000.f, 1.f, [this] { return Working->ShieldThrowDamage; }, [this](float V) { Working->ShieldThrowDamage = FMath::Clamp(V, 0.f, 1000.f); },
+		[this, CanThrowShield] { return CanThrowShield() && Working->bShieldThrow ? EVisibility::Visible : EVisibility::Collapsed; });
 	const bool bCanOverrideHandedness = IsFirearm(Working->Hold);
 	AddToggleWhen(LOCTEXT("OverrideTwoHanded", "Change how many hands hold it"), LOCTEXT("OverrideTwoHandedTip", "Use this hold with one hand or both. The usual setting follows the hold."),
 		[this] { return Working->bOverrideTwoHanded; }, [this](bool V) { Working->bOverrideTwoHanded = V; },

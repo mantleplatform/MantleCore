@@ -238,6 +238,38 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		}
 		Desc.DodgeStyle.Set(Style);
 	}
+	if (!Source.ComboSet.IsNone())
+	{
+		const FString Set = Source.ComboSet.ToString();
+		if (!Info.ComboSets.Contains(Set))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedComboSet", "This hold does not offer the {0} combo."), FText::FromString(Set)));
+			return false;
+		}
+		Desc.ComboSet.Set(Set);
+	}
+	// Round 3: where a bow's hand goes for the next arrow. None picked writes nothing (back, the hold's default).
+	if (!Source.Quiver.IsNone())
+	{
+		const FString Position = Source.Quiver.ToString();
+		if (!Info.Quivers.Contains(Position))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedQuiver", "This hold has no {0} quiver."), FText::FromString(Position)));
+			return false;
+		}
+		Desc.Quiver.Set(Position);
+	}
+	// Round 3: how a bow is held to shoot. None picked writes nothing (a, the hold's default).
+	if (!Source.ShootingStyle.IsNone())
+	{
+		const FString Style = Source.ShootingStyle.ToString();
+		if (!Info.ShootingStyles.Contains(Style))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedShootingStyle", "This hold has no shooting style {0}."), FText::FromString(Style)));
+			return false;
+		}
+		Desc.ShootingStyle.Set(Style);
+	}
 	// The hotbar icon: the weapon's library picture. It is made at publish (the Thumbnail step's choice); publish swaps this name for the
 	// uploaded texture's id, or drops it when no picture was taken.
 	if (!MeshName.IsEmpty()) Desc.Icon = AuxiliaryName(Source, TEXT("Icon"));
@@ -380,6 +412,23 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		Block.bBreakOnHeavy.Set(Source.bBreakOnHeavy);
 		Block.StunSeconds = Source.StunSeconds;
 		Desc.Block.Set(Block);
+	}
+	// Round 3: a bow's bash is on by default (20 damage); only a creator's change is written.
+	if (Info.bHasBash && (!Source.bBash || !FMath::IsNearlyEqual(Source.BashDamage, 20.0f)))
+	{
+		FMantleWeaponDocBash Bash;
+		Bash.bEnabled.Set(Source.bBash);
+		Bash.Damage = Source.BashDamage;
+		Desc.Bash.Set(Bash);
+	}
+	// Round 3 step 12: a shield's throw that returns, off by default; written only when the creator turns it on.
+	if (Info.bHasShieldThrow && Source.bShieldThrow)
+	{
+		FMantleWeaponDocShieldThrow Throw;
+		Throw.bEnabled.Set(true);
+		Throw.Range = Source.ShieldThrowRange;
+		Throw.Damage = Source.ShieldThrowDamage;
+		Desc.ShieldThrow.Set(Throw);
 	}
 	// A hold whose action is a throw (the spear beside its sweep, the throwable alone) throws its own model: the projectile block
 	// rides along, and the thrown weapon sticks where it lands and can be picked up again, with no choice to make.

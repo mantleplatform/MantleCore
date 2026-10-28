@@ -292,6 +292,16 @@ struct FMantleWeaponDocHoldInfo
 	TArray<FString> EquipStyles;
 	/** Round 2: the dodge style ids (x-dodgeStyles) of a hold with more than one dodge, the default first. Empty: one dodge, no choice. */
 	TArray<FString> DodgeStyles;
+	/** Round 3: the combo set ids (x-comboSets) of a hold with more than one combo, the default first. Empty: one combo, no choice. */
+	TArray<FString> ComboSets;
+	/** Round 3: the quiver positions (x-quivers) of a hold that places one (the bow), the default first. Empty: no quiver to place. */
+	TArray<FString> Quivers;
+	/** Round 3: the hold has a bash on the Melee key (x-bash: the bow). */
+	bool bHasBash = false;
+	/** Round 3 step 12: the hold may throw itself and catch it again (x-throw: the shield). */
+	bool bHasShieldThrow = false;
+	/** Round 3: the shooting style ids (x-shootingStyles) of a hold held more than one way to shoot (the bow), the default first. Empty: one way. */
+	TArray<FString> ShootingStyles;
 };
 
 /** The pre-#840 name: an archetype's entry is its firearm hold's. */
@@ -426,6 +436,22 @@ struct FMantleWeaponDocBlock
 	TMantleWeaponDocValue<bool> bEnabled{ true };
 	TMantleWeaponDocValue<bool> bBreakOnHeavy{ true };
 	double StunSeconds = 1.5;
+};
+
+/** schema bash (Round 3): a bow's bash on the Melee key. On unless enabled is false. */
+struct FMantleWeaponDocBash
+{
+	TMantleWeaponDocValue<bool> bEnabled{ true };
+	double Damage = 20.0;
+};
+
+/** schema throw (Round 3 step 12): a shield's throw that returns. Absent: off; present, on unless enabled is false. */
+struct FMantleWeaponDocShieldThrow
+{
+	TMantleWeaponDocValue<bool> bEnabled{ true };
+	/** How far out it flies before it comes back, cm. */
+	double Range = 1000.0;
+	double Damage = 25.0;
 };
 
 /** schema charges (#840): the charges resource's numbers. */
@@ -705,6 +731,12 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<FString> EquipStyle;
 	/** Round 2. Unset: the first style in the hold's x-dodgeStyles (a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> DodgeStyle;
+	/** Round 3. Unset: the hold's first set in x-comboSets, its own chain (a creator selection, not an asset path). */
+	TMantleWeaponDocValue<FString> ComboSet;
+	/** Round 3. Unset: back, the first in the hold's x-quivers (a creator selection, not an asset path). */
+	TMantleWeaponDocValue<FString> Quiver;
+	/** Round 3: the document's style. Unset: a, the first in the hold's x-shootingStyles (a creator selection, not an asset path). */
+	TMantleWeaponDocValue<FString> ShootingStyle;
 	/** sRGB. */
 	TMantleWeaponDocValue<FColor> Color{ FColor(40, 110, 160) };
 	/** #904: sRGB, multiplied into the element's effects; only where the weapon has an element (GetElement). Unset: the element's own colours. */
@@ -743,6 +775,10 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<FMantleWeaponDocConsumable> Consumable;
 	/** #840: blocking, on a hold that blocks. */
 	TMantleWeaponDocValue<FMantleWeaponDocBlock> Block;
+	/** Round 3: a bow's bash; unset is on with 20 damage. */
+	TMantleWeaponDocValue<FMantleWeaponDocBash> Bash;
+	/** Round 3 step 12: a shield's throw (the document's throw); unset is off. */
+	TMantleWeaponDocValue<FMantleWeaponDocShieldThrow> ShieldThrow;
 	TMantleWeaponDocValue<FMantleWeaponDocSounds> Sounds;
 	TMantleWeaponDocValue<FMantleWeaponDocFirstPerson> FirstPerson;
 	TMantleWeaponDocValue<FMantleWeaponDocSpread> Spread;

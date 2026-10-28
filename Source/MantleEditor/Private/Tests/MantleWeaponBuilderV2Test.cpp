@@ -271,6 +271,238 @@ bool FMantleWeaponBuilderV2DodgeStyleTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Round 3: the combo a creator picks is written as comboSet where the hold has more than one, and refused on a hold without that combo;
+// none picked writes nothing (the hold's default).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2ComboSetTest, "Mantle.Editor.WeaponBuilderV2.ComboSet", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2ComboSetTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	auto Build = [](EMantleWeaponHold Hold, FName Set, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("ComboSet"), nullptr);
+		Input->ComboSet = Set;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	if (TestTrue(TEXT("a sword with the spin combo builds"), Build(EMantleWeaponHold::Melee1h, TEXT("spin"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes it"), Desc.ComboSet.bSet && Desc.ComboSet.Value == TEXT("spin"));
+	}
+	if (TestTrue(TEXT("knuckles with the jab and cross build"), Build(EMantleWeaponHold::Unarmed, TEXT("jab_cross"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and write it"), Desc.ComboSet.bSet && Desc.ComboSet.Value == TEXT("jab_cross"));
+	}
+	if (TestTrue(TEXT("a spear with the lunge builds"), Build(EMantleWeaponHold::Spear, TEXT("lunge"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes it"), Desc.ComboSet.bSet && Desc.ComboSet.Value == TEXT("lunge"));
+	}
+	if (TestTrue(TEXT("a sword with no combo picked builds"), Build(EMantleWeaponHold::Melee1h, NAME_None, Desc, Messages)))
+	{
+		TestFalse(TEXT("and leaves the hold's default"), Desc.ComboSet.bSet);
+	}
+	TestFalse(TEXT("knuckles refuse the sword's spin"), Build(EMantleWeaponHold::Unarmed, TEXT("spin"), Desc, Messages));
+	TestFalse(TEXT("a bow, with one combo, refuses any"), Build(EMantleWeaponHold::Bow, TEXT("quick"), Desc, Messages));
+	TestTrue(TEXT("the refusal explains the choice"), Messages.ContainsByPredicate([](const FText& Message)
+	{
+		return Message.ToString().Contains(TEXT("does not offer"));
+	}));
+	return true;
+}
+
+// Round 3: the quiver a creator picks is written as quiver on a bow, and refused on a hold without one; none picked writes nothing (back, the
+// hold's default).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2QuiverTest, "Mantle.Editor.WeaponBuilderV2.Quiver", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2QuiverTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	auto Build = [](EMantleWeaponHold Hold, FName Position, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("Quiver"), nullptr);
+		Input->Quiver = Position;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	for (const TCHAR* Position : { TEXT("back"), TEXT("hip"), TEXT("side") })
+	{
+		if (TestTrue(*FString::Printf(TEXT("a bow with the %s quiver builds"), Position), Build(EMantleWeaponHold::Bow, Position, Desc, Messages)))
+		{
+			TestTrue(*FString::Printf(TEXT("and writes %s"), Position), Desc.Quiver.bSet && Desc.Quiver.Value == Position);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+			TestTrue(TEXT("with the same quiver"), Again.Quiver.bSet && Again.Quiver.Value == Position);
+		}
+	}
+	if (TestTrue(TEXT("a bow with no quiver picked builds"), Build(EMantleWeaponHold::Bow, NAME_None, Desc, Messages)))
+	{
+		TestFalse(TEXT("and leaves the hold's default"), Desc.Quiver.bSet);
+	}
+	TestFalse(TEXT("a bow refuses a quiver it does not offer"), Build(EMantleWeaponHold::Bow, TEXT("head"), Desc, Messages));
+	TestFalse(TEXT("a sword has no quiver to place"), Build(EMantleWeaponHold::Melee1h, TEXT("hip"), Desc, Messages));
+	TestTrue(TEXT("the refusal explains the choice"), Messages.ContainsByPredicate([](const FText& Message)
+	{
+		return Message.ToString().Contains(TEXT("no hip quiver"));
+	}));
+	return true;
+}
+
+// Round 3: the shooting style a creator picks is written as style on a bow, and refused on a hold with one way to hold it; none picked writes
+// nothing (a, the hold's default).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2ShootingStyleTest, "Mantle.Editor.WeaponBuilderV2.ShootingStyle", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2ShootingStyleTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	auto Build = [](EMantleWeaponHold Hold, FName Style, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("ShootingStyle"), nullptr);
+		Input->ShootingStyle = Style;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	for (const TCHAR* Style : { TEXT("a"), TEXT("c") })
+	{
+		if (TestTrue(*FString::Printf(TEXT("a bow in style %s builds"), Style), Build(EMantleWeaponHold::Bow, Style, Desc, Messages)))
+		{
+			TestTrue(*FString::Printf(TEXT("and writes %s"), Style), Desc.ShootingStyle.bSet && Desc.ShootingStyle.Value == Style);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+			TestTrue(TEXT("with the same style"), Again.ShootingStyle.bSet && Again.ShootingStyle.Value == Style);
+		}
+	}
+	if (TestTrue(TEXT("a bow with no style picked builds"), Build(EMantleWeaponHold::Bow, NAME_None, Desc, Messages)))
+	{
+		TestFalse(TEXT("and leaves the hold's default"), Desc.ShootingStyle.bSet);
+	}
+	TestFalse(TEXT("a bow refuses style b (not built)"), Build(EMantleWeaponHold::Bow, TEXT("b"), Desc, Messages));
+	TestFalse(TEXT("a sword has one way to hold it"), Build(EMantleWeaponHold::Melee1h, TEXT("c"), Desc, Messages));
+	TestTrue(TEXT("the refusal explains the choice"), Messages.ContainsByPredicate([](const FText& Message)
+	{
+		return Message.ToString().Contains(TEXT("no shooting style c"));
+	}));
+	return true;
+}
+
+// Round 3 (bow step 5): a bow may block. "Can block" on writes block (with its stun), off (the default) writes none; a staff still cannot.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2BowBlockTest, "Mantle.Editor.WeaponBuilderV2.BowBlock", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2BowBlockTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	TestTrue(TEXT("the hold library lets a bow block"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Bow).BlockRule == EMantleWeaponDocBlockRule::Optional);
+	TestTrue(TEXT("and not a staff"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Staff).BlockRule == EMantleWeaponDocBlockRule::None);
+	auto Build = [](const bool bBlock, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Bow, TEXT("BowBlock"), nullptr);
+		Input->bBlock = bBlock;
+		Input->bBreakOnHeavy = true;
+		Input->StunSeconds = 2.0f;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Bow), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	if (TestTrue(TEXT("a bow that blocks builds"), Build(true, Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes block, enabled"), Desc.Block.bSet && Desc.Block.Value.bEnabled.bSet && Desc.Block.Value.bEnabled.Value);
+		TestEqual(TEXT("with its stun"), Desc.Block.bSet ? Desc.Block.Value.StunSeconds : -1.0, 2.0);
+		FString Error;
+		FMantleWeaponDesc Again;
+		TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		TestTrue(TEXT("with the block"), Again.Block.bSet);
+	}
+	if (TestTrue(TEXT("a bow left as it is builds"), Build(false, Desc, Messages)))
+	{
+		TestFalse(TEXT("and does not block (right mouse zooms)"), Desc.Block.bSet);
+	}
+	return true;
+}
+
+// Round 3: a bow's bash is on by default and writes nothing; a creator turning it off or changing its damage is written, and no other hold has one.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2BowBashTest, "Mantle.Editor.WeaponBuilderV2.BowBash", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2BowBashTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	TestTrue(TEXT("the hold library gives a bow a bash"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Bow).bHasBash);
+	TestFalse(TEXT("and a sword none"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Melee1h).bHasBash);
+	auto Build = [](const EMantleWeaponHold Hold, const bool bBash, const float Damage, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("BowBash"), nullptr);
+		Input->bBash = bBash;
+		Input->BashDamage = Damage;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	if (TestTrue(TEXT("a bow left as it is builds"), Build(EMantleWeaponHold::Bow, true, 20.0f, Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no bash (on, 20 damage)"), Desc.Bash.bSet);
+	}
+	if (TestTrue(TEXT("a bow with the bash off builds"), Build(EMantleWeaponHold::Bow, false, 20.0f, Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes the bash, off"), Desc.Bash.bSet && Desc.Bash.Value.bEnabled.bSet && !Desc.Bash.Value.bEnabled.Value);
+		FString Error;
+		FMantleWeaponDesc Again;
+		TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		TestTrue(TEXT("with the bash off"), Again.Bash.bSet && !Again.Bash.Value.bEnabled.Value);
+	}
+	if (TestTrue(TEXT("a bow with a bash damage builds"), Build(EMantleWeaponHold::Bow, true, 35.0f, Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes it, on"), Desc.Bash.bSet && Desc.Bash.Value.bEnabled.Value && Desc.Bash.Value.Damage == 35.0);
+	}
+	if (TestTrue(TEXT("a sword with the same fields builds"), Build(EMantleWeaponHold::Melee1h, false, 35.0f, Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no bash (it has none)"), Desc.Bash.bSet);
+	}
+	return true;
+}
+
+// Round 3 step 12: a shield's throw is off by default and writes nothing; turned on it writes its range and damage and reads again; no other hold
+// has one.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2ShieldThrowTest, "Mantle.Editor.WeaponBuilderV2.ShieldThrow", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2ShieldThrowTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	TestTrue(TEXT("the hold library lets a shield throw"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Shield).bHasShieldThrow);
+	TestFalse(TEXT("and a sword not"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Melee1h).bHasShieldThrow);
+	auto Build = [](const EMantleWeaponHold Hold, const bool bThrow, const float Range, const float Damage, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("ShieldThrow"), nullptr);
+		Input->bShieldThrow = bThrow;
+		Input->ShieldThrowRange = Range;
+		Input->ShieldThrowDamage = Damage;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	if (TestTrue(TEXT("a shield left as it is builds"), Build(EMantleWeaponHold::Shield, false, 1000.0f, 25.0f, Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no throw (off)"), Desc.ShieldThrow.bSet);
+	}
+	if (TestTrue(TEXT("a shield that throws builds"), Build(EMantleWeaponHold::Shield, true, 1500.0f, 40.0f, Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes the throw, on"), Desc.ShieldThrow.bSet && Desc.ShieldThrow.Value.bEnabled.Value);
+		TestEqual(TEXT("with its range"), Desc.ShieldThrow.Value.Range, 1500.0);
+		TestEqual(TEXT("and damage"), Desc.ShieldThrow.Value.Damage, 40.0);
+		FString Error;
+		FMantleWeaponDesc Again;
+		TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		TestTrue(TEXT("with the throw on"), Again.ShieldThrow.bSet && Again.ShieldThrow.Value.bEnabled.Value && Again.ShieldThrow.Value.Range == 1500.0);
+	}
+	if (TestTrue(TEXT("a sword with the same fields builds"), Build(EMantleWeaponHold::Melee1h, true, 1500.0f, 40.0f, Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no throw (it has none)"), Desc.ShieldThrow.bSet);
+	}
+	return true;
+}
+
 // A staff's held beam that also throws spells writes both blocks, with or without a charge (aim and hold), and the document
 // reader takes it.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffSpellsBesideBeamTest, "Mantle.Editor.WeaponBuilderV2.StaffSpellsBesideBeam", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -549,6 +781,14 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->Resource = EMantleWeaponSourceResource::None; Changed(TEXT("resource changes signature")); Input->Resource = EMantleWeaponSourceResource::Default;
 	Input->EquipStyle = TEXT("back"); Changed(TEXT("equip style changes signature")); Input->EquipStyle = NAME_None;
 	Input->DodgeStyle = TEXT("dash"); Changed(TEXT("dodge style changes signature")); Input->DodgeStyle = NAME_None;
+	Input->ComboSet = TEXT("spin"); Changed(TEXT("combo set changes signature")); Input->ComboSet = NAME_None;
+	Input->Quiver = TEXT("hip"); Changed(TEXT("quiver changes signature")); Input->Quiver = NAME_None;
+	Input->bBash = false; Changed(TEXT("bash changes signature")); Input->bBash = true;
+	Input->BashDamage = 35.0f; Changed(TEXT("bash damage changes signature")); Input->BashDamage = 20.0f;
+	Input->bShieldThrow = true; Changed(TEXT("shield throw changes signature")); Input->bShieldThrow = false;
+	Input->ShieldThrowRange = 1500.0f; Changed(TEXT("shield throw range changes signature")); Input->ShieldThrowRange = 1000.0f;
+	Input->ShieldThrowDamage = 40.0f; Changed(TEXT("shield throw damage changes signature")); Input->ShieldThrowDamage = 25.0f;
+	Input->ShootingStyle = TEXT("c"); Changed(TEXT("shooting style changes signature")); Input->ShootingStyle = NAME_None;
 	Input->bOverrideStyle = true; Changed(TEXT("style choice changes signature")); Input->bOverrideStyle = false;
 	Input->bOverrideColor = true; Changed(TEXT("color choice changes signature")); Input->bOverrideColor = false;
 	Input->Model = FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")); Changed(TEXT("selected asset changes signature")); Input->Model.Reset();
