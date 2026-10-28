@@ -46,7 +46,7 @@ namespace MantleWeaponDocumentPrivate
 	const TCHAR* const GWeaponDocV2Fields[] = {
 		TEXT("hold"), TEXT("delivery"), TEXT("charge"), TEXT("block"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"),
 		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("bash"),
-		TEXT("throw")
+		TEXT("throw"), TEXT("tapLook"), TEXT("holdLook")
 	};
 	// #1025: consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
 	const TCHAR* const GWeaponDocUseStyleNames[] = { TEXT("eatDrink"), TEXT("use") };
@@ -64,10 +64,31 @@ namespace MantleWeaponDocumentPrivate
 	const TCHAR* const GWeaponDocQuiverNames[] = { TEXT("back"), TEXT("hip"), TEXT("side") };
 	// style (Round 3): how a bow is held to shoot (B is not built).
 	const TCHAR* const GWeaponDocShootingStyleNames[] = { TEXT("a"), TEXT("c") };
+	// tapLook and holdLook (Round 4 step 2): what a tap and what a hold do on a staff. The hold looks are the schema's enum in order; the two beam
+	// looks that are not built yet (x-holdLooksLater) are refused, and x-beamLooks are the ones that channel the staff's beam.
+	const TCHAR* const GWeaponDocTapLookNames[] = { TEXT("bolt"), TEXT("handFireball"), TEXT("aimedShock") };
+	const TCHAR* const GWeaponDocHoldLookNames[] = {
+		TEXT("beam"), TEXT("chargedBlast"), TEXT("handFireballHeld"), TEXT("skyCall"), TEXT("groundChannel"), TEXT("whirlCharge"), TEXT("whirlBeam")
+	};
+	const TCHAR* const GWeaponDocLaterHoldLookNames[] = { TEXT("groundChannel"), TEXT("whirlBeam") };
+	const TCHAR* const GWeaponDocBeamLookNames[] = { TEXT("beam"), TEXT("groundChannel"), TEXT("whirlBeam") };
 	// The Round 3 names match exactly, as the schema's enums do (TArray<FString>::Contains ignores case).
 	bool WeaponDocHasName(const TArray<FString>& Names, const FString& Name)
 	{
 		return Names.ContainsByPredicate([&Name](const FString& Known) { return Known.Equals(Name, ESearchCase::CaseSensitive); });
+	}
+	/** Whether Name is one of a name table's spellings (exactly, as the schema's enums match). */
+	template <int32 N>
+	bool WeaponDocNameIn(const TCHAR* const (&Names)[N], const FString& Name)
+	{
+		for (const TCHAR* Known : Names)
+		{
+			if (Name.Equals(Known, ESearchCase::CaseSensitive))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 	const TCHAR* const GWeaponDocConsumableEffectNames[] = { TEXT("heal"), TEXT("none") };
 	const TCHAR* const GWeaponDocUseRefused[] = {
@@ -401,10 +422,15 @@ namespace MantleWeaponDocumentPrivate
 			Spear.ComboSets = { TEXT("quick"), TEXT("long"), TEXT("lunge") };
 			Table.Add(Spear);
 		}
-		// staff
-		Table.Add(WeaponDocHold(true, { EAction::Equip, EAction::Holster, EAction::Idle, EAction::Cast, EAction::Heavy },
-			{ EDelivery::Projectile, EDelivery::Beam }, ECharge::Optional, { EResource::Charges, EResource::None }, EBlock::None,
-			{ ESocket::GripR, ESocket::GripL, ESocket::Focus }, { ESocket::Sight }));
+		// staff. Round 4 step 2: what a tap and what a hold do (the hold looks built so far; groundChannel and whirlBeam come later).
+		{
+			FMantleWeaponDocHoldInfo Staff = WeaponDocHold(true, { EAction::Equip, EAction::Holster, EAction::Idle, EAction::Cast, EAction::Heavy },
+				{ EDelivery::Projectile, EDelivery::Beam }, ECharge::Optional, { EResource::Charges, EResource::None }, EBlock::None,
+				{ ESocket::GripR, ESocket::GripL, ESocket::Focus }, { ESocket::Sight });
+			Staff.TapLooks = { TEXT("bolt"), TEXT("handFireball"), TEXT("aimedShock") };
+			Staff.HoldLooks = { TEXT("beam"), TEXT("chargedBlast"), TEXT("handFireballHeld"), TEXT("skyCall"), TEXT("whirlCharge") };
+			Table.Add(Staff);
+		}
 		// bow: its quiver holds arrows, nocked by one clip (the magazine reload style). Round 3: it may block (right mouse raises its guard).
 		{
 			FMantleWeaponDocHoldInfo Bow = WeaponDocHold(true, { EAction::Equip, EAction::Holster, EAction::Idle, EAction::Nock, EAction::Draw, EAction::Release },
@@ -1564,7 +1590,7 @@ namespace MantleWeaponDocumentPrivate
 			const FString Path;
 			Keys(Root, Path,
 				{ TEXT("schemaVersion"), TEXT("name"), TEXT("archetype"), TEXT("hold"), TEXT("delivery"), TEXT("twoHanded"), TEXT("effects"),
-				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
+				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("tapLook"), TEXT("holdLook"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
 				  TEXT("charge"), TEXT("magazine"), TEXT("reload"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"),
 				  TEXT("consumable"), TEXT("block"), TEXT("bash"), TEXT("throw"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
 				{ TEXT("schemaVersion"), TEXT("name") });
@@ -1638,6 +1664,8 @@ namespace MantleWeaponDocumentPrivate
 			OptText(Root, Path, TEXT("comboSet"), EWeaponDocText::Any, Out.ComboSet);
 			OptText(Root, Path, TEXT("quiver"), EWeaponDocText::Any, Out.Quiver);
 			OptText(Root, Path, TEXT("style"), EWeaponDocText::Any, Out.ShootingStyle);
+			OptText(Root, Path, TEXT("tapLook"), EWeaponDocText::Any, Out.TapLook);
+			OptText(Root, Path, TEXT("holdLook"), EWeaponDocText::Any, Out.HoldLook);
 			OptColor(Root, TEXT("color"), Out.Color);
 			OptColor(Root, TEXT("effectsColor"), Out.EffectsColor);
 			if (const TSharedPtr<FJsonValue> Mesh = Field(Root, TEXT("mesh")))
@@ -2431,6 +2459,14 @@ namespace MantleWeaponDocumentPrivate
 			{
 				WeaponDocPut(Node, TEXT("style"), WeaponDocStringNode(D.ShootingStyle.Value));
 			}
+			if (D.TapLook.bSet)
+			{
+				WeaponDocPut(Node, TEXT("tapLook"), WeaponDocStringNode(D.TapLook.Value));
+			}
+			if (D.HoldLook.bSet)
+			{
+				WeaponDocPut(Node, TEXT("holdLook"), WeaponDocStringNode(D.HoldLook.Value));
+			}
 			if (D.Color.bSet)
 			{
 				WeaponDocPut(Node, TEXT("color"), WeaponDocNumbersNode({ static_cast<double>(D.Color.Value.R), static_cast<double>(D.Color.Value.G),
@@ -2973,6 +3009,63 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 					*FString::Join(Info.ShootingStyles, TEXT(", "))));
 		}
 	}
+	// Tap look (Round 4 step 2), the same way: a known look, then one the hold offers. A hold whose tap looks one way takes none.
+	if (D.TapLook.bSet)
+	{
+		const FString& Look = D.TapLook.Value;
+		TArray<FString> KnownLooks;
+		for (const TCHAR* Name : GWeaponDocTapLookNames)
+		{
+			KnownLooks.Add(Name);
+		}
+		if (!WeaponDocHasName(KnownLooks, Look))
+		{
+			R.Add(TEXT("tapLook"), TEXT("enum"), FString::Printf(TEXT("is %s: use one of %s"), *Look, *FString::Join(KnownLooks, TEXT(", "))));
+		}
+		else if (!WeaponDocHasName(Info.TapLooks, Look))
+		{
+			R.Add(TEXT("tapLook"), TEXT("mantle"), Info.TapLooks.IsEmpty()
+				? FString::Printf(TEXT("a %s has no tap look: drop tapLook"), Hold)
+				: FString::Printf(TEXT("is %s, which a %s does not have: pick one of its tap looks"), *Look, Hold));
+		}
+	}
+	// Hold look (Round 4 step 2): a known look; then, for the hold, one built so far (groundChannel and whirlBeam come in a later update); a beam
+	// look needs the beam block, a charge look the charge block it holds for.
+	if (D.HoldLook.bSet)
+	{
+		const FString& Look = D.HoldLook.Value;
+		TArray<FString> KnownLooks;
+		for (const TCHAR* Name : GWeaponDocHoldLookNames)
+		{
+			KnownLooks.Add(Name);
+		}
+		const bool bBeamLook = WeaponDocNameIn(GWeaponDocBeamLookNames, Look);
+		if (!WeaponDocHasName(KnownLooks, Look))
+		{
+			R.Add(TEXT("holdLook"), TEXT("enum"), FString::Printf(TEXT("is %s: use one of %s"), *Look, *FString::Join(KnownLooks, TEXT(", "))));
+		}
+		else if (Info.HoldLooks.IsEmpty())
+		{
+			R.Add(TEXT("holdLook"), TEXT("mantle"), FString::Printf(TEXT("a %s has no hold look: drop holdLook"), Hold));
+		}
+		else if (WeaponDocNameIn(GWeaponDocLaterHoldLookNames, Look))
+		{
+			R.Add(TEXT("holdLook"), TEXT("mantle"), FString::Printf(TEXT("is %s, which comes in a later update: pick one of %s"), *Look,
+				*FString::Join(Info.HoldLooks, TEXT(", "))));
+		}
+		else if (!WeaponDocHasName(Info.HoldLooks, Look))
+		{
+			R.Add(TEXT("holdLook"), TEXT("mantle"), FString::Printf(TEXT("is %s, which a %s does not have: pick one of its hold looks"), *Look, Hold));
+		}
+		else if (bBeamLook && !D.Beam.bSet)
+		{
+			R.Add(TEXT("holdLook"), TEXT("mantle"), FString::Printf(TEXT("is %s, a beam look: it needs the beam block (the beam delivery); add beam, or pick a charge look"), *Look));
+		}
+		else if (!bBeamLook && !D.Charge.bSet)
+		{
+			R.Add(TEXT("holdLook"), TEXT("mantle"), FString::Printf(TEXT("is %s, which charges: it needs a charge block to hold for; add charge, or pick beam"), *Look));
+		}
+	}
 	// Bash (Round 3): only a hold with a bash on the Melee key (the bow) takes one.
 	if (D.Bash.bSet && !Info.bHasBash)
 	{
@@ -3324,6 +3417,16 @@ const TCHAR* FMantleWeaponDocument::ConsumableEffectName(const EMantleWeaponDocC
 TConstArrayView<const TCHAR*> FMantleWeaponDocument::GetUseRefusedFields()
 {
 	return MantleWeaponDocumentPrivate::GWeaponDocUseRefused;
+}
+
+TConstArrayView<const TCHAR*> FMantleWeaponDocument::GetLaterHoldLooks()
+{
+	return MantleWeaponDocumentPrivate::GWeaponDocLaterHoldLookNames;
+}
+
+TConstArrayView<const TCHAR*> FMantleWeaponDocument::GetBeamLooks()
+{
+	return MantleWeaponDocumentPrivate::GWeaponDocBeamLookNames;
 }
 
 const TCHAR* FMantleWeaponDocument::EffectsName(const EMantleWeaponDocEffects Effects)
