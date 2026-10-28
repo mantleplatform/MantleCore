@@ -2,6 +2,7 @@
 #include "MantleActorDecompose.h"
 #include "MantleCoverage.h"
 #include "MantleMirrorBake.h"
+#include "MantlePlaceAssets.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceValidator.h"
 
@@ -687,6 +688,60 @@ bool FMantleDecomposeMirroredGroupExportTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("and turned half a circle about Z"), FMath::IsNearlyEqual(FMath::Abs(Group.Rotator().Yaw), 180.0, 0.01));
 		TestTrue(TEXT("its second part keeps its place in the group"), Parts.ContainsByPredicate([](const FTransform& Part) { return Part.GetLocation().Equals(FVector(100.0, 0.0, 0.0), 0.001); }));
 		TestEqual(TEXT("no mesh is mirrored"), Result.Coverage.Count(MantleCoverageCategory::StaticMeshes, EOutcome::Approximated), static_cast<int64>(0));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleDecomposeMirroredGroupGatherTest,
+	"Mantle.Editor.Decompose.MirroredGroupCopiesAreGathered",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleDecomposeMirroredGroupGatherTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleActorDecomposeTestPrivate;
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, CubePath);
+	if (!Cube)
+	{
+		AddWarning(TEXT("the engine cube did not load; skipped"));
+		return true;
+	}
+	FDecomposeWorld Fixture;
+	AStaticMeshActor* Actor = Fixture.World->SpawnActor<AStaticMeshActor>();
+	if (!TestNotNull(TEXT("the actor spawned"), Actor))
+	{
+		return false;
+	}
+	Actor->SetActorLabel(TEXT("Kit"));
+	Actor->GetStaticMeshComponent()->SetStaticMesh(Cube);
+	AddMesh(Actor, TEXT("Second"), Cube, FVector(100.0, 0.0, 0.0));
+	Actor->SetActorScale3D(FVector(-1.0, 1.0, 1.0));
+
+	// Publish gathers the level, then exports it against what it gathered; an export that wrote a mesh the gather did not
+	// hold makes publish gather again ("the level kept changing"). So the mirrored copy a group part uses is gathered, and
+	// gathering and exporting again finds the same copy, not a new one.
+	const FMantlePlaceDependencies First = FMantlePlaceAssets::Gather(Fixture.World);
+	FVector PositiveScale;
+	FString Why;
+	UStaticMesh* Copy = FMantleMirrorBake::MirroredCopy(Cube, FVector(-1.0, 1.0, 1.0), PositiveScale, Why);
+	if (!TestNotNull(TEXT("the mirrored copy"), Copy))
+	{
+		return false;
+	}
+	const FMantleGatheredMesh* Gathered = First.Meshes.FindByPredicate([Copy](const FMantleGatheredMesh& Mesh) { return Mesh.Mesh.Get() == Copy; });
+	TestNotNull(TEXT("the mirrored copy is gathered"), Gathered);
+	TestFalse(TEXT("and the unmirrored mesh is not what the group publishes"), First.Meshes.ContainsByPredicate([Cube](const FMantleGatheredMesh& Mesh) { return Mesh.Mesh.Get() == Cube; }));
+
+	FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	const FMantlePlaceDependencies Second = FMantlePlaceAssets::Gather(Fixture.World);
+	TestEqual(TEXT("gathering again finds the same meshes"), Second.Meshes.Num(), First.Meshes.Num());
+	if (Gathered)
+	{
+		const FMantleGatheredMesh* Again = Second.Meshes.FindByPredicate([Copy](const FMantleGatheredMesh& Mesh) { return Mesh.Mesh.Get() == Copy; });
+		if (TestNotNull(TEXT("the same copy again"), Again))
+		{
+			TestEqual(TEXT("under the same key"), Again->Key, Gathered->Key);
+		}
 	}
 	return true;
 }
