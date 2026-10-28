@@ -65,7 +65,7 @@
 namespace MantlePlaceAssetConverterPrivate
 {
 	/** Bump this whenever how a conversion is written changes, so stale caches are rebuilt. */
-	const TCHAR* const CacheVersion = TEXT("f5-v16");
+	const TCHAR* const CacheVersion = TEXT("f5-v17");
 
 	const TCHAR* const ConversionRemedy = TEXT("It still publishes. Nothing to do unless it matters to how your place looks.");
 
@@ -3757,6 +3757,10 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		if (Water.bWavesDropped)
 		{
 			Warn(TEXT("its waves (world position offset) are dropped: Mantle's water is a flat surface with moving normal maps."));
+		}
+		if (Water.bShorelineFoamDropped)
+		{
+			Warn(TEXT("its shoreline foam (a distance field) is dropped: Mantle's water has no shoreline."));
 		}
 
 		// What the schema says does nothing on water is not written; what the source had of it is said.
