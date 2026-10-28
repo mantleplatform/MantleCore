@@ -159,6 +159,15 @@ namespace MantleWeaponBuilderPanelPrivate
 		return FText::FromString(Style);
 	}
 
+	FText DodgeStyleLabel(const FString& Style)
+	{
+		if (Style == TEXT("upright")) return LOCTEXT("DodgeStyleUpright", "Upright step");
+		if (Style == TEXT("crouched")) return LOCTEXT("DodgeStyleCrouched", "Crouched sidestep");
+		if (Style == TEXT("dash")) return LOCTEXT("DodgeStyleDash", "Long dash");
+		if (Style == TEXT("sidestep")) return LOCTEXT("DodgeStyleSidestep", "Sidestep");
+		return FText::FromString(Style);
+	}
+
 	FText BuilderHoldBlurb(EMantleWeaponHold Hold)
 	{
 		switch (Hold)
@@ -653,6 +662,7 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 		? static_cast<EMantleWeaponSourceStyle>(HoldInfo(Hold).Effects)
 		: Hold == EMantleWeaponHold::Staff ? EMantleWeaponSourceStyle::Arcane : EMantleWeaponSourceStyle::Generic;
 	Working->EquipStyle = NAME_None;
+	Working->DodgeStyle = NAME_None;
 	Working->bOverrideColor = false;
 	Working->Color = FColor(40, 110, 160);
 	Working->Charge = FMantleWeaponSourceCharge();
@@ -663,6 +673,7 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	}
 	Working->bBlock = HoldInfo(Hold).BlockRule == EMantleWeaponDocBlockRule::Required;
 	Working->bBreakOnHeavy = true;
+	Working->StunSeconds = 1.5f;
 	Working->Projectile = FMantleWeaponSourceProjectile();
 	Working->Sweep = FMantleWeaponSourceSweep();
 	Working->Beam = FMantleWeaponSourceBeam();
@@ -928,8 +939,13 @@ FText SMantleWeaponBuilder::SummaryText() const
 	if (Working->bBlock || HoldInfo(Working->Hold).BlockRule == EMantleWeaponDocBlockRule::Required)
 	{
 		Lines.Add(FString::Printf(TEXT("Blocking: on%s"), Working->bBreakOnHeavy ? TEXT("; heavy attacks break a guard") : TEXT("")));
+		if (Working->bBreakOnHeavy)
+		{
+			Lines.Add(Working->StunSeconds > 0.f ? FString::Printf(TEXT("Broken guard: stuns for %.1f seconds"), Working->StunSeconds) : FString(TEXT("Broken guard: no stun")));
+		}
 	}
 	if (Working->bOverrideStyle) Lines.Add(FString::Printf(TEXT("Effect style: %s"), *StyleLabel(Working->Style).ToString()));
+	if (!Working->DodgeStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Dodge: %s"), *DodgeStyleLabel(Working->DodgeStyle.ToString()).ToString()));
 	if (Working->Parts.Num() > 0) Lines.Add(FString::Printf(TEXT("Moving parts: %d"), Working->Parts.Num()));
 	if (Working->Attachments.Num() > 0) Lines.Add(FString::Printf(TEXT("Fixed details: %d"), Working->Attachments.Num()));
 	if (!Working->FireSound.IsNull() || !Working->FireSuppressedSound.IsNull()) Lines.Add(TEXT("Custom sound: set"));
@@ -1562,6 +1578,21 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		AddRow(LOCTEXT("EquipStyle", "Draw style"), EquipStyleTip,
 			MakeChoiceControl<FName>(EquipStyles, [this] { return Working->EquipStyle; }, [this](FName Value) { Working->EquipStyle = Value; }));
 	}
+	// Round 2: the dodge (Left Alt, gamepad B) where the hold has more than one look; a roll is the same for every look.
+	if (Info.DodgeStyles.Num() > 1)
+	{
+		TArray<TPair<FName, FText>> DodgeStyles;
+		DodgeStyles.Emplace(NAME_None, FText::Format(LOCTEXT("DodgeStyleDefault", "Hold default ({0})"), DodgeStyleLabel(Info.DodgeStyles[0])));
+		for (const FString& Style : Info.DodgeStyles)
+		{
+			DodgeStyles.Emplace(FName(*Style), DodgeStyleLabel(Style));
+		}
+		const FText DodgeStyleTip = Working->Hold == EMantleWeaponHold::Unarmed
+			? LOCTEXT("DodgeStyleUnarmedTip", "How the holder dodges: a long dash (the default) or a short sidestep.")
+			: LOCTEXT("DodgeStyleShieldTip", "How the holder dodges with a shield: an upright step (the default), a crouched sidestep or a long dash. A sword uses it while paired with a shield; without one it falls back to the shield's.");
+		AddRow(LOCTEXT("DodgeStyle", "Dodge"), DodgeStyleTip,
+			MakeChoiceControl<FName>(DodgeStyles, [this] { return Working->DodgeStyle; }, [this](FName Value) { Working->DodgeStyle = Value; }));
+	}
 	if (Deliveries.Num() > 2)
 	{
 		// #905: SetDelivery starts a gun's beam or launched round from usable numbers, and keeps the effect style one the attack can use.
@@ -1749,6 +1780,10 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 	AddToggleWhen(LOCTEXT("BreakOnHeavy", "A heavy attack can break the guard"), LOCTEXT("BreakOnHeavyTip", "A heavy attack can interrupt a block."),
 		[this] { return Working->bBreakOnHeavy; }, [this](bool V) { Working->bBreakOnHeavy = V; },
 		[this, CanBlock] { return CanBlock() && Working->bBlock ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
+	AddFloatWhen(LOCTEXT("StunSeconds", "Stun after a broken guard (0–5 seconds)"),
+		LOCTEXT("StunSecondsTip", "How long a player whose guard is broken is stunned: they cannot move, attack or block, and hits still hurt. 0 gives the short guard break with no stun."),
+		0.f, 5.f, 0.1f, [this] { return Working->StunSeconds; }, [this](float V) { Working->StunSeconds = FMath::Clamp(V, 0.f, 5.f); },
+		[this, CanBlock] { return CanBlock() && Working->bBlock && Working->bBreakOnHeavy ? EVisibility::Visible : EVisibility::Collapsed; });
 	const bool bCanOverrideHandedness = IsFirearm(Working->Hold);
 	AddToggleWhen(LOCTEXT("OverrideTwoHanded", "Change how many hands hold it"), LOCTEXT("OverrideTwoHandedTip", "Use this hold with one hand or both. The usual setting follows the hold."),
 		[this] { return Working->bOverrideTwoHanded; }, [this](bool V) { Working->bOverrideTwoHanded = V; },

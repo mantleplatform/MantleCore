@@ -142,6 +142,7 @@ class Player:
     character: Optional[Entity]
     crouch_enabled: Optional[bool]
     crouch_speed: Optional[float]
+    dodge_enabled: Optional[bool]
     drown_damage: Optional[float]
     health: Optional[float]
     is_crouched: Optional[bool]
@@ -178,14 +179,18 @@ class Player:
     crouch_stopped: Signal
     damaged: Signal
     died: Signal
+    dodged: Signal
     health_changed: Signal
     out_of_breath: Signal
+    parried: Signal
     ragdolled: Signal
     recovered: Signal
     respawned: Signal
     sprint_started: Signal
     sprint_stopped: Signal
     stamina_changed: Signal
+    stun_ended: Signal
+    stunned: Signal
     def force_crouch(self, crouched: bool, /) -> bool:
         """Hold the player crouched (true) or standing (false) whatever they press, until ReleaseCrouch. A player held crouched can still walk (sprinting is off while crouched); one held standing cannot crouch or slide. CrouchEnabled false wins over a crouch hold. Returns false when the player has no character on foot. The hold ends with the character: a respawn gives the key back."""
         ...

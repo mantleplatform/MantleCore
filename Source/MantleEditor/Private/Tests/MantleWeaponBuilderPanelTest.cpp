@@ -174,6 +174,7 @@ bool FMantleWeaponBuilderPanelSourceCopyTest::RunTest(const FString& Parameters)
 	Source->Charge.bCancelable = false;
 	Source->bBlock = true;
 	Source->bBreakOnHeavy = false;
+	Source->StunSeconds = 2.5f;
 	Source->Projectile.Speed = 2400.f;
 	Source->Projectile.Gravity = 0.45f;
 	Source->Projectile.BlastRadius = 8.f;
