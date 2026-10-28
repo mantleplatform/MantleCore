@@ -51,6 +51,20 @@ namespace MantleWeaponBuilderLogic
 	 */
 	MANTLEEDITOR_API void SetDelivery(UMantleWeaponSource& Source, EMantleWeaponSourceDelivery Delivery);
 
+	/** Round 4 step 2: the staff throws spells (its projectile block): the projectile delivery, or spells beside its held beam. */
+	MANTLEEDITOR_API bool StaffCastsSpells(const UMantleWeaponSource& Source);
+
+	/** Round 4 step 2: the staff has a beam (its beam block): the beam delivery. */
+	MANTLEEDITOR_API bool StaffHasBeam(const UMantleWeaponSource& Source);
+
+	/** Round 4 step 2: the hold looks the panel offers a staff now, in the document's spellings: beam only with a beam, the charge looks only with a
+	 *  charged attack on and spells to charge. A staff with only a beam offers beam alone. */
+	MANTLEEDITOR_API TArray<FString> OfferedHoldLooks(const UMantleWeaponSource& Source);
+
+	/** Round 4 step 2: clears a tap look or hold look the source no longer offers (after the delivery, the spells or the charge changed), so the
+	 *  export never writes a look the reader refuses. */
+	MANTLEEDITOR_API void DropInvalidLooks(UMantleWeaponSource& Source);
+
 	/** Plain words: "Pistol", "Marksman rifle". */
 	MANTLEEDITOR_API FText HoldLabel(EMantleWeaponHold Hold);
 

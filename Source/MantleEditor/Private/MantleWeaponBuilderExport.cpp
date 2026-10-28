@@ -270,6 +270,27 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		}
 		Desc.ShootingStyle.Set(Style);
 	}
+	// Round 4 step 2: what a tap and what a hold do on a staff. None picked writes nothing (the bolt; the beam, else the charged blast).
+	if (!Source.TapLook.IsNone())
+	{
+		const FString Look = Source.TapLook.ToString();
+		if (!Info.TapLooks.Contains(Look))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedTapLook", "This hold has no tap look {0}."), FText::FromString(Look)));
+			return false;
+		}
+		Desc.TapLook.Set(Look);
+	}
+	if (!Source.HoldLook.IsNone())
+	{
+		const FString Look = Source.HoldLook.ToString();
+		if (!Info.HoldLooks.Contains(Look))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedHoldLook", "This hold has no hold look {0}."), FText::FromString(Look)));
+			return false;
+		}
+		Desc.HoldLook.Set(Look);
+	}
 	// The hotbar icon: the weapon's library picture. It is made at publish (the Thumbnail step's choice); publish swaps this name for the
 	// uploaded texture's id, or drops it when no picture was taken.
 	if (!MeshName.IsEmpty()) Desc.Icon = AuxiliaryName(Source, TEXT("Icon"));

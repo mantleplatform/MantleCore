@@ -3028,6 +3028,10 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 				? FString::Printf(TEXT("a %s has no tap look: drop tapLook"), Hold)
 				: FString::Printf(TEXT("is %s, which a %s does not have: pick one of its tap looks"), *Look, Hold));
 		}
+		else if (!D.Projectile.bSet)
+		{
+			R.Add(TEXT("tapLook"), TEXT("mantle"), FString::Printf(TEXT("a %s with only a beam casts no spell on a tap: add a projectile block, or drop tapLook"), Hold));
+		}
 	}
 	// Hold look (Round 4 step 2): a known look; then, for the hold, one built so far (groundChannel and whirlBeam come in a later update); a beam
 	// look needs the beam block, a charge look the charge block it holds for.
@@ -3056,6 +3060,10 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		else if (!WeaponDocHasName(Info.HoldLooks, Look))
 		{
 			R.Add(TEXT("holdLook"), TEXT("mantle"), FString::Printf(TEXT("is %s, which a %s does not have: pick one of its hold looks"), *Look, Hold));
+		}
+		else if (!bBeamLook && !D.Projectile.bSet)
+		{
+			R.Add(TEXT("holdLook"), TEXT("mantle"), FString::Printf(TEXT("is %s, which charges a spell: a %s with only a beam has none; add a projectile block, or pick beam"), *Look, Hold));
 		}
 		else if (bBeamLook && !D.Beam.bSet)
 		{

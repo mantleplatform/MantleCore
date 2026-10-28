@@ -234,6 +234,14 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName ShootingStyle = NAME_None;
 
+	/** Round 4 step 2: what a tap does on a staff that casts spells (bolt, handFireball or aimedShock); unset uses the hold's first, bolt. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	FName TapLook = NAME_None;
+
+	/** Round 4 step 2: what a hold does on a staff (beam, chargedBlast, handFireballHeld, skyCall or whirlCharge); unset is beam on a staff with a beam, else chargedBlast. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	FName HoldLook = NAME_None;
+
 	/** The creator's UStaticMesh or USkeletalMesh. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	TSoftObjectPtr<UObject> Model;

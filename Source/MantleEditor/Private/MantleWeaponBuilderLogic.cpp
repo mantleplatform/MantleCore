@@ -204,6 +204,53 @@ void MantleWeaponBuilderLogic::SetDelivery(UMantleWeaponSource& Source, EMantleW
 	}
 }
 
+bool MantleWeaponBuilderLogic::StaffHasBeam(const UMantleWeaponSource& Source)
+{
+	return Source.Hold == EMantleWeaponHold::Staff && DeliveryOf(Source) == EMantleWeaponDocDelivery::Beam;
+}
+
+bool MantleWeaponBuilderLogic::StaffCastsSpells(const UMantleWeaponSource& Source)
+{
+	if (Source.Hold != EMantleWeaponHold::Staff)
+	{
+		return false;
+	}
+	const EMantleWeaponDocDelivery Delivery = DeliveryOf(Source);
+	return Delivery == EMantleWeaponDocDelivery::Projectile || (Delivery == EMantleWeaponDocDelivery::Beam && Source.bSpellsBesideBeam);
+}
+
+TArray<FString> MantleWeaponBuilderLogic::OfferedHoldLooks(const UMantleWeaponSource& Source)
+{
+	TArray<FString> Offered;
+	if (Source.Hold != EMantleWeaponHold::Staff)
+	{
+		return Offered;
+	}
+	const TConstArrayView<const TCHAR*> BeamLooks = FMantleWeaponDocument::GetBeamLooks();
+	const bool bSpells = StaffCastsSpells(Source);
+	for (const FString& Look : FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Staff).HoldLooks)
+	{
+		const bool bBeamLook = BeamLooks.ContainsByPredicate([&Look](const TCHAR* Name) { return Look.Equals(Name, ESearchCase::CaseSensitive); });
+		if (bBeamLook ? StaffHasBeam(Source) : (bSpells && Source.Charge.bEnabled))
+		{
+			Offered.Add(Look);
+		}
+	}
+	return Offered;
+}
+
+void MantleWeaponBuilderLogic::DropInvalidLooks(UMantleWeaponSource& Source)
+{
+	if (!StaffCastsSpells(Source))
+	{
+		Source.TapLook = NAME_None;
+	}
+	if (!Source.HoldLook.IsNone() && !OfferedHoldLooks(Source).Contains(Source.HoldLook.ToString()))
+	{
+		Source.HoldLook = NAME_None;
+	}
+}
+
 FText MantleWeaponBuilderLogic::HoldLabel(EMantleWeaponHold Hold)
 {
 	switch (Hold)

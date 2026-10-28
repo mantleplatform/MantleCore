@@ -389,6 +389,155 @@ bool FMantleWeaponBuilderV2ShootingStyleTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Round 4 step 2: the tap look a creator picks is written as tapLook on a staff that throws spells, and refused on a hold with one way to tap;
+// none picked writes nothing (the bolt). A staff with only a beam casts no spell, so the document reader refuses a tap look there.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2TapLookTest, "Mantle.Editor.WeaponBuilderV2.TapLook", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2TapLookTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	auto Build = [](EMantleWeaponHold Hold, FName Look, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("TapLook"), nullptr);
+		if (Hold == EMantleWeaponHold::Staff)
+		{
+			Input->Delivery = EMantleWeaponSourceDelivery::Projectile;
+		}
+		Input->TapLook = Look;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	for (const TCHAR* Look : { TEXT("bolt"), TEXT("handFireball"), TEXT("aimedShock") })
+	{
+		if (TestTrue(*FString::Printf(TEXT("a spell staff with the %s tap builds"), Look), Build(EMantleWeaponHold::Staff, Look, Desc, Messages)))
+		{
+			TestTrue(*FString::Printf(TEXT("and writes %s"), Look), Desc.TapLook.bSet && Desc.TapLook.Value == Look);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+			TestTrue(TEXT("with the same look"), Again.TapLook.bSet && Again.TapLook.Value == Look);
+		}
+	}
+	if (TestTrue(TEXT("a staff with no tap look picked builds"), Build(EMantleWeaponHold::Staff, NAME_None, Desc, Messages)))
+	{
+		TestFalse(TEXT("and leaves the default"), Desc.TapLook.bSet);
+	}
+	TestFalse(TEXT("a staff refuses a tap look it does not offer"), Build(EMantleWeaponHold::Staff, TEXT("thunderclap"), Desc, Messages));
+	TestFalse(TEXT("a sword has no tap look"), Build(EMantleWeaponHold::Melee1h, TEXT("bolt"), Desc, Messages));
+	TestTrue(TEXT("the refusal explains the choice"), Messages.ContainsByPredicate([](const FText& Message)
+	{
+		return Message.ToString().Contains(TEXT("no tap look bolt"));
+	}));
+	// A staff with only a beam: the builder hides the look, and the reader refuses one that got through.
+	UMantleWeaponSource* BeamOnly = Source(EMantleWeaponHold::Staff, TEXT("BeamOnlyTap"), nullptr);
+	BeamOnly->Delivery = EMantleWeaponSourceDelivery::Beam;
+	BeamOnly->TapLook = TEXT("handFireball");
+	TestFalse(TEXT("a beam-only staff casts no spell for a tap look"), MantleWeaponBuilderLogic::StaffCastsSpells(*BeamOnly));
+	if (FMantleWeaponBuilderExport::BuildDocument(*BeamOnly, RequiredPoints(EMantleWeaponHold::Staff), TEXT("FixtureMesh"), Desc, Messages))
+	{
+		TArray<FMantleWeaponDocError> Errors;
+		TestFalse(TEXT("and the reader refuses it"), FMantleWeaponDocument::Validate(Desc, Errors));
+	}
+	MantleWeaponBuilderLogic::DropInvalidLooks(*BeamOnly);
+	TestTrue(TEXT("the builder clears a tap look the staff no longer offers"), BeamOnly->TapLook.IsNone());
+	BeamOnly->bSpellsBesideBeam = true;
+	BeamOnly->TapLook = TEXT("aimedShock");
+	MantleWeaponBuilderLogic::DropInvalidLooks(*BeamOnly);
+	TestTrue(TEXT("and keeps one it does (spells beside the beam)"), BeamOnly->TapLook == FName(TEXT("aimedShock")));
+	return true;
+}
+
+// Round 4 step 2: the hold look is written as holdLook on a staff. The panel offers beam only with a beam and the charge looks only with a
+// charged attack on (and spells to charge); a look that stops being offered is cleared; the reader takes what the builder writes.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2HoldLookTest, "Mantle.Editor.WeaponBuilderV2.HoldLook", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2HoldLookTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	auto Staff = [](EMantleWeaponSourceDelivery Delivery, bool bSpellsBesideBeam, bool bCharge, FName Look)
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("HoldLook"), nullptr);
+		Input->Delivery = Delivery;
+		Input->bSpellsBesideBeam = bSpellsBesideBeam;
+		Input->Charge.bEnabled = bCharge;
+		Input->HoldLook = Look;
+		return Input;
+	};
+	const auto Offered = [](const UMantleWeaponSource& Input) { return FString::Join(MantleWeaponBuilderLogic::OfferedHoldLooks(Input), TEXT(",")); };
+	// What the panel offers.
+	TestEqual(TEXT("spells with a charge: the charge looks, no beam"), Offered(*Staff(EMantleWeaponSourceDelivery::Projectile, false, true, NAME_None)),
+		FString(TEXT("chargedBlast,handFireballHeld,skyCall,whirlCharge")));
+	TestEqual(TEXT("spells without a charge: nothing to hold for"), Offered(*Staff(EMantleWeaponSourceDelivery::Projectile, false, false, NAME_None)), FString());
+	TestEqual(TEXT("a beam with spells and a charge: all"), Offered(*Staff(EMantleWeaponSourceDelivery::Beam, true, true, NAME_None)),
+		FString(TEXT("beam,chargedBlast,handFireballHeld,skyCall,whirlCharge")));
+	TestEqual(TEXT("a beam with spells, no charge: the beam"), Offered(*Staff(EMantleWeaponSourceDelivery::Beam, true, false, NAME_None)), FString(TEXT("beam")));
+	TestEqual(TEXT("a beam alone, charge or not: the beam"), Offered(*Staff(EMantleWeaponSourceDelivery::Beam, false, true, NAME_None)), FString(TEXT("beam")));
+	TestEqual(TEXT("a sword offers none"), Offered(*Source(EMantleWeaponHold::Melee1h, TEXT("Sword"), nullptr)), FString());
+
+	// A look that stops being offered is cleared.
+	UMantleWeaponSource* Spells = Staff(EMantleWeaponSourceDelivery::Projectile, false, true, TEXT("skyCall"));
+	MantleWeaponBuilderLogic::DropInvalidLooks(*Spells);
+	TestTrue(TEXT("a charge look stays while the charge is on"), Spells->HoldLook == FName(TEXT("skyCall")));
+	Spells->Charge.bEnabled = false;
+	MantleWeaponBuilderLogic::DropInvalidLooks(*Spells);
+	TestTrue(TEXT("and goes when the charge goes"), Spells->HoldLook.IsNone());
+	UMantleWeaponSource* Both = Staff(EMantleWeaponSourceDelivery::Beam, true, true, TEXT("beam"));
+	Both->DisplayName = TEXT("Both");
+	Both->Delivery = EMantleWeaponSourceDelivery::Projectile;
+	MantleWeaponBuilderLogic::DropInvalidLooks(*Both);
+	TestTrue(TEXT("the beam look goes when the staff has no beam"), Both->HoldLook.IsNone());
+
+	// What the builder writes, the reader takes.
+	auto Build = [](UMantleWeaponSource& Input, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(Input, RequiredPoints(EMantleWeaponHold::Staff), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	for (const TCHAR* Look : { TEXT("chargedBlast"), TEXT("handFireballHeld"), TEXT("skyCall"), TEXT("whirlCharge") })
+	{
+		UMantleWeaponSource* Input = Staff(EMantleWeaponSourceDelivery::Projectile, false, true, Look);
+		if (TestTrue(*FString::Printf(TEXT("a spell staff with the %s hold builds"), Look), Build(*Input, Desc, Messages)))
+		{
+			TestTrue(*FString::Printf(TEXT("and writes %s"), Look), Desc.HoldLook.bSet && Desc.HoldLook.Value == Look);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+			TestTrue(TEXT("with the same look"), Again.HoldLook.bSet && Again.HoldLook.Value == Look);
+		}
+	}
+	UMantleWeaponSource* BeamStaff = Staff(EMantleWeaponSourceDelivery::Beam, true, true, TEXT("beam"));
+	if (TestTrue(TEXT("a beam staff with the beam hold builds"), Build(*BeamStaff, Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes it"), Desc.HoldLook.bSet && Desc.HoldLook.Value == TEXT("beam"));
+		TArray<FMantleWeaponDocError> Errors;
+		TestTrue(TEXT("which the reader takes"), FMantleWeaponDocument::Validate(Desc, Errors));
+	}
+	UMantleWeaponSource* None = Staff(EMantleWeaponSourceDelivery::Projectile, false, true, NAME_None);
+	if (TestTrue(TEXT("a staff with no hold look picked builds"), Build(*None, Desc, Messages)))
+	{
+		TestFalse(TEXT("and leaves the default"), Desc.HoldLook.bSet);
+	}
+	UMantleWeaponSource* Unknown = Staff(EMantleWeaponSourceDelivery::Projectile, false, true, TEXT("meteorShower"));
+	TestFalse(TEXT("a staff refuses a hold look it does not offer"), Build(*Unknown, Desc, Messages));
+	UMantleWeaponSource* Bow = Source(EMantleWeaponHold::Bow, TEXT("BowHold"), nullptr);
+	Bow->HoldLook = TEXT("skyCall");
+	TestFalse(TEXT("a bow has no hold look"), FMantleWeaponBuilderExport::BuildDocument(*Bow, RequiredPoints(EMantleWeaponHold::Bow), TEXT("FixtureMesh"), Desc, Messages));
+	TestTrue(TEXT("the refusal explains the choice"), Messages.ContainsByPredicate([](const FText& Message)
+	{
+		return Message.ToString().Contains(TEXT("no hold look skyCall"));
+	}));
+	// A look the builder would not offer is still refused by the reader (a beam look on a staff with no beam).
+	UMantleWeaponSource* Stale = Staff(EMantleWeaponSourceDelivery::Projectile, false, true, TEXT("beam"));
+	if (Build(*Stale, Desc, Messages))
+	{
+		TArray<FMantleWeaponDocError> Errors;
+		TestFalse(TEXT("the reader refuses a beam look on a spell staff"), FMantleWeaponDocument::Validate(Desc, Errors));
+	}
+	return true;
+}
+
 // Round 3 (bow step 5): a bow may block. "Can block" on writes block (with its stun), off (the default) writes none; a staff still cannot.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2BowBlockTest, "Mantle.Editor.WeaponBuilderV2.BowBlock", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FMantleWeaponBuilderV2BowBlockTest::RunTest(const FString& Parameters)
@@ -789,6 +938,8 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->ShieldThrowRange = 1500.0f; Changed(TEXT("shield throw range changes signature")); Input->ShieldThrowRange = 1000.0f;
 	Input->ShieldThrowDamage = 40.0f; Changed(TEXT("shield throw damage changes signature")); Input->ShieldThrowDamage = 25.0f;
 	Input->ShootingStyle = TEXT("c"); Changed(TEXT("shooting style changes signature")); Input->ShootingStyle = NAME_None;
+	Input->TapLook = TEXT("handFireball"); Changed(TEXT("tap look changes signature")); Input->TapLook = NAME_None;
+	Input->HoldLook = TEXT("skyCall"); Changed(TEXT("hold look changes signature")); Input->HoldLook = NAME_None;
 	Input->bOverrideStyle = true; Changed(TEXT("style choice changes signature")); Input->bOverrideStyle = false;
 	Input->bOverrideColor = true; Changed(TEXT("color choice changes signature")); Input->bOverrideColor = false;
 	Input->Model = FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")); Changed(TEXT("selected asset changes signature")); Input->Model.Reset();
