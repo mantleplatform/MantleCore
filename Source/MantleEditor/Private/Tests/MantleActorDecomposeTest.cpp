@@ -613,4 +613,82 @@ bool FMantleDecomposeMirroredGroupTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleDecomposeMirroredGroupExportTest,
+	"Mantle.Editor.Decompose.MirroredGroupExportsMirroredParts",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleDecomposeMirroredGroupExportTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleActorDecomposeTestPrivate;
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, CubePath);
+	if (!Cube)
+	{
+		AddWarning(TEXT("the engine cube did not load; skipped"));
+		return true;
+	}
+
+	// A mesh actor with a second mesh 100 units along X is a Group of two parts.
+	auto ExportGroup = [this, Cube](const FVector& Scale, FMantleExportResult& OutResult, FTransform& OutGroup, TArray<FTransform>& OutParts)
+	{
+		FDecomposeWorld Fixture;
+		AStaticMeshActor* Actor = Fixture.World->SpawnActor<AStaticMeshActor>();
+		if (!TestNotNull(TEXT("the actor spawned"), Actor))
+		{
+			return false;
+		}
+		Actor->SetActorLabel(TEXT("Kit"));
+		Actor->GetStaticMeshComponent()->SetStaticMesh(Cube);
+		AddMesh(Actor, TEXT("Second"), Cube, FVector(100.0, 0.0, 0.0));
+		Actor->SetActorScale3D(Scale);
+		OutResult = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+		const FMantleEntity* Group = OutResult.Place.Entities.FindByPredicate([](const FMantleEntity& Candidate) { return Candidate.Name == TEXT("Kit"); });
+		if (!TestNotNull(TEXT("the group is exported"), Group))
+		{
+			return false;
+		}
+		OutGroup = Group->Transform;
+		for (const FMantleEntity& Entity : OutResult.Place.Entities)
+		{
+			if (Entity.Parent == Group->Id)
+			{
+				OutParts.Add(Entity.Transform);
+			}
+		}
+		return true;
+	};
+
+	// One axis: a mirror. The group is positive, the second part is across the group's origin, and both meshes are mirrored copies.
+	{
+		FMantleExportResult Result;
+		FTransform Group;
+		TArray<FTransform> Parts;
+		if (!ExportGroup(FVector(-1.0, 1.0, 1.0), Result, Group, Parts))
+		{
+			return false;
+		}
+		TestTrue(TEXT("the mirrored group is at the positive scale"), Group.GetScale3D().Equals(FVector::OneVector, 0.0001));
+		TestEqual(TEXT("it has two parts"), Parts.Num(), 2);
+		TestTrue(TEXT("the second part is reflected"), Parts.ContainsByPredicate([](const FTransform& Part) { return Part.GetLocation().Equals(FVector(-100.0, 0.0, 0.0), 0.001); }));
+		TestTrue(TEXT("every part is at the positive scale"), !Parts.ContainsByPredicate([](const FTransform& Part) { return !Part.GetScale3D().Equals(FVector::OneVector, 0.0001); }));
+		TestEqual(TEXT("both meshes are mirrored copies"), Result.Coverage.Count(MantleCoverageCategory::StaticMeshes, EOutcome::Approximated), static_cast<int64>(2));
+	}
+
+	// Two axes: a rotation. The group is turned half a circle about Z, its parts are as they were, and no mesh is mirrored.
+	{
+		FMantleExportResult Result;
+		FTransform Group;
+		TArray<FTransform> Parts;
+		if (!ExportGroup(FVector(-1.0, -1.0, 1.0), Result, Group, Parts))
+		{
+			return false;
+		}
+		TestTrue(TEXT("the rotated group is at the positive scale"), Group.GetScale3D().Equals(FVector::OneVector, 0.0001));
+		TestTrue(TEXT("and turned half a circle about Z"), FMath::IsNearlyEqual(FMath::Abs(Group.Rotator().Yaw), 180.0, 0.01));
+		TestTrue(TEXT("its second part keeps its place in the group"), Parts.ContainsByPredicate([](const FTransform& Part) { return Part.GetLocation().Equals(FVector(100.0, 0.0, 0.0), 0.001); }));
+		TestEqual(TEXT("no mesh is mirrored"), Result.Coverage.Count(MantleCoverageCategory::StaticMeshes, EOutcome::Approximated), static_cast<int64>(0));
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

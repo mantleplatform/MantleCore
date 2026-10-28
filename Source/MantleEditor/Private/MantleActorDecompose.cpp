@@ -103,6 +103,16 @@ FMantleMirrorResult FMantleActorDecompose::ResolveMirror(UStaticMesh* Source, co
 	return Result;
 }
 
+bool FMantleActorDecompose::IsRotatedGroup(const AActor* Actor)
+{
+	if (!Actor || !Actor->GetRootComponent())
+	{
+		return false;
+	}
+	const FVector Scale = FMantlePlaceExporter::PublishedTransform(Actor).GetScale3D();
+	return FMantleMirrorBake::HasNegativeAxis(Scale) && !FMantleMirrorBake::FlipsWinding(Scale);
+}
+
 FVector FMantleActorDecompose::GroupMirrorSigns(const AActor* Actor)
 {
 	TArray<AActor*> Children;
@@ -112,7 +122,7 @@ FVector FMantleActorDecompose::GroupMirrorSigns(const AActor* Actor)
 	}
 	Actor->GetAttachedActors(Children);
 	const FVector Scale = FMantlePlaceExporter::PublishedTransform(Actor).GetScale3D();
-	if (!HasNegativeAxis(Scale) || Children.Num() > 0)
+	if (!HasNegativeAxis(Scale) || Children.Num() > 0 || IsRotatedGroup(Actor))
 	{
 		return FVector::OneVector;
 	}

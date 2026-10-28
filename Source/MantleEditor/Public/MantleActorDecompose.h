@@ -61,10 +61,13 @@ public:
 
 	/**
 	 * The mirror a Group actor (a Blueprint prefab) carries in a negative scale on its root: -1 on each negative axis, 1 on the
-	 * others, or all 1 when it has none, or has child actors (their transforms would need mirroring too, which a place can't carry).
+	 * others, or all 1 when it has none, an even number of negative axes (a rotation: IsRotatedGroup), or has child actors (their transforms would need mirroring too, which a place can't carry).
 	 * Export publishes the group at the positive scale and mirrors its parts (CollectPrefabParts) instead.
 	 */
 	static FVector GroupMirrorSigns(const AActor* Actor);
+
+	/** Whether a Group actor's root has an even number of negative scale axes: a rotation, not a mirror, so its parts need no mirroring (child actors included). */
+	static bool IsRotatedGroup(const AActor* Actor);
 
 	/** ResolveMirror for a static mesh actor, by the scale Export publishes it at (FMantlePlaceExporter::PublishedTransform). Not needed for anything else. */
 	static FMantleMirrorResult MirrorForActor(const AActor* Actor);

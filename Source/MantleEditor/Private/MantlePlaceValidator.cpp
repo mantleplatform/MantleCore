@@ -1080,7 +1080,7 @@ namespace
 			PublishedScale = PublishedScale.GetAbs();
 		}
 		// A player start has no shape to mirror: it publishes at the positive scale, which the export's coverage report says too.
-		if (Type == EMantleEntityType::PlayerStart || (Type == EMantleEntityType::Group && FMantleActorDecompose::GroupMirrorSigns(Actor) != FVector::OneVector))
+		if (Type == EMantleEntityType::PlayerStart || (Type == EMantleEntityType::Group && (FMantleActorDecompose::GroupMirrorSigns(Actor) != FVector::OneVector || FMantleActorDecompose::IsRotatedGroup(Actor))))
 		{
 			PublishedScale = PublishedScale.GetAbs();
 		}

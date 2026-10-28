@@ -3728,6 +3728,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	TMap<const AActor*, FMantleMirrorResult> MirrorByActor;
 	// #818: decals (and player starts) published at the positive scale of the negative one they have.
 	TSet<const AActor*> UnmirroredActors;
+	TSet<const AActor*> RotatedGroups;
 	int32 EffectParts = 0;
 	int32 ReflectionProbes = 0;
 	int32 Texts = 0;
@@ -3845,8 +3846,13 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		if (Type == EMantleEntityType::Group && FMantleActorDecompose::GroupMirrorSigns(Actor) != FVector::OneVector)
 		{
 			UnmirroredActors.Add(Actor);
-			Result.Coverage.Add(MantleCoverageCategory::StaticMeshes, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
+			Result.Coverage.Add(MantleCoverageCategory::OtherComponents, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
 				TEXT("a prefab with a negative scale is published at the positive scale, with its parts mirrored."));
+		}
+		// An even number of negative axes is a rotation: the group publishes turned, at the positive scale, and its parts are as they were.
+		if (Type == EMantleEntityType::Group && FMantleActorDecompose::IsRotatedGroup(Actor))
+		{
+			RotatedGroups.Add(Actor);
 		}
 		// A player start has no shape to mirror: it publishes at the positive scale, and its facing is its rotation.
 		if (Type == EMantleEntityType::PlayerStart && FMantleActorDecompose::HasNegativeAxis(PublishedTransform(Actor).GetScale3D()))
@@ -3984,6 +3990,10 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		if (ActorMirror)
 		{
 			Entity.Transform.SetScale3D(ActorMirror->PositiveScale);
+		}
+		if (RotatedGroups.Contains(Actor))
+		{
+			Entity.Transform = ExporterNormalizeInstance(Entity.Transform);
 		}
 		if (UnmirroredActors.Contains(Actor))
 		{
