@@ -238,6 +238,16 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		}
 		Desc.DodgeStyle.Set(Style);
 	}
+	if (!Source.ComboSet.IsNone())
+	{
+		const FString Set = Source.ComboSet.ToString();
+		if (!Info.ComboSets.Contains(Set))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedComboSet", "This hold does not offer the {0} combo."), FText::FromString(Set)));
+			return false;
+		}
+		Desc.ComboSet.Set(Set);
+	}
 	// The hotbar icon: the weapon's library picture. It is made at publish (the Thumbnail step's choice); publish swaps this name for the
 	// uploaded texture's id, or drops it when no picture was taken.
 	if (!MeshName.IsEmpty()) Desc.Icon = AuxiliaryName(Source, TEXT("Icon"));

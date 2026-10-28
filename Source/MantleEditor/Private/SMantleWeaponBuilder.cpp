@@ -168,6 +168,21 @@ namespace MantleWeaponBuilderPanelPrivate
 		return FText::FromString(Style);
 	}
 
+	FText ComboSetLabel(const FString& Set)
+	{
+		if (Set == TEXT("chop")) return LOCTEXT("ComboSetChop", "Chop and stab");
+		if (Set == TEXT("spin")) return LOCTEXT("ComboSetSpin", "Spin");
+		if (Set == TEXT("second")) return LOCTEXT("ComboSetSecond", "Second chain");
+		if (Set == TEXT("punches")) return LOCTEXT("ComboSetPunches", "Punches");
+		if (Set == TEXT("overhand")) return LOCTEXT("ComboSetOverhand", "Overhand");
+		if (Set == TEXT("hammer")) return LOCTEXT("ComboSetHammer", "Hammer");
+		if (Set == TEXT("jab_cross")) return LOCTEXT("ComboSetJabCross", "Jab and cross");
+		if (Set == TEXT("quick")) return LOCTEXT("ComboSetQuick", "Quick");
+		if (Set == TEXT("long")) return LOCTEXT("ComboSetLong", "Long");
+		if (Set == TEXT("lunge")) return LOCTEXT("ComboSetLunge", "Lunge");
+		return FText::FromString(Set);
+	}
+
 	FText BuilderHoldBlurb(EMantleWeaponHold Hold)
 	{
 		switch (Hold)
@@ -663,6 +678,7 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 		: Hold == EMantleWeaponHold::Staff ? EMantleWeaponSourceStyle::Arcane : EMantleWeaponSourceStyle::Generic;
 	Working->EquipStyle = NAME_None;
 	Working->DodgeStyle = NAME_None;
+	Working->ComboSet = NAME_None;
 	Working->bOverrideColor = false;
 	Working->Color = FColor(40, 110, 160);
 	Working->Charge = FMantleWeaponSourceCharge();
@@ -946,6 +962,7 @@ FText SMantleWeaponBuilder::SummaryText() const
 	}
 	if (Working->bOverrideStyle) Lines.Add(FString::Printf(TEXT("Effect style: %s"), *StyleLabel(Working->Style).ToString()));
 	if (!Working->DodgeStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Dodge: %s"), *DodgeStyleLabel(Working->DodgeStyle.ToString()).ToString()));
+	if (!Working->ComboSet.IsNone()) Lines.Add(FString::Printf(TEXT("Combo: %s"), *ComboSetLabel(Working->ComboSet.ToString()).ToString()));
 	if (Working->Parts.Num() > 0) Lines.Add(FString::Printf(TEXT("Moving parts: %d"), Working->Parts.Num()));
 	if (Working->Attachments.Num() > 0) Lines.Add(FString::Printf(TEXT("Fixed details: %d"), Working->Attachments.Num()));
 	if (!Working->FireSound.IsNull() || !Working->FireSuppressedSound.IsNull()) Lines.Add(TEXT("Custom sound: set"));
@@ -1592,6 +1609,23 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 			: LOCTEXT("DodgeStyleShieldTip", "How the holder dodges with a shield: an upright step (the default), a crouched sidestep or a long dash. A sword uses it while paired with a shield; without one it falls back to the shield's.");
 		AddRow(LOCTEXT("DodgeStyle", "Dodge"), DodgeStyleTip,
 			MakeChoiceControl<FName>(DodgeStyles, [this] { return Working->DodgeStyle; }, [this](FName Value) { Working->DodgeStyle = Value; }));
+	}
+	// Round 3: the combo where the hold has more than one chain of attacks.
+	if (Info.ComboSets.Num() > 1)
+	{
+		TArray<TPair<FName, FText>> ComboSets;
+		ComboSets.Emplace(NAME_None, FText::Format(LOCTEXT("ComboSetDefault", "Hold default ({0})"), ComboSetLabel(Info.ComboSets[0])));
+		for (const FString& Set : Info.ComboSets)
+		{
+			ComboSets.Emplace(FName(*Set), ComboSetLabel(Set));
+		}
+		const FText ComboSetTip = Working->Hold == EMantleWeaponHold::Unarmed
+			? LOCTEXT("ComboSetUnarmedTip", "The chain of attacks: punches (the default), an overhand chain, a hammer chain or a quick jab and cross. Empty hands always punch.")
+			: Working->Hold == EMantleWeaponHold::Spear
+				? LOCTEXT("ComboSetSpearTip", "The chain of attacks: quick (the default), long or lunge. It plays when the spear is held without a shield.")
+				: LOCTEXT("ComboSetSwordTip", "The chain of attacks: chop and stab (the default), spin or a second chain. It plays while the sword is paired with a shield; a lone sword has one chain.");
+		AddRow(LOCTEXT("ComboSet", "Combo"), ComboSetTip,
+			MakeChoiceControl<FName>(ComboSets, [this] { return Working->ComboSet; }, [this](FName Value) { Working->ComboSet = Value; }));
 	}
 	if (Deliveries.Num() > 2)
 	{

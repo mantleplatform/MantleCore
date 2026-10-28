@@ -271,6 +271,46 @@ bool FMantleWeaponBuilderV2DodgeStyleTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Round 3: the combo a creator picks is written as comboSet where the hold has more than one, and refused on a hold without that combo;
+// none picked writes nothing (the hold's default).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2ComboSetTest, "Mantle.Editor.WeaponBuilderV2.ComboSet", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2ComboSetTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	auto Build = [](EMantleWeaponHold Hold, FName Set, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("ComboSet"), nullptr);
+		Input->ComboSet = Set;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	if (TestTrue(TEXT("a sword with the spin combo builds"), Build(EMantleWeaponHold::Melee1h, TEXT("spin"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes it"), Desc.ComboSet.bSet && Desc.ComboSet.Value == TEXT("spin"));
+	}
+	if (TestTrue(TEXT("knuckles with the jab and cross build"), Build(EMantleWeaponHold::Unarmed, TEXT("jab_cross"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and write it"), Desc.ComboSet.bSet && Desc.ComboSet.Value == TEXT("jab_cross"));
+	}
+	if (TestTrue(TEXT("a spear with the lunge builds"), Build(EMantleWeaponHold::Spear, TEXT("lunge"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes it"), Desc.ComboSet.bSet && Desc.ComboSet.Value == TEXT("lunge"));
+	}
+	if (TestTrue(TEXT("a sword with no combo picked builds"), Build(EMantleWeaponHold::Melee1h, NAME_None, Desc, Messages)))
+	{
+		TestFalse(TEXT("and leaves the hold's default"), Desc.ComboSet.bSet);
+	}
+	TestFalse(TEXT("knuckles refuse the sword's spin"), Build(EMantleWeaponHold::Unarmed, TEXT("spin"), Desc, Messages));
+	TestFalse(TEXT("a bow, with one combo, refuses any"), Build(EMantleWeaponHold::Bow, TEXT("quick"), Desc, Messages));
+	TestTrue(TEXT("the refusal explains the choice"), Messages.ContainsByPredicate([](const FText& Message)
+	{
+		return Message.ToString().Contains(TEXT("does not offer"));
+	}));
+	return true;
+}
+
 // A staff's held beam that also throws spells writes both blocks, with or without a charge (aim and hold), and the document
 // reader takes it.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffSpellsBesideBeamTest, "Mantle.Editor.WeaponBuilderV2.StaffSpellsBesideBeam", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -549,6 +589,7 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->Resource = EMantleWeaponSourceResource::None; Changed(TEXT("resource changes signature")); Input->Resource = EMantleWeaponSourceResource::Default;
 	Input->EquipStyle = TEXT("back"); Changed(TEXT("equip style changes signature")); Input->EquipStyle = NAME_None;
 	Input->DodgeStyle = TEXT("dash"); Changed(TEXT("dodge style changes signature")); Input->DodgeStyle = NAME_None;
+	Input->ComboSet = TEXT("spin"); Changed(TEXT("combo set changes signature")); Input->ComboSet = NAME_None;
 	Input->bOverrideStyle = true; Changed(TEXT("style choice changes signature")); Input->bOverrideStyle = false;
 	Input->bOverrideColor = true; Changed(TEXT("color choice changes signature")); Input->bOverrideColor = false;
 	Input->Model = FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")); Changed(TEXT("selected asset changes signature")); Input->Model.Reset();

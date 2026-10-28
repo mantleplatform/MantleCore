@@ -45,7 +45,7 @@ namespace MantleWeaponDocumentPrivate
 	// #840: version 2's fields, which a version-1 document has none of.
 	const TCHAR* const GWeaponDocV2Fields[] = {
 		TEXT("hold"), TEXT("delivery"), TEXT("charge"), TEXT("block"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"),
-		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle")
+		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet")
 	};
 	// #1025: consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
 	const TCHAR* const GWeaponDocUseStyleNames[] = { TEXT("eatDrink"), TEXT("use") };
@@ -55,6 +55,10 @@ namespace MantleWeaponDocumentPrivate
 	};
 	// dodgeStyle (Round 2): a shipped hold's named dodge, where it has more than one.
 	const TCHAR* const GWeaponDocDodgeStyleNames[] = { TEXT("upright"), TEXT("crouched"), TEXT("dash"), TEXT("sidestep") };
+	// comboSet (Round 3): a shipped hold's named combo, where it has more than one.
+	const TCHAR* const GWeaponDocComboSetNames[] = {
+		TEXT("chop"), TEXT("spin"), TEXT("second"), TEXT("punches"), TEXT("overhand"), TEXT("hammer"), TEXT("jab_cross"), TEXT("quick"), TEXT("long"), TEXT("lunge")
+	};
 	const TCHAR* const GWeaponDocConsumableEffectNames[] = { TEXT("heal"), TEXT("none") };
 	const TCHAR* const GWeaponDocUseRefused[] = {
 		TEXT("fire"), TEXT("attachments"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil")
@@ -371,6 +375,8 @@ namespace MantleWeaponDocumentPrivate
 			Sword.EquipStyles = { TEXT("hip"), TEXT("back"), TEXT("overhead") };
 			// Round 2: the SwordShield pair's three dodges, which a paired sword picks.
 			Sword.DodgeStyles = { TEXT("upright"), TEXT("crouched"), TEXT("dash") };
+			// Round 3: the SwordShield pair's three combos (a lone sword plays its one chain whatever the set).
+			Sword.ComboSets = { TEXT("chop"), TEXT("spin"), TEXT("second") };
 			Table.Add(Sword);
 		}
 		// melee_2h
@@ -381,6 +387,8 @@ namespace MantleWeaponDocumentPrivate
 			FMantleWeaponDocHoldInfo Spear = WeaponDocHold(true, SpearActions, { EDelivery::Sweep, EDelivery::Projectile }, ECharge::Optional,
 				{ EResource::None }, EBlock::Optional, { ESocket::GripR, ESocket::GripL, ESocket::Tip, ESocket::EdgeBase }, { ESocket::EdgeTip });
 			Spear.EquipStyles = { TEXT("back") };
+			// Round 3: the two-handed spear's three combos (beside a shield the pair's one chain plays).
+			Spear.ComboSets = { TEXT("quick"), TEXT("long"), TEXT("lunge") };
 			Table.Add(Spear);
 		}
 		// staff
@@ -404,6 +412,8 @@ namespace MantleWeaponDocumentPrivate
 			FMantleWeaponDocHoldInfo Unarmed = WeaponDocHold(false, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None },
 				EBlock::Optional, {}, { ESocket::GripR, ESocket::GripL });
 			Unarmed.DodgeStyles = { TEXT("dash"), TEXT("sidestep") };
+			// Round 3: four combos, the punches the default (bare hands always punch).
+			Unarmed.ComboSets = { TEXT("punches"), TEXT("overhand"), TEXT("hammer"), TEXT("jab_cross") };
 			Table.Add(Unarmed);
 		}
 		// shield: its own item in the left hand; it blocks and bashes (a sweep from grip to face), never charges. Round 2: three
@@ -1515,7 +1525,7 @@ namespace MantleWeaponDocumentPrivate
 			const FString Path;
 			Keys(Root, Path,
 				{ TEXT("schemaVersion"), TEXT("name"), TEXT("archetype"), TEXT("hold"), TEXT("delivery"), TEXT("twoHanded"), TEXT("effects"),
-				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
+				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
 				  TEXT("charge"), TEXT("magazine"), TEXT("reload"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"),
 				  TEXT("consumable"), TEXT("block"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
 				{ TEXT("schemaVersion"), TEXT("name") });
@@ -1586,6 +1596,7 @@ namespace MantleWeaponDocumentPrivate
 			OptChoice(Root, Path, TEXT("effects"), GWeaponDocEffectsNames, Out.Effects);
 			OptText(Root, Path, TEXT("equipStyle"), EWeaponDocText::Any, Out.EquipStyle);
 			OptText(Root, Path, TEXT("dodgeStyle"), EWeaponDocText::Any, Out.DodgeStyle);
+			OptText(Root, Path, TEXT("comboSet"), EWeaponDocText::Any, Out.ComboSet);
 			OptColor(Root, TEXT("color"), Out.Color);
 			OptColor(Root, TEXT("effectsColor"), Out.EffectsColor);
 			if (const TSharedPtr<FJsonValue> Mesh = Field(Root, TEXT("mesh")))
@@ -2342,6 +2353,10 @@ namespace MantleWeaponDocumentPrivate
 			{
 				WeaponDocPut(Node, TEXT("dodgeStyle"), WeaponDocStringNode(D.DodgeStyle.Value));
 			}
+			if (D.ComboSet.bSet)
+			{
+				WeaponDocPut(Node, TEXT("comboSet"), WeaponDocStringNode(D.ComboSet.Value));
+			}
 			if (D.Color.bSet)
 			{
 				WeaponDocPut(Node, TEXT("color"), WeaponDocNumbersNode({ static_cast<double>(D.Color.Value.R), static_cast<double>(D.Color.Value.G),
@@ -2817,6 +2832,27 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 				? FString::Printf(TEXT("a %s has one dodge: drop dodgeStyle"), Hold)
 				: FString::Printf(TEXT("is %s, which a %s does not have: pick one of %s"), *Style, Hold,
 					*FString::Join(Info.DodgeStyles, TEXT(", "))));
+		}
+	}
+	// Combo set (Round 3), the same way: a known id, then one the hold offers. A hold with one combo takes none.
+	if (D.ComboSet.bSet)
+	{
+		const FString& Set = D.ComboSet.Value;
+		TArray<FString> KnownSets;
+		for (const TCHAR* Name : GWeaponDocComboSetNames)
+		{
+			KnownSets.Add(Name);
+		}
+		if (!KnownSets.Contains(Set))
+		{
+			R.Add(TEXT("comboSet"), TEXT("enum"), FString::Printf(TEXT("is %s: use one of %s"), *Set, *FString::Join(KnownSets, TEXT(", "))));
+		}
+		else if (!Info.ComboSets.Contains(Set))
+		{
+			R.Add(TEXT("comboSet"), TEXT("mantle"), Info.ComboSets.IsEmpty()
+				? FString::Printf(TEXT("a %s has one combo: drop comboSet"), Hold)
+				: FString::Printf(TEXT("is %s, which a %s does not have: pick one of %s"), *Set, Hold,
+					*FString::Join(Info.ComboSets, TEXT(", "))));
 		}
 	}
 	EMantleWeaponDocEffects Element = EMantleWeaponDocEffects::Arcane;
