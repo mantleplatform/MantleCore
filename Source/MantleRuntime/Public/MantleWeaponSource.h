@@ -226,6 +226,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName ComboSet = NAME_None;
 
+	/** Round 3: where a bow's hand goes for the next arrow (back, hip or side); unset uses the hold's first, back. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	FName Quiver = NAME_None;
+
 	/** The creator's UStaticMesh or USkeletalMesh. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	TSoftObjectPtr<UObject> Model;

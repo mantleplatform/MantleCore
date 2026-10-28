@@ -248,6 +248,17 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		}
 		Desc.ComboSet.Set(Set);
 	}
+	// Round 3: where a bow's hand goes for the next arrow. None picked writes nothing (back, the hold's default).
+	if (!Source.Quiver.IsNone())
+	{
+		const FString Position = Source.Quiver.ToString();
+		if (!Info.Quivers.Contains(Position))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedQuiver", "This hold has no {0} quiver."), FText::FromString(Position)));
+			return false;
+		}
+		Desc.Quiver.Set(Position);
+	}
 	// The hotbar icon: the weapon's library picture. It is made at publish (the Thumbnail step's choice); publish swaps this name for the
 	// uploaded texture's id, or drops it when no picture was taken.
 	if (!MeshName.IsEmpty()) Desc.Icon = AuxiliaryName(Source, TEXT("Icon"));

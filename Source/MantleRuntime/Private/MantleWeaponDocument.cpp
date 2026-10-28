@@ -45,7 +45,7 @@ namespace MantleWeaponDocumentPrivate
 	// #840: version 2's fields, which a version-1 document has none of.
 	const TCHAR* const GWeaponDocV2Fields[] = {
 		TEXT("hold"), TEXT("delivery"), TEXT("charge"), TEXT("block"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"),
-		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet")
+		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver")
 	};
 	// #1025: consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
 	const TCHAR* const GWeaponDocUseStyleNames[] = { TEXT("eatDrink"), TEXT("use") };
@@ -59,6 +59,8 @@ namespace MantleWeaponDocumentPrivate
 	const TCHAR* const GWeaponDocComboSetNames[] = {
 		TEXT("chop"), TEXT("spin"), TEXT("second"), TEXT("punches"), TEXT("overhand"), TEXT("hammer"), TEXT("jab_cross"), TEXT("quick"), TEXT("long"), TEXT("lunge")
 	};
+	// quiver (Round 3): where a bow's hand goes for the next arrow.
+	const TCHAR* const GWeaponDocQuiverNames[] = { TEXT("back"), TEXT("hip"), TEXT("side") };
 	const TCHAR* const GWeaponDocConsumableEffectNames[] = { TEXT("heal"), TEXT("none") };
 	const TCHAR* const GWeaponDocUseRefused[] = {
 		TEXT("fire"), TEXT("attachments"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil")
@@ -404,6 +406,8 @@ namespace MantleWeaponDocumentPrivate
 			Bow.ReloadStyle = EStyle::Magazine;
 			Bow.StowedRoles = { ERole::Arrow };
 			Bow.EquipStyles = { TEXT("back"), TEXT("bow_equip_01"), TEXT("bow_equip_02"), TEXT("bow_equip_03"), TEXT("bow_equip_04") };
+			// Round 3: where the nock's hand goes for the next arrow, the back the default.
+			Bow.Quivers = { TEXT("back"), TEXT("hip"), TEXT("side") };
 			Table.Add(Bow);
 		}
 		// unarmed (#897): a fist weapon worn on the hand (knuckles, claws, a gauntlet), its mesh required like any; empty hands
@@ -1525,7 +1529,7 @@ namespace MantleWeaponDocumentPrivate
 			const FString Path;
 			Keys(Root, Path,
 				{ TEXT("schemaVersion"), TEXT("name"), TEXT("archetype"), TEXT("hold"), TEXT("delivery"), TEXT("twoHanded"), TEXT("effects"),
-				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
+				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
 				  TEXT("charge"), TEXT("magazine"), TEXT("reload"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"),
 				  TEXT("consumable"), TEXT("block"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
 				{ TEXT("schemaVersion"), TEXT("name") });
@@ -1597,6 +1601,7 @@ namespace MantleWeaponDocumentPrivate
 			OptText(Root, Path, TEXT("equipStyle"), EWeaponDocText::Any, Out.EquipStyle);
 			OptText(Root, Path, TEXT("dodgeStyle"), EWeaponDocText::Any, Out.DodgeStyle);
 			OptText(Root, Path, TEXT("comboSet"), EWeaponDocText::Any, Out.ComboSet);
+			OptText(Root, Path, TEXT("quiver"), EWeaponDocText::Any, Out.Quiver);
 			OptColor(Root, TEXT("color"), Out.Color);
 			OptColor(Root, TEXT("effectsColor"), Out.EffectsColor);
 			if (const TSharedPtr<FJsonValue> Mesh = Field(Root, TEXT("mesh")))
@@ -2357,6 +2362,10 @@ namespace MantleWeaponDocumentPrivate
 			{
 				WeaponDocPut(Node, TEXT("comboSet"), WeaponDocStringNode(D.ComboSet.Value));
 			}
+			if (D.Quiver.bSet)
+			{
+				WeaponDocPut(Node, TEXT("quiver"), WeaponDocStringNode(D.Quiver.Value));
+			}
 			if (D.Color.bSet)
 			{
 				WeaponDocPut(Node, TEXT("color"), WeaponDocNumbersNode({ static_cast<double>(D.Color.Value.R), static_cast<double>(D.Color.Value.G),
@@ -2853,6 +2862,27 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 				? FString::Printf(TEXT("a %s has one combo: drop comboSet"), Hold)
 				: FString::Printf(TEXT("is %s, which a %s does not have: pick one of %s"), *Set, Hold,
 					*FString::Join(Info.ComboSets, TEXT(", "))));
+		}
+	}
+	// Quiver (Round 3), the same way: a known position, then one the hold offers. A hold with no quiver to place takes none.
+	if (D.Quiver.bSet)
+	{
+		const FString& Position = D.Quiver.Value;
+		TArray<FString> KnownPositions;
+		for (const TCHAR* Name : GWeaponDocQuiverNames)
+		{
+			KnownPositions.Add(Name);
+		}
+		if (!KnownPositions.Contains(Position))
+		{
+			R.Add(TEXT("quiver"), TEXT("enum"), FString::Printf(TEXT("is %s: use one of %s"), *Position, *FString::Join(KnownPositions, TEXT(", "))));
+		}
+		else if (!Info.Quivers.Contains(Position))
+		{
+			R.Add(TEXT("quiver"), TEXT("mantle"), Info.Quivers.IsEmpty()
+				? FString::Printf(TEXT("a %s has no quiver to place: drop quiver"), Hold)
+				: FString::Printf(TEXT("is %s, which a %s does not have: pick one of %s"), *Position, Hold,
+					*FString::Join(Info.Quivers, TEXT(", "))));
 		}
 	}
 	EMantleWeaponDocEffects Element = EMantleWeaponDocEffects::Arcane;

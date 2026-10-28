@@ -183,6 +183,14 @@ namespace MantleWeaponBuilderPanelPrivate
 		return FText::FromString(Set);
 	}
 
+	FText QuiverLabel(const FString& Position)
+	{
+		if (Position == TEXT("back")) return LOCTEXT("QuiverBack", "Over the shoulder");
+		if (Position == TEXT("hip")) return LOCTEXT("QuiverHip", "At the hip");
+		if (Position == TEXT("side")) return LOCTEXT("QuiverSide", "At the side");
+		return FText::FromString(Position);
+	}
+
 	FText BuilderHoldBlurb(EMantleWeaponHold Hold)
 	{
 		switch (Hold)
@@ -679,6 +687,7 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->EquipStyle = NAME_None;
 	Working->DodgeStyle = NAME_None;
 	Working->ComboSet = NAME_None;
+	Working->Quiver = NAME_None;
 	Working->bOverrideColor = false;
 	Working->Color = FColor(40, 110, 160);
 	Working->Charge = FMantleWeaponSourceCharge();
@@ -963,6 +972,7 @@ FText SMantleWeaponBuilder::SummaryText() const
 	if (Working->bOverrideStyle) Lines.Add(FString::Printf(TEXT("Effect style: %s"), *StyleLabel(Working->Style).ToString()));
 	if (!Working->DodgeStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Dodge: %s"), *DodgeStyleLabel(Working->DodgeStyle.ToString()).ToString()));
 	if (!Working->ComboSet.IsNone()) Lines.Add(FString::Printf(TEXT("Combo: %s"), *ComboSetLabel(Working->ComboSet.ToString()).ToString()));
+	if (!Working->Quiver.IsNone()) Lines.Add(FString::Printf(TEXT("Quiver: %s"), *QuiverLabel(Working->Quiver.ToString()).ToString()));
 	if (Working->Parts.Num() > 0) Lines.Add(FString::Printf(TEXT("Moving parts: %d"), Working->Parts.Num()));
 	if (Working->Attachments.Num() > 0) Lines.Add(FString::Printf(TEXT("Fixed details: %d"), Working->Attachments.Num()));
 	if (!Working->FireSound.IsNull() || !Working->FireSuppressedSound.IsNull()) Lines.Add(TEXT("Custom sound: set"));
@@ -1626,6 +1636,19 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 				: LOCTEXT("ComboSetSwordTip", "The chain of attacks: chop and stab (the default), spin or a second chain. It plays while the sword is paired with a shield; a lone sword has one chain.");
 		AddRow(LOCTEXT("ComboSet", "Combo"), ComboSetTip,
 			MakeChoiceControl<FName>(ComboSets, [this] { return Working->ComboSet; }, [this](FName Value) { Working->ComboSet = Value; }));
+	}
+	// Round 3: where the bow's hand goes for the next arrow.
+	if (Info.Quivers.Num() > 1)
+	{
+		TArray<TPair<FName, FText>> Quivers;
+		Quivers.Emplace(NAME_None, FText::Format(LOCTEXT("QuiverDefault", "Hold default ({0})"), QuiverLabel(Info.Quivers[0])));
+		for (const FString& Position : Info.Quivers)
+		{
+			Quivers.Emplace(FName(*Position), QuiverLabel(Position));
+		}
+		AddRow(LOCTEXT("Quiver", "Quiver"),
+			LOCTEXT("QuiverTip", "Where the archer's hand goes for the next arrow: over the shoulder (the default), at the hip or at the side. The nock animation follows it, standing and crouched."),
+			MakeChoiceControl<FName>(Quivers, [this] { return Working->Quiver; }, [this](FName Value) { Working->Quiver = Value; }));
 	}
 	if (Deliveries.Num() > 2)
 	{

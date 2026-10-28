@@ -311,6 +311,45 @@ bool FMantleWeaponBuilderV2ComboSetTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Round 3: the quiver a creator picks is written as quiver on a bow, and refused on a hold without one; none picked writes nothing (back, the
+// hold's default).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2QuiverTest, "Mantle.Editor.WeaponBuilderV2.Quiver", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2QuiverTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	auto Build = [](EMantleWeaponHold Hold, FName Position, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("Quiver"), nullptr);
+		Input->Quiver = Position;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	for (const TCHAR* Position : { TEXT("back"), TEXT("hip"), TEXT("side") })
+	{
+		if (TestTrue(*FString::Printf(TEXT("a bow with the %s quiver builds"), Position), Build(EMantleWeaponHold::Bow, Position, Desc, Messages)))
+		{
+			TestTrue(*FString::Printf(TEXT("and writes %s"), Position), Desc.Quiver.bSet && Desc.Quiver.Value == Position);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+			TestTrue(TEXT("with the same quiver"), Again.Quiver.bSet && Again.Quiver.Value == Position);
+		}
+	}
+	if (TestTrue(TEXT("a bow with no quiver picked builds"), Build(EMantleWeaponHold::Bow, NAME_None, Desc, Messages)))
+	{
+		TestFalse(TEXT("and leaves the hold's default"), Desc.Quiver.bSet);
+	}
+	TestFalse(TEXT("a bow refuses a quiver it does not offer"), Build(EMantleWeaponHold::Bow, TEXT("head"), Desc, Messages));
+	TestFalse(TEXT("a sword has no quiver to place"), Build(EMantleWeaponHold::Melee1h, TEXT("hip"), Desc, Messages));
+	TestTrue(TEXT("the refusal explains the choice"), Messages.ContainsByPredicate([](const FText& Message)
+	{
+		return Message.ToString().Contains(TEXT("no hip quiver"));
+	}));
+	return true;
+}
+
 // A staff's held beam that also throws spells writes both blocks, with or without a charge (aim and hold), and the document
 // reader takes it.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffSpellsBesideBeamTest, "Mantle.Editor.WeaponBuilderV2.StaffSpellsBesideBeam", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -590,6 +629,7 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->EquipStyle = TEXT("back"); Changed(TEXT("equip style changes signature")); Input->EquipStyle = NAME_None;
 	Input->DodgeStyle = TEXT("dash"); Changed(TEXT("dodge style changes signature")); Input->DodgeStyle = NAME_None;
 	Input->ComboSet = TEXT("spin"); Changed(TEXT("combo set changes signature")); Input->ComboSet = NAME_None;
+	Input->Quiver = TEXT("hip"); Changed(TEXT("quiver changes signature")); Input->Quiver = NAME_None;
 	Input->bOverrideStyle = true; Changed(TEXT("style choice changes signature")); Input->bOverrideStyle = false;
 	Input->bOverrideColor = true; Changed(TEXT("color choice changes signature")); Input->bOverrideColor = false;
 	Input->Model = FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")); Changed(TEXT("selected asset changes signature")); Input->Model.Reset();
