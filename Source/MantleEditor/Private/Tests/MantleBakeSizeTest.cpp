@@ -22,10 +22,15 @@ bool FMantleBakeSizeTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("no textures keeps auto-detect"), FMantleGltfMaterialFlattener::ChooseFixedBakeSize({}, Settings, Size));
 
 	TestTrue(TEXT("a texture above the cap fixes the size"), FMantleGltfMaterialFlattener::ChooseFixedBakeSize({ FIntPoint(32768, 32768) }, Settings, Size));
-	TestEqual(TEXT("at the default size"), Size, 1024);
+	TestEqual(TEXT("at the cap"), Size, 2048);
 	TestTrue(TEXT("one wide texture is enough"), FMantleGltfMaterialFlattener::ChooseFixedBakeSize({ FIntPoint(256, 256), FIntPoint(4096, 64) }, Settings, Size));
 	TestTrue(TEXT("a texture with no size fixes it"), FMantleGltfMaterialFlattener::ChooseFixedBakeSize({ FIntPoint(512, 512), FIntPoint(0, 0) }, Settings, Size));
 
+	TestEqual(TEXT("a texture with no size bakes at the default"), (FMantleGltfMaterialFlattener::ChooseFixedBakeSize({ FIntPoint(0, 0) }, Settings, Size), Size), 1024);
+	Settings.MaxBakeSize = 3000;
+	FMantleGltfMaterialFlattener::ChooseFixedBakeSize({ FIntPoint(40000, 8) }, Settings, Size);
+	TestEqual(TEXT("an odd cap rounds down to a power of two"), Size, 2048);
+	Settings.MaxBakeSize = 2048;
 	Settings.DefaultBakeSize = 3000;
 	FMantleGltfMaterialFlattener::ChooseFixedBakeSize({ FIntPoint(0, 0) }, Settings, Size);
 	TestEqual(TEXT("a default above the cap is held to the cap"), Size, 2048);

@@ -65,7 +65,7 @@
 namespace MantlePlaceAssetConverterPrivate
 {
 	/** Bump this whenever how a conversion is written changes, so stale caches are rebuilt. */
-	const TCHAR* const CacheVersion = TEXT("f5-v18");
+	const TCHAR* const CacheVersion = TEXT("f5-v19");
 
 	const TCHAR* const ConversionRemedy = TEXT("It still publishes. Nothing to do unless it matters to how your place looks.");
 
@@ -1868,14 +1868,17 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 bool FMantleGltfMaterialFlattener::ChooseFixedBakeSize(const TArray<FIntPoint>& TextureSizes, const FMantleFlattenSettings& Settings, int32& OutSize)
 {
 	const int32 MaxBake = FMath::Max(1, Settings.MaxBakeSize);
-	bool bTooBigOrUnknown = false;
+	const auto PowerOfTwoBelow = [](int32 Value) { return static_cast<int32>(FMath::RoundUpToPowerOfTwo(static_cast<uint32>(Value) + 1) / 2); };
+	bool bTooBig = false;
+	bool bUnknown = false;
 	for (const FIntPoint& Size : TextureSizes)
 	{
-		bTooBigOrUnknown = bTooBigOrUnknown || Size.X <= 0 || Size.Y <= 0 || Size.X > MaxBake || Size.Y > MaxBake;
+		bUnknown = bUnknown || Size.X <= 0 || Size.Y <= 0;
+		bTooBig = bTooBig || Size.X > MaxBake || Size.Y > MaxBake;
 	}
-	// The largest power of two not above the default size, itself held to the cap.
-	OutSize = static_cast<int32>(FMath::RoundUpToPowerOfTwo(static_cast<uint32>(FMath::Clamp(Settings.DefaultBakeSize, 1, MaxBake)) + 1) / 2);
-	return bTooBigOrUnknown;
+	// A texture too big for a bake is still big: bake at the most we publish. One with no readable size says nothing, so use the default.
+	OutSize = PowerOfTwoBelow(bTooBig ? MaxBake : FMath::Clamp(Settings.DefaultBakeSize, 1, MaxBake));
+	return bTooBig || bUnknown;
 }
 
 bool FMantleGltfMaterialFlattener::CanBakeTextures() const
