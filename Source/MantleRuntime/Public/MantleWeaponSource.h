@@ -218,6 +218,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName EquipStyle = NAME_None;
 
+	/** Round 2: the selected dodge for a hold with more than one (a shield, a sword beside one, knuckles); unset uses the hold's first. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	FName DodgeStyle = NAME_None;
+
 	/** The creator's UStaticMesh or USkeletalMesh. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	TSoftObjectPtr<UObject> Model;

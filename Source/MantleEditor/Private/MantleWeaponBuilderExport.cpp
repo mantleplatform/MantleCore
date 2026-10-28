@@ -228,6 +228,16 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		}
 		Desc.EquipStyle.Set(Style);
 	}
+	if (!Source.DodgeStyle.IsNone())
+	{
+		const FString Style = Source.DodgeStyle.ToString();
+		if (!Info.DodgeStyles.Contains(Style))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedDodgeStyle", "This hold does not offer the {0} dodge."), FText::FromString(Style)));
+			return false;
+		}
+		Desc.DodgeStyle.Set(Style);
+	}
 	// The hotbar icon: the weapon's library picture. It is made at publish (the Thumbnail step's choice); publish swaps this name for the
 	// uploaded texture's id, or drops it when no picture was taken.
 	if (!MeshName.IsEmpty()) Desc.Icon = AuxiliaryName(Source, TEXT("Icon"));

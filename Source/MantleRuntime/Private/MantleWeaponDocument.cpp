@@ -45,7 +45,7 @@ namespace MantleWeaponDocumentPrivate
 	// #840: version 2's fields, which a version-1 document has none of.
 	const TCHAR* const GWeaponDocV2Fields[] = {
 		TEXT("hold"), TEXT("delivery"), TEXT("charge"), TEXT("block"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"),
-		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle")
+		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle")
 	};
 	// #1025: consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
 	const TCHAR* const GWeaponDocUseStyleNames[] = { TEXT("eatDrink"), TEXT("use") };
@@ -53,6 +53,8 @@ namespace MantleWeaponDocumentPrivate
 	const TCHAR* const GWeaponDocEquipStyleNames[] = {
 		TEXT("hip"), TEXT("back"), TEXT("overhead"), TEXT("bow_equip_01"), TEXT("bow_equip_02"), TEXT("bow_equip_03"), TEXT("bow_equip_04")
 	};
+	// dodgeStyle (Round 2): a shipped hold's named dodge, where it has more than one.
+	const TCHAR* const GWeaponDocDodgeStyleNames[] = { TEXT("upright"), TEXT("crouched"), TEXT("dash"), TEXT("sidestep") };
 	const TCHAR* const GWeaponDocConsumableEffectNames[] = { TEXT("heal"), TEXT("none") };
 	const TCHAR* const GWeaponDocUseRefused[] = {
 		TEXT("fire"), TEXT("attachments"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil")
@@ -367,6 +369,8 @@ namespace MantleWeaponDocumentPrivate
 			FMantleWeaponDocHoldInfo Sword = WeaponDocHold(false, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
 				{ ESocket::GripR, ESocket::EdgeBase, ESocket::EdgeTip }, { ESocket::GripL });
 			Sword.EquipStyles = { TEXT("hip"), TEXT("back"), TEXT("overhead") };
+			// Round 2: the SwordShield pair's three dodges, which a paired sword picks.
+			Sword.DodgeStyles = { TEXT("upright"), TEXT("crouched"), TEXT("dash") };
 			Table.Add(Sword);
 		}
 		// melee_2h
@@ -395,12 +399,21 @@ namespace MantleWeaponDocumentPrivate
 			Table.Add(Bow);
 		}
 		// unarmed (#897): a fist weapon worn on the hand (knuckles, claws, a gauntlet), its mesh required like any; empty hands
-		// are built into the game and are never a document.
-		Table.Add(WeaponDocHold(false, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
-			{}, { ESocket::GripR, ESocket::GripL }));
-		// shield: its own item in the left hand; it blocks and bashes (a sweep from grip to face), never charges.
-		Table.Add(WeaponDocHold(false, { EAction::Equip, EAction::Holster, EAction::Block, EAction::Attack }, { EDelivery::Sweep },
-			ECharge::None, { EResource::None }, EBlock::Required, { ESocket::Grip, ESocket::Face }, {}));
+		// are built into the game and are never a document. Round 2: two dodges, the long dash the default.
+		{
+			FMantleWeaponDocHoldInfo Unarmed = WeaponDocHold(false, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None },
+				EBlock::Optional, {}, { ESocket::GripR, ESocket::GripL });
+			Unarmed.DodgeStyles = { TEXT("dash"), TEXT("sidestep") };
+			Table.Add(Unarmed);
+		}
+		// shield: its own item in the left hand; it blocks and bashes (a sweep from grip to face), never charges. Round 2: three
+		// dodges, the upright step-hop the default.
+		{
+			FMantleWeaponDocHoldInfo Shield = WeaponDocHold(false, { EAction::Equip, EAction::Holster, EAction::Block, EAction::Attack },
+				{ EDelivery::Sweep }, ECharge::None, { EResource::None }, EBlock::Required, { ESocket::Grip, ESocket::Face }, {});
+			Shield.DodgeStyles = { TEXT("upright"), TEXT("crouched"), TEXT("dash") };
+			Table.Add(Shield);
+		}
 		// throwable: one hand, thrown overhand; its projectile is the weapon itself (a press throws, no charge).
 		Table.Add(WeaponDocHold(false, { EAction::Equip, EAction::Holster, EAction::Idle, EAction::Throw }, { EDelivery::Projectile },
 			ECharge::None, { EResource::None }, EBlock::None, { ESocket::GripR }, { ESocket::Tip }));
@@ -1378,7 +1391,9 @@ namespace MantleWeaponDocumentPrivate
 			Keys(Obj, Path, { TEXT("enabled"), TEXT("breakOnHeavy"), TEXT("stunSeconds") });
 			OptBoolean(Obj, Path, TEXT("enabled"), Out.bEnabled);
 			OptBoolean(Obj, Path, TEXT("breakOnHeavy"), Out.bBreakOnHeavy);
-			OptNumber(Obj, Path, TEXT("stunSeconds"), 0.0, 5.0, Out.StunSeconds);
+			TMantleWeaponDocValue<double> Stun(Out.StunSeconds);
+			OptNumber(Obj, Path, TEXT("stunSeconds"), 0.0, 5.0, Stun);
+			Out.StunSeconds = Stun.Value;
 		}
 
 		/**
@@ -1500,7 +1515,7 @@ namespace MantleWeaponDocumentPrivate
 			const FString Path;
 			Keys(Root, Path,
 				{ TEXT("schemaVersion"), TEXT("name"), TEXT("archetype"), TEXT("hold"), TEXT("delivery"), TEXT("twoHanded"), TEXT("effects"),
-				  TEXT("equipStyle"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
+				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
 				  TEXT("charge"), TEXT("magazine"), TEXT("reload"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"),
 				  TEXT("consumable"), TEXT("block"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
 				{ TEXT("schemaVersion"), TEXT("name") });
@@ -1570,6 +1585,7 @@ namespace MantleWeaponDocumentPrivate
 			OptBoolean(Root, Path, TEXT("twoHanded"), Out.bTwoHanded);
 			OptChoice(Root, Path, TEXT("effects"), GWeaponDocEffectsNames, Out.Effects);
 			OptText(Root, Path, TEXT("equipStyle"), EWeaponDocText::Any, Out.EquipStyle);
+			OptText(Root, Path, TEXT("dodgeStyle"), EWeaponDocText::Any, Out.DodgeStyle);
 			OptColor(Root, TEXT("color"), Out.Color);
 			OptColor(Root, TEXT("effectsColor"), Out.EffectsColor);
 			if (const TSharedPtr<FJsonValue> Mesh = Field(Root, TEXT("mesh")))
@@ -2113,7 +2129,9 @@ namespace MantleWeaponDocumentPrivate
 			FWeaponDocNodePtr Node = WeaponDocObjectNode();
 			Boolean(Node, TEXT("enabled"), In.bEnabled);
 			Boolean(Node, TEXT("breakOnHeavy"), In.bBreakOnHeavy);
-			Number(Node, TEXT("stunSeconds"), In.StunSeconds);
+			TMantleWeaponDocValue<double> Stun;
+			Stun.Set(In.StunSeconds);
+			Number(Node, TEXT("stunSeconds"), Stun);
 			return Node;
 		}
 
@@ -2319,6 +2337,10 @@ namespace MantleWeaponDocumentPrivate
 			if (D.EquipStyle.bSet)
 			{
 				WeaponDocPut(Node, TEXT("equipStyle"), WeaponDocStringNode(D.EquipStyle.Value));
+			}
+			if (D.DodgeStyle.bSet)
+			{
+				WeaponDocPut(Node, TEXT("dodgeStyle"), WeaponDocStringNode(D.DodgeStyle.Value));
 			}
 			if (D.Color.bSet)
 			{
@@ -2774,6 +2796,27 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 				? FString::Printf(TEXT("a %s has no equip styles: drop equipStyle"), Hold)
 				: FString::Printf(TEXT("is %s, which a %s does not have: pick one of %s"), *Style, Hold,
 					*FString::Join(Info.EquipStyles, TEXT(", "))));
+		}
+	}
+	// Dodge style (Round 2), the same way: a known id, then one the hold offers. A hold with one dodge takes none.
+	if (D.DodgeStyle.bSet)
+	{
+		const FString& Style = D.DodgeStyle.Value;
+		TArray<FString> KnownStyles;
+		for (const TCHAR* Name : GWeaponDocDodgeStyleNames)
+		{
+			KnownStyles.Add(Name);
+		}
+		if (!KnownStyles.Contains(Style))
+		{
+			R.Add(TEXT("dodgeStyle"), TEXT("enum"), FString::Printf(TEXT("is %s: use one of %s"), *Style, *FString::Join(KnownStyles, TEXT(", "))));
+		}
+		else if (!Info.DodgeStyles.Contains(Style))
+		{
+			R.Add(TEXT("dodgeStyle"), TEXT("mantle"), Info.DodgeStyles.IsEmpty()
+				? FString::Printf(TEXT("a %s has one dodge: drop dodgeStyle"), Hold)
+				: FString::Printf(TEXT("is %s, which a %s does not have: pick one of %s"), *Style, Hold,
+					*FString::Join(Info.DodgeStyles, TEXT(", "))));
 		}
 	}
 	EMantleWeaponDocEffects Element = EMantleWeaponDocEffects::Arcane;

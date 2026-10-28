@@ -235,6 +235,42 @@ bool FMantleWeaponBuilderV2EquipStylesTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Round 2: the dodge style a creator picks is written as dodgeStyle where the hold has more than one dodge, and refused on a hold without
+// that style; none picked writes nothing (the hold's default).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2DodgeStyleTest, "Mantle.Editor.WeaponBuilderV2.DodgeStyle", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2DodgeStyleTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	auto Build = [](EMantleWeaponHold Hold, FName Style, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("DodgeStyle"), nullptr);
+		Input->DodgeStyle = Style;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	if (TestTrue(TEXT("a shield with the crouched dodge builds"), Build(EMantleWeaponHold::Shield, TEXT("crouched"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes it"), Desc.DodgeStyle.bSet && Desc.DodgeStyle.Value == TEXT("crouched"));
+	}
+	if (TestTrue(TEXT("knuckles with the sidestep build"), Build(EMantleWeaponHold::Unarmed, TEXT("sidestep"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and write it"), Desc.DodgeStyle.bSet && Desc.DodgeStyle.Value == TEXT("sidestep"));
+	}
+	if (TestTrue(TEXT("a shield with no dodge picked builds"), Build(EMantleWeaponHold::Shield, NAME_None, Desc, Messages)))
+	{
+		TestFalse(TEXT("and leaves the hold's default"), Desc.DodgeStyle.bSet);
+	}
+	TestFalse(TEXT("knuckles refuse the shield's upright dodge"), Build(EMantleWeaponHold::Unarmed, TEXT("upright"), Desc, Messages));
+	TestFalse(TEXT("a bow, with one dodge, refuses any"), Build(EMantleWeaponHold::Bow, TEXT("dash"), Desc, Messages));
+	TestTrue(TEXT("the refusal explains the choice"), Messages.ContainsByPredicate([](const FText& Message)
+	{
+		return Message.ToString().Contains(TEXT("does not offer"));
+	}));
+	return true;
+}
+
 // A staff's held beam that also throws spells writes both blocks, with or without a charge (aim and hold), and the document
 // reader takes it.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffSpellsBesideBeamTest, "Mantle.Editor.WeaponBuilderV2.StaffSpellsBesideBeam", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -512,6 +548,7 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->Delivery = EMantleWeaponSourceDelivery::Beam; Changed(TEXT("delivery changes signature")); Input->Delivery = EMantleWeaponSourceDelivery::Default;
 	Input->Resource = EMantleWeaponSourceResource::None; Changed(TEXT("resource changes signature")); Input->Resource = EMantleWeaponSourceResource::Default;
 	Input->EquipStyle = TEXT("back"); Changed(TEXT("equip style changes signature")); Input->EquipStyle = NAME_None;
+	Input->DodgeStyle = TEXT("dash"); Changed(TEXT("dodge style changes signature")); Input->DodgeStyle = NAME_None;
 	Input->bOverrideStyle = true; Changed(TEXT("style choice changes signature")); Input->bOverrideStyle = false;
 	Input->bOverrideColor = true; Changed(TEXT("color choice changes signature")); Input->bOverrideColor = false;
 	Input->Model = FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")); Changed(TEXT("selected asset changes signature")); Input->Model.Reset();

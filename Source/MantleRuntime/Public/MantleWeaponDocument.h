@@ -290,6 +290,8 @@ struct FMantleWeaponDocHoldInfo
 	TArray<EMantleWeaponDocSocket> OptionalSockets;
 	/** The equip style ids available to this hold, in order; the first is the default. Empty means no style selection. */
 	TArray<FString> EquipStyles;
+	/** Round 2: the dodge style ids (x-dodgeStyles) of a hold with more than one dodge, the default first. Empty: one dodge, no choice. */
+	TArray<FString> DodgeStyles;
 };
 
 /** The pre-#840 name: an archetype's entry is its firearm hold's. */
@@ -701,6 +703,8 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<EMantleWeaponDocEffects> Effects;
 	/** Unset: the first style in the hold's x-equipStyles (equipStyle is a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> EquipStyle;
+	/** Round 2. Unset: the first style in the hold's x-dodgeStyles (a creator selection, not an asset path). */
+	TMantleWeaponDocValue<FString> DodgeStyle;
 	/** sRGB. */
 	TMantleWeaponDocValue<FColor> Color{ FColor(40, 110, 160) };
 	/** #904: sRGB, multiplied into the element's effects; only where the weapon has an element (GetElement). Unset: the element's own colours. */
