@@ -137,6 +137,7 @@ bool FMantleWeaponBuilderV2AllHoldsTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("LOD0 contains geometry"), Triangles(*Built) > 0);
 		if (Hold == EMantleWeaponHold::Bow) TestTrue(TEXT("bow draw required"), Desc.Charge.bSet && Desc.Charge.Value.bRequired.Value);
 		if (Hold == EMantleWeaponHold::Shield) TestTrue(TEXT("shield block required"), Desc.Block.bSet && Desc.Block.Value.bEnabled.Value);
+		if (Desc.Block.bSet) TestEqual(TEXT("the stun time exports (default 1.5 s)"), Desc.Block.Value.StunSeconds, 1.5);
 		if (Hold == EMantleWeaponHold::Staff)
 		{
 			// A staff casts the held beam by default and carries its charges.

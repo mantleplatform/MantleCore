@@ -1375,9 +1375,10 @@ namespace MantleWeaponDocumentPrivate
 
 		void ReadBlock(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocBlock& Out)
 		{
-			Keys(Obj, Path, { TEXT("enabled"), TEXT("breakOnHeavy") });
+			Keys(Obj, Path, { TEXT("enabled"), TEXT("breakOnHeavy"), TEXT("stunSeconds") });
 			OptBoolean(Obj, Path, TEXT("enabled"), Out.bEnabled);
 			OptBoolean(Obj, Path, TEXT("breakOnHeavy"), Out.bBreakOnHeavy);
+			OptNumber(Obj, Path, TEXT("stunSeconds"), 0.0, 5.0, Out.StunSeconds);
 		}
 
 		/**
@@ -2112,6 +2113,7 @@ namespace MantleWeaponDocumentPrivate
 			FWeaponDocNodePtr Node = WeaponDocObjectNode();
 			Boolean(Node, TEXT("enabled"), In.bEnabled);
 			Boolean(Node, TEXT("breakOnHeavy"), In.bBreakOnHeavy);
+			Number(Node, TEXT("stunSeconds"), In.StunSeconds);
 			return Node;
 		}
 

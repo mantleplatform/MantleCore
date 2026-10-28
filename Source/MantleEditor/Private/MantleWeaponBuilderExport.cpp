@@ -368,6 +368,7 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		FMantleWeaponDocBlock Block;
 		Block.bEnabled.Set(true);
 		Block.bBreakOnHeavy.Set(Source.bBreakOnHeavy);
+		Block.StunSeconds = Source.StunSeconds;
 		Desc.Block.Set(Block);
 	}
 	// A hold whose action is a throw (the spear beside its sweep, the throwable alone) throws its own model: the projectile block

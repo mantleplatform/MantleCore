@@ -663,6 +663,7 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	}
 	Working->bBlock = HoldInfo(Hold).BlockRule == EMantleWeaponDocBlockRule::Required;
 	Working->bBreakOnHeavy = true;
+	Working->StunSeconds = 1.5f;
 	Working->Projectile = FMantleWeaponSourceProjectile();
 	Working->Sweep = FMantleWeaponSourceSweep();
 	Working->Beam = FMantleWeaponSourceBeam();
@@ -928,6 +929,10 @@ FText SMantleWeaponBuilder::SummaryText() const
 	if (Working->bBlock || HoldInfo(Working->Hold).BlockRule == EMantleWeaponDocBlockRule::Required)
 	{
 		Lines.Add(FString::Printf(TEXT("Blocking: on%s"), Working->bBreakOnHeavy ? TEXT("; heavy attacks break a guard") : TEXT("")));
+		if (Working->bBreakOnHeavy)
+		{
+			Lines.Add(Working->StunSeconds > 0.f ? FString::Printf(TEXT("Broken guard: stuns for %.1f seconds"), Working->StunSeconds) : FString(TEXT("Broken guard: no stun")));
+		}
 	}
 	if (Working->bOverrideStyle) Lines.Add(FString::Printf(TEXT("Effect style: %s"), *StyleLabel(Working->Style).ToString()));
 	if (Working->Parts.Num() > 0) Lines.Add(FString::Printf(TEXT("Moving parts: %d"), Working->Parts.Num()));
@@ -1749,6 +1754,10 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 	AddToggleWhen(LOCTEXT("BreakOnHeavy", "A heavy attack can break the guard"), LOCTEXT("BreakOnHeavyTip", "A heavy attack can interrupt a block."),
 		[this] { return Working->bBreakOnHeavy; }, [this](bool V) { Working->bBreakOnHeavy = V; },
 		[this, CanBlock] { return CanBlock() && Working->bBlock ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
+	AddFloatWhen(LOCTEXT("StunSeconds", "Stun after a broken guard (0–5 seconds)"),
+		LOCTEXT("StunSecondsTip", "How long a player whose guard is broken is stunned: they cannot move, attack or block, and hits still hurt. 0 gives the short guard break with no stun."),
+		0.f, 5.f, 0.1f, [this] { return Working->StunSeconds; }, [this](float V) { Working->StunSeconds = FMath::Clamp(V, 0.f, 5.f); },
+		[this, CanBlock] { return CanBlock() && Working->bBlock && Working->bBreakOnHeavy ? EVisibility::Visible : EVisibility::Collapsed; });
 	const bool bCanOverrideHandedness = IsFirearm(Working->Hold);
 	AddToggleWhen(LOCTEXT("OverrideTwoHanded", "Change how many hands hold it"), LOCTEXT("OverrideTwoHandedTip", "Use this hold with one hand or both. The usual setting follows the hold."),
 		[this] { return Working->bOverrideTwoHanded; }, [this](bool V) { Working->bOverrideTwoHanded = V; },

@@ -255,6 +255,8 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceCharge Charge;
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bBlock = false;
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bBreakOnHeavy = true;
+	/** Seconds a broken guard stuns the holder (0 to 5); 0 keeps the short guard break. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 5.0)) float StunSeconds = 1.5f;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceProjectile Projectile;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceSweep Sweep;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceBeam Beam;

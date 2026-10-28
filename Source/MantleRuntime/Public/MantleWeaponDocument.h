@@ -423,6 +423,7 @@ struct FMantleWeaponDocBlock
 {
 	TMantleWeaponDocValue<bool> bEnabled{ true };
 	TMantleWeaponDocValue<bool> bBreakOnHeavy{ true };
+	double StunSeconds = 1.5;
 };
 
 /** schema charges (#840): the charges resource's numbers. */
