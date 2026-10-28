@@ -296,6 +296,8 @@ struct FMantleWeaponDocHoldInfo
 	TArray<FString> ComboSets;
 	/** Round 3: the quiver positions (x-quivers) of a hold that places one (the bow), the default first. Empty: no quiver to place. */
 	TArray<FString> Quivers;
+	/** Round 3: the shooting style ids (x-shootingStyles) of a hold held more than one way to shoot (the bow), the default first. Empty: one way. */
+	TArray<FString> ShootingStyles;
 };
 
 /** The pre-#840 name: an archetype's entry is its firearm hold's. */
@@ -713,6 +715,8 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<FString> ComboSet;
 	/** Round 3. Unset: back, the first in the hold's x-quivers (a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> Quiver;
+	/** Round 3: the document's style. Unset: a, the first in the hold's x-shootingStyles (a creator selection, not an asset path). */
+	TMantleWeaponDocValue<FString> ShootingStyle;
 	/** sRGB. */
 	TMantleWeaponDocValue<FColor> Color{ FColor(40, 110, 160) };
 	/** #904: sRGB, multiplied into the element's effects; only where the weapon has an element (GetElement). Unset: the element's own colours. */

@@ -191,6 +191,13 @@ namespace MantleWeaponBuilderPanelPrivate
 		return FText::FromString(Position);
 	}
 
+	FText ShootingStyleLabel(const FString& Style)
+	{
+		if (Style == TEXT("a")) return LOCTEXT("ShootingStyleA", "Classic archer");
+		if (Style == TEXT("c")) return LOCTEXT("ShootingStyleC", "Held flat, like a crossbow");
+		return FText::FromString(Style);
+	}
+
 	FText BuilderHoldBlurb(EMantleWeaponHold Hold)
 	{
 		switch (Hold)
@@ -688,6 +695,7 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->DodgeStyle = NAME_None;
 	Working->ComboSet = NAME_None;
 	Working->Quiver = NAME_None;
+	Working->ShootingStyle = NAME_None;
 	Working->bOverrideColor = false;
 	Working->Color = FColor(40, 110, 160);
 	Working->Charge = FMantleWeaponSourceCharge();
@@ -973,6 +981,7 @@ FText SMantleWeaponBuilder::SummaryText() const
 	if (!Working->DodgeStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Dodge: %s"), *DodgeStyleLabel(Working->DodgeStyle.ToString()).ToString()));
 	if (!Working->ComboSet.IsNone()) Lines.Add(FString::Printf(TEXT("Combo: %s"), *ComboSetLabel(Working->ComboSet.ToString()).ToString()));
 	if (!Working->Quiver.IsNone()) Lines.Add(FString::Printf(TEXT("Quiver: %s"), *QuiverLabel(Working->Quiver.ToString()).ToString()));
+	if (!Working->ShootingStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Shooting style: %s"), *ShootingStyleLabel(Working->ShootingStyle.ToString()).ToString()));
 	if (Working->Parts.Num() > 0) Lines.Add(FString::Printf(TEXT("Moving parts: %d"), Working->Parts.Num()));
 	if (Working->Attachments.Num() > 0) Lines.Add(FString::Printf(TEXT("Fixed details: %d"), Working->Attachments.Num()));
 	if (!Working->FireSound.IsNull() || !Working->FireSuppressedSound.IsNull()) Lines.Add(TEXT("Custom sound: set"));
@@ -1649,6 +1658,19 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		AddRow(LOCTEXT("Quiver", "Quiver"),
 			LOCTEXT("QuiverTip", "Where the archer's hand goes for the next arrow: over the shoulder (the default), at the hip or at the side. The nock animation follows it, standing and crouched."),
 			MakeChoiceControl<FName>(Quivers, [this] { return Working->Quiver; }, [this](FName Value) { Working->Quiver = Value; }));
+	}
+	// Round 3: how the archer holds the bow to shoot.
+	if (Info.ShootingStyles.Num() > 1)
+	{
+		TArray<TPair<FName, FText>> Styles;
+		Styles.Emplace(NAME_None, FText::Format(LOCTEXT("ShootingStyleDefault", "Hold default ({0})"), ShootingStyleLabel(Info.ShootingStyles[0])));
+		for (const FString& Style : Info.ShootingStyles)
+		{
+			Styles.Emplace(FName(*Style), ShootingStyleLabel(Style));
+		}
+		AddRow(LOCTEXT("ShootingStyle", "Shooting style"),
+			LOCTEXT("ShootingStyleTip", "How the archer holds the bow to shoot: the classic archer (the default), side-on with the string at the cheek, or held flat at chest height like a crossbow. The aim, draw and release follow it, standing and crouched."),
+			MakeChoiceControl<FName>(Styles, [this] { return Working->ShootingStyle; }, [this](FName Value) { Working->ShootingStyle = Value; }));
 	}
 	if (Deliveries.Num() > 2)
 	{

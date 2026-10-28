@@ -230,6 +230,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName Quiver = NAME_None;
 
+	/** Round 3: how a bow is held to shoot (the document's style: a or c); unset uses the hold's first, a. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	FName ShootingStyle = NAME_None;
+
 	/** The creator's UStaticMesh or USkeletalMesh. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	TSoftObjectPtr<UObject> Model;

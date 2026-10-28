@@ -259,6 +259,17 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		}
 		Desc.Quiver.Set(Position);
 	}
+	// Round 3: how a bow is held to shoot. None picked writes nothing (a, the hold's default).
+	if (!Source.ShootingStyle.IsNone())
+	{
+		const FString Style = Source.ShootingStyle.ToString();
+		if (!Info.ShootingStyles.Contains(Style))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedShootingStyle", "This hold has no shooting style {0}."), FText::FromString(Style)));
+			return false;
+		}
+		Desc.ShootingStyle.Set(Style);
+	}
 	// The hotbar icon: the weapon's library picture. It is made at publish (the Thumbnail step's choice); publish swaps this name for the
 	// uploaded texture's id, or drops it when no picture was taken.
 	if (!MeshName.IsEmpty()) Desc.Icon = AuxiliaryName(Source, TEXT("Icon"));

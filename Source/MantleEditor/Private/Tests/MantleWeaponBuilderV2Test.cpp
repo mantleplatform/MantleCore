@@ -350,6 +350,45 @@ bool FMantleWeaponBuilderV2QuiverTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Round 3: the shooting style a creator picks is written as style on a bow, and refused on a hold with one way to hold it; none picked writes
+// nothing (a, the hold's default).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2ShootingStyleTest, "Mantle.Editor.WeaponBuilderV2.ShootingStyle", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2ShootingStyleTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	auto Build = [](EMantleWeaponHold Hold, FName Style, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("ShootingStyle"), nullptr);
+		Input->ShootingStyle = Style;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	for (const TCHAR* Style : { TEXT("a"), TEXT("c") })
+	{
+		if (TestTrue(*FString::Printf(TEXT("a bow in style %s builds"), Style), Build(EMantleWeaponHold::Bow, Style, Desc, Messages)))
+		{
+			TestTrue(*FString::Printf(TEXT("and writes %s"), Style), Desc.ShootingStyle.bSet && Desc.ShootingStyle.Value == Style);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+			TestTrue(TEXT("with the same style"), Again.ShootingStyle.bSet && Again.ShootingStyle.Value == Style);
+		}
+	}
+	if (TestTrue(TEXT("a bow with no style picked builds"), Build(EMantleWeaponHold::Bow, NAME_None, Desc, Messages)))
+	{
+		TestFalse(TEXT("and leaves the hold's default"), Desc.ShootingStyle.bSet);
+	}
+	TestFalse(TEXT("a bow refuses style b (not built)"), Build(EMantleWeaponHold::Bow, TEXT("b"), Desc, Messages));
+	TestFalse(TEXT("a sword has one way to hold it"), Build(EMantleWeaponHold::Melee1h, TEXT("c"), Desc, Messages));
+	TestTrue(TEXT("the refusal explains the choice"), Messages.ContainsByPredicate([](const FText& Message)
+	{
+		return Message.ToString().Contains(TEXT("no shooting style c"));
+	}));
+	return true;
+}
+
 // A staff's held beam that also throws spells writes both blocks, with or without a charge (aim and hold), and the document
 // reader takes it.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffSpellsBesideBeamTest, "Mantle.Editor.WeaponBuilderV2.StaffSpellsBesideBeam", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -630,6 +669,7 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->DodgeStyle = TEXT("dash"); Changed(TEXT("dodge style changes signature")); Input->DodgeStyle = NAME_None;
 	Input->ComboSet = TEXT("spin"); Changed(TEXT("combo set changes signature")); Input->ComboSet = NAME_None;
 	Input->Quiver = TEXT("hip"); Changed(TEXT("quiver changes signature")); Input->Quiver = NAME_None;
+	Input->ShootingStyle = TEXT("c"); Changed(TEXT("shooting style changes signature")); Input->ShootingStyle = NAME_None;
 	Input->bOverrideStyle = true; Changed(TEXT("style choice changes signature")); Input->bOverrideStyle = false;
 	Input->bOverrideColor = true; Changed(TEXT("color choice changes signature")); Input->bOverrideColor = false;
 	Input->Model = FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")); Changed(TEXT("selected asset changes signature")); Input->Model.Reset();
