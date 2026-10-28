@@ -3758,6 +3758,10 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		{
 			Warn(TEXT("its waves (world position offset) are dropped: Mantle's water is a flat surface with moving normal maps."));
 		}
+		if (Water.bShorelineFoamDropped)
+		{
+			Warn(TEXT("its shoreline foam (a distance field) is dropped: Mantle's water has no shoreline."));
+		}
 
 		// What the schema says does nothing on water is not written; what the source had of it is said.
 		if (BaseColor.IsSet())

@@ -12,18 +12,26 @@
 #include "Engine/Texture2D.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionAppendVector.h"
+#include "Materials/MaterialExpressionCameraPositionWS.h"
+#include "Materials/MaterialExpressionClamp.h"
 #include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionConstant2Vector.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "Materials/MaterialExpressionDepthFade.h"
+#include "Materials/MaterialExpressionDistanceToNearestSurface.h"
 #include "Materials/MaterialExpressionDivide.h"
 #include "Materials/MaterialExpressionFunctionOutput.h"
+#include "Materials/MaterialExpressionIf.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionObjectPositionWS.h"
+#include "Materials/MaterialExpressionOneMinus.h"
 #include "Materials/MaterialExpressionPanner.h"
 #include "Materials/MaterialExpressionPixelDepth.h"
+#include "Materials/MaterialExpressionPower.h"
 #include "Materials/MaterialExpressionSaturate.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionSetMaterialAttributes.h"
@@ -32,6 +40,7 @@
 #include "Materials/MaterialExpressionStaticSwitchParameter.h"
 #include "Materials/MaterialExpressionSubtract.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
+#include "Materials/MaterialExpressionTextureObject.h"
 #include "Materials/MaterialExpressionTextureSample.h"
 #include "Materials/MaterialExpressionTime.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
@@ -355,6 +364,165 @@ namespace MantleWaterMaterialTestPrivate
 	{
 		const FUTF8ToTCHAR Converted(reinterpret_cast<const ANSICHAR*>(Bytes.GetData()), Bytes.Num());
 		return FString(Converted.Length(), Converted.Get());
+	}
+
+	UMaterialExpressionScalarParameter* AddScalarParameter(UMaterial* Material, const TCHAR* Name, const float Value)
+	{
+		UMaterialExpressionScalarParameter* Parameter = AddExpression<UMaterialExpressionScalarParameter>(Material);
+		Parameter->ParameterName = Name;
+		Parameter->DefaultValue = Value;
+		return Parameter;
+	}
+
+	UMaterialExpressionVectorParameter* AddVectorParameter(UMaterial* Material, const TCHAR* Name, const FLinearColor& Value)
+	{
+		UMaterialExpressionVectorParameter* Parameter = AddExpression<UMaterialExpressionVectorParameter>(Material);
+		Parameter->ParameterName = Name;
+		Parameter->DefaultValue = Value;
+		return Parameter;
+	}
+
+	UMaterialExpressionComponentMask* AddMask(UMaterial* Material, UMaterialExpression* Source, const bool bR, const bool bG, const bool bB)
+	{
+		UMaterialExpressionComponentMask* Mask = AddExpression<UMaterialExpressionComponentMask>(Material);
+		Mask->R = bR;
+		Mask->G = bG;
+		Mask->B = bB;
+		Mask->A = false;
+		Mask->Input.Connect(0, Source);
+		return Mask;
+	}
+
+	/** An Add, Subtract, Multiply or Divide of two nodes. */
+	template <typename TBinary>
+	TBinary* AddBinary(UMaterial* Material, UMaterialExpression* A, UMaterialExpression* B)
+	{
+		TBinary* Node = AddExpression<TBinary>(Material);
+		Node->A.Connect(0, A);
+		Node->B.Connect(0, B);
+		return Node;
+	}
+
+	UMaterialExpressionClamp* AddClamp(UMaterial* Material, UMaterialExpression* Source)
+	{
+		UMaterialExpressionClamp* Clamp = AddExpression<UMaterialExpressionClamp>(Material);
+		Clamp->Input.Connect(0, Source);
+		return Clamp;
+	}
+
+	UMaterialExpressionTextureSample* AddMaskSample(UMaterial* Material, UTexture* Texture, UMaterialExpression* Uvs)
+	{
+		UMaterialExpressionTextureSample* Sample = AddExpression<UMaterialExpressionTextureSample>(Material);
+		Sample->Texture = Texture;
+		Sample->SamplerType = SAMPLERTYPE_Masks;
+		if (Uvs)
+		{
+			Sample->Coordinates.Connect(0, Uvs);
+		}
+		return Sample;
+	}
+
+	UMaterialExpressionIf* AddIf(UMaterial* Material, UMaterialExpression* A, UMaterialExpression* B, const float Greater, const float Less)
+	{
+		UMaterialExpressionIf* If = AddExpression<UMaterialExpressionIf>(Material);
+		If->A.Connect(0, A);
+		if (B)
+		{
+			If->B.Connect(0, B);
+		}
+		If->AGreaterThanB.Connect(0, AddNumber(Material, Greater));
+		If->ALessThanB.Connect(0, AddNumber(Material, Less));
+		return If;
+	}
+
+	void ConnectCallInput(UMaterialExpressionMaterialFunctionCall* Call, const TCHAR* Name, UMaterialExpression* Source)
+	{
+		for (FFunctionExpressionInput& Input : Call->FunctionInputs)
+		{
+			if (Input.Input.InputName == FName(Name))
+			{
+				Input.Input.Connect(0, Source);
+			}
+		}
+	}
+
+	/**
+	 * Stylized Village's MM_Water (Translucent, Default Lit), as its graph dump has it: Opacity and BaseColor each a "Foam on/off" static switch
+	 * (on) over the same shoreline foam, If(foam textures' product > Clamp((DistanceToNearestSurface - Foam Size) / Foam Contrast)) then 1 else 0,
+	 * times Foam Intensity; Opacity = Depth Fade (no opacity input) + that; BaseColor = Lerp(depth colour, foam colour, that), the depth colour
+	 * a Lerp from Color1 to Color2 by Power(Clamp((1 - (scene point - object).z) / Color_Depth), Color_Contrast) (scene point = camera +
+	 * Scene Depth / Pixel Depth x (world position - camera)); Normal = Lerp((0, 0, 1), Motion_4WayChaos_Normal(World XY / WaveSize, Speed,
+	 * normal texture), 1). The parameters are the instance MI_Water's.
+	 */
+	UMaterial* NewMmWater(UTexture* FoamTexture, UTexture* NormalTexture, UMaterialFunction* Chaos, const FLinearColor& Color1, const FLinearColor& Color2)
+	{
+		UMaterial* Material = NewTranslucent();
+
+		// The shoreline foam.
+		UMaterialExpression* Reach = AddClamp(Material, AddBinary<UMaterialExpressionDivide>(Material,
+			AddBinary<UMaterialExpressionSubtract>(Material, AddExpression<UMaterialExpressionDistanceToNearestSurface>(Material), AddScalarParameter(Material, TEXT("Foam Size"), 2.41f)),
+			AddScalarParameter(Material, TEXT("Foam Contrast"), 183.0f)));
+		UMaterialExpression* Product = AddBinary<UMaterialExpressionMultiply>(Material, AddMaskSample(Material, FoamTexture, Reach), AddMaskSample(Material, FoamTexture, Reach));
+		UMaterialExpression* Foam = AddClamp(Material, AddBinary<UMaterialExpressionMultiply>(Material,
+			AddIf(Material, Product, Reach, 1.0f, 0.0f), AddScalarParameter(Material, TEXT("Foam Intensity"), 1.0f)));
+
+		// Opacity.
+		UMaterialExpressionDepthFade* Fade = AddExpression<UMaterialExpressionDepthFade>(Material);
+		UMaterialExpressionStaticSwitchParameter* OpacitySwitch = AddExpression<UMaterialExpressionStaticSwitchParameter>(Material);
+		OpacitySwitch->ParameterName = TEXT("Foam on/off");
+		OpacitySwitch->DefaultValue = true;
+		OpacitySwitch->A.Connect(0, AddBinary<UMaterialExpressionAdd>(Material, Fade, Foam));
+		OpacitySwitch->B.Connect(0, Fade);
+		Material->GetEditorOnlyData()->Opacity.Connect(0, OpacitySwitch);
+
+		// The depth colour.
+		UMaterialExpressionConstant2Vector* Flat = AddExpression<UMaterialExpressionConstant2Vector>(Material);
+		UMaterialExpressionAppendVector* ObjectHeight = AddExpression<UMaterialExpressionAppendVector>(Material);
+		ObjectHeight->A.Connect(0, Flat);
+		ObjectHeight->B.Connect(0, AddMask(Material, AddExpression<UMaterialExpressionObjectPositionWS>(Material), false, false, true));
+		UMaterialExpression* ToCamera = AddBinary<UMaterialExpressionSubtract>(Material, AddExpression<UMaterialExpressionCameraPositionWS>(Material), ObjectHeight);
+		UMaterialExpression* Ray = AddBinary<UMaterialExpressionSubtract>(Material,
+			AddBinary<UMaterialExpressionSubtract>(Material, AddExpression<UMaterialExpressionWorldPosition>(Material), ObjectHeight), ToCamera);
+		UMaterialExpression* Scene = AddBinary<UMaterialExpressionAdd>(Material,
+			AddBinary<UMaterialExpressionMultiply>(Material,
+				AddBinary<UMaterialExpressionDivide>(Material, AddExpression<UMaterialExpressionSceneDepth>(Material), AddExpression<UMaterialExpressionPixelDepth>(Material)), Ray),
+			ToCamera);
+		UMaterialExpressionOneMinus* Above = AddExpression<UMaterialExpressionOneMinus>(Material);
+		Above->Input.Connect(0, AddMask(Material, Scene, false, false, true));
+		UMaterialExpressionPower* Gradient = AddExpression<UMaterialExpressionPower>(Material);
+		Gradient->Base.Connect(0, AddClamp(Material, AddBinary<UMaterialExpressionDivide>(Material, Above, AddScalarParameter(Material, TEXT("Color_Depth"), 682.0f))));
+		Gradient->Exponent.Connect(0, AddScalarParameter(Material, TEXT("Color_Contrast"), 0.97f));
+		UMaterialExpressionLinearInterpolate* Depth = AddExpression<UMaterialExpressionLinearInterpolate>(Material);
+		Depth->A.Connect(0, AddVectorParameter(Material, TEXT("Color1"), Color1));
+		Depth->B.Connect(0, AddVectorParameter(Material, TEXT("Color2"), Color2));
+		Depth->Alpha.Connect(0, Gradient);
+		UMaterialExpressionLinearInterpolate* WithFoam = AddExpression<UMaterialExpressionLinearInterpolate>(Material);
+		WithFoam->A.Connect(0, Depth);
+		WithFoam->B.Connect(0, AddVectorParameter(Material, TEXT("foam color"), FLinearColor::White));
+		WithFoam->Alpha.Connect(0, Foam);
+		UMaterialExpressionStaticSwitchParameter* ColourSwitch = AddExpression<UMaterialExpressionStaticSwitchParameter>(Material);
+		ColourSwitch->ParameterName = TEXT("Foam on/off");
+		ColourSwitch->DefaultValue = true;
+		ColourSwitch->A.Connect(0, WithFoam);
+		ColourSwitch->B.Connect(0, Depth);
+		Material->GetEditorOnlyData()->BaseColor.Connect(0, ColourSwitch);
+
+		// The normal.
+		UMaterialExpressionMaterialFunctionCall* Motion = AddExpression<UMaterialExpressionMaterialFunctionCall>(Material);
+		Motion->SetMaterialFunction(Chaos);
+		ConnectCallInput(Motion, TEXT("Coordinates"), AddBinary<UMaterialExpressionDivide>(Material,
+			AddMask(Material, AddExpression<UMaterialExpressionWorldPosition>(Material), true, true, false), AddScalarParameter(Material, TEXT("WaveSize"), 350.0f)));
+		ConnectCallInput(Motion, TEXT("Speed"), AddScalarParameter(Material, TEXT("Speed"), 1.5f));
+		UMaterialExpressionTextureObject* Texture = AddExpression<UMaterialExpressionTextureObject>(Material);
+		Texture->Texture = NormalTexture;
+		Texture->SamplerType = SAMPLERTYPE_Normal;
+		ConnectCallInput(Motion, TEXT("Texture"), Texture);
+		UMaterialExpressionLinearInterpolate* Normal = AddExpression<UMaterialExpressionLinearInterpolate>(Material);
+		Normal->A.Connect(0, AddColour(Material, FLinearColor(0.0f, 0.0f, 1.0f)));
+		Normal->B.Connect(0, Motion);
+		Normal->Alpha.Connect(0, AddNumber(Material, 1.0f));
+		Material->GetEditorOnlyData()->Normal.Connect(0, Normal);
+		return Material;
 	}
 }
 
@@ -1275,6 +1443,176 @@ bool FMantleWaterPluginChainTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a bare Single Layer Water material is water"), Plain.bFound && Plain.bSingleLayer);
 	TestTrue(TEXT("with the clear lake's colour"), Plain.bColour && FMath::IsNearlyEqual(Plain.Colour[1], FMantleWaterMaterial::ClearLakeColour[1], 1.0e-6));
 	TestFalse(TEXT("and no coefficients of its own (they derive from the colour)"), Plain.bVolume);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleWaterMmWaterTest,
+	"Mantle.Editor.Water.MmWaterRead",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleWaterMmWaterTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWaterMaterialTestPrivate;
+
+	// Stylized Village's MI_Water (parent MM_Water): it read black at an estimated 0.75 opacity with a still normal.
+	UMaterialFunction* Chaos = LoadEngineFunction(TEXT("/Engine/Functions/Engine_MaterialFunctions03/ComplexMotion/Motion_4WayChaos_Normal.Motion_4WayChaos_Normal"));
+	if (!Chaos)
+	{
+		AddWarning(TEXT("Motion_4WayChaos_Normal could not be loaded; the MM_Water case is skipped."));
+		return true;
+	}
+	UTexture2D* Foam = UTexture2D::CreateTransient(4, 4);
+	UTexture2D* Normal = UTexture2D::CreateTransient(4, 4);
+	const FLinearColor Color1(0.0f, 0.081295f, 0.223958f);
+	UMaterial* Material = NewMmWater(Foam, Normal, Chaos, Color1, FLinearColor(0.0f, 0.96875f, 0.44518f));
+
+	FMantleWaterBake Water;
+	const auto* Data = Material->GetEditorOnlyData();
+	if (!TestTrue(TEXT("the depth fade is found"), FMantleWaterMaterial::Recognise(Material, &Data->Opacity, &Data->BaseColor, &Data->Normal, Water)))
+	{
+		return false;
+	}
+	TestTrue(TEXT("the opacity is read, not estimated"), Water.bOpacityRead);
+	TestEqual(TEXT("the far end has no shoreline foam: the depth fade's 1"), Water.Opacity, 1.0, 1.0e-6);
+	TestTrue(TEXT("so the water publishes opaque, with the water key"), Water.PublishesOpaque());
+	TestTrue(TEXT("the shoreline foam is said to be dropped"), Water.bShorelineFoamDropped);
+	if (TestTrue(TEXT("the deep colour is read"), Water.bColour))
+	{
+		TestEqual(TEXT("red is Color1's"), Water.Colour[0], 0.0, 1.0e-4);
+		TestEqual(TEXT("green is Color1's"), Water.Colour[1], 0.081295, 1.0e-4);
+		TestEqual(TEXT("blue is Color1's"), Water.Colour[2], 0.223958, 1.0e-4);
+	}
+	if (TestEqual(TEXT("the motion is two normal layers"), Water.Normals.Num(), 2))
+	{
+		for (const FMantleWaterNormalLayer& Layer : Water.Normals)
+		{
+			TestTrue(TEXT("of the source texture"), Layer.Texture.Get() == Normal);
+			TestTrue(TEXT("laid out by world position"), Layer.bWorld);
+			TestEqual(TEXT("over WaveSize"), Layer.WorldSizeCm, 350.0, 1.0e-6);
+			TestTrue(TEXT("flagged as approximated (two of the function's four samples)"), Layer.bApproximated);
+		}
+		// 0.1 a second per unit of Speed (1.5), on both axes, the pair of opposite diagonals.
+		TestEqual(TEXT("the first pans u"), Water.Normals[0].Speed[0], 0.15, 1.0e-6);
+		TestEqual(TEXT("the first pans v"), Water.Normals[0].Speed[1], 0.15, 1.0e-6);
+		TestEqual(TEXT("the second pans the other way (u)"), Water.Normals[1].Speed[0], -0.15, 1.0e-6);
+		TestEqual(TEXT("the second pans the other way (v)"), Water.Normals[1].Speed[1], -0.15, 1.0e-6);
+	}
+	TestEqual(TEXT("the Lerp's alpha of 1 leaves the normal strength alone"), Water.NormalScale, 1.0, 1.0e-6);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleWaterIfNodeTest,
+	"Mantle.Editor.Water.IfNode",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleWaterIfNodeTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWaterMaterialTestPrivate;
+
+	// Opacity = Depth Fade (0.8) x If(A, B): greater 1, less 0.5, equals (when connected) 0.25.
+	auto Far = [this](const float A, const float B, const bool bBConnected, const bool bEquals)
+	{
+		UMaterial* Material = NewTranslucent();
+		UMaterialExpressionIf* If = AddIf(Material, AddNumber(Material, A), bBConnected ? AddNumber(Material, B) : nullptr, 1.0f, 0.5f);
+		If->ConstB = B;
+		if (bEquals)
+		{
+			If->AEqualsB.Connect(0, AddNumber(Material, 0.25f));
+		}
+		Material->GetEditorOnlyData()->Opacity.Connect(0, AddBinary<UMaterialExpressionMultiply>(Material, AddDepthFadeAt(Material, 0.8f, 100.0f), If));
+		FMantleWaterBake Water;
+		FMantleWaterMaterial::Recognise(Material, &Material->GetEditorOnlyData()->Opacity, nullptr, nullptr, Water);
+		TestTrue(TEXT("the If is read"), Water.bOpacityRead);
+		return Water.Opacity;
+	};
+	TestEqual(TEXT("A over B takes the greater branch"), Far(2.0f, 1.0f, true, false), 0.8, 1.0e-6);
+	TestEqual(TEXT("A under B takes the less branch"), Far(0.5f, 1.0f, true, false), 0.4, 1.0e-6);
+	TestEqual(TEXT("A within the threshold of B takes the equals branch"), Far(1.0f, 1.0f, true, true), 0.2, 1.0e-6);
+	TestEqual(TEXT("with no equals branch it is the greater one"), Far(1.0f, 1.0f, true, false), 0.8, 1.0e-6);
+	TestEqual(TEXT("an unconnected B is ConstB"), Far(2.0f, 3.0f, false, false), 0.4, 1.0e-6);
+
+	// A product of mask textures is 0..1: against a B of 1 it never gets over, so the less branch (0) is taken without reading the textures.
+	UTexture2D* Mask = UTexture2D::CreateTransient(4, 4);
+	UMaterial* Bounded = NewTranslucent();
+	UMaterialExpressionIf* Under = AddIf(Bounded, AddBinary<UMaterialExpressionMultiply>(Bounded, AddMaskSample(Bounded, Mask, nullptr), AddMaskSample(Bounded, Mask, nullptr)), AddNumber(Bounded, 1.0f), 1.0f, 0.0f);
+	UMaterialExpressionMultiply* Gain = AddBinary<UMaterialExpressionMultiply>(Bounded, Under, AddNumber(Bounded, 0.1f));
+	Bounded->GetEditorOnlyData()->Opacity.Connect(0, AddBinary<UMaterialExpressionAdd>(Bounded, AddDepthFadeAt(Bounded, 0.9f, 100.0f), Gain));
+	FMantleWaterBake BoundedWater;
+	FMantleWaterMaterial::Recognise(Bounded, &Bounded->GetEditorOnlyData()->Opacity, nullptr, nullptr, BoundedWater);
+	TestTrue(TEXT("a bounded A against a B at its top is read"), BoundedWater.bOpacityRead);
+	TestEqual(TEXT("as the less branch"), BoundedWater.Opacity, 0.9, 1.0e-6);
+
+	// Against a B inside the range it is not known which side it falls on; a normal map is not bounded at all.
+	UMaterial* Straddles = NewTranslucent();
+	UMaterialExpressionIf* Between = AddIf(Straddles, AddMaskSample(Straddles, Mask, nullptr), AddNumber(Straddles, 0.5f), 1.0f, 0.0f);
+	Straddles->GetEditorOnlyData()->Opacity.Connect(0, AddBinary<UMaterialExpressionAdd>(Straddles, AddDepthFadeAt(Straddles, 0.9f, 100.0f), Between));
+	FMantleWaterBake StraddlesWater;
+	FMantleWaterMaterial::Recognise(Straddles, &Straddles->GetEditorOnlyData()->Opacity, nullptr, nullptr, StraddlesWater);
+	TestFalse(TEXT("a texture against a B inside 0..1 is not read"), StraddlesWater.bOpacityRead);
+	TestFalse(TEXT("and says why"), StraddlesWater.Why.IsEmpty());
+
+	UMaterial* Unbounded = NewTranslucent();
+	UMaterialExpressionTextureSample* NormalSample = AddMaskSample(Unbounded, Mask, nullptr);
+	NormalSample->SamplerType = SAMPLERTYPE_Normal;
+	UMaterialExpressionIf* Tilt = AddIf(Unbounded, NormalSample, AddNumber(Unbounded, 1.0f), 1.0f, 0.0f);
+	Unbounded->GetEditorOnlyData()->Opacity.Connect(0, AddBinary<UMaterialExpressionAdd>(Unbounded, AddDepthFadeAt(Unbounded, 0.9f, 100.0f), Tilt));
+	FMantleWaterBake UnboundedWater;
+	FMantleWaterMaterial::Recognise(Unbounded, &Unbounded->GetEditorOnlyData()->Opacity, nullptr, nullptr, UnboundedWater);
+	TestFalse(TEXT("a normal map is not bounded to 0..1"), UnboundedWater.bOpacityRead);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleWaterNormalLerpTest,
+	"Mantle.Editor.Water.NormalLerpConstantAlpha",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleWaterNormalLerpTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWaterMaterialTestPrivate;
+	UTexture2D* Normal = UTexture2D::CreateTransient(4, 4);
+	UTexture2D* Ice = UTexture2D::CreateTransient(4, 4);
+
+	// Lerp(flat, panned normal, alpha) with a constant alpha follows the side it weights.
+	auto Read = [&](const float Alpha)
+	{
+		UMaterial* Material = NewWater(3.0f);
+		UMaterialExpressionLinearInterpolate* Lerp = AddExpression<UMaterialExpressionLinearInterpolate>(Material);
+		Lerp->A.Connect(0, AddColour(Material, FLinearColor(0.0f, 0.0f, 1.0f)));
+		Lerp->B.Connect(0, AddPannedNormal(Material, Normal, 0.25f, FLinearColor(-0.5f, 0.0f, -0.5f), 0.005f));
+		Lerp->Alpha.Connect(0, AddNumber(Material, Alpha));
+		Material->GetEditorOnlyData()->Normal.Connect(0, Lerp);
+		return FMantlePlaceAssets::AnalyzeMaterial(Material).Fidelity2.Water;
+	};
+	const FMantleWaterBake Full = Read(1.0f);
+	if (TestEqual(TEXT("an alpha of 1 is the normal map"), Full.Normals.Num(), 1))
+	{
+		TestTrue(TEXT("its texture"), Full.Normals[0].Texture.Get() == Normal);
+		TestEqual(TEXT("at full strength"), Full.NormalScale, 1.0, 1.0e-6);
+	}
+	const FMantleWaterBake Part = Read(0.8f);
+	if (TestEqual(TEXT("an alpha of 0.8 is the normal map"), Part.Normals.Num(), 1))
+	{
+		TestEqual(TEXT("at that strength against the flat normal"), Part.NormalScale, 0.8, 1.0e-6);
+	}
+	const FMantleWaterBake Flat = Read(0.2f);
+	TestEqual(TEXT("an alpha under half is the flat normal: no layer"), Flat.Normals.Num(), 0);
+	TestTrue(TEXT("and says what it reads"), Flat.Why.Contains(TEXT("Constant3Vector")));
+
+	// An alpha that is not a constant (a texture) keeps the old rule: the water is the Lerp's A side (the winter ice).
+	UMaterial* Winter = NewWater(3.0f);
+	UMaterialExpressionLinearInterpolate* Blend = AddExpression<UMaterialExpressionLinearInterpolate>(Winter);
+	Blend->A.Connect(0, AddPannedNormal(Winter, Normal, 0.25f, FLinearColor(-0.5f, 0.0f, -0.5f), 0.005f));
+	Blend->B.Connect(0, AddPannedNormal(Winter, Ice, 0.25f, FLinearColor(-0.5f, 0.0f, -0.5f), 0.005f));
+	Blend->Alpha.Connect(0, AddMaskSample(Winter, Ice, nullptr));
+	Winter->GetEditorOnlyData()->Normal.Connect(0, Blend);
+	const FMantleWaterBake& Water = FMantlePlaceAssets::AnalyzeMaterial(Winter).Fidelity2.Water;
+	if (TestEqual(TEXT("a non-constant alpha reads the A side"), Water.Normals.Num(), 1))
+	{
+		TestTrue(TEXT("the water's normal, not the ice"), Water.Normals[0].Texture.Get() == Normal);
+	}
 	return true;
 }
 

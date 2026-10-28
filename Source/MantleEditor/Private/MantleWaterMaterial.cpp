@@ -8,6 +8,7 @@
 #include "Materials/MaterialExpressionAbs.h"
 #include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionAppendVector.h"
+#include "Materials/MaterialExpressionCameraPositionWS.h"
 #include "Materials/MaterialExpressionClamp.h"
 #include "Materials/MaterialExpressionCollectionParameter.h"
 #include "Materials/MaterialExpressionComponentMask.h"
@@ -16,13 +17,16 @@
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "Materials/MaterialExpressionConstant4Vector.h"
 #include "Materials/MaterialExpressionDepthFade.h"
+#include "Materials/MaterialExpressionDistanceToNearestSurface.h"
 #include "Materials/MaterialExpressionDivide.h"
 #include "Materials/MaterialExpressionFunctionOutput.h"
+#include "Materials/MaterialExpressionIf.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionMax.h"
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "Materials/MaterialExpressionMin.h"
 #include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionObjectPositionWS.h"
 #include "Materials/MaterialExpressionOneMinus.h"
 #include "Materials/MaterialExpressionPanner.h"
 #include "Materials/MaterialExpressionPixelDepth.h"
@@ -53,6 +57,12 @@ namespace MantleWaterMaterialPrivate
 	/** A scene depth far past any fade distance, and a pixel depth at the surface itself: Scene Depth minus Pixel Depth is "deep". */
 	constexpr double FarSceneDepth = 1.0e6;
 
+	/** A distance to the nearest surface (a distance field's) far past any shoreline: the far end of the water has none. */
+	constexpr double FarSurfaceDistanceCm = 1.0e6;
+
+	/** The camera's height over the water, when a colour read models positions (FFarEvaluator::bModelPositions): above the surface, as water is seen from. */
+	constexpr double ModelCameraHeightCm = 1000.0;
+
 	/** One to four numbers; a scalar (one) broadcasts against a wider value. */
 	struct FValue
 	{
@@ -63,6 +73,16 @@ namespace MantleWaterMaterialPrivate
 		{
 			FValue Out;
 			Out.V[0] = Value;
+			return Out;
+		}
+
+		static FValue Vector3(const double X, const double Y, const double Z)
+		{
+			FValue Out;
+			Out.N = 3;
+			Out.V[0] = X;
+			Out.V[1] = Y;
+			Out.V[2] = Z;
 			return Out;
 		}
 
@@ -162,6 +182,16 @@ namespace MantleWaterMaterialPrivate
 		FString Failure;
 		int32 Budget = 2048;
 
+		/**
+		 * World Position, Camera Position and Object Position are read as a model of the water seen from above (#628: Stylized
+		 * Village's MM_Water colours its depth by them): the surface at the origin, the object there too, the camera
+		 * ModelCameraHeightCm over it. Off unless a colour read asks, so an opacity graph that reads a position still stops the read.
+		 */
+		bool bModelPositions = false;
+
+		/** A distance-field term (the shoreline foam of MM_Water) was read at the far end, where there is no shoreline: it is dropped, and said. */
+		bool bShorelineFoamDropped = false;
+
 		bool Fail(const FString& Why)
 		{
 			if (Failure.IsEmpty())
@@ -241,6 +271,128 @@ namespace MantleWaterMaterialPrivate
 				Out.V[Lane] = Op(Out.V[Lane]);
 			}
 			return true;
+		}
+
+		/**
+		 * What an input's first lane can be: Low and High, equal when the graph evaluates exactly. When it does not, a texture
+		 * sample of a colour or mask texture is somewhere in 0..1 and a Multiply or Add of such bounds is bounded by theirs
+		 * (on a copy, so a failed exact read leaves no failure behind). Why gets the first node that stopped the exact read.
+		 */
+		bool Bounds(const FExpressionInput& In, const bool bHasConstant, const double Constant, double& Low, double& High, FString& Why, const int32 Depth = 0)
+		{
+			FFarEvaluator Probe = *this;
+			Probe.Failure.Reset();
+			FValue Exact;
+			if (Probe.Input(In, bHasConstant, Constant, Exact))
+			{
+				bShorelineFoamDropped = bShorelineFoamDropped || Probe.bShorelineFoamDropped;
+				Low = Exact.Lane(0);
+				High = Low;
+				return true;
+			}
+			if (Why.IsEmpty())
+			{
+				Why = Probe.Failure;
+			}
+			const UMaterialExpression* Expression = In.Expression;
+			if (const UMaterialExpressionRerouteBase* Reroute = Cast<UMaterialExpressionRerouteBase>(Expression))
+			{
+				int32 Real = 0;
+				Expression = Reroute->TraceInputsToRealExpression(Real);
+			}
+			if (!Expression || Depth >= 8)
+			{
+				return false;
+			}
+			if (const UMaterialExpressionTextureBase* Texture = Cast<UMaterialExpressionTextureBase>(Expression))
+			{
+				// Normal maps (and data) run below 0 or above 1: only a colour, grayscale, alpha or mask sample is bounded.
+				const EMaterialSamplerType Sampler = Texture->SamplerType;
+				switch (Sampler)
+				{
+				case SAMPLERTYPE_Color:
+				case SAMPLERTYPE_Grayscale:
+				case SAMPLERTYPE_Alpha:
+				case SAMPLERTYPE_Masks:
+				case SAMPLERTYPE_LinearColor:
+				case SAMPLERTYPE_LinearGrayscale:
+					Low = 0.0;
+					High = 1.0;
+					return true;
+				default:
+					return false;
+				}
+			}
+			if (const UMaterialExpressionMultiply* Multiply = Cast<UMaterialExpressionMultiply>(Expression))
+			{
+				double ALow = 0.0, AHigh = 0.0, BLow = 0.0, BHigh = 0.0;
+				if (!Bounds(Multiply->A, true, Multiply->ConstA, ALow, AHigh, Why, Depth + 1) || !Bounds(Multiply->B, true, Multiply->ConstB, BLow, BHigh, Why, Depth + 1))
+				{
+					return false;
+				}
+				const double Corners[4] = { ALow * BLow, ALow * BHigh, AHigh * BLow, AHigh * BHigh };
+				Low = FMath::Min(FMath::Min(Corners[0], Corners[1]), FMath::Min(Corners[2], Corners[3]));
+				High = FMath::Max(FMath::Max(Corners[0], Corners[1]), FMath::Max(Corners[2], Corners[3]));
+				return true;
+			}
+			if (const UMaterialExpressionAdd* Add = Cast<UMaterialExpressionAdd>(Expression))
+			{
+				double ALow = 0.0, AHigh = 0.0, BLow = 0.0, BHigh = 0.0;
+				if (!Bounds(Add->A, true, Add->ConstA, ALow, AHigh, Why, Depth + 1) || !Bounds(Add->B, true, Add->ConstB, BLow, BHigh, Why, Depth + 1))
+				{
+					return false;
+				}
+				Low = ALow + BLow;
+				High = AHigh + BHigh;
+				return true;
+			}
+			return false;
+		}
+
+		/**
+		 * An If node (#628: MM_Water's shoreline foam, If(foam texture product > distance threshold) then 1 else 0). A and B
+		 * compare on their first lane, as the engine's If does; within EqualsThreshold the equals branch is taken, which is the
+		 * greater branch when none is connected. When A cannot be read exactly but is bounded (a product of mask textures is
+		 * 0..1) and B is at or past its top, A only reaches B at the texture's own peak, so it is below B: the less branch.
+		 * Past the bottom of A's range the greater branch. Anything else stops the read.
+		 */
+		bool Conditional(const UMaterialExpressionIf& If, FValue& Out)
+		{
+			FValue B;
+			if (!Input(If.B, true, If.ConstB, B))
+			{
+				return false;
+			}
+			const double Threshold = B.Lane(0);
+			double Low = 0.0;
+			double High = 0.0;
+			FString Why;
+			if (!Bounds(If.A, false, 0.0, Low, High, Why))
+			{
+				return Fail(Why.IsEmpty() ? FString(TEXT("an If compares a value it cannot read")) : Why);
+			}
+			if (Low == High)
+			{
+				const FExpressionInput* Branch = nullptr;
+				if (FMath::Abs(Low - Threshold) < If.EqualsThreshold)
+				{
+					Branch = If.AEqualsB.Expression ? &If.AEqualsB : &If.AGreaterThanB;
+				}
+				else
+				{
+					Branch = Low > Threshold ? &If.AGreaterThanB : &If.ALessThanB;
+				}
+				return Input(*Branch, false, 0.0, Out);
+			}
+			if (High <= Threshold)
+			{
+				return Input(If.ALessThanB, false, 0.0, Out);
+			}
+			if (Low > Threshold)
+			{
+				return Input(If.AGreaterThanB, false, 0.0, Out);
+			}
+			return Fail(TEXT("an If compares a value that is not known to be on one side of its threshold"));
 		}
 
 		bool Node(const UMaterialExpression* Expression, const int32 Output, FValue& Out)
@@ -352,6 +504,34 @@ namespace MantleWaterMaterialPrivate
 			{
 				Out = FValue::Scalar(0.0);
 				return true;
+			}
+			// The distance to the nearest distance-field surface is the shoreline foam's input: the far end is far from any shore.
+			if (Expression->IsA<UMaterialExpressionDistanceToNearestSurface>())
+			{
+				bShorelineFoamDropped = true;
+				Out = FValue::Scalar(FarSurfaceDistanceCm);
+				return true;
+			}
+			if (const UMaterialExpressionIf* If = Cast<UMaterialExpressionIf>(Expression))
+			{
+				return Conditional(*If, Out);
+			}
+			// A colour read's model of the water seen from above: the surface and the object at the origin, the camera over them.
+			// Scene Depth over Pixel Depth is a ratio with a pixel depth of 0 here, which the divide below reads as 0 (not infinity):
+			// the point behind the water, camera + ratio x (surface - camera), is then the camera itself, above the water, with no depth
+			// under it. That is the shallow end of a Scene Depth colour gradient, which is what a pool's colour is read as.
+			if (bModelPositions)
+			{
+				if (Expression->IsA<UMaterialExpressionWorldPosition>() || Expression->IsA<UMaterialExpressionObjectPositionWS>())
+				{
+					Out = FValue::Vector3(0.0, 0.0, 0.0);
+					return true;
+				}
+				if (Expression->IsA<UMaterialExpressionCameraPositionWS>())
+				{
+					Out = FValue::Vector3(0.0, 0.0, ModelCameraHeightCm);
+					return true;
+				}
 			}
 			if (const UMaterialExpressionMaterialFunctionCall* Call = Cast<UMaterialExpressionMaterialFunctionCall>(Expression))
 			{
@@ -499,6 +679,9 @@ namespace MantleWaterMaterialPrivate
 
 	/** The schema's bound on a uvPanning component (schema/material.schema.json), and on a water normal's panning. */
 	constexpr double MaxPan = 10.0;
+
+	/** UV repeats a second that Motion_4WayChaos_Normal pans each of its four samples by, per unit of its Speed input (each Panner's SpeedX and SpeedY are +-0.1). */
+	constexpr double ChaosPanPerSpeed = 0.1;
 
 	/** Reroutes followed to the node that really feeds Input; null when nothing does. */
 	const UMaterialExpression* Resolve(const FExpressionInput& Input)
@@ -1009,6 +1192,12 @@ namespace MantleWaterMaterialPrivate
 			{
 				Source = Cast<UMaterialExpressionTextureBase>(Resolve(Sample->TextureObject));
 			}
+			return TextureOfSource(Source);
+		}
+
+		/** A texture node's texture: the instance's override for a parameter, else the node's own. */
+		UTexture* TextureOfSource(const UMaterialExpressionTextureBase* Source) const
+		{
 			if (!Source)
 			{
 				return nullptr;
@@ -1159,6 +1348,63 @@ namespace MantleWaterMaterialPrivate
 			return Fail(FString::Printf(TEXT("the normal calls %s"), *Function->GetName()));
 		}
 
+		/**
+		 * The engine's Motion_4WayChaos_Normal (#628: Stylized Village's MM_Water): four samples of one normal texture, each
+		 * panned diagonally ((1, 1), (-1, -1), (-1, 1), (1, -1)) by 0.1 UV a second per unit of its Speed input (the function
+		 * multiplies Time by Speed into each Panner, whose own speeds are +-0.1 on both axes; read from the asset's Panners), and
+		 * averaged. Its inputs are Coordinates (the UVs), Speed and Texture. The document carries two layers, so two of the
+		 * four are kept: the opposite pair (1, 1) and (-1, -1), laid out as the Coordinates are by world position. The other
+		 * pair, the function's offset per sample and its blend are not carried, which is said (bApproximated).
+		 */
+		bool ChaosFunction(const UMaterialExpressionMaterialFunctionCall* Call)
+		{
+			const FExpressionInput* Coordinates = CallInputNamed(Call, TEXT("Coordinates"));
+			const FExpressionInput* SpeedInput = CallInputNamed(Call, TEXT("Speed"));
+			const FExpressionInput* TextureInput = CallInputNamed(Call, TEXT("Texture"));
+			if (!Coordinates || !SpeedInput || !TextureInput)
+			{
+				return Fail(TEXT("the normal calls Motion_4WayChaos_Normal without its inputs"));
+			}
+			UTexture* Texture = TextureOfSource(Cast<UMaterialExpressionTextureBase>(Resolve(*TextureInput)));
+			if (!Texture)
+			{
+				return Fail(TEXT("Motion_4WayChaos_Normal has no texture"));
+			}
+			FMantleWaterNormalLayer Layer;
+			if (!WorldLayerOf(Context, *Coordinates, Layer))
+			{
+				return Fail(TEXT("Motion_4WayChaos_Normal's coordinates are not World Position XY over a size"));
+			}
+			FFarEvaluator Probe;
+			Probe.Context = Context;
+			FValue Speed;
+			if (!Probe.Input(*SpeedInput, false, 0.0, Speed))
+			{
+				return Fail(FString::Printf(TEXT("Motion_4WayChaos_Normal's speed: %s"), *Probe.Failure));
+			}
+			const double Pan = ChaosPanPerSpeed * Speed.Lane(0);
+			if (FMath::Abs(Pan) > MaxPan)
+			{
+				return Fail(TEXT("Motion_4WayChaos_Normal is faster than Mantle keeps"));
+			}
+			Layer.Texture = Texture;
+			Layer.bApproximated = true;
+			Layer.Speed[0] = Pan;
+			Layer.Speed[1] = Pan;
+			Found.Add(Layer);
+			Layer.Speed[0] = -Pan;
+			Layer.Speed[1] = -Pan;
+			Found.Add(Layer);
+			return true;
+		}
+
+		/** Whether Input is the flat normal (0, 0, 1) as a constant: what a Lerp toward a normal map starts from. */
+		bool IsFlatNormal(const FExpressionInput& Input) const
+		{
+			const UMaterialExpressionConstant3Vector* Constant = Cast<UMaterialExpressionConstant3Vector>(Resolve(Input));
+			return Constant && FMath::Abs(Constant->Constant.R) < 1.0e-4f && FMath::Abs(Constant->Constant.G) < 1.0e-4f && Constant->Constant.B > 0.999f;
+		}
+
 		bool Visit(const FExpressionInput& Input)
 		{
 			if (--Budget < 0)
@@ -1185,13 +1431,36 @@ namespace MantleWaterMaterialPrivate
 			{
 				return Switch->Value.Expression ? Fail(TEXT("a static switch is driven by a node")) : Visit(Switch->DefaultValue ? Switch->A : Switch->B);
 			}
-			// A Lerp toward another normal (the ice a winter parameter blends in): the water is its A side.
 			if (const UMaterialExpressionLinearInterpolate* Lerp = Cast<UMaterialExpressionLinearInterpolate>(Expression))
 			{
+				// A constant alpha (a number or parameters the instance sets) says which side the water is: B from half, else A. A
+				// flat normal blended toward a normal map by an alpha under 1 (MM_Water's Lerp((0, 0, 1), motion, 1)) is that map at
+				// the alpha's strength.
+				FFarEvaluator Probe;
+				Probe.Context = Context;
+				FValue Alpha;
+				if (Probe.Input(Lerp->Alpha, true, Lerp->ConstAlpha, Alpha))
+				{
+					const double Weight = FMath::Clamp(Alpha.Lane(0), 0.0, 1.0);
+					if (Weight >= 0.5)
+					{
+						if (IsFlatNormal(Lerp->A))
+						{
+							Scale *= Weight;
+						}
+						return Visit(Lerp->B);
+					}
+					return Visit(Lerp->A);
+				}
+				// A toward another normal by something that is not a constant (the ice a winter parameter blends in): the water is its A side.
 				return Visit(Lerp->A);
 			}
 			if (const UMaterialExpressionMaterialFunctionCall* Call = Cast<UMaterialExpressionMaterialFunctionCall>(Expression))
 			{
+				if (IsFunctionNamed(Call, TEXT("Motion_4WayChaos_Normal")))
+				{
+					return ChaosFunction(Call);
+				}
 				if (IsFunctionNamed(Call, TEXT("FlattenNormal")))
 				{
 					const FExpressionInput* Normal = CallInputNamed(Call, TEXT("Normal"));
@@ -1232,8 +1501,11 @@ namespace MantleWaterMaterialPrivate
 		{
 			FFarEvaluator Colour;
 			Colour.Context = Context;
+			Colour.bModelPositions = true;
 			FValue Deep;
-			if (Colour.Input(*BaseColor, false, 0.0, Deep) && Deep.N >= 3)
+			const bool bRead = Colour.Input(*BaseColor, false, 0.0, Deep);
+			Out.bShorelineFoamDropped = Out.bShorelineFoamDropped || Colour.bShorelineFoamDropped;
+			if (bRead && Deep.N >= 3)
 			{
 				Out.bColour = true;
 				for (int32 Channel = 0; Channel < 3; ++Channel)
@@ -1321,7 +1593,9 @@ bool FMantleWaterMaterial::Recognise(const UMaterialInterface* Context, const FE
 	FFarEvaluator Evaluator;
 	Evaluator.Context = Context;
 	FValue Value;
-	if (Evaluator.Input(*Opacity, false, 0.0, Value) && Value.Lane(0) >= MinimumOpacity)
+	const bool bOpacityEvaluated = Evaluator.Input(*Opacity, false, 0.0, Value);
+	Out.bShorelineFoamDropped = Evaluator.bShorelineFoamDropped;
+	if (bOpacityEvaluated && Value.Lane(0) >= MinimumOpacity)
 	{
 		Out.bOpacityRead = true;
 		Out.Opacity = FMath::Clamp(Value.Lane(0), 0.0, 1.0);

@@ -63,6 +63,9 @@ struct MANTLEEDITOR_API FMantleWaterBake
 	/** A Single Layer Water material animated its waves (world position offset): they are dropped, the water keeps its flat surface and its normal maps. */
 	bool bWavesDropped = false;
 
+	/** The graph reads a distance field (the shoreline foam of a pool material): the far end has no shoreline, so the foam is dropped and said. */
+	bool bShorelineFoamDropped = false;
+
 	/** The Single Layer Water output node's scattering and absorption (1/cm), when its graph evaluated; they stand in for the derived coefficients. */
 	bool bVolume = false;
 	FMantleWaterCoefficients Volume;
@@ -135,8 +138,12 @@ struct MANTLEEDITOR_API FMantleWaterMaterial
 	 * opacity input, Scene Depth is far and Pixel Depth near, CameraDepthFade is 1) over the nodes constants,
 	 * parameters (as Context sets them), Add, Subtract, Multiply, Divide, Min, Max, Lerp, Clamp, Saturate,
 	 * OneMinus, Abs, Power, Component Mask, Append, reroutes and static switches; anything else (a texture
-	 * sample, Time, a function) stops that read. BaseColor is read the same way for the deep colour. Normal (may be
-	 * null) is read for its panned samples (FMantleWaterBake::bNormalPanned).
+	 * sample, Time, a function) stops that read. Two more are read for a pool's foam (#628): Distance To Nearest Surface is
+	 * far (no shoreline; bShorelineFoamDropped), and an If whose A is a product of colour or mask textures (0..1) against a
+	 * B at or above 1 takes its A-less-than-B branch. BaseColor is read the same way for the deep colour, and also models
+	 * World, Object and Camera Position (the camera above the water) for a Scene Depth colour gradient. Normal (may be
+	 * null) is read for its panned samples (FMantleWaterBake::bNormalPanned): a Lerp with a constant alpha takes the side it
+	 * weights, and the engine's Motion_4WayChaos_Normal is two world-laid layers panning in opposite directions.
 	 */
 	static bool Recognise(const UMaterialInterface* Context, const FExpressionInput* Opacity, const FExpressionInput* BaseColor, const FExpressionInput* Normal, FMantleWaterBake& Out);
 
