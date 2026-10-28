@@ -298,6 +298,8 @@ struct FMantleWeaponDocHoldInfo
 	TArray<FString> Quivers;
 	/** Round 3: the hold has a bash on the Melee key (x-bash: the bow). */
 	bool bHasBash = false;
+	/** Round 3 step 12: the hold may throw itself and catch it again (x-throw: the shield). */
+	bool bHasShieldThrow = false;
 	/** Round 3: the shooting style ids (x-shootingStyles) of a hold held more than one way to shoot (the bow), the default first. Empty: one way. */
 	TArray<FString> ShootingStyles;
 };
@@ -441,6 +443,15 @@ struct FMantleWeaponDocBash
 {
 	TMantleWeaponDocValue<bool> bEnabled{ true };
 	double Damage = 20.0;
+};
+
+/** schema throw (Round 3 step 12): a shield's throw that returns. Absent: off; present, on unless enabled is false. */
+struct FMantleWeaponDocShieldThrow
+{
+	TMantleWeaponDocValue<bool> bEnabled{ true };
+	/** How far out it flies before it comes back, cm. */
+	double Range = 1000.0;
+	double Damage = 25.0;
 };
 
 /** schema charges (#840): the charges resource's numbers. */
@@ -766,6 +777,8 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<FMantleWeaponDocBlock> Block;
 	/** Round 3: a bow's bash; unset is on with 20 damage. */
 	TMantleWeaponDocValue<FMantleWeaponDocBash> Bash;
+	/** Round 3 step 12: a shield's throw (the document's throw); unset is off. */
+	TMantleWeaponDocValue<FMantleWeaponDocShieldThrow> ShieldThrow;
 	TMantleWeaponDocValue<FMantleWeaponDocSounds> Sounds;
 	TMantleWeaponDocValue<FMantleWeaponDocFirstPerson> FirstPerson;
 	TMantleWeaponDocValue<FMantleWeaponDocSpread> Spread;

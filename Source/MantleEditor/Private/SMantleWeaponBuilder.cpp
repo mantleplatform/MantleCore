@@ -709,6 +709,9 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->StunSeconds = 1.5f;
 	Working->bBash = true;
 	Working->BashDamage = 20.f;
+	Working->bShieldThrow = false;
+	Working->ShieldThrowRange = 1000.f;
+	Working->ShieldThrowDamage = 25.f;
 	Working->Projectile = FMantleWeaponSourceProjectile();
 	Working->Sweep = FMantleWeaponSourceSweep();
 	Working->Beam = FMantleWeaponSourceBeam();
@@ -983,6 +986,7 @@ FText SMantleWeaponBuilder::SummaryText() const
 	if (!Working->DodgeStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Dodge: %s"), *DodgeStyleLabel(Working->DodgeStyle.ToString()).ToString()));
 	if (!Working->ComboSet.IsNone()) Lines.Add(FString::Printf(TEXT("Combo: %s"), *ComboSetLabel(Working->ComboSet.ToString()).ToString()));
 	if (HoldInfo(Working->Hold).bHasBash && !Working->bBash) Lines.Add(TEXT("Bash: off"));
+	if (HoldInfo(Working->Hold).bHasShieldThrow && Working->bShieldThrow) Lines.Add(TEXT("Throw: on"));
 	if (!Working->Quiver.IsNone()) Lines.Add(FString::Printf(TEXT("Quiver: %s"), *QuiverLabel(Working->Quiver.ToString()).ToString()));
 	if (!Working->ShootingStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Shooting style: %s"), *ShootingStyleLabel(Working->ShootingStyle.ToString()).ToString()));
 	if (Working->Parts.Num() > 0) Lines.Add(FString::Printf(TEXT("Moving parts: %d"), Working->Parts.Num()));
@@ -1876,6 +1880,20 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		LOCTEXT("BashDamageTip", "How much each hit of the bash hurts. 20 is the bare-hands punch."),
 		0.f, 1000.f, 1.f, [this] { return Working->BashDamage; }, [this](float V) { Working->BashDamage = FMath::Clamp(V, 0.f, 1000.f); },
 		[this, CanBash] { return CanBash() && Working->bBash ? EVisibility::Visible : EVisibility::Collapsed; });
+	// Round 3 step 12: a shield may be thrown with guard + Melee and comes back to the hand, off by default.
+	const TFunction<bool()> CanThrowShield = [this] { return HoldInfo(Working->Hold).bHasShieldThrow; };
+	AddToggleWhen(LOCTEXT("ShieldThrow", "Throw with guard + Melee"),
+		LOCTEXT("ShieldThrowTip", "With the guard up, a tap of the Melee key throws the shield and holding it aims the throw; the shield flies out and comes back to the hand. Off, guard + Melee bashes."),
+		[this] { return Working->bShieldThrow; }, [this](bool V) { Working->bShieldThrow = V; },
+		[CanThrowShield] { return CanThrowShield() ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
+	AddFloatWhen(LOCTEXT("ShieldThrowRange", "Throw range (100–3000 cm)"),
+		LOCTEXT("ShieldThrowRangeTip", "How far the shield flies before it turns back (it stops sooner at a wall or what you aim at). 1000 is 10 m."),
+		100.f, 3000.f, 10.f, [this] { return Working->ShieldThrowRange; }, [this](float V) { Working->ShieldThrowRange = FMath::Clamp(V, 100.f, 3000.f); },
+		[this, CanThrowShield] { return CanThrowShield() && Working->bShieldThrow ? EVisibility::Visible : EVisibility::Collapsed; });
+	AddFloatWhen(LOCTEXT("ShieldThrowDamage", "Throw damage (0–1000)"),
+		LOCTEXT("ShieldThrowDamageTip", "How much the thrown shield hurts each player it hits (once per throw)."),
+		0.f, 1000.f, 1.f, [this] { return Working->ShieldThrowDamage; }, [this](float V) { Working->ShieldThrowDamage = FMath::Clamp(V, 0.f, 1000.f); },
+		[this, CanThrowShield] { return CanThrowShield() && Working->bShieldThrow ? EVisibility::Visible : EVisibility::Collapsed; });
 	const bool bCanOverrideHandedness = IsFirearm(Working->Hold);
 	AddToggleWhen(LOCTEXT("OverrideTwoHanded", "Change how many hands hold it"), LOCTEXT("OverrideTwoHandedTip", "Use this hold with one hand or both. The usual setting follows the hold."),
 		[this] { return Working->bOverrideTwoHanded; }, [this](bool V) { Working->bOverrideTwoHanded = V; },

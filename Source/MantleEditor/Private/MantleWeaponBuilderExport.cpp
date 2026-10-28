@@ -421,6 +421,15 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		Bash.Damage = Source.BashDamage;
 		Desc.Bash.Set(Bash);
 	}
+	// Round 3 step 12: a shield's throw that returns, off by default; written only when the creator turns it on.
+	if (Info.bHasShieldThrow && Source.bShieldThrow)
+	{
+		FMantleWeaponDocShieldThrow Throw;
+		Throw.bEnabled.Set(true);
+		Throw.Range = Source.ShieldThrowRange;
+		Throw.Damage = Source.ShieldThrowDamage;
+		Desc.ShieldThrow.Set(Throw);
+	}
 	// A hold whose action is a throw (the spear beside its sweep, the throwable alone) throws its own model: the projectile block
 	// rides along, and the thrown weapon sticks where it lands and can be picked up again, with no choice to make.
 	const bool bThrowsItsModel = Info.Actions.Contains(EMantleWeaponDocAction::Throw);

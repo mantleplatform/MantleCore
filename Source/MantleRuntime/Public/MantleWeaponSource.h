@@ -277,6 +277,12 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bBash = true;
 	/** Round 3: damage of each hit of the bash (the bare-hands punch's 20). */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 1000.0)) float BashDamage = 20.0f;
+	/** Round 3 step 12: a shield's throw that returns (guard + Melee): off by default. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") bool bShieldThrow = false;
+	/** Round 3 step 12: how far out the thrown shield flies before it comes back, cm (100 to 3000). */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 100.0, ClampMax = 3000.0)) float ShieldThrowRange = 1000.0f;
+	/** Round 3 step 12: damage to each target the thrown shield hits (once per throw). */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 1000.0)) float ShieldThrowDamage = 25.0f;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceProjectile Projectile;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceSweep Sweep;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceBeam Beam;

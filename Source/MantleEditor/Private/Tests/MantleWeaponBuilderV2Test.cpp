@@ -463,6 +463,46 @@ bool FMantleWeaponBuilderV2BowBashTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Round 3 step 12: a shield's throw is off by default and writes nothing; turned on it writes its range and damage and reads again; no other hold
+// has one.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2ShieldThrowTest, "Mantle.Editor.WeaponBuilderV2.ShieldThrow", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2ShieldThrowTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	TestTrue(TEXT("the hold library lets a shield throw"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Shield).bHasShieldThrow);
+	TestFalse(TEXT("and a sword not"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Melee1h).bHasShieldThrow);
+	auto Build = [](const EMantleWeaponHold Hold, const bool bThrow, const float Range, const float Damage, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("ShieldThrow"), nullptr);
+		Input->bShieldThrow = bThrow;
+		Input->ShieldThrowRange = Range;
+		Input->ShieldThrowDamage = Damage;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	if (TestTrue(TEXT("a shield left as it is builds"), Build(EMantleWeaponHold::Shield, false, 1000.0f, 25.0f, Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no throw (off)"), Desc.ShieldThrow.bSet);
+	}
+	if (TestTrue(TEXT("a shield that throws builds"), Build(EMantleWeaponHold::Shield, true, 1500.0f, 40.0f, Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes the throw, on"), Desc.ShieldThrow.bSet && Desc.ShieldThrow.Value.bEnabled.Value);
+		TestEqual(TEXT("with its range"), Desc.ShieldThrow.Value.Range, 1500.0);
+		TestEqual(TEXT("and damage"), Desc.ShieldThrow.Value.Damage, 40.0);
+		FString Error;
+		FMantleWeaponDesc Again;
+		TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		TestTrue(TEXT("with the throw on"), Again.ShieldThrow.bSet && Again.ShieldThrow.Value.bEnabled.Value && Again.ShieldThrow.Value.Range == 1500.0);
+	}
+	if (TestTrue(TEXT("a sword with the same fields builds"), Build(EMantleWeaponHold::Melee1h, true, 1500.0f, 40.0f, Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no throw (it has none)"), Desc.ShieldThrow.bSet);
+	}
+	return true;
+}
+
 // A staff's held beam that also throws spells writes both blocks, with or without a charge (aim and hold), and the document
 // reader takes it.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffSpellsBesideBeamTest, "Mantle.Editor.WeaponBuilderV2.StaffSpellsBesideBeam", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -745,6 +785,9 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->Quiver = TEXT("hip"); Changed(TEXT("quiver changes signature")); Input->Quiver = NAME_None;
 	Input->bBash = false; Changed(TEXT("bash changes signature")); Input->bBash = true;
 	Input->BashDamage = 35.0f; Changed(TEXT("bash damage changes signature")); Input->BashDamage = 20.0f;
+	Input->bShieldThrow = true; Changed(TEXT("shield throw changes signature")); Input->bShieldThrow = false;
+	Input->ShieldThrowRange = 1500.0f; Changed(TEXT("shield throw range changes signature")); Input->ShieldThrowRange = 1000.0f;
+	Input->ShieldThrowDamage = 40.0f; Changed(TEXT("shield throw damage changes signature")); Input->ShieldThrowDamage = 25.0f;
 	Input->ShootingStyle = TEXT("c"); Changed(TEXT("shooting style changes signature")); Input->ShootingStyle = NAME_None;
 	Input->bOverrideStyle = true; Changed(TEXT("style choice changes signature")); Input->bOverrideStyle = false;
 	Input->bOverrideColor = true; Changed(TEXT("color choice changes signature")); Input->bOverrideColor = false;

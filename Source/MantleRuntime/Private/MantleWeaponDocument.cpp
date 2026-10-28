@@ -45,7 +45,8 @@ namespace MantleWeaponDocumentPrivate
 	// #840: version 2's fields, which a version-1 document has none of.
 	const TCHAR* const GWeaponDocV2Fields[] = {
 		TEXT("hold"), TEXT("delivery"), TEXT("charge"), TEXT("block"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"),
-		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("bash")
+		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("bash"),
+		TEXT("throw")
 	};
 	// #1025: consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
 	const TCHAR* const GWeaponDocUseStyleNames[] = { TEXT("eatDrink"), TEXT("use") };
@@ -432,6 +433,8 @@ namespace MantleWeaponDocumentPrivate
 			FMantleWeaponDocHoldInfo Shield = WeaponDocHold(false, { EAction::Equip, EAction::Holster, EAction::Block, EAction::Attack },
 				{ EDelivery::Sweep }, ECharge::None, { EResource::None }, EBlock::Required, { ESocket::Grip, ESocket::Face }, {});
 			Shield.DodgeStyles = { TEXT("upright"), TEXT("crouched"), TEXT("dash") };
+			// Round 3 step 12: guard + Melee may throw it (the document's throw; off without it).
+			Shield.bHasShieldThrow = true;
 			Table.Add(Shield);
 		}
 		// throwable: one hand, thrown overhand; its projectile is the weapon itself (a press throws, no charge).
@@ -1425,6 +1428,18 @@ namespace MantleWeaponDocumentPrivate
 			Out.Damage = Damage.Value;
 		}
 
+		void ReadShieldThrow(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocShieldThrow& Out)
+		{
+			Keys(Obj, Path, { TEXT("enabled"), TEXT("range"), TEXT("damage") });
+			OptBoolean(Obj, Path, TEXT("enabled"), Out.bEnabled);
+			TMantleWeaponDocValue<double> Range(Out.Range);
+			OptNumber(Obj, Path, TEXT("range"), 100.0, 3000.0, Range);
+			Out.Range = Range.Value;
+			TMantleWeaponDocValue<double> Damage(Out.Damage);
+			OptNumber(Obj, Path, TEXT("damage"), 0.0, 1000.0, Damage);
+			Out.Damage = Damage.Value;
+		}
+
 		/**
 		 * #840: the rules that depend on which keys the text has, on a document within the schema (CheckRules reads the
 		 * values): version 1 has none of version 2's fields; version 2's archetype is its hold's alias; a weapon without a
@@ -1546,7 +1561,7 @@ namespace MantleWeaponDocumentPrivate
 				{ TEXT("schemaVersion"), TEXT("name"), TEXT("archetype"), TEXT("hold"), TEXT("delivery"), TEXT("twoHanded"), TEXT("effects"),
 				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
 				  TEXT("charge"), TEXT("magazine"), TEXT("reload"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"),
-				  TEXT("consumable"), TEXT("block"), TEXT("bash"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
+				  TEXT("consumable"), TEXT("block"), TEXT("bash"), TEXT("throw"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
 				{ TEXT("schemaVersion"), TEXT("name") });
 			// #840: 1 is the firearm document (archetype), 2 names the hold and the delivery; each requires its own fields.
 			int32 Version = 0;
@@ -1668,6 +1683,7 @@ namespace MantleWeaponDocumentPrivate
 			OptBlock(Root, Path, TEXT("consumable"), Out.Consumable, &FWeaponDocReader::ReadConsumable);
 			OptBlock(Root, Path, TEXT("block"), Out.Block, &FWeaponDocReader::ReadBlock);
 			OptBlock(Root, Path, TEXT("bash"), Out.Bash, &FWeaponDocReader::ReadBash);
+			OptBlock(Root, Path, TEXT("throw"), Out.ShieldThrow, &FWeaponDocReader::ReadShieldThrow);
 			OptBlock(Root, Path, TEXT("sounds"), Out.Sounds, &FWeaponDocReader::ReadSounds);
 			OptBlock(Root, Path, TEXT("firstPerson"), Out.FirstPerson, &FWeaponDocReader::ReadFirstPerson);
 			OptBlock(Root, Path, TEXT("spread"), Out.Spread, &FWeaponDocReader::ReadSpread);
@@ -2178,6 +2194,19 @@ namespace MantleWeaponDocumentPrivate
 			return Node;
 		}
 
+		static FWeaponDocNodePtr ShieldThrowSettings(const FMantleWeaponDocShieldThrow& In)
+		{
+			FWeaponDocNodePtr Node = WeaponDocObjectNode();
+			Boolean(Node, TEXT("enabled"), In.bEnabled);
+			TMantleWeaponDocValue<double> Range;
+			Range.Set(In.Range);
+			Number(Node, TEXT("range"), Range);
+			TMantleWeaponDocValue<double> Damage;
+			Damage.Set(In.Damage);
+			Number(Node, TEXT("damage"), Damage);
+			return Node;
+		}
+
 		static FWeaponDocNodePtr Sounds(const FMantleWeaponDocSounds& In)
 		{
 			FWeaponDocNodePtr Node = WeaponDocObjectNode();
@@ -2459,6 +2488,7 @@ namespace MantleWeaponDocumentPrivate
 			Block(Node, TEXT("consumable"), D.Consumable, &FWeaponDocWriter::Consumable);
 			Block(Node, TEXT("block"), D.Block, &FWeaponDocWriter::BlockSettings);
 			Block(Node, TEXT("bash"), D.Bash, &FWeaponDocWriter::BashSettings);
+			Block(Node, TEXT("throw"), D.ShieldThrow, &FWeaponDocWriter::ShieldThrowSettings);
 			Block(Node, TEXT("sounds"), D.Sounds, &FWeaponDocWriter::Sounds);
 			Block(Node, TEXT("firstPerson"), D.FirstPerson, &FWeaponDocWriter::FirstPerson);
 			Block(Node, TEXT("spread"), D.Spread, &FWeaponDocWriter::Spread);
@@ -2942,6 +2972,11 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 	if (D.Bash.bSet && !Info.bHasBash)
 	{
 		R.Add(TEXT("bash"), TEXT("mantle"), FString::Printf(TEXT("a %s has no bash: drop bash"), Hold));
+	}
+	// Throw (Round 3 step 12): only a hold that throws itself and catches it again (the shield) takes one.
+	if (D.ShieldThrow.bSet && !Info.bHasShieldThrow)
+	{
+		R.Add(TEXT("throw"), TEXT("mantle"), FString::Printf(TEXT("a %s does not throw and catch itself: drop throw"), Hold));
 	}
 	EMantleWeaponDocEffects Element = EMantleWeaponDocEffects::Arcane;
 	if (D.EffectsColor.bSet && !D.GetElement(Element))
