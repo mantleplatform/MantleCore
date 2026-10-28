@@ -707,6 +707,8 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->bBlock = HoldInfo(Hold).BlockRule == EMantleWeaponDocBlockRule::Required;
 	Working->bBreakOnHeavy = true;
 	Working->StunSeconds = 1.5f;
+	Working->bBash = true;
+	Working->BashDamage = 20.f;
 	Working->Projectile = FMantleWeaponSourceProjectile();
 	Working->Sweep = FMantleWeaponSourceSweep();
 	Working->Beam = FMantleWeaponSourceBeam();
@@ -980,6 +982,7 @@ FText SMantleWeaponBuilder::SummaryText() const
 	if (Working->bOverrideStyle) Lines.Add(FString::Printf(TEXT("Effect style: %s"), *StyleLabel(Working->Style).ToString()));
 	if (!Working->DodgeStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Dodge: %s"), *DodgeStyleLabel(Working->DodgeStyle.ToString()).ToString()));
 	if (!Working->ComboSet.IsNone()) Lines.Add(FString::Printf(TEXT("Combo: %s"), *ComboSetLabel(Working->ComboSet.ToString()).ToString()));
+	if (HoldInfo(Working->Hold).bHasBash && !Working->bBash) Lines.Add(TEXT("Bash: off"));
 	if (!Working->Quiver.IsNone()) Lines.Add(FString::Printf(TEXT("Quiver: %s"), *QuiverLabel(Working->Quiver.ToString()).ToString()));
 	if (!Working->ShootingStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Shooting style: %s"), *ShootingStyleLabel(Working->ShootingStyle.ToString()).ToString()));
 	if (Working->Parts.Num() > 0) Lines.Add(FString::Printf(TEXT("Moving parts: %d"), Working->Parts.Num()));
@@ -1863,6 +1866,16 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		LOCTEXT("StunSecondsTip", "How long a player whose guard is broken is stunned: they cannot move, attack or block, and hits still hurt. 0 gives the short guard break with no stun."),
 		0.f, 5.f, 0.1f, [this] { return Working->StunSeconds; }, [this](float V) { Working->StunSeconds = FMath::Clamp(V, 0.f, 5.f); },
 		[this, CanBlock] { return CanBlock() && Working->bBlock && Working->bBreakOnHeavy ? EVisibility::Visible : EVisibility::Collapsed; });
+	// Round 3: a bow swings itself on the Melee key (a three-hit bash), on by default.
+	const TFunction<bool()> CanBash = [this] { return HoldInfo(Working->Hold).bHasBash; };
+	AddToggleWhen(LOCTEXT("Bash", "Bash with the Melee key"),
+		LOCTEXT("BashTip", "The bow swings in a three-hit bash on the Melee key, and a running one when the player runs. Off, the Melee key does nothing with this bow."),
+		[this] { return Working->bBash; }, [this](bool V) { Working->bBash = V; },
+		[CanBash] { return CanBash() ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
+	AddFloatWhen(LOCTEXT("BashDamage", "Bash damage (0–1000 per hit)"),
+		LOCTEXT("BashDamageTip", "How much each hit of the bash hurts. 20 is the bare-hands punch."),
+		0.f, 1000.f, 1.f, [this] { return Working->BashDamage; }, [this](float V) { Working->BashDamage = FMath::Clamp(V, 0.f, 1000.f); },
+		[this, CanBash] { return CanBash() && Working->bBash ? EVisibility::Visible : EVisibility::Collapsed; });
 	const bool bCanOverrideHandedness = IsFirearm(Working->Hold);
 	AddToggleWhen(LOCTEXT("OverrideTwoHanded", "Change how many hands hold it"), LOCTEXT("OverrideTwoHandedTip", "Use this hold with one hand or both. The usual setting follows the hold."),
 		[this] { return Working->bOverrideTwoHanded; }, [this](bool V) { Working->bOverrideTwoHanded = V; },

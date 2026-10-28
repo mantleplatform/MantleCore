@@ -296,6 +296,8 @@ struct FMantleWeaponDocHoldInfo
 	TArray<FString> ComboSets;
 	/** Round 3: the quiver positions (x-quivers) of a hold that places one (the bow), the default first. Empty: no quiver to place. */
 	TArray<FString> Quivers;
+	/** Round 3: the hold has a bash on the Melee key (x-bash: the bow). */
+	bool bHasBash = false;
 	/** Round 3: the shooting style ids (x-shootingStyles) of a hold held more than one way to shoot (the bow), the default first. Empty: one way. */
 	TArray<FString> ShootingStyles;
 };
@@ -432,6 +434,13 @@ struct FMantleWeaponDocBlock
 	TMantleWeaponDocValue<bool> bEnabled{ true };
 	TMantleWeaponDocValue<bool> bBreakOnHeavy{ true };
 	double StunSeconds = 1.5;
+};
+
+/** schema bash (Round 3): a bow's bash on the Melee key. On unless enabled is false. */
+struct FMantleWeaponDocBash
+{
+	TMantleWeaponDocValue<bool> bEnabled{ true };
+	double Damage = 20.0;
 };
 
 /** schema charges (#840): the charges resource's numbers. */
@@ -755,6 +764,8 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<FMantleWeaponDocConsumable> Consumable;
 	/** #840: blocking, on a hold that blocks. */
 	TMantleWeaponDocValue<FMantleWeaponDocBlock> Block;
+	/** Round 3: a bow's bash; unset is on with 20 damage. */
+	TMantleWeaponDocValue<FMantleWeaponDocBash> Bash;
 	TMantleWeaponDocValue<FMantleWeaponDocSounds> Sounds;
 	TMantleWeaponDocValue<FMantleWeaponDocFirstPerson> FirstPerson;
 	TMantleWeaponDocValue<FMantleWeaponDocSpread> Spread;

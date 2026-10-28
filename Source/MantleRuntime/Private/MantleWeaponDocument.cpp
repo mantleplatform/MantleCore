@@ -45,7 +45,7 @@ namespace MantleWeaponDocumentPrivate
 	// #840: version 2's fields, which a version-1 document has none of.
 	const TCHAR* const GWeaponDocV2Fields[] = {
 		TEXT("hold"), TEXT("delivery"), TEXT("charge"), TEXT("block"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"),
-		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style")
+		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("bash")
 	};
 	// #1025: consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
 	const TCHAR* const GWeaponDocUseStyleNames[] = { TEXT("eatDrink"), TEXT("use") };
@@ -410,6 +410,8 @@ namespace MantleWeaponDocumentPrivate
 			Bow.EquipStyles = { TEXT("back"), TEXT("bow_equip_01"), TEXT("bow_equip_02"), TEXT("bow_equip_03"), TEXT("bow_equip_04") };
 			// Round 3: where the nock's hand goes for the next arrow, the back the default.
 			Bow.Quivers = { TEXT("back"), TEXT("hip"), TEXT("side") };
+			// Round 3: the Melee key bashes (on by default; the document's bash can turn it off).
+			Bow.bHasBash = true;
 			// Round 3: how the bow is held to shoot, a (the classic archer) the default; c has its own clip set (HCS_Bow_C).
 			Bow.ShootingStyles = { TEXT("a"), TEXT("c") };
 			Table.Add(Bow);
@@ -1414,6 +1416,15 @@ namespace MantleWeaponDocumentPrivate
 			Out.StunSeconds = Stun.Value;
 		}
 
+		void ReadBash(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocBash& Out)
+		{
+			Keys(Obj, Path, { TEXT("enabled"), TEXT("damage") });
+			OptBoolean(Obj, Path, TEXT("enabled"), Out.bEnabled);
+			TMantleWeaponDocValue<double> Damage(Out.Damage);
+			OptNumber(Obj, Path, TEXT("damage"), 0.0, 1000.0, Damage);
+			Out.Damage = Damage.Value;
+		}
+
 		/**
 		 * #840: the rules that depend on which keys the text has, on a document within the schema (CheckRules reads the
 		 * values): version 1 has none of version 2's fields; version 2's archetype is its hold's alias; a weapon without a
@@ -1535,7 +1546,7 @@ namespace MantleWeaponDocumentPrivate
 				{ TEXT("schemaVersion"), TEXT("name"), TEXT("archetype"), TEXT("hold"), TEXT("delivery"), TEXT("twoHanded"), TEXT("effects"),
 				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
 				  TEXT("charge"), TEXT("magazine"), TEXT("reload"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"),
-				  TEXT("consumable"), TEXT("block"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
+				  TEXT("consumable"), TEXT("block"), TEXT("bash"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
 				{ TEXT("schemaVersion"), TEXT("name") });
 			// #840: 1 is the firearm document (archetype), 2 names the hold and the delivery; each requires its own fields.
 			int32 Version = 0;
@@ -1656,6 +1667,7 @@ namespace MantleWeaponDocumentPrivate
 			OptBlock(Root, Path, TEXT("beam"), Out.Beam, &FWeaponDocReader::ReadBeam);
 			OptBlock(Root, Path, TEXT("consumable"), Out.Consumable, &FWeaponDocReader::ReadConsumable);
 			OptBlock(Root, Path, TEXT("block"), Out.Block, &FWeaponDocReader::ReadBlock);
+			OptBlock(Root, Path, TEXT("bash"), Out.Bash, &FWeaponDocReader::ReadBash);
 			OptBlock(Root, Path, TEXT("sounds"), Out.Sounds, &FWeaponDocReader::ReadSounds);
 			OptBlock(Root, Path, TEXT("firstPerson"), Out.FirstPerson, &FWeaponDocReader::ReadFirstPerson);
 			OptBlock(Root, Path, TEXT("spread"), Out.Spread, &FWeaponDocReader::ReadSpread);
@@ -2156,6 +2168,16 @@ namespace MantleWeaponDocumentPrivate
 			return Node;
 		}
 
+		static FWeaponDocNodePtr BashSettings(const FMantleWeaponDocBash& In)
+		{
+			FWeaponDocNodePtr Node = WeaponDocObjectNode();
+			Boolean(Node, TEXT("enabled"), In.bEnabled);
+			TMantleWeaponDocValue<double> Damage;
+			Damage.Set(In.Damage);
+			Number(Node, TEXT("damage"), Damage);
+			return Node;
+		}
+
 		static FWeaponDocNodePtr Sounds(const FMantleWeaponDocSounds& In)
 		{
 			FWeaponDocNodePtr Node = WeaponDocObjectNode();
@@ -2436,6 +2458,7 @@ namespace MantleWeaponDocumentPrivate
 			Block(Node, TEXT("beam"), D.Beam, &FWeaponDocWriter::Beam);
 			Block(Node, TEXT("consumable"), D.Consumable, &FWeaponDocWriter::Consumable);
 			Block(Node, TEXT("block"), D.Block, &FWeaponDocWriter::BlockSettings);
+			Block(Node, TEXT("bash"), D.Bash, &FWeaponDocWriter::BashSettings);
 			Block(Node, TEXT("sounds"), D.Sounds, &FWeaponDocWriter::Sounds);
 			Block(Node, TEXT("firstPerson"), D.FirstPerson, &FWeaponDocWriter::FirstPerson);
 			Block(Node, TEXT("spread"), D.Spread, &FWeaponDocWriter::Spread);
@@ -2914,6 +2937,11 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 				: FString::Printf(TEXT("is %s, which a %s does not have: pick one of %s"), *Style, Hold,
 					*FString::Join(Info.ShootingStyles, TEXT(", "))));
 		}
+	}
+	// Bash (Round 3): only a hold with a bash on the Melee key (the bow) takes one.
+	if (D.Bash.bSet && !Info.bHasBash)
+	{
+		R.Add(TEXT("bash"), TEXT("mantle"), FString::Printf(TEXT("a %s has no bash: drop bash"), Hold));
 	}
 	EMantleWeaponDocEffects Element = EMantleWeaponDocEffects::Arcane;
 	if (D.EffectsColor.bSet && !D.GetElement(Element))

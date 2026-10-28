@@ -423,6 +423,46 @@ bool FMantleWeaponBuilderV2BowBlockTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Round 3: a bow's bash is on by default and writes nothing; a creator turning it off or changing its damage is written, and no other hold has one.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2BowBashTest, "Mantle.Editor.WeaponBuilderV2.BowBash", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2BowBashTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	TestTrue(TEXT("the hold library gives a bow a bash"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Bow).bHasBash);
+	TestFalse(TEXT("and a sword none"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Melee1h).bHasBash);
+	auto Build = [](const EMantleWeaponHold Hold, const bool bBash, const float Damage, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("BowBash"), nullptr);
+		Input->bBash = bBash;
+		Input->BashDamage = Damage;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	if (TestTrue(TEXT("a bow left as it is builds"), Build(EMantleWeaponHold::Bow, true, 20.0f, Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no bash (on, 20 damage)"), Desc.Bash.bSet);
+	}
+	if (TestTrue(TEXT("a bow with the bash off builds"), Build(EMantleWeaponHold::Bow, false, 20.0f, Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes the bash, off"), Desc.Bash.bSet && Desc.Bash.Value.bEnabled.bSet && !Desc.Bash.Value.bEnabled.Value);
+		FString Error;
+		FMantleWeaponDesc Again;
+		TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		TestTrue(TEXT("with the bash off"), Again.Bash.bSet && !Again.Bash.Value.bEnabled.Value);
+	}
+	if (TestTrue(TEXT("a bow with a bash damage builds"), Build(EMantleWeaponHold::Bow, true, 35.0f, Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes it, on"), Desc.Bash.bSet && Desc.Bash.Value.bEnabled.Value && Desc.Bash.Value.Damage == 35.0);
+	}
+	if (TestTrue(TEXT("a sword with the same fields builds"), Build(EMantleWeaponHold::Melee1h, false, 35.0f, Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no bash (it has none)"), Desc.Bash.bSet);
+	}
+	return true;
+}
+
 // A staff's held beam that also throws spells writes both blocks, with or without a charge (aim and hold), and the document
 // reader takes it.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffSpellsBesideBeamTest, "Mantle.Editor.WeaponBuilderV2.StaffSpellsBesideBeam", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -703,6 +743,8 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->DodgeStyle = TEXT("dash"); Changed(TEXT("dodge style changes signature")); Input->DodgeStyle = NAME_None;
 	Input->ComboSet = TEXT("spin"); Changed(TEXT("combo set changes signature")); Input->ComboSet = NAME_None;
 	Input->Quiver = TEXT("hip"); Changed(TEXT("quiver changes signature")); Input->Quiver = NAME_None;
+	Input->bBash = false; Changed(TEXT("bash changes signature")); Input->bBash = true;
+	Input->BashDamage = 35.0f; Changed(TEXT("bash damage changes signature")); Input->BashDamage = 20.0f;
 	Input->ShootingStyle = TEXT("c"); Changed(TEXT("shooting style changes signature")); Input->ShootingStyle = NAME_None;
 	Input->bOverrideStyle = true; Changed(TEXT("style choice changes signature")); Input->bOverrideStyle = false;
 	Input->bOverrideColor = true; Changed(TEXT("color choice changes signature")); Input->bOverrideColor = false;

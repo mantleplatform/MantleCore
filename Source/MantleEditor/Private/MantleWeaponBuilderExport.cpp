@@ -413,6 +413,14 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		Block.StunSeconds = Source.StunSeconds;
 		Desc.Block.Set(Block);
 	}
+	// Round 3: a bow's bash is on by default (20 damage); only a creator's change is written.
+	if (Info.bHasBash && (!Source.bBash || !FMath::IsNearlyEqual(Source.BashDamage, 20.0f)))
+	{
+		FMantleWeaponDocBash Bash;
+		Bash.bEnabled.Set(Source.bBash);
+		Bash.Damage = Source.BashDamage;
+		Desc.Bash.Set(Bash);
+	}
 	// A hold whose action is a throw (the spear beside its sweep, the throwable alone) throws its own model: the projectile block
 	// rides along, and the thrown weapon sticks where it lands and can be picked up again, with no choice to make.
 	const bool bThrowsItsModel = Info.Actions.Contains(EMantleWeaponDocAction::Throw);
