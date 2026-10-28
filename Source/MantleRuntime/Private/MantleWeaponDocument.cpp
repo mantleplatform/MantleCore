@@ -399,10 +399,10 @@ namespace MantleWeaponDocumentPrivate
 		Table.Add(WeaponDocHold(true, { EAction::Equip, EAction::Holster, EAction::Idle, EAction::Cast, EAction::Heavy },
 			{ EDelivery::Projectile, EDelivery::Beam }, ECharge::Optional, { EResource::Charges, EResource::None }, EBlock::None,
 			{ ESocket::GripR, ESocket::GripL, ESocket::Focus }, { ESocket::Sight }));
-		// bow: its quiver holds arrows, nocked by one clip (the magazine reload style).
+		// bow: its quiver holds arrows, nocked by one clip (the magazine reload style). Round 3: it may block (right mouse raises its guard).
 		{
 			FMantleWeaponDocHoldInfo Bow = WeaponDocHold(true, { EAction::Equip, EAction::Holster, EAction::Idle, EAction::Nock, EAction::Draw, EAction::Release },
-				{ EDelivery::Projectile }, ECharge::Required, { EResource::Quiver }, EBlock::None,
+				{ EDelivery::Projectile }, ECharge::Required, { EResource::Quiver }, EBlock::Optional,
 				{ ESocket::GripL, ESocket::StringTop, ESocket::StringBottom, ESocket::Nock }, { ESocket::Sight });
 			Bow.bHasReloadStyle = true;
 			Bow.ReloadStyle = EStyle::Magazine;
