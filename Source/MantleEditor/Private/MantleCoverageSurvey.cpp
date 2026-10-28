@@ -656,6 +656,14 @@ namespace MantleCoverageSurveyPrivate
 			{
 				Losses.Add(TEXT("Fresnel rim glow dropped"));
 			}
+			if (Analysis.Fidelity2.bNormalFoamDropped)
+			{
+				Losses.Add(TEXT("foam mask on the normal dropped"));
+			}
+			if (Analysis.Fidelity2.bNormalLayersMerged)
+			{
+				Losses.Add(TEXT("two flowing layers kept as one"));
+			}
 			// #628: the bake has no instance, so per-instance variation is baked at its average.
 			if (Analysis.bPerInstanceVariation)
 			{
