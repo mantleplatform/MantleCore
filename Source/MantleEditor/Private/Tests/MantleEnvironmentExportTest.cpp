@@ -1067,6 +1067,38 @@ bool FMantleEnvironmentSunShadeTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("nor does a tree near them with open sky above"), FMantleEnvironmentExport::IsShadedFromSun(Test.World, TowardSun, Points));
 	Tree->Destroy();
 
+	// A closed box, 80 m wide and 10 m tall, under a low sun: the sun's way crosses more than 30 m of the hall before it meets the roof or a wall.
+	{
+		const FVector LowSun = FVector(FMath::Cos(FMath::DegreesToRadians(10.0)), 0.0, FMath::Sin(FMath::DegreesToRadians(10.0)));
+		TArray<AStaticMeshActor*> Box;
+		const auto AddSlab = [&](const FVector& Where, const FVector& Scale)
+		{
+			AStaticMeshActor* Slab = Test.World->SpawnActor<AStaticMeshActor>(Where, FRotator::ZeroRotator);
+			if (Slab)
+			{
+				Slab->SetMobility(EComponentMobility::Movable);
+				UStaticMeshComponent* SlabMesh = Slab->GetStaticMeshComponent();
+				SlabMesh->SetStaticMesh(Cube);
+				Slab->SetActorScale3D(Scale);
+				SlabMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+				SlabMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+				Box.Add(Slab);
+			}
+		};
+		AddSlab(FVector(0.0, 0.0, 1000.0), FVector(80.0, 80.0, 1.0));
+		AddSlab(FVector(4000.0, 0.0, 500.0), FVector(1.0, 80.0, 10.0));
+		AddSlab(FVector(-4000.0, 0.0, 500.0), FVector(1.0, 80.0, 10.0));
+		AddSlab(FVector(0.0, 4000.0, 500.0), FVector(80.0, 1.0, 10.0));
+		AddSlab(FVector(0.0, -4000.0, 500.0), FVector(80.0, 1.0, 10.0));
+		TestEqual(TEXT("a box's five slabs"), Box.Num(), 5);
+		TestTrue(TEXT("a closed hall shades its spawn point from a low sun, however far the wall is"),
+			FMantleEnvironmentExport::IsShadedFromSun(Test.World, LowSun, { FVector::ZeroVector }));
+		for (AStaticMeshActor* Slab : Box)
+		{
+			Slab->Destroy();
+		}
+	}
+
 	// A flat roof, a hundred metres wide, six metres up.
 	AStaticMeshActor* Roof = Test.World->SpawnActor<AStaticMeshActor>(FVector(0.0, 0.0, 600.0), FRotator::ZeroRotator);
 	if (!TestNotNull(TEXT("a roof"), Roof))

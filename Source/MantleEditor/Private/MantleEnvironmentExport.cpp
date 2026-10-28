@@ -67,11 +67,14 @@ namespace MantleEnvironmentExportPrivate
 	/** How far above a spawn point the sun's way is traced from, in cm: about a player's eye. */
 	constexpr double SunProbeHeight = 150.0;
 
+	/** How far the sun's way is traced, in cm: past any level's roof, since a low sun crosses a big hall or cave before it meets a wall. */
+	constexpr double SunProbeDistance = 500000.0;
+
 	/**
-	 * How far the sun's way is traced, in cm: a ceiling or a room's wall. A blocker farther off is a tree, a house or a hill in the
-	 * distance, which shades a street for a while but does not enclose the spawn point, so the level is still sunlit.
+	 * How far straight up is traced, in cm: a ceiling's height. A blocker farther off is a tree canopy, a house or a hill, which
+	 * shades a street but does not enclose the spawn point, so the level is still sunlit.
 	 */
-	constexpr double SunProbeDistance = 3000.0;
+	constexpr double SunProbeCeilingDistance = 5000.0;
 
 	/** How far to the sides of a spawn point the other probes start from, in cm: about a player's shoulder width and a half. */
 	constexpr double SunProbeSpread = 100.0;
@@ -1230,10 +1233,10 @@ bool FMantleEnvironmentExport::IsShadedFromSun(UWorld* World, const FVector& Tow
 		return false;
 	}
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(MantleSunProbe), /*bTraceComplex*/ true);
-	const auto IsBlocked = [World, &Params](const FVector& Start, const FVector& Way)
+	const auto IsBlocked = [World, &Params](const FVector& Start, const FVector& Way, const double Distance)
 	{
 		FHitResult Hit;
-		if (!World->LineTraceSingleByChannel(Hit, Start, Start + Way * SunProbeDistance, ECC_Visibility, Params))
+		if (!World->LineTraceSingleByChannel(Hit, Start, Start + Way * Distance, ECC_Visibility, Params))
 		{
 			return false;
 		}
@@ -1249,7 +1252,7 @@ bool FMantleEnvironmentExport::IsShadedFromSun(UWorld* World, const FVector& Tow
 		for (const FVector& Offset : Offsets)
 		{
 			const FVector Start = Point + Offset + FVector(0.0, 0.0, SunProbeHeight);
-			if (IsBlocked(Start, Direction) && IsBlocked(Start, FVector::UpVector))
+			if (IsBlocked(Start, Direction, SunProbeDistance) && IsBlocked(Start, FVector::UpVector, SunProbeCeilingDistance))
 			{
 				++Blocked;
 			}
