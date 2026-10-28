@@ -172,6 +172,11 @@ void FMantleMirrorBake::MirrorCollision(const UBodySetup& From, UBodySetup& To, 
 	To.InvalidatePhysicsData();
 }
 
+FTransform FMantleMirrorBake::ReflectTransform(const FTransform& Transform, const FVector& Signs)
+{
+	return FTransform(MantleMirrorBakePrivate::MirrorRotation(Transform.Rotator(), Signs).Quaternion(), Transform.GetLocation() * Signs, Transform.GetScale3D());
+}
+
 UStaticMesh* FMantleMirrorBake::MirroredCopy(UStaticMesh* Source, const FVector& Scale, FVector& OutPositiveScale, FString& OutWhy)
 {
 	using namespace MantleMirrorBakePrivate;

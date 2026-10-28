@@ -48,6 +48,12 @@ public:
 	 */
 	static void MirrorCollision(const UBodySetup& From, UBodySetup& To, const FVector& Scale);
 
+	/**
+	 * Transform conjugated by the mirror Signs (each 1 or -1): the same placement seen in mirrored space. Location is
+	 * mirrored, rotation reflected, scale kept (a mirror leaves a diagonal scale as it is).
+	 */
+	static FTransform ReflectTransform(const FTransform& Transform, const FVector& Signs);
+
 	/** Forgets every cached copy (tests; the editor's shutdown). */
 	static void ClearCache();
 };
