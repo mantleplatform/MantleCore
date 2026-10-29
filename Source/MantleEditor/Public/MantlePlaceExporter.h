@@ -434,7 +434,8 @@ public:
 	 * Whether Export leaves Actor out instead of refusing it (#818, creator friendliness first): editor-only and cinematic
 	 * actors (camera rigs, level sequences, notes, target points, runtime virtual texture volumes), a Static Mesh Actor with no
 	 * mesh, a decal with no BaseColor texture, an Ambient Sound whose Sound Cue plays no sound wave, a particle actor whose
-	 * particles Mantle cannot carry, and a Level Instance (the actors of a loaded one publish on their own, as ordinary items).
+	 * particles Mantle cannot carry, a mesh drawn only with materials that publish as flat white cards (volume fog, cloud cards:
+	 * FMantlePlaceAssets::UnpublishableMaterialWhy), and a Level Instance (the actors of a loaded one publish on their own, as ordinary items).
 	 * IsEngineInfrastructure is true for all of them, DescribeUnpublishedContent returns the ones that are a loss, and the
 	 * coverage survey lists each (Dropped for a loss).
 	 */

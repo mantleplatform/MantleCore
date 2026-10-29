@@ -3381,6 +3381,10 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 
 	const EBlendMode Blend = Material->GetBlendMode();
 	Walk.bTranslucent = IsTranslucentBlendMode(Blend);
+	if (Base->MaterialDomain == MD_Volume)
+	{
+		Out.UnpublishableWhy = TEXT("is a volume material (volume fog) with no surface Mantle can draw; its bake is a flat white card");
+	}
 	// #628: Additive is carried (alphaMode additive), so it is not a BlendMode loss.
 	if (Blend == BLEND_Modulate || Blend == BLEND_AlphaComposite || Blend == BLEND_AlphaHoldout
 		|| Blend == BLEND_TranslucentColoredTransmittance)
@@ -3538,6 +3542,13 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 					DropWaves();
 					Carry({ MP_WorldPositionOffset });
 				}
+			}
+			// A depth fade whose opacity is a shape the evaluator cannot read (a gradient function, noise) and with no normal map, no
+			// single-layer water: a cloud card, not water. The guessed opacity would draw one even sheet, so the mesh is left out.
+			if (!Fidelity.Water.bSingleLayer && !Fidelity.Water.bOpacityRead && Fidelity.Water.Normals.Num() == 0 && !Fidelity.Water.bNormalPanned)
+			{
+				Out.UnpublishableWhy = FString::Printf(TEXT("is translucent with a shape the export cannot read (%s), which would publish as one even see-through sheet"),
+					Fidelity.Water.Why.IsEmpty() ? TEXT("a depth fade over a gradient or noise") : *Fidelity.Water.Why);
 			}
 			Carry({ MP_Opacity });
 			if (Fidelity.Water.bColour)
@@ -3702,6 +3713,17 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 	// #471: a pure base-colour tint is carried; any other vertex colour use is the loss, and then the tint is not carried either.
 	Out.bVertexColorTintsBaseColor = Walk.bBaseColorTint && !Out.Has(EMantleMaterialLoss::VertexColor);
 	return Out;
+}
+
+bool FMantlePlaceAssets::UnpublishableMaterialWhy(const UMaterialInterface* Material, FString& OutWhy)
+{
+	const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
+	if (!Base || !(Base->MaterialDomain == MD_Volume || IsTranslucentBlendMode(Material->GetBlendMode())))
+	{
+		return false;
+	}
+	OutWhy = AnalyzeMaterial(Material).UnpublishableWhy;
+	return !OutWhy.IsEmpty();
 }
 
 bool FMantlePlaceAssets::PublishesAsCarPaint(const UMaterialInterface* Material)

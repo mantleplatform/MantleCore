@@ -246,6 +246,14 @@ struct MANTLEEDITOR_API FMantleMaterialAnalysis
 	 */
 	bool bPerInstanceVariation = false;
 
+	/**
+	 * The bake of this material is a flat white card, so a mesh drawn with only such materials is left out of the place (and said):
+	 * a Volume domain material (volume fog has no surface to bake), or a translucent material whose shape is a depth fade over a
+	 * gradient or noise the graph evaluator cannot read and that has no water in it (a cloud card): the guessed constant opacity
+	 * would draw one even sheet. Empty when it publishes. See FMantlePlaceAssets::UnpublishableMaterialWhy.
+	 */
+	FString UnpublishableWhy;
+
 	bool Has(EMantleMaterialLoss Loss) const { return EnumHasAnyFlags(Losses, Loss); }
 };
 
@@ -759,6 +767,12 @@ public:
 	 * At most one of wind, worldAligned and layerBlend is recognised (in that order).
 	 */
 	static FMantleMaterialAnalysis AnalyzeMaterial(const UMaterialInterface* Material);
+
+	/**
+	 * Whether Material would publish as a flat white card (FMantleMaterialAnalysis::UnpublishableWhy); OutWhy says why, phrased to
+	 * follow "uses material 'X', which". Opaque, masked and surface-only materials return false without a graph walk.
+	 */
+	static bool UnpublishableMaterialWhy(const UMaterialInterface* Material, FString& OutWhy);
 
 	/**
 	 * True when Material publishes as Mantle's car paint (shading carPaint, #487): a surface
