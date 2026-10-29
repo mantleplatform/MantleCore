@@ -234,6 +234,18 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName ShootingStyle = NAME_None;
 
+	/** Round 4 step 2: what a tap does on a staff that casts spells (bolt, handFireball or aimedShock); unset uses the hold's first, bolt. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	FName TapLook = NAME_None;
+
+	/** Round 4 step 2: what a hold does on a staff (beam, chargedBlast, handFireballHeld, skyCall or whirlCharge); unset is beam on a staff with a beam, else chargedBlast. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	FName HoldLook = NAME_None;
+
+	/** Round 4 step 5: how the weapon is held for a hold with more than one stance (a spear beside a shield: ready or shoulder); unset uses the hold's first. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	FName Stance = NAME_None;
+
 	/** The creator's UStaticMesh or USkeletalMesh. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	TSoftObjectPtr<UObject> Model;
@@ -283,6 +295,8 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 100.0, ClampMax = 3000.0)) float ShieldThrowRange = 1000.0f;
 	/** Round 3 step 12: damage to each target the thrown shield hits (once per throw). */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 1000.0)) float ShieldThrowDamage = 25.0f;
+	/** Round 4 step 7: a staff's own melee on the Melee key (the WZ three-hit combo, hold for the leap): off by default. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") bool bStaffMelee = false;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceProjectile Projectile;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceSweep Sweep;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceBeam Beam;

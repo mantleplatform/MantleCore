@@ -204,6 +204,103 @@ void MantleWeaponBuilderLogic::SetDelivery(UMantleWeaponSource& Source, EMantleW
 	}
 }
 
+bool MantleWeaponBuilderLogic::StaffHasBeam(const UMantleWeaponSource& Source)
+{
+	return Source.Hold == EMantleWeaponHold::Staff && DeliveryOf(Source) == EMantleWeaponDocDelivery::Beam;
+}
+
+bool MantleWeaponBuilderLogic::StaffCastsSpells(const UMantleWeaponSource& Source)
+{
+	if (Source.Hold != EMantleWeaponHold::Staff)
+	{
+		return false;
+	}
+	const EMantleWeaponDocDelivery Delivery = DeliveryOf(Source);
+	return Delivery == EMantleWeaponDocDelivery::Projectile || (Delivery == EMantleWeaponDocDelivery::Beam && Source.bSpellsBesideBeam);
+}
+
+TArray<FString> MantleWeaponBuilderLogic::OfferedHoldLooks(const UMantleWeaponSource& Source)
+{
+	TArray<FString> Offered;
+	if (Source.Hold != EMantleWeaponHold::Staff)
+	{
+		return Offered;
+	}
+	const TConstArrayView<const TCHAR*> BeamLooks = FMantleWeaponDocument::GetBeamLooks();
+	const bool bSpells = StaffCastsSpells(Source);
+	for (const FString& Look : FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Staff).HoldLooks)
+	{
+		const bool bBeamLook = BeamLooks.ContainsByPredicate([&Look](const TCHAR* Name) { return Look.Equals(Name, ESearchCase::CaseSensitive); });
+		if (bBeamLook ? StaffHasBeam(Source) : (bSpells && Source.Charge.bEnabled))
+		{
+			Offered.Add(Look);
+		}
+	}
+	return Offered;
+}
+
+TArray<FString> MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold Hold)
+{
+	// Round 4 step 8: every stance is built (the Battle Mage too), so the hold's own list.
+	const TArray<FString>& Stances = FMantleWeaponDocument::GetHoldInfo(ToDocHold(Hold)).Stances;
+	return Stances.Num() > 1 ? Stances : TArray<FString>();
+}
+
+bool MantleWeaponBuilderLogic::IsBattleMage(const UMantleWeaponSource& Source)
+{
+	return Source.Hold == EMantleWeaponHold::Staff && Source.Stance.ToString().Equals(FMantleWeaponDocument::GetBattleMageStance(), ESearchCase::CaseSensitive);
+}
+
+TArray<FString> MantleWeaponBuilderLogic::OfferedEquipStyles(const UMantleWeaponSource& Source)
+{
+	const FMantleWeaponDocHoldInfo& Info = FMantleWeaponDocument::GetHoldInfo(ToDocHold(Source.Hold));
+	return (Info.EquipStylesStance.IsEmpty() || Source.Stance.ToString().Equals(Info.EquipStylesStance, ESearchCase::CaseSensitive)) ? Info.EquipStyles : TArray<FString>();
+}
+
+TArray<FString> MantleWeaponBuilderLogic::OfferedDodgeStyles(const UMantleWeaponSource& Source)
+{
+	const FMantleWeaponDocHoldInfo& Info = FMantleWeaponDocument::GetHoldInfo(ToDocHold(Source.Hold));
+	return (Info.DodgeStylesStance.IsEmpty() || Source.Stance.ToString().Equals(Info.DodgeStylesStance, ESearchCase::CaseSensitive)) ? Info.DodgeStyles : TArray<FString>();
+}
+
+void MantleWeaponBuilderLogic::DropInvalidStyles(UMantleWeaponSource& Source)
+{
+	if (!Source.EquipStyle.IsNone() && !OfferedEquipStyles(Source).Contains(Source.EquipStyle.ToString()))
+	{
+		Source.EquipStyle = NAME_None;
+	}
+	if (!Source.DodgeStyle.IsNone() && !OfferedDodgeStyles(Source).Contains(Source.DodgeStyle.ToString()))
+	{
+		Source.DodgeStyle = NAME_None;
+	}
+}
+
+void MantleWeaponBuilderLogic::DropInvalidLooks(UMantleWeaponSource& Source)
+{
+	// Round 4 step 8: a Battle Mage has no tap or hold look (its left mouse swings the staff) and no charge (it never charges). It casts spells,
+	// never a beam alone, so a staff with a beam and no spells beside it is switched to spells; a beam with spells beside it stays as it is.
+	if (IsBattleMage(Source))
+	{
+		if (StaffHasBeam(Source) && !Source.bSpellsBesideBeam)
+		{
+			SetDelivery(Source, EMantleWeaponSourceDelivery::Projectile);
+		}
+		Source.TapLook = NAME_None;
+		Source.HoldLook = NAME_None;
+		Source.Charge.bEnabled = false;
+		Source.Charge.bRequired = false;
+		return;
+	}
+	if (!StaffCastsSpells(Source))
+	{
+		Source.TapLook = NAME_None;
+	}
+	if (!Source.HoldLook.IsNone() && !OfferedHoldLooks(Source).Contains(Source.HoldLook.ToString()))
+	{
+		Source.HoldLook = NAME_None;
+	}
+}
+
 FText MantleWeaponBuilderLogic::HoldLabel(EMantleWeaponHold Hold)
 {
 	switch (Hold)

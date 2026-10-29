@@ -198,6 +198,38 @@ namespace MantleWeaponBuilderPanelPrivate
 		return FText::FromString(Style);
 	}
 
+	/** Round 4 step 2: what a tap and what a hold do on a staff, in plain words. */
+	FText TapLookLabel(const FString& Look)
+	{
+		if (Look == TEXT("bolt")) return LOCTEXT("TapLookBolt", "Bolt from the staff (taps take turns)");
+		if (Look == TEXT("handFireball")) return LOCTEXT("TapLookHandFireball", "Fireball from the left hand");
+		if (Look == TEXT("aimedShock")) return LOCTEXT("TapLookAimedShock", "Aimed shock");
+		return FText::FromString(Look);
+	}
+
+	FText StanceLabel(const FString& Stance)
+	{
+		if (Stance == TEXT("ready")) return LOCTEXT("StanceReady", "Ready");
+		if (Stance == TEXT("shoulder")) return LOCTEXT("StanceShoulder", "On the shoulder");
+		if (Stance == TEXT("greatsword")) return LOCTEXT("StanceGreatsword", "Greatsword");
+		if (Stance == TEXT("longsword")) return LOCTEXT("StanceLongsword", "Longsword");
+		if (Stance == TEXT("wizard")) return LOCTEXT("StanceWizard", "Wizard");
+		if (Stance == TEXT("battleMage")) return LOCTEXT("StanceBattleMage", "Battle Mage");
+		return FText::FromString(Stance);
+	}
+
+	FText HoldLookLabel(const FString& Look)
+	{
+		if (Look == TEXT("beam")) return LOCTEXT("HoldLookBeam", "Beam");
+		if (Look == TEXT("chargedBlast")) return LOCTEXT("HoldLookChargedBlast", "Charged blast");
+		if (Look == TEXT("handFireballHeld")) return LOCTEXT("HoldLookHandFireballHeld", "Fireball held in the left hand");
+		if (Look == TEXT("skyCall")) return LOCTEXT("HoldLookSkyCall", "Sky call");
+		if (Look == TEXT("groundChannel")) return LOCTEXT("HoldLookGroundChannel", "Beam from the planted staff");
+		if (Look == TEXT("whirlCharge")) return LOCTEXT("HoldLookWhirlCharge", "Whirl charge");
+		if (Look == TEXT("whirlBeam")) return LOCTEXT("HoldLookWhirlBeam", "Whirl beam");
+		return FText::FromString(Look);
+	}
+
 	FText BuilderHoldBlurb(EMantleWeaponHold Hold)
 	{
 		switch (Hold)
@@ -300,6 +332,46 @@ namespace MantleWeaponBuilderPanelPrivate
 					for (const FItem& Item : *KeepAlive)
 						if (Item.IsValid() && Item->Key == Current) return Item->Value;
 					return KeepAlive->IsEmpty() ? FText::GetEmpty() : KeepAlive->Last()->Value;
+				})
+			];
+	}
+
+	/** Round 4 step 2: a choice list that is asked again each time it opens (GetChoices), for options that depend on other settings (a staff's hold
+	 *  looks follow its beam and its charge). The shown value is Get's, found in the list as it stands now (empty when it is not offered). */
+	template<typename TValue>
+	TSharedRef<SWidget> MakeLiveChoiceControl(TFunction<TArray<TPair<TValue, FText>>()> GetChoices, TFunction<TValue()> Get, TFunction<void(TValue)> Set)
+	{
+		using FChoice = TPair<TValue, FText>;
+		using FItem = TSharedPtr<FChoice>;
+		TSharedRef<TArray<FItem>> Items = MakeShared<TArray<FItem>>();
+		const TFunction<void()> Fill = [Items, GetChoices]()
+		{
+			Items->Reset();
+			for (const TPair<TValue, FText>& Choice : GetChoices())
+			{
+				Items->Add(MakeShared<FChoice>(Choice));
+			}
+		};
+		Fill();
+		TSharedPtr<TArray<FItem>> KeepAlive = Items;
+		return SNew(SComboBox<FItem>)
+			.OptionsSource(KeepAlive.Get())
+			.OnComboBoxOpening_Lambda([Fill]() { Fill(); })
+			.OnGenerateWidget_Lambda([KeepAlive](FItem Item)
+			{
+				return SNew(STextBlock).Text(Item.IsValid() ? Item->Value : FText::GetEmpty());
+			})
+			.OnSelectionChanged_Lambda([Set](FItem Item, ESelectInfo::Type)
+			{
+				if (Item.IsValid()) Set(Item->Key);
+			})
+			[
+				SNew(STextBlock).Text_Lambda([KeepAlive, Get, GetChoices]
+				{
+					const TValue Current = Get();
+					for (const TPair<TValue, FText>& Choice : GetChoices())
+						if (Choice.Key == Current) return Choice.Value;
+					return FText::GetEmpty();
 				})
 			];
 	}
@@ -696,6 +768,9 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->ComboSet = NAME_None;
 	Working->Quiver = NAME_None;
 	Working->ShootingStyle = NAME_None;
+	Working->TapLook = NAME_None;
+	Working->HoldLook = NAME_None;
+	Working->Stance = NAME_None;
 	Working->bOverrideColor = false;
 	Working->Color = FColor(40, 110, 160);
 	Working->Charge = FMantleWeaponSourceCharge();
@@ -712,6 +787,7 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->bShieldThrow = false;
 	Working->ShieldThrowRange = 1000.f;
 	Working->ShieldThrowDamage = 25.f;
+	Working->bStaffMelee = false;
 	Working->Projectile = FMantleWeaponSourceProjectile();
 	Working->Sweep = FMantleWeaponSourceSweep();
 	Working->Beam = FMantleWeaponSourceBeam();
@@ -987,8 +1063,12 @@ FText SMantleWeaponBuilder::SummaryText() const
 	if (!Working->ComboSet.IsNone()) Lines.Add(FString::Printf(TEXT("Combo: %s"), *ComboSetLabel(Working->ComboSet.ToString()).ToString()));
 	if (HoldInfo(Working->Hold).bHasBash && !Working->bBash) Lines.Add(TEXT("Bash: off"));
 	if (HoldInfo(Working->Hold).bHasShieldThrow && Working->bShieldThrow) Lines.Add(TEXT("Throw: on"));
+	if (HoldInfo(Working->Hold).bHasStaffMelee && Working->bStaffMelee && !MantleWeaponBuilderLogic::IsBattleMage(*Working)) Lines.Add(TEXT("Staff melee: on"));
 	if (!Working->Quiver.IsNone()) Lines.Add(FString::Printf(TEXT("Quiver: %s"), *QuiverLabel(Working->Quiver.ToString()).ToString()));
 	if (!Working->ShootingStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Shooting style: %s"), *ShootingStyleLabel(Working->ShootingStyle.ToString()).ToString()));
+	if (!Working->TapLook.IsNone()) Lines.Add(FString::Printf(TEXT("Tap: %s"), *TapLookLabel(Working->TapLook.ToString()).ToString()));
+	if (!Working->HoldLook.IsNone()) Lines.Add(FString::Printf(TEXT("Hold: %s"), *HoldLookLabel(Working->HoldLook.ToString()).ToString()));
+	if (!Working->Stance.IsNone()) Lines.Add(FString::Printf(TEXT("Stance: %s"), *StanceLabel(Working->Stance.ToString()).ToString()));
 	if (Working->Parts.Num() > 0) Lines.Add(FString::Printf(TEXT("Moving parts: %d"), Working->Parts.Num()));
 	if (Working->Attachments.Num() > 0) Lines.Add(FString::Printf(TEXT("Fixed details: %d"), Working->Attachments.Num()));
 	if (!Working->FireSound.IsNull() || !Working->FireSuppressedSound.IsNull()) Lines.Add(TEXT("Custom sound: set"));
@@ -1606,6 +1686,31 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 	}
 
 	AddHeading(LOCTEXT("DeliveryHeading", "How it works"));
+	// Round 4 step 5: how the weapon is held, where the hold has more than one built stance (a spear: ready, or resting on the shoulder; a two-handed
+	// sword: greatsword or longsword). Step 6: first among the rows, because the longsword's Draw style and Dodge rows below depend on it.
+	const TArray<FString> Stances = MantleWeaponBuilderLogic::OfferedStances(Working->Hold);
+	if (Stances.Num() > 1)
+	{
+		TArray<TPair<FName, FText>> StanceChoices;
+		StanceChoices.Emplace(NAME_None, FText::Format(LOCTEXT("StanceDefault", "Hold default ({0})"), StanceLabel(Stances[0])));
+		for (const FString& Stance : Stances)
+		{
+			StanceChoices.Emplace(FName(*Stance), StanceLabel(Stance));
+		}
+		const FText StanceTip = Working->Hold == EMantleWeaponHold::Melee2h
+			? LOCTEXT("StanceTwoHandedTip", "How the two-handed sword fights: the greatsword (the default) is heavy, with a spin and three charge levels. The longsword is lighter and quicker, with a three-hit combo, one charged thrust, a lunging power thrust, three dodges (the Dodge row) and a back or hip draw (the Draw style row).")
+			: Working->Hold == EMantleWeaponHold::Staff
+			? LOCTEXT("StanceStaffTip", "How the staff is held: the wizard (the default) holds it upright and casts. The Battle Mage holds it low and reversed and fights up close: left mouse and the Melee key swing a four-hit combo, holding the Melee key leaps and slams the staff down, and with the aim held left mouse throws fireballs from the left hand. A Battle Mage never charges or channels a beam (it needs the projectile attack style for its fireballs), and has no Tap, Hold or charge choice.")
+			: LOCTEXT("StanceTip", "How the spear is carried: ready, held up at all times (the default), or resting on the shoulder out of a fight. On the shoulder it comes down with the first attack, block or throw and goes back up after five quiet seconds. It shows only while the spear is held with a shield.");
+		AddRow(LOCTEXT("Stance", "Stance"), StanceTip,
+			MakeChoiceControl<FName>(StanceChoices, [this] { return Working->Stance; }, [this](FName Value)
+			{
+				Working->Stance = Value;
+				// The longsword's dodge and draw go with it: a two-handed sword back in its own stance keeps neither. A Battle Mage keeps no look.
+				MantleWeaponBuilderLogic::DropInvalidStyles(*Working);
+				MantleWeaponBuilderLogic::DropInvalidLooks(*Working);
+			}));
+	}
 	if (Info.EquipStyles.Num() > 1)
 	{
 		TArray<TPair<FName, FText>> EquipStyles;
@@ -1617,9 +1722,13 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		}
 		const FText EquipStyleTip = Working->Hold == EMantleWeaponHold::Bow
 			? LOCTEXT("EquipStyleBowTip", "The normal draw comes from the back. Equip 01–04 play after that draw; the standard back holster and carry are kept.")
-			: LOCTEXT("EquipStyleMeleeTip", "When paired with a shield, choose the sword's hip draw, back draw or overhead flourish. The hip draw is the default.");
-		AddRow(LOCTEXT("EquipStyle", "Draw style"), EquipStyleTip,
-			MakeChoiceControl<FName>(EquipStyles, [this] { return Working->EquipStyle; }, [this](FName Value) { Working->EquipStyle = Value; }));
+			: Working->Hold == EMantleWeaponHold::Melee2h
+				? LOCTEXT("EquipStyleLongswordTip", "How the longsword is drawn: from the back over the shoulder (the default) or from the hip. The greatsword has one draw.")
+				: LOCTEXT("EquipStyleMeleeTip", "When paired with a shield, choose the sword's hip draw, back draw or overhead flourish. The hip draw is the default.");
+		// Round 4 step 6: a two-handed sword draws one way unless it is the longsword, so the row shows with that stance only.
+		AddRowWhen(LOCTEXT("EquipStyle", "Draw style"), EquipStyleTip,
+			MakeChoiceControl<FName>(EquipStyles, [this] { return Working->EquipStyle; }, [this](FName Value) { Working->EquipStyle = Value; }),
+			[this] { return MantleWeaponBuilderLogic::OfferedEquipStyles(*Working).Num() > 1 ? EVisibility::Visible : EVisibility::Collapsed; });
 	}
 	// Round 2: the dodge (Left Alt, gamepad B) where the hold has more than one look; a roll is the same for every look.
 	if (Info.DodgeStyles.Num() > 1)
@@ -1632,9 +1741,13 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		}
 		const FText DodgeStyleTip = Working->Hold == EMantleWeaponHold::Unarmed
 			? LOCTEXT("DodgeStyleUnarmedTip", "How the holder dodges: a long dash (the default) or a short sidestep.")
+			: Working->Hold == EMantleWeaponHold::Melee2h
+			? LOCTEXT("DodgeStyleLongswordTip", "How the longsword dodges: an upright step (the default), a crouched sidestep or a long dash. The greatsword has one dodge.")
 			: LOCTEXT("DodgeStyleShieldTip", "How the holder dodges with a shield: an upright step (the default), a crouched sidestep or a long dash. A sword uses it while paired with a shield; without one it falls back to the shield's.");
-		AddRow(LOCTEXT("DodgeStyle", "Dodge"), DodgeStyleTip,
-			MakeChoiceControl<FName>(DodgeStyles, [this] { return Working->DodgeStyle; }, [this](FName Value) { Working->DodgeStyle = Value; }));
+		// Round 4 step 6: a two-handed sword has one dodge unless it is the longsword, so the row shows with that stance only.
+		AddRowWhen(LOCTEXT("DodgeStyle", "Dodge"), DodgeStyleTip,
+			MakeChoiceControl<FName>(DodgeStyles, [this] { return Working->DodgeStyle; }, [this](FName Value) { Working->DodgeStyle = Value; }),
+			[this] { return MantleWeaponBuilderLogic::OfferedDodgeStyles(*Working).Num() > 1 ? EVisibility::Visible : EVisibility::Collapsed; });
 	}
 	// Round 3: the combo where the hold has more than one chain of attacks.
 	if (Info.ComboSets.Num() > 1)
@@ -1679,6 +1792,35 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 			LOCTEXT("ShootingStyleTip", "How the archer holds the bow to shoot: the classic archer (the default), side-on with the string at the cheek, or held flat at chest height like a crossbow. The aim, draw and release follow it, standing and crouched."),
 			MakeChoiceControl<FName>(Styles, [this] { return Working->ShootingStyle; }, [this](FName Value) { Working->ShootingStyle = Value; }));
 	}
+	// Round 4 step 2: what a tap and what a hold do on a staff that throws spells.
+	if (Info.TapLooks.Num() > 1)
+	{
+		TArray<TPair<FName, FText>> TapLooks;
+		TapLooks.Emplace(NAME_None, FText::Format(LOCTEXT("TapLookDefault", "Hold default ({0})"), TapLookLabel(Info.TapLooks[0])));
+		for (const FString& Look : Info.TapLooks)
+		{
+			TapLooks.Emplace(FName(*Look), TapLookLabel(Look));
+		}
+		AddRowWhen(LOCTEXT("TapLook", "Tap"),
+			LOCTEXT("TapLookTip", "What a tap casts: a bolt from the staff's head (taps in a row take turns between three swings), a fireball from the left hand, or the aimed shock cast at once."),
+			MakeChoiceControl<FName>(TapLooks, [this] { return Working->TapLook; }, [this](FName Value) { Working->TapLook = Value; }),
+			[this] { return MantleWeaponBuilderLogic::StaffCastsSpells(*Working) && !MantleWeaponBuilderLogic::IsBattleMage(*Working) ? EVisibility::Visible : EVisibility::Collapsed; });
+		// The hold looks follow the beam and the charge: the beam looks only with a beam, the charge looks only with a charged attack on.
+		AddRowWhen(LOCTEXT("HoldLook", "Hold"),
+			LOCTEXT("HoldLookTip", "What holding the attack button does, aiming or not: channel the beam (a staff with a beam: thrust forward, from the staff planted in a crouch, or whirled overhead), or charge a stronger spell (needs the charged attack on): a charged blast, a fireball held in the left hand, a sky call or a whirl."),
+			MakeLiveChoiceControl<FName>([this]
+			{
+				TArray<TPair<FName, FText>> HoldLooks;
+				const FString Default = MantleWeaponBuilderLogic::StaffHasBeam(*Working) ? TEXT("beam") : TEXT("chargedBlast");
+				HoldLooks.Emplace(NAME_None, FText::Format(LOCTEXT("HoldLookDefault", "Hold default ({0})"), HoldLookLabel(Default)));
+				for (const FString& Look : MantleWeaponBuilderLogic::OfferedHoldLooks(*Working))
+				{
+					HoldLooks.Emplace(FName(*Look), HoldLookLabel(Look));
+				}
+				return HoldLooks;
+			}, [this] { return Working->HoldLook; }, [this](FName Value) { Working->HoldLook = Value; }),
+			[this] { return MantleWeaponBuilderLogic::StaffCastsSpells(*Working) && !MantleWeaponBuilderLogic::IsBattleMage(*Working) ? EVisibility::Visible : EVisibility::Collapsed; });
+	}
 	if (Deliveries.Num() > 2)
 	{
 		// #905: SetDelivery starts a gun's beam or launched round from usable numbers, and keeps the effect style one the attack can use.
@@ -1688,12 +1830,17 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 			MakeChoiceControl<EMantleWeaponSourceDelivery>(Deliveries, [this] { return Working->Delivery; }, [this](EMantleWeaponSourceDelivery V)
 			{
 				MantleWeaponBuilderLogic::SetDelivery(*Working, V);
+				MantleWeaponBuilderLogic::DropInvalidLooks(*Working);
 			}));
 	}
 	// #909: a staff's held beam can also throw spells (a tap casts, holding is the beam).
 	AddToggleWhen(LOCTEXT("SpellsBesideBeam", "Also throws spells"), LOCTEXT("SpellsBesideBeamTip", "A tap throws a spell and holding the button channels the beam. While aiming, a tap throws an aimed spell and holding charges one (with a charged attack on)."),
 		[this] { return Working->bSpellsBesideBeam; },
-		[this](bool V) { Working->bSpellsBesideBeam = V; },
+		[this](bool V)
+		{
+			Working->bSpellsBesideBeam = V;
+			MantleWeaponBuilderLogic::DropInvalidLooks(*Working);
+		},
 		[this] { return Working->Hold == EMantleWeaponHold::Staff && EffectiveDelivery(*Working) == EMantleWeaponDocDelivery::Beam ? EVisibility::Visible : EVisibility::Collapsed; },
 		[] { return true; });
 	if (Resources.Num() > 2)
@@ -1827,7 +1974,9 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 
 	const TFunction<EVisibility()> HasCharge = [this]
 	{
-		return HoldInfo(Working->Hold).Charge != EMantleWeaponDocChargeRule::None ? EVisibility::Visible : EVisibility::Collapsed;
+		// Round 4 step 8: a Battle Mage never charges (the reader refuses its charge).
+		return HoldInfo(Working->Hold).Charge != EMantleWeaponDocChargeRule::None && !MantleWeaponBuilderLogic::IsBattleMage(*Working)
+			? EVisibility::Visible : EVisibility::Collapsed;
 	};
 	const TFunction<EVisibility()> ActiveCharge = [this, HasCharge]
 	{
@@ -1838,7 +1987,11 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 	AddHeading(LOCTEXT("ChargeHeading", "Charge and guard"));
 	AddToggleWhen(LOCTEXT("EnableCharge", "Allow a charged attack"), LOCTEXT("EnableChargeTip", "Let players hold the attack button to build a stronger attack."),
 		[this] { return Working->Charge.bEnabled || HoldInfo(Working->Hold).Charge == EMantleWeaponDocChargeRule::Required; },
-		[this](bool V) { Working->Charge.bEnabled = V; }, HasCharge,
+		[this](bool V)
+		{
+			Working->Charge.bEnabled = V;
+			MantleWeaponBuilderLogic::DropInvalidLooks(*Working);
+		}, HasCharge,
 		[this] { return HoldInfo(Working->Hold).Charge != EMantleWeaponDocChargeRule::Required; });
 	AddFloatWhen(LOCTEXT("ChargeSeconds", "Time to charge (seconds)"), LOCTEXT("ChargeSecondsTip", "How long a full charge takes."), 0.1f, 10.f, 0.1f,
 		[this] { return Working->Charge.Seconds; }, [this](float V) { Working->Charge.Seconds = FMath::Clamp(V, 0.1f, 10.f); }, ActiveCharge);
@@ -1859,7 +2012,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 	{
 		return HoldInfo(Working->Hold).BlockRule != EMantleWeaponDocBlockRule::None;
 	};
-	AddToggleWhen(LOCTEXT("Block", "Can block"), LOCTEXT("BlockTip", "This hold can use its block action."),
+	AddToggleWhen(LOCTEXT("Block", "Can block"), LOCTEXT("BlockTip", "This hold can use its block action. On a bow or a staff, right mouse blocks instead of zooming or aiming."),
 		[this] { return Working->bBlock; }, [this](bool V) { Working->bBlock = V; },
 		[this, CanBlock] { return CanBlock() ? EVisibility::Visible : EVisibility::Collapsed; },
 		[this] { return HoldInfo(Working->Hold).BlockRule != EMantleWeaponDocBlockRule::Required; });
@@ -1894,6 +2047,13 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		LOCTEXT("ShieldThrowDamageTip", "How much the thrown shield hurts each player it hits (once per throw)."),
 		0.f, 1000.f, 1.f, [this] { return Working->ShieldThrowDamage; }, [this](float V) { Working->ShieldThrowDamage = FMath::Clamp(V, 0.f, 1000.f); },
 		[this, CanThrowShield] { return CanThrowShield() && Working->bShieldThrow ? EVisibility::Visible : EVisibility::Collapsed; });
+	// Round 4 step 7: a staff may fight with the Melee key (a three-hit combo, and a hold for a leap), off by default. Step 8: a Battle Mage always
+	// does (its own combo), so the row is hidden for it.
+	const TFunction<bool()> CanStaffMelee = [this] { return HoldInfo(Working->Hold).bHasStaffMelee && !MantleWeaponBuilderLogic::IsBattleMage(*Working); };
+	AddToggleWhen(LOCTEXT("StaffMelee", "Fight with the Melee key"),
+		LOCTEXT("StaffMeleeTip", "Tapping the Melee key swings the staff in a three-hit combo; holding it leaps forward and slams the staff down. Each hit does the weapon's damage (the leap twice it), and can be blocked and parried like a sword's. Off, the Melee key does a plain weapon strike."),
+		[this] { return Working->bStaffMelee; }, [this](bool V) { Working->bStaffMelee = V; },
+		[CanStaffMelee] { return CanStaffMelee() ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
 	const bool bCanOverrideHandedness = IsFirearm(Working->Hold);
 	AddToggleWhen(LOCTEXT("OverrideTwoHanded", "Change how many hands hold it"), LOCTEXT("OverrideTwoHandedTip", "Use this hold with one hand or both. The usual setting follows the hold."),
 		[this] { return Working->bOverrideTwoHanded; }, [this](bool V) { Working->bOverrideTwoHanded = V; },

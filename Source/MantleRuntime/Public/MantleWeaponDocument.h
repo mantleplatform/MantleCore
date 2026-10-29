@@ -300,8 +300,22 @@ struct FMantleWeaponDocHoldInfo
 	bool bHasBash = false;
 	/** Round 3 step 12: the hold may throw itself and catch it again (x-throw: the shield). */
 	bool bHasShieldThrow = false;
+	/** Round 4 step 7: the hold may fight with the Melee key in its own combo (x-staffMelee: the staff). */
+	bool bHasStaffMelee = false;
 	/** Round 3: the shooting style ids (x-shootingStyles) of a hold held more than one way to shoot (the bow), the default first. Empty: one way. */
 	TArray<FString> ShootingStyles;
+	/** Round 4 step 2: the tap looks (x-tapLooks) of a hold whose tap can look more than one way (the staff), the default first. Empty: no choice. */
+	TArray<FString> TapLooks;
+	/** Round 4 step 2: the hold looks (x-holdLooks) of a hold whose hold can look more than one way (the staff), the default first
+	 *  (a staff's real default is beam when it has a beam block, else chargedBlast: see GetBeamLooks). Empty: no choice. */
+	TArray<FString> HoldLooks;
+	/** Round 4 step 5: the stance ids (x-stances) of a hold that can be held more than one way, the default first. Empty: one stance, no choice.
+	 *  Every one is built (step 8 built the Battle Mage, and x-stancesLater is gone). */
+	TArray<FString> Stances;
+	/** Round 4 step 6 (x-withStance): the stance a document must hold the weapon in to pick one of EquipStyles / DodgeStyles. Empty: any stance of
+	 *  the hold (a sword's styles do not depend on one). A melee_2h picks its back or hip draw and its dodge only as a longsword. */
+	FString EquipStylesStance;
+	FString DodgeStylesStance;
 };
 
 /** The pre-#840 name: an archetype's entry is its firearm hold's. */
@@ -737,6 +751,16 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<FString> Quiver;
 	/** Round 3: the document's style. Unset: a, the first in the hold's x-shootingStyles (a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> ShootingStyle;
+	/** Round 4 step 2: what a tap does on a staff. Unset: bolt, the first in the hold's x-tapLooks (a creator selection, not an asset path). */
+	TMantleWeaponDocValue<FString> TapLook;
+	/** Round 4 step 2: what a hold does on a staff. Unset: beam on a staff with a beam block, else chargedBlast (a creator selection, not an asset path). */
+	TMantleWeaponDocValue<FString> HoldLook;
+	/** Round 4 step 5: the stance the hold is held in. Unset: the first in the hold's x-stances, the hold's own clip set (a creator selection,
+	 *  not an asset path). A spear's shoulder plays only beside a shield (the pair's clip set, HCS_SpearShield_Shoulder). */
+	TMantleWeaponDocValue<FString> Stance;
+	/** Round 4 step 7: a staff's own melee on the Melee key (a three-hit combo, and a hold the leaping power move). Unset: off, the Melee key
+	 *  keeps the generic weapon-butt strike. */
+	TMantleWeaponDocValue<bool> bStaffMelee{ false };
 	/** sRGB. */
 	TMantleWeaponDocValue<FColor> Color{ FColor(40, 110, 160) };
 	/** #904: sRGB, multiplied into the element's effects; only where the weapon has an element (GetElement). Unset: the element's own colours. */
@@ -876,6 +900,13 @@ public:
 
 	/** #1025: what a consumable (delivery use) refuses, the top-level keys of a weapon's numbers and attachments (its mesh shows alone). */
 	static TConstArrayView<const TCHAR*> GetUseRefusedFields();
+
+	/** Round 4 step 2: schema x-beamLooks, the hold looks that channel the staff's beam (they need its beam block; the others charge). */
+	static TConstArrayView<const TCHAR*> GetBeamLooks();
+
+	/** Round 4 step 8: the staff's Battle Mage stance ("battleMage"). A document in it fights with its staff (staffMelee on: true or absent, never
+	 *  false) and takes no tapLook or holdLook (the validator refuses them; the weapon builder hides their rows). */
+	static const TCHAR* GetBattleMageStance();
 
 	/** The document's text, UTF-8-ready, "\n" line ends, a line end at the end. */
 	static FString Write(const FMantleWeaponDesc& Desc);

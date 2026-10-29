@@ -221,7 +221,7 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 	if (!Source.EquipStyle.IsNone())
 	{
 		const FString Style = Source.EquipStyle.ToString();
-		if (!Info.EquipStyles.Contains(Style))
+		if (!OfferedEquipStyles(Source).Contains(Style))
 		{
 			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedEquipStyle", "This hold does not offer the {0} draw style."), FText::FromString(Style)));
 			return false;
@@ -231,7 +231,7 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 	if (!Source.DodgeStyle.IsNone())
 	{
 		const FString Style = Source.DodgeStyle.ToString();
-		if (!Info.DodgeStyles.Contains(Style))
+		if (!OfferedDodgeStyles(Source).Contains(Style))
 		{
 			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedDodgeStyle", "This hold does not offer the {0} dodge."), FText::FromString(Style)));
 			return false;
@@ -269,6 +269,38 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 			return false;
 		}
 		Desc.ShootingStyle.Set(Style);
+	}
+	// Round 4 step 2: what a tap and what a hold do on a staff. None picked writes nothing (the bolt; the beam, else the charged blast).
+	if (!Source.TapLook.IsNone())
+	{
+		const FString Look = Source.TapLook.ToString();
+		if (!Info.TapLooks.Contains(Look))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedTapLook", "This hold has no tap look {0}."), FText::FromString(Look)));
+			return false;
+		}
+		Desc.TapLook.Set(Look);
+	}
+	if (!Source.HoldLook.IsNone())
+	{
+		const FString Look = Source.HoldLook.ToString();
+		if (!Info.HoldLooks.Contains(Look))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedHoldLook", "This hold has no hold look {0}."), FText::FromString(Look)));
+			return false;
+		}
+		Desc.HoldLook.Set(Look);
+	}
+	// Round 4 step 5: how the weapon is held. None picked writes nothing (the hold's first stance); the ones the reader refuses for now are never offered.
+	if (!Source.Stance.IsNone())
+	{
+		const FString Stance = Source.Stance.ToString();
+		if (!MantleWeaponBuilderLogic::OfferedStances(Source.Hold).Contains(Stance))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedStance", "This hold does not offer the {0} stance."), FText::FromString(Stance)));
+			return false;
+		}
+		Desc.Stance.Set(Stance);
 	}
 	// The hotbar icon: the weapon's library picture. It is made at publish (the Thumbnail step's choice); publish swaps this name for the
 	// uploaded texture's id, or drops it when no picture was taken.
@@ -429,6 +461,11 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		Throw.Range = Source.ShieldThrowRange;
 		Throw.Damage = Source.ShieldThrowDamage;
 		Desc.ShieldThrow.Set(Throw);
+	}
+	// Round 4 step 7: a staff's own melee on the Melee key, off by default; written only when the creator turns it on.
+	if (Info.bHasStaffMelee && Source.bStaffMelee)
+	{
+		Desc.bStaffMelee.Set(true);
 	}
 	// A hold whose action is a throw (the spear beside its sweep, the throwable alone) throws its own model: the projectile block
 	// rides along, and the thrown weapon sticks where it lands and can be picked up again, with no choice to make.
