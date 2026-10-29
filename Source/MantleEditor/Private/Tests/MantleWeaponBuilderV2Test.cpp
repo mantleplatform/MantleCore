@@ -282,6 +282,10 @@ bool FMantleWeaponBuilderV2StanceTest::RunTest(const FString& Parameters)
 	{
 		UMantleWeaponSource* Input = Source(Hold, TEXT("Stance"), nullptr);
 		Input->Stance = Stance;
+		// What the panel does when the stance is picked: the styles and looks the new stance does not offer are dropped (a Battle Mage's
+		// staff is switched from a lone beam to spells).
+		MantleWeaponBuilderLogic::DropInvalidStyles(*Input);
+		MantleWeaponBuilderLogic::DropInvalidLooks(*Input);
 		Messages.Reset();
 		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
 	};
@@ -332,10 +336,23 @@ bool FMantleWeaponBuilderV2StanceTest::RunTest(const FString& Parameters)
 		MantleWeaponBuilderLogic::DropInvalidLooks(*Mage);
 		TestTrue(TEXT("its looks are dropped"), Mage->TapLook.IsNone() && Mage->HoldLook.IsNone());
 		TestFalse(TEXT("and its charge (it never charges)"), Mage->Charge.bEnabled);
+		// A staff's default is the lone beam, which a Battle Mage never channels: picking the stance switches it to spells.
+		TestTrue(TEXT("a beam-only staff is switched to spells"), Mage->Delivery == EMantleWeaponSourceDelivery::Projectile
+			&& MantleWeaponBuilderLogic::DeliveryOf(*Mage) == EMantleWeaponDocDelivery::Projectile);
 		if (TestTrue(TEXT("so it builds"), FMantleWeaponBuilderExport::BuildDocument(*Mage, RequiredPoints(EMantleWeaponHold::Staff), TEXT("FixtureMesh"), Desc, Messages)))
 		{
 			TestFalse(TEXT("with no charge"), Desc.Charge.bSet);
 		}
+	}
+	{
+		// A beam with spells beside it casts spells, so a Battle Mage keeps it (the reader takes it).
+		UMantleWeaponSource* Both = Source(EMantleWeaponHold::Staff, TEXT("Stance"), nullptr);
+		Both->Delivery = EMantleWeaponSourceDelivery::Beam;
+		Both->bSpellsBesideBeam = true;
+		Both->Stance = TEXT("battleMage");
+		MantleWeaponBuilderLogic::DropInvalidLooks(*Both);
+		TestTrue(TEXT("a beam with spells beside it stays as it is"), Both->Delivery == EMantleWeaponSourceDelivery::Beam);
+		TestTrue(TEXT("and builds"), FMantleWeaponBuilderExport::BuildDocument(*Both, RequiredPoints(EMantleWeaponHold::Staff), TEXT("FixtureMesh"), Desc, Messages));
 	}
 	TestFalse(TEXT("a two-handed sword refuses the Battle Mage"), Build(EMantleWeaponHold::Melee2h, TEXT("battleMage"), Desc, Messages));
 	TestFalse(TEXT("a sword refuses the shoulder"), Build(EMantleWeaponHold::Melee1h, TEXT("shoulder"), Desc, Messages));

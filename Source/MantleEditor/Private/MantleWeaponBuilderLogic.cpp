@@ -277,9 +277,14 @@ void MantleWeaponBuilderLogic::DropInvalidStyles(UMantleWeaponSource& Source)
 
 void MantleWeaponBuilderLogic::DropInvalidLooks(UMantleWeaponSource& Source)
 {
-	// Round 4 step 8: a Battle Mage has no tap or hold look (its left mouse swings the staff) and no charge (it never charges).
+	// Round 4 step 8: a Battle Mage has no tap or hold look (its left mouse swings the staff) and no charge (it never charges). It casts spells,
+	// never a beam alone, so a staff with a beam and no spells beside it is switched to spells; a beam with spells beside it stays as it is.
 	if (IsBattleMage(Source))
 	{
+		if (StaffHasBeam(Source) && !Source.bSpellsBesideBeam)
+		{
+			SetDelivery(Source, EMantleWeaponSourceDelivery::Projectile);
+		}
 		Source.TapLook = NAME_None;
 		Source.HoldLook = NAME_None;
 		Source.Charge.bEnabled = false;
