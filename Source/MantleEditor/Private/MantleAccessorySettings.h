@@ -22,9 +22,10 @@ struct FMantleAccessorySettings
 	static bool ApplyDefaultPlacement(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError);
 
 	/**
-	 * Lowers a neck accessory (already aligned) until the top of its mesh meets the collarbones of Body (the height of the
-	 * clavicle bones in the reference pose), so a chain rests on the shoulders and base of the neck instead of floating at the
-	 * jaw. Only the draft's attach location changes, along the avatar's up axis. False when Body lacks the bones.
+	 * Lowers a neck accessory (already aligned) along the avatar's up axis until a link of its upper half touches Body's skin
+	 * in the reference pose, so a chain lies on the shoulders and base of the neck instead of floating at the jaw (what hangs
+	 * below, a pendant, is left to rest on the chest). Only the draft's attach location changes. False when Body lacks the
+	 * neck bone or vertices, or nothing touches within 30 cm.
 	 */
 	static bool RestOnShoulders(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError);
 

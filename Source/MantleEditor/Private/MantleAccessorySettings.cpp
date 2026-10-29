@@ -11,6 +11,7 @@
 #include "MantleMeshReduce.h"
 #include "MantlePlaceAssets.h"
 #include "StaticMeshResources.h"
+#include "Rendering/SkeletalMeshRenderData.h"
 
 namespace MantleAccessorySettingsPrivate
 {
@@ -108,32 +109,67 @@ bool FMantleAccessorySettings::RestOnShoulders(FMantleCosmeticDraft& Draft, cons
 	Mesh = UploadMesh(Mesh, Contract->RigidAccessory);
 	const FReferenceSkeleton& Reference = Body->GetRefSkeleton();
 	const TArray<FTransform>& Pose = Reference.GetRefBonePose();
-	auto InComponent = [&Reference, &Pose](const FName Name, FTransform& Out)
+	int32 Bone = Reference.FindBoneIndex(FName(*Point->SocketBone));
+	const FStaticMeshRenderData* MeshData = Mesh->GetRenderData();
+	const FSkeletalMeshRenderData* BodyData = Body->GetResourceForRendering();
+	if (!Pose.IsValidIndex(Bone) || !MeshData || MeshData->LODResources.IsEmpty() || !BodyData || BodyData->LODRenderData.IsEmpty())
 	{
-		int32 Bone = Reference.FindBoneIndex(Name);
-		if (!Pose.IsValidIndex(Bone)) return false;
-		Out = Pose[Bone];
-		while ((Bone = Reference.GetParentIndex(Bone)) != INDEX_NONE) Out = Out * Pose[Bone];
-		return true;
-	};
-	FTransform SocketBone, Left, Right;
-	if (!InComponent(FName(*Point->SocketBone), SocketBone) || !InComponent(TEXT("clavicle_l"), Left) || !InComponent(TEXT("clavicle_r"), Right))
-	{
-		OutError = TEXT("The chosen MetaHuman lacks the neck or collarbone bones.");
+		OutError = TEXT("The neck bone or the meshes' vertices could not be read.");
 		return false;
 	}
+	FTransform SocketBone = Pose[Bone];
+	while ((Bone = Reference.GetParentIndex(Bone)) != INDEX_NONE) SocketBone = SocketBone * Pose[Bone];
 	// The mesh as it is worn now (attach rotation and offset on the bone), in the body's component space, whose Z is up.
 	const FTransform Attach(FRotator(Draft.AttachRotation.X, Draft.AttachRotation.Y, Draft.AttachRotation.Z), FVector(Draft.AttachLocation), FVector(Draft.AttachScale));
-	const FBox Box = Mesh->GetBoundingBox();
-	double Top = -TNumericLimits<double>::Max();
-	for (int32 Corner = 0; Corner < 8; ++Corner)
+	const FTransform Worn = Attach * SocketBone;
+	const FPositionVertexBuffer& MeshPositions = MeshData->LODResources[0].VertexBuffers.PositionVertexBuffer;
+	TArray<FVector> Chain;
+	double Low = TNumericLimits<double>::Max(), High = -TNumericLimits<double>::Max();
+	for (uint32 Index = 0; Index < MeshPositions.GetNumVertices(); Index += FMath::Max(1u, MeshPositions.GetNumVertices() / 1500u))
 	{
-		const FVector Point3((Corner & 1) ? Box.Max.X : Box.Min.X, (Corner & 2) ? Box.Max.Y : Box.Min.Y, (Corner & 4) ? Box.Max.Z : Box.Min.Z);
-		Top = FMath::Max(Top, (Attach * SocketBone).TransformPosition(Point3).Z);
+		Chain.Add(Worn.TransformPosition(FVector(MeshPositions.VertexPosition(Index))));
+		Low = FMath::Min(Low, Chain.Last().Z);
+		High = FMath::Max(High, Chain.Last().Z);
 	}
-	const double Collar = (Left.GetTranslation().Z + Right.GetTranslation().Z) * 0.5;
-	const FVector Drop = SocketBone.GetRotation().Inverse().RotateVector(FVector(0.0, 0.0, Collar - Top));
-	Draft.AttachLocation = FMantleCosmeticPackage::ClampAttachLocation(Draft.AttachLocation + FVector3f(Drop));
+	// What hangs from the loop (a pendant) rests on the chest; the upper half of the mesh is what lies on the shoulders.
+	const double Split = High - (High - Low) * 0.5;
+	Chain.RemoveAll([Split](const FVector& Position) { return Position.Z < Split; });
+	// The body around the neck and shoulders, in the reference pose.
+	const FPositionVertexBuffer& BodyPositions = BodyData->LODRenderData[0].StaticVertexBuffers.PositionVertexBuffer;
+	TArray<FVector> Skin;
+	for (uint32 Index = 0; Index < BodyPositions.GetNumVertices(); ++Index)
+	{
+		const FVector Position(BodyPositions.VertexPosition(Index));
+		if (Position.Z > Low - 40.0 && Position.Z < High + 5.0) Skin.Add(Position);
+	}
+	if (Chain.IsEmpty() || Skin.IsEmpty())
+	{
+		OutError = TEXT("There is no neck or shoulder skin to rest the chain on.");
+		return false;
+	}
+	// Lower it until a link touches the skin: the first step at which one is within the contact distance.
+	constexpr double StepCm = 0.2, ContactCm = 0.4, MaxDropCm = 30.0;
+	double Drop = 0.0;
+	for (; Drop <= MaxDropCm; Drop += StepCm)
+	{
+		bool bTouching = false;
+		for (const FVector& Link : Chain)
+		{
+			const FVector Lowered(Link.X, Link.Y, Link.Z - Drop);
+			for (const FVector& Point3 : Skin)
+			{
+				if (FVector::DistSquared(Lowered, Point3) < ContactCm * ContactCm) { bTouching = true; break; }
+			}
+			if (bTouching) break;
+		}
+		if (bTouching) break;
+	}
+	if (Drop > MaxDropCm)
+	{
+		return false;
+	}
+	const FVector InBone = SocketBone.GetRotation().Inverse().RotateVector(FVector(0.0, 0.0, -Drop));
+	Draft.AttachLocation = FMantleCosmeticPackage::ClampAttachLocation(Draft.AttachLocation + FVector3f(InBone));
 	return true;
 }
 
