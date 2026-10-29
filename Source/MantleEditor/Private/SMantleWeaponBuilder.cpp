@@ -785,6 +785,7 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->bShieldThrow = false;
 	Working->ShieldThrowRange = 1000.f;
 	Working->ShieldThrowDamage = 25.f;
+	Working->bStaffMelee = false;
 	Working->Projectile = FMantleWeaponSourceProjectile();
 	Working->Sweep = FMantleWeaponSourceSweep();
 	Working->Beam = FMantleWeaponSourceBeam();
@@ -1060,6 +1061,7 @@ FText SMantleWeaponBuilder::SummaryText() const
 	if (!Working->ComboSet.IsNone()) Lines.Add(FString::Printf(TEXT("Combo: %s"), *ComboSetLabel(Working->ComboSet.ToString()).ToString()));
 	if (HoldInfo(Working->Hold).bHasBash && !Working->bBash) Lines.Add(TEXT("Bash: off"));
 	if (HoldInfo(Working->Hold).bHasShieldThrow && Working->bShieldThrow) Lines.Add(TEXT("Throw: on"));
+	if (HoldInfo(Working->Hold).bHasStaffMelee && Working->bStaffMelee) Lines.Add(TEXT("Staff melee: on"));
 	if (!Working->Quiver.IsNone()) Lines.Add(FString::Printf(TEXT("Quiver: %s"), *QuiverLabel(Working->Quiver.ToString()).ToString()));
 	if (!Working->ShootingStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Shooting style: %s"), *ShootingStyleLabel(Working->ShootingStyle.ToString()).ToString()));
 	if (!Working->TapLook.IsNone()) Lines.Add(FString::Printf(TEXT("Tap: %s"), *TapLookLabel(Working->TapLook.ToString()).ToString()));
@@ -2038,6 +2040,12 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		LOCTEXT("ShieldThrowDamageTip", "How much the thrown shield hurts each player it hits (once per throw)."),
 		0.f, 1000.f, 1.f, [this] { return Working->ShieldThrowDamage; }, [this](float V) { Working->ShieldThrowDamage = FMath::Clamp(V, 0.f, 1000.f); },
 		[this, CanThrowShield] { return CanThrowShield() && Working->bShieldThrow ? EVisibility::Visible : EVisibility::Collapsed; });
+	// Round 4 step 7: a staff may fight with the Melee key (a three-hit combo, and a hold for a leap), off by default.
+	const TFunction<bool()> CanStaffMelee = [this] { return HoldInfo(Working->Hold).bHasStaffMelee; };
+	AddToggleWhen(LOCTEXT("StaffMelee", "Fight with the Melee key"),
+		LOCTEXT("StaffMeleeTip", "Tapping the Melee key swings the staff in a three-hit combo; holding it leaps forward and slams the staff down. Each hit does the weapon's damage (the leap twice it), and can be blocked and parried like a sword's. Off, the Melee key does a plain weapon strike."),
+		[this] { return Working->bStaffMelee; }, [this](bool V) { Working->bStaffMelee = V; },
+		[CanStaffMelee] { return CanStaffMelee() ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
 	const bool bCanOverrideHandedness = IsFirearm(Working->Hold);
 	AddToggleWhen(LOCTEXT("OverrideTwoHanded", "Change how many hands hold it"), LOCTEXT("OverrideTwoHandedTip", "Use this hold with one hand or both. The usual setting follows the hold."),
 		[this] { return Working->bOverrideTwoHanded; }, [this](bool V) { Working->bOverrideTwoHanded = V; },

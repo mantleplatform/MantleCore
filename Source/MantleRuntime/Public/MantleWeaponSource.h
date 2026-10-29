@@ -295,6 +295,8 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 100.0, ClampMax = 3000.0)) float ShieldThrowRange = 1000.0f;
 	/** Round 3 step 12: damage to each target the thrown shield hits (once per throw). */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 1000.0)) float ShieldThrowDamage = 25.0f;
+	/** Round 4 step 7: a staff's own melee on the Melee key (the WZ three-hit combo, hold for the leap): off by default. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") bool bStaffMelee = false;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceProjectile Projectile;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceSweep Sweep;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceBeam Beam;

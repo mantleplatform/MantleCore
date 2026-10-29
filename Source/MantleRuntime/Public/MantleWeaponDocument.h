@@ -300,6 +300,8 @@ struct FMantleWeaponDocHoldInfo
 	bool bHasBash = false;
 	/** Round 3 step 12: the hold may throw itself and catch it again (x-throw: the shield). */
 	bool bHasShieldThrow = false;
+	/** Round 4 step 7: the hold may fight with the Melee key in its own combo (x-staffMelee: the staff). */
+	bool bHasStaffMelee = false;
 	/** Round 3: the shooting style ids (x-shootingStyles) of a hold held more than one way to shoot (the bow), the default first. Empty: one way. */
 	TArray<FString> ShootingStyles;
 	/** Round 4 step 2: the tap looks (x-tapLooks) of a hold whose tap can look more than one way (the staff), the default first. Empty: no choice. */
@@ -756,6 +758,9 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	/** Round 4 step 5: the stance the hold is held in. Unset: the first in the hold's x-stances, the hold's own clip set (a creator selection,
 	 *  not an asset path). A spear's shoulder plays only beside a shield (the pair's clip set, HCS_SpearShield_Shoulder). */
 	TMantleWeaponDocValue<FString> Stance;
+	/** Round 4 step 7: a staff's own melee on the Melee key (a three-hit combo, and a hold the leaping power move). Unset: off, the Melee key
+	 *  keeps the generic weapon-butt strike. */
+	TMantleWeaponDocValue<bool> bStaffMelee{ false };
 	/** sRGB. */
 	TMantleWeaponDocValue<FColor> Color{ FColor(40, 110, 160) };
 	/** #904: sRGB, multiplied into the element's effects; only where the weapon has an element (GetElement). Unset: the element's own colours. */

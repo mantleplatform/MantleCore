@@ -46,7 +46,7 @@ namespace MantleWeaponDocumentPrivate
 	const TCHAR* const GWeaponDocV2Fields[] = {
 		TEXT("hold"), TEXT("delivery"), TEXT("charge"), TEXT("block"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"),
 		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("bash"),
-		TEXT("throw"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance")
+		TEXT("throw"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance"), TEXT("staffMelee")
 	};
 	// #1025: consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
 	const TCHAR* const GWeaponDocUseStyleNames[] = { TEXT("eatDrink"), TEXT("use") };
@@ -446,6 +446,8 @@ namespace MantleWeaponDocumentPrivate
 				TEXT("whirlBeam") };
 			// Round 4 step 5: the wizard stance is the default; the Battle Mage (step 8) is refused until it is built.
 			Staff.Stances = { TEXT("wizard"), TEXT("battleMage") };
+			// Round 4 step 7: the Melee key may fight with the staff (the document's staffMelee, off by default).
+			Staff.bHasStaffMelee = true;
 			Table.Add(Staff);
 		}
 		// bow: its quiver holds arrows, nocked by one clip (the magazine reload style). Round 3: it may block (right mouse raises its guard).
@@ -1607,7 +1609,7 @@ namespace MantleWeaponDocumentPrivate
 			const FString Path;
 			Keys(Root, Path,
 				{ TEXT("schemaVersion"), TEXT("name"), TEXT("archetype"), TEXT("hold"), TEXT("delivery"), TEXT("twoHanded"), TEXT("effects"),
-				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
+				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance"), TEXT("staffMelee"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
 				  TEXT("charge"), TEXT("magazine"), TEXT("reload"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"),
 				  TEXT("consumable"), TEXT("block"), TEXT("bash"), TEXT("throw"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
 				{ TEXT("schemaVersion"), TEXT("name") });
@@ -1684,6 +1686,7 @@ namespace MantleWeaponDocumentPrivate
 			OptText(Root, Path, TEXT("tapLook"), EWeaponDocText::Any, Out.TapLook);
 			OptText(Root, Path, TEXT("holdLook"), EWeaponDocText::Any, Out.HoldLook);
 			OptText(Root, Path, TEXT("stance"), EWeaponDocText::Any, Out.Stance);
+			OptBoolean(Root, Path, TEXT("staffMelee"), Out.bStaffMelee);
 			OptColor(Root, TEXT("color"), Out.Color);
 			OptColor(Root, TEXT("effectsColor"), Out.EffectsColor);
 			if (const TSharedPtr<FJsonValue> Mesh = Field(Root, TEXT("mesh")))
@@ -2489,6 +2492,7 @@ namespace MantleWeaponDocumentPrivate
 			{
 				WeaponDocPut(Node, TEXT("stance"), WeaponDocStringNode(D.Stance.Value));
 			}
+			Boolean(Node, TEXT("staffMelee"), D.bStaffMelee);
 			if (D.Color.bSet)
 			{
 				WeaponDocPut(Node, TEXT("color"), WeaponDocNumbersNode({ static_cast<double>(D.Color.Value.R), static_cast<double>(D.Color.Value.G),
@@ -3143,6 +3147,11 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 	if (D.ShieldThrow.bSet && !Info.bHasShieldThrow)
 	{
 		R.Add(TEXT("throw"), TEXT("mantle"), FString::Printf(TEXT("a %s does not throw and catch itself: drop throw"), Hold));
+	}
+	// Staff melee (Round 4 step 7): only a hold whose Melee key can fight with it (the staff) takes one.
+	if (D.bStaffMelee.bSet && !Info.bHasStaffMelee)
+	{
+		R.Add(TEXT("staffMelee"), TEXT("mantle"), FString::Printf(TEXT("a %s has no staff melee: drop staffMelee"), Hold));
 	}
 	EMantleWeaponDocEffects Element = EMantleWeaponDocEffects::Arcane;
 	if (D.EffectsColor.bSet && !D.GetElement(Element))

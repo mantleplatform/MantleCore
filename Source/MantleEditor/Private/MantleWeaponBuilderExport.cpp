@@ -462,6 +462,11 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		Throw.Damage = Source.ShieldThrowDamage;
 		Desc.ShieldThrow.Set(Throw);
 	}
+	// Round 4 step 7: a staff's own melee on the Melee key, off by default; written only when the creator turns it on.
+	if (Info.bHasStaffMelee && Source.bStaffMelee)
+	{
+		Desc.bStaffMelee.Set(true);
+	}
 	// A hold whose action is a throw (the spear beside its sweep, the throwable alone) throws its own model: the projectile block
 	// rides along, and the thrown weapon sticks where it lands and can be picked up again, with no choice to make.
 	const bool bThrowsItsModel = Info.Actions.Contains(EMantleWeaponDocAction::Throw);

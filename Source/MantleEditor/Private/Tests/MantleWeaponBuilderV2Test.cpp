@@ -817,6 +817,42 @@ bool FMantleWeaponBuilderV2ShieldThrowTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Round 4 step 7: a staff's melee on the Melee key is off by default and writes nothing; turned on it writes staffMelee true and reads again; no
+// other hold has one.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffMeleeTest, "Mantle.Editor.WeaponBuilderV2.StaffMelee", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2StaffMeleeTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	TestTrue(TEXT("the hold library lets a staff fight with the Melee key"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Staff).bHasStaffMelee);
+	TestFalse(TEXT("and a sword not"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Melee1h).bHasStaffMelee);
+	auto Build = [](const EMantleWeaponHold Hold, const bool bStaffMelee, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("StaffMelee"), nullptr);
+		Input->bStaffMelee = bStaffMelee;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	if (TestTrue(TEXT("a staff left as it is builds"), Build(EMantleWeaponHold::Staff, false, Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no staffMelee (off)"), Desc.bStaffMelee.bSet);
+	}
+	if (TestTrue(TEXT("a staff that fights builds"), Build(EMantleWeaponHold::Staff, true, Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes staffMelee, on"), Desc.bStaffMelee.bSet && Desc.bStaffMelee.Value);
+		FString Error;
+		FMantleWeaponDesc Again;
+		TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		TestTrue(TEXT("with staffMelee on"), Again.bStaffMelee.bSet && Again.bStaffMelee.Value);
+	}
+	if (TestTrue(TEXT("a sword with the same field builds"), Build(EMantleWeaponHold::Melee1h, true, Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no staffMelee (it has none)"), Desc.bStaffMelee.bSet);
+	}
+	return true;
+}
+
 // A staff's held beam that also throws spells writes both blocks, with or without a charge (aim and hold), and the document
 // reader takes it.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffSpellsBesideBeamTest, "Mantle.Editor.WeaponBuilderV2.StaffSpellsBesideBeam", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -1102,6 +1138,7 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->bShieldThrow = true; Changed(TEXT("shield throw changes signature")); Input->bShieldThrow = false;
 	Input->ShieldThrowRange = 1500.0f; Changed(TEXT("shield throw range changes signature")); Input->ShieldThrowRange = 1000.0f;
 	Input->ShieldThrowDamage = 40.0f; Changed(TEXT("shield throw damage changes signature")); Input->ShieldThrowDamage = 25.0f;
+	Input->bStaffMelee = true; Changed(TEXT("staff melee changes signature")); Input->bStaffMelee = false;
 	Input->ShootingStyle = TEXT("c"); Changed(TEXT("shooting style changes signature")); Input->ShootingStyle = NAME_None;
 	Input->TapLook = TEXT("handFireball"); Changed(TEXT("tap look changes signature")); Input->TapLook = NAME_None;
 	Input->HoldLook = TEXT("skyCall"); Changed(TEXT("hold look changes signature")); Input->HoldLook = NAME_None;
