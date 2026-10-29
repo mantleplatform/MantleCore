@@ -856,11 +856,15 @@ bool FMantleAgentTools::BuildCosmeticPackage(const FString& AssetPath, const FSt
 			*FString::Join(CosmeticSlotOptions(*Contract, EMantleCosmeticClass::Accessory), TEXT(", "))));
 		return false;
 	}
-	if (bHairCardsSource && Class != EMantleCosmeticClass::Hair)
+	// A static mesh in an accessory slot is a rigid accessory (a necklace, a hat), uploaded exactly as the panel's Accessory class
+	// does; in any other slot a static mesh is a hair cards mesh.
+	const bool bRigidAccessory = Class == EMantleCosmeticClass::Accessory && Cast<UStaticMesh>(Asset);
+	if (bHairCardsSource && !bRigidAccessory && Class != EMantleCosmeticClass::Hair)
 	{
 		OutRefusal = Refusal(TEXT("cards_not_hair"), FString::Printf(
-			TEXT("%s is a Groom or a cards mesh, which uploads as hair. Use one of: %s."),
-			*Asset->GetName(), *FString::Join(CosmeticSlotOptions(*Contract, EMantleCosmeticClass::Hair), TEXT(", "))));
+			TEXT("%s is a Groom or a static mesh. A Groom or a cards mesh uploads as hair (%s); a static mesh accessory such as a necklace uploads in an accessory slot (%s)."),
+			*Asset->GetName(), *FString::Join(CosmeticSlotOptions(*Contract, EMantleCosmeticClass::Hair), TEXT(", ")),
+			*FString::Join(CosmeticSlotOptions(*Contract, EMantleCosmeticClass::Accessory), TEXT(", "))));
 		return false;
 	}
 	if (bClothAsset && Class != EMantleCosmeticClass::Garment)
@@ -870,10 +874,10 @@ bool FMantleAgentTools::BuildCosmeticPackage(const FString& AssetPath, const FSt
 			*Asset->GetName(), *FString::Join(CosmeticSlotOptions(*Contract, EMantleCosmeticClass::Garment), TEXT(", "))));
 		return false;
 	}
-	if (!bOutfit && Class == EMantleCosmeticClass::Accessory)
+	if (!bOutfit && !bRigidAccessory && Class == EMantleCosmeticClass::Accessory)
 	{
 		OutRefusal = Refusal(TEXT("accessory_needs_outfit"), FString::Printf(
-			TEXT("%s is a skeletal mesh; these tools upload accessories from MetaHuman Outfits. Use Tools > Mantle > Cosmetics... for a static mesh accessory."),
+			TEXT("%s is a skeletal mesh; an accessory uploads from a static mesh or a MetaHuman Outfit."),
 			*Asset->GetName()));
 		return false;
 	}

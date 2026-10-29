@@ -7,6 +7,11 @@
 #include "MantlePng.h"
 #include "MantleThumbnailChoice.h"
 
+#include "MantleToolCall.h"
+
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "Materials/Material.h"
@@ -404,6 +409,36 @@ bool FMantleAccessoryCustomThumbnailTest::RunTest(const FString& Parameters)
 	Draft.Thumbnail.ImageFile.FilePath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Automation"), TEXT("MantleNoSuchThumbnail.png"));
 	const FMantleCosmeticPackage Refused = FMantleCosmeticExport::BuildCore(Draft, *Contract);
 	TestTrue(TEXT("a missing custom picture is an error"), Refused.HasErrors());
+	return true;
+}
+
+// The agent tools take a plain static mesh in an accessory slot (a necklace) through the panel's own Accessory export, and
+// still refuse a static mesh in a clothing slot as hair cards.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleAccessoryAgentTest, "Mantle.Cosmetics.Accessory.AgentTakesStaticMesh",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMantleAccessoryAgentTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleAccessoryExportTestPrivate;
+	TStrongObjectPtr<UMaterialInterface> Material(MakeMaterial(0));
+	TStrongObjectPtr<UStaticMesh> Light(MakeDisc(30, 30, Material.Get()));
+	auto Check = [this, &Light](const FString& Slot) -> TSharedPtr<FJsonObject>
+	{
+		const FString Json = MantleToolCall::CallTool(TEXT("CheckCosmetic"), { Light->GetPathName(), Slot, FString(), FString(), FString() });
+		TSharedPtr<FJsonObject> Out;
+		FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Out);
+		TestTrue(FString::Printf(TEXT("%s: the agent answered (%s)"), *Slot, *Json.Left(300)), Out.IsValid());
+		return Out;
+	};
+	if (const TSharedPtr<FJsonObject> Neck = Check(TEXT("acc_neck")))
+	{
+		TestTrue(FString::Printf(TEXT("a static mesh in acc_neck is checked, not refused (%s)"), *Neck->GetStringField(TEXT("refused"))), Neck->GetBoolField(TEXT("ok")));
+	}
+	if (const TSharedPtr<FJsonObject> Top = Check(TEXT("top")))
+	{
+		TestFalse(TEXT("a static mesh in a clothing slot is refused"), Top->GetBoolField(TEXT("ok")));
+		TestEqual(TEXT("as cards_not_hair"), Top->GetStringField(TEXT("refused")), FString(TEXT("cards_not_hair")));
+	}
 	return true;
 }
 
