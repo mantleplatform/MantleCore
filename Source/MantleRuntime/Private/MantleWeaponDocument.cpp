@@ -46,7 +46,7 @@ namespace MantleWeaponDocumentPrivate
 	const TCHAR* const GWeaponDocV2Fields[] = {
 		TEXT("hold"), TEXT("delivery"), TEXT("charge"), TEXT("block"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"),
 		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("bash"),
-		TEXT("throw"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance"), TEXT("staffMelee"), TEXT("extra")
+		TEXT("throw"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance"), TEXT("staffMelee"), TEXT("extra"), TEXT("gravity"), TEXT("suppressor"), TEXT("bipod")
 	};
 	// #1025: consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
 	const TCHAR* const GWeaponDocUseStyleNames[] = { TEXT("eatDrink"), TEXT("use") };
@@ -330,9 +330,13 @@ namespace MantleWeaponDocumentPrivate
 		Info.Charge = EMantleWeaponDocChargeRule::None;
 		Info.Resources = { EMantleWeaponDocResource::Magazine };
 		Info.BlockRule = EMantleWeaponDocBlockRule::None;
+		// Round 3 step 16: and a firearm may grab props instead of shooting (the document's gravity).
+		Info.bHasGravity = true;
 		Info.bMeshRequired = true;
 		Info.Sockets = { ESocket::Sight, ESocket::Muzzle, ESocket::GripR };
 		Info.OptionalSockets = { ESocket::GripL, ESocket::Magazine, ESocket::ShellEject };
+		// Round 3: every firearm can toggle a suppressor (x-suppressor).
+		Info.bHasSuppressor = true;
 		return Info;
 	}
 
@@ -402,9 +406,13 @@ namespace MantleWeaponDocumentPrivate
 		// pump_shotgun
 		Table.Add(WeaponDocFirearm(EStyle::PerRound, true, EEffects::Shotgun,
 			{ ERole::Pump, ERole::Trigger, ERole::Feed, ERole::Shell }, PerRoundActions));
-		// bolt_sniper
-		Table.Add(WeaponDocFirearm(EStyle::Magazine, true, EEffects::Rifle,
-			{ ERole::Bolt, ERole::Trigger, ERole::Magazine, ERole::MagazineRelease, ERole::Cartridge }, MagazineActions));
+		// bolt_sniper. Round 3: it can deploy a bipod (x-bipod).
+		{
+			FMantleWeaponDocHoldInfo Sniper = WeaponDocFirearm(EStyle::Magazine, true, EEffects::Rifle,
+				{ ERole::Bolt, ERole::Trigger, ERole::Magazine, ERole::MagazineRelease, ERole::Cartridge }, MagazineActions);
+			Sniper.bHasBipod = true;
+			Table.Add(Sniper);
+		}
 		// lmg
 		Table.Add(WeaponDocFirearm(EStyle::Magazine, true, EEffects::Rifle,
 			{ ERole::Bolt, ERole::Trigger, ERole::Feed, ERole::Magazine, ERole::MagazineRelease }, MagazineActions));
@@ -1487,6 +1495,19 @@ namespace MantleWeaponDocumentPrivate
 			Out.Damage = Damage.Value;
 		}
 
+		void ReadBipod(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocBipod& Out)
+		{
+			Keys(Obj, Path, { TEXT("folded"), TEXT("deployed") }, { TEXT("folded"), TEXT("deployed") });
+			if (const TSharedPtr<FJsonValue> Folded = Field(Obj, TEXT("folded")))
+			{
+				Text(Folded, At(Path, TEXT("folded")), EWeaponDocText::AttachmentName, Out.Folded);
+			}
+			if (const TSharedPtr<FJsonValue> Deployed = Field(Obj, TEXT("deployed")))
+			{
+				Text(Deployed, At(Path, TEXT("deployed")), EWeaponDocText::AttachmentName, Out.Deployed);
+			}
+		}
+
 		void ReadExtra(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocExtra& Out)
 		{
 			Keys(Obj, Path, { TEXT("kind"), TEXT("cooldownSeconds"), TEXT("maxMass"), TEXT("liftPlayers"), TEXT("maxHeight"), TEXT("durationSeconds"),
@@ -1508,6 +1529,21 @@ namespace MantleWeaponDocumentPrivate
 			OptNumber(Obj, Path, TEXT("heal"), 1.0, 1000.0, Out.Heal);
 			// Round 5 step 5: the dash's distance.
 			OptNumber(Obj, Path, TEXT("dashDistance"), 700.0, 2500.0, Out.DashDistance);
+		}
+
+		// Round 3 step 16: a gun that grabs props. The limits are MantleGravityGunDefaults' (the schema's gravity).
+		void ReadGravity(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocGravity& Out)
+		{
+			namespace D = MantleGravityGunDefaults;
+			Keys(Obj, Path, { TEXT("range"), TEXT("maxMass"), TEXT("holdSeconds"), TEXT("holdDistance"), TEXT("launchSpeed"), TEXT("launchDamage"),
+				TEXT("cooldownSeconds") });
+			OptNumber(Obj, Path, TEXT("range"), D::RangeMinCm, D::RangeMaxCm, Out.Range);
+			OptNumber(Obj, Path, TEXT("maxMass"), D::MaxMassMinKg, D::MaxMassMaxKg, Out.MaxMass);
+			OptNumber(Obj, Path, TEXT("holdSeconds"), 0.0, D::HoldSecondsMax, Out.HoldSeconds);
+			OptNumber(Obj, Path, TEXT("holdDistance"), D::HoldDistanceMinCm, D::HoldDistanceMaxCm, Out.HoldDistance);
+			OptNumber(Obj, Path, TEXT("launchSpeed"), D::LaunchSpeedMinCmS, D::LaunchSpeedMaxCmS, Out.LaunchSpeed);
+			OptNumber(Obj, Path, TEXT("launchDamage"), 0.0, D::LaunchDamageMax, Out.LaunchDamage);
+			OptNumber(Obj, Path, TEXT("cooldownSeconds"), 0.0, D::CooldownSecondsMax, Out.CooldownSeconds);
 		}
 
 		void ReadShieldThrow(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocShieldThrow& Out)
@@ -1641,9 +1677,9 @@ namespace MantleWeaponDocumentPrivate
 			const FString Path;
 			Keys(Root, Path,
 				{ TEXT("schemaVersion"), TEXT("name"), TEXT("archetype"), TEXT("hold"), TEXT("delivery"), TEXT("twoHanded"), TEXT("effects"),
-				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance"), TEXT("staffMelee"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
+				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("suppressor"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance"), TEXT("staffMelee"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
 				  TEXT("charge"), TEXT("magazine"), TEXT("reload"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"),
-				  TEXT("consumable"), TEXT("block"), TEXT("bash"), TEXT("throw"), TEXT("extra"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
+				  TEXT("consumable"), TEXT("block"), TEXT("bash"), TEXT("bipod"), TEXT("throw"), TEXT("extra"), TEXT("gravity"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
 				{ TEXT("schemaVersion"), TEXT("name") });
 			// #840: 1 is the firearm document (archetype), 2 names the hold and the delivery; each requires its own fields.
 			int32 Version = 0;
@@ -1715,6 +1751,7 @@ namespace MantleWeaponDocumentPrivate
 			OptText(Root, Path, TEXT("comboSet"), EWeaponDocText::Any, Out.ComboSet);
 			OptText(Root, Path, TEXT("quiver"), EWeaponDocText::Any, Out.Quiver);
 			OptText(Root, Path, TEXT("style"), EWeaponDocText::Any, Out.ShootingStyle);
+			OptText(Root, Path, TEXT("suppressor"), EWeaponDocText::AttachmentName, Out.Suppressor);
 			OptText(Root, Path, TEXT("tapLook"), EWeaponDocText::Any, Out.TapLook);
 			OptText(Root, Path, TEXT("holdLook"), EWeaponDocText::Any, Out.HoldLook);
 			OptText(Root, Path, TEXT("stance"), EWeaponDocText::Any, Out.Stance);
@@ -1769,8 +1806,10 @@ namespace MantleWeaponDocumentPrivate
 			OptBlock(Root, Path, TEXT("consumable"), Out.Consumable, &FWeaponDocReader::ReadConsumable);
 			OptBlock(Root, Path, TEXT("block"), Out.Block, &FWeaponDocReader::ReadBlock);
 			OptBlock(Root, Path, TEXT("bash"), Out.Bash, &FWeaponDocReader::ReadBash);
+			OptBlock(Root, Path, TEXT("bipod"), Out.Bipod, &FWeaponDocReader::ReadBipod);
 			OptBlock(Root, Path, TEXT("throw"), Out.ShieldThrow, &FWeaponDocReader::ReadShieldThrow);
 			OptBlock(Root, Path, TEXT("extra"), Out.Extra, &FWeaponDocReader::ReadExtra);
+			OptBlock(Root, Path, TEXT("gravity"), Out.Gravity, &FWeaponDocReader::ReadGravity);
 			OptBlock(Root, Path, TEXT("sounds"), Out.Sounds, &FWeaponDocReader::ReadSounds);
 			OptBlock(Root, Path, TEXT("firstPerson"), Out.FirstPerson, &FWeaponDocReader::ReadFirstPerson);
 			OptBlock(Root, Path, TEXT("spread"), Out.Spread, &FWeaponDocReader::ReadSpread);
@@ -2281,6 +2320,14 @@ namespace MantleWeaponDocumentPrivate
 			return Node;
 		}
 
+		static FWeaponDocNodePtr BipodSettings(const FMantleWeaponDocBipod& In)
+		{
+			FWeaponDocNodePtr Node = WeaponDocObjectNode();
+			WeaponDocPut(Node, TEXT("folded"), WeaponDocStringNode(In.Folded));
+			WeaponDocPut(Node, TEXT("deployed"), WeaponDocStringNode(In.Deployed));
+			return Node;
+		}
+
 		static FWeaponDocNodePtr ExtraSettings(const FMantleWeaponDocExtra& In)
 		{
 			FWeaponDocNodePtr Node = WeaponDocObjectNode();
@@ -2297,6 +2344,19 @@ namespace MantleWeaponDocumentPrivate
 			}
 			Number(Node, TEXT("heal"), In.Heal);
 			Number(Node, TEXT("dashDistance"), In.DashDistance);
+			return Node;
+		}
+
+		static FWeaponDocNodePtr GravitySettings(const FMantleWeaponDocGravity& In)
+		{
+			FWeaponDocNodePtr Node = WeaponDocObjectNode();
+			Number(Node, TEXT("range"), In.Range);
+			Number(Node, TEXT("maxMass"), In.MaxMass);
+			Number(Node, TEXT("holdSeconds"), In.HoldSeconds);
+			Number(Node, TEXT("holdDistance"), In.HoldDistance);
+			Number(Node, TEXT("launchSpeed"), In.LaunchSpeed);
+			Number(Node, TEXT("launchDamage"), In.LaunchDamage);
+			Number(Node, TEXT("cooldownSeconds"), In.CooldownSeconds);
 			return Node;
 		}
 
@@ -2532,6 +2592,10 @@ namespace MantleWeaponDocumentPrivate
 			{
 				WeaponDocPut(Node, TEXT("style"), WeaponDocStringNode(D.ShootingStyle.Value));
 			}
+			if (D.Suppressor.bSet)
+			{
+				WeaponDocPut(Node, TEXT("suppressor"), WeaponDocStringNode(D.Suppressor.Value));
+			}
 			if (D.TapLook.bSet)
 			{
 				WeaponDocPut(Node, TEXT("tapLook"), WeaponDocStringNode(D.TapLook.Value));
@@ -2607,8 +2671,10 @@ namespace MantleWeaponDocumentPrivate
 			Block(Node, TEXT("consumable"), D.Consumable, &FWeaponDocWriter::Consumable);
 			Block(Node, TEXT("block"), D.Block, &FWeaponDocWriter::BlockSettings);
 			Block(Node, TEXT("bash"), D.Bash, &FWeaponDocWriter::BashSettings);
+			Block(Node, TEXT("bipod"), D.Bipod, &FWeaponDocWriter::BipodSettings);
 			Block(Node, TEXT("throw"), D.ShieldThrow, &FWeaponDocWriter::ShieldThrowSettings);
 			Block(Node, TEXT("extra"), D.Extra, &FWeaponDocWriter::ExtraSettings);
+			Block(Node, TEXT("gravity"), D.Gravity, &FWeaponDocWriter::GravitySettings);
 			Block(Node, TEXT("sounds"), D.Sounds, &FWeaponDocWriter::Sounds);
 			Block(Node, TEXT("firstPerson"), D.FirstPerson, &FWeaponDocWriter::FirstPerson);
 			Block(Node, TEXT("spread"), D.Spread, &FWeaponDocWriter::Spread);
@@ -3217,6 +3283,62 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 	{
 		R.Add(TEXT("bash"), TEXT("mantle"), FString::Printf(TEXT("a %s has no bash: drop bash"), Hold));
 	}
+	// Suppressor toggle and bipod (Round 3): each names attachments of the document; only the holds that have them take them, a bipod gun has no
+	// suppressor toggle, and a suppressor needs the shot it makes (sounds.fireSuppressed). Version 1 has neither field (the reader says so).
+	if (D.ReadSchemaVersion == 2)
+	{
+		const auto HasAttachment = [&D](const FString& Name)
+		{
+			if (D.Attachments.bSet)
+			{
+				for (const FMantleWeaponDocAttachment& Attachment : D.Attachments.Value)
+				{
+					if (Attachment.Name == Name)
+					{
+						return true;
+					}
+				}
+			}
+			return false;
+		};
+		if (D.Suppressor.bSet)
+		{
+			if (!Info.bHasSuppressor)
+			{
+				R.Add(TEXT("suppressor"), TEXT("mantle"), FString::Printf(TEXT("a %s has no suppressor to toggle: drop suppressor"), Hold));
+			}
+			else if (D.Bipod.bSet)
+			{
+				R.Add(TEXT("suppressor"), TEXT("mantle"), TEXT("a gun with a bipod has no suppressor toggle: drop suppressor, or drop bipod"));
+			}
+			else if (!HasAttachment(D.Suppressor.Value))
+			{
+				R.Add(TEXT("suppressor"), TEXT("mantle"), FString::Printf(TEXT("\"%s\" is not in attachments: add the attachment, or name another"), *D.Suppressor.Value));
+			}
+			else if (!(D.Sounds.bSet && D.Sounds.Value.FireSuppressed.bSet))
+			{
+				R.Add(TEXT("sounds/fireSuppressed"), TEXT("mantle"), TEXT("a suppressor needs the shot it makes: add sounds.fireSuppressed"));
+			}
+		}
+		if (D.Bipod.bSet)
+		{
+			if (!Info.bHasBipod)
+			{
+				R.Add(TEXT("bipod"), TEXT("mantle"), FString::Printf(TEXT("a %s has no bipod: drop bipod"), Hold));
+			}
+			else
+			{
+				if (!D.Bipod.Value.Folded.IsEmpty() && !HasAttachment(D.Bipod.Value.Folded))
+				{
+					R.Add(TEXT("bipod/folded"), TEXT("mantle"), FString::Printf(TEXT("\"%s\" is not in attachments: add the attachment, or name another"), *D.Bipod.Value.Folded));
+				}
+				if (!D.Bipod.Value.Deployed.IsEmpty() && !HasAttachment(D.Bipod.Value.Deployed))
+				{
+					R.Add(TEXT("bipod/deployed"), TEXT("mantle"), FString::Printf(TEXT("\"%s\" is not in attachments: add the attachment, or name another"), *D.Bipod.Value.Deployed));
+				}
+			}
+		}
+	}
 	// Throw (Round 3 step 12): only a hold that throws itself and catches it again (the shield) takes one.
 	if (D.ShieldThrow.bSet && !Info.bHasShieldThrow)
 	{
@@ -3269,6 +3391,11 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		{
 			R.Add(TEXT("extra/dashDistance"), TEXT("mantle"), TEXT("is set, but only dash has a dashDistance: drop dashDistance"));
 		}
+	}
+	// The gravity block (Round 3 step 16): only a hold that can be a gravity gun (the firearms) takes one.
+	if (D.Gravity.bSet && !Info.bHasGravity)
+	{
+		R.Add(TEXT("gravity"), TEXT("mantle"), FString::Printf(TEXT("a %s cannot be a gravity gun: drop gravity"), Hold));
 	}
 	EMantleWeaponDocEffects Element = EMantleWeaponDocEffects::Arcane;
 	if (D.EffectsColor.bSet && !D.GetElement(Element))

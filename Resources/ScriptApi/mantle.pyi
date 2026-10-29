@@ -42,6 +42,7 @@ class Entity:
     collision_layer: str
     color: str
     exists: bool
+    grabbable: bool
     light_color: str
     light_enabled: bool
     light_inner_cone: float
@@ -144,6 +145,7 @@ class Player:
     crouch_speed: Optional[float]
     dodge_enabled: Optional[bool]
     drown_damage: Optional[float]
+    grab_enabled: Optional[bool]
     health: Optional[float]
     is_crouched: Optional[bool]
     is_ragdolled: Optional[bool]
