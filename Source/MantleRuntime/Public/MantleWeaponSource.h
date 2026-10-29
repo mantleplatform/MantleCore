@@ -309,6 +309,12 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 100.0, ClampMax = 2000.0)) float ExtraMaxHeight = 500.0f;
 	/** Round 5 step 6: how long levitate's float lasts, s. */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 30.0)) float ExtraDurationSeconds = 6.0f;
+	/** Round 5 step 3: blink's reach toward the crosshair, cm. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 300.0, ClampMax = 3000.0)) float ExtraRange = 1500.0f;
+	/** Round 5 step 3: blink's look, by its document spelling (overhead, curl, sink); none (unset) writes no look (overhead). */
+	UPROPERTY(EditAnywhere, Category = "Mantle") FName ExtraLook = NAME_None;
+	/** Round 5 step 4: the health heal gives back. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 1000.0)) float ExtraHeal = 35.0f;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceProjectile Projectile;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceSweep Sweep;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceBeam Beam;

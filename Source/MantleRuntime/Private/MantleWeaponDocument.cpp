@@ -97,7 +97,10 @@ namespace MantleWeaponDocumentPrivate
 	// Round 5 step 0: extra.kind, the schema's enum in order. blink, heal and dash are in it but not built yet (x-extrasLater): refused until then
 	// (step 6 built levitate).
 	const TCHAR* const GWeaponDocExtraNames[] = { TEXT("none"), TEXT("telekinesis"), TEXT("blink"), TEXT("heal"), TEXT("dash"), TEXT("levitate") };
-	const EMantleWeaponDocExtra GWeaponDocExtrasLater[] = { EMantleWeaponDocExtra::Blink, EMantleWeaponDocExtra::Heal, EMantleWeaponDocExtra::Dash };
+	// Round 5 steps 3, 4 and 6: blink, heal and levitate are built; dash still comes later.
+	const EMantleWeaponDocExtra GWeaponDocExtrasLater[] = { EMantleWeaponDocExtra::Dash };
+	// Round 5 step 3: extra.look, blink's looks in the enum's order (overhead the default).
+	const TCHAR* const GWeaponDocBlinkLookNames[] = { TEXT("overhead"), TEXT("curl"), TEXT("sink") };
 	const TCHAR* const GWeaponDocUseRefused[] = {
 		TEXT("fire"), TEXT("attachments"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil")
 	};
@@ -126,6 +129,7 @@ namespace MantleWeaponDocumentPrivate
 	static_assert(WeaponDocCount(GWeaponDocUseStyleNames) == static_cast<int32>(EMantleWeaponDocUseStyle::Count), "one name per use style");
 	static_assert(WeaponDocCount(GWeaponDocConsumableEffectNames) == static_cast<int32>(EMantleWeaponDocConsumableEffect::Count), "one name per consumable effect");
 	static_assert(WeaponDocCount(GWeaponDocExtraNames) == static_cast<int32>(EMantleWeaponDocExtra::Count), "one name per extra");
+	static_assert(WeaponDocCount(GWeaponDocBlinkLookNames) == static_cast<int32>(EMantleWeaponDocBlinkLook::Count), "one name per blink look");
 
 	/** Names[Index], or "" past the table. */
 	template <int32 N>
@@ -1488,7 +1492,8 @@ namespace MantleWeaponDocumentPrivate
 
 		void ReadExtra(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocExtra& Out)
 		{
-			Keys(Obj, Path, { TEXT("kind"), TEXT("cooldownSeconds"), TEXT("maxMass"), TEXT("liftPlayers"), TEXT("maxHeight"), TEXT("durationSeconds") },
+			Keys(Obj, Path, { TEXT("kind"), TEXT("cooldownSeconds"), TEXT("maxMass"), TEXT("liftPlayers"), TEXT("maxHeight"), TEXT("durationSeconds"),
+				TEXT("range"), TEXT("look"), TEXT("heal") },
 				{ TEXT("kind") });
 			if (const TSharedPtr<FJsonValue> Kind = Field(Obj, TEXT("kind")))
 			{
@@ -1500,6 +1505,10 @@ namespace MantleWeaponDocumentPrivate
 			// Round 5 step 6: levitate's cap and time.
 			OptNumber(Obj, Path, TEXT("maxHeight"), 100.0, 2000.0, Out.MaxHeight);
 			OptNumber(Obj, Path, TEXT("durationSeconds"), 1.0, 30.0, Out.DurationSeconds);
+			// Round 5 steps 3 and 4: blink's reach and look, heal's amount.
+			OptNumber(Obj, Path, TEXT("range"), 300.0, 3000.0, Out.Range);
+			OptChoice(Obj, Path, TEXT("look"), GWeaponDocBlinkLookNames, Out.Look);
+			OptNumber(Obj, Path, TEXT("heal"), 1.0, 1000.0, Out.Heal);
 		}
 
 		void ReadShieldThrow(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocShieldThrow& Out)
@@ -2282,6 +2291,12 @@ namespace MantleWeaponDocumentPrivate
 			Boolean(Node, TEXT("liftPlayers"), In.bLiftPlayers);
 			Number(Node, TEXT("maxHeight"), In.MaxHeight);
 			Number(Node, TEXT("durationSeconds"), In.DurationSeconds);
+			Number(Node, TEXT("range"), In.Range);
+			if (In.Look.bSet)
+			{
+				WeaponDocPut(Node, TEXT("look"), WeaponDocStringNode(WeaponDocNameAt(GWeaponDocBlinkLookNames, static_cast<int32>(In.Look.Value))));
+			}
+			Number(Node, TEXT("heal"), In.Heal);
 			return Node;
 		}
 
@@ -3212,8 +3227,9 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 	{
 		R.Add(TEXT("staffMelee"), TEXT("mantle"), FString::Printf(TEXT("a %s has no staff melee: drop staffMelee"), Hold));
 	}
-	// The extra (Round 5 step 0): only a hold with an extra on Q (the staff) takes one; a kind that is built (blink, heal and dash come in a later
-	// update); maxMass only on the extra that lifts; (step 6) maxHeight and durationSeconds only on levitate. A Battle Mage takes any built one.
+	// The extra (Round 5 step 0): only a hold with an extra on Q (the staff) takes one; a kind that is built (dash comes in a later update); maxMass
+	// only on the extra that lifts; (step 6) maxHeight and durationSeconds only on levitate; (steps 3 and 4) range and look only on blink, heal only
+	// on heal. A Battle Mage takes any built one.
 	if (D.Extra.bSet)
 	{
 		const FMantleWeaponDocExtra& Extra = D.Extra.Value;
@@ -3223,7 +3239,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		}
 		else if (IsExtraLater(Extra.Kind))
 		{
-			R.Add(TEXT("extra/kind"), TEXT("mantle"), FString::Printf(TEXT("is %s, which comes in a later update: pick none, telekinesis or levitate"),
+			R.Add(TEXT("extra/kind"), TEXT("mantle"), FString::Printf(TEXT("is %s, which comes in a later update: pick none, telekinesis, blink, heal or levitate"),
 				ExtraName(Extra.Kind)));
 		}
 		else if (Extra.MaxHeight.bSet && Extra.Kind != EMantleWeaponDocExtra::Levitate)
@@ -3241,6 +3257,18 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		else if (Extra.bLiftPlayers.bSet && Extra.Kind != EMantleWeaponDocExtra::Telekinesis)
 		{
 			R.Add(TEXT("extra/liftPlayers"), TEXT("mantle"), TEXT("is set, but only telekinesis lifts anyone: drop liftPlayers"));
+		}
+		else if (Extra.Range.bSet && Extra.Kind != EMantleWeaponDocExtra::Blink)
+		{
+			R.Add(TEXT("extra/range"), TEXT("mantle"), TEXT("is set, but only blink has a range: drop range"));
+		}
+		else if (Extra.Look.bSet && Extra.Kind != EMantleWeaponDocExtra::Blink)
+		{
+			R.Add(TEXT("extra/look"), TEXT("mantle"), TEXT("is set, but only blink has a look: drop look"));
+		}
+		else if (Extra.Heal.bSet && Extra.Kind != EMantleWeaponDocExtra::Heal)
+		{
+			R.Add(TEXT("extra/heal"), TEXT("mantle"), TEXT("is set, but only heal has a heal: drop heal"));
 		}
 	}
 	EMantleWeaponDocEffects Element = EMantleWeaponDocEffects::Arcane;
@@ -3594,6 +3622,17 @@ TConstArrayView<const TCHAR*> FMantleWeaponDocument::GetBeamLooks()
 const TCHAR* FMantleWeaponDocument::ExtraName(const EMantleWeaponDocExtra Extra)
 {
 	return MantleWeaponDocumentPrivate::WeaponDocNameAt(MantleWeaponDocumentPrivate::GWeaponDocExtraNames, static_cast<int32>(Extra));
+}
+
+const TCHAR* FMantleWeaponDocument::BlinkLookName(const EMantleWeaponDocBlinkLook Look)
+{
+	return MantleWeaponDocumentPrivate::WeaponDocNameAt(MantleWeaponDocumentPrivate::GWeaponDocBlinkLookNames, static_cast<int32>(Look));
+}
+
+double FMantleWeaponDocument::DefaultExtraCooldownSeconds(const EMantleWeaponDocExtra Extra)
+{
+	// Brief rows 4, 11 and 13.
+	return Extra == EMantleWeaponDocExtra::Blink ? 5.0 : Extra == EMantleWeaponDocExtra::Heal ? 20.0 : Extra == EMantleWeaponDocExtra::Levitate ? 8.0 : 3.0;
 }
 
 bool FMantleWeaponDocument::IsExtraLater(const EMantleWeaponDocExtra Extra)

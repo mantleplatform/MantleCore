@@ -545,6 +545,18 @@ enum class EMantleWeaponDocExtra : uint8
 	Count
 };
 
+/** schema extra.look (Round 5 step 3): how a blink leaves and arrives, in the enum's order (the pack's WZ_Teleport_01, _02 and _03). */
+enum class EMantleWeaponDocBlinkLook : uint8
+{
+	/** The staff raised overhead, gone, a wide braced landing (Teleport_01). */
+	Overhead,
+	/** A small hop curling into a ball, unfolding into the landing (Teleport_02). */
+	Curl,
+	/** A hop and a sink into the floor, a burst back up out of it (Teleport_03); overhead where either floor is not flat and solid. */
+	Sink,
+	Count
+};
+
 /** schema extra (Round 5 step 0): a staff's extra on Q. Unset is none. */
 struct FMantleWeaponDocExtra
 {
@@ -560,6 +572,12 @@ struct FMantleWeaponDocExtra
 	TMantleWeaponDocValue<double> MaxHeight{ 500.0 };
 	/** Round 5 step 6, levitate only: how long a float lasts before it drifts down by itself, s (1 to 30). Unset: 6. */
 	TMantleWeaponDocValue<double> DurationSeconds{ 6.0 };
+	/** Round 5 step 3, blink only: how far it reaches toward the crosshair, cm in a straight line from the eyes (300 to 3000). */
+	TMantleWeaponDocValue<double> Range{ 1500.0 };
+	/** Round 5 step 3, blink only: how the body leaves and arrives. Unset: overhead. */
+	TMantleWeaponDocValue<EMantleWeaponDocBlinkLook> Look{ EMantleWeaponDocBlinkLook::Overhead };
+	/** Round 5 step 4, heal only: the health it gives back (1 to 1000). */
+	TMantleWeaponDocValue<double> Heal{ 35.0 };
 };
 
 enum class EMantleWeaponDocUseStyle : uint8
@@ -977,6 +995,10 @@ public:
 	/** Round 5 step 0: schema x-extrasLater: the extras in the kind enum that are not built yet (the validator refuses them, so the weapon builder does
 	 *  not offer them). */
 	static bool IsExtraLater(EMantleWeaponDocExtra Extra);
+	/** Round 5 step 3: extra.look's spelling ("overhead"). */
+	static const TCHAR* BlinkLookName(EMantleWeaponDocBlinkLook Look);
+	/** Round 5 steps 3 and 4: the cooldown an extra has when the document sets none (telekinesis 3, blink 5, heal 20, levitate 8; the rest 3). */
+	static double DefaultExtraCooldownSeconds(EMantleWeaponDocExtra Extra);
 
 	/** #904: Effects is an element (not one of the firearms' rifle, pistol and shotgun). */
 	static bool IsElement(EMantleWeaponDocEffects Effects) { return Effects > EMantleWeaponDocEffects::Shotgun && Effects < EMantleWeaponDocEffects::Count; }

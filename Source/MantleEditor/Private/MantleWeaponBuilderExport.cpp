@@ -468,8 +468,8 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		Desc.bStaffMelee.Set(true);
 	}
 	// Round 5 step 0: a staff's extra on Q, none by default; written only when the creator picks one this build plays (telekinesis), with its
-	// cooldown and the heaviest prop it lifts. Step 6: levitate, with its cooldown, cap and time. The later extras (blink, heal, dash) are not
-	// offered yet.
+	// cooldown and the heaviest prop it lifts. Step 6: levitate, with its cooldown, cap and time. Steps 3 and 4: blink (its reach and look) and
+	// heal (its amount). The later extra (dash) is not offered yet.
 	if (Info.bHasExtra && !Source.Extra.IsNone() && Source.Extra.ToString() == FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Levitate))
 	{
 		FMantleWeaponDocExtra Extra;
@@ -482,19 +482,58 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 	else if (Info.bHasExtra && !Source.Extra.IsNone())
 	{
 		const FString Kind = Source.Extra.ToString();
-		if (Kind != FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Telekinesis))
+		EMantleWeaponDocExtra Picked = EMantleWeaponDocExtra::None;
+		for (const EMantleWeaponDocExtra Built : { EMantleWeaponDocExtra::Telekinesis, EMantleWeaponDocExtra::Blink, EMantleWeaponDocExtra::Heal })
+		{
+			if (Kind == FMantleWeaponDocument::ExtraName(Built))
+			{
+				Picked = Built;
+			}
+		}
+		if (Picked == EMantleWeaponDocExtra::None)
 		{
 			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedExtra", "This build has no staff extra {0}."), FText::FromString(Kind)));
 			return false;
 		}
 		FMantleWeaponDocExtra Extra;
-		Extra.Kind = EMantleWeaponDocExtra::Telekinesis;
+		Extra.Kind = Picked;
 		Extra.CooldownSeconds.Set(FMath::Clamp(static_cast<double>(Source.ExtraCooldownSeconds), 0.0, 60.0));
-		Extra.MaxMass.Set(FMath::Clamp(static_cast<double>(Source.ExtraMaxMass), 1.0, 5000.0));
-		// Round 5 step 2: written only when the creator turns player lifting off (on is the document's default).
-		if (!Source.bExtraLiftPlayers)
+		if (Picked == EMantleWeaponDocExtra::Telekinesis)
 		{
-			Extra.bLiftPlayers.Set(false);
+			Extra.MaxMass.Set(FMath::Clamp(static_cast<double>(Source.ExtraMaxMass), 1.0, 5000.0));
+			// Round 5 step 2: written only when the creator turns player lifting off (on is the document's default).
+			if (!Source.bExtraLiftPlayers)
+			{
+				Extra.bLiftPlayers.Set(false);
+			}
+		}
+		else if (Picked == EMantleWeaponDocExtra::Blink)
+		{
+			// Round 5 step 3: the reach, and the look only when it is not the default (overhead).
+			Extra.Range.Set(FMath::Clamp(static_cast<double>(Source.ExtraRange), 300.0, 3000.0));
+			bool bKnownLook = Source.ExtraLook.IsNone();
+			for (int32 Look = 0; Look < static_cast<int32>(EMantleWeaponDocBlinkLook::Count); ++Look)
+			{
+				const EMantleWeaponDocBlinkLook Each = static_cast<EMantleWeaponDocBlinkLook>(Look);
+				if (Source.ExtraLook.ToString() == FMantleWeaponDocument::BlinkLookName(Each))
+				{
+					bKnownLook = true;
+					if (Each != EMantleWeaponDocBlinkLook::Overhead)
+					{
+						Extra.Look.Set(Each);
+					}
+				}
+			}
+			if (!bKnownLook)
+			{
+				OutMessages.Add(FText::Format(LOCTEXT("UnsupportedBlinkLook", "This build has no blink look {0}."), FText::FromName(Source.ExtraLook)));
+				return false;
+			}
+		}
+		else
+		{
+			// Round 5 step 4: how much it heals.
+			Extra.Heal.Set(FMath::Clamp(static_cast<double>(Source.ExtraHeal), 1.0, 1000.0));
 		}
 		Desc.Extra.Set(Extra);
 	}

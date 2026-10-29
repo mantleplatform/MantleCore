@@ -958,7 +958,53 @@ bool FMantleWeaponBuilderV2StaffExtraTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
 		}
 	}
-	TestFalse(TEXT("an extra this build does not play is refused"), Build(EMantleWeaponHold::Staff, TEXT("blink"), Desc, Messages));
+	TestFalse(TEXT("an extra this build does not play is refused"), Build(EMantleWeaponHold::Staff, TEXT("dash"), Desc, Messages));
+	// Round 5 steps 3 and 4: blink writes its reach (and a look only when it is not overhead), heal its amount; neither writes telekinesis's numbers.
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("StaffBlink"), nullptr);
+		Input->Extra = TEXT("blink");
+		Input->ExtraCooldownSeconds = 5.0f;
+		Input->ExtraRange = 2000.0f;
+		Messages.Reset();
+		if (TestTrue(TEXT("a blink staff builds"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff), TEXT("FixtureMesh"),
+			Desc, Messages)))
+		{
+			TestTrue(TEXT("and writes blink with its reach"), Desc.Extra.bSet && Desc.Extra.Value.Kind == EMantleWeaponDocExtra::Blink
+				&& Desc.Extra.Value.Range.bSet && FMath::IsNearlyEqual(Desc.Extra.Value.Range.Value, 2000.0));
+			TestTrue(TEXT("no look (overhead) and no mass"), Desc.Extra.bSet && !Desc.Extra.Value.Look.bSet && !Desc.Extra.Value.MaxMass.bSet);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		}
+		Input->ExtraLook = TEXT("sink");
+		Messages.Reset();
+		if (TestTrue(TEXT("a sinking blink builds"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff),
+			TEXT("FixtureMesh"), Desc, Messages)))
+		{
+			TestTrue(TEXT("and writes its look"), Desc.Extra.bSet && Desc.Extra.Value.Look.bSet && Desc.Extra.Value.Look.Value == EMantleWeaponDocBlinkLook::Sink);
+		}
+		Input->ExtraLook = TEXT("spin");
+		Messages.Reset();
+		TestFalse(TEXT("a look this build does not have is refused"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff),
+			TEXT("FixtureMesh"), Desc, Messages));
+	}
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("StaffHeal"), nullptr);
+		Input->Extra = TEXT("heal");
+		Input->ExtraHeal = 50.0f;
+		Messages.Reset();
+		if (TestTrue(TEXT("a heal staff builds"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff), TEXT("FixtureMesh"),
+			Desc, Messages)))
+		{
+			TestTrue(TEXT("and writes heal with its amount"), Desc.Extra.bSet && Desc.Extra.Value.Kind == EMantleWeaponDocExtra::Heal
+				&& Desc.Extra.Value.Heal.bSet && FMath::IsNearlyEqual(Desc.Extra.Value.Heal.Value, 50.0) && !Desc.Extra.Value.Range.bSet);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		}
+	}
+	TestEqual(TEXT("blink's own cooldown"), FMantleWeaponDocument::DefaultExtraCooldownSeconds(EMantleWeaponDocExtra::Blink), 5.0);
+	TestEqual(TEXT("heal's own cooldown"), FMantleWeaponDocument::DefaultExtraCooldownSeconds(EMantleWeaponDocExtra::Heal), 20.0);
 	if (TestTrue(TEXT("a sword with the same field builds"), Build(EMantleWeaponHold::Melee1h, TEXT("telekinesis"), Desc, Messages)))
 	{
 		TestFalse(TEXT("and writes no extra (it has none)"), Desc.Extra.bSet);
@@ -1258,6 +1304,9 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->bExtraLiftPlayers = false; Changed(TEXT("lifting players changes signature")); Input->bExtraLiftPlayers = true;
 	Input->ExtraMaxHeight = 300.0f; Changed(TEXT("levitate's cap changes signature")); Input->ExtraMaxHeight = 500.0f;
 	Input->ExtraDurationSeconds = 10.0f; Changed(TEXT("levitate's time changes signature")); Input->ExtraDurationSeconds = 6.0f;
+	Input->ExtraRange = 2000.0f; Changed(TEXT("blink reach changes signature")); Input->ExtraRange = 1500.0f;
+	Input->ExtraLook = TEXT("sink"); Changed(TEXT("blink look changes signature")); Input->ExtraLook = NAME_None;
+	Input->ExtraHeal = 50.0f; Changed(TEXT("heal amount changes signature")); Input->ExtraHeal = 35.0f;
 	Input->ShootingStyle = TEXT("c"); Changed(TEXT("shooting style changes signature")); Input->ShootingStyle = NAME_None;
 	Input->TapLook = TEXT("handFireball"); Changed(TEXT("tap look changes signature")); Input->TapLook = NAME_None;
 	Input->HoldLook = TEXT("skyCall"); Changed(TEXT("hold look changes signature")); Input->HoldLook = NAME_None;

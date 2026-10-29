@@ -794,6 +794,9 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->bExtraLiftPlayers = true;
 	Working->ExtraMaxHeight = 500.f;
 	Working->ExtraDurationSeconds = 6.f;
+	Working->ExtraRange = 1500.f;
+	Working->ExtraLook = NAME_None;
+	Working->ExtraHeal = 35.f;
 	Working->Projectile = FMantleWeaponSourceProjectile();
 	Working->Sweep = FMantleWeaponSourceSweep();
 	Working->Beam = FMantleWeaponSourceBeam();
@@ -2061,24 +2064,31 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		LOCTEXT("StaffMeleeTip", "Tapping the Melee key swings the staff in a three-hit combo; holding it leaps forward and slams the staff down. Each hit does the weapon's damage (the leap twice it), and can be blocked and parried like a sword's. Off, the Melee key does a plain weapon strike."),
 		[this] { return Working->bStaffMelee; }, [this](bool V) { Working->bStaffMelee = V; },
 		[CanStaffMelee] { return CanStaffMelee() ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
-	// Round 5 step 0: a staff's one extra on Q (gamepad D-pad up), none by default. Only the extras this build plays are offered (telekinesis, and
-	// step 6's levitate); the later ones (blink, heal, dash) come with their own updates.
+	// Round 5 step 0: a staff's one extra on Q (gamepad D-pad up), none by default. Only the extras this build plays are offered (telekinesis, step
+	// 6's levitate, steps 3 and 4's blink and heal); the later one (dash) comes with its own update.
 	if (HoldInfo(Working->Hold).bHasExtra)
 	{
 		static const FName Telekinesis(FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Telekinesis));
 		static const FName Levitate(FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Levitate));
+		static const FName Blink(FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Blink));
+		static const FName Heal(FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Heal));
 		TArray<TPair<FName, FText>> Extras;
 		Extras.Emplace(NAME_None, LOCTEXT("ExtraNone", "None"));
 		Extras.Emplace(Telekinesis, LOCTEXT("ExtraTelekinesis", "Telekinesis"));
+		Extras.Emplace(Blink, LOCTEXT("ExtraBlink", "Blink"));
+		Extras.Emplace(Heal, LOCTEXT("ExtraHeal", "Heal"));
 		Extras.Emplace(Levitate, LOCTEXT("ExtraLevitate", "Levitate"));
 		AddRowWhen(LOCTEXT("Extra", "Extra on Q"),
-			LOCTEXT("ExtraTip", "What Q (gamepad D-pad up) does with this staff. Telekinesis: tap Q on a physics prop up to 20 m away to lift it; left mouse throws it where you aim, Q again slams it down, and after 5 seconds it drops by itself. Anchored props can't be lifted. Levitate: tap Q to float; jump rises, crouch sinks, the movement keys steer; Q again or the time limit drifts you down. It never uses the staff's charges."),
-			// Round 5 step 6: picking an extra puts the cooldown at that extra's own (telekinesis 3 s, levitate 8 s); the creator can change it after.
+			LOCTEXT("ExtraTip", "What Q (gamepad D-pad up) does with this staff. Telekinesis: tap Q on a physics prop up to 20 m away to lift it; left mouse throws it where you aim, Q again slams it down, and after 5 seconds it drops by itself. Anchored props can't be lifted. Blink: vanish and reappear on the ground where you aim, up to its reach. Heal: bow over the staff and heal yourself about a second later, standing still until it lands; a dodge before then cancels it. Levitate: tap Q to float; jump rises, crouch sinks, the movement keys steer; Q again or the time limit drifts you down. None of them uses the staff's charges."),
+			// Round 5 steps 3, 4 and 6: picking an extra puts the cooldown at that extra's own (telekinesis 3 s, blink 5, heal 20, levitate 8); the
+			// creator can change it after.
 			MakeChoiceControl<FName>(Extras, [this] { return Working->Extra; }, [this](FName Value)
 			{
 				if (Value != Working->Extra)
 				{
-					Working->ExtraCooldownSeconds = Value == Levitate ? 8.f : 3.f;
+					const EMantleWeaponDocExtra Kind = Value == Blink ? EMantleWeaponDocExtra::Blink : Value == Heal ? EMantleWeaponDocExtra::Heal
+						: Value == Levitate ? EMantleWeaponDocExtra::Levitate : EMantleWeaponDocExtra::Telekinesis;
+					Working->ExtraCooldownSeconds = static_cast<float>(FMantleWeaponDocument::DefaultExtraCooldownSeconds(Kind));
 				}
 				Working->Extra = Value;
 			}),
@@ -2105,6 +2115,24 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 			LOCTEXT("ExtraDurationTip", "After this long the player drifts down and lands by themselves."),
 			1.f, 30.f, 0.5f, [this] { return Working->ExtraDurationSeconds; }, [this](float V) { Working->ExtraDurationSeconds = FMath::Clamp(V, 1.f, 30.f); },
 			[this] { return Working->Extra == Levitate ? EVisibility::Visible : EVisibility::Collapsed; });
+		// Round 5 step 3: blink's reach and look.
+		AddFloatWhen(LOCTEXT("ExtraRange", "Blink reach (3–30 m)"),
+			LOCTEXT("ExtraRangeTip", "How far toward the crosshair the blink can take you, in cm along the ground. Where the spot you aim at has no room, it lands at the nearest free spot short of it; it never goes through walls."),
+			300.f, 3000.f, 10.f, [this] { return Working->ExtraRange; }, [this](float V) { Working->ExtraRange = FMath::Clamp(V, 300.f, 3000.f); },
+			[this] { return Working->Extra == Blink ? EVisibility::Visible : EVisibility::Collapsed; });
+		TArray<TPair<FName, FText>> Looks;
+		Looks.Emplace(NAME_None, LOCTEXT("BlinkLookOverhead", "Overhead (staff raised, gone, a braced landing)"));
+		Looks.Emplace(FName(FMantleWeaponDocument::BlinkLookName(EMantleWeaponDocBlinkLook::Curl)), LOCTEXT("BlinkLookCurl", "Curl (a hop curling into a ball)"));
+		Looks.Emplace(FName(FMantleWeaponDocument::BlinkLookName(EMantleWeaponDocBlinkLook::Sink)), LOCTEXT("BlinkLookSink", "Sink (into the floor and back up)"));
+		AddRowWhen(LOCTEXT("ExtraLook", "Blink look"),
+			LOCTEXT("ExtraLookTip", "How the body leaves and arrives. Sink plays Overhead instead where the floor is a slope or something that moves."),
+			MakeChoiceControl<FName>(Looks, [this] { return Working->ExtraLook; }, [this](FName Value) { Working->ExtraLook = Value; }),
+			[this] { return Working->Extra == Blink ? EVisibility::Visible : EVisibility::Collapsed; });
+		// Round 5 step 4: heal's amount.
+		AddFloatWhen(LOCTEXT("ExtraHealAmount", "Health it gives back (1–1000)"),
+			LOCTEXT("ExtraHealAmountTip", "Never past the player's maximum health. At full health Q does nothing (and the cooldown is not spent)."),
+			1.f, 1000.f, 1.f, [this] { return Working->ExtraHeal; }, [this](float V) { Working->ExtraHeal = FMath::Clamp(V, 1.f, 1000.f); },
+			[this] { return Working->Extra == Heal ? EVisibility::Visible : EVisibility::Collapsed; });
 	}
 	const bool bCanOverrideHandedness = IsFirearm(Working->Hold);
 	AddToggleWhen(LOCTEXT("OverrideTwoHanded", "Change how many hands hold it"), LOCTEXT("OverrideTwoHandedTip", "Use this hold with one hand or both. The usual setting follows the hold."),
