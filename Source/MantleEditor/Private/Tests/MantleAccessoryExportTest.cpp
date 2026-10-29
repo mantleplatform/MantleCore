@@ -7,6 +7,12 @@
 #include "MantlePng.h"
 #include "MantleThumbnailChoice.h"
 
+#include "MantleEditorActions.h"
+#include "MantleToolCall.h"
+
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "Materials/Material.h"
@@ -404,6 +410,83 @@ bool FMantleAccessoryCustomThumbnailTest::RunTest(const FString& Parameters)
 	Draft.Thumbnail.ImageFile.FilePath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Automation"), TEXT("MantleNoSuchThumbnail.png"));
 	const FMantleCosmeticPackage Refused = FMantleCosmeticExport::BuildCore(Draft, *Contract);
 	TestTrue(TEXT("a missing custom picture is an error"), Refused.HasErrors());
+	return true;
+}
+
+// The agent tools take a plain static mesh in an accessory slot (a necklace) through the panel's own Accessory export, and
+// still refuse a static mesh in a clothing slot as hair cards.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleAccessoryAgentTest, "Mantle.Cosmetics.Accessory.AgentTakesStaticMesh",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMantleAccessoryAgentTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleAccessoryExportTestPrivate;
+	TStrongObjectPtr<UMaterialInterface> Material(MakeMaterial(0));
+	TStrongObjectPtr<UStaticMesh> Light(MakeDisc(30, 30, Material.Get()));
+	auto Check = [this, &Light](const FString& Slot) -> TSharedPtr<FJsonObject>
+	{
+		const FString Json = MantleToolCall::CallTool(TEXT("CheckCosmetic"), { Light->GetPathName(), Slot, FString(), FString(), FString() });
+		TSharedPtr<FJsonObject> Out;
+		FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Out);
+		TestTrue(FString::Printf(TEXT("%s: the agent answered (%s)"), *Slot, *Json.Left(300)), Out.IsValid());
+		return Out;
+	};
+	if (const TSharedPtr<FJsonObject> Neck = Check(TEXT("acc_neck")))
+	{
+		TestTrue(FString::Printf(TEXT("a static mesh in acc_neck is checked, not refused (%s)"), *Neck->GetStringField(TEXT("refused"))), Neck->GetBoolField(TEXT("ok")));
+	}
+	// The placement the panel opens with: the mesh's axes aligned to the avatar's, so a necklace is not uploaded sideways.
+	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get();
+	if (TestNotNull(TEXT("the avatar contract loads"), Contract))
+	{
+		const FMantleCosmeticDraft Draft = FMantleEditorActions::MakeCosmeticDraft(EMantleCosmeticClass::Accessory, Light.Get(), TEXT("acc_neck"), FString(), *Contract, EMantleFitSex::Auto);
+		TestTrue(TEXT("a static mesh accessory starts aligned to the avatar's axes"), Draft.bAttach);
+		TestTrue(TEXT("a neck accessory starts lowered onto the shoulders, not centred on the neck socket"), !Draft.AttachLocation.IsNearlyZero(0.5f));
+		const FMantleCosmeticDraft Wrist = FMantleEditorActions::MakeCosmeticDraft(EMantleCosmeticClass::Accessory, Light.Get(), TEXT("acc_face"), FString(), *Contract, EMantleFitSex::Auto);
+		TestTrue(TEXT("another slot is only aligned, not lowered"), Wrist.AttachLocation.IsNearlyZero(0.01f));
+	}
+	if (const TSharedPtr<FJsonObject> Top = Check(TEXT("top")))
+	{
+		TestFalse(TEXT("a static mesh in a clothing slot is refused"), Top->GetBoolField(TEXT("ok")));
+		TestEqual(TEXT("as cards_not_hair"), Top->GetStringField(TEXT("refused")), FString(TEXT("cards_not_hair")));
+	}
+	return true;
+}
+
+// A necklace ring around a neck-like cylinder falls until it meets the shoulders and stops at the surface (with clearance),
+// even when the skin is a few big triangles whose corners are far from any link.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleShoulderRestTest, "Mantle.Cosmetics.Accessory.RestOnShoulders",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMantleShoulderRestTest::RunTest(const FString& Parameters)
+{
+	// Shoulders: a flat annulus at z = 0 between radius 5 (the neck) and 40, as 24 wide triangles pairs (corners 35 cm apart).
+	TArray<FVector> Skin;
+	constexpr int32 Segments = 24;
+	for (int32 Index = 0; Index < Segments; ++Index)
+	{
+		const double A0 = 2.0 * PI * Index / Segments, A1 = 2.0 * PI * (Index + 1) / Segments;
+		const FVector In0(5.0 * FMath::Cos(A0), 5.0 * FMath::Sin(A0), 0.0), In1(5.0 * FMath::Cos(A1), 5.0 * FMath::Sin(A1), 0.0);
+		const FVector Out0(40.0 * FMath::Cos(A0), 40.0 * FMath::Sin(A0), 0.0), Out1(40.0 * FMath::Cos(A1), 40.0 * FMath::Sin(A1), 0.0);
+		Skin.Append({ In0, Out0, Out1, In0, Out1, In1 });
+		// The neck's wall: vertical triangles a ring outside it never meets.
+		const FVector Up0(In0.X, In0.Y, 20.0), Up1(In1.X, In1.Y, 20.0);
+		Skin.Append({ In0, In1, Up1, In0, Up1, Up0 });
+	}
+	// A ring of 7 cm radius, 10 cm above the shoulders, around the neck.
+	TArray<FVector> Ring;
+	for (int32 Index = 0; Index < 200; ++Index)
+	{
+		const double Angle = 2.0 * PI * Index / 200;
+		Ring.Add(FVector(7.0 * FMath::Cos(Angle), 7.0 * FMath::Sin(Angle), 10.0));
+	}
+	const double Drop = FMantleAccessorySettings::DropOntoSurface(Ring, Skin, 0.15, 30.0);
+	TestTrue(TEXT("the ring finds the shoulders"), Drop >= 0.0);
+	TestEqual(TEXT("it stops 0.15 cm above the surface, neither floating nor inside"), Drop, 10.0 - 0.15, 0.001);
+	// With nothing beneath it, it does not move.
+	TestTrue(TEXT("no surface below: no answer"), FMantleAccessorySettings::DropOntoSurface(Ring, TArray<FVector>(), 0.15, 30.0) < 0.0);
+	// Too far above the surface for the limit: no answer.
+	TestTrue(TEXT("beyond the limit: no answer"), FMantleAccessorySettings::DropOntoSurface(Ring, Skin, 0.15, 5.0) < 0.0);
 	return true;
 }
 

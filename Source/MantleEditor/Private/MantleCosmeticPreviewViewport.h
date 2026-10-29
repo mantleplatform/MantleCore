@@ -81,6 +81,7 @@ public:
 
 	/** The body shown, for filtering animations by skeleton; null when nothing is shown. */
 	USkeletalMesh* GetShownBody() const;
+	USkeletalMesh* GetShownFace() const;
 
 	// FGCObject
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
