@@ -133,6 +133,11 @@ USkeletalMesh* SMantleCosmeticPreviewViewport::GetShownBody() const
 	return BodyComponent && BodyComponent->IsVisible() ? BodyComponent->GetSkeletalMeshAsset() : nullptr;
 }
 
+USkeletalMesh* SMantleCosmeticPreviewViewport::GetShownFace() const
+{
+	return FaceComponent && FaceComponent->IsVisible() ? FaceComponent->GetSkeletalMeshAsset() : nullptr;
+}
+
 void SMantleCosmeticPreviewViewport::Show(const FMantlePreviewView& View)
 {
 	if (!BodyComponent || !FaceComponent || !GarmentComponent)

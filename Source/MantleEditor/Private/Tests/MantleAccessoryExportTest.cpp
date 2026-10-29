@@ -453,4 +453,41 @@ bool FMantleAccessoryAgentTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// A necklace ring around a neck-like cylinder falls until it meets the shoulders and stops at the surface (with clearance),
+// even when the skin is a few big triangles whose corners are far from any link.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleShoulderRestTest, "Mantle.Cosmetics.Accessory.RestOnShoulders",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMantleShoulderRestTest::RunTest(const FString& Parameters)
+{
+	// Shoulders: a flat annulus at z = 0 between radius 5 (the neck) and 40, as 24 wide triangles pairs (corners 35 cm apart).
+	TArray<FVector> Skin;
+	constexpr int32 Segments = 24;
+	for (int32 Index = 0; Index < Segments; ++Index)
+	{
+		const double A0 = 2.0 * PI * Index / Segments, A1 = 2.0 * PI * (Index + 1) / Segments;
+		const FVector In0(5.0 * FMath::Cos(A0), 5.0 * FMath::Sin(A0), 0.0), In1(5.0 * FMath::Cos(A1), 5.0 * FMath::Sin(A1), 0.0);
+		const FVector Out0(40.0 * FMath::Cos(A0), 40.0 * FMath::Sin(A0), 0.0), Out1(40.0 * FMath::Cos(A1), 40.0 * FMath::Sin(A1), 0.0);
+		Skin.Append({ In0, Out0, Out1, In0, Out1, In1 });
+		// The neck's wall: vertical triangles a ring outside it never meets.
+		const FVector Up0(In0.X, In0.Y, 20.0), Up1(In1.X, In1.Y, 20.0);
+		Skin.Append({ In0, In1, Up1, In0, Up1, Up0 });
+	}
+	// A ring of 7 cm radius, 10 cm above the shoulders, around the neck.
+	TArray<FVector> Ring;
+	for (int32 Index = 0; Index < 200; ++Index)
+	{
+		const double Angle = 2.0 * PI * Index / 200;
+		Ring.Add(FVector(7.0 * FMath::Cos(Angle), 7.0 * FMath::Sin(Angle), 10.0));
+	}
+	const double Drop = FMantleAccessorySettings::DropOntoSurface(Ring, Skin, 0.15, 30.0);
+	TestTrue(TEXT("the ring finds the shoulders"), Drop >= 0.0);
+	TestEqual(TEXT("it stops 0.15 cm above the surface, neither floating nor inside"), Drop, 10.0 - 0.15, 0.001);
+	// With nothing beneath it, it does not move.
+	TestTrue(TEXT("no surface below: no answer"), FMantleAccessorySettings::DropOntoSurface(Ring, TArray<FVector>(), 0.15, 30.0) < 0.0);
+	// Too far above the surface for the limit: no answer.
+	TestTrue(TEXT("beyond the limit: no answer"), FMantleAccessorySettings::DropOntoSurface(Ring, Skin, 0.15, 5.0) < 0.0);
+	return true;
+}
+
 #endif

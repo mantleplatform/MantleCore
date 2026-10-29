@@ -54,7 +54,7 @@ namespace MantleDevRenderAccessoryPrivate
 		const USkeletalMeshSocket* Own = Body.BodyMesh->FindSocket(FName(*Slot));
 		const FTransform Socket = Own && Own->BoneName == FName(*Point->SocketBone) ? Own->GetSocketLocalTransform() * Pose : Pose;
 		const FTransform Worn = Placed * Attach * Socket;
-		for (const TCHAR* View : { TEXT("front"), TEXT("back") })
+		for (const TCHAR* View : { TEXT("front"), TEXT("back"), TEXT("side") })
 		{
 			// The body and the face as the editor evaluated them (the merged head+body has no render data of its own here).
 			FMantleThumbnailSubject Shot = FMantleCosmeticThumbnail::GarmentSubject(Body.BodyMesh.Get(), Body.FaceMesh.Get(), nullptr, nullptr, Shown->GetBoundingBox().TransformBy(Worn));
@@ -63,6 +63,7 @@ namespace MantleDevRenderAccessoryPrivate
 			Shot.StaticTransform = Worn;
 			Shot.Describe = FString::Printf(TEXT("%s worn on %s"), *Shown->GetName(), *BodyId);
 			if (FCString::Strcmp(View, TEXT("back")) == 0) { Shot.View.Yaw += 180.0f; }
+			if (FCString::Strcmp(View, TEXT("side")) == 0) { Shot.View.Yaw += 90.0f; }
 			TArray<FColor> Pixels;
 			const FString File = FPaths::Combine(Directory, FString::Printf(TEXT("%s_worn_%s.png"), *Label, View));
 			const bool bWritten = FMantleCosmeticThumbnail::Capture(Shot, Size, Pixels, Error)

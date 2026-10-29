@@ -81,7 +81,7 @@ bool FMantleAccessorySettings::AlignToAvatarAxes(FMantleCosmeticDraft& Draft, co
 	return true;
 }
 
-bool FMantleAccessorySettings::ApplyDefaultPlacement(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError)
+bool FMantleAccessorySettings::ApplyDefaultPlacement(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError, const USkeletalMesh* Face)
 {
 	if (!AlignToAvatarAxes(Draft, Body, OutError))
 	{
@@ -90,12 +90,62 @@ bool FMantleAccessorySettings::ApplyDefaultPlacement(FMantleCosmeticDraft& Draft
 	if (Draft.Slot.Contains(TEXT("neck")))
 	{
 		FString Ignored;
-		RestOnShoulders(Draft, Body, Ignored);
+		RestOnShoulders(Draft, Body, Ignored, Face);
 	}
 	return true;
 }
 
-bool FMantleAccessorySettings::RestOnShoulders(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError)
+namespace MantleAccessorySettingsPrivate
+{
+	/** LOD 0 of a skinned mesh as triangle corners in its reference pose (the shape the picture draws). */
+	void AppendSkin(const USkeletalMesh* Mesh, const double MinZ, const double MaxZ, TArray<FVector>& OutTriangles)
+	{
+		const FSkeletalMeshRenderData* Data = Mesh ? Mesh->GetResourceForRendering() : nullptr;
+		if (!Data || Data->LODRenderData.IsEmpty()) return;
+		const FSkeletalMeshLODRenderData& LOD = Data->LODRenderData[0];
+		const FPositionVertexBuffer& Positions = LOD.StaticVertexBuffers.PositionVertexBuffer;
+		const FRawStaticIndexBuffer16or32Interface* Indices = LOD.MultiSizeIndexContainer.GetIndexBuffer();
+		if (!Indices) return;
+		for (int32 Index = 0; Index + 2 < Indices->Num(); Index += 3)
+		{
+			const FVector Corner[3] = { FVector(Positions.VertexPosition(Indices->Get(Index))), FVector(Positions.VertexPosition(Indices->Get(Index + 1))),
+				FVector(Positions.VertexPosition(Indices->Get(Index + 2))) };
+			const double Low = FMath::Min3(Corner[0].Z, Corner[1].Z, Corner[2].Z);
+			const double High = FMath::Max3(Corner[0].Z, Corner[1].Z, Corner[2].Z);
+			if (High > MinZ && Low < MaxZ) OutTriangles.Append(Corner, 3);
+		}
+	}
+}
+
+double FMantleAccessorySettings::DropOntoSurface(TConstArrayView<FVector> Links, TConstArrayView<FVector> Triangles, const double ClearanceCm, const double MaxDropCm)
+{
+	double Best = -1.0;
+	for (const FVector& Link : Links)
+	{
+		double Below = -TNumericLimits<double>::Max();
+		for (int32 Index = 0; Index + 2 < Triangles.Num(); Index += 3)
+		{
+			const FVector& A = Triangles[Index];
+			const FVector& B = Triangles[Index + 1];
+			const FVector& C = Triangles[Index + 2];
+			// The link's vertical line through the triangle: barycentric weights in the XY plane.
+			const double Area = (B.X - A.X) * (C.Y - A.Y) - (C.X - A.X) * (B.Y - A.Y);
+			if (FMath::Abs(Area) < UE_DOUBLE_SMALL_NUMBER) continue;
+			const double U = ((B.X - Link.X) * (C.Y - Link.Y) - (C.X - Link.X) * (B.Y - Link.Y)) / Area;
+			const double V = ((C.X - Link.X) * (A.Y - Link.Y) - (A.X - Link.X) * (C.Y - Link.Y)) / Area;
+			const double W = 1.0 - U - V;
+			if (U < 0.0 || V < 0.0 || W < 0.0) continue;
+			const double Surface = U * A.Z + V * B.Z + W * C.Z;
+			if (Surface <= Link.Z + ClearanceCm) Below = FMath::Max(Below, Surface);
+		}
+		if (Below == -TNumericLimits<double>::Max()) continue;
+		const double Drop = FMath::Max(0.0, Link.Z - Below - ClearanceCm);
+		if (Drop <= MaxDropCm && (Best < 0.0 || Drop < Best)) Best = Drop;
+	}
+	return Best;
+}
+
+bool FMantleAccessorySettings::RestOnShoulders(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError, const USkeletalMesh* Face)
 {
 	OutError.Reset();
 	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get(&OutError);
@@ -111,61 +161,36 @@ bool FMantleAccessorySettings::RestOnShoulders(FMantleCosmeticDraft& Draft, cons
 	const TArray<FTransform>& Pose = Reference.GetRefBonePose();
 	int32 Bone = Reference.FindBoneIndex(FName(*Point->SocketBone));
 	const FStaticMeshRenderData* MeshData = Mesh->GetRenderData();
-	const FSkeletalMeshRenderData* BodyData = Body->GetResourceForRendering();
-	if (!Pose.IsValidIndex(Bone) || !MeshData || MeshData->LODResources.IsEmpty() || !BodyData || BodyData->LODRenderData.IsEmpty())
+	if (!Pose.IsValidIndex(Bone) || !MeshData || MeshData->LODResources.IsEmpty())
 	{
-		OutError = TEXT("The neck bone or the meshes' vertices could not be read.");
+		OutError = TEXT("The neck bone or the accessory's vertices could not be read.");
 		return false;
 	}
 	FTransform SocketBone = Pose[Bone];
 	while ((Bone = Reference.GetParentIndex(Bone)) != INDEX_NONE) SocketBone = SocketBone * Pose[Bone];
 	// The mesh as it is worn now (attach rotation and offset on the bone), in the body's component space, whose Z is up.
-	const FTransform Attach(FRotator(Draft.AttachRotation.X, Draft.AttachRotation.Y, Draft.AttachRotation.Z), FVector(Draft.AttachLocation), FVector(Draft.AttachScale));
-	const FTransform Worn = Attach * SocketBone;
+	const FTransform Worn = FTransform(FRotator(Draft.AttachRotation.X, Draft.AttachRotation.Y, Draft.AttachRotation.Z), FVector(Draft.AttachLocation), FVector(Draft.AttachScale)) * SocketBone;
 	const FPositionVertexBuffer& MeshPositions = MeshData->LODResources[0].VertexBuffers.PositionVertexBuffer;
-	TArray<FVector> Chain;
+	TArray<FVector> Links;
 	double Low = TNumericLimits<double>::Max(), High = -TNumericLimits<double>::Max();
-	for (uint32 Index = 0; Index < MeshPositions.GetNumVertices(); Index += FMath::Max(1u, MeshPositions.GetNumVertices() / 1500u))
+	for (uint32 Index = 0; Index < MeshPositions.GetNumVertices(); ++Index)
 	{
-		Chain.Add(Worn.TransformPosition(FVector(MeshPositions.VertexPosition(Index))));
-		Low = FMath::Min(Low, Chain.Last().Z);
-		High = FMath::Max(High, Chain.Last().Z);
+		Links.Add(Worn.TransformPosition(FVector(MeshPositions.VertexPosition(Index))));
+		Low = FMath::Min(Low, Links.Last().Z);
+		High = FMath::Max(High, Links.Last().Z);
 	}
 	// What hangs from the loop (a pendant) rests on the chest; the upper half of the mesh is what lies on the shoulders.
 	const double Split = High - (High - Low) * 0.5;
-	Chain.RemoveAll([Split](const FVector& Position) { return Position.Z < Split; });
-	// The body around the neck and shoulders, in the reference pose.
-	const FPositionVertexBuffer& BodyPositions = BodyData->LODRenderData[0].StaticVertexBuffers.PositionVertexBuffer;
+	Links.RemoveAll([Split](const FVector& Position) { return Position.Z < Split; });
+	// The skin the picture draws: the body and the face (the neck belongs to both), under and around the chain.
 	TArray<FVector> Skin;
-	for (uint32 Index = 0; Index < BodyPositions.GetNumVertices(); ++Index)
+	MantleAccessorySettingsPrivate::AppendSkin(Body, Low - 40.0, High + 5.0, Skin);
+	MantleAccessorySettingsPrivate::AppendSkin(Face, Low - 40.0, High + 5.0, Skin);
+	constexpr double ClearanceCm = 0.15, MaxDropCm = 30.0;
+	const double Drop = Links.IsEmpty() || Skin.IsEmpty() ? -1.0 : DropOntoSurface(Links, Skin, ClearanceCm, MaxDropCm);
+	if (Drop < 0.0)
 	{
-		const FVector Position(BodyPositions.VertexPosition(Index));
-		if (Position.Z > Low - 40.0 && Position.Z < High + 5.0) Skin.Add(Position);
-	}
-	if (Chain.IsEmpty() || Skin.IsEmpty())
-	{
-		OutError = TEXT("There is no neck or shoulder skin to rest the chain on.");
-		return false;
-	}
-	// Lower it until a link touches the skin: the first step at which one is within the contact distance.
-	constexpr double StepCm = 0.2, ContactCm = 0.4, MaxDropCm = 30.0;
-	double Drop = 0.0;
-	for (; Drop <= MaxDropCm; Drop += StepCm)
-	{
-		bool bTouching = false;
-		for (const FVector& Link : Chain)
-		{
-			const FVector Lowered(Link.X, Link.Y, Link.Z - Drop);
-			for (const FVector& Point3 : Skin)
-			{
-				if (FVector::DistSquared(Lowered, Point3) < ContactCm * ContactCm) { bTouching = true; break; }
-			}
-			if (bTouching) break;
-		}
-		if (bTouching) break;
-	}
-	if (Drop > MaxDropCm)
-	{
+		OutError = TEXT("There is no neck or shoulder skin under the chain to rest it on.");
 		return false;
 	}
 	const FVector InBone = SocketBone.GetRotation().Inverse().RotateVector(FVector(0.0, 0.0, -Drop));
