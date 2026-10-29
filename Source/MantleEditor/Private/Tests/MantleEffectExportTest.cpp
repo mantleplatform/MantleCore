@@ -14,6 +14,7 @@
 #include "Distributions/DistributionVectorUniform.h"
 #include "Dom/JsonObject.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialExpressionConstant.h"
 #include "Misc/AutomationTest.h"
 #include "Particles/Acceleration/ParticleModuleAccelerationConstant.h"
 #include "Particles/Color/ParticleModuleColorOverLife.h"
@@ -309,6 +310,52 @@ bool FMantleEffectExportTranslateTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("size min"), Props.Sprites.SizeMin, 4.0);
 		TestTrue(TEXT("a cylinder"), Props.Sprites.Shape == EMantleSpritesShape::Cylinder);
 		TestEqual(TEXT("max particles"), Props.Sprites.MaxParticles, FMantleSpritesSettings().MaxParticles);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleEffectExportDistortionTest,
+	"Mantle.Editor.EffectExport.Distortion",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleEffectExportDistortionTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleEffectExportTestPrivate;
+
+	UPackage* Package = GetTransientPackage();
+
+	// A textureless ordinary material still gets the soft dot.
+	{
+		UParticleSystemComponent* Component = MakeComponent(Package, MakeBubbleSystem(Package));
+		FMantleCoverage Coverage;
+		TArray<TSharedPtr<FJsonObject>> Out;
+		TestTrue(TEXT("an ordinary textureless material is carried"), FMantleEffectExport::Translate(Component, TEXT("Torch/Ember"), Coverage, Out));
+		TestEqual(TEXT("one effect"), Out.Num(), 1);
+		TestEqual(TEXT("nothing dropped"), Coverage.Count(MantleCoverageCategory::Particles, EMantleCoverageOutcome::Dropped), static_cast<int64>(0));
+	}
+
+	// A material that writes Refraction is heat distortion: skipped, and reported.
+	{
+		UParticleSystem* System = MakeBubbleSystem(Package);
+		UMaterial* Material = Cast<UMaterial>(System->Emitters[0]->GetLODLevel(0)->RequiredModule->Material.Get());
+		if (!TestNotNull(TEXT("the material"), Material))
+		{
+			return false;
+		}
+		Material->BlendMode = BLEND_Translucent;
+		Material->GetEditorOnlyData()->Refraction.Expression = NewObject<UMaterialExpressionConstant>(Material);
+		UParticleSystemComponent* Component = MakeComponent(Package, System);
+		FMantleCoverage Coverage;
+		TArray<TSharedPtr<FJsonObject>> Out;
+		FMantleEffectExport::Translate(Component, TEXT("Torch/Distortion"), Coverage, Out);
+		TestEqual(TEXT("a refraction emitter makes no effect"), Out.Num(), 0);
+		TestEqual(TEXT("it is reported dropped"), Coverage.Count(MantleCoverageCategory::Particles, EMantleCoverageOutcome::Dropped), static_cast<int64>(1));
+		const FMantleCoverageCategory* Category = Coverage.Find(MantleCoverageCategory::Particles);
+		if (TestNotNull(TEXT("the category"), Category) && Category->Get(EMantleCoverageOutcome::Dropped).Examples.Num() == 1)
+		{
+			TestTrue(TEXT("saying distortion-only"), Category->Get(EMantleCoverageOutcome::Dropped).Examples[0].Detail.Contains(TEXT("distortion-only")));
+		}
 	}
 	return true;
 }
