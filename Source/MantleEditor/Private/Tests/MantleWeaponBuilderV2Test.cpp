@@ -963,7 +963,7 @@ bool FMantleWeaponBuilderV2StaffExtraTest::RunTest(const FString& Parameters)
 	{
 		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("StaffExtraDash"), nullptr);
 		Input->Extra = TEXT("dash");
-		Input->ExtraCooldownSeconds = 4.0f;
+		Input->ExtraCooldownSeconds = 6.0f;
 		Input->ExtraDashDistance = 2500.0f;
 		Messages.Reset();
 		if (TestTrue(TEXT("a dash staff builds"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff),
@@ -973,7 +973,7 @@ bool FMantleWeaponBuilderV2StaffExtraTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("with its distance"), Desc.Extra.bSet && Desc.Extra.Value.DashDistance.bSet
 				&& FMath::IsNearlyEqual(Desc.Extra.Value.DashDistance.Value, 2500.0));
 			TestTrue(TEXT("and its cooldown"), Desc.Extra.bSet && Desc.Extra.Value.CooldownSeconds.bSet
-				&& FMath::IsNearlyEqual(Desc.Extra.Value.CooldownSeconds.Value, 4.0));
+				&& FMath::IsNearlyEqual(Desc.Extra.Value.CooldownSeconds.Value, 6.0));
 			TestTrue(TEXT("and nothing of the others"), Desc.Extra.bSet && !Desc.Extra.Value.MaxMass.bSet && !Desc.Extra.Value.bLiftPlayers.bSet
 				&& !Desc.Extra.Value.Range.bSet && !Desc.Extra.Value.Heal.bSet);
 			FString Error;
@@ -1021,6 +1021,8 @@ bool FMantleWeaponBuilderV2StaffExtraTest::RunTest(const FString& Parameters)
 		{
 			TestTrue(TEXT("and writes heal with its amount"), Desc.Extra.bSet && Desc.Extra.Value.Kind == EMantleWeaponDocExtra::Heal
 				&& Desc.Extra.Value.Heal.bSet && FMath::IsNearlyEqual(Desc.Extra.Value.Heal.Value, 50.0) && !Desc.Extra.Value.Range.bSet);
+			// A source never given a cooldown writes none: the document's heal then waits heal's own 20 s, not telekinesis's 3.
+			TestFalse(TEXT("and no cooldown (heal's own 20 s applies)"), Desc.Extra.bSet && Desc.Extra.Value.CooldownSeconds.bSet);
 			FString Error;
 			FMantleWeaponDesc Again;
 			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
@@ -1322,7 +1324,7 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->ShieldThrowDamage = 40.0f; Changed(TEXT("shield throw damage changes signature")); Input->ShieldThrowDamage = 25.0f;
 	Input->bStaffMelee = true; Changed(TEXT("staff melee changes signature")); Input->bStaffMelee = false;
 	Input->Extra = TEXT("telekinesis"); Changed(TEXT("staff extra changes signature")); Input->Extra = NAME_None;
-	Input->ExtraCooldownSeconds = 5.0f; Changed(TEXT("extra cooldown changes signature")); Input->ExtraCooldownSeconds = 3.0f;
+	Input->ExtraCooldownSeconds = 5.0f; Changed(TEXT("extra cooldown changes signature")); Input->ExtraCooldownSeconds = -1.0f;
 	Input->ExtraMaxMass = 100.0f; Changed(TEXT("extra max mass changes signature")); Input->ExtraMaxMass = 300.0f;
 	Input->bExtraLiftPlayers = false; Changed(TEXT("lifting players changes signature")); Input->bExtraLiftPlayers = true;
 	Input->ExtraMaxHeight = 300.0f; Changed(TEXT("levitate's cap changes signature")); Input->ExtraMaxHeight = 500.0f;

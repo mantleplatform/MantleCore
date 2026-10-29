@@ -789,7 +789,7 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->ShieldThrowDamage = 25.f;
 	Working->bStaffMelee = false;
 	Working->Extra = NAME_None;
-	Working->ExtraCooldownSeconds = 3.f;
+	Working->ExtraCooldownSeconds = -1.f;
 	Working->ExtraMaxMass = 300.f;
 	Working->bExtraLiftPlayers = true;
 	Working->ExtraMaxHeight = 500.f;
@@ -2065,8 +2065,8 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		LOCTEXT("StaffMeleeTip", "Tapping the Melee key swings the staff in a three-hit combo; holding it leaps forward and slams the staff down. Each hit does the weapon's damage (the leap twice it), and can be blocked and parried like a sword's. Off, the Melee key does a plain weapon strike."),
 		[this] { return Working->bStaffMelee; }, [this](bool V) { Working->bStaffMelee = V; },
 		[CanStaffMelee] { return CanStaffMelee() ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
-	// Round 5 step 0: a staff's one extra on Q (gamepad D-pad up), none by default. Only the extras this build plays are offered (telekinesis, step
-	// 6's levitate, steps 3 and 4's blink and heal); the later one (dash) comes with its own update.
+	// Round 5 step 0: a staff's one extra on Q (gamepad D-pad up), none by default. All five are offered: telekinesis, blink, heal, the dash and
+	// levitate.
 	if (HoldInfo(Working->Hold).bHasExtra)
 	{
 		static const FName Telekinesis(FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Telekinesis));

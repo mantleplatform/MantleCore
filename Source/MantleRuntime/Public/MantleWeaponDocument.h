@@ -532,8 +532,7 @@ struct FMantleWeaponDocBeam
 };
 
 /** schema consumable.style (#1025): which of each hold's two potion clips a use plays. */
-/** schema extra.kind (Round 5 step 0): a staff's one extra on Q, in the enum's order. The ones in the schema that come in a later update
- *  (x-extrasLater) are refused by the reader until then (Round 5 step 6 built Levitate). */
+/** schema extra.kind (Round 5 step 0): a staff's one extra on Q, in the enum's order. Every one is built. */
 enum class EMantleWeaponDocExtra : uint8
 {
 	None,
@@ -994,12 +993,9 @@ public:
 	static const TCHAR* ConsumableEffectName(EMantleWeaponDocConsumableEffect Effect);
 	/** Round 5 step 0: extra.kind's spelling (none, telekinesis, ...). */
 	static const TCHAR* ExtraName(EMantleWeaponDocExtra Extra);
-	/** Round 5 step 0: schema x-extrasLater: the extras in the kind enum that are not built yet (the validator refuses them, so the weapon builder does
-	 *  not offer them). */
-	static bool IsExtraLater(EMantleWeaponDocExtra Extra);
 	/** Round 5 step 3: extra.look's spelling ("overhead"). */
 	static const TCHAR* BlinkLookName(EMantleWeaponDocBlinkLook Look);
-	/** Round 5 steps 3 and 4: the cooldown an extra has when the document sets none (telekinesis 3, blink 5, heal 20, levitate 8; the rest 3). */
+	/** Round 5 steps 3 and 4: the cooldown an extra has when the document sets none (telekinesis 3, blink 5, heal 20, dash 4, levitate 8; none 3). */
 	static double DefaultExtraCooldownSeconds(EMantleWeaponDocExtra Extra);
 
 	/** #904: Effects is an element (not one of the firearms' rifle, pistol and shotgun). */

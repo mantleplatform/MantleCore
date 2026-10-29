@@ -205,7 +205,7 @@ declare extern type Player with
 	SprintEnabled: boolean?
 	--- How fast the character sprints, in centimetres per second (700 unless a script changes it; it scales with WalkSpeed until you set it). nil while the player has no character. Setting it (server only) clamps to 0..1500 and lasts for the rest of the session, through respawns.
 	SprintSpeed: number?
-	--- Whether the player's staff extra works (true unless a script changes it); nil while the player has no character. A staff whose weapon names an extra (telekinesis) uses it on Q (gamepad D-pad up). Setting it (server only) to false makes Q do nothing, and lets go of anything the extra is holding: a lifted prop drops. Use it for a safe zone or a cutscene. It lasts for the rest of the session, through respawns.
+	--- Whether the player's staff extra works (true unless a script changes it); nil while the player has no character. A staff whose weapon names an extra (telekinesis, blink, heal, dash or levitate) uses it on Q (gamepad D-pad up). Setting it (server only) to false makes Q do nothing, and ends an extra under way: a held prop or player is dropped, a float ends and the body falls, a dash ends, a blink or heal is cancelled. Use it for a safe zone or a cutscene. It lasts for the rest of the session, through respawns.
 	StaffExtraEnabled: boolean?
 	--- The stamina the character has left, from 0 to MaxStamina (it counts in small steps, the same on every machine, and moves only while StaminaEnabled is true); nil while the player has no character. Setting it (server only) clamps to 0..MaxStamina. Every new character starts full.
 	Stamina: number?

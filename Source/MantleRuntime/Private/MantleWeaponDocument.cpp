@@ -94,12 +94,8 @@ namespace MantleWeaponDocumentPrivate
 		return false;
 	}
 	const TCHAR* const GWeaponDocConsumableEffectNames[] = { TEXT("heal"), TEXT("none") };
-	// Round 5 step 0: extra.kind, the schema's enum in order. blink, heal and dash are in it but not built yet (x-extrasLater): refused until then
-	// (step 6 built levitate).
+	// Round 5 step 0: extra.kind, the schema's enum in order. Every kind is built.
 	const TCHAR* const GWeaponDocExtraNames[] = { TEXT("none"), TEXT("telekinesis"), TEXT("blink"), TEXT("heal"), TEXT("dash"), TEXT("levitate") };
-	// Round 5 steps 3, 4 and 6: blink, heal and levitate are built; dash still comes later.
-	// Round 5 step 5 built the dash, the last of them: none is later now (a kind added to the schema before it is built goes here).
-	const TArray<EMantleWeaponDocExtra> GWeaponDocExtrasLater;
 	// Round 5 step 3: extra.look, blink's looks in the enum's order (overhead the default).
 	const TCHAR* const GWeaponDocBlinkLookNames[] = { TEXT("overhead"), TEXT("curl"), TEXT("sink") };
 	const TCHAR* const GWeaponDocUseRefused[] = {
@@ -3231,20 +3227,14 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 	{
 		R.Add(TEXT("staffMelee"), TEXT("mantle"), FString::Printf(TEXT("a %s has no staff melee: drop staffMelee"), Hold));
 	}
-	// The extra (Round 5 step 0): only a hold with an extra on Q (the staff) takes one; a kind that is built (x-extrasLater; none since step 5); maxMass
-	// only on the extra that lifts; (step 6) maxHeight and durationSeconds only on levitate; (steps 3 and 4) range and look only on blink, heal only
-	// on heal. A Battle Mage takes any built one.
+	// The extra (Round 5 step 0): only a hold with an extra on Q (the staff) takes one; maxMass only on the extra that lifts; (step 6) maxHeight and
+	// durationSeconds only on levitate; (steps 3 and 4) range and look only on blink, heal only on heal. A Battle Mage takes any one.
 	if (D.Extra.bSet)
 	{
 		const FMantleWeaponDocExtra& Extra = D.Extra.Value;
 		if (!Info.bHasExtra)
 		{
 			R.Add(TEXT("extra"), TEXT("mantle"), FString::Printf(TEXT("a %s has no extra: drop extra"), Hold));
-		}
-		else if (IsExtraLater(Extra.Kind))
-		{
-			R.Add(TEXT("extra/kind"), TEXT("mantle"), FString::Printf(TEXT("is %s, which comes in a later update: pick none, telekinesis, blink, heal, dash or levitate"),
-				ExtraName(Extra.Kind)));
 		}
 		else if (Extra.MaxHeight.bSet && Extra.Kind != EMantleWeaponDocExtra::Levitate)
 		{
@@ -3643,18 +3633,6 @@ double FMantleWeaponDocument::DefaultExtraCooldownSeconds(const EMantleWeaponDoc
 	// Brief rows 4, 11, 13 and 15.
 	return Extra == EMantleWeaponDocExtra::Blink ? 5.0 : Extra == EMantleWeaponDocExtra::Heal ? 20.0 : Extra == EMantleWeaponDocExtra::Levitate ? 8.0
 		: Extra == EMantleWeaponDocExtra::Dash ? 4.0 : 3.0;
-}
-
-bool FMantleWeaponDocument::IsExtraLater(const EMantleWeaponDocExtra Extra)
-{
-	for (const EMantleWeaponDocExtra Later : MantleWeaponDocumentPrivate::GWeaponDocExtrasLater)
-	{
-		if (Later == Extra)
-		{
-			return true;
-		}
-	}
-	return false;
 }
 
 const TCHAR* FMantleWeaponDocument::GetBattleMageStance()

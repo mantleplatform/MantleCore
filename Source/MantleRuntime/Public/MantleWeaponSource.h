@@ -299,8 +299,8 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bStaffMelee = false;
 	/** Round 5 step 0: a staff's extra on Q, by its document spelling (telekinesis); none (unset) writes no extra. */
 	UPROPERTY(EditAnywhere, Category = "Mantle") FName Extra = NAME_None;
-	/** Round 5 step 0: seconds after the extra ends before Q works again. */
-	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 60.0)) float ExtraCooldownSeconds = 3.0f;
+	/** Round 5 step 0: seconds after the extra ends before Q works again. Below 0 (the default) means unset: the extra's own cooldown, nothing written. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = -1.0, ClampMax = 60.0)) float ExtraCooldownSeconds = -1.0f;
 	/** Round 5 step 0: telekinesis's heaviest prop, kg. */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 5000.0)) float ExtraMaxMass = 300.0f;
 	/** Round 5 step 2: telekinesis lifts players too (off writes liftPlayers false). */

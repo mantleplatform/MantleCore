@@ -39,6 +39,16 @@ namespace MantleWeaponBuilderExportPrivate
 
 	bool IsMesh(UObject* Asset) { return Cast<UStaticMesh>(Asset) || Cast<USkeletalMesh>(Asset); }
 
+	/** The extra's cooldown, written only when the creator chose one that is not the kind's own (below 0 = never chosen). */
+	void SetExtraCooldownIfChosen(FMantleWeaponDocExtra& Extra, const float Seconds)
+	{
+		const double Clamped = FMath::Clamp(static_cast<double>(Seconds), 0.0, 60.0);
+		if (Seconds >= 0.f && !FMath::IsNearlyEqual(Clamped, FMantleWeaponDocument::DefaultExtraCooldownSeconds(Extra.Kind)))
+		{
+			Extra.CooldownSeconds.Set(Clamped);
+		}
+	}
+
 	/** Preserve existing files before any generated asset is replaced. Failed multi-asset builds remain recoverable. */
 	struct FOutputBackup
 	{
@@ -474,7 +484,7 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 	{
 		FMantleWeaponDocExtra Extra;
 		Extra.Kind = EMantleWeaponDocExtra::Levitate;
-		Extra.CooldownSeconds.Set(FMath::Clamp(static_cast<double>(Source.ExtraCooldownSeconds), 0.0, 60.0));
+		SetExtraCooldownIfChosen(Extra, Source.ExtraCooldownSeconds);
 		Extra.MaxHeight.Set(FMath::Clamp(static_cast<double>(Source.ExtraMaxHeight), 100.0, 2000.0));
 		Extra.DurationSeconds.Set(FMath::Clamp(static_cast<double>(Source.ExtraDurationSeconds), 1.0, 30.0));
 		Desc.Extra.Set(Extra);
@@ -498,7 +508,7 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		}
 		FMantleWeaponDocExtra Extra;
 		Extra.Kind = Picked;
-		Extra.CooldownSeconds.Set(FMath::Clamp(static_cast<double>(Source.ExtraCooldownSeconds), 0.0, 60.0));
+		SetExtraCooldownIfChosen(Extra, Source.ExtraCooldownSeconds);
 		if (Picked == EMantleWeaponDocExtra::Telekinesis)
 		{
 			Extra.MaxMass.Set(FMath::Clamp(static_cast<double>(Source.ExtraMaxMass), 1.0, 5000.0));
