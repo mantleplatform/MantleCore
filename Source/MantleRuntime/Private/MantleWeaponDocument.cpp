@@ -31,7 +31,7 @@ namespace MantleWeaponDocumentPrivate
 	const TCHAR* const GWeaponDocReloadStyleNames[] = { TEXT("magazine"), TEXT("perRound"), TEXT("byRoundCount") };
 	const TCHAR* const GWeaponDocRoleNames[] = {
 		TEXT("bolt"), TEXT("trigger"), TEXT("hammer"), TEXT("slide"), TEXT("cylinder"), TEXT("pump"), TEXT("feed"), TEXT("magazine"),
-		TEXT("magazine_release"), TEXT("shell"), TEXT("cartridge"), TEXT("speed_loader"), TEXT("round"), TEXT("arrow")
+		TEXT("magazine_release"), TEXT("shell"), TEXT("cartridge"), TEXT("speed_loader"), TEXT("suppressor"), TEXT("round"), TEXT("arrow")
 	};
 	const TCHAR* const GWeaponDocActionNames[] = {
 		TEXT("equip"), TEXT("holster"), TEXT("idle"), TEXT("fire"), TEXT("fire_last"), TEXT("reload_tactical"), TEXT("reload_empty"),
@@ -393,29 +393,29 @@ namespace MantleWeaponDocumentPrivate
 		TArray<FMantleWeaponDocHoldInfo> Table;
 		// pistol
 		Table.Add(WeaponDocFirearm(EStyle::Magazine, false, EEffects::Pistol,
-			{ ERole::Slide, ERole::Trigger, ERole::Hammer, ERole::Magazine, ERole::MagazineRelease }, MagazineActions));
+			{ ERole::Slide, ERole::Trigger, ERole::Hammer, ERole::Magazine, ERole::MagazineRelease, ERole::Suppressor }, MagazineActions));
 		// revolver
 		Table.Add(WeaponDocFirearm(EStyle::ByRoundCount, false, EEffects::Pistol,
-			{ ERole::Cylinder, ERole::Trigger, ERole::Hammer, ERole::Cartridge, ERole::SpeedLoader }, ByRoundCountActions));
+			{ ERole::Cylinder, ERole::Trigger, ERole::Hammer, ERole::Cartridge, ERole::SpeedLoader, ERole::Suppressor }, ByRoundCountActions));
 		// rifle, smg, dmr
 		for (int32 Copy = 0; Copy < 3; ++Copy)
 		{
 			Table.Add(WeaponDocFirearm(EStyle::Magazine, true, EEffects::Rifle,
-				{ ERole::Bolt, ERole::Trigger, ERole::Magazine, ERole::MagazineRelease }, MagazineActions));
+				{ ERole::Bolt, ERole::Trigger, ERole::Magazine, ERole::MagazineRelease, ERole::Suppressor }, MagazineActions));
 		}
 		// pump_shotgun
 		Table.Add(WeaponDocFirearm(EStyle::PerRound, true, EEffects::Shotgun,
-			{ ERole::Pump, ERole::Trigger, ERole::Feed, ERole::Shell }, PerRoundActions));
+			{ ERole::Pump, ERole::Trigger, ERole::Feed, ERole::Shell, ERole::Suppressor }, PerRoundActions));
 		// bolt_sniper. Round 3: it can deploy a bipod (x-bipod).
 		{
 			FMantleWeaponDocHoldInfo Sniper = WeaponDocFirearm(EStyle::Magazine, true, EEffects::Rifle,
-				{ ERole::Bolt, ERole::Trigger, ERole::Magazine, ERole::MagazineRelease, ERole::Cartridge }, MagazineActions);
+				{ ERole::Bolt, ERole::Trigger, ERole::Magazine, ERole::MagazineRelease, ERole::Cartridge, ERole::Suppressor }, MagazineActions);
 			Sniper.bHasBipod = true;
 			Table.Add(Sniper);
 		}
 		// lmg
 		Table.Add(WeaponDocFirearm(EStyle::Magazine, true, EEffects::Rifle,
-			{ ERole::Bolt, ERole::Trigger, ERole::Feed, ERole::Magazine, ERole::MagazineRelease }, MagazineActions));
+			{ ERole::Bolt, ERole::Trigger, ERole::Feed, ERole::Magazine, ERole::MagazineRelease, ERole::Suppressor }, MagazineActions));
 		// melee_1h: used by the SwordShield pair clip set's hip/back equip styles.
 		{
 			FMantleWeaponDocHoldInfo Sword = WeaponDocHold(false, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
@@ -3318,6 +3318,27 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 			else if (!(D.Sounds.bSet && D.Sounds.Value.FireSuppressed.bSet))
 			{
 				R.Add(TEXT("sounds/fireSuppressed"), TEXT("mantle"), TEXT("a suppressor needs the shot it makes: add sounds.fireSuppressed"));
+			}
+		}
+		// The suppressor as a bone of the mesh (parts.suppressor): the same toggle by another path, so the same rules; the two are exclusive.
+		if (D.Parts.bSet && D.Parts.Value[EMantleWeaponDocRole::Suppressor].bSet && Info.bHasSuppressor)
+		{
+			const FMantleWeaponDocPart& SuppressorPart = D.Parts.Value[EMantleWeaponDocRole::Suppressor].Value;
+			if (D.Suppressor.bSet)
+			{
+				R.Add(TEXT("parts/suppressor"), TEXT("mantle"), TEXT("a gun toggles its suppressor with the suppressor attachment or this bone, not both: drop one"));
+			}
+			else if (D.Bipod.bSet)
+			{
+				R.Add(TEXT("parts/suppressor"), TEXT("mantle"), TEXT("a gun with a bipod has no suppressor toggle: drop parts.suppressor, or drop bipod"));
+			}
+			else if (!(D.Sounds.bSet && D.Sounds.Value.FireSuppressed.bSet))
+			{
+				R.Add(TEXT("sounds/fireSuppressed"), TEXT("mantle"), TEXT("a suppressor needs the shot it makes: add sounds.fireSuppressed"));
+			}
+			if (SuppressorPart.ShownDuring.bSet)
+			{
+				R.Add(TEXT("parts/suppressor/shownDuring"), TEXT("mantle"), TEXT("the suppressor toggle shows and hides this bone: drop shownDuring"));
 			}
 		}
 		if (D.Bipod.bSet)

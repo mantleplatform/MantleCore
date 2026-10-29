@@ -190,6 +190,8 @@ enum class EMantleWeaponDocRole : uint8
 	Shell,
 	Cartridge,
 	SpeedLoader,
+	/** Guns Round 3: a bone of the mesh the suppressor toggle hides and shows (never moved by a clip). */
+	Suppressor,
 	/** #840: stowed roles (x-holds stowedRoles). */
 	Round,
 	Arrow,
