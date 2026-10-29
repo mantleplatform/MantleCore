@@ -207,6 +207,9 @@ public:
 	bool IsSimulating() const;
 	/** Anchored stops simulating (the body stays where it is); un-anchored simulates again. Server only. */
 	void SetAnchored(bool bAnchored);
+	/** Script API 1.55 (Entity.Grabbable): a tool that grabs (the staff's telekinesis, the gravity gun) leaves a prop alone while this is false. Server; on unless a script turns it off. */
+	bool IsGrabbable() const { return bGrabbable; }
+	void SetGrabbable(const bool bInGrabbable) { bGrabbable = bInGrabbable; }
 	/** kg*cm/s, world axes. Wakes the body; does nothing while anchored. */
 	void ApplyImpulse(const FVector& Impulse);
 	/** kg*cm^2/s, in degrees about the world axes. Wakes the body; does nothing while anchored. */
@@ -271,5 +274,6 @@ private:
 	EMantlePhysicsBodySource BodySource = EMantlePhysicsBodySource::Mesh;
 	bool bAdopted = false;
 	bool bHitEventsEnabled = false;
+	bool bGrabbable = true;
 	FDelegateHandle PlaceRetainedHandle;
 };

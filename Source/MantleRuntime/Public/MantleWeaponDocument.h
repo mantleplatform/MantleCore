@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "MantleGravityGunDefaults.h"
 
 // #611: a creator weapon's document (schema/weapon.schema.json) as plain types, with its strict reader and its writer.
 // The plugin's weapon builder writes it; the client builds its weapon definition from it (MantleGameplay). A creator
@@ -189,6 +190,8 @@ enum class EMantleWeaponDocRole : uint8
 	Shell,
 	Cartridge,
 	SpeedLoader,
+	/** Guns Round 3: a bone of the mesh the suppressor toggle hides and shows (never moved by a clip). */
+	Suppressor,
 	/** #840: stowed roles (x-holds stowedRoles). */
 	Round,
 	Arrow,
@@ -298,12 +301,18 @@ struct FMantleWeaponDocHoldInfo
 	TArray<FString> Quivers;
 	/** Round 3: the hold has a bash on the Melee key (x-bash: the bow). */
 	bool bHasBash = false;
+	/** Round 3 (suppressor): the hold can toggle a suppressor with the toggle key (x-suppressor: every firearm). */
+	bool bHasSuppressor = false;
+	/** Round 3 (bipod): the hold can deploy a bipod (x-bipod: the bolt sniper). */
+	bool bHasBipod = false;
 	/** Round 3 step 12: the hold may throw itself and catch it again (x-throw: the shield). */
 	bool bHasShieldThrow = false;
 	/** Round 4 step 7: the hold may fight with the Melee key in its own combo (x-staffMelee: the staff). */
 	bool bHasStaffMelee = false;
 	/** Round 5 step 0: the hold carries one extra on Q (x-extra: the staff). */
 	bool bHasExtra = false;
+	/** Round 3 step 16: the hold may be a gravity gun (x-gravity: the firearm holds). */
+	bool bHasGravity = false;
 	/** Round 3: the shooting style ids (x-shootingStyles) of a hold held more than one way to shoot (the bow), the default first. Empty: one way. */
 	TArray<FString> ShootingStyles;
 	/** Round 4 step 2: the tap looks (x-tapLooks) of a hold whose tap can look more than one way (the staff), the default first. Empty: no choice. */
@@ -424,6 +433,15 @@ struct FMantleWeaponDocReload
 	/** Required; the archetype's. */
 	EMantleWeaponDocReloadStyle Style = EMantleWeaponDocReloadStyle::Magazine;
 	TMantleWeaponDocValue<double> Seconds{ 1.6 };
+};
+
+/** schema bipod (Round 3): the two attachments a bolt sniper swaps as its bipod deploys and stows. Names of the document's attachments. */
+struct FMantleWeaponDocBipod
+{
+	/** Shown while the bipod is stowed (required). */
+	FString Folded;
+	/** Shown while the bipod is deployed (required). */
+	FString Deployed;
 };
 
 struct FMantleWeaponDocSounds
@@ -579,6 +597,25 @@ struct FMantleWeaponDocExtra
 	TMantleWeaponDocValue<double> Heal{ 35.0 };
 	/** Round 5 step 5, dash only: how far it goes, cm (700 to 2500). Unset: 1200. */
 	TMantleWeaponDocValue<double> DashDistance{ 1200.0 };
+};
+
+/** schema gravity (Round 3 step 16): a gun that grabs props instead of shooting. Defaults: MantleGravityGunDefaults. */
+struct FMantleWeaponDocGravity
+{
+	/** cm the crosshair reaches for a prop. */
+	TMantleWeaponDocValue<double> Range{ MantleGravityGunDefaults::RangeCm };
+	/** kg, the heaviest prop. */
+	TMantleWeaponDocValue<double> MaxMass{ MantleGravityGunDefaults::MaxMassKg };
+	/** s a grabbed prop is held before it drops by itself; 0: no limit. */
+	TMantleWeaponDocValue<double> HoldSeconds{ MantleGravityGunDefaults::HoldSeconds };
+	/** cm in front of the muzzle the held prop sits. */
+	TMantleWeaponDocValue<double> HoldDistance{ MantleGravityGunDefaults::HoldDistanceCm };
+	/** cm/s a launched prop leaves at. */
+	TMantleWeaponDocValue<double> LaunchSpeed{ MantleGravityGunDefaults::LaunchSpeedCmS };
+	/** Damage a launched prop does to a player or NPC it strikes. */
+	TMantleWeaponDocValue<double> LaunchDamage{ MantleGravityGunDefaults::LaunchDamage };
+	/** s after a let-go before the next grab. */
+	TMantleWeaponDocValue<double> CooldownSeconds{ MantleGravityGunDefaults::CooldownSeconds };
 };
 
 enum class EMantleWeaponDocUseStyle : uint8
@@ -802,6 +839,11 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<FString> Quiver;
 	/** Round 3: the document's style. Unset: a, the first in the hold's x-shootingStyles (a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> ShootingStyle;
+	/** Round 3 (suppressor): the name of one of the document's attachments, the suppressor the toggle key puts on and takes off. Unset: no toggle.
+	 *  sounds.suppressed is the state the weapon starts in. */
+	TMantleWeaponDocValue<FString> Suppressor;
+	/** Round 3 (bipod): a bolt sniper's folded and deployed attachments. Unset: no bipod. */
+	TMantleWeaponDocValue<FMantleWeaponDocBipod> Bipod;
 	/** Round 4 step 2: what a tap does on a staff. Unset: bolt, the first in the hold's x-tapLooks (a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> TapLook;
 	/** Round 4 step 2: what a hold does on a staff. Unset: beam on a staff with a beam block, else chargedBlast (a creator selection, not an asset path). */
@@ -856,6 +898,8 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<FMantleWeaponDocShieldThrow> ShieldThrow;
 	/** Round 5 step 0: a staff's extra on Q (the document's extra); unset is none. */
 	TMantleWeaponDocValue<FMantleWeaponDocExtra> Extra;
+	/** Round 3 step 16: a firearm that grabs props instead of shooting (the document's gravity); unset is a plain gun. */
+	TMantleWeaponDocValue<FMantleWeaponDocGravity> Gravity;
 	TMantleWeaponDocValue<FMantleWeaponDocSounds> Sounds;
 	TMantleWeaponDocValue<FMantleWeaponDocFirstPerson> FirstPerson;
 	TMantleWeaponDocValue<FMantleWeaponDocSpread> Spread;

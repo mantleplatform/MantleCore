@@ -51,6 +51,8 @@ declare extern type Entity with
 	Color: string
 	--- False once the entity has been destroyed.
 	Exists: boolean
+	--- Whether a staff's telekinesis or a gravity gun may grab a physics entity (true unless a script sets it false). Set it to false for a prop that must stay where it is; a grab already holding it drops it. An entity with no physics block is never grabbable (false), and setting it on one errors. Set it on the server.
+	Grabbable: boolean
 	--- The light's colour as "#RRGGBB", the same format as Vehicles:SetPaintColor. Replicates like LightEnabled.
 	LightColor: string
 	--- Whether the light shines. Setting it on the server changes it for everyone, players who join later included; on a client it only changes that client's view. Errors if the entity is not a light.
@@ -165,6 +167,8 @@ declare extern type Player with
 	DodgeEnabled: boolean?
 	--- How much health a character out of breath loses each second, dealt once a second and tagged "Drown" (10 unless a script changes it). It goes past Armor and Shield, and nobody is credited for the kill. 0 lets a character stay under forever once its breath is gone. nil while the player has no character. Setting it (server only) clamps to 0..10000 and lasts for the rest of the session. Only counts while BreathEnabled is true.
 	DrownDamage: number?
+	--- Whether the player's gravity gun works (true unless a script changes it); nil while the player has no character. A gun whose weapon has a gravity block grabs the physics prop under the crosshair with left mouse and launches it with the next click. Setting it (server only) to false makes the gun do nothing, and drops what it holds. A staff's telekinesis keeps StaffExtraEnabled. It lasts for the rest of the session, through respawns.
+	GrabEnabled: boolean?
 	--- The character's health, from 0 to MaxHealth; nil while the player has no character. Weapons and TakeDamage lower this same value. Setting it (server only) clamps to 0..MaxHealth, and 0 kills the character with no killer. Setting it on a dead player, or one driving a vehicle, does nothing: use Respawn to bring a player back.
 	Health: number?
 	--- Whether the character is crouched right now (by the key, a slide or ForceCrouch). nil while the player has no character. Read-only.
@@ -239,11 +243,11 @@ declare extern type Player with
 	Died: Signal<(Player, Player?, string)>
 	--- The player dodged (roll false: one tap of the dodge key) or rolled (roll true: a double tap), on the server, as it starts. For the first half second of it nothing hurts them. DodgeEnabled false stops the key; a firearm, or a weapon with no dodge animation, never dodges.
 	Dodged: Signal<(Player, boolean)>
-	--- The player's telekinesis let go of what it lifted, on the server. how is "thrown" (left mouse threw it along the crosshair; a player or an NPC: the way the movement keys point), "slammed" (Q again drove it into the ground), "choked" (a player or an NPC only: Q held half a second) or "dropped" (the hold ran out: 5 seconds for a prop, 3 for a player or an NPC; or a stun, a knockdown, a dodge, a hit on the caster while holding a player or an NPC, putting the staff away, StaffExtraEnabled false, anchoring the prop, NPC.Liftable false, or the target's own death or knockdown ended it). target is nil once the prop, player or NPC is gone.
+	--- The player's telekinesis let go of what it lifted, on the server. how is "thrown" (left mouse threw it along the crosshair; a player or an NPC: the way the movement keys point), "slammed" (Q again drove it into the ground), "choked" (a player or an NPC only: Q held half a second) or "dropped" (the hold ran out: 5 seconds for a prop, 3 for a player or an NPC; or a stun, a knockdown, a dodge, a hit on the caster while holding a player or an NPC, putting the staff away, StaffExtraEnabled false, anchoring the prop, NPC.Liftable false, or the target's own death or knockdown ended it). target is nil once the prop, player or NPC is gone. 1.55: a gravity gun's let-go fires it too, with how "launch" (left mouse threw the prop), "drop" (right mouse let it fall) or the reason the hold ended: "timeout", "holstered", "removed", "dead", "hit", "too_far", "lost" (the prop was destroyed or anchored), "not_grabbable", "disabled" (GrabEnabled false), or the holder's stun, knockdown, swimming or seat.
 	Dropped: Signal<(Player, Entity?, string)>
 	--- The character's health changed: damage, healing, Health set, or a respawn's refill. Fires on the server and on every client.
 	HealthChanged: Signal<(Player, number, number)>
-	--- The player's telekinesis lifted target, on the server: a physics prop that is not anchored (anchor a prop to keep it safe), another player (their character's Entity; a staff whose liftPlayers is false lifts no players), or a script NPC (its Entity: NPCs:FromEntity gives the NPC; NPC.Liftable false keeps one safe). target is nil for a prop scripts have no Entity for. Dropped follows when they let it go.
+	--- The player's telekinesis lifted target, on the server: a physics prop that is not anchored (anchor a prop to keep it safe), another player (their character's Entity; a staff whose liftPlayers is false lifts no players), or a script NPC (its Entity: NPCs:FromEntity gives the NPC; NPC.Liftable false keeps one safe). target is nil for a prop scripts have no Entity for. Dropped follows when they let it go. 1.55: a gravity gun's grab fires it too (a physics prop only; Entity.Grabbable false keeps a prop safe from the gun and the staff alike).
 	Lifted: Signal<(Player, Entity?)>
 	--- The character's Breath reached 0: from now on it takes DrownDamage every second until it surfaces. Fires on the server and on every client.
 	OutOfBreath: Signal<(Player)>
