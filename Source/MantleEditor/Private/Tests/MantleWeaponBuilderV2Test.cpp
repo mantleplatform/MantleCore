@@ -958,7 +958,30 @@ bool FMantleWeaponBuilderV2StaffExtraTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
 		}
 	}
-	TestFalse(TEXT("an extra this build does not play is refused"), Build(EMantleWeaponHold::Staff, TEXT("dash"), Desc, Messages));
+	TestFalse(TEXT("an extra this build does not play is refused"), Build(EMantleWeaponHold::Staff, TEXT("fireball"), Desc, Messages));
+	// Round 5 step 5: the dash, with its distance and its cooldown; nothing of the others'.
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("StaffExtraDash"), nullptr);
+		Input->Extra = TEXT("dash");
+		Input->ExtraCooldownSeconds = 4.0f;
+		Input->ExtraDashDistance = 2500.0f;
+		Messages.Reset();
+		if (TestTrue(TEXT("a dash staff builds"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff),
+			TEXT("FixtureMesh"), Desc, Messages)))
+		{
+			TestTrue(TEXT("and writes the dash"), Desc.Extra.bSet && Desc.Extra.Value.Kind == EMantleWeaponDocExtra::Dash);
+			TestTrue(TEXT("with its distance"), Desc.Extra.bSet && Desc.Extra.Value.DashDistance.bSet
+				&& FMath::IsNearlyEqual(Desc.Extra.Value.DashDistance.Value, 2500.0));
+			TestTrue(TEXT("and its cooldown"), Desc.Extra.bSet && Desc.Extra.Value.CooldownSeconds.bSet
+				&& FMath::IsNearlyEqual(Desc.Extra.Value.CooldownSeconds.Value, 4.0));
+			TestTrue(TEXT("and nothing of the others"), Desc.Extra.bSet && !Desc.Extra.Value.MaxMass.bSet && !Desc.Extra.Value.bLiftPlayers.bSet
+				&& !Desc.Extra.Value.Range.bSet && !Desc.Extra.Value.Heal.bSet);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+			TestTrue(TEXT("with the dash"), Again.Extra.bSet && Again.Extra.Value.Kind == EMantleWeaponDocExtra::Dash);
+		}
+	}
 	// Round 5 steps 3 and 4: blink writes its reach (and a look only when it is not overhead), heal its amount; neither writes telekinesis's numbers.
 	{
 		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("StaffBlink"), nullptr);
@@ -1307,6 +1330,7 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->ExtraRange = 2000.0f; Changed(TEXT("blink reach changes signature")); Input->ExtraRange = 1500.0f;
 	Input->ExtraLook = TEXT("sink"); Changed(TEXT("blink look changes signature")); Input->ExtraLook = NAME_None;
 	Input->ExtraHeal = 50.0f; Changed(TEXT("heal amount changes signature")); Input->ExtraHeal = 35.0f;
+	Input->ExtraDashDistance = 2000.0f; Changed(TEXT("dash distance changes signature")); Input->ExtraDashDistance = 1200.0f;
 	Input->ShootingStyle = TEXT("c"); Changed(TEXT("shooting style changes signature")); Input->ShootingStyle = NAME_None;
 	Input->TapLook = TEXT("handFireball"); Changed(TEXT("tap look changes signature")); Input->TapLook = NAME_None;
 	Input->HoldLook = TEXT("skyCall"); Changed(TEXT("hold look changes signature")); Input->HoldLook = NAME_None;

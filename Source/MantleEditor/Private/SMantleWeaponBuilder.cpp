@@ -797,6 +797,7 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->ExtraRange = 1500.f;
 	Working->ExtraLook = NAME_None;
 	Working->ExtraHeal = 35.f;
+	Working->ExtraDashDistance = 1200.f;
 	Working->Projectile = FMantleWeaponSourceProjectile();
 	Working->Sweep = FMantleWeaponSourceSweep();
 	Working->Beam = FMantleWeaponSourceBeam();
@@ -2072,29 +2073,31 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		static const FName Levitate(FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Levitate));
 		static const FName Blink(FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Blink));
 		static const FName Heal(FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Heal));
+		static const FName Dash(FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Dash));
 		TArray<TPair<FName, FText>> Extras;
 		Extras.Emplace(NAME_None, LOCTEXT("ExtraNone", "None"));
 		Extras.Emplace(Telekinesis, LOCTEXT("ExtraTelekinesis", "Telekinesis"));
 		Extras.Emplace(Blink, LOCTEXT("ExtraBlink", "Blink"));
 		Extras.Emplace(Heal, LOCTEXT("ExtraHeal", "Heal"));
+		Extras.Emplace(Dash, LOCTEXT("ExtraDash", "Dash"));
 		Extras.Emplace(Levitate, LOCTEXT("ExtraLevitate", "Levitate"));
 		AddRowWhen(LOCTEXT("Extra", "Extra on Q"),
-			LOCTEXT("ExtraTip", "What Q (gamepad D-pad up) does with this staff. Telekinesis: tap Q on a physics prop up to 20 m away to lift it; left mouse throws it where you aim, Q again slams it down, and after 5 seconds it drops by itself. Anchored props can't be lifted. Blink: vanish and reappear on the ground where you aim, up to its reach. Heal: bow over the staff and heal yourself about a second later, standing still until it lands; a dodge before then cancels it. Levitate: tap Q to float; jump rises, crouch sinks, the movement keys steer; Q again or the time limit drifts you down. None of them uses the staff's charges."),
-			// Round 5 steps 3, 4 and 6: picking an extra puts the cooldown at that extra's own (telekinesis 3 s, blink 5, heal 20, levitate 8); the
+			LOCTEXT("ExtraTip", "What Q (gamepad D-pad up) does with this staff. Telekinesis: tap Q on a physics prop up to 20 m away to lift it; left mouse throws it where you aim, Q again slams it down, and after 5 seconds it drops by itself. Anchored props can't be lifted. Blink: vanish and reappear on the ground where you aim, up to its reach. Heal: bow over the staff and heal yourself about a second later, standing still until it lands; a dodge before then cancels it. Levitate: tap Q to float; jump rises, crouch sinks, the movement keys steer; Q again or the time limit drifts you down. Dash: Q dashes straight ahead the way the camera faces, on the ground or once per jump in the air; a wall stops it. None of them uses the staff's charges."),
+			// Round 5 steps 3, 4 and 6: picking an extra puts the cooldown at that extra's own (telekinesis 3 s, blink 5, heal 20, the dash 4, levitate 8); the
 			// creator can change it after.
 			MakeChoiceControl<FName>(Extras, [this] { return Working->Extra; }, [this](FName Value)
 			{
 				if (Value != Working->Extra)
 				{
 					const EMantleWeaponDocExtra Kind = Value == Blink ? EMantleWeaponDocExtra::Blink : Value == Heal ? EMantleWeaponDocExtra::Heal
-						: Value == Levitate ? EMantleWeaponDocExtra::Levitate : EMantleWeaponDocExtra::Telekinesis;
+						: Value == Levitate ? EMantleWeaponDocExtra::Levitate : Value == Dash ? EMantleWeaponDocExtra::Dash : EMantleWeaponDocExtra::Telekinesis;
 					Working->ExtraCooldownSeconds = static_cast<float>(FMantleWeaponDocument::DefaultExtraCooldownSeconds(Kind));
 				}
 				Working->Extra = Value;
 			}),
 			[] { return EVisibility::Visible; });
 		AddFloatWhen(LOCTEXT("ExtraCooldown", "Extra cooldown (0–60 s)"),
-			LOCTEXT("ExtraCooldownTip", "How long after the extra ends (for telekinesis, after the prop is let go; for levitate, after the landing) before Q works again."),
+			LOCTEXT("ExtraCooldownTip", "How long after the extra ends (for telekinesis, after the prop is let go; for levitate, after the landing; for the dash, once you can move again) before Q works again."),
 			0.f, 60.f, 0.1f, [this] { return Working->ExtraCooldownSeconds; }, [this](float V) { Working->ExtraCooldownSeconds = FMath::Clamp(V, 0.f, 60.f); },
 			[this] { return Working->Extra.IsNone() ? EVisibility::Collapsed : EVisibility::Visible; });
 		AddFloatWhen(LOCTEXT("ExtraMaxMass", "Heaviest prop it lifts (1–5000 kg)"),
@@ -2133,6 +2136,11 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 			LOCTEXT("ExtraHealAmountTip", "Never past the player's maximum health. At full health Q does nothing (and the cooldown is not spent)."),
 			1.f, 1000.f, 1.f, [this] { return Working->ExtraHeal; }, [this](float V) { Working->ExtraHeal = FMath::Clamp(V, 1.f, 1000.f); },
 			[this] { return Working->Extra == Heal ? EVisibility::Visible : EVisibility::Collapsed; });
+		// Round 5 step 5: the dash's distance.
+		AddFloatWhen(LOCTEXT("ExtraDashDistance", "Dash distance (700–2500 cm)"),
+			LOCTEXT("ExtraDashDistanceTip", "How far the dash goes, unless a wall stops it sooner. 1200 cm (12 m) by default."),
+			700.f, 2500.f, 10.f, [this] { return Working->ExtraDashDistance; }, [this](float V) { Working->ExtraDashDistance = FMath::Clamp(V, 700.f, 2500.f); },
+			[this] { return Working->Extra == Dash ? EVisibility::Visible : EVisibility::Collapsed; });
 	}
 	const bool bCanOverrideHandedness = IsFirearm(Working->Hold);
 	AddToggleWhen(LOCTEXT("OverrideTwoHanded", "Change how many hands hold it"), LOCTEXT("OverrideTwoHandedTip", "Use this hold with one hand or both. The usual setting follows the hold."),

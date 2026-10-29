@@ -469,7 +469,7 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 	}
 	// Round 5 step 0: a staff's extra on Q, none by default; written only when the creator picks one this build plays (telekinesis), with its
 	// cooldown and the heaviest prop it lifts. Step 6: levitate, with its cooldown, cap and time. Steps 3 and 4: blink (its reach and look) and
-	// heal (its amount). The later extra (dash) is not offered yet.
+	// heal (its amount). Step 5: the dash (its distance).
 	if (Info.bHasExtra && !Source.Extra.IsNone() && Source.Extra.ToString() == FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Levitate))
 	{
 		FMantleWeaponDocExtra Extra;
@@ -483,7 +483,8 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 	{
 		const FString Kind = Source.Extra.ToString();
 		EMantleWeaponDocExtra Picked = EMantleWeaponDocExtra::None;
-		for (const EMantleWeaponDocExtra Built : { EMantleWeaponDocExtra::Telekinesis, EMantleWeaponDocExtra::Blink, EMantleWeaponDocExtra::Heal })
+		for (const EMantleWeaponDocExtra Built : { EMantleWeaponDocExtra::Telekinesis, EMantleWeaponDocExtra::Blink, EMantleWeaponDocExtra::Heal,
+			EMantleWeaponDocExtra::Dash })
 		{
 			if (Kind == FMantleWeaponDocument::ExtraName(Built))
 			{
@@ -529,6 +530,11 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 				OutMessages.Add(FText::Format(LOCTEXT("UnsupportedBlinkLook", "This build has no blink look {0}."), FText::FromName(Source.ExtraLook)));
 				return false;
 			}
+		}
+		else if (Picked == EMantleWeaponDocExtra::Dash)
+		{
+			// Round 5 step 5: how far the dash goes, cm (7 to 25 m).
+			Extra.DashDistance.Set(FMath::Clamp(static_cast<double>(Source.ExtraDashDistance), 700.0, 2500.0));
 		}
 		else
 		{

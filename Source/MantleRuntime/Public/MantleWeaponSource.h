@@ -315,6 +315,8 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle") FName ExtraLook = NAME_None;
 	/** Round 5 step 4: the health heal gives back. */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 1000.0)) float ExtraHeal = 35.0f;
+	/** Round 5 step 5: how far the dash goes, cm (700 to 2500). */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 700.0, ClampMax = 2500.0)) float ExtraDashDistance = 1200.0f;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceProjectile Projectile;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceSweep Sweep;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceBeam Beam;

@@ -98,7 +98,8 @@ namespace MantleWeaponDocumentPrivate
 	// (step 6 built levitate).
 	const TCHAR* const GWeaponDocExtraNames[] = { TEXT("none"), TEXT("telekinesis"), TEXT("blink"), TEXT("heal"), TEXT("dash"), TEXT("levitate") };
 	// Round 5 steps 3, 4 and 6: blink, heal and levitate are built; dash still comes later.
-	const EMantleWeaponDocExtra GWeaponDocExtrasLater[] = { EMantleWeaponDocExtra::Dash };
+	// Round 5 step 5 built the dash, the last of them: none is later now (a kind added to the schema before it is built goes here).
+	const TArray<EMantleWeaponDocExtra> GWeaponDocExtrasLater;
 	// Round 5 step 3: extra.look, blink's looks in the enum's order (overhead the default).
 	const TCHAR* const GWeaponDocBlinkLookNames[] = { TEXT("overhead"), TEXT("curl"), TEXT("sink") };
 	const TCHAR* const GWeaponDocUseRefused[] = {
@@ -1493,7 +1494,7 @@ namespace MantleWeaponDocumentPrivate
 		void ReadExtra(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocExtra& Out)
 		{
 			Keys(Obj, Path, { TEXT("kind"), TEXT("cooldownSeconds"), TEXT("maxMass"), TEXT("liftPlayers"), TEXT("maxHeight"), TEXT("durationSeconds"),
-				TEXT("range"), TEXT("look"), TEXT("heal") },
+				TEXT("range"), TEXT("look"), TEXT("heal"), TEXT("dashDistance") },
 				{ TEXT("kind") });
 			if (const TSharedPtr<FJsonValue> Kind = Field(Obj, TEXT("kind")))
 			{
@@ -1509,6 +1510,8 @@ namespace MantleWeaponDocumentPrivate
 			OptNumber(Obj, Path, TEXT("range"), 300.0, 3000.0, Out.Range);
 			OptChoice(Obj, Path, TEXT("look"), GWeaponDocBlinkLookNames, Out.Look);
 			OptNumber(Obj, Path, TEXT("heal"), 1.0, 1000.0, Out.Heal);
+			// Round 5 step 5: the dash's distance.
+			OptNumber(Obj, Path, TEXT("dashDistance"), 700.0, 2500.0, Out.DashDistance);
 		}
 
 		void ReadShieldThrow(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocShieldThrow& Out)
@@ -2297,6 +2300,7 @@ namespace MantleWeaponDocumentPrivate
 				WeaponDocPut(Node, TEXT("look"), WeaponDocStringNode(WeaponDocNameAt(GWeaponDocBlinkLookNames, static_cast<int32>(In.Look.Value))));
 			}
 			Number(Node, TEXT("heal"), In.Heal);
+			Number(Node, TEXT("dashDistance"), In.DashDistance);
 			return Node;
 		}
 
@@ -3227,7 +3231,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 	{
 		R.Add(TEXT("staffMelee"), TEXT("mantle"), FString::Printf(TEXT("a %s has no staff melee: drop staffMelee"), Hold));
 	}
-	// The extra (Round 5 step 0): only a hold with an extra on Q (the staff) takes one; a kind that is built (dash comes in a later update); maxMass
+	// The extra (Round 5 step 0): only a hold with an extra on Q (the staff) takes one; a kind that is built (x-extrasLater; none since step 5); maxMass
 	// only on the extra that lifts; (step 6) maxHeight and durationSeconds only on levitate; (steps 3 and 4) range and look only on blink, heal only
 	// on heal. A Battle Mage takes any built one.
 	if (D.Extra.bSet)
@@ -3239,7 +3243,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		}
 		else if (IsExtraLater(Extra.Kind))
 		{
-			R.Add(TEXT("extra/kind"), TEXT("mantle"), FString::Printf(TEXT("is %s, which comes in a later update: pick none, telekinesis, blink, heal or levitate"),
+			R.Add(TEXT("extra/kind"), TEXT("mantle"), FString::Printf(TEXT("is %s, which comes in a later update: pick none, telekinesis, blink, heal, dash or levitate"),
 				ExtraName(Extra.Kind)));
 		}
 		else if (Extra.MaxHeight.bSet && Extra.Kind != EMantleWeaponDocExtra::Levitate)
@@ -3269,6 +3273,11 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		else if (Extra.Heal.bSet && Extra.Kind != EMantleWeaponDocExtra::Heal)
 		{
 			R.Add(TEXT("extra/heal"), TEXT("mantle"), TEXT("is set, but only heal has a heal: drop heal"));
+		}
+		// Round 5 step 5: dashDistance only on the dash.
+		else if (Extra.DashDistance.bSet && Extra.Kind != EMantleWeaponDocExtra::Dash)
+		{
+			R.Add(TEXT("extra/dashDistance"), TEXT("mantle"), TEXT("is set, but only dash has a dashDistance: drop dashDistance"));
 		}
 	}
 	EMantleWeaponDocEffects Element = EMantleWeaponDocEffects::Arcane;
@@ -3631,8 +3640,9 @@ const TCHAR* FMantleWeaponDocument::BlinkLookName(const EMantleWeaponDocBlinkLoo
 
 double FMantleWeaponDocument::DefaultExtraCooldownSeconds(const EMantleWeaponDocExtra Extra)
 {
-	// Brief rows 4, 11 and 13.
-	return Extra == EMantleWeaponDocExtra::Blink ? 5.0 : Extra == EMantleWeaponDocExtra::Heal ? 20.0 : Extra == EMantleWeaponDocExtra::Levitate ? 8.0 : 3.0;
+	// Brief rows 4, 11, 13 and 15.
+	return Extra == EMantleWeaponDocExtra::Blink ? 5.0 : Extra == EMantleWeaponDocExtra::Heal ? 20.0 : Extra == EMantleWeaponDocExtra::Levitate ? 8.0
+		: Extra == EMantleWeaponDocExtra::Dash ? 4.0 : 3.0;
 }
 
 bool FMantleWeaponDocument::IsExtraLater(const EMantleWeaponDocExtra Extra)

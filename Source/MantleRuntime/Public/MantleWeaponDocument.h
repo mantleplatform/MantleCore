@@ -578,6 +578,8 @@ struct FMantleWeaponDocExtra
 	TMantleWeaponDocValue<EMantleWeaponDocBlinkLook> Look{ EMantleWeaponDocBlinkLook::Overhead };
 	/** Round 5 step 4, heal only: the health it gives back (1 to 1000). */
 	TMantleWeaponDocValue<double> Heal{ 35.0 };
+	/** Round 5 step 5, dash only: how far it goes, cm (700 to 2500). Unset: 1200. */
+	TMantleWeaponDocValue<double> DashDistance{ 1200.0 };
 };
 
 enum class EMantleWeaponDocUseStyle : uint8
