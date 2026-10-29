@@ -71,9 +71,10 @@ namespace MantleWeaponDocumentPrivate
 		TEXT("beam"), TEXT("chargedBlast"), TEXT("handFireballHeld"), TEXT("skyCall"), TEXT("groundChannel"), TEXT("whirlCharge"), TEXT("whirlBeam")
 	};
 	const TCHAR* const GWeaponDocBeamLookNames[] = { TEXT("beam"), TEXT("groundChannel"), TEXT("whirlBeam") };
-	// stance (Round 4 step 5): the schema's enum in order. battleMage is in it but not built yet (x-stancesLater): refused until then (step 6 built the longsword).
+	// stance (Round 4 step 5): the schema's enum in order, every one built (step 6 the longsword, step 8 the Battle Mage).
 	const TCHAR* const GWeaponDocStanceNames[] = { TEXT("greatsword"), TEXT("longsword"), TEXT("wizard"), TEXT("battleMage"), TEXT("ready"), TEXT("shoulder") };
-	const TCHAR* const GWeaponDocStancesLater[] = { TEXT("battleMage") };
+	// Round 4 step 8: the staff's melee stance, which refuses tapLook, holdLook and staffMelee false.
+	const TCHAR* const GWeaponDocBattleMageStance = TEXT("battleMage");
 	// The Round 3 names match exactly, as the schema's enums do (TArray<FString>::Contains ignores case).
 	bool WeaponDocHasName(const TArray<FString>& Names, const FString& Name)
 	{
@@ -3047,8 +3048,9 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 					*FString::Join(Info.ShootingStyles, TEXT(", "))));
 		}
 	}
-	// Stance (Round 4 step 5), the same way: a known stance, then one the hold offers, then one that is built (longsword and battleMage come in a
-	// later update). A spear's shoulder is accepted on any spear: whether a shield pairs with it is not in the document, so a lone spear ignores it.
+	// Stance (Round 4 step 5), the same way: a known stance, then one the hold offers. A spear's shoulder is accepted on any spear: whether a shield
+	// pairs with it is not in the document, so a lone spear ignores it.
+	bool bBattleMage = false;
 	if (D.Stance.bSet)
 	{
 		const FString& Stance = D.Stance.Value;
@@ -3069,13 +3071,24 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		}
 		else
 		{
-			for (const TCHAR* Later : GWeaponDocStancesLater)
-			{
-				if (Stance.Equals(Later, ESearchCase::CaseSensitive))
-				{
-					R.Add(TEXT("stance"), TEXT("mantle"), FString::Printf(TEXT("is %s, which comes in a later update: pick %s"), *Stance, *Info.Stances[0]));
-				}
-			}
+			bBattleMage = Stance.Equals(GWeaponDocBattleMageStance, ESearchCase::CaseSensitive);
+		}
+	}
+	// The Battle Mage (Round 4 step 8): its left mouse swings the staff and it never charges or channels, so it has no tap or hold look; it always
+	// fights with its staff, so staffMelee may be true or absent but not false.
+	if (bBattleMage)
+	{
+		if (D.TapLook.bSet)
+		{
+			R.Add(TEXT("tapLook"), TEXT("mantle"), TEXT("a Battle Mage swings its staff on left mouse, so it has no tap look: drop tapLook"));
+		}
+		if (D.HoldLook.bSet)
+		{
+			R.Add(TEXT("holdLook"), TEXT("mantle"), TEXT("a Battle Mage never charges or channels, so it has no hold look: drop holdLook"));
+		}
+		if (D.bStaffMelee.bSet && !D.bStaffMelee.Value)
+		{
+			R.Add(TEXT("staffMelee"), TEXT("mantle"), TEXT("a Battle Mage always fights with its staff: drop staffMelee, or set it to true"));
 		}
 	}
 	// Tap look (Round 4 step 2), the same way: a known look, then one the hold offers. A hold whose tap looks one way takes none.
@@ -3501,9 +3514,9 @@ TConstArrayView<const TCHAR*> FMantleWeaponDocument::GetBeamLooks()
 	return MantleWeaponDocumentPrivate::GWeaponDocBeamLookNames;
 }
 
-TConstArrayView<const TCHAR*> FMantleWeaponDocument::GetStancesLater()
+const TCHAR* FMantleWeaponDocument::GetBattleMageStance()
 {
-	return MantleWeaponDocumentPrivate::GWeaponDocStancesLater;
+	return MantleWeaponDocumentPrivate::GWeaponDocBattleMageStance;
 }
 
 const TCHAR* FMantleWeaponDocument::EffectsName(const EMantleWeaponDocEffects Effects)

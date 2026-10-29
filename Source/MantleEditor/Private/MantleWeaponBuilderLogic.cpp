@@ -241,16 +241,14 @@ TArray<FString> MantleWeaponBuilderLogic::OfferedHoldLooks(const UMantleWeaponSo
 
 TArray<FString> MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold Hold)
 {
-	const TConstArrayView<const TCHAR*> Later = FMantleWeaponDocument::GetStancesLater();
-	TArray<FString> Offered;
-	for (const FString& Stance : FMantleWeaponDocument::GetHoldInfo(ToDocHold(Hold)).Stances)
-	{
-		if (!Later.ContainsByPredicate([&Stance](const TCHAR* Name) { return Stance.Equals(Name, ESearchCase::CaseSensitive); }))
-		{
-			Offered.Add(Stance);
-		}
-	}
-	return Offered.Num() > 1 ? Offered : TArray<FString>();
+	// Round 4 step 8: every stance is built (the Battle Mage too), so the hold's own list.
+	const TArray<FString>& Stances = FMantleWeaponDocument::GetHoldInfo(ToDocHold(Hold)).Stances;
+	return Stances.Num() > 1 ? Stances : TArray<FString>();
+}
+
+bool MantleWeaponBuilderLogic::IsBattleMage(const UMantleWeaponSource& Source)
+{
+	return Source.Hold == EMantleWeaponHold::Staff && Source.Stance.ToString().Equals(FMantleWeaponDocument::GetBattleMageStance(), ESearchCase::CaseSensitive);
 }
 
 TArray<FString> MantleWeaponBuilderLogic::OfferedEquipStyles(const UMantleWeaponSource& Source)
@@ -279,6 +277,13 @@ void MantleWeaponBuilderLogic::DropInvalidStyles(UMantleWeaponSource& Source)
 
 void MantleWeaponBuilderLogic::DropInvalidLooks(UMantleWeaponSource& Source)
 {
+	// Round 4 step 8: a Battle Mage has no tap or hold look (its left mouse swings the staff; it never charges or channels).
+	if (IsBattleMage(Source))
+	{
+		Source.TapLook = NAME_None;
+		Source.HoldLook = NAME_None;
+		return;
+	}
 	if (!StaffCastsSpells(Source))
 	{
 		Source.TapLook = NAME_None;

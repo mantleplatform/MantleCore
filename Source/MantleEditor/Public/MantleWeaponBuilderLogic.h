@@ -62,9 +62,13 @@ namespace MantleWeaponBuilderLogic
 	 *  looks alone. */
 	MANTLEEDITOR_API TArray<FString> OfferedHoldLooks(const UMantleWeaponSource& Source);
 
-	/** Round 4 step 5: the stances the panel offers Hold, the default first, in the document's spellings: the hold's x-stances without the ones the
-	 *  reader refuses for now (x-stancesLater: the Battle Mage). A hold with fewer than two built stances offers none. */
+	/** Round 4 step 5: the stances the panel offers Hold, the default first, in the document's spellings: the hold's x-stances (step 8: every one is
+	 *  built, the Battle Mage too). A hold with fewer than two stances offers none. */
 	MANTLEEDITOR_API TArray<FString> OfferedStances(EMantleWeaponHold Hold);
+
+	/** Round 4 step 8: the source is a staff in the Battle Mage stance: it fights with its staff (its melee is always on) and has no tap or hold look,
+	 *  so the panel hides those rows and the export writes none. */
+	MANTLEEDITOR_API bool IsBattleMage(const UMantleWeaponSource& Source);
 
 	/** Round 4 step 6: the draw styles and the dodge styles the panel offers the source now, the default first: the hold's x-equipStyles / x-dodgeStyles,
 	 *  except that a hold which ties them to a stance (x-withStance: a two-handed sword's, to the longsword) offers none until the source is in it. */
@@ -75,8 +79,8 @@ namespace MantleWeaponBuilderLogic
 	 *  reader refuses. */
 	MANTLEEDITOR_API void DropInvalidStyles(UMantleWeaponSource& Source);
 
-	/** Round 4 step 2: clears a tap look or hold look the source no longer offers (after the delivery, the spells or the charge changed), so the
-	 *  export never writes a look the reader refuses. */
+	/** Round 4 step 2: clears a tap look or hold look the source no longer offers (after the delivery, the spells or the charge changed; step 8: both
+	 *  in the Battle Mage stance), so the export never writes a look the reader refuses. */
 	MANTLEEDITOR_API void DropInvalidLooks(UMantleWeaponSource& Source);
 
 	/** Plain words: "Pistol", "Marksman rifle". */

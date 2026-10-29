@@ -213,6 +213,8 @@ namespace MantleWeaponBuilderPanelPrivate
 		if (Stance == TEXT("shoulder")) return LOCTEXT("StanceShoulder", "On the shoulder");
 		if (Stance == TEXT("greatsword")) return LOCTEXT("StanceGreatsword", "Greatsword");
 		if (Stance == TEXT("longsword")) return LOCTEXT("StanceLongsword", "Longsword");
+		if (Stance == TEXT("wizard")) return LOCTEXT("StanceWizard", "Wizard");
+		if (Stance == TEXT("battleMage")) return LOCTEXT("StanceBattleMage", "Battle Mage");
 		return FText::FromString(Stance);
 	}
 
@@ -1061,7 +1063,7 @@ FText SMantleWeaponBuilder::SummaryText() const
 	if (!Working->ComboSet.IsNone()) Lines.Add(FString::Printf(TEXT("Combo: %s"), *ComboSetLabel(Working->ComboSet.ToString()).ToString()));
 	if (HoldInfo(Working->Hold).bHasBash && !Working->bBash) Lines.Add(TEXT("Bash: off"));
 	if (HoldInfo(Working->Hold).bHasShieldThrow && Working->bShieldThrow) Lines.Add(TEXT("Throw: on"));
-	if (HoldInfo(Working->Hold).bHasStaffMelee && Working->bStaffMelee) Lines.Add(TEXT("Staff melee: on"));
+	if (HoldInfo(Working->Hold).bHasStaffMelee && Working->bStaffMelee && !MantleWeaponBuilderLogic::IsBattleMage(*Working)) Lines.Add(TEXT("Staff melee: on"));
 	if (!Working->Quiver.IsNone()) Lines.Add(FString::Printf(TEXT("Quiver: %s"), *QuiverLabel(Working->Quiver.ToString()).ToString()));
 	if (!Working->ShootingStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Shooting style: %s"), *ShootingStyleLabel(Working->ShootingStyle.ToString()).ToString()));
 	if (!Working->TapLook.IsNone()) Lines.Add(FString::Printf(TEXT("Tap: %s"), *TapLookLabel(Working->TapLook.ToString()).ToString()));
@@ -1697,13 +1699,16 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		}
 		const FText StanceTip = Working->Hold == EMantleWeaponHold::Melee2h
 			? LOCTEXT("StanceTwoHandedTip", "How the two-handed sword fights: the greatsword (the default) is heavy, with a spin and three charge levels. The longsword is lighter and quicker, with a three-hit combo, one charged thrust, a lunging power thrust, three dodges (the Dodge row) and a back or hip draw (the Draw style row).")
+			: Working->Hold == EMantleWeaponHold::Staff
+			? LOCTEXT("StanceStaffTip", "How the staff is held: the wizard (the default) holds it upright and casts. The Battle Mage holds it low and reversed and fights up close: left mouse and the Melee key swing a four-hit combo, holding the Melee key leaps and slams the staff down, and with the aim held left mouse throws fireballs from the left hand. A Battle Mage never charges or channels a beam, and has no Tap or Hold choice.")
 			: LOCTEXT("StanceTip", "How the spear is carried: ready, held up at all times (the default), or resting on the shoulder out of a fight. On the shoulder it comes down with the first attack, block or throw and goes back up after five quiet seconds. It shows only while the spear is held with a shield.");
 		AddRow(LOCTEXT("Stance", "Stance"), StanceTip,
 			MakeChoiceControl<FName>(StanceChoices, [this] { return Working->Stance; }, [this](FName Value)
 			{
 				Working->Stance = Value;
-				// The longsword's dodge and draw go with it: a two-handed sword back in its own stance keeps neither.
+				// The longsword's dodge and draw go with it: a two-handed sword back in its own stance keeps neither. A Battle Mage keeps no look.
 				MantleWeaponBuilderLogic::DropInvalidStyles(*Working);
+				MantleWeaponBuilderLogic::DropInvalidLooks(*Working);
 			}));
 	}
 	if (Info.EquipStyles.Num() > 1)
@@ -1799,7 +1804,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		AddRowWhen(LOCTEXT("TapLook", "Tap"),
 			LOCTEXT("TapLookTip", "What a tap casts: a bolt from the staff's head (taps in a row take turns between three swings), a fireball from the left hand, or the aimed shock cast at once."),
 			MakeChoiceControl<FName>(TapLooks, [this] { return Working->TapLook; }, [this](FName Value) { Working->TapLook = Value; }),
-			[this] { return MantleWeaponBuilderLogic::StaffCastsSpells(*Working) ? EVisibility::Visible : EVisibility::Collapsed; });
+			[this] { return MantleWeaponBuilderLogic::StaffCastsSpells(*Working) && !MantleWeaponBuilderLogic::IsBattleMage(*Working) ? EVisibility::Visible : EVisibility::Collapsed; });
 		// The hold looks follow the beam and the charge: the beam looks only with a beam, the charge looks only with a charged attack on.
 		AddRowWhen(LOCTEXT("HoldLook", "Hold"),
 			LOCTEXT("HoldLookTip", "What holding the attack button does, aiming or not: channel the beam (a staff with a beam: thrust forward, from the staff planted in a crouch, or whirled overhead), or charge a stronger spell (needs the charged attack on): a charged blast, a fireball held in the left hand, a sky call or a whirl."),
@@ -1814,7 +1819,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 				}
 				return HoldLooks;
 			}, [this] { return Working->HoldLook; }, [this](FName Value) { Working->HoldLook = Value; }),
-			[this] { return MantleWeaponBuilderLogic::StaffCastsSpells(*Working) ? EVisibility::Visible : EVisibility::Collapsed; });
+			[this] { return MantleWeaponBuilderLogic::StaffCastsSpells(*Working) && !MantleWeaponBuilderLogic::IsBattleMage(*Working) ? EVisibility::Visible : EVisibility::Collapsed; });
 	}
 	if (Deliveries.Num() > 2)
 	{
@@ -2040,8 +2045,9 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		LOCTEXT("ShieldThrowDamageTip", "How much the thrown shield hurts each player it hits (once per throw)."),
 		0.f, 1000.f, 1.f, [this] { return Working->ShieldThrowDamage; }, [this](float V) { Working->ShieldThrowDamage = FMath::Clamp(V, 0.f, 1000.f); },
 		[this, CanThrowShield] { return CanThrowShield() && Working->bShieldThrow ? EVisibility::Visible : EVisibility::Collapsed; });
-	// Round 4 step 7: a staff may fight with the Melee key (a three-hit combo, and a hold for a leap), off by default.
-	const TFunction<bool()> CanStaffMelee = [this] { return HoldInfo(Working->Hold).bHasStaffMelee; };
+	// Round 4 step 7: a staff may fight with the Melee key (a three-hit combo, and a hold for a leap), off by default. Step 8: a Battle Mage always
+	// does (its own combo), so the row is hidden for it.
+	const TFunction<bool()> CanStaffMelee = [this] { return HoldInfo(Working->Hold).bHasStaffMelee && !MantleWeaponBuilderLogic::IsBattleMage(*Working); };
 	AddToggleWhen(LOCTEXT("StaffMelee", "Fight with the Melee key"),
 		LOCTEXT("StaffMeleeTip", "Tapping the Melee key swings the staff in a three-hit combo; holding it leaps forward and slams the staff down. Each hit does the weapon's damage (the leap twice it), and can be blocked and parried like a sword's. Off, the Melee key does a plain weapon strike."),
 		[this] { return Working->bStaffMelee; }, [this](bool V) { Working->bStaffMelee = V; },

@@ -272,8 +272,8 @@ bool FMantleWeaponBuilderV2DodgeStyleTest::RunTest(const FString& Parameters)
 }
 
 // Round 4 step 5: the stance a creator picks is written as stance where the hold has more than one built stance (a spear: ready or shoulder), and
-// refused on a hold without it; none picked writes nothing (the hold's first). The Battle Mage comes in a later update: the panel does not offer
-// it and the export refuses it. Step 6 built the longsword, a two-handed sword's second stance.
+// refused on a hold without it; none picked writes nothing (the hold's first). Step 6 built the longsword, a two-handed sword's second stance, and
+// step 8 the Battle Mage, a staff's: in it the export writes no tap or hold look (the panel drops them) and the staff melee row is hidden.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StanceTest, "Mantle.Editor.WeaponBuilderV2.Stance", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FMantleWeaponBuilderV2StanceTest::RunTest(const FString& Parameters)
 {
@@ -290,7 +290,8 @@ bool FMantleWeaponBuilderV2StanceTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("a spear is offered ready and shoulder"), FString::Join(MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Spear), TEXT(",")), FString(TEXT("ready,shoulder")));
 	TestEqual(TEXT("a two-handed sword is offered the greatsword and the longsword"), FString::Join(MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Melee2h), TEXT(",")),
 		FString(TEXT("greatsword,longsword")));
-	TestEqual(TEXT("a staff is offered none: its Battle Mage comes later"), MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Staff).Num(), 0);
+	TestEqual(TEXT("a staff is offered the wizard and the Battle Mage"), FString::Join(MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Staff), TEXT(",")),
+		FString(TEXT("wizard,battleMage")));
 	TestEqual(TEXT("a sword is offered none"), MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Melee1h).Num(), 0);
 	if (TestTrue(TEXT("a spear on the shoulder builds"), Build(EMantleWeaponHold::Spear, TEXT("shoulder"), Desc, Messages)))
 	{
@@ -314,8 +315,23 @@ bool FMantleWeaponBuilderV2StanceTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("and writes it"), Desc.Stance.bSet && Desc.Stance.Value == TEXT("longsword"));
 	}
+	if (TestTrue(TEXT("a staff in the Battle Mage stance builds"), Build(EMantleWeaponHold::Staff, TEXT("battleMage"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes it"), Desc.Stance.bSet && Desc.Stance.Value == TEXT("battleMage"));
+		TestFalse(TEXT("with no tap or hold look"), Desc.TapLook.bSet || Desc.HoldLook.bSet);
+	}
+	{
+		// The Battle Mage drops the looks a wizard picked, and the panel hides them and the staff melee row (its melee is always on).
+		UMantleWeaponSource* Mage = Source(EMantleWeaponHold::Staff, TEXT("Stance"), nullptr);
+		Mage->TapLook = TEXT("handFireball");
+		Mage->HoldLook = TEXT("chargedBlast");
+		TestFalse(TEXT("a wizard is no Battle Mage"), MantleWeaponBuilderLogic::IsBattleMage(*Mage));
+		Mage->Stance = TEXT("battleMage");
+		TestTrue(TEXT("the Battle Mage stance is the Battle Mage"), MantleWeaponBuilderLogic::IsBattleMage(*Mage));
+		MantleWeaponBuilderLogic::DropInvalidLooks(*Mage);
+		TestTrue(TEXT("its looks are dropped"), Mage->TapLook.IsNone() && Mage->HoldLook.IsNone());
+	}
 	TestFalse(TEXT("a two-handed sword refuses the Battle Mage"), Build(EMantleWeaponHold::Melee2h, TEXT("battleMage"), Desc, Messages));
-	TestFalse(TEXT("a staff refuses the Battle Mage for now"), Build(EMantleWeaponHold::Staff, TEXT("battleMage"), Desc, Messages));
 	TestFalse(TEXT("a sword refuses the shoulder"), Build(EMantleWeaponHold::Melee1h, TEXT("shoulder"), Desc, Messages));
 	TestTrue(TEXT("the refusal explains the choice"), Messages.ContainsByPredicate([](const FText& Message)
 	{
