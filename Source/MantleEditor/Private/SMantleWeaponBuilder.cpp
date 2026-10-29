@@ -2117,7 +2117,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 			[this] { return Working->Extra == Levitate ? EVisibility::Visible : EVisibility::Collapsed; });
 		// Round 5 step 3: blink's reach and look.
 		AddFloatWhen(LOCTEXT("ExtraRange", "Blink reach (3–30 m)"),
-			LOCTEXT("ExtraRangeTip", "How far toward the crosshair the blink can take you, in cm along the ground. Where the spot you aim at has no room, it lands at the nearest free spot short of it; it never goes through walls."),
+			LOCTEXT("ExtraRangeTip", "How far toward the crosshair the blink can take you, in cm from your eyes. Where the spot you aim at has no room, it lands at the nearest free spot short of it; it never goes through walls."),
 			300.f, 3000.f, 10.f, [this] { return Working->ExtraRange; }, [this](float V) { Working->ExtraRange = FMath::Clamp(V, 300.f, 3000.f); },
 			[this] { return Working->Extra == Blink ? EVisibility::Visible : EVisibility::Collapsed; });
 		TArray<TPair<FName, FText>> Looks;
