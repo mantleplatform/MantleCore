@@ -3383,7 +3383,7 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 	Walk.bTranslucent = IsTranslucentBlendMode(Blend);
 	if (Base->MaterialDomain == MD_Volume)
 	{
-		Out.UnpublishableWhy = TEXT("is a volume material (volume fog), which has no surface Mantle can draw; its bake is a flat white card");
+		Out.UnpublishableWhy = TEXT("is a volume material (volume fog) with no surface Mantle can draw; its bake is a flat white card");
 	}
 	// #628: Additive is carried (alphaMode additive), so it is not a BlendMode loss.
 	if (Blend == BLEND_Modulate || Blend == BLEND_AlphaComposite || Blend == BLEND_AlphaHoldout

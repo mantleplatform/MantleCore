@@ -2195,7 +2195,7 @@ bool FMantlePlaceExporter::DescribeSkippedActor(const AActor* Actor, FSkippedAct
 				{
 					if (First.IsEmpty())
 					{
-						First = FString::Printf(TEXT("material '%s' %s"), *Material->GetName(), *SlotWhy);
+						First = FString::Printf(TEXT("material '%s', which %s"), *Material->GetName(), *SlotWhy);
 					}
 				}
 				else
