@@ -297,6 +297,12 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 1000.0)) float ShieldThrowDamage = 25.0f;
 	/** Round 4 step 7: a staff's own melee on the Melee key (the WZ three-hit combo, hold for the leap): off by default. */
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bStaffMelee = false;
+	/** Round 5 step 0: a staff's extra on Q, by its document spelling (telekinesis); none (unset) writes no extra. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") FName Extra = NAME_None;
+	/** Round 5 step 0: seconds after the extra ends before Q works again. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 60.0)) float ExtraCooldownSeconds = 3.0f;
+	/** Round 5 step 0: telekinesis's heaviest prop, kg. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 5000.0)) float ExtraMaxMass = 300.0f;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceProjectile Projectile;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceSweep Sweep;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceBeam Beam;

@@ -302,6 +302,8 @@ struct FMantleWeaponDocHoldInfo
 	bool bHasShieldThrow = false;
 	/** Round 4 step 7: the hold may fight with the Melee key in its own combo (x-staffMelee: the staff). */
 	bool bHasStaffMelee = false;
+	/** Round 5 step 0: the hold carries one extra on Q (x-extra: the staff). */
+	bool bHasExtra = false;
 	/** Round 3: the shooting style ids (x-shootingStyles) of a hold held more than one way to shoot (the bow), the default first. Empty: one way. */
 	TArray<FString> ShootingStyles;
 	/** Round 4 step 2: the tap looks (x-tapLooks) of a hold whose tap can look more than one way (the staff), the default first. Empty: no choice. */
@@ -530,6 +532,30 @@ struct FMantleWeaponDocBeam
 };
 
 /** schema consumable.style (#1025): which of each hold's two potion clips a use plays. */
+/** schema extra.kind (Round 5 step 0): a staff's one extra on Q, in the enum's order. Blink, Heal, Dash and Levitate are in the schema but come in a
+ *  later update (x-extrasLater): the reader refuses them until then. */
+enum class EMantleWeaponDocExtra : uint8
+{
+	None,
+	Telekinesis,
+	Blink,
+	Heal,
+	Dash,
+	Levitate,
+	Count
+};
+
+/** schema extra (Round 5 step 0): a staff's extra on Q. Unset is none. */
+struct FMantleWeaponDocExtra
+{
+	/** Required. */
+	EMantleWeaponDocExtra Kind = EMantleWeaponDocExtra::None;
+	/** Seconds after the extra ends before Q works again. Unset: the kind's own (telekinesis 3). */
+	TMantleWeaponDocValue<double> CooldownSeconds{ 3.0 };
+	/** Telekinesis only: the heaviest prop it lifts, kg. */
+	TMantleWeaponDocValue<double> MaxMass{ 300.0 };
+};
+
 enum class EMantleWeaponDocUseStyle : uint8
 {
 	/** Raised to the mouth: each hold's _Potion_01 clip (a potion, a drink, food). */
@@ -803,6 +829,8 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<FMantleWeaponDocBash> Bash;
 	/** Round 3 step 12: a shield's throw (the document's throw); unset is off. */
 	TMantleWeaponDocValue<FMantleWeaponDocShieldThrow> ShieldThrow;
+	/** Round 5 step 0: a staff's extra on Q (the document's extra); unset is none. */
+	TMantleWeaponDocValue<FMantleWeaponDocExtra> Extra;
 	TMantleWeaponDocValue<FMantleWeaponDocSounds> Sounds;
 	TMantleWeaponDocValue<FMantleWeaponDocFirstPerson> FirstPerson;
 	TMantleWeaponDocValue<FMantleWeaponDocSpread> Spread;
@@ -938,6 +966,11 @@ public:
 	static const TCHAR* EffectsName(EMantleWeaponDocEffects Effects);
 	static const TCHAR* UseStyleName(EMantleWeaponDocUseStyle Style);
 	static const TCHAR* ConsumableEffectName(EMantleWeaponDocConsumableEffect Effect);
+	/** Round 5 step 0: extra.kind's spelling (none, telekinesis, ...). */
+	static const TCHAR* ExtraName(EMantleWeaponDocExtra Extra);
+	/** Round 5 step 0: schema x-extrasLater: the extras in the kind enum that are not built yet (the validator refuses them, so the weapon builder does
+	 *  not offer them). */
+	static bool IsExtraLater(EMantleWeaponDocExtra Extra);
 
 	/** #904: Effects is an element (not one of the firearms' rifle, pistol and shotgun). */
 	static bool IsElement(EMantleWeaponDocEffects Effects) { return Effects > EMantleWeaponDocEffects::Shotgun && Effects < EMantleWeaponDocEffects::Count; }

@@ -467,6 +467,22 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 	{
 		Desc.bStaffMelee.Set(true);
 	}
+	// Round 5 step 0: a staff's extra on Q, none by default; written only when the creator picks one this build plays (telekinesis), with its
+	// cooldown and the heaviest prop it lifts. The later extras (blink, heal, dash, levitate) are not offered yet.
+	if (Info.bHasExtra && !Source.Extra.IsNone())
+	{
+		const FString Kind = Source.Extra.ToString();
+		if (Kind != FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Telekinesis))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedExtra", "This build has no staff extra {0}."), FText::FromString(Kind)));
+			return false;
+		}
+		FMantleWeaponDocExtra Extra;
+		Extra.Kind = EMantleWeaponDocExtra::Telekinesis;
+		Extra.CooldownSeconds.Set(FMath::Clamp(static_cast<double>(Source.ExtraCooldownSeconds), 0.0, 60.0));
+		Extra.MaxMass.Set(FMath::Clamp(static_cast<double>(Source.ExtraMaxMass), 1.0, 5000.0));
+		Desc.Extra.Set(Extra);
+	}
 	// A hold whose action is a throw (the spear beside its sweep, the throwable alone) throws its own model: the projectile block
 	// rides along, and the thrown weapon sticks where it lands and can be picked up again, with no choice to make.
 	const bool bThrowsItsModel = Info.Actions.Contains(EMantleWeaponDocAction::Throw);

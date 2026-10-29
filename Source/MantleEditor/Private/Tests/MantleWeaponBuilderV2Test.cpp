@@ -892,6 +892,47 @@ bool FMantleWeaponBuilderV2StaffMeleeTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Round 5 step 0: a staff's extra on Q is none by default and writes nothing; telekinesis writes extra with its cooldown and heaviest prop and reads
+// again; an extra this build does not play is refused; no other hold has one.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffExtraTest, "Mantle.Editor.WeaponBuilderV2.StaffExtra", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2StaffExtraTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	TestTrue(TEXT("the hold library gives a staff an extra"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Staff).bHasExtra);
+	TestFalse(TEXT("and a sword none"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Melee1h).bHasExtra);
+	auto Build = [](const EMantleWeaponHold Hold, const FName Extra, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("StaffExtra"), nullptr);
+		Input->Extra = Extra;
+		Input->ExtraCooldownSeconds = 4.0f;
+		Input->ExtraMaxMass = 120.0f;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	if (TestTrue(TEXT("a staff left as it is builds"), Build(EMantleWeaponHold::Staff, NAME_None, Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no extra (none)"), Desc.Extra.bSet);
+	}
+	if (TestTrue(TEXT("a telekinesis staff builds"), Build(EMantleWeaponHold::Staff, TEXT("telekinesis"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes telekinesis"), Desc.Extra.bSet && Desc.Extra.Value.Kind == EMantleWeaponDocExtra::Telekinesis);
+		TestTrue(TEXT("with its cooldown"), Desc.Extra.bSet && Desc.Extra.Value.CooldownSeconds.bSet && FMath::IsNearlyEqual(Desc.Extra.Value.CooldownSeconds.Value, 4.0));
+		TestTrue(TEXT("and its heaviest prop"), Desc.Extra.bSet && Desc.Extra.Value.MaxMass.bSet && FMath::IsNearlyEqual(Desc.Extra.Value.MaxMass.Value, 120.0));
+		FString Error;
+		FMantleWeaponDesc Again;
+		TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		TestTrue(TEXT("with telekinesis"), Again.Extra.bSet && Again.Extra.Value.Kind == EMantleWeaponDocExtra::Telekinesis);
+	}
+	TestFalse(TEXT("an extra this build does not play is refused"), Build(EMantleWeaponHold::Staff, TEXT("blink"), Desc, Messages));
+	if (TestTrue(TEXT("a sword with the same field builds"), Build(EMantleWeaponHold::Melee1h, TEXT("telekinesis"), Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no extra (it has none)"), Desc.Extra.bSet);
+	}
+	return true;
+}
+
 // A staff's held beam that also throws spells writes both blocks, with or without a charge (aim and hold), and the document
 // reader takes it.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffSpellsBesideBeamTest, "Mantle.Editor.WeaponBuilderV2.StaffSpellsBesideBeam", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -1178,6 +1219,9 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->ShieldThrowRange = 1500.0f; Changed(TEXT("shield throw range changes signature")); Input->ShieldThrowRange = 1000.0f;
 	Input->ShieldThrowDamage = 40.0f; Changed(TEXT("shield throw damage changes signature")); Input->ShieldThrowDamage = 25.0f;
 	Input->bStaffMelee = true; Changed(TEXT("staff melee changes signature")); Input->bStaffMelee = false;
+	Input->Extra = TEXT("telekinesis"); Changed(TEXT("staff extra changes signature")); Input->Extra = NAME_None;
+	Input->ExtraCooldownSeconds = 5.0f; Changed(TEXT("extra cooldown changes signature")); Input->ExtraCooldownSeconds = 3.0f;
+	Input->ExtraMaxMass = 100.0f; Changed(TEXT("extra max mass changes signature")); Input->ExtraMaxMass = 300.0f;
 	Input->ShootingStyle = TEXT("c"); Changed(TEXT("shooting style changes signature")); Input->ShootingStyle = NAME_None;
 	Input->TapLook = TEXT("handFireball"); Changed(TEXT("tap look changes signature")); Input->TapLook = NAME_None;
 	Input->HoldLook = TEXT("skyCall"); Changed(TEXT("hold look changes signature")); Input->HoldLook = NAME_None;

@@ -788,6 +788,9 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->ShieldThrowRange = 1000.f;
 	Working->ShieldThrowDamage = 25.f;
 	Working->bStaffMelee = false;
+	Working->Extra = NAME_None;
+	Working->ExtraCooldownSeconds = 3.f;
+	Working->ExtraMaxMass = 300.f;
 	Working->Projectile = FMantleWeaponSourceProjectile();
 	Working->Sweep = FMantleWeaponSourceSweep();
 	Working->Beam = FMantleWeaponSourceBeam();
@@ -1064,6 +1067,7 @@ FText SMantleWeaponBuilder::SummaryText() const
 	if (HoldInfo(Working->Hold).bHasBash && !Working->bBash) Lines.Add(TEXT("Bash: off"));
 	if (HoldInfo(Working->Hold).bHasShieldThrow && Working->bShieldThrow) Lines.Add(TEXT("Throw: on"));
 	if (HoldInfo(Working->Hold).bHasStaffMelee && Working->bStaffMelee && !MantleWeaponBuilderLogic::IsBattleMage(*Working)) Lines.Add(TEXT("Staff melee: on"));
+	if (HoldInfo(Working->Hold).bHasExtra && !Working->Extra.IsNone()) Lines.Add(FString::Printf(TEXT("Extra on Q: %s"), *Working->Extra.ToString()));
 	if (!Working->Quiver.IsNone()) Lines.Add(FString::Printf(TEXT("Quiver: %s"), *QuiverLabel(Working->Quiver.ToString()).ToString()));
 	if (!Working->ShootingStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Shooting style: %s"), *ShootingStyleLabel(Working->ShootingStyle.ToString()).ToString()));
 	if (!Working->TapLook.IsNone()) Lines.Add(FString::Printf(TEXT("Tap: %s"), *TapLookLabel(Working->TapLook.ToString()).ToString()));
@@ -2054,6 +2058,27 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		LOCTEXT("StaffMeleeTip", "Tapping the Melee key swings the staff in a three-hit combo; holding it leaps forward and slams the staff down. Each hit does the weapon's damage (the leap twice it), and can be blocked and parried like a sword's. Off, the Melee key does a plain weapon strike."),
 		[this] { return Working->bStaffMelee; }, [this](bool V) { Working->bStaffMelee = V; },
 		[CanStaffMelee] { return CanStaffMelee() ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
+	// Round 5 step 0: a staff's one extra on Q (gamepad D-pad up), none by default. Only the extras this build plays are offered (telekinesis); the
+	// later ones (blink, heal, dash, levitate) come with their own updates.
+	if (HoldInfo(Working->Hold).bHasExtra)
+	{
+		static const FName Telekinesis(FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Telekinesis));
+		TArray<TPair<FName, FText>> Extras;
+		Extras.Emplace(NAME_None, LOCTEXT("ExtraNone", "None"));
+		Extras.Emplace(Telekinesis, LOCTEXT("ExtraTelekinesis", "Telekinesis"));
+		AddRowWhen(LOCTEXT("Extra", "Extra on Q"),
+			LOCTEXT("ExtraTip", "What Q (gamepad D-pad up) does with this staff. Telekinesis: tap Q on a physics prop up to 20 m away to lift it; left mouse throws it where you aim, Q again slams it down, and after 5 seconds it drops by itself. Anchored props can't be lifted. It never uses the staff's charges."),
+			MakeChoiceControl<FName>(Extras, [this] { return Working->Extra; }, [this](FName Value) { Working->Extra = Value; }),
+			[] { return EVisibility::Visible; });
+		AddFloatWhen(LOCTEXT("ExtraCooldown", "Extra cooldown (0–60 s)"),
+			LOCTEXT("ExtraCooldownTip", "How long after the extra ends (for telekinesis, after the prop is let go) before Q works again."),
+			0.f, 60.f, 0.1f, [this] { return Working->ExtraCooldownSeconds; }, [this](float V) { Working->ExtraCooldownSeconds = FMath::Clamp(V, 0.f, 60.f); },
+			[this] { return Working->Extra.IsNone() ? EVisibility::Collapsed : EVisibility::Visible; });
+		AddFloatWhen(LOCTEXT("ExtraMaxMass", "Heaviest prop it lifts (1–5000 kg)"),
+			LOCTEXT("ExtraMaxMassTip", "Telekinesis leaves anything heavier where it is."),
+			1.f, 5000.f, 1.f, [this] { return Working->ExtraMaxMass; }, [this](float V) { Working->ExtraMaxMass = FMath::Clamp(V, 1.f, 5000.f); },
+			[this] { return Working->Extra == Telekinesis ? EVisibility::Visible : EVisibility::Collapsed; });
+	}
 	const bool bCanOverrideHandedness = IsFirearm(Working->Hold);
 	AddToggleWhen(LOCTEXT("OverrideTwoHanded", "Change how many hands hold it"), LOCTEXT("OverrideTwoHandedTip", "Use this hold with one hand or both. The usual setting follows the hold."),
 		[this] { return Working->bOverrideTwoHanded; }, [this](bool V) { Working->bOverrideTwoHanded = V; },
