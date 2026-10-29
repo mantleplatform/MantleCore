@@ -19,6 +19,7 @@
 #include "Distributions/DistributionVectorUniform.h"
 #include "Distributions/DistributionVectorUniformCurve.h"
 #include "Engine/Texture2D.h"
+#include "Materials/Material.h"
 #include "Materials/MaterialInterface.h"
 #include "Particles/Acceleration/ParticleModuleAcceleration.h"
 #include "Particles/Acceleration/ParticleModuleAccelerationConstant.h"
@@ -142,6 +143,30 @@ namespace MantleEffectExportPrivate
 	bool NearlyVector(const FVector& A, const FVector& B)
 	{
 		return Nearly(A.X, B.X) && Nearly(A.Y, B.Y) && Nearly(A.Z, B.Z);
+	}
+
+	/**
+	 * True for a heat-distortion material: it writes Refraction and has no colour texture to draw. Its alpha comes from a
+	 * ParameterDynamic module we do not read, so as a sprite it would only be an opaque white box.
+	 */
+	bool IsDistortionOnly(const UMaterialInterface* Material)
+	{
+		const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
+		if (!Base || !Base->GetEditorOnlyData() || !Base->GetEditorOnlyData()->Refraction.IsConnected())
+		{
+			return false;
+		}
+		TArray<UTexture*> Used;
+		Material->GetUsedTextures(Used);
+		for (UTexture* Texture : Used)
+		{
+			const UTexture2D* Texture2D = Cast<UTexture2D>(Texture);
+			if (Texture2D && Texture2D->CompressionSettings != TC_Normalmap)
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** The material's base texture and blend: additive stays additive, anything else is translucent. */
@@ -303,6 +328,13 @@ namespace MantleEffectExportPrivate
 					FString::Printf(TEXT("an emitter with %s: attractors and vector fields are not carried"), *ModuleLabel(Module)));
 				return false;
 			}
+		}
+
+		if (Lod->RequiredModule && IsDistortionOnly(Lod->RequiredModule->Material.Get()))
+		{
+			Coverage.Add(MantleCoverageCategory::Particles, EMantleCoverageOutcome::Dropped, Name,
+				TEXT("a heat-distortion (refraction) emitter: skipped as distortion-only, Mantle's sprites cannot bend the view"));
+			return false;
 		}
 
 		FMantleEffectProps& Props = Out.Props;
