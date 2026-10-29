@@ -71,9 +71,9 @@ namespace MantleWeaponDocumentPrivate
 		TEXT("beam"), TEXT("chargedBlast"), TEXT("handFireballHeld"), TEXT("skyCall"), TEXT("groundChannel"), TEXT("whirlCharge"), TEXT("whirlBeam")
 	};
 	const TCHAR* const GWeaponDocBeamLookNames[] = { TEXT("beam"), TEXT("groundChannel"), TEXT("whirlBeam") };
-	// stance (Round 4 step 5): the schema's enum in order. longsword and battleMage are in it but not built yet (x-stancesLater): refused until then.
+	// stance (Round 4 step 5): the schema's enum in order. battleMage is in it but not built yet (x-stancesLater): refused until then (step 6 built the longsword).
 	const TCHAR* const GWeaponDocStanceNames[] = { TEXT("greatsword"), TEXT("longsword"), TEXT("wizard"), TEXT("battleMage"), TEXT("ready"), TEXT("shoulder") };
-	const TCHAR* const GWeaponDocStancesLater[] = { TEXT("longsword"), TEXT("battleMage") };
+	const TCHAR* const GWeaponDocStancesLater[] = { TEXT("battleMage") };
 	// The Round 3 names match exactly, as the schema's enums do (TArray<FString>::Contains ignores case).
 	bool WeaponDocHasName(const TArray<FString>& Names, const FString& Name)
 	{
@@ -412,11 +412,16 @@ namespace MantleWeaponDocumentPrivate
 			Sword.ComboSets = { TEXT("chop"), TEXT("spin"), TEXT("second") };
 			Table.Add(Sword);
 		}
-		// melee_2h. Round 4 step 5: the greatsword stance is the default; the longsword (step 6) is refused until it is built.
+		// melee_2h. Round 4 step 5: the greatsword stance is the default. Step 6: the longsword (HCS_Melee2h_Longsword) has three dodges and two draws,
+		// which a document may pick only in that stance; the greatsword has one of each (x-withStance).
 		{
 			FMantleWeaponDocHoldInfo TwoHanded = WeaponDocHold(true, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
 				{ ESocket::GripR, ESocket::GripL, ESocket::EdgeBase, ESocket::EdgeTip }, {});
 			TwoHanded.Stances = { TEXT("greatsword"), TEXT("longsword") };
+			TwoHanded.EquipStyles = { TEXT("back"), TEXT("hip") };
+			TwoHanded.DodgeStyles = { TEXT("upright"), TEXT("crouched"), TEXT("dash") };
+			TwoHanded.EquipStylesStance = TEXT("longsword");
+			TwoHanded.DodgeStylesStance = TEXT("longsword");
 			Table.Add(TwoHanded);
 		}
 		// spear: the SpearShield pair clip set has one approved equip style, the back draw.
@@ -2941,6 +2946,12 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 				: FString::Printf(TEXT("is %s, which a %s does not have: pick one of %s"), *Style, Hold,
 					*FString::Join(Info.EquipStyles, TEXT(", "))));
 		}
+		else if (!Info.EquipStylesStance.IsEmpty() && !(D.Stance.bSet && D.Stance.Value.Equals(Info.EquipStylesStance, ESearchCase::CaseSensitive)))
+		{
+			// Round 4 step 6: a melee_2h draws one way unless it is held in the longsword stance.
+			R.Add(TEXT("equipStyle"), TEXT("mantle"), FString::Printf(TEXT("a %s has one draw unless it is held in the %s stance: drop equipStyle, or set stance %s"),
+				Hold, *Info.EquipStylesStance, *Info.EquipStylesStance));
+		}
 	}
 	// Dodge style (Round 2), the same way: a known id, then one the hold offers. A hold with one dodge takes none.
 	if (D.DodgeStyle.bSet)
@@ -2961,6 +2972,12 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 				? FString::Printf(TEXT("a %s has one dodge: drop dodgeStyle"), Hold)
 				: FString::Printf(TEXT("is %s, which a %s does not have: pick one of %s"), *Style, Hold,
 					*FString::Join(Info.DodgeStyles, TEXT(", "))));
+		}
+		else if (!Info.DodgeStylesStance.IsEmpty() && !(D.Stance.bSet && D.Stance.Value.Equals(Info.DodgeStylesStance, ESearchCase::CaseSensitive)))
+		{
+			// Round 4 step 6: a melee_2h has one dodge unless it is held in the longsword stance.
+			R.Add(TEXT("dodgeStyle"), TEXT("mantle"), FString::Printf(TEXT("a %s has one dodge unless it is held in the %s stance: drop dodgeStyle, or set stance %s"),
+				Hold, *Info.DodgeStylesStance, *Info.DodgeStylesStance));
 		}
 	}
 	// Combo set (Round 3), the same way: a known id, then one the hold offers. A hold with one combo takes none.

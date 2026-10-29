@@ -221,7 +221,7 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 	if (!Source.EquipStyle.IsNone())
 	{
 		const FString Style = Source.EquipStyle.ToString();
-		if (!Info.EquipStyles.Contains(Style))
+		if (!OfferedEquipStyles(Source).Contains(Style))
 		{
 			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedEquipStyle", "This hold does not offer the {0} draw style."), FText::FromString(Style)));
 			return false;
@@ -231,7 +231,7 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 	if (!Source.DodgeStyle.IsNone())
 	{
 		const FString Style = Source.DodgeStyle.ToString();
-		if (!Info.DodgeStyles.Contains(Style))
+		if (!OfferedDodgeStyles(Source).Contains(Style))
 		{
 			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedDodgeStyle", "This hold does not offer the {0} dodge."), FText::FromString(Style)));
 			return false;

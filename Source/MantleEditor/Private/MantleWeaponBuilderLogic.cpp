@@ -253,6 +253,30 @@ TArray<FString> MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold Hold)
 	return Offered.Num() > 1 ? Offered : TArray<FString>();
 }
 
+TArray<FString> MantleWeaponBuilderLogic::OfferedEquipStyles(const UMantleWeaponSource& Source)
+{
+	const FMantleWeaponDocHoldInfo& Info = FMantleWeaponDocument::GetHoldInfo(ToDocHold(Source.Hold));
+	return (Info.EquipStylesStance.IsEmpty() || Source.Stance.ToString().Equals(Info.EquipStylesStance, ESearchCase::CaseSensitive)) ? Info.EquipStyles : TArray<FString>();
+}
+
+TArray<FString> MantleWeaponBuilderLogic::OfferedDodgeStyles(const UMantleWeaponSource& Source)
+{
+	const FMantleWeaponDocHoldInfo& Info = FMantleWeaponDocument::GetHoldInfo(ToDocHold(Source.Hold));
+	return (Info.DodgeStylesStance.IsEmpty() || Source.Stance.ToString().Equals(Info.DodgeStylesStance, ESearchCase::CaseSensitive)) ? Info.DodgeStyles : TArray<FString>();
+}
+
+void MantleWeaponBuilderLogic::DropInvalidStyles(UMantleWeaponSource& Source)
+{
+	if (!Source.EquipStyle.IsNone() && !OfferedEquipStyles(Source).Contains(Source.EquipStyle.ToString()))
+	{
+		Source.EquipStyle = NAME_None;
+	}
+	if (!Source.DodgeStyle.IsNone() && !OfferedDodgeStyles(Source).Contains(Source.DodgeStyle.ToString()))
+	{
+		Source.DodgeStyle = NAME_None;
+	}
+}
+
 void MantleWeaponBuilderLogic::DropInvalidLooks(UMantleWeaponSource& Source)
 {
 	if (!StaffCastsSpells(Source))

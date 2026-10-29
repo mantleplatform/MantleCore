@@ -211,6 +211,8 @@ namespace MantleWeaponBuilderPanelPrivate
 	{
 		if (Stance == TEXT("ready")) return LOCTEXT("StanceReady", "Ready");
 		if (Stance == TEXT("shoulder")) return LOCTEXT("StanceShoulder", "On the shoulder");
+		if (Stance == TEXT("greatsword")) return LOCTEXT("StanceGreatsword", "Greatsword");
+		if (Stance == TEXT("longsword")) return LOCTEXT("StanceLongsword", "Longsword");
 		return FText::FromString(Stance);
 	}
 
@@ -1691,9 +1693,13 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		}
 		const FText EquipStyleTip = Working->Hold == EMantleWeaponHold::Bow
 			? LOCTEXT("EquipStyleBowTip", "The normal draw comes from the back. Equip 01–04 play after that draw; the standard back holster and carry are kept.")
-			: LOCTEXT("EquipStyleMeleeTip", "When paired with a shield, choose the sword's hip draw, back draw or overhead flourish. The hip draw is the default.");
-		AddRow(LOCTEXT("EquipStyle", "Draw style"), EquipStyleTip,
-			MakeChoiceControl<FName>(EquipStyles, [this] { return Working->EquipStyle; }, [this](FName Value) { Working->EquipStyle = Value; }));
+			: Working->Hold == EMantleWeaponHold::Melee2h
+				? LOCTEXT("EquipStyleLongswordTip", "How the longsword is drawn: from the back over the shoulder (the default) or from the hip. The greatsword has one draw.")
+				: LOCTEXT("EquipStyleMeleeTip", "When paired with a shield, choose the sword's hip draw, back draw or overhead flourish. The hip draw is the default.");
+		// Round 4 step 6: a two-handed sword draws one way unless it is the longsword, so the row shows with that stance only.
+		AddRowWhen(LOCTEXT("EquipStyle", "Draw style"), EquipStyleTip,
+			MakeChoiceControl<FName>(EquipStyles, [this] { return Working->EquipStyle; }, [this](FName Value) { Working->EquipStyle = Value; }),
+			[this] { return MantleWeaponBuilderLogic::OfferedEquipStyles(*Working).Num() > 1 ? EVisibility::Visible : EVisibility::Collapsed; });
 	}
 	// Round 2: the dodge (Left Alt, gamepad B) where the hold has more than one look; a roll is the same for every look.
 	if (Info.DodgeStyles.Num() > 1)
@@ -1706,9 +1712,13 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		}
 		const FText DodgeStyleTip = Working->Hold == EMantleWeaponHold::Unarmed
 			? LOCTEXT("DodgeStyleUnarmedTip", "How the holder dodges: a long dash (the default) or a short sidestep.")
+			: Working->Hold == EMantleWeaponHold::Melee2h
+			? LOCTEXT("DodgeStyleLongswordTip", "How the longsword dodges: an upright step (the default), a crouched sidestep or a long dash. The greatsword has one dodge.")
 			: LOCTEXT("DodgeStyleShieldTip", "How the holder dodges with a shield: an upright step (the default), a crouched sidestep or a long dash. A sword uses it while paired with a shield; without one it falls back to the shield's.");
-		AddRow(LOCTEXT("DodgeStyle", "Dodge"), DodgeStyleTip,
-			MakeChoiceControl<FName>(DodgeStyles, [this] { return Working->DodgeStyle; }, [this](FName Value) { Working->DodgeStyle = Value; }));
+		// Round 4 step 6: a two-handed sword has one dodge unless it is the longsword, so the row shows with that stance only.
+		AddRowWhen(LOCTEXT("DodgeStyle", "Dodge"), DodgeStyleTip,
+			MakeChoiceControl<FName>(DodgeStyles, [this] { return Working->DodgeStyle; }, [this](FName Value) { Working->DodgeStyle = Value; }),
+			[this] { return MantleWeaponBuilderLogic::OfferedDodgeStyles(*Working).Num() > 1 ? EVisibility::Visible : EVisibility::Collapsed; });
 	}
 	// Round 3: the combo where the hold has more than one chain of attacks.
 	if (Info.ComboSets.Num() > 1)
@@ -1763,9 +1773,16 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		{
 			StanceChoices.Emplace(FName(*Stance), StanceLabel(Stance));
 		}
-		AddRow(LOCTEXT("Stance", "Stance"),
-			LOCTEXT("StanceTip", "How the spear is carried: ready, held up at all times (the default), or resting on the shoulder out of a fight. On the shoulder it comes down with the first attack, block or throw and goes back up after five quiet seconds. It shows only while the spear is held with a shield."),
-			MakeChoiceControl<FName>(StanceChoices, [this] { return Working->Stance; }, [this](FName Value) { Working->Stance = Value; }));
+		const FText StanceTip = Working->Hold == EMantleWeaponHold::Melee2h
+			? LOCTEXT("StanceTwoHandedTip", "How the two-handed sword fights: the greatsword (the default) is heavy, with a spin and three charge levels. The longsword is lighter and quicker, with a three-hit combo, one charged thrust, a lunging power thrust, three dodges (the Dodge row) and a back or hip draw (the Draw style row).")
+			: LOCTEXT("StanceTip", "How the spear is carried: ready, held up at all times (the default), or resting on the shoulder out of a fight. On the shoulder it comes down with the first attack, block or throw and goes back up after five quiet seconds. It shows only while the spear is held with a shield.");
+		AddRow(LOCTEXT("Stance", "Stance"), StanceTip,
+			MakeChoiceControl<FName>(StanceChoices, [this] { return Working->Stance; }, [this](FName Value)
+			{
+				Working->Stance = Value;
+				// The longsword's dodge and draw go with it: a two-handed sword back in its own stance keeps neither.
+				MantleWeaponBuilderLogic::DropInvalidStyles(*Working);
+			}));
 	}
 	// Round 4 step 2: what a tap and what a hold do on a staff that throws spells.
 	if (Info.TapLooks.Num() > 1)

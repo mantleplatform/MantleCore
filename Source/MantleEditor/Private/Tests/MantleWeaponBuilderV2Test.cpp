@@ -272,8 +272,8 @@ bool FMantleWeaponBuilderV2DodgeStyleTest::RunTest(const FString& Parameters)
 }
 
 // Round 4 step 5: the stance a creator picks is written as stance where the hold has more than one built stance (a spear: ready or shoulder), and
-// refused on a hold without it; none picked writes nothing (the hold's first). The longsword and the Battle Mage come in a later update: the
-// panel does not offer them and the export refuses them.
+// refused on a hold without it; none picked writes nothing (the hold's first). The Battle Mage comes in a later update: the panel does not offer
+// it and the export refuses it. Step 6 built the longsword, a two-handed sword's second stance.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StanceTest, "Mantle.Editor.WeaponBuilderV2.Stance", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FMantleWeaponBuilderV2StanceTest::RunTest(const FString& Parameters)
 {
@@ -288,7 +288,8 @@ bool FMantleWeaponBuilderV2StanceTest::RunTest(const FString& Parameters)
 	FMantleWeaponDesc Desc;
 	TArray<FText> Messages;
 	TestEqual(TEXT("a spear is offered ready and shoulder"), FString::Join(MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Spear), TEXT(",")), FString(TEXT("ready,shoulder")));
-	TestEqual(TEXT("a two-handed sword is offered none: its longsword comes later"), MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Melee2h).Num(), 0);
+	TestEqual(TEXT("a two-handed sword is offered the greatsword and the longsword"), FString::Join(MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Melee2h), TEXT(",")),
+		FString(TEXT("greatsword,longsword")));
 	TestEqual(TEXT("a staff is offered none: its Battle Mage comes later"), MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Staff).Num(), 0);
 	TestEqual(TEXT("a sword is offered none"), MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Melee1h).Num(), 0);
 	if (TestTrue(TEXT("a spear on the shoulder builds"), Build(EMantleWeaponHold::Spear, TEXT("shoulder"), Desc, Messages)))
@@ -309,13 +310,82 @@ bool FMantleWeaponBuilderV2StanceTest::RunTest(const FString& Parameters)
 	{
 		TestFalse(TEXT("and leaves the hold's default"), Desc.Stance.bSet);
 	}
-	TestFalse(TEXT("a two-handed sword refuses the longsword for now"), Build(EMantleWeaponHold::Melee2h, TEXT("longsword"), Desc, Messages));
+	if (TestTrue(TEXT("a two-handed sword in the longsword stance builds"), Build(EMantleWeaponHold::Melee2h, TEXT("longsword"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes it"), Desc.Stance.bSet && Desc.Stance.Value == TEXT("longsword"));
+	}
+	TestFalse(TEXT("a two-handed sword refuses the Battle Mage"), Build(EMantleWeaponHold::Melee2h, TEXT("battleMage"), Desc, Messages));
 	TestFalse(TEXT("a staff refuses the Battle Mage for now"), Build(EMantleWeaponHold::Staff, TEXT("battleMage"), Desc, Messages));
 	TestFalse(TEXT("a sword refuses the shoulder"), Build(EMantleWeaponHold::Melee1h, TEXT("shoulder"), Desc, Messages));
 	TestTrue(TEXT("the refusal explains the choice"), Messages.ContainsByPredicate([](const FText& Message)
 	{
 		return Message.ToString().Contains(TEXT("does not offer"));
 	}));
+	return true;
+}
+
+// Round 4 step 6: a two-handed sword's dodge and draw are the longsword's (x-withStance): the panel offers them, and the export writes them, only in
+// that stance, and a stance change drops a pick the new stance does not offer. A greatsword has one dodge and one draw.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2LongswordTest, "Mantle.Editor.WeaponBuilderV2.Longsword", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2LongswordTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	auto Build = [](FName Stance, FName Dodge, FName Equip, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Melee2h, TEXT("Longsword"), nullptr);
+		Input->Stance = Stance;
+		Input->DodgeStyle = Dodge;
+		Input->EquipStyle = Equip;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Melee2h), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+
+	// What the panel offers: nothing until the stance is the longsword's; the hold's other styles are never tied to a stance.
+	UMantleWeaponSource* Panel = Source(EMantleWeaponHold::Melee2h, TEXT("LongswordPanel"), nullptr);
+	TestEqual(TEXT("a greatsword is offered no dodge"), MantleWeaponBuilderLogic::OfferedDodgeStyles(*Panel).Num(), 0);
+	TestEqual(TEXT("and no draw"), MantleWeaponBuilderLogic::OfferedEquipStyles(*Panel).Num(), 0);
+	Panel->Stance = TEXT("longsword");
+	TestEqual(TEXT("a longsword is offered three dodges"), FString::Join(MantleWeaponBuilderLogic::OfferedDodgeStyles(*Panel), TEXT(",")), FString(TEXT("upright,crouched,dash")));
+	TestEqual(TEXT("and two draws"), FString::Join(MantleWeaponBuilderLogic::OfferedEquipStyles(*Panel), TEXT(",")), FString(TEXT("back,hip")));
+	Panel->Stance = TEXT("greatsword");
+	TestEqual(TEXT("a greatsword stance picked is offered no dodge"), MantleWeaponBuilderLogic::OfferedDodgeStyles(*Panel).Num(), 0);
+	UMantleWeaponSource* Shield = Source(EMantleWeaponHold::Shield, TEXT("LongswordShield"), nullptr);
+	TestEqual(TEXT("a shield is still offered its three dodges whatever its stance"), MantleWeaponBuilderLogic::OfferedDodgeStyles(*Shield).Num(), 3);
+	UMantleWeaponSource* Sword = Source(EMantleWeaponHold::Melee1h, TEXT("LongswordSword"), nullptr);
+	TestEqual(TEXT("and a sword its three draws"), MantleWeaponBuilderLogic::OfferedEquipStyles(*Sword).Num(), 3);
+
+	// Changing the stance drops a pick the new stance does not offer, and keeps one it does.
+	Panel->Stance = TEXT("longsword");
+	Panel->DodgeStyle = TEXT("dash");
+	Panel->EquipStyle = TEXT("hip");
+	MantleWeaponBuilderLogic::DropInvalidStyles(*Panel);
+	TestTrue(TEXT("the longsword keeps its dodge and draw"), Panel->DodgeStyle == FName(TEXT("dash")) && Panel->EquipStyle == FName(TEXT("hip")));
+	Panel->Stance = NAME_None;
+	MantleWeaponBuilderLogic::DropInvalidStyles(*Panel);
+	TestTrue(TEXT("back in the greatsword it keeps neither"), Panel->DodgeStyle.IsNone() && Panel->EquipStyle.IsNone());
+
+	// What the export writes.
+	if (TestTrue(TEXT("a longsword with the crouched dodge and the hip draw builds"), Build(TEXT("longsword"), TEXT("crouched"), TEXT("hip"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes the stance, the dodge and the draw"), Desc.Stance.bSet && Desc.Stance.Value == TEXT("longsword")
+			&& Desc.DodgeStyle.bSet && Desc.DodgeStyle.Value == TEXT("crouched") && Desc.EquipStyle.bSet && Desc.EquipStyle.Value == TEXT("hip"));
+		FMantleWeaponDesc Again;
+		FString Error;
+		TestTrue(TEXT("the document reads again (the reader's rules accept it)"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+	}
+	if (TestTrue(TEXT("a longsword with none picked builds"), Build(TEXT("longsword"), NAME_None, NAME_None, Desc, Messages)))
+	{
+		TestFalse(TEXT("and leaves the dodge and the draw to the hold's defaults"), Desc.DodgeStyle.bSet || Desc.EquipStyle.bSet);
+	}
+	TestFalse(TEXT("a greatsword refuses a dodge"), Build(NAME_None, TEXT("dash"), NAME_None, Desc, Messages));
+	TestFalse(TEXT("a greatsword in its own stance refuses a draw"), Build(TEXT("greatsword"), NAME_None, TEXT("hip"), Desc, Messages));
+	TestTrue(TEXT("the refusal explains the choice"), Messages.ContainsByPredicate([](const FText& Message)
+	{
+		return Message.ToString().Contains(TEXT("does not offer"));
+	}));
+	TestFalse(TEXT("a longsword refuses the fists' sidestep"), Build(TEXT("longsword"), TEXT("sidestep"), NAME_None, Desc, Messages));
 	return true;
 }
 

@@ -308,8 +308,12 @@ struct FMantleWeaponDocHoldInfo
 	 *  (a staff's real default is beam when it has a beam block, else chargedBlast: see GetBeamLooks). Empty: no choice. */
 	TArray<FString> HoldLooks;
 	/** Round 4 step 5: the stance ids (x-stances) of a hold that can be held more than one way, the default first. Empty: one stance, no choice.
-	 *  The ones not built yet are in x-stancesLater (longsword, battleMage); the validator refuses them for now. */
+	 *  The ones not built yet are in x-stancesLater (battleMage); the validator refuses them for now. */
 	TArray<FString> Stances;
+	/** Round 4 step 6 (x-withStance): the stance a document must hold the weapon in to pick one of EquipStyles / DodgeStyles. Empty: any stance of
+	 *  the hold (a sword's styles do not depend on one). A melee_2h picks its back or hip draw and its dodge only as a longsword. */
+	FString EquipStylesStance;
+	FString DodgeStylesStance;
 };
 
 /** The pre-#840 name: an archetype's entry is its firearm hold's. */
@@ -895,7 +899,7 @@ public:
 	/** Round 4 step 2: schema x-beamLooks, the hold looks that channel the staff's beam (they need its beam block; the others charge). */
 	static TConstArrayView<const TCHAR*> GetBeamLooks();
 
-	/** Round 4 step 5: schema x-stancesLater, the stances in x-stances that are not built yet (longsword, battleMage): the validator refuses them, so
+	/** Round 4 step 5: schema x-stancesLater, the stances in x-stances that are not built yet (battleMage): the validator refuses them, so
 	 *  the weapon builder does not offer them. */
 	static TConstArrayView<const TCHAR*> GetStancesLater();
 
