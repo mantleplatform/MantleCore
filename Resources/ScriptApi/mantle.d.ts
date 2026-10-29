@@ -260,7 +260,7 @@ interface Player {
 	readonly sprintStarted: Signal<[player: Player]>;
 	/** The character stopped sprinting: the key let go, stamina ran out, SprintEnabled turned off, or it stopped moving. Fires on the server and on every client. */
 	readonly sprintStopped: Signal<[player: Player]>;
-	/** The player used their staff's extra on Q (gamepad D-pad up), on the server, as it starts. extra is the weapon's extra: "telekinesis", "blink", "heal" or "levitate" (a press that ends a float fires nothing). Not fired for a press that did nothing (StaffExtraEnabled false, the cooldown, nothing to lift, nowhere to blink to, full health, stunned, knocked down, swimming, sliding, seated or in a vehicle). */
+	/** The player used their staff's extra on Q (gamepad D-pad up), on the server, as it starts. extra is the weapon's extra: "telekinesis", "blink", "heal", "dash" or "levitate" (a press that ends a float fires nothing). Not fired for a press that did nothing (StaffExtraEnabled false, the cooldown, nothing to lift, nowhere to blink to, full health, stunned, knocked down, swimming, sliding, seated or in a vehicle). */
 	readonly staffExtraUsed: Signal<[player: Player, extra: string]>;
 	/** The character's Stamina changed: sprinting, resting, a jump's cost or a script setting it. It reports steps of about half a percent of MaxStamina, not every frame. Fires on the server and on every client while StaminaEnabled is true. */
 	readonly staminaChanged: Signal<[player: Player, old: number, new: number]>;
