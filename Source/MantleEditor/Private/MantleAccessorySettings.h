@@ -16,6 +16,19 @@ struct FMantleAccessorySettings
 	static bool AlignToAvatarAxes(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError);
 
 	/**
+	 * The placement a new accessory starts with: AlignToAvatarAxes, and for a neck slot also RestOnShoulders. Saved placements
+	 * (Load) are never passed through here, so a creator's own always wins.
+	 */
+	static bool ApplyDefaultPlacement(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError);
+
+	/**
+	 * Lowers a neck accessory (already aligned) until the top of its mesh meets the collarbones of Body (the height of the
+	 * clavicle bones in the reference pose), so a chain rests on the shoulders and base of the neck instead of floating at the
+	 * jaw. Only the draft's attach location changes, along the avatar's up axis. False when Body lacks the bones.
+	 */
+	static bool RestOnShoulders(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError);
+
+	/**
 	 * The shift to take off every vertex so a mesh whose pivot is out of the slot's reach (a model exported with its pivot at
 	 * the feet) is centred on its pivot, or zero when the pivot already reaches or the mesh is too big for the slot either way.
 	 */

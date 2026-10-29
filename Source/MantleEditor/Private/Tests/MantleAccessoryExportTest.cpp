@@ -441,6 +441,9 @@ bool FMantleAccessoryAgentTest::RunTest(const FString& Parameters)
 	{
 		const FMantleCosmeticDraft Draft = FMantleEditorActions::MakeCosmeticDraft(EMantleCosmeticClass::Accessory, Light.Get(), TEXT("acc_neck"), FString(), *Contract, EMantleFitSex::Auto);
 		TestTrue(TEXT("a static mesh accessory starts aligned to the avatar's axes"), Draft.bAttach);
+		TestTrue(TEXT("a neck accessory starts lowered onto the shoulders, not centred on the neck socket"), !Draft.AttachLocation.IsNearlyZero(0.5f));
+		const FMantleCosmeticDraft Wrist = FMantleEditorActions::MakeCosmeticDraft(EMantleCosmeticClass::Accessory, Light.Get(), TEXT("acc_face"), FString(), *Contract, EMantleFitSex::Auto);
+		TestTrue(TEXT("another slot is only aligned, not lowered"), Wrist.AttachLocation.IsNearlyZero(0.01f));
 	}
 	if (const TSharedPtr<FJsonObject> Top = Check(TEXT("top")))
 	{

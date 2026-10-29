@@ -80,6 +80,63 @@ bool FMantleAccessorySettings::AlignToAvatarAxes(FMantleCosmeticDraft& Draft, co
 	return true;
 }
 
+bool FMantleAccessorySettings::ApplyDefaultPlacement(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError)
+{
+	if (!AlignToAvatarAxes(Draft, Body, OutError))
+	{
+		return false;
+	}
+	if (Draft.Slot.Contains(TEXT("neck")))
+	{
+		FString Ignored;
+		RestOnShoulders(Draft, Body, Ignored);
+	}
+	return true;
+}
+
+bool FMantleAccessorySettings::RestOnShoulders(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError)
+{
+	OutError.Reset();
+	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get(&OutError);
+	const FMantleContractSlot* Point = Contract ? Contract->Slots.FindByPredicate([&Draft](const FMantleContractSlot& Entry)
+		{ return Entry.Id == Draft.Slot && Entry.Group == TEXT("accessory"); }) : nullptr;
+	const UStaticMesh* Mesh = Cast<UStaticMesh>(Draft.Source.Get());
+	if (!Point || !Body || !Mesh)
+	{
+		return false;
+	}
+	Mesh = UploadMesh(Mesh, Contract->RigidAccessory);
+	const FReferenceSkeleton& Reference = Body->GetRefSkeleton();
+	const TArray<FTransform>& Pose = Reference.GetRefBonePose();
+	auto InComponent = [&Reference, &Pose](const FName Name, FTransform& Out)
+	{
+		int32 Bone = Reference.FindBoneIndex(Name);
+		if (!Pose.IsValidIndex(Bone)) return false;
+		Out = Pose[Bone];
+		while ((Bone = Reference.GetParentIndex(Bone)) != INDEX_NONE) Out = Out * Pose[Bone];
+		return true;
+	};
+	FTransform SocketBone, Left, Right;
+	if (!InComponent(FName(*Point->SocketBone), SocketBone) || !InComponent(TEXT("clavicle_l"), Left) || !InComponent(TEXT("clavicle_r"), Right))
+	{
+		OutError = TEXT("The chosen MetaHuman lacks the neck or collarbone bones.");
+		return false;
+	}
+	// The mesh as it is worn now (attach rotation and offset on the bone), in the body's component space, whose Z is up.
+	const FTransform Attach(FRotator(Draft.AttachRotation.X, Draft.AttachRotation.Y, Draft.AttachRotation.Z), FVector(Draft.AttachLocation), FVector(Draft.AttachScale));
+	const FBox Box = Mesh->GetBoundingBox();
+	double Top = -TNumericLimits<double>::Max();
+	for (int32 Corner = 0; Corner < 8; ++Corner)
+	{
+		const FVector Point3((Corner & 1) ? Box.Max.X : Box.Min.X, (Corner & 2) ? Box.Max.Y : Box.Min.Y, (Corner & 4) ? Box.Max.Z : Box.Min.Z);
+		Top = FMath::Max(Top, (Attach * SocketBone).TransformPosition(Point3).Z);
+	}
+	const double Collar = (Left.GetTranslation().Z + Right.GetTranslation().Z) * 0.5;
+	const FVector Drop = SocketBone.GetRotation().Inverse().RotateVector(FVector(0.0, 0.0, Collar - Top));
+	Draft.AttachLocation = FMantleCosmeticPackage::ClampAttachLocation(Draft.AttachLocation + FVector3f(Drop));
+	return true;
+}
+
 void FMantleAccessorySettings::Save(const FMantleCosmeticDraft& Draft, const FString& ConfigFile)
 {
 	if (Draft.Class != EMantleCosmeticClass::Accessory || !Draft.Source.IsValid()) return;

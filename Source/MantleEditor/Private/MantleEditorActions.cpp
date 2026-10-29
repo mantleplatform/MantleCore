@@ -275,7 +275,7 @@ void FMantleEditorActions::ApplyCosmeticAccessoryPlacementDefaults(FMantleCosmet
 	FString Error;
 	if (FMantleFitBodies::ParseBodyType(TEXT("f_med_nrw"), Type) && FMantleFitBodies::Make(TEXT("f_med_nrw"), Type, Body, Error))
 	{
-		FMantleAccessorySettings::AlignToAvatarAxes(Draft, Body.BodyMesh.Get(), Error);
+		FMantleAccessorySettings::ApplyDefaultPlacement(Draft, Body.BodyMesh.Get(), Error);
 		FMantleFitBodies::Release(Body);
 	}
 	if (!Draft.bAttach)

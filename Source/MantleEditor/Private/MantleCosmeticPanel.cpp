@@ -2105,7 +2105,7 @@ bool SMantleCosmeticPanel::BuildPackage()
 	{
 		const USkeletalMesh* Body = PreviewSession.IsValid() && PreviewSession->GetView().State == EMantlePreviewState::Ready
 			&& PreviewViewport.IsValid() ? PreviewViewport->GetShownBody() : Draft.AuthoringBody.Get();
-		if (!FMantleAccessorySettings::AlignToAvatarAxes(Draft, Body, PreviewInputError))
+		if (!FMantleAccessorySettings::ApplyDefaultPlacement(Draft, Body, PreviewInputError))
 		{
 			ShowIssues({ FMantleCosmeticChecks::Error(PreviewInputError, TEXT("Choose the current MetaHuman under Authored on, or preview its catalog avatar first.")) }, {});
 			return false;
@@ -3032,7 +3032,7 @@ FReply SMantleCosmeticPanel::OnAlignAccessoryAxes()
 {
 	const USkeletalMesh* Body = PreviewSession.IsValid() && PreviewSession->GetView().State == EMantlePreviewState::Ready
 		&& PreviewViewport.IsValid() ? PreviewViewport->GetShownBody() : Draft.AuthoringBody.Get();
-	if (FMantleAccessorySettings::AlignToAvatarAxes(Draft, Body, PreviewInputError))
+	if (FMantleAccessorySettings::ApplyDefaultPlacement(Draft, Body, PreviewInputError))
 	{
 		bAccessoryPlacementInitialized = true;
 		Package.Reset();
@@ -3048,7 +3048,7 @@ void SMantleCosmeticPanel::RefreshAccessoryPreview()
 		|| PreviewSession->GetView().State != EMantlePreviewState::Ready) return;
 	if (!bAccessoryPlacementInitialized)
 	{
-		if (!FMantleAccessorySettings::AlignToAvatarAxes(Draft, PreviewViewport->GetShownBody(), PreviewInputError)) return;
+		if (!FMantleAccessorySettings::ApplyDefaultPlacement(Draft, PreviewViewport->GetShownBody(), PreviewInputError)) return;
 		bAccessoryPlacementInitialized = true;
 		Package.Reset();
 		SaveAccessoryPlacement();
