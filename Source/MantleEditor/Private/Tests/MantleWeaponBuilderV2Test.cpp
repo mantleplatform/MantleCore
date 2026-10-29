@@ -552,13 +552,13 @@ bool FMantleWeaponBuilderV2HoldLookTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-// Round 3 (bow step 5): a bow may block. "Can block" on writes block (with its stun), off (the default) writes none; a staff still cannot.
+// Round 3 (bow step 5): a bow may block. "Can block" on writes block (with its stun), off (the default) writes none; a rifle still cannot.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2BowBlockTest, "Mantle.Editor.WeaponBuilderV2.BowBlock", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FMantleWeaponBuilderV2BowBlockTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleWeaponBuilderV2TestPrivate;
 	TestTrue(TEXT("the hold library lets a bow block"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Bow).BlockRule == EMantleWeaponDocBlockRule::Optional);
-	TestTrue(TEXT("and not a staff"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Staff).BlockRule == EMantleWeaponDocBlockRule::None);
+	TestTrue(TEXT("and not a rifle"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Rifle).BlockRule == EMantleWeaponDocBlockRule::None);
 	auto Build = [](const bool bBlock, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
 	{
 		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Bow, TEXT("BowBlock"), nullptr);
@@ -582,6 +582,39 @@ bool FMantleWeaponBuilderV2BowBlockTest::RunTest(const FString& Parameters)
 	if (TestTrue(TEXT("a bow left as it is builds"), Build(false, Desc, Messages)))
 	{
 		TestFalse(TEXT("and does not block (right mouse zooms)"), Desc.Block.bSet);
+	}
+	return true;
+}
+
+// Round 4 (staff step 4): a staff may block too. "Can block" on writes block (with its stun), off (the default) writes none: right mouse aims as it did.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffBlockTest, "Mantle.Editor.WeaponBuilderV2.StaffBlock", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2StaffBlockTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	TestTrue(TEXT("the hold library lets a staff block"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Staff).BlockRule == EMantleWeaponDocBlockRule::Optional);
+	auto Build = [](const bool bBlock, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("StaffBlock"), nullptr);
+		Input->bBlock = bBlock;
+		Input->bBreakOnHeavy = true;
+		Input->StunSeconds = 2.0f;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	if (TestTrue(TEXT("a staff that blocks builds"), Build(true, Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes block, enabled"), Desc.Block.bSet && Desc.Block.Value.bEnabled.bSet && Desc.Block.Value.bEnabled.Value);
+		TestEqual(TEXT("with its stun"), Desc.Block.bSet ? Desc.Block.Value.StunSeconds : -1.0, 2.0);
+		FString Error;
+		FMantleWeaponDesc Again;
+		TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		TestTrue(TEXT("with the block"), Again.Block.bSet);
+	}
+	if (TestTrue(TEXT("a staff left as it is builds"), Build(false, Desc, Messages)))
+	{
+		TestFalse(TEXT("and does not block (right mouse aims)"), Desc.Block.bSet);
 	}
 	return true;
 }

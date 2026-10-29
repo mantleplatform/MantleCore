@@ -421,10 +421,11 @@ namespace MantleWeaponDocumentPrivate
 			Spear.ComboSets = { TEXT("quick"), TEXT("long"), TEXT("lunge") };
 			Table.Add(Spear);
 		}
-		// staff. Round 4 step 2: what a tap and what a hold do (step 3: every hold look, groundChannel and whirlBeam included).
+		// staff. Round 4 step 2: what a tap and what a hold do (step 3: every hold look, groundChannel and whirlBeam included). Step 4: it may block
+		// (right mouse raises its guard instead of the aim).
 		{
 			FMantleWeaponDocHoldInfo Staff = WeaponDocHold(true, { EAction::Equip, EAction::Holster, EAction::Idle, EAction::Cast, EAction::Heavy },
-				{ EDelivery::Projectile, EDelivery::Beam }, ECharge::Optional, { EResource::Charges, EResource::None }, EBlock::None,
+				{ EDelivery::Projectile, EDelivery::Beam }, ECharge::Optional, { EResource::Charges, EResource::None }, EBlock::Optional,
 				{ ESocket::GripR, ESocket::GripL, ESocket::Focus }, { ESocket::Sight });
 			Staff.TapLooks = { TEXT("bolt"), TEXT("handFireball"), TEXT("aimedShock") };
 			Staff.HoldLooks = { TEXT("beam"), TEXT("chargedBlast"), TEXT("handFireballHeld"), TEXT("skyCall"), TEXT("groundChannel"), TEXT("whirlCharge"),

@@ -1962,7 +1962,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 	{
 		return HoldInfo(Working->Hold).BlockRule != EMantleWeaponDocBlockRule::None;
 	};
-	AddToggleWhen(LOCTEXT("Block", "Can block"), LOCTEXT("BlockTip", "This hold can use its block action."),
+	AddToggleWhen(LOCTEXT("Block", "Can block"), LOCTEXT("BlockTip", "This hold can use its block action. On a bow or a staff, right mouse blocks instead of zooming or aiming."),
 		[this] { return Working->bBlock; }, [this](bool V) { Working->bBlock = V; },
 		[this, CanBlock] { return CanBlock() ? EVisibility::Visible : EVisibility::Collapsed; },
 		[this] { return HoldInfo(Working->Hold).BlockRule != EMantleWeaponDocBlockRule::Required; });
