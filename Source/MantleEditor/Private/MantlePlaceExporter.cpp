@@ -2180,6 +2180,37 @@ bool FMantlePlaceExporter::DescribeSkippedActor(const AActor* Actor, FSkippedAct
 			Out.Category = MantleCoverageCategory::StaticMeshes;
 			return true;
 		}
+		// A mesh drawn only with materials that publish as flat white cards (volume fog, cloud cards): skipped, and said. One with a
+		// material that does publish keeps its mesh.
+		if (Component && Component->GetStaticMesh() && !MantlePlaceExporterPrefab::NeedsGroup(Actor) && Component->GetNumMaterials() > 0)
+		{
+			FString Why;
+			FString First;
+			bool bAllUnpublishable = true;
+			for (int32 Slot = 0; Slot < Component->GetNumMaterials() && bAllUnpublishable; ++Slot)
+			{
+				const UMaterialInterface* Material = Component->GetMaterial(Slot);
+				FString SlotWhy;
+				if (Material && FMantlePlaceAssets::UnpublishableMaterialWhy(Material, SlotWhy))
+				{
+					if (First.IsEmpty())
+					{
+						First = FString::Printf(TEXT("material '%s' %s"), *Material->GetName(), *SlotWhy);
+					}
+				}
+				else
+				{
+					bAllUnpublishable = false;
+				}
+			}
+			if (bAllUnpublishable)
+			{
+				Out.What = FString::Printf(TEXT("uses %s. Skipped: it is left out of the place, because it would show as a white card."), *First);
+				Out.Remedy = TEXT("Give it a material Mantle can draw (an opaque, masked or textured one), or leave it out. The rest of the place publishes without it.");
+				Out.Category = MantleCoverageCategory::StaticMeshes;
+				return true;
+			}
+		}
 		return false;
 	}
 
