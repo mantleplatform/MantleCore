@@ -259,7 +259,7 @@ declare extern type Player with
 	SprintStarted: Signal<(Player)>
 	--- The character stopped sprinting: the key let go, stamina ran out, SprintEnabled turned off, or it stopped moving. Fires on the server and on every client.
 	SprintStopped: Signal<(Player)>
-	--- The player used their staff's extra on Q (gamepad D-pad up), on the server, as it starts. extra is the weapon's extra: "telekinesis". Not fired for a press that did nothing (StaffExtraEnabled false, the cooldown, nothing to lift, stunned, knocked down, swimming, sliding, seated or in a vehicle).
+	--- The player used their staff's extra on Q (gamepad D-pad up), on the server, as it starts. extra is the weapon's extra: "telekinesis", "blink", "heal" or "levitate" (a press that ends a float fires nothing). Not fired for a press that did nothing (StaffExtraEnabled false, the cooldown, nothing to lift, nowhere to blink to, full health, stunned, knocked down, swimming, sliding, seated or in a vehicle).
 	StaffExtraUsed: Signal<(Player, string)>
 	--- The character's Stamina changed: sprinting, resting, a jump's cost or a script setting it. It reports steps of about half a percent of MaxStamina, not every frame. Fires on the server and on every client while StaminaEnabled is true.
 	StaminaChanged: Signal<(Player, number, number)>
