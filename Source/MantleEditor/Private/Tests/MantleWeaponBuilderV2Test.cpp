@@ -938,6 +938,26 @@ bool FMantleWeaponBuilderV2StaffExtraTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("and writes liftPlayers false"), Desc.Extra.bSet && Desc.Extra.Value.bLiftPlayers.bSet && !Desc.Extra.Value.bLiftPlayers.Value);
 		}
 	}
+	// Round 5 step 6: levitate writes its cooldown, cap and time (no telekinesis field), and reads again.
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("StaffExtraLevitate"), nullptr);
+		Input->Extra = TEXT("levitate");
+		Input->ExtraCooldownSeconds = 8.0f;
+		Input->ExtraMaxHeight = 300.0f;
+		Input->ExtraDurationSeconds = 10.0f;
+		Messages.Reset();
+		if (TestTrue(TEXT("a levitate staff builds"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff),
+			TEXT("FixtureMesh"), Desc, Messages)))
+		{
+			TestTrue(TEXT("and writes levitate"), Desc.Extra.bSet && Desc.Extra.Value.Kind == EMantleWeaponDocExtra::Levitate);
+			TestTrue(TEXT("with its cap and time"), Desc.Extra.bSet && Desc.Extra.Value.MaxHeight.bSet && FMath::IsNearlyEqual(Desc.Extra.Value.MaxHeight.Value, 300.0)
+				&& Desc.Extra.Value.DurationSeconds.bSet && FMath::IsNearlyEqual(Desc.Extra.Value.DurationSeconds.Value, 10.0));
+			TestTrue(TEXT("and no telekinesis field"), !Desc.Extra.Value.MaxMass.bSet && !Desc.Extra.Value.bLiftPlayers.bSet);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		}
+	}
 	TestFalse(TEXT("an extra this build does not play is refused"), Build(EMantleWeaponHold::Staff, TEXT("blink"), Desc, Messages));
 	if (TestTrue(TEXT("a sword with the same field builds"), Build(EMantleWeaponHold::Melee1h, TEXT("telekinesis"), Desc, Messages)))
 	{
@@ -1236,6 +1256,8 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->ExtraCooldownSeconds = 5.0f; Changed(TEXT("extra cooldown changes signature")); Input->ExtraCooldownSeconds = 3.0f;
 	Input->ExtraMaxMass = 100.0f; Changed(TEXT("extra max mass changes signature")); Input->ExtraMaxMass = 300.0f;
 	Input->bExtraLiftPlayers = false; Changed(TEXT("lifting players changes signature")); Input->bExtraLiftPlayers = true;
+	Input->ExtraMaxHeight = 300.0f; Changed(TEXT("levitate's cap changes signature")); Input->ExtraMaxHeight = 500.0f;
+	Input->ExtraDurationSeconds = 10.0f; Changed(TEXT("levitate's time changes signature")); Input->ExtraDurationSeconds = 6.0f;
 	Input->ShootingStyle = TEXT("c"); Changed(TEXT("shooting style changes signature")); Input->ShootingStyle = NAME_None;
 	Input->TapLook = TEXT("handFireball"); Changed(TEXT("tap look changes signature")); Input->TapLook = NAME_None;
 	Input->HoldLook = TEXT("skyCall"); Changed(TEXT("hold look changes signature")); Input->HoldLook = NAME_None;

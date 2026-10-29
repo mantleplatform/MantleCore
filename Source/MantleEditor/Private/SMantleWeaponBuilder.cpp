@@ -792,6 +792,8 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->ExtraCooldownSeconds = 3.f;
 	Working->ExtraMaxMass = 300.f;
 	Working->bExtraLiftPlayers = true;
+	Working->ExtraMaxHeight = 500.f;
+	Working->ExtraDurationSeconds = 6.f;
 	Working->Projectile = FMantleWeaponSourceProjectile();
 	Working->Sweep = FMantleWeaponSourceSweep();
 	Working->Beam = FMantleWeaponSourceBeam();
@@ -2059,20 +2061,30 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		LOCTEXT("StaffMeleeTip", "Tapping the Melee key swings the staff in a three-hit combo; holding it leaps forward and slams the staff down. Each hit does the weapon's damage (the leap twice it), and can be blocked and parried like a sword's. Off, the Melee key does a plain weapon strike."),
 		[this] { return Working->bStaffMelee; }, [this](bool V) { Working->bStaffMelee = V; },
 		[CanStaffMelee] { return CanStaffMelee() ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
-	// Round 5 step 0: a staff's one extra on Q (gamepad D-pad up), none by default. Only the extras this build plays are offered (telekinesis); the
-	// later ones (blink, heal, dash, levitate) come with their own updates.
+	// Round 5 step 0: a staff's one extra on Q (gamepad D-pad up), none by default. Only the extras this build plays are offered (telekinesis, and
+	// step 6's levitate); the later ones (blink, heal, dash) come with their own updates.
 	if (HoldInfo(Working->Hold).bHasExtra)
 	{
 		static const FName Telekinesis(FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Telekinesis));
+		static const FName Levitate(FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Levitate));
 		TArray<TPair<FName, FText>> Extras;
 		Extras.Emplace(NAME_None, LOCTEXT("ExtraNone", "None"));
 		Extras.Emplace(Telekinesis, LOCTEXT("ExtraTelekinesis", "Telekinesis"));
+		Extras.Emplace(Levitate, LOCTEXT("ExtraLevitate", "Levitate"));
 		AddRowWhen(LOCTEXT("Extra", "Extra on Q"),
-			LOCTEXT("ExtraTip", "What Q (gamepad D-pad up) does with this staff. Telekinesis: tap Q on a physics prop up to 20 m away to lift it; left mouse throws it where you aim, Q again slams it down, and after 5 seconds it drops by itself. Anchored props can't be lifted. It never uses the staff's charges."),
-			MakeChoiceControl<FName>(Extras, [this] { return Working->Extra; }, [this](FName Value) { Working->Extra = Value; }),
+			LOCTEXT("ExtraTip", "What Q (gamepad D-pad up) does with this staff. Telekinesis: tap Q on a physics prop up to 20 m away to lift it; left mouse throws it where you aim, Q again slams it down, and after 5 seconds it drops by itself. Anchored props can't be lifted. Levitate: tap Q to float; jump rises, crouch sinks, the movement keys steer; Q again or the time limit drifts you down. It never uses the staff's charges."),
+			// Round 5 step 6: picking an extra puts the cooldown at that extra's own (telekinesis 3 s, levitate 8 s); the creator can change it after.
+			MakeChoiceControl<FName>(Extras, [this] { return Working->Extra; }, [this](FName Value)
+			{
+				if (Value != Working->Extra)
+				{
+					Working->ExtraCooldownSeconds = Value == Levitate ? 8.f : 3.f;
+				}
+				Working->Extra = Value;
+			}),
 			[] { return EVisibility::Visible; });
 		AddFloatWhen(LOCTEXT("ExtraCooldown", "Extra cooldown (0–60 s)"),
-			LOCTEXT("ExtraCooldownTip", "How long after the extra ends (for telekinesis, after the prop is let go) before Q works again."),
+			LOCTEXT("ExtraCooldownTip", "How long after the extra ends (for telekinesis, after the prop is let go; for levitate, after the landing) before Q works again."),
 			0.f, 60.f, 0.1f, [this] { return Working->ExtraCooldownSeconds; }, [this](float V) { Working->ExtraCooldownSeconds = FMath::Clamp(V, 0.f, 60.f); },
 			[this] { return Working->Extra.IsNone() ? EVisibility::Collapsed : EVisibility::Visible; });
 		AddFloatWhen(LOCTEXT("ExtraMaxMass", "Heaviest prop it lifts (1–5000 kg)"),
@@ -2084,6 +2096,15 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 			LOCTEXT("ExtraLiftPlayersTip", "Telekinesis can lift other players (only ones you could hurt) for up to 3 seconds: left mouse throws them the way your movement keys point, a tap of Q slams them down, holding Q chokes them (it never kills). Off, it lifts only props."),
 			[this] { return Working->bExtraLiftPlayers; }, [this](bool V) { Working->bExtraLiftPlayers = V; },
 			[this] { return Working->Extra == Telekinesis ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
+		// Round 5 step 6: levitate's cap over the floor and its time.
+		AddFloatWhen(LOCTEXT("ExtraMaxHeight", "Highest it floats (100–2000 cm)"),
+			LOCTEXT("ExtraMaxHeightTip", "Levitate never floats higher than this over the floor (or water) below."),
+			100.f, 2000.f, 10.f, [this] { return Working->ExtraMaxHeight; }, [this](float V) { Working->ExtraMaxHeight = FMath::Clamp(V, 100.f, 2000.f); },
+			[this] { return Working->Extra == Levitate ? EVisibility::Visible : EVisibility::Collapsed; });
+		AddFloatWhen(LOCTEXT("ExtraDuration", "How long it floats (1–30 s)"),
+			LOCTEXT("ExtraDurationTip", "After this long the player drifts down and lands by themselves."),
+			1.f, 30.f, 0.5f, [this] { return Working->ExtraDurationSeconds; }, [this](float V) { Working->ExtraDurationSeconds = FMath::Clamp(V, 1.f, 30.f); },
+			[this] { return Working->Extra == Levitate ? EVisibility::Visible : EVisibility::Collapsed; });
 	}
 	const bool bCanOverrideHandedness = IsFirearm(Working->Hold);
 	AddToggleWhen(LOCTEXT("OverrideTwoHanded", "Change how many hands hold it"), LOCTEXT("OverrideTwoHandedTip", "Use this hold with one hand or both. The usual setting follows the hold."),

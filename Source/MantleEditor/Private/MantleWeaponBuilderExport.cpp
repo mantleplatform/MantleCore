@@ -468,8 +468,18 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		Desc.bStaffMelee.Set(true);
 	}
 	// Round 5 step 0: a staff's extra on Q, none by default; written only when the creator picks one this build plays (telekinesis), with its
-	// cooldown and the heaviest prop it lifts. The later extras (blink, heal, dash, levitate) are not offered yet.
-	if (Info.bHasExtra && !Source.Extra.IsNone())
+	// cooldown and the heaviest prop it lifts. Step 6: levitate, with its cooldown, cap and time. The later extras (blink, heal, dash) are not
+	// offered yet.
+	if (Info.bHasExtra && !Source.Extra.IsNone() && Source.Extra.ToString() == FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Levitate))
+	{
+		FMantleWeaponDocExtra Extra;
+		Extra.Kind = EMantleWeaponDocExtra::Levitate;
+		Extra.CooldownSeconds.Set(FMath::Clamp(static_cast<double>(Source.ExtraCooldownSeconds), 0.0, 60.0));
+		Extra.MaxHeight.Set(FMath::Clamp(static_cast<double>(Source.ExtraMaxHeight), 100.0, 2000.0));
+		Extra.DurationSeconds.Set(FMath::Clamp(static_cast<double>(Source.ExtraDurationSeconds), 1.0, 30.0));
+		Desc.Extra.Set(Extra);
+	}
+	else if (Info.bHasExtra && !Source.Extra.IsNone())
 	{
 		const FString Kind = Source.Extra.ToString();
 		if (Kind != FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Telekinesis))

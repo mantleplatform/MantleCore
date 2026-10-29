@@ -532,8 +532,8 @@ struct FMantleWeaponDocBeam
 };
 
 /** schema consumable.style (#1025): which of each hold's two potion clips a use plays. */
-/** schema extra.kind (Round 5 step 0): a staff's one extra on Q, in the enum's order. Blink, Heal, Dash and Levitate are in the schema but come in a
- *  later update (x-extrasLater): the reader refuses them until then. */
+/** schema extra.kind (Round 5 step 0): a staff's one extra on Q, in the enum's order. The ones in the schema that come in a later update
+ *  (x-extrasLater) are refused by the reader until then (Round 5 step 6 built Levitate). */
 enum class EMantleWeaponDocExtra : uint8
 {
 	None,
@@ -556,6 +556,10 @@ struct FMantleWeaponDocExtra
 	TMantleWeaponDocValue<double> MaxMass{ 300.0 };
 	/** Round 5 step 2, telekinesis only: it lifts players too. Unset: true. */
 	TMantleWeaponDocValue<bool> bLiftPlayers{ true };
+	/** Round 5 step 6, levitate only: the highest over the floor below, cm (100 to 2000). Unset: 500. */
+	TMantleWeaponDocValue<double> MaxHeight{ 500.0 };
+	/** Round 5 step 6, levitate only: how long a float lasts before it drifts down by itself, s (1 to 30). Unset: 6. */
+	TMantleWeaponDocValue<double> DurationSeconds{ 6.0 };
 };
 
 enum class EMantleWeaponDocUseStyle : uint8

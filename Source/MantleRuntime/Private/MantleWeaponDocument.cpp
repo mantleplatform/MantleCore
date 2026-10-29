@@ -94,11 +94,10 @@ namespace MantleWeaponDocumentPrivate
 		return false;
 	}
 	const TCHAR* const GWeaponDocConsumableEffectNames[] = { TEXT("heal"), TEXT("none") };
-	// Round 5 step 0: extra.kind, the schema's enum in order. blink, heal, dash and levitate are in it but not built yet (x-extrasLater): refused
-	// until then.
+	// Round 5 step 0: extra.kind, the schema's enum in order. blink, heal and dash are in it but not built yet (x-extrasLater): refused until then
+	// (step 6 built levitate).
 	const TCHAR* const GWeaponDocExtraNames[] = { TEXT("none"), TEXT("telekinesis"), TEXT("blink"), TEXT("heal"), TEXT("dash"), TEXT("levitate") };
-	const EMantleWeaponDocExtra GWeaponDocExtrasLater[] = { EMantleWeaponDocExtra::Blink, EMantleWeaponDocExtra::Heal, EMantleWeaponDocExtra::Dash,
-		EMantleWeaponDocExtra::Levitate };
+	const EMantleWeaponDocExtra GWeaponDocExtrasLater[] = { EMantleWeaponDocExtra::Blink, EMantleWeaponDocExtra::Heal, EMantleWeaponDocExtra::Dash };
 	const TCHAR* const GWeaponDocUseRefused[] = {
 		TEXT("fire"), TEXT("attachments"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil")
 	};
@@ -1489,7 +1488,8 @@ namespace MantleWeaponDocumentPrivate
 
 		void ReadExtra(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocExtra& Out)
 		{
-			Keys(Obj, Path, { TEXT("kind"), TEXT("cooldownSeconds"), TEXT("maxMass"), TEXT("liftPlayers") }, { TEXT("kind") });
+			Keys(Obj, Path, { TEXT("kind"), TEXT("cooldownSeconds"), TEXT("maxMass"), TEXT("liftPlayers"), TEXT("maxHeight"), TEXT("durationSeconds") },
+				{ TEXT("kind") });
 			if (const TSharedPtr<FJsonValue> Kind = Field(Obj, TEXT("kind")))
 			{
 				Choice(Kind, At(Path, TEXT("kind")), GWeaponDocExtraNames, Out.Kind);
@@ -1497,6 +1497,9 @@ namespace MantleWeaponDocumentPrivate
 			OptNumber(Obj, Path, TEXT("cooldownSeconds"), 0.0, 60.0, Out.CooldownSeconds);
 			OptNumber(Obj, Path, TEXT("maxMass"), 1.0, 5000.0, Out.MaxMass);
 			OptBoolean(Obj, Path, TEXT("liftPlayers"), Out.bLiftPlayers);
+			// Round 5 step 6: levitate's cap and time.
+			OptNumber(Obj, Path, TEXT("maxHeight"), 100.0, 2000.0, Out.MaxHeight);
+			OptNumber(Obj, Path, TEXT("durationSeconds"), 1.0, 30.0, Out.DurationSeconds);
 		}
 
 		void ReadShieldThrow(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocShieldThrow& Out)
@@ -2277,6 +2280,8 @@ namespace MantleWeaponDocumentPrivate
 			Number(Node, TEXT("cooldownSeconds"), In.CooldownSeconds);
 			Number(Node, TEXT("maxMass"), In.MaxMass);
 			Boolean(Node, TEXT("liftPlayers"), In.bLiftPlayers);
+			Number(Node, TEXT("maxHeight"), In.MaxHeight);
+			Number(Node, TEXT("durationSeconds"), In.DurationSeconds);
 			return Node;
 		}
 
@@ -3207,8 +3212,8 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 	{
 		R.Add(TEXT("staffMelee"), TEXT("mantle"), FString::Printf(TEXT("a %s has no staff melee: drop staffMelee"), Hold));
 	}
-	// The extra (Round 5 step 0): only a hold with an extra on Q (the staff) takes one; a kind that is built (blink, heal, dash and levitate come in
-	// a later update); and maxMass only on the extra that lifts. A Battle Mage takes any built one.
+	// The extra (Round 5 step 0): only a hold with an extra on Q (the staff) takes one; a kind that is built (blink, heal and dash come in a later
+	// update); maxMass only on the extra that lifts; (step 6) maxHeight and durationSeconds only on levitate. A Battle Mage takes any built one.
 	if (D.Extra.bSet)
 	{
 		const FMantleWeaponDocExtra& Extra = D.Extra.Value;
@@ -3218,8 +3223,16 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		}
 		else if (IsExtraLater(Extra.Kind))
 		{
-			R.Add(TEXT("extra/kind"), TEXT("mantle"), FString::Printf(TEXT("is %s, which comes in a later update: pick none or telekinesis"),
+			R.Add(TEXT("extra/kind"), TEXT("mantle"), FString::Printf(TEXT("is %s, which comes in a later update: pick none, telekinesis or levitate"),
 				ExtraName(Extra.Kind)));
+		}
+		else if (Extra.MaxHeight.bSet && Extra.Kind != EMantleWeaponDocExtra::Levitate)
+		{
+			R.Add(TEXT("extra/maxHeight"), TEXT("mantle"), TEXT("is set, but only levitate floats: drop maxHeight"));
+		}
+		else if (Extra.DurationSeconds.bSet && Extra.Kind != EMantleWeaponDocExtra::Levitate)
+		{
+			R.Add(TEXT("extra/durationSeconds"), TEXT("mantle"), TEXT("is set, but only levitate floats: drop durationSeconds"));
 		}
 		else if (Extra.MaxMass.bSet && Extra.Kind != EMantleWeaponDocExtra::Telekinesis)
 		{

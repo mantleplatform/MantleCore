@@ -305,6 +305,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 5000.0)) float ExtraMaxMass = 300.0f;
 	/** Round 5 step 2: telekinesis lifts players too (off writes liftPlayers false). */
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bExtraLiftPlayers = true;
+	/** Round 5 step 6: levitate's highest over the floor below, cm. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 100.0, ClampMax = 2000.0)) float ExtraMaxHeight = 500.0f;
+	/** Round 5 step 6: how long levitate's float lasts, s. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 30.0)) float ExtraDurationSeconds = 6.0f;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceProjectile Projectile;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceSweep Sweep;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceBeam Beam;
