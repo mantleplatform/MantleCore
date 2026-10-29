@@ -239,11 +239,11 @@ declare extern type Player with
 	Died: Signal<(Player, Player?, string)>
 	--- The player dodged (roll false: one tap of the dodge key) or rolled (roll true: a double tap), on the server, as it starts. For the first half second of it nothing hurts them. DodgeEnabled false stops the key; a firearm, or a weapon with no dodge animation, never dodges.
 	Dodged: Signal<(Player, boolean)>
-	--- The player's telekinesis let go of what it lifted, on the server. how is "thrown" (left mouse threw it along the crosshair; a player: the way the movement keys point), "slammed" (Q again drove it into the ground), "choked" (a player only: Q held half a second) or "dropped" (the hold ran out: 5 seconds for a prop, 3 for a player; or a stun, a knockdown, a dodge, a hit on the caster while holding a player, putting the staff away, StaffExtraEnabled false, anchoring the prop or the player's own death or knockdown ended it). target is nil once the prop or player is gone.
+	--- The player's telekinesis let go of what it lifted, on the server. how is "thrown" (left mouse threw it along the crosshair; a player or an NPC: the way the movement keys point), "slammed" (Q again drove it into the ground), "choked" (a player or an NPC only: Q held half a second) or "dropped" (the hold ran out: 5 seconds for a prop, 3 for a player or an NPC; or a stun, a knockdown, a dodge, a hit on the caster while holding a player or an NPC, putting the staff away, StaffExtraEnabled false, anchoring the prop, NPC.Liftable false, or the target's own death or knockdown ended it). target is nil once the prop, player or NPC is gone.
 	Dropped: Signal<(Player, Entity?, string)>
 	--- The character's health changed: damage, healing, Health set, or a respawn's refill. Fires on the server and on every client.
 	HealthChanged: Signal<(Player, number, number)>
-	--- The player's telekinesis lifted target, on the server: a physics prop that is not anchored (anchor a prop to keep it safe), or another player (their character's Entity; a staff whose liftPlayers is false lifts only props). target is nil for a prop scripts have no Entity for. Dropped follows when they let it go.
+	--- The player's telekinesis lifted target, on the server: a physics prop that is not anchored (anchor a prop to keep it safe), another player (their character's Entity; a staff whose liftPlayers is false lifts no players), or a script NPC (its Entity: NPCs:FromEntity gives the NPC; NPC.Liftable false keeps one safe). target is nil for a prop scripts have no Entity for. Dropped follows when they let it go.
 	Lifted: Signal<(Player, Entity?)>
 	--- The character's Breath reached 0: from now on it takes DrownDamage every second until it surfaces. Fires on the server and on every client.
 	OutOfBreath: Signal<(Player)>
@@ -339,6 +339,8 @@ declare extern type NPC with
 	Exists: boolean
 	--- The NPC's health, from 0 to MaxHealth. Weapons, TakeDamage and Heal change this same value. Setting it clamps to 0..MaxHealth, and 0 kills the NPC with no killer. Setting it on a dead NPC does nothing: use Respawn to bring it back. (server only)
 	Health: number
+	--- Whether a staff's telekinesis can lift the NPC (true unless a script changes it). Lifted, the NPC rises off the floor facing the caster, its walk and its Follow or Attack paused, until it is thrown, slammed, choked (never to death) or dropped; then it gets up and carries on. Set it to false for an NPC that must stay put (a shopkeeper, a boss); setting it while the NPC is held drops it onto its feet. The caster's Player.Lifted and Dropped report the NPC as its Entity (NPCs:FromEntity turns it back into the NPC). (server only)
+	Liftable: boolean
 	--- The most health the NPC can have (100 unless a script changes it). Setting it clamps to 1..10000; lowering it below Health lowers Health too, and raising it does not heal. Respawn refills health to this maximum. (server only)
 	MaxHealth: number
 	--- Where the NPC stands: the middle of its body, in centimetres, as Player.Position reads a character. Read-only: use MoveTo to walk it. (server only)

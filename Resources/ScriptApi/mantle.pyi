@@ -266,6 +266,7 @@ class NPC:
     """A character NPCs:Spawn made. The server walks and animates it; every player sees it."""
     exists: bool
     health: float
+    liftable: bool
     max_health: float
     position: Vector3
     rotation: Vector3
