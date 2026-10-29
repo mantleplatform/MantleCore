@@ -303,6 +303,8 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 60.0)) float ExtraCooldownSeconds = 3.0f;
 	/** Round 5 step 0: telekinesis's heaviest prop, kg. */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 5000.0)) float ExtraMaxMass = 300.0f;
+	/** Round 5 step 2: telekinesis lifts players too (off writes liftPlayers false). */
+	UPROPERTY(EditAnywhere, Category = "Mantle") bool bExtraLiftPlayers = true;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceProjectile Projectile;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceSweep Sweep;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceBeam Beam;

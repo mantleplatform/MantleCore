@@ -791,6 +791,7 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->Extra = NAME_None;
 	Working->ExtraCooldownSeconds = 3.f;
 	Working->ExtraMaxMass = 300.f;
+	Working->bExtraLiftPlayers = true;
 	Working->Projectile = FMantleWeaponSourceProjectile();
 	Working->Sweep = FMantleWeaponSourceSweep();
 	Working->Beam = FMantleWeaponSourceBeam();
@@ -2078,6 +2079,11 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 			LOCTEXT("ExtraMaxMassTip", "Telekinesis leaves anything heavier where it is."),
 			1.f, 5000.f, 1.f, [this] { return Working->ExtraMaxMass; }, [this](float V) { Working->ExtraMaxMass = FMath::Clamp(V, 1.f, 5000.f); },
 			[this] { return Working->Extra == Telekinesis ? EVisibility::Visible : EVisibility::Collapsed; });
+		// Round 5 step 2: telekinesis on players, on by default.
+		AddToggleWhen(LOCTEXT("ExtraLiftPlayers", "Lift players too"),
+			LOCTEXT("ExtraLiftPlayersTip", "Telekinesis can lift other players (only ones you could hurt) for up to 3 seconds: left mouse throws them the way your movement keys point, a tap of Q slams them down, holding Q chokes them (it never kills). Off, it lifts only props."),
+			[this] { return Working->bExtraLiftPlayers; }, [this](bool V) { Working->bExtraLiftPlayers = V; },
+			[this] { return Working->Extra == Telekinesis ? EVisibility::Visible : EVisibility::Collapsed; }, [] { return true; });
 	}
 	const bool bCanOverrideHandedness = IsFirearm(Working->Hold);
 	AddToggleWhen(LOCTEXT("OverrideTwoHanded", "Change how many hands hold it"), LOCTEXT("OverrideTwoHandedTip", "Use this hold with one hand or both. The usual setting follows the hold."),

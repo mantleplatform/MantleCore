@@ -925,6 +925,19 @@ bool FMantleWeaponBuilderV2StaffExtraTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
 		TestTrue(TEXT("with telekinesis"), Again.Extra.bSet && Again.Extra.Value.Kind == EMantleWeaponDocExtra::Telekinesis);
 	}
+	TestTrue(TEXT("lifting players is on unless turned off, and not written"), Desc.Extra.bSet && !Desc.Extra.Value.bLiftPlayers.bSet);
+	// Round 5 step 2: turned off, it is written false and reads back.
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("StaffExtraPropsOnly"), nullptr);
+		Input->Extra = TEXT("telekinesis");
+		Input->bExtraLiftPlayers = false;
+		Messages.Reset();
+		if (TestTrue(TEXT("a props-only telekinesis staff builds"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff),
+			TEXT("FixtureMesh"), Desc, Messages)))
+		{
+			TestTrue(TEXT("and writes liftPlayers false"), Desc.Extra.bSet && Desc.Extra.Value.bLiftPlayers.bSet && !Desc.Extra.Value.bLiftPlayers.Value);
+		}
+	}
 	TestFalse(TEXT("an extra this build does not play is refused"), Build(EMantleWeaponHold::Staff, TEXT("blink"), Desc, Messages));
 	if (TestTrue(TEXT("a sword with the same field builds"), Build(EMantleWeaponHold::Melee1h, TEXT("telekinesis"), Desc, Messages)))
 	{
@@ -1222,6 +1235,7 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->Extra = TEXT("telekinesis"); Changed(TEXT("staff extra changes signature")); Input->Extra = NAME_None;
 	Input->ExtraCooldownSeconds = 5.0f; Changed(TEXT("extra cooldown changes signature")); Input->ExtraCooldownSeconds = 3.0f;
 	Input->ExtraMaxMass = 100.0f; Changed(TEXT("extra max mass changes signature")); Input->ExtraMaxMass = 300.0f;
+	Input->bExtraLiftPlayers = false; Changed(TEXT("lifting players changes signature")); Input->bExtraLiftPlayers = true;
 	Input->ShootingStyle = TEXT("c"); Changed(TEXT("shooting style changes signature")); Input->ShootingStyle = NAME_None;
 	Input->TapLook = TEXT("handFireball"); Changed(TEXT("tap look changes signature")); Input->TapLook = NAME_None;
 	Input->HoldLook = TEXT("skyCall"); Changed(TEXT("hold look changes signature")); Input->HoldLook = NAME_None;

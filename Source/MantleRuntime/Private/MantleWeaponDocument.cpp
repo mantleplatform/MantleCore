@@ -1489,13 +1489,14 @@ namespace MantleWeaponDocumentPrivate
 
 		void ReadExtra(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocExtra& Out)
 		{
-			Keys(Obj, Path, { TEXT("kind"), TEXT("cooldownSeconds"), TEXT("maxMass") }, { TEXT("kind") });
+			Keys(Obj, Path, { TEXT("kind"), TEXT("cooldownSeconds"), TEXT("maxMass"), TEXT("liftPlayers") }, { TEXT("kind") });
 			if (const TSharedPtr<FJsonValue> Kind = Field(Obj, TEXT("kind")))
 			{
 				Choice(Kind, At(Path, TEXT("kind")), GWeaponDocExtraNames, Out.Kind);
 			}
 			OptNumber(Obj, Path, TEXT("cooldownSeconds"), 0.0, 60.0, Out.CooldownSeconds);
 			OptNumber(Obj, Path, TEXT("maxMass"), 1.0, 5000.0, Out.MaxMass);
+			OptBoolean(Obj, Path, TEXT("liftPlayers"), Out.bLiftPlayers);
 		}
 
 		void ReadShieldThrow(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocShieldThrow& Out)
@@ -2275,6 +2276,7 @@ namespace MantleWeaponDocumentPrivate
 			WeaponDocPut(Node, TEXT("kind"), WeaponDocStringNode(WeaponDocNameAt(GWeaponDocExtraNames, static_cast<int32>(In.Kind))));
 			Number(Node, TEXT("cooldownSeconds"), In.CooldownSeconds);
 			Number(Node, TEXT("maxMass"), In.MaxMass);
+			Boolean(Node, TEXT("liftPlayers"), In.bLiftPlayers);
 			return Node;
 		}
 
@@ -3222,6 +3224,10 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		else if (Extra.MaxMass.bSet && Extra.Kind != EMantleWeaponDocExtra::Telekinesis)
 		{
 			R.Add(TEXT("extra/maxMass"), TEXT("mantle"), TEXT("is set, but only telekinesis lifts anything: drop maxMass"));
+		}
+		else if (Extra.bLiftPlayers.bSet && Extra.Kind != EMantleWeaponDocExtra::Telekinesis)
+		{
+			R.Add(TEXT("extra/liftPlayers"), TEXT("mantle"), TEXT("is set, but only telekinesis lifts anyone: drop liftPlayers"));
 		}
 	}
 	EMantleWeaponDocEffects Element = EMantleWeaponDocEffects::Arcane;

@@ -554,6 +554,8 @@ struct FMantleWeaponDocExtra
 	TMantleWeaponDocValue<double> CooldownSeconds{ 3.0 };
 	/** Telekinesis only: the heaviest prop it lifts, kg. */
 	TMantleWeaponDocValue<double> MaxMass{ 300.0 };
+	/** Round 5 step 2, telekinesis only: it lifts players too. Unset: true. */
+	TMantleWeaponDocValue<bool> bLiftPlayers{ true };
 };
 
 enum class EMantleWeaponDocUseStyle : uint8

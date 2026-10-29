@@ -481,6 +481,11 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		Extra.Kind = EMantleWeaponDocExtra::Telekinesis;
 		Extra.CooldownSeconds.Set(FMath::Clamp(static_cast<double>(Source.ExtraCooldownSeconds), 0.0, 60.0));
 		Extra.MaxMass.Set(FMath::Clamp(static_cast<double>(Source.ExtraMaxMass), 1.0, 5000.0));
+		// Round 5 step 2: written only when the creator turns player lifting off (on is the document's default).
+		if (!Source.bExtraLiftPlayers)
+		{
+			Extra.bLiftPlayers.Set(false);
+		}
 		Desc.Extra.Set(Extra);
 	}
 	// A hold whose action is a throw (the spear beside its sweep, the throwable alone) throws its own model: the projectile block
