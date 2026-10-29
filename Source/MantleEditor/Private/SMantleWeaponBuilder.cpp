@@ -1682,6 +1682,28 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 	}
 
 	AddHeading(LOCTEXT("DeliveryHeading", "How it works"));
+	// Round 4 step 5: how the weapon is held, where the hold has more than one built stance (a spear: ready, or resting on the shoulder; a two-handed
+	// sword: greatsword or longsword). Step 6: first among the rows, because the longsword's Draw style and Dodge rows below depend on it.
+	const TArray<FString> Stances = MantleWeaponBuilderLogic::OfferedStances(Working->Hold);
+	if (Stances.Num() > 1)
+	{
+		TArray<TPair<FName, FText>> StanceChoices;
+		StanceChoices.Emplace(NAME_None, FText::Format(LOCTEXT("StanceDefault", "Hold default ({0})"), StanceLabel(Stances[0])));
+		for (const FString& Stance : Stances)
+		{
+			StanceChoices.Emplace(FName(*Stance), StanceLabel(Stance));
+		}
+		const FText StanceTip = Working->Hold == EMantleWeaponHold::Melee2h
+			? LOCTEXT("StanceTwoHandedTip", "How the two-handed sword fights: the greatsword (the default) is heavy, with a spin and three charge levels. The longsword is lighter and quicker, with a three-hit combo, one charged thrust, a lunging power thrust, three dodges (the Dodge row) and a back or hip draw (the Draw style row).")
+			: LOCTEXT("StanceTip", "How the spear is carried: ready, held up at all times (the default), or resting on the shoulder out of a fight. On the shoulder it comes down with the first attack, block or throw and goes back up after five quiet seconds. It shows only while the spear is held with a shield.");
+		AddRow(LOCTEXT("Stance", "Stance"), StanceTip,
+			MakeChoiceControl<FName>(StanceChoices, [this] { return Working->Stance; }, [this](FName Value)
+			{
+				Working->Stance = Value;
+				// The longsword's dodge and draw go with it: a two-handed sword back in its own stance keeps neither.
+				MantleWeaponBuilderLogic::DropInvalidStyles(*Working);
+			}));
+	}
 	if (Info.EquipStyles.Num() > 1)
 	{
 		TArray<TPair<FName, FText>> EquipStyles;
@@ -1762,27 +1784,6 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		AddRow(LOCTEXT("ShootingStyle", "Shooting style"),
 			LOCTEXT("ShootingStyleTip", "How the archer holds the bow to shoot: the classic archer (the default), side-on with the string at the cheek, or held flat at chest height like a crossbow. The aim, draw and release follow it, standing and crouched."),
 			MakeChoiceControl<FName>(Styles, [this] { return Working->ShootingStyle; }, [this](FName Value) { Working->ShootingStyle = Value; }));
-	}
-	// Round 4 step 5: how the weapon is held, where the hold has more than one built stance (a spear: ready, or resting on the shoulder).
-	const TArray<FString> Stances = MantleWeaponBuilderLogic::OfferedStances(Working->Hold);
-	if (Stances.Num() > 1)
-	{
-		TArray<TPair<FName, FText>> StanceChoices;
-		StanceChoices.Emplace(NAME_None, FText::Format(LOCTEXT("StanceDefault", "Hold default ({0})"), StanceLabel(Stances[0])));
-		for (const FString& Stance : Stances)
-		{
-			StanceChoices.Emplace(FName(*Stance), StanceLabel(Stance));
-		}
-		const FText StanceTip = Working->Hold == EMantleWeaponHold::Melee2h
-			? LOCTEXT("StanceTwoHandedTip", "How the two-handed sword fights: the greatsword (the default) is heavy, with a spin and three charge levels. The longsword is lighter and quicker, with a three-hit combo, one charged thrust, a lunging power thrust, three dodges (the Dodge row) and a back or hip draw (the Draw style row).")
-			: LOCTEXT("StanceTip", "How the spear is carried: ready, held up at all times (the default), or resting on the shoulder out of a fight. On the shoulder it comes down with the first attack, block or throw and goes back up after five quiet seconds. It shows only while the spear is held with a shield.");
-		AddRow(LOCTEXT("Stance", "Stance"), StanceTip,
-			MakeChoiceControl<FName>(StanceChoices, [this] { return Working->Stance; }, [this](FName Value)
-			{
-				Working->Stance = Value;
-				// The longsword's dodge and draw go with it: a two-handed sword back in its own stance keeps neither.
-				MantleWeaponBuilderLogic::DropInvalidStyles(*Working);
-			}));
 	}
 	// Round 4 step 2: what a tap and what a hold do on a staff that throws spells.
 	if (Info.TapLooks.Num() > 1)
