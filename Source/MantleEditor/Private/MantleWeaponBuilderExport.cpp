@@ -39,6 +39,16 @@ namespace MantleWeaponBuilderExportPrivate
 
 	bool IsMesh(UObject* Asset) { return Cast<UStaticMesh>(Asset) || Cast<USkeletalMesh>(Asset); }
 
+	/** The extra's cooldown, written only when the creator chose one that is not the kind's own (below 0 = never chosen). */
+	void SetExtraCooldownIfChosen(FMantleWeaponDocExtra& Extra, const float Seconds)
+	{
+		const double Clamped = FMath::Clamp(static_cast<double>(Seconds), 0.0, 60.0);
+		if (Seconds >= 0.f && !FMath::IsNearlyEqual(Clamped, FMantleWeaponDocument::DefaultExtraCooldownSeconds(Extra.Kind)))
+		{
+			Extra.CooldownSeconds.Set(Clamped);
+		}
+	}
+
 	/** Preserve existing files before any generated asset is replaced. Failed multi-asset builds remain recoverable. */
 	struct FOutputBackup
 	{
@@ -466,6 +476,82 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 	if (Info.bHasStaffMelee && Source.bStaffMelee)
 	{
 		Desc.bStaffMelee.Set(true);
+	}
+	// Round 5 step 0: a staff's extra on Q, none by default; written only when the creator picks one this build plays (telekinesis), with its
+	// cooldown and the heaviest prop it lifts. Step 6: levitate, with its cooldown, cap and time. Steps 3 and 4: blink (its reach and look) and
+	// heal (its amount). Step 5: the dash (its distance).
+	if (Info.bHasExtra && !Source.Extra.IsNone() && Source.Extra.ToString() == FMantleWeaponDocument::ExtraName(EMantleWeaponDocExtra::Levitate))
+	{
+		FMantleWeaponDocExtra Extra;
+		Extra.Kind = EMantleWeaponDocExtra::Levitate;
+		SetExtraCooldownIfChosen(Extra, Source.ExtraCooldownSeconds);
+		Extra.MaxHeight.Set(FMath::Clamp(static_cast<double>(Source.ExtraMaxHeight), 100.0, 2000.0));
+		Extra.DurationSeconds.Set(FMath::Clamp(static_cast<double>(Source.ExtraDurationSeconds), 1.0, 30.0));
+		Desc.Extra.Set(Extra);
+	}
+	else if (Info.bHasExtra && !Source.Extra.IsNone())
+	{
+		const FString Kind = Source.Extra.ToString();
+		EMantleWeaponDocExtra Picked = EMantleWeaponDocExtra::None;
+		for (const EMantleWeaponDocExtra Built : { EMantleWeaponDocExtra::Telekinesis, EMantleWeaponDocExtra::Blink, EMantleWeaponDocExtra::Heal,
+			EMantleWeaponDocExtra::Dash })
+		{
+			if (Kind == FMantleWeaponDocument::ExtraName(Built))
+			{
+				Picked = Built;
+			}
+		}
+		if (Picked == EMantleWeaponDocExtra::None)
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedExtra", "This build has no staff extra {0}."), FText::FromString(Kind)));
+			return false;
+		}
+		FMantleWeaponDocExtra Extra;
+		Extra.Kind = Picked;
+		SetExtraCooldownIfChosen(Extra, Source.ExtraCooldownSeconds);
+		if (Picked == EMantleWeaponDocExtra::Telekinesis)
+		{
+			Extra.MaxMass.Set(FMath::Clamp(static_cast<double>(Source.ExtraMaxMass), 1.0, 5000.0));
+			// Round 5 step 2: written only when the creator turns player lifting off (on is the document's default).
+			if (!Source.bExtraLiftPlayers)
+			{
+				Extra.bLiftPlayers.Set(false);
+			}
+		}
+		else if (Picked == EMantleWeaponDocExtra::Blink)
+		{
+			// Round 5 step 3: the reach, and the look only when it is not the default (overhead).
+			Extra.Range.Set(FMath::Clamp(static_cast<double>(Source.ExtraRange), 300.0, 3000.0));
+			bool bKnownLook = Source.ExtraLook.IsNone();
+			for (int32 Look = 0; Look < static_cast<int32>(EMantleWeaponDocBlinkLook::Count); ++Look)
+			{
+				const EMantleWeaponDocBlinkLook Each = static_cast<EMantleWeaponDocBlinkLook>(Look);
+				if (Source.ExtraLook.ToString() == FMantleWeaponDocument::BlinkLookName(Each))
+				{
+					bKnownLook = true;
+					if (Each != EMantleWeaponDocBlinkLook::Overhead)
+					{
+						Extra.Look.Set(Each);
+					}
+				}
+			}
+			if (!bKnownLook)
+			{
+				OutMessages.Add(FText::Format(LOCTEXT("UnsupportedBlinkLook", "This build has no blink look {0}."), FText::FromName(Source.ExtraLook)));
+				return false;
+			}
+		}
+		else if (Picked == EMantleWeaponDocExtra::Dash)
+		{
+			// Round 5 step 5: how far the dash goes, cm (7 to 25 m).
+			Extra.DashDistance.Set(FMath::Clamp(static_cast<double>(Source.ExtraDashDistance), 700.0, 2500.0));
+		}
+		else
+		{
+			// Round 5 step 4: how much it heals.
+			Extra.Heal.Set(FMath::Clamp(static_cast<double>(Source.ExtraHeal), 1.0, 1000.0));
+		}
+		Desc.Extra.Set(Extra);
 	}
 	// A hold whose action is a throw (the spear beside its sweep, the throwable alone) throws its own model: the projectile block
 	// rides along, and the thrown weapon sticks where it lands and can be picked up again, with no choice to make.

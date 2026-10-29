@@ -302,6 +302,8 @@ struct FMantleWeaponDocHoldInfo
 	bool bHasShieldThrow = false;
 	/** Round 4 step 7: the hold may fight with the Melee key in its own combo (x-staffMelee: the staff). */
 	bool bHasStaffMelee = false;
+	/** Round 5 step 0: the hold carries one extra on Q (x-extra: the staff). */
+	bool bHasExtra = false;
 	/** Round 3: the shooting style ids (x-shootingStyles) of a hold held more than one way to shoot (the bow), the default first. Empty: one way. */
 	TArray<FString> ShootingStyles;
 	/** Round 4 step 2: the tap looks (x-tapLooks) of a hold whose tap can look more than one way (the staff), the default first. Empty: no choice. */
@@ -530,6 +532,55 @@ struct FMantleWeaponDocBeam
 };
 
 /** schema consumable.style (#1025): which of each hold's two potion clips a use plays. */
+/** schema extra.kind (Round 5 step 0): a staff's one extra on Q, in the enum's order. Every one is built. */
+enum class EMantleWeaponDocExtra : uint8
+{
+	None,
+	Telekinesis,
+	Blink,
+	Heal,
+	Dash,
+	Levitate,
+	Count
+};
+
+/** schema extra.look (Round 5 step 3): how a blink leaves and arrives, in the enum's order (the pack's WZ_Teleport_01, _02 and _03). */
+enum class EMantleWeaponDocBlinkLook : uint8
+{
+	/** The staff raised overhead, gone, a wide braced landing (Teleport_01). */
+	Overhead,
+	/** A small hop curling into a ball, unfolding into the landing (Teleport_02). */
+	Curl,
+	/** A hop and a sink into the floor, a burst back up out of it (Teleport_03); overhead where either floor is not flat and solid. */
+	Sink,
+	Count
+};
+
+/** schema extra (Round 5 step 0): a staff's extra on Q. Unset is none. */
+struct FMantleWeaponDocExtra
+{
+	/** Required. */
+	EMantleWeaponDocExtra Kind = EMantleWeaponDocExtra::None;
+	/** Seconds after the extra ends before Q works again. Unset: the kind's own (telekinesis 3). */
+	TMantleWeaponDocValue<double> CooldownSeconds{ 3.0 };
+	/** Telekinesis only: the heaviest prop it lifts, kg. */
+	TMantleWeaponDocValue<double> MaxMass{ 300.0 };
+	/** Round 5 step 2, telekinesis only: it lifts players too. Unset: true. */
+	TMantleWeaponDocValue<bool> bLiftPlayers{ true };
+	/** Round 5 step 6, levitate only: the highest over the floor below, cm (100 to 2000). Unset: 500. */
+	TMantleWeaponDocValue<double> MaxHeight{ 500.0 };
+	/** Round 5 step 6, levitate only: how long a float lasts before it drifts down by itself, s (1 to 30). Unset: 6. */
+	TMantleWeaponDocValue<double> DurationSeconds{ 6.0 };
+	/** Round 5 step 3, blink only: how far it reaches toward the crosshair, cm in a straight line from the eyes (300 to 3000). */
+	TMantleWeaponDocValue<double> Range{ 1500.0 };
+	/** Round 5 step 3, blink only: how the body leaves and arrives. Unset: overhead. */
+	TMantleWeaponDocValue<EMantleWeaponDocBlinkLook> Look{ EMantleWeaponDocBlinkLook::Overhead };
+	/** Round 5 step 4, heal only: the health it gives back (1 to 1000). */
+	TMantleWeaponDocValue<double> Heal{ 35.0 };
+	/** Round 5 step 5, dash only: how far it goes, cm (700 to 2500). Unset: 1200. */
+	TMantleWeaponDocValue<double> DashDistance{ 1200.0 };
+};
+
 enum class EMantleWeaponDocUseStyle : uint8
 {
 	/** Raised to the mouth: each hold's _Potion_01 clip (a potion, a drink, food). */
@@ -803,6 +854,8 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<FMantleWeaponDocBash> Bash;
 	/** Round 3 step 12: a shield's throw (the document's throw); unset is off. */
 	TMantleWeaponDocValue<FMantleWeaponDocShieldThrow> ShieldThrow;
+	/** Round 5 step 0: a staff's extra on Q (the document's extra); unset is none. */
+	TMantleWeaponDocValue<FMantleWeaponDocExtra> Extra;
 	TMantleWeaponDocValue<FMantleWeaponDocSounds> Sounds;
 	TMantleWeaponDocValue<FMantleWeaponDocFirstPerson> FirstPerson;
 	TMantleWeaponDocValue<FMantleWeaponDocSpread> Spread;
@@ -938,6 +991,12 @@ public:
 	static const TCHAR* EffectsName(EMantleWeaponDocEffects Effects);
 	static const TCHAR* UseStyleName(EMantleWeaponDocUseStyle Style);
 	static const TCHAR* ConsumableEffectName(EMantleWeaponDocConsumableEffect Effect);
+	/** Round 5 step 0: extra.kind's spelling (none, telekinesis, ...). */
+	static const TCHAR* ExtraName(EMantleWeaponDocExtra Extra);
+	/** Round 5 step 3: extra.look's spelling ("overhead"). */
+	static const TCHAR* BlinkLookName(EMantleWeaponDocBlinkLook Look);
+	/** Round 5 steps 3 and 4: the cooldown an extra has when the document sets none (telekinesis 3, blink 5, heal 20, dash 4, levitate 8; none 3). */
+	static double DefaultExtraCooldownSeconds(EMantleWeaponDocExtra Extra);
 
 	/** #904: Effects is an element (not one of the firearms' rifle, pistol and shotgun). */
 	static bool IsElement(EMantleWeaponDocEffects Effects) { return Effects > EMantleWeaponDocEffects::Shotgun && Effects < EMantleWeaponDocEffects::Count; }

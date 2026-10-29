@@ -892,6 +892,151 @@ bool FMantleWeaponBuilderV2StaffMeleeTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Round 5 step 0: a staff's extra on Q is none by default and writes nothing; telekinesis writes extra with its cooldown and heaviest prop and reads
+// again; an extra this build does not play is refused; no other hold has one.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffExtraTest, "Mantle.Editor.WeaponBuilderV2.StaffExtra", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2StaffExtraTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	TestTrue(TEXT("the hold library gives a staff an extra"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Staff).bHasExtra);
+	TestFalse(TEXT("and a sword none"), FMantleWeaponDocument::GetHoldInfo(EMantleWeaponDocHold::Melee1h).bHasExtra);
+	auto Build = [](const EMantleWeaponHold Hold, const FName Extra, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("StaffExtra"), nullptr);
+		Input->Extra = Extra;
+		Input->ExtraCooldownSeconds = 4.0f;
+		Input->ExtraMaxMass = 120.0f;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	if (TestTrue(TEXT("a staff left as it is builds"), Build(EMantleWeaponHold::Staff, NAME_None, Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no extra (none)"), Desc.Extra.bSet);
+	}
+	if (TestTrue(TEXT("a telekinesis staff builds"), Build(EMantleWeaponHold::Staff, TEXT("telekinesis"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes telekinesis"), Desc.Extra.bSet && Desc.Extra.Value.Kind == EMantleWeaponDocExtra::Telekinesis);
+		TestTrue(TEXT("with its cooldown"), Desc.Extra.bSet && Desc.Extra.Value.CooldownSeconds.bSet && FMath::IsNearlyEqual(Desc.Extra.Value.CooldownSeconds.Value, 4.0));
+		TestTrue(TEXT("and its heaviest prop"), Desc.Extra.bSet && Desc.Extra.Value.MaxMass.bSet && FMath::IsNearlyEqual(Desc.Extra.Value.MaxMass.Value, 120.0));
+		FString Error;
+		FMantleWeaponDesc Again;
+		TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		TestTrue(TEXT("with telekinesis"), Again.Extra.bSet && Again.Extra.Value.Kind == EMantleWeaponDocExtra::Telekinesis);
+	}
+	TestTrue(TEXT("lifting players is on unless turned off, and not written"), Desc.Extra.bSet && !Desc.Extra.Value.bLiftPlayers.bSet);
+	// Round 5 step 2: turned off, it is written false and reads back.
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("StaffExtraPropsOnly"), nullptr);
+		Input->Extra = TEXT("telekinesis");
+		Input->bExtraLiftPlayers = false;
+		Messages.Reset();
+		if (TestTrue(TEXT("a props-only telekinesis staff builds"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff),
+			TEXT("FixtureMesh"), Desc, Messages)))
+		{
+			TestTrue(TEXT("and writes liftPlayers false"), Desc.Extra.bSet && Desc.Extra.Value.bLiftPlayers.bSet && !Desc.Extra.Value.bLiftPlayers.Value);
+		}
+	}
+	// Round 5 step 6: levitate writes its cooldown, cap and time (no telekinesis field), and reads again.
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("StaffExtraLevitate"), nullptr);
+		Input->Extra = TEXT("levitate");
+		Input->ExtraCooldownSeconds = 8.0f;
+		Input->ExtraMaxHeight = 300.0f;
+		Input->ExtraDurationSeconds = 10.0f;
+		Messages.Reset();
+		if (TestTrue(TEXT("a levitate staff builds"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff),
+			TEXT("FixtureMesh"), Desc, Messages)))
+		{
+			TestTrue(TEXT("and writes levitate"), Desc.Extra.bSet && Desc.Extra.Value.Kind == EMantleWeaponDocExtra::Levitate);
+			TestTrue(TEXT("with its cap and time"), Desc.Extra.bSet && Desc.Extra.Value.MaxHeight.bSet && FMath::IsNearlyEqual(Desc.Extra.Value.MaxHeight.Value, 300.0)
+				&& Desc.Extra.Value.DurationSeconds.bSet && FMath::IsNearlyEqual(Desc.Extra.Value.DurationSeconds.Value, 10.0));
+			TestTrue(TEXT("and no telekinesis field"), !Desc.Extra.Value.MaxMass.bSet && !Desc.Extra.Value.bLiftPlayers.bSet);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		}
+	}
+	TestFalse(TEXT("an extra this build does not play is refused"), Build(EMantleWeaponHold::Staff, TEXT("fireball"), Desc, Messages));
+	// Round 5 step 5: the dash, with its distance and its cooldown; nothing of the others'.
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("StaffExtraDash"), nullptr);
+		Input->Extra = TEXT("dash");
+		Input->ExtraCooldownSeconds = 6.0f;
+		Input->ExtraDashDistance = 2500.0f;
+		Messages.Reset();
+		if (TestTrue(TEXT("a dash staff builds"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff),
+			TEXT("FixtureMesh"), Desc, Messages)))
+		{
+			TestTrue(TEXT("and writes the dash"), Desc.Extra.bSet && Desc.Extra.Value.Kind == EMantleWeaponDocExtra::Dash);
+			TestTrue(TEXT("with its distance"), Desc.Extra.bSet && Desc.Extra.Value.DashDistance.bSet
+				&& FMath::IsNearlyEqual(Desc.Extra.Value.DashDistance.Value, 2500.0));
+			TestTrue(TEXT("and its cooldown"), Desc.Extra.bSet && Desc.Extra.Value.CooldownSeconds.bSet
+				&& FMath::IsNearlyEqual(Desc.Extra.Value.CooldownSeconds.Value, 6.0));
+			TestTrue(TEXT("and nothing of the others"), Desc.Extra.bSet && !Desc.Extra.Value.MaxMass.bSet && !Desc.Extra.Value.bLiftPlayers.bSet
+				&& !Desc.Extra.Value.Range.bSet && !Desc.Extra.Value.Heal.bSet);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+			TestTrue(TEXT("with the dash"), Again.Extra.bSet && Again.Extra.Value.Kind == EMantleWeaponDocExtra::Dash);
+		}
+	}
+	// Round 5 steps 3 and 4: blink writes its reach (and a look only when it is not overhead), heal its amount; neither writes telekinesis's numbers.
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("StaffBlink"), nullptr);
+		Input->Extra = TEXT("blink");
+		Input->ExtraCooldownSeconds = 5.0f;
+		Input->ExtraRange = 2000.0f;
+		Messages.Reset();
+		if (TestTrue(TEXT("a blink staff builds"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff), TEXT("FixtureMesh"),
+			Desc, Messages)))
+		{
+			TestTrue(TEXT("and writes blink with its reach"), Desc.Extra.bSet && Desc.Extra.Value.Kind == EMantleWeaponDocExtra::Blink
+				&& Desc.Extra.Value.Range.bSet && FMath::IsNearlyEqual(Desc.Extra.Value.Range.Value, 2000.0));
+			TestTrue(TEXT("no look (overhead) and no mass"), Desc.Extra.bSet && !Desc.Extra.Value.Look.bSet && !Desc.Extra.Value.MaxMass.bSet);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		}
+		Input->ExtraLook = TEXT("sink");
+		Messages.Reset();
+		if (TestTrue(TEXT("a sinking blink builds"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff),
+			TEXT("FixtureMesh"), Desc, Messages)))
+		{
+			TestTrue(TEXT("and writes its look"), Desc.Extra.bSet && Desc.Extra.Value.Look.bSet && Desc.Extra.Value.Look.Value == EMantleWeaponDocBlinkLook::Sink);
+		}
+		Input->ExtraLook = TEXT("spin");
+		Messages.Reset();
+		TestFalse(TEXT("a look this build does not have is refused"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff),
+			TEXT("FixtureMesh"), Desc, Messages));
+	}
+	{
+		UMantleWeaponSource* Input = Source(EMantleWeaponHold::Staff, TEXT("StaffHeal"), nullptr);
+		Input->Extra = TEXT("heal");
+		Input->ExtraHeal = 50.0f;
+		Messages.Reset();
+		if (TestTrue(TEXT("a heal staff builds"), FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(EMantleWeaponHold::Staff), TEXT("FixtureMesh"),
+			Desc, Messages)))
+		{
+			TestTrue(TEXT("and writes heal with its amount"), Desc.Extra.bSet && Desc.Extra.Value.Kind == EMantleWeaponDocExtra::Heal
+				&& Desc.Extra.Value.Heal.bSet && FMath::IsNearlyEqual(Desc.Extra.Value.Heal.Value, 50.0) && !Desc.Extra.Value.Range.bSet);
+			// A source never given a cooldown writes none: the document's heal then waits heal's own 20 s, not telekinesis's 3.
+			TestFalse(TEXT("and no cooldown (heal's own 20 s applies)"), Desc.Extra.bSet && Desc.Extra.Value.CooldownSeconds.bSet);
+			FString Error;
+			FMantleWeaponDesc Again;
+			TestTrue(TEXT("and the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error));
+		}
+	}
+	TestEqual(TEXT("blink's own cooldown"), FMantleWeaponDocument::DefaultExtraCooldownSeconds(EMantleWeaponDocExtra::Blink), 5.0);
+	TestEqual(TEXT("heal's own cooldown"), FMantleWeaponDocument::DefaultExtraCooldownSeconds(EMantleWeaponDocExtra::Heal), 20.0);
+	if (TestTrue(TEXT("a sword with the same field builds"), Build(EMantleWeaponHold::Melee1h, TEXT("telekinesis"), Desc, Messages)))
+	{
+		TestFalse(TEXT("and writes no extra (it has none)"), Desc.Extra.bSet);
+	}
+	return true;
+}
+
 // A staff's held beam that also throws spells writes both blocks, with or without a charge (aim and hold), and the document
 // reader takes it.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StaffSpellsBesideBeamTest, "Mantle.Editor.WeaponBuilderV2.StaffSpellsBesideBeam", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -1178,6 +1323,16 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->ShieldThrowRange = 1500.0f; Changed(TEXT("shield throw range changes signature")); Input->ShieldThrowRange = 1000.0f;
 	Input->ShieldThrowDamage = 40.0f; Changed(TEXT("shield throw damage changes signature")); Input->ShieldThrowDamage = 25.0f;
 	Input->bStaffMelee = true; Changed(TEXT("staff melee changes signature")); Input->bStaffMelee = false;
+	Input->Extra = TEXT("telekinesis"); Changed(TEXT("staff extra changes signature")); Input->Extra = NAME_None;
+	Input->ExtraCooldownSeconds = 5.0f; Changed(TEXT("extra cooldown changes signature")); Input->ExtraCooldownSeconds = -1.0f;
+	Input->ExtraMaxMass = 100.0f; Changed(TEXT("extra max mass changes signature")); Input->ExtraMaxMass = 300.0f;
+	Input->bExtraLiftPlayers = false; Changed(TEXT("lifting players changes signature")); Input->bExtraLiftPlayers = true;
+	Input->ExtraMaxHeight = 300.0f; Changed(TEXT("levitate's cap changes signature")); Input->ExtraMaxHeight = 500.0f;
+	Input->ExtraDurationSeconds = 10.0f; Changed(TEXT("levitate's time changes signature")); Input->ExtraDurationSeconds = 6.0f;
+	Input->ExtraRange = 2000.0f; Changed(TEXT("blink reach changes signature")); Input->ExtraRange = 1500.0f;
+	Input->ExtraLook = TEXT("sink"); Changed(TEXT("blink look changes signature")); Input->ExtraLook = NAME_None;
+	Input->ExtraHeal = 50.0f; Changed(TEXT("heal amount changes signature")); Input->ExtraHeal = 35.0f;
+	Input->ExtraDashDistance = 2000.0f; Changed(TEXT("dash distance changes signature")); Input->ExtraDashDistance = 1200.0f;
 	Input->ShootingStyle = TEXT("c"); Changed(TEXT("shooting style changes signature")); Input->ShootingStyle = NAME_None;
 	Input->TapLook = TEXT("handFireball"); Changed(TEXT("tap look changes signature")); Input->TapLook = NAME_None;
 	Input->HoldLook = TEXT("skyCall"); Changed(TEXT("hold look changes signature")); Input->HoldLook = NAME_None;

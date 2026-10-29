@@ -205,6 +205,8 @@ declare extern type Player with
 	SprintEnabled: boolean?
 	--- How fast the character sprints, in centimetres per second (700 unless a script changes it; it scales with WalkSpeed until you set it). nil while the player has no character. Setting it (server only) clamps to 0..1500 and lasts for the rest of the session, through respawns.
 	SprintSpeed: number?
+	--- Whether the player's staff extra works (true unless a script changes it); nil while the player has no character. A staff whose weapon names an extra (telekinesis, blink, heal, dash or levitate) uses it on Q (gamepad D-pad up). Setting it (server only) to false makes Q do nothing, and ends an extra under way: a held prop or player is dropped, a float ends and the body falls, a dash ends, a blink or heal is cancelled. Use it for a safe zone or a cutscene. It lasts for the rest of the session, through respawns.
+	StaffExtraEnabled: boolean?
 	--- The stamina the character has left, from 0 to MaxStamina (it counts in small steps, the same on every machine, and moves only while StaminaEnabled is true); nil while the player has no character. Setting it (server only) clamps to 0..MaxStamina. Every new character starts full.
 	Stamina: number?
 	--- How much stamina sprinting uses each second (20 unless a script changes it); nil while the player has no character. Setting it (server only) clamps to 0..10000 and lasts for the rest of the session.
@@ -237,8 +239,12 @@ declare extern type Player with
 	Died: Signal<(Player, Player?, string)>
 	--- The player dodged (roll false: one tap of the dodge key) or rolled (roll true: a double tap), on the server, as it starts. For the first half second of it nothing hurts them. DodgeEnabled false stops the key; a firearm, or a weapon with no dodge animation, never dodges.
 	Dodged: Signal<(Player, boolean)>
+	--- The player's telekinesis let go of what it lifted, on the server. how is "thrown" (left mouse threw it along the crosshair; a player or an NPC: the way the movement keys point), "slammed" (Q again drove it into the ground), "choked" (a player or an NPC only: Q held half a second) or "dropped" (the hold ran out: 5 seconds for a prop, 3 for a player or an NPC; or a stun, a knockdown, a dodge, a hit on the caster while holding a player or an NPC, putting the staff away, StaffExtraEnabled false, anchoring the prop, NPC.Liftable false, or the target's own death or knockdown ended it). target is nil once the prop, player or NPC is gone.
+	Dropped: Signal<(Player, Entity?, string)>
 	--- The character's health changed: damage, healing, Health set, or a respawn's refill. Fires on the server and on every client.
 	HealthChanged: Signal<(Player, number, number)>
+	--- The player's telekinesis lifted target, on the server: a physics prop that is not anchored (anchor a prop to keep it safe), another player (their character's Entity; a staff whose liftPlayers is false lifts no players), or a script NPC (its Entity: NPCs:FromEntity gives the NPC; NPC.Liftable false keeps one safe). target is nil for a prop scripts have no Entity for. Dropped follows when they let it go.
+	Lifted: Signal<(Player, Entity?)>
 	--- The character's Breath reached 0: from now on it takes DrownDamage every second until it surfaces. Fires on the server and on every client.
 	OutOfBreath: Signal<(Player)>
 	--- The player's guard parried a melee hit, on the server: the hit landed in the first 0.3 seconds after they raised the guard (once per raise, and only when the guard had been down for half a second before it). The hit does no damage, and the attacker is thrown back and cannot attack, block or dodge until they recover. attacker is the player whose swing was parried, nil when it has none. Guns, spells and explosions are never parried.
@@ -253,6 +259,8 @@ declare extern type Player with
 	SprintStarted: Signal<(Player)>
 	--- The character stopped sprinting: the key let go, stamina ran out, SprintEnabled turned off, or it stopped moving. Fires on the server and on every client.
 	SprintStopped: Signal<(Player)>
+	--- The player used their staff's extra on Q (gamepad D-pad up), on the server, as it starts. extra is the weapon's extra: "telekinesis", "blink", "heal", "dash" or "levitate" (a press that ends a float fires nothing). Not fired for a press that did nothing (StaffExtraEnabled false, the cooldown, nothing to lift, nowhere to blink to, full health, stunned, knocked down, swimming, sliding, seated or in a vehicle).
+	StaffExtraUsed: Signal<(Player, string)>
 	--- The character's Stamina changed: sprinting, resting, a jump's cost or a script setting it. It reports steps of about half a percent of MaxStamina, not every frame. Fires on the server and on every client while StaminaEnabled is true.
 	StaminaChanged: Signal<(Player, number, number)>
 	--- The player's stun is over, on the server: it ran out, or a knockdown, a death or putting the weapon away ended it early.
@@ -331,6 +339,8 @@ declare extern type NPC with
 	Exists: boolean
 	--- The NPC's health, from 0 to MaxHealth. Weapons, TakeDamage and Heal change this same value. Setting it clamps to 0..MaxHealth, and 0 kills the NPC with no killer. Setting it on a dead NPC does nothing: use Respawn to bring it back. (server only)
 	Health: number
+	--- Whether a staff's telekinesis can lift the NPC (true unless a script changes it). Lifted, the NPC rises off the floor facing the caster, its walk and its Follow or Attack paused, until it is thrown, slammed, choked (never to death) or dropped; then it gets up and carries on. Set it to false for an NPC that must stay put (a shopkeeper, a boss); setting it while the NPC is held drops it onto its feet. The caster's Player.Lifted and Dropped report the NPC as its Entity (NPCs:FromEntity turns it back into the NPC). (server only)
+	Liftable: boolean
 	--- The most health the NPC can have (100 unless a script changes it). Setting it clamps to 1..10000; lowering it below Health lowers Health too, and raising it does not heal. Respawn refills health to this maximum. (server only)
 	MaxHealth: number
 	--- Where the NPC stands: the middle of its body, in centimetres, as Player.Position reads a character. Read-only: use MoveTo to walk it. (server only)

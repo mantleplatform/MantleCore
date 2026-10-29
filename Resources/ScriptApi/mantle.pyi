@@ -164,6 +164,7 @@ class Player:
     shield_regen_rate: Optional[float]
     sprint_enabled: Optional[bool]
     sprint_speed: Optional[float]
+    staff_extra_enabled: Optional[bool]
     stamina: Optional[float]
     stamina_drain: Optional[float]
     stamina_enabled: Optional[bool]
@@ -180,7 +181,9 @@ class Player:
     damaged: Signal
     died: Signal
     dodged: Signal
+    dropped: Signal
     health_changed: Signal
+    lifted: Signal
     out_of_breath: Signal
     parried: Signal
     ragdolled: Signal
@@ -188,6 +191,7 @@ class Player:
     respawned: Signal
     sprint_started: Signal
     sprint_stopped: Signal
+    staff_extra_used: Signal
     stamina_changed: Signal
     stun_ended: Signal
     stunned: Signal
@@ -262,6 +266,7 @@ class NPC:
     """A character NPCs:Spawn made. The server walks and animates it; every player sees it."""
     exists: bool
     health: float
+    liftable: bool
     max_health: float
     position: Vector3
     rotation: Vector3

@@ -297,6 +297,26 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 1000.0)) float ShieldThrowDamage = 25.0f;
 	/** Round 4 step 7: a staff's own melee on the Melee key (the WZ three-hit combo, hold for the leap): off by default. */
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bStaffMelee = false;
+	/** Round 5 step 0: a staff's extra on Q, by its document spelling (telekinesis); none (unset) writes no extra. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") FName Extra = NAME_None;
+	/** Round 5 step 0: seconds after the extra ends before Q works again. Below 0 (the default) means unset: the extra's own cooldown, nothing written. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = -1.0, ClampMax = 60.0)) float ExtraCooldownSeconds = -1.0f;
+	/** Round 5 step 0: telekinesis's heaviest prop, kg. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 5000.0)) float ExtraMaxMass = 300.0f;
+	/** Round 5 step 2: telekinesis lifts players too (off writes liftPlayers false). */
+	UPROPERTY(EditAnywhere, Category = "Mantle") bool bExtraLiftPlayers = true;
+	/** Round 5 step 6: levitate's highest over the floor below, cm. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 100.0, ClampMax = 2000.0)) float ExtraMaxHeight = 500.0f;
+	/** Round 5 step 6: how long levitate's float lasts, s. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 30.0)) float ExtraDurationSeconds = 6.0f;
+	/** Round 5 step 3: blink's reach toward the crosshair, cm. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 300.0, ClampMax = 3000.0)) float ExtraRange = 1500.0f;
+	/** Round 5 step 3: blink's look, by its document spelling (overhead, curl, sink); none (unset) writes no look (overhead). */
+	UPROPERTY(EditAnywhere, Category = "Mantle") FName ExtraLook = NAME_None;
+	/** Round 5 step 4: the health heal gives back. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 1000.0)) float ExtraHeal = 35.0f;
+	/** Round 5 step 5: how far the dash goes, cm (700 to 2500). */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 700.0, ClampMax = 2500.0)) float ExtraDashDistance = 1200.0f;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceProjectile Projectile;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceSweep Sweep;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceBeam Beam;
