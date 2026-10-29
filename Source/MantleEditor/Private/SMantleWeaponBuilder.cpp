@@ -207,6 +207,13 @@ namespace MantleWeaponBuilderPanelPrivate
 		return FText::FromString(Look);
 	}
 
+	FText StanceLabel(const FString& Stance)
+	{
+		if (Stance == TEXT("ready")) return LOCTEXT("StanceReady", "Ready");
+		if (Stance == TEXT("shoulder")) return LOCTEXT("StanceShoulder", "On the shoulder");
+		return FText::FromString(Stance);
+	}
+
 	FText HoldLookLabel(const FString& Look)
 	{
 		if (Look == TEXT("beam")) return LOCTEXT("HoldLookBeam", "Beam");
@@ -759,6 +766,7 @@ void SMantleWeaponBuilder::SetHold(EMantleWeaponHold Hold)
 	Working->ShootingStyle = NAME_None;
 	Working->TapLook = NAME_None;
 	Working->HoldLook = NAME_None;
+	Working->Stance = NAME_None;
 	Working->bOverrideColor = false;
 	Working->Color = FColor(40, 110, 160);
 	Working->Charge = FMantleWeaponSourceCharge();
@@ -1054,6 +1062,7 @@ FText SMantleWeaponBuilder::SummaryText() const
 	if (!Working->ShootingStyle.IsNone()) Lines.Add(FString::Printf(TEXT("Shooting style: %s"), *ShootingStyleLabel(Working->ShootingStyle.ToString()).ToString()));
 	if (!Working->TapLook.IsNone()) Lines.Add(FString::Printf(TEXT("Tap: %s"), *TapLookLabel(Working->TapLook.ToString()).ToString()));
 	if (!Working->HoldLook.IsNone()) Lines.Add(FString::Printf(TEXT("Hold: %s"), *HoldLookLabel(Working->HoldLook.ToString()).ToString()));
+	if (!Working->Stance.IsNone()) Lines.Add(FString::Printf(TEXT("Stance: %s"), *StanceLabel(Working->Stance.ToString()).ToString()));
 	if (Working->Parts.Num() > 0) Lines.Add(FString::Printf(TEXT("Moving parts: %d"), Working->Parts.Num()));
 	if (Working->Attachments.Num() > 0) Lines.Add(FString::Printf(TEXT("Fixed details: %d"), Working->Attachments.Num()));
 	if (!Working->FireSound.IsNull() || !Working->FireSuppressedSound.IsNull()) Lines.Add(TEXT("Custom sound: set"));
@@ -1743,6 +1752,20 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		AddRow(LOCTEXT("ShootingStyle", "Shooting style"),
 			LOCTEXT("ShootingStyleTip", "How the archer holds the bow to shoot: the classic archer (the default), side-on with the string at the cheek, or held flat at chest height like a crossbow. The aim, draw and release follow it, standing and crouched."),
 			MakeChoiceControl<FName>(Styles, [this] { return Working->ShootingStyle; }, [this](FName Value) { Working->ShootingStyle = Value; }));
+	}
+	// Round 4 step 5: how the weapon is held, where the hold has more than one built stance (a spear: ready, or resting on the shoulder).
+	const TArray<FString> Stances = MantleWeaponBuilderLogic::OfferedStances(Working->Hold);
+	if (Stances.Num() > 1)
+	{
+		TArray<TPair<FName, FText>> StanceChoices;
+		StanceChoices.Emplace(NAME_None, FText::Format(LOCTEXT("StanceDefault", "Hold default ({0})"), StanceLabel(Stances[0])));
+		for (const FString& Stance : Stances)
+		{
+			StanceChoices.Emplace(FName(*Stance), StanceLabel(Stance));
+		}
+		AddRow(LOCTEXT("Stance", "Stance"),
+			LOCTEXT("StanceTip", "How the spear is carried: ready, held up at all times (the default), or resting on the shoulder out of a fight. On the shoulder it comes down with the first attack, block or throw and goes back up after five quiet seconds. It shows only while the spear is held with a shield."),
+			MakeChoiceControl<FName>(StanceChoices, [this] { return Working->Stance; }, [this](FName Value) { Working->Stance = Value; }));
 	}
 	// Round 4 step 2: what a tap and what a hold do on a staff that throws spells.
 	if (Info.TapLooks.Num() > 1)

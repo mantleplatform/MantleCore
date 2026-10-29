@@ -242,6 +242,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName HoldLook = NAME_None;
 
+	/** Round 4 step 5: how the weapon is held for a hold with more than one stance (a spear beside a shield: ready or shoulder); unset uses the hold's first. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	FName Stance = NAME_None;
+
 	/** The creator's UStaticMesh or USkeletalMesh. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	TSoftObjectPtr<UObject> Model;

@@ -271,6 +271,54 @@ bool FMantleWeaponBuilderV2DodgeStyleTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Round 4 step 5: the stance a creator picks is written as stance where the hold has more than one built stance (a spear: ready or shoulder), and
+// refused on a hold without it; none picked writes nothing (the hold's first). The longsword and the Battle Mage come in a later update: the
+// panel does not offer them and the export refuses them.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2StanceTest, "Mantle.Editor.WeaponBuilderV2.Stance", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FMantleWeaponBuilderV2StanceTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWeaponBuilderV2TestPrivate;
+	auto Build = [](EMantleWeaponHold Hold, FName Stance, FMantleWeaponDesc& Desc, TArray<FText>& Messages)
+	{
+		UMantleWeaponSource* Input = Source(Hold, TEXT("Stance"), nullptr);
+		Input->Stance = Stance;
+		Messages.Reset();
+		return FMantleWeaponBuilderExport::BuildDocument(*Input, RequiredPoints(Hold), TEXT("FixtureMesh"), Desc, Messages);
+	};
+	FMantleWeaponDesc Desc;
+	TArray<FText> Messages;
+	TestEqual(TEXT("a spear is offered ready and shoulder"), FString::Join(MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Spear), TEXT(",")), FString(TEXT("ready,shoulder")));
+	TestEqual(TEXT("a two-handed sword is offered none: its longsword comes later"), MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Melee2h).Num(), 0);
+	TestEqual(TEXT("a staff is offered none: its Battle Mage comes later"), MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Staff).Num(), 0);
+	TestEqual(TEXT("a sword is offered none"), MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold::Melee1h).Num(), 0);
+	if (TestTrue(TEXT("a spear on the shoulder builds"), Build(EMantleWeaponHold::Spear, TEXT("shoulder"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes it"), Desc.Stance.bSet && Desc.Stance.Value == TEXT("shoulder"));
+		FMantleWeaponDesc Again;
+		FString Error;
+		if (TestTrue(TEXT("the document reads again"), FMantleWeaponDocument::Parse(FMantleWeaponDocument::Write(Desc), Again, Error)))
+		{
+			TestTrue(TEXT("with the same stance"), Again.Stance.bSet && Again.Stance.Value == TEXT("shoulder"));
+		}
+	}
+	if (TestTrue(TEXT("a spear held ready builds"), Build(EMantleWeaponHold::Spear, TEXT("ready"), Desc, Messages)))
+	{
+		TestTrue(TEXT("and writes it"), Desc.Stance.bSet && Desc.Stance.Value == TEXT("ready"));
+	}
+	if (TestTrue(TEXT("a spear with no stance picked builds"), Build(EMantleWeaponHold::Spear, NAME_None, Desc, Messages)))
+	{
+		TestFalse(TEXT("and leaves the hold's default"), Desc.Stance.bSet);
+	}
+	TestFalse(TEXT("a two-handed sword refuses the longsword for now"), Build(EMantleWeaponHold::Melee2h, TEXT("longsword"), Desc, Messages));
+	TestFalse(TEXT("a staff refuses the Battle Mage for now"), Build(EMantleWeaponHold::Staff, TEXT("battleMage"), Desc, Messages));
+	TestFalse(TEXT("a sword refuses the shoulder"), Build(EMantleWeaponHold::Melee1h, TEXT("shoulder"), Desc, Messages));
+	TestTrue(TEXT("the refusal explains the choice"), Messages.ContainsByPredicate([](const FText& Message)
+	{
+		return Message.ToString().Contains(TEXT("does not offer"));
+	}));
+	return true;
+}
+
 // Round 3: the combo a creator picks is written as comboSet where the hold has more than one, and refused on a hold without that combo;
 // none picked writes nothing (the hold's default).
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleWeaponBuilderV2ComboSetTest, "Mantle.Editor.WeaponBuilderV2.ComboSet", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -987,6 +1035,7 @@ bool FMantleWeaponBuilderV2SignatureTest::RunTest(const FString& Parameters)
 	Input->ShootingStyle = TEXT("c"); Changed(TEXT("shooting style changes signature")); Input->ShootingStyle = NAME_None;
 	Input->TapLook = TEXT("handFireball"); Changed(TEXT("tap look changes signature")); Input->TapLook = NAME_None;
 	Input->HoldLook = TEXT("skyCall"); Changed(TEXT("hold look changes signature")); Input->HoldLook = NAME_None;
+	Input->Stance = TEXT("shoulder"); Changed(TEXT("stance changes signature")); Input->Stance = NAME_None;
 	Input->bOverrideStyle = true; Changed(TEXT("style choice changes signature")); Input->bOverrideStyle = false;
 	Input->bOverrideColor = true; Changed(TEXT("color choice changes signature")); Input->bOverrideColor = false;
 	Input->Model = FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")); Changed(TEXT("selected asset changes signature")); Input->Model.Reset();

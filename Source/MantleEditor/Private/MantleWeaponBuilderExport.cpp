@@ -291,6 +291,17 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 		}
 		Desc.HoldLook.Set(Look);
 	}
+	// Round 4 step 5: how the weapon is held. None picked writes nothing (the hold's first stance); the ones the reader refuses for now are never offered.
+	if (!Source.Stance.IsNone())
+	{
+		const FString Stance = Source.Stance.ToString();
+		if (!MantleWeaponBuilderLogic::OfferedStances(Source.Hold).Contains(Stance))
+		{
+			OutMessages.Add(FText::Format(LOCTEXT("UnsupportedStance", "This hold does not offer the {0} stance."), FText::FromString(Stance)));
+			return false;
+		}
+		Desc.Stance.Set(Stance);
+	}
 	// The hotbar icon: the weapon's library picture. It is made at publish (the Thumbnail step's choice); publish swaps this name for the
 	// uploaded texture's id, or drops it when no picture was taken.
 	if (!MeshName.IsEmpty()) Desc.Icon = AuxiliaryName(Source, TEXT("Icon"));

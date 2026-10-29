@@ -46,7 +46,7 @@ namespace MantleWeaponDocumentPrivate
 	const TCHAR* const GWeaponDocV2Fields[] = {
 		TEXT("hold"), TEXT("delivery"), TEXT("charge"), TEXT("block"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"),
 		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("bash"),
-		TEXT("throw"), TEXT("tapLook"), TEXT("holdLook")
+		TEXT("throw"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance")
 	};
 	// #1025: consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
 	const TCHAR* const GWeaponDocUseStyleNames[] = { TEXT("eatDrink"), TEXT("use") };
@@ -71,6 +71,9 @@ namespace MantleWeaponDocumentPrivate
 		TEXT("beam"), TEXT("chargedBlast"), TEXT("handFireballHeld"), TEXT("skyCall"), TEXT("groundChannel"), TEXT("whirlCharge"), TEXT("whirlBeam")
 	};
 	const TCHAR* const GWeaponDocBeamLookNames[] = { TEXT("beam"), TEXT("groundChannel"), TEXT("whirlBeam") };
+	// stance (Round 4 step 5): the schema's enum in order. longsword and battleMage are in it but not built yet (x-stancesLater): refused until then.
+	const TCHAR* const GWeaponDocStanceNames[] = { TEXT("greatsword"), TEXT("longsword"), TEXT("wizard"), TEXT("battleMage"), TEXT("ready"), TEXT("shoulder") };
+	const TCHAR* const GWeaponDocStancesLater[] = { TEXT("longsword"), TEXT("battleMage") };
 	// The Round 3 names match exactly, as the schema's enums do (TArray<FString>::Contains ignores case).
 	bool WeaponDocHasName(const TArray<FString>& Names, const FString& Name)
 	{
@@ -409,9 +412,13 @@ namespace MantleWeaponDocumentPrivate
 			Sword.ComboSets = { TEXT("chop"), TEXT("spin"), TEXT("second") };
 			Table.Add(Sword);
 		}
-		// melee_2h
-		Table.Add(WeaponDocHold(true, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
-			{ ESocket::GripR, ESocket::GripL, ESocket::EdgeBase, ESocket::EdgeTip }, {}));
+		// melee_2h. Round 4 step 5: the greatsword stance is the default; the longsword (step 6) is refused until it is built.
+		{
+			FMantleWeaponDocHoldInfo TwoHanded = WeaponDocHold(true, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
+				{ ESocket::GripR, ESocket::GripL, ESocket::EdgeBase, ESocket::EdgeTip }, {});
+			TwoHanded.Stances = { TEXT("greatsword"), TEXT("longsword") };
+			Table.Add(TwoHanded);
+		}
 		// spear: the SpearShield pair clip set has one approved equip style, the back draw.
 		{
 			FMantleWeaponDocHoldInfo Spear = WeaponDocHold(true, SpearActions, { EDelivery::Sweep, EDelivery::Projectile }, ECharge::Optional,
@@ -419,6 +426,8 @@ namespace MantleWeaponDocumentPrivate
 			Spear.EquipStyles = { TEXT("back") };
 			// Round 3: the two-handed spear's three combos (beside a shield the pair's one chain plays).
 			Spear.ComboSets = { TEXT("quick"), TEXT("long"), TEXT("lunge") };
+			// Round 4 step 5: ready the default; shoulder plays only beside a shield (HCS_SpearShield_Shoulder).
+			Spear.Stances = { TEXT("ready"), TEXT("shoulder") };
 			Table.Add(Spear);
 		}
 		// staff. Round 4 step 2: what a tap and what a hold do (step 3: every hold look, groundChannel and whirlBeam included). Step 4: it may block
@@ -430,6 +439,8 @@ namespace MantleWeaponDocumentPrivate
 			Staff.TapLooks = { TEXT("bolt"), TEXT("handFireball"), TEXT("aimedShock") };
 			Staff.HoldLooks = { TEXT("beam"), TEXT("chargedBlast"), TEXT("handFireballHeld"), TEXT("skyCall"), TEXT("groundChannel"), TEXT("whirlCharge"),
 				TEXT("whirlBeam") };
+			// Round 4 step 5: the wizard stance is the default; the Battle Mage (step 8) is refused until it is built.
+			Staff.Stances = { TEXT("wizard"), TEXT("battleMage") };
 			Table.Add(Staff);
 		}
 		// bow: its quiver holds arrows, nocked by one clip (the magazine reload style). Round 3: it may block (right mouse raises its guard).
@@ -1591,7 +1602,7 @@ namespace MantleWeaponDocumentPrivate
 			const FString Path;
 			Keys(Root, Path,
 				{ TEXT("schemaVersion"), TEXT("name"), TEXT("archetype"), TEXT("hold"), TEXT("delivery"), TEXT("twoHanded"), TEXT("effects"),
-				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("tapLook"), TEXT("holdLook"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
+				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
 				  TEXT("charge"), TEXT("magazine"), TEXT("reload"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"),
 				  TEXT("consumable"), TEXT("block"), TEXT("bash"), TEXT("throw"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
 				{ TEXT("schemaVersion"), TEXT("name") });
@@ -1667,6 +1678,7 @@ namespace MantleWeaponDocumentPrivate
 			OptText(Root, Path, TEXT("style"), EWeaponDocText::Any, Out.ShootingStyle);
 			OptText(Root, Path, TEXT("tapLook"), EWeaponDocText::Any, Out.TapLook);
 			OptText(Root, Path, TEXT("holdLook"), EWeaponDocText::Any, Out.HoldLook);
+			OptText(Root, Path, TEXT("stance"), EWeaponDocText::Any, Out.Stance);
 			OptColor(Root, TEXT("color"), Out.Color);
 			OptColor(Root, TEXT("effectsColor"), Out.EffectsColor);
 			if (const TSharedPtr<FJsonValue> Mesh = Field(Root, TEXT("mesh")))
@@ -2468,6 +2480,10 @@ namespace MantleWeaponDocumentPrivate
 			{
 				WeaponDocPut(Node, TEXT("holdLook"), WeaponDocStringNode(D.HoldLook.Value));
 			}
+			if (D.Stance.bSet)
+			{
+				WeaponDocPut(Node, TEXT("stance"), WeaponDocStringNode(D.Stance.Value));
+			}
 			if (D.Color.bSet)
 			{
 				WeaponDocPut(Node, TEXT("color"), WeaponDocNumbersNode({ static_cast<double>(D.Color.Value.R), static_cast<double>(D.Color.Value.G),
@@ -3010,6 +3026,37 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 					*FString::Join(Info.ShootingStyles, TEXT(", "))));
 		}
 	}
+	// Stance (Round 4 step 5), the same way: a known stance, then one the hold offers, then one that is built (longsword and battleMage come in a
+	// later update). A spear's shoulder is accepted on any spear: whether a shield pairs with it is not in the document, so a lone spear ignores it.
+	if (D.Stance.bSet)
+	{
+		const FString& Stance = D.Stance.Value;
+		TArray<FString> KnownStances;
+		for (const TCHAR* Name : GWeaponDocStanceNames)
+		{
+			KnownStances.Add(Name);
+		}
+		if (!WeaponDocHasName(KnownStances, Stance))
+		{
+			R.Add(TEXT("stance"), TEXT("enum"), FString::Printf(TEXT("is %s: use one of %s"), *Stance, *FString::Join(KnownStances, TEXT(", "))));
+		}
+		else if (!WeaponDocHasName(Info.Stances, Stance))
+		{
+			R.Add(TEXT("stance"), TEXT("mantle"), Info.Stances.IsEmpty()
+				? FString::Printf(TEXT("a %s has one stance: drop stance"), Hold)
+				: FString::Printf(TEXT("is %s, which a %s does not have: pick one of its stances"), *Stance, Hold));
+		}
+		else
+		{
+			for (const TCHAR* Later : GWeaponDocStancesLater)
+			{
+				if (Stance.Equals(Later, ESearchCase::CaseSensitive))
+				{
+					R.Add(TEXT("stance"), TEXT("mantle"), FString::Printf(TEXT("is %s, which comes in a later update: pick %s"), *Stance, *Info.Stances[0]));
+				}
+			}
+		}
+	}
 	// Tap look (Round 4 step 2), the same way: a known look, then one the hold offers. A hold whose tap looks one way takes none.
 	if (D.TapLook.bSet)
 	{
@@ -3426,6 +3473,11 @@ TConstArrayView<const TCHAR*> FMantleWeaponDocument::GetUseRefusedFields()
 TConstArrayView<const TCHAR*> FMantleWeaponDocument::GetBeamLooks()
 {
 	return MantleWeaponDocumentPrivate::GWeaponDocBeamLookNames;
+}
+
+TConstArrayView<const TCHAR*> FMantleWeaponDocument::GetStancesLater()
+{
+	return MantleWeaponDocumentPrivate::GWeaponDocStancesLater;
 }
 
 const TCHAR* FMantleWeaponDocument::EffectsName(const EMantleWeaponDocEffects Effects)

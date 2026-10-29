@@ -62,6 +62,10 @@ namespace MantleWeaponBuilderLogic
 	 *  looks alone. */
 	MANTLEEDITOR_API TArray<FString> OfferedHoldLooks(const UMantleWeaponSource& Source);
 
+	/** Round 4 step 5: the stances the panel offers Hold, the default first, in the document's spellings: the hold's x-stances without the ones the
+	 *  reader refuses for now (x-stancesLater: the longsword and the Battle Mage). A hold with fewer than two built stances offers none. */
+	MANTLEEDITOR_API TArray<FString> OfferedStances(EMantleWeaponHold Hold);
+
 	/** Round 4 step 2: clears a tap look or hold look the source no longer offers (after the delivery, the spells or the charge changed), so the
 	 *  export never writes a look the reader refuses. */
 	MANTLEEDITOR_API void DropInvalidLooks(UMantleWeaponSource& Source);

@@ -307,6 +307,9 @@ struct FMantleWeaponDocHoldInfo
 	/** Round 4 step 2: the hold looks (x-holdLooks) of a hold whose hold can look more than one way (the staff), the default first
 	 *  (a staff's real default is beam when it has a beam block, else chargedBlast: see GetBeamLooks). Empty: no choice. */
 	TArray<FString> HoldLooks;
+	/** Round 4 step 5: the stance ids (x-stances) of a hold that can be held more than one way, the default first. Empty: one stance, no choice.
+	 *  The ones not built yet are in x-stancesLater (longsword, battleMage); the validator refuses them for now. */
+	TArray<FString> Stances;
 };
 
 /** The pre-#840 name: an archetype's entry is its firearm hold's. */
@@ -746,6 +749,9 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<FString> TapLook;
 	/** Round 4 step 2: what a hold does on a staff. Unset: beam on a staff with a beam block, else chargedBlast (a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> HoldLook;
+	/** Round 4 step 5: the stance the hold is held in. Unset: the first in the hold's x-stances, the hold's own clip set (a creator selection,
+	 *  not an asset path). A spear's shoulder plays only beside a shield (the pair's clip set, HCS_SpearShield_Shoulder). */
+	TMantleWeaponDocValue<FString> Stance;
 	/** sRGB. */
 	TMantleWeaponDocValue<FColor> Color{ FColor(40, 110, 160) };
 	/** #904: sRGB, multiplied into the element's effects; only where the weapon has an element (GetElement). Unset: the element's own colours. */
@@ -888,6 +894,10 @@ public:
 
 	/** Round 4 step 2: schema x-beamLooks, the hold looks that channel the staff's beam (they need its beam block; the others charge). */
 	static TConstArrayView<const TCHAR*> GetBeamLooks();
+
+	/** Round 4 step 5: schema x-stancesLater, the stances in x-stances that are not built yet (longsword, battleMage): the validator refuses them, so
+	 *  the weapon builder does not offer them. */
+	static TConstArrayView<const TCHAR*> GetStancesLater();
 
 	/** The document's text, UTF-8-ready, "\n" line ends, a line end at the end. */
 	static FString Write(const FMantleWeaponDesc& Desc);

@@ -239,6 +239,20 @@ TArray<FString> MantleWeaponBuilderLogic::OfferedHoldLooks(const UMantleWeaponSo
 	return Offered;
 }
 
+TArray<FString> MantleWeaponBuilderLogic::OfferedStances(EMantleWeaponHold Hold)
+{
+	const TConstArrayView<const TCHAR*> Later = FMantleWeaponDocument::GetStancesLater();
+	TArray<FString> Offered;
+	for (const FString& Stance : FMantleWeaponDocument::GetHoldInfo(ToDocHold(Hold)).Stances)
+	{
+		if (!Later.ContainsByPredicate([&Stance](const TCHAR* Name) { return Stance.Equals(Name, ESearchCase::CaseSensitive); }))
+		{
+			Offered.Add(Stance);
+		}
+	}
+	return Offered.Num() > 1 ? Offered : TArray<FString>();
+}
+
 void MantleWeaponBuilderLogic::DropInvalidLooks(UMantleWeaponSource& Source)
 {
 	if (!StaffCastsSpells(Source))
