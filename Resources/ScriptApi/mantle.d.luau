@@ -239,11 +239,11 @@ declare extern type Player with
 	Died: Signal<(Player, Player?, string)>
 	--- The player dodged (roll false: one tap of the dodge key) or rolled (roll true: a double tap), on the server, as it starts. For the first half second of it nothing hurts them. DodgeEnabled false stops the key; a firearm, or a weapon with no dodge animation, never dodges.
 	Dodged: Signal<(Player, boolean)>
-	--- The player's telekinesis let go of what it lifted, on the server. how is "thrown" (left mouse threw it along the crosshair), "slammed" (Q again drove it into the ground) or "dropped" (the 5 second hold ran out, or a stun, a knockdown, a dodge, putting the staff away, StaffExtraEnabled false or anchoring the prop ended it). target is nil once the prop is gone.
+	--- The player's telekinesis let go of what it lifted, on the server. how is "thrown" (left mouse threw it along the crosshair; a player: the way the movement keys point), "slammed" (Q again drove it into the ground), "choked" (a player only: Q held half a second) or "dropped" (the hold ran out: 5 seconds for a prop, 3 for a player; or a stun, a knockdown, a dodge, a hit on the caster while holding a player, putting the staff away, StaffExtraEnabled false, anchoring the prop or the player's own death or knockdown ended it). target is nil once the prop or player is gone.
 	Dropped: Signal<(Player, Entity?, string)>
 	--- The character's health changed: damage, healing, Health set, or a respawn's refill. Fires on the server and on every client.
 	HealthChanged: Signal<(Player, number, number)>
-	--- The player's telekinesis lifted target, on the server: a physics prop that is not anchored (anchor a prop to keep it safe). target is nil for a prop scripts have no Entity for. Dropped follows when they let it go.
+	--- The player's telekinesis lifted target, on the server: a physics prop that is not anchored (anchor a prop to keep it safe), or another player (their character's Entity; a staff whose liftPlayers is false lifts only props). target is nil for a prop scripts have no Entity for. Dropped follows when they let it go.
 	Lifted: Signal<(Player, Entity?)>
 	--- The character's Breath reached 0: from now on it takes DrownDamage every second until it surfaces. Fires on the server and on every client.
 	OutOfBreath: Signal<(Player)>
