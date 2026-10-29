@@ -3,12 +3,15 @@
 
 #include "MantleAvatarContract.h"
 #include "MantleAvatarConverter.h"
+#include "MantleAccessorySettings.h"
 #include "MantleCosmeticExport.h"
 #include "MantleCosmeticPackage.h"
 #include "MantleCosmeticValidation.h"
 #include "MantleCreatorSignIn.h"
 #include "MantleFitBodies.h"
 #include "MantleParametricOutfit.h"
+#include "MantleRuntime.h"
+#include "Engine/StaticMesh.h"
 #include "MantlePublishPanel.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -56,6 +59,7 @@ FMantleCosmeticDraft FMantleEditorActions::MakeCosmeticDraft(const EMantleCosmet
 	ApplyCosmeticOutfitDefaults(Draft);
 	ApplyCosmeticFitTargetDefaults(Draft, &Contract);
 	ApplyCosmeticRoleDefaults(Draft, &Contract);
+	ApplyCosmeticAccessoryPlacementDefaults(Draft);
 	return Draft;
 }
 
@@ -253,6 +257,31 @@ bool FMantleEditorActions::ApplyCosmeticSecondaryDefaults(FMantleCosmeticDraft& 
 	Draft.SecondaryMotion = FMantleCosmeticChecks::SuggestSecondaryMappings(Joints, *Skeleton);
 	Draft.SecondaryMotion.RemoveAll([&Draft](const FMantleSecondaryMapping& Mapping) { return !Draft.JawBone.IsNone() && Mapping.StartBone == Draft.JawBone; });
 	return true;
+}
+
+void FMantleEditorActions::ApplyCosmeticAccessoryPlacementDefaults(FMantleCosmeticDraft& Draft)
+{
+	if (Draft.Class != EMantleCosmeticClass::Accessory || !Cast<UStaticMesh>(Draft.Source.Get()))
+	{
+		return;
+	}
+	if (FMantleAccessorySettings::Load(Draft, FMantleAccessorySettings::DefaultConfigFile()))
+	{
+		return;
+	}
+	// Every MetaHuman body has the same reference bone rotations, so the standard medium body stands in for the preview's.
+	EMetaHumanBodyType Type;
+	FMantleFitBody Body;
+	FString Error;
+	if (FMantleFitBodies::ParseBodyType(TEXT("f_med_nrw"), Type) && FMantleFitBodies::Make(TEXT("f_med_nrw"), Type, Body, Error))
+	{
+		FMantleAccessorySettings::AlignToAvatarAxes(Draft, Body.BodyMesh.Get(), Error);
+		FMantleFitBodies::Release(Body);
+	}
+	if (!Draft.bAttach)
+	{
+		UE_LOG(LogMantle, Warning, TEXT("Accessory %s keeps its own axes: %s"), *Draft.Source->GetName(), *Error);
+	}
 }
 
 void FMantleEditorActions::ApplyCosmeticRoleDefaults(FMantleCosmeticDraft& Draft, const FMantleAvatarContract* Contract)

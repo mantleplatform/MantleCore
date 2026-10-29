@@ -7,6 +7,7 @@
 #include "MantlePng.h"
 #include "MantleThumbnailChoice.h"
 
+#include "MantleEditorActions.h"
 #include "MantleToolCall.h"
 
 #include "Dom/JsonObject.h"
@@ -433,6 +434,13 @@ bool FMantleAccessoryAgentTest::RunTest(const FString& Parameters)
 	if (const TSharedPtr<FJsonObject> Neck = Check(TEXT("acc_neck")))
 	{
 		TestTrue(FString::Printf(TEXT("a static mesh in acc_neck is checked, not refused (%s)"), *Neck->GetStringField(TEXT("refused"))), Neck->GetBoolField(TEXT("ok")));
+	}
+	// The placement the panel opens with: the mesh's axes aligned to the avatar's, so a necklace is not uploaded sideways.
+	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get();
+	if (TestNotNull(TEXT("the avatar contract loads"), Contract))
+	{
+		const FMantleCosmeticDraft Draft = FMantleEditorActions::MakeCosmeticDraft(EMantleCosmeticClass::Accessory, Light.Get(), TEXT("acc_neck"), FString(), *Contract, EMantleFitSex::Auto);
+		TestTrue(TEXT("a static mesh accessory starts aligned to the avatar's axes"), Draft.bAttach);
 	}
 	if (const TSharedPtr<FJsonObject> Top = Check(TEXT("top")))
 	{

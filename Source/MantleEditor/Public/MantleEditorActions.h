@@ -122,6 +122,12 @@ struct MANTLEEDITOR_API FMantleEditorActions
 	/** Avatars' section roles from MetaHuman's slot names at the body's upload LOD (needs Contract); unchanged otherwise. */
 	static void ApplyCosmeticRoleDefaults(FMantleCosmeticDraft& Draft, const FMantleAvatarContract* Contract);
 
+	/**
+	 * A static mesh accessory's placement, as the panel opens it: the creator's saved placement for this mesh and slot, else
+	 * the mesh's axes aligned to the avatar's (FMantleAccessorySettings::AlignToAvatarAxes, on a standard body made in memory).
+	 */
+	static void ApplyCosmeticAccessoryPlacementDefaults(FMantleCosmeticDraft& Draft);
+
 	/** KeepSlots from ticks by row: unset when every row is ticked (the whole mesh), else the ticked rows' Slots. */
 	static TOptional<TArray<int32>> CosmeticKeepSlots(TConstArrayView<bool> Keep, TConstArrayView<int32> Slots);
 

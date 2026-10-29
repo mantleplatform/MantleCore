@@ -6,7 +6,9 @@
 // export uploads instead of the source: the reduced copy when the mesh is over the triangle limit, centred on the socket when
 // its pivot is out of the slot's reach (FMantleAccessorySettings). Nothing is saved or uploaded. Logs MANTLE_RENDER_ACCESSORY lines.
 #include "MantleAccessorySettings.h"
+#include "MantleAccessoryPlacement.h"
 #include "MantleAvatarContract.h"
+#include "MantleEditorActions.h"
 #include "MantleCosmeticThumbnail.h"
 #include "MantleFitBodies.h"
 #include "MantlePng.h"
@@ -28,7 +30,7 @@ namespace MantleDevRenderAccessoryPrivate
 	 * The accessory on one of Epic's standard bodies (made in memory, as the garment fits are) in the reference pose, on the slot's
 	 * bone at the body's own socket when it has one, in the catalog thumbnail's scene. Placed is the upload's recentring.
 	 */
-	void RunWorn(UStaticMesh* Shown, const FTransform& Placed, const FMantleAvatarContract& Contract, const FString& Slot, const FString& BodyId, const FString& Directory,
+	void RunWorn(UStaticMesh* Shown, const FTransform& Placed, const FTransform& Attach, const FMantleAvatarContract& Contract, const FString& Slot, const FString& BodyId, const FString& Directory,
 		const FString& Label, const int32 Size)
 	{
 		EMetaHumanBodyType Type;
@@ -51,7 +53,7 @@ namespace MantleDevRenderAccessoryPrivate
 		for (int32 Index = Bone; Index != INDEX_NONE; Index = Skeleton.GetRawParentIndex(Index)) { Pose = Pose * Skeleton.GetRawRefBonePose()[Index]; }
 		const USkeletalMeshSocket* Own = Body.BodyMesh->FindSocket(FName(*Slot));
 		const FTransform Socket = Own && Own->BoneName == FName(*Point->SocketBone) ? Own->GetSocketLocalTransform() * Pose : Pose;
-		const FTransform Worn = Placed * Socket;
+		const FTransform Worn = Placed * Attach * Socket;
 		for (const TCHAR* View : { TEXT("front"), TEXT("back") })
 		{
 			// The body and the face as the editor evaluated them (the merged head+body has no render data of its own here).
@@ -105,6 +107,21 @@ namespace MantleDevRenderAccessoryPrivate
 				Placed = FTransform(FVector(-FMantleAccessorySettings::RecenterOffset(FBox3f(Shown->GetBoundingBox()), *Limits)));
 			}
 		}
+		// The placement the panel and the upload use for this mesh (saved, else aligned to the avatar's axes).
+		FTransform Attach = FTransform::Identity;
+		if (bBody)
+		{
+			const FMantleCosmeticDraft Draft = FMantleEditorActions::MakeCosmeticDraft(EMantleCosmeticClass::Accessory, Source, Slot, FString(), *Contract, EMantleFitSex::Auto);
+			if (Draft.bAttach)
+			{
+				FMantleCosmeticTransform Placement;
+				Placement.Rotation = FRotator(Draft.AttachRotation.X, Draft.AttachRotation.Y, Draft.AttachRotation.Z);
+				Placement.Location = FVector(Draft.AttachLocation);
+				Placement.Scale = FVector(Draft.AttachScale);
+				Attach = MantleAccessoryPlacement::ClampedAttach(Placement);
+			}
+			UE_LOG(LogMantleRenderAccessory, Display, TEXT("MANTLE_RENDER_ACCESSORY placement attach=%d rotation=%s"), Draft.bAttach, *Draft.AttachRotation.ToString());
+		}
 		UE_LOG(LogMantleRenderAccessory, Display, TEXT("MANTLE_RENDER_ACCESSORY %s bounds=%s moved=%s"), *Shown->GetName(), *Shown->GetBoundingBox().ToString(), *Placed.GetLocation().ToString());
 
 		for (const TCHAR* View : { TEXT("front"), TEXT("angled") })
@@ -125,7 +142,7 @@ namespace MantleDevRenderAccessoryPrivate
 		}
 		if (bBody)
 		{
-			RunWorn(Shown, Placed, *Contract, Slot, BodyArg.StartsWith(TEXT("body:")) ? BodyArg.Mid(5) : FString(TEXT("f_med_nrw")), Args[1], Args[2], Size);
+			RunWorn(Shown, Placed, Attach, *Contract, Slot, BodyArg.StartsWith(TEXT("body:")) ? BodyArg.Mid(5) : FString(TEXT("f_med_nrw")), Args[1], Args[2], Size);
 		}
 		UE_LOG(LogMantleRenderAccessory, Display, TEXT("MANTLE_RENDER_ACCESSORY done"));
 	}
