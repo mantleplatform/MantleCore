@@ -2089,9 +2089,9 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 			{
 				if (Value != Working->Extra)
 				{
-					const EMantleWeaponDocExtra Kind = Value == Blink ? EMantleWeaponDocExtra::Blink : Value == Heal ? EMantleWeaponDocExtra::Heal
+					const EMantleWeaponDocExtra ExtraKind = Value == Blink ? EMantleWeaponDocExtra::Blink : Value == Heal ? EMantleWeaponDocExtra::Heal
 						: Value == Levitate ? EMantleWeaponDocExtra::Levitate : Value == Dash ? EMantleWeaponDocExtra::Dash : EMantleWeaponDocExtra::Telekinesis;
-					Working->ExtraCooldownSeconds = static_cast<float>(FMantleWeaponDocument::DefaultExtraCooldownSeconds(Kind));
+					Working->ExtraCooldownSeconds = static_cast<float>(FMantleWeaponDocument::DefaultExtraCooldownSeconds(ExtraKind));
 				}
 				Working->Extra = Value;
 			}),
