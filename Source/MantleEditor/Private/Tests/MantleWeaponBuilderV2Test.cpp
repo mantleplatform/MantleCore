@@ -325,11 +325,17 @@ bool FMantleWeaponBuilderV2StanceTest::RunTest(const FString& Parameters)
 		UMantleWeaponSource* Mage = Source(EMantleWeaponHold::Staff, TEXT("Stance"), nullptr);
 		Mage->TapLook = TEXT("handFireball");
 		Mage->HoldLook = TEXT("chargedBlast");
+		Mage->Charge.bEnabled = true;
 		TestFalse(TEXT("a wizard is no Battle Mage"), MantleWeaponBuilderLogic::IsBattleMage(*Mage));
 		Mage->Stance = TEXT("battleMage");
 		TestTrue(TEXT("the Battle Mage stance is the Battle Mage"), MantleWeaponBuilderLogic::IsBattleMage(*Mage));
 		MantleWeaponBuilderLogic::DropInvalidLooks(*Mage);
 		TestTrue(TEXT("its looks are dropped"), Mage->TapLook.IsNone() && Mage->HoldLook.IsNone());
+		TestFalse(TEXT("and its charge (it never charges)"), Mage->Charge.bEnabled);
+		if (TestTrue(TEXT("so it builds"), FMantleWeaponBuilderExport::BuildDocument(*Mage, RequiredPoints(EMantleWeaponHold::Staff), TEXT("FixtureMesh"), Desc, Messages)))
+		{
+			TestFalse(TEXT("with no charge"), Desc.Charge.bSet);
+		}
 	}
 	TestFalse(TEXT("a two-handed sword refuses the Battle Mage"), Build(EMantleWeaponHold::Melee2h, TEXT("battleMage"), Desc, Messages));
 	TestFalse(TEXT("a sword refuses the shoulder"), Build(EMantleWeaponHold::Melee1h, TEXT("shoulder"), Desc, Messages));

@@ -1700,7 +1700,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 		const FText StanceTip = Working->Hold == EMantleWeaponHold::Melee2h
 			? LOCTEXT("StanceTwoHandedTip", "How the two-handed sword fights: the greatsword (the default) is heavy, with a spin and three charge levels. The longsword is lighter and quicker, with a three-hit combo, one charged thrust, a lunging power thrust, three dodges (the Dodge row) and a back or hip draw (the Draw style row).")
 			: Working->Hold == EMantleWeaponHold::Staff
-			? LOCTEXT("StanceStaffTip", "How the staff is held: the wizard (the default) holds it upright and casts. The Battle Mage holds it low and reversed and fights up close: left mouse and the Melee key swing a four-hit combo, holding the Melee key leaps and slams the staff down, and with the aim held left mouse throws fireballs from the left hand. A Battle Mage never charges or channels a beam, and has no Tap or Hold choice.")
+			? LOCTEXT("StanceStaffTip", "How the staff is held: the wizard (the default) holds it upright and casts. The Battle Mage holds it low and reversed and fights up close: left mouse and the Melee key swing a four-hit combo, holding the Melee key leaps and slams the staff down, and with the aim held left mouse throws fireballs from the left hand. A Battle Mage never charges or channels a beam (it needs the projectile attack style for its fireballs), and has no Tap, Hold or charge choice.")
 			: LOCTEXT("StanceTip", "How the spear is carried: ready, held up at all times (the default), or resting on the shoulder out of a fight. On the shoulder it comes down with the first attack, block or throw and goes back up after five quiet seconds. It shows only while the spear is held with a shield.");
 		AddRow(LOCTEXT("Stance", "Stance"), StanceTip,
 			MakeChoiceControl<FName>(StanceChoices, [this] { return Working->Stance; }, [this](FName Value)
@@ -1974,7 +1974,9 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 
 	const TFunction<EVisibility()> HasCharge = [this]
 	{
-		return HoldInfo(Working->Hold).Charge != EMantleWeaponDocChargeRule::None ? EVisibility::Visible : EVisibility::Collapsed;
+		// Round 4 step 8: a Battle Mage never charges (the reader refuses its charge).
+		return HoldInfo(Working->Hold).Charge != EMantleWeaponDocChargeRule::None && !MantleWeaponBuilderLogic::IsBattleMage(*Working)
+			? EVisibility::Visible : EVisibility::Collapsed;
 	};
 	const TFunction<EVisibility()> ActiveCharge = [this, HasCharge]
 	{

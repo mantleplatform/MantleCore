@@ -277,11 +277,13 @@ void MantleWeaponBuilderLogic::DropInvalidStyles(UMantleWeaponSource& Source)
 
 void MantleWeaponBuilderLogic::DropInvalidLooks(UMantleWeaponSource& Source)
 {
-	// Round 4 step 8: a Battle Mage has no tap or hold look (its left mouse swings the staff; it never charges or channels).
+	// Round 4 step 8: a Battle Mage has no tap or hold look (its left mouse swings the staff) and no charge (it never charges).
 	if (IsBattleMage(Source))
 	{
 		Source.TapLook = NAME_None;
 		Source.HoldLook = NAME_None;
+		Source.Charge.bEnabled = false;
+		Source.Charge.bRequired = false;
 		return;
 	}
 	if (!StaffCastsSpells(Source))

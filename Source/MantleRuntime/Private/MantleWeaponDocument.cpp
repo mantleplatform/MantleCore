@@ -3090,6 +3090,15 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		{
 			R.Add(TEXT("staffMelee"), TEXT("mantle"), TEXT("a Battle Mage always fights with its staff: drop staffMelee, or set it to true"));
 		}
+		// It never charges, and never channels a beam: its spells are the projectile block's hand fireballs (a beam beside them is not used).
+		if (D.Charge.bSet)
+		{
+			R.Add(TEXT("charge"), TEXT("mantle"), TEXT("a Battle Mage never charges: drop charge"));
+		}
+		if (D.Beam.bSet && !D.Projectile.bSet)
+		{
+			R.Add(TEXT("delivery"), TEXT("mantle"), TEXT("a Battle Mage never channels a beam; its spells are hand fireballs: use the projectile delivery"));
+		}
 	}
 	// Tap look (Round 4 step 2), the same way: a known look, then one the hold offers. A hold whose tap looks one way takes none.
 	if (D.TapLook.bSet)
