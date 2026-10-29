@@ -54,8 +54,8 @@ namespace MantleDevRenderAccessoryPrivate
 		const FTransform Worn = Placed * Socket;
 		for (const TCHAR* View : { TEXT("front"), TEXT("back") })
 		{
-			USkeletalMesh* Whole = Body.MergedHeadAndBodyMesh ? Body.MergedHeadAndBodyMesh.Get() : Body.BodyMesh.Get();
-			FMantleThumbnailSubject Shot = FMantleCosmeticThumbnail::GarmentSubject(Whole, nullptr, nullptr, nullptr, Shown->GetBoundingBox().TransformBy(Worn));
+			// The body and the face as the editor evaluated them (the merged head+body has no render data of its own here).
+			FMantleThumbnailSubject Shot = FMantleCosmeticThumbnail::GarmentSubject(Body.BodyMesh.Get(), Body.FaceMesh.Get(), nullptr, nullptr, Shown->GetBoundingBox().TransformBy(Worn));
 			Shot.bFloor = true;
 			Shot.StaticMesh = Shown;
 			Shot.StaticTransform = Worn;
