@@ -36,4 +36,16 @@ struct FMantleAccessorySettings
 	 * MaxDropCm. Pure (tested).
 	 */
 	static double DropOntoSurface(TConstArrayView<FVector> Links, TConstArrayView<FVector> Triangles, double ClearanceCm, double MaxDropCm);
+
+	/**
+	 * The shift to take off every vertex so a mesh whose pivot is out of the slot's reach (a model exported with its pivot at
+	 * the feet) is centred on its pivot, or zero when the pivot already reaches or the mesh is too big for the slot either way.
+	 */
+	static FVector3f RecenterOffset(const FBox3f& Bounds, const FMantleContractAccessoryBounds& Limits);
+
+	/**
+	 * The mesh that uploads for Source: Source itself within the class's triangle limit, otherwise the cached reduced copy
+	 * the export makes. Source when it cannot be reduced. Never modifies Source.
+	 */
+	static const UStaticMesh* UploadMesh(const UStaticMesh* Source, const FMantleContractClass& Class);
 };
