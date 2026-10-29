@@ -205,6 +205,8 @@ declare extern type Player with
 	SprintEnabled: boolean?
 	--- How fast the character sprints, in centimetres per second (700 unless a script changes it; it scales with WalkSpeed until you set it). nil while the player has no character. Setting it (server only) clamps to 0..1500 and lasts for the rest of the session, through respawns.
 	SprintSpeed: number?
+	--- Whether the player's staff extra works (true unless a script changes it); nil while the player has no character. A staff whose weapon names an extra (telekinesis) uses it on Q (gamepad D-pad up). Setting it (server only) to false makes Q do nothing, and lets go of anything the extra is holding: a lifted prop drops. Use it for a safe zone or a cutscene. It lasts for the rest of the session, through respawns.
+	StaffExtraEnabled: boolean?
 	--- The stamina the character has left, from 0 to MaxStamina (it counts in small steps, the same on every machine, and moves only while StaminaEnabled is true); nil while the player has no character. Setting it (server only) clamps to 0..MaxStamina. Every new character starts full.
 	Stamina: number?
 	--- How much stamina sprinting uses each second (20 unless a script changes it); nil while the player has no character. Setting it (server only) clamps to 0..10000 and lasts for the rest of the session.
@@ -237,8 +239,12 @@ declare extern type Player with
 	Died: Signal<(Player, Player?, string)>
 	--- The player dodged (roll false: one tap of the dodge key) or rolled (roll true: a double tap), on the server, as it starts. For the first half second of it nothing hurts them. DodgeEnabled false stops the key; a firearm, or a weapon with no dodge animation, never dodges.
 	Dodged: Signal<(Player, boolean)>
+	--- The player's telekinesis let go of what it lifted, on the server. how is "thrown" (left mouse threw it along the crosshair), "slammed" (Q again drove it into the ground) or "dropped" (the 5 second hold ran out, or a stun, a knockdown, a dodge, putting the staff away, StaffExtraEnabled false or anchoring the prop ended it). target is nil once the prop is gone.
+	Dropped: Signal<(Player, Entity?, string)>
 	--- The character's health changed: damage, healing, Health set, or a respawn's refill. Fires on the server and on every client.
 	HealthChanged: Signal<(Player, number, number)>
+	--- The player's telekinesis lifted target, on the server: a physics prop that is not anchored (anchor a prop to keep it safe). target is nil for a prop scripts have no Entity for. Dropped follows when they let it go.
+	Lifted: Signal<(Player, Entity?)>
 	--- The character's Breath reached 0: from now on it takes DrownDamage every second until it surfaces. Fires on the server and on every client.
 	OutOfBreath: Signal<(Player)>
 	--- The player's guard parried a melee hit, on the server: the hit landed in the first 0.3 seconds after they raised the guard (once per raise, and only when the guard had been down for half a second before it). The hit does no damage, and the attacker is thrown back and cannot attack, block or dodge until they recover. attacker is the player whose swing was parried, nil when it has none. Guns, spells and explosions are never parried.
@@ -253,6 +259,8 @@ declare extern type Player with
 	SprintStarted: Signal<(Player)>
 	--- The character stopped sprinting: the key let go, stamina ran out, SprintEnabled turned off, or it stopped moving. Fires on the server and on every client.
 	SprintStopped: Signal<(Player)>
+	--- The player used their staff's extra on Q (gamepad D-pad up), on the server, as it starts. extra is the weapon's extra: "telekinesis". Not fired for a press that did nothing (StaffExtraEnabled false, the cooldown, nothing to lift, stunned, knocked down, swimming, sliding, seated or in a vehicle).
+	StaffExtraUsed: Signal<(Player, string)>
 	--- The character's Stamina changed: sprinting, resting, a jump's cost or a script setting it. It reports steps of about half a percent of MaxStamina, not every frame. Fires on the server and on every client while StaminaEnabled is true.
 	StaminaChanged: Signal<(Player, number, number)>
 	--- The player's stun is over, on the server: it ran out, or a knockdown, a death or putting the weapon away ended it early.
