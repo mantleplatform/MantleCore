@@ -167,4 +167,47 @@ bool FMantleTerrainPlainGreyLayerIsGatheredTest::RunTest(const FString& Paramete
 	return true;
 }
 
+// A painted layer whose landscape material could not be read (MedievalVillage: no Landscape Layer Blend feeding Base Color) is drawn plain
+// grey with a warning instead of stopping the publish; a Place Settings entry still wins, and Gather uploads the grey material.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTerrainUnreadableLayersDrawPlainGreyTest,
+	"Mantle.Editor.Terrain.UnreadableLayersDrawPlainGrey",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTerrainUnreadableLayersDrawPlainGreyTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTerrainHolesTestPrivate;
+
+	FMantleTerrainSource Source = MakeFlatSource({ FName(TEXT("Grass")), FName(TEXT("Mud")) });
+	Source.bMaterialRead = false;
+	Source.MaterialProblem = TEXT("Its landscape material 'MI_Landscape' has no Landscape Layer Blend feeding its Base Color.");
+	TArray<FMantleTerrainLayerChoice> Layers;
+	TArray<FMantleValidationIssue> Issues;
+	FMantleCoverage Coverage;
+	TestTrue(TEXT("painted layers with an unreadable material are not refused"), FMantleTerrainExport::ChooseLayers(nullptr, Source, TEXT("Landscape"), Layers, Issues, &Coverage));
+	TestEqual(TEXT("no error"), CountIssues(Issues, EMantleIssueSeverity::Error, TEXT("")), 0);
+	TestEqual(TEXT("a plain grey warning for each layer"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("plain grey")), 2);
+	TestEqual(TEXT("and an approximated layer line for each"), static_cast<int64>(Coverage.Count(MantleCoverageCategory::TerrainLayers, EMantleCoverageOutcome::Approximated)), static_cast<int64>(2));
+	if (!TestEqual(TEXT("both layers are kept"), Layers.Num(), 2))
+	{
+		return false;
+	}
+	for (const FMantleTerrainLayerChoice& Layer : Layers)
+	{
+		TestNotNull(TEXT("each with a material"), Layer.Material);
+		TestFalse(TEXT("which is not read from a landscape material"), Layer.bDerived);
+	}
+
+	// The grey materials are gathered, as Export names them.
+	FMantlePlaceDependencies Dependencies;
+	Dependencies.AddTerrainLayerMaterials(Layers, TEXT("Landscape"));
+	for (const FMantleTerrainLayerChoice& Layer : Layers)
+	{
+		const FString Key = FMantlePlaceAssets::MaterialKey(Layer.Material);
+		TestTrue(TEXT("each grey material is gathered"),
+			Dependencies.Materials.ContainsByPredicate([&Key](const FMantleGatheredMaterial& Gathered) { return Gathered.Key == Key; }));
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
