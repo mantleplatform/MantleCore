@@ -97,7 +97,10 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 		UStaticMesh* Built = NewObject<UStaticMesh>(MeshOuter, MeshName, RF_Transient);
 		for (const FName& SlotName : Slots.SlotNames)
 		{
-			Built->GetStaticMaterials().Add(FStaticMaterial(Params.Material, SlotName));
+			// UVChannelData starts uninitialised, and only the editor fills it later; UStaticMesh::GetUVChannelData
+			// ensures it is set. The engine's AddMaterial gives a new slot the same default density.
+			FStaticMaterial& Slot = Built->GetStaticMaterials().Add_GetRef(FStaticMaterial(Params.Material, SlotName));
+			Slot.UVChannelData = FMeshUVChannelInfo(1.0f);
 		}
 
 		// A non-editor build reads collision triangles back from the render data, and only from a mesh

@@ -68,6 +68,18 @@ namespace MantleHeadlessMeshBuildTestPrivate
 		return Field;
 	}
 
+	/** Every material slot has its UV channel data set, so UStaticMesh::GetUVChannelData does not ensure. */
+	void ExpectUVChannelData(FAutomationTestBase& Test, UStaticMesh* Mesh)
+	{
+		Test.TestTrue(TEXT("the mesh has a material slot"), Mesh->GetStaticMaterials().Num() > 0);
+		for (const FStaticMaterial& Slot : Mesh->GetStaticMaterials())
+		{
+			Test.TestTrue(TEXT("the slot's UV channel data is initialised"), Slot.UVChannelData.bInitialized);
+		}
+		// Would ensure (and write a crash report) on an uninitialised slot.
+		Test.TestTrue(TEXT("GetUVChannelData(0) reads the slot"), Mesh->GetUVChannelData(0) != nullptr);
+	}
+
 	/**
 	 * What a server's collision needs from a mesh built without render resources: none initialised, one LOD of
 	 * render data holding the CPU vertices, a body setup, bounds, and the collision triangles read back.
@@ -94,6 +106,7 @@ namespace MantleHeadlessMeshBuildTestPrivate
 			Test.TestFalse(TEXT("the collision cook did not fail"), static_cast<bool>(Body->bFailedToCreatePhysicsMeshes));
 			Test.TestTrue(TEXT("the collision cooked a triangle mesh"), Body->TriMeshGeometries.Num() > 0);
 		}
+		ExpectUVChannelData(Test, Mesh);
 		Test.TestFalse(TEXT("the bounds are not empty"), RenderData->Bounds.BoxExtent.IsNearlyZero());
 		Test.TestFalse(TEXT("the mesh bounds are not empty"), Mesh->GetBounds().BoxExtent.IsNearlyZero());
 

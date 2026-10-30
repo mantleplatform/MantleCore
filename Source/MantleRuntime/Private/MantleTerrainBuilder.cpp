@@ -407,7 +407,9 @@ bool FMantleTerrainBuilder::BuildChunks(const FMantleHeightfield& Field, const F
 			const FName MeshName = MakeUniqueObjectName(MeshOuter, UStaticMesh::StaticClass(),
 				FName(*FString::Printf(TEXT("MantleTerrainChunk_%d_%d"), ChunkX, ChunkY)));
 			UStaticMesh* Mesh = NewObject<UStaticMesh>(MeshOuter, MeshName, RF_Transient);
-			Mesh->GetStaticMaterials().Add(FStaticMaterial(nullptr, FName(MaterialSlotName)));
+			// UVChannelData must be initialised (UStaticMesh::GetUVChannelData ensures it); see the static mesh builder.
+			FStaticMaterial& Slot = Mesh->GetStaticMaterials().Add_GetRef(FStaticMaterial(nullptr, FName(MaterialSlotName)));
+			Slot.UVChannelData = FMeshUVChannelInfo(1.0f);
 			// A non-editor build reads collision triangles back from the render data, and only from a mesh
 			// flagged for CPU access (UStaticMesh::GetPhysicsTriMeshData).
 			Mesh->bAllowCPUAccess = Params.bCollision;
