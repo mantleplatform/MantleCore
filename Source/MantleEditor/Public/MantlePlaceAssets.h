@@ -452,6 +452,9 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 {
 	TArray<FMantleGatheredMesh> Meshes;
 	TArray<FMantleGatheredMaterial> Materials;
+
+	/** Transient material instances that matched the content of one already in Materials, so were not gathered again. */
+	TSet<const UMaterialInterface*> MergedInstances;
 	TArray<FMantleGatheredTexture> Textures;
 
 	/** AmbientSounds' own sound waves (#324), in level order. */
@@ -619,8 +622,14 @@ public:
 	/** #804: the name a mesh is written under in its GLB: a baked mesh's IntendedName (no counter), any other mesh's own name. */
 	static FString PublishedMeshName(const UStaticMesh& Mesh);
 
-	/** "material:" + the object path. */
+	/**
+	 * "material:" + the object path; for a transient material instance (a Material Instance Dynamic a Blueprint makes), "material:dynamic:" + a hash
+	 * of its content (IsTransientMaterialInstance), so identical ones share one upload and one bake.
+	 */
 	static FString MaterialKey(const UMaterialInterface* Material);
+
+	/** A material instance that is not on disk: a Material Instance Dynamic, or an instance that is transient or in the transient package. */
+	static bool IsTransientMaterialInstance(const UMaterialInterface* Material);
 
 	/** "sound:" + the object path (#324). */
 	static FString SoundKey(const USoundBase* Sound);

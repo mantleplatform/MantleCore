@@ -12,6 +12,7 @@
 #include "MantlePlaceValidator.h"
 #include "MantleMeshLumenData.h"
 #include "MantleRuntime.h"
+#include "MantleWaterBodyExport.h"
 #include "Materials/MaterialInterface.h"
 #include "MeshCardBuild.h"
 #include "MeshUtilities.h"
@@ -141,6 +142,11 @@ void FMantleMeshLumenBake::CheckLevel(UWorld* World, TArray<FMantleValidationIss
 	TMap<const UStaticMesh*, FString> Meshes;
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
+		// A flat mesh with a water material publishes as a water body, so its mesh is not published and has no Lumen data to lack.
+		if (FMantleWaterBodyExport::IsFlatWaterMesh(*It))
+		{
+			continue;
+		}
 		TInlineComponentArray<UStaticMeshComponent*> Components(*It);
 		for (const UStaticMeshComponent* Component : Components)
 		{

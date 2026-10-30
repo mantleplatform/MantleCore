@@ -33,7 +33,10 @@ namespace MantleSkyMeshPrivate
 		return Name.Contains(TEXT("sky"), ESearchCase::IgnoreCase) || Name.Contains(TEXT("cloud"), ESearchCase::IgnoreCase);
 	}
 
-	/** Whether the component, its actor (label or class) or the Blueprint it came from is named like a sky. */
+	/**
+	 * Whether the component, its actor (label or class), the Blueprint it came from or one of its materials (or a
+	 * material's parent) is named like a sky. A plain 'Sphere' with MI_SkyHDRI is a sky dome too (ValleyofGuldur).
+	 */
 	bool IsNamedLikeSky(const UStaticMeshComponent* Component)
 	{
 		if (NamedLikeSky(Component->GetName()))
@@ -41,7 +44,19 @@ namespace MantleSkyMeshPrivate
 			return true;
 		}
 		const AActor* Owner = Component->GetOwner();
-		return Owner && (NamedLikeSky(Owner->GetActorLabel()) || NamedLikeSky(Owner->GetClass()->GetName()));
+		if (Owner && (NamedLikeSky(Owner->GetActorLabel()) || NamedLikeSky(Owner->GetClass()->GetName())))
+		{
+			return true;
+		}
+		for (int32 Slot = 0; Slot < Component->GetNumMaterials(); ++Slot)
+		{
+			const UMaterialInterface* Material = Component->GetMaterial(Slot);
+			if (Material && (NamedLikeSky(Material->GetName()) || (Material->GetMaterial() && NamedLikeSky(Material->GetMaterial()->GetName()))))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** What the component's materials say about it. */

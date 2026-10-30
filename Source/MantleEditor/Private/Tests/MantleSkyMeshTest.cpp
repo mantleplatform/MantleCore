@@ -263,4 +263,39 @@ bool FMantleSkyMeshKeepsLargeGeometryTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleSkyMeshMaterialNameTest,
+	"Mantle.Editor.SkyMesh.PlainSphereWithASkyMaterialIsLeftOut",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleSkyMeshMaterialNameTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleSkyMeshTestPrivate;
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, CubePath);
+	if (!Cube)
+	{
+		AddWarning(TEXT("the engine cube did not load; skipped"));
+		return true;
+	}
+	FSkyWorld Fixture;
+	SpawnCube(Fixture.World, Cube, TEXT("Ground"), FVector::ZeroVector, 5000.0);
+
+	// ValleyofGuldur: a plain 'Sphere' around the level, two-sided, whose material only is named like a sky (MI_SkyHDRI).
+	UMaterial* SkyHdri = NewObject<UMaterial>(GetTransientPackage(), MakeUniqueObjectName(GetTransientPackage(), UMaterial::StaticClass(), TEXT("MI_SkyHDRI")));
+	SkyHdri->TwoSided = true;
+	// The same dome with a two-sided rock material is large geometry, not a sky.
+	UMaterial* Rock = NewObject<UMaterial>(GetTransientPackage(), MakeUniqueObjectName(GetTransientPackage(), UMaterial::StaticClass(), TEXT("M_Rock")));
+	Rock->TwoSided = true;
+	AStaticMeshActor* Sphere = SpawnCube(Fixture.World, Cube, TEXT("Sphere"), FVector::ZeroVector, 40000.0, SkyHdri);
+	AStaticMeshActor* Cliffs = SpawnCube(Fixture.World, Cube, TEXT("Cliffs"), FVector::ZeroVector, 30000.0, Rock);
+	if (!TestNotNull(TEXT("the actors spawned"), Sphere) || !TestNotNull(TEXT("both of them"), Cliffs))
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("a two-sided dome with a material named like a sky is a sky"), FMantleSkyMesh::IsSkyMeshActor(Sphere));
+	TestFalse(TEXT("a two-sided dome with a rock material is not"), FMantleSkyMesh::IsSkyMeshActor(Cliffs));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

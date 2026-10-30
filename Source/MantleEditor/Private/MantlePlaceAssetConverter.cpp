@@ -2032,6 +2032,15 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 		}
 		ConvertMesh(Mesh.Mesh.Get(), Out);
 	}
+	if (Dependencies.MergedInstances.Num() > 0)
+	{
+		int32 Distinct = 0;
+		for (const FMantleGatheredMaterial& Material : Dependencies.Materials)
+		{
+			Distinct += FMantlePlaceAssets::IsTransientMaterialInstance(Material.Material.Get()) ? 1 : 0;
+		}
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE merged %d dynamic material instances into %d distinct materials"), Dependencies.MergedInstances.Num() + Distinct, Distinct);
+	}
 	for (const FMantleGatheredMaterial& Material : Dependencies.Materials)
 	{
 		if (!Continue(Material.Name))

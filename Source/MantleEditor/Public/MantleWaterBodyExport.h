@@ -235,6 +235,21 @@ struct MANTLEEDITOR_API FMantleWaterBodyExport
 	 */
 	static bool Admit(const AActor* Actor, const FString& Label, int32& Bodies, int32& SplinePoints, FMantleCoverage* Coverage);
 
+	/**
+	 * Whether Actor is a Static Mesh Actor that is a flat mesh drawn only with materials recognised as water (the common Fab pond: the
+	 * engine plane scaled out, a water material on it). It publishes as a lake-type WaterBody entity, not as a StaticMesh (ReadFlatWaterMesh).
+	 * Only a standalone actor: one attached to another actor, or with actors attached to it, stays a mesh.
+	 */
+	static bool IsFlatWaterMesh(const AActor* Actor);
+
+	/**
+	 * The WaterBody a flat water mesh (IsFlatWaterMesh) publishes as, or false when Actor is not one. OutTransform is the entity's: the
+	 * footprint's centre at the mesh's top, turned by the mesh's yaw, at scale 1. OutProps is a lake whose spline is the footprint
+	 * rectangle (four linear points, in OutTransform's space), with the depth and look the water material gives and collision as the
+	 * mesh has it. OutDepthSource says in words where the depth came from, for the coverage line.
+	 */
+	static bool ReadFlatWaterMesh(const AActor* Actor, FTransform& OutTransform, FMantleWaterBodyProps& OutProps, FString& OutDepthSource);
+
 	/** The data as one JSON object ({ "bodies": [...], "zones": [...] }), for the harness and for the writer to come. */
 	static TSharedRef<FJsonObject> ToJson(const FMantleWaterBodies& Water);
 	static FString ToJsonString(const FMantleWaterBodies& Water);

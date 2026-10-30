@@ -736,6 +736,16 @@ namespace
 		TArray<FMantleParseError>& Errors,
 		FMantleEntity& Entity)
 	{
+		// A flat mesh with a water material (a Fab pond) is a still lake with the mesh's footprint; the mesh itself is not uploaded.
+		FTransform FlatTransform;
+		FMantleWaterBodyProps FlatProps;
+		FString FlatDepthSource;
+		if (FMantleWaterBodyExport::ReadFlatWaterMesh(Actor, FlatTransform, FlatProps, FlatDepthSource))
+		{
+			Entity.Transform = FlatTransform;
+			Entity.Props.Set<FMantleWaterBodyProps>(MoveTemp(FlatProps));
+			return;
+		}
 		FMantleWaterBodyData Body;
 		FMantleWaterBodyProps Props;
 		FString Why;
@@ -2366,6 +2376,8 @@ bool FMantlePlaceExporter::ClassifyActor(const AActor* Actor, EMantleEntityType&
 	if (FMantleWaterBodyExport::IsWaterBodyActor(Actor)) { OutType = EMantleEntityType::WaterBody; return true; }
 	// #628: a mesh actor made of several components (a Blueprint's mesh, doors, lights, particles) is a Group of parts.
 	if (MantlePlaceExporterPrefab::NeedsGroup(Actor)) { OutType = EMantleEntityType::Group;            return true; }
+	// A flat mesh drawn only with water materials (a Fab pond: the engine plane, a water material) is a still WaterBody, not a slab to stand on.
+	if (FMantleWaterBodyExport::IsFlatWaterMesh(Actor)) { OutType = EMantleEntityType::WaterBody; return true; }
 	// #818: a placed particle actor (an Emitter, a Niagara Actor) is a Group of Effect parts, as a Blueprint's particle components are.
 	if (MantlePlaceExporterSkips::IsTranslatableParticleActor(Actor)) { OutType = EMantleEntityType::Group; return true; }
 	// #628: a Box or Sphere reflection capture, before the root checks (its preview boxes would read as trigger parts).

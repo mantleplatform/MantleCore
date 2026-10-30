@@ -81,6 +81,7 @@
 #include "Materials/MaterialFunctionInterface.h"
 #include "Materials/MaterialInstance.h"
 #include "Materials/MaterialInstanceConstant.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/FileHelper.h"
 #include "Misc/SecureHash.h"
@@ -2223,6 +2224,10 @@ void FMantlePlaceDependencies::AddMaterial(UMaterialInterface* Material, const F
 		Existing->Key = Key;
 		Existing->Name = Material->GetName();
 	}
+	else if (Existing->Material.Get() != Material && FMantlePlaceAssets::IsTransientMaterialInstance(Material))
+	{
+		MergedInstances.Add(Material);
+	}
 	Existing->UsedBy.AddUnique(Label);
 }
 
@@ -3207,9 +3212,76 @@ void FMantlePlaceAssets::CheckSounds(const FMantlePlaceDependencies& Dependencie
 	}
 }
 
+namespace MantlePlaceAssetsPrivate
+{
+	/**
+	 * A material's identity as text: a material or an on-disk instance by path; a transient instance by its parent and everything it overrides
+	 * (scalar, vector and texture parameters, base properties), which is all a bake reads. A parent that is itself transient is described the same way.
+	 */
+	FString DescribeMaterialContent(const UMaterialInterface* Material, const int32 Depth = 0)
+	{
+		const UMaterialInstance* Instance = Cast<UMaterialInstance>(Material);
+		if (!Instance || Depth > 16 || !FMantlePlaceAssets::IsTransientMaterialInstance(Instance))
+		{
+			return Material ? Material->GetPathName() : FString(TEXT("none"));
+		}
+		auto Name = [](const FMaterialParameterInfo& Info)
+		{
+			return FString::Printf(TEXT("%s|%d|%d"), *Info.Name.ToString(), static_cast<int32>(Info.Association), Info.Index);
+		};
+		TArray<FString> Lines;
+		for (const FScalarParameterValue& Value : Instance->ScalarParameterValues)
+		{
+			Lines.Add(FString::Printf(TEXT("s %s=%.9g"), *Name(Value.ParameterInfo), Value.ParameterValue));
+		}
+		for (const FVectorParameterValue& Value : Instance->VectorParameterValues)
+		{
+			Lines.Add(FString::Printf(TEXT("v %s=%.9g,%.9g,%.9g,%.9g"), *Name(Value.ParameterInfo), Value.ParameterValue.R, Value.ParameterValue.G,
+				Value.ParameterValue.B, Value.ParameterValue.A));
+		}
+		for (const FDoubleVectorParameterValue& Value : Instance->DoubleVectorParameterValues)
+		{
+			Lines.Add(FString::Printf(TEXT("d %s=%.17g,%.17g,%.17g,%.17g"), *Name(Value.ParameterInfo), Value.ParameterValue.X, Value.ParameterValue.Y,
+				Value.ParameterValue.Z, Value.ParameterValue.W));
+		}
+		for (const FTextureParameterValue& Value : Instance->TextureParameterValues)
+		{
+			Lines.Add(FString::Printf(TEXT("t %s=%s"), *Name(Value.ParameterInfo), Value.ParameterValue ? *Value.ParameterValue->GetPathName() : TEXT("none")));
+		}
+		Lines.Add(FString::Printf(TEXT("base %llu"), Instance->GetBasePropertyOverridesHash()));
+		Lines.Sort();
+		return FString::Printf(TEXT("parent %s\n%s"), *DescribeMaterialContent(Instance->Parent, Depth + 1), *FString::Join(Lines, TEXT("\n")));
+	}
+}
+
+bool FMantlePlaceAssets::IsTransientMaterialInstance(const UMaterialInterface* Material)
+{
+	return Cast<UMaterialInstance>(Material)
+		&& (Material->IsA<UMaterialInstanceDynamic>() || Material->HasAnyFlags(RF_Transient) || Material->GetOutermost() == GetTransientPackage());
+}
+
 FString FMantlePlaceAssets::MaterialKey(const UMaterialInterface* Material)
 {
-	return Material ? TEXT("material:") + Material->GetPathName() : FString();
+	if (!Material)
+	{
+		return FString();
+	}
+	if (!IsTransientMaterialInstance(Material))
+	{
+		return TEXT("material:") + Material->GetPathName();
+	}
+	// A Blueprint makes one dynamic instance per actor, many with the same parent and values: those are one material.
+	FMD5 Md5;
+	const FTCHARToUTF8 Utf8(*MantlePlaceAssetsPrivate::DescribeMaterialContent(Material));
+	Md5.Update(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length());
+	uint8 Digest[16];
+	Md5.Final(Digest);
+	FString Key = TEXT("material:dynamic:");
+	for (const uint8 Byte : Digest)
+	{
+		Key += FString::Printf(TEXT("%02x"), Byte);
+	}
+	return Key;
 }
 
 FString FMantlePlaceAssets::DecalTextureKey(const UTexture* Texture, const bool bNormal)
@@ -3534,6 +3606,16 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 				Walk.AddTexture(Fidelity.SourceTextures[Slot].Get());
 				Walk.AddTexture(Fidelity.LayerTextures[Slot].Get());
 			}
+		}
+
+		// A fog or light-shaft card: unlit, see-through (translucent, additive or modulate) and faded by scene depth. The bake sees the
+		// fade's near end, so it would publish as one hard see-through sheet; the mesh is left out. The fade reaches Opacity (which additive
+		// and modulate use too) or, for those two, Emissive Color. A lit one is water or a cloud card, below.
+		if (bCarries && Out.UnpublishableWhy.IsEmpty() && Models.HasOnlyShadingModel(MSM_Unlit)
+			&& (Blend == BLEND_Translucent || Blend == BLEND_Additive || Blend == BLEND_Modulate)
+			&& (FMantleWaterMaterial::FadesByDepth(Roots.Opacity) || (Blend != BLEND_Translucent && FMantleWaterMaterial::FadesByDepth(Roots.Emissive))))
+		{
+			Out.UnpublishableWhy = TEXT("is a soft fog or light card (unlit, see-through, faded by scene depth), which would publish as a hard see-through sheet");
 		}
 
 		// #628: a depth-faded translucent material (water): the bake sees the fade's near end and writes opacity 0, so its

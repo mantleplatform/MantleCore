@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCoverage.h"
+#include "MantlePlaceAssets.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceParser.h"
 #include "MantleTargetFeatures.h"
@@ -7,12 +8,16 @@
 #include "MantleWaterBodyExport.h"
 
 #include "Components/BoxComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "Materials/Material.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/Package.h"
 #include "UObject/UnrealType.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -575,6 +580,205 @@ bool FMantleWaterBodyExportsEntityTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("the place has one water body"), Bodies, 1);
 	TestTrue(TEXT("and the zone"), Result.Place.Settings.Water.IsSet());
+	return true;
+}
+
+// A flat mesh with a water material (the common Fab pond: the engine plane scaled out) is a still water body, not a slab to stand on.
+// These need no Water plugin: the pond is read from the mesh and its material.
+
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantleFlatWaterTestPrivate
+{
+	const TCHAR* const PlanePath = TEXT("/Engine/BasicShapes/Plane.Plane");
+	const TCHAR* const CubePath = TEXT("/Engine/BasicShapes/Cube.Cube");
+
+	/** A Single Layer Water material with nothing else in it: the Water plugin's own shading model, recognised as water. */
+	UMaterial* NewWaterMaterial()
+	{
+		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
+		Material->SetShadingModel(MSM_SingleLayerWater);
+		Material->bUseMaterialAttributes = true;
+		return Material;
+	}
+
+	AStaticMeshActor* SpawnMeshActor(UWorld* World, UStaticMesh* Mesh, UMaterialInterface* Material, const FTransform& Transform)
+	{
+		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>();
+		if (Actor)
+		{
+			Actor->GetStaticMeshComponent()->SetStaticMesh(Mesh);
+			Actor->GetStaticMeshComponent()->SetMaterial(0, Material);
+			Actor->SetActorLabel(TEXT("Water"));
+			Actor->SetActorTransform(Transform);
+		}
+		return Actor;
+	}
+
+	int32 CountEntities(const FMantleExportResult& Result, const EMantleEntityType Type)
+	{
+		int32 Count = 0;
+		for (const FMantleEntity& Entity : Result.Place.Entities)
+		{
+			Count += Entity.Type == Type ? 1 : 0;
+		}
+		return Count;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleFlatWaterMeshExportsAsWaterBodyTest,
+	"Mantle.Editor.Water.FlatMeshWithWaterMaterialExportsAsWaterBody",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleFlatWaterMeshExportsAsWaterBodyTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleFlatWaterTestPrivate;
+	using namespace MantleWaterBodyExportTestPrivate;
+
+	UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, PlanePath);
+	if (!Plane)
+	{
+		AddWarning(TEXT("the engine plane did not load; skipped"));
+		return true;
+	}
+	UMaterial* Material = NewWaterMaterial();
+	FWaterTestWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	// The pond of PostApocalypticDesert: the plane at scale (112, 72, 22), turned a quarter so the footprint is not along the world axes.
+	AStaticMeshActor* Pond = SpawnMeshActor(Fixture.World, Plane, Material,
+		FTransform(FRotator(0.0, 90.0, 0.0), FVector(1000.0, 2000.0, 300.0), FVector(112.0, 72.0, 22.0)));
+	if (!TestNotNull(TEXT("the pond"), Pond))
+	{
+		return false;
+	}
+
+	EMantleEntityType Type = EMantleEntityType::StaticMesh;
+	TestTrue(TEXT("it classifies"), FMantlePlaceExporter::ClassifyActor(Pond, Type));
+	TestEqual(TEXT("as a WaterBody"), Type, EMantleEntityType::WaterBody);
+
+	// Gather agrees: the plane and its material are not uploaded.
+	const FMantlePlaceDependencies Dependencies = FMantlePlaceDependencies::Gather(Fixture.World);
+	TestEqual(TEXT("no mesh is gathered"), Dependencies.Meshes.Num(), 0);
+	TestEqual(TEXT("and no material"), Dependencies.Materials.Num(), 0);
+
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	TestEqual(TEXT("the place has one water body"), CountEntities(Result, EMantleEntityType::WaterBody), 1);
+	TestEqual(TEXT("and no static mesh"), CountEntities(Result, EMantleEntityType::StaticMesh), 0);
+	const FMantleEntity* Entity = Result.Place.Entities.FindByPredicate([](const FMantleEntity& Candidate) { return Candidate.Type == EMantleEntityType::WaterBody; });
+	const FMantleWaterBodyProps* Props = Entity ? Entity->Props.TryGet<FMantleWaterBodyProps>() : nullptr;
+	if (!TestNotNull(TEXT("with water body properties"), Props))
+	{
+		return false;
+	}
+	TestEqual(TEXT("a still pond is a lake"), Props->BodyType, EMantleWaterBodyType::Lake);
+	TestTrue(TEXT("the surface is the mesh's top, centred on the footprint"), Entity->Transform.GetLocation().Equals(FVector(1000.0, 2000.0, 300.0), 0.5));
+	TestTrue(TEXT("at scale 1"), Entity->Transform.GetScale3D().Equals(FVector::OneVector, 1.0e-4));
+	TestEqual(TEXT("turned by the mesh's yaw"), Entity->Transform.Rotator().Yaw, 90.0, 0.01);
+
+	// The spline is the footprint rectangle in the entity's own space: the mesh's X and Y sides at their scales.
+	const FBox Box = Plane->GetBoundingBox();
+	const double HalfX = Box.GetSize().X * 112.0 * 0.5;
+	const double HalfY = Box.GetSize().Y * 72.0 * 0.5;
+	if (TestEqual(TEXT("four points"), Props->SplinePoints.Num(), 4))
+	{
+		for (const FMantleWaterSplinePoint& Point : Props->SplinePoints)
+		{
+			TestEqual(TEXT("a corner's X is half the mesh's X side"), FMath::Abs(Point.Location.X), HalfX, 0.5);
+			TestEqual(TEXT("a corner's Y is half the mesh's Y side"), FMath::Abs(Point.Location.Y), HalfY, 0.5);
+			TestEqual(TEXT("at the surface"), Point.Location.Z, 0.0, 0.01);
+			TestEqual(TEXT("joined by straight edges"), Point.Interp, EMantleWaterSplinePointType::Linear);
+			TestTrue(TEXT("with a depth to swim in"), Point.Depth >= 100.0);
+		}
+	}
+
+	// The coverage says what happened to the mesh.
+	TestEqual(TEXT("the coverage approximates the pond"), static_cast<int64>(Result.Coverage.Count(MantleCoverageCategory::Water, EMantleCoverageOutcome::Approximated)), static_cast<int64>(1));
+	const FMantleCoverageCategory* Water = Result.Coverage.Find(MantleCoverageCategory::Water);
+	const FMantleCoverageExample* Line = Water ? Water->Get(EMantleCoverageOutcome::Approximated).Examples.FindByPredicate(
+		[](const FMantleCoverageExample& Example) { return Example.Detail.Contains(TEXT("is a flat mesh with a water material, published as a water body")); }) : nullptr;
+	TestNotNull(TEXT("in words"), Line);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleSolidWaterMaterialMeshStaysMeshTest,
+	"Mantle.Editor.Water.NonFlatMeshWithWaterMaterialStaysStaticMesh",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleSolidWaterMaterialMeshStaysMeshTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleFlatWaterTestPrivate;
+	using namespace MantleWaterBodyExportTestPrivate;
+
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, CubePath);
+	if (!Cube)
+	{
+		AddWarning(TEXT("the engine cube did not load; skipped"));
+		return true;
+	}
+	FWaterTestWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	// A fountain bowl or a waterfall is not flat: a cube stands for either.
+	AStaticMeshActor* Bowl = SpawnMeshActor(Fixture.World, Cube, NewWaterMaterial(), FTransform(FVector(0.0, 0.0, 100.0)));
+	if (!TestNotNull(TEXT("the cube"), Bowl))
+	{
+		return false;
+	}
+	TestFalse(TEXT("it is not a flat water mesh"), FMantleWaterBodyExport::IsFlatWaterMesh(Bowl));
+	EMantleEntityType Type = EMantleEntityType::WaterBody;
+	TestTrue(TEXT("it classifies"), FMantlePlaceExporter::ClassifyActor(Bowl, Type));
+	TestEqual(TEXT("as a StaticMesh"), Type, EMantleEntityType::StaticMesh);
+	// The engine cube is one of Mantle's own shapes, never gathered; its water material is.
+	TestEqual(TEXT("and its material is gathered"), FMantlePlaceDependencies::Gather(Fixture.World).Materials.Num(), 1);
+
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	TestEqual(TEXT("the place has one static mesh"), CountEntities(Result, EMantleEntityType::StaticMesh), 1);
+	TestEqual(TEXT("and no water body"), CountEntities(Result, EMantleEntityType::WaterBody), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleFlatPlainMeshStaysMeshTest,
+	"Mantle.Editor.Water.FlatMeshWithNormalMaterialStaysStaticMesh",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleFlatPlainMeshStaysMeshTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleFlatWaterTestPrivate;
+	using namespace MantleWaterBodyExportTestPrivate;
+
+	UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, PlanePath);
+	if (!Plane)
+	{
+		AddWarning(TEXT("the engine plane did not load; skipped"));
+		return true;
+	}
+	FWaterTestWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	// The same plane, scaled the same, with an ordinary opaque material: a floor.
+	AStaticMeshActor* Floor = SpawnMeshActor(Fixture.World, Plane, NewObject<UMaterial>(GetTransientPackage()),
+		FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, 300.0), FVector(112.0, 72.0, 22.0)));
+	if (!TestNotNull(TEXT("the plane"), Floor))
+	{
+		return false;
+	}
+	TestFalse(TEXT("it is not a flat water mesh"), FMantleWaterBodyExport::IsFlatWaterMesh(Floor));
+	EMantleEntityType Type = EMantleEntityType::WaterBody;
+	TestTrue(TEXT("it classifies"), FMantlePlaceExporter::ClassifyActor(Floor, Type));
+	TestEqual(TEXT("as a StaticMesh"), Type, EMantleEntityType::StaticMesh);
+
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	TestEqual(TEXT("the place has one static mesh"), CountEntities(Result, EMantleEntityType::StaticMesh), 1);
+	TestEqual(TEXT("and no water body"), CountEntities(Result, EMantleEntityType::WaterBody), 0);
 	return true;
 }
 
