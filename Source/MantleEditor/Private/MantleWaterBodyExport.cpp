@@ -2,17 +2,22 @@
 #include "MantleWaterBodyExport.h"
 
 #include "MantleCoverage.h"
+#include "MantlePlaceAssets.h"
+#include "MantleWaterMaterial.h"
 
 #include "Components/PrimitiveComponent.h"
 #include "Components/SplineComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "JsonObjectConverter.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInterface.h"
+#include "MaterialShared.h"
 #include "Math/InterpCurve.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -815,6 +820,177 @@ int32 FMantleWaterBodyExport::CountBodiesCarving(const AActor* Landscape)
 	return Count;
 }
 
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantleWaterBodyExportFlat
+{
+	/**
+	 * A mesh is flat when its world height is at most this share of the shorter side of its footprint. The engine's plane is exactly 0 and
+	 * a Fab pond or pool slab is a centimetre or a few over metres, well under 1%; a fountain bowl or a cube is a large share of its width,
+	 * and a waterfall (a tall sheet) is taller than wide. 2% keeps a 5 cm slab on a 2.5 m pool and nothing that holds water in a basin.
+	 */
+	constexpr double MaxHeightShare = 0.02;
+
+	/** The height any mesh may have and still be flat whatever its size (a plane's own thickness, a hairline slab), cm. */
+	constexpr double MinHeightAllowance = 1.0;
+
+	/** A footprint side under this is not a pond, cm. */
+	constexpr double MinSide = 10.0;
+
+	/** The depth a flat water mesh gets when its material gives none: about chest deep, so a character swims in it, cm. */
+	constexpr double DefaultDepth = 200.0;
+
+	/** The depth read from a material is held to this range: a shallow fade is still wadeable, and a very clear volume is not a bottomless pit, cm. */
+	constexpr double MinDepth = 100.0;
+	constexpr double MaxDepth = 2000.0;
+
+	/** The depth the water material implies, held to the range, and where it came from; the default when the material gives none. */
+	double DepthOf(const FMantleWaterBake& Water, const FMantleWaterCoefficients* Volume, FString& OutSource)
+	{
+		if (Water.bFadeDistance && Water.FadeDistanceCm > 0.0)
+		{
+			OutSource = FString::Printf(TEXT("the material's %.0f cm fade distance"), Water.FadeDistanceCm);
+			return FMath::Clamp(Water.FadeDistanceCm, MinDepth, MaxDepth);
+		}
+		// Coefficients ties the fade distance to about three extinction lengths (sigma = 3 / D), so the clearest channel gives D back.
+		double Clearest = 0.0;
+		if (Volume)
+		{
+			for (int32 Channel = 0; Channel < 3; ++Channel)
+			{
+				const double Extinction = Volume->Scattering[Channel] + Volume->Absorption[Channel];
+				if (Extinction > 0.0 && (Clearest == 0.0 || Extinction < Clearest))
+				{
+					Clearest = Extinction;
+				}
+			}
+		}
+		if (Clearest > 0.0)
+		{
+			OutSource = TEXT("the material's absorption and scattering");
+			return FMath::Clamp(3.0 / Clearest, MinDepth, MaxDepth);
+		}
+		OutSource = FString::Printf(TEXT("the default %.0f cm, as the material gives none"), DefaultDepth);
+		return DefaultDepth;
+	}
+}
+
+bool FMantleWaterBodyExport::IsFlatWaterMesh(const AActor* Actor)
+{
+	FTransform Transform;
+	FMantleWaterBodyProps Props;
+	FString DepthSource;
+	return ReadFlatWaterMesh(Actor, Transform, Props, DepthSource);
+}
+
+bool FMantleWaterBodyExport::ReadFlatWaterMesh(const AActor* Actor, FTransform& OutTransform, FMantleWaterBodyProps& OutProps, FString& OutDepthSource)
+{
+	namespace Flat = MantleWaterBodyExportFlat;
+	const AStaticMeshActor* MeshActor = Cast<AStaticMeshActor>(Actor);
+	const UStaticMeshComponent* Component = MeshActor ? MeshActor->GetStaticMeshComponent() : nullptr;
+	const UStaticMesh* Mesh = Component ? Component->GetStaticMesh() : nullptr;
+	if (!Mesh || Actor->IsTemplate() || Actor->GetAttachParentActor())
+	{
+		return false;
+	}
+	// The entity is written at scale 1, which would move anything attached to the actor's scaled root.
+	TArray<AActor*> Attached;
+	Actor->GetAttachedActors(Attached);
+	if (Attached.Num() > 0)
+	{
+		return false;
+	}
+
+	// The footprint in the mesh's yaw frame (the rotation a pond is placed with), and the height in the world.
+	const FBox Local = Mesh->GetBoundingBox();
+	if (!Local.IsValid)
+	{
+		return false;
+	}
+	const FTransform ToWorld = Component->GetComponentTransform();
+	const FTransform YawFrame(FRotator(0.0, ToWorld.Rotator().Yaw, 0.0));
+	FBox Footprint(ForceInit);
+	FBox World(ForceInit);
+	for (int32 Corner = 0; Corner < 8; ++Corner)
+	{
+		const FVector At = ToWorld.TransformPosition(FVector((Corner & 1) ? Local.Max.X : Local.Min.X, (Corner & 2) ? Local.Max.Y : Local.Min.Y, (Corner & 4) ? Local.Max.Z : Local.Min.Z));
+		World += At;
+		Footprint += YawFrame.InverseTransformPosition(At);
+	}
+	const double Width = Footprint.Max.X - Footprint.Min.X;
+	const double Length = Footprint.Max.Y - Footprint.Min.Y;
+	const double Height = World.Max.Z - World.Min.Z;
+	const double Shorter = FMath::Min(Width, Length);
+	if (Shorter < Flat::MinSide || Height > FMath::Max(Flat::MinHeightAllowance, Shorter * Flat::MaxHeightShare))
+	{
+		return false;
+	}
+
+	// Every material the mesh would upload is water; the first one's look stands for the pond.
+	FMantleWaterBake Water;
+	bool bFirst = true;
+	for (const int32 Slot : FMantlePlaceAssets::UploadSlots(Mesh))
+	{
+		const UMaterialInterface* Material = FMantlePlaceAssets::EffectiveMaterial(Component, Slot);
+		// Only Single Layer Water and translucent materials can be water, so the graph is not walked for the rest.
+		if (!Material || !(Material->GetShadingModels().HasShadingModel(MSM_SingleLayerWater) || IsTranslucentBlendMode(Material->GetBlendMode())))
+		{
+			return false;
+		}
+		const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Material);
+		if (!Analysis.Fidelity2.Water.bFound || !Analysis.UnpublishableWhy.IsEmpty())
+		{
+			return false;
+		}
+		if (bFirst)
+		{
+			Water = Analysis.Fidelity2.Water;
+			bFirst = false;
+		}
+	}
+	if (bFirst)
+	{
+		return false;
+	}
+
+	// The pond: its centre at the mesh's top, and the footprint rectangle as the spline, in the entity's own space.
+	const FVector Centre = YawFrame.TransformPosition(FVector((Footprint.Min.X + Footprint.Max.X) * 0.5, (Footprint.Min.Y + Footprint.Max.Y) * 0.5, 0.0));
+	OutTransform = FTransform(YawFrame.GetRotation(), FVector(Centre.X, Centre.Y, World.Max.Z));
+
+	OutProps = FMantleWaterBodyProps();
+	OutProps.BodyType = EMantleWaterBodyType::Lake;
+	const FMantleWaterCoefficients Derived = FMantleWaterMaterial::Coefficients(Water.Colour, Water.bFadeDistance ? Water.FadeDistanceCm : 0.0);
+	const FMantleWaterCoefficients* Volume = Water.bVolume ? &Water.Volume : (Water.bColour ? &Derived : nullptr);
+	const double Depth = Flat::DepthOf(Water, Volume, OutDepthSource);
+	const double HalfWidth = Width * 0.5;
+	const double HalfLength = Length * 0.5;
+	const FVector2D Corners[] = { FVector2D(-HalfWidth, -HalfLength), FVector2D(HalfWidth, -HalfLength), FVector2D(HalfWidth, HalfLength), FVector2D(-HalfWidth, HalfLength) };
+	for (const FVector2D& Corner : Corners)
+	{
+		FMantleWaterSplinePoint& Point = OutProps.SplinePoints.AddDefaulted_GetRef();
+		Point.Location = FVector(Corner.X, Corner.Y, 0.0);
+		Point.Interp = EMantleWaterSplinePointType::Linear;
+		Point.Depth = Depth;
+	}
+
+	// The look the material gives, as the plugin's Water Albedo, Scattering and Absorption parameters hold it (linear, 0 to 1).
+	auto Unit = [](const double (&Channels)[3])
+	{
+		return FLinearColor(static_cast<float>(FMath::Clamp(Channels[0], 0.0, 1.0)), static_cast<float>(FMath::Clamp(Channels[1], 0.0, 1.0)), static_cast<float>(FMath::Clamp(Channels[2], 0.0, 1.0)));
+	};
+	if (Water.bColour)
+	{
+		OutProps.Albedo = Unit(Water.Colour);
+	}
+	if (Volume)
+	{
+		OutProps.Scattering = Unit(Volume->Scattering);
+		OutProps.Absorption = Unit(Volume->Absorption);
+	}
+	// A mesh with no collision is decoration; one with collision is water to swim in.
+	OutProps.bCollision = Component->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
+	return true;
+}
+
 bool FMantleWaterBodyExport::IsWaterBodyActor(const AActor* Actor)
 {
 	// One class lookup, not the whole set: this runs for every actor of a level.
@@ -985,19 +1161,26 @@ bool FMantleWaterBodyExport::Admit(const AActor* Actor, const FString& Label, in
 			Coverage->Add(MantleCoverageCategory::Water, Outcome, Name, Detail);
 		}
 	};
-	FMantleWaterBodyData Body;
-	if (!ReadBody(Actor, Body))
-	{
-		Report(EMantleCoverageOutcome::Dropped, Label, TEXT("a water body that could not be read."));
-		return false;
-	}
 	FMantleWaterBodyProps Props;
 	FString Why;
 	TArray<FString> Notes;
-	if (!BuildProps(Body, Props, Why, Notes))
+	// A flat mesh with a water material is not a Water plugin body (ReadBody refuses it): it has its own reader.
+	FTransform FlatTransform;
+	FString FlatDepthSource;
+	const bool bFlat = ReadFlatWaterMesh(Actor, FlatTransform, Props, FlatDepthSource);
+	if (!bFlat)
 	{
-		Report(EMantleCoverageOutcome::Dropped, Label, FString::Printf(TEXT("left out: it %s."), *Why));
-		return false;
+		FMantleWaterBodyData Body;
+		if (!ReadBody(Actor, Body))
+		{
+			Report(EMantleCoverageOutcome::Dropped, Label, TEXT("a water body that could not be read."));
+			return false;
+		}
+		if (!BuildProps(Body, Props, Why, Notes))
+		{
+			Report(EMantleCoverageOutcome::Dropped, Label, FString::Printf(TEXT("left out: it %s."), *Why));
+			return false;
+		}
 	}
 	if (Bodies >= FMantlePlaceLimits::MaxWaterBodiesPerPlace)
 	{
@@ -1011,7 +1194,10 @@ bool FMantleWaterBodyExport::Admit(const AActor* Actor, const FString& Label, in
 	}
 	++Bodies;
 	SplinePoints += Props.SplinePoints.Num();
-	FString Detail = TEXT("published as a water body: its shape, depth, waves, collision and look colours. The water material's other settings (foam, caustics, flow maps) are not carried.");
+	FString Detail = bFlat
+		? FString::Printf(TEXT("is a flat mesh with a water material, published as a water body: its footprint, surface height, collision and look colours, with a depth of %s. "
+			"The material's other settings (foam, caustics, flow maps) are not carried."), *FlatDepthSource)
+		: FString(TEXT("published as a water body: its shape, depth, waves, collision and look colours. The water material's other settings (foam, caustics, flow maps) are not carried."));
 	if (Notes.Num() > 0)
 	{
 		Detail += TEXT(" ") + FString::Join(Notes, TEXT("; ")) + TEXT(".");

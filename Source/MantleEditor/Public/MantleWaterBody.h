@@ -9,7 +9,8 @@ class UStaticMeshComponent;
 /**
  * Water plugin bodies (WaterBodyCustom, Lake, River, Ocean components), recognised by class name (GhzGarage/mantle#818, #997). MantleEditor
  * does not link the Water plugin. The exporter leaves a body out with a warning until the place format carries it (FMantleWaterBodyExport
- * reads it); an ordinary static mesh with a water material still publishes with Mantle's water.
+ * reads it); a static mesh with a water material still publishes with Mantle's water, unless it is flat: then it is a WaterBody
+ * (FMantleWaterBodyExport::IsFlatWaterMesh).
  */
 class MANTLEEDITOR_API FMantleWaterBody
 {
