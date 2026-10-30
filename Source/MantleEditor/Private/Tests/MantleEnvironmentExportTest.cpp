@@ -1122,6 +1122,69 @@ bool FMantleEnvironmentSunShadeTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleEnvironmentInteriorExportTest,
+	"Mantle.Editor.EnvironmentExport.Interior",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleEnvironmentInteriorExportTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleEnvironmentExportTestPrivate;
+	FTestWorld Test;
+	if (!TestNotNull(TEXT("a test world"), Test.World))
+	{
+		return false;
+	}
+	// A level with a post-process volume and nothing else: no sun, sky light, atmosphere, clouds or fog (Room A's shape).
+	APostProcessVolume* Grade = Test.Spawn<APostProcessVolume>(TEXT("Grade"));
+	if (!TestNotNull(TEXT("a post-process volume"), Grade))
+	{
+		return false;
+	}
+	Grade->bUnbound = true;
+	Grade->Settings.bOverride_BloomIntensity = true;
+	Grade->Settings.BloomIntensity = 2.0f;
+	Grade->Settings.bOverride_BloomThreshold = true;
+	Grade->Settings.BloomThreshold = 2.0f;
+
+	FMantlePlace Place;
+	TMap<const AActor*, FString> IdByActor;
+	FMantleCoverage Coverage;
+	FMantleEnvironmentExport::Apply(Test.World, IdByActor, Place, Coverage);
+	const FMantleEnvironmentSettings& Environment = Place.Settings.Environment;
+	if (!FMantleTargetFeatures::Current().Reads(MantleClientFeatures::EnvironmentLighting))
+	{
+		AddInfo(TEXT("the target client does not read the lighting keys; the interior key is dropped"));
+		return true;
+	}
+	TestTrue(TEXT("a level with no environment of its own is an interior"), Environment.bNoOutdoors);
+	if (TestTrue(TEXT("the bloom threshold is carried"), Environment.BloomThreshold.IsSet()))
+	{
+		TestNearlyEqual(TEXT("as it is"), *Environment.BloomThreshold, 2.0, 0.001);
+	}
+	TestFalse(TEXT("the weather is not written for it: the client holds it"), Environment.Weather.IsSet());
+	const FString Json = FMantlePlaceExporter::ToJson(Place);
+	TestTrue(TEXT("outdoors false is written"), Json.Replace(TEXT(" "), TEXT("")).Contains(TEXT("\"outdoors\":false")));
+	TestTrue(TEXT("and the threshold"), Json.Replace(TEXT(" "), TEXT("")).Contains(TEXT("\"bloomThreshold\":2")));
+	const FMantleParseResult Parsed = FMantlePlaceParser::ParseFromString(Json);
+	TestTrue(TEXT("the parser reads both back"),
+		Parsed.Place.Settings.Environment.bNoOutdoors && Parsed.Place.Settings.Environment.BloomThreshold.IsSet());
+
+	// An engine-default threshold (below zero) is not carried, and a level with an atmosphere is not an interior.
+	Grade->Settings.BloomThreshold = -1.0f;
+	ASkyAtmosphere* Atmosphere = Test.Spawn<ASkyAtmosphere>(TEXT("Atmosphere"));
+	if (!TestNotNull(TEXT("a sky atmosphere"), Atmosphere))
+	{
+		return false;
+	}
+	FMantlePlace Outdoor;
+	FMantleCoverage OutdoorCoverage;
+	FMantleEnvironmentExport::Apply(Test.World, IdByActor, Outdoor, OutdoorCoverage);
+	TestFalse(TEXT("a level with its own sky is outdoors"), Outdoor.Settings.Environment.bNoOutdoors);
+	TestFalse(TEXT("and a default threshold is not carried"), Outdoor.Settings.Environment.BloomThreshold.IsSet());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleEnvironmentLightingKeysTest,
 	"Mantle.Editor.EnvironmentExport.LightingKeys",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
