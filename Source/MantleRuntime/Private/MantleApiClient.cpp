@@ -919,6 +919,18 @@ namespace MantleApiClientLibraryPrivate
 		Out = FMantleLibraryScriptManifest();
 		Out.Name = ReadString(ManifestObject, TEXT("name"));
 		Out.Description = ReadString(ManifestObject, TEXT("description"));
+		const TArray<TSharedPtr<FJsonValue>>* Dependencies = nullptr;
+		if (ManifestObject->TryGetArrayField(TEXT("dependencies"), Dependencies) && Dependencies)
+		{
+			for (const TSharedPtr<FJsonValue>& Value : *Dependencies)
+			{
+				FString Name;
+				if (Value.IsValid() && Value->TryGetString(Name))
+				{
+					Out.Dependencies.Add(MoveTemp(Name));
+				}
+			}
+		}
 		ReadManifestOptions(ManifestObject, TEXT("parameters"), Out.Parameters);
 		ReadManifestOptions(ManifestObject, TEXT("settings"), Out.Settings);
 	}

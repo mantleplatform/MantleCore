@@ -70,6 +70,10 @@ struct MANTLESCRIPTTOOLS_API FMantleScriptCatalogEntry
 	 *  catalogue source, so the runtime never imports MantleEditor to interpret a traceback. */
 	TArray<FMantleGraphSourceMapEntry> GraphSourceMap;
 	FDateTime LastModified;
+	/** #134: for a file of a script package, the storage names its package's manifest lists under "dependencies";
+	 *  the source that mounts the package copies them onto every file of it (MantleStampPackageDependencies).
+	 *  Empty for a place's own script and for a package that lists none. require() reads it from the calling file's package. */
+	TArray<FString> PackageDependencies;
 };
 
 /**
@@ -168,6 +172,8 @@ private:
 
 	/** Every file under Scripts/ and then Packages/ with a script extension and a non-dot name, each folder sorted. */
 	TArray<FDiskScriptFile> GatherFiles() const;
+	/** #134: each package folder's package.json time stamp, by package name; a change restarts the scripts like a new file does. */
+	TMap<FString, FDateTime> ReadManifestStamps() const;
 
 	/** The side and require-only rule of a gathered file (MantleClassifyScriptCatalogPath's, by where it was read). */
 	static bool ClassifyFile(const FDiskScriptFile& File, EMantleSide& OutSide, bool& bOutModuleOnly);
@@ -180,6 +186,7 @@ private:
 	TArray<FMantleScriptCatalogEntry> Entries;
 	/** #838: Packages/<Name>/package.json, by package name (compared case-sensitively). */
 	TArray<TPair<FString, FMantleScriptPackageManifest>> PackageManifests;
+	TMap<FString, FDateTime> ManifestStamps;
 	int32 NextId = 1;
 };
 
@@ -188,6 +195,9 @@ private:
  * or empty for a place's own script (and for anything that is not Packages/<name>/<more>). Case-exact.
  */
 MANTLESCRIPTTOOLS_API FString MantleScriptPackageOf(const FString& CatalogPath);
+
+/** #134: sets PackageDependencies on every entry mounted under Packages/<Package>/ (Package compared case-sensitively). */
+MANTLESCRIPTTOOLS_API void MantleStampPackageDependencies(TArray<FMantleScriptCatalogEntry>& Entries, const FString& Package, const TArray<FString>& Dependencies);
 
 /**
  * The side and require-only rule of a catalogue path, the one rule every source applies: Server/ and Client/ run on
@@ -211,9 +221,10 @@ MANTLESCRIPTTOOLS_API bool MantleClassifyScriptCatalogPath(const FString& Catalo
  *    A place script never reaches a package file any other way (a literal Packages/ path is refused).
  *  - From a package file, a bare name resolves inside that package only: Packages/<name>/<Thing>, then its Shared/,
  *    then its own side's folder. A relative path must stay inside the package. A package cannot require the place's
- *    own scripts or another package (Mantle provides no modules of its own): either is refused with a message.
- *    "@<its own name>/Thing" reaches its own Shared/Thing; "@<another mounted package>/..." is refused; any other
- *    "@" is stripped, then resolved inside the package.
+ *    own scripts. #134: it can require another package's Shared/ modules with "@<name>/Thing", only when <name> is in
+ *    its own manifest's dependencies (entries carry them as PackageDependencies); otherwise it is refused with a
+ *    message naming the dependencies field. Dependencies are not transitive.
+ *    "@<its own name>/Thing" reaches its own Shared/Thing; any other "@" is stripped, then resolved inside the package.
  */
 MANTLESCRIPTTOOLS_API const FMantleScriptCatalogEntry* MantleResolveRequire(
 	const TArray<FMantleScriptCatalogEntry>& Entries,

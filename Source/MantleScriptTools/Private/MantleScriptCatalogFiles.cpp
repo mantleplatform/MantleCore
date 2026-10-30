@@ -107,6 +107,17 @@ FString MantleScriptPackageOf(const FString& CatalogPath)
 	return CatalogPath.Mid(NameStart, Slash - NameStart);
 }
 
+void MantleStampPackageDependencies(TArray<FMantleScriptCatalogEntry>& Entries, const FString& Package, const TArray<FString>& Dependencies)
+{
+	for (FMantleScriptCatalogEntry& Entry : Entries)
+	{
+		if (MantleScriptPackageOf(Entry.Path).Equals(Package, ESearchCase::CaseSensitive))
+		{
+			Entry.PackageDependencies = Dependencies;
+		}
+	}
+}
+
 bool MantleClassifyScriptCatalogPath(const FString& CatalogPath, EMantleSide& OutSide, bool& bOutModuleOnly)
 {
 	TArray<FString> Segments;
@@ -287,7 +298,33 @@ void FMantleDiskScriptCatalogSource::Discover()
 				PackageManifests.Emplace(Folder, FMantleStorage::ReadScriptPackageManifestJson(ManifestText));
 			}
 		}
+		ManifestStamps = ReadManifestStamps();
+		// #134: every file of a package carries its manifest's dependencies, which require() reads.
+		for (const TPair<FString, FMantleScriptPackageManifest>& Pair : PackageManifests)
+		{
+			MantleStampPackageDependencies(Entries, Pair.Key, Pair.Value.Dependencies);
+		}
 	}
+}
+
+TMap<FString, FDateTime> FMantleDiskScriptCatalogSource::ReadManifestStamps() const
+{
+	TMap<FString, FDateTime> Stamps;
+	if (PackagesRoot.IsEmpty())
+	{
+		return Stamps;
+	}
+	TArray<FString> Folders;
+	IFileManager::Get().FindFiles(Folders, *(PackagesRoot / TEXT("*")), /*Files*/ false, /*Directories*/ true);
+	for (const FString& Folder : Folders)
+	{
+		const FString ManifestFile = PackagesRoot / Folder / TEXT("package.json");
+		if (IFileManager::Get().FileExists(*ManifestFile))
+		{
+			Stamps.Add(Folder, IFileManager::Get().GetTimeStamp(*ManifestFile));
+		}
+	}
+	return Stamps;
 }
 
 bool FMantleDiskScriptCatalogSource::Poll(TArray<int32>& OutChangedIds, bool& bOutStructureChanged)
@@ -338,6 +375,17 @@ bool FMantleDiskScriptCatalogSource::Poll(TArray<int32>& OutChangedIds, bool& bO
 	if (!bOutStructureChanged && SeenCount != Entries.Num())
 	{
 		bOutStructureChanged = true;
+	}
+	// #134: a package.json edit (its dependencies, parameters, settings) restarts the scripts too.
+	if (!bOutStructureChanged)
+	{
+		const TMap<FString, FDateTime> Stamps = ReadManifestStamps();
+		bOutStructureChanged = Stamps.Num() != ManifestStamps.Num();
+		for (const TPair<FString, FDateTime>& Pair : Stamps)
+		{
+			const FDateTime* Known = ManifestStamps.Find(Pair.Key);
+			bOutStructureChanged = bOutStructureChanged || !Known || *Known != Pair.Value;
+		}
 	}
 
 	if (bOutStructureChanged)
@@ -398,6 +446,16 @@ namespace
 			return MantleScriptPackageOf(Entry.Path).Equals(Package, ESearchCase::CaseSensitive);
 		});
 	}
+
+	/** #134: true when the package's files (the first one found carries them all) list Name as a dependency. */
+	bool MantleRequireListsDependency(const TArray<FMantleScriptCatalogEntry>& Entries, const FString& Package, const FString& Name)
+	{
+		const FMantleScriptCatalogEntry* Found = Entries.FindByPredicate([&Package](const FMantleScriptCatalogEntry& Entry)
+		{
+			return MantleScriptPackageOf(Entry.Path).Equals(Package, ESearchCase::CaseSensitive);
+		});
+		return Found && Found->PackageDependencies.ContainsByPredicate([&Name](const FString& Dependency) { return Dependency.Equals(Name, ESearchCase::CaseSensitive); });
+	}
 }
 
 const FMantleScriptCatalogEntry* MantleResolveRequire(
@@ -439,17 +497,42 @@ const FMantleScriptCatalogEntry* MantleResolveRequire(
 			else
 			{
 				UnknownAliasName = Name;
+				// #134: a package asking for a name that differs only in letter case from a mounted package (storage names are case-sensitive).
+				if (!FromPackage.IsEmpty())
+				{
+					for (const FMantleScriptCatalogEntry& Candidate : Entries)
+					{
+						const FString Mounted = MantleScriptPackageOf(Candidate.Path);
+						if (!Mounted.IsEmpty() && Mounted.Equals(Name, ESearchCase::IgnoreCase) && !Mounted.Equals(Name, ESearchCase::CaseSensitive))
+						{
+							OutError = FString::Printf(
+								TEXT("require: \"%s\" names no package, but the place stores one called %s (package names are case-sensitive); did you mean \"@%s/%s\"? Write it in package %s's dependencies the same way."),
+								*Request, *Mounted, *Mounted, *Path.Mid(Slash + 1), *FromPackage);
+							return nullptr;
+						}
+					}
+				}
+				// #134: a package listed this one as a dependency but the place has not mounted it.
+				if (!FromPackage.IsEmpty() && MantleRequireListsDependency(Entries, FromPackage, Name))
+				{
+					OutError = FString::Printf(
+						TEXT("require: package %s depends on %s, but this place does not store a script package named %s. Add %s to the place's storage (the storage name must be exactly %s), or remove it from %s's dependencies."),
+						*FromPackage, *Name, *Name, *Name, *Name, *FromPackage);
+					return nullptr;
+				}
 			}
 		}
 	}
 
 	if (!AliasPackage.IsEmpty())
 	{
-		if (!FromPackage.IsEmpty() && !AliasPackage.Equals(FromPackage, ESearchCase::CaseSensitive))
+		// #134: another package's Shared/ is reachable only from a package that lists it under "dependencies".
+		if (!FromPackage.IsEmpty() && !AliasPackage.Equals(FromPackage, ESearchCase::CaseSensitive)
+			&& !MantleRequireListsDependency(Entries, FromPackage, AliasPackage))
 		{
 			OutError = FString::Printf(
-				TEXT("require: \"%s\" is another package's module; a package can only require its own files. Packages talk to each other through Events, State and Net."),
-				*Request);
+				TEXT("require: \"%s\" is another package's module, and package %s does not list %s as a dependency. Add \"dependencies\": [\"%s\"] to %s's package.json, or let the two packages talk through Events, State and Net."),
+				*Request, *FromPackage, *AliasPackage, *AliasPackage, *FromPackage);
 			return nullptr;
 		}
 		// Only the package's Shared/ folder is reachable this way: it is all a client and a server both receive.

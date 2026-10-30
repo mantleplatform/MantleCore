@@ -341,6 +341,30 @@ namespace MantlePlaceStoragePrivate
 		return false;
 	}
 
+	/** #134: the manifest's "dependencies", read leniently: texts that are storage names, unique ignoring case, at most the cap; anything else is left out. */
+	void ReadDependencyList(const TSharedPtr<FJsonObject>& Object, TArray<FString>& Out)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Names = nullptr;
+		if (!Object->TryGetArrayField(TEXT("dependencies"), Names) || !Names)
+		{
+			return;
+		}
+		for (const TSharedPtr<FJsonValue>& Value : *Names)
+		{
+			FString Name;
+			if (Out.Num() >= FMantlePlaceLimits::MaxScriptPackageDependencies)
+			{
+				break;
+			}
+			if (!Value.IsValid() || !Value->TryGetString(Name) || !FMantlePlaceLimits::IsStorageName(Name)
+				|| Out.ContainsByPredicate([&Name](const FString& Earlier) { return Earlier.Equals(Name, ESearchCase::IgnoreCase); }))
+			{
+				continue;
+			}
+			Out.Add(MoveTemp(Name));
+		}
+	}
+
 	/**
 	 * One option list of a manifest: "parameters" or "settings", the same shape. See ReadScriptPackageManifest for
 	 * the lenient rules.
@@ -907,6 +931,7 @@ FMantleScriptPackageManifest FMantleStorage::ReadScriptPackageManifest(const TSh
 	}
 	Object->TryGetStringField(TEXT("name"), Manifest.Name);
 	Object->TryGetStringField(TEXT("description"), Manifest.Description);
+	MantlePlaceStoragePrivate::ReadDependencyList(Object, Manifest.Dependencies);
 	MantlePlaceStoragePrivate::ReadOptionList(Object, TEXT("parameters"), FMantlePlaceLimits::MaxScriptPointParameters, Manifest.Parameters);
 	MantlePlaceStoragePrivate::ReadOptionList(Object, TEXT("settings"), FMantlePlaceLimits::MaxStorageSettings, Manifest.Settings);
 	return Manifest;

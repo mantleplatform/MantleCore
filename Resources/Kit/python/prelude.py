@@ -53,3 +53,39 @@ def _entity_observe_attribute(self, name, fn):
 
 
 __mantle_extend("Entity", "observe_attribute", _entity_observe_attribute)
+
+
+def _export_function(package, name):
+    def _call(*args):
+        r = Exports.call(package, name, *args)
+        if r is None:
+            return None
+        if r[0]:
+            return r[1]
+        raise RuntimeError(r[1])
+
+    return _call
+
+
+def _export_table(package):
+    # The package lives in the closure, not on the object, so no export name can clash with it. An export whose name Python
+    # resolves itself (a dunder) is reached as table["name"]. PocketPy does not call __setattr__, so unlike Luau and JS a write
+    # to the table just sets an attribute on that one object; it never reaches the package's exports.
+    class _ExportTable:
+        def __getattr__(self, name):
+            return _export_function(package, name)
+
+        def __getitem__(self, name):
+            return _export_function(package, name)
+
+    return _ExportTable()
+
+
+def _exports_get(self, package):
+    if not isinstance(package, str):
+        raise TypeError("Exports.get: argument 1 (package) must be a string")
+    return _export_table(package)
+
+
+__mantle_extend("Exports", "get", _exports_get)
+__mantle_extend("Exports", "get_place", lambda self: _export_table(""))

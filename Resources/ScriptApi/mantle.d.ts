@@ -288,7 +288,7 @@ interface Player {
 	releaseCrouch(): boolean;
 	/** Give the player a fresh character with full health right now, alive or dead: at position when given, otherwise at the spawn point the place's respawn mode picks. The old character (or a corpse waiting for its respawn) is removed. Returns false when the player is driving a vehicle (eject them first) or cannot be spawned. (server only) */
 	respawn(position?: Vector3 | undefined): boolean;
-	/** Hurt the character through the same path weapons use, so the game's damage rules apply: friendly fire, Armor, then Shield, then health. source is the player to credit: if this hit kills, Died names them as the killer. damageType tags the hit for Damaged and Died ("Generic" when left out); use a built-in such as "Bullet", "Melee", "Explosion", "Fall", "Vehicle" or "Area", or any word of your own up to 32 characters, such as "Poison". Returns false when the player has no character on foot (respawning or driving), is already dead, or nothing got through (friendly fire off, or Armor 100). (server only) */
+	/** Hurt the character through the same path weapons use, so the game's damage rules apply: friendly fire, Armor, then Shield, then health. source is the player to credit: if this hit kills, Died names them as the killer. damageType tags the hit for Damaged and Died ("Generic" when left out); use a built-in such as "Bullet", "Melee", "Explosion", "Fall", "Vehicle", "Area", "Magic" or "Drown", or any word of your own up to 32 characters, such as "Poison". Returns false when the player has no character on foot (respawning or driving), is already dead, or nothing got through (friendly fire off, or Armor 100). (server only) */
 	takeDamage(amount: number, source?: Player | undefined, damageType?: string | undefined): boolean;
 	/** Move the player's character instantly. Always lands exactly at position, even inside solid geometry; returns false only when the player has no character to move right now. (server only) */
 	teleport(position: Vector3): boolean;
@@ -553,7 +553,7 @@ interface CameraService {
 	reset(): void;
 	/** Hold the camera still at position, looking at lookAt (Mode becomes "Fixed"). The player still moves their character. Set Mode to "Default" or call Reset to give the camera back. (client only) */
 	setFixed(position: Vector3, lookAt: Vector3): void;
-	/** Shake the view, fading out over duration seconds. intensity is clamped to 0 to 1 and duration to 0 to 3; a new shake replaces one still running, and 0 stops it. Does nothing when the player turned on Reduced motion. (client only) */
+	/** Shake the view, fading out over duration seconds. intensity is clamped to 0 to 1 and duration to 0 to 3; a new shake replaces one still running, and 0 stops it. Does nothing when the player turned on Reduced motion or turned Camera shake off. (client only) */
 	shake(intensity: number, duration: number): void;
 	/** Move the camera smoothly from where the view is now to position, looking at lookAt, over seconds (0 to 60), then hold it there like SetFixed. Mode is "Fixed" from the start. style and direction ease it as they do Entity:Tween (Linear and Out unless given). Returns a signal that fires once when the camera arrives; it never fires if SetFixed, TweenFixed, Follow, Mode or Reset takes the camera first. (client only) */
 	tweenFixed(position: Vector3, lookAt: Vector3, seconds: number, style?: string | undefined, direction?: string | undefined): Signal;
@@ -724,6 +724,19 @@ interface ExplosionsService {
 	create(position: Vector3, options?: { radius?: number | undefined; damage?: number | undefined; innerRadius?: number | undefined; falloff?: number | undefined; damageType?: string | undefined; attacker?: Player | undefined; impulse?: number | undefined; ragdoll?: boolean | undefined; ragdollSeconds?: number | undefined; lineOfSight?: boolean | undefined; effect?: string | undefined; sound?: boolean | undefined }): number;
 }
 const Explosions: ExplosionsService;
+
+/** Functions a package publishes for other scripts on the same side to call, in any language. A call runs right away and gives back one answer (return a table for more). Exports can't wait. */
+interface ExportsService {
+	/** The functions this package has published: Exports:Get("QBCore").AddMoney(player, "cash", 5). Looked up each time you call, so it keeps working across the package's reloads. Export names are exact. */
+	get(packageName: string): Record<string, (...args: any[]) => any>;
+	/** The functions the place's own scripts have published. */
+	getPlace(): Record<string, (...args: any[]) => any>;
+	/** True when this package has published at least one export (so it is running) and, if you give a name, has published that export. */
+	has(packageName: string, name?: string): boolean;
+	/** Publish a function under this name. It is filed under your own package (the place's own scripts count as the place), so nobody else can set or replace it, and it is removed when your script stops or reloads. Call it from a script that runs by itself, not from a module, before it first waits. */
+	set(name: string, handler: (...args: any[]) => any): void;
+}
+const Exports: ExportsService;
 
 /** Outbound HTTP from server scripts (server only): call your own backend, a webhook, any public web service. Players' games never make these requests. Private and internal addresses are always refused. */
 interface HttpService {

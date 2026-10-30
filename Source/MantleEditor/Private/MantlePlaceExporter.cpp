@@ -5098,6 +5098,14 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				Result.Errors.Add(FMantleParseError{ SettingsPath + TEXT("/") + Issue.Key, Issue.Message });
 			}
 		}
+		// #134: the packages a package depends on must be in the place (a cycle is only a warning in Check this place).
+		for (const FMantleScriptDependencyIssue& Issue : FMantleScriptPackages::CheckPlaceDependencies(LocalPackages, StorageSettings ? StorageSettings->Storage : TArray<FMantleStorageSetting>()))
+		{
+			if (Issue.Problem != EMantleScriptDependencyProblem::Cycle)
+			{
+				Result.Errors.Add(FMantleParseError{ TEXT("/packages/") + Issue.Package, Issue.Message + TEXT(" ") + Issue.Remedy });
+			}
+		}
 		// A package folder not stored yet is stored with no settings on its first publish, which a required setting without a default refuses.
 		for (const FMantleLocalScriptPackage& Package : LocalPackages)
 		{

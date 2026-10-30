@@ -36,6 +36,7 @@ MantlePocketPy_GcSweepStats* MantlePocketPy_GcActiveSweep[MANTLE_POCKETPY_MAX_VM
 MantlePocketPy_InterruptFn MantlePocketPy_Interrupt = 0;
 unsigned long long MantlePocketPy_OpCount[MANTLE_POCKETPY_MAX_VM];
 unsigned long long MantlePocketPy_InstructionCount[MANTLE_POCKETPY_MAX_VM];
+int MantlePocketPy_StopReason[MANTLE_POCKETPY_MAX_VM];
 
 /* Retained for bootstrap and native ownership tests which intentionally have no
  * generation cell. Real script instances use their stable cell directly. */
