@@ -67,7 +67,8 @@
 namespace MantlePlaceAssetConverterPrivate
 {
 	/** Bump this whenever how a conversion is written changes, so stale caches are rebuilt. */
-	const TCHAR* const CacheVersion = TEXT("f5-v19");
+	// v20: meshes have values that are not numbers set to safe ones (#42); v19 caches still held them, and the cook refused those meshes.
+	const TCHAR* const CacheVersion = TEXT("f5-v20");
 
 	const TCHAR* const ConversionRemedy = TEXT("It still publishes. Nothing to do unless it matters to how your place looks.");
 
