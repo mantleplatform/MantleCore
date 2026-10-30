@@ -680,6 +680,14 @@ public:
 	static bool ReadStaticMesh(const UStaticMesh* Mesh, int32 LODIndex, FMantleGlbMesh& OutMesh, TArray<int32>& OutSlots, int32& OutTriangles, FString& OutError);
 
 	/**
+	 * The vertices of render LOD LODIndex of Mesh that ReadStaticMesh finds a position or a texture coordinate (UV set 0 or 1) that
+	 * is not a number in, and sets (the texture coordinates) or refuses (the positions). Read from the render buffers without
+	 * copying them. Normals and tangents are not counted: a render buffer stores them packed, so they are always numbers. All
+	 * zero when the LOD has no CPU copy.
+	 */
+	static FMantleGlbNonFinite CountNonFiniteStaticMesh(const UStaticMesh* Mesh, int32 LODIndex);
+
+	/**
 	 * #628: Glb's per-vertex arrays (positions, normals, tangents, UVs, UV1s, colours; any that are empty stay empty)
 	 * rebuilt so each of Sections has its own vertices, and one primitive per section, in Sections' order, appended to
 	 * Glb.Primitives: a vertex two sections use is written once for each, and each section's indices are renumbered into

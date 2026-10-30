@@ -4231,6 +4231,8 @@ void FMantlePlaceAssets::CheckMesh(const UStaticMesh* Mesh, const FString& UsedB
 	int32 Triangles = Counted.Triangles;
 	int32 Vertices = Counted.Vertices;
 	const TArray<int32>& Slots = Counted.Slots;
+	const UStaticMesh* Published = Mesh;
+	int32 PublishedFrom = 0;
 
 	// #804: over a limit, the mesh publishes from a smaller version of itself where it can (the creator's mesh is untouched).
 	// When it cannot be reduced, the plain reason (needing Allow CPU Access, say) goes on the error below.
@@ -4261,6 +4263,7 @@ void FMantlePlaceAssets::CheckMesh(const UStaticMesh* Mesh, const FString& UsedB
 				TEXT("Nothing to do: your mesh is unchanged. To publish a more detailed version, make a LOD 0 that fits the limit in the mesh editor.") });
 			Triangles = Smaller.Triangles;
 			Vertices = Smaller.Vertices;
+			PublishedFrom = PublishedLOD;
 		}
 		else
 		{
@@ -4274,6 +4277,8 @@ void FMantlePlaceAssets::CheckMesh(const UStaticMesh* Mesh, const FString& UsedB
 					TEXT("Nothing to do. If the reduced mesh looks too rough, make a LOD that fits the limit in the mesh editor and Mantle publishes that instead.") });
 				Triangles = Smaller.Triangles;
 				Vertices = Smaller.Vertices;
+				Published = Reduced;
+				PublishedFrom = 0;
 			}
 			else
 			{
@@ -4285,6 +4290,21 @@ void FMantlePlaceAssets::CheckMesh(const UStaticMesh* Mesh, const FString& UsedB
 	}
 	// What the creator can try when Mantle could not shrink the mesh itself.
 	const FString ReduceNote = ReduceFailure.IsEmpty() ? FString() : FString::Printf(TEXT(" Mantle couldn't reduce it automatically: %s."), *ReduceFailure);
+
+	// What the export sets or refuses rather than writes: the server rejects a value that is not a number.
+	const FMantleGlbNonFinite NonFinite = FMantleCosmeticExport::CountNonFiniteStaticMesh(Published, PublishedFrom);
+	if (NonFinite.Positions > 0)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, FString(),
+			FString::Printf(TEXT("%s has %d vertex positions that are not numbers, so it cannot be published."), *Subject, NonFinite.Positions),
+			TEXT("Fix or delete those vertices in a modelling tool and re-import the mesh.") });
+	}
+	if (NonFinite.TexCoords > 0)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("%s had %d texture coordinates that were not numbers; they were set to 0."), *Subject, NonFinite.TexCoords),
+			TEXT("Nothing to do: your mesh is unchanged. Textures near those vertices may look stretched; fix the UVs in a modelling tool to correct that.") });
+	}
 
 	if (Mesh->IsNaniteEnabled())
 	{

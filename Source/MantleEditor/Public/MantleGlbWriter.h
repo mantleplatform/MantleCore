@@ -123,6 +123,27 @@ struct MANTLEEDITOR_API FMantleGlbStaticExtras
 };
 
 /**
+ * How many vertices had a value that was not a finite number (NaN or infinity), by stream: what
+ * FMantleGlbWriter::SanitiseNonFinite found. The cook refuses such a mesh (backend cook readFiniteFloats).
+ */
+struct MANTLEEDITOR_API FMantleGlbNonFinite
+{
+	/** Vertices with a bad component in either UV set; set to (0, 0). */
+	int32 TexCoords = 0;
+
+	/** Vertices with a bad normal; set to straight up. */
+	int32 Normals = 0;
+
+	/** Vertices with a bad tangent; set to a direction at right angles to the normal. */
+	int32 Tangents = 0;
+
+	/** Vertices with a bad position: counted, not repaired (there is no right place to put them). */
+	int32 Positions = 0;
+
+	bool Any() const { return TexCoords > 0 || Normals > 0 || Tangents > 0 || Positions > 0; }
+};
+
+/**
  * Writes the plugin's uploads as binary glTF (A2.4 #283), for the cook worker's readers
  * (backend/internal/cook/gltf.go and gltfskin.go).
  *
@@ -173,6 +194,13 @@ public:
 	 * extras write exactly what WriteLODs writes.
 	 */
 	static bool WriteStatic(TConstArrayView<FMantleGlbMesh> LODs, const FMantleGlbStaticExtras& Extras, TArray<uint8>& OutBytes, FString& OutError);
+
+	/**
+	 * Replaces every value in Mesh the cook would refuse as not a number: a texture coordinate (either set) becomes
+	 * (0, 0), a normal (0, 0, 1), a tangent a unit direction at right angles to the normal with w 1. A position cannot be
+	 * repaired, so it is only counted. Returns what was found.
+	 */
+	static FMantleGlbNonFinite SanitiseNonFinite(FMantleGlbMesh& Mesh);
 
 	/** The extension that carries a static mesh's screen sizes and simple collision (backend cook.StaticMeshExtension). */
 	static const TCHAR* StaticMeshExtension;
