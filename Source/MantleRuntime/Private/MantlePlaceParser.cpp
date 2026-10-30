@@ -3417,7 +3417,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			{ TEXT("maxPlayers"), TEXT("gravity"), TEXT("skybox"), TEXT("ambientLight"),
 			  TEXT("respawnMode"), TEXT("streamingDistance"), TEXT("allowCommunityServers"),
 			  TEXT("allowPrivateServers"), TEXT("avatarHeight"), TEXT("environment"), TEXT("carjacking"), TEXT("water"),
-			  TEXT("maxCarriedTools"), TEXT("allowToolSwap") },
+			  TEXT("maxCarriedTools"), TEXT("allowToolSwap"), TEXT("killZ"), TEXT("boundary") },
 			TEXT("/settings"));
 
 		double MaxPlayers = Place.Settings.MaxPlayers;
@@ -3465,6 +3465,56 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			}
 		}
 		ReadStrictOptionalBool(Ctx, *SettingsObj, TEXT("allowToolSwap"), TEXT("/settings"), Place.Settings.bAllowToolSwap);
+		// #5: the kill floor's height in cm, any finite number; absent means the game mode works it out from the built place.
+		if (const TSharedPtr<FJsonValue> KillZ = (*SettingsObj)->TryGetField(TEXT("killZ")))
+		{
+			if (KillZ->Type != EJson::Number || !FMath::IsFinite(KillZ->AsNumber()))
+			{
+				Ctx.Fail(TEXT("/settings/killZ"), TEXT("must be a number"));
+			}
+			else
+			{
+				Place.Settings.KillZ = KillZ->AsNumber();
+			}
+		}
+		// #5: the map boundary, a box in cm; every side required, min below max.
+		if (const TSharedPtr<FJsonValue> BoundaryValue = (*SettingsObj)->TryGetField(TEXT("boundary")))
+		{
+			const TSharedPtr<FJsonObject>* BoundaryObj = nullptr;
+			if (!BoundaryValue->TryGetObject(BoundaryObj))
+			{
+				Ctx.Fail(TEXT("/settings/boundary"), TEXT("expected an object"));
+			}
+			else
+			{
+				RequireNoUnknownKeys(Ctx, *BoundaryObj, { TEXT("minX"), TEXT("maxX"), TEXT("minY"), TEXT("maxY") }, TEXT("/settings/boundary"));
+				FMantleMapBoundary Box;
+				bool bAllSides = true;
+				const auto ReadSide = [&](const TCHAR* Key, double& Out)
+				{
+					const TSharedPtr<FJsonValue> Side = (*BoundaryObj)->TryGetField(Key);
+					if (!Side.IsValid() || Side->Type != EJson::Number || !FMath::IsFinite(Side->AsNumber()))
+					{
+						Ctx.Fail(FString(TEXT("/settings/boundary/")) + Key, TEXT("required number is missing"));
+						bAllSides = false;
+						return;
+					}
+					Out = Side->AsNumber();
+				};
+				ReadSide(TEXT("minX"), Box.MinX);
+				ReadSide(TEXT("maxX"), Box.MaxX);
+				ReadSide(TEXT("minY"), Box.MinY);
+				ReadSide(TEXT("maxY"), Box.MaxY);
+				if (bAllSides && (Box.MinX >= Box.MaxX || Box.MinY >= Box.MaxY))
+				{
+					Ctx.Fail(TEXT("/settings/boundary"), TEXT("each min must be below its max"));
+				}
+				else if (bAllSides)
+				{
+					Place.Settings.Boundary = Box;
+				}
+			}
+		}
 		ReadEnvironmentSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Environment);
 		ReadWaterZone(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Water);
 
