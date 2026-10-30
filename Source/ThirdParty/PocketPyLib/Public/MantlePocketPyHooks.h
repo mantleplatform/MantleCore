@@ -300,6 +300,9 @@ typedef int (*MantlePocketPy_InterruptFn)(void); /* returns 0 to fault (over bud
 extern POCKETPY_HOOKS_API MantlePocketPy_InterruptFn MantlePocketPy_Interrupt;
 extern POCKETPY_HOOKS_API unsigned long long MantlePocketPy_OpCount[MANTLE_POCKETPY_MAX_VM]; /* opcodes since the last hook poll; wraps at the period */
 extern POCKETPY_HOOKS_API unsigned long long MantlePocketPy_InstructionCount[MANTLE_POCKETPY_MAX_VM]; /* the actual budget accumulator */
+/* Why the interpreter stopped a script on its own, for the host to report at the outermost resume: 0 none, 1 instruction budget,
+ * 2 wall-clock watchdog, 3 CPU clock. The stop travels as a nested terminal (no Python exception), so `except` cannot catch it. */
+extern POCKETPY_HOOKS_API int MantlePocketPy_StopReason[MANTLE_POCKETPY_MAX_VM];
 /* ---- END MANTLE PATCH ---- */
 
 /* ---- S1.16 (#132): per-INSTANCE memory accounting, on top of the per-VM accounting above.

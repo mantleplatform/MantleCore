@@ -23621,7 +23621,9 @@ __NEXT_STEP:
     if(++MantlePocketPy_OpCount[MantlePocketPy_CurrentVm] >= MANTLE_POCKETPY_INTERRUPT_PERIOD) {
         MantlePocketPy_OpCount[MantlePocketPy_CurrentVm] = 0;
         if(MantlePocketPy_Interrupt && !MantlePocketPy_Interrupt()) {
-            RuntimeError("script exhausted its instruction budget. Break long loops up with task.wait().");
+            /* A budget stop is a nested terminal, not a RuntimeError: a script's `except` cannot swallow it, so it cannot
+             * loop forever around a catch. The hook has recorded the reason; the host reports it at the outermost resume. */
+            py_mantle_latch_nested_terminal();
             goto __ERROR;
         }
     }
@@ -23645,7 +23647,8 @@ __NEXT_STEP:
     if(self->watchdog_info.max_reset_time > 0) {
         if(py_debugger_status() == 0 && clock() > self->watchdog_info.max_reset_time) {
             self->watchdog_info.max_reset_time = 0;
-            TimeoutError("watchdog timeout");
+            MantlePocketPy_StopReason[MantlePocketPy_CurrentVm] = 2;
+            py_mantle_latch_nested_terminal();
             goto __ERROR;
         }
     }
