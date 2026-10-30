@@ -1180,6 +1180,21 @@ bool FMantleEnvironmentInteriorExportTest::RunTest(const FString& Parameters)
 	FMantleCoverage OutdoorCoverage;
 	FMantleEnvironmentExport::Apply(Test.World, IdByActor, Outdoor, OutdoorCoverage);
 	TestFalse(TEXT("a level with its own sky is outdoors"), Outdoor.Settings.Environment.bNoOutdoors);
+
+	// A sky Blueprint holds its sky light as a component on an ordinary actor: that is an outdoor environment too.
+	Atmosphere->Destroy();
+	AActor* SkyBlueprint = Test.Spawn<AActor>(TEXT("SkyBlueprint"));
+	if (!TestNotNull(TEXT("a Blueprint-style actor"), SkyBlueprint))
+	{
+		return false;
+	}
+	USkyLightComponent* SkyPart = NewObject<USkyLightComponent>(SkyBlueprint, TEXT("SkyLightPart"));
+	SkyBlueprint->SetRootComponent(SkyPart);
+	SkyPart->RegisterComponent();
+	FMantlePlace ComponentSky;
+	FMantleCoverage ComponentCoverage;
+	FMantleEnvironmentExport::Apply(Test.World, IdByActor, ComponentSky, ComponentCoverage);
+	TestFalse(TEXT("a sky light inside a Blueprint actor makes the level outdoors"), ComponentSky.Settings.Environment.bNoOutdoors);
 	TestFalse(TEXT("and a default threshold is not carried"), Outdoor.Settings.Environment.BloomThreshold.IsSet());
 	return true;
 }

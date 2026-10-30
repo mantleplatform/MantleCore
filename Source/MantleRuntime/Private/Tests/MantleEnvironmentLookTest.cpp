@@ -317,6 +317,25 @@ bool FMantleEnvironmentInteriorTest::RunTest(const FString& Parameters)
 		}
 		FMantleBuildResult Result;
 		FMantleEnvironment::Apply(World, Place, Result);
+		// Without a sun or sky nothing is bound, and every subsystem path that reads them copes: the clock still runs, the
+		// sun gives no light, no sky weather is driven, and a tick is a no-op.
+		if (UMantleEnvironmentSubsystem* Subsystem = World->GetSubsystem<UMantleEnvironmentSubsystem>())
+		{
+			if (Place.Settings.Environment.bNoOutdoors)
+			{
+				TestTrue(TEXT("an interior is marked"), Subsystem->IsInterior());
+				TestEqual(TEXT("it has no sun to give light"), Subsystem->GetSunIntensity(), 0.0f);
+				TestFalse(TEXT("no sky weather is driven"), Subsystem->HasWeatherSky());
+				TestFalse(TEXT("and no night sky"), Subsystem->HasNightSky());
+				TestFalse(TEXT("so the subsystem has nothing to tick"), Subsystem->IsTickable());
+				TestEqual(TEXT("its natural weather is held at Clear"), static_cast<int32>(Subsystem->GetWeather().State), static_cast<int32>(EMantleWeatherState::Clear));
+				Subsystem->Tick(0.016f);
+			}
+			else
+			{
+				TestFalse(TEXT("an outdoor place is not an interior"), Subsystem->IsInterior());
+			}
+		}
 		OutSuns = 0;
 		OutOthers = 0;
 		for (TActorIterator<AActor> It(World); It; ++It)

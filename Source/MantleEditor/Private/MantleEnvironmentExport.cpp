@@ -637,6 +637,14 @@ namespace MantleEnvironmentExportPrivate
 				"set Direct Sun to Always in Mantle Place Settings to keep it."), Points.Num()));
 	}
 
+	/** True when the actor owns a sky light, atmosphere, clouds, height fog or directional light as a component (a sky Blueprint). */
+	bool OwnsSkyComponent(const AActor* Actor)
+	{
+		return Actor->FindComponentByClass<USkyLightComponent>() || Actor->FindComponentByClass<USkyAtmosphereComponent>()
+			|| Actor->FindComponentByClass<UVolumetricCloudComponent>() || Actor->FindComponentByClass<UExponentialHeightFogComponent>()
+			|| Actor->FindComponentByClass<UDirectionalLightComponent>();
+	}
+
 	/**
 	 * Whether the place has an outdoor environment (the place file's settings.environment.outdoors): a level with no sun, sky
 	 * light, atmosphere, clouds or fog of its own is an interior, lit only by its own lights, and publishes as one so the client
@@ -1425,6 +1433,9 @@ void FMantleEnvironmentExport::Apply(UWorld* World, const TMap<const AActor*, FS
 	TArray<const AVolumetricCloud*> Clouds;
 	TArray<const AExponentialHeightFog*> Fogs;
 	TArray<const APostProcessVolume*> Volumes;
+	// A sky built as a Blueprint (Ultra Dynamic Sky, an HDRI backdrop, a sky BP with its own sun) holds its parts as components
+	// on one actor, not as sky actors: it still gives the level an outdoor environment.
+	bool bSkyComponents = false;
 	if (World)
 	{
 		for (TActorIterator<AActor> It(World); It; ++It)
@@ -1434,6 +1445,7 @@ void FMantleEnvironmentExport::Apply(UWorld* World, const TMap<const AActor*, FS
 			{
 				continue;
 			}
+			bSkyComponents = bSkyComponents || OwnsSkyComponent(Actor);
 			if (const ASkyAtmosphere* Atmosphere = Cast<ASkyAtmosphere>(Actor))
 			{
 				Atmospheres.Add(Atmosphere);
@@ -1463,7 +1475,8 @@ void FMantleEnvironmentExport::Apply(UWorld* World, const TMap<const AActor*, FS
 
 	MapSun(IdByActor, Place, Coverage, bReadsEnvironment);
 	// A post-process volume alone is no outdoor environment: it carries the look, not a sky.
-	MapOutdoors(World, bHasSun || Atmospheres.Num() > 0 || SkyLights.Num() > 0 || Clouds.Num() > 0 || Fogs.Num() > 0, Place, Coverage, bReadsLighting);
+	MapOutdoors(World, bHasSun || bSkyComponents || Atmospheres.Num() > 0 || SkyLights.Num() > 0 || Clouds.Num() > 0 || Fogs.Num() > 0,
+		Place, Coverage, bReadsLighting);
 	MapDirectSun(World, IdByActor, Place, Coverage, bReadsLighting);
 	MapPostProcess(Volumes, Environment, Coverage, bReadsEnvironment, bHasEnvironment, FMantleExposureProject::Current());
 
