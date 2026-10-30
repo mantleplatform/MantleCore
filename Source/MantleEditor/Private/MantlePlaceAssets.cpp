@@ -3537,10 +3537,11 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		}
 
 		// A fog or light-shaft card: unlit, see-through (translucent, additive or modulate) and faded by scene depth. The bake sees the
-		// fade's near end, so it would publish as one hard see-through sheet; the mesh is left out. A lit one is water or a cloud card, below.
+		// fade's near end, so it would publish as one hard see-through sheet; the mesh is left out. The fade reaches Opacity (which additive
+		// and modulate use too) or, for those two, Emissive Color. A lit one is water or a cloud card, below.
 		if (bCarries && Out.UnpublishableWhy.IsEmpty() && Models.HasOnlyShadingModel(MSM_Unlit)
 			&& (Blend == BLEND_Translucent || Blend == BLEND_Additive || Blend == BLEND_Modulate)
-			&& FMantleWaterMaterial::FadesByDepth(Blend == BLEND_Translucent ? Roots.Opacity : Roots.Emissive))
+			&& (FMantleWaterMaterial::FadesByDepth(Roots.Opacity) || (Blend != BLEND_Translucent && FMantleWaterMaterial::FadesByDepth(Roots.Emissive))))
 		{
 			Out.UnpublishableWhy = TEXT("is a soft fog or light card (unlit, see-through, faded by scene depth), which would publish as a hard see-through sheet");
 		}
