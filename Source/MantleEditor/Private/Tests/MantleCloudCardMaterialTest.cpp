@@ -115,6 +115,49 @@ bool FMantleVolumeFogMaterialTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleFogCardMaterialTest,
+	"Mantle.Editor.Material.UnlitFogCardIsUnpublishable",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleFogCardMaterialTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCloudCardMaterialTestPrivate;
+
+	// MM_Fog's shape: unlit additive, a Depth Fade into the emissive.
+	UMaterial* Fog = NewObject<UMaterial>(GetTransientPackage());
+	Fog->SetShadingModel(MSM_Unlit);
+	Fog->BlendMode = BLEND_Additive;
+	UMaterialExpressionDepthFade* Fade = AddNode<UMaterialExpressionDepthFade>(Fog);
+	Fade->InOpacity.Connect(0, AddNumber(Fog, 0.5f));
+	Fade->FadeDistance.Connect(0, AddNumber(Fog, 300.0f));
+	UMaterialExpressionMultiply* Glow = AddNode<UMaterialExpressionMultiply>(Fog);
+	Glow->A.Connect(0, Fade);
+	Glow->B.Connect(0, AddNumber(Fog, 2.0f));
+	Fog->GetEditorOnlyData()->EmissiveColor.Connect(0, Glow);
+	FString Why;
+	TestTrue(TEXT("an unlit additive depth-faded card is left out"), FMantlePlaceAssets::UnpublishableMaterialWhy(Fog, Why));
+	TestTrue(TEXT("and says it is a soft fog or light card"), Why.Contains(TEXT("fog or light card")));
+
+	// A light shaft: unlit translucent, a Depth Fade into the opacity.
+	UMaterial* Shaft = NewObject<UMaterial>(GetTransientPackage());
+	Shaft->SetShadingModel(MSM_Unlit);
+	Shaft->BlendMode = BLEND_Translucent;
+	UMaterialExpressionDepthFade* ShaftFade = AddNode<UMaterialExpressionDepthFade>(Shaft);
+	ShaftFade->InOpacity.Connect(0, AddNumber(Shaft, 0.5f));
+	ShaftFade->FadeDistance.Connect(0, AddNumber(Shaft, 300.0f));
+	Shaft->GetEditorOnlyData()->Opacity.Connect(0, ShaftFade);
+	TestTrue(TEXT("an unlit translucent depth-faded card is left out"), FMantlePlaceAssets::UnpublishableMaterialWhy(Shaft, Why));
+
+	// A glass sign: unlit translucent with no depth fade publishes.
+	UMaterial* Sign = NewObject<UMaterial>(GetTransientPackage());
+	Sign->SetShadingModel(MSM_Unlit);
+	Sign->BlendMode = BLEND_Translucent;
+	Sign->GetEditorOnlyData()->Opacity.Connect(0, AddNumber(Sign, 0.4f));
+	TestFalse(TEXT("an unlit translucent material with no depth fade publishes"), FMantlePlaceAssets::UnpublishableMaterialWhy(Sign, Why));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleCloudCardActorSkipTest,
 	"Mantle.Editor.Material.CloudCardActorIsSkippedAndSaid",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

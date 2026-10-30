@@ -147,6 +147,9 @@ struct MANTLEEDITOR_API FMantleWaterMaterial
 	 */
 	static bool Recognise(const UMaterialInterface* Context, const FExpressionInput* Opacity, const FExpressionInput* BaseColor, const FExpressionInput* Normal, FMantleWaterBake& Out);
 
+	/** Whether Input's graph reaches a Depth Fade node, a Scene Depth node or a depth fade function (a fade by what is behind the surface). */
+	static bool FadesByDepth(const FExpressionInput* Input);
+
 	/**
 	 * Out.bFound for a material whose shading model is Single Layer Water (GhzGarage/mantle#818): it is water already, so there is no
 	 * fade to find; opacity is 1 and the water publishes opaque with the water key. BaseColor and Normal (either may be null: a material

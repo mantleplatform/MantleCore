@@ -3536,6 +3536,15 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 			}
 		}
 
+		// A fog or light-shaft card: unlit, see-through (translucent, additive or modulate) and faded by scene depth. The bake sees the
+		// fade's near end, so it would publish as one hard see-through sheet; the mesh is left out. A lit one is water or a cloud card, below.
+		if (bCarries && Out.UnpublishableWhy.IsEmpty() && Models.HasOnlyShadingModel(MSM_Unlit)
+			&& (Blend == BLEND_Translucent || Blend == BLEND_Additive || Blend == BLEND_Modulate)
+			&& FMantleWaterMaterial::FadesByDepth(Blend == BLEND_Translucent ? Roots.Opacity : Roots.Emissive))
+		{
+			Out.UnpublishableWhy = TEXT("is a soft fog or light card (unlit, see-through, faded by scene depth), which would publish as a hard see-through sheet");
+		}
+
 		// #628: a depth-faded translucent material (water): the bake sees the fade's near end and writes opacity 0, so its
 		// opacity (and deep colour, when the graph gives one) is carried as constants read at the far end.
 		// GhzGarage/mantle#818: a Single Layer Water material (a Water plugin body's) is water already, before any fade is looked for.
