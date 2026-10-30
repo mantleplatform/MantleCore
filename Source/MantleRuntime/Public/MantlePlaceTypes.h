@@ -763,9 +763,17 @@ struct FMantleScriptPackageManifest
 {
 	FString Name;
 	FString Description;
+	/** #134: the storage names of the script packages this one may require("@Name/...") from; at most FMantlePlaceLimits::MaxScriptPackageDependencies. */
+	TArray<FString> Dependencies;
 	TArray<FMantleScriptPackageParameter> Parameters;
 	/** Stage 6: the package-wide settings its storage entry may set, at most FMantlePlaceLimits::MaxStorageSettings. */
 	TArray<FMantleScriptPackageParameter> Settings;
+
+	/** True when PackageName (case-sensitive, as storage names are compared) is one of Dependencies. */
+	bool DependsOn(const FString& PackageName) const
+	{
+		return Dependencies.ContainsByPredicate([&PackageName](const FString& Dependency) { return Dependency.Equals(PackageName, ESearchCase::CaseSensitive); });
+	}
 
 	/** The declared parameter named exactly Name (case-sensitive), or null. */
 	const FMantleScriptPackageParameter* FindParameter(const FString& ParameterName) const

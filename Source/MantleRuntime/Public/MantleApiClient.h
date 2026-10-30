@@ -172,6 +172,8 @@ struct FMantleLibraryScriptManifest
 {
 	FString Name;
 	FString Description;
+	/** #134: storage names of the packages this one depends on. */
+	TArray<FString> Dependencies;
 	TArray<FMantleLibraryScriptParameter> Parameters;
 	TArray<FMantleLibraryScriptParameter> Settings;
 };

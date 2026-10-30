@@ -691,6 +691,23 @@ class _ExplosionsService:
 
 Explosions: _ExplosionsService
 
+class _ExportsService:
+    """Functions a package publishes for other scripts on the same side to call, in any language. A call runs right away and gives back one answer (return a table for more). Exports can't wait."""
+    def get(self, packageName: str, /) -> Any:
+        """The functions this package has published: Exports:Get('QBCore').AddMoney(player, 'cash', 5). Looked up each time you call, so it keeps working across the package's reloads. Export names are exact."""
+        ...
+    def get_place(self) -> Any:
+        """The functions the place's own scripts have published."""
+        ...
+    def has(self, packageName: str, name: str = ..., /) -> bool:
+        """True when this package has published at least one export (so it is running) and, if you give a name, has published that export."""
+        ...
+    def set(self, name: str, handler: Callable[..., Any], /) -> None:
+        """Publish a function under this name. It is filed under your own package (the place's own scripts count as the place), so nobody else can set or replace it, and it is removed when your script stops or reloads. Call it from a script that runs by itself, not from a module, before it first waits."""
+        ...
+
+Exports: _ExportsService
+
 class _HttpService:
     """Outbound HTTP from server scripts (server only): call your own backend, a webhook, any public web service. Players' games never make these requests. Private and internal addresses are always refused."""
     def is_available(self) -> bool:

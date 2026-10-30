@@ -199,6 +199,9 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** A ScriptPoint's parameters (#838): at most this many keys. */
 	static constexpr int32 MaxScriptPointParameters = 16;
 
+	/** A script package manifest's dependencies (#134): at most this many storage names, unique ignoring letter case. */
+	static constexpr int32 MaxScriptPackageDependencies = 16;
+
 	/** A ScriptPoint parameter key's length (#838): a letter, then up to 31 more. IsScriptPointParameterName implements it. */
 	static constexpr int32 MaxScriptPointParameterNameLength = 32;
 
