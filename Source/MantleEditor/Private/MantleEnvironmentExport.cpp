@@ -637,6 +637,12 @@ namespace MantleEnvironmentExportPrivate
 				"set Direct Sun to Always in Mantle Place Settings to keep it."), Points.Num()));
 	}
 
+	/** True for a live, non-transient actor that is not Mantle's own default sky: one the environment export may count. */
+	bool IsEnvironmentCandidate(const AActor* Actor)
+	{
+		return Actor && IsValid(Actor) && !Actor->HasAnyFlags(RF_Transient) && !Actor->ActorHasTag(FName(FMantleEnvironment::EnvironmentActorTag));
+	}
+
 	/** True when the actor owns a sky light, atmosphere, clouds, height fog or directional light as a component (a sky Blueprint). */
 	bool OwnsSkyComponent(const AActor* Actor)
 	{
@@ -967,7 +973,7 @@ namespace MantleEnvironmentExportPrivate
 
 bool FMantleEnvironmentExport::IsReported(const AActor* Actor)
 {
-	if (!Actor || !IsValid(Actor) || Actor->HasAnyFlags(RF_Transient) || Actor->ActorHasTag(FName(FMantleEnvironment::EnvironmentActorTag)))
+	if (!MantleEnvironmentExportPrivate::IsEnvironmentCandidate(Actor))
 	{
 		return false;
 	}
@@ -1441,11 +1447,16 @@ void FMantleEnvironmentExport::Apply(UWorld* World, const TMap<const AActor*, FS
 		for (TActorIterator<AActor> It(World); It; ++It)
 		{
 			const AActor* Actor = *It;
+			// A sky Blueprint is an ordinary actor, so IsReported (sky and post-process actor classes only) never passes it:
+			// look at its components first, on any live, non-transient actor that is not Mantle's own default sky.
+			if (IsEnvironmentCandidate(Actor))
+			{
+				bSkyComponents = bSkyComponents || OwnsSkyComponent(Actor);
+			}
 			if (!IsReported(Actor))
 			{
 				continue;
 			}
-			bSkyComponents = bSkyComponents || OwnsSkyComponent(Actor);
 			if (const ASkyAtmosphere* Atmosphere = Cast<ASkyAtmosphere>(Actor))
 			{
 				Atmospheres.Add(Atmosphere);
