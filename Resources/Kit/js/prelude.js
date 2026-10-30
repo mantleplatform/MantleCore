@@ -46,8 +46,13 @@ extend("State", "observe", function (key, fn) {
 function exportTable(pkg) {
 	const cache = new Map();
 	return new Proxy({}, {
-		get(_, name) {
-			if (typeof name !== "string" || name === "then") return undefined; // never look like a promise
+		get(target, name) {
+			if (typeof name !== "string") return undefined;
+			// Names JavaScript itself probes for (a promise looks for then, JSON for toJSON, string joins for toString) stay
+			// the object's own unless the package really published an export of that name.
+			if ((name === "then" || name === "toJSON" || name === "toString" || name === "valueOf") && !Exports.has(pkg, name)) {
+				return Reflect.get(target, name);
+			}
 			let fn = cache.get(name);
 			if (!fn) {
 				fn = (...args) => Exports.call(pkg, name, ...args);
