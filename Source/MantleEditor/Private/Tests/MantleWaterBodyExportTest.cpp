@@ -734,7 +734,8 @@ bool FMantleSolidWaterMaterialMeshStaysMeshTest::RunTest(const FString& Paramete
 	EMantleEntityType Type = EMantleEntityType::WaterBody;
 	TestTrue(TEXT("it classifies"), FMantlePlaceExporter::ClassifyActor(Bowl, Type));
 	TestEqual(TEXT("as a StaticMesh"), Type, EMantleEntityType::StaticMesh);
-	TestEqual(TEXT("and its mesh is gathered"), FMantlePlaceDependencies::Gather(Fixture.World).Meshes.Num(), 1);
+	// The engine cube is one of Mantle's own shapes, never gathered; its water material is.
+	TestEqual(TEXT("and its material is gathered"), FMantlePlaceDependencies::Gather(Fixture.World).Materials.Num(), 1);
 
 	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
 	TestEqual(TEXT("the place has one static mesh"), CountEntities(Result, EMantleEntityType::StaticMesh), 1);
