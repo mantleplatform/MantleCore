@@ -901,6 +901,12 @@ public:
 	static FString MeshCacheSalt(const FMantlePlaceAssetLimits& Limits, const UStaticMesh& Mesh, int32 FromLOD, const FString& ReducedTag);
 
 	/**
+	 * #149: the part of MeshCacheSalt the mesh's Lumen side file adds: the engine that bakes it and each slot material's blend
+	 * mode and two-sidedness (materials are not in the mesh's package, so they are named here).
+	 */
+	static FString MeshLumenSalt(const UStaticMesh& Mesh);
+
+	/**
 	 * #628: makes a mesh's LOD screen sizes ones the cook accepts, on the export's copy only (never the asset). Values that
 	 * are already valid are kept: LOD0 is limited to 1 (a size above 1 means nothing more than "always"), and each later
 	 * LOD must be finite, above 0 and strictly below the one before. One that is not (a repeat, a rise, 0, NaN) takes half

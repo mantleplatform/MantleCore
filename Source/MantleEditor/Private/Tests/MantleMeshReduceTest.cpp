@@ -368,14 +368,15 @@ bool FMantleMeshReduceFittingMeshTest::RunTest(const FString& Parameters)
 	FMantlePlaceAssets::CheckMesh(Mesh, FString(), Limits, Issues);
 	TestEqual(TEXT("Check says nothing"), Issues.Num(), 0);
 
-	// The cache salt of a mesh that fits adds nothing to the salt the limits alone give.
+	// The cache salt of a mesh that fits adds nothing to the salt the limits and its Lumen data (#149) give.
 	TArray<FString> Caps;
 	for (const int32 Cap : Limits.LODMaxTriangles)
 	{
 		Caps.Add(FString::FromInt(Cap));
 	}
 	const FString Original = FString::Printf(TEXT("mesh lods=%d/%s collision=%d/%d/%d/%d bytes=%lld %s"), Limits.MaxLODs, *FString::Join(Caps, TEXT(",")),
-		Limits.MaxCollisionPrimitives, Limits.MaxConvexHulls, Limits.MaxHullVertices, Limits.MaxTotalHullVertices, Limits.MaxUploadBytes, *Mesh->GetPathName());
+		Limits.MaxCollisionPrimitives, Limits.MaxConvexHulls, Limits.MaxHullVertices, Limits.MaxTotalHullVertices, Limits.MaxUploadBytes, *Mesh->GetPathName())
+		+ FMantlePlaceAssetConverter::MeshLumenSalt(*Mesh);
 	TestEqual(TEXT("the salt of a mesh that fits is unchanged"), FMantlePlaceAssetConverter::MeshCacheSalt(Limits, *Mesh, 0, FString()), Original);
 	TestEqual(TEXT("a mesh published from LOD 2 says so"), FMantlePlaceAssetConverter::MeshCacheSalt(Limits, *Mesh, 2, FString()), Original + TEXT(" fromlod=2"));
 	TestEqual(TEXT("a reduced mesh says so"), FMantlePlaceAssetConverter::MeshCacheSalt(Limits, *Mesh, 0, TEXT("1350/x")), Original + TEXT(" reduced=1350/x"));

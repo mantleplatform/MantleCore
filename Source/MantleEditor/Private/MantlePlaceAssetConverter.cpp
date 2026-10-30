@@ -3015,6 +3015,7 @@ FString FMantlePlaceAssetConverter::MeshCacheSalt(const FMantlePlaceAssetLimits&
 	}
 	FString Salt = FString::Printf(TEXT("mesh lods=%d/%s collision=%d/%d/%d/%d bytes=%lld %s"), Limits.MaxLODs, *FString::Join(LODCaps, TEXT(",")),
 		Limits.MaxCollisionPrimitives, Limits.MaxConvexHulls, Limits.MaxHullVertices, Limits.MaxTotalHullVertices, Limits.MaxUploadBytes, *Mesh.GetPathName());
+	Salt += MeshLumenSalt(Mesh);
 	// #804: only a mesh published from a smaller version of itself says so; one that fits keeps the key it had.
 	if (FromLOD > 0)
 	{
@@ -3024,9 +3025,12 @@ FString FMantlePlaceAssetConverter::MeshCacheSalt(const FMantlePlaceAssetLimits&
 	{
 		Salt += TEXT(" reduced=") + ReducedTag;
 	}
-	// #149: the Lumen side file is baked with the conversion: by this engine, with each slot material's blend mode and
-	// two-sidedness (materials are not in the mesh's package, so they are named here).
-	Salt += TEXT(" lumen=1 engine=") + FMantleMeshLumenFile::EngineTag() + TEXT(" sections=");
+	return Salt;
+}
+
+FString FMantlePlaceAssetConverter::MeshLumenSalt(const UStaticMesh& Mesh)
+{
+	FString Salt = TEXT(" lumen=1 engine=") + FMantleMeshLumenFile::EngineTag() + TEXT(" sections=");
 	for (const FStaticMaterial& Slot : Mesh.GetStaticMaterials())
 	{
 		const FMantleMeshLumenSection Section = FMantleMeshLumenBake::SectionFor(Slot.MaterialInterface);
