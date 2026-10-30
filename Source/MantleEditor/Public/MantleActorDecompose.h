@@ -61,8 +61,9 @@ public:
 
 	/**
 	 * The mirror a Group actor (a Blueprint prefab) carries in a negative scale on its root: -1 on each negative axis, 1 on the
-	 * others, or all 1 when it has none, an even number of negative axes (a rotation: IsRotatedGroup), or has child actors (their transforms would need mirroring too, which a place can't carry).
-	 * Export publishes the group at the positive scale and mirrors its parts (CollectPrefabParts) instead.
+	 * others, or all 1 when it has none or an even number of negative axes (a rotation: IsRotatedGroup).
+	 * Export publishes the group at the positive scale and mirrors its parts (CollectPrefabParts) instead, and moves its child actors
+	 * to the mirrored places (each keeps its own shape unmirrored: a child actor is an entity of its own).
 	 */
 	static FVector GroupMirrorSigns(const AActor* Actor);
 

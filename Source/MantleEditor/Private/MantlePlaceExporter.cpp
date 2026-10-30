@@ -68,6 +68,7 @@
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/LightComponentBase.h"
+#include "Components/LocalLightComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/RectLightComponent.h"
@@ -1792,6 +1793,16 @@ namespace MantlePlaceExporterPrefab
 	}
 
 	/**
+	 * A point, spot or rect light with an attenuation radius of 0 or less. Unreal's falloff reaches zero 0.00001 cm from such a
+	 * light (the renderer's inverse radius is capped there), so it lights nothing: Export leaves it out rather than publish a radius the schema refuses.
+	 */
+	bool LightsNothing(const UActorComponent* Component)
+	{
+		const ULocalLightComponent* Light = Cast<ULocalLightComponent>(Component);
+		return Light && Light->AttenuationRadius <= 0.0f;
+	}
+
+	/**
 	 * The entity type Export writes Component as when it is part of a prefab, or false. Only what
 	 * the exporter already writes as an actor of its own, read the same way, and only what a player
 	 * would see or touch: a mesh component without a mesh, or a light hidden in game, is nothing.
@@ -2214,6 +2225,16 @@ bool FMantlePlaceExporter::DescribeSkippedActor(const AActor* Actor, FSkippedAct
 			}
 		}
 		return false;
+	}
+
+	// A point, spot or rect light with an attenuation radius of 0 lights nothing in Unreal, so there is nothing to publish.
+	if ((Actor->IsA(APointLight::StaticClass()) || Actor->IsA(ASpotLight::StaticClass()) || Actor->IsA(ARectLight::StaticClass()))
+		&& MantlePlaceExporterPrefab::LightsNothing(Actor->GetRootComponent()))
+	{
+		Out.What = TEXT("has an attenuation radius of 0, which lights nothing in Unreal, so it is left out of the place.");
+		Out.Remedy = TEXT("Set the light's attenuation radius above zero to keep it.");
+		Out.Category = MantleCoverageCategory::Lights;
+		return true;
 	}
 
 	// A decal whose material gives Mantle no texture to draw, or that has no size to show it at.
@@ -3194,6 +3215,11 @@ bool FMantlePlaceExporter::IsExportedInstanceSource(const UInstancedStaticMeshCo
 	return bVisible || Component->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
 }
 
+bool FMantlePlaceExporter::IsGameContent(const UActorComponent* Component)
+{
+	return Component && ExporterIsGameContent(Component);
+}
+
 TArray<UInstancedStaticMeshComponent*> FMantlePlaceExporter::CollectInstanceSources(UWorld* World)
 {
 	TArray<UInstancedStaticMeshComponent*> Sources;
@@ -3315,6 +3341,8 @@ void FMantlePlaceExporter::CollectPrefabParts(
 				{
 					Part.Transform = FMantleMirrorBake::ReflectTransform(Part.Transform, GroupSigns);
 				}
+				// Particles have no handedness: a negative scale publishes at the positive one.
+				Part.Transform.SetScale3D(Part.Transform.GetScale3D().GetAbs());
 				Part.EffectProperties = Emitters[EmitterIndex];
 				Part.EffectIndex = EmitterIndex;
 			}
@@ -3376,6 +3404,19 @@ void FMantlePlaceExporter::CollectPrefabParts(
 
 		if (Scene && MantlePlaceExporterPrefab::PartType(Scene, Type))
 		{
+			// A point, spot or rect light with an attenuation radius of 0 lights nothing in Unreal, so it is left out and said so.
+			if (MantlePlaceExporterPrefab::LightsNothing(Scene))
+			{
+				if (OutUnsupported)
+				{
+					OutUnsupported->Add(FMantleUnpublishedPart{
+						FString::Printf(TEXT("has a light component ('%s') with an attenuation radius of 0, which lights nothing in Unreal, so it is left out; the rest of the actor publishes."),
+							*Scene->GetName()),
+						TEXT("Set the light's attenuation radius above zero to keep it."),
+						/*bBlocksPublish*/ false, MantleCoverageCategory::Lights });
+				}
+				continue;
+			}
 			FMantlePrefabPart Part;
 			Part.Component = Scene;
 			Part.Type = Type;
@@ -3405,6 +3446,25 @@ void FMantlePlaceExporter::CollectPrefabParts(
 				}
 				Part.MirroredMesh = Mirror.Mesh;
 				Part.Transform.SetScale3D(Mirror.PositiveScale);
+			}
+			else if (Type == EMantleEntityType::SkeletalMesh && FMantleActorDecompose::HasNegativeAxis(MeshScale))
+			{
+				// A skeletal mesh can't be mirrored in a copy, as a static mesh can.
+				if (OutUnsupported)
+				{
+					OutUnsupported->Add(FMantleUnpublishedPart{
+						FString::Printf(TEXT("has a skeletal mesh component ('%s') with a scale of %s, and Mantle can't mirror a skeletal mesh, so it is left out; the rest of the actor publishes."),
+							*Scene->GetName(), *MeshScale.ToString()),
+						TEXT("Use a positive scale, or a skeletal mesh mirrored in your modelling tool."),
+						/*bBlocksPublish*/ false, MantleCoverageCategory::SkeletalMeshes });
+				}
+				continue;
+			}
+			else
+			{
+				// The group's mirror can cancel a part's own negative axes (a mesh left with nothing to mirror), and a light, sound
+				// or trigger has no handedness: what is left publishes at the positive scale.
+				Part.Transform.SetScale3D(MeshScale.GetAbs());
 			}
 			OutParts.Add(MoveTemp(Part));
 			continue;
@@ -3854,6 +3914,8 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	// #818: decals (and player starts) published at the positive scale of the negative one they have.
 	TSet<const AActor*> UnmirroredActors;
 	TSet<const AActor*> RotatedGroups;
+	// A mirrored group's signs: its child actors are placed in the mirrored space (#628).
+	TMap<const AActor*, FVector> MirroredGroups;
 	int32 EffectParts = 0;
 	int32 ReflectionProbes = 0;
 	int32 Texts = 0;
@@ -3971,8 +4033,17 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		if (Type == EMantleEntityType::Group && FMantleActorDecompose::GroupMirrorSigns(Actor) != FVector::OneVector)
 		{
 			UnmirroredActors.Add(Actor);
+			MirroredGroups.Add(Actor, FMantleActorDecompose::GroupMirrorSigns(Actor));
 			Result.Coverage.Add(MantleCoverageCategory::OtherComponents, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
 				TEXT("a prefab with a negative scale is published at the positive scale, with its parts mirrored."));
+			// Child actors (a Child Actor component's) are their own entities: they move to where the mirror puts them, but keep their own shape.
+			TArray<AActor*> ChildActors;
+			Actor->GetAttachedActors(ChildActors);
+			if (ChildActors.Num() > 0)
+			{
+				Result.Coverage.Add(MantleCoverageCategory::OtherComponents, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
+					TEXT("its child actors are placed where the mirror puts them, but are not mirrored themselves."));
+			}
 		}
 		// An even number of negative axes is a rotation: the group publishes turned, at the positive scale, and its parts are as they were.
 		if (Type == EMantleEntityType::Group && FMantleActorDecompose::IsRotatedGroup(Actor))
@@ -4091,6 +4162,11 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		{
 			Entity.Parent = IdByActor[ParentActor];
 			Entity.Transform = Actor->GetRootComponent()->GetRelativeTransform();
+			// The parent publishes at the positive scale of a mirror (#628): its child moves to where the mirror put it.
+			if (const FVector* ParentSigns = MirroredGroups.Find(ParentActor))
+			{
+				Entity.Transform = FMantleMirrorBake::ReflectTransform(Entity.Transform, *ParentSigns);
+			}
 		}
 		else
 		{
