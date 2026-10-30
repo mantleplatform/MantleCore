@@ -14,7 +14,7 @@ namespace MantleMeshLumenDataPrivate
 	constexpr uint32 FormatVersion = 1;
 
 	/** No mesh's file comes near this; a count past it is a damaged file, not a big mesh. */
-	constexpr int64 MaxStreamedMipBytes = 256LL * 1024 * 1024;
+	constexpr int64 MaxMipBytes = 256LL * 1024 * 1024;
 
 	void SetReason(FString* OutReason, const FString& Reason)
 	{
@@ -67,16 +67,24 @@ TArray<uint8> FMantleMeshLumenFile::Write(const FMantleContentHash& MeshHash, co
 	FString Mesh = MeshHash.ToString();
 	Writer << Engine << Mesh;
 
-	// FDistanceFieldVolumeData::Serialize's fields, the streamed mips as plain bytes: its bulk data needs a package to be read back.
+	// One mip, the finest: the renderer streams every mip but the resident one from a file on disk
+	// (FDistanceFieldSceneData::AsyncUpdate reads StreamableMips through the IO dispatcher or an async file handle), and a
+	// runtime mesh has none, so the client makes this the resident mip and never asks for another. The finest is mip 0,
+	// in the streamed bytes; a field with no streamed bytes keeps its resident mip.
 	FDistanceFieldVolumeData& Field = const_cast<FDistanceFieldVolumeData&>(DistanceField);
-	Writer << Field.LocalSpaceMeshBounds << Field.bMostlyTwoSided << Field.Mips << Field.AlwaysLoadedMip;
-	TArray<uint8> Streamed;
-	if (const int64 StreamedBytes = Field.StreamableMips.GetBulkDataSize(); StreamedBytes > 0)
+	FSparseDistanceFieldMip Mip = Field.Mips[DistanceField::NumMips - 1];
+	TArray<uint8> MipBytes = Field.AlwaysLoadedMip;
+	const int64 StreamedBytes = Field.StreamableMips.GetBulkDataSize();
+	if (StreamedBytes > 0 && Field.Mips[0].BulkSize > 0 && static_cast<int64>(Field.Mips[0].BulkOffset) + Field.Mips[0].BulkSize <= StreamedBytes)
 	{
-		Streamed.Append(static_cast<const uint8*>(Field.StreamableMips.LockReadOnly()), StreamedBytes);
+		Mip = Field.Mips[0];
+		MipBytes.Reset();
+		MipBytes.Append(static_cast<const uint8*>(Field.StreamableMips.LockReadOnly()) + Mip.BulkOffset, Mip.BulkSize);
 		Field.StreamableMips.Unlock();
 	}
-	Writer << Streamed;
+	Mip.BulkOffset = 0;
+	Mip.BulkSize = MipBytes.Num();
+	Writer << Field.LocalSpaceMeshBounds << Field.bMostlyTwoSided << Mip << MipBytes;
 	Writer << const_cast<FCardRepresentationData&>(Cards);
 	return Bytes;
 }
@@ -117,20 +125,25 @@ bool FMantleMeshLumenFile::Read(const TConstArrayView<uint8> Bytes, const FMantl
 	}
 
 	TUniquePtr<FDistanceFieldVolumeData> Field = MakeUnique<FDistanceFieldVolumeData>();
-	Reader << Field->LocalSpaceMeshBounds << Field->bMostlyTwoSided << Field->Mips << Field->AlwaysLoadedMip;
-	int32 StreamedBytes = 0;
-	Reader << StreamedBytes;
-	if (Reader.IsError() || StreamedBytes < 0 || StreamedBytes > MaxStreamedMipBytes || StreamedBytes > Reader.TotalSize() - Reader.Tell())
+	FSparseDistanceFieldMip Mip;
+	int32 MipBytes = 0;
+	Reader << Field->LocalSpaceMeshBounds << Field->bMostlyTwoSided << Mip << MipBytes;
+	if (Reader.IsError() || MipBytes <= 0 || MipBytes > MaxMipBytes || MipBytes > Reader.TotalSize() - Reader.Tell() || Mip.BulkSize != static_cast<uint32>(MipBytes))
 	{
 		SetReason(OutReason, TEXT("has a damaged distance field"));
 		return false;
 	}
-	if (StreamedBytes > 0)
+	Field->AlwaysLoadedMip.SetNumUninitialized(MipBytes);
+	Reader.Serialize(Field->AlwaysLoadedMip.GetData(), MipBytes);
+	// The one mip is the resident one (the last). The others describe the same field with no bytes behind them: the
+	// renderer only asks for a mip whose BulkSize is not 0, so it stays on this one, and IsValid reads mip 0.
+	for (int32 Index = 0; Index < DistanceField::NumMips; ++Index)
 	{
-		Field->StreamableMips.Lock(LOCK_READ_WRITE);
-		void* Data = Field->StreamableMips.Realloc(StreamedBytes);
-		Reader.Serialize(Data, StreamedBytes);
-		Field->StreamableMips.Unlock();
+		Field->Mips[Index] = Mip;
+		if (Index != DistanceField::NumMips - 1)
+		{
+			Field->Mips[Index].BulkSize = 0;
+		}
 	}
 	TUniquePtr<FCardRepresentationData> Cards = MakeUnique<FCardRepresentationData>();
 	Reader << *Cards;

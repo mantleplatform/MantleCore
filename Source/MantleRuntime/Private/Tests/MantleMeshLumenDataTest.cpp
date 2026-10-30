@@ -26,11 +26,18 @@ bool FMantleMeshLumenFileTest::RunTest(const FString& Parameters)
 	FDistanceFieldVolumeData Field;
 	Field.LocalSpaceMeshBounds = FBox3f(FVector3f(-50.0f), FVector3f(50.0f));
 	Field.bMostlyTwoSided = true;
+	// Mip 0 (the finest) streamed at bytes 16..63, the coarsest resident.
 	Field.Mips[0].IndirectionDimensions = FIntVector(2, 2, 2);
 	Field.Mips[0].NumDistanceFieldBricks = 3;
+	Field.Mips[0].BulkOffset = 16;
+	Field.Mips[0].BulkSize = 48;
+	Field.Mips[DistanceField::NumMips - 1].IndirectionDimensions = FIntVector(1, 1, 1);
+	Field.Mips[DistanceField::NumMips - 1].BulkSize = 3;
 	Field.AlwaysLoadedMip = { 9, 8, 7 };
 	Field.StreamableMips.Lock(LOCK_READ_WRITE);
-	FMemory::Memset(Field.StreamableMips.Realloc(64), 0x5A, 64);
+	uint8* Streamed = Field.StreamableMips.Realloc(64);
+	FMemory::Memset(Streamed, 0x11, 16);
+	FMemory::Memset(Streamed + 16, 0x5A, 48);
 	Field.StreamableMips.Unlock();
 	FCardRepresentationData Cards;
 	Cards.MeshCardsBuildData.Bounds = FBox(FVector(-50.0), FVector(50.0));
@@ -48,9 +55,16 @@ bool FMantleMeshLumenFileTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("bounds"), Read.DistanceField->LocalSpaceMeshBounds, Field.LocalSpaceMeshBounds);
 	TestTrue(TEXT("two-sided"), Read.DistanceField->bMostlyTwoSided);
-	TestEqual(TEXT("bricks"), Read.DistanceField->Mips[0].NumDistanceFieldBricks, 3);
-	TestEqual(TEXT("always-loaded mip"), Read.DistanceField->AlwaysLoadedMip, Field.AlwaysLoadedMip);
-	TestEqual(TEXT("streamed mips"), Read.DistanceField->StreamableMips.GetBulkDataSize(), 64LL);
+	// The finest mip comes back as the resident one, and no mip is left to stream (a runtime mesh has no file to stream it from).
+	const FSparseDistanceFieldMip& Resident = Read.DistanceField->Mips[DistanceField::NumMips - 1];
+	TestEqual(TEXT("resident mip is the finest"), Resident.IndirectionDimensions, FIntVector(2, 2, 2));
+	TestEqual(TEXT("bricks"), Resident.NumDistanceFieldBricks, 3);
+	TArray<uint8> Finest;
+	Finest.Init(0x5A, 48);
+	TestEqual(TEXT("resident bytes"), Read.DistanceField->AlwaysLoadedMip, Finest);
+	TestEqual(TEXT("resident size"), Resident.BulkSize, 48u);
+	TestEqual(TEXT("nothing to stream"), Read.DistanceField->Mips[0].BulkSize, 0u);
+	TestTrue(TEXT("still a valid field"), Read.DistanceField->IsValid());
 	TestEqual(TEXT("cards"), Read.Cards->MeshCardsBuildData.CardBuildData.Num(), 2);
 
 	TestFalse(TEXT("another mesh's file is not present"), FMantleMeshLumenFile::Read(File, Other, Read, &Reason));

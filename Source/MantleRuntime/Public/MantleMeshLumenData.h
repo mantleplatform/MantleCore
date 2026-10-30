@@ -34,8 +34,9 @@ struct MANTLERUNTIME_API FMantleMeshLumenData
  *   FString engine tag (FMantleMeshLumenFile::EngineTag: the engine's serialised layout is the format, so the
  *     tag of the editor that baked it must be the client's own),
  *   FString the mesh's cooked hash ("blake3:<hex>", the MRM2 it was baked from),
- *   the distance field: local bounds, bMostlyTwoSided, its mips, the always-loaded mip and the streamed
- *     mips as one byte array,
+ *   the distance field: local bounds, bMostlyTwoSided, its finest mip (FSparseDistanceFieldMip) and that mip's
+ *     bytes, which the client makes the resident mip (the renderer streams the others only from a file on disk,
+ *     which a runtime mesh has not got),
  *   the card representation (FCardRepresentationData's own operator<<).
  * Anything else, a different engine or another mesh's file, reads as "not present": the mesh builds without.
  */
