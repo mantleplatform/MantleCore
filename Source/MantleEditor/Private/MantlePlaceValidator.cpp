@@ -37,6 +37,7 @@
 
 #include "Animation/SkeletalMeshActor.h"
 #include "Components/AudioComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/DecalComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/LightComponentBase.h"
@@ -132,10 +133,9 @@ namespace
 	}
 
 	/**
-	 * Components that carry content — geometry or light. These are what a place can lose if
-	 * an actor is published with more of them than its entity type can express.
+	 * Components of a kind that carries content — geometry or light — whether or not a player could see or touch this one.
 	 */
-	bool IsContentComponent(const UActorComponent* Component)
+	bool IsContentKind(const UActorComponent* Component)
 	{
 		if (FMantleActorDecompose::IsVisualisation(Component))
 		{
@@ -161,6 +161,26 @@ namespace
 		}
 		return Component->IsA(UPrimitiveComponent::StaticClass())
 			|| Component->IsA(ULightComponentBase::StaticClass());
+	}
+
+	/**
+	 * Components that carry content a player could see or touch. These are what a place can lose if
+	 * an actor is published with more of them than its entity type can express. The exporter's own
+	 * question (FMantlePlaceExporter::IsGameContent, which CollectPrefabParts asks too): a spline, a
+	 * hidden component that doesn't collide, and a transient one are nothing to lose, and neither is
+	 * a mesh component with no mesh or an instanced mesh (exported on its own, or with no instances to export).
+	 */
+	bool IsContentComponent(const UActorComponent* Component)
+	{
+		if (!IsContentKind(Component) || Component->HasAnyFlags(RF_Transient) || Component->IsA(UInstancedStaticMeshComponent::StaticClass()))
+		{
+			return false;
+		}
+		if (const UStaticMeshComponent* Mesh = Cast<UStaticMeshComponent>(Component); Mesh && !Mesh->GetStaticMesh())
+		{
+			return false;
+		}
+		return FMantlePlaceExporter::IsGameContent(Component);
 	}
 
 	/** How many content components an entity type can represent. */
@@ -252,6 +272,20 @@ namespace
 				continue;
 			}
 
+			// A capsule is a collision shape Mantle has no entity for (box and sphere are triggers): left out and said so, as a prefab's is.
+			if (Component->IsA(UCapsuleComponent::StaticClass()))
+			{
+				Result.Issues.Add(FMantleValidationIssue{
+					EMantleIssueSeverity::Warning,
+					LabelOf(Actor),
+					FString::Printf(
+						TEXT("has a %s component ('%s') that Mantle can't publish, so it is left out; the rest of the actor publishes."),
+						*Component->GetClass()->GetName(),
+						*Component->GetName()),
+					TEXT("Fine if players won't miss it. Otherwise remove it, or build it from parts Mantle publishes: static meshes, point and spot lights, and box or sphere collision.") });
+				continue;
+			}
+
 			++Seen;
 			if (Seen <= Allowed)
 			{
@@ -319,7 +353,7 @@ namespace
 				|| (bPrefab && Audio && Audio->Sound.Get())
 				|| (Component == Root && !bPrefab)
 				|| FMantleActorDecompose::IsVisualisation(Component)
-				|| IsContentComponent(Component)
+				|| IsContentKind(Component)
 				|| Component->GetClass() == USceneComponent::StaticClass()
 				|| Component->HasAnyFlags(RF_Transient)
 				|| (Instanced && FMantlePlaceExporter::IsExportedInstanceSource(Instanced))

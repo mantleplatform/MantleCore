@@ -115,14 +115,12 @@ bool FMantleActorDecompose::IsRotatedGroup(const AActor* Actor)
 
 FVector FMantleActorDecompose::GroupMirrorSigns(const AActor* Actor)
 {
-	TArray<AActor*> Children;
 	if (!Actor || !Actor->GetRootComponent())
 	{
 		return FVector::OneVector;
 	}
-	Actor->GetAttachedActors(Children);
 	const FVector Scale = FMantlePlaceExporter::PublishedTransform(Actor).GetScale3D();
-	if (!HasNegativeAxis(Scale) || Children.Num() > 0 || IsRotatedGroup(Actor))
+	if (!HasNegativeAxis(Scale) || IsRotatedGroup(Actor))
 	{
 		return FVector::OneVector;
 	}

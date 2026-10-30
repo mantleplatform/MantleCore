@@ -600,6 +600,14 @@ public:
 	 */
 	static bool IsExportedInstanceSource(const UInstancedStaticMeshComponent* Component);
 
+	/**
+	 * Whether Component is content in game: a visible primitive or light, or one that collides. Not editor-only
+	 * components, billboards and arrows, splines (authoring data), spline meshes and dynamic meshes (named on their own).
+	 * The one answer for Export (what makes an actor a Group of parts), CollectPrefabParts (what it names as left out)
+	 * and Check (what counts as an extra component).
+	 */
+	static bool IsGameContent(const UActorComponent* Component);
+
 	/** Every component IsExportedInstanceSource accepts in World, in actor then component order. */
 	static TArray<UInstancedStaticMeshComponent*> CollectInstanceSources(UWorld* World);
 
