@@ -6,6 +6,7 @@
 #include "MantlePlaceExporter.h"
 #include "MantlePreviewShared.h"
 #include "MantleCoverageSurvey.h"
+#include "MantleMeshLumenBake.h"
 #include "MantlePlaceValidator.h"
 #include "MantleClientFeatures.h"
 #include "MantlePreparedPlaceAssets.h"
@@ -68,6 +69,18 @@ namespace MantlePreviewExportPrivate
 		TMap<FString, FString> Textures;
 		/** The cook's info object for this asset (mantle-cook's result.info; cook.Result.Info): what the vehicle checks read. May be null. */
 		TSharedPtr<FJsonObject> Info;
+		/** Meshes (#149): the Lumen side file baked from the cooked mesh (Assets/<64 hex>), its hash and length. Empty when it has none. */
+		FString LumenFile;
+		FString LumenHash;
+		int64 LumenBytes = 0;
+	};
+
+	/** One cooked mesh's Lumen side file (#149), baked once per distinct mesh. */
+	struct FBundleLumen
+	{
+		FString File;
+		FString Hash;
+		int64 Bytes = 0;
 	};
 
 	/** One script or UI entry of the manifest. */
@@ -103,6 +116,12 @@ namespace MantlePreviewExportPrivate
 		TMap<FString, int32> AssetIndexById;
 		TSet<FString> WrittenFiles;
 		int64 TotalAssetBytes = 0;
+
+		/** #149: per cooked mesh file, its Lumen side file (none when the bake had nothing), and what the bakes cost. */
+		TMap<FString, TOptional<FBundleLumen>> LumenByMeshFile;
+		double LumenBakeSeconds = 0.0;
+		int64 LumenTotalBytes = 0;
+		int32 LumenBaked = 0;
 		int32 CookCount = 0;
 
 		/** Run's progress dialog (null when none) and whether the creator cancelled it. */
@@ -667,6 +686,55 @@ namespace MantlePreviewExportPrivate
 			State.WrittenFiles.Add(OutAsset.File);
 			State.TotalAssetBytes += Cooked.Num();
 		}
+
+		// #149: the mesh's Lumen data, baked from the bytes the client builds, once per distinct mesh. No data is no
+		// failure: the client builds the mesh without it.
+		if (Kind == TEXT("mesh"))
+		{
+			if (!State.LumenByMeshFile.Contains(OutAsset.File))
+			{
+				TOptional<FBundleLumen>& Baked = State.LumenByMeshFile.Add(OutAsset.File);
+				const double BakeStart = FPlatformTime::Seconds();
+				TArray<uint8> LumenFile;
+				FString Reason;
+				const bool bBaked = FMantleMeshLumenBake::Bake(Cooked, Hash, Name, LumenFile, Reason);
+				const double BakeSeconds = FPlatformTime::Seconds() - BakeStart;
+				State.LumenBakeSeconds += BakeSeconds;
+				if (!bBaked)
+				{
+					UE_LOG(LogMantle, Display, TEXT("MANTLE_PREVIEW_EXPORT lumen '%s' none: it %s (%.0f ms)"), *Name, *Reason, BakeSeconds * 1000.0);
+				}
+				else
+				{
+					const FMantleContentHash LumenHash = FMantleContentHash::OfBytes(LumenFile);
+					FBundleLumen Lumen;
+					Lumen.File = TEXT("Assets/") + LumenHash.ToHex();
+					Lumen.Hash = LumenHash.ToString();
+					Lumen.Bytes = LumenFile.Num();
+					if (!State.WrittenFiles.Contains(Lumen.File))
+					{
+						if (State.TotalAssetBytes + LumenFile.Num() > MaxAssetTotalBytes || !PreviewWriteBytes(State.BundleDir / Lumen.File, LumenFile))
+						{
+							OutError = FString::Printf(TEXT("Could not write the Lumen data %s for '%s'."), *Lumen.File, *Name);
+							return false;
+						}
+						State.WrittenFiles.Add(Lumen.File);
+						State.TotalAssetBytes += LumenFile.Num();
+						State.LumenTotalBytes += LumenFile.Num();
+					}
+					++State.LumenBaked;
+					UE_LOG(LogMantle, Display, TEXT("MANTLE_PREVIEW_EXPORT lumen '%s' mesh %lld bytes -> %lld bytes (%.0f ms)"),
+						*Name, static_cast<int64>(Cooked.Num()), Lumen.Bytes, BakeSeconds * 1000.0);
+					Baked = MoveTemp(Lumen);
+				}
+			}
+			if (const TOptional<FBundleLumen>& Lumen = State.LumenByMeshFile.FindChecked(OutAsset.File); Lumen.IsSet())
+			{
+				OutAsset.LumenFile = Lumen->File;
+				OutAsset.LumenHash = Lumen->Hash;
+				OutAsset.LumenBytes = Lumen->Bytes;
+			}
+		}
 		return true;
 	}
 
@@ -1034,6 +1102,9 @@ namespace MantlePreviewExportPrivate
 				State.Assets.Add(MoveTemp(Asset));
 			}
 		}
+
+		UE_LOG(LogMantle, Display, TEXT("MANTLE_PREVIEW_EXPORT lumen total: %d of %d distinct meshes baked, %lld bytes, %.1f s"),
+			State.LumenBaked, State.LumenByMeshFile.Num(), State.LumenTotalBytes, State.LumenBakeSeconds);
 
 		// --- The place, with the provisional ids and src_ ids the exporter writes offline --------------
 		if (PreviewStageCancelled(State, ProgressScripts, TEXT("Writing the place, scripts and UI")))
@@ -1449,6 +1520,12 @@ namespace MantlePreviewExportPrivate
 					if (!Asset.Role.IsEmpty())
 					{
 						Writer->WriteValue(TEXT("role"), Asset.Role);
+					}
+					if (!Asset.LumenFile.IsEmpty())
+					{
+						Writer->WriteValue(TEXT("lumenFile"), Asset.LumenFile);
+						Writer->WriteValue(TEXT("lumenHash"), Asset.LumenHash);
+						Writer->WriteValue(TEXT("lumenBytes"), Asset.LumenBytes);
 					}
 					if (Asset.Textures.Num() > 0)
 					{

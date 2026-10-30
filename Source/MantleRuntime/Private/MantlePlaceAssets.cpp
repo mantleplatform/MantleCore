@@ -1794,6 +1794,12 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 	Build.Ref.Hash = Hash;
 	Build.Ref.Url = Asset.Url;
 	Build.Ref.Bytes = FMath::Max<int64>(Asset.CookedBytes, 0);
+	if (RecordKind == EAssetKind::Mesh && !Asset.LumenHash.IsEmpty() && !Asset.LumenUrl.IsEmpty()
+		&& FMantleContentHash::Parse(Asset.LumenHash, Build.LumenRef.Hash))
+	{
+		Build.LumenRef.Url = Asset.LumenUrl;
+		Build.LumenRef.Bytes = FMath::Max<int64>(Asset.LumenBytes, 0);
+	}
 	Store->Pin(Hash);
 	Build.bPinned = true;
 
@@ -2123,6 +2129,46 @@ void FMantlePlaceAssets::OnFetched(const FBuildKey& Key, const FMantleAssetResul
 	Build->Bytes = Fetched.Bytes;
 	Build->PendingBytes = Fetched.SizeBytes;
 	PendingBuildBytes += Build->PendingBytes;
+	if (Key.Kind == EAssetKind::Mesh && Build->LumenRef.Hash.IsValid())
+	{
+		// #149: the side file next, still counted as this build's fetch; it decodes with the mesh.
+		++FetchesInFlight;
+		const TWeakPtr<FMantlePlaceAssets> Weak = AsShared();
+		Build->RequestId = Store->Request(Build->LumenRef, EMantleAssetLoad::Bytes, FMantleAssetDone::CreateLambda(
+			[Weak, Key](const FMantleAssetResult& Lumen)
+			{
+				if (const TSharedPtr<FMantlePlaceAssets> Pinned = Weak.Pin())
+				{
+					Pinned->OnLumenFetched(Key, Lumen);
+				}
+			}));
+		return;
+	}
+	Build->State = EBuildState::Fetched;
+	DecodeQueue.Add(Key);
+}
+
+void FMantlePlaceAssets::OnLumenFetched(const FBuildKey& Key, const FMantleAssetResult& Fetched)
+{
+	--FetchesInFlight;
+	FBuild* Build = Builds.Find(Key);
+	if (!Build || Build->State != EBuildState::Fetching)
+	{
+		return;
+	}
+	Build->RequestId = 0;
+	if (Fetched.bSuccess)
+	{
+		if (!Fetched.bFromCache)
+		{
+			DownloadedBytes += Fetched.SizeBytes;
+		}
+		Build->LumenBytes = Fetched.Bytes;
+	}
+	else
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS mesh %s Lumen data not present (%s); built without"), *Build->Id, *Fetched.Error);
+	}
 	Build->State = EBuildState::Fetched;
 	DecodeQueue.Add(Key);
 }
@@ -2147,11 +2193,15 @@ void FMantlePlaceAssets::StartDecodes()
 
 		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> Bytes = MoveTemp(Build->Bytes);
 		Build->Bytes.Reset();
+		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> LumenBytes = MoveTemp(Build->LumenBytes);
+		Build->LumenBytes.Reset();
+		const FString BuildId = Build->Id;
 		const int64 MaxTextureGpuBytes = Settings.MaxTextureGpuBytes;
 		const TSharedRef<FCompletionQueue, ESPMode::ThreadSafe> Queue = Completions;
-		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes]()
+		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, LumenBytes, BuildId, Key, MaxTextureGpuBytes]()
 		{
 			TSharedPtr<FMantleStaticMeshData> MeshV2;
+			TSharedPtr<FMantleMeshLumenData> Lumen;
 			TSharedPtr<FMantleRuntimeMesh> MeshV1;
 			TSharedPtr<FMantleDecodedTexture> Texture;
 			TSharedPtr<FMantlePlaceMaterialDesc> Material;
@@ -2174,6 +2224,17 @@ void FMantlePlaceAssets::StartDecodes()
 					if (!FMantleStaticMeshReader::Read(View, *MeshV2, &Error))
 					{
 						MeshV2.Reset();
+					}
+					else if (LumenBytes.IsValid())
+					{
+						// #149: a file from another engine or for other bytes is "not present", never a failure.
+						FString Reason;
+						Lumen = MakeShared<FMantleMeshLumenData>();
+						if (!FMantleMeshLumenFile::Read(*LumenBytes, Key.Hash, *Lumen, &Reason))
+						{
+							UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS mesh %s Lumen data not used: it %s"), *BuildId, *Reason);
+							Lumen.Reset();
+						}
 					}
 				}
 				else if (View.Num() >= 4 && FMemory::Memcmp(View.GetData(), "MRM1", 4) == 0 && Bytes.IsValid())
@@ -2320,9 +2381,9 @@ void FMantlePlaceAssets::StartDecodes()
 			}
 			}
 
-			Queue->Push([Key, MeshV2, MeshV1, Texture, Material, Sound, Skinned, Clip, Heightfield, TerrainWeights, Vehicle, Weapon, Error](FMantlePlaceAssets& Self)
+			Queue->Push([Key, MeshV2, MeshV1, Texture, Material, Sound, Skinned, Clip, Heightfield, TerrainWeights, Vehicle, Weapon, Lumen, Error](FMantlePlaceAssets& Self)
 			{
-				Self.OnDecoded(Key, MeshV2, MeshV1, Texture, Material, Sound, Skinned, Clip, Heightfield, TerrainWeights, Vehicle, Weapon, Error);
+				Self.OnDecoded(Key, MeshV2, MeshV1, Texture, Material, Sound, Skinned, Clip, Heightfield, TerrainWeights, Vehicle, Weapon, Lumen, Error);
 			});
 		});
 	}
@@ -2332,7 +2393,7 @@ void FMantlePlaceAssets::StartDecodes()
 void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStaticMeshData> MeshV2, TSharedPtr<FMantleRuntimeMesh> MeshV1,
 	TSharedPtr<FMantleDecodedTexture> Texture, TSharedPtr<FMantlePlaceMaterialDesc> Material, TSharedPtr<const FMantleSoundData> Sound,
 	TSharedPtr<FMantleSkinnedMesh> Skinned, TSharedPtr<const FMantleAnimClip> Clip, TSharedPtr<const FMantleHeightfield> Heightfield,
-	TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, const FString& Error)
+	TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, TSharedPtr<FMantleMeshLumenData> Lumen, const FString& Error)
 {
 	--DecodesInFlight;
 	FBuild* Build = Builds.Find(Key);
@@ -2354,8 +2415,14 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 		: TerrainWeights ? static_cast<int64>(TerrainWeights->GetAllocatedBytes())
 		: Vehicle && Vehicle->Body.LODs.Num() > 0 ? static_cast<int64>(Vehicle->Body.LODs[0].NumVertices()) * 64 : 0;
 	PendingBuildBytes += Build->PendingBytes;
+	if (Lumen)
+	{
+		Build->PendingBytes += Lumen->GetAllocatedBytes();
+		PendingBuildBytes += Lumen->GetAllocatedBytes();
+	}
 	Build->MeshV2 = MeshV2;
 	Build->MeshV1 = MeshV1;
+	Build->Lumen = Lumen;
 	Build->Texture = Texture;
 	Build->Material = Material;
 	Build->Sound = Sound;
@@ -2523,6 +2590,7 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		// #470: a dedicated server never draws, and its collision is LOD0's.
 		Params.bBuildLowerLODs = !IsRunningDedicatedServer();
 		Params.Name = TEXT("MantlePlaceMesh");
+		Params.Lumen = Build.Lumen.Get();
 		UStaticMesh* Mesh = nullptr;
 		if (Build.MeshV2)
 		{
@@ -2540,6 +2608,10 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 				Build.MeshV2->VertexCount(), Build.MeshV2->TriangleCount(), Build.MeshV2->SlotCount(), Build.MeshV2->LODCount(),
 				*FString::Join(LODTriangles, TEXT("/")), Params.bBuildLowerLODs || Build.MeshV2->LODCount() == 1 ? TEXT("") : TEXT(", LOD0 built on a server"),
 				Build.MeshV2->UV1s.Num() > 0 ? TEXT(", UV1") : TEXT(""), *CollisionDetail);
+			if (Build.Lumen)
+			{
+				Build.Detail += TEXT(", Lumen data");
+			}
 			Mesh = FMantleRuntimeStaticMeshBuilder::Build(*Build.MeshV2, Params, &Error);
 		}
 		else if (Build.MeshV1)
@@ -2550,6 +2622,7 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		}
 		Build.MeshV2.Reset();
 		Build.MeshV1.Reset();
+		Build.Lumen.Reset();
 		ReleasePending(Build);
 		if (!Mesh)
 		{

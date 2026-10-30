@@ -115,6 +115,14 @@ struct FMantleUploadedAsset
 	/** The cooked object's length; 0 until cooked. */
 	int64 CookedBytes = 0;
 
+	/**
+	 * Meshes (#149): the optional Lumen side file baked at publish (FMantleMeshLumenFile), as Url, CookedHash and
+	 * CookedBytes are for the mesh. Empty when the mesh has none. Only an offline preview bundle sets these so far.
+	 */
+	FString LumenUrl;
+	FString LumenHash;
+	int64 LumenBytes = 0;
+
 	/** Why the cook refused the asset, when it did. */
 	FString CookError;
 

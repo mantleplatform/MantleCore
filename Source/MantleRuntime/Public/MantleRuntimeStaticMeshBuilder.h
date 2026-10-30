@@ -6,6 +6,7 @@
 class UMaterialInterface;
 class UObject;
 class UStaticMesh;
+struct FMantleMeshLumenData;
 struct FMantleRuntimeMesh;
 struct FMantleStaticMeshData;
 
@@ -57,6 +58,14 @@ struct FMantleStaticMeshBuildParams
 	 * commandlet) initialises them as before. See FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources.
 	 */
 	bool bInitRenderResources = true;
+
+	/**
+	 * #149: the mesh's baked Lumen data (FMantleMeshLumenFile), or null. The build takes both halves (they move to
+	 * LOD0's DistanceFieldData and CardRepresentationData, which the mesh then owns) before the render resources
+	 * are initialised, so the scene proxy finds them: Lumen's software tracing and distance field lighting see the
+	 * mesh. Left alone on a build without render resources.
+	 */
+	FMantleMeshLumenData* Lumen = nullptr;
 
 	/** Outer of the new mesh; the transient package when null. */
 	UObject* Outer = nullptr;

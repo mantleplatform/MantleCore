@@ -6,6 +6,7 @@
 #include "MantleApiClient.h"
 #include "MantleAssetStore.h"
 #include "MantleHeightfieldReader.h"
+#include "MantleMeshLumenData.h"
 #include "MantlePlaceMaterial.h"
 #include "MantlePlaceTypes.h"
 #include "MantleRuntimeMesh.h"
@@ -506,6 +507,15 @@ private:
 		int64 PendingBytes = 0;
 
 		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> Bytes;
+
+		/**
+		 * Meshes (#149): the optional Lumen side file (MLD1), fetched after the mesh and read beside it. A zero hash
+		 * when the asset has none; a file that fails to download or read is "not present" and the mesh builds without.
+		 */
+		FMantleStoredAssetRef LumenRef;
+		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> LumenBytes;
+		TSharedPtr<FMantleMeshLumenData> Lumen;
+
 		TSharedPtr<FMantleStaticMeshData> MeshV2;
 		TSharedPtr<FMantleRuntimeMesh> MeshV1;
 		TSharedPtr<FMantleDecodedTexture> Texture;
@@ -615,11 +625,13 @@ private:
 
 	void StartFetches();
 	void OnFetched(const FBuildKey& Key, const FMantleAssetResult& Fetched);
+	/** #149: the mesh's Lumen side file arrived (or did not); either way the mesh goes on to decode. */
+	void OnLumenFetched(const FBuildKey& Key, const FMantleAssetResult& Fetched);
 	void StartDecodes();
 	void OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStaticMeshData> MeshV2, TSharedPtr<FMantleRuntimeMesh> MeshV1,
 		TSharedPtr<FMantleDecodedTexture> Texture, TSharedPtr<FMantlePlaceMaterialDesc> Material, TSharedPtr<const FMantleSoundData> Sound,
 		TSharedPtr<FMantleSkinnedMesh> Skinned, TSharedPtr<const FMantleAnimClip> Clip, TSharedPtr<const FMantleHeightfield> Heightfield,
-		TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, const FString& Error);
+		TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, TSharedPtr<FMantleMeshLumenData> Lumen, const FString& Error);
 	/** #435: a vehicle's materials, from its document, as material records (off a dedicated server). */
 	void QueueMaterialsOf(const FString& VehicleId, const TArray<FString>& MaterialIds);
 	/** #488: a vehicle's liveries, from its document, as colour texture records (off a dedicated server). */

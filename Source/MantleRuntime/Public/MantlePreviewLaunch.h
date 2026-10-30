@@ -69,6 +69,14 @@ struct FMantlePreviewAsset
 
 	/** Materials only: slot name to the id of another asset of this bundle. */
 	TMap<FString, FString> Textures;
+
+	/**
+	 * Meshes only, optional (#149): the mesh's Lumen side file (MLD1), as File, CookedHash and CookedBytes are for the
+	 * mesh. Empty when the bundle has none for it, or the file named is not there: the mesh is then built without.
+	 */
+	FString LumenFile;
+	FString LumenHash;
+	int64 LumenBytes = 0;
 };
 
 /**
