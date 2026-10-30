@@ -110,13 +110,22 @@ namespace MantleLibraryPanelPrivate
 	 */
 	FString LibraryManifestJson(const FMantleLibraryScriptManifest& Manifest)
 	{
-		if (Manifest.Name.IsEmpty() && Manifest.Description.IsEmpty() && Manifest.Parameters.Num() == 0 && Manifest.Settings.Num() == 0)
+		if (Manifest.Name.IsEmpty() && Manifest.Description.IsEmpty() && Manifest.Dependencies.Num() == 0 && Manifest.Parameters.Num() == 0 && Manifest.Settings.Num() == 0)
 		{
 			return FString();
 		}
 		const TSharedRef<FJsonObject> Object = MakeShared<FJsonObject>();
 		Object->SetStringField(TEXT("name"), Manifest.Name);
 		Object->SetStringField(TEXT("description"), Manifest.Description);
+		if (Manifest.Dependencies.Num() > 0)
+		{
+			TArray<TSharedPtr<FJsonValue>> Names;
+			for (const FString& Name : Manifest.Dependencies)
+			{
+				Names.Add(MakeShared<FJsonValueString>(Name));
+			}
+			Object->SetArrayField(TEXT("dependencies"), Names);
+		}
 		// Settings beside parameters, and each option's required, min, max and options.
 		auto OptionsJson = [](const TArray<FMantleLibraryScriptParameter>& Options)
 		{
@@ -977,6 +986,10 @@ TSharedRef<SWidget> SMantleLibraryPanel::BuildTile(const FMantleLibraryCard& Car
 				Paths.Add(FString::Printf(TEXT("  %s (%s)"), *File.Path, *File.Language));
 			}
 			Tooltip += FString::Printf(TEXT("\n\nFiles in v%d:\n%s"), Latest->Version, *FString::Join(Paths, TEXT("\n")));
+			if (Latest->Manifest.Dependencies.Num() > 0)
+			{
+				Tooltip += FString::Printf(TEXT("\n\nNeeds the packages: %s (store them under exactly these names)"), *FString::Join(Latest->Manifest.Dependencies, TEXT(", ")));
+			}
 			if (Latest->Manifest.Parameters.Num() > 0)
 			{
 				TArray<FString> Parameters;

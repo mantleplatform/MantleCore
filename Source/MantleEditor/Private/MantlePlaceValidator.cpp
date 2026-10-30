@@ -1591,7 +1591,15 @@ namespace
 			}
 		}
 
-		// require() inside each package, by the runtime's rules (a package reaches only its own files).
+		// #134: what each package depends on must be in the place (a cycle is only a warning: requires are lazy).
+		for (const FMantleScriptDependencyIssue& Issue : FMantleScriptPackages::CheckPlaceDependencies(Packages, Settings ? Settings->Storage : TArray<FMantleStorageSetting>()))
+		{
+			Result.Issues.Add(FMantleValidationIssue{
+				Issue.Problem == EMantleScriptDependencyProblem::Cycle ? EMantleIssueSeverity::Warning : EMantleIssueSeverity::Error,
+				FString(), Issue.Message, Issue.Remedy });
+		}
+
+		// require() inside each package, by the runtime's rules (a package reaches only its own files and its dependencies' Shared modules).
 		TArray<FMantleScriptCatalogEntry> Entries;
 		{
 			TArray<FMantleScriptCollectionIssue> Ignored;

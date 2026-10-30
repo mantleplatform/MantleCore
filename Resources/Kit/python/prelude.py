@@ -53,3 +53,26 @@ def _entity_observe_attribute(self, name, fn):
 
 
 __mantle_extend("Entity", "observe_attribute", _entity_observe_attribute)
+
+
+class _ExportTable:
+    def __init__(self, package):
+        self._package = package
+
+    def __getattr__(self, name):
+        package = self._package
+
+        def _call(*args):
+            return Exports.call(package, name, *args)
+
+        return _call
+
+
+def _exports_get(self, package):
+    if not isinstance(package, str):
+        raise TypeError("Exports.get: argument 1 (package) must be a string")
+    return _ExportTable(package)
+
+
+__mantle_extend("Exports", "get", _exports_get)
+__mantle_extend("Exports", "get_place", lambda self: _ExportTable(""))

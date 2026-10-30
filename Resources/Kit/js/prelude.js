@@ -41,6 +41,35 @@ extend("State", "observe", function (key, fn) {
 	});
 });
 
+// Exports.get(package) -> an object whose members call that package's exports (#135). Looked up at each call, so a
+// held object keeps working across the package's reloads. Export names are exact, not camelCased.
+function exportTable(pkg) {
+	const cache = new Map();
+	return new Proxy({}, {
+		get(_, name) {
+			if (typeof name !== "string" || name === "then") return undefined; // never look like a promise
+			let fn = cache.get(name);
+			if (!fn) {
+				fn = (...args) => Exports.call(pkg, name, ...args);
+				cache.set(name, fn);
+			}
+			return fn;
+		},
+		set() {
+			throw new TypeError("an export table is read-only; the package that owns it sets exports with Exports.set");
+		},
+	});
+}
+extend("Exports", "get", function (pkg) {
+	if (typeof pkg !== "string") {
+		throw new TypeError("Exports.get: argument 1 (package) must be a string");
+	}
+	return exportTable(pkg);
+});
+extend("Exports", "getPlace", function () {
+	return exportTable("");
+});
+
 // Entity.prototype.observeAttribute(name, fn) -> Connection
 // Calls fn(value) now and every time the named attribute changes.
 extend("Entity", "observeAttribute", function (name, fn) {

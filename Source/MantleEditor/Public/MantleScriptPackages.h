@@ -6,6 +6,7 @@
 #include "MantleScriptCatalogFiles.h"
 
 class FJsonObject;
+struct FMantleStorageSetting;
 class UWorld;
 
 /** Something about a level's Packages/ folder that Check, Test locally or Publish refuses or warns about (#838), in plain words. */
@@ -62,6 +63,39 @@ struct MANTLEEDITOR_API FMantleScriptOptionIssue
 	EMantleScriptOptionProblem Problem = EMantleScriptOptionProblem::Invalid;
 	/** "KillBricks needs RoundLength.", "KillBricks's Speed must be between 1 and 10." */
 	FString Message;
+};
+
+/** What is wrong with a package's dependency (#134). */
+enum class EMantleScriptDependencyProblem : uint8
+{
+	/** The place stores nothing under that name. An error. */
+	Missing,
+	/** The name belongs to a storage entry that is not a script package (a vehicle, a weapon). An error. */
+	NotAScript,
+	/** Packages list each other. A warning: requires are lazy, so a cycle runs, but it is a smell. */
+	Cycle,
+};
+
+/** One problem CheckDependencies found, in plain words naming the packages. */
+struct MANTLEEDITOR_API FMantleScriptDependencyIssue
+{
+	/** The package that lists the dependency. */
+	FString Package;
+	/** The name it lists. */
+	FString Dependency;
+	EMantleScriptDependencyProblem Problem = EMantleScriptDependencyProblem::Missing;
+	FString Message;
+	FString Remedy;
+};
+
+/** One package the place will run, for CheckDependencies: a local Packages/ folder or a stored script entry. */
+struct MANTLEEDITOR_API FMantleScriptDependencyNode
+{
+	/** The storage name. */
+	FString Name;
+	/** False for a storage entry whose manifest is not known (typed in by hand): it satisfies a dependency by name but lists none. */
+	bool bManifestKnown = false;
+	FMantleScriptPackageManifest Manifest;
 };
 
 /** A Packages/<Name>/ folder beside a level (#838): a script package a creator authors, tests locally, and publishes as a library item. */
@@ -192,6 +226,21 @@ public:
 	 */
 	static bool KnownManifest(const FString& Name, const TArray<FMantleLocalScriptPackage>& Local, const FString& StoredManifestJson,
 		FMantleScriptPackageManifest& OutManifest);
+
+	/**
+	 * What the packages the place runs need that it does not have (#134). Packages is every package the place will run: local folders
+	 * first, then the stored script entries that are not local. OtherKindByName maps a storage entry's name to its kind ("vehicle",
+	 * "weapon") for entries that are not script packages. A dependency that is a package's name is fine; one that is another kind of
+	 * entry is NotAScript; one nothing holds is Missing. Packages that list each other give one Cycle warning per group.
+	 */
+	static TArray<FMantleScriptDependencyIssue> CheckDependencies(const TArray<FMantleScriptDependencyNode>& Packages,
+		const TMap<FString, FString>& OtherKindByName);
+
+	/**
+	 * CheckDependencies over a place: Local folders first, then the Storage entries that are not local (a script entry's recorded manifest,
+	 * or an entry typed in by hand, which satisfies a dependency by name but lists none). Check this place and Export both use it.
+	 */
+	static TArray<FMantleScriptDependencyIssue> CheckPlaceDependencies(const TArray<FMantleLocalScriptPackage>& Local, const TArray<FMantleStorageSetting>& Storage);
 
 	/** An entry's path inside its package ("Server/Main.luau" for "Packages/KillBricks/Server/Main.luau"); the path itself for a place script. */
 	static FString PathInPackage(const FString& CatalogPath);

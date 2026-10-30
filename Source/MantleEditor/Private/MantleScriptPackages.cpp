@@ -4,6 +4,7 @@
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceLimits.h"
 #include "MantlePlaceParser.h"
+#include "MantlePlaceSettingsActor.h"
 #include "MantlePlaceStorage.h"
 #include "MantleScriptError.h"
 
@@ -117,6 +118,47 @@ namespace MantleScriptPackagesPrivate
 			return TEXT("shared");
 		}
 		return TEXT("");
+	}
+
+	/** package.json's "dependencies" (#134): a list of storage names, unique ignoring letter case, at most the cap. */
+	void ReadManifestDependencies(const TSharedPtr<FJsonObject>& Root, TArray<FString>& OutDependencies, TArray<FString>& OutProblems)
+	{
+		if (!Root->HasField(TEXT("dependencies")))
+		{
+			return;
+		}
+		const TArray<TSharedPtr<FJsonValue>>* Names = nullptr;
+		if (!Root->TryGetArrayField(TEXT("dependencies"), Names) || !Names)
+		{
+			OutProblems.Add(TEXT("package.json's dependencies is not a list. Write it like \"dependencies\": [\"QBCore\"]."));
+			return;
+		}
+		if (Names->Num() > FMantlePlaceLimits::MaxScriptPackageDependencies)
+		{
+			OutProblems.Add(FString::Printf(TEXT("package.json lists %d dependencies; a package has at most %d."),
+				Names->Num(), FMantlePlaceLimits::MaxScriptPackageDependencies));
+			return;
+		}
+		for (int32 Index = 0; Index < Names->Num(); ++Index)
+		{
+			FString Name;
+			if (!(*Names)[Index].IsValid() || !(*Names)[Index]->TryGetString(Name))
+			{
+				OutProblems.Add(FString::Printf(TEXT("package.json's dependency number %d is not text. Write each one as a package name between quotes."), Index + 1));
+			}
+			else if (!FMantlePlaceLimits::IsStorageName(Name))
+			{
+				OutProblems.Add(FString::Printf(TEXT("package.json's dependency '%s' is not a package name. Use the name the place stores the package under: a letter, then up to 63 letters, digits or '_'."), *Name));
+			}
+			else if (OutDependencies.ContainsByPredicate([&Name](const FString& Earlier) { return Earlier.Equals(Name, ESearchCase::IgnoreCase); }))
+			{
+				OutProblems.Add(FString::Printf(TEXT("package.json lists the dependency '%s' twice (names are unique, ignoring letter case). Remove one."), *Name));
+			}
+			else
+			{
+				OutDependencies.Add(Name);
+			}
+		}
 	}
 
 	/**
@@ -624,6 +666,7 @@ bool FMantleScriptPackages::ReadManifest(const FString& Json, FMantleScriptPacka
 		}
 	}
 
+	ReadManifestDependencies(Root, OutManifest.Dependencies, OutProblems);
 	// The two option lists share every rule.
 	ReadManifestOptions(Root, TEXT("parameters"), TEXT("parameter"), FMantlePlaceLimits::MaxScriptPointParameters, OutManifest.Parameters, OutProblems);
 	ReadManifestOptions(Root, TEXT("settings"), TEXT("setting"), FMantlePlaceLimits::MaxStorageSettings, OutManifest.Settings, OutProblems);
@@ -641,6 +684,16 @@ TSharedRef<FJsonObject> FMantleScriptPackages::ManifestToJsonObject(const FMantl
 	const TSharedRef<FJsonObject> Object = MakeShared<FJsonObject>();
 	Object->SetStringField(TEXT("name"), Manifest.Name);
 	Object->SetStringField(TEXT("description"), Manifest.Description);
+	// Only when there are some, so a package without dependencies keeps the exact JSON (and idempotency key) it always had.
+	if (Manifest.Dependencies.Num() > 0)
+	{
+		TArray<TSharedPtr<FJsonValue>> Dependencies;
+		for (const FString& Dependency : Manifest.Dependencies)
+		{
+			Dependencies.Add(MakeShared<FJsonValueString>(Dependency));
+		}
+		Object->SetArrayField(TEXT("dependencies"), Dependencies);
+	}
 	TArray<TSharedPtr<FJsonValue>> Parameters;
 	for (const FMantleScriptPackageParameter& Parameter : Manifest.Parameters)
 	{
@@ -868,6 +921,13 @@ void FMantleScriptPackages::Collect(const FString& PackagesFolder, TArray<FMantl
 			PackageProblem(FString::Printf(TEXT("Packages/%s has %d scripts; a package holds at most %d."), *Folder, Package.Entries.Num(), FMantlePlaceLimits::MaxScriptPackageFiles),
 				TEXT("Combine some, or split it into two packages."), true);
 		}
+		// #134: a package may require the Shared modules of the packages it lists; its entries carry the list for require().
+		if (Package.Manifest.DependsOn(Folder))
+		{
+			PackageProblem(FString::Printf(TEXT("Packages/%s/package.json lists %s as its own dependency."), *Folder, *Folder),
+				TEXT("Remove it from \"dependencies\": a package already reaches its own modules by their bare names."), true);
+		}
+		MantleStampPackageDependencies(Package.Entries, Package.Name, Package.Manifest.Dependencies);
 		Package.bValid = bValid;
 	}
 }
@@ -929,6 +989,142 @@ bool FMantleScriptPackages::PrepareFiles(const FMantleLocalScriptPackage& Packag
 	return true;
 }
 
+TArray<FMantleScriptDependencyIssue> FMantleScriptPackages::CheckDependencies(const TArray<FMantleScriptDependencyNode>& Packages,
+	const TMap<FString, FString>& OtherKindByName)
+{
+	TArray<FMantleScriptDependencyIssue> Issues;
+	auto FindNode = [&Packages](const FString& Name) -> const FMantleScriptDependencyNode*
+	{
+		return Packages.FindByPredicate([&Name](const FMantleScriptDependencyNode& Node) { return Node.Name.Equals(Name, ESearchCase::CaseSensitive); });
+	};
+	for (const FMantleScriptDependencyNode& Node : Packages)
+	{
+		if (!Node.bManifestKnown)
+		{
+			continue;
+		}
+		for (const FString& Dependency : Node.Manifest.Dependencies)
+		{
+			if (FindNode(Dependency))
+			{
+				continue;
+			}
+			FMantleScriptDependencyIssue& Issue = Issues.AddDefaulted_GetRef();
+			Issue.Package = Node.Name;
+			Issue.Dependency = Dependency;
+			if (const FString* Kind = OtherKindByName.Find(Dependency))
+			{
+				Issue.Problem = EMantleScriptDependencyProblem::NotAScript;
+				Issue.Message = FString::Printf(TEXT("%s needs the package %s, but the storage entry named %s is a %s."), *Node.Name, *Dependency, *Dependency, **Kind);
+				Issue.Remedy = FString::Printf(TEXT("Rename that entry, then add the script package under the name %s."), *Dependency);
+			}
+			else
+			{
+				Issue.Problem = EMantleScriptDependencyProblem::Missing;
+				Issue.Message = FString::Printf(TEXT("%s needs the package %s, which this place does not store."), *Node.Name, *Dependency);
+				Issue.Remedy = FString::Printf(TEXT("Add %s with Tools > Mantle > Library (Add to storage), or put a Packages/%s folder beside the level. The storage name must be exactly %s."),
+					*Dependency, *Dependency, *Dependency);
+			}
+		}
+	}
+
+	// Cycles: a package that can reach itself through the dependencies it lists. One warning per group, named after its first member.
+	TSet<FString> Reported;
+	for (const FMantleScriptDependencyNode& Start : Packages)
+	{
+		if (!Start.bManifestKnown || Reported.Contains(Start.Name))
+		{
+			continue;
+		}
+		TArray<FString> Reach; // every package reachable from Start
+		TArray<FString> Pending = Start.Manifest.Dependencies;
+		while (Pending.Num() > 0)
+		{
+			const FString Name = Pending.Pop();
+			if (Reach.Contains(Name))
+			{
+				continue;
+			}
+			Reach.Add(Name);
+			if (const FMantleScriptDependencyNode* Node = FindNode(Name); Node && Node->bManifestKnown)
+			{
+				Pending.Append(Node->Manifest.Dependencies);
+			}
+		}
+		if (!Reach.Contains(Start.Name))
+		{
+			continue;
+		}
+		// The group: Start and every package in Reach that can reach Start back.
+		TArray<FString> Group{ Start.Name };
+		for (const FString& Name : Reach)
+		{
+			const FMantleScriptDependencyNode* Node = FindNode(Name);
+			if (!Node || !Node->bManifestKnown || Name == Start.Name)
+			{
+				continue;
+			}
+			TArray<FString> Back = Node->Manifest.Dependencies;
+			TArray<FString> Seen;
+			bool bReachesStart = false;
+			while (Back.Num() > 0 && !bReachesStart)
+			{
+				const FString Next = Back.Pop();
+				if (Next.Equals(Start.Name, ESearchCase::CaseSensitive)) { bReachesStart = true; break; }
+				if (Seen.Contains(Next)) { continue; }
+				Seen.Add(Next);
+				if (const FMantleScriptDependencyNode* NextNode = FindNode(Next); NextNode && NextNode->bManifestKnown)
+				{
+					Back.Append(NextNode->Manifest.Dependencies);
+				}
+			}
+			if (bReachesStart)
+			{
+				Group.Add(Name);
+			}
+		}
+		Group.Sort();
+		Reported.Append(Group);
+		FMantleScriptDependencyIssue& Issue = Issues.AddDefaulted_GetRef();
+		Issue.Package = Group[0];
+		Issue.Dependency = Group.Num() > 1 ? Group[1] : Group[0];
+		Issue.Problem = EMantleScriptDependencyProblem::Cycle;
+		Issue.Message = FString::Printf(TEXT("%s list each other as dependencies."), *FString::Join(Group, TEXT(" and ")));
+		Issue.Remedy = TEXT("Move what they share into a third package that both depend on.");
+	}
+	return Issues;
+}
+
+TArray<FMantleScriptDependencyIssue> FMantleScriptPackages::CheckPlaceDependencies(const TArray<FMantleLocalScriptPackage>& Local, const TArray<FMantleStorageSetting>& Storage)
+{
+	TArray<FMantleScriptDependencyNode> Nodes;
+	TMap<FString, FString> OtherKinds;
+	for (const FMantleLocalScriptPackage& Package : Local)
+	{
+		FMantleScriptDependencyNode& Node = Nodes.AddDefaulted_GetRef();
+		Node.Name = Package.Name;
+		Node.bManifestKnown = Package.bHasManifest;
+		Node.Manifest = Package.Manifest;
+	}
+	for (const FMantleStorageSetting& Entry : Storage)
+	{
+		const bool bLocal = Local.ContainsByPredicate([&Entry](const FMantleLocalScriptPackage& Package) { return Package.Name.Equals(Entry.Name, ESearchCase::CaseSensitive); });
+		if (bLocal)
+		{
+			continue;
+		}
+		if (!Entry.Kind.IsEmpty() && !Entry.Kind.Equals(FMantleStorage::KindScript, ESearchCase::CaseSensitive))
+		{
+			OtherKinds.Add(Entry.Name, Entry.Kind);
+			continue;
+		}
+		FMantleScriptDependencyNode& Node = Nodes.AddDefaulted_GetRef();
+		Node.Name = Entry.Name;
+		Node.bManifestKnown = KnownManifest(Entry.Name, Local, Entry.Manifest, Node.Manifest);
+	}
+	return CheckDependencies(Nodes, OtherKinds);
+}
+
 bool FMantleScriptPackages::ParsePackageRequest(const FString& Request, FString& OutPackage)
 {
 	OutPackage.Reset();
@@ -956,7 +1152,10 @@ bool FMantleScriptPackages::ResolveStaticRequire(const TArray<FMantleScriptCatal
 	OutTarget = nullptr;
 	OutError.Reset();
 	FString Package;
-	if (MantleScriptPackageOf(From.Path).IsEmpty() && ParsePackageRequest(Request, Package))
+	// A place script reaches any package; a package script (#134) only the ones it lists as dependencies.
+	if (ParsePackageRequest(Request, Package)
+		&& (MantleScriptPackageOf(From.Path).IsEmpty()
+			|| From.PackageDependencies.ContainsByPredicate([&Package](const FString& Dependency) { return Dependency.Equals(Package, ESearchCase::CaseSensitive); })))
 	{
 		const bool bLocal = Entries.ContainsByPredicate([&Package](const FMantleScriptCatalogEntry& Entry)
 		{
