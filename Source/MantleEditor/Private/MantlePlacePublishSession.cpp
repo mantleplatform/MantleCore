@@ -636,8 +636,9 @@ EMantlePlaceExportOutcome FMantleLevelPublishSource::Export(const FMantlePlaceAs
 		if (MantlePlacePublishSessionPrivate::IsUploadedAssetId(Ref.Id) && !Recorded.Contains(Ref.Id))
 		{
 			// Name it: a later "level kept changing" failure then says which asset Gather never saw.
-			UE_LOG(LogMantle, Display, TEXT("MANTLE_PUBLISH asset %s (kind %d, hash %s) was exported but not uploaded; gathering again"),
-				*Ref.Id, static_cast<int32>(Ref.Kind), *Ref.Hash);
+			const FString* Key = Exported.ProvisionalKeys.Find(Ref.Id);
+			UE_LOG(LogMantle, Display, TEXT("MANTLE_PUBLISH asset %s (kind %d, hash %s, %s) was exported but not uploaded; gathering again"),
+				*Ref.Id, static_cast<int32>(Ref.Kind), *Ref.Hash, Key ? **Key : TEXT("source unknown"));
 			bMissing = true;
 		}
 	}

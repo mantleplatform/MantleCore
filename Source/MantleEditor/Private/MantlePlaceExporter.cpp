@@ -5013,7 +5013,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			Listed.Add(Existing.Id);
 		}
 		const FMantlePlaceAssetSet* Assets = Options.Assets;
-		auto AddUpload = [&Place, &Listed, &Uploads, Assets](const FString& Key, EMantleAssetKind Kind)
+		auto AddUpload = [&Place, &Listed, &Uploads, &Result, Assets](const FString& Key, EMantleAssetKind Kind)
 		{
 			FMantleAssetRef Ref;
 			Ref.Kind = Kind;
@@ -5027,6 +5027,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			else
 			{
 				Ref.Id = FMantlePlaceAssets::ProvisionalId(Key);
+				Result.ProvisionalKeys.Add(Ref.Id, Key);
 				const FMantleConvertedMesh* Mesh = Assets ? Assets->FindMesh(Key) : nullptr;
 				const FMantleConvertedTexture* Texture = Assets ? Assets->FindTexture(Key) : nullptr;
 				const FMantleConvertedSound* Sound = Assets ? Assets->FindSound(Key) : nullptr;

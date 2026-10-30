@@ -124,6 +124,9 @@ struct FMantleExportResult
 	 */
 	FMantleCoverage Coverage;
 
+	/** The upload key (for a material, "material:" and its path name) behind each provisional asset id Place.Assets lists, so a log can name an asset Gather never saw. */
+	TMap<FString, FString> ProvisionalKeys;
+
 	/** The place file's size in bytes, as ToJson writes it (GhzGarage/mantle#818), measured after grouping and any thinning. */
 	int64 PlaceBytes = 0;
 

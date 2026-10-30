@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCoverage.h"
 #include "MantleLandscapeMaterialReader.h"
+#include "MantlePlaceAssets.h"
 #include "MantleTerrainExport.h"
 
 #include "Misc/AutomationTest.h"
@@ -134,6 +135,35 @@ bool FMantleTerrainUnpaintedGetsDefaultLayerTest::RunTest(const FString& Paramet
 		TestNotNull(TEXT("with a material"), Layers[0].Material);
 	}
 	TestEqual(TEXT("still only a warning"), CountIssues(Issues, EMantleIssueSeverity::Error, TEXT("")), 0);
+	return true;
+}
+
+// The plain grey ground an unpainted landscape gets is not read from its material (bDerived false), yet Export names it: Gather must
+// upload it, or Publish finds it "exported but not uploaded" until it gives up with "the level kept changing" (HellCage, ValleyofGuldur).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTerrainPlainGreyLayerIsGatheredTest,
+	"Mantle.Editor.Terrain.PlainGreyLayerIsGathered",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTerrainPlainGreyLayerIsGatheredTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTerrainHolesTestPrivate;
+
+	FMantleTerrainSource Bare = MakeFlatSource({});
+	TArray<FMantleTerrainLayerChoice> Layers;
+	TArray<FMantleValidationIssue> Issues;
+	TestTrue(TEXT("an unpainted landscape is chosen"), FMantleTerrainExport::ChooseLayers(nullptr, Bare, TEXT("Landscape"), Layers, Issues));
+	if (!TestEqual(TEXT("one layer"), Layers.Num(), 1) || !TestNotNull(TEXT("with a material"), Layers[0].Material))
+	{
+		return false;
+	}
+	TestFalse(TEXT("which is not derived from a landscape material"), Layers[0].bDerived);
+
+	FMantlePlaceDependencies Dependencies;
+	Dependencies.AddTerrainLayerMaterials(Layers, TEXT("Landscape"));
+	const FString Key = FMantlePlaceAssets::MaterialKey(Layers[0].Material);
+	TestTrue(TEXT("the grey layer's material is gathered, as Export names it"),
+		Dependencies.Materials.ContainsByPredicate([&Key](const FMantleGatheredMaterial& Gathered) { return Gathered.Key == Key; }));
 	return true;
 }
 

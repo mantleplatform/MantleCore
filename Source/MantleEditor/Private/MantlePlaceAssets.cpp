@@ -2225,6 +2225,19 @@ void FMantlePlaceDependencies::AddMaterial(UMaterialInterface* Material, const F
 	Existing->UsedBy.AddUnique(Label);
 }
 
+void FMantlePlaceDependencies::AddTerrainLayerMaterials(const TArray<FMantleTerrainLayerChoice>& Choices, const FString& Label)
+{
+	for (const FMantleTerrainLayerChoice& Choice : Choices)
+	{
+		// Transient, not bDerived, is the test: a landscape with nothing painted and no Place Settings entry is drawn with a plain grey
+		// layer made the same way (MakeLayerMaterial) that is not derived from its material; Export names it too.
+		if (Choice.Material && Choice.Material->HasAnyFlags(RF_Transient))
+		{
+			AddMaterial(Choice.Material, Label);
+		}
+	}
+}
+
 void FMantlePlaceDependencies::AddMesh(const UStaticMesh* Mesh, const FString& Label)
 {
 	if (!Mesh || FMantlePlaceAssets::IsLibraryAsset(Mesh))
@@ -2443,23 +2456,7 @@ void FMantlePlaceDependencies::AddTerrain(const AActor* Landscape)
 		if (FMantleTerrainExport::ReadLandscape(Landscape, Source, Problem)
 			&& FMantleTerrainExport::ChooseLayers(Landscape->GetWorld(), Source, Label, Chosen, Ignored))
 		{
-			for (const FMantleTerrainLayerChoice& Choice : Chosen)
-			{
-				if (!Choice.bDerived || !Choice.Material)
-				{
-					continue;
-				}
-				const FString DerivedKey = FMantlePlaceAssets::MaterialKey(Choice.Material);
-				FMantleGatheredMaterial* Derived = Materials.FindByPredicate([&DerivedKey](const FMantleGatheredMaterial& Entry) { return Entry.Key == DerivedKey; });
-				if (!Derived)
-				{
-					Derived = &Materials.AddDefaulted_GetRef();
-					Derived->Material = Choice.Material;
-					Derived->Key = DerivedKey;
-					Derived->Name = Choice.Material->GetName();
-				}
-				Derived->UsedBy.AddUnique(Label);
-			}
+			AddTerrainLayerMaterials(Chosen, Label);
 		}
 	}
 
