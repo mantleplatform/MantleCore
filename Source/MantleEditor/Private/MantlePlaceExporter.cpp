@@ -5,6 +5,7 @@
 #include "MantleMeshLumenData.h"
 #include "MantleApiManifest.h"
 #include "MantleAssetLibrary.h"
+#include "MantleCableBake.h"
 #include "MantleConstraint.h"
 #include "MantleCoverageSurvey.h"
 #include "MantleCrowdSpawner.h"
@@ -58,6 +59,7 @@
 #include "Animation/SkeletalMeshActor.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "CableComponent.h"
 #include "Camera/CameraActor.h"
 #include "Components/ArrowComponent.h"
 #include "Components/AudioComponent.h"
@@ -68,6 +70,7 @@
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/LightComponentBase.h"
+#include "Components/LocalLightComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/RectLightComponent.h"
@@ -1316,8 +1319,25 @@ namespace MantlePlaceExporterSkips
  * content: a class marked NotPlaceable can never be placed by a creator, and an actor with
  * no root component has no transform and so cannot be a place entity.
  */
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantlePlaceExporterInfrastructure
+{
+	/** Whether Actor's type is one Export always leaves out (an info actor, a brush, a controller, a pawn, a camera, a reflection capture it cannot carry, world text on a client that cannot read it). */
+	bool IsLeftOutByType(const AActor* Actor)
+	{
+		return Actor->IsA(AInfo::StaticClass())
+			|| FMantleActorDecompose::IsUnpublishedReflectionCapture(Actor)
+			|| Actor->IsA(ABrush::StaticClass())
+			|| Actor->IsA(AController::StaticClass())
+			|| Actor->IsA(APawn::StaticClass())
+			|| Actor->IsA(ACameraActor::StaticClass())
+			|| (Actor->GetClass() == ATextRenderActor::StaticClass() && !FMantleTargetFeatures::Current().Reads(MantleClientFeatures::WorldText));
+	}
+}
+
 bool FMantlePlaceExporter::IsEngineInfrastructure(const AActor* Actor)
 {
+	using namespace MantlePlaceExporterInfrastructure;
 	if (Actor->GetClass()->HasAnyClassFlags(CLASS_NotPlaceable))
 	{
 		return true;
@@ -1372,13 +1392,8 @@ bool FMantlePlaceExporter::IsEngineInfrastructure(const AActor* Actor)
 	{
 		return true;
 	}
-	return Actor->IsA(AInfo::StaticClass())
-		|| FMantleActorDecompose::IsUnpublishedReflectionCapture(Actor)
-		|| Actor->IsA(ABrush::StaticClass())
-		|| Actor->IsA(AController::StaticClass())
-		|| Actor->IsA(APawn::StaticClass())
-		|| Actor->IsA(ACameraActor::StaticClass())
-		|| (Actor->GetClass() == ATextRenderActor::StaticClass() && !FMantleTargetFeatures::Current().Reads(MantleClientFeatures::WorldText));
+	// A type Mantle does not know with nothing to show: left out with a warning (DescribeUnpublishedContent), not refused.
+	return IsLeftOutByType(Actor) || HasNothingToShow(Actor);
 }
 
 namespace
@@ -1515,6 +1530,13 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 	{
 		OutWhat = FString::Printf(TEXT("is a %s, which Mantle leaves out: %s."), *Class->GetName(), FMantleTargetFeatures::NeedsNewerClient);
 		OutRemedy = TEXT("Nothing to change: the text would be dropped.");
+		return true;
+	}
+	// An actor of a type Mantle does not know with nothing to show (a Blueprint that only carries a wind source): left out, with a warning.
+	if (HasNothingToShow(Actor))
+	{
+		OutWhat = FString::Printf(TEXT("is a %s, which Mantle does not publish, and it has nothing a player could see, hear or touch, so it is left out of the place."), *Class->GetName());
+		OutRemedy = TEXT("Nothing to change: the rest of the place publishes without it. Blueprint logic never travels; use a place script for behaviour.");
 		return true;
 	}
 	return false;
@@ -1675,7 +1697,7 @@ void FMantlePlaceExporter::DescribeUnpublishedParts(const AActor* Actor, TArray<
 		}
 	}
 	// Spline meshes (a landscape's roads, PCG's Spawn Spline Mesh) are baked into static meshes (#628)
-	// at export, by FMantleSplineMeshBake: nothing of them is unpublishable here.
+	// at export, by FMantleSplineMeshBake: nothing of them is unpublishable here. Nor of cables, baked by FMantleCableBake.
 
 	// An actor a PCG graph spawned, of a type Mantle can't express. A publishable one (a Static
 	// Mesh Actor, a light, only instanced meshes) exports like any other and needs no message.
@@ -1710,6 +1732,34 @@ bool FMantlePlaceExporter::IsProvidedByMantle(const AActor* Actor)
 namespace
 {
 	bool ExporterIsGameContent(const UActorComponent* Component); // with the instanced meshes, below
+}
+
+bool FMantlePlaceExporter::HasNothingToShow(const AActor* Actor)
+{
+	// One a PCG graph spawned has its own message (DescribeUnpublishedParts).
+	EMantleEntityType Type;
+	if (!IsValid(Actor) || Actor->HasAnyFlags(RF_Transient) || Actor->ActorHasTag(GExporterPCGActorTag)
+		|| ClassifyActor(Actor, Type) || IsInstanceHost(Actor))
+	{
+		return false;
+	}
+	// The engine's own and Mantle's own actors (the World Settings, a built place's sky) are infrastructure already, and not named.
+	if (Actor->GetClass()->HasAnyClassFlags(CLASS_NotPlaceable) || !Actor->GetRootComponent()
+		|| Actor->ActorHasTag(FName(FMantleEnvironment::EnvironmentActorTag)) || Actor->ActorHasTag(FName(FMantleTerrainBuilder::TerrainActorTag))
+		|| Actor->IsA(APhysicsConstraintActor::StaticClass()) || MantlePlaceExporterInfrastructure::IsLeftOutByType(Actor))
+	{
+		return false;
+	}
+	// Content, a sound or particles, and the parts DescribeUnpublishedParts names (PCG, dynamic meshes), are things a player could miss.
+	TArray<UActorComponent*> Components;
+	Actor->GetComponents(Components);
+	return !Components.ContainsByPredicate([](const UActorComponent* Component)
+	{
+		return Component && !Component->HasAnyFlags(RF_Transient)
+			&& (ExporterIsGameContent(Component) || Component->IsA(UAudioComponent::StaticClass()) || Component->IsA(UFXSystemComponent::StaticClass())
+				|| IsOrDerivesFromClassNamed(Component->GetClass(), TEXT("PCGComponent"))
+				|| IsOrDerivesFromClassNamed(Component->GetClass(), TEXT("DynamicMeshComponent")));
+	});
 }
 
 // Named, not anonymous: MantleEditor builds as a unity build.
@@ -1789,6 +1839,16 @@ namespace MantlePlaceExporterPrefab
 	bool IsShownInGame(const USceneComponent* Component)
 	{
 		return Component->IsVisible() && !Component->bHiddenInGame;
+	}
+
+	/**
+	 * A point, spot or rect light with an attenuation radius of 0 or less. Unreal's falloff reaches zero 0.00001 cm from such a
+	 * light (the renderer's inverse radius is capped there), so it lights nothing: Export leaves it out rather than publish a radius the schema refuses.
+	 */
+	bool LightsNothing(const UActorComponent* Component)
+	{
+		const ULocalLightComponent* Light = Cast<ULocalLightComponent>(Component);
+		return Light && Light->AttenuationRadius <= 0.0f;
 	}
 
 	/**
@@ -2214,6 +2274,16 @@ bool FMantlePlaceExporter::DescribeSkippedActor(const AActor* Actor, FSkippedAct
 			}
 		}
 		return false;
+	}
+
+	// A point, spot or rect light with an attenuation radius of 0 lights nothing in Unreal, so there is nothing to publish.
+	if ((Actor->IsA(APointLight::StaticClass()) || Actor->IsA(ASpotLight::StaticClass()) || Actor->IsA(ARectLight::StaticClass()))
+		&& MantlePlaceExporterPrefab::LightsNothing(Actor->GetRootComponent()))
+	{
+		Out.What = TEXT("has an attenuation radius of 0, which lights nothing in Unreal, so it is left out of the place.");
+		Out.Remedy = TEXT("Set the light's attenuation radius above zero to keep it.");
+		Out.Category = MantleCoverageCategory::Lights;
+		return true;
 	}
 
 	// A decal whose material gives Mantle no texture to draw, or that has no size to show it at.
@@ -3082,6 +3152,11 @@ namespace
 		{
 			return false;
 		}
+		// A cable is baked into a static mesh on its own (FMantleCableBake); a hidden one has nothing to show, and it never collides.
+		if (FMantleCableBake::IsCableComponent(Component))
+		{
+			return false;
+		}
 		if (const UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Component))
 		{
 			const bool bVisible = Primitive->IsVisible() && !Primitive->bHiddenInGame;
@@ -3192,6 +3267,11 @@ bool FMantlePlaceExporter::IsExportedInstanceSource(const UInstancedStaticMeshCo
 	}
 	const bool bVisible = Component->IsVisible() && !Component->bHiddenInGame;
 	return bVisible || Component->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
+}
+
+bool FMantlePlaceExporter::IsGameContent(const UActorComponent* Component)
+{
+	return Component && ExporterIsGameContent(Component);
 }
 
 TArray<UInstancedStaticMeshComponent*> FMantlePlaceExporter::CollectInstanceSources(UWorld* World)
@@ -3315,6 +3395,8 @@ void FMantlePlaceExporter::CollectPrefabParts(
 				{
 					Part.Transform = FMantleMirrorBake::ReflectTransform(Part.Transform, GroupSigns);
 				}
+				// Particles have no handedness: a negative scale publishes at the positive one.
+				Part.Transform.SetScale3D(Part.Transform.GetScale3D().GetAbs());
 				Part.EffectProperties = Emitters[EmitterIndex];
 				Part.EffectIndex = EmitterIndex;
 			}
@@ -3376,6 +3458,19 @@ void FMantlePlaceExporter::CollectPrefabParts(
 
 		if (Scene && MantlePlaceExporterPrefab::PartType(Scene, Type))
 		{
+			// A point, spot or rect light with an attenuation radius of 0 lights nothing in Unreal, so it is left out and said so.
+			if (MantlePlaceExporterPrefab::LightsNothing(Scene))
+			{
+				if (OutUnsupported)
+				{
+					OutUnsupported->Add(FMantleUnpublishedPart{
+						FString::Printf(TEXT("has a light component ('%s') with an attenuation radius of 0, which lights nothing in Unreal, so it is left out; the rest of the actor publishes."),
+							*Scene->GetName()),
+						TEXT("Set the light's attenuation radius above zero to keep it."),
+						/*bBlocksPublish*/ false, MantleCoverageCategory::Lights });
+				}
+				continue;
+			}
 			FMantlePrefabPart Part;
 			Part.Component = Scene;
 			Part.Type = Type;
@@ -3405,6 +3500,25 @@ void FMantlePlaceExporter::CollectPrefabParts(
 				}
 				Part.MirroredMesh = Mirror.Mesh;
 				Part.Transform.SetScale3D(Mirror.PositiveScale);
+			}
+			else if (Type == EMantleEntityType::SkeletalMesh && FMantleActorDecompose::HasNegativeAxis(MeshScale))
+			{
+				// A skeletal mesh can't be mirrored in a copy, as a static mesh can.
+				if (OutUnsupported)
+				{
+					OutUnsupported->Add(FMantleUnpublishedPart{
+						FString::Printf(TEXT("has a skeletal mesh component ('%s') with a scale of %s, and Mantle can't mirror a skeletal mesh, so it is left out; the rest of the actor publishes."),
+							*Scene->GetName(), *MeshScale.ToString()),
+						TEXT("Use a positive scale, or a skeletal mesh mirrored in your modelling tool."),
+						/*bBlocksPublish*/ false, MantleCoverageCategory::SkeletalMeshes });
+				}
+				continue;
+			}
+			else
+			{
+				// The group's mirror can cancel a part's own negative axes (a mesh left with nothing to mirror), and a light, sound
+				// or trigger has no handedness: what is left publishes at the positive scale.
+				Part.Transform.SetScale3D(MeshScale.GetAbs());
 			}
 			OutParts.Add(MoveTemp(Part));
 			continue;
@@ -3613,6 +3727,12 @@ bool FMantlePlaceExporter::IsInstanceHost(const AActor* Actor)
 		{
 			// Baked into static meshes on their own (#628), like instanced meshes: nothing else to lose.
 			bHasInstances = bHasInstances || FMantleSplineMeshBake::IsBakeSource(Spline);
+			continue;
+		}
+		if (const UCableComponent* Cable = Cast<UCableComponent>(Component))
+		{
+			// Baked into a static mesh on its own too (FMantleCableBake).
+			bHasInstances = bHasInstances || FMantleCableBake::IsBakeSource(Cable);
 			continue;
 		}
 		if (ExporterIsGameContent(Component))
@@ -3854,6 +3974,8 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	// #818: decals (and player starts) published at the positive scale of the negative one they have.
 	TSet<const AActor*> UnmirroredActors;
 	TSet<const AActor*> RotatedGroups;
+	// A mirrored group's signs: its child actors are placed in the mirrored space (#628).
+	TMap<const AActor*, FVector> MirroredGroups;
 	int32 EffectParts = 0;
 	int32 ReflectionProbes = 0;
 	int32 Texts = 0;
@@ -3971,8 +4093,17 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		if (Type == EMantleEntityType::Group && FMantleActorDecompose::GroupMirrorSigns(Actor) != FVector::OneVector)
 		{
 			UnmirroredActors.Add(Actor);
+			MirroredGroups.Add(Actor, FMantleActorDecompose::GroupMirrorSigns(Actor));
 			Result.Coverage.Add(MantleCoverageCategory::OtherComponents, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
 				TEXT("a prefab with a negative scale is published at the positive scale, with its parts mirrored."));
+			// Child actors (a Child Actor component's) are their own entities: they move to where the mirror puts them, but keep their own shape.
+			TArray<AActor*> ChildActors;
+			Actor->GetAttachedActors(ChildActors);
+			if (ChildActors.Num() > 0)
+			{
+				Result.Coverage.Add(MantleCoverageCategory::OtherComponents, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
+					TEXT("its child actors are placed where the mirror puts them, but are not mirrored themselves."));
+			}
 		}
 		// An even number of negative axes is a rotation: the group publishes turned, at the positive scale, and its parts are as they were.
 		if (Type == EMantleEntityType::Group && FMantleActorDecompose::IsRotatedGroup(Actor))
@@ -4091,6 +4222,11 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		{
 			Entity.Parent = IdByActor[ParentActor];
 			Entity.Transform = Actor->GetRootComponent()->GetRelativeTransform();
+			// The parent publishes at the positive scale of a mirror (#628): its child moves to where the mirror put it.
+			if (const FVector* ParentSigns = MirroredGroups.Find(ParentActor))
+			{
+				Entity.Transform = FMantleMirrorBake::ReflectTransform(Entity.Transform, *ParentSigns);
+			}
 		}
 		else
 		{
@@ -4403,7 +4539,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		}
 	}
 
-	// Pass 2b — spline meshes (#628): a landscape's road and river-bank splines, PCG's Spawn Spline Mesh
+	// Pass 2b — spline meshes (#628) and cables: a landscape's road and river-bank splines, PCG's Spawn Spline Mesh
 	// output and Blueprint spline meshes. FMantleSplineMeshBake merges them by owning actor and material
 	// set into static meshes, deformed along their splines as the components render, and cuts them within
 	// the place mesh limits. Each is written as a StaticMesh entity in world space, and its mesh and
@@ -4433,7 +4569,30 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 					TEXT("nothing a player could see or touch (hidden in game and not colliding, or an empty mesh), so nothing of them is published."), Report.Skipped);
 			}
 		}
-		for (const FMantleBakedSplineMesh& Baked : Bake.Meshes)
+
+		// Cables (the Cable Component's wires) are baked into the same kind of mesh by FMantleCableBake, in the shape they have in the
+		// editor, and written the same way.
+		const FMantleSplineBakeResult CableBake = FMantleCableBake::Bake(World, Uploads.Limits);
+		for (const FMantleSplineBakeProblem& Problem : CableBake.Problems)
+		{
+			Result.Errors.Add(FMantleParseError{
+				FString::Printf(TEXT("/actors/%s"), *Problem.OwnerName),
+				FString::Printf(TEXT("'%s' %s %s"), *Problem.OwnerLabel, *Problem.What, *Problem.Remedy) });
+			Result.Coverage.Add(MantleCoverageCategory::Cables, EMantleCoverageOutcome::Dropped, Problem.OwnerLabel, Problem.What);
+		}
+		for (const FMantleSplineBakeReport& Report : CableBake.Reports)
+		{
+			if (Report.Components > 0)
+			{
+				Result.Coverage.Add(MantleCoverageCategory::Cables, EMantleCoverageOutcome::Approximated, Report.OwnerLabel,
+					FString::Printf(TEXT("baked into %d static mesh%s, merged by material, in the shape they have in the editor: they do not sway in the place."),
+						Report.Meshes, Report.Meshes == 1 ? TEXT("") : TEXT("es")),
+					Report.Components);
+			}
+		}
+		TArray<FMantleBakedSplineMesh> BakedMeshes = Bake.Meshes;
+		BakedMeshes.Append(CableBake.Meshes);
+		for (const FMantleBakedSplineMesh& Baked : BakedMeshes)
 		{
 			const FString Path = FString::Printf(TEXT("/entities/%d"), Place.Entities.Num());
 			TArray<FMantleValidationIssue> MeshIssues;
@@ -4468,7 +4627,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			Props.Surface = Baked.Surface;
 
 			FMantleEntity Entity;
-			// Hashed from the owner and material set, not the geometry, so editing a road keeps its id. A collision
+			// Hashed from the owner and material set, not the geometry, so editing a road keeps its id (a cable's owner is "Cables"). A collision
 			// (it never happens in practice) is suffixed rather than failing the publish, as the instanced ids are.
 			Entity.Id = FString::Printf(TEXT("ent_spl_%s"), *ExporterMd5Hex(Baked.OwnerName + TEXT("|") + Baked.IdSeed).Left(24));
 			const FString Base = Entity.Id;
@@ -5013,7 +5172,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			Listed.Add(Existing.Id);
 		}
 		const FMantlePlaceAssetSet* Assets = Options.Assets;
-		auto AddUpload = [&Place, &Listed, &Uploads, Assets](const FString& Key, EMantleAssetKind Kind)
+		auto AddUpload = [&Place, &Listed, &Uploads, &Result, Assets](const FString& Key, EMantleAssetKind Kind)
 		{
 			FMantleAssetRef Ref;
 			Ref.Kind = Kind;
@@ -5027,6 +5186,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			else
 			{
 				Ref.Id = FMantlePlaceAssets::ProvisionalId(Key);
+				Result.ProvisionalKeys.Add(Ref.Id, Key);
 				const FMantleConvertedMesh* Mesh = Assets ? Assets->FindMesh(Key) : nullptr;
 				const FMantleConvertedTexture* Texture = Assets ? Assets->FindTexture(Key) : nullptr;
 				const FMantleConvertedSound* Sound = Assets ? Assets->FindSound(Key) : nullptr;

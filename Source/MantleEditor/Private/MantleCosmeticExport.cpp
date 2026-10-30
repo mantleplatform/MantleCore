@@ -777,6 +777,21 @@ namespace MantleCosmeticExportPrivate
 			}
 		}
 
+		// The cook refuses a value that is not a number (a texture coordinate, normal or tangent): set to a safe one here, and
+		// Check says so (CountNonFiniteStaticMesh). A position cannot be set to anything sensible.
+		const FMantleGlbNonFinite NonFinite = FMantleGlbWriter::SanitiseNonFinite(Glb);
+		if (NonFinite.Positions > 0)
+		{
+			OutError = FString::Printf(TEXT("%s LOD %d has %d vertex positions that are not numbers. Fix or delete those vertices in a modelling tool and re-import it."),
+				*Mesh->GetName(), LODIndex, NonFinite.Positions);
+			return false;
+		}
+		if (NonFinite.Any())
+		{
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_F4 %s LOD %d: set %d texture coordinates, %d normals and %d tangents that were not numbers"), *Mesh->GetName(),
+				LODIndex, NonFinite.TexCoords, NonFinite.Normals, NonFinite.Tangents);
+		}
+
 		const TArray<FStaticMaterial>& Slots = Mesh->GetStaticMaterials();
 		TArray<int32> Order;
 		for (int32 Section = 0; Section < LOD.Sections.Num(); ++Section)
@@ -4765,6 +4780,36 @@ bool FMantleCosmeticExport::ReadStaticMesh(const UStaticMesh* Mesh, int32 LODInd
 	OutSlots = MoveTemp(Source.SlotIndices);
 	OutTriangles = Source.NumTriangles;
 	return true;
+}
+
+FMantleGlbNonFinite FMantleCosmeticExport::CountNonFiniteStaticMesh(const UStaticMesh* Mesh, int32 LODIndex)
+{
+	FMantleGlbNonFinite Found;
+	const FStaticMeshRenderData* RenderData = Mesh ? Mesh->GetRenderData() : nullptr;
+	if (!RenderData || !RenderData->LODResources.IsValidIndex(LODIndex))
+	{
+		return Found;
+	}
+	const FStaticMeshLODResources& LOD = RenderData->LODResources[LODIndex];
+	const FPositionVertexBuffer& PositionBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+	const FStaticMeshVertexBuffer& VertexBuffer = LOD.VertexBuffers.StaticMeshVertexBuffer;
+	const uint32 NumVertices = PositionBuffer.GetNumVertices();
+	if (NumVertices == 0 || !PositionBuffer.GetVertexData() || !VertexBuffer.GetTexCoordData())
+	{
+		return Found;
+	}
+	const uint32 NumUVSets = FMath::Min<uint32>(VertexBuffer.GetNumTexCoords(), 2);
+	for (uint32 Vertex = 0; Vertex < NumVertices; ++Vertex)
+	{
+		Found.Positions += PositionBuffer.VertexPosition(Vertex).ContainsNaN() ? 1 : 0;
+		bool bBad = false;
+		for (uint32 Set = 0; Set < NumUVSets; ++Set)
+		{
+			bBad = bBad || VertexBuffer.GetVertexUV(Vertex, Set).ContainsNaN();
+		}
+		Found.TexCoords += bBad ? 1 : 0;
+	}
+	return Found;
 }
 
 bool FMantleCosmeticExport::ReadSkeletalMesh(const USkeletalMesh* Mesh, int32 LODIndex, FMantleGlbMesh& OutMesh, TArray<int32>& OutSlots,

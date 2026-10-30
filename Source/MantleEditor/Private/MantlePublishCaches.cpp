@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePublishCaches.h"
+#include "MantleCableBake.h"
 #include "MantleMeshReduce.h"
 #include "MantleMirrorBake.h"
 #include "MantleSplineMeshBake.h"
@@ -41,5 +42,6 @@ void FMantlePublishCaches::Prune()
 {
 	FMantleMirrorBake::ClearCache();
 	FMantleSplineMeshBake::ClearCache();
+	FMantleCableBake::ClearCache();
 	FMantleMeshReduce::ClearCache();
 }

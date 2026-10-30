@@ -17,6 +17,7 @@ class UInstancedStaticMeshComponent;
 class UMaterialInterface;
 class UMantleVehicleSource;
 class UObject;
+struct FMantleTerrainLayerChoice;
 class USkeletalMesh;
 class USkeletalMeshComponent;
 class USoundBase;
@@ -537,11 +538,23 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	 */
 	void AddSplineMeshes(UWorld* World);
 
+	/**
+	 * Adds the static meshes the level's cables are baked into (FMantleCableBake), each with its material, under the label
+	 * "Cables": Export writes them as StaticMesh entities.
+	 */
+	void AddCableMeshes(UWorld* World);
+
 	/** Adds a mesh no component uses, with each slot's own material (FMantlePlaceAssets::MeshSlotMaterial). Library meshes are skipped. */
 	void AddMesh(const UStaticMesh* Mesh, const FString& Label);
 
 	/** Adds one material under Label unless it is a library material. */
 	void AddMaterial(UMaterialInterface* Material, const FString& Label);
+
+	/**
+	 * Adds the materials a landscape's layers draw with that Mantle makes itself (transient: read from the landscape's material, or the plain grey of an
+	 * unpainted one), which Export names and so Gather must upload. A Place Settings entry's own material is a project asset, gathered with the settings.
+	 */
+	void AddTerrainLayerMaterials(const TArray<FMantleTerrainLayerChoice>& Choices, const FString& Label);
 
 	/** Adds one sound under Label when it is a sound wave that is neither a library sound nor generated while the game runs (#324). */
 	void AddSound(const USoundBase* Sound, const FString& Label);

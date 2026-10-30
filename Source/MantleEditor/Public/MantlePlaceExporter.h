@@ -124,6 +124,9 @@ struct FMantleExportResult
 	 */
 	FMantleCoverage Coverage;
 
+	/** The upload key (for a material, "material:" and its path name) behind each provisional asset id Place.Assets lists, so a log can name an asset Gather never saw. */
+	TMap<FString, FString> ProvisionalKeys;
+
 	/** The place file's size in bytes, as ToJson writes it (GhzGarage/mantle#818), measured after grouping and any thinning. */
 	int64 PlaceBytes = 0;
 
@@ -418,6 +421,14 @@ public:
 	static bool DescribeUnpublishedContent(const AActor* Actor, FString& OutWhat, FString& OutRemedy);
 
 	/**
+	 * Whether Actor is of a type ClassifyActor cannot express and holds nothing a player could see, hear or touch (a Blueprint
+	 * that only carries a wind source): nothing is lost by leaving it out. Export leaves it out (IsEngineInfrastructure is true
+	 * for it) and DescribeUnpublishedContent names it as a warning, so Check, the coverage survey and the preview agree. An
+	 * actor with content, a sound, particles, PCG or a dynamic mesh is not one: it is still refused.
+	 */
+	static bool HasNothingToShow(const AActor* Actor);
+
+	/**
 	 * An actor Export leaves out, and why (#818). Carries what a creator needs: what is wrong in plain words (following the
 	 * actor's label), the fix, the coverage category it is listed under, and whether it is a loss (a warning, Dropped) or only
 	 * a note (a Level Instance whose actors publish on their own, Info).
@@ -597,6 +608,14 @@ public:
 	 */
 	static bool IsExportedInstanceSource(const UInstancedStaticMeshComponent* Component);
 
+	/**
+	 * Whether Component is content in game: a visible primitive or light, or one that collides. Not editor-only
+	 * components, billboards and arrows, splines (authoring data), spline meshes and dynamic meshes (named on their own).
+	 * The one answer for Export (what makes an actor a Group of parts), CollectPrefabParts (what it names as left out)
+	 * and Check (what counts as an extra component).
+	 */
+	static bool IsGameContent(const UActorComponent* Component);
+
 	/** Every component IsExportedInstanceSource accepts in World, in actor then component order. */
 	static TArray<UInstancedStaticMeshComponent*> CollectInstanceSources(UWorld* World);
 
@@ -616,7 +635,7 @@ public:
 	 * no collision, like a spline or a volume's brush) don't count; neither do the parts
 	 * DescribeUnpublishedParts reports on their own. Spline meshes (#628) are baked into static
 	 * meshes on their own (FMantleSplineMeshBake), so an actor holding only those and instanced
-	 * meshes counts too.
+	 * meshes counts too; so do cables (FMantleCableBake).
 	 */
 	static bool IsInstanceHost(const AActor* Actor);
 

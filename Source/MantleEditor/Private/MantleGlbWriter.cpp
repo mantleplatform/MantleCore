@@ -203,6 +203,59 @@ namespace MantleGlbWriterPrivate
 	}
 }
 
+FMantleGlbNonFinite FMantleGlbWriter::SanitiseNonFinite(FMantleGlbMesh& Mesh)
+{
+	FMantleGlbNonFinite Found;
+	for (const FVector3f& Position : Mesh.Positions)
+	{
+		Found.Positions += Position.ContainsNaN() ? 1 : 0;
+	}
+
+	// A vertex counts once for the texture coordinates, however many of its values are bad.
+	const int32 NumUVs = FMath::Max(Mesh.UVs.Num(), Mesh.UV1s.Num());
+	for (int32 Vertex = 0; Vertex < NumUVs; ++Vertex)
+	{
+		bool bFixed = false;
+		if (Mesh.UVs.IsValidIndex(Vertex) && Mesh.UVs[Vertex].ContainsNaN())
+		{
+			Mesh.UVs[Vertex] = FVector2f::ZeroVector;
+			bFixed = true;
+		}
+		if (Mesh.UV1s.IsValidIndex(Vertex) && Mesh.UV1s[Vertex].ContainsNaN())
+		{
+			Mesh.UV1s[Vertex] = FVector2f::ZeroVector;
+			bFixed = true;
+		}
+		Found.TexCoords += bFixed ? 1 : 0;
+	}
+
+	for (FVector3f& Normal : Mesh.Normals)
+	{
+		if (Normal.ContainsNaN())
+		{
+			Normal = FVector3f(0.0f, 0.0f, 1.0f);
+			++Found.Normals;
+		}
+	}
+	for (int32 Vertex = 0; Vertex < Mesh.Tangents.Num(); ++Vertex)
+	{
+		if (!Mesh.Tangents[Vertex].ContainsNaN())
+		{
+			continue;
+		}
+		const FVector3f Normal = Mesh.Normals.IsValidIndex(Vertex) ? Mesh.Normals[Vertex] : FVector3f(0.0f, 0.0f, 1.0f);
+		const FVector3f Axis = FMath::Abs(Normal.X) < 0.9f ? FVector3f(1.0f, 0.0f, 0.0f) : FVector3f(0.0f, 1.0f, 0.0f);
+		FVector3f Tangent = (Axis - Normal * FVector3f::DotProduct(Axis, Normal)).GetSafeNormal();
+		if (Tangent.IsZero())
+		{
+			Tangent = Axis;
+		}
+		Mesh.Tangents[Vertex] = FVector4f(Tangent.X, Tangent.Y, Tangent.Z, 1.0f);
+		++Found.Tangents;
+	}
+	return Found;
+}
+
 FVector3d FMantleGlbWriter::ToGltfPosition(const FVector3d& Unreal)
 {
 	using namespace MantleGlbWriterPrivate;

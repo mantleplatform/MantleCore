@@ -412,6 +412,11 @@ TArray<FString> FMantlePlacePreview::ListContentLeftOut(UWorld* SourceWorld)
 		EMantleEntityType Type;
 		if (!FMantlePlaceExporter::ClassifyActor(Actor, Type))
 		{
+			// Instanced meshes, spline meshes and cables publish on their own, so nothing of the actor is left out.
+			if (FMantlePlaceExporter::IsInstanceHost(Actor))
+			{
+				continue;
+			}
 			LeftOut.Add(FString::Printf(
 				TEXT("'%s' is a %s, which Mantle cannot publish."), *Label, *Actor->GetClass()->GetName()));
 		}

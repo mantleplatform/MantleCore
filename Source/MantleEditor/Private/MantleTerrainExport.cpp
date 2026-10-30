@@ -558,6 +558,7 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 		{
 			const FMantleTerrainLayerSetting* Entry = nullptr;
 			const FMantleLandscapeLayerLook* Look = nullptr;
+			bool bPlain = false; // the material could not be read and Place Settings has no entry: drawn plain grey
 		};
 		TArray<FLayerPlan> Plans;
 		Plans.SetNum(Source.LayerNames.Num());
@@ -588,8 +589,13 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 			}
 			else
 			{
-				Refuse(FString::Printf(TEXT("has paint layer '%s', which has no material to draw it with in Mantle. %s"), *Name.ToString(), *Source.MaterialProblem).TrimEnd(),
-					FString::Printf(TEXT("In %s, add '%s' with the material it should look like."), Where, *Name.ToString()));
+				// The landscape's material says nothing about this layer: draw it plain grey rather than stop the publish.
+				Plan.bPlain = true;
+				Candidates.Add(Index);
+				Warn(FString::Printf(TEXT("has paint layer '%s', which has no material to draw it with in Mantle, so it is drawn plain grey. %s"), *Name.ToString(), *Source.MaterialProblem).TrimEnd(),
+					FString::Printf(TEXT("It still publishes. To draw the layer differently, add '%s' in %s with the material it should look like."), *Name.ToString(), Where));
+				Report(MantleCoverageCategory::TerrainLayers, EMantleCoverageOutcome::Approximated, Name.ToString(),
+					FString::Printf(TEXT("'%s' has no Place Settings material and its landscape material could not be read: drawn plain grey."), *Label));
 			}
 		}
 		if (Candidates.Num() == 0 && !bFailed)
@@ -619,6 +625,19 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 				{
 					Choice.Material = Plan.Entry->Material;
 					Choice.TilingCm = Plan.Entry->TilingCm;
+					continue;
+				}
+				if (Plan.bPlain)
+				{
+					FMantleLandscapeLayerLook Plain;
+					Plain.Layer = Name;
+					Choice.Material = FMantleLandscapeMaterialReader::MakeLayerMaterial(Plain);
+					Choice.TilingCm = 400.0;
+					if (!Choice.Material)
+					{
+						Refuse(FString::Printf(TEXT("has paint layer '%s', whose plain grey material could not be made."), *Name.ToString()),
+							FString::Printf(TEXT("In %s, add '%s' with the material it should look like."), Where, *Name.ToString()));
+					}
 					continue;
 				}
 				// A look read from the landscape's own material.

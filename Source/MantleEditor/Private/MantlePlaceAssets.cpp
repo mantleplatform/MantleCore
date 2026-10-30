@@ -4,6 +4,7 @@
 #include "MantleActorDecompose.h"
 #include "MantleAssetLibrary.h"
 #include "MantleAvatarContract.h"
+#include "MantleCableBake.h"
 #include "MantleCosmeticExport.h"
 #include "MantleEffect.h"
 #include "MantleEffectExport.h"
@@ -2225,6 +2226,19 @@ void FMantlePlaceDependencies::AddMaterial(UMaterialInterface* Material, const F
 	Existing->UsedBy.AddUnique(Label);
 }
 
+void FMantlePlaceDependencies::AddTerrainLayerMaterials(const TArray<FMantleTerrainLayerChoice>& Choices, const FString& Label)
+{
+	for (const FMantleTerrainLayerChoice& Choice : Choices)
+	{
+		// Transient, not bDerived, is the test: a landscape with nothing painted and no Place Settings entry is drawn with a plain grey
+		// layer made the same way (MakeLayerMaterial) that is not derived from its material; Export names it too.
+		if (Choice.Material && Choice.Material->HasAnyFlags(RF_Transient))
+		{
+			AddMaterial(Choice.Material, Label);
+		}
+	}
+}
+
 void FMantlePlaceDependencies::AddMesh(const UStaticMesh* Mesh, const FString& Label)
 {
 	if (!Mesh || FMantlePlaceAssets::IsLibraryAsset(Mesh))
@@ -2392,6 +2406,8 @@ FMantlePlaceDependencies FMantlePlaceDependencies::Gather(UWorld* World)
 	}
 	// Spline meshes baked into static meshes, where Export writes them (#628): they upload like any project mesh.
 	Out.AddSplineMeshes(World);
+	// Cables baked the same way (FMantleCableBake).
+	Out.AddCableMeshes(World);
 	// The landscape, where Export writes it (#466). Only the first one publishes; Check names the rest.
 	const TArray<AActor*> Landscapes = FMantleTerrainExport::CollectLandscapes(World);
 	if (Landscapes.Num() > 0)
@@ -2407,6 +2423,16 @@ void FMantlePlaceDependencies::AddSplineMeshes(UWorld* World)
 {
 	// The bake is cached while its sources are unchanged, so Export finds these same meshes (and keys).
 	const FMantleSplineBakeResult Bake = FMantleSplineMeshBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
+	for (const FMantleBakedSplineMesh& Baked : Bake.Meshes)
+	{
+		AddMesh(Baked.Mesh, Baked.OwnerLabel);
+	}
+}
+
+void FMantlePlaceDependencies::AddCableMeshes(UWorld* World)
+{
+	// Cached while the cables are unchanged, as the spline bake is, so Export finds these same meshes (and keys).
+	const FMantleSplineBakeResult Bake = FMantleCableBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
 	for (const FMantleBakedSplineMesh& Baked : Bake.Meshes)
 	{
 		AddMesh(Baked.Mesh, Baked.OwnerLabel);
@@ -2443,23 +2469,7 @@ void FMantlePlaceDependencies::AddTerrain(const AActor* Landscape)
 		if (FMantleTerrainExport::ReadLandscape(Landscape, Source, Problem)
 			&& FMantleTerrainExport::ChooseLayers(Landscape->GetWorld(), Source, Label, Chosen, Ignored))
 		{
-			for (const FMantleTerrainLayerChoice& Choice : Chosen)
-			{
-				if (!Choice.bDerived || !Choice.Material)
-				{
-					continue;
-				}
-				const FString DerivedKey = FMantlePlaceAssets::MaterialKey(Choice.Material);
-				FMantleGatheredMaterial* Derived = Materials.FindByPredicate([&DerivedKey](const FMantleGatheredMaterial& Entry) { return Entry.Key == DerivedKey; });
-				if (!Derived)
-				{
-					Derived = &Materials.AddDefaulted_GetRef();
-					Derived->Material = Choice.Material;
-					Derived->Key = DerivedKey;
-					Derived->Name = Choice.Material->GetName();
-				}
-				Derived->UsedBy.AddUnique(Label);
-			}
+			AddTerrainLayerMaterials(Chosen, Label);
 		}
 	}
 
@@ -4221,6 +4231,8 @@ void FMantlePlaceAssets::CheckMesh(const UStaticMesh* Mesh, const FString& UsedB
 	int32 Triangles = Counted.Triangles;
 	int32 Vertices = Counted.Vertices;
 	const TArray<int32>& Slots = Counted.Slots;
+	const UStaticMesh* Published = Mesh;
+	int32 PublishedFrom = 0;
 
 	// #804: over a limit, the mesh publishes from a smaller version of itself where it can (the creator's mesh is untouched).
 	// When it cannot be reduced, the plain reason (needing Allow CPU Access, say) goes on the error below.
@@ -4251,6 +4263,7 @@ void FMantlePlaceAssets::CheckMesh(const UStaticMesh* Mesh, const FString& UsedB
 				TEXT("Nothing to do: your mesh is unchanged. To publish a more detailed version, make a LOD 0 that fits the limit in the mesh editor.") });
 			Triangles = Smaller.Triangles;
 			Vertices = Smaller.Vertices;
+			PublishedFrom = PublishedLOD;
 		}
 		else
 		{
@@ -4264,6 +4277,8 @@ void FMantlePlaceAssets::CheckMesh(const UStaticMesh* Mesh, const FString& UsedB
 					TEXT("Nothing to do. If the reduced mesh looks too rough, make a LOD that fits the limit in the mesh editor and Mantle publishes that instead.") });
 				Triangles = Smaller.Triangles;
 				Vertices = Smaller.Vertices;
+				Published = Reduced;
+				PublishedFrom = 0;
 			}
 			else
 			{
@@ -4275,6 +4290,21 @@ void FMantlePlaceAssets::CheckMesh(const UStaticMesh* Mesh, const FString& UsedB
 	}
 	// What the creator can try when Mantle could not shrink the mesh itself.
 	const FString ReduceNote = ReduceFailure.IsEmpty() ? FString() : FString::Printf(TEXT(" Mantle couldn't reduce it automatically: %s."), *ReduceFailure);
+
+	// What the export sets or refuses rather than writes: the server rejects a value that is not a number.
+	const FMantleGlbNonFinite NonFinite = FMantleCosmeticExport::CountNonFiniteStaticMesh(Published, PublishedFrom);
+	if (NonFinite.Positions > 0)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, FString(),
+			FString::Printf(TEXT("%s has %d vertex positions that are not numbers, so it cannot be published."), *Subject, NonFinite.Positions),
+			TEXT("Fix or delete those vertices in a modelling tool and re-import the mesh.") });
+	}
+	if (NonFinite.TexCoords > 0)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("%s had %d texture coordinates that were not numbers; they were set to 0."), *Subject, NonFinite.TexCoords),
+			TEXT("Nothing to do: your mesh is unchanged. Textures near those vertices may look stretched; fix the UVs in a modelling tool to correct that.") });
+	}
 
 	if (Mesh->IsNaniteEnabled())
 	{
