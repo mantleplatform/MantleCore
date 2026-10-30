@@ -57,7 +57,12 @@ __mantle_extend("Entity", "observe_attribute", _entity_observe_attribute)
 
 def _export_function(package, name):
     def _call(*args):
-        return Exports.call(package, name, *args)
+        r = Exports.call(package, name, *args)
+        if r is None:
+            return None
+        if r[0]:
+            return r[1]
+        raise RuntimeError(r[1])
 
     return _call
 

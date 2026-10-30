@@ -55,7 +55,12 @@ function exportTable(pkg) {
 			}
 			let fn = cache.get(name);
 			if (!fn) {
-				fn = (...args) => Exports.call(pkg, name, ...args);
+				fn = (...args) => {
+					const r = Exports.call(pkg, name, ...args);
+					if (r === undefined) return undefined;
+					if (r[0]) return r[1];
+					throw new Error(r[1]);
+				};
 				cache.set(name, fn);
 			}
 			return fn;
