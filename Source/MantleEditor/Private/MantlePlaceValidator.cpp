@@ -2,6 +2,7 @@
 #include "MantlePlaceValidator.h"
 #include "MantleActorDecompose.h"
 #include "MantleAssetLibrary.h"
+#include "MantleCableBake.h"
 #include "MantleClientFeatures.h"
 #include "Particles/ParticleSystemComponent.h"
 #include "MantleCrowdSpawner.h"
@@ -143,6 +144,11 @@ namespace
 		}
 		// Baked into static meshes on its own (#628), checked with the level's spline meshes; not also an extra component.
 		if (Component->IsA(USplineMeshComponent::StaticClass()))
+		{
+			return false;
+		}
+		// Cables too (FMantleCableBake).
+		if (FMantleCableBake::IsCableComponent(Component))
 		{
 			return false;
 		}
@@ -1885,6 +1891,20 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 	// its fix. The baked meshes themselves are held to the mesh limits with the level's other uploads, below.
 	{
 		const FMantleSplineBakeResult Bake = FMantleSplineMeshBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
+		Publishable += Bake.Meshes.Num();
+		for (const FMantleSplineBakeProblem& Problem : Bake.Problems)
+		{
+			Result.Issues.Add(FMantleValidationIssue{
+				EMantleIssueSeverity::Error,
+				Problem.OwnerLabel,
+				Problem.What,
+				Problem.Remedy });
+		}
+	}
+
+	// Cables (FMantleCableBake), which Export bakes into static meshes the same way: whatever can't be baked is an error with its fix.
+	{
+		const FMantleSplineBakeResult Bake = FMantleCableBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
 		Publishable += Bake.Meshes.Num();
 		for (const FMantleSplineBakeProblem& Problem : Bake.Problems)
 		{

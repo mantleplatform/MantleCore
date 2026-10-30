@@ -33,6 +33,8 @@ public class MantleEditor : ModuleRules
 			"Json",
 			// The exporter reads a static mesh's simple collision (#470): UBodySetupCore lives here.
 			"PhysicsCore",
+			// A Cable Actor's tube is baked into a static mesh from its simulated points (FMantleCableBake): UCableComponent lives here.
+			"CableComponent",
 			"JsonUtilities",
 			"HTTP",
 			"DeveloperSettings",
