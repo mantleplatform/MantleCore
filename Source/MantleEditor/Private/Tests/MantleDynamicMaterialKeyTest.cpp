@@ -68,6 +68,52 @@ bool FMantleDynamicMaterialKeyDifferentTextureTest::RunTest(const FString& Param
 	return true;
 }
 
+// MagiciansLibrary's books still made 559 distinct looks (cover, spine and pages each picked at random), 52 minutes of bakes. Past
+// MaxVariantsPerMaterial looks of one material, the rest are drawn as one of those, picked by content so the same level picks the same.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleDynamicMaterialVariantCapTest,
+	"Mantle.Editor.MaterialKey.LooksOfOneMaterialPastTheCapStandInAsAnEarlierOne",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleDynamicMaterialVariantCapTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleDynamicMaterialKeyTestPrivate;
+
+	const int32 Cap = FMantlePlaceAssets::MaxVariantsPerMaterial;
+	UMaterial* Parent = NewObject<UMaterial>(GetTransientPackage());
+	UMaterial* FewParent = NewObject<UMaterial>(GetTransientPackage());
+	TArray<UMaterialInstanceDynamic*> Instances;
+	FMantlePlaceDependencies Dependencies;
+	FMantlePlaceAssets::ClearVariantStandIns();
+	for (int32 Index = 0; Index < Cap + 5; ++Index)
+	{
+		UMaterialInstanceDynamic* Instance = NewInstance(Parent, TEXT("/Engine/EngineResources/DefaultTexture"));
+		Instance->SetScalarParameterValue(TEXT("Wear"), static_cast<float>(Index));
+		Instances.Add(Instance);
+		Dependencies.AddMaterial(Instance, FString::Printf(TEXT("Book%d"), Index));
+	}
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		UMaterialInstanceDynamic* Instance = NewInstance(FewParent, TEXT("/Engine/EngineResources/DefaultTexture"));
+		Instance->SetScalarParameterValue(TEXT("Wear"), static_cast<float>(Index));
+		Dependencies.AddMaterial(Instance, FString::Printf(TEXT("Candle%d"), Index));
+	}
+
+	TestEqual(TEXT("the capped material and the other one's three looks are gathered"), Dependencies.Materials.Num(), Cap + 3);
+	const TArray<const UMaterialInterface*>* Capped = Dependencies.CappedInstances.Find(Parent->GetName());
+	TestTrue(TEXT("the books past the cap are named"), Capped && Capped->Num() == 5);
+	TestFalse(TEXT("a material with few looks is not capped"), Dependencies.CappedInstances.Contains(FewParent->GetName()));
+	for (int32 Index = Cap; Index < Instances.Num(); ++Index)
+	{
+		const FString Key = FMantlePlaceAssets::MaterialKey(Instances[Index]);
+		const bool bGathered = Dependencies.Materials.ContainsByPredicate([&Key](const FMantleGatheredMaterial& Entry) { return Entry.Key == Key; });
+		TestTrue(FString::Printf(TEXT("book %d's key is one of the gathered looks"), Index), bGathered);
+	}
+	TestEqual(TEXT("an earlier book keeps its own key"), FMantlePlaceAssets::MaterialKey(Instances[0]), Dependencies.Materials[0].Key);
+	FMantlePlaceAssets::ClearVariantStandIns();
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantlePersistentMaterialKeyTest,
 	"Mantle.Editor.MaterialKey.APersistentMaterialKeepsItsPathKey",

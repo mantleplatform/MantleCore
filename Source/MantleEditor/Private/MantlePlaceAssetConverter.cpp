@@ -2042,6 +2042,11 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 		}
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE merged %d dynamic material instances into %d distinct materials"), Dependencies.MergedInstances.Num() + Distinct, Distinct);
 	}
+	for (const TPair<FString, TArray<const UMaterialInterface*>>& Capped : Dependencies.CappedInstances)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE capped %s: %d more looks drawn as one of the first %d"), *Capped.Key, Capped.Value.Num(),
+			FMantlePlaceAssets::MaxVariantsPerMaterial);
+	}
 	for (const FMantleGatheredMaterial& Material : Dependencies.Materials)
 	{
 		if (!Continue(Material.Name))

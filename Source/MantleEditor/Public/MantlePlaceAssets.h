@@ -455,6 +455,15 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 
 	/** Transient material instances that matched the content of one already in Materials, so were not gathered again. */
 	TSet<const UMaterialInterface*> MergedInstances;
+
+	/**
+	 * Transient material instances past FMantlePlaceAssets::MaxVariantsPerMaterial looks of their material, so drawn as one of those
+	 * looks (FMantlePlaceAssets::MaterialKey follows the stand-in), by the name of the material they vary.
+	 */
+	TMap<FString, TArray<const UMaterialInterface*>> CappedInstances;
+
+	/** The distinct transient-instance keys gathered per material they vary (its first on-disk ancestor's path), in gather order. */
+	TMap<FString, TArray<FString>> VariantKeys;
 	TArray<FMantleGatheredTexture> Textures;
 
 	/** AmbientSounds' own sound waves (#324), in level order. */
@@ -550,7 +559,10 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	/** Adds a mesh no component uses, with each slot's own material (FMantlePlaceAssets::MeshSlotMaterial). Library meshes are skipped. */
 	void AddMesh(const UStaticMesh* Mesh, const FString& Label);
 
-	/** Adds one material under Label unless it is a library material. */
+	/**
+	 * Adds one material under Label unless it is a library material. A transient instance past MaxVariantsPerMaterial looks of its
+	 * material is not added: it stands in as one of those (by its content hash, so the same level picks the same one every time).
+	 */
 	void AddMaterial(UMaterialInterface* Material, const FString& Label);
 
 	/**
@@ -630,6 +642,22 @@ public:
 
 	/** A material instance that is not on disk: a Material Instance Dynamic, or an instance that is transient or in the transient package. */
 	static bool IsTransientMaterialInstance(const UMaterialInterface* Material);
+
+	/**
+	 * At most this many distinct looks of one material come from transient instances (a Blueprint that gives each book a random cover
+	 * makes hundreds, each its own bake): the rest are drawn as one of these. Each look is a bake and an upload.
+	 */
+	static constexpr int32 MaxVariantsPerMaterial = 16;
+
+	/** The on-disk material a transient instance varies: its first ancestor that is not transient (itself when it is not transient). */
+	static const UMaterialInterface* VariedMaterial(const UMaterialInterface* Material);
+
+	/**
+	 * Gather's stand-ins for capped instances (FMantlePlaceDependencies::CappedInstances), which MaterialKey follows; Gather clears them
+	 * first, so they are the last gathered level's.
+	 */
+	static void SetVariantStandIn(const UMaterialInterface* Instance, UMaterialInterface* StandIn);
+	static void ClearVariantStandIns();
 
 	/** "sound:" + the object path (#324). */
 	static FString SoundKey(const USoundBase* Sound);

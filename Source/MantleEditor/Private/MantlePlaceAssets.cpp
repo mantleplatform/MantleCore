@@ -94,6 +94,7 @@
 #include "Sound/SoundWave.h"
 #include "Sound/SoundWaveProcedural.h"
 #include "StaticMeshResources.h"
+#include "UObject/ObjectKey.h"
 #include "UObject/UnrealType.h"
 
 // Named, not anonymous: MantleEditor builds as a unity build.
@@ -2217,6 +2218,27 @@ void FMantlePlaceDependencies::AddMaterial(UMaterialInterface* Material, const F
 	}
 	const FString Key = FMantlePlaceAssets::MaterialKey(Material);
 	FMantleGatheredMaterial* Existing = Materials.FindByPredicate([&Key](const FMantleGatheredMaterial& Entry) { return Entry.Key == Key; });
+	if (!Existing && FMantlePlaceAssets::IsTransientMaterialInstance(Material))
+	{
+		const UMaterialInterface* Varied = FMantlePlaceAssets::VariedMaterial(Material);
+		const FString VariedName = Varied ? Varied->GetName() : FString(TEXT("none"));
+		TArray<FString>& Looks = VariantKeys.FindOrAdd(Varied ? Varied->GetPathName() : FString());
+		if (Looks.Num() >= FMantlePlaceAssets::MaxVariantsPerMaterial)
+		{
+			// The key ends in its content's MD5, so its last 8 hex digits pick the same look for the same content every time.
+			const uint32 Pick = static_cast<uint32>(FCString::Strtoui64(*Key.Right(8), nullptr, 16));
+			const FString& StandInKey = Looks[Pick % Looks.Num()];
+			FMantleGatheredMaterial* StandIn = Materials.FindByPredicate([&StandInKey](const FMantleGatheredMaterial& Entry) { return Entry.Key == StandInKey; });
+			if (StandIn && StandIn->Material.IsValid())
+			{
+				FMantlePlaceAssets::SetVariantStandIn(Material, StandIn->Material.Get());
+				CappedInstances.FindOrAdd(VariedName).Add(Material);
+				StandIn->UsedBy.AddUnique(Label);
+				return;
+			}
+		}
+		Looks.Add(Key);
+	}
 	if (!Existing)
 	{
 		Existing = &Materials.AddDefaulted_GetRef();
@@ -2292,6 +2314,7 @@ void FMantlePlaceDependencies::AddScriptAssets(UWorld* World)
 FMantlePlaceDependencies FMantlePlaceDependencies::Gather(UWorld* World)
 {
 	FMantlePlaceDependencies Out;
+	FMantlePlaceAssets::ClearVariantStandIns();
 	if (!World)
 	{
 		return Out;
@@ -3260,11 +3283,46 @@ bool FMantlePlaceAssets::IsTransientMaterialInstance(const UMaterialInterface* M
 		&& (Material->IsA<UMaterialInstanceDynamic>() || Material->HasAnyFlags(RF_Transient) || Material->GetOutermost() == GetTransientPackage());
 }
 
+const UMaterialInterface* FMantlePlaceAssets::VariedMaterial(const UMaterialInterface* Material)
+{
+	for (int32 Depth = 0; Material && IsTransientMaterialInstance(Material) && Depth <= 16; ++Depth)
+	{
+		Material = Cast<UMaterialInstance>(Material)->Parent;
+	}
+	return Material;
+}
+
+namespace MantlePlaceAssetsPrivate
+{
+	TMap<TObjectKey<UMaterialInterface>, TWeakObjectPtr<UMaterialInterface>>& VariantStandIns()
+	{
+		static TMap<TObjectKey<UMaterialInterface>, TWeakObjectPtr<UMaterialInterface>> StandIns;
+		return StandIns;
+	}
+}
+
+void FMantlePlaceAssets::SetVariantStandIn(const UMaterialInterface* Instance, UMaterialInterface* StandIn)
+{
+	MantlePlaceAssetsPrivate::VariantStandIns().Add(TObjectKey<UMaterialInterface>(Instance), StandIn);
+}
+
+void FMantlePlaceAssets::ClearVariantStandIns()
+{
+	MantlePlaceAssetsPrivate::VariantStandIns().Reset();
+}
+
 FString FMantlePlaceAssets::MaterialKey(const UMaterialInterface* Material)
 {
 	if (!Material)
 	{
 		return FString();
+	}
+	if (const TWeakObjectPtr<UMaterialInterface>* StandIn = MantlePlaceAssetsPrivate::VariantStandIns().Find(TObjectKey<UMaterialInterface>(Material)))
+	{
+		if (StandIn->IsValid() && StandIn->Get() != Material)
+		{
+			return MaterialKey(StandIn->Get());
+		}
 	}
 	if (!IsTransientMaterialInstance(Material))
 	{
@@ -4512,6 +4570,13 @@ void FMantlePlaceAssets::CheckLevel(UWorld* World, TArray<FMantleValidationIssue
 	for (const FMantleGatheredMesh& Mesh : Dependencies.Meshes)
 	{
 		CheckMesh(Mesh.Mesh.Get(), DescribeUsers(Mesh.UsedBy), Limits, OutIssues);
+	}
+	for (const TPair<FString, TArray<const UMaterialInterface*>>& Capped : Dependencies.CappedInstances)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("Material '%s' is given more than %d different looks at runtime (a Blueprint setting its parameters); %d more of them are drawn as one of the first %d."),
+				*Capped.Key, MaxVariantsPerMaterial, Capped.Value.Num(), MaxVariantsPerMaterial),
+			TEXT("It still publishes. Each look is baked and uploaded on its own, so fewer looks publish faster; if a look matters, make it a material instance on disk.") });
 	}
 	TSet<const UTexture*> ReportedTextures;
 	for (const FMantleGatheredMaterial& Material : Dependencies.Materials)
