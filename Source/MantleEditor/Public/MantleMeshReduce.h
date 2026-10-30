@@ -33,6 +33,20 @@ public:
 	/** A reduction that comes out over a limit is tried again this many times in all, each aiming lower. */
 	static constexpr int32 MaxAttempts = 3;
 
+	/**
+	 * A mesh with more than this many times the triangle limit is refused, not reduced. Reading it into a mesh description and
+	 * reducing it runs on the game thread with nothing to show for it: a 517 MB mesh hung a publish for 100 minutes. 20 times
+	 * the limit (10 million triangles at the default) is about the most a mesh description holds in a few GB and reduces in
+	 * minutes; a scene mesh past it is better split or reduced in a modelling tool.
+	 */
+	static constexpr int32 MaxSourceTriangleFactor = 20;
+
+	/**
+	 * Whether a mesh with SourceTriangles is too big to attempt to reduce to Limits. True sets OutWhy to a plain reason that
+	 * says what to do instead. Decided from the render data's triangle count, before any mesh description is made.
+	 */
+	static bool IsTooBigToReduce(int64 SourceTriangles, const FMantlePlaceAssetLimits& Limits, FString& OutWhy);
+
 	/** Whether the editor has a static mesh reducer to use (the engine's, in an editor build). */
 	static bool IsAvailable();
 

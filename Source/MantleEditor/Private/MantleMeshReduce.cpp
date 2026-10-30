@@ -200,6 +200,18 @@ namespace MantleMeshReducePrivate
 	}
 }
 
+bool FMantleMeshReduce::IsTooBigToReduce(int64 SourceTriangles, const FMantlePlaceAssetLimits& Limits, FString& OutWhy)
+{
+	const int64 Ceiling = static_cast<int64>(Limits.MaxTriangles) * MaxSourceTriangleFactor;
+	if (SourceTriangles <= Ceiling)
+	{
+		return false;
+	}
+	OutWhy = FString::Printf(TEXT("it has %s triangles, which is too big to reduce (Mantle reduces meshes of up to %s). Split it into smaller meshes, or reduce it in a modelling tool or with Unreal's own LOD tools first"),
+		*FText::AsNumber(SourceTriangles).ToString(), *FText::AsNumber(Ceiling).ToString());
+	return true;
+}
+
 bool FMantleMeshReduce::IsAvailable()
 {
 	return MantleMeshReducePrivate::StaticReducer() != nullptr;
@@ -323,10 +335,15 @@ bool FMantleMeshReduce::ReduceUntilFits(const FMeshDescription& In, const FMantl
 	for (int32 Attempt = 0; Attempt < MaxAttempts; ++Attempt)
 	{
 		FMeshDescription Reduced;
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_804 MeshReduce: attempt %d of %d, reducing %d triangles to about %d triangles and %d vertices"),
+			Attempt + 1, MaxAttempts, In.Triangles().Num(), TargetTriangles, TargetVertices);
+		const double AttemptStart = FPlatformTime::Seconds();
 		if (!ReduceDescription(In, TargetTriangles, TargetVertices, Reduced, OutWhy))
 		{
 			return false;
 		}
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_804 MeshReduce: attempt %d reduced to %d triangles in %.1f s"), Attempt + 1, Reduced.Triangles().Num(),
+			FPlatformTime::Seconds() - AttemptStart);
 		Triangles = 0;
 		Vertices = 0;
 		if (!Measure(Reduced, Triangles, Vertices))
@@ -402,11 +419,18 @@ UStaticMesh* FMantleMeshReduce::ReducedCopy(const UStaticMesh* Source, const FMa
 
 	UStaticMesh* Result = nullptr;
 	FString Why;
+	const double ReduceStart = FPlatformTime::Seconds();
 	do
 	{
 		if (!IsAvailable())
 		{
 			Why = TEXT("the editor has no static mesh reducer");
+			break;
+		}
+		// The triangle count is on the render data: a mesh past the ceiling is refused before any mesh description is made of it.
+		const FStaticMeshRenderData* SourceData = Source->GetRenderData();
+		if (SourceData && SourceData->LODResources.IsValidIndex(0) && IsTooBigToReduce(SourceData->LODResources[0].GetNumTriangles(), Limits, Why))
+		{
 			break;
 		}
 		FMeshDescription Original;
@@ -420,6 +444,8 @@ UStaticMesh* FMantleMeshReduce::ReducedCopy(const UStaticMesh* Source, const FMa
 		}
 
 		// Reducing must not lose a material: every slot the source draws with is still drawn in the copy.
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_804 MeshReduce: reducing '%s' (%d triangles) to fit %d triangles and %d vertices"), *Source->GetName(),
+			Original.Triangles().Num(), Limits.MaxTriangles, Limits.MaxVertices);
 		const TArray<int32> SourceSlots = FMantlePlaceAssets::UploadSlots(Source);
 		UStaticMesh* Built = nullptr;
 		auto Measure = [&](const FMeshDescription& Reduced, int32& OutTriangles, int32& OutVertices) -> bool
@@ -446,8 +472,9 @@ UStaticMesh* FMantleMeshReduce::ReducedCopy(const UStaticMesh* Source, const FMa
 			break;
 		}
 		Result = Built;
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_804 MeshReduce: '%s' reduced from %d triangles and %d vertices into '%s' (%d triangles)"), *Source->GetName(),
-			Before.Triangles, Before.Vertices, *Result->GetName(), Result->GetRenderData()->LODResources[0].GetNumTriangles());
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_804 MeshReduce: '%s' reduced from %d triangles and %d vertices into '%s' (%d triangles) in %.1f s"), *Source->GetName(),
+			Before.Triangles, Before.Vertices, *Result->GetName(), Result->GetRenderData()->LODResources[0].GetNumTriangles(),
+			FPlatformTime::Seconds() - ReduceStart);
 	}
 	while (false);
 
