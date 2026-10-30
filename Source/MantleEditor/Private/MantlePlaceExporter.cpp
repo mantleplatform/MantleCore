@@ -5,6 +5,7 @@
 #include "MantleMeshLumenData.h"
 #include "MantleApiManifest.h"
 #include "MantleAssetLibrary.h"
+#include "MantleCableBake.h"
 #include "MantleConstraint.h"
 #include "MantleCoverageSurvey.h"
 #include "MantleCrowdSpawner.h"
@@ -58,6 +59,7 @@
 #include "Animation/SkeletalMeshActor.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "CableComponent.h"
 #include "Camera/CameraActor.h"
 #include "Components/ArrowComponent.h"
 #include "Components/AudioComponent.h"
@@ -1379,7 +1381,9 @@ bool FMantlePlaceExporter::IsEngineInfrastructure(const AActor* Actor)
 		|| Actor->IsA(AController::StaticClass())
 		|| Actor->IsA(APawn::StaticClass())
 		|| Actor->IsA(ACameraActor::StaticClass())
-		|| (Actor->GetClass() == ATextRenderActor::StaticClass() && !FMantleTargetFeatures::Current().Reads(MantleClientFeatures::WorldText));
+		|| (Actor->GetClass() == ATextRenderActor::StaticClass() && !FMantleTargetFeatures::Current().Reads(MantleClientFeatures::WorldText))
+		// A type Mantle does not know with nothing to show: left out with a warning (DescribeUnpublishedContent), not refused.
+		|| HasNothingToShow(Actor);
 }
 
 namespace
@@ -1516,6 +1520,13 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 	{
 		OutWhat = FString::Printf(TEXT("is a %s, which Mantle leaves out: %s."), *Class->GetName(), FMantleTargetFeatures::NeedsNewerClient);
 		OutRemedy = TEXT("Nothing to change: the text would be dropped.");
+		return true;
+	}
+	// An actor of a type Mantle does not know with nothing to show (a Blueprint that only carries a wind source): left out, with a warning.
+	if (HasNothingToShow(Actor))
+	{
+		OutWhat = FString::Printf(TEXT("is a %s, which Mantle does not publish, and it has nothing a player could see, hear or touch, so it is left out of the place."), *Class->GetName());
+		OutRemedy = TEXT("Nothing to change: the rest of the place publishes without it. Blueprint logic never travels; use a place script for behaviour.");
 		return true;
 	}
 	return false;
@@ -1676,7 +1687,7 @@ void FMantlePlaceExporter::DescribeUnpublishedParts(const AActor* Actor, TArray<
 		}
 	}
 	// Spline meshes (a landscape's roads, PCG's Spawn Spline Mesh) are baked into static meshes (#628)
-	// at export, by FMantleSplineMeshBake: nothing of them is unpublishable here.
+	// at export, by FMantleSplineMeshBake: nothing of them is unpublishable here. Nor of cables, baked by FMantleCableBake.
 
 	// An actor a PCG graph spawned, of a type Mantle can't express. A publishable one (a Static
 	// Mesh Actor, a light, only instanced meshes) exports like any other and needs no message.
@@ -1711,6 +1722,27 @@ bool FMantlePlaceExporter::IsProvidedByMantle(const AActor* Actor)
 namespace
 {
 	bool ExporterIsGameContent(const UActorComponent* Component); // with the instanced meshes, below
+}
+
+bool FMantlePlaceExporter::HasNothingToShow(const AActor* Actor)
+{
+	// One a PCG graph spawned has its own message (DescribeUnpublishedParts).
+	EMantleEntityType Type;
+	if (!IsValid(Actor) || Actor->HasAnyFlags(RF_Transient) || Actor->ActorHasTag(GExporterPCGActorTag)
+		|| ClassifyActor(Actor, Type) || IsInstanceHost(Actor))
+	{
+		return false;
+	}
+	// Content, a sound or particles, and the parts DescribeUnpublishedParts names (PCG, dynamic meshes), are things a player could miss.
+	TArray<UActorComponent*> Components;
+	Actor->GetComponents(Components);
+	return !Components.ContainsByPredicate([](const UActorComponent* Component)
+	{
+		return Component && !Component->HasAnyFlags(RF_Transient)
+			&& (ExporterIsGameContent(Component) || Component->IsA(UAudioComponent::StaticClass()) || Component->IsA(UFXSystemComponent::StaticClass())
+				|| IsOrDerivesFromClassNamed(Component->GetClass(), TEXT("PCGComponent"))
+				|| IsOrDerivesFromClassNamed(Component->GetClass(), TEXT("DynamicMeshComponent")));
+	});
 }
 
 // Named, not anonymous: MantleEditor builds as a unity build.
@@ -3103,6 +3135,11 @@ namespace
 		{
 			return false;
 		}
+		// A cable is baked into a static mesh on its own (FMantleCableBake); a hidden one has nothing to show, and it never collides.
+		if (FMantleCableBake::IsCableComponent(Component))
+		{
+			return false;
+		}
 		if (const UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Component))
 		{
 			const bool bVisible = Primitive->IsVisible() && !Primitive->bHiddenInGame;
@@ -3673,6 +3710,12 @@ bool FMantlePlaceExporter::IsInstanceHost(const AActor* Actor)
 		{
 			// Baked into static meshes on their own (#628), like instanced meshes: nothing else to lose.
 			bHasInstances = bHasInstances || FMantleSplineMeshBake::IsBakeSource(Spline);
+			continue;
+		}
+		if (const UCableComponent* Cable = Cast<UCableComponent>(Component))
+		{
+			// Baked into a static mesh on its own too (FMantleCableBake).
+			bHasInstances = bHasInstances || FMantleCableBake::IsBakeSource(Cable);
 			continue;
 		}
 		if (ExporterIsGameContent(Component))
@@ -4479,7 +4522,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		}
 	}
 
-	// Pass 2b — spline meshes (#628): a landscape's road and river-bank splines, PCG's Spawn Spline Mesh
+	// Pass 2b — spline meshes (#628) and cables: a landscape's road and river-bank splines, PCG's Spawn Spline Mesh
 	// output and Blueprint spline meshes. FMantleSplineMeshBake merges them by owning actor and material
 	// set into static meshes, deformed along their splines as the components render, and cuts them within
 	// the place mesh limits. Each is written as a StaticMesh entity in world space, and its mesh and
@@ -4509,7 +4552,30 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 					TEXT("nothing a player could see or touch (hidden in game and not colliding, or an empty mesh), so nothing of them is published."), Report.Skipped);
 			}
 		}
-		for (const FMantleBakedSplineMesh& Baked : Bake.Meshes)
+
+		// Cables (the Cable Component's wires) are baked into the same kind of mesh by FMantleCableBake, in the shape they have in the
+		// editor, and written the same way.
+		const FMantleSplineBakeResult CableBake = FMantleCableBake::Bake(World, Uploads.Limits);
+		for (const FMantleSplineBakeProblem& Problem : CableBake.Problems)
+		{
+			Result.Errors.Add(FMantleParseError{
+				FString::Printf(TEXT("/actors/%s"), *Problem.OwnerName),
+				FString::Printf(TEXT("'%s' %s %s"), *Problem.OwnerLabel, *Problem.What, *Problem.Remedy) });
+			Result.Coverage.Add(MantleCoverageCategory::Cables, EMantleCoverageOutcome::Dropped, Problem.OwnerLabel, Problem.What);
+		}
+		for (const FMantleSplineBakeReport& Report : CableBake.Reports)
+		{
+			if (Report.Components > 0)
+			{
+				Result.Coverage.Add(MantleCoverageCategory::Cables, EMantleCoverageOutcome::Approximated, Report.OwnerLabel,
+					FString::Printf(TEXT("baked into %d static mesh%s, merged by material, in the shape they have in the editor: they do not sway in the place."),
+						Report.Meshes, Report.Meshes == 1 ? TEXT("") : TEXT("es")),
+					Report.Components);
+			}
+		}
+		TArray<FMantleBakedSplineMesh> BakedMeshes = Bake.Meshes;
+		BakedMeshes.Append(CableBake.Meshes);
+		for (const FMantleBakedSplineMesh& Baked : BakedMeshes)
 		{
 			const FString Path = FString::Printf(TEXT("/entities/%d"), Place.Entities.Num());
 			TArray<FMantleValidationIssue> MeshIssues;
@@ -4544,7 +4610,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			Props.Surface = Baked.Surface;
 
 			FMantleEntity Entity;
-			// Hashed from the owner and material set, not the geometry, so editing a road keeps its id. A collision
+			// Hashed from the owner and material set, not the geometry, so editing a road keeps its id (a cable's owner is "Cables"). A collision
 			// (it never happens in practice) is suffixed rather than failing the publish, as the instanced ids are.
 			Entity.Id = FString::Printf(TEXT("ent_spl_%s"), *ExporterMd5Hex(Baked.OwnerName + TEXT("|") + Baked.IdSeed).Left(24));
 			const FString Base = Entity.Id;

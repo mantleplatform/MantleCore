@@ -118,6 +118,11 @@
 			]
 		},
 		{
+			"Name": "CableComponent",
+			"Enabled": true,
+			"TargetAllowList": [ "Editor" ]
+		},
+		{
 			"Name": "ChaosOutfitAsset",
 			"Enabled": true,
 			"TargetAllowList": [ "Editor" ]

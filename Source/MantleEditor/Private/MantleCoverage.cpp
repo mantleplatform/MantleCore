@@ -16,7 +16,7 @@ namespace MantleCoverageCpp
 	{
 		static const TArray<FString> Order = {
 			MantleCoverageCategory::StaticMeshes, MantleCoverageCategory::SkeletalMeshes, MantleCoverageCategory::InstancedMeshes,
-			MantleCoverageCategory::PaintedFoliage, MantleCoverageCategory::SplineMeshes, MantleCoverageCategory::Materials,
+			MantleCoverageCategory::PaintedFoliage, MantleCoverageCategory::SplineMeshes, MantleCoverageCategory::Cables, MantleCoverageCategory::Materials,
 			MantleCoverageCategory::Terrain, MantleCoverageCategory::TerrainLayers, MantleCoverageCategory::LandscapeMaterial,
 			MantleCoverageCategory::LandscapeGrass, MantleCoverageCategory::WaterCarve, MantleCoverageCategory::Lights, MantleCoverageCategory::Sky,
 			MantleCoverageCategory::Fog, MantleCoverageCategory::PostProcess, MantleCoverageCategory::Volumes,

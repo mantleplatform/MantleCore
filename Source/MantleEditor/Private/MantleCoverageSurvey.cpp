@@ -2,6 +2,7 @@
 #include "MantleCoverageSurvey.h"
 #include "MantleActorDecompose.h"
 #include "MantleAssetLibrary.h"
+#include "MantleCableBake.h"
 #include "MantleClientFeatures.h"
 #include "MantleCoverage.h"
 #include "MantleEnvironment.h"
@@ -94,7 +95,7 @@ namespace MantleCoverageSurveyPrivate
 	bool CoverageIsContent(const UActorComponent* Component)
 	{
 		if (FMantleActorDecompose::IsVisualisation(Component) || Component->IsA(USplineMeshComponent::StaticClass())
-			|| CoverageIsOrDerives(Component->GetClass(), TEXT("DynamicMeshComponent")))
+			|| FMantleCableBake::IsCableComponent(Component) || CoverageIsOrDerives(Component->GetClass(), TEXT("DynamicMeshComponent")))
 		{
 			return false;
 		}
@@ -200,8 +201,8 @@ namespace MantleCoverageSurveyPrivate
 			{
 				continue;
 			}
-			// Spline and dynamic meshes are reported on their own (the spline mesh bake, DescribeUnpublishedParts).
-			if (Component->IsA(USplineMeshComponent::StaticClass()) || CoverageIsOrDerives(Component->GetClass(), TEXT("DynamicMeshComponent")))
+			// Spline and dynamic meshes are reported on their own (the spline mesh bake, DescribeUnpublishedParts), and cables (the cable bake).
+			if (Component->IsA(USplineMeshComponent::StaticClass()) || FMantleCableBake::IsCableComponent(Component) || CoverageIsOrDerives(Component->GetClass(), TEXT("DynamicMeshComponent")))
 			{
 				continue;
 			}

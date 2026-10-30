@@ -538,6 +538,12 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	 */
 	void AddSplineMeshes(UWorld* World);
 
+	/**
+	 * Adds the static meshes the level's cables are baked into (FMantleCableBake), each with its material, under the label
+	 * "Cables": Export writes them as StaticMesh entities.
+	 */
+	void AddCableMeshes(UWorld* World);
+
 	/** Adds a mesh no component uses, with each slot's own material (FMantlePlaceAssets::MeshSlotMaterial). Library meshes are skipped. */
 	void AddMesh(const UStaticMesh* Mesh, const FString& Label);
 

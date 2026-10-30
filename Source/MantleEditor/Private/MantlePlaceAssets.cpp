@@ -4,6 +4,7 @@
 #include "MantleActorDecompose.h"
 #include "MantleAssetLibrary.h"
 #include "MantleAvatarContract.h"
+#include "MantleCableBake.h"
 #include "MantleCosmeticExport.h"
 #include "MantleEffect.h"
 #include "MantleEffectExport.h"
@@ -2405,6 +2406,8 @@ FMantlePlaceDependencies FMantlePlaceDependencies::Gather(UWorld* World)
 	}
 	// Spline meshes baked into static meshes, where Export writes them (#628): they upload like any project mesh.
 	Out.AddSplineMeshes(World);
+	// Cables baked the same way (FMantleCableBake).
+	Out.AddCableMeshes(World);
 	// The landscape, where Export writes it (#466). Only the first one publishes; Check names the rest.
 	const TArray<AActor*> Landscapes = FMantleTerrainExport::CollectLandscapes(World);
 	if (Landscapes.Num() > 0)
@@ -2420,6 +2423,16 @@ void FMantlePlaceDependencies::AddSplineMeshes(UWorld* World)
 {
 	// The bake is cached while its sources are unchanged, so Export finds these same meshes (and keys).
 	const FMantleSplineBakeResult Bake = FMantleSplineMeshBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
+	for (const FMantleBakedSplineMesh& Baked : Bake.Meshes)
+	{
+		AddMesh(Baked.Mesh, Baked.OwnerLabel);
+	}
+}
+
+void FMantlePlaceDependencies::AddCableMeshes(UWorld* World)
+{
+	// Cached while the cables are unchanged, as the spline bake is, so Export finds these same meshes (and keys).
+	const FMantleSplineBakeResult Bake = FMantleCableBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
 	for (const FMantleBakedSplineMesh& Baked : Bake.Meshes)
 	{
 		AddMesh(Baked.Mesh, Baked.OwnerLabel);

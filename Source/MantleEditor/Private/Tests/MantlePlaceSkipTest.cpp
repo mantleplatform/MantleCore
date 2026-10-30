@@ -6,7 +6,9 @@
 #include "MantlePlaceValidator.h"
 
 #include "Components/AudioComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/WindDirectionalSourceComponent.h"
 #include "Distributions/DistributionFloatConstant.h"
 #include "Engine/DecalActor.h"
 #include "Engine/StaticMeshActor.h"
@@ -512,6 +514,73 @@ bool FMantlePlaceSkipLevelInstanceTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	ExpectSkipped(*this, Fixture.World, TEXT("Cabin instance"), MantleCoverageCategory::SubLevels);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePlaceSkipActorWithNothingToShowTest,
+	"Mantle.Editor.PlaceSkip.UnsupportedActorWithNothingToShowIsSkipped",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePlaceSkipActorWithNothingToShowTest::RunTest(const FString& Parameters)
+{
+	using namespace MantlePlaceSkipTestPrivate;
+	FSkipWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	// An actor rooted on a wind source (a Blueprint like BP_Wind): a type Mantle does not know, with nothing to see, hear or touch.
+	AActor* Holder = Fixture.World->SpawnActor<AActor>(FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("the actor"), Holder))
+	{
+		return false;
+	}
+	UWindDirectionalSourceComponent* Wind = NewObject<UWindDirectionalSourceComponent>(Holder, TEXT("Wind"));
+	Holder->SetRootComponent(Wind);
+	Wind->RegisterComponent();
+	Holder->SetActorLabel(TEXT("BP_Wind"));
+	ExpectSkipped(*this, Fixture.World, TEXT("BP_Wind"), MantleCoverageCategory::OtherActors);
+
+	// Said in plain words, not as the generic refusal.
+	const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(Fixture.World);
+	const FMantleValidationIssue* Issue = Validation.Issues.FindByPredicate([](const FMantleValidationIssue& Candidate) { return Candidate.Actor == TEXT("BP_Wind"); });
+	if (TestNotNull(TEXT("Check names it"), Issue))
+	{
+		TestTrue(TEXT("as nothing to see, hear or touch"), Issue->Problem.Contains(TEXT("nothing a player could see, hear or touch")));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePlaceSkipUnsupportedActorWithContentTest,
+	"Mantle.Editor.PlaceSkip.UnsupportedActorWithContentIsStillRefused",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePlaceSkipUnsupportedActorWithContentTest::RunTest(const FString& Parameters)
+{
+	using namespace MantlePlaceSkipTestPrivate;
+	FSkipWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	// An actor rooted on a capsule: a type Mantle does not know, and it collides, so a player could touch what is lost.
+	AActor* Holder = Fixture.World->SpawnActor<AActor>(FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("the actor"), Holder))
+	{
+		return false;
+	}
+	UCapsuleComponent* Capsule = NewObject<UCapsuleComponent>(Holder, TEXT("Body"));
+	Holder->SetRootComponent(Capsule);
+	Capsule->RegisterComponent();
+	Holder->SetActorLabel(TEXT("Solid logic"));
+
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	TestTrue(TEXT("export refuses it"), MentionsLabel(Result, Holder->GetName()));
+	const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(Fixture.World);
+	TestTrue(TEXT("Check raises an error for it"), HasIssue(Validation, TEXT("Solid logic"), EMantleIssueSeverity::Error));
+	TestFalse(TEXT("and no warning that it is left out"), HasIssue(Validation, TEXT("Solid logic"), EMantleIssueSeverity::Warning));
 	return true;
 }
 
