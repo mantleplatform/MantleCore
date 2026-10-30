@@ -90,6 +90,10 @@ public class MantleEditor : ModuleRules
 			// #804: FOverlappingCorners (OverlappingCorners.h), which the static mesh reducer takes beside the mesh
 			// description. An engine runtime module, already loaded by the editor; no plugin or third-party code.
 			"MeshUtilitiesCommon",
+			// #149: a place mesh's Lumen data (mesh distance field and card representation), baked at publish with
+			// IMeshUtilities::GenerateSignedDistanceFieldVolumeData / GenerateCardRepresentationData. An engine
+			// Developer module the editor already loads; the shipped client never builds this module.
+			"MeshUtilities",
 			"SkeletalMeshUtilitiesCommon",
 			"TargetPlatform",
 			// #610's Atlas fixer: rewrites a skeletal mesh's source geometry (FSkeletalMeshAttributes) and renders any

@@ -1,7 +1,9 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleRuntimeStaticMeshBuilder.h"
 
+#include "DistanceFieldAtlas.h"
 #include "Engine/StaticMesh.h"
+#include "MantleMeshLumenData.h"
 #include "MantleRuntime.h"
 #include "MantleRuntimeMesh.h"
 #include "MantleStaticMeshReader.h"
@@ -11,6 +13,7 @@
 #include "RenderUtils.h"
 #include "StaticMeshAttributes.h"
 #include "StaticMeshOperations.h"
+#include "MeshCardBuild.h"
 #include "StaticMeshResources.h"
 #include "UObject/Package.h"
 
@@ -156,6 +159,13 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 			if (bRayTracing)
 			{
 				RenderData->InitializeRayTracingRepresentationFromRenderingLODs();
+			}
+			// #149: what the editor's derived data would have put on LOD0. The proxy copies both pointers when it is made.
+			if (Params.Lumen && Params.Lumen->DistanceField && Params.Lumen->Cards)
+			{
+				Params.Lumen->DistanceField->AssetName = Built->GetFName();
+				RenderData->LODResources[0].DistanceFieldData = Params.Lumen->DistanceField.Release();
+				RenderData->LODResources[0].CardRepresentationData = Params.Lumen->Cards.Release();
 			}
 			Built->InitResources();
 		}

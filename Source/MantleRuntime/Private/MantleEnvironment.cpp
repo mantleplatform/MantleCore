@@ -236,6 +236,7 @@ void FMantleEnvironment::Apply(UWorld* World, const FMantlePlace& Place, FMantle
 	if (Environment)
 	{
 		Environment->StartClock();
+		Environment->SetInterior(Place.Settings.Environment.bNoOutdoors);
 	}
 
 	if (World->GetNetMode() == NM_DedicatedServer)
@@ -251,6 +252,19 @@ void FMantleEnvironment::Apply(UWorld* World, const FMantlePlace& Place, FMantle
 	// Indoor levels (#722): the place's scale on the sky light, and a sun that never reaches it.
 	Binding.SkyLightIntensityScale = static_cast<float>(Place.Settings.Environment.SkyLightIntensity.Get(1.0));
 	Binding.bNoDirectSun = Place.Settings.Environment.bNoDirectSun;
+
+	// An interior (settings.environment.outdoors false) has no outdoor environment of its own: no default sun, sky
+	// light, atmosphere, clouds, fog or night sky, only the place's own lights; the weather is held at Clear.
+	if (Place.Settings.Environment.bNoOutdoors)
+	{
+		if (Environment)
+		{
+			Environment->BindSky(Binding);
+			Environment->SetPlaceExposure(Place.Settings.Environment.Exposure);
+			Environment->SetPlaceBloomThreshold(Place.Settings.Environment.BloomThreshold);
+		}
+		return;
+	}
 
 	if (AActor* Atmosphere = SpawnEnvironmentActor<ASkyAtmosphere>(World, TEXT("MantleDefaultSkyAtmosphere")))
 	{
@@ -341,5 +355,6 @@ void FMantleEnvironment::Apply(UWorld* World, const FMantlePlace& Place, FMantle
 		Environment->BindSky(Binding);
 		// The place's exposure (#628), or none: a place without one clears the last place's.
 		Environment->SetPlaceExposure(Place.Settings.Environment.Exposure);
+		Environment->SetPlaceBloomThreshold(Place.Settings.Environment.BloomThreshold);
 	}
 }

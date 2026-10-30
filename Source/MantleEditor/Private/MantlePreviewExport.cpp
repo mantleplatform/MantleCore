@@ -6,6 +6,7 @@
 #include "MantlePlaceExporter.h"
 #include "MantlePreviewShared.h"
 #include "MantleCoverageSurvey.h"
+#include "MantleMeshLumenData.h"
 #include "MantlePlaceValidator.h"
 #include "MantleClientFeatures.h"
 #include "MantlePreparedPlaceAssets.h"
@@ -640,7 +641,22 @@ namespace MantlePreviewExportPrivate
 		const FString& Kind = Upload.Options.Kind;
 		TArray<uint8> Cooked;
 		FMantleContentHash Hash;
-		if (!PreviewRunCook(State, Name, Upload.Options, Upload.Bytes, Cooked, Hash, OutInfo, OutError))
+		if (Kind == TEXT("lumen"))
+		{
+			// #149: a mesh's Lumen side file is stored as baked (the backend's cook only checks its header), so the local
+			// tool is not asked; the header is checked as the backend checks it.
+			FString Engine;
+			FString MeshTag;
+			if (!FMantleMeshLumenFile::ReadHeader(Upload.Bytes, Engine, MeshTag) || Upload.Bytes.Num() > FMantleMeshLumenFile::MaxBytes)
+			{
+				OutError = FString::Printf(TEXT("The Lumen data of '%s' is not a Lumen file the client reads."), *Name);
+				return false;
+			}
+			Cooked = Upload.Bytes;
+			Hash = FMantleContentHash::OfBytes(Cooked);
+			OutInfo.Reset();
+		}
+		else if (!PreviewRunCook(State, Name, Upload.Options, Upload.Bytes, Cooked, Hash, OutInfo, OutError))
 		{
 			return false;
 		}

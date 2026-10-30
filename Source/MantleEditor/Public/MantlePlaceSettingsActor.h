@@ -97,6 +97,21 @@ enum class EMantlePlaceDirectSun : uint8
 };
 
 /**
+ * Whether the place has an outdoor environment (the place file's settings.environment.outdoors). Automatic and Outdoors both
+ * leave the key out; Interior writes false.
+ */
+UENUM()
+enum class EMantlePlaceOutdoors : uint8
+{
+	/** The export decides: an interior when the level has no sun, sky light, atmosphere, clouds or fog of its own. */
+	Automatic,
+	/** Mantle's own sky, sun, clouds and fog, whatever the export finds. */
+	Outdoors,
+	/** No outdoor environment: only the level's own lights, no default sun, sky or fog, and no weather. */
+	Interior,
+};
+
+/**
  * The colour-grading preset a place starts in (#532), the place file's
  * settings.environment.colorGrading. None is the key left out; the rest are Environment.ColorGrading's
  * presets, numbered as MantleEnvironmentOverrideValues numbers them.
@@ -282,6 +297,14 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, Category = "Mantle|Environment")
 	EMantlePlaceDirectSun DirectSun = EMantlePlaceDirectSun::Automatic;
+
+	/**
+	 * Whether the place has the outdoor environment Mantle adds to a level: a sun, sky, clouds, fog and weather. Automatic makes
+	 * a level with none of its own (no sun, sky light, atmosphere, clouds or fog) an interior; Outdoors and Interior decide it yourself.
+	 * Places that make an interior need a Mantle client that reads the sky light setting to load.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Environment")
+	EMantlePlaceOutdoors Outdoors = EMantlePlaceOutdoors::Automatic;
 
 	/** A colour multiplied over the whole picture. White leaves it unchanged. */
 	UPROPERTY(EditAnywhere, Category = "Mantle|Environment", meta = (HideAlphaChannel))

@@ -98,7 +98,8 @@ namespace
 		TEXT("AnimClip"),
 		TEXT("Heightfield"),
 		TEXT("Vehicle"),
-		TEXT("Weapon")
+		TEXT("Weapon"),
+		TEXT("Lumen")
 	};
 
 	const TCHAR* const GCollisionNames[] = {

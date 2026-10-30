@@ -223,6 +223,9 @@ namespace MantleEnvironmentDefaults
 	/** Environment.Bloom (#532, script API 1.27): the bloom's intensity, 0 (none) to this. */
 	constexpr double MaxScriptBloom = 4.0;
 
+	/** settings.environment.bloomThreshold: the post-process Bloom Threshold, 0 to this (a place key; no script writes it). */
+	constexpr double MaxBloomThreshold = 8.0;
+
 	// ---- Exposure and height fog of a place's look (#628, settings.environment) -------------------
 	// Place keys only: no script writes these. The ranges are the schema's, validate.py's and the backend's.
 

@@ -20,11 +20,15 @@ namespace MantleReflectionProbePrivate
 		TEXT("Capture a place's reflection probes at run time (1, the default since their brightness matches the editor, #722) or leave them out (0). Read when a place is built.\n"),
 		ECVF_Default);
 
-	/** An int cvar of the engine's by name, or Fallback when this build does not have it. */
+	/**
+	 * An int cvar of the engine's by name, or Fallback when this build does not have it. Read through IConsoleVariable,
+	 * not FindTConsoleVariableDataInt: some of these are FAutoConsoleVariableRefs, which have no TConsoleVariableData
+	 * and ensure when asked for it (IConsoleManager.h:511).
+	 */
 	int32 ProbeEngineInt(const TCHAR* Name, int32 Fallback)
 	{
-		const TConsoleVariableData<int32>* Variable = IConsoleManager::Get().FindTConsoleVariableDataInt(Name);
-		return Variable ? Variable->GetValueOnGameThread() : Fallback;
+		const IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(Name);
+		return Variable ? Variable->GetInt() : Fallback;
 	}
 }
 

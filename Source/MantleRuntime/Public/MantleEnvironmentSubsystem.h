@@ -373,6 +373,23 @@ public:
 	void SetPlaceExposure(const TOptional<FMantleExposureSettings>& Exposure);
 
 	/**
+	 * Clients: sets the place's Bloom Threshold (FMantleEnvironment::Apply, from settings.environment.bloomThreshold; unset
+	 * clears it) and applies it through the same one post-process volume. Unset leaves the engine's own (-1: everything glows).
+	 */
+	void SetPlaceBloomThreshold(const TOptional<double>& Threshold);
+
+	/** Writes the Bloom Threshold part of a post-process volume's Settings (UpdatePostProcess's, split out so it can be tested). */
+	static void ApplyBloomThresholdSettings(FPostProcessSettings& Settings, const TOptional<double>& Threshold);
+
+	/**
+	 * Every net mode: marks the place an interior (settings.environment.outdoors false; FMantleEnvironment::Apply). Its
+	 * natural weather is held at Clear and strikes nothing, so no rain falls through its ceiling; a script's weather still
+	 * applies. The server holds it too, so a script reads the weather the players see.
+	 */
+	void SetInterior(bool bInInterior) { bInterior = bInInterior; }
+	bool IsInterior() const { return bInterior; }
+
+	/**
 	 * The game's own exposure compensation in stops: the project's r.DefaultFeature.AutoExposure.Bias (1 unless the
 	 * project changes it), which every post-process setting starts from. A place's exposure bias is added to it.
 	 */
@@ -526,6 +543,10 @@ private:
 	TWeakObjectPtr<APostProcessVolume> PostProcessVolume;
 	/** #628: the place's exposure, which UpdatePostProcess puts in that same volume. */
 	TOptional<FMantleExposureSettings> PlaceExposure;
+	/** The place's Bloom Threshold, put in that same volume. */
+	TOptional<double> PlaceBloomThreshold;
+	/** SetInterior's flag. */
+	bool bInterior = false;
 	/** SetExposureLift's stops. */
 	float ExposureLift = 0.0f;
 

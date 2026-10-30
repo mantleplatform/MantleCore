@@ -730,7 +730,8 @@ FMantleWeatherSample UMantleEnvironmentSubsystem::GetWeather() const
 FMantleWeatherSample UMantleEnvironmentSubsystem::GetWeatherBeforeCloudCover() const
 {
 	FMantleWeatherSample Natural;
-	if (Weather.IsSet())
+	// An interior (settings.environment.outdoors false) has no sky to rain from: the natural weather stays Clear.
+	if (Weather.IsSet() && !bInterior)
 	{
 		Natural = Weather->Sample(GetWeatherSeconds());
 	}
@@ -787,7 +788,10 @@ void UMantleEnvironmentSubsystem::CollectStrikes(double FromSeconds, double ToSe
 	}
 	if (Override.WeatherRevision == 0)
 	{
-		Weather->CollectStrikes(FromSeconds, ToSeconds, Out);
+		if (!bInterior)
+		{
+			Weather->CollectStrikes(FromSeconds, ToSeconds, Out);
+		}
 		return;
 	}
 
@@ -815,7 +819,7 @@ void UMantleEnvironmentSubsystem::CollectStrikes(double FromSeconds, double ToSe
 	}
 
 	// The seeded sequence's own: never while forced, and after a hand-back only once it is whole.
-	if (!bForced && ToSeconds > BlendEnd)
+	if (!bForced && !bInterior && ToSeconds > BlendEnd)
 	{
 		Weather->CollectStrikes(FMath::Max(FromSeconds, BlendEnd), ToSeconds, Out);
 	}
@@ -1122,7 +1126,8 @@ void UMantleEnvironmentSubsystem::UpdatePostProcess()
 	// This player's own look over the replicated one, field by field, in one volume.
 	const FMantleEnvironmentOverride Look = GetPostProcessLook();
 	// The place's exposure needs the volume too, unless it is the game's own (fixed, no bias).
-	const bool bNeutral = Look.IsPostProcessNeutral() && IsPlaceExposureNeutral(PlaceExposure) && ExposureLift == 0.0f;
+	const bool bNeutral = Look.IsPostProcessNeutral() && IsPlaceExposureNeutral(PlaceExposure) && ExposureLift == 0.0f
+		&& !PlaceBloomThreshold.IsSet();
 	APostProcessVolume* Volume = PostProcessVolume.Get();
 	if (!Volume)
 	{
@@ -1162,6 +1167,7 @@ void UMantleEnvironmentSubsystem::UpdatePostProcess()
 	// Bloom, and a preset's LUT. A missing LUT grades nothing (it was logged once).
 	Settings.bOverride_BloomIntensity = Look.Bloom >= 0.0f;
 	Settings.BloomIntensity = FMath::Max(Look.Bloom, 0.0f);
+	ApplyBloomThresholdSettings(Settings, PlaceBloomThreshold);
 	UTexture* Lut = Look.ColorGrading != MantleEnvironmentOverrideValues::ColorGradingNone
 		? ResolveColorGradingLut(Look.ColorGrading)
 		: nullptr;
@@ -1216,6 +1222,26 @@ void UMantleEnvironmentSubsystem::SetPlaceExposure(const TOptional<FMantleExposu
 			Exposure->Mode == EMantleExposureMode::Auto ? TEXT("auto") : TEXT("fixed"), Exposure->Bias, GetEngineExposureBias(),
 			Exposure->MinBrightness.Get(MantleEnvironmentDefaults::DefaultAutoExposureMin),
 			Exposure->MaxBrightness.Get(MantleEnvironmentDefaults::DefaultAutoExposureMax));
+	}
+	UpdatePostProcess();
+}
+
+void UMantleEnvironmentSubsystem::ApplyBloomThresholdSettings(FPostProcessSettings& Settings, const TOptional<double>& Threshold)
+{
+	// Unset keeps the engine's own threshold (-1: everything glows), as before.
+	Settings.bOverride_BloomThreshold = Threshold.IsSet();
+	if (Threshold.IsSet())
+	{
+		Settings.BloomThreshold = static_cast<float>(*Threshold);
+	}
+}
+
+void UMantleEnvironmentSubsystem::SetPlaceBloomThreshold(const TOptional<double>& Threshold)
+{
+	PlaceBloomThreshold = Threshold;
+	if (Threshold.IsSet())
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_ENV_BLOOM_THRESHOLD threshold=%.3f"), *Threshold);
 	}
 	UpdatePostProcess();
 }

@@ -187,7 +187,12 @@ enum class EMantleAssetKind : uint8
 	/** A creator-published vehicle (#435): MVH1, its body and its document. */
 	Vehicle,
 	/** A creator-published weapon (#789): MWP1, its mesh and its document. */
-	Weapon
+	Weapon,
+	/**
+	 * A static mesh's Lumen side file (#149): MLD1 (FMantleMeshLumenFile), its distance field and Lumen cards, baked by the
+	 * plugin at publish and named by its mesh's entry (FMantleAssetRef::Lumen). Stored as baked, never cooked.
+	 */
+	Lumen
 };
 
 enum class EMantleCollision : uint8
@@ -413,6 +418,12 @@ struct FMantleEnvironmentSettings
 	TOptional<double> Saturation;
 	/** bloom: 0 (no glow) to MaxScriptBloom. Unset: the engine's own bloom. */
 	TOptional<double> Bloom;
+	/**
+	 * bloomThreshold: the brightness below which nothing glows, 0 to MaxBloomThreshold (the post-process Bloom Threshold).
+	 * Unset: the engine's own (-1, where everything glows). Applied on clients as the place loads
+	 * (UMantleEnvironmentSubsystem::SetPlaceBloomThreshold), not through the replicated override.
+	 */
+	TOptional<double> BloomThreshold;
 	/** colorGrading: a MantleEnvironmentOverrideValues::ColorGrading* preset, never None. Unset: none. */
 	TOptional<uint8> ColorGrading;
 	/** colorGradingIntensity: how much of the preset shows, 0 to 1; 1 is the full look. */
@@ -434,13 +445,19 @@ struct FMantleEnvironmentSettings
 	 * baked), so the client does not light the place with it. Only false is written; true is Mantle's own.
 	 */
 	bool bNoDirectSun = false;
+	/**
+	 * outdoors: false when the place has no outdoor environment of its own (no sun, sky light, atmosphere, clouds or fog:
+	 * an interior lit by its own lights). The client then spawns no default sun, sky light, atmosphere, clouds, fog or night
+	 * sky, and holds the natural weather at Clear. Only false is written; true is Mantle's own sky.
+	 */
+	bool bNoOutdoors = false;
 
 	/** True when the file set none of the keys (an absent or empty block). */
 	bool IsEmpty() const
 	{
 		return !ClockTime.IsSet() && !TimeScale.IsSet() && !Weather.IsSet() && !ColorTint.IsSet() && !Saturation.IsSet()
-			&& !Bloom.IsSet() && !ColorGrading.IsSet() && !ColorGradingIntensity.IsSet() && !Exposure.IsSet() && !Fog.IsSet()
-			&& !SkyLightIntensity.IsSet() && !bNoDirectSun;
+			&& !Bloom.IsSet() && !BloomThreshold.IsSet() && !ColorGrading.IsSet() && !ColorGradingIntensity.IsSet() && !Exposure.IsSet() && !Fog.IsSet()
+			&& !SkyLightIntensity.IsSet() && !bNoDirectSun && !bNoOutdoors;
 	}
 };
 
@@ -546,6 +563,12 @@ struct FMantleAssetRef
 	EMantleAssetKind Kind = EMantleAssetKind::StaticMesh;
 	FString Hash;
 	int64 Bytes = 0;
+
+	/** StaticMesh, optional (#149): the id of this manifest's Lumen entry for the mesh. */
+	FString Lumen;
+
+	/** Lumen (#149): the engine the file was baked by (FMantleMeshLumenFile::EngineTag). A client of another engine skips it. */
+	FString Engine;
 };
 
 /**

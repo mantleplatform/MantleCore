@@ -12,6 +12,7 @@
 #include "Engine/Texture2D.h"
 #include "HAL/PlatformTime.h"
 #include "MantleConnection.h"
+#include "MantleMeshLumenData.h"
 #include "MantlePlaceStorage.h"
 #include "MantleRuntime.h"
 #include "MantleRuntimeStaticMeshBuilder.h"
@@ -1076,6 +1077,8 @@ const TCHAR* FMantlePlaceAssets::KindName(const EAssetKind Kind)
 	case EAssetKind::AnimClip: return TEXT("animclip");
 	case EAssetKind::Vehicle: return TEXT("vehicle");
 	case EAssetKind::Weapon: return TEXT("weapon");
+	// #149: a static mesh's Lumen side file (MLD1), stored as the plugin baked it.
+	case EAssetKind::Lumen: return TEXT("lumen");
 	case EAssetKind::Mesh:
 	default: return TEXT("mesh");
 	}
@@ -1487,6 +1490,11 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 		}
 	}
 
+	if (Settings.bRenderAssets)
+	{
+		AddLumenRecords(Place);
+	}
+
 	int32 MeshCount = 0;
 	int32 MaterialCount = 0;
 	int32 SoundCount = 0;
@@ -1495,10 +1503,11 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 	int32 HeightfieldCount = 0;
 	int32 VehicleCount = 0;
 	int32 WeaponCount = 0;
+	int32 LumenCount = 0;
 	for (const TPair<FString, FRecord>& Pair : Records)
 	{
 		const EAssetKind Kind = Pair.Value.Kind;
-		(Kind == EAssetKind::Mesh ? MeshCount : Kind == EAssetKind::Material ? MaterialCount : Kind == EAssetKind::Sound ? SoundCount
+		(Kind == EAssetKind::Lumen ? LumenCount : Kind == EAssetKind::Mesh ? MeshCount : Kind == EAssetKind::Material ? MaterialCount : Kind == EAssetKind::Sound ? SoundCount
 			: (Kind == EAssetKind::SkeletalMesh || Kind == EAssetKind::AnimClip) ? SkeletalCount : Kind == EAssetKind::Heightfield ? HeightfieldCount
 			: Kind == EAssetKind::Vehicle ? VehicleCount : Kind == EAssetKind::Weapon ? WeaponCount : TextureCount) += 1;
 	}
@@ -1516,6 +1525,10 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 	if (WeaponCount > 0)
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS preflight place %s: %d uploaded weapon(s) (#789)"), *Place.PlaceId, WeaponCount);
+	}
+	if (Settings.bRenderAssets)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS preflight place %s: Lumen data for %d of %d uploaded meshes (#149)"), *Place.PlaceId, LumenCount, MeshCount);
 	}
 	if (!Settings.bRenderAssets)
 	{
@@ -1583,12 +1596,56 @@ void FMantlePlaceAssets::StartManifestOnly(const FMantlePlace& Place)
 		// A script may spawn the mesh with collision on (the default), so it is built with it.
 		Record.bCollision = Record.bCollision || bMesh;
 	}
+	if (Settings.bRenderAssets)
+	{
+		AddLumenRecords(Place);
+	}
 
 	UE_LOG(LogMantle, Log,
 		TEXT("MANTLE_PLACE_ASSETS manifest-only place %s: %d uploaded assets no entity or vehicle uses (about %.1f MB as uploaded), %d skipped over the cap, %d materials skipped on the dedicated server"),
 		*Place.PlaceId, Taken, Megabytes(TakenBytes), OverCap, SkippedMaterials);
 	Result.SkippedMaterials = SkippedMaterials;
 	bStarted = true;
+}
+
+void FMantlePlaceAssets::AddLumenRecords(const FMantlePlace& Place)
+{
+	TMap<FString, const FMantleAssetRef*> ById;
+	for (const FMantleAssetRef& Asset : Place.Assets)
+	{
+		ById.Add(Asset.Id, &Asset);
+	}
+	TArray<FString> MeshIds;
+	for (const TPair<FString, FRecord>& Pair : Records)
+	{
+		if (Pair.Value.Kind == EAssetKind::Mesh)
+		{
+			MeshIds.AddUnique(Pair.Value.Id);
+		}
+	}
+	const FString Engine = FMantleMeshLumenFile::EngineTag();
+	int32 OtherEngine = 0;
+	for (const FString& MeshId : MeshIds)
+	{
+		const FMantleAssetRef* const* Mesh = ById.Find(MeshId);
+		const FMantleAssetRef* const* Lumen = Mesh && !(*Mesh)->Lumen.IsEmpty() ? ById.Find((*Mesh)->Lumen) : nullptr;
+		if (!Lumen || !IsUploadedId((*Lumen)->Id))
+		{
+			continue;
+		}
+		if ((*Lumen)->Engine != Engine)
+		{
+			++OtherEngine;
+			UE_LOG(LogMantle, Verbose, TEXT("MANTLE_PLACE_ASSETS mesh %s Lumen data not present: baked by engine %s, this client is %s"), *MeshId, *(*Lumen)->Engine, *Engine);
+			continue;
+		}
+		EnsureRecord((*Lumen)->Id, EAssetKind::Lumen);
+		MeshLumen.Add(MeshId, TPair<FString, FString>(RecordKey((*Lumen)->Id, EAssetKind::Lumen, EMantleTextureRole::Color), (*Mesh)->Hash));
+	}
+	if (OtherEngine > 0)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS %d mesh(es)' Lumen data was baked by another engine than this client's (%s): built without it"), OtherEngine, *Engine);
+	}
 }
 
 FMantlePlaceAssets::FRecord& FMantlePlaceAssets::EnsureRecord(const FString& Id, const EAssetKind Kind, const EMantleTextureRole Role)
@@ -1610,6 +1667,11 @@ void FMantlePlaceAssets::FailRecord(FRecord& Record, const FString& Error)
 	Record.bFailed = true;
 	Record.bResolving = false;
 	Record.Error = Error;
+	if (Record.Kind == EAssetKind::Lumen)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS Lumen data %s not present: it %s"), *Record.Id, *Error);
+		return;
+	}
 	UE_LOG(LogMantle, Error, TEXT("MANTLE_PLACE_ASSETS FAIL %s %s: %s"), KindName(Record.Kind), *Record.Id, *Error);
 }
 
@@ -1794,6 +1856,11 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 	Build.Ref.Hash = Hash;
 	Build.Ref.Url = Asset.Url;
 	Build.Ref.Bytes = FMath::Max<int64>(Asset.CookedBytes, 0);
+	if (const TPair<FString, FString>* Lumen = RecordKind == EAssetKind::Mesh ? MeshLumen.Find(RecordId) : nullptr)
+	{
+		Build.LumenRecord = Lumen->Key;
+		Build.LumenMeshTag = Lumen->Value;
+	}
 	Store->Pin(Hash);
 	Build.bPinned = true;
 
@@ -1802,7 +1869,7 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 	// are the build, #469) or a heightfield (its decoded grid is the build, #466), or terrain weights
 	// (#596, likewise), so none has anything to reuse.
 	if (RecordKind != EAssetKind::Material && RecordKind != EAssetKind::Sound && RecordKind != EAssetKind::AnimClip
-		&& RecordKind != EAssetKind::Heightfield && RecordKind != EAssetKind::TerrainWeights
+		&& RecordKind != EAssetKind::Heightfield && RecordKind != EAssetKind::TerrainWeights && RecordKind != EAssetKind::Lumen
 		// A weapon is read again, not reused: queuing what its document names happens when it is decoded (#789).
 		&& RecordKind != EAssetKind::Weapon)
 	{
@@ -2147,6 +2214,11 @@ void FMantlePlaceAssets::StartDecodes()
 
 		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> Bytes = MoveTemp(Build->Bytes);
 		Build->Bytes.Reset();
+		if (Key.Kind == EAssetKind::Lumen)
+		{
+			// #149: nothing to decode off the game thread; OnDecoded looks at the header.
+			Build->LumenFile = Bytes;
+		}
 		const int64 MaxTextureGpuBytes = Settings.MaxTextureGpuBytes;
 		const TSharedRef<FCompletionQueue, ESPMode::ThreadSafe> Queue = Completions;
 		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes]()
@@ -2167,6 +2239,9 @@ void FMantlePlaceAssets::StartDecodes()
 
 			switch (Key.Kind)
 			{
+			case EAssetKind::Lumen:
+				break;
+
 			case EAssetKind::Mesh:
 				if (FMantleStaticMeshReader::HasMagic(View))
 				{
@@ -2175,6 +2250,7 @@ void FMantlePlaceAssets::StartDecodes()
 					{
 						MeshV2.Reset();
 					}
+
 				}
 				else if (View.Num() >= 4 && FMemory::Memcmp(View.GetData(), "MRM1", 4) == 0 && Bytes.IsValid())
 				{
@@ -2340,6 +2416,22 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 	{
 		return;
 	}
+	// #149: a Lumen side file is its bytes; each mesh reads it as it builds (FMantleMeshLumenFile::Read). Only its magic is looked at here.
+	if (Key.Kind == EAssetKind::Lumen)
+	{
+		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> File = Build->LumenFile;
+		FString Engine;
+		FString MeshTag;
+		if (!File.IsValid() || !FMantleMeshLumenFile::ReadHeader(*File, Engine, MeshTag))
+		{
+			FailBuild(*Build, TEXT("is not a Lumen file this client reads (MLD1)"));
+			return;
+		}
+		Build->Detail = FString::Printf(TEXT("MLD1, engine %s, %.1f KB"), *Engine, File->Num() / 1024.0);
+		ReleasePending(*Build);
+		QueueBuild(Key);
+		return;
+	}
 	if (!Error.IsEmpty()
 		|| (!MeshV2 && !MeshV1 && !Texture && !Material && !Sound && !Skinned && !Clip && !Heightfield && !TerrainWeights && !Vehicle && !Weapon))
 	{
@@ -2395,6 +2487,15 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 		QueueLiveriesOf(VehicleId, LiveryIds);
 		QueueMeshesOf(VehicleId, MeshIds);
 		QueueSoundsOf(VehicleId, SoundIds);
+		return;
+	}
+	// #149: a mesh with a Lumen side file waits for it to settle, as a material waits for its textures (the record is
+	// in the first texture slot the wait reads); then BuildOne reads it.
+	if (Key.Kind == EAssetKind::Mesh && !Build->LumenRecord.IsEmpty())
+	{
+		Build->TextureRecords[0] = Build->LumenRecord;
+		Build->State = EBuildState::WaitingForTextures;
+		WaitingMaterials.Add(Key);
 		return;
 	}
 	if (Key.Kind != EAssetKind::Material)
@@ -2523,6 +2624,25 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		// #470: a dedicated server never draws, and its collision is LOD0's.
 		Params.bBuildLowerLODs = !IsRunningDedicatedServer();
 		Params.Name = TEXT("MantlePlaceMesh");
+		// #149: the mesh's Lumen data, when its side file arrived and is this engine's and this mesh's; else none.
+		FMantleMeshLumenData Lumen;
+		FString LumenDetail;
+		if (!Build.LumenRecord.IsEmpty())
+		{
+			const FRecord* LumenRecord = Records.Find(Build.LumenRecord);
+			const FBuild* LumenBuild = LumenRecord && LumenRecord->Build.IsSet() ? Builds.Find(LumenRecord->Build.GetValue()) : nullptr;
+			FString Reason = TEXT("did not arrive");
+			if (LumenBuild && LumenBuild->State == EBuildState::Ready && LumenBuild->LumenFile.IsValid()
+				&& FMantleMeshLumenFile::Read(*LumenBuild->LumenFile, Build.LumenMeshTag, Lumen, &Reason))
+			{
+				Params.Lumen = &Lumen;
+				LumenDetail = TEXT(", Lumen data");
+			}
+			else
+			{
+				UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS mesh %s Lumen data not present: it %s; built without"), *Build.Id, *Reason);
+			}
+		}
 		UStaticMesh* Mesh = nullptr;
 		if (Build.MeshV2)
 		{
@@ -2540,6 +2660,7 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 				Build.MeshV2->VertexCount(), Build.MeshV2->TriangleCount(), Build.MeshV2->SlotCount(), Build.MeshV2->LODCount(),
 				*FString::Join(LODTriangles, TEXT("/")), Params.bBuildLowerLODs || Build.MeshV2->LODCount() == 1 ? TEXT("") : TEXT(", LOD0 built on a server"),
 				Build.MeshV2->UV1s.Num() > 0 ? TEXT(", UV1") : TEXT(""), *CollisionDetail);
+			Build.Detail += LumenDetail;
 			Mesh = FMantleRuntimeStaticMeshBuilder::Build(*Build.MeshV2, Params, &Error);
 		}
 		else if (Build.MeshV1)
@@ -2581,6 +2702,11 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		MarkReady(Build, Mesh);
 		return;
 	}
+
+	case EAssetKind::Lumen:
+		// #149: the downloaded MLD1 is the build; each mesh that names it reads it as it builds.
+		MarkReady(Build, nullptr);
+		return;
 
 	case EAssetKind::Texture:
 	{
@@ -2842,7 +2968,13 @@ void FMantlePlaceAssets::FailBuild(FBuild& Build, const FString& Error)
 	Build.TerrainWeights.Reset();
 	Build.Vehicle.Reset();
 	Build.Weapon.Reset();
+	Build.LumenFile.Reset();
 	ReleasePending(Build);
+	if (Build.Key.Kind == EAssetKind::Lumen)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS Lumen data %s not present: it %s"), *FString::Join(Build.RecordIds, TEXT(",")), *Error);
+		return;
+	}
 	UE_LOG(LogMantle, Error, TEXT("MANTLE_PLACE_ASSETS FAIL %s %s: %s"), KindName(Build.Key.Kind), *FString::Join(Build.RecordIds, TEXT(",")), *Error);
 }
 
@@ -2959,7 +3091,8 @@ void FMantlePlaceAssets::CheckComplete()
 	for (const TPair<FString, FRecord>& Pair : Records)
 	{
 		const FRecord& Record = Pair.Value;
-		if (Record.Kind == EAssetKind::Sound)
+		// A Lumen side file that did not arrive is "not present" (#149): its mesh is built without it.
+		if (Record.Kind == EAssetKind::Sound || Record.Kind == EAssetKind::Lumen)
 		{
 			continue;
 		}
@@ -2992,6 +3125,7 @@ void FMantlePlaceAssets::CheckComplete()
 		case EAssetKind::AnimClip: ++Result.Clips; break;
 		case EAssetKind::Heightfield: ++Result.Heightfields; break;
 		case EAssetKind::TerrainWeights: break; // the weightmap's second use, not an asset of its own (#596)
+		case EAssetKind::Lumen: break;
 		}
 	}
 	Result.Errors.Append(CollisionErrors);

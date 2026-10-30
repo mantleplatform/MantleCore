@@ -290,6 +290,18 @@ struct MANTLEEDITOR_API FMantleConvertedMesh
 	int32 LODs = 1;
 	int32 CollisionShapes = 0;
 
+	/**
+	 * #149: the mesh's Lumen side file (FMantleMeshLumenFile, MLD1, baked from LOD0 by FMantleMeshLumenBake), uploaded as an
+	 * asset of kind lumen beside the mesh and named by its manifest entry, and its hash. Empty when it has none, with the
+	 * reason in LumenNone (what Check this place reports for a level that asks for Lumen).
+	 */
+	TArray<uint8> Lumen;
+	FString LumenHash;
+	FString LumenNone;
+
+	/** The upload key of the Lumen side file: the mesh's own key, marked. */
+	FString LumenKey() const { return Key + TEXT("#lumen"); }
+
 	bool bFromCache = false;
 };
 
@@ -724,6 +736,9 @@ struct MANTLEEDITOR_API FMantlePlaceConversionStats
 
 	/** Calls into the flattener (GLTFExporter). A republish of unchanged content makes none. */
 	int32 FlattenerCalls = 0;
+
+	/** #149: time spent baking meshes' Lumen data (FMantleMeshLumenBake), which a mesh from the cache does not repeat. */
+	double LumenSeconds = 0.0;
 };
 
 /**
@@ -884,6 +899,12 @@ public:
 	 * its key, and the hash of what it converts to, are as they were.
 	 */
 	static FString MeshCacheSalt(const FMantlePlaceAssetLimits& Limits, const UStaticMesh& Mesh, int32 FromLOD, const FString& ReducedTag);
+
+	/**
+	 * #149: the part of MeshCacheSalt the mesh's Lumen side file adds: the engine that bakes it and each slot material's blend
+	 * mode and two-sidedness (materials are not in the mesh's package, so they are named here).
+	 */
+	static FString MeshLumenSalt(const UStaticMesh& Mesh);
 
 	/**
 	 * #628: makes a mesh's LOD screen sizes ones the cook accepts, on the export's copy only (never the asset). Values that

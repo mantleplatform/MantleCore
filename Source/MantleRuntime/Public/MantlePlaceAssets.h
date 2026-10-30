@@ -459,7 +459,7 @@ private:
 	 * TerrainWeights (#596) is an uploaded Texture (the API's kind) read on the CPU into a Terrain's
 	 * heaviest layer per texel, beside (not instead of) the GPU texture a client builds from the same id.
 	 */
-	enum class EAssetKind : uint8 { Mesh, Material, Texture, Sound, SkeletalMesh, AnimClip, Heightfield, Vehicle, TerrainWeights, Weapon };
+	enum class EAssetKind : uint8 { Mesh, Material, Texture, Sound, SkeletalMesh, AnimClip, Heightfield, Vehicle, TerrainWeights, Weapon, Lumen };
 
 	using FSoundSettled = TFunction<void(TSharedPtr<const FMantleSoundData>, const FString&)>;
 
@@ -506,6 +506,21 @@ private:
 		int64 PendingBytes = 0;
 
 		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> Bytes;
+
+		/**
+		 * Lumen side files (#149): the MLD1 as downloaded, which is what the build is (kept while the set lives); each mesh
+		 * that names it reads its own copy of the data from it when it builds.
+		 */
+		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> LumenFile;
+
+		/**
+		 * Meshes (#149): the record of the mesh's Lumen side file (empty when the place gives it none, or one baked by another
+		 * engine), and the mesh's upload hash the file must name. The mesh waits for that record to settle before it builds
+		 * (WaitingForTextures, as a material waits for its textures); a file that fails is "not present".
+		 */
+		FString LumenRecord;
+		FString LumenMeshTag;
+
 		TSharedPtr<FMantleStaticMeshData> MeshV2;
 		TSharedPtr<FMantleRuntimeMesh> MeshV1;
 		TSharedPtr<FMantleDecodedTexture> Texture;
@@ -599,6 +614,15 @@ private:
 	void Start(const FMantlePlace& Place);
 	/** #462: PrepareManifestOnly's Start: the manifest's uploaded meshes and materials no entity or built vehicle uses, within the caps. */
 	void StartManifestOnly(const FMantlePlace& Place);
+
+	/**
+	 * #149: a record for the Lumen side file of every mesh record so far whose manifest entry names one baked by this
+	 * engine (FMantleMeshLumenFile::EngineTag), and MeshLumen for ApplyResolved. One baked by another engine is "not present".
+	 */
+	void AddLumenRecords(const FMantlePlace& Place);
+
+	/** #149: a mesh id to its Lumen side file's record key and the mesh's upload hash the file must name. */
+	TMap<FString, TPair<FString, FString>> MeshLumen;
 	static TSharedRef<FMantlePlaceAssets> PrepareWith(const FMantlePlace& Place, const FMantlePlaceAssetSettings& Settings,
 		FMantlePlaceAssetsDone OnDone, bool bManifestOnly);
 	/** #462: GetLiveMeshState / GetLiveMaterialState across the live sets, newest first. */

@@ -3,6 +3,8 @@
 #include "MantleAnimClipWriter.h"
 #include "MantleCosmeticExport.h"
 #include "MantleHeightfieldReader.h"
+#include "MantleMeshLumenBake.h"
+#include "MantleMeshLumenData.h"
 #include "MantleMeshReduce.h"
 #include "MantlePlaceLimits.h"
 #include "MantlePng.h"
@@ -1645,6 +1647,11 @@ bool FMantlePlaceAssetSet::TakeUploads(EMantlePlaceUploadStage Stage, TArray<FMa
 		for (FMantleConvertedMesh& Mesh : Meshes)
 		{
 			Take(Mesh.Key, TEXT("mesh"), Mesh.Hash, Mesh.Name, Mesh.Bytes);
+			// #149: its Lumen side file, beside it (nothing waits on the other: the place file names both).
+			if (Mesh.Lumen.Num() > 0)
+			{
+				Take(Mesh.LumenKey(), TEXT("lumen"), Mesh.LumenHash, Mesh.Name + TEXT(" (Lumen data)"), Mesh.Lumen);
+			}
 		}
 		return true;
 	}
@@ -2093,9 +2100,18 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 	{
 		OnProgress(Done, Total, FString());
 	}
+	int32 LumenFiles = 0;
+	int64 LumenBytes = 0;
+	for (const FMantleConvertedMesh& Mesh : Out.Meshes)
+	{
+		LumenFiles += Mesh.Lumen.Num() > 0 ? 1 : 0;
+		LumenBytes += Mesh.Lumen.Num();
+	}
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 converted %d mesh(es) (%d from cache) and %d material(s) (%d from cache), %d texture(s), %d sound(s), %d flattener call(s), %d issue(s)"),
 		Stats.MeshesConverted + Stats.MeshesFromCache, Stats.MeshesFromCache, Stats.MaterialsConverted + Stats.MaterialsFromCache, Stats.MaterialsFromCache,
 		Out.Textures.Num(), Out.Sounds.Num(), Stats.FlattenerCalls, Out.Issues.Num());
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 Lumen data (#149): %d of %d mesh(es), %.2f MB, %.1f s baking"),
+		LumenFiles, Out.Meshes.Num(), LumenBytes / (1024.0 * 1024.0), Stats.LumenSeconds);
 	return !Out.HasErrors();
 }
 
@@ -2999,6 +3015,7 @@ FString FMantlePlaceAssetConverter::MeshCacheSalt(const FMantlePlaceAssetLimits&
 	}
 	FString Salt = FString::Printf(TEXT("mesh lods=%d/%s collision=%d/%d/%d/%d bytes=%lld %s"), Limits.MaxLODs, *FString::Join(LODCaps, TEXT(",")),
 		Limits.MaxCollisionPrimitives, Limits.MaxConvexHulls, Limits.MaxHullVertices, Limits.MaxTotalHullVertices, Limits.MaxUploadBytes, *Mesh.GetPathName());
+	Salt += MeshLumenSalt(Mesh);
 	// #804: only a mesh published from a smaller version of itself says so; one that fits keeps the key it had.
 	if (FromLOD > 0)
 	{
@@ -3007,6 +3024,17 @@ FString FMantlePlaceAssetConverter::MeshCacheSalt(const FMantlePlaceAssetLimits&
 	if (!ReducedTag.IsEmpty())
 	{
 		Salt += TEXT(" reduced=") + ReducedTag;
+	}
+	return Salt;
+}
+
+FString FMantlePlaceAssetConverter::MeshLumenSalt(const UStaticMesh& Mesh)
+{
+	FString Salt = TEXT(" lumen=1 engine=") + FMantleMeshLumenFile::EngineTag() + TEXT(" sections=");
+	for (const FStaticMaterial& Slot : Mesh.GetStaticMaterials())
+	{
+		const FMantleMeshLumenSection Section = FMantleMeshLumenBake::SectionFor(Slot.MaterialInterface);
+		Salt += FString::Printf(TEXT("%d%s"), static_cast<int32>(Section.BlendMode), Section.bTwoSided ? TEXT("t") : TEXT("o"));
 	}
 	return Salt;
 }
@@ -3286,6 +3314,25 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 		Out.Issues.Add(ErrorIssue(FString::Printf(TEXT("Mesh '%s' is %.1f MB once converted; an upload may be at most %.0f MB."), *Mesh->GetName(),
 			Converted.Bytes.Num() / (1024.0 * 1024.0), Limits.MaxUploadBytes / (1024.0 * 1024.0)), TEXT("Use a lower-detail version of it.")));
 		return false;
+	}
+
+	// #149: its Lumen data, from the LOD0 just written (the geometry the client builds), each section as its slot's material
+	// draws it. None is no failure: the client builds the mesh without, and Check this place says why.
+	{
+		TArray<FMantleMeshLumenSection> Sections;
+		for (const int32 Slot : Converted.Slots)
+		{
+			const TArray<FStaticMaterial>& Materials = Mesh->GetStaticMaterials();
+			Sections.Add(FMantleMeshLumenBake::SectionFor(Materials.IsValidIndex(Slot) ? Materials[Slot].MaterialInterface.Get() : nullptr));
+		}
+		const double BakeStart = FPlatformTime::Seconds();
+		if (FMantleMeshLumenBake::Bake(LODs[0], Sections, Converted.Hash, Converted.Lumen, Converted.LumenNone))
+		{
+			Converted.LumenHash = FMantleSha256::AssetHash(Converted.Lumen);
+		}
+		Stats.LumenSeconds += FPlatformTime::Seconds() - BakeStart;
+		UE_LOG(LogMantle, Verbose, TEXT("MANTLE_LUMEN %s: %s (%.0f ms)"), *Mesh->GetName(),
+			Converted.Lumen.Num() > 0 ? *FString::Printf(TEXT("%d bytes"), Converted.Lumen.Num()) : *Converted.LumenNone, (FPlatformTime::Seconds() - BakeStart) * 1000.0);
 	}
 	++Stats.MeshesConverted;
 	Out.Issues.Append(MeshIssues);
@@ -4242,6 +4289,20 @@ bool FMantlePlaceAssetConverter::LoadCachedMesh(const FString& CacheKey, FMantle
 	Out.Vertices = static_cast<int32>(NumberField(Meta, TEXT("vertices"), 0));
 	Out.LODs = static_cast<int32>(NumberField(Meta, TEXT("lods"), 1));
 	Out.CollisionShapes = static_cast<int32>(NumberField(Meta, TEXT("collisionShapes"), 0));
+	// #149: the Lumen side file beside the GLB, or the reason it has none.
+	FString LumenHash;
+	if (Meta->TryGetStringField(TEXT("lumenHash"), LumenHash))
+	{
+		if (!FFileHelper::LoadFileToArray(Out.Lumen, *(Base + TEXT(".lumen")), FILEREAD_Silent) || FMantleSha256::AssetHash(Out.Lumen) != LumenHash)
+		{
+			return false;
+		}
+		Out.LumenHash = LumenHash;
+	}
+	else if (!Meta->TryGetStringField(TEXT("lumenNone"), Out.LumenNone))
+	{
+		return false;
+	}
 	ReadCachedIssues(Meta, OutIssues);
 	const TArray<TSharedPtr<FJsonValue>>* Slots = nullptr;
 	if (!Meta->TryGetArrayField(TEXT("slots"), Slots))
@@ -4285,14 +4346,22 @@ void FMantlePlaceAssetConverter::StoreCachedMesh(const FString& CacheKey, const 
 	Meta->SetNumberField(TEXT("vertices"), Mesh.Vertices);
 	Meta->SetNumberField(TEXT("lods"), Mesh.LODs);
 	Meta->SetNumberField(TEXT("collisionShapes"), Mesh.CollisionShapes);
+	if (Mesh.Lumen.Num() > 0)
+	{
+		Meta->SetStringField(TEXT("lumenHash"), Mesh.LumenHash);
+	}
+	else
+	{
+		Meta->SetStringField(TEXT("lumenNone"), Mesh.LumenNone);
+	}
 	TArray<TSharedPtr<FJsonValue>> IssueValues;
 	for (const FMantleValidationIssue& Issue : Issues)
 	{
 		IssueValues.Add(MakeShared<FJsonValueObject>(IssueJson(Issue)));
 	}
 	Meta->SetArrayField(TEXT("issues"), IssueValues);
-	// The GLB first: the metadata is what makes an entry count, so it goes last.
-	if (SaveAtomically(Mesh.Bytes, Base + TEXT(".glb")))
+	// The GLB (and Lumen file) first: the metadata is what makes an entry count, so it goes last.
+	if (SaveAtomically(Mesh.Bytes, Base + TEXT(".glb")) && (Mesh.Lumen.Num() == 0 || SaveAtomically(Mesh.Lumen, Base + TEXT(".lumen"))))
 	{
 		SaveStringAtomically(JsonText(Meta), Base + TEXT(".json"));
 	}
