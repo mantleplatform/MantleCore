@@ -62,6 +62,9 @@ namespace MantleCableBakeTestPrivate
 				Actor->CableComponent->SetMaterial(0, Material);
 			}
 			Actor->FinishSpawning(FTransform(Location));
+			// The component laid its particles out when it registered, before the properties above were set (a default 10 segments, 100 units
+			// long); registering it again lays them out along this cable, as the editor does when a property of the cable is changed.
+			Actor->CableComponent->ReregisterComponent();
 			return Actor;
 		}
 	};

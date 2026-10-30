@@ -1319,8 +1319,25 @@ namespace MantlePlaceExporterSkips
  * content: a class marked NotPlaceable can never be placed by a creator, and an actor with
  * no root component has no transform and so cannot be a place entity.
  */
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantlePlaceExporterInfrastructure
+{
+	/** Whether Actor's type is one Export always leaves out (an info actor, a brush, a controller, a pawn, a camera, a reflection capture it cannot carry, world text on a client that cannot read it). */
+	bool IsLeftOutByType(const AActor* Actor)
+	{
+		return Actor->IsA(AInfo::StaticClass())
+			|| FMantleActorDecompose::IsUnpublishedReflectionCapture(Actor)
+			|| Actor->IsA(ABrush::StaticClass())
+			|| Actor->IsA(AController::StaticClass())
+			|| Actor->IsA(APawn::StaticClass())
+			|| Actor->IsA(ACameraActor::StaticClass())
+			|| (Actor->GetClass() == ATextRenderActor::StaticClass() && !FMantleTargetFeatures::Current().Reads(MantleClientFeatures::WorldText));
+	}
+}
+
 bool FMantlePlaceExporter::IsEngineInfrastructure(const AActor* Actor)
 {
+	using namespace MantlePlaceExporterInfrastructure;
 	if (Actor->GetClass()->HasAnyClassFlags(CLASS_NotPlaceable))
 	{
 		return true;
@@ -1375,15 +1392,8 @@ bool FMantlePlaceExporter::IsEngineInfrastructure(const AActor* Actor)
 	{
 		return true;
 	}
-	return Actor->IsA(AInfo::StaticClass())
-		|| FMantleActorDecompose::IsUnpublishedReflectionCapture(Actor)
-		|| Actor->IsA(ABrush::StaticClass())
-		|| Actor->IsA(AController::StaticClass())
-		|| Actor->IsA(APawn::StaticClass())
-		|| Actor->IsA(ACameraActor::StaticClass())
-		|| (Actor->GetClass() == ATextRenderActor::StaticClass() && !FMantleTargetFeatures::Current().Reads(MantleClientFeatures::WorldText))
-		// A type Mantle does not know with nothing to show: left out with a warning (DescribeUnpublishedContent), not refused.
-		|| HasNothingToShow(Actor);
+	// A type Mantle does not know with nothing to show: left out with a warning (DescribeUnpublishedContent), not refused.
+	return IsLeftOutByType(Actor) || HasNothingToShow(Actor);
 }
 
 namespace
@@ -1730,6 +1740,13 @@ bool FMantlePlaceExporter::HasNothingToShow(const AActor* Actor)
 	EMantleEntityType Type;
 	if (!IsValid(Actor) || Actor->HasAnyFlags(RF_Transient) || Actor->ActorHasTag(GExporterPCGActorTag)
 		|| ClassifyActor(Actor, Type) || IsInstanceHost(Actor))
+	{
+		return false;
+	}
+	// The engine's own and Mantle's own actors (the World Settings, a built place's sky) are infrastructure already, and not named.
+	if (Actor->GetClass()->HasAnyClassFlags(CLASS_NotPlaceable) || !Actor->GetRootComponent()
+		|| Actor->ActorHasTag(FName(FMantleEnvironment::EnvironmentActorTag)) || Actor->ActorHasTag(FName(FMantleTerrainBuilder::TerrainActorTag))
+		|| Actor->IsA(APhysicsConstraintActor::StaticClass()) || MantlePlaceExporterInfrastructure::IsLeftOutByType(Actor))
 	{
 		return false;
 	}
