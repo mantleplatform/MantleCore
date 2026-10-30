@@ -142,7 +142,7 @@ namespace MantleScriptPackagesPrivate
 		for (int32 Index = 0; Index < Names->Num(); ++Index)
 		{
 			FString Name;
-			if (!(*Names)[Index].IsValid() || !(*Names)[Index]->TryGetString(Name))
+			if (!(*Names)[Index].IsValid() || (*Names)[Index]->Type != EJson::String || !(*Names)[Index]->TryGetString(Name))
 			{
 				OutProblems.Add(FString::Printf(TEXT("package.json's dependency number %d is not text. Write each one as a package name between quotes."), Index + 1));
 			}
