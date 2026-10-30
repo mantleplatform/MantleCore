@@ -2,7 +2,6 @@
 #include "MantleMeshLumenData.h"
 
 #include "DistanceFieldAtlas.h"
-#include "MantleAssetStore.h"
 #include "MeshCardBuild.h"
 #include "Misc/EngineVersion.h"
 #include "Serialization/MemoryReader.h"
@@ -49,7 +48,7 @@ FString FMantleMeshLumenFile::EngineTag()
 	return FEngineVersion::Current().ToString(EVersionComponent::Changelist);
 }
 
-TArray<uint8> FMantleMeshLumenFile::Write(const FMantleContentHash& MeshHash, const FDistanceFieldVolumeData& DistanceField, const FCardRepresentationData& Cards)
+TArray<uint8> FMantleMeshLumenFile::Write(const FString& MeshTag, const FDistanceFieldVolumeData& DistanceField, const FCardRepresentationData& Cards)
 {
 	using namespace MantleMeshLumenDataPrivate;
 
@@ -64,7 +63,7 @@ TArray<uint8> FMantleMeshLumenFile::Write(const FMantleContentHash& MeshHash, co
 	uint32 Version = FormatVersion;
 	Writer << Version;
 	FString Engine = EngineTag();
-	FString Mesh = MeshHash.ToString();
+	FString Mesh = MeshTag;
 	Writer << Engine << Mesh;
 
 	// One mip, the finest: the renderer streams every mip but the resident one from a file on disk
@@ -89,7 +88,25 @@ TArray<uint8> FMantleMeshLumenFile::Write(const FMantleContentHash& MeshHash, co
 	return Bytes;
 }
 
-bool FMantleMeshLumenFile::Read(const TConstArrayView<uint8> Bytes, const FMantleContentHash& MeshHash, FMantleMeshLumenData& OutData, FString* OutReason)
+bool FMantleMeshLumenFile::ReadHeader(const TConstArrayView<uint8> Bytes, FString& OutEngine, FString& OutMeshTag)
+{
+	using namespace MantleMeshLumenDataPrivate;
+
+	OutEngine.Reset();
+	OutMeshTag.Reset();
+	if (Bytes.Num() < 8 || FMemory::Memcmp(Bytes.GetData(), "MLD1", 4) != 0)
+	{
+		return false;
+	}
+	const TArray<uint8> Copy(Bytes.GetData(), FMath::Min<int32>(Bytes.Num(), 4096));
+	FMemoryReader Reader(Copy, /*bIsPersistent*/ true);
+	Reader.Seek(4);
+	uint32 Version = 0;
+	Reader << Version << OutEngine << OutMeshTag;
+	return !Reader.IsError() && Version == FormatVersion && !OutEngine.IsEmpty() && !OutMeshTag.IsEmpty();
+}
+
+bool FMantleMeshLumenFile::Read(const TConstArrayView<uint8> Bytes, const FString& MeshTag, FMantleMeshLumenData& OutData, FString* OutReason)
 {
 	using namespace MantleMeshLumenDataPrivate;
 
@@ -118,7 +135,7 @@ bool FMantleMeshLumenFile::Read(const TConstArrayView<uint8> Bytes, const FMantl
 		SetReason(OutReason, FString::Printf(TEXT("was baked by engine %s (this client is %s)"), *Engine, *EngineTag()));
 		return false;
 	}
-	if (Mesh != MeshHash.ToString())
+	if (Mesh != MeshTag)
 	{
 		SetReason(OutReason, FString::Printf(TEXT("belongs to mesh %s"), *Mesh));
 		return false;

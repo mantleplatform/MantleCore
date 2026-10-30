@@ -179,8 +179,7 @@ namespace MantlePreviewLaunchPrivate
 				return false;
 			}
 			const FJsonObject& Fields = **Entry;
-			const FString Unknown = FirstUnknownKey(Fields, { TEXT("id"), TEXT("kind"), TEXT("file"), TEXT("cookedHash"), TEXT("cookedBytes"), TEXT("role"), TEXT("textures"),
-				TEXT("lumenFile"), TEXT("lumenHash"), TEXT("lumenBytes") });
+			const FString Unknown = FirstUnknownKey(Fields, { TEXT("id"), TEXT("kind"), TEXT("file"), TEXT("cookedHash"), TEXT("cookedBytes"), TEXT("role"), TEXT("textures") });
 			FMantlePreviewAsset Asset;
 			FString File;
 			double Bytes = 0.0;
@@ -234,32 +233,6 @@ namespace MantlePreviewLaunchPrivate
 				OutError = FString::Printf(TEXT("Preview asset '%s' file '%s' is %s, not the %lld bytes its manifest says."), *Asset.Id, *File,
 					FileBytes < 0 ? TEXT("missing") : *FString::Printf(TEXT("%lld bytes"), FileBytes), Asset.CookedBytes);
 				return false;
-			}
-			// #149: optional, and never a reason to refuse the bundle: a side file that is missing or does not add up is left out.
-			FString LumenFile;
-			double LumenBytes = 0.0;
-			if (Fields.TryGetStringField(TEXT("lumenFile"), LumenFile) && Fields.TryGetStringField(TEXT("lumenHash"), Asset.LumenHash)
-				&& Fields.TryGetNumberField(TEXT("lumenBytes"), LumenBytes))
-			{
-				FMantleContentHash LumenHash;
-				const FString LumenPath = Result.BundleDirectory / LumenFile;
-				Asset.LumenBytes = static_cast<int64>(LumenBytes);
-				if (Asset.Kind == TEXT("mesh") && FMantleContentHash::Parse(Asset.LumenHash, LumenHash) && MantlePreviewLaunch::IsBundleRelativePath(LumenFile)
-					&& Asset.LumenBytes > 0 && Asset.LumenBytes <= MantlePreviewLimits::MaxAssetBytes && IFileManager::Get().FileSize(*LumenPath) == Asset.LumenBytes)
-				{
-					Asset.LumenFile = LumenPath;
-					TotalBytes += Asset.LumenBytes;
-				}
-				else
-				{
-					UE_LOG(LogMantle, Log, TEXT("MANTLE_PREVIEW asset %s: Lumen data '%s' not present; the mesh is built without"), *Asset.Id, *LumenFile);
-					Asset.LumenHash.Reset();
-					Asset.LumenBytes = 0;
-				}
-			}
-			else
-			{
-				Asset.LumenHash.Reset();
 			}
 			TotalBytes += Asset.CookedBytes;
 			if (TotalBytes > MantlePreviewLimits::MaxTotalAssetBytes)

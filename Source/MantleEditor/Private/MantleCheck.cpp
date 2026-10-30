@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCheck.h"
+#include "MantleMeshLumenBake.h"
 #include "MantlePlaceInstancing.h"
 #include "MantlePlaceWorldPartition.h"
 #include "MantleRuntime.h"
@@ -105,6 +106,8 @@ FMantleCheckReport FMantleCheck::Evaluate(UWorld* World, const bool bThin)
 
 	const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(World, bThin);
 	Report.Issues.Append(Validation.Issues);
+	// #149: meshes a Lumen level would publish without Lumen data, and why.
+	FMantleMeshLumenBake::CheckLevel(World, Report.Issues);
 	if (!Validation.HasErrors())
 	{
 		FMantleExportOptions Options;

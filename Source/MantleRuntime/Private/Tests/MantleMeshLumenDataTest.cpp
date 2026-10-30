@@ -1,6 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "DistanceFieldAtlas.h"
-#include "MantleAssetStore.h"
 #include "MantleMeshLumenData.h"
 #include "MeshCardBuild.h"
 
@@ -18,10 +17,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FMantleMeshLumenFileTest::RunTest(const FString& Parameters)
 {
-	const uint8 MeshBytes[] = { 1, 2, 3, 4 };
-	const uint8 OtherBytes[] = { 5, 6, 7, 8 };
-	const FMantleContentHash Mesh = FMantleContentHash::OfBytes(MeshBytes, sizeof(MeshBytes));
-	const FMantleContentHash Other = FMantleContentHash::OfBytes(OtherBytes, sizeof(OtherBytes));
+	const FString Mesh = TEXT("sha256:") + FString::ChrN(64, TEXT('a'));
+	const FString Other = TEXT("sha256:") + FString::ChrN(64, TEXT('b'));
 
 	FDistanceFieldVolumeData Field;
 	Field.LocalSpaceMeshBounds = FBox3f(FVector3f(-50.0f), FVector3f(50.0f));

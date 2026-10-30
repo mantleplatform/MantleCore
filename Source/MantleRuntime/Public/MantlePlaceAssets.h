@@ -6,7 +6,6 @@
 #include "MantleApiClient.h"
 #include "MantleAssetStore.h"
 #include "MantleHeightfieldReader.h"
-#include "MantleMeshLumenData.h"
 #include "MantlePlaceMaterial.h"
 #include "MantlePlaceTypes.h"
 #include "MantleRuntimeMesh.h"
@@ -460,7 +459,7 @@ private:
 	 * TerrainWeights (#596) is an uploaded Texture (the API's kind) read on the CPU into a Terrain's
 	 * heaviest layer per texel, beside (not instead of) the GPU texture a client builds from the same id.
 	 */
-	enum class EAssetKind : uint8 { Mesh, Material, Texture, Sound, SkeletalMesh, AnimClip, Heightfield, Vehicle, TerrainWeights, Weapon };
+	enum class EAssetKind : uint8 { Mesh, Material, Texture, Sound, SkeletalMesh, AnimClip, Heightfield, Vehicle, TerrainWeights, Weapon, Lumen };
 
 	using FSoundSettled = TFunction<void(TSharedPtr<const FMantleSoundData>, const FString&)>;
 
@@ -509,12 +508,18 @@ private:
 		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> Bytes;
 
 		/**
-		 * Meshes (#149): the optional Lumen side file (MLD1), fetched after the mesh and read beside it. A zero hash
-		 * when the asset has none; a file that fails to download or read is "not present" and the mesh builds without.
+		 * Lumen side files (#149): the MLD1 as downloaded, which is what the build is (kept while the set lives); each mesh
+		 * that names it reads its own copy of the data from it when it builds.
 		 */
-		FMantleStoredAssetRef LumenRef;
-		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> LumenBytes;
-		TSharedPtr<FMantleMeshLumenData> Lumen;
+		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> LumenFile;
+
+		/**
+		 * Meshes (#149): the record of the mesh's Lumen side file (empty when the place gives it none, or one baked by another
+		 * engine), and the mesh's upload hash the file must name. The mesh waits for that record to settle before it builds
+		 * (WaitingForTextures, as a material waits for its textures); a file that fails is "not present".
+		 */
+		FString LumenRecord;
+		FString LumenMeshTag;
 
 		TSharedPtr<FMantleStaticMeshData> MeshV2;
 		TSharedPtr<FMantleRuntimeMesh> MeshV1;
@@ -609,6 +614,15 @@ private:
 	void Start(const FMantlePlace& Place);
 	/** #462: PrepareManifestOnly's Start: the manifest's uploaded meshes and materials no entity or built vehicle uses, within the caps. */
 	void StartManifestOnly(const FMantlePlace& Place);
+
+	/**
+	 * #149: a record for the Lumen side file of every mesh record so far whose manifest entry names one baked by this
+	 * engine (FMantleMeshLumenFile::EngineTag), and MeshLumen for ApplyResolved. One baked by another engine is "not present".
+	 */
+	void AddLumenRecords(const FMantlePlace& Place);
+
+	/** #149: a mesh id to its Lumen side file's record key and the mesh's upload hash the file must name. */
+	TMap<FString, TPair<FString, FString>> MeshLumen;
 	static TSharedRef<FMantlePlaceAssets> PrepareWith(const FMantlePlace& Place, const FMantlePlaceAssetSettings& Settings,
 		FMantlePlaceAssetsDone OnDone, bool bManifestOnly);
 	/** #462: GetLiveMeshState / GetLiveMaterialState across the live sets, newest first. */
@@ -625,13 +639,11 @@ private:
 
 	void StartFetches();
 	void OnFetched(const FBuildKey& Key, const FMantleAssetResult& Fetched);
-	/** #149: the mesh's Lumen side file arrived (or did not); either way the mesh goes on to decode. */
-	void OnLumenFetched(const FBuildKey& Key, const FMantleAssetResult& Fetched);
 	void StartDecodes();
 	void OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStaticMeshData> MeshV2, TSharedPtr<FMantleRuntimeMesh> MeshV1,
 		TSharedPtr<FMantleDecodedTexture> Texture, TSharedPtr<FMantlePlaceMaterialDesc> Material, TSharedPtr<const FMantleSoundData> Sound,
 		TSharedPtr<FMantleSkinnedMesh> Skinned, TSharedPtr<const FMantleAnimClip> Clip, TSharedPtr<const FMantleHeightfield> Heightfield,
-		TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, TSharedPtr<FMantleMeshLumenData> Lumen, const FString& Error);
+		TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, const FString& Error);
 	/** #435: a vehicle's materials, from its document, as material records (off a dedicated server). */
 	void QueueMaterialsOf(const FString& VehicleId, const TArray<FString>& MaterialIds);
 	/** #488: a vehicle's liveries, from its document, as colour texture records (off a dedicated server). */

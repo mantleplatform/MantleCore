@@ -26,6 +26,7 @@ namespace
 		case EMantleAssetKind::Heightfield: return TEXT("Heightfield");
 		case EMantleAssetKind::Vehicle:    return TEXT("Vehicle");
 		case EMantleAssetKind::Weapon:     return TEXT("Weapon");
+		case EMantleAssetKind::Lumen:      return TEXT("Lumen");
 		default:                           return TEXT("Unknown");
 		}
 	}

@@ -187,7 +187,12 @@ enum class EMantleAssetKind : uint8
 	/** A creator-published vehicle (#435): MVH1, its body and its document. */
 	Vehicle,
 	/** A creator-published weapon (#789): MWP1, its mesh and its document. */
-	Weapon
+	Weapon,
+	/**
+	 * A static mesh's Lumen side file (#149): MLD1 (FMantleMeshLumenFile), its distance field and Lumen cards, baked by the
+	 * plugin at publish and named by its mesh's entry (FMantleAssetRef::Lumen). Stored as baked, never cooked.
+	 */
+	Lumen
 };
 
 enum class EMantleCollision : uint8
@@ -546,6 +551,12 @@ struct FMantleAssetRef
 	EMantleAssetKind Kind = EMantleAssetKind::StaticMesh;
 	FString Hash;
 	int64 Bytes = 0;
+
+	/** StaticMesh, optional (#149): the id of this manifest's Lumen entry for the mesh. */
+	FString Lumen;
+
+	/** Lumen (#149): the engine the file was baked by (FMantleMeshLumenFile::EngineTag). A client of another engine skips it. */
+	FString Engine;
 };
 
 /**

@@ -2,6 +2,7 @@
 #include "MantlePlaceExporter.h"
 #include "MantleActorDecompose.h"
 #include "MantleMirrorBake.h"
+#include "MantleMeshLumenData.h"
 #include "MantleApiManifest.h"
 #include "MantleAssetLibrary.h"
 #include "MantleConstraint.h"
@@ -568,6 +569,7 @@ namespace
 		case EMantleAssetKind::Heightfield: return TEXT("Heightfield");
 		case EMantleAssetKind::Vehicle:  return TEXT("Vehicle");
 		case EMantleAssetKind::Weapon:   return TEXT("Weapon");
+		case EMantleAssetKind::Lumen:    return TEXT("Lumen");
 		default:                         return TEXT("StaticMesh");
 		}
 	}
@@ -5076,10 +5078,53 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				Place.Assets.Add(MoveTemp(Ref));
 			}
 		};
+		// #149: a mesh's Lumen side file, listed after the mesh, which names it.
+		auto AddLumen = [&Place, &Listed, Assets](const FMantleConvertedMesh& Mesh)
+		{
+			const FMantlePlaceUploadedRef* MeshUploaded = Assets->Uploaded.Find(Mesh.Key);
+			const FString MeshId = MeshUploaded && !MeshUploaded->Id.IsEmpty() ? MeshUploaded->Id : FMantlePlaceAssets::ProvisionalId(Mesh.Key);
+			FMantleAssetRef Ref;
+			Ref.Kind = EMantleAssetKind::Lumen;
+			Ref.Engine = FMantleMeshLumenFile::EngineTag();
+			const FMantlePlaceUploadedRef* Uploaded = Assets->Uploaded.Find(Mesh.LumenKey());
+			if (MeshUploaded && !MeshUploaded->Id.IsEmpty() && (!Uploaded || Uploaded->Id.IsEmpty()))
+			{
+				// The mesh is on Mantle but its Lumen file is not (Mantle refused it): the mesh goes without, as a client would.
+				return;
+			}
+			if (Uploaded && !Uploaded->Id.IsEmpty())
+			{
+				Ref.Id = Uploaded->Id;
+				Ref.Hash = Uploaded->Hash;
+				Ref.Bytes = Uploaded->Bytes;
+			}
+			else
+			{
+				Ref.Id = FMantlePlaceAssets::ProvisionalId(Mesh.LumenKey());
+				Ref.Hash = Mesh.LumenHash;
+				Ref.Bytes = Assets->UploadSize(Mesh.LumenKey(), Mesh.Lumen.Num());
+			}
+			FMantleAssetRef* MeshRef = Place.Assets.FindByPredicate([&MeshId](const FMantleAssetRef& Asset) { return Asset.Id == MeshId; });
+			if (!MeshRef)
+			{
+				return;
+			}
+			MeshRef->Lumen = Ref.Id;
+			if (!Listed.Contains(Ref.Id))
+			{
+				Listed.Add(Ref.Id);
+				Place.Assets.Add(MoveTemp(Ref));
+			}
+		};
 		for (const FString& Key : Uploads.Keys)
 		{
 			const EMantleAssetKind Kind = Uploads.KindOf.FindChecked(Key);
 			AddUpload(Key, Kind);
+			const FMantleConvertedMesh* LumenMesh = Kind == EMantleAssetKind::StaticMesh && Assets ? Assets->FindMesh(Key) : nullptr;
+			if (LumenMesh && !LumenMesh->LumenHash.IsEmpty())
+			{
+				AddLumen(*LumenMesh);
+			}
 			const FMantleConvertedMaterial* Material = Kind == EMantleAssetKind::Material && Assets ? Assets->FindMaterial(Key) : nullptr;
 			if (Material)
 			{
@@ -5456,6 +5501,15 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 		Writer->WriteValue(TEXT("kind"), AssetKindName(Asset.Kind));
 		Writer->WriteValue(TEXT("hash"), Asset.Hash);
 		Writer->WriteValue(TEXT("bytes"), static_cast<double>(Asset.Bytes));
+		// #149: a mesh's Lumen side file, and the engine that file was baked by.
+		if (!Asset.Lumen.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("lumen"), Asset.Lumen);
+		}
+		if (!Asset.Engine.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("engine"), Asset.Engine);
+		}
 		Writer->WriteObjectEnd();
 	}
 	Writer->WriteArrayEnd();

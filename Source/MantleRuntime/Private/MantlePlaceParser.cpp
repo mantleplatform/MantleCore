@@ -3618,7 +3618,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 				continue;
 			}
 
-			RequireNoUnknownKeys(Ctx, *Obj, { TEXT("id"), TEXT("kind"), TEXT("hash"), TEXT("bytes") }, Path);
+			RequireNoUnknownKeys(Ctx, *Obj, { TEXT("id"), TEXT("kind"), TEXT("hash"), TEXT("bytes"), TEXT("lumen"), TEXT("engine") }, Path);
 
 			FMantleAssetRef Asset;
 			RequireString(Ctx, *Obj, TEXT("id"), Path, Asset.Id);
@@ -3640,12 +3640,54 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 				}
 			}
 
+			// #149: a StaticMesh may name its Lumen side file (another entry, checked below); a Lumen entry says its engine.
+			if ((*Obj)->HasField(TEXT("lumen")))
+			{
+				if (Asset.Kind != EMantleAssetKind::StaticMesh)
+				{
+					Ctx.Fail(Join(Path, TEXT("lumen")), TEXT("only a StaticMesh may name a Lumen file"));
+				}
+				else if (RequireString(Ctx, *Obj, TEXT("lumen"), Path, Asset.Lumen) && !FMantlePlaceAssets::IsUploadedId(Asset.Lumen))
+				{
+					Ctx.Fail(Join(Path, TEXT("lumen")), TEXT("must be an uploaded asset id"));
+				}
+			}
+			if ((*Obj)->HasField(TEXT("engine")))
+			{
+				if (Asset.Kind != EMantleAssetKind::Lumen)
+				{
+					Ctx.Fail(Join(Path, TEXT("engine")), TEXT("only a Lumen entry says its engine"));
+				}
+				else if (RequireString(Ctx, *Obj, TEXT("engine"), Path, Asset.Engine) && (Asset.Engine.IsEmpty() || Asset.Engine.Len() > 128))
+				{
+					Ctx.Fail(Join(Path, TEXT("engine")), TEXT("must be 1 to 128 characters"));
+				}
+			}
+			else if (Asset.Kind == EMantleAssetKind::Lumen)
+			{
+				Ctx.Fail(Join(Path, TEXT("engine")), TEXT("a Lumen entry must say the engine it was baked by"));
+			}
+
 			Place.Assets.Add(MoveTemp(Asset));
 		}
 	}
 	else
 	{
 		Ctx.Fail(TEXT("/assets"), TEXT("required array is missing"));
+	}
+	// #149: a mesh's lumen names a Lumen entry of this manifest (validate.py check_lumen_links, the backend's alike).
+	for (int32 i = 0; i < Place.Assets.Num(); ++i)
+	{
+		const FString& LumenId = Place.Assets[i].Lumen;
+		if (LumenId.IsEmpty())
+		{
+			continue;
+		}
+		const FMantleAssetRef* Lumen = Place.Assets.FindByPredicate([&LumenId](const FMantleAssetRef& Other) { return Other.Id == LumenId; });
+		if (!Lumen || Lumen->Kind != EMantleAssetKind::Lumen)
+		{
+			Ctx.Fail(Join(Index(TEXT("/assets"), i), TEXT("lumen")), FString::Printf(TEXT("'%s' is not a Lumen entry of this place's assets"), *LumenId));
+		}
 	}
 
 	// entities

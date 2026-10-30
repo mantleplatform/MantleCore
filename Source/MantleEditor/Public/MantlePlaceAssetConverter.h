@@ -290,6 +290,18 @@ struct MANTLEEDITOR_API FMantleConvertedMesh
 	int32 LODs = 1;
 	int32 CollisionShapes = 0;
 
+	/**
+	 * #149: the mesh's Lumen side file (FMantleMeshLumenFile, MLD1, baked from LOD0 by FMantleMeshLumenBake), uploaded as an
+	 * asset of kind lumen beside the mesh and named by its manifest entry, and its hash. Empty when it has none, with the
+	 * reason in LumenNone (what Check this place reports for a level that asks for Lumen).
+	 */
+	TArray<uint8> Lumen;
+	FString LumenHash;
+	FString LumenNone;
+
+	/** The upload key of the Lumen side file: the mesh's own key, marked. */
+	FString LumenKey() const { return Key + TEXT("#lumen"); }
+
 	bool bFromCache = false;
 };
 
@@ -724,6 +736,9 @@ struct MANTLEEDITOR_API FMantlePlaceConversionStats
 
 	/** Calls into the flattener (GLTFExporter). A republish of unchanged content makes none. */
 	int32 FlattenerCalls = 0;
+
+	/** #149: time spent baking meshes' Lumen data (FMantleMeshLumenBake), which a mesh from the cache does not repeat. */
+	double LumenSeconds = 0.0;
 };
 
 /**
