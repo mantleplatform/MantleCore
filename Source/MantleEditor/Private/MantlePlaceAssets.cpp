@@ -3250,9 +3250,7 @@ namespace MantlePlaceAssetsPrivate
 		}
 		Lines.Add(FString::Printf(TEXT("base %llu"), Instance->GetBasePropertyOverridesHash()));
 		Lines.Sort();
-		return FString::Printf(TEXT("parent %s
-%s"), *DescribeMaterialContent(Instance->Parent, Depth + 1), *FString::Join(Lines, TEXT("
-")));
+		return FString::Printf(TEXT("parent %s\n%s"), *DescribeMaterialContent(Instance->Parent, Depth + 1), *FString::Join(Lines, TEXT("\n")));
 	}
 }
 
