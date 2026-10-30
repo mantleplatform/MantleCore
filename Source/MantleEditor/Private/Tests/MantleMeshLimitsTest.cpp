@@ -5,6 +5,8 @@
 
 #include "Misc/AutomationTest.h"
 
+#include <limits>
+
 #if WITH_DEV_AUTOMATION_TESTS
 
 // A mesh far past the triangle limit is refused before any reduction starts (a 517 MB scene mesh hung a publish for 100 minutes),
@@ -46,8 +48,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FMantleGlbSanitiseNonFiniteTest::RunTest(const FString& Parameters)
 {
-	const float NaN = TNumericLimits<float>::QuietNaN();
-	const float Infinity = TNumericLimits<float>::Infinity();
+	const float NaN = std::numeric_limits<float>::quiet_NaN();
+	const float Infinity = std::numeric_limits<float>::infinity();
 
 	FMantleGlbMesh Glb;
 	Glb.Positions = { FVector3f(0, 0, 0), FVector3f(100, 0, 0), FVector3f(0, 100, 0) };
