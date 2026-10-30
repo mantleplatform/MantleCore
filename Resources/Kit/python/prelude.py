@@ -69,16 +69,14 @@ def _export_function(package, name):
 
 def _export_table(package):
     # The package lives in the closure, not on the object, so no export name can clash with it. An export whose name Python
-    # resolves itself (a dunder) is reached as table["name"].
+    # resolves itself (a dunder) is reached as table["name"]. PocketPy does not call __setattr__, so unlike Luau and JS a write
+    # to the table just sets an attribute on that one object; it never reaches the package's exports.
     class _ExportTable:
         def __getattr__(self, name):
             return _export_function(package, name)
 
         def __getitem__(self, name):
             return _export_function(package, name)
-
-        def __setattr__(self, name, value):
-            raise TypeError("an export table is read-only; the package that owns it sets exports with Exports.set")
 
     return _ExportTable()
 
