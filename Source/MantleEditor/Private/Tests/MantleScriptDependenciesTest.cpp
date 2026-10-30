@@ -53,16 +53,16 @@ namespace MantleScriptDependenciesTestPrivate
 		return FString::Join(Problems, TEXT("\n"));
 	}
 
-	struct FFolder
+	struct FDependencyFolder
 	{
 		FString Root;
-		FFolder()
+		FDependencyFolder()
 		{
 			Root = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectIntermediateDir(), TEXT("MantleScriptDependenciesTest"),
 				FGuid::NewGuid().ToString(EGuidFormats::Digits)));
 			IFileManager::Get().MakeDirectory(*(Root / TEXT("Packages")), true);
 		}
-		~FFolder() { IFileManager::Get().DeleteDirectory(*Root, false, true); }
+		~FDependencyFolder() { IFileManager::Get().DeleteDirectory(*Root, false, true); }
 		void Write(const FString& Relative, const FString& Text) const { FFileHelper::SaveStringToFile(Text, *(Root / Relative)); }
 	};
 }
@@ -112,7 +112,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleScriptDependenciesCollectTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleScriptDependenciesTestPrivate;
-	FFolder Folder;
+	FDependencyFolder Folder;
 	Folder.Write(TEXT("Packages/Hunger/package.json"), TEXT("{\"name\": \"Hunger\", \"dependencies\": [\"QBCore\"]}"));
 	Folder.Write(TEXT("Packages/Hunger/Server/Main.luau"), TEXT("local C = require(\"@QBCore/Config\")"));
 	Folder.Write(TEXT("Packages/QBCore/package.json"), TEXT("{\"name\": \"QBCore\"}"));
