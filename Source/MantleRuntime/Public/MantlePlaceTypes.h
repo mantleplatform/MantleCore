@@ -471,6 +471,20 @@ struct FMantleWaterZone
 	double ZoneYawDeg = 0.0;
 };
 
+/** settings.boundary (#5): the box, in cm, a player may stay inside; a character past any side falls out of the world (dies and respawns). */
+struct FMantleMapBoundary
+{
+	double MinX = 0.0;
+	double MaxX = 0.0;
+	double MinY = 0.0;
+	double MaxY = 0.0;
+
+	bool Contains(const FVector& Location) const
+	{
+		return Location.X >= MinX && Location.X <= MaxX && Location.Y >= MinY && Location.Y <= MaxY;
+	}
+};
+
 struct FMantleSettings
 {
 	int32 MaxPlayers = 16;
@@ -509,6 +523,13 @@ struct FMantleSettings
 	int32 MaxCarriedTools = 32;
 	/** settings.allowToolSwap: whether a full Backpack's pickup swaps the weapon in hand for it. On unless the file sets it to false. */
 	bool bAllowToolSwap = true;
+	/**
+	 * settings.killZ (#5): the height, cm, below which a character has fallen out of the world. Unset: the game mode works it out
+	 * from the lowest geometry the place built, less a margin (AMantleGameMode::KillFloorMarginCm).
+	 */
+	TOptional<double> KillZ;
+	/** settings.boundary (#5). Unset: no side boundary (open worlds). */
+	TOptional<FMantleMapBoundary> Boundary;
 	/** The place's default look (#532). Empty when the file has no settings.environment. */
 	FMantleEnvironmentSettings Environment;
 	/** The place's Water Zone (#997). Unset when the file has no settings.water. */
