@@ -128,7 +128,7 @@ bool FMantleMeshLumenFile::Read(const TConstArrayView<uint8> Bytes, const FMantl
 	if (StreamedBytes > 0)
 	{
 		Field->StreamableMips.Lock(LOCK_READ_WRITE);
-		void* Data = Field->StreamableMips.Realloc(StreamedBytes, 1);
+		void* Data = Field->StreamableMips.Realloc(StreamedBytes);
 		Reader.Serialize(Data, StreamedBytes);
 		Field->StreamableMips.Unlock();
 	}

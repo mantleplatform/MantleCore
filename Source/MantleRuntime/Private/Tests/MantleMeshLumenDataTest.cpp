@@ -30,7 +30,7 @@ bool FMantleMeshLumenFileTest::RunTest(const FString& Parameters)
 	Field.Mips[0].NumDistanceFieldBricks = 3;
 	Field.AlwaysLoadedMip = { 9, 8, 7 };
 	Field.StreamableMips.Lock(LOCK_READ_WRITE);
-	FMemory::Memset(Field.StreamableMips.Realloc(64, 1), 0x5A, 64);
+	FMemory::Memset(Field.StreamableMips.Realloc(64), 0x5A, 64);
 	Field.StreamableMips.Unlock();
 	FCardRepresentationData Cards;
 	Cards.MeshCardsBuildData.Bounds = FBox(FVector(-50.0), FVector(50.0));
