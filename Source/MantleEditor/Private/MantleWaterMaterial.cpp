@@ -1559,6 +1559,14 @@ namespace MantleWaterMaterialPrivate
 	}
 }
 
+bool FMantleWaterMaterial::FadesByDepth(const FExpressionInput* Input)
+{
+	using namespace MantleWaterMaterialPrivate;
+	TSet<const UMaterialExpression*> Seen;
+	int32 Budget = 4096;
+	return ReachesDepthFade(Input, Seen, Budget);
+}
+
 bool FMantleWaterMaterial::Recognise(const UMaterialInterface* Context, const FExpressionInput* Opacity, const FExpressionInput* BaseColor, const FExpressionInput* Normal, FMantleWaterBake& Out)
 {
 	using namespace MantleWaterMaterialPrivate;
