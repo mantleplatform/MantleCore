@@ -1,9 +1,18 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "MantleEnvironment.h"
 #include "MantleEnvironmentDefaults.h"
 #include "MantleEnvironmentSubsystem.h"
+#include "MantlePlaceBuilder.h"
 #include "MantlePlaceParser.h"
 
+#include "Engine/DirectionalLight.h"
+#include "Engine/ExponentialHeightFog.h"
 #include "Engine/Scene.h"
+#include "Engine/SkyLight.h"
+#include "Engine/World.h"
+#include "Components/SkyAtmosphereComponent.h"
+#include "Components/VolumetricCloudComponent.h"
+#include "EngineUtils.h"
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -258,6 +267,82 @@ bool FMantleEnvironmentExposureSettingsTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("nor the range"), Settings.bOverride_AutoExposureMinBrightness || Settings.bOverride_AutoExposureMaxBrightness);
 		TestFalse(TEXT("nor the compensation"), Settings.bOverride_AutoExposureBias);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleEnvironmentInteriorTest,
+	"Mantle.Runtime.Environment.Interior",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleEnvironmentInteriorTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleEnvironmentLookTestPrivate;
+
+	// The keys parse: outdoors false is an interior, the threshold is a number in range, and a wrong type is refused.
+	const FMantleParseResult Interior = FMantlePlaceParser::ParseFromString(
+		PlaceJson(TEXT("\"outdoors\":false,\"bloom\":2,\"bloomThreshold\":2.0")));
+	if (!TestTrue(TEXT("an interior place with a bloom threshold parses"), Interior.bSuccess))
+	{
+		AddError(Interior.ErrorSummary());
+		return false;
+	}
+	const FMantleEnvironmentSettings& Settings = Interior.Place.Settings.Environment;
+	TestTrue(TEXT("outdoors false is read"), Settings.bNoOutdoors);
+	TestTrue(TEXT("and the threshold"), Settings.BloomThreshold.IsSet() && *Settings.BloomThreshold == 2.0);
+	TestFalse(TEXT("a block with those keys is not empty"), Settings.IsEmpty());
+	TestFalse(TEXT("outdoors is true unless the file says false"),
+		FMantlePlaceParser::ParseFromString(PlaceJson(TEXT("\"outdoors\":true"))).Place.Settings.Environment.bNoOutdoors);
+	TestTrue(TEXT("outdoors must be a boolean"), RefusedAt(TEXT("\"outdoors\":\"no\""), TEXT("/settings/environment/outdoors")));
+	TestTrue(TEXT("a threshold past 8 is refused"), RefusedAt(TEXT("\"bloomThreshold\":9"), TEXT("/settings/environment/bloomThreshold")));
+	TestTrue(TEXT("and a negative one"), RefusedAt(TEXT("\"bloomThreshold\":-1"), TEXT("/settings/environment/bloomThreshold")));
+
+	// The threshold reaches the volume's settings, and unset leaves the engine's own.
+	{
+		FPostProcessSettings Applied;
+		UMantleEnvironmentSubsystem::ApplyBloomThresholdSettings(Applied, TOptional<double>(2.0));
+		TestTrue(TEXT("a threshold is overridden"), Applied.bOverride_BloomThreshold);
+		TestEqual(TEXT("to the place's value"), Applied.BloomThreshold, 2.0f);
+		UMantleEnvironmentSubsystem::ApplyBloomThresholdSettings(Applied, TOptional<double>());
+		TestFalse(TEXT("an unset threshold is not overridden"), Applied.bOverride_BloomThreshold);
+	}
+
+	// An interior place gets no default sun, sky light, atmosphere, clouds or fog; an outdoor one gets all of them.
+	auto CountEnvironmentActors = [this](const FMantlePlace& Place, int32& OutSuns, int32& OutOthers)
+	{
+		UWorld* World = UWorld::CreateWorld(EWorldType::Game, /*bInformEngineOfWorld*/ false, TEXT("MantleEnvironmentInteriorTestWorld"));
+		if (!TestNotNull(TEXT("a world"), World))
+		{
+			return;
+		}
+		FMantleBuildResult Result;
+		FMantleEnvironment::Apply(World, Place, Result);
+		OutSuns = 0;
+		OutOthers = 0;
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			if (It->IsA<ADirectionalLight>())
+			{
+				++OutSuns;
+			}
+			else if (It->IsA<ASkyLight>() || It->IsA<ASkyAtmosphere>() || It->IsA<AVolumetricCloud>() || It->IsA<AExponentialHeightFog>())
+			{
+				++OutOthers;
+			}
+		}
+		World->DestroyWorld(/*bInformEngineOfWorld*/ false);
+	};
+
+	int32 Suns = 0, Others = 0;
+	CountEnvironmentActors(Interior.Place, Suns, Others);
+	TestEqual(TEXT("an interior place spawns no default sun"), Suns, 0);
+	TestEqual(TEXT("nor any other sky actor"), Others, 0);
+
+	FMantlePlace Outdoor = Interior.Place;
+	Outdoor.Settings.Environment.bNoOutdoors = false;
+	CountEnvironmentActors(Outdoor, Suns, Others);
+	TestEqual(TEXT("an outdoor place with no sun of its own gets the default one"), Suns, 1);
+	TestTrue(TEXT("and the rest of the sky"), Others > 0);
 	return true;
 }
 

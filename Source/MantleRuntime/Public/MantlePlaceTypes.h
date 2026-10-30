@@ -418,6 +418,12 @@ struct FMantleEnvironmentSettings
 	TOptional<double> Saturation;
 	/** bloom: 0 (no glow) to MaxScriptBloom. Unset: the engine's own bloom. */
 	TOptional<double> Bloom;
+	/**
+	 * bloomThreshold: the brightness below which nothing glows, 0 to MaxBloomThreshold (the post-process Bloom Threshold).
+	 * Unset: the engine's own (-1, where everything glows). Applied on clients as the place loads
+	 * (UMantleEnvironmentSubsystem::SetPlaceBloomThreshold), not through the replicated override.
+	 */
+	TOptional<double> BloomThreshold;
 	/** colorGrading: a MantleEnvironmentOverrideValues::ColorGrading* preset, never None. Unset: none. */
 	TOptional<uint8> ColorGrading;
 	/** colorGradingIntensity: how much of the preset shows, 0 to 1; 1 is the full look. */
@@ -439,13 +445,19 @@ struct FMantleEnvironmentSettings
 	 * baked), so the client does not light the place with it. Only false is written; true is Mantle's own.
 	 */
 	bool bNoDirectSun = false;
+	/**
+	 * outdoors: false when the place has no outdoor environment of its own (no sun, sky light, atmosphere, clouds or fog:
+	 * an interior lit by its own lights). The client then spawns no default sun, sky light, atmosphere, clouds, fog or night
+	 * sky, and holds the natural weather at Clear. Only false is written; true is Mantle's own sky.
+	 */
+	bool bNoOutdoors = false;
 
 	/** True when the file set none of the keys (an absent or empty block). */
 	bool IsEmpty() const
 	{
 		return !ClockTime.IsSet() && !TimeScale.IsSet() && !Weather.IsSet() && !ColorTint.IsSet() && !Saturation.IsSet()
-			&& !Bloom.IsSet() && !ColorGrading.IsSet() && !ColorGradingIntensity.IsSet() && !Exposure.IsSet() && !Fog.IsSet()
-			&& !SkyLightIntensity.IsSet() && !bNoDirectSun;
+			&& !Bloom.IsSet() && !BloomThreshold.IsSet() && !ColorGrading.IsSet() && !ColorGradingIntensity.IsSet() && !Exposure.IsSet() && !Fog.IsSet()
+			&& !SkyLightIntensity.IsSet() && !bNoDirectSun && !bNoOutdoors;
 	}
 };
 

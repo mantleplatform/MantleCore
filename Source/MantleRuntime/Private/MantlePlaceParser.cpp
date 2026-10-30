@@ -1027,6 +1027,9 @@ namespace
 				Out.bNoDirectSun = !bDirect;
 			}
 		}
+		bool bOutdoors = true;
+		ReadStrictOptionalBool(Ctx, Environment, TEXT("outdoors"), EnvironmentPath, bOutdoors);
+		Out.bNoOutdoors = !bOutdoors;
 	}
 
 	/**
@@ -1049,8 +1052,8 @@ namespace
 		RequireNoUnknownKeys(
 			Ctx, *Environment,
 			{ TEXT("clockTime"), TEXT("timeScale"), TEXT("weather"), TEXT("colorTint"), TEXT("saturation"),
-			  TEXT("bloom"), TEXT("colorGrading"), TEXT("colorGradingIntensity"), TEXT("exposure"), TEXT("fog"),
-			  TEXT("skyLight"), TEXT("sun") },
+			  TEXT("bloom"), TEXT("bloomThreshold"), TEXT("colorGrading"), TEXT("colorGradingIntensity"), TEXT("exposure"),
+			  TEXT("fog"), TEXT("skyLight"), TEXT("sun"), TEXT("outdoors") },
 			EnvironmentPath);
 		ReadEnvironmentExposure(Ctx, *Environment, EnvironmentPath, Out.Exposure);
 		ReadEnvironmentFog(Ctx, *Environment, EnvironmentPath, Out.Fog);
@@ -1064,6 +1067,8 @@ namespace
 			0.0, MantleEnvironmentDefaults::MaxScriptSaturation, Out.Saturation);
 		ReadEnvironmentNumber(Ctx, *Environment, TEXT("bloom"), EnvironmentPath,
 			0.0, MantleEnvironmentDefaults::MaxScriptBloom, Out.Bloom);
+		ReadEnvironmentNumber(Ctx, *Environment, TEXT("bloomThreshold"), EnvironmentPath,
+			0.0, MantleEnvironmentDefaults::MaxBloomThreshold, Out.BloomThreshold);
 		ReadEnvironmentNumber(Ctx, *Environment, TEXT("colorGradingIntensity"), EnvironmentPath,
 			0.0, 1.0, Out.ColorGradingIntensity);
 

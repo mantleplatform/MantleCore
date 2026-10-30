@@ -5372,6 +5372,10 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 		{
 			Writer->WriteValue(TEXT("bloom"), *Environment.Bloom);
 		}
+		if (Environment.BloomThreshold.IsSet())
+		{
+			Writer->WriteValue(TEXT("bloomThreshold"), *Environment.BloomThreshold);
+		}
 		if (Environment.ColorGrading.IsSet())
 		{
 			// Null for ColorGradingNone: no preset is the key left out.
@@ -5450,6 +5454,10 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 			Writer->WriteObjectStart(TEXT("skyLight"));
 			Writer->WriteValue(TEXT("intensity"), *Environment.SkyLightIntensity);
 			Writer->WriteObjectEnd();
+		}
+		if (Environment.bNoOutdoors)
+		{
+			Writer->WriteValue(TEXT("outdoors"), false);
 		}
 		if (Environment.bNoDirectSun)
 		{
