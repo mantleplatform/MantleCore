@@ -402,8 +402,7 @@ bool FMantleSplineMeshBake::IsBakeSource(const USplineMeshComponent* Component)
 		return false;
 	}
 	// Something a player would see or touch, as an instanced mesh is held to.
-	const bool bVisible = Component->IsVisible() && !Component->bHiddenInGame;
-	return bVisible || Component->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
+	return FMantlePlaceExporter::IsShownInGame(Component) || Component->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
 }
 
 TArray<USplineMeshComponent*> FMantleSplineMeshBake::CollectSources(UWorld* World, TMap<FString, int32>* OutNotPublished)

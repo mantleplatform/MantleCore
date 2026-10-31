@@ -1848,7 +1848,7 @@ namespace MantlePlaceExporterPrefab
 
 	bool IsShownInGame(const USceneComponent* Component)
 	{
-		return Component->IsVisible() && !Component->bHiddenInGame;
+		return FMantlePlaceExporter::IsShownInGame(Component);
 	}
 
 	/**
@@ -3171,8 +3171,7 @@ namespace
 		}
 		if (const UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Component))
 		{
-			const bool bVisible = Primitive->IsVisible() && !Primitive->bHiddenInGame;
-			return bVisible || Primitive->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
+			return FMantlePlaceExporter::IsShownInGame(Primitive) || Primitive->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
 		}
 		if (const ULightComponentBase* Light = Cast<ULightComponentBase>(Component))
 		{
@@ -3277,13 +3276,24 @@ bool FMantlePlaceExporter::IsExportedInstanceSource(const UInstancedStaticMeshCo
 	{
 		return false;
 	}
-	const bool bVisible = Component->IsVisible() && !Component->bHiddenInGame;
-	return bVisible || Component->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
+	return IsShownInGame(Component) || Component->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
 }
 
 bool FMantlePlaceExporter::IsGameContent(const UActorComponent* Component)
 {
 	return Component && ExporterIsGameContent(Component);
+}
+
+bool FMantlePlaceExporter::IsShownInGame(const USceneComponent* Component)
+{
+	if (!Component || !Component->IsVisible() || Component->bHiddenInGame)
+	{
+		return false;
+	}
+	// As FPrimitiveSceneProxy decides bVirtualTextureMainPassDrawNever.
+	const UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Component);
+	return !Primitive || Primitive->GetRuntimeVirtualTextures().Num() == 0
+		|| Primitive->GetVirtualTextureRenderPassType() != ERuntimeVirtualTextureMainPassType::Never;
 }
 
 TArray<UInstancedStaticMeshComponent*> FMantlePlaceExporter::CollectInstanceSources(UWorld* World)

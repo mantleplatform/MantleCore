@@ -616,6 +616,13 @@ public:
 	 */
 	static bool IsGameContent(const UActorComponent* Component);
 
+	/**
+	 * Whether a player sees Component: visible, not hidden in game, and drawn in the main pass. A primitive that only
+	 * writes into a runtime virtual texture (its "Draw in Main Pass" is Never, as MedievalVillage's cart tracks are) is
+	 * never drawn itself; the place has no runtime virtual texture to write into, so it shows nothing.
+	 */
+	static bool IsShownInGame(const USceneComponent* Component);
+
 	/** Every component IsExportedInstanceSource accepts in World, in actor then component order. */
 	static TArray<UInstancedStaticMeshComponent*> CollectInstanceSources(UWorld* World);
 

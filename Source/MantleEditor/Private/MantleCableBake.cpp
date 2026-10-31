@@ -313,7 +313,7 @@ bool FMantleCableBake::IsBakeSource(const UCableComponent* Component)
 		return false;
 	}
 	// Something a player would see. (The component has no collision geometry in the game, whatever its profile says.)
-	return Component->IsVisible() && !Component->bHiddenInGame;
+	return FMantlePlaceExporter::IsShownInGame(Component);
 }
 
 TArray<UCableComponent*> FMantleCableBake::CollectSources(UWorld* World)
