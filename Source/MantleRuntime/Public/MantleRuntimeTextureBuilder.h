@@ -142,6 +142,15 @@ public:
 	/** Bytes of a Format texture with NumMips levels from Width x Height down. */
 	static int64 ComputeGpuBytes(EPixelFormat Format, int32 Width, int32 Height, int32 NumMips);
 
+	/**
+	 * Top mips Build leaves out at Settings > Textures level TextureQuality (sg.TextureQuality: 0 Low, 1 Medium, 2 High, 3 Epic).
+	 * These textures never stream (NeverStream), so the engine's streaming mip bias and pool size, which are what the Textures
+	 * levels set, cannot reach them: Low drops two (a quarter of the texels), Medium one, High and Epic none. Data textures (masks,
+	 * weights) keep every mip, and a texture never drops below MinDimension on its longer side. A texture already built keeps its
+	 * mips; the setting reaches the next ones built (the next place load).
+	 */
+	static int32 ComputeMipsToDrop(int32 TextureQuality, EMantleTextureRole Role, int32 Width, int32 Height, int32 NumMips);
+
 	/** Levels in a full chain from Width x Height down to 1 x 1. */
 	static int32 ComputeFullMipCount(int32 Width, int32 Height);
 

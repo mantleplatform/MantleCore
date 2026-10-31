@@ -9,6 +9,7 @@
 #include "Misc/CoreMisc.h"
 #include "Modules/ModuleManager.h"
 #include "RHIGlobals.h"
+#include "Scalability.h"
 #include "TextureResource.h"
 #include "UObject/Package.h"
 
@@ -536,6 +537,24 @@ bool FMantleRuntimeTextureBuilder::Decode(const TConstArrayView<uint8> Bytes, co
 	return true;
 }
 
+int32 FMantleRuntimeTextureBuilder::ComputeMipsToDrop(const int32 TextureQuality, const EMantleTextureRole Role, const int32 Width, const int32 Height, const int32 NumMips)
+{
+	constexpr int32 MinDimension = 256;
+	if (Role == EMantleTextureRole::Data)
+	{
+		return 0;
+	}
+	int32 Wanted = TextureQuality <= 0 ? 2 : (TextureQuality == 1 ? 1 : 0);
+	int32 Drop = 0;
+	int32 Longest = FMath::Max(Width, Height);
+	while (Drop < Wanted && Drop < NumMips - 1 && Longest / 2 >= MinDimension)
+	{
+		Longest /= 2;
+		++Drop;
+	}
+	return Drop;
+}
+
 UTexture2D* FMantleRuntimeTextureBuilder::Build(FMantleDecodedTexture&& Decoded, const FMantleTextureBuildParams& Params, FString* OutError)
 {
 	using namespace MantleRuntimeTextureBuilderPrivate;
@@ -600,6 +619,11 @@ UTexture2D* FMantleRuntimeTextureBuilder::Build(FMantleDecodedTexture&& Decoded,
 		return Fail(FString::Printf(TEXT("the texture needs %lld bytes of texture memory; the budget is %lld"), Footprint, Params.MaxGpuBytes));
 	}
 
+	// The Textures setting (see ComputeMipsToDrop): the top mips are never uploaded. Mips are independent, so the chain just starts lower.
+	const int32 Drop = ComputeMipsToDrop(Scalability::GetQualityLevels().TextureQuality, Decoded.Role, Width, Height, NumMips);
+	const int32 KeptWidth = Decoded.Mips[Drop].Width;
+	const int32 KeptHeight = Decoded.Mips[Drop].Height;
+
 	UObject* Outer = Params.Outer ? Params.Outer : GetTransientPackage();
 	const FName Name = Params.Name.IsNone() ? NAME_None : MakeUniqueObjectName(Outer, UTexture2D::StaticClass(), Params.Name);
 	UTexture2D* Texture = NewObject<UTexture2D>(Outer, Name, RF_Transient);
@@ -607,12 +631,17 @@ UTexture2D* FMantleRuntimeTextureBuilder::Build(FMantleDecodedTexture&& Decoded,
 	Texture->bNotOfflineProcessed = true;
 
 	FTexturePlatformData* PlatformData = new FTexturePlatformData();
-	PlatformData->SizeX = Width;
-	PlatformData->SizeY = Height;
+	PlatformData->SizeX = KeptWidth;
+	PlatformData->SizeY = KeptHeight;
 	PlatformData->SetNumSlices(1);
 	PlatformData->PixelFormat = Decoded.Format;
 	for (FMantleTextureMip& Source : Decoded.Mips)
 	{
+		if (&Source - Decoded.Mips.GetData() < Drop)
+		{
+			Source.Bytes.Empty();
+			continue;
+		}
 		FTexture2DMipMap* Mip = new FTexture2DMipMap(Source.Width, Source.Height, 1);
 		PlatformData->Mips.Add(Mip);
 		Mip->BulkData.Lock(LOCK_READ_WRITE);

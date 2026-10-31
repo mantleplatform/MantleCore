@@ -17,6 +17,7 @@
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformTime.h"
 #include "Materials/MaterialInterface.h"
+#include "Scalability.h"
 #include "Tasks/Task.h"
 
 #include <atomic>
@@ -100,6 +101,35 @@ namespace MantleTerrainGrassPrivate
 		TEXT("mantle.Grass.DensityScale"), 1.0f,
 		TEXT("Terrain grass: scales every grass entry's density. 1 is what the place says, 0 turns grass off, at most 2. Standing grass is rebuilt when it changes."),
 		ECVF_Default);
+
+	/**
+	 * What Settings > Foliage (sg.FoliageQuality: 0 Low .. 3 Epic) does to terrain grass. The engine's own foliage.DensityScale and
+	 * grass.DensityScale never reach this grass, so the tier is applied here: how much of each entry's density stands and how far out
+	 * it is drawn. Grass never goes to none at any tier (creators place it on purpose). A change stands again at once (the density
+	 * and distance are compared every tick).
+	 */
+	double TierDensity(const int32 FoliageQuality)
+	{
+		static const double Density[] = {0.3, 0.6, 1.0, 1.0};
+		return Density[FMath::Clamp(FoliageQuality, 0, 3)];
+	}
+
+	double TierDistance(const int32 FoliageQuality)
+	{
+		static const double Distance[] = {0.5, 0.7, 0.85, 1.0};
+		return Distance[FMath::Clamp(FoliageQuality, 0, 3)];
+	}
+
+	double EffectiveDensityScale()
+	{
+		const double Cvar = FMath::Clamp(static_cast<double>(CVarGrassDensityScale.GetValueOnGameThread()), 0.0, 2.0);
+		return FMath::Min(Cvar * TierDensity(Scalability::GetQualityLevels().FoliageQuality), 2.0);
+	}
+
+	double EffectiveDistanceScale()
+	{
+		return TierDistance(Scalability::GetQualityLevels().FoliageQuality);
+	}
 
 	TAutoConsoleVariable<int32> CVarGrassMaxInstancesPerFrame(
 		TEXT("mantle.Grass.MaxInstancesPerFrame"), 20000,
@@ -325,7 +355,8 @@ void UMantleTerrainGrassComponent::Init(TSharedPtr<const FMantleHeightfield> InF
 	Shared->Entries = Entries;
 	Shared->Maps = Maps;
 	Shared->Holes = MoveTemp(InHoles);
-	AppliedDensityScale = FMath::Clamp(static_cast<double>(CVarGrassDensityScale.GetValueOnGameThread()), 0.0, 2.0);
+	AppliedDensityScale = EffectiveDensityScale();
+	AppliedDistanceScale = EffectiveDistanceScale();
 }
 
 void UMantleTerrainGrassComponent::OnComponentDestroyed(const bool bDestroyingHierarchy)
@@ -375,11 +406,13 @@ void UMantleTerrainGrassComponent::TickComponent(const float DeltaTime, const EL
 	}
 
 	// The density scale: a change rebuilds everything, and 0 stands none.
-	const double Scale = FMath::Clamp(static_cast<double>(CVarGrassDensityScale.GetValueOnGameThread()), 0.0, 2.0);
-	if (!FMath::IsNearlyEqual(Scale, AppliedDensityScale))
+	const double Scale = EffectiveDensityScale();
+	const double DistanceScale = EffectiveDistanceScale();
+	if (!FMath::IsNearlyEqual(Scale, AppliedDensityScale) || !FMath::IsNearlyEqual(DistanceScale, AppliedDistanceScale))
 	{
 		ReleaseAll();
 		AppliedDensityScale = Scale;
+		AppliedDistanceScale = DistanceScale;
 	}
 
 	// What the workers finished: new work waits at most MaxCellsWaiting cells for the game thread.
@@ -472,7 +505,7 @@ void UMantleTerrainGrassComponent::Scan(const FVector& View)
 	for (const TPair<uint64, FCell>& Pair : Cells)
 	{
 		const FCell& Cell = Pair.Value;
-		const double Reach = Entries[Cell.Entry].CullEnd + CellSizes[Cell.Entry];
+		const double Reach = Entries[Cell.Entry].CullEnd * AppliedDistanceScale + CellSizes[Cell.Entry];
 		if (DistanceSquaredToCell(View, Cell.Coord, CellSizes[Cell.Entry]) > Reach * Reach)
 		{
 			ToRelease.Add(Pair.Key);
@@ -509,7 +542,7 @@ void UMantleTerrainGrassComponent::Scan(const FVector& View)
 			continue;
 		}
 		const double Side = CellSizes[EntryIndex];
-		const double Reach = Entries[EntryIndex].CullEnd;
+		const double Reach = Entries[EntryIndex].CullEnd * AppliedDistanceScale;
 		const FIntPoint Count = FMantleTerrainGrassGenerator::CellCount(*Field, Side);
 		const int32 FirstX = FMath::Max(0, FMath::FloorToInt32((View.X - Reach) / Side));
 		const int32 LastX = FMath::Min(Count.X - 1, FMath::FloorToInt32((View.X + Reach) / Side));
@@ -623,7 +656,7 @@ void UMantleTerrainGrassComponent::Apply(FMantleGrassCellInstances&& Generated)
 	Ism->bAffectDistanceFieldLighting = false;
 	Ism->SetCastShadow(Entry.bCastShadow);
 	// Each instance fades out between the two, and is gone past the end.
-	Ism->SetCullDistances(FMath::RoundToInt32(Entry.CullStart), FMath::RoundToInt32(Entry.CullEnd));
+	Ism->SetCullDistances(FMath::RoundToInt32(Entry.CullStart * AppliedDistanceScale), FMath::RoundToInt32(Entry.CullEnd * AppliedDistanceScale));
 	// Instances go in before the component registers, so its render state is built once for all of them.
 	Ism->PreAllocateInstancesMemory(Count);
 	Ism->AddInstances(Generated.Instances, /*bShouldReturnIndices*/ false, /*bWorldSpace*/ false, /*bUpdateNavigation*/ false);
