@@ -1059,6 +1059,23 @@ namespace
 
 		FMantleTerrainBuildParams Params;
 		Params.bRenderLODs = !bDedicatedServer;
+		// The hole mask: quads with a hole corner get no triangles, so no collision, and no grass. A mask that
+		// cannot be read is an error at its path and the terrain is built whole.
+		if (!Props.Holes.IsEmpty())
+		{
+			FString HolesError;
+			const double HolesStart = FPlatformTime::Seconds();
+			const TSharedPtr<const FMantleTerrainWeights> Mask = FMantlePlaceAssets::FindLiveTerrainWeights(Props.Holes, HolesError);
+			LoadStats.Add(Props.Holes, HolesStart);
+			if (!Mask.IsValid() || !Mask->HasPixels())
+			{
+				Errors.Add(FMantleParseError{ Path + TEXT("/properties/holes"), Mask.IsValid() ? FString(TEXT("was read without its pixels")) : HolesError });
+			}
+			else
+			{
+				Params.Holes = FMantleTerrainHoleGrid::FromMask(*Mask, Field->Width, Field->Height);
+			}
+		}
 		FString BuildError;
 		AActor* Actor = FMantleTerrainBuilder::Spawn(World, Entity.Name, *Field, Material, Props.bCastShadow, Params, &BuildError);
 		if (!Actor)
@@ -1154,7 +1171,7 @@ namespace
 				Maps[GrassIndex] = MoveTemp(Map);
 			}
 			UMantleTerrainGrassComponent* GrassComponent = NewObject<UMantleTerrainGrassComponent>(Actor, TEXT("Grass"));
-			GrassComponent->Init(Field, Props.Grass, MoveTemp(Looks), MoveTemp(Maps));
+			GrassComponent->Init(Field, Props.Grass, MoveTemp(Looks), MoveTemp(Maps), Params.Holes);
 			Actor->AddInstanceComponent(GrassComponent);
 			GrassComponent->RegisterComponent();
 		}

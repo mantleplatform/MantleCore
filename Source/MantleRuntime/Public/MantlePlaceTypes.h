@@ -1262,6 +1262,11 @@ struct FMantleTerrainProps
 	FString Weightmap;
 	/** An uploaded Texture: R, G, B, A weigh layers 4 to 7 (#628), over the terrain like Weightmap. Present exactly when there are more than 4 layers. */
 	FString Weightmap2;
+	/**
+	 * An uploaded Texture marking holes: texel (x, y) is heightfield sample (x, y), only red counts, below 128 is a hole.
+	 * A quad with a hole corner has no triangles, collision or grass. Empty means no holes.
+	 */
+	FString Holes;
 	/** 1 to FMantlePlaceLimits::MaxTerrainLayers. */
 	TArray<FMantleTerrainLayer> Layers;
 	bool bCastShadow = true;

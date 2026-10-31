@@ -224,6 +224,111 @@ FString FMantleTerrainExport::Weightmap2KeyForPath(const FString& LandscapePath)
 	return TEXT("weightmap2:") + LandscapePath;
 }
 
+FString FMantleTerrainExport::HolesKey(const AActor* Landscape)
+{
+	return HolesKeyForPath(Landscape ? Landscape->GetPathName() : FString());
+}
+
+FString FMantleTerrainExport::HolesKeyForPath(const FString& LandscapePath)
+{
+	return TEXT("terrainholes:") + LandscapePath;
+}
+
+void FMantleTerrainExport::ApplyCoverage(FMantleTerrainSource& Source, const TArray<uint8>& Covered)
+{
+	const int32 Width = Source.Width;
+	const int32 Height = Source.Height;
+	if (Width <= 0 || Height <= 0 || Covered.Num() != Width * Height || Source.Heights.Num() != Width * Height || !Covered.Contains(0))
+	{
+		return;
+	}
+	if (Source.Holes.Num() != Width * Height)
+	{
+		Source.Holes.SetNumZeroed(Width * Height);
+	}
+	// Along each row, a missing sample takes the height of the nearest covered sample in that row.
+	TArray<bool> RowFilled;
+	RowFilled.Init(false, Height);
+	for (int32 Y = 0; Y < Height; ++Y)
+	{
+		const int32 Row = Y * Width;
+		int32 Last = INDEX_NONE;
+		TArray<int32> NearestLeft;
+		NearestLeft.Init(INDEX_NONE, Width);
+		for (int32 X = 0; X < Width; ++X)
+		{
+			Last = Covered[Row + X] ? X : Last;
+			NearestLeft[X] = Last;
+		}
+		RowFilled[Y] = Last != INDEX_NONE;
+		int32 Next = INDEX_NONE;
+		for (int32 X = Width - 1; X >= 0; --X)
+		{
+			Next = Covered[Row + X] ? X : Next;
+			if (Covered[Row + X])
+			{
+				continue;
+			}
+			++Source.MissingSamples;
+			Source.Holes[Row + X] = 1;
+			const int32 Left = NearestLeft[X];
+			const int32 From = Left == INDEX_NONE ? Next : Next == INDEX_NONE ? Left : (X - Left <= Next - X ? Left : Next);
+			if (From != INDEX_NONE)
+			{
+				Source.Heights[Row + X] = Source.Heights[Row + From];
+			}
+		}
+	}
+	// A row with no covered sample at all takes the nearest row that had one.
+	for (int32 Y = 0; Y < Height; ++Y)
+	{
+		if (RowFilled[Y])
+		{
+			continue;
+		}
+		int32 Nearest = INDEX_NONE;
+		for (int32 Distance = 1; Distance < Height && Nearest == INDEX_NONE; ++Distance)
+		{
+			Nearest = Y - Distance >= 0 && RowFilled[Y - Distance] ? Y - Distance : Y + Distance < Height && RowFilled[Y + Distance] ? Y + Distance : INDEX_NONE;
+		}
+		if (Nearest != INDEX_NONE)
+		{
+			FMemory::Memcpy(Source.Heights.GetData() + Y * Width, Source.Heights.GetData() + Nearest * Width, Width * sizeof(uint16));
+		}
+	}
+}
+
+TArray<FColor> FMantleTerrainExport::MakeHoleMask(const FMantleTerrainSource& Source, const FIntPoint Size)
+{
+	TArray<FColor> Out;
+	if (!HasHoles(Source) || Size.X <= 0 || Size.Y <= 0 || Source.Holes.Num() != Source.Width * Source.Height)
+	{
+		return Out;
+	}
+	Out.SetNumUninitialized(Size.X * Size.Y);
+	// Sample to sample, corner to corner, as MakeHeightfield lays a resampled grid over the landscape's.
+	const double StepX = Size.X > 1 ? static_cast<double>(Source.Width - 1) / (Size.X - 1) : 0.0;
+	const double StepY = Size.Y > 1 ? static_cast<double>(Source.Height - 1) / (Size.Y - 1) : 0.0;
+	for (int32 Y = 0; Y < Size.Y; ++Y)
+	{
+		const int32 SourceY = FMath::Clamp(FMath::RoundToInt32(Y * StepY), 0, Source.Height - 1);
+		for (int32 X = 0; X < Size.X; ++X)
+		{
+			const int32 SourceX = FMath::Clamp(FMath::RoundToInt32(X * StepX), 0, Source.Width - 1);
+			const uint8 Red = Source.Holes[SourceY * Source.Width + SourceX] ? 0 : 255;
+			Out[Y * Size.X + X] = FColor(Red, Red, Red, 255);
+		}
+	}
+	return Out;
+}
+
+TArray<uint8> FMantleTerrainExport::EncodeHoleMask(const FMantleTerrainSource& Source, const FMantleHeightfield& Field, const int32 MaxTextureSize, FIntPoint& OutSize)
+{
+	OutSize = FIntPoint(FMath::Clamp(Field.Width, 1, FMath::Max(MaxTextureSize, 1)), FMath::Clamp(Field.Height, 1, FMath::Max(MaxTextureSize, 1)));
+	const TArray<FColor> Texels = MakeHoleMask(Source, OutSize);
+	return Texels.IsEmpty() ? TArray<uint8>() : FMantlePng::EncodeRGBA8(OutSize.X, OutSize.Y, Texels);
+}
+
 bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSource& Out, FString& OutProblem)
 {
 	using namespace MantleTerrainExportPrivate;
@@ -271,6 +376,7 @@ bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSour
 	Out.Width = MaxX - MinX + 1;
 	Out.Height = MaxY - MinY + 1;
 	Out.FirstSample = FIntPoint(MinX, MinY);
+	Out.LandscapePath = FSoftObjectPath(Landscape);
 	Out.SpacingX = Scale.X;
 	Out.SpacingY = Scale.Y;
 	Out.HeightScale = HeightScale;
@@ -292,6 +398,31 @@ bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSour
 	FLandscapeEditDataInterface Edit(Info, FGuid(), /*bInUploadTextureChangesToGPU*/ false);
 	Out.Heights.SetNumZeroed(Out.Width * Out.Height);
 	Edit.GetHeightDataFast(MinX, MinY, MaxX, MaxY, Out.Heights.GetData(), Out.Width);
+
+	// Which samples a component covers: a landscape's components need not fill its extent, and a sample none covers has no ground
+	// (GetHeightDataFast leaves it 0, the lowest height). Neighbouring components share their edge samples, so an edge of a missing
+	// component next to a present one is ground.
+	{
+		TArray<uint8> Covered;
+		Covered.SetNumZeroed(Out.Width * Out.Height);
+		const int32 ComponentQuads = Info->ComponentSizeQuads;
+		for (const TPair<FIntPoint, ULandscapeComponent*>& Component : Info->XYtoComponentMap)
+		{
+			if (!Component.Value)
+			{
+				continue;
+			}
+			const int32 FromX = FMath::Max(Component.Key.X * ComponentQuads - MinX, 0);
+			const int32 FromY = FMath::Max(Component.Key.Y * ComponentQuads - MinY, 0);
+			const int32 ToX = FMath::Min(Component.Key.X * ComponentQuads + ComponentQuads - MinX, Out.Width - 1);
+			const int32 ToY = FMath::Min(Component.Key.Y * ComponentQuads + ComponentQuads - MinY, Out.Height - 1);
+			for (int32 Y = FromY; Y <= ToY; ++Y)
+			{
+				FMemory::Memset(Covered.GetData() + Y * Out.Width + FromX, 1, FMath::Max(ToX - FromX + 1, 0));
+			}
+		}
+		ApplyCoverage(Out, Covered);
+	}
 
 	ULandscapeLayerInfoObject* const Visibility = ALandscapeProxy::VisibilityLayer;
 	for (const FLandscapeInfoLayerSettings& Layer : Info->Layers)
@@ -321,14 +452,21 @@ bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSour
 		TArray<uint8> Holes;
 		Holes.SetNumZeroed(Out.Width * Out.Height);
 		Edit.GetWeightDataFast(Visibility, MinX, MinY, MaxX, MaxY, Holes.GetData(), Out.Width);
-		Out.bHasHoles = TerrainAnyNonZero(Holes);
-		if (Out.bHasHoles)
+		// Unreal cuts the ground where the visibility weight reaches its threshold; a fainter stroke still shows ground.
+		const int32 Threshold = FMath::CeilToInt32(LANDSCAPE_VISIBILITY_THRESHOLD * 255.0f);
+		for (int32 Index = 0; Index < Holes.Num(); ++Index)
 		{
-			for (const uint8 Hole : Holes)
+			if (Holes[Index] >= Threshold)
 			{
-				Out.HoleSamples += Hole != 0 ? 1 : 0;
+				if (Out.Holes.IsEmpty())
+				{
+					Out.Holes.SetNumZeroed(Out.Width * Out.Height);
+				}
+				Out.Holes[Index] = 1;
+				++Out.HoleSamples;
 			}
 		}
+		Out.bHasHoles = Out.HoleSamples > 0;
 	}
 
 	// What the landscape's own material says its layers look like, read only when a painted layer has no
@@ -339,12 +477,12 @@ bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSour
 		bool bNeedsLook = false;
 		for (const FName& Name : Out.LayerNames)
 		{
-			const FMantleTerrainLayerSetting* Entry = Settings ? Settings->FindTerrainLayer(Name) : nullptr;
+			const FMantleTerrainLayerSetting* Entry = Settings ? Settings->FindTerrainLayer(Name, Out.LandscapePath) : nullptr;
 			bNeedsLook = bNeedsLook || !Entry || !Entry->Material;
 		}
 		// Nothing painted: unless Place Settings draws it, the material may pick its ground from slope and height, which is baked from the heights.
 		const bool bNothingPainted = Out.LayerNames.Num() == 0;
-		const bool bSettingsDraw = Settings && Settings->TerrainLayers.Num() > 0 && Settings->TerrainLayers[0].Material;
+		const bool bSettingsDraw = Settings && Settings->FirstTerrainLayer(Out.LandscapePath);
 		if (bNeedsLook || (bNothingPainted && !bSettingsDraw))
 		{
 			Out.bMaterialRead = FMantleLandscapeMaterialReader::Read(Landscape->GetLandscapeMaterial(), Out.SpacingX, Out.MaterialRead, Out.MaterialProblem);
@@ -521,15 +659,21 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 			Source.LandscapeMaterial ? *Source.LandscapeMaterial->GetName() : TEXT("none"), BakeTilingCm);
 	};
 
-	if (Source.bHasHoles)
+	if (HasHoles(Source))
 	{
-		// The heightfield format has no hole mask, but the heights under a hole are still there: the published terrain simply draws them. The landscape itself is only read.
-		const FString HoleCount = Source.HoleSamples > 0
-			? FString::Printf(TEXT("%d of its %d samples"), Source.HoleSamples, Source.Width * Source.Height) : FString(TEXT("part of it"));
-		Warn(FString::Printf(TEXT("has holes painted in it (its visibility layer, %s), which Mantle terrain cannot carry yet, so the published terrain is filled across them."), *HoleCount),
-			TEXT("It still publishes, and your landscape is not changed. To keep an opening (a cave mouth, a tunnel), model it as a mesh over the filled ground."));
-		Report(MantleCoverageCategory::Terrain, EMantleCoverageOutcome::Approximated, Label,
-			FString::Printf(TEXT("holes painted in the landscape's visibility layer (%s) are filled: Mantle terrain has no holes, so the ground is drawn across them."), *HoleCount));
+		// Holes publish as holes (the Terrain's hole mask): no ground, collision or grass there. Nothing to warn about; the report says how much.
+		TArray<FString> Kinds;
+		if (Source.HoleSamples > 0)
+		{
+			Kinds.Add(FString::Printf(TEXT("%d painted in its visibility layer"), Source.HoleSamples));
+		}
+		if (Source.MissingSamples > 0)
+		{
+			Kinds.Add(FString::Printf(TEXT("%d with no landscape component"), Source.MissingSamples));
+		}
+		Report(MantleCoverageCategory::Terrain, EMantleCoverageOutcome::Info, Label,
+			FString::Printf(TEXT("holes kept: of its %d samples, %s have no ground, so no ground, collision or grass is drawn there."), Source.Width * Source.Height,
+				*FString::Join(Kinds, TEXT(" and "))));
 	}
 
 	if (Source.WaterBodiesCarving > 0)
@@ -553,7 +697,7 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 	const AMantlePlaceSettingsActor* Settings = AMantlePlaceSettingsActor::Find(World);
 	if (Source.LayerNames.Num() == 0)
 	{
-		const FMantleTerrainLayerSetting* First = Settings && Settings->TerrainLayers.Num() > 0 ? &Settings->TerrainLayers[0] : nullptr;
+		const FMantleTerrainLayerSetting* First = Settings ? Settings->FirstTerrainLayer(Source.LandscapePath) : nullptr;
 		if (!First || !First->Material)
 		{
 			// Nothing painted and nothing in Place Settings: the first look the landscape's material states, else that material baked whole,
@@ -620,7 +764,7 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 		{
 			const FName Name = Source.LayerNames[Index];
 			FLayerPlan& Plan = Plans[Index];
-			Plan.Entry = Settings ? Settings->FindTerrainLayer(Name) : nullptr;
+			Plan.Entry = Settings ? Settings->FindTerrainLayer(Name, Source.LandscapePath) : nullptr;
 			if (Plan.Entry && !Plan.Entry->Material)
 			{
 				Plan.Entry = nullptr;
@@ -1056,22 +1200,112 @@ bool FMantleTerrainExport::EncodeWeightmaps(const FMantleTerrainSource& Source, 
 	return true;
 }
 
-void FMantleTerrainExport::CheckLevel(UWorld* World, TArray<FMantleValidationIssue>& OutIssues)
+int64 FMantleTerrainExport::PublishedSamples(const int32 Width, const int32 Height)
+{
+	if (Width < 2 || Height < 2)
+	{
+		return 0;
+	}
+	return static_cast<int64>(FMath::Min(Width, FMantleHeightfieldReader::MaxSize)) * FMath::Min(Height, FMantleHeightfieldReader::MaxSize);
+}
+
+int64 FMantleTerrainExport::PublishedSamples(const AActor* Actor)
+{
+	// The extent ReadLandscape reads, without reading it.
+	const ALandscape* Landscape = Cast<ALandscape>(Actor);
+	const ULandscapeInfo* Info = Landscape ? Landscape->GetLandscapeInfo() : nullptr;
+	int32 MinX = 0;
+	int32 MinY = 0;
+	int32 MaxX = 0;
+	int32 MaxY = 0;
+	if (!Info || !Info->GetLandscapeExtent(MinX, MinY, MaxX, MaxY))
+	{
+		return 0;
+	}
+	return PublishedSamples(MaxX - MinX + 1, MaxY - MinY + 1);
+}
+
+TArray<int32> FMantleTerrainExport::FitTerrains(TConstArrayView<int64> Samples, TConstArrayView<FString> Labels, TArray<TPair<int32, FMantleValidationIssue>>& OutLeftOut)
+{
+	TArray<int32> Kept;
+	int64 PlaceSamples = 0;
+	for (int32 Index = 0; Index < Samples.Num(); ++Index)
+	{
+		const FString Label = Labels.IsValidIndex(Index) ? Labels[Index] : FString();
+		if (Kept.Num() >= FMantlePlaceLimits::MaxTerrainsPerPlace)
+		{
+			OutLeftOut.Emplace(Index, TooManyLandscapes(Label, Index + 1));
+			continue;
+		}
+		// A landscape that does not fit is left out, and the next one may still fit.
+		if (PlaceSamples + Samples[Index] > FMantlePlaceLimits::MaxTerrainSamplesPerPlace)
+		{
+			OutLeftOut.Emplace(Index, OverSampleBudget(Label, Samples[Index], PlaceSamples));
+			continue;
+		}
+		PlaceSamples += Samples[Index];
+		Kept.Add(Index);
+	}
+	return Kept;
+}
+
+TArray<AActor*> FMantleTerrainExport::TerrainLandscapes(UWorld* World, TArray<TPair<const AActor*, FMantleValidationIssue>>* OutLeftOut)
 {
 	using namespace MantleTerrainExportPrivate;
 
 	const TArray<AActor*> Landscapes = CollectLandscapes(World);
-	for (int32 Index = 0; Index < Landscapes.Num(); ++Index)
+	TArray<int64> Samples;
+	TArray<FString> Labels;
+	for (const AActor* Landscape : Landscapes)
 	{
-		const AActor* Landscape = Landscapes[Index];
-		const FString Label = TerrainLabelOf(Landscape);
-		if (Index >= FMantlePlaceLimits::MaxTerrainsPerPlace)
+		Samples.Add(PublishedSamples(Landscape));
+		Labels.Add(TerrainLabelOf(Landscape));
+	}
+	TArray<TPair<int32, FMantleValidationIssue>> LeftOut;
+	TArray<AActor*> Out;
+	for (const int32 Index : FitTerrains(Samples, Labels, LeftOut))
+	{
+		Out.Add(Landscapes[Index]);
+	}
+	if (OutLeftOut)
+	{
+		for (TPair<int32, FMantleValidationIssue>& Entry : LeftOut)
 		{
-			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, Label,
-				FString::Printf(TEXT("is landscape number %d; a place publishes at most %d."), Index + 1, FMantlePlaceLimits::MaxTerrainsPerPlace),
-				TEXT("Merge the landscapes into one, or remove the extra ones, then publish again.") });
-			continue;
+			OutLeftOut->Emplace(Landscapes[Entry.Key], MoveTemp(Entry.Value));
 		}
+	}
+	return Out;
+}
+
+FMantleValidationIssue FMantleTerrainExport::TooManyLandscapes(const FString& Label, const int32 Number)
+{
+	return FMantleValidationIssue{ EMantleIssueSeverity::Error, Label,
+		FString::Printf(TEXT("is landscape number %d; a place publishes at most %d landscapes, so it is left out."), Number, FMantlePlaceLimits::MaxTerrainsPerPlace),
+		TEXT("Remove a landscape the place does not need, or split the world into more than one place.") };
+}
+
+FMantleValidationIssue FMantleTerrainExport::OverSampleBudget(const FString& Label, const int64 Samples, const int64 Before)
+{
+	return FMantleValidationIssue{ EMantleIssueSeverity::Error, Label,
+		FString::Printf(TEXT("has %s height samples, and the landscapes before it already have %s; a place's landscapes have at most %s together, so it is left out."),
+			*FText::AsNumber(Samples).ToString(), *FText::AsNumber(Before).ToString(), *FText::AsNumber(FMantlePlaceLimits::MaxTerrainSamplesPerPlace).ToString()),
+		TEXT("Make it or another landscape smaller (fewer components, or a larger scale so its samples are farther apart), or split the world into more than one place.") };
+}
+
+void FMantleTerrainExport::CheckLevel(UWorld* World, TArray<FMantleValidationIssue>& OutIssues)
+{
+	using namespace MantleTerrainExportPrivate;
+
+	// The landscapes Export publishes as Terrains (TerrainLandscapes, which Gather and Export take too), and an error for each one left out.
+	TArray<TPair<const AActor*, FMantleValidationIssue>> LeftOut;
+	const TArray<AActor*> Landscapes = TerrainLandscapes(World, &LeftOut);
+	for (TPair<const AActor*, FMantleValidationIssue>& Entry : LeftOut)
+	{
+		OutIssues.Add(MoveTemp(Entry.Value));
+	}
+	for (const AActor* Landscape : Landscapes)
+	{
+		const FString Label = TerrainLabelOf(Landscape);
 		FMantleTerrainSource Source;
 		FString Problem;
 		if (!ReadLandscape(Landscape, Source, Problem))

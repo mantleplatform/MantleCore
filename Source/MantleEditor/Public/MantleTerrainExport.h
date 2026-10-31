@@ -49,11 +49,21 @@ struct MANTLEEDITOR_API FMantleTerrainSource
 	TMap<FName, const UPhysicalMaterial*> LayerPhysMaterials;
 
 	/**
-	 * Part of the landscape is a hole (its visibility layer is painted), and how many samples. The heightfield has no hole mask, so the
-	 * heights and weights are published as they are, filling the holes: the landscape itself is never changed. ChooseLayers says so.
+	 * Part of the landscape is a hole painted in its visibility layer (at least LANDSCAPE_VISIBILITY_THRESHOLD of it, where Unreal cuts the
+	 * ground), and how many samples. Published as holes, in the Terrain's hole mask (Holes below).
 	 */
 	bool bHasHoles = false;
 	int32 HoleSamples = 0;
+
+	/**
+	 * Samples of the extent no landscape component covers (a landscape whose components do not fill its bounds). They have no ground: they
+	 * are holes in the mask too, and their heights are filled from the nearest covered sample, only so that resampling does not pull the
+	 * ground around them down to the lowest height.
+	 */
+	int32 MissingSamples = 0;
+
+	/** Per sample (Width x Height, row-major), 1 where there is no ground (painted hole or no component), else 0. Empty when there is none. */
+	TArray<uint8> Holes;
 
 	/**
 	 * What the landscape's own material says each paint layer looks like (#628), read when a painted layer has no
@@ -93,6 +103,9 @@ struct MANTLEEDITOR_API FMantleTerrainSource
 
 	/** Where sample (0, 0) is and how the landscape is turned: the Terrain entity's transform (scale 1). */
 	FTransform Transform = FTransform::Identity;
+
+	/** The landscape actor read, which Mantle Place Settings entries for one landscape name (FMantleTerrainLayerSetting::Landscape); empty for none. */
+	FSoftObjectPath LandscapePath;
 };
 
 /** One Terrain layer as Export writes it: the landscape's layer, the material Mantle Place Settings gives it, and its tiling. */
@@ -148,7 +161,7 @@ struct FMantleTerrainFold
 };
 
 /**
- * A level's landscape as a Mantle Terrain (#466): what Export, Check this place and the asset
+ * A level's landscapes as Mantle Terrains (#466), one Terrain entity each: what Export, Check this place and the asset
  * converter share, so the three never disagree.
  *
  * A landscape becomes one heightfield (MHF1, at most 2049 samples a side: a larger one is resampled)
@@ -189,6 +202,31 @@ public:
 
 	/** Weightmap2Key for a landscape path (what the converter has). */
 	static FString Weightmap2KeyForPath(const FString& LandscapePath);
+
+	/** "terrainholes:" + the landscape's path, the key of its hole mask texture. */
+	static FString HolesKey(const AActor* Landscape);
+
+	/** HolesKey for a landscape path (what the converter has). */
+	static FString HolesKeyForPath(const FString& LandscapePath);
+
+	/** Whether Source has samples with no ground, so its Terrain publishes a hole mask. */
+	static bool HasHoles(const FMantleTerrainSource& Source) { return Source.Holes.Contains(1); }
+
+	/**
+	 * The Terrain's hole mask (the `holes` texture) at Size: texel (x, y) is published sample (x, y) of a Size grid laid over Source's samples
+	 * corner to corner (row 0 is the first row), red 0 for a hole and 255 for ground, from the nearest source sample. Empty when Source has
+	 * no holes. Size is the heightfield's (MakeHeightfield), a side capped to the texture limit when it is larger (the client maps by nearest).
+	 */
+	static TArray<FColor> MakeHoleMask(const FMantleTerrainSource& Source, FIntPoint Size);
+
+	/** The hole mask as a PNG at Field's size, each side at most MaxTextureSize; empty when Source has no holes. OutSize is the PNG's. */
+	static TArray<uint8> EncodeHoleMask(const FMantleTerrainSource& Source, const FMantleHeightfield& Field, int32 MaxTextureSize, FIntPoint& OutSize);
+
+	/**
+	 * Marks Source's samples that no component covers as holes and fills their heights from the nearest covered one, along the row (else
+	 * from the nearest filled row). Covered is Width x Height, nonzero where a component covers the sample. Pure data; ReadLandscape uses it.
+	 */
+	static void ApplyCoverage(FMantleTerrainSource& Source, const TArray<uint8>& Covered);
 
 	/**
 	 * Reads Landscape's final heights and paint weights (every loaded proxy), its holes and its
@@ -303,9 +341,36 @@ public:
 	 */
 	static TArray<FColor> MakeWeightmap(const FMantleTerrainSource& Source, TConstArrayView<int32> SourceLayers, FIntPoint Size, TConstArrayView<int32> ChannelOfSource = TConstArrayView<int32>());
 
+	/** The heightfield samples a Width x Height landscape publishes (MakeHeightfield's width x height): what FMantlePlaceLimits::MaxTerrainSamplesPerPlace counts. */
+	static int64 PublishedSamples(int32 Width, int32 Height);
+
+	/** PublishedSamples of the extent ReadLandscape would read for Landscape, without reading it; 0 when it has none loaded. */
+	static int64 PublishedSamples(const AActor* Landscape);
+
 	/**
-	 * Check this place's terrain part: at most FMantlePlaceLimits::MaxTerrainsPerPlace landscapes,
-	 * each one readable and with layers ChooseLayers accepts, and a warning when one is resampled.
+	 * Which landscapes of these PublishedSamples (in CollectLandscapes' order) publish as Terrains: the indices kept, in order. Past
+	 * FMantlePlaceLimits::MaxTerrainsPerPlace kept, a landscape is left out (TooManyLandscapes); one that would take the place past
+	 * MaxTerrainSamplesPerPlace is left out (OverSampleBudget) and the next may still fit. Each one left out is in OutLeftOut, by index,
+	 * with its error under Labels' entry. Pure data.
+	 */
+	static TArray<int32> FitTerrains(TConstArrayView<int64> Samples, TConstArrayView<FString> Labels, TArray<TPair<int32, FMantleValidationIssue>>& OutLeftOut);
+
+	/** World's landscapes that publish as Terrains (FitTerrains over CollectLandscapes): what Gather, Check and Export all take. */
+	static TArray<AActor*> TerrainLandscapes(UWorld* World, TArray<TPair<const AActor*, FMantleValidationIssue>>* OutLeftOut = nullptr);
+
+	/** The error for landscape Number (counted from 1, in CollectLandscapes' order) past FMantlePlaceLimits::MaxTerrainsPerPlace: it is left out. */
+	static FMantleValidationIssue TooManyLandscapes(const FString& Label, int32 Number);
+
+	/**
+	 * The error for a landscape of Samples (PublishedSamples) that the landscapes before it, with Before samples, leave no room for under
+	 * FMantlePlaceLimits::MaxTerrainSamplesPerPlace: it is left out, and the next landscape may still fit.
+	 */
+	static FMantleValidationIssue OverSampleBudget(const FString& Label, int64 Samples, int64 Before);
+
+	/**
+	 * Check this place's terrain part: every landscape is a Terrain, at most FMantlePlaceLimits::MaxTerrainsPerPlace of them and
+	 * MaxTerrainSamplesPerPlace samples together (in CollectLandscapes' order, as Export counts them), each one readable and with
+	 * layers ChooseLayers accepts, and a warning when one is resampled.
 	 */
 	static void CheckLevel(UWorld* World, TArray<FMantleValidationIssue>& OutIssues);
 };

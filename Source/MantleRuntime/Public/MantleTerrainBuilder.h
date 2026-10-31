@@ -11,6 +11,7 @@ class UStaticMesh;
 class UTexture;
 class UWorld;
 struct FMeshDescription;
+struct FMantleTerrainHoleGrid;
 
 /**
  * The parameter names M_MantleTerrain exposes (#466), which tools/materials/Create-TerrainMaterial.py
@@ -68,6 +69,12 @@ struct FMantleTerrainBuildParams
 	 * is the dedicated server (FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources).
 	 */
 	bool bInitRenderResources = true;
+
+	/**
+	 * The quads that are holes (the terrain's hole mask): no triangles in any LOD, so no collision and no skirt
+	 * along them; a chunk that is all hole gets no mesh. A coarser LOD's quad is a hole when any quad it covers is.
+	 */
+	TSharedPtr<const FMantleTerrainHoleGrid> Holes;
 
 	/** Outer of the chunk meshes; the transient package when null. */
 	UObject* Outer = nullptr;
@@ -157,7 +164,7 @@ public:
 	 * and (x + 1, y), (x, y + 1), (x + 1, y + 1), whose cross(c - a, b - a) is +Z.
 	 */
 	static void BuildChunkDescription(const FMantleHeightfield& Field, const FIntPoint& First, const FIntPoint& Last,
-		int32 Step, float SkirtDepth, const bool (&bSkirts)[4], FMeshDescription& Out);
+		int32 Step, float SkirtDepth, const bool (&bSkirts)[4], FMeshDescription& Out, const FMantleTerrainHoleGrid* Holes = nullptr);
 
 	/** Every chunk's mesh. False, with the reason (and nothing in Out), when the heightfield is unusable or a mesh fails. */
 	static bool BuildChunks(const FMantleHeightfield& Field, const FMantleTerrainBuildParams& Params,

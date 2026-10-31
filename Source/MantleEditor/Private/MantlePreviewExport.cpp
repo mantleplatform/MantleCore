@@ -903,7 +903,7 @@ namespace MantlePreviewExportPrivate
 		{
 			return false;
 		}
-		const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(World);
+		const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(World, Options.bThinInstances);
 		PreviewAddIssueLines(Validation.Issues, Result.Errors, Result.Warnings);
 		if (Validation.HasErrors())
 		{
@@ -1061,6 +1061,7 @@ namespace MantlePreviewExportPrivate
 		ExportOptions.Name = World->GetName();
 		ExportOptions.AuthorId = TEXT("usr_preview");
 		ExportOptions.Assets = &Set;
+		ExportOptions.bThinInstances = Options.bThinInstances;
 		const FMantleExportResult Exported = FMantlePlaceExporter::Export(World, ExportOptions);
 		// The materials it gathered for the cook, recognised, baked or lost, join the report (Export leaves them to whoever gathered).
 		Result.Coverage = Exported.Coverage;
@@ -1714,18 +1715,19 @@ namespace MantlePreviewExportPrivate
 
 	FAutoConsoleCommandWithWorldAndArgs GMantlePreviewExportCommand(
 		TEXT("Mantle.Preview.Export"),
-		TEXT("Mantle.Preview.Export [-CookTool=<path to mantle-cook.exe>] [-Out=<folder>] [-Features=<comma list>|all] -- writes a complete offline preview bundle for the open level ")
+		TEXT("Mantle.Preview.Export [-CookTool=<path to mantle-cook.exe>] [-Out=<folder>] [-Features=<comma list>|all] [-Thin=auto] -- writes a complete offline preview bundle for the open level ")
 		TEXT("(validate, convert, cook every asset locally, scripts, UI, avatar), blocking the editor until it ends. ")
 		TEXT("Nothing is sent to Mantle. -CookTool defaults to MANTLE_COOK_TOOL; -Out replaces <Project>/Saved/Mantle/Preview as the folder bundles go under. ")
 		TEXT("-Features names the gated features the client you will preview in reads (MantleClientFeatures: materialFidelity, terrainGrass, ...): the cook lets their keys through, ")
 		TEXT("and an export for a client without materialFidelity or terrainGrass leaves foliage shading and landscape grass out, reported as needing a newer Mantle client. ")
-		TEXT("It defaults to all, so a bare export with no client is a dev export for a client as new as this build. ")
+		TEXT("It defaults to all, so a bare export with no client is a dev export for a client as new as this build. -Thin=auto thins instanced meshes evenly to fit, as Publish's does. ")
 		TEXT("Logs MANTLE_PREVIEW_EXPORT_DONE <manifest path> or MANTLE_PREVIEW_EXPORT_FAILED <reason> per problem."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			FMantlePreviewExportOptions Options;
 			Options.CookTool = PreviewArgValue(Args, TEXT("-CookTool="));
 			Options.OutputRoot = PreviewArgValue(Args, TEXT("-Out="));
+			Options.bThinInstances = PreviewArgValue(Args, TEXT("-Thin=")).Equals(TEXT("auto"), ESearchCase::IgnoreCase);
 			// #628: a bare export has no client to ask, so it is a dev export: every feature this build reads.
 			const bool bHasFeatures = Args.ContainsByPredicate([](const FString& Arg) { return Arg.StartsWith(TEXT("-Features="), ESearchCase::IgnoreCase); });
 			Options.Features = bHasFeatures ? FMantleTargetFeatures::Parse(PreviewArgValue(Args, TEXT("-Features="))) : FMantleTargetFeatures::All();

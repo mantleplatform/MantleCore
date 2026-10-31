@@ -65,8 +65,8 @@ public:
 
 	/**
 	 * Reports the layers Export publishes for a landscape (Kept, each named, with its material and tiling) and any
-	 * painted layer of Source it does not publish (Dropped). Export calls it once ChooseLayers has chosen. It does
-	 * nothing when "Terrain layers" has been reported already (ChooseLayers may report them itself).
+	 * painted layer of Source it does not publish (Dropped), each line naming Label. Export calls it for each landscape
+	 * once ChooseLayers has chosen, unless ChooseLayers reported that landscape's layers itself.
 	 */
 	static void ReportTerrainLayers(FMantleCoverage& Out, const FString& Label, const FMantleTerrainSource& Source,
 		const TArray<FMantleTerrainLayerChoice>& Layers);

@@ -74,6 +74,9 @@ struct FMantlePreviewExportOptions
 	 * Default: every feature this build reads, which is what a bare export (no client) is: a dev export.
 	 */
 	FMantleTargetFeatures Features;
+
+	/** Thin instanced meshes evenly to fit the place's limit, as Publish's -Thin=auto does (FMantleExportOptions::bThinInstances). */
+	bool bThinInstances = false;
 };
 
 /** What the export did. When bSuccess is false only Errors is meaningful, and no generation folder is left behind. */

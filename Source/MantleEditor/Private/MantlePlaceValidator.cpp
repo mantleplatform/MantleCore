@@ -1958,11 +1958,10 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 		}
 	}
 
-	// The landscape (#466), which Export writes as a Terrain, held to the same rules: one per place,
-	// no holes, its painted layers given materials in Mantle Place Settings.
+	// The landscapes (#466), which Export writes as Terrains, held to the same rules: as many as the place's
+	// limits hold, each one readable, its painted layers given looks.
 	{
-		const TArray<AActor*> Landscapes = FMantleTerrainExport::CollectLandscapes(World);
-		Publishable += FMath::Min(Landscapes.Num(), FMantlePlaceLimits::MaxTerrainsPerPlace);
+		Publishable += FMantleTerrainExport::TerrainLandscapes(World).Num();
 		FMantleTerrainExport::CheckLevel(World, Result.Issues);
 	}
 

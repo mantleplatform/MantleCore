@@ -103,6 +103,59 @@ bool FMantleTerrainWeights::FromDecodedTexture(const FMantleDecodedTexture& Text
 	return true;
 }
 
+TSharedPtr<const FMantleTerrainHoleGrid> FMantleTerrainHoleGrid::FromMask(const FMantleTerrainWeights& Mask, const int32 InWidth, const int32 InHeight)
+{
+	if (!Mask.HasPixels() || InWidth < 2 || InHeight < 2)
+	{
+		return nullptr;
+	}
+	TSharedRef<FMantleTerrainHoleGrid> Grid = MakeShared<FMantleTerrainHoleGrid>();
+	Grid->Width = InWidth;
+	Grid->Height = InHeight;
+
+	// A sample is a hole where the nearest texel's red is below 128.
+	TArray<uint8> Samples;
+	Samples.SetNumUninitialized(InWidth * InHeight);
+	for (int32 Y = 0; Y < InHeight; ++Y)
+	{
+		const int32 TexelY = FMath::RoundToInt32(static_cast<double>(Y) * (Mask.Height - 1) / (InHeight - 1));
+		for (int32 X = 0; X < InWidth; ++X)
+		{
+			const int32 TexelX = FMath::RoundToInt32(static_cast<double>(X) * (Mask.Width - 1) / (InWidth - 1));
+			Samples[Y * InWidth + X] = Mask.Rgba[(TexelY * Mask.Width + TexelX) * 4] < 128 ? 1 : 0;
+		}
+	}
+	Grid->Quad.SetNumZeroed((InWidth - 1) * (InHeight - 1));
+	bool bAny = false;
+	for (int32 Y = 0; Y + 1 < InHeight; ++Y)
+	{
+		for (int32 X = 0; X + 1 < InWidth; ++X)
+		{
+			if (Samples[Y * InWidth + X] | Samples[Y * InWidth + X + 1] | Samples[(Y + 1) * InWidth + X] | Samples[(Y + 1) * InWidth + X + 1])
+			{
+				Grid->Quad[Y * (InWidth - 1) + X] = 1;
+				bAny = true;
+			}
+		}
+	}
+	return bAny ? TSharedPtr<const FMantleTerrainHoleGrid>(Grid) : nullptr;
+}
+
+bool FMantleTerrainHoleGrid::AnyHole(const int32 X0, const int32 Y0, const int32 X1, const int32 Y1) const
+{
+	for (int32 Y = Y0; Y < Y1; ++Y)
+	{
+		for (int32 X = X0; X < X1; ++X)
+		{
+			if (QuadIsHole(X, Y))
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 int32 FMantleTerrainWeights::DominantLayerAt(const double U, const double V) const
 {
 	if (!IsValid())

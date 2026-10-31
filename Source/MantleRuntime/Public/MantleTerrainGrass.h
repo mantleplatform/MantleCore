@@ -24,6 +24,7 @@ class UStaticMesh;
 class UWorld;
 struct FMantleHeightfield;
 struct FMantleTerrainWeights;
+struct FMantleTerrainHoleGrid;
 
 /** One cell's generated grass: instance transforms relative to Origin, in the terrain's own space (cm). */
 struct FMantleGrassCellInstances
@@ -86,10 +87,12 @@ public:
 	 * Fills Out with the grass of Cell for Entry (entry number EntryIndex), whose map is Map, which must hold pixels
 	 * (a map without any grows nothing). The map is stretched over the whole terrain as the weightmap is, texel
 	 * centres at (i + 0.5) / size. Instances are uniformly scaled between Entry's scale range, turned about the up
-	 * axis when it asks for a random yaw, and tilted onto the surface normal when it asks to align.
+	 * axis when it asks for a random yaw, and tilted onto the surface normal when it asks to align. Nothing grows
+	 * over a hole quad of Holes (null for a terrain without holes).
 	 */
 	static void GenerateCell(const FMantleTerrainGrass& Entry, int32 EntryIndex, const FIntPoint& Cell, const FMantleHeightfield& Field,
-		const FMantleTerrainWeights& Map, double DensityScale, FMantleGrassCellInstances& Out);
+		const FMantleTerrainWeights& Map, double DensityScale, FMantleGrassCellInstances& Out,
+		const FMantleTerrainHoleGrid* Holes = nullptr);
 };
 
 /** What one grass entry draws with, resolved on the game thread by the place builder. */
@@ -114,6 +117,7 @@ struct FMantleGrassEntryAssets
  *
  * Console variables: mantle.Grass.DensityScale (1; 0 turns grass off), mantle.Grass.MaxInstancesPerFrame (the
  * most instances added to components in one frame) and mantle.Grass.MaxLiveInstances (the most standing at once).
+ * These caps, and the cells in flight and waiting, are one budget shared by every terrain's grass in the world.
  * Log marker: MANTLE_GRASS.
  */
 UCLASS(ClassGroup = Mantle, NotBlueprintable, Transient)
@@ -129,7 +133,7 @@ public:
 	 * map failed to load is passed with a null mesh or map and grows nothing. The heightfield is the terrain's.
 	 */
 	void Init(TSharedPtr<const FMantleHeightfield> InField, TArray<FMantleTerrainGrass> InEntries, TArray<FMantleGrassEntryAssets> InAssets,
-		TArray<TSharedPtr<const FMantleTerrainWeights>> InMaps);
+		TArray<TSharedPtr<const FMantleTerrainWeights>> InMaps, TSharedPtr<const FMantleTerrainHoleGrid> InHoles = nullptr);
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void OnComponentDestroyed(bool bDestroyingHierarchy) override;

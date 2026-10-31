@@ -4657,25 +4657,35 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		}
 	}
 
-	// Pass 2c — the landscape as a Terrain (#466). An ALandscape is NotPlaceable, so pass 1 skipped
+	// Pass 2c — each landscape as a Terrain (#466). An ALandscape is NotPlaceable, so pass 1 skipped
 	// it as infrastructure; it is read here, with the same rules Check and the converter apply
-	// (FMantleTerrainExport): one per place, its painted layers mapped to materials in Mantle Place
-	// Settings, no holes. Its heightfield and weightmap go through the upload path by their keys.
+	// (FMantleTerrainExport): as many as the place's limits hold, each one's painted layers mapped to materials in
+	// Mantle Place Settings or read from its landscape material. Heightfields and weightmaps go through the upload path by their keys.
 	{
 		const FMantleAssetLibrary& Library = FMantleAssetLibrary::Get();
-		const TArray<AActor*> Landscapes = FMantleTerrainExport::CollectLandscapes(World);
-		for (int32 LandscapeIndex = 0; LandscapeIndex < Landscapes.Num(); ++LandscapeIndex)
+		// The landscapes the place's limits hold (FMantleTerrainExport::TerrainLandscapes, as Gather and Check take them); each other one is an error.
+		TArray<TPair<const AActor*, FMantleValidationIssue>> LeftOut;
+		const TArray<AActor*> Landscapes = FMantleTerrainExport::TerrainLandscapes(World, &LeftOut);
+		for (const TPair<const AActor*, FMantleValidationIssue>& Entry : LeftOut)
 		{
-			const AActor* Landscape = Landscapes[LandscapeIndex];
+			Result.Errors.Add(FMantleParseError{ FString::Printf(TEXT("/actors/%s"), *Entry.Key->GetName()),
+				FString::Printf(TEXT("'%s' %s %s"), *Entry.Value.Actor, *Entry.Value.Problem, *Entry.Value.Remedy) });
+		}
+		// How many "Terrain layers" lines the report has: ChooseLayers reports a landscape's layers itself when it gives it a default layer.
+		auto TerrainLayerLines = [&Result]()
+		{
+			const FMantleCoverageCategory* Category = Result.Coverage.Find(MantleCoverageCategory::TerrainLayers);
+			int64 Lines = 0;
+			for (int32 Outcome = 0; Category && Outcome < UE_ARRAY_COUNT(Category->Buckets); ++Outcome)
+			{
+				Lines += Category->Buckets[Outcome].Count;
+			}
+			return Lines;
+		};
+		for (const AActor* Landscape : Landscapes)
+		{
 			const FString SourcePath = FString::Printf(TEXT("/actors/%s"), *Landscape->GetName());
 			const FString Label = ExporterLabelOf(Landscape);
-			if (LandscapeIndex >= FMantlePlaceLimits::MaxTerrainsPerPlace)
-			{
-				Result.Errors.Add(FMantleParseError{ SourcePath, FString::Printf(
-					TEXT("'%s' is landscape number %d; a place publishes at most %d. Merge the landscapes into one, or remove the extra ones."),
-					*Label, LandscapeIndex + 1, FMantlePlaceLimits::MaxTerrainsPerPlace) });
-				continue;
-			}
 			FMantleTerrainSource Source;
 			FString Problem;
 			if (!FMantleTerrainExport::ReadLandscape(Landscape, Source, Problem))
@@ -4685,6 +4695,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			}
 			TArray<FMantleTerrainLayerChoice> Layers;
 			TArray<FMantleValidationIssue> LayerIssues;
+			const int64 LinesBefore = TerrainLayerLines();
 			if (!FMantleTerrainExport::ChooseLayers(World, Source, Label, Layers, LayerIssues, &Result.Coverage))
 			{
 				for (const FMantleValidationIssue& Issue : LayerIssues)
@@ -4693,7 +4704,10 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				}
 				continue;
 			}
-			FMantleCoverageSurvey::ReportTerrainLayers(Result.Coverage, Label, Source, Layers);
+			if (TerrainLayerLines() == LinesBefore)
+			{
+				FMantleCoverageSurvey::ReportTerrainLayers(Result.Coverage, Label, Source, Layers);
+			}
 
 			FMantleEntity Entity;
 			Entity.Id = MakeEntityId(Landscape, UsedIds);
@@ -4710,6 +4724,11 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			if (FMantleTerrainExport::WeightmapCount(Layers.Num()) > 1)
 			{
 				Props.Weightmap2 = Uploads.IdFor(FMantleTerrainExport::Weightmap2Key(Landscape), EMantleAssetKind::Texture, Landscape);
+			}
+			// Where it has no ground, the hole mask the converter makes under its own key.
+			if (FMantleTerrainExport::HasHoles(Source))
+			{
+				Props.Holes = Uploads.IdFor(FMantleTerrainExport::HolesKey(Landscape), EMantleAssetKind::Texture, Landscape);
 			}
 			for (const FMantleTerrainLayerChoice& Choice : Layers)
 			{
@@ -5902,6 +5921,10 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 			if (!P11->Weightmap2.IsEmpty())
 			{
 				Writer->WriteValue(TEXT("weightmap2"), P11->Weightmap2);
+			}
+			if (!P11->Holes.IsEmpty())
+			{
+				Writer->WriteValue(TEXT("holes"), P11->Holes);
 			}
 			Writer->WriteArrayStart(TEXT("layers"));
 			for (const FMantleTerrainLayer& Layer : P11->Layers)

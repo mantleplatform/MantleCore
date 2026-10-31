@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleTerrainBuilder.h"
 
+#include "MantleTerrainSurface.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
@@ -206,7 +207,7 @@ float FMantleTerrainBuilder::EdgeSkirtDepth(const FMantleHeightfield& Field, con
 }
 
 void FMantleTerrainBuilder::BuildChunkDescription(const FMantleHeightfield& Field, const FIntPoint& First, const FIntPoint& Last,
-	const int32 Step, const float SkirtDepth, const bool (&bSkirts)[4], FMeshDescription& Out)
+	const int32 Step, const float SkirtDepth, const bool (&bSkirts)[4], FMeshDescription& Out, const FMantleTerrainHoleGrid* Holes)
 {
 	FStaticMeshAttributes Attributes(Out);
 	Attributes.Register();
@@ -273,21 +274,32 @@ void FMantleTerrainBuilder::BuildChunkDescription(const FMantleHeightfield& Fiel
 		return Instance;
 	};
 
+	// A vertex is made when a triangle first needs it, so a hole leaves none behind.
 	TArray<FVertexInstanceID> Grid;
-	Grid.Reserve(NX * NY);
-	for (int32 IY = 0; IY < NY; ++IY)
+	Grid.Init(FVertexInstanceID(INDEX_NONE), NX * NY);
+	auto At = [&](const int32 IX, const int32 IY)
 	{
-		for (int32 IX = 0; IX < NX; ++IX)
+		FVertexInstanceID& Instance = Grid[IY * NX + IX];
+		if (Instance.GetValue() == INDEX_NONE)
 		{
-			Grid.Add(AddVertex(Xs[IX], Ys[IY], 0.0f));
+			Instance = AddVertex(Xs[IX], Ys[IY], 0.0f);
 		}
-	}
-	auto At = [&Grid, NX](const int32 IX, const int32 IY) { return Grid[IY * NX + IX]; };
+		return Instance;
+	};
+	// The quad (IX, IY) of this LOD covers these quads of the heightfield.
+	auto IsHole = [&](const int32 IX, const int32 IY)
+	{
+		return Holes && Holes->AnyHole(Xs[IX], Ys[IY], Xs[IX + 1], Ys[IY + 1]);
+	};
 
 	for (int32 IY = 0; IY + 1 < NY; ++IY)
 	{
 		for (int32 IX = 0; IX + 1 < NX; ++IX)
 		{
+			if (IsHole(IX, IY))
+			{
+				continue;
+			}
 			const FVertexInstanceID Lower[3] = { At(IX, IY), At(IX, IY + 1), At(IX + 1, IY) };
 			const FVertexInstanceID Upper[3] = { At(IX + 1, IY), At(IX, IY + 1), At(IX + 1, IY + 1) };
 			Out.CreateTriangle(Group, MakeArrayView(Lower));
@@ -300,20 +312,31 @@ void FMantleTerrainBuilder::BuildChunkDescription(const FMantleHeightfield& Fiel
 		return;
 	}
 	// A skirt is a strip from the edge down SkirtDepth, both windings: a gap can be seen from either side.
-	auto AddSkirt = [&](const TArray<FIntPoint>& EdgeSamples)
+	// Along a hole there is no edge to hang a skirt from: Side 0 and 1 run along Y, 2 and 3 along X.
+	auto AddSkirt = [&](const TArray<FIntPoint>& EdgeSamples, const int32 Side)
 	{
 		TArray<FVertexInstanceID> Hanging;
-		Hanging.Reserve(EdgeSamples.Num());
-		for (const FIntPoint& GridIndex : EdgeSamples)
+		Hanging.Init(FVertexInstanceID(INDEX_NONE), EdgeSamples.Num());
+		auto Down = [&](const int32 Segment)
 		{
-			Hanging.Add(AddVertex(Xs[GridIndex.X], Ys[GridIndex.Y], SkirtDepth));
-		}
+			if (Hanging[Segment].GetValue() == INDEX_NONE)
+			{
+				Hanging[Segment] = AddVertex(Xs[EdgeSamples[Segment].X], Ys[EdgeSamples[Segment].Y], SkirtDepth);
+			}
+			return Hanging[Segment];
+		};
 		for (int32 Segment = 0; Segment + 1 < EdgeSamples.Num(); ++Segment)
 		{
+			const FIntPoint EdgeQuad = Side == 0 ? FIntPoint(0, Segment) : Side == 1 ? FIntPoint(NX - 2, Segment)
+				: Side == 2 ? FIntPoint(Segment, 0) : FIntPoint(Segment, NY - 2);
+			if (IsHole(EdgeQuad.X, EdgeQuad.Y))
+			{
+				continue;
+			}
 			const FVertexInstanceID A = At(EdgeSamples[Segment].X, EdgeSamples[Segment].Y);
 			const FVertexInstanceID B = At(EdgeSamples[Segment + 1].X, EdgeSamples[Segment + 1].Y);
-			const FVertexInstanceID DownA = Hanging[Segment];
-			const FVertexInstanceID DownB = Hanging[Segment + 1];
+			const FVertexInstanceID DownA = Down(Segment);
+			const FVertexInstanceID DownB = Down(Segment + 1);
 			const FVertexInstanceID Faces[4][3] = {
 				{ A, B, DownA }, { B, DownB, DownA }, { A, DownA, B }, { B, DownA, DownB } };
 			for (const FVertexInstanceID (&Face)[3] : Faces)
@@ -341,7 +364,7 @@ void FMantleTerrainBuilder::BuildChunkDescription(const FMantleHeightfield& Fiel
 			default: SideSamples.Add(FIntPoint(Along, NY - 1)); break;
 			}
 		}
-		AddSkirt(SideSamples);
+		AddSkirt(SideSamples, Side);
 	}
 }
 
@@ -399,9 +422,19 @@ bool FMantleTerrainBuilder::BuildChunks(const FMantleHeightfield& Field, const F
 			TArray<const FMeshDescription*> DescriptionPointers;
 			for (int32 Lod = 0; Lod < LODs; ++Lod)
 			{
-				BuildChunkDescription(Field, Chunk.FirstSample, Chunk.LastSample, 1 << Lod, SkirtDepth, bSkirts, Descriptions[Lod]);
+				BuildChunkDescription(Field, Chunk.FirstSample, Chunk.LastSample, 1 << Lod, SkirtDepth, bSkirts, Descriptions[Lod], Params.Holes.Get());
+				// A coarser LOD that has lost all its quads to a hole ends the chunk's LODs there; a chunk with none at LOD 0 is all hole.
+				if (Descriptions[Lod].Triangles().Num() == 0)
+				{
+					break;
+				}
 				DescriptionPointers.Add(&Descriptions[Lod]);
 			}
+			if (DescriptionPointers.Num() == 0)
+			{
+				continue;
+			}
+			const int32 ChunkLODs = DescriptionPointers.Num();
 			Vertices += Descriptions[0].Vertices().Num();
 
 			const FName MeshName = MakeUniqueObjectName(MeshOuter, UStaticMesh::StaticClass(),
@@ -422,7 +455,7 @@ bool FMantleTerrainBuilder::BuildChunks(const FMantleHeightfield& Field, const F
 			BuildParams.bAllowCpuAccess = Params.bCollision;
 			// UV0 spans the whole terrain and each layer repeats hundreds of times over it: half floats
 			// would step visibly, so every LOD keeps full-precision UVs.
-			BuildParams.PerLODOverrides.SetNum(LODs);
+			BuildParams.PerLODOverrides.SetNum(ChunkLODs);
 			for (UStaticMesh::FBuildMeshDescriptionsLODParams& LODParams : BuildParams.PerLODOverrides)
 			{
 				LODParams.bUseFullPrecisionUVs = true;
@@ -437,12 +470,12 @@ bool FMantleTerrainBuilder::BuildChunks(const FMantleHeightfield& Field, const F
 				return FailTerrain(OutError, FString::Printf(TEXT("the engine could not build terrain chunk (%d, %d)"), ChunkX, ChunkY));
 			}
 			FStaticMeshRenderData* RenderData = Mesh->GetRenderData();
-			if (!RenderData || RenderData->LODResources.Num() != LODs)
+			if (!RenderData || RenderData->LODResources.Num() != ChunkLODs)
 			{
 				return FailTerrain(OutError, FString::Printf(TEXT("the engine built %d LODs of terrain chunk (%d, %d), not %d"),
-					RenderData ? RenderData->LODResources.Num() : 0, ChunkX, ChunkY, LODs));
+					RenderData ? RenderData->LODResources.Num() : 0, ChunkX, ChunkY, ChunkLODs));
 			}
-			for (int32 Lod = 0; Lod < LODs; ++Lod)
+			for (int32 Lod = 0; Lod < ChunkLODs; ++Lod)
 			{
 				// Chosen by screen size, which for chunks of one size is by distance (LODScreenSize).
 				RenderData->ScreenSize[Lod].Default = LODScreenSize(Lod);
