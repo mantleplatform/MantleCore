@@ -432,6 +432,105 @@ class UiNode:
         """Show or hide this node (and its subtree)."""
         ...
 
+class VoxelWorld:
+    """The place's block world (#168): read its blocks anywhere, change them (server), and hear players build. Block coordinates are whole blocks (x, y, z with z up, as every position), from the world's lowest corner."""
+    def clear_highlight(self) -> None:
+        """Removes the outline HighlightBlock drew."""
+        ...
+    def count_blocks(self, min: Vector3, max: Vector3, name: str, /) -> float:
+        """How many blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks)."""
+        ...
+    def edit_as_player(self, player: Player, x: float, y: float, z: float, name: Optional[str] = ..., /) -> str:
+        """Breaks (nil or 'air') or places a block for a player, as if they did it with Mantle's own tools: the rate limit (20 a second), reach (6 m from their eyes), line of sight, the block rules and OnBlockPlacing / OnBlockBreaking all apply. For your own build tool: the player's client raycasts (VoxelWorld:Raycast from the camera), sends a Remote, and the server calls this. Returns 'applied' or why not: 'same', 'closed', 'rate', 'outside', 'unknown_type', 'nothing_to_break', 'unbreakable', 'occupied', 'floating', 'out_of_reach', 'blocked', 'cancelled', 'no_player'."""
+        ...
+    def fill(self, shape: dict[str, Any], name: Optional[str] = ..., /) -> float:
+        """Sets every block of a shape to a type (nil or 'air' empties it) and returns how many changed. A shape is {Box = {min, max}}, {Sphere = {center, radius}} or {Line = {from, to, radius}}, in blocks; at most 262,144 blocks a call. Raises one OnBlocksChanged."""
+        ...
+    def find_blocks(self, min: Vector3, max: Vector3, name: str, limit: Optional[float] = ..., /) -> list[Vector3]:
+        """Where the blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks), up to limit (default and at most 1,024)."""
+        ...
+    def get_block(self, x: float, y: float, z: float, /) -> Optional[str]:
+        """The block type's name at (x, y, z), 'air' for empty, nil outside the world."""
+        ...
+    def get_block_at(self, position: Vector3, /) -> Optional[str]:
+        """The block type's name at a world position (cm), 'air' for empty, nil outside the world."""
+        ...
+    def get_look(self) -> str:
+        """'blocky' (cubes) or 'smooth' (ground you dig)."""
+        ...
+    def get_size(self) -> Vector3:
+        """The world's size in blocks."""
+        ...
+    def get_type_info(self, name: str, /) -> dict[str, Any]:
+        """A block type as the place file defines it: Hardness (seconds to break by hand, -1 unbreakable), Solid, Liquid, Light (0 to 15), Render ('opaque', 'cutout', 'translucent'), Surface, Tags and Drops (the creator's own id; no engine meaning)."""
+        ...
+    def get_types(self) -> list[str]:
+        """Every block type's name, in the place file's order (not 'air')."""
+        ...
+    def highlight_block(self, x: float, y: float, z: float, /) -> None:
+        """Outlines one block on this player's screen (the outline Mantle's own tools draw), for your own build tool. One at a time."""
+        ...
+    def is_edited(self, min: Vector3, max: Vector3, /) -> bool:
+        """Whether anything in the box (corners in blocks) may differ from the world the place was published with (whole 16-block sections are compared)."""
+        ...
+    def is_loaded(self, min: Vector3, max: Vector3, /) -> bool:
+        """Whether this machine holds every block of the box. Always true today: server and players hold the whole world."""
+        ...
+    def on_block_breaking(self, handler: Optional[Callable[..., Any]], /) -> Connection:
+        """Called before a player's broken block goes, on the spot (the handler may not wait). Return false to keep the block."""
+        ...
+    def on_block_broken(self, handler: Callable[..., Any], /) -> Connection:
+        """A player broke a block (Block is what it was)."""
+        ...
+    def on_block_changed(self, handler: Callable[..., Any], /) -> Connection:
+        """Any single block changed, by a player or a script's SetBlock (a Fill or Replace raises OnBlocksChanged instead). At most 1,024 a tick; past that the tick's other changes come as one OnBlocksChanged."""
+        ...
+    def on_block_placed(self, handler: Callable[..., Any], /) -> Connection:
+        """A player placed a block."""
+        ...
+    def on_block_placing(self, handler: Optional[Callable[..., Any]], /) -> Connection:
+        """Called before a player's placed block goes in, on the spot (the handler may not wait). Return false to refuse it: the player sees it put right. Not raised for a script's own SetBlock or Fill."""
+        ...
+    def on_blocks_changed(self, handler: Callable[..., Any], /) -> Connection:
+        """Many blocks changed at once (a Fill or Replace, or more single changes in a tick than OnBlockChanged raises)."""
+        ...
+    def on_generate_section(self, handler: Callable[..., Any], /) -> Connection:
+        """Generates the world from a script: the handler is called once for every 16 x 16 x 16 section (nearest players first, a few a tick), on the spot (it may not wait), with the section's corners in blocks and a writer that sets its blocks. Use the same seed for the same world. Every player sees what it wrote. Sections someone already changed are left alone."""
+        ...
+    def raycast(self, origin: Vector3, direction: Vector3, params: dict[str, Any] = ..., /) -> Optional[dict[str, Any]]:
+        """Walks the blocks from origin (cm) along direction to the first block within MaxDistance (default 10,000 cm, at most 51,200). It reads blocks, not physics, so it works at any distance. Liquids are passed through unless IgnoreLiquid is false."""
+        ...
+    def replace(self, shape: dict[str, Any], from_: str, to: Optional[str] = ..., /) -> float:
+        """Like Fill, but changes only the blocks of type from. Returns how many changed."""
+        ...
+    def set_block(self, x: float, y: float, z: float, name: Optional[str] = ..., /) -> bool:
+        """Sets one block (nil or 'air' empties it). True when it changed. Every player sees it; OnBlockChanged follows (not the cancellable OnBlockPlacing/OnBlockBreaking, which are for players' edits)."""
+        ...
+    def set_built_in_tools(self, enabled: bool, player: Optional[Player] = ..., /) -> None:
+        """Turns Mantle's built-in build tools on or off for one player, or for everyone now and later (no player). They are off unless a script turns them on: Z toggles build mode, hold left mouse breaks, right mouse places, 1-9 and the wheel pick a hotbar slot, I opens a block picker. A game that makes its own tools leaves them off."""
+        ...
+    def surface_height(self, x: float, y: float, /) -> Optional[float]:
+        """The world height (cm) of the top of the highest solid block in column (x, y), or nil when the column is empty."""
+        ...
+    def voxel_to_world(self, x: float, y: float, z: float, /) -> Vector3:
+        """The world position (cm) of a block's middle."""
+        ...
+    def world_to_voxel(self, position: Vector3, /) -> Vector3:
+        """The block coordinates holding a world position (cm)."""
+        ...
+
+class VoxelWriter:
+    """Writes one section's blocks inside an OnGenerateSection handler (block coordinates; writes outside the section are ignored)."""
+    def fill_box(self, min: Vector3, max: Vector3, name: Optional[str] = ..., /) -> None:
+        """Sets every block of a box (corners in blocks, inclusive), clipped to the section."""
+        ...
+    def fill_column(self, x: float, y: float, fromZ: float, toZ: float, name: Optional[str] = ..., /) -> None:
+        """Sets the blocks of column (x, y) from fromZ to toZ (inclusive), clipped to the section: a terrain generator's usual call."""
+        ...
+    def set_block(self, x: float, y: float, z: float, name: Optional[str] = ..., /) -> None:
+        """Sets one block of the section."""
+        ...
+
 class _AssetsService:
     """Spawn the place's own meshes at runtime (server only). Change any mesh's look through its Entity."""
     def spawn(self, assetId: str, position: Vector3, props: Optional[dict[str, Any]] = ..., /) -> Entity:
@@ -844,6 +943,23 @@ class _NetService:
 
 Net: _NetService
 
+class _NoiseService:
+    """Smooth seeded noise for generating worlds (#168): the same seed and position always give the same value, from -1 to 1, on every machine."""
+    def fbm2_d(self, seed: float, x: float, y: float, octaves: Optional[float] = ..., frequency: Optional[float] = ..., /) -> float:
+        """Layered noise (octaves, default 4, at most 8: each twice as fine and half as strong) at (x, y) times frequency (default 1): natural terrain."""
+        ...
+    def fbm3_d(self, seed: float, x: float, y: float, z: float, octaves: Optional[float] = ..., frequency: Optional[float] = ..., /) -> float:
+        """Layered 3D noise, as Fbm2D."""
+        ...
+    def perlin2_d(self, seed: float, x: float, y: float, frequency: Optional[float] = ..., /) -> float:
+        """Gradient noise at (x, y) times frequency (default 1): about one hill per 1 / frequency units."""
+        ...
+    def perlin3_d(self, seed: float, x: float, y: float, z: float, frequency: Optional[float] = ..., /) -> float:
+        """Gradient noise at (x, y, z) times frequency (default 1): caves, ore veins."""
+        ...
+
+Noise: _NoiseService
+
 class _PlayersService:
     """Everyone in the session."""
     local_player: Player
@@ -1192,6 +1308,9 @@ class _WorldService:
         ...
     def get_entities_in_radius(self, center: Vector3, radius: float, params: dict[str, Any] = ..., /) -> list[Entity]:
         """Every entity and player character touching a ball of this radius (at most 50 m) around center, nearest first. Overlap-only entities (triggers) count; entities with no collision never do. A character is listed as its Entity; Players:GetPlayerFromCharacter tells whose it is. params: Include, Exclude, Tag, IgnorePlayers, Layers, ExcludeLayers (collision layers, server scripts only), and MaxResults (256 at most, and by default). Runs on this machine only; a script may make 256 spatial queries a frame."""
+        ...
+    def get_voxel_world(self) -> Optional[VoxelWorld]:
+        """The place's block world (#168), or nil when the place has none."""
         ...
     def on_tagged(self, tag: str, handler: Callable[..., Any], /) -> Connection:
         """Call handler for every entity that has the tag now, and for each one that gets it later."""
