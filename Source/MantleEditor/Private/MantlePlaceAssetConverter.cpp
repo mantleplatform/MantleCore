@@ -77,7 +77,8 @@ namespace MantlePlaceAssetConverterPrivate
 	// v23: flat collision boxes are thickened too (its SM_SUW_wall_13); v22 meshes lack them.
 	// v24: world-mapped materials bake one world tile and publish worldAligned; v23 stretched one bake over each mesh (Downtown's roads).
 	// v25: only a material whose bake changes when its card moves is world-mapped; v24 world-tiled UV-mapped walls, signs and trim.
-	const TCHAR* const CacheVersion = TEXT("f5-v25");
+	// v26: the card is also tried standing like a wall; v25 took wall-only world mapping for UV (Downtown's MI_Building_Bricks_A_red_WS).
+	const TCHAR* const CacheVersion = TEXT("f5-v26");
 
 	const TCHAR* const ConversionRemedy = TEXT("It still publishes. Nothing to do unless it matters to how your place looks.");
 
@@ -1822,9 +1823,10 @@ namespace MantlePlaceAssetConverterPrivate
 			const int32 X = Corner & 1;
 			const int32 Y = (Corner >> 1) & 1;
 			const FVertexID Vertex = Description.CreateVertex();
-			Attributes.GetVertexPositions()[Vertex] = FVector3f(Side * X + Shift, Side * Y + Shift, 0.0f);
+			Attributes.GetVertexPositions()[Vertex] = Surface.bStanding ? FVector3f(Side * X + Shift, Shift, Side * (1 - Y) + Shift)
+				: FVector3f(Side * X + Shift, Side * Y + Shift, 0.0f);
 			const FVertexInstanceID Instance = Description.CreateVertexInstance(Vertex);
-			Attributes.GetVertexInstanceNormals()[Instance] = FVector3f(0.0f, 0.0f, 1.0f);
+			Attributes.GetVertexInstanceNormals()[Instance] = Surface.bStanding ? FVector3f(0.0f, -1.0f, 0.0f) : FVector3f(0.0f, 0.0f, 1.0f);
 			Attributes.GetVertexInstanceTangents()[Instance] = FVector3f(1.0f, 0.0f, 0.0f);
 			Attributes.GetVertexInstanceBinormalSigns()[Instance] = 1.0f;
 			Attributes.GetVertexInstanceColors()[Instance] = Color;
@@ -3810,26 +3812,44 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 		{
 			UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 GLTFExporter on %s: %s"), *Material->GetName(), *Message);
 		}
-		Converted.Document = MaterialFromGltf(Flattened, 0, Converted.Name, Limits, bOversizeReported, Out, MaterialExtras(Analysis, Converted.Name, Out.Issues));
+		// The analysis flags any world position in the graph; many such materials (Downtown's trim sheets, signs, brick walls) map their
+		// textures by UV and use it only for a noise mask. Bake once more with the card moved, lying flat and standing like a wall (a material
+		// may project by world position on walls only): only a bake that really changes is world-mapped, and the way of the two that changes
+		// more is the one published. A UV-mapped one keeps the first bake, which over UVs 0 to 1 is the plain bake, and its UV mapping.
+		const FMantleGlbDocument* Chosen = &Flattened;
+		bool bWorldMapped = false;
+		FMantleGlbDocument Standing;
 		if (Surface.WorldTileCm > 0.0)
 		{
-			// The analysis flags any world position in the graph; many such materials (Downtown's trim sheets, signs, brick walls) map their
-			// textures by UV and use it only for a noise mask. Bake once more with the card moved: only a bake that really changes is world-mapped.
-			// A UV-mapped one keeps the first bake, which over UVs 0 to 1 is the plain bake, and its UV mapping.
-			FMantleFlattenSettings Shifted = FlattenSettings;
-			Shifted.Surface.WorldShiftCm = Surface.WorldTileCm * WorldShiftFraction;
-			FMantleGlbDocument Moved;
-			TArray<FString> MovedMessages;
-			FString MovedError;
-			const double Difference = Flattener->Flatten(Neutral.IsValid() ? Neutral.Get() : Material, Shifted, Moved, MovedMessages, MovedError)
-				? BakedBaseColorDifference(Flattened, Moved) : 1.0;
-			const bool bWorldMapped = Difference >= WorldMappedDifference;
-			UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: moving its card changed its base colour by %.1f%%, so it is %s"), *Material->GetName(), 100.0 * Difference,
-				bWorldMapped ? TEXT("world-mapped: published to repeat by world position") : TEXT("mapped by UV: published on the mesh's UVs"));
-			if (bWorldMapped)
+			UMaterialInterface* Baked = Neutral.IsValid() ? Neutral.Get() : Material;
+			auto MovedDifference = [this, Baked, &FlattenSettings, &Surface](const FMantleGlbDocument& Base, const bool bStanding)
 			{
-				ApplyWorldTile(Converted.Document, Surface);
-			}
+				FMantleFlattenSettings Moved = FlattenSettings;
+				Moved.Surface.bStanding = bStanding;
+				Moved.Surface.WorldShiftCm = Surface.WorldTileCm * WorldShiftFraction;
+				FMantleGlbDocument MovedDocument;
+				TArray<FString> MovedMessages;
+				FString MovedError;
+				return Flattener->Flatten(Baked, Moved, MovedDocument, MovedMessages, MovedError) ? BakedBaseColorDifference(Base, MovedDocument) : 1.0;
+			};
+			const double FlatDifference = MovedDifference(Flattened, false);
+			FMantleFlattenSettings StandingSettings = FlattenSettings;
+			StandingSettings.Surface.bStanding = true;
+			TArray<FString> StandingMessages;
+			FString StandingError;
+			const double StandingDifference = Flattener->Flatten(Baked, StandingSettings, Standing, StandingMessages, StandingError)
+				? MovedDifference(Standing, true) : 0.0;
+			bWorldMapped = FMath::Max(FlatDifference, StandingDifference) >= WorldMappedDifference;
+			const bool bUseStanding = bWorldMapped && StandingDifference > FlatDifference;
+			Chosen = bUseStanding ? &Standing : &Flattened;
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: moving its card changed its base colour by %.1f%% flat and %.1f%% standing, so it is %s"), *Material->GetName(),
+				100.0 * FlatDifference, 100.0 * StandingDifference, !bWorldMapped ? TEXT("mapped by UV: published on the mesh's UVs")
+				: bUseStanding ? TEXT("world-mapped on walls: the standing bake repeats by world position") : TEXT("world-mapped: published to repeat by world position"));
+		}
+		Converted.Document = MaterialFromGltf(*Chosen, 0, Converted.Name, Limits, bOversizeReported, Out, MaterialExtras(Analysis, Converted.Name, Out.Issues));
+		if (bWorldMapped)
+		{
+			ApplyWorldTile(Converted.Document, Surface);
 		}
 	}
 	else

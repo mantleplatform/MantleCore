@@ -313,6 +313,12 @@ struct MANTLEEDITOR_API FMantleBakeSurface
 	 */
 	double WorldShiftCm = 0.0;
 
+	/**
+	 * The card stands up (facing along -Y, like a wall) instead of lying flat: a material may project its world mapping only on walls
+	 * (Downtown's MI_Building_Bricks_A_red_WS did not change at all on a flat card). Compared, never stored, like the shift.
+	 */
+	bool bStanding = false;
+
 	bool IsPlain() const { return VertexColor == FColor::White && UvRange <= 1 && WorldTileCm <= 0.0; }
 
 	/** What the conversion cache keys on: empty for the plain surface, so those bakes keep their keys. */
