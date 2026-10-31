@@ -173,8 +173,8 @@ struct FMantleTerrainFold
  * layer of its own. A landscape with no painted layer whose material picks its ground from the slope and
  * height (FMantleLandscapeAutoChain) has each of that chain's layers baked from the heightfield, and then
  * goes through the same choosing, folding and weightmaps as painted layers. More painted layers than fit
- * are folded into the nearest kept ones. Holes painted in the visibility layer are filled in the published data (the format has no hole
- * mask), with a warning and an approximated coverage line; the landscape is only read.
+ * are folded into the nearest kept ones. Holes painted in the visibility layer, and samples no landscape
+ * component covers, publish as holes in the Terrain's hole mask; the landscape is only read.
  */
 class MANTLEEDITOR_API FMantleTerrainExport
 {
