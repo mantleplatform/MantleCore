@@ -73,7 +73,8 @@ namespace MantlePlaceAssetConverterPrivate
 	/** Bump this whenever how a conversion is written changes, so stale caches are rebuilt. */
 	// v20: meshes have values that are not numbers set to safe ones (#42); v19 caches still held them, and the cook refused those meshes.
 	// v21: bakes wait for their textures to finish compiling; v20 bakes could hold Unreal's 32x32 compiling placeholder (white books).
-	const TCHAR* const CacheVersion = TEXT("f5-v21");
+	// v22: flat convex collision hulls are thickened instead of left out (SciFiAlienFacility's corridor floors); v21 meshes lack them.
+	const TCHAR* const CacheVersion = TEXT("f5-v22");
 
 	const TCHAR* const ConversionRemedy = TEXT("It still publishes. Nothing to do unless it matters to how your place looks.");
 
@@ -983,9 +984,15 @@ namespace MantlePlaceAssetConverterPrivate
 				bFinite = bFinite && IsUploadableCollisionValue(Placed);
 				Points.Add(FVector3f(Placed));
 			}
+			if (bFinite && !FMantleStaticMeshReader::HullSpansVolume(Points))
+			{
+				// A flat hull (a floor or ceiling sheet: SciFiAlienFacility's corridor floors) still collides in Unreal, but the cook takes only
+				// hulls with volume, and dropping it let players fall through. Thicken it across its plane instead.
+				FMantlePlaceAssetConverter::ThickenFlatHull(Points);
+			}
 			if (!bFinite || !FMantleStaticMeshReader::HullSpansVolume(Points))
 			{
-				LeftOut.Add(FString::Printf(TEXT("convex hull %d (flat, or fewer than 4 points)"), Index));
+				LeftOut.Add(FString::Printf(TEXT("convex hull %d (a line or a point, or fewer than 3 points)"), Index));
 				continue;
 			}
 			bHullPastCap = bHullPastCap || Points.Num() > Limits.MaxHullVertices;
@@ -3508,6 +3515,52 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
 		*Surface.CacheTag());
+}
+
+bool FMantlePlaceAssetConverter::ThickenFlatHull(TArray<FVector3f>& Points)
+{
+	if (Points.Num() < 3)
+	{
+		return false;
+	}
+	const FVector3d P0(Points[0]);
+	int32 Far = 0;
+	double FarDistance = 0.0;
+	for (int32 Index = 1; Index < Points.Num(); ++Index)
+	{
+		const double Distance = (FVector3d(Points[Index]) - P0).Length();
+		if (Distance > FarDistance)
+		{
+			FarDistance = Distance;
+			Far = Index;
+		}
+	}
+	const FVector3d Axis = (FVector3d(Points[Far]) - P0).GetSafeNormal();
+	FVector3d Normal = FVector3d::ZeroVector;
+	double Best = 0.0;
+	for (const FVector3f& Point : Points)
+	{
+		const FVector3d Cross = FVector3d::CrossProduct(Axis, FVector3d(Point) - P0);
+		if (Cross.Length() > Best)
+		{
+			Best = Cross.Length();
+			Normal = Cross;
+		}
+	}
+	if (Axis.IsNearlyZero() || !(Best > 1.0e-3))
+	{
+		return false;
+	}
+	const FVector3f Offset = FVector3f(Normal.GetSafeNormal() * FlatHullHalfThicknessCm);
+	const int32 Count = Points.Num();
+	Points.Reserve(Count * 2);
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		const FVector3f Point = Points[Index];
+		Points[Index] = Point + Offset;
+		Points.Add(Point - Offset);
+	}
+	return true;
 }
 
 void FMantlePlaceAssetConverter::ScaleTextureTransforms(FMantleGlbDocument& Document, const int32 Index, const double UvRange)
