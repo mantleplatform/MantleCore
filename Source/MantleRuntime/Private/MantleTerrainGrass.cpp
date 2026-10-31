@@ -71,6 +71,21 @@ namespace MantleTerrainGrassPrivate
 	constexpr int32 MaxCellsInFlight = 32;
 	constexpr int32 MaxCellsWaiting = 64;
 
+	/**
+	 * What every terrain's grass shares (game thread only): the live-instance cap, the cells in flight and waiting,
+	 * and the frame's instance and component budget are checked against these, not against one terrain's own counts.
+	 */
+	struct FGrassBudget
+	{
+		int64 LiveInstances = 0;
+		int32 InFlight = 0;
+		int32 Waiting = 0;
+		uint64 Frame = 0;
+		int64 AddedThisFrame = 0;
+		int32 ComponentsThisFrame = 0;
+	};
+	FGrassBudget GBudget;
+
 	/** Components made in one frame, whatever the instance budget: each registers a render proxy of its own. */
 	constexpr int32 MaxComponentsPerFrame = 12;
 
@@ -173,7 +188,8 @@ bool FMantleTerrainGrassGenerator::SurfaceAt(const FMantleHeightfield& Field, co
 }
 
 void FMantleTerrainGrassGenerator::GenerateCell(const FMantleTerrainGrass& Entry, const int32 EntryIndex, const FIntPoint& Cell,
-	const FMantleHeightfield& Field, const FMantleTerrainWeights& Map, const double DensityScale, FMantleGrassCellInstances& Out)
+	const FMantleHeightfield& Field, const FMantleTerrainWeights& Map, const double DensityScale, FMantleGrassCellInstances& Out,
+	const FMantleTerrainHoleGrid* Holes)
 {
 	using namespace MantleTerrainGrassPrivate;
 
@@ -214,6 +230,10 @@ void FMantleTerrainGrassGenerator::GenerateCell(const FMantleTerrainGrass& Entry
 		{
 			continue;
 		}
+		if (Holes && Holes->IsHoleAt(X / Field.SpacingX, Y / Field.SpacingY))
+		{
+			continue;
+		}
 		// The weight is the chance this candidate stays: 0 keeps none (a draw is never below 0), 1 keeps all (a draw is always below 1).
 		const double Weight = Map.SampleChannel(Entry.Channel, X / ExtentX, Y / ExtentY);
 		if (!(DrawKeep < Weight))
@@ -247,6 +267,7 @@ struct UMantleTerrainGrassComponent::FShared
 	TSharedPtr<const FMantleHeightfield> Field;
 	TArray<FMantleTerrainGrass> Entries;
 	TArray<TSharedPtr<const FMantleTerrainWeights>> Maps;
+	TSharedPtr<const FMantleTerrainHoleGrid> Holes;
 	std::atomic<bool> bCancelled{ false };
 	TQueue<FMantleGrassCellInstances, EQueueMode::Mpsc> Results;
 };
@@ -266,7 +287,7 @@ uint64 UMantleTerrainGrassComponent::CellKey(const int32 Entry, const FIntPoint&
 }
 
 void UMantleTerrainGrassComponent::Init(TSharedPtr<const FMantleHeightfield> InField, TArray<FMantleTerrainGrass> InEntries,
-	TArray<FMantleGrassEntryAssets> InAssets, TArray<TSharedPtr<const FMantleTerrainWeights>> InMaps)
+	TArray<FMantleGrassEntryAssets> InAssets, TArray<TSharedPtr<const FMantleTerrainWeights>> InMaps, TSharedPtr<const FMantleTerrainHoleGrid> InHoles)
 {
 	using namespace MantleTerrainGrassPrivate;
 
@@ -303,6 +324,7 @@ void UMantleTerrainGrassComponent::Init(TSharedPtr<const FMantleHeightfield> InF
 	Shared->Field = Field;
 	Shared->Entries = Entries;
 	Shared->Maps = Maps;
+	Shared->Holes = MoveTemp(InHoles);
 	AppliedDensityScale = FMath::Clamp(static_cast<double>(CVarGrassDensityScale.GetValueOnGameThread()), 0.0, 2.0);
 }
 
@@ -312,6 +334,13 @@ void UMantleTerrainGrassComponent::OnComponentDestroyed(const bool bDestroyingHi
 	{
 		Shared->bCancelled.store(true);
 	}
+	// Its grass goes with its actor; the cells still being made come back to a cancelled task and are never counted.
+	MantleTerrainGrassPrivate::GBudget.LiveInstances -= LiveInstances;
+	MantleTerrainGrassPrivate::GBudget.InFlight -= InFlight;
+	MantleTerrainGrassPrivate::GBudget.Waiting -= Ready.Num();
+	LiveInstances = 0;
+	InFlight = 0;
+	Ready.Reset();
 	Super::OnComponentDestroyed(bDestroyingHierarchy);
 }
 
@@ -358,6 +387,8 @@ void UMantleTerrainGrassComponent::TickComponent(const float DeltaTime, const EL
 	while (Shared->Results.Dequeue(Finished))
 	{
 		--InFlight;
+		--GBudget.InFlight;
+		++GBudget.Waiting;
 		Ready.Add(MoveTemp(Finished));
 	}
 
@@ -382,7 +413,7 @@ void UMantleTerrainGrassComponent::TickComponent(const float DeltaTime, const EL
 	}
 
 	// Ask for the nearest cells first.
-	while (InFlight < MaxCellsInFlight && Ready.Num() + InFlight < MaxCellsWaiting && Wanted.Num() > 0)
+	while (GBudget.InFlight < MaxCellsInFlight && GBudget.Waiting + GBudget.InFlight < MaxCellsWaiting && Wanted.Num() > 0)
 	{
 		const FWanted Want = Wanted.Pop(EAllowShrinking::No);
 		if (!Cells.Contains(Want.Key))
@@ -393,21 +424,27 @@ void UMantleTerrainGrassComponent::TickComponent(const float DeltaTime, const EL
 
 	// Give finished cells components, within the frame's budget. A cell over the budget goes in alone, so none starves.
 	const int64 Budget = FMath::Max(CVarGrassMaxInstancesPerFrame.GetValueOnGameThread(), 1);
-	int64 Added = 0;
-	int32 Components = 0;
+	// The frame's budget is shared by every terrain's grass: the terrains tick one after another in a frame.
+	if (GBudget.Frame != GFrameCounter)
+	{
+		GBudget.Frame = GFrameCounter;
+		GBudget.AddedThisFrame = 0;
+		GBudget.ComponentsThisFrame = 0;
+	}
 	int32 Consumed = 0;
-	for (; Consumed < Ready.Num() && Components < MaxComponentsPerFrame; ++Consumed)
+	for (; Consumed < Ready.Num() && GBudget.ComponentsThisFrame < MaxComponentsPerFrame; ++Consumed)
 	{
 		const int64 Count = Ready[Consumed].Instances.Num();
-		if (Added > 0 && Added + Count > Budget)
+		if (GBudget.AddedThisFrame > 0 && GBudget.AddedThisFrame + Count > Budget)
 		{
 			break;
 		}
-		Added += Count;
-		Components += Count > 0 ? 1 : 0;
+		GBudget.AddedThisFrame += Count;
+		GBudget.ComponentsThisFrame += Count > 0 ? 1 : 0;
 		Apply(MoveTemp(Ready[Consumed]));
 	}
 	Ready.RemoveAt(0, Consumed, EAllowShrinking::No);
+	GBudget.Waiting -= Consumed;
 
 	if (!bStartLogged && FirstScanSeconds > 0.0
 		&& ((Cells.Num() > 0 && Wanted.IsEmpty() && InFlight == 0 && Ready.IsEmpty()) || Now - FirstScanSeconds > StartLogDeadlineSeconds))
@@ -448,7 +485,7 @@ void UMantleTerrainGrassComponent::Scan(const FVector& View)
 
 	// A cell the live-instance cap turned away is tried again once there is room for it.
 	const int64 MaxLive = FMath::Max(CVarGrassMaxLiveInstances.GetValueOnGameThread(), 1);
-	if (LiveInstances * 10 < MaxLive * 9)
+	if (GBudget.LiveInstances * 10 < MaxLive * 9)
 	{
 		TArray<uint64> Skipped;
 		for (const TPair<uint64, FCell>& Pair : Cells)
@@ -510,6 +547,7 @@ void UMantleTerrainGrassComponent::StartGenerating(const FWanted& Want)
 	Cell.Entry = Want.Entry;
 	Cell.Coord = Want.Coord;
 	++InFlight;
+	++GBudget.InFlight;
 
 	const TSharedPtr<FShared, ESPMode::ThreadSafe> Work = Shared;
 	const int32 Entry = Want.Entry;
@@ -522,7 +560,7 @@ void UMantleTerrainGrassComponent::StartGenerating(const FWanted& Want)
 			return;
 		}
 		FMantleGrassCellInstances Generated;
-		FMantleTerrainGrassGenerator::GenerateCell(Work->Entries[Entry], Entry, Coord, *Work->Field, *Work->Maps[Entry], Scale, Generated);
+		FMantleTerrainGrassGenerator::GenerateCell(Work->Entries[Entry], Entry, Coord, *Work->Field, *Work->Maps[Entry], Scale, Generated, Work->Holes.Get());
 		Work->Results.Enqueue(MoveTemp(Generated));
 	}, LowLevelTasks::ETaskPriority::BackgroundNormal);
 }
@@ -555,7 +593,7 @@ void UMantleTerrainGrassComponent::Apply(FMantleGrassCellInstances&& Generated)
 	USceneComponent* Root = Owner ? Owner->GetRootComponent() : nullptr;
 	const FMantleTerrainGrass& Entry = Entries[Generated.Entry];
 	const FMantleGrassEntryAssets& Looks = Assets[Generated.Entry];
-	if (!Root || !Looks.Mesh || LiveInstances + Count > MaxLive)
+	if (!Root || !Looks.Mesh || GBudget.LiveInstances + Count > MaxLive)
 	{
 		Cell->State = ECellState::Skipped;
 		++SkippedSinceLog;
@@ -596,6 +634,7 @@ void UMantleTerrainGrassComponent::Apply(FMantleGrassCellInstances&& Generated)
 	Cell->Component = Ism;
 	Cell->Instances = Count;
 	LiveInstances += Count;
+	GBudget.LiveInstances += Count;
 	++LiveCells;
 }
 
@@ -614,6 +653,7 @@ void UMantleTerrainGrassComponent::ReleaseCell(const uint64 Key)
 		}
 		Ism->DestroyComponent();
 		LiveInstances -= Cell->Instances;
+		MantleTerrainGrassPrivate::GBudget.LiveInstances -= Cell->Instances;
 		--LiveCells;
 		++ReleasedSinceLog;
 	}
@@ -630,8 +670,11 @@ void UMantleTerrainGrassComponent::ReleaseAll()
 	}
 	Cells.Reset();
 	Wanted.Reset();
+	MantleTerrainGrassPrivate::GBudget.Waiting -= Ready.Num();
 	Ready.Reset();
 	LiveCells = 0;
+	// ReleaseCell took each live cell's instances off both counts; clear any a lost component left.
+	MantleTerrainGrassPrivate::GBudget.LiveInstances -= LiveInstances;
 	LiveInstances = 0;
 	// Cells still being made come back with the old scale (or for a cell no longer there) and are dropped.
 }

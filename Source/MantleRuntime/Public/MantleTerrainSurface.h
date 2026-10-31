@@ -77,6 +77,40 @@ struct MANTLERUNTIME_API FMantleTerrainWeights
 };
 
 /**
+ * Where a Terrain has holes: the quads of its heightfield that are not built. Made from the hole mask (a Texture
+ * whose red channel below 128 marks a hole sample, texel (x, y) being sample (x, y), the nearest texel when the
+ * sizes differ); a quad is a hole when any of its four corner samples is. Immutable once made and thread-safe to read:
+ * the chunk builder, and grass generation on worker threads, share it.
+ */
+struct MANTLERUNTIME_API FMantleTerrainHoleGrid
+{
+	/** The heightfield's samples along X and Y; there are (Width - 1) x (Height - 1) quads. */
+	int32 Width = 0;
+	int32 Height = 0;
+
+	/** (Width - 1) x (Height - 1), row-major: 1 for a quad that is a hole. */
+	TArray<uint8> Quad;
+
+	/** The grid for a Width x Height heightfield from a mask read with its pixels; null when the mask has none, or marks no hole. */
+	static TSharedPtr<const FMantleTerrainHoleGrid> FromMask(const FMantleTerrainWeights& Mask, int32 InWidth, int32 InHeight);
+
+	/** The quad whose lowest corner is sample (X, Y) is a hole. Out of range is not. */
+	bool QuadIsHole(int32 X, int32 Y) const
+	{
+		return X >= 0 && Y >= 0 && X + 1 < Width && Y + 1 < Height && Quad[Y * (Width - 1) + X] != 0;
+	}
+
+	/** Any quad from (X0, Y0) up to but not including (X1, Y1) is a hole: the quads a coarser LOD's quad covers. */
+	bool AnyHole(int32 X0, int32 Y0, int32 X1, int32 Y1) const;
+
+	/** The point (SampleX, SampleY), in samples from sample (0, 0), is over a hole quad. */
+	bool IsHoleAt(double SampleX, double SampleY) const
+	{
+		return QuadIsHole(FMath::FloorToInt32(SampleX), FMath::FloorToInt32(SampleY));
+	}
+};
+
+/**
  * The surfaces of a built Terrain (#596 step 1b), on its actor: what MantleSurfaceFromHit asks when a
  * hit lands on the terrain's chunks, which carry no surface of their own. The place builder adds it
  * on the server and every client, wherever a layer names a surface other than default; nothing of it

@@ -1317,6 +1317,12 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			{
 				EnsureRecord(Terrain->Weightmap2, EAssetKind::Texture, EMantleTextureRole::Data);
 			}
+			// The hole mask, on every net mode: a server cuts the holes out of its collision too. Its pixels are kept
+			// (the red channel is read), as a grass map's are.
+			if (IsUploadedId(Terrain->Holes))
+			{
+				EnsureRecord(Terrain->Holes, EAssetKind::TerrainWeights).bKeepPixels = true;
+			}
 			// #596: the same weightmap's heaviest layers, on every net mode (a server resolves bullet
 			// hits too), when a layer names a surface for them to pick between.
 			if (IsUploadedId(Terrain->Weightmap) && UMantleTerrainSurfaceComponent::NeedsWeights(*Terrain))

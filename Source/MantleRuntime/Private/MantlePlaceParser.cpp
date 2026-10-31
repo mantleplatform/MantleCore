@@ -1357,7 +1357,7 @@ namespace
 	 */
 	void ParseTerrain(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Props, const FString& Path, FMantleTerrainProps& P)
 	{
-		RequireNoUnknownKeys(Ctx, Props, { TEXT("heightfield"), TEXT("weightmap"), TEXT("weightmap2"), TEXT("layers"), TEXT("castShadow"), TEXT("grass") }, Path);
+		RequireNoUnknownKeys(Ctx, Props, { TEXT("heightfield"), TEXT("weightmap"), TEXT("weightmap2"), TEXT("holes"), TEXT("layers"), TEXT("castShadow"), TEXT("grass") }, Path);
 
 		// An empty id could only fail later, at build, on every machine.
 		if (RequireString(Ctx, Props, TEXT("heightfield"), Path, P.Heightfield) && P.Heightfield.IsEmpty())
@@ -1373,6 +1373,11 @@ namespace
 		if (bHasWeightmap2 && RequireString(Ctx, Props, TEXT("weightmap2"), Path, P.Weightmap2) && P.Weightmap2.IsEmpty())
 		{
 			Ctx.Fail(Join(Path, TEXT("weightmap2")), TEXT("names no texture"));
+		}
+
+		if (Props->HasField(TEXT("holes")) && RequireString(Ctx, Props, TEXT("holes"), Path, P.Holes) && P.Holes.IsEmpty())
+		{
+			Ctx.Fail(Join(Path, TEXT("holes")), TEXT("names no texture"));
 		}
 
 		const FString LayersPath = Join(Path, TEXT("layers"));
@@ -3788,7 +3793,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		}
 	}
 
-	// One Terrain per place: validate.py's check_terrain_rules and the backend's terrainTotal,
+	// At most MaxTerrainsPerPlace Terrains: validate.py's check_terrain_rules and the backend's terrainTotal,
 	// reported at the type of the first Terrain past it.
 	{
 		int32 Terrains = 0;
@@ -3804,6 +3809,57 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 					Join(Index(TEXT("/entities"), i), TEXT("type")),
 					FString::Printf(TEXT("is Terrain number %d; a place may have at most %d"), Terrains, FMantlePlaceLimits::MaxTerrainsPerPlace));
 			}
+		}
+	}
+
+	// The heightfield samples of every Terrain together, read from the manifest's bytes (an MHF1 is a
+	// 36-byte header and 16-bit samples), reported at the heightfield of the Terrain that takes the place
+	// past the budget: validate.py's check_terrain_samples and the backend's terrainSampleTotal.
+	{
+		int64 Samples = 0;
+		for (int32 i = 0; i < Place.Entities.Num(); ++i)
+		{
+			const FMantleTerrainProps* Terrain = Place.Entities[i].Props.TryGet<FMantleTerrainProps>();
+			if (!Terrain)
+			{
+				continue;
+			}
+			const FMantleAssetRef* Listed = Place.Assets.FindByPredicate([Terrain](const FMantleAssetRef& Asset)
+			{
+				return Asset.Kind == EMantleAssetKind::Heightfield && Asset.Id.Equals(Terrain->Heightfield, ESearchCase::CaseSensitive);
+			});
+			if (!Listed || Listed->Bytes <= 36)
+			{
+				continue;
+			}
+			const int64 Before = Samples;
+			Samples += (Listed->Bytes - 36) / 2;
+			if (Before <= FMantlePlaceLimits::MaxTerrainSamplesPerPlace && Samples > FMantlePlaceLimits::MaxTerrainSamplesPerPlace)
+			{
+				Ctx.Fail(
+					Join(Join(Index(TEXT("/entities"), i), TEXT("properties")), TEXT("heightfield")),
+					FString::Printf(TEXT("brings the place to %lld heightfield samples; a place holds at most %lld"),
+						Samples, FMantlePlaceLimits::MaxTerrainSamplesPerPlace));
+			}
+		}
+	}
+
+	// A Terrain's hole mask is a Texture too, by the kind the manifest gives it.
+	for (int32 i = 0; i < Place.Entities.Num(); ++i)
+	{
+		const FMantleTerrainProps* Terrain = Place.Entities[i].Props.TryGet<FMantleTerrainProps>();
+		if (!Terrain || Terrain->Holes.IsEmpty())
+		{
+			continue;
+		}
+		const FMantleAssetRef* Listed = Place.Assets.FindByPredicate([Terrain](const FMantleAssetRef& Asset)
+		{
+			return Asset.Id.Equals(Terrain->Holes, ESearchCase::CaseSensitive);
+		});
+		if (Listed && Listed->Kind != EMantleAssetKind::Texture)
+		{
+			Ctx.Fail(Join(Join(Index(TEXT("/entities"), i), TEXT("properties")), TEXT("holes")),
+				FString::Printf(TEXT("'%s' is listed in the manifest as something other than a texture"), *Terrain->Holes));
 		}
 	}
 
