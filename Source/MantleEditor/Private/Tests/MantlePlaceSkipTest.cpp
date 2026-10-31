@@ -31,6 +31,7 @@
 #include "Sound/SoundNodeWavePlayer.h"
 #include "Sound/SoundWave.h"
 #include "UObject/Package.h"
+#include "VT/RuntimeVirtualTexture.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -356,6 +357,26 @@ bool FMantlePlaceSkipRuntimeVirtualTextureVolumeTest::RunTest(const FString& Par
 		return false;
 	}
 	ExpectSkipped(*this, Fixture.World, TEXT("Landscape RVT"), MantleCoverageCategory::Volumes);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePlaceSkipVirtualTextureOnlyMeshTest,
+	"Mantle.Editor.PlaceSkip.VirtualTextureOnlyMeshIsNotShown",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePlaceSkipVirtualTextureOnlyMeshTest::RunTest(const FString& Parameters)
+{
+	// MedievalVillage's cart tracks: spline meshes that only write into the landscape's runtime virtual texture. Published,
+	// they floated above the ground as flat cards.
+	UStaticMeshComponent* Mesh = NewObject<UStaticMeshComponent>(GetTransientPackage());
+	TestTrue(TEXT("a plain mesh is shown"), FMantlePlaceExporter::IsShownInGame(Mesh));
+	Mesh->RuntimeVirtualTextures.Add(NewObject<URuntimeVirtualTexture>(GetTransientPackage()));
+	TestTrue(TEXT("one that also writes a virtual texture is still drawn by default"), FMantlePlaceExporter::IsShownInGame(Mesh));
+	Mesh->VirtualTextureRenderPassType = ERuntimeVirtualTextureMainPassType::Never;
+	TestFalse(TEXT("one that never draws in the main pass is not shown"), FMantlePlaceExporter::IsShownInGame(Mesh));
+	TestFalse(TEXT("nor is it game content, as it does not collide"),
+		(Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision), FMantlePlaceExporter::IsGameContent(Mesh)));
 	return true;
 }
 
