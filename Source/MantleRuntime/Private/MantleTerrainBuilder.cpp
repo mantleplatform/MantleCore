@@ -280,7 +280,7 @@ void FMantleTerrainBuilder::BuildChunkDescription(const FMantleHeightfield& Fiel
 	auto At = [&](const int32 IX, const int32 IY)
 	{
 		FVertexInstanceID& Instance = Grid[IY * NX + IX];
-		if (!Instance.IsValid())
+		if (Instance.GetValue() == INDEX_NONE)
 		{
 			Instance = AddVertex(Xs[IX], Ys[IY], 0.0f);
 		}
@@ -319,7 +319,7 @@ void FMantleTerrainBuilder::BuildChunkDescription(const FMantleHeightfield& Fiel
 		Hanging.Init(FVertexInstanceID(INDEX_NONE), EdgeSamples.Num());
 		auto Down = [&](const int32 Segment)
 		{
-			if (!Hanging[Segment].IsValid())
+			if (Hanging[Segment].GetValue() == INDEX_NONE)
 			{
 				Hanging[Segment] = AddVertex(Xs[EdgeSamples[Segment].X], Ys[EdgeSamples[Segment].Y], SkirtDepth);
 			}
