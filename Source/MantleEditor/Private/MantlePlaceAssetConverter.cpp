@@ -76,7 +76,8 @@ namespace MantlePlaceAssetConverterPrivate
 	// v22: flat convex collision hulls are thickened instead of left out (SciFiAlienFacility's corridor floors); v21 meshes lack them.
 	// v23: flat collision boxes are thickened too (its SM_SUW_wall_13); v22 meshes lack them.
 	// v24: world-mapped materials bake one world tile and publish worldAligned; v23 stretched one bake over each mesh (Downtown's roads).
-	const TCHAR* const CacheVersion = TEXT("f5-v24");
+	// v25: only a material whose bake changes when its card moves is world-mapped; v24 world-tiled UV-mapped walls, signs and trim.
+	const TCHAR* const CacheVersion = TEXT("f5-v25");
 
 	const TCHAR* const ConversionRemedy = TEXT("It still publishes. Nothing to do unless it matters to how your place looks.");
 
@@ -1814,13 +1815,14 @@ namespace MantlePlaceAssetConverterPrivate
 		const FVector4f Color(FLinearColor(Surface.VertexColor));
 		const float Range = static_cast<float>(FMath::Max(Surface.UvRange, 1));
 		const float Side = Surface.WorldTileCm > 0.0 ? static_cast<float>(Surface.WorldTileCm) : 100.0f;
+		const float Shift = static_cast<float>(Surface.WorldShiftCm);
 		TArray<FVertexInstanceID> Corners;
 		for (int32 Corner = 0; Corner < 4; ++Corner)
 		{
 			const int32 X = Corner & 1;
 			const int32 Y = (Corner >> 1) & 1;
 			const FVertexID Vertex = Description.CreateVertex();
-			Attributes.GetVertexPositions()[Vertex] = FVector3f(Side * X, Side * Y, 0.0f);
+			Attributes.GetVertexPositions()[Vertex] = FVector3f(Side * X + Shift, Side * Y + Shift, 0.0f);
 			const FVertexInstanceID Instance = Description.CreateVertexInstance(Vertex);
 			Attributes.GetVertexInstanceNormals()[Instance] = FVector3f(0.0f, 0.0f, 1.0f);
 			Attributes.GetVertexInstanceTangents()[Instance] = FVector3f(1.0f, 0.0f, 0.0f);
@@ -3527,6 +3529,51 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 		*Surface.CacheTag());
 }
 
+double FMantlePlaceAssetConverter::MeanPixelDifference(const TArray<FColor>& A, const TArray<FColor>& B)
+{
+	if (A.Num() == 0 || A.Num() != B.Num())
+	{
+		return 1.0;
+	}
+	double Sum = 0.0;
+	for (int32 Index = 0; Index < A.Num(); ++Index)
+	{
+		Sum += FMath::Abs(A[Index].R - B[Index].R) + FMath::Abs(A[Index].G - B[Index].G) + FMath::Abs(A[Index].B - B[Index].B);
+	}
+	return Sum / (3.0 * 255.0 * A.Num());
+}
+
+double FMantlePlaceAssetConverter::BakedBaseColorDifference(const FMantleGlbDocument& First, const FMantleGlbDocument& Second)
+{
+	using namespace MantlePlaceAssetConverterPrivate;
+	TArray<FColor> Pixels[2];
+	for (int32 Which = 0; Which < 2; ++Which)
+	{
+		const FMantleGlbDocument& Doc = Which == 0 ? First : Second;
+		const TArray<TSharedPtr<FJsonValue>>* Materials = nullptr;
+		if (!Doc.Json.IsValid() || !Doc.Json->TryGetArrayField(TEXT("materials"), Materials) || Materials->Num() == 0)
+		{
+			return 1.0;
+		}
+		const FTextureRef Ref = ReadTextureRef(ObjectField(ObjectField((*Materials)[0]->AsObject(), TEXT("pbrMetallicRoughness")), TEXT("baseColorTexture")));
+		if (!Ref.IsSet())
+		{
+			// A constant colour does not move with the card.
+			return 0.0;
+		}
+		TArray<uint8> Bytes;
+		int32 Source = INDEX_NONE;
+		FString Name;
+		int32 Width = 0;
+		int32 Height = 0;
+		if (!ReadTextureImage(Doc, Ref.Texture, Bytes, Source, Name) || !DecodeBgra(Bytes, true, Pixels[Which], Width, Height))
+		{
+			return 1.0;
+		}
+	}
+	return MeanPixelDifference(Pixels[0], Pixels[1]);
+}
+
 void FMantlePlaceAssetConverter::ApplyWorldTile(FMantlePlaceMaterialDocument& Doc, const FMantleBakeSurface& Surface)
 {
 	// The bake is one world tile (Surface.WorldTileCm a side): drawn by world position it repeats as the source did, where over each mesh's
@@ -3764,7 +3811,26 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 			UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 GLTFExporter on %s: %s"), *Material->GetName(), *Message);
 		}
 		Converted.Document = MaterialFromGltf(Flattened, 0, Converted.Name, Limits, bOversizeReported, Out, MaterialExtras(Analysis, Converted.Name, Out.Issues));
-		ApplyWorldTile(Converted.Document, Surface);
+		if (Surface.WorldTileCm > 0.0)
+		{
+			// The analysis flags any world position in the graph; many such materials (Downtown's trim sheets, signs, brick walls) map their
+			// textures by UV and use it only for a noise mask. Bake once more with the card moved: only a bake that really changes is world-mapped.
+			// A UV-mapped one keeps the first bake, which over UVs 0 to 1 is the plain bake, and its UV mapping.
+			FMantleFlattenSettings Shifted = FlattenSettings;
+			Shifted.Surface.WorldShiftCm = Surface.WorldTileCm * WorldShiftFraction;
+			FMantleGlbDocument Moved;
+			TArray<FString> MovedMessages;
+			FString MovedError;
+			const double Difference = Flattener->Flatten(Neutral.IsValid() ? Neutral.Get() : Material, Shifted, Moved, MovedMessages, MovedError)
+				? BakedBaseColorDifference(Flattened, Moved) : 1.0;
+			const bool bWorldMapped = Difference >= WorldMappedDifference;
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: moving its card changed its base colour by %.1f%%, so it is %s"), *Material->GetName(), 100.0 * Difference,
+				bWorldMapped ? TEXT("world-mapped: published to repeat by world position") : TEXT("mapped by UV: published on the mesh's UVs"));
+			if (bWorldMapped)
+			{
+				ApplyWorldTile(Converted.Document, Surface);
+			}
+		}
 	}
 	else
 	{

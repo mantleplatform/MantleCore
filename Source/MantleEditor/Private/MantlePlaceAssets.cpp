@@ -3519,6 +3519,7 @@ FString FMantleBakeSurface::CacheTag() const
 	}
 	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%d%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1),
 		WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""));
+	// The shift is not in the tag: the shifted bake is only compared with, never stored.
 }
 
 FColor FMantleGatheredMaterial::AverageVertexColor() const

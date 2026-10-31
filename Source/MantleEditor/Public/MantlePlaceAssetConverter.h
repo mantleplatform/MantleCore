@@ -829,6 +829,18 @@ public:
 	/** The worldAligned sharpness a world-tile bake publishes with: how sharply its top and side projections meet. */
 	static constexpr double WorldTileSharpness = 4.0;
 
+	/** How far the comparison bake's card is moved, as a share of the tile: not a whole number of any likely repeat. */
+	static constexpr double WorldShiftFraction = 0.37;
+
+	/** The base colour a moved card must change by (MeanPixelDifference) for the material to count as world-mapped. */
+	static constexpr double WorldMappedDifference = 0.03;
+
+	/** The mean difference of two equal-sized images' RGB, 0 (the same) to 1; 1 when their sizes differ or one is empty. */
+	static double MeanPixelDifference(const TArray<FColor>& A, const TArray<FColor>& B);
+
+	/** MeanPixelDifference of two bakes' first material's base colour images: 0 for a constant colour, 1 when either cannot be read. */
+	static double BakedBaseColorDifference(const FMantleGlbDocument& First, const FMantleGlbDocument& Second);
+
 	/** A collision box's full size with one side of zero (a flat sheet) made 2 x FlatHullHalfThicknessCm; a box flat on two or three sides is returned as it is. */
 	static FVector ThickenFlatBox(const FVector& Size);
 
