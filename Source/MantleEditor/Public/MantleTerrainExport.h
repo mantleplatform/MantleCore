@@ -93,6 +93,9 @@ struct MANTLEEDITOR_API FMantleTerrainSource
 
 	/** Where sample (0, 0) is and how the landscape is turned: the Terrain entity's transform (scale 1). */
 	FTransform Transform = FTransform::Identity;
+
+	/** The landscape actor read, which Mantle Place Settings entries for one landscape name (FMantleTerrainLayerSetting::Landscape); empty for none. */
+	FSoftObjectPath LandscapePath;
 };
 
 /** One Terrain layer as Export writes it: the landscape's layer, the material Mantle Place Settings gives it, and its tiling. */
@@ -148,7 +151,7 @@ struct FMantleTerrainFold
 };
 
 /**
- * A level's landscape as a Mantle Terrain (#466): what Export, Check this place and the asset
+ * A level's landscapes as Mantle Terrains (#466), one Terrain entity each: what Export, Check this place and the asset
  * converter share, so the three never disagree.
  *
  * A landscape becomes one heightfield (MHF1, at most 2049 samples a side: a larger one is resampled)
@@ -303,9 +306,36 @@ public:
 	 */
 	static TArray<FColor> MakeWeightmap(const FMantleTerrainSource& Source, TConstArrayView<int32> SourceLayers, FIntPoint Size, TConstArrayView<int32> ChannelOfSource = TConstArrayView<int32>());
 
+	/** The heightfield samples a Width x Height landscape publishes (MakeHeightfield's width x height): what FMantlePlaceLimits::MaxTerrainSamplesPerPlace counts. */
+	static int64 PublishedSamples(int32 Width, int32 Height);
+
+	/** PublishedSamples of the extent ReadLandscape would read for Landscape, without reading it; 0 when it has none loaded. */
+	static int64 PublishedSamples(const AActor* Landscape);
+
 	/**
-	 * Check this place's terrain part: at most FMantlePlaceLimits::MaxTerrainsPerPlace landscapes,
-	 * each one readable and with layers ChooseLayers accepts, and a warning when one is resampled.
+	 * Which landscapes of these PublishedSamples (in CollectLandscapes' order) publish as Terrains: the indices kept, in order. Past
+	 * FMantlePlaceLimits::MaxTerrainsPerPlace kept, a landscape is left out (TooManyLandscapes); one that would take the place past
+	 * MaxTerrainSamplesPerPlace is left out (OverSampleBudget) and the next may still fit. Each one left out is in OutLeftOut, by index,
+	 * with its error under Labels' entry. Pure data.
+	 */
+	static TArray<int32> FitTerrains(TConstArrayView<int64> Samples, TConstArrayView<FString> Labels, TArray<TPair<int32, FMantleValidationIssue>>& OutLeftOut);
+
+	/** World's landscapes that publish as Terrains (FitTerrains over CollectLandscapes): what Gather, Check and Export all take. */
+	static TArray<AActor*> TerrainLandscapes(UWorld* World, TArray<TPair<const AActor*, FMantleValidationIssue>>* OutLeftOut = nullptr);
+
+	/** The error for landscape Number (counted from 1, in CollectLandscapes' order) past FMantlePlaceLimits::MaxTerrainsPerPlace: it is left out. */
+	static FMantleValidationIssue TooManyLandscapes(const FString& Label, int32 Number);
+
+	/**
+	 * The error for a landscape of Samples (PublishedSamples) that the landscapes before it, with Before samples, leave no room for under
+	 * FMantlePlaceLimits::MaxTerrainSamplesPerPlace: it is left out, and the next landscape may still fit.
+	 */
+	static FMantleValidationIssue OverSampleBudget(const FString& Label, int64 Samples, int64 Before);
+
+	/**
+	 * Check this place's terrain part: every landscape is a Terrain, at most FMantlePlaceLimits::MaxTerrainsPerPlace of them and
+	 * MaxTerrainSamplesPerPlace samples together (in CollectLandscapes' order, as Export counts them), each one readable and with
+	 * layers ChooseLayers accepts, and a warning when one is resampled.
 	 */
 	static void CheckLevel(UWorld* World, TArray<FMantleValidationIssue>& OutIssues);
 };

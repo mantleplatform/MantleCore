@@ -315,10 +315,25 @@ const FMantleStorageSetting* AMantlePlaceSettingsActor::FindStorageEntry(const F
 	return Storage.FindByPredicate([&Name](const FMantleStorageSetting& Entry) { return Entry.Name.Equals(Name, ESearchCase::CaseSensitive); });
 }
 
-const FMantleTerrainLayerSetting* AMantlePlaceSettingsActor::FindTerrainLayer(const FName Layer) const
+const FMantleTerrainLayerSetting* AMantlePlaceSettingsActor::FindTerrainLayer(const FName Layer, const FSoftObjectPath& LandscapePath) const
 {
 	// FName compares without case, as the landscape's own layer names do.
-	return TerrainLayers.FindByPredicate([Layer](const FMantleTerrainLayerSetting& Entry) { return Entry.Layer == Layer; });
+	if (!LandscapePath.IsNull())
+	{
+		if (const FMantleTerrainLayerSetting* Own = TerrainLayers.FindByPredicate([Layer, &LandscapePath](const FMantleTerrainLayerSetting& Entry)
+			{
+				return Entry.Layer == Layer && !Entry.Landscape.IsNull() && Entry.Landscape.ToSoftObjectPath() == LandscapePath;
+			}))
+		{
+			return Own;
+		}
+	}
+	return TerrainLayers.FindByPredicate([Layer](const FMantleTerrainLayerSetting& Entry) { return Entry.Layer == Layer && Entry.Landscape.IsNull(); });
+}
+
+const FMantleTerrainLayerSetting* AMantlePlaceSettingsActor::FirstTerrainLayer(const FSoftObjectPath& LandscapePath) const
+{
+	return TerrainLayers.FindByPredicate([&LandscapePath](const FMantleTerrainLayerSetting& Entry) { return Entry.Material && Entry.AppliesTo(LandscapePath); });
 }
 
 const TCHAR* AMantlePlaceSettingsActor::RespawnModeName(EMantleRespawnMode Mode)

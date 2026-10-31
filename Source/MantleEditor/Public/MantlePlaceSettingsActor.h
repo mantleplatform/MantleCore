@@ -150,6 +150,16 @@ struct MANTLEEDITOR_API FMantleTerrainLayerSetting
 	/** How big one repeat of the material's textures is on the ground, in cm. */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = "1", ClampMax = "100000", UIMin = "50", UIMax = "5000"))
 	float TilingCm = 400.0f;
+
+	/**
+	 * The one landscape this entry draws, for a level whose landscapes paint a layer of the same name differently. Empty: every
+	 * landscape's layer of this name. An entry for a landscape wins over an entry for every landscape.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (AllowedClasses = "/Script/Landscape.Landscape"))
+	TSoftObjectPtr<AActor> Landscape;
+
+	/** Whether this entry draws the landscape at LandscapePath: it names that landscape, or none. */
+	bool AppliesTo(const FSoftObjectPath& LandscapePath) const { return Landscape.IsNull() || Landscape.ToSoftObjectPath() == LandscapePath; }
 };
 
 /**
@@ -372,9 +382,10 @@ public:
 	TArray<FString> PublishedScriptAssetIds;
 
 	/**
-	 * The level's landscape as players see it (#466): one entry per paint layer, naming the material it
-	 * is drawn with. Up to 4 painted layers publish. A landscape with no painted layer is drawn with the
-	 * first entry's material.
+	 * The level's landscapes as players see them (#466): one entry per paint layer, naming the material it
+	 * is drawn with. An entry is for every landscape's layer of its name, or for one landscape (its Landscape),
+	 * which wins over an entry for every landscape. Up to 8 painted layers publish per landscape. A landscape
+	 * with no painted layer is drawn with the first entry that is for it.
 	 */
 	UPROPERTY(EditAnywhere, Category = "Mantle|Terrain")
 	TArray<FMantleTerrainLayerSetting> TerrainLayers;
@@ -422,8 +433,14 @@ public:
 	/** Copies the active level viewport's camera into the chosen view, as an undoable change. False when it is not a perspective viewport. */
 	bool SetThumbnailFromViewport();
 
-	/** The entry for a paint layer, or null. */
-	const FMantleTerrainLayerSetting* FindTerrainLayer(FName Layer) const;
+	/**
+	 * The entry for a paint layer of the landscape at LandscapePath, or null: one for that landscape first, else one for every
+	 * landscape. An empty path finds only entries for every landscape.
+	 */
+	const FMantleTerrainLayerSetting* FindTerrainLayer(FName Layer, const FSoftObjectPath& LandscapePath = FSoftObjectPath()) const;
+
+	/** The first entry with a material that draws the landscape at LandscapePath (for it, or for every landscape), or null. */
+	const FMantleTerrainLayerSetting* FirstTerrainLayer(const FSoftObjectPath& LandscapePath = FSoftObjectPath()) const;
 
 	/** The level's settings actor, or null. With more than one, the first found is used. */
 	static AMantlePlaceSettingsActor* Find(UWorld* World);

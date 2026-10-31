@@ -271,6 +271,7 @@ bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSour
 	Out.Width = MaxX - MinX + 1;
 	Out.Height = MaxY - MinY + 1;
 	Out.FirstSample = FIntPoint(MinX, MinY);
+	Out.LandscapePath = FSoftObjectPath(Landscape);
 	Out.SpacingX = Scale.X;
 	Out.SpacingY = Scale.Y;
 	Out.HeightScale = HeightScale;
@@ -339,12 +340,12 @@ bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSour
 		bool bNeedsLook = false;
 		for (const FName& Name : Out.LayerNames)
 		{
-			const FMantleTerrainLayerSetting* Entry = Settings ? Settings->FindTerrainLayer(Name) : nullptr;
+			const FMantleTerrainLayerSetting* Entry = Settings ? Settings->FindTerrainLayer(Name, Out.LandscapePath) : nullptr;
 			bNeedsLook = bNeedsLook || !Entry || !Entry->Material;
 		}
 		// Nothing painted: unless Place Settings draws it, the material may pick its ground from slope and height, which is baked from the heights.
 		const bool bNothingPainted = Out.LayerNames.Num() == 0;
-		const bool bSettingsDraw = Settings && Settings->TerrainLayers.Num() > 0 && Settings->TerrainLayers[0].Material;
+		const bool bSettingsDraw = Settings && Settings->FirstTerrainLayer(Out.LandscapePath);
 		if (bNeedsLook || (bNothingPainted && !bSettingsDraw))
 		{
 			Out.bMaterialRead = FMantleLandscapeMaterialReader::Read(Landscape->GetLandscapeMaterial(), Out.SpacingX, Out.MaterialRead, Out.MaterialProblem);
@@ -553,7 +554,7 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 	const AMantlePlaceSettingsActor* Settings = AMantlePlaceSettingsActor::Find(World);
 	if (Source.LayerNames.Num() == 0)
 	{
-		const FMantleTerrainLayerSetting* First = Settings && Settings->TerrainLayers.Num() > 0 ? &Settings->TerrainLayers[0] : nullptr;
+		const FMantleTerrainLayerSetting* First = Settings ? Settings->FirstTerrainLayer(Source.LandscapePath) : nullptr;
 		if (!First || !First->Material)
 		{
 			// Nothing painted and nothing in Place Settings: the first look the landscape's material states, else that material baked whole,
@@ -620,7 +621,7 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 		{
 			const FName Name = Source.LayerNames[Index];
 			FLayerPlan& Plan = Plans[Index];
-			Plan.Entry = Settings ? Settings->FindTerrainLayer(Name) : nullptr;
+			Plan.Entry = Settings ? Settings->FindTerrainLayer(Name, Source.LandscapePath) : nullptr;
 			if (Plan.Entry && !Plan.Entry->Material)
 			{
 				Plan.Entry = nullptr;
@@ -1056,22 +1057,112 @@ bool FMantleTerrainExport::EncodeWeightmaps(const FMantleTerrainSource& Source, 
 	return true;
 }
 
-void FMantleTerrainExport::CheckLevel(UWorld* World, TArray<FMantleValidationIssue>& OutIssues)
+int64 FMantleTerrainExport::PublishedSamples(const int32 Width, const int32 Height)
+{
+	if (Width < 2 || Height < 2)
+	{
+		return 0;
+	}
+	return static_cast<int64>(FMath::Min(Width, FMantleHeightfieldReader::MaxSize)) * FMath::Min(Height, FMantleHeightfieldReader::MaxSize);
+}
+
+int64 FMantleTerrainExport::PublishedSamples(const AActor* Actor)
+{
+	// The extent ReadLandscape reads, without reading it.
+	const ALandscape* Landscape = Cast<ALandscape>(Actor);
+	const ULandscapeInfo* Info = Landscape ? Landscape->GetLandscapeInfo() : nullptr;
+	int32 MinX = 0;
+	int32 MinY = 0;
+	int32 MaxX = 0;
+	int32 MaxY = 0;
+	if (!Info || !Info->GetLandscapeExtent(MinX, MinY, MaxX, MaxY))
+	{
+		return 0;
+	}
+	return PublishedSamples(MaxX - MinX + 1, MaxY - MinY + 1);
+}
+
+TArray<int32> FMantleTerrainExport::FitTerrains(TConstArrayView<int64> Samples, TConstArrayView<FString> Labels, TArray<TPair<int32, FMantleValidationIssue>>& OutLeftOut)
+{
+	TArray<int32> Kept;
+	int64 PlaceSamples = 0;
+	for (int32 Index = 0; Index < Samples.Num(); ++Index)
+	{
+		const FString Label = Labels.IsValidIndex(Index) ? Labels[Index] : FString();
+		if (Kept.Num() >= FMantlePlaceLimits::MaxTerrainsPerPlace)
+		{
+			OutLeftOut.Emplace(Index, TooManyLandscapes(Label, Index + 1));
+			continue;
+		}
+		// A landscape that does not fit is left out, and the next one may still fit.
+		if (PlaceSamples + Samples[Index] > FMantlePlaceLimits::MaxTerrainSamplesPerPlace)
+		{
+			OutLeftOut.Emplace(Index, OverSampleBudget(Label, Samples[Index], PlaceSamples));
+			continue;
+		}
+		PlaceSamples += Samples[Index];
+		Kept.Add(Index);
+	}
+	return Kept;
+}
+
+TArray<AActor*> FMantleTerrainExport::TerrainLandscapes(UWorld* World, TArray<TPair<const AActor*, FMantleValidationIssue>>* OutLeftOut)
 {
 	using namespace MantleTerrainExportPrivate;
 
 	const TArray<AActor*> Landscapes = CollectLandscapes(World);
-	for (int32 Index = 0; Index < Landscapes.Num(); ++Index)
+	TArray<int64> Samples;
+	TArray<FString> Labels;
+	for (const AActor* Landscape : Landscapes)
 	{
-		const AActor* Landscape = Landscapes[Index];
-		const FString Label = TerrainLabelOf(Landscape);
-		if (Index >= FMantlePlaceLimits::MaxTerrainsPerPlace)
+		Samples.Add(PublishedSamples(Landscape));
+		Labels.Add(TerrainLabelOf(Landscape));
+	}
+	TArray<TPair<int32, FMantleValidationIssue>> LeftOut;
+	TArray<AActor*> Out;
+	for (const int32 Index : FitTerrains(Samples, Labels, LeftOut))
+	{
+		Out.Add(Landscapes[Index]);
+	}
+	if (OutLeftOut)
+	{
+		for (TPair<int32, FMantleValidationIssue>& Entry : LeftOut)
 		{
-			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, Label,
-				FString::Printf(TEXT("is landscape number %d; a place publishes at most %d."), Index + 1, FMantlePlaceLimits::MaxTerrainsPerPlace),
-				TEXT("Merge the landscapes into one, or remove the extra ones, then publish again.") });
-			continue;
+			OutLeftOut->Emplace(Landscapes[Entry.Key], MoveTemp(Entry.Value));
 		}
+	}
+	return Out;
+}
+
+FMantleValidationIssue FMantleTerrainExport::TooManyLandscapes(const FString& Label, const int32 Number)
+{
+	return FMantleValidationIssue{ EMantleIssueSeverity::Error, Label,
+		FString::Printf(TEXT("is landscape number %d; a place publishes at most %d landscapes, so it is left out."), Number, FMantlePlaceLimits::MaxTerrainsPerPlace),
+		TEXT("Remove a landscape the place does not need, or split the world into more than one place.") };
+}
+
+FMantleValidationIssue FMantleTerrainExport::OverSampleBudget(const FString& Label, const int64 Samples, const int64 Before)
+{
+	return FMantleValidationIssue{ EMantleIssueSeverity::Error, Label,
+		FString::Printf(TEXT("has %s height samples, and the landscapes before it already have %s; a place's landscapes have at most %s together, so it is left out."),
+			*FText::AsNumber(Samples).ToString(), *FText::AsNumber(Before).ToString(), *FText::AsNumber(FMantlePlaceLimits::MaxTerrainSamplesPerPlace).ToString()),
+		TEXT("Make it or another landscape smaller (fewer components, or a larger scale so its samples are farther apart), or split the world into more than one place.") };
+}
+
+void FMantleTerrainExport::CheckLevel(UWorld* World, TArray<FMantleValidationIssue>& OutIssues)
+{
+	using namespace MantleTerrainExportPrivate;
+
+	// The landscapes Export publishes as Terrains (TerrainLandscapes, which Gather and Export take too), and an error for each one left out.
+	TArray<TPair<const AActor*, FMantleValidationIssue>> LeftOut;
+	const TArray<AActor*> Landscapes = TerrainLandscapes(World, &LeftOut);
+	for (TPair<const AActor*, FMantleValidationIssue>& Entry : LeftOut)
+	{
+		OutIssues.Add(MoveTemp(Entry.Value));
+	}
+	for (const AActor* Landscape : Landscapes)
+	{
+		const FString Label = TerrainLabelOf(Landscape);
 		FMantleTerrainSource Source;
 		FString Problem;
 		if (!ReadLandscape(Landscape, Source, Problem))

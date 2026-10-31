@@ -700,7 +700,21 @@ namespace MantleCoverageSurveyPrivate
 		}
 	}
 
-	/** The landscape: published as a Terrain or not, the landscape material (never used yet) and the grass its material grows (#628). */
+	/** Whether anything in Category, whatever its outcome, is reported under Name. */
+	bool CoverageNames(const FMantleCoverage& Coverage, const TCHAR* Category, const FString& Name)
+	{
+		const FMantleCoverageCategory* Found = Coverage.Find(Category);
+		for (int32 Outcome = 0; Found && Outcome < UE_ARRAY_COUNT(Found->Buckets); ++Outcome)
+		{
+			if (Found->Buckets[Outcome].Examples.ContainsByPredicate([&Name](const FMantleCoverageExample& Example) { return Example.Name == Name; }))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Each landscape: published as a Terrain or not, the landscape material (never used yet) and the grass its material grows (#628). */
 	void CoverageSurveyTerrain(UWorld* World, FMantleExportResult& Result)
 	{
 		FMantleCoverage& Coverage = Result.Coverage;
@@ -753,18 +767,20 @@ namespace MantleCoverageSurveyPrivate
 					Why.Num() > 0 ? FString::Join(Why, TEXT(" ")) : FString(TEXT("is not in the place.")));
 			}
 
-			// The landscape's own material is never read: every layer takes a material from Mantle Place Settings.
+			// The landscape's own material, when nothing read it (ChooseLayers reports a material it reads, by name): every layer takes a
+			// material from Mantle Place Settings. Several landscapes may share one material, which is then one line.
 			const ALandscapeProxy* Proxy = Cast<ALandscapeProxy>(Landscape);
 			const UMaterialInterface* LandscapeMaterial = Proxy ? Proxy->GetLandscapeMaterial() : nullptr;
-			if (LandscapeMaterial && !Coverage.HasCategory(Cat::LandscapeMaterial))
+			if (LandscapeMaterial && !CoverageNames(Coverage, Cat::LandscapeMaterial, LandscapeMaterial->GetName())
+				&& !CoverageNames(Coverage, Cat::LandscapeMaterial, Label))
 			{
 				Coverage.Add(Cat::LandscapeMaterial, EOutcome::Dropped, Label,
 					FString::Printf(TEXT("its material '%s' is not used: each layer takes a material from Mantle Place Settings."), *LandscapeMaterial->GetName()));
 			}
 
-			// The grass types its material grows. A Terrain that carries grass entries keeps them; Export reports what it did itself.
+			// The grass types its material grows. Export reports a published Terrain's grass itself; a landscape left out drops its grass.
 			const TArray<FMantleCoverageSurvey::FGrassType> GrassTypes = FMantleCoverageSurvey::FindLandscapeGrassTypes(Landscape);
-			if (GrassTypes.Num() > 0 && !Coverage.HasCategory(Cat::LandscapeGrass))
+			if (GrassTypes.Num() > 0 && !(Published && Coverage.HasCategory(Cat::LandscapeGrass)))
 			{
 				const FMantleTerrainProps* Props = Published ? Published->Props.TryGet<FMantleTerrainProps>() : nullptr;
 				if (Props && Props->Grass.Num() > 0)
@@ -910,11 +926,6 @@ TArray<FMantleCoverageSurvey::FGrassType> FMantleCoverageSurvey::FindLandscapeGr
 void FMantleCoverageSurvey::ReportTerrainLayers(FMantleCoverage& Out, const FString& Label, const FMantleTerrainSource& Source,
 	const TArray<FMantleTerrainLayerChoice>& Layers)
 {
-	// Whoever chose the layers may have reported them already (ChooseLayers does, once it keeps layers it cannot name here).
-	if (Out.HasCategory(MantleCoverageCategory::TerrainLayers))
-	{
-		return;
-	}
 	TSet<FName> Published;
 	for (const FMantleTerrainLayerChoice& Choice : Layers)
 	{

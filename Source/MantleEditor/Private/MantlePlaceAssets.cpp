@@ -2481,11 +2481,10 @@ FMantlePlaceDependencies FMantlePlaceDependencies::Gather(UWorld* World)
 	Out.AddSplineMeshes(World);
 	// Cables baked the same way (FMantleCableBake).
 	Out.AddCableMeshes(World);
-	// The landscape, where Export writes it (#466). Only the first one publishes; Check names the rest.
-	const TArray<AActor*> Landscapes = FMantleTerrainExport::CollectLandscapes(World);
-	if (Landscapes.Num() > 0)
+	// The landscapes, where Export writes them (#466): each one a Terrain, as many as the place's limits hold (Check names the rest).
+	for (const AActor* Landscape : FMantleTerrainExport::TerrainLandscapes(World))
 	{
-		Out.AddTerrain(Landscapes[0]);
+		Out.AddTerrain(Landscape);
 	}
 	// The Script Assets last, as Export lists them: each only once, however often it is also placed.
 	Out.AddScriptAssets(World);
