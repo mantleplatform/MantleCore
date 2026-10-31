@@ -182,8 +182,8 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** Distinct grass maps (textures) across one Terrain's grass[] (#628). Cross-entity: validate.py and the backend state it too. */
 	static constexpr int32 MaxTerrainGrassMaps = 4;
 
-	/** VoxelWorld entities in one place (#168). Cross-entity: validate.py and the backend state it too. */
-	static constexpr int32 MaxVoxelWorldsPerPlace = 1;
+	/** VoxelWorld entities in one place (#168), at most one of each look. Cross-entity: validate.py and the backend state it too. */
+	static constexpr int32 MaxVoxelWorldsPerPlace = 2;
 
 	/** A VoxelWorld's size in blocks (#168): x and y at most this, each side a multiple of VoxelSectionSize. */
 	static constexpr int32 MaxVoxelWorldSizeXY = 1024;

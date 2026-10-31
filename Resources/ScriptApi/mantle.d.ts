@@ -1273,8 +1273,8 @@ interface WorldService {
 	getEntitiesInBox(center: Vector3, size: Vector3, params?: { include?: (Entity | Player)[] | undefined; exclude?: (Entity | Player)[] | undefined; tag?: string | undefined; ignorePlayers?: boolean | undefined; maxResults?: number | undefined; layers?: (string)[] | undefined; excludeLayers?: (string)[] | undefined }): (Entity)[];
 	/** Every entity and player character touching a ball of this radius (at most 50 m) around center, nearest first. Overlap-only entities (triggers) count; entities with no collision never do. A character is listed as its Entity; Players:GetPlayerFromCharacter tells whose it is. params: Include, Exclude, Tag, IgnorePlayers, Layers, ExcludeLayers (collision layers, server scripts only), and MaxResults (256 at most, and by default). Runs on this machine only; a script may make 256 spatial queries a frame. */
 	getEntitiesInRadius(center: Vector3, radius: number, params?: { include?: (Entity | Player)[] | undefined; exclude?: (Entity | Player)[] | undefined; tag?: string | undefined; ignorePlayers?: boolean | undefined; maxResults?: number | undefined; layers?: (string)[] | undefined; excludeLayers?: (string)[] | undefined }): (Entity)[];
-	/** The place's block world (#168), or nil when the place has none. */
-	getVoxelWorld(): VoxelWorld | undefined;
+	/** The place's block world (#168), or nil when the place has none. A place may have two, one of each look: give "blocky" or "smooth" for that one; with no look, the place's first. */
+	getVoxelWorld(look?: string | undefined): VoxelWorld | undefined;
 	/** Call handler for every entity that has the tag now, and for each one that gets it later. */
 	onTagged(tag: string, handler: (entity: Entity) => void): Connection;
 	/** Call handler when an entity loses the tag. */

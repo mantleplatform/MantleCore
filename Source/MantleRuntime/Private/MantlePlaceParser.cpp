@@ -4042,9 +4042,11 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		}
 	}
 
-	// One VoxelWorld (#168), neither rotated nor scaled (its blocks are a fixed grid): validate.py and the backend state both.
+	// At most two VoxelWorlds (#168), one of each look, neither rotated nor scaled (their voxels are a fixed grid): validate.py
+	// and the backend state both.
 	{
 		int32 VoxelWorlds = 0;
+		bool bLooks[2] = {};
 		for (int32 i = 0; i < Place.Entities.Num(); ++i)
 		{
 			const FMantleEntity& Entity = Place.Entities[i];
@@ -4052,11 +4054,18 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			{
 				continue;
 			}
+			const bool bSmooth = Entity.Props.IsType<FMantleVoxelWorldProps>() && Entity.Props.Get<FMantleVoxelWorldProps>().bSmooth;
 			if (++VoxelWorlds == FMantlePlaceLimits::MaxVoxelWorldsPerPlace + 1)
 			{
 				Ctx.Fail(Join(Index(TEXT("/entities"), i), TEXT("type")),
 					FString::Printf(TEXT("is VoxelWorld number %d; a place may have at most %d"), VoxelWorlds, FMantlePlaceLimits::MaxVoxelWorldsPerPlace));
 			}
+			else if (bLooks[bSmooth ? 1 : 0])
+			{
+				Ctx.Fail(Join(Index(TEXT("/entities"), i), TEXT("type")),
+					FString::Printf(TEXT("is a second %s VoxelWorld; a place may have one of each look"), bSmooth ? TEXT("smooth") : TEXT("blocky")));
+			}
+			bLooks[bSmooth ? 1 : 0] = true;
 			if (!Entity.Transform.GetRotation().IsIdentity(KINDA_SMALL_NUMBER) || !Entity.Transform.GetScale3D().Equals(FVector::OneVector))
 			{
 				Ctx.Fail(Join(Index(TEXT("/entities"), i), TEXT("transform")), TEXT("a VoxelWorld is not rotated or scaled (rotation [0, 0, 0], scale [1, 1, 1])"));
