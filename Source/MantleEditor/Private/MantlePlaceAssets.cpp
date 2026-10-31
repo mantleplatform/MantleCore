@@ -94,6 +94,8 @@
 #include "Sound/SoundWave.h"
 #include "Sound/SoundWaveProcedural.h"
 #include "StaticMeshResources.h"
+#include "StaticMeshComponentLODInfo.h"
+#include "UObject/ObjectKey.h"
 #include "UObject/UnrealType.h"
 
 // Named, not anonymous: MantleEditor builds as a unity build.
@@ -2109,7 +2111,7 @@ void FMantlePlaceDependencies::AddScatter(const AActor* Actor)
 		for (const int32 Slot : FMantlePlaceAssets::UploadSlots(Mesh))
 		{
 			UMaterialInterface* Material = Override(Slot);
-			AddMaterial(Material ? Material : FMantlePlaceAssets::MeshSlotMaterial(Mesh, Slot), Label);
+			AddSlotVertexColors(AddMaterial(Material ? Material : FMantlePlaceAssets::MeshSlotMaterial(Mesh, Slot), Label), Mesh, nullptr, Slot);
 		}
 	}
 }
@@ -2184,10 +2186,11 @@ void FMantlePlaceDependencies::AddComponent(const UStaticMeshComponent* Componen
 
 	if (FMantlePlaceAssets::IsLibraryAsset(Mesh))
 	{
-		// A library mesh brings its own materials; only overrides are published (and uploaded when not library).
-		for (UMaterialInterface* Override : Component->OverrideMaterials)
+		// A library mesh brings its own materials; only overrides are published (and uploaded when not library). An override is still
+		// drawn with the colours painted on the component (DowntownWestModularPack's roads: the engine's plane, painted for its puddles).
+		for (int32 Slot = 0; Slot < Component->OverrideMaterials.Num(); ++Slot)
 		{
-			AddMaterial(Override, Label);
+			AddSlotVertexColors(AddMaterial(Component->OverrideMaterials[Slot], Label), Mesh, Component, Slot);
 		}
 		return;
 	}
@@ -2205,18 +2208,71 @@ void FMantlePlaceDependencies::AddComponent(const UStaticMeshComponent* Componen
 
 	for (const int32 Slot : FMantlePlaceAssets::UploadSlots(Mesh))
 	{
-		AddMaterial(FMantlePlaceAssets::EffectiveMaterial(Component, Slot), Label);
+		AddSlotVertexColors(AddMaterial(FMantlePlaceAssets::EffectiveMaterial(Component, Slot), Label), Mesh, Component, Slot);
 	}
 }
 
-void FMantlePlaceDependencies::AddMaterial(UMaterialInterface* Material, const FString& Label)
+void FMantlePlaceDependencies::AddSlotVertexColors(FMantleGatheredMaterial* Entry, const UStaticMesh* Mesh, const UStaticMeshComponent* Component, const int32 Slot)
 {
-	if (!Material || FMantlePlaceAssets::IsLibraryAsset(Material))
+	if (!Entry || !Mesh)
 	{
 		return;
 	}
+	// Painted colours are the component's own; unpainted, every component drawing the mesh has the mesh's, so those are read once.
+	const bool bPainted = Component && Component->LODData.Num() > 0 && Component->LODData[0].OverrideVertexColors != nullptr;
+	FVector4d Sum(0.0, 0.0, 0.0, 0.0);
+	double Vertices = 0.0;
+	if (bPainted)
+	{
+		FMantlePlaceAssets::SlotVertexColors(Mesh, Component, Slot, Sum, Vertices);
+	}
+	else
+	{
+		const TPair<const UStaticMesh*, int32> CacheKey(Mesh, Slot);
+		if (const TPair<FVector4d, double>* Cached = MeshSlotColors.Find(CacheKey))
+		{
+			Sum = Cached->Key;
+			Vertices = Cached->Value;
+		}
+		else
+		{
+			FMantlePlaceAssets::SlotVertexColors(Mesh, nullptr, Slot, Sum, Vertices);
+			MeshSlotColors.Add(CacheKey, TPair<FVector4d, double>(Sum, Vertices));
+		}
+	}
+	Entry->VertexColorSum += Sum;
+	Entry->VertexColorWeight += Vertices;
+}
+
+FMantleGatheredMaterial* FMantlePlaceDependencies::AddMaterial(UMaterialInterface* Material, const FString& Label)
+{
+	if (!Material || FMantlePlaceAssets::IsLibraryAsset(Material))
+	{
+		return nullptr;
+	}
 	const FString Key = FMantlePlaceAssets::MaterialKey(Material);
 	FMantleGatheredMaterial* Existing = Materials.FindByPredicate([&Key](const FMantleGatheredMaterial& Entry) { return Entry.Key == Key; });
+	if (!Existing && FMantlePlaceAssets::IsTransientMaterialInstance(Material))
+	{
+		const UMaterialInterface* Varied = FMantlePlaceAssets::VariedMaterial(Material);
+		const FString VariedName = Varied ? Varied->GetName() : FString(TEXT("none"));
+		TArray<FString>& Looks = VariantKeys.FindOrAdd(Varied ? Varied->GetPathName() : FString());
+		if (Looks.Num() >= FMantlePlaceAssets::MaxVariantsPerMaterial)
+		{
+			// The key ends in its content's MD5, so its last 8 hex digits pick the same look for the same content every time.
+			const uint32 Pick = static_cast<uint32>(FCString::Strtoui64(*Key.Right(8), nullptr, 16));
+			const FString& StandInKey = Looks[Pick % Looks.Num()];
+			FMantleGatheredMaterial* StandIn = Materials.FindByPredicate([&StandInKey](const FMantleGatheredMaterial& Entry) { return Entry.Key == StandInKey; });
+			if (StandIn && StandIn->Material.IsValid())
+			{
+				FMantlePlaceAssets::SetVariantStandIn(Material, StandIn->Material.Get());
+				CappedInstances.FindOrAdd(VariedName).Add(Material);
+				StandIn->UsedBy.AddUnique(Label);
+				return StandIn;
+			}
+		}
+		Looks.Add(Key);
+	}
 	if (!Existing)
 	{
 		Existing = &Materials.AddDefaulted_GetRef();
@@ -2229,12 +2285,23 @@ void FMantlePlaceDependencies::AddMaterial(UMaterialInterface* Material, const F
 		MergedInstances.Add(Material);
 	}
 	Existing->UsedBy.AddUnique(Label);
+	return Existing;
 }
 
 void FMantlePlaceDependencies::AddTerrainLayerMaterials(const TArray<FMantleTerrainLayerChoice>& Choices, const FString& Label)
 {
 	for (const FMantleTerrainLayerChoice& Choice : Choices)
 	{
+		// A layer baked from the landscape's own material (one Mantle cannot read layer by layer) names that material, which is on disk:
+		// it uploads baked over as many landscape quads as its tiling needs to repeat.
+		if (Choice.bLandscapeMaterialBake && Choice.Material)
+		{
+			if (FMantleGatheredMaterial* Entry = AddMaterial(Choice.Material, Label))
+			{
+				Entry->BakeUvRange = FMath::Max(Entry->BakeUvRange, Choice.BakeUvRange);
+			}
+			continue;
+		}
 		// Transient, not bDerived, is the test: a landscape with nothing painted and no Place Settings entry is drawn with a plain grey
 		// layer made the same way (MakeLayerMaterial) that is not derived from its material; Export names it too.
 		if (Choice.Material && Choice.Material->HasAnyFlags(RF_Transient))
@@ -2262,10 +2329,10 @@ void FMantlePlaceDependencies::AddMesh(const UStaticMesh* Mesh, const FString& L
 	Existing->UsedBy.AddUnique(Label);
 
 	// No component overrides anything, so each slot uploads the mesh's own material, which a script
-	// can then put back on what it spawns.
+	// can then put back on what it spawns. With no component, it is drawn with the mesh's own vertex colours.
 	for (const int32 Slot : FMantlePlaceAssets::UploadSlots(Mesh))
 	{
-		AddMaterial(FMantlePlaceAssets::MeshSlotMaterial(Mesh, Slot), Label);
+		AddSlotVertexColors(AddMaterial(FMantlePlaceAssets::MeshSlotMaterial(Mesh, Slot), Label), Mesh, nullptr, Slot);
 	}
 }
 
@@ -2292,6 +2359,7 @@ void FMantlePlaceDependencies::AddScriptAssets(UWorld* World)
 FMantlePlaceDependencies FMantlePlaceDependencies::Gather(UWorld* World)
 {
 	FMantlePlaceDependencies Out;
+	FMantlePlaceAssets::ClearVariantStandIns();
 	if (!World)
 	{
 		return Out;
@@ -3260,11 +3328,46 @@ bool FMantlePlaceAssets::IsTransientMaterialInstance(const UMaterialInterface* M
 		&& (Material->IsA<UMaterialInstanceDynamic>() || Material->HasAnyFlags(RF_Transient) || Material->GetOutermost() == GetTransientPackage());
 }
 
+const UMaterialInterface* FMantlePlaceAssets::VariedMaterial(const UMaterialInterface* Material)
+{
+	for (int32 Depth = 0; Material && IsTransientMaterialInstance(Material) && Depth <= 16; ++Depth)
+	{
+		Material = Cast<UMaterialInstance>(Material)->Parent;
+	}
+	return Material;
+}
+
+namespace MantlePlaceAssetsPrivate
+{
+	TMap<TObjectKey<UMaterialInterface>, TWeakObjectPtr<UMaterialInterface>>& VariantStandIns()
+	{
+		static TMap<TObjectKey<UMaterialInterface>, TWeakObjectPtr<UMaterialInterface>> StandIns;
+		return StandIns;
+	}
+}
+
+void FMantlePlaceAssets::SetVariantStandIn(const UMaterialInterface* Instance, UMaterialInterface* StandIn)
+{
+	MantlePlaceAssetsPrivate::VariantStandIns().Add(TObjectKey<UMaterialInterface>(Instance), StandIn);
+}
+
+void FMantlePlaceAssets::ClearVariantStandIns()
+{
+	MantlePlaceAssetsPrivate::VariantStandIns().Reset();
+}
+
 FString FMantlePlaceAssets::MaterialKey(const UMaterialInterface* Material)
 {
 	if (!Material)
 	{
 		return FString();
+	}
+	if (const TWeakObjectPtr<UMaterialInterface>* StandIn = MantlePlaceAssetsPrivate::VariantStandIns().Find(TObjectKey<UMaterialInterface>(Material)))
+	{
+		if (StandIn->IsValid() && StandIn->Get() != Material)
+		{
+			return MaterialKey(StandIn->Get());
+		}
 	}
 	if (!IsTransientMaterialInstance(Material))
 	{
@@ -3359,6 +3462,81 @@ UMaterialInterface* FMantlePlaceAssets::MeshSlotMaterial(const UStaticMesh* Mesh
 {
 	UMaterialInterface* Material = Mesh ? Mesh->GetMaterial(Slot) : nullptr;
 	return Material ? Material : UMaterial::GetDefaultMaterial(MD_Surface);
+}
+
+bool FMantlePlaceAssets::SlotVertexColors(const UStaticMesh* Mesh, const UStaticMeshComponent* Component, const int32 Slot, FVector4d& OutSum, double& OutVertices)
+{
+	const FStaticMeshRenderData* RenderData = Mesh ? Mesh->GetRenderData() : nullptr;
+	if (!RenderData || RenderData->LODResources.Num() == 0)
+	{
+		return false;
+	}
+	const FStaticMeshLODResources& LOD = RenderData->LODResources[0];
+	const uint32 VertexCount = LOD.GetNumVertices();
+	// The painted colours replace the mesh's only when there is one for every vertex, as Unreal draws them.
+	const FColorVertexBuffer* Painted = Component && Component->LODData.Num() > 0 ? Component->LODData[0].OverrideVertexColors : nullptr;
+	const FColorVertexBuffer* Colors = Painted && Painted->GetNumVertices() == VertexCount && Painted->GetVertexData() ? Painted : nullptr;
+	if (!Colors && LOD.VertexBuffers.ColorVertexBuffer.GetNumVertices() == VertexCount && LOD.VertexBuffers.ColorVertexBuffer.GetVertexData())
+	{
+		Colors = &LOD.VertexBuffers.ColorVertexBuffer;
+	}
+	bool bFound = false;
+	for (const FStaticMeshSection& Section : LOD.Sections)
+	{
+		if (Section.MaterialIndex != Slot || Section.MaxVertexIndex < Section.MinVertexIndex || Section.MaxVertexIndex >= VertexCount)
+		{
+			continue;
+		}
+		bFound = true;
+		const uint32 Count = Section.MaxVertexIndex - Section.MinVertexIndex + 1;
+		if (!Colors)
+		{
+			// No colours at all: Unreal draws the mesh white.
+			OutSum += FVector4d(1.0, 1.0, 1.0, 1.0) * static_cast<double>(Count);
+			OutVertices += Count;
+			continue;
+		}
+		const uint32 Step = FMath::Max<uint32>(1, Count / 65536);
+		FVector4d SectionSum(0.0, 0.0, 0.0, 0.0);
+		uint32 Sampled = 0;
+		for (uint32 Index = Section.MinVertexIndex; Index <= Section.MaxVertexIndex; Index += Step)
+		{
+			const FColor Color = Colors->VertexColor(Index);
+			SectionSum += FVector4d(Color.R, Color.G, Color.B, Color.A) / 255.0;
+			++Sampled;
+		}
+		OutSum += SectionSum * (static_cast<double>(Count) / FMath::Max<uint32>(Sampled, 1));
+		OutVertices += Count;
+	}
+	return bFound;
+}
+
+FString FMantleBakeSurface::CacheTag() const
+{
+	if (IsPlain())
+	{
+		return FString();
+	}
+	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%d"), *VertexColor.ToHex(), FMath::Max(UvRange, 1));
+}
+
+FColor FMantleGatheredMaterial::AverageVertexColor() const
+{
+	if (VertexColorWeight <= 0.0)
+	{
+		return FColor::White;
+	}
+	const FVector4d Average = VertexColorSum / VertexColorWeight;
+	auto Byte = [](const double Channel) { return static_cast<uint8>(FMath::Clamp(FMath::RoundToInt(Channel * 255.0), 0, 255)); };
+	return FColor(Byte(Average.X), Byte(Average.Y), Byte(Average.Z), Byte(Average.W));
+}
+
+FMantleBakeSurface FMantleGatheredMaterial::BakeSurface() const
+{
+	FMantleBakeSurface Surface;
+	Surface.VertexColor = AverageVertexColor();
+	Surface.UvRange = FMath::Max(BakeUvRange, 1);
+	return Surface;
 }
 
 const TCHAR* FMantlePlaceAssets::ScriptAssetsLabel = TEXT("Script Assets");
@@ -4512,6 +4690,13 @@ void FMantlePlaceAssets::CheckLevel(UWorld* World, TArray<FMantleValidationIssue
 	for (const FMantleGatheredMesh& Mesh : Dependencies.Meshes)
 	{
 		CheckMesh(Mesh.Mesh.Get(), DescribeUsers(Mesh.UsedBy), Limits, OutIssues);
+	}
+	for (const TPair<FString, TArray<const UMaterialInterface*>>& Capped : Dependencies.CappedInstances)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("Material '%s' is given more than %d different looks at runtime (a Blueprint setting its parameters); %d more of them are drawn as one of the first %d."),
+				*Capped.Key, MaxVariantsPerMaterial, Capped.Value.Num(), MaxVariantsPerMaterial),
+			TEXT("It still publishes. Each look is baked and uploaded on its own, so fewer looks publish faster; if a look matters, make it a material instance on disk.") });
 	}
 	TSet<const UTexture*> ReportedTextures;
 	for (const FMantleGatheredMaterial& Material : Dependencies.Materials)

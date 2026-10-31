@@ -64,6 +64,18 @@ struct MANTLEEDITOR_API FMantleTerrainSource
 	bool bMaterialRead = false;
 	FString MaterialProblem;
 
+	/**
+	 * The landscape's own material, null for none. When its layers cannot be read from it (an ordinary UV-mapped material with no Landscape
+	 * Layer Blend, DowntownWestModularPack's), ChooseLayers bakes the material itself as the layer's look instead of drawing plain grey.
+	 */
+	UMaterialInterface* LandscapeMaterial = nullptr;
+
+	/**
+	 * The most landscape UV units (landscape quads) any texture of LandscapeMaterial takes to repeat (FMantleLandscapeMaterialReader::LargestUvRepeat:
+	 * 10 for a texture tiled by 0.1). 0 when the material does not say, or when it was not needed (its layers were read).
+	 */
+	double LandscapeMaterialUvRepeat = 0.0;
+
 	/** The average base colour of each layer's look, by layer name, where known (#628): which kept layer a folded one goes into. */
 	TMap<FName, FLinearColor> LayerColours;
 
@@ -107,6 +119,13 @@ struct FMantleTerrainLayerChoice
 	 * from the heightfield's slope (BakeSlopeMask), and the painted layers' weights are scaled by what it leaves.
 	 */
 	bool bSlopeOverlay = false;
+
+	/**
+	 * Material is the landscape's own material, baked whole as this layer's look because its layers could not be read from it. It is baked
+	 * over UVs 0 to BakeUvRange (landscape quads), so a texture it tiles finely repeats inside the bake, and TilingCm is that many quads.
+	 */
+	bool bLandscapeMaterialBake = false;
+	int32 BakeUvRange = 1;
 };
 
 /**
@@ -196,7 +215,8 @@ public:
 	 * Warnings (a fold, something the landscape material does that Mantle cannot keep) go in OutIssues and
 	 * Coverage (when given), and do not fail it.
 	 * A landscape with nothing painted and no Place Settings entry gets a default layer (the first look its landscape material states, else
-	 * plain grey) with a warning. Holes are warned about, never refused (Source.bHasHoles).
+	 * that material baked whole, else plain grey) with a warning. A painted layer with no entry whose landscape material could not be read is
+	 * drawn with that material baked whole (bLandscapeMaterialBake), or plain grey when the landscape has no material. Holes are warned about, never refused (Source.bHasHoles).
 	 * False, with each blocking problem in OutIssues under Label: a painted layer with neither an entry
 	 * nor a look in a landscape material that could not be read, or a default layer that could not be made.
 	 */
@@ -205,6 +225,15 @@ public:
 
 	/** For each of Source's layers (SourceCount of them), the weightmap channel (its index in Layers) its paint goes to, folded layers included; INDEX_NONE for a layer not drawn. */
 	static TArray<int32> FoldChannels(const TArray<FMantleTerrainLayerChoice>& Layers, int32 SourceCount);
+
+	/** The most landscape quads a bake of the landscape's own material may cover: more and each repeat of its textures gets too few pixels. */
+	static constexpr int32 MaxLandscapeBakeUvRange = 64;
+
+	/**
+	 * How many landscape quads a bake of Source's landscape material covers: its largest texture repeat (Source.LandscapeMaterialUvRepeat)
+	 * rounded up, so its coarsest texture repeats whole inside it (finer ones that do not divide it still show a seam), or MaxLandscapeBakeUvRange when the material does not say; at most that.
+	 */
+	static int32 LandscapeBakeUvRange(const FMantleTerrainSource& Source);
 
 	/**
 	 * The heightfield published for Source: its samples as they are when both sides fit MaxSamples,

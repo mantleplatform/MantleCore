@@ -49,6 +49,9 @@
 #include "Misc/SecureHash.h"
 #include "Modules/ModuleManager.h"
 #include "Options/GLTFExportOptions.h"
+#include "TextureCompiler.h"
+#include "ContentStreaming.h"
+#include "Engine/Texture2D.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "Policies/CondensedJsonPrintPolicy.h"
 #include "RHIGlobals.h"
@@ -56,6 +59,7 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "StaticMeshAttributes.h"
 #include "StaticMeshResources.h"
 #include "UObject/Package.h"
 #include "UObject/StrongObjectPtr.h"
@@ -68,7 +72,8 @@ namespace MantlePlaceAssetConverterPrivate
 {
 	/** Bump this whenever how a conversion is written changes, so stale caches are rebuilt. */
 	// v20: meshes have values that are not numbers set to safe ones (#42); v19 caches still held them, and the cook refused those meshes.
-	const TCHAR* const CacheVersion = TEXT("f5-v20");
+	// v21: bakes wait for their textures to finish compiling; v20 bakes could hold Unreal's 32x32 compiling placeholder (white books).
+	const TCHAR* const CacheVersion = TEXT("f5-v21");
 
 	const TCHAR* const ConversionRemedy = TEXT("It still publishes. Nothing to do unless it matters to how your place looks.");
 
@@ -1780,6 +1785,68 @@ void FMantlePlaceAssetSet::ReleaseBytes()
 // ---------------------------------------------------------------------------------------------
 // GLTFExporter
 
+namespace MantlePlaceAssetConverterPrivate
+{
+	/**
+	 * The card a material is baked on when the bake surface is not GLTFExporter's own: one quad, 1 m a side, facing up, its UVs 0 to
+	 * Surface.UvRange and every corner Surface.VertexColor, drawn with Material in its only slot. Transient; null when it cannot be built.
+	 */
+	UStaticMesh* MakeBakeCard(UMaterialInterface* Material, const FMantleBakeSurface& Surface)
+	{
+		FMeshDescription Description;
+		FStaticMeshAttributes Attributes(Description);
+		Attributes.Register();
+		const FName SlotName(TEXT("Bake"));
+		const FPolygonGroupID Group = Description.CreatePolygonGroup();
+		Attributes.GetPolygonGroupMaterialSlotNames()[Group] = SlotName;
+		// The bake writes the colour back out as sRGB bytes (FMeshMaterialRenderItem::PopulateWithMeshData), so the corners hold the bytes
+		// as linear: the Vertex Color node then reads exactly the bytes over 255, as it does on the meshes the colour was averaged from.
+		const FVector4f Color(FLinearColor(Surface.VertexColor));
+		const float Range = static_cast<float>(FMath::Max(Surface.UvRange, 1));
+		TArray<FVertexInstanceID> Corners;
+		for (int32 Corner = 0; Corner < 4; ++Corner)
+		{
+			const int32 X = Corner & 1;
+			const int32 Y = (Corner >> 1) & 1;
+			const FVertexID Vertex = Description.CreateVertex();
+			Attributes.GetVertexPositions()[Vertex] = FVector3f(100.0f * X, 100.0f * Y, 0.0f);
+			const FVertexInstanceID Instance = Description.CreateVertexInstance(Vertex);
+			Attributes.GetVertexInstanceNormals()[Instance] = FVector3f(0.0f, 0.0f, 1.0f);
+			Attributes.GetVertexInstanceTangents()[Instance] = FVector3f(1.0f, 0.0f, 0.0f);
+			Attributes.GetVertexInstanceBinormalSigns()[Instance] = 1.0f;
+			Attributes.GetVertexInstanceColors()[Instance] = Color;
+			Attributes.GetVertexInstanceUVs().Set(Instance, 0, FVector2f(Range * X, Range * Y));
+			Corners.Add(Instance);
+		}
+		Description.CreateTriangle(Group, { Corners[0], Corners[2], Corners[1] });
+		Description.CreateTriangle(Group, { Corners[2], Corners[3], Corners[1] });
+
+		UObject* Outer = GetTransientPackage();
+		UStaticMesh* Card = NewObject<UStaticMesh>(Outer, FMantlePlaceAssets::UniqueBakedMeshName(Outer, TEXT("MantleBakeCard")), RF_Transient);
+		Card->GetStaticMaterials().Add(FStaticMaterial(Material, SlotName, SlotName));
+		Card->bAllowCPUAccess = true;
+		Card->SetLightMapCoordinateIndex(0);
+		Card->SetNumSourceModels(1);
+		FMeshBuildSettings& Build = Card->GetSourceModel(0).BuildSettings;
+		Build.bRecomputeNormals = false;
+		Build.bRecomputeTangents = false;
+		Build.bGenerateLightmapUVs = false;
+		Build.bBuildReversedIndexBuffer = false;
+		Build.DistanceFieldResolutionScale = 0.0f;
+		Build.MaxLumenMeshCards = 0;
+		UStaticMesh::FBuildMeshDescriptionsParams Params;
+		Params.bMarkPackageDirty = false;
+		Params.bAllowCpuAccess = true;
+		Params.bBuildSimpleCollision = false;
+		if (!Card->BuildFromMeshDescriptions({ &Description }, Params))
+		{
+			Card->MarkAsGarbage();
+			return nullptr;
+		}
+		return Card;
+	}
+}
+
 bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const FMantleFlattenSettings& Settings, FMantleGlbDocument& OutDocument,
 	TArray<FString>& OutMessages, FString& OutError)
 {
@@ -1811,6 +1878,36 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 	{
 		const int32 MaxBake = FMath::Max(1, Settings.MaxBakeSize);
 		const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Material);
+		// A texture still compiling (a project opened with a cold cache) is Unreal's 32x32 placeholder: sized and baked as that, a book's
+		// cover came out a flat white tint (MagiciansLibrary). Finish them first.
+		{
+			TArray<UTexture*> Compiling;
+			for (const TWeakObjectPtr<UTexture>& Weak : Analysis.Textures)
+			{
+				if (UTexture* Texture = Weak.Get(); Texture && Texture->IsCompiling())
+				{
+					Compiling.Add(Texture);
+				}
+			}
+			if (Compiling.Num() > 0)
+			{
+				FTextureCompilingManager::Get().FinishCompilation(Compiling);
+			}
+			// The bake renders the material, so it samples what is resident: every mip, not what streaming has brought in so far.
+			bool bStreaming = false;
+			for (const TWeakObjectPtr<UTexture>& Weak : Analysis.Textures)
+			{
+				if (UTexture2D* Texture2D = Cast<UTexture2D>(Weak.Get()))
+				{
+					Texture2D->SetForceMipLevelsToBeResident(30.0f);
+					bStreaming = true;
+				}
+			}
+			if (bStreaming)
+			{
+				IStreamingManager::Get().BlockTillAllRequestsFinished(10.0f);
+			}
+		}
 		TArray<FIntPoint> TextureSizes;
 		FString Sizes;
 		for (const TWeakObjectPtr<UTexture>& Weak : Analysis.Textures)
@@ -1822,7 +1919,13 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 			TextureSizes.Add(Size);
 		}
 		int32 Fallback = 0;
-		const bool bOverride = ChooseFixedBakeSize(TextureSizes, Settings, Fallback);
+		bool bOverride = ChooseFixedBakeSize(TextureSizes, Settings, Fallback);
+		// A bake over many landscape quads holds that many repeats of its textures: give it the most pixels a bake may have.
+		if (Settings.Surface.UvRange > 1)
+		{
+			bOverride = true;
+			Fallback = static_cast<int32>(FMath::RoundUpToPowerOfTwo(static_cast<uint32>(MaxBake) + 1) / 2);
+		}
 		int32 Largest = 0;
 		for (const FIntPoint& Size : TextureSizes)
 		{
@@ -1853,8 +1956,29 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 	const FString Path = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Mantle"), TEXT("AssetCache"), TEXT("Bake"),
 		FString::Printf(TEXT("%s_%s.glb"), *SafeName, *FGuid::NewGuid().ToString(EGuidFormats::Digits))));
 
+	// Any surface but GLTFExporter's own card is a card mesh of our own, baked with its mesh data: GLTFExporter then draws the material on
+	// the card's vertex colours and UVs (only for a material that reads such data, FGLTFMaterialUtilities::NeedsMeshData; any other bakes
+	// over UVs 0 to 1 as before). The document then holds the card too, but its materials[0] is still the material.
+	TStrongObjectPtr<UStaticMesh> Card;
+	if (!Settings.Surface.IsPlain())
+	{
+		Card.Reset(MantlePlaceAssetConverterPrivate::MakeBakeCard(Material, Settings.Surface));
+		if (!Card.IsValid())
+		{
+			OutError = TEXT("the card to bake it on could not be built");
+			return false;
+		}
+		Options->BakeMaterialInputs = EGLTFMaterialBakeMode::UseMeshData;
+	}
+
 	FGLTFExportMessages Messages;
-	const bool bExported = UGLTFExporter::ExportToGLTF(Material, Path, Options.Get(), TSet<AActor*>(), Messages);
+	UObject* Exported = Card.IsValid() ? static_cast<UObject*>(Card.Get()) : static_cast<UObject*>(Material);
+	const bool bExported = UGLTFExporter::ExportToGLTF(Exported, Path, Options.Get(), TSet<AActor*>(), Messages);
+	if (Card.IsValid())
+	{
+		Card->MarkAsGarbage();
+		Card.Reset();
+	}
 	OutMessages.Append(Messages.Warnings);
 	OutMessages.Append(Messages.Errors);
 	TArray<uint8> Bytes;
@@ -2042,13 +2166,18 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 		}
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE merged %d dynamic material instances into %d distinct materials"), Dependencies.MergedInstances.Num() + Distinct, Distinct);
 	}
+	for (const TPair<FString, TArray<const UMaterialInterface*>>& Capped : Dependencies.CappedInstances)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE capped %s: %d more looks drawn as one of the first %d"), *Capped.Key, Capped.Value.Num(),
+			FMantlePlaceAssets::MaxVariantsPerMaterial);
+	}
 	for (const FMantleGatheredMaterial& Material : Dependencies.Materials)
 	{
 		if (!Continue(Material.Name))
 		{
 			return false;
 		}
-		ConvertMaterial(Material.Material.Get(), Out);
+		ConvertMaterial(Material.Material.Get(), Material.BakeSurface(), Out);
 	}
 	for (const FMantleGatheredTexture& Texture : Dependencies.Textures)
 	{
@@ -2935,7 +3064,7 @@ void FMantlePlaceAssetConverter::ConvertDependencyStep(const FMantlePlaceDepende
 	const int32 Material = Step - Dependencies.Meshes.Num();
 	if (Dependencies.Materials.IsValidIndex(Material))
 	{
-		ConvertMaterial(Dependencies.Materials[Material].Material.Get(), Out);
+		ConvertMaterial(Dependencies.Materials[Material].Material.Get(), Dependencies.Materials[Material].BakeSurface(), Out);
 		return;
 	}
 	// A decal's textures (#472).
@@ -3356,6 +3485,106 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 
 bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, FMantlePlaceAssetSet& Out)
 {
+	return ConvertMaterial(Material, FMantleBakeSurface(), Out);
+}
+
+FMantleBakeSurface FMantlePlaceAssetConverter::EffectiveBakeSurface(const FMantleMaterialAnalysis& Analysis, const FMantleBakeSurface& Surface)
+{
+	FMantleBakeSurface Effective = Surface;
+	Effective.UvRange = FMath::Max(Surface.UvRange, 1);
+	if (!Analysis.Has(EMantleMaterialLoss::VertexColor) || Analysis.bVertexColorTintsBaseColor)
+	{
+		Effective.VertexColor = FColor::White;
+	}
+	return Effective;
+}
+
+FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& InSettings, const FMantlePlaceAssetLimits& InLimits,
+	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface)
+{
+	// #628: a per-instance node is baked at a representative value; the salt keeps an earlier bake (which read it as 0) from standing in.
+	// A bake on anything but the plain surface (a vertex colour, a landscape's UV range) adds its tag, so a different colour is not served
+	// another's bake, and every plain bake keeps the key it always had.
+	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s"), *Describe, InSettings.DefaultBakeSize,
+		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
+		*Surface.CacheTag());
+}
+
+void FMantlePlaceAssetConverter::ScaleTextureTransforms(FMantleGlbDocument& Document, const int32 Index, const double UvRange)
+{
+	const TArray<TSharedPtr<FJsonValue>>* Materials = nullptr;
+	if (UvRange == 1.0 || !Document.Json.IsValid() || !Document.Json->TryGetArrayField(TEXT("materials"), Materials) || !Materials->IsValidIndex(Index)
+		|| !(*Materials)[Index].IsValid())
+	{
+		return;
+	}
+	const TSharedPtr<FJsonObject> Material = (*Materials)[Index]->AsObject();
+	if (!Material.IsValid())
+	{
+		return;
+	}
+	TArray<TSharedPtr<FJsonObject>> Infos;
+	const TSharedPtr<FJsonObject>* Pbr = nullptr;
+	if (Material->TryGetObjectField(TEXT("pbrMetallicRoughness"), Pbr))
+	{
+		for (const TCHAR* Name : { TEXT("baseColorTexture"), TEXT("metallicRoughnessTexture") })
+		{
+			const TSharedPtr<FJsonObject>* Info = nullptr;
+			if ((*Pbr)->TryGetObjectField(Name, Info))
+			{
+				Infos.Add(*Info);
+			}
+		}
+	}
+	for (const TCHAR* Name : { TEXT("normalTexture"), TEXT("occlusionTexture"), TEXT("emissiveTexture") })
+	{
+		const TSharedPtr<FJsonObject>* Info = nullptr;
+		if (Material->TryGetObjectField(Name, Info))
+		{
+			Infos.Add(*Info);
+		}
+	}
+	for (const TSharedPtr<FJsonObject>& Info : Infos)
+	{
+		const TSharedPtr<FJsonObject>* Extensions = nullptr;
+		TSharedPtr<FJsonObject> ExtensionsObject;
+		if (Info->TryGetObjectField(TEXT("extensions"), Extensions))
+		{
+			ExtensionsObject = *Extensions;
+		}
+		else
+		{
+			ExtensionsObject = MakeShared<FJsonObject>();
+			Info->SetObjectField(TEXT("extensions"), ExtensionsObject);
+		}
+		const TSharedPtr<FJsonObject>* Transform = nullptr;
+		TSharedPtr<FJsonObject> TransformObject;
+		if (ExtensionsObject->TryGetObjectField(TEXT("KHR_texture_transform"), Transform))
+		{
+			TransformObject = *Transform;
+		}
+		else
+		{
+			TransformObject = MakeShared<FJsonObject>();
+			ExtensionsObject->SetObjectField(TEXT("KHR_texture_transform"), TransformObject);
+		}
+		double Scale[2] = { 1.0, 1.0 };
+		const TArray<TSharedPtr<FJsonValue>>* Values = nullptr;
+		if (TransformObject->TryGetArrayField(TEXT("scale"), Values) && Values->Num() == 2)
+		{
+			Scale[0] = (*Values)[0].IsValid() ? (*Values)[0]->AsNumber() : 1.0;
+			Scale[1] = (*Values)[1].IsValid() ? (*Values)[1]->AsNumber() : 1.0;
+		}
+		// The terrain's UV u is the bake's UvRange * u: a texture read at scale s of the bake's UVs is read at s * UvRange of the terrain's.
+		TArray<TSharedPtr<FJsonValue>> Scaled;
+		Scaled.Add(MakeShared<FJsonValueNumber>(Scale[0] * UvRange));
+		Scaled.Add(MakeShared<FJsonValueNumber>(Scale[1] * UvRange));
+		TransformObject->SetArrayField(TEXT("scale"), Scaled);
+	}
+}
+
+bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, const FMantleBakeSurface& InSurface, FMantlePlaceAssetSet& Out)
+{
 	using namespace MantlePlaceAssetConverterPrivate;
 	if (!Material)
 	{
@@ -3382,9 +3611,8 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, F
 		bOversizeReported = bOversizeReported || FMantlePlaceAssets::PublishedTextureSize(Size, Limits.MaxTextureSize) != Size;
 	}
 
-	// #628: a per-instance node is baked at a representative value; the salt keeps an earlier bake (which read it as 0) from standing in.
-	const FString Salt = FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s"), *Flattener->Describe(), Settings.DefaultBakeSize,
-		Limits.MaxTextureSize, Limits.MaxTextureBytes, *Material->GetPathName(), Analysis.bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""));
+	const FMantleBakeSurface Surface = EffectiveBakeSurface(Analysis, InSurface);
+	const FString Salt = MaterialCacheSalt(Flattener->Describe(), Settings, Limits, Material, Analysis.bPerInstanceVariation, Surface);
 	FString CacheKey, WhyNot;
 	const bool bCacheable = ComputeCacheKey(Salt, Objects, CacheKey, WhyNot);
 	{
@@ -3435,8 +3663,14 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, F
 	FString FlattenError;
 	FMantleFlattenSettings FlattenSettings = Settings;
 	FlattenSettings.MaxBakeSize = Limits.MaxTextureSize;
+	FlattenSettings.Surface = Surface;
+	if (!Surface.IsPlain())
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: baked on a card with vertex colour %s and UVs 0 to %d"), *Material->GetName(), *Surface.VertexColor.ToHex(), Surface.UvRange);
+	}
 	if (Flattener->Flatten(Neutral.IsValid() ? Neutral.Get() : Material, FlattenSettings, Flattened, Messages, FlattenError))
 	{
+		ScaleTextureTransforms(Flattened, 0, Surface.UvRange);
 		for (const FString& Message : Messages)
 		{
 			UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 GLTFExporter on %s: %s"), *Material->GetName(), *Message);

@@ -3287,6 +3287,55 @@ FString FMantleLandscapeMaterialReader::LayerMaterialName(const FMantleLandscape
 	return FString::Printf(TEXT("MantleTerrainLayer_%s_%s"), *SafeName(Look.Layer.ToString()), *ShortHash(Seed));
 }
 
+bool FMantleLandscapeMaterialReader::LargestUvRepeat(const UMaterialInterface* Material, const double SpacingCm, double& OutUvUnits)
+{
+	using namespace MantleLandscapeMaterialReaderPrivate;
+
+	OutUvUnits = 0.0;
+	const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
+	if (!Base || !Base->GetEditorOnlyData())
+	{
+		return false;
+	}
+	const double Spacing = SpacingCm > 0.0 ? SpacingCm : 100.0;
+	UMaterial* MutableBase = const_cast<UMaterial*>(Base);
+	FLmGraphReader Reader(Material, Spacing);
+	for (const ELmProp Prop : { ELmProp::BaseColor, ELmProp::Normal })
+	{
+		const FExpressionInput* Root = MutableBase->GetExpressionInputForProperty(Base->bUseMaterialAttributes ? MP_MaterialAttributes
+			: Prop == ELmProp::BaseColor ? MP_BaseColor : MP_Normal);
+		if (!Root || !Root->Expression)
+		{
+			continue;
+		}
+		// Every texture sample under the output, each one's repeat read from its coordinates; a sample's own inputs are its UVs, not entered.
+		FLmVisit Visit;
+		TArray<FLmRef> Stack;
+		Stack.Add(Reader.Resolve(*Root, nullptr));
+		while (Stack.Num() > 0)
+		{
+			const FLmRef Node = Stack.Pop(EAllowShrinking::No);
+			if (!Visit.Enter(Node))
+			{
+				continue;
+			}
+			const UMaterialExpressionTextureSample* Sample = nullptr;
+			if (Reader.SampledTexture(Node, Sample))
+			{
+				const double Cm = Reader.SampleTileCm(Node, Sample);
+				OutUvUnits = FMath::Max(OutUvUnits, Cm / Spacing);
+				continue;
+			}
+			if (Cast<UMaterialExpressionTextureSample>(Node.Expression))
+			{
+				continue;
+			}
+			Reader.Children(Node, Prop, Stack);
+		}
+	}
+	return OutUvUnits > 0.0;
+}
+
 UMaterialInterface* FMantleLandscapeMaterialReader::MakeLayerMaterial(const FMantleLandscapeLayerLook& Look)
 {
 	const FString Name = LayerMaterialName(Look);

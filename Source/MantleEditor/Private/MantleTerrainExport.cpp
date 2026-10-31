@@ -16,7 +16,9 @@
 #include "MantleRuntime.h"
 #include "MantleTerrainSampling.h"
 #include "Async/ParallelFor.h"
+#include "Materials/Material.h"
 #include "Materials/MaterialInterface.h"
+#include "MaterialDomain.h"
 
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleTerrainExportPrivate
@@ -346,6 +348,14 @@ bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSour
 		if (bNeedsLook || (bNothingPainted && !bSettingsDraw))
 		{
 			Out.bMaterialRead = FMantleLandscapeMaterialReader::Read(Landscape->GetLandscapeMaterial(), Out.SpacingX, Out.MaterialRead, Out.MaterialProblem);
+			// Unreal draws a landscape with no material of its own with the default surface material: that is no material to bake.
+			UMaterialInterface* Own = Landscape->GetLandscapeMaterial();
+			Out.LandscapeMaterial = Own != UMaterial::GetDefaultMaterial(MD_Surface) ? Own : nullptr;
+			// Its layers could not be read, so ChooseLayers bakes the material whole: over how many quads its textures take to repeat.
+			if (Out.LandscapeMaterial && (!Out.bMaterialRead || Out.MaterialRead.Layers.Num() == 0))
+			{
+				FMantleLandscapeMaterialReader::LargestUvRepeat(Out.LandscapeMaterial, Out.SpacingX, Out.LandscapeMaterialUvRepeat);
+			}
 			for (const FMantleLandscapeLayerLook& Look : Out.MaterialRead.Layers)
 			{
 				if (Look.bHasAverage)
@@ -460,6 +470,16 @@ TArray<int32> FMantleTerrainExport::FoldChannels(const TArray<FMantleTerrainLaye
 	return Channels;
 }
 
+int32 FMantleTerrainExport::LandscapeBakeUvRange(const FMantleTerrainSource& Source)
+{
+	if (Source.LandscapeMaterialUvRepeat <= 0.0)
+	{
+		return MaxLandscapeBakeUvRange;
+	}
+	// A hair over a whole number is that number: 0.1 as a float is 10.0000001 quads.
+	return FMath::Clamp(FMath::CeilToInt(Source.LandscapeMaterialUvRepeat - 0.001), 1, MaxLandscapeBakeUvRange);
+}
+
 bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSource& Source, const FString& Label,
 	TArray<FMantleTerrainLayerChoice>& OutLayers, TArray<FMantleValidationIssue>& OutIssues, FMantleCoverage* Coverage)
 {
@@ -482,6 +502,24 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 		}
 	};
 	const TCHAR* const Where = TEXT("Mantle Place Settings (Tools > Mantle > Place settings) > Terrain Layers");
+
+	// A landscape material Mantle cannot read layer by layer is baked whole as the layer's look, over enough landscape quads that its
+	// textures repeat inside the bake (a 0 to 1 bake would hold one quad's worth of a texture tiled by 0.1, seamed at every quad).
+	const int32 BakeUvRange = LandscapeBakeUvRange(Source);
+	const double BakeTilingCm = FMath::Clamp(BakeUvRange * Source.SpacingX, 1.0, 100000.0);
+	auto BakeLandscapeMaterial = [&Source, BakeUvRange, BakeTilingCm](FMantleTerrainLayerChoice& Choice)
+	{
+		Choice.Material = Source.LandscapeMaterial;
+		Choice.bDerived = true;
+		Choice.bLandscapeMaterialBake = true;
+		Choice.BakeUvRange = BakeUvRange;
+		Choice.TilingCm = BakeTilingCm;
+	};
+	auto BakedWhat = [&Source, BakeTilingCm]()
+	{
+		return FString::Printf(TEXT("its landscape material '%s' baked whole (tiled every %g cm)"),
+			Source.LandscapeMaterial ? *Source.LandscapeMaterial->GetName() : TEXT("none"), BakeTilingCm);
+	};
 
 	if (Source.bHasHoles)
 	{
@@ -518,15 +556,28 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 		const FMantleTerrainLayerSetting* First = Settings && Settings->TerrainLayers.Num() > 0 ? &Settings->TerrainLayers[0] : nullptr;
 		if (!First || !First->Material)
 		{
-			// Nothing painted and nothing in Place Settings: the first look the landscape's material states, else plain grey, so the ground is still there.
+			// Nothing painted and nothing in Place Settings: the first look the landscape's material states, else that material baked whole,
+			// else plain grey, so the ground is still there.
 			const FMantleLandscapeLayerLook* Look = Source.bMaterialRead && Source.MaterialRead.Layers.Num() > 0 ? &Source.MaterialRead.Layers[0] : nullptr;
 			FMantleLandscapeLayerLook Plain;
 			Plain.Layer = TEXT("Ground");
 			FMantleTerrainLayerChoice& Choice = OutLayers.AddDefaulted_GetRef();
 			Choice.Layer = Look ? Look->Layer : Plain.Layer;
-			Choice.bDerived = Look != nullptr;
-			Choice.Material = FMantleLandscapeMaterialReader::MakeLayerMaterial(Look ? *Look : Plain);
-			Choice.TilingCm = FMath::Clamp(Look && Look->TilingCm() > 0.0 ? Look->TilingCm() : 400.0, 1.0, 100000.0);
+			if (Look)
+			{
+				Choice.bDerived = true;
+				Choice.Material = FMantleLandscapeMaterialReader::MakeLayerMaterial(*Look);
+				Choice.TilingCm = FMath::Clamp(Look->TilingCm() > 0.0 ? Look->TilingCm() : 400.0, 1.0, 100000.0);
+			}
+			else if (Source.LandscapeMaterial)
+			{
+				BakeLandscapeMaterial(Choice);
+			}
+			else
+			{
+				Choice.Material = FMantleLandscapeMaterialReader::MakeLayerMaterial(Plain);
+				Choice.TilingCm = 400.0;
+			}
 			if (!Choice.Material)
 			{
 				Refuse(TEXT("has no painted layer and no material to draw it with, so players would see nothing on it."),
@@ -534,7 +585,8 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 			}
 			else
 			{
-				const FString What = Look ? FString::Printf(TEXT("the first look its landscape material states ('%s')"), *Look->Layer.ToString()) : FString(TEXT("plain grey"));
+				const FString What = Look ? FString::Printf(TEXT("the first look its landscape material states ('%s')"), *Look->Layer.ToString())
+					: Choice.bLandscapeMaterialBake ? BakedWhat() : FString(TEXT("plain grey"));
 				Warn(FString::Printf(TEXT("has no painted layer and no material in Mantle Place Settings to draw it with, so it is drawn with %s."), *What),
 					FString::Printf(TEXT("It still publishes. To draw the ground differently, add an entry in %s with the material it should look like."), Where));
 				Report(MantleCoverageCategory::TerrainLayers, EMantleCoverageOutcome::Approximated, Choice.Layer.ToString(),
@@ -558,7 +610,7 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 		{
 			const FMantleTerrainLayerSetting* Entry = nullptr;
 			const FMantleLandscapeLayerLook* Look = nullptr;
-			bool bPlain = false; // the material could not be read and Place Settings has no entry: drawn plain grey
+			bool bPlain = false; // the material could not be read and Place Settings has no entry: drawn with the material baked whole, else plain grey
 		};
 		TArray<FLayerPlan> Plans;
 		Plans.SetNum(Source.LayerNames.Num());
@@ -589,13 +641,16 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 			}
 			else
 			{
-				// The landscape's material says nothing about this layer: draw it plain grey rather than stop the publish.
+				// The landscape's material says nothing about this layer on its own: draw it with that material baked whole (plain grey when
+				// the landscape has none) rather than stop the publish.
 				Plan.bPlain = true;
 				Candidates.Add(Index);
-				Warn(FString::Printf(TEXT("has paint layer '%s', which has no material to draw it with in Mantle, so it is drawn plain grey. %s"), *Name.ToString(), *Source.MaterialProblem).TrimEnd(),
+				const FString What = Source.LandscapeMaterial ? BakedWhat() : FString(TEXT("plain grey"));
+				Warn(FString::Printf(TEXT("has paint layer '%s', which has no material of its own to draw it with in Mantle, so it is drawn with %s. %s"),
+						*Name.ToString(), *What, *Source.MaterialProblem).TrimEnd(),
 					FString::Printf(TEXT("It still publishes. To draw the layer differently, add '%s' in %s with the material it should look like."), *Name.ToString(), Where));
 				Report(MantleCoverageCategory::TerrainLayers, EMantleCoverageOutcome::Approximated, Name.ToString(),
-					FString::Printf(TEXT("'%s' has no Place Settings material and its landscape material could not be read: drawn plain grey."), *Label));
+					FString::Printf(TEXT("'%s' has no Place Settings material and its landscape material could not be read layer by layer: drawn with %s."), *Label, *What));
 			}
 		}
 		if (Candidates.Num() == 0 && !bFailed)
@@ -625,6 +680,11 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 				{
 					Choice.Material = Plan.Entry->Material;
 					Choice.TilingCm = Plan.Entry->TilingCm;
+					continue;
+				}
+				if (Plan.bPlain && Source.LandscapeMaterial)
+				{
+					BakeLandscapeMaterial(Choice);
 					continue;
 				}
 				if (Plan.bPlain)
