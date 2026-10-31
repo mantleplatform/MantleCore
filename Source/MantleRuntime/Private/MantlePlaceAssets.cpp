@@ -626,6 +626,15 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 			}
 			continue;
 		}
+		// A VoxelWorld's starting blocks (#168): the server needs them for collision and the edits it checks. Its tiles are drawn only.
+		if (const FMantleVoxelWorldProps* Voxel = Entity.Props.TryGet<FMantleVoxelWorldProps>())
+		{
+			if (IsUploadedId(Voxel->World) || (bSoundsCount && Voxel->TileTextures().ContainsByPredicate([](const FString& Id) { return IsUploadedId(Id); })))
+			{
+				return true;
+			}
+			continue;
+		}
 		// A custom WaterBody's surface mesh (#997): the server needs it for the water's collision.
 		if (const FMantleWaterBodyProps* Water = Entity.Props.TryGet<FMantleWaterBodyProps>())
 		{
@@ -1041,6 +1050,30 @@ TSharedPtr<const FMantleHeightfield> FMantlePlaceAssets::FindLiveHeightfield(con
 	return nullptr;
 }
 
+TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> FMantlePlaceAssets::FindLiveVoxelFile(const FString& Id, bool bTile, FString& OutError)
+{
+	using namespace MantlePlaceAssetsPrivate;
+	const EAssetKind Kind = bTile ? EAssetKind::VoxelTile : EAssetKind::VoxelWorld;
+	for (int32 Index = GLiveSets.Num() - 1; Index >= 0; --Index)
+	{
+		const FMantlePlaceAssets& Set = *GLiveSets[Index];
+		const FRecord* Record = Set.FindRecord(Id, Kind);
+		if (!Record)
+		{
+			continue;
+		}
+		const FBuild* Build = Record->Build.IsSet() ? Set.Builds.Find(Record->Build.GetValue()) : nullptr;
+		if (!Build || Build->State != EBuildState::Ready || !Build->VoxelFile.IsValid())
+		{
+			OutError = FString::Printf(TEXT("'%s' did not load: %s"), *Id, Build && !Build->Error.IsEmpty() ? *Build->Error : TEXT("it is not ready"));
+			return nullptr;
+		}
+		return Build->VoxelFile;
+	}
+	OutError = FString::Printf(TEXT("'%s' is an uploaded %s no loaded place prepared"), *Id, bTile ? TEXT("block tile") : TEXT("VoxelWorldData"));
+	return nullptr;
+}
+
 TSharedPtr<const FMantleTerrainWeights> FMantlePlaceAssets::FindLiveTerrainWeights(const FString& Id, FString& OutError)
 {
 	using namespace MantlePlaceAssetsPrivate;
@@ -1079,6 +1112,9 @@ const TCHAR* FMantlePlaceAssets::KindName(const EAssetKind Kind)
 	case EAssetKind::Weapon: return TEXT("weapon");
 	// #149: a static mesh's Lumen side file (MLD1), stored as the plugin baked it.
 	case EAssetKind::Lumen: return TEXT("lumen");
+	// #168: a VoxelWorld's blocks (MBW1); its tiles are uploaded textures, held to the API's "texture" like a weightmap.
+	case EAssetKind::VoxelWorld: return TEXT("voxelworld");
+	case EAssetKind::VoxelTile: return TEXT("voxeltile");
 	case EAssetKind::Mesh:
 	default: return TEXT("mesh");
 	}
@@ -1295,6 +1331,32 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 					{
 						EnsureRecord(Material, EAssetKind::Material);
 					}
+				}
+			}
+			continue;
+		}
+
+		// A VoxelWorld (#168): its blocks everywhere (a dedicated server builds collision from them), its tiles only where
+		// something renders. Both are kept as downloaded; the voxel world reads them.
+		if (const FMantleVoxelWorldProps* Voxel = Entity.Props.TryGet<FMantleVoxelWorldProps>())
+		{
+			if (IsUploadedId(Voxel->World))
+			{
+				EnsureRecord(Voxel->World, EAssetKind::VoxelWorld);
+			}
+			for (const FString& Tile : Voxel->TileTextures())
+			{
+				if (!IsUploadedId(Tile))
+				{
+					continue;
+				}
+				if (Settings.bRenderAssets)
+				{
+					EnsureRecord(Tile, EAssetKind::VoxelTile);
+				}
+				else
+				{
+					SkippedTextures.Add(Tile);
 				}
 			}
 			continue;
@@ -1798,7 +1860,7 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 		ApplyResolved(EnsureRecord(SwappedId, EAssetKind::SkeletalMesh), Answer);
 		return;
 	}
-	const TCHAR* Expected = Record.Kind == EAssetKind::TerrainWeights ? KindName(EAssetKind::Texture) : KindName(Record.Kind);
+	const TCHAR* Expected = (Record.Kind == EAssetKind::TerrainWeights || Record.Kind == EAssetKind::VoxelTile) ? KindName(EAssetKind::Texture) : KindName(Record.Kind);
 	if (!Asset.Kind.Equals(Expected, ESearchCase::CaseSensitive))
 	{
 		FailRecord(Record, FString::Printf(TEXT("is a %s, not a %s"), *Asset.Kind, Expected));
@@ -1876,6 +1938,7 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 	// (#596, likewise), so none has anything to reuse.
 	if (RecordKind != EAssetKind::Material && RecordKind != EAssetKind::Sound && RecordKind != EAssetKind::AnimClip
 		&& RecordKind != EAssetKind::Heightfield && RecordKind != EAssetKind::TerrainWeights && RecordKind != EAssetKind::Lumen
+		&& RecordKind != EAssetKind::VoxelWorld && RecordKind != EAssetKind::VoxelTile
 		// A weapon is read again, not reused: queuing what its document names happens when it is decoded (#789).
 		&& RecordKind != EAssetKind::Weapon)
 	{
@@ -2225,6 +2288,11 @@ void FMantlePlaceAssets::StartDecodes()
 			// #149: nothing to decode off the game thread; OnDecoded looks at the header.
 			Build->LumenFile = Bytes;
 		}
+		if (Key.Kind == EAssetKind::VoxelWorld || Key.Kind == EAssetKind::VoxelTile)
+		{
+			// #168: likewise; the voxel world reads its blocks and tiles on its own workers.
+			Build->VoxelFile = Bytes;
+		}
 		const int64 MaxTextureGpuBytes = Settings.MaxTextureGpuBytes;
 		const TSharedRef<FCompletionQueue, ESPMode::ThreadSafe> Queue = Completions;
 		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes]()
@@ -2246,6 +2314,8 @@ void FMantlePlaceAssets::StartDecodes()
 			switch (Key.Kind)
 			{
 			case EAssetKind::Lumen:
+			case EAssetKind::VoxelWorld:
+			case EAssetKind::VoxelTile:
 				break;
 
 			case EAssetKind::Mesh:
@@ -2434,6 +2504,20 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 			return;
 		}
 		Build->Detail = FString::Printf(TEXT("MLD1, engine %s, %.1f KB"), *Engine, File->Num() / 1024.0);
+		ReleasePending(*Build);
+		QueueBuild(Key);
+		return;
+	}
+	// #168: a VoxelWorldData is its MBW1 bytes (only the magic is looked at here); a block tile is the texture's file.
+	if (Key.Kind == EAssetKind::VoxelWorld || Key.Kind == EAssetKind::VoxelTile)
+	{
+		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> File = Build->VoxelFile;
+		if (!File.IsValid() || (Key.Kind == EAssetKind::VoxelWorld && (File->Num() < 4 || FMemory::Memcmp(File->GetData(), "MBW1", 4) != 0)))
+		{
+			FailBuild(*Build, TEXT("is not a block world file this client reads (MBW1)"));
+			return;
+		}
+		Build->Detail = FString::Printf(TEXT("%s, %.1f KB"), Key.Kind == EAssetKind::VoxelWorld ? TEXT("MBW1") : TEXT("block tile"), File->Num() / 1024.0);
 		ReleasePending(*Build);
 		QueueBuild(Key);
 		return;
@@ -2714,6 +2798,12 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		MarkReady(Build, nullptr);
 		return;
 
+	case EAssetKind::VoxelWorld:
+	case EAssetKind::VoxelTile:
+		// #168: likewise the downloaded file; the voxel world reads it.
+		MarkReady(Build, nullptr);
+		return;
+
 	case EAssetKind::Texture:
 	{
 		if (!Build.Texture)
@@ -2975,6 +3065,7 @@ void FMantlePlaceAssets::FailBuild(FBuild& Build, const FString& Error)
 	Build.Vehicle.Reset();
 	Build.Weapon.Reset();
 	Build.LumenFile.Reset();
+	Build.VoxelFile.Reset();
 	ReleasePending(Build);
 	if (Build.Key.Kind == EAssetKind::Lumen)
 	{
@@ -3132,6 +3223,8 @@ void FMantlePlaceAssets::CheckComplete()
 		case EAssetKind::Heightfield: ++Result.Heightfields; break;
 		case EAssetKind::TerrainWeights: break; // the weightmap's second use, not an asset of its own (#596)
 		case EAssetKind::Lumen: break;
+		case EAssetKind::VoxelWorld: break;
+		case EAssetKind::VoxelTile: break;
 		}
 	}
 	Result.Errors.Append(CollisionErrors);

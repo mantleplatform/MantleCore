@@ -27,6 +27,7 @@ namespace
 		case EMantleAssetKind::Vehicle:    return TEXT("Vehicle");
 		case EMantleAssetKind::Weapon:     return TEXT("Weapon");
 		case EMantleAssetKind::Lumen:      return TEXT("Lumen");
+		case EMantleAssetKind::VoxelWorldData: return TEXT("VoxelWorldData");
 		default:                           return TEXT("Unknown");
 		}
 	}

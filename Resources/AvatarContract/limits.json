@@ -934,6 +934,23 @@
       "maxSourceBytes": 8396838,
       "comment": "One Terrain's heights (#466): a grid of 16-bit samples, row-major, 2 to 2049 on a side (a 2 km landscape at 1 m is 2017 or 2049 samples; the plugin resamples a larger landscape down). The plugin writes MHF1 itself (backend/internal/cook/heightfield.go has the layout) and the cook worker checks every field against these numbers and stores the canonical encoding. A sample's height is heightOffset + value x heightScale cm, and spacing is the cm between samples along X and Y, in the Terrain entity's space. maxSourceBytes is exactly MHF1's 36-byte header plus a 2049 x 2049 grid of 2-byte samples (validate.py and the cook's contract check hold it so), the upload cap for kind heightfield. A Terrain's paint layers ride in one RGBA texture upload (R is layer 0 to A is layer 3), held to the upload-wide texture limits like any other."
     },
+    "voxelWorld": {
+      "format": "MBW1",
+      "maxBytes": 67108864,
+      "maxSizeXY": 1024,
+      "maxSizeZ": 256,
+      "sectionSize": 16,
+      "maxBlockTypes": 255,
+      "maxTileTextures": 256,
+      "maxNonUniformSections": 16384,
+      "tileSizes": [
+        16,
+        32,
+        64,
+        128
+      ],
+      "comment": "One place's VoxelWorld block world (#168): a grid of 16 x 16 x 16 sections of block ids, uploaded as kind voxelworld in the Mantle block format MBW1 (backend/internal/cook/voxelworld.go has the layout) and stored as it came once the cook worker has read every section. maxBytes (64 MiB) is the upload cap, equal to assets.MaxVoxelWorldBytes (held equal by a Go test). maxSizeXY and maxSizeZ are the world's size in blocks (a multiple of sectionSize on each axis); maxBlockTypes is how many block types a VoxelWorld entity lists (ids are 1-based, 0 is air, so an id fits a byte); maxTileTextures is how many distinct tile textures one VoxelWorld may name across all its block types, each square and exactly the entity's tileSize (one of tileSizes). maxNonUniformSections caps the sections that are not a single repeated id, which are the ones a client meshes and stores in full."
+    },
     "material": {
       "schema": "material.schema.json",
       "master": "M_MantlePlace",
