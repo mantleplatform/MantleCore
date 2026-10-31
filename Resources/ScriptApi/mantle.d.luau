@@ -487,6 +487,56 @@ declare extern type UiNode with
 	function SetVisible(self, visible: boolean): boolean
 end
 
+--- The place's block world (#168): read its blocks anywhere, change them (server), and hear players build. Block coordinates are whole blocks (x, y, z with z up, as every position), from the world's lowest corner.
+declare extern type VoxelWorld with
+	--- How many blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks).
+	function CountBlocks(self, min: Vector3, max: Vector3, name: string): number
+	--- Sets every block of a shape to a type (nil or "air" empties it) and returns how many changed. A shape is {Box = {min, max}}, {Sphere = {center, radius}} or {Line = {from, to, radius}}, in blocks; at most 262,144 blocks a call. Raises one OnBlocksChanged. (server only)
+	function Fill(self, shape: {Box: {Vector3}?, Sphere: {any}?, Line: {any}?}, name: string?): number
+	--- Where the blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks), up to limit (default and at most 1,024).
+	function FindBlocks(self, min: Vector3, max: Vector3, name: string, limit: number?): {Vector3}
+	--- The block type's name at (x, y, z), "air" for empty, nil outside the world.
+	function GetBlock(self, x: number, y: number, z: number): string?
+	--- The block type's name at a world position (cm), "air" for empty, nil outside the world.
+	function GetBlockAt(self, position: Vector3): string?
+	--- "blocky" (cubes) or "smooth" (ground you dig).
+	function GetLook(self): string
+	--- The world's size in blocks.
+	function GetSize(self): Vector3
+	--- A block type as the place file defines it: Hardness (seconds to break by hand, -1 unbreakable), Solid, Liquid, Light (0 to 15), Render ("opaque", "cutout", "translucent"), Surface, Tags and Drops (the creator's own id; no engine meaning).
+	function GetTypeInfo(self, name: string): {Hardness: number, Solid: boolean, Liquid: boolean, Light: number, Render: string, Surface: string, Tags: {string}, Drops: string?}
+	--- Every block type's name, in the place file's order (not "air").
+	function GetTypes(self): {string}
+	--- Whether anything in the box (corners in blocks) may differ from the world the place was published with (whole 16-block sections are compared). (server only)
+	function IsEdited(self, min: Vector3, max: Vector3): boolean
+	--- Whether this machine holds every block of the box. Always true today: server and players hold the whole world.
+	function IsLoaded(self, min: Vector3, max: Vector3): boolean
+	--- Called before a player's broken block goes, on the spot (the handler may not wait). Return false to keep the block. (server only)
+	function OnBlockBreaking(self, handler: (info: {Source: {Player: Player?, Script: boolean}, Coordinates: Vector3, Block: string}) -> boolean?): Connection
+	--- A player broke a block (Block is what it was). (server only)
+	function OnBlockBroken(self, handler: (info: {Source: {Player: Player?, Script: boolean}, Coordinates: Vector3, Block: string}) -> ()): Connection
+	--- Any single block changed, by a player or a script's SetBlock (a Fill or Replace raises OnBlocksChanged instead). At most 1,024 a tick; past that the tick's other changes come as one OnBlocksChanged. (server only)
+	function OnBlockChanged(self, handler: (info: {Source: {Player: Player?, Script: boolean}, Coordinates: Vector3, Block: string, Old: string, New: string}) -> ()): Connection
+	--- A player placed a block. (server only)
+	function OnBlockPlaced(self, handler: (info: {Source: {Player: Player?, Script: boolean}, Coordinates: Vector3, Block: string}) -> ()): Connection
+	--- Called before a player's placed block goes in, on the spot (the handler may not wait). Return false to refuse it: the player sees it put right. Not raised for a script's own SetBlock or Fill. (server only)
+	function OnBlockPlacing(self, handler: (info: {Source: {Player: Player?, Script: boolean}, Coordinates: Vector3, Block: string}) -> boolean?): Connection
+	--- Many blocks changed at once (a Fill or Replace, or more single changes in a tick than OnBlockChanged raises). (server only)
+	function OnBlocksChanged(self, handler: (info: {Source: {Player: Player?, Script: boolean}, Min: Vector3, Max: Vector3, Count: number}) -> ()): Connection
+	--- Walks the blocks from origin (cm) along direction to the first block within MaxDistance (default 10,000 cm, at most 51,200). It reads blocks, not physics, so it works at any distance. Liquids are passed through unless IgnoreLiquid is false.
+	function Raycast(self, origin: Vector3, direction: Vector3, params: {MaxDistance: number?, IgnoreLiquid: boolean?}?): {Block: string, Position: Vector3, Normal: Vector3, Coordinates: Vector3, Distance: number}?
+	--- Like Fill, but changes only the blocks of type from. Returns how many changed. (server only)
+	function Replace(self, shape: {Box: {Vector3}?, Sphere: {any}?, Line: {any}?}, from: string, to: string?): number
+	--- Sets one block (nil or "air" empties it). True when it changed. Every player sees it; OnBlockChanged follows (not the cancellable OnBlockPlacing/OnBlockBreaking, which are for players' edits). (server only)
+	function SetBlock(self, x: number, y: number, z: number, name: string?): boolean
+	--- The world height (cm) of the top of the highest solid block in column (x, y), or nil when the column is empty.
+	function SurfaceHeight(self, x: number, y: number): number?
+	--- The world position (cm) of a block's middle.
+	function VoxelToWorld(self, x: number, y: number, z: number): Vector3
+	--- The block coordinates holding a world position (cm).
+	function WorldToVoxel(self, position: Vector3): Vector3
+end
+
 --- Spawn the place's own meshes at runtime (server only). Change any mesh's look through its Entity.
 declare extern type AssetsService with
 	--- Spawn one of the place's StaticMesh assets (any mesh its asset list names, placed or not) that every player sees, and return it as an Entity. props sets how it starts: Rotation, Scale (a Vector3, or one number for all three), Material (one of the place's Material assets, for every slot), Color, Transparency, Collision ("Blocking" by default, "Overlap" or "None"), CastShadow (true by default) and Anchored (spawned meshes stay where scripts put them; false is refused). A mesh uploaded with the place may take a moment to appear on a player's screen while it downloads. Spawned meshes count towards the same limit as Entity:Clone; Destroy one to make room. (server only)
@@ -1163,6 +1213,8 @@ declare extern type WorldService with
 	function GetEntitiesInBox(self, center: Vector3, size: Vector3, params: {Include: {Entity | Player}?, Exclude: {Entity | Player}?, Tag: string?, IgnorePlayers: boolean?, MaxResults: number?, Layers: {string}?, ExcludeLayers: {string}?}?): {Entity}
 	--- Every entity and player character touching a ball of this radius (at most 50 m) around center, nearest first. Overlap-only entities (triggers) count; entities with no collision never do. A character is listed as its Entity; Players:GetPlayerFromCharacter tells whose it is. params: Include, Exclude, Tag, IgnorePlayers, Layers, ExcludeLayers (collision layers, server scripts only), and MaxResults (256 at most, and by default). Runs on this machine only; a script may make 256 spatial queries a frame.
 	function GetEntitiesInRadius(self, center: Vector3, radius: number, params: {Include: {Entity | Player}?, Exclude: {Entity | Player}?, Tag: string?, IgnorePlayers: boolean?, MaxResults: number?, Layers: {string}?, ExcludeLayers: {string}?}?): {Entity}
+	--- The place's block world (#168), or nil when the place has none.
+	function GetVoxelWorld(self): VoxelWorld?
 	--- Call handler for every entity that has the tag now, and for each one that gets it later.
 	function OnTagged(self, tag: string, handler: (entity: Entity) -> ()): Connection
 	--- Call handler when an entity loses the tag.
