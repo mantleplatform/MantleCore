@@ -307,6 +307,12 @@ struct MANTLEEDITOR_API FMantleBakeSurface
 	/** The tile WorldTileCm is for a world-mapped material whose own repeat is not read. */
 	static constexpr double DefaultWorldTileCm = 400.0;
 
+	/**
+	 * How far the card is moved across the world, in cm on both axes: a second bake moved off the first is how the converter tells a
+	 * material really mapped by world position (the bake changes) from one whose world position only feeds a small part (it barely does).
+	 */
+	double WorldShiftCm = 0.0;
+
 	bool IsPlain() const { return VertexColor == FColor::White && UvRange <= 1 && WorldTileCm <= 0.0; }
 
 	/** What the conversion cache keys on: empty for the plain surface, so those bakes keep their keys. */

@@ -440,4 +440,34 @@ bool FMantleWorldTileBakeTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Many materials with world position somewhere in their graph map their textures by UV (Downtown's trim sheets, signs and brick walls):
+// world-tiled, they came out as a grid of squares. A second bake on a moved card tells them apart by how much its base colour changes.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleWorldMappedDifferenceTest,
+	"Mantle.Editor.BakeSurface.MovedCardDifferenceTellsWorldMapping",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleWorldMappedDifferenceTest::RunTest(const FString& Parameters)
+{
+	TArray<FColor> Brick;
+	TArray<FColor> Moved;
+	for (int32 Index = 0; Index < 64; ++Index)
+	{
+		Brick.Add(FColor(uint8(Index * 4), 80, 40, 255));
+		// A world-mapped pattern shifts under the card.
+		Moved.Add(FColor(uint8(((Index + 23) % 64) * 4), 80, 40, 255));
+	}
+	TestEqual(TEXT("the same bake differs by nothing"), FMantlePlaceAssetConverter::MeanPixelDifference(Brick, Brick), 0.0);
+	TestTrue(TEXT("a pattern that moved with the card is world-mapped"),
+		FMantlePlaceAssetConverter::MeanPixelDifference(Brick, Moved) >= FMantlePlaceAssetConverter::WorldMappedDifference);
+	TArray<FColor> Noise = Brick;
+	Noise[3].R += 6;
+	TestTrue(TEXT("a small world-space noise change is not"),
+		FMantlePlaceAssetConverter::MeanPixelDifference(Brick, Noise) < FMantlePlaceAssetConverter::WorldMappedDifference);
+	TArray<FColor> Smaller = Brick;
+	Smaller.Pop();
+	TestEqual(TEXT("images of different sizes count as different"), FMantlePlaceAssetConverter::MeanPixelDifference(Brick, Smaller), 1.0);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
