@@ -163,8 +163,8 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** Terrain entities in one place (#466): one per landscape of the level. Cross-entity: validate.py's MAX_TERRAINS_PER_PLACE states it. */
 	static constexpr int32 MaxTerrainsPerPlace = 16;
 
-	/** Heightfield samples (width x height) of every Terrain in one place together. Cross-entity: validate.py's MAX_TERRAIN_SAMPLES_PER_PLACE. */
-	static constexpr int64 MaxTerrainSamplesPerPlace = 16 * 1024 * 1024;
+	/** Heightfield samples (width x height) of every Terrain in one place together: 4 x 2049 x 2049. Cross-entity: validate.py's MAX_TERRAIN_SAMPLES_PER_PLACE. */
+	static constexpr int64 MaxTerrainSamplesPerPlace = 16793604;
 
 	/** Terrain grass[], 0 to this many entries (#628). */
 	static constexpr int32 MaxTerrainGrass = 32;
