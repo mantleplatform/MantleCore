@@ -58,6 +58,12 @@ struct FMantleVoxelBlockType
 	/** 0 to 15: the block glows and lights its neighbours. */
 	uint8 Light = 0;
 
+	/** Seconds to break by hand; -1 unbreakable, 0 at once. */
+	float Hardness = 1.0f;
+
+	/** What breaking and placing it sound like: an EMantleSurface value. */
+	uint8 Surface = 0;
+
 	/** The block's tiles in the world's texture array: top face, side faces, bottom face. */
 	uint8 TileTop = 0;
 	uint8 TileSide = 0;

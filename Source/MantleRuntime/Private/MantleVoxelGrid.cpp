@@ -158,9 +158,14 @@ bool FMantleVoxelGrid::SetSectionBlocks(int32 Index, const uint8* Ids)
 
 void FMantleVoxelGrid::RebuildColumnTops()
 {
-	for (int32 Y = 0; Y < Size.Y; ++Y)
+	RebuildColumnTops(FIntPoint(0, 0), FIntPoint(Size.X, Size.Y));
+}
+
+void FMantleVoxelGrid::RebuildColumnTops(const FIntPoint& Min, const FIntPoint& Max)
+{
+	for (int32 Y = FMath::Max(0, Min.Y); Y < FMath::Min(Size.Y, Max.Y); ++Y)
 	{
-		for (int32 X = 0; X < Size.X; ++X)
+		for (int32 X = FMath::Max(0, Min.X); X < FMath::Min(Size.X, Max.X); ++X)
 		{
 			int16 Top = -1;
 			for (int32 Z = Size.Z - 1; Z >= 0; --Z)

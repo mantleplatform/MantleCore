@@ -67,6 +67,9 @@ public:
 
 	void RebuildColumnTops();
 
+	/** Only the columns in [Min, Max) (a section received whole). */
+	void RebuildColumnTops(const FIntPoint& Min, const FIntPoint& Max);
+
 	/** The highest Z in column (X, Y) whose block stops light, or -1 (none, or outside the world). */
 	FORCEINLINE int32 GetColumnTop(int32 X, int32 Y) const
 	{
