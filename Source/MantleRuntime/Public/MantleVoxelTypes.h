@@ -27,6 +27,18 @@ namespace MantleVoxel
 	constexpr int32 MaxBlockTypes = 255;
 	constexpr uint8 MaxLight = 15;
 
+	/**
+	 * Smooth worlds (#168 section 10): 50 cm voxels, each a material (the block id) and a density, -127 to 127, solid above 0;
+	 * the ground's surface is where density crosses 0. A voxel at or below 0 holds no material (air), so everything that reads
+	 * block ids (light, column tops, rays) sees a smooth world's solid voxels as blocks.
+	 */
+	constexpr double SmoothVoxelSize = 50.0;
+	constexpr int8 EmptyDensity = -127;
+	constexpr int8 FullDensity = 127;
+
+	/** Smooth sections hold two 4 KB arrays, so fewer of them fit the same 64 MB. */
+	constexpr int32 MaxNonUniformSmoothSections = 8192;
+
 	/** A block's index inside its section: X fastest, then Y, then Z. */
 	FORCEINLINE int32 LocalIndex(int32 X, int32 Y, int32 Z)
 	{

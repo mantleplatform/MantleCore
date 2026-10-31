@@ -58,7 +58,7 @@ int32 FMantleVoxelBlockTypes::FindId(FName Name) const
 	return INDEX_NONE;
 }
 
-bool FMantleVoxelGrid::Init(const FIntVector& SizeInBlocks, TArray<FMantleVoxelBlockType> InTypes, FString* OutError)
+bool FMantleVoxelGrid::Init(const FIntVector& SizeInBlocks, TArray<FMantleVoxelBlockType> InTypes, FString* OutError, bool bInSmooth)
 {
 	auto Fail = [OutError](const FString& Error)
 	{
@@ -89,6 +89,93 @@ bool FMantleVoxelGrid::Init(const FIntVector& SizeInBlocks, TArray<FMantleVoxelB
 	SectionData.SetNum(Sections.X * Sections.Y * Sections.Z);
 	ColumnTops.Init(-1, S.X * S.Y);
 	NumNonUniform = 0;
+	bSmooth = bInSmooth;
+	DensityData.Reset();
+	if (bSmooth)
+	{
+		DensityData.SetNum(SectionData.Num());
+	}
+	NumNonUniformDensity = 0;
+	return true;
+}
+
+const FMantleVoxelDensity& FMantleVoxelGrid::GetDensitySection(int32 Index) const
+{
+	static const FMantleVoxelDensity Empty;
+	return DensityData.IsValidIndex(Index) ? DensityData[Index] : Empty;
+}
+
+FMantleVoxelGrid::ESetResult FMantleVoxelGrid::SetVoxel(const FIntVector& P, uint8 Material, int8 Density)
+{
+	if (!bSmooth || !IsInside(P) || Material >= Types->Num())
+	{
+		return ESetResult::Outside;
+	}
+	if (Density <= 0)
+	{
+		Material = MantleVoxel::Air;
+	}
+	else if (Material == MantleVoxel::Air)
+	{
+		Density = 0;
+	}
+	const FIntVector S(P.X >> MantleVoxel::SectionShift, P.Y >> MantleVoxel::SectionShift, P.Z >> MantleVoxel::SectionShift);
+	const int32 Index = SectionIndex(S);
+	const int32 Local = MantleVoxel::LocalIndex(P.X & MantleVoxel::SectionMask, P.Y & MantleVoxel::SectionMask, P.Z & MantleVoxel::SectionMask);
+	FMantleVoxelSection& Section = SectionData[Index];
+	FMantleVoxelDensity& Densities = DensityData[Index];
+	const bool bMaterialChanges = Section.Get(Local) != Material;
+	const bool bDensityChanges = Densities.Get(Local) != Density;
+	if (!bMaterialChanges && !bDensityChanges)
+	{
+		return ESetResult::Same;
+	}
+	if ((bMaterialChanges && Section.IsUniform() && NumNonUniform >= MantleVoxel::MaxNonUniformSections)
+		|| (bDensityChanges && Densities.IsUniform() && NumNonUniformDensity >= MantleVoxel::MaxNonUniformSmoothSections))
+	{
+		return ESetResult::OverCap;
+	}
+	if (bDensityChanges)
+	{
+		NumNonUniformDensity += Densities.IsUniform() ? 1 : 0;
+		Densities.Set(Local, Density);
+	}
+	if (bMaterialChanges)
+	{
+		NumNonUniform += Section.IsUniform() ? 1 : 0;
+		Section.Set(Local, Material);
+		UpdateColumnTop(P.X, P.Y, P.Z, Material);
+	}
+	return ESetResult::Changed;
+}
+
+bool FMantleVoxelGrid::SetSectionVoxels(int32 Index, const uint8* Materials, const int8* Densities)
+{
+	if (!bSmooth)
+	{
+		return false;
+	}
+	uint8 Ids[MantleVoxel::SectionVolume];
+	int8 Values[MantleVoxel::SectionVolume];
+	for (int32 I = 0; I < MantleVoxel::SectionVolume; ++I)
+	{
+		const bool bSolid = Densities[I] > 0 && Materials[I] != MantleVoxel::Air;
+		Ids[I] = bSolid ? Materials[I] : MantleVoxel::Air;
+		Values[I] = bSolid ? Densities[I] : int8(FMath::Min<int32>(Densities[I], 0));
+	}
+	FMantleVoxelDensity New;
+	New.SetAll(Values);
+	FMantleVoxelDensity& Old = DensityData[Index];
+	if (Old.IsUniform() && !New.IsUniform() && NumNonUniformDensity >= MantleVoxel::MaxNonUniformSmoothSections)
+	{
+		return false;
+	}
+	if (!SetSectionBlocks(Index, Ids))
+	{
+		return false;
+	}
+	NumNonUniformDensity += (New.IsUniform() ? 0 : 1) - (Old.IsUniform() ? 0 : 1);
+	Old = MoveTemp(New);
 	return true;
 }
 
@@ -102,6 +189,11 @@ FIntVector FMantleVoxelGrid::SectionCoord(int32 Index) const
 
 FMantleVoxelGrid::ESetResult FMantleVoxelGrid::SetBlock(const FIntVector& P, uint8 Id)
 {
+	if (bSmooth)
+	{
+		// A block in a smooth world is a full voxel of that material (air: an empty one).
+		return SetVoxel(P, Id, Id == MantleVoxel::Air ? MantleVoxel::EmptyDensity : MantleVoxel::FullDensity);
+	}
 	if (!IsInside(P) || Id >= Types->Num())
 	{
 		return ESetResult::Outside;
@@ -129,6 +221,11 @@ FMantleVoxelGrid::ESetResult FMantleVoxelGrid::SetBlock(const FIntVector& P, uin
 
 void FMantleVoxelGrid::CompactSection(int32 Index)
 {
+	if (DensityData.IsValidIndex(Index) && !DensityData[Index].IsUniform())
+	{
+		DensityData[Index].Compact();
+		NumNonUniformDensity -= DensityData[Index].IsUniform() ? 1 : 0;
+	}
 	FMantleVoxelSection& Section = SectionData[Index];
 	if (Section.IsUniform())
 	{
@@ -215,10 +312,14 @@ int32 FMantleVoxelGrid::GetSolidTop(int32 X, int32 Y) const
 
 int64 FMantleVoxelGrid::GetAllocatedBytes() const
 {
-	int64 Bytes = SectionData.GetAllocatedSize() + ColumnTops.GetAllocatedSize();
+	int64 Bytes = SectionData.GetAllocatedSize() + ColumnTops.GetAllocatedSize() + DensityData.GetAllocatedSize();
 	for (const FMantleVoxelSection& Section : SectionData)
 	{
 		Bytes += Section.GetAllocatedBytes();
+	}
+	for (const FMantleVoxelDensity& Densities : DensityData)
+	{
+		Bytes += Densities.GetAllocatedBytes();
 	}
 	return Bytes;
 }

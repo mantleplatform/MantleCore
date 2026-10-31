@@ -1572,7 +1572,7 @@ namespace
 	void ParseVoxelWorld(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Props, const FString& Path, FMantleVoxelWorldProps& P)
 	{
 		RequireNoUnknownKeys(Ctx, Props, { TEXT("size"), TEXT("blockTypes"), TEXT("world"), TEXT("tileSize"), TEXT("filter"), TEXT("edit"),
-			TEXT("persistence") }, Path);
+			TEXT("persistence"), TEXT("look") }, Path);
 		const FString SizePath = Join(Path, TEXT("size"));
 		const TArray<TSharedPtr<FJsonValue>>* Size = nullptr;
 		if (!Props->TryGetArrayField(TEXT("size"), Size) || Size->Num() != 3)
@@ -1662,6 +1662,19 @@ namespace
 		int32 Persistence = 0;
 		OptionalChoice(Ctx, Props, TEXT("persistence"), Path, { TEXT("none"), TEXT("server"), TEXT("place") }, Persistence);
 		P.Persistence = EMantleVoxelPersistence(Persistence);
+		int32 Look = 0;
+		OptionalChoice(Ctx, Props, TEXT("look"), Path, { TEXT("blocky"), TEXT("smooth") }, Look);
+		P.bSmooth = Look == 1;
+		if (P.bSmooth && Props->HasField(TEXT("world")))
+		{
+			// A smooth world starts empty and is made by its scripts (OnGenerateSection, the brushes): MBW1 holds blocks only.
+			Ctx.Fail(Join(Path, TEXT("world")), TEXT("a smooth VoxelWorld has no VoxelWorldData yet: its scripts make the ground"));
+		}
+		if (P.bSmooth && P.BlockTypes.Num() > FMantlePlaceLimits::MaxVoxelSmoothMaterials)
+		{
+			Ctx.Fail(TypesPath, FString::Printf(TEXT("has %d block types; a smooth VoxelWorld's are its ground materials, at most %d"), P.BlockTypes.Num(),
+				FMantlePlaceLimits::MaxVoxelSmoothMaterials));
+		}
 	}
 
 	/** The Effect keys only the sprites archetype takes, the schema's order. */

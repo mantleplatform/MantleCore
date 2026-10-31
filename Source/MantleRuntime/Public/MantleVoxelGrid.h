@@ -23,8 +23,43 @@ public:
 		OverCap
 	};
 
-	/** Size in blocks: each axis a multiple of 16, at most 1024 x 1024 x 256. Every block starts as air. */
-	bool Init(const FIntVector& SizeInBlocks, TArray<FMantleVoxelBlockType> Types, FString* OutError = nullptr);
+	/**
+	 * Size in blocks: each axis a multiple of 16, at most 1024 x 1024 x 256. Every block starts as air. bSmooth (#168 section 10):
+	 * every voxel also has a density, and the block types are its materials.
+	 */
+	bool Init(const FIntVector& SizeInBlocks, TArray<FMantleVoxelBlockType> Types, FString* OutError = nullptr, bool bSmooth = false);
+
+	bool IsSmooth() const { return bSmooth; }
+
+	/** Smooth: P's density, EmptyDensity outside the world. Blocky: full for a solid block, empty otherwise. */
+	FORCEINLINE int8 GetDensity(const FIntVector& P) const
+	{
+		if (!bSmooth)
+		{
+			return Types->IsSolid(GetBlock(P)) ? MantleVoxel::FullDensity : MantleVoxel::EmptyDensity;
+		}
+		if (!IsInside(P))
+		{
+			return MantleVoxel::EmptyDensity;
+		}
+		const FIntVector S(P.X >> MantleVoxel::SectionShift, P.Y >> MantleVoxel::SectionShift, P.Z >> MantleVoxel::SectionShift);
+		return DensityData[SectionIndex(S)].Get(P.X & MantleVoxel::SectionMask, P.Y & MantleVoxel::SectionMask, P.Z & MantleVoxel::SectionMask);
+	}
+
+	/** Smooth: one section's densities (uniform empty on a blocky grid). */
+	const FMantleVoxelDensity& GetDensitySection(int32 Index) const;
+
+	/**
+	 * Smooth: sets one voxel's material and density. A density at or below 0 holds no material (it becomes air); a material of air
+	 * with a density above 0 is clamped to 0. Changed when either changed.
+	 */
+	ESetResult SetVoxel(const FIntVector& P, uint8 Material, int8 Density);
+
+	/** Smooth: replaces a whole section (generation), held to SetVoxel's rule. Call RebuildColumnTops after the last. False over the cap. */
+	bool SetSectionVoxels(int32 Index, const uint8* Materials, const int8* Densities);
+
+	/** Smooth: sections whose densities are not one value throughout (the smooth cap counts these). */
+	int32 GetNumNonUniformDensity() const { return NumNonUniformDensity; }
 
 	const FIntVector& GetSize() const { return Size; }
 	const FIntVector& GetSectionCounts() const { return Sections; }
@@ -91,4 +126,7 @@ private:
 	TArray<int16> ColumnTops;
 	TSharedRef<FMantleVoxelBlockTypes, ESPMode::ThreadSafe> Types = MakeShared<FMantleVoxelBlockTypes, ESPMode::ThreadSafe>();
 	int32 NumNonUniform = 0;
+	bool bSmooth = false;
+	TArray<FMantleVoxelDensity> DensityData;
+	int32 NumNonUniformDensity = 0;
 };

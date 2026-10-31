@@ -88,3 +88,38 @@ private:
 	uint8 UniformId = MantleVoxel::Air;
 	TSharedPtr<FData, ESPMode::ThreadSafe> Data;
 };
+
+/**
+ * #168 smooth worlds: the densities of one section, beside its FMantleVoxelSection of materials. Uniform (one value, nothing
+ * allocated: all air or all solid) or 4096 values, shared copy-on-write like the blocks.
+ */
+class MANTLERUNTIME_API FMantleVoxelDensity
+{
+public:
+	FMantleVoxelDensity() = default;
+	explicit FMantleVoxelDensity(int8 InUniform) : Uniform(InUniform) {}
+
+	FORCEINLINE int8 Get(int32 Index) const { return Data.IsValid() ? (*Data)[Index] : Uniform; }
+	FORCEINLINE int8 Get(int32 X, int32 Y, int32 Z) const { return Get(MantleVoxel::LocalIndex(X, Y, Z)); }
+
+	/** True when it changed. */
+	bool Set(int32 Index, int8 Value);
+	/** 4096 values in LocalIndex order; uniform when they all match. */
+	void SetAll(const int8* Values);
+	/** Uniform again when every value matches. */
+	void Compact();
+
+	bool IsUniform() const { return !Data.IsValid(); }
+	int8 GetUniform() const { return Uniform; }
+	int32 GetAllocatedBytes() const { return Data.IsValid() ? int32(Data->GetAllocatedSize()) : 0; }
+
+	/** The wire form, zlib-compressed as FMantleVoxelSection::Compress: [0][value] uniform or [1][4096 values]. */
+	void Compress(TArray<uint8>& Out) const;
+	static bool Decompress(TConstArrayView<uint8> Bytes, FMantleVoxelDensity& Out);
+
+	friend MANTLERUNTIME_API bool operator==(const FMantleVoxelDensity& A, const FMantleVoxelDensity& B);
+
+private:
+	int8 Uniform = MantleVoxel::EmptyDensity;
+	TSharedPtr<TArray<int8>, ESPMode::ThreadSafe> Data;
+};
