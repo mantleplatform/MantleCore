@@ -197,6 +197,13 @@ public:
 	 */
 	static UMaterialInterface* MakeLayerMaterial(const FMantleLandscapeLayerLook& Look);
 
+	/**
+	 * The most landscape UV units (landscape quads, SpacingCm each) any 2D texture under Material's Base Color or Normal takes to repeat, as
+	 * the graph's coordinates say (a Texture Coordinate times 0.1 is 10). What a bake of the whole material must cover for its textures to
+	 * repeat inside it. False, with OutUvUnits 0, when no texture's repeat can be read.
+	 */
+	static bool LargestUvRepeat(const UMaterialInterface* Material, double SpacingCm, double& OutUvUnits);
+
 	/** The name (without a path) MakeLayerMaterial gives Look's material: stable for the same layer, textures and colour. */
 	static FString LayerMaterialName(const FMantleLandscapeLayerLook& Look);
 

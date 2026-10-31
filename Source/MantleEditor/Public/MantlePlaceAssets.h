@@ -283,6 +283,26 @@ struct MANTLEEDITOR_API FMantleGatheredMesh
 	TArray<FString> UsedBy;
 };
 
+/**
+ * What a material is baked on beyond the material itself: GLTFExporter draws it on a card, and Unreal's own card has white vertex colours
+ * and UVs 0 to 1. A material whose graph reads vertex colour (a puddle layer by Vertex Color's blue) is baked with the colour its meshes
+ * really have, and a landscape's own material over many landscape quads, so its tiling repeats in the bake. The plain surface is
+ * Unreal's card, so it bakes as every material always has.
+ */
+struct MANTLEEDITOR_API FMantleBakeSurface
+{
+	/** The vertex colour every corner of the card has, as the material's Vertex Color node reads it (the bytes over 255). */
+	FColor VertexColor = FColor::White;
+
+	/** The card's UVs run 0 to this on both axes. */
+	int32 UvRange = 1;
+
+	bool IsPlain() const { return VertexColor == FColor::White && UvRange <= 1; }
+
+	/** What the conversion cache keys on: empty for the plain surface, so those bakes keep their keys. */
+	FString CacheTag() const;
+};
+
 /** One material the level uses (a slot of an uploaded mesh, or an override) that is not in the Mantle library. */
 struct MANTLEEDITOR_API FMantleGatheredMaterial
 {
@@ -290,6 +310,22 @@ struct MANTLEEDITOR_API FMantleGatheredMaterial
 	FString Key;
 	FString Name;
 	TArray<FString> UsedBy;
+
+	/**
+	 * The vertex colours of the meshes drawing it, summed (RGBA, 0 to 1) over their vertices, and how many vertices: a component's painted
+	 * colours where it has them, else its mesh's, else white (a mesh with none is drawn white). Only the vertices of the sections it draws.
+	 */
+	FVector4d VertexColorSum = FVector4d(0.0, 0.0, 0.0, 0.0);
+	double VertexColorWeight = 0.0;
+
+	/** The UV range a landscape layer bakes it over (FMantleTerrainLayerChoice::BakeUvRange); 1 for everything else. */
+	int32 BakeUvRange = 1;
+
+	/** The average of VertexColorSum, white when nothing was counted. */
+	FColor AverageVertexColor() const;
+
+	/** What this material is baked on: its average vertex colour and its UV range. The converter keeps the colour only for a material that reads it. */
+	FMantleBakeSurface BakeSurface() const;
 };
 
 /** One sound wave an AmbientSound plays that is not in the Mantle library (#324): it is converted to a WAV and uploaded. */
@@ -562,8 +598,10 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	/**
 	 * Adds one material under Label unless it is a library material. A transient instance past MaxVariantsPerMaterial looks of its
 	 * material is not added: it stands in as one of those (by its content hash, so the same level picks the same one every time).
+	 * Returns the entry that now draws it (the stand-in's for a capped instance), null for a library material or none. The pointer is
+	 * only good until the next material is added.
 	 */
-	void AddMaterial(UMaterialInterface* Material, const FString& Label);
+	FMantleGatheredMaterial* AddMaterial(UMaterialInterface* Material, const FString& Label);
 
 	/**
 	 * Adds the materials a landscape's layers draw with that Mantle makes itself (transient: read from the landscape's material, or the plain grey of an
@@ -611,6 +649,13 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	 * painted layers.
 	 */
 	void AddTerrain(const AActor* Landscape);
+
+private:
+	/** Counts the vertex colours slot Slot of Mesh is drawn with on Component (null: the mesh's own) into Entry (FMantlePlaceAssets::SlotVertexColors). */
+	void AddSlotVertexColors(FMantleGatheredMaterial* Entry, const UStaticMesh* Mesh, const UStaticMeshComponent* Component, int32 Slot);
+
+	/** A mesh slot's own colours, counted once per mesh however many components draw it unpainted. */
+	TMap<TPair<const UStaticMesh*, int32>, TPair<FVector4d, double>> MeshSlotColors;
 };
 
 /**
@@ -775,6 +820,14 @@ public:
 
 	/** The material a slot of Mesh renders with where no component overrides it: the mesh's slot material, else Unreal's default surface material. */
 	static UMaterialInterface* MeshSlotMaterial(const UStaticMesh* Mesh, int32 Slot);
+
+	/**
+	 * The vertex colours of the LOD 0 sections of Mesh that draw slot Slot, as the material's Vertex Color node reads them (0 to 1), summed
+	 * into OutSum with their vertex count in OutVertices: Component's painted colours (Override Vertex Colors) where it has them for every
+	 * vertex, else the mesh's own, else white for each vertex. A section's vertices are sampled (at most 65,536) and the average counted for all.
+	 * False, adding nothing, when the mesh has no render data or no such section.
+	 */
+	static bool SlotVertexColors(const UStaticMesh* Mesh, const UStaticMeshComponent* Component, int32 Slot, FVector4d& OutSum, double& OutVertices);
 
 	/** What a gathered Script Asset's UsedBy names: "Script Assets". */
 	static const TCHAR* ScriptAssetsLabel;

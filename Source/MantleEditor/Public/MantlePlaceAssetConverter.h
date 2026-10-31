@@ -670,6 +670,12 @@ struct MANTLEEDITOR_API FMantleFlattenSettings
 	 * DefaultBakeSize or this, never at the texture's size: Unreal's bake crashes the editor when asked for more than its render target holds.
 	 */
 	int32 MaxBakeSize = 2048;
+
+	/**
+	 * What the material is drawn on for the bake. The plain surface is GLTFExporter's own card (white vertex colours, UVs 0 to 1); any
+	 * other is a one-quad mesh with that vertex colour and UV range, baked with GLTFExporter's mesh data (FMantleGltfMaterialFlattener).
+	 */
+	FMantleBakeSurface Surface;
 };
 
 /**
@@ -786,6 +792,30 @@ public:
 
 	bool ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAssetSet& Out);
 	bool ConvertMaterial(UMaterialInterface* Material, FMantlePlaceAssetSet& Out);
+
+	/**
+	 * ConvertMaterial baked on Surface (gather's FMantleGatheredMaterial::BakeSurface): the vertex colour is kept only for a material whose
+	 * graph reads vertex colour beyond a base colour tint (EffectiveBakeSurface), and the cache keys on what is kept.
+	 */
+	bool ConvertMaterial(UMaterialInterface* Material, const FMantleBakeSurface& Surface, FMantlePlaceAssetSet& Out);
+
+	/**
+	 * The surface a material is really baked on: Surface with its vertex colour put back to white unless Analysis has a VertexColor loss
+	 * (a tint, bVertexColorTintsBaseColor, publishes as one and so needs none in the bake).
+	 */
+	static FMantleBakeSurface EffectiveBakeSurface(const FMantleMaterialAnalysis& Analysis, const FMantleBakeSurface& Surface);
+
+	/**
+	 * A bake over UVs 0 to UvRange is drawn on a terrain whose own UVs run 0 to 1 per tile: each texture transform of material Index's
+	 * textures (KHR_texture_transform) has its scale multiplied by UvRange, and a texture with none gets one of that scale. GLTFExporter's
+	 * baked textures come out with a scale of 1 / UvRange, so they cover one tile; a source texture it kept keeps its own tiling inside it.
+	 */
+	static void ScaleTextureTransforms(FMantleGlbDocument& Document, int32 Index, double UvRange);
+
+	/** The salt a material's cache key is made with (Describe is the flattener's): Surface's CacheTag is empty for the plain surface. */
+	static FString MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& Settings, const FMantlePlaceAssetLimits& Limits,
+		const UMaterialInterface* Material, bool bPerInstanceVariation, const FMantleBakeSurface& Surface);
+
 	bool ConvertSound(USoundWave* Sound, FMantlePlaceAssetSet& Out);
 
 	/**
