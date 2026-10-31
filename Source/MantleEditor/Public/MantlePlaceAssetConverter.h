@@ -812,6 +812,17 @@ public:
 	 */
 	static void ScaleTextureTransforms(FMantleGlbDocument& Document, int32 Index, double UvRange);
 
+	/**
+	 * A flat convex collision hull (every point on one plane, at least three not on a line) as a slab FlatHullHalfThicknessCm to each
+	 * side of that plane: each point twice, once each way along the plane's normal. Unreal collides with a flat hull, but the cook takes
+	 * only hulls with volume. False, unchanged, when the points span no plane.
+	 */
+	static bool ThickenFlatHull(TArray<FVector3f>& Points);
+	static constexpr double FlatHullHalfThicknessCm = 1.0;
+
+	/** A collision box's full size with one side of zero (a flat sheet) made 2 x FlatHullHalfThicknessCm; a box flat on two or three sides is returned as it is. */
+	static FVector ThickenFlatBox(const FVector& Size);
+
 	/** The salt a material's cache key is made with (Describe is the flattener's): Surface's CacheTag is empty for the plain surface. */
 	static FString MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& Settings, const FMantlePlaceAssetLimits& Limits,
 		const UMaterialInterface* Material, bool bPerInstanceVariation, const FMantleBakeSurface& Surface);
