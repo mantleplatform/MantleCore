@@ -115,7 +115,7 @@ struct FMantleGrassEntryAssets
  * server or in an editor world; nothing of it replicates, since each machine builds the same terrain from the
  * same place.
  *
- * Console variables: mantle.Grass.DensityScale (1; 0 turns grass off), mantle.Grass.MaxInstancesPerFrame (the
+ * Settings > Foliage scales every entry's density and draw distance (Low 30% and half the distance, Medium 60% and 70%, High full density and 85%, Epic full). Console variables: mantle.Grass.DensityScale (1; 0 turns grass off), mantle.Grass.MaxInstancesPerFrame (the
  * most instances added to components in one frame) and mantle.Grass.MaxLiveInstances (the most standing at once).
  * These caps, and the cells in flight and waiting, are one budget shared by every terrain's grass in the world.
  * Log marker: MANTLE_GRASS.
@@ -212,6 +212,8 @@ private:
 
 	/** The density scale the standing cells were made with; a change rebuilds them all. */
 	double AppliedDensityScale = 1.0;
+	/** The Foliage tier's draw-distance scale the standing cells were made with; a change rebuilds them all, like the density. */
+	double AppliedDistanceScale = 1.0;
 
 	double NextScanSeconds = 0.0;
 	double NextLogSeconds = 0.0;
