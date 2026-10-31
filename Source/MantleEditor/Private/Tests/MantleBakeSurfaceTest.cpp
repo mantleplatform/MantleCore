@@ -399,4 +399,45 @@ bool FMantleBakeSurfaceLargestUvRepeatTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// DowntownWestModularPack's roads map their textures by world position: baked once over each road's UVs, one bake was stretched across
+// a whole road. A world-mapped material is now baked as one world tile and published worldAligned at that tile's size.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleWorldTileBakeTest,
+	"Mantle.Editor.BakeSurface.WorldMappedMaterialsBakeOneWorldTile",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleWorldTileBakeTest::RunTest(const FString& Parameters)
+{
+	FMantleMaterialAnalysis WorldMapped;
+	WorldMapped.Losses = EMantleMaterialLoss::WorldAligned;
+	const FMantleBakeSurface Tile = FMantlePlaceAssetConverter::EffectiveBakeSurface(WorldMapped, FMantleBakeSurface());
+	TestEqual(TEXT("a world-mapped material bakes one world tile"), Tile.WorldTileCm, FMantleBakeSurface::DefaultWorldTileCm);
+	TestFalse(TEXT("which is not the plain surface"), Tile.IsPlain());
+	TestTrue(TEXT("and keys its own cache entry"), Tile.CacheTag().Contains(TEXT("worldtile=")));
+
+	FMantleMaterialAnalysis Kept = WorldMapped;
+	Kept.Fidelity2.bWorldAligned = true;
+	TestEqual(TEXT("one whose pattern is kept from its source textures does not"),
+		FMantlePlaceAssetConverter::EffectiveBakeSurface(Kept, FMantleBakeSurface()).WorldTileCm, 0.0);
+	FMantleBakeSurface Landscape;
+	Landscape.UvRange = 16;
+	TestEqual(TEXT("nor does a landscape layer, which keeps its UV range"),
+		FMantlePlaceAssetConverter::EffectiveBakeSurface(WorldMapped, Landscape).WorldTileCm, 0.0);
+	TestEqual(TEXT("a material mapped by UV keeps the plain surface"),
+		FMantlePlaceAssetConverter::EffectiveBakeSurface(FMantleMaterialAnalysis(), FMantleBakeSurface()).WorldTileCm, 0.0);
+
+	FMantlePlaceMaterialDocument Opaque;
+	FMantlePlaceAssetConverter::ApplyWorldTile(Opaque, Tile);
+	TestTrue(TEXT("an opaque world-tile bake publishes worldAligned"), Opaque.bWorldAligned);
+	TestEqual(TEXT("at the tile's size"), Opaque.TileSizeCm, FMantleBakeSurface::DefaultWorldTileCm);
+	FMantlePlaceMaterialDocument Glass;
+	Glass.AlphaMode = TEXT("blend");
+	FMantlePlaceAssetConverter::ApplyWorldTile(Glass, Tile);
+	TestFalse(TEXT("a see-through one does not (the format's mapping is opaque only)"), Glass.bWorldAligned);
+	FMantlePlaceMaterialDocument Plain;
+	FMantlePlaceAssetConverter::ApplyWorldTile(Plain, FMantleBakeSurface());
+	TestFalse(TEXT("nor does a plain bake"), Plain.bWorldAligned);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

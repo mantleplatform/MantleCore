@@ -297,7 +297,17 @@ struct MANTLEEDITOR_API FMantleBakeSurface
 	/** The card's UVs run 0 to this on both axes. */
 	int32 UvRange = 1;
 
-	bool IsPlain() const { return VertexColor == FColor::White && UvRange <= 1; }
+	/**
+	 * When above 0, the card is this many cm a side, for a material mapped by world position (EMantleMaterialLoss::WorldAligned): the bake
+	 * is then one tile of its world pattern, published to repeat every this many cm in the world (worldAligned) instead of stretched once
+	 * over each mesh's UVs. 0: the card is 1 m a side and the bake maps by UV.
+	 */
+	double WorldTileCm = 0.0;
+
+	/** The tile WorldTileCm is for a world-mapped material whose own repeat is not read. */
+	static constexpr double DefaultWorldTileCm = 400.0;
+
+	bool IsPlain() const { return VertexColor == FColor::White && UvRange <= 1 && WorldTileCm <= 0.0; }
 
 	/** What the conversion cache keys on: empty for the plain surface, so those bakes keep their keys. */
 	FString CacheTag() const;

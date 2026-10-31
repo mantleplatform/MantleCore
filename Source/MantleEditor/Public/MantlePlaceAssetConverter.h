@@ -820,6 +820,15 @@ public:
 	static bool ThickenFlatHull(TArray<FVector3f>& Points);
 	static constexpr double FlatHullHalfThicknessCm = 1.0;
 
+	/**
+	 * A material baked as one world tile (Surface.WorldTileCm above 0) publishes worldAligned at that tile size, when the document is
+	 * opaque and carries no other mapping (wind, a layer blend, water): the format holds one. Anything else is left as it is.
+	 */
+	static void ApplyWorldTile(FMantlePlaceMaterialDocument& Doc, const FMantleBakeSurface& Surface);
+
+	/** The worldAligned sharpness a world-tile bake publishes with: how sharply its top and side projections meet. */
+	static constexpr double WorldTileSharpness = 4.0;
+
 	/** A collision box's full size with one side of zero (a flat sheet) made 2 x FlatHullHalfThicknessCm; a box flat on two or three sides is returned as it is. */
 	static FVector ThickenFlatBox(const FVector& Size);
 
