@@ -1290,7 +1290,10 @@ enum class EMantleVoxelRenderClass : uint8
 	Translucent
 };
 
-/** Who may change a VoxelWorld's blocks (#168): players and scripts, nobody, or scripts only. */
+/**
+ * Who may change a VoxelWorld's blocks (#168): every player; no player; or players with the scripts deciding each edit (their
+ * OnBlockPlacing / OnBlockBreaking or OnTerrainEditing). Scripts' own changes always go through.
+ */
 enum class EMantleVoxelEdit : uint8
 {
 	All,

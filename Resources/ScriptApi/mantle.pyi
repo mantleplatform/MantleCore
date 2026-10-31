@@ -1348,8 +1348,8 @@ class _WorldService:
     def get_entities_in_radius(self, center: Vector3, radius: float, params: dict[str, Any] = ..., /) -> list[Entity]:
         """Every entity and player character touching a ball of this radius (at most 50 m) around center, nearest first. Overlap-only entities (triggers) count; entities with no collision never do. A character is listed as its Entity; Players:GetPlayerFromCharacter tells whose it is. params: Include, Exclude, Tag, IgnorePlayers, Layers, ExcludeLayers (collision layers, server scripts only), and MaxResults (256 at most, and by default). Runs on this machine only; a script may make 256 spatial queries a frame."""
         ...
-    def get_voxel_world(self) -> Optional[VoxelWorld]:
-        """The place's block world (#168), or nil when the place has none."""
+    def get_voxel_world(self, look: Optional[str] = ..., /) -> Optional[VoxelWorld]:
+        """The place's block world (#168), or nil when the place has none. A place may have two, one of each look: give 'blocky' or 'smooth' for that one; with no look, the place's first."""
         ...
     def on_tagged(self, tag: str, handler: Callable[..., Any], /) -> Connection:
         """Call handler for every entity that has the tag now, and for each one that gets it later."""

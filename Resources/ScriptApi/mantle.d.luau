@@ -1272,8 +1272,8 @@ declare extern type WorldService with
 	function GetEntitiesInBox(self, center: Vector3, size: Vector3, params: {Include: {Entity | Player}?, Exclude: {Entity | Player}?, Tag: string?, IgnorePlayers: boolean?, MaxResults: number?, Layers: {string}?, ExcludeLayers: {string}?}?): {Entity}
 	--- Every entity and player character touching a ball of this radius (at most 50 m) around center, nearest first. Overlap-only entities (triggers) count; entities with no collision never do. A character is listed as its Entity; Players:GetPlayerFromCharacter tells whose it is. params: Include, Exclude, Tag, IgnorePlayers, Layers, ExcludeLayers (collision layers, server scripts only), and MaxResults (256 at most, and by default). Runs on this machine only; a script may make 256 spatial queries a frame.
 	function GetEntitiesInRadius(self, center: Vector3, radius: number, params: {Include: {Entity | Player}?, Exclude: {Entity | Player}?, Tag: string?, IgnorePlayers: boolean?, MaxResults: number?, Layers: {string}?, ExcludeLayers: {string}?}?): {Entity}
-	--- The place's block world (#168), or nil when the place has none.
-	function GetVoxelWorld(self): VoxelWorld?
+	--- The place's block world (#168), or nil when the place has none. A place may have two, one of each look: give "blocky" or "smooth" for that one; with no look, the place's first.
+	function GetVoxelWorld(self, look: string?): VoxelWorld?
 	--- Call handler for every entity that has the tag now, and for each one that gets it later.
 	function OnTagged(self, tag: string, handler: (entity: Entity) -> ()): Connection
 	--- Call handler when an entity loses the tag.
