@@ -496,7 +496,7 @@ interface VoxelWorld {
 	clearBrushPreview(): void;
 	/** Removes the outline HighlightBlock drew. (client only) */
 	clearHighlight(): void;
-	/** How many blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks). */
+	/** How many blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks). On a smooth world: the solid voxels of that material (density above 0), or the empty ones for "air". */
 	countBlocks(min: Vector3, max: Vector3, name: string): number;
 	/** Smooth worlds: takes ground away in a sphere (Brush("dig", ...)). Returns the voxels changed. (server only) */
 	dig(position: Vector3, radius: number, options?: { strength?: number | undefined }): number;
@@ -504,7 +504,7 @@ interface VoxelWorld {
 	editAsPlayer(player: Player, x: number, y: number, z: number, name?: string | undefined): string;
 	/** Sets every block of a shape to a type (nil or "air" empties it) and returns how many changed. A shape is {Box = {min, max}}, {Sphere = {center, radius}} or {Line = {from, to, radius}}, in blocks; at most 262,144 blocks a call. Raises one OnBlocksChanged. (server only) */
 	fill(shape: { box?: (Vector3)[] | undefined; sphere?: (any)[] | undefined; line?: (any)[] | undefined }, name?: string | undefined): number;
-	/** Where the blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks), up to limit (default and at most 1,024). */
+	/** Where the blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks), up to limit (default and at most 1,024). On a smooth world: the solid voxels of that material, as CountBlocks counts them. */
 	findBlocks(min: Vector3, max: Vector3, name: string, limit?: number | undefined): (Vector3)[];
 	/** Smooth worlds: pulls the ground in a sphere toward a level floor at options.PlaneZ (cm; default the position's height). New ground takes options.Material, or its neighbour's. Returns the voxels changed. (server only) */
 	flatten(position: Vector3, radius: number, options?: { strength?: number | undefined; material?: string | undefined; planeZ?: number | undefined }): number;
@@ -554,7 +554,7 @@ interface VoxelWorld {
 	previewBrush(position: Vector3, radius: number): void;
 	/** Walks the blocks from origin (cm) along direction to the first block within MaxDistance (default 10,000 cm, at most 51,200). It reads blocks, not physics, so it works at any distance. Liquids are passed through unless IgnoreLiquid is false. On a smooth world it finds the ground's surface: {Material, Position, Normal, Distance}. */
 	raycast(origin: Vector3, direction: Vector3, params?: { maxDistance?: number | undefined; ignoreLiquid?: boolean | undefined }): { block?: string | undefined; material?: string | undefined; position: Vector3; normal: Vector3; coordinates?: Vector3 | undefined; distance: number } | undefined;
-	/** Like Fill, but changes only the blocks of type from. Returns how many changed. (server only) */
+	/** Like Fill, but changes only the blocks of type from. Returns how many changed. On a smooth world it changes the voxels of material from (solid ones; "air" for empty ones) into full voxels of to. (server only) */
 	replace(shape: { box?: (Vector3)[] | undefined; sphere?: (any)[] | undefined; line?: (any)[] | undefined }, from: string, to?: string | undefined): number;
 	/** Sets one block (nil or "air" empties it). True when it changed. Every player sees it; OnBlockChanged follows (not the cancellable OnBlockPlacing/OnBlockBreaking, which are for players' edits). (server only) */
 	setBlock(x: number, y: number, z: number, name?: string | undefined): boolean;
@@ -564,7 +564,7 @@ interface VoxelWorld {
 	setVoxel(x: number, y: number, z: number, material: string | undefined, density: number): boolean;
 	/** Smooth worlds: rounds off the ground in a sphere (each voxel moves toward its neighbours' average). Returns the voxels changed. (server only) */
 	smooth(position: Vector3, radius: number, options?: { strength?: number | undefined }): number;
-	/** The world height (cm) of the top of the highest solid block in column (x, y), or nil when the column is empty. */
+	/** The world height (cm) of the top of the highest solid block in column (x, y), or nil when the column is empty. On a smooth world: the top of the highest solid voxel (density above 0), within a voxel (50 cm) of the drawn surface; Raycast finds the surface itself. */
 	surfaceHeight(x: number, y: number): number | undefined;
 	/** The world position (cm) of a block's (on a smooth world, a voxel's) middle. */
 	voxelToWorld(x: number, y: number, z: number): Vector3;
