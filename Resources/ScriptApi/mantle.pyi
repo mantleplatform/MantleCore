@@ -434,11 +434,20 @@ class UiNode:
 
 class VoxelWorld:
     """The place's block world (#168): read its blocks anywhere, change them (server), and hear players build. Block coordinates are whole blocks (x, y, z with z up, as every position), from the world's lowest corner."""
+    def brush(self, tool: str, position: Vector3, radius: float, options: dict[str, Any] = ..., /) -> float:
+        """Smooth worlds: one brush stroke, as a player's but with no checks: tool 'dig', 'fill', 'flatten', 'smooth' or 'paint', a sphere at position (cm) of radius 50 to 800 cm. options: Strength 1 to 100 (default 50), Material (fill and paint need it; new ground takes it), PlaneZ (flatten's floor height in cm; default the position's). Every player gets the stroke (about 21 bytes). Returns the voxels changed; OnTerrainEdited follows."""
+        ...
+    def clear_brush_preview(self) -> None:
+        """Removes the ring PreviewBrush drew."""
+        ...
     def clear_highlight(self) -> None:
         """Removes the outline HighlightBlock drew."""
         ...
     def count_blocks(self, min: Vector3, max: Vector3, name: str, /) -> float:
         """How many blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks)."""
+        ...
+    def dig(self, position: Vector3, radius: float, options: dict[str, Any] = ..., /) -> float:
+        """Smooth worlds: takes ground away in a sphere (Brush('dig', ...)). Returns the voxels changed."""
         ...
     def edit_as_player(self, player: Player, x: float, y: float, z: float, name: Optional[str] = ..., /) -> str:
         """Breaks (nil or 'air') or places a block for a player, as if they did it with Mantle's own tools: the rate limit (20 a second), reach (6 m from their eyes), line of sight, the block rules and OnBlockPlacing / OnBlockBreaking all apply. For your own build tool: the player's client raycasts (VoxelWorld:Raycast from the camera), sends a Remote, and the server calls this. Returns 'applied' or why not: 'same', 'closed', 'rate', 'outside', 'unknown_type', 'nothing_to_break', 'unbreakable', 'occupied', 'floating', 'out_of_reach', 'blocked', 'cancelled', 'no_player'."""
@@ -449,14 +458,23 @@ class VoxelWorld:
     def find_blocks(self, min: Vector3, max: Vector3, name: str, limit: Optional[float] = ..., /) -> list[Vector3]:
         """Where the blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks), up to limit (default and at most 1,024)."""
         ...
+    def flatten(self, position: Vector3, radius: float, options: dict[str, Any] = ..., /) -> float:
+        """Smooth worlds: pulls the ground in a sphere toward a level floor at options.PlaneZ (cm; default the position's height). New ground takes options.Material, or its neighbour's. Returns the voxels changed."""
+        ...
     def get_block(self, x: float, y: float, z: float, /) -> Optional[str]:
         """The block type's name at (x, y, z), 'air' for empty, nil outside the world."""
         ...
     def get_block_at(self, position: Vector3, /) -> Optional[str]:
         """The block type's name at a world position (cm), 'air' for empty, nil outside the world."""
         ...
+    def get_density(self, x: float, y: float, z: float, /) -> Optional[float]:
+        """Smooth worlds: the density at voxel (x, y, z), -127 to 127: solid above 0, the surface where it crosses 0. Nil outside the world."""
+        ...
     def get_look(self) -> str:
         """'blocky' (cubes) or 'smooth' (ground you dig)."""
+        ...
+    def get_material(self, x: float, y: float, z: float, /) -> Optional[str]:
+        """Smooth worlds: the material at voxel (x, y, z), 'air' where the ground is empty, nil outside the world."""
         ...
     def get_size(self) -> Vector3:
         """The world's size in blocks."""
@@ -474,7 +492,7 @@ class VoxelWorld:
         """Whether anything in the box (corners in blocks) may differ from the world the place was published with (whole 16-block sections are compared)."""
         ...
     def is_loaded(self, min: Vector3, max: Vector3, /) -> bool:
-        """Whether this machine holds every block of the box. Always true today: server and players hold the whole world."""
+        """Whether this machine holds every block of the box. The server and players hold the whole world once its own blocks are in (a moment after the place starts; before that it reads as air)."""
         ...
     def on_block_breaking(self, handler: Optional[Callable[..., Any]], /) -> Connection:
         """Called before a player's broken block goes, on the spot (the handler may not wait). Return false to keep the block."""
@@ -497,8 +515,20 @@ class VoxelWorld:
     def on_generate_section(self, handler: Callable[..., Any], /) -> Connection:
         """Generates the world from a script: the handler is called once for every 16 x 16 x 16 section (nearest players first, a few a tick), on the spot (it may not wait), with the section's corners in blocks and a writer that sets its blocks. Use the same seed for the same world. Every player sees what it wrote. Sections someone already changed are left alone."""
         ...
+    def on_terrain_edited(self, handler: Callable[..., Any], /) -> Connection:
+        """Smooth worlds: a brush stroke changed the ground, a player's or a script's."""
+        ...
+    def on_terrain_editing(self, handler: Optional[Callable[..., Any]], /) -> Connection:
+        """Smooth worlds: called before a player's brush stroke goes in, on the spot (the handler may not wait). Return false to refuse it. Not raised for a script's own brushes."""
+        ...
+    def paint(self, position: Vector3, radius: float, options: dict[str, Any], /) -> float:
+        """Smooth worlds: changes the ground's material in a sphere, not its shape (stronger reaches nearer the edge). Returns the voxels changed. To add ground, use Brush('fill', position, radius, {Material = ...})."""
+        ...
+    def preview_brush(self, position: Vector3, radius: float, /) -> None:
+        """Smooth worlds: draws the brush ring Mantle's own tools draw, on this player's screen only, for your own terrain tool. One at a time."""
+        ...
     def raycast(self, origin: Vector3, direction: Vector3, params: dict[str, Any] = ..., /) -> Optional[dict[str, Any]]:
-        """Walks the blocks from origin (cm) along direction to the first block within MaxDistance (default 10,000 cm, at most 51,200). It reads blocks, not physics, so it works at any distance. Liquids are passed through unless IgnoreLiquid is false."""
+        """Walks the blocks from origin (cm) along direction to the first block within MaxDistance (default 10,000 cm, at most 51,200). It reads blocks, not physics, so it works at any distance. Liquids are passed through unless IgnoreLiquid is false. On a smooth world it finds the ground's surface: {Material, Position, Normal, Distance}."""
         ...
     def replace(self, shape: dict[str, Any], from_: str, to: Optional[str] = ..., /) -> float:
         """Like Fill, but changes only the blocks of type from. Returns how many changed."""
@@ -509,11 +539,17 @@ class VoxelWorld:
     def set_built_in_tools(self, enabled: bool, player: Optional[Player] = ..., /) -> None:
         """Turns Mantle's built-in build tools on or off for one player, or for everyone now and later (no player). They are off unless a script turns them on: Z toggles build mode, hold left mouse breaks, right mouse places, 1-9 and the wheel pick a hotbar slot, I opens a block picker. A game that makes its own tools leaves them off."""
         ...
+    def set_voxel(self, x: float, y: float, z: float, material: Optional[str], density: float, /) -> bool:
+        """Smooth worlds: sets one voxel's material and density (-127 to 127). At or below 0 it is empty and keeps no material. True when it changed."""
+        ...
+    def smooth(self, position: Vector3, radius: float, options: dict[str, Any] = ..., /) -> float:
+        """Smooth worlds: rounds off the ground in a sphere (each voxel moves toward its neighbours' average). Returns the voxels changed."""
+        ...
     def surface_height(self, x: float, y: float, /) -> Optional[float]:
         """The world height (cm) of the top of the highest solid block in column (x, y), or nil when the column is empty."""
         ...
     def voxel_to_world(self, x: float, y: float, z: float, /) -> Vector3:
-        """The world position (cm) of a block's middle."""
+        """The world position (cm) of a block's (on a smooth world, a voxel's) middle."""
         ...
     def world_to_voxel(self, position: Vector3, /) -> Vector3:
         """The block coordinates holding a world position (cm)."""
@@ -529,6 +565,9 @@ class VoxelWriter:
         ...
     def set_block(self, x: float, y: float, z: float, name: Optional[str] = ..., /) -> None:
         """Sets one block of the section."""
+        ...
+    def set_voxel(self, x: float, y: float, z: float, material: Optional[str], density: float, /) -> None:
+        """Smooth worlds: sets one voxel of the section, a material and a density (-127 to 127, solid above 0). For smooth ground, let the density run through 0 over two or three voxels (about 48 a voxel): the surface lies where it crosses 0. SetBlock, FillBox and FillColumn write full voxels."""
         ...
 
 class _AssetsService:

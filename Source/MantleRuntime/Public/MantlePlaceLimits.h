@@ -200,6 +200,9 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** Distinct tile textures across one VoxelWorld's block types (#168): one texture array. */
 	static constexpr int32 MaxVoxelTileTextures = 256;
 
+	/** A smooth VoxelWorld's block types are its ground materials (#168 section 10): at most this many. */
+	static constexpr int32 MaxVoxelSmoothMaterials = 32;
+
 	/** A VoxelWorld block type's light and hardness ranges (#168): light 0 to this; hardness -1 (unbreakable) or 0 to this. */
 	static constexpr int32 MaxVoxelBlockLight = 15;
 	static constexpr double MaxVoxelBlockHardness = 60.0;

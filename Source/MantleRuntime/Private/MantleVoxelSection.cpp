@@ -291,6 +291,136 @@ bool FMantleVoxelSection::Decompress(TConstArrayView<uint8> Bytes, FMantleVoxelS
 	return Deserialize(Raw, Out);
 }
 
+bool FMantleVoxelDensity::Set(int32 Index, int8 Value)
+{
+	check(Index >= 0 && Index < MantleVoxel::SectionVolume);
+	if (Get(Index) == Value)
+	{
+		return false;
+	}
+	if (!Data.IsValid())
+	{
+		Data = MakeShared<TArray<int8>, ESPMode::ThreadSafe>();
+		Data->Init(Uniform, MantleVoxel::SectionVolume);
+	}
+	else if (!Data.IsUnique())
+	{
+		Data = MakeShared<TArray<int8>, ESPMode::ThreadSafe>(*Data);
+	}
+	(*Data)[Index] = Value;
+	return true;
+}
+
+void FMantleVoxelDensity::SetAll(const int8* Values)
+{
+	Data.Reset();
+	Uniform = Values[0];
+	for (int32 I = 1; I < MantleVoxel::SectionVolume; ++I)
+	{
+		if (Values[I] != Uniform)
+		{
+			Data = MakeShared<TArray<int8>, ESPMode::ThreadSafe>(Values, MantleVoxel::SectionVolume);
+			return;
+		}
+	}
+}
+
+void FMantleVoxelDensity::Compact()
+{
+	if (Data.IsValid())
+	{
+		// Held here: SetAll lets go of Data first.
+		const TSharedPtr<TArray<int8>, ESPMode::ThreadSafe> Values = Data;
+		SetAll(Values->GetData());
+	}
+}
+
+void FMantleVoxelDensity::Compress(TArray<uint8>& Out) const
+{
+	TArray<uint8> Raw;
+	if (!Data.IsValid())
+	{
+		Raw = { 0, uint8(Uniform) };
+	}
+	else
+	{
+		Raw.Add(1);
+		Raw.Append(reinterpret_cast<const uint8*>(Data->GetData()), MantleVoxel::SectionVolume);
+	}
+	const int32 Bound = FCompression::CompressMemoryBound(NAME_Zlib, Raw.Num());
+	Out.SetNumUninitialized(2 + Bound);
+	Out[0] = uint8(Raw.Num() & 0xFF);
+	Out[1] = uint8(Raw.Num() >> 8);
+	int32 Compressed = Bound;
+	if (!FCompression::CompressMemory(NAME_Zlib, Out.GetData() + 2, Compressed, Raw.GetData(), Raw.Num()))
+	{
+		Out.SetNum(2);
+		Out[1] |= 0x80;
+		Out.Append(Raw);
+		return;
+	}
+	Out.SetNum(2 + Compressed);
+}
+
+bool FMantleVoxelDensity::Decompress(TConstArrayView<uint8> Bytes, FMantleVoxelDensity& Out)
+{
+	if (Bytes.Num() < 3)
+	{
+		return false;
+	}
+	const bool bStored = (Bytes[1] & 0x80) != 0;
+	const int32 RawSize = Bytes[0] | ((Bytes[1] & 0x7F) << 8);
+	if (RawSize != 2 && RawSize != 1 + MantleVoxel::SectionVolume)
+	{
+		return false;
+	}
+	TArray<uint8> Raw;
+	if (bStored)
+	{
+		if (Bytes.Num() != 2 + RawSize)
+		{
+			return false;
+		}
+		Raw = TArray<uint8>(Bytes.RightChop(2));
+	}
+	else
+	{
+		Raw.SetNumUninitialized(RawSize);
+		if (!FCompression::UncompressMemory(NAME_Zlib, Raw.GetData(), RawSize, Bytes.GetData() + 2, Bytes.Num() - 2))
+		{
+			return false;
+		}
+	}
+	if (Raw[0] == 0 && RawSize == 2)
+	{
+		Out = FMantleVoxelDensity(int8(Raw[1]));
+		return true;
+	}
+	if (Raw[0] != 1 || RawSize != 1 + MantleVoxel::SectionVolume)
+	{
+		return false;
+	}
+	Out = FMantleVoxelDensity();
+	Out.SetAll(reinterpret_cast<const int8*>(Raw.GetData() + 1));
+	return true;
+}
+
+bool operator==(const FMantleVoxelDensity& A, const FMantleVoxelDensity& B)
+{
+	if (A.IsUniform() && B.IsUniform())
+	{
+		return A.Uniform == B.Uniform;
+	}
+	for (int32 I = 0; I < MantleVoxel::SectionVolume; ++I)
+	{
+		if (A.Get(I) != B.Get(I))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 bool operator==(const FMantleVoxelSection& A, const FMantleVoxelSection& B)
 {
 	if (A.IsUniform() && B.IsUniform())

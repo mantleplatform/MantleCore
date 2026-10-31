@@ -490,22 +490,34 @@ interface UiNode {
 
 /** The place's block world (#168): read its blocks anywhere, change them (server), and hear players build. Block coordinates are whole blocks (x, y, z with z up, as every position), from the world's lowest corner. */
 interface VoxelWorld {
+	/** Smooth worlds: one brush stroke, as a player's but with no checks: tool "dig", "fill", "flatten", "smooth" or "paint", a sphere at position (cm) of radius 50 to 800 cm. options: Strength 1 to 100 (default 50), Material (fill and paint need it; new ground takes it), PlaneZ (flatten's floor height in cm; default the position's). Every player gets the stroke (about 21 bytes). Returns the voxels changed; OnTerrainEdited follows. (server only) */
+	brush(tool: string, position: Vector3, radius: number, options?: { strength?: number | undefined; material?: string | undefined; planeZ?: number | undefined }): number;
+	/** Removes the ring PreviewBrush drew. (client only) */
+	clearBrushPreview(): void;
 	/** Removes the outline HighlightBlock drew. (client only) */
 	clearHighlight(): void;
 	/** How many blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks). */
 	countBlocks(min: Vector3, max: Vector3, name: string): number;
+	/** Smooth worlds: takes ground away in a sphere (Brush("dig", ...)). Returns the voxels changed. (server only) */
+	dig(position: Vector3, radius: number, options?: { strength?: number | undefined }): number;
 	/** Breaks (nil or "air") or places a block for a player, as if they did it with Mantle's own tools: the rate limit (20 a second), reach (6 m from their eyes), line of sight, the block rules and OnBlockPlacing / OnBlockBreaking all apply. For your own build tool: the player's client raycasts (VoxelWorld:Raycast from the camera), sends a Remote, and the server calls this. Returns "applied" or why not: "same", "closed", "rate", "outside", "unknown_type", "nothing_to_break", "unbreakable", "occupied", "floating", "out_of_reach", "blocked", "cancelled", "no_player". (server only) */
 	editAsPlayer(player: Player, x: number, y: number, z: number, name?: string | undefined): string;
 	/** Sets every block of a shape to a type (nil or "air" empties it) and returns how many changed. A shape is {Box = {min, max}}, {Sphere = {center, radius}} or {Line = {from, to, radius}}, in blocks; at most 262,144 blocks a call. Raises one OnBlocksChanged. (server only) */
 	fill(shape: { box?: (Vector3)[] | undefined; sphere?: (any)[] | undefined; line?: (any)[] | undefined }, name?: string | undefined): number;
 	/** Where the blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks), up to limit (default and at most 1,024). */
 	findBlocks(min: Vector3, max: Vector3, name: string, limit?: number | undefined): (Vector3)[];
+	/** Smooth worlds: pulls the ground in a sphere toward a level floor at options.PlaneZ (cm; default the position's height). New ground takes options.Material, or its neighbour's. Returns the voxels changed. (server only) */
+	flatten(position: Vector3, radius: number, options?: { strength?: number | undefined; material?: string | undefined; planeZ?: number | undefined }): number;
 	/** The block type's name at (x, y, z), "air" for empty, nil outside the world. */
 	getBlock(x: number, y: number, z: number): string | undefined;
 	/** The block type's name at a world position (cm), "air" for empty, nil outside the world. */
 	getBlockAt(position: Vector3): string | undefined;
+	/** Smooth worlds: the density at voxel (x, y, z), -127 to 127: solid above 0, the surface where it crosses 0. Nil outside the world. */
+	getDensity(x: number, y: number, z: number): number | undefined;
 	/** "blocky" (cubes) or "smooth" (ground you dig). */
 	getLook(): string;
+	/** Smooth worlds: the material at voxel (x, y, z), "air" where the ground is empty, nil outside the world. */
+	getMaterial(x: number, y: number, z: number): string | undefined;
 	/** The world's size in blocks. */
 	getSize(): Vector3;
 	/** A block type as the place file defines it: Hardness (seconds to break by hand, -1 unbreakable), Solid, Liquid, Light (0 to 15), Render ("opaque", "cutout", "translucent"), Surface, Tags and Drops (the creator's own id; no engine meaning). */
@@ -516,7 +528,7 @@ interface VoxelWorld {
 	highlightBlock(x: number, y: number, z: number): void;
 	/** Whether anything in the box (corners in blocks) may differ from the world the place was published with (whole 16-block sections are compared). (server only) */
 	isEdited(min: Vector3, max: Vector3): boolean;
-	/** Whether this machine holds every block of the box. Always true today: server and players hold the whole world. */
+	/** Whether this machine holds every block of the box. The server and players hold the whole world once its own blocks are in (a moment after the place starts; before that it reads as air). */
 	isLoaded(min: Vector3, max: Vector3): boolean;
 	/** Called before a player's broken block goes, on the spot (the handler may not wait). Return false to keep the block. (server only) */
 	onBlockBreaking(handler: (info: { source: { player?: Player | undefined; script: boolean }; coordinates: Vector3; block: string }) => boolean | undefined): Connection;
@@ -532,17 +544,29 @@ interface VoxelWorld {
 	onBlocksChanged(handler: (info: { source: { player?: Player | undefined; script: boolean }; min: Vector3; max: Vector3; count: number }) => void): Connection;
 	/** Generates the world from a script: the handler is called once for every 16 x 16 x 16 section (nearest players first, a few a tick), on the spot (it may not wait), with the section's corners in blocks and a writer that sets its blocks. Use the same seed for the same world. Every player sees what it wrote. Sections someone already changed are left alone. (server only) */
 	onGenerateSection(handler: (section: { min: Vector3; max: Vector3 }, writer: VoxelWriter) => void): Connection;
-	/** Walks the blocks from origin (cm) along direction to the first block within MaxDistance (default 10,000 cm, at most 51,200). It reads blocks, not physics, so it works at any distance. Liquids are passed through unless IgnoreLiquid is false. */
-	raycast(origin: Vector3, direction: Vector3, params?: { maxDistance?: number | undefined; ignoreLiquid?: boolean | undefined }): { block: string; position: Vector3; normal: Vector3; coordinates: Vector3; distance: number } | undefined;
+	/** Smooth worlds: a brush stroke changed the ground, a player's or a script's. (server only) */
+	onTerrainEdited(handler: (info: { source: { player?: Player | undefined; script: boolean }; tool: string; position: Vector3; radius: number; strength: number; material?: string | undefined }) => void): Connection;
+	/** Smooth worlds: called before a player's brush stroke goes in, on the spot (the handler may not wait). Return false to refuse it. Not raised for a script's own brushes. (server only) */
+	onTerrainEditing(handler: (info: { source: { player?: Player | undefined; script: boolean }; tool: string; position: Vector3; radius: number; strength: number; material?: string | undefined }) => boolean | undefined): Connection;
+	/** Smooth worlds: changes the ground's material in a sphere, not its shape (stronger reaches nearer the edge). Returns the voxels changed. To add ground, use Brush("fill", position, radius, {Material = ...}). (server only) */
+	paint(position: Vector3, radius: number, options: { material: string; strength?: number | undefined }): number;
+	/** Smooth worlds: draws the brush ring Mantle's own tools draw, on this player's screen only, for your own terrain tool. One at a time. (client only) */
+	previewBrush(position: Vector3, radius: number): void;
+	/** Walks the blocks from origin (cm) along direction to the first block within MaxDistance (default 10,000 cm, at most 51,200). It reads blocks, not physics, so it works at any distance. Liquids are passed through unless IgnoreLiquid is false. On a smooth world it finds the ground's surface: {Material, Position, Normal, Distance}. */
+	raycast(origin: Vector3, direction: Vector3, params?: { maxDistance?: number | undefined; ignoreLiquid?: boolean | undefined }): { block?: string | undefined; material?: string | undefined; position: Vector3; normal: Vector3; coordinates?: Vector3 | undefined; distance: number } | undefined;
 	/** Like Fill, but changes only the blocks of type from. Returns how many changed. (server only) */
 	replace(shape: { box?: (Vector3)[] | undefined; sphere?: (any)[] | undefined; line?: (any)[] | undefined }, from: string, to?: string | undefined): number;
 	/** Sets one block (nil or "air" empties it). True when it changed. Every player sees it; OnBlockChanged follows (not the cancellable OnBlockPlacing/OnBlockBreaking, which are for players' edits). (server only) */
 	setBlock(x: number, y: number, z: number, name?: string | undefined): boolean;
 	/** Turns Mantle's built-in build tools on or off for one player, or for everyone now and later (no player). They are off unless a script turns them on: Z toggles build mode, hold left mouse breaks, right mouse places, 1-9 and the wheel pick a hotbar slot, I opens a block picker. A game that makes its own tools leaves them off. (server only) */
 	setBuiltInTools(enabled: boolean, player?: Player | undefined): void;
+	/** Smooth worlds: sets one voxel's material and density (-127 to 127). At or below 0 it is empty and keeps no material. True when it changed. (server only) */
+	setVoxel(x: number, y: number, z: number, material: string | undefined, density: number): boolean;
+	/** Smooth worlds: rounds off the ground in a sphere (each voxel moves toward its neighbours' average). Returns the voxels changed. (server only) */
+	smooth(position: Vector3, radius: number, options?: { strength?: number | undefined }): number;
 	/** The world height (cm) of the top of the highest solid block in column (x, y), or nil when the column is empty. */
 	surfaceHeight(x: number, y: number): number | undefined;
-	/** The world position (cm) of a block's middle. */
+	/** The world position (cm) of a block's (on a smooth world, a voxel's) middle. */
 	voxelToWorld(x: number, y: number, z: number): Vector3;
 	/** The block coordinates holding a world position (cm). */
 	worldToVoxel(position: Vector3): Vector3;
@@ -556,6 +580,8 @@ interface VoxelWriter {
 	fillColumn(x: number, y: number, fromZ: number, toZ: number, name?: string | undefined): void;
 	/** Sets one block of the section. (server only) */
 	setBlock(x: number, y: number, z: number, name?: string | undefined): void;
+	/** Smooth worlds: sets one voxel of the section, a material and a density (-127 to 127, solid above 0). For smooth ground, let the density run through 0 over two or three voxels (about 48 a voxel): the surface lies where it crosses 0. SetBlock, FillBox and FillColumn write full voxels. (server only) */
+	setVoxel(x: number, y: number, z: number, material: string | undefined, density: number): void;
 }
 
 /** Spawn the place's own meshes at runtime (server only). Change any mesh's look through its Entity. */

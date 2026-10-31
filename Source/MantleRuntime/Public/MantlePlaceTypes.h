@@ -1338,6 +1338,8 @@ struct FMantleVoxelWorldProps
 	FString World;
 	/** 16, 32, 64 or 128: every tile texture is that square. */
 	int32 TileSize = 16;
+	/** look "smooth" (#168 steps 7-9): 50 cm voxels of ground with densities, the block types its materials, made by scripts. */
+	bool bSmooth = false;
 	/** Nearest (pixel art) or linear filtering of the tiles. */
 	bool bLinearFilter = false;
 	EMantleVoxelEdit Edit = EMantleVoxelEdit::All;
