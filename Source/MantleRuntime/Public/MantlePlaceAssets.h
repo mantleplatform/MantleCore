@@ -405,6 +405,12 @@ public:
 	static TSharedPtr<const FMantleHeightfield> FindLiveHeightfield(const FString& Id, FString& OutError);
 
 	/**
+	 * #168: a VoxelWorld's starting blocks (an MBW1 file) or one of its tile textures (the uploaded texture's file, MTX1 or an
+	 * image), as downloaded, from the newest live set that prepared it; null with OutError otherwise. Game thread.
+	 */
+	static TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> FindLiveVoxelFile(const FString& Id, bool bTile, FString& OutError);
+
+	/**
 	 * A Terrain weightmap's heaviest layer per texel (#596) for an uploaded id in the newest live set
 	 * that has it; null with the reason otherwise. Prepared on every net mode, the server's included,
 	 * but only for a Terrain whose layers name a surface (UMantleTerrainSurfaceComponent::NeedsWeights).
@@ -459,7 +465,7 @@ private:
 	 * TerrainWeights (#596) is an uploaded Texture (the API's kind) read on the CPU into a Terrain's
 	 * heaviest layer per texel, beside (not instead of) the GPU texture a client builds from the same id.
 	 */
-	enum class EAssetKind : uint8 { Mesh, Material, Texture, Sound, SkeletalMesh, AnimClip, Heightfield, Vehicle, TerrainWeights, Weapon, Lumen };
+	enum class EAssetKind : uint8 { Mesh, Material, Texture, Sound, SkeletalMesh, AnimClip, Heightfield, Vehicle, TerrainWeights, Weapon, Lumen, VoxelWorld, VoxelTile };
 
 	using FSoundSettled = TFunction<void(TSharedPtr<const FMantleSoundData>, const FString&)>;
 
@@ -512,6 +518,12 @@ private:
 		 * that names it reads its own copy of the data from it when it builds.
 		 */
 		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> LumenFile;
+
+		/**
+		 * #168: a VoxelWorldData (MBW1) or a block tile texture, as downloaded: the voxel world reads both itself, the tiles
+		 * into one texture array (kept while the set lives).
+		 */
+		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> VoxelFile;
 
 		/**
 		 * Meshes (#149): the record of the mesh's Lumen side file (empty when the place gives it none, or one baked by another

@@ -40,9 +40,10 @@ namespace
 		TEXT("WeaponSpawn"),
 		TEXT("ScriptPoint"),
 		TEXT("Text"),
-		TEXT("WaterBody")
+		TEXT("WaterBody"),
+		TEXT("VoxelWorld")
 	};
-	static_assert(UE_ARRAY_COUNT(GEntityTypeNames) == static_cast<SIZE_T>(EMantleEntityType::WaterBody) + 1, "one name per EMantleEntityType");
+	static_assert(UE_ARRAY_COUNT(GEntityTypeNames) == static_cast<SIZE_T>(EMantleEntityType::VoxelWorld) + 1, "one name per EMantleEntityType");
 
 	// In EMantleWaterBodyType and EMantleWaterSplinePointType order; a WaterBody's type and its spline points' interp (#997).
 	const TCHAR* const GWaterBodyTypeNames[] = {
@@ -99,8 +100,10 @@ namespace
 		TEXT("Heightfield"),
 		TEXT("Vehicle"),
 		TEXT("Weapon"),
-		TEXT("Lumen")
+		TEXT("Lumen"),
+		TEXT("VoxelWorldData")
 	};
+	static_assert(UE_ARRAY_COUNT(GAssetKindNames) == static_cast<SIZE_T>(EMantleAssetKind::VoxelWorldData) + 1, "one name per EMantleAssetKind");
 
 	const TCHAR* const GCollisionNames[] = {
 		TEXT("none"),
@@ -375,4 +378,20 @@ const TCHAR* MantleWaterSplinePointTypeToString(EMantleWaterSplinePointType Type
 bool MantleParseWaterSplinePointType(const FString& In, EMantleWaterSplinePointType& Out)
 {
 	return ParseEnum(In, GWaterSplinePointTypeNames, Out);
+}
+
+TArray<FString> FMantleVoxelWorldProps::TileTextures() const
+{
+	TArray<FString> Tiles;
+	for (const FMantleVoxelBlockTypeProps& Type : BlockTypes)
+	{
+		for (const FString* Id : { &Type.Top, &Type.Side, &Type.Bottom })
+		{
+			if (!Id->IsEmpty())
+			{
+				Tiles.AddUnique(*Id);
+			}
+		}
+	}
+	return Tiles;
 }

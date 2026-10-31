@@ -182,6 +182,34 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** Distinct grass maps (textures) across one Terrain's grass[] (#628). Cross-entity: validate.py and the backend state it too. */
 	static constexpr int32 MaxTerrainGrassMaps = 4;
 
+	/** VoxelWorld entities in one place (#168). Cross-entity: validate.py and the backend state it too. */
+	static constexpr int32 MaxVoxelWorldsPerPlace = 1;
+
+	/** A VoxelWorld's size in blocks (#168): x and y at most this, each side a multiple of VoxelSectionSize. */
+	static constexpr int32 MaxVoxelWorldSizeXY = 1024;
+
+	/** A VoxelWorld's height in blocks (#168). */
+	static constexpr int32 MaxVoxelWorldSizeZ = 256;
+
+	/** A VoxelWorld's section side in blocks (#168): every side of its size is a multiple of this. */
+	static constexpr int32 VoxelSectionSize = 16;
+
+	/** A VoxelWorld's blockTypes[], 1 to this many (#168): a block is one byte and 0 is air. */
+	static constexpr int32 MaxVoxelBlockTypes = 255;
+
+	/** Distinct tile textures across one VoxelWorld's block types (#168): one texture array. */
+	static constexpr int32 MaxVoxelTileTextures = 256;
+
+	/** A VoxelWorld block type's light and hardness ranges (#168): light 0 to this; hardness -1 (unbreakable) or 0 to this. */
+	static constexpr int32 MaxVoxelBlockLight = 15;
+	static constexpr double MaxVoxelBlockHardness = 60.0;
+
+	/** A VoxelWorld block type's name length, drops length and tags (#168). */
+	static constexpr int32 MaxVoxelBlockNameLength = 32;
+	static constexpr int32 MaxVoxelBlockDropsLength = 64;
+	static constexpr int32 MaxVoxelBlockTags = 8;
+	static constexpr int32 MaxVoxelBlockTagLength = 32;
+
 	/** VehicleSpawn respawnSeconds, 0 to this (#435). */
 	static constexpr double MaxVehicleRespawnSeconds = 600.0;
 

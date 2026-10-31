@@ -103,7 +103,13 @@ enum class EMantleEntityType : uint8
 	 * A body of the Water plugin (GhzGarage/mantle#997): a lake, river, ocean or custom-mesh body, with the place's Water Zone in
 	 * settings.water. Added without a schema version bump, and not behind a client feature: every client reads it.
 	 */
-	WaterBody
+	WaterBody,
+	/**
+	 * A block world (#168): a grid of 100 cm blocks in 16 x 16 x 16 sections, its block types, and optionally an uploaded
+	 * VoxelWorldData (MBW1) it starts from. MantleGameplay builds it after the place (UMantleVoxelPlaceSubsystem). One per
+	 * place. Added without a schema version bump, gated at publish until a released build reads it.
+	 */
+	VoxelWorld
 };
 
 /** A WaterBody's kind (#997), the place file's properties.bodyType: the Water plugin's lake, river, ocean or custom-mesh body. */
@@ -192,7 +198,9 @@ enum class EMantleAssetKind : uint8
 	 * A static mesh's Lumen side file (#149): MLD1 (FMantleMeshLumenFile), its distance field and Lumen cards, baked by the
 	 * plugin at publish and named by its mesh's entry (FMantleAssetRef::Lumen). Stored as baked, never cooked.
 	 */
-	Lumen
+	Lumen,
+	/** A block world's starting blocks (#168): MBW1 (FMantleVoxelWorldFile), checked by the cook and stored as uploaded. */
+	VoxelWorldData
 };
 
 enum class EMantleCollision : uint8
@@ -1274,6 +1282,71 @@ struct FMantleTerrainProps
 	TArray<FMantleTerrainGrass> Grass;
 };
 
+/** How a VoxelWorld block type draws (#168). */
+enum class EMantleVoxelRenderClass : uint8
+{
+	Opaque,
+	Cutout,
+	Translucent
+};
+
+/** Who may change a VoxelWorld's blocks (#168): players and scripts, nobody, or scripts only. */
+enum class EMantleVoxelEdit : uint8
+{
+	All,
+	None,
+	Script
+};
+
+/** Whether a VoxelWorld's edits are kept (#168): not at all, per server, or per place. */
+enum class EMantleVoxelPersistence : uint8
+{
+	None,
+	Server,
+	Place
+};
+
+/** One block type of a VoxelWorld (#168). Its id is its index in the list plus one (0 is air). */
+struct FMantleVoxelBlockTypeProps
+{
+	/** Unique in the world, [a-z0-9_], not "air": what scripts call it. */
+	FString Name;
+	/** Uploaded Texture ids for the top, side and bottom faces ("all" fills those the file leaves out). */
+	FString Top;
+	FString Side;
+	FString Bottom;
+	EMantleVoxelRenderClass Render = EMantleVoxelRenderClass::Opaque;
+	bool bSolid = true;
+	bool bLiquid = false;
+	/** 0 to 15. */
+	int32 Light = 0;
+	/** Seconds to break by hand; -1 unbreakable. */
+	double Hardness = 1.0;
+	/** What footsteps and impacts on it sound and look like. */
+	EMantleSurface Surface = EMantleSurface::Default;
+	FString Drops;
+	TArray<FString> Tags;
+};
+
+/** A VoxelWorld (#168). The entity's location is the world's lowest corner; it is not rotated or scaled. */
+struct FMantleVoxelWorldProps
+{
+	/** In blocks: each a multiple of 16, at most FMantlePlaceLimits::MaxVoxelWorldSizeXY wide, MaxVoxelWorldSizeZ high. */
+	FIntVector Size = FIntVector(16);
+	TArray<FMantleVoxelBlockTypeProps> BlockTypes;
+	/** An uploaded VoxelWorldData id, or empty: all air. */
+	FString World;
+	/** 16, 32, 64 or 128: every tile texture is that square. */
+	int32 TileSize = 16;
+	/** Nearest (pixel art) or linear filtering of the tiles. */
+	bool bLinearFilter = false;
+	EMantleVoxelEdit Edit = EMantleVoxelEdit::All;
+	EMantleVoxelPersistence Persistence = EMantleVoxelPersistence::None;
+
+	/** The distinct tile texture ids, in first-use order (block types in order, then top, side, bottom). */
+	MANTLERUNTIME_API TArray<FString> TileTextures() const;
+};
+
 /**
  * A particle effect (#460): a built-in archetype and its look. The parser fills every key the place
  * file leaves out from the archetype's own look (FMantleEffects::DefaultLook), so Look is always whole.
@@ -1437,7 +1510,8 @@ using FMantleEntityProps = TVariant<
 	FMantleWeaponSpawnProps,
 	FMantleScriptPointProps,
 	FMantleTextProps,
-	FMantleWaterBodyProps>;
+	FMantleWaterBodyProps,
+	FMantleVoxelWorldProps>;
 
 /** What happens to an interaction option once it has been used (the schema's afterUse). */
 enum class EMantleInteractableAfterUse : uint8

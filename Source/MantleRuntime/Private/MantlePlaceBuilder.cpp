@@ -1649,6 +1649,10 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 			// The parser reads and checks it (GhzGarage/mantle#997); the water is built by the runtime stage after this one,
 			// so nothing stands for the entity yet and it is not an error.
 			continue;
+
+		case EMantleEntityType::VoxelWorld:
+			// #168: MantleGameplay's UMantleVoxelPlaceSubsystem builds it once the place is retained, as the water.
+			continue;
 		}
 
 		if (Actor)

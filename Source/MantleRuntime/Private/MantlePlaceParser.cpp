@@ -1436,6 +1436,234 @@ namespace
 		}
 	}
 
+	/** A string key the schema limits to one of Names, else Fail. Out is the index; a missing key keeps it. */
+	void OptionalChoice(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Obj, const TCHAR* Key, const FString& Path,
+		TConstArrayView<const TCHAR*> Names, int32& Out)
+	{
+		if (!Obj->HasField(Key))
+		{
+			return;
+		}
+		FString Value;
+		if (!RequireString(Ctx, Obj, Key, Path, Value))
+		{
+			return;
+		}
+		for (int32 I = 0; I < Names.Num(); ++I)
+		{
+			if (Value.Equals(Names[I], ESearchCase::CaseSensitive))
+			{
+				Out = I;
+				return;
+			}
+		}
+		Ctx.Fail(Join(Path, Key), FString::Printf(TEXT("'%s' is not one of %s"), *Value, *FString::Join(Names, TEXT(", "))));
+	}
+
+	/** A whole number key in [Min, Max], else Fail. A missing key keeps Out. */
+	void OptionalWhole(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Obj, const TCHAR* Key, const FString& Path, int32 Min, int32 Max, int32& Out)
+	{
+		double Value = 0.0;
+		if (!Obj->HasField(Key) || !RequireNumber(Ctx, Obj, Key, Path, Value))
+		{
+			return;
+		}
+		if (Value != FMath::RoundToDouble(Value) || Value < Min || Value > Max)
+		{
+			Ctx.Fail(Join(Path, Key), FString::Printf(TEXT("%g is not a whole number from %d to %d"), Value, Min, Max));
+			return;
+		}
+		Out = int32(Value);
+	}
+
+	/** A VoxelWorld block type (#168): the schema's blockType, every rule reported at its own key. */
+	void ParseVoxelBlockType(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleVoxelBlockTypeProps& P)
+	{
+		RequireNoUnknownKeys(Ctx, Obj, { TEXT("name"), TEXT("all"), TEXT("top"), TEXT("side"), TEXT("bottom"), TEXT("render"), TEXT("solid"),
+			TEXT("liquid"), TEXT("light"), TEXT("hardness"), TEXT("surface"), TEXT("drops"), TEXT("tags") }, Path);
+		if (RequireString(Ctx, Obj, TEXT("name"), Path, P.Name))
+		{
+			bool bChars = !P.Name.IsEmpty() && P.Name.Len() <= FMantlePlaceLimits::MaxVoxelBlockNameLength;
+			for (const TCHAR C : P.Name)
+			{
+				bChars &= (C >= 'a' && C <= 'z') || (C >= '0' && C <= '9') || C == '_';
+			}
+			if (!bChars)
+			{
+				Ctx.Fail(Join(Path, TEXT("name")), FString::Printf(TEXT("'%s' is not 1 to %d of a-z, 0-9 and _"), *P.Name, FMantlePlaceLimits::MaxVoxelBlockNameLength));
+			}
+			else if (P.Name == TEXT("air"))
+			{
+				Ctx.Fail(Join(Path, TEXT("name")), TEXT("'air' is the empty block, not a block type"));
+			}
+		}
+		FString All;
+		auto Tile = [&](const TCHAR* Key, FString& Out)
+		{
+			if (Obj->HasField(Key) && RequireString(Ctx, Obj, Key, Path, Out) && Out.IsEmpty())
+			{
+				Ctx.Fail(Join(Path, Key), TEXT("names no texture"));
+			}
+		};
+		Tile(TEXT("all"), All);
+		Tile(TEXT("top"), P.Top);
+		Tile(TEXT("side"), P.Side);
+		Tile(TEXT("bottom"), P.Bottom);
+		if (All.IsEmpty() && (P.Top.IsEmpty() || P.Side.IsEmpty() || P.Bottom.IsEmpty()))
+		{
+			Ctx.Fail(Join(Path, TEXT("all")), TEXT("is required unless top, side and bottom are all given"));
+		}
+		for (FString* Face : { &P.Top, &P.Side, &P.Bottom })
+		{
+			if (Face->IsEmpty())
+			{
+				*Face = All;
+			}
+		}
+		int32 Render = 0;
+		OptionalChoice(Ctx, Obj, TEXT("render"), Path, { TEXT("opaque"), TEXT("cutout"), TEXT("translucent") }, Render);
+		P.Render = EMantleVoxelRenderClass(Render);
+		OptionalBool(Obj, TEXT("solid"), P.bSolid);
+		OptionalBool(Obj, TEXT("liquid"), P.bLiquid);
+		if (P.bLiquid && P.bSolid)
+		{
+			Ctx.Fail(Join(Path, TEXT("liquid")), TEXT("a liquid is not solid: give solid false with it"));
+		}
+		OptionalWhole(Ctx, Obj, TEXT("light"), Path, 0, FMantlePlaceLimits::MaxVoxelBlockLight, P.Light);
+		if (Obj->HasField(TEXT("hardness")) && RequireNumber(Ctx, Obj, TEXT("hardness"), Path, P.Hardness)
+			&& P.Hardness != -1.0 && (P.Hardness < 0.0 || P.Hardness > FMantlePlaceLimits::MaxVoxelBlockHardness))
+		{
+			Ctx.Fail(Join(Path, TEXT("hardness")), FString::Printf(TEXT("%g is neither -1 (unbreakable) nor 0 to %g seconds"), P.Hardness, FMantlePlaceLimits::MaxVoxelBlockHardness));
+		}
+		ReadSurface(Ctx, Obj, Path, P.Surface);
+		if (Obj->HasField(TEXT("drops")) && RequireString(Ctx, Obj, TEXT("drops"), Path, P.Drops)
+			&& (P.Drops.IsEmpty() || P.Drops.Len() > FMantlePlaceLimits::MaxVoxelBlockDropsLength))
+		{
+			Ctx.Fail(Join(Path, TEXT("drops")), FString::Printf(TEXT("is %d characters; 1 to %d"), P.Drops.Len(), FMantlePlaceLimits::MaxVoxelBlockDropsLength));
+		}
+		const TArray<TSharedPtr<FJsonValue>>* Tags = nullptr;
+		if (Obj->HasField(TEXT("tags")))
+		{
+			if (!Obj->TryGetArrayField(TEXT("tags"), Tags))
+			{
+				Ctx.Fail(Join(Path, TEXT("tags")), TEXT("expected an array of strings"));
+			}
+			else if (Tags->Num() > FMantlePlaceLimits::MaxVoxelBlockTags)
+			{
+				Ctx.Fail(Join(Path, TEXT("tags")), FString::Printf(TEXT("has %d tags; at most %d"), Tags->Num(), FMantlePlaceLimits::MaxVoxelBlockTags));
+			}
+			else
+			{
+				for (int32 I = 0; I < Tags->Num(); ++I)
+				{
+					FString Tag;
+					if (!(*Tags)[I].IsValid() || !(*Tags)[I]->TryGetString(Tag) || Tag.IsEmpty() || Tag.Len() > FMantlePlaceLimits::MaxVoxelBlockTagLength)
+					{
+						Ctx.Fail(Index(Join(Path, TEXT("tags")), I), FString::Printf(TEXT("expected a string of 1 to %d characters"), FMantlePlaceLimits::MaxVoxelBlockTagLength));
+						continue;
+					}
+					P.Tags.Add(Tag);
+				}
+			}
+		}
+	}
+
+	/** A VoxelWorld's properties (#168): the schema's branch; one per place and a still transform are checked with the place. */
+	void ParseVoxelWorld(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Props, const FString& Path, FMantleVoxelWorldProps& P)
+	{
+		RequireNoUnknownKeys(Ctx, Props, { TEXT("size"), TEXT("blockTypes"), TEXT("world"), TEXT("tileSize"), TEXT("filter"), TEXT("edit"),
+			TEXT("persistence") }, Path);
+		const FString SizePath = Join(Path, TEXT("size"));
+		const TArray<TSharedPtr<FJsonValue>>* Size = nullptr;
+		if (!Props->TryGetArrayField(TEXT("size"), Size) || Size->Num() != 3)
+		{
+			Ctx.Fail(SizePath, TEXT("required [x, y, z] in blocks is missing or not 3 numbers"));
+		}
+		else
+		{
+			const int32 Max[3] = { FMantlePlaceLimits::MaxVoxelWorldSizeXY, FMantlePlaceLimits::MaxVoxelWorldSizeXY, FMantlePlaceLimits::MaxVoxelWorldSizeZ };
+			for (int32 Axis = 0; Axis < 3; ++Axis)
+			{
+				double Value = 0.0;
+				const int32 Step = FMantlePlaceLimits::VoxelSectionSize;
+				if (!(*Size)[Axis].IsValid() || !(*Size)[Axis]->TryGetNumber(Value) || Value != FMath::RoundToDouble(Value)
+					|| Value < Step || Value > Max[Axis] || int32(Value) % Step != 0)
+				{
+					Ctx.Fail(Index(SizePath, Axis), FString::Printf(TEXT("expected a multiple of %d blocks from %d to %d"), Step, Step, Max[Axis]));
+					continue;
+				}
+				P.Size[Axis] = int32(Value);
+			}
+		}
+		const FString TypesPath = Join(Path, TEXT("blockTypes"));
+		const TArray<TSharedPtr<FJsonValue>>* Types = nullptr;
+		if (!Props->TryGetArrayField(TEXT("blockTypes"), Types))
+		{
+			Ctx.Fail(TypesPath, TEXT("required array is missing or not an array"));
+		}
+		else if (Types->Num() < 1 || Types->Num() > FMantlePlaceLimits::MaxVoxelBlockTypes)
+		{
+			Ctx.Fail(TypesPath, FString::Printf(TEXT("has %d block types; a VoxelWorld needs 1 to %d"), Types->Num(), FMantlePlaceLimits::MaxVoxelBlockTypes));
+		}
+		else
+		{
+			TSet<FString> Names;
+			for (int32 I = 0; I < Types->Num(); ++I)
+			{
+				const FString TypePath = Index(TypesPath, I);
+				const TSharedPtr<FJsonObject>* Type = nullptr;
+				if (!(*Types)[I].IsValid() || !(*Types)[I]->TryGetObject(Type))
+				{
+					Ctx.Fail(TypePath, TEXT("expected an object"));
+					continue;
+				}
+				FMantleVoxelBlockTypeProps Parsed;
+				ParseVoxelBlockType(Ctx, *Type, TypePath, Parsed);
+				if (!Parsed.Name.IsEmpty())
+				{
+					bool bAlready = false;
+					Names.Add(Parsed.Name, &bAlready);
+					if (bAlready)
+					{
+						Ctx.Fail(Join(TypePath, TEXT("name")), FString::Printf(TEXT("'%s' names an earlier block type too"), *Parsed.Name));
+					}
+				}
+				P.BlockTypes.Add(MoveTemp(Parsed));
+			}
+			const int32 Tiles = P.TileTextures().Num();
+			if (Tiles > FMantlePlaceLimits::MaxVoxelTileTextures)
+			{
+				Ctx.Fail(TypesPath, FString::Printf(TEXT("use %d different tile textures; at most %d"), Tiles, FMantlePlaceLimits::MaxVoxelTileTextures));
+			}
+		}
+		if (Props->HasField(TEXT("world")) && RequireString(Ctx, Props, TEXT("world"), Path, P.World) && P.World.IsEmpty())
+		{
+			Ctx.Fail(Join(Path, TEXT("world")), TEXT("names no VoxelWorldData"));
+		}
+		if (Props->HasField(TEXT("tileSize")))
+		{
+			int32 TileSize = 0;
+			OptionalWhole(Ctx, Props, TEXT("tileSize"), Path, 16, 128, TileSize);
+			if (TileSize != 0 && TileSize != 16 && TileSize != 32 && TileSize != 64 && TileSize != 128)
+			{
+				Ctx.Fail(Join(Path, TEXT("tileSize")), FString::Printf(TEXT("%d is not 16, 32, 64 or 128"), TileSize));
+			}
+			else if (TileSize != 0)
+			{
+				P.TileSize = TileSize;
+			}
+		}
+		int32 Filter = 0;
+		OptionalChoice(Ctx, Props, TEXT("filter"), Path, { TEXT("nearest"), TEXT("linear") }, Filter);
+		P.bLinearFilter = Filter == 1;
+		int32 Edit = 0;
+		OptionalChoice(Ctx, Props, TEXT("edit"), Path, { TEXT("all"), TEXT("none"), TEXT("script") }, Edit);
+		P.Edit = EMantleVoxelEdit(Edit);
+		int32 Persistence = 0;
+		OptionalChoice(Ctx, Props, TEXT("persistence"), Path, { TEXT("none"), TEXT("server"), TEXT("place") }, Persistence);
+		P.Persistence = EMantleVoxelPersistence(Persistence);
+	}
+
 	/** The Effect keys only the sprites archetype takes, the schema's order. */
 	const TCHAR* const EffectSpritesKeys[] = {
 		TEXT("texture"), TEXT("blend"), TEXT("colorEnd"), TEXT("alpha"), TEXT("alphaEnd"), TEXT("fadeIn"), TEXT("sizeMin"), TEXT("sizeMax"),
@@ -2968,6 +3196,14 @@ namespace
 			break;
 		}
 
+		case EMantleEntityType::VoxelWorld:
+		{
+			FMantleVoxelWorldProps P;
+			ParseVoxelWorld(Ctx, Props, Path, P);
+			Entity.Props.Set<FMantleVoxelWorldProps>(MoveTemp(P));
+			break;
+		}
+
 		case EMantleEntityType::VehicleSpawn:
 		{
 			// A creator vehicle parked here: the name of a vehicle in the place's storage.
@@ -3789,6 +4025,28 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 					FString::Printf(TEXT("brings the place to %d instances; a place holds at most %d"),
 						InstanceTotal, FMantlePlaceLimits::MaxInstancesPerPlace));
 				break;
+			}
+		}
+	}
+
+	// One VoxelWorld (#168), neither rotated nor scaled (its blocks are a fixed grid): validate.py and the backend state both.
+	{
+		int32 VoxelWorlds = 0;
+		for (int32 i = 0; i < Place.Entities.Num(); ++i)
+		{
+			const FMantleEntity& Entity = Place.Entities[i];
+			if (Entity.Type != EMantleEntityType::VoxelWorld)
+			{
+				continue;
+			}
+			if (++VoxelWorlds == FMantlePlaceLimits::MaxVoxelWorldsPerPlace + 1)
+			{
+				Ctx.Fail(Join(Index(TEXT("/entities"), i), TEXT("type")),
+					FString::Printf(TEXT("is VoxelWorld number %d; a place may have at most %d"), VoxelWorlds, FMantlePlaceLimits::MaxVoxelWorldsPerPlace));
+			}
+			if (!Entity.Transform.GetRotation().IsIdentity(KINDA_SMALL_NUMBER) || !Entity.Transform.GetScale3D().Equals(FVector::OneVector))
+			{
+				Ctx.Fail(Join(Index(TEXT("/entities"), i), TEXT("transform")), TEXT("a VoxelWorld is not rotated or scaled (rotation [0, 0, 0], scale [1, 1, 1])"));
 			}
 		}
 	}
