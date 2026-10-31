@@ -75,7 +75,8 @@ namespace MantlePlaceAssetConverterPrivate
 	// v21: bakes wait for their textures to finish compiling; v20 bakes could hold Unreal's 32x32 compiling placeholder (white books).
 	// v22: flat convex collision hulls are thickened instead of left out (SciFiAlienFacility's corridor floors); v21 meshes lack them.
 	// v23: flat collision boxes are thickened too (its SM_SUW_wall_13); v22 meshes lack them.
-	const TCHAR* const CacheVersion = TEXT("f5-v23");
+	// v24: world-mapped materials bake one world tile and publish worldAligned; v23 stretched one bake over each mesh (Downtown's roads).
+	const TCHAR* const CacheVersion = TEXT("f5-v24");
 
 	const TCHAR* const ConversionRemedy = TEXT("It still publishes. Nothing to do unless it matters to how your place looks.");
 
@@ -1797,7 +1798,7 @@ void FMantlePlaceAssetSet::ReleaseBytes()
 namespace MantlePlaceAssetConverterPrivate
 {
 	/**
-	 * The card a material is baked on when the bake surface is not GLTFExporter's own: one quad, 1 m a side, facing up, its UVs 0 to
+	 * The card a material is baked on when the bake surface is not GLTFExporter's own: one quad, 1 m (or Surface.WorldTileCm) a side, facing up, its UVs 0 to
 	 * Surface.UvRange and every corner Surface.VertexColor, drawn with Material in its only slot. Transient; null when it cannot be built.
 	 */
 	UStaticMesh* MakeBakeCard(UMaterialInterface* Material, const FMantleBakeSurface& Surface)
@@ -1812,13 +1813,14 @@ namespace MantlePlaceAssetConverterPrivate
 		// as linear: the Vertex Color node then reads exactly the bytes over 255, as it does on the meshes the colour was averaged from.
 		const FVector4f Color(FLinearColor(Surface.VertexColor));
 		const float Range = static_cast<float>(FMath::Max(Surface.UvRange, 1));
+		const float Side = Surface.WorldTileCm > 0.0 ? static_cast<float>(Surface.WorldTileCm) : 100.0f;
 		TArray<FVertexInstanceID> Corners;
 		for (int32 Corner = 0; Corner < 4; ++Corner)
 		{
 			const int32 X = Corner & 1;
 			const int32 Y = (Corner >> 1) & 1;
 			const FVertexID Vertex = Description.CreateVertex();
-			Attributes.GetVertexPositions()[Vertex] = FVector3f(100.0f * X, 100.0f * Y, 0.0f);
+			Attributes.GetVertexPositions()[Vertex] = FVector3f(Side * X, Side * Y, 0.0f);
 			const FVertexInstanceID Instance = Description.CreateVertexInstance(Vertex);
 			Attributes.GetVertexInstanceNormals()[Instance] = FVector3f(0.0f, 0.0f, 1.0f);
 			Attributes.GetVertexInstanceTangents()[Instance] = FVector3f(1.0f, 0.0f, 0.0f);
@@ -3505,6 +3507,12 @@ FMantleBakeSurface FMantlePlaceAssetConverter::EffectiveBakeSurface(const FMantl
 	{
 		Effective.VertexColor = FColor::White;
 	}
+	// Mapped by world position, and not the plain pattern kept from its source textures (Fidelity2's worldAligned): bake one world tile.
+	// A landscape layer (a UV range) keeps its own tiling.
+	if (Analysis.Has(EMantleMaterialLoss::WorldAligned) && !Analysis.Fidelity2.bWorldAligned && Effective.UvRange <= 1)
+	{
+		Effective.WorldTileCm = FMantleBakeSurface::DefaultWorldTileCm;
+	}
 	return Effective;
 }
 
@@ -3517,6 +3525,19 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
 		*Surface.CacheTag());
+}
+
+void FMantlePlaceAssetConverter::ApplyWorldTile(FMantlePlaceMaterialDocument& Doc, const FMantleBakeSurface& Surface)
+{
+	// The bake is one world tile (Surface.WorldTileCm a side): drawn by world position it repeats as the source did, where over each mesh's
+	// UVs it was stretched once across the mesh (DowntownWestModularPack's roads). The format carries one such mapping, opaque only.
+	if (Surface.WorldTileCm <= 0.0 || Doc.bWorldAligned || Doc.bWind || Doc.bLayerBlend || Doc.bWater || Doc.AlphaMode != TEXT("opaque"))
+	{
+		return;
+	}
+	Doc.bWorldAligned = true;
+	Doc.TileSizeCm = Surface.WorldTileCm;
+	Doc.Sharpness = WorldTileSharpness;
 }
 
 FVector FMantlePlaceAssetConverter::ThickenFlatBox(const FVector& Size)
@@ -3732,7 +3753,8 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	FlattenSettings.Surface = Surface;
 	if (!Surface.IsPlain())
 	{
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: baked on a card with vertex colour %s and UVs 0 to %d"), *Material->GetName(), *Surface.VertexColor.ToHex(), Surface.UvRange);
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: baked on a card with vertex colour %s and UVs 0 to %d%s"), *Material->GetName(), *Surface.VertexColor.ToHex(), Surface.UvRange,
+			Surface.WorldTileCm > 0.0 ? *FString::Printf(TEXT(", %g cm a side for its world mapping"), Surface.WorldTileCm) : TEXT(""));
 	}
 	if (Flattener->Flatten(Neutral.IsValid() ? Neutral.Get() : Material, FlattenSettings, Flattened, Messages, FlattenError))
 	{
@@ -3742,6 +3764,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 			UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 GLTFExporter on %s: %s"), *Material->GetName(), *Message);
 		}
 		Converted.Document = MaterialFromGltf(Flattened, 0, Converted.Name, Limits, bOversizeReported, Out, MaterialExtras(Analysis, Converted.Name, Out.Issues));
+		ApplyWorldTile(Converted.Document, Surface);
 	}
 	else
 	{

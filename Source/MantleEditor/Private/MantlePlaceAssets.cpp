@@ -3517,7 +3517,8 @@ FString FMantleBakeSurface::CacheTag() const
 	{
 		return FString();
 	}
-	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%d"), *VertexColor.ToHex(), FMath::Max(UvRange, 1));
+	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%d%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1),
+		WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""));
 }
 
 FColor FMantleGatheredMaterial::AverageVertexColor() const
@@ -4309,7 +4310,7 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 	case EMantleMaterialLoss::WorldPositionOffset:
 		return TEXT("world position offset (wind or vertex animation) is dropped, so the mesh will not sway or move (only the engine's SimpleGrassWind with constant intensity and speed is kept).");
 	case EMantleMaterialLoss::WorldAligned:
-		return TEXT("world-aligned or triplanar mapping is baked onto the mesh's own UVs, so its pattern will not line up across neighbouring meshes (only the engine's WorldAlignedTexture and WorldAlignedNormal straight into an opaque material's outputs, with constant sizes, are kept).");
+		return TEXT("world-aligned or triplanar mapping is baked as one 4 m tile that repeats by world position, so patterns larger than 4 m repeat and may show faint seams (the engine's WorldAlignedTexture and WorldAlignedNormal straight into an opaque material's outputs, with constant sizes, are kept exactly; a see-through material is baked onto the mesh's own UVs).");
 	case EMantleMaterialLoss::Refraction:
 		return TEXT("refraction is approximated: it publishes as smooth, tinted glass that is a little more reflective and opaque (by its index of refraction), but the scene behind it is not bent.");
 	case EMantleMaterialLoss::Subsurface:
