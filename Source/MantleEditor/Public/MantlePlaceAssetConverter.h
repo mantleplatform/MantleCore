@@ -820,6 +820,9 @@ public:
 	static bool ThickenFlatHull(TArray<FVector3f>& Points);
 	static constexpr double FlatHullHalfThicknessCm = 1.0;
 
+	/** A collision box's full size with one side of zero (a flat sheet) made 2 x FlatHullHalfThicknessCm; a box flat on two or three sides is returned as it is. */
+	static FVector ThickenFlatBox(const FVector& Size);
+
 	/** The salt a material's cache key is made with (Describe is the flattener's): Surface's CacheTag is empty for the plain surface. */
 	static FString MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& Settings, const FMantlePlaceAssetLimits& Limits,
 		const UMaterialInterface* Material, bool bPerInstanceVariation, const FMantleBakeSurface& Surface);

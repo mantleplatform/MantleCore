@@ -74,7 +74,8 @@ namespace MantlePlaceAssetConverterPrivate
 	// v20: meshes have values that are not numbers set to safe ones (#42); v19 caches still held them, and the cook refused those meshes.
 	// v21: bakes wait for their textures to finish compiling; v20 bakes could hold Unreal's 32x32 compiling placeholder (white books).
 	// v22: flat convex collision hulls are thickened instead of left out (SciFiAlienFacility's corridor floors); v21 meshes lack them.
-	const TCHAR* const CacheVersion = TEXT("f5-v22");
+	// v23: flat collision boxes are thickened too (its SM_SUW_wall_13); v22 meshes lack them.
+	const TCHAR* const CacheVersion = TEXT("f5-v23");
 
 	const TCHAR* const ConversionRemedy = TEXT("It still publishes. Nothing to do unless it matters to how your place looks.");
 
@@ -932,8 +933,9 @@ namespace MantlePlaceAssetConverterPrivate
 		for (int32 Index = 0; Index < Geom.BoxElems.Num(); ++Index)
 		{
 			const FKBoxElem& Box = Geom.BoxElems[Index];
-			const FVector Size(Box.X, Box.Y, Box.Z);
-			if (!IsUploadableCollisionValue(Box.Center) || !IsUploadableCollisionValue(Size) || !(Box.X > 0.0f && Box.Y > 0.0f && Box.Z > 0.0f)
+			// A box flat along one side (a wall sheet: SciFiAlienFacility's SM_SUW_wall_13) still collides in Unreal: thicken that side, as a flat hull is.
+			const FVector Size = FMantlePlaceAssetConverter::ThickenFlatBox(FVector(Box.X, Box.Y, Box.Z));
+			if (!IsUploadableCollisionValue(Box.Center) || !IsUploadableCollisionValue(Size) || !(Size.X > 0.0 && Size.Y > 0.0 && Size.Z > 0.0)
 				|| Box.Rotation.ContainsNaN())
 			{
 				LeftOut.Add(FString::Printf(TEXT("box %d (no volume)"), Index));
@@ -3515,6 +3517,17 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
 		*Surface.CacheTag());
+}
+
+FVector FMantlePlaceAssetConverter::ThickenFlatBox(const FVector& Size)
+{
+	const int32 Flat = (Size.X > 0.0 ? 0 : 1) + (Size.Y > 0.0 ? 0 : 1) + (Size.Z > 0.0 ? 0 : 1);
+	if (Flat != 1 || Size.X < 0.0 || Size.Y < 0.0 || Size.Z < 0.0)
+	{
+		return Size;
+	}
+	const double Thickness = 2.0 * FlatHullHalfThicknessCm;
+	return FVector(Size.X > 0.0 ? Size.X : Thickness, Size.Y > 0.0 ? Size.Y : Thickness, Size.Z > 0.0 ? Size.Z : Thickness);
 }
 
 bool FMantlePlaceAssetConverter::ThickenFlatHull(TArray<FVector3f>& Points)

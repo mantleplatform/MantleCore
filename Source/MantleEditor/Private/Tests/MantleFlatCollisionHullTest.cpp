@@ -7,7 +7,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 // SciFiAlienFacility's corridor floor is a flat convex hull: Unreal collides with it, but the cook takes only hulls with volume, so it was
-// left out and players fell through. A flat hull is now thickened across its plane.
+// left out and players fell through. A flat hull is now thickened across its plane, and a flat box on its flat side.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleFlatCollisionHullTest,
 	"Mantle.Editor.Collision.FlatHullsAreThickened",
@@ -43,6 +43,12 @@ bool FMantleFlatCollisionHullTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("and is left as it was"), Line.Num(), 4);
 	TArray<FVector3f> Two = { FVector3f(0, 0, 0), FVector3f(1, 0, 0) };
 	TestFalse(TEXT("two points are not thickened"), FMantlePlaceAssetConverter::ThickenFlatHull(Two));
+
+	// A box flat on one side (SciFiAlienFacility's SM_SUW_wall_13) gets that side's thickness; flat on two, or whole, is left as it is.
+	const double Full = 2.0 * FMantlePlaceAssetConverter::FlatHullHalfThicknessCm;
+	TestEqual(TEXT("a wall sheet box is thickened"), FMantlePlaceAssetConverter::ThickenFlatBox(FVector(0.0, 400.0, 300.0)), FVector(Full, 400.0, 300.0));
+	TestEqual(TEXT("a whole box is unchanged"), FMantlePlaceAssetConverter::ThickenFlatBox(FVector(10.0, 20.0, 30.0)), FVector(10.0, 20.0, 30.0));
+	TestEqual(TEXT("a box flat on two sides is unchanged"), FMantlePlaceAssetConverter::ThickenFlatBox(FVector(0.0, 0.0, 30.0)), FVector(0.0, 0.0, 30.0));
 	return true;
 }
 
