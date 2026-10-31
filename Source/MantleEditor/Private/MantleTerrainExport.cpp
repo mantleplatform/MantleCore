@@ -224,6 +224,111 @@ FString FMantleTerrainExport::Weightmap2KeyForPath(const FString& LandscapePath)
 	return TEXT("weightmap2:") + LandscapePath;
 }
 
+FString FMantleTerrainExport::HolesKey(const AActor* Landscape)
+{
+	return HolesKeyForPath(Landscape ? Landscape->GetPathName() : FString());
+}
+
+FString FMantleTerrainExport::HolesKeyForPath(const FString& LandscapePath)
+{
+	return TEXT("terrainholes:") + LandscapePath;
+}
+
+void FMantleTerrainExport::ApplyCoverage(FMantleTerrainSource& Source, const TArray<uint8>& Covered)
+{
+	const int32 Width = Source.Width;
+	const int32 Height = Source.Height;
+	if (Width <= 0 || Height <= 0 || Covered.Num() != Width * Height || Source.Heights.Num() != Width * Height || !Covered.Contains(0))
+	{
+		return;
+	}
+	if (Source.Holes.Num() != Width * Height)
+	{
+		Source.Holes.SetNumZeroed(Width * Height);
+	}
+	// Along each row, a missing sample takes the height of the nearest covered sample in that row.
+	TArray<bool> RowFilled;
+	RowFilled.Init(false, Height);
+	for (int32 Y = 0; Y < Height; ++Y)
+	{
+		const int32 Row = Y * Width;
+		int32 Last = INDEX_NONE;
+		TArray<int32> NearestLeft;
+		NearestLeft.Init(INDEX_NONE, Width);
+		for (int32 X = 0; X < Width; ++X)
+		{
+			Last = Covered[Row + X] ? X : Last;
+			NearestLeft[X] = Last;
+		}
+		RowFilled[Y] = Last != INDEX_NONE;
+		int32 Next = INDEX_NONE;
+		for (int32 X = Width - 1; X >= 0; --X)
+		{
+			Next = Covered[Row + X] ? X : Next;
+			if (Covered[Row + X])
+			{
+				continue;
+			}
+			++Source.MissingSamples;
+			Source.Holes[Row + X] = 1;
+			const int32 Left = NearestLeft[X];
+			const int32 From = Left == INDEX_NONE ? Next : Next == INDEX_NONE ? Left : (X - Left <= Next - X ? Left : Next);
+			if (From != INDEX_NONE)
+			{
+				Source.Heights[Row + X] = Source.Heights[Row + From];
+			}
+		}
+	}
+	// A row with no covered sample at all takes the nearest row that had one.
+	for (int32 Y = 0; Y < Height; ++Y)
+	{
+		if (RowFilled[Y])
+		{
+			continue;
+		}
+		int32 Nearest = INDEX_NONE;
+		for (int32 Distance = 1; Distance < Height && Nearest == INDEX_NONE; ++Distance)
+		{
+			Nearest = Y - Distance >= 0 && RowFilled[Y - Distance] ? Y - Distance : Y + Distance < Height && RowFilled[Y + Distance] ? Y + Distance : INDEX_NONE;
+		}
+		if (Nearest != INDEX_NONE)
+		{
+			FMemory::Memcpy(Source.Heights.GetData() + Y * Width, Source.Heights.GetData() + Nearest * Width, Width * sizeof(uint16));
+		}
+	}
+}
+
+TArray<FColor> FMantleTerrainExport::MakeHoleMask(const FMantleTerrainSource& Source, const FIntPoint Size)
+{
+	TArray<FColor> Out;
+	if (!HasHoles(Source) || Size.X <= 0 || Size.Y <= 0 || Source.Holes.Num() != Source.Width * Source.Height)
+	{
+		return Out;
+	}
+	Out.SetNumUninitialized(Size.X * Size.Y);
+	// Sample to sample, corner to corner, as MakeHeightfield lays a resampled grid over the landscape's.
+	const double StepX = Size.X > 1 ? static_cast<double>(Source.Width - 1) / (Size.X - 1) : 0.0;
+	const double StepY = Size.Y > 1 ? static_cast<double>(Source.Height - 1) / (Size.Y - 1) : 0.0;
+	for (int32 Y = 0; Y < Size.Y; ++Y)
+	{
+		const int32 SourceY = FMath::Clamp(FMath::RoundToInt32(Y * StepY), 0, Source.Height - 1);
+		for (int32 X = 0; X < Size.X; ++X)
+		{
+			const int32 SourceX = FMath::Clamp(FMath::RoundToInt32(X * StepX), 0, Source.Width - 1);
+			const uint8 Red = Source.Holes[SourceY * Source.Width + SourceX] ? 0 : 255;
+			Out[Y * Size.X + X] = FColor(Red, Red, Red, 255);
+		}
+	}
+	return Out;
+}
+
+TArray<uint8> FMantleTerrainExport::EncodeHoleMask(const FMantleTerrainSource& Source, const FMantleHeightfield& Field, const int32 MaxTextureSize, FIntPoint& OutSize)
+{
+	OutSize = FIntPoint(FMath::Clamp(Field.Width, 1, FMath::Max(MaxTextureSize, 1)), FMath::Clamp(Field.Height, 1, FMath::Max(MaxTextureSize, 1)));
+	const TArray<FColor> Texels = MakeHoleMask(Source, OutSize);
+	return Texels.IsEmpty() ? TArray<uint8>() : FMantlePng::EncodeRGBA8(OutSize.X, OutSize.Y, Texels);
+}
+
 bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSource& Out, FString& OutProblem)
 {
 	using namespace MantleTerrainExportPrivate;
@@ -294,6 +399,31 @@ bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSour
 	Out.Heights.SetNumZeroed(Out.Width * Out.Height);
 	Edit.GetHeightDataFast(MinX, MinY, MaxX, MaxY, Out.Heights.GetData(), Out.Width);
 
+	// Which samples a component covers: a landscape's components need not fill its extent, and a sample none covers has no ground
+	// (GetHeightDataFast leaves it 0, the lowest height). Neighbouring components share their edge samples, so an edge of a missing
+	// component next to a present one is ground.
+	{
+		TArray<uint8> Covered;
+		Covered.SetNumZeroed(Out.Width * Out.Height);
+		const int32 ComponentQuads = Info->ComponentSizeQuads;
+		for (const TPair<FIntPoint, ULandscapeComponent*>& Component : Info->XYtoComponentMap)
+		{
+			if (!Component.Value)
+			{
+				continue;
+			}
+			const int32 FromX = FMath::Max(Component.Key.X * ComponentQuads - MinX, 0);
+			const int32 FromY = FMath::Max(Component.Key.Y * ComponentQuads - MinY, 0);
+			const int32 ToX = FMath::Min(Component.Key.X * ComponentQuads + ComponentQuads - MinX, Out.Width - 1);
+			const int32 ToY = FMath::Min(Component.Key.Y * ComponentQuads + ComponentQuads - MinY, Out.Height - 1);
+			for (int32 Y = FromY; Y <= ToY; ++Y)
+			{
+				FMemory::Memset(Covered.GetData() + Y * Out.Width + FromX, 1, FMath::Max(ToX - FromX + 1, 0));
+			}
+		}
+		ApplyCoverage(Out, Covered);
+	}
+
 	ULandscapeLayerInfoObject* const Visibility = ALandscapeProxy::VisibilityLayer;
 	for (const FLandscapeInfoLayerSettings& Layer : Info->Layers)
 	{
@@ -322,14 +452,21 @@ bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSour
 		TArray<uint8> Holes;
 		Holes.SetNumZeroed(Out.Width * Out.Height);
 		Edit.GetWeightDataFast(Visibility, MinX, MinY, MaxX, MaxY, Holes.GetData(), Out.Width);
-		Out.bHasHoles = TerrainAnyNonZero(Holes);
-		if (Out.bHasHoles)
+		// Unreal cuts the ground where the visibility weight reaches its threshold; a fainter stroke still shows ground.
+		const int32 Threshold = FMath::CeilToInt32(LANDSCAPE_VISIBILITY_THRESHOLD * 255.0f);
+		for (int32 Index = 0; Index < Holes.Num(); ++Index)
 		{
-			for (const uint8 Hole : Holes)
+			if (Holes[Index] >= Threshold)
 			{
-				Out.HoleSamples += Hole != 0 ? 1 : 0;
+				if (Out.Holes.IsEmpty())
+				{
+					Out.Holes.SetNumZeroed(Out.Width * Out.Height);
+				}
+				Out.Holes[Index] = 1;
+				++Out.HoleSamples;
 			}
 		}
+		Out.bHasHoles = Out.HoleSamples > 0;
 	}
 
 	// What the landscape's own material says its layers look like, read only when a painted layer has no
@@ -522,15 +659,21 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 			Source.LandscapeMaterial ? *Source.LandscapeMaterial->GetName() : TEXT("none"), BakeTilingCm);
 	};
 
-	if (Source.bHasHoles)
+	if (HasHoles(Source))
 	{
-		// The heightfield format has no hole mask, but the heights under a hole are still there: the published terrain simply draws them. The landscape itself is only read.
-		const FString HoleCount = Source.HoleSamples > 0
-			? FString::Printf(TEXT("%d of its %d samples"), Source.HoleSamples, Source.Width * Source.Height) : FString(TEXT("part of it"));
-		Warn(FString::Printf(TEXT("has holes painted in it (its visibility layer, %s), which Mantle terrain cannot carry yet, so the published terrain is filled across them."), *HoleCount),
-			TEXT("It still publishes, and your landscape is not changed. To keep an opening (a cave mouth, a tunnel), model it as a mesh over the filled ground."));
-		Report(MantleCoverageCategory::Terrain, EMantleCoverageOutcome::Approximated, Label,
-			FString::Printf(TEXT("holes painted in the landscape's visibility layer (%s) are filled: Mantle terrain has no holes, so the ground is drawn across them."), *HoleCount));
+		// Holes publish as holes (the Terrain's hole mask): no ground, collision or grass there. Nothing to warn about; the report says how much.
+		TArray<FString> Kinds;
+		if (Source.HoleSamples > 0)
+		{
+			Kinds.Add(FString::Printf(TEXT("%d painted in its visibility layer"), Source.HoleSamples));
+		}
+		if (Source.MissingSamples > 0)
+		{
+			Kinds.Add(FString::Printf(TEXT("%d with no landscape component"), Source.MissingSamples));
+		}
+		Report(MantleCoverageCategory::Terrain, EMantleCoverageOutcome::Info, Label,
+			FString::Printf(TEXT("holes kept: of its %d samples, %s have no ground, so no ground, collision or grass is drawn there."), Source.Width * Source.Height,
+				*FString::Join(Kinds, TEXT(" and "))));
 	}
 
 	if (Source.WaterBodiesCarving > 0)

@@ -49,11 +49,21 @@ struct MANTLEEDITOR_API FMantleTerrainSource
 	TMap<FName, const UPhysicalMaterial*> LayerPhysMaterials;
 
 	/**
-	 * Part of the landscape is a hole (its visibility layer is painted), and how many samples. The heightfield has no hole mask, so the
-	 * heights and weights are published as they are, filling the holes: the landscape itself is never changed. ChooseLayers says so.
+	 * Part of the landscape is a hole painted in its visibility layer (at least LANDSCAPE_VISIBILITY_THRESHOLD of it, where Unreal cuts the
+	 * ground), and how many samples. Published as holes, in the Terrain's hole mask (Holes below).
 	 */
 	bool bHasHoles = false;
 	int32 HoleSamples = 0;
+
+	/**
+	 * Samples of the extent no landscape component covers (a landscape whose components do not fill its bounds). They have no ground: they
+	 * are holes in the mask too, and their heights are filled from the nearest covered sample, only so that resampling does not pull the
+	 * ground around them down to the lowest height.
+	 */
+	int32 MissingSamples = 0;
+
+	/** Per sample (Width x Height, row-major), 1 where there is no ground (painted hole or no component), else 0. Empty when there is none. */
+	TArray<uint8> Holes;
 
 	/**
 	 * What the landscape's own material says each paint layer looks like (#628), read when a painted layer has no
@@ -192,6 +202,31 @@ public:
 
 	/** Weightmap2Key for a landscape path (what the converter has). */
 	static FString Weightmap2KeyForPath(const FString& LandscapePath);
+
+	/** "terrainholes:" + the landscape's path, the key of its hole mask texture. */
+	static FString HolesKey(const AActor* Landscape);
+
+	/** HolesKey for a landscape path (what the converter has). */
+	static FString HolesKeyForPath(const FString& LandscapePath);
+
+	/** Whether Source has samples with no ground, so its Terrain publishes a hole mask. */
+	static bool HasHoles(const FMantleTerrainSource& Source) { return Source.Holes.Contains(1); }
+
+	/**
+	 * The Terrain's hole mask (the `holes` texture) at Size: texel (x, y) is published sample (x, y) of a Size grid laid over Source's samples
+	 * corner to corner (row 0 is the first row), red 0 for a hole and 255 for ground, from the nearest source sample. Empty when Source has
+	 * no holes. Size is the heightfield's (MakeHeightfield), a side capped to the texture limit when it is larger (the client maps by nearest).
+	 */
+	static TArray<FColor> MakeHoleMask(const FMantleTerrainSource& Source, FIntPoint Size);
+
+	/** The hole mask as a PNG at Field's size, each side at most MaxTextureSize; empty when Source has no holes. OutSize is the PNG's. */
+	static TArray<uint8> EncodeHoleMask(const FMantleTerrainSource& Source, const FMantleHeightfield& Field, int32 MaxTextureSize, FIntPoint& OutSize);
+
+	/**
+	 * Marks Source's samples that no component covers as holes and fills their heights from the nearest covered one, along the row (else
+	 * from the nearest filled row). Covered is Width x Height, nonzero where a component covers the sample. Pure data; ReadLandscape uses it.
+	 */
+	static void ApplyCoverage(FMantleTerrainSource& Source, const TArray<uint8>& Covered);
 
 	/**
 	 * Reads Landscape's final heights and paint weights (every loaded proxy), its holes and its

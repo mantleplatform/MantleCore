@@ -67,7 +67,7 @@ namespace MantlePlacePreviewPrivate
 		if (const FMantleTerrainProps* Terrain = Entity.Props.TryGet<FMantleTerrainProps>())
 		{
 			// A Terrain (#466): its heights, its weights (two maps past four layers, #628) and every layer's material.
-			if (NotOnMantle(Terrain->Heightfield) || NotOnMantle(Terrain->Weightmap) || NotOnMantle(Terrain->Weightmap2))
+			if (NotOnMantle(Terrain->Heightfield) || NotOnMantle(Terrain->Weightmap) || NotOnMantle(Terrain->Weightmap2) || NotOnMantle(Terrain->Holes))
 			{
 				return true;
 			}

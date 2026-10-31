@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCoverage.h"
+#include "MantleHeightfieldReader.h"
 #include "MantleLandscapeMaterialReader.h"
 #include "MantlePlaceAssets.h"
 #include "MantleTerrainExport.h"
@@ -10,8 +11,8 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// A landscape with holes painted in its visibility layer, and one with nothing painted, publish with a warning and a coverage line instead
-// of being refused. ChooseLayers takes no level (a null world means no Place Settings), so a source built in code is enough.
+// A landscape with holes (painted in its visibility layer, or where no component covers its extent) publishes them as holes, in the Terrain's
+// hole mask; one with nothing painted publishes with a warning and a coverage line instead of being refused. ChooseLayers takes no level (a null world means no Place Settings), so a source built in code is enough.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleTerrainHolesTestPrivate
@@ -61,11 +62,11 @@ namespace MantleTerrainHolesTestPrivate
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleTerrainHolesAreFilledTest,
-	"Mantle.Editor.Terrain.HolesAreFilled",
+	FMantleTerrainHolesAreKeptTest,
+	"Mantle.Editor.Terrain.HolesAreKept",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleTerrainHolesAreFilledTest::RunTest(const FString& Parameters)
+bool FMantleTerrainHolesAreKeptTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleTerrainHolesTestPrivate;
 
@@ -75,6 +76,8 @@ bool FMantleTerrainHolesAreFilledTest::RunTest(const FString& Parameters)
 	Source.MaterialRead.bFoundLayers = true;
 	Source.bHasHoles = true;
 	Source.HoleSamples = 3;
+	Source.Holes.SetNumZeroed(16);
+	Source.Holes[5] = Source.Holes[6] = Source.Holes[9] = 1;
 
 	TArray<FMantleTerrainLayerChoice> Layers;
 	TArray<FMantleValidationIssue> Issues;
@@ -82,24 +85,77 @@ bool FMantleTerrainHolesAreFilledTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a landscape with holes is not refused"), FMantleTerrainExport::ChooseLayers(nullptr, Source, TEXT("Landscape"), Layers, Issues, &Coverage));
 	TestEqual(TEXT("its layer is chosen as it is without holes"), Layers.Num(), 1);
 	TestEqual(TEXT("with no error"), CountIssues(Issues, EMantleIssueSeverity::Error, TEXT("")), 0);
-	TestEqual(TEXT("and a warning that the holes are filled"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("holes")), 1);
-	TestEqual(TEXT("which says how many samples (3 of 16)"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("3 of its 16 samples")), 1);
-	TestEqual(TEXT("and an approximated terrain line in the coverage report"), static_cast<int64>(Coverage.Count(MantleCoverageCategory::Terrain, EMantleCoverageOutcome::Approximated)), static_cast<int64>(1));
+	TestEqual(TEXT("and no warning: the holes are kept"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("holes")), 0);
+	TestEqual(TEXT("the coverage report notes them"), static_cast<int64>(Coverage.Count(MantleCoverageCategory::Terrain, EMantleCoverageOutcome::Info)), static_cast<int64>(1));
+	TestEqual(TEXT("and approximates nothing"), static_cast<int64>(Coverage.Count(MantleCoverageCategory::Terrain, EMantleCoverageOutcome::Approximated)), static_cast<int64>(0));
 
-	// The published data is the landscape's own heights and weights: nothing is rewritten to fill the hole.
-	const FMantleHeightfield Field = FMantleTerrainExport::MakeHeightfield(Source);
-	TestEqual(TEXT("the heightfield keeps every sample"), Field.Heights.Num(), 16);
-	TestTrue(TEXT("as the landscape has them"), Field.Heights == Source.Heights);
+	// The mask: red 0 at the holes, 255 elsewhere, one texel a sample, row 0 the first row of samples.
+	TestTrue(TEXT("it has holes"), FMantleTerrainExport::HasHoles(Source));
+	const TArray<FColor> Mask = FMantleTerrainExport::MakeHoleMask(Source, FIntPoint(4, 4));
+	if (TestEqual(TEXT("a texel a sample"), Mask.Num(), 16))
+	{
+		for (int32 Index = 0; Index < 16; ++Index)
+		{
+			TestEqual(TEXT("red marks the holes"), static_cast<int32>(Mask[Index].R), Source.Holes[Index] ? 0 : 255);
+		}
+	}
+	// A resampled grid takes the nearest sample's: corner to corner, so (1, 1) of a 2 x 2 is sample (3, 3), ground.
+	const TArray<FColor> Small = FMantleTerrainExport::MakeHoleMask(Source, FIntPoint(2, 2));
+	TestTrue(TEXT("a smaller mask maps by nearest sample"), Small.Num() == 4 && Small[0].R == 255 && Small[3].R == 255);
+	FMantleHeightfield Field;
+	Field.Width = 4;
+	Field.Height = 4;
+	FIntPoint Size;
+	const TArray<uint8> Png = FMantleTerrainExport::EncodeHoleMask(Source, Field, 2048, Size);
+	TestTrue(TEXT("the mask is a PNG at the heightfield's size"), !Png.IsEmpty() && Size == FIntPoint(4, 4));
+	Field.Width = 2049;
+	FMantleTerrainExport::EncodeHoleMask(Source, Field, 2048, Size);
+	TestTrue(TEXT("capped to the texture limit"), Size == FIntPoint(2048, 4));
 
-	// Without holes there is neither the warning nor the line.
+	// Without holes there is no mask and no line.
 	Source.bHasHoles = false;
 	Source.HoleSamples = 0;
+	Source.Holes.Reset();
 	Layers.Reset();
 	Issues.Reset();
 	FMantleCoverage Clean;
 	TestTrue(TEXT("a landscape without holes is chosen"), FMantleTerrainExport::ChooseLayers(nullptr, Source, TEXT("Landscape"), Layers, Issues, &Clean));
-	TestEqual(TEXT("with no hole warning"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("holes")), 0);
-	TestEqual(TEXT("and no terrain line"), static_cast<int64>(Clean.Count(MantleCoverageCategory::Terrain, EMantleCoverageOutcome::Approximated)), static_cast<int64>(0));
+	TestFalse(TEXT("and has no holes"), FMantleTerrainExport::HasHoles(Source));
+	TestEqual(TEXT("so no mask"), FMantleTerrainExport::MakeHoleMask(Source, FIntPoint(4, 4)).Num(), 0);
+	TestEqual(TEXT("and no terrain line"), static_cast<int64>(Clean.Count(MantleCoverageCategory::Terrain, EMantleCoverageOutcome::Info)), static_cast<int64>(0));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTerrainMissingComponentsTest,
+	"Mantle.Editor.Terrain.MissingComponentsAreHoles",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTerrainMissingComponentsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTerrainHolesTestPrivate;
+
+	// 4 x 3 samples: the right half of the middle row and all of the last row have no component (GetHeightDataFast left them 0).
+	FMantleTerrainSource Source;
+	Source.Width = 4;
+	Source.Height = 3;
+	Source.Heights = { 100, 200, 300, 400,   500, 600, 0, 0,   0, 0, 0, 0 };
+	const TArray<uint8> Covered = { 1, 1, 1, 1,   1, 1, 0, 0,   0, 0, 0, 0 };
+	FMantleTerrainExport::ApplyCoverage(Source, Covered);
+	TestEqual(TEXT("six samples have no ground"), Source.MissingSamples, 6);
+	TestTrue(TEXT("they are holes"), Source.Holes == TArray<uint8>{ 0, 0, 0, 0,   0, 0, 1, 1,   1, 1, 1, 1 });
+	TestTrue(TEXT("so the Terrain has a mask"), FMantleTerrainExport::HasHoles(Source));
+	TestTrue(TEXT("covered heights are kept"), Source.Heights[0] == 100 && Source.Heights[5] == 600);
+	TestTrue(TEXT("a missing sample takes the nearest in its row"), Source.Heights[6] == 600 && Source.Heights[7] == 600);
+	TestTrue(TEXT("a row with nothing covered takes the nearest row"), Source.Heights[8] == 500 && Source.Heights[11] == 600);
+
+	// Everything covered: nothing changes.
+	FMantleTerrainSource Whole = MakeFlatSource({ TEXT("Grass") });
+	TArray<uint8> All;
+	All.Init(1, 16);
+	FMantleTerrainExport::ApplyCoverage(Whole, All);
+	TestEqual(TEXT("a whole landscape has none missing"), Whole.MissingSamples, 0);
+	TestFalse(TEXT("and no holes"), FMantleTerrainExport::HasHoles(Whole));
 	return true;
 }
 

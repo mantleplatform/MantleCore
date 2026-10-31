@@ -2362,6 +2362,30 @@ bool FMantlePlaceAssetConverter::ConvertTerrainSource(UWorld* World, const FMant
 			Out.AddTexture(MoveTemp(Texture2));
 		}
 	}
+	// Where it has no ground (holes painted in its visibility layer, samples no component covers): a red-channel mask, one texel a published
+	// sample, lossless like the weightmaps.
+	if (FMantleTerrainExport::HasHoles(Source))
+	{
+		FIntPoint Size;
+		TArray<uint8> Png = FMantleTerrainExport::EncodeHoleMask(Source, Field, Limits.MaxTextureSize, Size);
+		if (Png.IsEmpty() || Png.Num() > Limits.MaxTextureBytes)
+		{
+			Out.Issues.Add(ErrorIssue(FString::Printf(TEXT("Landscape '%s''s holes could not be made into an image Mantle takes."), *Label),
+				TEXT("Paint the holes with fewer, broader strokes, then publish again.")));
+			return false;
+		}
+		FMantleConvertedTexture Texture;
+		Texture.Key = FMantleTerrainExport::HolesKeyForPath(Path);
+		Texture.Name = FString::Printf(TEXT("%s (holes)"), *Label);
+		Texture.Format = TEXT("png");
+		Texture.Width = Size.X;
+		Texture.Height = Size.Y;
+		Texture.Hash = FMantleSha256::AssetHash(Png);
+		Texture.Bytes = MoveTemp(Png);
+		Out.AddTexture(MoveTemp(Texture));
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_TERRAIN_HOLES %s: %d painted and %d uncovered sample(s) of %d, mask %d x %d"),
+			*Label, Source.HoleSamples, Source.MissingSamples, Source.Width * Source.Height, Size.X, Size.Y);
+	}
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_TERRAIN converted landscape %s: %d x %d samples, %d layer(s), %d bytes"),
 		*Label, Converted.Width, Converted.Height, Layers.Num(), Converted.Bytes.Num());
 	Out.Heightfields.Add(MoveTemp(Converted));

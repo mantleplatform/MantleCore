@@ -4725,6 +4725,11 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			{
 				Props.Weightmap2 = Uploads.IdFor(FMantleTerrainExport::Weightmap2Key(Landscape), EMantleAssetKind::Texture, Landscape);
 			}
+			// Where it has no ground, the hole mask the converter makes under its own key.
+			if (FMantleTerrainExport::HasHoles(Source))
+			{
+				Props.Holes = Uploads.IdFor(FMantleTerrainExport::HolesKey(Landscape), EMantleAssetKind::Texture, Landscape);
+			}
 			for (const FMantleTerrainLayerChoice& Choice : Layers)
 			{
 				FMantleTerrainLayer& Layer = Props.Layers.AddDefaulted_GetRef();
@@ -5916,6 +5921,10 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 			if (!P11->Weightmap2.IsEmpty())
 			{
 				Writer->WriteValue(TEXT("weightmap2"), P11->Weightmap2);
+			}
+			if (!P11->Holes.IsEmpty())
+			{
+				Writer->WriteValue(TEXT("holes"), P11->Holes);
 			}
 			Writer->WriteArrayStart(TEXT("layers"));
 			for (const FMantleTerrainLayer& Layer : P11->Layers)
