@@ -691,6 +691,10 @@ bool FMantleVoxelizeScriptMadeSmoothTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("it holds nothing a place cannot carry"), Actor->DescribeProblems().Num(), 0);
 	TestEqual(TEXT("its voxels are 50 cm"), Actor->VoxelSize(), 50.0);
+	Actor->Size = FIntVector(60, 64, 32);
+	const TArray<FMantleVoxelWorldProblem> BadSize = Actor->DescribeProblems();
+	TestTrue(TEXT("a bad size is told in voxels"), BadSize.Num() > 0 && BadSize[0].What.StartsWith(TEXT("is 60 x 64 x 32 voxels;")));
+	Actor->Size = FIntVector(64, 64, 32);
 
 	const FMantleExportResult Exported = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
 	int32 Index = INDEX_NONE;
