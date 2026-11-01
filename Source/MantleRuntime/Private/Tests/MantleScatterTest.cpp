@@ -320,6 +320,7 @@ bool FMantleScatterParserTest::RunTest(const FString& Parameters)
 	FMantleParseResult Result = ParseScatter(TEXT(""));
 	TestTrue(TEXT("the required keys alone parse"), Result.bSuccess);
 	const FMantleScatterParams* Plain = ScatterOf(Result);
+	const bool bCollisionOffByDefault = Plain && !Plain->bCollision;
 	TestTrue(TEXT("defaults: box placement, box shape, no clusters, never culled"),
 		Plain && Plain->Placement == EMantleScatterPlacement::Box && Plain->Shape == EMantleScatterShape::Box
 		&& Plain->ClusterCount == 0 && Plain->DrawDistance == 0.0 && Plain->MaxSlopeDegrees == 90.0);
@@ -353,7 +354,7 @@ bool FMantleScatterParserTest::RunTest(const FString& Parameters)
 
 	Result = ParseScatter(TEXT(",\"collision\":true"));
 	TestTrue(TEXT("collision parses"), Result.bSuccess && ScatterOf(Result) && ScatterOf(Result)->bCollision);
-	TestTrue(TEXT("collision is off by default"), Plain && !Plain->bCollision);
+	TestTrue(TEXT("collision is off by default"), bCollisionOffByDefault);
 	TestTrue(TEXT("a collision that is not a boolean is refused"), HasErrorAt(ParseScatter(TEXT(",\"collision\":\"yes\"")), TEXT("collision")));
 	// halfExtent 1000 x 1000 cm at density 0.1 makes 40 instances: 51 such Scatters pass the place's 2000 colliding.
 	{

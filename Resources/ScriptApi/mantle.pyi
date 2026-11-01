@@ -86,11 +86,17 @@ class Entity:
     def get_material(self, slot: Optional[float] = ..., /) -> Optional[str]:
         """The material asset id a mesh shows in a slot (0 when left out), or nil when the slot shows the mesh's own material."""
         ...
+    def get_scatter_hash(self) -> str:
+        """Scatters only: a number as 16 hex digits that summarises every instance this Scatter generates (its whole stream, in its own space), so two machines' values can be compared. Errors when the entity is not a Scatter."""
+        ...
     def get_tags(self) -> list[str]:
         """All of the entity's tags."""
         ...
     def has_tag(self, tag: str, /) -> bool:
         """Whether the entity has this tag."""
+        ...
+    def instances_in(self, min: Vector3, max: Vector3, /) -> list[Any]:
+        """Scatters only: the instances this Scatter generates inside the world-space box from `min` to `max` (x and y; z is ignored), as a list of {Position: Vector3, Rotation: Vector3 (pitch, yaw, roll degrees), Scale: number, Mesh: string}. It is the Scatter's whole stream, the same on the server and every client, whether or not any is in range or drawn (a client draws fewer on a low Foliage setting). The box is at most 200 m by 200 m and holds at most 2000 instances, and a script may call it 10 times a second; past any of these the call fails with a message. Errors when the entity is not a Scatter."""
         ...
     def observe_attribute(self, name: str, handler: Callable[..., Any], /) -> Connection:
         """Call handler with the attribute's value now and every time it changes."""
@@ -118,6 +124,9 @@ class Entity:
         ...
     def set_material(self, assetId: str, slot: Optional[float] = ..., /) -> None:
         """Show another of the place's Material assets on this mesh: in one material slot (counting from 0), or in every slot when slot is left out. '' puts the place's own material back. Replicates like Color. Errors when the id is not a Material in the place's assets, the slot doesn't exist, or the entity is not a mesh."""
+        ...
+    def set_scatter_settings(self, settings: dict[str, Any], /) -> None:
+        """Scatters only (server): change the keys of the table you give; every other setting stays. The keys are the Scatter place-file keys (seed, halfExtent, density, scale, alignment, maxTilt, meshes, drawDistance, placement, maxSlopeDegrees, minHeight, maxHeight, shape, radius, path, width, exclusions, clusterCount, clusterRadius), checked with the same limits and messages as publishing a place: a value that is refused is an error and the Scatter keeps its settings. Every player generates the new instances on their own machine, so nothing but the settings is sent; a Scatter can change at most 4 times a second. Errors when the entity is not a Scatter."""
         ...
     def stop_clip(self) -> None:
         """Stop a SkeletalMesh's clip: it shows its resting pose until the next PlayClip. Replicates like PlayClip. Errors when the entity is not a SkeletalMesh."""
@@ -986,18 +995,18 @@ class _NetService:
 Net: _NetService
 
 class _NoiseService:
-    """Smooth seeded noise for generating worlds (#168): the same seed and position always give the same value, from -1 to 1, on every machine."""
+    """Smooth seeded noise for generating worlds (#168, exact since 1.60): the same seed and position always give the same value, from -1 to 1, bit for bit on every machine (client and server)."""
     def fbm2_d(self, seed: float, x: float, y: float, octaves: Optional[float] = ..., frequency: Optional[float] = ..., /) -> float:
-        """Layered noise (octaves, default 4, at most 8: each twice as fine and half as strong) at (x, y) times frequency (default 1): natural terrain."""
+        """Layered noise (octaves, default 4, at most 8: each twice as fine and half as strong) at (x, y) times frequency (default 1): natural terrain. Values are multiples of 1/65536, the same on every machine. A seed is a whole number from -2147483648 to 2147483647, and a coordinate times the frequency must stay within 8388608 either way; anything else is an error."""
         ...
     def fbm3_d(self, seed: float, x: float, y: float, z: float, octaves: Optional[float] = ..., frequency: Optional[float] = ..., /) -> float:
-        """Layered 3D noise, as Fbm2D."""
+        """Layered 3D noise, as Fbm2D. Values are multiples of 1/65536, the same on every machine. A seed is a whole number from -2147483648 to 2147483647, and a coordinate times the frequency must stay within 8388608 either way; anything else is an error."""
         ...
     def perlin2_d(self, seed: float, x: float, y: float, frequency: Optional[float] = ..., /) -> float:
-        """Gradient noise at (x, y) times frequency (default 1): about one hill per 1 / frequency units."""
+        """Gradient noise at (x, y) times frequency (default 1): about one hill per 1 / frequency units. Values are multiples of 1/65536, the same on every machine. A seed is a whole number from -2147483648 to 2147483647, and a coordinate times the frequency must stay within 8388608 either way; anything else is an error."""
         ...
     def perlin3_d(self, seed: float, x: float, y: float, z: float, frequency: Optional[float] = ..., /) -> float:
-        """Gradient noise at (x, y, z) times frequency (default 1): caves, ore veins."""
+        """Gradient noise at (x, y, z) times frequency (default 1): caves, ore veins. Values are multiples of 1/65536, the same on every machine. A seed is a whole number from -2147483648 to 2147483647, and a coordinate times the frequency must stay within 8388608 either way; anything else is an error."""
         ...
 
 Noise: _NoiseService
@@ -1031,6 +1040,17 @@ class _ProjectilesService:
         ...
 
 Projectiles: _ProjectilesService
+
+class _RandomService:
+    """Seeded random numbers (#169): the same seed and index always give the same value, on every machine (client and server), whatever was asked before. Draw i of a seed never depends on draw i - 1: ask for any index in any order. A seed is a whole number from -2147483648 to 2147483647 and an index a whole number from 0 to 4294967295; anything else is an error."""
+    def int(self, seed: float, index: float, min: float, max: float, /) -> float:
+        """A whole number from `min` to `max`, both included: draw `index` of the stream `seed`. min and max are whole numbers, min at most max, at most 4294967295 apart."""
+        ...
+    def number(self, seed: float, index: float, /) -> float:
+        """A number from 0 up to, never reaching, 1: draw `index` of the stream `seed`."""
+        ...
+
+Random: _RandomService
 
 class _RespawnService:
     """How a death becomes a respawn. By default a dead player respawns on their own after a short wait at a spawn point the place picks. Change the wait, or turn automatic respawning off to run rounds where the dead stay down until you bring them back with Player:Respawn. The server decides; there is nothing for a client script here. Player.Respawned fires when a player gets a fresh character."""
