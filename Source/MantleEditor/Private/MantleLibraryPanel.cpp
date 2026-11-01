@@ -27,6 +27,7 @@
 #include "ImageUtils.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
+#include "Misc/MessageDialog.h"
 #include "Modules/ModuleManager.h"
 #include "Policies/CondensedJsonPrintPolicy.h"
 #include "ScopedTransaction.h"
@@ -287,12 +288,31 @@ int32 FMantleLibraryStorage::FindUpdatable(const TArray<FMantleStorageEntry>& En
 
 bool FMantleLibraryStorage::IsUsableStatus(const FString& Status)
 {
-	return Status.Equals(TEXT("active"), ESearchCase::CaseSensitive) || Status.Equals(TEXT("delisted"), ESearchCase::CaseSensitive);
+	return Status.Equals(TEXT("active"), ESearchCase::CaseSensitive);
 }
 
-bool FMantleLibraryStorage::IsAddableStatus(const FString& Status)
+FString FMantleLibraryStorage::DeleteConfirmText(const FString& ItemName)
 {
-	return Status.Equals(TEXT("active"), ESearchCase::CaseSensitive);
+	return FString::Printf(TEXT("Delist \"%s\"?\n\nThis deletes the item for good and cannot be undone. Everyone who added it to their library loses it.\n\nTo hide it without deleting it, make it private instead (publish it again with Private chosen)."),
+		ItemName.IsEmpty() ? TEXT("this item") : *ItemName);
+}
+
+FString FMantleLibraryStorage::DescribeDeleteRefusal(const FMantleApiResult& Result, const FString& ItemName)
+{
+	TArray<FMantleLibraryUsePlace> Places;
+	if (FMantleApiClient::ParseItemInUse(Result, Places))
+	{
+		TArray<FString> Parts;
+		for (const FMantleLibraryUsePlace& Place : Places)
+		{
+			Parts.Add(FString::Printf(TEXT("%s (%s, %s version)"), Place.Name.IsEmpty() ? TEXT("an unnamed place") : *Place.Name,
+				Place.bYours ? TEXT("yours") : TEXT("not yours"), Place.Revision.Equals(TEXT("staged"), ESearchCase::CaseSensitive) ? TEXT("staged") : TEXT("live")));
+		}
+		const FString Named = ItemName.IsEmpty() ? FString(TEXT("this item")) : FString::Printf(TEXT("\"%s\""), *ItemName);
+		return FString::Printf(TEXT("Not delisted: %s is still stored by %s. Remove it from those places' storage and republish them first, then delist it."),
+			*Named, *FString::Join(Parts, TEXT(", ")));
+	}
+	return Result.Message.IsEmpty() ? FString(TEXT("Mantle could not delist the item.")) : Result.Message;
 }
 
 bool FMantleLibraryStorage::IsTakenDownStatus(const FString& Status)
@@ -329,7 +349,7 @@ FMantleLibraryAddPlan FMantleLibraryStorage::PlanAdd(const TArray<FMantleStorage
 		{
 			Plan.Message = FString::Printf(TEXT("Already stored as \"%s\" at v%d. %s Remove it from storage."), *Stored.Name, Stored.Version, *TakenDownNote());
 		}
-		else if (Stored.Version < Version && IsAddableStatus(Status))
+		else if (Stored.Version < Version && IsUsableStatus(Status))
 		{
 			Plan.Message = FString::Printf(TEXT("Already stored as \"%s\" at v%d. A place stores one version of an item: use Update to v%d."),
 				*Stored.Name, Stored.Version, Version);
@@ -345,15 +365,11 @@ FMantleLibraryAddPlan FMantleLibraryStorage::PlanAdd(const TArray<FMantleStorage
 		}
 		return Plan;
 	}
-	if (!IsAddableStatus(Status))
+	if (!IsUsableStatus(Status))
 	{
 		if (IsTakenDownStatus(Status))
 		{
 			Plan.Message = TakenDownNote() + TEXT(" It cannot be added to a place.");
-		}
-		else if (Status.Equals(TEXT("delisted"), ESearchCase::CaseSensitive))
-		{
-			Plan.Message = TEXT("This item is delisted, so it can no longer be added to a place. A place that already stores it keeps working.");
 		}
 		else
 		{
@@ -1078,8 +1094,7 @@ TSharedRef<SWidget> SMantleLibraryPanel::BuildTile(const FMantleLibraryCard& Car
 
 	const FString CreatorName = Card.CreatorName.IsEmpty() ? FString(TEXT("unknown")) : Card.CreatorName;
 	const FString Byline = FString::Printf(TEXT("by %s%s  -  v%d%s"), *CreatorName, Card.bCreatorOfficial ? TEXT(" (official)") : TEXT(""), Card.LatestVersion,
-		Card.Status.Equals(TEXT("delisted"), ESearchCase::CaseSensitive) ? TEXT("  -  delisted")
-			: (FMantleLibraryStorage::IsTakenDownStatus(Card.Status) ? TEXT("  -  taken down") : TEXT("")));
+		FMantleLibraryStorage::IsTakenDownStatus(Card.Status) ? TEXT("  -  taken down") : TEXT(""));
 
 	const TSharedRef<SVerticalBox> Column = SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight()
@@ -1146,14 +1161,6 @@ TSharedRef<SWidget> SMantleLibraryPanel::BuildTile(const FMantleLibraryCard& Car
 		bAddEnabled = false;
 		AddTip = FText::Format(LOCTEXT("AddNotActive", "This item is {0}, so a place cannot store it."), FText::FromString(Card.Status));
 	}
-	else if (!FMantleLibraryStorage::IsAddableStatus(Card.Status) && (bUpdatable || StoredIndex == INDEX_NONE))
-	{
-		// Delisted: a place that already stores it keeps working, but a new add or a re-pin cannot be published.
-		bAddEnabled = false;
-		AddTip = bUpdatable
-			? LOCTEXT("UpdateDelisted", "This item is delisted, so the pin of a place that stores it cannot be updated.")
-			: LOCTEXT("AddDelisted", "This item is delisted, so it can no longer be added to a place.");
-	}
 	else if (bUpdatable)
 	{
 		AddLabel = FText::Format(LOCTEXT("UpdateTo", "Update to v{0}"), FText::AsNumber(Card.LatestVersion));
@@ -1186,6 +1193,17 @@ TSharedRef<SWidget> SMantleLibraryPanel::BuildTile(const FMantleLibraryCard& Car
 		.IsEnabled(bAddEnabled)
 		.OnClicked_Lambda([this, Card] { return OnAddClicked(Card); })
 	];
+	if (Card.bOwned)
+	{
+		Buttons->AddSlot().AutoWidth().Padding(4, 0, 0, 0)
+		[
+			SNew(SButton)
+			.Text(LOCTEXT("Delist", "Delist"))
+			.ToolTipText(LOCTEXT("DelistTip", "Delete this item for good. It cannot be undone."))
+			.IsEnabled(!bBusy)
+			.OnClicked_Lambda([this, Card] { return OnDelistClicked(Card); })
+		];
+	}
 	Column->AddSlot().AutoHeight().Padding(0, 6, 0, 0)
 	[
 		Buttons
@@ -1280,6 +1298,53 @@ void SMantleLibraryPanel::FinishGet(const FString& ItemId, const FMantleApiResul
 		Remember(Card);
 	}
 	SetTileNote(ItemId, TEXT("Got it. You can add it to storage now."), false);
+}
+
+FReply SMantleLibraryPanel::OnDelistClicked(FMantleLibraryCard Card)
+{
+	if (TileBusy.Contains(Card.Id))
+	{
+		return FReply::Handled();
+	}
+	if (!FMantleCreatorSignIn::EnsureSignedIn(LOCTEXT("DelistSignInReason", "Sign in to delist items from your Mantle library.")))
+	{
+		SetTileNote(Card.Id, TEXT("Sign in to delist this item."), true);
+		return FReply::Handled();
+	}
+	if (FMessageDialog::Open(EAppMsgType::YesNo, FText::FromString(FMantleLibraryStorage::DeleteConfirmText(Card.Name))) != EAppReturnType::Yes)
+	{
+		return FReply::Handled();
+	}
+	TileBusy.Add(Card.Id);
+	SetTileNote(Card.Id, TEXT("Delisting..."), false);
+	const FString ItemId = Card.Id;
+	const FString ItemName = Card.Name;
+	const TWeakPtr<SMantleLibraryPanel> WeakThis = SharedThis(this);
+	FMantleApiClient::DeleteLibraryItemAsync(ItemId, FMantleApiCallback::CreateLambda([WeakThis, ItemId, ItemName](const FMantleApiResult& Result)
+	{
+		if (const TSharedPtr<SMantleLibraryPanel> Panel = WeakThis.Pin())
+		{
+			Panel->FinishDelist(ItemId, ItemName, Result);
+		}
+	}));
+	return FReply::Handled();
+}
+
+void SMantleLibraryPanel::FinishDelist(const FString& ItemId, const FString& ItemName, const FMantleApiResult& Result)
+{
+	TileBusy.Remove(ItemId);
+	if (!Result.bSuccess)
+	{
+		SetTileNote(ItemId, FMantleLibraryStorage::DescribeDeleteRefusal(Result, ItemName), true);
+		return;
+	}
+	Cards.RemoveAll([&ItemId](const FMantleLibraryCard& Card) { return Card.Id.Equals(ItemId, ESearchCase::CaseSensitive); });
+	Known.Remove(ItemId);
+	TileNotes.Remove(ItemId);
+	StorageNote.Text = FString::Printf(TEXT("Delisted \"%s\". It is deleted for good."), *ItemName);
+	StorageNote.bError = false;
+	RebuildTiles();
+	RebuildStorage();
 }
 
 FReply SMantleLibraryPanel::OnAddClicked(FMantleLibraryCard Card)
@@ -1399,7 +1464,6 @@ bool SMantleLibraryPanel::ApplyUpdate(const FString& ItemId, const int32 Version
 		OutMessage = FString::Printf(TEXT("\"%s\" is already at v%d."), *Settings->Storage[Index].Name, Settings->Storage[Index].Version);
 		return false;
 	}
-	// A delisted item stays stored at its pin, but the backend refuses to publish a place that re-pins it.
 	if (const FMantleLibraryCard* Item = Known.Find(ItemId))
 	{
 		if (FMantleLibraryStorage::IsTakenDownStatus(Item->Status))
@@ -1407,7 +1471,7 @@ bool SMantleLibraryPanel::ApplyUpdate(const FString& ItemId, const int32 Version
 			OutMessage = FString::Printf(TEXT("\"%s\" cannot be updated. %s"), *Settings->Storage[Index].Name, *FMantleLibraryStorage::TakenDownNote());
 			return false;
 		}
-		if (!FMantleLibraryStorage::IsAddableStatus(Item->Status))
+		if (!FMantleLibraryStorage::IsUsableStatus(Item->Status))
 		{
 			OutMessage = FString::Printf(TEXT("\"%s\" is %s, so its pin cannot be updated."), *Settings->Storage[Index].Name, *Item->Status);
 			return false;
@@ -1715,11 +1779,7 @@ void SMantleLibraryPanel::RebuildStorage()
 			{
 				Detail += FString::Printf(TEXT(" (latest v%d)"), Item->LatestVersion);
 			}
-			if (Item->Status.Equals(TEXT("delisted"), ESearchCase::CaseSensitive))
-			{
-				Detail += TEXT("  -  delisted: it stays here at this version but cannot be updated");
-			}
-			else if (FMantleLibraryStorage::IsTakenDownStatus(Item->Status))
+			if (FMantleLibraryStorage::IsTakenDownStatus(Item->Status))
 			{
 				Detail += TEXT("  -  taken down: ") + FMantleLibraryStorage::TakenDownNote() + TEXT(" Remove it from this list.");
 				bError = true;
@@ -1747,7 +1807,7 @@ void SMantleLibraryPanel::RebuildStorage()
 		const FString EntryName = Entry.Name;
 		const FString ItemId = Entry.Item;
 		const int32 LatestVersion = Item ? Item->LatestVersion : 0;
-		const bool bCanUpdate = Item && Item->LatestVersion > Entry.Version && FMantleLibraryStorage::IsAddableStatus(Item->Status);
+		const bool bCanUpdate = Item && Item->LatestVersion > Entry.Version && FMantleLibraryStorage::IsUsableStatus(Item->Status);
 
 		StorageBox->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
 		[

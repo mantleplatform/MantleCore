@@ -205,6 +205,19 @@ struct FMantleLibraryPlaceRef
 	FString Name;
 };
 
+/** One place that still stores an item, from the item_in_use refusal of DELETE /library/items/{id}. */
+struct FMantleLibraryUsePlace
+{
+	FString Id;
+	FString Name;
+
+	/** "live" or "staged": which version of the place stores the item. */
+	FString Revision;
+
+	/** The caller owns the place. */
+	bool bYours = false;
+};
+
 /**
  * One library item as the library routes describe it (#614 stage 6): a card of GET /library/items or
  * GET /library/items/mine, or GET /library/items/{id}, which adds Versions.
@@ -223,7 +236,7 @@ struct FMantleLibraryCard
 	/** "private" or "public". */
 	FString Visibility;
 
-	/** "active", "delisted" or "taken_down" (what the API reports; a stored item loads only as active or delisted, #614 stage 7). */
+	/** "active" or "taken_down" (what the API reports). */
 	FString Status;
 
 	FString CreatorId;
@@ -417,6 +430,19 @@ public:
 	 * naming the caller's own item, is harmless. A place that still stores it refuses its next publish.
 	 */
 	static void RemoveLibraryItemAsync(const FString& ItemId, FMantleApiCallback OnDone);
+
+	/**
+	 * DELETE /library/items/{id}: the caller's own item is deleted for good, with its versions, the copies in other
+	 * libraries, its scripts and the files nothing else uses. It cannot be undone. Answers 204, or 409 item_in_use
+	 * (read by ParseItemInUse), 409 item_taken_down, or 404 not_found.
+	 */
+	static void DeleteLibraryItemAsync(const FString& ItemId, FMantleApiCallback OnDone);
+
+	/**
+	 * Reads the places of an item_in_use refusal, live ones first as the API sends them. False, with the output empty,
+	 * when the answer is not that refusal or lists no place.
+	 */
+	static bool ParseItemInUse(const FMantleApiResult& Result, TArray<FMantleLibraryUsePlace>& OutPlaces);
 
 	/** The request path of a list call: "/library/items?kind=vehicle&q=...&limit=24&cursor=...", values URL-encoded, empty ones left out. */
 	static FString MakeLibraryListPath(const FMantleLibraryQuery& Query, bool bMine, const FString& Cursor);

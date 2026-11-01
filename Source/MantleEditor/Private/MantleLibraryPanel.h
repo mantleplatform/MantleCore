@@ -68,7 +68,7 @@ struct FMantleLibraryStorage
 	/**
 	 * Whether {sanitized unique name of ItemName, ItemId, Version} may be appended to Entries. Refuses (and says why):
 	 * a bad item id or a version below 1; an item that is already stored, at any version; an item whose Status a place may
-	 * not newly add (IsAddableStatus: a delisted item is refused, because the backend refuses to publish one); a full place
+	 * not newly add (IsUsableStatus: only an active item is added); a full place
 	 * (the schema's cap); and anything FMantleStorage::CheckEntries would report for the entries with it added.
 	 */
 	static FMantleLibraryAddPlan PlanAdd(const TArray<FMantleStorageEntry>& Entries, const FString& ItemId, const FString& ItemName, int32 Version,
@@ -80,14 +80,17 @@ struct FMantleLibraryStorage
 	/** The index of the entry that stores ItemId at a version below LatestVersion, or INDEX_NONE when it is absent or already current. */
 	static int32 FindUpdatable(const TArray<FMantleStorageEntry>& Entries, const FString& ItemId, int32 LatestVersion);
 
-	/** True for an item status a place may store: what the storage resolve loads, "active" and "delisted". */
+	/** True for an item status a place may store, add or re-pin: what the storage resolve loads, only "active". */
 	static bool IsUsableStatus(const FString& Status);
 
+	/** The question the Delist button asks before it deletes: for good, no undo, others lose it, and private hides without deleting. */
+	static FString DeleteConfirmText(const FString& ItemName);
+
 	/**
-	 * True for an item status a creator may newly add to a place, or update a pin of: only "active". A delisted item still
-	 * loads (IsUsableStatus), so an entry already stored keeps working, but publishing a place that adds or re-pins it is refused.
+	 * What the tile says when DELETE /library/items/{id} was refused: for item_in_use the places by name, marked yours or
+	 * not and live or staged, with what to do first; otherwise the server's own message (item_taken_down, not_found...).
 	 */
-	static bool IsAddableStatus(const FString& Status);
+	static FString DescribeDeleteRefusal(const FMantleApiResult& Result, const FString& ItemName);
 
 	/**
 	 * True for status "taken_down": a moderator removed the item after a copyright complaint. It never loads
@@ -178,6 +181,8 @@ private:
 
 	// Actions on a card.
 	FReply OnGetClicked(FMantleLibraryCard Card);
+	FReply OnDelistClicked(FMantleLibraryCard Card);
+	void FinishDelist(const FString& ItemId, const FString& ItemName, const FMantleApiResult& Result);
 	FReply OnAddClicked(FMantleLibraryCard Card);
 	void FinishGet(const FString& ItemId, const FMantleApiResult& Detail);
 	void SetTileNote(const FString& ItemId, const FString& Text, bool bError);

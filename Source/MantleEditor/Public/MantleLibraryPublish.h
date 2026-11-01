@@ -148,7 +148,7 @@ public:
 	/**
 	 * The Idempotency-Key for creating an item for one uploaded vehicle: the same for the same source asset,
 	 * uploaded bytes, visibility and Generation, so a retried create names the item the first one made. Generation
-	 * counts how often the vehicle's link was forgotten (UMantleSettings): a new item made after a delisted or deleted
+	 * counts how often the vehicle's link was forgotten (UMantleSettings): a new item made after a deleted
 	 * one needs a key the old creation never used. 0 is the first item and keeps the key it always had. 1 to 128
 	 * printable characters, no spaces.
 	 */
@@ -160,7 +160,7 @@ public:
 	 */
 	static FString MakeVisibilityPatchBody(bool bPublic, const FString& ThumbnailAssetId = FString());
 
-	/** Reads GET /library/items/{id}: its visibility ("public" or "private") and status ("active" or "delisted"); false when it is not an item. */
+	/** Reads GET /library/items/{id}: its visibility ("public" or "private") and its status ("active" or "taken_down"); false when it is not an item. */
 	static bool ReadItemState(const FString& ItemBody, FString& OutVisibility, FString& OutStatus);
 
 	/** True when an item's visibility is a known one that is not the choice (an unknown or empty one is left alone). */
@@ -175,12 +175,9 @@ public:
 	/** PATCH /library/items/{id} body that sets only the card's picture and leaves the item's visibility alone. */
 	static FString MakeThumbnailPatchBody(const FString& ThumbnailAssetId);
 
-	/** True for status "delisted": the owner removed the item, so it takes no versions and no edits. */
-	static bool IsDelisted(const FString& ItemStatus);
-
 	/**
 	 * True for status "taken_down" (#614 stage 7): a moderator removed the item after a copyright complaint. It takes no
-	 * versions and no edits, and unlike a delisted item it is never replaced by a new item for the same content.
+	 * versions and no edits, and it is never replaced by a new item for the same content.
 	 */
 	static bool IsTakenDown(const FString& ItemStatus);
 

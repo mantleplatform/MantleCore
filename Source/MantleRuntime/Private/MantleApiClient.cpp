@@ -1086,6 +1086,41 @@ void FMantleApiClient::RemoveLibraryItemAsync(const FString& ItemId, FMantleApiC
 	SendAsync(TEXT("DELETE"), TEXT("/library/items/") + FGenericPlatformHttp::UrlEncode(ItemId) + TEXT("/get"), FString(), OnDone);
 }
 
+void FMantleApiClient::DeleteLibraryItemAsync(const FString& ItemId, FMantleApiCallback OnDone)
+{
+	SendAsync(TEXT("DELETE"), TEXT("/library/items/") + FGenericPlatformHttp::UrlEncode(ItemId), FString(), OnDone);
+}
+
+bool FMantleApiClient::ParseItemInUse(const FMantleApiResult& Result, TArray<FMantleLibraryUsePlace>& OutPlaces)
+{
+	OutPlaces.Reset();
+	if (Result.StatusCode != 409 || !Result.Code.Equals(TEXT("item_in_use"), ESearchCase::CaseSensitive))
+	{
+		return false;
+	}
+	TSharedPtr<FJsonObject> Root;
+	const TArray<TSharedPtr<FJsonValue>>* Places = nullptr;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Result.Body), Root) || !Root.IsValid() || !Root->TryGetArrayField(TEXT("places"), Places))
+	{
+		return false;
+	}
+	for (const TSharedPtr<FJsonValue>& Value : *Places)
+	{
+		const TSharedPtr<FJsonObject> Object = Value.IsValid() ? Value->AsObject() : nullptr;
+		if (!Object.IsValid())
+		{
+			continue;
+		}
+		FMantleLibraryUsePlace Place;
+		Object->TryGetStringField(TEXT("id"), Place.Id);
+		Object->TryGetStringField(TEXT("name"), Place.Name);
+		Object->TryGetStringField(TEXT("revision"), Place.Revision);
+		Object->TryGetBoolField(TEXT("yours"), Place.bYours);
+		OutPlaces.Add(MoveTemp(Place));
+	}
+	return OutPlaces.Num() > 0;
+}
+
 bool FMantleApiClient::ParseLibraryCards(const FString& Json, TArray<FMantleLibraryCard>& OutCards, FString& OutNextCursor, FString& OutError)
 {
 	OutCards.Reset();
