@@ -279,6 +279,73 @@ bool FMantleScatterCellsSpacingTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterCellsThinningTest,
+	"Mantle.Runtime.Scatter.Cells.WideSpacingIsThinned",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterCellsThinningTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterCellsTestPrivate;
+
+	FMantleScatterGenerateOptions None;
+	FString Error;
+	const int32 Target = FMantlePlaceLimits::ScatterSpacingCandidates;
+
+	// 320,000 candidates (400 m x 400 m at density 2) with a spacing of 50 m: 5,000 candidates a spacing square, thinned to about 64 of them, which
+	// is 160,000 / 2,500 squares x 64 = 4,096 in all.
+	FMantleScatterParams Wide = CellParams();
+	Wide.Density = 2.0;
+	Wide.MinSpacing = 5000.0;
+	TestEqual(TEXT("the Scatter counts, it is not refused"), FMantleScatter::CountFor(Wide, Error), static_cast<int64>(320000));
+	const TSharedPtr<const FMantleScatterCellIndex> WideIndex = FMantleScatter::BuildCellIndex(Wide, Error);
+	if (!TestTrue(*FString::Printf(TEXT("its index builds (%s)"), *Error), WideIndex.IsValid()))
+	{
+		return false;
+	}
+	TestTrue(*FString::Printf(TEXT("only about %d candidates a spacing square stay (%d of 320,000)"), Target, WideIndex->NumSlots()),
+		WideIndex->NumSlots() > 2800 && WideIndex->NumSlots() < 5600);
+	// Still a deterministic field: a cell alone is the whole build's region, in any order, and the parallel read is the whole stream.
+	const int32 Thinned = CheckCellsMatchWhole(*this, TEXT("thinned wide spacing"), Wide, None);
+	// 160,000 m2 holds about 45 discs of a 50 m spacing packed at random, and 64 candidates a square is enough to reach that.
+	TestTrue(*FString::Printf(TEXT("the spacing still leaves a field (%d)"), Thinned), Thinned > 20 && Thinned < 120);
+
+	// The same Scatter with a spacing it holds comfortably (150 cm is 4.5 a square) is not thinned: every candidate is there.
+	FMantleScatterParams Close = Wide;
+	Close.MinSpacing = 150.0;
+	TSharedPtr<const FMantleScatterCellIndex> CloseIndex = FMantleScatter::BuildCellIndex(Close, Error);
+	TestTrue(TEXT("a close spacing keeps every candidate"), CloseIndex.IsValid() && CloseIndex->NumSlots() == 320000);
+	// And one built whole (up to 200,000) is never thinned, however wide the spacing.
+	FMantleScatterParams Small = CellParams();
+	Small.MinSpacing = 5000.0;
+	TSharedPtr<const FMantleScatterCellIndex> SmallIndex = FMantleScatter::BuildCellIndex(Small, Error);
+	TestTrue(TEXT("a Scatter built whole is not thinned"), SmallIndex.IsValid() && SmallIndex->NumSlots() == 80000);
+
+	// The review's case: a 1 km box at density 2 with a spacing of 1 km. Every read stays small and the whole stream is the same as a whole build's.
+	FMantleScatterParams Huge = CellParams();
+	Huge.HalfExtent = FVector(50000.0, 50000.0, 0.0);
+	Huge.Density = 2.0;
+	Huge.MinSpacing = 100000.0;
+	Huge.DrawDistance = 10000.0;
+	TestEqual(TEXT("2,000,000 candidates count"), FMantleScatter::CountFor(Huge, Error), static_cast<int64>(2000000));
+	const double Start = FPlatformTime::Seconds();
+	const TSharedPtr<const FMantleScatterCellIndex> HugeIndex = FMantleScatter::BuildCellIndex(Huge, Error);
+	if (!TestTrue(TEXT("the huge index builds"), HugeIndex.IsValid()))
+	{
+		return false;
+	}
+	TArray<FMantleScatterInstance> ByCells;
+	TestTrue(TEXT("every cell reads"), FMantleScatter::GenerateAllByCells(Huge, *HugeIndex, ByCells, Error, None));
+	const double Seconds = FPlatformTime::Seconds() - Start;
+	TArray<FMantleScatterInstance> Whole;
+	TestTrue(TEXT("the whole build generates"), FMantleScatter::Generate(Huge, Whole, Error, None));
+	TestTrue(*FString::Printf(TEXT("the index and every cell took %.2f s"), Seconds), Seconds < 10.0);
+	TestTrue(*FString::Printf(TEXT("about %d candidates remain (%d)"), Target, HugeIndex->NumSlots()), HugeIndex->NumSlots() >= 1 && HugeIndex->NumSlots() < 400);
+	TestEqual(TEXT("the cells' hash is the whole build's"), FMantleScatter::HashText(FMantleScatter::Hash(ByCells)), FMantleScatter::HashText(FMantleScatter::Hash(Whole)));
+	TestTrue(TEXT("at least one instance stands"), ByCells.Num() >= 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleScatterCellsPrefixTest,
 	"Mantle.Runtime.Scatter.Cells.TiersKeepAPrefix",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -397,19 +464,12 @@ bool FMantleScatterCellsLimitsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("2,000,001 is refused"), FMantleScatter::CountFor(P, Error), static_cast<int64>(-1));
 	TestTrue(TEXT("with the cap in the message"), Error.Contains(TEXT("at most 2000000")));
 
-	// A spacing much wider than the candidates are apart (more than 64 in one spacing square) is refused for a Scatter built in cells: at density
-	// 200, 56 cm is 627,200 of 640,000 and 57 cm is 649,800. One built whole is not held to it.
+	// A wide minSpacing is never refused: a Scatter built in cells thins its candidates instead (WideSpacingIsThinned).
 	P.Density = 200.0;
-	P.MinSpacing = 56.0;
-	TestEqual(TEXT("56 cm at density 200 passes"), FMantleScatter::CountFor(P, Error), static_cast<int64>(2000000));
 	P.MinSpacing = 57.0;
-	TestEqual(TEXT("57 cm at density 200 is refused"), FMantleScatter::CountFor(P, Error), static_cast<int64>(-1));
-	TestTrue(TEXT("with the spacing in the message"), Error.Contains(TEXT("minSpacing is too wide for the density")));
-	P.Density = 20.0;
+	TestEqual(TEXT("57 cm at density 200 counts"), FMantleScatter::CountFor(P, Error), static_cast<int64>(2000000));
 	P.MinSpacing = 100000.0;
-	TestEqual(TEXT("a Scatter built whole keeps any minSpacing"), FMantleScatter::CountFor(P, Error), static_cast<int64>(200000));
-	P.Density = 20.0001;
-	TestEqual(TEXT("one instance more and the widest spacing is refused"), FMantleScatter::CountFor(P, Error), static_cast<int64>(-1));
+	TestEqual(TEXT("so does the widest spacing"), FMantleScatter::CountFor(P, Error), static_cast<int64>(2000000));
 	P.MinSpacing = 0.0;
 	P.Density = 20.0001;
 

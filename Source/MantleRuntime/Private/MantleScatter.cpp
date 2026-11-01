@@ -859,6 +859,13 @@ namespace MantleScatterPrivate
 		int64 SpacingMm = 0;
 		int64 StepMm = 0;
 
+		/**
+		 * The share of candidates kept, in millionths (1,000,000 for all). A Scatter built in cells (#189) whose spacing is wide for its density
+		 * would make every cell check thousands of neighbours, so it keeps about ScatterSpacingCandidates candidates per spacing square, each picked
+		 * by its own hash: the same on every machine, and the same for a cell and the whole build. The spacing then fills the same as it would with all.
+		 */
+		int64 ThinKeepMicro = 1000000;
+
 		/** Cluster centres: each from its own stream, numbered past any instance's so the two never share one. */
 		TArray<FScatterPoint> Centres;
 		int64 ClusterRadiusMm = 0;
@@ -914,6 +921,24 @@ namespace MantleScatterPrivate
 
 			SpacingMm = Params.MinSpacing > 0.0 ? FMath::Max<int64>(ScatterHalfMillimetres(Params.MinSpacing), 1) : 0;
 			StepMm = Params.Shape == EMantleScatterShape::Path && Params.PathStep > 0.0 ? FMath::Max<int64>(ScatterHalfMillimetres(Params.PathStep), 1) : 0;
+			if (SpacingMm > 0)
+			{
+				FString Ignored;
+				if (FMantleScatter::CountFor(Params, Ignored) > FMantleScatter::WholeInstances)
+				{
+					// Each step is its own statement and IEEE operation, so every machine rounds the share the same.
+					const double SpacingM = static_cast<double>(SpacingMm) / 1000.0;
+					const double SquareM2 = SpacingM * SpacingM;
+					const double PerSquare = Params.Density * SquareM2;
+					const double Target = static_cast<double>(FMantlePlaceLimits::ScatterSpacingCandidates);
+					if (PerSquare > Target)
+					{
+						const double Share = Target * 1000000.0;
+						const double Kept = FMath::FloorToDouble(Share / PerSquare);
+						ThinKeepMicro = FMath::Clamp<int64>(static_cast<int64>(Kept), 1, 999999);
+					}
+				}
+			}
 
 			ClusterRadiusMm = ScatterHalfMillimetres(Params.ClusterRadius);
 			for (int32 Cluster = 0; Cluster < Params.ClusterCount; ++Cluster)
@@ -933,6 +958,15 @@ namespace MantleScatterPrivate
 		/** Instance Index's X-Y in whole mm and, along a stepped path, the heading there; false where an exclusion drops it. */
 		bool Place(const int64 Index, int64& OutX, int64& OutY, int64& OutTangentYaw) const
 		{
+			// A thinned Scatter drops a candidate by its own hash first, from a stream numbered clear of the instances' and the clusters' (#189).
+			if (ThinKeepMicro < 1000000)
+			{
+				FScatterStream Thin(Params.Seed, 0x40000000u + static_cast<uint32>(Index));
+				if (Thin.Next() % 1000000u >= static_cast<uint64>(ThinKeepMicro))
+				{
+					return false;
+				}
+			}
 			// Five 64-bit draws per instance, always all five, so changing the alignment, the scale
 			// range, the meshes or the shape never moves the rest of an instance. A retry (a disc's) takes
 			// later draws of the same stream.
@@ -1182,20 +1216,6 @@ int64 FMantleScatter::CountFor(const FMantleScatterParams& Params, FString& OutE
 		OutError = FString::Printf(TEXT("%.0f instances is more than %d; a scatter that big needs a drawDistance, so it is built around each player and not all at once"),
 			Rounded, WholeInstances);
 		return -1;
-	}
-	// A spacing much wider than the candidates are apart makes every cell check without end, so one built in cells holds its candidates per
-	// spacing square (density times the spacing in metres, squared) to a few. Each step is its own statement, as validate.py and the backend do.
-	if (Rounded > static_cast<double>(WholeInstances) && Params.MinSpacing > 0.0)
-	{
-		const double SpacingSquareCm2 = Params.MinSpacing * Params.MinSpacing;
-		const double PerSquareM2 = Params.Density * SpacingSquareCm2;
-		const double Limit = static_cast<double>(FMantlePlaceLimits::MaxScatterSpacingCandidates) * 10000.0;
-		if (PerSquareM2 > Limit)
-		{
-			OutError = FString::Printf(TEXT("minSpacing is too wide for the density: a scatter of more than %d instances may have at most %d candidates in one spacing square (density times minSpacing in metres, squared)"),
-				WholeInstances, FMantlePlaceLimits::MaxScatterSpacingCandidates);
-			return -1;
-		}
 	}
 	return static_cast<int64>(Rounded);
 }

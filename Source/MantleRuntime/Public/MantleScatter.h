@@ -337,6 +337,8 @@ public:
 	// X-Y lie in it, in the same order, whatever was built before or on which machine. The minimum spacing keeps that exact across a cell
 	// border: an instance is dropped when an earlier-numbered KEPT instance is closer, and whether that neighbour is kept is worked out
 	// on demand (from further neighbours, whichever cell they are in), never read from a cell that happens to be built.
+	// A spacing wide for the density (over FMantlePlaceLimits::ScatterSpacingCandidates candidates in a spacing square) would make each read check
+	// without end, so such a Scatter keeps about that many candidates per square, each picked by its own hash (Place: in every read and the index).
 
 	/** Whether Params (valid, and counted) is built in cells: its count is above WholeInstances. A colliding Scatter never is (its cap is far lower). */
 	static bool UsesCells(const FMantleScatterParams& Params);
