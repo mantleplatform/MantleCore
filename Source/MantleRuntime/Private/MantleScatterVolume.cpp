@@ -352,6 +352,12 @@ bool AMantleScatterVolume::RefreshScatter(FString& OutError)
 	{
 		return false;
 	}
+	// A Scatter built in cells (#189) files its candidates once, off the game thread, on every machine (a game's cells and a script's
+	// queries read the same index, and a server's first query does not wait for it); an editor preview builds the whole Scatter.
+	if (!Params.bCollision && !IsEditorWorld() && FMantleScatter::UsesCells(Params))
+	{
+		StartIndexTask(Params);
+	}
 	// Visual scatters build only where something draws; a colliding one (#169) builds on a dedicated server too, since the
 	// server's bodies are what stop a player and an NPC.
 	if (!FMantleScatter::DrawsScatter(World) && !Params.bCollision)
@@ -397,7 +403,7 @@ bool AMantleScatterVolume::RefreshScatter(FString& OutError)
 			Looks[MeshIndex].Materials = Meshes[MeshIndex].Materials;
 		}
 		UMantleScatterCellsComponent* Cells = NewObject<UMantleScatterCellsComponent>(this, NAME_None, RF_Transient | RF_TextExportTransient | RF_DuplicateTransient);
-		Cells->Init(Params, Options, MoveTemp(Looks), Params.DrawDistance * FMantleScatter::FoliageTierDistance(FoliageQuality));
+		Cells->Init(Params, Options, MoveTemp(Looks), Params.DrawDistance * FMantleScatter::FoliageTierDistance(FoliageQuality), IndexTask);
 		Cells->RegisterComponent();
 		CellsComponent = Cells;
 		return true;
@@ -788,16 +794,33 @@ const TArray<FMantleScatterInstance>* AMantleScatterVolume::GenerateFullCached(F
 	return &FullInstances;
 }
 
-const FMantleScatterCellIndex* AMantleScatterVolume::GetQueryIndex(const FMantleScatterParams& Params, FString& OutError) const
+void AMantleScatterVolume::StartIndexTask(const FMantleScatterParams& Params) const
 {
 	// The index depends on the settings and nothing else (no terrain, no transform), so it lives as long as the settings key.
 	const FString Key = SettingsKey();
-	if (!QueryIndex.IsValid() || !QueryIndexKey.Equals(Key, ESearchCase::CaseSensitive))
+	if (IndexTask.IsValid() && IndexTaskKey.Equals(Key, ESearchCase::CaseSensitive))
 	{
-		QueryIndex = FMantleScatter::BuildCellIndex(Params, OutError);
-		QueryIndexKey = QueryIndex.IsValid() ? Key : FString();
+		return;
 	}
-	return QueryIndex.Get();
+	IndexTaskKey = Key;
+	IndexTaskError = MakeShared<FString, ESPMode::ThreadSafe>();
+	const TSharedPtr<FString, ESPMode::ThreadSafe> Error = IndexTaskError;
+	IndexTask = UE::Tasks::Launch(TEXT("MantleScatterIndex"), [Params, Error]() -> TSharedPtr<const FMantleScatterCellIndex>
+	{
+		return FMantleScatter::BuildCellIndex(Params, *Error);
+	}, LowLevelTasks::ETaskPriority::BackgroundNormal);
+}
+
+const FMantleScatterCellIndex* AMantleScatterVolume::GetQueryIndex(const FMantleScatterParams& Params, FString& OutError) const
+{
+	StartIndexTask(Params);
+	const TSharedPtr<const FMantleScatterCellIndex>& Index = IndexTask.GetResult();
+	if (!Index.IsValid())
+	{
+		OutError = IndexTaskError.IsValid() && !IndexTaskError->IsEmpty() ? *IndexTaskError : FString(TEXT("the Scatter's cells could not be indexed"));
+		return nullptr;
+	}
+	return Index.Get();
 }
 
 bool AMantleScatterVolume::UsesCells() const

@@ -94,13 +94,6 @@ struct UMantleScatterCellsComponent::FShared
 	FMantleScatterGenerateOptions Options;
 	std::atomic<bool> bCancelled{ false };
 
-	/** The finished index (or why there is none), at most once. */
-	struct FIndexResult
-	{
-		TSharedPtr<const FMantleScatterCellIndex> Index;
-		FString Error;
-	};
-	TQueue<FIndexResult, EQueueMode::Mpsc> IndexResults;
 	TQueue<FBuiltCell, EQueueMode::Mpsc> Results;
 };
 
@@ -123,7 +116,7 @@ int64 UMantleScatterCellsComponent::GetWorldLiveInstances()
 }
 
 void UMantleScatterCellsComponent::Init(const FMantleScatterParams& InParams, const FMantleScatterGenerateOptions& InOptions,
-	TArray<FMantleGrassEntryAssets> InAssets, const double InReachCm)
+	TArray<FMantleGrassEntryAssets> InAssets, const double InReachCm, UE::Tasks::TTask<TSharedPtr<const FMantleScatterCellIndex>> InIndexTask)
 {
 	Params = InParams;
 	Options = InOptions;
@@ -135,18 +128,8 @@ void UMantleScatterCellsComponent::Init(const FMantleScatterParams& InParams, co
 	Shared->Params = Params;
 	Shared->Options = Options;
 
-	// The index is the one thing that reads the whole stream, and it is cheap (a place and no filter per candidate), so it goes to a worker too.
-	const TSharedPtr<FShared, ESPMode::ThreadSafe> Work = Shared;
-	UE::Tasks::Launch(TEXT("MantleScatterIndex"), [Work]()
-	{
-		if (Work->bCancelled.load())
-		{
-			return;
-		}
-		FShared::FIndexResult Result;
-		Result.Index = FMantleScatter::BuildCellIndex(Work->Params, Result.Error);
-		Work->IndexResults.Enqueue(MoveTemp(Result));
-	}, LowLevelTasks::ETaskPriority::BackgroundNormal);
+	// The index is the one thing that reads the whole stream, and it is cheap (a place and no filter per candidate): the volume builds it on a worker.
+	IndexTask = MoveTemp(InIndexTask);
 }
 
 void UMantleScatterCellsComponent::OnComponentDestroyed(const bool bDestroyingHierarchy)
@@ -204,18 +187,14 @@ void UMantleScatterCellsComponent::TickComponent(const float DeltaTime, const EL
 		return;
 	}
 
-	// The index arrives once; without one nothing is read (and the reason is logged, once).
-	if (!Index.IsValid() && IndexError.IsEmpty())
+	// The index arrives once; without one nothing is read (and that is logged, once).
+	if (!Index.IsValid() && !bIndexFailed && IndexTask.IsValid() && IndexTask.IsCompleted())
 	{
-		FShared::FIndexResult Result;
-		if (Shared->IndexResults.Dequeue(Result))
+		Index = IndexTask.GetResult();
+		if (!Index.IsValid())
 		{
-			Index = Result.Index;
-			IndexError = Result.Index.IsValid() ? FString() : (Result.Error.IsEmpty() ? FString(TEXT("no index")) : Result.Error);
-			if (!Index.IsValid())
-			{
-				UE_LOG(LogMantle, Warning, TEXT("MANTLE_SCATTER_CELLS %s: no cells: %s"), *GetOwner()->GetName(), *IndexError);
-			}
+			bIndexFailed = true;
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_SCATTER_CELLS %s: no cells: the Scatter could not be indexed"), *GetOwner()->GetName());
 		}
 	}
 	if (!Index.IsValid())

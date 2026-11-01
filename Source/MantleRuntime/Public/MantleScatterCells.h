@@ -17,6 +17,7 @@
 #include "Components/ActorComponent.h"
 #include "MantleScatter.h"
 #include "MantleTerrainGrass.h"
+#include "Tasks/Task.h"
 
 #include "MantleScatterCells.generated.h"
 
@@ -45,9 +46,11 @@ public:
 	/**
 	 * Starts building the Scatter: Params (counted, above WholeInstances) with Options (the ground and the Foliage tier's candidate prefix), the
 	 * mesh each mesh entry draws with (Assets[i] for Params.Meshes[i]; a null mesh leaves that mesh's instances out), and the distance from the
-	 * view, cm, in which cells stand (the draw distance after the Foliage tier). Begins the index build at once.
+	 * view, cm, in which cells stand (the draw distance after the Foliage tier). IndexTask is the volume's background build of the position index;
+	 * cells are asked for once it is done.
 	 */
-	void Init(const FMantleScatterParams& InParams, const FMantleScatterGenerateOptions& InOptions, TArray<FMantleGrassEntryAssets> InAssets, double InReachCm);
+	void Init(const FMantleScatterParams& InParams, const FMantleScatterGenerateOptions& InOptions, TArray<FMantleGrassEntryAssets> InAssets, double InReachCm,
+		UE::Tasks::TTask<TSharedPtr<const FMantleScatterCellIndex>> InIndexTask);
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void OnComponentDestroyed(bool bDestroyingHierarchy) override;
@@ -128,8 +131,9 @@ private:
 	/** What a worker shares: the inputs it reads, the results it hands back, and whether the component is gone. */
 	TSharedPtr<FShared, ESPMode::ThreadSafe> Shared;
 
+	UE::Tasks::TTask<TSharedPtr<const FMantleScatterCellIndex>> IndexTask;
 	TSharedPtr<const FMantleScatterCellIndex> Index;
-	FString IndexError;
+	bool bIndexFailed = false;
 
 	TMap<uint64, FCell> Cells;
 	TArray<FWanted> Wanted;

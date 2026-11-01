@@ -5,6 +5,7 @@
 #include "GameFramework/Actor.h"
 #include "MantlePlaceTypes.h"
 #include "MantleScatter.h"
+#include "Tasks/Task.h"
 
 #include "MantleScatterVolume.generated.h"
 
@@ -389,10 +390,19 @@ private:
 	UPROPERTY(Transient, DuplicateTransient, TextExportTransient)
 	TObjectPtr<UMantleScatterCellsComponent> CellsComponent;
 
-	/** The position index a query on a Scatter built in cells reads (cached under SettingsKey; the cells component builds its own, off the game thread). */
-	mutable TSharedPtr<const FMantleScatterCellIndex> QueryIndex;
-	mutable FString QueryIndexKey;
+public:
+	/** The position index of a Scatter built in cells, made once off the game thread (RefreshScatter starts it, whatever machine this is). */
+	using FIndexTask = UE::Tasks::TTask<TSharedPtr<const FMantleScatterCellIndex>>;
 
+private:
+	mutable FIndexTask IndexTask;
+	mutable FString IndexTaskKey;
+	mutable TSharedPtr<FString, ESPMode::ThreadSafe> IndexTaskError;
+
+	/** Starts the index build for Params unless one is already running (or done) for these settings. */
+	void StartIndexTask(const FMantleScatterParams& Params) const;
+
+	/** The index, waiting for the build if it is still running; null with OutError when there is none. */
 	const FMantleScatterCellIndex* GetQueryIndex(const FMantleScatterParams& Params, FString& OutError) const;
 
 	/** GenerateFull's cache. */
