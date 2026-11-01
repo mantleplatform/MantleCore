@@ -773,6 +773,7 @@ const TArray<FMantleScatterInstance>* AMantleScatterVolume::GenerateFullCached(F
 	// A Scatter built in cells is read through its cells on every core, then put back in index order: the instances Generate would give,
 	// so the hash is the same on a machine that builds whole, in cells, or (a dedicated server) nothing.
 	const bool bCells = FMantleScatter::UsesCells(Params);
+	const double FullStart = FPlatformTime::Seconds();
 	const FMantleScatterCellIndex* Index = bCells ? GetQueryIndex(Params, OutError) : nullptr;
 	if (bCells && !Index)
 	{
@@ -788,6 +789,9 @@ const TArray<FMantleScatterInstance>* AMantleScatterVolume::GenerateFullCached(F
 	}
 	FullKey = Key;
 	FullHash = FMantleScatter::Hash(FullInstances);
+	// What a script's whole-stream read cost (the hash of a big Scatter reads every cell once; repeats come from the cache).
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_SCATTER_FULL entity=%s cells=%d instances=%d hash=%s ms=%.1f"), *GetName(), bCells ? 1 : 0, FullInstances.Num(),
+		*FMantleScatter::HashText(FullHash), (FPlatformTime::Seconds() - FullStart) * 1000.0);
 	return &FullInstances;
 }
 
