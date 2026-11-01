@@ -566,4 +566,49 @@ bool FMantleScatterPathStepCheckTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterCellsCheckTest,
+	"Mantle.Editor.Scatter.Check.BigScatterNeedsADrawDistance",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterCellsCheckTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterExportTestPrivate;
+
+	// #189: a scatter over 200,000 instances is built in cells around each player, so Check asks for a draw distance in plain words.
+	FScatterWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	AMantleScatterVolume* Volume = Fixture.World->SpawnActor<AMantleScatterVolume>(FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("a volume"), Volume))
+	{
+		return false;
+	}
+	Volume->SetActorLabel(TEXT("Jungle"));
+	Volume->HalfExtent = FVector(10000.0, 10000.0, 0.0); // 40,000 square metres
+	Volume->Density = 6.0; // 240,000 instances
+	Volume->Meshes.SetNum(1);
+	Volume->Meshes[0].MeshId = TEXT("ast_cube");
+	const auto Has = [](const FMantleValidationResult& Result, const TCHAR* Text)
+	{
+		return Result.Issues.ContainsByPredicate([Text](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Actor == TEXT("Jungle") && Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(Text);
+		});
+	};
+
+	Volume->DrawDistance = 0.0;
+	TestTrue(TEXT("a big scatter without a draw distance is named"), Has(FMantlePlaceValidator::Validate(Fixture.World), TEXT("makes 240000 instances but has no Draw Distance")));
+
+	Volume->DrawDistance = 8000.0;
+	TestFalse(TEXT("with a draw distance it says nothing of it"), Has(FMantlePlaceValidator::Validate(Fixture.World), TEXT("Draw Distance")));
+	FMantleScatterParams Params;
+	FString Problem;
+	TestTrue(FString::Printf(TEXT("and it reads (%s)"), *Problem), Volume->ReadProps(Params, Problem));
+	TestTrue(TEXT("built in cells"), FMantleScatter::CountFor(Params, Problem) > FMantlePlaceLimits::ScatterWholeInstances);
+	return true;
+}
+
 #endif

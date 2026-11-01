@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleScatter.h"
 
+#include "Async/ParallelFor.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Engine/World.h"
@@ -809,6 +810,288 @@ namespace MantleScatterPrivate
 			return;
 		}
 	}
+
+	/**
+	 * Everything an instance's index turns into, split in two so a cell can be read without generating the whole stream (#189): Place is
+	 * the instance's X-Y (and where an exclusion drops it), Finish is every other filter and the rest of the instance, minimum spacing
+	 * excepted (spacing needs the instances before it). Place and Finish each start the instance's own stream afresh, so an instance never
+	 * depends on another. Generate runs both for every index in order, so it is the same as it was before cells.
+	 */
+	struct FScatterPipeline
+	{
+		const FMantleScatterParams& Params;
+		const FMantleScatterGenerateOptions& Options;
+
+		int64 HalfX = 0;
+		int64 HalfY = 0;
+		int64 HalfZ = 0;
+		int64 RadiusMm = 0;
+		int64 ScaleLo = 0;
+		int64 ScaleHi = 0;
+		int64 Tilt = 0;
+		FScatterPath Path;
+
+		bool bTerrain = false;
+		bool bSlopeFilter = false;
+		bool bMinSlopeFilter = false;
+		bool bAlignToGround = false;
+		// The filters compare whole numbers: the normal's up component and the threshold (the cosine of the limit) each rounded to
+		// millionths, heights in whole millimetres, so a last bit of float maths on another machine cannot flip a decision.
+		int64 SlopeLimitMicro = 0;
+		// The minimum slope (#188) is the same test the other way round: kept where the up component is at most the cosine of the limit.
+		int64 MinSlopeLimitMicro = 0;
+		// The paint-layer filter (#187): the weight is the weightmap's byte (0 to 255), the thresholds millionths, and the test
+		// is byte x 1,000,000 against threshold x 255, all whole numbers.
+		bool bLayerFilter = false;
+		bool bMinLayer = false;
+		bool bMaxLayer = false;
+		int64 MinLayerMicro = 0;
+		int64 MaxLayerMicro = 0;
+		bool bMinHeight = false;
+		bool bMaxHeight = false;
+		int64 MinHeightMm = 0;
+		int64 MaxHeightMm = 0;
+
+		TArray<FScatterBoxMm, TInlineAllocator<FMantleScatter::MaxExclusions>> Exclusions;
+		TArray<FScatterStripMm> Strips;
+
+		/** The minimum spacing (#190) in whole mm, 0 for none, and the path step (#190) in whole mm, 0 for random places along the path. */
+		int64 SpacingMm = 0;
+		int64 StepMm = 0;
+
+		/** Cluster centres: each from its own stream, numbered past any instance's so the two never share one. */
+		TArray<FScatterPoint> Centres;
+		int64 ClusterRadiusMm = 0;
+
+		/** Cumulative weights: a draw below Cumulative[i] and at or above Cumulative[i - 1] picks mesh i, so a weight of 0 is never picked. */
+		TArray<int64, TInlineAllocator<FMantleScatter::MaxMeshes>> Cumulative;
+		int64 TotalWeight = 0;
+
+		FScatterPipeline(const FMantleScatterParams& InParams, const FMantleScatterGenerateOptions& InOptions)
+			: Params(InParams)
+			, Options(InOptions)
+		{
+			HalfX = ScatterHalfMillimetres(Params.HalfExtent.X);
+			HalfY = ScatterHalfMillimetres(Params.HalfExtent.Y);
+			HalfZ = ScatterHalfMillimetres(Params.HalfExtent.Z);
+			RadiusMm = ScatterHalfMillimetres(Params.Radius);
+			ScaleLo = FMath::Clamp<int64>(FMath::RoundToInt64(Params.MinScale * 1000.0), 1, MAX_uint16);
+			ScaleHi = FMath::Clamp<int64>(FMath::RoundToInt64(Params.MaxScale * 1000.0), ScaleLo, MAX_uint16);
+			Tilt = FMath::Clamp<int64>(FMath::RoundToInt64(Params.MaxTiltDegrees * 100.0), 0, 9000);
+			if (Params.Shape == EMantleScatterShape::Path)
+			{
+				Path = ScatterBuildPath(Params);
+			}
+
+			bTerrain = Params.Placement == EMantleScatterPlacement::Terrain;
+			bSlopeFilter = bTerrain && Params.MaxSlopeDegrees < 90.0;
+			bMinSlopeFilter = bTerrain && Params.MinSlopeDegrees > 0.0;
+			bAlignToGround = bTerrain && Params.Alignment == EMantleScatterAlignment::Ground;
+			SlopeLimitMicro = ScatterMillionths(FMath::Cos(FMath::DegreesToRadians(Params.MaxSlopeDegrees)));
+			MinSlopeLimitMicro = ScatterMillionths(FMath::Cos(FMath::DegreesToRadians(Params.MinSlopeDegrees)));
+			bLayerFilter = bTerrain && Params.PaintLayer >= 0;
+			bMinLayer = bLayerFilter && Params.MinLayerWeight.IsSet();
+			bMaxLayer = bLayerFilter && Params.MaxLayerWeight.IsSet();
+			MinLayerMicro = bMinLayer ? ScatterMillionths(Params.MinLayerWeight.GetValue()) : 0;
+			MaxLayerMicro = bMaxLayer ? ScatterMillionths(Params.MaxLayerWeight.GetValue()) : 0;
+			bMinHeight = Params.MinHeight.IsSet();
+			bMaxHeight = Params.MaxHeight.IsSet();
+			MinHeightMm = bMinHeight ? ScatterHalfMillimetres(Params.MinHeight.GetValue()) : 0;
+			MaxHeightMm = bMaxHeight ? ScatterHalfMillimetres(Params.MaxHeight.GetValue()) : 0;
+
+			for (const FMantleScatterExclusion& Exclusion : Params.Exclusions)
+			{
+				FScatterBoxMm& Box = Exclusions.AddDefaulted_GetRef();
+				Box.CenterX = ScatterHalfMillimetres(Exclusion.Center.X);
+				Box.CenterY = ScatterHalfMillimetres(Exclusion.Center.Y);
+				Box.HalfX = ScatterHalfMillimetres(Exclusion.HalfExtent.X);
+				Box.HalfY = ScatterHalfMillimetres(Exclusion.HalfExtent.Y);
+			}
+			for (const FMantleScatterPathExclusion& Strip : Params.PathExclusions)
+			{
+				Strips.Add(ScatterBuildStrip(Strip));
+			}
+
+			SpacingMm = Params.MinSpacing > 0.0 ? FMath::Max<int64>(ScatterHalfMillimetres(Params.MinSpacing), 1) : 0;
+			StepMm = Params.Shape == EMantleScatterShape::Path && Params.PathStep > 0.0 ? FMath::Max<int64>(ScatterHalfMillimetres(Params.PathStep), 1) : 0;
+
+			ClusterRadiusMm = ScatterHalfMillimetres(Params.ClusterRadius);
+			for (int32 Cluster = 0; Cluster < Params.ClusterCount; ++Cluster)
+			{
+				FScatterStream Stream(Params.Seed, 0x80000000u + static_cast<uint32>(Cluster));
+				FScatterPoint& Centre = Centres.AddDefaulted_GetRef();
+				ScatterInShape(Params, Path, HalfX, HalfY, RadiusMm, Stream.Next(), Stream, Centre.X, Centre.Y);
+			}
+
+			for (const FMantleScatterMesh& Mesh : Params.Meshes)
+			{
+				TotalWeight += Mesh.Weight;
+				Cumulative.Add(TotalWeight);
+			}
+		}
+
+		/** Instance Index's X-Y in whole mm and, along a stepped path, the heading there; false where an exclusion drops it. */
+		bool Place(const int64 Index, int64& OutX, int64& OutY, int64& OutTangentYaw) const
+		{
+			// Five 64-bit draws per instance, always all five, so changing the alignment, the scale
+			// range, the meshes or the shape never moves the rest of an instance. A retry (a disc's) takes
+			// later draws of the same stream.
+			FScatterStream Stream(Params.Seed, static_cast<uint32>(Index));
+			const uint64 PlaceDraw = Stream.Next();
+			Stream.Next();
+			Stream.Next();
+			Stream.Next();
+			const uint64 Group = Stream.Next();
+
+			int64 X = 0;
+			int64 Y = 0;
+			int64 TangentYaw = 0;
+			if (Centres.Num() > 0)
+			{
+				const FScatterPoint& Centre = Centres[static_cast<int32>(ScatterPick(ScatterLow(Group), 0, Centres.Num() - 1))];
+				int64 OffsetX = 0;
+				int64 OffsetY = 0;
+				ScatterOnDisc(ClusterRadiusMm, PlaceDraw, Stream, OffsetX, OffsetY);
+				X = Centre.X + OffsetX;
+				Y = Centre.Y + OffsetY;
+			}
+			else if (StepMm > 0)
+			{
+				// Instance Index sits Index steps along the path, turned along the line (#190).
+				ScatterInShape(Params, Path, HalfX, HalfY, RadiusMm, PlaceDraw, Stream, X, Y, Index * StepMm, &TangentYaw);
+			}
+			else
+			{
+				ScatterInShape(Params, Path, HalfX, HalfY, RadiusMm, PlaceDraw, Stream, X, Y);
+			}
+			OutX = X;
+			OutY = Y;
+			OutTangentYaw = TangentYaw;
+
+			for (const FScatterStripMm& Strip : Strips)
+			{
+				if (ScatterInStrip(Strip, X, Y))
+				{
+					return false;
+				}
+			}
+			for (const FScatterBoxMm& Box : Exclusions)
+			{
+				if (FMath::Abs(X - Box.CenterX) <= Box.HalfX && FMath::Abs(Y - Box.CenterY) <= Box.HalfY)
+				{
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/**
+		 * The rest of instance Index, placed at X, Y by Place: the terrain, slope, height, layer and range filters, then the instance's height,
+		 * turn, scale and mesh. False where a filter drops it. The minimum spacing is not applied here.
+		 */
+		bool Finish(const int64 Index, const int64 X, const int64 Y, const int64 TangentYaw, FMantleScatterInstance& Out) const
+		{
+			FScatterStream Stream(Params.Seed, static_cast<uint32>(Index));
+			Stream.Next();
+			const uint64 Height = Stream.Next();
+			const uint64 Turn = Stream.Next();
+			const uint64 Look = Stream.Next();
+
+			int64 Z = ScatterPick(ScatterLow(Height), -HalfZ, HalfZ);
+			// The surface normal Ground alignment follows, in millionths of the scatter's space (up until a terrain says otherwise).
+			int64 AlignX = 0;
+			int64 AlignY = 0;
+			int64 AlignZ = ScatterUnit;
+			if (bTerrain)
+			{
+				FMantleScatterGround Ground;
+				if (!Options.Ground || !Options.Ground(X, Y, Ground))
+				{
+					return false;
+				}
+				if (bSlopeFilter)
+				{
+					if (ScatterMillionths(Ground.NormalZ) < SlopeLimitMicro)
+					{
+						return false;
+					}
+				}
+				if (bMinSlopeFilter)
+				{
+					if (ScatterMillionths(Ground.NormalZ) > MinSlopeLimitMicro)
+					{
+						return false;
+					}
+				}
+				if (bMinHeight || bMaxHeight)
+				{
+					const int64 HeightMm = ScatterHalfMillimetres(Ground.WorldZCm);
+					if ((bMinHeight && HeightMm < MinHeightMm) || (bMaxHeight && HeightMm > MaxHeightMm))
+					{
+						return false;
+					}
+				}
+				if (bLayerFilter)
+				{
+					const int64 Scaled = static_cast<int64>(FMath::Clamp(Ground.LayerWeight, 0, 255)) * 1000000;
+					if ((bMinLayer && Scaled < MinLayerMicro * 255) || (bMaxLayer && Scaled > MaxLayerMicro * 255))
+					{
+						return false;
+					}
+				}
+				Z += Ground.ZMm;
+				if (bAlignToGround)
+				{
+					AlignX = ScatterMillionths(Ground.LocalNormalX);
+					AlignY = ScatterMillionths(Ground.LocalNormalY);
+					AlignZ = ScatterMillionths(Ground.LocalNormalZ);
+				}
+			}
+			// The fixed point is 32-bit millimetres (2147 km): a position past it cannot be a place's.
+			if (FMath::Abs(X) > MAX_int32 || FMath::Abs(Y) > MAX_int32 || FMath::Abs(Z) > MAX_int32)
+			{
+				return false;
+			}
+
+			Out = FMantleScatterInstance();
+			Out.X = static_cast<int32>(X);
+			Out.Y = static_cast<int32>(Y);
+			Out.Z = static_cast<int32>(Z);
+			Out.Yaw = static_cast<uint16>(StepMm > 0 ? TangentYaw : ScatterPick(ScatterHigh(Height), 0, 35999));
+			switch (Params.Alignment)
+			{
+			case EMantleScatterAlignment::Tilted:
+			case EMantleScatterAlignment::Ground:
+				Out.Pitch = static_cast<int16>(ScatterPick(ScatterLow(Turn), -Tilt, Tilt));
+				Out.Roll = static_cast<int16>(ScatterPick(ScatterHigh(Turn), -Tilt, Tilt));
+				// Ground leans like Tilted, then the whole turn is carried onto the slope (#188).
+				if (bAlignToGround)
+				{
+					ScatterAlignToGround(AlignX, AlignY, AlignZ, Out.Yaw, Out.Pitch, Out.Roll);
+				}
+				break;
+			case EMantleScatterAlignment::Tumbled:
+				Out.Pitch = static_cast<int16>(ScatterPick(ScatterLow(Turn), -9000, 9000));
+				Out.Roll = static_cast<int16>(ScatterPick(ScatterHigh(Turn), -18000, 17999));
+				break;
+			case EMantleScatterAlignment::Upright:
+			default:
+				Out.Pitch = 0;
+				Out.Roll = 0;
+				break;
+			}
+			Out.Scale = static_cast<uint16>(ScatterPick(ScatterLow(Look), ScaleLo, ScaleHi));
+
+			const int64 Pick = ScatterPick(ScatterHigh(Look), 0, TotalWeight - 1);
+			int32 MeshIndex = 0;
+			while (MeshIndex < Cumulative.Num() - 1 && Pick >= Cumulative[MeshIndex])
+			{
+				++MeshIndex;
+			}
+			Out.Mesh = static_cast<uint16>(MeshIndex);
+			return true;
+		}
+	};
 }
 
 const TCHAR* FMantleScatter::AlignmentName(const EMantleScatterAlignment Alignment)
@@ -862,10 +1145,11 @@ int64 FMantleScatter::CountFor(const FMantleScatterParams& Params, FString& OutE
 		{
 			// A fixed step (#190): the whole steps that fit, plus the one at the start; the density is not used.
 			const int64 Steps = Path.Total / FMath::Max<int64>(ScatterHalfMillimetres(Params.PathStep), 1) + 1;
-			if (Steps > MaxInstances)
+			// A stepped path is built whole, never in cells, so it keeps the whole-Scatter cap (#189).
+			if (Steps > WholeInstances)
 			{
 				OutError = FString::Printf(TEXT("a path step of %g cm makes %lld instances along the path; a scatter makes at most %d"),
-					Params.PathStep, static_cast<long long>(Steps), MaxInstances);
+					Params.PathStep, static_cast<long long>(Steps), WholeInstances);
 				return -1;
 			}
 			return Steps;
@@ -892,6 +1176,13 @@ int64 FMantleScatter::CountFor(const FMantleScatterParams& Params, FString& OutE
 			AreaM2, Params.Density, Rounded, MaxInstances);
 		return -1;
 	}
+	// More than a Scatter built whole holds is built in cells around each camera, which needs to know how far (#189).
+	if (Rounded > static_cast<double>(WholeInstances) && !(Params.DrawDistance > 0.0))
+	{
+		OutError = FString::Printf(TEXT("%.0f instances is more than %d; a scatter that big needs a drawDistance, so it is built around each player and not all at once"),
+			Rounded, WholeInstances);
+		return -1;
+	}
 	return static_cast<int64>(Rounded);
 }
 
@@ -908,190 +1199,25 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 	}
 	const int64 Candidates = Options.MaxCandidates >= 0 ? FMath::Min(Count, Options.MaxCandidates) : Count;
 
-	const int64 HalfX = ScatterHalfMillimetres(Params.HalfExtent.X);
-	const int64 HalfY = ScatterHalfMillimetres(Params.HalfExtent.Y);
-	const int64 HalfZ = ScatterHalfMillimetres(Params.HalfExtent.Z);
-	const int64 RadiusMm = ScatterHalfMillimetres(Params.Radius);
-	const int64 ScaleLo = FMath::Clamp<int64>(FMath::RoundToInt64(Params.MinScale * 1000.0), 1, MAX_uint16);
-	const int64 ScaleHi = FMath::Clamp<int64>(FMath::RoundToInt64(Params.MaxScale * 1000.0), ScaleLo, MAX_uint16);
-	const int64 Tilt = FMath::Clamp<int64>(FMath::RoundToInt64(Params.MaxTiltDegrees * 100.0), 0, 9000);
-	const FScatterPath Path = Params.Shape == EMantleScatterShape::Path ? ScatterBuildPath(Params) : FScatterPath();
-
-	const bool bTerrain = Params.Placement == EMantleScatterPlacement::Terrain;
-	const bool bSlopeFilter = bTerrain && Params.MaxSlopeDegrees < 90.0;
-	const bool bMinSlopeFilter = bTerrain && Params.MinSlopeDegrees > 0.0;
-	const bool bAlignToGround = bTerrain && Params.Alignment == EMantleScatterAlignment::Ground;
-	// The filters compare whole numbers: the normal's up component and the threshold (the cosine of the limit) each rounded to
-	// millionths, heights in whole millimetres, so a last bit of float maths on another machine cannot flip a decision.
-	const int64 SlopeLimitMicro = ScatterMillionths(FMath::Cos(FMath::DegreesToRadians(Params.MaxSlopeDegrees)));
-	// The minimum slope (#188) is the same test the other way round: kept where the up component is at most the cosine of the limit.
-	const int64 MinSlopeLimitMicro = ScatterMillionths(FMath::Cos(FMath::DegreesToRadians(Params.MinSlopeDegrees)));
-	// The paint-layer filter (#187): the weight is the weightmap's byte (0 to 255), the thresholds millionths, and the test
-	// is byte x 1,000,000 against threshold x 255, all whole numbers.
-	const bool bLayerFilter = bTerrain && Params.PaintLayer >= 0;
-	const bool bMinLayer = bLayerFilter && Params.MinLayerWeight.IsSet();
-	const bool bMaxLayer = bLayerFilter && Params.MaxLayerWeight.IsSet();
-	const int64 MinLayerMicro = bMinLayer ? ScatterMillionths(Params.MinLayerWeight.GetValue()) : 0;
-	const int64 MaxLayerMicro = bMaxLayer ? ScatterMillionths(Params.MaxLayerWeight.GetValue()) : 0;
-	const bool bMinHeight = Params.MinHeight.IsSet();
-	const bool bMaxHeight = Params.MaxHeight.IsSet();
-	const int64 MinHeightMm = bMinHeight ? ScatterHalfMillimetres(Params.MinHeight.GetValue()) : 0;
-	const int64 MaxHeightMm = bMaxHeight ? ScatterHalfMillimetres(Params.MaxHeight.GetValue()) : 0;
-
-	TArray<FScatterBoxMm, TInlineAllocator<FMantleScatter::MaxExclusions>> Exclusions;
-	for (const FMantleScatterExclusion& Exclusion : Params.Exclusions)
-	{
-		FScatterBoxMm& Box = Exclusions.AddDefaulted_GetRef();
-		Box.CenterX = ScatterHalfMillimetres(Exclusion.Center.X);
-		Box.CenterY = ScatterHalfMillimetres(Exclusion.Center.Y);
-		Box.HalfX = ScatterHalfMillimetres(Exclusion.HalfExtent.X);
-		Box.HalfY = ScatterHalfMillimetres(Exclusion.HalfExtent.Y);
-	}
-
-	TArray<FScatterStripMm> Strips;
-	for (const FMantleScatterPathExclusion& Strip : Params.PathExclusions)
-	{
-		Strips.Add(ScatterBuildStrip(Strip));
-	}
-
-	// The minimum spacing (#190) and the path step (#190): the step in whole mm, or 0 for random places along the path.
+	const FScatterPipeline Pipeline(Params, Options);
 	FScatterSpacingGrid Spacing;
-	Spacing.Spacing = Params.MinSpacing > 0.0 ? FMath::Max<int64>(ScatterHalfMillimetres(Params.MinSpacing), 1) : 0;
-	const int64 StepMm = Params.Shape == EMantleScatterShape::Path && Params.PathStep > 0.0 ? FMath::Max<int64>(ScatterHalfMillimetres(Params.PathStep), 1) : 0;
+	Spacing.Spacing = Pipeline.SpacingMm;
 
-	// Cluster centres: each from its own stream, numbered past any instance's so the two never share one.
-	TArray<FScatterPoint> Centres;
-	const int64 ClusterRadiusMm = ScatterHalfMillimetres(Params.ClusterRadius);
-	for (int32 Cluster = 0; Cluster < Params.ClusterCount; ++Cluster)
-	{
-		FScatterStream Stream(Params.Seed, 0x80000000u + static_cast<uint32>(Cluster));
-		FScatterPoint& Centre = Centres.AddDefaulted_GetRef();
-		ScatterInShape(Params, Path, HalfX, HalfY, RadiusMm, Stream.Next(), Stream, Centre.X, Centre.Y);
-	}
-
-	// Cumulative weights: a draw below Cumulative[i] and at or above Cumulative[i - 1] picks mesh i,
-	// so a weight of 0 is never picked.
-	TArray<int64, TInlineAllocator<MaxMeshes>> Cumulative;
-	int64 TotalWeight = 0;
-	for (const FMantleScatterMesh& Mesh : Params.Meshes)
-	{
-		TotalWeight += Mesh.Weight;
-		Cumulative.Add(TotalWeight);
-	}
-
-	OutInstances.Reserve(static_cast<int32>(Candidates));
+	OutInstances.Reserve(static_cast<int32>(FMath::Min<int64>(Candidates, MAX_int32)));
 	for (int64 Index = 0; Index < Candidates; ++Index)
 	{
-		// Five 64-bit draws per instance, always all five, so changing the alignment, the scale
-		// range, the meshes or the shape never moves the rest of an instance. A retry (a disc's) takes
-		// later draws of the same stream.
-		FScatterStream Stream(Params.Seed, static_cast<uint32>(Index));
-		const uint64 Place = Stream.Next();
-		const uint64 Height = Stream.Next();
-		const uint64 Turn = Stream.Next();
-		const uint64 Look = Stream.Next();
-		const uint64 Group = Stream.Next();
-
 		int64 X = 0;
 		int64 Y = 0;
 		int64 TangentYaw = 0;
-		if (Centres.Num() > 0)
-		{
-			const FScatterPoint& Centre = Centres[static_cast<int32>(ScatterPick(ScatterLow(Group), 0, Centres.Num() - 1))];
-			int64 OffsetX = 0;
-			int64 OffsetY = 0;
-			ScatterOnDisc(ClusterRadiusMm, Place, Stream, OffsetX, OffsetY);
-			X = Centre.X + OffsetX;
-			Y = Centre.Y + OffsetY;
-		}
-		else if (StepMm > 0)
-		{
-			// Instance Index sits Index steps along the path, turned along the line (#190).
-			ScatterInShape(Params, Path, HalfX, HalfY, RadiusMm, Place, Stream, X, Y, Index * StepMm, &TangentYaw);
-		}
-		else
-		{
-			ScatterInShape(Params, Path, HalfX, HalfY, RadiusMm, Place, Stream, X, Y);
-		}
-
-		bool bExcluded = false;
-		for (const FScatterStripMm& Strip : Strips)
-		{
-			if (ScatterInStrip(Strip, X, Y))
-			{
-				bExcluded = true;
-				break;
-			}
-		}
-		for (const FScatterBoxMm& Box : Exclusions)
-		{
-			if (FMath::Abs(X - Box.CenterX) <= Box.HalfX && FMath::Abs(Y - Box.CenterY) <= Box.HalfY)
-			{
-				bExcluded = true;
-				break;
-			}
-		}
-		if (bExcluded)
+		if (!Pipeline.Place(Index, X, Y, TangentYaw))
 		{
 			continue;
 		}
-
-		int64 Z = ScatterPick(ScatterLow(Height), -HalfZ, HalfZ);
-		// The surface normal Ground alignment follows, in millionths of the scatter's space (up until a terrain says otherwise).
-		int64 AlignX = 0;
-		int64 AlignY = 0;
-		int64 AlignZ = ScatterUnit;
-		if (bTerrain)
-		{
-			FMantleScatterGround Ground;
-			if (!Options.Ground || !Options.Ground(X, Y, Ground))
-			{
-				continue;
-			}
-			if (bSlopeFilter)
-			{
-				if (ScatterMillionths(Ground.NormalZ) < SlopeLimitMicro)
-				{
-					continue;
-				}
-			}
-			if (bMinSlopeFilter)
-			{
-				if (ScatterMillionths(Ground.NormalZ) > MinSlopeLimitMicro)
-				{
-					continue;
-				}
-			}
-			if (bMinHeight || bMaxHeight)
-			{
-				const int64 HeightMm = ScatterHalfMillimetres(Ground.WorldZCm);
-				if ((bMinHeight && HeightMm < MinHeightMm) || (bMaxHeight && HeightMm > MaxHeightMm))
-				{
-					continue;
-				}
-			}
-			if (bLayerFilter)
-			{
-				const int64 Scaled = static_cast<int64>(FMath::Clamp(Ground.LayerWeight, 0, 255)) * 1000000;
-				if ((bMinLayer && Scaled < MinLayerMicro * 255) || (bMaxLayer && Scaled > MaxLayerMicro * 255))
-				{
-					continue;
-				}
-			}
-			Z += Ground.ZMm;
-			if (bAlignToGround)
-			{
-				AlignX = ScatterMillionths(Ground.LocalNormalX);
-				AlignY = ScatterMillionths(Ground.LocalNormalY);
-				AlignZ = ScatterMillionths(Ground.LocalNormalZ);
-			}
-		}
-		// The fixed point is 32-bit millimetres (2147 km): a position past it cannot be a place's.
-		if (FMath::Abs(X) > MAX_int32 || FMath::Abs(Y) > MAX_int32 || FMath::Abs(Z) > MAX_int32)
+		FMantleScatterInstance Instance;
+		if (!Pipeline.Finish(Index, X, Y, TangentYaw, Instance))
 		{
 			continue;
 		}
-
 		// Last of the filters, so an instance another filter dropped never keeps its neighbours away (#190).
 		if (Spacing.Spacing > 0)
 		{
@@ -1101,43 +1227,531 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 			}
 			Spacing.Add(X, Y);
 		}
+		OutInstances.Add(Instance);
+	}
+	return true;
+}
 
-		FMantleScatterInstance& Instance = OutInstances.AddDefaulted_GetRef();
-		Instance.X = static_cast<int32>(X);
-		Instance.Y = static_cast<int32>(Y);
-		Instance.Z = static_cast<int32>(Z);
-		Instance.Yaw = static_cast<uint16>(StepMm > 0 ? TangentYaw : ScatterPick(ScatterHigh(Height), 0, 35999));
-		switch (Params.Alignment)
+// ---- Cells (#189) ----------------------------------------------------------------------------------------------------------------
+
+namespace MantleScatterPrivate
+{
+	/** About this many candidates in a cell: the cell side follows from the density, clamped between these sides (whole mm). */
+	constexpr int64 CellTargetCandidates = 8192;
+	constexpr int64 CellMinSideMm = 4000;
+	constexpr int64 CellMaxSideMm = 128000;
+	/** A cell holding more candidates than this (clusters pile them up) is halved while it can be, and the grid stays under CellMaxCount cells. */
+	constexpr int64 CellHotCandidates = 32768;
+	constexpr int64 CellMaxCount = 4000000;
+
+	struct FScatterPlaced
+	{
+		int32 X = 0;
+		int32 Y = 0;
+		uint32 Candidate = 0;
+	};
+
+	/** The cell side the density asks for, in whole metres' worth of mm, integers only so every machine files a candidate in the same cell. */
+	int64 ScatterCellSideForDensity(const double Density)
+	{
+		const int64 DensityMicro = ScatterMillionths(Density);
+		if (DensityMicro <= 0)
 		{
-		case EMantleScatterAlignment::Tilted:
-		case EMantleScatterAlignment::Ground:
-			Instance.Pitch = static_cast<int16>(ScatterPick(ScatterLow(Turn), -Tilt, Tilt));
-			Instance.Roll = static_cast<int16>(ScatterPick(ScatterHigh(Turn), -Tilt, Tilt));
-			// Ground leans like Tilted, then the whole turn is carried onto the slope (#188).
-			if (bAlignToGround)
+			return CellMaxSideMm;
+		}
+		// The cell area for the target is target / density square metres; its side in mm is the square root of target x 1e12 / (density in millionths).
+		const int64 SquareMm = CellTargetCandidates * 1000000000000ll / DensityMicro;
+		const int64 Side = (ScatterISqrt(SquareMm) / 1000) * 1000;
+		return FMath::Clamp<int64>(Side, CellMinSideMm, CellMaxSideMm);
+	}
+
+	/** How many cells of Side cover the box MinX..MaxX by MinY..MaxY, and (when that is few enough to count) the most candidates one holds. */
+	void ScatterCellGrid(const TArray<FScatterPlaced>& Placed, const int64 MinX, const int64 MinY, const int64 MaxX, const int64 MaxY, const int64 Side,
+		int64& OutCellsX, int64& OutCellsY, int64& OutMostInCell)
+	{
+		OutCellsX = (MaxX - MinX) / Side + 1;
+		OutCellsY = (MaxY - MinY) / Side + 1;
+		OutMostInCell = 0;
+		if (OutCellsX * OutCellsY > CellMaxCount)
+		{
+			return;
+		}
+		TArray<uint32> Counts;
+		Counts.SetNumZeroed(static_cast<int32>(OutCellsX * OutCellsY));
+		for (const FScatterPlaced& Point : Placed)
+		{
+			const int64 Cell = ((static_cast<int64>(Point.Y) - MinY) / Side) * OutCellsX + (static_cast<int64>(Point.X) - MinX) / Side;
+			OutMostInCell = FMath::Max<int64>(OutMostInCell, ++Counts[static_cast<int32>(Cell)]);
+		}
+	}
+
+	/**
+	 * Reads instances out of an index, a slot at a time, with the minimum spacing exact whatever cell a neighbour is in (#189).
+	 *
+	 * Without spacing an instance is Finish and nothing else. With it, a candidate is kept when it passes every other filter and no
+	 * lower-numbered KEPT candidate lies closer than the spacing: the same rule Generate walks in order, here asked per candidate. Whether
+	 * a neighbour is kept is itself worked out the same way (from its own lower-numbered neighbours), and remembered, so the answer for a
+	 * candidate is a pure function of the stream and never of which cells were read. The chain from neighbour to neighbour runs on an
+	 * explicit stack, not the call stack: it can be long, and a worker thread's stack is small.
+	 */
+	struct FScatterCellReader
+	{
+		const FScatterPipeline& Pipeline;
+		const FMantleScatterCellIndex& Index;
+
+		enum EState : uint8
+		{
+			Unknown = 0,
+			/** Passes every filter but spacing; its neighbours are not all known yet. */
+			Passed = 1,
+			Dropped = 2,
+			Kept = 3
+		};
+		struct FEntry
+		{
+			uint8 State = Unknown;
+			FMantleScatterInstance Instance;
+		};
+		TMap<uint32, FEntry> Entries;
+
+		/** The candidates of every cell loaded so far, by spacing-sized square. */
+		TMap<uint64, TArray<uint32, TInlineAllocator<4>>> Grid;
+		TSet<int32> Loaded;
+
+		FScatterCellReader(const FScatterPipeline& InPipeline, const FMantleScatterCellIndex& InIndex)
+			: Pipeline(InPipeline)
+			, Index(InIndex)
+		{
+		}
+
+		bool Filter(const uint32 Slot, FMantleScatterInstance& Out) const
+		{
+			return Pipeline.Finish(Index.Candidate[Slot], Index.X[Slot], Index.Y[Slot], 0, Out);
+		}
+
+		void LoadCell(const int64 CellX, const int64 CellY)
+		{
+			if (CellX < 0 || CellY < 0 || CellX >= Index.CellsX || CellY >= Index.CellsY)
 			{
-				ScatterAlignToGround(AlignX, AlignY, AlignZ, Instance.Yaw, Instance.Pitch, Instance.Roll);
+				return;
 			}
-			break;
-		case EMantleScatterAlignment::Tumbled:
-			Instance.Pitch = static_cast<int16>(ScatterPick(ScatterLow(Turn), -9000, 9000));
-			Instance.Roll = static_cast<int16>(ScatterPick(ScatterHigh(Turn), -18000, 17999));
-			break;
-		case EMantleScatterAlignment::Upright:
-		default:
-			Instance.Pitch = 0;
-			Instance.Roll = 0;
-			break;
+			bool bAlready = false;
+			Loaded.Add(static_cast<int32>(CellY * Index.CellsX + CellX), &bAlready);
+			if (bAlready)
+			{
+				return;
+			}
+			uint32 Begin = 0;
+			uint32 End = 0;
+			Index.SlotRange(FIntPoint(static_cast<int32>(CellX), static_cast<int32>(CellY)), Begin, End);
+			const int64 Spacing = Pipeline.SpacingMm;
+			for (uint32 Slot = Begin; Slot < End; ++Slot)
+			{
+				Grid.FindOrAdd(FScatterSpacingGrid::Key(ScatterFloorDiv(Index.X[Slot], Spacing), ScatterFloorDiv(Index.Y[Slot], Spacing))).Add(Slot);
+			}
 		}
-		Instance.Scale = static_cast<uint16>(ScatterPick(ScatterLow(Look), ScaleLo, ScaleHi));
 
-		const int64 Pick = ScatterPick(ScatterHigh(Look), 0, TotalWeight - 1);
-		int32 MeshIndex = 0;
-		while (MeshIndex < Cumulative.Num() - 1 && Pick >= Cumulative[MeshIndex])
+		/** The slots of lower-numbered candidates closer than the spacing to Slot's, loading the cells they might be in. */
+		void EarlierNeighbours(const uint32 Slot, TArray<uint32, TInlineAllocator<16>>& Out)
 		{
-			++MeshIndex;
+			Out.Reset();
+			const int64 Spacing = Pipeline.SpacingMm;
+			const int64 X = Index.X[Slot];
+			const int64 Y = Index.Y[Slot];
+			const uint32 Number = Index.Candidate[Slot];
+			// Anything within the spacing is under the box X +- (Spacing - 1): the cells that box covers hold every such candidate.
+			const int64 FirstX = ScatterFloorDiv(X - Spacing + 1 - Index.OriginX, Index.CellMm);
+			const int64 LastX = ScatterFloorDiv(X + Spacing - 1 - Index.OriginX, Index.CellMm);
+			const int64 FirstY = ScatterFloorDiv(Y - Spacing + 1 - Index.OriginY, Index.CellMm);
+			const int64 LastY = ScatterFloorDiv(Y + Spacing - 1 - Index.OriginY, Index.CellMm);
+			for (int64 CellY = FirstY; CellY <= LastY; ++CellY)
+			{
+				for (int64 CellX = FirstX; CellX <= LastX; ++CellX)
+				{
+					LoadCell(CellX, CellY);
+				}
+			}
+			const int64 SquareX = ScatterFloorDiv(X, Spacing);
+			const int64 SquareY = ScatterFloorDiv(Y, Spacing);
+			for (int64 StepX = -1; StepX <= 1; ++StepX)
+			{
+				for (int64 StepY = -1; StepY <= 1; ++StepY)
+				{
+					const TArray<uint32, TInlineAllocator<4>>* Found = Grid.Find(FScatterSpacingGrid::Key(SquareX + StepX, SquareY + StepY));
+					if (!Found)
+					{
+						continue;
+					}
+					for (const uint32 Other : *Found)
+					{
+						if (Index.Candidate[Other] >= Number)
+						{
+							continue;
+						}
+						// The same test Generate's grid makes: exactly the spacing apart is kept.
+						const int64 Dx = FMath::Abs(X - Index.X[Other]);
+						const int64 Dy = FMath::Abs(Y - Index.Y[Other]);
+						if (Dx < Spacing && Dy < Spacing && Dx * Dx + Dy * Dy < Spacing * Spacing)
+						{
+							Out.Add(Other);
+						}
+					}
+				}
+			}
 		}
-		Instance.Mesh = static_cast<uint16>(MeshIndex);
+
+		/** Whether the candidate at Slot is a kept instance of the stream, and that instance. */
+		bool Read(const uint32 Slot, FMantleScatterInstance& OutInstance)
+		{
+			if (Pipeline.SpacingMm <= 0)
+			{
+				return Filter(Slot, OutInstance);
+			}
+			TArray<uint32> Stack;
+			Stack.Add(Slot);
+			TArray<uint32, TInlineAllocator<16>> Neighbours;
+			while (Stack.Num() > 0)
+			{
+				const uint32 Top = Stack.Last();
+				FEntry* Entry = Entries.Find(Top);
+				if (Entry && Entry->State >= Dropped)
+				{
+					Stack.Pop(EAllowShrinking::No);
+					continue;
+				}
+				if (!Entry)
+				{
+					FEntry Fresh;
+					Fresh.State = Filter(Top, Fresh.Instance) ? Passed : Dropped;
+					Entry = &Entries.Add(Top, Fresh);
+					if (Entry->State == Dropped)
+					{
+						Stack.Pop(EAllowShrinking::No);
+						continue;
+					}
+				}
+				EarlierNeighbours(Top, Neighbours);
+				bool bBlocked = false;
+				const int32 StackBefore = Stack.Num();
+				for (const uint32 Other : Neighbours)
+				{
+					const FEntry* Known = Entries.Find(Other);
+					if (Known && Known->State == Kept)
+					{
+						bBlocked = true;
+						break;
+					}
+					if (!Known || Known->State == Passed)
+					{
+						Stack.Add(Other);
+					}
+				}
+				// Re-find: the map may have moved while the neighbours were looked at.
+				Entry = Entries.Find(Top);
+				if (bBlocked)
+				{
+					Stack.SetNum(StackBefore, EAllowShrinking::No);
+					Entry->State = Dropped;
+					Stack.Pop(EAllowShrinking::No);
+				}
+				else if (Stack.Num() == StackBefore)
+				{
+					Entry->State = Kept;
+					Stack.Pop(EAllowShrinking::No);
+				}
+			}
+			const FEntry* Result = Entries.Find(Slot);
+			if (Result && Result->State == Kept)
+			{
+				OutInstance = Result->Instance;
+				return true;
+			}
+			return false;
+		}
+	};
+
+	/**
+	 * The kept instances among Slots (ascending candidate number), in that order. Candidates at or past MaxCandidates (the Foliage tier's
+	 * prefix) are not there; one that is never depends on a later one, so the prefix is a subset of the whole.
+	 */
+	void ScatterReadSlots(const FScatterPipeline& Pipeline, const FMantleScatterCellIndex& Index, TConstArrayView<uint32> Slots, const int64 MaxCandidates,
+		TArray<FMantleScatterInstance>& OutInstances, TArray<uint32>* OutCandidates)
+	{
+		FScatterCellReader Reader(Pipeline, Index);
+		for (const uint32 Slot : Slots)
+		{
+			if (MaxCandidates >= 0 && static_cast<int64>(Index.Candidate[Slot]) >= MaxCandidates)
+			{
+				break;
+			}
+			FMantleScatterInstance Instance;
+			if (Reader.Read(Slot, Instance))
+			{
+				OutInstances.Add(Instance);
+				if (OutCandidates)
+				{
+					OutCandidates->Add(Index.Candidate[Slot]);
+				}
+			}
+		}
+	}
+
+	TArray<uint32> ScatterCellSlots(const FMantleScatterCellIndex& Index, const FIntPoint& Cell)
+	{
+		uint32 Begin = 0;
+		uint32 End = 0;
+		Index.SlotRange(Cell, Begin, End);
+		TArray<uint32> Slots;
+		Slots.Reserve(static_cast<int32>(End - Begin));
+		for (uint32 Slot = Begin; Slot < End; ++Slot)
+		{
+			Slots.Add(Slot);
+		}
+		return Slots;
+	}
+}
+
+int64 FMantleScatterCellIndex::MemoryBytes() const
+{
+	return static_cast<int64>(CellStart.GetAllocatedSize() + Candidate.GetAllocatedSize() + X.GetAllocatedSize() + Y.GetAllocatedSize());
+}
+
+FIntPoint FMantleScatterCellIndex::CellAt(const int64 XMm, const int64 YMm) const
+{
+	if (CellsX <= 0 || CellsY <= 0 || CellMm <= 0)
+	{
+		return FIntPoint::ZeroValue;
+	}
+	using namespace MantleScatterPrivate;
+	return FIntPoint(
+		static_cast<int32>(FMath::Clamp<int64>(ScatterFloorDiv(XMm - OriginX, CellMm), 0, CellsX - 1)),
+		static_cast<int32>(FMath::Clamp<int64>(ScatterFloorDiv(YMm - OriginY, CellMm), 0, CellsY - 1)));
+}
+
+void FMantleScatterCellIndex::SlotRange(const FIntPoint& Cell, uint32& OutBegin, uint32& OutEnd) const
+{
+	if (Cell.X < 0 || Cell.Y < 0 || Cell.X >= CellsX || Cell.Y >= CellsY)
+	{
+		OutBegin = OutEnd = 0;
+		return;
+	}
+	const int32 Number = Cell.Y * CellsX + Cell.X;
+	OutBegin = CellStart[Number];
+	OutEnd = CellStart[Number + 1];
+}
+
+FBox2D FMantleScatterCellIndex::CellBoundsCm(const FIntPoint& Cell) const
+{
+	const double MinX = static_cast<double>(OriginX + static_cast<int64>(Cell.X) * CellMm) * 0.1;
+	const double MinY = static_cast<double>(OriginY + static_cast<int64>(Cell.Y) * CellMm) * 0.1;
+	const double Side = static_cast<double>(CellMm) * 0.1;
+	return FBox2D(FVector2D(MinX, MinY), FVector2D(MinX + Side, MinY + Side));
+}
+
+bool FMantleScatter::UsesCells(const FMantleScatterParams& Params)
+{
+	FString Ignored;
+	return CountFor(Params, Ignored) > WholeInstances;
+}
+
+TSharedPtr<const FMantleScatterCellIndex> FMantleScatter::BuildCellIndex(const FMantleScatterParams& Params, FString& OutError)
+{
+	using namespace MantleScatterPrivate;
+
+	const int64 Count = CountFor(Params, OutError);
+	if (Count < 0)
+	{
+		return nullptr;
+	}
+	const FMantleScatterGenerateOptions NoOptions;
+	const FScatterPipeline Pipeline(Params, NoOptions);
+	if (Pipeline.StepMm > 0)
+	{
+		OutError = TEXT("a path step is built whole, not in cells");
+		return nullptr;
+	}
+
+	TArray<FScatterPlaced> Placed;
+	Placed.Reserve(static_cast<int32>(Count));
+	int64 MinX = MAX_int64, MinY = MAX_int64, MaxX = MIN_int64, MaxY = MIN_int64;
+	for (int64 Candidate = 0; Candidate < Count; ++Candidate)
+	{
+		int64 X = 0;
+		int64 Y = 0;
+		int64 TangentYaw = 0;
+		if (!Pipeline.Place(Candidate, X, Y, TangentYaw) || FMath::Abs(X) > MAX_int32 || FMath::Abs(Y) > MAX_int32)
+		{
+			continue;
+		}
+		FScatterPlaced& Point = Placed.AddDefaulted_GetRef();
+		Point.X = static_cast<int32>(X);
+		Point.Y = static_cast<int32>(Y);
+		Point.Candidate = static_cast<uint32>(Candidate);
+		MinX = FMath::Min(MinX, X);
+		MinY = FMath::Min(MinY, Y);
+		MaxX = FMath::Max(MaxX, X);
+		MaxY = FMath::Max(MaxY, Y);
+	}
+
+	TSharedRef<FMantleScatterCellIndex> Index = MakeShared<FMantleScatterCellIndex>();
+	Index->Count = Count;
+	if (Placed.Num() == 0)
+	{
+		Index->CellMm = FMath::Max<int64>(CellMinSideMm, Pipeline.SpacingMm);
+		Index->CellStart.Add(0);
+		return Index;
+	}
+
+	// The side: from the density, never under the spacing (a neighbour within the spacing is then in the same or an adjacent cell),
+	// halved while a cell is hotter than CellHotCandidates and the grid stays small enough.
+	int64 Side = FMath::Max(ScatterCellSideForDensity(Params.Density), Pipeline.SpacingMm);
+	int64 CellsX = 0, CellsY = 0, Most = 0;
+	for (;;)
+	{
+		ScatterCellGrid(Placed, MinX, MinY, MaxX, MaxY, Side, CellsX, CellsY, Most);
+		if (CellsX * CellsY > CellMaxCount)
+		{
+			// Too many cells for this side (a huge empty footprint): coarser, whatever the heat.
+			Side *= 2;
+			continue;
+		}
+		const int64 Half = Side / 2;
+		if (Most > CellHotCandidates && Half >= CellMinSideMm && Half >= Pipeline.SpacingMm
+			&& ((MaxX - MinX) / Half + 1) * ((MaxY - MinY) / Half + 1) <= CellMaxCount)
+		{
+			Side = Half;
+			continue;
+		}
+		break;
+	}
+
+	Index->CellMm = Side;
+	Index->OriginX = MinX;
+	Index->OriginY = MinY;
+	Index->CellsX = static_cast<int32>(CellsX);
+	Index->CellsY = static_cast<int32>(CellsY);
+	const int32 NumCells = Index->CellsX * Index->CellsY;
+	Index->CellStart.SetNumZeroed(NumCells + 1);
+	const auto CellOf = [&](const FScatterPlaced& Point)
+	{
+		return static_cast<int32>(((static_cast<int64>(Point.Y) - MinY) / Side) * CellsX + (static_cast<int64>(Point.X) - MinX) / Side);
+	};
+	for (const FScatterPlaced& Point : Placed)
+	{
+		++Index->CellStart[CellOf(Point) + 1];
+	}
+	for (int32 Cell = 0; Cell < NumCells; ++Cell)
+	{
+		Index->CellStart[Cell + 1] += Index->CellStart[Cell];
+	}
+	Index->Candidate.SetNumUninitialized(Placed.Num());
+	Index->X.SetNumUninitialized(Placed.Num());
+	Index->Y.SetNumUninitialized(Placed.Num());
+	TArray<uint32> Fill;
+	Fill.Append(Index->CellStart.GetData(), NumCells);
+	// Placed is in ascending candidate order, so each cell's slots are too.
+	for (const FScatterPlaced& Point : Placed)
+	{
+		const uint32 Slot = Fill[CellOf(Point)]++;
+		Index->Candidate[Slot] = Point.Candidate;
+		Index->X[Slot] = Point.X;
+		Index->Y[Slot] = Point.Y;
+	}
+	return Index;
+}
+
+bool FMantleScatter::GenerateCell(const FMantleScatterParams& Params, const FMantleScatterCellIndex& Index, const FIntPoint& Cell,
+	TArray<FMantleScatterInstance>& OutInstances, FString& OutError, const FMantleScatterGenerateOptions& Options)
+{
+	using namespace MantleScatterPrivate;
+
+	OutInstances.Reset();
+	if (CountFor(Params, OutError) < 0)
+	{
+		return false;
+	}
+	const FScatterPipeline Pipeline(Params, Options);
+	const TArray<uint32> Slots = ScatterCellSlots(Index, Cell);
+	ScatterReadSlots(Pipeline, Index, Slots, Options.MaxCandidates, OutInstances, nullptr);
+	return true;
+}
+
+bool FMantleScatter::GenerateInBox(const FMantleScatterParams& Params, const FMantleScatterCellIndex& Index, const int64 MinXMm, const int64 MinYMm,
+	const int64 MaxXMm, const int64 MaxYMm, TArray<FMantleScatterInstance>& OutInstances, FString& OutError, const FMantleScatterGenerateOptions& Options)
+{
+	using namespace MantleScatterPrivate;
+
+	OutInstances.Reset();
+	if (CountFor(Params, OutError) < 0)
+	{
+		return false;
+	}
+	if (Index.NumCells() == 0 || MaxXMm < MinXMm || MaxYMm < MinYMm)
+	{
+		return true;
+	}
+	const FScatterPipeline Pipeline(Params, Options);
+	const FIntPoint First = Index.CellAt(MinXMm, MinYMm);
+	const FIntPoint Last = Index.CellAt(MaxXMm, MaxYMm);
+	TArray<uint32> Slots;
+	for (int32 CellY = First.Y; CellY <= Last.Y; ++CellY)
+	{
+		for (int32 CellX = First.X; CellX <= Last.X; ++CellX)
+		{
+			uint32 Begin = 0;
+			uint32 End = 0;
+			Index.SlotRange(FIntPoint(CellX, CellY), Begin, End);
+			for (uint32 Slot = Begin; Slot < End; ++Slot)
+			{
+				if (Index.X[Slot] >= MinXMm && Index.X[Slot] <= MaxXMm && Index.Y[Slot] >= MinYMm && Index.Y[Slot] <= MaxYMm)
+				{
+					Slots.Add(Slot);
+				}
+			}
+		}
+	}
+	Slots.Sort([&Index](const uint32 A, const uint32 B) { return Index.Candidate[A] < Index.Candidate[B]; });
+	ScatterReadSlots(Pipeline, Index, Slots, Options.MaxCandidates, OutInstances, nullptr);
+	return true;
+}
+
+bool FMantleScatter::GenerateAllByCells(const FMantleScatterParams& Params, const FMantleScatterCellIndex& Index, TArray<FMantleScatterInstance>& OutInstances,
+	FString& OutError, const FMantleScatterGenerateOptions& Options)
+{
+	using namespace MantleScatterPrivate;
+
+	OutInstances.Reset();
+	const int64 Count = CountFor(Params, OutError);
+	if (Count < 0)
+	{
+		return false;
+	}
+	const FScatterPipeline Pipeline(Params, Options);
+	TArray<FMantleScatterInstance> ByCandidate;
+	ByCandidate.SetNumUninitialized(static_cast<int32>(Count));
+	TArray<uint8> Present;
+	Present.SetNumZeroed(static_cast<int32>(Count));
+	ParallelFor(Index.NumCells(), [&](const int32 Number)
+	{
+		const FIntPoint Cell(Number % Index.CellsX, Number / Index.CellsX);
+		const TArray<uint32> Slots = ScatterCellSlots(Index, Cell);
+		TArray<FMantleScatterInstance> Instances;
+		TArray<uint32> Candidates;
+		ScatterReadSlots(Pipeline, Index, Slots, Options.MaxCandidates, Instances, &Candidates);
+		// Each candidate number is in exactly one cell, so no two cells write the same element.
+		for (int32 At = 0; At < Instances.Num(); ++At)
+		{
+			ByCandidate[static_cast<int32>(Candidates[At])] = Instances[At];
+			Present[static_cast<int32>(Candidates[At])] = 1;
+		}
+	});
+	OutInstances.Reserve(static_cast<int32>(Count));
+	for (int32 Candidate = 0; Candidate < Present.Num(); ++Candidate)
+	{
+		if (Present[Candidate])
+		{
+			OutInstances.Add(ByCandidate[Candidate]);
+		}
 	}
 	return true;
 }

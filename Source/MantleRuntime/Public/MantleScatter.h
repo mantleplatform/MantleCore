@@ -228,11 +228,60 @@ struct FMantleScatterInstance
 	bool operator!=(const FMantleScatterInstance& Other) const { return !(*this == Other); }
 };
 
+/**
+ * Where every candidate of one big Scatter lands (#189): the position index its cells are read from. One Scatter's instance k always has
+ * the same place (its own counter-based stream), so the index is each candidate's index and X-Y in whole millimetres, filed by cell
+ * (a square of CellMm, row by row from the lowest corner) and, inside a cell, by index. Nothing here depends on the terrain, a filter
+ * or the Foliage tier: those are applied when a cell is read. Immutable once built; any thread may read it.
+ *
+ * Candidates an exclusion drops are never filed (an exclusion is a place, nothing more). A slot is a candidate's position in the
+ * arrays below.
+ */
+struct MANTLERUNTIME_API FMantleScatterCellIndex
+{
+	/** The cell side in whole millimetres, at least the Scatter's minimum spacing. */
+	int64 CellMm = 0;
+
+	/** The lowest corner of cell (0, 0), millimetres in the scatter's own space. */
+	int64 OriginX = 0;
+	int64 OriginY = 0;
+
+	/** Cells along X and Y; 0 when no candidate is filed. */
+	int32 CellsX = 0;
+	int32 CellsY = 0;
+
+	/** The first slot of each cell, then the end: CellsX * CellsY + 1 numbers. */
+	TArray<uint32> CellStart;
+
+	/** Per slot: the candidate's index in the instance stream, and its X-Y in millimetres. A cell's slots are in ascending index order. */
+	TArray<uint32> Candidate;
+	TArray<int32> X;
+	TArray<int32> Y;
+
+	/** The Scatter's count (FMantleScatter::CountFor) when this was built. */
+	int64 Count = 0;
+
+	int32 NumCells() const { return CellsX * CellsY; }
+	int32 NumSlots() const { return Candidate.Num(); }
+	int64 MemoryBytes() const;
+
+	/** The cell a point is in, clamped to the grid; (0, 0) for an empty index. */
+	FIntPoint CellAt(int64 XMm, int64 YMm) const;
+
+	/** The cell's slots, [Begin, End); empty for a cell off the grid. */
+	void SlotRange(const FIntPoint& Cell, uint32& OutBegin, uint32& OutEnd) const;
+
+	/** The cell's lowest corner and side, centimetres in the scatter's space. */
+	FBox2D CellBoundsCm(const FIntPoint& Cell) const;
+};
+
 class MANTLERUNTIME_API FMantleScatter
 {
 public:
 	/** The caps: a request past any is refused with a message, never trimmed. The place limits' own. */
 	static constexpr int32 MaxInstances = FMantlePlaceLimits::MaxScatterInstances;
+	/** A Scatter of more than this is built in cells near each camera and needs a drawDistance (#189); up to it, whole. */
+	static constexpr int32 WholeInstances = FMantlePlaceLimits::ScatterWholeInstances;
 	static constexpr int32 MaxMeshes = FMantlePlaceLimits::MaxScatterMeshes;
 	static constexpr int32 MaxMeshWeight = FMantlePlaceLimits::MaxScatterMeshWeight;
 	static constexpr double MaxHalfExtentCm = FMantlePlaceLimits::MaxScatterHalfExtent;
@@ -282,6 +331,43 @@ public:
 	 */
 	static bool Generate(const FMantleScatterParams& Params, TArray<FMantleScatterInstance>& OutInstances, FString& OutError,
 		const FMantleScatterGenerateOptions& Options = FMantleScatterGenerateOptions());
+
+	// ---- Cells (#189) -------------------------------------------------------------------------------------------------------
+	// A Scatter of more than WholeInstances is read cell by cell: the instances of a cell are exactly the whole stream's instances whose
+	// X-Y lie in it, in the same order, whatever was built before or on which machine. The minimum spacing keeps that exact across a cell
+	// border: an instance is dropped when an earlier-numbered KEPT instance is closer, and whether that neighbour is kept is worked out
+	// on demand (from further neighbours, whichever cell they are in), never read from a cell that happens to be built.
+
+	/** Whether Params (valid, and counted) is built in cells: its count is above WholeInstances. A colliding Scatter never is (its cap is far lower). */
+	static bool UsesCells(const FMantleScatterParams& Params);
+
+	/**
+	 * The index of Params' candidates, or null with OutError. The cell side comes from the density (about 8,000 candidates a cell, 4 to 128 m),
+	 * halved where clusters make a cell hotter, and is never under the minimum spacing. Pure: any thread.
+	 */
+	static TSharedPtr<const FMantleScatterCellIndex> BuildCellIndex(const FMantleScatterParams& Params, FString& OutError);
+
+	/**
+	 * The instances of one cell, in index order: the whole stream's instances whose X-Y lie in it, bit for bit (Options.MaxCandidates and
+	 * Ground as for Generate). A cell off the grid has none. Pure: any thread. False with OutError when the parameters cannot generate.
+	 */
+	static bool GenerateCell(const FMantleScatterParams& Params, const FMantleScatterCellIndex& Index, const FIntPoint& Cell,
+		TArray<FMantleScatterInstance>& OutInstances, FString& OutError, const FMantleScatterGenerateOptions& Options = FMantleScatterGenerateOptions());
+
+	/**
+	 * The whole stream's instances whose X-Y (millimetres, scatter space) lie inside the box (edges included), in index order, found through the
+	 * cells the box covers and without building anything else. What InstancesIn reads on a machine that builds no cells.
+	 */
+	static bool GenerateInBox(const FMantleScatterParams& Params, const FMantleScatterCellIndex& Index, int64 MinXMm, int64 MinYMm,
+		int64 MaxXMm, int64 MaxYMm, TArray<FMantleScatterInstance>& OutInstances, FString& OutError,
+		const FMantleScatterGenerateOptions& Options = FMantleScatterGenerateOptions());
+
+	/**
+	 * The whole stream (what Generate gives), made cell by cell on every core and put back in index order: the same instances, the same
+	 * hash. What GetScatterHash reads of a Scatter built in cells.
+	 */
+	static bool GenerateAllByCells(const FMantleScatterParams& Params, const FMantleScatterCellIndex& Index, TArray<FMantleScatterInstance>& OutInstances,
+		FString& OutError, const FMantleScatterGenerateOptions& Options = FMantleScatterGenerateOptions());
 
 	/** The instance as a transform in the scatter's space (cm, degrees, uniform scale). */
 	static FTransform ToTransform(const FMantleScatterInstance& Instance);

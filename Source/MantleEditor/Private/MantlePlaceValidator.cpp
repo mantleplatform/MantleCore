@@ -875,12 +875,12 @@ namespace
 				Length += FVector2D::Distance(Volume->Path[Index - 1], Volume->Path[Index]);
 			}
 			const int64 Steps = static_cast<int64>(Length / Volume->PathStep) + 1;
-			if (Steps > FMantlePlaceLimits::MaxScatterInstances)
+			if (Steps > FMantlePlaceLimits::ScatterWholeInstances)
 			{
 				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
 					FString::Printf(TEXT("puts an instance every %.1f cm along a %.0f m path: about %lld instances, over the %d one scatter makes."),
-						Volume->PathStep, Length / 100.0, static_cast<long long>(Steps), FMantlePlaceLimits::MaxScatterInstances),
-					FString::Printf(TEXT("Raise Path Step to at least %.1f cm, or shorten the path."), Length / (FMantlePlaceLimits::MaxScatterInstances - 1)) });
+						Volume->PathStep, Length / 100.0, static_cast<long long>(Steps), FMantlePlaceLimits::ScatterWholeInstances),
+					FString::Printf(TEXT("Raise Path Step to at least %.1f cm, or shorten the path."), Length / (FMantlePlaceLimits::ScatterWholeInstances - 1)) });
 				return;
 			}
 		}
@@ -900,6 +900,20 @@ namespace
 		FString Problem;
 		if (!Volume->ReadProps(Props, Problem))
 		{
+			// #189: a Scatter over ScatterWholeInstances is built in cells around each player, which needs a draw distance. Name the
+			// count and the fix plainly (ReadProps has filled Props before counting them).
+			FString Ignored;
+			FMantleScatterParams WithDistance = Props;
+			WithDistance.DrawDistance = 1.0;
+			const int64 Count = Volume->DrawDistance > 0.0 ? -1 : FMantleScatter::CountFor(WithDistance, Ignored);
+			if (Count > FMantlePlaceLimits::ScatterWholeInstances)
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+					FString::Printf(TEXT("makes %lld instances but has no Draw Distance; a scatter of more than %d is only built around each player, out to its draw distance."),
+						static_cast<long long>(Count), FMantlePlaceLimits::ScatterWholeInstances),
+					TEXT("Set Draw Distance in the scatter volume's Details panel (how far away players see its instances), or lower its density.") });
+				return;
+			}
 			Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor), Problem,
 				TEXT("Change it in the scatter volume's Details panel.") });
 			return;

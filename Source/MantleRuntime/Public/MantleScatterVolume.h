@@ -14,6 +14,7 @@ struct FMantleTerrainWeights;
 namespace Scalability { struct FQualityLevels; }
 class UBoxComponent;
 class UInstancedStaticMeshComponent;
+class UMantleScatterCellsComponent;
 class UMaterialInterface;
 class UStaticMesh;
 struct FPropertyChangedEvent;
@@ -122,7 +123,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (ClampMin = "0", ClampMax = "1000000", UIMin = "0", Units = "cm"))
 	FVector HalfExtent = FVector(1000.0, 1000.0, 0.0);
 
-	/** Instances per square metre of the box's footprint. A scatter makes at most 200,000, and a place holds 200,000 in all. */
+	/**
+	 * Instances per square metre of the box's footprint. A scatter makes at most 2,000,000, and a place holds 2,000,000 in all. One of more than
+	 * 200,000 needs a Draw Distance: a game builds it in cells around the player, not all at once.
+	 */
 	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (ClampMin = "0", UIMin = "0", UIMax = "10"))
 	double Density = 0.5;
 
@@ -151,7 +155,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (TitleProperty = "Mesh"))
 	TArray<FMantleScatterMeshSettings> Meshes;
 
-	/** How far from the camera instances are drawn, cm (they fade over the last fifth); 0 never culls. At most 1,000,000. */
+	/** How far from the camera instances are drawn, cm (they fade over the last fifth); 0 never culls. At most 1,000,000. Required above 200,000 instances. */
 	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (ClampMin = "0", ClampMax = "1000000", UIMin = "0", UIMax = "50000", Units = "cm"))
 	double DrawDistance = 0.0;
 
@@ -302,7 +306,9 @@ public:
 	 * Generates the instances and builds them: one instanced static mesh component per mesh that has
 	 * instances, collision-free, under the volume's root. Replaces what was built before. Builds nothing,
 	 * and succeeds, where nothing draws (a dedicated server). False with OutError when the settings cannot
-	 * generate. In a level being edited the components are the preview: editor-only and never saved.
+	 * generate. In a level being edited the components are the preview: editor-only and never saved, and the
+	 * whole Scatter whatever its size. A game builds a Scatter of more than 200,000 instances in cells around
+	 * the player instead (UMantleScatterCellsComponent): nothing stands at first, and GetInstanceCount is what stands now.
 	 */
 	bool RefreshScatter(FString& OutError);
 
@@ -319,14 +325,28 @@ public:
 	 */
 	const TArray<FMantleScatterInstance>* GenerateFullCached(FString& OutError) const;
 
+	/**
+	 * The instances of the full stream whose X-Y lie in the box MinXCm..MaxXCm by MinYCm..MaxYCm (the volume's own space, cm, edges included), in
+	 * index order. A box far larger than any place (or unbounded: pass +- DBL_MAX) means every instance. For a Scatter built in cells this reads only
+	 * the cells the box covers, so a dedicated server (which builds nothing visual) answers a query in the area's own time, whatever the Scatter's size.
+	 * False with OutError when the settings cannot generate.
+	 */
+	bool GenerateInArea(double MinXCm, double MinYCm, double MaxXCm, double MaxYCm, TArray<FMantleScatterInstance>& OutInstances, FString& OutError) const;
+
+	/** Whether the current settings make a Scatter of more than 200,000 instances, which a game builds in cells. False where they cannot generate. */
+	bool UsesCells() const;
+
 	/** FMantleScatter::Hash of the last GenerateFull's instances. */
 	uint64 GetFullHash() const { return FullHash; }
 
 	/** Removes the built instances. */
 	void ClearScatter();
 
-	/** The instances the last RefreshScatter generated (0 where nothing draws). */
-	int32 GetInstanceCount() const { return BuiltInstances; }
+	/** The instances the last RefreshScatter generated (0 where nothing draws); for a Scatter built in cells, the ones standing now. */
+	int32 GetInstanceCount() const;
+
+	/** The cells component of a Scatter built in cells; null for any other. */
+	UMantleScatterCellsComponent* GetCellsComponent() const { return CellsComponent; }
 
 	/** FMantleScatter::Hash of the last RefreshScatter's instances (0 where nothing draws). */
 	uint64 GetInstanceHash() const { return BuiltHash; }
@@ -364,6 +384,16 @@ private:
 
 	/** The ground under a point in the volume's space, from TerrainSurfaces and the volume's transform now. */
 	FMantleScatterGroundFn MakeGround() const;
+
+	/** The Scatter built in cells (#189) in a game that draws: set by RefreshScatter, destroyed by ClearScatter. */
+	UPROPERTY(Transient, DuplicateTransient, TextExportTransient)
+	TObjectPtr<UMantleScatterCellsComponent> CellsComponent;
+
+	/** The position index a query on a Scatter built in cells reads (cached under SettingsKey; the cells component builds its own, off the game thread). */
+	mutable TSharedPtr<const FMantleScatterCellIndex> QueryIndex;
+	mutable FString QueryIndexKey;
+
+	const FMantleScatterCellIndex* GetQueryIndex(const FMantleScatterParams& Params, FString& OutError) const;
 
 	/** GenerateFull's cache. */
 	mutable TArray<FMantleScatterInstance> FullInstances;

@@ -343,14 +343,16 @@ bool FMantleScatterPlaceCapsTest::RunTest(const FString& Parameters)
 	{
 		All.Add(&Forty);
 	}
-	TestTrue(TEXT("51 visual Scatters are within 200000"), FMantleScatter::CheckPlaceTotals(All, Bad, Error));
+	TestTrue(TEXT("51 visual Scatters are within the place total"), FMantleScatter::CheckPlaceTotals(All, Bad, Error));
+	// mantle#189: the place holds 2,000,000, in Scatters of up to 2,000,000 each (more than 200,000 with a draw distance).
 	FMantleScatterParams Huge = BoxParams();
-	Huge.HalfExtent = FVector(10000.0, 10000.0, 0.0);
-	Huge.Density = 5.0; // 200000
+	Huge.HalfExtent = FVector(50000.0, 50000.0, 0.0);
+	Huge.Density = 2.0; // 2000000
+	Huge.DrawDistance = 5000.0;
 	All = { &Huge, &Forty };
-	TestFalse(TEXT("200000 plus 40 passes the place total"), FMantleScatter::CheckPlaceTotals(All, Bad, Error));
+	TestFalse(TEXT("2000000 plus 40 passes the place total"), FMantleScatter::CheckPlaceTotals(All, Bad, Error));
 	TestEqual(TEXT("at the second"), Bad, 1);
-	TestTrue(TEXT("with its message"), Error.Contains(TEXT("scatter instances; a place holds at most 200000")));
+	TestTrue(TEXT("with its message"), Error.Contains(TEXT("scatter instances; a place holds at most 2000000")));
 	return true;
 }
 

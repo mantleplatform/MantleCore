@@ -349,17 +349,23 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	static constexpr double MaxScatterCoordinate = 1000000.0;
 
 	/**
-	 * Instances one Scatter makes (#530): its footprint in square metres times its density, rounded.
-	 * Cross-field (halfExtent times density), so validate.py's MAX_SCATTER_INSTANCES states it.
+	 * Instances one Scatter makes (#530, #189): its footprint in square metres times its density, rounded. Cross-field (halfExtent times
+	 * density), so validate.py's MAX_SCATTER_INSTANCES states it. A Scatter of up to ScatterWholeInstances is built whole when the place
+	 * loads; a bigger one is built in cells near each camera (MantleScatterCells.h), so only the position index (12 bytes a candidate,
+	 * 24 MB at this cap) is paid for everywhere, and what stands is held to the live-instance budget.
 	 */
-	static constexpr int32 MaxScatterInstances = 200000;
+	static constexpr int32 MaxScatterInstances = 2000000;
+
+	/** The most instances a Scatter built whole has (#530): above this it is built in cells. A path step's count stays under it too (#190). */
+	static constexpr int32 ScatterWholeInstances = 200000;
 
 	/**
-	 * Scatter instances across a whole place (#530). Measured on the build PC: 100,000 generate in
-	 * 1.3 ms and build into instanced meshes in 12.7 ms, so a place at the cap costs a client about
-	 * 30 ms once, while it builds the place. Cross-entity: validate.py's MAX_SCATTER_INSTANCES_PER_PLACE.
+	 * Scatter instances across a whole place (#530, #189). Cross-entity: validate.py's MAX_SCATTER_INSTANCES_PER_PLACE. Whole Scatters
+	 * were measured on the build PC at 100,000 generated in 1.3 ms and built into instanced meshes in 12.7 ms; the cell Scatters above
+	 * ScatterWholeInstances build only around the camera, so the place cap is the Scatter cap: one dense biome map (the jungle test has
+	 * 875,000) fits with room to grow.
 	 */
-	static constexpr int32 MaxScatterInstancesPerPlace = 200000;
+	static constexpr int32 MaxScatterInstancesPerPlace = 2000000;
 
 	/**
 	 * Instances of the Scatters whose collision is on, across a whole place (#169): each is a physics body and a navigation

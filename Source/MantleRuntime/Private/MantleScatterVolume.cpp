@@ -5,6 +5,7 @@
 #include "MantleHeightfieldReader.h"
 #include "MantlePlaceLimits.h"
 #include "MantleRuntime.h"
+#include "MantleScatterCells.h"
 #include "MantleShadowDistance.h"
 #include "MantleTerrainGrass.h"
 #include "MantleTerrainSurface.h"
@@ -327,9 +328,19 @@ void AMantleScatterVolume::ClearScatter()
 		}
 	}
 	ScatterComponents.Reset();
+	if (IsValid(CellsComponent))
+	{
+		CellsComponent->DestroyComponent();
+	}
+	CellsComponent = nullptr;
 	BuiltInstances = 0;
 	BuiltHash = 0;
 	PreviewKey.Reset();
+}
+
+int32 AMantleScatterVolume::GetInstanceCount() const
+{
+	return IsValid(CellsComponent) ? static_cast<int32>(FMath::Min<int64>(CellsComponent->GetLiveInstances(), MAX_int32)) : BuiltInstances;
 }
 
 bool AMantleScatterVolume::RefreshScatter(FString& OutError)
@@ -372,6 +383,24 @@ bool AMantleScatterVolume::RefreshScatter(FString& OutError)
 	if (Params.Placement == EMantleScatterPlacement::Terrain)
 	{
 		Options.Ground = MakeGround();
+	}
+
+	// More than a Scatter built whole holds (#189): built in cells around the player, not all at once. A preview shows it whole, and a
+	// colliding Scatter (far under the whole cap) is whole on every machine.
+	if (!bPreview && !Params.bCollision && FMantleScatter::UsesCells(Params))
+	{
+		TArray<FMantleGrassEntryAssets> Looks;
+		Looks.SetNum(Meshes.Num());
+		for (int32 MeshIndex = 0; MeshIndex < Meshes.Num(); ++MeshIndex)
+		{
+			Looks[MeshIndex].Mesh = Meshes[MeshIndex].Mesh;
+			Looks[MeshIndex].Materials = Meshes[MeshIndex].Materials;
+		}
+		UMantleScatterCellsComponent* Cells = NewObject<UMantleScatterCellsComponent>(this, NAME_None, RF_Transient | RF_TextExportTransient | RF_DuplicateTransient);
+		Cells->Init(Params, Options, MoveTemp(Looks), Params.DrawDistance * FMantleScatter::FoliageTierDistance(FoliageQuality));
+		Cells->RegisterComponent();
+		CellsComponent = Cells;
+		return true;
 	}
 
 	TArray<FMantleScatterInstance> Instances;
@@ -738,7 +767,18 @@ const TArray<FMantleScatterInstance>* AMantleScatterVolume::GenerateFullCached(F
 	{
 		Options.Ground = MakeGround();
 	}
-	if (!FMantleScatter::Generate(Params, FullInstances, OutError, Options))
+	// A Scatter built in cells is read through its cells on every core, then put back in index order: the instances Generate would give,
+	// so the hash is the same on a machine that builds whole, in cells, or (a dedicated server) nothing.
+	const bool bCells = FMantleScatter::UsesCells(Params);
+	const FMantleScatterCellIndex* Index = bCells ? GetQueryIndex(Params, OutError) : nullptr;
+	if (bCells && !Index)
+	{
+		FullKey.Reset();
+		return nullptr;
+	}
+	const bool bMade = bCells ? FMantleScatter::GenerateAllByCells(Params, *Index, FullInstances, OutError, Options)
+		: FMantleScatter::Generate(Params, FullInstances, OutError, Options);
+	if (!bMade)
 	{
 		FullKey.Reset();
 		return nullptr;
@@ -746,4 +786,64 @@ const TArray<FMantleScatterInstance>* AMantleScatterVolume::GenerateFullCached(F
 	FullKey = Key;
 	FullHash = FMantleScatter::Hash(FullInstances);
 	return &FullInstances;
+}
+
+const FMantleScatterCellIndex* AMantleScatterVolume::GetQueryIndex(const FMantleScatterParams& Params, FString& OutError) const
+{
+	// The index depends on the settings and nothing else (no terrain, no transform), so it lives as long as the settings key.
+	const FString Key = SettingsKey();
+	if (!QueryIndex.IsValid() || !QueryIndexKey.Equals(Key, ESearchCase::CaseSensitive))
+	{
+		QueryIndex = FMantleScatter::BuildCellIndex(Params, OutError);
+		QueryIndexKey = QueryIndex.IsValid() ? Key : FString();
+	}
+	return QueryIndex.Get();
+}
+
+bool AMantleScatterVolume::UsesCells() const
+{
+	FMantleScatterParams Params;
+	FString Ignored;
+	return ReadProps(Params, Ignored) && FMantleScatter::UsesCells(Params);
+}
+
+bool AMantleScatterVolume::GenerateInArea(const double MinXCm, const double MinYCm, const double MaxXCm, const double MaxYCm,
+	TArray<FMantleScatterInstance>& OutInstances, FString& OutError) const
+{
+	// Bounded: a box that fits the fixed point (2147 km); anything bigger is every instance.
+	constexpr double Limit = 2.0e8;
+	const bool bBounded = MinXCm > -Limit && MinYCm > -Limit && MaxXCm < Limit && MaxYCm < Limit;
+	FMantleScatterParams Params;
+	if (bBounded && ReadProps(Params, OutError) && FMantleScatter::UsesCells(Params))
+	{
+		FMantleScatterGenerateOptions Options;
+		if (Params.Placement == EMantleScatterPlacement::Terrain)
+		{
+			Options.Ground = MakeGround();
+		}
+		const FMantleScatterCellIndex* Index = GetQueryIndex(Params, OutError);
+		if (!Index)
+		{
+			return false;
+		}
+		// A millimetre of slack either way: the caller's own test decides the edge.
+		return FMantleScatter::GenerateInBox(Params, *Index, FMath::FloorToInt64(MinXCm * 10.0) - 1, FMath::FloorToInt64(MinYCm * 10.0) - 1,
+			FMath::CeilToInt64(MaxXCm * 10.0) + 1, FMath::CeilToInt64(MaxYCm * 10.0) + 1, OutInstances, OutError, Options);
+	}
+	const TArray<FMantleScatterInstance>* All = GenerateFullCached(OutError);
+	if (!All)
+	{
+		return false;
+	}
+	OutInstances.Reset();
+	for (const FMantleScatterInstance& Instance : *All)
+	{
+		const double X = Instance.X * 0.1;
+		const double Y = Instance.Y * 0.1;
+		if (X >= MinXCm - 0.1 && X <= MaxXCm + 0.1 && Y >= MinYCm - 0.1 && Y <= MaxYCm + 0.1)
+		{
+			OutInstances.Add(Instance);
+		}
+	}
+	return true;
 }
