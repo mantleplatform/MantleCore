@@ -86,6 +86,16 @@ enum class EMantleVoxelWorldPersistence : uint8
 	Place,
 };
 
+/** How a world's ground looks (#168): the place file's VoxelWorld look. */
+UENUM()
+enum class EMantleVoxelWorldLook : uint8
+{
+	/** 100 cm cubes that players break and place. */
+	Blocky,
+	/** Ground of 50 cm voxels drawn as a smooth surface that players dig, fill, flatten, smooth and paint. */
+	Smooth,
+};
+
 /** One block type of a Mantle Voxel World (#168). Its id in the world file is its place in the list plus one (0 is air). */
 USTRUCT()
 struct MANTLEEDITOR_API FMantleVoxelBlockTypeSettings
@@ -131,8 +141,9 @@ struct MANTLEEDITOR_API FMantleVoxelWorldProblem
 };
 
 /**
- * A block world in the level (#168 step 6): its blocks as the MBW1 file the VoxelWorldData asset uploads
- * (FMantleVoxelWorldFile), its size, its block types with their tiles, and how players may change it. The exporter writes it
+ * A block world in the level (#168 step 6), blocky or smooth: its blocks as the MBW1 file the VoxelWorldData asset uploads
+ * (FMantleVoxelWorldFile; none when its scripts make the ground), its size, its block types (a smooth world's ground
+ * materials) with their tiles, and how players may change it. The exporter writes it
  * as a VoxelWorld entity at its location (the world's lowest corner, never rotated or scaled); Publish uploads the file and
  * each tile texture. Made by Tools > Mantle > Voxelize selected meshes, or Import block world (.mbw).
  *
@@ -154,9 +165,22 @@ public:
 	/** The folder of the World Outliner the voxelized meshes are moved to. */
 	static const FName VoxelizedSourceFolder;
 
-	/** In 100 cm blocks, x, y and z: each a multiple of 16, at most 1024 x 1024 x 256. Set with the blocks. */
-	UPROPERTY(VisibleAnywhere, Category = "Mantle")
+	/**
+	 * Blocky: 100 cm cubes. Smooth: ground of 50 cm voxels, whose block types are its ground materials (at most 32). A place may
+	 * have one world of each look.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	EMantleVoxelWorldLook Look = EMantleVoxelWorldLook::Blocky;
+
+	/**
+	 * In voxels (100 cm blocks, or 50 cm on a smooth world), x, y and z: each a multiple of 16, at most 1024 x 1024 x 256. Set with
+	 * the blocks when Voxelize or Import makes them; set it by hand for a world its scripts generate (OnGenerateSection).
+	 */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FIntVector Size = FIntVector(16);
+
+	/** The edge of one voxel in cm: 100 blocky, 50 smooth. */
+	double VoxelSize() const;
 
 	/** How many blocks are not air (for the Details panel). */
 	UPROPERTY(VisibleAnywhere, Category = "Mantle")

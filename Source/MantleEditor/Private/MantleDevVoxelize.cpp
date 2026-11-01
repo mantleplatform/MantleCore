@@ -48,6 +48,7 @@ namespace MantleDevVoxelizePrivate
 		}
 		FMantleVoxelizeOptions Options;
 		Options.TileFolder = FMantleVoxelize::TileFolderFor(World);
+		Options.bSmooth = Args.Contains(TEXT("smooth"));
 		const FMantleVoxelizeResult Result = FMantleVoxelize::Voxelize(World, Sources, Options);
 		if (!Result.IsOk())
 		{
@@ -68,7 +69,7 @@ namespace MantleDevVoxelizePrivate
 
 	FAutoConsoleCommandWithWorldAndArgs GMantleDevVoxelizeCommand(
 		TEXT("Mantle.Dev.Voxelize"),
-		TEXT("Mantle.Dev.Voxelize [all] -- voxelizes the selected actors (or every visible static mesh actor with 'all') into a block world, ")
+		TEXT("Mantle.Dev.Voxelize [all] [smooth] -- voxelizes the selected actors (or every visible static mesh actor with 'all') into a block world (smooth ground with 'smooth'), ")
 		TEXT("as Tools > Mantle > Voxelize does, and logs MANTLE_VOXELIZE ok/error and the world's problems. Saves nothing."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&Run));
 }

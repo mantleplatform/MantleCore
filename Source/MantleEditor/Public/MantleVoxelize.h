@@ -16,6 +16,12 @@ struct MANTLEEDITOR_API FMantleVoxelizeOptions
 	int32 TileSize = 32;
 
 	/**
+	 * Smooth ground instead of blocks: 50 cm voxels, each solid voxel a ground material, drawn as a smooth surface. Same shape
+	 * rules as blocks (#64); at most 32 materials.
+	 */
+	bool bSmooth = false;
+
+	/**
 	 * The content folder the tiles are saved in, one texture per block type (e.g. /Game/MantleVoxelize/Map_1). Empty makes
 	 * them in the transient package and saves nothing (the tests).
 	 */
@@ -74,7 +80,10 @@ public:
 	static FMantleVoxelizeResult ImportMbw(UWorld* World, TConstArrayView<uint8> Bytes, const FVector& Location, const FMantleVoxelizeOptions& Options);
 
 	/** Tools > Mantle > Voxelize selected meshes: the selected actors, one undoable step, a notification with what it made. */
-	static void VoxelizeSelection();
+	static void VoxelizeSelection(bool bSmooth = false);
+
+	/** VoxelizeSelection as smooth ground (the menu's second entry). */
+	static void VoxelizeSelectionSmooth() { VoxelizeSelection(/*bSmooth*/ true); }
 
 	/** Tools > Mantle > Import block world (.mbw): a file picked on disk, one undoable step, a notification. */
 	static void ImportWithDialog();

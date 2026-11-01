@@ -1700,6 +1700,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 	int32 ReflectionProbes = 0;
 	int32 Texts = 0;
 	int32 VoxelWorlds = 0;
+	int32 VoxelWorldsOfLook[2] = { 0, 0 };
 	bool bWarnedSun = false;
 	// #838: checked after the loop, once the level's packages and storage are known.
 	TArray<const AMantleScriptPoint*> ScriptPoints;
@@ -1834,7 +1835,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 		CheckEffect(Actor, Type, Effects, Result);
 		ValidatorCheckScatter(Actor, Type, ScatterInstances, Result);
 		CheckConstraint(Actor, Type, Constraints, Result);
-		// #168 step 6: a block world, held to what the place format takes, and at most one blocky world in the place.
+		// #168: a block world, held to what the place format takes, and at most one world of each look in the place.
 		if (const AMantleVoxelWorldActor* Voxel = Type == EMantleEntityType::VoxelWorld ? Cast<AMantleVoxelWorldActor>(Actor) : nullptr)
 		{
 			for (const FMantleVoxelWorldProblem& Problem : Voxel->DescribeProblems())
@@ -1847,7 +1848,8 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, LabelOf(Actor), LargestSource,
 					FString::Printf(TEXT("Undo the Voxelize, leave '%s' out of the selection, then Voxelize again."), *Voxel->LargestSource) });
 			}
-			const FString CountProblem = FMantlePlaceExporter::DescribeVoxelWorldCount(++VoxelWorlds);
+			const bool bSmoothWorld = Voxel->Look == EMantleVoxelWorldLook::Smooth;
+			const FString CountProblem = FMantlePlaceExporter::DescribeVoxelWorldCount(++VoxelWorlds, ++VoxelWorldsOfLook[bSmoothWorld ? 1 : 0], bSmoothWorld);
 			if (!CountProblem.IsEmpty())
 			{
 				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor), CountProblem, FString() });

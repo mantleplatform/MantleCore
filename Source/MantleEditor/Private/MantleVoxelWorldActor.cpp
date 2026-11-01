@@ -41,10 +41,16 @@ AMantleVoxelWorldActor::AMantleVoxelWorldActor()
 #endif
 }
 
+double AMantleVoxelWorldActor::VoxelSize() const
+{
+	return Look == EMantleVoxelWorldLook::Smooth ? MantleVoxel::SmoothVoxelSize : MantleVoxel::BlockSize;
+}
+
 void AMantleVoxelWorldActor::SetBlocks(const FMantleVoxelWorldFile& File)
 {
 	File.Write(WorldData);
 	Size = File.Size;
+	Look = File.bSmooth ? EMantleVoxelWorldLook::Smooth : EMantleVoxelWorldLook::Blocky;
 	BlockCount = 0;
 	const TArray<int64> Counts = CountBlocks();
 	for (int32 Id = 1; Id < Counts.Num(); ++Id)
@@ -127,6 +133,11 @@ TArray<FMantleVoxelWorldProblem> AMantleVoxelWorldActor::DescribeProblems() cons
 		{
 			Add(FString::Printf(TEXT("holds %s blocks but says it is %s."), *File.Size.ToString(), *Size.ToString()), TEXT("Voxelize or import the blocks again."));
 		}
+		else if (File.bSmooth != (Look == EMantleVoxelWorldLook::Smooth))
+		{
+			Add(File.bSmooth ? TEXT("holds smooth ground but its Look is Blocky.") : TEXT("holds blocks but its Look is Smooth."),
+				TEXT("Set the Look back, or Voxelize or import the ground again with the look you want."));
+		}
 		else
 		{
 			const TArray<int64> Counts = CountBlocks();
@@ -146,6 +157,11 @@ TArray<FMantleVoxelWorldProblem> AMantleVoxelWorldActor::DescribeProblems() cons
 	{
 		Add(FString::Printf(TEXT("has %d block types; a block world has 1 to %d."), BlockTypes.Num(), FMantlePlaceLimits::MaxVoxelBlockTypes),
 			BlockTypes.Num() < 1 ? TEXT("Add a block type.") : TEXT("Use fewer different meshes and materials."));
+	}
+	else if (Look == EMantleVoxelWorldLook::Smooth && BlockTypes.Num() > FMantlePlaceLimits::MaxVoxelSmoothMaterials)
+	{
+		Add(FString::Printf(TEXT("is smooth with %d block types; a smooth world's block types are its ground materials, at most %d."), BlockTypes.Num(),
+			FMantlePlaceLimits::MaxVoxelSmoothMaterials), TEXT("Use fewer ground materials, or set its Look to Blocky."));
 	}
 
 	if (TileSize != 16 && TileSize != 32 && TileSize != 64 && TileSize != 128)
@@ -237,7 +253,7 @@ void AMantleVoxelWorldActor::UpdateBounds()
 	// The box from the lowest corner (the actor's location) out to the far corner.
 	if (Bounds)
 	{
-		const FVector Extent = FVector(Size) * (MantleVoxel::BlockSize * 0.5);
+		const FVector Extent = FVector(Size) * (VoxelSize() * 0.5);
 		Bounds->SetBoxExtent(Extent, /*bUpdateOverlaps*/ false);
 		Bounds->SetRelativeLocation(Extent);
 	}
