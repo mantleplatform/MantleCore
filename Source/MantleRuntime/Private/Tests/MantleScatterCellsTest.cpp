@@ -63,7 +63,7 @@ namespace MantleScatterCellsTestPrivate
 			Out.LocalNormalX = Normal.X;
 			Out.LocalNormalY = Normal.Y;
 			Out.LocalNormalZ = Normal.Z;
-			Out.LayerWeight = static_cast<int32>((XMm / 5000) & 255);
+			Out.LayerWeight = static_cast<int32>((XMm / 800) & 255);
 			return true;
 		};
 	}
@@ -210,7 +210,7 @@ bool FMantleScatterCellsMatchWholeTest::RunTest(const FString& Parameters)
 	Ground.MinLayerWeight = 0.2;
 	Ground.MaxLayerWeight = 0.9;
 	const int32 OnTerrain = CheckCellsMatchWhole(*this, TEXT("terrain"), Ground, OnGround);
-	TestTrue(TEXT("the terrain filters drop some and keep some"), OnTerrain > 1000 && OnTerrain < Plain);
+	TestTrue(*FString::Printf(TEXT("the terrain filters drop some and keep some (%d of %d)"), OnTerrain, Plain), OnTerrain > 1000 && OnTerrain < Plain);
 	return true;
 }
 
@@ -436,8 +436,8 @@ bool FMantleScatterCellsMeasureTest::RunTest(const FString& Parameters)
 
 	// What a big Scatter costs, logged (MANTLE_SCATTER_CELLS_MEASURE): the index for 2,000,000 candidates, one ordinary cell, every cell on every core.
 	FMantleScatterParams P = CellParams();
-	P.HalfExtent = FVector(70700.0, 70700.0, 0.0); // about 2 km x 2 km
-	P.Density = 0.5;                                // about 2,000,000
+	P.HalfExtent = FVector(70700.0, 70700.0, 0.0); // about 1.4 km x 1.4 km
+	P.Density = 1.0;                                // about 2,000,000
 	P.MinSpacing = 60.0;
 	FString Error;
 	const int64 Count = FMantleScatter::CountFor(P, Error);
