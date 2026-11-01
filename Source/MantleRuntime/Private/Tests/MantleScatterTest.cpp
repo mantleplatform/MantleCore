@@ -908,12 +908,13 @@ bool FMantleScatterGroundAlignmentGoldenTest::RunTest(const FString& Parameters)
 		return true;
 	};
 	const TArray<FMantleScatterInstance> Instances = GenerateOk(*this, P, Options);
-	TestEqual(TEXT("count"), Instances.Num(), 0);
-	TestEqual(TEXT("hash"), FMantleScatter::HashText(FMantleScatter::Hash(Instances)), FString(TEXT("")));
+	TestEqual(TEXT("count"), Instances.Num(), 200);
+	TestEqual(TEXT("hash"), FMantleScatter::HashText(FMantleScatter::Hash(Instances)), FString(TEXT("39bf89f3a563a481")));
 	if (Instances.Num() > 0)
 	{
 		const FMantleScatterInstance& First = Instances[0];
-		AddInfo(FString::Printf(TEXT("first: %d %d %d yaw %d pitch %d roll %d"), First.X, First.Y, First.Z, First.Yaw, First.Pitch, First.Roll));
+		TestTrue(TEXT("the first instance's turn, in hundredths of a degree"),
+			First.X == 690 && First.Y == 6145 && First.Yaw == 34105 && First.Pitch == 6737 && First.Roll == 7222);
 	}
 	return true;
 }
