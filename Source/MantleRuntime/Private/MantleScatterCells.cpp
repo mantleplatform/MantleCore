@@ -555,9 +555,12 @@ void UMantleScatterCellsComponent::LogSummary(const bool bStarted)
 	const double IndexMb = Index.IsValid() ? static_cast<double>(Index->MemoryBytes()) / (1024.0 * 1024.0) : 0.0;
 	if (bStarted)
 	{
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_SCATTER_CELLS entity=%s candidates=%d grid=%dx%d cell_m=%.1f cells=%d instances=%lld index_mb=%.1f"),
+		UE_LOG(LogMantle, Log,
+			TEXT("MANTLE_SCATTER_CELLS entity=%s candidates=%d grid=%dx%d cell_m=%.1f cells=%d instances=%lld index_mb=%.1f built=%d gen_ms_avg=%.2f build_ms_frame_avg=%.2f build_ms_frame_max=%.2f"),
 			*Name, Index.IsValid() ? Index->NumSlots() : 0, Index.IsValid() ? Index->CellsX : 0, Index.IsValid() ? Index->CellsY : 0,
-			Index.IsValid() ? static_cast<double>(Index->CellMm) / 1000.0 : 0.0, LiveCells, LiveInstances, IndexMb);
+			Index.IsValid() ? static_cast<double>(Index->CellMm) / 1000.0 : 0.0, LiveCells, LiveInstances, IndexMb, BuiltSinceLog,
+			BuiltSinceLog > 0 ? GenerateMsSinceLog / BuiltSinceLog : 0.0,
+			ApplyFramesSinceLog > 0 ? ApplyMsSinceLog / ApplyFramesSinceLog : 0.0, ApplyMsMaxFrame);
 	}
 	else
 	{
