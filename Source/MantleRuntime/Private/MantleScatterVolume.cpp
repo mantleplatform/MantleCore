@@ -15,6 +15,9 @@
 #include "Engine/CollisionProfile.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "HAL/Event.h"
+#include "HAL/PlatformProcess.h"
+#include "HAL/PlatformTime.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/CoreMisc.h"
 #include "Scalability.h"
@@ -780,8 +783,24 @@ const TArray<FMantleScatterInstance>* AMantleScatterVolume::GenerateFullCached(F
 		FullKey.Reset();
 		return nullptr;
 	}
-	const bool bMade = bCells ? FMantleScatter::GenerateAllByCells(Params, *Index, FullInstances, OutError, Options)
-		: FMantleScatter::Generate(Params, FullInstances, OutError, Options);
+	bool bMade = false;
+	if (bCells)
+	{
+		// Every cell is read on the workers while this thread sleeps on an event: a script that asks for the hash is charged the (CPU) time of
+		// its own thread, which is none, and the server stalls once for the read, then answers from the cache.
+		FEvent* Done = FPlatformProcess::GetSynchEventFromPool(true);
+		UE::Tasks::Launch(TEXT("MantleScatterFull"), [&]()
+		{
+			bMade = FMantleScatter::GenerateAllByCells(Params, *Index, FullInstances, OutError, Options);
+			Done->Trigger();
+		}, LowLevelTasks::ETaskPriority::BackgroundNormal);
+		Done->Wait();
+		FPlatformProcess::ReturnSynchEventToPool(Done);
+	}
+	else
+	{
+		bMade = FMantleScatter::Generate(Params, FullInstances, OutError, Options);
+	}
 	if (!bMade)
 	{
 		FullKey.Reset();
