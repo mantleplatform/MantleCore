@@ -1766,11 +1766,16 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 			AMantleScatterVolume* Volume = ScatterActor ? Cast<AMantleScatterVolume>(*ScatterActor) : nullptr;
 			const FMantleEntity* ScatterEntity = Place.Entities.FindByPredicate([&ScatterId](const FMantleEntity& E) { return E.Id == ScatterId; });
 			const FMantleScatterParams* ScatterProps = ScatterEntity ? ScatterEntity->Props.TryGet<FMantleScatterParams>() : nullptr;
-			if (!Volume || !ScatterProps || !FMantleScatter::DrawsScatter(World))
+			if (!Volume || !ScatterProps)
 			{
 				continue;
 			}
+			// A dedicated server draws nothing but still answers Scatter reads from scripts, so it knows the ground too.
 			Volume->SetTerrainSurfaces(Surfaces);
+			if (!FMantleScatter::DrawsScatter(World))
+			{
+				continue;
+			}
 			RefreshBuiltScatter(Volume, *ScatterEntity, *ScatterProps,
 				EntityPath(static_cast<int32>(ScatterEntity - Place.Entities.GetData())) + TEXT("/properties"), Result.Errors);
 		}

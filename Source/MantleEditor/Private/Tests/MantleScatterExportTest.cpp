@@ -1,10 +1,12 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "MantleHeightfieldReader.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceParser.h"
 #include "MantleScatter.h"
 #include "MantleScatterEditorGround.h"
 #include "MantleScatterVolume.h"
 #include "MantleTerrainExport.h"
+#include "MantleTerrainSurface.h"
 
 #include "Dom/JsonObject.h"
 #include "Engine/World.h"

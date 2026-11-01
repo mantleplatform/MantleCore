@@ -3756,6 +3756,20 @@ int32 FMantlePlaceParser::CodePointLength(const FString& Value)
 	return Length;
 }
 
+bool FMantlePlaceParser::ParseScatterProperties(const TSharedPtr<FJsonObject>& Properties, FMantleScatterParams& Out, TArray<FMantleParseError>& OutErrors)
+{
+	Out = FMantleScatterParams();
+	if (!Properties.IsValid())
+	{
+		OutErrors.Add(FMantleParseError{ TEXT("/properties"), TEXT("expected an object") });
+		return false;
+	}
+	FParseContext Ctx;
+	ParseScatter(Ctx, Properties, TEXT("/properties"), Out);
+	OutErrors.Append(Ctx.Errors);
+	return Ctx.Errors.Num() == 0;
+}
+
 FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json)
 {
 	return ParseFromString(Json, TArray<FString>());

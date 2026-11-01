@@ -34,6 +34,14 @@ public:
 	 */
 	static FMantleParseResult ParseFromString(const FString& Json, const TArray<FString>& DiskScriptPackages, bool bAcceptDraftVehicleIds);
 
+	/**
+	 * #169: a Scatter's properties object read and checked exactly as a place file's is (the schema's keys, every limit, the
+	 * instance count). Out is the defaults plus the keys given. False, with each problem at its path under "/properties"
+	 * in OutErrors (as the parser words it in a place), when anything is refused. Server scripts that change a Scatter use it,
+	 * so a value is refused with the very message publish gives.
+	 */
+	static bool ParseScatterProperties(const TSharedPtr<FJsonObject>& Properties, FMantleScatterParams& Out, TArray<FMantleParseError>& OutErrors);
+
 	/** Parse from a file on disk. */
 	static FMantleParseResult ParseFromFile(const FString& FilePath);
 

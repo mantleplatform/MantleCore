@@ -1,6 +1,8 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleScatter.h"
 
+#include "Dom/JsonObject.h"
+#include "Dom/JsonValue.h"
 #include "Engine/World.h"
 #include "Misc/CoreMisc.h"
 
@@ -607,6 +609,98 @@ double FMantleScatter::FoliageTierDistance(const int32 FoliageQuality)
 {
 	static const double Distance[] = {0.5, 0.7, 0.85, 1.0};
 	return Distance[FMath::Clamp(FoliageQuality, 0, 3)];
+}
+
+TSharedRef<FJsonObject> FMantleScatter::ToJson(const FMantleScatterParams& Params)
+{
+	const TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+	const auto Numbers = [](std::initializer_list<double> Values)
+	{
+		TArray<TSharedPtr<FJsonValue>> Out;
+		for (const double Value : Values)
+		{
+			Out.Add(MakeShared<FJsonValueNumber>(Value));
+		}
+		return Out;
+	};
+	Json->SetNumberField(TEXT("seed"), Params.Seed);
+	Json->SetArrayField(TEXT("halfExtent"), Numbers({ Params.HalfExtent.X, Params.HalfExtent.Y, Params.HalfExtent.Z }));
+	Json->SetNumberField(TEXT("density"), Params.Density);
+	Json->SetArrayField(TEXT("scale"), Numbers({ Params.MinScale, Params.MaxScale }));
+	Json->SetStringField(TEXT("alignment"), AlignmentName(Params.Alignment));
+	Json->SetNumberField(TEXT("maxTilt"), Params.MaxTiltDegrees);
+	TArray<TSharedPtr<FJsonValue>> Meshes;
+	for (const FMantleScatterMesh& Mesh : Params.Meshes)
+	{
+		const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+		Entry->SetStringField(TEXT("mesh"), Mesh.MeshId);
+		Entry->SetNumberField(TEXT("weight"), Mesh.Weight);
+		if (Mesh.Materials.Num() > 0)
+		{
+			TArray<TSharedPtr<FJsonValue>> Materials;
+			for (const FString& Material : Mesh.Materials)
+			{
+				Materials.Add(Material.IsEmpty() ? TSharedPtr<FJsonValue>(MakeShared<FJsonValueNull>())
+					: TSharedPtr<FJsonValue>(MakeShared<FJsonValueString>(Material)));
+			}
+			Entry->SetArrayField(TEXT("materials"), Materials);
+		}
+		Meshes.Add(MakeShared<FJsonValueObject>(Entry));
+	}
+	Json->SetArrayField(TEXT("meshes"), Meshes);
+	if (Params.DrawDistance > 0.0)
+	{
+		Json->SetNumberField(TEXT("drawDistance"), Params.DrawDistance);
+	}
+	if (Params.Placement == EMantleScatterPlacement::Terrain)
+	{
+		Json->SetStringField(TEXT("placement"), PlacementName(Params.Placement));
+		Json->SetNumberField(TEXT("maxSlopeDegrees"), Params.MaxSlopeDegrees);
+		if (Params.MinHeight.IsSet())
+		{
+			Json->SetNumberField(TEXT("minHeight"), Params.MinHeight.GetValue());
+		}
+		if (Params.MaxHeight.IsSet())
+		{
+			Json->SetNumberField(TEXT("maxHeight"), Params.MaxHeight.GetValue());
+		}
+	}
+	if (Params.Shape != EMantleScatterShape::Box)
+	{
+		Json->SetStringField(TEXT("shape"), ShapeName(Params.Shape));
+	}
+	if (Params.Shape == EMantleScatterShape::Disc)
+	{
+		Json->SetNumberField(TEXT("radius"), Params.Radius);
+	}
+	if (Params.Shape == EMantleScatterShape::Path)
+	{
+		TArray<TSharedPtr<FJsonValue>> Points;
+		for (const FVector2D& Point : Params.Path)
+		{
+			Points.Add(MakeShared<FJsonValueArray>(Numbers({ Point.X, Point.Y })));
+		}
+		Json->SetArrayField(TEXT("path"), Points);
+		Json->SetNumberField(TEXT("width"), Params.Width);
+	}
+	if (Params.Exclusions.Num() > 0)
+	{
+		TArray<TSharedPtr<FJsonValue>> Exclusions;
+		for (const FMantleScatterExclusion& Exclusion : Params.Exclusions)
+		{
+			const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+			Entry->SetArrayField(TEXT("center"), Numbers({ Exclusion.Center.X, Exclusion.Center.Y }));
+			Entry->SetArrayField(TEXT("halfExtent"), Numbers({ Exclusion.HalfExtent.X, Exclusion.HalfExtent.Y }));
+			Exclusions.Add(MakeShared<FJsonValueObject>(Entry));
+		}
+		Json->SetArrayField(TEXT("exclusions"), Exclusions);
+	}
+	if (Params.ClusterCount > 0)
+	{
+		Json->SetNumberField(TEXT("clusterCount"), Params.ClusterCount);
+		Json->SetNumberField(TEXT("clusterRadius"), Params.ClusterRadius);
+	}
+	return Json;
 }
 
 FTransform FMantleScatter::ToTransform(const FMantleScatterInstance& Instance)

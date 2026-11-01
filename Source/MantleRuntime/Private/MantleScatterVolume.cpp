@@ -316,56 +316,7 @@ bool AMantleScatterVolume::RefreshScatter(FString& OutError)
 	}
 	if (Params.Placement == EMantleScatterPlacement::Terrain)
 	{
-		Options.Ground = [Surfaces = TerrainSurfaces, ScatterToWorld = GetActorTransform()](
-			const int64 XMm, const int64 YMm, FMantleScatterGround& Out) -> bool
-		{
-			// The point's world X-Y; the highest surface under it wins, holes and the terrain's edge leave none.
-			const FVector World = ScatterToWorld.TransformPosition(FVector(static_cast<double>(XMm) * 0.1, static_cast<double>(YMm) * 0.1, 0.0));
-			bool bFound = false;
-			double BestZ = 0.0;
-			FVector BestNormal = FVector::UpVector;
-			for (const FMantleScatterTerrainSurface& Surface : Surfaces)
-			{
-				if (!Surface.Field.IsValid())
-				{
-					continue;
-				}
-				const FMantleHeightfield& Field = *Surface.Field;
-				const FVector Local = Surface.TerrainToWorld.InverseTransformPosition(World);
-				if (!(Local.X >= 0.0 && Local.Y >= 0.0 && Local.X <= Field.ExtentX() && Local.Y <= Field.ExtentY()))
-				{
-					continue;
-				}
-				if (Surface.Holes.IsValid() && Surface.Holes->IsHoleAt(Local.X / Field.SpacingX, Local.Y / Field.SpacingY))
-				{
-					continue;
-				}
-				float Height = 0.0f;
-				FVector3f Normal = FVector3f::UpVector;
-				if (!FMantleTerrainGrassGenerator::SurfaceAt(Field, Local.X, Local.Y, Height, Normal))
-				{
-					continue;
-				}
-				const double SurfaceZ = Surface.TerrainToWorld.TransformPosition(FVector(Local.X, Local.Y, static_cast<double>(Height))).Z;
-				if (!bFound || SurfaceZ > BestZ)
-				{
-					bFound = true;
-					BestZ = SurfaceZ;
-					BestNormal = Surface.TerrainToWorld.TransformVectorNoScale(FVector(Normal)).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
-				}
-			}
-			if (!bFound)
-			{
-				return false;
-			}
-			// Rounded to whole millimetres in the scatter's own space, the fixed point every machine agrees on.
-			const double LocalZ = ScatterToWorld.InverseTransformPosition(FVector(World.X, World.Y, BestZ)).Z;
-			const double Millimetres = LocalZ * 10.0;
-			Out.ZMm = static_cast<int64>(FMath::FloorToDouble(Millimetres + 0.5));
-			Out.NormalZ = BestNormal.Z;
-			Out.WorldZCm = BestZ;
-			return true;
-		};
+		Options.Ground = MakeGround();
 	}
 
 	TArray<FMantleScatterInstance> Instances;
@@ -590,3 +541,87 @@ void AMantleScatterVolume::PostEditChangeProperty(FPropertyChangedEvent& Propert
 	RefreshEditorPreview();
 }
 #endif
+
+FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
+{
+	return [Surfaces = TerrainSurfaces, ScatterToWorld = GetActorTransform()](
+		const int64 XMm, const int64 YMm, FMantleScatterGround& Out) -> bool
+	{
+		// The point's world X-Y; the highest surface under it wins, holes and the terrain's edge leave none.
+		const FVector World = ScatterToWorld.TransformPosition(FVector(static_cast<double>(XMm) * 0.1, static_cast<double>(YMm) * 0.1, 0.0));
+		bool bFound = false;
+		double BestZ = 0.0;
+		FVector BestNormal = FVector::UpVector;
+		for (const FMantleScatterTerrainSurface& Surface : Surfaces)
+		{
+			if (!Surface.Field.IsValid())
+			{
+				continue;
+			}
+			const FMantleHeightfield& Field = *Surface.Field;
+			const FVector Local = Surface.TerrainToWorld.InverseTransformPosition(World);
+			if (!(Local.X >= 0.0 && Local.Y >= 0.0 && Local.X <= Field.ExtentX() && Local.Y <= Field.ExtentY()))
+			{
+				continue;
+			}
+			if (Surface.Holes.IsValid() && Surface.Holes->IsHoleAt(Local.X / Field.SpacingX, Local.Y / Field.SpacingY))
+			{
+				continue;
+			}
+			float Height = 0.0f;
+			FVector3f Normal = FVector3f::UpVector;
+			if (!FMantleTerrainGrassGenerator::SurfaceAt(Field, Local.X, Local.Y, Height, Normal))
+			{
+				continue;
+			}
+			const double SurfaceZ = Surface.TerrainToWorld.TransformPosition(FVector(Local.X, Local.Y, static_cast<double>(Height))).Z;
+			if (!bFound || SurfaceZ > BestZ)
+			{
+				bFound = true;
+				BestZ = SurfaceZ;
+				BestNormal = Surface.TerrainToWorld.TransformVectorNoScale(FVector(Normal)).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
+			}
+		}
+		if (!bFound)
+		{
+			return false;
+		}
+		// Rounded to whole millimetres in the scatter's own space, the fixed point every machine agrees on.
+		const double LocalZ = ScatterToWorld.InverseTransformPosition(FVector(World.X, World.Y, BestZ)).Z;
+		const double Millimetres = LocalZ * 10.0;
+		Out.ZMm = static_cast<int64>(FMath::FloorToDouble(Millimetres + 0.5));
+		Out.NormalZ = BestNormal.Z;
+		Out.WorldZCm = BestZ;
+		return true;
+	};
+}
+
+bool AMantleScatterVolume::GenerateFull(TArray<FMantleScatterInstance>& OutInstances, FString& OutError) const
+{
+	// Cached under everything the instances depend on: the settings, the Terrains below and where this volume stands.
+	const FString Key = SettingsKey() + TEXT("|x") + GetActorTransform().ToString();
+	if (FullKey.Equals(Key, ESearchCase::CaseSensitive))
+	{
+		OutInstances = FullInstances;
+		return true;
+	}
+	FMantleScatterParams Params;
+	if (!ReadProps(Params, OutError))
+	{
+		return false;
+	}
+	FMantleScatterGenerateOptions Options;
+	if (Params.Placement == EMantleScatterPlacement::Terrain)
+	{
+		Options.Ground = MakeGround();
+	}
+	if (!FMantleScatter::Generate(Params, FullInstances, OutError, Options))
+	{
+		FullKey.Reset();
+		return false;
+	}
+	FullKey = Key;
+	FullHash = FMantleScatter::Hash(FullInstances);
+	OutInstances = FullInstances;
+	return true;
+}

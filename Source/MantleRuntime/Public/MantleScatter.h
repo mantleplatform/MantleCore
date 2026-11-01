@@ -21,6 +21,7 @@
 #include "MantleScatter.generated.h"
 
 class UWorld;
+class FJsonObject;
 
 /** How each instance is turned. The place schema's alignment enum, in this order. */
 UENUM()
@@ -233,6 +234,12 @@ public:
 
 	/** FNV-1a over every field of every instance: one number two clients' logs can be compared by. */
 	static uint64 Hash(TConstArrayView<FMantleScatterInstance> Instances);
+
+	/**
+	 * Params as a Scatter's place-file properties object, every key written (so FMantlePlaceParser::ParseScatterProperties
+	 * reads it back to the same parameters). The way a server script's change of settings is overlaid and sent to clients.
+	 */
+	static TSharedRef<FJsonObject> ToJson(const FMantleScatterParams& Params);
 
 	/** Hash as 16 lowercase hex digits, the form logs and tests print. */
 	static FString HashText(uint64 InHash);

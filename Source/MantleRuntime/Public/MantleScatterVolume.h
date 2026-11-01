@@ -228,6 +228,16 @@ public:
 	 */
 	bool RefreshScatter(FString& OutError);
 
+	/**
+	 * Every instance of the current settings at the full stream (no Foliage tier), generated without building anything:
+	 * what Scatter reads for scripts (Entity:InstancesIn, GetScatterHash). Works on a dedicated server, which draws nothing.
+	 * The instances are in the volume's own space. False with OutError when the settings cannot generate.
+	 */
+	bool GenerateFull(TArray<FMantleScatterInstance>& OutInstances, FString& OutError) const;
+
+	/** FMantleScatter::Hash of the last GenerateFull's instances. */
+	uint64 GetFullHash() const { return FullHash; }
+
 	/** Removes the built instances. */
 	void ClearScatter();
 
@@ -267,6 +277,14 @@ private:
 	/** Built at runtime (and for the editor preview), never saved. */
 	UPROPERTY(Transient, DuplicateTransient, TextExportTransient)
 	TArray<TObjectPtr<UInstancedStaticMeshComponent>> ScatterComponents;
+
+	/** The ground under a point in the volume's space, from TerrainSurfaces and the volume's transform now. */
+	FMantleScatterGroundFn MakeGround() const;
+
+	/** GenerateFull's cache. */
+	mutable TArray<FMantleScatterInstance> FullInstances;
+	mutable FString FullKey;
+	mutable uint64 FullHash = 0;
 
 	/** The ground Terrain placement drops onto, and the volume's transform it was set for. */
 	TArray<FMantleScatterTerrainSurface> TerrainSurfaces;
