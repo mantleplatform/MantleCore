@@ -56,7 +56,7 @@ public:
 	TMap<FString, FString> LibraryItemByLink;
 
 	/**
-	 * How many times each LibraryItemByLink key's item was forgotten (it was deleted or delisted), same keys. It goes into the
+	 * How many times each LibraryItemByLink key's item was forgotten (it was deleted), same keys. It goes into the
 	 * Idempotency-Key of the next item the vehicle creates, so a new item is not mistaken for a retry of the old creation.
 	 */
 	UPROPERTY(config, VisibleAnywhere, Category = "Library")
@@ -127,7 +127,7 @@ public:
 	/** Records the vehicle's library item for this account and API, and saves immediately. */
 	void RememberLibraryItemForVehicle(const FString& ApiBaseUrl, const FString& AccountId, const FString& SourcePath, const FString& ItemId);
 
-	/** Forgets the vehicle's library item for this account and API only (it is gone, delisted, or not this account's), bumps the vehicle's generation, and saves immediately. */
+	/** Forgets the vehicle's library item for this account and API only (it is gone, or not this account's), bumps the vehicle's generation, and saves immediately. */
 	void ForgetLibraryItemForVehicle(const FString& ApiBaseUrl, const FString& AccountId, const FString& SourcePath);
 
 	/** How often the vehicle's library item was forgotten for this account and API: 0 until it first is. */

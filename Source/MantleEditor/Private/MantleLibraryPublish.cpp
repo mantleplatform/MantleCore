@@ -435,11 +435,6 @@ FString FMantleLibraryPublish::MakeThumbnailPatchBody(const FString& ThumbnailAs
 	return MantleLibraryPublishPrivate::WriteLibraryObject(Body);
 }
 
-bool FMantleLibraryPublish::IsDelisted(const FString& ItemStatus)
-{
-	return ItemStatus.Equals(TEXT("delisted"), ESearchCase::CaseSensitive);
-}
-
 bool FMantleLibraryPublish::IsTakenDown(const FString& ItemStatus)
 {
 	return ItemStatus.Equals(TEXT("taken_down"), ESearchCase::CaseSensitive);

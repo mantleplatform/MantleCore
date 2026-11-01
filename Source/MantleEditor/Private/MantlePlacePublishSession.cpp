@@ -2194,12 +2194,6 @@ void FMantlePlacePublishSession::HandleLibraryResponse(const FMantleApiResult& R
 			RestartLibraryJobAsNew(TEXT("no longer exists"));
 			return;
 		}
-		if (!Job.bForgotten && bExistingItemStep && Response.StatusCode == 409 && Response.Code.Equals(TEXT("item_delisted"), ESearchCase::CaseSensitive))
-		{
-			// Delisted between the read and this request.
-			RestartLibraryJobAsNew(TEXT("was delisted"));
-			return;
-		}
 		if (Job.bPackage && Response.StatusCode == 409 && Response.Code.Equals(TEXT("script_unavailable"), ESearchCase::CaseSensitive)
 			&& !Response.Message.Contains(TEXT("refused by moderation")))
 		{
@@ -2237,14 +2231,8 @@ void FMantlePlacePublishSession::HandleLibraryResponse(const FMantleApiResult& R
 		FMantleLibraryPublish::ReadItemState(Response.Body, Visibility, Status);
 		if (FMantleLibraryPublish::IsTakenDown(Status))
 		{
-			// A moderator removed it. Unlike a delisted item it is not replaced by a new one for the same content.
+			// A moderator removed it. It is not replaced by a new one for the same content.
 			Fail(FString::Printf(TEXT("'%s' was taken down by a Mantle moderator after a complaint, so it cannot be published again. Use different content."), *Job.Name));
-			return;
-		}
-		if (FMantleLibraryPublish::IsDelisted(Status))
-		{
-			// A delisted item takes no versions and no edits: it stays delisted, and this vehicle gets a new item.
-			RestartLibraryJobAsNew(TEXT("was delisted"));
 			return;
 		}
 		Job.ExistingVersion = 0;

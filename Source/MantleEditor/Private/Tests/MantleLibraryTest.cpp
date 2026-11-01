@@ -336,38 +336,83 @@ bool FMantleLibraryStorageCapTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleLibraryStorageDelistedTest,
-	"Mantle.Library.Storage.RefusesAddingADelistedItem",
+	FMantleLibraryStorageUsableStatusTest,
+	"Mantle.Library.Storage.OnlyAnActiveItemIsUsable",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleLibraryStorageDelistedTest::RunTest(const FString& Parameters)
+bool FMantleLibraryStorageUsableStatusTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleLibraryTestPrivate;
-	TestTrue(TEXT("a delisted item still loads"), FMantleLibraryStorage::IsUsableStatus(TEXT("delisted")));
-	TestFalse(TEXT("but may not be newly added"), FMantleLibraryStorage::IsAddableStatus(TEXT("delisted")));
-	TestTrue(TEXT("an active item may be added"), FMantleLibraryStorage::IsAddableStatus(TEXT("active")));
-	TestFalse(TEXT("an unknown status may not"), FMantleLibraryStorage::IsAddableStatus(TEXT("removed")));
-	TestFalse(TEXT("nor an empty one"), FMantleLibraryStorage::IsAddableStatus(FString()));
+	TestTrue(TEXT("an active item may be added"), FMantleLibraryStorage::IsUsableStatus(TEXT("active")));
+	TestFalse(TEXT("a status that no longer exists may not"), FMantleLibraryStorage::IsUsableStatus(TEXT("delisted")));
+	TestFalse(TEXT("an unknown status may not"), FMantleLibraryStorage::IsUsableStatus(TEXT("removed")));
+	TestFalse(TEXT("nor an empty one"), FMantleLibraryStorage::IsUsableStatus(FString()));
 
-	// A new add of a delisted item is refused, and says why.
 	TArray<FMantleStorageEntry> Entries;
-	const FMantleLibraryAddPlan New = FMantleLibraryStorage::PlanAdd(Entries, ItemTruck, TEXT("Truck"), 2, TEXT("delisted"));
-	TestTrue(TEXT("a delisted item is not added"), New.Result == EMantleLibraryAdd::Invalid);
-	TestTrue(TEXT("and the message says delisted"), New.Message.Contains(TEXT("delisted")));
-	TestFalse(TEXT("with no entry to append"), New.Entry.Item.Equals(ItemTruck));
-
-	// An entry already stored stays; a newer version of it is not offered as an update.
 	Entries.Add(MakeEntry(TEXT("Truck"), ItemTruck, 1));
-	const FMantleLibraryAddPlan Stored = FMantleLibraryStorage::PlanAdd(Entries, ItemTruck, TEXT("Truck"), 2, TEXT("delisted"));
-	TestTrue(TEXT("a stored delisted item is reported as stored"), Stored.Result == EMantleLibraryAdd::AlreadyStored);
-	TestFalse(TEXT("with no update offered"), Stored.Message.Contains(TEXT("Update to")));
-	TestTrue(TEXT("and the reason named"), Stored.Message.Contains(TEXT("delisted")));
 	const FMantleLibraryAddPlan Active = FMantleLibraryStorage::PlanAdd(Entries, ItemTruck, TEXT("Truck"), 2, TEXT("active"));
 	TestTrue(TEXT("an active item still offers the update"), Active.Message.Contains(TEXT("Update to v2")));
-
-	// A different item that is active is still added beside it.
-	TestTrue(TEXT("another, active item is added"),
+	TestTrue(TEXT("another, active item is added beside it"),
 		FMantleLibraryStorage::PlanAdd(Entries, ItemBus, TEXT("Bus"), 1, TEXT("active")).Result == EMantleLibraryAdd::Added);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleLibraryDeleteRefusalTest,
+	"Mantle.Library.Delete.ExplainsWhyAnItemWasNotDeleted",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleLibraryDeleteRefusalTest::RunTest(const FString& Parameters)
+{
+	// item_in_use: the places by name, yours or not, live or staged, and what to do first.
+	FMantleApiResult InUse;
+	InUse.StatusCode = 409;
+	InUse.Code = TEXT("item_in_use");
+	InUse.Message = TEXT("server words");
+	InUse.Body = TEXT("{\"code\":\"item_in_use\",\"message\":\"x\",\"places\":[{\"id\":\"p1\",\"name\":\"Arena\",\"revision\":\"live\",\"yours\":true},{\"id\":\"p2\",\"name\":\"Harbor\",\"revision\":\"staged\",\"yours\":false}]}");
+	TArray<FMantleLibraryUsePlace> Places;
+	if (TestTrue(TEXT("the refusal is read"), FMantleApiClient::ParseItemInUse(InUse, Places)) && TestEqual(TEXT("two places"), Places.Num(), 2))
+	{
+		TestEqual(TEXT("the first is Arena"), Places[0].Name, FString(TEXT("Arena")));
+		TestTrue(TEXT("it is yours"), Places[0].bYours);
+		TestEqual(TEXT("and live"), Places[0].Revision, FString(TEXT("live")));
+		TestFalse(TEXT("the second is not yours"), Places[1].bYours);
+		TestEqual(TEXT("and staged"), Places[1].Revision, FString(TEXT("staged")));
+	}
+	const FString Text = FMantleLibraryStorage::DescribeDeleteRefusal(InUse, TEXT("Truck"));
+	TestTrue(TEXT("names the item"), Text.Contains(TEXT("\"Truck\"")));
+	TestTrue(TEXT("names a place marked yours and live"), Text.Contains(TEXT("Arena (yours, live version)")));
+	TestTrue(TEXT("names a place marked not yours and staged"), Text.Contains(TEXT("Harbor (not yours, staged version)")));
+	TestTrue(TEXT("says to remove it from storage and republish first"), Text.Contains(TEXT("Remove it from those places' storage and republish them first")));
+
+	// The same code with another status, a body without places, or another code is not that refusal.
+	FMantleApiResult Wrong = InUse;
+	Wrong.StatusCode = 500;
+	TestFalse(TEXT("another status is not the refusal"), FMantleApiClient::ParseItemInUse(Wrong, Places) || Places.Num() != 0);
+	Wrong = InUse;
+	Wrong.Body = TEXT("{\"code\":\"item_in_use\"}");
+	TestFalse(TEXT("no places is not readable"), FMantleApiClient::ParseItemInUse(Wrong, Places));
+	Wrong = InUse;
+	Wrong.Code = TEXT("item_taken_down");
+	TestFalse(TEXT("another code is not the refusal"), FMantleApiClient::ParseItemInUse(Wrong, Places));
+
+	// Every other refusal shows the server's message.
+	FMantleApiResult TakenDown;
+	TakenDown.StatusCode = 409;
+	TakenDown.Code = TEXT("item_taken_down");
+	TakenDown.Message = TEXT("A moderator took this item down.");
+	TestEqual(TEXT("item_taken_down shows the server's message"), FMantleLibraryStorage::DescribeDeleteRefusal(TakenDown, TEXT("Truck")), TakenDown.Message);
+	FMantleApiResult Silent;
+	Silent.StatusCode = 0;
+	TestFalse(TEXT("a failure without words still says something"), FMantleLibraryStorage::DescribeDeleteRefusal(Silent, TEXT("Truck")).IsEmpty());
+
+	// The question asked before deleting.
+	const FString Ask = FMantleLibraryStorage::DeleteConfirmText(TEXT("Truck"));
+	TestTrue(TEXT("the question names the item"), Ask.Contains(TEXT("\"Truck\"")));
+	TestTrue(TEXT("says for good"), Ask.Contains(TEXT("for good")));
+	TestTrue(TEXT("says it cannot be undone"), Ask.Contains(TEXT("cannot be undone")));
+	TestTrue(TEXT("says people who added it lose it"), Ask.Contains(TEXT("loses it")));
+	TestTrue(TEXT("points at making it private"), Ask.Contains(TEXT("private")));
 	return true;
 }
 
@@ -476,10 +521,8 @@ bool FMantleLibraryTakenDownStatusTest::RunTest(const FString& Parameters)
 	const FString TakenDown(TEXT("taken_down"));
 	TestTrue(TEXT("taken_down is the taken-down status"), FMantleLibraryStorage::IsTakenDownStatus(TakenDown));
 	TestFalse(TEXT("active is not"), FMantleLibraryStorage::IsTakenDownStatus(TEXT("active")));
-	TestFalse(TEXT("delisted is not"), FMantleLibraryStorage::IsTakenDownStatus(TEXT("delisted")));
 	TestFalse(TEXT("the status is case sensitive"), FMantleLibraryStorage::IsTakenDownStatus(TEXT("Taken_Down")));
 	TestFalse(TEXT("a taken-down item does not load, so it is not usable"), FMantleLibraryStorage::IsUsableStatus(TakenDown));
-	TestFalse(TEXT("and may not be added or re-pinned"), FMantleLibraryStorage::IsAddableStatus(TakenDown));
 
 	// A new add is refused, with the taken-down note.
 	const FMantleLibraryAddPlan Add = FMantleLibraryStorage::PlanAdd(TArray<FMantleStorageEntry>(), ItemTruck, TEXT("Truck"), 2, TakenDown);
@@ -498,10 +541,8 @@ bool FMantleLibraryTakenDownStatusTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("it points at removing it"), Again.Message.Contains(TEXT("Remove it from storage")));
 	TestEqual(TEXT("planning does not change the stored entry"), Stored[0].Version, 1);
 
-	// Active and delisted keep their rules.
+	// Active keeps its rule.
 	TestTrue(TEXT("an active item is still added"), FMantleLibraryStorage::PlanAdd(TArray<FMantleStorageEntry>(), ItemTruck, TEXT("Truck"), 2, TEXT("active")).Result == EMantleLibraryAdd::Added);
-	TestTrue(TEXT("a delisted item is still refused as delisted"),
-		FMantleLibraryStorage::PlanAdd(TArray<FMantleStorageEntry>(), ItemTruck, TEXT("Truck"), 2, TEXT("delisted")).Message.Contains(TEXT("delisted")));
 
 	// A card with the status reads from the API.
 	TArray<FMantleLibraryCard> Cards;

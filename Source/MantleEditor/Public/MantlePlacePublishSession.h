@@ -630,7 +630,7 @@ private:
 		/** #838: a script package, Packages[PackageIndex]: its item is made with kind "script" from its files and manifest. */
 		bool bPackage = false;
 		int32 PackageIndex = INDEX_NONE;
-		/** A remembered item that is gone or delisted is forgotten once, then a new one is made. */
+		/** A remembered item that is gone is forgotten once, then a new one is made. */
 		bool bForgotten = false;
 		/** What Looking found: the version of the remembered item that already holds AssetId, 0 for none. */
 		int32 ExistingVersion = 0;

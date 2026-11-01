@@ -310,7 +310,7 @@ bool FMantleLibraryPublishBodiesTest::RunTest(const FString& Parameters)
 	TestNotEqual(TEXT("another visibility has another"), FMantleLibraryPublish::MakeIdempotencyKey(TEXT("/Game/Cars/V"), AssetTruck, false), Key);
 	TestTrue(TEXT("it is a printable key without spaces within 128 characters"), Key.Len() >= 1 && Key.Len() <= 128 && !Key.Contains(TEXT(" ")));
 
-	// A vehicle whose item was forgotten (deleted or delisted) makes a new item, which must not replay the old creation.
+	// A vehicle whose item was forgotten (deleted) makes a new item, which must not replay the old creation.
 	TestEqual(TEXT("generation 0 is the key a vehicle always had"), FMantleLibraryPublish::MakeIdempotencyKey(TEXT("/Game/Cars/V"), AssetTruck, true, 0), Key);
 	const FString SecondKey = FMantleLibraryPublish::MakeIdempotencyKey(TEXT("/Game/Cars/V"), AssetTruck, true, 1);
 	TestNotEqual(TEXT("a later generation has another key"), SecondKey, Key);
@@ -322,7 +322,7 @@ bool FMantleLibraryPublishBodiesTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleLibraryPublishExistingItemTest,
-	"Mantle.LibraryPublish.Requests.AnExistingItemFollowsTheChoiceAndADelistedOneIsReplaced",
+	"Mantle.LibraryPublish.Requests.AnExistingItemFollowsTheChoice",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantleLibraryPublishExistingItemTest::RunTest(const FString& Parameters)
@@ -359,10 +359,6 @@ bool FMantleLibraryPublishExistingItemTest::RunTest(const FString& Parameters)
 	const TSharedPtr<FJsonObject> PictureOnly = ReadObject(FMantleLibraryPublish::MakeThumbnailPatchBody(TEXT("ast_x")));
 	TestTrue(TEXT("a picture-only edit names the picture"), PictureOnly.IsValid() && PictureOnly->HasField(TEXT("thumbnailAssetId")));
 	TestTrue(TEXT("and not the visibility or a declaration"), PictureOnly.IsValid() && !PictureOnly->HasField(TEXT("visibility")) && !PictureOnly->HasField(TEXT("rightsDeclarationVersion")));
-
-	TestTrue(TEXT("delisted is delisted"), FMantleLibraryPublish::IsDelisted(TEXT("delisted")));
-	TestFalse(TEXT("active is not"), FMantleLibraryPublish::IsDelisted(TEXT("active")));
-	TestFalse(TEXT("nor is an empty status"), FMantleLibraryPublish::IsDelisted(FString()));
 
 	const TSharedPtr<FJsonObject> ToPublic = ReadObject(FMantleLibraryPublish::MakeVisibilityPatchBody(true));
 	if (TestTrue(TEXT("the public patch is JSON"), ToPublic.IsValid()))
@@ -591,10 +587,8 @@ bool FMantleLibraryPublishModerationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("duplicate: gives the two ways out"), DuplicateText.Contains(TEXT("Publish it privately, or contact support if it is yours.")));
 
 	TestTrue(TEXT("taken_down is taken down"), FMantleLibraryPublish::IsTakenDown(TEXT("taken_down")));
-	TestFalse(TEXT("delisted is not"), FMantleLibraryPublish::IsTakenDown(TEXT("delisted")));
 	TestFalse(TEXT("nor is active"), FMantleLibraryPublish::IsTakenDown(TEXT("active")));
 	TestFalse(TEXT("the status is case sensitive"), FMantleLibraryPublish::IsTakenDown(TEXT("Taken_Down")));
-	TestFalse(TEXT("a taken-down item is not delisted (it is never replaced by a new one)"), FMantleLibraryPublish::IsDelisted(TEXT("taken_down")));
 	return true;
 }
 
