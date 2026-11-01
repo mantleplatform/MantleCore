@@ -654,7 +654,7 @@ FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
 				BestNormal = Surface.TerrainToWorld.TransformVectorNoScale(FVector(Normal)).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
 				if (Layer >= 0)
 				{
-					BestWeight = PaintLayerWeightAt(Surface, Layer, Local.X / Field.ExtentX(), Local.Y / Field.ExtentY());
+					BestWeight = MantleScatterVolumePrivate::PaintLayerWeightAt(Surface, Layer, Local.X / Field.ExtentX(), Local.Y / Field.ExtentY());
 				}
 			}
 		}
