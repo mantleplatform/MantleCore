@@ -470,4 +470,90 @@ bool FMantleVoxelizeCheckCountTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVoxelizeShapesTest,
+	"Mantle.Editor.Voxelize.FillsTheShapeNotItsBounds",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVoxelizeShapesTest::RunTest(const FString& Parameters)
+{
+	// #64: a closed mesh fills only the cells whose centre is inside it, and an open one the cells its surface passes through.
+	using namespace MantleVoxelizeTestPrivate;
+	UStaticMesh* Sphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane"));
+	if (!TestNotNull(TEXT("the engine sphere"), Sphere) || !TestNotNull(TEXT("the engine plane"), Plane))
+	{
+		return false;
+	}
+	{
+		FVoxelWorld Fixture;
+		if (!TestNotNull(TEXT("a world"), Fixture.World))
+		{
+			return false;
+		}
+		// A 1000 cm ball: about 4/3 pi 5^3 = 524 blocks inside it, against 1000 for its bounds.
+		const FMantleVoxelizeResult Ball = FMantleVoxelize::Voxelize(Fixture.World, { SpawnCube(Fixture.World, Sphere, FVector(500.0), TEXT("Ball"), 10.0) }, FMantleVoxelizeOptions());
+		if (TestTrue(FString::Printf(TEXT("the ball voxelizes (%s)"), *Ball.Error), Ball.IsOk()))
+		{
+			TestTrue(FString::Printf(TEXT("the ball fills about its volume, not its box (%lld blocks)"), Ball.Blocks), Ball.Blocks > 400 && Ball.Blocks < 650);
+		}
+	}
+	{
+		FVoxelWorld Fixture;
+		if (!TestNotNull(TEXT("a world"), Fixture.World))
+		{
+			return false;
+		}
+		// A 1000 cm square plane, open and flat: one layer of 10 x 10 blocks, where its bounds alone filled none.
+		const FMantleVoxelizeResult Floor = FMantleVoxelize::Voxelize(Fixture.World, { SpawnCube(Fixture.World, Plane, FVector(500.0, 500.0, 50.0), TEXT("Floor"), 10.0) }, FMantleVoxelizeOptions());
+		if (TestTrue(FString::Printf(TEXT("the plane voxelizes (%s)"), *Floor.Error), Floor.IsOk()))
+		{
+			TestEqual(TEXT("a flat plane is one layer of blocks under its surface"), Floor.Blocks, int64(100));
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVoxelizeLargestSourceTest,
+	"Mantle.Editor.Voxelize.CheckNamesAMeshThatFillsMostOfTheWorld",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVoxelizeLargestSourceTest::RunTest(const FString& Parameters)
+{
+	// #64: one source that makes most of the blocks (a sky dome filled solid) is named, by Voxelize and by Check.
+	using namespace MantleVoxelizeTestPrivate;
+	UStaticMesh* Cube = LoadCube();
+	FVoxelWorld Fixture;
+	if (!TestNotNull(TEXT("the engine cube"), Cube) || !TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	const TArray<AActor*> Sources = {
+		SpawnCube(Fixture.World, Cube, FVector(1000.0, 1000.0, 1000.0), TEXT("Dome"), 20.0),
+		SpawnCube(Fixture.World, Cube, FVector(2150.0, 50.0, 50.0), TEXT("Crate")),
+	};
+	const FMantleVoxelizeResult Result = FMantleVoxelize::Voxelize(Fixture.World, Sources, FMantleVoxelizeOptions());
+	if (!TestTrue(FString::Printf(TEXT("it voxelizes (%s)"), *Result.Error), Result.IsOk()))
+	{
+		return false;
+	}
+	TestEqual(TEXT("the dome is the largest source"), Result.World->LargestSource, FString(TEXT("Dome")));
+	TestEqual(TEXT("with its 20^3 blocks"), Result.World->LargestSourceBlocks, int64(8000));
+	TestTrue(TEXT("Voxelize warns, naming it"), Result.Warning.Contains(TEXT("'Dome'")));
+	TestEqual(TEXT("Check says the same"), Result.World->DescribeLargestSource(), Result.Warning);
+	TestEqual(TEXT("it is a warning, not a problem: the world still publishes"), Result.World->DescribeProblems().Num(), 0);
+
+	// A world of only small cubes has no largest-source warning.
+	FVoxelWorld Small;
+	if (TestNotNull(TEXT("a second world"), Small.World))
+	{
+		const FMantleVoxelizeResult Cubes = FMantleVoxelize::Voxelize(Small.World, SpawnCubeScene(Small.World, Cube), FMantleVoxelizeOptions());
+		TestTrue(TEXT("the cube scene voxelizes"), Cubes.IsOk());
+		TestTrue(TEXT("and has no warning"), Cubes.Warning.IsEmpty());
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

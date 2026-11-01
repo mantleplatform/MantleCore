@@ -162,6 +162,19 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Mantle")
 	int64 BlockCount = 0;
 
+	/** The source actor Voxelize made the most blocks from, and how many (#64): Check warns when it is most of the world. */
+	UPROPERTY(VisibleAnywhere, Category = "Mantle")
+	FString LargestSource;
+
+	UPROPERTY(VisibleAnywhere, Category = "Mantle")
+	int64 LargestSourceBlocks = 0;
+
+	/**
+	 * A warning when one voxelized source made more than half of a world of at least one section's worth of blocks: usually
+	 * a sky dome, ground plane or backdrop filled solid rather than cubes (#64). Empty otherwise.
+	 */
+	FString DescribeLargestSource() const;
+
 	/** The block types, id 1 first. A block whose id is past the list publishes as air in the game. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	TArray<FMantleVoxelBlockTypeSettings> BlockTypes;

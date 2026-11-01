@@ -4,6 +4,7 @@
 #include "MantleCosmeticExport.h"
 #include "MantlePlaceLimits.h"
 #include "MantleRuntime.h"
+#include "MantleSkyMesh.h"
 #include "MantleVoxelGrid.h"
 #include "MantleVoxelTypes.h"
 #include "MantleVoxelWorldActor.h"
@@ -24,6 +25,7 @@
 #include "IDesktopPlatform.h"
 #include "ImageCore.h"
 #include "LevelEditorViewport.h"
+#include "MeshDescription.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "Materials/MaterialExpressionConstant4Vector.h"
@@ -41,12 +43,86 @@
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleVoxelizePrivate
 {
-	/** One box of solid cells: a mesh component's or one instance's world bounds, and its block type (index into the types). */
+	/**
+	 * A mesh's triangles in its own space (LOD 0 of its source data), with corners welded by position, so a cube whose faces
+	 * were imported unwelded still counts as closed. Closed: every edge has exactly two triangles, so a ray's crossings tell
+	 * inside from outside (#64).
+	 */
+	struct FMeshShape
+	{
+		TArray<FVector> Positions;
+		TArray<FIntVector> Triangles;
+		bool bClosed = false;
+	};
+
+	/** One mesh component or instance: its world bounds, its shape and where it sits, its block type and its source actor. */
 	struct FFill
 	{
 		FBox Box;
 		int32 Type = 0;
+		int32 Source = 0;
+		/** Null when the mesh has no source data to read: the whole box fills, as a cube does. */
+		const FMeshShape* Shape = nullptr;
+		FTransform Transform;
 	};
+
+	/** Mesh's shape, read once per mesh; null when it has no source triangles (a cooked-only mesh). */
+	const FMeshShape* ShapeOf(UStaticMesh* Mesh, TMap<UStaticMesh*, TUniquePtr<FMeshShape>>& Shapes)
+	{
+		if (const TUniquePtr<FMeshShape>* Found = Shapes.Find(Mesh))
+		{
+			return Found->Get();
+		}
+		TUniquePtr<FMeshShape>& Shape = Shapes.Add(Mesh);
+		const FMeshDescription* Description = Mesh->GetMeshDescription(0);
+		if (!Description || Description->Triangles().Num() == 0)
+		{
+			return nullptr;
+		}
+		Shape = MakeUnique<FMeshShape>();
+		const TVertexAttributesRef<const FVector3f> Positions = Description->GetVertexPositions();
+		// Welded to a hundredth of a millimetre.
+		TMap<FIntVector, int32> Welded;
+		TMap<FVertexID, int32> IndexOf;
+		for (const FVertexID Vertex : Description->Vertices().GetElementIDs())
+		{
+			const FVector Position(Positions[Vertex]);
+			const FIntVector Key(FMath::RoundToInt(Position.X * 1000.0), FMath::RoundToInt(Position.Y * 1000.0), FMath::RoundToInt(Position.Z * 1000.0));
+			int32* Index = Welded.Find(Key);
+			if (!Index)
+			{
+				Index = &Welded.Add(Key, Shape->Positions.Add(Position));
+			}
+			IndexOf.Add(Vertex, *Index);
+		}
+		TMap<TPair<int32, int32>, int32> EdgeUses;
+		for (const FTriangleID Triangle : Description->Triangles().GetElementIDs())
+		{
+			const TArrayView<const FVertexID> Corners = Description->GetTriangleVertices(Triangle);
+			const FIntVector Tri(IndexOf[Corners[0]], IndexOf[Corners[1]], IndexOf[Corners[2]]);
+			if (Tri.X == Tri.Y || Tri.Y == Tri.Z || Tri.Z == Tri.X)
+			{
+				continue; // collapsed by the weld: no area, crosses nothing
+			}
+			Shape->Triangles.Add(Tri);
+			for (int32 Side = 0; Side < 3; ++Side)
+			{
+				const int32 A = Tri[Side];
+				const int32 B = Tri[(Side + 1) % 3];
+				++EdgeUses.FindOrAdd(TPair<int32, int32>(FMath::Min(A, B), FMath::Max(A, B)));
+			}
+		}
+		Shape->bClosed = Shape->Triangles.Num() >= 4;
+		for (const TPair<TPair<int32, int32>, int32>& Edge : EdgeUses)
+		{
+			if (Edge.Value != 2)
+			{
+				Shape->bClosed = false;
+				break;
+			}
+		}
+		return Shape.Get();
+	}
 
 	/** A block type as Voxelize finds it: one (mesh, first material) pair. */
 	struct FSourceType
@@ -68,14 +144,16 @@ namespace MantleVoxelizePrivate
 	}
 
 	/** Every static mesh component of Actor (each instance of an instanced one) as a fill, adding its (mesh, material) type. */
-	void CollectFills(AActor* Actor, TArray<FFill>& Fills, TArray<FSourceType>& Types, TMap<TPair<UStaticMesh*, UMaterialInterface*>, int32>& TypeOf)
+	void CollectFills(AActor* Actor, int32 Source, TArray<FFill>& Fills, TArray<FSourceType>& Types, TMap<TPair<UStaticMesh*, UMaterialInterface*>, int32>& TypeOf,
+		TMap<UStaticMesh*, TUniquePtr<FMeshShape>>& Shapes)
 	{
 		TInlineComponentArray<UStaticMeshComponent*> Components;
 		Actor->GetComponents(Components);
 		for (UStaticMeshComponent* Component : Components)
 		{
 			UStaticMesh* Mesh = Component ? Component->GetStaticMesh() : nullptr;
-			if (!Mesh || Component->IsEditorOnly())
+			// A sky dome is left out as the exporter leaves it out of a place (FMantleSkyMesh): filled, it is a solid mass of blocks (#64).
+			if (!Mesh || Component->IsEditorOnly() || FMantleSkyMesh::IsSkyMesh(Component))
 			{
 				continue;
 			}
@@ -92,6 +170,7 @@ namespace MantleVoxelizePrivate
 				TypeOf.Add(Key, Type);
 			}
 			const FBox MeshBox = Mesh->GetBoundingBox();
+			const FMeshShape* Shape = ShapeOf(Mesh, Shapes);
 			if (const UInstancedStaticMeshComponent* Instanced = Cast<UInstancedStaticMeshComponent>(Component))
 			{
 				for (int32 Index = 0; Index < Instanced->GetInstanceCount(); ++Index)
@@ -99,12 +178,139 @@ namespace MantleVoxelizePrivate
 					FTransform Instance;
 					if (Instanced->GetInstanceTransform(Index, Instance, /*bWorldSpace*/ true))
 					{
-						Fills.Add(FFill{ MeshBox.TransformBy(Instance), Type });
+						Fills.Add(FFill{ MeshBox.TransformBy(Instance), Type, Source, Shape, Instance });
 					}
 				}
 				continue;
 			}
-			Fills.Add(FFill{ MeshBox.TransformBy(Component->GetComponentTransform()), Type });
+			Fills.Add(FFill{ MeshBox.TransformBy(Component->GetComponentTransform()), Type, Source, Shape, Component->GetComponentTransform() });
+		}
+	}
+
+	/**
+	 * Calls Set(X, Y, Z) for each cell (world cell coordinates, within [Lo, Hi]) that Fill makes solid (#64):
+	 * - no shape: every cell of the box, as before;
+	 * - a closed mesh: each cell whose centre is inside it, from one ray along X per row of cells, filled between
+	 *   alternate crossings;
+	 * - an open mesh, or a closed one too thin to hold a cell centre (a fence board): the cells its surface passes through.
+	 */
+	template <typename FSetFn>
+	void FillCells(const FFill& Fill, const int64 Lo[3], const int64 Hi[3], FSetFn&& Set)
+	{
+		const double Block = MantleVoxel::BlockSize;
+		if (!Fill.Shape)
+		{
+			for (int64 Z = Lo[2]; Z <= Hi[2]; ++Z)
+			{
+				for (int64 Y = Lo[1]; Y <= Hi[1]; ++Y)
+				{
+					for (int64 X = Lo[0]; X <= Hi[0]; ++X)
+					{
+						Set(X, Y, Z);
+					}
+				}
+			}
+			return;
+		}
+		TArray<FVector> World;
+		World.Reserve(Fill.Shape->Positions.Num());
+		for (const FVector& Position : Fill.Shape->Positions)
+		{
+			World.Add(Fill.Transform.TransformPosition(Position));
+		}
+		bool bAny = false;
+		if (Fill.Shape->bClosed)
+		{
+			// Rows are offset a hair off the cell centre, so a ray never runs exactly along an edge or through a corner.
+			constexpr double OffsetY = 0.0137;
+			constexpr double OffsetZ = 0.0071;
+			const int64 RowsY = Hi[1] - Lo[1] + 1;
+			const int64 RowsZ = Hi[2] - Lo[2] + 1;
+			TArray<TArray<double>> Crossings;
+			Crossings.SetNum(RowsY * RowsZ);
+			for (const FIntVector& Tri : Fill.Shape->Triangles)
+			{
+				const FVector& A = World[Tri.X];
+				const FVector& B = World[Tri.Y];
+				const FVector& C = World[Tri.Z];
+				int64 YLo, YHi, ZLo, ZHi;
+				CellRange(FMath::Min3(A.Y, B.Y, C.Y) - OffsetY, FMath::Max3(A.Y, B.Y, C.Y) - OffsetY, YLo, YHi);
+				CellRange(FMath::Min3(A.Z, B.Z, C.Z) - OffsetZ, FMath::Max3(A.Z, B.Z, C.Z) - OffsetZ, ZLo, ZHi);
+				YLo = FMath::Max(YLo, Lo[1]); YHi = FMath::Min(YHi, Hi[1]);
+				ZLo = FMath::Max(ZLo, Lo[2]); ZHi = FMath::Min(ZHi, Hi[2]);
+				// The triangle's projection on the YZ plane; one edge-on to the ray's direction crosses nothing.
+				const double Det = (B.Y - A.Y) * (C.Z - A.Z) - (C.Y - A.Y) * (B.Z - A.Z);
+				if (FMath::Abs(Det) < UE_DOUBLE_SMALL_NUMBER)
+				{
+					continue;
+				}
+				for (int64 Z = ZLo; Z <= ZHi; ++Z)
+				{
+					const double Pz = (static_cast<double>(Z) + 0.5) * Block + OffsetZ;
+					for (int64 Y = YLo; Y <= YHi; ++Y)
+					{
+						const double Py = (static_cast<double>(Y) + 0.5) * Block + OffsetY;
+						const double U = ((Py - A.Y) * (C.Z - A.Z) - (C.Y - A.Y) * (Pz - A.Z)) / Det;
+						const double V = ((B.Y - A.Y) * (Pz - A.Z) - (Py - A.Y) * (B.Z - A.Z)) / Det;
+						if (U < 0.0 || V < 0.0 || U + V > 1.0)
+						{
+							continue;
+						}
+						Crossings[(Z - Lo[2]) * RowsY + (Y - Lo[1])].Add(A.X + U * (B.X - A.X) + V * (C.X - A.X));
+					}
+				}
+			}
+			for (int64 Row = 0; Row < Crossings.Num(); ++Row)
+			{
+				TArray<double>& Xs = Crossings[Row];
+				Xs.Sort();
+				const int64 Y = Lo[1] + Row % RowsY;
+				const int64 Z = Lo[2] + Row / RowsY;
+				// In and out in pairs; an odd one left over (a crack the weld missed) is dropped.
+				for (int32 Index = 0; Index + 1 < Xs.Num(); Index += 2)
+				{
+					int64 XLo, XHi;
+					CellRange(Xs[Index], Xs[Index + 1], XLo, XHi);
+					for (int64 X = FMath::Max(XLo, Lo[0]); X <= FMath::Min(XHi, Hi[0]); ++X)
+					{
+						Set(X, Y, Z);
+						bAny = true;
+					}
+				}
+			}
+		}
+		if (bAny)
+		{
+			return;
+		}
+		// The surface: points across each triangle no further apart than half a block, each making its cell solid.
+		const double Spacing = Block * 0.5;
+		for (const FIntVector& Tri : Fill.Shape->Triangles)
+		{
+			const FVector& A = World[Tri.X];
+			const FVector& B = World[Tri.Y];
+			const FVector& C = World[Tri.Z];
+			const FVector Centroid = (A + B + C) / 3.0;
+			const double Longest = FMath::Max3(FVector::Dist(A, B), FVector::Dist(B, C), FVector::Dist(C, A));
+			const int32 Steps = FMath::Clamp(FMath::CeilToInt(Longest / Spacing), 1, 4096);
+			for (int32 I = 0; I <= Steps; ++I)
+			{
+				for (int32 J = 0; I + J <= Steps; ++J)
+				{
+					const double U = static_cast<double>(I) / Steps;
+					const double V = static_cast<double>(J) / Steps;
+					// A hair towards the middle, so a mesh's outer edge on a cell boundary doesn't spill into the next cell.
+				const FVector OnTriangle = A + U * (B - A) + V * (C - A);
+				const FVector P = OnTriangle + (Centroid - OnTriangle).GetSafeNormal() * 0.01;
+					const int64 X = static_cast<int64>(FMath::FloorToDouble(P.X / Block));
+					const int64 Y = static_cast<int64>(FMath::FloorToDouble(P.Y / Block));
+					const int64 Z = static_cast<int64>(FMath::FloorToDouble(P.Z / Block));
+					if (X >= Lo[0] && X <= Hi[0] && Y >= Lo[1] && Y <= Hi[1] && Z >= Lo[2] && Z <= Hi[2])
+					{
+						Set(X, Y, Z);
+					}
+				}
+			}
 		}
 	}
 
@@ -420,6 +626,7 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 	TArray<FFill> Fills;
 	TArray<FSourceType> Types;
 	TMap<TPair<UStaticMesh*, UMaterialInterface*>, int32> TypeOf;
+	TMap<UStaticMesh*, TUniquePtr<FMeshShape>> Shapes;
 	TArray<AActor*> Used;
 	for (AActor* Actor : Sources)
 	{
@@ -428,7 +635,7 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 			continue;
 		}
 		const int32 Before = Fills.Num();
-		CollectFills(Actor, Fills, Types, TypeOf);
+		CollectFills(Actor, Used.Num(), Fills, Types, TypeOf, Shapes);
 		if (Fills.Num() > Before)
 		{
 			Used.Add(Actor);
@@ -462,7 +669,16 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 		bool bEmpty = false;
 		for (int32 Axis = 0; Axis < 3; ++Axis)
 		{
-			CellRange(Fill.Box.Min[Axis], Fill.Box.Max[Axis], Cells.Lo[Axis], Cells.Hi[Axis]);
+			if (Fill.Shape)
+			{
+				// Every cell the box touches: a surface (a thin wall) can fill a cell whose centre is outside its bounds.
+				Cells.Lo[Axis] = static_cast<int64>(FMath::Clamp(FMath::FloorToDouble(Fill.Box.Min[Axis] / MantleVoxel::BlockSize), -1.0e12, 1.0e12));
+				Cells.Hi[Axis] = static_cast<int64>(FMath::Clamp(FMath::FloorToDouble(Fill.Box.Max[Axis] / MantleVoxel::BlockSize), -1.0e12, 1.0e12));
+			}
+			else
+			{
+				CellRange(Fill.Box.Min[Axis], Fill.Box.Max[Axis], Cells.Lo[Axis], Cells.Hi[Axis]);
+			}
 			bEmpty |= Cells.Lo[Axis] > Cells.Hi[Axis];
 		}
 		if (bEmpty)
@@ -521,25 +737,34 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 		Result.Error = FString::Printf(TEXT("The block world could not be made: %s."), *GridError);
 		return Result;
 	}
+	// Blocks each source actor made solid, to name one that fills most of the world (a sky dome, #64).
+	TArray<int64> SourceBlocks;
+	SourceBlocks.SetNumZeroed(Used.Num());
 	for (int32 FillIndex = 0; FillIndex < Fills.Num(); ++FillIndex)
 	{
 		const FCells& Cells = CellsOf[FillIndex];
 		const uint8 Id = static_cast<uint8>(Fills[FillIndex].Type + 1);
-		for (int64 Z = Cells.Lo[2]; Z <= Cells.Hi[2]; ++Z)
+		int64& Counted = SourceBlocks[Fills[FillIndex].Source];
+		bool bOverCap = false;
+		FillCells(Fills[FillIndex], Cells.Lo, Cells.Hi, [&](int64 X, int64 Y, int64 Z)
 		{
-			for (int64 Y = Cells.Lo[1]; Y <= Cells.Hi[1]; ++Y)
+			const FIntVector P(static_cast<int32>(X - Min[0]), static_cast<int32>(Y - Min[1]), static_cast<int32>(Z - Min[2]));
+			if (bOverCap || Grid.GetBlock(P) == Id)
 			{
-				for (int64 X = Cells.Lo[0]; X <= Cells.Hi[0]; ++X)
-				{
-					const FIntVector P(static_cast<int32>(X - Min[0]), static_cast<int32>(Y - Min[1]), static_cast<int32>(Z - Min[2]));
-					if (Grid.SetBlock(P, Id) == FMantleVoxelGrid::ESetResult::OverCap)
-					{
-						Result.Error = FString::Printf(TEXT("The selection has too many mixed 16-block sections for one block world (at most %d). Voxelize a smaller part of the level."),
-							MantleVoxel::MaxNonUniformSections);
-						return Result;
-					}
-				}
+				return;
 			}
+			if (Grid.SetBlock(P, Id) == FMantleVoxelGrid::ESetResult::OverCap)
+			{
+				bOverCap = true;
+				return;
+			}
+			++Counted;
+		});
+		if (bOverCap)
+		{
+			Result.Error = FString::Printf(TEXT("The selection has too many mixed 16-block sections for one block world (at most %d). Voxelize a smaller part of the level."),
+				MantleVoxel::MaxNonUniformSections);
+			return Result;
 		}
 	}
 	for (int32 Section = 0; Section < Grid.NumSections(); ++Section)
@@ -579,6 +804,15 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 	Actor->TileSize = Options.TileSize;
 	Actor->BlockTypes = MoveTemp(BlockTypes);
 	Actor->SetBlocks(File);
+	for (int32 Source = 0; Source < Used.Num(); ++Source)
+	{
+		if (SourceBlocks[Source] > Actor->LargestSourceBlocks)
+		{
+			Actor->LargestSourceBlocks = SourceBlocks[Source];
+			Actor->LargestSource = Used[Source]->GetActorLabel();
+		}
+	}
+	Result.Warning = Actor->DescribeLargestSource();
 	for (AActor* Source : Used)
 	{
 		Source->Modify();
@@ -703,8 +937,9 @@ void FMantleVoxelize::VoxelizeSelection()
 	Notify(FText::Format(LOCTEXT("Voxelized", "Voxelized {0} actors into a block world"), FText::AsNumber(Result.SourceActors)),
 		FString::Printf(TEXT("%lld blocks of %d types (%s), %d x %d x %d blocks. The meshes are hidden in the \"%s\" folder and left out of the place; tiles are in %s."),
 			Result.Blocks, Result.TypeNames.Num(), *DescribeTypes(Result.TypeNames), Result.Size.X, Result.Size.Y, Result.Size.Z,
-			*AMantleVoxelWorldActor::VoxelizedSourceFolder.ToString(), *Options.TileFolder),
-		true);
+			*AMantleVoxelWorldActor::VoxelizedSourceFolder.ToString(), *Options.TileFolder)
+			+ (Result.Warning.IsEmpty() ? FString() : FString::Printf(TEXT(" Check: the world %s."), *Result.Warning)),
+		Result.Warning.IsEmpty());
 }
 
 void FMantleVoxelize::ImportWithDialog()

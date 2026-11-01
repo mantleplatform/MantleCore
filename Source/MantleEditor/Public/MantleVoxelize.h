@@ -28,6 +28,9 @@ struct MANTLEEDITOR_API FMantleVoxelizeResult
 	/** Empty on success; otherwise what stopped it, in plain words. */
 	FString Error;
 
+	/** On success, what Check will warn about the result (one mesh filled most of it, #64); empty otherwise. */
+	FString Warning;
+
 	AMantleVoxelWorldActor* World = nullptr;
 
 	/** The world's lowest corner, in cm (a multiple of 100), and its size in blocks (multiples of 16). */
