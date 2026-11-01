@@ -309,6 +309,115 @@ bool FMantleScatterTerrainAndTierTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterPlaceCapsTest,
+	"Mantle.Runtime.Scatter.Caps.PlaceTotalsAreSharedByParserAndScripts",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterPlaceCapsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterTestPrivate;
+
+	// 40 instances each (20 m x 20 m at 0.1); 5000 of them would be 200000, 51 colliding ones pass 2000.
+	FMantleScatterParams Forty = BoxParams();
+	Forty.HalfExtent = FVector(1000.0, 1000.0, 0.0);
+	Forty.Density = 0.1;
+	FMantleScatterParams Colliding = Forty;
+	Colliding.bCollision = true;
+
+	TArray<const FMantleScatterParams*> All;
+	for (int32 Index = 0; Index < 50; ++Index)
+	{
+		All.Add(&Colliding);
+	}
+	int32 Bad = INDEX_NONE;
+	FString Error;
+	TestTrue(TEXT("exactly 2000 colliding instances are fine"), FMantleScatter::CheckPlaceTotals(All, Bad, Error));
+	All.Add(&Colliding);
+	TestFalse(TEXT("the 2001st colliding instance crosses the cap"), FMantleScatter::CheckPlaceTotals(All, Bad, Error));
+	TestEqual(TEXT("at the Scatter that crosses it"), Bad, 50);
+	TestTrue(TEXT("with the parser's message"), Error.Contains(TEXT("colliding scatter instances; a place holds at most 2000")));
+
+	// Non-colliding scatters do not count towards the colliding cap, only towards the place total.
+	All.Reset();
+	for (int32 Index = 0; Index < 51; ++Index)
+	{
+		All.Add(&Forty);
+	}
+	TestTrue(TEXT("51 visual Scatters are within 200000"), FMantleScatter::CheckPlaceTotals(All, Bad, Error));
+	FMantleScatterParams Huge = BoxParams();
+	Huge.HalfExtent = FVector(10000.0, 10000.0, 0.0);
+	Huge.Density = 5.0; // 200000
+	All = { &Huge, &Forty };
+	TestFalse(TEXT("200000 plus 40 passes the place total"), FMantleScatter::CheckPlaceTotals(All, Bad, Error));
+	TestEqual(TEXT("at the second"), Bad, 1);
+	TestTrue(TEXT("with its message"), Error.Contains(TEXT("scatter instances; a place holds at most 200000")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterRoundedFiltersTest,
+	"Mantle.Runtime.Scatter.Generator.FiltersCompareRoundedNumbers",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterRoundedFiltersTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterTestPrivate;
+
+	FMantleScatterParams P = BoxParams();
+	P.HalfExtent = FVector(1000.0, 1000.0, 0.0);
+	P.Density = 1.0;
+	P.Placement = EMantleScatterPlacement::Terrain;
+	P.MinHeight = 100.0; // 1000 mm
+
+	// A surface 0.04 mm under the limit (and 0.04 mm over) rounds to the limit's millimetre: kept both times, however the float came out.
+	FMantleScatterGenerateOptions Options;
+	for (const double HeightCm : { 99.996, 100.004 })
+	{
+		Options.Ground = [HeightCm](const int64, const int64, FMantleScatterGround& Out) -> bool
+		{
+			Out.ZMm = 0;
+			Out.NormalZ = 1.0;
+			Out.WorldZCm = HeightCm;
+			return true;
+		};
+		TestTrue(TEXT("a height within half a millimetre of the limit is on the limit"), GenerateOk(*this, P, Options).Num() > 0);
+	}
+	// 0.6 mm under is a different millimetre: dropped.
+	Options.Ground = [](const int64, const int64, FMantleScatterGround& Out) -> bool
+	{
+		Out.ZMm = 0;
+		Out.NormalZ = 1.0;
+		Out.WorldZCm = 99.94;
+		return true;
+	};
+	TestEqual(TEXT("a height a millimetre under the limit is dropped"), GenerateOk(*this, P, Options).Num(), 0);
+
+	// A normal within half a millionth of the threshold is on it (kept); a clearly steeper one is dropped.
+	P.MinHeight.Reset();
+	P.MaxSlopeDegrees = 60.0; // cos = 0.5
+	for (const double NormalZ : { 0.4999996, 0.5000004 })
+	{
+		Options.Ground = [NormalZ](const int64, const int64, FMantleScatterGround& Out) -> bool
+		{
+			Out.ZMm = 0;
+			Out.NormalZ = NormalZ;
+			Out.WorldZCm = 0.0;
+			return true;
+		};
+		TestTrue(TEXT("a normal within half a millionth of the slope limit is kept"), GenerateOk(*this, P, Options).Num() > 0);
+	}
+	Options.Ground = [](const int64, const int64, FMantleScatterGround& Out) -> bool
+	{
+		Out.ZMm = 0;
+		Out.NormalZ = 0.49;
+		Out.WorldZCm = 0.0;
+		return true;
+	};
+	TestEqual(TEXT("a steeper normal is dropped"), GenerateOk(*this, P, Options).Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleScatterParserTest,
 	"Mantle.Runtime.Scatter.Parser.ReadsAndRefusesTheNewKeys",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

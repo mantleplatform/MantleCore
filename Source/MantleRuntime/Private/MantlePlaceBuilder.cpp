@@ -1513,7 +1513,8 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 
 	// Terrains' surfaces by entity id, for the Scatters that drop onto terrain (#169); their transforms are read after pass 3.
 	TMap<FString, FMantleScatterTerrainSurface> TerrainSurfaces;
-	// Scatters placed on terrain wait for every transform to be applied before they generate: the entity ids, in place order.
+	// Every Scatter's entity id in place order: each is handed the terrains once every transform is applied (a script may switch
+	// one to terrain placement later), and the ones placed on terrain generate then.
 	TArray<FString> TerrainScatters;
 
 	// Pass 1 — spawn everything. Children may appear before their parents in the array,
@@ -1644,7 +1645,7 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 			if (const FMantleScatterParams* Props = Entity.Props.TryGet<FMantleScatterParams>())
 			{
 				Actor = BuildScatter(World, Entity, *Props, Path, Result.Errors);
-				if (Actor && Props->Placement == EMantleScatterPlacement::Terrain)
+				if (Actor)
 				{
 					TerrainScatters.Add(Entity.Id);
 				}
@@ -1771,8 +1772,13 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 			{
 				continue;
 			}
-			// A dedicated server draws nothing but still answers Scatter reads from scripts, so it knows the ground too.
+			// A dedicated server draws nothing but still answers Scatter reads from scripts, so it knows the ground too; and a
+			// Scatter that is not on terrain yet may be switched to it by a script, so every one is given the ground.
 			Volume->SetTerrainSurfaces(Surfaces);
+			if (ScatterProps->Placement != EMantleScatterPlacement::Terrain)
+			{
+				continue;
+			}
 			if (!FMantleScatter::DrawsScatter(World) && !ScatterProps->bCollision)
 			{
 				continue;
