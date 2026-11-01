@@ -354,6 +354,7 @@ bool FMantleMeshReduce::ReduceDescription(const FMeshDescription& In, int32 Targ
 			}
 		}
 		// The simplified normals are kept; tangents are made again from them and the UVs.
+		FStaticMeshOperations::ComputeTriangleTangentsAndNormals(Reduced);
 		FStaticMeshOperations::ComputeTangentsAndNormals(Reduced, EComputeNTBsFlags::Tangents | EComputeNTBsFlags::UseMikkTSpace);
 	}
 	if (Reduced.Triangles().Num() == 0)
