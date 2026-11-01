@@ -330,6 +330,43 @@ namespace
 		Writer->WriteArrayEnd();
 	}
 
+	/** A JSON value built elsewhere (FMantleScatter::ToJson), written into the place file: under Key in an object, or as an array element when Key is null. */
+	void WriteJsonValue(const TSharedRef<FWriter>& Writer, const FString* Key, const TSharedPtr<FJsonValue>& Value)
+	{
+		const EJson Type = Value.IsValid() ? Value->Type : EJson::Null;
+		switch (Type)
+		{
+		case EJson::Number:
+			Key ? Writer->WriteValue(*Key, Value->AsNumber()) : Writer->WriteValue(Value->AsNumber());
+			break;
+		case EJson::String:
+			Key ? Writer->WriteValue(*Key, Value->AsString()) : Writer->WriteValue(Value->AsString());
+			break;
+		case EJson::Boolean:
+			Key ? Writer->WriteValue(*Key, Value->AsBool()) : Writer->WriteValue(Value->AsBool());
+			break;
+		case EJson::Array:
+			Key ? Writer->WriteArrayStart(*Key) : Writer->WriteArrayStart();
+			for (const TSharedPtr<FJsonValue>& Element : Value->AsArray())
+			{
+				WriteJsonValue(Writer, nullptr, Element);
+			}
+			Writer->WriteArrayEnd();
+			break;
+		case EJson::Object:
+			Key ? Writer->WriteObjectStart(*Key) : Writer->WriteObjectStart();
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Value->AsObject()->Values)
+			{
+				WriteJsonValue(Writer, &Field.Key, Field.Value);
+			}
+			Writer->WriteObjectEnd();
+			break;
+		default:
+			Key ? Writer->WriteNull(*Key) : Writer->WriteNull();
+			break;
+		}
+	}
+
 	void WriteTransform(const TSharedRef<FWriter>& Writer, const FTransform& Transform)
 	{
 		Writer->WriteObjectStart(TEXT("transform"));
@@ -6196,7 +6233,7 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 			// (FMantleScatter::ToJson), so the editor and a script's Scatter settings write one way.
 			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : FMantleScatter::ToJson(*P15)->Values)
 			{
-				FJsonSerializer::Serialize(Field.Value, Field.Key, Writer, /*bCloseWriter*/ false);
+				WriteJsonValue(Writer, &Field.Key, Field.Value);
 			}
 		}
 		else if (const FMantleReflectionProbeProps* P16 = Entity.Props.TryGet<FMantleReflectionProbeProps>())
