@@ -36,6 +36,7 @@
 #include "MantlePublishPanel.h"
 #include "MantleReferenceBodies.h"
 #include "MantleVehicleConverter.h"
+#include "MantleVoxelize.h"
 #include "SMantleVehicleBuilder.h"
 #include "MantleVehicleSource.h"
 #include "MantleWeaponBuilderPanel.h"
@@ -812,6 +813,25 @@ void FillMantleSection(FToolMenuSection& Section)
 			"(the place's stored packages, or one in the level's Packages folder) and set the parameters the package lists."),
 		FSlateIcon(),
 		FUIAction(FExecuteAction::CreateStatic(&OnAddScriptPoint)));
+
+	Section.AddMenuEntry(
+		TEXT("MantleVoxelize"),
+		LOCTEXT("VoxelizeLabel", "Voxelize selected meshes"),
+		LOCTEXT("VoxelizeTooltip",
+			"Turn the selected cube meshes into a block world players can dig and build in: every 100 cm block inside a mesh becomes a block, "
+			"each mesh and material a block type with a tile made from its texture. The meshes are hidden in a \"Voxelized sources\" folder "
+			"and left out of the place. Undo puts everything back."),
+		FSlateIcon(),
+		FUIAction(FExecuteAction::CreateStatic(&FMantleVoxelize::VoxelizeSelection)));
+
+	Section.AddMenuEntry(
+		TEXT("MantleImportBlockWorld"),
+		LOCTEXT("ImportBlockWorldLabel", "Import block world (.mbw)..."),
+		LOCTEXT("ImportBlockWorldTooltip",
+			"Add a block world from a saved .mbw file (a blocky world's blocks). Its block types come in as block_1, block_2 and so on with grey "
+			"tiles: give each its name and tiles in the Details panel."),
+		FSlateIcon(),
+		FUIAction(FExecuteAction::CreateStatic(&FMantleVoxelize::ImportWithDialog)));
 
 	Section.AddMenuEntry(
 		TEXT("MantleValidate"),

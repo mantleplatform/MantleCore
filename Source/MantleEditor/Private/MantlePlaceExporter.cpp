@@ -42,6 +42,7 @@
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
 #include "MantleVehicleSpawnPoint.h"
+#include "MantleVoxelWorldActor.h"
 #include "MantleWaterBody.h"
 #include "MantleWaterBodyExport.h"
 #include "MantleWeaponSpawnPoint.h"
@@ -102,6 +103,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/TextRenderActor.h"
 #include "Engine/Texture.h"
+#include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
@@ -573,6 +575,7 @@ namespace
 		case EMantleAssetKind::Vehicle:  return TEXT("Vehicle");
 		case EMantleAssetKind::Weapon:   return TEXT("Weapon");
 		case EMantleAssetKind::Lumen:    return TEXT("Lumen");
+		case EMantleAssetKind::VoxelWorldData: return TEXT("VoxelWorldData");
 		default:                         return TEXT("StaticMesh");
 		}
 	}
@@ -783,6 +786,63 @@ namespace
 			}
 		}
 		Entity.Props.Set<FMantleWaterBodyProps>(MoveTemp(Props));
+	}
+
+	/**
+	 * A VoxelWorld entity's properties (#168 step 6), from a Mantle Voxel World: its size and settings, its blocks by the id of
+	 * their VoxelWorldData upload (none when the world is all air), and each block type's tiles by the ids of their texture
+	 * uploads, gathered as a decal's base colour is (FMantlePlaceDependencies::AddVoxelWorld). Placed at its location only: a
+	 * block world is never rotated, scaled or parented. What of it cannot publish (AMantleVoxelWorldActor::DescribeProblems)
+	 * refuses the export, in the words Check uses.
+	 */
+	void ExporterReadVoxelWorld(
+		const AMantleVoxelWorldActor* Actor,
+		const FString& Path,
+		MantlePlaceExporterUploads::FContext& Uploads,
+		TArray<FMantleParseError>& Errors,
+		FMantleEntity& Entity)
+	{
+		for (const FMantleVoxelWorldProblem& Problem : Actor->DescribeProblems())
+		{
+			Errors.Add(FMantleParseError{ Path + TEXT("/properties"), FString::Printf(TEXT("'%s' %s %s"), *Entity.Name, *Problem.What, *Problem.Remedy) });
+		}
+		auto TileIdFor = [&Uploads](UTexture2D* Texture)
+		{
+			if (!Texture)
+			{
+				return FString();
+			}
+			const FString Gathered = FMantlePlaceAssets::DecalTextureKey(Texture, /*bNormal*/ false);
+			const FString* Converted = Uploads.Assets ? Uploads.Assets->DecalTextures.Find(Gathered) : nullptr;
+			return Uploads.IdFor(Converted ? *Converted : Gathered, EMantleAssetKind::Texture, Texture);
+		};
+		FMantleVoxelWorldProps Props;
+		Props.Size = Actor->Size;
+		Props.TileSize = Actor->TileSize;
+		Props.bSmooth = false;
+		Props.bLinearFilter = Actor->Filter == EMantleVoxelTileFilter::Linear;
+		Props.Edit = static_cast<EMantleVoxelEdit>(Actor->Edit);
+		Props.Persistence = static_cast<EMantleVoxelPersistence>(Actor->Persistence);
+		if (Actor->WorldData.Num() > 0)
+		{
+			Props.World = Uploads.IdFor(Actor->WorldKey(), EMantleAssetKind::VoxelWorldData, Actor);
+		}
+		for (const FMantleVoxelBlockTypeSettings& Settings : Actor->BlockTypes)
+		{
+			FMantleVoxelBlockTypeProps& Type = Props.BlockTypes.AddDefaulted_GetRef();
+			Type.Name = Settings.Name;
+			Type.Top = TileIdFor(Settings.Top.Get());
+			Type.Side = TileIdFor(Settings.Side.Get());
+			Type.Bottom = TileIdFor(Settings.Bottom.Get());
+			Type.Render = static_cast<EMantleVoxelRenderClass>(Settings.Render);
+			Type.bSolid = Settings.bSolid;
+			Type.Hardness = Settings.Hardness;
+			Type.Surface = static_cast<EMantleSurface>(Settings.Surface);
+		}
+		Entity.Props.Set<FMantleVoxelWorldProps>(MoveTemp(Props));
+		Entity.Parent.Reset();
+		Entity.Transform = FTransform(Actor->GetActorLocation());
+		Entity.bDynamic = false;
 	}
 
 	/**
@@ -1306,6 +1366,11 @@ namespace
 			ExporterReadWaterBody(Actor, Path, ReferencedAssets, Uploads, Errors, Entity);
 			break;
 
+		case EMantleEntityType::VoxelWorld:
+			// #168 step 6: a Mantle Voxel World, its blocks (an uploaded VoxelWorldData) and each block type's tiles (uploaded textures).
+			ExporterReadVoxelWorld(CastChecked<AMantleVoxelWorldActor>(Actor), Path, Uploads, Errors, Entity);
+			break;
+
 		default:
 			Entity.Props.Set<FMantleEmptyProps>(FMantleEmptyProps{});
 			break;
@@ -1372,6 +1437,12 @@ bool FMantlePlaceExporter::IsEngineInfrastructure(const AActor* Actor)
 	// A Terrain rebuilt from a place file (#466, the importer's): runtime output, not a landscape.
 	// DescribeUnpublishedContent names it, so it is not dropped without a word.
 	if (Actor->ActorHasTag(FName(FMantleTerrainBuilder::TerrainActorTag)))
+	{
+		return true;
+	}
+
+	// The meshes Voxelize turned into a block world (#168 step 6): the world publishes their blocks, so they are left out, silently.
+	if (Actor->ActorHasTag(AMantleVoxelWorldActor::VoxelizedSourceTag))
 	{
 		return true;
 	}
@@ -2372,6 +2443,8 @@ bool FMantlePlaceExporter::DescribeSkippedActor(const AActor* Actor, FSkippedAct
 
 bool FMantlePlaceExporter::ClassifyActor(const AActor* Actor, EMantleEntityType& OutType)
 {
+	// #168 step 6: a Mantle Voxel World, first: its outline box would otherwise read as a part of a Group.
+	if (Actor->IsA(AMantleVoxelWorldActor::StaticClass())) { OutType = EMantleEntityType::VoxelWorld; return true; }
 	// GhzGarage/mantle#997: a Water plugin body is a WaterBody entity.
 	if (FMantleWaterBodyExport::IsWaterBodyActor(Actor)) { OutType = EMantleEntityType::WaterBody; return true; }
 	// #628: a mesh actor made of several components (a Blueprint's mesh, doors, lights, particles) is a Group of parts.
@@ -2427,6 +2500,20 @@ bool FMantlePlaceExporter::ClassifyActor(const AActor* Actor, EMantleEntityType&
 	}
 
 	return false;
+}
+
+FString FMantlePlaceExporter::DescribeVoxelWorldCount(const int32 Number)
+{
+	if (Number > FMantlePlaceLimits::MaxVoxelWorldsPerPlace)
+	{
+		return FString::Printf(TEXT("is block world number %d; a place may have at most %d (one blocky, one smooth). Remove it, or merge it into another."),
+			Number, FMantlePlaceLimits::MaxVoxelWorldsPerPlace);
+	}
+	if (Number > 1)
+	{
+		return TEXT("is a second blocky block world; a place may have one of each look (blocky and smooth). Merge the two into one, or remove one.");
+	}
+	return FString();
 }
 
 FString FMantlePlaceExporter::EntityIdFor(const AActor* Actor)
@@ -3263,6 +3350,11 @@ bool FMantlePlaceExporter::IsExportedInstanceSource(const UInstancedStaticMeshCo
 	}
 	const AActor* Owner = Component->GetOwner();
 	if (!IsValid(Owner) || Owner->HasAnyFlags(RF_Transient) || IsProvidedByMantle(Owner))
+	{
+		return false;
+	}
+	// Instances Voxelize turned into blocks (#168 step 6) publish as the block world, not one by one.
+	if (Owner->ActorHasTag(AMantleVoxelWorldActor::VoxelizedSourceTag))
 	{
 		return false;
 	}
@@ -4225,6 +4317,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	Uploads.Limits = FMantlePlaceAssetLimits::FromContract();
 	FMantleCrowdBudget CrowdBudget;
 	int32 Constraints = 0;
+	int32 VoxelWorlds = 0;
 
 	for (int32 i = 0; i < Exportable.Num(); ++i)
 	{
@@ -4345,6 +4438,22 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 					Path + TEXT("/type"),
 					FString::Printf(TEXT("'%s' is physics constraint number %d; a place may have at most %d. Remove some, or join them from a place script."),
 						*Entity.Name, Constraints, FMantlePlaceLimits::MaxConstraintsPerPlace) });
+			}
+		}
+
+		// Block worlds (#168 step 6): at most two in a place, one of each look, at the path the parser reports it. A Mantle Voxel
+		// World is always blocky (it holds blocks; a smooth world's ground is made by its scripts), so a second one is refused.
+		if (Entity.Type == EMantleEntityType::VoxelWorld)
+		{
+			const FString WorldProblem = FMantlePlaceExporter::DescribeVoxelWorldCount(++VoxelWorlds);
+			if (!WorldProblem.IsEmpty())
+			{
+				Result.Errors.Add(FMantleParseError{ Path + TEXT("/type"), FString::Printf(TEXT("'%s' %s"), *Entity.Name, *WorldProblem) });
+			}
+			if (!FMantleTargetFeatures::Current().Reads(MantleClientFeatures::VoxelWorld))
+			{
+				Result.Errors.Add(FMantleParseError{ Path + TEXT("/type"),
+					FString::Printf(TEXT("'%s' is a block world, which this Mantle client can't load: %s."), *Entity.Name, FMantleTargetFeatures::NeedsNewerClient) });
 			}
 		}
 
@@ -5272,6 +5381,12 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 					Ref.Hash = Sound->Hash;
 					Ref.Bytes = Assets->UploadSize(Key, Sound->Bytes.Num());
 				}
+				else if (const FMantleConvertedVoxelWorld* VoxelWorld = Assets ? Assets->FindVoxelWorld(Key) : nullptr)
+				{
+					// #168 step 6: a block world's MBW1.
+					Ref.Hash = VoxelWorld->Hash;
+					Ref.Bytes = Assets->UploadSize(Key, VoxelWorld->Bytes.Num());
+				}
 				else if (const FSoftObjectPath* Source = Uploads.SourceOf.Find(Key))
 				{
 					Ref.Hash = ProvisionalHash(*Source, Ref.Bytes);
@@ -6127,6 +6242,71 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 			}
 			Writer->WriteValue(TEXT("brightness"), P16->Brightness);
 			Writer->WriteValue(TEXT("skylightScale"), P16->SkylightScale);
+		}
+		else if (const FMantleVoxelWorldProps* P22 = Entity.Props.TryGet<FMantleVoxelWorldProps>())
+		{
+			// A new type (#168 step 6): its keys ship with it. A block type with one tile on every face writes it as "all"; the
+			// optional keys (liquid, light, drops, tags) only when set.
+			Writer->WriteArrayStart(TEXT("size"));
+			Writer->WriteValue(P22->Size.X);
+			Writer->WriteValue(P22->Size.Y);
+			Writer->WriteValue(P22->Size.Z);
+			Writer->WriteArrayEnd();
+			Writer->WriteArrayStart(TEXT("blockTypes"));
+			for (const FMantleVoxelBlockTypeProps& Type : P22->BlockTypes)
+			{
+				Writer->WriteObjectStart();
+				Writer->WriteValue(TEXT("name"), Type.Name);
+				if (Type.Top == Type.Side && Type.Side == Type.Bottom)
+				{
+					Writer->WriteValue(TEXT("all"), Type.Top);
+				}
+				else
+				{
+					Writer->WriteValue(TEXT("top"), Type.Top);
+					Writer->WriteValue(TEXT("side"), Type.Side);
+					Writer->WriteValue(TEXT("bottom"), Type.Bottom);
+				}
+				const TCHAR* const RenderNames[] = { TEXT("opaque"), TEXT("cutout"), TEXT("translucent") };
+				Writer->WriteValue(TEXT("render"), FString(RenderNames[FMath::Min<int32>(static_cast<int32>(Type.Render), 2)]));
+				Writer->WriteValue(TEXT("solid"), Type.bSolid);
+				if (Type.bLiquid)
+				{
+					Writer->WriteValue(TEXT("liquid"), true);
+				}
+				if (Type.Light > 0)
+				{
+					Writer->WriteValue(TEXT("light"), Type.Light);
+				}
+				Writer->WriteValue(TEXT("hardness"), Type.Hardness);
+				Writer->WriteValue(TEXT("surface"), FString(MantleSurfaceToString(Type.Surface)));
+				if (!Type.Drops.IsEmpty())
+				{
+					Writer->WriteValue(TEXT("drops"), Type.Drops);
+				}
+				if (Type.Tags.Num() > 0)
+				{
+					Writer->WriteArrayStart(TEXT("tags"));
+					for (const FString& Tag : Type.Tags)
+					{
+						Writer->WriteValue(Tag);
+					}
+					Writer->WriteArrayEnd();
+				}
+				Writer->WriteObjectEnd();
+			}
+			Writer->WriteArrayEnd();
+			if (!P22->World.IsEmpty())
+			{
+				Writer->WriteValue(TEXT("world"), P22->World);
+			}
+			Writer->WriteValue(TEXT("tileSize"), P22->TileSize);
+			Writer->WriteValue(TEXT("filter"), FString(P22->bLinearFilter ? TEXT("linear") : TEXT("nearest")));
+			const TCHAR* const EditNames[] = { TEXT("all"), TEXT("none"), TEXT("script") };
+			Writer->WriteValue(TEXT("edit"), FString(EditNames[FMath::Min<int32>(static_cast<int32>(P22->Edit), 2)]));
+			const TCHAR* const PersistenceNames[] = { TEXT("none"), TEXT("server"), TEXT("place") };
+			Writer->WriteValue(TEXT("persistence"), FString(PersistenceNames[FMath::Min<int32>(static_cast<int32>(P22->Persistence), 2)]));
+			Writer->WriteValue(TEXT("look"), FString(P22->bSmooth ? TEXT("smooth") : TEXT("blocky")));
 		}
 		else if (const FMantleWaterBodyProps* P21 = Entity.Props.TryGet<FMantleWaterBodyProps>())
 		{

@@ -83,6 +83,11 @@ namespace MantlePlacePreviewPrivate
 		{
 			return NotOnMantle(Skeletal->Mesh) || NotOnMantle(Skeletal->Clip) || Skeletal->Materials.ContainsByPredicate(NotOnMantle);
 		}
+		// A VoxelWorld's blocks and tiles (#168 step 6).
+		if (const FMantleVoxelWorldProps* Voxel = Entity.Props.TryGet<FMantleVoxelWorldProps>())
+		{
+			return NotOnMantle(Voxel->World) || Voxel->TileTextures().ContainsByPredicate(NotOnMantle);
+		}
 		// A Decal's textures (#472).
 		if (const FMantleDecalProps* Decal = Entity.Props.TryGet<FMantleDecalProps>())
 		{
@@ -178,6 +183,11 @@ bool FMantlePlacePreview::RecordKnownUploads(FMantlePlaceAssetSet& Set, const FM
 	for (const FMantleConvertedHeightfield& Heightfield : Set.Heightfields)
 	{
 		Probes.Add({ Heightfield.Key, Heightfield.Hash, Heightfield.Bytes.Num() });
+	}
+	// Block worlds' blocks (#168 step 6) name nothing else either.
+	for (const FMantleConvertedVoxelWorld& World : Set.VoxelWorlds)
+	{
+		Probes.Add({ World.Key, World.Hash, World.Bytes.Num() });
 	}
 	return PreviewAskAndRecord(Set, Probes, Diff, OutProblem);
 }

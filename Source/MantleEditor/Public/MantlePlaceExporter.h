@@ -329,6 +329,13 @@ public:
 	static bool ClassifyActor(const AActor* Actor, EMantleEntityType& OutType);
 
 	/**
+	 * #168 step 6: what is wrong with the Number-th Mantle Voxel World of a level (1 first), or empty. A place holds at most
+	 * FMantlePlaceLimits::MaxVoxelWorldsPerPlace, one of each look, and a Mantle Voxel World is always blocky, so the second
+	 * is already one too many of its look. Export and Check both count with it, in the exporter's actor order.
+	 */
+	static FString DescribeVoxelWorldCount(int32 Number);
+
+	/**
 	 * The parts Export writes for Actor as child entities of its Group (#468), sorted by component
 	 * name, each with its transform relative to the actor's root: every static mesh component with
 	 * a mesh that is visible in game, point and spot light shown in game, box or sphere that a
