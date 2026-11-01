@@ -113,7 +113,8 @@ TArray<FMantleVoxelWorldProblem> AMantleVoxelWorldActor::DescribeProblems() cons
 	{
 		if (Size[Axis] < Step || Size[Axis] > Max[Axis] || Size[Axis] % Step != 0)
 		{
-			Add(FString::Printf(TEXT("is %d x %d x %d blocks; each side must be a multiple of %d, at most %d x %d x %d."), Size.X, Size.Y, Size.Z, Step,
+			Add(FString::Printf(TEXT("is %d x %d x %d %s; each side must be a multiple of %d, at most %d x %d x %d."), Size.X, Size.Y, Size.Z,
+				Look == EMantleVoxelWorldLook::Smooth ? TEXT("voxels") : TEXT("blocks"), Step,
 				FMantlePlaceLimits::MaxVoxelWorldSizeXY, FMantlePlaceLimits::MaxVoxelWorldSizeXY, FMantlePlaceLimits::MaxVoxelWorldSizeZ),
 				TEXT("Voxelize a smaller part of the level, or split it into more than one place."));
 			break;

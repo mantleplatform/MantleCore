@@ -655,7 +655,7 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 	}
 	if (Options.bSmooth && Types.Num() > FMantlePlaceLimits::MaxVoxelSmoothMaterials)
 	{
-		Result.Error = FString::Printf(TEXT("The selection uses %d different mesh and material pairs; smooth ground has at most %d materials. Voxelize fewer kinds of mesh at a time, or as blocks."),
+		Result.Error = FString::Printf(TEXT("The selection uses %d different materials; smooth ground has at most %d. Voxelize fewer kinds of mesh at a time, or as blocks."),
 			Types.Num(), FMantlePlaceLimits::MaxVoxelSmoothMaterials);
 		return Result;
 	}
@@ -943,9 +943,13 @@ void FMantleVoxelize::VoxelizeSelection(const bool bSmooth)
 	}
 	GEditor->SelectNone(/*bNoteSelectionChange*/ false, /*bDeselectBSPSurfs*/ true);
 	GEditor->SelectActor(Result.World, /*bInSelected*/ true, /*bNotify*/ true);
-	Notify(FText::Format(LOCTEXT("Voxelized", "Voxelized {0} actors into a block world"), FText::AsNumber(Result.SourceActors)),
-		FString::Printf(TEXT("%lld blocks of %d types (%s), %d x %d x %d blocks. The meshes are hidden in the \"%s\" folder and left out of the place; tiles are in %s."),
-			Result.Blocks, Result.TypeNames.Num(), *DescribeTypes(Result.TypeNames), Result.Size.X, Result.Size.Y, Result.Size.Z,
+	const FText Title = bSmooth
+		? FText::Format(LOCTEXT("VoxelizedSmooth", "Voxelized {0} actors into smooth ground"), FText::AsNumber(Result.SourceActors))
+		: FText::Format(LOCTEXT("Voxelized", "Voxelized {0} actors into a block world"), FText::AsNumber(Result.SourceActors));
+	Notify(Title,
+		FString::Printf(TEXT("%lld %s of %d %s (%s), %d x %d x %d %s. The meshes are hidden in the \"%s\" folder and left out of the place; tiles are in %s."),
+			Result.Blocks, bSmooth ? TEXT("voxels") : TEXT("blocks"), Result.TypeNames.Num(), bSmooth ? TEXT("materials") : TEXT("types"), *DescribeTypes(Result.TypeNames),
+			Result.Size.X, Result.Size.Y, Result.Size.Z, bSmooth ? TEXT("voxels of 50 cm") : TEXT("blocks"),
 			*AMantleVoxelWorldActor::VoxelizedSourceFolder.ToString(), *Options.TileFolder)
 			+ (Result.Warning.IsEmpty() ? FString() : FString::Printf(TEXT(" Check: the world %s."), *Result.Warning)),
 		Result.Warning.IsEmpty());
