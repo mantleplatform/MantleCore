@@ -15,7 +15,9 @@
 #include "Engine/World.h"
 #include "MaterialDomain.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialInstanceConstant.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/Package.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -76,7 +78,9 @@ namespace MantleVoxelizeTestPrivate
 	 */
 	TArray<AActor*> SpawnCubeScene(UWorld* World, UStaticMesh* Cube)
 	{
-		UMaterialInterface* Other = UMaterial::GetDefaultMaterial(MD_Surface);
+		// Its own instance: the engine cube's material can itself resolve to the default one in a headless run, so the default would not differ.
+		UMaterialInstanceConstant* Other = NewObject<UMaterialInstanceConstant>(GetTransientPackage());
+		Other->SetParentEditorOnly(UMaterial::GetDefaultMaterial(MD_Surface));
 		return {
 			SpawnCube(World, Cube, FVector(50.0, 50.0, 50.0), TEXT("Cube A")),
 			SpawnCube(World, Cube, FVector(150.0, 50.0, 50.0), TEXT("Cube B")),
@@ -183,8 +187,8 @@ bool FMantleVoxelizeCubesTest::RunTest(const FString& Parameters)
 	{
 		if (TestNotNull(TEXT("each type has a tile"), Type.Top.Get()))
 		{
-			TestEqual(TEXT("the tile is Tile Size wide"), Type.Top->Source.GetSizeX(), World->TileSize);
-			TestEqual(TEXT("and square"), Type.Top->Source.GetSizeY(), World->TileSize);
+			TestEqual(TEXT("the tile is Tile Size wide"), Type.Top->Source.GetSizeX(), int64(World->TileSize));
+			TestEqual(TEXT("and square"), Type.Top->Source.GetSizeY(), int64(World->TileSize));
 			TestTrue(TEXT("on every face"), Type.Side == Type.Top && Type.Bottom == Type.Top);
 		}
 	}
@@ -293,7 +297,7 @@ bool FMantleVoxelizeImportTest::RunTest(const FString& Parameters)
 		const UTexture2D* Tile = World->BlockTypes[0].Top.Get();
 		if (TestNotNull(TEXT("with a grey tile"), Tile))
 		{
-			TestEqual(TEXT("of the tile size"), Tile->Source.GetSizeX(), World->TileSize);
+			TestEqual(TEXT("of the tile size"), Tile->Source.GetSizeX(), int64(World->TileSize));
 		}
 	}
 	TestTrue(TEXT("the blocks it holds are the file's"), World->WorldData == Bytes);
