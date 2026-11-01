@@ -541,6 +541,7 @@ bool FMantleScatterParserTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the required keys alone parse"), Result.bSuccess);
 	const FMantleScatterParams* Plain = ScatterOf(Result);
 	const bool bCollisionOffByDefault = Plain && !Plain->bCollision;
+	const bool bNoPaintLayerByDefault = Plain && Plain->PaintLayer == -1 && !Plain->MinLayerWeight.IsSet() && !Plain->MaxLayerWeight.IsSet();
 	TestTrue(TEXT("defaults: box placement, box shape, no clusters, never culled"),
 		Plain && Plain->Placement == EMantleScatterPlacement::Box && Plain->Shape == EMantleScatterShape::Box
 		&& Plain->ClusterCount == 0 && Plain->DrawDistance == 0.0 && Plain->MaxSlopeDegrees == 90.0);
@@ -565,7 +566,7 @@ bool FMantleScatterParserTest::RunTest(const FString& Parameters)
 	const FMantleScatterParams* Painted = ScatterOf(Result);
 	TestTrue(TEXT("the paint-layer keys parse"), Result.bSuccess && Painted && Painted->PaintLayer == 5
 		&& Painted->MinLayerWeight.Get(-1.0) == 0.9 && Painted->MaxLayerWeight.Get(-1.0) == 1.0);
-	TestEqual(TEXT("no paint layer by default"), Plain ? Plain->PaintLayer : 0, -1);
+	TestTrue(TEXT("no paint layer by default"), bNoPaintLayerByDefault);
 	TestTrue(TEXT("a paint layer on box placement is refused"), HasErrorAt(ParseScatter(TEXT(",\"paintLayer\":1,\"minLayerWeight\":0.5")), TEXT("paintLayer")));
 	TestTrue(TEXT("a paint layer past 7 is refused"),
 		HasErrorAt(ParseScatter(TEXT(",\"placement\":\"terrain\",\"paintLayer\":8,\"minLayerWeight\":0.5")), TEXT("paintLayer")));
