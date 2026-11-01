@@ -32,7 +32,12 @@ enum class EMantleScatterAlignment : uint8
 	/** A random yaw, plus pitch and roll each up to the max tilt either way. */
 	Tilted,
 	/** Any yaw, pitch and roll: rocks and debris with no up. */
-	Tumbled
+	Tumbled,
+	/**
+	 * Terrain placement only (#188): each instance stands on the ground's slope, its up following the surface normal, with a random turn
+	 * about that normal and a lean of up to the max tilt either way off it. On flat ground this is the same as Tilted.
+	 */
+	Ground
 };
 
 /** Where instances go: the box as it always was, or dropped onto the Terrain below each one (#169). The place schema's placement enum. */
@@ -92,7 +97,7 @@ struct FMantleScatterParams
 
 	EMantleScatterAlignment Alignment = EMantleScatterAlignment::Upright;
 
-	/** Tilted only: the largest pitch and roll either way, in degrees (0 to 90). */
+	/** Tilted and Ground only: the largest pitch and roll either way, in degrees (0 to 90). For Ground the lean is off the surface normal. */
 	double MaxTiltDegrees = 10.0;
 
 	TArray<FMantleScatterMesh> Meshes;
@@ -105,6 +110,9 @@ struct FMantleScatterParams
 
 	/** Terrain only: instances on ground steeper than this many degrees from flat are dropped. 90 filters nothing. */
 	double MaxSlopeDegrees = 90.0;
+
+	/** Terrain only (#188): instances on ground flatter than this many degrees from flat are dropped, 0 to MaxSlopeDegrees. 0 filters nothing. */
+	double MinSlopeDegrees = 0.0;
 
 	/** Terrain only: the surface's world height, cm, must be at least MinHeight and at most MaxHeight when these are set. */
 	TOptional<double> MinHeight;
@@ -146,8 +154,15 @@ struct FMantleScatterGround
 {
 	/** The surface height, millimetres, rounded to whole mm. */
 	int64 ZMm = 0;
-	/** The surface normal's up component, 0 to 1 (1 is flat). */
+	/** The surface normal's up component in world space, 0 to 1 (1 is flat): what the slope limits read. */
 	double NormalZ = 1.0;
+	/**
+	 * The surface normal in the scatter's own space (unit length), what Ground alignment follows; the same surface as NormalZ. Each
+	 * component is rounded to millionths before use, as NormalZ is. Up for a Ground function that does not set it.
+	 */
+	double LocalNormalX = 0.0;
+	double LocalNormalY = 0.0;
+	double LocalNormalZ = 1.0;
 	/** The surface's height in world space, cm. */
 	double WorldZCm = 0.0;
 	/** The Scatter's paint layer's weight there, 0 to 255 (the weightmap's byte, nearest texel); only read when PaintLayer is set. */

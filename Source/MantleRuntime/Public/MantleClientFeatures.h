@@ -82,6 +82,8 @@ namespace MantleClientFeatures
 	inline const TCHAR* const ScatterCollision = TEXT("scatterCollision");
 	/** A Scatter's paint-layer filter (#187): paintLayer, minLayerWeight and maxLayerWeight on terrain placement. */
 	inline const TCHAR* const ScatterPaintLayer = TEXT("scatterPaintLayer");
+	/** A Scatter's minimum slope and ground alignment (#188): minSlopeDegrees, and alignment "ground" on terrain placement. */
+	inline const TCHAR* const ScatterGroundAlign = TEXT("scatterGroundAlign");
 
 	/** Every feature this build reads, in the order above. */
 	inline TArray<FString> All()
@@ -90,7 +92,7 @@ namespace MantleClientFeatures
 			InstancedMesh, CrowdSpawner, CrowdPointsOfInterest, SkeletalMesh, RectLight, Decal, LightShape, Terrain, TerrainGrass,
 			Vehicle, VehicleLinkage, VehicleParts, VehicleCarInteraction, VehicleContactPoints, VehicleHiddenSeat, VehicleFliers, VehicleHover, VehicleSeatKind, VehicleWeaponArc, Effect, EffectSprites, Constraint, Scatter, ReflectionProbes, Storage,
 			UIDocuments, EnvironmentDefaults, EnvironmentLighting, AvatarHeight, SoundEmitterAutoplay, StaticMeshPhysics, PhysicsMaterial, Surface, DrawDistance, CarPaint,
-			MaterialFidelity, MaterialAdditive, WeaponDocument, WorldText, VoxelWorld, ScatterDrawDistance, ScatterTerrain, ScatterShapes, ScatterCollision, ScatterPaintLayer
+			MaterialFidelity, MaterialAdditive, WeaponDocument, WorldText, VoxelWorld, ScatterDrawDistance, ScatterTerrain, ScatterShapes, ScatterCollision, ScatterPaintLayer, ScatterGroundAlign
 		};
 	}
 }

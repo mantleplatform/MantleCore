@@ -12,7 +12,7 @@ namespace MantleScatterPrivate
 	constexpr uint64 ScatterGoldenGamma = 0x9E3779B97F4A7C15ull;
 
 	/** The schema's alignment enum, in EMantleScatterAlignment order. */
-	const TCHAR* const GScatterAlignmentNames[] = { TEXT("upright"), TEXT("tilted"), TEXT("tumbled") };
+	const TCHAR* const GScatterAlignmentNames[] = { TEXT("upright"), TEXT("tilted"), TEXT("tumbled"), TEXT("ground") };
 	constexpr int32 GScatterAlignmentCount = static_cast<int32>(UE_ARRAY_COUNT(GScatterAlignmentNames));
 
 	/** SplitMix64's output function: a bijective 64-bit mix. */
@@ -98,6 +98,16 @@ namespace MantleScatterPrivate
 		if (!(Params.MaxSlopeDegrees >= 0.0 && Params.MaxSlopeDegrees <= 90.0))
 		{
 			OutError = FString::Printf(TEXT("max slope %g must be 0 to 90 degrees"), Params.MaxSlopeDegrees);
+			return false;
+		}
+		if (!(Params.MinSlopeDegrees >= 0.0 && Params.MinSlopeDegrees <= Params.MaxSlopeDegrees))
+		{
+			OutError = FString::Printf(TEXT("min slope %g must be 0 or more and at most the max slope %g degrees"), Params.MinSlopeDegrees, Params.MaxSlopeDegrees);
+			return false;
+		}
+		if (Params.Alignment == EMantleScatterAlignment::Ground && Params.Placement != EMantleScatterPlacement::Terrain)
+		{
+			OutError = TEXT("alignment ground only applies where placement is terrain");
 			return false;
 		}
 		const double MaxCoordinate = FMantlePlaceLimits::MaxScatterCoordinate;
@@ -227,6 +237,269 @@ namespace MantleScatterPrivate
 	{
 		const double Millionths = Value * 1.0e6;
 		return static_cast<int64>(FMath::FloorToDouble(Millionths + 0.5));
+	}
+
+	// Ground alignment (#188) is integer maths from end to end: the rounded surface normal in, hundredths of a degree out, with no
+	// sin, cos, atan or sqrt from the C library, so the server, every client and the editor preview turn an instance the same bit for
+	// bit. Vectors are in millionths (ScatterUnit is 1). sin, cos and atan2 are CORDIC (shifts and adds on a table of angles) and the
+	// square root is an integer one.
+	constexpr int64 ScatterUnit = 1000000;
+
+	/** atan(2^-i) in millionths of a degree, the CORDIC table. */
+	constexpr int64 GScatterCordicAngle[] = {
+		45000000, 26565051, 14036243, 7125016, 3576334, 1789911, 895174, 447614, 223811, 111906, 55953, 27976, 13988, 6994,
+		3497, 1749, 874, 437, 219, 109, 55, 27, 14, 7, 3, 2, 1 };
+	constexpr int32 GScatterCordicSteps = static_cast<int32>(UE_ARRAY_COUNT(GScatterCordicAngle));
+	/** The product of 1 / sqrt(1 + 2^-2i) over the steps, times 1e9: the start length that leaves a CORDIC rotation of length 1e9. */
+	constexpr int64 GScatterCordicGain = 607252935;
+
+	/** Value / Divisor rounded down (Divisor above 0), the same on every machine for a negative Value too. */
+	int64 ScatterFloorDiv(const int64 Value, const int64 Divisor)
+	{
+		int64 Quotient = Value / Divisor;
+		if (Value % Divisor < 0)
+		{
+			--Quotient;
+		}
+		return Quotient;
+	}
+
+	/** Value / Divisor rounded half up (Divisor above 0). */
+	int64 ScatterDivRound(const int64 Value, const int64 Divisor)
+	{
+		return ScatterFloorDiv(2 * Value + Divisor, 2 * Divisor);
+	}
+
+	/** The square root of Value (0 or more) rounded down, one bit pair at a time. */
+	int64 ScatterISqrt(const int64 Value)
+	{
+		if (Value <= 0)
+		{
+			return 0;
+		}
+		uint64 Remaining = static_cast<uint64>(Value);
+		uint64 Result = 0;
+		uint64 Bit = 1ull << 62;
+		while (Bit > Remaining)
+		{
+			Bit >>= 2;
+		}
+		while (Bit != 0)
+		{
+			if (Remaining >= Result + Bit)
+			{
+				Remaining -= Result + Bit;
+				Result = (Result >> 1) + Bit;
+			}
+			else
+			{
+				Result >>= 1;
+			}
+			Bit >>= 2;
+		}
+		return static_cast<int64>(Result);
+	}
+
+	/** The sine and cosine of an angle in hundredths of a degree (any whole number), each in millionths. */
+	void ScatterSinCos(const int64 Hundredths, int64& OutSin, int64& OutCos)
+	{
+		// Millionths of a degree, wrapped to -180 to 180 and then to -90 to 90 (the CORDIC's reach), flipping both results past 90.
+		int64 Angle = Hundredths * 10000;
+		Angle = ((Angle % 360000000) + 360000000) % 360000000;
+		if (Angle > 180000000)
+		{
+			Angle -= 360000000;
+		}
+		int64 Flip = 1;
+		if (Angle > 90000000)
+		{
+			Angle -= 180000000;
+			Flip = -1;
+		}
+		else if (Angle < -90000000)
+		{
+			Angle += 180000000;
+			Flip = -1;
+		}
+		int64 X = GScatterCordicGain;
+		int64 Y = 0;
+		int64 Left = Angle;
+		for (int32 Step = 0; Step < GScatterCordicSteps; ++Step)
+		{
+			const int64 ShiftedX = X >> Step;
+			const int64 ShiftedY = Y >> Step;
+			if (Left >= 0)
+			{
+				X -= ShiftedY;
+				Y += ShiftedX;
+				Left -= GScatterCordicAngle[Step];
+			}
+			else
+			{
+				X += ShiftedY;
+				Y -= ShiftedX;
+				Left += GScatterCordicAngle[Step];
+			}
+		}
+		OutSin = Flip * ScatterDivRound(Y, 1000);
+		OutCos = Flip * ScatterDivRound(X, 1000);
+	}
+
+	/** atan2(Y, X) in whole hundredths of a degree, above -18000 and at most 18000; 0 for (0, 0). Any size of Y and X. */
+	int64 ScatterAtan2(int64 Y, int64 X)
+	{
+		if (X == 0 && Y == 0)
+		{
+			return 0;
+		}
+		// Both scaled so the larger is about 2^40: a left shift loses nothing, a right one only bits far below the angle's resolution.
+		const uint64 Larger = static_cast<uint64>(FMath::Max(FMath::Abs(X), FMath::Abs(Y)));
+		const int32 Shift = 40 - (64 - static_cast<int32>(FMath::CountLeadingZeros64(Larger)));
+		if (Shift >= 0)
+		{
+			X *= (1ll << Shift);
+			Y *= (1ll << Shift);
+		}
+		else
+		{
+			X >>= -Shift;
+			Y >>= -Shift;
+		}
+		// The CORDIC turns a vector in the right half onto the X axis; a vector in the left half is flipped there first.
+		int64 Total = 0;
+		if (X < 0)
+		{
+			X = -X;
+			Y = -Y;
+			Total = 180000000;
+		}
+		for (int32 Step = 0; Step < GScatterCordicSteps; ++Step)
+		{
+			const int64 ShiftedX = X >> Step;
+			const int64 ShiftedY = Y >> Step;
+			if (Y > 0)
+			{
+				X += ShiftedY;
+				Y -= ShiftedX;
+				Total += GScatterCordicAngle[Step];
+			}
+			else
+			{
+				X -= ShiftedY;
+				Y += ShiftedX;
+				Total -= GScatterCordicAngle[Step];
+			}
+		}
+		int64 Hundredths = ScatterDivRound(Total, 10000);
+		if (Hundredths > 18000)
+		{
+			Hundredths -= 36000;
+		}
+		else if (Hundredths <= -18000)
+		{
+			Hundredths += 36000;
+		}
+		return Hundredths;
+	}
+
+	/** A direction, in millionths. */
+	struct FScatterAxis
+	{
+		int64 X = 0;
+		int64 Y = 0;
+		int64 Z = 0;
+	};
+
+	/** The forward (local X) and up (local Z) axes of FRotator(pitch, yaw, roll), each angle in hundredths of a degree: FRotationMatrix's first and third rows. */
+	void ScatterAxes(const int64 Pitch, const int64 Yaw, const int64 Roll, FScatterAxis& OutForward, FScatterAxis& OutUp)
+	{
+		int64 SinPitch, CosPitch, SinYaw, CosYaw, SinRoll, CosRoll;
+		ScatterSinCos(Pitch, SinPitch, CosPitch);
+		ScatterSinCos(Yaw, SinYaw, CosYaw);
+		ScatterSinCos(Roll, SinRoll, CosRoll);
+		const int64 SinPitchCosYaw = ScatterDivRound(SinPitch * CosYaw, ScatterUnit);
+		const int64 SinPitchSinYaw = ScatterDivRound(SinPitch * SinYaw, ScatterUnit);
+		OutForward.X = ScatterDivRound(CosPitch * CosYaw, ScatterUnit);
+		OutForward.Y = ScatterDivRound(CosPitch * SinYaw, ScatterUnit);
+		OutForward.Z = SinPitch;
+		OutUp.X = -ScatterDivRound(CosRoll * SinPitchCosYaw, ScatterUnit) - ScatterDivRound(SinRoll * SinYaw, ScatterUnit);
+		OutUp.Y = ScatterDivRound(CosYaw * SinRoll, ScatterUnit) - ScatterDivRound(CosRoll * SinPitchSinYaw, ScatterUnit);
+		OutUp.Z = ScatterDivRound(CosRoll * CosPitch, ScatterUnit);
+	}
+
+	/**
+	 * Vector after the turn that takes straight up onto the unit normal Normal (its up component 0 or more): the shortest turn, about
+	 * the horizontal axis across the slope. Written without a division by the slope's length, so a flat normal needs no special case.
+	 */
+	FScatterAxis ScatterTurnToNormal(const FScatterAxis& Normal, const FScatterAxis& Vector)
+	{
+		const int64 Across = ScatterDivRound(Normal.X * Vector.X + Normal.Y * Vector.Y, ScatterUnit);
+		const int64 OnePlusUp = ScatterUnit + Normal.Z;
+		FScatterAxis Out;
+		Out.X = Vector.X - ScatterDivRound(Normal.X * Across, OnePlusUp) + ScatterDivRound(Normal.X * Vector.Z, ScatterUnit);
+		Out.Y = Vector.Y - ScatterDivRound(Normal.Y * Across, OnePlusUp) + ScatterDivRound(Normal.Y * Vector.Z, ScatterUnit);
+		Out.Z = -Across + ScatterDivRound(Normal.Z * Vector.Z, ScatterUnit);
+		return Out;
+	}
+
+	/**
+	 * Ground alignment (#188). Yaw, Pitch and Roll (hundredths of a degree) are the instance's turn as if it stood on flat ground; this
+	 * replaces them with that turn followed by the shortest turn that takes up onto the surface normal (NormalX/Y/Z in millionths of the
+	 * scatter's space, any length). The instance's up ends on the normal, with the random yaw as its turn about it and the tilt as its
+	 * lean off it. A normal that is straight up (or has no length) leaves the angles exactly as they were.
+	 */
+	void ScatterAlignToGround(const int64 NormalX, const int64 NormalY, const int64 NormalZ, uint16& Yaw, int16& Pitch, int16& Roll)
+	{
+		FScatterAxis Normal;
+		Normal.X = NormalX;
+		Normal.Y = NormalY;
+		Normal.Z = FMath::Max<int64>(NormalZ, 0);
+		const int64 Length = ScatterISqrt(Normal.X * Normal.X + Normal.Y * Normal.Y + Normal.Z * Normal.Z);
+		if (Length <= 0)
+		{
+			return;
+		}
+		Normal.X = ScatterDivRound(Normal.X * ScatterUnit, Length);
+		Normal.Y = ScatterDivRound(Normal.Y * ScatterUnit, Length);
+		Normal.Z = ScatterDivRound(Normal.Z * ScatterUnit, Length);
+		if (Normal.X == 0 && Normal.Y == 0)
+		{
+			return;
+		}
+
+		FScatterAxis Forward;
+		FScatterAxis Up;
+		ScatterAxes(Pitch, Yaw, Roll, Forward, Up);
+		Forward = ScatterTurnToNormal(Normal, Forward);
+		Up = ScatterTurnToNormal(Normal, Up);
+
+		// Back to yaw, pitch and roll: yaw and pitch from the forward axis, roll from where up sits between the roll-free up and side axes.
+		const int64 Flat = ScatterISqrt(Forward.X * Forward.X + Forward.Y * Forward.Y);
+		const int64 Whole = ScatterISqrt(Flat * Flat + Forward.Z * Forward.Z);
+		int64 NewYaw = 0;
+		int64 CosYaw = ScatterUnit;
+		int64 SinYaw = 0;
+		if (Flat > 0)
+		{
+			NewYaw = ScatterAtan2(Forward.Y, Forward.X);
+			CosYaw = ScatterDivRound(Forward.X * ScatterUnit, Flat);
+			SinYaw = ScatterDivRound(Forward.Y * ScatterUnit, Flat);
+		}
+		const int64 NewPitch = ScatterAtan2(Forward.Z, Flat);
+		const int64 SinPitch = Whole > 0 ? ScatterDivRound(Forward.Z * ScatterUnit, Whole) : 0;
+		const int64 CosPitch = Whole > 0 ? ScatterDivRound(Flat * ScatterUnit, Whole) : ScatterUnit;
+		// Roll-free side axis (-sin yaw, cos yaw, 0) and up axis (-sin pitch cos yaw, -sin pitch sin yaw, cos pitch); up = cos roll x the second + sin roll x the first.
+		const int64 Side = ScatterDivRound(-SinYaw * Up.X + CosYaw * Up.Y, ScatterUnit);
+		const int64 Lift = ScatterDivRound(-ScatterDivRound(SinPitch * CosYaw, ScatterUnit) * Up.X - ScatterDivRound(SinPitch * SinYaw, ScatterUnit) * Up.Y
+			+ CosPitch * Up.Z, ScatterUnit);
+		int64 NewRoll = ScatterAtan2(Side, Lift);
+		if (NewRoll == 18000)
+		{
+			NewRoll = -18000;
+		}
+		Yaw = static_cast<uint16>(((NewYaw % 36000) + 36000) % 36000);
+		Pitch = static_cast<int16>(FMath::Clamp<int64>(NewPitch, -9000, 9000));
+		Roll = static_cast<int16>(NewRoll);
 	}
 
 	/** A path in whole millimetres: its points, each segment's length rounded to whole mm (a segment that rounds to 0 is skipped), and the strip's width. */
@@ -446,9 +719,13 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 
 	const bool bTerrain = Params.Placement == EMantleScatterPlacement::Terrain;
 	const bool bSlopeFilter = bTerrain && Params.MaxSlopeDegrees < 90.0;
+	const bool bMinSlopeFilter = bTerrain && Params.MinSlopeDegrees > 0.0;
+	const bool bAlignToGround = bTerrain && Params.Alignment == EMantleScatterAlignment::Ground;
 	// The filters compare whole numbers: the normal's up component and the threshold (the cosine of the limit) each rounded to
 	// millionths, heights in whole millimetres, so a last bit of float maths on another machine cannot flip a decision.
 	const int64 SlopeLimitMicro = ScatterMillionths(FMath::Cos(FMath::DegreesToRadians(Params.MaxSlopeDegrees)));
+	// The minimum slope (#188) is the same test the other way round: kept where the up component is at most the cosine of the limit.
+	const int64 MinSlopeLimitMicro = ScatterMillionths(FMath::Cos(FMath::DegreesToRadians(Params.MinSlopeDegrees)));
 	// The paint-layer filter (#187): the weight is the weightmap's byte (0 to 255), the thresholds millionths, and the test
 	// is byte x 1,000,000 against threshold x 255, all whole numbers.
 	const bool bLayerFilter = bTerrain && Params.PaintLayer >= 0;
@@ -535,6 +812,10 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 		}
 
 		int64 Z = ScatterPick(ScatterLow(Height), -HalfZ, HalfZ);
+		// The surface normal Ground alignment follows, in millionths of the scatter's space (up until a terrain says otherwise).
+		int64 AlignX = 0;
+		int64 AlignY = 0;
+		int64 AlignZ = ScatterUnit;
 		if (bTerrain)
 		{
 			FMantleScatterGround Ground;
@@ -545,6 +826,13 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 			if (bSlopeFilter)
 			{
 				if (ScatterMillionths(Ground.NormalZ) < SlopeLimitMicro)
+				{
+					continue;
+				}
+			}
+			if (bMinSlopeFilter)
+			{
+				if (ScatterMillionths(Ground.NormalZ) > MinSlopeLimitMicro)
 				{
 					continue;
 				}
@@ -566,6 +854,12 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 				}
 			}
 			Z += Ground.ZMm;
+			if (bAlignToGround)
+			{
+				AlignX = ScatterMillionths(Ground.LocalNormalX);
+				AlignY = ScatterMillionths(Ground.LocalNormalY);
+				AlignZ = ScatterMillionths(Ground.LocalNormalZ);
+			}
 		}
 		// The fixed point is 32-bit millimetres (2147 km): a position past it cannot be a place's.
 		if (FMath::Abs(X) > MAX_int32 || FMath::Abs(Y) > MAX_int32 || FMath::Abs(Z) > MAX_int32)
@@ -581,8 +875,14 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 		switch (Params.Alignment)
 		{
 		case EMantleScatterAlignment::Tilted:
+		case EMantleScatterAlignment::Ground:
 			Instance.Pitch = static_cast<int16>(ScatterPick(ScatterLow(Turn), -Tilt, Tilt));
 			Instance.Roll = static_cast<int16>(ScatterPick(ScatterHigh(Turn), -Tilt, Tilt));
+			// Ground leans like Tilted, then the whole turn is carried onto the slope (#188).
+			if (bAlignToGround)
+			{
+				ScatterAlignToGround(AlignX, AlignY, AlignZ, Instance.Yaw, Instance.Pitch, Instance.Roll);
+			}
 			break;
 		case EMantleScatterAlignment::Tumbled:
 			Instance.Pitch = static_cast<int16>(ScatterPick(ScatterLow(Turn), -9000, 9000));
@@ -753,6 +1053,7 @@ TSharedRef<FJsonObject> FMantleScatter::ToJson(const FMantleScatterParams& Param
 	{
 		Json->SetStringField(TEXT("placement"), PlacementName(Params.Placement));
 		Json->SetNumberField(TEXT("maxSlopeDegrees"), Params.MaxSlopeDegrees);
+		Json->SetNumberField(TEXT("minSlopeDegrees"), Params.MinSlopeDegrees);
 		if (Params.MinHeight.IsSet())
 		{
 			Json->SetNumberField(TEXT("minHeight"), Params.MinHeight.GetValue());

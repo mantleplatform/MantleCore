@@ -1956,6 +1956,13 @@ namespace
 		}
 		const bool bTerrain = P.Placement == EMantleScatterPlacement::Terrain;
 		ReadOptionalRange(Ctx, Props, TEXT("maxSlopeDegrees"), Path, 0.0, 90.0, P.MaxSlopeDegrees);
+		// The minimum slope (#188): 0 to 90 and at most the maximum, reported at the maximum like the height pair.
+		ReadOptionalRange(Ctx, Props, TEXT("minSlopeDegrees"), Path, 0.0, 90.0, P.MinSlopeDegrees);
+		if (Props->HasField(TEXT("minSlopeDegrees")) && Props->HasField(TEXT("maxSlopeDegrees")) && P.MaxSlopeDegrees < P.MinSlopeDegrees)
+		{
+			Ctx.Fail(Join(Path, TEXT("maxSlopeDegrees")),
+				FString::Printf(TEXT("maxSlopeDegrees %g is below minSlopeDegrees %g"), P.MaxSlopeDegrees, P.MinSlopeDegrees));
+		}
 		for (const TCHAR* Key : { TEXT("minHeight"), TEXT("maxHeight") })
 		{
 			if (!Props->HasField(Key))
@@ -2013,12 +2020,17 @@ namespace
 		}
 		if (!bTerrain)
 		{
-			for (const TCHAR* Key : { TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"), TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight") })
+			for (const TCHAR* Key : { TEXT("maxSlopeDegrees"), TEXT("minSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"), TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight") })
 			{
 				if (Props->HasField(Key))
 				{
 					Ctx.Fail(Join(Path, Key), FString::Printf(TEXT("%s only applies where placement is \"terrain\""), Key));
 				}
+			}
+			// alignment is parsed before placement, so the ground alignment (#188) is checked here, at its own key.
+			if (P.Alignment == EMantleScatterAlignment::Ground)
+			{
+				Ctx.Fail(Join(Path, TEXT("alignment")), TEXT("alignment ground only applies where placement is \"terrain\""));
 			}
 		}
 
@@ -2184,7 +2196,7 @@ namespace
 		RequireNoUnknownKeys(
 			Ctx, Props,
 			{ TEXT("seed"), TEXT("halfExtent"), TEXT("density"), TEXT("scale"), TEXT("alignment"), TEXT("maxTilt"), TEXT("meshes"),
-				TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"), TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight"), TEXT("shape"),
+				TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"), TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight"), TEXT("shape"),
 				TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision") },
 			Path);
 		const int32 ErrorsBefore = Ctx.Errors.Num();
@@ -2227,7 +2239,7 @@ namespace
 			FString Alignment;
 			if (RequireString(Ctx, Props, TEXT("alignment"), Path, Alignment) && !FMantleScatter::ParseAlignment(Alignment, P.Alignment))
 			{
-				Ctx.Fail(Join(Path, TEXT("alignment")), FString::Printf(TEXT("'%s' is not upright, tilted or tumbled"), *Alignment));
+				Ctx.Fail(Join(Path, TEXT("alignment")), FString::Printf(TEXT("'%s' is not upright, tilted, tumbled or ground"), *Alignment));
 			}
 		}
 		ReadOptionalRange(Ctx, Props, TEXT("maxTilt"), Path, 0.0, FMantlePlaceLimits::MaxScatterTilt, P.MaxTiltDegrees);

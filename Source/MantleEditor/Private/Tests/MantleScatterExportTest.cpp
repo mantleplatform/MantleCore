@@ -54,6 +54,9 @@ namespace MantleScatterExportTestPrivate
 		P.DrawDistance = 12345.678901;
 		P.Placement = EMantleScatterPlacement::Terrain;
 		P.MaxSlopeDegrees = 33.3333333;
+		P.MinSlopeDegrees = 12.5;
+		P.Alignment = EMantleScatterAlignment::Ground;
+		P.MaxTiltDegrees = 7.25;
 		P.MinHeight = -250.125;
 		P.MaxHeight = 4000.0625;
 		P.PaintLayer = 5;
@@ -87,6 +90,10 @@ namespace MantleScatterExportTestPrivate
 		{
 			Out.ZMm = (XMm + YMm) / 100;
 			Out.NormalZ = 0.9;
+			// The same slope in the scatter's own space, for ground alignment (#188): 25.8 degrees, leaning along X.
+			Out.LocalNormalX = FMath::Sqrt(1.0 - 0.81);
+			Out.LocalNormalY = 0.0;
+			Out.LocalNormalZ = 0.9;
 			Out.WorldZCm = static_cast<double>(XMm) * 0.01;
 			// The paint layer's weight changes across the field, so the layer filter keeps some instances and drops others.
 			Out.LayerWeight = static_cast<int32>(FMath::Abs(XMm / 10000) % 256);
@@ -155,6 +162,9 @@ bool FMantleScatterExportKeysTest::RunTest(const FString& Parameters)
 		TestEqual(What + TEXT(": draw distance"), Got->DrawDistance, Sent.DrawDistance);
 		TestTrue(What + TEXT(": placed on terrain"), Got->Placement == EMantleScatterPlacement::Terrain);
 		TestEqual(What + TEXT(": max slope"), Got->MaxSlopeDegrees, Sent.MaxSlopeDegrees);
+		TestEqual(What + TEXT(": min slope"), Got->MinSlopeDegrees, Sent.MinSlopeDegrees);
+		TestTrue(What + TEXT(": aligned to the ground"), Got->Alignment == EMantleScatterAlignment::Ground);
+		TestEqual(What + TEXT(": max tilt"), Got->MaxTiltDegrees, Sent.MaxTiltDegrees);
 		TestTrue(What + TEXT(": min height"), Got->MinHeight == Sent.MinHeight);
 		TestTrue(What + TEXT(": max height"), Got->MaxHeight == Sent.MaxHeight);
 		TestEqual(What + TEXT(": paint layer"), Got->PaintLayer, Sent.PaintLayer);
@@ -195,7 +205,7 @@ bool FMantleScatterExportKeysTest::RunTest(const FString& Parameters)
 		&& Root->TryGetArrayField(TEXT("entities"), Entities) && Entities->Num() == 1
 		&& (*Entities)[0]->AsObject()->TryGetObjectField(TEXT("properties"), Properties)))
 	{
-		for (const TCHAR* Key : { TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"),
+		for (const TCHAR* Key : { TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"),
 			TEXT("shape"), TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision"),
 			TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight") })
 		{
@@ -405,6 +415,59 @@ bool FMantleScatterPaintLayerCheckTest::RunTest(const FString& Parameters)
 	const FMantleValidationResult Fine = FMantlePlaceValidator::Validate(Fixture.World);
 	TestFalse(TEXT("a sound filter on terrain says nothing of it"),
 		Has(Fine, EMantleIssueSeverity::Warning, TEXT("its Placement is Box")) || Has(Fine, EMantleIssueSeverity::Error, TEXT("Max Layer Weight")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterGroundAlignCheckTest,
+	"Mantle.Editor.Scatter.Check.GroundAlignmentAndMinSlope",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterGroundAlignCheckTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterExportTestPrivate;
+
+	// #188: ground alignment under Box placement and a Min Slope above the Max are errors with a plain fix.
+	FScatterWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	AMantleScatterVolume* Volume = Fixture.World->SpawnActor<AMantleScatterVolume>(FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("a volume"), Volume))
+	{
+		return false;
+	}
+	Volume->SetActorLabel(TEXT("Ferns"));
+	Volume->HalfExtent = FVector(1000.0, 1000.0, 0.0);
+	Volume->Density = 0.01;
+	Volume->Meshes.SetNum(1);
+	Volume->Meshes[0].MeshId = TEXT("ast_cube");
+	const auto Has = [](const FMantleValidationResult& Result, const TCHAR* Text)
+	{
+		return Result.Issues.ContainsByPredicate([Text](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Actor == TEXT("Ferns") && Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(Text);
+		});
+	};
+
+	Volume->Alignment = EMantleScatterAlignment::Ground;
+	Volume->Placement = EMantleScatterPlacement::Box;
+	TestTrue(TEXT("ground alignment on a box is an error"), Has(FMantlePlaceValidator::Validate(Fixture.World), TEXT("aligned to the ground, but its Placement is Box")));
+
+	Volume->Placement = EMantleScatterPlacement::Terrain;
+	Volume->MinSlopeDegrees = 50.0;
+	Volume->MaxSlopeDegrees = 30.0;
+	TestTrue(TEXT("a Min Slope above the Max is an error"), Has(FMantlePlaceValidator::Validate(Fixture.World), TEXT("the Max Slope is below the Min")));
+
+	Volume->MaxSlopeDegrees = 80.0;
+	const FMantleValidationResult Fine = FMantlePlaceValidator::Validate(Fixture.World);
+	TestFalse(TEXT("ground alignment between sound slopes on terrain says nothing of them"),
+		Has(Fine, TEXT("aligned to the ground")) || Has(Fine, TEXT("Max Slope is below")));
+	FMantleScatterParams Params;
+	FString Problem;
+	TestTrue(FString::Printf(TEXT("and it reads (%s)"), *Problem), Volume->ReadProps(Params, Problem));
+	TestEqual(TEXT("with its min slope"), Params.MinSlopeDegrees, 50.0);
 	return true;
 }
 

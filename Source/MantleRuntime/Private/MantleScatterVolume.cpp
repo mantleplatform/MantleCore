@@ -122,6 +122,7 @@ void AMantleScatterVolume::ApplyProps(const FMantleScatterParams& In)
 	DrawDistance = In.DrawDistance;
 	Placement = In.Placement;
 	MaxSlopeDegrees = In.MaxSlopeDegrees;
+	MinSlopeDegrees = In.MinSlopeDegrees;
 	bLimitMinHeight = In.MinHeight.IsSet();
 	MinHeight = In.MinHeight.Get(MinHeight);
 	bLimitMaxHeight = In.MaxHeight.IsSet();
@@ -210,6 +211,7 @@ bool AMantleScatterVolume::ReadProps(FMantleScatterParams& Out, FString& OutProb
 	if (Placement == EMantleScatterPlacement::Terrain)
 	{
 		Out.MaxSlopeDegrees = MaxSlopeDegrees;
+		Out.MinSlopeDegrees = MinSlopeDegrees;
 		if (bLimitMinHeight)
 		{
 			Out.MinHeight = MinHeight;
@@ -468,7 +470,7 @@ FString AMantleScatterVolume::SettingsKey() const
 	Key += FString::Printf(TEXT("|d%.17g|p%d,%.17g,%d,%.17g,%d,%.17g|s%d,%.17g,%.17g|c%d,%.17g|k%d|t%d"), DrawDistance,
 		static_cast<int32>(Placement), MaxSlopeDegrees, bLimitMinHeight, MinHeight, bLimitMaxHeight, MaxHeight,
 		static_cast<int32>(Shape), Radius, Width, ClusterCount, ClusterRadius, bCollision, TerrainSurfaces.Num());
-	Key += FString::Printf(TEXT("|v%d|L%d,%d,%.17g,%.17g"), TerrainVersion, bFilterPaintLayer, PaintLayer, MinLayerWeight, MaxLayerWeight);
+	Key += FString::Printf(TEXT("|v%d|L%d,%d,%.17g,%.17g|n%.17g"), TerrainVersion, bFilterPaintLayer, PaintLayer, MinLayerWeight, MaxLayerWeight, MinSlopeDegrees);
 	if (Placement == EMantleScatterPlacement::Terrain)
 	{
 		// Where the volume stands decides which ground each instance lands on, so moving it rebuilds.
@@ -667,6 +669,11 @@ FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
 		const double Millimetres = LocalZ * 10.0;
 		Out.ZMm = static_cast<int64>(FMath::FloorToDouble(Millimetres + 0.5));
 		Out.NormalZ = BestNormal.Z;
+		// The same surface in the scatter's own space, which is where each instance's turn is stored (scale ignored, as for the normal itself).
+		const FVector LocalNormal = ScatterToWorld.InverseTransformVectorNoScale(BestNormal).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
+		Out.LocalNormalX = LocalNormal.X;
+		Out.LocalNormalY = LocalNormal.Y;
+		Out.LocalNormalZ = LocalNormal.Z;
 		Out.WorldZCm = BestZ;
 		Out.LayerWeight = BestWeight;
 		return true;

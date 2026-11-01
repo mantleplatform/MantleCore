@@ -119,14 +119,17 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (ClampMin = "0.001", ClampMax = "65.535", UIMin = "0.1", UIMax = "4"))
 	double MaxScale = 1.2;
 
-	/** Upright turns instances about Z only; Tilted also leans them up to Max Tilt; Tumbled turns them any way. */
+	/**
+	 * Upright turns instances about Z only; Tilted also leans them up to Max Tilt; Tumbled turns them any way. Ground (Terrain placement
+	 * only) stands each instance on the slope, its up following the ground, with a random turn about it and a lean of up to Max Tilt.
+	 */
 	UPROPERTY(EditAnywhere, Category = "Scatter")
 	EMantleScatterAlignment Alignment = EMantleScatterAlignment::Upright;
 
-	/** Tilted only: the largest lean either way, 0 to 90 degrees. */
+	/** Tilted and Ground only: the largest lean either way (off the ground for Ground), 0 to 90 degrees. */
 	UPROPERTY(EditAnywhere, Category = "Scatter",
 		meta = (ClampMin = "0", ClampMax = "90", UIMin = "0", UIMax = "90", Units = "deg",
-			EditCondition = "Alignment == EMantleScatterAlignment::Tilted", EditConditionHides))
+			EditCondition = "Alignment == EMantleScatterAlignment::Tilted || Alignment == EMantleScatterAlignment::Ground", EditConditionHides))
 	double MaxTiltDegrees = 10.0;
 
 	/** The meshes instances are drawn from, 1 to 16, each picked by its weight. */
@@ -146,6 +149,12 @@ public:
 		meta = (ClampMin = "0", ClampMax = "90", Units = "deg",
 			EditCondition = "Placement == EMantleScatterPlacement::Terrain", EditConditionHides))
 	double MaxSlopeDegrees = 90.0;
+
+	/** Terrain only: instances on ground flatter than this many degrees from flat are left out (cliffs and steep slopes only). 0 leaves out none, at most Max Slope. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (ClampMin = "0", ClampMax = "90", Units = "deg",
+			EditCondition = "Placement == EMantleScatterPlacement::Terrain", EditConditionHides))
+	double MinSlopeDegrees = 0.0;
 
 	/** Terrain only: leave out instances whose ground is lower than Min Height (world cm). */
 	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",

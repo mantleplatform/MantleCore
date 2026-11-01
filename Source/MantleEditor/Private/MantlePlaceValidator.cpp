@@ -837,6 +837,22 @@ namespace
 				return;
 			}
 		}
+		// Ground alignment and a minimum slope (#188) need terrain placement and a min slope at most the max, as the parser holds them.
+		if (Volume->Alignment == EMantleScatterAlignment::Ground && Volume->Placement != EMantleScatterPlacement::Terrain)
+		{
+			Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+				TEXT("is aligned to the ground, but its Placement is Box: only a scatter placed on terrain has ground to stand its instances on."),
+				TEXT("Set Placement to Terrain, or set Alignment to Upright, Tilted or Tumbled.") });
+			return;
+		}
+		if (Volume->Placement == EMantleScatterPlacement::Terrain && Volume->MinSlopeDegrees > Volume->MaxSlopeDegrees)
+		{
+			Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+				FString::Printf(TEXT("keeps ground between slopes of %.1f and %.1f degrees: the Max Slope is below the Min, so no instance could be kept."),
+					Volume->MinSlopeDegrees, Volume->MaxSlopeDegrees),
+				TEXT("Set Max Slope Degrees to at least Min Slope Degrees in the scatter volume's Details panel.") });
+			return;
+		}
 		FMantleScatterParams Props;
 		FString Problem;
 		if (!Volume->ReadProps(Props, Problem))

@@ -620,4 +620,339 @@ bool FMantleScatterParserTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Minimum slope and ground alignment (#188).
+namespace MantleScatterTestPrivate
+{
+	/** Flat-looking ground at height 0 whose surface normal (the same in world and scatter space) is Normal. */
+	FMantleScatterGenerateOptions SlopeOptions(const FVector& Normal)
+	{
+		FMantleScatterGenerateOptions Options;
+		Options.Ground = [Normal](const int64, const int64, FMantleScatterGround& Out) -> bool
+		{
+			Out.ZMm = 0;
+			Out.NormalZ = Normal.Z;
+			Out.LocalNormalX = Normal.X;
+			Out.LocalNormalY = Normal.Y;
+			Out.LocalNormalZ = Normal.Z;
+			Out.WorldZCm = 0.0;
+			return true;
+		};
+		return Options;
+	}
+
+	FMantleScatterParams TerrainParams()
+	{
+		FMantleScatterParams P = BoxParams();
+		P.HalfExtent = FVector(1000.0, 1000.0, 0.0);
+		P.Density = 1.0;
+		P.Placement = EMantleScatterPlacement::Terrain;
+		return P;
+	}
+
+	double DegreesBetween(const FVector& A, const FVector& B)
+	{
+		return FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(A.GetSafeNormal(), B.GetSafeNormal()), -1.0, 1.0)));
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterMinSlopeTest,
+	"Mantle.Runtime.Scatter.Generator.MinSlopeFilter",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterMinSlopeTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterTestPrivate;
+
+	FMantleScatterParams P = TerrainParams();
+
+	// The west half (X < 0) is a 60 degree slope (normal up 0.5), the east half is flat.
+	FMantleScatterGenerateOptions Options;
+	Options.Ground = [](const int64 XMm, const int64, FMantleScatterGround& Out) -> bool
+	{
+		Out.ZMm = 0;
+		Out.NormalZ = XMm < 0 ? 0.5 : 1.0;
+		Out.WorldZCm = 0.0;
+		return true;
+	};
+	const TArray<FMantleScatterInstance> Everything = GenerateOk(*this, P, Options);
+	TestTrue(TEXT("some stand without a limit"), Everything.Num() > 0);
+
+	// A minimum of 0 is the default: nothing is dropped, and the instances are the ones the generator always made.
+	P.MinSlopeDegrees = 0.0;
+	TestEqual(TEXT("a minimum of 0 filters nothing"), FMantleScatter::Hash(GenerateOk(*this, P, Options)), FMantleScatter::Hash(Everything));
+
+	// A minimum of 30 keeps the steep (west) side only, and those instances are the unfiltered ones, unchanged.
+	P.MinSlopeDegrees = 30.0;
+	TArray<FMantleScatterInstance> Kept = GenerateOk(*this, P, Options);
+	TestTrue(TEXT("the instances that stay are the unfiltered west ones"),
+		Kept == Everything.FilterByPredicate([](const FMantleScatterInstance& I) { return I.X < 0; }));
+	TestTrue(TEXT("a minimum keeps some and drops some"), Kept.Num() > 0 && Kept.Num() < Everything.Num());
+	TestEqual(TEXT("the filtered hash is stable"), FMantleScatter::Hash(GenerateOk(*this, P, Options)), FMantleScatter::Hash(Kept));
+
+	// With a maximum on top, a band that holds 60 degrees keeps the west, one that holds neither side keeps none.
+	P.MaxSlopeDegrees = 70.0;
+	TestEqual(TEXT("a 30 to 70 degree band keeps the 60 degree side"), GenerateOk(*this, P, Options).Num(), Kept.Num());
+	P.MinSlopeDegrees = 10.0;
+	P.MaxSlopeDegrees = 50.0;
+	TestEqual(TEXT("a 10 to 50 degree band holds neither side"), GenerateOk(*this, P, Options).Num(), 0);
+
+	// A slope on the limit is kept both ways: min = max = 60 keeps the 60 degree side (cos 60 = 0.5 to the millionth) and drops flat.
+	P.MinSlopeDegrees = 60.0;
+	P.MaxSlopeDegrees = 60.0;
+	TestEqual(TEXT("a slope on the limit is kept"), GenerateOk(*this, P, Options).Num(), Kept.Num());
+
+	// A normal within half a millionth of the threshold is on it; a clearly flatter one is dropped, a clearly steeper one kept.
+	P.MaxSlopeDegrees = 90.0;
+	for (const double NormalZ : { 0.4999996, 0.5000004 })
+	{
+		TestTrue(TEXT("a normal within half a millionth of the minimum is kept"), GenerateOk(*this, P, SlopeOptions(FVector(FMath::Sqrt(1.0 - NormalZ * NormalZ), 0.0, NormalZ))).Num() > 0);
+	}
+	TestEqual(TEXT("flatter ground than the minimum is dropped"), GenerateOk(*this, P, SlopeOptions(FVector(0.0, FMath::Sin(FMath::DegreesToRadians(59.0)), FMath::Cos(FMath::DegreesToRadians(59.0))))).Num(), 0);
+	TestTrue(TEXT("steeper ground than the minimum is kept"), GenerateOk(*this, P, SlopeOptions(FVector(0.0, FMath::Sin(FMath::DegreesToRadians(61.0)), FMath::Cos(FMath::DegreesToRadians(61.0))))).Num() > 0);
+
+	// A minimum of 90 keeps a vertical wall (normal up 0) and nothing less.
+	P.MinSlopeDegrees = 90.0;
+	TestTrue(TEXT("a wall is kept by a minimum of 90"), GenerateOk(*this, P, SlopeOptions(FVector(1.0, 0.0, 0.0))).Num() > 0);
+	TestEqual(TEXT("a steep slope is dropped by a minimum of 90"),
+		GenerateOk(*this, P, SlopeOptions(FVector(FMath::Sin(FMath::DegreesToRadians(89.0)), 0.0, FMath::Cos(FMath::DegreesToRadians(89.0))))).Num(), 0);
+
+	// Box placement ignores the limit (the parser refuses the key there); the numbers are checked.
+	FMantleScatterParams Box = BoxParams();
+	TArray<FMantleScatterInstance> Out;
+	FString Error;
+	Box.MinSlopeDegrees = 45.0;
+	TestTrue(TEXT("a minimum on box placement filters nothing"), FMantleScatter::Generate(Box, Out, Error) && Out.Num() == 30);
+	Box.MinSlopeDegrees = -1.0;
+	TestFalse(TEXT("a negative minimum is refused"), FMantleScatter::Generate(Box, Out, Error));
+	Box.MinSlopeDegrees = 91.0;
+	TestFalse(TEXT("a minimum past 90 is refused"), FMantleScatter::Generate(Box, Out, Error));
+	P.MinSlopeDegrees = 60.0;
+	P.MaxSlopeDegrees = 30.0;
+	TestFalse(TEXT("a minimum above the maximum is refused"), FMantleScatter::Generate(P, Out, Error));
+	TestTrue(TEXT("with a message naming both"), Error.Contains(TEXT("min slope")) && Error.Contains(TEXT("max slope")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterGroundAlignmentTest,
+	"Mantle.Runtime.Scatter.Generator.GroundAlignment",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterGroundAlignmentTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterTestPrivate;
+
+	FMantleScatterParams P = TerrainParams();
+	P.Density = 2.0;
+	P.MaxTiltDegrees = 20.0;
+
+	// Existing alignments never read the normal: on sloped ground Upright and Tilted give the box's instances, only the height differs.
+	const FVector Slope(0.6, -0.48, 0.64);
+	FMantleScatterParams Plain = P;
+	Plain.Alignment = EMantleScatterAlignment::Tilted;
+	const TArray<FMantleScatterInstance> TiltedOnSlope = GenerateOk(*this, Plain, SlopeOptions(Slope));
+	const TArray<FMantleScatterInstance> TiltedOnFlat = GenerateOk(*this, Plain, SlopeOptions(FVector::UpVector));
+	TestTrue(TEXT("tilted instances ignore the slope"), TiltedOnSlope == TiltedOnFlat);
+
+	// Ground on flat ground is exactly Tilted (the same instances, the same hash), whatever the tilt.
+	FMantleScatterParams Ground = P;
+	Ground.Alignment = EMantleScatterAlignment::Ground;
+	TestTrue(TEXT("ground on flat ground is tilted"), GenerateOk(*this, Ground, SlopeOptions(FVector::UpVector)) == TiltedOnFlat);
+	Ground.MaxTiltDegrees = 0.0;
+	FMantleScatterParams UprightParams = P;
+	UprightParams.MaxTiltDegrees = 0.0;
+	TestTrue(TEXT("ground with no tilt on flat ground is upright"),
+		GenerateOk(*this, Ground, SlopeOptions(FVector::UpVector)) == GenerateOk(*this, UprightParams, SlopeOptions(FVector::UpVector)));
+
+	// On a slope with no tilt, each instance's up is the ground normal, and it is the flat instance turned onto the slope.
+	const TArray<FVector> Normals = {
+		Slope.GetSafeNormal(), FVector(0.5, 0.0, 0.8660254).GetSafeNormal(), FVector(-0.3, 0.2, 0.9).GetSafeNormal(),
+		FVector(0.0, 1.0, 0.1).GetSafeNormal(), FVector(1.0, 0.0, 0.0), FVector(0.0, -1.0, 0.0), FVector(-0.7071068, 0.7071068, 0.0),
+		FVector(0.9999, 0.0, 0.01).GetSafeNormal(), FVector(0.0, 0.01, 0.99995).GetSafeNormal() };
+	Ground.MaxTiltDegrees = 0.0;
+	FMantleScatterParams FlatReference = Ground;
+	FlatReference.Alignment = EMantleScatterAlignment::Tilted;
+	const TArray<FMantleScatterInstance> FlatInstances = GenerateOk(*this, FlatReference, SlopeOptions(FVector::UpVector));
+	for (const FVector& Normal : Normals)
+	{
+		const TArray<FMantleScatterInstance> Aligned = GenerateOk(*this, Ground, SlopeOptions(Normal));
+		TestEqual(*FString::Printf(TEXT("a slope %s keeps every instance"), *Normal.ToCompactString()), Aligned.Num(), FlatInstances.Num());
+		double WorstUp = 0.0;
+		double WorstTurn = 0.0;
+		bool bOthersUnchanged = true;
+		for (int32 Index = 0; Index < Aligned.Num() && Index < FlatInstances.Num(); ++Index)
+		{
+			const FQuat Got = FMantleScatter::ToTransform(Aligned[Index]).GetRotation();
+			WorstUp = FMath::Max(WorstUp, DegreesBetween(Got.GetAxisZ(), Normal));
+			// The flat turn, then the shortest turn from straight up onto the slope.
+			const FQuat Flat = FMantleScatter::ToTransform(FlatInstances[Index]).GetRotation();
+			const FQuat Expected = FQuat::FindBetweenNormals(FVector::UpVector, Normal) * Flat;
+			WorstTurn = FMath::Max(WorstTurn, FMath::RadiansToDegrees(Got.AngularDistance(Expected)));
+			bOthersUnchanged &= Aligned[Index].X == FlatInstances[Index].X && Aligned[Index].Y == FlatInstances[Index].Y
+				&& Aligned[Index].Z == FlatInstances[Index].Z && Aligned[Index].Scale == FlatInstances[Index].Scale
+				&& Aligned[Index].Mesh == FlatInstances[Index].Mesh;
+		}
+		TestTrue(TEXT("position, scale and mesh are the flat instance's"), bOthersUnchanged);
+		TestTrue(*FString::Printf(TEXT("up follows the slope %s (worst %.4f degrees off)"), *Normal.ToCompactString(), WorstUp), WorstUp < 0.03);
+		TestTrue(*FString::Printf(TEXT("the turn is the flat turn carried onto the slope %s (worst %.4f degrees off)"), *Normal.ToCompactString(), WorstTurn),
+			WorstTurn < 0.05);
+	}
+
+	// The turn about the normal is random: the instances' forward axes spread all the way round it.
+	{
+		const FVector Normal = Normals[0];
+		const TArray<FMantleScatterInstance> Aligned = GenerateOk(*this, Ground, SlopeOptions(Normal));
+		const FVector Across = FVector::CrossProduct(Normal, FVector::UpVector).GetSafeNormal();
+		const FVector Along = FVector::CrossProduct(Across, Normal);
+		int32 Quadrants[4] = { 0, 0, 0, 0 };
+		for (const FMantleScatterInstance& Instance : Aligned)
+		{
+			const FVector Forward = FMantleScatter::ToTransform(Instance).GetRotation().GetAxisX();
+			const double X = FVector::DotProduct(Forward, Across);
+			const double Y = FVector::DotProduct(Forward, Along);
+			++Quadrants[(X >= 0.0 ? 0 : 1) + (Y >= 0.0 ? 0 : 2)];
+		}
+		TestTrue(TEXT("instances turn every way about the normal"), Quadrants[0] > 20 && Quadrants[1] > 20 && Quadrants[2] > 20 && Quadrants[3] > 20);
+	}
+
+	// With a tilt, up leans off the normal by at most the tilt, and by about that much for some instances.
+	Ground.MaxTiltDegrees = 20.0;
+	for (const FVector& Normal : { Normals[0], Normals[4], Normals[6] })
+	{
+		const TArray<FMantleScatterInstance> Leaning = GenerateOk(*this, Ground, SlopeOptions(Normal));
+		double Worst = 0.0;
+		for (const FMantleScatterInstance& Instance : Leaning)
+		{
+			Worst = FMath::Max(Worst, DegreesBetween(FMantleScatter::ToTransform(Instance).GetRotation().GetAxisZ(), Normal));
+		}
+		TestTrue(*FString::Printf(TEXT("the lean off %s stays within the tilt (worst %.3f)"), *Normal.ToCompactString(), Worst), Worst <= 20.0 * 1.4143 + 0.05);
+		TestTrue(*FString::Printf(TEXT("some instances lean off %s (worst %.3f)"), *Normal.ToCompactString(), Worst), Worst > 10.0);
+		TestEqual(TEXT("the aligned instances are stable"), FMantleScatter::Hash(GenerateOk(*this, Ground, SlopeOptions(Normal))), FMantleScatter::Hash(Leaning));
+	}
+
+	// The slope filters read the world up component, the alignment the scatter-space normal: each on its own.
+	{
+		FMantleScatterGenerateOptions Split;
+		Split.Ground = [](const int64, const int64, FMantleScatterGround& Out) -> bool
+		{
+			Out.ZMm = 0;
+			Out.NormalZ = 1.0;
+			Out.LocalNormalX = 1.0;
+			Out.LocalNormalY = 0.0;
+			Out.LocalNormalZ = 0.0;
+			Out.WorldZCm = 0.0;
+			return true;
+		};
+		const TArray<FMantleScatterInstance> Turned = GenerateOk(*this, Ground, Split);
+		TestEqual(TEXT("a flat world normal does not stop alignment"), Turned.Num(), FlatInstances.Num());
+		TestTrue(TEXT("the scatter-space normal decides the turn"),
+			Turned.Num() > 0 && DegreesBetween(FMantleScatter::ToTransform(Turned[0]).GetRotation().GetAxisZ(), FVector(1.0, 0.0, 0.0)) <= 20.1);
+	}
+
+	// A normal that is not unit length or has no up (a ground function's own choice) still gives a clean turn.
+	{
+		Ground.MaxTiltDegrees = 0.0;
+		const TArray<FMantleScatterInstance> Long = GenerateOk(*this, Ground, SlopeOptions(Normals[0] * 3.0));
+		const TArray<FMantleScatterInstance> Unit = GenerateOk(*this, Ground, SlopeOptions(Normals[0]));
+		TestTrue(TEXT("the normal is normalised"), Long == Unit);
+		const TArray<FMantleScatterInstance> Upside = GenerateOk(*this, Ground, SlopeOptions(FVector(0.0, 0.0, -1.0)));
+		TestTrue(TEXT("a normal pointing down leaves the instances as they were"), Upside == FlatInstances);
+	}
+
+	// Ground alignment needs a Terrain; a bad combination is refused and ToJson writes both new keys back.
+	FMantleScatterParams Box = BoxParams();
+	Box.Alignment = EMantleScatterAlignment::Ground;
+	TArray<FMantleScatterInstance> Out;
+	FString Error;
+	TestFalse(TEXT("ground alignment on box placement is refused"), FMantleScatter::Generate(Box, Out, Error));
+	TestTrue(TEXT("with a message naming terrain"), Error.Contains(TEXT("terrain")));
+
+	Ground.MinSlopeDegrees = 40.0;
+	const TSharedRef<FJsonObject> Json = FMantleScatter::ToJson(Ground);
+	TestEqual(TEXT("alignment is written"), Json->GetStringField(TEXT("alignment")), FString(TEXT("ground")));
+	TestEqual(TEXT("minSlopeDegrees is written"), Json->GetNumberField(TEXT("minSlopeDegrees")), 40.0);
+	FMantleScatterParams Back;
+	TArray<FMantleParseError> Errors;
+	TestTrue(TEXT("the written keys read back"), FMantlePlaceParser::ParseScatterProperties(Json, Back, Errors));
+	TestTrue(TEXT("to the same settings"), Back.Alignment == EMantleScatterAlignment::Ground && Back.MinSlopeDegrees == 40.0 && Back.MaxTiltDegrees == 0.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterGroundAlignmentGoldenTest,
+	"Mantle.Runtime.Scatter.Generator.GroundAlignmentIsStable",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterGroundAlignmentGoldenTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterTestPrivate;
+
+	// The numbers come out of integer maths only (no libm), so they are fixed: a slope that tilts three ways across the area.
+	FMantleScatterParams P = TerrainParams();
+	P.Seed = 188;
+	P.Density = 0.5;
+	P.Alignment = EMantleScatterAlignment::Ground;
+	P.MaxTiltDegrees = 12.0;
+	P.MinSlopeDegrees = 20.0;
+	FMantleScatterGenerateOptions Options;
+	Options.Ground = [](const int64 XMm, const int64 YMm, FMantleScatterGround& Out) -> bool
+	{
+		const FVector Normal = XMm < -3000 ? FVector(0.6, -0.48, 0.64) : (YMm < 0 ? FVector(-0.8, 0.0, 0.6) : FVector(0.0, 0.9701425, 0.2425356));
+		Out.ZMm = 0;
+		Out.NormalZ = Normal.Z;
+		Out.LocalNormalX = Normal.X;
+		Out.LocalNormalY = Normal.Y;
+		Out.LocalNormalZ = Normal.Z;
+		Out.WorldZCm = 0.0;
+		return true;
+	};
+	const TArray<FMantleScatterInstance> Instances = GenerateOk(*this, P, Options);
+	TestEqual(TEXT("count"), Instances.Num(), 0);
+	TestEqual(TEXT("hash"), FMantleScatter::HashText(FMantleScatter::Hash(Instances)), FString(TEXT("")));
+	if (Instances.Num() > 0)
+	{
+		const FMantleScatterInstance& First = Instances[0];
+		AddInfo(FString::Printf(TEXT("first: %d %d %d yaw %d pitch %d roll %d"), First.X, First.Y, First.Z, First.Yaw, First.Pitch, First.Roll));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterSlopeParserTest,
+	"Mantle.Runtime.Scatter.Parser.MinSlopeAndGroundAlignment",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterSlopeParserTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterTestPrivate;
+
+	const FMantleScatterParams* Plain = nullptr;
+	FMantleParseResult Result = ParseScatter(TEXT(""));
+	Plain = ScatterOf(Result);
+	TestTrue(TEXT("defaults: no minimum slope, upright"),
+		Plain && Plain->MinSlopeDegrees == 0.0 && Plain->Alignment == EMantleScatterAlignment::Upright);
+
+	Result = ParseScatter(TEXT(",\"placement\":\"terrain\",\"minSlopeDegrees\":50,\"maxSlopeDegrees\":85,\"alignment\":\"ground\",\"maxTilt\":5"));
+	const FMantleScatterParams* Cliffs = ScatterOf(Result);
+	TestTrue(TEXT("the minimum slope and ground alignment parse"), Result.bSuccess && Cliffs && Cliffs->MinSlopeDegrees == 50.0
+		&& Cliffs->MaxSlopeDegrees == 85.0 && Cliffs->Alignment == EMantleScatterAlignment::Ground && Cliffs->MaxTiltDegrees == 5.0);
+
+	Result = ParseScatter(TEXT(",\"placement\":\"terrain\",\"minSlopeDegrees\":60,\"maxSlopeDegrees\":60"));
+	TestTrue(TEXT("a minimum equal to the maximum parses"), Result.bSuccess);
+	Result = ParseScatter(TEXT(",\"placement\":\"terrain\",\"minSlopeDegrees\":30"));
+	TestTrue(TEXT("a minimum alone parses"), Result.bSuccess && ScatterOf(Result) && ScatterOf(Result)->MaxSlopeDegrees == 90.0);
+
+	TestTrue(TEXT("a minimum slope on box placement is refused"), HasErrorAt(ParseScatter(TEXT(",\"minSlopeDegrees\":30")), TEXT("minSlopeDegrees")));
+	TestTrue(TEXT("ground alignment on box placement is refused"), HasErrorAt(ParseScatter(TEXT(",\"alignment\":\"ground\"")), TEXT("alignment")));
+	TestTrue(TEXT("ground alignment on an explicit box is refused"),
+		HasErrorAt(ParseScatter(TEXT(",\"placement\":\"box\",\"alignment\":\"ground\"")), TEXT("alignment")));
+	TestTrue(TEXT("a minimum past 90 is refused"), HasErrorAt(ParseScatter(TEXT(",\"placement\":\"terrain\",\"minSlopeDegrees\":91")), TEXT("minSlopeDegrees")));
+	TestTrue(TEXT("a negative minimum is refused"), HasErrorAt(ParseScatter(TEXT(",\"placement\":\"terrain\",\"minSlopeDegrees\":-1")), TEXT("minSlopeDegrees")));
+	TestTrue(TEXT("a minimum above the maximum is refused at the maximum"),
+		HasErrorAt(ParseScatter(TEXT(",\"placement\":\"terrain\",\"minSlopeDegrees\":60,\"maxSlopeDegrees\":30")), TEXT("maxSlopeDegrees")));
+	TestTrue(TEXT("an unknown alignment is refused"), HasErrorAt(ParseScatter(TEXT(",\"alignment\":\"sideways\"")), TEXT("alignment")));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
