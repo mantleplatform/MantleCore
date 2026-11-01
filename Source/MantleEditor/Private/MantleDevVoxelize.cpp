@@ -56,6 +56,10 @@ namespace MantleDevVoxelizePrivate
 		}
 		UE_LOG(LogMantleDevVoxelize, Display, TEXT("MANTLE_VOXELIZE ok sources=%d blocks=%lld types=%d size=%dx%dx%d"),
 			Result.SourceActors, Result.Blocks, Result.TypeNames.Num(), Result.Size.X, Result.Size.Y, Result.Size.Z);
+		if (!Result.Warning.IsEmpty())
+		{
+			UE_LOG(LogMantleDevVoxelize, Warning, TEXT("MANTLE_VOXELIZE warning=%s"), *Result.Warning);
+		}
 		for (const FMantleVoxelWorldProblem& Problem : Result.World->DescribeProblems())
 		{
 			UE_LOG(LogMantleDevVoxelize, Warning, TEXT("MANTLE_VOXELIZE problem=%s"), *Problem.What);

@@ -59,6 +59,17 @@ FString AMantleVoxelWorldActor::WorldKey() const
 	return FString::Printf(TEXT("voxelworld:%s"), *GetPathName());
 }
 
+FString AMantleVoxelWorldActor::DescribeLargestSource() const
+{
+	constexpr int64 SectionBlocks = 16 * 16 * 16;
+	if (LargestSource.IsEmpty() || BlockCount < SectionBlocks || LargestSourceBlocks * 2 <= BlockCount)
+	{
+		return FString();
+	}
+	return FString::Printf(TEXT("has %lld of its %lld blocks (%.0f%%) from one voxelized mesh, '%s'; a sky dome, ground plane or backdrop turns into a solid mass of blocks"),
+		LargestSourceBlocks, BlockCount, 100.0 * static_cast<double>(LargestSourceBlocks) / static_cast<double>(BlockCount), *LargestSource);
+}
+
 TArray<int64> AMantleVoxelWorldActor::CountBlocks() const
 {
 	TArray<int64> Counts;

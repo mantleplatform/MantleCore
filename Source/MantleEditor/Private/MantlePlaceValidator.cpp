@@ -1841,6 +1841,12 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 			{
 				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor), Problem.What, Problem.Remedy });
 			}
+			const FString LargestSource = Voxel->DescribeLargestSource();
+			if (!LargestSource.IsEmpty())
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, LabelOf(Actor), LargestSource,
+					FString::Printf(TEXT("Undo the Voxelize, leave '%s' out of the selection, then Voxelize again."), *Voxel->LargestSource) });
+			}
 			const FString CountProblem = FMantlePlaceExporter::DescribeVoxelWorldCount(++VoxelWorlds);
 			if (!CountProblem.IsEmpty())
 			{
