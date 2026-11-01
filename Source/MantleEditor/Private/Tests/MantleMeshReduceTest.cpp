@@ -612,4 +612,51 @@ bool FMantleMeshReduceMirrorBakeTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshReduceVeryBigMeshTest,
+	"Mantle.Editor.MeshReduce.ReducesAMeshFarOverTheLimit",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshReduceVeryBigMeshTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshReduceTestPrivate;
+	FReduceFixture Fixture;
+	if (!TestTrue(TEXT("two engine materials load"), Fixture.IsReady()))
+	{
+		return false;
+	}
+	if (!FMantleMeshReduce::IsAvailable())
+	{
+		AddWarning(TEXT("this editor has no static mesh reducer, so the reduction was not tested"));
+		return true;
+	}
+	// 128 x 128 quads: 32,768 triangles, more than 20 times the limit of 1,500. It is reduced, not refused.
+	UStaticMesh* Mesh = Fixture.MakeMesh({ 128 }, { 2 });
+	const FMantlePlaceAssetLimits Limits = SmallLimits();
+	FMantleMeshLODCount Before;
+	FMantlePlaceAssets::CountMeshLOD(Mesh, 0, Before);
+	TestTrue(TEXT("the mesh is over 20 times the limit"), Before.Triangles > 20 * TriangleLimit);
+
+	FString Why;
+	UStaticMesh* Reduced = FMantleMeshReduce::ReducedCopy(Mesh, Limits, Why);
+	if (!TestNotNull(TEXT("a reduced copy: ") + Why, Reduced))
+	{
+		return false;
+	}
+	FMantleMeshLODCount After;
+	FMantlePlaceAssets::CountMeshLOD(Reduced, 0, After);
+	TestTrue(FString::Printf(TEXT("within the limit (%d)"), After.Triangles), After.Triangles > 0 && After.Triangles <= TriangleLimit);
+
+	// Cancel is honoured between attempts, and is not remembered as a failure.
+	FMantleMeshReduce::ClearCache();
+	FMeshDescription Original;
+	FReduceFixture::AddGrid(Original, BigGrid, 2);
+	FString CancelWhy;
+	const bool bFit = FMantleMeshReduce::ReduceUntilFits(Original, Limits,
+		[](const FMeshDescription&, int32& Triangles, int32& Vertices) { Triangles = 1; Vertices = 1; return true; }, CancelWhy, []() { return true; });
+	TestFalse(TEXT("a cancelled reduction does not fit"), bFit);
+	TestEqual(TEXT("and says it was cancelled"), CancelWhy, FString(FMantleMeshReduce::CancelledWhy));
+	return true;
+}
+
 #endif

@@ -30,22 +30,11 @@ public:
 	/** The share of the triangle and vertex limits a reduction aims for. */
 	static constexpr float TargetShare = 0.9f;
 
+	/** What OutWhy says when the creator pressed Cancel on the reduction's progress dialog. Not remembered: the next Check tries again. */
+	static const TCHAR* const CancelledWhy;
+
 	/** A reduction that comes out over a limit is tried again this many times in all, each aiming lower. */
 	static constexpr int32 MaxAttempts = 3;
-
-	/**
-	 * A mesh with more than this many times the triangle limit is refused, not reduced. Reading it into a mesh description and
-	 * reducing it runs on the game thread with nothing to show for it: a 517 MB mesh hung a publish for 100 minutes. 20 times
-	 * the limit (10 million triangles at the default) is about the most a mesh description holds in a few GB and reduces in
-	 * minutes; a scene mesh past it is better split or reduced in a modelling tool.
-	 */
-	static constexpr int32 MaxSourceTriangleFactor = 20;
-
-	/**
-	 * Whether a mesh with SourceTriangles is too big to attempt to reduce to Limits. True sets OutWhy to a plain reason that
-	 * says what to do instead. Decided from the render data's triangle count, before any mesh description is made.
-	 */
-	static bool IsTooBigToReduce(int64 SourceTriangles, const FMantlePlaceAssetLimits& Limits, FString& OutWhy);
 
 	/** Whether the editor has a static mesh reducer to use (the engine's, in an editor build). */
 	static bool IsAvailable();
@@ -90,11 +79,14 @@ public:
 	/**
 	 * Reduces In towards TargetShare of Limits' triangles and vertices, then hands each try to Measure, which builds
 	 * what it likes from the description and answers with the triangles and vertices that came out (false stops, with
-	 * OutWhy set by Measure). A try over either limit is followed by another aiming lower, MaxAttempts in all.
+	 * OutWhy set by Measure). A try over either limit is followed by another aiming lower, MaxAttempts in all. ShouldCancel is asked
+	 * before each try (never during one: the engine's reducer is one call that cannot be interrupted); true stops with OutWhy
+	 * CancelledWhy.
 	 * True when the last try Measure saw is within both limits.
 	 */
 	static bool ReduceUntilFits(const FMeshDescription& In, const FMantlePlaceAssetLimits& Limits,
-		TFunctionRef<bool(const FMeshDescription& Reduced, int32& OutTriangles, int32& OutVertices)> Measure, FString& OutWhy);
+		TFunctionRef<bool(const FMeshDescription& Reduced, int32& OutTriangles, int32& OutVertices)> Measure, FString& OutWhy,
+		TFunctionRef<bool()> ShouldCancel = []() { return false; });
 
 	/**
 	 * A transient copy of Source with its render LOD 0 reduced within Limits' triangles and vertices, or null with

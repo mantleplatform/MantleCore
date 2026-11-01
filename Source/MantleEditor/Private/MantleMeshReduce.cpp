@@ -200,17 +200,7 @@ namespace MantleMeshReducePrivate
 	}
 }
 
-bool FMantleMeshReduce::IsTooBigToReduce(int64 SourceTriangles, const FMantlePlaceAssetLimits& Limits, FString& OutWhy)
-{
-	const int64 Ceiling = static_cast<int64>(Limits.MaxTriangles) * MaxSourceTriangleFactor;
-	if (SourceTriangles <= Ceiling)
-	{
-		return false;
-	}
-	OutWhy = FString::Printf(TEXT("it has %s triangles, which is too big to reduce (Mantle reduces meshes of up to %s). Split it into smaller meshes, or reduce it in a modelling tool or with Unreal's own LOD tools first"),
-		*FText::AsNumber(SourceTriangles).ToString(), *FText::AsNumber(Ceiling).ToString());
-	return true;
-}
+const TCHAR* const FMantleMeshReduce::CancelledWhy = TEXT("reducing it was cancelled");
 
 bool FMantleMeshReduce::IsAvailable()
 {
@@ -323,7 +313,8 @@ bool FMantleMeshReduce::ReduceDescription(const FMeshDescription& In, int32 Targ
 }
 
 bool FMantleMeshReduce::ReduceUntilFits(const FMeshDescription& In, const FMantlePlaceAssetLimits& Limits,
-	TFunctionRef<bool(const FMeshDescription& Reduced, int32& OutTriangles, int32& OutVertices)> Measure, FString& OutWhy)
+	TFunctionRef<bool(const FMeshDescription& Reduced, int32& OutTriangles, int32& OutVertices)> Measure, FString& OutWhy,
+	TFunctionRef<bool()> ShouldCancel)
 {
 	using namespace MantleMeshReducePrivate;
 	OutWhy.Reset();
@@ -334,6 +325,11 @@ bool FMantleMeshReduce::ReduceUntilFits(const FMeshDescription& In, const FMantl
 	int32 Vertices = 0;
 	for (int32 Attempt = 0; Attempt < MaxAttempts; ++Attempt)
 	{
+		if (ShouldCancel())
+		{
+			OutWhy = CancelledWhy;
+			return false;
+		}
 		FMeshDescription Reduced;
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_804 MeshReduce: attempt %d of %d, reducing %d triangles to about %d triangles and %d vertices"),
 			Attempt + 1, MaxAttempts, In.Triangles().Num(), TargetTriangles, TargetVertices);
@@ -412,25 +408,37 @@ UStaticMesh* FMantleMeshReduce::ReducedCopy(const UStaticMesh* Source, const FMa
 		}
 	}
 
-	// Not cached: a reduction of a big mesh takes a while on the game thread, so the editor says what it is doing (a cache hit
-	// returned above, with no task). Delayed, so a quick one does not flash a dialog.
-	FScopedSlowTask ReducingTask(1.0f, FText::FromString(FString::Printf(TEXT("Reducing '%s' for publishing..."), *Source->GetName())));
-	ReducingTask.MakeDialogDelayed(0.5f);
+	// Not cached: a reduction of a big mesh takes a while on the game thread (the editor does not repaint while the reducer
+	// runs), so a dialog with a Cancel button names the mesh and says what Cancel can do. Delayed, so a quick one does not flash
+	// a dialog. A cache hit returned above, with no task.
+	int64 SourceTriangles = 0;
+	if (const FStaticMeshRenderData* SourceRender = Source->GetRenderData())
+	{
+		if (SourceRender->LODResources.IsValidIndex(0))
+		{
+			SourceTriangles = SourceRender->LODResources[0].GetNumTriangles();
+		}
+	}
+	FScopedSlowTask ReducingTask(static_cast<float>(MaxAttempts + 1), FText::FromString(FString::Printf(TEXT("Reducing '%s' (%s triangles) for publishing..."),
+		*Source->GetName(), *FText::AsNumber(SourceTriangles).ToString())));
+	ReducingTask.MakeDialogDelayed(0.5f, true);
+	const FText CancelNote = FText::FromString(TEXT("Cancel works between steps, not in the middle of one: a very large mesh can keep the editor busy for several minutes inside a step."));
+	ReducingTask.EnterProgressFrame(1.0f, CancelNote);
+	bool bCancelled = ReducingTask.ShouldCancel();
 
 	UStaticMesh* Result = nullptr;
 	FString Why;
 	const double ReduceStart = FPlatformTime::Seconds();
 	do
 	{
+		if (bCancelled)
+		{
+			Why = CancelledWhy;
+			break;
+		}
 		if (!IsAvailable())
 		{
 			Why = TEXT("the editor has no static mesh reducer");
-			break;
-		}
-		// The triangle count is on the render data: a mesh past the ceiling is refused before any mesh description is made of it.
-		const FStaticMeshRenderData* SourceData = Source->GetRenderData();
-		if (SourceData && SourceData->LODResources.IsValidIndex(0) && IsTooBigToReduce(SourceData->LODResources[0].GetNumTriangles(), Limits, Why))
-		{
 			break;
 		}
 		FMeshDescription Original;
@@ -467,7 +475,12 @@ UStaticMesh* FMantleMeshReduce::ReducedCopy(const UStaticMesh* Source, const FMa
 		};
 		FMantleMeshLODCount Before;
 		FMantlePlaceAssets::CountMeshLOD(Source, 0, Before);
-		if (!ReduceUntilFits(Original, Limits, Measure, Why))
+		auto ShouldCancel = [&]() -> bool
+		{
+			ReducingTask.EnterProgressFrame(1.0f, CancelNote);
+			return ReducingTask.ShouldCancel();
+		};
+		if (!ReduceUntilFits(Original, Limits, Measure, Why, ShouldCancel))
 		{
 			break;
 		}
@@ -481,6 +494,12 @@ UStaticMesh* FMantleMeshReduce::ReducedCopy(const UStaticMesh* Source, const FMa
 	if (!Result)
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_804 MeshReduce: '%s' was not reduced: %s"), *Source->GetName(), *Why);
+	}
+	if (!Result && Why == CancelledWhy)
+	{
+		// Not remembered as a failure: the next Check tries again.
+		OutWhy = Why;
+		return nullptr;
 	}
 	FCopy& Stored = Store.Copies.FindOrAdd(Key);
 	Stored.Source = Source;
