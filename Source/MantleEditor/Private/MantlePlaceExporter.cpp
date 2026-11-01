@@ -355,9 +355,10 @@ namespace
 			break;
 		case EJson::Object:
 			Key ? Writer->WriteObjectStart(*Key) : Writer->WriteObjectStart();
-			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Value->AsObject()->Values)
+			for (const auto& Field : Value->AsObject()->Values)
 			{
-				WriteJsonValue(Writer, &Field.Key, Field.Value);
+				const FString FieldKey(Field.Key.ToView());
+				WriteJsonValue(Writer, &FieldKey, Field.Value);
 			}
 			Writer->WriteObjectEnd();
 			break;
@@ -6232,9 +6233,10 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 			// the instances the editor previewed; the #169 keys only where they apply. The runtime's own writer
 			// (FMantleScatter::ToJson), so the editor and a script's Scatter settings write one way.
 			const TSharedRef<FJsonObject> Scatter = FMantleScatter::ToJson(*P15); // held: a loop over a temporary's Values would dangle
-			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Scatter->Values)
+			for (const auto& Field : Scatter->Values)
 			{
-				WriteJsonValue(Writer, &Field.Key, Field.Value);
+				const FString FieldKey(Field.Key.ToView());
+				WriteJsonValue(Writer, &FieldKey, Field.Value);
 			}
 		}
 		else if (const FMantleReflectionProbeProps* P16 = Entity.Props.TryGet<FMantleReflectionProbeProps>())
