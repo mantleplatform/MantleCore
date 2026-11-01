@@ -459,7 +459,7 @@ class VoxelWorld:
         """Smooth worlds: takes ground away in a sphere (Brush('dig', ...)). Returns the voxels changed."""
         ...
     def edit_as_player(self, player: Player, x: float, y: float, z: float, name: Optional[str] = ..., /) -> str:
-        """Breaks (nil or 'air') or places a block for a player, as if they did it with Mantle's own tools: the rate limit (20 a second), reach (6 m from their eyes), line of sight, the block rules and OnBlockPlacing / OnBlockBreaking all apply. For your own build tool: the player's client raycasts (VoxelWorld:Raycast from the camera), sends a Remote, and the server calls this. Returns 'applied' or why not: 'same', 'closed', 'rate', 'outside', 'unknown_type', 'nothing_to_break', 'unbreakable', 'occupied', 'floating', 'out_of_reach', 'blocked', 'cancelled', 'no_player'."""
+        """Breaks (nil or 'air') or places a block for a player, as if they did it with Mantle's own tools: the rate limit (20 a second, always), the edit rules (SetEditRules: by default reach 6 m from their eyes, line of sight, a placed block touching another), the block rules and OnBlockPlacing / OnBlockBreaking all apply. For your own build tool: the player's client raycasts (VoxelWorld:Raycast from the camera), sends a Remote, and the server calls this. Returns 'applied' or why not: 'same', 'closed', 'rate', 'outside', 'unknown_type', 'nothing_to_break', 'unbreakable', 'occupied', 'floating', 'out_of_reach', 'blocked', 'cancelled', 'no_player'."""
         ...
     def fill(self, shape: dict[str, Any], name: Optional[str] = ..., /) -> float:
         """Sets every block of a shape to a type (nil or 'air' empties it) and returns how many changed. A shape is {Box = {min, max}}, {Sphere = {center, radius}} or {Line = {from, to, radius}}, in blocks; at most 262,144 blocks a call. Raises one OnBlocksChanged."""
@@ -478,6 +478,9 @@ class VoxelWorld:
         ...
     def get_density(self, x: float, y: float, z: float, /) -> Optional[float]:
         """Smooth worlds: the density at voxel (x, y, z), -127 to 127: solid above 0, the surface where it crosses 0. Nil outside the world."""
+        ...
+    def get_edit_rules(self) -> dict[str, Any]:
+        """The rules a player's edit must pass in this world (see SetEditRules): Reach in cm, LineOfSight and MustTouch. On a client these are the rules the server last sent, so your own tool can aim and highlight by the same reach."""
         ...
     def get_look(self) -> str:
         """'blocky' (cubes) or 'smooth' (ground you dig)."""
@@ -547,6 +550,9 @@ class VoxelWorld:
         ...
     def set_built_in_tools(self, enabled: bool, player: Optional[Player] = ..., /) -> None:
         """Turns Mantle's built-in build tools on or off for one player, or for everyone now and later (no player). They are off unless a script turns them on: Z toggles build mode, hold left mouse breaks, right mouse places, 1-9 and the wheel pick a hotbar slot, I opens a block picker. A game that makes its own tools leaves them off."""
+        ...
+    def set_edit_rules(self, rules: dict[str, Any], /) -> None:
+        """Sets the rules a player's edit must pass in this world: Mantle's own tools and EditAsPlayer both. Reach is how far from the player's eyes they can build, in cm (default 600, so 6 m; 1 to 10,000, which is 100 m; a larger number is cut to 10,000). LineOfSight (default true) refuses an edit with a block or ground in the way. MustTouch (default true) makes a placed block touch another solid block (blocky worlds); false lets blocks be placed in mid-air. Leave a field out to keep its current value. Errors on an unknown field, a Reach that is not a positive number, or a flag that is not true or false. The limit of 20 edits a second per player stays in the engine as an anti-abuse cap and cannot be changed. OnBlockPlacing / OnBlockBreaking still decide each edit. Mantle's own tools aim by the same reach."""
         ...
     def set_voxel(self, x: float, y: float, z: float, material: Optional[str], density: float, /) -> bool:
         """Smooth worlds: sets one voxel's material and density (-127 to 127). At or below 0 it is empty and keeps no material. True when it changed."""
