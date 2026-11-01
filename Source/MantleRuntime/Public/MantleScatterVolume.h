@@ -337,6 +337,12 @@ public:
 	/** Whether the current settings make a Scatter of more than 200,000 instances, which a game builds in cells. False where they cannot generate. */
 	bool UsesCells() const;
 
+	/**
+	 * Starts the background build of the cell index when this Scatter is built in cells (and does nothing otherwise, or in an editor world).
+	 * RefreshScatter does it; the place builder calls it for a dedicated server, which builds nothing else but answers script queries.
+	 */
+	void StartCellIndex();
+
 	/** FMantleScatter::Hash of the last GenerateFull's instances. */
 	uint64 GetFullHash() const { return FullHash; }
 

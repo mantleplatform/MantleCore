@@ -1359,9 +1359,11 @@ namespace
 		}
 		MakeMovable(Actor);
 		Actor->ApplyProps(Props);
-		// A dedicated server keeps the actor as the entity's transform node and builds nothing, unless the Scatter collides.
+		// A dedicated server keeps the actor as the entity's transform node and builds nothing, unless the Scatter collides. One built in
+		// cells (#189) still has its position index made in the background, so a script's first query on it does not wait.
 		if (!FMantleScatter::DrawsScatter(World) && !Props.bCollision)
 		{
+			Actor->StartCellIndex();
 			return Actor;
 		}
 

@@ -354,10 +354,7 @@ bool AMantleScatterVolume::RefreshScatter(FString& OutError)
 	}
 	// A Scatter built in cells (#189) files its candidates once, off the game thread, on every machine (a game's cells and a script's
 	// queries read the same index, and a server's first query does not wait for it); an editor preview builds the whole Scatter.
-	if (!Params.bCollision && !IsEditorWorld() && FMantleScatter::UsesCells(Params))
-	{
-		StartIndexTask(Params);
-	}
+	StartCellIndex();
 	// Visual scatters build only where something draws; a colliding one (#169) builds on a dedicated server too, since the
 	// server's bodies are what stop a player and an NPC.
 	if (!FMantleScatter::DrawsScatter(World) && !Params.bCollision)
@@ -796,8 +793,27 @@ const TArray<FMantleScatterInstance>* AMantleScatterVolume::GenerateFullCached(F
 
 void AMantleScatterVolume::StartIndexTask(const FMantleScatterParams& Params) const
 {
-	// The index depends on the settings and nothing else (no terrain, no transform), so it lives as long as the settings key.
-	const FString Key = SettingsKey();
+	// The index depends on where candidates fall and how crowded the cells are, nothing else (no terrain, no transform, no filter), so it
+	// lives as long as those settings: a terrain arriving later does not start it again.
+	FString Key = FString::Printf(TEXT("%d|%.17g,%.17g,%.17g|%.17g|%d|%.17g|%.17g|%.17g|%d,%.17g|%.17g"), Params.Seed, Params.HalfExtent.X,
+		Params.HalfExtent.Y, Params.HalfExtent.Z, Params.Density, static_cast<int32>(Params.Shape), Params.Radius, Params.Width, Params.MinSpacing,
+		Params.ClusterCount, Params.ClusterRadius, Params.PathStep);
+	for (const FVector2D& Point : Params.Path)
+	{
+		Key += FString::Printf(TEXT("|P%.17g,%.17g"), Point.X, Point.Y);
+	}
+	for (const FMantleScatterExclusion& Exclusion : Params.Exclusions)
+	{
+		Key += FString::Printf(TEXT("|X%.17g,%.17g,%.17g,%.17g"), Exclusion.Center.X, Exclusion.Center.Y, Exclusion.HalfExtent.X, Exclusion.HalfExtent.Y);
+	}
+	for (const FMantleScatterPathExclusion& Strip : Params.PathExclusions)
+	{
+		Key += FString::Printf(TEXT("|Y%.17g"), Strip.Width);
+		for (const FVector2D& Point : Strip.Path)
+		{
+			Key += FString::Printf(TEXT(",%.17g:%.17g"), Point.X, Point.Y);
+		}
+	}
 	if (IndexTask.IsValid() && IndexTaskKey.Equals(Key, ESearchCase::CaseSensitive))
 	{
 		return;
@@ -821,6 +837,16 @@ const FMantleScatterCellIndex* AMantleScatterVolume::GetQueryIndex(const FMantle
 		return nullptr;
 	}
 	return Index.Get();
+}
+
+void AMantleScatterVolume::StartCellIndex()
+{
+	FMantleScatterParams Params;
+	FString Ignored;
+	if (!IsEditorWorld() && ReadProps(Params, Ignored) && !Params.bCollision && FMantleScatter::UsesCells(Params))
+	{
+		StartIndexTask(Params);
+	}
 }
 
 bool AMantleScatterVolume::UsesCells() const
