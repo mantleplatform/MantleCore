@@ -6231,7 +6231,8 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 			// A new type (#530): every key it ships with is written, at full precision, so the client generates exactly
 			// the instances the editor previewed; the #169 keys only where they apply. The runtime's own writer
 			// (FMantleScatter::ToJson), so the editor and a script's Scatter settings write one way.
-			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : FMantleScatter::ToJson(*P15)->Values)
+			const TSharedRef<FJsonObject> Scatter = FMantleScatter::ToJson(*P15); // held: a loop over a temporary's Values would dangle
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Scatter->Values)
 			{
 				WriteJsonValue(Writer, &Field.Key, Field.Value);
 			}
