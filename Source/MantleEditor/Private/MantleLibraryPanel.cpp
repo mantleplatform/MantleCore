@@ -1173,10 +1173,11 @@ TSharedRef<SWidget> SMantleLibraryPanel::BuildTile(const FMantleLibraryCard& Car
 		AddTip = LOCTEXT("InStorageTip", "This place already stores the item's latest version.");
 	}
 
-	const TSharedRef<SHorizontalBox> Buttons = SNew(SHorizontalBox);
+	// Wraps: "Add to storage" and "Delist" together are wider than a tile.
+	const TSharedRef<SWrapBox> Buttons = SNew(SWrapBox).UseAllottedSize(true);
 	if (!bCanUse)
 	{
-		Buttons->AddSlot().AutoWidth().Padding(0, 0, 4, 0)
+		Buttons->AddSlot().Padding(0, 0, 4, 4)
 		[
 			SNew(SButton)
 			.Text(LOCTEXT("Get", "Get"))
@@ -1185,7 +1186,7 @@ TSharedRef<SWidget> SMantleLibraryPanel::BuildTile(const FMantleLibraryCard& Car
 			.OnClicked_Lambda([this, Card] { return OnGetClicked(Card); })
 		];
 	}
-	Buttons->AddSlot().AutoWidth()
+	Buttons->AddSlot().Padding(0, 0, 4, 4)
 	[
 		SNew(SButton)
 		.Text(AddLabel)
@@ -1195,7 +1196,7 @@ TSharedRef<SWidget> SMantleLibraryPanel::BuildTile(const FMantleLibraryCard& Car
 	];
 	if (Card.bOwned)
 	{
-		Buttons->AddSlot().AutoWidth().Padding(4, 0, 0, 0)
+		Buttons->AddSlot().Padding(0, 0, 4, 4)
 		[
 			SNew(SButton)
 			.Text(LOCTEXT("Delist", "Delist"))
