@@ -695,6 +695,10 @@ TSharedRef<FJsonObject> FMantleScatter::ToJson(const FMantleScatterParams& Param
 		}
 		Json->SetArrayField(TEXT("exclusions"), Exclusions);
 	}
+	if (Params.bCollision)
+	{
+		Json->SetBoolField(TEXT("collision"), true);
+	}
 	if (Params.ClusterCount > 0)
 	{
 		Json->SetNumberField(TEXT("clusterCount"), Params.ClusterCount);

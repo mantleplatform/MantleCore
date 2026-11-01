@@ -2100,6 +2100,18 @@ namespace
 			}
 		}
 
+		if (const TSharedPtr<FJsonValue> Collision = Props->TryGetField(TEXT("collision")))
+		{
+			if (Collision->Type != EJson::Boolean)
+			{
+				Ctx.Fail(Join(Path, TEXT("collision")), TEXT("must be true or false"));
+			}
+			else
+			{
+				P.bCollision = Collision->AsBool();
+			}
+		}
+
 		const bool bHasCount = Props->HasField(TEXT("clusterCount"));
 		const bool bHasRadius = Props->HasField(TEXT("clusterRadius"));
 		if (bHasCount)
@@ -2135,7 +2147,7 @@ namespace
 			Ctx, Props,
 			{ TEXT("seed"), TEXT("halfExtent"), TEXT("density"), TEXT("scale"), TEXT("alignment"), TEXT("maxTilt"), TEXT("meshes"),
 				TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"), TEXT("shape"),
-				TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius") },
+				TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision") },
 			Path);
 		const int32 ErrorsBefore = Ctx.Errors.Num();
 
@@ -5210,6 +5222,31 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 					Join(Join(Index(TEXT("/entities"), i), TEXT("properties")), TEXT("density")),
 					FString::Printf(TEXT("brings the place to %lld scatter instances; a place holds at most %d"),
 						static_cast<long long>(ScatterTotal), FMantlePlaceLimits::MaxScatterInstancesPerPlace));
+				break;
+			}
+		}
+	}
+
+	// The place-wide count of colliding Scatter instances (#169): each is a body the server and every client build.
+	// Counted at the formula's count, as the total above is, and reported at the density of the Scatter that crosses it.
+	{
+		int64 CollidingTotal = 0;
+		for (int32 i = 0; i < Place.Entities.Num(); ++i)
+		{
+			const FMantleScatterParams* Scatter = Place.Entities[i].Props.TryGet<FMantleScatterParams>();
+			FString Why;
+			const int64 Count = Scatter && Scatter->bCollision ? FMantleScatter::CountFor(*Scatter, Why) : -1;
+			if (Count < 0)
+			{
+				continue;
+			}
+			CollidingTotal += Count;
+			if (CollidingTotal > FMantlePlaceLimits::MaxScatterCollidingInstancesPerPlace)
+			{
+				Ctx.Fail(
+					Join(Join(Index(TEXT("/entities"), i), TEXT("properties")), TEXT("density")),
+					FString::Printf(TEXT("brings the place to %lld colliding scatter instances; a place holds at most %d"),
+						static_cast<long long>(CollidingTotal), FMantlePlaceLimits::MaxScatterCollidingInstancesPerPlace));
 				break;
 			}
 		}

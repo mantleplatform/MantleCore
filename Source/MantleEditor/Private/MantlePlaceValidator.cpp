@@ -807,10 +807,11 @@ namespace
 	 * place's scatter instances under MaxScatterInstancesPerPlace, named at the volume that crosses it. A volume placed on
 	 * terrain (#169) is warned when the level has no landscape that publishes (every instance would be left out) or when
 	 * it leans, since terrain placement drops each instance straight down and the volume only turns about Z.
-	 * PublishedLandscapes is -1 until the first terrain volume asks for it.
+	 * PublishedLandscapes is -1 until the first terrain volume asks for it. Colliding scatters' instances (#169 step 6) are held
+	 * to MaxScatterCollidingInstancesPerPlace together, as the parser holds them, named at the volume that crosses it.
 	 */
-	void ValidatorCheckScatter(const AActor* Actor, EMantleEntityType Type, int64& ScatterInstances, int32& PublishedLandscapes,
-		FMantleValidationResult& Result)
+	void ValidatorCheckScatter(const AActor* Actor, EMantleEntityType Type, int64& ScatterInstances, int64& CollidingInstances,
+		int32& PublishedLandscapes, FMantleValidationResult& Result)
 	{
 		const AMantleScatterVolume* Volume = Type == EMantleEntityType::Scatter ? Cast<AMantleScatterVolume>(Actor) : nullptr;
 		if (!Volume)
@@ -871,6 +872,21 @@ namespace
 				FString::Printf(TEXT("brings the place to %lld scatter instances; a place holds at most %d."),
 					static_cast<long long>(ScatterInstances), FMantlePlaceLimits::MaxScatterInstancesPerPlace),
 				TEXT("Lower the Density or shrink the footprint (box, disc or path) of this or another scatter volume.") });
+		}
+		if (Props.bCollision)
+		{
+			const int64 CollidingBefore = CollidingInstances;
+			CollidingInstances += FMath::Max<int64>(Count, 0);
+			if (CollidingBefore <= FMantlePlaceLimits::MaxScatterCollidingInstancesPerPlace
+				&& CollidingInstances > FMantlePlaceLimits::MaxScatterCollidingInstancesPerPlace)
+			{
+				Result.Issues.Add(FMantleValidationIssue{
+					EMantleIssueSeverity::Error,
+					LabelOf(Actor),
+					FString::Printf(TEXT("brings the place to %lld colliding scatter instances; a place holds at most %d."),
+						static_cast<long long>(CollidingInstances), FMantlePlaceLimits::MaxScatterCollidingInstancesPerPlace),
+					TEXT("Turn Collision off on scatters players need not bump into, or lower their Density.") });
+			}
 		}
 	}
 
@@ -1721,6 +1737,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 	int32 WeaponSpawns = 0;
 	int32 Effects = 0;
 	int64 ScatterInstances = 0;
+	int64 CollidingScatterInstances = 0;
 	int32 PublishedLandscapes = -1;
 	int32 Constraints = 0;
 	int32 ReflectionProbes = 0;
@@ -1859,7 +1876,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 			ScriptPoints.Add(ScriptPoint);
 		}
 		CheckEffect(Actor, Type, Effects, Result);
-		ValidatorCheckScatter(Actor, Type, ScatterInstances, PublishedLandscapes, Result);
+		ValidatorCheckScatter(Actor, Type, ScatterInstances, CollidingScatterInstances, PublishedLandscapes, Result);
 		CheckConstraint(Actor, Type, Constraints, Result);
 		// #168: a block world, held to what the place format takes, and at most one world of each look in the place.
 		if (const AMantleVoxelWorldActor* Voxel = Type == EMantleEntityType::VoxelWorld ? Cast<AMantleVoxelWorldActor>(Actor) : nullptr)

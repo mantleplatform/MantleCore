@@ -122,6 +122,9 @@ struct FMantleScatterParams
 	/** No instance is kept inside any of these. */
 	TArray<FMantleScatterExclusion> Exclusions;
 
+	/** The instances block movement and shape navigation, on the server and every client (#169). Off: visual only. */
+	bool bCollision = false;
+
 	/** 0 spreads instances evenly; above 0 gathers them into this many clusters of ClusterRadius cm about centres picked in the shape. */
 	int32 ClusterCount = 0;
 	double ClusterRadius = 0.0;

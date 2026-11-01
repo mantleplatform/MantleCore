@@ -1340,7 +1340,8 @@ namespace
 		}
 		MakeMovable(Actor);
 		Actor->ApplyProps(Props);
-		if (!FMantleScatter::DrawsScatter(World))
+		// A dedicated server keeps the actor as the entity's transform node and builds nothing, unless the Scatter collides.
+		if (!FMantleScatter::DrawsScatter(World) && !Props.bCollision)
 		{
 			return Actor;
 		}
@@ -1772,7 +1773,7 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 			}
 			// A dedicated server draws nothing but still answers Scatter reads from scripts, so it knows the ground too.
 			Volume->SetTerrainSurfaces(Surfaces);
-			if (!FMantleScatter::DrawsScatter(World))
+			if (!FMantleScatter::DrawsScatter(World) && !ScatterProps->bCollision)
 			{
 				continue;
 			}

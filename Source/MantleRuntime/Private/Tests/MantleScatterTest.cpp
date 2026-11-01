@@ -351,6 +351,28 @@ bool FMantleScatterParserTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("clusterCount alone is refused"), HasErrorAt(ParseScatter(TEXT(",\"clusterCount\":4")), TEXT("clusterRadius")));
 	TestTrue(TEXT("a draw distance of 0 is refused"), HasErrorAt(ParseScatter(TEXT(",\"drawDistance\":0")), TEXT("drawDistance")));
 
+	Result = ParseScatter(TEXT(",\"collision\":true"));
+	TestTrue(TEXT("collision parses"), Result.bSuccess && ScatterOf(Result) && ScatterOf(Result)->bCollision);
+	TestTrue(TEXT("collision is off by default"), Plain && !Plain->bCollision);
+	TestTrue(TEXT("a collision that is not a boolean is refused"), HasErrorAt(ParseScatter(TEXT(",\"collision\":\"yes\"")), TEXT("collision")));
+	// halfExtent 1000 x 1000 cm at density 0.1 makes 40 instances: 51 such Scatters pass the place's 2000 colliding.
+	{
+		FString Entities;
+		for (int32 Index = 0; Index < 51; ++Index)
+		{
+			Entities += (Index ? TEXT(",") : TEXT("")) + FString::Printf(
+				TEXT("{\"id\":\"ent_scatter_%d\",\"type\":\"Scatter\",\"parent\":null,\"transform\":{\"location\":[0,0,0],\"rotation\":[0,0,0],\"scale\":[1,1,1]},"
+					 "\"properties\":{\"halfExtent\":[1000,1000,0],\"density\":0.1,\"collision\":true,\"meshes\":[{\"mesh\":\"ast_cube\"}]}}"), Index);
+		}
+		const FString Json = FString::Printf(
+			TEXT("{\"schemaVersion\":1,\"placeId\":\"plc_scatter002\",\"revision\":{\"number\":1,\"state\":\"draft\"},"
+				 "\"metadata\":{\"name\":\"Field\",\"authorId\":\"usr_4b1d\"},\"settings\":{},"
+				 "\"assets\":[{\"id\":\"ast_cube\",\"kind\":\"StaticMesh\",\"hash\":\"md5:0123456789abcdef\",\"bytes\":1024}],\"entities\":[%s]}"), *Entities);
+		const FMantleParseResult Over = FMantlePlaceParser::ParseFromString(Json);
+		TestTrue(TEXT("past 2000 colliding instances in a place is refused at the Scatter that crosses it"),
+			Over.Errors.ContainsByPredicate([](const FMantleParseError& Error) { return Error.Path == TEXT("/entities/50/properties/density"); }));
+	}
+
 	FString Exclusions;
 	for (int32 Index = 0; Index < 17; ++Index)
 	{

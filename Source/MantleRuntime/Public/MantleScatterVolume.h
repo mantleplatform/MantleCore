@@ -193,6 +193,13 @@ public:
 	double ClusterRadius = 500.0;
 
 	/**
+	 * Off (the default): the instances are visual only. On: each blocks movement and shapes NPC navigation, on the server and every
+	 * client, from the same instances (a place holds at most 2000 colliding instances in all). Not thinned by the Foliage setting.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Collision")
+	bool bCollision = false;
+
+	/**
 	 * The Terrains Terrain placement drops onto: set by the place builder from the Terrains it built, and by an editor that finds
 	 * the Terrains in its level. Instances are left out where none lies below them.
 	 */
@@ -294,6 +301,9 @@ private:
 	void UnbindScalability();
 	void OnScalabilityChanged(const Scalability::FQualityLevels& Levels);
 	FDelegateHandle ScalabilityHandle;
+
+	/** Bumped by SetTerrainSurfaces; part of SettingsKey. */
+	int32 TerrainVersion = 0;
 	int32 BuiltFoliageQuality = -1;
 
 	int32 BuiltInstances = 0;

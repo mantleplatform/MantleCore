@@ -6191,104 +6191,12 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 		}
 		else if (const FMantleScatterParams* P15 = Entity.Props.TryGet<FMantleScatterParams>())
 		{
-			// A new type (#530): every key ships with it, so every key is written, at full precision, so
-			// the client generates exactly the instances the editor previewed. A mesh's materials only
-			// when it names any.
-			Writer->WriteValue(TEXT("seed"), P15->Seed);
-			WriteVector(Writer, TEXT("halfExtent"), P15->HalfExtent);
-			Writer->WriteValue(TEXT("density"), P15->Density);
-			Writer->WriteArrayStart(TEXT("scale"));
-			Writer->WriteValue(P15->MinScale);
-			Writer->WriteValue(P15->MaxScale);
-			Writer->WriteArrayEnd();
-			Writer->WriteValue(TEXT("alignment"), FString(FMantleScatter::AlignmentName(P15->Alignment)));
-			Writer->WriteValue(TEXT("maxTilt"), P15->MaxTiltDegrees);
-			Writer->WriteArrayStart(TEXT("meshes"));
-			for (const FMantleScatterMesh& Mesh : P15->Meshes)
+			// A new type (#530): every key it ships with is written, at full precision, so the client generates exactly
+			// the instances the editor previewed; the #169 keys only where they apply. The runtime's own writer
+			// (FMantleScatter::ToJson), so the editor and a script's Scatter settings write one way.
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : FMantleScatter::ToJson(*P15)->Values)
 			{
-				Writer->WriteObjectStart();
-				Writer->WriteValue(TEXT("mesh"), Mesh.MeshId);
-				Writer->WriteValue(TEXT("weight"), Mesh.Weight);
-				if (Mesh.Materials.Num() > 0)
-				{
-					Writer->WriteArrayStart(TEXT("materials"));
-					for (const FString& Material : Mesh.Materials)
-					{
-						if (Material.IsEmpty())
-						{
-							Writer->WriteNull(); // an unset slot (#262)
-						}
-						else
-						{
-							Writer->WriteValue(Material);
-						}
-					}
-					Writer->WriteArrayEnd();
-				}
-				Writer->WriteObjectEnd();
-			}
-			Writer->WriteArrayEnd();
-			// #169: each key only where it applies, as the schema refuses one without the placement or shape it needs.
-			if (P15->DrawDistance > 0.0)
-			{
-				Writer->WriteValue(TEXT("drawDistance"), P15->DrawDistance);
-			}
-			if (P15->Placement == EMantleScatterPlacement::Terrain)
-			{
-				Writer->WriteValue(TEXT("placement"), FString(FMantleScatter::PlacementName(P15->Placement)));
-				Writer->WriteValue(TEXT("maxSlopeDegrees"), P15->MaxSlopeDegrees);
-				if (P15->MinHeight.IsSet())
-				{
-					Writer->WriteValue(TEXT("minHeight"), P15->MinHeight.GetValue());
-				}
-				if (P15->MaxHeight.IsSet())
-				{
-					Writer->WriteValue(TEXT("maxHeight"), P15->MaxHeight.GetValue());
-				}
-			}
-			if (P15->Shape != EMantleScatterShape::Box)
-			{
-				Writer->WriteValue(TEXT("shape"), FString(FMantleScatter::ShapeName(P15->Shape)));
-			}
-			if (P15->Shape == EMantleScatterShape::Disc)
-			{
-				Writer->WriteValue(TEXT("radius"), P15->Radius);
-			}
-			else if (P15->Shape == EMantleScatterShape::Path)
-			{
-				Writer->WriteArrayStart(TEXT("path"));
-				for (const FVector2D& Point : P15->Path)
-				{
-					Writer->WriteArrayStart();
-					Writer->WriteValue(Point.X);
-					Writer->WriteValue(Point.Y);
-					Writer->WriteArrayEnd();
-				}
-				Writer->WriteArrayEnd();
-				Writer->WriteValue(TEXT("width"), P15->Width);
-			}
-			if (P15->Exclusions.Num() > 0)
-			{
-				Writer->WriteArrayStart(TEXT("exclusions"));
-				for (const FMantleScatterExclusion& Exclusion : P15->Exclusions)
-				{
-					Writer->WriteObjectStart();
-					Writer->WriteArrayStart(TEXT("center"));
-					Writer->WriteValue(Exclusion.Center.X);
-					Writer->WriteValue(Exclusion.Center.Y);
-					Writer->WriteArrayEnd();
-					Writer->WriteArrayStart(TEXT("halfExtent"));
-					Writer->WriteValue(Exclusion.HalfExtent.X);
-					Writer->WriteValue(Exclusion.HalfExtent.Y);
-					Writer->WriteArrayEnd();
-					Writer->WriteObjectEnd();
-				}
-				Writer->WriteArrayEnd();
-			}
-			if (P15->ClusterCount > 0)
-			{
-				Writer->WriteValue(TEXT("clusterCount"), P15->ClusterCount);
-				Writer->WriteValue(TEXT("clusterRadius"), P15->ClusterRadius);
+				FJsonSerializer::Serialize(Field.Value, Field.Key, Writer, /*bCloseWriter*/ false);
 			}
 		}
 		else if (const FMantleReflectionProbeProps* P16 = Entity.Props.TryGet<FMantleReflectionProbeProps>())

@@ -357,6 +357,12 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	 */
 	static constexpr int32 MaxScatterInstancesPerPlace = 200000;
 
+	/**
+	 * Instances of the Scatters whose collision is on, across a whole place (#169): each is a physics body and a navigation
+	 * source on the server and every client. Cross-entity: validate.py's MAX_SCATTER_COLLIDING_INSTANCES_PER_PLACE.
+	 */
+	static constexpr int32 MaxScatterCollidingInstancesPerPlace = 2000;
+
 	/** VehicleSpawn livery, -1 (the vehicle's default) to this (#488): limits.json placeAssets.livery.maxLiveries - 1. */
 	static constexpr int32 MaxVehicleLiveryIndex = 7;
 

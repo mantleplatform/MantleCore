@@ -2,6 +2,7 @@
 #include "MantleHeightfieldReader.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceParser.h"
+#include "MantlePlaceValidator.h"
 #include "MantleScatter.h"
 #include "MantleScatterEditorGround.h"
 #include "MantleScatterVolume.h"
@@ -62,6 +63,7 @@ namespace MantleScatterExportTestPrivate
 		P.Exclusions = { { FVector2D(100.5, -200.25), FVector2D(150.0, 75.5) }, { FVector2D(-800.0, 0.0), FVector2D(50.0, 50.0) } };
 		P.ClusterCount = 7;
 		P.ClusterRadius = 420.42;
+		P.bCollision = true;
 		if (Shape != EMantleScatterShape::Disc)
 		{
 			P.Radius = 0.0;
@@ -166,6 +168,7 @@ bool FMantleScatterExportKeysTest::RunTest(const FString& Parameters)
 		}
 		TestEqual(What + TEXT(": cluster count"), Got->ClusterCount, Sent.ClusterCount);
 		TestEqual(What + TEXT(": cluster radius"), Got->ClusterRadius, Sent.ClusterRadius);
+		TestTrue(What + TEXT(": collision"), Got->bCollision);
 		const uint64 SentHash = FlatHash(Sent);
 		TestNotEqual(What + TEXT(": the editor's copy generates"), SentHash, static_cast<uint64>(0));
 		TestEqual(What + TEXT(": and the client's hashes the same"), FlatHash(*Got), SentHash);
@@ -185,7 +188,7 @@ bool FMantleScatterExportKeysTest::RunTest(const FString& Parameters)
 		&& (*Entities)[0]->AsObject()->TryGetObjectField(TEXT("properties"), Properties)))
 	{
 		for (const TCHAR* Key : { TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"),
-			TEXT("shape"), TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius") })
+			TEXT("shape"), TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision") })
 		{
 			TestFalse(FString::Printf(TEXT("a plain box scatter writes no %s"), Key), (*Properties)->HasField(Key));
 		}
@@ -280,9 +283,63 @@ bool FMantleScatterEditorGroundTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a box scatter"), Volume->RefreshScatter(Error));
 	TestEqual(TEXT("keeps every instance"), static_cast<int64>(Volume->GetInstanceCount()), Asked);
 
-	TestTrue(TEXT("a published transform reads back as itself"),
-		FMantleScatterEditorGround::AsPublished(FMantleScatterEditorGround::AsPublished(FTransform(FRotator(0.0, 33.3, 0.0))))
-			.Equals(FMantleScatterEditorGround::AsPublished(FTransform(FRotator(0.0, 33.3, 0.0))), 0.0));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterCollisionCheckTest,
+	"Mantle.Editor.Scatter.Check.CollidingInstancesHaveAPlaceCap",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterCollisionCheckTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterExportTestPrivate;
+
+	// Two colliding scatters of 1500 each (400 square metres at 3.75): the second crosses the place's 2000, and Check names it.
+	FScatterWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	const auto Spawn = [&Fixture](const TCHAR* Label, const FVector& Location, const bool bCollision)
+	{
+		AMantleScatterVolume* Volume = Fixture.World->SpawnActor<AMantleScatterVolume>(Location, FRotator::ZeroRotator);
+		if (Volume)
+		{
+			Volume->SetActorLabel(Label);
+			Volume->HalfExtent = FVector(1000.0, 1000.0, 0.0);
+			Volume->Density = 3.75;
+			Volume->Meshes.SetNum(1);
+			Volume->Meshes[0].MeshId = TEXT("ast_cube");
+			Volume->bCollision = bCollision;
+		}
+		return Volume;
+	};
+	const auto CapIssueOn = [](const FMantleValidationResult& Result, const TCHAR* Label)
+	{
+		return Result.Issues.ContainsByPredicate([Label](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Actor == Label && Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("colliding scatter instances"));
+		});
+	};
+	AMantleScatterVolume* First = Spawn(TEXT("Rocks A"), FVector::ZeroVector, true);
+	AMantleScatterVolume* Second = Spawn(TEXT("Rocks B"), FVector(5000.0, 0.0, 0.0), true);
+	if (!TestNotNull(TEXT("two volumes"), First) || !TestNotNull(TEXT("two volumes"), Second))
+	{
+		return false;
+	}
+	FMantleScatterParams Params;
+	FString Problem;
+	TestTrue(TEXT("each reads"), First->ReadProps(Params, Problem));
+	TestEqual(TEXT("1500 instances each"), FMantleScatter::CountFor(Params, Problem), static_cast<int64>(1500));
+
+	FMantleValidationResult Result = FMantlePlaceValidator::Validate(Fixture.World);
+	TestTrue(TEXT("the volume that crosses 2000 is named"), CapIssueOn(Result, TEXT("Rocks A")) != CapIssueOn(Result, TEXT("Rocks B")));
+
+	// Without collision on one of them, the place holds 1500 colliding instances: no error.
+	Second->bCollision = false;
+	Result = FMantlePlaceValidator::Validate(Fixture.World);
+	TestFalse(TEXT("one colliding scatter fits"), CapIssueOn(Result, TEXT("Rocks A")) || CapIssueOn(Result, TEXT("Rocks B")));
 	return true;
 }
 

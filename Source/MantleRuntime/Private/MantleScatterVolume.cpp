@@ -121,6 +121,7 @@ void AMantleScatterVolume::ApplyProps(const FMantleScatterParams& In)
 		Entry.Center = Exclusion.Center;
 		Entry.HalfExtent = Exclusion.HalfExtent;
 	}
+	bCollision = In.bCollision;
 	ClusterCount = In.ClusterCount;
 	ClusterRadius = In.ClusterCount > 0 ? In.ClusterRadius : ClusterRadius;
 	Meshes.Reset(In.Meshes.Num());
@@ -211,6 +212,7 @@ bool AMantleScatterVolume::ReadProps(FMantleScatterParams& Out, FString& OutProb
 		Exclusion.Center = Entry.Center;
 		Exclusion.HalfExtent = Entry.HalfExtent;
 	}
+	Out.bCollision = bCollision;
 	if (ClusterCount > 0)
 	{
 		Out.ClusterCount = ClusterCount;
@@ -283,20 +285,22 @@ bool AMantleScatterVolume::RefreshScatter(FString& OutError)
 {
 	ClearScatter();
 	UWorld* World = GetWorld();
-	if (!FMantleScatter::DrawsScatter(World))
-	{
-		return true; // visual only: a dedicated server has nothing to build
-	}
-
 	FMantleScatterParams Params;
 	if (!ReadProps(Params, OutError))
 	{
 		return false;
 	}
+	// Visual scatters build only where something draws; a colliding one (#169) builds on a dedicated server too, since the
+	// server's bodies are what stop a player and an NPC.
+	if (!FMantleScatter::DrawsScatter(World) && !Params.bCollision)
+	{
+		return true;
+	}
 	// The editor preview shows every instance, as Epic does; a game takes Settings > Foliage's tier, as grass does.
 	const bool bPreview = IsEditorWorld();
-	const int32 FoliageQuality = bPreview ? 3 : Scalability::GetQualityLevels().FoliageQuality;
-	if (!bPreview)
+	// A colliding scatter is the same on every machine, whatever its Foliage setting: its bodies decide where players walk.
+	const int32 FoliageQuality = (bPreview || Params.bCollision) ? 3 : Scalability::GetQualityLevels().FoliageQuality;
+	if (!bPreview && !Params.bCollision)
 	{
 		BindScalability();
 	}
@@ -386,15 +390,27 @@ bool AMantleScatterVolume::RefreshScatter(FString& OutError)
 				Ism->SetMaterial(Slot, Entry.Materials[Slot]);
 			}
 		}
-		// Visual only: no physics bodies, no overlaps, nothing for navigation.
-		Ism->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
-		Ism->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		Ism->SetGenerateOverlapEvents(false);
-		Ism->SetCanEverAffectNavigation(false);
+		if (Params.bCollision)
+		{
+			// Opt-in (#169): a blocking body per instance, as an InstancedMesh's, and a source for the NPC navigation mesh.
+			Ism->SetCollisionProfileName(UCollisionProfile::CustomCollisionProfileName);
+			Ism->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Ism->SetCollisionResponseToAllChannels(ECR_Block);
+			Ism->SetGenerateOverlapEvents(false);
+			Ism->SetCanEverAffectNavigation(true);
+		}
+		else
+		{
+			// Visual only: no physics bodies, no overlaps, nothing for navigation.
+			Ism->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+			Ism->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Ism->SetGenerateOverlapEvents(false);
+			Ism->SetCanEverAffectNavigation(false);
+		}
 		// Instances go in before the component registers, so its render state is built once for all
 		// of them, as the place builder does for an InstancedMesh.
 		Ism->PreAllocateInstancesMemory(Buckets[MeshIndex].Num());
-		Ism->AddInstances(Buckets[MeshIndex], /*bShouldReturnIndices*/ false, /*bWorldSpace*/ false, /*bUpdateNavigation*/ false);
+		Ism->AddInstances(Buckets[MeshIndex], /*bShouldReturnIndices*/ false, /*bWorldSpace*/ false, /*bUpdateNavigation*/ Params.bCollision);
 		Ism->RegisterComponent();
 		// Listed as the actor's own, so the Details panel and the world outliner show it.
 		AddInstanceComponent(Ism);
@@ -420,9 +436,20 @@ FString AMantleScatterVolume::SettingsKey() const
 	}
 	const EComponentMobility::Type Mobility = ScatterRoot ? ScatterRoot->GetMobility() : EComponentMobility::Movable;
 	Key +=FString::Printf(TEXT("|m%d"), static_cast<int32>(Mobility));
-	Key += FString::Printf(TEXT("|d%.17g|p%d,%.17g,%d,%.17g,%d,%.17g|s%d,%.17g,%.17g|c%d,%.17g|t%d"), DrawDistance,
+	Key += FString::Printf(TEXT("|d%.17g|p%d,%.17g,%d,%.17g,%d,%.17g|s%d,%.17g,%.17g|c%d,%.17g|k%d|t%d"), DrawDistance,
 		static_cast<int32>(Placement), MaxSlopeDegrees, bLimitMinHeight, MinHeight, bLimitMaxHeight, MaxHeight,
-		static_cast<int32>(Shape), Radius, Width, ClusterCount, ClusterRadius, TerrainSurfaces.Num());
+		static_cast<int32>(Shape), Radius, Width, ClusterCount, ClusterRadius, bCollision, TerrainSurfaces.Num());
+	Key += FString::Printf(TEXT("|v%d"), TerrainVersion);
+	if (Placement == EMantleScatterPlacement::Terrain)
+	{
+		// Where the volume stands decides which ground each instance lands on, so moving it rebuilds.
+		const FTransform Placed = GetActorTransform();
+		const FRotator Turn = Placed.GetRotation().Rotator();
+		const FVector Where = Placed.GetLocation();
+		const FVector Size = Placed.GetScale3D();
+		Key += FString::Printf(TEXT("|w%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g"), Where.X, Where.Y, Where.Z, Turn.Pitch, Turn.Yaw, Turn.Roll,
+			Size.X, Size.Y, Size.Z);
+	}
 	for (const FVector2D& Point : Path)
 	{
 		Key += FString::Printf(TEXT("|P%.17g,%.17g"), Point.X, Point.Y);
@@ -437,6 +464,12 @@ FString AMantleScatterVolume::SettingsKey() const
 void AMantleScatterVolume::SetTerrainSurfaces(TArray<FMantleScatterTerrainSurface> InSurfaces)
 {
 	TerrainSurfaces = MoveTemp(InSurfaces);
+	// New heights for the same number of Terrains (a sculpt) must rebuild too, so the key carries a counter.
+	++TerrainVersion;
+	if (IsEditorWorld())
+	{
+		RefreshEditorPreview();
+	}
 }
 
 void AMantleScatterVolume::BindScalability()
@@ -544,7 +577,15 @@ void AMantleScatterVolume::PostEditChangeProperty(FPropertyChangedEvent& Propert
 
 FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
 {
-	return [Surfaces = TerrainSurfaces, ScatterToWorld = GetActorTransform()](
+	// Both transforms are rebuilt from their location, exported rotator and scale: what a place file holds and the client builds
+	// from, so the editor's quaternion cannot round a height differently from the client's.
+	const auto Exported = [](const FTransform& T) { return FTransform(FRotator(T.GetRotation().Rotator()), T.GetLocation(), T.GetScale3D()); };
+	TArray<FMantleScatterTerrainSurface> Exact = TerrainSurfaces;
+	for (FMantleScatterTerrainSurface& Surface : Exact)
+	{
+		Surface.TerrainToWorld = Exported(Surface.TerrainToWorld);
+	}
+	return [Surfaces = MoveTemp(Exact), ScatterToWorld = Exported(GetActorTransform())](
 		const int64 XMm, const int64 YMm, FMantleScatterGround& Out) -> bool
 	{
 		// The point's world X-Y; the highest surface under it wins, holes and the terrain's edge leave none.
