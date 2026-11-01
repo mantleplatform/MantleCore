@@ -112,10 +112,14 @@ interface Entity {
 	getAttribute(name: string): any;
 	/** The material asset id a mesh shows in a slot (0 when left out), or nil when the slot shows the mesh's own material. */
 	getMaterial(slot?: number | undefined): string | undefined;
+	/** Scatters only: a number as 16 hex digits that summarises every instance this Scatter generates (its whole stream, in its own space), so two machines' values can be compared. Errors when the entity is not a Scatter. */
+	getScatterHash(): string;
 	/** All of the entity's tags. */
 	getTags(): (string)[];
 	/** Whether the entity has this tag. */
 	hasTag(tag: string): boolean;
+	/** Scatters only: the instances this Scatter generates inside the world-space box from `min` to `max` (x and y; z is ignored), as a list of {Position: Vector3, Rotation: Vector3 (pitch, yaw, roll degrees), Scale: number, Mesh: string}. It is the Scatter's whole stream, the same on the server and every client, whether or not any is in range or drawn (a client draws fewer on a low Foliage setting). The box is at most 200 m by 200 m and holds at most 2000 instances, and a script may call it 10 times a second; past any of these the call fails with a message. Errors when the entity is not a Scatter. */
+	instancesIn(min: Vector3, max: Vector3): (any)[];
 	/** Call handler with the attribute's value now and every time it changes. */
 	observeAttribute(name: string, handler: (value: any) => void): Connection;
 	/** Play one of the place's AnimClip assets on a SkeletalMesh, starting now. Leave clipAssetId out (or nil) to restart the clip it plays now, or its own. params: Loop (true by default; false holds the last frame), PlayRate (clip seconds per second, 1 by default, clamped to 0..10) and StartOffset (seconds into the clip to start at, 0 by default, clamped to 0..3600). On the server it plays for everyone, players who join later included, in step on every screen; on a client it only changes that client's view. Errors when the entity is not a SkeletalMesh, the id is not an AnimClip in the place's assets, or the clip was authored on another skeleton (on a dedicated server, which never loads clips, that last one shows on each player's screen as the mesh's resting pose instead). */
@@ -134,6 +138,8 @@ interface Entity {
 	setEffectRate(rate: number): void;
 	/** Show another of the place's Material assets on this mesh: in one material slot (counting from 0), or in every slot when slot is left out. "" puts the place's own material back. Replicates like Color. Errors when the id is not a Material in the place's assets, the slot doesn't exist, or the entity is not a mesh. */
 	setMaterial(assetId: string, slot?: number | undefined): void;
+	/** Scatters only (server): change the keys of the table you give; every other setting stays. The keys are the Scatter place-file keys (seed, halfExtent, density, scale, alignment, maxTilt, meshes, drawDistance, placement, maxSlopeDegrees, minHeight, maxHeight, shape, radius, path, width, exclusions, clusterCount, clusterRadius), checked with the same limits and messages as publishing a place: a value that is refused is an error and the Scatter keeps its settings. Every player generates the new instances on their own machine, so nothing but the settings is sent; a Scatter can change at most 4 times a second. Errors when the entity is not a Scatter. (server only) */
+	setScatterSettings(settings: Record<string, any>): void;
 	/** Stop a SkeletalMesh's clip: it shows its resting pose until the next PlayClip. Replicates like PlayClip. Errors when the entity is not a SkeletalMesh. */
 	stopClip(): void;
 	/** Effects only: stop emitting; the particles already out die out. Replicates like PlayEffect. Errors when the entity is not an Effect. */
@@ -956,15 +962,15 @@ interface NetService {
 }
 const Net: NetService;
 
-/** Smooth seeded noise for generating worlds (#168): the same seed and position always give the same value, from -1 to 1, on every machine. */
+/** Smooth seeded noise for generating worlds (#168, exact since 1.60): the same seed and position always give the same value, from -1 to 1, bit for bit on every machine (client and server). */
 interface NoiseService {
-	/** Layered noise (octaves, default 4, at most 8: each twice as fine and half as strong) at (x, y) times frequency (default 1): natural terrain. */
+	/** Layered noise (octaves, default 4, at most 8: each twice as fine and half as strong) at (x, y) times frequency (default 1): natural terrain. Values are multiples of 1/65536, the same on every machine. A seed is a whole number from -2147483648 to 2147483647, and a coordinate times the frequency must stay within 8388608 either way; anything else is an error. */
 	fbm2D(seed: number, x: number, y: number, octaves?: number | undefined, frequency?: number | undefined): number;
-	/** Layered 3D noise, as Fbm2D. */
+	/** Layered 3D noise, as Fbm2D. Values are multiples of 1/65536, the same on every machine. A seed is a whole number from -2147483648 to 2147483647, and a coordinate times the frequency must stay within 8388608 either way; anything else is an error. */
 	fbm3D(seed: number, x: number, y: number, z: number, octaves?: number | undefined, frequency?: number | undefined): number;
-	/** Gradient noise at (x, y) times frequency (default 1): about one hill per 1 / frequency units. */
+	/** Gradient noise at (x, y) times frequency (default 1): about one hill per 1 / frequency units. Values are multiples of 1/65536, the same on every machine. A seed is a whole number from -2147483648 to 2147483647, and a coordinate times the frequency must stay within 8388608 either way; anything else is an error. */
 	perlin2D(seed: number, x: number, y: number, frequency?: number | undefined): number;
-	/** Gradient noise at (x, y, z) times frequency (default 1): caves, ore veins. */
+	/** Gradient noise at (x, y, z) times frequency (default 1): caves, ore veins. Values are multiples of 1/65536, the same on every machine. A seed is a whole number from -2147483648 to 2147483647, and a coordinate times the frequency must stay within 8388608 either way; anything else is an error. */
 	perlin3D(seed: number, x: number, y: number, z: number, frequency?: number | undefined): number;
 }
 const Noise: NoiseService;
@@ -998,6 +1004,15 @@ interface ProjectilesService {
 	fire(options: { position: Vector3; velocity?: Vector3 | undefined; target?: Vector3 | undefined; speed?: number | undefined; gravityScale?: number | undefined; lifetime?: number | undefined; look?: string | undefined; color?: string | undefined; scale?: number | undefined; damage?: number | undefined; damageType?: string | undefined; explosion?: { radius?: number | undefined; damage?: number | undefined; innerRadius?: number | undefined; falloff?: number | undefined; damageType?: string | undefined; impulse?: number | undefined; ragdoll?: boolean | undefined; ragdollSeconds?: number | undefined; lineOfSight?: boolean | undefined; effect?: string | undefined; sound?: boolean | undefined } | undefined; explodeOnExpire?: boolean | undefined; tag?: string | undefined; attacker?: Player | undefined }): number;
 }
 const Projectiles: ProjectilesService;
+
+/** Seeded random numbers (#169): the same seed and index always give the same value, on every machine (client and server), whatever was asked before. Draw i of a seed never depends on draw i - 1: ask for any index in any order. A seed is a whole number from -2147483648 to 2147483647 and an index a whole number from 0 to 4294967295; anything else is an error. */
+interface RandomService {
+	/** A whole number from `min` to `max`, both included: draw `index` of the stream `seed`. min and max are whole numbers, min at most max, at most 4294967295 apart. */
+	int(seed: number, index: number, min: number, max: number): number;
+	/** A number from 0 up to, never reaching, 1: draw `index` of the stream `seed`. */
+	number(seed: number, index: number): number;
+}
+const Random: RandomService;
 
 /** How a death becomes a respawn. By default a dead player respawns on their own after a short wait at a spawn point the place picks. Change the wait, or turn automatic respawning off to run rounds where the dead stay down until you bring them back with Player:Respawn. The server decides; there is nothing for a client script here. Player.Respawned fires when a player gets a fresh character. */
 interface RespawnService {
