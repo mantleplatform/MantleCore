@@ -5,10 +5,14 @@
 #include "MantleRuntime.h"
 
 #include "Engine/StaticMesh.h"
+#include "DynamicMesh/DynamicMesh3.h"
+#include "DynamicMeshToMeshDescription.h"
+#include "GeometryScript/MeshSimplifyFunctions.h"
 #include "IMeshReductionInterfaces.h"
 #include "IMeshReductionManagerModule.h"
 #include "Materials/MaterialInterface.h"
 #include "MeshDescription.h"
+#include "MeshDescriptionToDynamicMesh.h"
 #include "MeshReductionSettings.h"
 #include "Misc/ScopedSlowTask.h"
 #include "Misc/SecureHash.h"
@@ -18,6 +22,7 @@
 #include "StaticMeshAttributes.h"
 #include "StaticMeshOperations.h"
 #include "StaticMeshResources.h"
+#include "UDynamicMesh.h"
 #include "UObject/GCObject.h"
 #include "UObject/Package.h"
 
@@ -25,7 +30,7 @@
 namespace MantleMeshReducePrivate
 {
 	/** Bumped when what a reduced copy holds changes, so a cached copy from before is not reused. */
-	const TCHAR* const ReduceVersion = TEXT("meshreduce-1");
+	const TCHAR* const ReduceVersion = TEXT("meshreduce-2");
 
 	/** The prefix a copy's polygon groups and material slots are named with, followed by the source slot's index. */
 	const TCHAR* const SlotPrefix = TEXT("MantleReducedSlot_");
@@ -297,22 +302,60 @@ bool FMantleMeshReduce::ReduceDescription(const FMeshDescription& In, int32 Targ
 		return false;
 	}
 
-	// Any: the reducer keeps going until both the triangle and the vertex target are met.
-	FMeshReductionSettings Settings;
-	Settings.TerminationCriterion = EStaticMeshReductionTerimationCriterion::Any;
-	Settings.PercentTriangles = 1.0f;
-	Settings.MaxNumOfTriangles = static_cast<uint32>(FMath::Max(TargetTriangles, 2));
-	Settings.PercentVertices = 1.0f;
-	Settings.MaxNumOfVerts = static_cast<uint32>(FMath::Max(TargetVertices, 4));
-
-	FOverlappingCorners OverlappingCorners;
-	FStaticMeshOperations::FindOverlappingCorners(OverlappingCorners, In, UE_THRESH_POINTS_ARE_SAME);
-
-	// The reducer writes its polygon groups' names into the static mesh attributes: they have to be there.
 	FMeshDescription Reduced;
 	FStaticMeshAttributes(Reduced).Register();
-	float MaxDeviation = 0.0f;
-	Reducer->ReduceMeshDescription(Reduced, MaxDeviation, In, OverlappingCorners, Settings);
+	if (ReducerForTests)
+	{
+		// Any: the reducer keeps going until both the triangle and the vertex target are met.
+		FMeshReductionSettings Settings;
+		Settings.TerminationCriterion = EStaticMeshReductionTerimationCriterion::Any;
+		Settings.PercentTriangles = 1.0f;
+		Settings.MaxNumOfTriangles = static_cast<uint32>(FMath::Max(TargetTriangles, 2));
+		Settings.PercentVertices = 1.0f;
+		Settings.MaxNumOfVerts = static_cast<uint32>(FMath::Max(TargetVertices, 4));
+
+		FOverlappingCorners OverlappingCorners;
+		FStaticMeshOperations::FindOverlappingCorners(OverlappingCorners, In, UE_THRESH_POINTS_ARE_SAME);
+
+		// The reducer writes its polygon groups' names into the static mesh attributes: they have to be there.
+		float MaxDeviation = 0.0f;
+		Reducer->ReduceMeshDescription(Reduced, MaxDeviation, In, OverlappingCorners, Settings);
+	}
+	else
+	{
+		// The engine's own static mesh reducer ignores its importance settings (it reads only the targets and the welding
+		// threshold, QuadricMeshReduction.cpp), so a texture seam is only as safe as its fixed weights make it. Geometry
+		// Script's attribute-aware simplify keeps UVs, normals and material borders as constraints on every collapse.
+		UE::Geometry::FDynamicMesh3 Dynamic;
+		FMeshDescriptionToDynamicMesh ToDynamic;
+		ToDynamic.Convert(&In, Dynamic, false);
+		UDynamicMesh* Target = NewObject<UDynamicMesh>(GetTransientPackage());
+		Target->SetMesh(MoveTemp(Dynamic));
+
+		FGeometryScriptSimplifyMeshOptions Options;
+		Options.Method = EGeometryScriptRemoveMeshSimplificationType::AttributeAwareV2;
+		UGeometryScriptLibrary_MeshSimplifyFunctions::ApplySimplifyToTriangleCount(Target, FMath::Max(TargetTriangles, 2), Options);
+
+		FDynamicMeshToMeshDescription ToDescription;
+		Target->ProcessMesh([&](const UE::Geometry::FDynamicMesh3& Simplified)
+		{
+			ToDescription.Convert(&Simplified, Reduced, false);
+		});
+
+		// Polygon groups come back in the source's order and numbering, without their names; the build matches slots by name.
+		FStaticMeshConstAttributes InAttributes(In);
+		FStaticMeshAttributes OutAttributes(Reduced);
+		TPolygonGroupAttributesRef<FName> OutSlotNames = OutAttributes.GetPolygonGroupMaterialSlotNames();
+		for (const FPolygonGroupID Group : Reduced.PolygonGroups().GetElementIDs())
+		{
+			if (In.PolygonGroups().IsValid(Group))
+			{
+				OutSlotNames[Group] = InAttributes.GetPolygonGroupMaterialSlotNames()[Group];
+			}
+		}
+		// The simplified normals are kept; tangents are made again from them and the UVs.
+		FStaticMeshOperations::ComputeTangentsAndNormals(Reduced, EComputeNTBsFlags::Tangents | EComputeNTBsFlags::UseMikkTSpace);
+	}
 	if (Reduced.Triangles().Num() == 0)
 	{
 		OutWhy = TEXT("the reducer left no triangles");

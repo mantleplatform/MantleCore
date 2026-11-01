@@ -133,6 +133,9 @@ public class MantleEditor : ModuleRules
 			"AnimationBlueprintLibrary",
 			"GeometryFramework",
 			"GeometryCore",
+			// Over-limit meshes are reduced with Geometry Script's attribute-aware simplify (UV seams and material borders held),
+			// which converts to and from a mesh description. Engine runtime module, no plugin.
+			"MeshConversion",
 			// #646: evaluated native Outfit source sizes are editor authoring input only.
 			"ChaosClothAssetEngine",
 			"ChaosClothAsset",

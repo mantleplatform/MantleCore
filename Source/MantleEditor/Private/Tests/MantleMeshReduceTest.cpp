@@ -612,4 +612,91 @@ bool FMantleMeshReduceMirrorBakeTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshReduceKeepsAUVSeamTest,
+	"Mantle.Editor.MeshReduce.KeepsAUVSeam",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshReduceKeepsAUVSeamTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshReduceTestPrivate;
+	FReduceFixture Fixture;
+	if (!FMantleMeshReduce::IsAvailable())
+	{
+		AddWarning(TEXT("this editor has no static mesh reducer, so the reduction was not tested"));
+		return true;
+	}
+	// A grid whose right half is a second UV island, ten texture widths over: a seam down the middle, on shared vertices.
+	FMeshDescription Original;
+	FReduceFixture::AddGrid(Original, BigGrid, 2);
+	FStaticMeshAttributes Attributes(Original);
+	TVertexAttributesRef<FVector3f> Positions = Attributes.GetVertexPositions();
+	TVertexInstanceAttributesRef<FVector2f> UVs = Attributes.GetVertexInstanceUVs();
+	const float Middle = 0.5f * 10.0f * BigGrid;
+	for (const FTriangleID Triangle : Original.Triangles().GetElementIDs())
+	{
+		float CentreX = 0.0f;
+		for (const FVertexID Vertex : Original.GetTriangleVertices(Triangle))
+		{
+			CentreX += Positions[Vertex].X / 3.0f;
+		}
+		if (CentreX > Middle)
+		{
+			for (const FVertexInstanceID Instance : Original.GetTriangleVertexInstances(Triangle))
+			{
+				UVs.Set(Instance, 0, UVs.Get(Instance, 0) + FVector2f(10.0f, 0.0f));
+			}
+		}
+	}
+
+	FMeshDescription Reduced;
+	FString Why;
+	if (!TestTrue(TEXT("it reduces: ") + Why, FMantleMeshReduce::ReduceDescription(Original, 600, 100000, Reduced, Why)))
+	{
+		return false;
+	}
+	TestTrue(TEXT("to far fewer triangles"), Reduced.Triangles().Num() > 0 && Reduced.Triangles().Num() < BigTriangles / 2);
+
+	FStaticMeshConstAttributes ReducedAttributes(Reduced);
+	TVertexInstanceAttributesConstRef<FVector2f> ReducedUVs = ReducedAttributes.GetVertexInstanceUVs();
+	int32 Smeared = 0;
+	TMap<FVertexID, TArray<float>> UsedAt;
+	for (const FTriangleID Triangle : Reduced.Triangles().GetElementIDs())
+	{
+		float MinU = TNumericLimits<float>::Max();
+		float MaxU = -TNumericLimits<float>::Max();
+		for (const FVertexInstanceID Instance : Reduced.GetTriangleVertexInstances(Triangle))
+		{
+			const float U = ReducedUVs.Get(Instance, 0).X;
+			MinU = FMath::Min(MinU, U);
+			MaxU = FMath::Max(MaxU, U);
+			UsedAt.FindOrAdd(Reduced.GetVertexInstanceVertex(Instance)).Add(U);
+		}
+		Smeared += MaxU - MinU > 5.0f ? 1 : 0;
+	}
+	TestEqual(TEXT("no triangle stretches its texture across the seam"), Smeared, 0);
+	int32 SeamVertices = 0;
+	for (const TPair<FVertexID, TArray<float>>& Pair : UsedAt)
+	{
+		float MinU = TNumericLimits<float>::Max();
+		float MaxU = -TNumericLimits<float>::Max();
+		for (const float U : Pair.Value)
+		{
+			MinU = FMath::Min(MinU, U);
+			MaxU = FMath::Max(MaxU, U);
+		}
+		SeamVertices += MaxU - MinU > 5.0f ? 1 : 0;
+	}
+	TestTrue(TEXT("the seam is still a seam"), SeamVertices > 0);
+
+	TSet<FName> Names;
+	TPolygonGroupAttributesConstRef<FName> GroupNames = ReducedAttributes.GetPolygonGroupMaterialSlotNames();
+	for (const FPolygonGroupID Group : Reduced.PolygonGroups().GetElementIDs())
+	{
+		Names.Add(GroupNames[Group]);
+	}
+	TestTrue(TEXT("both material groups keep their names"), Names.Contains(FReduceFixture::SlotNameOf(0)) && Names.Contains(FReduceFixture::SlotNameOf(1)));
+	return true;
+}
+
 #endif
