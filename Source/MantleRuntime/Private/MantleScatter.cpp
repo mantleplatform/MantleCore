@@ -1,6 +1,8 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleScatter.h"
 
+#include "Dom/JsonObject.h"
+#include "Dom/JsonValue.h"
 #include "Engine/World.h"
 #include "Misc/CoreMisc.h"
 
@@ -87,6 +89,79 @@ namespace MantleScatterPrivate
 			OutError = FString::Printf(TEXT("max tilt %g must be 0 to %g degrees"), Params.MaxTiltDegrees, FMantleScatter::MaxTiltLimit);
 			return false;
 		}
+		if (!(Params.DrawDistance == 0.0 || (Params.DrawDistance > 0.0 && Params.DrawDistance <= FMantleScatter::MaxDrawDistanceCm)))
+		{
+			OutError = FString::Printf(TEXT("draw distance %g must be above 0 and at most %g cm (0 for none)"), Params.DrawDistance,
+				FMantleScatter::MaxDrawDistanceCm);
+			return false;
+		}
+		if (!(Params.MaxSlopeDegrees >= 0.0 && Params.MaxSlopeDegrees <= 90.0))
+		{
+			OutError = FString::Printf(TEXT("max slope %g must be 0 to 90 degrees"), Params.MaxSlopeDegrees);
+			return false;
+		}
+		const double MaxCoordinate = FMantlePlaceLimits::MaxScatterCoordinate;
+		if ((Params.MinHeight.IsSet() && !(FMath::Abs(Params.MinHeight.GetValue()) <= MaxCoordinate))
+			|| (Params.MaxHeight.IsSet() && !(FMath::Abs(Params.MaxHeight.GetValue()) <= MaxCoordinate)))
+		{
+			OutError = FString::Printf(TEXT("min and max height must be within %g cm either way"), MaxCoordinate);
+			return false;
+		}
+		if (Params.MinHeight.IsSet() && Params.MaxHeight.IsSet() && Params.MinHeight.GetValue() > Params.MaxHeight.GetValue())
+		{
+			OutError = FString::Printf(TEXT("max height %g is below min height %g"), Params.MaxHeight.GetValue(), Params.MinHeight.GetValue());
+			return false;
+		}
+		if (Params.Shape == EMantleScatterShape::Disc
+			&& !(Params.Radius > 0.0 && Params.Radius <= FMantlePlaceLimits::MaxScatterRadius))
+		{
+			OutError = FString::Printf(TEXT("radius %g must be above 0 and at most %g cm"), Params.Radius, FMantlePlaceLimits::MaxScatterRadius);
+			return false;
+		}
+		if (Params.Shape == EMantleScatterShape::Path)
+		{
+			if (Params.Path.Num() < 2 || Params.Path.Num() > FMantleScatter::MaxPathPoints)
+			{
+				OutError = FString::Printf(TEXT("path has %d points; a path takes 2 to %d"), Params.Path.Num(), FMantleScatter::MaxPathPoints);
+				return false;
+			}
+			for (const FVector2D& Point : Params.Path)
+			{
+				if (!(FMath::Abs(Point.X) <= MaxCoordinate && FMath::Abs(Point.Y) <= MaxCoordinate))
+				{
+					OutError = FString::Printf(TEXT("path point %s must be within %g cm either way"), *Point.ToString(), MaxCoordinate);
+					return false;
+				}
+			}
+			if (!(Params.Width > 0.0 && Params.Width <= FMantlePlaceLimits::MaxScatterPathWidth))
+			{
+				OutError = FString::Printf(TEXT("width %g must be above 0 and at most %g cm"), Params.Width, FMantlePlaceLimits::MaxScatterPathWidth);
+				return false;
+			}
+		}
+		if (Params.Exclusions.Num() > FMantleScatter::MaxExclusions)
+		{
+			OutError = FString::Printf(TEXT("%d exclusions; a scatter takes at most %d"), Params.Exclusions.Num(), FMantleScatter::MaxExclusions);
+			return false;
+		}
+		for (const FMantleScatterExclusion& Exclusion : Params.Exclusions)
+		{
+			if (!(FMath::Abs(Exclusion.Center.X) <= MaxCoordinate && FMath::Abs(Exclusion.Center.Y) <= MaxCoordinate
+				&& Exclusion.HalfExtent.X > 0.0 && Exclusion.HalfExtent.Y > 0.0
+				&& Exclusion.HalfExtent.X <= FMantleScatter::MaxHalfExtentCm && Exclusion.HalfExtent.Y <= FMantleScatter::MaxHalfExtentCm))
+			{
+				OutError = TEXT("an exclusion's centre must be within 1000000 cm either way and its half extent above 0 and at most 1000000 cm");
+				return false;
+			}
+		}
+		if (Params.ClusterCount < 0 || Params.ClusterCount > FMantleScatter::MaxClusters
+			|| (Params.ClusterCount > 0
+				&& !(Params.ClusterRadius > 0.0 && Params.ClusterRadius <= FMantlePlaceLimits::MaxScatterClusterRadius)))
+		{
+			OutError = FString::Printf(TEXT("clusters must be 1 to %d of a radius above 0 and at most %g cm"), FMantleScatter::MaxClusters,
+				FMantlePlaceLimits::MaxScatterClusterRadius);
+			return false;
+		}
 		if (Params.Meshes.Num() == 0 || Params.Meshes.Num() > FMantleScatter::MaxMeshes)
 		{
 			OutError = FString::Printf(TEXT("%d meshes; a scatter takes 1 to %d"), Params.Meshes.Num(), FMantleScatter::MaxMeshes);
@@ -125,6 +200,126 @@ namespace MantleScatterPrivate
 		const double Millimetres = HalfCm * 10.0;
 		return static_cast<int64>(FMath::FloorToDouble(Millimetres + 0.5));
 	}
+
+	/** A path in whole millimetres: its points, each segment's length rounded to whole mm (a segment that rounds to 0 is skipped), and the strip's width. */
+	struct FScatterPath
+	{
+		TArray<int64> X;
+		TArray<int64> Y;
+		/** Segment i runs from point i to point i + 1 and is Length[i] mm long (at least 1). */
+		TArray<int32> Segment;
+		TArray<int64> Length;
+		/** Running total of Length: segment k covers [Cumulative[k] - Length[k], Cumulative[k]). */
+		TArray<int64> Cumulative;
+		int64 Total = 0;
+		int64 WidthMm = 0;
+	};
+
+	FScatterPath ScatterBuildPath(const FMantleScatterParams& Params)
+	{
+		FScatterPath Path;
+		for (const FVector2D& Point : Params.Path)
+		{
+			Path.X.Add(ScatterHalfMillimetres(Point.X));
+			Path.Y.Add(ScatterHalfMillimetres(Point.Y));
+		}
+		Path.WidthMm = ScatterHalfMillimetres(Params.Width);
+		for (int32 Index = 0; Index + 1 < Path.X.Num(); ++Index)
+		{
+			const int64 Dx = Path.X[Index + 1] - Path.X[Index];
+			const int64 Dy = Path.Y[Index + 1] - Path.Y[Index];
+			// The squared length is exact in a double (under 2^53) and sqrt is correctly rounded, so the length is the same everywhere.
+			const double Exact = FMath::Sqrt(static_cast<double>(Dx * Dx + Dy * Dy));
+			const int64 Length = static_cast<int64>(FMath::FloorToDouble(Exact + 0.5));
+			if (Length > 0)
+			{
+				Path.Total += Length;
+				Path.Segment.Add(Index);
+				Path.Length.Add(Length);
+				Path.Cumulative.Add(Path.Total);
+			}
+		}
+		return Path;
+	}
+
+	/** A point in whole millimetres. */
+	struct FScatterPoint
+	{
+		int64 X = 0;
+		int64 Y = 0;
+	};
+
+	/** A box in whole millimetres. */
+	struct FScatterBoxMm
+	{
+		int64 CenterX = 0;
+		int64 CenterY = 0;
+		int64 HalfX = 0;
+		int64 HalfY = 0;
+	};
+
+	/** A point on a disc of the given radius (mm): the stream's draw first, then more of its draws until one lands inside. Integers only. */
+	void ScatterOnDisc(const int64 Radius, const uint64 Draw, FScatterStream& Stream, int64& OutX, int64& OutY)
+	{
+		const int64 RadiusSquared = Radius * Radius;
+		uint64 Current = Draw;
+		for (int32 Try = 0; Try < 32; ++Try)
+		{
+			const int64 X = ScatterPick(ScatterLow(Current), -Radius, Radius);
+			const int64 Y = ScatterPick(ScatterHigh(Current), -Radius, Radius);
+			if (X * X + Y * Y <= RadiusSquared)
+			{
+				OutX = X;
+				OutY = Y;
+				return;
+			}
+			Current = Stream.Next();
+		}
+		OutX = 0;
+		OutY = 0;
+	}
+
+	/** A point in the shape (X-Y, mm about the scatter's origin) from one 64-bit draw, plus the stream's later draws where it has to retry. */
+	void ScatterInShape(const FMantleScatterParams& Params, const FScatterPath& Path, const int64 HalfX, const int64 HalfY,
+		const int64 RadiusMm, const uint64 Draw, FScatterStream& Stream, int64& OutX, int64& OutY)
+	{
+		switch (Params.Shape)
+		{
+		case EMantleScatterShape::Disc:
+			ScatterOnDisc(RadiusMm, Draw, Stream, OutX, OutY);
+			return;
+		case EMantleScatterShape::Path:
+		{
+			if (Path.Total <= 0)
+			{
+				OutX = Path.X.Num() > 0 ? Path.X[0] : 0;
+				OutY = Path.Y.Num() > 0 ? Path.Y[0] : 0;
+				return;
+			}
+			const int64 Along = ScatterPick(ScatterLow(Draw), 0, Path.Total - 1);
+			int32 Pick = 0;
+			while (Pick < Path.Cumulative.Num() - 1 && Along >= Path.Cumulative[Pick])
+			{
+				++Pick;
+			}
+			const int32 From = Path.Segment[Pick];
+			const int64 Length = Path.Length[Pick];
+			const int64 Offset = Along - (Path.Cumulative[Pick] - Length);
+			const int64 Dx = Path.X[From + 1] - Path.X[From];
+			const int64 Dy = Path.Y[From + 1] - Path.Y[From];
+			const int64 Across = ScatterPick(ScatterHigh(Draw), 0, Path.WidthMm) - Path.WidthMm / 2;
+			// Integer division truncates toward zero on every machine.
+			OutX = Path.X[From] + Dx * Offset / Length - Dy * Across / Length;
+			OutY = Path.Y[From] + Dy * Offset / Length + Dx * Across / Length;
+			return;
+		}
+		case EMantleScatterShape::Box:
+		default:
+			OutX = ScatterPick(ScatterLow(Draw), -HalfX, HalfX);
+			OutY = ScatterPick(ScatterHigh(Draw), -HalfY, HalfY);
+			return;
+		}
+	}
 }
 
 const TCHAR* FMantleScatter::AlignmentName(const EMantleScatterAlignment Alignment)
@@ -157,11 +352,37 @@ int64 FMantleScatter::CountFor(const FMantleScatterParams& Params, FString& OutE
 		return -1;
 	}
 
-	// The footprint in whole square millimetres (exact in a double up to the extent cap), then
-	// square metres by one division, so 100 m x 100 m at density 1 is 10000. validate.py and the
-	// backend do exactly these IEEE operations, so all three agree on every count.
-	const int64 AreaMm2 = 4 * ScatterHalfMillimetres(Params.HalfExtent.X) * ScatterHalfMillimetres(Params.HalfExtent.Y);
-	const double AreaM2 = static_cast<double>(AreaMm2) / 1.0e6;
+	// The footprint in square metres, from whole millimetres. Each step is its own statement and its own IEEE
+	// operation (no fused multiply-add), exactly as validate.py and the backend do them, so all three agree on every count.
+	double AreaM2 = 0.0;
+	switch (Params.Shape)
+	{
+	case EMantleScatterShape::Disc:
+	{
+		const int64 Radius = ScatterHalfMillimetres(Params.Radius);
+		const double RadiusSquared = static_cast<double>(Radius * Radius);
+		const double Scaled = RadiusSquared * 3141593.0;
+		const double AreaMm2 = Scaled / 1000000.0;
+		AreaM2 = AreaMm2 / 1000000.0;
+		break;
+	}
+	case EMantleScatterShape::Path:
+	{
+		const FScatterPath Path = ScatterBuildPath(Params);
+		const double AreaMm2 = static_cast<double>(Path.Total * Path.WidthMm);
+		AreaM2 = AreaMm2 / 1000000.0;
+		break;
+	}
+	case EMantleScatterShape::Box:
+	default:
+	{
+		// The footprint in whole square millimetres (exact in a double up to the extent cap), then
+		// square metres by one division, so 100 m x 100 m at density 1 is 10000.
+		const int64 AreaMm2 = 4 * ScatterHalfMillimetres(Params.HalfExtent.X) * ScatterHalfMillimetres(Params.HalfExtent.Y);
+		AreaM2 = static_cast<double>(AreaMm2) / 1.0e6;
+		break;
+	}
+	}
 	const double Wanted = AreaM2 * Params.Density;
 	const double Rounded = FMath::FloorToDouble(Wanted + 0.5);
 	if (!(Rounded <= static_cast<double>(MaxInstances)))
@@ -173,7 +394,8 @@ int64 FMantleScatter::CountFor(const FMantleScatterParams& Params, FString& OutE
 	return static_cast<int64>(Rounded);
 }
 
-bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantleScatterInstance>& OutInstances, FString& OutError)
+bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantleScatterInstance>& OutInstances, FString& OutError,
+	const FMantleScatterGenerateOptions& Options)
 {
 	using namespace MantleScatterPrivate;
 
@@ -183,13 +405,40 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 	{
 		return false;
 	}
+	const int64 Candidates = Options.MaxCandidates >= 0 ? FMath::Min(Count, Options.MaxCandidates) : Count;
 
 	const int64 HalfX = ScatterHalfMillimetres(Params.HalfExtent.X);
 	const int64 HalfY = ScatterHalfMillimetres(Params.HalfExtent.Y);
 	const int64 HalfZ = ScatterHalfMillimetres(Params.HalfExtent.Z);
+	const int64 RadiusMm = ScatterHalfMillimetres(Params.Radius);
 	const int64 ScaleLo = FMath::Clamp<int64>(FMath::RoundToInt64(Params.MinScale * 1000.0), 1, MAX_uint16);
 	const int64 ScaleHi = FMath::Clamp<int64>(FMath::RoundToInt64(Params.MaxScale * 1000.0), ScaleLo, MAX_uint16);
 	const int64 Tilt = FMath::Clamp<int64>(FMath::RoundToInt64(Params.MaxTiltDegrees * 100.0), 0, 9000);
+	const FScatterPath Path = Params.Shape == EMantleScatterShape::Path ? ScatterBuildPath(Params) : FScatterPath();
+
+	const bool bTerrain = Params.Placement == EMantleScatterPlacement::Terrain;
+	const bool bSlopeFilter = bTerrain && Params.MaxSlopeDegrees < 90.0;
+	const double CosMaxSlope = FMath::Cos(FMath::DegreesToRadians(Params.MaxSlopeDegrees));
+
+	TArray<FScatterBoxMm, TInlineAllocator<FMantleScatter::MaxExclusions>> Exclusions;
+	for (const FMantleScatterExclusion& Exclusion : Params.Exclusions)
+	{
+		FScatterBoxMm& Box = Exclusions.AddDefaulted_GetRef();
+		Box.CenterX = ScatterHalfMillimetres(Exclusion.Center.X);
+		Box.CenterY = ScatterHalfMillimetres(Exclusion.Center.Y);
+		Box.HalfX = ScatterHalfMillimetres(Exclusion.HalfExtent.X);
+		Box.HalfY = ScatterHalfMillimetres(Exclusion.HalfExtent.Y);
+	}
+
+	// Cluster centres: each from its own stream, numbered past any instance's so the two never share one.
+	TArray<FScatterPoint> Centres;
+	const int64 ClusterRadiusMm = ScatterHalfMillimetres(Params.ClusterRadius);
+	for (int32 Cluster = 0; Cluster < Params.ClusterCount; ++Cluster)
+	{
+		FScatterStream Stream(Params.Seed, 0x80000000u + static_cast<uint32>(Cluster));
+		FScatterPoint& Centre = Centres.AddDefaulted_GetRef();
+		ScatterInShape(Params, Path, HalfX, HalfY, RadiusMm, Stream.Next(), Stream, Centre.X, Centre.Y);
+	}
 
 	// Cumulative weights: a draw below Cumulative[i] and at or above Cumulative[i - 1] picks mesh i,
 	// so a weight of 0 is never picked.
@@ -201,21 +450,78 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 		Cumulative.Add(TotalWeight);
 	}
 
-	OutInstances.SetNumUninitialized(static_cast<int32>(Count));
-	for (int32 Index = 0; Index < OutInstances.Num(); ++Index)
+	OutInstances.Reserve(static_cast<int32>(Candidates));
+	for (int64 Index = 0; Index < Candidates; ++Index)
 	{
-		// Four 64-bit draws per instance, always all four, so changing the alignment, the scale
-		// range or the meshes never moves an instance.
+		// Five 64-bit draws per instance, always all five, so changing the alignment, the scale
+		// range, the meshes or the shape never moves the rest of an instance. A retry (a disc's) takes
+		// later draws of the same stream.
 		FScatterStream Stream(Params.Seed, static_cast<uint32>(Index));
 		const uint64 Place = Stream.Next();
 		const uint64 Height = Stream.Next();
 		const uint64 Turn = Stream.Next();
 		const uint64 Look = Stream.Next();
+		const uint64 Group = Stream.Next();
 
-		FMantleScatterInstance& Instance = OutInstances[Index];
-		Instance.X = static_cast<int32>(ScatterPick(ScatterLow(Place), -HalfX, HalfX));
-		Instance.Y = static_cast<int32>(ScatterPick(ScatterHigh(Place), -HalfY, HalfY));
-		Instance.Z = static_cast<int32>(ScatterPick(ScatterLow(Height), -HalfZ, HalfZ));
+		int64 X = 0;
+		int64 Y = 0;
+		if (Centres.Num() > 0)
+		{
+			const FScatterPoint& Centre = Centres[static_cast<int32>(ScatterPick(ScatterLow(Group), 0, Centres.Num() - 1))];
+			int64 OffsetX = 0;
+			int64 OffsetY = 0;
+			ScatterOnDisc(ClusterRadiusMm, Place, Stream, OffsetX, OffsetY);
+			X = Centre.X + OffsetX;
+			Y = Centre.Y + OffsetY;
+		}
+		else
+		{
+			ScatterInShape(Params, Path, HalfX, HalfY, RadiusMm, Place, Stream, X, Y);
+		}
+
+		bool bExcluded = false;
+		for (const FScatterBoxMm& Box : Exclusions)
+		{
+			if (FMath::Abs(X - Box.CenterX) <= Box.HalfX && FMath::Abs(Y - Box.CenterY) <= Box.HalfY)
+			{
+				bExcluded = true;
+				break;
+			}
+		}
+		if (bExcluded)
+		{
+			continue;
+		}
+
+		int64 Z = ScatterPick(ScatterLow(Height), -HalfZ, HalfZ);
+		if (bTerrain)
+		{
+			FMantleScatterGround Ground;
+			if (!Options.Ground || !Options.Ground(X, Y, Ground))
+			{
+				continue;
+			}
+			if (bSlopeFilter && Ground.NormalZ < CosMaxSlope)
+			{
+				continue;
+			}
+			if ((Params.MinHeight.IsSet() && Ground.WorldZCm < Params.MinHeight.GetValue())
+				|| (Params.MaxHeight.IsSet() && Ground.WorldZCm > Params.MaxHeight.GetValue()))
+			{
+				continue;
+			}
+			Z += Ground.ZMm;
+		}
+		// The fixed point is 32-bit millimetres (2147 km): a position past it cannot be a place's.
+		if (FMath::Abs(X) > MAX_int32 || FMath::Abs(Y) > MAX_int32 || FMath::Abs(Z) > MAX_int32)
+		{
+			continue;
+		}
+
+		FMantleScatterInstance& Instance = OutInstances.AddDefaulted_GetRef();
+		Instance.X = static_cast<int32>(X);
+		Instance.Y = static_cast<int32>(Y);
+		Instance.Z = static_cast<int32>(Z);
 		Instance.Yaw = static_cast<uint16>(ScatterPick(ScatterHigh(Height), 0, 35999));
 		switch (Params.Alignment)
 		{
@@ -244,6 +550,161 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 		Instance.Mesh = static_cast<uint16>(MeshIndex);
 	}
 	return true;
+}
+
+const TCHAR* FMantleScatter::PlacementName(const EMantleScatterPlacement Placement)
+{
+	return Placement == EMantleScatterPlacement::Terrain ? TEXT("terrain") : TEXT("box");
+}
+
+bool FMantleScatter::ParsePlacement(const FString& Name, EMantleScatterPlacement& Out)
+{
+	if (Name.Equals(TEXT("box"), ESearchCase::CaseSensitive))
+	{
+		Out = EMantleScatterPlacement::Box;
+		return true;
+	}
+	if (Name.Equals(TEXT("terrain"), ESearchCase::CaseSensitive))
+	{
+		Out = EMantleScatterPlacement::Terrain;
+		return true;
+	}
+	return false;
+}
+
+const TCHAR* FMantleScatter::ShapeName(const EMantleScatterShape Shape)
+{
+	switch (Shape)
+	{
+	case EMantleScatterShape::Disc:
+		return TEXT("disc");
+	case EMantleScatterShape::Path:
+		return TEXT("path");
+	case EMantleScatterShape::Box:
+	default:
+		return TEXT("box");
+	}
+}
+
+bool FMantleScatter::ParseShape(const FString& Name, EMantleScatterShape& Out)
+{
+	for (const EMantleScatterShape Candidate : { EMantleScatterShape::Box, EMantleScatterShape::Disc, EMantleScatterShape::Path })
+	{
+		if (Name.Equals(ShapeName(Candidate), ESearchCase::CaseSensitive))
+		{
+			Out = Candidate;
+			return true;
+		}
+	}
+	return false;
+}
+
+double FMantleScatter::FoliageTierDensity(const int32 FoliageQuality)
+{
+	static const double Density[] = {0.3, 0.6, 1.0, 1.0};
+	return Density[FMath::Clamp(FoliageQuality, 0, 3)];
+}
+
+double FMantleScatter::FoliageTierDistance(const int32 FoliageQuality)
+{
+	static const double Distance[] = {0.5, 0.7, 0.85, 1.0};
+	return Distance[FMath::Clamp(FoliageQuality, 0, 3)];
+}
+
+TSharedRef<FJsonObject> FMantleScatter::ToJson(const FMantleScatterParams& Params)
+{
+	const TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+	const auto Numbers = [](std::initializer_list<double> Values)
+	{
+		TArray<TSharedPtr<FJsonValue>> Out;
+		for (const double Value : Values)
+		{
+			Out.Add(MakeShared<FJsonValueNumber>(Value));
+		}
+		return Out;
+	};
+	Json->SetNumberField(TEXT("seed"), Params.Seed);
+	Json->SetArrayField(TEXT("halfExtent"), Numbers({ Params.HalfExtent.X, Params.HalfExtent.Y, Params.HalfExtent.Z }));
+	Json->SetNumberField(TEXT("density"), Params.Density);
+	Json->SetArrayField(TEXT("scale"), Numbers({ Params.MinScale, Params.MaxScale }));
+	Json->SetStringField(TEXT("alignment"), AlignmentName(Params.Alignment));
+	Json->SetNumberField(TEXT("maxTilt"), Params.MaxTiltDegrees);
+	TArray<TSharedPtr<FJsonValue>> Meshes;
+	for (const FMantleScatterMesh& Mesh : Params.Meshes)
+	{
+		const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+		Entry->SetStringField(TEXT("mesh"), Mesh.MeshId);
+		Entry->SetNumberField(TEXT("weight"), Mesh.Weight);
+		if (Mesh.Materials.Num() > 0)
+		{
+			TArray<TSharedPtr<FJsonValue>> Materials;
+			for (const FString& Material : Mesh.Materials)
+			{
+				Materials.Add(Material.IsEmpty() ? TSharedPtr<FJsonValue>(MakeShared<FJsonValueNull>())
+					: TSharedPtr<FJsonValue>(MakeShared<FJsonValueString>(Material)));
+			}
+			Entry->SetArrayField(TEXT("materials"), Materials);
+		}
+		Meshes.Add(MakeShared<FJsonValueObject>(Entry));
+	}
+	Json->SetArrayField(TEXT("meshes"), Meshes);
+	if (Params.DrawDistance > 0.0)
+	{
+		Json->SetNumberField(TEXT("drawDistance"), Params.DrawDistance);
+	}
+	if (Params.Placement == EMantleScatterPlacement::Terrain)
+	{
+		Json->SetStringField(TEXT("placement"), PlacementName(Params.Placement));
+		Json->SetNumberField(TEXT("maxSlopeDegrees"), Params.MaxSlopeDegrees);
+		if (Params.MinHeight.IsSet())
+		{
+			Json->SetNumberField(TEXT("minHeight"), Params.MinHeight.GetValue());
+		}
+		if (Params.MaxHeight.IsSet())
+		{
+			Json->SetNumberField(TEXT("maxHeight"), Params.MaxHeight.GetValue());
+		}
+	}
+	if (Params.Shape != EMantleScatterShape::Box)
+	{
+		Json->SetStringField(TEXT("shape"), ShapeName(Params.Shape));
+	}
+	if (Params.Shape == EMantleScatterShape::Disc)
+	{
+		Json->SetNumberField(TEXT("radius"), Params.Radius);
+	}
+	if (Params.Shape == EMantleScatterShape::Path)
+	{
+		TArray<TSharedPtr<FJsonValue>> Points;
+		for (const FVector2D& Point : Params.Path)
+		{
+			Points.Add(MakeShared<FJsonValueArray>(Numbers({ Point.X, Point.Y })));
+		}
+		Json->SetArrayField(TEXT("path"), Points);
+		Json->SetNumberField(TEXT("width"), Params.Width);
+	}
+	if (Params.Exclusions.Num() > 0)
+	{
+		TArray<TSharedPtr<FJsonValue>> Exclusions;
+		for (const FMantleScatterExclusion& Exclusion : Params.Exclusions)
+		{
+			const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+			Entry->SetArrayField(TEXT("center"), Numbers({ Exclusion.Center.X, Exclusion.Center.Y }));
+			Entry->SetArrayField(TEXT("halfExtent"), Numbers({ Exclusion.HalfExtent.X, Exclusion.HalfExtent.Y }));
+			Exclusions.Add(MakeShared<FJsonValueObject>(Entry));
+		}
+		Json->SetArrayField(TEXT("exclusions"), Exclusions);
+	}
+	if (Params.bCollision)
+	{
+		Json->SetBoolField(TEXT("collision"), true);
+	}
+	if (Params.ClusterCount > 0)
+	{
+		Json->SetNumberField(TEXT("clusterCount"), Params.ClusterCount);
+		Json->SetNumberField(TEXT("clusterRadius"), Params.ClusterRadius);
+	}
+	return Json;
 }
 
 FTransform FMantleScatter::ToTransform(const FMantleScatterInstance& Instance)

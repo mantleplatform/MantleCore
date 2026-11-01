@@ -37,6 +37,7 @@
 #include "MantleReferenceBodies.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVoxelize.h"
+#include "MantleScatterEditorGround.h"
 #include "SMantleVehicleBuilder.h"
 #include "MantleVehicleSource.h"
 #include "MantleWeaponBuilderPanel.h"
@@ -625,6 +626,8 @@ void FMantleEditorModule::StartupModule()
 	FMantleScriptsPanelController::Startup();
 	// The "Mantle" Content Browser category and UMantleScriptGraph's asset type actions.
 	FMantleScriptGraphModule::Startup();
+	// #169: the level's landscapes as the ground terrain-placed scatter volumes preview on.
+	FMantleScatterEditorGround::Startup();
 	// Tools > Mantle > Cosmetics..., the cosmetic authoring and upload panel.
 	SMantleCosmeticPanel::RegisterTab();
 	SMantleVehicleBuilder::RegisterTab();
@@ -733,6 +736,7 @@ void FMantleEditorModule::ShutdownModule()
 		GUnrealEd->UnregisterComponentVisualizer(UMantleSeatSpotComponent::StaticClass()->GetFName());
 	}
 	FMantlePlaceSecretsDetails::Unregister();
+	FMantleScatterEditorGround::Shutdown();
 	FMantleScriptGraphModule::Shutdown();
 	FMantleScriptsPanelController::Shutdown();
 

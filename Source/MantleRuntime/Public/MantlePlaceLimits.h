@@ -324,6 +324,26 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** A Scatter mesh's weight, 0 to this (#530); at least one mesh of a Scatter weighs more than 0. */
 	static constexpr int32 MaxScatterMeshWeight = 1000;
 
+	/** A Scatter's path (#169): 2 to this many [x, y] points, and its width above 0 and at most MaxScatterPathWidth cm. */
+	static constexpr int32 MaxScatterPathPoints = 64;
+	static constexpr double MaxScatterPathWidth = 100000.0;
+
+	/** A Scatter's disc radius (#169), above 0 and at most this many cm. */
+	static constexpr double MaxScatterRadius = 1000000.0;
+
+	/** A Scatter's exclusion boxes (#169), at most this many. */
+	static constexpr int32 MaxScatterExclusions = 16;
+
+	/** A Scatter's clusterCount (#169), 1 to this, and clusterRadius, above 0 and at most MaxScatterClusterRadius cm. */
+	static constexpr int32 MaxScatterClusters = 1000;
+	static constexpr double MaxScatterClusterRadius = 100000.0;
+
+	/** pi in millionths, the constant a Scatter disc's instance count uses (#169). */
+	static constexpr int32 ScatterPiMicro = 3141593;
+
+	/** A Scatter's path point, exclusion centre or terrain height filter (#169): each at most this many cm either way. */
+	static constexpr double MaxScatterCoordinate = 1000000.0;
+
 	/**
 	 * Instances one Scatter makes (#530): its footprint in square metres times its density, rounded.
 	 * Cross-field (halfExtent times density), so validate.py's MAX_SCATTER_INSTANCES states it.
@@ -336,6 +356,12 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	 * 30 ms once, while it builds the place. Cross-entity: validate.py's MAX_SCATTER_INSTANCES_PER_PLACE.
 	 */
 	static constexpr int32 MaxScatterInstancesPerPlace = 200000;
+
+	/**
+	 * Instances of the Scatters whose collision is on, across a whole place (#169): each is a physics body and a navigation
+	 * source on the server and every client. Cross-entity: validate.py's MAX_SCATTER_COLLIDING_INSTANCES_PER_PLACE.
+	 */
+	static constexpr int32 MaxScatterCollidingInstancesPerPlace = 2000;
 
 	/** VehicleSpawn livery, -1 (the vehicle's default) to this (#488): limits.json placeAssets.livery.maxLiveries - 1. */
 	static constexpr int32 MaxVehicleLiveryIndex = 7;

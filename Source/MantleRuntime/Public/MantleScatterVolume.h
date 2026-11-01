@@ -8,6 +8,9 @@
 
 #include "MantleScatterVolume.generated.h"
 
+struct FMantleHeightfield;
+struct FMantleTerrainHoleGrid;
+namespace Scalability { struct FQualityLevels; }
 class UBoxComponent;
 class UInstancedStaticMeshComponent;
 class UMaterialInterface;
@@ -42,6 +45,29 @@ struct MANTLERUNTIME_API FMantleScatterMeshSettings
 	/** The material ids by slot it names in a place file, kept like MeshId. */
 	UPROPERTY(VisibleAnywhere, AdvancedDisplay, Category = "Scatter")
 	TArray<FString> MaterialIds;
+};
+
+/** An X-Y box no instance of a Mantle Scatter Volume stands in (#169), in the volume's own space. */
+USTRUCT()
+struct MANTLERUNTIME_API FMantleScatterExclusionSettings
+{
+	GENERATED_BODY()
+
+	/** The box's centre, cm. */
+	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (Units = "cm"))
+	FVector2D Center = FVector2D::ZeroVector;
+
+	/** Half the box in X and Y, cm. */
+	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (ClampMin = "0.1", ClampMax = "1000000", UIMin = "10", Units = "cm"))
+	FVector2D HalfExtent = FVector2D(100.0, 100.0);
+};
+
+/** A Terrain a Scatter drops its instances onto (#169): its surface and where it stands in the world. */
+struct FMantleScatterTerrainSurface
+{
+	TSharedPtr<const FMantleHeightfield> Field;
+	TSharedPtr<const FMantleTerrainHoleGrid> Holes;
+	FTransform TerrainToWorld = FTransform::Identity;
 };
 
 /**
@@ -99,6 +125,86 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (TitleProperty = "Mesh"))
 	TArray<FMantleScatterMeshSettings> Meshes;
 
+	/** How far from the camera instances are drawn, cm (they fade over the last fifth); 0 never culls. At most 1,000,000. */
+	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (ClampMin = "0", ClampMax = "1000000", UIMin = "0", UIMax = "50000", Units = "cm"))
+	double DrawDistance = 0.0;
+
+	/** Box scatters inside the footprint; Terrain drops each instance onto the Terrain below it and leaves out those with none (holes, off the edge). */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain")
+	EMantleScatterPlacement Placement = EMantleScatterPlacement::Box;
+
+	/** Terrain only: instances on ground steeper than this many degrees from flat are left out. 90 leaves out none. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (ClampMin = "0", ClampMax = "90", Units = "deg",
+			EditCondition = "Placement == EMantleScatterPlacement::Terrain", EditConditionHides))
+	double MaxSlopeDegrees = 90.0;
+
+	/** Terrain only: leave out instances whose ground is lower than Min Height (world cm). */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (EditCondition = "Placement == EMantleScatterPlacement::Terrain", EditConditionHides))
+	bool bLimitMinHeight = false;
+
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (ClampMin = "-1000000", ClampMax = "1000000", Units = "cm",
+			EditCondition = "Placement == EMantleScatterPlacement::Terrain && bLimitMinHeight", EditConditionHides))
+	double MinHeight = 0.0;
+
+	/** Terrain only: leave out instances whose ground is higher than Max Height (world cm). */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (EditCondition = "Placement == EMantleScatterPlacement::Terrain", EditConditionHides))
+	bool bLimitMaxHeight = false;
+
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (ClampMin = "-1000000", ClampMax = "1000000", Units = "cm",
+			EditCondition = "Placement == EMantleScatterPlacement::Terrain && bLimitMaxHeight", EditConditionHides))
+	double MaxHeight = 10000.0;
+
+	/** The footprint: the Half Extent box, a Disc of Radius, or a Path strip of Width along its points. Half Extent's Z sets the layer's depth in every shape. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Shape")
+	EMantleScatterShape Shape = EMantleScatterShape::Box;
+
+	/** Disc: the radius, cm. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Shape",
+		meta = (ClampMin = "0.1", ClampMax = "1000000", Units = "cm",
+			EditCondition = "Shape == EMantleScatterShape::Disc", EditConditionHides))
+	double Radius = 1000.0;
+
+	/** Path: 2 to 64 points, cm in the volume's own space, instances scatter along the line between them. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Shape",
+		meta = (EditCondition = "Shape == EMantleScatterShape::Path", EditConditionHides))
+	TArray<FVector2D> Path;
+
+	/** Path: the strip's full width, cm. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Shape",
+		meta = (ClampMin = "0.1", ClampMax = "100000", Units = "cm",
+			EditCondition = "Shape == EMantleScatterShape::Path", EditConditionHides))
+	double Width = 500.0;
+
+	/** Up to 16 boxes (X-Y) no instance stands in. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Shape")
+	TArray<FMantleScatterExclusionSettings> Exclusions;
+
+	/** 0 spreads instances evenly; 1 to 1000 gathers them into that many clusters, each of Cluster Radius, centred inside the footprint. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Shape", meta = (ClampMin = "0", ClampMax = "1000", UIMin = "0", UIMax = "50"))
+	int32 ClusterCount = 0;
+
+	UPROPERTY(EditAnywhere, Category = "Scatter|Shape",
+		meta = (ClampMin = "0.1", ClampMax = "100000", Units = "cm", EditCondition = "ClusterCount > 0", EditConditionHides))
+	double ClusterRadius = 500.0;
+
+	/**
+	 * Off (the default): the instances are visual only. On: each blocks movement and shapes NPC navigation, on the server and every
+	 * client, from the same instances (a place holds at most 2000 colliding instances in all). Not thinned by the Foliage setting.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Collision")
+	bool bCollision = false;
+
+	/**
+	 * The Terrains Terrain placement drops onto: set by the place builder from the Terrains it built, and by an editor that finds
+	 * the Terrains in its level. Instances are left out where none lies below them.
+	 */
+	void SetTerrainSurfaces(TArray<FMantleScatterTerrainSurface> InSurfaces);
+
 	/**
 	 * Sets the actor from Scatter properties (the place builder's and the importer's): the numbers, and
 	 * each mesh's weight and ids. Loads nothing; LoadAssetsFromIds does, where something draws.
@@ -129,6 +235,16 @@ public:
 	 */
 	bool RefreshScatter(FString& OutError);
 
+	/**
+	 * Every instance of the current settings at the full stream (no Foliage tier), generated without building anything:
+	 * what Scatter reads for scripts (Entity:InstancesIn, GetScatterHash). Works on a dedicated server, which draws nothing.
+	 * The instances are in the volume's own space. False with OutError when the settings cannot generate.
+	 */
+	bool GenerateFull(TArray<FMantleScatterInstance>& OutInstances, FString& OutError) const;
+
+	/** FMantleScatter::Hash of the last GenerateFull's instances. */
+	uint64 GetFullHash() const { return FullHash; }
+
 	/** Removes the built instances. */
 	void ClearScatter();
 
@@ -138,6 +254,9 @@ public:
 	/** FMantleScatter::Hash of the last RefreshScatter's instances (0 where nothing draws). */
 	uint64 GetInstanceHash() const { return BuiltHash; }
 
+	/** The Foliage tier (0 Low to 3 Epic) the last RefreshScatter built at (3 in an editor preview); -1 before any. */
+	int32 GetBuiltFoliageQuality() const { return BuiltFoliageQuality; }
+
 	/** Whether Component is one RefreshScatter built: the scatter's own, not an extra component. */
 	bool IsScatterComponent(const UActorComponent* Component) const;
 
@@ -145,6 +264,8 @@ protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
 	/** A level opened in the editor registers its actors without running their construction: the preview starts here then. */
 	virtual void PostRegisterAllComponents() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void BeginDestroy() override;
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
@@ -163,6 +284,27 @@ private:
 	/** Built at runtime (and for the editor preview), never saved. */
 	UPROPERTY(Transient, DuplicateTransient, TextExportTransient)
 	TArray<TObjectPtr<UInstancedStaticMeshComponent>> ScatterComponents;
+
+	/** The ground under a point in the volume's space, from TerrainSurfaces and the volume's transform now. */
+	FMantleScatterGroundFn MakeGround() const;
+
+	/** GenerateFull's cache. */
+	mutable TArray<FMantleScatterInstance> FullInstances;
+	mutable FString FullKey;
+	mutable uint64 FullHash = 0;
+
+	/** The ground Terrain placement drops onto, and the volume's transform it was set for. */
+	TArray<FMantleScatterTerrainSurface> TerrainSurfaces;
+
+	/** A game that draws re-reads the Foliage tier when Settings change: the instances stand again at the new density and distance. */
+	void BindScalability();
+	void UnbindScalability();
+	void OnScalabilityChanged(const Scalability::FQualityLevels& Levels);
+	FDelegateHandle ScalabilityHandle;
+
+	/** Bumped by SetTerrainSurfaces; part of SettingsKey. */
+	int32 TerrainVersion = 0;
+	int32 BuiltFoliageQuality = -1;
 
 	int32 BuiltInstances = 0;
 	uint64 BuiltHash = 0;

@@ -1897,6 +1897,244 @@ namespace
 		}
 	}
 
+	/** Two numbers at Path (a path point, an exclusion's centre or half extent); false, reported, when it is not. */
+	bool ReadScatterPair(FParseContext& Ctx, const TSharedPtr<FJsonValue>& Value, const FString& Path, FVector2D& Out)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Array = nullptr;
+		if (!Value.IsValid() || !Value->TryGetArray(Array) || Array->Num() != 2
+			|| (*Array)[0]->Type != EJson::Number || (*Array)[1]->Type != EJson::Number)
+		{
+			Ctx.Fail(Path, TEXT("expected two numbers [x, y]"));
+			return false;
+		}
+		Out = FVector2D((*Array)[0]->AsNumber(), (*Array)[1]->AsNumber());
+		return true;
+	}
+
+	/** A number in [-MaxScatterCoordinate, MaxScatterCoordinate], or reported. */
+	bool CheckScatterCoordinate(FParseContext& Ctx, const double Value, const FString& Path)
+	{
+		if (!(FMath::Abs(Value) <= FMantlePlaceLimits::MaxScatterCoordinate))
+		{
+			Ctx.Fail(Path, FString::Printf(TEXT("%g is outside the permitted range [-%g, %g]"), Value, FMantlePlaceLimits::MaxScatterCoordinate,
+				FMantlePlaceLimits::MaxScatterCoordinate));
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * A Scatter's drawDistance, terrain placement, shape, exclusions and clusters (#169): each key at its own path,
+	 * a key that needs another refused, as validate.py and the backend do.
+	 */
+	void ParseScatterPlacementAndShape(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Props, const FString& Path, FMantleScatterParams& P)
+	{
+		if (const TSharedPtr<FJsonValue> Distance = Props->TryGetField(TEXT("drawDistance")))
+		{
+			const FString DistancePath = Join(Path, TEXT("drawDistance"));
+			if (Distance->Type != EJson::Number)
+			{
+				Ctx.Fail(DistancePath, TEXT("must be a number"));
+			}
+			else if (const double Value = Distance->AsNumber(); !(Value > 0.0 && Value <= FMantlePlaceLimits::MaxDrawDistance))
+			{
+				Ctx.Fail(DistancePath, FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), Value, FMantlePlaceLimits::MaxDrawDistance));
+			}
+			else
+			{
+				P.DrawDistance = Value;
+			}
+		}
+
+		if (Props->HasField(TEXT("placement")))
+		{
+			FString Placement;
+			if (RequireString(Ctx, Props, TEXT("placement"), Path, Placement) && !FMantleScatter::ParsePlacement(Placement, P.Placement))
+			{
+				Ctx.Fail(Join(Path, TEXT("placement")), FString::Printf(TEXT("'%s' is not box or terrain"), *Placement));
+			}
+		}
+		const bool bTerrain = P.Placement == EMantleScatterPlacement::Terrain;
+		ReadOptionalRange(Ctx, Props, TEXT("maxSlopeDegrees"), Path, 0.0, 90.0, P.MaxSlopeDegrees);
+		for (const TCHAR* Key : { TEXT("minHeight"), TEXT("maxHeight") })
+		{
+			if (!Props->HasField(Key))
+			{
+				continue;
+			}
+			double Height = 0.0;
+			if (RequireNumber(Ctx, Props, Key, Path, Height) && CheckScatterCoordinate(Ctx, Height, Join(Path, Key)))
+			{
+				(Key[1] == TEXT('i') ? P.MinHeight : P.MaxHeight) = Height;
+			}
+		}
+		if (P.MinHeight.IsSet() && P.MaxHeight.IsSet() && P.MinHeight.GetValue() > P.MaxHeight.GetValue())
+		{
+			Ctx.Fail(Join(Path, TEXT("maxHeight")),
+				FString::Printf(TEXT("maxHeight %g is below minHeight %g"), P.MaxHeight.GetValue(), P.MinHeight.GetValue()));
+		}
+		if (!bTerrain)
+		{
+			for (const TCHAR* Key : { TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight") })
+			{
+				if (Props->HasField(Key))
+				{
+					Ctx.Fail(Join(Path, Key), FString::Printf(TEXT("%s only applies where placement is \"terrain\""), Key));
+				}
+			}
+		}
+
+		if (Props->HasField(TEXT("shape")))
+		{
+			FString Shape;
+			if (RequireString(Ctx, Props, TEXT("shape"), Path, Shape) && !FMantleScatter::ParseShape(Shape, P.Shape))
+			{
+				Ctx.Fail(Join(Path, TEXT("shape")), FString::Printf(TEXT("'%s' is not box, disc or path"), *Shape));
+			}
+		}
+		const auto RefuseUnlessShape = [&](const TCHAR* Key, const EMantleScatterShape Needed)
+		{
+			if (Props->HasField(Key) && P.Shape != Needed)
+			{
+				Ctx.Fail(Join(Path, Key), FString::Printf(TEXT("%s is only used where shape is \"%s\""), Key, FMantleScatter::ShapeName(Needed)));
+				return false;
+			}
+			return true;
+		};
+		if (RefuseUnlessShape(TEXT("radius"), EMantleScatterShape::Disc))
+		{
+			if (P.Shape == EMantleScatterShape::Disc)
+			{
+				if (RequireNumber(Ctx, Props, TEXT("radius"), Path, P.Radius)
+					&& !(P.Radius > 0.0 && P.Radius <= FMantlePlaceLimits::MaxScatterRadius))
+				{
+					Ctx.Fail(Join(Path, TEXT("radius")),
+						FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), P.Radius, FMantlePlaceLimits::MaxScatterRadius));
+				}
+			}
+		}
+		const bool bPathOk = RefuseUnlessShape(TEXT("path"), EMantleScatterShape::Path);
+		const bool bWidthOk = RefuseUnlessShape(TEXT("width"), EMantleScatterShape::Path);
+		if (bPathOk && P.Shape == EMantleScatterShape::Path)
+		{
+			const FString PointsPath = Join(Path, TEXT("path"));
+			const TArray<TSharedPtr<FJsonValue>>* Points = nullptr;
+			if (!Props->TryGetArrayField(TEXT("path"), Points))
+			{
+				Ctx.Fail(PointsPath, TEXT("required array is missing or not an array"));
+			}
+			else
+			{
+				if (Points->Num() < 2 || Points->Num() > FMantlePlaceLimits::MaxScatterPathPoints)
+				{
+					Ctx.Fail(PointsPath, FString::Printf(TEXT("has %d points; a path takes 2 to %d"), Points->Num(), FMantlePlaceLimits::MaxScatterPathPoints));
+				}
+				for (int32 PointIndex = 0; PointIndex < Points->Num(); ++PointIndex)
+				{
+					FVector2D Point;
+					const FString PointPath = Index(PointsPath, PointIndex);
+					if (ReadScatterPair(Ctx, (*Points)[PointIndex], PointPath, Point))
+					{
+						CheckScatterCoordinate(Ctx, Point.X, Index(PointPath, 0));
+						CheckScatterCoordinate(Ctx, Point.Y, Index(PointPath, 1));
+						P.Path.Add(Point);
+					}
+				}
+			}
+		}
+		if (bWidthOk && P.Shape == EMantleScatterShape::Path
+			&& RequireNumber(Ctx, Props, TEXT("width"), Path, P.Width)
+			&& !(P.Width > 0.0 && P.Width <= FMantlePlaceLimits::MaxScatterPathWidth))
+		{
+			Ctx.Fail(Join(Path, TEXT("width")),
+				FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), P.Width, FMantlePlaceLimits::MaxScatterPathWidth));
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* Exclusions = nullptr;
+		if (Props->HasField(TEXT("exclusions")))
+		{
+			const FString ExclusionsPath = Join(Path, TEXT("exclusions"));
+			if (!Props->TryGetArrayField(TEXT("exclusions"), Exclusions))
+			{
+				Ctx.Fail(ExclusionsPath, TEXT("expected an array"));
+			}
+			else
+			{
+				if (Exclusions->Num() > FMantlePlaceLimits::MaxScatterExclusions)
+				{
+					Ctx.Fail(ExclusionsPath, FString::Printf(TEXT("has %d exclusions; a Scatter takes at most %d"), Exclusions->Num(),
+						FMantlePlaceLimits::MaxScatterExclusions));
+				}
+				for (int32 ExclusionIndex = 0; ExclusionIndex < Exclusions->Num(); ++ExclusionIndex)
+				{
+					const FString ExclusionPath = Index(ExclusionsPath, ExclusionIndex);
+					const TSharedPtr<FJsonObject>* Exclusion = nullptr;
+					if (!(*Exclusions)[ExclusionIndex].IsValid() || !(*Exclusions)[ExclusionIndex]->TryGetObject(Exclusion))
+					{
+						Ctx.Fail(ExclusionPath, TEXT("expected an object"));
+						continue;
+					}
+					RequireNoUnknownKeys(Ctx, *Exclusion, { TEXT("center"), TEXT("halfExtent") }, ExclusionPath);
+					FMantleScatterExclusion Parsed;
+					const FString CenterPath = Join(ExclusionPath, TEXT("center"));
+					const FString HalfPath = Join(ExclusionPath, TEXT("halfExtent"));
+					if (ReadScatterPair(Ctx, (*Exclusion)->TryGetField(TEXT("center")), CenterPath, Parsed.Center))
+					{
+						CheckScatterCoordinate(Ctx, Parsed.Center.X, Index(CenterPath, 0));
+						CheckScatterCoordinate(Ctx, Parsed.Center.Y, Index(CenterPath, 1));
+					}
+					if (ReadScatterPair(Ctx, (*Exclusion)->TryGetField(TEXT("halfExtent")), HalfPath, Parsed.HalfExtent))
+					{
+						for (int32 Axis = 0; Axis < 2; ++Axis)
+						{
+							const double Half = Axis == 0 ? Parsed.HalfExtent.X : Parsed.HalfExtent.Y;
+							if (!(Half > 0.0 && Half <= FMantlePlaceLimits::MaxScatterHalfExtent))
+							{
+								Ctx.Fail(Index(HalfPath, Axis), FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), Half,
+									FMantlePlaceLimits::MaxScatterHalfExtent));
+							}
+						}
+					}
+					P.Exclusions.Add(Parsed);
+				}
+			}
+		}
+
+		if (const TSharedPtr<FJsonValue> Collision = Props->TryGetField(TEXT("collision")))
+		{
+			if (Collision->Type != EJson::Boolean)
+			{
+				Ctx.Fail(Join(Path, TEXT("collision")), TEXT("must be true or false"));
+			}
+			else
+			{
+				P.bCollision = Collision->AsBool();
+			}
+		}
+
+		const bool bHasCount = Props->HasField(TEXT("clusterCount"));
+		const bool bHasRadius = Props->HasField(TEXT("clusterRadius"));
+		if (bHasCount)
+		{
+			double Count = 0.0;
+			if (RequireNumber(Ctx, Props, TEXT("clusterCount"), Path, Count))
+			{
+				ReadBoundedInt(Ctx, Count, 1, FMantlePlaceLimits::MaxScatterClusters, Join(Path, TEXT("clusterCount")), P.ClusterCount);
+			}
+		}
+		if (bHasRadius
+			&& RequireNumber(Ctx, Props, TEXT("clusterRadius"), Path, P.ClusterRadius)
+			&& !(P.ClusterRadius > 0.0 && P.ClusterRadius <= FMantlePlaceLimits::MaxScatterClusterRadius))
+		{
+			Ctx.Fail(Join(Path, TEXT("clusterRadius")),
+				FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), P.ClusterRadius, FMantlePlaceLimits::MaxScatterClusterRadius));
+		}
+		if (bHasCount != bHasRadius)
+		{
+			Ctx.Fail(Join(Path, bHasCount ? TEXT("clusterRadius") : TEXT("clusterCount")), TEXT("clusterCount and clusterRadius go together"));
+		}
+	}
+
 	/**
 	 * A Scatter's properties: the schema's branch plus the rules it can't state (a scale range in
 	 * order, at least one mesh that weighs more than 0, and the instance count its box and density make),
@@ -1907,7 +2145,9 @@ namespace
 	{
 		RequireNoUnknownKeys(
 			Ctx, Props,
-			{ TEXT("seed"), TEXT("halfExtent"), TEXT("density"), TEXT("scale"), TEXT("alignment"), TEXT("maxTilt"), TEXT("meshes") },
+			{ TEXT("seed"), TEXT("halfExtent"), TEXT("density"), TEXT("scale"), TEXT("alignment"), TEXT("maxTilt"), TEXT("meshes"),
+				TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"), TEXT("shape"),
+				TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision") },
 			Path);
 		const int32 ErrorsBefore = Ctx.Errors.Num();
 
@@ -1953,6 +2193,7 @@ namespace
 			}
 		}
 		ReadOptionalRange(Ctx, Props, TEXT("maxTilt"), Path, 0.0, FMantlePlaceLimits::MaxScatterTilt, P.MaxTiltDegrees);
+		ParseScatterPlacementAndShape(Ctx, Props, Path, P);
 
 		const FString MeshesPath = Join(Path, TEXT("meshes"));
 		const TArray<TSharedPtr<FJsonValue>>* Meshes = nullptr;
@@ -3527,6 +3768,20 @@ int32 FMantlePlaceParser::CodePointLength(const FString& Value)
 	return Length;
 }
 
+bool FMantlePlaceParser::ParseScatterProperties(const TSharedPtr<FJsonObject>& Properties, FMantleScatterParams& Out, TArray<FMantleParseError>& OutErrors)
+{
+	Out = FMantleScatterParams();
+	if (!Properties.IsValid())
+	{
+		OutErrors.Add(FMantleParseError{ TEXT("/properties"), TEXT("expected an object") });
+		return false;
+	}
+	FParseContext Ctx;
+	ParseScatter(Ctx, Properties, TEXT("/properties"), Out);
+	OutErrors.Append(Ctx.Errors);
+	return Ctx.Errors.Num() == 0;
+}
+
 FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json)
 {
 	return ParseFromString(Json, TArray<FString>());
@@ -4967,6 +5222,31 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 					Join(Join(Index(TEXT("/entities"), i), TEXT("properties")), TEXT("density")),
 					FString::Printf(TEXT("brings the place to %lld scatter instances; a place holds at most %d"),
 						static_cast<long long>(ScatterTotal), FMantlePlaceLimits::MaxScatterInstancesPerPlace));
+				break;
+			}
+		}
+	}
+
+	// The place-wide count of colliding Scatter instances (#169): each is a body the server and every client build.
+	// Counted at the formula's count, as the total above is, and reported at the density of the Scatter that crosses it.
+	{
+		int64 CollidingTotal = 0;
+		for (int32 i = 0; i < Place.Entities.Num(); ++i)
+		{
+			const FMantleScatterParams* Scatter = Place.Entities[i].Props.TryGet<FMantleScatterParams>();
+			FString Why;
+			const int64 Count = Scatter && Scatter->bCollision ? FMantleScatter::CountFor(*Scatter, Why) : -1;
+			if (Count < 0)
+			{
+				continue;
+			}
+			CollidingTotal += Count;
+			if (CollidingTotal > FMantlePlaceLimits::MaxScatterCollidingInstancesPerPlace)
+			{
+				Ctx.Fail(
+					Join(Join(Index(TEXT("/entities"), i), TEXT("properties")), TEXT("density")),
+					FString::Printf(TEXT("brings the place to %lld colliding scatter instances; a place holds at most %d"),
+						static_cast<long long>(CollidingTotal), FMantlePlaceLimits::MaxScatterCollidingInstancesPerPlace));
 				break;
 			}
 		}

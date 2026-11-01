@@ -330,6 +330,43 @@ namespace
 		Writer->WriteArrayEnd();
 	}
 
+	/** A JSON value built elsewhere (FMantleScatter::ToJson), written into the place file: under Key in an object, or as an array element when Key is null. */
+	void WriteJsonValue(const TSharedRef<FWriter>& Writer, const FString* Key, const TSharedPtr<FJsonValue>& Value)
+	{
+		const EJson Type = Value.IsValid() ? Value->Type : EJson::Null;
+		switch (Type)
+		{
+		case EJson::Number:
+			Key ? Writer->WriteValue(*Key, Value->AsNumber()) : Writer->WriteValue(Value->AsNumber());
+			break;
+		case EJson::String:
+			Key ? Writer->WriteValue(*Key, Value->AsString()) : Writer->WriteValue(Value->AsString());
+			break;
+		case EJson::Boolean:
+			Key ? Writer->WriteValue(*Key, Value->AsBool()) : Writer->WriteValue(Value->AsBool());
+			break;
+		case EJson::Array:
+			Key ? Writer->WriteArrayStart(*Key) : Writer->WriteArrayStart();
+			for (const TSharedPtr<FJsonValue>& Element : Value->AsArray())
+			{
+				WriteJsonValue(Writer, nullptr, Element);
+			}
+			Writer->WriteArrayEnd();
+			break;
+		case EJson::Object:
+			Key ? Writer->WriteObjectStart(*Key) : Writer->WriteObjectStart();
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Value->AsObject()->Values)
+			{
+				WriteJsonValue(Writer, &Field.Key, Field.Value);
+			}
+			Writer->WriteObjectEnd();
+			break;
+		default:
+			Key ? Writer->WriteNull(*Key) : Writer->WriteNull();
+			break;
+		}
+	}
+
 	void WriteTransform(const TSharedRef<FWriter>& Writer, const FTransform& Transform)
 	{
 		Writer->WriteObjectStart(TEXT("transform"));
@@ -6191,43 +6228,14 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 		}
 		else if (const FMantleScatterParams* P15 = Entity.Props.TryGet<FMantleScatterParams>())
 		{
-			// A new type (#530): every key ships with it, so every key is written, at full precision, so
-			// the client generates exactly the instances the editor previewed. A mesh's materials only
-			// when it names any.
-			Writer->WriteValue(TEXT("seed"), P15->Seed);
-			WriteVector(Writer, TEXT("halfExtent"), P15->HalfExtent);
-			Writer->WriteValue(TEXT("density"), P15->Density);
-			Writer->WriteArrayStart(TEXT("scale"));
-			Writer->WriteValue(P15->MinScale);
-			Writer->WriteValue(P15->MaxScale);
-			Writer->WriteArrayEnd();
-			Writer->WriteValue(TEXT("alignment"), FString(FMantleScatter::AlignmentName(P15->Alignment)));
-			Writer->WriteValue(TEXT("maxTilt"), P15->MaxTiltDegrees);
-			Writer->WriteArrayStart(TEXT("meshes"));
-			for (const FMantleScatterMesh& Mesh : P15->Meshes)
+			// A new type (#530): every key it ships with is written, at full precision, so the client generates exactly
+			// the instances the editor previewed; the #169 keys only where they apply. The runtime's own writer
+			// (FMantleScatter::ToJson), so the editor and a script's Scatter settings write one way.
+			const TSharedRef<FJsonObject> Scatter = FMantleScatter::ToJson(*P15); // held: a loop over a temporary's Values would dangle
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Scatter->Values)
 			{
-				Writer->WriteObjectStart();
-				Writer->WriteValue(TEXT("mesh"), Mesh.MeshId);
-				Writer->WriteValue(TEXT("weight"), Mesh.Weight);
-				if (Mesh.Materials.Num() > 0)
-				{
-					Writer->WriteArrayStart(TEXT("materials"));
-					for (const FString& Material : Mesh.Materials)
-					{
-						if (Material.IsEmpty())
-						{
-							Writer->WriteNull(); // an unset slot (#262)
-						}
-						else
-						{
-							Writer->WriteValue(Material);
-						}
-					}
-					Writer->WriteArrayEnd();
-				}
-				Writer->WriteObjectEnd();
+				WriteJsonValue(Writer, &Field.Key, Field.Value);
 			}
-			Writer->WriteArrayEnd();
 		}
 		else if (const FMantleReflectionProbeProps* P16 = Entity.Props.TryGet<FMantleReflectionProbeProps>())
 		{
