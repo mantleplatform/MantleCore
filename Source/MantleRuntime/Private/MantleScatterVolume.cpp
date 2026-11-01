@@ -639,17 +639,27 @@ FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
 
 bool AMantleScatterVolume::GenerateFull(TArray<FMantleScatterInstance>& OutInstances, FString& OutError) const
 {
+	const TArray<FMantleScatterInstance>* Cached = GenerateFullCached(OutError);
+	if (!Cached)
+	{
+		return false;
+	}
+	OutInstances = *Cached;
+	return true;
+}
+
+const TArray<FMantleScatterInstance>* AMantleScatterVolume::GenerateFullCached(FString& OutError) const
+{
 	// Cached under everything the instances depend on: the settings, the Terrains below and where this volume stands.
 	const FString Key = SettingsKey() + TEXT("|x") + GetActorTransform().ToString();
 	if (FullKey.Equals(Key, ESearchCase::CaseSensitive))
 	{
-		OutInstances = FullInstances;
-		return true;
+		return &FullInstances;
 	}
 	FMantleScatterParams Params;
 	if (!ReadProps(Params, OutError))
 	{
-		return false;
+		return nullptr;
 	}
 	FMantleScatterGenerateOptions Options;
 	if (Params.Placement == EMantleScatterPlacement::Terrain)
@@ -659,10 +669,9 @@ bool AMantleScatterVolume::GenerateFull(TArray<FMantleScatterInstance>& OutInsta
 	if (!FMantleScatter::Generate(Params, FullInstances, OutError, Options))
 	{
 		FullKey.Reset();
-		return false;
+		return nullptr;
 	}
 	FullKey = Key;
 	FullHash = FMantleScatter::Hash(FullInstances);
-	OutInstances = FullInstances;
-	return true;
+	return &FullInstances;
 }

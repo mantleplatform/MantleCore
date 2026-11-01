@@ -418,7 +418,13 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 
 	const bool bTerrain = Params.Placement == EMantleScatterPlacement::Terrain;
 	const bool bSlopeFilter = bTerrain && Params.MaxSlopeDegrees < 90.0;
-	const double CosMaxSlope = FMath::Cos(FMath::DegreesToRadians(Params.MaxSlopeDegrees));
+	// The filters compare whole numbers: the normal's up component and the threshold (the cosine of the limit) each rounded to
+	// millionths, heights in whole millimetres, so a last bit of float maths on another machine cannot flip a decision.
+	const int64 SlopeLimitMicro = static_cast<int64>(FMath::FloorToDouble(FMath::Cos(FMath::DegreesToRadians(Params.MaxSlopeDegrees)) * 1.0e6 + 0.5));
+	const bool bMinHeight = Params.MinHeight.IsSet();
+	const bool bMaxHeight = Params.MaxHeight.IsSet();
+	const int64 MinHeightMm = bMinHeight ? ScatterHalfMillimetres(Params.MinHeight.GetValue()) : 0;
+	const int64 MaxHeightMm = bMaxHeight ? ScatterHalfMillimetres(Params.MaxHeight.GetValue()) : 0;
 
 	TArray<FScatterBoxMm, TInlineAllocator<FMantleScatter::MaxExclusions>> Exclusions;
 	for (const FMantleScatterExclusion& Exclusion : Params.Exclusions)
@@ -501,14 +507,21 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 			{
 				continue;
 			}
-			if (bSlopeFilter && Ground.NormalZ < CosMaxSlope)
+			if (bSlopeFilter)
 			{
-				continue;
+				const double NormalMicro = FMath::FloorToDouble(Ground.NormalZ * 1.0e6 + 0.5);
+				if (static_cast<int64>(NormalMicro) < SlopeLimitMicro)
+				{
+					continue;
+				}
 			}
-			if ((Params.MinHeight.IsSet() && Ground.WorldZCm < Params.MinHeight.GetValue())
-				|| (Params.MaxHeight.IsSet() && Ground.WorldZCm > Params.MaxHeight.GetValue()))
+			if (bMinHeight || bMaxHeight)
 			{
-				continue;
+				const double HeightMm = FMath::FloorToDouble(Ground.WorldZCm * 10.0 + 0.5);
+				if ((bMinHeight && static_cast<int64>(HeightMm) < MinHeightMm) || (bMaxHeight && static_cast<int64>(HeightMm) > MaxHeightMm))
+				{
+					continue;
+				}
 			}
 			Z += Ground.ZMm;
 		}
@@ -609,6 +622,48 @@ double FMantleScatter::FoliageTierDistance(const int32 FoliageQuality)
 {
 	static const double Distance[] = {0.5, 0.7, 0.85, 1.0};
 	return Distance[FMath::Clamp(FoliageQuality, 0, 3)];
+}
+
+bool FMantleScatter::CheckPlaceTotals(TConstArrayView<const FMantleScatterParams*> All, int32& OutBadIndex, FString& OutError)
+{
+	OutBadIndex = INDEX_NONE;
+	int64 Total = 0;
+	for (int32 Index = 0; Index < All.Num(); ++Index)
+	{
+		FString Why;
+		const int64 Count = All[Index] ? CountFor(*All[Index], Why) : -1;
+		if (Count < 0)
+		{
+			continue;
+		}
+		Total += Count;
+		if (Total > FMantlePlaceLimits::MaxScatterInstancesPerPlace)
+		{
+			OutBadIndex = Index;
+			OutError = FString::Printf(TEXT("brings the place to %lld scatter instances; a place holds at most %d"),
+				static_cast<long long>(Total), FMantlePlaceLimits::MaxScatterInstancesPerPlace);
+			return false;
+		}
+	}
+	int64 Colliding = 0;
+	for (int32 Index = 0; Index < All.Num(); ++Index)
+	{
+		FString Why;
+		const int64 Count = All[Index] && All[Index]->bCollision ? CountFor(*All[Index], Why) : -1;
+		if (Count < 0)
+		{
+			continue;
+		}
+		Colliding += Count;
+		if (Colliding > FMantlePlaceLimits::MaxScatterCollidingInstancesPerPlace)
+		{
+			OutBadIndex = Index;
+			OutError = FString::Printf(TEXT("brings the place to %lld colliding scatter instances; a place holds at most %d"),
+				static_cast<long long>(Colliding), FMantlePlaceLimits::MaxScatterCollidingInstancesPerPlace);
+			return false;
+		}
+	}
+	return true;
 }
 
 TSharedRef<FJsonObject> FMantleScatter::ToJson(const FMantleScatterParams& Params)

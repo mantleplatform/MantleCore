@@ -5201,54 +5201,20 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		}
 	}
 
-	// The place-wide Scatter instance total, which the schema cannot express: validate.py's
-	// check_scatter_rules and the backend's scatterTotal, reported at the density of the Scatter that
-	// crosses it. A Scatter already refused on its own is not counted.
+	// The place-wide Scatter caps, which the schema cannot express: validate.py's check_scatter_rules and the backend's
+	// scatterCounts (FMantleScatter::CheckPlaceTotals, the rule a script's change of a Scatter also goes through), reported at
+	// the density of the Scatter that crosses a cap. A Scatter already refused on its own is not counted.
 	{
-		int64 ScatterTotal = 0;
-		for (int32 i = 0; i < Place.Entities.Num(); ++i)
+		TArray<const FMantleScatterParams*> Scatters;
+		for (const FMantleEntity& Entity : Place.Entities)
 		{
-			const FMantleScatterParams* Scatter = Place.Entities[i].Props.TryGet<FMantleScatterParams>();
-			FString Why;
-			const int64 Count = Scatter ? FMantleScatter::CountFor(*Scatter, Why) : -1;
-			if (Count < 0)
-			{
-				continue;
-			}
-			ScatterTotal += Count;
-			if (ScatterTotal > FMantlePlaceLimits::MaxScatterInstancesPerPlace)
-			{
-				Ctx.Fail(
-					Join(Join(Index(TEXT("/entities"), i), TEXT("properties")), TEXT("density")),
-					FString::Printf(TEXT("brings the place to %lld scatter instances; a place holds at most %d"),
-						static_cast<long long>(ScatterTotal), FMantlePlaceLimits::MaxScatterInstancesPerPlace));
-				break;
-			}
+			Scatters.Add(Entity.Props.TryGet<FMantleScatterParams>());
 		}
-	}
-
-	// The place-wide count of colliding Scatter instances (#169): each is a body the server and every client build.
-	// Counted at the formula's count, as the total above is, and reported at the density of the Scatter that crosses it.
-	{
-		int64 CollidingTotal = 0;
-		for (int32 i = 0; i < Place.Entities.Num(); ++i)
+		int32 BadIndex = INDEX_NONE;
+		FString CapError;
+		if (!FMantleScatter::CheckPlaceTotals(Scatters, BadIndex, CapError))
 		{
-			const FMantleScatterParams* Scatter = Place.Entities[i].Props.TryGet<FMantleScatterParams>();
-			FString Why;
-			const int64 Count = Scatter && Scatter->bCollision ? FMantleScatter::CountFor(*Scatter, Why) : -1;
-			if (Count < 0)
-			{
-				continue;
-			}
-			CollidingTotal += Count;
-			if (CollidingTotal > FMantlePlaceLimits::MaxScatterCollidingInstancesPerPlace)
-			{
-				Ctx.Fail(
-					Join(Join(Index(TEXT("/entities"), i), TEXT("properties")), TEXT("density")),
-					FString::Printf(TEXT("brings the place to %lld colliding scatter instances; a place holds at most %d"),
-						static_cast<long long>(CollidingTotal), FMantlePlaceLimits::MaxScatterCollidingInstancesPerPlace));
-				break;
-			}
+			Ctx.Fail(Join(Join(Index(TEXT("/entities"), BadIndex), TEXT("properties")), TEXT("density")), CapError);
 		}
 	}
 

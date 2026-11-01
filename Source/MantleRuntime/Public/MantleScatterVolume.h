@@ -242,6 +242,12 @@ public:
 	 */
 	bool GenerateFull(TArray<FMantleScatterInstance>& OutInstances, FString& OutError) const;
 
+	/**
+	 * GenerateFull without the copy: the cached instances, valid until the settings, the terrains or the volume's transform change
+	 * (or the next GenerateFull). Null, with OutError, when the settings cannot generate.
+	 */
+	const TArray<FMantleScatterInstance>* GenerateFullCached(FString& OutError) const;
+
 	/** FMantleScatter::Hash of the last GenerateFull's instances. */
 	uint64 GetFullHash() const { return FullHash; }
 

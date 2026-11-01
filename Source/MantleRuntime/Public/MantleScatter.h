@@ -244,6 +244,14 @@ public:
 	 */
 	static TSharedRef<FJsonObject> ToJson(const FMantleScatterParams& Params);
 
+	/**
+	 * The place-wide Scatter caps over every Scatter of a place (null entries are skipped; one that cannot count is not counted):
+	 * at most MaxScatterInstancesPerPlace instances in all, and at most MaxScatterCollidingInstancesPerPlace among the ones whose
+	 * collision is on. False at the first Scatter that crosses either, its index in OutBadIndex and the parser's message in
+	 * OutError. The place parser and a script's change of a Scatter's settings both use it, so they refuse alike.
+	 */
+	static bool CheckPlaceTotals(TConstArrayView<const FMantleScatterParams*> All, int32& OutBadIndex, FString& OutError);
+
 	/** Hash as 16 lowercase hex digits, the form logs and tests print. */
 	static FString HashText(uint64 InHash);
 
