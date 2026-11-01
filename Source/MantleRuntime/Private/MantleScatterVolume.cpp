@@ -784,6 +784,7 @@ const TArray<FMantleScatterInstance>* AMantleScatterVolume::GenerateFullCached(F
 		return nullptr;
 	}
 	bool bMade = false;
+	uint64 CellsHash = 0;
 	if (bCells)
 	{
 		// Every cell is read on the workers while this thread sleeps on an event: a script that asks for the hash is charged the (CPU) time of
@@ -792,6 +793,8 @@ const TArray<FMantleScatterInstance>* AMantleScatterVolume::GenerateFullCached(F
 		UE::Tasks::Launch(TEXT("MantleScatterFull"), [&]()
 		{
 			bMade = FMantleScatter::GenerateAllByCells(Params, *Index, FullInstances, OutError, Options);
+			// The hash of a million instances is milliseconds too: taken here, not on the thread that is being charged.
+			CellsHash = bMade ? FMantleScatter::Hash(FullInstances) : 0;
 			Done->Trigger();
 		}, LowLevelTasks::ETaskPriority::BackgroundNormal);
 		Done->Wait();
@@ -807,7 +810,7 @@ const TArray<FMantleScatterInstance>* AMantleScatterVolume::GenerateFullCached(F
 		return nullptr;
 	}
 	FullKey = Key;
-	FullHash = FMantleScatter::Hash(FullInstances);
+	FullHash = bCells ? CellsHash : FMantleScatter::Hash(FullInstances);
 	// What a script's whole-stream read cost (the hash of a big Scatter reads every cell once; repeats come from the cache).
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_SCATTER_FULL entity=%s cells=%d instances=%d hash=%s ms=%.1f"), *GetName(), bCells ? 1 : 0, FullInstances.Num(),
 		*FMantleScatter::HashText(FullHash), (FPlatformTime::Seconds() - FullStart) * 1000.0);
