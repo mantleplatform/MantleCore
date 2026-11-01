@@ -60,6 +60,9 @@ public:
 	int64 GetLiveInstances() const { return LiveInstances; }
 	int32 GetPendingCells() const { return Wanted.Num() + InFlight + Ready.Num(); }
 
+	/** Cells read since this component started, whether or not they stood (a cell the live cap turned away counts each time it is read). */
+	int32 GetBuiltTotal() const { return BuiltTotal; }
+
 	/** Whether the position index is built (cells are asked for only after). */
 	bool IsIndexReady() const { return Index.IsValid(); }
 
@@ -90,6 +93,8 @@ private:
 		ECellState State = ECellState::Generating;
 		TArray<TWeakObjectPtr<UInstancedStaticMeshComponent>> Components;
 		int32 Instances = 0;
+		/** For a Skipped cell: how many instances it would add, so it is asked for again only when that many fit (never, if it alone is over the cap). */
+		int32 Needed = 0;
 		FIntPoint Coord = FIntPoint::ZeroValue;
 	};
 
@@ -154,6 +159,7 @@ private:
 	bool bStartLogged = false;
 
 	/** Counts and times since the last log line. */
+	int32 BuiltTotal = 0;
 	int32 BuiltSinceLog = 0;
 	int32 ReleasedSinceLog = 0;
 	int32 SkippedSinceLog = 0;

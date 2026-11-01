@@ -1183,6 +1183,20 @@ int64 FMantleScatter::CountFor(const FMantleScatterParams& Params, FString& OutE
 			Rounded, WholeInstances);
 		return -1;
 	}
+	// A spacing much wider than the candidates are apart makes every cell check without end, so one built in cells holds its candidates per
+	// spacing square (density times the spacing in metres, squared) to a few. Each step is its own statement, as validate.py and the backend do.
+	if (Rounded > static_cast<double>(WholeInstances) && Params.MinSpacing > 0.0)
+	{
+		const double SpacingSquareCm2 = Params.MinSpacing * Params.MinSpacing;
+		const double PerSquareM2 = Params.Density * SpacingSquareCm2;
+		const double Limit = static_cast<double>(FMantlePlaceLimits::MaxScatterSpacingCandidates) * 10000.0;
+		if (PerSquareM2 > Limit)
+		{
+			OutError = FString::Printf(TEXT("minSpacing is too wide for the density: a scatter of more than %d instances may have at most %d candidates in one spacing square (density times minSpacing in metres, squared)"),
+				WholeInstances, FMantlePlaceLimits::MaxScatterSpacingCandidates);
+			return -1;
+		}
+	}
 	return static_cast<int64>(Rounded);
 }
 
