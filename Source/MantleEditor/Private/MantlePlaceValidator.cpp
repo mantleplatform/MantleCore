@@ -818,10 +818,102 @@ namespace
 		{
 			return;
 		}
+		// The paint-layer filter (#187) only travels on terrain placement; the Details panel hides it under Box, so a filter left
+		// ticked there is dropped without a word unless Check says so.
+		if (Volume->bFilterPaintLayer)
+		{
+			if (Volume->Placement != EMantleScatterPlacement::Terrain)
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, LabelOf(Actor),
+					FString::Printf(TEXT("filters by paint layer %d, but its Placement is Box, so the filter is left out and instances fill the whole box."), Volume->PaintLayer),
+					TEXT("Set Placement to Terrain to keep the filter, or untick Filter Paint Layer.") });
+			}
+			else if (Volume->MaxLayerWeight < Volume->MinLayerWeight)
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+					FString::Printf(TEXT("keeps paint layer %d between weights %.2f and %.2f: the Max Layer Weight is below the Min, so no instance could be kept."),
+						Volume->PaintLayer, Volume->MinLayerWeight, Volume->MaxLayerWeight),
+					TEXT("Set Max Layer Weight to at least Min Layer Weight in the scatter volume's Details panel.") });
+				return;
+			}
+		}
+		// Ground alignment and a minimum slope (#188) need terrain placement and a min slope at most the max, as the parser holds them.
+		if (Volume->Alignment == EMantleScatterAlignment::Ground && Volume->Placement != EMantleScatterPlacement::Terrain)
+		{
+			Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+				TEXT("is aligned to the ground, but its Placement is Box: only a scatter placed on terrain has ground to stand its instances on."),
+				TEXT("Set Placement to Terrain, or set Alignment to Upright, Tilted or Tumbled.") });
+			return;
+		}
+		if (Volume->Placement == EMantleScatterPlacement::Terrain && Volume->MinSlopeDegrees > Volume->MaxSlopeDegrees)
+		{
+			Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+				FString::Printf(TEXT("keeps ground between slopes of %.1f and %.1f degrees: the Max Slope is below the Min, so no instance could be kept."),
+					Volume->MinSlopeDegrees, Volume->MaxSlopeDegrees),
+				TEXT("Set Max Slope Degrees to at least Min Slope Degrees in the scatter volume's Details panel.") });
+			return;
+		}
+		// A fixed path step and path exclusion strips (#190), as the parser holds them, each with a plain fix.
+		if (Volume->PathStep > 0.0 && Volume->Shape != EMantleScatterShape::Path)
+		{
+			Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, LabelOf(Actor),
+				FString::Printf(TEXT("has a Path Step of %.0f cm, but its Shape is not Path, so the step is left out and instances spread at random."), Volume->PathStep),
+				TEXT("Set Shape to Path to keep the step, or set Path Step to 0.") });
+		}
+		if (Volume->Shape == EMantleScatterShape::Path && Volume->PathStep > 0.0)
+		{
+			if (Volume->ClusterCount > 0)
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+					TEXT("puts instances at a fixed Path Step and also gathers them into clusters, which cannot go together."),
+					TEXT("Set Cluster Count to 0, or set Path Step to 0 to scatter at random along the path.") });
+				return;
+			}
+			double Length = 0.0;
+			for (int32 Index = 1; Index < Volume->Path.Num(); ++Index)
+			{
+				Length += FVector2D::Distance(Volume->Path[Index - 1], Volume->Path[Index]);
+			}
+			const int64 Steps = static_cast<int64>(Length / Volume->PathStep) + 1;
+			if (Steps > FMantlePlaceLimits::ScatterWholeInstances)
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+					FString::Printf(TEXT("puts an instance every %.1f cm along a %.0f m path: about %lld instances, over the %d one scatter makes."),
+						Volume->PathStep, Length / 100.0, static_cast<long long>(Steps), FMantlePlaceLimits::ScatterWholeInstances),
+					FString::Printf(TEXT("Raise Path Step to at least %.1f cm, or shorten the path."), Length / (FMantlePlaceLimits::ScatterWholeInstances - 1)) });
+				return;
+			}
+		}
+		for (int32 Index = 0; Index < Volume->PathExclusions.Num(); ++Index)
+		{
+			const FMantleScatterPathExclusionSettings& Strip = Volume->PathExclusions[Index];
+			if (Strip.Path.Num() < 2 || Strip.Width <= 0.0)
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+					FString::Printf(TEXT("has a path exclusion (number %d) with %d points and a width of %.1f cm; a strip needs at least 2 points and a width above 0."),
+						Index + 1, Strip.Path.Num(), Strip.Width),
+					TEXT("Give the strip 2 or more points and a width under Path Exclusions, or remove it.") });
+				return;
+			}
+		}
 		FMantleScatterParams Props;
 		FString Problem;
 		if (!Volume->ReadProps(Props, Problem))
 		{
+			// #189: a Scatter over ScatterWholeInstances is built in cells around each player, which needs a draw distance. Name the
+			// count and the fix plainly (ReadProps has filled Props before counting them).
+			FString Ignored;
+			FMantleScatterParams WithDistance = Props;
+			WithDistance.DrawDistance = 1.0;
+			const int64 Count = Volume->DrawDistance > 0.0 ? -1 : FMantleScatter::CountFor(WithDistance, Ignored);
+			if (Count > FMantlePlaceLimits::ScatterWholeInstances)
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+					FString::Printf(TEXT("makes %lld instances but has no Draw Distance; a scatter of more than %d is only built around each player, out to its draw distance."),
+						static_cast<long long>(Count), FMantlePlaceLimits::ScatterWholeInstances),
+					TEXT("Set Draw Distance in the scatter volume's Details panel (how far away players see its instances), or lower its density.") });
+				return;
+			}
 			Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor), Problem,
 				TEXT("Change it in the scatter volume's Details panel.") });
 			return;

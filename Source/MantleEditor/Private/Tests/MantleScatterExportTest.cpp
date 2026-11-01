@@ -54,13 +54,21 @@ namespace MantleScatterExportTestPrivate
 		P.DrawDistance = 12345.678901;
 		P.Placement = EMantleScatterPlacement::Terrain;
 		P.MaxSlopeDegrees = 33.3333333;
+		P.MinSlopeDegrees = 12.5;
+		P.Alignment = EMantleScatterAlignment::Ground;
+		P.MaxTiltDegrees = 7.25;
 		P.MinHeight = -250.125;
 		P.MaxHeight = 4000.0625;
+		P.PaintLayer = 5;
+		P.MinLayerWeight = 0.2509803;
+		P.MaxLayerWeight = 0.75;
 		P.Shape = Shape;
 		P.Radius = 1777.777;
 		P.Path = { FVector2D(-1000.5, 0.25), FVector2D(0.0, 900.125), FVector2D(1200.0, -300.0) };
 		P.Width = 333.3;
 		P.Exclusions = { { FVector2D(100.5, -200.25), FVector2D(150.0, 75.5) }, { FVector2D(-800.0, 0.0), FVector2D(50.0, 50.0) } };
+		P.PathExclusions = { { { FVector2D(-500.0, -500.0), FVector2D(500.0, 400.25) }, 120.5 } };
+		P.MinSpacing = 35.75;
 		P.ClusterCount = 7;
 		P.ClusterRadius = 420.42;
 		P.bCollision = true;
@@ -84,7 +92,13 @@ namespace MantleScatterExportTestPrivate
 		{
 			Out.ZMm = (XMm + YMm) / 100;
 			Out.NormalZ = 0.9;
+			// The same slope in the scatter's own space, for ground alignment (#188): 25.8 degrees, leaning along X.
+			Out.LocalNormalX = FMath::Sqrt(1.0 - 0.81);
+			Out.LocalNormalY = 0.0;
+			Out.LocalNormalZ = 0.9;
 			Out.WorldZCm = static_cast<double>(XMm) * 0.01;
+			// The paint layer's weight changes across the field, so the layer filter keeps some instances and drops others.
+			Out.LayerWeight = static_cast<int32>(FMath::Abs(XMm / 10000) % 256);
 			return true;
 		};
 		TArray<FMantleScatterInstance> Instances;
@@ -150,8 +164,14 @@ bool FMantleScatterExportKeysTest::RunTest(const FString& Parameters)
 		TestEqual(What + TEXT(": draw distance"), Got->DrawDistance, Sent.DrawDistance);
 		TestTrue(What + TEXT(": placed on terrain"), Got->Placement == EMantleScatterPlacement::Terrain);
 		TestEqual(What + TEXT(": max slope"), Got->MaxSlopeDegrees, Sent.MaxSlopeDegrees);
+		TestEqual(What + TEXT(": min slope"), Got->MinSlopeDegrees, Sent.MinSlopeDegrees);
+		TestTrue(What + TEXT(": aligned to the ground"), Got->Alignment == EMantleScatterAlignment::Ground);
+		TestEqual(What + TEXT(": max tilt"), Got->MaxTiltDegrees, Sent.MaxTiltDegrees);
 		TestTrue(What + TEXT(": min height"), Got->MinHeight == Sent.MinHeight);
 		TestTrue(What + TEXT(": max height"), Got->MaxHeight == Sent.MaxHeight);
+		TestEqual(What + TEXT(": paint layer"), Got->PaintLayer, Sent.PaintLayer);
+		TestTrue(What + TEXT(": min layer weight"), Got->MinLayerWeight == Sent.MinLayerWeight);
+		TestTrue(What + TEXT(": max layer weight"), Got->MaxLayerWeight == Sent.MaxLayerWeight);
 		TestTrue(What + TEXT(": shape"), Got->Shape == Shape);
 		TestEqual(What + TEXT(": radius"), Got->Radius, Sent.Radius);
 		TestEqual(What + TEXT(": path points"), Got->Path.Num(), Sent.Path.Num());
@@ -166,12 +186,40 @@ bool FMantleScatterExportKeysTest::RunTest(const FString& Parameters)
 			TestTrue(What + TEXT(": exclusion"), Got->Exclusions[Index].Center == Sent.Exclusions[Index].Center
 				&& Got->Exclusions[Index].HalfExtent == Sent.Exclusions[Index].HalfExtent);
 		}
+		TestEqual(What + TEXT(": min spacing"), Got->MinSpacing, Sent.MinSpacing);
+		TestEqual(What + TEXT(": path exclusions"), Got->PathExclusions.Num(), Sent.PathExclusions.Num());
+		for (int32 Index = 0; Index < Sent.PathExclusions.Num() && Index < Got->PathExclusions.Num(); ++Index)
+		{
+			TestTrue(What + TEXT(": path exclusion"), Got->PathExclusions[Index].Path == Sent.PathExclusions[Index].Path
+				&& Got->PathExclusions[Index].Width == Sent.PathExclusions[Index].Width);
+		}
 		TestEqual(What + TEXT(": cluster count"), Got->ClusterCount, Sent.ClusterCount);
 		TestEqual(What + TEXT(": cluster radius"), Got->ClusterRadius, Sent.ClusterRadius);
 		TestTrue(What + TEXT(": collision"), Got->bCollision);
 		const uint64 SentHash = FlatHash(Sent);
 		TestNotEqual(What + TEXT(": the editor's copy generates"), SentHash, static_cast<uint64>(0));
 		TestEqual(What + TEXT(": and the client's hashes the same"), FlatHash(*Got), SentHash);
+	}
+
+	// A fixed step along a path (#190), which takes no clusters: the step survives, and the client lays the same instances.
+	{
+		FMantleScatterParams Sent = EveryKey(EMantleScatterShape::Path);
+		Sent.ClusterCount = 0;
+		Sent.ClusterRadius = 0.0;
+		Sent.PathStep = 250.125;
+		Base.Place.Entities[0].Props.Set<FMantleScatterParams>(Sent);
+		const FMantleParseResult Back = FMantlePlaceParser::ParseFromString(FMantlePlaceExporter::ToJson(Base.Place));
+		for (const FMantleParseError& Error : Back.Errors)
+		{
+			AddError(FString::Printf(TEXT("path step: %s %s"), *Error.Path, *Error.Message));
+		}
+		if (const FMantleScatterParams* Got = ScatterOf(Back); TestNotNull(TEXT("the stepped path survives the file"), Got))
+		{
+			TestEqual(TEXT("its path step"), Got->PathStep, Sent.PathStep);
+			const uint64 SentHash = FlatHash(Sent);
+			TestNotEqual(TEXT("the stepped path generates"), SentHash, static_cast<uint64>(0));
+			TestEqual(TEXT("and the client's hashes the same"), FlatHash(*Got), SentHash);
+		}
 	}
 
 	// A plain box scatter writes none of the new keys, which the schema refuses without the placement or shape they need.
@@ -187,8 +235,9 @@ bool FMantleScatterExportKeysTest::RunTest(const FString& Parameters)
 		&& Root->TryGetArrayField(TEXT("entities"), Entities) && Entities->Num() == 1
 		&& (*Entities)[0]->AsObject()->TryGetObjectField(TEXT("properties"), Properties)))
 	{
-		for (const TCHAR* Key : { TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"),
-			TEXT("shape"), TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision") })
+		for (const TCHAR* Key : { TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"),
+			TEXT("shape"), TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision"),
+			TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight"), TEXT("minSpacing"), TEXT("pathStep"), TEXT("pathExclusions") })
 		{
 			TestFalse(FString::Printf(TEXT("a plain box scatter writes no %s"), Key), (*Properties)->HasField(Key));
 		}
@@ -340,6 +389,225 @@ bool FMantleScatterCollisionCheckTest::RunTest(const FString& Parameters)
 	Second->bCollision = false;
 	Result = FMantlePlaceValidator::Validate(Fixture.World);
 	TestFalse(TEXT("one colliding scatter fits"), CapIssueOn(Result, TEXT("Rocks A")) || CapIssueOn(Result, TEXT("Rocks B")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterPaintLayerCheckTest,
+	"Mantle.Editor.Scatter.Check.PaintLayerFilter",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterPaintLayerCheckTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterExportTestPrivate;
+
+	// #187: a paint-layer filter left ticked under Box placement is named (it is dropped), and a Max below the Min is an error.
+	FScatterWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	AMantleScatterVolume* Volume = Fixture.World->SpawnActor<AMantleScatterVolume>(FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("a volume"), Volume))
+	{
+		return false;
+	}
+	Volume->SetActorLabel(TEXT("Moss"));
+	Volume->HalfExtent = FVector(1000.0, 1000.0, 0.0);
+	Volume->Density = 0.01;
+	Volume->Meshes.SetNum(1);
+	Volume->Meshes[0].MeshId = TEXT("ast_cube");
+	const auto Has = [](const FMantleValidationResult& Result, const EMantleIssueSeverity Severity, const TCHAR* Text)
+	{
+		return Result.Issues.ContainsByPredicate([Severity, Text](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Actor == TEXT("Moss") && Issue.Severity == Severity && Issue.Problem.Contains(Text);
+		});
+	};
+
+	Volume->bFilterPaintLayer = true;
+	Volume->PaintLayer = 2;
+	Volume->Placement = EMantleScatterPlacement::Box;
+	TestTrue(TEXT("a filter under Box placement is named"),
+		Has(FMantlePlaceValidator::Validate(Fixture.World), EMantleIssueSeverity::Warning, TEXT("its Placement is Box")));
+	FMantleScatterParams Params;
+	FString Problem;
+	TestTrue(TEXT("and it reads"), Volume->ReadProps(Params, Problem));
+	TestEqual(TEXT("without the filter"), Params.PaintLayer, -1);
+
+	Volume->Placement = EMantleScatterPlacement::Terrain;
+	Volume->MinLayerWeight = 0.8;
+	Volume->MaxLayerWeight = 0.3;
+	TestTrue(TEXT("a Max below the Min is an error"),
+		Has(FMantlePlaceValidator::Validate(Fixture.World), EMantleIssueSeverity::Error, TEXT("Max Layer Weight is below the Min")));
+
+	Volume->MaxLayerWeight = 0.9;
+	const FMantleValidationResult Fine = FMantlePlaceValidator::Validate(Fixture.World);
+	TestFalse(TEXT("a sound filter on terrain says nothing of it"),
+		Has(Fine, EMantleIssueSeverity::Warning, TEXT("its Placement is Box")) || Has(Fine, EMantleIssueSeverity::Error, TEXT("Max Layer Weight")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterGroundAlignCheckTest,
+	"Mantle.Editor.Scatter.Check.GroundAlignmentAndMinSlope",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterGroundAlignCheckTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterExportTestPrivate;
+
+	// #188: ground alignment under Box placement and a Min Slope above the Max are errors with a plain fix.
+	FScatterWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	AMantleScatterVolume* Volume = Fixture.World->SpawnActor<AMantleScatterVolume>(FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("a volume"), Volume))
+	{
+		return false;
+	}
+	Volume->SetActorLabel(TEXT("Ferns"));
+	Volume->HalfExtent = FVector(1000.0, 1000.0, 0.0);
+	Volume->Density = 0.01;
+	Volume->Meshes.SetNum(1);
+	Volume->Meshes[0].MeshId = TEXT("ast_cube");
+	const auto Has = [](const FMantleValidationResult& Result, const TCHAR* Text)
+	{
+		return Result.Issues.ContainsByPredicate([Text](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Actor == TEXT("Ferns") && Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(Text);
+		});
+	};
+
+	Volume->Alignment = EMantleScatterAlignment::Ground;
+	Volume->Placement = EMantleScatterPlacement::Box;
+	TestTrue(TEXT("ground alignment on a box is an error"), Has(FMantlePlaceValidator::Validate(Fixture.World), TEXT("aligned to the ground, but its Placement is Box")));
+
+	Volume->Placement = EMantleScatterPlacement::Terrain;
+	Volume->MinSlopeDegrees = 50.0;
+	Volume->MaxSlopeDegrees = 30.0;
+	TestTrue(TEXT("a Min Slope above the Max is an error"), Has(FMantlePlaceValidator::Validate(Fixture.World), TEXT("the Max Slope is below the Min")));
+
+	Volume->MaxSlopeDegrees = 80.0;
+	const FMantleValidationResult Fine = FMantlePlaceValidator::Validate(Fixture.World);
+	TestFalse(TEXT("ground alignment between sound slopes on terrain says nothing of them"),
+		Has(Fine, TEXT("aligned to the ground")) || Has(Fine, TEXT("Max Slope is below")));
+	FMantleScatterParams Params;
+	FString Problem;
+	TestTrue(FString::Printf(TEXT("and it reads (%s)"), *Problem), Volume->ReadProps(Params, Problem));
+	TestEqual(TEXT("with its min slope"), Params.MinSlopeDegrees, 50.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterPathStepCheckTest,
+	"Mantle.Editor.Scatter.Check.PathStepAndPathExclusions",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterPathStepCheckTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterExportTestPrivate;
+
+	// #190: a Path Step off a path is named (it is left out); with clusters, one making too many instances, and a bad strip are errors.
+	FScatterWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	AMantleScatterVolume* Volume = Fixture.World->SpawnActor<AMantleScatterVolume>(FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("a volume"), Volume))
+	{
+		return false;
+	}
+	Volume->SetActorLabel(TEXT("Fence"));
+	Volume->HalfExtent = FVector(1000.0, 1000.0, 0.0);
+	Volume->Density = 0.01;
+	Volume->Meshes.SetNum(1);
+	Volume->Meshes[0].MeshId = TEXT("ast_cube");
+	const auto Has = [](const FMantleValidationResult& Result, const EMantleIssueSeverity Severity, const TCHAR* Text)
+	{
+		return Result.Issues.ContainsByPredicate([Severity, Text](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Actor == TEXT("Fence") && Issue.Severity == Severity && Issue.Problem.Contains(Text);
+		});
+	};
+
+	Volume->PathStep = 300.0;
+	TestTrue(TEXT("a step off a path is named"), Has(FMantlePlaceValidator::Validate(Fixture.World), EMantleIssueSeverity::Warning, TEXT("its Shape is not Path")));
+
+	Volume->Shape = EMantleScatterShape::Path;
+	Volume->Path = { FVector2D(-900.0, 0.0), FVector2D(900.0, 0.0) };
+	Volume->Width = 100.0;
+	Volume->ClusterCount = 3;
+	Volume->ClusterRadius = 200.0;
+	TestTrue(TEXT("a step with clusters is an error"), Has(FMantlePlaceValidator::Validate(Fixture.World), EMantleIssueSeverity::Error, TEXT("also gathers them into clusters")));
+
+	Volume->ClusterCount = 0;
+	Volume->Path = { FVector2D(-150000.0, 0.0), FVector2D(150000.0, 0.0) };
+	Volume->PathStep = 1.0; // 3 km at 1 cm: 300001 instances
+	TestTrue(TEXT("a step that makes too many is an error"), Has(FMantlePlaceValidator::Validate(Fixture.World), EMantleIssueSeverity::Error, TEXT("over the 200000 one scatter makes")));
+
+	Volume->Path = { FVector2D(-900.0, 0.0), FVector2D(900.0, 0.0) };
+	Volume->PathStep = 300.0;
+	Volume->PathExclusions.SetNum(1);
+	Volume->PathExclusions[0].Path = { FVector2D::ZeroVector };
+	TestTrue(TEXT("a strip of one point is an error"), Has(FMantlePlaceValidator::Validate(Fixture.World), EMantleIssueSeverity::Error, TEXT("a strip needs at least 2 points")));
+
+	Volume->PathExclusions[0].Path = { FVector2D(0.0, -300.0), FVector2D(0.0, 300.0) };
+	const FMantleValidationResult Fine = FMantlePlaceValidator::Validate(Fixture.World);
+	TestFalse(TEXT("a sound stepped path with a strip says nothing of them"), Has(Fine, EMantleIssueSeverity::Error, TEXT("Path"))
+		|| Has(Fine, EMantleIssueSeverity::Error, TEXT("strip")) || Has(Fine, EMantleIssueSeverity::Warning, TEXT("Path Step")));
+	FMantleScatterParams Params;
+	FString Problem;
+	TestTrue(FString::Printf(TEXT("and it reads (%s)"), *Problem), Volume->ReadProps(Params, Problem));
+	TestEqual(TEXT("with its step"), Params.PathStep, 300.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterCellsCheckTest,
+	"Mantle.Editor.Scatter.Check.BigScatterNeedsADrawDistance",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterCellsCheckTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterExportTestPrivate;
+
+	// #189: a scatter over 200,000 instances is built in cells around each player, so Check asks for a draw distance in plain words.
+	FScatterWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	AMantleScatterVolume* Volume = Fixture.World->SpawnActor<AMantleScatterVolume>(FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("a volume"), Volume))
+	{
+		return false;
+	}
+	Volume->SetActorLabel(TEXT("Jungle"));
+	Volume->HalfExtent = FVector(10000.0, 10000.0, 0.0); // 40,000 square metres
+	Volume->Density = 6.0; // 240,000 instances
+	Volume->Meshes.SetNum(1);
+	Volume->Meshes[0].MeshId = TEXT("ast_cube");
+	const auto Has = [](const FMantleValidationResult& Result, const TCHAR* Text)
+	{
+		return Result.Issues.ContainsByPredicate([Text](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Actor == TEXT("Jungle") && Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(Text);
+		});
+	};
+
+	Volume->DrawDistance = 0.0;
+	TestTrue(TEXT("a big scatter without a draw distance is named"), Has(FMantlePlaceValidator::Validate(Fixture.World), TEXT("makes 240000 instances but has no Draw Distance")));
+
+	Volume->DrawDistance = 8000.0;
+	TestFalse(TEXT("with a draw distance it says nothing of it"), Has(FMantlePlaceValidator::Validate(Fixture.World), TEXT("Draw Distance")));
+	FMantleScatterParams Params;
+	FString Problem;
+	TestTrue(FString::Printf(TEXT("and it reads (%s)"), *Problem), Volume->ReadProps(Params, Problem));
+	TestTrue(TEXT("built in cells"), FMantleScatter::CountFor(Params, Problem) > FMantlePlaceLimits::ScatterWholeInstances);
 	return true;
 }
 

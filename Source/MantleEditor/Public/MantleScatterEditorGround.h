@@ -29,8 +29,10 @@ public:
 	 * One landscape's surface as a client builds it from the published Terrain: the heightfield MakeHeightfield
 	 * uploads (through the MHF1 file the client reads), the holes from the hole mask the converter uploads, and
 	 * the Terrain entity's transform. Field is empty when the source cannot make a heightfield.
+	 * With World, also the paint-layer weightmaps (#187): the layers the publish picks (ChooseLayers) at the
+	 * size the converter uploads them (EncodeWeightmaps), so a paint-layer filter lands where it lands for players.
 	 */
-	static FMantleScatterTerrainSurface SurfaceFor(const FMantleTerrainSource& Source);
+	static FMantleScatterTerrainSurface SurfaceFor(const FMantleTerrainSource& Source, UWorld* World = nullptr, const FString& Label = FString());
 
 	/** Every landscape of World that publishes as a Terrain (FMantleTerrainExport::TerrainLandscapes), as SurfaceFor makes it. */
 	static TArray<FMantleScatterTerrainSurface> SurfacesFor(UWorld* World);

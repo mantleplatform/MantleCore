@@ -5,14 +5,17 @@
 #include "GameFramework/Actor.h"
 #include "MantlePlaceTypes.h"
 #include "MantleScatter.h"
+#include "Tasks/Task.h"
 
 #include "MantleScatterVolume.generated.h"
 
 struct FMantleHeightfield;
 struct FMantleTerrainHoleGrid;
+struct FMantleTerrainWeights;
 namespace Scalability { struct FQualityLevels; }
 class UBoxComponent;
 class UInstancedStaticMeshComponent;
+class UMantleScatterCellsComponent;
 class UMaterialInterface;
 class UStaticMesh;
 struct FPropertyChangedEvent;
@@ -62,11 +65,33 @@ struct MANTLERUNTIME_API FMantleScatterExclusionSettings
 	FVector2D HalfExtent = FVector2D(100.0, 100.0);
 };
 
+/** A strip of a Mantle Scatter Volume no instance stands in (#190): X-Y points in the volume's own space, and the strip's full width. */
+USTRUCT()
+struct MANTLERUNTIME_API FMantleScatterPathExclusionSettings
+{
+	GENERATED_BODY()
+
+	/** 2 to 64 points, cm. */
+	UPROPERTY(EditAnywhere, Category = "Scatter")
+	TArray<FVector2D> Path;
+
+	/** The strip's full width, cm. */
+	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (ClampMin = "0.1", ClampMax = "100000", Units = "cm"))
+	double Width = 200.0;
+};
+
 /** A Terrain a Scatter drops its instances onto (#169): its surface and where it stands in the world. */
 struct FMantleScatterTerrainSurface
 {
 	TSharedPtr<const FMantleHeightfield> Field;
 	TSharedPtr<const FMantleTerrainHoleGrid> Holes;
+	/** The paint-layer weightmaps with their pixels (#187): layers 0 to 3 and 4 to 7; null where the Terrain has none. */
+	TSharedPtr<const FMantleTerrainWeights> Weights;
+	TSharedPtr<const FMantleTerrainWeights> Weights2;
+	/** How many layers the Terrain has; a layer past it weighs 0. */
+	int32 LayerCount = 0;
+	/** The Terrain names a weightmap. Without one layer 0 weighs 255 everywhere; with one that did not load every layer weighs 0. */
+	bool bWeightmap = false;
 	FTransform TerrainToWorld = FTransform::Identity;
 };
 
@@ -99,7 +124,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (ClampMin = "0", ClampMax = "1000000", UIMin = "0", Units = "cm"))
 	FVector HalfExtent = FVector(1000.0, 1000.0, 0.0);
 
-	/** Instances per square metre of the box's footprint. A scatter makes at most 200,000, and a place holds 200,000 in all. */
+	/**
+	 * Instances per square metre of the box's footprint. A scatter makes at most 2,000,000, and a place holds 2,000,000 in all. One of more than
+	 * 200,000 needs a Draw Distance: a game builds it in cells around the player, not all at once.
+	 */
 	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (ClampMin = "0", UIMin = "0", UIMax = "10"))
 	double Density = 0.5;
 
@@ -111,21 +139,24 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (ClampMin = "0.001", ClampMax = "65.535", UIMin = "0.1", UIMax = "4"))
 	double MaxScale = 1.2;
 
-	/** Upright turns instances about Z only; Tilted also leans them up to Max Tilt; Tumbled turns them any way. */
+	/**
+	 * Upright turns instances about Z only; Tilted also leans them up to Max Tilt; Tumbled turns them any way. Ground (Terrain placement
+	 * only) stands each instance on the slope, its up following the ground, with a random turn about it and a lean of up to Max Tilt.
+	 */
 	UPROPERTY(EditAnywhere, Category = "Scatter")
 	EMantleScatterAlignment Alignment = EMantleScatterAlignment::Upright;
 
-	/** Tilted only: the largest lean either way, 0 to 90 degrees. */
+	/** Tilted and Ground only: the largest lean either way (off the ground for Ground), 0 to 90 degrees. */
 	UPROPERTY(EditAnywhere, Category = "Scatter",
 		meta = (ClampMin = "0", ClampMax = "90", UIMin = "0", UIMax = "90", Units = "deg",
-			EditCondition = "Alignment == EMantleScatterAlignment::Tilted", EditConditionHides))
+			EditCondition = "Alignment == EMantleScatterAlignment::Tilted || Alignment == EMantleScatterAlignment::Ground", EditConditionHides))
 	double MaxTiltDegrees = 10.0;
 
 	/** The meshes instances are drawn from, 1 to 16, each picked by its weight. */
 	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (TitleProperty = "Mesh"))
 	TArray<FMantleScatterMeshSettings> Meshes;
 
-	/** How far from the camera instances are drawn, cm (they fade over the last fifth); 0 never culls. At most 1,000,000. */
+	/** How far from the camera instances are drawn, cm (they fade over the last fifth); 0 never culls. At most 1,000,000. Required above 200,000 instances. */
 	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (ClampMin = "0", ClampMax = "1000000", UIMin = "0", UIMax = "50000", Units = "cm"))
 	double DrawDistance = 0.0;
 
@@ -138,6 +169,12 @@ public:
 		meta = (ClampMin = "0", ClampMax = "90", Units = "deg",
 			EditCondition = "Placement == EMantleScatterPlacement::Terrain", EditConditionHides))
 	double MaxSlopeDegrees = 90.0;
+
+	/** Terrain only: instances on ground flatter than this many degrees from flat are left out (cliffs and steep slopes only). 0 leaves out none, at most Max Slope. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (ClampMin = "0", ClampMax = "90", Units = "deg",
+			EditCondition = "Placement == EMantleScatterPlacement::Terrain", EditConditionHides))
+	double MinSlopeDegrees = 0.0;
 
 	/** Terrain only: leave out instances whose ground is lower than Min Height (world cm). */
 	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
@@ -158,6 +195,31 @@ public:
 		meta = (ClampMin = "-1000000", ClampMax = "1000000", Units = "cm",
 			EditCondition = "Placement == EMantleScatterPlacement::Terrain && bLimitMaxHeight", EditConditionHides))
 	double MaxHeight = 10000.0;
+
+	/**
+	 * Terrain only: keep instances only where a Terrain paint layer's weight is within Min and Max Layer Weight. The layer is the Terrain's
+	 * layers[] index (0 to 7: the weightmap's R, G, B, A, then the second weightmap's). A layer the Terrain does not have weighs 0.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (EditCondition = "Placement == EMantleScatterPlacement::Terrain", EditConditionHides))
+	bool bFilterPaintLayer = false;
+
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (ClampMin = "0", ClampMax = "7", UIMin = "0", UIMax = "7",
+			EditCondition = "Placement == EMantleScatterPlacement::Terrain && bFilterPaintLayer", EditConditionHides))
+	int32 PaintLayer = 0;
+
+	/** Keep instances where the layer weighs at least this (0 to 1). */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (ClampMin = "0", ClampMax = "1", UIMin = "0", UIMax = "1",
+			EditCondition = "Placement == EMantleScatterPlacement::Terrain && bFilterPaintLayer", EditConditionHides))
+	double MinLayerWeight = 0.5;
+
+	/** Keep instances where the layer weighs at most this (0 to 1), and at least Min Layer Weight. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (ClampMin = "0", ClampMax = "1", UIMin = "0", UIMax = "1",
+			EditCondition = "Placement == EMantleScatterPlacement::Terrain && bFilterPaintLayer", EditConditionHides))
+	double MaxLayerWeight = 1.0;
 
 	/** The footprint: the Half Extent box, a Disc of Radius, or a Path strip of Width along its points. Half Extent's Z sets the layer's depth in every shape. */
 	UPROPERTY(EditAnywhere, Category = "Scatter|Shape")
@@ -180,9 +242,23 @@ public:
 			EditCondition = "Shape == EMantleScatterShape::Path", EditConditionHides))
 	double Width = 500.0;
 
+	/** Path: 0 scatters at random along the strip. Above 0 (at least 1 cm) puts an instance every Path Step cm along the line, turned to face along it; Width then only spreads them across, and Density and clusters are not used. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Shape",
+		meta = (ClampMin = "0", ClampMax = "1000000", Units = "cm",
+			EditCondition = "Shape == EMantleScatterShape::Path", EditConditionHides))
+	double PathStep = 0.0;
+
 	/** Up to 16 boxes (X-Y) no instance stands in. */
 	UPROPERTY(EditAnywhere, Category = "Scatter|Shape")
 	TArray<FMantleScatterExclusionSettings> Exclusions;
+
+	/** Up to 16 strips along a line (X-Y) no instance stands in. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Shape")
+	TArray<FMantleScatterPathExclusionSettings> PathExclusions;
+
+	/** 0 allows any distance between instances. Above 0, an instance is left out when an earlier kept one is closer than this many cm in X-Y (the lower numbered one wins, so the same ones survive on every machine). */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Shape", meta = (ClampMin = "0", ClampMax = "100000", Units = "cm"))
+	double MinSpacing = 0.0;
 
 	/** 0 spreads instances evenly; 1 to 1000 gathers them into that many clusters, each of Cluster Radius, centred inside the footprint. */
 	UPROPERTY(EditAnywhere, Category = "Scatter|Shape", meta = (ClampMin = "0", ClampMax = "1000", UIMin = "0", UIMax = "50"))
@@ -231,7 +307,9 @@ public:
 	 * Generates the instances and builds them: one instanced static mesh component per mesh that has
 	 * instances, collision-free, under the volume's root. Replaces what was built before. Builds nothing,
 	 * and succeeds, where nothing draws (a dedicated server). False with OutError when the settings cannot
-	 * generate. In a level being edited the components are the preview: editor-only and never saved.
+	 * generate. In a level being edited the components are the preview: editor-only and never saved, and the
+	 * whole Scatter whatever its size. A game builds a Scatter of more than 200,000 instances in cells around
+	 * the player instead (UMantleScatterCellsComponent): nothing stands at first, and GetInstanceCount is what stands now.
 	 */
 	bool RefreshScatter(FString& OutError);
 
@@ -248,14 +326,34 @@ public:
 	 */
 	const TArray<FMantleScatterInstance>* GenerateFullCached(FString& OutError) const;
 
+	/**
+	 * The instances of the full stream whose X-Y lie in the box MinXCm..MaxXCm by MinYCm..MaxYCm (the volume's own space, cm, edges included), in
+	 * index order. A box far larger than any place (or unbounded: pass +- DBL_MAX) means every instance. For a Scatter built in cells this reads only
+	 * the cells the box covers, so a dedicated server (which builds nothing visual) answers a query in the area's own time, whatever the Scatter's size.
+	 * False with OutError when the settings cannot generate.
+	 */
+	bool GenerateInArea(double MinXCm, double MinYCm, double MaxXCm, double MaxYCm, TArray<FMantleScatterInstance>& OutInstances, FString& OutError) const;
+
+	/** Whether the current settings make a Scatter of more than 200,000 instances, which a game builds in cells. False where they cannot generate. */
+	bool UsesCells() const;
+
+	/**
+	 * Starts the background build of the cell index when this Scatter is built in cells (and does nothing otherwise, or in an editor world).
+	 * RefreshScatter does it; the place builder calls it for a dedicated server, which builds nothing else but answers script queries.
+	 */
+	void StartCellIndex();
+
 	/** FMantleScatter::Hash of the last GenerateFull's instances. */
 	uint64 GetFullHash() const { return FullHash; }
 
 	/** Removes the built instances. */
 	void ClearScatter();
 
-	/** The instances the last RefreshScatter generated (0 where nothing draws). */
-	int32 GetInstanceCount() const { return BuiltInstances; }
+	/** The instances the last RefreshScatter generated (0 where nothing draws); for a Scatter built in cells, the ones standing now. */
+	int32 GetInstanceCount() const;
+
+	/** The cells component of a Scatter built in cells; null for any other. */
+	UMantleScatterCellsComponent* GetCellsComponent() const { return CellsComponent; }
 
 	/** FMantleScatter::Hash of the last RefreshScatter's instances (0 where nothing draws). */
 	uint64 GetInstanceHash() const { return BuiltHash; }
@@ -293,6 +391,25 @@ private:
 
 	/** The ground under a point in the volume's space, from TerrainSurfaces and the volume's transform now. */
 	FMantleScatterGroundFn MakeGround() const;
+
+	/** The Scatter built in cells (#189) in a game that draws: set by RefreshScatter, destroyed by ClearScatter. */
+	UPROPERTY(Transient, DuplicateTransient, TextExportTransient)
+	TObjectPtr<UMantleScatterCellsComponent> CellsComponent;
+
+public:
+	/** The position index of a Scatter built in cells, made once off the game thread (RefreshScatter starts it, whatever machine this is). */
+	using FIndexTask = UE::Tasks::TTask<TSharedPtr<const FMantleScatterCellIndex>>;
+
+private:
+	mutable FIndexTask IndexTask;
+	mutable FString IndexTaskKey;
+	mutable TSharedPtr<FString, ESPMode::ThreadSafe> IndexTaskError;
+
+	/** Starts the index build for Params unless one is already running (or done) for these settings. */
+	void StartIndexTask(const FMantleScatterParams& Params) const;
+
+	/** The index, waiting for the build if it is still running; null with OutError when there is none. */
+	const FMantleScatterCellIndex* GetQueryIndex(const FMantleScatterParams& Params, FString& OutError) const;
 
 	/** GenerateFull's cache. */
 	mutable TArray<FMantleScatterInstance> FullInstances;

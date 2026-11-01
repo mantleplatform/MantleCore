@@ -5,6 +5,7 @@
 #include "MantleHeightfieldReader.h"
 #include "MantlePlaceLimits.h"
 #include "MantleRuntime.h"
+#include "MantleScatterCells.h"
 #include "MantleShadowDistance.h"
 #include "MantleTerrainGrass.h"
 #include "MantleTerrainSurface.h"
@@ -14,6 +15,9 @@
 #include "Engine/CollisionProfile.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "HAL/Event.h"
+#include "HAL/PlatformProcess.h"
+#include "HAL/PlatformTime.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/CoreMisc.h"
 #include "Scalability.h"
@@ -39,6 +43,25 @@ namespace MantleScatterVolumePrivate
 {
 	/** The share of a drawDistance at which instances start to fade out: the last fifth, as an InstancedMesh's (MantlePlaceBuilder.cpp). */
 	constexpr double ScatterFadeStartShare = 0.8;
+
+	/**
+	 * The weight, 0 to 255, of paint layer Layer on Surface at (U, V) (0 to 1 across the terrain), nearest texel (#187). A layer the
+	 * Terrain does not have weighs 0; no weightmap at all is layer 0 everywhere (the Terrain's own rule); a weightmap that did not load
+	 * weighs 0 for every layer.
+	 */
+	int32 PaintLayerWeightAt(const FMantleScatterTerrainSurface& Surface, const int32 Layer, const double U, const double V)
+	{
+		if (Layer >= Surface.LayerCount)
+		{
+			return 0;
+		}
+		if (!Surface.bWeightmap)
+		{
+			return Layer == 0 ? 255 : 0;
+		}
+		const TSharedPtr<const FMantleTerrainWeights>& Map = Layer < 4 ? Surface.Weights : Surface.Weights2;
+		return Map.IsValid() ? Map->ChannelByteAt(Layer & 3, U, V) : 0;
+	}
 
 	/** What a mesh is called in a message: its asset's name, else the id it was given. */
 	FString ScatterMeshLabel(const FMantleScatterMeshSettings& Entry, int32 Index)
@@ -103,10 +126,15 @@ void AMantleScatterVolume::ApplyProps(const FMantleScatterParams& In)
 	DrawDistance = In.DrawDistance;
 	Placement = In.Placement;
 	MaxSlopeDegrees = In.MaxSlopeDegrees;
+	MinSlopeDegrees = In.MinSlopeDegrees;
 	bLimitMinHeight = In.MinHeight.IsSet();
 	MinHeight = In.MinHeight.Get(MinHeight);
 	bLimitMaxHeight = In.MaxHeight.IsSet();
 	MaxHeight = In.MaxHeight.Get(MaxHeight);
+	bFilterPaintLayer = In.PaintLayer >= 0;
+	PaintLayer = In.PaintLayer >= 0 ? In.PaintLayer : PaintLayer;
+	MinLayerWeight = In.MinLayerWeight.Get(0.0);
+	MaxLayerWeight = In.MaxLayerWeight.Get(1.0);
 	Shape = In.Shape;
 	Radius = In.Shape == EMantleScatterShape::Disc ? In.Radius : Radius;
 	if (In.Shape == EMantleScatterShape::Path)
@@ -121,6 +149,15 @@ void AMantleScatterVolume::ApplyProps(const FMantleScatterParams& In)
 		Entry.Center = Exclusion.Center;
 		Entry.HalfExtent = Exclusion.HalfExtent;
 	}
+	PathExclusions.Reset(In.PathExclusions.Num());
+	for (const FMantleScatterPathExclusion& Strip : In.PathExclusions)
+	{
+		FMantleScatterPathExclusionSettings& Entry = PathExclusions.AddDefaulted_GetRef();
+		Entry.Path = Strip.Path;
+		Entry.Width = Strip.Width;
+	}
+	PathStep = In.Shape == EMantleScatterShape::Path ? In.PathStep : 0.0;
+	MinSpacing = In.MinSpacing;
 	bCollision = In.bCollision;
 	ClusterCount = In.ClusterCount;
 	ClusterRadius = In.ClusterCount > 0 ? In.ClusterRadius : ClusterRadius;
@@ -187,6 +224,7 @@ bool AMantleScatterVolume::ReadProps(FMantleScatterParams& Out, FString& OutProb
 	if (Placement == EMantleScatterPlacement::Terrain)
 	{
 		Out.MaxSlopeDegrees = MaxSlopeDegrees;
+		Out.MinSlopeDegrees = MinSlopeDegrees;
 		if (bLimitMinHeight)
 		{
 			Out.MinHeight = MinHeight;
@@ -194,6 +232,12 @@ bool AMantleScatterVolume::ReadProps(FMantleScatterParams& Out, FString& OutProb
 		if (bLimitMaxHeight)
 		{
 			Out.MaxHeight = MaxHeight;
+		}
+		if (bFilterPaintLayer)
+		{
+			Out.PaintLayer = PaintLayer;
+			Out.MinLayerWeight = MinLayerWeight;
+			Out.MaxLayerWeight = MaxLayerWeight;
 		}
 	}
 	Out.Shape = Shape;
@@ -212,6 +256,17 @@ bool AMantleScatterVolume::ReadProps(FMantleScatterParams& Out, FString& OutProb
 		Exclusion.Center = Entry.Center;
 		Exclusion.HalfExtent = Entry.HalfExtent;
 	}
+	for (const FMantleScatterPathExclusionSettings& Entry : PathExclusions)
+	{
+		FMantleScatterPathExclusion& Strip = Out.PathExclusions.AddDefaulted_GetRef();
+		Strip.Path = Entry.Path;
+		Strip.Width = Entry.Width;
+	}
+	if (Shape == EMantleScatterShape::Path)
+	{
+		Out.PathStep = PathStep;
+	}
+	Out.MinSpacing = MinSpacing;
 	Out.bCollision = bCollision;
 	if (ClusterCount > 0)
 	{
@@ -276,9 +331,19 @@ void AMantleScatterVolume::ClearScatter()
 		}
 	}
 	ScatterComponents.Reset();
+	if (IsValid(CellsComponent))
+	{
+		CellsComponent->DestroyComponent();
+	}
+	CellsComponent = nullptr;
 	BuiltInstances = 0;
 	BuiltHash = 0;
 	PreviewKey.Reset();
+}
+
+int32 AMantleScatterVolume::GetInstanceCount() const
+{
+	return IsValid(CellsComponent) ? static_cast<int32>(FMath::Min<int64>(CellsComponent->GetLiveInstances(), MAX_int32)) : BuiltInstances;
 }
 
 bool AMantleScatterVolume::RefreshScatter(FString& OutError)
@@ -290,6 +355,9 @@ bool AMantleScatterVolume::RefreshScatter(FString& OutError)
 	{
 		return false;
 	}
+	// A Scatter built in cells (#189) files its candidates once, off the game thread, on every machine (a game's cells and a script's
+	// queries read the same index, and a server's first query does not wait for it); an editor preview builds the whole Scatter.
+	StartCellIndex();
 	// Visual scatters build only where something draws; a colliding one (#169) builds on a dedicated server too, since the
 	// server's bodies are what stop a player and an NPC.
 	if (!FMantleScatter::DrawsScatter(World) && !Params.bCollision)
@@ -321,6 +389,24 @@ bool AMantleScatterVolume::RefreshScatter(FString& OutError)
 	if (Params.Placement == EMantleScatterPlacement::Terrain)
 	{
 		Options.Ground = MakeGround();
+	}
+
+	// More than a Scatter built whole holds (#189): built in cells around the player, not all at once. A preview shows it whole, and a
+	// colliding Scatter (far under the whole cap) is whole on every machine.
+	if (!bPreview && !Params.bCollision && FMantleScatter::UsesCells(Params))
+	{
+		TArray<FMantleGrassEntryAssets> Looks;
+		Looks.SetNum(Meshes.Num());
+		for (int32 MeshIndex = 0; MeshIndex < Meshes.Num(); ++MeshIndex)
+		{
+			Looks[MeshIndex].Mesh = Meshes[MeshIndex].Mesh;
+			Looks[MeshIndex].Materials = Meshes[MeshIndex].Materials;
+		}
+		UMantleScatterCellsComponent* Cells = NewObject<UMantleScatterCellsComponent>(this, NAME_None, RF_Transient | RF_TextExportTransient | RF_DuplicateTransient);
+		Cells->Init(Params, Options, MoveTemp(Looks), Params.DrawDistance * FMantleScatter::FoliageTierDistance(FoliageQuality), IndexTask);
+		Cells->RegisterComponent();
+		CellsComponent = Cells;
+		return true;
 	}
 
 	TArray<FMantleScatterInstance> Instances;
@@ -439,7 +525,7 @@ FString AMantleScatterVolume::SettingsKey() const
 	Key += FString::Printf(TEXT("|d%.17g|p%d,%.17g,%d,%.17g,%d,%.17g|s%d,%.17g,%.17g|c%d,%.17g|k%d|t%d"), DrawDistance,
 		static_cast<int32>(Placement), MaxSlopeDegrees, bLimitMinHeight, MinHeight, bLimitMaxHeight, MaxHeight,
 		static_cast<int32>(Shape), Radius, Width, ClusterCount, ClusterRadius, bCollision, TerrainSurfaces.Num());
-	Key += FString::Printf(TEXT("|v%d"), TerrainVersion);
+	Key += FString::Printf(TEXT("|v%d|L%d,%d,%.17g,%.17g|n%.17g"), TerrainVersion, bFilterPaintLayer, PaintLayer, MinLayerWeight, MaxLayerWeight, MinSlopeDegrees);
 	if (Placement == EMantleScatterPlacement::Terrain)
 	{
 		// Where the volume stands decides which ground each instance lands on, so moving it rebuilds.
@@ -457,6 +543,15 @@ FString AMantleScatterVolume::SettingsKey() const
 	for (const FMantleScatterExclusionSettings& Exclusion : Exclusions)
 	{
 		Key += FString::Printf(TEXT("|X%.17g,%.17g,%.17g,%.17g"), Exclusion.Center.X, Exclusion.Center.Y, Exclusion.HalfExtent.X, Exclusion.HalfExtent.Y);
+	}
+	Key += FString::Printf(TEXT("|g%.17g|S%.17g"), PathStep, MinSpacing);
+	for (const FMantleScatterPathExclusionSettings& Strip : PathExclusions)
+	{
+		Key += FString::Printf(TEXT("|Y%.17g"), Strip.Width);
+		for (const FVector2D& Point : Strip.Path)
+		{
+			Key += FString::Printf(TEXT(",%.17g:%.17g"), Point.X, Point.Y);
+		}
 	}
 	return Key;
 }
@@ -585,7 +680,8 @@ FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
 	{
 		Surface.TerrainToWorld = Exported(Surface.TerrainToWorld);
 	}
-	return [Surfaces = MoveTemp(Exact), ScatterToWorld = Exported(GetActorTransform())](
+	const int32 Layer = bFilterPaintLayer ? PaintLayer : -1;
+	return [Surfaces = MoveTemp(Exact), ScatterToWorld = Exported(GetActorTransform()), Layer](
 		const int64 XMm, const int64 YMm, FMantleScatterGround& Out) -> bool
 	{
 		// The point's world X-Y; the highest surface under it wins, holes and the terrain's edge leave none.
@@ -593,6 +689,7 @@ FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
 		bool bFound = false;
 		double BestZ = 0.0;
 		FVector BestNormal = FVector::UpVector;
+		int32 BestWeight = 0;
 		for (const FMantleScatterTerrainSurface& Surface : Surfaces)
 		{
 			if (!Surface.Field.IsValid())
@@ -621,6 +718,10 @@ FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
 				bFound = true;
 				BestZ = SurfaceZ;
 				BestNormal = Surface.TerrainToWorld.TransformVectorNoScale(FVector(Normal)).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
+				if (Layer >= 0)
+				{
+					BestWeight = MantleScatterVolumePrivate::PaintLayerWeightAt(Surface, Layer, Local.X / Field.ExtentX(), Local.Y / Field.ExtentY());
+				}
 			}
 		}
 		if (!bFound)
@@ -632,7 +733,13 @@ FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
 		const double Millimetres = LocalZ * 10.0;
 		Out.ZMm = static_cast<int64>(FMath::FloorToDouble(Millimetres + 0.5));
 		Out.NormalZ = BestNormal.Z;
+		// The same surface in the scatter's own space, which is where each instance's turn is stored (scale ignored, as for the normal itself).
+		const FVector LocalNormal = ScatterToWorld.InverseTransformVectorNoScale(BestNormal).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
+		Out.LocalNormalX = LocalNormal.X;
+		Out.LocalNormalY = LocalNormal.Y;
+		Out.LocalNormalZ = LocalNormal.Z;
 		Out.WorldZCm = BestZ;
+		Out.LayerWeight = BestWeight;
 		return true;
 	};
 }
@@ -666,12 +773,152 @@ const TArray<FMantleScatterInstance>* AMantleScatterVolume::GenerateFullCached(F
 	{
 		Options.Ground = MakeGround();
 	}
-	if (!FMantleScatter::Generate(Params, FullInstances, OutError, Options))
+	// A Scatter built in cells is read through its cells on every core, then put back in index order: the instances Generate would give,
+	// so the hash is the same on a machine that builds whole, in cells, or (a dedicated server) nothing.
+	const bool bCells = FMantleScatter::UsesCells(Params);
+	const double FullStart = FPlatformTime::Seconds();
+	const FMantleScatterCellIndex* Index = bCells ? GetQueryIndex(Params, OutError) : nullptr;
+	if (bCells && !Index)
+	{
+		FullKey.Reset();
+		return nullptr;
+	}
+	bool bMade = false;
+	uint64 CellsHash = 0;
+	if (bCells)
+	{
+		// Every cell is read on the workers while this thread sleeps on an event: a script that asks for the hash is charged the (CPU) time of
+		// its own thread, which is none, and the server stalls once for the read, then answers from the cache.
+		FEvent* Done = FPlatformProcess::GetSynchEventFromPool(true);
+		UE::Tasks::Launch(TEXT("MantleScatterFull"), [&]()
+		{
+			bMade = FMantleScatter::GenerateAllByCells(Params, *Index, FullInstances, OutError, Options);
+			// The hash of a million instances is milliseconds too: taken here, not on the thread that is being charged.
+			CellsHash = bMade ? FMantleScatter::Hash(FullInstances) : 0;
+			Done->Trigger();
+		}, LowLevelTasks::ETaskPriority::BackgroundNormal);
+		Done->Wait();
+		FPlatformProcess::ReturnSynchEventToPool(Done);
+	}
+	else
+	{
+		bMade = FMantleScatter::Generate(Params, FullInstances, OutError, Options);
+	}
+	if (!bMade)
 	{
 		FullKey.Reset();
 		return nullptr;
 	}
 	FullKey = Key;
-	FullHash = FMantleScatter::Hash(FullInstances);
+	FullHash = bCells ? CellsHash : FMantleScatter::Hash(FullInstances);
+	// What a script's whole-stream read cost (the hash of a big Scatter reads every cell once; repeats come from the cache).
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_SCATTER_FULL entity=%s cells=%d instances=%d hash=%s ms=%.1f"), *GetName(), bCells ? 1 : 0, FullInstances.Num(),
+		*FMantleScatter::HashText(FullHash), (FPlatformTime::Seconds() - FullStart) * 1000.0);
 	return &FullInstances;
+}
+
+void AMantleScatterVolume::StartIndexTask(const FMantleScatterParams& Params) const
+{
+	// The index depends on where candidates fall and how crowded the cells are, nothing else (no terrain, no transform, no filter), so it
+	// lives as long as those settings: a terrain arriving later does not start it again.
+	FString Key = FString::Printf(TEXT("%d|%.17g,%.17g,%.17g|%.17g|%d|%.17g|%.17g|%.17g|%d,%.17g|%.17g"), Params.Seed, Params.HalfExtent.X,
+		Params.HalfExtent.Y, Params.HalfExtent.Z, Params.Density, static_cast<int32>(Params.Shape), Params.Radius, Params.Width, Params.MinSpacing,
+		Params.ClusterCount, Params.ClusterRadius, Params.PathStep);
+	for (const FVector2D& Point : Params.Path)
+	{
+		Key += FString::Printf(TEXT("|P%.17g,%.17g"), Point.X, Point.Y);
+	}
+	for (const FMantleScatterExclusion& Exclusion : Params.Exclusions)
+	{
+		Key += FString::Printf(TEXT("|X%.17g,%.17g,%.17g,%.17g"), Exclusion.Center.X, Exclusion.Center.Y, Exclusion.HalfExtent.X, Exclusion.HalfExtent.Y);
+	}
+	for (const FMantleScatterPathExclusion& Strip : Params.PathExclusions)
+	{
+		Key += FString::Printf(TEXT("|Y%.17g"), Strip.Width);
+		for (const FVector2D& Point : Strip.Path)
+		{
+			Key += FString::Printf(TEXT(",%.17g:%.17g"), Point.X, Point.Y);
+		}
+	}
+	if (IndexTask.IsValid() && IndexTaskKey.Equals(Key, ESearchCase::CaseSensitive))
+	{
+		return;
+	}
+	IndexTaskKey = Key;
+	IndexTaskError = MakeShared<FString, ESPMode::ThreadSafe>();
+	const TSharedPtr<FString, ESPMode::ThreadSafe> Error = IndexTaskError;
+	IndexTask = UE::Tasks::Launch(TEXT("MantleScatterIndex"), [Params, Error]() -> TSharedPtr<const FMantleScatterCellIndex>
+	{
+		return FMantleScatter::BuildCellIndex(Params, *Error);
+	}, LowLevelTasks::ETaskPriority::BackgroundNormal);
+}
+
+const FMantleScatterCellIndex* AMantleScatterVolume::GetQueryIndex(const FMantleScatterParams& Params, FString& OutError) const
+{
+	StartIndexTask(Params);
+	const TSharedPtr<const FMantleScatterCellIndex>& Index = IndexTask.GetResult();
+	if (!Index.IsValid())
+	{
+		OutError = IndexTaskError.IsValid() && !IndexTaskError->IsEmpty() ? *IndexTaskError : FString(TEXT("the Scatter's cells could not be indexed"));
+		return nullptr;
+	}
+	return Index.Get();
+}
+
+void AMantleScatterVolume::StartCellIndex()
+{
+	FMantleScatterParams Params;
+	FString Ignored;
+	if (!IsEditorWorld() && ReadProps(Params, Ignored) && !Params.bCollision && FMantleScatter::UsesCells(Params))
+	{
+		StartIndexTask(Params);
+	}
+}
+
+bool AMantleScatterVolume::UsesCells() const
+{
+	FMantleScatterParams Params;
+	FString Ignored;
+	return ReadProps(Params, Ignored) && FMantleScatter::UsesCells(Params);
+}
+
+bool AMantleScatterVolume::GenerateInArea(const double MinXCm, const double MinYCm, const double MaxXCm, const double MaxYCm,
+	TArray<FMantleScatterInstance>& OutInstances, FString& OutError) const
+{
+	// Bounded: a box that fits the fixed point (2147 km); anything bigger is every instance.
+	constexpr double Limit = 2.0e8;
+	const bool bBounded = MinXCm > -Limit && MinYCm > -Limit && MaxXCm < Limit && MaxYCm < Limit;
+	FMantleScatterParams Params;
+	if (bBounded && ReadProps(Params, OutError) && FMantleScatter::UsesCells(Params))
+	{
+		FMantleScatterGenerateOptions Options;
+		if (Params.Placement == EMantleScatterPlacement::Terrain)
+		{
+			Options.Ground = MakeGround();
+		}
+		const FMantleScatterCellIndex* Index = GetQueryIndex(Params, OutError);
+		if (!Index)
+		{
+			return false;
+		}
+		// A millimetre of slack either way: the caller's own test decides the edge.
+		return FMantleScatter::GenerateInBox(Params, *Index, FMath::FloorToInt64(MinXCm * 10.0) - 1, FMath::FloorToInt64(MinYCm * 10.0) - 1,
+			FMath::CeilToInt64(MaxXCm * 10.0) + 1, FMath::CeilToInt64(MaxYCm * 10.0) + 1, OutInstances, OutError, Options);
+	}
+	const TArray<FMantleScatterInstance>* All = GenerateFullCached(OutError);
+	if (!All)
+	{
+		return false;
+	}
+	OutInstances.Reset();
+	for (const FMantleScatterInstance& Instance : *All)
+	{
+		const double X = Instance.X * 0.1;
+		const double Y = Instance.Y * 0.1;
+		if (X >= MinXCm - 0.1 && X <= MaxXCm + 0.1 && Y >= MinYCm - 0.1 && Y <= MaxYCm + 0.1)
+		{
+			OutInstances.Add(Instance);
+		}
+	}
+	return true;
 }

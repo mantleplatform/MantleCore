@@ -1090,6 +1090,25 @@ namespace
 		{
 			OutSurface->Field = Field;
 			OutSurface->Holes = Params.Holes;
+			// The paint-layer weightmaps with their pixels (#187). One that did not load leaves its layers weighing 0.
+			OutSurface->LayerCount = Props.Layers.Num();
+			OutSurface->bWeightmap = !Props.Weightmap.IsEmpty();
+			const auto LoadPaintMap = [&Path](const FString& Id, TSharedPtr<const FMantleTerrainWeights>& Out)
+			{
+				if (Id.IsEmpty())
+				{
+					return;
+				}
+				FString PaintError;
+				Out = FMantlePlaceAssets::FindLiveTerrainWeights(Id, PaintError);
+				if (!Out.IsValid() || !Out->HasPixels())
+				{
+					UE_LOG(LogMantle, Warning, TEXT("MANTLE_PLACE_BUILD %s: a Scatter's paint-layer filter cannot read weightmap %s: %s"), *Path, *Id, *PaintError);
+					Out.Reset();
+				}
+			};
+			LoadPaintMap(Props.Weightmap, OutSurface->Weights);
+			LoadPaintMap(Props.Weightmap2, OutSurface->Weights2);
 		}
 
 		// #596: the layers' surfaces, on every net mode, so a hit on the terrain resolves to the layer
@@ -1340,9 +1359,11 @@ namespace
 		}
 		MakeMovable(Actor);
 		Actor->ApplyProps(Props);
-		// A dedicated server keeps the actor as the entity's transform node and builds nothing, unless the Scatter collides.
+		// A dedicated server keeps the actor as the entity's transform node and builds nothing, unless the Scatter collides. One built in
+		// cells (#189) still has its position index made in the background, so a script's first query on it does not wait.
 		if (!FMantleScatter::DrawsScatter(World) && !Props.bCollision)
 		{
+			Actor->StartCellIndex();
 			return Actor;
 		}
 

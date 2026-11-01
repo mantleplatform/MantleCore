@@ -32,7 +32,12 @@ enum class EMantleScatterAlignment : uint8
 	/** A random yaw, plus pitch and roll each up to the max tilt either way. */
 	Tilted,
 	/** Any yaw, pitch and roll: rocks and debris with no up. */
-	Tumbled
+	Tumbled,
+	/**
+	 * Terrain placement only (#188): each instance stands on the ground's slope, its up following the surface normal, with a random turn
+	 * about that normal and a lean of up to the max tilt either way off it. On flat ground this is the same as Tilted.
+	 */
+	Ground
 };
 
 /** Where instances go: the box as it always was, or dropped onto the Terrain below each one (#169). The place schema's placement enum. */
@@ -60,6 +65,13 @@ struct FMantleScatterExclusion
 {
 	FVector2D Center = FVector2D::ZeroVector;
 	FVector2D HalfExtent = FVector2D(100.0, 100.0);
+};
+
+/** A strip (#190) no instance is kept inside: every point within half the Width of the polyline, cm in the scatter's own space. */
+struct FMantleScatterPathExclusion
+{
+	TArray<FVector2D> Path;
+	double Width = 100.0;
 };
 
 /**
@@ -92,7 +104,7 @@ struct FMantleScatterParams
 
 	EMantleScatterAlignment Alignment = EMantleScatterAlignment::Upright;
 
-	/** Tilted only: the largest pitch and roll either way, in degrees (0 to 90). */
+	/** Tilted and Ground only: the largest pitch and roll either way, in degrees (0 to 90). For Ground the lean is off the surface normal. */
 	double MaxTiltDegrees = 10.0;
 
 	TArray<FMantleScatterMesh> Meshes;
@@ -106,9 +118,23 @@ struct FMantleScatterParams
 	/** Terrain only: instances on ground steeper than this many degrees from flat are dropped. 90 filters nothing. */
 	double MaxSlopeDegrees = 90.0;
 
+	/** Terrain only (#188): instances on ground flatter than this many degrees from flat are dropped, 0 to MaxSlopeDegrees. 0 filters nothing. */
+	double MinSlopeDegrees = 0.0;
+
 	/** Terrain only: the surface's world height, cm, must be at least MinHeight and at most MaxHeight when these are set. */
 	TOptional<double> MinHeight;
 	TOptional<double> MaxHeight;
+
+	/**
+	 * Terrain only (#187): the paint layer the filter reads, 0 to MaxTerrainLayers - 1 (the Terrain's layers[] index: weightmap channel
+	 * R, G, B, A are layers 0 to 3, weightmap2's are 4 to 7); -1 for none. Needs MinLayerWeight or MaxLayerWeight. A layer the Terrain
+	 * does not have weighs 0 everywhere, and a Terrain without a weightmap weighs layer 0 at 1 and every other at 0.
+	 */
+	int32 PaintLayer = -1;
+
+	/** The layer's weight (0 to 1) must be at least MinLayerWeight and at most MaxLayerWeight when these are set. */
+	TOptional<double> MinLayerWeight;
+	TOptional<double> MaxLayerWeight;
 
 	EMantleScatterShape Shape = EMantleScatterShape::Box;
 
@@ -119,8 +145,20 @@ struct FMantleScatterParams
 	TArray<FVector2D> Path;
 	double Width = 0.0;
 
+	/** Path shape only (#190): above 0, instances sit every PathStep cm along the path (the first at its start), each turned to face along the line; Width then only spreads them across the strip, and Density and clusters are not used. 0 keeps them random along the strip. */
+	double PathStep = 0.0;
+
 	/** No instance is kept inside any of these. */
 	TArray<FMantleScatterExclusion> Exclusions;
+
+	/** No instance is kept inside any of these strips either (#190). */
+	TArray<FMantleScatterPathExclusion> PathExclusions;
+
+	/**
+	 * Minimum distance between instances (#190), cm in X-Y; 0 keeps none apart. Instances are taken in index order and one is dropped when an
+	 * earlier kept one is closer than this (exactly this apart is kept). Only the other filters' survivors count.
+	 */
+	double MinSpacing = 0.0;
 
 	/** The instances block movement and shape navigation, on the server and every client (#169). Off: visual only. */
 	bool bCollision = false;
@@ -135,10 +173,19 @@ struct FMantleScatterGround
 {
 	/** The surface height, millimetres, rounded to whole mm. */
 	int64 ZMm = 0;
-	/** The surface normal's up component, 0 to 1 (1 is flat). */
+	/** The surface normal's up component in world space, 0 to 1 (1 is flat): what the slope limits read. */
 	double NormalZ = 1.0;
+	/**
+	 * The surface normal in the scatter's own space (unit length), what Ground alignment follows; the same surface as NormalZ. Each
+	 * component is rounded to millionths before use, as NormalZ is. Up for a Ground function that does not set it.
+	 */
+	double LocalNormalX = 0.0;
+	double LocalNormalY = 0.0;
+	double LocalNormalZ = 1.0;
 	/** The surface's height in world space, cm. */
 	double WorldZCm = 0.0;
+	/** The Scatter's paint layer's weight there, 0 to 255 (the weightmap's byte, nearest texel); only read when PaintLayer is set. */
+	int32 LayerWeight = 0;
 };
 
 /** The ground under (X, Y) millimetres in the scatter's own space; false where there is none (a hole, off every Terrain). */
@@ -181,11 +228,60 @@ struct FMantleScatterInstance
 	bool operator!=(const FMantleScatterInstance& Other) const { return !(*this == Other); }
 };
 
+/**
+ * Where every candidate of one big Scatter lands (#189): the position index its cells are read from. One Scatter's instance k always has
+ * the same place (its own counter-based stream), so the index is each candidate's index and X-Y in whole millimetres, filed by cell
+ * (a square of CellMm, row by row from the lowest corner) and, inside a cell, by index. Nothing here depends on the terrain, a filter
+ * or the Foliage tier: those are applied when a cell is read. Immutable once built; any thread may read it.
+ *
+ * Candidates an exclusion drops are never filed (an exclusion is a place, nothing more). A slot is a candidate's position in the
+ * arrays below.
+ */
+struct MANTLERUNTIME_API FMantleScatterCellIndex
+{
+	/** The cell side in whole millimetres, at least the Scatter's minimum spacing. */
+	int64 CellMm = 0;
+
+	/** The lowest corner of cell (0, 0), millimetres in the scatter's own space. */
+	int64 OriginX = 0;
+	int64 OriginY = 0;
+
+	/** Cells along X and Y; 0 when no candidate is filed. */
+	int32 CellsX = 0;
+	int32 CellsY = 0;
+
+	/** The first slot of each cell, then the end: CellsX * CellsY + 1 numbers. */
+	TArray<uint32> CellStart;
+
+	/** Per slot: the candidate's index in the instance stream, and its X-Y in millimetres. A cell's slots are in ascending index order. */
+	TArray<uint32> Candidate;
+	TArray<int32> X;
+	TArray<int32> Y;
+
+	/** The Scatter's count (FMantleScatter::CountFor) when this was built. */
+	int64 Count = 0;
+
+	int32 NumCells() const { return CellsX * CellsY; }
+	int32 NumSlots() const { return Candidate.Num(); }
+	int64 MemoryBytes() const;
+
+	/** The cell a point is in, clamped to the grid; (0, 0) for an empty index. */
+	FIntPoint CellAt(int64 XMm, int64 YMm) const;
+
+	/** The cell's slots, [Begin, End); empty for a cell off the grid. */
+	void SlotRange(const FIntPoint& Cell, uint32& OutBegin, uint32& OutEnd) const;
+
+	/** The cell's lowest corner and side, centimetres in the scatter's space. */
+	FBox2D CellBoundsCm(const FIntPoint& Cell) const;
+};
+
 class MANTLERUNTIME_API FMantleScatter
 {
 public:
 	/** The caps: a request past any is refused with a message, never trimmed. The place limits' own. */
 	static constexpr int32 MaxInstances = FMantlePlaceLimits::MaxScatterInstances;
+	/** A Scatter of more than this is built in cells near each camera and needs a drawDistance (#189); up to it, whole. */
+	static constexpr int32 WholeInstances = FMantlePlaceLimits::ScatterWholeInstances;
 	static constexpr int32 MaxMeshes = FMantlePlaceLimits::MaxScatterMeshes;
 	static constexpr int32 MaxMeshWeight = FMantlePlaceLimits::MaxScatterMeshWeight;
 	static constexpr double MaxHalfExtentCm = FMantlePlaceLimits::MaxScatterHalfExtent;
@@ -196,6 +292,9 @@ public:
 	static constexpr int32 MaxPathPoints = FMantlePlaceLimits::MaxScatterPathPoints;
 	static constexpr int32 MaxExclusions = FMantlePlaceLimits::MaxScatterExclusions;
 	static constexpr int32 MaxClusters = FMantlePlaceLimits::MaxScatterClusters;
+	static constexpr double MaxMinSpacingCm = FMantlePlaceLimits::MaxScatterMinSpacing;
+	static constexpr double MinPathStepCm = FMantlePlaceLimits::MinScatterPathStep;
+	static constexpr double MaxCoordinateCm = FMantlePlaceLimits::MaxScatterCoordinate;
 
 	/** The place schema's spelling of an alignment: upright, tilted or tumbled. */
 	static const TCHAR* AlignmentName(EMantleScatterAlignment Alignment);
@@ -220,7 +319,8 @@ public:
 	 * The number of instances Params asks for: the footprint in square metres times the density, rounded
 	 * half up. The footprint is the box's (from the half extents in whole millimetres), a disc's (pi as
 	 * 3141593 / 1000000 times the radius in whole mm squared) or a path's (the sum of its segments' lengths,
-	 * each rounded to whole mm, times the width in whole mm). -1 with OutError when a parameter is
+	 * each rounded to whole mm, times the width in whole mm). A path with a PathStep (#190) has the whole steps that fit in its length
+	 * (in whole mm), plus 1, whatever the density. -1 with OutError when a parameter is
 	 * out of range or the count passes MaxInstances. validate.py and the backend count the same way.
 	 */
 	static int64 CountFor(const FMantleScatterParams& Params, FString& OutError);
@@ -231,6 +331,43 @@ public:
 	 */
 	static bool Generate(const FMantleScatterParams& Params, TArray<FMantleScatterInstance>& OutInstances, FString& OutError,
 		const FMantleScatterGenerateOptions& Options = FMantleScatterGenerateOptions());
+
+	// ---- Cells (#189) -------------------------------------------------------------------------------------------------------
+	// A Scatter of more than WholeInstances is read cell by cell: the instances of a cell are exactly the whole stream's instances whose
+	// X-Y lie in it, in the same order, whatever was built before or on which machine. The minimum spacing keeps that exact across a cell
+	// border: an instance is dropped when an earlier-numbered KEPT instance is closer, and whether that neighbour is kept is worked out
+	// on demand (from further neighbours, whichever cell they are in), never read from a cell that happens to be built.
+
+	/** Whether Params (valid, and counted) is built in cells: its count is above WholeInstances. A colliding Scatter never is (its cap is far lower). */
+	static bool UsesCells(const FMantleScatterParams& Params);
+
+	/**
+	 * The index of Params' candidates, or null with OutError. The cell side comes from the density (about 8,000 candidates a cell, 4 to 128 m),
+	 * halved where clusters make a cell hotter, and is never under the minimum spacing. Pure: any thread.
+	 */
+	static TSharedPtr<const FMantleScatterCellIndex> BuildCellIndex(const FMantleScatterParams& Params, FString& OutError);
+
+	/**
+	 * The instances of one cell, in index order: the whole stream's instances whose X-Y lie in it, bit for bit (Options.MaxCandidates and
+	 * Ground as for Generate). A cell off the grid has none. Pure: any thread. False with OutError when the parameters cannot generate.
+	 */
+	static bool GenerateCell(const FMantleScatterParams& Params, const FMantleScatterCellIndex& Index, const FIntPoint& Cell,
+		TArray<FMantleScatterInstance>& OutInstances, FString& OutError, const FMantleScatterGenerateOptions& Options = FMantleScatterGenerateOptions());
+
+	/**
+	 * The whole stream's instances whose X-Y (millimetres, scatter space) lie inside the box (edges included), in index order, found through the
+	 * cells the box covers and without building anything else. What InstancesIn reads on a machine that builds no cells.
+	 */
+	static bool GenerateInBox(const FMantleScatterParams& Params, const FMantleScatterCellIndex& Index, int64 MinXMm, int64 MinYMm,
+		int64 MaxXMm, int64 MaxYMm, TArray<FMantleScatterInstance>& OutInstances, FString& OutError,
+		const FMantleScatterGenerateOptions& Options = FMantleScatterGenerateOptions());
+
+	/**
+	 * The whole stream (what Generate gives), made cell by cell on every core and put back in index order: the same instances, the same
+	 * hash. What GetScatterHash reads of a Scatter built in cells.
+	 */
+	static bool GenerateAllByCells(const FMantleScatterParams& Params, const FMantleScatterCellIndex& Index, TArray<FMantleScatterInstance>& OutInstances,
+		FString& OutError, const FMantleScatterGenerateOptions& Options = FMantleScatterGenerateOptions());
 
 	/** The instance as a transform in the scatter's space (cm, degrees, uniform scale). */
 	static FTransform ToTransform(const FMantleScatterInstance& Instance);

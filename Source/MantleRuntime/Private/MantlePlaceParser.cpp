@@ -1956,6 +1956,13 @@ namespace
 		}
 		const bool bTerrain = P.Placement == EMantleScatterPlacement::Terrain;
 		ReadOptionalRange(Ctx, Props, TEXT("maxSlopeDegrees"), Path, 0.0, 90.0, P.MaxSlopeDegrees);
+		// The minimum slope (#188): 0 to 90 and at most the maximum, reported at the maximum like the height pair.
+		ReadOptionalRange(Ctx, Props, TEXT("minSlopeDegrees"), Path, 0.0, 90.0, P.MinSlopeDegrees);
+		if (Props->HasField(TEXT("minSlopeDegrees")) && Props->HasField(TEXT("maxSlopeDegrees")) && P.MaxSlopeDegrees < P.MinSlopeDegrees)
+		{
+			Ctx.Fail(Join(Path, TEXT("maxSlopeDegrees")),
+				FString::Printf(TEXT("maxSlopeDegrees %g is below minSlopeDegrees %g"), P.MaxSlopeDegrees, P.MinSlopeDegrees));
+		}
 		for (const TCHAR* Key : { TEXT("minHeight"), TEXT("maxHeight") })
 		{
 			if (!Props->HasField(Key))
@@ -1973,14 +1980,57 @@ namespace
 			Ctx.Fail(Join(Path, TEXT("maxHeight")),
 				FString::Printf(TEXT("maxHeight %g is below minHeight %g"), P.MaxHeight.GetValue(), P.MinHeight.GetValue()));
 		}
+		// The paint-layer filter (#187): a layer index and a lower and/or upper weight; each needs the other.
+		if (Props->HasField(TEXT("paintLayer")))
+		{
+			double Layer = 0.0;
+			if (RequireNumber(Ctx, Props, TEXT("paintLayer"), Path, Layer))
+			{
+				ReadBoundedInt(Ctx, Layer, 0, FMantlePlaceLimits::MaxTerrainLayers - 1, Join(Path, TEXT("paintLayer")), P.PaintLayer);
+			}
+		}
+		for (const TCHAR* Key : { TEXT("minLayerWeight"), TEXT("maxLayerWeight") })
+		{
+			if (!Props->HasField(Key))
+			{
+				continue;
+			}
+			double Weight = 0.0;
+			if (RequireNumber(Ctx, Props, Key, Path, Weight))
+			{
+				RangeCheck(Ctx, Weight, 0.0, 1.0, Join(Path, Key));
+				(Key[1] == TEXT('i') ? P.MinLayerWeight : P.MaxLayerWeight) = Weight;
+			}
+		}
+		if (P.MinLayerWeight.IsSet() && P.MaxLayerWeight.IsSet() && P.MinLayerWeight.GetValue() > P.MaxLayerWeight.GetValue())
+		{
+			Ctx.Fail(Join(Path, TEXT("maxLayerWeight")),
+				FString::Printf(TEXT("maxLayerWeight %g is below minLayerWeight %g"), P.MaxLayerWeight.GetValue(), P.MinLayerWeight.GetValue()));
+		}
+		if (Props->HasField(TEXT("paintLayer")) && !Props->HasField(TEXT("minLayerWeight")) && !Props->HasField(TEXT("maxLayerWeight")))
+		{
+			Ctx.Fail(Join(Path, TEXT("paintLayer")), TEXT("paintLayer needs minLayerWeight or maxLayerWeight"));
+		}
+		for (const TCHAR* Key : { TEXT("minLayerWeight"), TEXT("maxLayerWeight") })
+		{
+			if (Props->HasField(Key) && !Props->HasField(TEXT("paintLayer")))
+			{
+				Ctx.Fail(Join(Path, Key), FString::Printf(TEXT("%s needs paintLayer"), Key));
+			}
+		}
 		if (!bTerrain)
 		{
-			for (const TCHAR* Key : { TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight") })
+			for (const TCHAR* Key : { TEXT("maxSlopeDegrees"), TEXT("minSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"), TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight") })
 			{
 				if (Props->HasField(Key))
 				{
 					Ctx.Fail(Join(Path, Key), FString::Printf(TEXT("%s only applies where placement is \"terrain\""), Key));
 				}
+			}
+			// alignment is parsed before placement, so the ground alignment (#188) is checked here, at its own key.
+			if (P.Alignment == EMantleScatterAlignment::Ground)
+			{
+				Ctx.Fail(Join(Path, TEXT("alignment")), TEXT("alignment ground only applies where placement is \"terrain\""));
 			}
 		}
 
@@ -2050,6 +2100,40 @@ namespace
 				FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), P.Width, FMantlePlaceLimits::MaxScatterPathWidth));
 		}
 
+		// pathStep (#190): a fixed step along a path, 1 cm to the coordinate range; only where shape is path.
+		if (RefuseUnlessShape(TEXT("pathStep"), EMantleScatterShape::Path) && P.Shape == EMantleScatterShape::Path && Props->HasField(TEXT("pathStep")))
+		{
+			double Step = 0.0;
+			if (RequireNumber(Ctx, Props, TEXT("pathStep"), Path, Step))
+			{
+				if (!(Step >= FMantlePlaceLimits::MinScatterPathStep && Step <= FMantlePlaceLimits::MaxScatterCoordinate))
+				{
+					Ctx.Fail(Join(Path, TEXT("pathStep")), FString::Printf(TEXT("%g is outside the permitted range [%g, %g]"), Step,
+						FMantlePlaceLimits::MinScatterPathStep, FMantlePlaceLimits::MaxScatterCoordinate));
+				}
+				else
+				{
+					P.PathStep = Step;
+				}
+			}
+		}
+		if (Props->HasField(TEXT("minSpacing")))
+		{
+			double Value = 0.0;
+			if (RequireNumber(Ctx, Props, TEXT("minSpacing"), Path, Value))
+			{
+				if (!(Value > 0.0 && Value <= FMantlePlaceLimits::MaxScatterMinSpacing))
+				{
+					Ctx.Fail(Join(Path, TEXT("minSpacing")),
+						FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), Value, FMantlePlaceLimits::MaxScatterMinSpacing));
+				}
+				else
+				{
+					P.MinSpacing = Value;
+				}
+			}
+		}
+
 		const TArray<TSharedPtr<FJsonValue>>* Exclusions = nullptr;
 		if (Props->HasField(TEXT("exclusions")))
 		{
@@ -2100,6 +2184,68 @@ namespace
 			}
 		}
 
+		// pathExclusions (#190): strips no instance stands in, each a polyline of 2 to 64 points and a width.
+		if (Props->HasField(TEXT("pathExclusions")))
+		{
+			const FString StripsPath = Join(Path, TEXT("pathExclusions"));
+			const TArray<TSharedPtr<FJsonValue>>* Strips = nullptr;
+			if (!Props->TryGetArrayField(TEXT("pathExclusions"), Strips))
+			{
+				Ctx.Fail(StripsPath, TEXT("expected an array"));
+			}
+			else
+			{
+				if (Strips->Num() > FMantlePlaceLimits::MaxScatterExclusions)
+				{
+					Ctx.Fail(StripsPath, FString::Printf(TEXT("has %d path exclusions; a Scatter takes at most %d"), Strips->Num(),
+						FMantlePlaceLimits::MaxScatterExclusions));
+				}
+				for (int32 StripIndex = 0; StripIndex < Strips->Num(); ++StripIndex)
+				{
+					const FString StripPath = Index(StripsPath, StripIndex);
+					const TSharedPtr<FJsonObject>* Strip = nullptr;
+					if (!(*Strips)[StripIndex].IsValid() || !(*Strips)[StripIndex]->TryGetObject(Strip))
+					{
+						Ctx.Fail(StripPath, TEXT("expected an object"));
+						continue;
+					}
+					RequireNoUnknownKeys(Ctx, *Strip, { TEXT("path"), TEXT("width") }, StripPath);
+					FMantleScatterPathExclusion Parsed;
+					const FString PointsPath = Join(StripPath, TEXT("path"));
+					const TArray<TSharedPtr<FJsonValue>>* Points = nullptr;
+					if (!(*Strip)->TryGetArrayField(TEXT("path"), Points))
+					{
+						Ctx.Fail(PointsPath, TEXT("required array is missing or not an array"));
+					}
+					else
+					{
+						if (Points->Num() < 2 || Points->Num() > FMantlePlaceLimits::MaxScatterPathPoints)
+						{
+							Ctx.Fail(PointsPath, FString::Printf(TEXT("has %d points; a path takes 2 to %d"), Points->Num(), FMantlePlaceLimits::MaxScatterPathPoints));
+						}
+						for (int32 PointIndex = 0; PointIndex < Points->Num(); ++PointIndex)
+						{
+							FVector2D Point;
+							const FString PointPath = Index(PointsPath, PointIndex);
+							if (ReadScatterPair(Ctx, (*Points)[PointIndex], PointPath, Point))
+							{
+								CheckScatterCoordinate(Ctx, Point.X, Index(PointPath, 0));
+								CheckScatterCoordinate(Ctx, Point.Y, Index(PointPath, 1));
+								Parsed.Path.Add(Point);
+							}
+						}
+					}
+					if (RequireNumber(Ctx, *Strip, TEXT("width"), StripPath, Parsed.Width)
+						&& !(Parsed.Width > 0.0 && Parsed.Width <= FMantlePlaceLimits::MaxScatterPathWidth))
+					{
+						Ctx.Fail(Join(StripPath, TEXT("width")),
+							FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), Parsed.Width, FMantlePlaceLimits::MaxScatterPathWidth));
+					}
+					P.PathExclusions.Add(MoveTemp(Parsed));
+				}
+			}
+		}
+
 		if (const TSharedPtr<FJsonValue> Collision = Props->TryGetField(TEXT("collision")))
 		{
 			if (Collision->Type != EJson::Boolean)
@@ -2133,6 +2279,11 @@ namespace
 		{
 			Ctx.Fail(Join(Path, bHasCount ? TEXT("clusterRadius") : TEXT("clusterCount")), TEXT("clusterCount and clusterRadius go together"));
 		}
+		// Clusters pick random places; a fixed step along a path (#190) does not (reported at the count, whatever else is wrong with the step).
+		if (bHasCount && Props->HasField(TEXT("pathStep")))
+		{
+			Ctx.Fail(Join(Path, TEXT("clusterCount")), TEXT("clusterCount cannot be combined with pathStep: instances sit at a fixed step"));
+		}
 	}
 
 	/**
@@ -2146,8 +2297,9 @@ namespace
 		RequireNoUnknownKeys(
 			Ctx, Props,
 			{ TEXT("seed"), TEXT("halfExtent"), TEXT("density"), TEXT("scale"), TEXT("alignment"), TEXT("maxTilt"), TEXT("meshes"),
-				TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"), TEXT("shape"),
-				TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision") },
+				TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"), TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight"), TEXT("shape"),
+				TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision"),
+				TEXT("minSpacing"), TEXT("pathStep"), TEXT("pathExclusions") },
 			Path);
 		const int32 ErrorsBefore = Ctx.Errors.Num();
 
@@ -2189,7 +2341,7 @@ namespace
 			FString Alignment;
 			if (RequireString(Ctx, Props, TEXT("alignment"), Path, Alignment) && !FMantleScatter::ParseAlignment(Alignment, P.Alignment))
 			{
-				Ctx.Fail(Join(Path, TEXT("alignment")), FString::Printf(TEXT("'%s' is not upright, tilted or tumbled"), *Alignment));
+				Ctx.Fail(Join(Path, TEXT("alignment")), FString::Printf(TEXT("'%s' is not upright, tilted, tumbled or ground"), *Alignment));
 			}
 		}
 		ReadOptionalRange(Ctx, Props, TEXT("maxTilt"), Path, 0.0, FMantlePlaceLimits::MaxScatterTilt, P.MaxTiltDegrees);
@@ -2250,7 +2402,8 @@ namespace
 		FString Why;
 		if (Ctx.Errors.Num() == ErrorsBefore && FMantleScatter::CountFor(P, Why) < 0)
 		{
-			Ctx.Fail(Join(Path, TEXT("density")), Why);
+			// A path step's count is the step's (#190): reported there, as validate.py and the backend do.
+			Ctx.Fail(Join(Path, P.PathStep > 0.0 ? TEXT("pathStep") : TEXT("density")), Why);
 		}
 	}
 

@@ -1180,6 +1180,13 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 	TSet<FString> SkippedSkeletal;
 	int32 SkippedSlots = 0;
 	TSet<FString> SkippedTextures;
+	// A Scatter on terrain may filter by paint layer (#187, or a script may switch it on): every Terrain's weightmaps are then read with
+	// their pixels on every net mode, since a server generates the Scatter too.
+	const bool bScatterOnTerrain = Place.Entities.ContainsByPredicate([](const FMantleEntity& Entity)
+	{
+		const FMantleScatterParams* Scatter = Entity.Props.TryGet<FMantleScatterParams>();
+		return Scatter && Scatter->Placement == EMantleScatterPlacement::Terrain;
+	});
 	for (const FMantleEntity& Entity : Place.Entities)
 	{
 		// A SkeletalMesh's mesh, materials and clip (#469): nothing is drawn on a dedicated server.
@@ -1378,6 +1385,17 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			if (IsUploadedId(Terrain->Weightmap2) && Settings.bRenderAssets)
 			{
 				EnsureRecord(Terrain->Weightmap2, EAssetKind::Texture, EMantleTextureRole::Data);
+			}
+			if (bScatterOnTerrain)
+			{
+				if (IsUploadedId(Terrain->Weightmap))
+				{
+					EnsureRecord(Terrain->Weightmap, EAssetKind::TerrainWeights).bKeepPixels = true;
+				}
+				if (IsUploadedId(Terrain->Weightmap2))
+				{
+					EnsureRecord(Terrain->Weightmap2, EAssetKind::TerrainWeights).bKeepPixels = true;
+				}
 			}
 			// The hole mask, on every net mode: a server cuts the holes out of its collision too. Its pixels are kept
 			// (the red channel is read), as a grass map's are.
