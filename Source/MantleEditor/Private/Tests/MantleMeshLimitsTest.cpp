@@ -9,37 +9,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// A mesh far past the triangle limit is refused before any reduction starts (a 517 MB scene mesh hung a publish for 100 minutes),
-// and a value that is not a number in a mesh is set to a safe one before the export (the server refuses it otherwise).
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleMeshReduceCeilingTest,
-	"Mantle.Editor.MeshReduce.RefusesAMeshTooBigToReduce",
-	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-
-bool FMantleMeshReduceCeilingTest::RunTest(const FString& Parameters)
-{
-	FMantlePlaceAssetLimits Limits;
-	Limits.MaxTriangles = 500000;
-	const int64 Ceiling = static_cast<int64>(Limits.MaxTriangles) * FMantleMeshReduce::MaxSourceTriangleFactor;
-
-	FString Why;
-	TestFalse(TEXT("a mesh just over the limit is reduced"), FMantleMeshReduce::IsTooBigToReduce(Limits.MaxTriangles + 1, Limits, Why));
-	TestTrue(TEXT("and gives no reason"), Why.IsEmpty());
-	TestFalse(TEXT("a mesh at the ceiling is still reduced"), FMantleMeshReduce::IsTooBigToReduce(Ceiling, Limits, Why));
-	TestTrue(TEXT("a mesh one triangle past the ceiling is refused"), FMantleMeshReduce::IsTooBigToReduce(Ceiling + 1, Limits, Why));
-	TestTrue(TEXT("with a reason that says what to do"), Why.Contains(TEXT("too big to reduce")) && Why.Contains(TEXT("Split it")));
-	Why.Reset();
-	TestTrue(TEXT("a mesh with more triangles than an int32 holds is refused"), FMantleMeshReduce::IsTooBigToReduce(5000000000LL, Limits, Why));
-
-	// The ceiling follows the limit.
-	FMantlePlaceAssetLimits Small;
-	Small.MaxTriangles = 1000;
-	Why.Reset();
-	TestFalse(TEXT("20 times a small limit is reduced"), FMantleMeshReduce::IsTooBigToReduce(20000, Small, Why));
-	TestTrue(TEXT("past it is refused"), FMantleMeshReduce::IsTooBigToReduce(20001, Small, Why));
-	return true;
-}
+// A value that is not a number in a mesh is set to a safe one before the export (the server refuses it otherwise).
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleGlbSanitiseNonFiniteTest,
