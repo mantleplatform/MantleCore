@@ -128,6 +128,7 @@ bool FMantleVoxelizeNamesAndTilesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("other characters become one underscore"), FMantleVoxelize::MakeTypeName(TEXT("Rock (Big)  #2"), Used), FString(TEXT("rock_big_2")));
 	TestEqual(TEXT("air is not a block type"), FMantleVoxelize::MakeTypeName(TEXT("Air"), Used), FString(TEXT("air_block")));
 	TestEqual(TEXT("nothing usable is 'block'"), FMantleVoxelize::MakeTypeName(TEXT("___"), Used), FString(TEXT("block")));
+	TestEqual(TEXT("a material instance's MI_ is dropped too (smooth ground names)"), FMantleVoxelize::MakeTypeName(TEXT("MI_Dirt_Wet"), Used), FString(TEXT("dirt_wet")));
 	const FString Long = FMantleVoxelize::MakeTypeName(FString::ChrN(50, TEXT('a')), Used);
 	TestEqual(TEXT("at most 32 characters"), Long.Len(), 32);
 	TestEqual(TEXT("and still unique when cut"), FMantleVoxelize::MakeTypeName(FString::ChrN(50, TEXT('a')), Used).Len(), 32);
@@ -303,12 +304,11 @@ bool FMantleVoxelizeImportTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the blocks it holds are the file's"), World->WorldData == Bytes);
 	TestEqual(TEXT("it holds nothing a place cannot carry"), World->DescribeProblems().Num(), 0);
 
-	// A smooth world's file is refused, saying why.
+	// A blocky file marked smooth has no ground densities after each section, so it does not read (real smooth files import:
+	// SmoothGroundExportsAndImports).
 	TArray<uint8> Smooth = Bytes;
 	Smooth[6] = 1;
-	const FMantleVoxelizeResult Refused = FMantleVoxelize::ImportMbw(Fixture.World, Smooth, FVector::ZeroVector, FMantleVoxelizeOptions());
-	TestFalse(TEXT("a smooth world is not imported"), Refused.IsOk());
-	TestTrue(TEXT("and the message says it is smooth"), Refused.Error.Contains(TEXT("smooth")));
+	TestFalse(TEXT("a blocky file marked smooth is refused"), FMantleVoxelize::ImportMbw(Fixture.World, Smooth, FVector::ZeroVector, FMantleVoxelizeOptions()).IsOk());
 
 	// Something that is not a world file at all.
 	const TArray<uint8> Junk = { 'N', 'O', 'P', 'E' };
@@ -552,6 +552,249 @@ bool FMantleVoxelizeLargestSourceTest::RunTest(const FString& Parameters)
 		const FMantleVoxelizeResult Cubes = FMantleVoxelize::Voxelize(Small.World, SpawnCubeScene(Small.World, Cube), FMantleVoxelizeOptions());
 		TestTrue(TEXT("the cube scene voxelizes"), Cubes.IsOk());
 		TestTrue(TEXT("and has no warning"), Cubes.Warning.IsEmpty());
+	}
+	return true;
+}
+
+
+namespace MantleVoxelizeTestPrivate
+{
+	/** A transient Side x Side grey texture with source pixels: a tile for a block type made by hand. */
+	UTexture2D* MakeTestTile(int32 Side = 32)
+	{
+		UTexture2D* Tile = NewObject<UTexture2D>(GetTransientPackage(), NAME_None, RF_Transient);
+		Tile->Source.Init(Side, Side, 1, 1, TSF_BGRA8);
+		uint8* Pixels = Tile->Source.LockMip(0);
+		FMemory::Memset(Pixels, 128, static_cast<SIZE_T>(Side) * Side * 4);
+		Tile->Source.UnlockMip(0);
+		return Tile;
+	}
+
+	FMantleVoxelBlockTypeSettings MakeTestType(const FString& Name, UTexture2D* Tile)
+	{
+		FMantleVoxelBlockTypeSettings Type;
+		Type.Name = Name;
+		Type.Top = Tile;
+		Type.Side = Tile;
+		Type.Bottom = Tile;
+		return Type;
+	}
+
+	const FMantleEntity* FindVoxelWorld(const FMantlePlace& Place, int32& OutIndex)
+	{
+		OutIndex = Place.Entities.IndexOfByPredicate([](const FMantleEntity& Entity) { return Entity.Type == EMantleEntityType::VoxelWorld; });
+		return OutIndex == INDEX_NONE ? nullptr : &Place.Entities[OutIndex];
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVoxelizeSmoothTest,
+	"Mantle.Editor.Voxelize.SmoothGroundExportsAndImports",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVoxelizeSmoothTest::RunTest(const FString& Parameters)
+{
+	// Voxelize as smooth ground: 50 cm voxels, the same shape rules; the world exports as look smooth with its ground file, and the
+	// file imports back as a smooth world.
+	using namespace MantleVoxelizeTestPrivate;
+	UStaticMesh* Cube = LoadCube();
+	FVoxelWorld Fixture;
+	if (!TestNotNull(TEXT("the engine cube"), Cube) || !TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	FMantleVoxelizeOptions Options;
+	Options.bSmooth = true;
+	const FMantleVoxelizeResult Result = FMantleVoxelize::Voxelize(Fixture.World, SpawnCubeScene(Fixture.World, Cube), Options);
+	if (!TestTrue(FString::Printf(TEXT("it voxelizes as smooth ground (%s)"), *Result.Error), Result.IsOk()))
+	{
+		return false;
+	}
+	AMantleVoxelWorldActor* Actor = Result.World;
+	TestTrue(TEXT("the world's look is smooth"), Actor->Look == EMantleVoxelWorldLook::Smooth);
+	TestEqual(TEXT("its voxels are 50 cm"), Actor->VoxelSize(), 50.0);
+	TestEqual(TEXT("each 100 cm cube is 8 voxels: 11 cubes' worth"), Result.Blocks, int64(88));
+	TestEqual(TEXT("at the lowest filled voxel"), Result.Origin, FVector(-200.0, 0.0, 0.0));
+	TestEqual(TEXT("it holds nothing a place cannot carry"), Actor->DescribeProblems().Num(), 0);
+	FMantleVoxelWorldFile File;
+	if (TestTrue(TEXT("its ground reads"), FMantleVoxelWorldFile::Read(Actor->WorldData, File)))
+	{
+		TestTrue(TEXT("as a smooth file"), File.bSmooth);
+	}
+
+	const FMantleExportResult Exported = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	int32 Index = INDEX_NONE;
+	const FMantleEntity* Entity = FindVoxelWorld(Exported.Place, Index);
+	if (TestNotNull(TEXT("a VoxelWorld entity"), Entity))
+	{
+		const FString EntityPath = FString::Printf(TEXT("/entities/%d"), Index);
+		for (const FMantleParseError& Error : Exported.Errors)
+		{
+			AddInfo(FString::Printf(TEXT("export: %s %s"), *Error.Path, *Error.Message));
+		}
+		TestFalse(TEXT("export does not refuse it"), Exported.Errors.ContainsByPredicate([&EntityPath](const FMantleParseError& Error) { return Error.Path.StartsWith(EntityPath); }));
+		const FMantleVoxelWorldProps* Props = Entity->Props.TryGet<FMantleVoxelWorldProps>();
+		if (TestNotNull(TEXT("with VoxelWorld properties"), Props))
+		{
+			TestTrue(TEXT("look smooth"), Props->bSmooth);
+			TestFalse(TEXT("with its ground file"), Props->World.IsEmpty());
+		}
+		const FMantleParseResult Parsed = FMantlePlaceParser::ParseFromString(FMantlePlaceExporter::ToJson(Exported.Place));
+		for (const FMantleParseError& Error : Parsed.Errors)
+		{
+			AddInfo(FString::Printf(TEXT("parse: %s %s"), *Error.Path, *Error.Message));
+		}
+		TestFalse(TEXT("the parser takes a smooth world with its ground file"),
+			Parsed.Errors.ContainsByPredicate([&EntityPath](const FMantleParseError& Error) { return Error.Path.StartsWith(EntityPath); }));
+	}
+
+	// The file imports back as smooth ground.
+	FVoxelWorld Other;
+	if (TestNotNull(TEXT("a second world"), Other.World))
+	{
+		const FMantleVoxelizeResult Imported = FMantleVoxelize::ImportMbw(Other.World, Actor->WorldData, FVector::ZeroVector, FMantleVoxelizeOptions());
+		if (TestTrue(FString::Printf(TEXT("the smooth file imports (%s)"), *Imported.Error), Imported.IsOk()))
+		{
+			TestTrue(TEXT("as a smooth world"), Imported.World->Look == EMantleVoxelWorldLook::Smooth);
+			TestEqual(TEXT("with the same ground"), Imported.Blocks, Result.Blocks);
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVoxelizeScriptMadeSmoothTest,
+	"Mantle.Editor.Voxelize.SmoothWorldMadeByScripts",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVoxelizeScriptMadeSmoothTest::RunTest(const FString& Parameters)
+{
+	// A smooth world placed by hand, with no ground file: its scripts make the ground. It exports as look smooth with no world.
+	using namespace MantleVoxelizeTestPrivate;
+	FVoxelWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	AMantleVoxelWorldActor* Actor = Fixture.World->SpawnActor<AMantleVoxelWorldActor>(FVector(0.0, 0.0, -400.0), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("a Mantle Voxel World"), Actor))
+	{
+		return false;
+	}
+	UTexture2D* Tile = MakeTestTile();
+	Actor->Look = EMantleVoxelWorldLook::Smooth;
+	Actor->Size = FIntVector(64, 64, 32);
+	Actor->BlockTypes = { MakeTestType(TEXT("grass"), Tile), MakeTestType(TEXT("rock"), Tile) };
+	for (const FMantleVoxelWorldProblem& Problem : Actor->DescribeProblems())
+	{
+		AddInfo(FString::Printf(TEXT("problem: %s"), *Problem.What));
+	}
+	TestEqual(TEXT("it holds nothing a place cannot carry"), Actor->DescribeProblems().Num(), 0);
+	TestEqual(TEXT("its voxels are 50 cm"), Actor->VoxelSize(), 50.0);
+
+	const FMantleExportResult Exported = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	int32 Index = INDEX_NONE;
+	const FMantleEntity* Entity = FindVoxelWorld(Exported.Place, Index);
+	if (!TestNotNull(TEXT("a VoxelWorld entity"), Entity))
+	{
+		return false;
+	}
+	const FString EntityPath = FString::Printf(TEXT("/entities/%d"), Index);
+	TestFalse(TEXT("export does not refuse it"), Exported.Errors.ContainsByPredicate([&EntityPath](const FMantleParseError& Error) { return Error.Path.StartsWith(EntityPath); }));
+	if (const FMantleVoxelWorldProps* Props = Entity->Props.TryGet<FMantleVoxelWorldProps>(); TestNotNull(TEXT("with VoxelWorld properties"), Props))
+	{
+		TestTrue(TEXT("look smooth"), Props->bSmooth);
+		TestEqual(TEXT("its size in voxels"), Props->Size, FIntVector(64, 64, 32));
+		TestTrue(TEXT("no ground file: its scripts make the ground"), Props->World.IsEmpty());
+		TestEqual(TEXT("its two ground materials"), Props->BlockTypes.Num(), 2);
+	}
+	const FMantleParseResult Parsed = FMantlePlaceParser::ParseFromString(FMantlePlaceExporter::ToJson(Exported.Place));
+	for (const FMantleParseError& Error : Parsed.Errors)
+	{
+		AddInfo(FString::Printf(TEXT("parse: %s %s"), *Error.Path, *Error.Message));
+	}
+	TestFalse(TEXT("the parser takes it"), Parsed.Errors.ContainsByPredicate([&EntityPath](const FMantleParseError& Error) { return Error.Path.StartsWith(EntityPath); }));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVoxelizeOneOfEachLookTest,
+	"Mantle.Editor.Voxelize.OneWorldOfEachLook",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVoxelizeOneOfEachLookTest::RunTest(const FString& Parameters)
+{
+	// A place holds one blocky and one smooth world; a second of either look, or a third world, is refused.
+	TestTrue(TEXT("one blocky world"), FMantlePlaceExporter::DescribeVoxelWorldCount(1, 1, false).IsEmpty());
+	TestTrue(TEXT("then one smooth one"), FMantlePlaceExporter::DescribeVoxelWorldCount(2, 1, true).IsEmpty());
+	TestTrue(TEXT("a second blocky one is refused"), FMantlePlaceExporter::DescribeVoxelWorldCount(2, 2, false).Contains(TEXT("second blocky")));
+	TestTrue(TEXT("a second smooth one is refused"), FMantlePlaceExporter::DescribeVoxelWorldCount(2, 2, true).Contains(TEXT("second smooth")));
+	TestFalse(TEXT("a third world is refused"), FMantlePlaceExporter::DescribeVoxelWorldCount(3, 2, true).IsEmpty());
+
+	// And Check says so for a level with two blocky worlds, but not for one of each.
+	using namespace MantleVoxelizeTestPrivate;
+	FVoxelWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	UTexture2D* Tile = MakeTestTile();
+	auto Spawn = [&](const FVector& At, EMantleVoxelWorldLook Look)
+	{
+		AMantleVoxelWorldActor* Actor = Fixture.World->SpawnActor<AMantleVoxelWorldActor>(At, FRotator::ZeroRotator);
+		Actor->Look = Look;
+		Actor->BlockTypes = { MakeTestType(TEXT("ground"), Tile) };
+		return Actor;
+	};
+	auto CountIssues = [&]()
+	{
+		const FMantleValidationResult Checked = FMantlePlaceValidator::Validate(Fixture.World);
+		return Checked.Issues.FilterByPredicate([](const FMantleValidationIssue& Issue) { return Issue.Problem.Contains(TEXT("one of each look")); }).Num();
+	};
+	Spawn(FVector::ZeroVector, EMantleVoxelWorldLook::Blocky);
+	AMantleVoxelWorldActor* Second = Spawn(FVector(5000.0, 0.0, 0.0), EMantleVoxelWorldLook::Smooth);
+	TestEqual(TEXT("one of each look passes Check"), CountIssues(), 0);
+	Second->Look = EMantleVoxelWorldLook::Blocky;
+	TestEqual(TEXT("two blocky worlds do not"), CountIssues(), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVoxelizeSmoothProblemsTest,
+	"Mantle.Editor.Voxelize.SmoothCheckMessages",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVoxelizeSmoothProblemsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVoxelizeTestPrivate;
+	FVoxelWorld Fixture;
+	UStaticMesh* Cube = LoadCube();
+	if (!TestNotNull(TEXT("a world"), Fixture.World) || !TestNotNull(TEXT("the engine cube"), Cube))
+	{
+		return false;
+	}
+	auto Has = [](const AMantleVoxelWorldActor* Actor, const TCHAR* Words)
+	{
+		return Actor->DescribeProblems().ContainsByPredicate([Words](const FMantleVoxelWorldProblem& Problem) { return Problem.What.Contains(Words); });
+	};
+	// More ground materials than a smooth world takes.
+	AMantleVoxelWorldActor* Many = Fixture.World->SpawnActor<AMantleVoxelWorldActor>(FVector::ZeroVector, FRotator::ZeroRotator);
+	UTexture2D* Tile = MakeTestTile();
+	Many->Look = EMantleVoxelWorldLook::Smooth;
+	for (int32 Index = 0; Index < 33; ++Index)
+	{
+		Many->BlockTypes.Add(MakeTestType(FString::Printf(TEXT("ground_%d"), Index), Tile));
+	}
+	TestTrue(TEXT("33 ground materials are too many"), Has(Many, TEXT("at most 32")));
+	Many->Look = EMantleVoxelWorldLook::Blocky;
+	TestFalse(TEXT("but fine as block types"), Has(Many, TEXT("at most 32")));
+
+	// A file of one look under the other.
+	const FMantleVoxelizeResult Blocks = FMantleVoxelize::Voxelize(Fixture.World, SpawnCubeScene(Fixture.World, Cube), FMantleVoxelizeOptions());
+	if (TestTrue(TEXT("the cubes voxelize"), Blocks.IsOk()))
+	{
+		Blocks.World->Look = EMantleVoxelWorldLook::Smooth;
+		TestTrue(TEXT("blocks under a smooth Look are named"), Has(Blocks.World, TEXT("its Look is Smooth")));
 	}
 	return true;
 }

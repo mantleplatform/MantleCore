@@ -822,13 +822,23 @@ void FillMantleSection(FToolMenuSection& Section)
 			"each mesh and material a block type with a tile made from its texture. The meshes are hidden in a \"Voxelized sources\" folder "
 			"and left out of the place. Undo puts everything back."),
 		FSlateIcon(),
-		FUIAction(FExecuteAction::CreateStatic(&FMantleVoxelize::VoxelizeSelection)));
+		FUIAction(FExecuteAction::CreateStatic(&FMantleVoxelize::VoxelizeSelection, false)));
+
+	Section.AddMenuEntry(
+		TEXT("MantleVoxelizeSmooth"),
+		LOCTEXT("VoxelizeSmoothLabel", "Voxelize selected meshes as smooth ground"),
+		LOCTEXT("VoxelizeSmoothTooltip",
+			"Turn the selected meshes into smooth ground players can dig, fill, flatten, smooth and paint: every 50 cm cell inside a mesh becomes "
+			"ground, each mesh and material a ground material (at most 32) with a tile made from its texture. The meshes are hidden in a "
+			"\"Voxelized sources\" folder and left out of the place. Undo puts everything back."),
+		FSlateIcon(),
+		FUIAction(FExecuteAction::CreateStatic(&FMantleVoxelize::VoxelizeSelectionSmooth)));
 
 	Section.AddMenuEntry(
 		TEXT("MantleImportBlockWorld"),
 		LOCTEXT("ImportBlockWorldLabel", "Import block world (.mbw)..."),
 		LOCTEXT("ImportBlockWorldTooltip",
-			"Add a block world from a saved .mbw file (a blocky world's blocks). Its block types come in as block_1, block_2 and so on with grey "
+			"Add a block world from a saved .mbw file (a blocky world's blocks or a smooth world's ground). Its block types come in as block_1, block_2 and so on with grey "
 			"tiles: give each its name and tiles in the Details panel."),
 		FSlateIcon(),
 		FUIAction(FExecuteAction::CreateStatic(&FMantleVoxelize::ImportWithDialog)));

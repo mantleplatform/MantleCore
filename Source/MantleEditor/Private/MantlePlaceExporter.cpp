@@ -819,7 +819,7 @@ namespace
 		FMantleVoxelWorldProps Props;
 		Props.Size = Actor->Size;
 		Props.TileSize = Actor->TileSize;
-		Props.bSmooth = false;
+		Props.bSmooth = Actor->Look == EMantleVoxelWorldLook::Smooth;
 		Props.bLinearFilter = Actor->Filter == EMantleVoxelTileFilter::Linear;
 		Props.Edit = static_cast<EMantleVoxelEdit>(Actor->Edit);
 		Props.Persistence = static_cast<EMantleVoxelPersistence>(Actor->Persistence);
@@ -2502,16 +2502,17 @@ bool FMantlePlaceExporter::ClassifyActor(const AActor* Actor, EMantleEntityType&
 	return false;
 }
 
-FString FMantlePlaceExporter::DescribeVoxelWorldCount(const int32 Number)
+FString FMantlePlaceExporter::DescribeVoxelWorldCount(const int32 Number, const int32 SameLook, const bool bSmooth)
 {
 	if (Number > FMantlePlaceLimits::MaxVoxelWorldsPerPlace)
 	{
 		return FString::Printf(TEXT("is block world number %d; a place may have at most %d (one blocky, one smooth). Remove it, or merge it into another."),
 			Number, FMantlePlaceLimits::MaxVoxelWorldsPerPlace);
 	}
-	if (Number > 1)
+	if (SameLook > 1)
 	{
-		return TEXT("is a second blocky block world; a place may have one of each look (blocky and smooth). Merge the two into one, or remove one.");
+		return FString::Printf(TEXT("is a second %s block world; a place may have one of each look (blocky and smooth). Merge the two into one, remove one, or set one's Look to %s."),
+			bSmooth ? TEXT("smooth") : TEXT("blocky"), bSmooth ? TEXT("Blocky") : TEXT("Smooth"));
 	}
 	return FString();
 }
@@ -4318,6 +4319,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	FMantleCrowdBudget CrowdBudget;
 	int32 Constraints = 0;
 	int32 VoxelWorlds = 0;
+	int32 VoxelWorldsOfLook[2] = { 0, 0 };
 
 	for (int32 i = 0; i < Exportable.Num(); ++i)
 	{
@@ -4441,11 +4443,12 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			}
 		}
 
-		// Block worlds (#168 step 6): at most two in a place, one of each look, at the path the parser reports it. A Mantle Voxel
-		// World is always blocky (it holds blocks; a smooth world's ground is made by its scripts), so a second one is refused.
+		// Block worlds (#168): at most two in a place, one of each look, at the path the parser reports it.
 		if (Entity.Type == EMantleEntityType::VoxelWorld)
 		{
-			const FString WorldProblem = FMantlePlaceExporter::DescribeVoxelWorldCount(++VoxelWorlds);
+			const AMantleVoxelWorldActor* VoxelActor = Cast<AMantleVoxelWorldActor>(Actor);
+			const bool bSmoothWorld = VoxelActor && VoxelActor->Look == EMantleVoxelWorldLook::Smooth;
+			const FString WorldProblem = FMantlePlaceExporter::DescribeVoxelWorldCount(++VoxelWorlds, ++VoxelWorldsOfLook[bSmoothWorld ? 1 : 0], bSmoothWorld);
 			if (!WorldProblem.IsEmpty())
 			{
 				Result.Errors.Add(FMantleParseError{ Path + TEXT("/type"), FString::Printf(TEXT("'%s' %s"), *Entity.Name, *WorldProblem) });

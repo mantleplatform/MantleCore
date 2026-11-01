@@ -134,17 +134,17 @@ namespace MantleVoxelizePrivate
 	/** A little under a millimetre, in cells: a cube's face exactly on a cell centre still counts as covering it. */
 	constexpr double CellSlack = 0.001;
 
-	/** The cells along one axis whose centres lie in [Min, Max] cm: [OutLo, OutHi], empty when OutLo > OutHi. */
-	void CellRange(double Min, double Max, int64& OutLo, int64& OutHi)
+	/** The cells (Cell cm wide) along one axis whose centres lie in [Min, Max] cm: [OutLo, OutHi], empty when OutLo > OutHi. */
+	void CellRange(double Min, double Max, int64& OutLo, int64& OutHi, double Cell = MantleVoxel::BlockSize)
 	{
 		// Held well inside int64, so a mesh with absurd bounds is refused as too big rather than overflowing.
 		constexpr double Limit = 1.0e12;
-		OutLo = static_cast<int64>(FMath::Clamp(FMath::CeilToDouble(Min / MantleVoxel::BlockSize - 0.5 - CellSlack), -Limit, Limit));
-		OutHi = static_cast<int64>(FMath::Clamp(FMath::FloorToDouble(Max / MantleVoxel::BlockSize - 0.5 + CellSlack), -Limit, Limit));
+		OutLo = static_cast<int64>(FMath::Clamp(FMath::CeilToDouble(Min / Cell - 0.5 - CellSlack), -Limit, Limit));
+		OutHi = static_cast<int64>(FMath::Clamp(FMath::FloorToDouble(Max / Cell - 0.5 + CellSlack), -Limit, Limit));
 	}
 
 	/** Every static mesh component of Actor (each instance of an instanced one) as a fill, adding its (mesh, material) type. */
-	void CollectFills(AActor* Actor, int32 Source, TArray<FFill>& Fills, TArray<FSourceType>& Types, TMap<TPair<UStaticMesh*, UMaterialInterface*>, int32>& TypeOf,
+	void CollectFills(AActor* Actor, int32 Source, bool bSmooth, TArray<FFill>& Fills, TArray<FSourceType>& Types, TMap<TPair<UStaticMesh*, UMaterialInterface*>, int32>& TypeOf,
 		TMap<UStaticMesh*, TUniquePtr<FMeshShape>>& Shapes)
 	{
 		TInlineComponentArray<UStaticMeshComponent*> Components;
@@ -158,7 +158,8 @@ namespace MantleVoxelizePrivate
 				continue;
 			}
 			UMaterialInterface* Material = Component->GetMaterial(0);
-			const TPair<UStaticMesh*, UMaterialInterface*> Key(Mesh, Material);
+			// Smooth ground has no cube faces to tell meshes apart by: one ground material per material.
+			const TPair<UStaticMesh*, UMaterialInterface*> Key(bSmooth ? nullptr : Mesh, Material);
 			int32 Type = INDEX_NONE;
 			if (const int32* Found = TypeOf.Find(Key))
 			{
@@ -195,9 +196,8 @@ namespace MantleVoxelizePrivate
 	 * - an open mesh, or a closed one too thin to hold a cell centre (a fence board): the cells its surface passes through.
 	 */
 	template <typename FSetFn>
-	void FillCells(const FFill& Fill, const int64 Lo[3], const int64 Hi[3], FSetFn&& Set)
+	void FillCells(const FFill& Fill, const int64 Lo[3], const int64 Hi[3], const double Block, FSetFn&& Set)
 	{
-		const double Block = MantleVoxel::BlockSize;
 		if (!Fill.Shape)
 		{
 			for (int64 Z = Lo[2]; Z <= Hi[2]; ++Z)
@@ -234,8 +234,8 @@ namespace MantleVoxelizePrivate
 				const FVector& B = World[Tri.Y];
 				const FVector& C = World[Tri.Z];
 				int64 YLo, YHi, ZLo, ZHi;
-				CellRange(FMath::Min3(A.Y, B.Y, C.Y) - OffsetY, FMath::Max3(A.Y, B.Y, C.Y) - OffsetY, YLo, YHi);
-				CellRange(FMath::Min3(A.Z, B.Z, C.Z) - OffsetZ, FMath::Max3(A.Z, B.Z, C.Z) - OffsetZ, ZLo, ZHi);
+				CellRange(FMath::Min3(A.Y, B.Y, C.Y) - OffsetY, FMath::Max3(A.Y, B.Y, C.Y) - OffsetY, YLo, YHi, Block);
+				CellRange(FMath::Min3(A.Z, B.Z, C.Z) - OffsetZ, FMath::Max3(A.Z, B.Z, C.Z) - OffsetZ, ZLo, ZHi, Block);
 				YLo = FMath::Max(YLo, Lo[1]); YHi = FMath::Min(YHi, Hi[1]);
 				ZLo = FMath::Max(ZLo, Lo[2]); ZHi = FMath::Min(ZHi, Hi[2]);
 				// The triangle's projection on the YZ plane; one edge-on to the ray's direction crosses nothing.
@@ -270,7 +270,7 @@ namespace MantleVoxelizePrivate
 				for (int32 Index = 0; Index + 1 < Xs.Num(); Index += 2)
 				{
 					int64 XLo, XHi;
-					CellRange(Xs[Index], Xs[Index + 1], XLo, XHi);
+					CellRange(Xs[Index], Xs[Index + 1], XLo, XHi, Block);
 					for (int64 X = FMath::Max(XLo, Lo[0]); X <= FMath::Min(XHi, Hi[0]); ++X)
 					{
 						Set(X, Y, Z);
@@ -483,10 +483,15 @@ namespace MantleVoxelizePrivate
 FString FMantleVoxelize::MakeTypeName(const FString& MeshName, TSet<FString>& Used)
 {
 	FString Lower = MeshName.ToLower();
-	// The Unreal naming prefix says nothing about the block.
-	if (Lower.StartsWith(TEXT("sm_")) && Lower.Len() > 3)
+	// The Unreal naming prefix (a mesh's, or a smooth ground material's) says nothing about the block.
+	for (const TCHAR* Prefix : { TEXT("sm_"), TEXT("mi_"), TEXT("m_") })
 	{
-		Lower.RightChopInline(3);
+		const int32 Length = FCString::Strlen(Prefix);
+		if (Lower.StartsWith(Prefix) && Lower.Len() > Length)
+		{
+			Lower.RightChopInline(Length);
+			break;
+		}
 	}
 	FString Name;
 	for (const TCHAR C : Lower)
@@ -616,6 +621,8 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 {
 	using namespace MantleVoxelizePrivate;
 	FMantleVoxelizeResult Result;
+	// The edge of one cell: a 100 cm block, or a 50 cm voxel of smooth ground.
+	const double Cell = Options.bSmooth ? MantleVoxel::SmoothVoxelSize : MantleVoxel::BlockSize;
 	if (!World)
 	{
 		Result.Error = TEXT("There is no level to voxelize in.");
@@ -635,7 +642,7 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 			continue;
 		}
 		const int32 Before = Fills.Num();
-		CollectFills(Actor, Used.Num(), Fills, Types, TypeOf, Shapes);
+		CollectFills(Actor, Used.Num(), Options.bSmooth, Fills, Types, TypeOf, Shapes);
 		if (Fills.Num() > Before)
 		{
 			Used.Add(Actor);
@@ -644,6 +651,12 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 	if (Fills.Num() == 0)
 	{
 		Result.Error = TEXT("None of the selected actors has a static mesh to turn into blocks. Select the cube meshes, then Voxelize again.");
+		return Result;
+	}
+	if (Options.bSmooth && Types.Num() > FMantlePlaceLimits::MaxVoxelSmoothMaterials)
+	{
+		Result.Error = FString::Printf(TEXT("The selection uses %d different mesh and material pairs; smooth ground has at most %d materials. Voxelize fewer kinds of mesh at a time, or as blocks."),
+			Types.Num(), FMantlePlaceLimits::MaxVoxelSmoothMaterials);
 		return Result;
 	}
 	if (Types.Num() > FMantlePlaceLimits::MaxVoxelBlockTypes)
@@ -672,12 +685,12 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 			if (Fill.Shape)
 			{
 				// Every cell the box touches: a surface (a thin wall) can fill a cell whose centre is outside its bounds.
-				Cells.Lo[Axis] = static_cast<int64>(FMath::Clamp(FMath::FloorToDouble(Fill.Box.Min[Axis] / MantleVoxel::BlockSize), -1.0e12, 1.0e12));
-				Cells.Hi[Axis] = static_cast<int64>(FMath::Clamp(FMath::FloorToDouble(Fill.Box.Max[Axis] / MantleVoxel::BlockSize), -1.0e12, 1.0e12));
+				Cells.Lo[Axis] = static_cast<int64>(FMath::Clamp(FMath::FloorToDouble(Fill.Box.Min[Axis] / Cell), -1.0e12, 1.0e12));
+				Cells.Hi[Axis] = static_cast<int64>(FMath::Clamp(FMath::FloorToDouble(Fill.Box.Max[Axis] / Cell), -1.0e12, 1.0e12));
 			}
 			else
 			{
-				CellRange(Fill.Box.Min[Axis], Fill.Box.Max[Axis], Cells.Lo[Axis], Cells.Hi[Axis]);
+				CellRange(Fill.Box.Min[Axis], Fill.Box.Max[Axis], Cells.Lo[Axis], Cells.Hi[Axis], Cell);
 			}
 			bEmpty |= Cells.Lo[Axis] > Cells.Hi[Axis];
 		}
@@ -699,7 +712,7 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 	}
 	if (Min[0] > Max[0])
 	{
-		Result.Error = TEXT("The selected meshes are too thin to fill any 100 cm block: each block's centre must lie inside a mesh's bounds.");
+		Result.Error = FString::Printf(TEXT("The selected meshes are too thin to fill any %.0f cm cell: each cell's centre must lie inside a mesh's bounds."), Cell);
 		return Result;
 	}
 	const int64 Caps[3] = { FMantlePlaceLimits::MaxVoxelWorldSizeXY, FMantlePlaceLimits::MaxVoxelWorldSizeXY, FMantlePlaceLimits::MaxVoxelWorldSizeZ };
@@ -711,8 +724,8 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 	}
 	if (Extent[0] > Caps[0] || Extent[1] > Caps[1] || Extent[2] > Caps[2])
 	{
-		Result.Error = FString::Printf(TEXT("The selection spans %lld x %lld x %lld blocks; a block world is at most %lld x %lld x %lld (100 cm blocks). Voxelize a smaller part of the level."),
-			Extent[0], Extent[1], Extent[2], Caps[0], Caps[1], Caps[2]);
+		Result.Error = FString::Printf(TEXT("The selection spans %lld x %lld x %lld cells; a block world is at most %lld x %lld x %lld (%.0f cm cells). Voxelize a smaller part of the level."),
+			Extent[0], Extent[1], Extent[2], Caps[0], Caps[1], Caps[2], Cell);
 		return Result;
 	}
 	const FIntVector Size(
@@ -726,13 +739,13 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 	TSet<FString> Names;
 	for (int32 Index = 0; Index < Types.Num(); ++Index)
 	{
-		const FString Name = MakeTypeName(Types[Index].Mesh->GetName(), Names);
+		const FString Name = MakeTypeName(Options.bSmooth && Types[Index].Material ? Types[Index].Material->GetName() : Types[Index].Mesh->GetName(), Names);
 		Result.TypeNames.Add(Name);
 		GridTypes[Index + 1].Name = FName(*Name);
 	}
 	FMantleVoxelGrid Grid;
 	FString GridError;
-	if (!Grid.Init(Size, MoveTemp(GridTypes), &GridError))
+	if (!Grid.Init(Size, MoveTemp(GridTypes), &GridError, Options.bSmooth))
 	{
 		Result.Error = FString::Printf(TEXT("The block world could not be made: %s."), *GridError);
 		return Result;
@@ -746,14 +759,15 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 		const uint8 Id = static_cast<uint8>(Fills[FillIndex].Type + 1);
 		int64& Counted = SourceBlocks[Fills[FillIndex].Source];
 		bool bOverCap = false;
-		FillCells(Fills[FillIndex], Cells.Lo, Cells.Hi, [&](int64 X, int64 Y, int64 Z)
+		FillCells(Fills[FillIndex], Cells.Lo, Cells.Hi, Cell, [&](int64 X, int64 Y, int64 Z)
 		{
 			const FIntVector P(static_cast<int32>(X - Min[0]), static_cast<int32>(Y - Min[1]), static_cast<int32>(Z - Min[2]));
 			if (bOverCap || Grid.GetBlock(P) == Id)
 			{
 				return;
 			}
-			if (Grid.SetBlock(P, Id) == FMantleVoxelGrid::ESetResult::OverCap)
+			const FMantleVoxelGrid::ESetResult Set = Options.bSmooth ? Grid.SetVoxel(P, Id, MantleVoxel::FullDensity) : Grid.SetBlock(P, Id);
+			if (Set == FMantleVoxelGrid::ESetResult::OverCap)
 			{
 				bOverCap = true;
 				return;
@@ -762,8 +776,8 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 		});
 		if (bOverCap)
 		{
-			Result.Error = FString::Printf(TEXT("The selection has too many mixed 16-block sections for one block world (at most %d). Voxelize a smaller part of the level."),
-				MantleVoxel::MaxNonUniformSections);
+			Result.Error = FString::Printf(TEXT("The selection has too many mixed 16-cell sections for one block world (at most %d). Voxelize a smaller part of the level."),
+				Options.bSmooth ? MantleVoxel::MaxNonUniformSmoothSections : MantleVoxel::MaxNonUniformSections);
 			return Result;
 		}
 	}
@@ -794,7 +808,7 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 	}
 
 	// The world at the lowest filled cell, and the sources out of the way: in their folder, hidden, left out of the place.
-	Result.Origin = FVector(static_cast<double>(Min[0]), static_cast<double>(Min[1]), static_cast<double>(Min[2])) * MantleVoxel::BlockSize;
+	Result.Origin = FVector(static_cast<double>(Min[0]), static_cast<double>(Min[1]), static_cast<double>(Min[2])) * Cell;
 	AMantleVoxelWorldActor* Actor = SpawnWorld(World, Result.Origin);
 	if (!Actor)
 	{
@@ -841,12 +855,6 @@ FMantleVoxelizeResult FMantleVoxelize::ImportMbw(UWorld* World, TConstArrayView<
 	if (!World)
 	{
 		Result.Error = TEXT("There is no level to import into.");
-		return Result;
-	}
-	// Byte 6 is the look: 0 blocky. A smooth world's ground is made by its scripts, so it has no blocks to import.
-	if (Bytes.Num() >= FMantleVoxelWorldFile::HeaderBytes && FMemory::Memcmp(Bytes.GetData(), "MBW1", 4) == 0 && Bytes[6] != 0)
-	{
-		Result.Error = TEXT("This is a smooth world's file. Only blocky worlds import: a smooth world's ground is made by its scripts.");
 		return Result;
 	}
 	FMantleVoxelWorldFile File;
@@ -908,7 +916,7 @@ FMantleVoxelizeResult FMantleVoxelize::ImportMbw(UWorld* World, TConstArrayView<
 	return Result;
 }
 
-void FMantleVoxelize::VoxelizeSelection()
+void FMantleVoxelize::VoxelizeSelection(const bool bSmooth)
 {
 	using namespace MantleVoxelizePrivate;
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
@@ -925,6 +933,7 @@ void FMantleVoxelize::VoxelizeSelection()
 	FScopedTransaction Transaction(LOCTEXT("VoxelizeUndo", "Voxelize"));
 	FMantleVoxelizeOptions Options;
 	Options.TileFolder = TileFolderFor(World);
+	Options.bSmooth = bSmooth;
 	const FMantleVoxelizeResult Result = Voxelize(World, Selected, Options);
 	if (!Result.IsOk())
 	{
