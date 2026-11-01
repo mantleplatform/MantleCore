@@ -5,6 +5,7 @@
 #include "MantleScatterCells.h"
 #include "MantleScatterVolume.h"
 
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -279,6 +280,73 @@ bool FMantleScatterCellsSpacingTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterCellsThinningTest,
+	"Mantle.Runtime.Scatter.Cells.WideSpacingIsThinned",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterCellsThinningTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterCellsTestPrivate;
+
+	FMantleScatterGenerateOptions None;
+	FString Error;
+	const int32 Target = FMantlePlaceLimits::ScatterSpacingCandidates;
+
+	// 320,000 candidates (400 m x 400 m at density 2) with a spacing of 50 m: 5,000 candidates a spacing square, thinned to about 64 of them, which
+	// is 160,000 / 2,500 squares x 64 = 4,096 in all.
+	FMantleScatterParams Wide = CellParams();
+	Wide.Density = 2.0;
+	Wide.MinSpacing = 5000.0;
+	TestEqual(TEXT("the Scatter counts, it is not refused"), FMantleScatter::CountFor(Wide, Error), static_cast<int64>(320000));
+	const TSharedPtr<const FMantleScatterCellIndex> WideIndex = FMantleScatter::BuildCellIndex(Wide, Error);
+	if (!TestTrue(*FString::Printf(TEXT("its index builds (%s)"), *Error), WideIndex.IsValid()))
+	{
+		return false;
+	}
+	TestTrue(*FString::Printf(TEXT("only about %d candidates a spacing square stay (%d of 320,000)"), Target, WideIndex->NumSlots()),
+		WideIndex->NumSlots() > 2800 && WideIndex->NumSlots() < 5600);
+	// Still a deterministic field: a cell alone is the whole build's region, in any order, and the parallel read is the whole stream.
+	const int32 Thinned = CheckCellsMatchWhole(*this, TEXT("thinned wide spacing"), Wide, None);
+	// 160,000 m2 holds about 45 discs of a 50 m spacing packed at random, and 64 candidates a square is enough to reach that.
+	TestTrue(*FString::Printf(TEXT("the spacing still leaves a field (%d)"), Thinned), Thinned > 20 && Thinned < 120);
+
+	// The same Scatter with a spacing it holds comfortably (150 cm is 4.5 a square) is not thinned: every candidate is there.
+	FMantleScatterParams Close = Wide;
+	Close.MinSpacing = 150.0;
+	TSharedPtr<const FMantleScatterCellIndex> CloseIndex = FMantleScatter::BuildCellIndex(Close, Error);
+	TestTrue(TEXT("a close spacing keeps every candidate"), CloseIndex.IsValid() && CloseIndex->NumSlots() == 320000);
+	// And one built whole (up to 200,000) is never thinned, however wide the spacing.
+	FMantleScatterParams Small = CellParams();
+	Small.MinSpacing = 5000.0;
+	TSharedPtr<const FMantleScatterCellIndex> SmallIndex = FMantleScatter::BuildCellIndex(Small, Error);
+	TestTrue(TEXT("a Scatter built whole is not thinned"), SmallIndex.IsValid() && SmallIndex->NumSlots() == 80000);
+
+	// The review's case: a 1 km box at density 2 with a spacing of 1 km. Every read stays small and the whole stream is the same as a whole build's.
+	FMantleScatterParams Huge = CellParams();
+	Huge.HalfExtent = FVector(50000.0, 50000.0, 0.0);
+	Huge.Density = 2.0;
+	Huge.MinSpacing = 100000.0;
+	Huge.DrawDistance = 10000.0;
+	TestEqual(TEXT("2,000,000 candidates count"), FMantleScatter::CountFor(Huge, Error), static_cast<int64>(2000000));
+	const double Start = FPlatformTime::Seconds();
+	const TSharedPtr<const FMantleScatterCellIndex> HugeIndex = FMantleScatter::BuildCellIndex(Huge, Error);
+	if (!TestTrue(TEXT("the huge index builds"), HugeIndex.IsValid()))
+	{
+		return false;
+	}
+	TArray<FMantleScatterInstance> ByCells;
+	TestTrue(TEXT("every cell reads"), FMantleScatter::GenerateAllByCells(Huge, *HugeIndex, ByCells, Error, None));
+	const double Seconds = FPlatformTime::Seconds() - Start;
+	TArray<FMantleScatterInstance> Whole;
+	TestTrue(TEXT("the whole build generates"), FMantleScatter::Generate(Huge, Whole, Error, None));
+	TestTrue(*FString::Printf(TEXT("the index and every cell took %.2f s"), Seconds), Seconds < 10.0);
+	TestTrue(*FString::Printf(TEXT("about %d candidates remain (%d)"), Target, HugeIndex->NumSlots()), HugeIndex->NumSlots() >= 1 && HugeIndex->NumSlots() < 400);
+	TestEqual(TEXT("the cells' hash is the whole build's"), FMantleScatter::HashText(FMantleScatter::Hash(ByCells)), FMantleScatter::HashText(FMantleScatter::Hash(Whole)));
+	TestTrue(TEXT("at least one instance stands"), ByCells.Num() >= 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleScatterCellsPrefixTest,
 	"Mantle.Runtime.Scatter.Cells.TiersKeepAPrefix",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -396,6 +464,15 @@ bool FMantleScatterCellsLimitsTest::RunTest(const FString& Parameters)
 	P.Density = 200.0001;
 	TestEqual(TEXT("2,000,001 is refused"), FMantleScatter::CountFor(P, Error), static_cast<int64>(-1));
 	TestTrue(TEXT("with the cap in the message"), Error.Contains(TEXT("at most 2000000")));
+
+	// A wide minSpacing is never refused: a Scatter built in cells thins its candidates instead (WideSpacingIsThinned).
+	P.Density = 200.0;
+	P.MinSpacing = 57.0;
+	TestEqual(TEXT("57 cm at density 200 counts"), FMantleScatter::CountFor(P, Error), static_cast<int64>(2000000));
+	P.MinSpacing = 100000.0;
+	TestEqual(TEXT("so does the widest spacing"), FMantleScatter::CountFor(P, Error), static_cast<int64>(2000000));
+	P.MinSpacing = 0.0;
+	P.Density = 20.0001;
 
 	// A stepped path stays whole: its cap is the whole cap, and cells refuse it.
 	FMantleScatterParams Step = CellParams();
@@ -643,8 +720,70 @@ bool FMantleScatterCellsComponentTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("far away, the old cells are released and new ones stand"), Cells->GetLiveInstances() > 0 && Cells->GetLiveInstances() <= 40000);
 	TestTrue(TEXT("the budget counts what stands"), UMantleScatterCellsComponent::GetWorldLiveInstances() == Cells->GetLiveInstances());
 
+	// A cell too big for the live cap is read once, not again every scan: its size is remembered until that many instances fit.
+	IConsoleVariable* LiveCap = IConsoleManager::Get().FindConsoleVariable(TEXT("mantle.Scatter.MaxLiveInstances"));
+	if (!TestNotNull(TEXT("the live cap variable"), LiveCap))
+	{
+		return false;
+	}
+	LiveCap->Set(50, ECVF_SetByCode);
+	Cells->SetViewOverride(FVector(0.0, 0.0, 0.0));
+	auto RunFor = [&](const double Seconds)
+	{
+		const double Until = FPlatformTime::Seconds() + Seconds;
+		while (FPlatformTime::Seconds() < Until)
+		{
+			Tick();
+			FPlatformProcess::Sleep(0.005f);
+		}
+	};
+	RunFor(2.0);
+	const int32 BuiltOnce = Cells->GetBuiltTotal();
+	TestEqual(TEXT("cells over a 50-instance cap do not stand"), Cells->GetLiveInstances(), static_cast<int64>(0));
+	RunFor(2.0);
+	TestEqual(TEXT("and are not read again every scan"), Cells->GetBuiltTotal(), BuiltOnce);
+	LiveCap->Set(40000, ECVF_SetByCode);
+	RunFor(10.0);
+	TestTrue(TEXT("once they fit they are asked for again and stand"), Cells->GetLiveInstances() > 0);
+
+	// The mesh components belong to the actor, which outlives the cells component: clearing the Scatter takes them down with it.
+	auto CountMeshComponents = [Volume]()
+	{
+		TArray<UInstancedStaticMeshComponent*> Meshes;
+		Volume->GetComponents(Meshes);
+		int32 Standing = 0;
+		for (const UInstancedStaticMeshComponent* Mesh : Meshes)
+		{
+			Standing += IsValid(Mesh) ? 1 : 0;
+		}
+		return Standing;
+	};
+	TestTrue(TEXT("cells stand as mesh components on the actor"), CountMeshComponents() > 0);
 	Volume->ClearScatter();
 	TestEqual(TEXT("clearing the Scatter releases its share of the budget"), UMantleScatterCellsComponent::GetWorldLiveInstances(), static_cast<int64>(0));
+	TestEqual(TEXT("and leaves no mesh component on the actor"), CountMeshComponents(), 0);
+
+	// Building the Scatter again (a settings change does this) stands only the new cells, not the new ones on top of the old.
+	TestTrue(TEXT("the Scatter builds again"), Volume->RefreshScatter(Error));
+	UMantleScatterCellsComponent* Again = Volume->GetCellsComponent();
+	if (!TestNotNull(TEXT("a new cells component"), Again))
+	{
+		return false;
+	}
+	Again->SetViewOverride(FVector(0.0, 0.0, 0.0));
+	RunFor(10.0);
+	int64 Standing = 0;
+	{
+		TArray<UInstancedStaticMeshComponent*> Meshes;
+		Volume->GetComponents(Meshes);
+		for (const UInstancedStaticMeshComponent* Mesh : Meshes)
+		{
+			Standing += IsValid(Mesh) ? Mesh->GetInstanceCount() : 0;
+		}
+	}
+	TestEqual(TEXT("the mesh components hold exactly the instances the budget counts"), Standing, UMantleScatterCellsComponent::GetWorldLiveInstances());
+	Volume->ClearScatter();
+	TestEqual(TEXT("clearing again leaves nothing counted"), UMantleScatterCellsComponent::GetWorldLiveInstances(), static_cast<int64>(0));
 	return true;
 }
 

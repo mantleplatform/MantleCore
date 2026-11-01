@@ -87,7 +87,7 @@ class Entity:
         """The material asset id a mesh shows in a slot (0 when left out), or nil when the slot shows the mesh's own material."""
         ...
     def get_scatter_hash(self) -> str:
-        """Scatters only: a number as 16 hex digits that summarises every instance this Scatter generates (its whole stream, in its own space), so two machines' values can be compared. For a Scatter of more than 200000 instances the first call reads every cell, which takes a moment on a big one. Errors when the entity is not a Scatter."""
+        """Scatters only: a number as 16 hex digits that summarises every instance this Scatter generates (its whole stream, in its own space), so two machines' values can be compared. For a Scatter of more than 200000 instances the first call reads every cell, which takes a moment on a big one, counts against the script's time (reading it again within a second can stop the script for using too much), and can be made 4 times a second at most. Errors when the entity is not a Scatter."""
         ...
     def get_tags(self) -> list[str]:
         """All of the entity's tags."""

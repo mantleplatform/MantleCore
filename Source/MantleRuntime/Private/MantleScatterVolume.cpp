@@ -789,16 +789,28 @@ const TArray<FMantleScatterInstance>* AMantleScatterVolume::GenerateFullCached(F
 	{
 		// Every cell is read on the workers while this thread sleeps on an event: a script that asks for the hash is charged the (CPU) time of
 		// its own thread, which is none, and the server stalls once for the read, then answers from the cache.
-		FEvent* Done = FPlatformProcess::GetSynchEventFromPool(true);
-		UE::Tasks::Launch(TEXT("MantleScatterFull"), [&]()
+		// Without worker threads (-nothreading) nothing would run the task while this thread sleeps on the event, so there it waits on the
+		// task itself, which runs it here.
+		FEvent* Done = FPlatformProcess::SupportsMultithreading() ? FPlatformProcess::GetSynchEventFromPool(true) : nullptr;
+		UE::Tasks::TTask<void> Reading = UE::Tasks::Launch(TEXT("MantleScatterFull"), [&]()
 		{
 			bMade = FMantleScatter::GenerateAllByCells(Params, *Index, FullInstances, OutError, Options);
 			// The hash of a million instances is milliseconds too: taken here, not on the thread that is being charged.
 			CellsHash = bMade ? FMantleScatter::Hash(FullInstances) : 0;
-			Done->Trigger();
+			if (Done)
+			{
+				Done->Trigger();
+			}
 		}, LowLevelTasks::ETaskPriority::BackgroundNormal);
-		Done->Wait();
-		FPlatformProcess::ReturnSynchEventToPool(Done);
+		if (Done)
+		{
+			Done->Wait();
+			FPlatformProcess::ReturnSynchEventToPool(Done);
+		}
+		else
+		{
+			Reading.Wait();
+		}
 	}
 	else
 	{

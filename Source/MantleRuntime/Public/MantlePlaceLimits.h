@@ -360,6 +360,14 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	static constexpr int32 ScatterWholeInstances = 200000;
 
 	/**
+	 * The candidates a Scatter built in cells (above ScatterWholeInstances) keeps in one minSpacing square when its density is higher than
+	 * that (#189): density times (minSpacing in metres) squared over this thins the candidates to it, each picked by its own hash. A cell reads
+	 * every candidate within the spacing of its own to tell which stand, so a spacing far wider than the candidates are apart would make
+	 * each read check without end. Nothing is refused; the Scatter just has fewer candidates, which fill the spacing as well.
+	 */
+	static constexpr int32 ScatterSpacingCandidates = 64;
+
+	/**
 	 * Scatter instances across a whole place (#530, #189). Cross-entity: validate.py's MAX_SCATTER_INSTANCES_PER_PLACE. Whole Scatters
 	 * were measured on the build PC at 100,000 generated in 1.3 ms and built into instanced meshes in 12.7 ms; the cell Scatters above
 	 * ScatterWholeInstances build only around the camera, so the place cap is the Scatter cap: one dense biome map (the jungle test has

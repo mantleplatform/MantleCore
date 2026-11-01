@@ -138,7 +138,9 @@ void UMantleScatterCellsComponent::OnComponentDestroyed(const bool bDestroyingHi
 	{
 		Shared->bCancelled.store(true);
 	}
-	// Its cells go with its actor; the ones still being read come back to a cancelled task and are never counted.
+	// The cells' mesh components belong to the actor, which outlives this component (ClearScatter, a settings change), so they are taken
+	// down here; the ones still being read come back to a cancelled task and are never counted.
+	ReleaseAll();
 	MantleScatterCellsPrivate::GBudget.LiveInstances -= LiveInstances;
 	MantleScatterCellsPrivate::GBudget.InFlight -= InFlight;
 	MantleScatterCellsPrivate::GBudget.Waiting -= Ready.Num();
@@ -309,22 +311,20 @@ void UMantleScatterCellsComponent::Scan(const FVector& View)
 		ReleaseCell(Key);
 	}
 
-	// A cell the live-instance cap turned away is tried again once there is room for it.
+	// A cell the live-instance cap turned away is tried again only once that many instances fit. One over the cap on its own never is, so
+	// it is not read again every scan.
 	const int64 MaxLive = FMath::Max(CVarScatterMaxLiveInstances.GetValueOnGameThread(), 1);
-	if (GBudget.LiveInstances * 10 < MaxLive * 9)
+	TArray<uint64> Skipped;
+	for (const TPair<uint64, FCell>& Pair : Cells)
 	{
-		TArray<uint64> Skipped;
-		for (const TPair<uint64, FCell>& Pair : Cells)
+		if (Pair.Value.State == ECellState::Skipped && GBudget.LiveInstances + Pair.Value.Needed <= MaxLive)
 		{
-			if (Pair.Value.State == ECellState::Skipped)
-			{
-				Skipped.Add(Pair.Key);
-			}
+			Skipped.Add(Pair.Key);
 		}
-		for (const uint64 Key : Skipped)
-		{
-			Cells.Remove(Key);
-		}
+	}
+	for (const uint64 Key : Skipped)
+	{
+		Cells.Remove(Key);
 	}
 
 	Wanted.Reset();
@@ -406,6 +406,7 @@ void UMantleScatterCellsComponent::Apply(FBuiltCell&& Built)
 	{
 		return;
 	}
+	++BuiltTotal;
 	++BuiltSinceLog;
 	GenerateMsSinceLog += Built.GenerateMs;
 
@@ -422,6 +423,7 @@ void UMantleScatterCellsComponent::Apply(FBuiltCell&& Built)
 	if (!Root || GBudget.LiveInstances + Count > MaxLive)
 	{
 		Cell->State = ECellState::Skipped;
+		Cell->Needed = Count;
 		++SkippedSinceLog;
 		return;
 	}
