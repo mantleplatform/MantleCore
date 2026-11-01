@@ -372,7 +372,7 @@ bool AMantleScatterVolume::RefreshScatter(FString& OutError)
 		if (DrawDistanceCm > 0.0)
 		{
 			const int32 CullEnd = FMath::Max(FMath::RoundToInt32(DrawDistanceCm), 1);
-			const int32 CullStart = FMath::Min(FMath::RoundToInt32(DrawDistanceCm * ScatterFadeStartShare), CullEnd);
+			const int32 CullStart = FMath::Min(FMath::RoundToInt32(DrawDistanceCm * MantleScatterVolumePrivate::ScatterFadeStartShare), CullEnd);
 			Ism->SetCullDistances(CullStart, CullEnd);
 			if (Shadows)
 			{
