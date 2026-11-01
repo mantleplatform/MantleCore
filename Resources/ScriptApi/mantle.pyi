@@ -444,7 +444,7 @@ class VoxelWorld:
         """Removes the outline HighlightBlock drew."""
         ...
     def count_blocks(self, min: Vector3, max: Vector3, name: str, /) -> float:
-        """How many blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks)."""
+        """How many blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks). On a smooth world: the solid voxels of that material (density above 0), or the empty ones for 'air'."""
         ...
     def dig(self, position: Vector3, radius: float, options: dict[str, Any] = ..., /) -> float:
         """Smooth worlds: takes ground away in a sphere (Brush('dig', ...)). Returns the voxels changed."""
@@ -456,7 +456,7 @@ class VoxelWorld:
         """Sets every block of a shape to a type (nil or 'air' empties it) and returns how many changed. A shape is {Box = {min, max}}, {Sphere = {center, radius}} or {Line = {from, to, radius}}, in blocks; at most 262,144 blocks a call. Raises one OnBlocksChanged."""
         ...
     def find_blocks(self, min: Vector3, max: Vector3, name: str, limit: Optional[float] = ..., /) -> list[Vector3]:
-        """Where the blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks), up to limit (default and at most 1,024)."""
+        """Where the blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks), up to limit (default and at most 1,024). On a smooth world: the solid voxels of that material, as CountBlocks counts them."""
         ...
     def flatten(self, position: Vector3, radius: float, options: dict[str, Any] = ..., /) -> float:
         """Smooth worlds: pulls the ground in a sphere toward a level floor at options.PlaneZ (cm; default the position's height). New ground takes options.Material, or its neighbour's. Returns the voxels changed."""
@@ -531,7 +531,7 @@ class VoxelWorld:
         """Walks the blocks from origin (cm) along direction to the first block within MaxDistance (default 10,000 cm, at most 51,200). It reads blocks, not physics, so it works at any distance. Liquids are passed through unless IgnoreLiquid is false. On a smooth world it finds the ground's surface: {Material, Position, Normal, Distance}."""
         ...
     def replace(self, shape: dict[str, Any], from_: str, to: Optional[str] = ..., /) -> float:
-        """Like Fill, but changes only the blocks of type from. Returns how many changed."""
+        """Like Fill, but changes only the blocks of type from. Returns how many changed. On a smooth world it changes the voxels of material from (solid ones; 'air' for empty ones) into full voxels of to."""
         ...
     def set_block(self, x: float, y: float, z: float, name: Optional[str] = ..., /) -> bool:
         """Sets one block (nil or 'air' empties it). True when it changed. Every player sees it; OnBlockChanged follows (not the cancellable OnBlockPlacing/OnBlockBreaking, which are for players' edits)."""
@@ -546,7 +546,7 @@ class VoxelWorld:
         """Smooth worlds: rounds off the ground in a sphere (each voxel moves toward its neighbours' average). Returns the voxels changed."""
         ...
     def surface_height(self, x: float, y: float, /) -> Optional[float]:
-        """The world height (cm) of the top of the highest solid block in column (x, y), or nil when the column is empty."""
+        """The world height (cm) of the top of the highest solid block in column (x, y), or nil when the column is empty. On a smooth world: the top of the highest solid voxel (density above 0), within a voxel (50 cm) of the drawn surface; Raycast finds the surface itself."""
         ...
     def voxel_to_world(self, x: float, y: float, z: float, /) -> Vector3:
         """The world position (cm) of a block's (on a smooth world, a voxel's) middle."""

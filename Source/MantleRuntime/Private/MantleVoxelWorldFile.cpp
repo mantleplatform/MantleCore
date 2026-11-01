@@ -66,9 +66,9 @@ bool FMantleVoxelWorldFile::Read(TConstArrayView<uint8> Bytes, FMantleVoxelWorld
 	const uint16 FileVersion = R.U16();
 	const uint8 Look = R.U8();
 	R.U8();
-	if (FileVersion != Version || Look != 0)
+	if (FileVersion != Version || Look > 1)
 	{
-		return Fail(OutError, FString::Printf(TEXT("is MBW1 version %d look %d; this client reads version %d blocky worlds"), FileVersion, Look, Version));
+		return Fail(OutError, FString::Printf(TEXT("is MBW1 version %d look %d; this client reads version %d, blocky or smooth"), FileVersion, Look, Version));
 	}
 	FIntVector Size;
 	Size.X = R.U16();
@@ -89,6 +89,7 @@ bool FMantleVoxelWorldFile::Read(TConstArrayView<uint8> Bytes, FMantleVoxelWorld
 	}
 	Out = FMantleVoxelWorldFile();
 	Out.Size = Size;
+	Out.bSmooth = Look == 1;
 	Out.Sections.Reserve(Count);
 	int64 Previous = -1;
 	int32 NonUniform = 0;
@@ -116,6 +117,19 @@ bool FMantleVoxelWorldFile::Read(TConstArrayView<uint8> Bytes, FMantleVoxelWorld
 		}
 		NonUniform += Section.Blocks.IsUniform() ? 0 : 1;
 		R.Pos += Length;
+		if (Out.bSmooth)
+		{
+			if (!R.Has(4))
+			{
+				return Fail(OutError, FString::Printf(TEXT("ends before section %u's densities"), Index));
+			}
+			const uint32 DensityLength = R.U32();
+			if (!R.Has(DensityLength) || !FMantleVoxelDensity::Decompress(Bytes.Slice(R.Pos, DensityLength), Section.Densities))
+			{
+				return Fail(OutError, FString::Printf(TEXT("section %u's densities cannot be read"), Index));
+			}
+			R.Pos += DensityLength;
+		}
 		Previous = Index;
 	}
 	if (NonUniform > MantleVoxel::MaxNonUniformSections)
@@ -135,7 +149,7 @@ void FMantleVoxelWorldFile::Write(TArray<uint8>& Out) const
 	Out.Reset();
 	Out.Append(reinterpret_cast<const uint8*>("MBW1"), 4);
 	Put16(Out, Version);
-	Out.Add(0);
+	Out.Add(bSmooth ? 1 : 0);
 	Out.Add(0);
 	Put16(Out, uint16(Size.X));
 	Put16(Out, uint16(Size.Y));
@@ -149,21 +163,47 @@ void FMantleVoxelWorldFile::Write(TArray<uint8>& Out) const
 		Put32(Out, uint32(Section.Index));
 		Put32(Out, uint32(Packed.Num()));
 		Out.Append(Packed);
+		if (bSmooth)
+		{
+			Section.Densities.Compress(Packed);
+			Put32(Out, uint32(Packed.Num()));
+			Out.Append(Packed);
+		}
 	}
 }
 
 FMantleVoxelWorldFile FMantleVoxelWorldFile::FromGrid(const FMantleVoxelGrid& Grid)
 {
-	FMantleVoxelWorldFile File;
-	File.Size = Grid.GetSize();
+	TArray<int32> Indices;
 	for (int32 Index = 0; Index < Grid.NumSections(); ++Index)
 	{
 		const FMantleVoxelSection& Blocks = Grid.GetSection(Index);
-		if (Blocks.IsUniform() && Blocks.GetUniformId() == MantleVoxel::Air)
+		const FMantleVoxelDensity& Densities = Grid.GetDensitySection(Index);
+		const bool bEmptyDensity = !Grid.IsSmooth() || (Densities.IsUniform() && Densities.GetUniform() == MantleVoxel::EmptyDensity);
+		if (Blocks.IsUniform() && Blocks.GetUniformId() == MantleVoxel::Air && bEmptyDensity)
 		{
 			continue;
 		}
-		File.Sections.Add({ Index, Blocks });
+		Indices.Add(Index);
+	}
+	return FromGridSections(Grid, Indices);
+}
+
+FMantleVoxelWorldFile FMantleVoxelWorldFile::FromGridSections(const FMantleVoxelGrid& Grid, TConstArrayView<int32> Indices)
+{
+	FMantleVoxelWorldFile File;
+	File.Size = Grid.GetSize();
+	File.bSmooth = Grid.IsSmooth();
+	TArray<int32> Sorted(Indices.GetData(), Indices.Num());
+	Sorted.Sort();
+	for (int32 I = 0; I < Sorted.Num(); ++I)
+	{
+		const int32 Index = Sorted[I];
+		if (Index < 0 || Index >= Grid.NumSections() || (I > 0 && Sorted[I - 1] == Index))
+		{
+			continue;
+		}
+		File.Sections.Add({ Index, Grid.GetSection(Index), Grid.GetDensitySection(Index) });
 	}
 	return File;
 }
@@ -174,6 +214,10 @@ bool FMantleVoxelWorldFile::ApplyTo(FMantleVoxelGrid& Grid, int32* OutUnknownIds
 	if (Grid.GetSize() != Size)
 	{
 		return Fail(OutError, FString::Printf(TEXT("is %s blocks; the VoxelWorld is %s"), *Size.ToString(), *Grid.GetSize().ToString()));
+	}
+	if (Grid.IsSmooth() != bSmooth)
+	{
+		return Fail(OutError, bSmooth ? TEXT("is a smooth world; the VoxelWorld is blocky") : TEXT("is a blocky world; the VoxelWorld is smooth"));
 	}
 	const int32 TypeCount = Grid.GetTypes().Num();
 	int32 Unknown = 0;
@@ -189,7 +233,21 @@ bool FMantleVoxelWorldFile::ApplyTo(FMantleVoxelGrid& Grid, int32* OutUnknownIds
 				++Unknown;
 			}
 		}
-		if (!Grid.SetSectionBlocks(Section.Index, Ids))
+		bool bFits = true;
+		if (bSmooth)
+		{
+			int8 Values[MantleVoxel::SectionVolume];
+			for (int32 I = 0; I < MantleVoxel::SectionVolume; ++I)
+			{
+				Values[I] = Section.Densities.Get(I);
+			}
+			bFits = Grid.SetSectionVoxels(Section.Index, Ids, Values);
+		}
+		else
+		{
+			bFits = Grid.SetSectionBlocks(Section.Index, Ids);
+		}
+		if (!bFits)
 		{
 			return Fail(OutError, TEXT("has more mixed sections than a world holds"));
 		}
