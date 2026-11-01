@@ -56,6 +56,9 @@ namespace MantleScatterExportTestPrivate
 		P.MaxSlopeDegrees = 33.3333333;
 		P.MinHeight = -250.125;
 		P.MaxHeight = 4000.0625;
+		P.PaintLayer = 5;
+		P.MinLayerWeight = 0.2509803;
+		P.MaxLayerWeight = 0.75;
 		P.Shape = Shape;
 		P.Radius = 1777.777;
 		P.Path = { FVector2D(-1000.5, 0.25), FVector2D(0.0, 900.125), FVector2D(1200.0, -300.0) };
@@ -85,6 +88,8 @@ namespace MantleScatterExportTestPrivate
 			Out.ZMm = (XMm + YMm) / 100;
 			Out.NormalZ = 0.9;
 			Out.WorldZCm = static_cast<double>(XMm) * 0.01;
+			// The paint layer's weight changes across the field, so the layer filter keeps some instances and drops others.
+			Out.LayerWeight = static_cast<int32>(FMath::Abs(XMm / 10000) % 256);
 			return true;
 		};
 		TArray<FMantleScatterInstance> Instances;
@@ -152,6 +157,9 @@ bool FMantleScatterExportKeysTest::RunTest(const FString& Parameters)
 		TestEqual(What + TEXT(": max slope"), Got->MaxSlopeDegrees, Sent.MaxSlopeDegrees);
 		TestTrue(What + TEXT(": min height"), Got->MinHeight == Sent.MinHeight);
 		TestTrue(What + TEXT(": max height"), Got->MaxHeight == Sent.MaxHeight);
+		TestEqual(What + TEXT(": paint layer"), Got->PaintLayer, Sent.PaintLayer);
+		TestTrue(What + TEXT(": min layer weight"), Got->MinLayerWeight == Sent.MinLayerWeight);
+		TestTrue(What + TEXT(": max layer weight"), Got->MaxLayerWeight == Sent.MaxLayerWeight);
 		TestTrue(What + TEXT(": shape"), Got->Shape == Shape);
 		TestEqual(What + TEXT(": radius"), Got->Radius, Sent.Radius);
 		TestEqual(What + TEXT(": path points"), Got->Path.Num(), Sent.Path.Num());
@@ -188,7 +196,8 @@ bool FMantleScatterExportKeysTest::RunTest(const FString& Parameters)
 		&& (*Entities)[0]->AsObject()->TryGetObjectField(TEXT("properties"), Properties)))
 	{
 		for (const TCHAR* Key : { TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"),
-			TEXT("shape"), TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision") })
+			TEXT("shape"), TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision"),
+			TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight") })
 		{
 			TestFalse(FString::Printf(TEXT("a plain box scatter writes no %s"), Key), (*Properties)->HasField(Key));
 		}
@@ -340,6 +349,62 @@ bool FMantleScatterCollisionCheckTest::RunTest(const FString& Parameters)
 	Second->bCollision = false;
 	Result = FMantlePlaceValidator::Validate(Fixture.World);
 	TestFalse(TEXT("one colliding scatter fits"), CapIssueOn(Result, TEXT("Rocks A")) || CapIssueOn(Result, TEXT("Rocks B")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterPaintLayerCheckTest,
+	"Mantle.Editor.Scatter.Check.PaintLayerFilter",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterPaintLayerCheckTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterExportTestPrivate;
+
+	// #187: a paint-layer filter left ticked under Box placement is named (it is dropped), and a Max below the Min is an error.
+	FScatterWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	AMantleScatterVolume* Volume = Fixture.World->SpawnActor<AMantleScatterVolume>(FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("a volume"), Volume))
+	{
+		return false;
+	}
+	Volume->SetActorLabel(TEXT("Moss"));
+	Volume->HalfExtent = FVector(1000.0, 1000.0, 0.0);
+	Volume->Density = 0.01;
+	Volume->Meshes.SetNum(1);
+	Volume->Meshes[0].MeshId = TEXT("ast_cube");
+	const auto Has = [](const FMantleValidationResult& Result, const EMantleIssueSeverity Severity, const TCHAR* Text)
+	{
+		return Result.Issues.ContainsByPredicate([Severity, Text](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Actor == TEXT("Moss") && Issue.Severity == Severity && Issue.Problem.Contains(Text);
+		});
+	};
+
+	Volume->bFilterPaintLayer = true;
+	Volume->PaintLayer = 2;
+	Volume->Placement = EMantleScatterPlacement::Box;
+	TestTrue(TEXT("a filter under Box placement is named"),
+		Has(FMantlePlaceValidator::Validate(Fixture.World), EMantleIssueSeverity::Warning, TEXT("its Placement is Box")));
+	FMantleScatterParams Params;
+	FString Problem;
+	TestTrue(TEXT("and it reads"), Volume->ReadProps(Params, Problem));
+	TestEqual(TEXT("without the filter"), Params.PaintLayer, -1);
+
+	Volume->Placement = EMantleScatterPlacement::Terrain;
+	Volume->MinLayerWeight = 0.8;
+	Volume->MaxLayerWeight = 0.3;
+	TestTrue(TEXT("a Max below the Min is an error"),
+		Has(FMantlePlaceValidator::Validate(Fixture.World), EMantleIssueSeverity::Error, TEXT("Max Layer Weight is below the Min")));
+
+	Volume->MaxLayerWeight = 0.9;
+	const FMantleValidationResult Fine = FMantlePlaceValidator::Validate(Fixture.World);
+	TestFalse(TEXT("a sound filter on terrain says nothing of it"),
+		Has(Fine, EMantleIssueSeverity::Warning, TEXT("its Placement is Box")) || Has(Fine, EMantleIssueSeverity::Error, TEXT("Max Layer Weight")));
 	return true;
 }
 

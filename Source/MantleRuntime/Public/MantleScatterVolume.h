@@ -10,6 +10,7 @@
 
 struct FMantleHeightfield;
 struct FMantleTerrainHoleGrid;
+struct FMantleTerrainWeights;
 namespace Scalability { struct FQualityLevels; }
 class UBoxComponent;
 class UInstancedStaticMeshComponent;
@@ -67,6 +68,13 @@ struct FMantleScatterTerrainSurface
 {
 	TSharedPtr<const FMantleHeightfield> Field;
 	TSharedPtr<const FMantleTerrainHoleGrid> Holes;
+	/** The paint-layer weightmaps with their pixels (#187): layers 0 to 3 and 4 to 7; null where the Terrain has none. */
+	TSharedPtr<const FMantleTerrainWeights> Weights;
+	TSharedPtr<const FMantleTerrainWeights> Weights2;
+	/** How many layers the Terrain has; a layer past it weighs 0. */
+	int32 LayerCount = 0;
+	/** The Terrain names a weightmap. Without one layer 0 weighs 255 everywhere; with one that did not load every layer weighs 0. */
+	bool bWeightmap = false;
 	FTransform TerrainToWorld = FTransform::Identity;
 };
 
@@ -158,6 +166,31 @@ public:
 		meta = (ClampMin = "-1000000", ClampMax = "1000000", Units = "cm",
 			EditCondition = "Placement == EMantleScatterPlacement::Terrain && bLimitMaxHeight", EditConditionHides))
 	double MaxHeight = 10000.0;
+
+	/**
+	 * Terrain only: keep instances only where a Terrain paint layer's weight is within Min and Max Layer Weight. The layer is the Terrain's
+	 * layers[] index (0 to 7: the weightmap's R, G, B, A, then the second weightmap's). A layer the Terrain does not have weighs 0.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (EditCondition = "Placement == EMantleScatterPlacement::Terrain", EditConditionHides))
+	bool bFilterPaintLayer = false;
+
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (ClampMin = "0", ClampMax = "7", UIMin = "0", UIMax = "7",
+			EditCondition = "Placement == EMantleScatterPlacement::Terrain && bFilterPaintLayer", EditConditionHides))
+	int32 PaintLayer = 0;
+
+	/** Keep instances where the layer weighs at least this (0 to 1). */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (ClampMin = "0", ClampMax = "1", UIMin = "0", UIMax = "1",
+			EditCondition = "Placement == EMantleScatterPlacement::Terrain && bFilterPaintLayer", EditConditionHides))
+	double MinLayerWeight = 0.5;
+
+	/** Keep instances where the layer weighs at most this (0 to 1), and at least Min Layer Weight. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Terrain",
+		meta = (ClampMin = "0", ClampMax = "1", UIMin = "0", UIMax = "1",
+			EditCondition = "Placement == EMantleScatterPlacement::Terrain && bFilterPaintLayer", EditConditionHides))
+	double MaxLayerWeight = 1.0;
 
 	/** The footprint: the Half Extent box, a Disc of Radius, or a Path strip of Width along its points. Half Extent's Z sets the layer's depth in every shape. */
 	UPROPERTY(EditAnywhere, Category = "Scatter|Shape")

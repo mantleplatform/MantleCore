@@ -110,6 +110,17 @@ struct FMantleScatterParams
 	TOptional<double> MinHeight;
 	TOptional<double> MaxHeight;
 
+	/**
+	 * Terrain only (#187): the paint layer the filter reads, 0 to MaxTerrainLayers - 1 (the Terrain's layers[] index: weightmap channel
+	 * R, G, B, A are layers 0 to 3, weightmap2's are 4 to 7); -1 for none. Needs MinLayerWeight or MaxLayerWeight. A layer the Terrain
+	 * does not have weighs 0 everywhere, and a Terrain without a weightmap weighs layer 0 at 1 and every other at 0.
+	 */
+	int32 PaintLayer = -1;
+
+	/** The layer's weight (0 to 1) must be at least MinLayerWeight and at most MaxLayerWeight when these are set. */
+	TOptional<double> MinLayerWeight;
+	TOptional<double> MaxLayerWeight;
+
 	EMantleScatterShape Shape = EMantleScatterShape::Box;
 
 	/** Disc: the radius, cm. */
@@ -139,6 +150,8 @@ struct FMantleScatterGround
 	double NormalZ = 1.0;
 	/** The surface's height in world space, cm. */
 	double WorldZCm = 0.0;
+	/** The Scatter's paint layer's weight there, 0 to 255 (the weightmap's byte, nearest texel); only read when PaintLayer is set. */
+	int32 LayerWeight = 0;
 };
 
 /** The ground under (X, Y) millimetres in the scatter's own space; false where there is none (a hole, off every Terrain). */

@@ -418,6 +418,117 @@ bool FMantleScatterRoundedFiltersTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterPaintLayerTest,
+	"Mantle.Runtime.Scatter.Generator.PaintLayerFilter",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterPaintLayerTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterTestPrivate;
+
+	FMantleScatterParams P = BoxParams();
+	P.HalfExtent = FVector(1000.0, 1000.0, 0.0);
+	P.Density = 1.0;
+	P.Placement = EMantleScatterPlacement::Terrain;
+
+	// The layer weighs 230 of 255 (about 0.902) on the east half (X >= 0) and 25 (about 0.098) on the west half.
+	FMantleScatterGenerateOptions Options;
+	Options.Ground = [](const int64 XMm, const int64, FMantleScatterGround& Out) -> bool
+	{
+		Out.ZMm = 0;
+		Out.NormalZ = 1.0;
+		Out.WorldZCm = 0.0;
+		Out.LayerWeight = XMm >= 0 ? 230 : 25;
+		return true;
+	};
+	const TArray<FMantleScatterInstance> Unfiltered = GenerateOk(*this, P, Options);
+
+	// Filter off (no paint layer): the weight is never read, every instance stays.
+	TestTrue(TEXT("some stand without the filter"), Unfiltered.Num() > 0);
+	const uint64 UnfilteredHash = FMantleScatter::Hash(Unfiltered);
+
+	// At least 0.9: the east half only. 0.9 x 255 = 229.5, so 230 passes and 229 would not.
+	P.PaintLayer = 1;
+	P.MinLayerWeight = 0.9;
+	TArray<FMantleScatterInstance> Kept = GenerateOk(*this, P, Options);
+	bool bEastOnly = Kept.Num() > 0 && Kept.Num() < Unfiltered.Num();
+	for (const FMantleScatterInstance& Instance : Kept)
+	{
+		bEastOnly &= Instance.X >= 0;
+	}
+	TestTrue(TEXT("a minimum keeps the heavy side only"), bEastOnly);
+	TestEqual(TEXT("the instances that stay are the unfiltered ones, unchanged"), Kept.Num(),
+		Unfiltered.FilterByPredicate([](const FMantleScatterInstance& I) { return I.X >= 0; }).Num());
+	TestEqual(TEXT("the filtered hash is stable"), FMantleScatter::Hash(GenerateOk(*this, P, Options)), FMantleScatter::Hash(Kept));
+	TestTrue(TEXT("the filter changes the hash"), FMantleScatter::Hash(Kept) != UnfilteredHash);
+
+	// At most 0.5: the west half only.
+	P.MinLayerWeight.Reset();
+	P.MaxLayerWeight = 0.5;
+	Kept = GenerateOk(*this, P, Options);
+	bool bWestOnly = Kept.Num() > 0 && Kept.Num() < Unfiltered.Num();
+	for (const FMantleScatterInstance& Instance : Kept)
+	{
+		bWestOnly &= Instance.X < 0;
+	}
+	TestTrue(TEXT("a maximum keeps the light side only"), bWestOnly);
+
+	// A band that holds neither side keeps none; one that holds both keeps all.
+	P.MinLayerWeight = 0.4;
+	P.MaxLayerWeight = 0.6;
+	TestEqual(TEXT("a band between the two weights keeps none"), GenerateOk(*this, P, Options).Num(), 0);
+	P.MinLayerWeight = 0.0;
+	P.MaxLayerWeight = 1.0;
+	TestEqual(TEXT("0 to 1 keeps every instance"), GenerateOk(*this, P, Options).Num(), Unfiltered.Num());
+
+	// The threshold is exact in whole numbers: weight 230 passes a minimum m when 230 x 1,000,000 >= (m in millionths) x 255.
+	P.MinLayerWeight = 0.901961; // 901961 x 255 = 230,000,055: just above 230,000,000, so 230 is dropped
+	TestEqual(TEXT("a minimum a hair above a byte's weight drops that byte"), GenerateOk(*this, P, Options).Num() > 0 ? 1 : 0, 0);
+	P.MinLayerWeight = 0.90196; // 901960 x 255 = 229,999,800: below 230,000,000, so 230 passes
+	TestTrue(TEXT("a minimum a hair below a byte's weight keeps that byte"), GenerateOk(*this, P, Options).Num() > 0);
+
+	// A layer the terrain lacks weighs 0 (the ground function's call): a minimum above 0 keeps none, a maximum keeps all.
+	Options.Ground = [](const int64, const int64, FMantleScatterGround& Out) -> bool
+	{
+		Out.ZMm = 0;
+		Out.NormalZ = 1.0;
+		Out.WorldZCm = 0.0;
+		Out.LayerWeight = 0;
+		return true;
+	};
+	P.MinLayerWeight = 0.5;
+	P.MaxLayerWeight.Reset();
+	TestEqual(TEXT("a missing layer fails a minimum"), GenerateOk(*this, P, Options).Num(), 0);
+	P.MinLayerWeight.Reset();
+	P.MaxLayerWeight = 0.5;
+	TestTrue(TEXT("a missing layer passes a maximum"), GenerateOk(*this, P, Options).Num() > 0);
+
+	// Box placement ignores the layer (the parser refuses the keys there), and a bad layer is refused by Generate.
+	FMantleScatterParams Box = BoxParams();
+	TArray<FMantleScatterInstance> Out;
+	FString Error;
+	Box.PaintLayer = 8;
+	Box.MinLayerWeight = 0.5;
+	TestFalse(TEXT("a layer past 7 is refused"), FMantleScatter::Generate(Box, Out, Error));
+	Box.PaintLayer = 2;
+	Box.MinLayerWeight.Reset();
+	TestFalse(TEXT("a layer with no limit is refused"), FMantleScatter::Generate(Box, Out, Error));
+	Box.PaintLayer = -1;
+	Box.MaxLayerWeight = 0.5;
+	TestFalse(TEXT("a limit with no layer is refused"), FMantleScatter::Generate(Box, Out, Error));
+
+	// ToJson writes the keys back to the same parameters.
+	P.PaintLayer = 3;
+	P.MinLayerWeight = 0.25;
+	P.MaxLayerWeight = 0.75;
+	const TSharedRef<FJsonObject> Json = FMantleScatter::ToJson(P);
+	TestEqual(TEXT("paintLayer is written"), static_cast<int32>(Json->GetNumberField(TEXT("paintLayer"))), 3);
+	TestEqual(TEXT("minLayerWeight is written"), Json->GetNumberField(TEXT("minLayerWeight")), 0.25);
+	TestEqual(TEXT("maxLayerWeight is written"), Json->GetNumberField(TEXT("maxLayerWeight")), 0.75);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleScatterParserTest,
 	"Mantle.Runtime.Scatter.Parser.ReadsAndRefusesTheNewKeys",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -450,6 +561,22 @@ bool FMantleScatterParserTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a path parses"), Result.bSuccess && ScatterOf(Result) && ScatterOf(Result)->Path.Num() == 3 && ScatterOf(Result)->Width == 300.0);
 
 	TestTrue(TEXT("a slope with box placement is refused"), HasErrorAt(ParseScatter(TEXT(",\"maxSlopeDegrees\":10")), TEXT("maxSlopeDegrees")));
+	Result = ParseScatter(TEXT(",\"placement\":\"terrain\",\"paintLayer\":5,\"minLayerWeight\":0.9,\"maxLayerWeight\":1"));
+	const FMantleScatterParams* Painted = ScatterOf(Result);
+	TestTrue(TEXT("the paint-layer keys parse"), Result.bSuccess && Painted && Painted->PaintLayer == 5
+		&& Painted->MinLayerWeight.Get(-1.0) == 0.9 && Painted->MaxLayerWeight.Get(-1.0) == 1.0);
+	TestEqual(TEXT("no paint layer by default"), Plain ? Plain->PaintLayer : 0, -1);
+	TestTrue(TEXT("a paint layer on box placement is refused"), HasErrorAt(ParseScatter(TEXT(",\"paintLayer\":1,\"minLayerWeight\":0.5")), TEXT("paintLayer")));
+	TestTrue(TEXT("a paint layer past 7 is refused"),
+		HasErrorAt(ParseScatter(TEXT(",\"placement\":\"terrain\",\"paintLayer\":8,\"minLayerWeight\":0.5")), TEXT("paintLayer")));
+	TestTrue(TEXT("a paint layer without a limit is refused"),
+		HasErrorAt(ParseScatter(TEXT(",\"placement\":\"terrain\",\"paintLayer\":1")), TEXT("paintLayer")));
+	TestTrue(TEXT("a limit without a paint layer is refused"),
+		HasErrorAt(ParseScatter(TEXT(",\"placement\":\"terrain\",\"maxLayerWeight\":0.5")), TEXT("maxLayerWeight")));
+	TestTrue(TEXT("a layer weight past 1 is refused"),
+		HasErrorAt(ParseScatter(TEXT(",\"placement\":\"terrain\",\"paintLayer\":1,\"minLayerWeight\":1.5")), TEXT("minLayerWeight")));
+	TestTrue(TEXT("layer min above max is refused"),
+		HasErrorAt(ParseScatter(TEXT(",\"placement\":\"terrain\",\"paintLayer\":1,\"minLayerWeight\":0.9,\"maxLayerWeight\":0.2")), TEXT("maxLayerWeight")));
 	TestTrue(TEXT("min above max is refused"),
 		HasErrorAt(ParseScatter(TEXT(",\"placement\":\"terrain\",\"minHeight\":10,\"maxHeight\":5")), TEXT("maxHeight")));
 	TestTrue(TEXT("a disc without a radius is refused"), HasErrorAt(ParseScatter(TEXT(",\"shape\":\"disc\"")), TEXT("radius")));

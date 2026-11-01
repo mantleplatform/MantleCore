@@ -153,7 +153,7 @@ FTransform FMantleScatterEditorGround::AsPublished(const FTransform& Transform)
 	return FTransform(FRotator(Transform.GetRotation().Rotator()), Transform.GetLocation(), Transform.GetScale3D());
 }
 
-FMantleScatterTerrainSurface FMantleScatterEditorGround::SurfaceFor(const FMantleTerrainSource& Source)
+FMantleScatterTerrainSurface FMantleScatterEditorGround::SurfaceFor(const FMantleTerrainSource& Source, UWorld* World, const FString& Label)
 {
 	FMantleScatterTerrainSurface Out;
 	Out.TerrainToWorld = AsPublished(Source.Transform);
@@ -177,6 +177,35 @@ FMantleScatterTerrainSurface FMantleScatterEditorGround::SurfaceFor(const FMantl
 			Out.Holes = FMantleTerrainHoleGrid::FromMask(Mask, Field->Width, Field->Height);
 		}
 	}
+	// The paint layers (#187) the place carries: one layer has no weightmap, more have one (a second past four), at the size the
+	// converter uploads them. The PNG is lossless, so the pixels MakeWeightmaps gives at that size are the ones a client decodes.
+	TArray<FMantleTerrainLayerChoice> Layers;
+	TArray<FMantleValidationIssue> LayerIssues;
+	if (World && FMantleTerrainExport::ChooseLayers(World, Source, Label, Layers, LayerIssues))
+	{
+		Out.LayerCount = Layers.Num();
+		Out.bWeightmap = Layers.Num() > 1;
+		const FMantlePlaceAssetLimits Limits;
+		FIntPoint Size;
+		TArray<uint8> Png;
+		TArray<uint8> Png2;
+		if (Out.bWeightmap && FMantleTerrainExport::EncodeWeightmaps(Source, Layers, Limits.MaxTextureSize, Limits.MaxTextureBytes, Size, Png, Png2))
+		{
+			TArray<FColor> First;
+			TArray<FColor> Second;
+			FMantleTerrainExport::MakeWeightmaps(Source, Layers, Size, First, Second);
+			TSharedRef<FMantleTerrainWeights> Weights = MakeShared<FMantleTerrainWeights>();
+			if (FMantleTerrainWeights::FromPixels(Size.X, Size.Y, First, *Weights, /*bKeepPixels*/ true))
+			{
+				Out.Weights = Weights;
+			}
+			TSharedRef<FMantleTerrainWeights> Weights2 = MakeShared<FMantleTerrainWeights>();
+			if (!Second.IsEmpty() && FMantleTerrainWeights::FromPixels(Size.X, Size.Y, Second, *Weights2, /*bKeepPixels*/ true))
+			{
+				Out.Weights2 = Weights2;
+			}
+		}
+	}
 	return Out;
 }
 
@@ -192,7 +221,7 @@ TArray<FMantleScatterTerrainSurface> FMantleScatterEditorGround::SurfacesFor(UWo
 			UE_LOG(LogMantle, Verbose, TEXT("MANTLE_SCATTER editor ground: %s is left out: %s"), *Landscape->GetName(), *Problem);
 			continue;
 		}
-		FMantleScatterTerrainSurface Surface = SurfaceFor(Source);
+		FMantleScatterTerrainSurface Surface = SurfaceFor(Source, World, Landscape->GetActorLabel());
 		if (Surface.Field.IsValid())
 		{
 			Out.Add(MoveTemp(Surface));

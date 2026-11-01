@@ -112,6 +112,27 @@ namespace MantleScatterPrivate
 			OutError = FString::Printf(TEXT("max height %g is below min height %g"), Params.MaxHeight.GetValue(), Params.MinHeight.GetValue());
 			return false;
 		}
+		if (Params.PaintLayer < -1 || Params.PaintLayer >= FMantlePlaceLimits::MaxTerrainLayers)
+		{
+			OutError = FString::Printf(TEXT("paint layer %d must be 0 to %d"), Params.PaintLayer, FMantlePlaceLimits::MaxTerrainLayers - 1);
+			return false;
+		}
+		if ((Params.MinLayerWeight.IsSet() && !(Params.MinLayerWeight.GetValue() >= 0.0 && Params.MinLayerWeight.GetValue() <= 1.0))
+			|| (Params.MaxLayerWeight.IsSet() && !(Params.MaxLayerWeight.GetValue() >= 0.0 && Params.MaxLayerWeight.GetValue() <= 1.0)))
+		{
+			OutError = TEXT("min and max layer weight must be 0 to 1");
+			return false;
+		}
+		if (Params.MinLayerWeight.IsSet() && Params.MaxLayerWeight.IsSet() && Params.MinLayerWeight.GetValue() > Params.MaxLayerWeight.GetValue())
+		{
+			OutError = FString::Printf(TEXT("max layer weight %g is below min layer weight %g"), Params.MaxLayerWeight.GetValue(), Params.MinLayerWeight.GetValue());
+			return false;
+		}
+		if ((Params.PaintLayer >= 0) != (Params.MinLayerWeight.IsSet() || Params.MaxLayerWeight.IsSet()))
+		{
+			OutError = TEXT("paint layer and min or max layer weight go together");
+			return false;
+		}
 		if (Params.Shape == EMantleScatterShape::Disc
 			&& !(Params.Radius > 0.0 && Params.Radius <= FMantlePlaceLimits::MaxScatterRadius))
 		{
@@ -199,6 +220,13 @@ namespace MantleScatterPrivate
 		// rounding: the backend and validate.py round each step, and the counts must agree exactly.
 		const double Millimetres = HalfCm * 10.0;
 		return static_cast<int64>(FMath::FloorToDouble(Millimetres + 0.5));
+	}
+
+	/** A 0 to 1 value in whole millionths, rounded half up, the multiply and the add as separate steps (see above). */
+	int64 ScatterMillionths(double Value)
+	{
+		const double Millionths = Value * 1.0e6;
+		return static_cast<int64>(FMath::FloorToDouble(Millionths + 0.5));
 	}
 
 	/** A path in whole millimetres: its points, each segment's length rounded to whole mm (a segment that rounds to 0 is skipped), and the strip's width. */
@@ -420,7 +448,14 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 	const bool bSlopeFilter = bTerrain && Params.MaxSlopeDegrees < 90.0;
 	// The filters compare whole numbers: the normal's up component and the threshold (the cosine of the limit) each rounded to
 	// millionths, heights in whole millimetres, so a last bit of float maths on another machine cannot flip a decision.
-	const int64 SlopeLimitMicro = static_cast<int64>(FMath::FloorToDouble(FMath::Cos(FMath::DegreesToRadians(Params.MaxSlopeDegrees)) * 1.0e6 + 0.5));
+	const int64 SlopeLimitMicro = ScatterMillionths(FMath::Cos(FMath::DegreesToRadians(Params.MaxSlopeDegrees)));
+	// The paint-layer filter (#187): the weight is the weightmap's byte (0 to 255), the thresholds millionths, and the test
+	// is byte x 1,000,000 against threshold x 255, all whole numbers.
+	const bool bLayerFilter = bTerrain && Params.PaintLayer >= 0;
+	const bool bMinLayer = bLayerFilter && Params.MinLayerWeight.IsSet();
+	const bool bMaxLayer = bLayerFilter && Params.MaxLayerWeight.IsSet();
+	const int64 MinLayerMicro = bMinLayer ? ScatterMillionths(Params.MinLayerWeight.GetValue()) : 0;
+	const int64 MaxLayerMicro = bMaxLayer ? ScatterMillionths(Params.MaxLayerWeight.GetValue()) : 0;
 	const bool bMinHeight = Params.MinHeight.IsSet();
 	const bool bMaxHeight = Params.MaxHeight.IsSet();
 	const int64 MinHeightMm = bMinHeight ? ScatterHalfMillimetres(Params.MinHeight.GetValue()) : 0;
@@ -509,16 +544,23 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 			}
 			if (bSlopeFilter)
 			{
-				const double NormalMicro = FMath::FloorToDouble(Ground.NormalZ * 1.0e6 + 0.5);
-				if (static_cast<int64>(NormalMicro) < SlopeLimitMicro)
+				if (ScatterMillionths(Ground.NormalZ) < SlopeLimitMicro)
 				{
 					continue;
 				}
 			}
 			if (bMinHeight || bMaxHeight)
 			{
-				const double HeightMm = FMath::FloorToDouble(Ground.WorldZCm * 10.0 + 0.5);
-				if ((bMinHeight && static_cast<int64>(HeightMm) < MinHeightMm) || (bMaxHeight && static_cast<int64>(HeightMm) > MaxHeightMm))
+				const int64 HeightMm = ScatterHalfMillimetres(Ground.WorldZCm);
+				if ((bMinHeight && HeightMm < MinHeightMm) || (bMaxHeight && HeightMm > MaxHeightMm))
+				{
+					continue;
+				}
+			}
+			if (bLayerFilter)
+			{
+				const int64 Scaled = static_cast<int64>(FMath::Clamp(Ground.LayerWeight, 0, 255)) * 1000000;
+				if ((bMinLayer && Scaled < MinLayerMicro * 255) || (bMaxLayer && Scaled > MaxLayerMicro * 255))
 				{
 					continue;
 				}
@@ -718,6 +760,18 @@ TSharedRef<FJsonObject> FMantleScatter::ToJson(const FMantleScatterParams& Param
 		if (Params.MaxHeight.IsSet())
 		{
 			Json->SetNumberField(TEXT("maxHeight"), Params.MaxHeight.GetValue());
+		}
+		if (Params.PaintLayer >= 0)
+		{
+			Json->SetNumberField(TEXT("paintLayer"), Params.PaintLayer);
+		}
+		if (Params.MinLayerWeight.IsSet())
+		{
+			Json->SetNumberField(TEXT("minLayerWeight"), Params.MinLayerWeight.GetValue());
+		}
+		if (Params.MaxLayerWeight.IsSet())
+		{
+			Json->SetNumberField(TEXT("maxLayerWeight"), Params.MaxLayerWeight.GetValue());
 		}
 	}
 	if (Params.Shape != EMantleScatterShape::Box)

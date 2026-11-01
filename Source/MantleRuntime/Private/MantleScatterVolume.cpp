@@ -40,6 +40,25 @@ namespace MantleScatterVolumePrivate
 	/** The share of a drawDistance at which instances start to fade out: the last fifth, as an InstancedMesh's (MantlePlaceBuilder.cpp). */
 	constexpr double ScatterFadeStartShare = 0.8;
 
+	/**
+	 * The weight, 0 to 255, of paint layer Layer on Surface at (U, V) (0 to 1 across the terrain), nearest texel (#187). A layer the
+	 * Terrain does not have weighs 0; no weightmap at all is layer 0 everywhere (the Terrain's own rule); a weightmap that did not load
+	 * weighs 0 for every layer.
+	 */
+	int32 PaintLayerWeightAt(const FMantleScatterTerrainSurface& Surface, const int32 Layer, const double U, const double V)
+	{
+		if (Layer >= Surface.LayerCount)
+		{
+			return 0;
+		}
+		if (!Surface.bWeightmap)
+		{
+			return Layer == 0 ? 255 : 0;
+		}
+		const TSharedPtr<const FMantleTerrainWeights>& Map = Layer < 4 ? Surface.Weights : Surface.Weights2;
+		return Map.IsValid() ? Map->ChannelByteAt(Layer & 3, U, V) : 0;
+	}
+
 	/** What a mesh is called in a message: its asset's name, else the id it was given. */
 	FString ScatterMeshLabel(const FMantleScatterMeshSettings& Entry, int32 Index)
 	{
@@ -107,6 +126,10 @@ void AMantleScatterVolume::ApplyProps(const FMantleScatterParams& In)
 	MinHeight = In.MinHeight.Get(MinHeight);
 	bLimitMaxHeight = In.MaxHeight.IsSet();
 	MaxHeight = In.MaxHeight.Get(MaxHeight);
+	bFilterPaintLayer = In.PaintLayer >= 0;
+	PaintLayer = In.PaintLayer >= 0 ? In.PaintLayer : PaintLayer;
+	MinLayerWeight = In.MinLayerWeight.Get(0.0);
+	MaxLayerWeight = In.MaxLayerWeight.Get(1.0);
 	Shape = In.Shape;
 	Radius = In.Shape == EMantleScatterShape::Disc ? In.Radius : Radius;
 	if (In.Shape == EMantleScatterShape::Path)
@@ -194,6 +217,12 @@ bool AMantleScatterVolume::ReadProps(FMantleScatterParams& Out, FString& OutProb
 		if (bLimitMaxHeight)
 		{
 			Out.MaxHeight = MaxHeight;
+		}
+		if (bFilterPaintLayer)
+		{
+			Out.PaintLayer = PaintLayer;
+			Out.MinLayerWeight = MinLayerWeight;
+			Out.MaxLayerWeight = MaxLayerWeight;
 		}
 	}
 	Out.Shape = Shape;
@@ -439,7 +468,7 @@ FString AMantleScatterVolume::SettingsKey() const
 	Key += FString::Printf(TEXT("|d%.17g|p%d,%.17g,%d,%.17g,%d,%.17g|s%d,%.17g,%.17g|c%d,%.17g|k%d|t%d"), DrawDistance,
 		static_cast<int32>(Placement), MaxSlopeDegrees, bLimitMinHeight, MinHeight, bLimitMaxHeight, MaxHeight,
 		static_cast<int32>(Shape), Radius, Width, ClusterCount, ClusterRadius, bCollision, TerrainSurfaces.Num());
-	Key += FString::Printf(TEXT("|v%d"), TerrainVersion);
+	Key += FString::Printf(TEXT("|v%d|L%d,%d,%.17g,%.17g"), TerrainVersion, bFilterPaintLayer, PaintLayer, MinLayerWeight, MaxLayerWeight);
 	if (Placement == EMantleScatterPlacement::Terrain)
 	{
 		// Where the volume stands decides which ground each instance lands on, so moving it rebuilds.
@@ -585,7 +614,8 @@ FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
 	{
 		Surface.TerrainToWorld = Exported(Surface.TerrainToWorld);
 	}
-	return [Surfaces = MoveTemp(Exact), ScatterToWorld = Exported(GetActorTransform())](
+	const int32 Layer = bFilterPaintLayer ? PaintLayer : -1;
+	return [Surfaces = MoveTemp(Exact), ScatterToWorld = Exported(GetActorTransform()), Layer](
 		const int64 XMm, const int64 YMm, FMantleScatterGround& Out) -> bool
 	{
 		// The point's world X-Y; the highest surface under it wins, holes and the terrain's edge leave none.
@@ -593,6 +623,7 @@ FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
 		bool bFound = false;
 		double BestZ = 0.0;
 		FVector BestNormal = FVector::UpVector;
+		int32 BestWeight = 0;
 		for (const FMantleScatterTerrainSurface& Surface : Surfaces)
 		{
 			if (!Surface.Field.IsValid())
@@ -621,6 +652,10 @@ FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
 				bFound = true;
 				BestZ = SurfaceZ;
 				BestNormal = Surface.TerrainToWorld.TransformVectorNoScale(FVector(Normal)).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
+				if (Layer >= 0)
+				{
+					BestWeight = PaintLayerWeightAt(Surface, Layer, Local.X / Field.ExtentX(), Local.Y / Field.ExtentY());
+				}
 			}
 		}
 		if (!bFound)
@@ -633,6 +668,7 @@ FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
 		Out.ZMm = static_cast<int64>(FMath::FloorToDouble(Millimetres + 0.5));
 		Out.NormalZ = BestNormal.Z;
 		Out.WorldZCm = BestZ;
+		Out.LayerWeight = BestWeight;
 		return true;
 	};
 }

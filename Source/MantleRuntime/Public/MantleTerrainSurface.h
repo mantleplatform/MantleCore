@@ -73,6 +73,12 @@ struct MANTLERUNTIME_API FMantleTerrainWeights
 	 */
 	double SampleChannel(int32 Channel, double U, double V) const;
 
+	/**
+	 * One channel's byte (0 R, 1 G, 2 B, 3 A; 0 to 255) of the texel whose span holds (U, V) (clamped to the terrain), no filtering: a whole
+	 * number every machine reads alike (Scatter's paint-layer filter, #187). 0 without pixels.
+	 */
+	int32 ChannelByteAt(int32 Channel, double U, double V) const;
+
 	SIZE_T GetAllocatedBytes() const { return Dominant.GetAllocatedSize() + DominantWeight.GetAllocatedSize() + Rgba.GetAllocatedSize(); }
 };
 

@@ -213,6 +213,17 @@ double FMantleTerrainWeights::SampleChannel(const int32 Channel, const double U,
 	return FMath::Lerp(Top, Bottom, FY) / 255.0;
 }
 
+int32 FMantleTerrainWeights::ChannelByteAt(const int32 Channel, const double U, const double V) const
+{
+	if (!HasPixels() || Channel < 0 || Channel > 3)
+	{
+		return 0;
+	}
+	const int32 X = FMath::Clamp(FMath::FloorToInt32(U * Width), 0, Width - 1);
+	const int32 Y = FMath::Clamp(FMath::FloorToInt32(V * Height), 0, Height - 1);
+	return Rgba[(Y * Width + X) * 4 + Channel];
+}
+
 // ---- UMantleTerrainSurfaceComponent -------------------------------------------------------------
 
 UMantleTerrainSurfaceComponent::UMantleTerrainSurfaceComponent()

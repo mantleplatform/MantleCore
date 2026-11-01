@@ -818,6 +818,25 @@ namespace
 		{
 			return;
 		}
+		// The paint-layer filter (#187) only travels on terrain placement; the Details panel hides it under Box, so a filter left
+		// ticked there is dropped without a word unless Check says so.
+		if (Volume->bFilterPaintLayer)
+		{
+			if (Volume->Placement != EMantleScatterPlacement::Terrain)
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, LabelOf(Actor),
+					FString::Printf(TEXT("filters by paint layer %d, but its Placement is Box, so the filter is left out and instances fill the whole box."), Volume->PaintLayer),
+					TEXT("Set Placement to Terrain to keep the filter, or untick Filter Paint Layer.") });
+			}
+			else if (Volume->MaxLayerWeight < Volume->MinLayerWeight)
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+					FString::Printf(TEXT("keeps paint layer %d between weights %.2f and %.2f: the Max Layer Weight is below the Min, so no instance could be kept."),
+						Volume->PaintLayer, Volume->MinLayerWeight, Volume->MaxLayerWeight),
+					TEXT("Set Max Layer Weight to at least Min Layer Weight in the scatter volume's Details panel.") });
+				return;
+			}
+		}
 		FMantleScatterParams Props;
 		FString Problem;
 		if (!Volume->ReadProps(Props, Problem))

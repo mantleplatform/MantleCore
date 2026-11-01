@@ -184,4 +184,27 @@ bool FMantleTerrainLayersSurfaceTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTerrainChannelByteTest,
+	"Mantle.Runtime.TerrainSurface.ChannelByteAt",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTerrainChannelByteTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTerrainLayersTestPrivate;
+
+	// Scatter's paint-layer filter reads the nearest texel's byte, no filtering (#187).
+	FMantleTerrainWeights Map;
+	FMantleTerrainWeights::FromPixels(2, 1, TArray<FColor>({ FColor(10, 20, 30, 40), FColor(110, 120, 130, 140) }), Map, true);
+	TestEqual(TEXT("left texel red"), Map.ChannelByteAt(0, 0.25, 0.5), 10);
+	TestEqual(TEXT("left texel alpha"), Map.ChannelByteAt(3, 0.49, 0.5), 40);
+	TestEqual(TEXT("right texel green"), Map.ChannelByteAt(1, 0.5, 0.5), 120);
+	TestEqual(TEXT("clamped past the end"), Map.ChannelByteAt(2, 2.0, -1.0), 130);
+	TestEqual(TEXT("a channel past 3 is 0"), Map.ChannelByteAt(4, 0.5, 0.5), 0);
+	FMantleTerrainWeights NoPixels;
+	FMantleTerrainWeights::FromPixels(2, 1, TArray<FColor>({ FColor::White, FColor::White }), NoPixels, false);
+	TestEqual(TEXT("without kept pixels it is 0"), NoPixels.ChannelByteAt(0, 0.25, 0.5), 0);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

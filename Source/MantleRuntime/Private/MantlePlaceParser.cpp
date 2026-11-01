@@ -1973,9 +1973,47 @@ namespace
 			Ctx.Fail(Join(Path, TEXT("maxHeight")),
 				FString::Printf(TEXT("maxHeight %g is below minHeight %g"), P.MaxHeight.GetValue(), P.MinHeight.GetValue()));
 		}
+		// The paint-layer filter (#187): a layer index and a lower and/or upper weight; each needs the other.
+		if (Props->HasField(TEXT("paintLayer")))
+		{
+			double Layer = 0.0;
+			if (RequireNumber(Ctx, Props, TEXT("paintLayer"), Path, Layer))
+			{
+				ReadBoundedInt(Ctx, Layer, 0, FMantlePlaceLimits::MaxTerrainLayers - 1, Join(Path, TEXT("paintLayer")), P.PaintLayer);
+			}
+		}
+		for (const TCHAR* Key : { TEXT("minLayerWeight"), TEXT("maxLayerWeight") })
+		{
+			if (!Props->HasField(Key))
+			{
+				continue;
+			}
+			double Weight = 0.0;
+			if (RequireNumber(Ctx, Props, Key, Path, Weight))
+			{
+				RangeCheck(Ctx, Weight, 0.0, 1.0, Join(Path, Key));
+				(Key[1] == TEXT('i') ? P.MinLayerWeight : P.MaxLayerWeight) = Weight;
+			}
+		}
+		if (P.MinLayerWeight.IsSet() && P.MaxLayerWeight.IsSet() && P.MinLayerWeight.GetValue() > P.MaxLayerWeight.GetValue())
+		{
+			Ctx.Fail(Join(Path, TEXT("maxLayerWeight")),
+				FString::Printf(TEXT("maxLayerWeight %g is below minLayerWeight %g"), P.MaxLayerWeight.GetValue(), P.MinLayerWeight.GetValue()));
+		}
+		if (Props->HasField(TEXT("paintLayer")) && !Props->HasField(TEXT("minLayerWeight")) && !Props->HasField(TEXT("maxLayerWeight")))
+		{
+			Ctx.Fail(Join(Path, TEXT("paintLayer")), TEXT("paintLayer needs minLayerWeight or maxLayerWeight"));
+		}
+		for (const TCHAR* Key : { TEXT("minLayerWeight"), TEXT("maxLayerWeight") })
+		{
+			if (Props->HasField(Key) && !Props->HasField(TEXT("paintLayer")))
+			{
+				Ctx.Fail(Join(Path, Key), FString::Printf(TEXT("%s needs paintLayer"), Key));
+			}
+		}
 		if (!bTerrain)
 		{
-			for (const TCHAR* Key : { TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight") })
+			for (const TCHAR* Key : { TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"), TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight") })
 			{
 				if (Props->HasField(Key))
 				{
@@ -2146,7 +2184,7 @@ namespace
 		RequireNoUnknownKeys(
 			Ctx, Props,
 			{ TEXT("seed"), TEXT("halfExtent"), TEXT("density"), TEXT("scale"), TEXT("alignment"), TEXT("maxTilt"), TEXT("meshes"),
-				TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"), TEXT("shape"),
+				TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"), TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight"), TEXT("shape"),
 				TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision") },
 			Path);
 		const int32 ErrorsBefore = Ctx.Errors.Num();
