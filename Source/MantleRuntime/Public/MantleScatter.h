@@ -67,6 +67,13 @@ struct FMantleScatterExclusion
 	FVector2D HalfExtent = FVector2D(100.0, 100.0);
 };
 
+/** A strip (#190) no instance is kept inside: every point within half the Width of the polyline, cm in the scatter's own space. */
+struct FMantleScatterPathExclusion
+{
+	TArray<FVector2D> Path;
+	double Width = 100.0;
+};
+
 /**
  * One mesh a scatter draws from: a library or uploaded (#252) mesh id, its relative weight, and its
  * materials by slot as on a StaticMesh (an empty entry leaves the slot on the mesh's own material; an
@@ -138,8 +145,20 @@ struct FMantleScatterParams
 	TArray<FVector2D> Path;
 	double Width = 0.0;
 
+	/** Path shape only (#190): above 0, instances sit every PathStep cm along the path (the first at its start), each turned to face along the line; Width then only spreads them across the strip, and Density and clusters are not used. 0 keeps them random along the strip. */
+	double PathStep = 0.0;
+
 	/** No instance is kept inside any of these. */
 	TArray<FMantleScatterExclusion> Exclusions;
+
+	/** No instance is kept inside any of these strips either (#190). */
+	TArray<FMantleScatterPathExclusion> PathExclusions;
+
+	/**
+	 * Minimum distance between instances (#190), cm in X-Y; 0 keeps none apart. Instances are taken in index order and one is dropped when an
+	 * earlier kept one is closer than this (exactly this apart is kept). Only the other filters' survivors count.
+	 */
+	double MinSpacing = 0.0;
 
 	/** The instances block movement and shape navigation, on the server and every client (#169). Off: visual only. */
 	bool bCollision = false;
@@ -224,6 +243,9 @@ public:
 	static constexpr int32 MaxPathPoints = FMantlePlaceLimits::MaxScatterPathPoints;
 	static constexpr int32 MaxExclusions = FMantlePlaceLimits::MaxScatterExclusions;
 	static constexpr int32 MaxClusters = FMantlePlaceLimits::MaxScatterClusters;
+	static constexpr double MaxMinSpacingCm = FMantlePlaceLimits::MaxScatterMinSpacing;
+	static constexpr double MinPathStepCm = FMantlePlaceLimits::MinScatterPathStep;
+	static constexpr double MaxCoordinateCm = FMantlePlaceLimits::MaxScatterCoordinate;
 
 	/** The place schema's spelling of an alignment: upright, tilted or tumbled. */
 	static const TCHAR* AlignmentName(EMantleScatterAlignment Alignment);
@@ -248,7 +270,8 @@ public:
 	 * The number of instances Params asks for: the footprint in square metres times the density, rounded
 	 * half up. The footprint is the box's (from the half extents in whole millimetres), a disc's (pi as
 	 * 3141593 / 1000000 times the radius in whole mm squared) or a path's (the sum of its segments' lengths,
-	 * each rounded to whole mm, times the width in whole mm). -1 with OutError when a parameter is
+	 * each rounded to whole mm, times the width in whole mm). A path with a PathStep (#190) has the whole steps that fit in its length
+	 * (in whole mm), plus 1, whatever the density. -1 with OutError when a parameter is
 	 * out of range or the count passes MaxInstances. validate.py and the backend count the same way.
 	 */
 	static int64 CountFor(const FMantleScatterParams& Params, FString& OutError);

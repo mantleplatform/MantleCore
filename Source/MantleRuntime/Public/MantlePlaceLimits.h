@@ -328,6 +328,10 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	static constexpr int32 MaxScatterPathPoints = 64;
 	static constexpr double MaxScatterPathWidth = 100000.0;
 
+	/** A Scatter's minSpacing (#190), above 0 and at most this many cm; its pathStep, MinScatterPathStep to MaxScatterCoordinate cm. */
+	static constexpr double MaxScatterMinSpacing = 100000.0;
+	static constexpr double MinScatterPathStep = 1.0;
+
 	/** A Scatter's disc radius (#169), above 0 and at most this many cm. */
 	static constexpr double MaxScatterRadius = 1000000.0;
 

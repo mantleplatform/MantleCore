@@ -145,6 +145,15 @@ void AMantleScatterVolume::ApplyProps(const FMantleScatterParams& In)
 		Entry.Center = Exclusion.Center;
 		Entry.HalfExtent = Exclusion.HalfExtent;
 	}
+	PathExclusions.Reset(In.PathExclusions.Num());
+	for (const FMantleScatterPathExclusion& Strip : In.PathExclusions)
+	{
+		FMantleScatterPathExclusionSettings& Entry = PathExclusions.AddDefaulted_GetRef();
+		Entry.Path = Strip.Path;
+		Entry.Width = Strip.Width;
+	}
+	PathStep = In.Shape == EMantleScatterShape::Path ? In.PathStep : 0.0;
+	MinSpacing = In.MinSpacing;
 	bCollision = In.bCollision;
 	ClusterCount = In.ClusterCount;
 	ClusterRadius = In.ClusterCount > 0 ? In.ClusterRadius : ClusterRadius;
@@ -243,6 +252,17 @@ bool AMantleScatterVolume::ReadProps(FMantleScatterParams& Out, FString& OutProb
 		Exclusion.Center = Entry.Center;
 		Exclusion.HalfExtent = Entry.HalfExtent;
 	}
+	for (const FMantleScatterPathExclusionSettings& Entry : PathExclusions)
+	{
+		FMantleScatterPathExclusion& Strip = Out.PathExclusions.AddDefaulted_GetRef();
+		Strip.Path = Entry.Path;
+		Strip.Width = Entry.Width;
+	}
+	if (Shape == EMantleScatterShape::Path)
+	{
+		Out.PathStep = PathStep;
+	}
+	Out.MinSpacing = MinSpacing;
 	Out.bCollision = bCollision;
 	if (ClusterCount > 0)
 	{
@@ -488,6 +508,15 @@ FString AMantleScatterVolume::SettingsKey() const
 	for (const FMantleScatterExclusionSettings& Exclusion : Exclusions)
 	{
 		Key += FString::Printf(TEXT("|X%.17g,%.17g,%.17g,%.17g"), Exclusion.Center.X, Exclusion.Center.Y, Exclusion.HalfExtent.X, Exclusion.HalfExtent.Y);
+	}
+	Key += FString::Printf(TEXT("|g%.17g|S%.17g"), PathStep, MinSpacing);
+	for (const FMantleScatterPathExclusionSettings& Strip : PathExclusions)
+	{
+		Key += FString::Printf(TEXT("|Y%.17g"), Strip.Width);
+		for (const FVector2D& Point : Strip.Path)
+		{
+			Key += FString::Printf(TEXT(",%.17g:%.17g"), Point.X, Point.Y);
+		}
 	}
 	return Key;
 }

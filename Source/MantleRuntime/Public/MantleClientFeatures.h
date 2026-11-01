@@ -84,6 +84,12 @@ namespace MantleClientFeatures
 	inline const TCHAR* const ScatterPaintLayer = TEXT("scatterPaintLayer");
 	/** A Scatter's minimum slope and ground alignment (#188): minSlopeDegrees, and alignment "ground" on terrain placement. */
 	inline const TCHAR* const ScatterGroundAlign = TEXT("scatterGroundAlign");
+	/** A Scatter's minSpacing (#190). */
+	inline const TCHAR* const ScatterMinSpacing = TEXT("scatterMinSpacing");
+	/** A Scatter's pathStep: a fixed step along a path shape (#190). */
+	inline const TCHAR* const ScatterPathStep = TEXT("scatterPathStep");
+	/** A Scatter's pathExclusions: strips along a polyline no instance stands in (#190). */
+	inline const TCHAR* const ScatterPathExclusions = TEXT("scatterPathExclusions");
 
 	/** Every feature this build reads, in the order above. */
 	inline TArray<FString> All()
@@ -92,7 +98,7 @@ namespace MantleClientFeatures
 			InstancedMesh, CrowdSpawner, CrowdPointsOfInterest, SkeletalMesh, RectLight, Decal, LightShape, Terrain, TerrainGrass,
 			Vehicle, VehicleLinkage, VehicleParts, VehicleCarInteraction, VehicleContactPoints, VehicleHiddenSeat, VehicleFliers, VehicleHover, VehicleSeatKind, VehicleWeaponArc, Effect, EffectSprites, Constraint, Scatter, ReflectionProbes, Storage,
 			UIDocuments, EnvironmentDefaults, EnvironmentLighting, AvatarHeight, SoundEmitterAutoplay, StaticMeshPhysics, PhysicsMaterial, Surface, DrawDistance, CarPaint,
-			MaterialFidelity, MaterialAdditive, WeaponDocument, WorldText, VoxelWorld, ScatterDrawDistance, ScatterTerrain, ScatterShapes, ScatterCollision, ScatterPaintLayer, ScatterGroundAlign
+			MaterialFidelity, MaterialAdditive, WeaponDocument, WorldText, VoxelWorld, ScatterDrawDistance, ScatterTerrain, ScatterShapes, ScatterCollision, ScatterPaintLayer, ScatterGroundAlign, ScatterMinSpacing, ScatterPathStep, ScatterPathExclusions
 		};
 	}
 }

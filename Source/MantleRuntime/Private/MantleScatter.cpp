@@ -185,6 +185,46 @@ namespace MantleScatterPrivate
 				return false;
 			}
 		}
+		if (!(Params.MinSpacing == 0.0 || (Params.MinSpacing > 0.0 && Params.MinSpacing <= FMantleScatter::MaxMinSpacingCm)))
+		{
+			OutError = FString::Printf(TEXT("min spacing %g must be above 0 and at most %g cm (0 for none)"), Params.MinSpacing, FMantleScatter::MaxMinSpacingCm);
+			return false;
+		}
+		if (!(Params.PathStep == 0.0 || (Params.PathStep >= FMantleScatter::MinPathStepCm && Params.PathStep <= FMantleScatter::MaxCoordinateCm)))
+		{
+			OutError = FString::Printf(TEXT("path step %g must be %g to %g cm (0 for random along the path)"), Params.PathStep,
+				FMantleScatter::MinPathStepCm, FMantleScatter::MaxCoordinateCm);
+			return false;
+		}
+		if (Params.PathStep > 0.0 && Params.Shape != EMantleScatterShape::Path)
+		{
+			OutError = TEXT("path step only applies where shape is path");
+			return false;
+		}
+		if (Params.PathStep > 0.0 && Params.ClusterCount > 0)
+		{
+			OutError = TEXT("clusters cannot be combined with a path step: instances sit at a fixed step");
+			return false;
+		}
+		if (Params.PathExclusions.Num() > FMantleScatter::MaxExclusions)
+		{
+			OutError = FString::Printf(TEXT("%d path exclusions; a scatter takes at most %d"), Params.PathExclusions.Num(), FMantleScatter::MaxExclusions);
+			return false;
+		}
+		for (const FMantleScatterPathExclusion& Strip : Params.PathExclusions)
+		{
+			bool bPointsOk = Strip.Path.Num() >= 2 && Strip.Path.Num() <= FMantleScatter::MaxPathPoints;
+			for (const FVector2D& Point : Strip.Path)
+			{
+				bPointsOk = bPointsOk && FMath::Abs(Point.X) <= MaxCoordinate && FMath::Abs(Point.Y) <= MaxCoordinate;
+			}
+			if (!bPointsOk || !(Strip.Width > 0.0 && Strip.Width <= FMantlePlaceLimits::MaxScatterPathWidth))
+			{
+				OutError = FString::Printf(TEXT("a path exclusion takes 2 to %d points within %g cm either way and a width above 0 and at most %g cm"),
+					FMantleScatter::MaxPathPoints, MaxCoordinate, FMantlePlaceLimits::MaxScatterPathWidth);
+				return false;
+			}
+		}
 		if (Params.ClusterCount < 0 || Params.ClusterCount > FMantleScatter::MaxClusters
 			|| (Params.ClusterCount > 0
 				&& !(Params.ClusterRadius > 0.0 && Params.ClusterRadius <= FMantlePlaceLimits::MaxScatterClusterRadius)))
@@ -559,6 +599,141 @@ namespace MantleScatterPrivate
 		int64 HalfY = 0;
 	};
 
+	/** A path exclusion (#190) in whole millimetres: its points, each segment's rounded length, the strip's half width and the box around it. */
+	struct FScatterStripMm
+	{
+		TArray<int64> X;
+		TArray<int64> Y;
+		TArray<int64> Length;
+		int64 Radius = 0;
+		int64 MinX = 0;
+		int64 MaxX = 0;
+		int64 MinY = 0;
+		int64 MaxY = 0;
+	};
+
+	FScatterStripMm ScatterBuildStrip(const FMantleScatterPathExclusion& Strip)
+	{
+		FScatterStripMm Out;
+		const double HalfWidth = Strip.Width * 0.5;
+		Out.Radius = ScatterHalfMillimetres(HalfWidth);
+		for (const FVector2D& Point : Strip.Path)
+		{
+			Out.X.Add(ScatterHalfMillimetres(Point.X));
+			Out.Y.Add(ScatterHalfMillimetres(Point.Y));
+		}
+		Out.MinX = Out.MaxX = Out.X[0];
+		Out.MinY = Out.MaxY = Out.Y[0];
+		for (int32 Index = 0; Index < Out.X.Num(); ++Index)
+		{
+			Out.MinX = FMath::Min(Out.MinX, Out.X[Index]);
+			Out.MaxX = FMath::Max(Out.MaxX, Out.X[Index]);
+			Out.MinY = FMath::Min(Out.MinY, Out.Y[Index]);
+			Out.MaxY = FMath::Max(Out.MaxY, Out.Y[Index]);
+			if (Index + 1 < Out.X.Num())
+			{
+				const int64 Dx = Out.X[Index + 1] - Out.X[Index];
+				const int64 Dy = Out.Y[Index + 1] - Out.Y[Index];
+				Out.Length.Add(static_cast<int64>(FMath::FloorToDouble(FMath::Sqrt(static_cast<double>(Dx * Dx + Dy * Dy)) + 0.5)));
+			}
+		}
+		Out.MinX -= Out.Radius;
+		Out.MaxX += Out.Radius;
+		Out.MinY -= Out.Radius;
+		Out.MaxY += Out.Radius;
+		return Out;
+	}
+
+	/**
+	 * Whether (X, Y) mm lies within the strip's half width of its polyline. All whole numbers: a point past a segment's end is measured
+	 * to that end point, a point beside it by its cross product over the segment's rounded length, rounded half up.
+	 */
+	bool ScatterInStrip(const FScatterStripMm& Strip, const int64 X, const int64 Y)
+	{
+		if (X < Strip.MinX || X > Strip.MaxX || Y < Strip.MinY || Y > Strip.MaxY)
+		{
+			return false;
+		}
+		const int64 RadiusSquared = Strip.Radius * Strip.Radius;
+		for (int32 Index = 0; Index + 1 < Strip.X.Num(); ++Index)
+		{
+			const int64 Ax = Strip.X[Index];
+			const int64 Ay = Strip.Y[Index];
+			const int64 Dx = Strip.X[Index + 1] - Ax;
+			const int64 Dy = Strip.Y[Index + 1] - Ay;
+			const int64 Px = X - Ax;
+			const int64 Py = Y - Ay;
+			const int64 Along = Px * Dx + Py * Dy;
+			if (Along <= 0 || Strip.Length[Index] == 0)
+			{
+				if (Px * Px + Py * Py <= RadiusSquared)
+				{
+					return true;
+				}
+			}
+			else if (Along >= Dx * Dx + Dy * Dy)
+			{
+				const int64 Ex = X - Strip.X[Index + 1];
+				const int64 Ey = Y - Strip.Y[Index + 1];
+				if (Ex * Ex + Ey * Ey <= RadiusSquared)
+				{
+					return true;
+				}
+			}
+			else if (ScatterDivRound(FMath::Abs(Px * Dy - Py * Dx), Strip.Length[Index]) <= Strip.Radius)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Instances kept so far, by cell (a square of the minimum spacing), for the spacing test (#190). */
+	struct FScatterSpacingGrid
+	{
+		int64 Spacing = 0;
+		TMap<uint64, TArray<FIntPoint, TInlineAllocator<4>>> Cells;
+
+		static uint64 Key(const int64 CellX, const int64 CellY)
+		{
+			return (static_cast<uint64>(static_cast<uint32>(CellX)) << 32) | static_cast<uint64>(static_cast<uint32>(CellY));
+		}
+
+		/** Whether a kept instance lies closer than Spacing to (X, Y) mm: the same cell or one of the eight around it. */
+		bool IsTooClose(const int64 X, const int64 Y) const
+		{
+			const int64 CellX = ScatterFloorDiv(X, Spacing);
+			const int64 CellY = ScatterFloorDiv(Y, Spacing);
+			for (int64 StepX = -1; StepX <= 1; ++StepX)
+			{
+				for (int64 StepY = -1; StepY <= 1; ++StepY)
+				{
+					const TArray<FIntPoint, TInlineAllocator<4>>* Kept = Cells.Find(Key(CellX + StepX, CellY + StepY));
+					if (!Kept)
+					{
+						continue;
+					}
+					for (const FIntPoint& Other : *Kept)
+					{
+						// Far apart on one axis is far apart: this also keeps the squares below within 64 bits.
+						const int64 Dx = FMath::Abs(X - Other.X);
+						const int64 Dy = FMath::Abs(Y - Other.Y);
+						if (Dx < Spacing && Dy < Spacing && Dx * Dx + Dy * Dy < Spacing * Spacing)
+						{
+							return true;
+						}
+					}
+				}
+			}
+			return false;
+		}
+
+		void Add(const int64 X, const int64 Y)
+		{
+			Cells.FindOrAdd(Key(ScatterFloorDiv(X, Spacing), ScatterFloorDiv(Y, Spacing))).Add(FIntPoint(static_cast<int32>(X), static_cast<int32>(Y)));
+		}
+	};
+
 	/** A point on a disc of the given radius (mm): the stream's draw first, then more of its draws until one lands inside. Integers only. */
 	void ScatterOnDisc(const int64 Radius, const uint64 Draw, FScatterStream& Stream, int64& OutX, int64& OutY)
 	{
@@ -580,9 +755,14 @@ namespace MantleScatterPrivate
 		OutY = 0;
 	}
 
-	/** A point in the shape (X-Y, mm about the scatter's origin) from one 64-bit draw, plus the stream's later draws where it has to retry. */
+	/**
+	 * A point in the shape (X-Y, mm about the scatter's origin) from one 64-bit draw, plus the stream's later draws where it has to retry.
+	 * On a path, ForcedAlong (0 or more, mm from the start; clamped to the path's length) puts the point there instead of at the draw's
+	 * place, and OutTangentYaw, when given, gets the heading of the segment it lies on in hundredths of a degree, 0 to 35999 (#190).
+	 */
 	void ScatterInShape(const FMantleScatterParams& Params, const FScatterPath& Path, const int64 HalfX, const int64 HalfY,
-		const int64 RadiusMm, const uint64 Draw, FScatterStream& Stream, int64& OutX, int64& OutY)
+		const int64 RadiusMm, const uint64 Draw, FScatterStream& Stream, int64& OutX, int64& OutY, const int64 ForcedAlong = -1,
+		int64* OutTangentYaw = nullptr)
 	{
 		switch (Params.Shape)
 		{
@@ -595,9 +775,13 @@ namespace MantleScatterPrivate
 			{
 				OutX = Path.X.Num() > 0 ? Path.X[0] : 0;
 				OutY = Path.Y.Num() > 0 ? Path.Y[0] : 0;
+				if (OutTangentYaw)
+				{
+					*OutTangentYaw = 0;
+				}
 				return;
 			}
-			const int64 Along = ScatterPick(ScatterLow(Draw), 0, Path.Total - 1);
+			const int64 Along = ForcedAlong >= 0 ? FMath::Min(ForcedAlong, Path.Total) : ScatterPick(ScatterLow(Draw), 0, Path.Total - 1);
 			int32 Pick = 0;
 			while (Pick < Path.Cumulative.Num() - 1 && Along >= Path.Cumulative[Pick])
 			{
@@ -612,6 +796,10 @@ namespace MantleScatterPrivate
 			// Integer division truncates toward zero on every machine.
 			OutX = Path.X[From] + Dx * Offset / Length - Dy * Across / Length;
 			OutY = Path.Y[From] + Dy * Offset / Length + Dx * Across / Length;
+			if (OutTangentYaw)
+			{
+				*OutTangentYaw = ((ScatterAtan2(Dy, Dx) % 36000) + 36000) % 36000;
+			}
 			return;
 		}
 		case EMantleScatterShape::Box:
@@ -670,6 +858,18 @@ int64 FMantleScatter::CountFor(const FMantleScatterParams& Params, FString& OutE
 	case EMantleScatterShape::Path:
 	{
 		const FScatterPath Path = ScatterBuildPath(Params);
+		if (Params.PathStep > 0.0)
+		{
+			// A fixed step (#190): the whole steps that fit, plus the one at the start; the density is not used.
+			const int64 Steps = Path.Total / FMath::Max<int64>(ScatterHalfMillimetres(Params.PathStep), 1) + 1;
+			if (Steps > MaxInstances)
+			{
+				OutError = FString::Printf(TEXT("a path step of %g cm makes %lld instances along the path; a scatter makes at most %d"),
+					Params.PathStep, static_cast<long long>(Steps), MaxInstances);
+				return -1;
+			}
+			return Steps;
+		}
 		const double AreaMm2 = static_cast<double>(Path.Total * Path.WidthMm);
 		AreaM2 = AreaMm2 / 1000000.0;
 		break;
@@ -748,6 +948,17 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 		Box.HalfY = ScatterHalfMillimetres(Exclusion.HalfExtent.Y);
 	}
 
+	TArray<FScatterStripMm> Strips;
+	for (const FMantleScatterPathExclusion& Strip : Params.PathExclusions)
+	{
+		Strips.Add(ScatterBuildStrip(Strip));
+	}
+
+	// The minimum spacing (#190) and the path step (#190): the step in whole mm, or 0 for random places along the path.
+	FScatterSpacingGrid Spacing;
+	Spacing.Spacing = Params.MinSpacing > 0.0 ? FMath::Max<int64>(ScatterHalfMillimetres(Params.MinSpacing), 1) : 0;
+	const int64 StepMm = Params.Shape == EMantleScatterShape::Path && Params.PathStep > 0.0 ? FMath::Max<int64>(ScatterHalfMillimetres(Params.PathStep), 1) : 0;
+
 	// Cluster centres: each from its own stream, numbered past any instance's so the two never share one.
 	TArray<FScatterPoint> Centres;
 	const int64 ClusterRadiusMm = ScatterHalfMillimetres(Params.ClusterRadius);
@@ -783,6 +994,7 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 
 		int64 X = 0;
 		int64 Y = 0;
+		int64 TangentYaw = 0;
 		if (Centres.Num() > 0)
 		{
 			const FScatterPoint& Centre = Centres[static_cast<int32>(ScatterPick(ScatterLow(Group), 0, Centres.Num() - 1))];
@@ -792,12 +1004,25 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 			X = Centre.X + OffsetX;
 			Y = Centre.Y + OffsetY;
 		}
+		else if (StepMm > 0)
+		{
+			// Instance Index sits Index steps along the path, turned along the line (#190).
+			ScatterInShape(Params, Path, HalfX, HalfY, RadiusMm, Place, Stream, X, Y, Index * StepMm, &TangentYaw);
+		}
 		else
 		{
 			ScatterInShape(Params, Path, HalfX, HalfY, RadiusMm, Place, Stream, X, Y);
 		}
 
 		bool bExcluded = false;
+		for (const FScatterStripMm& Strip : Strips)
+		{
+			if (ScatterInStrip(Strip, X, Y))
+			{
+				bExcluded = true;
+				break;
+			}
+		}
 		for (const FScatterBoxMm& Box : Exclusions)
 		{
 			if (FMath::Abs(X - Box.CenterX) <= Box.HalfX && FMath::Abs(Y - Box.CenterY) <= Box.HalfY)
@@ -867,11 +1092,21 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 			continue;
 		}
 
+		// Last of the filters, so an instance another filter dropped never keeps its neighbours away (#190).
+		if (Spacing.Spacing > 0)
+		{
+			if (Spacing.IsTooClose(X, Y))
+			{
+				continue;
+			}
+			Spacing.Add(X, Y);
+		}
+
 		FMantleScatterInstance& Instance = OutInstances.AddDefaulted_GetRef();
 		Instance.X = static_cast<int32>(X);
 		Instance.Y = static_cast<int32>(Y);
 		Instance.Z = static_cast<int32>(Z);
-		Instance.Yaw = static_cast<uint16>(ScatterPick(ScatterHigh(Height), 0, 35999));
+		Instance.Yaw = static_cast<uint16>(StepMm > 0 ? TangentYaw : ScatterPick(ScatterHigh(Height), 0, 35999));
 		switch (Params.Alignment)
 		{
 		case EMantleScatterAlignment::Tilted:
@@ -1092,6 +1327,31 @@ TSharedRef<FJsonObject> FMantleScatter::ToJson(const FMantleScatterParams& Param
 		}
 		Json->SetArrayField(TEXT("path"), Points);
 		Json->SetNumberField(TEXT("width"), Params.Width);
+		if (Params.PathStep > 0.0)
+		{
+			Json->SetNumberField(TEXT("pathStep"), Params.PathStep);
+		}
+	}
+	if (Params.MinSpacing > 0.0)
+	{
+		Json->SetNumberField(TEXT("minSpacing"), Params.MinSpacing);
+	}
+	if (Params.PathExclusions.Num() > 0)
+	{
+		TArray<TSharedPtr<FJsonValue>> Strips;
+		for (const FMantleScatterPathExclusion& Strip : Params.PathExclusions)
+		{
+			const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+			TArray<TSharedPtr<FJsonValue>> Points;
+			for (const FVector2D& Point : Strip.Path)
+			{
+				Points.Add(MakeShared<FJsonValueArray>(Numbers({ Point.X, Point.Y })));
+			}
+			Entry->SetArrayField(TEXT("path"), Points);
+			Entry->SetNumberField(TEXT("width"), Strip.Width);
+			Strips.Add(MakeShared<FJsonValueObject>(Entry));
+		}
+		Json->SetArrayField(TEXT("pathExclusions"), Strips);
 	}
 	if (Params.Exclusions.Num() > 0)
 	{

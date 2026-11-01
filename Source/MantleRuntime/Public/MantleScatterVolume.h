@@ -63,6 +63,21 @@ struct MANTLERUNTIME_API FMantleScatterExclusionSettings
 	FVector2D HalfExtent = FVector2D(100.0, 100.0);
 };
 
+/** A strip of a Mantle Scatter Volume no instance stands in (#190): X-Y points in the volume's own space, and the strip's full width. */
+USTRUCT()
+struct MANTLERUNTIME_API FMantleScatterPathExclusionSettings
+{
+	GENERATED_BODY()
+
+	/** 2 to 64 points, cm. */
+	UPROPERTY(EditAnywhere, Category = "Scatter")
+	TArray<FVector2D> Path;
+
+	/** The strip's full width, cm. */
+	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (ClampMin = "0.1", ClampMax = "100000", Units = "cm"))
+	double Width = 200.0;
+};
+
 /** A Terrain a Scatter drops its instances onto (#169): its surface and where it stands in the world. */
 struct FMantleScatterTerrainSurface
 {
@@ -222,9 +237,23 @@ public:
 			EditCondition = "Shape == EMantleScatterShape::Path", EditConditionHides))
 	double Width = 500.0;
 
+	/** Path: 0 scatters at random along the strip. Above 0 (at least 1 cm) puts an instance every Path Step cm along the line, turned to face along it; Width then only spreads them across, and Density and clusters are not used. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Shape",
+		meta = (ClampMin = "0", ClampMax = "1000000", Units = "cm",
+			EditCondition = "Shape == EMantleScatterShape::Path", EditConditionHides))
+	double PathStep = 0.0;
+
 	/** Up to 16 boxes (X-Y) no instance stands in. */
 	UPROPERTY(EditAnywhere, Category = "Scatter|Shape")
 	TArray<FMantleScatterExclusionSettings> Exclusions;
+
+	/** Up to 16 strips along a line (X-Y) no instance stands in. */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Shape")
+	TArray<FMantleScatterPathExclusionSettings> PathExclusions;
+
+	/** 0 allows any distance between instances. Above 0, an instance is left out when an earlier kept one is closer than this many cm in X-Y (the lower numbered one wins, so the same ones survive on every machine). */
+	UPROPERTY(EditAnywhere, Category = "Scatter|Shape", meta = (ClampMin = "0", ClampMax = "100000", Units = "cm"))
+	double MinSpacing = 0.0;
 
 	/** 0 spreads instances evenly; 1 to 1000 gathers them into that many clusters, each of Cluster Radius, centred inside the footprint. */
 	UPROPERTY(EditAnywhere, Category = "Scatter|Shape", meta = (ClampMin = "0", ClampMax = "1000", UIMin = "0", UIMax = "50"))

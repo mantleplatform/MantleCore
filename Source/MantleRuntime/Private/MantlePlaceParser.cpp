@@ -2100,6 +2100,40 @@ namespace
 				FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), P.Width, FMantlePlaceLimits::MaxScatterPathWidth));
 		}
 
+		// pathStep (#190): a fixed step along a path, 1 cm to the coordinate range; only where shape is path.
+		if (RefuseUnlessShape(TEXT("pathStep"), EMantleScatterShape::Path) && P.Shape == EMantleScatterShape::Path && Props->HasField(TEXT("pathStep")))
+		{
+			double Step = 0.0;
+			if (RequireNumber(Ctx, Props, TEXT("pathStep"), Path, Step))
+			{
+				if (!(Step >= FMantlePlaceLimits::MinScatterPathStep && Step <= FMantlePlaceLimits::MaxScatterCoordinate))
+				{
+					Ctx.Fail(Join(Path, TEXT("pathStep")), FString::Printf(TEXT("%g is outside the permitted range [%g, %g]"), Step,
+						FMantlePlaceLimits::MinScatterPathStep, FMantlePlaceLimits::MaxScatterCoordinate));
+				}
+				else
+				{
+					P.PathStep = Step;
+				}
+			}
+		}
+		if (Props->HasField(TEXT("minSpacing")))
+		{
+			double Value = 0.0;
+			if (RequireNumber(Ctx, Props, TEXT("minSpacing"), Path, Value))
+			{
+				if (!(Value > 0.0 && Value <= FMantlePlaceLimits::MaxScatterMinSpacing))
+				{
+					Ctx.Fail(Join(Path, TEXT("minSpacing")),
+						FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), Value, FMantlePlaceLimits::MaxScatterMinSpacing));
+				}
+				else
+				{
+					P.MinSpacing = Value;
+				}
+			}
+		}
+
 		const TArray<TSharedPtr<FJsonValue>>* Exclusions = nullptr;
 		if (Props->HasField(TEXT("exclusions")))
 		{
@@ -2150,6 +2184,68 @@ namespace
 			}
 		}
 
+		// pathExclusions (#190): strips no instance stands in, each a polyline of 2 to 64 points and a width.
+		if (Props->HasField(TEXT("pathExclusions")))
+		{
+			const FString StripsPath = Join(Path, TEXT("pathExclusions"));
+			const TArray<TSharedPtr<FJsonValue>>* Strips = nullptr;
+			if (!Props->TryGetArrayField(TEXT("pathExclusions"), Strips))
+			{
+				Ctx.Fail(StripsPath, TEXT("expected an array"));
+			}
+			else
+			{
+				if (Strips->Num() > FMantlePlaceLimits::MaxScatterExclusions)
+				{
+					Ctx.Fail(StripsPath, FString::Printf(TEXT("has %d path exclusions; a Scatter takes at most %d"), Strips->Num(),
+						FMantlePlaceLimits::MaxScatterExclusions));
+				}
+				for (int32 StripIndex = 0; StripIndex < Strips->Num(); ++StripIndex)
+				{
+					const FString StripPath = Index(StripsPath, StripIndex);
+					const TSharedPtr<FJsonObject>* Strip = nullptr;
+					if (!(*Strips)[StripIndex].IsValid() || !(*Strips)[StripIndex]->TryGetObject(Strip))
+					{
+						Ctx.Fail(StripPath, TEXT("expected an object"));
+						continue;
+					}
+					RequireNoUnknownKeys(Ctx, *Strip, { TEXT("path"), TEXT("width") }, StripPath);
+					FMantleScatterPathExclusion Parsed;
+					const FString PointsPath = Join(StripPath, TEXT("path"));
+					const TArray<TSharedPtr<FJsonValue>>* Points = nullptr;
+					if (!(*Strip)->TryGetArrayField(TEXT("path"), Points))
+					{
+						Ctx.Fail(PointsPath, TEXT("required array is missing or not an array"));
+					}
+					else
+					{
+						if (Points->Num() < 2 || Points->Num() > FMantlePlaceLimits::MaxScatterPathPoints)
+						{
+							Ctx.Fail(PointsPath, FString::Printf(TEXT("has %d points; a path takes 2 to %d"), Points->Num(), FMantlePlaceLimits::MaxScatterPathPoints));
+						}
+						for (int32 PointIndex = 0; PointIndex < Points->Num(); ++PointIndex)
+						{
+							FVector2D Point;
+							const FString PointPath = Index(PointsPath, PointIndex);
+							if (ReadScatterPair(Ctx, (*Points)[PointIndex], PointPath, Point))
+							{
+								CheckScatterCoordinate(Ctx, Point.X, Index(PointPath, 0));
+								CheckScatterCoordinate(Ctx, Point.Y, Index(PointPath, 1));
+								Parsed.Path.Add(Point);
+							}
+						}
+					}
+					if (RequireNumber(Ctx, *Strip, TEXT("width"), StripPath, Parsed.Width)
+						&& !(Parsed.Width > 0.0 && Parsed.Width <= FMantlePlaceLimits::MaxScatterPathWidth))
+					{
+						Ctx.Fail(Join(StripPath, TEXT("width")),
+							FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), Parsed.Width, FMantlePlaceLimits::MaxScatterPathWidth));
+					}
+					P.PathExclusions.Add(MoveTemp(Parsed));
+				}
+			}
+		}
+
 		if (const TSharedPtr<FJsonValue> Collision = Props->TryGetField(TEXT("collision")))
 		{
 			if (Collision->Type != EJson::Boolean)
@@ -2183,6 +2279,11 @@ namespace
 		{
 			Ctx.Fail(Join(Path, bHasCount ? TEXT("clusterRadius") : TEXT("clusterCount")), TEXT("clusterCount and clusterRadius go together"));
 		}
+		// Clusters pick random places; a fixed step along a path (#190) does not (reported at the count, whatever else is wrong with the step).
+		if (bHasCount && Props->HasField(TEXT("pathStep")))
+		{
+			Ctx.Fail(Join(Path, TEXT("clusterCount")), TEXT("clusterCount cannot be combined with pathStep: instances sit at a fixed step"));
+		}
 	}
 
 	/**
@@ -2197,7 +2298,8 @@ namespace
 			Ctx, Props,
 			{ TEXT("seed"), TEXT("halfExtent"), TEXT("density"), TEXT("scale"), TEXT("alignment"), TEXT("maxTilt"), TEXT("meshes"),
 				TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"), TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight"), TEXT("shape"),
-				TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision") },
+				TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision"),
+				TEXT("minSpacing"), TEXT("pathStep"), TEXT("pathExclusions") },
 			Path);
 		const int32 ErrorsBefore = Ctx.Errors.Num();
 
@@ -2300,7 +2402,8 @@ namespace
 		FString Why;
 		if (Ctx.Errors.Num() == ErrorsBefore && FMantleScatter::CountFor(P, Why) < 0)
 		{
-			Ctx.Fail(Join(Path, TEXT("density")), Why);
+			// A path step's count is the step's (#190): reported there, as validate.py and the backend do.
+			Ctx.Fail(Join(Path, P.PathStep > 0.0 ? TEXT("pathStep") : TEXT("density")), Why);
 		}
 	}
 

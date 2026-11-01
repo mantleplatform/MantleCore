@@ -67,6 +67,8 @@ namespace MantleScatterExportTestPrivate
 		P.Path = { FVector2D(-1000.5, 0.25), FVector2D(0.0, 900.125), FVector2D(1200.0, -300.0) };
 		P.Width = 333.3;
 		P.Exclusions = { { FVector2D(100.5, -200.25), FVector2D(150.0, 75.5) }, { FVector2D(-800.0, 0.0), FVector2D(50.0, 50.0) } };
+		P.PathExclusions = { { { FVector2D(-500.0, -500.0), FVector2D(500.0, 400.25) }, 120.5 } };
+		P.MinSpacing = 35.75;
 		P.ClusterCount = 7;
 		P.ClusterRadius = 420.42;
 		P.bCollision = true;
@@ -184,12 +186,40 @@ bool FMantleScatterExportKeysTest::RunTest(const FString& Parameters)
 			TestTrue(What + TEXT(": exclusion"), Got->Exclusions[Index].Center == Sent.Exclusions[Index].Center
 				&& Got->Exclusions[Index].HalfExtent == Sent.Exclusions[Index].HalfExtent);
 		}
+		TestEqual(What + TEXT(": min spacing"), Got->MinSpacing, Sent.MinSpacing);
+		TestEqual(What + TEXT(": path exclusions"), Got->PathExclusions.Num(), Sent.PathExclusions.Num());
+		for (int32 Index = 0; Index < Sent.PathExclusions.Num() && Index < Got->PathExclusions.Num(); ++Index)
+		{
+			TestTrue(What + TEXT(": path exclusion"), Got->PathExclusions[Index].Path == Sent.PathExclusions[Index].Path
+				&& Got->PathExclusions[Index].Width == Sent.PathExclusions[Index].Width);
+		}
 		TestEqual(What + TEXT(": cluster count"), Got->ClusterCount, Sent.ClusterCount);
 		TestEqual(What + TEXT(": cluster radius"), Got->ClusterRadius, Sent.ClusterRadius);
 		TestTrue(What + TEXT(": collision"), Got->bCollision);
 		const uint64 SentHash = FlatHash(Sent);
 		TestNotEqual(What + TEXT(": the editor's copy generates"), SentHash, static_cast<uint64>(0));
 		TestEqual(What + TEXT(": and the client's hashes the same"), FlatHash(*Got), SentHash);
+	}
+
+	// A fixed step along a path (#190), which takes no clusters: the step survives, and the client lays the same instances.
+	{
+		FMantleScatterParams Sent = EveryKey(EMantleScatterShape::Path);
+		Sent.ClusterCount = 0;
+		Sent.ClusterRadius = 0.0;
+		Sent.PathStep = 250.125;
+		Base.Place.Entities[0].Props.Set<FMantleScatterParams>(Sent);
+		const FMantleParseResult Back = FMantlePlaceParser::ParseFromString(FMantlePlaceExporter::ToJson(Base.Place));
+		for (const FMantleParseError& Error : Back.Errors)
+		{
+			AddError(FString::Printf(TEXT("path step: %s %s"), *Error.Path, *Error.Message));
+		}
+		if (const FMantleScatterParams* Got = ScatterOf(Back); TestNotNull(TEXT("the stepped path survives the file"), Got))
+		{
+			TestEqual(TEXT("its path step"), Got->PathStep, Sent.PathStep);
+			const uint64 SentHash = FlatHash(Sent);
+			TestNotEqual(TEXT("the stepped path generates"), SentHash, static_cast<uint64>(0));
+			TestEqual(TEXT("and the client's hashes the same"), FlatHash(*Got), SentHash);
+		}
 	}
 
 	// A plain box scatter writes none of the new keys, which the schema refuses without the placement or shape they need.
@@ -207,7 +237,7 @@ bool FMantleScatterExportKeysTest::RunTest(const FString& Parameters)
 	{
 		for (const TCHAR* Key : { TEXT("drawDistance"), TEXT("placement"), TEXT("maxSlopeDegrees"), TEXT("minSlopeDegrees"), TEXT("minHeight"), TEXT("maxHeight"),
 			TEXT("shape"), TEXT("radius"), TEXT("path"), TEXT("width"), TEXT("exclusions"), TEXT("clusterCount"), TEXT("clusterRadius"), TEXT("collision"),
-			TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight") })
+			TEXT("paintLayer"), TEXT("minLayerWeight"), TEXT("maxLayerWeight"), TEXT("minSpacing"), TEXT("pathStep"), TEXT("pathExclusions") })
 		{
 			TestFalse(FString::Printf(TEXT("a plain box scatter writes no %s"), Key), (*Properties)->HasField(Key));
 		}
@@ -468,6 +498,71 @@ bool FMantleScatterGroundAlignCheckTest::RunTest(const FString& Parameters)
 	FString Problem;
 	TestTrue(FString::Printf(TEXT("and it reads (%s)"), *Problem), Volume->ReadProps(Params, Problem));
 	TestEqual(TEXT("with its min slope"), Params.MinSlopeDegrees, 50.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterPathStepCheckTest,
+	"Mantle.Editor.Scatter.Check.PathStepAndPathExclusions",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterPathStepCheckTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterExportTestPrivate;
+
+	// #190: a Path Step off a path is named (it is left out); with clusters, one making too many instances, and a bad strip are errors.
+	FScatterWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	AMantleScatterVolume* Volume = Fixture.World->SpawnActor<AMantleScatterVolume>(FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("a volume"), Volume))
+	{
+		return false;
+	}
+	Volume->SetActorLabel(TEXT("Fence"));
+	Volume->HalfExtent = FVector(1000.0, 1000.0, 0.0);
+	Volume->Density = 0.01;
+	Volume->Meshes.SetNum(1);
+	Volume->Meshes[0].MeshId = TEXT("ast_cube");
+	const auto Has = [](const FMantleValidationResult& Result, const EMantleIssueSeverity Severity, const TCHAR* Text)
+	{
+		return Result.Issues.ContainsByPredicate([Severity, Text](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Actor == TEXT("Fence") && Issue.Severity == Severity && Issue.Problem.Contains(Text);
+		});
+	};
+
+	Volume->PathStep = 300.0;
+	TestTrue(TEXT("a step off a path is named"), Has(FMantlePlaceValidator::Validate(Fixture.World), EMantleIssueSeverity::Warning, TEXT("its Shape is not Path")));
+
+	Volume->Shape = EMantleScatterShape::Path;
+	Volume->Path = { FVector2D(-900.0, 0.0), FVector2D(900.0, 0.0) };
+	Volume->Width = 100.0;
+	Volume->ClusterCount = 3;
+	Volume->ClusterRadius = 200.0;
+	TestTrue(TEXT("a step with clusters is an error"), Has(FMantlePlaceValidator::Validate(Fixture.World), EMantleIssueSeverity::Error, TEXT("also gathers them into clusters")));
+
+	Volume->ClusterCount = 0;
+	Volume->Path = { FVector2D(-150000.0, 0.0), FVector2D(150000.0, 0.0) };
+	Volume->PathStep = 1.0; // 3 km at 1 cm: 300001 instances
+	TestTrue(TEXT("a step that makes too many is an error"), Has(FMantlePlaceValidator::Validate(Fixture.World), EMantleIssueSeverity::Error, TEXT("over the 200000 one scatter makes")));
+
+	Volume->Path = { FVector2D(-900.0, 0.0), FVector2D(900.0, 0.0) };
+	Volume->PathStep = 300.0;
+	Volume->PathExclusions.SetNum(1);
+	Volume->PathExclusions[0].Path = { FVector2D::ZeroVector };
+	TestTrue(TEXT("a strip of one point is an error"), Has(FMantlePlaceValidator::Validate(Fixture.World), EMantleIssueSeverity::Error, TEXT("a strip needs at least 2 points")));
+
+	Volume->PathExclusions[0].Path = { FVector2D(0.0, -300.0), FVector2D(0.0, 300.0) };
+	const FMantleValidationResult Fine = FMantlePlaceValidator::Validate(Fixture.World);
+	TestFalse(TEXT("a sound stepped path with a strip says nothing of them"), Has(Fine, EMantleIssueSeverity::Error, TEXT("Path"))
+		|| Has(Fine, EMantleIssueSeverity::Error, TEXT("strip")) || Has(Fine, EMantleIssueSeverity::Warning, TEXT("Path Step")));
+	FMantleScatterParams Params;
+	FString Problem;
+	TestTrue(FString::Printf(TEXT("and it reads (%s)"), *Problem), Volume->ReadProps(Params, Problem));
+	TestEqual(TEXT("with its step"), Params.PathStep, 300.0);
 	return true;
 }
 

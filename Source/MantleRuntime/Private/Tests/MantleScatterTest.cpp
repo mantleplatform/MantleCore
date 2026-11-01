@@ -956,4 +956,449 @@ bool FMantleScatterSlopeParserTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// #190: minimum spacing, a fixed step along a path, and path exclusion strips.
+namespace MantleScatterTestPrivate
+{
+	/** The rule written the slow way: instances in index order, each kept unless a kept one is closer than SpacingMm (X-Y, exactly that far is kept). */
+	TArray<FMantleScatterInstance> GreedySpacing(const TArray<FMantleScatterInstance>& Candidates, const int64 SpacingMm)
+	{
+		TArray<FMantleScatterInstance> Kept;
+		for (const FMantleScatterInstance& Candidate : Candidates)
+		{
+			bool bTooClose = false;
+			for (const FMantleScatterInstance& Other : Kept)
+			{
+				const int64 Dx = static_cast<int64>(Candidate.X) - Other.X;
+				const int64 Dy = static_cast<int64>(Candidate.Y) - Other.Y;
+				if (Dx * Dx + Dy * Dy < SpacingMm * SpacingMm)
+				{
+					bTooClose = true;
+					break;
+				}
+			}
+			if (!bTooClose)
+			{
+				Kept.Add(Candidate);
+			}
+		}
+		return Kept;
+	}
+
+	bool SameInstances(const TArray<FMantleScatterInstance>& A, const TArray<FMantleScatterInstance>& B)
+	{
+		if (A.Num() != B.Num())
+		{
+			return false;
+		}
+		for (int32 Index = 0; Index < A.Num(); ++Index)
+		{
+			if (A[Index] != B[Index])
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Millimetres from (Px, Py) to the segment A-B, in floating point: the independent model of the strip test. */
+	double DistanceToSegmentMm(const double Px, const double Py, const FVector2D& A, const FVector2D& B)
+	{
+		const FVector2D P(Px, Py);
+		const FVector2D Along = B - A;
+		const double LengthSquared = Along.SizeSquared();
+		const double T = LengthSquared > 0.0 ? FMath::Clamp(FVector2D::DotProduct(P - A, Along) / LengthSquared, 0.0, 1.0) : 0.0;
+		return FVector2D::Distance(P, A + Along * T);
+	}
+
+	FMantleScatterParams DenseBox()
+	{
+		FMantleScatterParams P = BoxParams();
+		P.HalfExtent = FVector(5000.0, 3000.0, 0.0);
+		P.Density = 0.2;
+		return P;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterSpacingTest,
+	"Mantle.Runtime.Scatter.Generator.MinSpacing",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterSpacingTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterTestPrivate;
+
+	FMantleScatterParams P = DenseBox();
+	const TArray<FMantleScatterInstance> Candidates = GenerateOk(*this, P);
+	TestEqual(TEXT("the unspaced count"), Candidates.Num(), 1200);
+
+	P.MinSpacing = 300.0;
+	const TArray<FMantleScatterInstance> Spaced = GenerateOk(*this, P);
+	TestTrue(TEXT("spacing drops some but not all"), Spaced.Num() > 0 && Spaced.Num() < Candidates.Num());
+	TestTrue(TEXT("the survivors are exactly the index-order rule written the slow way"), SameInstances(Spaced, GreedySpacing(Candidates, 3000)));
+	bool bAllApart = true;
+	for (int32 A = 0; A < Spaced.Num(); ++A)
+	{
+		for (int32 B = A + 1; B < Spaced.Num(); ++B)
+		{
+			const double Dx = static_cast<double>(Spaced[A].X) - Spaced[B].X;
+			const double Dy = static_cast<double>(Spaced[A].Y) - Spaced[B].Y;
+			bAllApart = bAllApart && Dx * Dx + Dy * Dy >= 3000.0 * 3000.0;
+		}
+	}
+	TestTrue(TEXT("no two survivors are closer than the spacing"), bAllApart);
+	TestEqual(TEXT("spacing is stable"), FMantleScatter::Hash(GenerateOk(*this, P)), FMantleScatter::Hash(Spaced));
+
+	// The Foliage tier's prefix: fewer candidates keep the first survivors, the same ones.
+	FMantleScatterGenerateOptions Prefix;
+	Prefix.MaxCandidates = 400;
+	const TArray<FMantleScatterInstance> SpacedPrefix = GenerateOk(*this, P, Prefix);
+	FMantleScatterParams Plain = DenseBox();
+	const TArray<FMantleScatterInstance> PlainPrefix = GenerateOk(*this, Plain, Prefix);
+	TestTrue(TEXT("a lower tier's survivors are the rule on its own candidates"), SameInstances(SpacedPrefix, GreedySpacing(PlainPrefix, 3000)));
+	bool bIsPrefix = SpacedPrefix.Num() <= Spaced.Num();
+	for (int32 Index = 0; bIsPrefix && Index < SpacedPrefix.Num(); ++Index)
+	{
+		bIsPrefix = SpacedPrefix[Index] == Spaced[Index];
+	}
+	TestTrue(TEXT("a lower tier keeps a prefix of the full tier's survivors"), bIsPrefix);
+
+	// Exactly the spacing apart is kept: a point 300 cm along is not closer than 300 cm.
+	FMantleScatterParams Line;
+	Line.Seed = 3;
+	Line.Shape = EMantleScatterShape::Path;
+	Line.Path = { FVector2D(0.0, 0.0), FVector2D(300.0, 0.0) };
+	Line.Width = 0.1;
+	Line.PathStep = 100.0;
+	Line.MinSpacing = 100.0;
+	Line.Meshes = { { TEXT("ast_cube"), 1, {} } };
+	const TArray<FMantleScatterInstance> Chain = GenerateOk(*this, Line);
+	TestEqual(TEXT("four steps, each at least (the jitter across the strip only adds) the spacing from the last: none dropped"), Chain.Num(), 4);
+
+	// An instance another filter dropped keeps nothing away: ground only on the right half.
+	FMantleScatterParams Terrain = DenseBox();
+	Terrain.Placement = EMantleScatterPlacement::Terrain;
+	FMantleScatterGenerateOptions Ground;
+	Ground.Ground = [](int64 XMm, int64, FMantleScatterGround& Out)
+	{
+		Out = FMantleScatterGround();
+		return XMm >= 0;
+	};
+	const TArray<FMantleScatterInstance> RightHalf = GenerateOk(*this, Terrain, Ground);
+	Terrain.MinSpacing = 300.0;
+	const TArray<FMantleScatterInstance> RightSpaced = GenerateOk(*this, Terrain, Ground);
+	TestTrue(TEXT("spacing counts the other filters' survivors only"), SameInstances(RightSpaced, GreedySpacing(RightHalf, 3000)));
+
+	// Tiny and huge spacings.
+	P.MinSpacing = 0.1;
+	TestTrue(TEXT("a 1 mm spacing is the rule too"), SameInstances(GenerateOk(*this, P), GreedySpacing(Candidates, 1)));
+	P.MinSpacing = 100000.0;
+	TestEqual(TEXT("a spacing wider than the box keeps one instance"), GenerateOk(*this, P).Num(), 1);
+
+	// Out of range.
+	FString Error;
+	TArray<FMantleScatterInstance> Out;
+	P.MinSpacing = 100001.0;
+	TestFalse(TEXT("a spacing past the limit is refused"), FMantleScatter::Generate(P, Out, Error));
+	P.MinSpacing = -1.0;
+	TestFalse(TEXT("a negative spacing is refused"), FMantleScatter::Generate(P, Out, Error));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterAlongPathTest,
+	"Mantle.Runtime.Scatter.Generator.AlongPath",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterAlongPathTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterTestPrivate;
+
+	FMantleScatterParams P;
+	P.Seed = 11;
+	P.Shape = EMantleScatterShape::Path;
+	P.Path = { FVector2D(0.0, 0.0), FVector2D(1000.0, 0.0), FVector2D(1000.0, 500.0) };
+	P.Width = 1.0;
+	P.Density = 0.0;
+	P.PathStep = 100.0;
+	P.Meshes = { { TEXT("ast_cube"), 1, {} } };
+
+	FString Error;
+	TestEqual(TEXT("the count is the whole steps that fit, plus the first"), FMantleScatter::CountFor(P, Error), static_cast<int64>(16));
+	const TArray<FMantleScatterInstance> Along = GenerateOk(*this, P);
+	TestEqual(TEXT("16 instances"), Along.Num(), 16);
+	bool bFirstLeg = true;
+	bool bSecondLeg = true;
+	for (int32 Index = 0; Index < Along.Num(); ++Index)
+	{
+		const FMantleScatterInstance& Instance = Along[Index];
+		if (Index < 10)
+		{
+			// X is exactly Index steps (1000 mm each); the strip is 1 cm wide, so Y is within 5 mm of the line.
+			bFirstLeg = bFirstLeg && Instance.X == Index * 1000 && FMath::Abs(Instance.Y) <= 5 && Instance.Yaw == 0;
+		}
+		else
+		{
+			bSecondLeg = bSecondLeg && FMath::Abs(Instance.X - 10000) <= 5 && FMath::Abs(Instance.Y - (Index - 10) * 1000) <= 5
+				&& FMath::Abs(static_cast<int32>(Instance.Yaw) - 9000) <= 2;
+		}
+	}
+	TestTrue(TEXT("the first leg: a fixed step along +X, facing +X (yaw 0)"), bFirstLeg);
+	TestTrue(TEXT("the second leg: a fixed step along +Y, facing +Y (yaw 90 degrees)"), bSecondLeg);
+
+	// The steps do not depend on the seed or the density; only the jitter across the strip does.
+	FMantleScatterParams Other = P;
+	Other.Seed = 12;
+	Other.Density = 5.0;
+	const TArray<FMantleScatterInstance> OtherAlong = GenerateOk(*this, Other);
+	bool bSameSteps = OtherAlong.Num() == Along.Num();
+	for (int32 Index = 0; bSameSteps && Index < Along.Num(); ++Index)
+	{
+		bSameSteps = Along[Index].Yaw == OtherAlong[Index].Yaw && FMath::Abs(Along[Index].X - OtherAlong[Index].X) <= 10
+			&& FMath::Abs(Along[Index].Y - OtherAlong[Index].Y) <= 10;
+	}
+	TestTrue(TEXT("seed and density do not move the steps"), bSameSteps);
+	TestEqual(TEXT("along the path is stable"), FMantleScatter::Hash(GenerateOk(*this, P)), FMantleScatter::Hash(Along));
+
+	// Headings: -X is 180 degrees, a diagonal 45, and the heading turns with the segment.
+	FMantleScatterParams Back = P;
+	Back.Path = { FVector2D(0.0, 0.0), FVector2D(-500.0, 0.0) };
+	const TArray<FMantleScatterInstance> BackAlong = GenerateOk(*this, Back);
+	TestEqual(TEXT("six steps along -X"), BackAlong.Num(), 6);
+	int32 YawOff = 0;
+	for (const FMantleScatterInstance& Instance : BackAlong)
+	{
+		YawOff = FMath::Max(YawOff, FMath::Abs(static_cast<int32>(Instance.Yaw) - 18000));
+	}
+	TestTrue(TEXT("facing -X is yaw 180 degrees"), YawOff <= 2);
+	FMantleScatterParams Diagonal = P;
+	Diagonal.Path = { FVector2D(0.0, 0.0), FVector2D(500.0, 500.0) };
+	const TArray<FMantleScatterInstance> DiagonalAlong = GenerateOk(*this, Diagonal);
+	TestTrue(TEXT("facing the diagonal is yaw 45 degrees"), DiagonalAlong.Num() > 1 && FMath::Abs(static_cast<int32>(DiagonalAlong[1].Yaw) - 4500) <= 2);
+
+	// Pitch and roll still follow the alignment; the yaw stays along the line.
+	FMantleScatterParams Tilted = P;
+	Tilted.Alignment = EMantleScatterAlignment::Tilted;
+	Tilted.MaxTiltDegrees = 15.0;
+	const TArray<FMantleScatterInstance> TiltedAlong = GenerateOk(*this, Tilted);
+	bool bYawKept = TiltedAlong.Num() == Along.Num();
+	bool bLeaned = false;
+	for (int32 Index = 0; bYawKept && Index < Along.Num(); ++Index)
+	{
+		bYawKept = TiltedAlong[Index].Yaw == Along[Index].Yaw;
+		bLeaned = bLeaned || TiltedAlong[Index].Pitch != 0;
+	}
+	TestTrue(TEXT("tilted keeps the heading and leans"), bYawKept && bLeaned);
+
+	// Off: the same params without a step scatter at random along the strip, as before.
+	FMantleScatterParams Random = P;
+	Random.PathStep = 0.0;
+	Random.Density = 2.0;
+	Random.Width = 100.0;
+	const TArray<FMantleScatterInstance> Scattered = GenerateOk(*this, Random);
+	TestEqual(TEXT("without a step the count is the footprint's"), Scattered.Num(), 30);
+	bool bRandomYaw = false;
+	for (const FMantleScatterInstance& Instance : Scattered)
+	{
+		bRandomYaw = bRandomYaw || (Instance.Yaw != 0 && FMath::Abs(static_cast<int32>(Instance.Yaw) - 9000) > 10);
+	}
+	TestTrue(TEXT("without a step the yaw is random"), bRandomYaw);
+
+	// Refused: a step off a path, with clusters, too small, or making too many.
+	TArray<FMantleScatterInstance> Out;
+	FMantleScatterParams Box = BoxParams();
+	Box.PathStep = 100.0;
+	TestFalse(TEXT("a step on a box is refused"), FMantleScatter::Generate(Box, Out, Error));
+	FMantleScatterParams Clustered = P;
+	Clustered.ClusterCount = 2;
+	Clustered.ClusterRadius = 100.0;
+	TestFalse(TEXT("a step with clusters is refused"), FMantleScatter::Generate(Clustered, Out, Error));
+	FMantleScatterParams Small = P;
+	Small.PathStep = 0.5;
+	TestFalse(TEXT("a step under 1 cm is refused"), FMantleScatter::Generate(Small, Out, Error));
+	FMantleScatterParams Many = P;
+	Many.Path = { FVector2D(-1000000.0, 0.0), FVector2D(1000000.0, 0.0) };
+	Many.PathStep = 5.0;
+	TestFalse(TEXT("a step that makes more than 200000 instances is refused"), FMantleScatter::Generate(Many, Out, Error));
+	Many.PathStep = 10.0;
+	TestEqual(TEXT("200001 steps of 10 cm are refused too; the limit is the count"), FMantleScatter::CountFor(Many, Error), static_cast<int64>(-1));
+	Many.PathStep = 11.0;
+	TestEqual(TEXT("181819 steps of 11 cm pass"), FMantleScatter::CountFor(Many, Error), static_cast<int64>(181819));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterPathExclusionTest,
+	"Mantle.Runtime.Scatter.Generator.PathExclusions",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterPathExclusionTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterTestPrivate;
+
+	FMantleScatterParams P = DenseBox();
+	const TArray<FMantleScatterInstance> Everything = GenerateOk(*this, P);
+
+	// A bent strip 2 m wide (half width 1000 mm): the model is the distance to its two legs.
+	FMantleScatterPathExclusion Strip;
+	Strip.Path = { FVector2D(-3000.0, -1000.0), FVector2D(0.0, 500.0), FVector2D(2500.0, 2000.0) };
+	Strip.Width = 400.0;
+	const double HalfWidthMm = Strip.Width * 5.0;
+	P.PathExclusions = { Strip };
+	const TArray<FMantleScatterInstance> Kept = GenerateOk(*this, P);
+
+	const auto DistanceMm = [&Strip](const FMantleScatterInstance& Instance)
+	{
+		double Nearest = TNumericLimits<double>::Max();
+		for (int32 Leg = 0; Leg + 1 < Strip.Path.Num(); ++Leg)
+		{
+			Nearest = FMath::Min(Nearest, DistanceToSegmentMm(Instance.X, Instance.Y, Strip.Path[Leg] * 10.0, Strip.Path[Leg + 1] * 10.0));
+		}
+		return Nearest;
+	};
+	int32 Dropped = 0;
+	bool bModelAgrees = true;
+	for (const FMantleScatterInstance& Instance : Everything)
+	{
+		const double Distance = DistanceMm(Instance);
+		// Within a millimetre of the edge either result is right: the strip is rounded to whole mm.
+		if (Distance <= HalfWidthMm - 1.0)
+		{
+			bModelAgrees = bModelAgrees && !Kept.Contains(Instance);
+			++Dropped;
+		}
+		else if (Distance >= HalfWidthMm + 1.0)
+		{
+			bModelAgrees = bModelAgrees && Kept.Contains(Instance);
+		}
+	}
+	TestTrue(TEXT("some instances fall in the strip"), Dropped > 20);
+	TestTrue(TEXT("what is dropped is what lies within half the width of the line, as an independent model says"), bModelAgrees);
+	bool bOnlyDrops = Kept.Num() < Everything.Num();
+	for (const FMantleScatterInstance& Instance : Kept)
+	{
+		bOnlyDrops = bOnlyDrops && Everything.Contains(Instance);
+	}
+	TestTrue(TEXT("the strip drops instances and moves or adds none"), bOnlyDrops);
+	TestEqual(TEXT("a strip is stable"), FMantleScatter::Hash(GenerateOk(*this, P)), FMantleScatter::Hash(Kept));
+
+	// Round caps past the end of the strip, and a line of one repeated point (a disc of the width).
+	FMantleScatterPathExclusion Dot;
+	Dot.Path = { FVector2D(1000.0, 1000.0), FVector2D(1000.0, 1000.0) };
+	Dot.Width = 400.0;
+	FMantleScatterParams Dotted = DenseBox();
+	Dotted.PathExclusions = { Dot };
+	const TArray<FMantleScatterInstance> DotKept = GenerateOk(*this, Dotted);
+	bool bDiscOk = DotKept.Num() < Everything.Num();
+	for (const FMantleScatterInstance& Instance : Everything)
+	{
+		const double Distance = FVector2D::Distance(FVector2D(Instance.X, Instance.Y), FVector2D(10000.0, 10000.0));
+		if (Distance <= 2000.0 - 1.0)
+		{
+			bDiscOk = bDiscOk && !DotKept.Contains(Instance);
+		}
+		else if (Distance >= 2000.0 + 1.0)
+		{
+			bDiscOk = bDiscOk && DotKept.Contains(Instance);
+		}
+	}
+	TestTrue(TEXT("a strip of one repeated point drops a disc of half the width"), bDiscOk);
+
+	// Order of the strips changes nothing; boxes and strips both apply.
+	FMantleScatterPathExclusion Second;
+	Second.Path = { FVector2D(-4000.0, 2500.0), FVector2D(4000.0, 2500.0) };
+	Second.Width = 300.0;
+	Strip.Width = 400.0;
+	FMantleScatterParams Two = DenseBox();
+	Two.PathExclusions = { Strip, Second };
+	FMantleScatterParams Reversed = DenseBox();
+	Reversed.PathExclusions = { Second, Strip };
+	TestEqual(TEXT("the order of the strips does not matter"), FMantleScatter::Hash(GenerateOk(*this, Two)), FMantleScatter::Hash(GenerateOk(*this, Reversed)));
+	TestTrue(TEXT("two strips drop more than one"), GenerateOk(*this, Two).Num() < Kept.Num());
+	FMantleScatterParams WithBox = Two;
+	WithBox.Exclusions = { { FVector2D(0.0, 0.0), FVector2D(500.0, 500.0) } };
+	TestTrue(TEXT("a box and strips both apply"), GenerateOk(*this, WithBox).Num() < GenerateOk(*this, Two).Num());
+
+	// A strip far from the box drops nothing; the instance indexes are not shifted by what a strip drops.
+	FMantleScatterPathExclusion Far;
+	Far.Path = { FVector2D(90000.0, 90000.0), FVector2D(91000.0, 90000.0) };
+	Far.Width = 100.0;
+	FMantleScatterParams Distant = DenseBox();
+	Distant.PathExclusions = { Far };
+	TestTrue(TEXT("a far strip changes nothing"), SameInstances(GenerateOk(*this, Distant), Everything));
+
+	// Refused: a line of one point, too many points, too many strips, a width of 0.
+	FString Error;
+	TArray<FMantleScatterInstance> Out;
+	FMantleScatterParams Bad = DenseBox();
+	FMantleScatterPathExclusion OnePoint;
+	OnePoint.Path = { FVector2D(0.0, 0.0) };
+	Bad.PathExclusions = { OnePoint };
+	TestFalse(TEXT("a line of one point is refused"), FMantleScatter::Generate(Bad, Out, Error));
+	Bad.PathExclusions = { Strip };
+	Bad.PathExclusions[0].Width = 0.0;
+	TestFalse(TEXT("a width of 0 is refused"), FMantleScatter::Generate(Bad, Out, Error));
+	Bad.PathExclusions.Reset();
+	for (int32 Index = 0; Index < 17; ++Index)
+	{
+		Bad.PathExclusions.Add(Strip);
+	}
+	TestFalse(TEXT("17 strips are refused"), FMantleScatter::Generate(Bad, Out, Error));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleScatterSpacingParserTest,
+	"Mantle.Runtime.Scatter.Parser.SpacingStepAndPathExclusions",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleScatterSpacingParserTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleScatterTestPrivate;
+
+	FMantleParseResult Result = ParseScatter(TEXT(""));
+	const FMantleScatterParams* Plain = ScatterOf(Result);
+	TestTrue(TEXT("defaults: no spacing, no step, no strips"),
+		Plain && Plain->MinSpacing == 0.0 && Plain->PathStep == 0.0 && Plain->PathExclusions.Num() == 0);
+
+	const FString Path = TEXT(",\"shape\":\"path\",\"path\":[[0,0],[2000,0]],\"width\":100");
+	Result = ParseScatter(Path + TEXT(",\"pathStep\":50,\"minSpacing\":40.5,"
+		"\"pathExclusions\":[{\"path\":[[0,10],[500,20],[900,-30]],\"width\":120}]"));
+	const FMantleScatterParams* All = ScatterOf(Result);
+	TestTrue(TEXT("every new key parses"), Result.bSuccess && All && All->PathStep == 50.0 && All->MinSpacing == 40.5
+		&& All->PathExclusions.Num() == 1 && All->PathExclusions[0].Path.Num() == 3 && All->PathExclusions[0].Width == 120.0);
+
+	// ToJson writes them back so a script's settings (and the server's) read the same.
+	if (All)
+	{
+		FMantleScatterParams Back;
+		TArray<FMantleParseError> Errors;
+		TestTrue(TEXT("ToJson reads back"), FMantlePlaceParser::ParseScatterProperties(FMantleScatter::ToJson(*All), Back, Errors));
+		TArray<FMantleScatterInstance> First;
+		TArray<FMantleScatterInstance> Second;
+		FString Error;
+		FMantleScatter::Generate(*All, First, Error);
+		FMantleScatter::Generate(Back, Second, Error);
+		TestTrue(TEXT("and gives the same instances"), First.Num() > 0 && SameInstances(First, Second));
+	}
+
+	TestTrue(TEXT("a step on a box is refused at pathStep"), HasErrorAt(ParseScatter(TEXT(",\"pathStep\":50")), TEXT("pathStep")));
+	TestTrue(TEXT("a step under 1 cm is refused"), HasErrorAt(ParseScatter(Path + TEXT(",\"pathStep\":0.5")), TEXT("pathStep")));
+	TestTrue(TEXT("a step with clusters is refused at the count"),
+		HasErrorAt(ParseScatter(Path + TEXT(",\"pathStep\":50,\"clusterCount\":2,\"clusterRadius\":100")), TEXT("clusterCount")));
+	TestTrue(TEXT("a step that makes too many is refused at pathStep"),
+		HasErrorAt(ParseScatter(TEXT(",\"shape\":\"path\",\"path\":[[-1000000,0],[1000000,0]],\"width\":100,\"pathStep\":5")), TEXT("pathStep")));
+	TestTrue(TEXT("a zero spacing is refused"), HasErrorAt(ParseScatter(TEXT(",\"minSpacing\":0")), TEXT("minSpacing")));
+	TestTrue(TEXT("a spacing past the limit is refused"), HasErrorAt(ParseScatter(TEXT(",\"minSpacing\":100001")), TEXT("minSpacing")));
+	TestTrue(TEXT("a strip of one point is refused"),
+		HasErrorAt(ParseScatter(TEXT(",\"pathExclusions\":[{\"path\":[[0,0]],\"width\":10}]")), TEXT("pathExclusions/0/path")));
+	TestTrue(TEXT("a strip without a width is refused"),
+		HasErrorAt(ParseScatter(TEXT(",\"pathExclusions\":[{\"path\":[[0,0],[1,1]]}]")), TEXT("pathExclusions/0/width")));
+	TestTrue(TEXT("a strip of width 0 is refused"),
+		HasErrorAt(ParseScatter(TEXT(",\"pathExclusions\":[{\"path\":[[0,0],[1,1]],\"width\":0}]")), TEXT("pathExclusions/0/width")));
+	TestFalse(TEXT("an unknown key in a strip is refused"),
+		ParseScatter(TEXT(",\"pathExclusions\":[{\"path\":[[0,0],[1,1]],\"width\":5,\"depth\":1}]")).bSuccess);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

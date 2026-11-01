@@ -853,6 +853,49 @@ namespace
 				TEXT("Set Max Slope Degrees to at least Min Slope Degrees in the scatter volume's Details panel.") });
 			return;
 		}
+		// A fixed path step and path exclusion strips (#190), as the parser holds them, each with a plain fix.
+		if (Volume->PathStep > 0.0 && Volume->Shape != EMantleScatterShape::Path)
+		{
+			Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, LabelOf(Actor),
+				FString::Printf(TEXT("has a Path Step of %.0f cm, but its Shape is not Path, so the step is left out and instances spread at random."), Volume->PathStep),
+				TEXT("Set Shape to Path to keep the step, or set Path Step to 0.") });
+		}
+		if (Volume->Shape == EMantleScatterShape::Path && Volume->PathStep > 0.0)
+		{
+			if (Volume->ClusterCount > 0)
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+					TEXT("puts instances at a fixed Path Step and also gathers them into clusters, which cannot go together."),
+					TEXT("Set Cluster Count to 0, or set Path Step to 0 to scatter at random along the path.") });
+				return;
+			}
+			double Length = 0.0;
+			for (int32 Index = 1; Index < Volume->Path.Num(); ++Index)
+			{
+				Length += FVector2D::Distance(Volume->Path[Index - 1], Volume->Path[Index]);
+			}
+			const int64 Steps = static_cast<int64>(Length / Volume->PathStep) + 1;
+			if (Steps > FMantlePlaceLimits::MaxScatterInstances)
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+					FString::Printf(TEXT("puts an instance every %.1f cm along a %.0f m path: about %lld instances, over the %d one scatter makes."),
+						Volume->PathStep, Length / 100.0, static_cast<long long>(Steps), FMantlePlaceLimits::MaxScatterInstances),
+					FString::Printf(TEXT("Raise Path Step to at least %.1f cm, or shorten the path."), Length / (FMantlePlaceLimits::MaxScatterInstances - 1)) });
+				return;
+			}
+		}
+		for (int32 Index = 0; Index < Volume->PathExclusions.Num(); ++Index)
+		{
+			const FMantleScatterPathExclusionSettings& Strip = Volume->PathExclusions[Index];
+			if (Strip.Path.Num() < 2 || Strip.Width <= 0.0)
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+					FString::Printf(TEXT("has a path exclusion (number %d) with %d points and a width of %.1f cm; a strip needs at least 2 points and a width above 0."),
+						Index + 1, Strip.Path.Num(), Strip.Width),
+					TEXT("Give the strip 2 or more points and a width under Path Exclusions, or remove it.") });
+				return;
+			}
+		}
 		FMantleScatterParams Props;
 		FString Problem;
 		if (!Volume->ReadProps(Props, Problem))
