@@ -408,7 +408,22 @@ struct MANTLEEDITOR_API FMantleGatheredTexture
 	/** #488: first gathered as a vehicle's livery (a base colour with alpha as coverage), not a decal's: for messages. */
 	bool bLivery = false;
 
+	/** #168 step 6: first gathered as a block world's tile, uploaded as it is, at its own size: for messages. */
+	bool bVoxelTile = false;
+
 	TArray<FString> UsedBy;
+};
+
+/** A Mantle Voxel World (#168 step 6): its blocks, uploaded as one VoxelWorldData (MBW1). Its tiles are in Textures. */
+struct MANTLEEDITOR_API FMantleGatheredVoxelWorld
+{
+	TWeakObjectPtr<AActor> Actor;
+
+	/** AMantleVoxelWorldActor::WorldKey. */
+	FString Key;
+
+	/** The actor's label. */
+	FString Name;
 };
 
 /**
@@ -534,11 +549,20 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	/** Mantle Weapon Spawns' built weapons (#789), in level order. */
 	TArray<FMantleGatheredWeapon> Weapons;
 
+	/** Mantle Voxel Worlds' blocks (#168 step 6), in level order; their tiles are in Textures. */
+	TArray<FMantleGatheredVoxelWorld> VoxelWorlds;
+
 	bool NeedsUploads() const
 	{
 		return Meshes.Num() > 0 || Materials.Num() > 0 || Textures.Num() > 0 || Sounds.Num() > 0 || SkeletalMeshes.Num() > 0 || Clips.Num() > 0
-			|| Terrains.Num() > 0 || Vehicles.Num() > 0 || Weapons.Num() > 0;
+			|| Terrains.Num() > 0 || Vehicles.Num() > 0 || Weapons.Num() > 0 || VoxelWorlds.Num() > 0;
 	}
+
+	/**
+	 * Adds one Mantle Voxel World (#168 step 6): its blocks, when it has any, and each block type's tiles, as a decal's base
+	 * colour is added (uploaded as they are, alpha kept). Check names a missing or wrongly sized tile.
+	 */
+	void AddVoxelWorld(const AActor* Actor);
 
 	/**
 	 * Adds one SkeletalMesh actor's mesh, the effective material of each of its slots (library ones skipped) and the

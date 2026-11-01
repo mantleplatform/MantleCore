@@ -32,6 +32,7 @@
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
 #include "MantleVehicleSpawnPoint.h"
+#include "MantleVoxelWorldActor.h"
 #include "MantleWeaponSpawnPoint.h"
 #include "HAL/FileManager.h"
 #include "Misc/PackageName.h"
@@ -221,7 +222,9 @@ namespace
 	void CheckComponents(const AActor* Actor, EMantleEntityType Type, FMantleValidationResult& Result)
 	{
 		// A reflection capture (#628) publishes as its one capture component; its preview boxes are the editor's.
-		if (Type == EMantleEntityType::ReflectionProbe || Type == EMantleEntityType::Text || Type == EMantleEntityType::WaterBody)
+		// A block world (#168 step 6) publishes its blocks; its outline box is the editor's.
+		if (Type == EMantleEntityType::ReflectionProbe || Type == EMantleEntityType::Text || Type == EMantleEntityType::WaterBody
+			|| Type == EMantleEntityType::VoxelWorld)
 		{
 			return;
 		}
@@ -1696,6 +1699,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 	int32 Constraints = 0;
 	int32 ReflectionProbes = 0;
 	int32 Texts = 0;
+	int32 VoxelWorlds = 0;
 	bool bWarnedSun = false;
 	// #838: checked after the loop, once the level's packages and storage are known.
 	TArray<const AMantleScriptPoint*> ScriptPoints;
@@ -1830,6 +1834,24 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 		CheckEffect(Actor, Type, Effects, Result);
 		ValidatorCheckScatter(Actor, Type, ScatterInstances, Result);
 		CheckConstraint(Actor, Type, Constraints, Result);
+		// #168 step 6: a block world, held to what the place format takes, and at most one blocky world in the place.
+		if (const AMantleVoxelWorldActor* Voxel = Type == EMantleEntityType::VoxelWorld ? Cast<AMantleVoxelWorldActor>(Actor) : nullptr)
+		{
+			for (const FMantleVoxelWorldProblem& Problem : Voxel->DescribeProblems())
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor), Problem.What, Problem.Remedy });
+			}
+			const FString CountProblem = FMantlePlaceExporter::DescribeVoxelWorldCount(++VoxelWorlds);
+			if (!CountProblem.IsEmpty())
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor), CountProblem, FString() });
+			}
+			if (!FMantleTargetFeatures::Current().Reads(MantleClientFeatures::VoxelWorld))
+			{
+				Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor),
+					FString::Printf(TEXT("is a block world, which this Mantle client can't load: %s."), FMantleTargetFeatures::NeedsNewerClient), FString() });
+			}
+		}
 		FMantleReflectionProbeExport::Check(Actor, Type, ReflectionProbes, Result);
 		FMantleTextExport::Check(Actor, Type, Texts, Result);
 		if (const AMantleCrowdSpawner* Spawner = Type == EMantleEntityType::CrowdSpawner ? Cast<AMantleCrowdSpawner>(Actor) : nullptr)

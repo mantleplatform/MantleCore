@@ -21,6 +21,8 @@
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
 #include "MantleVehicleThumbnail.h"
+#include "MantleVoxelWorldActor.h"
+#include "MantleVoxelWorldFile.h"
 #include "MantleCosmeticThumbnail.h"
 #include "MantleModelThumbnail.h"
 #include "MantleThumbnailStore.h"
@@ -1263,6 +1265,11 @@ const FMantleConvertedHeightfield* FMantlePlaceAssetSet::FindHeightfield(const F
 	return Heightfields.FindByPredicate([&Key](const FMantleConvertedHeightfield& Heightfield) { return Heightfield.Key == Key; });
 }
 
+const FMantleConvertedVoxelWorld* FMantlePlaceAssetSet::FindVoxelWorld(const FString& Key) const
+{
+	return VoxelWorlds.FindByPredicate([&Key](const FMantleConvertedVoxelWorld& World) { return World.Key == Key; });
+}
+
 const FMantleConvertedVehicle* FMantlePlaceAssetSet::FindVehicle(const FString& Key) const
 {
 	return Vehicles.FindByPredicate([&Key](const FMantleConvertedVehicle& Vehicle) { return Vehicle.Key == Key; });
@@ -1624,6 +1631,11 @@ bool FMantlePlaceAssetSet::TakeUploads(EMantlePlaceUploadStage Stage, TArray<FMa
 		{
 			Take(Heightfield.Key, TEXT("heightfield"), Heightfield.Hash, Heightfield.Name, Heightfield.Bytes);
 		}
+		// #168 step 6: block worlds' blocks, which name nothing else either (their tiles went with the textures).
+		for (FMantleConvertedVoxelWorld& World : VoxelWorlds)
+		{
+			Take(World.Key, TEXT("voxelworld"), World.Hash, World.Name, World.Bytes);
+		}
 		return true;
 	case EMantlePlaceUploadStage::Vehicle:
 		for (const FMantleConvertedVehicle& Vehicle : Vehicles)
@@ -1746,6 +1758,10 @@ int32 FMantlePlaceAssetSet::SpillBytes(const FString& Directory, const int64 Min
 	{
 		Spill(Heightfield.Key, Heightfield.Hash, Heightfield.Bytes);
 	}
+	for (FMantleConvertedVoxelWorld& World : VoxelWorlds)
+	{
+		Spill(World.Key, World.Hash, World.Bytes);
+	}
 	return Written;
 }
 
@@ -1758,6 +1774,7 @@ int64 FMantlePlaceAssetSet::HeldBytes() const
 	for (const FMantleConvertedSkeletalMesh& Each : SkeletalMeshes) { Held += Each.Bytes.Num(); }
 	for (const FMantleConvertedClip& Each : Clips) { Held += Each.Bytes.Num(); }
 	for (const FMantleConvertedHeightfield& Each : Heightfields) { Held += Each.Bytes.Num(); }
+	for (const FMantleConvertedVoxelWorld& Each : VoxelWorlds) { Held += Each.Bytes.Num(); }
 	return Held;
 }
 
@@ -1786,6 +1803,10 @@ void FMantlePlaceAssetSet::ReleaseBytes()
 	for (FMantleConvertedHeightfield& Heightfield : Heightfields)
 	{
 		Heightfield.Bytes.Empty();
+	}
+	for (FMantleConvertedVoxelWorld& World : VoxelWorlds)
+	{
+		World.Bytes.Empty();
 	}
 	for (FMantleConvertedVehicle& Vehicle : Vehicles)
 	{
@@ -2232,6 +2253,14 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 		}
 		ConvertTerrain(Terrain.Landscape.Get(), Out);
 	}
+	for (const FMantleGatheredVoxelWorld& World : Dependencies.VoxelWorlds)
+	{
+		if (!Continue(World.Name))
+		{
+			return false;
+		}
+		ConvertVoxelWorld(World, Out);
+	}
 	for (const FMantleGatheredVehicle& Vehicle : Dependencies.Vehicles)
 	{
 		if (!Continue(Vehicle.Name))
@@ -2291,6 +2320,40 @@ bool FMantlePlaceAssetConverter::ConvertTerrain(AActor* Landscape, FMantlePlaceA
 	const bool bTerrain = ConvertTerrainSource(Landscape->GetWorld(), Source, Key, FMantleTerrainExport::WeightmapKey(Landscape), Label, Landscape->GetPathName(), Out);
 	// Its grass maps (#628): one RGBA texture per four grass types, uploaded with the textures.
 	return bTerrain && FMantleTerrainGrassExport::ConvertMaps(Landscape, Source, Limits, Out);
+}
+
+bool FMantlePlaceAssetConverter::ConvertVoxelWorld(const FMantleGatheredVoxelWorld& World, FMantlePlaceAssetSet& Out)
+{
+	using namespace MantlePlaceAssetConverterPrivate;
+	if (Out.FindVoxelWorld(World.Key))
+	{
+		return true;
+	}
+	const AMantleVoxelWorldActor* Actor = Cast<AMantleVoxelWorldActor>(World.Actor.Get());
+	if (!Actor)
+	{
+		Out.Issues.Add(ErrorIssue(FString::Printf(TEXT("The block world '%s' could not be found in the level."), *World.Name), TEXT("Check the level, then publish again.")));
+		return false;
+	}
+	// The cook reads it the same way (backend/internal/cook/voxelworld.go): one it would refuse stops the publish here, by name.
+	FMantleVoxelWorldFile File;
+	FString Error;
+	if (!FMantleVoxelWorldFile::Read(Actor->WorldData, File, &Error))
+	{
+		Out.Issues.Add(ErrorIssue(FString::Printf(TEXT("The block world '%s' has blocks that cannot be published: its world file %s."), *World.Name, *Error),
+			TEXT("Voxelize or import its blocks again.")));
+		return false;
+	}
+	FMantleConvertedVoxelWorld Converted;
+	Converted.Key = World.Key;
+	Converted.Name = FString::Printf(TEXT("%s (blocks)"), *World.Name);
+	Converted.Path = Actor->GetPathName();
+	Converted.Bytes = Actor->WorldData;
+	Converted.Hash = FMantleSha256::AssetHash(Converted.Bytes);
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_VOXEL converted block world %s: %s blocks, %d section(s), %d bytes as MBW1"),
+		*World.Name, *File.Size.ToString(), File.Sections.Num(), Converted.Bytes.Num());
+	Out.VoxelWorlds.Add(MoveTemp(Converted));
+	return true;
 }
 
 bool FMantlePlaceAssetConverter::ConvertTerrainSource(UWorld* World, const FMantleTerrainSource& Source, const FString& Key,
@@ -2663,15 +2726,18 @@ bool FMantlePlaceAssetConverter::ConvertDecalTexture(const FMantleGatheredTextur
 	const UTexture* Texture = Gathered.Texture.Get();
 	const FString Users = FMantlePlaceAssets::DescribeUsers(Gathered.UsedBy);
 	// A vehicle's livery (#488) converts exactly as a decal's base colour does; only the words differ.
-	const TCHAR* Kind = Gathered.bLivery ? TEXT("Livery texture") : TEXT("Decal texture");
+	// So does a block world's tile (#168 step 6).
+	const TCHAR* Kind = Gathered.bLivery ? TEXT("Livery texture") : Gathered.bVoxelTile ? TEXT("Block tile") : TEXT("Decal texture");
 	const FString What = Users.IsEmpty()
 		? FString::Printf(TEXT("%s '%s'"), Kind, *Gathered.Name)
 		: FString::Printf(TEXT("%s '%s' (%s)"), Kind, *Gathered.Name, *Users);
 	const bool bLivery = Gathered.bLivery;
-	auto Refuse = [&Out, &What, bLivery](const FString& Why)
+	const bool bVoxelTile = Gathered.bVoxelTile;
+	auto Refuse = [&Out, &What, bLivery, bVoxelTile](const FString& Why)
 	{
 		Out.Issues.Add(ErrorIssue(FString::Printf(TEXT("%s can't be published: %s."), *What, *Why), bLivery
 			? TEXT("Use a 2D texture imported from an image file (PNG, JPEG, TGA) for the vehicle's livery.")
+			: bVoxelTile ? TEXT("Use a 2D texture of the world's Tile Size for the block type (Voxelize makes them).")
 			: TEXT("Use a 2D texture imported from an image file (PNG, JPEG, TGA) for the decal's BaseColor and Normal.")));
 		return false;
 	};
@@ -2690,6 +2756,7 @@ bool FMantlePlaceAssetConverter::ConvertDecalTexture(const FMantleGatheredTextur
 		return Refuse(TEXT("its pixels could not be encoded within the upload limits"));
 	}
 	Converted.Name = Gathered.bLivery ? FString::Printf(TEXT("%s (vehicle livery)"), *Gathered.Name)
+		: Gathered.bVoxelTile ? FString::Printf(TEXT("%s (block tile)"), *Gathered.Name)
 		: FString::Printf(TEXT("%s (decal %s)"), *Gathered.Name, Gathered.bNormal ? TEXT("normal map") : TEXT("base colour"));
 	Out.DecalTextures.Add(Gathered.Key, Out.AddTexture(MoveTemp(Converted)));
 	++Stats.DecalTexturesConverted;
@@ -3038,8 +3105,8 @@ bool FMantlePlaceAssetConverter::ConvertWeapon(const FMantleGatheredWeapon& Weap
 int32 FMantlePlaceAssetConverter::NumDependencySteps(const FMantlePlaceDependencies& Dependencies)
 {
 	return Dependencies.Meshes.Num() + Dependencies.Materials.Num() + Dependencies.Textures.Num() + Dependencies.Sounds.Num()
-		+ Dependencies.SkeletalMeshes.Num() + Dependencies.Clips.Num() + Dependencies.Terrains.Num() + Dependencies.Vehicles.Num()
-		+ Dependencies.Weapons.Num();
+		+ Dependencies.SkeletalMeshes.Num() + Dependencies.Clips.Num() + Dependencies.Terrains.Num() + Dependencies.VoxelWorlds.Num()
+		+ Dependencies.Vehicles.Num() + Dependencies.Weapons.Num();
 }
 
 FString FMantlePlaceAssetConverter::DependencyStepName(const FMantlePlaceDependencies& Dependencies, int32 Step)
@@ -3080,8 +3147,14 @@ FString FMantlePlaceAssetConverter::DependencyStepName(const FMantlePlaceDepende
 	{
 		return Dependencies.Terrains[Terrain].Name;
 	}
+	// Block worlds' blocks (#168 step 6), after the landscapes.
+	const int32 VoxelWorld = Terrain - Dependencies.Terrains.Num();
+	if (Dependencies.VoxelWorlds.IsValidIndex(VoxelWorld))
+	{
+		return Dependencies.VoxelWorlds[VoxelWorld].Name;
+	}
 	// Creator vehicles (#435): their bodies' materials are among the materials above.
-	const int32 Vehicle = Terrain - Dependencies.Terrains.Num();
+	const int32 Vehicle = VoxelWorld - Dependencies.VoxelWorlds.Num();
 	if (Dependencies.Vehicles.IsValidIndex(Vehicle))
 	{
 		return Dependencies.Vehicles[Vehicle].Name;
@@ -3138,8 +3211,15 @@ void FMantlePlaceAssetConverter::ConvertDependencyStep(const FMantlePlaceDepende
 		ConvertTerrain(Dependencies.Terrains[Terrain].Landscape.Get(), Out);
 		return;
 	}
+	// Block worlds' blocks (#168 step 6), as MBW1.
+	const int32 VoxelWorld = Terrain - Dependencies.Terrains.Num();
+	if (Dependencies.VoxelWorlds.IsValidIndex(VoxelWorld))
+	{
+		ConvertVoxelWorld(Dependencies.VoxelWorlds[VoxelWorld], Out);
+		return;
+	}
 	// Creator vehicles (#435): their documents name their materials' ids.
-	const int32 Vehicle = Terrain - Dependencies.Terrains.Num();
+	const int32 Vehicle = VoxelWorld - Dependencies.VoxelWorlds.Num();
 	if (Dependencies.Vehicles.IsValidIndex(Vehicle))
 	{
 		ConvertVehicle(Dependencies.Vehicles[Vehicle].Vehicle.Get(), Out);

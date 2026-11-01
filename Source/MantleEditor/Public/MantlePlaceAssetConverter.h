@@ -386,6 +386,18 @@ struct MANTLEEDITOR_API FMantleConvertedHeightfield
 	FString WeightmapKey;
 };
 
+/** A Mantle Voxel World's blocks (#168 step 6) as their upload: the MBW1 file it holds, uploaded with the heightfields (nothing names it but the place). */
+struct MANTLEEDITOR_API FMantleConvertedVoxelWorld
+{
+	/** AMantleVoxelWorldActor::WorldKey. */
+	FString Key;
+	FString Name;
+	FString Path;
+
+	TArray<uint8> Bytes;
+	FString Hash;
+};
+
 /**
  * One creator vehicle (#435), ready but for its materials' ids: the body as it uploads (LOD0 with its tires
  * merged) and the vehicle document without materials. FMantlePlaceAssetSet::VehicleBytes writes the upload once
@@ -549,6 +561,9 @@ struct MANTLEEDITOR_API FMantlePlaceAssetSet
 	/** The landscape's heights (#466), uploaded in their own stage, last; its weightmap is in Textures. */
 	TArray<FMantleConvertedHeightfield> Heightfields;
 
+	/** Block worlds' blocks (#168 step 6), uploaded in the heightfield stage; their tiles are in Textures. */
+	TArray<FMantleConvertedVoxelWorld> VoxelWorlds;
+
 	/** Creator vehicles (#435), uploaded last: their documents name their materials' ids. */
 	TArray<FMantleConvertedVehicle> Vehicles;
 
@@ -585,6 +600,7 @@ struct MANTLEEDITOR_API FMantlePlaceAssetSet
 	const FMantleConvertedSkeletalMesh* FindSkeletalMesh(const FString& Key) const;
 	const FMantleConvertedClip* FindClip(const FString& Key) const;
 	const FMantleConvertedHeightfield* FindHeightfield(const FString& Key) const;
+	const FMantleConvertedVoxelWorld* FindVoxelWorld(const FString& Key) const;
 	const FMantleConvertedVehicle* FindVehicle(const FString& Key) const;
 	const FMantleConvertedWeapon* FindWeapon(const FString& Key) const;
 
@@ -878,7 +894,7 @@ public:
 
 	/**
 	 * A publish converts what it gathered one step at a time, so the editor keeps running between steps: meshes, materials, decal
-	 * textures, sounds, skeletal meshes, clips, landscapes, vehicles, then weapons, each one step. A place's own steps (its UI images,
+	 * textures, sounds, skeletal meshes, clips, landscapes, block worlds (#168), vehicles, then weapons, each one step. A place's own steps (its UI images,
 	 * its thumbnail) follow these. #840: shared by the level and the weapon builder's publish.
 	 */
 	static int32 NumDependencySteps(const FMantlePlaceDependencies& Dependencies);
@@ -919,6 +935,12 @@ public:
 	 * materials (FMantlePlaceDependencies::AddTerrain). Not cached: it is read, not baked.
 	 */
 	bool ConvertTerrain(AActor* Landscape, FMantlePlaceAssetSet& Out);
+
+	/**
+	 * A Mantle Voxel World's blocks (#168 step 6): the MBW1 it holds, read back first (FMantleVoxelWorldFile::Read) so a file the
+	 * cook would refuse stops the publish here, naming the world. Its tiles convert as decal textures. Not cached: it is a copy.
+	 */
+	bool ConvertVoxelWorld(const FMantleGatheredVoxelWorld& World, FMantlePlaceAssetSet& Out);
 
 	/**
 	 * Converts an already-read landscape: what ConvertTerrain does after reading it, split out so tests

@@ -19,6 +19,7 @@
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
 #include "MantleVehicleSpawnPoint.h"
+#include "MantleVoxelWorldActor.h"
 #include "MantleWeaponSpawnPoint.h"
 
 #include "Animation/AnimSequence.h"
@@ -2166,6 +2167,46 @@ void FMantlePlaceDependencies::AddEffectTexture(UTexture* Texture, const FString
 	Existing->UsedBy.AddUnique(Label);
 }
 
+void FMantlePlaceDependencies::AddVoxelWorld(const AActor* Actor)
+{
+	const AMantleVoxelWorldActor* World = Cast<AMantleVoxelWorldActor>(Actor);
+	if (!World)
+	{
+		return;
+	}
+	const FString Label = World->GetActorLabel();
+	const FString Key = World->WorldKey();
+	if (World->WorldData.Num() > 0 && !VoxelWorlds.ContainsByPredicate([&Key](const FMantleGatheredVoxelWorld& Entry) { return Entry.Key == Key; }))
+	{
+		FMantleGatheredVoxelWorld& Entry = VoxelWorlds.AddDefaulted_GetRef();
+		Entry.Actor = const_cast<AMantleVoxelWorldActor*>(World);
+		Entry.Key = Key;
+		Entry.Name = Label;
+	}
+	// Each tile once, under the key the exporter names it by (FMantlePlaceAssets::DecalTextureKey, a base colour).
+	for (const FMantleVoxelBlockTypeSettings& Type : World->BlockTypes)
+	{
+		for (UTexture2D* Tile : { Type.Top.Get(), Type.Side.Get(), Type.Bottom.Get() })
+		{
+			if (!Tile)
+			{
+				continue;
+			}
+			const FString TileKey = FMantlePlaceAssets::DecalTextureKey(Tile, /*bNormal*/ false);
+			FMantleGatheredTexture* Existing = Textures.FindByPredicate([&TileKey](const FMantleGatheredTexture& Entry) { return Entry.Key == TileKey; });
+			if (!Existing)
+			{
+				Existing = &Textures.AddDefaulted_GetRef();
+				Existing->Texture = Tile;
+				Existing->Key = TileKey;
+				Existing->Name = Tile->GetName();
+				Existing->bVoxelTile = true;
+			}
+			Existing->UsedBy.AddUnique(Label);
+		}
+	}
+}
+
 void FMantlePlaceDependencies::AddActor(const AStaticMeshActor* Actor)
 {
 	if (!Actor)
@@ -2462,6 +2503,11 @@ FMantlePlaceDependencies FMantlePlaceDependencies::Gather(UWorld* World)
 		else if (Type == EMantleEntityType::Scatter)
 		{
 			Out.AddScatter(Actor);
+		}
+		else if (Type == EMantleEntityType::VoxelWorld)
+		{
+			// #168 step 6: a block world's blocks and tiles.
+			Out.AddVoxelWorld(Actor);
 		}
 	}
 	// Instanced meshes after the actors, as Export writes them (#467): the same sources, on any actor.
