@@ -52,8 +52,10 @@ struct MANTLEEDITOR_API FMantleVoxelizeResult
 /**
  * #168 step 6: turns a level's cube meshes into a Mantle Voxel World, and an MBW1 file into one.
  *
- * Voxelize: each source actor's static mesh components (and instanced mesh instances) fill every 100 cm cell whose centre
- * lies inside their world bounding box, so voxel-art cubes of any multiple of 100 cm become blocks. Each distinct (mesh, first
+ * Voxelize: each source actor's static mesh components (and instanced mesh instances) fill the 100 cm cells of their shape
+ * (#64): a closed mesh every cell whose centre is inside it, an open or too-thin one the cells its surface passes through, and
+ * one with no source triangles (cooked only) its world bounding box. So voxel-art cubes of any multiple of 100 cm become
+ * blocks. Sky domes are skipped, as the exporter skips them (FMantleSkyMesh). Each distinct (mesh, first
  * material) pair is a block type, named after its mesh; its tile is the material's base colour texture rendered down to a
  * Tile Size square (or a flat tile of its base colour), saved as a new texture in the project's own content. The world sits
  * at the lowest filled cell, its size rounded up to whole sections. The sources move to the "Voxelized sources" folder,
