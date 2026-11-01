@@ -994,7 +994,8 @@ namespace
 		const FMantleTerrainProps& Props,
 		const FString& Path,
 		TArray<FMantleParseError>& Errors,
-		FMantleBuilderLoadStats& LoadStats)
+		FMantleBuilderLoadStats& LoadStats,
+		FMantleScatterTerrainSurface* OutSurface = nullptr)
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_Terrain);
 
@@ -1082,6 +1083,13 @@ namespace
 		{
 			Errors.Add(FMantleParseError{ Path + TEXT("/properties/heightfield"), BuildError });
 			return nullptr;
+		}
+
+		// The surface a Scatter placed on terrain drops onto (#169); its transform is read once the place has put the terrain down.
+		if (OutSurface)
+		{
+			OutSurface->Field = Field;
+			OutSurface->Holes = Params.Holes;
 		}
 
 		// #596: the layers' surfaces, on every net mode, so a hit on the terrain resolves to the layer
@@ -1310,6 +1318,9 @@ namespace
 		return Actor;
 	}
 
+	void RefreshBuiltScatter(AMantleScatterVolume* Actor, const FMantleEntity& Entity, const FMantleScatterParams& Props,
+		const FString& PropsPath, TArray<FMantleParseError>& Errors);
+
 	/**
 	 * A Scatter (#530): an unreplicated AMantleScatterVolume at the entity's transform (applied in pass 3; its
 	 * instances are in its own space and follow its root). A machine that draws loads the meshes and generates
@@ -1341,18 +1352,31 @@ namespace
 		{
 			Errors.Add(FMantleParseError{ PropsPath + LoadError.Path, LoadError.Message });
 		}
+		// One placed on terrain waits: it needs the terrains' transforms, which pass 3 applies (FinishTerrainScatter).
+		if (Props.Placement == EMantleScatterPlacement::Terrain)
+		{
+			return Actor;
+		}
+		RefreshBuiltScatter(Actor, Entity, Props, PropsPath, Errors);
+		return Actor;
+	}
+
+	/** Builds a Scatter's instances now and writes its log line, or reports why it cannot, at its properties path. */
+	void RefreshBuiltScatter(AMantleScatterVolume* Actor, const FMantleEntity& Entity, const FMantleScatterParams& Props,
+		const FString& PropsPath, TArray<FMantleParseError>& Errors)
+	{
 		const double BuildStart = FPlatformTime::Seconds();
 		FString Error;
 		if (!Actor->RefreshScatter(Error))
 		{
 			Errors.Add(FMantleParseError{ PropsPath, Error });
-			return Actor;
+			return;
 		}
-		// One line per scatter, so two clients' logs show they built the same instances.
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_SCATTER_BUILD entity=%s seed=%d instances=%d hash=%s build_ms=%.2f"),
+		// One line per scatter, so two clients' logs show they built the same instances. The Foliage tier is part of it:
+		// two machines match only at the same tier (3 is Epic).
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_SCATTER_BUILD entity=%s seed=%d instances=%d hash=%s tier=%d build_ms=%.2f"),
 			*Entity.Id, Props.Seed, Actor->GetInstanceCount(), *FMantleScatter::HashText(Actor->GetInstanceHash()),
-			(FPlatformTime::Seconds() - BuildStart) * 1000.0);
-		return Actor;
+			Actor->GetBuiltFoliageQuality(), (FPlatformTime::Seconds() - BuildStart) * 1000.0);
 	}
 
 	/**
@@ -1486,6 +1510,11 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 		return Result;
 	}
 
+	// Terrains' surfaces by entity id, for the Scatters that drop onto terrain (#169); their transforms are read after pass 3.
+	TMap<FString, FMantleScatterTerrainSurface> TerrainSurfaces;
+	// Scatters placed on terrain wait for every transform to be applied before they generate: the entity ids, in place order.
+	TArray<FString> TerrainScatters;
+
 	// Pass 1 — spawn everything. Children may appear before their parents in the array,
 	// so nothing is attached until all actors exist.
 	for (int32 i = 0; i < Place.Entities.Num(); ++i)
@@ -1585,7 +1614,7 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 		case EMantleEntityType::Terrain:
 			if (const FMantleTerrainProps* Props = Entity.Props.TryGet<FMantleTerrainProps>())
 			{
-				Actor = BuildTerrainEntity(World, Entity, *Props, Path, Result.Errors, LoadStats);
+				Actor = BuildTerrainEntity(World, Entity, *Props, Path, Result.Errors, LoadStats, &TerrainSurfaces.Add(Entity.Id));
 			}
 			break;
 
@@ -1614,6 +1643,10 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 			if (const FMantleScatterParams* Props = Entity.Props.TryGet<FMantleScatterParams>())
 			{
 				Actor = BuildScatter(World, Entity, *Props, Path, Result.Errors);
+				if (Actor && Props->Placement == EMantleScatterPlacement::Terrain)
+				{
+					TerrainScatters.Add(Entity.Id);
+				}
 			}
 			break;
 
@@ -1710,6 +1743,36 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 		else
 		{
 			(*Actor)->SetActorRelativeTransform(Entity.Transform);
+		}
+	}
+
+	// Scatters placed on terrain (#169) generate now: every terrain stands where the place puts it, and so does the Scatter.
+	// Every terrain of the place is a surface, each at its own transform; the highest under a point wins.
+	if (TerrainScatters.Num() > 0)
+	{
+		TArray<FMantleScatterTerrainSurface> Surfaces;
+		for (TPair<FString, FMantleScatterTerrainSurface>& Pair : TerrainSurfaces)
+		{
+			AActor* const* TerrainActor = Result.Actors.Find(Pair.Key);
+			if (TerrainActor && Pair.Value.Field.IsValid())
+			{
+				Pair.Value.TerrainToWorld = (*TerrainActor)->GetActorTransform();
+				Surfaces.Add(Pair.Value);
+			}
+		}
+		for (const FString& ScatterId : TerrainScatters)
+		{
+			AActor* const* ScatterActor = Result.Actors.Find(ScatterId);
+			AMantleScatterVolume* Volume = ScatterActor ? Cast<AMantleScatterVolume>(*ScatterActor) : nullptr;
+			const FMantleEntity* ScatterEntity = Place.Entities.FindByPredicate([&ScatterId](const FMantleEntity& E) { return E.Id == ScatterId; });
+			const FMantleScatterParams* ScatterProps = ScatterEntity ? ScatterEntity->Props.TryGet<FMantleScatterParams>() : nullptr;
+			if (!Volume || !ScatterProps || !FMantleScatter::DrawsScatter(World))
+			{
+				continue;
+			}
+			Volume->SetTerrainSurfaces(Surfaces);
+			RefreshBuiltScatter(Volume, *ScatterEntity, *ScatterProps,
+				EntityPath(static_cast<int32>(ScatterEntity - Place.Entities.GetData())) + TEXT("/properties"), Result.Errors);
 		}
 	}
 

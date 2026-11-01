@@ -34,6 +34,33 @@ enum class EMantleScatterAlignment : uint8
 	Tumbled
 };
 
+/** Where instances go: the box as it always was, or dropped onto the Terrain below each one (#169). The place schema's placement enum. */
+UENUM()
+enum class EMantleScatterPlacement : uint8
+{
+	Box,
+	Terrain
+};
+
+/** The footprint instances are spread over (#169). The place schema's shape enum, in this order. */
+UENUM()
+enum class EMantleScatterShape : uint8
+{
+	/** The halfExtent box, as always. */
+	Box,
+	/** A disc of Radius about the origin. */
+	Disc,
+	/** A strip Width wide along a polyline of Path points. */
+	Path
+};
+
+/** A box (X-Y only) no instance is kept inside (#169), cm in the scatter's own space. */
+struct FMantleScatterExclusion
+{
+	FVector2D Center = FVector2D::ZeroVector;
+	FVector2D HalfExtent = FVector2D(100.0, 100.0);
+};
+
 /**
  * One mesh a scatter draws from: a library or uploaded (#252) mesh id, its relative weight, and its
  * materials by slot as on a StaticMesh (an empty entry leaves the slot on the mesh's own material; an
@@ -68,6 +95,59 @@ struct FMantleScatterParams
 	double MaxTiltDegrees = 10.0;
 
 	TArray<FMantleScatterMesh> Meshes;
+
+	/** cm from the camera past which instances are not drawn (they fade over the last fifth); 0 never culls (#169). */
+	double DrawDistance = 0.0;
+
+	/** Terrain drops each instance onto the Terrain below its X-Y and drops those with none (a hole, or no Terrain). */
+	EMantleScatterPlacement Placement = EMantleScatterPlacement::Box;
+
+	/** Terrain only: instances on ground steeper than this many degrees from flat are dropped. 90 filters nothing. */
+	double MaxSlopeDegrees = 90.0;
+
+	/** Terrain only: the surface's world height, cm, must be at least MinHeight and at most MaxHeight when these are set. */
+	TOptional<double> MinHeight;
+	TOptional<double> MaxHeight;
+
+	EMantleScatterShape Shape = EMantleScatterShape::Box;
+
+	/** Disc: the radius, cm. */
+	double Radius = 0.0;
+
+	/** Path: the polyline's points, cm in the scatter's space, and the strip's full width, cm. */
+	TArray<FVector2D> Path;
+	double Width = 0.0;
+
+	/** No instance is kept inside any of these. */
+	TArray<FMantleScatterExclusion> Exclusions;
+
+	/** 0 spreads instances evenly; above 0 gathers them into this many clusters of ClusterRadius cm about centres picked in the shape. */
+	int32 ClusterCount = 0;
+	double ClusterRadius = 0.0;
+};
+
+/** What a Terrain says about the ground under a point (#169), in the scatter's own space. */
+struct FMantleScatterGround
+{
+	/** The surface height, millimetres, rounded to whole mm. */
+	int64 ZMm = 0;
+	/** The surface normal's up component, 0 to 1 (1 is flat). */
+	double NormalZ = 1.0;
+	/** The surface's height in world space, cm. */
+	double WorldZCm = 0.0;
+};
+
+/** The ground under (X, Y) millimetres in the scatter's own space; false where there is none (a hole, off every Terrain). */
+using FMantleScatterGroundFn = TFunction<bool(int64 XMm, int64 YMm, FMantleScatterGround& Out)>;
+
+/** What a Generate call adds to the parameters. */
+struct FMantleScatterGenerateOptions
+{
+	/** Terrain placement needs this; without it every instance of a Terrain scatter is dropped. */
+	FMantleScatterGroundFn Ground;
+
+	/** Only the first this many of the scatter's instance streams are generated (-1: all): the Foliage tier's prefix, so a lower tier is a subset of a higher one. */
+	int64 MaxCandidates = -1;
 };
 
 /**
@@ -108,6 +188,10 @@ public:
 	static constexpr double MinScaleLimit = FMantlePlaceLimits::MinScatterScale;
 	static constexpr double MaxScaleLimit = FMantlePlaceLimits::MaxScatterScale;
 	static constexpr double MaxTiltLimit = FMantlePlaceLimits::MaxScatterTilt;
+	static constexpr double MaxDrawDistanceCm = FMantlePlaceLimits::MaxDrawDistance;
+	static constexpr int32 MaxPathPoints = FMantlePlaceLimits::MaxScatterPathPoints;
+	static constexpr int32 MaxExclusions = FMantlePlaceLimits::MaxScatterExclusions;
+	static constexpr int32 MaxClusters = FMantlePlaceLimits::MaxScatterClusters;
 
 	/** The place schema's spelling of an alignment: upright, tilted or tumbled. */
 	static const TCHAR* AlignmentName(EMantleScatterAlignment Alignment);
@@ -115,9 +199,24 @@ public:
 	/** Reads the schema's spelling, case-exact. */
 	static bool ParseAlignment(const FString& Name, EMantleScatterAlignment& Out);
 
+	/** The schema's spelling of a placement (box, terrain) or a shape (box, disc, path), and the way back, case-exact. */
+	static const TCHAR* PlacementName(EMantleScatterPlacement Placement);
+	static bool ParsePlacement(const FString& Name, EMantleScatterPlacement& Out);
+	static const TCHAR* ShapeName(EMantleScatterShape Shape);
+	static bool ParseShape(const FString& Name, EMantleScatterShape& Out);
+
 	/**
-	 * The number of instances Params asks for: the footprint in square metres (from the half extents
-	 * in whole millimetres) times the density, rounded half up. -1 with OutError when a parameter is
+	 * What Settings > Foliage (sg.FoliageQuality, 0 Low to 3 Epic) does to a scatter, and to terrain grass: the share of
+	 * each instance stream kept (a prefix of it) and the share of the drawDistance used. Never none at any tier.
+	 */
+	static double FoliageTierDensity(int32 FoliageQuality);
+	static double FoliageTierDistance(int32 FoliageQuality);
+
+	/**
+	 * The number of instances Params asks for: the footprint in square metres times the density, rounded
+	 * half up. The footprint is the box's (from the half extents in whole millimetres), a disc's (pi as
+	 * 3141593 / 1000000 times the radius in whole mm squared) or a path's (the sum of its segments' lengths,
+	 * each rounded to whole mm, times the width in whole mm). -1 with OutError when a parameter is
 	 * out of range or the count passes MaxInstances. validate.py and the backend count the same way.
 	 */
 	static int64 CountFor(const FMantleScatterParams& Params, FString& OutError);
@@ -126,7 +225,8 @@ public:
 	 * Fills OutInstances (replacing its contents) or returns false with OutError. Pure: no world,
 	 * no asset loading, no console variable; the same Params always give the same instances.
 	 */
-	static bool Generate(const FMantleScatterParams& Params, TArray<FMantleScatterInstance>& OutInstances, FString& OutError);
+	static bool Generate(const FMantleScatterParams& Params, TArray<FMantleScatterInstance>& OutInstances, FString& OutError,
+		const FMantleScatterGenerateOptions& Options = FMantleScatterGenerateOptions());
 
 	/** The instance as a transform in the scatter's space (cm, degrees, uniform scale). */
 	static FTransform ToTransform(const FMantleScatterInstance& Instance);

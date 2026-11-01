@@ -72,6 +72,12 @@ namespace MantleClientFeatures
 	inline const TCHAR* const WorldText = TEXT("worldText");
 	/** VoxelWorld entities and their VoxelWorldData (MBW1) asset (#168): block worlds. */
 	inline const TCHAR* const VoxelWorld = TEXT("voxelworld");
+	/** A Scatter's drawDistance and Foliage tiers (#169). */
+	inline const TCHAR* const ScatterDrawDistance = TEXT("scatterDrawDistance");
+	/** A Scatter's placement "terrain" and its slope and height filters (#169). */
+	inline const TCHAR* const ScatterTerrain = TEXT("scatterTerrain");
+	/** A Scatter's disc and path shapes, exclusions and clusters (#169). */
+	inline const TCHAR* const ScatterShapes = TEXT("scatterShapes");
 
 	/** Every feature this build reads, in the order above. */
 	inline TArray<FString> All()
@@ -80,7 +86,7 @@ namespace MantleClientFeatures
 			InstancedMesh, CrowdSpawner, CrowdPointsOfInterest, SkeletalMesh, RectLight, Decal, LightShape, Terrain, TerrainGrass,
 			Vehicle, VehicleLinkage, VehicleParts, VehicleCarInteraction, VehicleContactPoints, VehicleHiddenSeat, VehicleFliers, VehicleHover, VehicleSeatKind, VehicleWeaponArc, Effect, EffectSprites, Constraint, Scatter, ReflectionProbes, Storage,
 			UIDocuments, EnvironmentDefaults, EnvironmentLighting, AvatarHeight, SoundEmitterAutoplay, StaticMeshPhysics, PhysicsMaterial, Surface, DrawDistance, CarPaint,
-			MaterialFidelity, MaterialAdditive, WeaponDocument, WorldText, VoxelWorld
+			MaterialFidelity, MaterialAdditive, WeaponDocument, WorldText, VoxelWorld, ScatterDrawDistance, ScatterTerrain, ScatterShapes
 		};
 	}
 }

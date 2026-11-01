@@ -3,6 +3,7 @@
 
 #include "MantleHeightfieldReader.h"
 #include "MantleRuntime.h"
+#include "MantleScatter.h"
 #include "MantleTerrainBuilder.h"
 #include "MantleTerrainSurface.h"
 
@@ -110,14 +111,12 @@ namespace MantleTerrainGrassPrivate
 	 */
 	double TierDensity(const int32 FoliageQuality)
 	{
-		static const double Density[] = {0.3, 0.6, 1.0, 1.0};
-		return Density[FMath::Clamp(FoliageQuality, 0, 3)];
+		return FMantleScatter::FoliageTierDensity(FoliageQuality);
 	}
 
 	double TierDistance(const int32 FoliageQuality)
 	{
-		static const double Distance[] = {0.5, 0.7, 0.85, 1.0};
-		return Distance[FMath::Clamp(FoliageQuality, 0, 3)];
+		return FMantleScatter::FoliageTierDistance(FoliageQuality);
 	}
 
 	double EffectiveDensityScale()
