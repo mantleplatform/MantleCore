@@ -55,6 +55,13 @@ struct MANTLERUNTIME_API FMantleVoxelStroke
 	/** Applies it to a smooth grid. Returns the voxels changed; the box they lie in goes to OutMin / OutMax (unset when none). */
 	int32 Apply(FMantleVoxelGrid& Grid, FIntVector& OutMin, FIntVector& OutMax) const;
 
+	/**
+	 * Applies it to one 16 x 16 x 16 section held apart from a grid (a generator's writer, script API 1.59) with the same maths: Origin is
+	 * its lowest voxel, Materials and Densities its 4096 voxels x fastest, kept to the grid's rule (a density at or below 0 holds no
+	 * material). Voxels outside the section are left alone and read as the nearest one inside it. Returns the voxels changed.
+	 */
+	int32 ApplyToSection(const FIntVector& Origin, uint8* Materials, int8* Densities, int32 TypeCount) const;
+
 	static const TCHAR* ToolName(ETool Tool);
 	/** "dig", "fill", ...; false for anything else. */
 	static bool ParseTool(const FString& Name, ETool& OutTool);

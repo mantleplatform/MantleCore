@@ -557,6 +557,9 @@ class VoxelWorld:
 
 class VoxelWriter:
     """Writes one section's blocks inside an OnGenerateSection handler (block coordinates; writes outside the section are ignored)."""
+    def brush(self, tool: str, position: Vector3, radius: float, options: dict[str, Any] = ..., /) -> float:
+        """Smooth worlds: one brush stroke on the section being made, the same as VoxelWorld:Brush (tool 'dig', 'fill', 'flatten', 'smooth' or 'paint', a sphere at position in cm of radius 50 to 800 cm, the same options) but clipped to the section, for craters, hills and level pads as the ground is made. Run it after the section's SetVoxel calls: it works on what they wrote. Voxels past the section's edge read as the nearest one inside it, so call it in every section the sphere reaches (the same call is fine: each clips to its own). Nothing goes over the wire and no event is raised. Returns the section's voxels changed."""
+        ...
     def fill_box(self, min: Vector3, max: Vector3, name: Optional[str] = ..., /) -> None:
         """Sets every block of a box (corners in blocks, inclusive), clipped to the section."""
         ...

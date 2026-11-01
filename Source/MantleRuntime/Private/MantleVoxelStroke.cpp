@@ -72,17 +72,104 @@ bool FMantleVoxelStroke::Decode(TConstArrayView<uint8> Bytes, int32& Offset, FMa
 	return Out.IsValid();
 }
 
+namespace MantleVoxelStrokePrivate
+{
+	/** A smooth grid, as ApplyStroke reads and writes it. */
+	struct FGridAccess
+	{
+		FMantleVoxelGrid& Grid;
+
+		bool IsInside(const FIntVector& P) const { return Grid.IsInside(P); }
+		int32 GetDensity(const FIntVector& P) const { return Grid.GetDensity(P); }
+		uint8 GetBlock(const FIntVector& P) const { return Grid.GetBlock(P); }
+		int32 NumTypes() const { return Grid.GetTypes().Num(); }
+		bool Set(const FIntVector& P, uint8 M, int8 D) { return Grid.SetVoxel(P, M, D) == FMantleVoxelGrid::ESetResult::Changed; }
+	};
+
+	/** One section's voxels apart from a grid; a read outside it takes the nearest voxel inside. */
+	struct FSectionAccess
+	{
+		FIntVector Origin;
+		uint8* Materials;
+		int8* Densities;
+		int32 TypeCount;
+
+		static constexpr int32 Side = 16;
+
+		bool IsInside(const FIntVector& P) const
+		{
+			const FIntVector L = P - Origin;
+			return L.X >= 0 && L.Y >= 0 && L.Z >= 0 && L.X < Side && L.Y < Side && L.Z < Side;
+		}
+		int32 Local(const FIntVector& P) const
+		{
+			const FIntVector L = P - Origin;
+			return FMath::Clamp(L.X, 0, Side - 1) + Side * (FMath::Clamp(L.Y, 0, Side - 1) + Side * FMath::Clamp(L.Z, 0, Side - 1));
+		}
+		int32 GetDensity(const FIntVector& P) const { return Densities[Local(P)]; }
+		uint8 GetBlock(const FIntVector& P) const { return Materials[Local(P)]; }
+		int32 NumTypes() const { return TypeCount; }
+		bool Set(const FIntVector& P, uint8 M, int8 D)
+		{
+			// FMantleVoxelGrid::SetVoxel's rule: no unknown material, a density at or below 0 holds no material, and air holds no
+			// density above 0.
+			if (M >= TypeCount)
+			{
+				return false;
+			}
+			const bool bSolid = D > 0 && M != 0;
+			const uint8 NewM = bSolid ? M : uint8(0);
+			const int8 NewD = bSolid ? D : int8(FMath::Min<int32>(D, 0));
+			const int32 I = Local(P);
+			if (Materials[I] == NewM && Densities[I] == NewD)
+			{
+				return false;
+			}
+			Materials[I] = NewM;
+			Densities[I] = NewD;
+			return true;
+		}
+	};
+
+	template <typename TAccess>
+	int32 ApplyStroke(const FMantleVoxelStroke& Stroke, TAccess& Access, FIntVector& OutMin, FIntVector& OutMax);
+}
+
 int32 FMantleVoxelStroke::Apply(FMantleVoxelGrid& Grid, FIntVector& OutMin, FIntVector& OutMax) const
 {
-	using namespace MantleVoxelStrokePrivate;
 	if (!Grid.IsSmooth() || !IsValid())
 	{
 		return 0;
 	}
+	MantleVoxelStrokePrivate::FGridAccess Access{ Grid };
+	return MantleVoxelStrokePrivate::ApplyStroke(*this, Access, OutMin, OutMax);
+}
+
+int32 FMantleVoxelStroke::ApplyToSection(const FIntVector& Origin, uint8* Materials, int8* Densities, int32 TypeCount) const
+{
+	if (!IsValid() || !Materials || !Densities)
+	{
+		return 0;
+	}
+	MantleVoxelStrokePrivate::FSectionAccess Access{ Origin, Materials, Densities, TypeCount };
 	FIntVector Min, Max;
-	GetBounds(Min, Max);
-	const int64 R2 = int64(Radius) * Radius;
-	const bool bKnownMaterial = Material > 0 && Material < Grid.GetTypes().Num();
+	return MantleVoxelStrokePrivate::ApplyStroke(*this, Access, Min, Max);
+}
+
+template <typename TAccess>
+int32 MantleVoxelStrokePrivate::ApplyStroke(const FMantleVoxelStroke& Stroke, TAccess& Grid, FIntVector& OutMin, FIntVector& OutMax)
+{
+	using ETool = FMantleVoxelStroke::ETool;
+	constexpr int32 Fixed = FMantleVoxelStroke::Fixed;
+	const ETool Tool = Stroke.Tool;
+	const uint8 Material = Stroke.Material;
+	const int32 Strength = Stroke.Strength;
+	const FIntVector Centre = Stroke.Centre;
+	const int32 PlaneZ = Stroke.PlaneZ;
+	FIntVector Min, Max;
+	Stroke.GetBounds(Min, Max);
+	const int64 R2 = int64(Stroke.Radius) * Stroke.Radius;
+	const bool bKnownMaterial = Material > 0 && Material < Grid.NumTypes();
 	// Worked out from the voxels as they were, then written: no voxel sees another's new value (Smooth reads neighbours).
 	TArray<FNew> Writes;
 	for (int32 Z = Min.Z; Z <= Max.Z; ++Z)
@@ -162,7 +249,7 @@ int32 FMantleVoxelStroke::Apply(FMantleVoxelGrid& Grid, FIntVector& OutMin, FInt
 	int32 Changed = 0;
 	for (const FNew& W : Writes)
 	{
-		if (Grid.SetVoxel(W.P, W.Material, W.Density) == FMantleVoxelGrid::ESetResult::Changed)
+		if (Grid.Set(W.P, W.Material, W.Density))
 		{
 			OutMin = Changed == 0 ? W.P : OutMin.ComponentMin(W.P);
 			OutMax = Changed == 0 ? W.P : OutMax.ComponentMax(W.P);
