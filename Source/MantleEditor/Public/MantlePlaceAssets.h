@@ -208,6 +208,13 @@ struct MANTLEEDITOR_API FMantleMaterialFidelity2
 	/** see-through glass (#628): an unlit translucent material whose emissive is the scene behind it, published as tinted glass. */
 	FMantleSeeThroughGlass Glass;
 
+	/**
+	 * A vehicle light's glowing copy (FMantleVehicleLights::MakeLightMaterial): it publishes glowing in its kind's one color (white, red or amber), the model's glow
+	 * texture kept as the lens's shape, so the game has a glow to turn up and down.
+	 */
+	bool bVehicleLight = false;
+	FLinearColor VehicleLightColor = FLinearColor::White;
+
 	bool HasSource(int32 Slot) const { return Slot >= 0 && Slot < 4 && SourceTextures[Slot].IsValid(); }
 };
 

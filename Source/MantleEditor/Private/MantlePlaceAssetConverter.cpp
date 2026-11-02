@@ -4557,6 +4557,15 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		AddImage(Emissive, EMantlePlaceTextureSlot::Emissive, false);
 		KeepSlotTransform(EMantlePlaceTextureSlot::Emissive, Emissive);
 	}
+	// A vehicle light's copy (FMantleVehicleLights::MakeLightMaterial): its kind's one color, over the model's glow texture when it has one, at full strength
+	// at least, so the game's switch has a glow to scale.
+	if (Fidelity.bVehicleLight)
+	{
+		Doc.EmissiveFactor[0] = Fidelity.VehicleLightColor.R;
+		Doc.EmissiveFactor[1] = Fidelity.VehicleLightColor.G;
+		Doc.EmissiveFactor[2] = Fidelity.VehicleLightColor.B;
+		Doc.EmissiveStrength = FMath::Max(Doc.EmissiveStrength, 1.0);
+	}
 
 	// ORM: a source (#533) is already packed as glTF's, with the factors the graph gives; else glTF keeps
 	// occlusion (R) apart from metallic-roughness (G, B), and Mantle's orm packs them.

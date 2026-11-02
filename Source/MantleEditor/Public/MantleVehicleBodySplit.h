@@ -74,10 +74,11 @@ struct MANTLEEDITOR_API FMantleVehicleBodySplit
 	/**
 	 * Splits Body (LOD 0) in place when it draws more than MaxBodyMaterials: its geometry, sections and Materials (the model's slots, which keep only the ones
 	 * the body still draws, in their order) and Extras (kept in step with the body's vertices) are rewritten. False, with Body untouched and OutResult.Problem
-	 * set, when the pieces would be more than MaxPieces. True with no pieces when Body was within the cap.
+	 * set, when the pieces would be more than MaxPieces. True with no pieces when Body was within the cap. KeepInBody: slots that stay on the body before any other
+	 * (the light sections, which the game switches on the body), as many as MaxBodyMaterials allows.
 	 */
 	static bool Split(FMantleSkinnedMesh& Body, TArray<FSkeletalMaterial>& Materials, FMantleVehicleBodyExtras& Extras, int32 MaxBodyMaterials, int32 MaxPieceMaterials,
-		int32 MaxPieces, FMantleVehicleBodySplitResult& OutResult);
+		int32 MaxPieces, FMantleVehicleBodySplitResult& OutResult, const TSet<int32>& KeepInBody = TSet<int32>());
 
 	/** The name a piece's static mesh is saved under: SM_<Name>_Part<N> (N from 1). */
 	static FString PieceAssetName(const FString& Name, int32 Number) { return FString::Printf(TEXT("SM_%s_Part%d"), *Name, Number); }

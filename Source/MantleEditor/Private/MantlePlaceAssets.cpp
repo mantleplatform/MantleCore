@@ -17,6 +17,7 @@
 #include "MantleTerrainExport.h"
 #include "MantleTerrainGrassExport.h"
 #include "MantleVehicleConverter.h"
+#include "MantleVehicleLights.h"
 #include "MantleVehicleSource.h"
 #include "MantleVehicleSpawnPoint.h"
 #include "MantleVoxelWorldActor.h"
@@ -3820,6 +3821,13 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		{
 			Carry({ MP_EmissiveColor });
 			Out.Losses &= ~EMantleMaterialLoss::Unlit;
+		}
+
+		// A vehicle light (FMantleVehicleLights::MakeLightMaterial): glows in its kind's color whatever the model set.
+		if (const TOptional<EMantleVehicleLightKind> LightKind = FMantleVehicleLights::KindOf(Material))
+		{
+			Fidelity.bVehicleLight = true;
+			Fidelity.VehicleLightColor = FMantleVehicleLights::Color(*LightKind);
 		}
 
 		if (!Fidelity.bWind && bOpaque && bLit

@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleConverter.h"
+#include "MantleVehicleLights.h"
 #include "MantleCosmeticExport.h"
 #include "MantlePlaceAssets.h"
 #include "MantleRuntime.h"
@@ -133,7 +134,7 @@ namespace MantleVehicleConverterPrivate
 	 * The document keys after the collision, in the schema's order, then the horn (#546), whose sound's id is filled in at upload
 	 * as theirs are (the cook reads the keys in any order); every writer rebuilds around them so they stay there.
 	 */
-	const TCHAR* const VehicleTailKeys[] = { TEXT("materials"), TEXT("paint"), TEXT("liveries"), TEXT("liveryUV"), TEXT("defaultLivery"),
+	const TCHAR* const VehicleTailKeys[] = { TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryUV"), TEXT("defaultLivery"),
 		TEXT("linkage"), TEXT("parts"), TEXT("horn") };
 
 	/** How near two bones must sit for a mesh on one to be a tire on the other (a visual wheel beside the wheel), cm. */
@@ -2158,6 +2159,12 @@ const UMantleVehicleSource* FMantleVehicleConverter::MakeExportView(const UMantl
 		Box.Extent = Longer(Box.Extent);
 	}
 
+	// The headlight beams sit on the body, so they move with it.
+	for (FMantleVehicleSourceLightBeam& Beam : View->Lights.Beams)
+	{
+		Beam.Position = Longer(Beam.Position);
+	}
+
 	// A part rides a bone of the scaled body, so its placement and its size grow with it (a mirrored part stays mirrored).
 	for (FMantleVehicleSourcePart& Part : View->Parts)
 	{
@@ -2381,6 +2388,33 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 		Paint->SetField(TEXT("clearCoat"), VehicleNumber(P.ClearCoat));
 		Paint->SetField(TEXT("clearCoatRoughness"), VehicleNumber(P.ClearCoatRoughness));
 		Doc->SetObjectField(TEXT("paint"), Paint);
+	}
+	// Lights: only with something in them, every kind written (the cook fills the empty ones).
+	const FMantleVehicleSourceLights& L = Source.Lights;
+	if (!L.IsEmpty())
+	{
+		TSharedRef<FJsonObject> Lights = MakeShared<FJsonObject>();
+		const auto WriteKind = [&Lights](const TCHAR* Key, const TArray<FString>& Names)
+		{
+			TArray<TSharedPtr<FJsonValue>> Values;
+			for (const FString& Name : Names) Values.Add(MakeShared<FJsonValueString>(Name));
+			Lights->SetArrayField(Key, Values);
+		};
+		WriteKind(TEXT("head"), L.Head);
+		WriteKind(TEXT("rear"), L.Rear);
+		WriteKind(TEXT("reverse"), L.Reverse);
+		WriteKind(TEXT("left"), L.Left);
+		WriteKind(TEXT("right"), L.Right);
+		TArray<TSharedPtr<FJsonValue>> Beams;
+		for (const FMantleVehicleSourceLightBeam& Beam : L.Beams)
+		{
+			TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+			Entry->SetField(TEXT("position"), VehicleTriple(Beam.Position));
+			Entry->SetField(TEXT("direction"), VehicleTriple(Beam.Direction));
+			Beams.Add(MakeShared<FJsonValueObject>(Entry));
+		}
+		Lights->SetArrayField(TEXT("beams"), Beams);
+		Doc->SetObjectField(TEXT("lights"), Lights);
 	}
 	if (P.Liveries.Num() > 0)
 	{
@@ -3097,6 +3131,20 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 			if (Paint.Sections[Before].Equals(Section, ESearchCase::CaseSensitive))
 			{
 				AddError(FString::Printf(TEXT("paints section '%s' twice."), *Section), TEXT("List each section once under Paint > Sections."));
+			}
+		}
+	}
+	// Lights: each section a section of the body, as paint's are.
+	for (const EMantleVehicleLightKind Kind : { EMantleVehicleLightKind::Head, EMantleVehicleLightKind::Rear, EMantleVehicleLightKind::Reverse,
+		EMantleVehicleLightKind::Left, EMantleVehicleLightKind::Right })
+	{
+		for (const FString& Section : FMantleVehicleLights::Sections(Source->Lights, Kind))
+		{
+			if (!SectionNames.ContainsByPredicate([&Section](const FString& Name) { return Name.Equals(Section, ESearchCase::CaseSensitive); }))
+			{
+				AddError(FString::Printf(TEXT("lights section '%s' as %s, but its body has no such section (its sections: %s)."), *Section,
+					*FMantleVehicleLights::Label(Kind).ToString().ToLower(), *FString::Join(SectionNames, TEXT(", "))),
+					TEXT("Pick the light's section again in the vehicle builder's Seats and paint step, or name one of the body's sections under Lights."));
 			}
 		}
 	}

@@ -5,6 +5,7 @@
 #include "MantleVehicleBlueprint.h"
 #include "MantlePlaceValidator.h"
 #include "MantleVehicleBodySplit.h"
+#include "MantleVehicleLights.h"
 #include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleChassisDocument.h"
 #include "MantleVehicleChassisFit.h"
@@ -1225,7 +1226,15 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildAny(UObject* Model, const 
 		if (Source.Model)
 		{
 			const FMantleVehicleSurroundings* Around = Source.Around.IsSet() ? &Source.Around.GetValue() : nullptr;
-			Out = FitsOwnWheels(Source.Model, PresetId) ? Build(Cast<USkeletalMesh>(Source.Model), PresetId, Around) : BuildFromModel(Source.Model, PresetId, Options);
+			if (FitsOwnWheels(Source.Model, PresetId))
+			{
+				Out = Build(Cast<USkeletalMesh>(Source.Model), PresetId, Around);
+				LightOwnBody(Out, Options);
+			}
+			else
+			{
+				Out = BuildFromModel(Source.Model, PresetId, Options);
+			}
 		}
 		Out.Problems.Insert(Source.Problems, 0);
 		Out.Notes.Insert(Source.Notes, 0);
@@ -1233,9 +1242,74 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildAny(UObject* Model, const 
 	}
 	if (FitsOwnWheels(Model, PresetId))
 	{
-		return Build(Cast<USkeletalMesh>(Model), PresetId);
+		FMantleVehicleBuildResult Out = Build(Cast<USkeletalMesh>(Model), PresetId);
+		LightOwnBody(Out, Options);
+		return Out;
 	}
 	return BuildFromModel(Model, PresetId, Options);
+}
+
+void FMantleVehicleBuilder::LightOwnBody(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options)
+{
+	UMantleVehicleSource* Source = Built.Source;
+	USkeletalMesh* Model = Source && Built.bOk ? Source->Body.LoadSynchronous() : nullptr;
+	if (!Model)
+	{
+		return;
+	}
+	FMantleSkinnedMesh Body;
+	TArray<FSkeletalMaterial> Materials;
+	FString Error;
+	if (!FMantleSkinnedMesh::ExtractFromSkeletalMesh(Model, Body, &Error, &Materials))
+	{
+		Built.Notes.Add(FString::Printf(TEXT("Mantle could not look for lights on your model (%s), so it has none yet. Pick its light sections in the vehicle builder's Seats and paint step."), *Error));
+		return;
+	}
+	const FMantleVehicleLightGuess Guess = FMantleVehicleLights::Find(Body, Materials, false);
+	FMantleVehicleSourceLights Found;
+	FMantleVehicleLights::Cut(Body, Materials, Guess, Found);
+	bool bCut = false;
+	for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
+	{
+		bCut = bCut || Guess.Triangles[Kind].Num() > 0;
+	}
+	if (bCut)
+	{
+		// The light spots are cut out of a copy of the model, saved beside the vehicle; the model itself is never changed.
+		const FString Folder = FPackageName::GetLongPackagePath(Source->GetOutermost()->GetName());
+		USkeletalMesh* Lit = FMantleVehicleChassisMesh::Create(Body, Folder, Model->GetName() + TEXT("_Lights"), Error, &Materials);
+		if (Lit)
+		{
+			Source->Modify();
+			Source->Body = Lit;
+		}
+		else
+		{
+			Built.Notes.Add(FString::Printf(TEXT("Mantle found lights on your model but could not save the copy of it that has them (%s). Its lights that are whole materials still work."), *Error));
+		}
+	}
+	FMantleVehicleSourceLights Lights = Found;
+	if (Options.Lights.IsSet())
+	{
+		Lights = Options.Lights.GetValue();
+		// The creator placed the beams on the picture, the model worn on the type's frame: they move to the same place on the model as it is built.
+		const FBox3f Own = Body.ComputeBounds(0);
+		if (Options.LightsBounds.IsValid && Own.IsValid)
+		{
+			const FVector From = FVector(Options.LightsBounds.GetCenter());
+			const FVector To = FVector(Own.GetCenter());
+			const FVector Stretch = FVector(Own.GetExtent()) / FVector(Options.LightsBounds.GetExtent()).ComponentMax(FVector(1.0));
+			for (FMantleVehicleSourceLightBeam& Beam : Lights.Beams)
+			{
+				Beam.Position = To + (Beam.Position - From) * Stretch;
+			}
+		}
+	}
+	ApplyLights(*Source, Lights, Built.Notes);
+	if (Built.bSaved)
+	{
+		Built.bSaved = SaveVehicle(*Source, Built.SaveProblem);
+	}
 }
 
 bool FMantleVehicleBuilder::PrepareFromModel(UObject* ModelAsset, const FString& PresetId, const FMantleVehicleModelOptions& Options, FMantleVehicleOnChassis& Out, TArray<FString>& Problems)
@@ -1353,6 +1427,9 @@ bool FMantleVehicleBuilder::PrepareFromModel(UObject* ModelAsset, const FString&
 		return false;
 	}
 	Out.Notes.Append(Skinned.Notes);
+	// The lights: the spots of the model that glow (or are named for a light) are cut into sections of their own, so the game can switch each one.
+	const FMantleVehicleLightGuess LightGuess = FMantleVehicleLights::Find(Skinned.Body, Skinned.Materials, Spec.bCenterline);
+	FMantleVehicleLights::Cut(Skinned.Body, Skinned.Materials, LightGuess, Out.Lights);
 	// What reading the model had to say (a Nanite mesh read from its source or from its fallback, and why).
 	Out.Notes.Append(Model.Notes);
 	if (Skinned.Extras.UVs.Num() > 0 || Skinned.Extras.Colors.Num() > 0)
@@ -1427,8 +1504,23 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		PictureExtras = Skinned.Extras;
 		FMantleVehicleBodySplitResult Split;
 		FString SplitProblem;
+		// The light sections stay on the body, where the game switches them.
+		const FMantleVehicleSourceLights& LightsWanted = Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights;
+		const TArray<FString> SectionsBefore = FMantleVehicleLights::SectionNames(Skinned.Materials);
+		TSet<int32> LightSlots;
+		for (int32 Slot = 0; Slot < SectionsBefore.Num(); ++Slot)
+		{
+			for (const EMantleVehicleLightKind Kind : { EMantleVehicleLightKind::Head, EMantleVehicleLightKind::Rear, EMantleVehicleLightKind::Reverse,
+				EMantleVehicleLightKind::Left, EMantleVehicleLightKind::Right })
+			{
+				if (FMantleVehicleLights::Sections(LightsWanted, Kind).Contains(SectionsBefore[Slot]))
+				{
+					LightSlots.Add(Slot);
+				}
+			}
+		}
 		if (!FMantleVehicleBodySplit::Split(Skinned.Body, Skinned.Materials, Skinned.Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials,
-			FMantleVehicleLimits::MaxParts, Split))
+			FMantleVehicleLimits::MaxParts, Split, LightSlots))
 		{
 			SplitProblem = Split.Problem;
 		}
@@ -1504,6 +1596,12 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	{
 		return Out;
 	}
+	// The lights: the creator's rows and beams, else what the finder found; each light section gets its glowing copy of its material.
+	ApplyLights(*Out.Source, Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights, Out.Notes);
+	if (Out.bSaved)
+	{
+		Out.bSaved = SaveVehicle(*Out.Source, Out.SaveProblem);
+	}
 
 	Out.Notes.Insert(FString::Printf(TEXT("Built on the %s chassis: Mantle sets the weight, collision, seats and handling. Your model (%s) is the look."), *Preset->Name, *Model.Describe()), 0);
 	if (Map.IsEmpty() && Slots.Num() > 0)
@@ -1525,6 +1623,24 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		}
 	}
 	return Out;
+}
+
+void FMantleVehicleBuilder::ApplyLights(UMantleVehicleSource& Source, const FMantleVehicleSourceLights& Lights, TArray<FString>& OutNotes)
+{
+	// Only sections the body has: a section split off as a part (a body over the material cap) is not one the game can switch.
+	const USkeletalMesh* Mesh = Source.Body.LoadSynchronous();
+	const TArray<FString> Sections = Mesh ? FMantleVehicleLights::SectionNames(Mesh->GetMaterials()) : TArray<FString>();
+	FMantleVehicleSourceLights Kept = Lights;
+	for (const EMantleVehicleLightKind Kind : { EMantleVehicleLightKind::Head, EMantleVehicleLightKind::Rear, EMantleVehicleLightKind::Reverse,
+		EMantleVehicleLightKind::Left, EMantleVehicleLightKind::Right })
+	{
+		TArray<FString>& List = FMantleVehicleLights::Sections(Kept, Kind);
+		List.RemoveAll([&Sections](const FString& Section) { return !Sections.Contains(Section); });
+	}
+	Source.Modify();
+	Source.Lights = Kept;
+	FMantleVehicleLights::ApplyMaterials(Source, OutNotes);
+	Source.MarkPackageDirty();
 }
 
 void FMantleVehicleModelPreview::Discard()
@@ -1570,6 +1686,8 @@ bool FMantleVehicleBuilder::MakeModelPreview(UObject* ModelAsset, const FString&
 	Out.Spec = Prepared.Spec;
 	Out.Map = Prepared.Map;
 	Out.Yaw = Prepared.Yaw;
+	Out.Lights = Prepared.Lights;
+	Out.Sections = FMantleVehicleLights::SectionNames(Prepared.Skinned.Materials);
 	Out.Notes = Prepared.Notes;
 	Out.bOk = true;
 	return true;

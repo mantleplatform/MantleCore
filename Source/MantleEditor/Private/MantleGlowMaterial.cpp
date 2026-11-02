@@ -13,6 +13,8 @@
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionSceneColor.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
+#include "Materials/MaterialExpressionTextureBase.h"
+#include "Materials/MaterialExpressionTextureSampleParameter.h"
 #include "Materials/MaterialFunctionInterface.h"
 #include "Materials/MaterialInterface.h"
 
@@ -292,4 +294,82 @@ bool FMantleGlowMaterial::HasFresnel(const FExpressionInput* Emissive)
 	FGraphScan Scan;
 	Scan.ScanInput(Emissive, 0);
 	return Scan.bFresnel;
+}
+
+bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMaterialGlow& Out)
+{
+	using namespace MantleGlowMaterialPrivate;
+
+	Out = FMantleMaterialGlow();
+	UMaterial* Base = Material ? const_cast<UMaterial*>(Material->GetMaterial_Concurrent()) : nullptr;
+	const FExpressionInput* Emissive = Base ? Base->GetExpressionInputForProperty(MP_EmissiveColor) : nullptr;
+	if (!Emissive || !Emissive->Expression)
+	{
+		return false;
+	}
+	FGraphScan Scan;
+	Scan.ScanInput(Emissive, MaxFunctionDepth);
+	for (const UMaterialExpression* Expression : Scan.Seen)
+	{
+		if (const UMaterialExpressionScalarParameter* Scalar = Cast<UMaterialExpressionScalarParameter>(Expression))
+		{
+			double Value = 1.0;
+			if (ScalarOf(Scalar, Material, Value) && Value == 0.0)
+			{
+				Out.OffScalars.AddUnique(Scalar->ParameterName);
+			}
+		}
+	}
+	// The first texture in pre-order: what the glow is drawn with.
+	TFunction<const UMaterialExpressionTextureBase*(const FExpressionInput*, TSet<const UMaterialExpression*>&)> FirstTexture;
+	int32 Budget = NodeBudget;
+	FirstTexture = [&FirstTexture, &Budget](const FExpressionInput* Input, TSet<const UMaterialExpression*>& Seen) -> const UMaterialExpressionTextureBase*
+	{
+		const UMaterialExpression* Expression = Through(Input);
+		if (!Expression || --Budget < 0 || Seen.Contains(Expression))
+		{
+			return nullptr;
+		}
+		Seen.Add(Expression);
+		if (const UMaterialExpressionTextureBase* Texture = Cast<UMaterialExpressionTextureBase>(Expression))
+		{
+			return Texture;
+		}
+		UMaterialExpression* Mutable = const_cast<UMaterialExpression*>(Expression);
+		for (FExpressionInputIterator It{ Mutable }; It; ++It)
+		{
+			if (const UMaterialExpressionTextureBase* Found = FirstTexture(It.Input, Seen))
+			{
+				return Found;
+			}
+		}
+		return nullptr;
+	};
+	TSet<const UMaterialExpression*> TextureSeen;
+	if (const UMaterialExpressionTextureBase* Sample = FirstTexture(Emissive, TextureSeen))
+	{
+		UTexture* Texture = Sample->Texture;
+		if (const UMaterialExpressionTextureSampleParameter* Parameter = Cast<UMaterialExpressionTextureSampleParameter>(Sample))
+		{
+			UTexture* Set = nullptr;
+			if (Material->GetTextureParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(Parameter->ParameterName)), Set) && Set)
+			{
+				Texture = Set;
+			}
+		}
+		Out.Texture = Texture;
+	}
+	for (const bool bParametersOnly : { true, false })
+	{
+		TSet<const UMaterialExpression*> Seen;
+		int32 ColorBudget = NodeBudget;
+		FLinearColor Value;
+		if (const UMaterialExpression* Color = FirstColor(Emissive, Material, bParametersOnly, Seen, ColorBudget); Color && ColorOf(Color, Material, Value))
+		{
+			Out.Color = Value;
+			break;
+		}
+	}
+	Out.bGlows = Out.Texture != nullptr || Out.Color.GetMax() > 0.0f;
+	return Out.bGlows;
 }
