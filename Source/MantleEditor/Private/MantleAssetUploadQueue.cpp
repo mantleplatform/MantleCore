@@ -115,6 +115,12 @@ FString FMantleAssetUploadQueue::DescribeRefusal(const FMantleApiResult& Result,
 		return FString::Printf(TEXT("'%s' was removed from your account by a Mantle moderator (usually after a license complaint), ")
 			TEXT("so it cannot be uploaded or used again. Remove it from the level or replace it, then Publish again."), *Name);
 	}
+	// mantle#228: the same bytes taken down for any account refuse every new claim.
+	if (Code == TEXT("asset_taken_down"))
+	{
+		return FString::Printf(TEXT("A Mantle moderator took '%s' down after a copyright or ownership complaint, so no account can upload or use it. ")
+			TEXT("Remove it from the level or replace it, then Publish again."), *Name);
+	}
 	if (Code == TEXT("uploaded_differently"))
 	{
 		return FString::Printf(TEXT("'%s' has exactly the same pixels as an image already on Mantle for another use, and Mantle prepares ")

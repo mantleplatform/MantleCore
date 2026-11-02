@@ -76,7 +76,7 @@ struct MANTLEEDITOR_API FMantleQueuedUploadStatus
 	bool bInReview = false;
 
 	/**
-	 * Why it was refused: the API's code (claim_taken_down, uploaded_differently, too_large,
+	 * Why it was refused: the API's code (claim_taken_down, asset_taken_down, uploaded_differently, too_large,
 	 * assets_not_owned, ...), "rejected" (the cook or screening refused it after upload) or
 	 * "blocked" (Prepare refused it).
 	 */

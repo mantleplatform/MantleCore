@@ -250,6 +250,14 @@ bool FMantleProvenanceModerationTextTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("an asset refusal names the item"), Upload.Contains(TEXT("Truck")));
 	TestTrue(TEXT("and explains the duplicate"), Upload.Contains(TEXT("Another account uploaded this content first.")));
 	TestEqual(TEXT("the code is kept for the log"), Code, FString(TEXT("public_duplicate_claim")));
+
+	// A file taken down for every account (mantle#228): the plugin's own words, not the server's.
+	const FMantleApiResult TakenDown = Refused(403, TEXT("asset_taken_down"));
+	const FString TakenUpload = FMantleAssetUploadQueue::DescribeRefusal(TakenDown, TEXT("Truck"), Code);
+	TestEqual(TEXT("a taken-down asset"), TakenUpload, FString(TEXT("A Mantle moderator took 'Truck' down after a copyright or ownership complaint, so no account can upload or use it. Remove it from the level or replace it, then Publish again.")));
+	TestEqual(TEXT("its code is kept for the log"), Code, FString(TEXT("asset_taken_down")));
+	TestEqual(TEXT("a taken-down item file"), FMantleCosmeticUploadSession::DescribeFailure(TakenDown, TEXT("the item")),
+		FString(TEXT("A Mantle moderator took the item down after a copyright or ownership complaint, so no account can upload or use it. Use different content.")));
 	return true;
 }
 
