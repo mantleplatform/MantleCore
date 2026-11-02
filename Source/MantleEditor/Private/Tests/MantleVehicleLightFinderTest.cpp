@@ -373,6 +373,33 @@ bool FMantleVehicleLightsCutTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleLightsOneMaterialBothEndsTest,
+	"Mantle.Vehicle.Lights.NamedMaterialSpanningBothEnds",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleLightsOneMaterialBothEndsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleLightsTestPrivate;
+	// One material called only "Lights" for the headlights and the tail light, most of it at the front (so the material as a whole sits at the front): the front quads
+	// are headlights, the one at the back is a rear light, and the slot is not taken whole as headlights.
+	FMantleSkinnedMesh Body;
+	TArray<FSkeletalMaterial> Materials;
+	MakeBody(Body, Materials, TEXT("Lights"));
+	FMantleSkinnedMeshLOD& LOD = Body.LODs[0];
+	for (int32 Vertex = 12; Vertex < 20; ++Vertex)
+	{
+		LOD.Positions[Vertex].X = 190.f + (LOD.Positions[Vertex].X - (Vertex < 16 ? -200.f : 0.f));
+	}
+	const FMantleVehicleLightGuess Found = FMantleVehicleLights::Find(Body, Materials, false);
+	const int32 Head = static_cast<int32>(EMantleLightKind::Head);
+	const int32 Rear = static_cast<int32>(EMantleLightKind::Rear);
+	TestTrue(TEXT("the slot is not taken whole"), Found.WholeSlots[Head].IsEmpty() && Found.WholeSlots[Rear].IsEmpty());
+	TestEqual(TEXT("the quad at the back is the rear light"), Found.Triangles[Rear], TArray<int32>({ 4, 5 }));
+	TestEqual(TEXT("the others at the front are headlights"), Found.Triangles[Head].Num(), 8);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleVehicleLightsGlowTexturesTest,
 	"Mantle.Vehicle.Lights.GlowTextures",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
