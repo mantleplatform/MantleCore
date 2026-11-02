@@ -87,7 +87,7 @@ class Entity:
         """The material asset id a mesh shows in a slot (0 when left out), or nil when the slot shows the mesh's own material."""
         ...
     def get_scatter_hash(self) -> str:
-        """Scatters only: a number as 16 hex digits that summarises every instance this Scatter generates (its whole stream, in its own space), so two machines' values can be compared. For a Scatter of more than 200000 instances the first call reads every cell, which takes a moment on a big one, counts against the script's time (reading it again within a second can stop the script for using too much), and can be made 4 times a second at most. Errors when the entity is not a Scatter."""
+        """Scatters only: a number as 16 hex digits that summarizes every instance this Scatter generates (its whole stream, in its own space), so two machines' values can be compared. For a Scatter of more than 200000 instances the first call reads every cell, which takes a moment on a big one, counts against the script's time (reading it again within a second can stop the script for using too much), and can be made 4 times a second at most. Errors when the entity is not a Scatter."""
         ...
     def get_tags(self) -> list[str]:
         """All of the entity's tags."""
@@ -117,7 +117,7 @@ class Entity:
         """Store a custom value on the entity (numbers, strings, booleans, Vector3, tables). Server values replicate."""
         ...
     def set_effect_color(self, color: str, /) -> None:
-        """Effects only: tint the particles, '#RRGGBB'; the next particles take it. Replicates like PlayEffect. Errors when the entity is not an Effect or the colour is not '#RRGGBB'."""
+        """Effects only: tint the particles, '#RRGGBB'; the next particles take it. Replicates like PlayEffect. Errors when the entity is not an Effect or the color is not '#RRGGBB'."""
         ...
     def set_effect_rate(self, rate: float, /) -> None:
         """Effects only: how many particles spawn a second, clamped to 0..200; 0 emits nothing while it still plays. Replicates like PlayEffect. Errors when the entity is not an Effect."""
@@ -219,7 +219,7 @@ class Player:
         """Kill the character outright: Died fires with no killer, and the place's respawn rules take over as for any other death. Returns false when the player has no character on foot or is already dead."""
         ...
     def ragdoll(self, seconds: Optional[float] = ..., velocity: Optional[Vector3] = ..., /) -> bool:
-        """Knock the character down: it goes limp for everyone, the player cannot move or act, and when the time is up (or Recover is called) it stands back up where it lies with a get-up animation. seconds is how long to stay down, 0.1 to 300; leave it out to stay down until Recover (at most five minutes). velocity is an optional shove in centimetres per second; without it the character keeps the speed it had. Ragdolled fires now and Recovered when it gets up. Returns false when the player has no character on foot, is dead, is sitting in a vehicle or is already knocked down."""
+        """Knock the character down: it goes limp for everyone, the player cannot move or act, and when the time is up (or Recover is called) it stands back up where it lies with a get-up animation. seconds is how long to stay down, 0.1 to 300; leave it out to stay down until Recover (at most five minutes). velocity is an optional shove in centimeters per second; without it the character keeps the speed it had. Ragdolled fires now and Recovered when it gets up. Returns false when the player has no character on foot, is dead, is sitting in a vehicle or is already knocked down."""
         ...
     def recover(self) -> bool:
         """Stand a knocked-down character back up now, wherever it lies; Recovered fires when it is up. Safe to call at any time. Returns false when the character was not knocked down."""
@@ -291,7 +291,7 @@ class NPC:
     move_completed: Signal
     target_changed: Signal
     def attack(self, target: Entity | Player | NPC, options: dict[str, Any] = ..., /) -> None:
-        """Make target the NPC's enemy: it walks up to it and hurts it every Interval until it dies, goes away or you call ClearTarget. TargetChanged fires now, and Attacked fires at every swing or shot. It replaces whatever the NPC was doing. Melee by default: options Range (how close it gets before it swings, centimetres, 150 by default; 50 to 500), Damage (10 by default), DamageType ('Melee' by default) and Interval (seconds between swings, 1 by default; 0.1 to 60). The damage goes through the weapons' path, so armour, shield and the Damaged and Died signals apply to a player it hits; a kill credits nobody (the NPC is not a player), and friendly fire does not protect against an NPC. Chase (true by default): false makes it stand still and attack only what comes into Range. Give Projectile (the options of Projectiles:Fire, minus Position, Velocity, Target and Attacker) to make it a ranged attacker: it stops within Range (2000 by default, up to 5000) with a clear line to the target and fires that projectile at it, aimed for gravity, every Interval; Damage and DamageType then come from the projectile. Once a player target dies the NPC stops and TargetChanged fires with no target; attack them again after they respawn, or let SetAggroRange do it. Example: zombie:Attack(player, {Damage = 15, Interval = 1.2}) or turret:Attack(player, {Range = 3000, Interval = 0.5, Projectile = {Speed = 4000, Damage = 8, Look = 'Ball'}})"""
+        """Make target the NPC's enemy: it walks up to it and hurts it every Interval until it dies, goes away or you call ClearTarget. TargetChanged fires now, and Attacked fires at every swing or shot. It replaces whatever the NPC was doing. Melee by default: options Range (how close it gets before it swings, centimeters, 150 by default; 50 to 500), Damage (10 by default), DamageType ('Melee' by default) and Interval (seconds between swings, 1 by default; 0.1 to 60). The damage goes through the weapons' path, so armor, shield and the Damaged and Died signals apply to a player it hits; a kill credits nobody (the NPC is not a player), and friendly fire does not protect against an NPC. Chase (true by default): false makes it stand still and attack only what comes into Range. Give Projectile (the options of Projectiles:Fire, minus Position, Velocity, Target and Attacker) to make it a ranged attacker: it stops within Range (2000 by default, up to 5000) with a clear line to the target and fires that projectile at it, aimed for gravity, every Interval; Damage and DamageType then come from the projectile. Once a player target dies the NPC stops and TargetChanged fires with no target; attack them again after they respawn, or let SetAggroRange do it. Example: zombie:Attack(player, {Damage = 15, Interval = 1.2}) or turret:Attack(player, {Range = 3000, Interval = 0.5, Projectile = {Speed = 4000, Damage = 8, Look = 'Ball'}})"""
         ...
     def clear_target(self) -> bool:
         """Call the NPC off: it stops attacking or following and stands where it is, and TargetChanged fires with no target. Returns false when it had nothing to stop. An aggro range (SetAggroRange) stays on and may pick a new target."""
@@ -303,13 +303,13 @@ class NPC:
         """As DriveTo, through points in order (one to 64 positions): the car drives each leg in turn, passing the points on the way without stopping, and ends at the last, which is where it arrives. ArriveRadius is the last point's radius."""
         ...
     def drive_to(self, vehicle: Entity, position: Vector3, options: Optional[dict[str, Any]] = ..., /) -> None:
-        """Put the NPC in the driver's seat of vehicle and drive it to position: the NPC sits in the car for every player, which drives straight at the point, and DriveFinished fires when the drive ends. The NPC must be alive and within 4.5 m of the car with a clear line to the seat; it is the car's driver, so no player gets the Drive prompt or can take the seat, and the car errors if it already has a driver or the NPC is driving another car (StopDriving or ExitVehicle first). It replaces a drive the NPC is on in the same car (that one finishes as 'cancelled'). options: MaxSpeed (centimetres per second, 1400 by default, about 50 km/h; clamped to 100..3000) and ArriveRadius (centimetres, 600 by default; clamped to 100..5000). The NPC drives straight at the point over open ground: there are no roads to follow, and it does not steer round walls (a car that can't get on reverses and tries again, then gives up as 'stuck'). Cars and trucks only, not motorcycles or aircraft. Arrived, the NPC stays in the seat with the car braked until ExitVehicle."""
+        """Put the NPC in the driver's seat of vehicle and drive it to position: the NPC sits in the car for every player, which drives straight at the point, and DriveFinished fires when the drive ends. The NPC must be alive and within 4.5 m of the car with a clear line to the seat; it is the car's driver, so no player gets the Drive prompt or can take the seat, and the car errors if it already has a driver or the NPC is driving another car (StopDriving or ExitVehicle first). It replaces a drive the NPC is on in the same car (that one finishes as 'canceled'). options: MaxSpeed (centimeters per second, 1400 by default, about 50 km/h; clamped to 100..3000) and ArriveRadius (centimeters, 600 by default; clamped to 100..5000). The NPC drives straight at the point over open ground: there are no roads to follow, and it does not steer round walls (a car that can't get on reverses and tries again, then gives up as 'stuck'). Cars and trucks only, not motorcycles or aircraft. Arrived, the NPC stays in the seat with the car braked until ExitVehicle."""
         ...
     def exit_vehicle(self) -> bool:
-        """Get the NPC out of the car it is driving, standing beside it, and free the seat. A drive in progress ends as 'cancelled'. Returns false when the NPC is not in a car, the car is still moving faster than a walk (3 m/s; StopDriving, then try again once it has stopped) or there is nowhere to stand beside it."""
+        """Get the NPC out of the car it is driving, standing beside it, and free the seat. A drive in progress ends as 'canceled'. Returns false when the NPC is not in a car, the car is still moving faster than a walk (3 m/s; StopDriving, then try again once it has stopped) or there is nowhere to stand beside it."""
         ...
     def follow(self, target: Entity | Player | NPC, distance: Optional[float] = ..., /) -> None:
-        """Walk after target and keep about distance (centimetres) away from it, 200 by default; 50 to 5000. The NPC follows a player through respawns, going where they go as the server's navigation mesh allows, and stands still once it is close enough. It replaces whatever the NPC was doing (a MoveTo, an earlier Follow or an Attack) and carries on until StopFollowing, ClearTarget, a MoveTo, or the NPC or the target going away; a MoveTo you give it yourself takes over and ends the follow. The walk does not fire MoveCompleted. Example: guard:Follow(player, 300)"""
+        """Walk after target and keep about distance (centimeters) away from it, 200 by default; 50 to 5000. The NPC follows a player through respawns, going where they go as the server's navigation mesh allows, and stands still once it is close enough. It replaces whatever the NPC was doing (a MoveTo, an earlier Follow or an Attack) and carries on until StopFollowing, ClearTarget, a MoveTo, or the NPC or the target going away; a MoveTo you give it yourself takes over and ends the follow. The walk does not fire MoveCompleted. Example: guard:Follow(player, 300)"""
         ...
     def get_entity(self) -> Entity:
         """The NPC as an Entity: what a raycast that hits it reports. Tag it or give it attributes like any entity."""
@@ -333,7 +333,7 @@ class NPC:
         """Bring the NPC back with full health, dead or alive: standing at position (its feet) when given, otherwise where NPCs:Spawn first put it. Its clip stops, and a walk in progress ends without MoveCompleted. Returns false when it could not be put there."""
         ...
     def set_aggro_range(self, range: float, options: dict[str, Any] = ..., /) -> None:
-        """Let the NPC pick its own enemies: whenever it has no target and a living player comes within range (centimetres, up to 5000) it attacks the nearest one, as if you had called Attack with options (the same table as Attack's). 0 turns it off. It looks a few times a second, a ranged attacker ignores players it has no clear line to, and an NPC drops a target that gets more than twice range away. Players only; attack other NPCs with Attack. Example: zombie:SetAggroRange(1500, {Damage = 12})"""
+        """Let the NPC pick its own enemies: whenever it has no target and a living player comes within range (centimeters, up to 5000) it attacks the nearest one, as if you had called Attack with options (the same table as Attack's). 0 turns it off. It looks a few times a second, a ranged attacker ignores players it has no clear line to, and an NPC drops a target that gets more than twice range away. Players only; attack other NPCs with Attack. Example: zombie:SetAggroRange(1500, {Damage = 12})"""
         ...
     def stop(self) -> None:
         """Stop walking where the NPC is. The walk it abandons never fires MoveCompleted."""
@@ -342,7 +342,7 @@ class NPC:
         """End the clip PlayClip started: the NPC walks and stands on its own again."""
         ...
     def stop_driving(self) -> None:
-        """End the drive the NPC is on: the car brakes to a stop with the NPC still in the seat, and DriveFinished fires with 'cancelled'. Does nothing when the NPC is not driving."""
+        """End the drive the NPC is on: the car brakes to a stop with the NPC still in the seat, and DriveFinished fires with 'canceled'. Does nothing when the NPC is not driving."""
         ...
     def stop_following(self) -> bool:
         """End the follow Follow started: the NPC stops where it is. Returns false when the NPC was not following. An Attack is ended with ClearTarget."""
@@ -402,7 +402,7 @@ class UiNode:
     text: str
     activated: Signal
     def attach_to_world(self, target: Entity | Player | NPC, options: dict[str, Any] = ..., /) -> bool:
-        """Make this top-level node float over an entity, a player or an NPC in the world, on this player's screen only: a nameplate, a health bar, a marker. Build the node and its children as usual, then attach the top one; it stops being part of the screen's layout and follows the target, bottom-centre on the point above it. It is only drawn, never clicked. Attaching it again changes the options. Returns false if the node is not a top-level node of this script (call SetParent(nil) first) or the script already has 32 nodes floating; the nodes still count toward the node budget (256). If the target is destroyed, or a player has no character, the node hides. options: Bone (a bone or socket of the target's skeletal mesh, such as 'head'; without it, or when the target has no such bone, the node sits over the top of the target), Offset (a Vector3 in centimetres, in world axes, added to that point, such as Vector3.new(0, 0, 30)), ScreenOffsetX and ScreenOffsetY (pixels, x right and y down), MaxDistance (centimetres from the camera, default 3000, at most 50000: farther is hidden), FadeDistance (centimetres: it fades out over the last FadeDistance before MaxDistance; default 0 cuts off at MaxDistance), HideWhenOccluded (hide while world geometry is between the camera and the point; one cheap check a tenth of a second; default false: it draws over everything), HideForSelf (hide when the target is the local player's own character, for a nameplate you do not want over yourself), ScaleWithDistance (default false: constant size on screen; true makes it smaller with distance), MinScale and MaxScale (0.05 to 4, defaults 0.4 and 1; the limits when it scales), ScaleDistance (centimetres where it draws at scale 1, default 1000), OffScreen ('Hide', the default, or 'Clamp' to keep it on the edge of the screen pointing towards the target, for a marker). Example: nameplate:AttachToWorld(player, {Bone = 'head', Offset = Vector3.new(0, 0, 30), MaxDistance = 2500, FadeDistance = 500, HideForSelf = true})"""
+        """Make this top-level node float over an entity, a player or an NPC in the world, on this player's screen only: a nameplate, a health bar, a marker. Build the node and its children as usual, then attach the top one; it stops being part of the screen's layout and follows the target, bottom-center on the point above it. It is only drawn, never clicked. Attaching it again changes the options. Returns false if the node is not a top-level node of this script (call SetParent(nil) first) or the script already has 32 nodes floating; the nodes still count toward the node budget (256). If the target is destroyed, or a player has no character, the node hides. options: Bone (a bone or socket of the target's skeletal mesh, such as 'head'; without it, or when the target has no such bone, the node sits over the top of the target), Offset (a Vector3 in centimeters, in world axes, added to that point, such as Vector3.new(0, 0, 30)), ScreenOffsetX and ScreenOffsetY (pixels, x right and y down), MaxDistance (centimeters from the camera, default 3000, at most 50000: farther is hidden), FadeDistance (centimeters: it fades out over the last FadeDistance before MaxDistance; default 0 cuts off at MaxDistance), HideWhenOccluded (hide while world geometry is between the camera and the point; one cheap check a tenth of a second; default false: it draws over everything), HideForSelf (hide when the target is the local player's own character, for a nameplate you do not want over yourself), ScaleWithDistance (default false: constant size on screen; true makes it smaller with distance), MinScale and MaxScale (0.05 to 4, defaults 0.4 and 1; the limits when it scales), ScaleDistance (centimeters where it draws at scale 1, default 1000), OffScreen ('Hide', the default, or 'Clamp' to keep it on the edge of the screen pointing towards the target, for a marker). Example: nameplate:AttachToWorld(player, {Bone = 'head', Offset = Vector3.new(0, 0, 30), MaxDistance = 2500, FadeDistance = 500, HideForSelf = true})"""
         ...
     def destroy(self) -> None:
         """Remove this node and every descendant."""
@@ -423,7 +423,7 @@ class UiNode:
         """Set an image node's asset (an 'ast_' id from the place's asset library)."""
         ...
     def set_localized_text(self, key: str, fallback: Optional[str] = ..., /) -> bool:
-        """Look up key in the place's localisation table for the player's locale (falling back through the language, then the place's default locale, then fallback or key itself) and set it as this node's text."""
+        """Look up key in the place's localization table for the player's locale (falling back through the language, then the place's default locale, then fallback or key itself) and set it as this node's text."""
         ...
     def set_parent(self, parent: Optional[UiNode] = ..., /) -> bool:
         """Reparent this node (nil detaches it back to the root). Refuses a cycle or a node from another script."""
@@ -459,7 +459,7 @@ class VoxelWorld:
         """Smooth worlds: takes ground away in a sphere (Brush('dig', ...)). Returns the voxels changed."""
         ...
     def edit_as_player(self, player: Player, x: float, y: float, z: float, name: Optional[str] = ..., /) -> str:
-        """Breaks (nil or 'air') or places a block for a player, as if they did it with Mantle's own tools: the rate limit (20 a second, always), the edit rules (SetEditRules: by default reach 6 m from their eyes, line of sight, a placed block touching another), the block rules and OnBlockPlacing / OnBlockBreaking all apply. For your own build tool: the player's client raycasts (VoxelWorld:Raycast from the camera), sends a Remote, and the server calls this. Returns 'applied' or why not: 'same', 'closed', 'rate', 'outside', 'unknown_type', 'nothing_to_break', 'unbreakable', 'occupied', 'floating', 'out_of_reach', 'blocked', 'cancelled', 'no_player'."""
+        """Breaks (nil or 'air') or places a block for a player, as if they did it with Mantle's own tools: the rate limit (20 a second, always), the edit rules (SetEditRules: by default reach 6 m from their eyes, line of sight, a placed block touching another), the block rules and OnBlockPlacing / OnBlockBreaking all apply. For your own build tool: the player's client raycasts (VoxelWorld:Raycast from the camera), sends a Remote, and the server calls this. Returns 'applied' or why not: 'same', 'closed', 'rate', 'outside', 'unknown_type', 'nothing_to_break', 'unbreakable', 'occupied', 'floating', 'out_of_reach', 'blocked', 'canceled', 'no_player'."""
         ...
     def fill(self, shape: dict[str, Any], name: Optional[str] = ..., /) -> float:
         """Sets every block of a shape to a type (nil or 'air' empties it) and returns how many changed. A shape is {Box = {min, max}}, {Sphere = {center, radius}} or {Line = {from, to, radius}}, in blocks; at most 262,144 blocks a call. Raises one OnBlocksChanged."""
@@ -468,7 +468,7 @@ class VoxelWorld:
         """Where the blocks of a type are in a box (corners in blocks, inclusive; at most 1,048,576 blocks), up to limit (default and at most 1,024). On a smooth world: the solid voxels of that material, as CountBlocks counts them."""
         ...
     def flatten(self, position: Vector3, radius: float, options: dict[str, Any] = ..., /) -> float:
-        """Smooth worlds: pulls the ground in a sphere toward a level floor at options.PlaneZ (cm; default the position's height). New ground takes options.Material, or its neighbour's. Returns the voxels changed."""
+        """Smooth worlds: pulls the ground in a sphere toward a level floor at options.PlaneZ (cm; default the position's height). New ground takes options.Material, or its neighbor's. Returns the voxels changed."""
         ...
     def get_block(self, x: float, y: float, z: float, /) -> Optional[str]:
         """The block type's name at (x, y, z), 'air' for empty, nil outside the world."""
@@ -546,7 +546,7 @@ class VoxelWorld:
         """Like Fill, but changes only the blocks of type from. Returns how many changed. On a smooth world it changes the voxels of material from (solid ones; 'air' for empty ones) into full voxels of to."""
         ...
     def set_block(self, x: float, y: float, z: float, name: Optional[str] = ..., /) -> bool:
-        """Sets one block (nil or 'air' empties it). True when it changed. Every player sees it; OnBlockChanged follows (not the cancellable OnBlockPlacing/OnBlockBreaking, which are for players' edits)."""
+        """Sets one block (nil or 'air' empties it). True when it changed. Every player sees it; OnBlockChanged follows (not the cancelable OnBlockPlacing/OnBlockBreaking, which are for players' edits)."""
         ...
     def set_built_in_tools(self, enabled: bool, player: Optional[Player] = ..., /) -> None:
         """Turns Mantle's built-in build tools on or off for one player, or for everyone now and later (no player). They are off unless a script turns them on: Z toggles build mode, hold left mouse breaks, right mouse places, 1-9 and the wheel pick a hotbar slot, I opens a block picker. A game that makes its own tools leaves them off."""
@@ -558,7 +558,7 @@ class VoxelWorld:
         """Smooth worlds: sets one voxel's material and density (-127 to 127). At or below 0 it is empty and keeps no material. True when it changed."""
         ...
     def smooth(self, position: Vector3, radius: float, options: dict[str, Any] = ..., /) -> float:
-        """Smooth worlds: rounds off the ground in a sphere (each voxel moves toward its neighbours' average). Returns the voxels changed."""
+        """Smooth worlds: rounds off the ground in a sphere (each voxel moves toward its neighbors' average). Returns the voxels changed."""
         ...
     def surface_height(self, x: float, y: float, /) -> Optional[float]:
         """The world height (cm) of the top of the highest solid block in column (x, y), or nil when the column is empty. On a smooth world: the top of the highest solid voxel (density above 0), within a voxel (50 cm) of the drawn surface; Raycast finds the surface itself."""
@@ -608,7 +608,7 @@ class _AvatarService:
         """Whether the avatar editor is open on this client, whoever opened it."""
         ...
     def open_editor(self, options: Optional[dict[str, Any]] = ..., /) -> bool:
-        """Open the avatar editor over the running place, where the player changes their own look while the world goes on behind it. options.Categories limits what it offers: any of 'body' (the avatar, skin tone, eye colour, height and the rest of Body), 'hair' (hair, eyebrows, eyelashes, facial hair), 'clothes' (top, bottom, footwear), 'accessories', 'emotes' or 'all', or slot names such as 'top' or 'acc_hat'. Leave it out for everything (only then are outfits offered). options.Title is a heading over the panel ('Barber'), up to 40 characters. options.FreezeCharacter (default true) holds the character still and turns the camera onto it; false leaves the player in control and the camera where it is. The player sees only items they own or that are free, and Save puts the look on their account exactly as Mantle's own avatar screen does. Esc, the pad's B or Close shut it, asking first about unsaved changes. Returns false, opening nothing, when there is no local character, or the editor or another Mantle screen is already open. An unknown category is an error."""
+        """Open the avatar editor over the running place, where the player changes their own look while the world goes on behind it. options.Categories limits what it offers: any of 'body' (the avatar, skin tone, eye color, height and the rest of Body), 'hair' (hair, eyebrows, eyelashes, facial hair), 'clothes' (top, bottom, footwear), 'accessories', 'emotes' or 'all', or slot names such as 'top' or 'acc_hat'. Leave it out for everything (only then are outfits offered). options.Title is a heading over the panel ('Barber'), up to 40 characters. options.FreezeCharacter (default true) holds the character still and turns the camera onto it; false leaves the player in control and the camera where it is. The player sees only items they own or that are free, and Save puts the look on their account exactly as Mantle's own avatar screen does. Esc, the pad's B or Close shut it, asking first about unsaved changes. Returns false, opening nothing, when there is no local character, or the editor or another Mantle screen is already open. An unknown category is an error."""
         ...
     def play_emote(self, itemId: str, /) -> bool:
         """Play one of the local player's equipped emotes, by its item id (an emote on their emote wheel). Returns false, and plays nothing, when itemId is not one of their equipped emotes, when they have no character, or when called again too soon. true means the request went to the server, which checks it again and can still refuse it (the player is moving, in the air, seated or dead)."""
@@ -647,7 +647,7 @@ class _BackpackService:
         """Turn full-Backpack swaps on or off for the player. On, a pickup with a full Backpack and a weapon in hand reads 'Swap <held> for <new>': one kneel puts the held weapon on the floor and the new one in the hand. Off (or with bare hands), the prompt shows 'Backpack full' and does nothing. It lasts for the rest of the session, through respawns."""
         ...
     def set_weapon_color(self, player: Player, toolId: str, color: str, /) -> bool:
-        """Paint one of the player's weapons: color is '#RRGGBB', the same format as Vehicles:SetPaintColor. Every player sees the new colour. Returns false when the player does not have that Tool or it is not a weapon."""
+        """Paint one of the player's weapons: color is '#RRGGBB', the same format as Vehicles:SetPaintColor. Every player sees the new color. Returns false when the player does not have that Tool or it is not a weapon."""
         ...
 
 Backpack: _BackpackService
@@ -780,13 +780,13 @@ class _EffectsService:
         """Leave a mark on a surface at position, facing along normal (the direction the surface faces, such as a raycast hit's normal; it does not need to be exactly length 1). params.Style picks the mark: 'BulletHole' (a dark hole with a scuffed ring, the default), 'Scorch' (a ragged soot patch) or 'Splat' (a paint-like blob with droplets, blue by default). Color ('#RRGGBB') tints it, Size is how wide it is (2 to 500 cm, 30 by default) and Lifetime how many seconds it stays before fading away (0.1 to 60, 20 by default); numbers out of range are clamped. A player's machine keeps at most 64 script decals at once (fewer on a low Effects quality setting); a new one past that removes the oldest. Example: local hit = World:Raycast(origin, direction); if hit then Effects:Decal(hit.Position, hit.Normal, {Style = 'Scorch', Size = 80}) end. From a client script only this player sees it; from a server script every player does, but not one who joins later. A dedicated server shows nothing. At most 10 effect calls a frame per script (Play, Beam and Decal count together), and a server script at most 10 a second (bursts of 20); past either the script stops."""
         ...
     def play(self, archetype: str, position: Vector3, params: Optional[dict[str, Any]] = ..., /) -> None:
-        """Show a built-in particle effect at position for a moment, then it is gone. archetype is one of (any case; 'Muzzle Flash' and 'muzzle_flash' work too): 'Smoke' (a soft grey column), 'Fire' (flames), 'Sparks' (a spray of hot sparks), 'Dust' (a slow brown puff), 'Glow' (a soft light mist), 'Explosion' (a fireball with smoke and sparks), 'Impact' (sparks and dust where something hits), 'MuzzleFlash' (the flash at a gun's mouth), 'Blood' (a small stylised red spray for a hit), 'Splash' (water droplets), 'Confetti' (a party burst in three colours) or 'Heal' (green sparkles rising). The bursts (Explosion, Impact, MuzzleFlash, Blood, Splash, Confetti) play for a fraction of a second; the others for params.Duration seconds (1 by default, 0 to 10). params tune the look, each the archetype's own by default: Color ('#RRGGBB'; on Confetti it is the first of the three colours), Size (particle size, 1 to 1000 cm; a bigger Size makes a bigger explosion all through), Rate (particles a second, 0 to 200), Speed (0 to 5000 cm/s), Lifetime (how long each particle lives, 0.05 to 10 seconds) and Duration; numbers out of range are clamped. Particles leave along +Z, or along Rotation's up (a Vector3 of pitch, yaw and roll). On a low Effects quality setting a player sees the main layer only. Example: Effects:Play('Explosion', Vector3.new(0, 5, 0), {Size = 250, Color = '#44AAFF'}). From a client script only this player sees it; from a server script every player does, but not one who joins later. A dedicated server shows nothing. At most 10 effect calls a frame per script (Play, Beam and Decal count together), and a server script at most 10 a second (bursts of 20); past either the script stops."""
+        """Show a built-in particle effect at position for a moment, then it is gone. archetype is one of (any case; 'Muzzle Flash' and 'muzzle_flash' work too): 'Smoke' (a soft gray column), 'Fire' (flames), 'Sparks' (a spray of hot sparks), 'Dust' (a slow brown puff), 'Glow' (a soft light mist), 'Explosion' (a fireball with smoke and sparks), 'Impact' (sparks and dust where something hits), 'MuzzleFlash' (the flash at a gun's mouth), 'Blood' (a small stylized red spray for a hit), 'Splash' (water droplets), 'Confetti' (a party burst in three colors) or 'Heal' (green sparkles rising). The bursts (Explosion, Impact, MuzzleFlash, Blood, Splash, Confetti) play for a fraction of a second; the others for params.Duration seconds (1 by default, 0 to 10). params tune the look, each the archetype's own by default: Color ('#RRGGBB'; on Confetti it is the first of the three colors), Size (particle size, 1 to 1000 cm; a bigger Size makes a bigger explosion all through), Rate (particles a second, 0 to 200), Speed (0 to 5000 cm/s), Lifetime (how long each particle lives, 0.05 to 10 seconds) and Duration; numbers out of range are clamped. Particles leave along +Z, or along Rotation's up (a Vector3 of pitch, yaw and roll). On a low Effects quality setting a player sees the main layer only. Example: Effects:Play('Explosion', Vector3.new(0, 5, 0), {Size = 250, Color = '#44AAFF'}). From a client script only this player sees it; from a server script every player does, but not one who joins later. A dedicated server shows nothing. At most 10 effect calls a frame per script (Play, Beam and Decal count together), and a server script at most 10 a second (bursts of 20); past either the script stops."""
         ...
 
 Effects: _EffectsService
 
 class _EnvironmentService:
-    """The time of day, the weather, the sky, the fog and the screen's colour, the same for everyone on the server. Everyone can read them; server scripts can change them, and every player sees the change."""
+    """The time of day, the weather, the sky, the fog and the screen's color, the same for everyone on the server. Everyone can read them; server scripts can change them, and every player sees the change."""
     bloom: Optional[float]
     clock_time: float
     cloud_cover: float
@@ -840,9 +840,9 @@ class _EventsService:
 Events: _EventsService
 
 class _ExplosionsService:
-    """Blow things up from a server script: damage that fades with distance, a shove for loose props and players, and a visible, audible blast. The damage goes through the same path weapons use, so armour, the shield, team friendly fire and the Damaged and Died signals all apply (a death credits the attacker). Everything happens on the server; there is nothing for a client script here."""
+    """Blow things up from a server script: damage that fades with distance, a shove for loose props and players, and a visible, audible blast. The damage goes through the same path weapons use, so armor, the shield, team friendly fire and the Damaged and Died signals all apply (a death credits the attacker). Everything happens on the server; there is nothing for a client script here."""
     def create(self, position: Vector3, options: dict[str, Any] = ..., /) -> float:
-        """Explode at position (centimetres). Everything alive or loose within Radius is hurt and pushed, and the call returns how many things were hurt. options: Radius (centimetres, 500 by default; 10 to 5000), Damage (at the centre, 100 by default; 0 to 1000000), InnerRadius (full damage out to here, 0 by default), Falloff (how damage drops from InnerRadius to 0 at Radius: 0 is full damage everywhere, 1 drops in a straight line, the default, and 2 or more drops faster), DamageType (the tag Damaged and Died report, 'Explosion' by default; your own tag works), Attacker (the Player who gets the kill, and whose team friendly fire protects; their own blast hurts them too, which makes rocket jumps; leave it out for the world), Impulse (the speed in centimetres per second a loose physics prop at the centre is given, fading with distance; 800 by default, 0 for none; the weight of the prop does not matter), Ragdoll (true by default: a player in the blast is thrown down and gets up again after RagdollSeconds, 2 by default; with false only a heavy hit throws them), LineOfSight (true by default: nothing behind a wall or a hill is touched; false makes the blast reach through walls), Effect (the look of the blast: 'None', 'Small', 'Medium' (the default), 'Large' or 'Dirt') and Sound (true by default). At most 30 explosions a second. A player riding in a car is shielded by its body. NPCs take the damage like players do. Example: Explosions:Create(barrel.Position, {Radius = 600, Damage = 80, Attacker = player})"""
+        """Explode at position (centimeters). Everything alive or loose within Radius is hurt and pushed, and the call returns how many things were hurt. options: Radius (centimeters, 500 by default; 10 to 5000), Damage (at the center, 100 by default; 0 to 1000000), InnerRadius (full damage out to here, 0 by default), Falloff (how damage drops from InnerRadius to 0 at Radius: 0 is full damage everywhere, 1 drops in a straight line, the default, and 2 or more drops faster), DamageType (the tag Damaged and Died report, 'Explosion' by default; your own tag works), Attacker (the Player who gets the kill, and whose team friendly fire protects; their own blast hurts them too, which makes rocket jumps; leave it out for the world), Impulse (the speed in centimeters per second a loose physics prop at the center is given, fading with distance; 800 by default, 0 for none; the weight of the prop does not matter), Ragdoll (true by default: a player in the blast is thrown down and gets up again after RagdollSeconds, 2 by default; with false only a heavy hit throws them), LineOfSight (true by default: nothing behind a wall or a hill is touched; false makes the blast reach through walls), Effect (the look of the blast: 'None', 'Small', 'Medium' (the default), 'Large' or 'Dirt') and Sound (true by default). At most 30 explosions a second. A player riding in a car is shielded by its body. NPCs take the damage like players do. Example: Explosions:Create(barrel.Position, {Radius = 600, Damage = 80, Attacker = player})"""
         ...
 
 Explosions: _ExplosionsService
@@ -912,7 +912,7 @@ Input: _InputService
 
 class _InteractionService:
     """Let players walk up to an object and act on it with a key press, and hear when they do. A place can mark an object interactable itself; here a script makes one, changes what players can do to it, and reacts. The server decides everything: change things and listen to Interacted on the server. The client events are for the local player and only for effects such as a sound or a glow."""
-    cancelled: Signal
+    canceled: Signal
     interacted: Signal
     progress: Signal
     selected: Signal
@@ -931,7 +931,7 @@ class _InteractionService:
         """Make the entity interactable and set what players can do to it, for everyone. options is a list of at most two tables, one for each input: Key ('Primary' by default, or 'Secondary'), Text (what the prompt says beside the key, such as 'Open door'; leave it out to show the key alone), HoldSeconds (hold the key this long; 0 is a tap), PressCount (mash the key this many times instead; wins over HoldSeconds), PressDrainPerSecond (how fast a mash's progress drains, 0 to 10), AfterUse ('None', 'DisableUntilEnabled', 'Cooldown' or 'OneShot') and CooldownSeconds (needed above 0 for 'Cooldown'). Pass a part's id to change only that part of an object the place gave several parts; leave it out for the object as a whole. An empty list leaves the object with nothing to do. Example: Interaction:SetOptions(door, {{Key = 'Primary', Text = 'Open door'}})"""
         ...
     def set_range(self, entity: Entity, range: float, /) -> None:
-        """Set how close a player must stand to the entity, in centimetres, for the prompt to show and the key to work. Clamped to 50..5000. A place's default is 250."""
+        """Set how close a player must stand to the entity, in centimeters, for the prompt to show and the key to work. Clamped to 50..5000. A place's default is 250."""
         ...
     def start_cooldown(self, entity: Entity, action: str, seconds: float, part: str = ..., /) -> None:
         """Make one option of the entity unusable for this many seconds (up to 3600), for everyone, as if it had just been used with AfterUse 'Cooldown'. action is 'Primary' or 'Secondary'. SetEnabled ends it early. Pass a part's id for an object with several parts; leave it out for the object as a whole."""
@@ -1035,14 +1035,14 @@ class _PlayersService:
 Players: _PlayersService
 
 class _ProjectilesService:
-    """Fire projectiles from a server script: a ball, rocket, arrow or cube that flies under gravity, hits what is in its way, hurts it, and can explode. Each flies on the server and shows on every player's screen. Fire returns an id; Hit and Expired say how it ended. A projectile never hits the player or NPC that fired it, and a hit goes through the same damage path weapons use (armour, shield, friendly fire, Damaged and Died). Weapon damage, fire rate and ammo stay the game's: this is for your own gadgets, traps and turrets. At most 64 projectiles fly at once."""
+    """Fire projectiles from a server script: a ball, rocket, arrow or cube that flies under gravity, hits what is in its way, hurts it, and can explode. Each flies on the server and shows on every player's screen. Fire returns an id; Hit and Expired say how it ended. A projectile never hits the player or NPC that fired it, and a hit goes through the same damage path weapons use (armor, shield, friendly fire, Damaged and Died). Weapon damage, fire rate and ammo stay the game's: this is for your own gadgets, traps and turrets. At most 64 projectiles fly at once."""
     expired: Signal
     hit: Signal
     def cancel(self, id: float, /) -> bool:
         """Take a projectile out of the air: it vanishes without Hit or Expired, and without exploding. Returns false when it has already ended."""
         ...
     def fire(self, options: dict[str, Any], /) -> float:
-        """Launch a projectile and return its id. options: Position (where it starts) and either Velocity (a Vector3 in centimetres per second: the direction and speed) or Target (a point to hit; it is aimed at that point at Speed, 3000 by default, arcing for gravity; a target out of reach gets the flattest shot it can); GravityScale (1 by default; 0 flies dead straight, up to 10), Lifetime (seconds before it expires, 5 by default; 0.1 to 30), Look ('Ball' the default, 'Rocket', 'Arrow', 'Cube' or 'Invisible'), Color ('#RRGGBB'), Scale (0.1 to 10), Damage (to what it hits directly: 25 by default, or 0 when it has an Explosion; 0 to 1000000), DamageType ('Bullet' by default), Explosion (a table like Explosions:Create's options: it goes off where the projectile hits, and replaces the direct damage unless you also give Damage), ExplodeOnExpire (true: it goes off where it is when the lifetime ends, like a grenade; it needs an Explosion table, otherwise it explodes with the defaults), Tag (a name up to 64 characters Hit and Expired give back, so a handler knows which of its projectiles ended) and Attacker (the Player who gets the credit, whose team friendly fire protects, and who it never hits). Example: Projectiles:Fire({Position = muzzle, Velocity = aim * 2500, Look = 'Rocket', Attacker = player, Explosion = {Radius = 400, Damage = 90}})"""
+        """Launch a projectile and return its id. options: Position (where it starts) and either Velocity (a Vector3 in centimeters per second: the direction and speed) or Target (a point to hit; it is aimed at that point at Speed, 3000 by default, arcing for gravity; a target out of reach gets the flattest shot it can); GravityScale (1 by default; 0 flies dead straight, up to 10), Lifetime (seconds before it expires, 5 by default; 0.1 to 30), Look ('Ball' the default, 'Rocket', 'Arrow', 'Cube' or 'Invisible'), Color ('#RRGGBB'), Scale (0.1 to 10), Damage (to what it hits directly: 25 by default, or 0 when it has an Explosion; 0 to 1000000), DamageType ('Bullet' by default), Explosion (a table like Explosions:Create's options: it goes off where the projectile hits, and replaces the direct damage unless you also give Damage), ExplodeOnExpire (true: it goes off where it is when the lifetime ends, like a grenade; it needs an Explosion table, otherwise it explodes with the defaults), Tag (a name up to 64 characters Hit and Expired give back, so a handler knows which of its projectiles ended) and Attacker (the Player who gets the credit, whose team friendly fire protects, and who it never hits). Example: Projectiles:Fire({Position = muzzle, Velocity = aim * 2500, Look = 'Rocket', Attacker = player, Explosion = {Radius = 400, Damage = 90}})"""
         ...
 
 Projectiles: _ProjectilesService
@@ -1134,7 +1134,7 @@ class _StorageService:
 Storage: _StorageService
 
 class _TeamsService:
-    """Teams for a place: define them, put players on them, and decide whether teammates can hurt each other. The server decides everything; which team a player is on replicates, so client scripts and HUDs can read it. A team is named by its name (not case-sensitive) and has a colour. Friendly fire is off by default: once a player is on a team, damage from a teammate is ignored until Teams.FriendlyFire is set to true."""
+    """Teams for a place: define them, put players on them, and decide whether teammates can hurt each other. The server decides everything; which team a player is on replicates, so client scripts and HUDs can read it. A team is named by its name (not case-sensitive) and has a color. Friendly fire is off by default: once a player is on a team, damage from a teammate is ignored until Teams.FriendlyFire is set to true."""
     friendly_fire: bool
     teammates_collide: bool
     player_team_changed: Signal
@@ -1142,7 +1142,7 @@ class _TeamsService:
         """Define a team. name is 1 to 32 characters and must be new. color is '#RRGGBB' (white when left out), for a HUD or a nameplate to use. Up to 16 teams. Example: Teams:Create('Red', '#E53935')"""
         ...
     def get_color(self, name: str, /) -> Optional[str]:
-        """The team's colour as '#RRGGBB', or nil when there is no such team."""
+        """The team's color as '#RRGGBB', or nil when there is no such team."""
         ...
     def get_players(self, name: str, /) -> list[Player]:
         """The players on the team right now (an empty list for a team nobody is on, or one that does not exist)."""
@@ -1246,7 +1246,7 @@ class _VehiclesService:
         """The most health the car can have (100 unless you change it)."""
         ...
     def get_speed(self, vehicle: Entity, /) -> float:
-        """The car's speed in centimetres per second, as the simulation reports it. Errors if the entity is not a car or no longer exists."""
+        """The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists."""
         ...
     def is_boost_enabled(self, vehicle: Entity, /) -> bool:
         """Whether the car has a boost (SetBoostEnabled)."""
@@ -1375,7 +1375,7 @@ class _WorldService:
         """The first entity whose name (actor label) matches, or nil."""
         ...
     def get_entities_in_box(self, center: Vector3, size: Vector3, params: dict[str, Any] = ..., /) -> list[Entity]:
-        """Every entity and player character touching a box of this size (its full width, depth and height, at most 100 m on any side, kept square to the world's axes) centred on center, nearest first. Takes the same params as World:GetEntitiesInRadius."""
+        """Every entity and player character touching a box of this size (its full width, depth and height, at most 100 m on any side, kept square to the world's axes) centered on center, nearest first. Takes the same params as World:GetEntitiesInRadius."""
         ...
     def get_entities_in_radius(self, center: Vector3, radius: float, params: dict[str, Any] = ..., /) -> list[Entity]:
         """Every entity and player character touching a ball of this radius (at most 50 m) around center, nearest first. Overlap-only entities (triggers) count; entities with no collision never do. A character is listed as its Entity; Players:GetPlayerFromCharacter tells whose it is. params: Include, Exclude, Tag, IgnorePlayers, Layers, ExcludeLayers (collision layers, server scripts only), and MaxResults (256 at most, and by default). Runs on this machine only; a script may make 256 spatial queries a frame."""
@@ -1393,7 +1393,7 @@ class _WorldService:
         """Cast a ray from origin along direction and return the first thing it hits: a table of Entity, Player, Position, Normal and Distance, or nil. Player is set when the hit is a player's character. The ray is as long as direction, or params.MaxDistance when given, and at most 1 km. It passes through overlap-only entities (triggers) and never hits entities with no collision. params: MaxDistance, Include (only these entities or players count), Exclude, Tag (only entities with this tag count), IgnorePlayers, Layers (only entities on these collision layers count; server scripts only) and ExcludeLayers (look through entities on these layers). Runs on this machine only; a script may make 256 spatial queries a frame."""
         ...
     def spherecast(self, origin: Vector3, radius: float, direction: Vector3, params: dict[str, Any] = ..., /) -> Optional[dict[str, Any]]:
-        """Sweep a ball of this radius (at most 50 m) from origin along direction and return the first thing it touches, in the same table as World:Raycast, or nil. Distance is how far the ball's centre travelled. Takes the same params as World:Raycast."""
+        """Sweep a ball of this radius (at most 50 m) from origin along direction and return the first thing it touches, in the same table as World:Raycast, or nil. Distance is how far the ball's center traveled. Takes the same params as World:Raycast."""
         ...
 
 World: _WorldService
