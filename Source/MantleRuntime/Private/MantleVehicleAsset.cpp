@@ -2733,7 +2733,8 @@ UMantleBuiltVehicle* UMantleBuiltVehicle::Build(const FMantleVehicleAsset& Asset
 
 	FMantleSkinnedMeshBuildParams Params;
 	Params.Skeleton = Skeleton;
-	Params.MaxLODs = 1;
+	// Every LOD the cook wrote (limits.json lods, vehicle_body), at the builder's screen sizes (lods.screenSizes).
+	Params.MaxLODs = Body.LODs.Num();
 	Params.Outer = Owner;
 	// Nothing reads a vehicle body back: a cooked client drops the CPU copies once the GPU has them.
 	Params.bKeepCPUData = false;
