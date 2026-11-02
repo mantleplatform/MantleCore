@@ -208,6 +208,10 @@ FString FMantleCosmeticUploadSession::DescribeFailure(const FMantleApiResult& Re
 	{
 		return FString::Printf(TEXT("A moderator removed %s from your account (usually after a license complaint), so it cannot be uploaded or used again. Use different content."), *What);
 	}
+	if (Code == TEXT("asset_taken_down"))
+	{
+		return FString::Printf(TEXT("A Mantle moderator took %s down after a copyright or ownership complaint, so no account can upload or use it. Use different content."), *What);
+	}
 	if (Code == TEXT("assets_not_owned"))
 	{
 		return FString::Printf(TEXT("%s names a file your account holds no claim on (a moderator removed it, or it was never uploaded from this project). Upload the item again from your own files."), *What);
