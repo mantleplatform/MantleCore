@@ -113,7 +113,8 @@ int32 FMantleVehicleBodyReduce::CountTriangles(const FMantleSkinnedMesh& Body)
 	return Body.LODs.Num() > 0 ? Body.LODs[0].NumTriangles() : 0;
 }
 
-bool FMantleVehicleBodyReduce::ReduceToFit(FMantleSkinnedMesh& Body, FMantleVehicleBodyExtras& Extras, const int32 MaxTriangles, FMantleVehicleBodyReduceResult& Out)
+bool FMantleVehicleBodyReduce::ReduceToFit(FMantleSkinnedMesh& Body, FMantleVehicleBodyExtras& Extras, const int32 MaxTriangles, FMantleVehicleBodyReduceResult& Out,
+	const FText* Progress)
 {
 	using namespace MantleVehicleBodyReducePrivate;
 	Out = FMantleVehicleBodyReduceResult();
@@ -155,8 +156,8 @@ bool FMantleVehicleBodyReduce::ReduceToFit(FMantleSkinnedMesh& Body, FMantleVehi
 		MakeDescription(LOD, PieceOfBone[Bone]);
 	}
 
-	FScopedSlowTask Slow(static_cast<float>(Bones.Num() * MaxAttempts),
-		FText::Format(LOCTEXT("Reducing", "Reducing your vehicle's body from {0} to about {1} triangles so it fits (this can take a few minutes)..."),
+	FScopedSlowTask Slow(static_cast<float>(Bones.Num() * MaxAttempts), Progress ? *Progress
+		: FText::Format(LOCTEXT("Reducing", "Reducing your vehicle's body from {0} to about {1} triangles so it fits (this can take a few minutes)..."),
 			FText::AsNumber(Out.Before), FText::AsNumber(MaxTriangles)));
 	Slow.MakeDialogDelayed(0.5f, /*bShowCancelButton*/ true);
 

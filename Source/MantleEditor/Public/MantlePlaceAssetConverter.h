@@ -417,6 +417,9 @@ struct MANTLEEDITOR_API FMantleConvertedVehicle
 	FString ImportFilename;
 
 	FMantleGlbMesh Body;
+
+	/** Its lower LODs (FMantleVehicleBodyLODs: limits.json lods, vehicle_body), uploaded after Body; empty when none could be made. */
+	TArray<FMantleGlbMesh> LowerLODs;
 	TSharedPtr<FJsonObject> Document;
 
 	/** A body section (glTF material name) to its material's FMantlePlaceAssets::MaterialKey; library materials are left out. */

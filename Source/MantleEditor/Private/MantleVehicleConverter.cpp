@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleConverter.h"
+#include "MantleVehicleBodyLODs.h"
 #include "MantleVehicleLightFinder.h"
 #include "MantleCosmeticExport.h"
 #include "MantlePlaceAssets.h"
@@ -2726,13 +2727,22 @@ TArray<FString> FMantleVehicleConverter::LiveryTextureKeys(const UMantleVehicleS
 	return Keys;
 }
 
-bool FMantleVehicleConverter::WriteUpload(const FMantleGlbMesh& Body, const TSharedRef<FJsonObject>& Document, TArray<uint8>& OutBytes, FString& OutError)
+bool FMantleVehicleConverter::WriteUpload(const FMantleGlbMesh& Body, const TSharedRef<FJsonObject>& Document, TArray<uint8>& OutBytes, FString& OutError,
+	const TConstArrayView<FMantleGlbMesh> LowerLODs)
 {
-	FMantleGlbMesh Upload = Body;
+	TArray<FMantleGlbMesh> LODs;
+	LODs.Reserve(1 + LowerLODs.Num());
+	FMantleGlbMesh& Upload = LODs.Add_GetRef(Body);
 	TSharedRef<FJsonObject> Extras = MakeShared<FJsonObject>();
 	Extras->SetObjectField(ExtrasKey, Document);
 	Upload.Extras = Extras;
-	return FMantleGlbWriter::Write(Upload, OutBytes, OutError);
+	LODs.Append(LowerLODs.GetData(), LowerLODs.Num());
+	// The upload's bytes, not what the cook stores: shared vertices once, the skin and indices compact (it keeps a heavy car's LODs under the upload size).
+	for (FMantleGlbMesh& LOD : LODs)
+	{
+		FMantleVehicleBodyLODs::Slim(LOD);
+	}
+	return FMantleGlbWriter::WriteLODs(LODs, OutBytes, OutError);
 }
 
 void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, const FString& UsedBy, TArray<FMantleValidationIssue>& OutIssues)
@@ -3610,9 +3620,22 @@ namespace MantleVehicleConverterPrivate
 		{
 			Document->RemoveField(TEXT("paint"));
 		}
+		// Its far-away versions, as publishing makes them.
+		Body.MaterialNames = FMantleVehicleConverter::UniqueSectionNames(Body.MaterialNames);
+		TArray<FString> LODNotes;
+		FString LODWarning;
+		const TArray<FMantleGlbMesh> LowerLODs = FMantleVehicleBodyLODs::MakeFor(*Source, Body, LODNotes, LODWarning);
+		for (const FString& Note : LODNotes)
+		{
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_VEHICLE_UPLOAD %s"), *Note);
+		}
+		if (!LODWarning.IsEmpty())
+		{
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_VEHICLE_UPLOAD %s"), *LODWarning);
+		}
 		TArray<uint8> Bytes;
 		const FString Out = FPaths::ConvertRelativePathToFull(Args[1]);
-		if (!FMantleVehicleConverter::WriteUpload(Body, Document, Bytes, Error) || !FFileHelper::SaveArrayToFile(Bytes, *Out))
+		if (!FMantleVehicleConverter::WriteUpload(Body, Document, Bytes, Error, LowerLODs) || !FFileHelper::SaveArrayToFile(Bytes, *Out))
 		{
 			UE_LOG(LogMantle, Warning, TEXT("MANTLE_VEHICLE_UPLOAD could not write %s: %s"), *Out, *Error);
 			return;
