@@ -35,10 +35,16 @@ namespace MantleVehicleTypeMatchPrivate
 		return Lower.Contains(TEXT("prop"), ESearchCase::CaseSensitive) && !HasAny(Lower, { TEXT("guard"), TEXT("property"), TEXT("proportion") });
 	}
 
-	/** Words only a plane's parts carry. "wing" alone is not one: a sports car has a rear wing. */
+	/** Words only a plane's parts carry. "wing" alone is not one (a sports car has a rear wing), and nor are "rudder" and "flap" (a bike's steering bone may be a rudder). */
 	bool IsAirframeName(const FString& Lower)
 	{
-		return HasAny(Lower, { TEXT("aileron"), TEXT("elevator"), TEXT("rudder"), TEXT("fuselage"), TEXT("stabilizer"), TEXT("stabiliser"), TEXT("flap") });
+		return HasAny(Lower, { TEXT("aileron"), TEXT("elevator"), TEXT("fuselage"), TEXT("stabilizer"), TEXT("stabiliser") });
+	}
+
+	/** Words only a motorcycle's parts carry. */
+	bool IsBikeName(const FString& Lower)
+	{
+		return HasAny(Lower, { TEXT("handlebar"), TEXT("kickstand"), TEXT("swingarm"), TEXT("brake-lever"), TEXT("brakelever"), TEXT("brake_lever") });
 	}
 
 	bool IsJetName(const FString& Lower)
@@ -188,6 +194,9 @@ EMantleVehicleModelFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMan
 	const TArray<int32> Props = TopBones(Model, [](const FString& Name) { return IsPropellerName(Name); });
 	const TArray<int32> Airframe = TopBones(Model, [](const FString& Name) { return IsAirframeName(Name); });
 	const TArray<int32> Jets = TopBones(Model, [](const FString& Name) { return IsJetName(Name); });
+	const TArray<int32> BikeParts = TopBones(Model, [](const FString& Name) { return IsBikeName(Name); });
+	const FString LowerName = Model.Name.ToLower();
+	const bool bBikeNamed = HasAny(LowerName, { TEXT("motorcycle"), TEXT("motorbike"), TEXT("bike") });
 	const TArray<int32> Wheels = TopBones(Model, [](const FString& Name) { return IsWheelName(Name); });
 	const bool bAirframeMaterial = AnyMaterial([](const FString& Name) { return IsAirframeName(Name); });
 	const bool bWheelMaterial = AnyMaterial([](const FString& Name) { return IsWheelName(Name); });
@@ -216,13 +225,19 @@ EMantleVehicleModelFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMan
 	}
 
 	// Wheels: more than two is a road vehicle, two in a line a motorcycle.
+	if (Wheels.Num() >= 3)
+	{
+		OutEvidence.Add(FString::Printf(TEXT("%d wheels"), Wheels.Num()));
+		return EMantleVehicleModelFamily::Road;
+	}
+	// Handlebars, brake levers and the like (or the model's own name) are a motorcycle's, whatever its wheel bones are called.
+	if (BikeParts.Num() > 0 || bBikeNamed)
+	{
+		OutEvidence.Add(BikeParts.Num() > 0 ? TEXT("handlebars or brake levers") : TEXT("named like a bike"));
+		return EMantleVehicleModelFamily::Motorcycle;
+	}
 	if (Wheels.Num() > 0)
 	{
-		if (Wheels.Num() >= 3)
-		{
-			OutEvidence.Add(FString::Printf(TEXT("%d wheels"), Wheels.Num()));
-			return EMantleVehicleModelFamily::Road;
-		}
 		if (Wheels.Num() == 2 && Model.BonePositions.Num() == Model.Bones.Num())
 		{
 			FBox Box(ForceInit);

@@ -100,6 +100,12 @@ bool FMantleVehicleTypeMatchModelsTest::RunTest(const FString& Parameters)
 	Expect(Plane(), TEXT("motorcycle"), TEXT("plane"), TEXT("plane"));
 	Expect(Plane(), TEXT("hovercraft"), TEXT("plane"), TEXT("wings"));
 
+	// A bike whose steering bone is called a rudder and whose wheels are called FR and RR (the Fab pack's) is still a bike: it has brake levers.
+	const FMantleVehicleModel OddBike = MakeModel(FVector(270, 123, 174), { { FName("root"), INDEX_NONE, FVector::ZeroVector }, { FName("RR"), 0, FVector(-74, 0, 40) },
+		{ FName("rudder_bone"), 0, FVector(53, 0, 144) }, { FName("FR"), 2, FVector(108, 0, 40) }, { FName("brake-levers_L"), 2, FVector(53, -34, 163) } });
+	TestEqual(TEXT("a rudder bone alone is no plane: the odd bike fits motorcycle"), Check::Check(OddBike, TEXT("motorcycle")).Verdict, EMantleVehicleTypeVerdict::Fits);
+	TestEqual(TEXT("and picked as a sedan suggests motorcycle"), Check::Check(OddBike, TEXT("sedan")).SuggestedType, FString(TEXT("motorcycle")));
+
 	// A rotor is a helicopter's; a car's brake rotor is not.
 	const FMantleVehicleModel Heli = MakeModel(FVector(900, 300, 350), { { FName("root"), INDEX_NONE, FVector::ZeroVector }, { FName("MainRotor"), 0, FVector(0, 0, 300) }, { FName("TailRotor"), 0, FVector(-400, 0, 200) } });
 	TestEqual(TEXT("a helicopter fits helicopter"), Check::Check(Heli, TEXT("helicopter")).Verdict, EMantleVehicleTypeVerdict::Fits);
