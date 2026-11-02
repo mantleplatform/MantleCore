@@ -1201,6 +1201,8 @@ declare extern type VehiclesService with
 	function GetMaxFuel(self, vehicle: Entity): number
 	--- The most health the car can have (100 unless you change it). (server only)
 	function GetMaxHealth(self, vehicle: Entity): number
+	--- The car a VehicleSpawn entity keeps parked, as an Entity every Vehicles member takes (World:FindFirst finds the VehicleSpawn by its name). Returns nil while the spawn has no car standing: it is turned off, its car was destroyed and is waiting to come back, or the car is still being built, so ask again later. A car that comes back after a respawn is a new Entity: ask again. Errors if the entity is not a VehicleSpawn or no longer exists. (server only)
+	function GetParked(self, spawn: Entity): Entity?
 	--- The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists. (server only)
 	function GetSpeed(self, vehicle: Entity): number
 	--- Whether the car has a boost (SetBoostEnabled). (server only)
