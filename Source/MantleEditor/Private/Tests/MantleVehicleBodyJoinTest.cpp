@@ -415,6 +415,21 @@ bool FMantleVehicleBodyJoinLightMilitaryTest::RunTest(const FString& Parameters)
 		{
 			AddInfo(FString::Printf(TEXT("slot %d %s: %s"), Slot, *WholeMaterials[Slot].MaterialSlotName.ToString(), WholeMaterials[Slot].MaterialInterface ? *WholeMaterials[Slot].MaterialInterface->GetName() : TEXT("none")));
 		}
+		{
+			const FMantleSkinnedMeshLOD& Lit = Whole.LODs[0];
+			FBox3f Lights(ForceInit);
+			for (const FMantleSkinnedMeshSection& Section : Lit.Sections)
+			{
+				if (WholeMaterials.IsValidIndex(Section.MaterialIndex) && WholeMaterials[Section.MaterialIndex].MaterialSlotName == FName(TEXT("vehicle_lights")))
+				{
+					for (int32 Index = Section.FirstIndex; Index < Section.FirstIndex + Section.IndexCount; ++Index)
+					{
+						Lights += Lit.Positions[Lit.Indices[Index]];
+					}
+				}
+			}
+			AddInfo(FString::Printf(TEXT("body bounds %s, the lights material's bounds %s"), *Whole.ComputeBounds(0).ToString(), *Lights.ToString()));
+		}
 		TestFalse(TEXT("the bare body finds no light"), BareGuess.FoundAny());
 		TestTrue(TEXT("the joined body finds its lights"), Guess.FoundAny());
 		int32 Kinds = 0;
