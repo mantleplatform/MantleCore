@@ -16,6 +16,9 @@ public:
 	/** The chassis the viewport shows. Ask the viewport to refresh (SMantleBuilderViewport::RefreshFromKind) after changing it. */
 	void SetSpec(const FMantleChassisSpec& InSpec) { Spec = InSpec; }
 
+	/** Where Mantle thinks each wheel is, in the mesh's space (FMantleVehicleModelPreview::WheelDots): a dot goes on each. Refresh the viewport after changing it. */
+	void SetWheelDots(const TArray<FVector>& InDots) { WheelDots = InDots; }
+
 	// IMantleBuilderKind
 	virtual TArray<FMantleBuilderPointRole> GetRoles() const override { return TArray<FMantleBuilderPointRole>(); }
 	virtual TArray<FMantleBuilderPoint> GuessPoints(const UObject* Mesh) const override { return TArray<FMantleBuilderPoint>(); }
@@ -25,4 +28,5 @@ public:
 
 private:
 	FMantleChassisSpec Spec;
+	TArray<FVector> WheelDots;
 };

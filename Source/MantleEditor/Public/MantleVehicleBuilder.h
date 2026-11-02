@@ -5,6 +5,8 @@
 #include "MantleChassisSpec.h"
 #include "MantleVehicleChassisSkin.h"
 #include "MantleVehicleFit.h"
+#include "MantleVehicleAsset.h"
+#include "UObject/StrongObjectPtr.h"
 
 class AMantleVehicleSpawnPoint;
 class UMantleVehicleSource;
@@ -81,6 +83,59 @@ struct FMantleVehicleModelOptions
 };
 
 /**
+ * Everything BuildFromModel works out from a model, a vehicle type and the creator's choices before it saves anything (FMantleVehicleBuilder::PrepareFromModel): the
+ * chassis, the model worn on it, its moving parts and collision. The window's picture and the real build both come from this, so they cannot disagree.
+ */
+struct FMantleVehicleOnChassis
+{
+	/** The type's name ("Sedan"), for the sentences about it. */
+	FString PresetName;
+	FMantleVehicleModel Model;
+	/** The chassis the model is worn on: the window's own when Options.Spec was given, else the type's sized to the model. */
+	FMantleChassisSpec Spec;
+	/** The chassis's skeleton at that size (Body is the gray one, never shown). WheelPositions are where Mantle thinks each wheel is, in the body's space, cm. */
+	FMantleVehicleAsset Chassis;
+	TArray<FMantleVehiclePartSlot> Slots;
+	FMantleVehicleModelMap Map;
+	double Yaw = 0.0;
+	FMantleVehicleModelPlacement Placement;
+	/** The model skinned to the chassis's bones. */
+	FMantleVehicleSkinned Skinned;
+	FMantleVehicleSkinCollision Collision;
+	/** What Mantle chose and what the creator should look at, in the order BuildFromModel has always said it. */
+	TArray<FString> Notes;
+};
+
+/**
+ * The window's picture of a model on its vehicle's frame, made in memory and never saved: the creator's model (its own materials) worn on the chassis, and the spots Mantle
+ * puts the wheels (FMantleVehicleBuilder::MakeModelPreview). It is the same vehicle BuildFromModel builds. Give it up (Discard, or its destructor) when the picture is replaced.
+ */
+struct MANTLEEDITOR_API FMantleVehicleModelPreview
+{
+	FMantleVehicleModelPreview() = default;
+	FMantleVehicleModelPreview(const FMantleVehicleModelPreview&) = delete;
+	FMantleVehicleModelPreview& operator=(const FMantleVehicleModelPreview&) = delete;
+	~FMantleVehicleModelPreview() { Discard(); }
+
+	/** The whole model on the chassis's skeleton, in a throwaway package. Null when bOk is false. */
+	TStrongObjectPtr<USkeletalMesh> Mesh;
+	/** The model's body as skinned, for drawing without a renderer. */
+	FMantleSkinnedMesh Body;
+	/** Where Mantle thinks each wheel is: the mesh's space, cm. A dot goes on each. */
+	TArray<FVector> WheelDots;
+	/** The chassis the model is on, with the vehicle's size, seat and weight. */
+	FMantleChassisSpec Spec;
+	FMantleVehicleModelMap Map;
+	double Yaw = 0.0;
+	TArray<FString> Notes;
+	TArray<FString> Problems;
+	bool bOk = false;
+
+	/** Takes the picture's mesh and skeleton away. */
+	void Discard();
+};
+
+/**
  * The logic behind Tools > Mantle > Build a vehicle (#728), apart from Slate so tests can run it. It is the Convert Vehicle
  * command plus a vehicle type: the model is converted as FMantleVehicleConverter::ConvertAsset does, then the type's starting
  * settings, and a suggested Size (FitScale), are written into the new vehicle.
@@ -127,6 +182,25 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * as Build is.
 	 */
 	static FMantleVehicleBuildResult BuildFromModel(UObject* Model, const FString& PresetId, const FMantleVehicleModelOptions& Options = FMantleVehicleModelOptions());
+
+	/**
+	 * The part of BuildFromModel that decides how the model sits on the vehicle, with nothing saved: reads the model, picks the chassis (Options.Spec or the type's sized to
+	 * the model), the model's facing and moving parts, wears the model on the chassis and shapes its collision. False with Problems in plain words when it could not.
+	 * BuildFromModel and MakeModelPreview both start here, which is what keeps the picture and the build the same vehicle.
+	 */
+	static bool PrepareFromModel(UObject* Model, const FString& PresetId, const FMantleVehicleModelOptions& Options, FMantleVehicleOnChassis& Out, TArray<FString>& Problems);
+
+	/**
+	 * The picture of the model on its vehicle's frame (#821 flow, step 2): PrepareFromModel, then the model's whole body as a mesh in a throwaway package (/Temp, never saved,
+	 * never registered) and a dot for each wheel. Nothing is added to the project. Options.Name, Folder and bOverwrite are ignored. Fills Out; Problems say what stopped it.
+	 */
+	static bool MakeModelPreview(UObject* Model, const FString& PresetId, const FMantleVehicleModelOptions& Options, FMantleVehicleModelPreview& Out);
+
+	/**
+	 * Whether Preview (MakeModelPreview) and Built (BuildFromModel with the same model, type and options) are the same vehicle: the same wheel spots (the built vehicle's wheel
+	 * bones against the dots), and, when the build split nothing off the body, the same body (vertex count and bounds). False with Why in plain words for the first difference.
+	 */
+	static bool PreviewMatchesBuild(const FMantleVehicleModelPreview& Preview, const FMantleVehicleBuildResult& Built, FString& Why);
 
 	/**
 	 * The "This model has no inside" choice: hides or shows the driver and the passenger together, as one undo step. Hiding them on a

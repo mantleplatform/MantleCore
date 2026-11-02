@@ -8,6 +8,8 @@
 #include "MantleRuntime.h"
 #include "MantleVehicleBuilder.h"
 #include "MantleVehicleChassisBuilder.h"
+#include "MantleVehicleShapeKind.h"
+#include "SMantleBuilderViewport.h"
 #include "MantleVehicleSource.h"
 #include "MantleVehicleThumbnail.h"
 #include "Engine/TextureRenderTarget2D.h"
@@ -523,6 +525,59 @@ namespace MantleThumbnailSectionDevShot
 			FPlatformMisc::RequestExit(false);
 		}
 	}
+
+	/**
+	 * The vehicle builder's picture of a model on its frame (FMantleVehicleBuilder::MakeModelPreview): the catalog thumbnail capture of the preview mesh, and the builder's own
+	 * viewport (with the wheel dots) drawn offscreen. Uploads nothing and saves nothing.
+	 */
+	void RunVehiclePreviewShot(const TArray<FString>& Args)
+	{
+		if (Args.Num() < 3)
+		{
+			UE_LOG(LogMantle, Error, TEXT("MANTLE_THUMBNAIL_SHOT usage: Mantle.Dev.VehiclePreviewShot <Model> <Vehicle type> <Directory> [Exit]"));
+			return;
+		}
+		FString Path = Args[0];
+		if (!FPackageName::GetShortName(Path).Contains(TEXT(".")))
+		{
+			Path += TEXT(".") + FPackageName::GetShortName(Path);
+		}
+		UObject* Model = LoadObject<UObject>(nullptr, *Path);
+		IFileManager::Get().MakeDirectory(*Args[2], true);
+		FMantleVehicleModelPreview Preview;
+		if (!FMantleVehicleBuilder::MakeModelPreview(Model, Args[1], FMantleVehicleModelOptions(), Preview))
+		{
+			UE_LOG(LogMantle, Error, TEXT("MANTLE_THUMBNAIL_SHOT preview not made: %s"), Preview.Problems.Num() > 0 ? *Preview.Problems[0] : TEXT("model did not load"));
+		}
+		else
+		{
+			UObject* Picture = Preview.Mesh.Get();
+			const FMantleThumbnailResolver::FRender Render = FMantleModelThumbnail::RenderFor([Picture]() -> UObject* { return Picture; });
+			FMantleThumbnailChoice Choice;
+			Choice.Mode = EMantleThumbnailMode::Automatic;
+			const FMantleThumbnailResult Result = FMantleThumbnailResolver::Resolve(Choice, FMantleThumbnailTarget::Square(), Render);
+			const FString File = FPaths::Combine(Args[2], TEXT("vehicle_preview_catalog.png"));
+			const bool bSaved = Result.Succeeded() && FFileHelper::SaveArrayToFile(FMantleThumbnailResolver::ToPng(Result, FMantleThumbnailTarget::Square()), *File);
+			UE_LOG(LogMantle, Display, TEXT("MANTLE_THUMBNAIL_SHOT %s %s %s dots=%d"), *File, bSaved ? TEXT("saved") : TEXT("NOT saved"), *(Result.Succeeded() ? Result.Source : Result.Error), Preview.WheelDots.Num());
+
+			const TSharedRef<FMantleVehicleShapeKind> Kind = MakeShared<FMantleVehicleShapeKind>();
+			Kind->SetSpec(Preview.Spec);
+			Kind->SetWheelDots(Preview.WheelDots);
+			const TSharedRef<SMantleBuilderViewport> Viewport = SNew(SMantleBuilderViewport).Kind(Kind);
+			Viewport->SetMesh(Picture, true);
+			Viewport->RefreshFromKind();
+			Save(SNew(SBox).WidthOverride(640.0f).HeightOverride(420.0f)[Viewport], FPaths::Combine(Args[2], TEXT("vehicle_preview_viewport.png")), 640.0f, 440.0f);
+		}
+		if (Args.Num() > 3 && Args[3].Equals(TEXT("Exit"), ESearchCase::IgnoreCase))
+		{
+			FPlatformMisc::RequestExit(false);
+		}
+	}
+
+	FAutoConsoleCommand VehiclePreviewCommand(
+		TEXT("Mantle.Dev.VehiclePreviewShot"),
+		TEXT("Mantle.Dev.VehiclePreviewShot <Model> <Vehicle type> <Directory> [Exit]: the builder's picture of a model on its vehicle's frame, through the catalog thumbnail capture and the builder's viewport with wheel dots. Uploads nothing."),
+		FConsoleCommandWithArgsDelegate::CreateStatic(&RunVehiclePreviewShot));
 
 	FAutoConsoleCommand VehicleCommand(
 		TEXT("Mantle.Dev.VehicleThumbnailShot"),
