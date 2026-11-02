@@ -12,6 +12,7 @@
 struct FMantleSettings;
 struct FMantleAudience;
 struct FMantleEnvironmentSettings;
+struct FMantlePlacingSettings;
 struct FMantleStorageEntry;
 
 /** How a player who dies is placed back into the world (the place file's settings.respawnMode). */
@@ -24,6 +25,16 @@ enum class EMantleRespawnMode : uint8
 	Random,
 	/** Always the first Player Start. */
 	First,
+};
+
+/** What becomes of the pieces players place with placing mode (the place file's settings.placing.persistence). In EMantlePlacingPersistence's order. */
+UENUM()
+enum class EMantlePlacePersistence : uint8
+{
+	/** Placed pieces last until the server ends. */
+	None,
+	/** Placed pieces are saved and come back when the server starts: private servers keep them online, self-hosted servers keep them beside themselves, public servers keep nothing. */
+	Server,
 };
 
 /**
@@ -260,6 +271,23 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	bool bCarjacking = true;
 
+	// Placing mode (#184): what is kept of the pieces players place with the Placing API. A script
+	// turns placing mode on; nothing here does. Only values changed from these defaults are
+	// published; a place that changes any needs a Mantle client from after #184 to load.
+
+	/** Whether the pieces players place are saved. Server brings them back the next time the server starts. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Placing")
+	EMantlePlacePersistence PlacedPieces = EMantlePlacePersistence::None;
+
+	/** Set the most placed pieces with Max Placed Pieces instead of the most any place may have. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Placing", meta = (InlineEditConditionToggle))
+	bool bSetMaxPlacedPieces = false;
+
+	/** The most pieces players can have placed at once in this place, all players together. 2000 is the most any place may have. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Placing",
+		meta = (EditCondition = "bSetMaxPlacedPieces", ClampMin = "1", ClampMax = "2000", UIMin = "1", UIMax = "2000"))
+	int32 MaxPlacedPieces = 2000;
+
 	// The place's default look (#532): what every player starts in, with or without a script. A
 	// server script's Environment writes change it from there. Only values changed from these
 	// defaults are published; a place that changes any needs a Mantle client from after #532 to load.
@@ -456,6 +484,12 @@ public:
 
 	/** The place's default look (#532) from the Environment fields: only what differs from the defaults is set. */
 	FMantleEnvironmentSettings MakeEnvironmentSettings() const;
+
+	/** The place's placing mode settings (#184) from the Placing fields; the schema's defaults unless the creator changed them. */
+	FMantlePlacingSettings MakePlacingSettings() const;
+
+	/** Sets the Placing fields from a place file's settings.placing. */
+	void SetPlacingFrom(const FMantlePlacingSettings& Placing);
 
 	/** Sets the Environment fields from a place file's settings.environment; a key it leaves out resets its field. */
 	void SetEnvironmentFrom(const FMantleEnvironmentSettings& Environment);
