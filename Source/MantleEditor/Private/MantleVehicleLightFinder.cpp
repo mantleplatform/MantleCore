@@ -33,6 +33,12 @@ namespace MantleVehicleLightsPrivate
 	/** Which way a new beam points: forward and a little down, at the road ahead. */
 	const FVector BeamDirection(1.0, 0.0, -0.05);
 
+	/** The brightest of a color's red, green and blue (not its alpha, which FLinearColor::GetMax counts). */
+	float Brightest(const FLinearColor& Color)
+	{
+		return FMath::Max3(Color.R, Color.G, Color.B);
+	}
+
 	bool IsSignal(const EMantleLightKind Kind)
 	{
 		return Kind == EMantleLightKind::Left || Kind == EMantleLightKind::Right;
@@ -166,7 +172,7 @@ namespace MantleVehicleLightsPrivate
 		for (int32 Corner = 0; Corner < 3; ++Corner)
 		{
 			const FLinearColor Here = Image.At((Middle + LOD.UVs[C[Corner]]) * 0.5f);
-			if (Here.GetMax() > Best.GetMax())
+			if (Brightest(Here) > Brightest(Best))
 			{
 				Best = Here;
 			}
@@ -259,7 +265,7 @@ const TArray<FString>& FMantleVehicleLights::Sections(const FMantleVehicleSource
 TOptional<EMantleLightKind> FMantleVehicleLights::Classify(const FVector3f& Center, const FLinearColor& Glow, const FBox3f& Bounds)
 {
 	using namespace MantleVehicleLightsPrivate;
-	const float Max = Glow.GetMax();
+	const float Max = Brightest(Glow);
 	if (!Bounds.IsValid || Max <= KINDA_SMALL_NUMBER)
 	{
 		return {};
@@ -404,7 +410,7 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 			{
 				continue;
 			}
-			const FLinearColor Tint = Glow.Color.GetMax() > KINDA_SMALL_NUMBER ? Glow.Color : FLinearColor::White;
+			const FLinearColor Tint = Brightest(Glow.Color) > KINDA_SMALL_NUMBER ? Glow.Color : FLinearColor::White;
 			const FGlowImage* Image = nullptr;
 			if (Glow.Texture)
 			{
@@ -427,7 +433,7 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 				if (Image)
 				{
 					const FLinearColor Pixel = GlowUnder(LOD, Triangles[Index], *Image);
-					if (Pixel.GetMax() < GlowThreshold)
+					if (Brightest(Pixel) < GlowThreshold)
 					{
 						continue;
 					}

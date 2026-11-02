@@ -370,6 +370,6 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 			break;
 		}
 	}
-	Out.bGlows = Out.Texture != nullptr || Out.Color.GetMax() > 0.0f;
+	Out.bGlows = Out.Texture != nullptr || FMath::Max3(Out.Color.R, Out.Color.G, Out.Color.B) > 0.0f;
 	return Out.bGlows;
 }
