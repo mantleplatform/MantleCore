@@ -14,11 +14,11 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 // A vehicle Blueprint as the builder's source (BuildAny): a Chaos vehicle from a Fab pack, and a Blueprint made of several static pieces. The Blueprints are the
-// ones in the MantleVehicles scratch project; a project without them skips, and says so.
+// ones in the MantleVehicles scratch project (the ship) and the VehicleVarietyPackVolume2 project (the Chaos sedan); a project without them skips, and says so.
 
 namespace MantleVehicleBlueprintTestPrivate
 {
-	const TCHAR* const ChaosBlueprint = TEXT("/Game/VehicleVarietyPack/Blueprints/Hatchback/BP_Hatchback.BP_Hatchback");
+	const TCHAR* const ChaosBlueprint = TEXT("/Game/VehicleVarietyVol2/Blueprints/Sedan/BP_Sedan_Chaos.BP_Sedan_Chaos");
 	const TCHAR* const ShipBlueprint = TEXT("/Game/StarSparrow/Blueprints/BP_ModularStarSparrow01.BP_ModularStarSparrow01");
 	const TCHAR* const TestFolder = TEXT("/Game/MantleVehicles/_AutomationTest_Blueprint");
 
