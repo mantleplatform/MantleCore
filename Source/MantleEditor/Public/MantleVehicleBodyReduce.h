@@ -37,9 +37,11 @@ struct MANTLEEDITOR_API FMantleVehicleBodyReduce
 	/**
 	 * Reduces Body's LOD 0 in place to at most MaxTriangles, showing a progress dialog (with a Cancel button) when it takes a while. The vertices change, so Extras (a
 	 * vertex-for-vertex list of more UVs and colors) is emptied; tangents are left to be worked out again. True when Body was within the limit or now is; false with
-	 * Body untouched when the reducer is missing, could not get under the limit or was canceled (see Out).
+	 * Body untouched when the reducer is missing, could not get under the limit or was canceled (see Out). Progress, when given, is the dialog's
+	 * message (a body's lower LODs, FMantleVehicleBodyLODs, are made with it too).
 	 */
-	static bool ReduceToFit(FMantleSkinnedMesh& Body, FMantleVehicleBodyExtras& Extras, int32 MaxTriangles, FMantleVehicleBodyReduceResult& Out);
+	static bool ReduceToFit(FMantleSkinnedMesh& Body, FMantleVehicleBodyExtras& Extras, int32 MaxTriangles, FMantleVehicleBodyReduceResult& Out,
+		const FText* Progress = nullptr);
 
 	/** The share of the limit a reduction aims for: the reducer stops near its target, not on it. */
 	static constexpr float TargetShare = 0.92f;

@@ -18,6 +18,7 @@
 #include "MantleTargetFeatures.h"
 #include "MantleTerrainExport.h"
 #include "MantleTerrainGrassExport.h"
+#include "MantleVehicleBodyLODs.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
 #include "MantleVehicleThumbnail.h"
@@ -1400,7 +1401,7 @@ bool FMantlePlaceAssetSet::VehicleBytes(const FMantleConvertedVehicle& Vehicle, 
 	FString WriteError;
 	const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::WithHorn(FMantleVehicleConverter::WithParts(FMantleVehicleConverter::WithLiveries(
 		FMantleVehicleConverter::WithMaterials(Vehicle.Document.ToSharedRef(), Ids), LiveryIds), PartIds), HornSoundId);
-	if (!FMantleVehicleConverter::WriteUpload(Vehicle.Body, Document, OutBytes, WriteError))
+	if (!FMantleVehicleConverter::WriteUpload(Vehicle.Body, Document, OutBytes, WriteError, Vehicle.LowerLODs))
 	{
 		OutError = FString::Printf(TEXT("Vehicle '%s' could not be written: %s"), *Vehicle.Name, *WriteError);
 		return false;
@@ -2926,6 +2927,22 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 	{
 		Converted.Triangles += Primitive.Indices.Num() / 3;
 	}
+	// Its far-away versions (limits.json lods, vehicle_body: lods.targetFractions after LOD0's), its tires reduced with it, every light and paint
+	// section drawn on each. One LOD is a valid upload: the creator is told when fewer were made.
+	{
+		TArray<FString> LODNotes;
+		FString LODWarning;
+		Converted.LowerLODs = FMantleVehicleBodyLODs::MakeFor(*Vehicle, Converted.Body, LODNotes, LODWarning);
+		for (const FString& Note : LODNotes)
+		{
+			UE_LOG(LogTemp, Log, TEXT("Vehicle '%s': %s"), *Vehicle->GetName(), *Note);
+		}
+		if (!LODWarning.IsEmpty())
+		{
+			Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Vehicle '%s': %s"), *Vehicle->GetName(), *LODWarning),
+				TEXT("Nothing needs fixing for it to work. To have it drawn cheaper far away, publish again; if this keeps happening, use a body with fewer triangles.")));
+		}
+	}
 	Converted.Key = Key;
 	Converted.Name = Vehicle->GetName();
 	Converted.Path = Vehicle->GetPathName();
@@ -2959,13 +2976,32 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 	const FString HornPlaceholder = Converted.HornSoundKey.IsEmpty() ? FString() : FMantlePlaceAssets::ProvisionalId(Converted.HornSoundKey);
 	TArray<uint8> Bytes;
 	FString WriteError;
-	if (!FMantleVehicleConverter::WriteUpload(Converted.Body, FMantleVehicleConverter::WithHorn(FMantleVehicleConverter::WithParts(
-			FMantleVehicleConverter::WithLiveries(FMantleVehicleConverter::WithMaterials(Converted.Document.ToSharedRef(), Placeholders), LiveryPlaceholders),
-			PartPlaceholders), HornPlaceholder), Bytes, WriteError))
+	const TSharedRef<FJsonObject> SizedDocument = FMantleVehicleConverter::WithHorn(FMantleVehicleConverter::WithParts(
+		FMantleVehicleConverter::WithLiveries(FMantleVehicleConverter::WithMaterials(Converted.Document.ToSharedRef(), Placeholders), LiveryPlaceholders),
+		PartPlaceholders), HornPlaceholder);
+	if (!FMantleVehicleConverter::WriteUpload(Converted.Body, SizedDocument, Bytes, WriteError, Converted.LowerLODs))
 	{
 		Out.Issues.Add(ErrorIssue(FString::Printf(TEXT("Vehicle '%s' could not be written: %s"), *Vehicle->GetName(), *WriteError),
 			TEXT("Re-import its body and try again; if it keeps failing, report it with the log.")));
 		return false;
+	}
+	// Over the upload size with its far-away versions: the farthest is left out first, then the next, and the creator is told.
+	const int32 MadeLODs = Converted.LowerLODs.Num();
+	while (Bytes.Num() > Limits.MaxUploadBytes && Converted.LowerLODs.Num() > 0)
+	{
+		Converted.LowerLODs.Pop();
+		if (!FMantleVehicleConverter::WriteUpload(Converted.Body, SizedDocument, Bytes, WriteError, Converted.LowerLODs))
+		{
+			Out.Issues.Add(ErrorIssue(FString::Printf(TEXT("Vehicle '%s' could not be written: %s"), *Vehicle->GetName(), *WriteError),
+				TEXT("Re-import its body and try again; if it keeps failing, report it with the log.")));
+			return false;
+		}
+	}
+	if (Converted.LowerLODs.Num() < MadeLODs && Bytes.Num() <= Limits.MaxUploadBytes)
+	{
+		Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Vehicle '%s' was too big to upload with all its far-away versions, so %d of them were left out (it uploads with %d of %d). It still works; it only costs more to draw far away."),
+			*Vehicle->GetName(), MadeLODs - Converted.LowerLODs.Num(), Converted.LowerLODs.Num() + 1, MadeLODs + 1),
+			TEXT("To keep them all, use a body or tire mesh with fewer triangles.")));
 	}
 	if (Bytes.Num() > Limits.MaxUploadBytes)
 	{

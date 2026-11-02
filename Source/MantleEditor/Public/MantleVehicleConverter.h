@@ -117,7 +117,7 @@ struct MANTLEEDITOR_API FMantleVehicleConversion
  * mesh it cannot read.
  *
  * Publishing uploads the vehicle as one GLB: the body's LOD0 with any separate tire meshes merged onto their wheel
- * bones, and the vehicle document (schema/vehicle.schema.json) at extras.mantleVehicle, its materials the uploaded
+ * bones, its LOD1 and LOD2 made from that (FMantleVehicleBodyLODs, tires reduced with it), and the vehicle document (schema/vehicle.schema.json) at extras.mantleVehicle, its materials the uploaded
  * ids of the body's own. The cook worker checks it again with the same numbers (limits.json placeAssets.vehicle).
  * Its attached parts (#435 item 2) upload before it as meshes, with their materials, and the document names their ids.
  */
@@ -348,8 +348,9 @@ public:
 	 */
 	static TArray<FString> LiveryTextureKeys(const UMantleVehicleSource& Source);
 
-	/** The upload: Body with Document at extras.mantleVehicle. */
-	static bool WriteUpload(const FMantleGlbMesh& Body, const TSharedRef<FJsonObject>& Document, TArray<uint8>& OutBytes, FString& OutError);
+	/** The upload: Body with Document at extras.mantleVehicle, and its lower LODs (FMantleVehicleBodyLODs) after it. */
+	static bool WriteUpload(const FMantleGlbMesh& Body, const TSharedRef<FJsonObject>& Document, TArray<uint8>& OutBytes, FString& OutError,
+		TConstArrayView<FMantleGlbMesh> LowerLODs = TConstArrayView<FMantleGlbMesh>());
 
 	/**
 	 * Check this place's rules for one vehicle a spawn uses: a body with every wheel bone (not the root), 2 to 8
