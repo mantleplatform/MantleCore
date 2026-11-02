@@ -1230,6 +1230,8 @@ declare extern type VehiclesService with
 	function GetFuelConsumption(self, vehicle: Entity): number
 	--- The car's health, from 0 to MaxHealth. It only changes while health is on. (server only)
 	function GetHealth(self, vehicle: Entity): number
+	--- The script's word on a light: "on", "off" or "auto" (the game decides). light is "head", "rear", "reverse", "left" or "right". Errors if the entity is not a car or no longer exists. (server only)
+	function GetLights(self, vehicle: Entity, light: string): string
 	--- The most boost the car can store (100 unless you change it). (server only)
 	function GetMaxBoost(self, vehicle: Entity): number
 	--- The tank's size (100 unless you change it). (server only)
@@ -1252,6 +1254,8 @@ declare extern type VehiclesService with
 	function IsFuelEnabled(self, vehicle: Entity): boolean
 	--- Whether the car has health (SetHealthEnabled). (server only)
 	function IsHealthEnabled(self, vehicle: Entity): boolean
+	--- Whether a light is lit now, whoever decided it: the script's word, the J key, night, braking, reverse or the driver's signal keys. A signal counts as lit through its whole blink. light is "head", "rear", "reverse", "left", "right" or "signals" (either side). Errors if the entity is not a car or no longer exists. (server only)
+	function IsLightOn(self, vehicle: Entity, light: string): boolean
 	--- Whether the car is locked. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Errors if the entity is not a car or no longer exists. (server only)
 	function IsLocked(self, vehicle: Entity): boolean
 	--- Lock the car. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Returns false when the entity is not a car. (server only)
@@ -1282,6 +1286,8 @@ declare extern type VehiclesService with
 	function SetHealth(self, vehicle: Entity, health: number): ()
 	--- Give the car health (true) or take it away again (false). It is off for every car until you turn it on, so a car you never touch crashes as it always did. With health on, crashes wear the car down (a hard enough crash wrecks it in one hit), and at 0 health the car is destroyed: it cannot accelerate until you Repair it. It starts full (MaxHealth, 100 unless you change it). (server only)
 	function SetHealthEnabled(self, vehicle: Entity, enabled: boolean): ()
+	--- Run a car's lights from a script. light is "head" (the headlights and their beams), "rear" (the tail and brake lights), "reverse", "left", "right", "signals" (both sides: the hazards) or "all". mode is "on", "off" or "auto". On and off are the script's word and are final: the J key, night, braking, reverse and the driver's signal keys cannot change that light until you set it back to "auto" (a signal held on blinks). Auto gives the light back to the game: the headlights follow the J key and come on at night, the rear lights dim with the headlights and brighten when the car brakes, the reverse lights come on in reverse, and the signals follow the driver's [ and ] keys. The setting stays when the driver gets out. Returns false when the entity is not a car; errors on a light or mode it does not know. (server only)
+	function SetLights(self, vehicle: Entity, light: string, mode: string): boolean
 	--- Put one of the car's liveries on it: index counts from 0 in the liveries its vehicle was published with, and -1 takes the livery off. Every player sees the change. Returns false when the entity is not a car or the car has no livery at that index (the built-in cars have none). (server only)
 	function SetLivery(self, vehicle: Entity, index: number): boolean
 	--- Set the most boost the car can store, from 1 to 1,000,000. (server only)

@@ -1287,6 +1287,9 @@ class _VehiclesService:
     def get_health(self, vehicle: Entity, /) -> float:
         """The car's health, from 0 to MaxHealth. It only changes while health is on."""
         ...
+    def get_lights(self, vehicle: Entity, light: str, /) -> str:
+        """The script's word on a light: 'on', 'off' or 'auto' (the game decides). light is 'head', 'rear', 'reverse', 'left' or 'right'. Errors if the entity is not a car or no longer exists."""
+        ...
     def get_max_boost(self, vehicle: Entity, /) -> float:
         """The most boost the car can store (100 unless you change it)."""
         ...
@@ -1319,6 +1322,9 @@ class _VehiclesService:
         ...
     def is_health_enabled(self, vehicle: Entity, /) -> bool:
         """Whether the car has health (SetHealthEnabled)."""
+        ...
+    def is_light_on(self, vehicle: Entity, light: str, /) -> bool:
+        """Whether a light is lit now, whoever decided it: the script's word, the J key, night, braking, reverse or the driver's signal keys. A signal counts as lit through its whole blink. light is 'head', 'rear', 'reverse', 'left', 'right' or 'signals' (either side). Errors if the entity is not a car or no longer exists."""
         ...
     def is_locked(self, vehicle: Entity, /) -> bool:
         """Whether the car is locked. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Errors if the entity is not a car or no longer exists."""
@@ -1364,6 +1370,9 @@ class _VehiclesService:
         ...
     def set_health_enabled(self, vehicle: Entity, enabled: bool, /) -> None:
         """Give the car health (true) or take it away again (false). It is off for every car until you turn it on, so a car you never touch crashes as it always did. With health on, crashes wear the car down (a hard enough crash wrecks it in one hit), and at 0 health the car is destroyed: it cannot accelerate until you Repair it. It starts full (MaxHealth, 100 unless you change it)."""
+        ...
+    def set_lights(self, vehicle: Entity, light: str, mode: str, /) -> bool:
+        """Run a car's lights from a script. light is 'head' (the headlights and their beams), 'rear' (the tail and brake lights), 'reverse', 'left', 'right', 'signals' (both sides: the hazards) or 'all'. mode is 'on', 'off' or 'auto'. On and off are the script's word and are final: the J key, night, braking, reverse and the driver's signal keys cannot change that light until you set it back to 'auto' (a signal held on blinks). Auto gives the light back to the game: the headlights follow the J key and come on at night, the rear lights dim with the headlights and brighten when the car brakes, the reverse lights come on in reverse, and the signals follow the driver's [ and ] keys. The setting stays when the driver gets out. Returns false when the entity is not a car; errors on a light or mode it does not know."""
         ...
     def set_livery(self, vehicle: Entity, index: float, /) -> bool:
         """Put one of the car's liveries on it: index counts from 0 in the liveries its vehicle was published with, and -1 takes the livery off. Every player sees the change. Returns false when the entity is not a car or the car has no livery at that index (the built-in cars have none)."""
