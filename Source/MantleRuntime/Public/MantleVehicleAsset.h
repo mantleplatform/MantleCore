@@ -768,7 +768,8 @@ public:
 
 	/**
 	 * Builds from a read MVH1: the skeleton from the body's bone table and reference pose, the mesh on it
-	 * (one LOD, material slots named after the body's sections). Game thread. Null, with the reason in
+	 * (every LOD the body carries, switched at limits.json lods.screenSizes; material slots named after the body's
+	 * sections, shared by every LOD). Game thread. Null, with the reason in
 	 * OutError, when the body will not build.
 	 */
 	static UMantleBuiltVehicle* Build(const FMantleVehicleAsset& Asset, UObject* Outer, FString* OutError = nullptr);
