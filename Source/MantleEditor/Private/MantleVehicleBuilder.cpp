@@ -84,7 +84,7 @@ namespace MantleVehicleBuilderPrivate
 		return true;
 	}
 
-	// Defined with BuildChassis below, which they are shared with.
+	// Defined with BuildChassisImpl below, which they are shared with.
 	void ApplyMovement(const FMantleChassisSpec& Spec, UMantleVehicleSource& Source);
 	void ApplyGroundHandling(const FMantleChassisSpec& Spec, UMantleVehicleSource& Source);
 
@@ -450,139 +450,6 @@ namespace MantleVehicleBuilderPrivate
 			if (!Result.SaveProblem.IsEmpty())
 			{
 				UE_LOG(LogTemp, Warning, TEXT("MANTLE_VEHICLE_BUILD save problem: %s"), *Result.SaveProblem);
-			}
-		}));
-}
-
-namespace MantleVehicleBuilderPrivate
-{
-	// Mantle.Vehicle.BuildChassis: what Tools > Mantle > Build a vehicle > Shape it and Drive it make, from the console or a script, so a shaped
-	// vehicle can be made without clicking (an owner check's fixtures, an agent's run). Saves like the window does, under /Game/MantleVehicles.
-	FAutoConsoleCommand BuildChassisCommand(
-		TEXT("Mantle.Vehicle.BuildChassis"),
-		TEXT("Mantle.Vehicle.BuildChassis <vehicle type id> [wheelbase=<cm>] [track=<cm>] [wheelradius=<cm>] [wheelwidth=<cm>] [length=<cm>] [width=<cm>] [height=<cm>] [clearance=<cm>] "
-			 "[size=<factor>] [grip=<-1..1>] [power=<-1..1>] [stiffness=<-1..1>] [topspeed=<-1..1>] [passenger=<0|1>] "
-			 "-- makes a vehicle with no model as Tools > Mantle > Build a vehicle does (sizes held to their ranges; a plane, jet, helicopter or hovercraft takes size= and no other sizes), "
-			 "saves it under /Game/MantleVehicles and logs MANTLE_VEHICLE_BUILD_CHASSIS ok=<0|1> with the vehicle's path, its handling and every note."),
-		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
-		{
-			if (Args.Num() < 1)
-			{
-				UE_LOG(LogTemp, Error, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS ok=0 usage: Mantle.Vehicle.BuildChassis <vehicle type id> [wheelbase=<cm>] [track=<cm>] [wheelradius=<cm>] [wheelwidth=<cm>] [length=<cm>] [width=<cm>] [height=<cm>] [clearance=<cm>] [size=<factor>] [grip=<-1..1>] [power=<-1..1>] [stiffness=<-1..1>] [topspeed=<-1..1>] [passenger=<0|1>]"));
-				return;
-			}
-			FMantleChassisSpec Archetype;
-			FString Error;
-			if (!FMantleVehicleChassisBuilder::LoadSpec(Args[0], Archetype, Error))
-			{
-				UE_LOG(LogTemp, Error, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS ok=0 type=%s problem: %s"), *Args[0], *Error);
-				return;
-			}
-			const TPair<const TCHAR*, EMantleVehicleDimension> Names[] = {
-				{ TEXT("wheelbase"), EMantleVehicleDimension::Wheelbase }, { TEXT("track"), EMantleVehicleDimension::Track },
-				{ TEXT("wheelradius"), EMantleVehicleDimension::WheelRadius }, { TEXT("wheelwidth"), EMantleVehicleDimension::WheelWidth },
-				{ TEXT("length"), EMantleVehicleDimension::BodyLength }, { TEXT("width"), EMantleVehicleDimension::BodyWidth },
-				{ TEXT("height"), EMantleVehicleDimension::BodyHeight }, { TEXT("clearance"), EMantleVehicleDimension::GroundClearance } };
-			const TPair<const TCHAR*, EMantleVehicleFeel> Feels[] = { { TEXT("grip"), EMantleVehicleFeel::Grip }, { TEXT("power"), EMantleVehicleFeel::Power },
-				{ TEXT("stiffness"), EMantleVehicleFeel::Stiffness }, { TEXT("topspeed"), EMantleVehicleFeel::TopSpeed } };
-			// The window's own session shapes it, so the console and the window make the same vehicle: a road vehicle by its eight sizes (Reshape), a plane, jet, helicopter or
-			// hovercraft by one Size (Scaled, which grows the airframe, rotor or pads with the body; Reshape would leave them at the preset's).
-			const FMantleVehiclePreset* Preset = FMantleVehiclePresets::Find(Args[0]);
-			FMantleVehicleShapeSession Session;
-			Session.Start(Archetype, Preset ? Preset->FitMinScale : 0.0, Preset ? Preset->FitMaxScale : 0.0);
-			for (int32 Index = 1; Index < Args.Num(); ++Index)
-			{
-				FString Key;
-				FString Value;
-				if (!Args[Index].Split(TEXT("="), &Key, &Value))
-				{
-					UE_LOG(LogTemp, Error, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS ok=0 type=%s problem: '%s' is not <key>=<value>"), *Args[0], *Args[Index]);
-					return;
-				}
-				const double Number = FCString::Atod(*Value);
-				const TPair<const TCHAR*, EMantleVehicleDimension>* FoundSize = nullptr;
-				for (const TPair<const TCHAR*, EMantleVehicleDimension>& Entry : Names)
-				{
-					if (Key.Equals(Entry.Key, ESearchCase::IgnoreCase))
-					{
-						FoundSize = &Entry;
-					}
-				}
-				const TPair<const TCHAR*, EMantleVehicleFeel>* FoundFeel = nullptr;
-				for (const TPair<const TCHAR*, EMantleVehicleFeel>& Entry : Feels)
-				{
-					if (Key.Equals(Entry.Key, ESearchCase::IgnoreCase))
-					{
-						FoundFeel = &Entry;
-					}
-				}
-				if (FoundSize)
-				{
-					if (Session.UsesSize() || !FMantleVehicleShape::IsEditable(Archetype, FoundSize->Value))
-					{
-						UE_LOG(LogTemp, Error, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS ok=0 type=%s problem: this type has no %s to set%s"), *Args[0], *Key, Session.UsesSize() ? TEXT("; it is sized with size=<factor>") : TEXT(""));
-						return;
-					}
-					Session.SetDimension(FoundSize->Value, Number);
-				}
-				else if (FoundFeel)
-				{
-					if (!Session.HasFeel(FoundFeel->Value))
-					{
-						UE_LOG(LogTemp, Error, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS ok=0 type=%s problem: this type has no %s feel"), *Args[0], *Key);
-						return;
-					}
-					Session.SetFeel(FoundFeel->Value, Number);
-				}
-				else if (Key.Equals(TEXT("size"), ESearchCase::IgnoreCase))
-				{
-					if (!Session.UsesSize())
-					{
-						UE_LOG(LogTemp, Error, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS ok=0 type=%s problem: this type is shaped by its eight sizes, not by size="), *Args[0]);
-						return;
-					}
-					Session.SetSize(Number);
-				}
-				else if (Key.Equals(TEXT("passenger"), ESearchCase::IgnoreCase))
-				{
-					if (!Session.HasPassengerOption())
-					{
-						UE_LOG(LogTemp, Error, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS ok=0 type=%s problem: this type has no passenger seat to turn off"), *Args[0]);
-						return;
-					}
-					Session.SetPassenger(Number != 0.0);
-				}
-				else
-				{
-					UE_LOG(LogTemp, Error, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS ok=0 type=%s problem: '%s' is not a size, size=, a feel or passenger="), *Args[0], *Args[Index]);
-					return;
-				}
-			}
-			const FMantleChassisSpec Spec = Session.GetShaped();
-			const TArray<FText>& Held = Session.GetHeldNotes();
-			const FString Name = FMantleVehicleBuilder::FirstFreeChassisName(Args[0]);
-			const FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildChassis(Spec, FMantleVehicleBuilder::ChassisFolder() / Name, Name);
-			UE_LOG(LogTemp, Display, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS ok=%d saved=%d vehicle=%s type=%s shaped=%d %s"), Result.bOk ? 1 : 0, Result.bSaved ? 1 : 0,
-				Result.Source ? *Result.Source->GetPathName() : TEXT("none"), *Args[0], Spec.Derived.IsSet() ? 1 : 0, *FMantleVehicleShape::Describe(FMantleVehicleShape::Summarize(Spec)).ToString());
-			for (const FText& Note : Held)
-			{
-				UE_LOG(LogTemp, Display, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS held: %s"), *Note.ToString());
-			}
-			for (const FText& Warning : FMantleVehicleShape::Warnings(Spec))
-			{
-				UE_LOG(LogTemp, Display, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS warning: %s"), *Warning.ToString());
-			}
-			for (const FString& Problem : Result.Problems)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS problem: %s"), *Problem);
-			}
-			for (const FString& Note : Result.Notes)
-			{
-				UE_LOG(LogTemp, Display, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS note: %s"), *Note);
-			}
-			if (!Result.SaveProblem.IsEmpty())
-			{
-				UE_LOG(LogTemp, Warning, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS save problem: %s"), *Result.SaveProblem);
 			}
 		}));
 }
@@ -1088,14 +955,6 @@ FString FMantleVehicleBuilder::ChassisFolder()
 	return TEXT("/Game/MantleVehicles");
 }
 
-FString FMantleVehicleBuilder::FirstFreeChassisName(const FString& Wanted)
-{
-	return FirstFreeName(Wanted, [](const FString& Candidate)
-	{
-		return FPackageName::DoesPackageExist(ChassisFolder() / Candidate / (Candidate + TEXT("_Vehicle")));
-	});
-}
-
 FString FMantleVehicleBuilder::FirstFreeName(const FString& Wanted, const TFunctionRef<bool(const FString&)> IsTaken)
 {
 	// Letters and digits only: a name that is safe as an asset's, a folder's and a Content Browser row's.
@@ -1184,13 +1043,13 @@ namespace MantleVehicleBuilderPrivate
 		}
 	}
 
-	FMantleVehicleBuildResult BuildChassisImpl(const FMantleChassisSpec& Spec, const FString& PackagePath, const FString& Name, const FMantleSkinnedMesh* ModelBody,
+	FMantleVehicleBuildResult BuildChassisImpl(const FMantleChassisSpec& Spec, const FString& PackagePath, const FString& Name, const FMantleSkinnedMesh& ModelBody,
 		const TArray<FSkeletalMaterial>* ModelMaterials, const TArray<FMantleChassisBox>* Collision, const FMantleVehicleBodyExtras* Extras,
 		const TArray<FMantleVehicleSourcePart>* Parts = nullptr, const FMantleSkinnedMesh* PictureBody = nullptr, USkeletalMesh* PictureMesh = nullptr)
 	{
 		FMantleVehicleBuildResult Out;
 
-		// The gray body and the document, exactly as a published or driven chassis is made (FMantleVehicleChassisBuilder::MakeAsset).
+		// The frame's document, exactly as a published or driven chassis is made (FMantleVehicleChassisBuilder::MakeAsset). Its own body is never used: the model is the body.
 		FMantleVehicleAsset Asset;
 		FString Error;
 		if (!FMantleVehicleChassisBuilder::MakeAsset(Spec, Asset, Error))
@@ -1198,7 +1057,7 @@ namespace MantleVehicleBuilderPrivate
 			Out.Problems.Add(FString::Printf(TEXT("These sizes don't make a vehicle (%s). Change a size and try again."), *FMantleVehicleShape::PlainReason(Error)));
 			return Out;
 		}
-		USkeletalMesh* Mesh = FMantleVehicleChassisMesh::Create(ModelBody ? *ModelBody : Asset.Body, PackagePath, Name, Error, ModelMaterials, Extras);
+		USkeletalMesh* Mesh = FMantleVehicleChassisMesh::Create(ModelBody, PackagePath, Name, Error, ModelMaterials, Extras);
 		if (!Mesh)
 		{
 			Out.Problems.Add(FString::Printf(TEXT("Its body could not be built: %s."), *FMantleVehicleShape::PlainReason(Error)));
@@ -1312,7 +1171,7 @@ namespace MantleVehicleBuilderPrivate
 
 		// The library card's picture, taken now that the body is built: the vehicle as a player first sees it. Without one the card has no picture, which is said.
 		FString ThumbnailHow;
-		if (!FMantleVehicleThumbnail::Take(*Source, PictureMesh ? PictureMesh : Mesh, PictureBody ? *PictureBody : (ModelBody ? *ModelBody : Asset.Body), ThumbnailHow))
+		if (!FMantleVehicleThumbnail::Take(*Source, PictureMesh ? PictureMesh : Mesh, PictureBody ? *PictureBody : ModelBody, ThumbnailHow))
 		{
 			Out.Notes.Add(FString::Printf(TEXT("The vehicle's library picture could not be made (%s), so its library card will have no picture."), *ThumbnailHow));
 		}
@@ -1329,16 +1188,11 @@ namespace MantleVehicleBuilderPrivate
 	}
 }
 
-FMantleVehicleBuildResult FMantleVehicleBuilder::BuildChassis(const FMantleChassisSpec& Spec, const FString& PackagePath, const FString& Name)
-{
-	return MantleVehicleBuilderPrivate::BuildChassisImpl(Spec, PackagePath, Name, nullptr, nullptr, nullptr, nullptr);
-}
-
 FMantleVehicleBuildResult FMantleVehicleBuilder::BuildChassisWithBody(const FMantleChassisSpec& Spec, const FString& PackagePath, const FString& Name, const FMantleSkinnedMesh& Body,
 	const TArray<FSkeletalMaterial>& Materials, const TArray<FMantleChassisBox>* Collision, const FMantleVehicleBodyExtras* Extras, const TArray<FMantleVehicleSourcePart>* Parts,
 	const FMantleSkinnedMesh* PictureBody, USkeletalMesh* PictureMesh)
 {
-	return MantleVehicleBuilderPrivate::BuildChassisImpl(Spec, PackagePath, Name, &Body, &Materials, Collision, Extras, Parts, PictureBody, PictureMesh);
+	return MantleVehicleBuilderPrivate::BuildChassisImpl(Spec, PackagePath, Name, Body, &Materials, Collision, Extras, Parts, PictureBody, PictureMesh);
 }
 
 bool FMantleVehicleBuilder::FitsOwnWheels(UObject* Model, const FString& PresetId)

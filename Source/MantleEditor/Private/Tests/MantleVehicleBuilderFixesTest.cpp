@@ -30,6 +30,7 @@
 #include "HAL/FileManager.h"
 #include "LevelEditorViewport.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/ScopeExit.h"
 #include "Misc/Paths.h"
 #include "UObject/Package.h"
 #include "UObject/UObjectGlobals.h"
@@ -39,7 +40,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 // Covers the Build a vehicle window: the .fbx import, a build forgotten when the shape changes, what a flier is told on the
-// Drive step and where it is put, the scale limits said, one propeller count, one set of assets per vehicle and its undo, movement blocks that do not read, and the feel
+// Build and drive step and where it is put, the scale limits said, one propeller count, one set of assets per vehicle and its undo, movement blocks that do not read, and the feel
 // sliders of the road types.
 
 // The window's state, which a test drives the way the buttons do. Named, not anonymous: MantleEditor builds as a unity build.
@@ -56,14 +57,12 @@ struct FMantleVehicleBuilderFixAccess
 		Panel.SaveStatus = FText::FromString(TEXT("Saved in your Content Browser."));
 	}
 	static bool HasBuild(const SMantleVehicleBuilder& Panel) { return Panel.BuiltSource.IsValid() || Panel.bHaveLastBuild || Panel.SuggestedSize.IsSet() || !Panel.SaveStatus.IsEmpty(); }
-	static double Dimension(const SMantleVehicleBuilder& Panel, const EMantleVehicleDimension Which) { return Panel.Shape.GetDimensions().Get(Which); }
-	static void SetDimension(SMantleVehicleBuilder& Panel, const EMantleVehicleDimension Which, const double Value) { Panel.SetDimension(Which, Value); }
 	static void SetShapeSize(SMantleVehicleBuilder& Panel, const double Value) { Panel.SetShapeSize(Value); }
 	static void SetFeel(SMantleVehicleBuilder& Panel, const EMantleVehicleFeel Which, const double Value) { Panel.SetFeel(Which, Value); }
 	static void SetPassenger(SMantleVehicleBuilder& Panel, const bool bOn) { Panel.SetPassengerSeat(bOn); }
 	static FMantleVehicleModelOptions Options(const SMantleVehicleBuilder& Panel) { return Panel.MakeBuildOptions(); }
 	static void Remember(SMantleVehicleBuilder& Panel, const FMantleVehicleBuildResult& Result) { Panel.RememberBuilt(Result); }
-	static void Import(SMantleVehicleBuilder& Panel, const FString& File) { Panel.ImportFbx(File); }
+	static void Import(SMantleVehicleBuilder& Panel, const FString& File) { Panel.ImportFile(File); }
 	static FText ImportStatus(const SMantleVehicleBuilder& Panel) { return Panel.ImportStatus; }
 	static bool ImportFailed(const SMantleVehicleBuilder& Panel) { return Panel.bImportFailed; }
 	static UObject* Mesh(const SMantleVehicleBuilder& Panel) { return Panel.Mesh.Get(); }
@@ -273,16 +272,13 @@ bool FMantleVehicleBuilderShapeEditForgetsBuildTest::RunTest(const FString& Para
 	UMantleVehicleSource* Built = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
 	TSharedRef<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
 
-	// A road vehicle: a size that changes forgets the build; the same size again does not (positive and negative control).
+	// A road vehicle: a feel that changes forgets the build; the same feel again does not (positive and negative control).
 	Access::PickType(*Panel, TEXT("sedan"), TEXT("Sedan"));
 	Access::Give(*Panel, Built);
 	TestTrue(TEXT("a build is held"), Access::HasBuild(*Panel));
-	const double Wheelbase = Access::Dimension(*Panel, EMantleVehicleDimension::Wheelbase);
-	Access::SetDimension(*Panel, EMantleVehicleDimension::Wheelbase, Wheelbase);
-	TestTrue(TEXT("the same wheelbase again changes nothing, so the build is kept"), Access::HasBuild(*Panel));
-	Access::SetDimension(*Panel, EMantleVehicleDimension::Wheelbase, Wheelbase + 20.0);
-	TestTrue(TEXT("the wheelbase really moved"), !FMath::IsNearlyEqual(Access::Dimension(*Panel, EMantleVehicleDimension::Wheelbase), Wheelbase));
-	TestFalse(TEXT("a changed wheelbase forgets the build, its size and its save line"), Access::HasBuild(*Panel));
+	Access::SetFeel(*Panel, EMantleVehicleFeel::Grip, 0.0);
+	TestTrue(TEXT("the same grip again changes nothing, so the build is kept"), Access::HasBuild(*Panel));
+
 
 	// A feel slider is a shape change too.
 	Access::Give(*Panel, Built);
@@ -311,7 +307,7 @@ bool FMantleVehicleBuilderFlierAdviceTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleBuilderFixTestPrivate;
 
-	// The Drive step's line: a plane, a jet and a helicopter each get one, with their own number; everything else gets none.
+	// The Build and drive step's line: a plane, a jet and a helicopter each get one, with their own number; everything else gets none.
 	const auto Advice = [this](const TCHAR* Id) -> FString
 	{
 		FMantleChassisSpec Spec;
@@ -664,14 +660,18 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleVehicleBuilderMovementBlocksTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleBuilderFixTestPrivate;
-	FMantleChassisSpec Bike;
 	FString Error;
-	if (!TestTrue(TEXT("the motorcycle loads"), FMantleVehicleChassisBuilder::LoadSpec(TEXT("motorcycle"), Bike, Error)))
+	USkeletalMesh* Model = MantleVehicleScratchBody::Make(TEXT("/Temp/MantleFixBike"), TEXT("FixBikeModel"), Error);
+	if (!TestNotNull(*FString::Printf(TEXT("the sample model is made (%s)"), *Error), Model))
 	{
 		return false;
 	}
-	const FMantleVehicleBuildResult Built = FMantleVehicleBuilder::BuildChassis(Bike, TEXT("/Temp/MantleFixBike"), TEXT("FixBike"));
-	if (!TestTrue(TEXT("a motorcycle chassis is built"), Built.bOk && Built.Source != nullptr))
+	ON_SCOPE_EXIT { MantleVehicleScratchBody::Discard(Model); };
+	FMantleVehicleModelOptions Options;
+	Options.Folder = TEXT("/Temp/MantleFixBike");
+	Options.Name = TEXT("FixBike");
+	const FMantleVehicleBuildResult Built = FMantleVehicleBuilder::BuildFromModel(Model, TEXT("motorcycle"), Options);
+	if (!TestTrue(TEXT("a motorcycle is built from a model"), Built.bOk && Built.Source != nullptr))
 	{
 		return false;
 	}

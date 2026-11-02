@@ -8,6 +8,8 @@
 #include "MantleRuntime.h"
 #include "MantleVehicleBuilder.h"
 #include "MantleVehicleChassisBuilder.h"
+#include "MantleVehiclePreset.h"
+#include "SMantleVehicleBuilder.h"
 #include "MantleVehicleShapeKind.h"
 #include "SMantleBuilderViewport.h"
 #include "MantleVehicleSource.h"
@@ -36,6 +38,57 @@
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "MantleThumbnailSection"
+/** Reaches into the window for Mantle.Dev.VehicleBuilderShots (a friend of SMantleVehicleBuilder). Draw saves a widget to a file and says whether it worked. */
+struct FMantleVehicleBuilderShotAccess
+{
+	static void Run(const TArray<FString>& Args, const TFunction<bool(const TSharedRef<SWidget>&, const FString&)>& Draw)
+	{
+		if (Args.Num() < 3)
+		{
+			UE_LOG(LogMantle, Error, TEXT("MANTLE_BUILDER_SHOT usage: Mantle.Dev.VehicleBuilderShots <Model> <Vehicle type> <Directory> [Exit]"));
+			return;
+		}
+		FString Path = Args[0];
+		if (!FPackageName::GetShortName(Path).Contains(TEXT(".")))
+		{
+			Path += TEXT(".") + FPackageName::GetShortName(Path);
+		}
+		UObject* Model = LoadObject<UObject>(nullptr, *Path);
+		IFileManager::Get().MakeDirectory(*Args[2], true);
+		if (!Model)
+		{
+			UE_LOG(LogMantle, Error, TEXT("MANTLE_BUILDER_SHOT model %s did not load"), *Args[0]);
+			return;
+		}
+		const TSharedRef<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
+		const auto Shot = [&](const int32 Step, const TCHAR* Name)
+		{
+			Panel->Flow->GoTo(Step);
+			const FString File = FPaths::Combine(Args[2], FString::Printf(TEXT("builder_step%d_%s.png"), Step + 1, Name));
+			UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT %s %s"), *File, Draw(Panel, File) ? TEXT("saved") : TEXT("NOT saved"));
+		};
+		Shot(0, TEXT("type_none"));
+		const FMantleVehiclePreset* Preset = FMantleVehiclePresets::Find(Args[1]);
+		Panel->PickPreset(Args[1], FText::FromString(Preset ? Preset->Name : Args[1]));
+		Shot(0, TEXT("type_picked"));
+		Shot(1, TEXT("model_none"));
+		Panel->SetMesh(FAssetData(Model));
+		Shot(1, TEXT("model"));
+		Shot(2, TEXT("fit"));
+		Shot(3, TEXT("seats_paint"));
+		Shot(4, TEXT("thumbnail"));
+		// The build button is on the last step, so that is where it is pressed.
+		Panel->Flow->GoTo(5);
+		Panel->OnBuild();
+		Shot(5, TEXT("build"));
+		UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT built=%d"), Panel->BuiltSource.IsValid() ? 1 : 0);
+		if (Args.Num() > 3 && Args[3].Equals(TEXT("Exit"), ESearchCase::IgnoreCase))
+		{
+			FPlatformMisc::RequestExit(false);
+		}
+	}
+};
+
 
 namespace
 {
@@ -481,23 +534,26 @@ namespace MantleThumbnailSectionDevShot
 	}
 
 	/**
-	 * The vehicle builder's section on Automatic after a build: builds the sedan chassis in a scratch package, then draws the section with the builder's own
+	 * The vehicle builder's section on Automatic after a build: builds Model as the vehicle type in a scratch package, then draws the section with the builder's own
 	 * render (FMantleVehicleThumbnail::PreviewFor over the built vehicle). Before the build it draws the same section too. Uploads nothing.
 	 */
 	void RunVehicleSamples(const TArray<FString>& Args)
 	{
-		if (Args.Num() < 1)
+		if (Args.Num() < 3)
 		{
-			UE_LOG(LogMantle, Error, TEXT("MANTLE_THUMBNAIL_SHOT usage: Mantle.Dev.VehicleThumbnailShot <Directory> [Exit]"));
+			UE_LOG(LogMantle, Error, TEXT("MANTLE_THUMBNAIL_SHOT usage: Mantle.Dev.VehicleThumbnailShot <Model> <Vehicle type> <Directory> [Exit]"));
 			return;
 		}
-		IFileManager::Get().MakeDirectory(*Args[0], true);
-		FMantleChassisSpec Spec;
-		FString Error;
-		const bool bSpec = FMantleVehicleChassisBuilder::LoadSpec(TEXT("sedan"), Spec, Error);
+		FString Path = Args[0];
+		if (!FPackageName::GetShortName(Path).Contains(TEXT(".")))
+		{
+			Path += TEXT(".") + FPackageName::GetShortName(Path);
+		}
+		UObject* Model = LoadObject<UObject>(nullptr, *Path);
+		IFileManager::Get().MakeDirectory(*Args[2], true);
 		const UMantleVehicleSource* Built = nullptr;
 		FMantleVehicleBuildResult Result;
-		const FMantleThumbnailResolver::FRender Render = FMantleVehicleThumbnail::PreviewFor([&Built] { return Built; }, []() -> UObject* { return nullptr; });
+		const FMantleThumbnailResolver::FRender Render = FMantleVehicleThumbnail::PreviewFor([&Built] { return Built; }, [Model]() -> UObject* { return Model; });
 		const auto Draw = [&](const TCHAR* Name)
 		{
 			const TSharedRef<SMantleThumbnailSection> Section = SNew(SMantleThumbnailSection)
@@ -506,21 +562,25 @@ namespace MantleThumbnailSectionDevShot
 				.DefaultAngle(FMantleModelThumbnail::DefaultView())
 				.Choice(FMantleThumbnailChoice())
 				.Render(Render);
-			Save(SNew(SBox).Padding(12.0f)[Section], FPaths::Combine(Args[0], FString::Printf(TEXT("vehicle_section_%s.png"), Name)), 560.0f, 1400.0f);
+			Save(SNew(SBox).Padding(12.0f)[Section], FPaths::Combine(Args[2], FString::Printf(TEXT("vehicle_section_%s.png"), Name)), 560.0f, 1400.0f);
 		};
 		Draw(TEXT("before_build"));
-		if (bSpec)
+		if (Model)
 		{
-			Result = FMantleVehicleBuilder::BuildChassis(Spec, TEXT("/Temp/MantleVehicleThumbnailShot"), TEXT("ShotSedan"));
+			FMantleVehicleModelOptions Options;
+			Options.Folder = TEXT("/Temp/MantleVehicleThumbnailShot");
+			Options.Name = TEXT("ShotVehicle");
+			Options.bOverwrite = true;
+			Result = FMantleVehicleBuilder::BuildAny(Model, Args[1], Options);
 			Built = Result.Source;
 			UE_LOG(LogMantle, Display, TEXT("MANTLE_THUMBNAIL_SHOT build %s, picture %d bytes"), Result.bOk ? TEXT("ok") : TEXT("FAILED"), Built ? Built->ThumbnailPng.Num() : 0);
 			Draw(TEXT("after_build"));
 		}
 		else
 		{
-			UE_LOG(LogMantle, Error, TEXT("MANTLE_THUMBNAIL_SHOT sedan spec: %s"), *Error);
+			UE_LOG(LogMantle, Error, TEXT("MANTLE_THUMBNAIL_SHOT model %s did not load"), *Args[0]);
 		}
-		if (Args.Num() > 1 && Args[1].Equals(TEXT("Exit"), ESearchCase::IgnoreCase))
+		if (Args.Num() > 3 && Args[3].Equals(TEXT("Exit"), ESearchCase::IgnoreCase))
 		{
 			FPlatformMisc::RequestExit(false);
 		}
@@ -581,8 +641,16 @@ namespace MantleThumbnailSectionDevShot
 
 	FAutoConsoleCommand VehicleCommand(
 		TEXT("Mantle.Dev.VehicleThumbnailShot"),
-		TEXT("Mantle.Dev.VehicleThumbnailShot <Directory> [Exit]: the vehicle builder's Thumbnail section on Automatic before and after a build of the sedan; with Exit the editor closes afterwards. Uploads nothing."),
+		TEXT("Mantle.Dev.VehicleThumbnailShot <Model> <Vehicle type> <Directory> [Exit]: the vehicle builder's Thumbnail section on Automatic before and after a build of the model; with Exit the editor closes afterwards. Uploads nothing."),
 		FConsoleCommandWithArgsDelegate::CreateStatic(&RunVehicleSamples));
+
+	FAutoConsoleCommand VehicleBuilderShotsCommand(
+		TEXT("Mantle.Dev.VehicleBuilderShots"),
+		TEXT("Mantle.Dev.VehicleBuilderShots <Model> <Vehicle type> <Directory> [Exit]: the Build a vehicle window, step by step, drawn offscreen (the type, the model, the fit, seats and paint, the thumbnail, and the build). Builds the vehicle for real, in the project. Uploads nothing."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+		{
+			FMantleVehicleBuilderShotAccess::Run(Args, [](const TSharedRef<SWidget>& Window, const FString& File) { return Save(SNew(SBox).Padding(8.0f)[Window], File, 1180.0f, 760.0f); });
+		}));
 
 	FAutoConsoleCommand ModelCommand(
 		TEXT("Mantle.Dev.ThumbnailModelSamples"),
