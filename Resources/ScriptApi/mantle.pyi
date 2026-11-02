@@ -1248,6 +1248,9 @@ class _VehiclesService:
     def get_max_health(self, vehicle: Entity, /) -> float:
         """The most health the car can have (100 unless you change it)."""
         ...
+    def get_parked(self, spawn: Entity, /) -> Optional[Entity]:
+        """The car a VehicleSpawn entity keeps parked, as an Entity every Vehicles member takes (World:FindFirst finds the VehicleSpawn by its name). Returns nil while the spawn has no car standing: it is turned off, its car was destroyed and is waiting to come back, or the car is still being built, so ask again later. A car that comes back after a respawn is a new Entity: ask again. Errors if the entity is not a VehicleSpawn or no longer exists."""
+        ...
     def get_speed(self, vehicle: Entity, /) -> float:
         """The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists."""
         ...
