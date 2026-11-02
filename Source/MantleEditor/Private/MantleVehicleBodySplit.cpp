@@ -3,6 +3,8 @@
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/StaticMesh.h"
+#include "MantleMeshReduce.h"
+#include "MantleRuntimeSkeletalMeshBuilder.h"
 #include "MantleSkinnedMesh.h"
 #include "Materials/MaterialInterface.h"
 #include "MeshDescription.h"
@@ -42,6 +44,44 @@ namespace MantleVehicleBodySplitPrivate
 			Pose[Bone] = Parent >= 0 && Parent < Bone ? Local * Pose[Parent] : Local;
 		}
 		return Pose;
+	}
+
+	/** A piece below this many triangles gets no far-away versions: the reducer has nothing to gain from it. */
+	constexpr int32 SmallestPieceWorthLODs = 48;
+
+	/**
+	 * The piece's far-away versions: Description reduced to each of Fractions of its triangles (limits.json lods.targetFractions after LOD0's), a
+	 * polygon group per material kept as the piece has them. A version that comes out no smaller than the one before it, or that the reducer cannot
+	 * make, ends the list there: one LOD is a valid mesh, it only costs more to draw far away.
+	 */
+	TArray<FMeshDescription> MakeLowerLODs(const FMeshDescription& Description, const TConstArrayView<float> Fractions)
+	{
+		TArray<FMeshDescription> Out;
+		const int32 Triangles = Description.Triangles().Num();
+		if (Triangles < SmallestPieceWorthLODs || !FMantleMeshReduce::IsAvailable())
+		{
+			return Out;
+		}
+		const int32 Floor = FMath::Min(Triangles, 16 * FMath::Max(1, Description.PolygonGroups().Num()));
+		int32 Previous = Triangles;
+		for (const float Fraction : Fractions)
+		{
+			const int32 Target = FMath::Clamp(FMath::FloorToInt(static_cast<float>(Triangles) * Fraction), Floor, Triangles);
+			FMeshDescription Reduced;
+			FString Why;
+			if (!FMantleMeshReduce::ReduceDescription(Description, Target, Target * 2, Reduced, Why))
+			{
+				break;
+			}
+			const int32 Made = Reduced.Triangles().Num();
+			if (Made <= 0 || Made >= Previous)
+			{
+				break;
+			}
+			Previous = Made;
+			Out.Add(MoveTemp(Reduced));
+		}
+		return Out;
 	}
 
 	/** The saved-asset side: a package's asset already there, loaded or on disk, or null. */
@@ -414,18 +454,33 @@ UStaticMesh* FMantleVehicleBodySplit::MakePieceMesh(const FMantleVehicleBodyPiec
 		}
 	}
 
+	// Its far-away versions (limits.json lods.targetFractions after LOD0's, switching at lods.screenSizes): what the game draws a part with from a distance. They are
+	// made from the part's own triangles, so every LOD keeps the material slots and the bone the part rides.
+	const TArray<float> Fractions = { 0.5f, 0.25f };
+	const TArray<FMeshDescription> Lower = MakeLowerLODs(Description, Fractions);
+	TArray<const FMeshDescription*> Pointers = { &Description };
+	for (const FMeshDescription& Reduced : Lower)
+	{
+		Pointers.Add(&Reduced);
+	}
+	Mesh->SetNumSourceModels(Pointers.Num());
+
 	// The geometry is final: nothing recomputed but the tangents of a body that brought none, and no lightmap, distance field or Lumen cards.
-	FMeshBuildSettings& Settings = Mesh->GetSourceModel(0).BuildSettings;
-	Settings.bRecomputeNormals = false;
-	Settings.bRecomputeTangents = !bTangents;
-	Settings.bGenerateLightmapUVs = false;
-	Settings.bBuildReversedIndexBuffer = false;
-	Settings.DistanceFieldResolutionScale = 0.0f;
-	Settings.MaxLumenMeshCards = 0;
+	for (int32 LOD = 0; LOD < Pointers.Num(); ++LOD)
+	{
+		FStaticMeshSourceModel& Source = Mesh->GetSourceModel(LOD);
+		FMeshBuildSettings& Settings = Source.BuildSettings;
+		Settings.bRecomputeNormals = false;
+		Settings.bRecomputeTangents = !bTangents;
+		Settings.bGenerateLightmapUVs = false;
+		Settings.bBuildReversedIndexBuffer = false;
+		Settings.DistanceFieldResolutionScale = 0.0f;
+		Settings.MaxLumenMeshCards = 0;
+		Source.ScreenSize.Default = FMantleRuntimeSkeletalMeshBuilder::DefaultLODScreenSize(LOD);
+	}
 	UStaticMesh::FBuildMeshDescriptionsParams Params;
 	Params.bMarkPackageDirty = false;
 	Params.bAllowCpuAccess = true;
-	TArray<const FMeshDescription*> Pointers = { &Description };
 	if (!Mesh->BuildFromMeshDescriptions(Pointers, Params))
 	{
 		OutError = FString::Printf(TEXT("the engine could not build %s"), *PieceName);
