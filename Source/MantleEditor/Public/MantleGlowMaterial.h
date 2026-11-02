@@ -80,6 +80,9 @@ struct MANTLEEDITOR_API FMantleMaterialGlow
 	/** The first texture on the emissive path (a Texture Sample, or a Texture Sample Parameter as the instance sets it); null for a glow of one color. */
 	UTexture* Texture = nullptr;
 
+	/** The first texture on the base color path: the lens's own color, for a glow texture that is only a white mask. Null when the base color has none. */
+	UTexture* BaseTexture = nullptr;
+
 	/** The first color on the path (a Vector Parameter before a constant), white when there is none. */
 	FLinearColor Color = FLinearColor::White;
 

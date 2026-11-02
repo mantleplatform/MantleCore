@@ -158,8 +158,8 @@ namespace MantleVehicleLightsPrivate
 		return 0.5 * FVector3f::CrossProduct(LOD.Positions[C[1]] - LOD.Positions[C[0]], LOD.Positions[C[2]] - LOD.Positions[C[0]]).Size();
 	}
 
-	/** The brightest glow under a triangle: its middle and halfway to each corner. */
-	FLinearColor GlowUnder(const FMantleSkinnedMeshLOD& LOD, const int32 Triangle, const FGlowImage& Image)
+	/** The brightest glow under a triangle (its middle and halfway to each corner), and the UV it was read at. */
+	FLinearColor GlowUnder(const FMantleSkinnedMeshLOD& LOD, const int32 Triangle, const FGlowImage& Image, FVector2f& OutUV)
 	{
 		int32 C[3];
 		Corners(LOD, Triangle, C);
@@ -168,16 +168,27 @@ namespace MantleVehicleLightsPrivate
 			return FLinearColor::Black;
 		}
 		const FVector2f Middle = (LOD.UVs[C[0]] + LOD.UVs[C[1]] + LOD.UVs[C[2]]) / 3.f;
+		OutUV = Middle;
 		FLinearColor Best = Image.At(Middle);
 		for (int32 Corner = 0; Corner < 3; ++Corner)
 		{
-			const FLinearColor Here = Image.At((Middle + LOD.UVs[C[Corner]]) * 0.5f);
+			const FVector2f UV = (Middle + LOD.UVs[C[Corner]]) * 0.5f;
+			const FLinearColor Here = Image.At(UV);
 			if (Brightest(Here) > Brightest(Best))
 			{
 				Best = Here;
+				OutUV = UV;
 			}
 		}
 		return Best;
+	}
+
+	/** A color with little hue in it: its weakest channel at least SaturationFloor of its strongest. */
+	constexpr float SaturationFloor = 0.6f;
+	bool IsPale(const FLinearColor& Color)
+	{
+		const float Max = Brightest(Color);
+		return Max <= KINDA_SMALL_NUMBER || FMath::Min3(Color.R, Color.G, Color.B) >= Max * SaturationFloor;
 	}
 }
 
@@ -427,17 +438,38 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 				// A glow texture Mantle cannot read (no source data): nothing is guessed from it.
 				continue;
 			}
+			// A glow texture that is white everywhere (a mask) leaves the color to the lens under it: the base color, read where the glow is.
+			const FGlowImage* Base = nullptr;
+			if (Glow.BaseTexture && Glow.BaseTexture != Glow.Texture)
+			{
+				TSharedPtr<FGlowImage>& Cached = Images.FindOrAdd(Glow.BaseTexture);
+				if (!Cached.IsValid())
+				{
+					Cached = MakeShared<FGlowImage>();
+					Cached->Read(Glow.BaseTexture);
+				}
+				Base = Cached->Pixels.Num() > 0 ? Cached.Get() : nullptr;
+			}
 			for (int32 Index = 0; Index < Triangles.Num(); ++Index)
 			{
 				FLinearColor Here = Tint;
 				if (Image)
 				{
-					const FLinearColor Pixel = GlowUnder(LOD, Triangles[Index], *Image);
+					FVector2f UV;
+					const FLinearColor Pixel = GlowUnder(LOD, Triangles[Index], *Image, UV);
 					if (Brightest(Pixel) < GlowThreshold)
 					{
 						continue;
 					}
 					Here = Pixel * Tint;
+					if (Base && IsPale(Here))
+					{
+						const FLinearColor Lens = Base->At(UV);
+						if (!IsPale(Lens))
+						{
+							Here = Lens;
+						}
+					}
 				}
 				Kind[Index] = Classify(Centroid(LOD, Triangles[Index]), Here, Bounds);
 			}

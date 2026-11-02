@@ -1374,7 +1374,7 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeSeatsAndPaintStep()
 			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 			.Text_Lambda([this]
 			{
-				return FText::Format(LOCTEXT("BeamsHelp", "{0}|plural(one=One beam lights,other=# beams light) the road while the headlights are on. Each is a yellow arrow in the picture: click it, then drag to move it or turn it to aim."),
+				return FText::Format(LOCTEXT("BeamsHelp", "{0} {0}|plural(one=beam lights,other=beams light) the road while the headlights are on. Each is a yellow arrow in the picture: click it, then drag to move it or turn it to aim."),
 					FText::AsNumber(Lights.Beams.Num()));
 			})
 	];

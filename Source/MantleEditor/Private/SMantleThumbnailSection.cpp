@@ -410,7 +410,8 @@ namespace MantleThumbnailSectionDevShot
 	/** Widget rendered offscreen at Width over the editor's panel gray, as a PNG (the same way as the Cosmetics panel's dev shots). */
 	bool Save(const TSharedRef<SWidget>& Widget, const FString& File, const float Width, const float MaxHeight)
 	{
-		FWidgetRenderer Renderer(true, false);
+		// The target is cleared before each draw: the second, at the widget's own height, would otherwise land on the first.
+		FWidgetRenderer Renderer(true, true);
 		UTextureRenderTarget2D* Target = FWidgetRenderer::CreateTargetFor(FVector2D(Width, MaxHeight), TF_Bilinear, true);
 		Target->AddToRoot();
 		Renderer.DrawWidget(Target, Widget, FVector2D(Width, MaxHeight), 0.0f);

@@ -345,8 +345,8 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 		}
 		return nullptr;
 	};
-	TSet<const UMaterialExpression*> TextureSeen;
-	if (const UMaterialExpressionTextureBase* Sample = FirstTexture(Emissive, TextureSeen))
+	// A texture node's texture as the material (or its instance) sets it.
+	const auto TextureOf = [Material](const UMaterialExpressionTextureBase* Sample) -> UTexture*
 	{
 		UTexture* Texture = Sample->Texture;
 		if (const UMaterialExpressionTextureSampleParameter* Parameter = Cast<UMaterialExpressionTextureSampleParameter>(Sample))
@@ -357,7 +357,18 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 				Texture = Set;
 			}
 		}
-		Out.Texture = Texture;
+		return Texture;
+	};
+	TSet<const UMaterialExpression*> TextureSeen;
+	if (const UMaterialExpressionTextureBase* Sample = FirstTexture(Emissive, TextureSeen))
+	{
+		Out.Texture = TextureOf(Sample);
+	}
+	TSet<const UMaterialExpression*> BaseSeen;
+	Budget = NodeBudget;
+	if (const UMaterialExpressionTextureBase* Sample = FirstTexture(Base->GetExpressionInputForProperty(MP_BaseColor), BaseSeen))
+	{
+		Out.BaseTexture = TextureOf(Sample);
 	}
 	for (const bool bParametersOnly : { true, false })
 	{
