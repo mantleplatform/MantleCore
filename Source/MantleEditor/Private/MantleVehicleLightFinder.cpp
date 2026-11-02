@@ -4,7 +4,9 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkinnedAssetCommon.h"
+#include "Engine/Texture.h"
 #include "Engine/Texture2D.h"
+#include "HAL/IConsoleManager.h"
 #include "ImageCore.h"
 #include "MantleGlowMaterial.h"
 #include "MantleSkinnedMesh.h"
@@ -206,6 +208,93 @@ namespace MantleVehicleLightsPrivate
 		return Best;
 	}
 
+	/** The kind a glow texture is named for (its asset name, else its parameter's): Rear, Reverse or a signal (Left, split by side by the caller); unset for a generic one. */
+	TOptional<EMantleLightKind> GlowKind(const FMantleGlowTexture& Texture)
+	{
+		TOptional<EMantleLightKind> Kind = FMantleVehicleLights::FromGlowName(Texture.Texture ? Texture.Texture->GetName() : FString());
+		return Kind ? Kind : FMantleVehicleLights::FromGlowName(Texture.Parameter.ToString());
+	}
+
+	/** Whether a light's copy of a material keeps a glow texture: one named for another kind is switched off in it; a generic one, or one named for this kind, stays. */
+	bool KeepsTexture(const FMantleGlowTexture& Texture, const EMantleLightKind Kind)
+	{
+		const TOptional<EMantleLightKind> Named = GlowKind(Texture);
+		return !Named || *Named == Kind || (IsSignal(*Named) && IsSignal(Kind));
+	}
+
+	/**
+	 * A slot whose material has several glow textures (a lights, a stop and a reverse texture, switched by parameters): sets Kind for the slot's triangles.
+	 * One rule, so a triangle lit by more than one texture never swings between kinds: a texture named for a kind (stop, brake, tail: rear; reverse, backup:
+	 * reverse; signal, indicator, blinker, turn: a signal, by side) decides the triangle where it glows, and of several named textures the first in the
+	 * material's graph wins; a triangle no named texture lights takes the first generic texture (lights, head, emissive, or no recognizable name) that
+	 * lights it as a kind, by the color and position Classify reads.
+	 */
+	void KindsFromTextures(const FMantleSkinnedMeshLOD& LOD, const TArray<int32>& Triangles, const FMantleMaterialGlow& Glow, const FBox3f& Bounds,
+		TMap<UTexture*, TSharedPtr<FGlowImage>>& Images, TArray<TOptional<EMantleLightKind>>& Kind)
+	{
+		const auto ImageOf = [&Images](UTexture* Texture) -> const FGlowImage*
+		{
+			TSharedPtr<FGlowImage>& Cached = Images.FindOrAdd(Texture);
+			if (!Cached.IsValid())
+			{
+				Cached = MakeShared<FGlowImage>();
+				Cached->Read(Texture);
+			}
+			return Cached->Pixels.Num() > 0 ? Cached.Get() : nullptr;
+		};
+		struct FSource
+		{
+			const FGlowImage* Image = nullptr;
+			TOptional<EMantleLightKind> Named;
+		};
+		TArray<FSource> NamedSources;
+		TArray<FSource> GenericSources;
+		for (const FMantleGlowTexture& Texture : Glow.Textures)
+		{
+			// A glow texture Mantle cannot read (no source data) is left out; nothing is guessed from it.
+			FSource Source;
+			Source.Image = ImageOf(Texture.Texture);
+			Source.Named = GlowKind(Texture);
+			if (Source.Image)
+			{
+				(Source.Named ? NamedSources : GenericSources).Add(Source);
+			}
+		}
+		const FLinearColor Tint = Brightest(Glow.Color) > KINDA_SMALL_NUMBER ? Glow.Color : FLinearColor::White;
+		const FGlowImage* Base = Glow.BaseTexture ? ImageOf(Glow.BaseTexture) : nullptr;
+		for (int32 Index = 0; Index < Triangles.Num(); ++Index)
+		{
+			const FVector3f Center = Centroid(LOD, Triangles[Index]);
+			FVector2f UV;
+			for (const FSource& Source : NamedSources)
+			{
+				if (Brightest(GlowUnder(LOD, Triangles[Index], *Source.Image, UV)) >= GlowThreshold)
+				{
+					Kind[Index] = IsSignal(*Source.Named) ? SideOf(Center.Y, Bounds) : *Source.Named;
+					break;
+				}
+			}
+			for (int32 Each = 0; !Kind[Index] && Each < GenericSources.Num(); ++Each)
+			{
+				const FLinearColor Pixel = GlowUnder(LOD, Triangles[Index], *GenericSources[Each].Image, UV);
+				if (Brightest(Pixel) < GlowThreshold)
+				{
+					continue;
+				}
+				FLinearColor Here = Pixel * Tint;
+				if (Base && IsPale(Here))
+				{
+					const FLinearColor Lens = Base->At(UV);
+					if (!IsPale(Lens))
+					{
+						Here = Lens;
+					}
+				}
+				Kind[Index] = FMantleVehicleLights::Classify(Center, Here, Bounds);
+			}
+		}
+	}
+
 }
 
 bool FMantleVehicleLightGuess::FoundAny() const
@@ -370,6 +459,25 @@ TOptional<EMantleLightKind> FMantleVehicleLights::FromName(const FString& Name, 
 	return {};
 }
 
+TOptional<EMantleLightKind> FMantleVehicleLights::FromGlowName(const FString& Name)
+{
+	using namespace MantleVehicleLightsPrivate;
+	const TArray<FString> Said = Words(Name);
+	if (AnyWord(Said, { TEXT("reverse"), TEXT("backup") }))
+	{
+		return EMantleLightKind::Reverse;
+	}
+	if (AnyWord(Said, { TEXT("signal"), TEXT("indicator"), TEXT("blinker"), TEXT("turn") }))
+	{
+		return EMantleLightKind::Left;
+	}
+	if (AnyWord(Said, { TEXT("stop"), TEXT("brake"), TEXT("tail") }))
+	{
+		return EMantleLightKind::Rear;
+	}
+	return {};
+}
+
 FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Body, const TArray<FSkeletalMaterial>& Materials, const bool bCenterline)
 {
 	using namespace MantleVehicleLightsPrivate;
@@ -437,57 +545,64 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 			{
 				continue;
 			}
-			const FLinearColor Tint = Brightest(Glow.Color) > KINDA_SMALL_NUMBER ? Glow.Color : FLinearColor::White;
-			const FGlowImage* Image = nullptr;
-			if (Glow.Texture)
+			if (Glow.Textures.Num() > 1)
 			{
-				TSharedPtr<FGlowImage>& Cached = Images.FindOrAdd(Glow.Texture);
-				if (!Cached.IsValid())
-				{
-					Cached = MakeShared<FGlowImage>();
-					Cached->Read(Glow.Texture);
-				}
-				Image = Cached->Pixels.Num() > 0 ? Cached.Get() : nullptr;
+				KindsFromTextures(LOD, Triangles, Glow, Bounds, Images, Kind);
 			}
-			if (Glow.Texture && !Image)
+			else
 			{
-				// A glow texture Mantle cannot read (no source data): nothing is guessed from it.
-				continue;
-			}
-			// A glow texture that is white everywhere (a mask) leaves the color to the lens under it: the base color, read where the glow is.
-			const FGlowImage* Base = nullptr;
-			if (Glow.BaseTexture && Glow.BaseTexture != Glow.Texture)
-			{
-				TSharedPtr<FGlowImage>& Cached = Images.FindOrAdd(Glow.BaseTexture);
-				if (!Cached.IsValid())
+				const FLinearColor Tint = Brightest(Glow.Color) > KINDA_SMALL_NUMBER ? Glow.Color : FLinearColor::White;
+				const FGlowImage* Image = nullptr;
+				if (Glow.Texture)
 				{
-					Cached = MakeShared<FGlowImage>();
-					Cached->Read(Glow.BaseTexture);
-				}
-				Base = Cached->Pixels.Num() > 0 ? Cached.Get() : nullptr;
-			}
-			for (int32 Index = 0; Index < Triangles.Num(); ++Index)
-			{
-				FLinearColor Here = Tint;
-				if (Image)
-				{
-					FVector2f UV;
-					const FLinearColor Pixel = GlowUnder(LOD, Triangles[Index], *Image, UV);
-					if (Brightest(Pixel) < GlowThreshold)
+					TSharedPtr<FGlowImage>& Cached = Images.FindOrAdd(Glow.Texture);
+					if (!Cached.IsValid())
 					{
-						continue;
+						Cached = MakeShared<FGlowImage>();
+						Cached->Read(Glow.Texture);
 					}
-					Here = Pixel * Tint;
-					if (Base && IsPale(Here))
+					Image = Cached->Pixels.Num() > 0 ? Cached.Get() : nullptr;
+				}
+				if (Glow.Texture && !Image)
+				{
+					// A glow texture Mantle cannot read (no source data): nothing is guessed from it.
+					continue;
+				}
+				// A glow texture that is white everywhere (a mask) leaves the color to the lens under it: the base color, read where the glow is.
+				const FGlowImage* Base = nullptr;
+				if (Glow.BaseTexture && Glow.BaseTexture != Glow.Texture)
+				{
+					TSharedPtr<FGlowImage>& Cached = Images.FindOrAdd(Glow.BaseTexture);
+					if (!Cached.IsValid())
 					{
-						const FLinearColor Lens = Base->At(UV);
-						if (!IsPale(Lens))
+						Cached = MakeShared<FGlowImage>();
+						Cached->Read(Glow.BaseTexture);
+					}
+					Base = Cached->Pixels.Num() > 0 ? Cached.Get() : nullptr;
+				}
+				for (int32 Index = 0; Index < Triangles.Num(); ++Index)
+				{
+					FLinearColor Here = Tint;
+					if (Image)
+					{
+						FVector2f UV;
+						const FLinearColor Pixel = GlowUnder(LOD, Triangles[Index], *Image, UV);
+						if (Brightest(Pixel) < GlowThreshold)
 						{
-							Here = Lens;
+							continue;
+						}
+						Here = Pixel * Tint;
+						if (Base && IsPale(Here))
+						{
+							const FLinearColor Lens = Base->At(UV);
+							if (!IsPale(Lens))
+							{
+								Here = Lens;
+							}
 						}
 					}
+					Kind[Index] = Classify(Centroid(LOD, Triangles[Index]), Here, Bounds);
 				}
-				Kind[Index] = Classify(Centroid(LOD, Triangles[Index]), Here, Bounds);
 			}
 		}
 
@@ -711,6 +826,7 @@ UMaterialInterface* FMantleVehicleLights::OriginalOf(UMaterialInterface* Materia
 UMaterialInterface* FMantleVehicleLights::MakeLightMaterial(UMaterialInterface* Original, const EMantleLightKind Kind, const FString& PackagePath, const FString& AssetName,
 	FString& OutError)
 {
+	using namespace MantleVehicleLightsPrivate;
 	UMaterialInterface* Parent = OriginalOf(Original);
 	if (!Parent)
 	{
@@ -755,9 +871,33 @@ UMaterialInterface* FMantleVehicleLights::MakeLightMaterial(UMaterialInterface* 
 	// The glow the model ships switched off (an Emissive Intensity of 0) is turned on: the game turns it up and down from there.
 	FMantleMaterialGlow Glow;
 	FMantleMaterialGlow::Read(Parent, Glow);
+	// With several glow textures the copy keeps the ones for its kind: a texture parameter named for another kind goes black, and the switches that only such
+	// textures have stay off, so the reverse light does not glow with the brake texture.
+	TSet<FName> Dropped;
+	TSet<FName> Kept;
+	if (Glow.Textures.Num() > 1)
+	{
+		UTexture* Black = LoadObject<UTexture>(nullptr, TEXT("/Engine/EngineResources/Black"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+		for (const FMantleGlowTexture& Texture : Glow.Textures)
+		{
+			if (KeepsTexture(Texture, Kind))
+			{
+				Kept.Append(Texture.OffScalars);
+				continue;
+			}
+			Dropped.Append(Texture.OffScalars);
+			if (Black && !Texture.Parameter.IsNone())
+			{
+				Instance->SetTextureParameterValueEditorOnly(FMaterialParameterInfo(Texture.Parameter), Black);
+			}
+		}
+	}
 	for (const FName& Scalar : Glow.OffScalars)
 	{
-		Instance->SetScalarParameterValueEditorOnly(FMaterialParameterInfo(Scalar), 1.f);
+		if (!Dropped.Contains(Scalar) || Kept.Contains(Scalar))
+		{
+			Instance->SetScalarParameterValueEditorOnly(FMaterialParameterInfo(Scalar), 1.f);
+		}
 	}
 	UMantleVehicleLightData* Data = Cast<UMantleVehicleLightData>(Instance->GetAssetUserDataOfClass(UMantleVehicleLightData::StaticClass()));
 	if (!Data)
@@ -863,6 +1003,92 @@ void FMantleVehicleLights::ApplyMaterials(UMantleVehicleSource& Source, TArray<F
 			OutNotes.Add(FString::Printf(TEXT("The lights were set on %s, but it could not be saved (check that your project's files are not read-only)."), *Mesh->GetName()));
 		}
 	}
+}
+
+namespace MantleVehicleLightsPrivate
+{
+	// Mantle.Dev.VehicleFindLights: what the light finder makes of a model, from a headless editor. Read-only: nothing is saved (the light copies are made under /Temp,
+	// in memory), so it is safe to point at a creator's pack.
+	FAutoConsoleCommand FindLightsCommand(
+		TEXT("Mantle.Dev.VehicleFindLights"),
+		TEXT("Mantle.Dev.VehicleFindLights <skeletal mesh object path> -- logs MANTLE_FIND_LIGHTS lines: each slot's glow textures (name and parameter), the triangles found per light "
+			 "kind and the whole slots, and for each kind which texture parameters its light material copy keeps or blacks out. Writes nothing to disk."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+		{
+			if (Args.Num() < 1)
+			{
+				UE_LOG(LogTemp, Error, TEXT("MANTLE_FIND_LIGHTS ok=0 usage: Mantle.Dev.VehicleFindLights <skeletal mesh object path>"));
+				return;
+			}
+			USkeletalMesh* Mesh = Cast<USkeletalMesh>(StaticLoadObject(USkeletalMesh::StaticClass(), nullptr, *Args[0], nullptr, LOAD_NoWarn | LOAD_Quiet));
+			FMantleSkinnedMesh Body;
+			TArray<FSkeletalMaterial> Materials;
+			FString Error;
+			if (!Mesh || !FMantleSkinnedMesh::ExtractFromSkeletalMesh(Mesh, Body, &Error, &Materials))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("MANTLE_FIND_LIGHTS ok=0 model=%s problem: %s"), *Args[0], Mesh ? *Error : TEXT("not a skeletal mesh"));
+				return;
+			}
+			const FMantleVehicleLightGuess Guess = FMantleVehicleLights::Find(Body, Materials, false);
+			UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS ok=1 model=%s slots=%d found=%d"), *Args[0], Materials.Num(), Guess.FoundAny() ? 1 : 0);
+			for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
+			{
+				FString Whole;
+				for (const int32 Slot : Guess.WholeSlots[Kind])
+				{
+					Whole += FString::Printf(TEXT(" %d"), Slot);
+				}
+				UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS kind=%s triangles=%d whole slots:%s"), FMantleVehicleLights::Key(static_cast<EMantleLightKind>(Kind)),
+					Guess.Triangles[Kind].Num(), Whole.IsEmpty() ? TEXT(" none") : *Whole);
+			}
+			for (int32 Slot = 0; Slot < Materials.Num(); ++Slot)
+			{
+				UMaterialInterface* Material = Materials[Slot].MaterialInterface.Get();
+				FMantleMaterialGlow Glow;
+				if (!FMantleMaterialGlow::Read(Material, Glow))
+				{
+					continue;
+				}
+				UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS slot %d %s material=%s glow textures=%d"), Slot, *Materials[Slot].MaterialSlotName.ToString(),
+					Material ? *Material->GetName() : TEXT("none"), Glow.Textures.Num());
+				for (const FMantleGlowTexture& Texture : Glow.Textures)
+				{
+					const TOptional<EMantleLightKind> Named = GlowKind(Texture);
+					UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS slot %d texture=%s parameter=%s named=%s"), Slot, *Texture.Texture->GetName(),
+						Texture.Parameter.IsNone() ? TEXT("none") : *Texture.Parameter.ToString(), Named ? FMantleVehicleLights::Key(*Named) : TEXT("generic"));
+				}
+				if (Glow.Textures.Num() < 2)
+				{
+					continue;
+				}
+				for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
+				{
+					const EMantleLightKind Each = static_cast<EMantleLightKind>(Kind);
+					const FString AssetName = FString::Printf(TEXT("MI_FindLights_%d_%s"), Slot, FMantleVehicleLights::Key(Each));
+					FString CopyError;
+					UMaterialInterface* Copy = FMantleVehicleLights::MakeLightMaterial(Material, Each, TEXT("/Temp/MantleFindLights"), AssetName, CopyError);
+					if (!Copy)
+					{
+						UE_LOG(LogTemp, Warning, TEXT("MANTLE_FIND_LIGHTS slot %d kind=%s copy failed: %s"), Slot, FMantleVehicleLights::Key(Each), *CopyError);
+						continue;
+					}
+					FString Keeps;
+					FString Blacks;
+					for (const FMantleGlowTexture& Texture : Glow.Textures)
+					{
+						if (Texture.Parameter.IsNone())
+						{
+							continue;
+						}
+						UTexture* Now = nullptr;
+						Copy->GetTextureParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(Texture.Parameter)), Now);
+						(Now == Texture.Texture ? Keeps : Blacks) += FString::Printf(TEXT(" %s"), *Texture.Parameter.ToString());
+					}
+					UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS slot %d kind=%s copy keeps:%s blacks out:%s"), Slot, FMantleVehicleLights::Key(Each),
+						Keeps.IsEmpty() ? TEXT(" none") : *Keeps, Blacks.IsEmpty() ? TEXT(" none") : *Blacks);
+				}
+			}
+		}));
 }
 
 #undef LOCTEXT_NAMESPACE

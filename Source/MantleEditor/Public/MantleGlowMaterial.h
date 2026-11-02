@@ -71,14 +71,33 @@ struct MANTLEEDITOR_API FMantleGlowMaterial
 
 class UTexture;
 
+/** One texture the emissive graph reads, as the material (or its instance) sets it. */
+struct MANTLEEDITOR_API FMantleGlowTexture
+{
+	/** The texture, a parameter's override resolved: never null. */
+	UTexture* Texture = nullptr;
+
+	/** The Texture Sample Parameter's name when the texture comes from one, else none. */
+	FName Parameter;
+
+	/** The Scalar Parameters set to 0 that are multiplied with this texture's branch of the graph (its own "Brake Intensity"), and the ones shared with every texture beside it. */
+	TArray<FName> OffScalars;
+};
+
 /** Where a material glows, for the vehicle builder's light finder: what its emissive graph reads, as the material (or its instance) sets it. */
 struct MANTLEEDITOR_API FMantleMaterialGlow
 {
 	/** The emissive input is connected to a texture or to a color that is not black. */
 	bool bGlows = false;
 
-	/** The first texture on the emissive path (a Texture Sample, or a Texture Sample Parameter as the instance sets it); null for a glow of one color. */
+	/** The first texture on the emissive path (a Texture Sample, or a Texture Sample Parameter as the instance sets it); null for a glow of one color. Textures[0]'s texture. */
 	UTexture* Texture = nullptr;
+
+	/**
+	 * Every distinct texture on the emissive path, in the graph's pre-order (a material with a lights, a brake and a reverse texture, switched by parameters, lists
+	 * all three). A texture two nodes read is listed once. Empty for a glow of one color.
+	 */
+	TArray<FMantleGlowTexture> Textures;
 
 	/** The first texture on the base color path: the lens's own color, for a glow texture that is only a white mask. Null when the base color has none. */
 	UTexture* BaseTexture = nullptr;
