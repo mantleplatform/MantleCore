@@ -1748,12 +1748,19 @@ bool FMantleVehicleBuilder::PreviewMatchesBuild(const FMantleVehicleModelPreview
 	}
 	if (Built.Source->Parts.Num() == 0)
 	{
-		if (Preview.Body.LODs.Num() == 0 || Preview.Body.LODs[0].Positions.Num() != BuiltBody.LODs[0].Positions.Num() || Preview.Body.LODs[0].Indices.Num() != BuiltBody.LODs[0].Indices.Num())
+		// Both are read back from a mesh the editor built (it welds vertices and drops degenerate triangles), so they are compared the same way.
+		FMantleSkinnedMesh PictureBody;
+		if (!FMantleSkinnedMesh::ExtractFromSkeletalMesh(Preview.Mesh.Get(), PictureBody, &Error) || PictureBody.LODs.Num() == 0)
 		{
-			Why = TEXT("the picture's body and the built body have different triangles");
+			Why = FString::Printf(TEXT("the picture's body could not be read: %s"), *Error);
 			return false;
 		}
-		const FBox3f A = Preview.Body.ComputeBounds(0);
+		if (PictureBody.LODs[0].Positions.Num() != BuiltBody.LODs[0].Positions.Num() || PictureBody.LODs[0].Indices.Num() != BuiltBody.LODs[0].Indices.Num())
+		{
+			Why = FString::Printf(TEXT("the picture's body has %d triangles and the built body %d"), PictureBody.LODs[0].Indices.Num() / 3, BuiltBody.LODs[0].Indices.Num() / 3);
+			return false;
+		}
+		const FBox3f A = PictureBody.ComputeBounds(0);
 		const FBox3f B = BuiltBody.ComputeBounds(0);
 		if (!A.Min.Equals(B.Min, 0.05f) || !A.Max.Equals(B.Max, 0.05f))
 		{
