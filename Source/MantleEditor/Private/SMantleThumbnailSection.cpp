@@ -77,6 +77,8 @@ struct FMantleVehicleBuilderShotAccess
 		Shot(2, TEXT("fit"));
 		Shot(3, TEXT("seats_paint"));
 		Shot(4, TEXT("thumbnail"));
+		// The build button is on the last step, so that is where it is pressed.
+		Panel->Flow->GoTo(5);
 		Panel->OnBuild();
 		Shot(5, TEXT("build"));
 		UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT built=%d"), Panel->BuiltSource.IsValid() ? 1 : 0);
