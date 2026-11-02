@@ -120,6 +120,9 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("paint/flakeTint/*"), 0.0, 1.0 },
 		{ TEXT("paint/clearCoat"), 0.0, 1.0 },
 		{ TEXT("paint/clearCoatRoughness"), 0.0, 1.0 },
+		// Vehicle lights.
+		{ TEXT("lights/beams/*/position/*"), -1000.0, 1000.0 },
+		{ TEXT("lights/beams/*/direction/*"), -1.0, 1.0 },
 		{ TEXT("liveryUV"), 0.0, 0.0 },
 		{ TEXT("defaultLivery"), 0.0, 7.0 },
 		// #435 (b) suspension linkage.
@@ -623,6 +626,77 @@ namespace MantleVehicleAssetPrivate
 		P.Number(Paint, TEXT("/paint"), TEXT("flakeSize"), TEXT("paint/flakeSize"), D.FlakeSize);
 		P.Number(Paint, TEXT("/paint"), TEXT("clearCoat"), TEXT("paint/clearCoat"), D.ClearCoat);
 		P.Number(Paint, TEXT("/paint"), TEXT("clearCoatRoughness"), TEXT("paint/clearCoatRoughness"), D.ClearCoatRoughness);
+	}
+
+	/** The resolved document's lights: every key the cook fills, a section once within its kind, and the beams. */
+	void ReadVehicleLights(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
+	{
+		TSharedPtr<FJsonObject> Lights;
+		if (!P.Object(Root, TEXT(""), TEXT("lights"), Lights)
+			|| !P.Keys(Lights, TEXT("/lights"), { TEXT("head"), TEXT("rear"), TEXT("reverse"), TEXT("left"), TEXT("right"), TEXT("beams") },
+				{ TEXT("head"), TEXT("rear"), TEXT("reverse"), TEXT("left"), TEXT("right"), TEXT("beams") }))
+		{
+			return;
+		}
+		D.bLights = true;
+		const auto ReadKind = [&](const TCHAR* Key, TArray<FString>& Out)
+		{
+			const FString Pointer = FString(TEXT("/lights/")) + Key;
+			const TArray<TSharedPtr<FJsonValue>>* Sections = nullptr;
+			if (!P.Array(Lights->TryGetField(Key), Pointer, 0, MAX_int32, Sections))
+			{
+				return;
+			}
+			for (int32 Index = 0; Index < Sections->Num() && P.Ok(); ++Index)
+			{
+				FString Section;
+				const TSharedPtr<FJsonValue>& Value = (*Sections)[Index];
+				if (!Value.IsValid() || !Value->TryGetString(Section) || Section.IsEmpty() || Section.Len() > MaxSectionNameLength
+					|| Out.ContainsByPredicate([&Section](const FString& Seen) { return Seen.Equals(Section, ESearchCase::CaseSensitive); }))
+				{
+					P.Fail(FString::Printf(TEXT("%s/%d"), *Pointer, Index), TEXT("must name a body section, once"));
+					break;
+				}
+				Out.Add(Section);
+			}
+		};
+		ReadKind(TEXT("head"), D.LightHead);
+		ReadKind(TEXT("rear"), D.LightRear);
+		ReadKind(TEXT("reverse"), D.LightReverse);
+		ReadKind(TEXT("left"), D.LightLeft);
+		ReadKind(TEXT("right"), D.LightRight);
+		const TArray<TSharedPtr<FJsonValue>>* Beams = nullptr;
+		if (!P.Ok() || !P.Array(Lights->TryGetField(TEXT("beams")), TEXT("/lights/beams"), 0, MAX_int32, Beams))
+		{
+			return;
+		}
+		for (int32 Index = 0; Index < Beams->Num() && P.Ok(); ++Index)
+		{
+			const FString Pointer = FString::Printf(TEXT("/lights/beams/%d"), Index);
+			const TSharedPtr<FJsonObject>* Beam = nullptr;
+			if (!(*Beams)[Index].IsValid() || !(*Beams)[Index]->TryGetObject(Beam) || !Beam)
+			{
+				P.Fail(Pointer, TEXT("must be an object"));
+				break;
+			}
+			if (!P.Keys(*Beam, Pointer, { TEXT("position"), TEXT("direction") }, { TEXT("position"), TEXT("direction") }))
+			{
+				break;
+			}
+			FMantleVehicleLightBeamDesc& Out = D.LightBeams.AddDefaulted_GetRef();
+			FVector Direction;
+			if (!P.Vector((*Beam)->TryGetField(TEXT("position")), Pointer + TEXT("/position"), TEXT("lights/beams/*/position/*"), Out.Position)
+				|| !P.Vector((*Beam)->TryGetField(TEXT("direction")), Pointer + TEXT("/direction"), TEXT("lights/beams/*/direction/*"), Direction))
+			{
+				break;
+			}
+			if (!Direction.Normalize())
+			{
+				P.Fail(Pointer + TEXT("/direction"), TEXT("must point somewhere (not all zero)"));
+				break;
+			}
+			Out.Direction = Direction;
+		}
 	}
 
 	/** The resolved document's liveries (#488): uploaded texture ids, each once, with liveryUV (the cook fills it). */
@@ -1845,7 +1919,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	P.Keys(Root, TEXT(""),
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("maxSpeed"), TEXT("centerOfMass"), TEXT("dragCoefficient"), TEXT("frontalArea"),
 		  TEXT("engine"), TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"),
-		  TEXT("seat"), TEXT("camera"), TEXT("collision"), TEXT("materials"), TEXT("paint"), TEXT("liveries"), TEXT("liveryUV"),
+		  TEXT("seat"), TEXT("camera"), TEXT("collision"), TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryUV"),
 		  TEXT("defaultLivery"), TEXT("linkage"), TEXT("parts"), TEXT("passengerSeat"), TEXT("trunk"), TEXT("horn"), TEXT("preset"), TEXT("movementType"),
 		  TEXT("flight"), TEXT("helicopter"), TEXT("hover") },
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("maxSpeed"), TEXT("dragCoefficient"), TEXT("frontalArea"), TEXT("engine"),
@@ -2152,6 +2226,10 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	if (P.Ok() && Root->HasField(TEXT("paint")))
 	{
 		ReadVehiclePaint(P, Root, D);
+	}
+	if (P.Ok() && Root->HasField(TEXT("lights")))
+	{
+		ReadVehicleLights(P, Root, D);
 	}
 	if (P.Ok() && Root->HasField(TEXT("liveries")))
 	{

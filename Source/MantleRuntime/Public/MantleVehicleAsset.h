@@ -164,6 +164,13 @@ struct FMantleVehicleBoxDesc
 	FVector Extent = FVector::OneVector;
 };
 
+/** One headlight beam: where it starts (cm, the vehicle's own space) and which way it points (unit length once read). */
+struct FMantleVehicleLightBeamDesc
+{
+	FVector Position = FVector::ZeroVector;
+	FVector Direction = FVector::ForwardVector;
+};
+
 /**
  * Which simulation builds a vehicle (#821, the document's movementType). A truck, six-wheeler and motorcycle are Wheeled; a jet is a Plane.
  * (Not FMantleVehicleMovementType, the gameplay module's registry class.)
@@ -557,6 +564,18 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 
 	/** The attached parts (#435 item 2): static meshes riding the body's bones; empty when it has none. */
 	TArray<FMantleVehiclePartDesc> Parts;
+
+	/**
+	 * The lights (the document's lights block): the body sections that glow as each kind of light, and the headlight beams.
+	 * bLights: the document has the block; without it the car has no lights.
+	 */
+	bool bLights = false;
+	TArray<FString> LightHead;
+	TArray<FString> LightRear;
+	TArray<FString> LightReverse;
+	TArray<FString> LightLeft;
+	TArray<FString> LightRight;
+	TArray<FMantleVehicleLightBeamDesc> LightBeams;
 
 	bool HasPaint() const { return bPaint || PaintSections.Num() > 0; }
 
