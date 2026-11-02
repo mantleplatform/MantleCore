@@ -6,6 +6,7 @@
 #include "MantleVehicleChassisSkin.h"
 #include "MantleVehicleFit.h"
 #include "MantleVehicleAsset.h"
+#include "MantleVehicleSource.h"
 #include "UObject/StrongObjectPtr.h"
 
 class AMantleVehicleSpawnPoint;
