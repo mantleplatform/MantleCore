@@ -276,9 +276,9 @@ TArray<FMantleGlbMesh> FMantleVehicleBodyLODs::Make(const FMantleGlbMesh& Body, 
 			TArray<uint32> All;
 			for (const FMantleGlbPrimitive& Primitive : Out.Glb.Primitives)
 			{
-				for (const uint32 Index : Primitive.Indices)
+				for (const uint32 Local : Primitive.Indices)
 				{
-					All.Add(static_cast<uint32>(Primitive.FirstVertex) + Index);
+					All.Add(static_cast<uint32>(Primitive.FirstVertex) + Local);
 				}
 			}
 			Out.Glb.Tangents = MakeTangents(Out.Glb.Positions, Out.Glb.Normals, Out.Glb.UVs, All);
