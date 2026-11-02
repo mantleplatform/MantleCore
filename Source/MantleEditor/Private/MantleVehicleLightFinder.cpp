@@ -158,7 +158,18 @@ namespace MantleVehicleLightsPrivate
 		return 0.5 * FVector3f::CrossProduct(LOD.Positions[C[1]] - LOD.Positions[C[0]], LOD.Positions[C[2]] - LOD.Positions[C[0]]).Size();
 	}
 
-	/** The brightest glow under a triangle (its middle and halfway to each corner), and the UV it was read at. */
+	/** A color with little hue in it: its weakest channel at least SaturationFloor of its strongest. */
+	constexpr float SaturationFloor = 0.6f;
+	bool IsPale(const FLinearColor& Color)
+	{
+		const float Max = Brightest(Color);
+		return Max <= KINDA_SMALL_NUMBER || FMath::Min3(Color.R, Color.G, Color.B) >= Max * SaturationFloor;
+	}
+
+	/**
+	 * The glow under a triangle, read at its middle, halfway to each corner and halfway to each edge's middle, and the UV it was read at. A colored glow wins over a
+	 * white one (a lens laid over a red tail light and a white reverse light reads as the tail light, the bigger of the two on a car); else the brightest.
+	 */
 	FLinearColor GlowUnder(const FMantleSkinnedMeshLOD& LOD, const int32 Triangle, const FGlowImage& Image, FVector2f& OutUV)
 	{
 		int32 C[3];
@@ -168,28 +179,33 @@ namespace MantleVehicleLightsPrivate
 			return FLinearColor::Black;
 		}
 		const FVector2f Middle = (LOD.UVs[C[0]] + LOD.UVs[C[1]] + LOD.UVs[C[2]]) / 3.f;
-		OutUV = Middle;
-		FLinearColor Best = Image.At(Middle);
+		TArray<FVector2f, TInlineAllocator<7>> Samples = { Middle };
 		for (int32 Corner = 0; Corner < 3; ++Corner)
 		{
-			const FVector2f UV = (Middle + LOD.UVs[C[Corner]]) * 0.5f;
+			Samples.Add((Middle + LOD.UVs[C[Corner]]) * 0.5f);
+			Samples.Add((Middle + (LOD.UVs[C[Corner]] + LOD.UVs[C[(Corner + 1) % 3]]) * 0.5f) * 0.5f);
+		}
+		FLinearColor Best = FLinearColor::Black;
+		bool bBestColored = false;
+		OutUV = Middle;
+		for (const FVector2f& UV : Samples)
+		{
 			const FLinearColor Here = Image.At(UV);
-			if (Brightest(Here) > Brightest(Best))
+			if (Brightest(Here) < GlowThreshold)
+			{
+				continue;
+			}
+			const bool bColored = !IsPale(Here);
+			if ((bColored && !bBestColored) || (bColored == bBestColored && Brightest(Here) > Brightest(Best)))
 			{
 				Best = Here;
+				bBestColored = bColored;
 				OutUV = UV;
 			}
 		}
 		return Best;
 	}
 
-	/** A color with little hue in it: its weakest channel at least SaturationFloor of its strongest. */
-	constexpr float SaturationFloor = 0.6f;
-	bool IsPale(const FLinearColor& Color)
-	{
-		const float Max = Brightest(Color);
-		return Max <= KINDA_SMALL_NUMBER || FMath::Min3(Color.R, Color.G, Color.B) >= Max * SaturationFloor;
-	}
 }
 
 bool FMantleVehicleLightGuess::FoundAny() const
