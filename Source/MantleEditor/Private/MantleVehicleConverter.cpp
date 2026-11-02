@@ -693,6 +693,10 @@ bool FMantleVehicleConverter::ParseWheelBoneName(const FString& Bone, FMantleVeh
 		{ TEXT("_ml"), 1, true }, { TEXT("_mr"), 1, false },
 		{ TEXT("_bl"), 2, true }, { TEXT("_br"), 2, false },
 		{ TEXT("_rl"), 2, true }, { TEXT("_rr"), 2, false },
+		// GTA's order (the side first: wheel_lf is the left front).
+		{ TEXT("_lf"), 0, true }, { TEXT("_rf"), 0, false },
+		{ TEXT("_lm"), 1, true }, { TEXT("_rm"), 1, false },
+		{ TEXT("_lr"), 2, true },
 	};
 	const FString Lower = Bone.ToLower();
 	for (const FCorner& Corner : Corners)
@@ -810,14 +814,24 @@ TArray<FMantleVehicleWheelBone> FMantleVehicleConverter::FindWheelBones(const FR
 
 FString FMantleVehicleConverter::CornerOf(const FString& Bone)
 {
-	static const TCHAR* const Corners[] = { TEXT("_fl"), TEXT("_fr"), TEXT("_ml"), TEXT("_mr"), TEXT("_bl"), TEXT("_br"), TEXT("_rl"), TEXT("_rr") };
+	static const TCHAR* const Corners[] = { TEXT("_fl"), TEXT("_fr"), TEXT("_ml"), TEXT("_mr"), TEXT("_bl"), TEXT("_br"), TEXT("_rl"), TEXT("_rr"),
+		TEXT("_lf"), TEXT("_rf"), TEXT("_lm"), TEXT("_rm"), TEXT("_lr") };
 	const FString Lower = Bone.ToLower();
 	for (const TCHAR* Corner : Corners)
 	{
 		if (Lower.Len() > 3 && Lower.EndsWith(Corner, ESearchCase::CaseSensitive))
 		{
 			const FString Found(Corner);
-			return Found == TEXT("_rl") ? FString(TEXT("_bl")) : (Found == TEXT("_rr") ? FString(TEXT("_br")) : Found);
+			if (Found == TEXT("_rl") || Found == TEXT("_lr"))
+			{
+				return FString(TEXT("_bl"));
+			}
+			if (Found == TEXT("_rr"))
+			{
+				return FString(TEXT("_br"));
+			}
+			// GTA spells the side first.
+			return Found == TEXT("_lf") ? FString(TEXT("_fl")) : (Found == TEXT("_rf") ? FString(TEXT("_fr")) : (Found == TEXT("_lm") ? FString(TEXT("_ml")) : (Found == TEXT("_rm") ? FString(TEXT("_mr")) : Found)));
 		}
 	}
 	// The word naming (wheel_rear_no_spin_l is "_bl"), spelt as the suffix naming spells it.

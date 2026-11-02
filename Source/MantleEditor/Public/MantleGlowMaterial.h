@@ -106,13 +106,20 @@ struct MANTLEEDITOR_API FMantleMaterialGlow
 	FLinearColor Color = FLinearColor::White;
 
 	/**
+	 * The first color on the path is an exposed tint (a Vector Parameter) set to black: the glow is switched off by it, the way a glTF's Emissive Factor of 0 switches
+	 * off the white default emissive texture every imported material carries. Meaningful with a glow that is only a flat color or a uniform texture.
+	 */
+	bool bColorOff = false;
+
+	/**
 	 * The Scalar Parameters on the path the material sets to 0: a glow switched off in the model ("Emissive Intensity" 0, the way the Fab cars ship). The glow is
 	 * still where the texture says; a light made from it turns these on so it has something to glow with.
 	 */
 	TArray<FName> OffScalars;
 
 	/**
-	 * Reads Material's emissive graph (its own, not into functions). False, with Out.bGlows false, when nothing is connected or the graph holds no texture and
+	 * Reads Material's emissive graph, into the functions it calls by the output the emissive input reads (a glTF material is one call whose outputs read their own
+	 * textures: only the emissive ones are on the path). False, with Out.bGlows false, when nothing is connected or the graph holds no texture and
 	 * only black. Game thread (reads the material's editor-only graph).
 	 */
 	static bool Read(const UMaterialInterface* Material, FMantleMaterialGlow& Out);

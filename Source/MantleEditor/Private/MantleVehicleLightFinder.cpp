@@ -59,6 +59,9 @@ namespace MantleVehicleLightsPrivate
 		int32 Width = 0;
 		int32 Height = 0;
 
+		/** Every pixel the same color (a mask with nothing painted on it: the white default texture a glTF material carries for its emissive). */
+		bool bUniform = false;
+
 		bool Read(UTexture* Texture)
 		{
 			UTexture2D* Texture2D = Cast<UTexture2D>(Texture);
@@ -77,6 +80,11 @@ namespace MantleVehicleLightsPrivate
 			Pixels = TArray<FColor>(View.GetData(), static_cast<int32>(View.Num()));
 			Width = Bgra.SizeX;
 			Height = Bgra.SizeY;
+			bUniform = Pixels.Num() > 0;
+			for (int32 Index = 1; bUniform && Index < Pixels.Num(); ++Index)
+			{
+				bUniform = Pixels[Index] == Pixels[0];
+			}
 			return Pixels.Num() == Width * Height && Pixels.Num() > 0;
 		}
 
@@ -135,6 +143,28 @@ namespace MantleVehicleLightsPrivate
 			}
 		}
 		return false;
+	}
+
+	/** The bone with the most weight on a vertex; INDEX_NONE when the mesh has no weights. */
+	int32 DominantBone(const FMantleSkinnedMeshLOD& LOD, const int32 Vertex)
+	{
+		const int32 Stride = FMath::Max(1, LOD.NumInfluences);
+		if (LOD.InfluenceBones.Num() != LOD.Positions.Num() * Stride || LOD.InfluenceWeights.Num() != LOD.InfluenceBones.Num())
+		{
+			return INDEX_NONE;
+		}
+		int32 Best = INDEX_NONE;
+		int32 BestWeight = -1;
+		for (int32 Influence = 0; Influence < Stride; ++Influence)
+		{
+			const int32 At = Vertex * Stride + Influence;
+			if (static_cast<int32>(LOD.InfluenceWeights[At]) > BestWeight)
+			{
+				BestWeight = LOD.InfluenceWeights[At];
+				Best = LOD.InfluenceBones[At];
+			}
+		}
+		return Best;
 	}
 
 	/** The triangle's three corners. */
@@ -206,6 +236,38 @@ namespace MantleVehicleLightsPrivate
 			}
 		}
 		return Best;
+	}
+
+	/**
+	 * A glow that is no light: a flat white that is switched off. A glTF import gives every material a white emissive texture times an Emissive Factor (0 on a material
+	 * that does not glow) and a strength; a glow whose texture is one color all over, white, and whose factor is black or whose switch is at 0, is that default, not a
+	 * lens. A texture with something painted on it is a glow whatever its switch says (the Fab cars ship Emissive Intensity 0 with their glow baked in a texture), and so
+	 * is a flat color that is not white.
+	 */
+	bool IsInertGlow(const FMantleMaterialGlow& Glow, TMap<UTexture*, TSharedPtr<FGlowImage>>& Images)
+	{
+		if (!Glow.bColorOff && Glow.OffScalars.IsEmpty())
+		{
+			return false;
+		}
+		if (Glow.Textures.Num() == 0)
+		{
+			return IsPale(Glow.Color);
+		}
+		for (const FMantleGlowTexture& Texture : Glow.Textures)
+		{
+			TSharedPtr<FGlowImage>& Cached = Images.FindOrAdd(Texture.Texture);
+			if (!Cached.IsValid())
+			{
+				Cached = MakeShared<FGlowImage>();
+				Cached->Read(Texture.Texture);
+			}
+			if (!Cached->bUniform || !IsPale(Cached->At(FVector2f::ZeroVector)))
+			{
+				return false;
+			}
+		}
+		return Glow.bColorOff || IsPale(Glow.Color);
 	}
 
 	/** The kind a glow texture is named for (its asset name, else its parameter's): Rear, Reverse or a signal (Left, split by side by the caller); unset for a generic one. */
@@ -290,7 +352,10 @@ namespace MantleVehicleLightsPrivate
 						Here = Lens;
 					}
 				}
-				Kind[Index] = FMantleVehicleLights::Classify(Center, Here, Bounds);
+				if (const TOptional<EMantleLightKind> Found = FMantleVehicleLights::Classify(Center, Here, Bounds))
+				{
+					Kind[Index] = Found;
+				}
 			}
 		}
 	}
@@ -431,7 +496,7 @@ TOptional<EMantleLightKind> FMantleVehicleLights::FromName(const FString& Name, 
 	{
 		bLight = bLight || (Word.Contains(TEXT("light")) && !Word.Contains(TEXT("lightning"))) || Word.Contains(TEXT("lamp"));
 	}
-	if (AnyWord(Said, { TEXT("reverse"), TEXT("backup") }) && bLight)
+	if (AnyWord(Said, { TEXT("revers"), TEXT("backup") }) && bLight)
 	{
 		return EMantleLightKind::Reverse;
 	}
@@ -463,7 +528,7 @@ TOptional<EMantleLightKind> FMantleVehicleLights::FromGlowName(const FString& Na
 {
 	using namespace MantleVehicleLightsPrivate;
 	const TArray<FString> Said = Words(Name);
-	if (AnyWord(Said, { TEXT("reverse"), TEXT("backup") }))
+	if (AnyWord(Said, { TEXT("revers"), TEXT("backup") }))
 	{
 		return EMantleLightKind::Reverse;
 	}
@@ -512,6 +577,18 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 	Slots.Sort();
 
 	TMap<UTexture*, TSharedPtr<FGlowImage>> Images;
+	// The bones named for a light (at either end of the car; a bare "light" is told by where its triangles are).
+	TArray<bool> LightBones;
+	LightBones.Init(false, Body.Bones.Num());
+	bool bBoneLights = false;
+	for (int32 Bone = 0; Bone < Body.Bones.Num(); ++Bone)
+	{
+		const FString BoneName = Body.Bones[Bone].Name.ToString();
+		const FVector3f Front(Bounds.Max.X, Bounds.GetCenter().Y, Bounds.GetCenter().Z);
+		const FVector3f Rear(Bounds.Min.X, Bounds.GetCenter().Y, Bounds.GetCenter().Z);
+		LightBones[Bone] = FromName(BoneName, Front, Bounds).IsSet() || FromName(BoneName, Rear, Bounds).IsSet();
+		bBoneLights = bBoneLights || LightBones[Bone];
+	}
 	for (const int32 Slot : Slots)
 	{
 		const TArray<int32>& Triangles = SlotTriangles[Slot];
@@ -525,6 +602,21 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 			Middle += Centroid(LOD, Triangle);
 		}
 		Middle /= static_cast<float>(FMath::Max(Triangles.Num(), 1));
+		// A model rigged part by part (a GTA car's headlight_l, indicator_lf, reversinglight_l, taillight_r) names its lights in its bones: those triangles are that light.
+		TArray<TOptional<EMantleLightKind>> FromBones;
+		FromBones.SetNum(Triangles.Num());
+		if (bBoneLights)
+		{
+			for (int32 Index = 0; Index < Triangles.Num(); ++Index)
+			{
+				const int32 Bone = DominantBone(LOD, static_cast<int32>(LOD.Indices[Triangles[Index] * 3]));
+				if (LightBones.IsValidIndex(Bone) && LightBones[Bone])
+				{
+					FromBones[Index] = FromName(Body.Bones[Bone].Name.ToString(), Centroid(LOD, Triangles[Index]), Bounds);
+				}
+			}
+		}
+		Kind = FromBones;
 		FString NamedBy = Materials.IsValidIndex(Slot) ? Materials[Slot].MaterialSlotName.ToString() : FString();
 		TOptional<EMantleLightKind> Named = Materials.IsValidIndex(Slot) ? FromName(NamedBy, Middle, Bounds) : TOptional<EMantleLightKind>();
 		if (!Named && Material)
@@ -553,11 +645,16 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 		else
 		{
 			FMantleMaterialGlow Glow;
-			if (!FMantleMaterialGlow::Read(Material, Glow))
+			const bool bGlows = FMantleMaterialGlow::Read(Material, Glow) && !IsInertGlow(Glow, Images);
+			if (!bGlows && !bBoneLights)
 			{
 				continue;
 			}
-			if (Glow.Textures.Num() > 1)
+			if (!bGlows)
+			{
+				// No glow to read: the bones' names are all there is to go on.
+			}
+			else if (Glow.Textures.Num() > 1)
 			{
 				KindsFromTextures(LOD, Triangles, Glow, Bounds, Images, Kind);
 			}
@@ -575,11 +672,8 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 					}
 					Image = Cached->Pixels.Num() > 0 ? Cached.Get() : nullptr;
 				}
-				if (Glow.Texture && !Image)
-				{
-					// A glow texture Mantle cannot read (no source data): nothing is guessed from it.
-					continue;
-				}
+				// A glow texture Mantle cannot read (no source data): nothing is guessed from it.
+				const bool bUnreadable = Glow.Texture && !Image;
 				// A glow texture that is white everywhere (a mask) leaves the color to the lens under it: the base color, read where the glow is.
 				const FGlowImage* Base = nullptr;
 				if (Glow.BaseTexture && Glow.BaseTexture != Glow.Texture)
@@ -592,7 +686,7 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 					}
 					Base = Cached->Pixels.Num() > 0 ? Cached.Get() : nullptr;
 				}
-				for (int32 Index = 0; Index < Triangles.Num(); ++Index)
+				for (int32 Index = 0; !bUnreadable && Index < Triangles.Num(); ++Index)
 				{
 					FLinearColor Here = Tint;
 					if (Image)
@@ -613,7 +707,10 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 							}
 						}
 					}
-					Kind[Index] = Classify(Centroid(LOD, Triangles[Index]), Here, Bounds);
+					if (const TOptional<EMantleLightKind> Found = Classify(Centroid(LOD, Triangles[Index]), Here, Bounds))
+					{
+						Kind[Index] = Found;
+					}
 				}
 			}
 		}
@@ -1063,6 +1160,8 @@ namespace MantleVehicleLightsPrivate
 				}
 				UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS slot %d %s material=%s glow textures=%d"), Slot, *Materials[Slot].MaterialSlotName.ToString(),
 					Material ? *Material->GetName() : TEXT("none"), Glow.Textures.Num());
+				UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS slot %d glow color=(%.2f %.2f %.2f) colorOff=%d off scalars=%d"), Slot, Glow.Color.R, Glow.Color.G, Glow.Color.B,
+					Glow.bColorOff ? 1 : 0, Glow.OffScalars.Num());
 				for (const FMantleGlowTexture& Texture : Glow.Textures)
 				{
 					const TOptional<EMantleLightKind> Named = GlowKind(Texture);
