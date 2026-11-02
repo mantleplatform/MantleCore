@@ -11,6 +11,7 @@ class UMantleVehicleSource;
 class UObject;
 class USkeletalMesh;
 struct FMantleSkinnedMesh;
+struct FMantleVehicleSurroundings;
 struct FMantleVehicleSourcePart;
 struct FSkeletalMaterial;
 
@@ -94,9 +95,10 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * The model is only a skin (#728 step 2): when the type's defaults are applied, the collision (one box), center of mass, seats and
 	 * steering wheel are all the type's chassis (FMantleVehicleChassisFit), stretched to the model's wheel layout and written in the
 	 * model's units; nothing the converter read from the model's physics survives. Fails, changing nothing about the type, when the
-	 * model's wheels cannot be found.
+	 * model's wheels cannot be found. Around, when given, is what the converter reads off the vehicle the mesh came from (a vehicle Blueprint's parts, wheel setups and
+	 * mass: FMantleVehicleConverter::SurroundingsOfComponent), else the mesh's own preview attachments and physics.
 	 */
-	static FMantleVehicleBuildResult Build(USkeletalMesh* Mesh, const FString& PresetId);
+	static FMantleVehicleBuildResult Build(USkeletalMesh* Mesh, const FString& PresetId, const FMantleVehicleSurroundings* Around = nullptr);
 
 	/**
 	 * True when Model is a skeletal mesh whose own wheels (bones named like Wheel_FL) a car type's chassis can be fitted to, which Build does. Not a motorcycle's
@@ -107,6 +109,10 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	/**
 	 * What the window's Build button does (#821): Build when the model's own wheels fit the type (FitsOwnWheels), else BuildFromModel with Options, so every model
 	 * of every type becomes a vehicle: a car pack with corner-named wheels is fitted to its wheels, anything else is worn as a skin on the chassis.
+	 *
+	 * Model may also be a vehicle Blueprint (FMantleVehicleBlueprint::Resolve): a Chaos vehicle builds from its skeletal body with the wheels and parts set up on it,
+	 * a Blueprint of several static pieces is merged into one Static Mesh saved under MantleVehicles > Imported, and the build goes on from that. The result's Notes
+	 * say what was done, including that pieces which move become one solid piece.
 	 */
 	static FMantleVehicleBuildResult BuildAny(UObject* Model, const FString& PresetId, const FMantleVehicleModelOptions& Options = FMantleVehicleModelOptions());
 

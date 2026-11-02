@@ -2,6 +2,7 @@
 #include "MantleVehicleBuilder.h"
 
 #include "MantleChassisSpec.h"
+#include "MantleVehicleBlueprint.h"
 #include "MantlePlaceValidator.h"
 #include "MantleVehicleBodySplit.h"
 #include "MantleVehicleChassisBuilder.h"
@@ -21,6 +22,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetToolsModule.h"
 #include "Dom/JsonObject.h"
+#include "Engine/Blueprint.h"
 #include "Factories/FbxFactory.h"
 #include "Factories/FbxImportUI.h"
 #include "IAssetTools.h"
@@ -198,7 +200,7 @@ FString FMantleVehicleBuilder::ModelUnsavedNote()
 	return TEXT("Your model isn't saved yet. Save it too (Ctrl+S), or your vehicle will lose its body when the editor restarts.");
 }
 
-FMantleVehicleBuildResult FMantleVehicleBuilder::Build(USkeletalMesh* Mesh, const FString& PresetId)
+FMantleVehicleBuildResult FMantleVehicleBuilder::Build(USkeletalMesh* Mesh, const FString& PresetId, const FMantleVehicleSurroundings* Around)
 {
 	FMantleVehicleBuildResult Out;
 
@@ -225,7 +227,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::Build(USkeletalMesh* Mesh, cons
 
 	// The same conversion the Convert vehicle command runs; it makes <Mesh>_Vehicle beside the model, or updates the one there.
 	FMantleVehicleConversion Conversion;
-	UMantleVehicleSource* Source = FMantleVehicleConverter::ConvertAsset(Mesh, Conversion, nullptr);
+	UMantleVehicleSource* Source = FMantleVehicleConverter::ConvertAsset(Mesh, Conversion, Around);
 	Out.Problems.Append(Conversion.Problems);
 	if (!Source)
 	{
@@ -1361,6 +1363,20 @@ bool FMantleVehicleBuilder::FitsOwnWheels(UObject* Model, const FString& PresetI
 
 FMantleVehicleBuildResult FMantleVehicleBuilder::BuildAny(UObject* Model, const FString& PresetId, const FMantleVehicleModelOptions& Options)
 {
+	// A vehicle Blueprint is read first: a Chaos vehicle gives its skeletal body and the wheels and parts set up on it, a Blueprint of static pieces gives one merged mesh.
+	if (UBlueprint* Blueprint = Cast<UBlueprint>(Model))
+	{
+		FMantleVehicleBlueprintModel Source = FMantleVehicleBlueprint::Resolve(Blueprint);
+		FMantleVehicleBuildResult Out;
+		if (Source.Model)
+		{
+			const FMantleVehicleSurroundings* Around = Source.Around.IsSet() ? &Source.Around.GetValue() : nullptr;
+			Out = FitsOwnWheels(Source.Model, PresetId) ? Build(Cast<USkeletalMesh>(Source.Model), PresetId, Around) : BuildFromModel(Source.Model, PresetId, Options);
+		}
+		Out.Problems.Insert(Source.Problems, 0);
+		Out.Notes.Insert(Source.Notes, 0);
+		return Out;
+	}
 	if (FitsOwnWheels(Model, PresetId))
 	{
 		return Build(Cast<USkeletalMesh>(Model), PresetId);
