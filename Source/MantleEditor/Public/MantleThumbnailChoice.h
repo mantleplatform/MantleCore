@@ -113,7 +113,7 @@ struct MANTLEEDITOR_API FMantleThumbnailResolver
 	 */
 	using FRender = TFunction<bool(const FMantleThumbnailChoice& Choice, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight, FString& OutError)>;
 
-	/** The part of a Width x Height image that is kept: the centerd rectangle with the target's aspect, as large as fits. Pure. */
+	/** The part of a Width x Height image that is kept: the centered rectangle with the target's aspect, as large as fits. Pure. */
 	static FIntRect CropRect(int32 Width, int32 Height, const FMantleThumbnailTarget& Target);
 
 	/** How the kept part compares with the target: Fine at or above its size, Enlarged from half of it, else TooSmall. Pure. */

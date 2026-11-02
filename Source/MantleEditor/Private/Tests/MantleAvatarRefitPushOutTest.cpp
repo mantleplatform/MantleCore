@@ -11,7 +11,7 @@
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleAvatarRefitPushOutTestPrivate
 {
-	/** A flat square of Cells x Cells cells, Size cm across, centerd on the origin at height Z, every normal (0, 0, Up). */
+	/** A flat square of Cells x Cells cells, Size cm across, centered on the origin at height Z, every normal (0, 0, Up). */
 	FMantleSkinnedMeshLOD Sheet(const int32 Cells, const float Size, const float Z, const float Up)
 	{
 		FMantleSkinnedMeshLOD Mesh;

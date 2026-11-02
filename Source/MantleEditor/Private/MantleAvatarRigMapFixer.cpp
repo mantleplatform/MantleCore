@@ -53,7 +53,7 @@ namespace MantleAvatarRigMapPrivate
 	constexpr double MaxPlausibleHeightCm = 300.0;
 	constexpr double TypicalHeightCm = 175.0;
 
-	/** Offsets below these are left alone: the upload tolerates 10 cm at the feet, and a centerd pelvis is not required. */
+	/** Offsets below these are left alone: the upload tolerates 10 cm at the feet, and a centered pelvis is not required. */
 	constexpr double GroundToleranceCm = 1.0;
 	constexpr double CenterToleranceCm = 1.0;
 

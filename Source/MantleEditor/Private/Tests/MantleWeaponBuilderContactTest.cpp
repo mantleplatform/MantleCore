@@ -67,7 +67,7 @@ bool FMantleWeaponBuilderPalmInsideTest::RunTest(const FString& Parameters)
 	using namespace MantleWeaponBuilderMath;
 	const TArray<FVector3f> Gun = MakeBoxGun();
 
-	// A palm under the gun (thin side vertical) centerd in the handguard is deep inside it.
+	// A palm under the gun (thin side vertical) centered in the handguard is deep inside it.
 	const FPalmBox InHandguard = MakePalmBox(FVector(25, 0, 4.5), false);
 	TestTrue(TEXT("a palm cutting through the handguard's underside is inside the gun"), IsLeftPalmInsideGun(Gun, FTransform::Identity, FVector(25, 0, 1.0)));
 	TestFalse(TEXT("a palm 1 cm under the handguard is not"), IsLeftPalmInsideGun(Gun, FTransform::Identity, FVector(25, 0, -1.0)));

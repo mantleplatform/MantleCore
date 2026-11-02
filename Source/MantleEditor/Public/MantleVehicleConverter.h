@@ -218,7 +218,7 @@ public:
 	/**
 	 * #435 item 2: the found meshes as Source's parts, each on its socket's bone (or its bone, or the root) with the socket's offset
 	 * folded in, in the bone's space. A wheel with no Tire Mesh takes the widest mesh shaped like its tire (round across X and Z,
-	 * narrower in Y, centerd on its spin axis, within a fifth of twice its radius when that is known: as set, else MeasuredRadii),
+	 * narrower in Y, centered on its spin axis, within a fifth of twice its radius when that is known: as set, else MeasuredRadii),
 	 * hung from the root, its bone or a bone of its corner (a tire modeled in car space, or on a steering pivot), re-expressed about
 	 * its bone; failing any, the first mesh on its bone or on a bone within 1 cm of it with the same corner. Other tire-shaped meshes
 	 * ride the wheel's bone and spin with it; any other mesh on a wheel's bone (a brake caliper) moves to its hub, which steers

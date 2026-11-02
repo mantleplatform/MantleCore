@@ -55,7 +55,7 @@ namespace MantleVoxelizeTestPrivate
 		return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
 	}
 
-	/** The engine cube (100 cm, centerd on its pivot) at Location, at Scale, drawn with Material when one is given. */
+	/** The engine cube (100 cm, centered on its pivot) at Location, at Scale, drawn with Material when one is given. */
 	AStaticMeshActor* SpawnCube(UWorld* World, UStaticMesh* Cube, const FVector& Location, const TCHAR* Label, double Scale = 1.0, UMaterialInterface* Material = nullptr)
 	{
 		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(Location, FRotator::ZeroRotator);

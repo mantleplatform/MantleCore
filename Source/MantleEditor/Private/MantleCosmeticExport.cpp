@@ -6354,7 +6354,7 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 			{
 				for (FVector3f& Position : Mesh.Glb.Positions) Position -= Recenter;
 				Mesh.Bounds = Mesh.Bounds.ShiftBy(-Recenter);
-				Package.Notes.Add(FString::Printf(TEXT("Accessory: its pivot was out of reach of %s, so the mesh is centerd on the socket (moved %.1f, %.1f, %.1f cm)."),
+				Package.Notes.Add(FString::Printf(TEXT("Accessory: its pivot was out of reach of %s, so the mesh is centered on the socket (moved %.1f, %.1f, %.1f cm)."),
 					*Draft.Slot, Recenter.X, Recenter.Y, Recenter.Z));
 			}
 			FMantleCosmeticChecks::CheckMeshLimits(Mesh.NumTriangles, Mesh.Glb.Positions.Num(), 0, 0, Class, Issues, 1, EMantleLODPick::LODZeroOnly);

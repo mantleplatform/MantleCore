@@ -674,7 +674,7 @@ bool FMantleFlatWaterMeshExportsAsWaterBodyTest::RunTest(const FString& Paramete
 		return false;
 	}
 	TestEqual(TEXT("a still pond is a lake"), Props->BodyType, EMantleWaterBodyType::Lake);
-	TestTrue(TEXT("the surface is the mesh's top, centerd on the footprint"), Entity->Transform.GetLocation().Equals(FVector(1000.0, 2000.0, 300.0), 0.5));
+	TestTrue(TEXT("the surface is the mesh's top, centered on the footprint"), Entity->Transform.GetLocation().Equals(FVector(1000.0, 2000.0, 300.0), 0.5));
 	TestTrue(TEXT("at scale 1"), Entity->Transform.GetScale3D().Equals(FVector::OneVector, 1.0e-4));
 	TestEqual(TEXT("turned by the mesh's yaw"), Entity->Transform.Rotator().Yaw, 90.0, 0.01);
 

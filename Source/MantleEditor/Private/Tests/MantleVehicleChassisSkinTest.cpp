@@ -240,7 +240,7 @@ bool FMantleVehicleChassisSkinPlacementTest::RunTest(const FString& Parameters)
 	TestTrue(*FString::Printf(TEXT("it covers the chassis's ground (%.0f against %.0f square cm)"), Area, GrayArea), FMath::Abs(Area - GrayArea) < 0.01 * GrayArea);
 	TestTrue(TEXT("it is longer than wide, nose on +X"), Box.Max.X - Box.Min.X > Box.Max.Y - Box.Min.Y);
 	TestTrue(TEXT("it stands on the ground"), FMath::Abs(Box.Min.Z) < 0.01f);
-	TestTrue(*FString::Printf(TEXT("and is centerd on the chassis (x %.0f)"), 0.5f * (Box.Min.X + Box.Max.X)),
+	TestTrue(*FString::Printf(TEXT("and is centered on the chassis (x %.0f)"), 0.5f * (Box.Min.X + Box.Max.X)),
 		FMath::Abs(0.5f * (Box.Min.X + Box.Max.X) - 0.5f * (GrayBox.Min.X + GrayBox.Max.X)) < 1.0f && FMath::Abs(0.5f * (Box.Min.Y + Box.Max.Y)) < 1.0f);
 
 	// Whole to the root, one influence of full weight each, the model's triangles and its material slot kept.
@@ -377,7 +377,7 @@ bool FMantleVehicleChassisSkinPartsTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("and that is not where the chassis had it"), ComponentLocation(Body, Propeller).Equals(ComponentLocation(Gray.Body, Propeller), 0.5));
 	// A wheel turns about the chassis's wheel center, so the part is moved onto it and the bone stays.
 	TestTrue(*FString::Printf(TEXT("the left wheel bone stays at the chassis's wheel (%s)"), *ComponentLocation(Body, LeftWheel).ToString()), ComponentLocation(Body, LeftWheel).Equals(ComponentLocation(Gray.Body, LeftWheel), 0.01));
-	TestTrue(*FString::Printf(TEXT("and the wheel part is centerd on it (%s)"), *FVector(WheelBox.GetCenter()).ToString()), FVector::Dist(ComponentLocation(Body, LeftWheel), FVector(WheelBox.GetCenter())) < 0.5);
+	TestTrue(*FString::Printf(TEXT("and the wheel part is centered on it (%s)"), *FVector(WheelBox.GetCenter()).ToString()), FVector::Dist(ComponentLocation(Body, LeftWheel), FVector(WheelBox.GetCenter())) < 0.5);
 
 	// Positive control: with the default limit that same wheel, a meter from the chassis's, is not torn off its strut or swung about the wrong point: it stays still.
 	FMantleVehicleSkinned Still;

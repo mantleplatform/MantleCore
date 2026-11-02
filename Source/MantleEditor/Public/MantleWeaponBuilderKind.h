@@ -40,7 +40,7 @@ namespace MantleWeaponBuilderMath
 	};
 
 	/**
-	 * The palm centerd on a grip point. bWrapGrip: the fingers wrap round a grip, so the thin side faces the gun's side (thin along Y,
+	 * The palm centered on a grip point. bWrapGrip: the fingers wrap round a grip, so the thin side faces the gun's side (thin along Y,
 	 * long along the grip's height, wide along the bore). Otherwise the palm is under the gun, thin side vertical (long along the bore, wide across it).
 	 */
 	MANTLEEDITOR_API FPalmBox MakePalmBox(const FVector& GripWeapon, bool bWrapGrip);
@@ -57,7 +57,7 @@ namespace MantleWeaponBuilderMath
 	};
 
 	/**
-	 * A simple wire hand in the weapon frame: three palm capsules (about 8 x 8 cm, centerd on HandPoint) plus four fingers and a
+	 * A simple wire hand in the weapon frame: three palm capsules (about 8 x 8 cm, centered on HandPoint) plus four fingers and a
 	 * thumb of two capsules each. FarReachCm is how far the gun's far surface is from the hand point across the gun (its half-width
 	 * when the hand is on the gun's center line); each digit curls so its tip ends 0.8 cm beyond it, or as far as it can reach on a wide gun.
 	 * bWarning marks every capsule (red). Part names: Palm_n, Finger_n_A/B (n 0 is the index), Thumb_A/B.

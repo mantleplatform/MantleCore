@@ -138,7 +138,7 @@ bool FMantleVehicleFitRulesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("no wheels leaves the size alone"), NoneFit.Scale, 1.0);
 	TestFalse(TEXT("no wheels still explains itself"), NoneFit.Reason.IsEmpty());
 
-	// A model centerd off the origin has the same size: the sides come from its own center line.
+	// A model centered off the origin has the same size: the sides come from its own center line.
 	TArray<FMantleVehicleFitWheel> Shifted = SedanWheels;
 	for (FMantleVehicleFitWheel& Wheel : Shifted)
 	{
