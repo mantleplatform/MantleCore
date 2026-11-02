@@ -7,7 +7,7 @@
 class UObject;
 
 /** What a model looks like, in the builder's terms: the group of vehicle types it belongs to. */
-enum class EMantleVehicleFamily : uint8
+enum class EMantleVehicleModelFamily : uint8
 {
 	/** Nothing in the model says. */
 	Unknown,
@@ -43,7 +43,7 @@ struct MANTLEEDITOR_API FMantleVehicleTypeMatch
 	EMantleVehicleTypeVerdict Verdict = EMantleVehicleTypeVerdict::Fits;
 	EMantleVehicleTypeConfidence Confidence = EMantleVehicleTypeConfidence::Strong;
 	/** What the model looks like. */
-	EMantleVehicleFamily Family = EMantleVehicleFamily::Unknown;
+	EMantleVehicleModelFamily Family = EMantleVehicleModelFamily::Unknown;
 	/** The preset id to switch to ("motorcycle"); empty unless Verdict is Suggests. */
 	FString SuggestedType;
 	/** The suggested type's name for a button: "Motorcycle". */
@@ -69,10 +69,10 @@ struct MANTLEEDITOR_API FMantleVehicleTypeMatchCheck
 	static FMantleVehicleTypeMatch Check(const FMantleVehicleModel& Model, const FString& TypeId);
 
 	/** The family a preset belongs to ("sedan" is Road, "jet" is Plane); Unknown for an id with no preset. */
-	static EMantleVehicleFamily FamilyOfType(const FString& TypeId);
+	static EMantleVehicleModelFamily FamilyOfType(const FString& TypeId);
 
 	/** The family the model looks like, with what it saw in OutEvidence and how sure it is in OutConfidence. Unknown when it gives no sign. */
-	static EMantleVehicleFamily FamilyOfModel(const FMantleVehicleModel& Model, TArray<FString>& OutEvidence, EMantleVehicleTypeConfidence& OutConfidence);
+	static EMantleVehicleModelFamily FamilyOfModel(const FMantleVehicleModel& Model, TArray<FString>& OutEvidence, EMantleVehicleTypeConfidence& OutConfidence);
 
 	/** Reads Asset (a static or skeletal mesh) and checks it. False, with the reason in OutError, when the model cannot be read. */
 	static bool CheckAsset(UObject* Asset, const FString& TypeId, FMantleVehicleTypeMatch& Out, FString& OutError);

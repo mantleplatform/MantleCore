@@ -93,19 +93,19 @@ namespace MantleVehicleTypeMatchPrivate
 	}
 
 	/** The first (id) type of a family, which the "Switch to" button offers. */
-	FString TypeOfFamily(const EMantleVehicleFamily Family)
+	FString TypeOfFamily(const EMantleVehicleModelFamily Family)
 	{
 		switch (Family)
 		{
-		case EMantleVehicleFamily::Road:
+		case EMantleVehicleModelFamily::Road:
 			return TEXT("sedan");
-		case EMantleVehicleFamily::Motorcycle:
+		case EMantleVehicleModelFamily::Motorcycle:
 			return TEXT("motorcycle");
-		case EMantleVehicleFamily::Plane:
+		case EMantleVehicleModelFamily::Plane:
 			return TEXT("plane");
-		case EMantleVehicleFamily::Helicopter:
+		case EMantleVehicleModelFamily::Helicopter:
 			return TEXT("helicopter");
-		case EMantleVehicleFamily::Hover:
+		case EMantleVehicleModelFamily::Hover:
 			return TEXT("hovercraft");
 		default:
 			return FString();
@@ -113,34 +113,34 @@ namespace MantleVehicleTypeMatchPrivate
 	}
 
 	/** "a car, truck or van", for the message. */
-	FString Kind(const EMantleVehicleFamily Family)
+	FString Kind(const EMantleVehicleModelFamily Family)
 	{
 		switch (Family)
 		{
-		case EMantleVehicleFamily::Road:
+		case EMantleVehicleModelFamily::Road:
 			return TEXT("a car or truck");
-		case EMantleVehicleFamily::Motorcycle:
+		case EMantleVehicleModelFamily::Motorcycle:
 			return TEXT("a motorcycle");
-		case EMantleVehicleFamily::Plane:
+		case EMantleVehicleModelFamily::Plane:
 			return TEXT("a plane");
-		case EMantleVehicleFamily::Helicopter:
+		case EMantleVehicleModelFamily::Helicopter:
 			return TEXT("a helicopter");
 		default:
 			return TEXT("a hovercraft");
 		}
 	}
 
-	FString Does(const EMantleVehicleFamily Family)
+	FString Does(const EMantleVehicleModelFamily Family)
 	{
 		switch (Family)
 		{
-		case EMantleVehicleFamily::Road:
+		case EMantleVehicleModelFamily::Road:
 			return TEXT("drives on four or more wheels");
-		case EMantleVehicleFamily::Motorcycle:
+		case EMantleVehicleModelFamily::Motorcycle:
 			return TEXT("rides on two wheels in a line");
-		case EMantleVehicleFamily::Plane:
+		case EMantleVehicleModelFamily::Plane:
 			return TEXT("flies on wings");
-		case EMantleVehicleFamily::Helicopter:
+		case EMantleVehicleModelFamily::Helicopter:
 			return TEXT("flies on a rotor");
 		default:
 			return TEXT("floats on air");
@@ -148,33 +148,33 @@ namespace MantleVehicleTypeMatchPrivate
 	}
 }
 
-EMantleVehicleFamily FMantleVehicleTypeMatchCheck::FamilyOfType(const FString& TypeId)
+EMantleVehicleModelFamily FMantleVehicleTypeMatchCheck::FamilyOfType(const FString& TypeId)
 {
 	const FMantleVehiclePreset* Preset = FMantleVehiclePresets::Find(TypeId);
 	if (!Preset)
 	{
-		return EMantleVehicleFamily::Unknown;
+		return EMantleVehicleModelFamily::Unknown;
 	}
 	if (Preset->MovementType == TEXT("wheeled"))
 	{
-		return Preset->Id == TEXT("motorcycle") ? EMantleVehicleFamily::Motorcycle : EMantleVehicleFamily::Road;
+		return Preset->Id == TEXT("motorcycle") ? EMantleVehicleModelFamily::Motorcycle : EMantleVehicleModelFamily::Road;
 	}
 	if (Preset->MovementType == TEXT("plane"))
 	{
-		return EMantleVehicleFamily::Plane;
+		return EMantleVehicleModelFamily::Plane;
 	}
 	if (Preset->MovementType == TEXT("helicopter"))
 	{
-		return EMantleVehicleFamily::Helicopter;
+		return EMantleVehicleModelFamily::Helicopter;
 	}
 	if (Preset->MovementType == TEXT("hover"))
 	{
-		return EMantleVehicleFamily::Hover;
+		return EMantleVehicleModelFamily::Hover;
 	}
-	return EMantleVehicleFamily::Unknown;
+	return EMantleVehicleModelFamily::Unknown;
 }
 
-EMantleVehicleFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMantleVehicleModel& Model, TArray<FString>& OutEvidence, EMantleVehicleTypeConfidence& OutConfidence)
+EMantleVehicleModelFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMantleVehicleModel& Model, TArray<FString>& OutEvidence, EMantleVehicleTypeConfidence& OutConfidence)
 {
 	using namespace MantleVehicleTypeMatchPrivate;
 	OutConfidence = EMantleVehicleTypeConfidence::Strong;
@@ -196,7 +196,7 @@ EMantleVehicleFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMantleVe
 	if (Rotors.Num() > 0)
 	{
 		OutEvidence.Add(TEXT("a rotor"));
-		return EMantleVehicleFamily::Helicopter;
+		return EMantleVehicleModelFamily::Helicopter;
 	}
 	if (Props.Num() > 0 || Airframe.Num() > 0 || Jets.Num() > 0 || bAirframeMaterial)
 	{
@@ -212,7 +212,7 @@ EMantleVehicleFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMantleVe
 		{
 			OutEvidence.Add(TEXT("a jet engine"));
 		}
-		return EMantleVehicleFamily::Plane;
+		return EMantleVehicleModelFamily::Plane;
 	}
 
 	// Wheels: more than two is a road vehicle, two in a line a motorcycle.
@@ -221,7 +221,7 @@ EMantleVehicleFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMantleVe
 		if (Wheels.Num() >= 3)
 		{
 			OutEvidence.Add(FString::Printf(TEXT("%d wheels"), Wheels.Num()));
-			return EMantleVehicleFamily::Road;
+			return EMantleVehicleModelFamily::Road;
 		}
 		if (Wheels.Num() == 2 && Model.BonePositions.Num() == Model.Bones.Num())
 		{
@@ -236,12 +236,12 @@ EMantleVehicleFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMantleVe
 			if (Along > UE_KINDA_SMALL_NUMBER && Across <= 0.15 * Along)
 			{
 				OutEvidence.Add(TEXT("2 wheels, in a line"));
-				return EMantleVehicleFamily::Motorcycle;
+				return EMantleVehicleModelFamily::Motorcycle;
 			}
 			if (Along > UE_KINDA_SMALL_NUMBER && Across > 0.3 * Along)
 			{
 				OutEvidence.Add(TEXT("2 wheels, side by side"));
-				return EMantleVehicleFamily::Road;
+				return EMantleVehicleModelFamily::Road;
 			}
 		}
 	}
@@ -261,27 +261,27 @@ EMantleVehicleFamily FMantleVehicleTypeMatchCheck::FamilyOfModel(const FMantleVe
 			if (Ratio <= 0.35 && Height >= 1.6 * Wide)
 			{
 				OutEvidence.Add(TEXT("narrow and tall"));
-				return EMantleVehicleFamily::Motorcycle;
+				return EMantleVehicleModelFamily::Motorcycle;
 			}
 			if (Ratio >= 0.75 && Height <= 0.4 * Long && !bWheelMaterial)
 			{
 				OutEvidence.Add(TEXT("wide and flat"));
-				return EMantleVehicleFamily::Plane;
+				return EMantleVehicleModelFamily::Plane;
 			}
 			if (bWheelMaterial && Ratio > 0.35)
 			{
 				OutEvidence.Add(TEXT("wheel materials and a car's proportions"));
-				return EMantleVehicleFamily::Road;
+				return EMantleVehicleModelFamily::Road;
 			}
 			if (Ratio >= 0.3 && Ratio <= 0.7 && Height <= 1.2 * Wide)
 			{
 				OutEvidence.Add(TEXT("a car's proportions"));
-				return EMantleVehicleFamily::Road;
+				return EMantleVehicleModelFamily::Road;
 			}
 		}
 	}
 	OutConfidence = EMantleVehicleTypeConfidence::Weak;
-	return EMantleVehicleFamily::Unknown;
+	return EMantleVehicleModelFamily::Unknown;
 }
 
 FMantleVehicleTypeMatch FMantleVehicleTypeMatchCheck::Check(const FMantleVehicleModel& Model, const FString& TypeId)
@@ -289,8 +289,8 @@ FMantleVehicleTypeMatch FMantleVehicleTypeMatchCheck::Check(const FMantleVehicle
 	using namespace MantleVehicleTypeMatchPrivate;
 	FMantleVehicleTypeMatch Out;
 	const FMantleVehiclePreset* Picked = FMantleVehiclePresets::Find(TypeId);
-	const EMantleVehicleFamily Wanted = FamilyOfType(TypeId);
-	if (!Picked || Wanted == EMantleVehicleFamily::Unknown)
+	const EMantleVehicleModelFamily Wanted = FamilyOfType(TypeId);
+	if (!Picked || Wanted == EMantleVehicleModelFamily::Unknown)
 	{
 		Out.Verdict = EMantleVehicleTypeVerdict::Unsure;
 		Out.Message = TEXT("Pick a vehicle type first.");
@@ -298,7 +298,7 @@ FMantleVehicleTypeMatch FMantleVehicleTypeMatchCheck::Check(const FMantleVehicle
 	}
 
 	Out.Family = FamilyOfModel(Model, Out.Evidence, Out.Confidence);
-	if (Out.Family == EMantleVehicleFamily::Unknown)
+	if (Out.Family == EMantleVehicleModelFamily::Unknown)
 	{
 		Out.Verdict = EMantleVehicleTypeVerdict::Unsure;
 		Out.Message = FString::Printf(TEXT("Mantle can't tell what kind of vehicle this model is, so it will use it as a %s."), *Picked->Name.ToLower());
@@ -309,7 +309,7 @@ FMantleVehicleTypeMatch FMantleVehicleTypeMatchCheck::Check(const FMantleVehicle
 		return Out;
 	}
 	// Only the proportions to go by: they can say a model is not a car or a bike, but not what a plane, helicopter or hovercraft is, so those picks are let through.
-	if (Out.Confidence == EMantleVehicleTypeConfidence::Weak && Wanted != EMantleVehicleFamily::Road && Wanted != EMantleVehicleFamily::Motorcycle)
+	if (Out.Confidence == EMantleVehicleTypeConfidence::Weak && Wanted != EMantleVehicleModelFamily::Road && Wanted != EMantleVehicleModelFamily::Motorcycle)
 	{
 		return Out;
 	}
