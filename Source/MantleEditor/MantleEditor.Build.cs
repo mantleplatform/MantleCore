@@ -96,6 +96,8 @@ public class MantleEditor : ModuleRules
 			// IMeshUtilities::GenerateSignedDistanceFieldVolumeData / GenerateCardRepresentationData. An engine
 			// Developer module the editor already loads; the shipped client never builds this module.
 			"MeshUtilities",
+			// A vehicle Blueprint made of several static pieces is merged into one Static Mesh with the editor's own mesh merging (Merge Actors). Engine Developer module.
+			"MeshMergeUtilities",
 			"SkeletalMeshUtilitiesCommon",
 			"TargetPlatform",
 			// #610's Atlas fixer: rewrites a skeletal mesh's source geometry (FSkeletalMeshAttributes) and renders any
