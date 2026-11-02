@@ -2940,7 +2940,7 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 		if (!LODWarning.IsEmpty())
 		{
 			Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Vehicle '%s': %s"), *Vehicle->GetName(), *LODWarning),
-				TEXT("Nothing needs fixing for it to work. To have it drawn cheaper far away, publish again; if this keeps happening, use a body with fewer triangles.")));
+				TEXT("Nothing needs fixing for it to work.")));
 		}
 	}
 	Converted.Key = Key;

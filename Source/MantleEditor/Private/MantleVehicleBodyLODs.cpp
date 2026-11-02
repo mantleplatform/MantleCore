@@ -226,11 +226,16 @@ TArray<FMantleGlbMesh> FMantleVehicleBodyLODs::Make(const FMantleGlbMesh& Body, 
 			FText::AsNumber(LODIndex), FText::AsNumber(Target));
 		if (!FMantleVehicleBodyReduce::ReduceToFit(Reduced, Extras, Target, Result, &Progress) || !Result.bReduced)
 		{
+			// The reducer's own reasons speak of the body's limit; for a far-away version, a body it cannot cut down that far is simply already simple.
+			const bool bTooSimple = Result.Problem.IsEmpty() || Result.Problem.StartsWith(TEXT("the reducer left"));
 			OutWarning = Result.bCanceled
 				? FString::Printf(TEXT("You canceled making its far-away versions, so it uploads with %d of %d. It still works; it only costs more to draw far away."),
 					LODIndex, Fractions.Num() + 1)
+				: bTooSimple
+				? FString::Printf(TEXT("Its far-away version %d was not made because its body is already too simple to cut down that far, so it uploads with %d of %d. It still works."),
+					LODIndex, LODIndex, Fractions.Num() + 1)
 				: FString::Printf(TEXT("Its far-away version %d could not be made (%s), so it uploads with %d of %d. It still works; it only costs more to draw far away."),
-					LODIndex, Result.Problem.IsEmpty() ? TEXT("the reducer made no smaller copy") : *Result.Problem, LODIndex, Fractions.Num() + 1);
+					LODIndex, *Result.Problem, LODIndex, Fractions.Num() + 1);
 			break;
 		}
 
