@@ -24,7 +24,7 @@ namespace MantleVehicleBlueprintTestPrivate
 
 	UBlueprint* Load(FAutomationTestBase& Test, const TCHAR* Path)
 	{
-		if (!FPackageName::DoesPackageExist(FPackageName::ObjectPathToPackageName(Path)))
+		if (!FPackageName::DoesPackageExist(FPackageName::ObjectPathToPackageName(FString(Path))))
 		{
 			Test.AddWarning(FString::Printf(TEXT("SKIPPED, not passed: %s is not in this project."), Path));
 			return nullptr;
