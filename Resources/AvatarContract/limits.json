@@ -1117,6 +1117,8 @@
         "paint/flakeTint/*": [0, 1],
         "paint/clearCoat": [0, 1],
         "paint/clearCoatRoughness": [0, 1],
+        "lights/beams/*/position/*": [-1000, 1000],
+        "lights/beams/*/direction/*": [-1, 1],
         "liveryUV": [0, 0],
         "defaultLivery": [0, 7],
         "linkage/*/weight": [0, 1],

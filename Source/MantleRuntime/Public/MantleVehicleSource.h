@@ -471,6 +471,54 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	TArray<FMantleVehicleSourceBox> Collision;
 };
 
+/** One headlight beam: a real light on the car, on while the headlights are. */
+USTRUCT(BlueprintType)
+struct MANTLERUNTIME_API FMantleVehicleSourceLightBeam
+{
+	GENERATED_BODY()
+
+	/** Where it starts, cm in the vehicle's own space (+X forward). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lights", meta = (Units = "cm"))
+	FVector Position = FVector::ZeroVector;
+
+	/** Where it points, in the vehicle's own space; Mantle normalizes it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lights")
+	FVector Direction = FVector::ForwardVector;
+};
+
+/**
+ * A creator vehicle's lights: schema/vehicle.schema.json lights. Each kind lists the body sections (by the names Convert
+ * Vehicle lists) that glow as that light; the game turns their glow up and down (headlights with the switch and night, rear
+ * lights dim with the headlights and bright while braking, reverse lights in reverse, signals blinking). Colors come from the
+ * sections' own glow. The beams are real lights, on while the headlights are, with no shadows and fading out with
+ * distance. Empty everywhere: the car has no lights.
+ */
+USTRUCT(BlueprintType)
+struct MANTLERUNTIME_API FMantleVehicleSourceLights
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lights")
+	TArray<FString> Head;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lights")
+	TArray<FString> Rear;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lights")
+	TArray<FString> Reverse;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lights")
+	TArray<FString> Left;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lights")
+	TArray<FString> Right;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lights")
+	TArray<FMantleVehicleSourceLightBeam> Beams;
+
+	bool IsEmpty() const { return Head.IsEmpty() && Rear.IsEmpty() && Reverse.IsEmpty() && Left.IsEmpty() && Right.IsEmpty() && Beams.IsEmpty(); }
+};
+
 /**
  * A creator vehicle's paint (#435 f) and liveries (#488): schema/vehicle.schema.json paint, liveries, liveryUV and
  * defaultLivery, every default the schema's. Mantle holds each number to limits.json placeAssets.vehicle.ranges and the
@@ -635,6 +683,10 @@ public:
 	/** Its paint and liveries (#435 f, #488). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
 	FMantleVehicleSourcePaint Paint;
+
+	/** Its lights: the glowing body sections by kind and the headlight beams. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
+	FMantleVehicleSourceLights Lights;
 
 	/**
 	 * Its suspension linkage (#435 b): what moves the hubs, control arms and dampers after the wheels, at most 64 rules.
