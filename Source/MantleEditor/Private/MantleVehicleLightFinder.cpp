@@ -616,7 +616,6 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 				}
 			}
 		}
-		Kind = FromBones;
 		FString NamedBy = Materials.IsValidIndex(Slot) ? Materials[Slot].MaterialSlotName.ToString() : FString();
 		TOptional<EMantleLightKind> Named = Materials.IsValidIndex(Slot) ? FromName(NamedBy, Middle, Bounds) : TOptional<EMantleLightKind>();
 		if (!Named && Material)
@@ -652,7 +651,8 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 			}
 			if (!bGlows)
 			{
-				// No glow to read: the bones' names are all there is to go on.
+				// No glow to read: the bones' names are all there is to go on. (A material that glows is read by its glow, whatever its bones are called.)
+				Kind = FromBones;
 			}
 			else if (Glow.Textures.Num() > 1)
 			{

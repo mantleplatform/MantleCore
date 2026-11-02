@@ -268,6 +268,13 @@ namespace MantleGlowMaterialPrivate
 		return false;
 	}
 
+	/** Whether a Scalar Parameter's name is a switch for the glow, and not what places a texture (a glTF material's EmissiveTexture_TexCoord is 0 for the first UV set). */
+	bool IsGlowSwitchName(const FName Name)
+	{
+		const FString Text = Name.ToString();
+		return !Text.Contains(TEXT("TexCoord")) && !Text.Contains(TEXT("Rotation")) && !Text.Contains(TEXT("Tiling")) && !Text.Contains(TEXT("UVSet"));
+	}
+
 	/** A constant or a Scalar Parameter, as Context sets it. */
 	bool ScalarOf(const UMaterialExpression* Expression, const UMaterialInterface* Context, double& Out)
 	{
@@ -490,7 +497,7 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 		if (const UMaterialExpressionScalarParameter* Scalar = Cast<UMaterialExpressionScalarParameter>(Expression))
 		{
 			double Value = 1.0;
-			if (ScalarOf(Scalar, Material, Value) && Value == 0.0)
+			if (IsGlowSwitchName(Scalar->ParameterName) && ScalarOf(Scalar, Material, Value) && Value == 0.0)
 			{
 				Out.OffScalars.AddUnique(Scalar->ParameterName);
 			}
@@ -587,7 +594,7 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 		if (const UMaterialExpressionScalarParameter* Scalar = Cast<UMaterialExpressionScalarParameter>(Expression))
 		{
 			double Value = 1.0;
-			if (ScalarOf(Scalar, Material, Value) && Value == 0.0)
+			if (IsGlowSwitchName(Scalar->ParameterName) && ScalarOf(Scalar, Material, Value) && Value == 0.0)
 			{
 				Branch.Loose.Add(Scalar->ParameterName);
 			}
