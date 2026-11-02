@@ -60,6 +60,9 @@ MantlePlacingSnap::FResult MantlePlacingSnap::Compute(const FInput& Input)
 	const FVector Normal = Input.HitNormal.GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
 	const double Support = SupportHalfExtent(Rotation, Input.LocalBounds.GetExtent(), Normal);
 	FVector Location = Input.HitPoint + Normal * Support - Rotation.RotateVector(Input.LocalBounds.GetCenter());
+	// The socket search below starts from where the piece is held, before the grid moves it: a big piece rounded to a coarse grid could
+	// land closer to the wrong socket (a floor aimed at a wall top, its center half a floor away).
+	const FVector Held0 = Location;
 	if (Input.Grid > 0.0)
 	{
 		Location.X = FMath::RoundToDouble(Location.X / Input.Grid) * Input.Grid;
@@ -82,7 +85,7 @@ MantlePlacingSnap::FResult MantlePlacingSnap::Compute(const FInput& Input)
 	for (int32 Own = 0; Own < Input.Sockets->Num(); ++Own)
 	{
 		const FSocket& Socket = (*Input.Sockets)[Own];
-		const FVector Held = Location + Rotation.RotateVector(Socket.Position * Input.Scale);
+		const FVector Held = Held0 + Rotation.RotateVector(Socket.Position * Input.Scale);
 		for (const FNeighbor& Neighbor : Input.Neighbors)
 		{
 			if (!Neighbor.Sockets)
