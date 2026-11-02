@@ -71,7 +71,10 @@ void MantleSnapSockets::Convert(TConstArrayView<FMeshSocket> Sockets, TArray<FMa
 		Out.Position = Socket.Location;
 		Out.Rotation = Socket.Rotation.GetNormalized();
 		TArray<FString> Words;
-		Socket.Tag.ParseIntoArray(Words, TEXT(",; \t"), /*InCullEmpty*/ true);
+		FString Separated = Socket.Tag;
+		Separated.ReplaceInline(TEXT(","), TEXT(" "));
+		Separated.ReplaceInline(TEXT(";"), TEXT(" "));
+		Separated.ParseIntoArrayWS(Words);
 		bool bBad = false;
 		for (const FString& Word : Words)
 		{
