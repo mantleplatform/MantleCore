@@ -46,7 +46,7 @@ namespace MantleScatterCellsTestPrivate
 	{
 		return [](const int64 XMm, const int64 YMm, FMantleScatterGround& Out) -> bool
 		{
-			// A hole 40 m across, 100 m east of the centre.
+			// A hole 40 m across, 100 m east of the center.
 			if (XMm > 1000000 && XMm < 1400000 && FMath::Abs(YMm) < 200000)
 			{
 				return false;
@@ -229,7 +229,7 @@ bool FMantleScatterCellsSpacingTest::RunTest(const FString& Parameters)
 	OnGround.Ground = BumpyGround();
 
 	// Far more candidates than the spacing leaves room for, so every cell's border is crowded and a kept instance's fate hangs on a chain of
-	// neighbours through several cells: the case a per-cell spacing pass gets wrong.
+	// neighbors through several cells: the case a per-cell spacing pass gets wrong.
 	for (const double Spacing : { 150.0, 600.0, 2500.0, 15000.0 })
 	{
 		FMantleScatterParams P = CellParams();
@@ -270,7 +270,7 @@ bool FMantleScatterCellsSpacingTest::RunTest(const FString& Parameters)
 		TestTrue(*FString::Printf(TEXT("%s: the spacing thins the field (%d kept)"), *Name, Kept), Kept > 1 && Kept < 80000);
 	}
 
-	// The same on terrain with a hole and the other filters: an instance a filter dropped never keeps its neighbours away, in a cell or out of it.
+	// The same on terrain with a hole and the other filters: an instance a filter dropped never keeps its neighbors away, in a cell or out of it.
 	FMantleScatterParams Ground = CellParams();
 	Ground.Placement = EMantleScatterPlacement::Terrain;
 	Ground.MaxSlopeDegrees = 25.0;
@@ -667,7 +667,7 @@ bool FMantleScatterCellsComponentTest::RunTest(const FString& Parameters)
 			InAreaWhole.Add(Instance);
 		}
 	}
-	// The volume's area is a superset by at most a millimetre of slack; every instance of the exact area is in it, in order.
+	// The volume's area is a superset by at most a millimeter of slack; every instance of the exact area is in it, in order.
 	TestTrue(TEXT("the area holds the whole build's instances in it"), IsOrderedSubset(InAreaWhole, InArea) && InArea.Num() >= InAreaWhole.Num() && InArea.Num() <= InAreaWhole.Num() + 8);
 
 	// Cells around a view: nothing stands before the first scan, then some do, within the caps.

@@ -242,7 +242,7 @@ void FMantleAvatarTrianglesFixer::Analyze(const FMantleConvertContext& Context, 
 			else if (!bReduction)
 			{
 				Fix.bCanFix = false;
-				Fix.Action = TEXT("Can't: this editor has no skeletal mesh reduction (turn on the Skeletal Mesh Simplifier plugin), so reduce it in your modelling tool.");
+				Fix.Action = TEXT("Can't: this editor has no skeletal mesh reduction (turn on the Skeletal Mesh Simplifier plugin), so reduce it in your modeling tool.");
 			}
 			else
 			{

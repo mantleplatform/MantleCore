@@ -14,7 +14,7 @@ class UWorld;
  * with the rest of that folder. Both are deferred decals, translucent: M_MantleDecal projects
  * BaseColor (its alpha the coverage) times Opacity; M_MantleDecal_Normal projects Normal as well.
  * Two masters rather than a switch, because a decal material that writes a normal at all replaces
- * the surface's own normal under it. The exporter recognises a creator's instance of either by
+ * the surface's own normal under it. The exporter recognizes a creator's instance of either by
  * these paths.
  */
 struct MANTLERUNTIME_API FMantleDecalMaterials

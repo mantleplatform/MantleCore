@@ -12,7 +12,7 @@ template <typename ItemType> class SListView;
 /**
  * The Mantle Preview panel: what Test Locally is doing and what the preview client reports. The state
  * (finding client, exporting, starting, ready, failed, stopped, closed), the three ready flags, which client runs it,
- * the client's script messages (level-coloured, newest last, copyable), and how many requests the offline preview
+ * the client's script messages (level-colored, newest last, copyable), and how many requests the offline preview
  * refused, and the export's coverage report (what was kept, approximated and dropped) as a collapsible section; plus Test Locally, Stop, Reset local data, Choose client and Open bundle folder. It only shows
  * FMantleTestLocally's state, which it keeps current by polling preview-status.json while the owned process runs.
  */

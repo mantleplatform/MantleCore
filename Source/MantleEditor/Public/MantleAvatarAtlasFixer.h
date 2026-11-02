@@ -30,7 +30,7 @@ struct MANTLEEDITOR_API FMantleAtlasSlot
 	bool bTwoSided = false;
 	/**
 	 * Avatars: "skin", "eyes" or "other" (the role the upload gives the section, which the game tints by); empty for
-	 * garments and hair. Slots of different roles are never merged: the skin tint would colour a shirt.
+	 * garments and hair. Slots of different roles are never merged: the skin tint would color a shirt.
 	 */
 	FString Role;
 	/** Masked hair (hair cards, lashes, brows, beards, fur): never merged into an opaque atlas. */
@@ -94,9 +94,9 @@ struct MANTLEEDITOR_API FMantleAtlasSettings
 	/**
 	 * Render each source material through the editor's material baking (IMaterialBakingModule) so any material bakes,
 	 * not just one with a texture parameter: UDIM and virtual-textured materials too (#625: sampled before, which lost a
-	 * MetaHuman skin's tint). Off, or with no renderer (-NullRHI), the source textures are sampled directly (base colour,
+	 * MetaHuman skin's tint). Off, or with no renderer (-NullRHI), the source textures are sampled directly (base color,
 	 * normal and ORM found by parameter name, as the upload finds them) and a material without textures gives its flat
-	 * colour.
+	 * color.
 	 */
 	bool bRenderedBake = true;
 	/**
@@ -112,7 +112,7 @@ struct MANTLEEDITOR_API FMantleAtlasSettings
 struct MANTLEEDITOR_API FMantleBakedTextures
 {
 	int32 Size = 0;
-	/** sRGB colour; opacity in alpha for a masked or translucent material, else 255. */
+	/** sRGB color; opacity in alpha for a masked or translucent material, else 255. */
 	TArray<FColor> BaseColor;
 	/** Tangent-space normal. */
 	TArray<FColor> Normal;
@@ -139,7 +139,7 @@ struct MANTLEEDITOR_API FMantleBakedTextures
  *
  * Apply writes new assets only: a duplicate of the part's mesh (its skin weights, normals, tangents, morph targets,
  * sockets and physics kept) whose every LOD with source geometry is remapped the same way from LOD 0's layout (LODs the
- * mesh generates by reduction are regenerated from the new LOD 0 by the rebuild), the atlas textures (base colour sRGB
+ * mesh generates by reduction are regenerated from the new LOD 0 by the rebuild), the atlas textures (base color sRGB
  * with opacity in alpha for a masked atlas, tangent-space normal, ORM: occlusion, roughness, metallic) and one material
  * instance per atlas on M_MantlePlace's Opaque, Masked or Translucent permutation, whose BaseColor, Normal and ORM
  * texture parameters are what the upload reads. The new mesh is checked with the upload's own section and UV tile
@@ -186,7 +186,7 @@ public:
 	static int32 FindCell(const FMantleAtlasLayout& Layout, int32 Slot, const FVector2f& Centroid);
 
 	/**
-	 * The fix list's action for a plan: "merges 10 sections into 1 atlas (2048 squared; base colour, normal, ORM)", "bakes UDIM
+	 * The fix list's action for a plan: "merges 10 sections into 1 atlas (2048 squared; base color, normal, ORM)", "bakes UDIM
 	 * tiles 1001-1002 of "Body" into one 2048 squared texture set", with the resolution kept when the atlas had to shrink.
 	 */
 	static FString DescribeAction(TConstArrayView<FMantleAtlasSlot> Slots, TConstArrayView<FMantleAtlasGroup> Groups, TConstArrayView<FMantleAtlasLayout> Layouts);
@@ -203,16 +203,16 @@ public:
 		FMantleBakedTextures& Out, TArray<FString>& OutNotes);
 
 	/**
-	 * Whether a rendered bake takes the material's emissive as its base colour: the material is unlit (VRoid's MToon and
-	 * other toon shaders put all their colour there), or its base colour is black at every texel; and the emissive has
-	 * colour. A lit material with a real base colour keeps it. Pure (tested).
+	 * Whether a rendered bake takes the material's emissive as its base color: the material is unlit (VRoid's MToon and
+	 * other toon shaders put all their color there), or its base color is black at every texel; and the emissive has
+	 * color. A lit material with a real base color keeps it. Pure (tested).
 	 */
-	static bool BakesEmissiveAsColour(bool bUnlit, TConstArrayView<FColor> BaseColor, TConstArrayView<FColor> Emissive);
+	static bool BakesEmissiveAsColor(bool bUnlit, TConstArrayView<FColor> BaseColor, TConstArrayView<FColor> Emissive);
 
 	/**
 	 * #167: whether a rendered bake takes a material's Metallic pin as metal, and its Normal pin as a normal map. The Hair shading
 	 * model reuses both (Metallic is Scatter, Normal the strand Tangent), the Eye model Metallic (Curvature): baked as metal they
-	 * turn the colour near-black, so those bake metal 0 and a flat normal. Pure (tested).
+	 * turn the color near-black, so those bake metal 0 and a flat normal. Pure (tested).
 	 */
 	static bool BakesMetallic(const FMaterialShadingModelField& Models);
 	static bool BakesNormal(const FMaterialShadingModelField& Models);

@@ -83,18 +83,18 @@ bool FMantleEnvironmentExposureParserAcceptsTest::RunTest(const FString& Paramet
 		TestTrue(TEXT("density"), Fog.Density.IsSet() && *Fog.Density == 0.005);
 		TestTrue(TEXT("height falloff"), Fog.HeightFalloff.IsSet() && *Fog.HeightFalloff == 0.4);
 		TestTrue(TEXT("start distance"), Fog.StartDistance.IsSet() && *Fog.StartDistance == 2500.0);
-		if (TestTrue(TEXT("inscattering colour"), Fog.InscatteringColor.IsSet()))
+		if (TestTrue(TEXT("inscattering color"), Fog.InscatteringColor.IsSet()))
 		{
 			TestNearlyEqual(TEXT("its green"), Fog.InscatteringColor->G, 0.638f, 1.0e-4f);
 			TestNearlyEqual(TEXT("its blue"), Fog.InscatteringColor->B, 1.0f, 1.0e-4f);
 		}
-		if (TestTrue(TEXT("directional inscattering colour"), Fog.DirectionalInscatteringColor.IsSet()))
+		if (TestTrue(TEXT("directional inscattering color"), Fog.DirectionalInscatteringColor.IsSet()))
 		{
 			TestNearlyEqual(TEXT("its blue"), Fog.DirectionalInscatteringColor->B, 0.125f, 1.0e-4f);
 		}
 	}
 
-	// Each at its edge: a colour brighter than 1 is allowed, to 10 a channel.
+	// Each at its edge: a color brighter than 1 is allowed, to 10 a channel.
 	const FMantleParseResult Edges = FMantlePlaceParser::ParseFromString(PlaceJson(
 		TEXT("\"exposure\":{\"mode\":\"auto\",\"bias\":4,\"minBrightness\":0.03,\"maxBrightness\":0.03},")
 		TEXT("\"fog\":{\"density\":0.05,\"heightFalloff\":0.001,\"inscatteringColor\":[10,10,10],\"startDistance\":1000000,")
@@ -154,11 +154,11 @@ bool FMantleEnvironmentExposureParserRefusesTest::RunTest(const FString& Paramet
 	TestTrue(TEXT("a negative density"), RefusedAt(TEXT("\"fog\":{\"density\":-0.001}"), Fog + TEXT("/density")));
 	TestTrue(TEXT("a falloff of 0"), RefusedAt(TEXT("\"fog\":{\"heightFalloff\":0}"), Fog + TEXT("/heightFalloff")));
 	TestTrue(TEXT("a falloff past 2"), RefusedAt(TEXT("\"fog\":{\"heightFalloff\":2.5}"), Fog + TEXT("/heightFalloff")));
-	TestTrue(TEXT("a colour channel past 10"),
+	TestTrue(TEXT("a color channel past 10"),
 		RefusedAt(TEXT("\"fog\":{\"inscatteringColor\":[0.5,10.5,0.5]}"), Fog + TEXT("/inscatteringColor/1")));
-	TestTrue(TEXT("a negative colour channel"),
+	TestTrue(TEXT("a negative color channel"),
 		RefusedAt(TEXT("\"fog\":{\"inscatteringColor\":[-0.1,0.5,0.5]}"), Fog + TEXT("/inscatteringColor/0")));
-	TestTrue(TEXT("a colour of two numbers"),
+	TestTrue(TEXT("a color of two numbers"),
 		RefusedAt(TEXT("\"fog\":{\"directionalInscatteringColor\":[0.2,0.2]}"), Fog + TEXT("/directionalInscatteringColor")));
 	TestTrue(TEXT("a negative start distance"), RefusedAt(TEXT("\"fog\":{\"startDistance\":-1}"), Fog + TEXT("/startDistance")));
 	TestTrue(TEXT("a start distance past 1e6"), RefusedAt(TEXT("\"fog\":{\"startDistance\":1000001}"), Fog + TEXT("/startDistance")));

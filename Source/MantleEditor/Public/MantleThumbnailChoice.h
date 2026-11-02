@@ -60,7 +60,7 @@ struct MANTLEEDITOR_API FMantleThumbnailChoice
 	bool HasCustomImage() const { return !Texture.IsNull() || !ImageFile.FilePath.IsEmpty(); }
 };
 
-/** The final picture's size. Every kind is a 512 x 512 square except a place, which is the catalogue's 16:9. */
+/** The final picture's size. Every kind is a 512 x 512 square except a place, which is the catalog's 16:9. */
 struct MANTLEEDITOR_API FMantleThumbnailTarget
 {
 	int32 Width = 512;
@@ -69,7 +69,7 @@ struct MANTLEEDITOR_API FMantleThumbnailTarget
 	/** The library and avatar-shop thumbnail class: 512 x 512 PNG (limits.json avatar content thumbnail). */
 	static FMantleThumbnailTarget Square() { return { 512, 512 }; }
 
-	/** A place's catalogue picture (metadata.thumbnail), 1280 x 720. */
+	/** A place's catalog picture (metadata.thumbnail), 1280 x 720. */
 	static FMantleThumbnailTarget Wide() { return { 1280, 720 }; }
 
 	bool operator==(const FMantleThumbnailTarget& Other) const { return Width == Other.Width && Height == Other.Height; }
@@ -102,7 +102,7 @@ enum class EMantleThumbnailSize : uint8
 
 /**
  * The one resolver behind every uploader's thumbnail (#124): turns a FMantleThumbnailChoice into the final picture. Automatic and Angle are the
- * kind's own render (the Render callback); Custom is read here, centre-cropped to the target's shape, checked and resized. The pure parts need no
+ * kind's own render (the Render callback); Custom is read here, center-cropped to the target's shape, checked and resized. The pure parts need no
  * renderer and are tested headless.
  */
 struct MANTLEEDITOR_API FMantleThumbnailResolver
@@ -113,7 +113,7 @@ struct MANTLEEDITOR_API FMantleThumbnailResolver
 	 */
 	using FRender = TFunction<bool(const FMantleThumbnailChoice& Choice, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight, FString& OutError)>;
 
-	/** The part of a Width x Height image that is kept: the centred rectangle with the target's aspect, as large as fits. Pure. */
+	/** The part of a Width x Height image that is kept: the centerd rectangle with the target's aspect, as large as fits. Pure. */
 	static FIntRect CropRect(int32 Width, int32 Height, const FMantleThumbnailTarget& Target);
 
 	/** How the kept part compares with the target: Fine at or above its size, Enlarged from half of it, else TooSmall. Pure. */

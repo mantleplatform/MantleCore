@@ -67,12 +67,12 @@ bool FMantleBodyOffsetsBuilder::LearnVertexMap(const TConstArrayView<FVector3f> 
 			{
 				for (int32 DZ = -1; DZ <= 1; ++DZ)
 				{
-					const TArray<int32>* Neighbours = Grid.Find(FIntVector(Cell.X + DX, Cell.Y + DY, Cell.Z + DZ));
-					if (!Neighbours)
+					const TArray<int32>* Neighbors = Grid.Find(FIntVector(Cell.X + DX, Cell.Y + DY, Cell.Z + DZ));
+					if (!Neighbors)
 					{
 						continue;
 					}
-					for (const int32 Candidate : *Neighbours)
+					for (const int32 Candidate : *Neighbors)
 					{
 						if (FVector3f::Distance(Mapped[Candidate], P) > TolCm)
 						{
@@ -249,12 +249,12 @@ bool FMantleBodyOffsetsBuilder::LearnNearestVertexMap(const TConstArrayView<FVec
 			{
 				for (int32 DZ = -1; DZ <= 1; ++DZ)
 				{
-					const TArray<int32>* Neighbours = Grid.Find(FIntVector(Cell.X + DX, Cell.Y + DY, Cell.Z + DZ));
-					if (!Neighbours)
+					const TArray<int32>* Neighbors = Grid.Find(FIntVector(Cell.X + DX, Cell.Y + DY, Cell.Z + DZ));
+					if (!Neighbors)
 					{
 						continue;
 					}
-					for (const int32 Candidate : *Neighbours)
+					for (const int32 Candidate : *Neighbors)
 					{
 						const float Distance = FVector3f::Distance(Mapped[Candidate], P);
 						if (Distance < BestDistance || (Distance == BestDistance && Candidate < Best))
@@ -403,7 +403,7 @@ float FMantleBodyOffsetsBuilder::ShapeTargetMeasurement(const FString& ShapeName
 	float Target = Current;
 	if (ShapeName.StartsWith(TEXT("weight")) || ShapeName.StartsWith(TEXT("muscle")))
 	{
-		// The slider's end is the constraint's own end: Creator's Fat and Muscularity are unitless scales, not centimetres.
+		// The slider's end is the constraint's own end: Creator's Fat and Muscularity are unitless scales, not centimeters.
 		Target = bPlus ? Max : Min;
 	}
 	else if (ShapeName.StartsWith(TEXT("chest")))
@@ -588,8 +588,8 @@ FMantleBodyOffsetsBuilder::EBuildResult FMantleBodyOffsetsBuilder::BuildForChara
 			FString MapError;
 			int32 Exact = 0;
 			float Worst = 0.0f;
-			// Up to 1 cm: the built face is Creator's face to about a millimetre, but on some presets a few vertices sit a few
-			// millimetres off every state vertex (Aera: 0.39 cm). The shapes change smoothly over the face, so a vertex that
+			// Up to 1 cm: the built face is Creator's face to about a millimeter, but on some presets a few vertices sit a few
+			// millimeters off every state vertex (Aera: 0.39 cm). The shapes change smoothly over the face, so a vertex that
 			// near takes the same move; the note reports the worst match.
 			if (!LearnNearestVertexMap(Face->LODs[Lod], Committed, Map, MapError, 1.0f, &Exact, &Worst))
 			{

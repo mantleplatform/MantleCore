@@ -95,7 +95,7 @@ public:
 
 	/**
 	 * Makes and registers the runtime capture component for ProbeProps at this actor's present world transform
-	 * (its centre and rotation; the scale of the box is the half extent, whatever the actor's scale is). True when
+	 * (its center and rotation; the scale of the box is the half extent, whatever the actor's scale is). True when
 	 * it made one; false when it already has, or the component could not be made. Does not look at the cvars:
 	 * UMantleReflectionProbeSubsystem decides whether probes are drawn at all.
 	 */

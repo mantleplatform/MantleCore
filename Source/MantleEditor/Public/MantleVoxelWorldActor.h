@@ -18,7 +18,7 @@ enum class EMantleVoxelBlockRender : uint8
 	Opaque,
 	/** Fully see-through where the tile's alpha is low (leaves, glass panes). */
 	Cutout,
-	/** Partly see-through (water, coloured glass). */
+	/** Partly see-through (water, colored glass). */
 	Translucent,
 };
 

@@ -105,15 +105,15 @@ bool FMantleHairHeadSamples::Build(TConstArrayView<FVector3f> Positions, TConstA
 	Sorted.Sort();
 	const double Above60 = PieceFitPercentile(Sorted, 0.60);
 	const double Above75 = PieceFitPercentile(Sorted, 0.75);
-	FVector Centre = FVector::ZeroVector;
-	int32 NumCentre = 0;
-	for (int32 I = 0; I < Points.Num(); ++I) if (Heights[I] > Above60) { Centre += Points[I]; ++NumCentre; }
-	if (NumCentre > 0)
+	FVector Center = FVector::ZeroVector;
+	int32 NumCenter = 0;
+	for (int32 I = 0; I < Points.Num(); ++I) if (Heights[I] > Above60) { Center += Points[I]; ++NumCenter; }
+	if (NumCenter > 0)
 	{
-		Centre /= NumCentre;
+		Center /= NumCenter;
 		double Facing = 0.0;
 		int32 NumUp = 0;
-		for (int32 I = 0; I < Points.Num(); ++I) if (Heights[I] > Above75) { Facing += (Points[I] - Centre) | Normals[I]; ++NumUp; }
+		for (int32 I = 0; I < Points.Num(); ++I) if (Heights[I] > Above75) { Facing += (Points[I] - Center) | Normals[I]; ++NumUp; }
 		if (NumUp > 0 && Facing / NumUp < 0.0)
 		{
 			for (FVector& N : Normals) N = -N;
@@ -142,12 +142,12 @@ bool FMantleHairHeadSamples::Build(TConstArrayView<FVector3f> Positions, TConstA
 			Tree.Nearest(Points[S], 1, Ids, Distances);
 			ScalpOf[S] = Ids[0];
 		}
-		ScalpNeighbourStart.Add(0);
+		ScalpNeighborStart.Add(0);
 		for (const FVector& P : ScalpPoints)
 		{
 			Tree.InRadius(P, 2.0 * CoverReachCm, Ids);
-			ScalpNeighbourIds.Append(Ids);
-			ScalpNeighbourStart.Add(ScalpNeighbourIds.Num());
+			ScalpNeighborIds.Append(Ids);
+			ScalpNeighborStart.Add(ScalpNeighborIds.Num());
 		}
 	}
 
@@ -302,7 +302,7 @@ bool FMantleHairPieceFit::Fit(const FMantleHairHeadSamples& Head, TConstArrayVie
 			if (Distance > SeatCm || Near == INDEX_NONE) continue;
 			++Seated;
 			const FVector& Root = bA ? A : B;
-			for (const int32 N : Head.ScalpNeighbours(Near))
+			for (const int32 N : Head.ScalpNeighbors(Near))
 			{
 				if (!Covered[N] && FVector::DistSquared(Root, Head.ScalpPoint(N)) <= Reach2) { Covered[N] = true; ++PointsCovered; }
 			}

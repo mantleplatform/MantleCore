@@ -318,8 +318,8 @@ void FMantleSkinMask::SurfaceDepthMm(TConstArrayView<FVector3f> Positions, TCons
 		PointPosition[Weld[Vertex]] = Positions[Vertex];
 		Source[Weld[Vertex]] = Source[Weld[Vertex]] || !Inner[Vertex];
 	}
-	FPointNeighbours Neighbours;
-	PointNeighbours(Indices, Weld, NumPoints, Neighbours);
+	FPointNeighbors Neighbors;
+	PointNeighbors(Indices, Weld, NumPoints, Neighbors);
 
 	// A Dijkstra over the surface from every visible point that carries each point's nearest visible point (its seed)
 	// and keys on the straight distance to it: an edge path would read up to 1.4 times too deep across a grid's
@@ -351,7 +351,7 @@ void FMantleSkinMask::SurfaceDepthMm(TConstArrayView<FVector3f> Positions, TCons
 			continue;
 		}
 		const FVector3f& From = PointPosition[Seed[Top.Point]];
-		for (const int32 Other : Neighbours[Top.Point])
+		for (const int32 Other : Neighbors[Top.Point])
 		{
 			const float Straight = FVector3f::Dist(From, PointPosition[Other]);
 			if (Straight < Distance[Other])
@@ -455,7 +455,7 @@ bool FMantleSeeThroughAudit::Run(const FMantleSkinnedMeshLOD& Body, TConstArrayV
 	TArray<FVector3f> Cameras;
 	SphereDirections(Directions, Cameras);
 
-	// From each dropped triangle's centre back toward each camera: blocked by anything, or a garment just under it.
+	// From each dropped triangle's center back toward each camera: blocked by anything, or a garment just under it.
 	const TConstArrayView<FRayTriangle> TriangleView(Triangles);
 	const float MinSine = FMath::Sin(FMath::DegreesToRadians(MinGrazingDeg));
 	TArray<int32> HoleRays;
@@ -470,7 +470,7 @@ bool FMantleSeeThroughAudit::Run(const FMantleSkinnedMeshLOD& Body, TConstArrayV
 		const FVector3f& A = Body.Positions[Body.Indices[Triangle * 3]];
 		const FVector3f& B = Body.Positions[Body.Indices[Triangle * 3 + 1]];
 		const FVector3f& C = Body.Positions[Body.Indices[Triangle * 3 + 2]];
-		const FVector3f Centre = (A + B + C) / 3.0f;
+		const FVector3f Center = (A + B + C) / 3.0f;
 		const FVector3f Plane = FVector3f::CrossProduct(B - A, C - A).GetSafeNormal();
 		for (int32 Camera = 0; Camera < Cameras.Num(); ++Camera)
 		{
@@ -480,11 +480,11 @@ bool FMantleSeeThroughAudit::Run(const FMantleSkinnedMeshLOD& Body, TConstArrayV
 				continue;
 			}
 			++Asked[Slot];
-			if (SegmentBlocked(Grid, TriangleView, Centre, ToCamera, Reach, [](const FRayTriangle&) { return true; }))
+			if (SegmentBlocked(Grid, TriangleView, Center, ToCamera, Reach, [](const FRayTriangle&) { return true; }))
 			{
 				continue;
 			}
-			if (SegmentBlocked(Grid, TriangleView, Centre, -ToCamera, UnderReachCm, [](const FRayTriangle& Other) { return !Other.IsBody(); }))
+			if (SegmentBlocked(Grid, TriangleView, Center, -ToCamera, UnderReachCm, [](const FRayTriangle& Other) { return !Other.IsBody(); }))
 			{
 				continue;
 			}

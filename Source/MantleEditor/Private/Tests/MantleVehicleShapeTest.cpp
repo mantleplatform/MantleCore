@@ -141,25 +141,25 @@ bool FMantleVehicleShapeChangesHandlingTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a longer wheelbase leaves the mass unchanged"), FMath::IsNearlyEqual(Spec.Derived->Mass, AtOwnSizes.Mass, AtOwnSizes.Mass * 0.005));
 	const double Circle = FMantleVehicleShape::TurningCircleCm(Spec, Spec.Derived.GetValue());
 	TestTrue(TEXT("a longer wheelbase turns in a bigger circle"), Circle > FMantleVehicleShape::TurningCircleCm(Sedan, AtOwnSizes));
-	TestTrue(TEXT("and a bigger circle than the hand-tuned preset's"), Circle > FMantleVehicleShape::Summarise(Sedan).TurningCircleCm);
-	const FMantleVehicleSummary Summary = FMantleVehicleShape::Summarise(Spec);
+	TestTrue(TEXT("and a bigger circle than the hand-tuned preset's"), Circle > FMantleVehicleShape::Summarize(Sedan).TurningCircleCm);
+	const FMantleVehicleSummary Summary = FMantleVehicleShape::Summarize(Spec);
 	TestEqual(TEXT("the summary's weight is the derived mass"), Summary.MassKg, Spec.Derived->Mass);
 	TestEqual(TEXT("the summary's circle is the one measured here"), Summary.TurningCircleCm, Circle);
 
 	// The geometry follows: the axles are half the wheelbase either side of the middle, the track is kept, the seat and the steering wheel
-	// keep their places on the body, and the centre of mass is the derived one.
-	TestEqual(TEXT("the front axle is half the wheelbase ahead"), Spec.WheelCentre(0).X, 170.0);
-	TestEqual(TEXT("the rear axle is half the wheelbase behind"), Spec.WheelCentre(2).X, -170.0);
-	TestEqual(TEXT("the track is kept"), Spec.WheelCentre(1).Y - Spec.WheelCentre(0).Y, Sedan.Track);
+	// keep their places on the body, and the center of mass is the derived one.
+	TestEqual(TEXT("the front axle is half the wheelbase ahead"), Spec.WheelCenter(0).X, 170.0);
+	TestEqual(TEXT("the rear axle is half the wheelbase behind"), Spec.WheelCenter(2).X, -170.0);
+	TestEqual(TEXT("the track is kept"), Spec.WheelCenter(1).Y - Spec.WheelCenter(0).Y, Sedan.Track);
 	TestTrue(TEXT("the seat moves along with the wheelbase, nowhere else"), Spec.Seat.Equals(FVector(Sedan.Seat.X * 340.0 / Sedan.Wheelbase, Sedan.Seat.Y, Sedan.Seat.Z), 1.0e-6));
 	TestTrue(TEXT("the steering wheel keeps its reach from the seat"), (Spec.Hub - Spec.Seat).Equals(Sedan.Hub - Sedan.Seat, 1.0e-6));
-	TestTrue(TEXT("the centre of mass is the derived one"), Spec.CenterOfMass.Equals(Spec.Derived->CenterOfMass, 1.0e-6));
+	TestTrue(TEXT("the center of mass is the derived one"), Spec.CenterOfMass.Equals(Spec.Derived->CenterOfMass, 1.0e-6));
 
 	// The summary says so in a creator's words (the numbers only: a locale may spell a decimal its own way).
-	const FString Said = FMantleVehicleShape::Describe(FMantleVehicleShape::Summarise(Sedan)).ToString();
+	const FString Said = FMantleVehicleShape::Describe(FMantleVehicleShape::Summarize(Sedan)).ToString();
 	TestTrue(TEXT("the sentence starts with the weight"), Said.StartsWith(TEXT("Weighs about ")));
 	TestTrue(TEXT("the sentence gives the turning circle"), Said.Contains(TEXT("Turns in a circle about 7 m across.")));
-	TestTrue(TEXT("the weight is in tonnes"), Said.Contains(TEXT("tonnes. Turns in")));
+	TestTrue(TEXT("the weight is in metric tons"), Said.Contains(TEXT("metric tons. Turns in")));
 	TestTrue(TEXT("the sentence gives the top speed"), Said.Contains(TEXT("Top speed about 160 km/h.")));
 
 	// Ground clearance lifts the seat with the body; body height does not (a driver is the same size in any vehicle).
@@ -184,9 +184,9 @@ bool FMantleVehicleShapeHoldsTest::RunTest(const FString& Parameters)
 {
 	FMantleChassisSpec Sedan;
 	FMantleChassisSpec Bike;
-	FMantleChassisSpec Lorry;
+	FMantleChassisSpec Truck;
 	if (!MantleVehicleShapeTestPrivate::LoadPreset(*this, TEXT("sedan"), Sedan) || !MantleVehicleShapeTestPrivate::LoadPreset(*this, TEXT("motorcycle"), Bike)
-		|| !MantleVehicleShapeTestPrivate::LoadPreset(*this, TEXT("sixwheeler"), Lorry))
+		|| !MantleVehicleShapeTestPrivate::LoadPreset(*this, TEXT("sixwheeler"), Truck))
 	{
 		return false;
 	}
@@ -225,9 +225,9 @@ bool FMantleVehicleShapeHoldsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("and no smaller than the room they have"), Held.WheelRadius >= 100.0 / FMantleVehicleShape::MinAxleGapPerRadius - 1.0e-6);
 	TestEqual(TEXT("and say so"), Notes.Num(), 1);
 	Notes.Reset();
-	Held = FMantleVehicleShape::Edit(Lorry, FMantleVehicleShape::DimensionsOf(Lorry), EMantleVehicleDimension::WheelRadius, 1000.0, Notes);
-	TestTrue(TEXT("a three-axle lorry's wheels are held by its closest axles"),
-		Held.WheelRadius <= Lorry.Wheelbase * (Lorry.Axles[2].Position - Lorry.Axles[1].Position) / FMantleVehicleShape::MinAxleGapPerRadius + 1.0e-6);
+	Held = FMantleVehicleShape::Edit(Truck, FMantleVehicleShape::DimensionsOf(Truck), EMantleVehicleDimension::WheelRadius, 1000.0, Notes);
+	TestTrue(TEXT("a three-axle truck's wheels are held by its closest axles"),
+		Held.WheelRadius <= Truck.Wheelbase * (Truck.Axles[2].Position - Truck.Axles[1].Position) / FMantleVehicleShape::MinAxleGapPerRadius + 1.0e-6);
 	Notes.Reset();
 	Held = FMantleVehicleShape::Edit(Sedan, Own, EMantleVehicleDimension::Track, 1.0, Notes);
 	TestTrue(TEXT("a track too narrow for its wheels is held wider"), Held.Track >= FMantleVehicleShape::MinTrackPerWidth * Own.WheelWidth - 1.0e-6);
@@ -247,12 +247,12 @@ bool FMantleVehicleShapeHoldsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("and the pegs"), BikeSpec.Rider.RightPeg.Z, Bike.Rider.RightPeg.Z + 12.0);
 	TestEqual(TEXT("the grips stay as far apart"), BikeSpec.Rider.RightGrip.Y - BikeSpec.Rider.LeftGrip.Y, Bike.Rider.RightGrip.Y - Bike.Rider.LeftGrip.Y);
 
-	// A lorry with three axles keeps them where they are as shares of the wheelbase.
-	FMantleVehicleDimensions LorryLonger = FMantleVehicleShape::DimensionsOf(Lorry);
-	LorryLonger.Wheelbase *= 1.2;
-	const FMantleChassisSpec LorrySpec = FMantleVehicleShape::Reshape(Lorry, LorryLonger);
-	TestEqual(TEXT("the middle axle keeps its share of the wheelbase"), LorrySpec.Axles[1].Position, Lorry.Axles[1].Position);
-	TestEqual(TEXT("the middle axle moved with the wheelbase"), LorrySpec.WheelCentre(2).X, LorryLonger.Wheelbase * (0.5 - Lorry.Axles[1].Position));
+	// A truck with three axles keeps them where they are as shares of the wheelbase.
+	FMantleVehicleDimensions TruckLonger = FMantleVehicleShape::DimensionsOf(Truck);
+	TruckLonger.Wheelbase *= 1.2;
+	const FMantleChassisSpec TruckSpec = FMantleVehicleShape::Reshape(Truck, TruckLonger);
+	TestEqual(TEXT("the middle axle keeps its share of the wheelbase"), TruckSpec.Axles[1].Position, Truck.Axles[1].Position);
+	TestEqual(TEXT("the middle axle moved with the wheelbase"), TruckSpec.WheelCenter(2).X, TruckLonger.Wheelbase * (0.5 - Truck.Axles[1].Position));
 
 	// Warnings: none for any preset as it is; wheels outside the body say so.
 	for (const FString& Id : FMantleVehicleChassisBuilder::PresetIds())
@@ -307,7 +307,7 @@ bool FMantleVehicleShapePlacesTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	// A vehicle with no model at all: a grey body saved as a mesh, and a vehicle asset on it (a throwaway package, so nothing reaches the disk).
+	// A vehicle with no model at all: a gray body saved as a mesh, and a vehicle asset on it (a throwaway package, so nothing reaches the disk).
 	const FMantleVehicleBuildResult Built = FMantleVehicleBuilder::BuildChassis(Spec, TEXT("/Temp/MantleVehicleShapeTest"), TEXT("ShapeTestSedan"));
 	for (const FString& Problem : Built.Problems)
 	{
@@ -329,7 +329,7 @@ bool FMantleVehicleShapePlacesTest::RunTest(const FString& Parameters)
 		TestNotNull(TEXT("the body has its skeleton"), Body->GetSkeleton());
 	}
 
-	// The wheels, handling, collision, centre of mass and seats are the chassis's.
+	// The wheels, handling, collision, center of mass and seats are the chassis's.
 	if (TestEqual(TEXT("four wheels"), Source->Wheels.Num(), 4))
 	{
 		TestEqual(TEXT("the first wheel is the front left"), Source->Wheels[0].Bone, FName(TEXT("wheel_fl")));
@@ -346,7 +346,7 @@ bool FMantleVehicleShapePlacesTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("the box is the body"), Tuning.Collision[0].Extent.Equals(FVector(0.5 * Spec.Length, 0.5 * Spec.Width, 0.5 * Spec.Height), 1.0e-3)
 			&& Tuning.Collision[0].Center.Equals(FVector(0.0, 0.0, Spec.Clearance + 0.5 * Spec.Height), 1.0e-3));
 	}
-	TestTrue(TEXT("the centre of mass is the chassis's"), Tuning.bOverrideCenterOfMass && Tuning.CenterOfMass.Equals(Spec.CenterOfMass, 1.0e-3));
+	TestTrue(TEXT("the center of mass is the chassis's"), Tuning.bOverrideCenterOfMass && Tuning.CenterOfMass.Equals(Spec.CenterOfMass, 1.0e-3));
 	TestTrue(TEXT("the driver's seat and steering wheel are the chassis's"), Tuning.bSeatLocation && Tuning.SeatLocation.Equals(Spec.Seat, 1.0e-3)
 		&& Tuning.bSteeringWheel && Tuning.SteeringWheelLocation.Equals(Spec.Hub, 1.0e-3));
 	TestTrue(TEXT("the passenger's seat is across from the driver's"), Tuning.bPassengerSeat && Tuning.PassengerSeatLocation.Equals(FVector(Spec.Seat.X, -Spec.Seat.Y, Spec.Seat.Z), 1.0e-3));
@@ -375,7 +375,7 @@ bool FMantleVehicleShapePlacesTest::RunTest(const FString& Parameters)
 		FString Error;
 		if (TestTrue(TEXT("the chassis makes an asset"), FMantleVehicleChassisBuilder::MakeAsset(Spec, Reference, Error)))
 		{
-			TestEqual(TEXT("the saved body has the grey shapes' triangles"), Triangles, Reference.Body.LODs[0].NumTriangles());
+			TestEqual(TEXT("the saved body has the gray shapes' triangles"), Triangles, Reference.Body.LODs[0].NumTriangles());
 		}
 		TestTrue(TEXT("the body has a joint at a wheel"), Read.Joints.ContainsByPredicate([](const FMantleGlbJoint& Joint) { return Joint.Name == FName(TEXT("wheel_fl")); }));
 	}
@@ -529,9 +529,9 @@ bool FMantleVehicleShapeWordsTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("a weight held at the most"), Said(TEXT("mass"), true), FString(TEXT("It is as heavy as Mantle allows, so it may feel lighter than its size suggests.")));
 	TestTrue(TEXT("a camera held at a limit is not something to worry a creator with"), FMantleVehicleShape::ClampedSentence(TEXT("camera/armLength"), true).IsEmpty());
-	TestTrue(TEXT("nor is the centre of mass"), FMantleVehicleShape::ClampedSentence(TEXT("centerOfMass/z"), false).IsEmpty());
+	TestTrue(TEXT("nor is the center of mass"), FMantleVehicleShape::ClampedSentence(TEXT("centerOfMass/z"), false).IsEmpty());
 
-	// The summary: tonnes over a tonne, kilograms under it.
+	// The summary: metric tons over a metric ton, kilograms under it.
 	FMantleVehicleSummary Summary;
 	Summary.TurningCircleCm = 650.0;
 	Summary.TopSpeedKmh = 162.0;
@@ -543,8 +543,8 @@ bool FMantleVehicleShapeWordsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("750 kg is said in kilograms"), Describe(750.0).StartsWith(TEXT("Weighs about 750 kg.")));
 	TestTrue(TEXT("a weight under 100 kg to the kilogram"), Describe(97.4).StartsWith(TEXT("Weighs about 97 kg.")));
 	TestTrue(TEXT("a weight over 100 kg to the nearest ten"), Describe(754.0).StartsWith(TEXT("Weighs about 750 kg.")));
-	TestTrue(TEXT("1500 kg is in tonnes"), Describe(1500.0).Contains(TEXT("tonnes. Turns in")));
-	TestTrue(TEXT("one tonne is one tonne"), Describe(1000.0).StartsWith(TEXT("Weighs about 1 tonne.")));
+	TestTrue(TEXT("1500 kg is in metric tons"), Describe(1500.0).Contains(TEXT("metric tons. Turns in")));
+	TestTrue(TEXT("one metric ton is one metric ton"), Describe(1000.0).StartsWith(TEXT("Weighs about 1 metric ton.")));
 	TestTrue(TEXT("the circle is how far across it turns"), Describe(750.0).Contains(TEXT("Turns in a circle about 7 m across.")));
 	TestTrue(TEXT("and the speed to the nearest five"), Describe(750.0).EndsWith(TEXT("Top speed about 160 km/h.")));
 
@@ -577,13 +577,13 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FMantleVehicleShapeTopHeavyTest::RunTest(const FString& Parameters)
 {
-	// A body as tall as it goes, on tracks from 1 m to 3 m: the derivation lowers the centre of mass to the track's target and rounds it, so the
-	// track just meets the target and may read a hair under it. That is not top-heavy; only a centre of mass the floor above the wheels holds up is.
+	// A body as tall as it goes, on tracks from 1 m to 3 m: the derivation lowers the center of mass to the track's target and rounds it, so the
+	// track just meets the target and may read a hair under it. That is not top-heavy; only a center of mass the floor above the wheels holds up is.
 	int32 Checked = 0;
 	for (const FString& Id : FMantleVehicleChassisBuilder::PresetIds())
 	{
 		FMantleChassisSpec Preset;
-		if (!MantleVehicleShapeTestPrivate::LoadPreset(*this, *Id, Preset) || Preset.bCentreline || Preset.Constants.Stability <= 0.0)
+		if (!MantleVehicleShapeTestPrivate::LoadPreset(*this, *Id, Preset) || Preset.bCenterline || Preset.Constants.Stability <= 0.0)
 		{
 			continue;
 		}
@@ -651,7 +651,7 @@ bool FMantleVehicleShapeRebuildTest::RunTest(const FString& Parameters)
 	}
 	USkeleton* Skeleton = Mesh->GetSkeleton();
 
-	// The body in its render data, which is what Test Locally and Publish read: every triangle of the grey shapes, the wheels where the wheelbase puts them.
+	// The body in its render data, which is what Test Locally and Publish read: every triangle of the gray shapes, the wheels where the wheelbase puts them.
 	const auto CheckBody = [this, Source](const FMantleChassisSpec& Spec, const TCHAR* Which)
 	{
 		FMantleGlbMesh Read;
@@ -671,7 +671,7 @@ bool FMantleVehicleShapeRebuildTest::RunTest(const FString& Parameters)
 		FString ReferenceError;
 		if (FMantleVehicleChassisBuilder::MakeAsset(Spec, Reference, ReferenceError))
 		{
-			TestEqual(*FString::Printf(TEXT("%s: every triangle of the grey shapes is in the saved body"), Which), Triangles, Reference.Body.LODs[0].NumTriangles());
+			TestEqual(*FString::Printf(TEXT("%s: every triangle of the gray shapes is in the saved body"), Which), Triangles, Reference.Body.LODs[0].NumTriangles());
 		}
 		const FMantleGlbJoint* Front = Read.Joints.FindByPredicate([](const FMantleGlbJoint& Joint) { return Joint.Name == FName(TEXT("wheel_fl")); });
 		if (TestNotNull(*FString::Printf(TEXT("%s: the body has its front wheel's joint"), Which), Front))

@@ -9,16 +9,16 @@ class UObject;
 class UTexture2D;
 
 /**
- * What a texture is for, which decides how its bytes are read: colour is sRGB, everything else is
- * linear. Shared by avatar items (A2.3) and place materials (Fab F8: base colour and emissive are
+ * What a texture is for, which decides how its bytes are read: color is sRGB, everything else is
+ * linear. Shared by avatar items (A2.3) and place materials (Fab F8: base color and emissive are
  * Color, the normal map Normal, ORM Data).
  */
 enum class EMantleTextureRole : uint8
 {
-	/** sRGB colour (base colour, emissive, hair atlases), alpha linear. Mips average in linear light. */
+	/** sRGB color (base color, emissive, hair atlases), alpha linear. Mips average in linear light. */
 	Color,
 
-	/** A tangent-space normal map, linear. Mips average the decoded normals and renormalise them. */
+	/** A tangent-space normal map, linear. Mips average the decoded normals and renormalize them. */
 	Normal,
 
 	/** Linear data (ORM, masks, coverage). Mips average each channel. */
@@ -88,7 +88,7 @@ struct MANTLERUNTIME_API FMantleDecodedTexture
 {
 	EPixelFormat Format = PF_Unknown;
 
-	/** Colour (Role Color) is sampled as sRGB. */
+	/** Color (Role Color) is sampled as sRGB. */
 	bool bSRGB = false;
 
 	EMantleTextureRole Role = EMantleTextureRole::Color;

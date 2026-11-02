@@ -255,7 +255,7 @@ bool FMantleFitBodies::Make(const FString& Id, const EMetaHumanBodyType Type, FM
 	Subsystem->InitializeMetaHumanCharacter(Character);
 	if (!Character->IsCharacterValid())
 	{
-		OutError = TEXT("MetaHuman Creator did not initialise the in-memory character");
+		OutError = TEXT("MetaHuman Creator did not initialize the in-memory character");
 		return false;
 	}
 	if (!Subsystem->TryAddObjectToEdit(Character))

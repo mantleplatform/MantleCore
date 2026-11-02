@@ -2,7 +2,7 @@
 #include "Graph/MantleGraphCompiler.h"
 
 #include "Dom/JsonValue.h"
-#include "Graph/MantleGraphCatalogue.h"
+#include "Graph/MantleGraphCatalog.h"
 #include "Misc/Base64.h"
 #include "Serialization/JsonWriter.h"
 
@@ -69,7 +69,7 @@ namespace
 		return PureKinds.Contains(Kind);
 	}
 
-	/** Normalises a registry/graph type annotation for equality comparison: strips a trailing
+	/** Normalizes a registry/graph type annotation for equality comparison: strips a trailing
 	 *  "?" (optional marker) and "bool"/"vector" spellings used by graph JSON onto the registry's
 	 *  own "boolean"/"Vector3". Array ("{T}") and function ("(...) -> ...") types, and "any", are
 	 *  left alone -- MantleGraphTypesCompatible treats those as unchecked. */
@@ -95,7 +95,7 @@ namespace
 		const FString A = MantleGraphNormalizeType(Actual);
 		if (E.StartsWith(TEXT("{")) || E.StartsWith(TEXT("(")) || A.StartsWith(TEXT("{")) || A.StartsWith(TEXT("(")))
 		{
-			return true; // arrays/maps/function types: not modelled precisely enough to check
+			return true; // arrays/maps/function types: not modeled precisely enough to check
 		}
 		return E == A;
 	}
@@ -670,7 +670,7 @@ void FMantleGraphCompilerRun::EnsurePureNodeCompiled(const FString& NodeId, cons
 		FString Dotted;
 		F->TryGetStringField(TEXT("member"), Dotted);
 		FString Err;
-		const FMantleGraphNodeDef* Def = FMantleGraphCatalogue::FindByDotted(Dotted, EMantleGraphNodeCategory::Get, Err);
+		const FMantleGraphNodeDef* Def = FMantleGraphCatalog::FindByDotted(Dotted, EMantleGraphNodeCategory::Get, Err);
 		if (!Def)
 		{
 			Fail(NodeId, Err);
@@ -1103,7 +1103,7 @@ void FMantleGraphCompilerRun::EmitEventNode(const FMantleGraphNode& Node, TSet<F
 		return;
 	}
 	FString Err;
-	const FMantleGraphNodeDef* Def = FMantleGraphCatalogue::FindByDotted(Dotted, EMantleGraphNodeCategory::Event, Err);
+	const FMantleGraphNodeDef* Def = FMantleGraphCatalog::FindByDotted(Dotted, EMantleGraphNodeCategory::Event, Err);
 	if (!Def)
 	{
 		Fail(NodeId, Err);
@@ -1185,7 +1185,7 @@ void FMantleGraphCompilerRun::EmitCallNode(const FMantleGraphNode& Node, TSet<FS
 		return;
 	}
 	FString Err;
-	const FMantleGraphNodeDef* Def = FMantleGraphCatalogue::FindByDotted(Dotted, EMantleGraphNodeCategory::Call, Err);
+	const FMantleGraphNodeDef* Def = FMantleGraphCatalog::FindByDotted(Dotted, EMantleGraphNodeCategory::Call, Err);
 	if (!Def)
 	{
 		Fail(NodeId, Err);
@@ -1258,7 +1258,7 @@ void FMantleGraphCompilerRun::EmitSetNode(const FMantleGraphNode& Node, const TS
 		return;
 	}
 	FString Err;
-	const FMantleGraphNodeDef* Def = FMantleGraphCatalogue::FindByDotted(Dotted, EMantleGraphNodeCategory::Set, Err);
+	const FMantleGraphNodeDef* Def = FMantleGraphCatalog::FindByDotted(Dotted, EMantleGraphNodeCategory::Set, Err);
 	if (!Def)
 	{
 		Fail(NodeId, Err);

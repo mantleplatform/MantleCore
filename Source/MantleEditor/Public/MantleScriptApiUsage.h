@@ -22,12 +22,12 @@ struct MANTLEEDITOR_API FMantleScriptApiNeed
 	 * getattr with a computed name, a key built from strings). Minor is then
 	 * the manifest's newest minor, the conservative answer.
 	 */
-	bool bAnalysed = true;
+	bool bAnalyzed = true;
 
-	/** When !bAnalysed: the construct that stopped the scan, phrased for the creator ("getfenv"). */
-	FString Unanalysable;
+	/** When !bAnalyzed: the construct that stopped the scan, phrased for the creator ("getfenv"). */
+	FString Unanalyzable;
 
-	/** Folds Other in: the higher minor wins, and any unanalysable script makes the result so. */
+	/** Folds Other in: the higher minor wins, and any unanalyzable script makes the result so. */
 	void Merge(const FMantleScriptApiNeed& Other);
 };
 
@@ -40,7 +40,7 @@ struct MANTLEEDITOR_API FMantleScriptApiNeed
  * older class (Player.Avatar) counts after "." or ":". A string literal that is exactly a newer
  * name counts too, which covers player["Avatar"] and getattr(player, "avatar"). A false match
  * only raises the recorded version, which is the safe direction. Reflection the scan can't
- * follow makes the script unanalysable instead of guessing.
+ * follow makes the script unanalyzable instead of guessing.
  *
  * A graph script is exact: every member node names its "Class.Member".
  */
@@ -53,6 +53,6 @@ public:
 	/** A visual-scripting graph. */
 	static FMantleScriptApiNeed ForGraph(const FMantleGraph& Graph);
 
-	/** The Check note for an unanalysable script at Scripts/RelativePath. Problem and Remedy. */
-	static void DescribeUnanalysable(const FString& RelativePath, const FMantleScriptApiNeed& Need, FString& OutProblem, FString& OutRemedy);
+	/** The Check note for an unanalyzable script at Scripts/RelativePath. Problem and Remedy. */
+	static void DescribeUnanalyzable(const FString& RelativePath, const FMantleScriptApiNeed& Need, FString& OutProblem, FString& OutRemedy);
 };

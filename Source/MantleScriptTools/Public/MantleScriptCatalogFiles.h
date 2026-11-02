@@ -13,7 +13,7 @@
  * How a script's source text should be interpreted. Luau, JavaScript and Python each run on
  * their own runtime; TypeScript shares the JavaScript runtime slot (see
  * UMantleScriptWorldSubsystem::EnsureLanguageRuntime). A .wasm file under Scripts/ never gets a
- * catalogue entry.
+ * catalog entry.
  */
 enum class EMantleScriptCatalogLanguage : uint8
 {
@@ -26,7 +26,7 @@ enum class EMantleScriptCatalogLanguage : uint8
 
 MANTLESCRIPTTOOLS_API EMantleScriptCatalogLanguage MantleScriptLanguageFromExtension(const FString& Extension);
 
-/** One script or module file a catalogue source knows about. */
+/** One script or module file a catalog source knows about. */
 struct MANTLESCRIPTTOOLS_API FMantleScriptCatalogEntry
 {
 	/** Stable for the lifetime of the owning source; never persisted or sent over the network. */
@@ -67,7 +67,7 @@ struct MANTLESCRIPTTOOLS_API FMantleScriptCatalogEntry
 	 *  Empty for published scripts, which carry none, and for disk sources (transpiled with their own). */
 	FString SourceMap;
 	/** Empty for handwritten source. Parsed from generated graph Luau's versioned header by the
-	 *  catalogue source, so the runtime never imports MantleEditor to interpret a traceback. */
+	 *  catalog source, so the runtime never imports MantleEditor to interpret a traceback. */
 	TArray<FMantleGraphSourceMapEntry> GraphSourceMap;
 	FDateTime LastModified;
 	/** #134: for a file of a script package, the storage names its package's manifest lists under "dependencies";
@@ -119,7 +119,7 @@ public:
 };
 
 /**
- * S1.2b's only catalogue source: <PlaceDir>/Scripts/{Server,Client,Shared}, where any folder
+ * S1.2b's only catalog source: <PlaceDir>/Scripts/{Server,Client,Shared}, where any folder
  * named exactly "Modules" (at any depth, case-sensitive) is require-only. Polled for hot reload
  * every 0.5s by the owning world subsystem. Never compiled into a Shipping build -- see
  * MantleScriptWorldSubsystem.cpp, which only constructs this behind #if !UE_BUILD_SHIPPING.
@@ -159,7 +159,7 @@ public:
 	static bool IsRequestedForLaunch(FString& OutPlaceFilePath);
 
 private:
-	/** One script file on disk: its catalogue path ("Server/X.luau" or "Packages/P/Server/X.luau") and absolute path. */
+	/** One script file on disk: its catalog path ("Server/X.luau" or "Packages/P/Server/X.luau") and absolute path. */
 	struct FDiskScriptFile
 	{
 		FString CatalogPath;
@@ -178,7 +178,7 @@ private:
 	/** The side and require-only rule of a gathered file (MantleClassifyScriptCatalogPath's, by where it was read). */
 	static bool ClassifyFile(const FDiskScriptFile& File, EMantleSide& OutSide, bool& bOutModuleOnly);
 
-	/** The absolute path a catalogue path was read from. */
+	/** The absolute path a catalog path was read from. */
 	FString FullPathOf(const FString& CatalogPath) const;
 
 	FString ScriptsRoot;
@@ -191,7 +191,7 @@ private:
 };
 
 /**
- * #838: the script package a catalogue path belongs to -- "KillBricks" for "Packages/KillBricks/Server/Main.luau" --
+ * #838: the script package a catalog path belongs to -- "KillBricks" for "Packages/KillBricks/Server/Main.luau" --
  * or empty for a place's own script (and for anything that is not Packages/<name>/<more>). Case-exact.
  */
 MANTLESCRIPTTOOLS_API FString MantleScriptPackageOf(const FString& CatalogPath);
@@ -200,7 +200,7 @@ MANTLESCRIPTTOOLS_API FString MantleScriptPackageOf(const FString& CatalogPath);
 MANTLESCRIPTTOOLS_API void MantleStampPackageDependencies(TArray<FMantleScriptCatalogEntry>& Entries, const FString& Package, const TArray<FString>& Dependencies);
 
 /**
- * The side and require-only rule of a catalogue path, the one rule every source applies: Server/ and Client/ run on
+ * The side and require-only rule of a catalog path, the one rule every source applies: Server/ and Client/ run on
  * their side, Shared/ is require-only on both, and so is anything under a folder named exactly "Modules" at any
  * depth. #838: "Packages/<name>/<path>" is classified by <path> the same way, <name> being a storage name. False for
  * anything else (a top folder spelled in another case, a file directly under a top folder's parent).

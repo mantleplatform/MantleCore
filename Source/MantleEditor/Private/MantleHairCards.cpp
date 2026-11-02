@@ -17,16 +17,16 @@ TArray<int32> FMantleHairCards::SelectWholeCards(TConstArrayView<FVector3f> Posi
 	for (const uint32 I : Indices) if (I >= static_cast<uint32>(Positions.Num())) return Selected;
 	const TArray<TArray<int32>> Cards = FindCards(Positions, Indices);
 	if (Cards.IsEmpty()) return Selected;
-	TArray<FVector3f> Centres;
-	Centres.Reserve(Cards.Num());
+	TArray<FVector3f> Centers;
+	Centers.Reserve(Cards.Num());
 	FVector3f Mean = FVector3f::ZeroVector;
 	for (const TArray<int32>& Card : Cards)
 	{
-		FVector3f Centre = FVector3f::ZeroVector;
-		for (const int32 T : Card) for (int32 C = 0; C < 3; ++C) Centre += Positions[Indices[T * 3 + C]];
-		Centre /= static_cast<float>(Card.Num() * 3);
-		Centres.Add(Centre);
-		Mean += Centre;
+		FVector3f Center = FVector3f::ZeroVector;
+		for (const int32 T : Card) for (int32 C = 0; C < 3; ++C) Center += Positions[Indices[T * 3 + C]];
+		Center /= static_cast<float>(Card.Num() * 3);
+		Centers.Add(Center);
+		Mean += Center;
 	}
 	Mean /= static_cast<float>(Cards.Num());
 
@@ -40,7 +40,7 @@ TArray<int32> FMantleHairCards::SelectWholeCards(TConstArrayView<FVector3f> Posi
 	float Nearest = TNumericLimits<float>::Max();
 	for (int32 C = 0; C < Cards.Num(); ++C)
 	{
-		const float D = FVector3f::DistSquared(Centres[C], Mean);
+		const float D = FVector3f::DistSquared(Centers[C], Mean);
 		if (D < Nearest) { Nearest = D; Next = C; }
 	}
 	int32 Left = Budget;
@@ -51,7 +51,7 @@ TArray<int32> FMantleHairCards::SelectWholeCards(TConstArrayView<FVector3f> Posi
 		{
 			Selected.Append(Cards[Next]);
 			Left -= Cards[Next].Num();
-			for (int32 C = 0; C < Cards.Num(); ++C) if (!Done[C]) Gap[C] = FMath::Min(Gap[C], FVector3f::DistSquared(Centres[C], Centres[Next]));
+			for (int32 C = 0; C < Cards.Num(); ++C) if (!Done[C]) Gap[C] = FMath::Min(Gap[C], FVector3f::DistSquared(Centers[C], Centers[Next]));
 		}
 		Next = INDEX_NONE;
 		float Farthest = -1.f;
@@ -294,27 +294,27 @@ TArray<float> FMantleHairCards::ComputeCoordU(TConstArrayView<FVector3f> Positio
 		FVector3f Previous = FVector3f::ZeroVector;
 		for (int32 GroupIndex = 0; GroupIndex < Groups.Num(); ++GroupIndex)
 		{
-			// The group's centre over distinct positions, as the engine averages mesh-description vertices.
+			// The group's center over distinct positions, as the engine averages mesh-description vertices.
 			TArray<int32> Distinct;
 			for (const int32 Vertex : Groups[GroupIndex].Vertices)
 			{
 				Distinct.AddUnique(Welded[Vertex]);
 			}
-			FVector3f Centre = FVector3f::ZeroVector;
+			FVector3f Center = FVector3f::ZeroVector;
 			for (const int32 Vertex : Distinct)
 			{
-				Centre += Positions[Vertex];
+				Center += Positions[Vertex];
 			}
-			Centre /= static_cast<float>(FMath::Max(1, Distinct.Num()));
+			Center /= static_cast<float>(FMath::Max(1, Distinct.Num()));
 			if (GroupIndex > 0)
 			{
-				TotalLength += FVector3f::Distance(Centre, Previous);
+				TotalLength += FVector3f::Distance(Center, Previous);
 			}
 			for (const int32 Vertex : Groups[GroupIndex].Vertices)
 			{
 				CoordU[Vertex] = TotalLength;
 			}
-			Previous = Centre;
+			Previous = Center;
 		}
 		if (Groups.Num() > 1 && TotalLength > 0.0f)
 		{

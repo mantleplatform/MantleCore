@@ -64,7 +64,7 @@ public:
 
 	/**
 	 * #625: avatars upload "as-is" (what you see is what you get: a supported skeleton and Mantle's
-	 * limits, no customisation, no clothing) only when this is on. Off by default, so creators see only Convert (the
+	 * limits, no customization, no clothing) only when this is on. Off by default, so creators see only Convert (the
 	 * avatar becomes a MetaHuman); with it off an avatar body without Mantle's reference topology is refused with
 	 * "Convert it first". Hidden: no EditAnywhere, so Project Settings never shows it; set it in the per-user
 	 * EditorPerProjectUserSettings.ini ([/Script/MantleEditor.MantleSettings] bAllowAsIsAvatars=True). The as-is code

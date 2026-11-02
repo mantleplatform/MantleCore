@@ -11,8 +11,8 @@ namespace MantleWeaponFitImpl
 		float Max;
 	};
 
-	// Overall lengths in centimetres, muzzle to butt: real-world guns of each kind, with a margin either side so a
-	// stylised mesh is not flagged for being a little off.
+	// Overall lengths in centimeters, muzzle to butt: real-world guns of each kind, with a margin either side so a
+	// stylized mesh is not flagged for being a little off.
 	static const FHoldInfo& HoldInfo(EMantleWeaponFitHold Hold)
 	{
 		static const FHoldInfo Table[] = {
@@ -250,9 +250,9 @@ namespace MantleWeaponFitImpl
 			const TCHAR* Made;
 		};
 		static const FUnitFix Fixes[] = {
-			{100.0, TEXT("in metres")},
+			{100.0, TEXT("in meters")},
 			{2.54, TEXT("in inches")},
-			{0.1, TEXT("in millimetres")},
+			{0.1, TEXT("in millimeters")},
 			{0.01, TEXT("100 times too large")},
 		};
 		const FUnitFix* Chosen = nullptr;
@@ -511,18 +511,18 @@ FMantleWeaponFitResult FMantleWeaponFit::Fit(const FMantleWeaponFitInput& In)
 		Result.ScaleReason = Decision.Reason;
 		// A throwable longer than a throwing weapon's range (a javelin, a spear) is fitted like the Spear hold: the shaft grip and the second hand.
 		const bool bLongThrowable = bHandled && In.Hold == EMantleWeaponFitHold::Throwable && Length > HoldInfo(In.Hold).Max;
-		const FVector Centre = Box.GetCenter();
-		FVector Grip = Centre;
+		const FVector Center = Box.GetCenter();
+		FVector Grip = Center;
 		// A bow's riser (the middle of its length): the palm goes behind its front face and past its hand-side face (-Y), the arrow
 		// lies along its other face.
-		double BowArrowY = Centre.Y;
+		double BowArrowY = Center.Y;
 		if (bBow)
 		{
 			double FrontX = TNumericLimits<double>::Lowest(), HandY = TNumericLimits<double>::Max(), ArrowY = TNumericLimits<double>::Lowest();
 			for (const FVector& P : Pts)
 			{
 				const FVector L((P - Centroid) | X, (P - Centroid) | Y, (P - Centroid) | Z);
-				if (FMath::Abs(L.Z - Centre.Z) <= FMantleWeaponFit::BowRiserHalfShare * Length)
+				if (FMath::Abs(L.Z - Center.Z) <= FMantleWeaponFit::BowRiserHalfShare * Length)
 				{
 					FrontX = FMath::Max(FrontX, L.X);
 					HandY = FMath::Min(HandY, L.Y);
@@ -531,7 +531,7 @@ FMantleWeaponFitResult FMantleWeaponFit::Fit(const FMantleWeaponFitInput& In)
 			}
 			if (FrontX == TNumericLimits<double>::Lowest()) { FrontX = Box.Max.X; HandY = Box.Min.Y; ArrowY = Box.Max.Y; }
 			Grip = FVector(FrontX - FMantleWeaponFit::BowPalmBehindFrontCm / Scale, HandY - FMantleWeaponFit::BowPalmBeyondRiserCm / Scale,
-				Centre.Z - FMantleWeaponFit::BowGripBelowMiddleShare * Length);
+				Center.Z - FMantleWeaponFit::BowGripBelowMiddleShare * Length);
 			BowArrowY = ArrowY - FMantleWeaponFit::BowNockInsideRiserCm / Scale;
 		}
 		if (!bBow && !bShield && (In.Hold != EMantleWeaponFitHold::Throwable || bHandled) && In.Hold != EMantleWeaponFitHold::Unarmed)
@@ -542,7 +542,7 @@ FMantleWeaponFitResult FMantleWeaponFit::Fit(const FMantleWeaponFitInput& In)
 		}
 		// A staff's palm is on the shaft's middle line, not the middle of the box (a curled head pulls the box's middle off the shaft): the
 		// middle of the mesh just around the palm. Its Focus is the middle of the head's top, the outer share of the length.
-		double StaffFocusY = Centre.Y, StaffFocusZ = Centre.Z;
+		double StaffFocusY = Center.Y, StaffFocusZ = Center.Z;
 		if (bStaff)
 		{
 			FBox2D Shaft(ForceInit), Head(ForceInit);
@@ -565,7 +565,7 @@ FMantleWeaponFitResult FMantleWeaponFit::Fit(const FMantleWeaponFitInput& In)
 			for (const FVector& P : Pts)
 			{
 				const FVector L((P - Centroid) | X, (P - Centroid) | Y, (P - Centroid) | Z);
-				if (FVector2D(L.Y - Centre.Y, L.Z - Centre.Z).Size() < Reach) Back = FMath::Min(Back, L.X);
+				if (FVector2D(L.Y - Center.Y, L.Z - Center.Z).Size() < Reach) Back = FMath::Min(Back, L.X);
 			}
 			Grip.X = (Back < TNumericLimits<double>::Max() ? Back : Box.Min.X) - ShieldPalmBehindCm / Scale;
 		}
@@ -576,12 +576,12 @@ FMantleWeaponFitResult FMantleWeaponFit::Fit(const FMantleWeaponFitInput& In)
 		if (In.Hold == EMantleWeaponFitHold::Consumable)
 		{
 			// An item held whole in the palm: its middle is the grip.
-			Point(TEXT("Grip"), Centre);
+			Point(TEXT("Grip"), Center);
 		}
 		else if (bShield)
 		{
 			Point(TEXT("Grip"), Grip);
-			Point(TEXT("Face"), FVector(Box.Max.X, Centre.Y, Centre.Z));
+			Point(TEXT("Face"), FVector(Box.Max.X, Center.Y, Center.Z));
 		}
 		else if (bBow)
 		{
@@ -590,7 +590,7 @@ FMantleWeaponFitResult FMantleWeaponFit::Fit(const FMantleWeaponFitInput& In)
 			Point(TEXT("Grip_L"), Grip);
 			Point(TEXT("StringTop"), FVector(Box.Min.X + FMantleWeaponFit::BowStringPlaneShare * Depth, BowArrowY, Box.Max.Z));
 			Point(TEXT("StringBottom"), FVector(Box.Min.X + FMantleWeaponFit::BowStringPlaneShare * Depth, BowArrowY, Box.Min.Z));
-			Point(TEXT("Nock"), FVector(Box.Min.X + FMantleWeaponFit::BowNockPlaneShare * Depth, BowArrowY, Centre.Z + FMantleWeaponFit::BowNockAboveMiddleShare * Length));
+			Point(TEXT("Nock"), FVector(Box.Min.X + FMantleWeaponFit::BowNockPlaneShare * Depth, BowArrowY, Center.Z + FMantleWeaponFit::BowNockAboveMiddleShare * Length));
 		}
 		else
 		{
@@ -605,11 +605,11 @@ FMantleWeaponFitResult FMantleWeaponFit::Fit(const FMantleWeaponFitInput& In)
 			if (bStaff) Point(TEXT("Focus"), FVector(Box.Max.X, StaffFocusY, StaffFocusZ));
 			else if (In.Hold != EMantleWeaponFitHold::Unarmed)
 			{
-				Point(TEXT("Tip"), FVector(Box.Max.X, Centre.Y, Centre.Z));
+				Point(TEXT("Tip"), FVector(Box.Max.X, Center.Y, Center.Z));
 				if (In.Hold != EMantleWeaponFitHold::Throwable)
 				{
-					Point(TEXT("EdgeBase"), FVector(Box.Min.X + Box.GetSize().X * (In.Hold == EMantleWeaponFitHold::Spear ? 0.85 : 0.25), Centre.Y, Centre.Z));
-					Point(TEXT("EdgeTip"), FVector(Box.Max.X, Centre.Y, Centre.Z));
+					Point(TEXT("EdgeBase"), FVector(Box.Min.X + Box.GetSize().X * (In.Hold == EMantleWeaponFitHold::Spear ? 0.85 : 0.25), Center.Y, Center.Z));
+					Point(TEXT("EdgeTip"), FVector(Box.Max.X, Center.Y, Center.Z));
 				}
 			}
 		}
@@ -787,7 +787,7 @@ FMantleWeaponFitResult FMantleWeaponFit::Fit(const FMantleWeaponFitInput& In)
 	Result.Suggestion = Decision.Suggestion;
 	Result.Scale = static_cast<float>(Scale);
 
-	// The final cloud: weapon-frame axes, scaled to centimetres.
+	// The final cloud: weapon-frame axes, scaled to centimeters.
 	TArray<FVector> Q;
 	Q.Reserve(Pts.Num());
 	double XMin = TNumericLimits<double>::Max();
@@ -866,14 +866,14 @@ FMantleWeaponFitResult FMantleWeaponFit::Fit(const FMantleWeaponFitInput& In)
 		}
 	}
 	auto RunWidth = [&](const FRun& Run) { return (Run.End - Run.Begin + 1) * BinWidth; };
-	auto RunCentreX = [&](const FRun& Run) { return XMin + BinWidth * 0.5 * (Run.Begin + Run.End + 1); };
+	auto RunCenterX = [&](const FRun& Run) { return XMin + BinWidth * 0.5 * (Run.Begin + Run.End + 1); };
 
 	// The grip is the rearmost protrusion in the rear 60% that is narrow enough to be a grip (a run over 25% of the
 	// length is a stock or a handguard). The next protrusion ahead of it, within 25% of the length, is the magazine.
 	int32 GripRun = INDEX_NONE;
 	for (int32 R = 0; R < Runs.Num() && GripRun == INDEX_NONE; ++R)
 	{
-		if (RunCentreX(Runs[R]) < XMin + 0.6 * Len && RunWidth(Runs[R]) <= 0.25 * Len)
+		if (RunCenterX(Runs[R]) < XMin + 0.6 * Len && RunWidth(Runs[R]) <= 0.25 * Len)
 		{
 			GripRun = R;
 		}
@@ -906,7 +906,7 @@ FMantleWeaponFitResult FMantleWeaponFit::Fit(const FMantleWeaponFitInput& In)
 	{
 		const FRun& Run = Runs[GripRun];
 		// Where the hand closes: just in front of the middle, a quarter of the way down from the body.
-		GripR = FVector(RunCentreX(Run) + 0.15 * RunWidth(Run), 0.5 * (Run.MinY + Run.MaxY), BodyBottom - 0.25 * (BodyBottom - Run.LowestZ));
+		GripR = FVector(RunCenterX(Run) + 0.15 * RunWidth(Run), 0.5 * (Run.MinY + Run.MaxY), BodyBottom - 0.25 * (BodyBottom - Run.LowestZ));
 	}
 	else
 	{
@@ -926,17 +926,17 @@ FMantleWeaponFitResult FMantleWeaponFit::Fit(const FMantleWeaponFitInput& In)
 		if (In.GripRule == EMantleWeaponGripRule::Proportion)
 		{
 			FirstRun = 0;
-			while (FirstRun < Runs.Num() && RunCentreX(Runs[FirstRun]) <= GripR.X)
+			while (FirstRun < Runs.Num() && RunCenterX(Runs[FirstRun]) <= GripR.X)
 			{
 				++FirstRun;
 			}
 		}
 		for (int32 R = FirstRun; R < Runs.Num(); ++R)
 		{
-			if (RunWidth(Runs[R]) <= 0.25 * Len && RunCentreX(Runs[R]) - GripR.X <= 0.25 * Len)
+			if (RunWidth(Runs[R]) <= 0.25 * Len && RunCenterX(Runs[R]) - GripR.X <= 0.25 * Len)
 			{
 				const FRun& Run = Runs[R];
-				Guess.Add(TEXT("Magazine"), FVector(RunCentreX(Run), 0.5 * (Run.MinY + Run.MaxY), BodyBottom - 0.5 * (BodyBottom - Run.LowestZ)));
+				Guess.Add(TEXT("Magazine"), FVector(RunCenterX(Run), 0.5 * (Run.MinY + Run.MaxY), BodyBottom - 0.5 * (BodyBottom - Run.LowestZ)));
 				break;
 			}
 		}
@@ -946,8 +946,8 @@ FMantleWeaponFitResult FMantleWeaponFit::Fit(const FMantleWeaponFitInput& In)
 	{
 		FBox Tip;
 		SlabBox(Q, XMax - 0.05 * Len, XMax, Tip);
-		const FVector Centre = Tip.GetCenter();
-		Guess.Add(TEXT("Muzzle"), FVector(XMax, Centre.Y, Centre.Z));
+		const FVector Center = Tip.GetCenter();
+		Guess.Add(TEXT("Muzzle"), FVector(XMax, Center.Y, Center.Z));
 	}
 
 	// Sight: the top surface of the slab 35% to 45% from the rear.
@@ -969,14 +969,14 @@ FMantleWeaponFitResult FMantleWeaponFit::Fit(const FMantleWeaponFitInput& In)
 	}
 
 	// Grip_L for two-handed holds: 40% of the length ahead of the right hand, kept 10% of the length short of the
-	// muzzle, under the middle of whatever the mesh has there (the handguard) by LeftHandBelowCentreCm.
+	// muzzle, under the middle of whatever the mesh has there (the handguard) by LeftHandBelowCenterCm.
 	if (IsTwoHanded(In.Hold))
 	{
 		const double ForeX = FMath::Max(FMath::Min(GripR.X + 0.4 * Len, XMax - 0.1 * Len), GripR.X + 0.05 * Len);
 		FBox Fore;
 		if (SlabBox(Q, ForeX - 0.02 * Len, ForeX + 0.02 * Len, Fore))
 		{
-			Guess.Add(TEXT("Grip_L"), FVector(ForeX, Fore.GetCenter().Y, Fore.GetCenter().Z - In.LeftHandBelowCentreCm));
+			Guess.Add(TEXT("Grip_L"), FVector(ForeX, Fore.GetCenter().Y, Fore.GetCenter().Z - In.LeftHandBelowCenterCm));
 		}
 		else
 		{

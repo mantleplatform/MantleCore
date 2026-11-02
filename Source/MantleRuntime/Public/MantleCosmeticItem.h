@@ -69,8 +69,8 @@ struct MANTLERUNTIME_API FMantleCosmeticTransform
 /**
  * One mesh section's material: its role (skin, eyes, other, hair_cards) and cooked textures. Entry k is section k.
  * A hair_cards section (a groom's cards, #325, #326) has the cards attribute atlas as its albedo (coverage in R, seed
- * in B: data, not colour). Generic artist cards use HairColor. Native v2 cards additionally require
- * nativeHair with signed direction data and explicit source colour settings; normal/ORM keep their ordinary meanings.
+ * in B: data, not color). Generic artist cards use HairColor. Native v2 cards additionally require
+ * nativeHair with signed direction data and explicit source color settings; normal/ORM keep their ordinary meanings.
  */
 struct MANTLERUNTIME_API FMantleCosmeticNativeEye
 {
@@ -78,7 +78,7 @@ struct MANTLERUNTIME_API FMantleCosmeticNativeEye
 	TMap<FName, FMantleCosmeticAssetRef> Textures;
 };
 
-/** Catalog form: immutable cooked direction texture plus the explicit source colour recipe. */
+/** Catalog form: immutable cooked direction texture plus the explicit source color recipe. */
 struct MANTLERUNTIME_API FMantleCosmeticNativeHair
 {
 	FMantleNativeHairSettings Settings;
@@ -100,7 +100,7 @@ struct MANTLERUNTIME_API FMantleCosmeticMaterial
 	/** Audited normalized native Groom atlas profile; empty preserves artist alpha handling. */
 	FString NativeHairProfile;
 	TOptional<FMantleCosmeticNativeHair> NativeHair;
-	/** Optional fixed mask-driven clothing colour customization. */
+	/** Optional fixed mask-driven clothing color customization. */
 	FMantleCosmeticAssetRef ColorMask;
 	TArray<FMantleClothingColorRegion> ColorRegions;
 

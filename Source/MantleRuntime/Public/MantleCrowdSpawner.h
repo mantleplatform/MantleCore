@@ -49,7 +49,7 @@ struct MANTLERUNTIME_API FMantleCrowdWornSettings
 	FString ItemId;
 };
 
-/** One look a crowd NPC may wear. Empty tone or eye colour, or a zero height, is picked by the seed. */
+/** One look a crowd NPC may wear. Empty tone or eye color, or a zero height, is picked by the seed. */
 USTRUCT()
 struct MANTLERUNTIME_API FMantleCrowdLookSettings
 {

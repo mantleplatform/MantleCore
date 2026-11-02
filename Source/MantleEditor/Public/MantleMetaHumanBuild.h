@@ -80,7 +80,7 @@ struct MANTLEEDITOR_API FMantleMetaHumanBuildResult
  *   0. the save scope checked (IsSaveScope): CharacterFolder is a /Game folder at least two levels deep holding the character;
  *   1. the preflight (Preflight, asking Epic): MetaHuman Optional Content, and Epic sign-in through
  *      CheckHasLoggedInUserAsync (never LoginToAuthEnvironment: no login window ever opens; not signed in is a clean stop);
- *   2. opened for editing (unless it already was); the skin: Epic's centre skin tone (U = V = 0.5), the
+ *   2. opened for editing (unless it already was); the skin: Epic's center skin tone (U = V = 0.5), the
  *      top underwear off, and the bottom masked out by Epic's own all-black T_Flat_Black_M (referenced, never copied) as the
  *      Body_Underwear_Mask texture override on TextureMaterialOverrides (never the deprecated SkinSettings.TextureOverrides,
  *      not read in 5.8); CommitSkinSettings, then the override read back: not stored is a stop;
@@ -100,7 +100,7 @@ public:
 	/** Epic's own all-black mask: the skin's Body_Underwear_Mask override, so the build bakes no underwear. Only read. */
 	static const TCHAR* const UnderwearMaskPath;
 
-	/** Epic's centre skin tone (the tone picker's U and V): players recolour in game. */
+	/** Epic's center skin tone (the tone picker's U and V): players recolor in game. */
 	static constexpr float SkinToneU = 0.5f;
 	static constexpr float SkinToneV = 0.5f;
 
@@ -127,7 +127,7 @@ public:
 
 	/**
 	 * Step 05 for Character (a UMetaHumanCharacter) in CharacterFolder. False with why; OutResult.Created lists what was made.
-	 * The skin is Epic's centre skin tone on every route (the upload is geometry only; players recolour it in game).
+	 * The skin is Epic's center skin tone on every route (the upload is geometry only; players recolor it in game).
 	 * bDeferHeightWarning records the measured height at Log severity, for a caller
 	 * that retries and reports its final result; direct builds warn by default. A built body whose lowest point is further from the
 	 * floor than the contract's feet tolerance (the upload's check) fails the step here (never retried as a height problem).
@@ -280,7 +280,7 @@ public:
  * One line, with the preflight as far as it is known without asking Epic, and the cloud note. Apply copies the character to
  * <output>/<Name>/<Name> (the source is never changed: a dirtied protected package stops it), sets the copy to the default
  * height (FMantleMetaHumanBuild::SetHeight; a fixed body type builds at its own height, with a warning line), builds it as
- * MHBuild does (Epic's centre skin tone), and hands the part on (FMantleMetaHumanBuild::HandOff). Creator's Height
+ * MHBuild does (Epic's center skin tone), and hands the part on (FMantleMetaHumanBuild::HandOff). Creator's Height
  * constraint is not exact, so the built height is measured and, when it is further than FMantleAvatarHeight::AimCm from the
  * default, the character is rebuilt with a corrected constraint (at most FMantleAvatarHeight::MaxHeightBuilds builds; not for
  * a fixed body type). A failed Apply deletes the copy and what the build made, the context as it was.

@@ -26,9 +26,9 @@ class FScopedTransaction;
 
 /**
  * Tools > Mantle > Build a vehicle...: four short steps, one decision each. Pick what you are building (a vehicle type: a card for
- * every publishable preset). Shape it while a grey picture of it changes, and read what it is like: a road vehicle has eight sliders in
- * centimetres and says what it weighs, how it turns and how fast it goes; a plane, helicopter or hovercraft has one Size slider (and a seat or a
- * top-speed feel where it has one) and says what suits it (FMantleVehicleShape::Describe). Drive it: put the grey vehicle in your level with no
+ * every publishable preset). Shape it while a gray picture of it changes, and read what it is like: a road vehicle has eight sliders in
+ * centimeters and says what it weighs, how it turns and how fast it goes; a plane, helicopter or hovercraft has one Size slider (and a seat or a
+ * top-speed feel where it has one) and says what suits it (FMantleVehicleShape::Describe). Drive it: put the gray vehicle in your level with no
  * model at all. Or, as an option, use your own 3D model as its body. The result, good or bad, shows in the window; there are no dialogs.
  * The logic is FMantleVehicleShape (the shape) and FMantleVehicleBuilder (the vehicle assets); this is only the page. Native Slate.
  */
@@ -47,7 +47,7 @@ public:
 
 	void Construct(const FArguments& InArgs);
 
-	/** Cancelling (closing the window other than with Done) takes the grey vehicles this window put in the level back out. */
+	/** Canceling (closing the window other than with Done) takes the gray vehicles this window put in the level back out. */
 	virtual ~SMantleVehicleBuilder() override;
 
 	/** The nomad tab: registered at module startup, opened from the Tools menu. */
@@ -86,7 +86,7 @@ private:
 	 */
 	void ShapeChanged();
 	FReply OnResetShape();
-	/** Shows the shaped chassis in the picture: a transient copy of the grey body, made the way a published chassis is (FMantleVehicleChassisBuilder::MakeAsset). */
+	/** Shows the shaped chassis in the picture: a transient copy of the gray body, made the way a published chassis is (FMantleVehicleChassisBuilder::MakeAsset). */
 	void RebuildPreview(bool bFrame);
 	/** The picture is out of date: it is redrawn in a moment, once, however many sizes changed meanwhile (a drag changes them every frame). */
 	void MarkPreviewDirty();
@@ -94,8 +94,8 @@ private:
 	void FlushPreview();
 	EActiveTimerReturnType OnPreviewTimer(double CurrentTime, float DeltaTime);
 
-	// Drive (the grey vehicle, no model).
-	FReply OnPutGreyInLevel();
+	// Drive (the gray vehicle, no model).
+	FReply OnPutGrayInLevel();
 
 	// Your own model (the vehicle on a creator's static or skeletal mesh).
 	bool CanBuild() const;
@@ -121,7 +121,7 @@ private:
 	 * has the sliders). Called when a model or a type is picked.
 	 */
 	void ReadModel(TOptional<bool> Twin = TOptional<bool>());
-	/** A propeller plane with two engines (a P-38): the grey vehicle gets a propeller bone for each, and the parts list a left and a right propeller. */
+	/** A propeller plane with two engines (a P-38): the gray vehicle gets a propeller bone for each, and the parts list a left and a right propeller. */
 	void SetTwinEngine(bool bOn);
 	/** The model's nose faces this way (a turn about Z, 0 / 90 / 180 / 270); the model's size is read again for it. */
 	void SetModelYaw(double Degrees);
@@ -142,11 +142,11 @@ private:
 	/** Saves the built vehicle when it has unsaved changes, and says on the page whether that worked. */
 	void SaveNow();
 
-	/** Done: closes the window, first taking out the grey vehicle when the model's vehicle is in the level instead. */
+	/** Done: closes the window, first taking out the gray vehicle when the model's vehicle is in the level instead. */
 	void FinishWindow();
 	void CloseWindow();
-	/** Takes every grey vehicle this window put in the level out of it again (one undo step). */
-	void RemoveGreySpawns();
+	/** Takes every gray vehicle this window put in the level out of it again (one undo step). */
+	void RemoveGraySpawns();
 
 	TSharedPtr<SMantleBuilderFlow> Flow;
 
@@ -166,27 +166,27 @@ private:
 	TSharedPtr<FMantleVehicleShapeKind> ShapeKind;
 	/** Weak: the picture lives only while the Shape step is open. */
 	TWeakPtr<SMantleBuilderViewport> ShapeViewport;
-	/** The transient grey vehicle the picture shows; replaced with every change. */
+	/** The transient gray vehicle the picture shows; replaced with every change. */
 	TStrongObjectPtr<UMantleBuiltVehicle> PreviewVehicle;
 
 	// Drive.
-	/** The name the grey vehicle is saved under (a folder and assets of this name); empty until it is first put in the level, new for each type. */
-	FString GreyName;
-	FString GreyPresetId;
-	/** The vehicle made for the sizes GreySignature names, if it is still there: pressing Put it in my level again for the same sizes remakes nothing. */
-	TWeakObjectPtr<UMantleVehicleSource> GreySource;
-	FString GreySignature;
+	/** The name the gray vehicle is saved under (a folder and assets of this name); empty until it is first put in the level, new for each type. */
+	FString GrayName;
+	FString GrayPresetId;
+	/** The vehicle made for the sizes GraySignature names, if it is still there: pressing Put it in my level again for the same sizes remakes nothing. */
+	TWeakObjectPtr<UMantleVehicleSource> GraySource;
+	FString GraySignature;
 	/** What the last build of it said besides that it worked: where it was saved, and its notes. */
-	FString GreyExtra;
-	bool bGreyNotSaved = false;
+	FString GrayExtra;
+	bool bGrayNotSaved = false;
 	/** What Put it in my level said, under the button, in plain words. */
 	FText DriveStatus;
 	/** What the placement said about where a flier went and what it needs, kept so a second press repeats it. */
-	FString GreyPlaceNote;
+	FString GrayPlaceNote;
 	bool bDriveFailed = false;
-	/** The grey vehicles Put it in my level added to the level, so Cancel and Done can take them out again. */
-	TArray<TWeakObjectPtr<AMantleVehicleSpawnPoint>> GreySpawns;
-	/** Done was pressed: closing the window now is not cancelling. */
+	/** The gray vehicles Put it in my level added to the level, so Cancel and Done can take them out again. */
+	TArray<TWeakObjectPtr<AMantleVehicleSpawnPoint>> GraySpawns;
+	/** Done was pressed: closing the window now is not canceling. */
 	bool bFinished = false;
 
 	// Your own model.
@@ -220,7 +220,7 @@ private:
 	TArray<double> YawValues;
 	/** The picked model is worn as a skin on the chassis (else its own wheels are fitted). Worked out when the model or the type is picked. */
 	bool bUseSkin = false;
-	/** The grey vehicle is the twin-engined plane (FMantleVehicleChassisSkin::AsTwin): set when the model has two propellers, or by the creator. */
+	/** The gray vehicle is the twin-engined plane (FMantleVehicleChassisSkin::AsTwin): set when the model has two propellers, or by the creator. */
 	bool bTwinEngine = false;
 	TSharedPtr<SVerticalBox> ResultBox;
 	/** What Pick an .fbx file... did, in plain words, under the picker; red when it failed. */

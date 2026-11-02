@@ -13,7 +13,7 @@
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleSeatSpotVisualizerPrivate
 {
-	/** The seated hips' footprint in centimetres: X is forward, Y is sideways, Z is up. */
+	/** The seated hips' footprint in centimeters: X is forward, Y is sideways, Z is up. */
 	const FVector HipHalfExtent(20.0, 20.0, 10.0);
 	constexpr double FacingLength = 60.0;
 	constexpr double ArrowHeadLength = 12.0;

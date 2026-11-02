@@ -342,7 +342,7 @@ public:
 
 	/**
 	 * #488: where an uploaded texture read with Role stands in the newest live set that has it, as GetLiveMeshState: a
-	 * vehicle's livery (read as colour) is prepared with its vehicle off a dedicated server, so a car can wait for it.
+	 * vehicle's livery (read as color) is prepared with its vehicle off a dedicated server, so a car can wait for it.
 	 */
 	static EMantleLiveAssetState GetLiveTextureState(const FString& Id, EMantleTextureRole Role, FString* OutError = nullptr);
 
@@ -567,7 +567,7 @@ private:
 		bool IsTerminal() const { return State == EBuildState::Ready || State == EBuildState::Failed; }
 	};
 
-	/** One uploaded id in one use (a texture used as colour and as data is two records). */
+	/** One uploaded id in one use (a texture used as color and as data is two records). */
 	struct FRecord
 	{
 		FString Id;
@@ -658,7 +658,7 @@ private:
 		TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, const FString& Error);
 	/** #435: a vehicle's materials, from its document, as material records (off a dedicated server). */
 	void QueueMaterialsOf(const FString& VehicleId, const TArray<FString>& MaterialIds);
-	/** #488: a vehicle's liveries, from its document, as colour texture records (off a dedicated server). */
+	/** #488: a vehicle's liveries, from its document, as color texture records (off a dedicated server). */
 	void QueueLiveriesOf(const FString& VehicleId, const TArray<FString>& TextureIds);
 	/** #435 item 2: a vehicle's part meshes, from its document, as mesh records without collision (off a dedicated server). */
 	void QueueMeshesOf(const FString& VehicleId, const TArray<FString>& MeshIds);

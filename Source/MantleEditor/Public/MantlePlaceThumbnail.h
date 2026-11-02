@@ -18,9 +18,9 @@ struct MANTLEEDITOR_API FMantlePlaceThumbnailView
 };
 
 /**
- * A published place's catalogue picture (#786): a 16:9 capture of the level itself, from the view chosen on Mantle Place
+ * A published place's catalog picture (#786): a 16:9 capture of the level itself, from the view chosen on Mantle Place
  * Settings (Thumbnail) or, when none is, from above and behind the first Player Start looking toward the middle of what
- * the level draws. Publish uploads it as a colour texture and the exporter names it in metadata.thumbnail; the
+ * the level draws. Publish uploads it as a color texture and the exporter names it in metadata.thumbnail; the
  * server holds the place out of discovery until the picture passes moderation.
  */
 class MANTLEEDITOR_API FMantlePlaceThumbnail

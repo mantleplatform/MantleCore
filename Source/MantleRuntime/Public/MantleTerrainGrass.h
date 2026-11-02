@@ -86,7 +86,7 @@ public:
 	/**
 	 * Fills Out with the grass of Cell for Entry (entry number EntryIndex), whose map is Map, which must hold pixels
 	 * (a map without any grows nothing). The map is stretched over the whole terrain as the weightmap is, texel
-	 * centres at (i + 0.5) / size. Instances are uniformly scaled between Entry's scale range, turned about the up
+	 * centers at (i + 0.5) / size. Instances are uniformly scaled between Entry's scale range, turned about the up
 	 * axis when it asks for a random yaw, and tilted onto the surface normal when it asks to align. Nothing grows
 	 * over a hole quad of Holes (null for a terrain without holes).
 	 */

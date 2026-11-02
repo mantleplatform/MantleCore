@@ -187,10 +187,10 @@ struct MANTLERUNTIME_API FMantleClearanceRestore
 	 *   - a vertex and its layer twin take the larger push (FMantleLayerCrossing::FindTwins);
 	 *   - vertices are welded by position within their section (split copies move together);
 	 *   - the push field is smoothed SmoothIters passes over the points' edge adjacency, never below a
-	 *     point's own requirement: p' = max(required, 0.5 p + 0.5 neighbour mean);
+	 *     point's own requirement: p' = max(required, 0.5 p + 0.5 neighbor mean);
 	 *   - direction: the point's own normal, scaled 1 / dot so the clearance along the surface normal grows
 	 *     by p; the surface triangle's normal where the two dot below NormalMinDot; untracked points the
-	 *     smoothing reached borrow their neighbours' surface normal;
+	 *     smoothing reached borrow their neighbors' surface normal;
 	 *   - the push vectors are smoothed as many passes (P17e), each kept at least its scalar length;
 	 *   - #636, when Seams is given (per vertex a seam id, INDEX_NONE for none: copies of one position in
 	 *     different sections share an id): the points of one seam become one point, pushed along one

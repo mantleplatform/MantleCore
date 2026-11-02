@@ -9,7 +9,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// A rigid accessory (a hat) declares colour areas in its item body as clothing does; a slot outside clothing
+// A rigid accessory (a hat) declares color areas in its item body as clothing does; a slot outside clothing
 // and accessories (hair) still refuses them. Pure: no network, no assets.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
@@ -58,7 +58,7 @@ bool FMantleAccessoryColorItemTest::RunTest(const FString& Parameters)
 	using namespace MantleAccessoryColorItemTestPrivate;
 	FString Json, Error;
 	const FMantleCosmeticPackage Cap = CapPackage();
-	if (!TestTrue(TEXT("a cap with colour areas makes its item"), Cap.MakeItemJson(CapIds(), Json, Error)))
+	if (!TestTrue(TEXT("a cap with color areas makes its item"), Cap.MakeItemJson(CapIds(), Json, Error)))
 	{
 		AddError(Error);
 		return false;
@@ -79,7 +79,7 @@ bool FMantleAccessoryColorItemTest::RunTest(const FString& Parameters)
 	FMantleCosmeticPackage Hair = CapPackage();
 	Hair.Class = EMantleCosmeticClass::Hair;
 	Hair.Slot = TEXT("hair");
-	TestFalse(TEXT("hair refuses colour areas"), Hair.MakeItemJson(CapIds(), Json, Error));
+	TestFalse(TEXT("hair refuses color areas"), Hair.MakeItemJson(CapIds(), Json, Error));
 	return true;
 }
 

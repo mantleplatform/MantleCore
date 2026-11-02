@@ -33,7 +33,7 @@ struct MANTLEEDITOR_API FMantleWaterSplineSample
 	/** Linear, Curve, Constant, CurveClamped or CurveCustomTangent. */
 	FString Type;
 
-	/** The river's width from its centre in each direction (rivers only), and the water's depth, current and audio intensity there. */
+	/** The river's width from its center in each direction (rivers only), and the water's depth, current and audio intensity there. */
 	float Width = 0.f;
 	float Depth = 0.f;
 	float Velocity = 0.f;
@@ -78,12 +78,12 @@ struct MANTLEEDITOR_API FMantleWaterWaves
 struct MANTLEEDITOR_API FMantleWaterMaterialParam
 {
 	FName Name;
-	bool bColour = false;
+	bool bColor = false;
 	float Scalar = 0.f;
-	FLinearColor Colour = FLinearColor::Black;
+	FLinearColor Color = FLinearColor::Black;
 };
 
-/** The body's water material: its name, its master, and the parameters that make up the look (absorption, scattering, colour, foam...). */
+/** The body's water material: its name, its master, and the parameters that make up the look (absorption, scattering, color, foam...). */
 struct MANTLEEDITOR_API FMantleWaterLook
 {
 	FString MaterialName;
@@ -92,11 +92,11 @@ struct MANTLEEDITOR_API FMantleWaterLook
 	/** The material the instance chain ends in (the water master). */
 	FString MasterName;
 
-	/** The scalar and colour parameters whose names say they shape the look; the number of parameters the material has in all. */
+	/** The scalar and color parameters whose names say they shape the look; the number of parameters the material has in all. */
 	TArray<FMantleWaterMaterialParam> Params;
 	int32 TotalParams = 0;
 
-	/** The water master's look parameters ("Water Albedo", "Scattering", "Absorption"), when the material has them as colours. */
+	/** The water master's look parameters ("Water Albedo", "Scattering", "Absorption"), when the material has them as colors. */
 	TOptional<FLinearColor> Albedo;
 	TOptional<FLinearColor> Scattering;
 	TOptional<FLinearColor> Absorption;
@@ -236,7 +236,7 @@ struct MANTLEEDITOR_API FMantleWaterBodyExport
 	static bool Admit(const AActor* Actor, const FString& Label, int32& Bodies, int32& SplinePoints, FMantleCoverage* Coverage);
 
 	/**
-	 * Whether Actor is a Static Mesh Actor that is a flat mesh drawn only with materials recognised as water (the common Fab pond: the
+	 * Whether Actor is a Static Mesh Actor that is a flat mesh drawn only with materials recognized as water (the common Fab pond: the
 	 * engine plane scaled out, a water material on it). It publishes as a lake-type WaterBody entity, not as a StaticMesh (ReadFlatWaterMesh).
 	 * Only a standalone actor: one attached to another actor, or with actors attached to it, stays a mesh.
 	 */
@@ -244,7 +244,7 @@ struct MANTLEEDITOR_API FMantleWaterBodyExport
 
 	/**
 	 * The WaterBody a flat water mesh (IsFlatWaterMesh) publishes as, or false when Actor is not one. OutTransform is the entity's: the
-	 * footprint's centre at the mesh's top, turned by the mesh's yaw, at scale 1. OutProps is a lake whose spline is the footprint
+	 * footprint's center at the mesh's top, turned by the mesh's yaw, at scale 1. OutProps is a lake whose spline is the footprint
 	 * rectangle (four linear points, in OutTransform's space), with the depth and look the water material gives and collision as the
 	 * mesh has it. OutDepthSource says in words where the depth came from, for the coverage line.
 	 */

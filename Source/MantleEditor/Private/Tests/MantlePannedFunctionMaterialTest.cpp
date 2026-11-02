@@ -303,9 +303,9 @@ bool FMantlePannedByTimeTest::RunTest(const FString& Parameters)
 {
 	using namespace MantlePannedFunctionTestPrivate;
 
-	UTexture2D* Colour = UTexture2D::CreateTransient(4, 4);
+	UTexture2D* Color = UTexture2D::CreateTransient(4, 4);
 
-	// UV x (2, 3) + Time x (0.1, -0.2) straight into the base colour.
+	// UV x (2, 3) + Time x (0.1, -0.2) straight into the base color.
 	UMaterial* Moving = NewObject<UMaterial>(GetTransientPackage());
 	UMaterialExpressionMultiply* Tiled = AddNode<UMaterialExpressionMultiply>(Moving);
 	Tiled->A.Connect(0, AddNode<UMaterialExpressionTextureCoordinate>(Moving));
@@ -316,7 +316,7 @@ bool FMantlePannedByTimeTest::RunTest(const FString& Parameters)
 	UMaterialExpressionAdd* Sum = AddNode<UMaterialExpressionAdd>(Moving);
 	Sum->A.Connect(0, Tiled);
 	Sum->B.Connect(0, Drift);
-	Moving->GetEditorOnlyData()->BaseColor.Connect(0, AddSample(Moving, Colour, Sum));
+	Moving->GetEditorOnlyData()->BaseColor.Connect(0, AddSample(Moving, Color, Sum));
 	const FMantleMaterialAnalysis Seen = FMantlePlaceAssets::AnalyzeMaterial(Moving);
 	if (TestTrue(TEXT("UV x tile + Time x speed is a panned source"), Seen.Fidelity2.HasSource(0) && Seen.Fidelity2.bPanning[0]))
 	{
@@ -331,7 +331,7 @@ bool FMantlePannedByTimeTest::RunTest(const FString& Parameters)
 	UMaterial* Timed = NewObject<UMaterial>(GetTransientPackage());
 	UMaterialExpressionPanner* Panner = AddPanner(Timed, 0.05f, 0.0f);
 	Panner->Time.Connect(0, AddNode<UMaterialExpressionTime>(Timed));
-	Timed->GetEditorOnlyData()->BaseColor.Connect(0, AddSample(Timed, Colour, Panner));
+	Timed->GetEditorOnlyData()->BaseColor.Connect(0, AddSample(Timed, Color, Panner));
 	const FMantleMaterialAnalysis Clocked = FMantlePlaceAssets::AnalyzeMaterial(Timed);
 	if (TestTrue(TEXT("a Panner on a Time node is panned"), Clocked.Fidelity2.bPanning[0]))
 	{
@@ -343,7 +343,7 @@ bool FMantlePannedByTimeTest::RunTest(const FString& Parameters)
 	UMaterialExpressionMultiply* Fixed = AddNode<UMaterialExpressionMultiply>(Still);
 	Fixed->A.Connect(0, AddNode<UMaterialExpressionTextureCoordinate>(Still));
 	Fixed->B.Connect(0, AddPair(Still, 2.0f, 3.0f));
-	Still->GetEditorOnlyData()->BaseColor.Connect(0, AddSample(Still, Colour, Fixed));
+	Still->GetEditorOnlyData()->BaseColor.Connect(0, AddSample(Still, Color, Fixed));
 	const FMantleMaterialAnalysis Plain = FMantlePlaceAssets::AnalyzeMaterial(Still);
 	TestFalse(TEXT("tiled UVs with no pan stay baked"), Plain.Fidelity2.bPanning[0]);
 
@@ -352,7 +352,7 @@ bool FMantlePannedByTimeTest::RunTest(const FString& Parameters)
 	UMaterialExpressionMultiply* Product = AddNode<UMaterialExpressionMultiply>(Warped);
 	Product->A.Connect(0, AddNode<UMaterialExpressionTime>(Warped));
 	Product->B.Connect(0, AddNode<UMaterialExpressionTextureCoordinate>(Warped));
-	Warped->GetEditorOnlyData()->BaseColor.Connect(0, AddSample(Warped, Colour, Product));
+	Warped->GetEditorOnlyData()->BaseColor.Connect(0, AddSample(Warped, Color, Product));
 	const FMantleMaterialAnalysis Refused = FMantlePlaceAssets::AnalyzeMaterial(Warped);
 	TestFalse(TEXT("Time times the UVs is not a pan"), Refused.Fidelity2.bPanning[0]);
 	TestTrue(TEXT("and it is reported frozen"), Refused.Has(EMantleMaterialLoss::Animation));

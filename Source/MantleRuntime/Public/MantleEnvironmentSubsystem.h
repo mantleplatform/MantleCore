@@ -151,7 +151,7 @@ public:
 
 	/**
 	 * Takes over the sun (and registers the rest of the sky) for the place FMantleEnvironment
-	 * just built, replacing any earlier binding. Records the sun's own intensity and colour as
+	 * just built, replacing any earlier binding. Records the sun's own intensity and color as
 	 * the day values and its yaw as the heading, then aims and fades it for the current hour at
 	 * once, so the first rendered frame is already right. Never called on a dedicated server.
 	 */
@@ -321,7 +321,7 @@ public:
 	 * A place's default look (#532, settings.environment) as an override built from the default,
 	 * never from the current one: the clock anchored now at its clockTime (on the default clock's
 	 * day, so the moon's phase carries on) and running at its timeScale, its weather held with no
-	 * blend, its tint, saturation, bloom and colour-grading preset and intensity. Each key the place
+	 * blend, its tint, saturation, bloom and color-grading preset and intensity. Each key the place
 	 * leaves out stays at the default. A set hour
 	 * or weather takes revision 1, so every machine building it from the same settings agrees on
 	 * the revisions whatever time it builds at: the server seeds the replicated override with it as
@@ -415,9 +415,9 @@ public:
 	void SetExposureLift(float Stops);
 
 	/**
-	 * Clients: the weather's tint for the fog (#930): its own colour moves Amount (0-1) of the way to Tint, as Ultra
-	 * Dynamic Sky's fog turns to its dust colour in dust. A script's Environment.FogColor still replaces it. The game
-	 * client sets it; nothing else does, so the fog keeps its own colour in the editor and on servers.
+	 * Clients: the weather's tint for the fog (#930): its own color moves Amount (0-1) of the way to Tint, as Ultra
+	 * Dynamic Sky's fog turns to its dust color in dust. A script's Environment.FogColor still replaces it. The game
+	 * client sets it; nothing else does, so the fog keeps its own color in the editor and on servers.
 	 */
 	void SetWeatherFogTint(const FLinearColor& Tint, float Amount);
 
@@ -436,7 +436,7 @@ public:
 	 */
 	float GetSunIntensity() const;
 
-	/** The day light's colour (the place sun's, or the default's), which the light takes back at sunrise. */
+	/** The day light's color (the place sun's, or the default's), which the light takes back at sunrise. */
 	FColor GetSunColor() const { return DayColor; }
 
 private:
@@ -534,7 +534,7 @@ private:
 	float AppliedFogDensity = 0.0f;
 	float AppliedSkyLightIntensity = 0.0f;
 
-	/** #454: what server scripts changed, the fog colour it replaces, and the post-process volume. */
+	/** #454: what server scripts changed, the fog color it replaces, and the post-process volume. */
 	FMantleEnvironmentOverride Override;
 	/** #532 ticket 4: this player's own look, over Override's post-process only. */
 	FMantleEnvironmentLocalLook LocalLook;
@@ -550,12 +550,12 @@ private:
 	/** SetExposureLift's stops. */
 	float ExposureLift = 0.0f;
 
-	/** SetWeatherFogTint's colour and share. */
+	/** SetWeatherFogTint's color and share. */
 	FLinearColor WeatherFogTint = FLinearColor::Black;
 	float WeatherFogTintAmount = 0.0f;
 
 	/**
-	 * #532: a bit per colour-grading preset (1 << preset) already found missing, so each is looked for and logged once.
+	 * #532: a bit per color-grading preset (1 << preset) already found missing, so each is looked for and logged once.
 	 * A found LUT needs no cache: the volume's settings hold it, and after that it resolves in memory.
 	 */
 	uint8 ColorGradingLutMissing = 0;

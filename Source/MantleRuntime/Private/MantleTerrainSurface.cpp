@@ -195,7 +195,7 @@ double FMantleTerrainWeights::SampleChannel(const int32 Channel, const double U,
 	{
 		return 0.0;
 	}
-	// The GPU's bilinear filter: texel i's centre is at (i + 0.5) / size, and the edge clamps.
+	// The GPU's bilinear filter: texel i's center is at (i + 0.5) / size, and the edge clamps.
 	const double X = FMath::Clamp(U * Width - 0.5, 0.0, static_cast<double>(Width - 1));
 	const double Y = FMath::Clamp(V * Height - 0.5, 0.0, static_cast<double>(Height - 1));
 	const int32 X0 = FMath::Min(FMath::FloorToInt32(X), Width - 1);

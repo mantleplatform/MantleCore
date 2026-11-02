@@ -41,7 +41,7 @@ namespace MantleUnriggedAsIsPrivate
 {
 	const TCHAR* const AsIsAvatarSlot = TEXT("avatar");
 
-	/** Influences summed by bone, then the heaviest Max kept and renormalised; false when nothing weighs anything. */
+	/** Influences summed by bone, then the heaviest Max kept and renormalized; false when nothing weighs anything. */
 	bool KeepHeaviest(TArray<TPair<int32, double>>& Blend, const int32 Max)
 	{
 		Blend.RemoveAll([](const TPair<int32, double>& Entry) { return !(Entry.Value > 0.0); });
@@ -337,7 +337,7 @@ FMantleFingerFix FMantleUnriggedAsIs::KeepOneFinger(const TConstArrayView<FVecto
 		FVector2D& HandDistance = ByHand.FindOrAdd(Hand);
 		HandDistance.X += FMath::Sqrt(NearestSquared);
 		HandDistance.Y += 1.0;
-		// Its weights on the other fingers dropped, the rest renormalised.
+		// Its weights on the other fingers dropped, the rest renormalized.
 		const int32 Keep = FingerOf[Nearest];
 		bool bDropped = false;
 		TSet<int32> DroppedHere;
@@ -524,21 +524,21 @@ FTransform FMantleUnriggedAsIs::FitRigid(const TConstArrayView<FVector3f> Source
 	OutFitCm = OutStartCm;
 	for (int32 Round = 0; Round < Rounds && Pairs.Num() >= 3; ++Round)
 	{
-		// Horn's closed form: the rotation is the top eigenvector of a 4x4 symmetric matrix of the centred pairs' cross sums.
-		FVector CentreA = FVector::ZeroVector;
-		FVector CentreB = FVector::ZeroVector;
+		// Horn's closed form: the rotation is the top eigenvector of a 4x4 symmetric matrix of the centerd pairs' cross sums.
+		FVector CenterA = FVector::ZeroVector;
+		FVector CenterB = FVector::ZeroVector;
 		for (const FPair& Pair : Pairs)
 		{
-			CentreA += Pair.A;
-			CentreB += Pair.B;
+			CenterA += Pair.A;
+			CenterB += Pair.B;
 		}
-		CentreA /= Pairs.Num();
-		CentreB /= Pairs.Num();
+		CenterA /= Pairs.Num();
+		CenterB /= Pairs.Num();
 		double S[3][3] = {};
 		for (const FPair& Pair : Pairs)
 		{
-			const FVector A = Pair.A - CentreA;
-			const FVector B = Pair.B - CentreB;
+			const FVector A = Pair.A - CenterA;
+			const FVector B = Pair.B - CenterB;
 			for (int32 Row = 0; Row < 3; ++Row)
 			{
 				for (int32 Column = 0; Column < 3; ++Column)
@@ -609,8 +609,8 @@ FTransform FMantleUnriggedAsIs::FitRigid(const TConstArrayView<FVector3f> Source
 			break;
 		}
 		Turn.Normalize();
-		// About the pairs' centre: off the source's centre, turned, onto the target's.
-		Current = Current * (FTransform(-CentreA) * FTransform(Turn) * FTransform(CentreB));
+		// About the pairs' center: off the source's center, turned, onto the target's.
+		Current = Current * (FTransform(-CenterA) * FTransform(Turn) * FTransform(CenterB));
 		const double Mean = Match(Current);
 		if (Mean < OutFitCm)
 		{
@@ -965,22 +965,22 @@ bool FMantleUnriggedAsIs::MakeSkinnedMesh(UStaticMesh& Posed, USkeletalMesh& Bod
 			return Share;
 		};
 		TArray<FVector3f> BodyHand;
-		FVector3f BodyCentre = FVector3f::ZeroVector;
+		FVector3f BodyCenter = FVector3f::ZeroVector;
 		for (int32 Vertex = 0; Vertex < Skin.Positions.Num(); ++Vertex)
 		{
 			if (HandShare(Skin.Bones, Skin.Weights, Skin.NumInfluences, Vertex) >= 0.5f)
 			{
 				BodyHand.Add(Skin.Positions[Vertex]);
-				BodyCentre += Skin.Positions[Vertex];
+				BodyCenter += Skin.Positions[Vertex];
 			}
 		}
-		FVector3f ModelCentre = FVector3f::ZeroVector;
+		FVector3f ModelCenter = FVector3f::ZeroVector;
 		int32 ModelCount = 0;
 		for (int32 Point = 0; Point < Points.Num(); ++Point)
 		{
 			if (HandShare(OutResult.Weights.Bones, OutResult.Weights.Weights, OutResult.Weights.NumInfluences, Point) >= 0.5f)
 			{
-				ModelCentre += Points[Point];
+				ModelCenter += Points[Point];
 				++ModelCount;
 			}
 		}
@@ -988,13 +988,13 @@ bool FMantleUnriggedAsIs::MakeSkinnedMesh(UStaticMesh& Posed, USkeletalMesh& Bod
 		{
 			continue;
 		}
-		BodyCentre /= BodyHand.Num();
-		ModelCentre /= ModelCount;
+		BodyCenter /= BodyHand.Num();
+		ModelCenter /= ModelCount;
 		// The fit's targets: the model's points near its hand; its sources: at most HandFitSamples of the body hand's skin.
 		TArray<FVector3f> Near;
 		for (const FVector3f& Point : Points)
 		{
-			if (FVector3f::Dist(Point, ModelCentre) <= HandFitRadiusCm)
+			if (FVector3f::Dist(Point, ModelCenter) <= HandFitRadiusCm)
 			{
 				Near.Add(Point);
 			}
@@ -1005,13 +1005,13 @@ bool FMantleUnriggedAsIs::MakeSkinnedMesh(UStaticMesh& Posed, USkeletalMesh& Bod
 		{
 			Sources.Add(BodyHand[Index]);
 		}
-		// Where it stands, then laid on from the two hands' centres.
+		// Where it stands, then laid on from the two hands' centers.
 		double StayCm = 0.0;
 		double Unused = 0.0;
 		double FromCm = 0.0;
 		double FitCm = 0.0;
 		FitRigid(Sources, Near, FTransform::Identity, 0, StayCm, Unused);
-		const FTransform Fit = FitRigid(Sources, Near, FTransform(FVector(ModelCentre - BodyCentre)), HandFitRounds, FromCm, FitCm);
+		const FTransform Fit = FitRigid(Sources, Near, FTransform(FVector(ModelCenter - BodyCenter)), HandFitRounds, FromCm, FitCm);
 		const double MovedCm = FVector::Dist(Fit.TransformPosition(RefPose[Hand].GetLocation()), RefPose[Hand].GetLocation());
 		const double TurnDegrees = FMath::RadiansToDegrees(Fit.GetRotation().GetAngle());
 		const bool bTake = FitCm < StayCm && MovedCm <= HandFitMaxCm && TurnDegrees <= HandFitMaxDegrees;
@@ -1104,11 +1104,11 @@ bool FMantleUnriggedAsIs::MakeSkinnedMesh(UStaticMesh& Posed, USkeletalMesh& Bod
 						++ModelCount;
 					}
 				}
-				const FVector3f BodyCentre = BodyCount > 0 ? BodySum / BodyCount : FVector3f::ZeroVector;
-				const FVector3f ModelCentre = ModelCount > 0 ? ModelSum / ModelCount : FVector3f::ZeroVector;
-				Line += FString::Printf(TEXT("; %s joint %s: body skin on it %d centred %s (%.1f cm from the joint), nearest body skin %.1f cm; model points on it %d centred %s (%.1f cm), nearest model point %.1f cm"),
-					Finger, *V(Joint), BodyCount, *V(BodyCentre), BodyCount > 0 ? FVector3f::Dist(Joint, BodyCentre) : -1.0f, BodyNearest, ModelCount, *V(ModelCentre),
-					ModelCount > 0 ? FVector3f::Dist(Joint, ModelCentre) : -1.0f, ModelNearest);
+				const FVector3f BodyCenter = BodyCount > 0 ? BodySum / BodyCount : FVector3f::ZeroVector;
+				const FVector3f ModelCenter = ModelCount > 0 ? ModelSum / ModelCount : FVector3f::ZeroVector;
+				Line += FString::Printf(TEXT("; %s joint %s: body skin on it %d centerd %s (%.1f cm from the joint), nearest body skin %.1f cm; model points on it %d centerd %s (%.1f cm), nearest model point %.1f cm"),
+					Finger, *V(Joint), BodyCount, *V(BodyCenter), BodyCount > 0 ? FVector3f::Dist(Joint, BodyCenter) : -1.0f, BodyNearest, ModelCount, *V(ModelCenter),
+					ModelCount > 0 ? FVector3f::Dist(Joint, ModelCenter) : -1.0f, ModelNearest);
 			}
 			FVector3f BodySum = FVector3f::ZeroVector;
 			FVector3f ModelSum = FVector3f::ZeroVector;
@@ -1132,12 +1132,12 @@ bool FMantleUnriggedAsIs::MakeSkinnedMesh(UStaticMesh& Posed, USkeletalMesh& Bod
 					++ModelCount;
 				}
 			}
-			Line += FString::Printf(TEXT("; hand and fingers: body skin %d centred %s, model points %d centred %s"), BodyCount,
+			Line += FString::Printf(TEXT("; hand and fingers: body skin %d centerd %s, model points %d centerd %s"), BodyCount,
 				*V(BodyCount > 0 ? BodySum / BodyCount : FVector3f::ZeroVector), ModelCount, *V(ModelCount > 0 ? ModelSum / ModelCount : FVector3f::ZeroVector));
 			UE_LOG(LogMantle, Log, TEXT("MANTLE_CONVERT_ASISRIG handfit %s"), *Line);
 		}
 	}
-	// A finger's skin follows one finger: closest points between fingers blend neighbours, which stretch when the fingers curl.
+	// A finger's skin follows one finger: closest points between fingers blend neighbors, which stretch when the fingers curl.
 	{
 		TArray<FName> BoneNames;
 		TArray<int32> BoneParents;

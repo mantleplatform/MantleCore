@@ -18,7 +18,7 @@ namespace MantleAnimClipPrivate
 	constexpr uint8 TrackTranslationAnimated = 1 << 2;
 	constexpr uint8 KnownTrackFlags = TrackRotationAnimated | TrackTranslation | TrackTranslationAnimated;
 
-	/** How far a dequantised key's length may be from 1 (the worker allows 0.01 before quantising). */
+	/** How far a dequantized key's length may be from 1 (the worker allows 0.01 before quantizing). */
 	constexpr float RotationLengthTolerance = 0.011f;
 
 	/** Slack on an event's time past the end of the clip (float32 seconds). */

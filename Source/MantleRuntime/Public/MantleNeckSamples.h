@@ -85,8 +85,8 @@ struct MANTLERUNTIME_API FMantleNeckSamples
 	/** Ray elevation, degrees: 0 horizontal, negative down towards the neck base and the upper chest. */
 	static float ElevationDeg(const int32 Elevation) { return Elevation == 0 ? 0.0f : (Elevation == 1 ? -25.0f : (Elevation == 2 ? -50.0f : -70.0f)); }
 
-	/** Ray Index of a face whose neck axis passes through (Centre, BaseZ). */
-	static void Ray(int32 Index, const FVector2f& Centre, float BaseZ, FVector3f& OutOrigin, FVector3f& OutDir);
+	/** Ray Index of a face whose neck axis passes through (Center, BaseZ). */
+	static void Ray(int32 Index, const FVector2f& Center, float BaseZ, FVector3f& OutOrigin, FVector3f& OutDir);
 
 	/** The neck base: the highest body vertex within ColumnRadiusCm of the z axis; -MAX_flt when there is none. */
 	static float NeckBaseZ(TConstArrayView<FVector3f> Body);
@@ -95,7 +95,7 @@ struct MANTLERUNTIME_API FMantleNeckSamples
 	struct FRaySet
 	{
 		float BaseZ = 0.0f;
-		FVector2f Centre = FVector2f::ZeroVector;
+		FVector2f Center = FVector2f::ZeroVector;
 		int32 ColumnVerts = 0;
 
 		/** NumRays() entries: the first hit of each ray (zero on a miss) and whether it hit. */
@@ -118,8 +118,8 @@ struct MANTLERUNTIME_API FMantleNeckSamples
 	/**
 	 * P17g: the neck by face correspondence. Both faces must have the same triangles; the source centroids
 	 * in the correspondence region around SourceBaseZ and the wearer's centroids of the same triangles.
-	 * OutMaxJumpCm: the largest difference between neighbouring triangles' displacements in the region (a
-	 * wrong index would jump by centimetres). OutTriangles (optional): each sample's triangle, ascending.
+	 * OutMaxJumpCm: the largest difference between neighboring triangles' displacements in the region (a
+	 * wrong index would jump by centimeters). OutTriangles (optional): each sample's triangle, ascending.
 	 * False when the triangle counts differ or nothing is in the region.
 	 */
 	static bool Correspond(const FMantleSkinnedMeshLOD& SourceFace, const FMantleSkinnedMeshLOD& WearerFace, float SourceBaseZ,
@@ -137,7 +137,7 @@ struct MANTLERUNTIME_API FMantleNeckSamples
 		float SourceBaseZ = 0.0f;
 		float WearerBaseZ = 0.0f;
 
-		/** Correspondence: the neighbour jump sanity figure. Rays: wearer misses filled from their ring. */
+		/** Correspondence: the neighbor jump sanity figure. Rays: wearer misses filled from their ring. */
 		float MaxJumpCm = 0.0f;
 		int32 RaysFilled = 0;
 		int32 SourceRayHits = 0;

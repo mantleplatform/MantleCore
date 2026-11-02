@@ -37,7 +37,7 @@ public:
 	 */
 	static constexpr double ConvertedToleranceCm = 0.5;
 
-	/** A build further than this from the target (cm) is rebuilt with a corrected Height constraint (tighter than ToleranceCm, so passes are centred, not just inside the edge). */
+	/** A build further than this from the target (cm) is rebuilt with a corrected Height constraint (tighter than ToleranceCm, so passes are centerd, not just inside the edge). */
 	static constexpr double AimCm = 0.15;
 
 	/** The most builds of one preset character for its height: the first build plus at most two corrected rebuilds. */

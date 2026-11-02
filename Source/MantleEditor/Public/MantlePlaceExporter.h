@@ -113,7 +113,7 @@ struct FMantleExportResult
 
 	/**
 	 * #394: what the exported scripts need from the script API, merged across scripts. Place's
-	 * scriptApi minor is its Minor; bAnalysed is false when a script couldn't be scanned (Check
+	 * scriptApi minor is its Minor; bAnalyzed is false when a script couldn't be scanned (Check
 	 * explains which, as a note).
 	 */
 	FMantleScriptApiNeed ScriptApiNeed;
@@ -214,7 +214,7 @@ struct FMantleExportOptions
 };
 
 /**
- * A file under a level's Scripts/ folder the runtime catalogue would silently skip: an
+ * A file under a level's Scripts/ folder the runtime catalog would silently skip: an
  * extension it cannot map to a script language, or a top folder that is not exactly
  * Server/Client/Shared (#129 -- a mismatch that would work on a creator's case-insensitive
  * Windows checkout and fail on the Linux dedicated server). Reported explicitly rather than
@@ -224,7 +224,7 @@ struct FMantleScriptCollectionIssue
 {
 	/** Relative to Scripts/, with the exact case it has on disk. */
 	FString RelativePath;
-	/** True when the extension itself is unrecognised; false for a folder/case problem. */
+	/** True when the extension itself is unrecognized; false for a folder/case problem. */
 	bool bLanguageUnknown = false;
 };
 
@@ -281,7 +281,7 @@ struct FMantleGraphScriptEntry
 	EMantleScriptSide Side = EMantleScriptSide::Server;
 	FString CompiledLuau;
 	FString AuthorJson;
-	/** #394: the script API the graph's member nodes need (FMantleScriptApiUsage::ForGraph); always analysed. */
+	/** #394: the script API the graph's member nodes need (FMantleScriptApiUsage::ForGraph); always analyzed. */
 	FMantleScriptApiNeed ApiNeed;
 };
 
@@ -382,7 +382,7 @@ public:
 
 	/**
 	 * Whether a Blueprint graph does anything: an enabled node with at least one wire. A new
-	 * Blueprint's greyed-out BeginPlay/Tick/Overlap events and its bare construction-script entry
+	 * Blueprint's grayed-out BeginPlay/Tick/Overlap events and its bare construction-script entry
 	 * are unwired, so an untouched Blueprint does not count as logic (#449).
 	 */
 	static bool GraphHasWiredNode(const UEdGraph* Graph);
@@ -471,7 +471,7 @@ public:
 	 * - an actor PCG spawned (tagged "PCG Generated Actor") of a type Mantle can't publish;
 	 * - dynamic mesh components (Geometry Script or PCG output) not saved as static mesh assets.
 	 *
-	 * PCG is recognised without linking it, since MantleCore has no plugin dependencies: components
+	 * PCG is recognized without linking it, since MantleCore has no plugin dependencies: components
 	 * by class name (PCGComponent, PCGPartitionActor, DynamicMeshComponent, including subclasses),
 	 * their settings read by reflection by property name (GenerationTrigger, bGenerated, bActivated,
 	 * bIsComponentPartitioned, bIsComponentLocal, CurrentEditingMode), and PCG's own actor tag. A
@@ -611,7 +611,7 @@ public:
 	 * including PCG volumes and partition actors, which is how PCG output publishes without a PCG
 	 * dependency. Not: editor-only or transient components or owners (a preview, runtime
 	 * generation), PCG's own debug output, empty components, a Mantle sky actor's, and components
-	 * neither visible in game nor colliding (visualisation nobody could see or touch).
+	 * neither visible in game nor colliding (visualization nobody could see or touch).
 	 */
 	static bool IsExportedInstanceSource(const UInstancedStaticMeshComponent* Component);
 
@@ -663,7 +663,7 @@ public:
 	/**
 	 * Cuts each group into InstancedMesh entities (#467): instances sorted along a Morton curve so
 	 * each entity covers a compact area, at most MaxPerEntity per entity, each entity anchored at
-	 * the centre of its instances' bounds (whole centimetres) with the instances relative to it.
+	 * the center of its instances' bounds (whole centimeters) with the instances relative to it.
 	 * Groups come out in InstancedGroupKey order. Ids are ent_ism_ + a hash of the group key + _ +
 	 * the chunk index, so the same content keeps its ids across republishes. Pure and deterministic.
 	 */
@@ -684,7 +684,7 @@ public:
 	 */
 	static FTransform PublishedTransform(const AActor* Actor);
 
-	/** Serialises a place to JSON text. */
+	/** Serializes a place to JSON text. */
 	static FString ToJson(const FMantlePlace& Place);
 
 	/**
@@ -700,7 +700,7 @@ public:
 	 * FMantleDiskScriptCatalogSource classifies them for a running client -- the exporter and
 	 * the runtime must never disagree about what a Scripts/ folder contains. Entries come back
 	 * sorted by path, which is what keeps a repeat export of unchanged sources byte-identical.
-	 * A file the catalogue would silently skip is reported through OutIssues instead.
+	 * A file the catalog would silently skip is reported through OutIssues instead.
 	 */
 	static void CollectScriptFiles(
 		const FString& ScriptsFolder,
@@ -726,7 +726,7 @@ public:
 
 	/**
 	 * Deterministic scr_ ids for an ordered collection of script paths, one per path in the same order, stable
-	 * across a repeat export of the same files. A collision (two paths sanitising to the same id) is
+	 * across a repeat export of the same files. A collision (two paths sanitizing to the same id) is
 	 * broken with a numeric suffix, as entity ids are. Exposed so the publisher can
 	 * compute the same keys CollectScriptFiles's entries will use before it calls Export.
 	 */
@@ -796,7 +796,7 @@ public:
 
 	/**
 	 * Deterministic uid_ ids for Paths, one per path in the same order: "uid_" and the path under
-	 * UI/ sanitised, extension included (Shop.rml and Shop.rcss differ). Collisions take a numeric
+	 * UI/ sanitized, extension included (Shop.rml and Shop.rcss differ). Collisions take a numeric
 	 * suffix, as script ids do.
 	 */
 	static TArray<FString> MakeUIDocumentIds(const TArray<FString>& Paths);

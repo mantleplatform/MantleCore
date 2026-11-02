@@ -96,7 +96,7 @@ struct MANTLERUNTIME_API FMantleGarmentSkinTransfer
 	/**
 	 * The face's share is then smoothed over the garment's mesh (FaceShareSmoothIters passes over its edges) as an
 	 * average over the face-tracked points, divided by their smoothed fraction floored at FaceShareMinCoverage:
-	 * neighbouring collar vertices get about the same neck / chest mix (from each vertex's own distances it jumps
+	 * neighboring collar vertices get about the same neck / chest mix (from each vertex's own distances it jumps
 	 * around the ring, and the face's untracked boundary leaves holes), and the share fades out evenly where the
 	 * face stops tracking. Shares under half an 8-bit weight step are 0.
 	 */
@@ -125,8 +125,8 @@ struct MANTLERUNTIME_API FMantleGarmentSkinTransfer
 	 *     triangle blended with its barycentrics; with Face set and the vertex within its reach, blended
 	 *     with the face's three corners at its closest face point by the face's smoothed share (FaceFadeCm,
 	 *     FaceShareSmoothIters; only the face's when the body does not track it; a vertex the face does not
-	 *     track but whose neighbours' share reaches it samples the face at the nearest face-tracked one);
-	 *     the top N kept, renormalised and quantised to sum exactly 255;
+	 *     track but whose neighbors' share reaches it samples the face at the nearest face-tracked one);
+	 *     the top N kept, renormalized and quantized to sum exactly 255;
 	 *   - untracked vertex: its nearest tracked vertex's new weights (fitted positions); none at all: kept.
 	 * N is the skin's slot count (the body's, or the face's when larger), at most MaxInfluences, and never
 	 * below the garment's own: an unrigged garment (one slot) takes the skin's blend whole. The garment's
@@ -152,7 +152,7 @@ struct MANTLERUNTIME_API FMantleGarmentSkinTransfer
 	/**
 	 * Laplacian smoothing of the skin weights over the welded points' edge adjacency (split copies end
 	 * with identical weights; sections are never smoothed into each other). Each pass over the union of
-	 * bones: w'(p) = (1 - 0.5 f) w(p) + 0.5 f * the neighbours' mean, the top N kept and renormalised; f is
+	 * bones: w'(p) = (1 - 0.5 f) w(p) + 0.5 f * the neighbors' mean, the top N kept and renormalized; f is
 	 * the point's mean Factor (1 everywhere when Factor is null). Iterations <= 0 changes nothing. False
 	 * (Garment unchanged) on bad skin data.
 	 */

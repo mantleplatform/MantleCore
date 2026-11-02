@@ -13,7 +13,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// A vehicle body for the editor tests that need a real skeletal mesh with wheel bones: the sedan preset's grey chassis, saved as a mesh in a
+// A vehicle body for the editor tests that need a real skeletal mesh with wheel bones: the sedan preset's gray chassis, saved as a mesh in a
 // throwaway /Temp package, nothing of it on disk. This needs nothing outside the plugin, so the tests cannot silently skip for missing content.
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleVehicleScratchBody

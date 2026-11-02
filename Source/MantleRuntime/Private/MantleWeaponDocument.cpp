@@ -1640,7 +1640,7 @@ namespace MantleWeaponDocumentPrivate
 			}
 		}
 
-		/** An sRGB colour, three integers 0..255 (color, effectsColor). */
+		/** An sRGB color, three integers 0..255 (color, effectsColor). */
 		void OptColor(const TSharedPtr<FJsonObject>& Obj, const TCHAR* Key, TMantleWeaponDocValue<FColor>& Out)
 		{
 			const TSharedPtr<FJsonValue> Color = Field(Obj, Key);
@@ -1831,7 +1831,7 @@ namespace MantleWeaponDocumentPrivate
 			R.Add(Path, TEXT("mantle"), TEXT("is all zeros, not a rotation: write [0, 0, 0, 1] for none"));
 			return;
 		}
-		R.Add(Path, TEXT("mantle"), FString::Printf(TEXT("is a quaternion of length %.3f, not a unit one: normalise it (divide each of its four numbers by %.3f)"),
+		R.Add(Path, TEXT("mantle"), FString::Printf(TEXT("is a quaternion of length %.3f, not a unit one: normalize it (divide each of its four numbers by %.3f)"),
 			Length, Length));
 	}
 

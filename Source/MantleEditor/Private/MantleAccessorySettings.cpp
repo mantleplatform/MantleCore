@@ -223,7 +223,7 @@ FVector3f FMantleAccessorySettings::RecenterOffset(const FBox3f& Bounds, const F
 	const double Reach = FVector3f(FMath::Max(FMath::Abs(Bounds.Min.X), FMath::Abs(Bounds.Max.X)),
 		FMath::Max(FMath::Abs(Bounds.Min.Y), FMath::Abs(Bounds.Max.Y)), FMath::Max(FMath::Abs(Bounds.Min.Z), FMath::Abs(Bounds.Max.Z))).Size();
 	if (Reach <= Limits.MaxReachCm) return FVector3f::ZeroVector;
-	// Centred, the farthest corner is half the box's diagonal away.
+	// Centerd, the farthest corner is half the box's diagonal away.
 	return Size.Size() * 0.5 <= Limits.MaxReachCm ? Bounds.GetCenter() : FVector3f::ZeroVector;
 }
 

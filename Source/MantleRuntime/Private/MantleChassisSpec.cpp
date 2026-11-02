@@ -47,8 +47,8 @@ namespace MantleChassisSpecPrivate
 		return FName(*FString::Printf(TEXT("wheel_a%d_%s"), Axle + 1, Side == 0 ? TEXT("l") : TEXT("r")));
 	}
 
-	/** The bone of the one wheel on axle Axle of a centreline chassis: wheel_f and wheel_r for two axles, wheel_a1, wheel_a2 and so on for three or four. */
-	FName CentrelineWheelBoneName(const int32 AxleCount, const int32 Axle)
+	/** The bone of the one wheel on axle Axle of a centerline chassis: wheel_f and wheel_r for two axles, wheel_a1, wheel_a2 and so on for three or four. */
+	FName CenterlineWheelBoneName(const int32 AxleCount, const int32 Axle)
 	{
 		if (AxleCount == 2)
 		{
@@ -57,8 +57,8 @@ namespace MantleChassisSpecPrivate
 		return FName(*FString::Printf(TEXT("wheel_a%d"), Axle + 1));
 	}
 
-	/** The fork bone a steered centreline wheel hangs under: fork_f and fork_r for two axles, fork_a1, fork_a2 and so on. */
-	FName CentrelineForkBoneName(const int32 AxleCount, const int32 Axle)
+	/** The fork bone a steered centerline wheel hangs under: fork_f and fork_r for two axles, fork_a1, fork_a2 and so on. */
+	FName CenterlineForkBoneName(const int32 AxleCount, const int32 Axle)
 	{
 		if (AxleCount == 2)
 		{
@@ -150,9 +150,9 @@ namespace MantleChassisSpecPrivate
 			Json->TryGetNumberField(TEXT("rotationStiffness"), Control.RotationStiffness);
 			Json->TryGetNumberField(TEXT("rotationDamping"), Control.RotationDamping);
 			Json->TryGetNumberField(TEXT("maxAccel"), Control.MaxAccel);
-			Json->TryGetNumberField(TEXT("autoCentreRollStrength"), Control.AutoCentreRollStrength);
-			Json->TryGetNumberField(TEXT("autoCentrePitchStrength"), Control.AutoCentrePitchStrength);
-			Json->TryGetNumberField(TEXT("autoCentreYawStrength"), Control.AutoCentreYawStrength);
+			Json->TryGetNumberField(TEXT("autoCenterRollStrength"), Control.AutoCenterRollStrength);
+			Json->TryGetNumberField(TEXT("autoCenterPitchStrength"), Control.AutoCenterPitchStrength);
+			Json->TryGetNumberField(TEXT("autoCenterYawStrength"), Control.AutoCenterYawStrength);
 		}
 		Read.bSet = true;
 		Out = Read;
@@ -294,7 +294,7 @@ namespace MantleChassisSpecPrivate
 
 	/**
 	 * The hovercraft block of a hovercraft preset's chassis (chassis.hovercraft): the pads, the fan and its pod, the fin and its rudder, the drawn skirt and
-	 * the damping that stands in for a tyre's grip. Every part is required; the fin's stall angle has the schema's default.
+	 * the damping that stands in for a tire's grip. Every part is required; the fin's stall angle has the schema's default.
 	 */
 	bool ParseHovercraft(const TSharedPtr<FJsonObject>& Chassis, FMantleChassisHovercraft& Out, FString& OutError)
 	{
@@ -390,7 +390,7 @@ namespace MantleChassisSpecPrivate
 		bool bRequired;
 	};
 
-	/** The preset's defaults, read as handling; the centre of mass is the chassis's. False with the reason when a number with no schema default is missing. */
+	/** The preset's defaults, read as handling; the center of mass is the chassis's. False with the reason when a number with no schema default is missing. */
 	bool ReadArchetype(const TSharedPtr<FJsonObject>& Defaults, FMantleChassisSpec& Spec, FString& OutError)
 	{
 		const FArchetypeField Fields[] = {
@@ -465,7 +465,7 @@ namespace MantleChassisSpecPrivate
 		}
 	}
 
-	/** A Scaled chassis's handling over its document: every number FMantleChassisDerive makes (the centre of mass is the spec's own). */
+	/** A Scaled chassis's handling over its document: every number FMantleChassisDerive makes (the center of mass is the spec's own). */
 	void ApplyHandling(const TSharedPtr<FJsonObject>& Doc, const FMantleChassisHandling& Handling)
 	{
 		Doc->SetNumberField(TEXT("mass"), Handling.Mass);
@@ -494,10 +494,10 @@ namespace MantleChassisSpecPrivate
 	constexpr double DocumentReach = 1000.0;
 
 	/**
-	 * A block as the document's collision box (its centre and half-extent), held inside DocumentReach of the origin: only a plane's physics boxes
+	 * A block as the document's collision box (its center and half-extent), held inside DocumentReach of the origin: only a plane's physics boxes
 	 * are, since a large wing or tail is past what the document can say. False when nothing of the block is left (the document's extent is at least 1 cm).
 	 */
-	bool HoldBlockInDocument(const FMantleChassisBlock& Block, FVector& OutCentre, FVector& OutExtent)
+	bool HoldBlockInDocument(const FMantleChassisBlock& Block, FVector& OutCenter, FVector& OutExtent)
 	{
 		FVector Low = FVector::ZeroVector;
 		FVector High = FVector::ZeroVector;
@@ -510,7 +510,7 @@ namespace MantleChassisSpecPrivate
 				return false;
 			}
 		}
-		OutCentre = 0.5 * (Low + High);
+		OutCenter = 0.5 * (Low + High);
 		OutExtent = 0.5 * (High - Low);
 		return true;
 	}
@@ -531,14 +531,14 @@ namespace MantleChassisSpecPrivate
 FName FMantleChassisSpec::WheelBone(const int32 Index) const
 {
 	using namespace MantleChassisSpecPrivate;
-	// Each axle is named by its own kind: a plane's centreline nose wheel is wheel_f, beside its pair of mains wheel_rl and wheel_rr.
+	// Each axle is named by its own kind: a plane's centerline nose wheel is wheel_f, beside its pair of mains wheel_rl and wheel_rr.
 	const int32 Axle = AxleOf(Index);
-	return AxleIsCentreline(Axle) ? CentrelineWheelBoneName(Axles.Num(), Axle) : WheelBoneName(Axles.Num(), Axle, Index - FirstWheelOf(Axle));
+	return AxleIsCenterline(Axle) ? CenterlineWheelBoneName(Axles.Num(), Axle) : WheelBoneName(Axles.Num(), Axle, Index - FirstWheelOf(Axle));
 }
 
 FName FMantleChassisSpec::ForkBoneOfAxle(const int32 Axle) const
 {
-	return MantleChassisSpecPrivate::CentrelineForkBoneName(Axles.Num(), Axle);
+	return MantleChassisSpecPrivate::CenterlineForkBoneName(Axles.Num(), Axle);
 }
 
 const TCHAR* FMantleChassisSpec::TypeName(const EMantleChassisType Kind)
@@ -615,8 +615,8 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 		return false;
 	}
 	Body->TryGetNumberField(TEXT("x"), Spec.BodyX);
-	// Which seat it is: a car's driver has a steering wheel, a rider's (a centreline chassis) handlebars and a pilot's a stick and a throttle.
-	Layout->TryGetBoolField(TEXT("centreline"), Spec.bCentreline);
+	// Which seat it is: a car's driver has a steering wheel, a rider's (a centerline chassis) handlebars and a pilot's a stick and a throttle.
+	Layout->TryGetBoolField(TEXT("centerline"), Spec.bCenterline);
 	const TSharedPtr<FJsonObject>* Seats = nullptr;
 	Spec.bPassenger = Root->TryGetObjectField(TEXT("seats"), Seats) && Seats && (*Seats)->HasField(TEXT("passenger"));
 	FString DriverKind;
@@ -624,7 +624,7 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	{
 		Spec.DriverSeat = DriverKind;
 	}
-	Spec.bSteeringWheel = !Spec.bCentreline && !Spec.DriverSeat.Equals(TEXT("pilot"), ESearchCase::CaseSensitive);
+	Spec.bSteeringWheel = !Spec.bCenterline && !Spec.DriverSeat.Equals(TEXT("pilot"), ESearchCase::CaseSensitive);
 	if (Spec.bSteeringWheel
 		&& (!GetObject(SeatJson, TEXT("steeringWheel"), TEXT("chassis.seat.steeringWheel"), WheelJson, OutError)
 			|| !GetVector(WheelJson, TEXT("location"), TEXT("chassis.seat.steeringWheel.location"), Spec.Hub, OutError)
@@ -648,7 +648,7 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 			return Refuse(OutError, FString::Printf(TEXT("the preset's chassis.layout.axles[%d] needs steer and drive"), Axle));
 		}
 		Object->TryGetBoolField(TEXT("handbrake"), Out.bHandbrake);
-		Object->TryGetBoolField(TEXT("centreline"), Out.bCentreline);
+		Object->TryGetBoolField(TEXT("centerline"), Out.bCenterline);
 		// Evenly spaced unless the axle says where it sits.
 		Out.Position = static_cast<double>(Axle) / static_cast<double>(AxleCount - 1);
 		if (Object->HasField(TEXT("position")) && !Object->TryGetNumberField(TEXT("position"), Out.Position))
@@ -667,9 +667,9 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 			return Refuse(OutError, TEXT("the preset's chassis.layout.axles positions must run from 0 at the front axle to 1 at the rearmost, each behind the one before"));
 		}
 	}
-	if (Spec.bCentreline && Spec.Axles[0].bSteer)
+	if (Spec.bCenterline && Spec.Axles[0].bSteer)
 	{
-		Spec.ForkBone = CentrelineForkBoneName(AxleCount, 0);
+		Spec.ForkBone = CenterlineForkBoneName(AxleCount, 0);
 	}
 	if (Spec.DriverSeat.Equals(TEXT("motorcycle"), ESearchCase::CaseSensitive) && !ParseRider(Chassis, Spec.Rider, OutError))
 	{
@@ -694,9 +694,9 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	{
 		return Refuse(OutError, TEXT("the preset's type is missing or not car, truck, motorcycle, plane, helicopter or hovercraft"));
 	}
-	if ((Spec.Type == EMantleChassisType::Motorcycle) != Spec.bCentreline)
+	if ((Spec.Type == EMantleChassisType::Motorcycle) != Spec.bCenterline)
 	{
-		return Refuse(OutError, TEXT("the preset's type motorcycle and its chassis.layout.centreline go together"));
+		return Refuse(OutError, TEXT("the preset's type motorcycle and its chassis.layout.centerline go together"));
 	}
 	if ((Spec.Type == EMantleChassisType::Plane) != Spec.Aircraft.bSet)
 	{
@@ -750,7 +750,7 @@ bool FMantleChassisSpec::Parse(const FString& PresetJsonText, FMantleChassisSpec
 	Size.Height = Spec.Height;
 	Size.Clearance = Spec.Clearance;
 	Size.Axles = Spec.Axles;
-	Size.bCentreline = Spec.bCentreline;
+	Size.bCenterline = Spec.bCenterline;
 	Size.Aircraft = Spec.Aircraft;
 	Size.Helicopter = Spec.Helicopter;
 	Size.Hovercraft = Spec.Hovercraft;
@@ -820,7 +820,7 @@ FString FMantleChassisSpec::ComposeDocument(const FMantleChassisSpec& Spec, TArr
 	}
 	Doc->SetArrayField(TEXT("wheels"), Wheels);
 
-	// The collision boxes, and the centre of mass. A car has the one, the body's. A plane's physics body is its fuselage, wing, tailplane and fin (the
+	// The collision boxes, and the center of mass. A car has the one, the body's. A plane's physics body is its fuselage, wing, tailplane and fin (the
 	// body's box first), each held inside what the document can say; a helicopter's is its cabin, tail boom and fin the same way (its rotors and skids
 	// collide with nothing: the skids' hidden wheels stand it on the ground).
 	TArray<TSharedPtr<FJsonValue>> Boxes;
@@ -837,12 +837,12 @@ FString FMantleChassisSpec::ComposeDocument(const FMantleChassisSpec& Spec, TArr
 		}
 		for (const FMantleChassisBlock& Block : Collided)
 		{
-			FVector Centre = FVector::ZeroVector;
+			FVector Center = FVector::ZeroVector;
 			FVector Extent = FVector::ZeroVector;
-			if (HoldBlockInDocument(Block, Centre, Extent))
+			if (HoldBlockInDocument(Block, Center, Extent))
 			{
 				const TSharedPtr<FJsonObject> Box = MakeShared<FJsonObject>();
-				Box->SetArrayField(TEXT("center"), NumberArray(Centre));
+				Box->SetArrayField(TEXT("center"), NumberArray(Center));
 				Box->SetArrayField(TEXT("extent"), NumberArray(Extent));
 				Boxes.Add(MakeShared<FJsonValueObject>(Box));
 			}
@@ -903,7 +903,7 @@ FMantleChassisBlock FMantleChassisSpec::WingBlock() const
 FMantleChassisBlock FMantleChassisSpec::HalfWingBlock(const bool bRight) const
 {
 	FMantleChassisBlock Block = WingBlock();
-	// The wing is centred on Y, so a half is the wing cut at Y 0.
+	// The wing is centered on Y, so a half is the wing cut at Y 0.
 	if (bRight)
 	{
 		Block.Min.Y = 0.0;
@@ -953,14 +953,14 @@ FVector FMantleChassisSpec::AileronBonePosition(const bool bRight) const
 
 FVector FMantleChassisSpec::PropellerHub(const int32 Engine) const
 {
-	// One engine is on the centreline; two are a third of the half-span out, the first (0) on the left.
+	// One engine is on the centerline; two are a third of the half-span out, the first (0) on the left.
 	const double Y = Aircraft.EngineCount < 2 ? 0.0 : (Engine == 0 ? -1.0 : 1.0) * (Aircraft.Wing.Span / 6.0);
 	return FVector(Aircraft.EngineX, Y, Clearance + 0.5 * Height);
 }
 
 FVector FMantleChassisSpec::NozzleLocation(const int32 Engine) const
 {
-	// One jet is on the centreline; two sit side by side behind the tail, the first (0) on the left, close enough to share the fuselage's end.
+	// One jet is on the centerline; two sit side by side behind the tail, the first (0) on the left, close enough to share the fuselage's end.
 	const double Y = Aircraft.EngineCount < 2 ? 0.0 : (Engine == 0 ? -1.0 : 1.0) * (TwinNozzleSpread * Width);
 	return FVector(Aircraft.EngineX, Y, Clearance + 0.5 * Height);
 }
@@ -974,7 +974,7 @@ FMantleChassisBlock FMantleChassisSpec::NozzleBlock(const int32 Engine) const
 {
 	const FVector Exit = NozzleLocation(Engine);
 	const double Half = 0.5 * (Aircraft.EngineCount < 2 ? SingleNozzleSize : TwinNozzleSize) * FMath::Min(Width, Height);
-	// From the exit forward to the fuselage's rear end, so it reads as the engine's back end; never less than a centimetre long, whatever the preset says.
+	// From the exit forward to the fuselage's rear end, so it reads as the engine's back end; never less than a centimeter long, whatever the preset says.
 	const double Front = FMath::Max(BodyBlock().Min.X, Exit.X + 1.0);
 	return { FVector(Exit.X, Exit.Y - Half, Exit.Z - Half), FVector(Front, Exit.Y + Half, Exit.Z + Half) };
 }
@@ -1005,7 +1005,7 @@ FVector FMantleChassisSpec::TailRotorHub() const
 
 FMantleChassisBlock FMantleChassisSpec::TailBoomBlock() const
 {
-	// From the cabin's rear end back: a boom on a cabin that is not centred on the skids still meets it.
+	// From the cabin's rear end back: a boom on a cabin that is not centered on the skids still meets it.
 	const double Front = BodyBlock().Min.X;
 	const double HalfWidth = 0.5 * Helicopter.BoomWidth;
 	const double HalfHeight = 0.5 * Helicopter.BoomHeight;
@@ -1080,7 +1080,7 @@ FMantleChassisBlock FMantleChassisSpec::SkidCrossTubeBlock(const int32 Axle) con
 
 FVector FMantleChassisSpec::PadLocation(const int32 Index) const
 {
-	const FVector Wheel = WheelCentre(Index);
+	const FVector Wheel = WheelCenter(Index);
 	return FVector(Wheel.X, Wheel.Y, Clearance);
 }
 
@@ -1096,7 +1096,7 @@ FVector FMantleChassisSpec::HoverRudderLocation() const
 
 FMantleChassisBlock FMantleChassisSpec::SkirtBlock() const
 {
-	// Under the hull, a little wider than it, its underside off the ground; never less than a centimetre tall, whatever the preset says.
+	// Under the hull, a little wider than it, its underside off the ground; never less than a centimeter tall, whatever the preset says.
 	const FMantleChassisBlock Hull = BodyBlock();
 	const double Out = Hovercraft.SkirtOverhang;
 	const double Bottom = FMath::Min(Hovercraft.SkirtGap, Clearance - 1.0);
@@ -1189,7 +1189,7 @@ FMantleChassisSpec FMantleChassisSpec::Scaled(const FMantleChassisSpec& Spec, co
 		}
 	}
 
-	// The handling follows the new size. The handling before is what a rider's rear brake and tyre are relative to.
+	// The handling follows the new size. The handling before is what a rider's rear brake and tire are relative to.
 	const FMantleChassisHandling Before = Spec.Derived.IsSet() ? Spec.Derived.GetValue() : Spec.Archetype;
 	const FMantleChassisHandling After = FMantleChassisDerive::Derive(Out, FMantleChassisFeel());
 	if (Before.BrakeTorque > 0.0)

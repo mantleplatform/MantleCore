@@ -774,7 +774,7 @@ FMantleBodyMatch FMantleEmoteCheck::CompareBodies(TConstArrayView<TArray<FTransf
 			}
 		}
 	}
-	// Planted feet: the source's foot or ball moves under half a centimetre since the frame before.
+	// Planted feet: the source's foot or ball moves under half a centimeter since the frame before.
 	double Slide = 0.0;
 	double Height = 0.0;
 	for (const TCHAR* Name : { TEXT("foot_l"), TEXT("foot_r"), TEXT("ball_l"), TEXT("ball_r") })

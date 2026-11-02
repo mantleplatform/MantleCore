@@ -40,7 +40,7 @@ struct MANTLEEDITOR_API FMantleConvertOptions
 	EMantleAvatarRoute Route = EMantleAvatarRoute::Convert;
 
 	/**
-	 * Empty: every fixer runs. Otherwise only these fixers analyse and apply (FMantleGarmentOutfit runs Strip, MHPose and
+	 * Empty: every fixer runs. Otherwise only these fixers analyze and apply (FMantleGarmentOutfit runs Strip, MHPose and
 	 * MHConform to make a MetaHuman of a garment's own body, without the build).
 	 */
 	TSet<FName> OnlyFixers;
@@ -133,7 +133,7 @@ struct MANTLEEDITOR_API FMantleAssemblyScan
  * The avatar converter (#610): Tools > Mantle > Cosmetics' Convert, and the toolset's ConvertCosmetic. From a selection
  * (a skeletal mesh, a MetaHuman Creator assembly's Blueprint or body, or the assembly's folder) it builds the context
  * (MakeContext), asks every registered fixer what it would fix (Analyze: the fix list the creator ticks), then runs the
- * fixers in pipeline order (Convert), each analysing the context as the fixers before it left it and applying the fixes
+ * fixers in pipeline order (Convert), each analyzing the context as the fixers before it left it and applying the fixes
  * the creator left on. Every write goes to new assets under Context.OutputFolder (<source folder>/Converted): the
  * creator's assets are never modified. Converting the same source again deletes that source's earlier output first,
  * found by the package metadata the converter stamps on every asset it keeps (ConvertedFromKey). Last, it runs the
@@ -209,7 +209,7 @@ public:
 
 	/**
 	 * Converts: deletes the source's earlier output under Context.OutputFolder, then for each fixer in pipeline order
-	 * analyses Context again and applies each of its fixes that Choices (the fix list as the creator left it, matched by
+	 * analyzes Context again and applies each of its fixes that Choices (the fix list as the creator left it, matched by
 	 * FixKeys) keeps on, that can be fixed, and whose part is included (the Assembly fixer's own fixes apply to left-out
 	 * parts too: one of them includes a part). A fix Choices doesn't list keeps the fixer's default. #625: a failed Convert-route
 	 * step (Strip, MHUnrigged, MHPose, MHConform, MHSource or MHBuild with its hand-off) stops the run there; no fixer after it runs. Stamps and (with

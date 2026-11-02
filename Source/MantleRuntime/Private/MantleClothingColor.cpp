@@ -23,7 +23,7 @@ bool MantleClothingColor::ValidateRegions(const TConstArrayView<FMantleClothingC
 	OutError.Reset();
 	if (Regions.Num() > MaxRegionsPerSection)
 	{
-		OutError = TEXT("A clothing material declares at most three RGB colour regions.");
+		OutError = TEXT("A clothing material declares at most three RGB color regions.");
 		return false;
 	}
 	TSet<FString> Ids;
@@ -32,7 +32,7 @@ bool MantleClothingColor::ValidateRegions(const TConstArrayView<FMantleClothingC
 	{
 		if (!IsRegionId(Region.Id) || Ids.Contains(Region.Id) || Region.Channel > 2 || Channels.Contains(Region.Channel))
 		{
-			OutError = TEXT("Colour regions need unique valid IDs and distinct RGB mask channels.");
+			OutError = TEXT("Color regions need unique valid IDs and distinct RGB mask channels.");
 			return false;
 		}
 		bool bLabelHasControl = false;
@@ -43,7 +43,7 @@ bool MantleClothingColor::ValidateRegions(const TConstArrayView<FMantleClothingC
 		if (Region.Label.TrimStartAndEnd().IsEmpty() || Region.Label.Len() > 64 || bLabelHasControl || Region.DefaultColor.A != 255
 			|| !FMath::IsFinite(Region.ReferenceLuminance) || Region.ReferenceLuminance < MinReferenceLuminance || Region.ReferenceLuminance > 1.0f)
 		{
-			OutError = TEXT("A colour region needs a label, opaque default colour and measured nonzero reference luminance.");
+			OutError = TEXT("A color region needs a label, opaque default color and measured nonzero reference luminance.");
 			return false;
 		}
 		Ids.Add(Region.Id);
@@ -58,7 +58,7 @@ bool MantleClothingColor::ValidateColors(const TConstArrayView<FMantleClothingCo
 	OutError.Reset();
 	if (Colors.Num() > MaxColorsPerItem)
 	{
-		OutError = TEXT("One worn clothing item takes at most eight colour overrides.");
+		OutError = TEXT("One worn clothing item takes at most eight color overrides.");
 		return false;
 	}
 	TSet<FString> Seen;
@@ -66,7 +66,7 @@ bool MantleClothingColor::ValidateColors(const TConstArrayView<FMantleClothingCo
 	{
 		if (!IsRegionId(Color.RegionId) || Seen.Contains(Color.RegionId) || Color.Color.A != 255 || !Declared.Contains(Color.RegionId))
 		{
-			OutError = TEXT("Clothing colours must name unique creator-declared regions and contain opaque RGB values.");
+			OutError = TEXT("Clothing colors must name unique creator-declared regions and contain opaque RGB values.");
 			return false;
 		}
 		Seen.Add(Color.RegionId);

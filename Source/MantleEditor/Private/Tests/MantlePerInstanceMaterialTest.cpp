@@ -16,10 +16,10 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// A material whose base colour is multiplied by Per Instance Random (a Fab foliage master's colour variation) read as 0 in
+// A material whose base color is multiplied by Per Instance Random (a Fab foliage master's color variation) read as 0 in
 // GLTFExporter's bake, which has no instance, and so published black. The converter now bakes a transient copy with each
 // per-instance node at a representative value and says the variation is averaged. The flattener here is scripted to read the base
-// colour the way the bake does (Per Instance Random as 0), so no renderer is needed.
+// color the way the bake does (Per Instance Random as 0), so no renderer is needed.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantlePerInstanceMaterialTestPrivate
@@ -33,14 +33,14 @@ namespace MantlePerInstanceMaterialTestPrivate
 		return Expression;
 	}
 
-	/** Base colour = Multiply(Constant3Vector (0.8, 0.6, 0.4), Variation), where Variation is the node the caller adds. */
+	/** Base color = Multiply(Constant3Vector (0.8, 0.6, 0.4), Variation), where Variation is the node the caller adds. */
 	UMaterial* NewVaryingMaterial(UMaterialExpression* (*MakeVariation)(UMaterial*))
 	{
 		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
-		UMaterialExpressionConstant3Vector* Colour = AddNode<UMaterialExpressionConstant3Vector>(Material);
-		Colour->Constant = FLinearColor(0.8f, 0.6f, 0.4f, 1.0f);
+		UMaterialExpressionConstant3Vector* Color = AddNode<UMaterialExpressionConstant3Vector>(Material);
+		Color->Constant = FLinearColor(0.8f, 0.6f, 0.4f, 1.0f);
 		UMaterialExpressionMultiply* Multiply = AddNode<UMaterialExpressionMultiply>(Material);
-		Multiply->A.Connect(0, Colour);
+		Multiply->A.Connect(0, Color);
 		Multiply->B.Connect(0, MakeVariation(Material));
 		Material->GetEditorOnlyData()->BaseColor.Connect(0, Multiply);
 		return Material;
@@ -58,7 +58,7 @@ namespace MantlePerInstanceMaterialTestPrivate
 		return Data;
 	}
 
-	/** What the real bake sees in the base colour of the material it is handed: a per-instance node reads 0, a constant its value. */
+	/** What the real bake sees in the base color of the material it is handed: a per-instance node reads 0, a constant its value. */
 	class FScriptedFlattener : public IMantleMaterialFlattener
 	{
 	public:
@@ -72,8 +72,8 @@ namespace MantlePerInstanceMaterialTestPrivate
 			++Calls;
 			const UMaterial* Base = Cast<UMaterial>(Material);
 			const UMaterialExpressionMultiply* Multiply = Base && Base->GetEditorOnlyData() ? Cast<UMaterialExpressionMultiply>(Base->GetEditorOnlyData()->BaseColor.Expression) : nullptr;
-			const UMaterialExpressionConstant3Vector* Colour = Multiply ? Cast<UMaterialExpressionConstant3Vector>(Multiply->A.Expression) : nullptr;
-			if (!Colour)
+			const UMaterialExpressionConstant3Vector* Color = Multiply ? Cast<UMaterialExpressionConstant3Vector>(Multiply->A.Expression) : nullptr;
+			if (!Color)
 			{
 				OutError = TEXT("the scripted flattener expected Multiply(Constant3Vector, x)");
 				return false;
@@ -88,7 +88,7 @@ namespace MantlePerInstanceMaterialTestPrivate
 			{
 				bSawPerInstanceNode = true;
 			}
-			const FLinearColor Value = Colour->Constant;
+			const FLinearColor Value = Color->Constant;
 			TArray<TSharedPtr<FJsonValue>> Factor;
 			for (const double Channel : { Value.R * Variation, Value.G * Variation, Value.B * Variation, 1.0 })
 			{
@@ -145,7 +145,7 @@ namespace MantlePerInstanceMaterialTestPrivate
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantlePerInstanceRandomBakesNonBlackTest,
-	"Mantle.Editor.PerInstance.RandomMultipliedBaseColourExportsNonBlack",
+	"Mantle.Editor.PerInstance.RandomMultipliedBaseColorExportsNonBlack",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantlePerInstanceRandomBakesNonBlackTest::RunTest(const FString& Parameters)
@@ -166,7 +166,7 @@ bool FMantlePerInstanceRandomBakesNonBlackTest::RunTest(const FString& Parameter
 	}
 	TestEqual(TEXT("the flattener ran once"), Flattener->Calls, 1);
 	TestTrue(TEXT("it was handed a material to read"), Flattener->bSawMaterialFromThisTest);
-	TestFalse(TEXT("the material it was handed has no per-instance node in the base colour"), Flattener->bSawPerInstanceNode);
+	TestFalse(TEXT("the material it was handed has no per-instance node in the base color"), Flattener->bSawPerInstanceNode);
 
 	const FMantleConvertedMaterial* Converted = Set.FindMaterial(FMantlePlaceAssets::MaterialKey(Material));
 	if (!TestNotNull(TEXT("the material is in the set"), Converted))
@@ -174,7 +174,7 @@ bool FMantlePerInstanceRandomBakesNonBlackTest::RunTest(const FString& Parameter
 		return false;
 	}
 	const FMantlePlaceMaterialDocument& Doc = Converted->Document;
-	TestEqual(TEXT("red is the colour at Per Instance Random 0.5"), Doc.BaseColorFactor[0], 0.4, 1.0e-4);
+	TestEqual(TEXT("red is the color at Per Instance Random 0.5"), Doc.BaseColorFactor[0], 0.4, 1.0e-4);
 	TestEqual(TEXT("green"), Doc.BaseColorFactor[1], 0.3, 1.0e-4);
 	TestEqual(TEXT("blue"), Doc.BaseColorFactor[2], 0.2, 1.0e-4);
 	TestTrue(TEXT("a note says the variation is averaged"), HasNote(Set.Issues));
@@ -212,7 +212,7 @@ bool FMantlePerInstanceCustomDataBakesDefaultTest::RunTest(const FString& Parame
 	{
 		return false;
 	}
-	TestEqual(TEXT("red is the colour at the custom data's default (0.25)"), Converted->Document.BaseColorFactor[0], 0.2, 1.0e-4);
+	TestEqual(TEXT("red is the color at the custom data's default (0.25)"), Converted->Document.BaseColorFactor[0], 0.2, 1.0e-4);
 	TestTrue(TEXT("with the note"), HasNote(Set.Issues));
 	return true;
 }
@@ -233,7 +233,7 @@ bool FMantlePerInstanceAbsentIsUntouchedTest::RunTest(const FString& Parameters)
 		return Constant;
 	});
 	TestFalse(TEXT("no per-instance variation is found"), FMantlePlaceAssets::AnalyzeMaterial(Material).bPerInstanceVariation);
-	TestFalse(TEXT("so there is no copy to bake"), FMantlePlaceAssets::NeutralisePerInstanceValues(Material).IsValid());
+	TestFalse(TEXT("so there is no copy to bake"), FMantlePlaceAssets::NeutralizePerInstanceValues(Material).IsValid());
 
 	TSharedRef<FScriptedFlattener> Flattener = MakeShared<FScriptedFlattener>();
 	FMantlePlaceAssetConverter Converter(Flattener, FPaths::Combine(FPaths::AutomationTransientDir(), TEXT("MantlePerInstance")));

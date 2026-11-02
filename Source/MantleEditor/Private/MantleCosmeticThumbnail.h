@@ -115,7 +115,7 @@ public:
 	 * The headshot's frame for a standing avatar whose meshes together fill Bounds: the head, neck and the top of the
 	 * shoulders. A head is the head joint to the top of Bounds (HeadshotMinHeadCm to HeadshotMaxHeadCm); without a joint,
 	 * the top of the body as the conform's portrait takes it (FMantleMetaHumanConform::NoHeadDropCm below the top, the
-	 * middle of Bounds). The frame is flat at the joint's depth, centred on the joint across, from HeadshotDownHeads heads
+	 * middle of Bounds). The frame is flat at the joint's depth, centerd on the joint across, from HeadshotDownHeads heads
 	 * below the joint (never below Bounds) to one head above it, HeadshotHalfWidthHeads heads to each side. Invalid for an
 	 * invalid Bounds. Pure.
 	 */
@@ -149,13 +149,13 @@ public:
 	/**
 	 * Renders Subject into a Size x Size render target and reads it back (opaque, sRGB). False with a reason. First
 	 * waits until every material it draws has its shaders (warm-up captures, shader and asset compiles finished, textures
-	 * streamed in), so nothing draws as the grey world grid; the log names each mesh, its materials and their state.
+	 * streamed in), so nothing draws as the gray world grid; the log names each mesh, its materials and their state.
 	 */
 	static bool Capture(const FMantleThumbnailSubject& Subject, int32 Size, TArray<FColor>& OutPixels, FString& OutError);
 
 	/**
 	 * Where a camera looking along View must stand so every corner of Frame lies inside a square
-	 * perspective view of FOVDegrees with Margin to spare, centred on the box. Pure.
+	 * perspective view of FOVDegrees with Margin to spare, centerd on the box. Pure.
 	 */
 	static FVector FrameCamera(const FBox& Frame, const FRotator& View, float FOVDegrees, float Margin);
 };

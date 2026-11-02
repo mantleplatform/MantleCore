@@ -17,7 +17,7 @@ namespace MantleHairColorPrivate
 		return 5.969f - 0.215f * B + 2.532f * B2 - 10.73f * B3 + 5.574f * B4 + 0.245f * B5;
 	}
 
-	/** HairColorToAbsorption for one channel (the colour kept off 0, where the log is not finite). */
+	/** HairColorToAbsorption for one channel (the color kept off 0, where the log is not finite). */
 	float ChannelToAbsorption(const float Channel)
 	{
 		const float Scaled = FMath::Loge(FMath::Clamp(Channel, 1.0e-4f, 1.0f)) / AbsorptionScale();
@@ -198,10 +198,10 @@ const TCHAR* FMantleHairColor::Describe(const ESource Source)
 {
 	switch (Source)
 	{
-	case ESource::Override: return TEXT("the colour set under Hair colour");
+	case ESource::Override: return TEXT("the color set under Hair color");
 	case ESource::Melanin: return TEXT("its material's Melanin and Redness");
-	case ESource::Vector: return TEXT("its material's colour parameter");
-	case ESource::Default: return TEXT("a default brown (its material names no colour)");
+	case ESource::Vector: return TEXT("its material's color parameter");
+	case ESource::Default: return TEXT("a default brown (its material names no color)");
 	}
 	return TEXT("");
 }

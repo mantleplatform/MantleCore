@@ -84,8 +84,8 @@ struct FMantlePreviewExportResult
 {
 	bool bSuccess = false;
 
-	/** The creator cancelled the export. bSuccess is false, Errors is just "Cancelled.", and the generation folder is gone. */
-	bool bCancelled = false;
+	/** The creator canceled the export. bSuccess is false, Errors is just "Canceled.", and the generation folder is gone. */
+	bool bCanceled = false;
 
 	/** The generation folder, and the manifest.json inside it (present only on success). */
 	FString BundleDirectory;
@@ -122,7 +122,7 @@ public:
 	/**
 	 * Runs the whole export for World, which must be a saved /Game level, under a progress dialog the creator can cancel
 	 * (checked between stages and between cooks; a cook already running is stopped). On failure or cancel the generation
-	 * folder is deleted; a cancel sets OutResult.bCancelled.
+	 * folder is deleted; a cancel sets OutResult.bCanceled.
 	 */
 	static bool Run(UWorld* World, const FMantlePreviewExportOptions& Options, FMantlePreviewExportResult& OutResult);
 

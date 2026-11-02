@@ -209,9 +209,9 @@ bool FMantleSplineMeshBakeMergeTest::RunTest(const FString& Parameters)
 		AddError(TEXT("the baked mesh has a body setup"));
 	}
 
-	// The pivot is where the merged mesh sits: its bounds relative to it are centred on it (to the cm it is rounded to).
+	// The pivot is where the merged mesh sits: its bounds relative to it are centerd on it (to the cm it is rounded to).
 	const FBox Box = WorldBoundsOf(*Merged);
-	TestTrue(TEXT("the pivot is the merged bounds' centre"), Box.GetCenter().Equals(Merged->Transform.GetLocation(), 1.0));
+	TestTrue(TEXT("the pivot is the merged bounds' center"), Box.GetCenter().Equals(Merged->Transform.GetLocation(), 1.0));
 	return true;
 }
 

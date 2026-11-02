@@ -746,7 +746,7 @@ bool FMantleAvatarRefit::RefitMeshDescription(FMeshDescription& Mesh, const FMan
 		}
 
 		// Normals and tangents: the field applied to a 1 cm offset along them (the runtime fitter's rule), the tangent
-		// re-orthogonalised to the new normal, the binormal sign kept; a degenerate result keeps the direction it had.
+		// re-orthogonalized to the new normal, the binormal sign kept; a degenerate result keeps the direction it had.
 		TVertexInstanceAttributesRef<FVector3f> Normals = Attributes.GetVertexInstanceNormals();
 		TVertexInstanceAttributesRef<FVector3f> Tangents = Attributes.GetVertexInstanceTangents();
 		TArray<TVertexInstanceAttributesRef<FVector3f>> MorphNormals;
@@ -903,10 +903,10 @@ TArray<float> FMantleAvatarRefit::DistanceToOpenings(const FMantleSkinnedMeshLOD
 	{
 		return Distance;
 	}
-	// Edges with their triangle counts, and each vertex's neighbours.
+	// Edges with their triangle counts, and each vertex's neighbors.
 	TMap<uint64, int32> EdgeTriangles;
-	TArray<TArray<int32>> Neighbours;
-	Neighbours.SetNum(N);
+	TArray<TArray<int32>> Neighbors;
+	Neighbors.SetNum(N);
 	auto Key = [](const int32 A, const int32 B) { return (static_cast<uint64>(FMath::Min(A, B)) << 32) | static_cast<uint32>(FMath::Max(A, B)); };
 	for (int32 Triangle = 0; Triangle < Garment.NumTriangles(); ++Triangle)
 	{
@@ -921,8 +921,8 @@ TArray<float> FMantleAvatarRefit::DistanceToOpenings(const FMantleSkinnedMeshLOD
 			}
 			if (++EdgeTriangles.FindOrAdd(Key(A, B)) == 1)
 			{
-				Neighbours[A].Add(B);
-				Neighbours[B].Add(A);
+				Neighbors[A].Add(B);
+				Neighbors[B].Add(A);
 			}
 		}
 	}
@@ -950,7 +950,7 @@ TArray<float> FMantleAvatarRefit::DistanceToOpenings(const FMantleSkinnedMeshLOD
 		{
 			continue;
 		}
-		for (const int32 Next : Neighbours[Top.Value])
+		for (const int32 Next : Neighbors[Top.Value])
 		{
 			const float Through = Top.Key + FVector3f::Dist(Garment.Positions[Top.Value], Garment.Positions[Next]);
 			if (Through < Distance[Next])

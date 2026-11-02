@@ -31,11 +31,11 @@ bool FMantleHeadFitMapsReferenceOntoHeadTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the reference onto itself scales by 1"), Same.Scale.Equals(FVector3f::OneVector, 1e-5f));
 	TestTrue(TEXT("the reference onto itself moves nothing"), Same.Offset.Equals(FVector3f::ZeroVector, 1e-4f));
 
-	// A head past the socket's bounds is clamped to them and stays centred.
+	// A head past the socket's bounds is clamped to them and stays centerd.
 	const FBox3f Huge(Reference.Min * 3.0f, Reference.Max * 3.0f);
 	const FMantleHeadFit::FFit Clamped = FMantleHeadFit::FitTo(Reference, Huge);
 	TestTrue(TEXT("the scale is clamped to 2"), Clamped.Scale.Equals(FVector3f(2.0f), 1e-5f));
-	TestTrue(TEXT("the clamped map keeps the centres together"),
+	TestTrue(TEXT("the clamped map keeps the centers together"),
 		(Clamped.Scale * Reference.GetCenter() + Clamped.Offset).Equals(Huge.GetCenter(), 1e-3f));
 	return true;
 }

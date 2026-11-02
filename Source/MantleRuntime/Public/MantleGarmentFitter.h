@@ -300,7 +300,7 @@ public:
 
 	/**
 	 * Garment warped by Field, every LOD, and rebound to Wearer (Rebind). Normals and tangents: the
-	 * field applied to a 1 cm offset along them, the tangent re-orthogonalised to the new normal, the
+	 * field applied to a 1 cm offset along them, the tangent re-orthogonalized to the new normal, the
 	 * binormal sign kept; a degenerate result keeps the original direction. False (OutFitted
 	 * unspecified) when the garment does not Validate, the field is not valid, or the rebind fails.
 	 */

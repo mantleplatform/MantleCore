@@ -101,11 +101,11 @@ struct MANTLEEDITOR_API FMantleCosmeticDraft
 
 	/** Native Outfit: representative converted source shapes packaged together in one catalog item. */
 	TArray<FMantleOutfitAuthoringTarget> OutfitTargets;
-	/** Hand-made colour areas (the panel's advanced section). Any declaration here turns detection off for the item. */
+	/** Hand-made color areas (the panel's advanced section). Any declaration here turns detection off for the item. */
 	TArray<FMantleClothingColorAuthoring> ClothingColors;
 
 	/**
-	 * #756, clothing (top, bottom, footwear): find the areas players can recolour from a mask texture the item's materials
+	 * #756, clothing (top, bottom, footwear): find the areas players can recolor from a mask texture the item's materials
 	 * already carry (FMantleClothingColorDetect) and upload them, at export. On by default, so a creator who changes
 	 * nothing, or a draft built in code, gets every area found. ClothingColorChoices untick or rename single areas.
 	 */
@@ -168,7 +168,7 @@ struct MANTLEEDITOR_API FMantleCosmeticDraft
 	int32 SourceSection = INDEX_NONE;
 
 	/**
-	 * Hair from a groom's cards (their atlases upload as hair_cards sections, #325, #326): the creator's colour,
+	 * Hair from a groom's cards (their atlases upload as hair_cards sections, #325, #326): the creator's color,
 	 * linear RGB, over the one read from the groom's material (FMantleHairColor). Unset reads the material.
 	 */
 	TOptional<FLinearColor> HairColor;
@@ -275,7 +275,7 @@ struct MANTLEEDITOR_API FMantleGroomCardsEntry
 	bool bInvertUV = false;
 	/**
 	 * The groom's materials (HairGroupsMaterials), the one named by the entry's MaterialSlotName first: where the
-	 * hair colour is read from (FMantleHairColor::FromMaterial).
+	 * hair color is read from (FMantleHairColor::FromMaterial).
 	 */
 	TArray<TWeakObjectPtr<UMaterialInterface>> Materials;
 	/** Exact cards slot, or the group rendering slot when no cards override exists. */
@@ -314,7 +314,7 @@ struct MANTLEEDITOR_API FMantleTextureParameter
 	/** The texture's asset name, "T_Hair_alpha". */
 	FString Texture;
 	bool bNormalMap = false;
-	/** Already the section's base colour, normal or ORM. */
+	/** Already the section's base color, normal or ORM. */
 	bool bTaken = false;
 };
 
@@ -350,20 +350,20 @@ struct MANTLEEDITOR_API FMantleFaceCandidate
 /**
  * #620: a material's textures as the upload and the converter read them (FMantleCosmeticExport::ResolveMaterialTextures).
  *
- * A material is plain when the upload can take its base colour texture as it is: the material is Mantle's own
+ * A material is plain when the upload can take its base color texture as it is: the material is Mantle's own
  * (M_MantlePlace, what the converter writes), or its Base Color input is exactly one texture sample (through reroutes
  * and the static switches its instance selects) on UV channel 0, untiled, of a one-block texture, with its RGB output.
  * Anything else (a tint, blend or mask over its textures, a detail map tiled over the UVs, a UDIM texture, material
- * attributes or layers, a flat colour) needs a bake: its colour exists only when the material is evaluated.
+ * attributes or layers, a flat color) needs a bake: its color exists only when the material is evaluated.
  */
 struct MANTLEEDITOR_API FMantleMaterialTextures
 {
 	bool bPlain = false;
-	/** Why it is not plain, for the converter's fix list ("its base colour is computed in the material"); empty when plain. */
+	/** Why it is not plain, for the converter's fix list ("its base color is computed in the material"); empty when plain. */
 	FString Why;
-	/** The base colour texture: the plain sample's, else by parameter name, else the largest colour texture it samples. */
+	/** The base color texture: the plain sample's, else by parameter name, else the largest color texture it samples. */
 	UTexture* BaseColor = nullptr;
-	/** Taken from the largest colour texture it samples (no parameter named for it): the upload says so. */
+	/** Taken from the largest color texture it samples (no parameter named for it): the upload says so. */
 	bool bBaseColorFromLargest = false;
 	UTexture* Normal = nullptr;
 	/** An occlusion / roughness / metallic texture, and the parameter it was found by ("ORM", "RMA", "SRMF Baked VT"). */
@@ -371,16 +371,16 @@ struct MANTLEEDITOR_API FMantleMaterialTextures
 	FString OrmParameter;
 	/** #481: a separate opacity texture (FMantleCosmeticExport::PickOpacityTexture), found only when asked for. */
 	UTexture* Opacity = nullptr;
-	/** Texture parameters the material samples only with tiled UVs (detail maps): never its base colour, normal or ORM. */
+	/** Texture parameters the material samples only with tiled UVs (detail maps): never its base color, normal or ORM. */
 	TArray<FName> TiledParameters;
 };
 
 /** #481: which channel of an opacity texture holds the opacity. */
 enum class EMantleOpacityChannel : uint8
 {
-	/** A grey (single-channel) texture, or a packed mask with opacity in R. */
+	/** A gray (single-channel) texture, or a packed mask with opacity in R. */
 	Red,
-	/** A texture whose alpha varies and whose colour is flat or an image. */
+	/** A texture whose alpha varies and whose color is flat or an image. */
 	Alpha,
 };
 
@@ -406,8 +406,8 @@ enum class EMantleOpacityChannel : uint8
  *
  * Hooks, marked in the code, for work not done here:
  * - #273 (A0.4, the user's materials handoff): which textures the runtime avatar, garment and
- *   hair materials consume. Until then each section uploads its albedo (colour), normal and, for
- *   avatars, ORM texture found by parameter name, or baked through GLTFExporter, or a flat colour.
+ *   hair materials consume. Until then each section uploads its albedo (color), normal and, for
+ *   avatars, ORM texture found by parameter name, or baked through GLTFExporter, or a flat color.
  * - Hair root UVs from the groom's strands (zeros for now), an avatar's DNA, automatic emote
  *   retargeting. (The fit preview is the panel's:
  *   FMantleCosmeticPreviewSession.)
@@ -434,7 +434,7 @@ public:
 		FMantleSkinnedMesh* OutHairPreview = nullptr, FMantleSkinnedMesh* OutHairSourceFace = nullptr);
 
 	/**
-	 * #756: for each exported clothing material not already declared by hand, detects its colour areas from its mask
+	 * #756: for each exported clothing material not already declared by hand, detects its color areas from its mask
 	 * texture (FMantleClothingColorDetect), applies Draft.ClothingColorChoices, measures each kept area against the
 	 * exported albedo (Package.Materials[i].AlbedoKey) and adds the clean area map and regions to Package.Materials[i].
 	 * Every material's result, found or not, goes to Package.DetectedClothingColors. Off for anything but a top, bottom
@@ -629,7 +629,7 @@ public:
 
 	/**
 	 * The texture's source pixels as an RGBA PNG, scaled down to MaxSize on its longer side when
-	 * larger. bLinear keeps data (normal maps, masks) linear; colour comes out sRGB.
+	 * larger. bLinear keeps data (normal maps, masks) linear; color comes out sRGB.
 	 */
 	static bool TextureToPng(const UTexture* Texture, int32 MaxSize, bool bLinear, TArray<uint8>& OutPng, FIntPoint& OutSize, FString& OutError);
 
@@ -641,7 +641,7 @@ public:
 	static bool TagPngRole(TArray<uint8>& Png, const FString& Role);
 
 	/** Whether every pixel of the PNG has R = G = B, the API's test for a normal map it refuses; false when it can't be read. */
-	static bool IsGreyPng(const TArray<uint8>& Png);
+	static bool IsGrayPng(const TArray<uint8>& Png);
 
 	/**
 	 * #575: the check-list line for a texture its export scales down (FMantleCosmeticChecks::CheckTextureSize on its
@@ -654,7 +654,7 @@ public:
 	/**
 	 * #469: one LOD of a skeletal mesh as an upload GLB's mesh, the reader avatars and garments use (shared with the place
 	 * converter): render vertices and triangles in their own order, every section, every bone of the raw reference skeleton
-	 * as a joint with its reference pose, and at most eight influences a vertex (#484: the heaviest kept and renormalised).
+	 * as a joint with its reference pose, and at most eight influences a vertex (#484: the heaviest kept and renormalized).
 	 * OutSlots[i] is the mesh's material slot glTF material i came from (UploadMaterialSlots' order). OutCappedVertices is how
 	 * many vertices had influences dropped and OutLargestDropped the largest weight one lost. False with a sentence for the
 	 * creator when the LOD has no CPU copy or its sections share vertices. #620: a LOD whose reference topology is in its
@@ -688,7 +688,7 @@ public:
 	static FMantleGlbNonFinite CountNonFiniteStaticMesh(const UStaticMesh* Mesh, int32 LODIndex);
 
 	/**
-	 * #628: Glb's per-vertex arrays (positions, normals, tangents, UVs, UV1s, colours; any that are empty stay empty)
+	 * #628: Glb's per-vertex arrays (positions, normals, tangents, UVs, UV1s, colors; any that are empty stay empty)
 	 * rebuilt so each of Sections has its own vertices, and one primitive per section, in Sections' order, appended to
 	 * Glb.Primitives: a vertex two sections use is written once for each, and each section's indices are renumbered into
 	 * its own range. The primitives tile the new vertex arrays in order, which is the layout the runtime reader needs;
@@ -714,39 +714,39 @@ public:
 
 	/**
 	 * #481: the opacity texture among a material's texture parameters, INDEX_NONE when there is none. Normal maps and
-	 * textures already taken (base colour, normal, ORM) are never picked. A parameter named for opacity (Opacity,
+	 * textures already taken (base color, normal, ORM) are never picked. A parameter named for opacity (Opacity,
 	 * Alpha, Transparency, Cutout) wins, in parameter order; else a texture whose name ends in one of those words
 	 * ("T_Hair_alpha"). Pure (tested).
 	 */
 	static int32 PickOpacityTexture(TConstArrayView<FMantleTextureParameter> Parameters);
 
 	/**
-	 * #481: A when some texel's alpha is below 255 and the colour carries nothing else (one flat colour, or a colour
-	 * image); else R (a grey single-channel mask, or a packed mask with opacity in R). Pure (tested).
+	 * #481: A when some texel's alpha is below 255 and the color carries nothing else (one flat color, or a color
+	 * image); else R (a gray single-channel mask, or a packed mask with opacity in R). Pure (tested).
 	 */
 	static EMantleOpacityChannel ChooseOpacityChannel(TConstArrayView<FColor> OpacityPixels);
 
 	/**
-	 * #481: writes Channel of each opacity texel into the albedo texel's alpha, keeping its colour. The two are the
+	 * #481: writes Channel of each opacity texel into the albedo texel's alpha, keeping its color. The two are the
 	 * same size (the caller resizes); a length mismatch packs the texels both have. Pure (tested).
 	 */
 	static void PackOpacityIntoAlpha(TArrayView<FColor> AlbedoPixels, TConstArrayView<FColor> OpacityPixels, EMantleOpacityChannel Channel);
 
 	/**
-	 * #620: a material's base colour, normal and ORM textures, and whether it is plain (FMantleMaterialTextures). The
+	 * #620: a material's base color, normal and ORM textures, and whether it is plain (FMantleMaterialTextures). The
 	 * upload and the converter's bakes both read textures this way. By parameter name (BaseColor, Albedo, Diffuse, Color,
-	 * ...; Normal; ORM, RMA, ARM, SRMF, Roughness) as before, except that a MetaHuman animated wrinkle or colour-mask map
+	 * ...; Normal; ORM, RMA, ARM, SRMF, Roughness) as before, except that a MetaHuman animated wrinkle or color-mask map
 	 * (IsAnimatedMaskTexture) and a texture parameter sampled only with tiled UVs (a detail map) are never taken; a plain
-	 * material's base colour (and normal, when that is a plain sample too) is the sample's own texture whatever its
-	 * parameter is called. bPickOpacity also finds a separate opacity texture (hair), which the base colour fallback then
+	 * material's base color (and normal, when that is a plain sample too) is the sample's own texture whatever its
+	 * parameter is called. bPickOpacity also finds a separate opacity texture (hair), which the base color fallback then
 	 * skips.
 	 */
 	static FMantleMaterialTextures ResolveMaterialTextures(UMaterialInterface* Material, bool bPickOpacity = false);
 
 	/**
-	 * #620: a MetaHuman animated wrinkle / colour-mask map by its parameter or texture name ("Basecolor Animated Delta
+	 * #620: a MetaHuman animated wrinkle / color-mask map by its parameter or texture name ("Basecolor Animated Delta
 	 * cm1", "T_Face_Basecolor_Animated_CM1", "T_Face_Normal_Animated_WM2", "T_head_wm1_msk_01"): a delta blended over
-	 * the real map while the face animates, never a base colour or normal of its own. Pure (tested).
+	 * the real map while the face animates, never a base color or normal of its own. Pure (tested).
 	 */
 	static bool IsAnimatedMaskTexture(const FString& Name);
 };

@@ -67,7 +67,7 @@ bool FMantleWeaponBuilderPalmInsideTest::RunTest(const FString& Parameters)
 	using namespace MantleWeaponBuilderMath;
 	const TArray<FVector3f> Gun = MakeBoxGun();
 
-	// A palm under the gun (thin side vertical) centred in the handguard is deep inside it.
+	// A palm under the gun (thin side vertical) centerd in the handguard is deep inside it.
 	const FPalmBox InHandguard = MakePalmBox(FVector(25, 0, 4.5), false);
 	TestTrue(TEXT("a palm cutting through the handguard's underside is inside the gun"), IsLeftPalmInsideGun(Gun, FTransform::Identity, FVector(25, 0, 1.0)));
 	TestFalse(TEXT("a palm 1 cm under the handguard is not"), IsLeftPalmInsideGun(Gun, FTransform::Identity, FVector(25, 0, -1.0)));
@@ -116,7 +116,7 @@ bool FMantleWeaponBuilderHandCapsulesTest::RunTest(const FString& Parameters)
 		return Hand.FindByPredicate([Part](const FMantleGhostCapsule& C) { return C.Part == FName(Part); });
 	};
 
-	// A right hand on a grip 3 cm wide (1.5 half-width), the hand on its centre line.
+	// A right hand on a grip 3 cm wide (1.5 half-width), the hand on its center line.
 	const FVector Palm(0, 0, 0);
 	const TArray<FMantleGhostCapsule> Right = MakeHandCapsules(Palm, EHandStyle::GripRight, 1.5, false);
 	TestEqual(TEXT("three palm capsules, four fingers and a thumb of two each"), Right.Num(), 3 + 5 * 2);
@@ -150,13 +150,13 @@ bool FMantleWeaponBuilderHandCapsulesTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("a very wide gun is reached up to its limit only"), -Tip->End.Y < HandSegment1Cm + HandSegment2Cm);
 	}
 
-	// A two-handed left hand: palm centre on the point, fingers up the +Y side, thumb up the -Y side.
+	// A two-handed left hand: palm center on the point, fingers up the +Y side, thumb up the -Y side.
 	const FVector Under(25, 0, -1);
 	const TArray<FMantleGhostCapsule> Left = MakeHandCapsules(Under, EHandStyle::SupportUnder, 2.5, false);
 	TestEqual(TEXT("left hand capsule count"), Left.Num(), 13);
 	if (const FMantleGhostCapsule* Middle = Find(Left, TEXT("Palm_1")))
 	{
-		TestTrue(TEXT("the palm's centre is the hand point"), ((Middle->Start + Middle->End) * 0.5).Equals(Under, 1.0e-6));
+		TestTrue(TEXT("the palm's center is the hand point"), ((Middle->Start + Middle->End) * 0.5).Equals(Under, 1.0e-6));
 	}
 	for (int32 I = 0; I < 4; ++I)
 	{
@@ -260,9 +260,9 @@ bool FMantleWeaponBuilderAimEyeTest::RunTest(const FString& Parameters)
 		const FMantleGhostCapsule* Head = Ghost.FindByPredicate([](const FMantleGhostCapsule& C) { return C.Part == FName(TEXT("Head")); });
 		if (TestNotNull(TEXT("head"), Head))
 		{
-			const FVector Centre = Fit.MeshToWeapon.TransformPosition((Head->Start + Head->End) * 0.5);
-			TestTrue(TEXT("aiming: the head is behind the eye"), Centre.X < EyeWeapon.X);
-			TestTrue(TEXT("aiming: the head is to the left of the eye"), Centre.Y < EyeWeapon.Y);
+			const FVector Center = Fit.MeshToWeapon.TransformPosition((Head->Start + Head->End) * 0.5);
+			TestTrue(TEXT("aiming: the head is behind the eye"), Center.X < EyeWeapon.X);
+			TestTrue(TEXT("aiming: the head is to the left of the eye"), Center.Y < EyeWeapon.Y);
 		}
 	}
 	return true;

@@ -96,12 +96,12 @@ bool FMantleFaceTopology::ReadFace(const USkeletalMesh* Face, FMantleSkinnedMesh
 	return true;
 }
 
-void FMantleNeckSamples::Ray(const int32 Index, const FVector2f& Centre, const float BaseZ, FVector3f& OutOrigin, FVector3f& OutDir)
+void FMantleNeckSamples::Ray(const int32 Index, const FVector2f& Center, const float BaseZ, FVector3f& OutOrigin, FVector3f& OutDir)
 {
 	const int32 Height = Index / (NumElevations * NumAzimuths);
 	const int32 Elevation = (Index / NumAzimuths) % NumElevations;
 	const int32 Azimuth = Index % NumAzimuths;
-	OutOrigin = FVector3f(Centre.X, Centre.Y, BaseZ + HeightCm(Height));
+	OutOrigin = FVector3f(Center.X, Center.Y, BaseZ + HeightCm(Height));
 	const float El = FMath::DegreesToRadians(ElevationDeg(Elevation));
 	const float Az = 2.0f * UE_PI * static_cast<float>(Azimuth) / static_cast<float>(NumAzimuths);
 	OutDir = FVector3f(FMath::Cos(Az) * FMath::Cos(El), FMath::Sin(Az) * FMath::Cos(El), FMath::Sin(El));
@@ -137,7 +137,7 @@ bool FMantleNeckSamples::Cast(const FMantleSkinnedMeshLOD& Face, const TConstArr
 	{
 		return false;
 	}
-	// The axis: the centre of the face's neck column just over the base.
+	// The axis: the center of the face's neck column just over the base.
 	FVector2f Sum = FVector2f::ZeroVector;
 	for (const FVector3f& P : Face.Positions)
 	{
@@ -147,13 +147,13 @@ bool FMantleNeckSamples::Cast(const FMantleSkinnedMeshLOD& Face, const TConstArr
 			++Out.ColumnVerts;
 		}
 	}
-	Out.Centre = Out.ColumnVerts > 0 ? Sum / static_cast<float>(Out.ColumnVerts) : FVector2f::ZeroVector;
+	Out.Center = Out.ColumnVerts > 0 ? Sum / static_cast<float>(Out.ColumnVerts) : FVector2f::ZeroVector;
 	const int32 NumTriangles = Face.NumTriangles();
 	ParallelFor(N, [&Face, &Out, NumTriangles](const int32 Index)
 	{
 		FVector3f Origin;
 		FVector3f Dir;
-		Ray(Index, Out.Centre, Out.BaseZ, Origin, Dir);
+		Ray(Index, Out.Center, Out.BaseZ, Origin, Dir);
 		float Best = ReachCm;
 		bool bHit = false;
 		for (int32 Triangle = 0; Triangle < NumTriangles; ++Triangle)
@@ -282,7 +282,7 @@ bool FMantleNeckSamples::Correspond(const FMantleSkinnedMeshLOD& SourceFace, con
 			}
 		}
 	}
-	// Sanity: neighbouring triangles (a shared edge, welded by position on the source) move alike.
+	// Sanity: neighboring triangles (a shared edge, welded by position on the source) move alike.
 	TMap<FIntVector, int32> Cells;
 	TArray<int32> Weld;
 	Weld.SetNum(SourceFace.NumVertices());

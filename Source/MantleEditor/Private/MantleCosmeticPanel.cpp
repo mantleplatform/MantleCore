@@ -128,13 +128,13 @@ namespace MantleCosmeticPanelPrivate
 		case EMantleCosmeticClass::Emote:
 			return LOCTEXT("EmoteHelp", "An animation on the UEFN mannequin, MetaHuman, UE5 Mannequin or UE4 Mannequin skeleton, at most 10 seconds. MetaHuman, UE5 Mannequin and UE4 Mannequin clips are retargeted onto the UEFN mannequin when they upload.");
 		case EMantleCosmeticClass::Overlay:
-			return LOCTEXT("OverlayHelp", "A scar or tattoo players can wear on a converted MetaHuman avatar. Paint a square mask (a power of two, at most 1024 x 1024) to the MetaHuman UV layout of the body or the face, in white on black, as a greyscale image or in the red channel only. Scars may add a normal map. Pick the slot above: its name says whether it is drawn on the body or the face.");
+			return LOCTEXT("OverlayHelp", "A scar or tattoo players can wear on a converted MetaHuman avatar. Paint a square mask (a power of two, at most 1024 x 1024) to the MetaHuman UV layout of the body or the face, in white on black, as a grayscale image or in the red channel only. Scars may add a normal map. Pick the slot above: its name says whether it is drawn on the body or the face.");
 		default:
 			return FText::GetEmpty();
 		}
 	}
 
-	FSlateColor SeverityColour(EMantleCosmeticSeverity Severity)
+	FSlateColor SeverityColor(EMantleCosmeticSeverity Severity)
 	{
 		switch (Severity)
 		{
@@ -222,7 +222,7 @@ SMantleCosmeticPanel::~SMantleCosmeticPanel()
 	{
 		Session->Cancel();
 	}
-	// The preview's downloads nobody waits on any more are cancelled; its fits still running finish and are dropped.
+	// The preview's downloads nobody waits on any more are canceled; its fits still running finish and are dropped.
 	if (PreviewSession.IsValid())
 	{
 		PreviewSession->OnChanged = nullptr;
@@ -328,7 +328,7 @@ void SMantleCosmeticPanel::Construct(const FArguments& InArgs)
 					SNew(STextBlock)
 					.AutoWrapText(true)
 					.Visibility_Lambda([this] { return ContractError.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
-					.ColorAndOpacity(SeverityColour(EMantleCosmeticSeverity::Error))
+					.ColorAndOpacity(SeverityColor(EMantleCosmeticSeverity::Error))
 					.Text_Lambda([this] { return FText::FromString(ContractError); })
 				]
 
@@ -485,7 +485,7 @@ void SMantleCosmeticPanel::Construct(const FArguments& InArgs)
 						]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)
 						[
-							// #325, #326: a groom's cards upload with the colour they are drawn in, read from the groom's
+							// #325, #326: a groom's cards upload with the color they are drawn in, read from the groom's
 							// material unless set here.
 							SNew(SHorizontalBox)
 							.Visibility_Lambda([this]
@@ -495,7 +495,7 @@ void SMantleCosmeticPanel::Construct(const FArguments& InArgs)
 							})
 							+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
 							[
-								SNew(STextBlock).Text(LOCTEXT("HairColorLabel", "Hair colour"))
+								SNew(STextBlock).Text(LOCTEXT("HairColorLabel", "Hair color"))
 							]
 							+ SHorizontalBox::Slot().FillWidth(1.0f)
 							[
@@ -522,7 +522,7 @@ void SMantleCosmeticPanel::Construct(const FArguments& InArgs)
 							[
 								SNew(STextBlock)
 								.Visibility_Lambda([this] { return !HairColorText.IsEmpty() && !Draft.HairColor.IsSet() ? EVisibility::Visible : EVisibility::Collapsed; })
-								.Text(LOCTEXT("HairColorInvalid", "Not a colour: the groom's is used"))
+								.Text(LOCTEXT("HairColorInvalid", "Not a color: the groom's is used"))
 							]
 						]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)
@@ -902,7 +902,7 @@ void SMantleCosmeticPanel::Construct(const FArguments& InArgs)
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
 						[
 							SNew(STextBlock).AutoWrapText(true).ColorAndOpacity(FSlateColor::UseSubduedForeground())
-							.Text(LOCTEXT("AccessoryAxesNote", "Unreal units are centimetres; standard mesh axes use Z up. A new accessory aligns to the chosen avatar's neutral anchor. Keep the mesh pivot at its intended attachment point, then adjust placement and preview. Saved corrections are preserved."))
+							.Text(LOCTEXT("AccessoryAxesNote", "Unreal units are centimeters; standard mesh axes use Z up. A new accessory aligns to the chosen avatar's neutral anchor. Keep the mesh pivot at its intended attachment point, then adjust placement and preview. Saved corrections are preserved."))
 						],
 						AccessoryOnly)
 				]
@@ -970,7 +970,7 @@ void SMantleCosmeticPanel::Construct(const FArguments& InArgs)
 							[
 								SNew(STextBlock)
 								.AutoWrapText(true)
-								.Text(LOCTEXT("RightsDeclaration", "I own this content or its licence permits public redistribution on Mantle"))
+								.Text(LOCTEXT("RightsDeclaration", "I own this content or its license permits public redistribution on Mantle"))
 							]
 						]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
@@ -978,7 +978,7 @@ void SMantleCosmeticPanel::Construct(const FArguments& InArgs)
 							SNew(STextBlock)
 							.AutoWrapText(true)
 							.Visibility_Lambda([this] { return Draft.bPublic && !Draft.bRightsDeclared ? EVisibility::Visible : EVisibility::Collapsed; })
-							.ColorAndOpacity(MantleCosmeticPanelPrivate::SeverityColour(EMantleCosmeticSeverity::Warning))
+							.ColorAndOpacity(MantleCosmeticPanelPrivate::SeverityColor(EMantleCosmeticSeverity::Warning))
 							.Text(LOCTEXT("RightsDeclarationNeeded", "Tick the declaration to publish publicly, or choose Private."))
 						])
 				]
@@ -1060,7 +1060,7 @@ void SMantleCosmeticPanel::Construct(const FArguments& InArgs)
 					})
 					.ColorAndOpacity_Lambda([this]
 					{
-						return bTestLocallyError ? FSlateColor(MantleCosmeticPanelPrivate::SeverityColour(EMantleCosmeticSeverity::Error)) : FSlateColor::UseForeground();
+						return bTestLocallyError ? FSlateColor(MantleCosmeticPanelPrivate::SeverityColor(EMantleCosmeticSeverity::Error)) : FSlateColor::UseForeground();
 					})
 					.Text_Lambda([this] { return TestLocallyResult; })
 				]
@@ -1865,7 +1865,7 @@ void SMantleCosmeticPanel::RefreshClothingColors()
 	AddFoundClothingAreas();
 	TSharedRef<SVerticalBox> Advanced = SNew(SVerticalBox);
 	Advanced->AddSlot().AutoHeight().Padding(0, 4)
-	[SNew(STextBlock).AutoWrapText(true).Text(LOCTEXT("DyeAuthoringHelp", "For experts: pick your own black-and-white area texture (red, green and blue each mark one area) and name each area. Anything you set up here replaces the areas Mantle found. Texture detail stays intact; very dark areas need a lighter version of the item's colour texture. Preview colours don't change what uploads."))];
+	[SNew(STextBlock).AutoWrapText(true).Text(LOCTEXT("DyeAuthoringHelp", "For experts: pick your own black-and-white area texture (red, green and blue each mark one area) and name each area. Anything you set up here replaces the areas Mantle found. Texture detail stays intact; very dark areas need a lighter version of the item's color texture. Preview colors don't change what uploads."))];
 	if (!ClothingMaterialNames.IsEmpty()) Advanced->AddSlot().AutoHeight().Padding(0, 4)
 	[SNew(STextBlock).AutoWrapText(true).Text(FText::FromString(TEXT("Material names: ") + FString::Join(ClothingMaterialNames, TEXT(", "))))];
 	else Advanced->AddSlot().AutoHeight().Padding(0, 4)
@@ -1885,7 +1885,7 @@ void SMantleCosmeticPanel::RefreshClothingColors()
 		{
 			return SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
-				[SNew(STextBlock).Text(bNeutral ? LOCTEXT("DyeNeutral", "Lighter colour texture (optional)") : LOCTEXT("DyeMask", "Area texture"))]
+				[SNew(STextBlock).Text(bNeutral ? LOCTEXT("DyeNeutral", "Lighter color texture (optional)") : LOCTEXT("DyeMask", "Area texture"))]
 				+ SHorizontalBox::Slot().FillWidth(1)[SNew(SObjectPropertyEntryBox).AllowedClass(UTexture2D::StaticClass())
 					.ObjectPath_Lambda([this, DeclarationIndex, bNeutral]
 					{ if (!Draft.ClothingColors.IsValidIndex(DeclarationIndex)) return FString(); const UTexture2D* Texture = bNeutral ? Draft.ClothingColors[DeclarationIndex].NeutralAlbedo.Get() : Draft.ClothingColors[DeclarationIndex].Mask.Get(); return Texture ? Texture->GetPathName() : FString(); })
@@ -1988,12 +1988,12 @@ void SMantleCosmeticPanel::AddFoundClothingAreas()
 	};
 	if (!Draft.ClothingColors.IsEmpty())
 	{
-		Line(LOCTEXT("DyeHandMade", "You've marked the colour areas yourself (under Advanced), so Mantle doesn't look for them."));
+		Line(LOCTEXT("DyeHandMade", "You've marked the color areas yourself (under Advanced), so Mantle doesn't look for them."));
 		return;
 	}
 	if (!bClothingAreasKnown)
 	{
-		Line(LOCTEXT("DyeNotYet", "Preview the item and Mantle will point out the parts players can recolour."));
+		Line(LOCTEXT("DyeNotYet", "Preview the item and Mantle will point out the parts players can recolor."));
 		return;
 	}
 	int32 Count = 0, MaterialsWithAreas = 0;
@@ -2005,16 +2005,16 @@ void SMantleCosmeticPanel::AddFoundClothingAreas()
 	}
 	if (Count == 0)
 	{
-		Line(LOCTEXT("DyeNone", "This item uploads in its original colours."));
+		Line(LOCTEXT("DyeNone", "This item uploads in its original colors."));
 		return;
 	}
-	Line(FText::Format(LOCTEXT("DyeFound", "We found {0} {0}|plural(one=area,other=areas) players can recolour. Untick any you'd like to keep fixed."), Count));
+	Line(FText::Format(LOCTEXT("DyeFound", "We found {0} {0}|plural(one=area,other=areas) players can recolor. Untick any you'd like to keep fixed."), Count));
 	ClothingColorsBox->AddSlot().AutoHeight().Padding(0, 2, 0, 6)
 	[
 		SNew(SCheckBox)
 		.IsChecked(bHighlightClothingAreas ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
 		.OnCheckStateChanged_Lambda([this](ECheckBoxState State) { bHighlightClothingAreas = State == ECheckBoxState::Checked; OnPreview(); })
-		[SNew(STextBlock).Text(LOCTEXT("DyeHighlight", "Show each area in its own colour in the preview"))]
+		[SNew(STextBlock).Text(LOCTEXT("DyeHighlight", "Show each area in its own color in the preview"))]
 	];
 	int32 AreaIndex = 0;
 	TSet<FString> Listed;
@@ -2037,13 +2037,13 @@ void SMantleCosmeticPanel::AddFoundClothingAreas()
 				[
 					SNew(SBox).WidthOverride(18).HeightOverride(18)
 					[SNew(SColorBlock).Color(FLinearColor::FromSRGBColor(FMantleClothingColorDetect::HighlightColor(AreaIndex)))
-						.ToolTipText(LOCTEXT("DyeSwatchTip", "This area's colour in the preview"))]
+						.ToolTipText(LOCTEXT("DyeSwatchTip", "This area's color in the preview"))]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
 				[
 					SNew(SCheckBox)
 					.IsChecked(bOn ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
-					.ToolTipText(LOCTEXT("DyeTickTip", "Ticked: players can recolour this area. Unticked: it keeps its original colours."))
+					.ToolTipText(LOCTEXT("DyeTickTip", "Ticked: players can recolor this area. Unticked: it keeps its original colors."))
 					.OnCheckStateChanged_Lambda([this, MaterialName, RegionId](ECheckBoxState State)
 					{
 						ClothingChoice(MaterialName, RegionId).bEnabled = State == ECheckBoxState::Checked;
@@ -2056,7 +2056,7 @@ void SMantleCosmeticPanel::AddFoundClothingAreas()
 					SNew(SEditableTextBox)
 					.Text(FText::FromString(Label))
 					.HintText(FText::FromString(DefaultLabel))
-					.ToolTipText(LOCTEXT("DyeNameTip", "The name players see in the colour menu."))
+					.ToolTipText(LOCTEXT("DyeNameTip", "The name players see in the color menu."))
 					.OnTextCommitted_Lambda([this, MaterialName, RegionId, DefaultLabel](const FText& Text, ETextCommit::Type)
 					{
 						const FString Name = Text.ToString().TrimStartAndEnd().Left(64);
@@ -2144,7 +2144,7 @@ void SMantleCosmeticPanel::ShowIssues(const TArray<FMantleCosmeticIssue>& Issues
 		[
 			SNew(STextBlock)
 			.AutoWrapText(true)
-			.ColorAndOpacity(MantleCosmeticPanelPrivate::SeverityColour(Issue.Severity))
+			.ColorAndOpacity(MantleCosmeticPanelPrivate::SeverityColor(Issue.Severity))
 			.Text(FText::FromString(Issue.ToString()))
 		];
 	}
@@ -2153,7 +2153,7 @@ void SMantleCosmeticPanel::ShowIssues(const TArray<FMantleCosmeticIssue>& Issues
 		IssuesBox->AddSlot().AutoHeight()
 		[
 			SNew(STextBlock)
-			.ColorAndOpacity(MantleCosmeticPanelPrivate::SeverityColour(EMantleCosmeticSeverity::Info))
+			.ColorAndOpacity(MantleCosmeticPanelPrivate::SeverityColor(EMantleCosmeticSeverity::Info))
 			.Text(LOCTEXT("AllGood", "Every check passed."))
 		];
 	}
@@ -2179,7 +2179,7 @@ void SMantleCosmeticPanel::ShowHairHeadFit()
 		Card->AddSlot().AutoHeight().Padding(0, 2)
 		[
 			SNew(STextBlock).AutoWrapText(true)
-			.ColorAndOpacity(Route.bSupported ? FSlateColor::UseForeground() : FSlateColor(MantleCosmeticPanelPrivate::SeverityColour(EMantleCosmeticSeverity::Warning)))
+			.ColorAndOpacity(Route.bSupported ? FSlateColor::UseForeground() : FSlateColor(MantleCosmeticPanelPrivate::SeverityColor(EMantleCosmeticSeverity::Warning)))
 			.Text(FText::FromString(Route.Words))
 		];
 	}
@@ -2252,7 +2252,7 @@ void SMantleCosmeticPanel::ShowHairHeadFit()
 		Card->AddSlot().AutoHeight().Padding(0, 2)
 		[
 			SNew(STextBlock).AutoWrapText(true)
-			.ColorAndOpacity(MantleCosmeticPanelPrivate::SeverityColour(EMantleCosmeticSeverity::Warning))
+			.ColorAndOpacity(MantleCosmeticPanelPrivate::SeverityColor(EMantleCosmeticSeverity::Warning))
 			.Text(FText::FromString(Message))
 		];
 	}
@@ -2327,7 +2327,7 @@ FReply SMantleCosmeticPanel::OnTestLocally()
 	}
 	else
 	{
-		TestLocallyResult = FText::FromString(Error.IsEmpty() ? FString(TEXT("The test was cancelled.")) : Error);
+		TestLocallyResult = FText::FromString(Error.IsEmpty() ? FString(TEXT("The test was canceled.")) : Error);
 		bTestLocallyError = !Error.IsEmpty();
 	}
 	return FReply::Handled();
@@ -2604,7 +2604,7 @@ TSharedRef<SWidget> SMantleCosmeticPanel::MakePreviewSection()
 					const bool bFailed = Draft.Class == EMantleCosmeticClass::Overlay ? bOverlayPreviewFailed
 						: Draft.Class == EMantleCosmeticClass::Avatar ? bAvatarPreviewFailed
 						: (!PreviewInputError.IsEmpty() || (PreviewSession.IsValid() && PreviewSession->GetView().State == EMantlePreviewState::Failed));
-					return bFailed ? SeverityColour(EMantleCosmeticSeverity::Error) : FSlateColor::UseForeground();
+					return bFailed ? SeverityColor(EMantleCosmeticSeverity::Error) : FSlateColor::UseForeground();
 				})
 				.Text(this, &SMantleCosmeticPanel::GetPreviewStatusText)
 			]
@@ -2967,14 +2967,14 @@ FReply SMantleCosmeticPanel::OnPreview()
 		ReadingDraft.bPublic = false;
 		FMantleCosmeticPackage ColorPackage;
 		{
-			FScopedSlowTask Finding(1.0f, LOCTEXT("PreviewFindingAreas", "Looking for the parts players can recolour..."));
+			FScopedSlowTask Finding(1.0f, LOCTEXT("PreviewFindingAreas", "Looking for the parts players can recolor..."));
 			Finding.MakeDialogDelayed(0.5f);
 			Finding.EnterProgressFrame(1.0f);
 			ColorPackage = FMantleCosmeticExport::Build(ReadingDraft, *Contract);
 		}
 		for (const FString& Note : ColorPackage.Notes)
 		{
-			if (Note.Contains(TEXT("colour area"))) UE_LOG(LogMantle, Log, TEXT("MANTLE_CLOTHING_AREAS %s"), *Note);
+			if (Note.Contains(TEXT("color area"))) UE_LOG(LogMantle, Log, TEXT("MANTLE_CLOTHING_AREAS %s"), *Note);
 		}
 		if (ColorPackage.HasErrors())
 		{
@@ -3921,7 +3921,7 @@ FString FMantleConvertSection::WhatISee(const FMantleAvatarSight& Sight)
 	return Sight.Name.IsEmpty() ? Seen : FString::Printf(TEXT("%s: %s"), *Sight.Name, *Seen);
 }
 
-FString FMantleConvertSection::AsIsGreyedWhy(const FMantleAvatarSight& Sight)
+FString FMantleConvertSection::AsIsGrayedWhy(const FMantleAvatarSight& Sight)
 {
 	if (Sight.Kind == FMantleAvatarSight::EKind::CreatorCharacter)
 	{
@@ -3938,7 +3938,7 @@ FString FMantleConvertSection::AsIsGreyedWhy(const FMantleAvatarSight& Sight)
 EMantleAvatarRoute FMantleConvertSection::DoorRoute(const EMantleAvatarRoute Picked, const FMantleAvatarSight& Sight)
 {
 	const EMantleAvatarRoute Route = EffectiveRoute(Picked);
-	return Route == EMantleAvatarRoute::AsIs && !AsIsGreyedWhy(Sight).IsEmpty() ? EMantleAvatarRoute::Convert : Route;
+	return Route == EMantleAvatarRoute::AsIs && !AsIsGrayedWhy(Sight).IsEmpty() ? EMantleAvatarRoute::Convert : Route;
 }
 
 TArray<FMantlePublishRow> FMantlePublishList::Make(const FMantleConvertContext& Context, const FMantlePackReview* Review, TConstArrayView<FString> HairSlots)
@@ -4008,7 +4008,7 @@ void FMantlePublishList::Sync(const FMantleConvertContext& Context, TArray<FMant
 		{
 			continue;
 		}
-		// A piece that can't be an Outfit, or whose Outfit couldn't be made (high heels are found then), is greyed and unticked.
+		// A piece that can't be an Outfit, or whose Outfit couldn't be made (high heels are found then), is grayed and unticked.
 		Row.Why = !Garment->Why.IsEmpty() ? Garment->Why : Garment->Error.IsEmpty() ? FString() : FString::Printf(TEXT("Couldn't make the Outfit: %s"), *Garment->Error);
 		Row.bTicked &= Row.Why.IsEmpty();
 	}
@@ -4077,14 +4077,14 @@ void SMantleCosmeticPanel::ResetConvert()
 TSharedRef<SWidget> SMantleCosmeticPanel::MakeConvertSection()
 {
 	using namespace MantleCosmeticPanelPrivate;
-	// #625: a route button; As is shows only while As-is uploads are allowed, greyed with why for a character it can't take.
+	// #625: a route button; As is shows only while As-is uploads are allowed, grayed with why for a character it can't take.
 	// Picking another route forgets the fix list.
 	auto RouteButton = [this](const EMantleAvatarRoute Route, const FText& Label, const FText& Tooltip)
 	{
 		return SNew(SCheckBox)
 			.Style(&FAppStyle::Get(), "RadioButton")
 			.ToolTipText(Tooltip)
-			.IsEnabled_Lambda([this, Route] { return Route != EMantleAvatarRoute::AsIs || FMantleConvertSection::AsIsGreyedWhy(AvatarSight).IsEmpty(); })
+			.IsEnabled_Lambda([this, Route] { return Route != EMantleAvatarRoute::AsIs || FMantleConvertSection::AsIsGrayedWhy(AvatarSight).IsEmpty(); })
 			.IsChecked_Lambda([this, Route] { return DoorRoute() == Route ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
 			.OnCheckStateChanged_Lambda([this, Route](const ECheckBoxState State)
 			{
@@ -4137,7 +4137,7 @@ TSharedRef<SWidget> SMantleCosmeticPanel::MakeConvertSection()
 				.Visibility_Lambda([] { return FMantleConvertSection::ShowsRoutePicker() ? EVisibility::Visible : EVisibility::Collapsed; })
 				[
 					RouteButton(EMantleAvatarRoute::AsIs, LOCTEXT("ConvertRouteAsIs", "As is"),
-						LOCTEXT("ConvertRouteAsIsTooltip", "What you see is what you get: a supported skeleton and Mantle's limits, no customisation, no clothing."))
+						LOCTEXT("ConvertRouteAsIsTooltip", "What you see is what you get: a supported skeleton and Mantle's limits, no customization, no clothing."))
 				]
 			]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
@@ -4146,9 +4146,9 @@ TSharedRef<SWidget> SMantleCosmeticPanel::MakeConvertSection()
 				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 				.Visibility_Lambda([this]
 				{
-					return FMantleConvertSection::ShowsRoutePicker() && !FMantleConvertSection::AsIsGreyedWhy(AvatarSight).IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed;
+					return FMantleConvertSection::ShowsRoutePicker() && !FMantleConvertSection::AsIsGrayedWhy(AvatarSight).IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed;
 				})
-				.Text_Lambda([this] { return FText::Format(LOCTEXT("ConvertAsIsGreyed", "({0})"), FText::FromString(FMantleConvertSection::AsIsGreyedWhy(AvatarSight))); })
+				.Text_Lambda([this] { return FText::Format(LOCTEXT("ConvertAsIsGrayed", "({0})"), FText::FromString(FMantleConvertSection::AsIsGrayedWhy(AvatarSight))); })
 			]
 		]
 		+ SVerticalBox::Slot().AutoHeight()
@@ -4175,7 +4175,7 @@ TSharedRef<SWidget> SMantleCosmeticPanel::MakeConvertSection()
 			SNew(STextBlock)
 			.AutoWrapText(true)
 			.Visibility_Lambda([this] { return ConvertStatus.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
-			.ColorAndOpacity_Lambda([this] { return bConvertFailed ? SeverityColour(EMantleCosmeticSeverity::Error) : FSlateColor::UseForeground(); })
+			.ColorAndOpacity_Lambda([this] { return bConvertFailed ? SeverityColor(EMantleCosmeticSeverity::Error) : FSlateColor::UseForeground(); })
 			.Text_Lambda([this] { return FText::FromString(ConvertStatus); })
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
@@ -4234,7 +4234,7 @@ void SMantleCosmeticPanel::AnalyzeConvertBody()
 	// The one door is under Avatar: whatever was picked converts for the avatar slot (a Blueprint as its whole assembly).
 	FMantleConvertOptions Options;
 	Options.Slot = TEXT("avatar");
-	// #625: Convert unless As-is is allowed, picked and not greyed. The fix list never asks Epic (MHBuild's line says the
+	// #625: Convert unless As-is is allowed, picked and not grayed. The fix list never asks Epic (MHBuild's line says the
 	// sign-in is checked when Convert runs).
 	Options.Route = DoorRoute();
 	// #55: the body the review's row chose, with the clothing its rows take.
@@ -4357,18 +4357,18 @@ void SMantleCosmeticPanel::RefreshConvertRows()
 		return ConvertContext->Parts.IsValidIndex(PartIndex)
 			? FMantleAvatarConverter::DescribePart(ConvertContext->Parts[PartIndex], *Contract) : FString(TEXT("The character"));
 	};
-	auto AddLine = [this](const FString& Text, const FSlateColor& Colour)
+	auto AddLine = [this](const FString& Text, const FSlateColor& Color)
 	{
 		ConvertBox->AddSlot().AutoHeight().Padding(0, 2)
 		[
-			SNew(STextBlock).AutoWrapText(true).ColorAndOpacity(Colour).Text(FText::FromString(Text))
+			SNew(STextBlock).AutoWrapText(true).ColorAndOpacity(Color).Text(FText::FromString(Text))
 		];
 	};
 
 	if (!ConvertResult.IsSet())
 	{
 		// #55: what the pack holds, as rows the creator changes; then the parts, then the fix list: one checkbox per fix, what is
-		// wrong and what it does; a line it can't fix greyed with why.
+		// wrong and what it does; a line it can't fix grayed with why.
 		AddPackReviewRows();
 		TArray<FString> Parts;
 		for (int32 Index = 0; Index < ConvertContext->Parts.Num(); ++Index)
@@ -4476,11 +4476,11 @@ void SMantleCosmeticPanel::RefreshConvertRows()
 	for (const FMantleConvertOutcome& Failed : ConvertResult->Failed)
 	{
 		AddLine(FString::Printf(TEXT("Not fixed: %s: %s (%s)"), *PartLabel(Failed.Fix.PartIndex), *Failed.Fix.Problem, *Failed.Reason),
-			SeverityColour(EMantleCosmeticSeverity::Error));
+			SeverityColor(EMantleCosmeticSeverity::Error));
 	}
 	for (const FString& Note : ConvertContext->Notes)
 	{
-		AddLine(Note, SeverityColour(EMantleCosmeticSeverity::Info));
+		AddLine(Note, SeverityColor(EMantleCosmeticSeverity::Info));
 	}
 	// Chunk 6: one "What to publish" list (the body, each piece of clothing, the hair), each row ticked, named and drawn.
 	AddPublishRows();
@@ -4620,7 +4620,7 @@ void SMantleCosmeticPanel::AddBodyRows()
 			[
 				SNew(STextBlock)
 				.AutoWrapText(true)
-				.ColorAndOpacity(SeverityColour(EMantleCosmeticSeverity::Warning))
+				.ColorAndOpacity(SeverityColor(EMantleCosmeticSeverity::Warning))
 				.Visibility_Lambda([this, PartIndex] { return FMantleAvatarStripFixer::MissingBodyChoice(ConvertFixes, PartIndex).IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
 				.Text_Lambda([this, PartIndex] { return FText::FromString(FMantleAvatarStripFixer::MissingBodyChoice(ConvertFixes, PartIndex) + TEXT(".")); })
 			]
@@ -5116,7 +5116,7 @@ void SMantleCosmeticPanel::MakePublishRows()
 		Progress.EnterProgressFrame(1.0f);
 		PublishThumbs.Add(RenderPublishThumb(Row));
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_CONVERT publish row %s: %s slot=%s %s%s thumbnail=%s"), *FMantlePublishList::SlotWord(Row.Slot), *Row.Name, *Row.Slot,
-			Row.bTicked ? TEXT("ticked") : TEXT("unticked"), Row.Why.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" (greyed: %s)"), *Row.Why),
+			Row.bTicked ? TEXT("ticked") : TEXT("unticked"), Row.Why.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" (grayed: %s)"), *Row.Why),
 			PublishThumbs.Last().IsValid() ? TEXT("drawn") : TEXT("none"));
 	}
 }
@@ -5232,9 +5232,9 @@ void SMantleCosmeticPanel::AddPublishRows()
 	for (int32 RowIndex = 0; RowIndex < PublishRows.Num(); ++RowIndex)
 	{
 		const FMantlePublishRow& Row = PublishRows[RowIndex];
-		// What stands under the name: greyed with why, uploaded, the part's check, the Outfit made or why it wasn't.
+		// What stands under the name: grayed with why, uploaded, the part's check, the Outfit made or why it wasn't.
 		FString Status;
-		FSlateColor StatusColour = FSlateColor::UseSubduedForeground();
+		FSlateColor StatusColor = FSlateColor::UseSubduedForeground();
 		const FMantleConvertGarment* Garment = Row.Kind == FMantlePublishRow::EKind::Garment && ConvertContext->Garments.IsValidIndex(Row.Index)
 			? &ConvertContext->Garments[Row.Index] : nullptr;
 		FString Why = Row.Why;
@@ -5249,7 +5249,7 @@ void SMantleCosmeticPanel::AddPublishRows()
 		else if (Row.bUploaded)
 		{
 			Status = TEXT("Uploaded.");
-			StatusColour = SeverityColour(EMantleCosmeticSeverity::Info);
+			StatusColor = SeverityColor(EMantleCosmeticSeverity::Info);
 		}
 		else if (Row.Kind == FMantlePublishRow::EKind::Part && ConvertResult.IsSet())
 		{
@@ -5264,14 +5264,14 @@ void SMantleCosmeticPanel::AddPublishRows()
 			}
 			Status = !Check ? FString() : Errors.IsEmpty() ? FString(TEXT("Ready to upload."))
 				: FString::Printf(TEXT("%d problem(s) still stop the upload: %s"), Errors.Num(), *FString::Join(Errors, TEXT(" ")));
-			StatusColour = SeverityColour(Errors.IsEmpty() ? EMantleCosmeticSeverity::Info : EMantleCosmeticSeverity::Error);
+			StatusColor = SeverityColor(Errors.IsEmpty() ? EMantleCosmeticSeverity::Info : EMantleCosmeticSeverity::Error);
 		}
 		else if (Garment)
 		{
 			Status = !Garment->Error.IsEmpty() ? FString::Printf(TEXT("Couldn't make the Outfit: %s"), *Garment->Error)
 				: !Garment->Outfit.IsEmpty() ? FString(TEXT("A MetaHuman Outfit on this character's MetaHuman, made."))
 				: FString(TEXT("Becomes a MetaHuman Outfit on this character's MetaHuman when you open it."));
-			StatusColour = Garment->Error.IsEmpty() ? FSlateColor::UseSubduedForeground() : SeverityColour(EMantleCosmeticSeverity::Error);
+			StatusColor = Garment->Error.IsEmpty() ? FSlateColor::UseSubduedForeground() : SeverityColor(EMantleCosmeticSeverity::Error);
 		}
 		else if (Row.Kind == FMantlePublishRow::EKind::Kept)
 		{
@@ -5344,7 +5344,7 @@ void SMantleCosmeticPanel::AddPublishRows()
 					SNew(STextBlock)
 					.AutoWrapText(true)
 					.Visibility(Status.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
-					.ColorAndOpacity(StatusColour)
+					.ColorAndOpacity(StatusColor)
 					.Text(FText::FromString(Status))
 				]
 			]
@@ -5421,7 +5421,7 @@ void SMantleCosmeticPanel::OpenPublishRow(const int32 RowIndex)
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleCosmeticPanelDevShot
 {
-	/** Widget rendered offscreen at Width (its own height, wrapped text laid out at that width) over the editor's panel grey, as a PNG. */
+	/** Widget rendered offscreen at Width (its own height, wrapped text laid out at that width) over the editor's panel gray, as a PNG. */
 	bool Save(const TSharedRef<SWidget>& Widget, const FString& File, const float Width, const float MaxHeight)
 	{
 		FWidgetRenderer Renderer(true, false);
@@ -5632,7 +5632,7 @@ void SMantleCosmeticPanel::DevConvertShot(const TArray<FString>& Args)
 			if (FMantleAvatarStripFixer::IsBodyRowLine(Fix))
 			{
 				UE_LOG(LogMantle, Display, TEXT("MANTLE_CONVERT_SHOT body row part %d %s: %s%s (%s)"), Fix.PartIndex, *Fix.Kind.ToString(),
-					Fix.bEnabled ? TEXT("ticked") : TEXT("unticked"), Fix.bCanFix ? TEXT("") : TEXT(", greyed"), *Fix.Problem);
+					Fix.bEnabled ? TEXT("ticked") : TEXT("unticked"), Fix.bCanFix ? TEXT("") : TEXT(", grayed"), *Fix.Problem);
 			}
 		}
 		Save(Panel->ConvertSectionBox.ToSharedRef(), File, 820.0f, 4000.0f);
@@ -5649,8 +5649,8 @@ void SMantleCosmeticPanel::DevConvertShot(const TArray<FString>& Args)
 	Panel->SetClass(EMantleCosmeticClass::Avatar);
 	Panel->PickAvatar(Character);
 	UE_LOG(LogMantle, Display, TEXT("MANTLE_CONVERT_SHOT sees: %s As is: %s"), *FMantleConvertSection::WhatISee(Panel->AvatarSight),
-		!FMantleConvertSection::ShowsRoutePicker() ? TEXT("hidden") : FMantleConvertSection::AsIsGreyedWhy(Panel->AvatarSight).IsEmpty() ? TEXT("offered")
-		: *FMantleConvertSection::AsIsGreyedWhy(Panel->AvatarSight));
+		!FMantleConvertSection::ShowsRoutePicker() ? TEXT("hidden") : FMantleConvertSection::AsIsGrayedWhy(Panel->AvatarSight).IsEmpty() ? TEXT("offered")
+		: *FMantleConvertSection::AsIsGrayedWhy(Panel->AvatarSight));
 	Panel->OnAnalyzeConvert();
 	if (!Panel->ConvertContext.IsValid() || !Panel->ConvertSectionBox.IsValid())
 	{

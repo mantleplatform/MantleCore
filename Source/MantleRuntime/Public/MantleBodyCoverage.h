@@ -45,7 +45,7 @@ struct FMantleGarmentSurface
  *     normal, either facing, covers the vertex (inner layers count: the inside of a folded collar faces
  *     the neck); a vertex just past a hem casts a ray that misses the garment, so no hem margin is needed;
  *   - otherwise a hit within InsideReachCm UNDER the skin whose triangle faces the skin's way covers it
- *     too (P16: the garment passes under the skin there; the MetaHuman shirt is modelled up to 3.5 cm
+ *     too (P16: the garment passes under the skin there; the MetaHuman shirt is modeled up to 3.5 cm
  *     inside the shoulder tips of its own authoring body, what MetaHuman's hidden-face mask removes by
  *     hand). A triangle under the skin facing the other way is another part's garment seen through a
  *     thin part (a finger, an ear) and does not count.
@@ -175,7 +175,7 @@ struct MANTLERUNTIME_API FMantleBodySinkApply
 	 * OutPositions = Base with every vertex of AmountCm[V] > 0 moved inward. Vertices are welded by
 	 * position (in Base) into points together with every other vertex at that position (split copies at
 	 * UV or normal seams), so the copies move as one and no crack opens; a point sinks along the
-	 * normalised sum of its copies' Normals by the largest amount among its copies, times a scale, 1 at
+	 * normalized sum of its copies' Normals by the largest amount among its copies, times a scale, 1 at
 	 * first. A kept triangle (KeptIndices) whose face normal then points against its Base one (or its
 	 * Original one, when Original is given: the unmoved mesh when Base was already sunk) is folded: it
 	 * halves the scale of its moved points, up to MaxHalvings passes, then the points of triangles still
@@ -224,7 +224,7 @@ struct FMantleBodySinkParams
  * closed double surface's inner and outer layer, or under a layer chording through a convex part, is not
  * seen. A ray meeting only inward-facing surfaces gives no sink. The required sink is UnderCm - t where
  * t < UnderCm, clamped to MaxSinkCm. The field is smoothed over the kept triangles' adjacency (welded by
- * position; s' = max(required, 0.5 s + 0.5 neighbour mean)), and applied with FMantleBodySinkApply::Sink.
+ * position; s' = max(required, 0.5 s + 0.5 neighbor mean)), and applied with FMantleBodySinkApply::Sink.
  *
  * With UnderCm 0 it is the skin-poke measure (P16): Inside counts the rendered vertices outside the
  * outermost garment layer (skin poking through), MaxRequiredCm the deepest. The face is never sunk (P17:

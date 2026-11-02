@@ -7,10 +7,10 @@ class UMantleVehicleSource;
 class USkeletalMesh;
 struct FMantleVehiclePreset;
 
-/** One wheel as the fit sees it (#728): where its centre is in the vehicle's space, and how big it is. Centimetres, +X forward, +Y right. */
+/** One wheel as the fit sees it (#728): where its center is in the vehicle's space, and how big it is. Centimeters, +X forward, +Y right. */
 struct FMantleVehicleFitWheel
 {
-	FVector Centre = FVector::ZeroVector;
+	FVector Center = FVector::ZeroVector;
 	/** The wheel's radius; 0 when it is not known (the wheel then counts towards the track only). */
 	double Radius = 0.0;
 };
@@ -18,7 +18,7 @@ struct FMantleVehicleFitWheel
 /** What sizing a creator's vehicle for the Mantle character found (#728). */
 struct FMantleVehicleFit
 {
-	/** The uniform size to apply to the whole vehicle: 1 is as modelled. Rounded to hundredths; 1 when it is already close. */
+	/** The uniform size to apply to the whole vehicle: 1 is as modeled. Rounded to hundredths; 1 when it is already close. */
 	double Scale = 1.0;
 	/** The size the wheel radius alone asks for, and the one the track width alone asks for; 0 when that signal is not available. */
 	double RadiusScale = 0.0;
@@ -36,7 +36,7 @@ struct FMantleVehicleFit
 
 /**
  * Sizes a creator's mesh for the 165.6 cm Mantle character (#728). One uniform scale per vehicle, from the parts that are sized for
- * roads and people: the wheel radius and the track width (wheel centre to wheel centre across an axle), compared with the
+ * roads and people: the wheel radius and the track width (wheel center to wheel center across an axle), compared with the
  * preset's typical values. Never from the wheelbase, so a stretched limousine keeps its length.
  */
 struct MANTLEEDITOR_API FMantleVehicleFitter
@@ -46,7 +46,7 @@ struct MANTLEEDITOR_API FMantleVehicleFitter
 
 	/**
 	 * The Size of a model that has no wheels to measure (#821: a spaceship, a plane, a helicopter): how much ground its footprint covers (its length by its
-	 * width, in the units it was modelled in, nose along +X) against the chassis's at its own size. The result is the uniform Size the chassis is scaled by
+	 * width, in the units it was modeled in, nose along +X) against the chassis's at its own size. The result is the uniform Size the chassis is scaled by
 	 * (FMantleChassisSpec::Scaled), the square root of the footprints' ratio, held to the preset's fit range and rounded to hundredths. Pure.
 	 */
 	static FMantleVehicleFit ComputeFromFootprint(const FMantleVehiclePreset& Preset, double ModelLength, double ModelWidth, double ChassisLength, double ChassisWidth);

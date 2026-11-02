@@ -10,7 +10,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// The collision of a vehicle built from a creator's model: shaped like the model and not the grey chassis's one box. A plane-shaped model gets a fuselage, wings
+// The collision of a vehicle built from a creator's model: shaped like the model and not the gray chassis's one box. A plane-shaped model gets a fuselage, wings
 // and a tail; a car-shaped one the chassis's box fitted to its hull with boxes over the cabin; a model that came with collision shapes of its own keeps them, but for its
 // wheels. Every box stays inside the document's limits and no lower than the chassis's own box. The models are boxes made in the test, as arrays.
 
@@ -21,7 +21,7 @@ namespace MantleVehicleModelCollisionTestPrivate
 	void AddModelBox(FMantleVehicleModel& Model, const FVector3f& Min, const FVector3f& Max, const int32 Bone)
 	{
 		FMantleSkinnedMeshLOD& LOD = Model.LOD;
-		const FVector3f Centre = 0.5f * (Min + Max);
+		const FVector3f Center = 0.5f * (Min + Max);
 		const FVector3f Half = 0.5f * (Max - Min);
 		for (int32 Axis = 0; Axis < 3; ++Axis)
 		{
@@ -34,10 +34,10 @@ namespace MantleVehicleModelCollisionTestPrivate
 				FVector3f V(0.0f);
 				V[(Axis + 2) % 3] = 1.0f;
 				const uint32 First = static_cast<uint32>(LOD.Positions.Num());
-				const FVector3f FaceCentre = Centre + Normal * Half[Axis];
+				const FVector3f FaceCenter = Center + Normal * Half[Axis];
 				const float Du = Half[(Axis + 1) % 3];
 				const float Dv = Half[(Axis + 2) % 3];
-				const FVector3f Corners[4] = { FaceCentre - U * Du - V * Dv, FaceCentre + U * Du - V * Dv, FaceCentre + U * Du + V * Dv, FaceCentre - U * Du + V * Dv };
+				const FVector3f Corners[4] = { FaceCenter - U * Du - V * Dv, FaceCenter + U * Du - V * Dv, FaceCenter + U * Du + V * Dv, FaceCenter - U * Du + V * Dv };
 				for (int32 Corner = 0; Corner < 4; ++Corner)
 				{
 					LOD.Positions.Add(Corners[Corner]);
@@ -88,19 +88,19 @@ namespace MantleVehicleModelCollisionTestPrivate
 	/** The model put on PresetId's chassis, fitted to its footprint (bFit) or as it is (an identity placement). */
 	bool PutOnChassis(FAutomationTestBase& Test, const TCHAR* PresetId, const FMantleVehicleModel& Model, const FMantleVehicleModelMap& Map, const bool bFit, FSkinnedModel& Out)
 	{
-		FMantleVehicleAsset Grey;
+		FMantleVehicleAsset Gray;
 		FString Error;
 		if (!Test.TestTrue(*FString::Printf(TEXT("the %s chassis loads (%s)"), PresetId, *Error),
-				FMantleVehicleChassisBuilder::LoadSpec(PresetId, Out.Spec, Error) && FMantleVehicleChassisBuilder::MakeAsset(Out.Spec, Grey, Error)))
+				FMantleVehicleChassisBuilder::LoadSpec(PresetId, Out.Spec, Error) && FMantleVehicleChassisBuilder::MakeAsset(Out.Spec, Gray, Error)))
 		{
 			return false;
 		}
-		Out.Slots = FMantleVehicleChassisSkin::PartSlots(Out.Spec, Grey.Body);
-		Out.Placement = bFit ? FMantleVehicleChassisSkin::FitPlacement(Out.Spec, Grey.Body, Model, 0.0, Map) : FMantleVehicleModelPlacement();
+		Out.Slots = FMantleVehicleChassisSkin::PartSlots(Out.Spec, Gray.Body);
+		Out.Placement = bFit ? FMantleVehicleChassisSkin::FitPlacement(Out.Spec, Gray.Body, Model, 0.0, Map) : FMantleVehicleModelPlacement();
 		Out.Tub = FMantleVehicleChassisFit::Place(FMantleVehicleChassisBuilder::ReferenceOf(Out.Spec), FMantleChassisStretch());
 		Out.Floor = Out.Tub.CollisionCenter.Z - Out.Tub.CollisionExtent.Z;
 		return Test.TestTrue(*FString::Printf(TEXT("the model is put on the %s (%s)"), PresetId, *Error),
-			FMantleVehicleChassisSkin::Skin(Grey.Body, Out.Slots, Model, Out.Placement, Map, Out.Skinned, Error));
+			FMantleVehicleChassisSkin::Skin(Gray.Body, Out.Slots, Model, Out.Placement, Map, Out.Skinned, Error));
 	}
 
 	bool Covers(const TArray<FMantleChassisBox>& Boxes, const FVector& Point, const double Tolerance)
@@ -127,7 +127,7 @@ namespace MantleVehicleModelCollisionTestPrivate
 		return Sum;
 	}
 
-	/** True when every box is inside the document's limits (centre within +-1000, extent 1 to 1000 on each axis) and no lower than Floor. */
+	/** True when every box is inside the document's limits (center within +-1000, extent 1 to 1000 on each axis) and no lower than Floor. */
 	bool InsideLimits(const TArray<FMantleChassisBox>& Boxes, const double Floor)
 	{
 		for (const FMantleChassisBox& Box : Boxes)
@@ -235,9 +235,9 @@ bool FMantleVehicleModelCollisionCarTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleModelCollisionTestPrivate;
 	FMantleChassisSpec Sedan;
-	FMantleVehicleAsset Grey;
+	FMantleVehicleAsset Gray;
 	FString Error;
-	if (!TestTrue(*FString::Printf(TEXT("the sedan chassis loads (%s)"), *Error), FMantleVehicleChassisBuilder::LoadSpec(TEXT("sedan"), Sedan, Error) && FMantleVehicleChassisBuilder::MakeAsset(Sedan, Grey, Error)))
+	if (!TestTrue(*FString::Printf(TEXT("the sedan chassis loads (%s)"), *Error), FMantleVehicleChassisBuilder::LoadSpec(TEXT("sedan"), Sedan, Error) && FMantleVehicleChassisBuilder::MakeAsset(Sedan, Gray, Error)))
 	{
 		return false;
 	}
@@ -352,12 +352,12 @@ bool FMantleVehicleModelCollisionPhysicsTest::RunTest(const FString& Parameters)
 	if (PutOnChassis(*this, TEXT("sedan"), Skeletal, FMantleVehicleModelMap(), /*bFit*/ false, PutRigged))
 	{
 		const FBox Hull(FVector(-200.0, -80.0, Floor + 5.0), FVector(200.0, 80.0, Floor + 80.0));
-		const FBox Tyre(FVector(120.0, -95.0, Floor + 5.0), FVector(190.0, -60.0, Floor + 70.0));
-		Skeletal.PhysicsBodies = { Body(Hull.Min, Hull.Max, 0), Body(Tyre.Min, Tyre.Max, 1) };
+		const FBox Tire(FVector(120.0, -95.0, Floor + 5.0), FVector(190.0, -60.0, Floor + 70.0));
+		Skeletal.PhysicsBodies = { Body(Hull.Min, Hull.Max, 0), Body(Tire.Min, Tire.Max, 1) };
 		const FMantleVehicleSkinCollision ByName = FMantleVehicleChassisSkin::ProposeCollision(PutRigged.Spec, PutRigged.Skinned.Body, PutRigged.Slots, Skeletal, PutRigged.Placement, FMantleVehicleModelMap());
 		TestEqual(TEXT("a body on a bone named like a wheel is not collision"), ByName.Boxes.Num(), 1);
 
-		Skeletal.PhysicsBodies = { Body(Hull.Min, Hull.Max, 0), Body(Tyre.Min, Tyre.Max, 2) };
+		Skeletal.PhysicsBodies = { Body(Hull.Min, Hull.Max, 0), Body(Tire.Min, Tire.Max, 2) };
 		const FMantleVehicleSkinCollision Control = FMantleVehicleChassisSkin::ProposeCollision(PutRigged.Spec, PutRigged.Skinned.Body, PutRigged.Slots, Skeletal, PutRigged.Placement, FMantleVehicleModelMap());
 		TestEqual(TEXT("control: the same body on an unnamed bone is"), Control.Boxes.Num(), 2);
 

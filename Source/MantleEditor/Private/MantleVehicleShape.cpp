@@ -16,7 +16,7 @@ namespace MantleVehicleShapePrivate
 	/** A size held to its range only says so when it moved by more than this (cm), so typing 340.04 is not "held". */
 	constexpr double HeldNoteCm = 0.05;
 
-	/** The least gap between neighbouring axles, as a share of the wheelbase (1 for two axles). */
+	/** The least gap between neighboring axles, as a share of the wheelbase (1 for two axles). */
 	double MinAxleShare(const FMantleChassisSpec& Archetype)
 	{
 		double Least = 1.0;
@@ -47,20 +47,20 @@ namespace MantleVehicleShapePrivate
 		return Effective > 0.0 ? Effective : Spec.Wheelbase;
 	}
 
-	/** A weight in a creator's words: "1.6 tonnes", "1 tonne", or whole kilograms (to the nearest ten from 100). */
+	/** A weight in a creator's words: "1.6 metric tons", "1 metric ton", or whole kilograms (to the nearest ten from 100). */
 	FText WeightText(const double MassKg)
 	{
 		if (MassKg >= 1000.0)
 		{
 			const double Tonnes = FMath::RoundToDouble(MassKg / 100.0) / 10.0;
-			return FMath::IsNearlyEqual(Tonnes, 1.0) ? LOCTEXT("WeightOneTonne", "1 tonne") : FText::Format(LOCTEXT("WeightTonnes", "{0} tonnes"), FText::AsNumber(Tonnes));
+			return FMath::IsNearlyEqual(Tonnes, 1.0) ? LOCTEXT("WeightOneTonne", "1 metric ton") : FText::Format(LOCTEXT("WeightTonnes", "{0} metric tons"), FText::AsNumber(Tonnes));
 		}
 		// Whole kilograms under 100, else the nearest ten.
 		const double Step = MassKg < 100.0 ? 1.0 : 10.0;
 		return FText::Format(LOCTEXT("WeightKilos", "{0} kg"), FText::AsNumber(FMath::RoundToDouble(MassKg / Step) * Step));
 	}
 
-	/** A speed in km/h, or a load in kg per square metre, to the nearest five, at least five: more digits than that claim a precision the numbers do not have. */
+	/** A speed in km/h, or a load in kg per square meter, to the nearest five, at least five: more digits than that claim a precision the numbers do not have. */
 	int32 NearestFive(const double Value)
 	{
 		return FMath::Max(5, FMath::RoundToInt(Value / 5.0) * 5);
@@ -250,8 +250,8 @@ double FMantleVehicleShape::TakeOffSpeedKmh(const FMantleChassisSpec& Spec)
 	{
 		return 0.0;
 	}
-	const double MetresPerSecond = FMath::Sqrt(2.0 * Handling.Mass * Gravity / (AirDensity * AreaM2 * Coefficient));
-	return MetresPerSecond * 3.6;
+	const double MetersPerSecond = FMath::Sqrt(2.0 * Handling.Mass * Gravity / (AirDensity * AreaM2 * Coefficient));
+	return MetersPerSecond * 3.6;
 }
 
 double FMantleVehicleShape::HoverTopSpeedKmh(const FMantleChassisSpec& Spec)
@@ -271,13 +271,13 @@ double FMantleVehicleShape::HoverTopSpeedKmh(const FMantleChassisSpec& Spec)
 	const double Drag = 0.5 * AirDensity * Handling.DragCoefficient * Handling.FrontalArea;
 	// Thrust x (1 - v / Fade) = Drag v^2 + Damping x mass x v, solved for v.
 	const double Linear = Handling.Mass * HoverLinearDamping + Thrust / Fade;
-	const double MetresPerSecond = Drag > 0.0 ? (-Linear + FMath::Sqrt(Linear * Linear + 4.0 * Drag * Thrust)) / (2.0 * Drag) : Thrust / Linear;
-	return FMath::Min(MetresPerSecond, Fade) * 3.6;
+	const double MetersPerSecond = Drag > 0.0 ? (-Linear + FMath::Sqrt(Linear * Linear + 4.0 * Drag * Thrust)) / (2.0 * Drag) : Thrust / Linear;
+	return FMath::Min(MetersPerSecond, Fade) * 3.6;
 }
 
 bool FMantleVehicleShape::IsEditable(const FMantleChassisSpec& Archetype, const EMantleVehicleDimension Dimension)
 {
-	if (Dimension == EMantleVehicleDimension::Track && Archetype.bCentreline)
+	if (Dimension == EMantleVehicleDimension::Track && Archetype.bCenterline)
 	{
 		return false;
 	}
@@ -333,7 +333,7 @@ FMantleDimensionRange FMantleVehicleShape::SliderRange(const FMantleChassisSpec&
 		}
 		break;
 	case EMantleVehicleDimension::GroundClearance:
-		// The box's centre (clearance and half the height) is held to the document's range too.
+		// The box's center (clearance and half the height) is held to the document's range too.
 		Low = 0.0;
 		High = 500.0;
 		break;
@@ -360,13 +360,13 @@ FMantleDimensionRange FMantleVehicleShape::HeldRange(const FMantleChassisSpec& A
 		Range.Max = FMath::Min(Range.Max, Dimensions.Wheelbase * Share / MinAxleGapPerRadius);
 		break;
 	case EMantleVehicleDimension::Track:
-		if (!Archetype.bCentreline)
+		if (!Archetype.bCenterline)
 		{
 			Range.Min = FMath::Max(Range.Min, MinTrackPerWidth * Dimensions.WheelWidth);
 		}
 		break;
 	case EMantleVehicleDimension::WheelWidth:
-		if (!Archetype.bCentreline)
+		if (!Archetype.bCenterline)
 		{
 			Range.Max = FMath::Min(Range.Max, Dimensions.Track / MinTrackPerWidth);
 		}
@@ -430,7 +430,7 @@ FMantleChassisSpec FMantleVehicleShape::Reshape(const FMantleChassisSpec& Archet
 	Out.Width = Dimensions.BodyWidth;
 	Out.Height = Dimensions.BodyHeight;
 	Out.Clearance = Dimensions.GroundClearance;
-	if (!Archetype.bCentreline)
+	if (!Archetype.bCenterline)
 	{
 		Out.Track = Dimensions.Track;
 	}
@@ -452,8 +452,8 @@ FMantleChassisSpec FMantleVehicleShape::Reshape(const FMantleChassisSpec& Archet
 	Out.Rider.LeftPeg += RiderShift;
 	Out.Rider.RightPeg += RiderShift;
 
-	// The handling follows the sizes, and the centre of mass is the derived one, as for a uniform resize (FMantleChassisSpec::Scaled). The
-	// rider's rear brake and tyre keep their share of the front's, whatever the derivation made of the front's.
+	// The handling follows the sizes, and the center of mass is the derived one, as for a uniform resize (FMantleChassisSpec::Scaled). The
+	// rider's rear brake and tire keep their share of the front's, whatever the derivation made of the front's.
 	const FMantleChassisHandling Before = Archetype.Derived.IsSet() ? Archetype.Derived.GetValue() : Archetype.Archetype;
 	const FMantleChassisHandling After = FMantleChassisDerive::Derive(Out);
 	if (Before.BrakeTorque > 0.0)
@@ -476,7 +476,7 @@ double FMantleVehicleShape::TurningCircleCm(const FMantleChassisSpec& Spec, cons
 	return 2.0 * MantleVehicleShapePrivate::EffectiveWheelbase(Spec) / FMath::Tan(FMath::DegreesToRadians(LockDegrees));
 }
 
-FMantleVehicleSummary FMantleVehicleShape::Summarise(const FMantleChassisSpec& Spec)
+FMantleVehicleSummary FMantleVehicleShape::Summarize(const FMantleChassisSpec& Spec)
 {
 	const FMantleChassisHandling& Handling = MantleVehicleShapePrivate::HandlingOf(Spec);
 	FMantleVehicleSummary Out;
@@ -529,7 +529,7 @@ FText FMantleVehicleShape::Describe(const FMantleVehicleSummary& Summary)
 		const FText TakeOff = Summary.TakeOffKmh > 0.0
 			? FText::Format(LOCTEXT("SummaryTakeOff", "Takes off at about {0} km/h."), FText::AsNumber(NearestFive(Summary.TakeOffKmh)))
 			: LOCTEXT("SummaryNoTakeOff", "Its wing is too small to lift it off the ground.");
-		return FText::Format(LOCTEXT("SummaryAircraft", "Weighs about {0}. Carries about {1} kg on each square metre of wing. {2} Top speed about {3} km/h."),
+		return FText::Format(LOCTEXT("SummaryAircraft", "Weighs about {0}. Carries about {1} kg on each square meter of wing. {2} Top speed about {3} km/h."),
 			Weight, FText::AsNumber(NearestFive(Summary.WingLoadingKgM2)), TakeOff, Speed);
 	}
 	case EMantleVehicleFamily::Helicopter:
@@ -563,7 +563,7 @@ TArray<FText> FMantleVehicleShape::Warnings(const FMantleChassisSpec& Spec)
 	// Wheels beyond the body: the front and rear axles sit half a wheelbase either side of the middle, the body half its length. (A
 	// two-wheeler's body box is only its engine and tank, a plane's main wheels stand under its wing, a helicopter's skids either side of its
 	// cabin, and a hovercraft's pads stand at the layout's hidden wheel points, a share of its hull, so their wheels are meant to stand out of it.)
-	const bool bCheckWheelsAgainstBody = !Spec.bCentreline && Spec.Type != EMantleChassisType::Plane && Spec.Type != EMantleChassisType::Helicopter
+	const bool bCheckWheelsAgainstBody = !Spec.bCenterline && Spec.Type != EMantleChassisType::Plane && Spec.Type != EMantleChassisType::Helicopter
 		&& Spec.Type != EMantleChassisType::Hovercraft;
 	if (bCheckWheelsAgainstBody && 0.5 * Spec.Wheelbase + Spec.WheelRadius > 0.5 * Spec.Length + WheelsOutsideBody)
 	{
@@ -574,11 +574,11 @@ TArray<FText> FMantleVehicleShape::Warnings(const FMantleChassisSpec& Spec)
 		Out.Add(LOCTEXT("WheelsPastSides", "The wheels stick out past the sides of the body. Make the body wider, or the track narrower."));
 	}
 
-	// A body whose weight sits too high for its track tips over in a turn. The derivation lowers the centre of mass as far as the wheels allow, and
+	// A body whose weight sits too high for its track tips over in a turn. The derivation lowers the center of mass as far as the wheels allow, and
 	// rounds it to six digits, so a track it just meets reads a hair under the target: the check allows a ten-thousandth.
 	const double Stability = Spec.Constants.Stability;
-	const double CentreHeight = Spec.CenterOfMass.Z;
-	if (!Spec.bCentreline && Stability > 0.0 && CentreHeight > 0.0 && Spec.Track / (2.0 * CentreHeight) < Stability * (1.0 - 1.0e-4))
+	const double CenterHeight = Spec.CenterOfMass.Z;
+	if (!Spec.bCenterline && Stability > 0.0 && CenterHeight > 0.0 && Spec.Track / (2.0 * CenterHeight) < Stability * (1.0 - 1.0e-4))
 	{
 		Out.Add(LOCTEXT("TopHeavy", "This is top-heavy and may tip over in turns. Make the wheels smaller, or the track wider."));
 	}
@@ -601,7 +601,7 @@ TArray<FText> FMantleVehicleShape::Warnings(const FMantleChassisSpec& Spec)
 	}
 
 	// Every number the vehicle document holds to its limits when this is published (FMantleVehicleChassisDocument::HeldNumbers): the ones the handling list above does not
-	// carry (a wing's area, a rotor's thrust, a tyre's grip), so the step says every number that is not what the size suggests.
+	// carry (a wing's area, a rotor's thrust, a tire's grip), so the step says every number that is not what the size suggests.
 	for (const FString& Line : FMantleVehicleChassisDocument::HeldNumbers(Spec))
 	{
 		const FText Said = FText::FromString(Line);
@@ -724,7 +724,7 @@ FText FMantleVehicleShape::FeelHelp(const EMantleVehicleFeel Feel)
 {
 	switch (Feel)
 	{
-	case EMantleVehicleFeel::Grip: return LOCTEXT("HelpGrip", "How well the tyres hold the road. Slide towards grippy for up to 30 percent more grip, or towards slippery for up to 30 percent less.");
+	case EMantleVehicleFeel::Grip: return LOCTEXT("HelpGrip", "How well the tires hold the road. Slide towards grippy for up to 30 percent more grip, or towards slippery for up to 30 percent less.");
 	case EMantleVehicleFeel::Power: return LOCTEXT("HelpPower", "How hard the engine pulls for its weight. Slide towards strong for up to 30 percent more power, or towards weak for up to 30 percent less.");
 	case EMantleVehicleFeel::Stiffness: return LOCTEXT("HelpStiffness", "How firm the ride is. Slide towards stiff for up to 30 percent stiffer springs, or towards soft for up to 30 percent softer.");
 	case EMantleVehicleFeel::TopSpeed: return LOCTEXT("HelpTopSpeed", "Slide towards fast for up to 30 percent more top speed at this size, or towards slow for up to 30 percent less.");
@@ -775,13 +775,13 @@ FString FMantleVehicleShape::PlainReason(const FString& Reason)
 	return Out;
 }
 
-FText FMantleVehicleShape::LengthText(const double Centimetres)
+FText FMantleVehicleShape::LengthText(const double Centimeters)
 {
-	if (FMath::Abs(Centimetres) < 100.0)
+	if (FMath::Abs(Centimeters) < 100.0)
 	{
-		return FText::Format(LOCTEXT("LengthCm", "{0} cm"), FText::AsNumber(FMath::RoundToDouble(Centimetres * 10.0) / 10.0));
+		return FText::Format(LOCTEXT("LengthCm", "{0} cm"), FText::AsNumber(FMath::RoundToDouble(Centimeters * 10.0) / 10.0));
 	}
-	return FText::Format(LOCTEXT("LengthM", "{0} m"), FText::AsNumber(FMath::RoundToDouble(Centimetres) / 100.0));
+	return FText::Format(LOCTEXT("LengthM", "{0} m"), FText::AsNumber(FMath::RoundToDouble(Centimeters) / 100.0));
 }
 
 void FMantleVehicleShapeSession::Start(const FMantleChassisSpec& InArchetype, const double InMinSize, const double InMaxSize)
@@ -977,7 +977,7 @@ void FMantleVehicleShapeSession::Refresh()
 	if (FeelMoved())
 	{
 		// The feel is one more thing the handling is derived from. A chassis still at its own sizes has no derived handling yet (it is the hand-tuned preset), so this
-		// is what makes it a shaped one. A motorcycle's rear tyre keeps its share of the front's, as Reshape keeps it when the sizes move.
+		// is what makes it a shaped one. A motorcycle's rear tire keeps its share of the front's, as Reshape keeps it when the sizes move.
 		const FMantleChassisHandling Before = MantleVehicleShapePrivate::HandlingOf(Shaped);
 		const FMantleChassisHandling After = FMantleChassisDerive::Derive(Shaped, Feel);
 		if (Before.TireFriction > 0.0)
@@ -987,7 +987,7 @@ void FMantleVehicleShapeSession::Refresh()
 		Shaped.CenterOfMass = After.CenterOfMass;
 		Shaped.Derived = After;
 	}
-	Summary = FMantleVehicleShape::Describe(FMantleVehicleShape::Summarise(Shaped));
+	Summary = FMantleVehicleShape::Describe(FMantleVehicleShape::Summarize(Shaped));
 	TArray<FText> Lines = HeldNotes;
 	Lines.Append(FMantleVehicleShape::Warnings(Shaped));
 	FString List;

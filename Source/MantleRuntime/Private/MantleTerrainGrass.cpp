@@ -297,7 +297,7 @@ struct UMantleTerrainGrassComponent::FShared
 	TArray<FMantleTerrainGrass> Entries;
 	TArray<TSharedPtr<const FMantleTerrainWeights>> Maps;
 	TSharedPtr<const FMantleTerrainHoleGrid> Holes;
-	std::atomic<bool> bCancelled{ false };
+	std::atomic<bool> bCanceled{ false };
 	TQueue<FMantleGrassCellInstances, EQueueMode::Mpsc> Results;
 };
 
@@ -362,9 +362,9 @@ void UMantleTerrainGrassComponent::OnComponentDestroyed(const bool bDestroyingHi
 {
 	if (Shared.IsValid())
 	{
-		Shared->bCancelled.store(true);
+		Shared->bCanceled.store(true);
 	}
-	// Its grass goes with its actor; the cells still being made come back to a cancelled task and are never counted.
+	// Its grass goes with its actor; the cells still being made come back to a canceled task and are never counted.
 	MantleTerrainGrassPrivate::GBudget.LiveInstances -= LiveInstances;
 	MantleTerrainGrassPrivate::GBudget.InFlight -= InFlight;
 	MantleTerrainGrassPrivate::GBudget.Waiting -= Ready.Num();
@@ -587,7 +587,7 @@ void UMantleTerrainGrassComponent::StartGenerating(const FWanted& Want)
 	const double Scale = AppliedDensityScale;
 	UE::Tasks::Launch(TEXT("MantleGrassCell"), [Work, Entry, Coord, Scale]()
 	{
-		if (Work->bCancelled.load())
+		if (Work->bCanceled.load())
 		{
 			return;
 		}

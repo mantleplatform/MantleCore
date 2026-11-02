@@ -359,7 +359,7 @@ bool FMantleBodyCorrespondence::MatchTangentSplits(TConstArrayView<FVector2f> UV
 		return FMath::Abs(A.X - B.X) <= Tolerance && FMath::Abs(A.Y - B.Y) <= Tolerance && FMath::Abs(A.Z - B.Z) <= Tolerance;
 	};
 	const auto Near2 = [](const FVector2f& A, const FVector2f& B) { return FMath::Abs(A.X - B.X) <= UVTolerance && FMath::Abs(A.Y - B.Y) <= UVTolerance; };
-	// Candidates come from the 27 neighbouring 0.01-unit position cells; everything else is compared by tolerance.
+	// Candidates come from the 27 neighboring 0.01-unit position cells; everything else is compared by tolerance.
 	TMap<FIntVector, TArray<int32>> ByCell;
 	TArray<int32> LogicalOfInput, FirstOfLogical;
 	TArray<FVector2f> LogicalUVs;
@@ -518,8 +518,8 @@ bool FMantleBodyCorrespondence::MatchFlippedDiagonals(TConstArrayView<FVector2f>
 		}
 		InputUVs.Add(FIntPoint(FMath::RoundToInt32(UV.X * 2048.0f), FMath::RoundToInt32(UV.Y * 2048.0f)));
 	}
-	// The UVs of each vertex's neighbours, which tell apart vertices that share a UV.
-	const auto Neighbours = [](TConstArrayView<FIntPoint> Points, TConstArrayView<uint32> Triangles, TArray<TSet<FIntPoint>>& Out) -> bool
+	// The UVs of each vertex's neighbors, which tell apart vertices that share a UV.
+	const auto Neighbors = [](TConstArrayView<FIntPoint> Points, TConstArrayView<uint32> Triangles, TArray<TSet<FIntPoint>>& Out) -> bool
 	{
 		Out.Reset();
 		Out.SetNum(Points.Num());
@@ -536,8 +536,8 @@ bool FMantleBodyCorrespondence::MatchFlippedDiagonals(TConstArrayView<FVector2f>
 		}
 		return true;
 	};
-	TArray<TSet<FIntPoint>> ReferenceNeighbours, InputNeighbours;
-	if (!Neighbours(QuantizedUVs, Indices, ReferenceNeighbours) || !Neighbours(InputUVs, InputIndices, InputNeighbours))
+	TArray<TSet<FIntPoint>> ReferenceNeighbors, InputNeighbors;
+	if (!Neighbors(QuantizedUVs, Indices, ReferenceNeighbors) || !Neighbors(InputUVs, InputIndices, InputNeighbors))
 	{
 		return Fail(OutError, TEXT("the body has an out-of-range triangle"));
 	}
@@ -575,14 +575,14 @@ bool FMantleBodyCorrespondence::MatchFlippedDiagonals(TConstArrayView<FVector2f>
 		do
 		{
 			int32 Sum = 0;
-			for (int32 A = 0; A < N; ++A) { Sum += ReferenceNeighbours[Group.Value[A]].Intersect(InputNeighbours[(*Input)[Order[A]]]).Num(); }
+			for (int32 A = 0; A < N; ++A) { Sum += ReferenceNeighbors[Group.Value[A]].Intersect(InputNeighbors[(*Input)[Order[A]]]).Num(); }
 			if (Sum > Best) { Best = Sum; BestCount = 1; BestOrder = Order; }
 			else if (Sum == Best) { ++BestCount; }
 		}
 		while (std::next_permutation(Order.GetData(), Order.GetData() + N));
 		if (BestCount != 1)
 		{
-			return Fail(OutError, TEXT("vertices that share a UV cannot be told apart by their neighbours"));
+			return Fail(OutError, TEXT("vertices that share a UV cannot be told apart by their neighbors"));
 		}
 		for (int32 A = 0; A < N; ++A) { InputOfReference[Group.Value[A]] = (*Input)[BestOrder[A]]; }
 	}
@@ -664,7 +664,7 @@ bool FMantleBodyCorrespondence::MatchFlippedDiagonals(TConstArrayView<FVector2f>
 	}
 	if (OutFlippedPairs) { *OutFlippedPairs = Flipped; }
 	OutInputOfReference = MoveTemp(InputOfReference);
-	OutNote = FString::Printf(TEXT("UV match, %d repeated-UV vertices told apart by their neighbours, %d diagonal%s flipped"), Repeated, Flipped, Flipped == 1 ? TEXT("") : TEXT("s"));
+	OutNote = FString::Printf(TEXT("UV match, %d repeated-UV vertices told apart by their neighbors, %d diagonal%s flipped"), Repeated, Flipped, Flipped == 1 ? TEXT("") : TEXT("s"));
 	OutError.Reset();
 	return true;
 }
@@ -721,7 +721,7 @@ bool FMantleBodyCorrespondence::MatchMergedBodyExport(const USkeletalMesh* Body,
 			if (Vertex.GetVertexUV(I, Channel) != Vertex.GetVertexUV(First, Channel))
 				return Fail(OutError, TEXT("body export shading twins differ in a UV channel"));
 		if (Color.GetNumVertices() && Color.VertexColor(I) != Color.VertexColor(First))
-			return Fail(OutError, TEXT("body export shading twins differ in vertex colour"));
+			return Fail(OutError, TEXT("body export shading twins differ in vertex color"));
 		for (int32 S = 0; S < Slots; ++S)
 			if (Bones[I * Slots + S] != Bones[First * Slots + S] || Weights[I * Slots + S] != Weights[First * Slots + S])
 				return Fail(OutError, TEXT("body export shading twins differ in exact native global skin weights"));
@@ -790,7 +790,7 @@ bool FMantleBodyCorrespondence::MatchMergedBodyExport(const USkeletalMesh* Body,
 				if (Source[Twin.Key].UVs[Channel] != Source[Twin.Value].UVs[Channel])
 					return Fail(OutError, TEXT("body export shading twins differ in imported UV channels"));
 			if (Source[Twin.Key].Color != Source[Twin.Value].Color)
-				return Fail(OutError, TEXT("body export shading twins differ in imported vertex colour"));
+				return Fail(OutError, TEXT("body export shading twins differ in imported vertex color"));
 			for (int32 S = 0; S < MAX_TOTAL_INFLUENCES; ++S)
 				if (Source[Twin.Key].InfluenceWeights[S] != Source[Twin.Value].InfluenceWeights[S]
 					|| (Source[Twin.Key].InfluenceWeights[S] && Source[Twin.Key].InfluenceBones[S] != Source[Twin.Value].InfluenceBones[S]))

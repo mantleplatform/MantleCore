@@ -54,7 +54,7 @@ bool FMantleVehicleBuilderBuildTest::RunTest(const FString& Parameters)
 	TestNull(TEXT("no model makes no vehicle"), NoMesh.Source);
 	TestTrue(TEXT("no model asks for a model"), NoMesh.Problems.Contains(TEXT("Pick the model to use as the vehicle's body.")));
 
-	// The model is the sedan chassis's own grey body. Converting makes <Mesh>_Vehicle beside the mesh, so a throwaway package keeps every real folder untouched.
+	// The model is the sedan chassis's own gray body. Converting makes <Mesh>_Vehicle beside the mesh, so a throwaway package keeps every real folder untouched.
 	FString BodyError;
 	USkeletalMesh* Copy = MantleVehicleScratchBody::Make(TEXT("/Temp/MantleVehicleBuilderTest"), TEXT("BuilderTestCar"), BodyError);
 	if (!TestNotNull(FString::Printf(TEXT("the test model (%s)"), *BodyError), Copy))
@@ -90,9 +90,9 @@ bool FMantleVehicleBuilderBuildTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("the vehicle remembers its type"), Built.Source->Preset, FName(TEXT("sedan")));
 		TestEqual(TEXT("the sedan's mass"), Built.Source->Tuning.Mass, 1500.f);
 		TestEqual(TEXT("the sedan's top speed"), Built.Source->Tuning.MaxSpeed, 4500.f);
-		// The model is only a skin: collision, centre of mass and seats are the chassis's, whatever the model's physics asset held.
+		// The model is only a skin: collision, center of mass and seats are the chassis's, whatever the model's physics asset held.
 		TestEqual(TEXT("the collision is the chassis's one box"), Built.Source->Tuning.Collision.Num(), 1);
-		TestTrue(TEXT("the centre of mass is the chassis's"), Built.Source->Tuning.bOverrideCenterOfMass);
+		TestTrue(TEXT("the center of mass is the chassis's"), Built.Source->Tuning.bOverrideCenterOfMass);
 		TestTrue(TEXT("the driver's seat is the chassis's"), Built.Source->Tuning.bSeatLocation && Built.Source->Tuning.bSteeringWheel);
 		TestTrue(TEXT("the passenger's seat is the chassis's"), Built.Source->Tuning.bPassengerSeat);
 		TestTrue(TEXT("the build says the chassis is Mantle's"), Built.Notes.ContainsByPredicate([](const FString& Note)

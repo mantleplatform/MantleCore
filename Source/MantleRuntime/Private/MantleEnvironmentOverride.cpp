@@ -23,7 +23,7 @@ namespace
 		TEXT("Warm"), TEXT("Cool"), TEXT("Noir"), TEXT("Sepia"), TEXT("Vivid"), TEXT("Faded"),
 	};
 	static_assert(UE_ARRAY_COUNT(OverrideColorGradingNames) == static_cast<SIZE_T>(MantleEnvironmentOverrideValues::ColorGradingLast),
-		"one name per colour-grading preset");
+		"one name per color-grading preset");
 }
 
 bool FMantleEnvironmentOverride::operator==(const FMantleEnvironmentOverride& Other) const
@@ -251,7 +251,7 @@ FString FMantleEnvironmentOverride::RgbToHex(uint32 Rgb)
 bool FMantleEnvironmentOverride::ParseHexRgb(const FString& Text, uint32& OutRgb)
 {
 	// The same rule as Vehicles:SetPaintColor and Backpack:SetWeaponColor, so a creator writes
-	// one colour format everywhere.
+	// one color format everywhere.
 	FString Value = Text.TrimStartAndEnd();
 	Value.RemoveFromStart(TEXT("#"));
 	if (Value.Len() != 6)

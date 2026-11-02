@@ -36,13 +36,13 @@ public:
 	static FString CheckPlace();
 
 	/**
-	 * Export preview: exports the open level to Mantle's place format in memory and summarises
+	 * Export preview: exports the open level to Mantle's place format in memory and summarizes
 	 * it. Nothing is written or uploaded; meshes and materials from the project carry provisional
 	 * ids until a publish uploads them. Read-only.
 	 * @return JSON: {"ok", "level", "exported" (false when the level cannot be expressed; see
 	 * "errors"), "placeJsonBytes", "entities": {"total", "byType": {type: count}}, "assets":
 	 * {"total", "bytes", "byKind": {kind: count}}, "scripts", "scriptApi": {"major", "minor",
-	 * "analysed"}, "errors": [{"path", "message"}]}.
+	 * "analyzed"}, "errors": [{"path", "message"}]}.
 	 */
 	UFUNCTION(meta = (AICallable))
 	static FString ExportPreview();
@@ -58,7 +58,7 @@ public:
 	 * items stored in the place (an agent cannot make the rights declaration a public one needs); an
 	 * item the creator already made public stays public, and the creator can make others public from the panel.
 	 * @param Notes Revision notes shown with this version. Always pass it; "" for none.
-	 * @return JSON: {"ok", "placeId", "revision", "live", "waitingForReview", "cancelled",
+	 * @return JSON: {"ok", "placeId", "revision", "live", "waitingForReview", "canceled",
 	 * "message", "issues": [{"severity", "actor", "message", "remedy"}]}, or a refusal.
 	 */
 	UFUNCTION(meta = (AICallable))
@@ -79,7 +79,7 @@ public:
 	 * matching assets. Always pass it; "" reports every asset.
 	 * @return JSON: {"ok", "publish": null when none has run, else {"phase" (idle, checking,
 	 * converting, uploading, crediting, scripts, exporting, library, creatingPlace, saving,
-	 * publishing, done, failed or cancelled; "library" is a go-live turning uploaded vehicles into
+	 * publishing, done, failed or canceled; "library" is a go-live turning uploaded vehicles into
 	 * library items), "running", "goLive", "progress", "status", "placeId", "revision"}, "assets": [{"name", "state" (queued,
 	 * uploading, processing, approved or refused), "assetId", "bytes", "alreadyOnMantle",
 	 * "inReview", "code", "message", "cookError"}]}.
@@ -102,8 +102,8 @@ public:
 	 * (the lowest minor that covers every script), and each script's own need. A script the scan
 	 * cannot follow makes the place record the editor's newest minor; it is listed with why. Read-only.
 	 * @return JSON: {"ok", "scripts", "recorded": {"major", "minor"} (both 0 without scripts),
-	 * "editorMinor", "analysed", "neededFor", "perScript": [{"path", "minor", "neededFor",
-	 * "analysed", "problem", "remedy"}]}.
+	 * "editorMinor", "analyzed", "neededFor", "perScript": [{"path", "minor", "neededFor",
+	 * "analyzed", "problem", "remedy"}]}.
 	 */
 	UFUNCTION(meta = (AICallable))
 	static FString ScriptApiRequirement();
@@ -236,7 +236,7 @@ public:
 	 * person asking told you is true. "" for none.
 	 * @param Route How it should go up, the panel's "How should it go up?": "convert" (Convert to MetaHuman, the default) or
 	 * "asis" (As is: it keeps its own look; offered only while As-is uploads are allowed, and refused with the panel's
-	 * reason when the panel greys it, e.g. a MetaHuman Creator character, "it's already a MetaHuman"). "" is convert.
+	 * reason when the panel grays it, e.g. a MetaHuman Creator character, "it's already a MetaHuman"). "" is convert.
 	 * Always pass it.
 	 * @return JSON: {"ok", "source", "assembly", "outputFolder", "route", "sees", "packReview": [lines], "canConvert", "bodyChoice": [lines], "parts": [{"index", "slot", "class",
 	 * "name", "mesh", "original", "face", "section", "skeleton", "authoringBody", "authoringFace",
@@ -244,7 +244,7 @@ public:
 	 * "canFix", "enabled", "needsConfirm"}], "notes", "unknownTurnOff", "unknownConfirm", "applied", and with Apply "result":
 	 * {"removedPrevious", "applied", "failed", "leftAlone" (fixes with a "reason"), "created" (asset
 	 * paths), "checks": [{"part", "canUpload", "standingHeightCm", "issues": [{"severity",
-	 * "message", "hint"}]}], "blocked"}}, or a refusal (not_convertible, no_contract, unknown_route, as_is_greyed, cannot_keep_body).
+	 * "message", "hint"}]}], "blocked"}}, or a refusal (not_convertible, no_contract, unknown_route, as_is_grayed, cannot_keep_body).
 	 */
 	UFUNCTION(meta = (AICallable))
 	static FString ConvertCosmetic(const FString& AssetPath, const FString& Slot, bool bApply, const FString& TurnOff = TEXT(""), const FString& Confirm = TEXT(""),

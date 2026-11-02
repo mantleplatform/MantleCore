@@ -53,9 +53,9 @@ namespace MantleAvatarRigMapPrivate
 	constexpr double MaxPlausibleHeightCm = 300.0;
 	constexpr double TypicalHeightCm = 175.0;
 
-	/** Offsets below these are left alone: the upload tolerates 10 cm at the feet, and a centred pelvis is not required. */
+	/** Offsets below these are left alone: the upload tolerates 10 cm at the feet, and a centerd pelvis is not required. */
 	constexpr double GroundToleranceCm = 1.0;
-	constexpr double CentreToleranceCm = 1.0;
+	constexpr double CenterToleranceCm = 1.0;
 
 	TMap<FString, FMantleRigMapping>& SessionMappings()
 	{
@@ -422,7 +422,7 @@ namespace MantleAvatarRigMapPrivate
 						Remapped.Add(FBoneWeight(static_cast<FBoneIndexType>(Bone), Weight.GetRawWeight()));
 					}
 				}
-				// Sorted heaviest first and normalised by the attribute.
+				// Sorted heaviest first and normalized by the attribute.
 				Weights.Set(Vertex, TArrayView<const FBoneWeight>(Remapped));
 			}
 		}
@@ -1075,7 +1075,7 @@ FString FMantleRigPlan::Describe(const FString& RigName) const
 	}
 	if (!FMath::IsNearlyEqual(Scale, 1.0))
 	{
-		Parts.Add(FString::Printf(TEXT("scales it %gx to centimetres"), Scale));
+		Parts.Add(FString::Printf(TEXT("scales it %gx to centimeters"), Scale));
 	}
 	if (bTurned)
 	{
@@ -1713,7 +1713,7 @@ bool FMantleAvatarRigMap::MakePlan(TConstArrayView<FMantleRigBone> Bones, const 
 	Out.Scale = RigChooseScale(MeasuredHeight);
 	const FVector Pelvis = Turn.RotateVector(SourcePosition(TEXT("pelvis"))) * Out.Scale;
 	FVector Offset = FVector::ZeroVector;
-	if (FVector2D(Pelvis.X, Pelvis.Y).Size() > CentreToleranceCm)
+	if (FVector2D(Pelvis.X, Pelvis.Y).Size() > CenterToleranceCm)
 	{
 		Offset.X = -Pelvis.X;
 		Offset.Y = -Pelvis.Y;
@@ -2074,7 +2074,7 @@ USkeletalMesh* FMantleAvatarRigMap::ApplyPlan(USkeletalMesh* Source, const FMant
 	const FReferenceSkeleton& SourceReference = Source->GetRefSkeleton();
 	if (Plan.Bones.Num() == 0 || Plan.NewIndexOfSource.Num() != SourceReference.GetRawBoneNum())
 	{
-		OutError = TEXT("the bone mapping was made for another mesh; analyse again");
+		OutError = TEXT("the bone mapping was made for another mesh; analyze again");
 		return nullptr;
 	}
 	FString Folder = OutputFolder;

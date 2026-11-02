@@ -13,7 +13,7 @@ class FMantleAvatarContract;
  */
 struct MANTLEEDITOR_API FMantleOverlayPlacement
 {
-	/** The projector in the mesh's own (reference pose) space, centimetres. */
+	/** The projector in the mesh's own (reference pose) space, centimeters. */
 	FTransform Transform = FTransform::Identity;
 	/** The picture's width on the surface; its height follows the picture's shape. */
 	float WidthCm = 10.f;

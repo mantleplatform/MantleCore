@@ -48,9 +48,9 @@ struct FMantleConstraintFrames
 /** The rules a Constraint's values follow outside the place parser (a script's Constraints:Create, the exporter). */
 struct MANTLERUNTIME_API FMantleConstraints
 {
-	/** Unreal forces are in kg*cm/s^2: a newton is 100 of them, and a newton-metre of torque 10000 kg*cm^2/s^2. */
+	/** Unreal forces are in kg*cm/s^2: a newton is 100 of them, and a newton-meter of torque 10000 kg*cm^2/s^2. */
 	static constexpr double UnrealForcePerNewton = 100.0;
-	static constexpr double UnrealTorquePerNewtonMetre = 10000.0;
+	static constexpr double UnrealTorquePerNewtonMeter = 10000.0;
 
 	/** A rope shorter than this is held to its anchors, like a ball joint: a zero-length limit is not stable. */
 	static constexpr double MinRopeLength = 0.1;

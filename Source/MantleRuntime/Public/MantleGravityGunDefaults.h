@@ -22,7 +22,7 @@ namespace MantleGravityGunDefaults
 	/** A grabbed prop drops by itself after this long, s; 0 holds it until the player lets go. */
 	inline constexpr double HoldSeconds = 0.0;
 	inline constexpr double HoldSecondsMax = 300.0;
-	/** The held prop's centre is this far in front of the muzzle, along the aim, cm. */
+	/** The held prop's center is this far in front of the muzzle, along the aim, cm. */
 	inline constexpr double HoldDistanceCm = 150.0;
 	inline constexpr double HoldDistanceMinCm = 50.0;
 	inline constexpr double HoldDistanceMaxCm = 600.0;

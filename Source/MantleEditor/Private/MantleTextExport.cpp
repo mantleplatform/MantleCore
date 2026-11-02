@@ -102,7 +102,7 @@ void FMantleTextExport::Read(const UTextRenderComponent* Component, const FVecto
 	using namespace MantleTextExportPrivate;
 	Out = FMantleTextProps();
 	Out.Text = PublishedText(Component);
-	// TextRenderColor is sRGB bytes; the place holds linear RGBA (FLinearColor(FColor) converts the colour, alpha stays linear).
+	// TextRenderColor is sRGB bytes; the place holds linear RGBA (FLinearColor(FColor) converts the color, alpha stays linear).
 	Out.Color = FLinearColor(Component->TextRenderColor);
 	Out.WorldSize = TextExportRounded(TextExportClamp(Component->WorldSize, FMantlePlaceLimits::MinTextWorldSize,
 		FMantlePlaceLimits::MaxTextWorldSize, TEXT("its world size"), OutApproximations));

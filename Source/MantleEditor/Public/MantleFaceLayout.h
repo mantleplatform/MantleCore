@@ -17,7 +17,7 @@ struct MANTLEEDITOR_API FMantleFaceLayoutSection
 };
 
 /**
- * The layout of a built MetaHuman face (Epic's UE Optimized / Medium LOD0, 6872 triangles): each vertex's quantised UV, the triangles and the render
+ * The layout of a built MetaHuman face (Epic's UE Optimized / Medium LOD0, 6872 triangles): each vertex's quantized UV, the triangles and the render
  * sections, in the built order, and no geometry. The client fits a collar by pairing the face a garment was authored with to the wearer's face by
  * TRIANGLE INDEX, so a face has to be numbered like the built ones. A face made in memory by MetaHuman Creator is its preview LOD3, the same surface
  * numbered differently; Reorder puts it into this layout (a UV match inside each section, tolerant of flipped quad diagonals as the body's is).
@@ -54,7 +54,7 @@ struct MANTLEEDITOR_API FMantleFaceLayout
 	/**
 	 * Puts Mesh (one primitive per section, as ReadRender or the upload's reader makes) into this layout's order, in place: every per-vertex
 	 * array carried along, the primitives rebuilt in the layout's sections with the materials of the sections they were matched to. Sections are
-	 * paired by vertex and triangle count (the material name breaks a tie); inside a section vertices are matched by UV and neighbours, and
+	 * paired by vertex and triangle count (the material name breaks a tie); inside a section vertices are matched by UV and neighbors, and
 	 * triangles must be the layout's but for flipped quad diagonals. On failure Mesh is unchanged and OutError says exactly what differs.
 	 * OutNote says how many sections matched exactly and how many diagonals were flipped.
 	 */

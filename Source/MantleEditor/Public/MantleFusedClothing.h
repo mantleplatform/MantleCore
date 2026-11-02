@@ -8,7 +8,7 @@ enum class EMantleFusedVerdict : uint8
 {
 	/** Nothing in its shape or name says clothing is part of it. */
 	Bare,
-	/** Clothing is modelled into it (a second layer just under its surface, or a material named for clothing). */
+	/** Clothing is modeled into it (a second layer just under its surface, or a material named for clothing). */
 	FusedClothing,
 	/** Too little geometry to tell. */
 	Unknown,
@@ -34,8 +34,8 @@ struct MANTLEEDITOR_API FMantleFusedResult
 
 /**
  * #50 / #55: whether a slot that reads as bare skin has clothing built into it (Sophie and Belica: one skin-named slot for the whole
- * body, jacket and boots modelled in). Pure: triangle arrays in, a verdict and a plain reason out. The checks:
- *   - the slot's name: skin that is named for clothing (boots, jacket, armour, belt ...) is FusedClothing;
+ * body, jacket and boots modeled in). Pure: triangle arrays in, a verdict and a plain reason out. The checks:
+ *   - the slot's name: skin that is named for clothing (boots, jacket, armor, belt ...) is FusedClothing;
  *   - its shape: from the outside surface, a ray going straight in meets a second surface facing outward within MaxLayerShare of
  *     the character's height (cloth lying over a body shell inside the same slot). A plain body's ray crosses empty inside and
  *     meets the far side, facing away. When LayeredShare of the sampled surface has that second layer, the slot is FusedClothing.
@@ -53,7 +53,7 @@ public:
 	/** The share of the sampled surface that must have a second layer. */
 	static constexpr double LayeredShare = 0.15;
 
-	/** A slot name that names clothing: boot, shoe, jacket, coat, shirt, pant, trouser, dress, skirt, armor, armour, belt, glove, vest, cloth, robe, cape, helmet. Pure. */
+	/** A slot name that names clothing: boot, shoe, jacket, coat, shirt, pant, trouser, dress, skirt, armor, armor, belt, glove, vest, cloth, robe, cape, helmet. Pure. */
 	static bool NamesClothing(const FString& SlotName);
 
 	/** The verdict for one slot; HeightCm is the character's standing height (cm, sets how close a layer must lie). */

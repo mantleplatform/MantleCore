@@ -170,7 +170,7 @@ public:
 
 	/**
 	 * Pure (tested): each of Points takes Skin's weights at its closest point on Skin's surface (the three corners' weights blended by
-	 * the point's barycentrics, the heaviest MaxInfluences kept, renormalised); a point above HeadCutZ takes HeadBoneIndex alone.
+	 * the point's barycentrics, the heaviest MaxInfluences kept, renormalized); a point above HeadCutZ takes HeadBoneIndex alone.
 	 * False with why when Skin has no triangles or no weights.
 	 */
 	static bool TransferWeights(TConstArrayView<FVector3f> Points, const FMantleAutoRigSkin& Skin, int32 HeadBoneIndex, double HeadCutZ,
@@ -178,9 +178,9 @@ public:
 
 	/**
 	 * Pure (tested): a finger's skin follows one finger. Closest-point weights between two fingers blend both (or take the
-	 * neighbour's), and those points stretch when the fingers curl apart. For each point weighted to a finger, the finger is the
+	 * neighbor's), and those points stretch when the fingers curl apart. For each point weighted to a finger, the finger is the
 	 * one whose bones (each a segment from its parent's joint to its own, a fingertip carried on past its last joint) pass
-	 * nearest the point; its weights on other fingers are dropped and the rest renormalised (all on that nearest bone when
+	 * nearest the point; its weights on other fingers are dropped and the rest renormalized (all on that nearest bone when
 	 * nothing is left). Fingers are the chains under a "hand_*" bone whose root is named thumb, index, middle, ring or pinky
 	 * (Epic's MetaHuman skeleton); only their main bones (<finger>_metacarpal, _01, _02, _03 and the side) are measured, not the
 	 * helper bones Epic's rig logic drives (bulge, half, palm, side, pip, dip, slide). Then a hand whose finger points lie

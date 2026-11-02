@@ -3,7 +3,7 @@
 
 #include "CoreMinimal.h"
 
-/** Fixed version-one source colour inputs. Native per-pixel direction is a separate linear RGB data texture. */
+/** Fixed version-one source color inputs. Native per-pixel direction is a separate linear RGB data texture. */
 struct MANTLERUNTIME_API FMantleNativeHairSettings
 {
     int32 Version = 1;

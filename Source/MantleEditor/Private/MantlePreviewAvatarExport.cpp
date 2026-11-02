@@ -180,7 +180,7 @@ namespace MantlePreviewAvatarExportPrivate
 				}
 				if (const TSharedPtr<FJsonValue> Mask = Section->TryGetField(TEXT("colorCustomization")); Mask.IsValid() && Mask->Type != EJson::Null)
 				{
-					OutError = FString::Printf(TEXT("the item's %s[%d] carries a clothing colour mask, which an avatar body does not"), List, Index);
+					OutError = FString::Printf(TEXT("the item's %s[%d] carries a clothing color mask, which an avatar body does not"), List, Index);
 					return false;
 				}
 				const TSharedPtr<FJsonValue> NativeHair = Section->TryGetField(TEXT("nativeHair"));

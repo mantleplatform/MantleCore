@@ -17,7 +17,7 @@ struct MANTLEEDITOR_API FMantleAreaChannelScore
 	float Binary = 0.0f;
 	/** Share of used texels above one half. */
 	float Coverage = 0.0f;
-	/** Mid-tone texels per on/off crossing between neighbours: about 0 to 2 for a hard edge, many for a smooth ramp. */
+	/** Mid-tone texels per on/off crossing between neighbors: about 0 to 2 for a hard edge, many for a smooth ramp. */
 	float EdgeWidth = 0.0f;
 	bool bAccepted = false;
 };
@@ -30,7 +30,7 @@ struct MANTLEEDITOR_API FMantleClothingColorChoice
 {
 	FString MaterialName;
 	FString RegionId;
-	/** Unticked: the area keeps its original colours and players cannot recolour it. */
+	/** Unticked: the area keeps its original colors and players cannot recolor it. */
 	bool bEnabled = true;
 	/** Empty keeps the default name ("Main", "Accent 1"). */
 	FString Label;
@@ -49,7 +49,7 @@ struct MANTLEEDITOR_API FMantleClothingColorDetection
 	/**
 	 * Every area found, before the creator's choices: Main on the clean map's red (covered by no accepted channel),
 	 * then one Accent per accepted channel on green and blue. Ids and default names are set; DefaultColor is the area's
-	 * average authored colour once measured at export; ReferenceLuminance is measured only for the regions declared.
+	 * average authored color once measured at export; ReferenceLuminance is measured only for the regions declared.
 	 */
 	TArray<FMantleClothingColorRegion> Areas;
 	/** Why nothing was found, in plain words for the creator; empty when areas were found. */
@@ -57,10 +57,10 @@ struct MANTLEEDITOR_API FMantleClothingColorDetection
 };
 
 /**
- * #756: finds the areas of a clothing item players can recolour, from a mask texture its material already carries,
+ * #756: finds the areas of a clothing item players can recolor, from a mask texture its material already carries,
  * so a creator never has to author one. A channel of the map is an area when it is near-binary, hard-edged and covers a
- * real share (but not all) of the texels the material uses; smooth greyscale (shading, occlusion, detail) never is.
- * Three accepted channels look like a many-colour ID map, which v1 does not split: nothing is found.
+ * real share (but not all) of the texels the material uses; smooth grayscale (shading, occlusion, detail) never is.
+ * Three accepted channels look like a many-color ID map, which v1 does not split: nothing is found.
  *
  * The accepted channels are repacked into the clean linear map FMantleClothingColorMeasure and the runtime read:
  * red is Main (covered by no accepted channel), green the first accepted channel, blue the second; the three sum to
@@ -94,7 +94,7 @@ public:
 
 	/**
 	 * The fallback when no map holds separate areas: the whole material is one Main area (clean map all red over its used
-	 * texels), so a plain or tinted garment can still be recoloured. False only when the mesh's UVs cannot be read.
+	 * texels), so a plain or tinted garment can still be recolored. False only when the mesh's UVs cannot be read.
 	 */
 	static bool DetectWhole(const FMantleGlbMesh& Mesh, int32 MaterialIndex, FIntPoint Size, FMantleClothingColorDetection& InOut,
 		TArray<FColor>& OutCleanMask, TArray<uint8>& OutUsed, int32& MainNumber, FString& OutError);
@@ -104,7 +104,7 @@ public:
 
 	/**
 	 * Scores red, green and blue and picks the channels taken: InOut's Scores, SourceChannels and (when none) Why. A channel
-	 * marking the same texels as one already taken (a greyscale map) is not taken again. Pure.
+	 * marking the same texels as one already taken (a grayscale map) is not taken again. Pure.
 	 */
 	static void Choose(TConstArrayView<FColor> Pixels, TConstArrayView<uint8> Used, FIntPoint Size, FMantleClothingColorDetection& InOut);
 
@@ -124,9 +124,9 @@ public:
 	/** The regions to declare: Detection's areas less the unticked ones, with the creator's names. Pure. */
 	static TArray<FMantleClothingColorRegion> ApplyChoices(const FMantleClothingColorDetection& Detection, TConstArrayView<FMantleClothingColorChoice> Choices);
 
-	/** The average authored colour (sRGB, opaque) of Albedo weighted by Mask's Channel over Used; mid-grey when it has no weight. Pure. */
+	/** The average authored color (sRGB, opaque) of Albedo weighted by Mask's Channel over Used; mid-gray when it has no weight. Pure. */
 	static FColor AverageColor(TConstArrayView<FColor> Albedo, TConstArrayView<FColor> Mask, TConstArrayView<uint8> Used, uint8 Channel);
 
-	/** A distinct, saturated colour per found area (by its order in the item) for the preview's highlight. */
+	/** A distinct, saturated color per found area (by its order in the item) for the preview's highlight. */
 	static FColor HighlightColor(int32 AreaIndex);
 };

@@ -53,7 +53,7 @@ bool FMantleFusedClothingCheckTest::RunTest(const FString& Parameters)
 	const FMantleFusedResult Bare = FMantleFusedClothing::CheckSlot({ TEXT("Body_Skin"), BareVertices, BareIndices }, 170.0);
 	TestEqual(TEXT("a plain body is bare"), Bare.Verdict, EMantleFusedVerdict::Bare);
 
-	// A jacket modelled into the same slot: a second surface 1 cm outside the body over the torso.
+	// A jacket modeled into the same slot: a second surface 1 cm outside the body over the torso.
 	TArray<FVector3f> FusedVertices = BareVertices;
 	TArray<int32> FusedIndices = BareIndices;
 	FusedTestTube(16.0, 70.0, 130.0, FusedVertices, FusedIndices);
@@ -76,7 +76,7 @@ bool FMantleFusedClothingCheckTest::RunTest(const FString& Parameters)
 	FusedTestTube(15.0, 0.0, 3.0, FewVertices, FewIndices);
 	TestEqual(TEXT("a few triangles can't tell"), FMantleFusedClothing::CheckSlot({ TEXT("Body_Skin"), FewVertices, FewIndices }, 170.0).Verdict, EMantleFusedVerdict::Unknown);
 
-	TestTrue(TEXT("armour is clothing"), FMantleFusedClothing::NamesClothing(TEXT("M_Armor_Skin")));
+	TestTrue(TEXT("armor is clothing"), FMantleFusedClothing::NamesClothing(TEXT("M_Armor_Skin")));
 	TestFalse(TEXT("a body is not"), FMantleFusedClothing::NamesClothing(TEXT("M_Body_Skin")));
 	return true;
 }

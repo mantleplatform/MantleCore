@@ -57,7 +57,7 @@ struct FMantleVehicleBuildResult
 /** How a creator's model goes onto a type's chassis (BuildFromModel, #821). Everything left unset is Mantle's proposal. */
 struct FMantleVehicleModelOptions
 {
-	/** The turn about Z that puts the model's nose on +X; unset, Mantle works it out from the model's wheels or rotors and otherwise leaves it as modelled. */
+	/** The turn about Z that puts the model's nose on +X; unset, Mantle works it out from the model's wheels or rotors and otherwise leaves it as modeled. */
 	TOptional<double> YawDegrees;
 	/** The parts of the model assigned to the chassis's moving bones; unset, Mantle's suggestions (FMantleVehicleChassisSkin::SuggestMap). */
 	TOptional<FMantleVehicleModelMap> Map;
@@ -91,7 +91,7 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * asset in place (ConvertAsset keeps its tuning, parts and paint), after which the preset's defaults are written over its
 	 * tuning again, so building twice with the same type gives the type's starting settings, not the creator's edits.
 	 *
-	 * The model is only a skin (#728 step 2): when the type's defaults are applied, the collision (one box), centre of mass, seats and
+	 * The model is only a skin (#728 step 2): when the type's defaults are applied, the collision (one box), center of mass, seats and
 	 * steering wheel are all the type's chassis (FMantleVehicleChassisFit), stretched to the model's wheel layout and written in the
 	 * model's units; nothing the converter read from the model's physics survives. Fails, changing nothing about the type, when the
 	 * model's wheels cannot be found.
@@ -114,9 +114,9 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * Chassis from a model (#821 WP5, #793 step 5): the creator's static or skeletal Model worn whole as the skin of PresetId's own chassis. The chassis is the
 	 * physics and the skeleton (its bones are wheels, control surfaces, propellers or nozzle, rotors, fork), its numbers the type's at the Size or sizes proposed from
 	 * the model's bounds; the model is skinned to the chassis's root bone, with the parts the creator assigned (Options.Map) riding the moving bones, so an unassigned
-	 * model still drives or flies and only fails to animate those parts. Saved under Options.Folder (or MantleVehicles), as BuildChassis saves a grey chassis.
+	 * model still drives or flies and only fails to animate those parts. Saved under Options.Folder (or MantleVehicles), as BuildChassis saves a gray chassis.
 	 *
-	 * Takes any model: a spaceship's static mesh (no wheels) is a jet, a plane's skeletal mesh with its own bones is a plane, two wheels on the centre line a
+	 * Takes any model: a spaceship's static mesh (no wheels) is a jet, a plane's skeletal mesh with its own bones is a plane, two wheels on the center line a
 	 * motorcycle, a wheel-less cabin a helicopter. The result has bOnChassis set. Problems say, in plain words, what stopped it. One undo step ("Build vehicle from model"),
 	 * as Build is.
 	 */
@@ -183,8 +183,8 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	static FString FirstFreeName(const FString& Wanted, TFunctionRef<bool(const FString&)> IsTaken);
 
 	/**
-	 * The vehicle of a chassis with no creator model (#793 step 4): the chassis's grey body saved as a skeletal mesh (FMantleVehicleChassisMesh), and a
-	 * vehicle asset on it whose wheels, tuning, collision, centre of mass and seats are the chassis's (its handling derived from its sizes when it was
+	 * The vehicle of a chassis with no creator model (#793 step 4): the chassis's gray body saved as a skeletal mesh (FMantleVehicleChassisMesh), and a
+	 * vehicle asset on it whose wheels, tuning, collision, center of mass and seats are the chassis's (its handling derived from its sizes when it was
 	 * shaped), saved the way Build saves one. Made as <Name>_Vehicle in PackagePath beside SKM_<Name> and SK_<Name>; a vehicle already there is
 	 * updated in place, so a spawn in the level that names it follows (Size 1; its paint, liveries and parts are kept). Press Put it in my level
 	 * (PlaceInLevel) on the result, then Test Locally.
@@ -200,7 +200,7 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * slots. The vehicle asset is the chassis's, the body is Body.
 	 *
 	 * Collision, when given and not empty (FMantleVehicleChassisSkin::ProposeCollision), is the vehicle's collision in place of the chassis's one box: its first box is
-	 * the one the driver sits in, the rest are added beside it. Extras are the model's other UV channels and vertex colours, written onto the body with its own tangents.
+	 * the one the driver sits in, the rest are added beside it. Extras are the model's other UV channels and vertex colors, written onto the body with its own tangents.
 	 *
 	 * Parts (#576): when given (even empty), they become the vehicle's Parts, replacing any a build before it made: the pieces of a model that drew more materials than a
 	 * published body may (FMantleVehicleBodySplit). PictureBody and PictureMesh are then the whole model, for the library card's picture, which Body (without those pieces) would miss.

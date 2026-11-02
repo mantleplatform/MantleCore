@@ -571,7 +571,7 @@ namespace
 		if (BaseColor)
 		{
 			// A normal map needs the master that writes normals; without that master in this build
-			// the decal keeps its colour on the plain one and drops the normal map.
+			// the decal keeps its color on the plain one and drops the normal map.
 			UMaterialInterface* Parent = Normal ? FMantleDecalMaterials::Load(/*bNormal*/ true) : nullptr;
 			const bool bWithNormal = Parent != nullptr;
 			if (!Parent)
@@ -1467,7 +1467,7 @@ namespace
 		{
 			// What a creator wrote, not a localizable string.
 			Text->SetText(FText::AsCultureInvariant(Props.Text));
-			// The place's colour is linear; the component's is an sRGB FColor, as the editor keeps it.
+			// The place's color is linear; the component's is an sRGB FColor, as the editor keeps it.
 			Text->SetTextRenderColor(Props.Color.ToFColor(true));
 			Text->SetWorldSize(static_cast<float>(Props.WorldSize));
 			Text->SetHorizontalAlignment(BuilderTextHorizontalAlignment(Props.HorizontalAlignment));
@@ -1482,7 +1482,7 @@ namespace
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantlePlaceBuilderDecalPrivate
 {
-	/** Per master (0 colour, 1 normal): looked for once, and found missing. Game thread. */
+	/** Per master (0 color, 1 normal): looked for once, and found missing. Game thread. */
 	bool GDecalMasterChecked[2] = { false, false };
 	bool GDecalMasterMissing[2] = { false, false };
 }

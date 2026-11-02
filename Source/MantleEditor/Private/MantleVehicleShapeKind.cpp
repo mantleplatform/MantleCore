@@ -33,7 +33,7 @@ FMantleBuilderOverlay FMantleVehicleShapeKind::Overlay(const TArray<FMantleBuild
 	Driver.Location = Spec.Seat;
 	// A two-wheeler's seat is a rider's, an aircraft's a pilot's.
 	const bool bPilot = Spec.Type == EMantleChassisType::Plane || Spec.Type == EMantleChassisType::Helicopter;
-	Driver.Label = Spec.bCentreline ? LOCTEXT("Rider", "Rider") : bPilot ? LOCTEXT("Pilot", "Pilot") : LOCTEXT("Driver", "Driver");
+	Driver.Label = Spec.bCenterline ? LOCTEXT("Rider", "Rider") : bPilot ? LOCTEXT("Pilot", "Pilot") : LOCTEXT("Driver", "Driver");
 	Driver.Color = FLinearColor(1.f, 0.5f, 0.05f);
 	Driver.RadiusCm = 4.f;
 
@@ -46,10 +46,10 @@ FMantleBuilderOverlay FMantleVehicleShapeKind::Overlay(const TArray<FMantleBuild
 		Passenger.RadiusCm = 4.f;
 	}
 
-	// The point the vehicle's weight is centred on: what makes it tip, or not.
+	// The point the vehicle's weight is centerd on: what makes it tip, or not.
 	FMantleBuilderOverlayMarker& Weight = Out.Markers.AddDefaulted_GetRef();
 	Weight.Location = Spec.CenterOfMass;
-	Weight.Label = LOCTEXT("Weight", "Weight is centred here");
+	Weight.Label = LOCTEXT("Weight", "Weight is centerd here");
 	Weight.Color = FLinearColor(0.35f, 0.75f, 1.f);
 	Weight.RadiusCm = 5.f;
 	return Out;
@@ -57,7 +57,7 @@ FMantleBuilderOverlay FMantleVehicleShapeKind::Overlay(const TArray<FMantleBuild
 
 FText FMantleVehicleShapeKind::Hint() const
 {
-	return LOCTEXT("Hint", "Right-drag to turn the view, scroll to zoom, press F to frame the vehicle. The grey figure is a character, so you can see how big the vehicle is.");
+	return LOCTEXT("Hint", "Right-drag to turn the view, scroll to zoom, press F to frame the vehicle. The gray figure is a character, so you can see how big the vehicle is.");
 }
 
 #undef LOCTEXT_NAMESPACE

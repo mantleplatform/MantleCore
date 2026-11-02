@@ -8,7 +8,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 // A hovercraft's chassis: four pads at the hull's corners (the layout's wheels, never drawn), a spring rate that rests the weight at the hover
-// height, a fan behind the hull and a fin on its top, a grey body of blocks on the root, and a push, spring and rudder that follow the size so a resized
+// height, a fan behind the hull and a fin on its top, a gray body of blocks on the root, and a push, spring and rudder that follow the size so a resized
 // hovercraft floats at its own hover height.
 
 // Named, not anonymous: MantleRuntime builds as a unity build.

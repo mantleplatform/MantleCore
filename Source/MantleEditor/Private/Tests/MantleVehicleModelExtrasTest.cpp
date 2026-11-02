@@ -20,9 +20,9 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// What a creator's model keeps when it becomes a vehicle's body: its own tangents, its UV channels above the first and its painted vertex colours, up to the
+// What a creator's model keeps when it becomes a vehicle's body: its own tangents, its UV channels above the first and its painted vertex colors, up to the
 // skeletal mesh's limit; and a Nanite mesh is read from its full-detail source and not its reduced fallback. The model is a 6 x 6 grid made in the test, with two UV
-// channels, colours that differ at every corner, and a tangent that is not the one a build would work out from the UVs, so a kept tangent can tell from a recomputed one.
+// channels, colors that differ at every corner, and a tangent that is not the one a build would work out from the UVs, so a kept tangent can tell from a recomputed one.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleVehicleModelExtrasTestPrivate
@@ -30,13 +30,13 @@ namespace MantleVehicleModelExtrasTestPrivate
 	constexpr int32 Cells = 6;
 	constexpr float Spacing = 100.0f;
 
-	/** The colour the grid's corner (X, Y) has, as a vertex colour the static build keeps. */
-	FColor ColourOf(const int32 X, const int32 Y)
+	/** The color the grid's corner (X, Y) has, as a vertex color the static build keeps. */
+	FColor ColorOf(const int32 X, const int32 Y)
 	{
 		return FLinearColor(static_cast<float>(X) / Cells, static_cast<float>(Y) / Cells, 0.25f, 1.0f).ToFColor(true);
 	}
 
-	/** A 6 x 6 grid of quads in the XY plane, a static mesh with its geometry kept in memory, two UV channels, colours and tangents along +Y. 72 triangles. */
+	/** A 6 x 6 grid of quads in the XY plane, a static mesh with its geometry kept in memory, two UV channels, colors and tangents along +Y. 72 triangles. */
 	UStaticMesh* MakeGridMesh()
 	{
 		UObject* Outer = GetTransientPackage();
@@ -135,7 +135,7 @@ namespace MantleVehicleModelExtrasTestPrivate
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleVehicleModelExtrasReadTest,
-	"Mantle.Vehicle.ChassisSkin.ModelKeepsUVsColoursAndTangents",
+	"Mantle.Vehicle.ChassisSkin.ModelKeepsUVsColorsAndTangents",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FMantleVehicleModelExtrasReadTest::RunTest(const FString& Parameters)
@@ -155,9 +155,9 @@ bool FMantleVehicleModelExtrasReadTest::RunTest(const FString& Parameters)
 	const int32 NumVertices = Model.LOD.Positions.Num();
 	TestEqual(TEXT("72 triangles"), Model.NumTriangles(), 72);
 
-	// Read from the render data: the second UV channel, every colour and the creator's own tangent, each on the vertex they belong to.
+	// Read from the render data: the second UV channel, every color and the creator's own tangent, each on the vertex they belong to.
 	if (TestEqual(TEXT("one UV channel above the first"), Model.ExtraUVs.Num(), 1) && TestEqual(TEXT("with an entry for every vertex"), Model.ExtraUVs[0].Num(), NumVertices)
-		&& TestEqual(TEXT("and a colour for every vertex"), Model.Colors.Num(), NumVertices) && TestEqual(TEXT("and a tangent for every vertex"), Model.LOD.Tangents.Num(), NumVertices))
+		&& TestEqual(TEXT("and a color for every vertex"), Model.Colors.Num(), NumVertices) && TestEqual(TEXT("and a tangent for every vertex"), Model.LOD.Tangents.Num(), NumVertices))
 	{
 		int32 Wrong = 0;
 		for (int32 Vertex = 0; Vertex < NumVertices; ++Vertex)
@@ -171,32 +171,32 @@ bool FMantleVehicleModelExtrasReadTest::RunTest(const FString& Parameters)
 			}
 			const FVector4f& Tangent = Model.LOD.Tangents[Vertex];
 			const bool bUV = NearUV(Model.ExtraUVs[0][Vertex], FVector2f(static_cast<float>(Y) / Cells, static_cast<float>(X) / Cells));
-			const bool bColour = Model.Colors[Vertex] == ColourOf(X, Y);
+			const bool bColor = Model.Colors[Vertex] == ColorOf(X, Y);
 			const bool bTangent = Tangent.Y > 0.99f && FMath::Abs(Tangent.X) < 0.05f;
-			Wrong += bUV && bColour && bTangent ? 0 : 1;
+			Wrong += bUV && bColor && bTangent ? 0 : 1;
 		}
-		TestEqual(TEXT("each vertex has its own second UV, colour and the creator's tangent"), Wrong, 0);
+		TestEqual(TEXT("each vertex has its own second UV, color and the creator's tangent"), Wrong, 0);
 	}
 	TestTrue(TEXT("a mesh that is not Nanite says nothing about it"), Model.Notes.IsEmpty());
 
-	// Worn on a chassis and made into the vehicle's body asset, they reach it: both UV channels, the colours, the tangents, and the build keeps the tangents.
+	// Worn on a chassis and made into the vehicle's body asset, they reach it: both UV channels, the colors, the tangents, and the build keeps the tangents.
 	FMantleChassisSpec Spec;
-	FMantleVehicleAsset Grey;
-	if (!TestTrue(*FString::Printf(TEXT("the sedan chassis loads (%s)"), *Error), FMantleVehicleChassisBuilder::LoadSpec(TEXT("sedan"), Spec, Error) && FMantleVehicleChassisBuilder::MakeAsset(Spec, Grey, Error)))
+	FMantleVehicleAsset Gray;
+	if (!TestTrue(*FString::Printf(TEXT("the sedan chassis loads (%s)"), *Error), FMantleVehicleChassisBuilder::LoadSpec(TEXT("sedan"), Spec, Error) && FMantleVehicleChassisBuilder::MakeAsset(Spec, Gray, Error)))
 	{
 		return false;
 	}
-	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Spec, Grey.Body);
+	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Spec, Gray.Body);
 	FMantleVehicleModelPlacement Placement;
 	Placement.Scale = 0.5;
 	Placement.Offset = FVector(-150.0, -150.0, 20.0);
 	FMantleVehicleSkinned Skinned;
-	if (!TestTrue(*FString::Printf(TEXT("the grid is put on the chassis (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Grey.Body, Slots, Model, Placement, FMantleVehicleModelMap(), Skinned, Error)))
+	if (!TestTrue(*FString::Printf(TEXT("the grid is put on the chassis (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Gray.Body, Slots, Model, Placement, FMantleVehicleModelMap(), Skinned, Error)))
 	{
 		return false;
 	}
 	TestEqual(TEXT("the skin carries the UV channel along"), Skinned.Extras.UVs.Num(), 1);
-	TestEqual(TEXT("and the colours, one for each vertex of the body"), Skinned.Extras.Colors.Num(), Skinned.Body.LODs[0].Positions.Num());
+	TestEqual(TEXT("and the colors, one for each vertex of the body"), Skinned.Extras.Colors.Num(), Skinned.Body.LODs[0].Positions.Num());
 
 	const FString Folder = TEXT("/Temp/MantleVehicleExtrasTest");
 	USkeletalMesh* Kept = FMantleVehicleChassisMesh::Create(Skinned.Body, Folder, TEXT("GridKept"), Error, &Skinned.Materials, &Skinned.Extras);
@@ -210,7 +210,7 @@ bool FMantleVehicleModelExtrasReadTest::RunTest(const FString& Parameters)
 			const FPositionVertexBuffer& Positions = LOD.StaticVertexBuffers.PositionVertexBuffer;
 			const FColorVertexBuffer& Colors = LOD.StaticVertexBuffers.ColorVertexBuffer;
 			TestEqual(TEXT("the body has both UV channels"), static_cast<int32>(Vertices.GetNumTexCoords()), 2);
-			TestEqual(TEXT("and a colour for every vertex"), static_cast<int32>(Colors.GetNumVertices()), static_cast<int32>(Positions.GetNumVertices()));
+			TestEqual(TEXT("and a color for every vertex"), static_cast<int32>(Colors.GetNumVertices()), static_cast<int32>(Positions.GetNumVertices()));
 			int32 Wrong = 0;
 			int32 Matched = 0;
 			for (uint32 Vertex = 0; Vertex < Positions.GetNumVertices(); ++Vertex)
@@ -228,12 +228,12 @@ bool FMantleVehicleModelExtrasReadTest::RunTest(const FString& Parameters)
 				++Matched;
 				const FVector4f Tangent = Vertices.VertexTangentX(Vertex);
 				const bool bUV1 = NearUV(Vertices.GetVertexUV(Vertex, 1), FVector2f(static_cast<float>(Y) / Cells, static_cast<float>(X) / Cells));
-				const bool bColour = Colors.VertexColor(Vertex) == ColourOf(X, Y);
+				const bool bColor = Colors.VertexColor(Vertex) == ColorOf(X, Y);
 				const bool bTangent = Tangent.Y > 0.9f && FMath::Abs(Tangent.X) < 0.2f;
-				Wrong += bUV1 && bColour && bTangent ? 0 : 1;
+				Wrong += bUV1 && bColor && bTangent ? 0 : 1;
 			}
 			TestTrue(*FString::Printf(TEXT("every vertex of the body is a corner of the grid (%d of %d)"), Matched, static_cast<int32>(Positions.GetNumVertices())), Matched == static_cast<int32>(Positions.GetNumVertices()));
-			TestEqual(TEXT("each keeps its second UV, its colour and the creator's tangent"), Wrong, 0);
+			TestEqual(TEXT("each keeps its second UV, its color and the creator's tangent"), Wrong, 0);
 		}
 		const FSkeletalMeshLODInfo* Info = Kept->GetLODInfo(0);
 		TestTrue(TEXT("the build does not recompute the tangents it was given"), Info && !Info->BuildSettings.bRecomputeTangents);
@@ -336,7 +336,7 @@ bool FMantleVehicleModelNaniteTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(*FString::Printf(TEXT("from its full-detail source, at x %.0f"), FromSource.Bounds().GetCenter().X), FromSource.Bounds().GetCenter().X > 1200.0);
 		TestEqual(TEXT("all 72 triangles"), FromSource.NumTriangles(), 72);
-		TestEqual(TEXT("the second UV channel, the colours and the tangents come with it"), FromSource.ExtraUVs.Num() + (FromSource.Colors.Num() == FromSource.LOD.Positions.Num() ? 1 : 0)
+		TestEqual(TEXT("the second UV channel, the colors and the tangents come with it"), FromSource.ExtraUVs.Num() + (FromSource.Colors.Num() == FromSource.LOD.Positions.Num() ? 1 : 0)
 			+ (FromSource.LOD.Tangents.Num() == FromSource.LOD.Positions.Num() ? 1 : 0), 3);
 		if (FromSource.ExtraUVs.Num() == 1 && FromSource.Colors.Num() == FromSource.LOD.Positions.Num())
 		{
@@ -347,9 +347,9 @@ bool FMantleVehicleModelNaniteTest::RunTest(const FString& Parameters)
 				int32 Y = 0;
 				const FVector3f Back = FromSource.LOD.Positions[Vertex] - FVector3f(1000.0f, 0.0f, 0.0f);
 				const bool bCorner = CornerOf(Back, X, Y);
-				Wrong += bCorner && NearUV(FromSource.ExtraUVs[0][Vertex], FVector2f(static_cast<float>(Y) / Cells, static_cast<float>(X) / Cells)) && FromSource.Colors[Vertex] == ColourOf(X, Y) ? 0 : 1;
+				Wrong += bCorner && NearUV(FromSource.ExtraUVs[0][Vertex], FVector2f(static_cast<float>(Y) / Cells, static_cast<float>(X) / Cells)) && FromSource.Colors[Vertex] == ColorOf(X, Y) ? 0 : 1;
 			}
-			TestEqual(TEXT("each vertex has its own second UV and colour"), Wrong, 0);
+			TestEqual(TEXT("each vertex has its own second UV and color"), Wrong, 0);
 		}
 		TestTrue(TEXT("the build is told it was read from the source"), FromSource.Notes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("full-detail source")); }));
 	}

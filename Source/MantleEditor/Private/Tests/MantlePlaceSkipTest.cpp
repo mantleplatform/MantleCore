@@ -69,7 +69,7 @@ namespace MantlePlaceSkipTestPrivate
 		}
 	};
 
-	/** An actor of the class at Path (a script path), labelled; null when the build has no such class. */
+	/** An actor of the class at Path (a script path), labeled; null when the build has no such class. */
 	AActor* SpawnByPath(UWorld* World, const TCHAR* Path, const TCHAR* Label)
 	{
 		UClass* Class = LoadClass<AActor>(nullptr, Path);

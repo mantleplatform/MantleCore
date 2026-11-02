@@ -77,7 +77,7 @@ namespace MantleMetaHumanPosePrivate
 			OutError = FString::Printf(TEXT("an IK rig could not be made for %s"), *Mesh.GetName());
 			return nullptr;
 		}
-		// A VRoid/VRM skeleton's chains by name (Epic's characterisation knows none of its bones), else Epic's auto definition.
+		// A VRoid/VRM skeleton's chains by name (Epic's characterization knows none of its bones), else Epic's auto definition.
 		TArray<FName> BoneNames;
 		for (const FMeshBoneInfo& Bone : Mesh.GetRefSkeleton().GetRefBoneInfo())
 		{

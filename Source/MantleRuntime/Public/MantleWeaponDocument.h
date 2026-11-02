@@ -856,7 +856,7 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<bool> bStaffMelee{ false };
 	/** sRGB. */
 	TMantleWeaponDocValue<FColor> Color{ FColor(40, 110, 160) };
-	/** #904: sRGB, multiplied into the element's effects; only where the weapon has an element (GetElement). Unset: the element's own colours. */
+	/** #904: sRGB, multiplied into the element's effects; only where the weapon has an element (GetElement). Unset: the element's own colors. */
 	TMantleWeaponDocValue<FColor> EffectsColor;
 	/** The weapon's skeletal mesh, a local name; every version-2 hold needs one (#897), so empty only on a refused document. */
 	FString Mesh;

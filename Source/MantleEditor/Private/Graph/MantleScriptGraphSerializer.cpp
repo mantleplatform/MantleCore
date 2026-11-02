@@ -19,7 +19,7 @@ namespace
 	}
 
 	/** Unconnected: a literal from the pin's own default value, for the three scalar categories a
-	 *  pin can be edited inline for (MantleScriptGraphSchema's pin-colour categories). Connected:
+	 *  pin can be edited inline for (MantleScriptGraphSchema's pin-color categories). Connected:
 	 *  an "@id[.output]" reference. Neither: nullptr, so the caller omits the JSON key entirely and
 	 *  lets the graph compiler's own RequireField/RequireInput/CollectCallArgs explain a missing
 	 *  value -- see MantleScriptGraphSerializer.h's header comment on why per-node validation isn't
@@ -54,7 +54,7 @@ namespace
 			// known simplification; use a Make Vector3 or Literal Vector3 node instead), but a
 			// template graph (MantleScriptTemplates.cpp) still needs to express a fixed literal
 			// position/offset without an extra node, so the plain default-value string is still
-			// honoured here if something (a template, a future editor) sets one.
+			// honored here if something (a template, a future editor) sets one.
 			FVector V;
 			if (V.InitFromString(Pin.DefaultValue))
 			{
@@ -322,7 +322,7 @@ namespace
 			return F;
 		}
 
-		OutError = FString::Printf(TEXT("unrecognised node kind '%s'"), *Kind);
+		OutError = FString::Printf(TEXT("unrecognized node kind '%s'"), *Kind);
 		return nullptr;
 	}
 }

@@ -56,7 +56,7 @@ constexpr int32 MantlePlaceMaterialTextureCount = 8;
 /** #533: wind.weight, how much each vertex sways. */
 enum class EMantlePlaceWindWeight : uint8
 {
-	/** "vertexColorR": the vertex colour's red. */
+	/** "vertexColorR": the vertex color's red. */
 	VertexColorR,
 
 	/** "uvV": 1 minus the first UV set's V (a card's top sways, its root stays). */
@@ -78,14 +78,14 @@ struct FMantlePlaceWind
 /** #533: the document's worldAligned object (WorldAlignedTexture and WorldAlignedNormal). */
 struct FMantlePlaceWorldAligned
 {
-	/** Centimetres one repeat covers, 1..100000. */
+	/** Centimeters one repeat covers, 1..100000. */
 	float TileSizeCm = 100.0f;
 
 	/** The projections' transition contrast, 1..16. */
 	float Sharpness = 1.0f;
 };
 
-/** #533: the vertex-colour channel a layer blend paints with. */
+/** #533: the vertex-color channel a layer blend paints with. */
 enum class EMantlePlaceLayerChannel : uint8
 {
 	R,
@@ -99,13 +99,13 @@ struct FMantlePlaceLayerBlend
 {
 	EMantlePlaceLayerChannel Channel = EMantlePlaceLayerChannel::R;
 
-	/** Linear RGB multiplied into the layer's base colour (A unused). */
+	/** Linear RGB multiplied into the layer's base color (A unused). */
 	FLinearColor BaseColorFactor = FLinearColor::White;
 };
 
 /**
  * #628: the document's foliage object, Unreal's Two Sided Foliage shading. Subsurface Color is
- * base colour x Tint x lerp(1, vertex colour red, VertexColorWeight) x Strength.
+ * base color x Tint x lerp(1, vertex color red, VertexColorWeight) x Strength.
  */
 struct FMantlePlaceFoliage
 {
@@ -115,7 +115,7 @@ struct FMantlePlaceFoliage
 	/** 0..4. */
 	float Strength = 1.0f;
 
-	/** 0..1: how much the vertex colour's red scales the transmitted light (0 ignores it). */
+	/** 0..1: how much the vertex color's red scales the transmitted light (0 ignores it). */
 	float VertexColorWeight = 0.0f;
 };
 
@@ -137,7 +137,7 @@ struct FMantlePlaceWaterNormal
 	/** Repeats across the mesh's UV set, -1024..1024 each; only with Uv. */
 	FVector2f Tiling = FVector2f(1.0f, 1.0f);
 
-	/** Centimetres one repeat covers, 1..100000; only with World. */
+	/** Centimeters one repeat covers, 1..100000; only with World. */
 	float WorldSizeCm = 100.0f;
 
 	/** Repeats a second, -10..10 each. */
@@ -151,7 +151,7 @@ struct FMantlePlaceWaterNormal
 
 /**
  * #628: the document's water object, Unreal's Single Layer Water shading on M_MantlePlace_Water. The coefficients
- * are per centimetre; the first normal map is the document's textures.normal, the second (when there is one) is
+ * are per centimeter; the first normal map is the document's textures.normal, the second (when there is one) is
  * Textures[WaterNormal2].
  */
 struct FMantlePlaceWater
@@ -245,10 +245,10 @@ struct FMantlePlaceCarPaint
 /** A material document's vertexColor (schema/material.schema.json, #471). */
 enum class EMantlePlaceVertexColor : uint8
 {
-	/** "none": the mesh's vertex colour is not used. */
+	/** "none": the mesh's vertex color is not used. */
 	None,
 
-	/** "multiplyBaseColor": its RGB multiplies the base colour. */
+	/** "multiplyBaseColor": its RGB multiplies the base color. */
 	MultiplyBaseColor,
 };
 
@@ -293,7 +293,7 @@ struct FMantlePlaceMaterialDesc
 
 	bool bDoubleSided = false;
 
-	/** Linear RGBA multiplied into the base colour texture. */
+	/** Linear RGBA multiplied into the base color texture. */
 	FLinearColor BaseColorFactor = FLinearColor::White;
 
 	float MetallicFactor = 1.0f;
@@ -371,7 +371,7 @@ struct FMantlePlaceMaterialDesc
 
 	/**
 	 * True when the material needs M_MantlePlace_Extended: a slot with its own transform, a normal scale or
-	 * occlusion strength other than 1, occlusion on UV 1, or a vertex colour mode (#471); a panning slot, wind,
+	 * occlusion strength other than 1, occlusion on UV 1, or a vertex color mode (#471); a panning slot, wind,
 	 * world-aligned mapping or a layer blend (#533). A key present at its default renders the same on
 	 * M_MantlePlace, so it stays there. Never for CarPaint.
 	 */
@@ -382,7 +382,7 @@ struct FMantlePlaceMaterialDesc
  * The parameter names M_MantlePlace exposes. The C++ side is written against these; the master
  * material and its six permutation instances are content (tools/materials/build_m_mantleplace.py
  * builds them headless, look-dev is a GUI handoff). Kept as TCHAR literals, not FName globals, so
- * nothing constructs an FName during static initialisation.
+ * nothing constructs an FName during static initialization.
  */
 namespace MantlePlaceMaterialParameters
 {
@@ -407,7 +407,7 @@ namespace MantlePlaceMaterialParameters
 	/**
 	 * M_MantlePlace_CarPaint only (tools/materials/Create-CarPaintMaterial.py, #487). It also has every
 	 * parameter above except AlphaCutoff. PaintTint is UMantleVehicleDefinition::PaintParameter's
-	 * default, so AMantleVehicle recolours a car-paint body the same way as an authored one.
+	 * default, so AMantleVehicle recolors a car-paint body the same way as an authored one.
 	 */
 	constexpr const TCHAR* PaintTint = TEXT("Paint Tint");
 	constexpr const TCHAR* FlakeDensity = TEXT("FlakeDensity");
@@ -425,8 +425,8 @@ namespace MantlePlaceMaterialParameters
 	 * M_MantlePlace_Extended only (tools/materials/Create-MantlePlaceExtendedMaterial.py, #471). It also has
 	 * every M_MantlePlace parameter except UVScale and UVOffset, which the per-slot rows below replace
 	 * (BuildOnParent derives a slot's rows from them when the document gives it no transform of its own).
-	 * Scalars: normal strength; occlusion strength; 0 or 1, the vertex colour's RGB multiplying the base
-	 * colour; 0 or 1, the UV set occlusion samples.
+	 * Scalars: normal strength; occlusion strength; 0 or 1, the vertex color's RGB multiplying the base
+	 * color; 0 or 1, the UV set occlusion samples.
 	 */
 	constexpr const TCHAR* NormalScale = TEXT("NormalScale");
 	constexpr const TCHAR* OcclusionStrength = TEXT("OcclusionStrength");
@@ -457,7 +457,7 @@ namespace MantlePlaceMaterialParameters
 	 * NormalScale and the Normal texture (and NormalUVPanning, which M_MantlePlace_Extended has too). Vectors:
 	 * scattering and absorption coefficients (linear RGB, 1/cm). Scalars: the phase function's g, the scale of the
 	 * scene behind the water. Per normal layer (Normal, Normal2): UVTiling (R, G), WorldSpace (0 mesh UVs, 1 world X and Y),
-	 * WorldScale (repeats per centimetre, 1 / worldSizeCm) and UVPanning (R, G, repeats a second). Normal2 is the second
+	 * WorldScale (repeats per centimeter, 1 / worldSizeCm) and UVPanning (R, G, repeats a second). Normal2 is the second
 	 * normal map texture, used by the SecondNormal permutation.
 	 */
 	constexpr const TCHAR* WaterScattering = TEXT("WaterScattering");
@@ -489,19 +489,19 @@ namespace MantlePlaceMaterialParameters
 	constexpr const TCHAR* SubsurfaceStrength = TEXT("SubsurfaceStrength");
 	constexpr const TCHAR* SubsurfaceVertexColorWeight = TEXT("SubsurfaceVertexColorWeight");
 
-	/** Wind scalars: SimpleGrassWind's intensity and speed; 0 or 1, the weight from the vertex colour's red; 0 or 1, from 1 - V. */
+	/** Wind scalars: SimpleGrassWind's intensity and speed; 0 or 1, the weight from the vertex color's red; 0 or 1, from 1 - V. */
 	constexpr const TCHAR* WindIntensity = TEXT("WindIntensity");
 	constexpr const TCHAR* WindSpeed = TEXT("WindSpeed");
 	constexpr const TCHAR* WindWeightVertexColor = TEXT("WindWeightVertexColor");
 	constexpr const TCHAR* WindWeightUV = TEXT("WindWeightUV");
 
-	/** World-aligned scalars: centimetres a repeat covers, and the projections' transition contrast. */
+	/** World-aligned scalars: centimeters a repeat covers, and the projections' transition contrast. */
 	constexpr const TCHAR* WorldAlignedTileSize = TEXT("WorldAlignedTileSize");
 	constexpr const TCHAR* WorldAlignedSharpness = TEXT("WorldAlignedSharpness");
 
 	/**
-	 * Layer blend: the layer's textures (as BaseColor, Normal, ORM), its base colour factor (linear RGB), and the
-	 * vertex-colour channel as a one-hot RGBA mask (the blend's alpha is dot(vertex colour, mask)).
+	 * Layer blend: the layer's textures (as BaseColor, Normal, ORM), its base color factor (linear RGB), and the
+	 * vertex-color channel as a one-hot RGBA mask (the blend's alpha is dot(vertex color, mask)).
 	 */
 	constexpr const TCHAR* LayerBaseColor = TEXT("LayerBaseColor");
 	constexpr const TCHAR* LayerNormal = TEXT("LayerNormal");
@@ -530,7 +530,7 @@ public:
 	/** Largest material document accepted (the worker's MaxMaterialBytes). */
 	static constexpr int32 MaxDocumentBytes = 16 * 1024;
 
-	/** Where the extended master lives (#471): M_MantlePlace plus per-slot UV transforms, normal and occlusion strength, occlusion UV, vertex colour. */
+	/** Where the extended master lives (#471): M_MantlePlace plus per-slot UV transforms, normal and occlusion strength, occlusion UV, vertex color. */
 	static constexpr const TCHAR* ExtendedMasterMaterialPath = TEXT("/Game/Mantle/Materials/M_MantlePlace_Extended.M_MantlePlace_Extended");
 
 	/**
@@ -556,7 +556,7 @@ public:
 	static constexpr int32 WaterNormal2PermutationIndex = 24;
 	static constexpr int32 AdditivePermutationBase = 25;
 
-	/** #533: World Position Offset stops past this many centimetres on a component drawing a Wind material. */
+	/** #533: World Position Offset stops past this many centimeters on a component drawing a Wind material. */
 	static constexpr int32 WindDisableDistance = 5000;
 
 	/** The car-paint permutation's asset name: MI_MantlePlace_CarPaint, an instance of M_MantlePlace_CarPaint. */
@@ -583,7 +583,7 @@ public:
 	static EMantlePlaceTextureSlot BaseSlotOf(EMantlePlaceTextureSlot Slot);
 
 	/**
-	 * How a slot's texture is read: base colour and emissive sRGB colour, the normal map Normal, ORM linear data;
+	 * How a slot's texture is read: base color and emissive sRGB color, the normal map Normal, ORM linear data;
 	 * a layer slot as its base slot.
 	 */
 	static EMantleTextureRole RoleForSlot(EMantlePlaceTextureSlot Slot);
@@ -672,7 +672,7 @@ public:
 
 	/**
 	 * As above for a document. A car-paint document whose permutation is missing falls back to
-	 * MI_MantlePlace_Opaque (same parameter names, so it keeps its colour and textures without the
+	 * MI_MantlePlace_Opaque (same parameter names, so it keeps its color and textures without the
 	 * clear coat), with bOutFellBack set and one warning per process
 	 * ("MANTLE_PLACE_MATERIAL M_MantlePlace_CarPaint is missing"). A document using #471's keys whose
 	 * M_MantlePlace_Extended permutation is missing falls back to the M_MantlePlace permutation of the same
@@ -686,7 +686,7 @@ public:
 	static UMaterialInterface* LoadPermutation(const FMantlePlaceMaterialDesc& Desc, bool* bOutFellBack = nullptr);
 
 	/**
-	 * Sets #471's parameters (strengths, occlusion UV, vertex colour, every slot's UV rows) and #533's (every
+	 * Sets #471's parameters (strengths, occlusion UV, vertex color, every slot's UV rows) and #533's (every
 	 * slot's panning; the wind, world-aligned or layer-blend values the document has) on an instance of
 	 * M_MantlePlace_Extended. The static switches are the parent's (the permutation). A water document (#628) also gets
 	 * ApplyWater's values, so the instance is right on M_MantlePlace_Water and keeps its first normal's tiling and
@@ -734,8 +734,8 @@ public:
 	 *   uploaded with no role stays the uploaded PNG/JPEG, never passed through that flip, and decodes
 	 *   to BGRA8: only then is green inverted here, so every normal map reaching M_MantlePlace is in
 	 *   Unreal's convention. Other formats are refused.
-	 * - ORM: a BC4 texture (the worker's choice for a grey data image) samples as (R, 0, 0), which
-	 *   would zero roughness and metallic, so it is expanded to grey BGRA8 (R = G = B).
+	 * - ORM: a BC4 texture (the worker's choice for a gray data image) samples as (R, 0, 0), which
+	 *   would zero roughness and metallic, so it is expanded to gray BGRA8 (R = G = B).
 	 * - A layer blend's slot (#533) is treated as the base slot it mirrors.
 	 * False, with the reason, when the texture cannot serve the slot.
 	 */

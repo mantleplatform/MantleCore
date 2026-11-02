@@ -73,7 +73,7 @@ namespace MantleSkyMeshTestPrivate
 		return Actor;
 	}
 
-	/** A plain actor with a scene root, which ClassifyActor makes a Group, labelled as a sky Blueprint is. */
+	/** A plain actor with a scene root, which ClassifyActor makes a Group, labeled as a sky Blueprint is. */
 	AActor* SpawnGroupActor(UWorld* World, const TCHAR* Label)
 	{
 		AActor* Actor = World->SpawnActor<AActor>();

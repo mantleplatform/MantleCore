@@ -254,7 +254,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	TArray<TSoftObjectPtr<UObject>> MagazineSections;
 
-	/** Uniform, centimetres per model unit. */
+	/** Uniform, centimeters per model unit. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	float FitScale = 1.f;
 

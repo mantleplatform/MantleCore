@@ -62,7 +62,7 @@ namespace
 		// A rope's angles are free, so nothing twists it; a weld's or a hinge's twist breaks it too.
 		const bool bAngularBreakable = bBreakable && Props.Type != EMantleConstraintType::Rope;
 		Instance.SetAngularBreakable(bAngularBreakable,
-			bAngularBreakable ? static_cast<float>(Props.BreakForce.GetValue() * FMantleConstraints::UnrealTorquePerNewtonMetre) : 0.0f);
+			bAngularBreakable ? static_cast<float>(Props.BreakForce.GetValue() * FMantleConstraints::UnrealTorquePerNewtonMeter) : 0.0f);
 	}
 
 	/** A world-space joint frame in a body's own space, unscaled, as the engine keeps a constraint's frames. */
@@ -323,7 +323,7 @@ bool FMantleConstraints::ReadEditorConstraint(const UPhysicsConstraintComponent*
 	}
 	else if (Profile.bAngularBreakable && OutProps.Type != EMantleConstraintType::Rope)
 	{
-		BreakForce = Profile.AngularBreakThreshold / UnrealTorquePerNewtonMetre;
+		BreakForce = Profile.AngularBreakThreshold / UnrealTorquePerNewtonMeter;
 	}
 	if (BreakForce > 0.0)
 	{

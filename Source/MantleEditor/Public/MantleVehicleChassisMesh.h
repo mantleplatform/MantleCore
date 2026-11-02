@@ -8,25 +8,25 @@ struct FMantleSkinnedMesh;
 struct FSkeletalMaterial;
 
 /**
- * What a creator's model brings to a body beyond its triangles and its first UV set (#821): its other UV channels and its painted vertex colours, each one entry per vertex of
- * the body, in the body's vertex order. A channel or colour list of any other length is left out. The mesh keeps up to the skeletal mesh limit (MAX_TEXCOORDS, 4 channels in all).
+ * What a creator's model brings to a body beyond its triangles and its first UV set (#821): its other UV channels and its painted vertex colors, each one entry per vertex of
+ * the body, in the body's vertex order. A channel or color list of any other length is left out. The mesh keeps up to the skeletal mesh limit (MAX_TEXCOORDS, 4 channels in all).
  */
 struct FMantleVehicleBodyExtras
 {
 	/** UV channels 1 and up. */
 	TArray<TArray<FVector2f>> UVs;
-	/** Vertex colours; empty for none. */
+	/** Vertex colors; empty for none. */
 	TArray<FColor> Colors;
 
 	bool IsEmpty() const { return UVs.Num() == 0 && Colors.Num() == 0; }
 };
 
 /**
- * A chassis's grey body (FMantleVehicleChassisBuilder::MakeAsset) as a saved skeletal mesh asset (#793 step 4), so a vehicle shaped in the
+ * A chassis's gray body (FMantleVehicleChassisBuilder::MakeAsset) as a saved skeletal mesh asset (#793 step 4), so a vehicle shaped in the
  * Build a vehicle window is an ordinary vehicle asset: Put it in my level, Test Locally and Publish all read its Body the way they read a
- * creator's model, and no part of them knows the vehicle was never modelled.
+ * creator's model, and no part of them knows the vehicle was never modeled.
  *
- * Two assets, SKM_<Name> (the mesh: a root bone, a bone at each wheel centre, the grey box and a cylinder on each wheel bone, one material
+ * Two assets, SKM_<Name> (the mesh: a root bone, a bone at each wheel center, the gray box and a cylinder on each wheel bone, one material
  * slot left empty so it draws Mantle's default surface) and SK_<Name> (its skeleton), the same recipe the weapon builder's rigid mesh uses.
  */
 struct MANTLEEDITOR_API FMantleVehicleChassisMesh
@@ -46,10 +46,10 @@ struct MANTLEEDITOR_API FMantleVehicleChassisMesh
 	 * a name is not usable, or a file cannot be saved. Game thread.
 	 *
 	 * ModelMaterials (#821, chassis from a model): a creator's model's material slots, which the body's sections name by MaterialIndex; the mesh then has those
-	 * slots, a polygon group for each. Null (the grey chassis) leaves one empty slot named after the first section.
+	 * slots, a polygon group for each. Null (the gray chassis) leaves one empty slot named after the first section.
 	 *
-	 * The body's own tangents (a creator's model has them) are kept: the build recomputes tangents from the UVs only for a body that has none (the grey chassis). Extras
-	 * (the model's other UV channels and vertex colours) are written beside them.
+	 * The body's own tangents (a creator's model has them) are kept: the build recomputes tangents from the UVs only for a body that has none (the gray chassis). Extras
+	 * (the model's other UV channels and vertex colors) are written beside them.
 	 */
 	static USkeletalMesh* Create(const FMantleSkinnedMesh& Body, const FString& PackagePath, const FString& Name, FString& OutError,
 		const TArray<FSkeletalMaterial>* ModelMaterials = nullptr, const FMantleVehicleBodyExtras* Extras = nullptr);

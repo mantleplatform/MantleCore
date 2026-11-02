@@ -1,5 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
-#include "Graph/MantleGraphCatalogue.h"
+#include "Graph/MantleGraphCatalog.h"
 
 #include "MantleApiManifest.h"
 
@@ -33,12 +33,12 @@ namespace
 	}
 }
 
-bool FMantleGraphCatalogue::IsHandlerType(const FString& ParamType)
+bool FMantleGraphCatalog::IsHandlerType(const FString& ParamType)
 {
 	return ParamType.TrimStartAndEnd().StartsWith(TEXT("("));
 }
 
-TArray<FMantleGraphPinDef> FMantleGraphCatalogue::ParseHandlerSignature(const FString& Signature)
+TArray<FMantleGraphPinDef> FMantleGraphCatalog::ParseHandlerSignature(const FString& Signature)
 {
 	TArray<FMantleGraphPinDef> Pins;
 	FString Sig = Signature.TrimStartAndEnd();
@@ -61,7 +61,7 @@ TArray<FMantleGraphPinDef> FMantleGraphCatalogue::ParseHandlerSignature(const FS
 		if (!Entry.Split(TEXT(":"), &Name, &Type))
 		{
 			// Not a "name: Type" entry (e.g. bare "...any" for a fully variadic handler). The
-			// graph must declare its own output names for this node; the catalogue can't.
+			// graph must declare its own output names for this node; the catalog can't.
 			continue;
 		}
 		FMantleGraphPinDef Pin;
@@ -101,13 +101,13 @@ namespace
 			Def.bService = Class.bService;
 			Def.bIsSignal = true;
 			Def.Side = Signal.Side;
-			Def.Outputs = FMantleGraphCatalogue::ParseHandlerSignature(Signal.Args);
+			Def.Outputs = FMantleGraphCatalog::ParseHandlerSignature(Signal.Args);
 			Def.Doc = Signal.Doc;
 			Out.Add(MoveTemp(Def));
 		}
 		for (const FMantleApiManifestMethod& Method : Class.Methods)
 		{
-			const bool bIsHandlerShaped = Method.Params.Num() > 0 && FMantleGraphCatalogue::IsHandlerType(Method.Params.Last().Type);
+			const bool bIsHandlerShaped = Method.Params.Num() > 0 && FMantleGraphCatalog::IsHandlerType(Method.Params.Last().Type);
 			FMantleGraphNodeDef Def;
 			Def.ClassName = Class.Name;
 			Def.MemberName = Method.Name;
@@ -122,7 +122,7 @@ namespace
 				{
 					Def.Inputs.Add(MantleGraphMakeParamPin(Method.Params[i]));
 				}
-				Def.Outputs = FMantleGraphCatalogue::ParseHandlerSignature(Method.Params.Last().Type);
+				Def.Outputs = FMantleGraphCatalog::ParseHandlerSignature(Method.Params.Last().Type);
 			}
 			else
 			{
@@ -169,7 +169,7 @@ namespace
 	}
 }
 
-const TArray<FMantleGraphNodeDef>& FMantleGraphCatalogue::All()
+const TArray<FMantleGraphNodeDef>& FMantleGraphCatalog::All()
 {
 	static TArray<FMantleGraphNodeDef> Cached;
 	static bool bBuilt = false;
@@ -184,7 +184,7 @@ const TArray<FMantleGraphNodeDef>& FMantleGraphCatalogue::All()
 	return Cached;
 }
 
-const FMantleGraphNodeDef* FMantleGraphCatalogue::FindByDotted(const FString& Dotted, EMantleGraphNodeCategory Category, FString& OutError)
+const FMantleGraphNodeDef* FMantleGraphCatalog::FindByDotted(const FString& Dotted, EMantleGraphNodeCategory Category, FString& OutError)
 {
 	FString ClassName, MemberName;
 	if (!Dotted.Split(TEXT("."), &ClassName, &MemberName) || ClassName.IsEmpty() || MemberName.IsEmpty())

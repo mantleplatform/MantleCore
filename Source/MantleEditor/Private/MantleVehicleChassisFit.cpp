@@ -11,8 +11,8 @@ namespace MantleVehicleChassisFitPrivate
 	constexpr double AxleBand = 0.1;
 
 	/** Wheels spread across the model by less than the larger of this (cm) and this share of the wheelbase are in one line down the middle. */
-	constexpr double CentrelineSpreadMin = 4.0;
-	constexpr double CentrelineSpreadShare = 0.03;
+	constexpr double CenterlineSpreadMin = 4.0;
+	constexpr double CenterlineSpreadShare = 0.03;
 
 	/** The most a box's half size may be written as (the vehicle asset's own limit). */
 	constexpr double MaxBoxExtent = 1000.0;
@@ -103,16 +103,16 @@ FMantleChassisLayout FMantleVehicleChassisFit::LayoutFromWheels(const TConstArra
 	{
 		return Layout;
 	}
-	FVector Min = Wheels[0].Centre;
-	FVector Max = Wheels[0].Centre;
+	FVector Min = Wheels[0].Center;
+	FVector Max = Wheels[0].Center;
 	double SumZ = 0.0;
 	double SumRadius = 0.0;
 	int32 RadiusCount = 0;
 	for (const FMantleVehicleFitWheel& Wheel : Wheels)
 	{
-		Min = Min.ComponentMin(Wheel.Centre);
-		Max = Max.ComponentMax(Wheel.Centre);
-		SumZ += Wheel.Centre.Z;
+		Min = Min.ComponentMin(Wheel.Center);
+		Max = Max.ComponentMax(Wheel.Center);
+		SumZ += Wheel.Center.Z;
 		if (Wheel.Radius > 0.0)
 		{
 			SumRadius += Wheel.Radius;
@@ -125,15 +125,15 @@ FMantleChassisLayout FMantleVehicleChassisFit::LayoutFromWheels(const TConstArra
 		return Layout;
 	}
 
-	// Every wheel on the centre line (a motorcycle's two): the layout has no track to find, and Track = 0 is not an invalid layout.
-	if (Max.Y - Min.Y < FMath::Max(CentrelineSpreadMin, CentrelineSpreadShare * Length))
+	// Every wheel on the center line (a motorcycle's two): the layout has no track to find, and Track = 0 is not an invalid layout.
+	if (Max.Y - Min.Y < FMath::Max(CenterlineSpreadMin, CenterlineSpreadShare * Length))
 	{
-		Layout.bCentreline = true;
+		Layout.bCenterline = true;
 		Layout.Track = 0.0;
 		Layout.FrontX = Max.X;
 		Layout.RearX = Min.X;
-		Layout.CentreY = 0.5 * (Min.Y + Max.Y);
-		Layout.CentreZ = SumZ / Wheels.Num();
+		Layout.CenterY = 0.5 * (Min.Y + Max.Y);
+		Layout.CenterZ = SumZ / Wheels.Num();
 		Layout.Radius = RadiusCount > 0 ? SumRadius / RadiusCount : 0.0;
 		Layout.bValid = true;
 		return Layout;
@@ -150,10 +150,10 @@ FMantleChassisLayout FMantleVehicleChassisFit::LayoutFromWheels(const TConstArra
 		int32 Count = 0;
 		for (const FMantleVehicleFitWheel& Wheel : Wheels)
 		{
-			if (bFront ? Wheel.Centre.X >= Max.X - Band : Wheel.Centre.X <= Min.X + Band)
+			if (bFront ? Wheel.Center.X >= Max.X - Band : Wheel.Center.X <= Min.X + Band)
 			{
-				LowY = FMath::Min(LowY, Wheel.Centre.Y);
-				HighY = FMath::Max(HighY, Wheel.Centre.Y);
+				LowY = FMath::Min(LowY, Wheel.Center.Y);
+				HighY = FMath::Max(HighY, Wheel.Center.Y);
 				++Count;
 			}
 		}
@@ -170,8 +170,8 @@ FMantleChassisLayout FMantleVehicleChassisFit::LayoutFromWheels(const TConstArra
 	}
 	Layout.FrontX = Max.X;
 	Layout.RearX = Min.X;
-	Layout.CentreY = 0.5 * (Min.Y + Max.Y);
-	Layout.CentreZ = SumZ / Wheels.Num();
+	Layout.CenterY = 0.5 * (Min.Y + Max.Y);
+	Layout.CenterZ = SumZ / Wheels.Num();
 	Layout.Radius = RadiusCount > 0 ? SumRadius / RadiusCount : 0.0;
 	Layout.bValid = true;
 	return Layout;
@@ -184,12 +184,12 @@ FMantleChassisStretch FMantleVehicleChassisFit::Stretch(const FMantleVehicleChas
 	Out.Size = Size > 0.0 ? Size : 1.0;
 	const double Radius = Layout.FitRadius();
 	Out.Kx = Clamped(Out.Size * Layout.Wheelbase() / Chassis.Wheelbase, Out.bClampedX);
-	// A centreline chassis (a motorcycle) or layout has no track to compare: its width grows as its wheels do, so a bike with big wheels is a bigger bike.
-	const double TrackRatio = Layout.bCentreline || Chassis.bCentreline ? Layout.FitRadius() / Chassis.WheelRadius : Layout.Track / Chassis.Track;
+	// A centerline chassis (a motorcycle) or layout has no track to compare: its width grows as its wheels do, so a bike with big wheels is a bigger bike.
+	const double TrackRatio = Layout.bCenterline || Chassis.bCenterline ? Layout.FitRadius() / Chassis.WheelRadius : Layout.Track / Chassis.Track;
 	Out.Ky = Clamped(Out.Size * TrackRatio, Out.bClampedY);
 	Out.Kz = Clamped(Out.Size * Radius / Chassis.WheelRadius, Out.bClampedZ);
 	// The chassis's origin on the model: the middle of its axles, the ground under its wheels, the middle of its track.
-	Out.Origin = FVector(0.5 * (Layout.FrontX + Layout.RearX), Layout.CentreY, Layout.CentreZ - Radius);
+	Out.Origin = FVector(0.5 * (Layout.FrontX + Layout.RearX), Layout.CenterY, Layout.CenterZ - Radius);
 	return Out;
 }
 
@@ -325,13 +325,13 @@ bool FMantleVehicleChassisFit::ClampBoxToBodyXY(FMantleChassisBox& Box, const FV
 		{
 			continue;
 		}
-		const double Centre = 0.5 * (Low + High);
+		const double Center = 0.5 * (Low + High);
 		const double Half = 0.5 * (High - Low);
-		if (!FMath::IsNearlyEqual(Centre, Box.Center[Axis], 1e-6) || !FMath::IsNearlyEqual(Half, Box.Extent[Axis], 1e-6))
+		if (!FMath::IsNearlyEqual(Center, Box.Center[Axis], 1e-6) || !FMath::IsNearlyEqual(Half, Box.Extent[Axis], 1e-6))
 		{
 			bChanged = true;
 		}
-		Box.Center[Axis] = Centre;
+		Box.Center[Axis] = Center;
 		Box.Extent[Axis] = Half;
 	}
 	return bChanged;
@@ -359,7 +359,7 @@ void FMantleVehicleChassisFit::Apply(const FMantleChassisPlacement& Placement, U
 	Source.Modify();
 	FMantleVehicleSourceTuning& Tuning = Source.Tuning;
 
-	// The model's own physics asset gave the converter its boxes and centre of mass; neither survives.
+	// The model's own physics asset gave the converter its boxes and center of mass; neither survives.
 	Tuning.Collision.Reset();
 	FMantleVehicleSourceBox& Box = Tuning.Collision.AddDefaulted_GetRef();
 	Box.Center = Placement.CollisionCenter;

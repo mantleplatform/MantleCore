@@ -230,7 +230,7 @@ void FMantleScriptDiscovery::DiscoverAt(const FString& ScriptsRoot, TArray<FMant
 		OutRows.Add(Row);
 	}
 
-	// UMantleScriptGraph assets. A graph is a .uasset, not a recognised text extension
+	// UMantleScriptGraph assets. A graph is a .uasset, not a recognized text extension
 	// above, so its row is assembled from the pre-discovered asset list rather than from disk.
 	for (const FAssetData& Asset : GraphAssets)
 	{

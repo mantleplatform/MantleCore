@@ -1,7 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "Graph/MantleScriptGraphNode.h"
 
-#include "Graph/MantleGraphCatalogue.h"
+#include "Graph/MantleGraphCatalog.h"
 #include "Graph/MantleScriptEdGraph.h"
 
 const FName FMantleGraphPinCategory::Exec(TEXT("exec"));
@@ -132,10 +132,10 @@ void UMantleScriptGraphNode::AllocateDefaultPins()
 			NodeKind == TEXT("event") ? EMantleGraphNodeCategory::Event :
 			NodeKind == TEXT("call") ? EMantleGraphNodeCategory::Call :
 			NodeKind == TEXT("get") ? EMantleGraphNodeCategory::Get : EMantleGraphNodeCategory::Set;
-		if (const FMantleGraphNodeDef* Def = FMantleGraphCatalogue::FindByDotted(Dotted, Category, Err))
+		if (const FMantleGraphNodeDef* Def = FMantleGraphCatalog::FindByDotted(Dotted, Category, Err))
 		{
 			AddPinsForMember(*this, *Def, !bPure);
-			CatalogueDoc = Def->Doc;
+			CatalogDoc = Def->Doc;
 		}
 		return;
 	}
@@ -440,9 +440,9 @@ FText UMantleScriptGraphNode::GetNodeTitle(ENodeTitleType::Type TitleType) const
 
 FText UMantleScriptGraphNode::GetTooltipText() const
 {
-	if (!CatalogueDoc.IsEmpty())
+	if (!CatalogDoc.IsEmpty())
 	{
-		return FText::FromString(CatalogueDoc);
+		return FText::FromString(CatalogDoc);
 	}
 	return GetNodeTitle(ENodeTitleType::FullTitle);
 }
@@ -460,7 +460,7 @@ FLinearColor UMantleScriptGraphNode::GetNodeTitleColor() const
 	if (NodeKind == TEXT("branch") || NodeKind == TEXT("sequence") || NodeKind == TEXT("forloop") ||
 		NodeKind == TEXT("foreach") || NodeKind == TEXT("while") || NodeKind == TEXT("doonce"))
 	{
-		return FLinearColor(0.15f, 0.15f, 0.6f); // Blueprint flow-control blue-grey
+		return FLinearColor(0.15f, 0.15f, 0.6f); // Blueprint flow-control blue-gray
 	}
-	return FLinearColor(0.4f, 0.4f, 0.4f); // ordinary call/statement grey
+	return FLinearColor(0.4f, 0.4f, 0.4f); // ordinary call/statement gray
 }

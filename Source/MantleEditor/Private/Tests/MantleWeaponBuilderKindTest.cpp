@@ -6,7 +6,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 // The weapon builder kind on the same synthetic rifle MantleWeaponFitTest builds from boxes of points, in
-// centimetres along mesh +Y with up +Z: the muzzle tip is at (0, 80, 5), no asset needed.
+// centimeters along mesh +Y with up +Z: the muzzle tip is at (0, 80, 5), no asset needed.
 
 namespace MantleWeaponBuilderKindTestPrivate
 {
@@ -261,13 +261,13 @@ bool FMantleWeaponBuilderKindHoldTest::RunTest(const FString& Parameters)
 			CheckClear(*this, TEXT("rifle"), Ghost, Rear, Muzzle->Transform.GetLocation());
 			if (const FMantleGhostCapsule* Head = FindCapsule(Ghost, TEXT("Head")))
 			{
-				// In the weapon frame +Y is the shooter's right, so the head's centre is on the negative side of the bore line.
-				const FVector Centre = Fit.MeshToWeapon.TransformPosition((Head->Start + Head->End) * 0.5);
-				TestTrue(TEXT("rifle: the head sits to the left of the bore line"), Centre.Y < Fit.Points.FindRef(TEXT("Muzzle")).GetLocation().Y - 2.0);
+				// In the weapon frame +Y is the shooter's right, so the head's center is on the negative side of the bore line.
+				const FVector Center = Fit.MeshToWeapon.TransformPosition((Head->Start + Head->End) * 0.5);
+				TestTrue(TEXT("rifle: the head sits to the left of the bore line"), Center.Y < Fit.Points.FindRef(TEXT("Muzzle")).GetLocation().Y - 2.0);
 				const FMantleBuilderPoint* Sight = MantleBuilderPoints::Find(Points, TEXT("Sight"));
 				if (TestNotNull(TEXT("rifle: sight"), Sight))
 				{
-					TestTrue(TEXT("rifle: the head is behind the sight"), Centre.X < Fit.MeshToWeapon.TransformPosition(Sight->Transform.GetLocation()).X);
+					TestTrue(TEXT("rifle: the head is behind the sight"), Center.X < Fit.MeshToWeapon.TransformPosition(Sight->Transform.GetLocation()).X);
 				}
 			}
 		}

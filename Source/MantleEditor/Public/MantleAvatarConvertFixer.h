@@ -42,9 +42,9 @@ class UObject;
  *   MHConform   (convert) a new MetaHuman Character conformed to the posed body with face landmarks from a front
  *               portrait, committed to the A-pose, hand joints re-estimated on the committed skin (pipeline step 04)
  *   MHSource    (convert) a MetaHuman Creator character picked as the source (an Epic preset or the creator's own): a copy
- *               of it set to the default height (its Height body constraint) and built as MHBuild builds, Epic's centre skin
+ *               of it set to the default height (its Height body constraint) and built as MHBuild builds, Epic's center skin
  *               tone too, then the same hand-off. Strip, MHPose and MHConform skip it (it has no mesh to convert)
- *   MHBuild     (convert) the character built with Epic's tools: Epic's centre skin tone, no Epic underwear, cloud skin
+ *   MHBuild     (convert) the character built with Epic's tools: Epic's center skin tone, no Epic underwear, cloud skin
  *               textures and face rig (signed in to Epic), the Optimized/Medium build, textures resized to 2048, the built
  *               height checked against the default (a warning) (step 05); then the hand-off (no remap yet): the avatar
  *               part becomes the built body and face, the build root the assembly folder, for the fixers after it
@@ -126,7 +126,7 @@ struct MANTLEEDITOR_API FMantleConvertPart
 	bool bAutoRigged = false;
 
 	/**
-	 * False for a part the creator opts into (an assembly's cloth-simulated piece). Fixers still analyse it, but the
+	 * False for a part the creator opts into (an assembly's cloth-simulated piece). Fixers still analyze it, but the
 	 * converter applies no fix to it except the one that includes it, and hands it to nobody while it stays out.
 	 */
 	bool bIncluded = true;
@@ -138,7 +138,7 @@ struct MANTLEEDITOR_API FMantleConvertPart
 /**
  * #625 (owner, 2026-10-02): how an avatar uploads. Convert: it becomes a MetaHuman (Epic's MetaHuman tools), wears
  * clothing and takes the avatar options. AsIs: what you see is what you get (a supported skeleton and Mantle's limits;
- * no customisation, no clothing); only while UMantleSettings::bAllowAsIsAvatars is on.
+ * no customization, no clothing); only while UMantleSettings::bAllowAsIsAvatars is on.
  */
 enum class EMantleAvatarRoute : uint8
 {
@@ -346,7 +346,7 @@ struct MANTLEEDITOR_API FMantleConvertFix
 
 	/**
 	 * #625: a line the creator must tick themselves (it starts unticked): e.g. "the kept parts are bare skin". While any
-	 * such line is unticked, Convert runs nothing (FMantleAvatarConverter::Convert) and the panel greys Convert.
+	 * such line is unticked, Convert runs nothing (FMantleAvatarConverter::Convert) and the panel grays Convert.
 	 */
 	bool bNeedsConfirm = false;
 

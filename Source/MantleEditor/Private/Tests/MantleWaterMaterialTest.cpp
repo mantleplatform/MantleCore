@@ -93,10 +93,10 @@ namespace MantleWaterMaterialTestPrivate
 		return Constant;
 	}
 
-	UMaterialExpressionConstant3Vector* AddColour(UMaterial* Material, const FLinearColor& Colour)
+	UMaterialExpressionConstant3Vector* AddColor(UMaterial* Material, const FLinearColor& Color)
 	{
 		UMaterialExpressionConstant3Vector* Constant = AddExpression<UMaterialExpressionConstant3Vector>(Material);
-		Constant->Constant = Colour;
+		Constant->Constant = Color;
 		return Constant;
 	}
 
@@ -146,7 +146,7 @@ namespace MantleWaterMaterialTestPrivate
 		Scaled->A.Connect(0, AddExpression<UMaterialExpressionTextureCoordinate>(Material));
 		Scaled->B.Connect(0, AddNumber(Material, Tiling));
 		UMaterialExpressionMultiply* Velocity = AddExpression<UMaterialExpressionMultiply>(Material);
-		Velocity->A.Connect(0, AddColour(Material, Direction));
+		Velocity->A.Connect(0, AddColor(Material, Direction));
 		Velocity->B.Connect(0, AddNumber(Material, Speed));
 		UMaterialExpressionPanner* Panner = AddExpression<UMaterialExpressionPanner>(Material);
 		Panner->Coordinate.Connect(0, Scaled);
@@ -167,7 +167,7 @@ namespace MantleWaterMaterialTestPrivate
 	}
 
 	/**
-	 * The UVs of the Spruce Forest lake's ripples (MF_Wind_Ripples): World Position XY over a size in centimetres on each axis, plus
+	 * The UVs of the Spruce Forest lake's ripples (MF_Wind_Ripples): World Position XY over a size in centimeters on each axis, plus
 	 * Time times a pan in repeats a second.
 	 */
 	template <typename TOwner>
@@ -449,7 +449,7 @@ namespace MantleWaterMaterialTestPrivate
 	/**
 	 * Stylized Village's MM_Water (Translucent, Default Lit), as its graph dump has it: Opacity and BaseColor each a "Foam on/off" static switch
 	 * (on) over the same shoreline foam, If(foam textures' product > Clamp((DistanceToNearestSurface - Foam Size) / Foam Contrast)) then 1 else 0,
-	 * times Foam Intensity; Opacity = Depth Fade (no opacity input) + that; BaseColor = Lerp(depth colour, foam colour, that), the depth colour
+	 * times Foam Intensity; Opacity = Depth Fade (no opacity input) + that; BaseColor = Lerp(depth color, foam color, that), the depth color
 	 * a Lerp from Color1 to Color2 by Power(Clamp((1 - (scene point - object).z) / Color_Depth), Color_Contrast) (scene point = camera +
 	 * Scene Depth / Pixel Depth x (world position - camera)); Normal = Lerp((0, 0, 1), Motion_4WayChaos_Normal(World XY / WaveSize, Speed,
 	 * normal texture), 1). The parameters are the instance MI_Water's.
@@ -475,7 +475,7 @@ namespace MantleWaterMaterialTestPrivate
 		OpacitySwitch->B.Connect(0, Fade);
 		Material->GetEditorOnlyData()->Opacity.Connect(0, OpacitySwitch);
 
-		// The depth colour.
+		// The depth color.
 		UMaterialExpressionConstant2Vector* Flat = AddExpression<UMaterialExpressionConstant2Vector>(Material);
 		UMaterialExpressionAppendVector* ObjectHeight = AddExpression<UMaterialExpressionAppendVector>(Material);
 		ObjectHeight->A.Connect(0, Flat);
@@ -500,12 +500,12 @@ namespace MantleWaterMaterialTestPrivate
 		WithFoam->A.Connect(0, Depth);
 		WithFoam->B.Connect(0, AddVectorParameter(Material, TEXT("foam color"), FLinearColor::White));
 		WithFoam->Alpha.Connect(0, Foam);
-		UMaterialExpressionStaticSwitchParameter* ColourSwitch = AddExpression<UMaterialExpressionStaticSwitchParameter>(Material);
-		ColourSwitch->ParameterName = TEXT("Foam on/off");
-		ColourSwitch->DefaultValue = true;
-		ColourSwitch->A.Connect(0, WithFoam);
-		ColourSwitch->B.Connect(0, Depth);
-		Material->GetEditorOnlyData()->BaseColor.Connect(0, ColourSwitch);
+		UMaterialExpressionStaticSwitchParameter* ColorSwitch = AddExpression<UMaterialExpressionStaticSwitchParameter>(Material);
+		ColorSwitch->ParameterName = TEXT("Foam on/off");
+		ColorSwitch->DefaultValue = true;
+		ColorSwitch->A.Connect(0, WithFoam);
+		ColorSwitch->B.Connect(0, Depth);
+		Material->GetEditorOnlyData()->BaseColor.Connect(0, ColorSwitch);
 
 		// The normal.
 		UMaterialExpressionMaterialFunctionCall* Motion = AddExpression<UMaterialExpressionMaterialFunctionCall>(Material);
@@ -518,7 +518,7 @@ namespace MantleWaterMaterialTestPrivate
 		Texture->SamplerType = SAMPLERTYPE_Normal;
 		ConnectCallInput(Motion, TEXT("Texture"), Texture);
 		UMaterialExpressionLinearInterpolate* Normal = AddExpression<UMaterialExpressionLinearInterpolate>(Material);
-		Normal->A.Connect(0, AddColour(Material, FLinearColor(0.0f, 0.0f, 1.0f)));
+		Normal->A.Connect(0, AddColor(Material, FLinearColor(0.0f, 0.0f, 1.0f)));
 		Normal->B.Connect(0, Motion);
 		Normal->Alpha.Connect(0, AddNumber(Material, 1.0f));
 		Material->GetEditorOnlyData()->Normal.Connect(0, Normal);
@@ -535,16 +535,16 @@ bool FMantleWaterDepthFadeOpacityTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleWaterMaterialTestPrivate;
 
-	// A Depth Fade (opacity 0.85) into Opacity, and a base colour that is a Lerp from a shallow to a deep colour by that fade.
+	// A Depth Fade (opacity 0.85) into Opacity, and a base color that is a Lerp from a shallow to a deep color by that fade.
 	UMaterial* Material = NewTranslucent();
 	UMaterialExpressionDepthFade* Fade = AddDepthFadeAt(Material, 0.85f, 100.0f);
-	UMaterialExpressionDepthFade* ColourFade = AddDepthFadeAt(Material, 1.0f, 100.0f);
-	UMaterialExpressionLinearInterpolate* Colour = AddExpression<UMaterialExpressionLinearInterpolate>(Material);
-	Colour->A.Connect(0, AddColour(Material, FLinearColor(0.0f, 0.30f, 0.30f)));
-	Colour->B.Connect(0, AddColour(Material, FLinearColor(0.0f, 0.02f, 0.03f)));
-	Colour->Alpha.Connect(0, ColourFade);
+	UMaterialExpressionDepthFade* ColorFade = AddDepthFadeAt(Material, 1.0f, 100.0f);
+	UMaterialExpressionLinearInterpolate* Color = AddExpression<UMaterialExpressionLinearInterpolate>(Material);
+	Color->A.Connect(0, AddColor(Material, FLinearColor(0.0f, 0.30f, 0.30f)));
+	Color->B.Connect(0, AddColor(Material, FLinearColor(0.0f, 0.02f, 0.03f)));
+	Color->Alpha.Connect(0, ColorFade);
 	Material->GetEditorOnlyData()->Opacity.Connect(0, Fade);
-	Material->GetEditorOnlyData()->BaseColor.Connect(0, Colour);
+	Material->GetEditorOnlyData()->BaseColor.Connect(0, Color);
 
 	const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Material);
 	const FMantleWaterBake& Water = Analysis.Fidelity2.Water;
@@ -552,12 +552,12 @@ bool FMantleWaterDepthFadeOpacityTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	TestTrue(TEXT("the opacity is read from the graph"), Water.bOpacityRead);
+	TestTrue(TEXT("the opacity is read from the graph"), Water.bOpacitiread);
 	TestEqual(TEXT("it is the far opacity, not the near end's 0"), Water.Opacity, 0.85, 1.0e-4);
-	if (TestTrue(TEXT("the deep colour is read"), Water.bColour))
+	if (TestTrue(TEXT("the deep color is read"), Water.bColor))
 	{
-		TestEqual(TEXT("deep green"), Water.Colour[1], 0.02, 1.0e-4);
-		TestEqual(TEXT("deep blue"), Water.Colour[2], 0.03, 1.0e-4);
+		TestEqual(TEXT("deep green"), Water.Color[1], 0.02, 1.0e-4);
+		TestEqual(TEXT("deep blue"), Water.Color[2], 0.03, 1.0e-4);
 	}
 	TestFalse(TEXT("nothing about the fade is a loss"), Analysis.Has(EMantleMaterialLoss::Animation));
 
@@ -570,8 +570,8 @@ bool FMantleWaterDepthFadeOpacityTest::RunTest(const FString& Parameters)
 	const FMantlePlaceMaterialDocument Doc = FMantlePlaceAssetConverter::MaterialFromGltf(Flattened, 0, TEXT("MI_Water"), FMantlePlaceAssetLimits(), false, Set, Extras);
 	TestEqual(TEXT("it stays translucent"), Doc.AlphaMode, FString(TEXT("blend")));
 	TestEqual(TEXT("the exported opacity is the far one"), Doc.BaseColorFactor[3], 0.85, 1.0e-4);
-	TestEqual(TEXT("the exported colour is the deep one (green)"), Doc.BaseColorFactor[1], 0.02, 1.0e-4);
-	TestEqual(TEXT("the exported colour is the deep one (blue)"), Doc.BaseColorFactor[2], 0.03, 1.0e-4);
+	TestEqual(TEXT("the exported color is the deep one (green)"), Doc.BaseColorFactor[1], 0.02, 1.0e-4);
+	TestEqual(TEXT("the exported color is the deep one (blue)"), Doc.BaseColorFactor[2], 0.03, 1.0e-4);
 
 	// Without the extras the bake's opacity stands: the fix is the recognition, not a change to every translucent material.
 	const FMantlePlaceMaterialDocument Plain = FMantlePlaceAssetConverter::MaterialFromGltf(Flattened, 0, TEXT("MI_Plain"), FMantlePlaceAssetLimits(), false, Set);
@@ -604,10 +604,10 @@ bool FMantleWaterSceneDepthOpacityTest::RunTest(const FString& Parameters)
 	Material->GetEditorOnlyData()->Opacity.Connect(0, Opacity);
 
 	FMantleWaterBake Water;
-	TestTrue(TEXT("a Scene Depth fade is found"), FMantleWaterMaterial::Recognise(Material, &Material->GetEditorOnlyData()->Opacity, nullptr, nullptr, Water));
-	TestTrue(TEXT("and read"), Water.bOpacityRead);
+	TestTrue(TEXT("a Scene Depth fade is found"), FMantleWaterMaterial::Recognize(Material, &Material->GetEditorOnlyData()->Opacity, nullptr, nullptr, Water));
+	TestTrue(TEXT("and read"), Water.bOpacitiread);
 	TestEqual(TEXT("its far opacity is the multiplier"), Water.Opacity, 0.6, 1.0e-4);
-	TestFalse(TEXT("no colour was asked for"), Water.bColour);
+	TestFalse(TEXT("no color was asked for"), Water.bColor);
 	return true;
 }
 
@@ -630,8 +630,8 @@ bool FMantleWaterEstimatedOpacityTest::RunTest(const FString& Parameters)
 	Material->GetEditorOnlyData()->Opacity.Connect(0, Opacity);
 
 	FMantleWaterBake Water;
-	TestTrue(TEXT("the fade is found"), FMantleWaterMaterial::Recognise(Material, &Material->GetEditorOnlyData()->Opacity, nullptr, nullptr, Water));
-	TestFalse(TEXT("the opacity could not be read"), Water.bOpacityRead);
+	TestTrue(TEXT("the fade is found"), FMantleWaterMaterial::Recognize(Material, &Material->GetEditorOnlyData()->Opacity, nullptr, nullptr, Water));
+	TestFalse(TEXT("the opacity could not be read"), Water.bOpacitiread);
 	TestEqual(TEXT("so it is the estimate"), Water.Opacity, FMantleWaterMaterial::EstimatedOpacity, 1.0e-6);
 	TestFalse(TEXT("and the reason is kept"), Water.Why.IsEmpty());
 
@@ -639,7 +639,7 @@ bool FMantleWaterEstimatedOpacityTest::RunTest(const FString& Parameters)
 	UMaterial* Plain = NewTranslucent();
 	Plain->GetEditorOnlyData()->Opacity.Connect(0, AddNumber(Plain, 0.4f));
 	FMantleWaterBake None;
-	TestFalse(TEXT("a constant opacity is not a depth fade"), FMantleWaterMaterial::Recognise(Plain, &Plain->GetEditorOnlyData()->Opacity, nullptr, nullptr, None));
+	TestFalse(TEXT("a constant opacity is not a depth fade"), FMantleWaterMaterial::Recognize(Plain, &Plain->GetEditorOnlyData()->Opacity, nullptr, nullptr, None));
 	return true;
 }
 
@@ -652,7 +652,7 @@ bool FMantleWaterNearOpaqueTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleWaterMaterialTestPrivate;
 
-	// A far opacity of 0.96 publishes opaque (so it reflects), keeping the bake's colour and roughness; 0.85 stays translucent.
+	// A far opacity of 0.96 publishes opaque (so it reflects), keeping the bake's color and roughness; 0.85 stays translucent.
 	for (const float Opacity : { 0.96f, 0.85f })
 	{
 		UMaterial* Material = NewTranslucent();
@@ -674,7 +674,7 @@ bool FMantleWaterNearOpaqueTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("it stays translucent"), Doc.AlphaMode, FString(TEXT("blend")));
 			TestEqual(TEXT("with the far opacity"), Doc.BaseColorFactor[3], static_cast<double>(Opacity), 1.0e-4);
 		}
-		TestEqual(TEXT("the bake's colour stands"), Doc.BaseColorFactor[1], 0.024158, 1.0e-6);
+		TestEqual(TEXT("the bake's color stands"), Doc.BaseColorFactor[1], 0.024158, 1.0e-6);
 		TestEqual(TEXT("the bake's roughness stands"), Doc.RoughnessFactor, 0.01, 1.0e-6);
 		TestEqual(TEXT("metallic is 0"), Doc.MetallicFactor, 0.0, 1.0e-6);
 	}
@@ -768,7 +768,7 @@ bool FMantleWaterCoefficientsTest::RunTest(const FString& Parameters)
 	// The starting-point heuristic: sigma = min(3 / D, 1); albedo = clamp(C, 0, 0.9); scattering = sigma albedo; absorption = sigma (1 - albedo).
 	const double Teal[3] = { 0.0, 0.024158, 0.025187 };
 
-	// A 100 cm fade: sigma 0.03, and the deep colour is the albedo.
+	// A 100 cm fade: sigma 0.03, and the deep color is the albedo.
 	const FMantleWaterCoefficients Clear = FMantleWaterMaterial::Coefficients(Teal, 100.0);
 	TestEqual(TEXT("scattering red"), Clear.Scattering[0], 0.0, 1.0e-9);
 	TestEqual(TEXT("scattering green"), Clear.Scattering[1], 0.00072474, 1.0e-8);
@@ -777,7 +777,7 @@ bool FMantleWaterCoefficientsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("absorption green"), Clear.Absorption[1], 0.02927526, 1.0e-8);
 	TestEqual(TEXT("absorption blue"), Clear.Absorption[2], 0.02924439, 1.0e-8);
 
-	// The Spruce river's 3 cm fade: sigma 1, the most the schema allows (near-opaque past a few centimetres, as in the editor).
+	// The Spruce river's 3 cm fade: sigma 1, the most the schema allows (near-opaque past a few centimeters, as in the editor).
 	const FMantleWaterCoefficients River = FMantleWaterMaterial::Coefficients(Teal, 3.0);
 	TestEqual(TEXT("river scattering green"), River.Scattering[1], 0.024158, 1.0e-9);
 	TestEqual(TEXT("river absorption green"), River.Absorption[1], 0.975842, 1.0e-9);
@@ -788,7 +788,7 @@ bool FMantleWaterCoefficientsTest::RunTest(const FString& Parameters)
 	const FMantleWaterCoefficients Unknown = FMantleWaterMaterial::Coefficients(Teal, 0.0);
 	TestEqual(TEXT("no fade distance is 100 cm"), Unknown.Scattering[1], Clear.Scattering[1], 1.0e-12);
 
-	// A bright deep colour keeps the albedo at 0.9, so the volume still absorbs a tenth.
+	// A bright deep color keeps the albedo at 0.9, so the volume still absorbs a tenth.
 	const double White[3] = { 1.0, 1.0, 1.0 };
 	const FMantleWaterCoefficients Bright = FMantleWaterMaterial::Coefficients(White, 100.0);
 	TestEqual(TEXT("albedo is capped at 0.9"), Bright.Scattering[0], 0.027, 1.0e-9);
@@ -852,7 +852,7 @@ bool FMantleWaterWorldNormalTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("and it is the normal scale"), CalledWater.NormalScale, 0.03, 1.0e-6);
 	}
 
-	// A function that does not lay anything out by world position is not recognised (and the reason is kept).
+	// A function that does not lay anything out by world position is not recognized (and the reason is kept).
 	UMaterialFunction* Plain = NewObject<UMaterialFunction>(GetTransientPackage());
 	UMaterialExpressionTextureSample* Sample = AddNode<UMaterialExpressionTextureSample>(Plain);
 	Sample->Texture = Normal;
@@ -889,7 +889,7 @@ bool FMantleWaterKeyRiverTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("its normal map is uploaded as a texture"), Document.Textures.Contains(TEXT("normal")));
 	TestTrue(TEXT("and its second normal map"), Document.Textures.Contains(TEXT("waterNormal2")));
-	TestFalse(TEXT("it has no base colour texture"), Document.Textures.Contains(TEXT("baseColor")));
+	TestFalse(TEXT("it has no base color texture"), Document.Textures.Contains(TEXT("baseColor")));
 	TestEqual(TEXT("the one image is one texture"), Set.Textures.Num(), 1);
 
 	// The JSON, with an uploaded id for each texture key.
@@ -916,7 +916,7 @@ bool FMantleWaterKeyRiverTest::RunTest(const FString& Parameters)
 	bool bTwoSided = true;
 	TestTrue(TEXT("with doubleSided"), Object->TryGetBoolField(TEXT("doubleSided"), bTwoSided));
 	TestFalse(TEXT("which does nothing on water, so false"), bTwoSided);
-	TestTrue(TEXT("the surface colour is the bake's, opaque"), NumbersMatch(Numbers(Object, TEXT("baseColorFactor")), { 0.0, 0.024158, 0.025187, 1.0 }, 1.0e-6));
+	TestTrue(TEXT("the surface color is the bake's, opaque"), NumbersMatch(Numbers(Object, TEXT("baseColorFactor")), { 0.0, 0.024158, 0.025187, 1.0 }, 1.0e-6));
 	double Roughness = -1.0;
 	Object->TryGetNumberField(TEXT("roughnessFactor"), Roughness);
 	TestEqual(TEXT("roughness"), Roughness, 0.01, 1.0e-6);
@@ -926,7 +926,7 @@ bool FMantleWaterKeyRiverTest::RunTest(const FString& Parameters)
 		TestFalse(FString::Printf(TEXT("%s is not written on water"), Ignored), Object->HasField(Ignored));
 	}
 
-	// The volume: the 3 cm fade is sigma 1, and the deep colour is the albedo.
+	// The volume: the 3 cm fade is sigma 1, and the deep color is the albedo.
 	const TSharedPtr<FJsonObject> Water = ObjectOf(Object, TEXT("water"));
 	if (!TestTrue(TEXT("the water object"), Water.IsValid()))
 	{
@@ -1072,7 +1072,7 @@ bool FMantleWaterKeyDroppedTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleWaterMaterialTestPrivate;
 
-	// The bake carries a metallic factor and an emissive colour; the schema says neither does anything on water, so neither is written.
+	// The bake carries a metallic factor and an emissive color; the schema says neither does anything on water, so neither is written.
 	UMaterial* Material = NewWater(100.0f);
 	const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Material);
 	const TArray<double> Glow = { 0.1, 0.0, 0.0 };
@@ -1101,7 +1101,7 @@ bool FMantleWaterKeyDroppedTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("no metallic key"), Json.Contains(TEXT("metallicFactor")));
 	TestFalse(TEXT("no emissive key"), Json.Contains(TEXT("emissive")));
 	TestFalse(TEXT("no normal layers without a normal map"), Json.Contains(TEXT("\"normal\"")));
-	TestTrue(TEXT("the deep colour is the albedo at the 100 cm default"), Json.Contains(TEXT("\"absorption\":[0.03,")));
+	TestTrue(TEXT("the deep color is the albedo at the 100 cm default"), Json.Contains(TEXT("\"absorption\":[0.03,")));
 	return true;
 }
 
@@ -1161,7 +1161,7 @@ bool FMantleWaterDowngradeTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("without the water key"), Json.Contains(TEXT("\"water\"")));
 	TestTrue(TEXT("opaque"), Json.Contains(TEXT("\"alphaMode\":\"opaque\"")));
 	TestTrue(TEXT("with the pan on the normal"), Json.Contains(TEXT("\"uvPanning\":{\"normal\":[-0.0125,0]}")));
-	TestTrue(TEXT("and the colour the bake gave"), Json.Contains(TEXT("\"baseColorFactor\":[0,0.024158,0.025187,1]")));
+	TestTrue(TEXT("and the color the bake gave"), Json.Contains(TEXT("\"baseColorFactor\":[0,0.024158,0.025187,1]")));
 	TestTrue(TEXT("and not metallic"), Json.Contains(TEXT("\"metallicFactor\":0")));
 
 	// The asset set writes it through the export's target, and says what it left out.
@@ -1224,19 +1224,19 @@ bool FMantleWaterMasterChainTest::RunTest(const FString& Parameters)
 	Fade->FadeDistance.Connect(0, DistanceParameter);
 	Master->GetEditorOnlyData()->Opacity.Connect(0, Fade);
 
-	UMaterialExpressionVectorParameter* ColourParameter = AddExpression<UMaterialExpressionVectorParameter>(Master);
-	ColourParameter->ParameterName = TEXT("Base Color");
-	ColourParameter->DefaultValue = FLinearColor(0.0f, 0.725731f, 0.75f);
+	UMaterialExpressionVectorParameter* ColorParameter = AddExpression<UMaterialExpressionVectorParameter>(Master);
+	ColorParameter->ParameterName = TEXT("Base Color");
+	ColorParameter->DefaultValue = FLinearColor(0.0f, 0.725731f, 0.75f);
 	UMaterialExpressionTextureSample* Ice = AddExpression<UMaterialExpressionTextureSample>(Master);
 	Ice->Texture = UTexture2D::CreateTransient(4, 4);
 	UMaterialExpressionLinearInterpolate* Winter = AddExpression<UMaterialExpressionLinearInterpolate>(Master);
-	Winter->A.Connect(0, ColourParameter);
+	Winter->A.Connect(0, ColorParameter);
 	Winter->B.Connect(0, Ice);
 	UMaterialExpressionStaticSwitchParameter* Switch = AddExpression<UMaterialExpressionStaticSwitchParameter>(Master);
 	Switch->ParameterName = TEXT("ProceduralWinter");
 	Switch->DefaultValue = true;
 	Switch->A.Connect(0, Winter);
-	Switch->B.Connect(0, ColourParameter);
+	Switch->B.Connect(0, ColorParameter);
 	Master->GetEditorOnlyData()->BaseColor.Connect(0, Switch);
 
 	// MI_River and MI_Lake: Opacity 0.96 and 0.99.
@@ -1252,10 +1252,10 @@ bool FMantleWaterMasterChainTest::RunTest(const FString& Parameters)
 		const FMantleWaterBake& Water = Analysis.Fidelity2.Water;
 		if (TestTrue(TEXT("the instance's depth fade is found"), Water.bFound))
 		{
-			TestTrue(TEXT("its opacity is read from the instance's parameter"), Water.bOpacityRead);
+			TestTrue(TEXT("its opacity is read from the instance's parameter"), Water.bOpacitiread);
 			TestEqual(TEXT("it is the instance's Opacity"), Water.Opacity, static_cast<double>(Value), 1.0e-4);
-			// The ice texture on the way to the colour stops that read: the bake's colour stands.
-			TestFalse(TEXT("the textured colour is not read"), Water.bColour);
+			// The ice texture on the way to the color stops that read: the bake's color stands.
+			TestFalse(TEXT("the textured color is not read"), Water.bColor);
 		}
 	}
 	return true;
@@ -1274,9 +1274,9 @@ bool FMantleWaterSingleLayerTest::RunTest(const FString& Parameters)
 	UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
 	Material->SetShadingModel(MSM_SingleLayerWater);
 	UMaterialExpressionSingleLayerWaterMaterialOutput* Output = AddExpression<UMaterialExpressionSingleLayerWaterMaterialOutput>(Material);
-	Output->ScatteringCoefficients.Connect(0, AddColour(Material, FLinearColor(0.01f, 0.02f, 0.03f)));
-	Output->AbsorptionCoefficients.Connect(0, AddColour(Material, FLinearColor(0.2f, 0.1f, 0.05f)));
-	Material->GetEditorOnlyData()->BaseColor.Connect(0, AddColour(Material, FLinearColor(0.0f, 0.2f, 0.25f)));
+	Output->ScatteringCoefficients.Connect(0, AddColor(Material, FLinearColor(0.01f, 0.02f, 0.03f)));
+	Output->AbsorptionCoefficients.Connect(0, AddColor(Material, FLinearColor(0.2f, 0.1f, 0.05f)));
+	Material->GetEditorOnlyData()->BaseColor.Connect(0, AddColor(Material, FLinearColor(0.0f, 0.2f, 0.25f)));
 
 	const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Material);
 	const FMantleWaterBake& Water = Analysis.Fidelity2.Water;
@@ -1298,7 +1298,7 @@ bool FMantleWaterSingleLayerTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the document writes the water key"), Doc.WritesWater());
 	TestEqual(TEXT("with the node's absorption"), Doc.WaterAbsorption[0], 0.2, 1.0e-4);
 	TestEqual(TEXT("and its scattering"), Doc.WaterScattering[2], 0.03, 1.0e-4);
-	TestEqual(TEXT("and the deep colour"), Doc.BaseColorFactor[2], 0.25, 1.0e-4);
+	TestEqual(TEXT("and the deep color"), Doc.BaseColorFactor[2], 0.25, 1.0e-4);
 
 	// An ordinary lit material stays ordinary.
 	UMaterial* Plain = NewObject<UMaterial>(GetTransientPackage());
@@ -1321,9 +1321,9 @@ bool FMantleWaterSingleLayerWavesTest::RunTest(const FString& Parameters)
 	UMaterialExpressionTime* Time = AddExpression<UMaterialExpressionTime>(Material);
 	UMaterialExpressionMultiply* Wave = AddExpression<UMaterialExpressionMultiply>(Material);
 	Wave->A.Connect(0, Time);
-	Wave->B.Connect(0, AddColour(Material, FLinearColor(0.0f, 0.0f, 50.0f)));
+	Wave->B.Connect(0, AddColor(Material, FLinearColor(0.0f, 0.0f, 50.0f)));
 	Material->GetEditorOnlyData()->WorldPositionOffset.Connect(0, Wave);
-	Material->GetEditorOnlyData()->BaseColor.Connect(0, AddColour(Material, FLinearColor(0.0f, 0.2f, 0.25f)));
+	Material->GetEditorOnlyData()->BaseColor.Connect(0, AddColor(Material, FLinearColor(0.0f, 0.2f, 0.25f)));
 
 	const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Material);
 	const FMantleWaterBake& Water = Analysis.Fidelity2.Water;
@@ -1333,7 +1333,7 @@ bool FMantleWaterSingleLayerWavesTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("its waves are said to be dropped"), Water.bWavesDropped);
 	TestFalse(TEXT("and it is not wind"), Analysis.Fidelity2.bWind);
-	TestFalse(TEXT("with no output node, the coefficients derive from the colour"), Water.bVolume);
+	TestFalse(TEXT("with no output node, the coefficients derive from the color"), Water.bVolume);
 
 	FMantleGlbDocument Flattened = BakedWater();
 	Flattened.Json->GetArrayField(TEXT("materials"))[0]->AsObject()->SetStringField(TEXT("alphaMode"), TEXT("OPAQUE"));
@@ -1376,14 +1376,14 @@ bool FMantleWaterPluginChainTest::RunTest(const FString& Parameters)
 	Foam->Texture = UTexture2D::CreateTransient(4, 4);
 	UMaterialExpressionLinearInterpolate* FoamScattering = AddExpression<UMaterialExpressionLinearInterpolate>(Master);
 	FoamScattering->A.Connect(0, Scattering);
-	FoamScattering->B.Connect(0, AddColour(Master, FLinearColor::White));
+	FoamScattering->B.Connect(0, AddColor(Master, FLinearColor::White));
 	FoamScattering->Alpha.Connect(0, Foam);
 	UMaterialExpressionSingleLayerWaterMaterialOutput* Output = AddExpression<UMaterialExpressionSingleLayerWaterMaterialOutput>(Master);
 	Output->ScatteringCoefficients.Connect(0, FoamScattering);
 	Output->AbsorptionCoefficients.Connect(0, Absorption);
 	UMaterialExpressionMultiply* Wave = AddExpression<UMaterialExpressionMultiply>(Master);
 	Wave->A.Connect(0, AddExpression<UMaterialExpressionTime>(Master));
-	Wave->B.Connect(0, AddColour(Master, FLinearColor(0.0f, 0.0f, 50.0f)));
+	Wave->B.Connect(0, AddColor(Master, FLinearColor(0.0f, 0.0f, 50.0f)));
 	UMaterialExpressionSetMaterialAttributes* Attributes = AddExpression<UMaterialExpressionSetMaterialAttributes>(Master);
 	Attributes->ConnectInputAttribute(MP_BaseColor, Albedo);
 	Attributes->ConnectInputAttribute(MP_OpacityMask, AddNumber(Master, 1.0f));
@@ -1418,9 +1418,9 @@ bool FMantleWaterPluginChainTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("the instance's absorption"), Water.Volume.Absorption[0], 0.2, 1.0e-4);
 		TestEqual(TEXT("and the master's scattering"), Water.Volume.Scattering[2], 0.03, 1.0e-4);
 	}
-	if (TestTrue(TEXT("the colour comes from Water Albedo"), Water.bColour))
+	if (TestTrue(TEXT("the color comes from Water Albedo"), Water.bColor))
 	{
-		TestEqual(TEXT("as the parameter has it"), Water.Colour[2], 0.25, 1.0e-4);
+		TestEqual(TEXT("as the parameter has it"), Water.Color[2], 0.25, 1.0e-4);
 	}
 
 	// GLTFExporter's bake of a masked material; the document is a water document, opaque, with the parameters' coefficients.
@@ -1433,16 +1433,16 @@ bool FMantleWaterPluginChainTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the document writes the water key"), Doc.WritesWater());
 	TestEqual(TEXT("masked water publishes opaque"), Doc.AlphaMode, FString(TEXT("opaque")));
 	TestEqual(TEXT("with the instance's absorption"), Doc.WaterAbsorption[0], 0.2, 1.0e-4);
-	TestEqual(TEXT("and the albedo as the surface colour"), Doc.BaseColorFactor[2], 0.25, 1.0e-4);
+	TestEqual(TEXT("and the albedo as the surface color"), Doc.BaseColorFactor[2], 0.25, 1.0e-4);
 
-	// A Single Layer Water material with nothing to read still has a volume and a colour: a clear lake's.
+	// A Single Layer Water material with nothing to read still has a volume and a color: a clear lake's.
 	UMaterial* Bare = NewObject<UMaterial>(GetTransientPackage());
 	Bare->SetShadingModel(MSM_SingleLayerWater);
 	Bare->bUseMaterialAttributes = true;
 	const FMantleWaterBake& Plain = FMantlePlaceAssets::AnalyzeMaterial(Bare).Fidelity2.Water;
 	TestTrue(TEXT("a bare Single Layer Water material is water"), Plain.bFound && Plain.bSingleLayer);
-	TestTrue(TEXT("with the clear lake's colour"), Plain.bColour && FMath::IsNearlyEqual(Plain.Colour[1], FMantleWaterMaterial::ClearLakeColour[1], 1.0e-6));
-	TestFalse(TEXT("and no coefficients of its own (they derive from the colour)"), Plain.bVolume);
+	TestTrue(TEXT("with the clear lake's color"), Plain.bColor && FMath::IsNearlyEqual(Plain.Color[1], FMantleWaterMaterial::ClearLakeColor[1], 1.0e-6));
+	TestFalse(TEXT("and no coefficients of its own (they derive from the color)"), Plain.bVolume);
 	return true;
 }
 
@@ -1469,19 +1469,19 @@ bool FMantleWaterMmWaterTest::RunTest(const FString& Parameters)
 
 	FMantleWaterBake Water;
 	const auto* Data = Material->GetEditorOnlyData();
-	if (!TestTrue(TEXT("the depth fade is found"), FMantleWaterMaterial::Recognise(Material, &Data->Opacity, &Data->BaseColor, &Data->Normal, Water)))
+	if (!TestTrue(TEXT("the depth fade is found"), FMantleWaterMaterial::Recognize(Material, &Data->Opacity, &Data->BaseColor, &Data->Normal, Water)))
 	{
 		return false;
 	}
-	TestTrue(TEXT("the opacity is read, not estimated"), Water.bOpacityRead);
+	TestTrue(TEXT("the opacity is read, not estimated"), Water.bOpacitiread);
 	TestEqual(TEXT("the far end has no shoreline foam: the depth fade's 1"), Water.Opacity, 1.0, 1.0e-6);
 	TestTrue(TEXT("so the water publishes opaque, with the water key"), Water.PublishesOpaque());
 	TestTrue(TEXT("the shoreline foam is said to be dropped"), Water.bShorelineFoamDropped);
-	if (TestTrue(TEXT("the deep colour is read"), Water.bColour))
+	if (TestTrue(TEXT("the deep color is read"), Water.bColor))
 	{
-		TestEqual(TEXT("red is Color1's"), Water.Colour[0], 0.0, 1.0e-4);
-		TestEqual(TEXT("green is Color1's"), Water.Colour[1], 0.081295, 1.0e-4);
-		TestEqual(TEXT("blue is Color1's"), Water.Colour[2], 0.223958, 1.0e-4);
+		TestEqual(TEXT("red is Color1's"), Water.Color[0], 0.0, 1.0e-4);
+		TestEqual(TEXT("green is Color1's"), Water.Color[1], 0.081295, 1.0e-4);
+		TestEqual(TEXT("blue is Color1's"), Water.Color[2], 0.223958, 1.0e-4);
 	}
 	if (TestEqual(TEXT("the motion is two normal layers"), Water.Normals.Num(), 2))
 	{
@@ -1523,8 +1523,8 @@ bool FMantleWaterIfNodeTest::RunTest(const FString& Parameters)
 		}
 		Material->GetEditorOnlyData()->Opacity.Connect(0, AddBinary<UMaterialExpressionMultiply>(Material, AddDepthFadeAt(Material, 0.8f, 100.0f), If));
 		FMantleWaterBake Water;
-		FMantleWaterMaterial::Recognise(Material, &Material->GetEditorOnlyData()->Opacity, nullptr, nullptr, Water);
-		TestTrue(TEXT("the If is read"), Water.bOpacityRead);
+		FMantleWaterMaterial::Recognize(Material, &Material->GetEditorOnlyData()->Opacity, nullptr, nullptr, Water);
+		TestTrue(TEXT("the If is read"), Water.bOpacitiread);
 		return Water.Opacity;
 	};
 	TestEqual(TEXT("A over B takes the greater branch"), Far(2.0f, 1.0f, true, false), 0.8, 1.0e-6);
@@ -1540,8 +1540,8 @@ bool FMantleWaterIfNodeTest::RunTest(const FString& Parameters)
 	UMaterialExpressionMultiply* Gain = AddBinary<UMaterialExpressionMultiply>(Bounded, Under, AddNumber(Bounded, 0.1f));
 	Bounded->GetEditorOnlyData()->Opacity.Connect(0, AddBinary<UMaterialExpressionAdd>(Bounded, AddDepthFadeAt(Bounded, 0.9f, 100.0f), Gain));
 	FMantleWaterBake BoundedWater;
-	FMantleWaterMaterial::Recognise(Bounded, &Bounded->GetEditorOnlyData()->Opacity, nullptr, nullptr, BoundedWater);
-	TestTrue(TEXT("a bounded A against a B at its top is read"), BoundedWater.bOpacityRead);
+	FMantleWaterMaterial::Recognize(Bounded, &Bounded->GetEditorOnlyData()->Opacity, nullptr, nullptr, BoundedWater);
+	TestTrue(TEXT("a bounded A against a B at its top is read"), BoundedWater.bOpacitiread);
 	TestEqual(TEXT("as the less branch"), BoundedWater.Opacity, 0.9, 1.0e-6);
 
 	// Against a B inside the range it is not known which side it falls on; a normal map is not bounded at all.
@@ -1549,8 +1549,8 @@ bool FMantleWaterIfNodeTest::RunTest(const FString& Parameters)
 	UMaterialExpressionIf* Between = AddIf(Straddles, AddMaskSample(Straddles, Mask, nullptr), AddNumber(Straddles, 0.5f), 1.0f, 0.0f);
 	Straddles->GetEditorOnlyData()->Opacity.Connect(0, AddBinary<UMaterialExpressionAdd>(Straddles, AddDepthFadeAt(Straddles, 0.9f, 100.0f), Between));
 	FMantleWaterBake StraddlesWater;
-	FMantleWaterMaterial::Recognise(Straddles, &Straddles->GetEditorOnlyData()->Opacity, nullptr, nullptr, StraddlesWater);
-	TestFalse(TEXT("a texture against a B inside 0..1 is not read"), StraddlesWater.bOpacityRead);
+	FMantleWaterMaterial::Recognize(Straddles, &Straddles->GetEditorOnlyData()->Opacity, nullptr, nullptr, StraddlesWater);
+	TestFalse(TEXT("a texture against a B inside 0..1 is not read"), StraddlesWater.bOpacitiread);
 	TestFalse(TEXT("and says why"), StraddlesWater.Why.IsEmpty());
 
 	UMaterial* Unbounded = NewTranslucent();
@@ -1559,8 +1559,8 @@ bool FMantleWaterIfNodeTest::RunTest(const FString& Parameters)
 	UMaterialExpressionIf* Tilt = AddIf(Unbounded, NormalSample, AddNumber(Unbounded, 1.0f), 1.0f, 0.0f);
 	Unbounded->GetEditorOnlyData()->Opacity.Connect(0, AddBinary<UMaterialExpressionAdd>(Unbounded, AddDepthFadeAt(Unbounded, 0.9f, 100.0f), Tilt));
 	FMantleWaterBake UnboundedWater;
-	FMantleWaterMaterial::Recognise(Unbounded, &Unbounded->GetEditorOnlyData()->Opacity, nullptr, nullptr, UnboundedWater);
-	TestFalse(TEXT("a normal map is not bounded to 0..1"), UnboundedWater.bOpacityRead);
+	FMantleWaterMaterial::Recognize(Unbounded, &Unbounded->GetEditorOnlyData()->Opacity, nullptr, nullptr, UnboundedWater);
+	TestFalse(TEXT("a normal map is not bounded to 0..1"), UnboundedWater.bOpacitiread);
 	return true;
 }
 
@@ -1580,7 +1580,7 @@ bool FMantleWaterNormalLerpTest::RunTest(const FString& Parameters)
 	{
 		UMaterial* Material = NewWater(3.0f);
 		UMaterialExpressionLinearInterpolate* Lerp = AddExpression<UMaterialExpressionLinearInterpolate>(Material);
-		Lerp->A.Connect(0, AddColour(Material, FLinearColor(0.0f, 0.0f, 1.0f)));
+		Lerp->A.Connect(0, AddColor(Material, FLinearColor(0.0f, 0.0f, 1.0f)));
 		Lerp->B.Connect(0, AddPannedNormal(Material, Normal, 0.25f, FLinearColor(-0.5f, 0.0f, -0.5f), 0.005f));
 		Lerp->Alpha.Connect(0, AddNumber(Material, Alpha));
 		Material->GetEditorOnlyData()->Normal.Connect(0, Lerp);

@@ -59,7 +59,7 @@ struct FMantleStorageExpandResult
 
 /**
  * One stored script package a machine runs (#838): the place's storage name for it (what Script.Package reads and
- * the catalogue mounts it under, Packages/<StorageName>/), the files for this machine's sides plus Shared, and
+ * the catalog mounts it under, Packages/<StorageName>/), the files for this machine's sides plus Shared, and
  * its manifest.
  */
 struct FMantleStoredScriptPackage

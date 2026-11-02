@@ -18,16 +18,16 @@
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleGlassIorTestPrivate
 {
-	/** What GLTFExporter writes for a translucent material: Alpha, base colour (alpha Opacity), roughness and, when Ior is above 0, its KHR_materials_ior. */
+	/** What GLTFExporter writes for a translucent material: Alpha, base color (alpha Opacity), roughness and, when Ior is above 0, its KHR_materials_ior. */
 	FMantleGlbDocument GlassBake(const TCHAR* Alpha, const double Opacity, const double Roughness, const double Ior)
 	{
 		const TSharedRef<FJsonObject> Pbr = MakeShared<FJsonObject>();
-		TArray<TSharedPtr<FJsonValue>> Colour;
+		TArray<TSharedPtr<FJsonValue>> Color;
 		for (const double Value : { 0.2, 0.4, 0.6, Opacity })
 		{
-			Colour.Add(MakeShared<FJsonValueNumber>(Value));
+			Color.Add(MakeShared<FJsonValueNumber>(Value));
 		}
-		Pbr->SetArrayField(TEXT("baseColorFactor"), Colour);
+		Pbr->SetArrayField(TEXT("baseColorFactor"), Color);
 		Pbr->SetNumberField(TEXT("metallicFactor"), 0.0);
 		Pbr->SetNumberField(TEXT("roughnessFactor"), Roughness);
 		const TSharedRef<FJsonObject> Material = MakeShared<FJsonObject>();
@@ -111,10 +111,10 @@ bool FMantleGlassIorDocumentTest::RunTest(const FString& Parameters)
 		TSharedPtr<FJsonObject> Parsed;
 		if (TestTrue(TEXT("as JSON"), FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Parsed) && Parsed.IsValid()))
 		{
-			const TArray<TSharedPtr<FJsonValue>>* Colour = nullptr;
-			if (TestTrue(TEXT("with a base colour factor"), Parsed->TryGetArrayField(TEXT("baseColorFactor"), Colour) && Colour->Num() == 4))
+			const TArray<TSharedPtr<FJsonValue>>* Color = nullptr;
+			if (TestTrue(TEXT("with a base color factor"), Parsed->TryGetArrayField(TEXT("baseColorFactor"), Color) && Color->Num() == 4))
 			{
-				TestEqual(TEXT("whose alpha is the glass opacity"), (*Colour)[3]->AsNumber(), FMantlePlaceAssetConverter::GlassOpacityFromIor(2.0, 0.3), 1.0e-3);
+				TestEqual(TEXT("whose alpha is the glass opacity"), (*Color)[3]->AsNumber(), FMantlePlaceAssetConverter::GlassOpacityFromIor(2.0, 0.3), 1.0e-3);
 			}
 		}
 	}

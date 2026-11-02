@@ -119,9 +119,9 @@ bool FMantleWorldTextParseTest::RunTest(const FString& Parameters)
 	if (const FMantleTextProps* Props = TextOf(Full))
 	{
 		TestEqual(TEXT("two lines"), Props->Text, FString(TEXT("Room 101\nLab")));
-		TestTrue(TEXT("its linear colour and alpha"), Props->Color.Equals(FLinearColor(1.0f, 0.2f, 0.05f, 0.5f)));
+		TestTrue(TEXT("its linear color and alpha"), Props->Color.Equals(FLinearColor(1.0f, 0.2f, 0.05f, 0.5f)));
 		TestEqual(TEXT("its world size"), Props->WorldSize, 40.0);
-		TestTrue(TEXT("centred across"), Props->HorizontalAlignment == EMantleTextHorizontalAlignment::Center);
+		TestTrue(TEXT("centered across"), Props->HorizontalAlignment == EMantleTextHorizontalAlignment::Center);
 		TestTrue(TEXT("on the baseline"), Props->VerticalAlignment == EMantleTextVerticalAlignment::Baseline);
 		TestEqual(TEXT("x scale"), Props->XScale, 1.5);
 		TestEqual(TEXT("y scale"), Props->YScale, 0.75);
@@ -170,9 +170,9 @@ bool FMantleWorldTextRefusalTest::RunTest(const FString& Parameters)
 		{ TEXT("no text"), TEXT("\"color\":[1,1,1,1]"), TEXT("/entities/0/properties/text") },
 		{ TEXT("empty text"), TEXT("\"text\":\"\""), TEXT("/entities/0/properties/text") },
 		{ TEXT("a number for the text"), TEXT("\"text\":42"), TEXT("/entities/0/properties/text") },
-		{ TEXT("a colour channel past 1"), TEXT("\"text\":\"x\",\"color\":[1.5,1,1,1]"), TEXT("/entities/0/properties/color/0") },
+		{ TEXT("a color channel past 1"), TEXT("\"text\":\"x\",\"color\":[1.5,1,1,1]"), TEXT("/entities/0/properties/color/0") },
 		{ TEXT("a negative alpha"), TEXT("\"text\":\"x\",\"color\":[1,1,1,-0.1]"), TEXT("/entities/0/properties/color/3") },
-		{ TEXT("an RGB colour"), TEXT("\"text\":\"x\",\"color\":[1,1,1]"), TEXT("/entities/0/properties/color") },
+		{ TEXT("an RGB color"), TEXT("\"text\":\"x\",\"color\":[1,1,1]"), TEXT("/entities/0/properties/color") },
 		{ TEXT("a zero world size"), TEXT("\"text\":\"x\",\"worldSize\":0"), TEXT("/entities/0/properties/worldSize") },
 		{ TEXT("a world size past 20 m"), TEXT("\"text\":\"x\",\"worldSize\":2001"), TEXT("/entities/0/properties/worldSize") },
 		{ TEXT("a string for the world size"), TEXT("\"text\":\"x\",\"worldSize\":\"40\""), TEXT("/entities/0/properties/worldSize") },
@@ -238,7 +238,7 @@ bool FMantleWorldTextBuilderTest::RunTest(const FString& Parameters)
 	if (TestNotNull(TEXT("the sign is a Text Render actor with its component"), Text))
 	{
 		TestEqual(TEXT("its text"), Text->Text.ToString(), FString(TEXT("Room 101\nLab")));
-		TestEqual(TEXT("its colour, as the editor's sRGB"), Text->TextRenderColor, FColor(255, 0, 0, 255));
+		TestEqual(TEXT("its color, as the editor's sRGB"), Text->TextRenderColor, FColor(255, 0, 0, 255));
 		TestEqual(TEXT("its world size"), Text->WorldSize, 40.0f);
 		TestTrue(TEXT("right"), Text->HorizontalAlignment == EHTA_Right);
 		TestTrue(TEXT("baseline is the engine's Quad Top"), Text->VerticalAlignment == EVRTA_QuadTop);

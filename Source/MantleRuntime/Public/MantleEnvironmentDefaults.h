@@ -49,7 +49,7 @@ namespace MantleEnvironmentDefaults
 	 */
 	constexpr float MoonIntensityScale = 0.12f;
 
-	/** Moonlight's cool colour, in linear space. */
+	/** Moonlight's cool color, in linear space. */
 	inline const FLinearColor MoonColor(0.55f, 0.66f, 1.0f);
 
 	/**
@@ -72,7 +72,7 @@ namespace MantleEnvironmentDefaults
 	 */
 	constexpr double StarDomeRadius = 2000000.0;
 
-	/** How far from the world's centre the moon sits, in cm: inside the dome, above the clouds. */
+	/** How far from the world's center the moon sits, in cm: inside the dome, above the clouds. */
 	constexpr double MoonDistance = 1800000.0;
 
 	/** The moon's apparent diameter. The real moon's half a degree reads as a speck in a game. */
@@ -168,7 +168,7 @@ namespace MantleEnvironmentDefaults
 	/**
 	 * The sky light at full cover, as a fraction of its own intensity, from HeavyCloudCoverStart. Ultra Dynamic Sky keeps its
 	 * sky light whole in every weather and brightens its sky instead, which lights the
-	 * overcast clouds pale grey; dimming it here left them dark blue.
+	 * overcast clouds pale gray; dimming it here left them dark blue.
 	 */
 	constexpr double SkyLightIntensityAtFullCover = 1.0;
 
@@ -178,7 +178,7 @@ namespace MantleEnvironmentDefaults
 	/**
 	 * The default fog for a place with none of its own (FMantleEnvironment::DefaultFogSettings): Ultra Dynamic Sky's base
 	 * fog, read off it live in clear weather. The engine's own (0.02, falling off at 0.2, from the camera) hugs the ground
-	 * and greys out everything near; this is thinner and reaches higher, and starts 73 m out.
+	 * and grays out everything near; this is thinner and reaches higher, and starts 73 m out.
 	 */
 	constexpr double DefaultFogDensity = 0.00551;
 	constexpr double DefaultFogHeightFalloff = 0.06;
@@ -240,7 +240,7 @@ namespace MantleEnvironmentDefaults
 	constexpr double DefaultAutoExposureMin = 0.03;
 	constexpr double DefaultAutoExposureMax = 8.0;
 
-	/** settings.environment.fog: the height fog's density, falloff, colours (a channel's luminance) and start distance (cm). */
+	/** settings.environment.fog: the height fog's density, falloff, colors (a channel's luminance) and start distance (cm). */
 	constexpr double MaxFogDensity = 0.05;
 	constexpr double MinFogHeightFalloff = 0.001;
 	constexpr double MaxFogHeightFalloff = 2.0;
@@ -248,7 +248,7 @@ namespace MantleEnvironmentDefaults
 	constexpr double MaxFogStartDistance = 1000000.0;
 
 	/**
-	 * Environment.ColorGrading's LUTs (#532): <folder>/<prefix><Preset>, a 256x16 colour lookup
+	 * Environment.ColorGrading's LUTs (#532): <folder>/<prefix><Preset>, a 256x16 color lookup
 	 * table each, made by tools/materials/Create-MantleLUTs.py. /Game/Mantle/Materials is in
 	 * DefaultGame.ini's DirectoriesToAlwaysCook, so every client has them without a reference.
 	 */

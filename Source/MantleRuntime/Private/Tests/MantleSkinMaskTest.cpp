@@ -19,12 +19,12 @@ namespace MantleSkinMaskTestPrivate
 	constexpr float SleeveHalfLength = 20.0f;
 	constexpr int32 Around = 48;
 
-	/** The window's half-width (2 cm of arc at the sleeve) and half-height, centred at angle 0, z 0. */
+	/** The window's half-width (2 cm of arc at the sleeve) and half-height, centered at angle 0, z 0. */
 	constexpr float WindowHalfCm = 2.0f;
 
 	/**
 	 * A tube around Z of Radius from Z0 to Z1 in Rings rings of Around vertices, normals and winding outward, turned by
-	 * Phase steps around. A quad whose centre Skip(theta, z) takes is left out.
+	 * Phase steps around. A quad whose center Skip(theta, z) takes is left out.
 	 */
 	void AddTube(TArray<FVector3f>& Positions, TArray<FVector3f>& Normals, TArray<uint32>& Indices, const float Radius, const float Z0, const float Z1,
 		const int32 Rings, const int32 InAround, TFunctionRef<bool(float, float)> Skip, const float Phase = 0.0f)
@@ -62,7 +62,7 @@ namespace MantleSkinMaskTestPrivate
 	/** Closes the tube's ring of InAround vertices at First (at height Z) with a fan, facing +z (bUp) or -z. */
 	void AddCap(TArray<FVector3f>& Positions, TArray<FVector3f>& Normals, TArray<uint32>& Indices, const uint32 First, const int32 InAround, const float Z, const bool bUp)
 	{
-		const uint32 Centre = Positions.Num();
+		const uint32 Center = Positions.Num();
 		Positions.Add(FVector3f(0.0f, 0.0f, Z));
 		Normals.Add(FVector3f(0.0f, 0.0f, bUp ? 1.0f : -1.0f));
 		for (int32 Step = 0; Step < InAround; ++Step)
@@ -71,11 +71,11 @@ namespace MantleSkinMaskTestPrivate
 			const uint32 B = First + (Step + 1) % InAround;
 			if (bUp)
 			{
-				Indices.Append({ Centre, A, B });
+				Indices.Append({ Center, A, B });
 			}
 			else
 			{
-				Indices.Append({ Centre, B, A });
+				Indices.Append({ Center, B, A });
 			}
 		}
 	}

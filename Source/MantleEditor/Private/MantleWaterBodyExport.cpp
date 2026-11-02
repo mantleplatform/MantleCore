@@ -272,10 +272,10 @@ namespace MantleWaterBodyExportPrivate
 				{
 					FMantleWaterMaterialParam& Param = Out.Params.AddDefaulted_GetRef();
 					Param.Name = Info.Name;
-					Param.bColour = true;
-					Param.Colour = Value;
+					Param.bColor = true;
+					Param.Color = Value;
 				}
-				// The water master's three look colours, by the names it gives them.
+				// The water master's three look colors, by the names it gives them.
 				const FString Key = Info.Name.ToString().Replace(TEXT(" "), TEXT(""));
 				if (Material->GetVectorParameterValue(FHashedMaterialParameterInfo(Info), Value))
 				{
@@ -570,10 +570,10 @@ namespace MantleWaterBodyExportPrivate
 		TSharedRef<FJsonObject> Params = MakeShared<FJsonObject>();
 		for (const FMantleWaterMaterialParam& Param : Look.Params)
 		{
-			if (Param.bColour)
+			if (Param.bColor)
 			{
-				Params->SetArrayField(Param.Name.ToString(), { MakeShared<FJsonValueNumber>(Param.Colour.R), MakeShared<FJsonValueNumber>(Param.Colour.G),
-					MakeShared<FJsonValueNumber>(Param.Colour.B), MakeShared<FJsonValueNumber>(Param.Colour.A) });
+				Params->SetArrayField(Param.Name.ToString(), { MakeShared<FJsonValueNumber>(Param.Color.R), MakeShared<FJsonValueNumber>(Param.Color.G),
+					MakeShared<FJsonValueNumber>(Param.Color.B), MakeShared<FJsonValueNumber>(Param.Color.A) });
 			}
 			else
 			{
@@ -825,7 +825,7 @@ namespace MantleWaterBodyExportFlat
 {
 	/**
 	 * A mesh is flat when its world height is at most this share of the shorter side of its footprint. The engine's plane is exactly 0 and
-	 * a Fab pond or pool slab is a centimetre or a few over metres, well under 1%; a fountain bowl or a cube is a large share of its width,
+	 * a Fab pond or pool slab is a centimeter or a few over meters, well under 1%; a fountain bowl or a cube is a large share of its width,
 	 * and a waterfall (a tall sheet) is taller than wide. 2% keeps a 5 cm slab on a 2.5 m pool and nothing that holds water in a basin.
 	 */
 	constexpr double MaxHeightShare = 0.02;
@@ -952,14 +952,14 @@ bool FMantleWaterBodyExport::ReadFlatWaterMesh(const AActor* Actor, FTransform& 
 		return false;
 	}
 
-	// The pond: its centre at the mesh's top, and the footprint rectangle as the spline, in the entity's own space.
-	const FVector Centre = YawFrame.TransformPosition(FVector((Footprint.Min.X + Footprint.Max.X) * 0.5, (Footprint.Min.Y + Footprint.Max.Y) * 0.5, 0.0));
-	OutTransform = FTransform(YawFrame.GetRotation(), FVector(Centre.X, Centre.Y, World.Max.Z));
+	// The pond: its center at the mesh's top, and the footprint rectangle as the spline, in the entity's own space.
+	const FVector Center = YawFrame.TransformPosition(FVector((Footprint.Min.X + Footprint.Max.X) * 0.5, (Footprint.Min.Y + Footprint.Max.Y) * 0.5, 0.0));
+	OutTransform = FTransform(YawFrame.GetRotation(), FVector(Center.X, Center.Y, World.Max.Z));
 
 	OutProps = FMantleWaterBodyProps();
 	OutProps.BodyType = EMantleWaterBodyType::Lake;
-	const FMantleWaterCoefficients Derived = FMantleWaterMaterial::Coefficients(Water.Colour, Water.bFadeDistance ? Water.FadeDistanceCm : 0.0);
-	const FMantleWaterCoefficients* Volume = Water.bVolume ? &Water.Volume : (Water.bColour ? &Derived : nullptr);
+	const FMantleWaterCoefficients Derived = FMantleWaterMaterial::Coefficients(Water.Color, Water.bFadeDistance ? Water.FadeDistanceCm : 0.0);
+	const FMantleWaterCoefficients* Volume = Water.bVolume ? &Water.Volume : (Water.bColor ? &Derived : nullptr);
 	const double Depth = Flat::DepthOf(Water, Volume, OutDepthSource);
 	const double HalfWidth = Width * 0.5;
 	const double HalfLength = Length * 0.5;
@@ -977,9 +977,9 @@ bool FMantleWaterBodyExport::ReadFlatWaterMesh(const AActor* Actor, FTransform& 
 	{
 		return FLinearColor(static_cast<float>(FMath::Clamp(Channels[0], 0.0, 1.0)), static_cast<float>(FMath::Clamp(Channels[1], 0.0, 1.0)), static_cast<float>(FMath::Clamp(Channels[2], 0.0, 1.0)));
 	};
-	if (Water.bColour)
+	if (Water.bColor)
 	{
-		OutProps.Albedo = Unit(Water.Colour);
+		OutProps.Albedo = Unit(Water.Color);
 	}
 	if (Volume)
 	{
@@ -1195,9 +1195,9 @@ bool FMantleWaterBodyExport::Admit(const AActor* Actor, const FString& Label, in
 	++Bodies;
 	SplinePoints += Props.SplinePoints.Num();
 	FString Detail = bFlat
-		? FString::Printf(TEXT("is a flat mesh with a water material, published as a water body: its footprint, surface height, collision and look colours, with a depth of %s. "
+		? FString::Printf(TEXT("is a flat mesh with a water material, published as a water body: its footprint, surface height, collision and look colors, with a depth of %s. "
 			"The material's other settings (foam, caustics, flow maps) are not carried."), *FlatDepthSource)
-		: FString(TEXT("published as a water body: its shape, depth, waves, collision and look colours. The water material's other settings (foam, caustics, flow maps) are not carried."));
+		: FString(TEXT("published as a water body: its shape, depth, waves, collision and look colors. The water material's other settings (foam, caustics, flow maps) are not carried."));
 	if (Notes.Num() > 0)
 	{
 		Detail += TEXT(" ") + FString::Join(Notes, TEXT("; ")) + TEXT(".");

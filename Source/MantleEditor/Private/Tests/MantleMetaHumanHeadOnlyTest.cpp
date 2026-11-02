@@ -44,7 +44,7 @@ bool FMantleMetaHumanHeadOnlyCoveredTest::RunTest(const FString& Parameters)
 
 	FMantleStripPlan HeadOnly;
 	HeadOnly.Slots = { HeadOnlyTestSlot(0, true, 145.0, 172.0), HeadOnlyTestSlot(1, false, 0.0, 160.0) };
-	TestTrue(TEXT("skin on the head alone (armour as the body): covered"), FMantleMetaHumanHeadOnly::IsCovered(HeadOnly, Why));
+	TestTrue(TEXT("skin on the head alone (armor as the body): covered"), FMantleMetaHumanHeadOnly::IsCovered(HeadOnly, Why));
 
 	FMantleStripPlan NoLegs;
 	NoLegs.Slots = { HeadOnlyTestSlot(0, true, 60.0, 172.0), HeadOnlyTestSlot(1, false, 0.0, 90.0) };

@@ -12,22 +12,22 @@ struct FMantleChassisLayout
 {
 	bool bValid = false;
 	/** One wheel at the front and one at the rear, in a line down the middle (a motorcycle): there is no track, and Track stays 0. */
-	bool bCentreline = false;
+	bool bCenterline = false;
 	/** The front and rear axles' X; the front is the larger. */
 	double FrontX = 0.0;
 	double RearX = 0.0;
 	/** The middle of the wheels across the car. */
-	double CentreY = 0.0;
-	/** Wheel centres' height. */
-	double CentreZ = 0.0;
-	/** Wheel centre to wheel centre across an axle. */
+	double CenterY = 0.0;
+	/** Wheel centers' height. */
+	double CenterZ = 0.0;
+	/** Wheel center to wheel center across an axle. */
 	double Track = 0.0;
 	/** The wheels' radius; 0 when it could not be read, and the ground is then taken to be Z = 0. */
 	double Radius = 0.0;
 
 	double Wheelbase() const { return FrontX - RearX; }
-	/** The wheel radius the fit uses: the measured one, or the wheel centres' height when it is not known. */
-	double FitRadius() const { return Radius > 0.0 ? Radius : CentreZ; }
+	/** The wheel radius the fit uses: the measured one, or the wheel centers' height when it is not known. */
+	double FitRadius() const { return Radius > 0.0 ? Radius : CenterZ; }
 };
 
 /** How a preset's chassis is stretched to a model's wheels, and where it sits on the model (#728 step 2). */
@@ -53,7 +53,7 @@ struct FMantleChassisStretch
 	bool IsStretched() const;
 };
 
-/** One collision box, in model units: its centre and half size. */
+/** One collision box, in model units: its center and half size. */
 struct FMantleChassisBox
 {
 	FVector Center = FVector::ZeroVector;
@@ -90,7 +90,7 @@ struct MANTLEEDITOR_API FMantleVehicleChassisFit
 
 	/**
 	 * The wheel layout of these wheels (model units). Invalid with fewer than two wheels or no length between the axles. Wheels that all sit on the model's
-	 * centre line (a motorcycle's two) are a centreline layout: no track, so a bike is not refused for having none (#821).
+	 * center line (a motorcycle's two) are a centerline layout: no track, so a bike is not refused for having none (#821).
 	 */
 	static FMantleChassisLayout LayoutFromWheels(TConstArrayView<FMantleVehicleFitWheel> Wheels);
 
@@ -135,7 +135,7 @@ struct MANTLEEDITOR_API FMantleVehicleChassisFit
 	static constexpr int32 MaxBodyBoxes = 2;
 
 	/**
-	 * Writes Placement into Source: the tub's collision box, then its body boxes (none unless the builder fitted some), the centre of mass (overridden, so the cook uses it), the driver's
+	 * Writes Placement into Source: the tub's collision box, then its body boxes (none unless the builder fitted some), the center of mass (overridden, so the cook uses it), the driver's
 	 * seat with its steering wheel, and the passenger seat (or none), and a first guess of each seat's contact points. Marks Source
 	 * for undo first. Does not touch the wheels, body, parts, doors or the other tuning.
 	 *

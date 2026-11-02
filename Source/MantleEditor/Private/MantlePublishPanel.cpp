@@ -104,7 +104,7 @@ namespace MantlePublishPanelPrivate
 		}
 	}
 
-	FSlateColor StepColour(EMantlePublishStepState State)
+	FSlateColor StepColor(EMantlePublishStepState State)
 	{
 		return State == EMantlePublishStepState::NotStarted ? FSlateColor::UseSubduedForeground() : FSlateColor::UseForeground();
 	}
@@ -388,7 +388,7 @@ TSharedRef<SWidget> SMantlePublishPanel::MakeVehicleChoice()
 			[
 				SNew(STextBlock)
 				.AutoWrapText(true)
-				.Text(LOCTEXT("VehiclesRights", "I own this content or its licence permits public redistribution on Mantle"))
+				.Text(LOCTEXT("VehiclesRights", "I own this content or its license permits public redistribution on Mantle"))
 			]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
@@ -423,7 +423,7 @@ TSharedRef<SWidget> SMantlePublishPanel::MakeStepRow(EMantlePublishStep Step, co
 		[
 			SNew(STextBlock)
 			.Font(FAppStyle::GetFontStyle("NormalFontBold"))
-			.ColorAndOpacity_Lambda([State] { return MantlePublishPanelPrivate::StepColour(State()); })
+			.ColorAndOpacity_Lambda([State] { return MantlePublishPanelPrivate::StepColor(State()); })
 			.Text(Label)
 		]
 		+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(0, 3)
@@ -543,7 +543,7 @@ FText SMantlePublishPanel::GetTitleText() const
 	}
 	if (Session->IsFinished())
 	{
-		return Session->GetResult().bCancelled ? FText::Format(LOCTEXT("TitleCancelled", "Publishing '{0}' was cancelled"), Level)
+		return Session->GetResult().bCanceled ? FText::Format(LOCTEXT("TitleCanceled", "Publishing '{0}' was canceled"), Level)
 			: Session->GetResult().bWaitingForReview ? FText::Format(LOCTEXT("TitleReview", "'{0}' is waiting for Mantle's moderators"), Level)
 			: FText::Format(LOCTEXT("TitleStopped", "'{0}' was not published"), Level);
 	}

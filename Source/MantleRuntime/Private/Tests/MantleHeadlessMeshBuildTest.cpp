@@ -14,7 +14,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Runtime meshes built for collision alone. A cooked dedicated server cannot initialise render
+// Runtime meshes built for collision alone. A cooked dedicated server cannot initialize render
 // resources (UStaticMesh::InitResources asserts there), so both the static mesh builder and the terrain
 // builder build the mesh without them: the CPU buffers, the bounds and the body setup stay, which is all
 // the server's collision reads. No world, no network.
@@ -74,14 +74,14 @@ namespace MantleHeadlessMeshBuildTestPrivate
 		Test.TestTrue(TEXT("the mesh has a material slot"), Mesh->GetStaticMaterials().Num() > 0);
 		for (const FStaticMaterial& Slot : Mesh->GetStaticMaterials())
 		{
-			Test.TestTrue(TEXT("the slot's UV channel data is initialised"), Slot.UVChannelData.bInitialized);
+			Test.TestTrue(TEXT("the slot's UV channel data is initialized"), Slot.UVChannelData.bInitialized);
 		}
-		// Would ensure (and write a crash report) on an uninitialised slot.
+		// Would ensure (and write a crash report) on an uninitialized slot.
 		Test.TestTrue(TEXT("GetUVChannelData(0) reads the slot"), Mesh->GetUVChannelData(0) != nullptr);
 	}
 
 	/**
-	 * What a server's collision needs from a mesh built without render resources: none initialised, one LOD of
+	 * What a server's collision needs from a mesh built without render resources: none initialized, one LOD of
 	 * render data holding the CPU vertices, a body setup, bounds, and the collision triangles read back.
 	 */
 	void ExpectCollisionOnlyMesh(FAutomationTestBase& Test, UStaticMesh* Mesh, const int32 ExpectedVertices, const int32 ExpectedTriangles)

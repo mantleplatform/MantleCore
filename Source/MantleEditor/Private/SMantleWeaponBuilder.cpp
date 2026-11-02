@@ -64,8 +64,8 @@ namespace MantleWeaponBuilderPanelPrivate
 			];
 	}
 
-	FLinearColor GoodColour() { return FLinearColor(0.55f, 0.80f, 0.55f); }
-	FLinearColor WarnColour() { return FLinearColor(0.95f, 0.65f, 0.25f); }
+	FLinearColor GoodColor() { return FLinearColor(0.55f, 0.80f, 0.55f); }
+	FLinearColor WarnColor() { return FLinearColor(0.95f, 0.65f, 0.25f); }
 
 	const FMantleWeaponDocHoldInfo& HoldInfo(EMantleWeaponHold Hold)
 	{
@@ -669,7 +669,7 @@ TArray<FMantleBuilderStep> SMantleWeaponBuilder::MakeSteps()
 	{
 		FMantleBuilderStep& Step = Steps.AddDefaulted_GetRef();
 		Step.Title = LOCTEXT("StepSize", "Size and direction");
-		Step.Help = LOCTEXT("StepSizeHelp", "Check that this weapon model is the right size and faces the right direction for its hold. The grey figure shows how it fits beside a character.");
+		Step.Help = LOCTEXT("StepSizeHelp", "Check that this weapon model is the right size and faces the right direction for its hold. The gray figure shows how it fits beside a character.");
 		Step.OnEnter = [this] { Refit(); };
 		Step.MakeContent = [this] { return MakeSizeStep(); };
 	}
@@ -1276,7 +1276,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeSizeStep()
 				]
 				+ SVerticalBox::Slot().AutoHeight()
 				[
-					MakeRow(LOCTEXT("SizeLabel", "Model size (1 = as imported)"), LOCTEXT("SizeTip", "Makes the weapon model bigger or smaller. The grey figure shows how it fits beside a character."),
+					MakeRow(LOCTEXT("SizeLabel", "Model size (1 = as imported)"), LOCTEXT("SizeTip", "Makes the weapon model bigger or smaller. The gray figure shows how it fits beside a character."),
 						SNew(SHorizontalBox)
 						+ SHorizontalBox::Slot().FillWidth(1.f)
 						[
@@ -1349,7 +1349,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeSizeStep()
 					[
 						SNew(STextBlock)
 						.AutoWrapText(true)
-						.ColorAndOpacity(WarnColour())
+						.ColorAndOpacity(WarnColor())
 						.Text_Lambda([this] { return FText::FromString(FriendlyFitWords(Kind->GetLastFit().Suggestion)); })
 					]
 					+ SHorizontalBox::Slot().AutoWidth().Padding(8.f, 0.f, 0.f, 0.f)
@@ -1438,7 +1438,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakePointsStep()
 					[
 						SNew(SImage)
 						.Image(FAppStyle::GetBrush("Icons.Check"))
-						.ColorAndOpacity(GoodColour())
+						.ColorAndOpacity(GoodColor())
 						.Visibility_Lambda([this, RoleName] { return MantleBuilderPoints::Find(Working->Points, RoleName) ? EVisibility::Visible : EVisibility::Hidden; })
 					]
 				]
@@ -1539,7 +1539,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakePointsStep()
 			[
 				SNew(STextBlock)
 				.AutoWrapText(true)
-				.ColorAndOpacity(WarnColour())
+				.ColorAndOpacity(WarnColor())
 				.Text_Lambda([this] { return WarningsText(); })
 			]
 		];
@@ -2304,10 +2304,10 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeTuningStep()
 	AddFloatWhen(LOCTEXT("BeamMaxSeconds", "Maximum beam time (0.1–30 seconds)"), LOCTEXT("BeamMaxSecondsTip", "How long one beam can stay active."), 0.1f, 30.f, 0.1f,
 		[this] { return Working->Beam.MaxSeconds; }, [this](float V) { Working->Beam.MaxSeconds = FMath::Clamp(V, 0.1f, 30.f); },
 		[this, IsBeam] { return IsBeam() ? EVisibility::Visible : EVisibility::Collapsed; });
-	AddFloatWhen(LOCTEXT("BeamRadius", "Beam thickness (0–200 cm)"), LOCTEXT("BeamRadiusTip", "How far from its centre line the beam hits, in cm. Zero is a thin line, like a laser; a larger value is a wide stream, like a flamethrower's."), 0.f, 200.f, 1.f,
+	AddFloatWhen(LOCTEXT("BeamRadius", "Beam thickness (0–200 cm)"), LOCTEXT("BeamRadiusTip", "How far from its center line the beam hits, in cm. Zero is a thin line, like a laser; a larger value is a wide stream, like a flamethrower's."), 0.f, 200.f, 1.f,
 		[this] { return Working->Beam.Radius; }, [this](float V) { Working->Beam.Radius = FMath::Clamp(V, 0.f, 200.f); },
 		[this, IsBeam] { return IsBeam() ? EVisibility::Visible : EVisibility::Collapsed; });
-	AddFloatWhen(LOCTEXT("BeamRange", "Beam reach (0 = maximum range; otherwise 100–100000 cm)"), LOCTEXT("BeamRangeTip", "How far the beam reaches. A flamethrower reaches a few metres, a laser much further. Choose zero to use the maximum range above, or a value from 100 to 100000 cm."), 0.f, 100000.f, 100.f,
+	AddFloatWhen(LOCTEXT("BeamRange", "Beam reach (0 = maximum range; otherwise 100–100000 cm)"), LOCTEXT("BeamRangeTip", "How far the beam reaches. A flamethrower reaches a few meters, a laser much further. Choose zero to use the maximum range above, or a value from 100 to 100000 cm."), 0.f, 100000.f, 100.f,
 		[this] { return Working->Beam.Range; }, [this](float V) { Working->Beam.Range = V == 0.f ? 0.f : FMath::Clamp(V, 100.f, 100000.f); },
 		[this, IsBeam] { return IsBeam() ? EVisibility::Visible : EVisibility::Collapsed; });
 
@@ -2476,7 +2476,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakePartsAndSoundStep()
 						.ColorAndOpacity_Lambda([this, Index]
 						{
 							return Working->Parts.IsValidIndex(Index) && Working->Parts[Index].Model.IsNull()
-								? FSlateColor(WarnColour()) : FSlateColor::UseSubduedForeground();
+								? FSlateColor(WarnColor()) : FSlateColor::UseSubduedForeground();
 						})
 						.Text_Lambda([this, Index]
 						{
@@ -2654,7 +2654,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakePartsAndSoundStep()
 							? EVisibility::Visible : EVisibility::Collapsed;
 					})
 					[
-						SNew(STextBlock).AutoWrapText(true).ColorAndOpacity(WarnColour())
+						SNew(STextBlock).AutoWrapText(true).ColorAndOpacity(WarnColor())
 							.Text(LOCTEXT("AttachmentNeedsVisual", "Choose a model or add a built-in effect before creating the weapon."))
 					]
 				]
@@ -2916,7 +2916,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeCreateStep()
 				SNew(STextBlock)
 				.AutoWrapText(true)
 				.Visibility_Lambda([this] { return TestResult.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
-				.ColorAndOpacity_Lambda([this] { return FSlateColor(bTestResultIsError ? WarnColour() : GoodColour()); })
+				.ColorAndOpacity_Lambda([this] { return FSlateColor(bTestResultIsError ? WarnColor() : GoodColor()); })
 				.Text_Lambda([this] { return TestResult; })
 			]
 			// #840 step 6: publish to the creator's library, from where a place stores it (Place Settings > Storage).
@@ -2963,7 +2963,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeCreateStep()
 				[
 					SNew(STextBlock)
 					.AutoWrapText(true)
-					.Text(LOCTEXT("PublishRights", "I own this content or its licence permits public redistribution on Mantle"))
+					.Text(LOCTEXT("PublishRights", "I own this content or its license permits public redistribution on Mantle"))
 				]
 			]
 			+ SVerticalBox::Slot()
@@ -3022,7 +3022,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakeCreateStep()
 				{
 					bool bError = false;
 					PublishStatusText(bError);
-					return FSlateColor(bError ? WarnColour() : GoodColour());
+					return FSlateColor(bError ? WarnColor() : GoodColor());
 				})
 				.Text_Lambda([this]
 				{
@@ -3157,7 +3157,7 @@ void SMantleWeaponBuilder::TestLocally()
 	}
 	else
 	{
-		TestResult = FText::FromString(Error.IsEmpty() ? FString(TEXT("The test was cancelled.")) : Error);
+		TestResult = FText::FromString(Error.IsEmpty() ? FString(TEXT("The test was canceled.")) : Error);
 		bTestResultIsError = !Error.IsEmpty();
 	}
 }

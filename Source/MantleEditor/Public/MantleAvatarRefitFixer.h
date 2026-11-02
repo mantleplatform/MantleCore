@@ -138,7 +138,7 @@ struct MANTLEEDITOR_API FMantleRefitPlan
  *   2. the warp: every vertex through an RBF field (FMantleRBFInterpolation, the one the client fits garments with)
  *      that takes the source body's surface onto the authoring body's, the dense vertex correspondence when the two
  *      share a topology, else the shared skeleton's joints. Normals, tangents and morph deltas are carried the way the
- *      runtime fitter carries them (the field applied to a 1 cm offset along them, tangents re-orthogonalised, the
+ *      runtime fitter carries them (the field applied to a 1 cm offset along them, tangents re-orthogonalized, the
  *      binormal sign kept); UVs, skin weights, sections and triangles are untouched.
  * The refitted mesh's reference pose is the authoring body's for every bone the body has; the garment's own extra
  * bones keep their local transforms. Posed in the authoring body's reference pose, the garment sits where the warp put it.
@@ -353,7 +353,7 @@ public:
 
 	/**
 	 * The fix for Context.Parts[PartIndex] with Bodies already resolved (Analyze's body, for the tests): none when the
-	 * part is bound to Bodies.Target within tolerance and its own body is fine; a greyed line when there is no target,
+	 * part is bound to Bodies.Target within tolerance and its own body is fine; a grayed line when there is no target,
 	 * the skeleton rule fails, or a vertex would move more than FMantleAvatarRefit::MaxMoveCm.
 	 */
 	static void AnalyzePart(const FMantleConvertContext& Context, int32 PartIndex, const FBodies& Bodies, const FMantleAvatarContract& Contract,

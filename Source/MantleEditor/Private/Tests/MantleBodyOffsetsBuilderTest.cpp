@@ -318,8 +318,8 @@ bool FMantleBodyOffsetsGlbWriterTest::RunTest(const FString& Parameters)
 	TArray<double> Values;
 	if (CheckAccessor(static_cast<int32>(FirstLods[0]->AsNumber()), 3, TEXT("LOD0 vertex deltas"), Values))
 	{
-		// Unreal (100, 200, 300) cm is glTF (1, 3, 2) m: x kept, y and z swapped, centimetres to metres, no translation.
-		TestEqual(TEXT("x in metres"), static_cast<float>(Values[0]), 1.0f, 1e-5f);
+		// Unreal (100, 200, 300) cm is glTF (1, 3, 2) m: x kept, y and z swapped, centimeters to meters, no translation.
+		TestEqual(TEXT("x in meters"), static_cast<float>(Values[0]), 1.0f, 1e-5f);
 		TestEqual(TEXT("y is Unreal's z"), static_cast<float>(Values[1]), 3.0f, 1e-5f);
 		TestEqual(TEXT("z is Unreal's y"), static_cast<float>(Values[2]), 2.0f, 1e-5f);
 	}
@@ -400,7 +400,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleBodyOffsetsNearestMapTest, "Mantle.Edito
 
 bool FMantleBodyOffsetsNearestMapTest::RunTest(const FString& Parameters)
 {
-	// The face: most built vertices are exact in Creator's refitted face, the neck ones are a millimetre or so off.
+	// The face: most built vertices are exact in Creator's refitted face, the neck ones are a millimeter or so off.
 	const TArray<FVector3f> State = { FVector3f(0, 0, 0), FVector3f(10, 30, 20), FVector3f(10.05f, 30.0f, 20.0f), FVector3f(50, 50, 50) };
 	// Built axes are (x, z, y): state (10, 30, 20) is built (10, 20, 30).
 	const TArray<FVector3f> Built = { FVector3f(50, 50, 50), FVector3f(10, 20, 30), FVector3f(10.12f, 20.0f, 30.0f) };

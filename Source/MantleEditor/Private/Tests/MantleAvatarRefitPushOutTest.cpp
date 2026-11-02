@@ -11,7 +11,7 @@
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleAvatarRefitPushOutTestPrivate
 {
-	/** A flat square of Cells x Cells cells, Size cm across, centred on the origin at height Z, every normal (0, 0, Up). */
+	/** A flat square of Cells x Cells cells, Size cm across, centerd on the origin at height Z, every normal (0, 0, Up). */
 	FMantleSkinnedMeshLOD Sheet(const int32 Cells, const float Size, const float Z, const float Up)
 	{
 		FMantleSkinnedMeshLOD Mesh;
@@ -147,7 +147,7 @@ bool FMantleAvatarRefitPushOutTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("wide: the covered middle is left"), Out.UnderCover, Covered);
 		TestTrue(TEXT("wide: the rim moved"), Out.Moved > 0);
 		TestTrue(TEXT("wide: the middle stayed under"), Out.InsideAfter >= Covered / 2);
-		// The rim's push is smoothed inward a little; the middle, 10 cm from any edge, stays put to within a millimetre.
+		// The rim's push is smoothed inward a little; the middle, 10 cm from any edge, stays put to within a millimeter.
 		TestTrue(TEXT("wide: the middle vertex stayed"), Garment.Positions[10 * 21 + 10].Equals(FVector3f(0, 0, -1.0f), 0.1f));
 		TestFalse(TEXT("wide: the detail names the depths"), Out.Detail.IsEmpty());
 	}

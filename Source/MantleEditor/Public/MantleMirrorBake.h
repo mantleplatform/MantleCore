@@ -19,7 +19,7 @@ class UStaticMesh;
  *
  * What the copy keeps: every LOD the source's render data can be read for (and its screen sizes), the material
  * slots (same indices, so a component's material overrides still line up), every UV set (the lightmap UVs
- * included) and vertex colours, tangents with their sign, and the simple collision (each shape mirrored;
+ * included) and vertex colors, tangents with their sign, and the simple collision (each shape mirrored;
  * complex-as-simple where the source has none). Triangles are turned over when an odd number of axes is
  * mirrored, so they still face out.
  */

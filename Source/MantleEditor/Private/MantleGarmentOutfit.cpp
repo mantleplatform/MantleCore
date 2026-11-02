@@ -105,7 +105,7 @@ namespace MantleGarmentOutfitPrivate
 						}
 					}
 				}
-				// Every point within Ring cells of the centre cell is now in: they are the nearest when the Kth is that close.
+				// Every point within Ring cells of the center cell is now in: they are the nearest when the Kth is that close.
 				if (Out.Num() >= K)
 				{
 					Out.Sort([](const TPair<double, int32>& A, const TPair<double, int32>& B) { return A.Key < B.Key; });
@@ -585,10 +585,10 @@ bool FMantleGarmentOutfit::TransferWeights(FMantleGlbMesh& Garment, const FMantl
 	{
 		// The search widens until it finds skin: a garment far from the body still follows its nearest bones.
 		const FVector3f Point = Garment.Positions[Vertex];
-		Grid.Nearest(Point, TransferNeighbours, NearCm * 3.0, Found);
+		Grid.Nearest(Point, TransferNeighbors, NearCm * 3.0, Found);
 		if (Found.IsEmpty())
 		{
-			Grid.Nearest(Point, TransferNeighbours, 200.0, Found);
+			Grid.Nearest(Point, TransferNeighbors, 200.0, Found);
 		}
 		if (Found.IsEmpty())
 		{
@@ -740,17 +740,17 @@ bool FMantleGarmentOutfit::CarryWithSkin(TArray<FVector3f>& Garment, const FMant
 		Move[Point] = Closest - From.Positions[Point];
 		Known[Point] = true;
 	}
-	// Smoothed over the skin's edges: half its own move, half its neighbours' mean; a point with no move takes its known neighbours'.
-	TArray<TArray<int32>> Neighbours;
-	Neighbours.SetNum(NumPoints);
+	// Smoothed over the skin's edges: half its own move, half its neighbors' mean; a point with no move takes its known neighbors'.
+	TArray<TArray<int32>> Neighbors;
+	Neighbors.SetNum(NumPoints);
 	for (int32 First = 0; First + 2 < From.Indices.Num(); First += 3)
 	{
 		for (int32 Corner = 0; Corner < 3; ++Corner)
 		{
 			const int32 A = static_cast<int32>(From.Indices[First + Corner]);
 			const int32 B = static_cast<int32>(From.Indices[First + (Corner + 1) % 3]);
-			Neighbours[A].AddUnique(B);
-			Neighbours[B].AddUnique(A);
+			Neighbors[A].AddUnique(B);
+			Neighbors[B].AddUnique(A);
 		}
 	}
 	for (int32 Pass = 0; Pass < CarrySmoothIters; ++Pass)
@@ -761,11 +761,11 @@ bool FMantleGarmentOutfit::CarryWithSkin(TArray<FVector3f>& Garment, const FMant
 		{
 			FVector3f Sum = FVector3f::ZeroVector;
 			int32 Count = 0;
-			for (const int32 Neighbour : Neighbours[Point])
+			for (const int32 Neighbor : Neighbors[Point])
 			{
-				if (Known[Neighbour])
+				if (Known[Neighbor])
 				{
-					Sum += Move[Neighbour];
+					Sum += Move[Neighbor];
 					++Count;
 				}
 			}
@@ -809,7 +809,7 @@ bool FMantleGarmentOutfit::CarryWithSkin(TArray<FVector3f>& Garment, const FMant
 		}
 		else
 		{
-			Grid.Nearest(Garment[Vertex], TransferNeighbours, 200.0, Found);
+			Grid.Nearest(Garment[Vertex], TransferNeighbors, 200.0, Found);
 			double Weights = 0.0;
 			for (const TPair<double, int32>& Near : Found)
 			{
@@ -1345,16 +1345,16 @@ bool FMantleGarmentOutfit::MakeFromWork(const FMantleConvertMetaHumanWork& Work,
 			Move[Point] = (Wrapped[Point] - TwinSurface.Positions[Point]) * static_cast<float>(Share);
 			Shaped += Share > 0.0 ? 1 : 0;
 		}
-		TArray<TArray<int32>> Neighbours;
-		Neighbours.SetNum(NumPoints);
+		TArray<TArray<int32>> Neighbors;
+		Neighbors.SetNum(NumPoints);
 		for (int32 First = 0; First + 2 < TwinSurface.Indices.Num(); First += 3)
 		{
 			for (int32 Corner = 0; Corner < 3; ++Corner)
 			{
 				const int32 A = static_cast<int32>(TwinSurface.Indices[First + Corner]);
 				const int32 B = static_cast<int32>(TwinSurface.Indices[First + (Corner + 1) % 3]);
-				Neighbours[A].AddUnique(B);
-				Neighbours[B].AddUnique(A);
+				Neighbors[A].AddUnique(B);
+				Neighbors[B].AddUnique(A);
 			}
 		}
 		for (int32 Pass = 0; Pass < ShapeSmoothIters; ++Pass)
@@ -1362,16 +1362,16 @@ bool FMantleGarmentOutfit::MakeFromWork(const FMantleConvertMetaHumanWork& Work,
 			TArray<FVector3f> Next = Move;
 			for (int32 Point = 0; Point < NumPoints; ++Point)
 			{
-				if (Neighbours[Point].IsEmpty())
+				if (Neighbors[Point].IsEmpty())
 				{
 					continue;
 				}
 				FVector3f Sum = FVector3f::ZeroVector;
-				for (const int32 Neighbour : Neighbours[Point])
+				for (const int32 Neighbor : Neighbors[Point])
 				{
-					Sum += Move[Neighbour];
+					Sum += Move[Neighbor];
 				}
-				Next[Point] = 0.5f * Move[Point] + 0.5f * Sum / static_cast<float>(Neighbours[Point].Num());
+				Next[Point] = 0.5f * Move[Point] + 0.5f * Sum / static_cast<float>(Neighbors[Point].Num());
 			}
 			Move = MoveTemp(Next);
 		}
@@ -2143,7 +2143,7 @@ USkeletalMesh* FMantleGarmentOutfit::FindBareBody(const USkeletalMesh& Body, FSt
 			continue;
 		}
 		// Strip's own skin check, section by section: skin, or a face detail (eyes, mouth, lashes, hair), is the body;
-		// anything else covers it (clothing, underwear, armour).
+		// anything else covers it (clothing, underwear, armor).
 		TArray<FString> Covering;
 		TArray<int32> SlotIndices;
 		for (const FMantleOutfitSection& Section : FMantleCosmeticExport::ReadOutfitSections(Mesh, 0, SlotIndices))

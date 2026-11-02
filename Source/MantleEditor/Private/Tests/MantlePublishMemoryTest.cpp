@@ -1052,15 +1052,15 @@ bool FMantlePublishMemorySessionReleaseTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("the caches are no longer held"), FMantlePublishCaches::NumActive(), ActiveBefore);
 	}
 
-	// Cancelled.
+	// Canceled.
 	{
 		FSessionRig Rig;
 		Rig.Mantle->UploadStatus = TEXT("processing");
 		Rig.Make(/*bGoLive*/ true);
 		Rig.Session->Start();
 		TestEqual(TEXT("a publish is uploading"), static_cast<int32>(Rig.Session->GetPhase()), static_cast<int32>(EMantlePublishPhase::Uploading));
-		TestTrue(TEXT("it can be cancelled"), Rig.Session->Cancel());
-		TestTrue(TEXT("and says so"), Rig.Session->GetResult().bCancelled);
+		TestTrue(TEXT("it can be canceled"), Rig.Session->Cancel());
+		TestTrue(TEXT("and says so"), Rig.Session->GetResult().bCanceled);
 		TestEqual(TEXT("the queue holds no bytes"), Rig.Session->GetQueue()->GetHeldBytes(), static_cast<int64>(0));
 		TestEqual(TEXT("the set holds no bytes"), SetBytes(Rig.Session->GetAssetSet()), static_cast<int64>(0));
 		TestEqual(TEXT("the caches are no longer held"), FMantlePublishCaches::NumActive(), ActiveBefore);
@@ -1671,7 +1671,7 @@ bool FMantlePublishMemoryReduceReasonTest::RunTest(const FString& Parameters)
 
 namespace MantlePublishMemoryTestPrivate
 {
-	/** A flattener that writes a glTF with one base colour image, so a material converts with one texture and no renderer. */
+	/** A flattener that writes a glTF with one base color image, so a material converts with one texture and no renderer. */
 	class FScriptedFlattener : public IMantleMaterialFlattener
 	{
 	public:

@@ -25,10 +25,10 @@ namespace MantleMirrorBakeTestPrivate
 {
 	const TCHAR* const CubePath = TEXT("/Engine/BasicShapes/Cube.Cube");
 
-	/** The engine cube's centre moved here: a mesh that is not symmetric about its origin, so a mirror shows. */
+	/** The engine cube's center moved here: a mesh that is not symmetric about its origin, so a mirror shows. */
 	const FVector CubeOffset(100.0, 20.0, 30.0);
 
-	/** A box that is off-centre and turned, to see collision mirror. */
+	/** A box that is off-center and turned, to see collision mirror. */
 	const FVector BoxCenter(100.0, 20.0, 30.0);
 	const FRotator BoxRotation(0.0, 30.0, 0.0);
 
@@ -192,7 +192,7 @@ bool FMantleMirrorBakeBoundsTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleMirrorBakeTestPrivate;
 	FMirrorFixture Fixture;
-	if (!TestTrue(TEXT("the fixture builds (the engine cube and an off-centre copy of it)"), Fixture.IsReady()))
+	if (!TestTrue(TEXT("the fixture builds (the engine cube and an off-center copy of it)"), Fixture.IsReady()))
 	{
 		return false;
 	}
@@ -201,8 +201,8 @@ bool FMantleMirrorBakeBoundsTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	// The fixture is off-centre, or no mirror would show.
-	TestTrue(TEXT("the source cube is off-centre"), Source.Bounds.GetCenter().Equals(CubeOffset, 0.1));
+	// The fixture is off-center, or no mirror would show.
+	TestTrue(TEXT("the source cube is off-center"), Source.Bounds.GetCenter().Equals(CubeOffset, 0.1));
 
 	// A cube mirrored on X: its bounds are the source's about x = 0.
 	{
@@ -523,7 +523,7 @@ bool FMantleMirrorBakeKeepsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("and the lightmap UVs are kept as a UV set"), static_cast<int32>(Mirrored->GetRenderData()->LODResources[0].VertexBuffers.StaticMeshVertexBuffer.GetNumTexCoords()),
 		static_cast<int32>(Fixture.Offset->GetRenderData()->LODResources[0].VertexBuffers.StaticMeshVertexBuffer.GetNumTexCoords()));
 
-	// The collision: the box's centre mirrored on X, its turn mirrored (yaw 30 becomes yaw -30), the same complexity.
+	// The collision: the box's center mirrored on X, its turn mirrored (yaw 30 becomes yaw -30), the same complexity.
 	const UBodySetup* Body = Mirrored->GetBodySetup();
 	if (!TestNotNull(TEXT("the copy has a body setup"), Body))
 	{
@@ -533,7 +533,7 @@ bool FMantleMirrorBakeKeepsTest::RunTest(const FString& Parameters)
 	if (TestEqual(TEXT("and the source's one box"), Body->AggGeom.BoxElems.Num(), 1))
 	{
 		const FKBoxElem& Box = Body->AggGeom.BoxElems[0];
-		TestTrue(FString::Printf(TEXT("the box's centre is mirrored on X (%s)"), *Box.Center.ToString()), Box.Center.Equals(FVector(-BoxCenter.X, BoxCenter.Y, BoxCenter.Z), 0.01));
+		TestTrue(FString::Printf(TEXT("the box's center is mirrored on X (%s)"), *Box.Center.ToString()), Box.Center.Equals(FVector(-BoxCenter.X, BoxCenter.Y, BoxCenter.Z), 0.01));
 		TestTrue(FString::Printf(TEXT("the box's rotation is mirrored (%s)"), *Box.Rotation.ToString()),
 			FMath::Abs(Box.Rotation.Quaternion() | FRotator(0.0, -30.0, 0.0).Quaternion()) > 0.9999);
 		TestTrue(TEXT("and its size is kept"), FMath::IsNearlyEqual(Box.X, 100.0f) && FMath::IsNearlyEqual(Box.Y, 100.0f) && FMath::IsNearlyEqual(Box.Z, 100.0f));

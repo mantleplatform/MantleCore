@@ -111,7 +111,7 @@ namespace MantleVehicleConverterPrivate
 		return MakeShared<FJsonValueArray>(Items);
 	}
 
-	/** A linear colour's RGB, as the schema's linearColor. */
+	/** A linear color's RGB, as the schema's linearColor. */
 	TSharedRef<FJsonValue> VehicleColor(const FLinearColor& Value)
 	{
 		TArray<TSharedPtr<FJsonValue>> Items = { VehicleNumber(Value.R), VehicleNumber(Value.G), VehicleNumber(Value.B) };
@@ -288,7 +288,7 @@ namespace MantleVehicleConverterPrivate
 		}
 	}
 
-	/** Caps a mesh's influences to Max per vertex: heaviest kept (the reader writes them heaviest first), renormalised. */
+	/** Caps a mesh's influences to Max per vertex: heaviest kept (the reader writes them heaviest first), renormalized. */
 	void VehicleCapInfluences(FMantleGlbMesh& Mesh, int32 Max)
 	{
 		const int32 N = Mesh.NumInfluences;
@@ -508,7 +508,7 @@ namespace MantleVehicleConverterPrivate
 		});
 	}
 
-	/** How far a tire's centre may sit off its wheel's spin axis (in X and Z), cm; how round its bounds must be; its least size across. */
+	/** How far a tire's center may sit off its wheel's spin axis (in X and Z), cm; how round its bounds must be; its least size across. */
 	constexpr double VehicleTireAxisCm = 3.0;
 	constexpr double VehicleTireRoundness = 0.15;
 	constexpr double VehicleTireMinDiameterCm = 10.0;
@@ -517,8 +517,8 @@ namespace MantleVehicleConverterPrivate
 
 	/**
 	 * Whether Placed (a mesh's bounds, placed in component space) is shaped and placed like a tire of the wheel at Hub: as wide in X
-	 * as in Z (within VehicleTireRoundness), narrower in Y than across, at least VehicleTireMinDiameterCm across, its centre within
-	 * VehicleTireAxisCm of the wheel's spin axis (X and Z) and within its radius of the hub along it (a tire modelled in car space,
+	 * as in Z (within VehicleTireRoundness), narrower in Y than across, at least VehicleTireMinDiameterCm across, its center within
+	 * VehicleTireAxisCm of the wheel's spin axis (X and Z) and within its radius of the hub along it (a tire modeled in car space,
 	 * or outboard of a steering pivot), and, when Radius is known, across within VehicleTireDiameterSlack of 2 x Radius. Its size
 	 * across when it is; 0 when not.
 	 */
@@ -546,13 +546,13 @@ namespace MantleVehicleConverterPrivate
 	}
 
 	// #612: GuessSeatContacts' first guesses, from the default avatar seated in the pack sedan: its
-	// pelvis 34 cm under the seat's capsule centre and 4.3 cm ahead of it; the balls of its feet about 80 cm ahead and 70 cm down, a
+	// pelvis 34 cm under the seat's capsule center and 4.3 cm ahead of it; the balls of its feet about 80 cm ahead and 70 cm down, a
 	// hand's width either side of the seat's middle; its hands at ten and two on a steering wheel, or on its lap without one.
 	const FVector VehicleGuessPelvis(4.3, 0.0, -34.0);
 	const FVector VehicleGuessFoot(80.0, 12.0, -70.0);
 	const FVector VehicleGuessLap(30.0, 15.0, 5.0);
 	constexpr double VehicleGuessRimDegrees = 60.0;
-	/** An exit's distance from the vehicle's centre line: past the collision's side by this, and at least VehicleGuessExitMin (the client's). */
+	/** An exit's distance from the vehicle's center line: past the collision's side by this, and at least VehicleGuessExitMin (the client's). */
 	constexpr double VehicleGuessExitClear = 100.0;
 	constexpr double VehicleGuessExitMin = 220.0;
 
@@ -632,7 +632,7 @@ bool FMantleVehicleConverter::IsUploadedId(const FString& Id)
 bool FMantleVehicleConverter::ParseWheelBoneName(const FString& Bone, FMantleVehicleWheelBone& Out)
 {
 	using namespace MantleVehicleConverterPrivate;
-	Out.bCentre = false;
+	Out.bCenter = false;
 	// A steering pivot, a part that does not spin or a hub named like its wheel is not the wheel: the one beside it without those words is.
 	if (VehicleWheelHelper(Bone))
 	{
@@ -675,7 +675,7 @@ bool FMantleVehicleConverter::ParseWheelBoneName(const FString& Bone, FMantleVeh
 		Out.bLeft = bLeft;
 		return true;
 	}
-	// A wheel on the centre line (a motorcycle's two, a plane's nose wheel; #821): "wheel" and a position word and no side, as wheel_f and wheel_r, wheel_front and
+	// A wheel on the center line (a motorcycle's two, a plane's nose wheel; #821): "wheel" and a position word and no side, as wheel_f and wheel_r, wheel_front and
 	// wheel_rear. Front is the front axle; rear, with the other corners' _R, is the back one.
 	if (bWheelWord)
 	{
@@ -686,7 +686,7 @@ bool FMantleVehicleConverter::ParseWheelBoneName(const FString& Bone, FMantleVeh
 			Out.Bone = FName(*Bone);
 			Out.Axle = bFront ? 0 : 2;
 			Out.bLeft = false;
-			Out.bCentre = true;
+			Out.bCenter = true;
 			return true;
 		}
 	}
@@ -1060,7 +1060,7 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	FMantleVehicleConversion Result;
 	if (!Mesh)
 	{
-		Result.Problems.Add(TEXT("Select the model to use as the vehicle's body (it needs a wheel part at the centre of each wheel), then convert it."));
+		Result.Problems.Add(TEXT("Select the model to use as the vehicle's body (it needs a wheel part at the center of each wheel), then convert it."));
 		return Result;
 	}
 	const FString Name = Mesh->GetName();
@@ -1068,7 +1068,7 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	const int32 NumBones = Skeleton.GetRawBoneNum();
 	if (NumBones > FMantleVehicleLimits::MaxBones)
 	{
-		Result.Problems.Add(FString::Printf(TEXT("%s has %d joints (bones); a vehicle model has at most %d. Remove the joints the vehicle does not need (each wheel needs one at its centre) and re-import it."),
+		Result.Problems.Add(FString::Printf(TEXT("%s has %d joints (bones); a vehicle model has at most %d. Remove the joints the vehicle does not need (each wheel needs one at its center) and re-import it."),
 			*Name, NumBones, FMantleVehicleLimits::MaxBones));
 	}
 
@@ -1094,7 +1094,7 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 			const int32 BoneB = Skeleton.FindRawBoneIndex(Wheels[B].Bone);
 			if (Pose.IsValidIndex(BoneA) && Pose.IsValidIndex(BoneB) && FVector::Dist(Pose[BoneA].GetLocation(), Pose[BoneB].GetLocation()) < 1.0)
 			{
-				Result.Problems.Add(FString::Printf(TEXT("%s has two parts, %s and %s, that are named like wheels and sit in the same place (one is probably a hub or axle). Rename the one that is not the wheel's centre so its name does not end in a corner (_FL and the like), and re-import it."),
+				Result.Problems.Add(FString::Printf(TEXT("%s has two parts, %s and %s, that are named like wheels and sit in the same place (one is probably a hub or axle). Rename the one that is not the wheel's center so its name does not end in a corner (_FL and the like), and re-import it."),
 					*Name, *Wheels[A].Bone.ToString(), *Wheels[B].Bone.ToString()));
 			}
 		}
@@ -1246,7 +1246,7 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	Result.Notes.Append(SetupNotes);
 	Result.Notes.Append(PartNotes);
 
-	// The chassis (#435): its collision boxes and centre of mass from the physics it simulates on, where the tuning sets neither.
+	// The chassis (#435): its collision boxes and center of mass from the physics it simulates on, where the tuning sets neither.
 	TArray<FName> WheelNames;
 	for (const FMantleVehicleWheelBone& Wheel : Wheels)
 	{
@@ -1264,10 +1264,10 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 		}
 		if (!Tuning.bOverrideCenterOfMass && (Around.bCenterOfMassOverride || bPhysics))
 		{
-			// A movement component's override is in the root body's space; the physics' own centre is in the body's already.
+			// A movement component's override is in the root body's space; the physics' own center is in the body's already.
 			Tuning.bOverrideCenterOfMass = true;
 			Tuning.CenterOfMass = Around.bCenterOfMassOverride && Pose.Num() > 0 ? Pose[0].TransformPosition(Around.CenterOfMassOverride) : Center;
-			Result.Notes.Add(FString::Printf(TEXT("Centre of mass: (%s, %s, %s) cm, from %s. Change it under Tuning > Center Of Mass in the vehicle asset."),
+			Result.Notes.Add(FString::Printf(TEXT("Center of mass: (%s, %s, %s) cm, from %s. Change it under Tuning > Center Of Mass in the vehicle asset."),
 				*VehicleNumberText(Tuning.CenterOfMass.X), *VehicleNumberText(Tuning.CenterOfMass.Y), *VehicleNumberText(Tuning.CenterOfMass.Z),
 				Around.bCenterOfMassOverride ? TEXT("the original vehicle's settings") : TEXT("the original's collision shape")));
 		}
@@ -1332,7 +1332,7 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	TArray<FString> PaintedList = Source.Paint.Sections;
 	PaintedList.Append(PaintedSlots);
 	Result.Notes.Add(FString::Printf(TEXT("Its sections: %s. %s"), *FString::Join(Sections, TEXT(", ")), !bPainted
-		? TEXT("None is painted: to give it a colour players and scripts can change, and liveries, add sections to Paint > Sections (or a part's slots to its Paint Slots) in the vehicle asset.")
+		? TEXT("None is painted: to give it a color players and scripts can change, and liveries, add sections to Paint > Sections (or a part's slots to its Paint Slots) in the vehicle asset.")
 		: *FString::Printf(TEXT("Painted with Mantle's car paint, where liveries go: %s. Add liveries (images, alpha where the paint shows) under Paint > Liveries in the vehicle asset."),
 			*FString::Join(PaintedList, TEXT(", ")))));
 
@@ -1356,7 +1356,7 @@ UMantleVehicleSource* FMantleVehicleConverter::ConvertAsset(USkeletalMesh* Mesh,
 	OutResult = FMantleVehicleConversion();
 	if (!Mesh)
 	{
-		OutResult.Problems.Add(TEXT("Select the model to use as the vehicle's body (it needs a wheel part at the centre of each wheel), then convert it."));
+		OutResult.Problems.Add(TEXT("Select the model to use as the vehicle's body (it needs a wheel part at the center of each wheel), then convert it."));
 		return nullptr;
 	}
 	const FMantleVehicleSurroundings Surroundings = Around ? *Around : SurroundingsOfMesh(*Mesh);
@@ -1392,7 +1392,7 @@ UMantleVehicleSource* FMantleVehicleConverter::ConvertAsset(USkeletalMesh* Mesh,
 		Source->Modify();
 		Source->Body = Scratch->Body;
 		Source->Wheels = Scratch->Wheels;
-		// Its tuning is the creator's; only a collision and centre of mass read from the physics, where it set neither, are new.
+		// Its tuning is the creator's; only a collision and center of mass read from the physics, where it set neither, are new.
 		Source->Tuning = Scratch->Tuning;
 		// Its paint's finish and liveries are the creator's; only a suggestion for sections, when it had none, is new.
 		Source->Paint.Sections = Scratch->Paint.Sections;
@@ -1470,7 +1470,7 @@ FMantleVehicleSurroundings FMantleVehicleConverter::SurroundingsOfComponent(cons
 		{
 			continue;
 		}
-		// A ChaosVehicles movement component's centre-of-mass override, mass and wheel setups (each a wheel class and the bone it
+		// A ChaosVehicles movement component's center-of-mass override, mass and wheel setups (each a wheel class and the bone it
 		// names), by their property names: MantleCore takes no plugin dependency.
 		const FBoolProperty* Enable = FindFProperty<FBoolProperty>(Component->GetClass(), TEXT("bEnableCenterOfMassOverride"));
 		const FStructProperty* Center = FindFProperty<FStructProperty>(Component->GetClass(), TEXT("CenterOfMassOverride"));
@@ -1567,7 +1567,7 @@ bool FMantleVehicleConverter::ReadChassisPhysics(const UPhysicsAsset& Physics, c
 	}
 
 	// Every shape of every chassis body (none on a wheel's bone or under one: a ChaosVehicles car's wheel bodies only mark
-	// where its wheels are), as an axis-aligned box in component space, with its volume for the centre of mass.
+	// where its wheels are), as an axis-aligned box in component space, with its volume for the center of mass.
 	TArray<FBox> Shapes;
 	FVector Weighted = FVector::ZeroVector;
 	double Volume = 0.0;
@@ -1619,7 +1619,7 @@ bool FMantleVehicleConverter::ReadChassisPhysics(const UPhysicsAsset& Physics, c
 			// A convex hull's volume is its bounds' here: close enough for where its weight sits.
 			Add(Element.CalcAABB(BoneTM, FVector::OneVector), 0.0, true);
 		}
-		// The root-most body is the chassis Mantle simulates: its COM nudge moves the centre.
+		// The root-most body is the chassis Mantle simulates: its COM nudge moves the center.
 		if (NudgeBone == INDEX_NONE || Bone < NudgeBone)
 		{
 			NudgeBone = Bone;
@@ -1660,7 +1660,7 @@ bool FMantleVehicleConverter::ReadChassisPhysics(const UPhysicsAsset& Physics, c
 		FMantleVehicleLimits::GetRange(TEXT("collision/*/extent/*"), ExtentMin, ExtentMax);
 		if (Out.Center.GetMin() < CenterMin || Out.Center.GetMax() > CenterMax || Out.Extent.GetMax() > ExtentMax)
 		{
-			OutNotes.Add(FString::Printf(TEXT("Collision: the model's collision shape (%s) reaches farther than a vehicle's boxes may (%s cm from the model's origin at most), so the vehicle's collision is one box around the body. Check the model is in centimetres, or set Collision in the vehicle asset."),
+			OutNotes.Add(FString::Printf(TEXT("Collision: the model's collision shape (%s) reaches farther than a vehicle's boxes may (%s cm from the model's origin at most), so the vehicle's collision is one box around the body. Check the model is in centimeters, or set Collision in the vehicle asset."),
 				*Physics.GetName(), *VehicleNumberText(CenterMax)));
 			OutBoxes.Reset();
 			return false;
@@ -1772,7 +1772,7 @@ void FMantleVehicleConverter::AddParts(const USkeletalMesh& Mesh, const TConstAr
 		Entry.Bone = Bone;
 		Entry.Placement = Found.Relative * Point;
 		// Shaped and placed like a tire of a wheel it could belong to: hung from the root, the wheel's bone or a bone of its corner
-		// (a steering pivot, a hub, or a tire modelled in car space and pinned to one).
+		// (a steering pivot, a hub, or a tire modeled in car space and pinned to one).
 		const FString Corner = CornerOf(Info[Bone].Name.ToString());
 		const FBox Bounds = Found.Mesh->GetBoundingBox().TransformBy(Entry.Placement);
 		for (int32 Index = 0; Index < WheelsAt.Num() && Entry.Round == INDEX_NONE; ++Index)
@@ -1923,7 +1923,7 @@ bool FMantleVehicleConverter::LooksLikePaint(const UMaterialInterface* Material)
 	{
 		return true;
 	}
-	// The built-in cars' paint contract (UMantleVehicleDefinition::PaintParameter's default): the slot a car is recoloured on.
+	// The built-in cars' paint contract (UMantleVehicleDefinition::PaintParameter's default): the slot a car is recolored on.
 	FLinearColor Tint;
 	return Material->GetVectorParameterValue(FHashedMaterialParameterInfo(FName(TEXT("Paint Tint"))), Tint);
 }
@@ -2049,7 +2049,7 @@ FMantleVehicleSourceSeatContacts FMantleVehicleConverter::GuessSeatContacts(cons
 		return FVector(FMath::Clamp(At.X, Min, Max), FMath::Clamp(At.Y, Min, Max), FMath::Clamp(At.Z, Min, Max));
 	};
 	const FVector Seat = bPassenger ? Tuning.PassengerSeatLocation : Tuning.SeatLocation;
-	// The seat's own side: the side of the centre line it sits on, else the driver's left (-Y) and the passenger's right.
+	// The seat's own side: the side of the center line it sits on, else the driver's left (-Y) and the passenger's right.
 	const double Side = Seat.Y < 0.0 ? -1.0 : (Seat.Y > 0.0 ? 1.0 : (bPassenger ? 1.0 : -1.0));
 
 	FMantleVehicleSourceSeatContacts Out;
@@ -2831,7 +2831,7 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		}
 		for (const FPoint& Entry : Points)
 		{
-			// The rotation is written normalised, within its range.
+			// The rotation is written normalized, within its range.
 			const FMantleVehicleSourceContact& Point = *Entry.Point;
 			for (int32 Axis = 0; Axis < 3; ++Axis)
 			{
@@ -3463,10 +3463,10 @@ namespace MantleVehicleConverterPrivate
 			return;
 		}
 		// Its attached parts (#435 item 2) name mesh uploads this file does not carry: they are left out, as the materials are. The
-		// chassis's collision boxes and centre of mass, which the parity run drives on, are in the document.
+		// chassis's collision boxes and center of mass, which the parity run drives on, are in the document.
 		UE_LOG(LogMantle, Display, TEXT("MANTLE_VEHICLE_UPLOAD wrote %s: %d bytes, %d wheels, %d linkage rules, %d collision boxes%s (%d attached parts left out)"),
 			*Out, Bytes.Num(), Source->Wheels.Num(), Source->Linkage.Num(), Source->Tuning.Collision.Num(),
-			Source->Tuning.bOverrideCenterOfMass ? TEXT(", a centre of mass") : TEXT(""), Source->Parts.Num());
+			Source->Tuning.bOverrideCenterOfMass ? TEXT(", a center of mass") : TEXT(""), Source->Parts.Num());
 	}
 
 	FAutoConsoleCommand WriteVehicleUploadCommand(

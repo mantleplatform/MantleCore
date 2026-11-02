@@ -36,7 +36,7 @@ private:
  * point and the interpolated vertex normal there. Triangles come from a bounding-volume tree, so the answer is exact
  * (the prototype picked candidate triangles from surface samples with a k-d tree and then measured exactly).
  *
- * Space is the caller's, in centimetres. The winding is checked once: if the triangles in the top quarter of the mesh
+ * Space is the caller's, in centimeters. The winding is checked once: if the triangles in the top quarter of the mesh
  * face inward, every triangle is flipped, so "outside" is always the side the skin faces. Vertex normals are the sum
  * of the unit face normals around each vertex, as in the prototype; vertices split at a UV seam keep their own.
  */
@@ -45,7 +45,7 @@ class MANTLEEDITOR_API FMantleScalpHeadSurface
 public:
 	struct FHit
 	{
-		/** Positive outside the skin, negative inside, centimetres. */
+		/** Positive outside the skin, negative inside, centimeters. */
 		double SignedDistance = 0.0;
 		FVector Point = FVector::ZeroVector;
 		FVector Normal = FVector::UpVector;
@@ -92,7 +92,7 @@ private:
  *  - Cards get a smoothed scalp offset field. On the head surface, push where hair is closer to the skin than the
  *    minimum clearance (1 mm; 2 mm when the pack has a cap, as cards ride on the cap) and pull in only floating roots
  *    (no-cap packs: card roots; cap packs: the cap's open edge) more than 5 mm off, to 3 mm. The field is smoothed with
- *    a normalised Gaussian (sigma 1.5 cm) over head vertices with hair nearby, and each card vertex moves along the head
+ *    a normalized Gaussian (sigma 1.5 cm) over head vertices with hair nearby, and each card vertex moves along the head
  *    normal by the field interpolated over its 4 nearest head vertices. Volume-style packs therefore keep their layering.
  *  - A solid cap gets only a lower-edge wrap: its open-boundary vertices snap to the closest scalp point + 1 mm (capped
  *    at 3 cm per axis), the displacement spreads inward with a cosine falloff over 3 cm of surface distance, and any
@@ -198,7 +198,7 @@ struct MANTLEEDITOR_API FMantleScalpFit
 	static TArray<FVector3f> FindCardEnds(TConstArrayView<FVector3f> Positions, TConstArrayView<uint32> Indices);
 
 	/**
-	 * Normalised Gaussian over the head vertices flagged in Mask: Out[i] = sum(w * Value * mask) / sum(w * mask) with
+	 * Normalized Gaussian over the head vertices flagged in Mask: Out[i] = sum(w * Value * mask) / sum(w * mask) with
 	 * w = exp(-0.5 (d/Sigma)^2) within 3 sigma, and the vertex's own weight doubled (the prototype added an identity
 	 * matrix to the distance matrix, which already counted the vertex itself). 0 where no masked vertex is near. A
 	 * constant field stays constant. Only vertices flagged in Wanted are computed (empty: all); the rest are 0.

@@ -31,7 +31,7 @@ public:
 	static constexpr float TargetShare = 0.9f;
 
 	/** What OutWhy says when the creator pressed Cancel on the reduction's progress dialog. Not remembered: the next Check tries again. */
-	static const TCHAR* const CancelledWhy;
+	static const TCHAR* const CanceledWhy;
 
 	/** A reduction that comes out over a limit is tried again this many times in all, each aiming lower. */
 	static constexpr int32 MaxAttempts = 3;
@@ -81,7 +81,7 @@ public:
 	 * what it likes from the description and answers with the triangles and vertices that came out (false stops, with
 	 * OutWhy set by Measure). A try over either limit is followed by another aiming lower, MaxAttempts in all. ShouldCancel is asked
 	 * before each try (never during one: the engine's reducer is one call that cannot be interrupted); true stops with OutWhy
-	 * CancelledWhy.
+	 * CanceledWhy.
 	 * True when the last try Measure saw is within both limits.
 	 */
 	static bool ReduceUntilFits(const FMeshDescription& In, const FMantlePlaceAssetLimits& Limits,

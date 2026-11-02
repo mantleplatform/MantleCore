@@ -46,7 +46,7 @@ namespace MantleAvatarAtlasFixerPrivate
 	constexpr int32 MinCellPixels = 4;
 	constexpr int32 MinAtlasSize = 64;
 
-	/** Source texels per UV unit of a material with no texture (a flat colour needs few), and the floor for any. */
+	/** Source texels per UV unit of a material with no texture (a flat color needs few), and the floor for any. */
 	constexpr int32 MinTexelsPerUV = 32;
 
 	/** Pixels of dilation around every cell's gutter, into the atlas's unused space, so mips never pull in a default. */
@@ -525,7 +525,7 @@ namespace MantleAvatarAtlasFixerPrivate
 		bool bClampU = false;
 		bool bClampV = false;
 
-		/** Source pixels as BGRA8 in the texture's own encoding (sRGB colour stays sRGB, data stays linear). */
+		/** Source pixels as BGRA8 in the texture's own encoding (sRGB color stays sRGB, data stays linear). */
 		bool Load(const UTexture* Texture, bool bLinear, int32 MaxSize)
 		{
 			Blocks.Reset();
@@ -647,8 +647,8 @@ namespace MantleAvatarAtlasFixerPrivate
 
 	/**
 	 * A material's textures found the way the upload finds them (FMantleCosmeticExport::ResolveMaterialTextures:
-	 * the plain sample's texture, else base colour, normal and ORM by parameter name, never an animated wrinkle map or a
-	 * tiled detail map, then the largest colour texture it uses); an opacity texture by
+	 * the plain sample's texture, else base color, normal and ORM by parameter name, never an animated wrinkle map or a
+	 * tiled detail map, then the largest color texture it uses); an opacity texture by
 	 * FMantleCosmeticExport::PickOpacityTexture; flat values from its parameters otherwise.
 	 */
 	struct FAtlasResolved
@@ -681,10 +681,10 @@ namespace MantleAvatarAtlasFixerPrivate
 			: AtlasNameHasAny(OrmName, { TEXT("RMA") }) ? EAtlasOrmLayout::Rma : EAtlasOrmLayout::RoughnessOnly;
 		for (const TCHAR* Name : { TEXT("BaseColor"), TEXT("Base Color"), TEXT("Color"), TEXT("Tint") })
 		{
-			FLinearColor Colour;
-			if (Material->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(FName(Name))), Colour))
+			FLinearColor Color;
+			if (Material->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(FName(Name))), Color))
 			{
-				Out.Flat = Colour;
+				Out.Flat = Color;
 				break;
 			}
 		}
@@ -773,14 +773,14 @@ namespace MantleAvatarAtlasFixerPrivate
 		{
 			for (int32 Column = 0; Column < Out.Size.X; ++Column)
 			{
-				FVector4f Colour(0.0f, 0.0f, 0.0f, 0.0f), Normal(0.0f, 0.0f, 0.0f, 0.0f), Orm(0.0f, 0.0f, 0.0f, 0.0f);
+				FVector4f Color(0.0f, 0.0f, 0.0f, 0.0f), Normal(0.0f, 0.0f, 0.0f, 0.0f), Orm(0.0f, 0.0f, 0.0f, 0.0f);
 				float Opacity = 0.0f;
 				for (int32 TY = 0; TY < Taps; ++TY)
 				{
 					for (int32 TX = 0; TX < Taps; ++TX)
 					{
 						const FVector2f UV(Padded.Min.X + (Column + (TX + 0.5f) / Taps) * PixelUV.X, Padded.Min.Y + (Row + (TY + 0.5f) / Taps) * PixelUV.Y);
-						Colour += Samplers.BaseColor.IsSet() ? Samplers.BaseColor->Sample(UV, ForcedTile) : FVector4f(Flat.R, Flat.G, Flat.B, 255.0f);
+						Color += Samplers.BaseColor.IsSet() ? Samplers.BaseColor->Sample(UV, ForcedTile) : FVector4f(Flat.R, Flat.G, Flat.B, 255.0f);
 						Normal += Samplers.Normal.IsSet() ? Samplers.Normal->Sample(UV, ForcedTile) : FVector4f(128.0f, 128.0f, 255.0f, 255.0f);
 						if (Samplers.Orm.IsSet())
 						{
@@ -802,11 +802,11 @@ namespace MantleAvatarAtlasFixerPrivate
 					}
 				}
 				const float Weight = 1.0f / (Taps * Taps);
-				Colour *= Weight;
-				// Opacity rides in the base colour's alpha; an opaque source (or an opaque atlas) is fully opaque.
-				Colour.W = !bAtlasHasAlpha || !bSourceHasAlpha ? 255.0f : Samplers.Opacity.IsSet() ? Opacity * Weight : Colour.W;
+				Color *= Weight;
+				// Opacity rides in the base color's alpha; an opaque source (or an opaque atlas) is fully opaque.
+				Color.W = !bAtlasHasAlpha || !bSourceHasAlpha ? 255.0f : Samplers.Opacity.IsSet() ? Opacity * Weight : Color.W;
 				const int32 Index = Row * Out.Size.X + Column;
-				Out.BaseColor[Index] = AtlasToColor(Colour);
+				Out.BaseColor[Index] = AtlasToColor(Color);
 				Out.Normal[Index] = AtlasToColor(Normal * Weight);
 				Out.Orm[Index] = AtlasToColor(Orm * Weight);
 			}
@@ -832,7 +832,7 @@ namespace MantleAvatarAtlasFixerPrivate
 				OutPixels[Y * Size.X + X] = (*Data)[SY * DataSize->X + SX];
 			}
 		}
-		// Colour must be sRGB like a creator's base colour texture.
+		// Color must be sRGB like a creator's base color texture.
 		if (Property == MP_BaseColor && Output.PropertyIsLinearColor.FindRef(Property))
 		{
 			for (FColor& Pixel : OutPixels)
@@ -926,7 +926,7 @@ namespace MantleAvatarAtlasFixerPrivate
 			{
 				continue;
 			}
-			// An unlit (toon) material, or one with a black base colour, shows its emissive: that is its colour.
+			// An unlit (toon) material, or one with a black base color, shows its emissive: that is its color.
 			TArray<FColor> Emissive;
 			if (AtlasBakedProperty(Output, MP_EmissiveColor, Request.Size, Emissive))
 			{
@@ -938,7 +938,7 @@ namespace MantleAvatarAtlasFixerPrivate
 					}
 				}
 				const bool bUnlit = Request.Material->GetShadingModels().IsUnlit();
-				const bool bEmissive = FMantleAvatarAtlasFixer::BakesEmissiveAsColour(bUnlit, Pixels.BaseColor, Emissive);
+				const bool bEmissive = FMantleAvatarAtlasFixer::BakesEmissiveAsColor(bUnlit, Pixels.BaseColor, Emissive);
 				if (bEmissive)
 				{
 					for (int32 Texel = 0; Texel < Pixels.BaseColor.Num(); ++Texel)
@@ -1041,8 +1041,8 @@ namespace MantleAvatarAtlasFixerPrivate
 						}
 						FVector4f Sum[3] = { FVector4f(0.0f, 0.0f, 0.0f, 0.0f), FVector4f(0.0f, 0.0f, 0.0f, 0.0f), FVector4f(0.0f, 0.0f, 0.0f, 0.0f) };
 						int32 Count = 0;
-						const FIntPoint Neighbours[4] = { FIntPoint(X - 1, Y), FIntPoint(X + 1, Y), FIntPoint(X, Y - 1), FIntPoint(X, Y + 1) };
-						for (const FIntPoint& Next : Neighbours)
+						const FIntPoint Neighbors[4] = { FIntPoint(X - 1, Y), FIntPoint(X + 1, Y), FIntPoint(X, Y - 1), FIntPoint(X, Y + 1) };
+						for (const FIntPoint& Next : Neighbors)
 						{
 							if (Next.X < 0 || Next.Y < 0 || Next.X >= Size || Next.Y >= Size || !Filled[Next.Y * Size + Next.X])
 							{
@@ -1139,7 +1139,7 @@ namespace MantleAvatarAtlasFixerPrivate
 				AtlasLoadSamplers(Material, MaxSize, *Samplers);
 				if (!Samplers->BaseColor.IsSet())
 				{
-					OutNotes.Add(FString::Printf(TEXT("%s has no base colour texture to sample; its cell is its flat colour"), *GetNameSafe(Material)));
+					OutNotes.Add(FString::Printf(TEXT("%s has no base color texture to sample; its cell is its flat color"), *GetNameSafe(Material)));
 				}
 			}
 			FAtlasCellPixels Pixels;
@@ -1219,15 +1219,15 @@ namespace MantleAvatarAtlasFixerPrivate
 		Material->TwoSided = Group.bTwoSided;
 		Material->SetUsageByFlag(MATUSAGE_SkeletalMesh, true);
 		UMaterialEditorOnlyData* Inputs = Material->GetEditorOnlyData();
-		UMaterialExpressionTextureSampleParameter2D* Colour = AtlasAddTextureParameter(*Material, MantlePlaceMaterialParameters::BaseColor, BaseColor, 0);
-		Inputs->BaseColor.Connect(0, Colour);
+		UMaterialExpressionTextureSampleParameter2D* Color = AtlasAddTextureParameter(*Material, MantlePlaceMaterialParameters::BaseColor, BaseColor, 0);
+		Inputs->BaseColor.Connect(0, Color);
 		if (Group.Blend == EMantleAtlasBlend::Masked)
 		{
-			Inputs->OpacityMask.Connect(4, Colour);
+			Inputs->OpacityMask.Connect(4, Color);
 		}
 		else if (Group.Blend == EMantleAtlasBlend::Translucent)
 		{
-			Inputs->Opacity.Connect(4, Colour);
+			Inputs->Opacity.Connect(4, Color);
 		}
 		Inputs->Normal.Connect(0, AtlasAddTextureParameter(*Material, MantlePlaceMaterialParameters::Normal, Normal, 1));
 		// ORM: occlusion, roughness, metallic in R, G, B.
@@ -1677,7 +1677,7 @@ void FMantleAvatarAtlasFixer::BuildCells(TConstArrayView<FMantleAtlasFace> Faces
 			OutFaceCell[Face] = *Cell;
 		}
 	}
-	// Never an empty rectangle: at least one of the slot's own texels wide (UVs collapsed on a flat-colour section).
+	// Never an empty rectangle: at least one of the slot's own texels wide (UVs collapsed on a flat-color section).
 	for (FMantleAtlasCell& Cell : OutLayout.Cells)
 	{
 		const float MinExtent = 1.0f / Cell.TexelsPerUV;
@@ -1871,7 +1871,7 @@ FString FMantleAvatarAtlasFixer::DescribeAction(TConstArrayView<FMantleAtlasSlot
 		{
 			Sizes = Plain;
 		}
-		const FString Maps = bOpacity ? TEXT("base colour with opacity, normal, ORM") : TEXT("base colour, normal, ORM");
+		const FString Maps = bOpacity ? TEXT("base color with opacity, normal, ORM") : TEXT("base color, normal, ORM");
 		Parts.Add(FString::Printf(TEXT("merges %d sections into %d atlas%s (%s; %s)"), Merged, Atlases, Atlases == 1 ? TEXT("") : TEXT("es"),
 			*FString::Join(Sizes, TEXT(", ")), *Maps));
 	}
@@ -1893,7 +1893,7 @@ FString FMantleAvatarAtlasFixer::DescribeAction(TConstArrayView<FMantleAtlasSlot
 				Tiles = FString::Printf(TEXT("%d-%d"), First, Last);
 			}
 		}
-		Parts.Add(FString::Printf(TEXT("bakes UDIM tiles %s of \"%s\" into one %s texture set (base colour, normal, ORM)"), *Tiles,
+		Parts.Add(FString::Printf(TEXT("bakes UDIM tiles %s of \"%s\" into one %s texture set (base color, normal, ORM)"), *Tiles,
 			Slot ? *Slot->Name : TEXT("?"), *SizeText(Layouts.IsValidIndex(Index) ? &Layouts[Index] : nullptr)));
 	}
 	return FString::Join(Parts, TEXT("; "));
@@ -2403,9 +2403,9 @@ void FMantleAvatarAtlasFixer::BakeMaterial(UMaterialInterface* Material, const F
 	Out.Orm = MoveTemp(Images.Orm);
 }
 
-bool FMantleAvatarAtlasFixer::BakesEmissiveAsColour(const bool bUnlit, const TConstArrayView<FColor> BaseColor, const TConstArrayView<FColor> Emissive)
+bool FMantleAvatarAtlasFixer::BakesEmissiveAsColor(const bool bUnlit, const TConstArrayView<FColor> BaseColor, const TConstArrayView<FColor> Emissive)
 {
-	// Black: no channel past a few levels at any texel (a dark fabric texture still varies); coloured: some texel is lit.
+	// Black: no channel past a few levels at any texel (a dark fabric texture still varies); colored: some texel is lit.
 	auto Brightest = [](const TConstArrayView<FColor> Pixels)
 	{
 		uint8 Max = 0;

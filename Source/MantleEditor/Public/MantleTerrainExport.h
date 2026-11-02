@@ -76,7 +76,7 @@ struct MANTLEEDITOR_API FMantleTerrainSource
 
 	/**
 	 * The landscape's own material, null for none. When its layers cannot be read from it (an ordinary UV-mapped material with no Landscape
-	 * Layer Blend, DowntownWestModularPack's), ChooseLayers bakes the material itself as the layer's look instead of drawing plain grey.
+	 * Layer Blend, DowntownWestModularPack's), ChooseLayers bakes the material itself as the layer's look instead of drawing plain gray.
 	 */
 	UMaterialInterface* LandscapeMaterial = nullptr;
 
@@ -86,8 +86,8 @@ struct MANTLEEDITOR_API FMantleTerrainSource
 	 */
 	double LandscapeMaterialUvRepeat = 0.0;
 
-	/** The average base colour of each layer's look, by layer name, where known (#628): which kept layer a folded one goes into. */
-	TMap<FName, FLinearColor> LayerColours;
+	/** The average base color of each layer's look, by layer name, where known (#628): which kept layer a folded one goes into. */
+	TMap<FName, FLinearColor> LayerColors;
 
 	/**
 	 * Water Bodies that carve this landscape through a brush edit layer (GhzGarage/mantle#997). The heights above are the landscape's final,
@@ -144,7 +144,7 @@ struct FMantleTerrainLayerChoice
 /**
  * Which of a landscape's painted layers Mantle publishes and where the others go (#628): when more layers are
  * painted than FMantlePlaceLimits::MaxTerrainLayers, the most painted are kept and each other layer's weight is
- * added to the kept layer whose base colour is nearest.
+ * added to the kept layer whose base color is nearest.
  */
 struct FMantleTerrainFold
 {
@@ -238,8 +238,8 @@ public:
 	/**
 	 * Which of Candidates (indices into Source's layers) are kept at most MaxLayers, and where the rest go (#628):
 	 * the layers with the most total paint weight are kept, in the landscape's order, and each other layer's weight
-	 * goes into the kept layer whose Source.LayerColours entry is nearest in linear RGB, or into the most painted
-	 * kept layer when either colour is unknown. Pure data.
+	 * goes into the kept layer whose Source.LayerColors entry is nearest in linear RGB, or into the most painted
+	 * kept layer when either color is unknown. Pure data.
 	 */
 	static FMantleTerrainFold PlanFold(const FMantleTerrainSource& Source, TConstArrayView<int32> Candidates, int32 MaxLayers);
 
@@ -253,8 +253,8 @@ public:
 	 * Warnings (a fold, something the landscape material does that Mantle cannot keep) go in OutIssues and
 	 * Coverage (when given), and do not fail it.
 	 * A landscape with nothing painted and no Place Settings entry gets a default layer (the first look its landscape material states, else
-	 * that material baked whole, else plain grey) with a warning. A painted layer with no entry whose landscape material could not be read is
-	 * drawn with that material baked whole (bLandscapeMaterialBake), or plain grey when the landscape has no material. Holes are warned about, never refused (Source.bHasHoles).
+	 * that material baked whole, else plain gray) with a warning. A painted layer with no entry whose landscape material could not be read is
+	 * drawn with that material baked whole (bLandscapeMaterialBake), or plain gray when the landscape has no material. Holes are warned about, never refused (Source.bHasHoles).
 	 * False, with each blocking problem in OutIssues under Label: a painted layer with neither an entry
 	 * nor a look in a landscape material that could not be read, or a default layer that could not be made.
 	 */
@@ -289,7 +289,7 @@ public:
 	/**
 	 * The slope overlay's weight at every sample of Source, 0 to 255 (Width x Height, row-major; empty when the overlay
 	 * is not found): each sample's normal from the heights' central differences and the spacing, (-dz/dx, -dz/dy, 1)
-	 * normalised, then Overlay.WeightAt of its Z, which is the material's own mask (Mask B of the world normal, times
+	 * normalized, then Overlay.WeightAt of its Z, which is the material's own mask (Mask B of the world normal, times
 	 * Multiplier, to the Power, then the blend with the layers' height) evaluated for that Z. Flat ground gives 0 for
 	 * an overlay that shows on steep ground only (as Spruce's rock does), a 60 degree slope about 255.
 	 */
@@ -332,7 +332,7 @@ public:
 	/**
 	 * Size.X x Size.Y pixels, row by row from the top (row 0 is the terrain's first row of samples),
 	 * stretched over the whole terrain: R, G, B and A are the weights of SourceLayers[0] to [3]
-	 * (indices into Source's layers, INDEX_NONE for none) sampled at the texel's centre, summing to
+	 * (indices into Source's layers, INDEX_NONE for none) sampled at the texel's center, summing to
 	 * 255 (all of the first where nothing is painted). What FMantlePng::EncodeRGBA8 takes.
 	 *
 	 * ChannelOfSource (FoldChannels, #628) is empty for none, else one entry per Source layer: the channel

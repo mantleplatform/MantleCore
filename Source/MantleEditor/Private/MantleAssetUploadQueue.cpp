@@ -36,7 +36,7 @@ namespace MantleAssetUploadQueuePrivate
 
 	FString RoleWords(const FString& Role)
 	{
-		if (Role == TEXT("color")) return TEXT("a colour map");
+		if (Role == TEXT("color")) return TEXT("a color map");
 		if (Role == TEXT("normal")) return TEXT("a normal map");
 		if (Role == TEXT("data")) return TEXT("a data map (roughness, metal, occlusion)");
 		return TEXT("another use");
@@ -112,7 +112,7 @@ FString FMantleAssetUploadQueue::DescribeRefusal(const FMantleApiResult& Result,
 	}
 	if (Code == TEXT("claim_taken_down"))
 	{
-		return FString::Printf(TEXT("'%s' was removed from your account by a Mantle moderator (usually after a licence complaint), ")
+		return FString::Printf(TEXT("'%s' was removed from your account by a Mantle moderator (usually after a license complaint), ")
 			TEXT("so it cannot be uploaded or used again. Remove it from the level or replace it, then Publish again."), *Name);
 	}
 	if (Code == TEXT("uploaded_differently"))
@@ -336,8 +336,8 @@ void FMantleAssetUploadQueue::Cancel()
 	++Generation;
 	InFlight = 0;
 	bDiffInFlight = false;
-	Outcome = EMantleUploadQueueOutcome::Cancelled;
-	AddLog(TEXT("Cancelled. Everything already uploaded stays on Mantle; the next Publish continues from there."));
+	Outcome = EMantleUploadQueueOutcome::Canceled;
+	AddLog(TEXT("Canceled. Everything already uploaded stays on Mantle; the next Publish continues from there."));
 }
 
 bool FMantleAssetUploadQueue::IsHashBusy(const FString& Hash, int32 Except) const
@@ -972,7 +972,7 @@ FString FMantleAssetUploadQueue::GetStatusText() const
 	switch (Outcome)
 	{
 	case EMantleUploadQueueOutcome::Idle: return TEXT("Ready");
-	case EMantleUploadQueueOutcome::Cancelled: return TEXT("Cancelled. Everything already uploaded stays on Mantle.");
+	case EMantleUploadQueueOutcome::Canceled: return TEXT("Canceled. Everything already uploaded stays on Mantle.");
 	case EMantleUploadQueueOutcome::Failed: return Failure;
 	case EMantleUploadQueueOutcome::WaitingForReview: return TEXT("Waiting for a Mantle moderator.");
 	case EMantleUploadQueueOutcome::Completed: return TEXT("Every file is on Mantle.");

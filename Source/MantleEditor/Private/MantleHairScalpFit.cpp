@@ -128,10 +128,10 @@ namespace MantleHairScalpFitPrivate
 	}
 
 	/** Dominant direction of a point set about its centroid: the column of the repeatedly squared covariance with the most weight. */
-	FVector DominantAxis(const TArray<FVector>& Centred)
+	FVector DominantAxis(const TArray<FVector>& Centerd)
 	{
 		double M[3][3] = {};
-		for (const FVector& P : Centred)
+		for (const FVector& P : Centerd)
 			for (int32 R = 0; R < 3; ++R) for (int32 C = 0; C < 3; ++C) M[R][C] += P[R] * P[C];
 		for (int32 Iter = 0; Iter < 8; ++Iter)
 		{
@@ -435,17 +435,17 @@ namespace MantleHairScalpFitPrivate
 			FCardAxis Card;
 			Card.Ids = Cards[Label];
 			if (Card.Ids.Num() < 4) continue;
-			FVector Centre = FVector::ZeroVector;
-			for (const int32 V : Card.Ids) Centre += Positions[V];
-			Centre /= Card.Ids.Num();
-			TArray<FVector> Centred;
-			Centred.Reserve(Card.Ids.Num());
-			for (const int32 V : Card.Ids) Centred.Add(Positions[V] - Centre);
-			const FVector Axis = DominantAxis(Centred);
+			FVector Center = FVector::ZeroVector;
+			for (const int32 V : Card.Ids) Center += Positions[V];
+			Center /= Card.Ids.Num();
+			TArray<FVector> Centerd;
+			Centerd.Reserve(Card.Ids.Num());
+			for (const int32 V : Card.Ids) Centerd.Add(Positions[V] - Center);
+			const FVector Axis = DominantAxis(Centerd);
 			Card.TMin = TNumericLimits<double>::Max();
 			Card.TMax = TNumericLimits<double>::Lowest();
 			Card.Along.Reserve(Card.Ids.Num());
-			for (const FVector& P : Centred) { const double T = P | Axis; Card.Along.Add(T); Card.TMin = FMath::Min(Card.TMin, T); Card.TMax = FMath::Max(Card.TMax, T); }
+			for (const FVector& P : Centerd) { const double T = P | Axis; Card.Along.Add(T); Card.TMin = FMath::Min(Card.TMin, T); Card.TMax = FMath::Max(Card.TMax, T); }
 			Out.Add(MoveTemp(Card));
 		}
 		return Out;
@@ -775,9 +775,9 @@ bool FMantleScalpFit::Run(const FMantleScalpHeadSurface& Head, const FMesh& Card
 
 	// Each card vertex reads the field at its 4 nearest head vertices, weighted 1 / (distance + 2 mm).
 	const int32 K = FMath::Min(4, NumHead);
-	TArray<int32> Neighbours;
+	TArray<int32> Neighbors;
 	TArray<double> Weights;
-	Neighbours.Init(0, CardPos.Num() * K);
+	Neighbors.Init(0, CardPos.Num() * K);
 	Weights.Init(0.0, CardPos.Num() * K);
 	TArray<uint8> Wanted;
 	Wanted.Init(0, NumHead);
@@ -788,7 +788,7 @@ bool FMantleScalpFit::Run(const FMantleScalpHeadSurface& Head, const FMesh& Card
 		double Sum = 0.0;
 		for (int32 J = 0; J < NearIds.Num(); ++J)
 		{
-			Neighbours[I * K + J] = NearIds[J];
+			Neighbors[I * K + J] = NearIds[J];
 			Weights[I * K + J] = 1.0 / (NearDist[J] + 0.2);
 			Sum += Weights[I * K + J];
 			Wanted[NearIds[J]] = 1;
@@ -813,8 +813,8 @@ bool FMantleScalpFit::Run(const FMantleScalpHeadSurface& Head, const FMesh& Card
 		FVector Normal = FVector::ZeroVector;
 		for (int32 J = 0; J < K; ++J)
 		{
-			F += Field[Neighbours[I * K + J]] * Weights[I * K + J];
-			Normal += Head.VertexNormal(Neighbours[I * K + J]) * Weights[I * K + J];
+			F += Field[Neighbors[I * K + J]] * Weights[I * K + J];
+			Normal += Head.VertexNormal(Neighbors[I * K + J]) * Weights[I * K + J];
 		}
 		Normal = Normal / (Normal.Size() + 1.e-12);
 		Moved[I] = CardPos[I] + Normal * F;

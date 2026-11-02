@@ -241,7 +241,7 @@ namespace MantleTerrainTestPrivate
 		Mask->Base.Connect(0, Scaled);
 		Mask->Exponent.Connect(0, Exponent);
 
-		// The overlay layer's own height (its colour's red), added to the mask and multiplied by it, as the Spruce master does.
+		// The overlay layer's own height (its color's red), added to the mask and multiplied by it, as the Spruce master does.
 		UMaterialExpressionTextureSample* RockSample = AddSample(Material, OutRock, AddLayerCoords(Material, 4.0f));
 		UMaterialExpressionComponentMask* RockHeight = AddExpression<UMaterialExpressionComponentMask>(Material);
 		RockHeight->Input.Connect(0, RockSample);
@@ -299,12 +299,12 @@ bool FMantleTerrainFoldKeepsMostPaintedTest::RunTest(const FString& Parameters)
 	// Six layers, the 4 most painted are D (200), B (100), F (90) and A (50); C (10) and E (5) are folded.
 	FMantleTerrainSource Source = MakeSource(
 		{ TEXT("A"), TEXT("B"), TEXT("C"), TEXT("D"), TEXT("E"), TEXT("F") }, { 50, 100, 10, 200, 5, 90 });
-	Source.LayerColours.Add(TEXT("A"), FLinearColor(0.1f, 0.5f, 0.1f));	// grass
-	Source.LayerColours.Add(TEXT("B"), FLinearColor(0.4f, 0.3f, 0.2f));	// dirt
-	Source.LayerColours.Add(TEXT("C"), FLinearColor(0.12f, 0.45f, 0.1f));	// nearest to A
-	Source.LayerColours.Add(TEXT("D"), FLinearColor(0.5f, 0.5f, 0.5f));	// rock
-	Source.LayerColours.Add(TEXT("E"), FLinearColor(0.45f, 0.28f, 0.2f));	// nearest to B
-	Source.LayerColours.Add(TEXT("F"), FLinearColor(0.9f, 0.9f, 0.95f));	// snow
+	Source.LayerColors.Add(TEXT("A"), FLinearColor(0.1f, 0.5f, 0.1f));	// grass
+	Source.LayerColors.Add(TEXT("B"), FLinearColor(0.4f, 0.3f, 0.2f));	// dirt
+	Source.LayerColors.Add(TEXT("C"), FLinearColor(0.12f, 0.45f, 0.1f));	// nearest to A
+	Source.LayerColors.Add(TEXT("D"), FLinearColor(0.5f, 0.5f, 0.5f));	// rock
+	Source.LayerColors.Add(TEXT("E"), FLinearColor(0.45f, 0.28f, 0.2f));	// nearest to B
+	Source.LayerColors.Add(TEXT("F"), FLinearColor(0.9f, 0.9f, 0.95f));	// snow
 
 	const TArray<int32> All = { 0, 1, 2, 3, 4, 5 };
 	const FMantleTerrainFold Fold = FMantleTerrainExport::PlanFold(Source, All, 4);
@@ -314,14 +314,14 @@ bool FMantleTerrainFoldKeepsMostPaintedTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("C is folded"), Fold.IsFolded(2));
 	TestTrue(TEXT("E is folded"), Fold.IsFolded(4));
 	TestFalse(TEXT("D is not"), Fold.IsFolded(3));
-	TestEqual(TEXT("C goes into A, the nearest colour"), Fold.Kept[Fold.SlotOfSource[2]], 0);
-	TestEqual(TEXT("E goes into B, the nearest colour"), Fold.Kept[Fold.SlotOfSource[4]], 1);
+	TestEqual(TEXT("C goes into A, the nearest color"), Fold.Kept[Fold.SlotOfSource[2]], 0);
+	TestEqual(TEXT("E goes into B, the nearest color"), Fold.Kept[Fold.SlotOfSource[4]], 1);
 
-	// Colours not known: a folded layer goes into the most painted one (D).
-	FMantleTerrainSource NoColours = Source;
-	NoColours.LayerColours.Reset();
-	const FMantleTerrainFold Plain = FMantleTerrainExport::PlanFold(NoColours, All, 4);
-	TestEqual(TEXT("without colours C goes into the most painted layer"), Plain.Kept[Plain.SlotOfSource[2]], 3);
+	// Colors not known: a folded layer goes into the most painted one (D).
+	FMantleTerrainSource NoColors = Source;
+	NoColors.LayerColors.Reset();
+	const FMantleTerrainFold Plain = FMantleTerrainExport::PlanFold(NoColors, All, 4);
+	TestEqual(TEXT("without colors C goes into the most painted layer"), Plain.Kept[Plain.SlotOfSource[2]], 3);
 	TestEqual(TEXT("and so does E"), Plain.Kept[Plain.SlotOfSource[4]], 3);
 
 	// No more layers than the limit: nothing is folded; a candidate list leaves a layer out.
@@ -571,26 +571,26 @@ bool FMantleLandscapeMaterialReaderInstanceLayersTest::RunTest(const FString& Pa
 	RiverNormal->CompressionSettings = TC_Normalmap;
 
 	UMaterialFunction* Function = MakeLayerFunction();
-	UMaterialExpressionLandscapeLayerBlend* ColourBlend = AddExpression<UMaterialExpressionLandscapeLayerBlend>(Material);
+	UMaterialExpressionLandscapeLayerBlend* ColorBlend = AddExpression<UMaterialExpressionLandscapeLayerBlend>(Material);
 	UMaterialExpressionLandscapeLayerBlend* NormalBlend = AddExpression<UMaterialExpressionLandscapeLayerBlend>(Material);
 	for (int32 Layer = 1; Layer <= 5; ++Layer)
 	{
 		const FString Name = FString::Printf(TEXT("L%d"), Layer);
 		UMaterialExpressionMaterialFunctionCall* Call = AddLayerCall(Material, Function, Name, Grass, GrassNormal, 1.0f);
-		const int32 ColourOutput = OutputIndexOf(Call, TEXT("Result"));
+		const int32 ColorOutput = OutputIndexOf(Call, TEXT("Result"));
 		const int32 NormalOutput = OutputIndexOf(Call, TEXT("Normal"));
-		if (!TestTrue(TEXT("the function call has both outputs"), ColourOutput != INDEX_NONE && NormalOutput != INDEX_NONE))
+		if (!TestTrue(TEXT("the function call has both outputs"), ColorOutput != INDEX_NONE && NormalOutput != INDEX_NONE))
 		{
 			return false;
 		}
-		FLayerBlendInput& ColourLayer = ColourBlend->Layers.AddDefaulted_GetRef();
-		ColourLayer.LayerName = FName(*Name);
-		ColourLayer.LayerInput.Connect(ColourOutput, Call);
+		FLayerBlendInput& ColorLayer = ColorBlend->Layers.AddDefaulted_GetRef();
+		ColorLayer.LayerName = FName(*Name);
+		ColorLayer.LayerInput.Connect(ColorOutput, Call);
 		FLayerBlendInput& NormalLayer = NormalBlend->Layers.AddDefaulted_GetRef();
 		NormalLayer.LayerName = FName(*Name);
 		NormalLayer.LayerInput.Connect(NormalOutput, Call);
 	}
-	Material->GetEditorOnlyData()->BaseColor.Connect(0, ColourBlend);
+	Material->GetEditorOnlyData()->BaseColor.Connect(0, ColorBlend);
 	Material->GetEditorOnlyData()->Normal.Connect(0, NormalBlend);
 	UMaterialInstanceConstant* Instance = NewObject<UMaterialInstanceConstant>(GetTransientPackage());
 	Instance->SetParentEditorOnly(Material, false);
@@ -907,7 +907,7 @@ bool FMantleTerrainFoldBeyondEightTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleTerrainTestPrivate;
 
-	// Ten painted layers against the limit: the 8 most painted are kept, and the two least painted fold into the nearest by colour.
+	// Ten painted layers against the limit: the 8 most painted are kept, and the two least painted fold into the nearest by color.
 	TArray<FName> Names;
 	TArray<int32> Weights;
 	for (int32 Index = 0; Index < 10; ++Index)
@@ -918,9 +918,9 @@ bool FMantleTerrainFoldBeyondEightTest::RunTest(const FString& Parameters)
 	FMantleTerrainSource Source = MakeSource(Names, Weights);
 	for (int32 Index = 0; Index < 10; ++Index)
 	{
-		// P0 and P1 (folded) are near P8 and P9 in colour.
-		const float Grey = Index == 0 ? 0.81f : Index == 1 ? 0.91f : Index * 0.1f;
-		Source.LayerColours.Add(Names[Index], FLinearColor(Grey, Grey, Grey));
+		// P0 and P1 (folded) are near P8 and P9 in color.
+		const float Gray = Index == 0 ? 0.81f : Index == 1 ? 0.91f : Index * 0.1f;
+		Source.LayerColors.Add(Names[Index], FLinearColor(Gray, Gray, Gray));
 	}
 	TArray<int32> All;
 	for (int32 Index = 0; Index < 10; ++Index)
@@ -932,7 +932,7 @@ bool FMantleTerrainFoldBeyondEightTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("P0 is folded"), Fold.IsFolded(0));
 	TestTrue(TEXT("P1 is folded"), Fold.IsFolded(1));
 	TestFalse(TEXT("P9 is kept"), Fold.IsFolded(9));
-	TestEqual(TEXT("P0 goes into P8, the nearest colour"), Fold.Kept[Fold.SlotOfSource[0]], 8);
+	TestEqual(TEXT("P0 goes into P8, the nearest color"), Fold.Kept[Fold.SlotOfSource[0]], 8);
 	TestEqual(TEXT("P1 goes into P9"), Fold.Kept[Fold.SlotOfSource[1]], 9);
 	return true;
 }

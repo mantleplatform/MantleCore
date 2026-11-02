@@ -82,7 +82,7 @@ TArray<uint8> FMantlePng::EncodeRGBA8(int32 Width, int32 Height, TConstArrayView
 	AppendBigEndian32(Header, static_cast<uint32>(Width));
 	AppendBigEndian32(Header, static_cast<uint32>(Height));
 	Header.Add(8);  // bit depth
-	Header.Add(6);  // colour type: RGBA
+	Header.Add(6);  // color type: RGBA
 	Header.Add(0);  // compression: deflate
 	Header.Add(0);  // filter method
 	Header.Add(0);  // no interlace
@@ -112,10 +112,10 @@ bool FMantlePng::ReadHeader(TConstArrayView<uint8> Bytes, int32& OutWidth, int32
 	}
 	OutWidth = static_cast<int32>(ReadBigEndian32(Bytes.GetData() + 16));
 	OutHeight = static_cast<int32>(ReadBigEndian32(Bytes.GetData() + 20));
-	const uint8 ColourType = Bytes[25];
-	OutHasAlpha = ColourType == 4 || ColourType == 6;
+	const uint8 ColorType = Bytes[25];
+	OutHasAlpha = ColorType == 4 || ColorType == 6;
 
-	// A palette or grey image carries alpha in a tRNS chunk.
+	// A palette or gray image carries alpha in a tRNS chunk.
 	int64 Offset = 8;
 	while (!OutHasAlpha && Offset + 8 <= Bytes.Num())
 	{

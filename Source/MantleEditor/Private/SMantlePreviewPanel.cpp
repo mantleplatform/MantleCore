@@ -44,7 +44,7 @@ namespace MantlePreviewPanelPrivate
 		return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	}
 
-	FSlateColor LevelColour(const FString& Level)
+	FSlateColor LevelColor(const FString& Level)
 	{
 		if (Level.Equals(TEXT("error"), ESearchCase::CaseSensitive))
 		{
@@ -57,7 +57,7 @@ namespace MantlePreviewPanelPrivate
 		return FSlateColor::UseForeground();
 	}
 
-	FSlateColor FlagColour(bool bReady)
+	FSlateColor FlagColor(bool bReady)
 	{
 		return bReady ? FSlateColor(FLinearColor(0.55f, 0.80f, 0.55f)) : FSlateColor::UseSubduedForeground();
 	}
@@ -178,7 +178,7 @@ void SMantlePreviewPanel::Construct(const FArguments& InArgs)
 				.Padding(0.0f, 0.0f, 16.0f, 0.0f)
 				[
 					SNew(STextBlock)
-					.ColorAndOpacity_Lambda([]() { return FlagColour(FMantleTestLocally::Get().IsGeometryReady()); })
+					.ColorAndOpacity_Lambda([]() { return FlagColor(FMantleTestLocally::Get().IsGeometryReady()); })
 					.Text_Lambda([]() { return FlagText(LOCTEXT("FlagGeometry", "Geometry"), FMantleTestLocally::Get().IsGeometryReady()); })
 				]
 				+ SHorizontalBox::Slot()
@@ -186,14 +186,14 @@ void SMantlePreviewPanel::Construct(const FArguments& InArgs)
 				.Padding(0.0f, 0.0f, 16.0f, 0.0f)
 				[
 					SNew(STextBlock)
-					.ColorAndOpacity_Lambda([]() { return FlagColour(FMantleTestLocally::Get().IsScriptsReady()); })
+					.ColorAndOpacity_Lambda([]() { return FlagColor(FMantleTestLocally::Get().IsScriptsReady()); })
 					.Text_Lambda([]() { return FlagText(LOCTEXT("FlagScripts", "Scripts"), FMantleTestLocally::Get().IsScriptsReady()); })
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				[
 					SNew(STextBlock)
-					.ColorAndOpacity_Lambda([]() { return FlagColour(FMantleTestLocally::Get().IsSpawnReady()); })
+					.ColorAndOpacity_Lambda([]() { return FlagColor(FMantleTestLocally::Get().IsSpawnReady()); })
 					.Text_Lambda([]() { return FlagText(LOCTEXT("FlagSpawn", "Spawn"), FMantleTestLocally::Get().IsSpawnReady()); })
 				]
 			]
@@ -391,7 +391,7 @@ TSharedRef<ITableRow> SMantlePreviewPanel::MakeRow(TSharedPtr<FRow> Row, const T
 			.Padding(0.0f, 1.0f, 8.0f, 1.0f)
 			[
 				SNew(STextBlock)
-				.ColorAndOpacity(LevelColour(Message.Level))
+				.ColorAndOpacity(LevelColor(Message.Level))
 				.Text(FText::FromString(Message.Source))
 			]
 			+ SHorizontalBox::Slot()
@@ -400,7 +400,7 @@ TSharedRef<ITableRow> SMantlePreviewPanel::MakeRow(TSharedPtr<FRow> Row, const T
 			[
 				SNew(STextBlock)
 				.AutoWrapText(true)
-				.ColorAndOpacity(LevelColour(Message.Level))
+				.ColorAndOpacity(LevelColor(Message.Level))
 				.Text(FText::FromString(Message.Text))
 			]
 		];

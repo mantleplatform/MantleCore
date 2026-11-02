@@ -268,7 +268,7 @@ bool FMantleUnriggedAsIsHandFitTest::RunTest(const FString& Parameters)
 	auto Boxes = [](const int32 Seed, const int32 PerPalm)
 	{
 		FRandomStream Random(Seed);
-		struct FPart { FVector3f Centre; FVector3f Size; int32 Count; };
+		struct FPart { FVector3f Center; FVector3f Size; int32 Count; };
 		const FPart Parts[] = { { FVector3f(4, 4, 1), FVector3f(8, 9, 2.5f), PerPalm }, { FVector3f(1, 13, 1), FVector3f(1.8f, 9, 1.8f), PerPalm / 3 },
 			{ FVector3f(3.5f, 13, 1), FVector3f(1.8f, 10, 1.8f), PerPalm / 3 }, { FVector3f(6, 12.5f, 1), FVector3f(1.8f, 8, 1.8f), PerPalm / 3 },
 			{ FVector3f(10, 2, 1), FVector3f(5, 2, 2), PerPalm / 4 } };
@@ -279,7 +279,7 @@ bool FMantleUnriggedAsIsHandFitTest::RunTest(const FString& Parameters)
 			{
 				FVector3f Unit(Random.FRandRange(-0.5f, 0.5f), Random.FRandRange(-0.5f, 0.5f), Random.FRandRange(-0.5f, 0.5f));
 				Unit[Random.RandRange(0, 2)] = Random.FRand() < 0.5f ? -0.5f : 0.5f;
-				Out.Add(Part.Centre + Unit * Part.Size);
+				Out.Add(Part.Center + Unit * Part.Size);
 			}
 		}
 		return Out;
@@ -289,19 +289,19 @@ bool FMantleUnriggedAsIsHandFitTest::RunTest(const FString& Parameters)
 	// The model's hand: turned 30 degrees about a slanted axis and moved 12 cm, its forearm beside it in the targets.
 	const FTransform Truth(FQuat(FVector(0.3, 0.2, 1.0).GetSafeNormal(), FMath::DegreesToRadians(30.0)), FVector(3.0, -11.0, 4.0));
 	TArray<FVector3f> Model;
-	FVector3f SourceCentre = FVector3f::ZeroVector;
-	FVector3f ModelCentre = FVector3f::ZeroVector;
+	FVector3f SourceCenter = FVector3f::ZeroVector;
+	FVector3f ModelCenter = FVector3f::ZeroVector;
 	for (const FVector3f& Point : Hand)
 	{
-		SourceCentre += Point;
+		SourceCenter += Point;
 	}
 	for (const FVector3f& Point : ModelHand)
 	{
 		Model.Add(FVector3f(Truth.TransformPosition(FVector(Point))));
-		ModelCentre += Model.Last();
+		ModelCenter += Model.Last();
 	}
-	SourceCentre /= Hand.Num();
-	ModelCentre /= ModelHand.Num();
+	SourceCenter /= Hand.Num();
+	ModelCenter /= ModelHand.Num();
 	{
 		FRandomStream Random(3);
 		for (int32 Index = 0; Index < 500; ++Index)
@@ -313,8 +313,8 @@ bool FMantleUnriggedAsIsHandFitTest::RunTest(const FString& Parameters)
 
 	double StartCm = 0.0;
 	double FitCm = 0.0;
-	// From the two hands' centres, a little off (the model's points that first take the hand's weights are only its near side).
-	const FTransform Start(FVector(ModelCentre - SourceCentre) + FVector(2.0, 1.0, -2.0));
+	// From the two hands' centers, a little off (the model's points that first take the hand's weights are only its near side).
+	const FTransform Start(FVector(ModelCenter - SourceCenter) + FVector(2.0, 1.0, -2.0));
 	const FTransform Fit = FMantleUnriggedAsIs::FitRigid(Hand, Model, Start, FMantleUnriggedAsIs::HandFitRounds, StartCm, FitCm);
 	TestTrue(FString::Printf(TEXT("the fit lays the hand on (%.3f cm from %.3f cm)"), FitCm, StartCm), FitCm < 0.4 && FitCm < StartCm);
 	double Worst = 0.0;

@@ -54,7 +54,7 @@ namespace MantleEnvironmentExportPrivate
 	 * Mantle's sky light's mean luminance at noon, in the units SkyLightMeanLuminance reads: the average radiance of a sky light
 	 * capturing Mantle's open sky, at its full intensity. Measured in the client (#722) over 9 captures (0.07600 to 0.07607, clear
 	 * weather, clock at 12, time scale 0) with this same formula: the irradiance map's integral luminance / 4 pi x Intensity x
-	 * Indirect Lighting Intensity x the light colour's luminance.
+	 * Indirect Lighting Intensity x the light color's luminance.
 	 */
 	constexpr double MantleSkyMeanLuminanceAtNoon = 0.0761;
 
@@ -193,7 +193,7 @@ namespace MantleEnvironmentExportPrivate
 		return Cloud->Material.IsNull() ? nullptr : Cloud->Material.LoadSynchronous();
 	}
 
-	/** The place's saturation from a post-process saturation vector: the global grade's master over its colour channels. */
+	/** The place's saturation from a post-process saturation vector: the global grade's master over its color channels. */
 	double SaturationOf(const FVector4& Grade)
 	{
 		return Grade.W * (Grade.X + Grade.Y + Grade.Z) / 3.0;
@@ -215,7 +215,7 @@ namespace MantleEnvironmentExportPrivate
 		return Out;
 	}
 
-	/** The level's first sun: its entity's colour takes the light's temperature, and its angle becomes the place's clock. */
+	/** The level's first sun: its entity's color takes the light's temperature, and its angle becomes the place's clock. */
 	void MapSun(const TMap<const AActor*, FString>& IdByActor, FMantlePlace& Place, FMantleCoverage& Coverage, const bool bReadsEnvironment)
 	{
 		FMantleEntity* Sun = nullptr;
@@ -243,18 +243,18 @@ namespace MantleEnvironmentExportPrivate
 		const ADirectionalLight* Light = Cast<ADirectionalLight>(SunActor);
 		const UDirectionalLightComponent* Component = Light ? Cast<UDirectionalLightComponent>(Light->GetLightComponent()) : nullptr;
 
-		TArray<FString> Carried = { TEXT("intensity"), TEXT("colour") };
+		TArray<FString> Carried = { TEXT("intensity"), TEXT("color") };
 		FMantleDirectionalLightProps* Props = Sun->Props.TryGet<FMantleDirectionalLightProps>();
 		if (Props && Component && Component->bUseTemperature)
 		{
-			// The place has no temperature for a directional light, so it goes into the colour it is multiplied with.
+			// The place has no temperature for a directional light, so it goes into the color it is multiplied with.
 			const FLinearColor Tint = FLinearColor::MakeFromColorTemperature(Component->Temperature);
 			Props->Color = FLinearColor(
 				FMath::Clamp(Props->Color.R * Tint.R, 0.0f, 1.0f),
 				FMath::Clamp(Props->Color.G * Tint.G, 0.0f, 1.0f),
 				FMath::Clamp(Props->Color.B * Tint.B, 0.0f, 1.0f),
 				Props->Color.A);
-			Carried.Add(FString::Printf(TEXT("temperature (%.0f K, baked into the colour)"), Component->Temperature));
+			Carried.Add(FString::Printf(TEXT("temperature (%.0f K, baked into the color)"), Component->Temperature));
 		}
 
 		FMantleEnvironmentSettings& Environment = Place.Settings.Environment;
@@ -337,7 +337,7 @@ namespace MantleEnvironmentExportPrivate
 		return true;
 	}
 
-	/** One texel of a cubemap's source data as linear colour; false for a format not handled. */
+	/** One texel of a cubemap's source data as linear color; false for a format not handled. */
 	bool ReadSourceTexel(const uint8* Texel, const ETextureSourceFormat Format, const bool bSRGB, FLinearColor& Out)
 	{
 		switch (Format)
@@ -350,9 +350,9 @@ namespace MantleEnvironmentExportPrivate
 		}
 		case TSF_G16:
 		{
-			uint16 Grey;
-			FMemory::Memcpy(&Grey, Texel, sizeof(Grey));
-			Out = FLinearColor(Grey / 65535.0f, Grey / 65535.0f, Grey / 65535.0f, 1.0f);
+			uint16 Gray;
+			FMemory::Memcpy(&Gray, Texel, sizeof(Gray));
+			Out = FLinearColor(Gray / 65535.0f, Gray / 65535.0f, Gray / 65535.0f, 1.0f);
 			return true;
 		}
 		case TSF_R16F:
@@ -697,7 +697,7 @@ namespace MantleEnvironmentExportPrivate
 		return Candidate->bUnbound && !Current->bUnbound;
 	}
 
-	/** The look of the level's post-process volume as the place's saturation, bloom, colour tint and exposure. */
+	/** The look of the level's post-process volume as the place's saturation, bloom, color tint and exposure. */
 	void MapPostProcess(const TArray<const APostProcessVolume*>& Volumes, FMantleEnvironmentSettings& Environment, FMantleCoverage& Coverage,
 		const bool bReadsEnvironment, const bool bHasEnvironment, const FMantleExposureProject& Project)
 	{
@@ -842,7 +842,7 @@ namespace MantleEnvironmentExportPrivate
 			TakeOverride(Overridden, TEXT("WhiteTemp"));
 			if (Environment.ColorTint.IsSet())
 			{
-				Explicit(TEXT("Colour Tint"));
+				Explicit(TEXT("Color Tint"));
 			}
 			else if (!bReadsEnvironment)
 			{
@@ -854,7 +854,7 @@ namespace MantleEnvironmentExportPrivate
 				if (Tint != 0xFFFFFF)
 				{
 					Environment.ColorTint = Tint;
-					Carried.Add(FString::Printf(TEXT("white balance (%.0f K, as a colour tint)"), Settings.WhiteTemp));
+					Carried.Add(FString::Printf(TEXT("white balance (%.0f K, as a color tint)"), Settings.WhiteTemp));
 				}
 			}
 		}
@@ -867,8 +867,8 @@ namespace MantleEnvironmentExportPrivate
 	}
 
 	/**
-	 * The level's first height fog as the place's fog: each of its density, height falloff, inscattering colour, start distance
-	 * and directional inscattering colour that differs from Mantle's own fog's (the component's default). The engine draws
+	 * The level's first height fog as the place's fog: each of its density, height falloff, inscattering color, start distance
+	 * and directional inscattering color that differs from Mantle's own fog's (the component's default). The engine draws
 	 * only the first fog, so a later one is reported as not used. What the place has no key for is listed as not carried.
 	 */
 	void MapFog(const TArray<const AExponentialHeightFog*>& Fogs, FMantleEnvironmentSettings& Environment, FMantleCoverage& Coverage,
@@ -918,7 +918,7 @@ namespace MantleEnvironmentExportPrivate
 				{
 					bool bClamped = false;
 					Mapped.InscatteringColor = ClampedLuminance(Component->FogInscatteringLuminance, bClamped);
-					Carried.Add(TEXT("inscattering colour"));
+					Carried.Add(TEXT("inscattering color"));
 					CarriedProperties.Add(FName(TEXT("FogInscatteringLuminance")));
 					if (bClamped)
 					{
@@ -935,7 +935,7 @@ namespace MantleEnvironmentExportPrivate
 				{
 					bool bClamped = false;
 					Mapped.DirectionalInscatteringColor = ClampedLuminance(Component->DirectionalInscatteringLuminance, bClamped);
-					Carried.Add(TEXT("directional inscattering colour"));
+					Carried.Add(TEXT("directional inscattering color"));
 					CarriedProperties.Add(FName(TEXT("DirectionalInscatteringLuminance")));
 					if (bClamped)
 					{
@@ -966,7 +966,7 @@ namespace MantleEnvironmentExportPrivate
 				Environment.Fog = Mapped;
 			}
 			ReportLook(Coverage, Cat::Fog, LabelOf(Fog), bCarried, FString::Join(Carried, TEXT(", ")), NotCarried,
-				TEXT("Mantle's own fog is used for the rest (the place carries a fog's density, height falloff, colours and start distance)"));
+				TEXT("Mantle's own fog is used for the rest (the place carries a fog's density, height falloff, colors and start distance)"));
 		}
 	}
 }
@@ -1060,8 +1060,8 @@ bool FMantleEnvironmentExport::ExposureFor(const FPostProcessSettings* Settings,
 	FString Metering;
 	// Manual metering exposes by the camera: compensation / (0.18 x 2^EV100), the EV100 from the volume's f-stop, shutter
 	// speed and ISO when Apply Physical Camera Exposure is on, and its compensation calibrated to a white point of 1, not
-	// middle grey (PostProcessEyeAdaptation.cpp). A place's fixed exposure is the compensation alone (white point 1, middle
-	// grey), so the same picture is the compensation plus log2(1 / 0.18) less the camera's EV100.
+	// middle gray (PostProcessEyeAdaptation.cpp). A place's fixed exposure is the compensation alone (white point 1, middle
+	// gray), so the same picture is the compensation plus log2(1 / 0.18) less the camera's EV100.
 	TOptional<double> ManualStops;
 	if (Settings && Settings->bOverride_AutoExposureMethod)
 	{

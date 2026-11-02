@@ -5,7 +5,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// VRoid/VRM skeletons (J_Bip_* bones), which Epic's auto characterisation finds no chains on: the converter names them.
+// VRoid/VRM skeletons (J_Bip_* bones), which Epic's auto characterization finds no chains on: the converter names them.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleVRoidChainsTestPrivate
@@ -101,7 +101,7 @@ bool FMantleVRoidChainsTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("prefixed, lower-case bones still name every chain"), FMantleMetaHumanPose::VRoidChains(Prefixed, Pelvis).Num(), 3 + 2 * 9);
 
-	// Not VRoid, or a VRoid skeleton missing a hand: nothing named, Epic's auto characterisation decides.
+	// Not VRoid, or a VRoid skeleton missing a hand: nothing named, Epic's auto characterization decides.
 	const TArray<FName> Epic = { TEXT("root"), TEXT("pelvis"), TEXT("spine_01"), TEXT("head"), TEXT("upperarm_l"), TEXT("hand_l") };
 	TestEqual(TEXT("Epic's skeleton is not VRoid"), FMantleMetaHumanPose::VRoidChains(Epic, Pelvis).Num(), 0);
 	TestTrue(TEXT("and has no VRoid pelvis"), Pelvis.IsNone());

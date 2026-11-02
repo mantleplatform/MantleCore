@@ -59,7 +59,7 @@ struct FMantleVoxelBlockType
 {
 	FName Name;
 
-	/** Until the tile textures come (#168 step 2), the colour the block is drawn with, linear. */
+	/** Until the tile textures come (#168 step 2), the color the block is drawn with, linear. */
 	FLinearColor Color = FLinearColor::White;
 
 	EMantleVoxelRender Render = EMantleVoxelRender::Opaque;
@@ -67,7 +67,7 @@ struct FMantleVoxelBlockType
 	/** Collides. */
 	bool bSolid = true;
 
-	/** 0 to 15: the block glows and lights its neighbours. */
+	/** 0 to 15: the block glows and lights its neighbors. */
 	uint8 Light = 0;
 
 	/** Seconds to break by hand; -1 unbreakable, 0 at once. */

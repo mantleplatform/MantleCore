@@ -95,9 +95,9 @@ FMantleFusedResult FMantleFusedClothing::CheckSlot(const FMantleFusedSlot& Slot,
 		{
 			continue;
 		}
-		const FVector3d Centre = (Position(Triangle * 3) + Position(Triangle * 3 + 1) + Position(Triangle * 3 + 2)) / 3.0;
+		const FVector3d Center = (Position(Triangle * 3) + Position(Triangle * 3 + 1) + Position(Triangle * 3 + 2)) / 3.0;
 		const FVector3d Direction = -Outward;
-		const FVector3d Origin = Centre + Direction * 0.05;
+		const FVector3d Origin = Center + Direction * 0.05;
 		double Nearest = TNumericLimits<double>::Max();
 		int32 NearestTriangle = INDEX_NONE;
 		for (int32 Other = 0; Other < Triangles; ++Other)

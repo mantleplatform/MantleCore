@@ -71,7 +71,7 @@ bool FMantleBuiltInMannequinFromRigTest::RunTest(const FString& Parameters)
 		AddError(Error);
 		return false;
 	}
-	TestTrue(TEXT("it is recognised as the built-in one"), FMantleBuiltInMannequin::Is(Mesh));
+	TestTrue(TEXT("it is recognized as the built-in one"), FMantleBuiltInMannequin::Is(Mesh));
 	TestTrue(TEXT("it is built once"), FMantleBuiltInMannequin::Get() == Mesh);
 	TestNotNull(TEXT("it has a skeleton"), Mesh->GetSkeleton());
 	const FSkeletalMeshRenderData* Render = Mesh->GetResourceForRendering();

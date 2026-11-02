@@ -130,7 +130,7 @@ enum class EMantleUploadQueueOutcome : uint8
 	WaitingForReview,
 	/** The run stopped for a reason that is not one file's (no connection, sign-in, Mantle down). Resumable. */
 	Failed,
-	Cancelled,
+	Canceled,
 };
 
 /**

@@ -615,7 +615,7 @@ void AMantleScatterVolume::SyncEditorBounds()
 #if WITH_EDITORONLY_DATA
 	if (EditorBounds)
 	{
-		// A flat layer still shows as a box a centimetre deep.
+		// A flat layer still shows as a box a centimeter deep.
 		EditorBounds->SetBoxExtent(FVector(HalfExtent.X, HalfExtent.Y, FMath::Max(HalfExtent.Z, 1.0)), /*bUpdateOverlaps*/ false);
 	}
 #endif
@@ -728,10 +728,10 @@ FMantleScatterGroundFn AMantleScatterVolume::MakeGround() const
 		{
 			return false;
 		}
-		// Rounded to whole millimetres in the scatter's own space, the fixed point every machine agrees on.
+		// Rounded to whole millimeters in the scatter's own space, the fixed point every machine agrees on.
 		const double LocalZ = ScatterToWorld.InverseTransformPosition(FVector(World.X, World.Y, BestZ)).Z;
-		const double Millimetres = LocalZ * 10.0;
-		Out.ZMm = static_cast<int64>(FMath::FloorToDouble(Millimetres + 0.5));
+		const double Millimeters = LocalZ * 10.0;
+		Out.ZMm = static_cast<int64>(FMath::FloorToDouble(Millimeters + 0.5));
 		Out.NormalZ = BestNormal.Z;
 		// The same surface in the scatter's own space, which is where each instance's turn is stored (scale ignored, as for the normal itself).
 		const FVector LocalNormal = ScatterToWorld.InverseTransformVectorNoScale(BestNormal).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
@@ -913,7 +913,7 @@ bool AMantleScatterVolume::GenerateInArea(const double MinXCm, const double MinY
 		{
 			return false;
 		}
-		// A millimetre of slack either way: the caller's own test decides the edge.
+		// A millimeter of slack either way: the caller's own test decides the edge.
 		return FMantleScatter::GenerateInBox(Params, *Index, FMath::FloorToInt64(MinXCm * 10.0) - 1, FMath::FloorToInt64(MinYCm * 10.0) - 1,
 			FMath::CeilToInt64(MaxXCm * 10.0) + 1, FMath::CeilToInt64(MaxYCm * 10.0) + 1, OutInstances, OutError, Options);
 	}

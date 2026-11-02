@@ -88,7 +88,7 @@ namespace MantleSkyMeshPrivate
 	}
 
 	/**
-	 * Whether Box holds the centre of every other mesh in the level that is smaller than it. Meshes as big as the
+	 * Whether Box holds the center of every other mesh in the level that is smaller than it. Meshes as big as the
 	 * candidate (another sky layer, a landscape-sized backdrop) say nothing about what it encloses, and a level with
 	 * no other mesh is enclosed by anything.
 	 */

@@ -20,8 +20,8 @@ struct MANTLEEDITOR_API FMantleAttributionRule
 	FDirectoryPath Folder;
 
 	/**
-	 * What players are shown, as the licence asks for it: for Creative Commons BY, the title, the
-	 * author, the source and the licence, e.g. "Crates" by Ann (fab.com/listings/...), CC BY 4.0.
+	 * What players are shown, as the license asks for it: for Creative Commons BY, the title, the
+	 * author, the source and the license, e.g. "Crates" by Ann (fab.com/listings/...), CC BY 4.0.
 	 * Plain text, one line, at most 500 characters.
 	 */
 	UPROPERTY(EditAnywhere, Category = "Credits", meta = (MultiLine = true))
@@ -30,14 +30,14 @@ struct MANTLEEDITOR_API FMantleAttributionRule
 
 /**
  * Credits for uploaded place assets (#398), shared with the project (DefaultEditor.ini), since the
- * licence belongs to the content, not to one creator's editor. The least friction for a Fab pack of
+ * license belongs to the content, not to one creator's editor. The least friction for a Fab pack of
  * hundreds of assets is one rule for the folder it was added to; a single asset can override its
  * folder with the "MantleAttribution" metadata tag on its package (for example
  * unreal.EditorAssetLibrary.set_metadata_tag(asset, "MantleAttribution", "...")), and an empty tag
  * value means none.
  *
- * Mantle cannot tell which licence content is under and never guesses: nothing is credited unless
- * a rule or a tag says so. Standard-licence Fab content needs no credit.
+ * Mantle cannot tell which license content is under and never guesses: nothing is credited unless
+ * a rule or a tag says so. Standard-license Fab content needs no credit.
  */
 UCLASS(config = Editor, defaultconfig, meta = (DisplayName = "Mantle Credits"))
 class MANTLEEDITOR_API UMantleAttributionSettings : public UDeveloperSettings

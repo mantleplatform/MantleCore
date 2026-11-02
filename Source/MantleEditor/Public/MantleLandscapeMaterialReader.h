@@ -7,7 +7,7 @@ class UMaterialInterface;
 class UTexture;
 
 /**
- * What a landscape's own material says one paint layer looks like (#628): the base colour and normal
+ * What a landscape's own material says one paint layer looks like (#628): the base color and normal
  * textures it blends in for that layer, how big one repeat of them is on the ground, and what the
  * material does to the layer that Mantle's terrain cannot keep. Pure data: the textures are the ones
  * the material (and its instance's overrides) sample, not copies.
@@ -16,7 +16,7 @@ struct MANTLEEDITOR_API FMantleLandscapeLayerLook
 {
 	FName Layer;
 
-	/** The layer's base colour and normal textures, null where the material has none for it. */
+	/** The layer's base color and normal textures, null where the material has none for it. */
 	UTexture* BaseColor = nullptr;
 	UTexture* Normal = nullptr;
 
@@ -24,11 +24,11 @@ struct MANTLEEDITOR_API FMantleLandscapeLayerLook
 	double BaseColorTilingCm = 0.0;
 	double NormalTilingCm = 0.0;
 
-	/** A flat base colour (a constant the layer's input is), used when the layer has no base colour texture. */
-	bool bHasFlatColour = false;
-	FLinearColor FlatColour = FLinearColor::Black;
+	/** A flat base color (a constant the layer's input is), used when the layer has no base color texture. */
+	bool bHasFlatColor = false;
+	FLinearColor FlatColor = FLinearColor::Black;
 
-	/** The base colour texture's average (or the flat colour), where it could be read: what a folded layer is matched to by. */
+	/** The base color texture's average (or the flat color), where it could be read: what a folded layer is matched to by. */
 	bool bHasAverage = false;
 	FLinearColor Average = FLinearColor::Black;
 
@@ -46,7 +46,7 @@ struct MANTLEEDITOR_API FMantleLandscapeLayerLook
 	/** What the material does to this layer that is not kept, in plain words ("it also blends 2 other textures (...)"). */
 	TArray<FString> Approximations;
 
-	/** The one repeat size the layer is published with: the base colour's, else the normal's, else 0. */
+	/** The one repeat size the layer is published with: the base color's, else the normal's, else 0. */
 	double TilingCm() const { return BaseColorTilingCm > 0.0 ? BaseColorTilingCm : NormalTilingCm; }
 };
 
@@ -190,7 +190,7 @@ public:
 
 	/**
 	 * A transient material for one layer's look: Base Color and Normal from the look's textures, or its flat
-	 * colour (mid grey when it has neither), the textures sampled on plain UVs so the terrain's own tiling
+	 * color (mid gray when it has neither), the textures sampled on plain UVs so the terrain's own tiling
 	 * applies. What the exporter converts like any Place Settings material. The same look gives the same
 	 * object (named by what it holds) for as long as the editor runs, so Check, Export and the converter agree
 	 * on its key. Null when Look is empty of everything.
@@ -204,7 +204,7 @@ public:
 	 */
 	static bool LargestUvRepeat(const UMaterialInterface* Material, double SpacingCm, double& OutUvUnits);
 
-	/** The name (without a path) MakeLayerMaterial gives Look's material: stable for the same layer, textures and colour. */
+	/** The name (without a path) MakeLayerMaterial gives Look's material: stable for the same layer, textures and color. */
 	static FString LayerMaterialName(const FMantleLandscapeLayerLook& Look);
 
 	/**
@@ -213,6 +213,6 @@ public:
 	 */
 	static FString LayerNameFromParameter(const FString& Name);
 
-	/** The average colour of Texture's source pixels in linear space, sampled on a grid. False when it has no readable source (a cooked or generated texture). */
-	static bool AverageColour(UTexture* Texture, FLinearColor& OutColour);
+	/** The average color of Texture's source pixels in linear space, sampled on a grid. False when it has no readable source (a cooked or generated texture). */
+	static bool AverageColor(UTexture* Texture, FLinearColor& OutColor);
 };

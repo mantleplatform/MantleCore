@@ -116,7 +116,7 @@ struct FMantleAvatarPreviewPlan
 
 	/**
 	 * #535: the idle the driver plays, a MAN1 clip on the UEFN skeleton in the plugin's Resources/AvatarContract, played
-	 * through UMantleClipAnimInstance. Absent until the owner decides the idle's licence; the preview then plays an idle
+	 * through UMantleClipAnimInstance. Absent until the owner decides the idle's license; the preview then plays an idle
 	 * named IdleAssetName from the project, when it has one on the driver's skeleton, else the driver's reference pose.
 	 */
 	static const TCHAR* const IdleClipFileName;
@@ -292,7 +292,7 @@ struct FMantleCosmeticPreviewSettings
  * under the garment. Everything but the mesh builds runs on background tasks; the game thread only pumps.
  *
  * Cached for the session: resolved and decoded avatars (built once) by id, and fits by (garment inputs, wearer).
- * A newer request replaces the current one: a download nobody wants any more is cancelled, and a fit that lands for
+ * A newer request replaces the current one: a download nobody wants any more is canceled, and a fit that lands for
  * an older request is kept in the cache but not shown. Game thread only.
  */
 class FMantleCosmeticPreviewSession : public FGCObject, public TSharedFromThis<FMantleCosmeticPreviewSession>
@@ -315,7 +315,7 @@ public:
 	/** Resolve and show the avatar without fitting a garment (rigid accessory preview). */
 	uint64 RequestAvatar(const FMantlePreviewTarget& Target);
 
-	/** Drops the current request (the panel's garment changed or it closed): its downloads are cancelled. */
+	/** Drops the current request (the panel's garment changed or it closed): its downloads are canceled. */
 	void Cancel();
 
 	const FMantlePreviewView& GetView() const { return View; }

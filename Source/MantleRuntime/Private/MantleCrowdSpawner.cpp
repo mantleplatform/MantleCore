@@ -315,7 +315,7 @@ bool AMantleCrowdSpawner::ReadProps(FMantleCrowdSpawnerProps& Out, FString& OutP
 		if (!Look.EyeColorId.IsEmpty() && !IsCrowdEyeColorId(Look.EyeColorId))
 		{
 			NoteProblem(FString::Printf(
-				TEXT("has Looks[%d] with eye colour '%s'; an eye colour is eye_ and two digits, like eye_02. Fix it, or leave it empty for the seed to pick."),
+				TEXT("has Looks[%d] with eye color '%s'; an eye color is eye_ and two digits, like eye_02. Fix it, or leave it empty for the seed to pick."),
 				i, *Look.EyeColorId));
 		}
 		if (Look.HeightPct != 0

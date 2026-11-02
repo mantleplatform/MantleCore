@@ -335,16 +335,16 @@ namespace MantleCosmeticItemPrivate
 				{ OutWhyNot = EntryWhere + TEXT("colorCustomization needs the fixed mode, verified mask and one to three regions"); return false; }
 				for (const TSharedPtr<FJsonValue>& RegionValue : *Regions)
 				{
-					if (!RegionValue.IsValid() || RegionValue->Type != EJson::Object) { OutWhyNot = EntryWhere + TEXT("colour region must be an object"); return false; }
+					if (!RegionValue.IsValid() || RegionValue->Type != EJson::Object) { OutWhyNot = EntryWhere + TEXT("color region must be an object"); return false; }
 					const TSharedPtr<FJsonObject> RegionObject = RegionValue->AsObject();
 					FMantleClothingColorRegion Region; FString Channel, RGB; double Luminance = 0;
 					if (RegionObject->Values.Num() != 5 || !RegionObject->TryGetStringField(TEXT("id"), Region.Id) || !RegionObject->TryGetStringField(TEXT("label"), Region.Label) ||
 						!RegionObject->TryGetStringField(TEXT("channel"), Channel) || !RegionObject->TryGetStringField(TEXT("defaultColor"), RGB) ||
-						!RegionObject->TryGetNumberField(TEXT("referenceLuminance"), Luminance)) { OutWhyNot = EntryWhere + TEXT("colour region fields are incomplete"); return false; }
+						!RegionObject->TryGetNumberField(TEXT("referenceLuminance"), Luminance)) { OutWhyNot = EntryWhere + TEXT("color region fields are incomplete"); return false; }
 					Region.Channel = Channel == TEXT("r") ? 0 : Channel == TEXT("g") ? 1 : Channel == TEXT("b") ? 2 : 255;
 					bool bRGB = RGB.Len() == 7 && RGB[0] == TEXT('#');
 					for (int32 Digit = 1; bRGB && Digit < RGB.Len(); ++Digit) bRGB = (RGB[Digit] >= TEXT('0') && RGB[Digit] <= TEXT('9')) || (RGB[Digit] >= TEXT('a') && RGB[Digit] <= TEXT('f'));
-					if (!bRGB || !FMath::IsFinite(Luminance) || Luminance < MantleClothingColor::MinReferenceLuminance || Luminance > 1) { OutWhyNot = EntryWhere + TEXT("colour region needs opaque RGB and nonzero reference luminance"); return false; }
+					if (!bRGB || !FMath::IsFinite(Luminance) || Luminance < MantleClothingColor::MinReferenceLuminance || Luminance > 1) { OutWhyNot = EntryWhere + TEXT("color region needs opaque RGB and nonzero reference luminance"); return false; }
 					Region.DefaultColor = FColor::FromHex(RGB); Region.DefaultColor.A = 255; Region.ReferenceLuminance = static_cast<float>(Luminance);
 					Material.ColorRegions.Add(MoveTemp(Region));
 				}
@@ -736,7 +736,7 @@ bool MantleCosmetic::ParseItemBatch(const FString& Json, TArray<FMantleCosmeticI
 			const bool bClothingColors = Item.Kind == EMantleCosmeticKind::Skinned && (Item.Slot == TEXT("top") || Item.Slot == TEXT("bottom") || Item.Slot == TEXT("footwear"));
 			const bool bAccessoryColors = Item.Kind == EMantleCosmeticKind::Rigid && Item.Slot.StartsWith(TEXT("acc_"));
 			if (!Material.ColorRegions.IsEmpty() && !bClothingColors && !bAccessoryColors)
-			{ OutWhyNot = Where + TEXT("only clothing and accessory items declare colour regions"); return false; }
+			{ OutWhyNot = Where + TEXT("only clothing and accessory items declare color regions"); return false; }
 		}
 		if (const TSharedPtr<FJsonValue> ManifestValue = Object->TryGetField(TEXT("garmentVariants")); ManifestValue.IsValid() && ManifestValue->Type != EJson::Null)
 		{
@@ -814,10 +814,10 @@ bool MantleCosmetic::ParseItemBatch(const FString& Json, TArray<FMantleCosmeticI
 				{
 					const FString Declaration = Region.Label + TEXT("/") + Region.DefaultColor.ToHex();
 					if (const FString* Previous = Out.Find(Region.Id); Previous && *Previous != Declaration)
-					{ OutWhyNot = TEXT("logical colour region declarations disagree between sections"); return false; }
+					{ OutWhyNot = TEXT("logical color region declarations disagree between sections"); return false; }
 					Out.Add(Region.Id, Declaration);
 				}
-			if (Out.Num() > MantleClothingColor::MaxColorsPerItem) { OutWhyNot = TEXT("more than eight logical colour regions"); return false; }
+			if (Out.Num() > MantleClothingColor::MaxColorsPerItem) { OutWhyNot = TEXT("more than eight logical color regions"); return false; }
 			return true;
 		};
 		if (!ReadLogicalColors(Item.Materials, LogicalColors)) return false;
@@ -825,10 +825,10 @@ bool MantleCosmetic::ParseItemBatch(const FString& Json, TArray<FMantleCosmeticI
 		{
 			TMap<FString, FString> VariantColors;
 			if (!ReadLogicalColors(Variant.Materials, VariantColors) || VariantColors.Num() != LogicalColors.Num())
-			{ OutWhyNot = TEXT("all garment sources must declare the same logical colour regions"); return false; }
+			{ OutWhyNot = TEXT("all garment sources must declare the same logical color regions"); return false; }
 			for (const auto& Color : LogicalColors)
 				if (!VariantColors.Contains(Color.Key) || VariantColors[Color.Key] != Color.Value)
-				{ OutWhyNot = TEXT("garment source colour label/default disagrees"); return false; }
+				{ OutWhyNot = TEXT("garment source color label/default disagrees"); return false; }
 		}
 		// Measurements load nothing, so unreadable ones leave the item without them rather than failing the answer.
 		FString MetricsWhyNot;
@@ -892,10 +892,10 @@ bool MantleCosmetic::ReadClothingColorRegions(const TSharedPtr<FJsonObject>& Obj
 		for (const FMantleClothingColorRegion& Region : Material.ColorRegions)
 		{
 			const FMantleClothingColorRegion* Found = Out.FindByPredicate([&Region](const FMantleClothingColorRegion& Existing) { return Existing.Id == Region.Id; });
-			if (Found && (Found->Label != Region.Label || Found->DefaultColor != Region.DefaultColor)) { OutWhyNot = TEXT("logical colour label/default disagree"); return false; }
+			if (Found && (Found->Label != Region.Label || Found->DefaultColor != Region.DefaultColor)) { OutWhyNot = TEXT("logical color label/default disagree"); return false; }
 			if (!Found) Out.Add(Region);
 		}
-	if (Out.Num() > MantleClothingColor::MaxColorsPerItem) { OutWhyNot = TEXT("more than eight clothing colour controls"); return false; }
+	if (Out.Num() > MantleClothingColor::MaxColorsPerItem) { OutWhyNot = TEXT("more than eight clothing color controls"); return false; }
 	return true;
 }
 

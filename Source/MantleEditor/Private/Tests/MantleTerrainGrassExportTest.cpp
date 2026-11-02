@@ -28,15 +28,15 @@ namespace MantleTerrainGrassExportTestPrivate
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleTerrainGrassDensityTest,
-	"Mantle.Editor.TerrainGrass.DensityIsPerSquareMetre",
+	"Mantle.Editor.TerrainGrass.DensityIsPerSquareMeter",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantleTerrainGrassDensityTest::RunTest(const FString& Parameters)
 {
-	TestEqual(TEXT("100 per 100 m2 is 1 per m2"), FMantleTerrainGrassExport::DensityPerSquareMetre(100.0f), 1.0);
-	TestEqual(TEXT("the engine default, 400, is 4"), FMantleTerrainGrassExport::DensityPerSquareMetre(400.0f), 4.0);
-	TestEqual(TEXT("the engine's top, 1000, is 10"), FMantleTerrainGrassExport::DensityPerSquareMetre(1000.0f), 10.0);
-	TestEqual(TEXT("0 stays 0"), FMantleTerrainGrassExport::DensityPerSquareMetre(0.0f), 0.0);
+	TestEqual(TEXT("100 per 100 m2 is 1 per m2"), FMantleTerrainGrassExport::DensityPerSquareMeter(100.0f), 1.0);
+	TestEqual(TEXT("the engine default, 400, is 4"), FMantleTerrainGrassExport::DensityPerSquareMeter(400.0f), 4.0);
+	TestEqual(TEXT("the engine's top, 1000, is 10"), FMantleTerrainGrassExport::DensityPerSquareMeter(1000.0f), 10.0);
+	TestEqual(TEXT("0 stays 0"), FMantleTerrainGrassExport::DensityPerSquareMeter(0.0f), 0.0);
 	return true;
 }
 
@@ -78,7 +78,7 @@ bool FMantleTerrainGrassPackingTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("A is empty"), static_cast<int32>(ConstantPixels[3].A), 0);
 	}
 
-	// Texel centres, as the weightmap: 3 samples across into 3 texels land at 1/3, 1 and 5/3 of the way along 0..200.
+	// Texel centers, as the weightmap: 3 samples across into 3 texels land at 1/3, 1 and 5/3 of the way along 0..200.
 	TArray<TArray<uint8>> Gradient;
 	Gradient.Add(TArray<uint8>());
 	Gradient[0] = { 0, 100, 200, 0, 100, 200 };
@@ -86,9 +86,9 @@ bool FMantleTerrainGrassPackingTest::RunTest(const FString& Parameters)
 	const TArray<FColor> AcrossPixels = FMantleTerrainGrassExport::MakeMap(Gradient, One, 3, 2, FIntPoint(3, 1));
 	if (TestEqual(TEXT("a 3 x 1 map has 3 pixels"), AcrossPixels.Num(), 3))
 	{
-		TestEqual(TEXT("first texel centre is 1/3 of a sample in"), static_cast<int32>(AcrossPixels[0].R), 33);
-		TestEqual(TEXT("middle texel centre is the middle sample"), static_cast<int32>(AcrossPixels[1].R), 100);
-		TestEqual(TEXT("last texel centre is 5/3 of a sample in"), static_cast<int32>(AcrossPixels[2].R), 167);
+		TestEqual(TEXT("first texel center is 1/3 of a sample in"), static_cast<int32>(AcrossPixels[0].R), 33);
+		TestEqual(TEXT("middle texel center is the middle sample"), static_cast<int32>(AcrossPixels[1].R), 100);
+		TestEqual(TEXT("last texel center is 5/3 of a sample in"), static_cast<int32>(AcrossPixels[2].R), 167);
 	}
 
 	// Row order: row 0 of the map is the terrain's first row of samples.

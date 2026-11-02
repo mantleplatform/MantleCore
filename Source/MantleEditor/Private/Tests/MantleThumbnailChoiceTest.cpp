@@ -59,7 +59,7 @@ bool FMantleThumbnailCropTest::RunTest(const FString&)
 {
 	const FMantleThumbnailTarget Square = FMantleThumbnailTarget::Square();
 	const FMantleThumbnailTarget Wide = FMantleThumbnailTarget::Wide();
-	// A wide picture loses its sides, a tall one its top and bottom, both centred.
+	// A wide picture loses its sides, a tall one its top and bottom, both centerd.
 	TestEqual(TEXT("1000x500 to a square"), FMantleThumbnailResolver::CropRect(1000, 500, Square), FIntRect(250, 0, 750, 500));
 	TestEqual(TEXT("500x1000 to a square"), FMantleThumbnailResolver::CropRect(500, 1000, Square), FIntRect(0, 250, 500, 750));
 	TestEqual(TEXT("a square stays whole"), FMantleThumbnailResolver::CropRect(512, 512, Square), FIntRect(0, 0, 512, 512));
@@ -113,7 +113,7 @@ bool FMantleThumbnailFitTest::RunTest(const FString&)
 	TestTrue(TEXT("a 300 picture is enlarged"), FMantleThumbnailResolver::FitToTarget(Solid(300, 300, FColor(10, 200, 30, 255)), 300, 300, Square, Out, Warning, Error));
 	TestEqual(TEXT("still 512 x 512"), Out.Num(), 512 * 512);
 	TestFalse(TEXT("the warning says so"), Warning.IsEmpty());
-	TestEqual(TEXT("flat colour stays flat"), Out[1000], FColor(10, 200, 30, 255));
+	TestEqual(TEXT("flat color stays flat"), Out[1000], FColor(10, 200, 30, 255));
 
 	// Too small is refused, with a reason and no pixels.
 	TestFalse(TEXT("100 is refused"), FMantleThumbnailResolver::FitToTarget(Solid(100, 100, FColor::White), 100, 100, Square, Out, Warning, Error));
@@ -350,7 +350,7 @@ bool FMantleThumbnailModelAngleTest::RunTest(const FString&)
 	FMantleModelThumbnail::ApplyChoice(Subject, Choice);
 	TestTrue(TEXT("Angle takes the chosen pitch and yaw"), Subject.View.Equals(FRotator(-20.0, 90.0, 0.0)));
 	TestTrue(TEXT("zoom 2 halves the framed box"), Subject.Frame.GetExtent().Equals(FVector(50, 25, 25)));
-	TestTrue(TEXT("about the same centre"), Subject.Frame.GetCenter().Equals(FVector(0, 0, 50)));
+	TestTrue(TEXT("about the same center"), Subject.Frame.GetCenter().Equals(FVector(0, 0, 50)));
 
 	// A model of nothing has nothing to draw; the resolver says so instead of failing.
 	const FMantleThumbnailResult Nothing = FMantleThumbnailResolver::Resolve(Choice, FMantleThumbnailTarget::Square(),

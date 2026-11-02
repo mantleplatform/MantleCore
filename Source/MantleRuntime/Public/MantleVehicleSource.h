@@ -12,13 +12,13 @@ class USoundBase;
 class UStaticMesh;
 class UTexture2D;
 
-/** One wheel of a creator vehicle (#435): a wheel-centre bone of the body and how it behaves. */
+/** One wheel of a creator vehicle (#435): a wheel-center bone of the body and how it behaves. */
 USTRUCT(BlueprintType)
 struct MANTLERUNTIME_API FMantleVehicleSourceWheel
 {
 	GENERATED_BODY()
 
-	/** The wheel-centre bone. Convert Vehicle finds bones named like the recipe's: "wheel" and a corner, e.g. Wheel_FL, PhysWheel_BR. */
+	/** The wheel-center bone. Convert Vehicle finds bones named like the recipe's: "wheel" and a corner, e.g. Wheel_FL, PhysWheel_BR. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wheel")
 	FName Bone;
 
@@ -79,7 +79,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePart
 
 	/**
 	 * The mesh's material slots (by index, as the mesh editor lists them) drawn with the vehicle's paint, and so wearing its
-	 * colour and its liveries, as the body's Paint > Sections are: a body shell that is a part (the OffroadCar's). Needs the
+	 * color and its liveries, as the body's Paint > Sections are: a body shell that is a part (the OffroadCar's). Needs the
 	 * vehicle's Paint. Convert Vehicle fills it with the slots whose material is Clear Coat or has a Paint Tint parameter, or
 	 * is a painted body section's.
 	 */
@@ -91,7 +91,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePart
 	FString FoundOn;
 };
 
-/** One chassis collision box, in the body's space: centre and half size, cm. */
+/** One chassis collision box, in the body's space: center and half size, cm. */
 USTRUCT(BlueprintType)
 struct MANTLERUNTIME_API FMantleVehicleSourceBox
 {
@@ -275,7 +275,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chassis", meta = (ClampMin = "0", ClampMax = "2"))
 	float DragCoefficient = 0.3f;
 
-	/** Square metres the drag acts on. */
+	/** Square meters the drag acts on. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Chassis", meta = (ClampMin = "0", ClampMax = "20"))
 	float FrontalArea = 2.2f;
 
@@ -366,7 +366,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Driver", meta = (ScriptName = "has_seat_location"))
 	bool bSeatLocation = false;
 
-	/** Where the seated driver's capsule centre goes, in the body's space, cm; the driver faces +X. */
+	/** Where the seated driver's capsule center goes, in the body's space, cm; the driver faces +X. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Driver", meta = (EditCondition = "bSeatLocation"))
 	FVector SeatLocation = FVector::ZeroVector;
 
@@ -418,7 +418,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passenger")
 	bool bPassengerSeat = false;
 
-	/** Where the seated passenger's capsule centre goes, in the body's space (as Seat Location), cm; the passenger faces +X. */
+	/** Where the seated passenger's capsule center goes, in the body's space (as Seat Location), cm; the passenger faces +X. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passenger", meta = (EditCondition = "bPassengerSeat"))
 	FVector PassengerSeatLocation = FVector::ZeroVector;
 
@@ -483,14 +483,14 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePaint
 
 	/**
 	 * The body's sections (its material slots, by the names Convert Vehicle lists) drawn with Mantle's car paint: a clear
-	 * coat over metallic flakes, in a colour every player sees and scripts can change. Empty, with no part's Paint Slots either:
+	 * coat over metallic flakes, in a color every player sees and scripts can change. Empty, with no part's Paint Slots either:
 	 * no paint (and so no liveries); every section keeps its own material. A part's Paint Slots (#435 item 2) wear this paint
 	 * too. Convert Vehicle fills it with the sections whose material is Clear Coat or has a Paint Tint parameter.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	TArray<FString> Sections;
 
-	/** The colour a car is painted when it spawns (linear). */
+	/** The color a car is painted when it spawns (linear). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint", meta = (HideAlphaChannel))
 	FLinearColor Color = FLinearColor(0.02f, 0.09f, 0.3f);
 
@@ -596,7 +596,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceLinkage
 };
 
 /**
- * A creator vehicle as authored (#435): the body skeletal mesh (a bone at each wheel centre), its wheels and its
+ * A creator vehicle as authored (#435): the body skeletal mesh (a bone at each wheel center), its wheels and its
  * tuning. The plugin's Convert Vehicle command makes one from a skeletal mesh, the vehicle builder puts it in the level, and
  * publishing uploads it as one Vehicle asset (the body as a GLB with the vehicle document in it) and its materials, which a library item and the place's Storage then name.
  * Nothing here is a class, a blueprint or code: a published vehicle runs on Mantle's own vehicle.
@@ -620,7 +620,7 @@ public:
 
 	/**
 	 * The uniform size applied to the whole vehicle on export so the Mantle character fits it (#728). The vehicle builder proposes it
-	 * from the preset; the creator may change it. 1 is as modelled.
+	 * from the preset; the creator may change it. 1 is as modeled.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle", meta = (ClampMin = 0.25, ClampMax = 4.0, DisplayName = "Size"))
 	float FitScale = 1.f;

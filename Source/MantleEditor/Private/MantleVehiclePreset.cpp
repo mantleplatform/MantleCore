@@ -582,7 +582,7 @@ bool FMantleVehiclePresets::ApplyDefaults(const FMantleVehiclePreset& Preset, UM
 
 	Reader.Float(TEXT("steering/maxAngle"), T.MaxSteeringAngle);
 	Reader.Bool(TEXT("steering/ackermann"), T.bAckermann);
-	// #821: a ground car's handling baked into the preset's document (the steering's speed curve, the rear tyres' own grip); absent, the vehicle keeps its own.
+	// #821: a ground car's handling baked into the preset's document (the steering's speed curve, the rear tires' own grip); absent, the vehicle keeps its own.
 	Reader.Pairs(TEXT("steering/speedCurve"), T.SteeringSpeedCurve);
 
 	Reader.Float(TEXT("brakes/brakeTorque"), T.BrakeTorque);

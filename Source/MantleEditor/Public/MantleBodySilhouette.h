@@ -72,5 +72,5 @@ public:
 	static FMantleSliderSeed Seed(const FMantleSilhouette& Source, const FMantleSilhouette& Default);
 
 	/** Silhouette divided by HeightCm: the build as a share of height. */
-	static FMantleSilhouette Normalised(const FMantleSilhouette& Silhouette, double HeightCm);
+	static FMantleSilhouette Normalized(const FMantleSilhouette& Silhouette, double HeightCm);
 };

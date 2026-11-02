@@ -136,10 +136,10 @@ bool FMantleTargetFeatures::WritesAdditive(const FMantlePlaceMaterialDocument& D
 namespace MantleTargetFeaturesPrivate
 {
 	/**
-	 * An additive document as a client without alphaMode additive reads it: translucent blending, with a black base colour
+	 * An additive document as a client without alphaMode additive reads it: translucent blending, with a black base color
 	 * (the glow is the emissive, which stays) and an opacity from the glow, clamp(luminance of emissive factor x strength, 0, 1), so
 	 * a bright glow is solid and a faint one shows through. An approximation: translucency blends where additive adds, and a glow
-	 * whose strength is above 1 saturates the opacity, but the surface keeps its colour and reads as light over what is behind it.
+	 * whose strength is above 1 saturates the opacity, but the surface keeps its color and reads as light over what is behind it.
 	 */
 	void DowngradeAdditive(FMantlePlaceMaterialDocument& Document)
 	{

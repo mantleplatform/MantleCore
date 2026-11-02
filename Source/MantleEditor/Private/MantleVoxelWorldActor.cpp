@@ -26,7 +26,7 @@ AMantleVoxelWorldActor::AMantleVoxelWorldActor()
 	SetRootComponent(Root);
 
 #if WITH_EDITORONLY_DATA
-	// The world's outline, in the editor only (an editor-only, visualisation component the exporter never reads).
+	// The world's outline, in the editor only (an editor-only, visualization component the exporter never reads).
 	Bounds = CreateEditorOnlyDefaultSubobject<UBoxComponent>(TEXT("Bounds"));
 	if (Bounds)
 	{

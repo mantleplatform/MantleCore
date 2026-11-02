@@ -13,7 +13,7 @@
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleHairFitPicturesPrivate
 {
-	/** One static mesh of the head (grey) and the hair (brown): vertex colours on the engine's vertex colour material. */
+	/** One static mesh of the head (gray) and the hair (brown): vertex colors on the engine's vertex color material. */
 	UStaticMesh* BuildHeadAndHair(const FMantleHairFitMeshes& Meshes, const TArray<FVector3f>& HairPositions)
 	{
 		UStaticMesh* Mesh = NewObject<UStaticMesh>(GetTransientPackage(), NAME_None, RF_Transient);
@@ -25,7 +25,7 @@ namespace MantleHairFitPicturesPrivate
 		const FPolygonGroupID Group = MD.CreatePolygonGroup();
 		Attributes.GetPolygonGroupMaterialSlotNames()[Group] = TEXT("HairFit");
 
-		const auto AddPart = [&](const TArray<FVector3f>& Positions, const TArray<uint32>& Triangles, const FLinearColor& Colour)
+		const auto AddPart = [&](const TArray<FVector3f>& Positions, const TArray<uint32>& Triangles, const FLinearColor& Color)
 		{
 			TArray<FVertexID> Vertices;
 			for (const FVector3f& P : Positions) Vertices.Add(MD.CreateVertex()), Attributes.GetVertexPositions()[Vertices.Last()] = P;
@@ -35,7 +35,7 @@ namespace MantleHairFitPicturesPrivate
 				for (int32 C = 0; C < 3; ++C)
 				{
 					const FVertexInstanceID Corner = MD.CreateVertexInstance(Vertices[Triangles[T + C]]);
-					Colors[Corner] = FVector4f(Colour);
+					Colors[Corner] = FVector4f(Color);
 					Corners.Add(Corner);
 				}
 				MD.CreateTriangle(Group, Corners);

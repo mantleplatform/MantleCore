@@ -7,7 +7,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// The one Avatar door: the "what I see" line, As is greyed with why, and the route the door uses.
+// The one Avatar door: the "what I see" line, As is grayed with why, and the route the door uses.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleAvatarDoorTest,
 	"Mantle.Editor.CosmeticPanel.AvatarDoor",
@@ -83,26 +83,26 @@ bool FMantleAvatarDoorTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("a Blueprint's face-only line isn't about clothing"), Assembled.bCovered);
 	}
 
-	// As is greyed, with why.
-	TestEqual(TEXT("Creator character: already a MetaHuman"), FMantleConvertSection::AsIsGreyedWhy(Creator), FString(TEXT("it's already a MetaHuman")));
-	TestEqual(TEXT("static mesh it can't auto-rig: no rig to keep"), FMantleConvertSection::AsIsGreyedWhy(Static), FString(TEXT("no rig to keep")));
-	TestEqual(TEXT("weightless skeleton it can't auto-rig: no rig to keep"), FMantleConvertSection::AsIsGreyedWhy(Weightless), FString(TEXT("no rig to keep")));
+	// As is grayed, with why.
+	TestEqual(TEXT("Creator character: already a MetaHuman"), FMantleConvertSection::AsIsGrayedWhy(Creator), FString(TEXT("it's already a MetaHuman")));
+	TestEqual(TEXT("static mesh it can't auto-rig: no rig to keep"), FMantleConvertSection::AsIsGrayedWhy(Static), FString(TEXT("no rig to keep")));
+	TestEqual(TEXT("weightless skeleton it can't auto-rig: no rig to keep"), FMantleConvertSection::AsIsGrayedWhy(Weightless), FString(TEXT("no rig to keep")));
 	// Chunk 7: a model with no rig goes As is when it can be auto-rigged here; else the auto-rig's own why.
 	FMantleAvatarSight Rigs = Static;
 	Rigs.bAutoRigs = true;
-	TestEqual(TEXT("static mesh it can auto-rig: As is offered"), FMantleConvertSection::AsIsGreyedWhy(Rigs), FString());
+	TestEqual(TEXT("static mesh it can auto-rig: As is offered"), FMantleConvertSection::AsIsGrayedWhy(Rigs), FString());
 	FMantleAvatarSight WeightlessRigs = Weightless;
 	WeightlessRigs.bAutoRigs = true;
-	TestEqual(TEXT("weightless skeleton it can auto-rig: As is offered"), FMantleConvertSection::AsIsGreyedWhy(WeightlessRigs), FString());
+	TestEqual(TEXT("weightless skeleton it can auto-rig: As is offered"), FMantleConvertSection::AsIsGrayedWhy(WeightlessRigs), FString());
 	FMantleAvatarSight NoRenderer = Static;
 	NoRenderer.AutoRigNote = TEXT("It has no rig, and fitting one needs a renderer, which this editor runs without.");
-	TestEqual(TEXT("can't auto-rig here: says why"), FMantleConvertSection::AsIsGreyedWhy(NoRenderer), NoRenderer.AutoRigNote);
+	TestEqual(TEXT("can't auto-rig here: says why"), FMantleConvertSection::AsIsGrayedWhy(NoRenderer), NoRenderer.AutoRigNote);
 	TestTrue(TEXT("static mesh it can auto-rig: As is used"), FMantleConvertSection::DoorRoute(EMantleAvatarRoute::AsIs, Rigs)
 		== (UMantleSettings::AllowsAsIsAvatars() ? EMantleAvatarRoute::AsIs : EMantleAvatarRoute::Convert));
-	TestEqual(TEXT("rigged skeletal mesh: As is offered"), FMantleConvertSection::AsIsGreyedWhy(Skeletal), FString());
-	TestEqual(TEXT("Blueprint: As is offered"), FMantleConvertSection::AsIsGreyedWhy(Blueprint), FString());
+	TestEqual(TEXT("rigged skeletal mesh: As is offered"), FMantleConvertSection::AsIsGrayedWhy(Skeletal), FString());
+	TestEqual(TEXT("Blueprint: As is offered"), FMantleConvertSection::AsIsGrayedWhy(Blueprint), FString());
 
-	// The route: Convert is the default; As is only while offered and not greyed.
+	// The route: Convert is the default; As is only while offered and not grayed.
 	TestTrue(TEXT("Convert picked"), FMantleConvertSection::DoorRoute(EMantleAvatarRoute::Convert, Skeletal) == EMantleAvatarRoute::Convert);
 	TestTrue(TEXT("As is picked for a Creator character: Convert"), FMantleConvertSection::DoorRoute(EMantleAvatarRoute::AsIs, Creator) == EMantleAvatarRoute::Convert);
 	TestTrue(TEXT("As is picked for a rigged mesh: As is only while allowed"), FMantleConvertSection::DoorRoute(EMantleAvatarRoute::AsIs, Skeletal)

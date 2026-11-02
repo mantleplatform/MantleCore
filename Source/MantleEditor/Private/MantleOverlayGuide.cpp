@@ -188,14 +188,14 @@ namespace MantleOverlayGuidePrivate
 		}
 	}
 
-	/** White outline then black text, centred on Centre. */
-	void GuideDrawLabel(TArray<FColor>& Pixels, const FString& Name, const FVector2f& Centre)
+	/** White outline then black text, centerd on Center. */
+	void GuideDrawLabel(TArray<FColor>& Pixels, const FString& Name, const FVector2f& Center)
 	{
 		const FString Text = Name.ToUpper();
 		const int32 Width = Text.Len() * 6 * TextScale - TextScale;
 		const int32 Height = 7 * TextScale;
-		const int32 Left = FMath::Clamp(FMath::RoundToInt(Centre.X) - Width / 2, 4, FMantleOverlayGuide::Size - Width - 4);
-		const int32 Top = FMath::Clamp(FMath::RoundToInt(Centre.Y) - Height / 2, 4, FMantleOverlayGuide::Size - Height - 4);
+		const int32 Left = FMath::Clamp(FMath::RoundToInt(Center.X) - Width / 2, 4, FMantleOverlayGuide::Size - Width - 4);
+		const int32 Top = FMath::Clamp(FMath::RoundToInt(Center.Y) - Height / 2, 4, FMantleOverlayGuide::Size - Height - 4);
 		for (int32 OffsetY = -2; OffsetY <= 2; OffsetY += 2)
 		{
 			for (int32 OffsetX = -2; OffsetX <= 2; OffsetX += 2)
@@ -210,22 +210,22 @@ namespace MantleOverlayGuidePrivate
 	}
 
 	/** A pixel-space point at 1/16 px, so equal corners compare equal. */
-	struct FQuantised
+	struct FQuantized
 	{
 		int32 X = 0;
 		int32 Y = 0;
 	};
 
-	FQuantised GuideQuantise(const FVector2f& Pixel)
+	FQuantized GuideQuantize(const FVector2f& Pixel)
 	{
-		FQuantised Result;
+		FQuantized Result;
 		Result.X = FMath::RoundToInt(Pixel.X * 16.f);
 		Result.Y = FMath::RoundToInt(Pixel.Y * 16.f);
 		return Result;
 	}
 
 	/** An undirected edge's key: its two corners, ordered. */
-	uint64 GuideEdgeKeyPart(const FQuantised& Point)
+	uint64 GuideEdgeKeyPart(const FQuantized& Point)
 	{
 		return (static_cast<uint64>(static_cast<uint32>(Point.X)) << 32) | static_cast<uint64>(static_cast<uint32>(Point.Y));
 	}
@@ -423,8 +423,8 @@ bool FMantleOverlayGuide::ReadMesh(const USkeletalMesh& Mesh, const bool bFace, 
 			}
 			// A layout laid out in a UDIM tile other than 0..1 (MetaHuman's body is) samples the same texture: fold the
 			// triangle back by its tile.
-			const FVector2f Centre = (Out.UV[0] + Out.UV[1] + Out.UV[2]) / 3.f;
-			const FVector2f Tile(FMath::FloorToFloat(Centre.X), FMath::FloorToFloat(Centre.Y));
+			const FVector2f Center = (Out.UV[0] + Out.UV[1] + Out.UV[2]) / 3.f;
+			const FVector2f Tile(FMath::FloorToFloat(Center.X), FMath::FloorToFloat(Center.Y));
 			for (FVector2f& UV : Out.UV)
 			{
 				UV -= Tile;
@@ -518,8 +518,8 @@ void FMantleOverlayGuide::Render(TConstArrayView<FTriangle> Triangles, TArray<FC
 		{
 			const FVector2f A = Corners[Index * 3 + Side];
 			const FVector2f B = Corners[Index * 3 + (Side + 1) % 3];
-			const FQuantised QA = GuideQuantise(A);
-			const FQuantised QB = GuideQuantise(B);
+			const FQuantized QA = GuideQuantize(A);
+			const FQuantized QB = GuideQuantize(B);
 			const uint64 KeyA = GuideEdgeKeyPart(QA);
 			const uint64 KeyB = GuideEdgeKeyPart(QB);
 			FGuideEdge& Edge = Edges.FindOrAdd(KeyA <= KeyB ? TPair<uint64, uint64>(KeyA, KeyB) : TPair<uint64, uint64>(KeyB, KeyA));
@@ -551,8 +551,8 @@ void FMantleOverlayGuide::Render(TConstArrayView<FTriangle> Triangles, TArray<FC
 	Parent.SetNumUninitialized(Triangles.Num());
 	TArray<float> Area;
 	Area.SetNumZeroed(Triangles.Num());
-	TArray<FVector2f> Centre;
-	Centre.SetNumZeroed(Triangles.Num());
+	TArray<FVector2f> Center;
+	Center.SetNumZeroed(Triangles.Num());
 	TMap<TPair<uint64, int32>, int32> CornerOwner;
 	for (int32 Index = 0; Index < Triangles.Num(); ++Index)
 	{
@@ -561,13 +561,13 @@ void FMantleOverlayGuide::Render(TConstArrayView<FTriangle> Triangles, TArray<FC
 		const FVector2f P1 = Corners[Index * 3 + 1];
 		const FVector2f P2 = Corners[Index * 3 + 2];
 		Area[Index] = 0.5f * FMath::Abs((P1.X - P0.X) * (P2.Y - P0.Y) - (P1.Y - P0.Y) * (P2.X - P0.X));
-		Centre[Index] = (P0 + P1 + P2) / 3.f;
+		Center[Index] = (P0 + P1 + P2) / 3.f;
 	}
 	for (int32 Index = 0; Index < Triangles.Num(); ++Index)
 	{
 		for (int32 Corner = 0; Corner < 3; ++Corner)
 		{
-			const TPair<uint64, int32> Key(GuideEdgeKeyPart(GuideQuantise(Corners[Index * 3 + Corner])), static_cast<int32>(Triangles[Index].Region));
+			const TPair<uint64, int32> Key(GuideEdgeKeyPart(GuideQuantize(Corners[Index * 3 + Corner])), static_cast<int32>(Triangles[Index].Region));
 			if (const int32* Owner = CornerOwner.Find(Key))
 			{
 				const int32 RootA = GuideFindRoot(Parent, Index);
@@ -589,7 +589,7 @@ void FMantleOverlayGuide::Render(TConstArrayView<FTriangle> Triangles, TArray<FC
 	{
 		const int32 Root = GuideFindRoot(Parent, Index);
 		IslandArea.FindOrAdd(Root) += Area[Index];
-		IslandSum.FindOrAdd(Root, FVector2f::ZeroVector) += Centre[Index] * Area[Index];
+		IslandSum.FindOrAdd(Root, FVector2f::ZeroVector) += Center[Index] * Area[Index];
 	}
 	bool bRegionSeen[RegionCount] = {};
 	int32 BestRoot[RegionCount];
@@ -630,11 +630,11 @@ void FMantleOverlayGuide::Render(TConstArrayView<FTriangle> Triangles, TArray<FC
 		{
 			if (static_cast<int32>(Triangles[Index].Region) == Region && GuideFindRoot(Parent, Index) == BestRoot[Region])
 			{
-				const float Distance = FVector2f::DistSquared(Centre[Index], Mean);
+				const float Distance = FVector2f::DistSquared(Center[Index], Mean);
 				if (Distance < BestDistance)
 				{
 					BestDistance = Distance;
-					At = Centre[Index];
+					At = Center[Index];
 				}
 			}
 		}

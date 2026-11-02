@@ -84,7 +84,7 @@ namespace MantleCosmeticThumbnailPrivate
 	/**
 	 * As ThumbnailTools does for a thumbnail it keeps, and as the conform's portrait settles: loads and asset compiles
 	 * (meshes, textures) finished, every shader job finished (a material whose shaders aren't ready draws as the engine's
-	 * grey world-grid material), the drawn meshes' textures forced resident and streamed in, the render thread caught up.
+	 * gray world-grid material), the drawn meshes' textures forced resident and streamed in, the render thread caught up.
 	 */
 	void CaptureSettle(TConstArrayView<TPair<UPrimitiveComponent*, const UObject*>> Drawn)
 	{
@@ -367,8 +367,8 @@ FVector FMantleCosmeticThumbnail::FrameCamera(const FBox& Frame, const FRotator&
 	const FVector Up = Axes.GetUnitAxis(EAxis::Z);
 	const double TanHalf = FMath::Tan(FMath::DegreesToRadians(static_cast<double>(FOVDegrees)) * 0.5);
 
-	// Each corner at depth d past the centre and a across the view needs the camera at least
-	// a / tan(half FOV) - d behind the centre (square view: the same half angle both ways).
+	// Each corner at depth d past the center and a across the view needs the camera at least
+	// a / tan(half FOV) - d behind the center (square view: the same half angle both ways).
 	double Distance = 0.0;
 	for (int32 Corner = 0; Corner < 8; ++Corner)
 	{
@@ -462,7 +462,7 @@ bool FMantleCosmeticThumbnail::Capture(const FMantleThumbnailSubject& Subject, i
 
 	UTextureRenderTarget2D* Target = NewObject<UTextureRenderTarget2D>(GetTransientPackage(), NAME_None, RF_Transient);
 	Target->ClearColor = FLinearColor::Black;
-	// 8-bit with the display gamma (not forced linear): the final LDR colour as the editor shows it.
+	// 8-bit with the display gamma (not forced linear): the final LDR color as the editor shows it.
 	Target->InitCustomFormat(Size, Size, PF_B8G8R8A8, false);
 	Target->UpdateResourceImmediate(true);
 
@@ -479,7 +479,7 @@ bool FMantleCosmeticThumbnail::Capture(const FMantleThumbnailSubject& Subject, i
 	const FVector Location = FrameCamera(Frame.IsValid ? Frame : Subject.Frame, Subject.View, FieldOfViewDegrees, FrameMargin);
 	Scene.AddComponent(Camera, FTransform(Subject.View, Location));
 
-	// Everything the picture needs in before it is taken, or a material draws as the engine's grey world grid: loads,
+	// Everything the picture needs in before it is taken, or a material draws as the engine's gray world grid: loads,
 	// asset compiles, every shader job and every mip (CaptureSettle). A material just made (a bake's) or one the editor
 	// compiles only when it is first drawn asks for its shaders at the first capture, so warm-up captures run until one
 	// asks for nothing more and every material drawn is ready (at most CaptureWarmUpRounds).
@@ -519,7 +519,7 @@ bool FMantleCosmeticThumbnail::Capture(const FMantleThumbnailSubject& Subject, i
 	}
 	else
 	{
-		UE_LOG(LogMantle, Warning, TEXT("MANTLE_COSMETIC_THUMBNAIL some materials are still not ready after %d warm-up captures: they may draw as the grey world grid"),
+		UE_LOG(LogMantle, Warning, TEXT("MANTLE_COSMETIC_THUMBNAIL some materials are still not ready after %d warm-up captures: they may draw as the gray world grid"),
 			CaptureWarmUpRounds);
 	}
 

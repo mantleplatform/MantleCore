@@ -228,7 +228,7 @@ bool FMantleVehicleExportScaleTest::RunTest(const FString& Parameters)
 	using namespace MantleVehicleExportScaleTestPrivate;
 	const TMap<FString, FString> NoMaterials;
 
-	// A Size of 1 is the vehicle as modelled: the view is the vehicle itself, and its document is the one it always wrote.
+	// A Size of 1 is the vehicle as modeled: the view is the vehicle itself, and its document is the one it always wrote.
 	UMantleVehicleSource* Plain = MakeSource(1.f);
 	TestTrue(TEXT("at Size 1 the export view is the vehicle itself"), FMantleVehicleConverter::MakeExportView(*Plain) == Plain);
 	TestEqual(TEXT("at Size 1 the view's document is the vehicle's own"),
@@ -506,7 +506,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleVehicleExportScaleBodyTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleExportScaleTestPrivate;
-	// The body is the sedan chassis's own grey mesh, so the test needs no project content and cannot silently skip. Anything that goes wrong here is a failure.
+	// The body is the sedan chassis's own gray mesh, so the test needs no project content and cannot silently skip. Anything that goes wrong here is a failure.
 	FString BodyError;
 	USkeletalMesh* Original = MantleVehicleScratchBody::Make(TEXT("/Temp/MantleVehicleExportScaleTest"), TEXT("ScaleTestBody"), BodyError);
 	if (!TestNotNull(FString::Printf(TEXT("the test body (%s)"), *BodyError), Original))
@@ -519,13 +519,13 @@ bool FMantleVehicleExportScaleBodyTest::RunTest(const FString& Parameters)
 	Source->Body = Original;
 	Source->FitScale = 2.f;
 
-	FMantleGlbMesh AsModelled;
+	FMantleGlbMesh AsModeled;
 	FMantleGlbMesh Sized;
 	FMantleGlbMesh Unapplied;
 	TArray<UMaterialInterface*> Materials;
 	FString Error;
-	const bool bAsModelledRead = FMantleVehicleConverter::ReadBody(*Source, AsModelled, Materials, Error, false);
-	if (!TestTrue(FString::Printf(TEXT("the as-modelled body reads (%s)"), *Error), bAsModelledRead))
+	const bool bAsModeledRead = FMantleVehicleConverter::ReadBody(*Source, AsModeled, Materials, Error, false);
+	if (!TestTrue(FString::Printf(TEXT("the as-modeled body reads (%s)"), *Error), bAsModeledRead))
 	{
 		return false;
 	}
@@ -534,31 +534,31 @@ bool FMantleVehicleExportScaleBodyTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	// Without the flag the body is as modelled, whatever the Size says (the fitter measures it that way).
-	TestTrue(TEXT("a body read without the flag is as modelled"), FMantleVehicleConverter::ReadBody(*Source, Unapplied, Materials, Error));
-	TestTrue(TEXT("the unflagged body is the as-modelled body"), Unapplied.Positions == AsModelled.Positions);
+	// Without the flag the body is as modeled, whatever the Size says (the fitter measures it that way).
+	TestTrue(TEXT("a body read without the flag is as modeled"), FMantleVehicleConverter::ReadBody(*Source, Unapplied, Materials, Error));
+	TestTrue(TEXT("the unflagged body is the as-modeled body"), Unapplied.Positions == AsModeled.Positions);
 
-	if (!TestEqual(TEXT("the same vertices"), Sized.Positions.Num(), AsModelled.Positions.Num()) || !TestTrue(TEXT("it has vertices"), AsModelled.Positions.Num() > 0))
+	if (!TestEqual(TEXT("the same vertices"), Sized.Positions.Num(), AsModeled.Positions.Num()) || !TestTrue(TEXT("it has vertices"), AsModeled.Positions.Num() > 0))
 	{
 		return false;
 	}
 	FBox Before(ForceInit);
 	FBox After(ForceInit);
-	for (int32 Index = 0; Index < AsModelled.Positions.Num(); ++Index)
+	for (int32 Index = 0; Index < AsModeled.Positions.Num(); ++Index)
 	{
-		Before += FVector(AsModelled.Positions[Index]);
+		Before += FVector(AsModeled.Positions[Index]);
 		After += FVector(Sized.Positions[Index]);
 	}
 	TestTrue(TEXT("the sized body's smallest corner is doubled"), After.Min.Equals(Before.Min * 2.0, 0.01));
 	TestTrue(TEXT("the sized body's largest corner is doubled"), After.Max.Equals(Before.Max * 2.0, 0.01));
-	TestTrue(TEXT("the normals are not scaled"), Sized.Normals == AsModelled.Normals);
+	TestTrue(TEXT("the normals are not scaled"), Sized.Normals == AsModeled.Normals);
 
-	if (TestEqual(TEXT("the same bones"), Sized.Joints.Num(), AsModelled.Joints.Num()))
+	if (TestEqual(TEXT("the same bones"), Sized.Joints.Num(), AsModeled.Joints.Num()))
 	{
 		bool bBonesDoubled = true;
 		for (int32 Joint = 0; Joint < Sized.Joints.Num(); ++Joint)
 		{
-			bBonesDoubled = bBonesDoubled && Sized.Joints[Joint].Local.GetTranslation().Equals(AsModelled.Joints[Joint].Local.GetTranslation() * 2.0, 0.01);
+			bBonesDoubled = bBonesDoubled && Sized.Joints[Joint].Local.GetTranslation().Equals(AsModeled.Joints[Joint].Local.GetTranslation() * 2.0, 0.01);
 		}
 		TestTrue(TEXT("every bone's rest translation is doubled"), bBonesDoubled);
 	}

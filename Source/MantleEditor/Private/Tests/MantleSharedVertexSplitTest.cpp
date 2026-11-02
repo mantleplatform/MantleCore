@@ -62,7 +62,7 @@ bool FMantleSharedVertexSplitTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("tangents follow"), Glb.Tangents.Num(), 6);
 	TestEqual(TEXT("UVs follow"), Glb.UVs.Num(), 6);
 	TestEqual(TEXT("second UVs follow"), Glb.UV1s.Num(), 6);
-	TestEqual(TEXT("colours follow"), Glb.Colors.Num(), 6);
+	TestEqual(TEXT("colors follow"), Glb.Colors.Num(), 6);
 
 	// The sections tile the vertex buffer in order, each with its material and one triangle.
 	int32 Covered = 0;
@@ -93,7 +93,7 @@ bool FMantleSharedVertexSplitTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("a corner keeps its tangent"), Glb.Tangents[NewVertex] == Before.Tangents[OldVertex]);
 			TestTrue(TEXT("a corner keeps its UV"), Glb.UVs[NewVertex] == Before.UVs[OldVertex]);
 			TestTrue(TEXT("a corner keeps its second UV"), Glb.UV1s[NewVertex] == Before.UV1s[OldVertex]);
-			TestTrue(TEXT("a corner keeps its colour"), Glb.Colors[NewVertex] == Before.Colors[OldVertex]);
+			TestTrue(TEXT("a corner keeps its color"), Glb.Colors[NewVertex] == Before.Colors[OldVertex]);
 		}
 	}
 

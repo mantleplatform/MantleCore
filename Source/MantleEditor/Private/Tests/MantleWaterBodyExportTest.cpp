@@ -250,14 +250,14 @@ bool FMantleWaterBodyCarvingCountTest::RunTest(const FString& Parameters)
 	}
 
 	// A box stands in for the landscape: the count reads only its bounds on the ground plane. A plain AActor has no root component when
-	// it spawns, so the spawn location is dropped (AActor::PostSpawnInitialize places only a root); the box is put at the centre itself.
-	auto MakeGround = [&Fixture](const FVector& Centre)
+	// it spawns, so the spawn location is dropped (AActor::PostSpawnInitialize places only a root); the box is put at the center itself.
+	auto MakeGround = [&Fixture](const FVector& Center)
 	{
-		AActor* Ground = Fixture.World->SpawnActor<AActor>(Centre, FRotator::ZeroRotator);
+		AActor* Ground = Fixture.World->SpawnActor<AActor>(Center, FRotator::ZeroRotator);
 		UBoxComponent* Box = NewObject<UBoxComponent>(Ground, TEXT("Ground"));
 		Box->SetBoxExtent(FVector(5000.0, 5000.0, 100.0));
 		Ground->SetRootComponent(Box);
-		Box->SetWorldLocation(Centre);
+		Box->SetWorldLocation(Center);
 		Box->RegisterComponent();
 		return Ground;
 	};
@@ -303,10 +303,10 @@ bool FMantleTerrainCarveCoverageTest::RunTest(const FString& Parameters)
 	Source.bMaterialRead = true;
 	FMantleLandscapeLayerLook Look;
 	Look.Layer = TEXT("Grass");
-	Look.bHasFlatColour = true;
-	Look.FlatColour = FLinearColor(0.1f, 0.5f, 0.1f);
+	Look.bHasFlatColor = true;
+	Look.FlatColor = FLinearColor(0.1f, 0.5f, 0.1f);
 	Look.bHasAverage = true;
-	Look.Average = Look.FlatColour;
+	Look.Average = Look.FlatColor;
 	Source.MaterialRead.Layers.Add(Look);
 	Source.MaterialRead.bFoundLayers = true;
 
@@ -414,9 +414,9 @@ bool FMantleWaterBodyBuildPropsTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("a lake builds"), FMantleWaterBodyExport::BuildProps(Lake, Props, Why, Notes));
 		TestTrue(TEXT("its points are in the actor's space"), Props.SplinePoints[0].Location.Equals(FVector(500.0, 0.0, 0.0), 0.01));
 		TestEqual(TEXT("one wave"), Props.Waves.Num(), 1);
-		TestEqual(TEXT("travelling along +Y is 90 degrees"), Props.Waves[0].DirectionDeg, 90.0);
+		TestEqual(TEXT("traveling along +Y is 90 degrees"), Props.Waves[0].DirectionDeg, 90.0);
 		TestEqual(TEXT("a steepness past one is held to one"), Props.Waves[0].Steepness, 1.0);
-		TestTrue(TEXT("a look colour is held to 0 to 1"), Props.Albedo.IsSet() && Props.Albedo->B == 1.f);
+		TestTrue(TEXT("a look color is held to 0 to 1"), Props.Albedo.IsSet() && Props.Albedo->B == 1.f);
 		TestFalse(TEXT("no collision is written as off"), Props.bCollision);
 	}
 
@@ -592,7 +592,7 @@ namespace MantleFlatWaterTestPrivate
 	const TCHAR* const PlanePath = TEXT("/Engine/BasicShapes/Plane.Plane");
 	const TCHAR* const CubePath = TEXT("/Engine/BasicShapes/Cube.Cube");
 
-	/** A Single Layer Water material with nothing else in it: the Water plugin's own shading model, recognised as water. */
+	/** A Single Layer Water material with nothing else in it: the Water plugin's own shading model, recognized as water. */
 	UMaterial* NewWaterMaterial()
 	{
 		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
@@ -674,7 +674,7 @@ bool FMantleFlatWaterMeshExportsAsWaterBodyTest::RunTest(const FString& Paramete
 		return false;
 	}
 	TestEqual(TEXT("a still pond is a lake"), Props->BodyType, EMantleWaterBodyType::Lake);
-	TestTrue(TEXT("the surface is the mesh's top, centred on the footprint"), Entity->Transform.GetLocation().Equals(FVector(1000.0, 2000.0, 300.0), 0.5));
+	TestTrue(TEXT("the surface is the mesh's top, centerd on the footprint"), Entity->Transform.GetLocation().Equals(FVector(1000.0, 2000.0, 300.0), 0.5));
 	TestTrue(TEXT("at scale 1"), Entity->Transform.GetScale3D().Equals(FVector::OneVector, 1.0e-4));
 	TestEqual(TEXT("turned by the mesh's yaw"), Entity->Transform.Rotator().Yaw, 90.0, 0.01);
 

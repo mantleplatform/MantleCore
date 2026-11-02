@@ -67,7 +67,7 @@ struct FMantleBodyPart
  * part. Directions: the angle between the source's and the converted's line from one joint to another (pelvis to chest,
  * upper arm to lower arm, foot to ball...), so neither skeleton's bone axes matter. Head turn: the angle between the two
  * heads' turns from their own reference pose. Places: hands, feet and head from the pelvis, the source's scaled by the
- * pelvis heights (cm). Feet: on the frames the source's foot or ball is planted (moves under half a centimetre), how far
+ * pelvis heights (cm). Feet: on the frames the source's foot or ball is planted (moves under half a centimeter), how far
  * the converted one slides and how much higher it is than the source's (scaled).
  */
 struct FMantleBodyMatch

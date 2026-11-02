@@ -13,7 +13,7 @@
  * pieces of the cards mesh; the atlas's main axis (U or V) is the one along which a card has more
  * distinct texture coordinates, voted over all cards; each card's vertices are grouped by their
  * coordinate along that axis (1/1024 apart), the groups sorted, and CoordU is the running length
- * through the groups' centres, normalised by the card's length. Ported rather than called, so the
+ * through the groups' centers, normalized by the card's length. Ported rather than called, so the
  * plugin needs no HairStrands module dependency (the groom asset itself is read by reflection).
  *
  * Root UV: the engine takes it from the groom's strands (the closest strand root to each card
@@ -39,7 +39,7 @@ struct MANTLEEDITOR_API FMantleHairCards
 
 	/**
 	 * Triangle numbers of complete cards within Budget. Never collapses a card or splits its alpha silhouette.
-	 * The kept cards are spread evenly over the style (farthest-point pick over the cards' centres, a card that no longer
+	 * The kept cards are spread evenly over the style (farthest-point pick over the cards' centers, a card that no longer
 	 * fits is skipped for a smaller one), so a small budget gives thin but even hair, not patches.
 	 */
 	static TArray<int32> SelectWholeCards(TConstArrayView<FVector3f> Positions, TConstArrayView<uint32> Indices, int32 Budget);

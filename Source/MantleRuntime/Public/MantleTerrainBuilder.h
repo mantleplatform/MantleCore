@@ -18,7 +18,7 @@ struct FMantleTerrainHoleGrid;
  * builds headless. The C++ side is written against these; per-layer names are "Layer<i>" plus a
  * suffix, i from 0 to FMantlePlaceLimits::MaxTerrainLayers - 1 (FMantleTerrainBuilder::LayerParameter).
  * Eight layers (#628): the generator script's Weightmap/LayerMask weigh layers 0 to 3 and Weightmap2/LayerMask2 layers 4 to 7.
- * Kept as TCHAR literals, not FName globals, so nothing constructs an FName during static initialisation.
+ * Kept as TCHAR literals, not FName globals, so nothing constructs an FName during static initialization.
  */
 namespace MantleTerrainMaterialParameters
 {
@@ -28,7 +28,7 @@ namespace MantleTerrainMaterialParameters
 	/** Texture: the paint weights of layers 4 to 7 (#628), R to A, over the whole terrain (UV0). Default white. */
 	constexpr const TCHAR* Weightmap2 = TEXT("Weightmap2");
 
-	/** Vector: 1 in each channel whose layer exists, 0 otherwise; multiplies the weights before they are normalised. */
+	/** Vector: 1 in each channel whose layer exists, 0 otherwise; multiplies the weights before they are normalized. */
 	constexpr const TCHAR* LayerMask = TEXT("LayerMask");
 
 	/** Vector: LayerMask for layers 4 to 7 (#628); default all 0. */
@@ -39,7 +39,7 @@ namespace MantleTerrainMaterialParameters
 	constexpr const TCHAR* Normal = TEXT("Normal");
 	constexpr const TCHAR* ORM = TEXT("ORM");
 
-	/** Vectors: the layer material's base colour factor; how often the layer repeats across the terrain in U and V (R, G). */
+	/** Vectors: the layer material's base color factor; how often the layer repeats across the terrain in U and V (R, G). */
 	constexpr const TCHAR* BaseColorFactor = TEXT("BaseColorFactor");
 	constexpr const TCHAR* UVScale = TEXT("UVScale");
 
@@ -107,9 +107,9 @@ struct FMantleTerrainLayerLook
  * (UStaticMesh::BuildFromMeshDescriptions, fast build, as FMantleRuntimeStaticMeshBuilder does):
  *
  *   - LOD 0 has a vertex per sample of the chunk; each further LOD takes every second vertex of the
- *     one before (the chunk's last sample on each axis is always kept, so neighbours meet), and the
+ *     one before (the chunk's last sample on each axis is always kept, so neighbors meet), and the
  *     engine picks them by screen size, which for chunks of one size is by distance.
- *   - Neighbouring chunks at different LODs meet at T-junctions, so every edge shared with another
+ *   - Neighboring chunks at different LODs meet at T-junctions, so every edge shared with another
  *     chunk has a skirt: a strip hanging below it, deep enough to cover the largest gap any LOD
  *     leaves on that edge, drawn from both sides. The terrain's outer border has none.
  *   - Normals and tangents come from the heightfield itself (central differences over the full

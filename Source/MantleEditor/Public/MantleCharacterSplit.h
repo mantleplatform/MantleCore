@@ -250,7 +250,7 @@ struct MANTLEEDITOR_API FMantleSplitProposal
 class MANTLEEDITOR_API FMantleCharacterSplit
 {
 public:
-	/** The layer a piece of Slot is drawn at, nudged by the words of its name (underwear lower, jackets and armour higher). Pure (tested). */
+	/** The layer a piece of Slot is drawn at, nudged by the words of its name (underwear lower, jackets and armor higher). Pure (tested). */
 	static int32 LayerOf(EMantleSplitRole Role, const FString& Slot, const FString& Name);
 
 	/** The body region a set of bone names says: "head", "hands", "feet" when most of them are, else "body". Pure (tested). */

@@ -8,7 +8,7 @@ class USkeletalMesh;
 /**
  * #736: the painting guide for scar and tattoo overlay creators. A scar or tattoo is a mask painted in the fixed
  * converted-MetaHuman UV layout, which a painter cannot see in a blank canvas. The guide is a Size x Size image of
- * that layout: every UV triangle filled in a soft colour by body region (the region the triangle's skin weights say it
+ * that layout: every UV triangle filled in a soft color by body region (the region the triangle's skin weights say it
  * belongs to), faint triangle edges, brighter island borders, and the region's name written on its largest island.
  *
  * The UV channel read is channel 0 of LOD0, the channel the shared skin material's masks sample. Drawing is entirely on

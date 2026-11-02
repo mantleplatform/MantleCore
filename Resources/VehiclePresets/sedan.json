@@ -3,7 +3,7 @@
   "id": "sedan",
   "name": "Sedan",
   "description": "A four-door road car: hatchbacks, saloons, coupes and estates. Handles like a sports car, a little softer.",
-  "comment": "A vehicle preset (#728): the starting point a creator picks before choosing their mesh. defaults is a vehicle document fragment (schema/vehicle.schema.json) the plugin writes into a new vehicle; ranges narrows placeAssets.vehicle.ranges in schema/avatar/limits.json for a vehicle built from this preset, by the same paths, and never widens them. fit sizes the creator's mesh for the 165.6 cm Mantle character: one uniform scale from the mesh's wheel radius and track width (wheel-centre to wheel-centre across an axle) against these typical values, never from the wheelbase, so a stretched limousine keeps its length. Values are tuned against the owner's Fab test pack, where the real-scale Vol 2 sedan comes out at about 1.0.",
+  "comment": "A vehicle preset (#728): the starting point a creator picks before choosing their mesh. defaults is a vehicle document fragment (schema/vehicle.schema.json) the plugin writes into a new vehicle; ranges narrows placeAssets.vehicle.ranges in schema/avatar/limits.json for a vehicle built from this preset, by the same paths, and never widens them. fit sizes the creator's mesh for the 165.6 cm Mantle character: one uniform scale from the mesh's wheel radius and track width (wheel-center to wheel-center across an axle) against these typical values, never from the wheelbase, so a stretched limousine keeps its length. Values are tuned against the owner's Fab test pack, where the real-scale Vol 2 sedan comes out at about 1.0.",
   "movementType": "wheeled",
   "publishable": true,
   "type": "car",

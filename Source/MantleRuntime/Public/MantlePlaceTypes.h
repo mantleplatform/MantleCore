@@ -244,7 +244,7 @@ enum class EMantleScriptLanguage : uint8
 /**
  * A place's maturity rating (#320), the place file's audience.maturity. A placeholder taxonomy
  * until #42 decides the real one, which replaces this. Unrated is what a place that never
- * declared one is. Catalogue metadata only: nothing in the world reads it.
+ * declared one is. Catalog metadata only: nothing in the world reads it.
  */
 enum class EMantleMaturity : uint8
 {
@@ -387,7 +387,7 @@ struct FMantleExposureSettings
 
 /**
  * settings.environment.fog (#628): the height fog's look. Each value is unset when the file leaves its key out, which
- * keeps the game's own fog value. Colours are linear luminance (0 to MaxFogColor a channel), the distance is in cm.
+ * keeps the game's own fog value. Colors are linear luminance (0 to MaxFogColor a channel), the distance is in cm.
  */
 struct FMantleFogSettings
 {
@@ -407,7 +407,7 @@ struct FMantleFogSettings
 
 /**
  * The place's default look (#532), the place file's optional settings.environment: the clock,
- * weather, colour grade, bloom and grading preset every player starts in, with or without a script. Each value is unset
+ * weather, color grade, bloom and grading preset every player starts in, with or without a script. Each value is unset
  * when the file leaves its key out. The server seeds the replicated environment override from it
  * once, as the place loads (UMantleEnvironmentSubsystem::MakeSettingsOverride); a server script's
  * Environment writes change it from there. The ranges are the script API's (MantleEnvironmentDefaults).
@@ -573,7 +573,7 @@ struct FMantleSeat
 {
 	/** The id of the entity the seat belongs to; it must be in the place's entities. */
 	FString Entity;
-	/** Where the hip rests, in the owning entity's local space (centimetres). */
+	/** Where the hip rests, in the owning entity's local space (centimeters). */
 	FVector Position = FVector::ZeroVector;
 	/** The way the seated body faces: degrees about up, in the owning entity's local space. Yaw only. */
 	double Yaw = 0.0;
@@ -713,7 +713,7 @@ struct FMantleStorageEntry
 /**
  * One file of a stored script package (#838), as the storage resolve answers it: the same {path, side, language,
  * source} a place's own scripts[] entry carries. Path is relative to the package ("Server/Main.luau"); the script
- * catalogue mounts it at Packages/<storage name>/<Path>.
+ * catalog mounts it at Packages/<storage name>/<Path>.
  */
 struct FMantleStoredScriptFile
 {
@@ -988,7 +988,7 @@ struct FMantleDecalProps
 	/** Empty when the decal has no normal map. */
 	FString Normal;
 	FVector Size = FVector(128.0, 256.0, 256.0);
-	/** 0 to 1, multiplied into the base colour's alpha. */
+	/** 0 to 1, multiplied into the base color's alpha. */
 	double Opacity = 1.0;
 	/** Higher draws later, on top; -MaxDecalSortOrder to MaxDecalSortOrder. */
 	int32 SortOrder = 0;
@@ -1245,7 +1245,7 @@ struct FMantleTerrainGrass
 	FString Mesh;
 	/** Materials by slot, as on FMantleStaticMeshProps; an empty entry leaves the slot on the mesh's own. */
 	TArray<FString> Materials;
-	/** Instances per square metre at full map weight, above 0 and at most FMantlePlaceLimits::MaxTerrainGrassDensity. */
+	/** Instances per square meter at full map weight, above 0 and at most FMantlePlaceLimits::MaxTerrainGrassDensity. */
 	double Density = 1.0;
 	/** Uniform scale, MinScale <= MaxScale. */
 	double MinScale = 1.0;
@@ -1402,7 +1402,7 @@ struct FMantleConstraintProps
 
 /**
  * A reflection probe (#628): Shape's volume, which only the keys of its own shape fill (the parser refuses the
- * others). The entity's transform places the centre and, for a box, turns it; its scale plays no part.
+ * others). The entity's transform places the center and, for a box, turns it; its scale plays no part.
  */
 struct FMantleReflectionProbeProps
 {

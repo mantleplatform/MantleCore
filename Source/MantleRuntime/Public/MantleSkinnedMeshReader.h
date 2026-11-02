@@ -40,7 +40,7 @@ struct FMantleSkinnedMeshHeader
 	/** The LODs carry hair card data (FMantleSkinnedMeshLOD::HairCards). */
 	bool bHairCards = false;
 
-	/** LOD0's quantised UV hash (UMantleBodyTopologyData::ComputeUVHash). */
+	/** LOD0's quantized UV hash (UMantleBodyTopologyData::ComputeUVHash). */
 	uint32 UVHash = 0;
 
 	/** Garments: body-shape SHA256. New head-hair: source face cooked BLAKE3, matched against its approved catalog dependency. */
@@ -72,7 +72,7 @@ struct FMantleSkinnedMeshReadResult
 /**
  * Reads MSK1, the cooked skinned mesh (avatar bodies, avatar faces, skinned garments and hair), into
  * FMantleSkinnedMesh. Written by backend/internal/cook/skinnedmesh.go; layout in
- * AVATAR_CATALOG_PLAN.md section 3.4 as A2.2 settled it. Positions are Unreal centimetres in the
+ * AVATAR_CATALOG_PLAN.md section 3.4 as A2.2 settled it. Positions are Unreal centimeters in the
  * asset's own axes (Epic's glTF convention, not MRM1's rotated one); sections carry their material
  * name, the only thing to bind materials by.
  *

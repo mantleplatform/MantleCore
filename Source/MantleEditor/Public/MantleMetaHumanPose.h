@@ -269,7 +269,7 @@ public:
 
 	/**
 	 * The retarget chains of a VRoid/VRM skeleton (J_Bip_C_Hips, J_Bip_L_UpperArm, ...), a layout Epic's auto
-	 * characterisation doesn't know, under Epic's labels (Spine, Neck, Head, Left/Right Clavicle, Arm, Leg, Foot and the
+	 * characterization doesn't know, under Epic's labels (Spine, Neck, Head, Left/Right Clavicle, Arm, Leg, Foot and the
 	 * fingers) so the retargeter maps them onto MetaHuman's; OutPelvis is the hips. Bones match by name ending, any case.
 	 * Empty when Names lacks the hips, spine, head, or either side's upper arm, hand, upper leg or foot. Pure (tested).
 	 */

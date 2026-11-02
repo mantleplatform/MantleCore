@@ -17,7 +17,7 @@ struct FMantleTerrainProps;
  *
  * Built from the decoded weightmap (its R, G, B and A are layers 0 to 3, FMantleTerrainBuilder's
  * convention); the heaviest channel wins, the lower layer on a tie. The texture's texels span the
- * terrain as UV0 does, 0 at its first sample and 1 at its last, a texel's centre at (i + 0.5) / size.
+ * terrain as UV0 does, 0 at its first sample and 1 at its last, a texel's center at (i + 0.5) / size.
  * A second weightmap holds layers 4 to 7 the same way; HeaviestLayerOf weighs the two maps' heaviest.
  */
 struct MANTLERUNTIME_API FMantleTerrainWeights
@@ -68,7 +68,7 @@ struct MANTLERUNTIME_API FMantleTerrainWeights
 
 	/**
 	 * One channel (0 R, 1 G, 2 B, 3 A) at (U, V), 0 to 1, read bilinearly the way the GPU filters the same
-	 * texture as the terrain draws it (texel centres at (i + 0.5) / size, clamped at the edge). 0 without pixels.
+	 * texture as the terrain draws it (texel centers at (i + 0.5) / size, clamped at the edge). 0 without pixels.
 	 * Pure and thread-safe: grass generation reads it from worker threads.
 	 */
 	double SampleChannel(int32 Channel, double U, double V) const;

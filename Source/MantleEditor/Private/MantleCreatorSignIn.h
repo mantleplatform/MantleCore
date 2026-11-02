@@ -48,7 +48,7 @@ public:
 	/**
 	 * Just in time, for an action that needs the API (Save, Publish): true straight away when
 	 * signed in; otherwise the sign-in dialog, with Reason at its top, and true once a token was
-	 * pasted and accepted. False when the creator cancelled, or in an unattended editor, which
+	 * pasted and accepted. False when the creator canceled, or in an unattended editor, which
 	 * never opens a dialog; the action then stops without sending anything.
 	 */
 	static bool EnsureSignedIn(const FText& Reason);

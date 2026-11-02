@@ -100,7 +100,7 @@ private:
 	TArray<FMantleGhostCapsule> Ghost;
 	FQuat ViewTurn = FQuat::Identity;
 	TWeakObjectPtr<class USceneComponent> ModelComponents[2];
-	/** The ghost as a solid, lit body in the scene: each capsule an engine cylinder with a sphere at each end, grey or red.
+	/** The ghost as a solid, lit body in the scene: each capsule an engine cylinder with a sphere at each end, gray or red.
 	 *  Rebuilt from Ghost on every Refresh; false (the wire outline is drawn instead) when the engine shapes are missing. */
 	bool UpdateSolidGhost();
 	TArray<TObjectPtr<class UStaticMeshComponent>> GhostParts;

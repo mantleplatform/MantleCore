@@ -92,7 +92,7 @@ bool FMantleBodySilhouette::Measure(const TConstArrayView<FVector3f> Vertices, c
 	return Out.bValid;
 }
 
-FMantleSilhouette FMantleBodySilhouette::Normalised(const FMantleSilhouette& Silhouette, const double HeightCm)
+FMantleSilhouette FMantleBodySilhouette::Normalized(const FMantleSilhouette& Silhouette, const double HeightCm)
 {
 	FMantleSilhouette Out = Silhouette;
 	if (HeightCm <= 0.0)

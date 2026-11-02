@@ -30,7 +30,7 @@ struct FMantlePackMove
 
 /**
  * The one Avatar door: what the panel sees in the character picked under Avatar, for the "what I see" line and the route
- * choice (FMantleConvertSection::WhatISee, AsIsGreyedWhy). The kind and bones are read on pick (SeeKind); the rest once
+ * choice (FMantleConvertSection::WhatISee, AsIsGrayedWhy). The kind and bones are read on pick (SeeKind); the rest once
  * the character is looked at (SeeContext, SeeAssembly).
  */
 struct FMantleAvatarSight
@@ -83,7 +83,7 @@ struct FMantleConvertSection
 	/** Whether the section shows the route picker: more than one route (Routes). */
 	static bool ShowsRoutePicker();
 
-	/** The route Convert... analyses on: Picked while the section offers it, else Convert. */
+	/** The route Convert... analyzes on: Picked while the section offers it, else Convert. */
 	static EMantleAvatarRoute EffectiveRoute(EMantleAvatarRoute Picked);
 
 	/**
@@ -127,13 +127,13 @@ struct FMantleConvertSection
 	static FString WhatISee(const FMantleAvatarSight& Sight);
 
 	/**
-	 * Why As is is greyed for Sight, empty when it isn't: a MetaHuman Creator character ("it's already a MetaHuman"); a
+	 * Why As is is grayed for Sight, empty when it isn't: a MetaHuman Creator character ("it's already a MetaHuman"); a
 	 * static mesh or a skeleton with no usable weights only when it can't be auto-rigged here (its AutoRigNote, else "no rig
 	 * to keep"). Pure (tested).
 	 */
-	static FString AsIsGreyedWhy(const FMantleAvatarSight& Sight);
+	static FString AsIsGrayedWhy(const FMantleAvatarSight& Sight);
 
-	/** The route the Avatar door uses: Picked while it is offered (EffectiveRoute) and not greyed for Sight, else Convert. Pure (tested). */
+	/** The route the Avatar door uses: Picked while it is offered (EffectiveRoute) and not grayed for Sight, else Convert. Pure (tested). */
 	static EMantleAvatarRoute DoorRoute(EMantleAvatarRoute Picked, const FMantleAvatarSight& Sight);
 };
 
@@ -161,7 +161,7 @@ struct FMantlePublishRow
 	/** The item's name as it uploads; the creator can change it. */
 	FString Name;
 	bool bTicked = true;
-	/** Why it can't be published from here, in plain words; empty when it can. A row with a why is greyed and never ticked. */
+	/** Why it can't be published from here, in plain words; empty when it can. A row with a why is grayed and never ticked. */
 	FString Why;
 	/** Uploaded from this list in this editor session. */
 	bool bUploaded = false;
@@ -173,17 +173,17 @@ struct FMantlePublishList
 	/**
 	 * The rows after Convert: each converted part (the body first; a part left out unticked), the Blueprint's pieces kept as
 	 * they are, the hair ticked in the pack's rows (HairSlots: the contract's hair slots), then the clothing (one row per
-	 * item, its trims in it; a piece that can't be an Outfit greyed with why). Pure (tested).
+	 * item, its trims in it; a piece that can't be an Outfit grayed with why). Pure (tested).
 	 */
 	static TArray<FMantlePublishRow> Make(const FMantleConvertContext& Context, const FMantlePackReview* Review, TConstArrayView<FString> HairSlots);
 
-	/** The next row after After (INDEX_NONE: from the top) that is ticked, not greyed and not uploaded yet; INDEX_NONE when none. Pure (tested). */
+	/** The next row after After (INDEX_NONE: from the top) that is ticked, not grayed and not uploaded yet; INDEX_NONE when none. Pure (tested). */
 	static int32 Next(TConstArrayView<FMantlePublishRow> Rows, int32 After);
 
-	/** The clothing rows after the Outfits were made: a piece whose Outfit failed (a high heel) is greyed with why and unticked. Pure (tested). */
+	/** The clothing rows after the Outfits were made: a piece whose Outfit failed (a high heel) is grayed with why and unticked. Pure (tested). */
 	static void Sync(const FMantleConvertContext& Context, TArray<FMantlePublishRow>& Rows);
 
-	/** The row's heading word: "Body", "Top", "Bottom", "Footwear", "Hair", "Eyebrows" (the slot, capitalised; the avatar slot is "Body"). Pure. */
+	/** The row's heading word: "Body", "Top", "Bottom", "Footwear", "Hair", "Eyebrows" (the slot, capitalized; the avatar slot is "Body"). Pure. */
 	static FString SlotWord(const FString& Slot);
 };
 
@@ -258,11 +258,11 @@ private:
 	/** Draft.KeepSlots from the ticks: unset when every section is ticked (the whole mesh), else the ticked slots. */
 	void ApplyOutfitKeep();
 	void RefreshClothingColors();
-	/** #756: the found colour areas (tick box, name, highlight swatch) above the advanced hand-made section. */
+	/** #756: the found color areas (tick box, name, highlight swatch) above the advanced hand-made section. */
 	void AddFoundClothingAreas();
 	/** #756: the creator's choice for one found area, made on first change. */
 	FMantleClothingColorChoice& ClothingChoice(const FString& MaterialName, const FString& RegionId);
-	/** #756: the preview colours: the highlight per found, ticked area (when on), then the hand-picked preview colours. */
+	/** #756: the preview colors: the highlight per found, ticked area (when on), then the hand-picked preview colors. */
 	TArray<FMantleClothingColor> ClothingPreviewColorsWithHighlight() const;
 	void PickClothingColor(int32 DeclarationIndex, int32 RegionIndex, bool bPreview);
 
@@ -380,7 +380,7 @@ private:
 	 * #610, the Convert section, under Avatar only (the one door): the character picked in the Avatar picker (a skeletal
 	 * mesh, a static mesh, a MetaHuman Creator character or a MetaHuman Blueprint: PickAvatar), the "what I see" line, then
 	 * "How should it go up?" (Convert pre-selected; As is beside it only while As-is uploads are allowed,
-	 * FMantleConvertSection::ShowsRoutePicker, greyed with why for a character it can't take). It is analysed into its fix
+	 * FMantleConvertSection::ShowsRoutePicker, grayed with why for a character it can't take). It is analyzed into its fix
 	 * list (FMantleAvatarConverter::Analyze) with a checkbox per fix, converted into new assets under its Converted folder
 	 * (Convert), and each converted part offered as a ready draft (LoadConvertedPart). The cloud note by the Convert
 	 * button; Convert runs behind a progress dialog (it blocks, as Epic's cloud calls do).
@@ -438,13 +438,13 @@ private:
 	 */
 	void UseConvertGarment(int32 GarmentIndex);
 
-	/** What Convert... analyses: picked at the Avatar door, else the draft's asset. */
+	/** What Convert... analyzes: picked at the Avatar door, else the draft's asset. */
 	UObject* GetConvertSelection() const;
 
 	TWeakObjectPtr<UObject> ConvertSource;
 	/** #625: the route picked while the section offers more than Convert (DoorRoute). */
 	EMantleAvatarRoute ConvertRoute = EMantleAvatarRoute::Convert;
-	/** What the door sees in ConvertSource, for the "what I see" line and As is greyed. */
+	/** What the door sees in ConvertSource, for the "what I see" line and As is grayed. */
 	FMantleAvatarSight AvatarSight;
 	/** The whole section (the line, the question, the rows), for Mantle.Dev.ConvertPanelShot's pictures. */
 	TSharedPtr<SVerticalBox> ConvertSectionBox;
@@ -500,7 +500,7 @@ private:
 	TArray<TStrongObjectPtr<UObject>> AuthoredOutfitKeepAlive;
 	FString OutfitAuthoringStatus;
 	TSharedPtr<SVerticalBox> OutfitTargetsBox;
-	/** Hair from a groom's cards: the Hair colour field as typed (#RRGGBB); Draft.HairColor is set when it parses. */
+	/** Hair from a groom's cards: the Hair color field as typed (#RRGGBB); Draft.HairColor is set when it parses. */
 	FString HairColorText;
 	bool bCanGenerateHairCards = false;
 	FString HairGenerationStatus;
@@ -537,7 +537,7 @@ private:
 	TSharedPtr<SVerticalBox> ClothingColorsBox;
 	TArray<FMantleClothingColor> ClothingPreviewColors;
 	TArray<FString> ClothingMaterialNames;
-	/** #756: the last preview build's colour area detection; bClothingAreasKnown once a preview has looked. */
+	/** #756: the last preview build's color area detection; bClothingAreasKnown once a preview has looked. */
 	TArray<FMantleClothingColorDetection> DetectedClothingColors;
 	bool bClothingAreasKnown = false;
 	bool bHighlightClothingAreas = true;

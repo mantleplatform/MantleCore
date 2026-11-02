@@ -44,7 +44,7 @@ bool FMantleWeaponBuilderFistTest::RunTest(const FString& Parameters)
 		++Fingers;
 		for (const FVector& End : { Capsule.Start, Capsule.End })
 		{
-			// Distance from the handle's centre line (parallel to X) in the Y-Z plane.
+			// Distance from the handle's center line (parallel to X) in the Y-Z plane.
 			const double Off = FVector2D(End.Y - Handle.Y, End.Z - Handle.Z).Size();
 			TestTrue(*FString::Printf(TEXT("%s stays within 3.5 cm of the handle (%.2f)"), *Capsule.Part.ToString(), Off), Off <= 3.5);
 			bBothSides |= End.Y > Handle.Y + 0.5;

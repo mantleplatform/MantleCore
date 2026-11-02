@@ -12,8 +12,8 @@ namespace MantleOverlayChecksPrivate
 {
 	/** Fraction of pixels allowed to break a rule before it counts as broken (dithering, a stray brush edge): 0.5 percent. */
 	constexpr double StrayFraction = 0.005;
-	/** Channel difference a greyscale mask may carry (rounding from a colour-space conversion). */
-	constexpr int32 GreyTolerance = 4;
+	/** Channel difference a grayscale mask may carry (rounding from a color-space conversion). */
+	constexpr int32 GrayTolerance = 4;
 	/** A red-only mask's green and blue stay at or below this. */
 	constexpr int32 EmptyChannelMax = 4;
 
@@ -124,17 +124,17 @@ bool FMantleOverlayChecks::CheckMask(const FString& What, int32 Width, int32 Hei
 		return OutIssues.Num() == Before;
 	}
 
-	int64 NotGreyNotRed = 0;
+	int64 NotGrayNotRed = 0;
 	int32 Highest = 0;
 	int64 Bright = 0;
 	for (const FColor& Pixel : Pixels)
 	{
-		const bool bGrey = FMath::Abs(static_cast<int32>(Pixel.R) - static_cast<int32>(Pixel.G)) <= GreyTolerance
-			&& FMath::Abs(static_cast<int32>(Pixel.R) - static_cast<int32>(Pixel.B)) <= GreyTolerance;
+		const bool bGray = FMath::Abs(static_cast<int32>(Pixel.R) - static_cast<int32>(Pixel.G)) <= GrayTolerance
+			&& FMath::Abs(static_cast<int32>(Pixel.R) - static_cast<int32>(Pixel.B)) <= GrayTolerance;
 		const bool bRedOnly = Pixel.G <= EmptyChannelMax && Pixel.B <= EmptyChannelMax;
-		if (!bGrey && !bRedOnly)
+		if (!bGray && !bRedOnly)
 		{
-			++NotGreyNotRed;
+			++NotGrayNotRed;
 		}
 		Highest = FMath::Max(Highest, static_cast<int32>(Pixel.R));
 		if (Pixel.R >= 250)
@@ -143,10 +143,10 @@ bool FMantleOverlayChecks::CheckMask(const FString& What, int32 Width, int32 Hei
 		}
 	}
 	const int64 Total = Pixels.Num();
-	if (NotGreyNotRed > static_cast<int64>(Total * StrayFraction))
+	if (NotGrayNotRed > static_cast<int64>(Total * StrayFraction))
 	{
-		OutIssues.Add(FMantleCosmeticChecks::Error(FString::Printf(TEXT("%s is a colour image; an overlay mask must be one channel."), *What),
-			TEXT("Save it as a greyscale image (white where the overlay shows, black where it does not), or paint it only in the red channel.")));
+		OutIssues.Add(FMantleCosmeticChecks::Error(FString::Printf(TEXT("%s is a color image; an overlay mask must be one channel."), *What),
+			TEXT("Save it as a grayscale image (white where the overlay shows, black where it does not), or paint it only in the red channel.")));
 		return false;
 	}
 	if (Highest <= 2)
@@ -173,7 +173,7 @@ bool FMantleOverlayChecks::CheckNormal(const FString& What, int32 Width, int32 H
 	{
 		return OutIssues.Num() == Before;
 	}
-	// A tangent-space normal map is bluish: red and green centre on 128 and blue sits high (z points out of the surface).
+	// A tangent-space normal map is bluish: red and green center on 128 and blue sits high (z points out of the surface).
 	double SumR = 0.0;
 	double SumG = 0.0;
 	int64 BlueHigh = 0;
@@ -193,7 +193,7 @@ bool FMantleOverlayChecks::CheckNormal(const FString& What, int32 Width, int32 H
 	if (FMath::Abs(MeanR - 128.0) > 24.0 || FMath::Abs(MeanG - 128.0) > 24.0 || BlueFraction < 0.95)
 	{
 		OutIssues.Add(FMantleCosmeticChecks::Error(FString::Printf(TEXT("%s does not look like a normal map."), *What),
-			TEXT("A normal map is a blue-purple image (flat areas are 128, 128, 255). Use the scar's tangent-space normal map, not a height or colour image.")));
+			TEXT("A normal map is a blue-purple image (flat areas are 128, 128, 255). Use the scar's tangent-space normal map, not a height or color image.")));
 	}
 	return OutIssues.Num() == Before;
 }

@@ -95,7 +95,7 @@ struct FMantleScatterParams
 	/** Half the box instances are placed in, in cm, about the scatter's origin. Z may be 0 (a flat layer). */
 	FVector HalfExtent = FVector(5000.0, 5000.0, 0.0);
 
-	/** Instances per square metre of the box's X-Y footprint. */
+	/** Instances per square meter of the box's X-Y footprint. */
 	double Density = 0.2;
 
 	/** Uniform scale, picked evenly between these. */
@@ -163,7 +163,7 @@ struct FMantleScatterParams
 	/** The instances block movement and shape navigation, on the server and every client (#169). Off: visual only. */
 	bool bCollision = false;
 
-	/** 0 spreads instances evenly; above 0 gathers them into this many clusters of ClusterRadius cm about centres picked in the shape. */
+	/** 0 spreads instances evenly; above 0 gathers them into this many clusters of ClusterRadius cm about centers picked in the shape. */
 	int32 ClusterCount = 0;
 	double ClusterRadius = 0.0;
 };
@@ -171,7 +171,7 @@ struct FMantleScatterParams
 /** What a Terrain says about the ground under a point (#169), in the scatter's own space. */
 struct FMantleScatterGround
 {
-	/** The surface height, millimetres, rounded to whole mm. */
+	/** The surface height, millimeters, rounded to whole mm. */
 	int64 ZMm = 0;
 	/** The surface normal's up component in world space, 0 to 1 (1 is flat): what the slope limits read. */
 	double NormalZ = 1.0;
@@ -188,7 +188,7 @@ struct FMantleScatterGround
 	int32 LayerWeight = 0;
 };
 
-/** The ground under (X, Y) millimetres in the scatter's own space; false where there is none (a hole, off every Terrain). */
+/** The ground under (X, Y) millimeters in the scatter's own space; false where there is none (a hole, off every Terrain). */
 using FMantleScatterGroundFn = TFunction<bool(int64 XMm, int64 YMm, FMantleScatterGround& Out)>;
 
 /** What a Generate call adds to the parameters. */
@@ -207,7 +207,7 @@ struct FMantleScatterGenerateOptions
  */
 struct FMantleScatterInstance
 {
-	/** Location in millimetres. */
+	/** Location in millimeters. */
 	int32 X = 0;
 	int32 Y = 0;
 	int32 Z = 0;
@@ -230,7 +230,7 @@ struct FMantleScatterInstance
 
 /**
  * Where every candidate of one big Scatter lands (#189): the position index its cells are read from. One Scatter's instance k always has
- * the same place (its own counter-based stream), so the index is each candidate's index and X-Y in whole millimetres, filed by cell
+ * the same place (its own counter-based stream), so the index is each candidate's index and X-Y in whole millimeters, filed by cell
  * (a square of CellMm, row by row from the lowest corner) and, inside a cell, by index. Nothing here depends on the terrain, a filter
  * or the Foliage tier: those are applied when a cell is read. Immutable once built; any thread may read it.
  *
@@ -239,10 +239,10 @@ struct FMantleScatterInstance
  */
 struct MANTLERUNTIME_API FMantleScatterCellIndex
 {
-	/** The cell side in whole millimetres, at least the Scatter's minimum spacing. */
+	/** The cell side in whole millimeters, at least the Scatter's minimum spacing. */
 	int64 CellMm = 0;
 
-	/** The lowest corner of cell (0, 0), millimetres in the scatter's own space. */
+	/** The lowest corner of cell (0, 0), millimeters in the scatter's own space. */
 	int64 OriginX = 0;
 	int64 OriginY = 0;
 
@@ -253,7 +253,7 @@ struct MANTLERUNTIME_API FMantleScatterCellIndex
 	/** The first slot of each cell, then the end: CellsX * CellsY + 1 numbers. */
 	TArray<uint32> CellStart;
 
-	/** Per slot: the candidate's index in the instance stream, and its X-Y in millimetres. A cell's slots are in ascending index order. */
+	/** Per slot: the candidate's index in the instance stream, and its X-Y in millimeters. A cell's slots are in ascending index order. */
 	TArray<uint32> Candidate;
 	TArray<int32> X;
 	TArray<int32> Y;
@@ -271,7 +271,7 @@ struct MANTLERUNTIME_API FMantleScatterCellIndex
 	/** The cell's slots, [Begin, End); empty for a cell off the grid. */
 	void SlotRange(const FIntPoint& Cell, uint32& OutBegin, uint32& OutEnd) const;
 
-	/** The cell's lowest corner and side, centimetres in the scatter's space. */
+	/** The cell's lowest corner and side, centimeters in the scatter's space. */
 	FBox2D CellBoundsCm(const FIntPoint& Cell) const;
 };
 
@@ -316,8 +316,8 @@ public:
 	static double FoliageTierDistance(int32 FoliageQuality);
 
 	/**
-	 * The number of instances Params asks for: the footprint in square metres times the density, rounded
-	 * half up. The footprint is the box's (from the half extents in whole millimetres), a disc's (pi as
+	 * The number of instances Params asks for: the footprint in square meters times the density, rounded
+	 * half up. The footprint is the box's (from the half extents in whole millimeters), a disc's (pi as
 	 * 3141593 / 1000000 times the radius in whole mm squared) or a path's (the sum of its segments' lengths,
 	 * each rounded to whole mm, times the width in whole mm). A path with a PathStep (#190) has the whole steps that fit in its length
 	 * (in whole mm), plus 1, whatever the density. -1 with OutError when a parameter is
@@ -335,8 +335,8 @@ public:
 	// ---- Cells (#189) -------------------------------------------------------------------------------------------------------
 	// A Scatter of more than WholeInstances is read cell by cell: the instances of a cell are exactly the whole stream's instances whose
 	// X-Y lie in it, in the same order, whatever was built before or on which machine. The minimum spacing keeps that exact across a cell
-	// border: an instance is dropped when an earlier-numbered KEPT instance is closer, and whether that neighbour is kept is worked out
-	// on demand (from further neighbours, whichever cell they are in), never read from a cell that happens to be built.
+	// border: an instance is dropped when an earlier-numbered KEPT instance is closer, and whether that neighbor is kept is worked out
+	// on demand (from further neighbors, whichever cell they are in), never read from a cell that happens to be built.
 	// A spacing wide for the density (over FMantlePlaceLimits::ScatterSpacingCandidates candidates in a spacing square) would make each read check
 	// without end, so such a Scatter keeps about that many candidates per square, each picked by its own hash (Place: in every read and the index).
 
@@ -357,7 +357,7 @@ public:
 		TArray<FMantleScatterInstance>& OutInstances, FString& OutError, const FMantleScatterGenerateOptions& Options = FMantleScatterGenerateOptions());
 
 	/**
-	 * The whole stream's instances whose X-Y (millimetres, scatter space) lie inside the box (edges included), in index order, found through the
+	 * The whole stream's instances whose X-Y (millimeters, scatter space) lie inside the box (edges included), in index order, found through the
 	 * cells the box covers and without building anything else. What InstancesIn reads on a machine that builds no cells.
 	 */
 	static bool GenerateInBox(const FMantleScatterParams& Params, const FMantleScatterCellIndex& Index, int64 MinXMm, int64 MinYMm,

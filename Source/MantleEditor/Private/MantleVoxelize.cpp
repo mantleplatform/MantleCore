@@ -81,7 +81,7 @@ namespace MantleVoxelizePrivate
 		}
 		Shape = MakeUnique<FMeshShape>();
 		const TVertexAttributesRef<const FVector3f> Positions = Description->GetVertexPositions();
-		// Welded to a hundredth of a millimetre.
+		// Welded to a hundredth of a millimeter.
 		TMap<FIntVector, int32> Welded;
 		TMap<FVertexID, int32> IndexOf;
 		for (const FVertexID Vertex : Description->Vertices().GetElementIDs())
@@ -131,10 +131,10 @@ namespace MantleVoxelizePrivate
 		UMaterialInterface* Material = nullptr;
 	};
 
-	/** A little under a millimetre, in cells: a cube's face exactly on a cell centre still counts as covering it. */
+	/** A little under a millimeter, in cells: a cube's face exactly on a cell center still counts as covering it. */
 	constexpr double CellSlack = 0.001;
 
-	/** The cells (Cell cm wide) along one axis whose centres lie in [Min, Max] cm: [OutLo, OutHi], empty when OutLo > OutHi. */
+	/** The cells (Cell cm wide) along one axis whose centers lie in [Min, Max] cm: [OutLo, OutHi], empty when OutLo > OutHi. */
 	void CellRange(double Min, double Max, int64& OutLo, int64& OutHi, double Cell = MantleVoxel::BlockSize)
 	{
 		// Held well inside int64, so a mesh with absurd bounds is refused as too big rather than overflowing.
@@ -191,9 +191,9 @@ namespace MantleVoxelizePrivate
 	/**
 	 * Calls Set(X, Y, Z) for each cell (world cell coordinates, within [Lo, Hi]) that Fill makes solid (#64):
 	 * - no shape: every cell of the box, as before;
-	 * - a closed mesh: each cell whose centre is inside it, from one ray along X per row of cells, filled between
+	 * - a closed mesh: each cell whose center is inside it, from one ray along X per row of cells, filled between
 	 *   alternate crossings;
-	 * - an open mesh, or a closed one too thin to hold a cell centre (a fence board): the cells its surface passes through.
+	 * - an open mesh, or a closed one too thin to hold a cell center (a fence board): the cells its surface passes through.
 	 */
 	template <typename FSetFn>
 	void FillCells(const FFill& Fill, const int64 Lo[3], const int64 Hi[3], const double Block, FSetFn&& Set)
@@ -221,7 +221,7 @@ namespace MantleVoxelizePrivate
 		bool bAny = false;
 		if (Fill.Shape->bClosed)
 		{
-			// Rows are offset a hair off the cell centre, so a ray never runs exactly along an edge or through a corner.
+			// Rows are offset a hair off the cell center, so a ray never runs exactly along an edge or through a corner.
 			constexpr double OffsetY = 0.0137;
 			constexpr double OffsetZ = 0.0071;
 			const int64 RowsY = Hi[1] - Lo[1] + 1;
@@ -406,7 +406,7 @@ namespace MantleVoxelizePrivate
 		return Texture;
 	}
 
-	/** Material's tile: its base colour texture rendered down to Side x Side, or a flat tile of its base colour. */
+	/** Material's tile: its base color texture rendered down to Side x Side, or a flat tile of its base color. */
 	TArray<FColor> TilePixels(UMaterialInterface* Material, int32 Side)
 	{
 		TArray<FColor> Pixels;
@@ -427,7 +427,7 @@ namespace MantleVoxelizePrivate
 		return Pixels;
 	}
 
-	/** Spawns the world actor at Origin (rotation 0, scale 1), labelled. */
+	/** Spawns the world actor at Origin (rotation 0, scale 1), labeled. */
 	AMantleVoxelWorldActor* SpawnWorld(UWorld* World, const FVector& Origin)
 	{
 		FActorSpawnParameters Parameters;
@@ -573,18 +573,18 @@ TArray<FColor> FMantleVoxelize::ResampleSquare(TConstArrayView64<FLinearColor> P
 
 UTexture2D* FMantleVoxelize::FindBaseColorTexture(UMaterialInterface* Material)
 {
-	// The upload's and the converter's own reading of a material's base colour (#620).
+	// The upload's and the converter's own reading of a material's base color (#620).
 	return Material ? Cast<UTexture2D>(FMantleCosmeticExport::ResolveMaterialTextures(Material).BaseColor) : nullptr;
 }
 
 FLinearColor FMantleVoxelize::FindBaseColor(UMaterialInterface* Material)
 {
-	const FLinearColor Grey(0.5f, 0.5f, 0.5f, 1.0f);
+	const FLinearColor Gray(0.5f, 0.5f, 0.5f, 1.0f);
 	if (!Material)
 	{
-		return Grey;
+		return Gray;
 	}
-	// A colour parameter named for it ("BaseColor", "Albedo", "Diffuse", "Tint", "Color").
+	// A color parameter named for it ("BaseColor", "Albedo", "Diffuse", "Tint", "Color").
 	TArray<FMaterialParameterInfo> Infos;
 	TArray<FGuid> Ids;
 	Material->GetAllVectorParameterInfo(Infos, Ids);
@@ -614,7 +614,7 @@ FLinearColor FMantleVoxelize::FindBaseColor(UMaterialInterface* Material)
 			return FLinearColor(Constant4->Constant.R, Constant4->Constant.G, Constant4->Constant.B, 1.0f);
 		}
 	}
-	return Grey;
+	return Gray;
 }
 
 FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AActor*>& Sources, const FMantleVoxelizeOptions& Options)
@@ -684,7 +684,7 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 		{
 			if (Fill.Shape)
 			{
-				// Every cell the box touches: a surface (a thin wall) can fill a cell whose centre is outside its bounds.
+				// Every cell the box touches: a surface (a thin wall) can fill a cell whose center is outside its bounds.
 				Cells.Lo[Axis] = static_cast<int64>(FMath::Clamp(FMath::FloorToDouble(Fill.Box.Min[Axis] / Cell), -1.0e12, 1.0e12));
 				Cells.Hi[Axis] = static_cast<int64>(FMath::Clamp(FMath::FloorToDouble(Fill.Box.Max[Axis] / Cell), -1.0e12, 1.0e12));
 			}
@@ -696,7 +696,7 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 		}
 		if (bEmpty)
 		{
-			// Thinner than a block's centre on some axis (a flat card): it covers no cell, so none of its loops run.
+			// Thinner than a block's center on some axis (a flat card): it covers no cell, so none of its loops run.
 			for (int32 Axis = 0; Axis < 3; ++Axis)
 			{
 				Cells.Lo[Axis] = 1;
@@ -712,7 +712,7 @@ FMantleVoxelizeResult FMantleVoxelize::Voxelize(UWorld* World, const TArray<AAct
 	}
 	if (Min[0] > Max[0])
 	{
-		Result.Error = FString::Printf(TEXT("The selected meshes are too thin to fill any %.0f cm cell: each cell's centre must lie inside a mesh's bounds."), Cell);
+		Result.Error = FString::Printf(TEXT("The selected meshes are too thin to fill any %.0f cm cell: each cell's center must lie inside a mesh's bounds."), Cell);
 		return Result;
 	}
 	const int64 Caps[3] = { FMantlePlaceLimits::MaxVoxelWorldSizeXY, FMantlePlaceLimits::MaxVoxelWorldSizeXY, FMantlePlaceLimits::MaxVoxelWorldSizeZ };
@@ -882,10 +882,10 @@ FMantleVoxelizeResult FMantleVoxelize::ImportMbw(UWorld* World, TConstArrayView<
 		}
 	}
 	const int32 TypeCount = FMath::Max(MaxId, 1);
-	TArray<FColor> Grey;
-	Grey.Init(FColor(128, 128, 128, 255), Options.TileSize * Options.TileSize);
+	TArray<FColor> Gray;
+	Gray.Init(FColor(128, 128, 128, 255), Options.TileSize * Options.TileSize);
 	FString TileError;
-	UTexture2D* Tile = MakeTile(Options.TileFolder, TEXT("T_placeholder"), Options.TileSize, Grey, TileError);
+	UTexture2D* Tile = MakeTile(Options.TileFolder, TEXT("T_placeholder"), Options.TileSize, Gray, TileError);
 	if (!Tile)
 	{
 		Result.Error = FString::Printf(TEXT("The placeholder tile: %s."), *TileError);
@@ -970,7 +970,7 @@ void FMantleVoxelize::ImportWithDialog()
 	if (!DesktopPlatform->OpenFileDialog(ParentWindow, TEXT("Pick a block world (.mbw)"), FString(), FString(), TEXT("Block world (*.mbw)|*.mbw"), EFileDialogFlags::None, Files)
 		|| Files.IsEmpty())
 	{
-		// Cancelled: nothing changes and there is nothing to say.
+		// Canceled: nothing changes and there is nothing to say.
 		return;
 	}
 	TArray<uint8> Bytes;

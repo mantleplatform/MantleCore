@@ -8,8 +8,8 @@
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleChassisDerivePrivate
 {
-	/** The least a wheel-centre-to-centre-of-mass height may be above the wheel centres, cm (never below the wheel radius + 2 cm). */
-	constexpr double CentreOfMassFloor = 2.0;
+	/** The least a wheel-center-to-center-of-mass height may be above the wheel centers, cm (never below the wheel radius + 2 cm). */
+	constexpr double CenterOfMassFloor = 2.0;
 
 	/** Suspension travel each way, cm. */
 	constexpr double MinTravel = 3.0;
@@ -230,17 +230,17 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 	H.Mass = Limited(H.Clamped, DocPath::Mass, Arch.Mass * VolumeRatio);
 	const double MassRatio = SizeRatio(H.Mass, Arch.Mass);
 
-	// Centre of mass: forward by the archetype's share of the wheelbase, up by its share of the body above the wheel centres, lowered if the track needs it
-	// to stay upright, and never below the floor above the wheel centres.
+	// Center of mass: forward by the archetype's share of the wheelbase, up by its share of the body above the wheel centers, lowered if the track needs it
+	// to stay upright, and never below the floor above the wheel centers.
 	const double BaseBodyAbove = Base.Clearance + Base.Height - Base.WheelRadius;
 	const double ComShare = BaseBodyAbove > 0.0 ? (Arch.CenterOfMass.Z - Base.WheelRadius) / BaseBodyAbove : 0.0;
 	const double WantedComZ = Spec.WheelRadius + ComShare * (Spec.Clearance + Spec.Height - Spec.WheelRadius);
 	double ComZ = WantedComZ;
-	if (K.Stability > 0.0 && !Spec.bCentreline)
+	if (K.Stability > 0.0 && !Spec.bCenterline)
 	{
 		ComZ = FMath::Min(ComZ, Spec.Track / (2.0 * K.Stability));
 	}
-	ComZ = FMath::Max(ComZ, Spec.WheelRadius + CentreOfMassFloor);
+	ComZ = FMath::Max(ComZ, Spec.WheelRadius + CenterOfMassFloor);
 	if (IsHeld(WantedComZ, ComZ))
 	{
 		NoteHeld(H.Clamped, TEXT("centerOfMass/z"), WantedComZ, ComZ);
@@ -274,7 +274,7 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 	H.BrakeTorque = Limited(H.Clamped, DocPath::BrakeTorque, Arch.BrakeTorque * MassRatio * (BaseWheels / Wheels) * RadiusRatio);
 	H.HandbrakeTorque = Limited(H.Clamped, DocPath::HandbrakeTorque, Arch.HandbrakeTorque * SizeRatio(H.BrakeTorque, Arch.BrakeTorque));
 
-	// Tyres and drag: the archetype's tyre and drag coefficient; the frontal area is the body's face against its own.
+	// Tires and drag: the archetype's tire and drag coefficient; the frontal area is the body's face against its own.
 	H.TireFriction = Limited(H.Clamped, DocPath::TireFriction, Arch.TireFriction * (1.0 + Reach * Grip));
 	H.DragCoefficient = Arch.DragCoefficient;
 	H.FrontalArea = Limited(H.Clamped, DocPath::FrontalArea,
@@ -304,7 +304,7 @@ FMantleChassisHandling FMantleChassisDerive::Derive(const FMantleChassisSpec& Sp
 	}
 	// A hovercraft's fan pushes the same share of its weight at every size. Each pad carries its share of the mass over how far it comes down at rest, so
 	// its rate follows the mass, the pads and that distance (the hull then rests at its own hover height: a pad's push is the rate times how far it has come
-	// down). The distance is held to a centimetre at least, so a hover height at or past the pads' reach gives a stiff pad and
+	// down). The distance is held to a centimeter at least, so a hover height at or past the pads' reach gives a stiff pad and
 	// not a division by nothing. The rudder follows its fin's planform, as a plane's surfaces do.
 	if (Spec.Hovercraft.bSet && Base.Hovercraft.bSet)
 	{
@@ -408,8 +408,8 @@ bool FMantleChassisDerive::LevelFlight(const FMantleChassisSpec& Spec, const FMa
 			double Reach = Surface.X - Com.X;
 			if (bWing)
 			{
-				const double CentreOfLift = Pitch > Wing.StallAngle ? (Pitch - Wing.StallAngle) * 10.0 + 20.0 : (Wing.StallAngle - Pitch) * 20.0 / Wing.StallAngle + 20.0;
-				Reach += CentreOfLift - 50.0;
+				const double CenterOfLift = Pitch > Wing.StallAngle ? (Pitch - Wing.StallAngle) * 10.0 + 20.0 : (Wing.StallAngle - Pitch) * 20.0 / Wing.StallAngle + 20.0;
+				Reach += CenterOfLift - 50.0;
 			}
 			Fx += SurfaceX;
 			Fz += SurfaceZ;
@@ -423,7 +423,7 @@ bool FMantleChassisDerive::LevelFlight(const FMantleChassisSpec& Spec, const FMa
 		Fz += (FinDrag + BodyDrag) * AirflowZ;
 		Moment += (Fin.X - Com.X) * FinDrag * AirflowZ - (FinZ - Com.Z) * FinDrag * AirflowX;
 		Moment += (BodyDragPoint.X - Com.X) * BodyDrag * AirflowZ - (BodyDragPoint.Z - Com.Z) * BodyDrag * AirflowX;
-		// The thrust that holds the speed (no net force along the flight path), pushing along X on its line: below the centre of mass it lifts the nose.
+		// The thrust that holds the speed (no net force along the flight path), pushing along X on its line: below the center of mass it lifts the nose.
 		const double Thrust = Fz * FMath::Tan(Theta) - Fx;
 		Moment -= ThrustArm * Thrust;
 		FBalance Out;
@@ -500,7 +500,7 @@ bool FMantleChassisDerive::SolveTrim(const FMantleChassisSpec& Spec, const FMant
 	{
 		return false;
 	}
-	// Only the sum of the camber and the control angle acts on the air (AerofoilForce), so the camber that centres the elevator is the camber now plus the
+	// Only the sum of the camber and the control angle acts on the air (AerofoilForce), so the camber that centers the elevator is the camber now plus the
 	// control angle the plane needs. The throttle is the same either way.
 	const double Camber = Spec.Aircraft.Tailplane.Camber + Held.Elevator * Spec.Aircraft.Tailplane.MaxControlAngle;
 	const double Throttle = Held.Throttle;

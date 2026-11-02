@@ -115,10 +115,10 @@ struct MANTLERUNTIME_API FMantleSkinMask
 
 /**
  * #877's see-through audit (DESIGN.md section 8): looks at the body as built, every LOD, for holes. From each of
- * Directions camera directions spread over the sphere, a ray runs from far outside to the centre of every DROPPED body
+ * Directions camera directions spread over the sphere, a ray runs from far outside to the center of every DROPPED body
  * triangle (in Body.Indices but not in KeptIndices). The ray is blocked by any garment triangle or kept body
  * triangle before it gets there (either side). It is also fine when it meets a garment within UnderReachCm past the
- * centre (P16: the garment lies just under that skin, so it shows the garment). Any other ray is a see-through hole:
+ * center (P16: the garment lies just under that skin, so it shows the garment). Any other ray is a see-through hole:
  * the camera looks through missing skin into the body. A dropped triangle every one of whose rays is blocked is
  * invisible. Cameras within MinGrazingDeg of a dropped triangle's plane are not asked: along it the missing triangle
  * is a sliver no pixel shows. Test utility; any thread.

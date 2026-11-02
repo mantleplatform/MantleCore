@@ -43,7 +43,7 @@ struct MANTLEEDITOR_API FMantleBodyCorrespondence
 
 	/** Lower-LOD (and general) merge of render vertices that differ ONLY in tangent. Unreal's mesh build
 	 * splits a vertex at a UV seam when the computed tangent differs on each side; Epic's source data
-	 * still has the reference counts. Vertices merge only when position, every UV channel, normal, colour
+	 * still has the reference counts. Vertices merge only when position, every UV channel, normal, color
 	 * and every skin slot (bone and weight) agree within a tight tolerance, so genuine hard edges and UV
 	 * seams are never collapsed. The lowest physical ID survives. The merged set must then pass the
 	 * unchanged complete Match. OutReferenceOfInput maps EVERY physical vertex (duplicates too) to its
@@ -83,16 +83,16 @@ struct MANTLEEDITOR_API FMantleBodyCorrespondence
 	/**
 	 * A body with the reference UV layout whose triangulation differs from the reference only where Epic's Optimized build cut a quad
 	 * the other way (MetaHuman Creator's in-memory body, which has not been through that build). Vertices are matched by UV; a UV the
-	 * reference repeats is told apart by the UVs of its neighbours. Every reference triangle must then be an input triangle, except
+	 * reference repeats is told apart by the UVs of its neighbors. Every reference triangle must then be an input triangle, except
 	 * flipped-diagonal pairs (two triangles sharing an edge, replaced by the two on the other diagonal), at most MaxFlippedPairs of them (the body: 8).
-	 * A UV the reference repeats up to 6 times is told apart by neighbours. OutFlippedPairs: how many pairs there were.
+	 * A UV the reference repeats up to 6 times is told apart by neighbors. OutFlippedPairs: how many pairs there were.
 	 * OutInputOfReference is as Match's; OutNote says how many repeated UVs and flipped diagonals there were. No positions are read.
 	 */
 	bool MatchFlippedDiagonals(TConstArrayView<FVector2f> UVs, TConstArrayView<uint32> InputIndices,
 		TArray<int32>& OutInputOfReference, FString& OutNote, FString& OutError, int32 MaxFlippedPairs = 8, int32* OutFlippedPairs = nullptr) const;
 
 	/** Body-export-only LOD0 merge proof. Original asset/streams are never changed.
-	 * Exact position/all UV channels/raw global skin/colour and every morph delta must agree.
+	 * Exact position/all UV channels/raw global skin/color and every morph delta must agree.
 	 * Static normals/tangents may differ; lowest physical ID survives. Strict indexed Match
 	 * proves the complete quotient; backend, fitting and lower-LOD contracts remain unchanged. */
 	bool MatchMergedBodyExport(const USkeletalMesh* Body, TArray<int32>& OutReferenceOfInput,

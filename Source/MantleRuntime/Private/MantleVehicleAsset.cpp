@@ -148,9 +148,9 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("seat/rider/rotationControl/rotationStiffness"), 0.0, 1000.0 },
 		{ TEXT("seat/rider/rotationControl/rotationDamping"), 0.0, 1000.0 },
 		{ TEXT("seat/rider/rotationControl/maxAccel"), 0.0, 1000.0 },
-		{ TEXT("seat/rider/rotationControl/autoCentreRollStrength"), 0.0, 10.0 },
-		{ TEXT("seat/rider/rotationControl/autoCentrePitchStrength"), 0.0, 10.0 },
-		{ TEXT("seat/rider/rotationControl/autoCentreYawStrength"), 0.0, 10.0 },
+		{ TEXT("seat/rider/rotationControl/autoCenterRollStrength"), 0.0, 10.0 },
+		{ TEXT("seat/rider/rotationControl/autoCenterPitchStrength"), 0.0, 10.0 },
+		{ TEXT("seat/rider/rotationControl/autoCenterYawStrength"), 0.0, 10.0 },
 		{ TEXT("camera/boomLocation/*"), -1000.0, 1000.0 },
 		// #821 a plane's flight block.
 		{ TEXT("flight/airSpeedLimit"), 500.0, 60000.0 },
@@ -572,7 +572,7 @@ namespace MantleVehicleAssetPrivate
 		return !D.bPassengerSeat || CheckVehicleSeatContacts(P, D, TEXT("passengerSeat"), D.PassengerSeatLocation, D.PassengerSeatContacts, false);
 	}
 
-	/** Three numbers within RangePath's range, as a linear colour. */
+	/** Three numbers within RangePath's range, as a linear color. */
 	bool ReadVehicleColor(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Obj, const TCHAR* Key, const TCHAR* RangePath, FLinearColor& Out)
 	{
 		FVector Value;
@@ -1559,7 +1559,7 @@ namespace MantleVehicleAssetPrivate
 			|| !P.Keys(Control, Pointer,
 				{ TEXT("torqueControl"), TEXT("torqueRotationDamping"), TEXT("targetRotation"), TEXT("rollVsSpeed"), TEXT("rollControlScaling"), TEXT("rollMaxAngle"),
 				  TEXT("pitchControlScaling"), TEXT("pitchMaxAngle"), TEXT("rotationStiffness"), TEXT("rotationDamping"), TEXT("maxAccel"),
-				  TEXT("autoCentreRollStrength"), TEXT("autoCentrePitchStrength"), TEXT("autoCentreYawStrength") }, {})
+				  TEXT("autoCenterRollStrength"), TEXT("autoCenterPitchStrength"), TEXT("autoCenterYawStrength") }, {})
 			|| (Control->HasField(TEXT("torqueControl")) && !P.Bool(Control, Pointer, TEXT("torqueControl"), C.bTorqueControl))
 			|| (Control->HasField(TEXT("targetRotation")) && !P.Bool(Control, Pointer, TEXT("targetRotation"), C.bTargetRotation))
 			|| (Control->HasField(TEXT("rollVsSpeed")) && !P.Bool(Control, Pointer, TEXT("rollVsSpeed"), C.bRollVsSpeed))
@@ -1571,9 +1571,9 @@ namespace MantleVehicleAssetPrivate
 			|| !P.OptNumber(Control, Pointer, TEXT("rotationStiffness"), TEXT("seat/rider/rotationControl/rotationStiffness"), C.RotationStiffness)
 			|| !P.OptNumber(Control, Pointer, TEXT("rotationDamping"), TEXT("seat/rider/rotationControl/rotationDamping"), C.RotationDamping)
 			|| !P.OptNumber(Control, Pointer, TEXT("maxAccel"), TEXT("seat/rider/rotationControl/maxAccel"), C.MaxAccel)
-			|| !P.OptNumber(Control, Pointer, TEXT("autoCentreRollStrength"), TEXT("seat/rider/rotationControl/autoCentreRollStrength"), C.AutoCentreRollStrength)
-			|| !P.OptNumber(Control, Pointer, TEXT("autoCentrePitchStrength"), TEXT("seat/rider/rotationControl/autoCentrePitchStrength"), C.AutoCentrePitchStrength)
-			|| !P.OptNumber(Control, Pointer, TEXT("autoCentreYawStrength"), TEXT("seat/rider/rotationControl/autoCentreYawStrength"), C.AutoCentreYawStrength))
+			|| !P.OptNumber(Control, Pointer, TEXT("autoCenterRollStrength"), TEXT("seat/rider/rotationControl/autoCenterRollStrength"), C.AutoCenterRollStrength)
+			|| !P.OptNumber(Control, Pointer, TEXT("autoCenterPitchStrength"), TEXT("seat/rider/rotationControl/autoCenterPitchStrength"), C.AutoCenterPitchStrength)
+			|| !P.OptNumber(Control, Pointer, TEXT("autoCenterYawStrength"), TEXT("seat/rider/rotationControl/autoCenterYawStrength"), C.AutoCenterYawStrength))
 		{
 			return false;
 		}

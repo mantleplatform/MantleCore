@@ -60,7 +60,7 @@ namespace MantleTerrainExportPrivate
 	/**
 	 * The surface at sample (X, Y) of Source for a material program: its world position (Source.Transform of the sample's
 	 * place on the grid, the height in cm) and the frame of its surface, from the heights' central differences exactly as
-	 * BakeSlopeMask takes them: the normal (-dz/dx, -dz/dy, 1) and the tangent (1, 0, dz/dx) and binormal (0, 1, dz/dy), normalised.
+	 * BakeSlopeMask takes them: the normal (-dz/dx, -dz/dy, 1) and the tangent (1, 0, dz/dx) and binormal (0, 1, dz/dy), normalized.
 	 */
 	FMantleSurfaceSample TerrainSurfaceAt(const FMantleTerrainSource& Source, const int32 X, const int32 Y)
 	{
@@ -102,8 +102,8 @@ namespace MantleTerrainExportPrivate
 	}
 
 	/**
-	 * Size.X x Size.Y texels of Plan's channels, each the bilinear weight at the texel's centre, summing to 255 over all
-	 * channels. The painted layers are normalised among themselves (all of one channel where nothing is painted) and scaled
+	 * Size.X x Size.Y texels of Plan's channels, each the bilinear weight at the texel's center, summing to 255 over all
+	 * channels. The painted layers are normalized among themselves (all of one channel where nothing is painted) and scaled
 	 * by 1 - the slope overlay's weight; the overlay takes the rest. Channels 0 to 3 go to OutFirst, 4 to 7 to OutSecond
 	 * (left empty up to 4 channels). SlopeMask is BakeSlopeMask's, empty for no overlay.
 	 */
@@ -128,8 +128,8 @@ namespace MantleTerrainExportPrivate
 		}
 		for (int32 TexelY = 0; TexelY < Size.Y; ++TexelY)
 		{
-			// The texel's centre as a fraction of the terrain, then in samples: UV0 is 0 at the first sample
-			// and 1 at the last, and a texture's texel centres sit at (i + 0.5) / size.
+			// The texel's center as a fraction of the terrain, then in samples: UV0 is 0 at the first sample
+			// and 1 at the last, and a texture's texel centers sit at (i + 0.5) / size.
 			const double SampleY = (TexelY + 0.5) / Size.Y * (Source.Height - 1);
 			for (int32 TexelX = 0; TexelX < Size.X; ++TexelX)
 			{
@@ -165,7 +165,7 @@ namespace MantleTerrainExportPrivate
 					Share[Plan.SlopeChannel] = Slope;
 				}
 
-				// Normalised to 255, the rounding remainder given to the heaviest layer so the sum is exact.
+				// Normalized to 255, the rounding remainder given to the heaviest layer so the sum is exact.
 				uint8 Channels[FMantlePlaceLimits::MaxTerrainLayers] = {};
 				int32 Total = 0;
 				int32 Heaviest = 0;
@@ -400,7 +400,7 @@ bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSour
 	Edit.GetHeightDataFast(MinX, MinY, MaxX, MaxY, Out.Heights.GetData(), Out.Width);
 
 	// Which samples a component covers: a landscape's components need not fill its extent, and a sample none covers has no ground
-	// (GetHeightDataFast leaves it 0, the lowest height). Neighbouring components share their edge samples, so an edge of a missing
+	// (GetHeightDataFast leaves it 0, the lowest height). Neighboring components share their edge samples, so an edge of a missing
 	// component next to a present one is ground.
 	{
 		TArray<uint8> Covered;
@@ -498,7 +498,7 @@ bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSour
 			{
 				if (Look.bHasAverage)
 				{
-					Out.LayerColours.Add(Look.Layer, Look.Average);
+					Out.LayerColors.Add(Look.Layer, Look.Average);
 				}
 			}
 			// The bake needs the transform, which is set below.
@@ -556,25 +556,25 @@ FMantleTerrainFold FMantleTerrainExport::PlanFold(const FMantleTerrainSource& So
 		Fold.SlotOfSource[Fold.Kept[Slot]] = Slot;
 	}
 
-	// Each other layer goes where its colour is nearest, else into the most painted layer there is.
+	// Each other layer goes where its color is nearest, else into the most painted layer there is.
 	for (int32 Rank = Max; Rank < Ranked.Num(); ++Rank)
 	{
 		const int32 Index = Ranked[Rank];
-		const FLinearColor* Colour = Source.LayerColours.Find(Source.LayerNames[Index]);
+		const FLinearColor* Color = Source.LayerColors.Find(Source.LayerNames[Index]);
 		int32 BestSlot = INDEX_NONE;
 		double BestDistance = TNumericLimits<double>::Max();
-		if (Colour)
+		if (Color)
 		{
 			// Most painted kept layer first, so an exact tie goes to it.
 			for (int32 KeptRank = 0; KeptRank < Max; ++KeptRank)
 			{
-				const FLinearColor* KeptColour = Source.LayerColours.Find(Source.LayerNames[Ranked[KeptRank]]);
-				if (!KeptColour)
+				const FLinearColor* KeptColor = Source.LayerColors.Find(Source.LayerNames[Ranked[KeptRank]]);
+				if (!KeptColor)
 				{
 					continue;
 				}
-				const double Distance = FMath::Square(static_cast<double>(Colour->R - KeptColour->R)) + FMath::Square(static_cast<double>(Colour->G - KeptColour->G))
-					+ FMath::Square(static_cast<double>(Colour->B - KeptColour->B));
+				const double Distance = FMath::Square(static_cast<double>(Color->R - KeptColor->R)) + FMath::Square(static_cast<double>(Color->G - KeptColor->G))
+					+ FMath::Square(static_cast<double>(Color->B - KeptColor->B));
 				if (Distance < BestDistance)
 				{
 					BestDistance = Distance;
@@ -701,7 +701,7 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 		if (!First || !First->Material)
 		{
 			// Nothing painted and nothing in Place Settings: the first look the landscape's material states, else that material baked whole,
-			// else plain grey, so the ground is still there.
+			// else plain gray, so the ground is still there.
 			const FMantleLandscapeLayerLook* Look = Source.bMaterialRead && Source.MaterialRead.Layers.Num() > 0 ? &Source.MaterialRead.Layers[0] : nullptr;
 			FMantleLandscapeLayerLook Plain;
 			Plain.Layer = TEXT("Ground");
@@ -730,7 +730,7 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 			else
 			{
 				const FString What = Look ? FString::Printf(TEXT("the first look its landscape material states ('%s')"), *Look->Layer.ToString())
-					: Choice.bLandscapeMaterialBake ? BakedWhat() : FString(TEXT("plain grey"));
+					: Choice.bLandscapeMaterialBake ? BakedWhat() : FString(TEXT("plain gray"));
 				Warn(FString::Printf(TEXT("has no painted layer and no material in Mantle Place Settings to draw it with, so it is drawn with %s."), *What),
 					FString::Printf(TEXT("It still publishes. To draw the ground differently, add an entry in %s with the material it should look like."), Where));
 				Report(MantleCoverageCategory::TerrainLayers, EMantleCoverageOutcome::Approximated, Choice.Layer.ToString(),
@@ -754,7 +754,7 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 		{
 			const FMantleTerrainLayerSetting* Entry = nullptr;
 			const FMantleLandscapeLayerLook* Look = nullptr;
-			bool bPlain = false; // the material could not be read and Place Settings has no entry: drawn with the material baked whole, else plain grey
+			bool bPlain = false; // the material could not be read and Place Settings has no entry: drawn with the material baked whole, else plain gray
 		};
 		TArray<FLayerPlan> Plans;
 		Plans.SetNum(Source.LayerNames.Num());
@@ -785,11 +785,11 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 			}
 			else
 			{
-				// The landscape's material says nothing about this layer on its own: draw it with that material baked whole (plain grey when
+				// The landscape's material says nothing about this layer on its own: draw it with that material baked whole (plain gray when
 				// the landscape has none) rather than stop the publish.
 				Plan.bPlain = true;
 				Candidates.Add(Index);
-				const FString What = Source.LandscapeMaterial ? BakedWhat() : FString(TEXT("plain grey"));
+				const FString What = Source.LandscapeMaterial ? BakedWhat() : FString(TEXT("plain gray"));
 				Warn(FString::Printf(TEXT("has paint layer '%s', which has no material of its own to draw it with in Mantle, so it is drawn with %s. %s"),
 						*Name.ToString(), *What, *Source.MaterialProblem).TrimEnd(),
 					FString::Printf(TEXT("It still publishes. To draw the layer differently, add '%s' in %s with the material it should look like."), *Name.ToString(), Where));
@@ -839,7 +839,7 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 					Choice.TilingCm = 400.0;
 					if (!Choice.Material)
 					{
-						Refuse(FString::Printf(TEXT("has paint layer '%s', whose plain grey material could not be made."), *Name.ToString()),
+						Refuse(FString::Printf(TEXT("has paint layer '%s', whose plain gray material could not be made."), *Name.ToString()),
 							FString::Printf(TEXT("In %s, add '%s' with the material it should look like."), Where, *Name.ToString()));
 					}
 					continue;
@@ -859,7 +859,7 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 				TArray<FString> Notes = Look.Approximations;
 				if (Look.bUnreadable)
 				{
-					Notes.Add(TEXT("its look is not a texture or a colour the material states, so it is drawn plain grey."));
+					Notes.Add(TEXT("its look is not a texture or a color the material states, so it is drawn plain gray."));
 				}
 				for (const FString& Note : Notes)
 				{
@@ -889,7 +889,7 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 			}
 			if (Folds.Num() > 0)
 			{
-				Warn(FString::Printf(TEXT("has %d painted layers; Mantle publishes at most %d of them (a slope overlay, where there is one, takes a place too), so it keeps the %d most painted and folds the others into the nearest by colour: %s."),
+				Warn(FString::Printf(TEXT("has %d painted layers; Mantle publishes at most %d of them (a slope overlay, where there is one, takes a place too), so it keeps the %d most painted and folds the others into the nearest by color: %s."),
 						Candidates.Num(), MaxPainted, MaxPainted, *FString::Join(Folds, TEXT(", "))),
 					TEXT("It still publishes, with those layers painted as the layers they were folded into. Nothing to do; to keep a different layer, paint more of it."));
 			}
@@ -1009,7 +1009,7 @@ TArray<uint8> FMantleTerrainExport::BakeSlopeMask(const FMantleTerrainSource& So
 			double SlopeX = 0.0;
 			double SlopeY = 0.0;
 			MantleTerrainExportPrivate::TerrainSlopeAt(Source, X, Y, SlopeX, SlopeY);
-			// The normal (-SlopeX, -SlopeY, 1) normalised: its Z is what the material's mask reads.
+			// The normal (-SlopeX, -SlopeY, 1) normalized: its Z is what the material's mask reads.
 			const double NormalZ = 1.0 / FMath::Sqrt(1.0 + SlopeX * SlopeX + SlopeY * SlopeY);
 			Mask[Y * Source.Width + X] = static_cast<uint8>(FMath::Clamp(FMath::RoundToInt32(Overlay.WeightAt(NormalZ) * 255.0f), 0, 255));
 		}
@@ -1056,7 +1056,7 @@ TArray<TArray<uint8>> FMantleTerrainExport::BakeAutoWeights(const FMantleTerrain
 			}
 			Share[0] = Rest;
 
-			// Normalised to 255, the rounding remainder given to the heaviest layer so the sum is exact.
+			// Normalized to 255, the rounding remainder given to the heaviest layer so the sum is exact.
 			int32 Channels[FMantleLandscapeAutoChain::MaxLayers] = {};
 			int32 Total = 0;
 			int32 Heaviest = 0;

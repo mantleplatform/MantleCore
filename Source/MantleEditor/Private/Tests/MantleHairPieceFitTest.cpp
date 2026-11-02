@@ -17,20 +17,20 @@ namespace MantleHairPieceFitTestPrivate
 	{
 		const int32 Rings = 24, Segments = 36;
 		const double Radius = 9.0;
-		const FVector Centre(0.0, 0.0, 160.0);
-		Positions.Add(FVector3f(0.f, 0.f, static_cast<float>(Centre.Z + Radius)));
+		const FVector Center(0.0, 0.0, 160.0);
+		Positions.Add(FVector3f(0.f, 0.f, static_cast<float>(Center.Z + Radius)));
 		for (int32 R = 1; R < Rings; ++R)
 		{
 			const double Theta = UE_DOUBLE_PI * R / Rings;
 			for (int32 S = 0; S < Segments; ++S)
 			{
 				const double Phi = 2.0 * UE_DOUBLE_PI * S / Segments;
-				const FVector P = Centre + Radius * FVector(FMath::Sin(Theta) * FMath::Cos(Phi), FMath::Sin(Theta) * FMath::Sin(Phi), FMath::Cos(Theta));
+				const FVector P = Center + Radius * FVector(FMath::Sin(Theta) * FMath::Cos(Phi), FMath::Sin(Theta) * FMath::Sin(Phi), FMath::Cos(Theta));
 				Positions.Add(FVector3f(static_cast<float>(P.X), static_cast<float>(P.Y), static_cast<float>(P.Z)));
 			}
 		}
 		const uint32 Bottom = Positions.Num();
-		Positions.Add(FVector3f(0.f, 0.f, static_cast<float>(Centre.Z - Radius)));
+		Positions.Add(FVector3f(0.f, 0.f, static_cast<float>(Center.Z - Radius)));
 		const auto Ring = [Segments](int32 R, int32 S) { return static_cast<uint32>(1 + (R - 1) * Segments + (S % Segments)); };
 		const auto AddTriangle = [&](uint32 A, uint32 B, uint32 C)
 		{
@@ -38,7 +38,7 @@ namespace MantleHairPieceFitTestPrivate
 			const FVector3f& B3 = Positions[static_cast<int32>(B)];
 			const FVector3f& C3 = Positions[static_cast<int32>(C)];
 			const FVector PA(A3.X, A3.Y, A3.Z), PB(B3.X, B3.Y, B3.Z), PC(C3.X, C3.Y, C3.Z);
-			const bool bOutward = (((PB - PA) ^ (PC - PA)) | ((PA + PB + PC) / 3.0 - Centre)) > 0.0;
+			const bool bOutward = (((PB - PA) ^ (PC - PA)) | ((PA + PB + PC) / 3.0 - Center)) > 0.0;
 			if (bOutward != bInward) Indices.Append({A, B, C}); else Indices.Append({A, C, B});
 		};
 		for (int32 S = 0; S < Segments; ++S) AddTriangle(0, Ring(1, S), Ring(1, S + 1));
@@ -51,14 +51,14 @@ namespace MantleHairPieceFitTestPrivate
 	}
 
 	/**
-	 * Hair cards in the head's frame (the sphere above: centre (0, 0, 160), radius 9). Each card is a strip 0.8 cm wide
+	 * Hair cards in the head's frame (the sphere above: center (0, 0, 160), radius 9). Each card is a strip 0.8 cm wide
 	 * rooted 1 mm off the skin at a polar angle of 10 to 55 degrees, combed down over the sphere to the equator. Short hair
 	 * stops there, its tip lifted 1.65 cm off the skin; long hair stays 1.5 mm off it to the equator. Long hair then falls 30 cm and flares out to 16 cm from the axis, so it is 32 cm wide at the
 	 * bottom, far wider than at the scalp (as bought long hair is). Each card's first two vertices are its root end.
 	 */
 	void PieceFitCards(bool bLong, TArray<FVector3f>& P, TArray<uint32>& I)
 	{
-		const FVector Centre(0.0, 0.0, 160.0);
+		const FVector Center(0.0, 0.0, 160.0);
 		const auto Add = [&P](const FVector& V) { P.Add(FVector3f(static_cast<float>(V.X), static_cast<float>(V.Y), static_cast<float>(V.Z))); };
 		for (const double ThetaDeg : {10.0, 25.0, 40.0, 55.0})
 		{
@@ -74,11 +74,11 @@ namespace MantleHairPieceFitTestPrivate
 					const double Theta = FMath::DegreesToRadians(ThetaDeg + (90.0 - ThetaDeg) * K / Over);
 					// The root sits 1 mm off the skin; the card lifts off it towards its tip, as a real card does.
 					const double R = K == 0 ? 9.1 : 9.15 + (bLong ? 0.0 : 1.5 * K / Over);
-					Spine.Add(Centre + R * (Out * FMath::Sin(Theta) + FVector(0.0, 0.0, FMath::Cos(Theta))));
+					Spine.Add(Center + R * (Out * FMath::Sin(Theta) + FVector(0.0, 0.0, FMath::Cos(Theta))));
 				}
 				if (bLong)
 				{
-					for (int32 K = 1; K <= 6; ++K) Spine.Add(Centre + Out * (9.15 + (16.0 - 9.15) * K / 6.0) - FVector(0.0, 0.0, 30.0 * K / 6.0));
+					for (int32 K = 1; K <= 6; ++K) Spine.Add(Center + Out * (9.15 + (16.0 - 9.15) * K / 6.0) - FVector(0.0, 0.0, 30.0 * K / 6.0));
 				}
 				const uint32 Base = P.Num();
 				for (const FVector& S : Spine) { Add(S - Side); Add(S + Side); }
@@ -155,7 +155,7 @@ bool FMantleHairPieceFitHeadSamplesFaceOutTest::RunTest(const FString& Parameter
 		}
 		TestEqual(bInward ? TEXT("inward-wound sphere: samples facing in") : TEXT("outward-wound sphere: samples facing in"), Wrong, 0);
 
-		// The nearest sample to a point is within a few millimetres of it, on the near side.
+		// The nearest sample to a point is within a few millimeters of it, on the near side.
 		int32 Id = INDEX_NONE; double D2 = 0.0;
 		Head.Nearest(FVector(0.0, 30.0, 160.0), Id, D2);
 		TestTrue(TEXT("nearest sample is on the +Y side"), Id != INDEX_NONE && Head.Point(Id).Y > 8.0);
@@ -219,7 +219,7 @@ bool FMantleHairPieceFitLongHairTest::RunTest(const FString& Parameters)
 	if (!TestTrue(TEXT("fit runs"), FMantleHairPieceFit::Fit(Head, Vendor, Ends, Fit, Error))) { AddError(Error); return false; }
 	TestTrue(TEXT("keeps out of the head"), Fit.bKeepsOutOfHead);
 	TestTrue(TEXT("the searched scale is well past the old 1.425 limit"), Fit.Scale > 1.6);
-	// A root within SeatCm (1 cm) of the scalp counts as seated, so the piece fit is good to about a centimetre and a tenth of
+	// A root within SeatCm (1 cm) of the scalp counts as seated, so the piece fit is good to about a centimeter and a tenth of
 	// the size; the scalp fit (stage 2) then pulls the roots in.
 	TestTrue(FString::Printf(TEXT("total scale within 10%% of the vendor's (%.4f for 0.4, offsets %.2f, %.2f, seated %.2f, coverage %.2f)"),
 		Fit.TotalScale(), Fit.OffsetY, Fit.OffsetZ, Fit.SeatedFraction, Fit.ScalpCoverage), FMath::Abs(Fit.TotalScale() * 2.5 - 1.0) < 0.10);

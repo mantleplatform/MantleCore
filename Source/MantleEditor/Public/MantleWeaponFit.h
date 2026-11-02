@@ -42,7 +42,7 @@ struct FMantleWeaponFitInput
 
 	/** How far below the middle of the handguard a two-handed left hand's palm sits, in cm (the builder uses
 	 *  FMantleWeaponFit::LeftHandBelowHandguardCm; 0 is the middle). */
-	double LeftHandBelowCentreCm = 0.0;
+	double LeftHandBelowCenterCm = 0.0;
 
 	/** A blade (melee_1h, melee_2h): the creator's Flip, the handle at the other end from the one the fit finds. */
 	bool bReverseLength = false;
@@ -53,7 +53,7 @@ struct FMantleWeaponFitResult
 	/** Mesh space to the weapon frame: bore along +X (muzzle at +X), up +Z, origin at the right-hand grip guess. A proper rotation plus the uniform Scale. */
 	FTransform MeshToWeapon = FTransform::Identity;
 
-	/** Uniform, centimetres per mesh unit; already inside MeshToWeapon. */
+	/** Uniform, centimeters per mesh unit; already inside MeshToWeapon. */
 	float Scale = 1.f;
 
 	/** Why the scale is what it is, in plain words. */
@@ -68,10 +68,10 @@ struct FMantleWeaponFitResult
 	/** Weapon-frame guesses: Grip_R (the origin), Grip_L (two-handed holds), Muzzle, Sight, Magazine (only when one is found). Rotations are identity; the hold decides the hands' orientation. */
 	TMap<FName, FTransform> Points;
 
-	/** Measurement for tests and tuning: the gun's length along the bore in centimetres (after Scale). */
+	/** Measurement for tests and tuning: the gun's length along the bore in centimeters (after Scale). */
 	float LengthCm = 0.f;
 
-	/** Measurement for tests and tuning: how far the Grip_R guess (the weapon-frame origin) is ahead of the rear of the mesh, in centimetres. */
+	/** Measurement for tests and tuning: how far the Grip_R guess (the weapon-frame origin) is ahead of the rear of the mesh, in centimeters. */
 	float GripFromRearCm = 0.f;
 
 	/** Plain-language notes for the panel: the guesses the creator should check. */
@@ -93,10 +93,10 @@ struct MANTLEEDITOR_API FMantleWeaponFit
 	static FMantleWeaponFitResult Fit(const FMantleWeaponFitInput& In);
 
 	/** Where the builder guesses a two-handed left palm: this far below the middle of the handguard, in cm. The pack TR15's
-	 *  (#729, Mantle.Weapon.AutoFitAccuracy.LeftHandBelowCentre); a fraction of the handguard's height failed on other guns. */
+	 *  (#729, Mantle.Weapon.AutoFitAccuracy.LeftHandBelowCenter); a fraction of the handguard's height failed on other guns. */
 	static constexpr double LeftHandBelowHandguardCm = 6.9;
 
-	/** A blade's Grip_R guess (the middle of the palm) sits this far from the handle's centre line, toward the weapon frame's
+	/** A blade's Grip_R guess (the middle of the palm) sits this far from the handle's center line, toward the weapon frame's
 	 *  -Z: where the palm rests when the melee holds' clips close the fist on the handle (#840, the slices of the in-game fist). */
 	static constexpr double BladePalmFromHandleCm = 2.0;
 

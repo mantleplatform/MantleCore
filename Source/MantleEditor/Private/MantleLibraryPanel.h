@@ -106,7 +106,7 @@ struct FMantleLibraryStorage
 /** Where the Library panel downloads card images from. */
 struct FMantleLibraryImages
 {
-	/** The most bytes of one image downloaded (the download is cancelled past this) and the longest side decoded. */
+	/** The most bytes of one image downloaded (the download is canceled past this) and the longest side decoded. */
 	static constexpr int64 MaxBytes = 4 * 1024 * 1024;
 	static constexpr int32 MaxSide = 4096;
 

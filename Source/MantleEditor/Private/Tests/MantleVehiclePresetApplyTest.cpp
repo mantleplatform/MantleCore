@@ -163,7 +163,7 @@ bool FMantleVehiclePresetApplyLeavesOthersTest::RunTest(const FString& Parameter
 	TestEqual(TEXT("collision box count"), T.Collision.Num(), 1);
 	if (T.Collision.Num() == 1)
 	{
-		TestTrue(TEXT("collision box centre"), T.Collision[0].Center.Equals(FVector(7.0, 8.0, 9.0)));
+		TestTrue(TEXT("collision box center"), T.Collision[0].Center.Equals(FVector(7.0, 8.0, 9.0)));
 	}
 	TestEqual(TEXT("wheel count"), Source->Wheels.Num(), 1);
 	if (Source->Wheels.Num() == 1)
@@ -175,8 +175,8 @@ bool FMantleVehiclePresetApplyLeavesOthersTest::RunTest(const FString& Parameter
 	TestEqual(TEXT("paint metallic"), Source->Paint.Metallic, 0.9f);
 	TestEqual(TEXT("paint sections"), Source->Paint.Sections.Num(), 1);
 	TestTrue(TEXT("the body is still unset"), Source->Body.IsNull());
-	// The preset carries no centre of mass, so the creator's choice (off) stays.
-	TestFalse(TEXT("centre of mass override is untouched"), T.bOverrideCenterOfMass);
+	// The preset carries no center of mass, so the creator's choice (off) stays.
+	TestFalse(TEXT("center of mass override is untouched"), T.bOverrideCenterOfMass);
 	// And the values it does carry did change.
 	TestEqual(TEXT("mass applied"), T.Mass, 1500.f);
 	TestEqual(TEXT("max speed applied"), T.MaxSpeed, 4500.f);

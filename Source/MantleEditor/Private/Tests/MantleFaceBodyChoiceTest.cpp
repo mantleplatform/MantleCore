@@ -108,7 +108,7 @@ bool FMantleBodyRowTest::RunTest(const FString& Parameters)
 		Row.bFaceOnBody = true;
 		Row.bCanKeep = false;
 		FMantleAvatarStripFixer::AddBodyRow(Fixes, 2, Row);
-		TestTrue(TEXT("keeping is greyed"), Find(Fixes, Bare) && !Find(Fixes, Bare)->bCanFix && Find(Fixes, Bare)->PartIndex == 2);
+		TestTrue(TEXT("keeping is grayed"), Find(Fixes, Bare) && !Find(Fixes, Bare)->bCanFix && Find(Fixes, Bare)->PartIndex == 2);
 	}
 
 	// The one bare-skin rule on plans.

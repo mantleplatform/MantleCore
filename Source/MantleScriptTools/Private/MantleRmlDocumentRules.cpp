@@ -710,7 +710,7 @@ namespace MantleRmlDocumentRules
 		// inline otherwise), a heading scale, Mantle's palette for controls (surface #272726, edge
 		// #444443, text #E8E6E2, hover #33251F, focus ring #EB6036), and `tab-index: auto` plus
 		// `nav: auto` on controls so keyboard and gamepad navigation work without any RCSS. The
-		// body fills the screen: RmlUi sizes a document to its content otherwise, so a centred or
+		// body fills the screen: RmlUi sizes a document to its content otherwise, so a centered or
 		// right-anchored absolute panel resolves against a 0x0 body in the top-left corner.
 		return
 			"body { display: block; width: 100%; height: 100%; font-family: Roboto; font-size: 16dp; color: #E8E6E2; }\n"

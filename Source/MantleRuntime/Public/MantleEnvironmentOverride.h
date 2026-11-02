@@ -19,7 +19,7 @@ namespace MantleEnvironmentOverrideValues
 	constexpr uint8 StarsShown = 1;
 	constexpr uint8 StarsHidden = 2;
 
-	/** The colours are 0xRRGGBB, sRGB, as a script writes "#RRGGBB". */
+	/** The colors are 0xRRGGBB, sRGB, as a script writes "#RRGGBB". */
 	constexpr uint32 White = 0xFFFFFF;
 
 	/**
@@ -41,7 +41,7 @@ namespace MantleEnvironmentOverrideValues
  * What server scripts have changed about the running environment (#454, script API 1.11): the
  * clock's anchor and rate, a forced weather and the blend into (or back out of) it, a cloud cover,
  * the fog, the stars, the sun and a small post-process subset, which #532 (script API 1.27) extends
- * with bloom and a fixed list of colour-grading LUTs. The default value changes nothing.
+ * with bloom and a fixed list of color-grading LUTs. The default value changes nothing.
  *
  * The server's script host writes the whole struct onto AMantleScriptReplicator, which Iris
  * replicates member-wise: whenever a script writes, and to a late joiner as its initial state.
@@ -136,7 +136,7 @@ struct MANTLERUNTIME_API FMantleEnvironmentOverride
 	UPROPERTY()
 	float FogDensity = 1.0f;
 
-	/** Environment.FogColor: the height fog's inscattering colour, when set. */
+	/** Environment.FogColor: the height fog's inscattering color, when set. */
 	UPROPERTY()
 	bool bFogColorSet = false;
 
@@ -168,7 +168,7 @@ struct MANTLERUNTIME_API FMantleEnvironmentOverride
 	UPROPERTY()
 	float Vignette = -1.0f;
 
-	/** Environment.ColorTint: multiplies the picture's colour; white is unchanged. */
+	/** Environment.ColorTint: multiplies the picture's color; white is unchanged. */
 	UPROPERTY()
 	uint32 ColorTint = 0xFFFFFF;
 
@@ -229,7 +229,7 @@ struct MANTLERUNTIME_API FMantleEnvironmentOverride
 	 */
 	static FSoftObjectPath ColorGradingLutPath(uint8 Preset);
 
-	/** 0xRRGGBB to linear colour, as the fog and the post-process use it. */
+	/** 0xRRGGBB to linear color, as the fog and the post-process use it. */
 	static FLinearColor LinearFromRgb(uint32 Rgb);
 
 	/** "#RRGGBB" for a script, from 0xRRGGBB. */

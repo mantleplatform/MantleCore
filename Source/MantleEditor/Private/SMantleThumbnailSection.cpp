@@ -341,7 +341,7 @@ void SMantleThumbnailSection::Refresh()
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleThumbnailSectionDevShot
 {
-	/** Widget rendered offscreen at Width over the editor's panel grey, as a PNG (the same way as the Cosmetics panel's dev shots). */
+	/** Widget rendered offscreen at Width over the editor's panel gray, as a PNG (the same way as the Cosmetics panel's dev shots). */
 	bool Save(const TSharedRef<SWidget>& Widget, const FString& File, const float Width, const float MaxHeight)
 	{
 		FWidgetRenderer Renderer(true, false);

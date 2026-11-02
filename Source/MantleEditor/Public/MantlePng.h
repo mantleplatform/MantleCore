@@ -13,9 +13,9 @@ struct MANTLEEDITOR_API FMantlePng
 	/** Pixels are Width x Height FColors (BGRA in memory), row by row from the top. Empty on bad input. */
 	static TArray<uint8> EncodeRGBA8(int32 Width, int32 Height, TConstArrayView<FColor> Pixels);
 
-	/** A PNG's size and whether it can carry alpha (colour type 4 or 6, or a tRNS chunk). False when it is not a PNG. */
+	/** A PNG's size and whether it can carry alpha (color type 4 or 6, or a tRNS chunk). False when it is not a PNG. */
 	static bool ReadHeader(TConstArrayView<uint8> Bytes, int32& OutWidth, int32& OutHeight, bool& OutHasAlpha);
 
-	/** A Size x Size image of one colour, for a section with no texture (a flat colour) or a placeholder. */
+	/** A Size x Size image of one color, for a section with no texture (a flat color) or a placeholder. */
 	static TArray<uint8> EncodeSolid(int32 Width, int32 Height, FColor Color);
 };

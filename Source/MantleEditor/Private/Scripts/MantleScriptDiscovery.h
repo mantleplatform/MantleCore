@@ -9,7 +9,7 @@
 
 /**
  * Discovers script files under a level's Scripts/ folder. The root is resolved straight from
- * the currently open editor level's package path, the same computation the game's disk catalogue source (FMantleDiskScriptCatalogSource) would
+ * the currently open editor level's package path, the same computation the game's disk catalog source (FMantleDiskScriptCatalogSource) would
  * do for a `-MantlePlace=<PlaceDir>/place.json` run one level up (Scripts/ is a sibling of the
  * place file there; here it's a sibling of the level asset).
  */
@@ -26,11 +26,11 @@ public:
 	static FString CurrentLevelScriptsPackageRoot();
 
 	/**
-	 * Recursively lists every recognised script file under ScriptsRoot into OutRows (cleared
+	 * Recursively lists every recognized script file under ScriptsRoot into OutRows (cleared
 	 * first, sorted by path). Classification mirrors MantleScriptCatalog.cpp's ClassifyPath
 	 * exactly (case-sensitive Server/Client/Shared top folder, a "Modules" folder at any depth,
 	 * dotfiles and dead languages skipped) so the panel never lists a file the runtime's own
-	 * catalogue would refuse.
+	 * catalog would refuse.
 	 */
 	static void DiscoverAt(const FString& ScriptsRoot, TArray<FMantleScriptRowPtr>& OutRows);
 };

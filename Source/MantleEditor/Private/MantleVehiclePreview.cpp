@@ -119,16 +119,16 @@ bool FMantleVehiclePreview::Make(const UMantleVehicleSource& Source, FMantleVehi
 	const TArray<FTransform> Pose = PreviewComponentPose(Mesh->GetRefSkeleton());
 	auto JointOf = [&Body](const FName Bone) { return FMantleVehicleConverter::JointIndex(Body, Bone); };
 
-	// The local car is drawn on the body as modelled (its mesh is not resized), so its document is the unsized vehicle's; the check above held
+	// The local car is drawn on the body as modeled (its mesh is not resized), so its document is the unsized vehicle's; the check above held
 	// the sized one, as the cook will (#728). With a Size of 1 the copy is skipped and nothing changes.
-	const UMantleVehicleSource* AsModelled = &Source;
+	const UMantleVehicleSource* AsModeled = &Source;
 	if (Source.FitScale != 1.f)
 	{
 		UMantleVehicleSource* Unsized = DuplicateObject<UMantleVehicleSource>(&Source, GetTransientPackage());
 		Unsized->FitScale = 1.f;
-		AsModelled = Unsized;
+		AsModeled = Unsized;
 	}
-	const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*AsModelled, TMap<FString, FString>());
+	const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*AsModeled, TMap<FString, FString>());
 	// Liveries upload as textures, which a local car has none of.
 	Document->RemoveField(TEXT("liveryUV"));
 	Document->RemoveField(TEXT("defaultLivery"));

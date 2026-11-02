@@ -517,7 +517,7 @@ bool FMantleFaceLayout::Parse(const FString& Json, FMantleFaceLayout& Out, FStri
 		const TArray<TSharedPtr<FJsonValue>>* Pair = nullptr;
 		if (!Value.IsValid() || !Value->TryGetArray(Pair) || Pair->Num() != 2)
 		{
-			OutError = TEXT("a quantised UV is not a pair");
+			OutError = TEXT("a quantized UV is not a pair");
 			return false;
 		}
 		Out.QuantizedUVs.Add(FIntPoint(static_cast<int32>((*Pair)[0]->AsNumber()), static_cast<int32>((*Pair)[1]->AsNumber())));
@@ -561,7 +561,7 @@ FString FMantleFaceLayout::ToJson() const
 {
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetNumberField(TEXT("version"), 1);
-	Root->SetStringField(TEXT("comment"), TEXT("Maintainer-recorded by Mantle.Dev.RecordFaceLayout. Plugin-only; not part of the synced avatar contract. The layout of a built MetaHuman face (Epic's UE Optimized / Medium LOD0): quantised UVs (x2048) and triangles in built order, and the render sections. No geometry."));
+	Root->SetStringField(TEXT("comment"), TEXT("Maintainer-recorded by Mantle.Dev.RecordFaceLayout. Plugin-only; not part of the synced avatar contract. The layout of a built MetaHuman face (Epic's UE Optimized / Medium LOD0): quantized UVs (x2048) and triangles in built order, and the render sections. No geometry."));
 	Root->SetStringField(TEXT("source"), Source);
 	Root->SetStringField(TEXT("generated"), Generated);
 	Root->SetNumberField(TEXT("vertexCount"), QuantizedUVs.Num());

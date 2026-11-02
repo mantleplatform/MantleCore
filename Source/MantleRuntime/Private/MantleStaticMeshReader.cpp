@@ -18,7 +18,7 @@ namespace MantleStaticMeshReaderPrivate
 	constexpr uint32 CollisionFlagSimpleAsComplex = 1 << 0;
 	constexpr uint32 CollisionKnownFlags = CollisionFlagSimpleAsComplex;
 
-	/** Position, normal, tangent and UV float32s of one vertex; colours add 4 bytes, UV1 8. */
+	/** Position, normal, tangent and UV float32s of one vertex; colors add 4 bytes, UV1 8. */
 	constexpr int64 VertexBytes = 12 + 12 + 16 + 8;
 
 	/** How far a hull's points must spread in each of three directions (cook.minHullSpanCm). */
@@ -261,7 +261,7 @@ namespace MantleStaticMeshReaderPrivate
 		return FVector3f(X, Y, Z);
 	}
 
-	/** A stored rotation: finite, of length 1 within 1e-3 (the cook normalised it), returned normalised. */
+	/** A stored rotation: finite, of length 1 within 1e-3 (the cook normalized it), returned normalized. */
 	bool ReadRotation(MantleCookedFormat::FCursor& Cursor, FQuat4f& Out)
 	{
 		const float X = Cursor.F32();

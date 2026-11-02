@@ -110,10 +110,10 @@ class MANTLEEDITOR_API FMantleTerrainGrassExport
 {
 public:
 	/**
-	 * Engine GrassDensity is instances per 100 square metres (a 10 m x 10 m square: LandscapeGrass.cpp divides
-	 * the cm extent by 1000 x 1000, whatever its own comment says); Mantle's density is per square metre.
+	 * Engine GrassDensity is instances per 100 square meters (a 10 m x 10 m square: LandscapeGrass.cpp divides
+	 * the cm extent by 1000 x 1000, whatever its own comment says); Mantle's density is per square meter.
 	 */
-	static double DensityPerSquareMetre(float EngineDensity);
+	static double DensityPerSquareMeter(float EngineDensity);
 
 	/** "grassmap:" + the landscape's path + ":" + the map's index: the key of that grass map's texture. */
 	static FString GrassMapKey(const AActor* Landscape, int32 MapIndex);
@@ -143,7 +143,7 @@ public:
 
 	/**
 	 * Size.X x Size.Y pixels, row by row from the top, stretched over the whole terrain as
-	 * FMantleTerrainExport::MakeWeightmap is (texel centres, the same orientation): R, G, B and A are the
+	 * FMantleTerrainExport::MakeWeightmap is (texel centers, the same orientation): R, G, B and A are the
 	 * weights of Weights[Indices[0]] to [3] (each Width x Height, INDEX_NONE or a missing grid for 0),
 	 * each independent of the others. What FMantlePng::EncodeRGBA8 takes.
 	 */

@@ -28,7 +28,7 @@ struct FMantleVehiclePreset
 	FString DriverSeat;
 	FString PassengerSeat;
 
-	/** Typical wheel radius and track width in centimetres, the values the mesh is scaled against. */
+	/** Typical wheel radius and track width in centimeters, the values the mesh is scaled against. */
 	double FitWheelRadius = 0.0;
 	double FitTrackWidth = 0.0;
 	double FitMinScale = 0.0;

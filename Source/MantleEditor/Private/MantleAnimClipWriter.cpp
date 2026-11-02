@@ -481,7 +481,7 @@ void FMantleAnimClipWriter::MoveRootOntoChildren(FMantleAnimClipData& Clip, cons
 	}
 	Clip.RootMotion.RiseCm = Highest - Lowest;
 	Clip.RootMotion.bInPlace = Clip.RootMotion.TravelCm > MaxTravelCm;
-	// A retarget leaves the root a hair off its reference: under half a centimetre or half a degree is no motion.
+	// A retarget leaves the root a hair off its reference: under half a centimeter or half a degree is no motion.
 	Clip.RootMotion.bMoved = bOffReference || Clip.RootMotion.TravelCm > 0.5 || Clip.RootMotion.RiseCm > 0.5 || Clip.RootMotion.TurnDegrees > 0.5;
 	if (!Clip.RootMotion.bMoved)
 	{

@@ -208,7 +208,7 @@ namespace MantleAgentToolsPrivate
 		case EMantlePublishPhase::Publishing:    return TEXT("publishing");
 		case EMantlePublishPhase::Done:          return TEXT("done");
 		case EMantlePublishPhase::Failed:        return TEXT("failed");
-		case EMantlePublishPhase::Cancelled:     return TEXT("cancelled");
+		case EMantlePublishPhase::Canceled:     return TEXT("canceled");
 		}
 		return TEXT("unknown");
 	}
@@ -396,7 +396,7 @@ FString FMantleAgentTools::ExportPreview(UWorld* World)
 	TSharedRef<FJsonObject> ScriptApi = MakeShared<FJsonObject>();
 	ScriptApi->SetNumberField(TEXT("major"), Place.ScriptApi.Major);
 	ScriptApi->SetNumberField(TEXT("minor"), Place.ScriptApi.Minor);
-	ScriptApi->SetBoolField(TEXT("analysed"), Export.ScriptApiNeed.bAnalysed);
+	ScriptApi->SetBoolField(TEXT("analyzed"), Export.ScriptApiNeed.bAnalyzed);
 
 	TArray<TSharedPtr<FJsonValue>> Errors;
 	for (const FMantleParseError& Error : Export.Errors)
@@ -460,7 +460,7 @@ FString FMantleAgentTools::DescribePublishResult(const FMantlePublishResult& Res
 	Object->SetNumberField(TEXT("revision"), Result.RevisionNumber);
 	Object->SetBoolField(TEXT("live"), Result.bWentLive);
 	Object->SetBoolField(TEXT("waitingForReview"), Result.bWaitingForReview);
-	Object->SetBoolField(TEXT("cancelled"), Result.bCancelled);
+	Object->SetBoolField(TEXT("canceled"), Result.bCanceled);
 	Object->SetStringField(TEXT("message"), Result.Message);
 	Object->SetArrayField(TEXT("issues"), Issues);
 	return WriteAgentJson(Object);
@@ -625,12 +625,12 @@ FString FMantleAgentTools::ScriptApiRequirement(UWorld* World)
 		Script->SetStringField(TEXT("path"), Path);
 		Script->SetNumberField(TEXT("minor"), Need.Minor);
 		Script->SetStringField(TEXT("neededFor"), Need.NeededFor);
-		Script->SetBoolField(TEXT("analysed"), Need.bAnalysed);
+		Script->SetBoolField(TEXT("analyzed"), Need.bAnalyzed);
 		FString Problem;
 		FString Remedy;
-		if (!Need.bAnalysed)
+		if (!Need.bAnalyzed)
 		{
-			FMantleScriptApiUsage::DescribeUnanalysable(Path, Need, Problem, Remedy);
+			FMantleScriptApiUsage::DescribeUnanalyzable(Path, Need, Problem, Remedy);
 		}
 		Script->SetStringField(TEXT("problem"), Problem);
 		Script->SetStringField(TEXT("remedy"), Remedy);
@@ -666,7 +666,7 @@ FString FMantleAgentTools::ScriptApiRequirement(UWorld* World)
 	Object->SetNumberField(TEXT("scripts"), Export.Place.Scripts.Num());
 	Object->SetObjectField(TEXT("recorded"), Recorded);
 	Object->SetNumberField(TEXT("editorMinor"), FMantleApiManifest::Get().Minor);
-	Object->SetBoolField(TEXT("analysed"), Export.ScriptApiNeed.bAnalysed);
+	Object->SetBoolField(TEXT("analyzed"), Export.ScriptApiNeed.bAnalyzed);
 	Object->SetStringField(TEXT("neededFor"), Export.ScriptApiNeed.NeededFor);
 	Object->SetArrayField(TEXT("perScript"), PerScript);
 	return WriteAgentJson(Object);

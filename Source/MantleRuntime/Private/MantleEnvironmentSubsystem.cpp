@@ -295,7 +295,7 @@ void UMantleEnvironmentSubsystem::BindSky(const FMantleSkyBinding& Binding)
 	}
 	const UExponentialHeightFogComponent* BoundFog = FogComponent.Get();
 	BaseFogDensity = BoundFog ? BoundFog->FogDensity : 0.0f;
-	// The fog's own colour, which a script's Environment.FogColor replaces and nil restores.
+	// The fog's own color, which a script's Environment.FogColor replaces and nil restores.
 	BaseFogColor = BoundFog ? BoundFog->FogInscatteringLuminance : FLinearColor::Black;
 	const USkyLightComponent* BoundSkyLight = SkyLightComponent.Get();
 	// The place's own scale (#722) is part of the base, so the weather scales from it.
@@ -312,7 +312,7 @@ void UMantleEnvironmentSubsystem::BindSky(const FMantleSkyBinding& Binding)
 			Look.CloudCoverage, Look.FogDensityScale);
 	}
 
-	// The place's own sun keeps its intensity, colour and heading; only its angle is Mantle's.
+	// The place's own sun keeps its intensity, color and heading; only its angle is Mantle's.
 	// The night sky turns around the same heading, so it is set even without a light.
 	UDirectionalLightComponent* Light = SunLight.Get();
 	HeadingYawDegrees = (Light && Binding.bPlaceSun) ? Binding.Sun->GetActorRotation().Yaw : 0.0;
@@ -323,7 +323,7 @@ void UMantleEnvironmentSubsystem::BindSky(const FMantleSkyBinding& Binding)
 		DayColor = Light->LightColor;
 		if (bNoDirectSun)
 		{
-			// A sealed level's sun (#722). The atmosphere and the clouds read the light's intensity and colour (its
+			// A sealed level's sun (#722). The atmosphere and the clouds read the light's intensity and color (its
 			// outer-space illuminance), so those stay as they are and the sky light still captures a lit sky. What
 			// the light adds to the place goes: its direct diffuse and specular light (Lumen's surface cache reads
 			// the same scales), its indirect light and its light in the volumetric fog.
@@ -498,8 +498,8 @@ void UMantleEnvironmentSubsystem::UpdateWeatherSky(bool bForce)
 			AppliedFogDensity = Density;
 		}
 
-		// Environment.FogColor replaces the fog's own colour while it is set; nil restores it. The weather's tint (dust)
-		// moves the fog's own colour toward its own.
+		// Environment.FogColor replaces the fog's own color while it is set; nil restores it. The weather's tint (dust)
+		// moves the fog's own color toward its own.
 		const FLinearColor OwnColor = WeatherFogTintAmount > 0.0f ? FMath::Lerp(BaseFogColor, WeatherFogTint, WeatherFogTintAmount) : BaseFogColor;
 		const FLinearColor Color = Override.bFogColorSet ? FMantleEnvironmentOverride::LinearFromRgb(Override.FogColor) : OwnColor;
 		if (bFirst || !Color.Equals(AppliedFogColor, 1.0e-3f))
@@ -1302,7 +1302,7 @@ UTexture* UMantleEnvironmentSubsystem::ResolveColorGradingLut(uint8 Preset)
 	{
 		ColorGradingLutMissing |= Bit;
 		UE_LOG(LogMantle, Warning,
-			TEXT("MANTLE_LUT missing %s: no %s colour grading on this client (tools/materials/Create-MantleLUTs.py makes it)"),
+			TEXT("MANTLE_LUT missing %s: no %s color grading on this client (tools/materials/Create-MantleLUTs.py makes it)"),
 			*Path.ToString(), Name);
 		return nullptr;
 	}
@@ -1310,7 +1310,7 @@ UTexture* UMantleEnvironmentSubsystem::ResolveColorGradingLut(uint8 Preset)
 	if (!Lut)
 	{
 		ColorGradingLutMissing |= Bit;
-		UE_LOG(LogMantle, Warning, TEXT("MANTLE_LUT could not load %s as a texture: no %s colour grading on this client"),
+		UE_LOG(LogMantle, Warning, TEXT("MANTLE_LUT could not load %s as a texture: no %s color grading on this client"),
 			*Path.ToString(), Name);
 		return nullptr;
 	}

@@ -206,7 +206,7 @@ FString FMantleCosmeticUploadSession::DescribeFailure(const FMantleApiResult& Re
 	}
 	if (Code == TEXT("claim_taken_down"))
 	{
-		return FString::Printf(TEXT("A moderator removed %s from your account (usually after a licence complaint), so it cannot be uploaded or used again. Use different content."), *What);
+		return FString::Printf(TEXT("A moderator removed %s from your account (usually after a license complaint), so it cannot be uploaded or used again. Use different content."), *What);
 	}
 	if (Code == TEXT("assets_not_owned"))
 	{
@@ -214,7 +214,7 @@ FString FMantleCosmeticUploadSession::DescribeFailure(const FMantleApiResult& Re
 	}
 	if (Code == TEXT("uploaded_differently"))
 	{
-		return FString::Printf(TEXT("%s: these exact bytes were uploaded before as a different kind of file (for example a texture used as a colour map in one item and as a mask in another), and one upload is one kind. Make a copy of the source asset for the second use."), *What);
+		return FString::Printf(TEXT("%s: these exact bytes were uploaded before as a different kind of file (for example a texture used as a color map in one item and as a mask in another), and one upload is one kind. Make a copy of the source asset for the second use."), *What);
 	}
 	if (Code == TEXT("source_not_ready"))
 	{
@@ -321,8 +321,8 @@ void FMantleCosmeticUploadSession::Cancel()
 	}
 	++Generation;
 	bInFlight = false;
-	Phase = EMantleUploadPhase::Cancelled;
-	AddLog(TEXT("Cancelled. Everything already uploaded stays on Mantle; Upload again continues from there."));
+	Phase = EMantleUploadPhase::Canceled;
+	AddLog(TEXT("Canceled. Everything already uploaded stays on Mantle; Upload again continues from there."));
 }
 
 void FMantleCosmeticUploadSession::Send(const FMantleUploadCallRequest& Request)
@@ -695,7 +695,7 @@ void FMantleCosmeticUploadSession::HandleDiff(const FMantleApiResult& Result)
 			continue;
 		}
 		// Bytes already uploaded as another kind or for another role (a texture cooked as a
-		// mask cannot serve as a colour map) are not this upload. A texture first uploaded with no
+		// mask cannot serve as a color map) are not this upload. A texture first uploaded with no
 		// role keeps its PNG, which serves any role, so that one is fine.
 		const FMantleAssetUploadOptions& Wanted = Package.Assets[Index].Options;
 		if (Found->Kind != Wanted.Kind || (!Found->CookOptions.Role.IsEmpty() && Found->CookOptions.Role != Wanted.Role))
@@ -991,7 +991,7 @@ FString FMantleCosmeticUploadSession::GetStatusText() const
 	case EMantleUploadPhase::Screening: return TEXT("Screening the item...");
 	case EMantleUploadPhase::Done: return FinalMessage;
 	case EMantleUploadPhase::Failed: return Failure;
-	case EMantleUploadPhase::Cancelled: return TEXT("Cancelled. Upload again to continue where it stopped.");
+	case EMantleUploadPhase::Canceled: return TEXT("Canceled. Upload again to continue where it stopped.");
 	default: return FString();
 	}
 }

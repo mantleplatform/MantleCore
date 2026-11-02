@@ -251,7 +251,7 @@ FMantleHeadFit::FFit FMantleHeadFit::FitTo(const FBox3f& Reference, const FBox3f
 	for (int32 Axis = 0; Axis < 3; ++Axis)
 	{
 		Fit.Scale[Axis] = From[Axis] > KINDA_SMALL_NUMBER ? FMath::Clamp(To[Axis] / From[Axis], 0.5f, 2.0f) : 1.0f;
-		// The boxes' centres meet: with a clamped scale the head is still centred under the hat.
+		// The boxes' centers meet: with a clamped scale the head is still centerd under the hat.
 		Fit.Offset[Axis] = Measured.GetCenter()[Axis] - Fit.Scale[Axis] * Reference.GetCenter()[Axis];
 	}
 	return Fit;

@@ -119,7 +119,7 @@ EMantlePhysicsBodySource UMantlePhysicsMeshComponent::PrepareSimulationBody(USta
 	else
 	{
 		// No simple collision at all (an uploaded mesh collides on its triangles): a box the size of
-		// the mesh's local bounds. At least a centimetre on each axis, so a flat mesh still has volume.
+		// the mesh's local bounds. At least a centimeter on each axis, so a flat mesh still has volume.
 		FBox MeshBounds = Mesh ? Mesh->GetBoundingBox() : FBox(ForceInit);
 		if (!MeshBounds.IsValid)
 		{

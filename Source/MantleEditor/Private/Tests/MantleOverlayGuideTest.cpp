@@ -10,7 +10,7 @@
 
 namespace MantleOverlayGuideTestPrivate
 {
-	/** Pixels that are not the plain background colour. */
+	/** Pixels that are not the plain background color. */
 	int32 NonBackground(const TArray<FColor>& Pixels)
 	{
 		int32 Count = 0;

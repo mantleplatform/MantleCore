@@ -51,7 +51,7 @@ bool FMantleEnvironmentLightingParserTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("and a negative one"), HasEnvironmentError(ParseEnvironment(TEXT("\"skyLight\": { \"intensity\": -0.1 }")), TEXT("intensity")));
 	TestTrue(TEXT("and a string"), HasEnvironmentError(ParseEnvironment(TEXT("\"skyLight\": { \"intensity\": \"0.5\" }")), TEXT("intensity")));
 	TestTrue(TEXT("a sun that is not a boolean is refused"), HasEnvironmentError(ParseEnvironment(TEXT("\"sun\": { \"direct\": \"no\" }")), TEXT("direct")));
-	TestTrue(TEXT("an unknown key in skyLight is refused"), HasEnvironmentError(ParseEnvironment(TEXT("\"skyLight\": { \"colour\": 1 }"))));
+	TestTrue(TEXT("an unknown key in skyLight is refused"), HasEnvironmentError(ParseEnvironment(TEXT("\"skyLight\": { \"color\": 1 }"))));
 	TestTrue(TEXT("an unknown key in sun is refused"), HasEnvironmentError(ParseEnvironment(TEXT("\"sun\": { \"angle\": 1 }"))));
 	TestTrue(TEXT("a skyLight that is not an object is refused"), HasEnvironmentError(ParseEnvironment(TEXT("\"skyLight\": 1")), TEXT("skyLight")));
 	return true;
