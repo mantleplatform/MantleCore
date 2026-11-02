@@ -8,6 +8,7 @@
 
 class USkeletalMesh;
 class USkeleton;
+class UStaticMesh;
 
 /** One wheel of a creator vehicle (#435): schema/vehicle.schema.json wheels[], as the cook resolved it. */
 struct FMantleVehicleWheelDesc
@@ -735,6 +736,31 @@ struct MANTLERUNTIME_API FMantleVehicleBodyCollision
 	 * Null when the body has no LOD or skin data to tell by, or nothing is left.
 	 */
 	static TSharedPtr<const FMantleVehicleBodyCollision> FromBody(const FMantleSkinnedMesh& Body, TConstArrayView<FName> WheelBones);
+
+	/** One attached part's surface for the shape: its triangles (LOD0, in the mesh's own space) and where they sit in the body's component space. */
+	struct FPart
+	{
+		TArray<FVector3f> Positions;
+		TArray<uint32> Indices;
+
+		/** The mesh's space into the body's component space: the part's own transform on its bone, then the bone's reference pose. */
+		FTransform ToComponent = FTransform::Identity;
+	};
+
+	/**
+	 * LOD0's triangles of Mesh (the first section to the last, every material), read from its CPU copy; false, with Out untouched, when the
+	 * mesh was built without one or has no triangles. A part's mesh is built for this (FMantlePlaceAssets: a vehicle's part meshes keep their
+	 * CPU data, a dedicated server's included).
+	 */
+	static bool ReadPartTriangles(const UStaticMesh& Mesh, FPart& Out);
+
+	/**
+	 * Body's shape with Parts added at their places, as one shape for characters, cameras and weapon traces: a car that was split into a body and
+	 * parts (a model with more materials than a body may draw) has most of its surface in its parts. Body may be null (a car whose body is all
+	 * wheels or whose triangles all went to parts). A triangle with no area is dropped, as FromBody drops it. Null when nothing is left. Pure
+	 * arithmetic over the arrays, so the same on a server and a client: built once for a vehicle type, with the body's cook shared by its cars.
+	 */
+	static TSharedPtr<const FMantleVehicleBodyCollision> WithParts(const TSharedPtr<const FMantleVehicleBodyCollision>& Body, TConstArrayView<FPart> Parts);
 };
 
 /**

@@ -6,6 +6,7 @@
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
 #include "MantleCookedCursor.h"
 #include "MantleRuntime.h"
 #include "MantleRuntimeSkeletalMeshBuilder.h"
@@ -13,6 +14,7 @@
 #include "ReferenceSkeleton.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "StaticMeshResources.h"
 #include "UObject/Package.h"
 
 // Named, not anonymous: MantleRuntime builds as a unity build.
@@ -2688,6 +2690,89 @@ TSharedPtr<const FMantleVehicleBodyCollision> FMantleVehicleBodyCollision::FromB
 				Remap[Vertex] = Out->Positions.Add(Lod.Positions[Vertex]);
 			}
 			Out->Indices.Add(Remap[Vertex]);
+		}
+	}
+	if (Out->Indices.Num() == 0)
+	{
+		return nullptr;
+	}
+	return Out;
+}
+
+bool FMantleVehicleBodyCollision::ReadPartTriangles(const UStaticMesh& Mesh, FPart& Out)
+{
+	const FStaticMeshRenderData* RenderData = Mesh.GetRenderData();
+	if (!RenderData || RenderData->LODResources.Num() == 0)
+	{
+		return false;
+	}
+	const FStaticMeshLODResources& LOD = RenderData->LODResources[0];
+	const FPositionVertexBuffer& Positions = LOD.VertexBuffers.PositionVertexBuffer;
+	const int32 NumVertices = static_cast<int32>(Positions.GetNumVertices());
+	if (NumVertices == 0 || Positions.GetVertexData() == nullptr || !LOD.IndexBuffer.GetAllowCPUAccess())
+	{
+		return false;
+	}
+	const FIndexArrayView Indices = LOD.IndexBuffer.GetArrayView();
+	if (Indices.Num() < 3)
+	{
+		return false;
+	}
+	TArray<FVector3f> Read;
+	Read.Reserve(NumVertices);
+	for (int32 Vertex = 0; Vertex < NumVertices; ++Vertex)
+	{
+		Read.Add(Positions.VertexPosition(static_cast<uint32>(Vertex)));
+	}
+	TArray<uint32> Triangles;
+	Triangles.Reserve(Indices.Num());
+	for (int32 At = 0; At < Indices.Num(); ++At)
+	{
+		Triangles.Add(Indices[At]);
+	}
+	Out.Positions = MoveTemp(Read);
+	Out.Indices = MoveTemp(Triangles);
+	return true;
+}
+
+TSharedPtr<const FMantleVehicleBodyCollision> FMantleVehicleBodyCollision::WithParts(const TSharedPtr<const FMantleVehicleBodyCollision>& Body, const TConstArrayView<FPart> Parts)
+{
+	TSharedRef<FMantleVehicleBodyCollision> Out = MakeShared<FMantleVehicleBodyCollision>();
+	if (Body.IsValid())
+	{
+		Out->Positions = Body->Positions;
+		Out->Indices = Body->Indices;
+	}
+	for (const FPart& Part : Parts)
+	{
+		const int32 NumVertices = Part.Positions.Num();
+		TArray<int32> Remap;
+		Remap.Init(INDEX_NONE, NumVertices);
+		for (int32 First = 0; First + 2 < Part.Indices.Num(); First += 3)
+		{
+			const uint32 Raw[3] = { Part.Indices[First], Part.Indices[First + 1], Part.Indices[First + 2] };
+			if (Raw[0] >= static_cast<uint32>(NumVertices) || Raw[1] >= static_cast<uint32>(NumVertices) || Raw[2] >= static_cast<uint32>(NumVertices))
+			{
+				continue;
+			}
+			FVector3f Placed[3];
+			for (int32 Corner = 0; Corner < 3; ++Corner)
+			{
+				Placed[Corner] = FVector3f(Part.ToComponent.TransformPosition(FVector(Part.Positions[static_cast<int32>(Raw[Corner])])));
+			}
+			if (FVector3f::CrossProduct(Placed[1] - Placed[0], Placed[2] - Placed[0]).SizeSquared() <= UE_SMALL_NUMBER)
+			{
+				continue;
+			}
+			for (int32 Corner = 0; Corner < 3; ++Corner)
+			{
+				int32& Index = Remap[static_cast<int32>(Raw[Corner])];
+				if (Index == INDEX_NONE)
+				{
+					Index = Out->Positions.Add(Placed[Corner]);
+				}
+				Out->Indices.Add(Index);
+			}
 		}
 	}
 	if (Out->Indices.Num() == 0)
