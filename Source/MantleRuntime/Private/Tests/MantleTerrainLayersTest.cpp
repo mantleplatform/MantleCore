@@ -240,7 +240,7 @@ bool FMantleTerrainMaterialReloadTest::RunTest(const FString& Parameters)
 		AddInfo(TEXT("MI_MantleTerrain is not in this project's content; nothing to reload"));
 		return true;
 	}
-	TestEqual(TEXT("the first terrain is drawn with MI_MantleTerrain"), First->GetPathName(), FString(TEXT("/Game/Mantle/Materials/MI_MantleTerrain")));
+	TestEqual(TEXT("the first terrain is drawn with MI_MantleTerrain"), First->GetPathName(), FString(FMantleTerrainBuilder::MaterialPath));
 
 	// What a cooked client does when nothing holds it: an editor keeps loaded assets standalone, so that is cleared first.
 	TWeakObjectPtr<const UMaterialInterface> Loaded(First);
