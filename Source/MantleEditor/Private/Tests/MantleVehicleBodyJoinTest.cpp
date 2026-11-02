@@ -411,12 +411,17 @@ bool FMantleVehicleBodyJoinLightMilitaryTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("with no material of its own an instance made while the Blueprint ran"), !WholeMaterials.ContainsByPredicate([](const FSkeletalMaterial& Slot)
 			{ return Slot.MaterialInterface && Slot.MaterialInterface->GetOutermost() == GetTransientPackage(); }));
 		const FMantleVehicleLightGuess Guess = FMantleVehicleLights::Find(Whole, WholeMaterials, false);
+		for (int32 Slot = 0; Slot < WholeMaterials.Num(); ++Slot)
+		{
+			AddInfo(FString::Printf(TEXT("slot %d %s: %s"), Slot, *WholeMaterials[Slot].MaterialSlotName.ToString(), WholeMaterials[Slot].MaterialInterface ? *WholeMaterials[Slot].MaterialInterface->GetName() : TEXT("none")));
+		}
 		TestFalse(TEXT("the bare body finds no light"), BareGuess.FoundAny());
 		TestTrue(TEXT("the joined body finds its lights"), Guess.FoundAny());
 		int32 Kinds = 0;
 		for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
 		{
 			Kinds += (Guess.Triangles[Kind].Num() > 0 || Guess.WholeSlots[Kind].Num() > 0) ? 1 : 0;
+			AddInfo(FString::Printf(TEXT("light kind %s: %d triangles, %d whole slots"), FMantleVehicleLights::Key(static_cast<EMantleLightKind>(Kind)), Guess.Triangles[Kind].Num(), Guess.WholeSlots[Kind].Num()));
 		}
 		TestTrue(*FString::Printf(TEXT("at least the head and rear lights (%d kinds)"), Kinds), Kinds >= 2);
 	}
