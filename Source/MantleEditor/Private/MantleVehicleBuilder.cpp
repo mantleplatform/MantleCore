@@ -1591,8 +1591,10 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 			return Out;
 		}
 	}
-	// A model with more triangles than a published vehicle may have is reduced for the creator (the model they made is not touched), and told so. The materials are
-	// split after, so the pieces that ride along are already within the limit too.
+	// The whole car is held to the vehicle's triangle limit, near: the body and every part it will carry together (tires, doors, seats and the rest are all in the model
+	// here), so a model over it is reduced for the creator as one (the model they made is not touched), and told so. The body's materials are split into parts after, the
+	// triangles unchanged, so the body and its parts together are within the limit too. A far-away version of each is made on top of this and adds nothing near.
+	bool bReductionFailed = false;
 	{
 		FMantleVehicleBodyReduceResult Reduced;
 		const int32 Limit = FMantleVehicleLimits::MaxTriangles;
@@ -1601,12 +1603,13 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 			if (FMantleVehicleBodyReduce::ReduceToFit(Skinned.Body, Skinned.Extras, Limit, Reduced))
 			{
 				Out.bBodyReduced = Reduced.bReduced;
-				Out.Notes.Add(FString::Printf(TEXT("Your model has %d triangles, and a published vehicle may have %d, so Mantle made a lighter copy for the vehicle: %d triangles, with every material, part and wheel where they were. Your own model was not changed and there is nothing for you to do."),
-					Reduced.Before, Limit, Reduced.After));
+				Out.Notes.Add(FString::Printf(TEXT("Mantle simplified your car from %d to %d triangles so it runs well on every server. Every material, part and wheel is where it was, your lights and paint still work, and your own model was not changed. There is nothing for you to do."),
+					Reduced.Before, Reduced.After));
 			}
 			else
 			{
-				Out.Notes.Add(FString::Printf(TEXT("Your model has %d triangles, and a published vehicle may have %d. Mantle tried to make a lighter copy for the vehicle, but %s. Use a lower-detail version of the model, then build again."),
+				bReductionFailed = true;
+				Out.Notes.Add(FString::Printf(TEXT("Your model has %d triangles, and a published vehicle may have %d. Mantle tried to simplify it for you, but %s. Use a lower-detail version of the model, then build again."),
 					Reduced.Before, Limit, *Reduced.Problem));
 			}
 		}
@@ -1614,6 +1617,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	// A model that draws more materials than a published body may: the body keeps the ones with the most triangles and the rest are split off as parts of the
 	// vehicle, each triangle with its material, its place and its bone, so the vehicle looks as the model does. The creator is told what was done, in plain words.
 	TArray<FMantleVehicleSourcePart> SplitParts;
+	int32 SplitPartTriangles = 0;
 	FMantleSkinnedMesh PictureBody;
 	TArray<FSkeletalMaterial> PictureMaterials;
 	FMantleVehicleBodyExtras PictureExtras;
@@ -1655,6 +1659,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 				{
 					break;
 				}
+				SplitPartTriangles += Piece.NumTriangles();
 				FMantleVehicleSourcePart& Part = SplitParts.AddDefaulted_GetRef();
 				Part.Mesh = PieceMesh;
 				Part.Bone = Piece.Bone;
@@ -1674,8 +1679,20 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 			Skinned.Materials = PictureMaterials;
 			Skinned.Extras = PictureExtras;
 			SplitParts.Reset();
+			SplitPartTriangles = 0;
 			Out.Notes.Add(FString::Printf(TEXT("Your model draws %d different materials and a published vehicle's body may have %d. Mantle tried to carry the extra ones as separate parts, but %s. Merge some of its materials in your 3D tool, then build again."),
 				ModelMaterials, FMantleVehicleLimits::MaxSections, *SplitProblem));
+		}
+	}
+	// What the car draws near, body and parts together: the number the limit is about. The reduction above brings it within the limit when the model can be reduced.
+	{
+		const int32 BodyTriangles = FMantleVehicleBodyReduce::CountTriangles(Skinned.Body);
+		UE_LOG(LogTemp, Log, TEXT("MANTLE_VEHICLE_CAR_TRIANGLES %s body=%d parts=%d total=%d limit=%d"), *Name, BodyTriangles, SplitPartTriangles,
+			BodyTriangles + SplitPartTriangles, FMantleVehicleLimits::MaxTriangles);
+		if (BodyTriangles + SplitPartTriangles > FMantleVehicleLimits::MaxTriangles && !bReductionFailed)
+		{
+			Out.Notes.Add(FString::Printf(TEXT("Your car draws %d triangles up close and a published vehicle may have %d. Use a lower-detail version of the model, then build again."),
+				BodyTriangles + SplitPartTriangles, FMantleVehicleLimits::MaxTriangles));
 		}
 	}
 	// The library card's picture shows the whole model, not the body without its split-off parts.

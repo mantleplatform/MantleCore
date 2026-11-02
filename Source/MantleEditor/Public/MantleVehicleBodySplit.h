@@ -85,7 +85,9 @@ struct MANTLEEDITOR_API FMantleVehicleBodySplit
 
 	/**
 	 * Makes Piece a saved static mesh asset PieceName under PackagePath (a throwaway /Temp package is not written to disk), writing into one already there so a build
-	 * again keeps the same asset. Null, with the reason in OutError as a clause, when it cannot be built or saved. Game thread.
+	 * again keeps the same asset. The mesh carries far-away versions of itself (LOD1 and LOD2 at half and a quarter of its triangles, switching at the skeletal LODs'
+	 * screen sizes), which upload as the static mesh's own LODs; a piece too small to gain from them has one LOD. Null, with the reason in OutError as a clause, when it
+	 * cannot be built or saved. Game thread.
 	 */
 	static UStaticMesh* MakePieceMesh(const FMantleVehicleBodyPiece& Piece, const FString& PackagePath, const FString& PieceName, FString& OutError);
 };
