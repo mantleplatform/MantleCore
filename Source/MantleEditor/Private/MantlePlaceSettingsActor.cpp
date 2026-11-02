@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceSettingsActor.h"
 #include "MantleEnvironmentOverride.h"
+#include "MantlePlaceLimits.h"
 #include "MantlePlaceTypes.h"
 
 #include "Engine/World.h"
@@ -93,6 +94,7 @@ void AMantlePlaceSettingsActor::ApplyTo(UWorld* World, FMantleSettings& Out)
 		Out.bAllowPrivateServers = Settings->bAllowPrivateServers;
 		Out.bCarjacking = Settings->bCarjacking;
 		Out.Environment = Settings->MakeEnvironmentSettings();
+		Out.Placing = Settings->MakePlacingSettings();
 	}
 }
 
@@ -156,6 +158,25 @@ FMantleEnvironmentSettings AMantlePlaceSettingsActor::MakeEnvironmentSettings() 
 	return Out;
 }
 
+FMantlePlacingSettings AMantlePlaceSettingsActor::MakePlacingSettings() const
+{
+	// The defaults are the schema's, so the exporter writes the block only when the creator changed something.
+	FMantlePlacingSettings Out;
+	Out.Persistence = static_cast<EMantlePlacingPersistence>(PlacedPieces);
+	if (bSetMaxPlacedPieces)
+	{
+		Out.MaxPieces = FMath::Clamp(MaxPlacedPieces, 1, FMantlePlaceLimits::MaxPlacedPieces);
+	}
+	return Out;
+}
+
+void AMantlePlaceSettingsActor::SetPlacingFrom(const FMantlePlacingSettings& Placing)
+{
+	PlacedPieces = static_cast<EMantlePlacePersistence>(Placing.Persistence);
+	bSetMaxPlacedPieces = Placing.MaxPieces != FMantlePlaceLimits::MaxPlacedPieces;
+	MaxPlacedPieces = Placing.MaxPieces;
+}
+
 void AMantlePlaceSettingsActor::SetEnvironmentFrom(const FMantleEnvironmentSettings& Environment)
 {
 	bSetClockTime = Environment.ClockTime.IsSet();
@@ -206,8 +227,13 @@ void AMantlePlaceSettingsActor::SetFrom(UWorld* World, const FMantleSettings& Se
 		Actor->bAllowPrivateServers = Settings.bAllowPrivateServers;
 		Actor->bCarjacking = Settings.bCarjacking;
 		Actor->SetEnvironmentFrom(Settings.Environment);
+		Actor->SetPlacingFrom(Settings.Placing);
 	}
 }
+
+// EMantlePlacePersistence mirrors the runtime's EMantlePlacingPersistence member for member.
+static_assert(static_cast<int32>(EMantlePlacePersistence::Server) == static_cast<int32>(EMantlePlacingPersistence::Server),
+	"EMantlePlacePersistence must list EMantlePlacingPersistence's members in the same order");
 
 // EMantlePlaceMaturity and EMantlePlacePlatform mirror the runtime's EMantleMaturity and
 // EMantlePlatform member for member, so a cast maps one onto the other.

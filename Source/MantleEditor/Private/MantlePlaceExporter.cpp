@@ -5722,6 +5722,22 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 	{
 		Writer->WriteValue(TEXT("carjacking"), false);
 	}
+	// Placing mode's settings (#184), only when the creator changed one, and only the keys changed: persistence
+	// when it is server, maxPieces when it is below the most a place may have.
+	const FMantlePlacingSettings& Placing = Place.Settings.Placing;
+	if (Placing.Persistence != EMantlePlacingPersistence::None || Placing.MaxPieces != FMantlePlaceLimits::MaxPlacedPieces)
+	{
+		Writer->WriteObjectStart(TEXT("placing"));
+		if (Placing.Persistence == EMantlePlacingPersistence::Server)
+		{
+			Writer->WriteValue(TEXT("persistence"), TEXT("server"));
+		}
+		if (Placing.MaxPieces != FMantlePlaceLimits::MaxPlacedPieces)
+		{
+			Writer->WriteValue(TEXT("maxPieces"), Placing.MaxPieces);
+		}
+		Writer->WriteObjectEnd();
+	}
 	// The place's default look (#532), only when it sets something, and only the keys it sets:
 	// clients from before it refuse the key, so a place that keeps the default look still reaches them.
 	const FMantleEnvironmentSettings& Environment = Place.Settings.Environment;

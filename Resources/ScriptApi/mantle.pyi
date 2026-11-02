@@ -1042,7 +1042,7 @@ class _PlacingService:
         """The pieces saved by an earlier run of this place are back (the place file's settings.placing.persistence is 'server'). Raised once, before players join, with how many. Their attributes came back too, so rebuild your own tables here."""
         ...
     def place_as_player(self, player: Player, item: str, position: Vector3, rotation: Optional[Vector3] = ..., /) -> str:
-        """Places a piece for a player, as if they did it with placing mode: the rate limit (5 a second), reach from their eyes, overlap, the caps and OnPiecePlacing all apply. The player does not need Start, but item must be a place StaticMesh asset id or an entity id of the place. position is where the piece's origin goes and rotation its pitch, yaw and roll in degrees; no snapping. Returns 'applied' or why not: 'no_player', 'unknown_item', 'rate', 'out_of_reach', 'overlaps', 'cap', 'canceled' or the text OnPiecePlacing gave."""
+        """Places a piece for a player, as if they did it with placing mode: the rate limit (5 a second), reach from their eyes, overlap, the caps and OnPiecePlacing all apply. The player does not need Start, but item must be a place StaticMesh asset id or an entity id of the place. position is where the piece's origin goes and rotation its pitch, yaw and roll in degrees; no snapping. Returns 'applied' or why not: 'no_player', 'unknown_item', 'rate', 'out_of_reach', 'overlaps', 'cap', 'canceled', 'failed' (the piece could not be made), a 'still downloading' message while the item's mesh loads, or the text OnPiecePlacing gave."""
         ...
     def rotate(self, steps: float, /) -> None:
         """Turns the ghost by steps of RotationStep (negative turns the other way)."""
