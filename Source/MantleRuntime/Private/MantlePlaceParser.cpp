@@ -2983,6 +2983,194 @@ namespace
 		Out = Zone;
 	}
 
+	/** settings.placing (GhzGarage/mantle#184): persistence none or server, maxPieces a whole number 1 to FMantlePlaceLimits::MaxPlacedPieces. */
+	void ReadPlacingSettings(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Settings, const FString& Path, FMantlePlacingSettings& Out)
+	{
+		if (!Settings->HasField(TEXT("placing")))
+		{
+			return;
+		}
+		const FString PlacingPath = Join(Path, TEXT("placing"));
+		const TSharedPtr<FJsonObject>* Placing = nullptr;
+		if (!Settings->TryGetObjectField(TEXT("placing"), Placing))
+		{
+			Ctx.Fail(PlacingPath, TEXT("must be an object"));
+			return;
+		}
+		RequireNoUnknownKeys(Ctx, *Placing, { TEXT("persistence"), TEXT("maxPieces") }, PlacingPath);
+		int32 Persistence = 0;
+		OptionalChoice(Ctx, *Placing, TEXT("persistence"), PlacingPath, { TEXT("none"), TEXT("server") }, Persistence);
+		Out.Persistence = Persistence == 1 ? EMantlePlacingPersistence::Server : EMantlePlacingPersistence::None;
+		// Typed, so a string such as "100" is refused rather than read as a number.
+		if (const TSharedPtr<FJsonValue> MaxPieces = (*Placing)->TryGetField(TEXT("maxPieces")))
+		{
+			const double Value = MaxPieces->Type == EJson::Number ? MaxPieces->AsNumber() : -1.0;
+			if (MaxPieces->Type != EJson::Number || Value != FMath::FloorToDouble(Value) || Value < 1.0 || Value > FMantlePlaceLimits::MaxPlacedPieces)
+			{
+				Ctx.Fail(Join(PlacingPath, TEXT("maxPieces")), FString::Printf(TEXT("must be a whole number from 1 to %d"), FMantlePlaceLimits::MaxPlacedPieces));
+			}
+			else
+			{
+				Out.MaxPieces = static_cast<int32>(Value);
+			}
+		}
+	}
+
+	/** A socket's name or kind (#184): [A-Za-z0-9_], 1 to FMantlePlaceLimits::MaxMeshSocketNameLength characters. */
+	bool IsSocketIdentifier(const FString& Value)
+	{
+		if (Value.IsEmpty() || Value.Len() > FMantlePlaceLimits::MaxMeshSocketNameLength)
+		{
+			return false;
+		}
+		for (const TCHAR Char : Value)
+		{
+			if (Char > 127 || !(FChar::IsAlnum(Char) || Char == TEXT('_')))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** A socket's required string key that must be an identifier (name, kind); the failure is at the key. */
+	bool ReadSocketIdentifier(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Socket, const TCHAR* Key, const FString& Path, FString& Out)
+	{
+		if (!RequireString(Ctx, Socket, Key, Path, Out))
+		{
+			return false;
+		}
+		if (!IsSocketIdentifier(Out))
+		{
+			Ctx.Fail(Join(Path, Key), FString::Printf(TEXT("'%s' must be 1 to %d letters, digits or underscores"), *Out, FMantlePlaceLimits::MaxMeshSocketNameLength));
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * A socket's three-number array (position, rotation): finite numbers, and with Limit above zero each within it. Required
+	 * here; the caller checks HasField first for an optional key.
+	 */
+	bool ReadSocketTriple(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Socket, const TCHAR* Key, const FString& Path, double Limit, double (&Out)[3])
+	{
+		const FString KeyPath = Join(Path, Key);
+		const TArray<TSharedPtr<FJsonValue>>* Array = nullptr;
+		if (!Socket->TryGetArrayField(Key, Array))
+		{
+			Ctx.Fail(KeyPath, TEXT("required array of 3 numbers is missing or not an array"));
+			return false;
+		}
+		if (Array->Num() != 3)
+		{
+			Ctx.Fail(KeyPath, FString::Printf(TEXT("expected 3 numbers, got %d"), Array->Num()));
+			return false;
+		}
+		bool bOk = true;
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			const TSharedPtr<FJsonValue>& Item = (*Array)[Axis];
+			if (!Item.IsValid() || Item->Type != EJson::Number || !FMath::IsFinite(Item->AsNumber()))
+			{
+				Ctx.Fail(Index(KeyPath, Axis), TEXT("expected a finite number"));
+				bOk = false;
+				continue;
+			}
+			Out[Axis] = Item->AsNumber();
+			if (Limit > 0.0 && FMath::Abs(Out[Axis]) > Limit)
+			{
+				RangeCheck(Ctx, Out[Axis], -Limit, Limit, Index(KeyPath, Axis));
+				bOk = false;
+			}
+		}
+		return bOk;
+	}
+
+	/**
+	 * A StaticMesh asset's sockets (GhzGarage/mantle#184): at most FMantlePlaceLimits::MaxMeshSockets, names unique within the
+	 * asset, each one's failures reported at its own key, as validate.py check_mesh_sockets and the backend do.
+	 */
+	void ReadMeshSockets(FParseContext& Ctx, const TSharedPtr<FJsonObject>& AssetObj, const FString& Path, TArray<FMantlePlaceSocket>& Out)
+	{
+		const FString SocketsPath = Join(Path, TEXT("sockets"));
+		const TArray<TSharedPtr<FJsonValue>>* List = nullptr;
+		if (!AssetObj->TryGetArrayField(TEXT("sockets"), List))
+		{
+			Ctx.Fail(SocketsPath, TEXT("must be an array"));
+			return;
+		}
+		if (List->Num() > FMantlePlaceLimits::MaxMeshSockets)
+		{
+			Ctx.Fail(SocketsPath, FString::Printf(TEXT("has %d sockets; an asset may have at most %d"), List->Num(), FMantlePlaceLimits::MaxMeshSockets));
+		}
+		TSet<FString> Names;
+		for (int32 I = 0; I < List->Num(); ++I)
+		{
+			const FString SocketPath = Index(SocketsPath, I);
+			const TSharedPtr<FJsonObject>* SocketObj = nullptr;
+			if (!(*List)[I].IsValid() || !(*List)[I]->TryGetObject(SocketObj))
+			{
+				Ctx.Fail(SocketPath, TEXT("expected an object"));
+				continue;
+			}
+			RequireNoUnknownKeys(Ctx, *SocketObj, { TEXT("name"), TEXT("kind"), TEXT("position"), TEXT("rotation"), TEXT("accepts") }, SocketPath);
+
+			FMantlePlaceSocket Socket;
+			if (ReadSocketIdentifier(Ctx, *SocketObj, TEXT("name"), SocketPath, Socket.Name))
+			{
+				bool bAlready = false;
+				Names.Add(Socket.Name, &bAlready);
+				if (bAlready)
+				{
+					Ctx.Fail(Join(SocketPath, TEXT("name")), FString::Printf(TEXT("'%s' names an earlier socket of this asset too"), *Socket.Name));
+				}
+			}
+			ReadSocketIdentifier(Ctx, *SocketObj, TEXT("kind"), SocketPath, Socket.Kind);
+
+			double Position[3] = { 0.0, 0.0, 0.0 };
+			if (ReadSocketTriple(Ctx, *SocketObj, TEXT("position"), SocketPath, FMantlePlaceLimits::MaxMeshSocketPosition, Position))
+			{
+				Socket.Position = FVector(Position[0], Position[1], Position[2]);
+			}
+			// [pitch, yaw, roll] in degrees, as a transform's rotation is.
+			if ((*SocketObj)->HasField(TEXT("rotation")))
+			{
+				double Rotation[3] = { 0.0, 0.0, 0.0 };
+				if (ReadSocketTriple(Ctx, *SocketObj, TEXT("rotation"), SocketPath, 0.0, Rotation))
+				{
+					Socket.Rotation = FRotator(Rotation[0], Rotation[1], Rotation[2]);
+				}
+			}
+			if ((*SocketObj)->HasField(TEXT("accepts")))
+			{
+				const FString AcceptsPath = Join(SocketPath, TEXT("accepts"));
+				const TArray<TSharedPtr<FJsonValue>>* Accepts = nullptr;
+				if (!(*SocketObj)->TryGetArrayField(TEXT("accepts"), Accepts))
+				{
+					Ctx.Fail(AcceptsPath, TEXT("must be an array"));
+				}
+				else
+				{
+					if (Accepts->Num() > FMantlePlaceLimits::MaxMeshSocketAccepts)
+					{
+						Ctx.Fail(AcceptsPath, FString::Printf(TEXT("has %d kinds; a socket accepts at most %d"), Accepts->Num(), FMantlePlaceLimits::MaxMeshSocketAccepts));
+					}
+					for (int32 K = 0; K < Accepts->Num(); ++K)
+					{
+						FString Accepted;
+						if (!(*Accepts)[K].IsValid() || (*Accepts)[K]->Type != EJson::String || !(*Accepts)[K]->TryGetString(Accepted) || !IsSocketIdentifier(Accepted))
+						{
+							Ctx.Fail(Index(AcceptsPath, K), FString::Printf(TEXT("must be a socket kind: 1 to %d letters, digits or underscores"), FMantlePlaceLimits::MaxMeshSocketNameLength));
+							continue;
+						}
+						Socket.Accepts.Add(MoveTemp(Accepted));
+					}
+				}
+			}
+			Out.Add(MoveTemp(Socket));
+		}
+	}
+
 	// An entity's interactable block (the schema's interactable). Colors are linear RGB arrays like every other
 	// color of the place; entity references are checked for existence once every entity is read (ParseFromString).
 
@@ -4074,7 +4262,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			{ TEXT("maxPlayers"), TEXT("gravity"), TEXT("skybox"), TEXT("ambientLight"),
 			  TEXT("respawnMode"), TEXT("streamingDistance"), TEXT("allowCommunityServers"),
 			  TEXT("allowPrivateServers"), TEXT("avatarHeight"), TEXT("environment"), TEXT("carjacking"), TEXT("water"),
-			  TEXT("maxCarriedTools"), TEXT("allowToolSwap"), TEXT("killZ"), TEXT("boundary") },
+			  TEXT("maxCarriedTools"), TEXT("allowToolSwap"), TEXT("killZ"), TEXT("boundary"), TEXT("placing") },
 			TEXT("/settings"));
 
 		double MaxPlayers = Place.Settings.MaxPlayers;
@@ -4174,6 +4362,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		}
 		ReadEnvironmentSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Environment);
 		ReadWaterZone(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Water);
+		ReadPlacingSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Placing);
 
 		// Deprecated: still accepted, so existing place files parse, but nothing reads it
 		// at runtime and the exporter no longer writes it.
@@ -4330,7 +4519,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 				continue;
 			}
 
-			RequireNoUnknownKeys(Ctx, *Obj, { TEXT("id"), TEXT("kind"), TEXT("hash"), TEXT("bytes"), TEXT("lumen"), TEXT("engine") }, Path);
+			RequireNoUnknownKeys(Ctx, *Obj, { TEXT("id"), TEXT("kind"), TEXT("hash"), TEXT("bytes"), TEXT("lumen"), TEXT("engine"), TEXT("sockets") }, Path);
 
 			FMantleAssetRef Asset;
 			RequireString(Ctx, *Obj, TEXT("id"), Path, Asset.Id);
@@ -4378,6 +4567,19 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			else if (Asset.Kind == EMantleAssetKind::Lumen)
 			{
 				Ctx.Fail(Join(Path, TEXT("engine")), TEXT("a Lumen entry must say the engine it was baked by"));
+			}
+
+			// #184: a StaticMesh may carry snap sockets for placing mode.
+			if ((*Obj)->HasField(TEXT("sockets")))
+			{
+				if (Asset.Kind != EMantleAssetKind::StaticMesh)
+				{
+					Ctx.Fail(Join(Path, TEXT("sockets")), TEXT("only a StaticMesh may have sockets"));
+				}
+				else
+				{
+					ReadMeshSockets(Ctx, *Obj, Path, Asset.Sockets);
+				}
 			}
 
 			Place.Assets.Add(MoveTemp(Asset));

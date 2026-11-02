@@ -53,6 +53,7 @@ class Entity:
     mass: float
     name: str
     physics_material: Optional[str]
+    placed_by: Optional[str]
     position: Vector3
     rotation: Vector3
     scale: Vector3
@@ -1016,6 +1017,56 @@ class _NoiseService:
         ...
 
 Noise: _NoiseService
+
+class _PlacingService:
+    """Placing mode: a ghost that follows a player's camera, snapping, a server check and cancellable events, switched on by a script (server: Start, Stop; client: the controls). Nothing is on unless a script calls Start. Costs, owners, build zones and health are the place's own scripts."""
+    def confirm(self) -> str:
+        """Places the ghost's piece: sends the request to the server, which checks it again. Returns 'sent', or the reason the ghost is red ('out_of_reach', 'overlaps', 'cap', a hint from SetItemHint) and nothing is sent."""
+        ...
+    def get_ghost(self) -> Optional[dict[str, Any]]:
+        """The ghost now, or nil while placing mode is off for this player. Valid says whether Confirm would send; Reason says why not."""
+        ...
+    def on_ghost_changed(self, handler: Callable[..., Any], /) -> Connection:
+        """The ghost's item, place, rotation, validity or reason changed (at most once a frame). Draw your own hotbar or cost tooltip from it."""
+        ...
+    def on_left(self, handler: Callable[..., Any], /) -> Connection:
+        """A player left placing mode with the default keys (right mouse or Escape). Their mode is off now; call Start again to bring it back."""
+        ...
+    def on_piece_placed(self, handler: Callable[..., Any], /) -> Connection:
+        """A piece went in. Piece is an ordinary Entity: give it attributes, tags and health, move it or Destroy it. Piece.PlacedBy is the placer's UserId."""
+        ...
+    def on_piece_placing(self, handler: Callable[..., Any], /) -> Connection:
+        """Called before a player's piece goes in, on the spot (the handler may not wait). Return false to refuse it, and as a second value the reason the player sees (Luau: return false, 'Not enough wood'; any language: return the reason text on its own). The player's ghost shows it. Raised for placing by keys and for PlaceAsPlayer, after the engine's own checks."""
+        ...
+    def on_pieces_loaded(self, handler: Callable[..., Any], /) -> Connection:
+        """The pieces saved by an earlier run of this place are back (the place file's settings.placing.persistence is 'server'). Raised once, before players join, with how many. Their attributes came back too, so rebuild your own tables here."""
+        ...
+    def place_as_player(self, player: Player, item: str, position: Vector3, rotation: Optional[Vector3] = ..., /) -> str:
+        """Places a piece for a player, as if they did it with placing mode: the rate limit (5 a second), reach from their eyes, overlap, the caps and OnPiecePlacing all apply. The player does not need Start, but item must be a place StaticMesh asset id or an entity id of the place. position is where the piece's origin goes and rotation its pitch, yaw and roll in degrees; no snapping. Returns 'applied' or why not: 'no_player', 'unknown_item', 'rate', 'out_of_reach', 'overlaps', 'cap', 'canceled' or the text OnPiecePlacing gave."""
+        ...
+    def rotate(self, steps: float, /) -> None:
+        """Turns the ghost by steps of RotationStep (negative turns the other way)."""
+        ...
+    def select_item(self, index: float, /) -> None:
+        """Picks the ghost's item: its place in the Start list, from 1. For Keys = 'script' (the wheel does it with the default keys)."""
+        ...
+    def set_item_hint(self, player: Player, item: str, hint: Optional[str] = ..., /) -> None:
+        """Tells a player's ghost that item is not allowed right now, and why ('Need 10 wood'): it shows red with this text before they click, which the player's own machine cannot know. nil clears it. At most 120 characters. The server's check still decides."""
+        ...
+    def set_snap(self, enabled: bool, /) -> None:
+        """Turns socket snapping on or off for the ghost (G does it with the default keys)."""
+        ...
+    def set_sockets(self, item: str, sockets: list[dict[str, Any]], /) -> None:
+        """Gives an item its sockets, replacing the ones its mesh has in the place file (an empty list removes them). A socket is a named point on a piece: Position in cm and Rotation in degrees in the mesh's own space (a template's scale stretches it with the mesh, so a cube's edge is at 50), its facing the forward (+X) axis, a Kind ('wall_bottom') and the kinds it Accepts. A piece snaps where a socket meets one of another piece whose kind it accepts, or whose Accepts lists its kind. Up to 32 sockets, names and kinds of letters, digits and _. Use it for a template entity or a piece made at runtime, which have no mesh sockets."""
+        ...
+    def start(self, player: Player, options: dict[str, Any], /) -> None:
+        """Turns placing mode on for one player (a second Start replaces the first). Items lists what they can place, 1 to 64 entries: ids of the place's StaticMesh assets or of entities of the place used as templates (cloned as they are, so keep one out of players' sight; a physics entity or an NPC is refused). Grid (cm, none by default) snaps a piece's position, RotationStep (degrees, 90) is one rotate press, Snap (true) joins pieces at their sockets, Reach (cm from the eyes, 800, at most 2,000) is how far they can place, MaxPieces (200, at most 2,000) is the most pieces this player may have in the place, SnapRadius (cm, 60; 1 to 500) is how close a socket must be held to another to join it. Names (optional) maps an item to the name the hint line shows for it; without one the line shows the id made readable (ent_tpl_floor is Floor). Keys is 'default' (left mouse places, the wheel picks the item, R and Shift+R rotate, G toggles snap, right mouse leaves; on a gamepad the right trigger places, D-pad left and right pick the item, RB and LB rotate, D-pad up toggles snap, B leaves) or 'script' (no keys: the place's client scripts drive the mode with SelectItem, Rotate, SetSnap and Confirm). The ghost follows the camera on the player's machine; nothing goes to the server until they place. OnPiecePlacing can refuse."""
+        ...
+    def stop(self, player: Player, /) -> None:
+        """Turns placing mode off for one player and removes their ghost. Pieces they placed stay."""
+        ...
+
+Placing: _PlacingService
 
 class _PlayersService:
     """Everyone in the session."""

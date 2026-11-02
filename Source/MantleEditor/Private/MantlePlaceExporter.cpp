@@ -3,6 +3,7 @@
 #include "MantleActorDecompose.h"
 #include "MantleMirrorBake.h"
 #include "MantleMeshLumenData.h"
+#include "MantleSnapSockets.h"
 #include "MantleApiManifest.h"
 #include "MantleAssetLibrary.h"
 #include "MantleCableBake.h"
@@ -5437,6 +5438,20 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 					Ref.Hash = ProvisionalHash(FSoftObjectPath(), Ref.Bytes);
 				}
 			}
+			// Placing mode (mantleplatform/mantle#184): the mesh's Snap_<kind> sockets travel with it, so the server reads them without loading the mesh.
+			if (Kind == EMantleAssetKind::StaticMesh)
+			{
+				const FSoftObjectPath* SourcePath = Uploads.SourceOf.Find(Key);
+				if (const UStaticMesh* SourceMesh = SourcePath ? Cast<UStaticMesh>(SourcePath->ResolveObject()) : nullptr)
+				{
+					TArray<FString> Problems;
+					MantleSnapSockets::Read(*SourceMesh, Ref.Sockets, Problems);
+					for (const FString& Problem : Problems)
+					{
+						Result.Errors.Add(FMantleParseError{ FString::Printf(TEXT("assets/%s/sockets"), *SourceMesh->GetName()), Problem });
+					}
+				}
+			}
 			if (!Listed.Contains(Ref.Id))
 			{
 				Listed.Add(Ref.Id);
@@ -5882,6 +5897,38 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 		if (!Asset.Engine.IsEmpty())
 		{
 			Writer->WriteValue(TEXT("engine"), Asset.Engine);
+		}
+		// Placing mode (mantleplatform/mantle#184): a mesh's snap sockets.
+		if (!Asset.Sockets.IsEmpty())
+		{
+			Writer->WriteArrayStart(TEXT("sockets"));
+			for (const FMantlePlaceSocket& Socket : Asset.Sockets)
+			{
+				Writer->WriteObjectStart();
+				Writer->WriteValue(TEXT("name"), Socket.Name);
+				Writer->WriteValue(TEXT("kind"), Socket.Kind);
+				Writer->WriteArrayStart(TEXT("position"));
+				Writer->WriteValue(Socket.Position.X);
+				Writer->WriteValue(Socket.Position.Y);
+				Writer->WriteValue(Socket.Position.Z);
+				Writer->WriteArrayEnd();
+				Writer->WriteArrayStart(TEXT("rotation"));
+				Writer->WriteValue(Socket.Rotation.Pitch);
+				Writer->WriteValue(Socket.Rotation.Yaw);
+				Writer->WriteValue(Socket.Rotation.Roll);
+				Writer->WriteArrayEnd();
+				if (!Socket.Accepts.IsEmpty())
+				{
+					Writer->WriteArrayStart(TEXT("accepts"));
+					for (const FString& Accepted : Socket.Accepts)
+					{
+						Writer->WriteValue(Accepted);
+					}
+					Writer->WriteArrayEnd();
+				}
+				Writer->WriteObjectEnd();
+			}
+			Writer->WriteArrayEnd();
 		}
 		Writer->WriteObjectEnd();
 	}

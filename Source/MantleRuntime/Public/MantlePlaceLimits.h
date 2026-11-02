@@ -182,6 +182,19 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** Distinct grass maps (textures) across one Terrain's grass[] (#628). Cross-entity: validate.py and the backend state it too. */
 	static constexpr int32 MaxTerrainGrassMaps = 4;
 
+	/** Placed pieces a place may hold at once, and so the most settings.placing.maxPieces may say (#184). The schema and the backend state it too. */
+	static constexpr int32 MaxPlacedPieces = 2000;
+
+	/** A StaticMesh asset's snap sockets (#184): at most this many, each with at most MaxMeshSocketAccepts accepted kinds. */
+	static constexpr int32 MaxMeshSockets = 32;
+	static constexpr int32 MaxMeshSocketAccepts = 8;
+
+	/** A socket's name and kinds (#184): [A-Za-z0-9_], 1 to this many characters. */
+	static constexpr int32 MaxMeshSocketNameLength = 32;
+
+	/** A socket's position (#184): each axis within this many cm of the mesh's origin. */
+	static constexpr double MaxMeshSocketPosition = 100000.0;
+
 	/** VoxelWorld entities in one place (#168), at most one of each look. Cross-entity: validate.py and the backend state it too. */
 	static constexpr int32 MaxVoxelWorldsPerPlace = 2;
 
