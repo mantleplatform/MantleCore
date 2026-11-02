@@ -35,6 +35,14 @@ struct MANTLEEDITOR_API FMantleVehicleAttachedMesh
 	FString Label;
 };
 
+/** A static mesh found riding a body, placed: the bone it rides (the root for the body itself) and where it sits in the body's component space. */
+struct MANTLEEDITOR_API FMantleVehiclePlacedMesh
+{
+	FMantleVehicleAttachedMesh Found;
+	int32 Bone = 0;
+	FTransform Placement;
+};
+
 /** A ChaosVehicles movement component's wheel setup: the bone it names and its wheel class's sizes (0 where it has none). */
 struct MANTLEEDITOR_API FMantleVehicleWheelSetup
 {
@@ -226,6 +234,14 @@ public:
 	 */
 	static void AddParts(const USkeletalMesh& Mesh, TConstArrayView<FMantleVehicleAttachedMesh> Attached, UMantleVehicleSource& Source,
 		TArray<FString>& OutNotes, const TMap<FName, double>& MeasuredRadii = TMap<FName, double>());
+
+	/**
+	 * Splits the meshes found riding Mesh (Around.Attached) into the pieces of the car's own body and the ones AddParts keeps as parts and tires. A car modeled as a bare
+	 * skeleton with its body, doors, seats and cargo attached to it as separate static meshes is the case: OutBody are those pieces, each placed on its bone, for the caller to
+	 * join into the body model (FMantleVehicleBodyJoin). OutRest are the meshes on a wheel (on its bone or a bone of its corner, or shaped and placed like its tire: the rules
+	 * of AddParts) and any not on a socket or bone of Mesh, in the order they were found.
+	 */
+	static void SplitBodyPieces(const USkeletalMesh& Mesh, const FMantleVehicleSurroundings& Around, TArray<FMantleVehiclePlacedMesh>& OutBody, TArray<FMantleVehicleAttachedMesh>& OutRest);
 
 	/** The material a part's slot publishes with: its override, else the mesh's own slot material (FMantlePlaceAssets::MeshSlotMaterial). */
 	static UMaterialInterface* PartSlotMaterial(const FMantleVehicleSourcePart& Part, const UStaticMesh* Mesh, int32 Slot);

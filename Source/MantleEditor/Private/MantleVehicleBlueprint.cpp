@@ -1,8 +1,11 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleBlueprint.h"
 
+#include "MantleVehicleAsset.h"
+#include "MantleVehicleBodyJoin.h"
 #include "MantleVehicleBuilder.h"
 
+#include "Animation/Skeleton.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -101,9 +104,52 @@ FMantleVehicleBlueprintModel FMantleVehicleBlueprint::Resolve(UBlueprint* Bluepr
 	if (Body)
 	{
 		const TArray<const UActorComponent*> ConstComponents(Components);
-		Out.Model = Body->GetSkeletalMeshAsset();
-		Out.Around = FMantleVehicleConverter::SurroundingsOfComponent(*Body, ConstComponents);
+		USkeletalMesh* Skeletal = Body->GetSkeletalMeshAsset();
+		Out.Model = Skeletal;
+		FMantleVehicleSurroundings Around = FMantleVehicleConverter::SurroundingsOfComponent(*Body, ConstComponents);
 		Out.Notes.Add(FString::Printf(TEXT("Used the body of %s, with the wheels and parts set up on it."), *Blueprint->GetName()));
+
+		// A body of bones and wheels with the car attached to it as static meshes (the shell, the doors, the seats, the lights on a material of their own): the pieces
+		// are joined into the body, so the picture, the paint and the lights see the whole car. Pieces on a wheel (tires, brakes) stay for the converter to use as the wheel's.
+		TArray<FMantleVehiclePlacedMesh> BodyPieces;
+		TArray<FMantleVehicleAttachedMesh> Rest;
+		FMantleVehicleConverter::SplitBodyPieces(*Skeletal, Around, BodyPieces, Rest);
+		if (BodyPieces.Num() > 0)
+		{
+			const FString Name = ObjectTools::SanitizeObjectName(Blueprint->GetName());
+			const FString PackagePath = bSave ? (Folder.IsEmpty() ? MergeFolder() / Name : Folder) : FString(TEXT("/Temp/MantleVehicleBlueprint")) / Name;
+			FString Error;
+			int32 Triangles = 0;
+			USkeletalMesh* Joined = FMantleVehicleBodyJoin::Make(*Skeletal, BodyPieces, PackagePath, Name, Error, &Triangles);
+			if (Joined)
+			{
+				FString Names;
+				for (const FMantleVehiclePlacedMesh& Piece : BodyPieces)
+				{
+					Names += (Names.IsEmpty() ? TEXT("") : TEXT(", ")) + Piece.Found.Mesh->GetName();
+				}
+				Out.Model = Joined;
+				Out.PiecesJoined = BodyPieces.Num();
+				Out.MadeAssets.Add(Joined);
+				if (USkeleton* Skeleton = Joined->GetSkeleton())
+				{
+					Out.MadeAssets.Add(Skeleton);
+				}
+				Around.Attached = MoveTemp(Rest);
+				Out.Notes.Add(FString::Printf(TEXT("%s is a skeleton of bones and wheels with the car attached to it as %d separate pieces (%s). Mantle joined them into one model (%s), each piece on the bone it rides and keeping its material, so the whole car is in the picture, the paint and the lights."),
+					*Blueprint->GetName(), BodyPieces.Num(), *Names, *Joined->GetPathName()));
+				Out.Notes.Add(TEXT("Pieces that open on their own, like a door or a tailgate, become solid parts of the body."));
+				if (Triangles > FMantleVehicleLimits::MaxTriangles)
+				{
+					Out.Notes.Add(FString::Printf(TEXT("The joined model has %d triangles; a vehicle body may have at most %d."), Triangles, FMantleVehicleLimits::MaxTriangles));
+				}
+			}
+			else
+			{
+				Out.Notes.Add(FString::Printf(TEXT("Mantle could not join the pieces attached to %s into its body (%s), so they ride along as separate parts and are not in the picture or the lights."), *Blueprint->GetName(), *Error));
+			}
+		}
+		Out.Around = Around;
 		return Out;
 	}
 

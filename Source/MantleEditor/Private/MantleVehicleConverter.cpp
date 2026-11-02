@@ -35,6 +35,7 @@
 #include "UObject/UnrealType.h"
 #include "HAL/IConsoleManager.h"
 #include "ImageCore.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
@@ -537,6 +538,48 @@ namespace MantleVehicleConverterPrivate
 			&& FMath::Abs(Offset.Y) <= FMath::Max(VehicleTireAxisCm, 0.5 * Across);
 		const bool bSized = Radius <= 0.0 || FMath::Abs(Across - 2.0 * Radius) <= VehicleTireDiameterSlack * 2.0 * Radius;
 		return bRound && bOnAxis && bSized ? Across : 0.0;
+	}
+
+	/**
+	 * The point a mesh attached to AttachTo hangs from on Mesh, in component space: a socket (its bone and offset), a bone, or the body itself (the root, no offset)
+	 * when AttachTo is None. Returns the bone's raw index, INDEX_NONE when AttachTo is neither a socket nor a bone of Mesh.
+	 */
+	int32 VehicleAttachPoint(const USkeletalMesh& Mesh, const FReferenceSkeleton& Skeleton, const TArray<FTransform>& Pose, const FName AttachTo, FTransform& OutPoint)
+	{
+		int32 Bone = 0;
+		OutPoint = FTransform::Identity;
+		if (const USkeletalMeshSocket* Socket = AttachTo.IsNone() ? nullptr : Mesh.FindSocket(AttachTo))
+		{
+			Bone = Skeleton.FindRawBoneIndex(Socket->BoneName);
+			if (Bone != INDEX_NONE)
+			{
+				OutPoint = Socket->GetSocketLocalTransform() * Pose[Bone];
+			}
+		}
+		else if (!AttachTo.IsNone())
+		{
+			Bone = Skeleton.FindRawBoneIndex(AttachTo);
+			if (Bone != INDEX_NONE)
+			{
+				OutPoint = Pose[Bone];
+			}
+		}
+		return Bone;
+	}
+
+	/** A material a part or a joined piece can name after this editor session: an instance made while the Blueprint ran (a construction script's) stands for the material it was made from. */
+	UMaterialInterface* VehicleStableMaterial(UMaterialInterface* Material)
+	{
+		for (int32 Guard = 0; Guard < 16; ++Guard)
+		{
+			const UMaterialInstanceDynamic* Dynamic = Cast<UMaterialInstanceDynamic>(Material);
+			if (!Dynamic)
+			{
+				break;
+			}
+			Material = Dynamic->Parent;
+		}
+		return Material;
 	}
 
 	/** A numeric property's value on Container (float or double, by name: MantleCore takes no plugin dependency); 0 when it has none. */
@@ -1511,8 +1554,8 @@ FMantleVehicleSurroundings FMantleVehicleConverter::SurroundingsOfComponent(cons
 			continue;
 		}
 		const UStaticMeshComponent* Static = Cast<UStaticMeshComponent>(Component);
-		// Instanced meshes are scenery, and a mesh hidden in game is never seen.
-		if (!Static || !Static->GetStaticMesh() || Static->IsA<UInstancedStaticMeshComponent>() || Static->bHiddenInGame)
+		// Instanced meshes are scenery, and a mesh hidden in game or switched off (a tent frame the car shows only when asked) is never seen.
+		if (!Static || !Static->GetStaticMesh() || Static->IsA<UInstancedStaticMeshComponent>() || Static->bHiddenInGame || !Static->IsVisible())
 		{
 			continue;
 		}
@@ -1540,9 +1583,10 @@ FMantleVehicleSurroundings FMantleVehicleConverter::SurroundingsOfComponent(cons
 		Found.Mesh = Static->GetStaticMesh();
 		Found.AttachTo = Socket;
 		Found.Relative = Relative;
+		// A Blueprint's construction script gives a mesh instances made as it runs; a part or a joined piece names the material they were made from.
 		for (UMaterialInterface* Override : Static->OverrideMaterials)
 		{
-			Found.Overrides.Add(Override);
+			Found.Overrides.Add(MantleVehicleConverterPrivate::VehicleStableMaterial(Override));
 		}
 		Found.Label = Static->GetName();
 	}
@@ -1744,24 +1788,8 @@ void FMantleVehicleConverter::AddParts(const USkeletalMesh& Mesh, const TConstAr
 			continue;
 		}
 		// The point it hangs from, in component space: a socket (its bone and offset), a bone, or the body itself.
-		int32 Bone = 0;
 		FTransform Point = FTransform::Identity;
-		if (const USkeletalMeshSocket* Socket = Found.AttachTo.IsNone() ? nullptr : Mesh.FindSocket(Found.AttachTo))
-		{
-			Bone = Skeleton.FindRawBoneIndex(Socket->BoneName);
-			if (Bone != INDEX_NONE)
-			{
-				Point = Socket->GetSocketLocalTransform() * Pose[Bone];
-			}
-		}
-		else if (!Found.AttachTo.IsNone())
-		{
-			Bone = Skeleton.FindRawBoneIndex(Found.AttachTo);
-			if (Bone != INDEX_NONE)
-			{
-				Point = Pose[Bone];
-			}
-		}
+		const int32 Bone = VehicleAttachPoint(Mesh, Skeleton, Pose, Found.AttachTo, Point);
 		if (Bone == INDEX_NONE)
 		{
 			Skipped.Add(FString::Printf(TEXT("%s (%s, on %s, which is not a socket or bone of %s)"), *Found.Mesh->GetName(), *Found.Label,
@@ -1899,6 +1927,71 @@ void FMantleVehicleConverter::AddParts(const USkeletalMesh& Mesh, const TConstAr
 	if (Skipped.Num() > 0)
 	{
 		OutNotes.Add(FString::Printf(TEXT("Left out: %s. They are not attached to a part of the body that can carry them: attach them to one of the body's sockets or bones (its attachment points) to include them."), *FString::Join(Skipped, TEXT("; "))));
+	}
+}
+
+void FMantleVehicleConverter::SplitBodyPieces(const USkeletalMesh& Mesh, const FMantleVehicleSurroundings& Around, TArray<FMantleVehiclePlacedMesh>& OutBody,
+	TArray<FMantleVehicleAttachedMesh>& OutRest)
+{
+	using namespace MantleVehicleConverterPrivate;
+	OutBody.Reset();
+	OutRest.Reset();
+	const FReferenceSkeleton& Skeleton = Mesh.GetRefSkeleton();
+	const TArray<FMeshBoneInfo>& Info = Skeleton.GetRawRefBoneInfo();
+	if (Info.IsEmpty())
+	{
+		OutRest = Around.Attached;
+		return;
+	}
+	const TArray<FTransform> Pose = VehicleComponentPose(Skeleton);
+
+	// The wheels as AddParts knows them: the bone, its corner and, when the vehicle's wheel setup gives it, the wheel's radius.
+	struct FWheelAt
+	{
+		int32 Bone = INDEX_NONE;
+		FString Corner;
+		double Radius = 0.0;
+	};
+	TArray<FWheelAt> Wheels;
+	for (const FMantleVehicleWheelBone& Named : FindWheelBones(Skeleton))
+	{
+		FWheelAt& At = Wheels.AddDefaulted_GetRef();
+		At.Bone = Skeleton.FindRawBoneIndex(Named.Bone);
+		At.Corner = CornerOf(Named.Bone.ToString());
+		const FMantleVehicleWheelSetup* Setup = Around.WheelSetups.FindByPredicate([&Named](const FMantleVehicleWheelSetup& Candidate) { return Candidate.Bone == Named.Bone; });
+		At.Radius = Setup ? static_cast<double>(Setup->Radius) : 0.0;
+	}
+
+	for (const FMantleVehicleAttachedMesh& Found : Around.Attached)
+	{
+		FTransform Point = FTransform::Identity;
+		const int32 Bone = Found.Mesh ? VehicleAttachPoint(Mesh, Skeleton, Pose, Found.AttachTo, Point) : INDEX_NONE;
+		if (Bone == INDEX_NONE)
+		{
+			OutRest.Add(Found);
+			continue;
+		}
+		const FTransform Placement = Found.Relative * Point;
+		const FBox Bounds = Found.Mesh->GetBoundingBox().TransformBy(Placement);
+		const FString Corner = CornerOf(Info[Bone].Name.ToString());
+		const bool bOnWheel = Wheels.ContainsByPredicate([&](const FWheelAt& At)
+		{
+			if (At.Bone == INDEX_NONE)
+			{
+				return false;
+			}
+			const bool bOnCorner = Bone == At.Bone || (!Corner.IsEmpty() && Corner == At.Corner);
+			return bOnCorner || (Bone == 0 && VehicleTireFit(Bounds, Pose[At.Bone].GetLocation(), At.Radius) > 0.0);
+		});
+		if (bOnWheel)
+		{
+			OutRest.Add(Found);
+			continue;
+		}
+		FMantleVehiclePlacedMesh& Piece = OutBody.AddDefaulted_GetRef();
+		Piece.Found = Found;
+		Piece.Bone = Bone;
+		Piece.Placement = Placement;
 	}
 }
 
