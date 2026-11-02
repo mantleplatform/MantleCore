@@ -28,9 +28,8 @@ namespace MantleTerrainBuilderPrivate
 	/** The least a skirt hangs below its edge, so a seam between two LODs never shows a sliver of sky. */
 	constexpr float MinSkirtCm = 10.0f;
 
-	/** MI_MantleTerrain once loaded, and whether its absence was already reported. Game thread. */
+	/** MI_MantleTerrain while it is loaded, and whether its absence was already reported. Game thread. */
 	TWeakObjectPtr<UMaterialInterface> GTerrainMaterial;
-	bool bTerrainMaterialLookedUp = false;
 	bool bWarnedTerrainMaterialMissing = false;
 
 	bool FailTerrain(FString* OutError, const FString& Error)
@@ -55,11 +54,9 @@ namespace MantleTerrainBuilderPrivate
 		{
 			return Loaded;
 		}
-		if (!bTerrainMaterialLookedUp)
-		{
-			bTerrainMaterialLookedUp = true;
-			GTerrainMaterial = LoadObject<UMaterialInterface>(nullptr, FMantleTerrainBuilder::MaterialPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
-		}
+		// Loaded again whenever it is gone: nothing holds it between places, so leaving a place's terrain lets the garbage
+		// collector unload it, and a one-time lookup then drew every later terrain with its first layer stretched across it.
+		GTerrainMaterial = LoadObject<UMaterialInterface>(nullptr, FMantleTerrainBuilder::MaterialPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
 		return GTerrainMaterial.Get();
 	}
 

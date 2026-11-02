@@ -3,9 +3,12 @@
 #include "MantlePlaceLimits.h"
 #include "MantlePlaceParser.h"
 #include "MantleSurface.h"
+#include "MantleTerrainBuilder.h"
 #include "MantleTerrainSurface.h"
 
+#include "Materials/MaterialInstance.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/GarbageCollection.h"
 #include "UObject/Package.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -204,6 +207,57 @@ bool FMantleTerrainChannelByteTest::RunTest(const FString& Parameters)
 	FMantleTerrainWeights NoPixels;
 	FMantleTerrainWeights::FromPixels(2, 1, TArray<FColor>({ FColor::White, FColor::White }), NoPixels, false);
 	TestEqual(TEXT("without kept pixels it is 0"), NoPixels.ChannelByteAt(0, 0.25, 0.5), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTerrainMaterialReloadTest,
+	"Mantle.Runtime.TerrainBuilder.MaterialReload",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTerrainMaterialReloadTest::RunTest(const FString& Parameters)
+{
+	// Leaving a place lets the garbage collector unload MI_MantleTerrain; the next place's terrain must load it again,
+	// not fall back to its first layer stretched across the whole terrain (Stylized Spruce Forest, played after another place).
+	FMantleHeightfield Field;
+	Field.Width = 2;
+	Field.Height = 2;
+	Field.SpacingX = 100.0f;
+	Field.SpacingY = 100.0f;
+	Field.HeightScale = 1.0f;
+	Field.Heights.SetNumZeroed(4);
+	const TArray<FMantleTerrainLayerLook> Layers = { FMantleTerrainLayerLook(), FMantleTerrainLayerLook() };
+
+	auto ParentOf = [&Field, &Layers]() -> const UMaterialInterface*
+	{
+		const UMaterialInstance* Instance = Cast<UMaterialInstance>(
+			FMantleTerrainBuilder::BuildMaterial(Field, Layers, nullptr, nullptr, GetTransientPackage()));
+		return Instance ? Instance->Parent.Get() : nullptr;
+	};
+	const UMaterialInterface* First = ParentOf();
+	if (!First)
+	{
+		AddInfo(TEXT("MI_MantleTerrain is not in this project's content; nothing to reload"));
+		return true;
+	}
+	TestEqual(TEXT("the first terrain is drawn with MI_MantleTerrain"), First->GetPathName(), FString(TEXT("/Game/Mantle/Materials/MI_MantleTerrain")));
+
+	// What a cooked client does when nothing holds it: an editor keeps loaded assets standalone, so that is cleared first.
+	TWeakObjectPtr<const UMaterialInterface> Loaded(First);
+	const_cast<UMaterialInterface*>(First)->ClearFlags(RF_Standalone);
+	First = nullptr;
+	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+	if (Loaded.IsValid())
+	{
+		AddInfo(TEXT("MI_MantleTerrain stayed loaded through garbage collection; the reload is not exercised"));
+	}
+
+	const UMaterialInterface* Second = ParentOf();
+	TestNotNull(TEXT("a terrain built after the material was unloaded is still drawn with MI_MantleTerrain"), Second);
+	if (Second)
+	{
+		const_cast<UMaterialInterface*>(Second)->SetFlags(RF_Standalone);
+	}
 	return true;
 }
 
