@@ -1231,7 +1231,7 @@ FMantleVehicleModelPlacement FMantleVehicleChassisSkin::FitPlacement(const FMant
 	}
 	Placement.Scale = HeldModelScale(Placement.Scale, Placement.Note);
 
-	// Where it stands: the model's own box centerd on the chassis's (wheels, when two or more are assigned, decide the length instead), its lowest point, or its
+	// Where it stands: the model's own box centered on the chassis's (wheels, when two or more are assigned, decide the length instead), its lowest point, or its
 	// wheels' lowest, on the ground.
 	FMantleVehicleModelPlacement Turned = Placement;
 	FBox Moved(ForceInit);

@@ -323,7 +323,7 @@ bool FMantleHairCardsFitClearFaceTest::RunTest(const FString& Parameters)
 	FMantleHairHeadSamples Head; FString Error;
 	if (!TestTrue(TEXT("head samples build"), Head.Build(HeadP, HeadI, Error))) { AddError(Error); return false; }
 
-	// The sphere is centerd on the origin (radius 9, top 9, +Y forward): at z = -5 the skin is in the face zone.
+	// The sphere is centered on the origin (radius 9, top 9, +Y forward): at z = -5 the skin is in the face zone.
 	const FVector3f Fringe(0.f, 8.f, -5.f);   // in front of the face
 	const FVector3f Clear(0.f, 12.f, -5.f);   // well in front of it
 	const FVector3f Crown(0.f, 0.f, 9.1f);

@@ -46,10 +46,10 @@ FMantleBuilderOverlay FMantleVehicleShapeKind::Overlay(const TArray<FMantleBuild
 		Passenger.RadiusCm = 4.f;
 	}
 
-	// The point the vehicle's weight is centerd on: what makes it tip, or not.
+	// The point the vehicle's weight is centered on: what makes it tip, or not.
 	FMantleBuilderOverlayMarker& Weight = Out.Markers.AddDefaulted_GetRef();
 	Weight.Location = Spec.CenterOfMass;
-	Weight.Label = LOCTEXT("Weight", "Weight is centerd here");
+	Weight.Label = LOCTEXT("Weight", "Weight is centered here");
 	Weight.Color = FLinearColor(0.35f, 0.75f, 1.f);
 	Weight.RadiusCm = 5.f;
 	return Out;

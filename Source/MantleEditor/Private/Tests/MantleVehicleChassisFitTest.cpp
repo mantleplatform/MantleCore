@@ -205,7 +205,7 @@ bool FMantleVehicleChassisFitThreeAxlesTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	// A six-wheel model of 700 cm (1.25x the chassis), its middle axle 21 cm behind where the chassis's share puts it, centerd
+	// A six-wheel model of 700 cm (1.25x the chassis), its middle axle 21 cm behind where the chassis's share puts it, centered
 	// off its origin. The end axles give the wheelbase and track; the middle axle is not asked for.
 	TArray<FMantleVehicleFitWheel> Wheels;
 	const double ModelWheelbase = 1.25 * Chassis.Wheelbase;
@@ -289,14 +289,14 @@ bool FMantleVehicleChassisFitOriginTest::RunTest(const FString& Parameters)
 	const FMantleVehicleChassisReference Chassis = TruckChassis();
 
 	// A model whose origin is not at the axle midpoint: front axle at 300, rear at 20 (middle 160), wheel centers 50 up with radius 42
-	// (so the ground is at 8), the track centerd 10 across. The chassis is laid on that middle, that ground and that center line.
+	// (so the ground is at 8), the track centered 10 across. The chassis is laid on that middle, that ground and that center line.
 	const FMantleChassisLayout Layout = FMantleVehicleChassisFit::LayoutFromWheels(FourWheels(300.0, 20.0, 168.0, 10.0, 50.0, 42.0));
 	const FMantleChassisStretch Stretch = FMantleVehicleChassisFit::Stretch(Chassis, Layout, 1.0);
 	TestTrue(TEXT("the origin is the axle middle, the ground, the track center"), Near(Stretch.Origin, FVector(160.0, 10.0, 8.0)));
 	TestEqual(TEXT("the wheelbase is 280 against the chassis's 350"), Stretch.Kx, 0.8);
 
 	const FMantleChassisPlacement Placed = FMantleVehicleChassisFit::Place(Chassis, Stretch);
-	TestTrue(TEXT("the box is centerd on the axle middle and track center"), FMath::IsNearlyEqual(Placed.CollisionCenter.X, 160.0) && FMath::IsNearlyEqual(Placed.CollisionCenter.Y, 10.0));
+	TestTrue(TEXT("the box is centered on the axle middle and track center"), FMath::IsNearlyEqual(Placed.CollisionCenter.X, 160.0) && FMath::IsNearlyEqual(Placed.CollisionCenter.Y, 10.0));
 	TestTrue(TEXT("the box's underside is the clearance above the model's ground"), FMath::IsNearlyEqual(Placed.CollisionCenter.Z - Placed.CollisionExtent.Z, 8.0 + 48.0));
 	TestTrue(TEXT("the center of mass is over the axle middle, above the wheel centers"), FMath::IsNearlyEqual(Placed.CenterOfMass.X, 160.0) && FMath::IsNearlyEqual(Placed.CenterOfMass.Y, 10.0) && Placed.CenterOfMass.Z > 50.0);
 	TestTrue(TEXT("the seat is the chassis's, stretched about the origin"), Near(Placed.Seat, FVector(160.0 + 73.2 * 0.8, 10.0 - 42.0, 8.0 + 130.0)));

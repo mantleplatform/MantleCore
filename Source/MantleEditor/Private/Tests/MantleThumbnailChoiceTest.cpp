@@ -59,7 +59,7 @@ bool FMantleThumbnailCropTest::RunTest(const FString&)
 {
 	const FMantleThumbnailTarget Square = FMantleThumbnailTarget::Square();
 	const FMantleThumbnailTarget Wide = FMantleThumbnailTarget::Wide();
-	// A wide picture loses its sides, a tall one its top and bottom, both centerd.
+	// A wide picture loses its sides, a tall one its top and bottom, both centered.
 	TestEqual(TEXT("1000x500 to a square"), FMantleThumbnailResolver::CropRect(1000, 500, Square), FIntRect(250, 0, 750, 500));
 	TestEqual(TEXT("500x1000 to a square"), FMantleThumbnailResolver::CropRect(500, 1000, Square), FIntRect(0, 250, 500, 750));
 	TestEqual(TEXT("a square stays whole"), FMantleThumbnailResolver::CropRect(512, 512, Square), FIntRect(0, 0, 512, 512));

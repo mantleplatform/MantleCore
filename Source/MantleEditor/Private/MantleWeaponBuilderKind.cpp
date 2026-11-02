@@ -180,7 +180,7 @@ namespace MantleWeaponBuilderKindPrivate
 	}
 
 	/** Solves one arm from the shoulder and adds its capsules to Arm; the elbow bends toward Outward and Down (the body's own down).
-	 *  To a hand point (no Wrist): the forearm stops at the wrist and a hand capsule is centerd on the point (the palm, where the
+	 *  To a hand point (no Wrist): the forearm stops at the wrist and a hand capsule is centered on the point (the palm, where the
 	 *  game puts it). To a Wrist (a hand drawn on its own, which starts there): the upper arm and forearm only, the forearm ending on
 	 *  the wrist, so the arm runs into the hand with no gap. */
 	void SolveArm(FArm& Arm, const TCHAR* Side, const FVector& Shoulder, const FVector& Hand, const FVector& Outward, const FVector* Wrist = nullptr,
@@ -215,7 +215,7 @@ namespace MantleWeaponBuilderKindPrivate
 	 * The ghost holding the gun, in the weapon frame (bore +X, up +Z, +Y to the shooter's right), each arm solved to its hand point.
 	 * Shouldered (rifle and the like): the right shoulder sits just behind the stock's rear on the bore line, the body is turned
 	 * about it so the left shoulder comes forward, and the head leans in with the cheek beside the stock, the eye behind the sight.
-	 * Otherwise (pistol, revolver): arms out in front, the head centerd behind the gun with the eye well back from the sight.
+	 * Otherwise (pistol, revolver): arms out in front, the head centered behind the gun with the eye well back from the sight.
 	 */
 	FPose BuildPose(const TArray<FMantleBuilderPoint>& Points, const FTransform& MeshToWeapon, bool bShouldered, double RearXCm, const FVector* AimEye = nullptr,
 		const double* ButtZ = nullptr, const FVector* WristR = nullptr, const FVector* WristL = nullptr)

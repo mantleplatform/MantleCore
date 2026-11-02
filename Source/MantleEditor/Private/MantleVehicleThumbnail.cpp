@@ -68,7 +68,7 @@ bool FMantleVehicleThumbnail::Draw(const FMantleSkinnedMesh& Body, TArray<FColor
 	{
 		return false;
 	}
-	// Orthographic: the vehicle fills about four fifths of the card, centerd.
+	// Orthographic: the vehicle fills about four fifths of the card, centered.
 	const double Scale = 0.82 * static_cast<double>(Full) / Span;
 	const FVector Middle = Extent.GetCenter();
 	const auto ToScreen = [&](const FVector& Point)

@@ -77,7 +77,7 @@ private:
  *     That is only a starting size: long hair is far wider at the shoulders than at the scalp, so the search reaches 3x.
  *  2. Search. A coarse grid over a further uniform scale, a Y offset and a top offset, then a finer grid around the
  *     best coarse candidate (FSearch). The Z offset is not free: it puts the piece's highest point at the head's top plus
- *     the top offset. X is not offset (hair is centerd on the head's plane of symmetry).
+ *     the top offset. X is not offset (hair is centered on the head's plane of symmetry).
  *  3. Score (#51, roots). Hair belongs where its roots meet the scalp, not where its top lines up with the head's top
  *     (that floated ponytails, braids and long hair above the crown). Each card's root is the end of the card nearer the
  *     head; a root is seated when it is within SeatCm of a scalp sample. A candidate scores the share of cards seated

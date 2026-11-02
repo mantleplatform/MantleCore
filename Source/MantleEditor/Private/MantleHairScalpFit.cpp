@@ -128,10 +128,10 @@ namespace MantleHairScalpFitPrivate
 	}
 
 	/** Dominant direction of a point set about its centroid: the column of the repeatedly squared covariance with the most weight. */
-	FVector DominantAxis(const TArray<FVector>& Centerd)
+	FVector DominantAxis(const TArray<FVector>& Centered)
 	{
 		double M[3][3] = {};
-		for (const FVector& P : Centerd)
+		for (const FVector& P : Centered)
 			for (int32 R = 0; R < 3; ++R) for (int32 C = 0; C < 3; ++C) M[R][C] += P[R] * P[C];
 		for (int32 Iter = 0; Iter < 8; ++Iter)
 		{
@@ -438,14 +438,14 @@ namespace MantleHairScalpFitPrivate
 			FVector Center = FVector::ZeroVector;
 			for (const int32 V : Card.Ids) Center += Positions[V];
 			Center /= Card.Ids.Num();
-			TArray<FVector> Centerd;
-			Centerd.Reserve(Card.Ids.Num());
-			for (const int32 V : Card.Ids) Centerd.Add(Positions[V] - Center);
-			const FVector Axis = DominantAxis(Centerd);
+			TArray<FVector> Centered;
+			Centered.Reserve(Card.Ids.Num());
+			for (const int32 V : Card.Ids) Centered.Add(Positions[V] - Center);
+			const FVector Axis = DominantAxis(Centered);
 			Card.TMin = TNumericLimits<double>::Max();
 			Card.TMax = TNumericLimits<double>::Lowest();
 			Card.Along.Reserve(Card.Ids.Num());
-			for (const FVector& P : Centerd) { const double T = P | Axis; Card.Along.Add(T); Card.TMin = FMath::Min(Card.TMin, T); Card.TMax = FMath::Max(Card.TMax, T); }
+			for (const FVector& P : Centered) { const double T = P | Axis; Card.Along.Add(T); Card.TMin = FMath::Min(Card.TMin, T); Card.TMax = FMath::Max(Card.TMax, T); }
 			Out.Add(MoveTemp(Card));
 		}
 		return Out;

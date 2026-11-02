@@ -188,7 +188,7 @@ namespace MantleOverlayGuidePrivate
 		}
 	}
 
-	/** White outline then black text, centerd on Center. */
+	/** White outline then black text, centered on Center. */
 	void GuideDrawLabel(TArray<FColor>& Pixels, const FString& Name, const FVector2f& Center)
 	{
 		const FString Text = Name.ToUpper();

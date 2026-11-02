@@ -41,7 +41,7 @@ namespace MantleNailSeatingTestPrivate
 		return Sheet;
 	}
 
-	/** A 3 x 3 vertex patch, 1 cm by 2 cm, tilted TiltDegrees about X, centerd at Center. */
+	/** A 3 x 3 vertex patch, 1 cm by 2 cm, tilted TiltDegrees about X, centered at Center. */
 	void NailTestPatch(const FVector3f& Center, const float TiltDegrees, TArray<FVector3f>& Positions, TArray<uint32>& Indices)
 	{
 		const uint32 First = static_cast<uint32>(Positions.Num());

@@ -524,7 +524,7 @@ FTransform FMantleUnriggedAsIs::FitRigid(const TConstArrayView<FVector3f> Source
 	OutFitCm = OutStartCm;
 	for (int32 Round = 0; Round < Rounds && Pairs.Num() >= 3; ++Round)
 	{
-		// Horn's closed form: the rotation is the top eigenvector of a 4x4 symmetric matrix of the centerd pairs' cross sums.
+		// Horn's closed form: the rotation is the top eigenvector of a 4x4 symmetric matrix of the centered pairs' cross sums.
 		FVector CenterA = FVector::ZeroVector;
 		FVector CenterB = FVector::ZeroVector;
 		for (const FPair& Pair : Pairs)
@@ -1106,7 +1106,7 @@ bool FMantleUnriggedAsIs::MakeSkinnedMesh(UStaticMesh& Posed, USkeletalMesh& Bod
 				}
 				const FVector3f BodyCenter = BodyCount > 0 ? BodySum / BodyCount : FVector3f::ZeroVector;
 				const FVector3f ModelCenter = ModelCount > 0 ? ModelSum / ModelCount : FVector3f::ZeroVector;
-				Line += FString::Printf(TEXT("; %s joint %s: body skin on it %d centerd %s (%.1f cm from the joint), nearest body skin %.1f cm; model points on it %d centerd %s (%.1f cm), nearest model point %.1f cm"),
+				Line += FString::Printf(TEXT("; %s joint %s: body skin on it %d centered %s (%.1f cm from the joint), nearest body skin %.1f cm; model points on it %d centered %s (%.1f cm), nearest model point %.1f cm"),
 					Finger, *V(Joint), BodyCount, *V(BodyCenter), BodyCount > 0 ? FVector3f::Dist(Joint, BodyCenter) : -1.0f, BodyNearest, ModelCount, *V(ModelCenter),
 					ModelCount > 0 ? FVector3f::Dist(Joint, ModelCenter) : -1.0f, ModelNearest);
 			}
@@ -1132,7 +1132,7 @@ bool FMantleUnriggedAsIs::MakeSkinnedMesh(UStaticMesh& Posed, USkeletalMesh& Bod
 					++ModelCount;
 				}
 			}
-			Line += FString::Printf(TEXT("; hand and fingers: body skin %d centerd %s, model points %d centerd %s"), BodyCount,
+			Line += FString::Printf(TEXT("; hand and fingers: body skin %d centered %s, model points %d centered %s"), BodyCount,
 				*V(BodyCount > 0 ? BodySum / BodyCount : FVector3f::ZeroVector), ModelCount, *V(ModelCount > 0 ? ModelSum / ModelCount : FVector3f::ZeroVector));
 			UE_LOG(LogMantle, Log, TEXT("MANTLE_CONVERT_ASISRIG handfit %s"), *Line);
 		}

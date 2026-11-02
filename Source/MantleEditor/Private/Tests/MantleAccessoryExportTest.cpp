@@ -258,7 +258,7 @@ bool FMantleAccessoryUnderLimitTest::RunTest(const FString& Parameters)
 	const FMantleCosmeticPackage Second = FMantleCosmeticExport::BuildCore(NeckDraft(Light.Get()), *Contract);
 	TestFalse(TEXT("it exports without errors"), First.HasErrors());
 	TestFalse(TEXT("it is not reduced"), HasNote(First, TEXT("reduced from")));
-	TestFalse(TEXT("its pivot is not moved"), HasNote(First, TEXT("centerd on the socket")));
+	TestFalse(TEXT("its pivot is not moved"), HasNote(First, TEXT("centered on the socket")));
 	TestTrue(TEXT("the preview shows the source itself"), FMantleAccessorySettings::UploadMesh(Light.Get(), Contract->RigidAccessory) == Light.Get());
 	const FMantleCosmeticUploadAsset* A = First.FindAsset(TEXT("mesh"));
 	const FMantleCosmeticUploadAsset* B = Second.FindAsset(TEXT("mesh"));
@@ -300,7 +300,7 @@ bool FMantleAccessoryFeetPivotTest::RunTest(const FString& Parameters)
 		}
 	}
 	TestFalse(TEXT("an accessory with its pivot at the feet exports for acc_neck"), Package.HasErrors());
-	TestTrue(TEXT("its notes say it was centerd"), HasNote(Package, TEXT("centerd on the socket")));
+	TestTrue(TEXT("its notes say it was centered"), HasNote(Package, TEXT("centered on the socket")));
 	TestTrue(TEXT("the source's bounds are untouched"), Chain->GetBoundingBox().Equals(BoundsBefore, 1e-4));
 
 	// Too big for the slot either way: refused and not moved. The rule itself, on boxes: 40 cm centers (its farthest
@@ -308,13 +308,13 @@ bool FMantleAccessoryFeetPivotTest::RunTest(const FString& Parameters)
 	TStrongObjectPtr<UStaticMesh> Huge(MakeDisc(30, 30, Material.Get(), FVector3f(0.0f, 0.0f, 150.0f), 40.0f));
 	const FMantleCosmeticPackage Refused = FMantleCosmeticExport::BuildCore(NeckDraft(Huge.Get()), *Contract);
 	TestTrue(TEXT("an accessory too big for the slot is still refused"), Refused.HasErrors());
-	TestFalse(TEXT("and not moved"), HasNote(Refused, TEXT("centerd on the socket")));
+	TestFalse(TEXT("and not moved"), HasNote(Refused, TEXT("centered on the socket")));
 	const FMantleContractAccessoryBounds* Neck = Contract->AccessoryBounds.Find(TEXT("acc_neck"));
 	if (TestNotNull(TEXT("acc_neck has bounds"), Neck))
 	{
 		auto Box = [](const float Side, const float Height) { return FBox3f(FVector3f(-Side / 2, -Side / 2, 150.0f), FVector3f(Side / 2, Side / 2, 150.0f + Height)); };
-		TestFalse(TEXT("a 40 cm cube far from its pivot is centerd"), FMantleAccessorySettings::RecenterOffset(Box(40.0f, 40.0f), *Neck).IsZero());
-		TestTrue(TEXT("a 45 cm cube would still reach too far when centerd, so it is not moved"), FMantleAccessorySettings::RecenterOffset(Box(45.0f, 45.0f), *Neck).IsZero());
+		TestFalse(TEXT("a 40 cm cube far from its pivot is centered"), FMantleAccessorySettings::RecenterOffset(Box(40.0f, 40.0f), *Neck).IsZero());
+		TestTrue(TEXT("a 45 cm cube would still reach too far when centered, so it is not moved"), FMantleAccessorySettings::RecenterOffset(Box(45.0f, 45.0f), *Neck).IsZero());
 		TestTrue(TEXT("a 60 cm item is too big, so it is not moved"), FMantleAccessorySettings::RecenterOffset(Box(60.0f, 2.0f), *Neck).IsZero());
 		TestTrue(TEXT("an item whose pivot already reaches is not moved"), FMantleAccessorySettings::RecenterOffset(Box(10.0f, 10.0f).ShiftBy(FVector3f(0.0f, 0.0f, -150.0f)), *Neck).IsZero());
 	}
@@ -441,7 +441,7 @@ bool FMantleAccessoryAgentTest::RunTest(const FString& Parameters)
 	{
 		const FMantleCosmeticDraft Draft = FMantleEditorActions::MakeCosmeticDraft(EMantleCosmeticClass::Accessory, Light.Get(), TEXT("acc_neck"), FString(), *Contract, EMantleFitSex::Auto);
 		TestTrue(TEXT("a static mesh accessory starts aligned to the avatar's axes"), Draft.bAttach);
-		TestTrue(TEXT("a neck accessory starts lowered onto the shoulders, not centerd on the neck socket"), !Draft.AttachLocation.IsNearlyZero(0.5f));
+		TestTrue(TEXT("a neck accessory starts lowered onto the shoulders, not centered on the neck socket"), !Draft.AttachLocation.IsNearlyZero(0.5f));
 		const FMantleCosmeticDraft Wrist = FMantleEditorActions::MakeCosmeticDraft(EMantleCosmeticClass::Accessory, Light.Get(), TEXT("acc_face"), FString(), *Contract, EMantleFitSex::Auto);
 		TestTrue(TEXT("another slot is only aligned, not lowered"), Wrist.AttachLocation.IsNearlyZero(0.01f));
 	}
