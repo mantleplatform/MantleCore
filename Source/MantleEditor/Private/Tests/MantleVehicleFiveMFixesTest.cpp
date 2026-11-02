@@ -7,8 +7,10 @@
 #include "MantleVehicleBuilder.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleLightFinder.h"
+#include "MantleVehicleScratchBody.h"
 #include "MantleVehicleTypeMatch.h"
 
+#include "Engine/SkeletalMesh.h"
 #include "Engine/SkinnedAssetCommon.h"
 #include "Engine/Texture2D.h"
 #include "Materials/Material.h"
@@ -447,6 +449,44 @@ bool FMantleVehicleFiveMReduceTest::RunTest(const FString& Parameters)
 		bBonesKept = bBonesKept && LOD.InfluenceBones[Vertex] == (bWheelPanel ? 1 : 0);
 	}
 	TestTrue(TEXT("each triangle rides the bone it did"), bBonesKept);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleFiveMRebuildTest,
+	"Mantle.Vehicle.FiveM.BuildAgainUpdatesTheSameVehicle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleFiveMRebuildTest::RunTest(const FString& Parameters)
+{
+	FString Error;
+	USkeletalMesh* Model = MantleVehicleScratchBody::Make(TEXT("/Temp/MantleFiveMRebuildModel"), TEXT("FiveMRebuildBody"), Error);
+	if (!TestNotNull(*FString::Printf(TEXT("the scratch model is made (%s)"), *Error), Model))
+	{
+		return false;
+	}
+	// No name asked for, as a script or a new window builds: the same model and type built twice is one vehicle, updated, and not a second set of assets.
+	FMantleVehicleModelOptions Options;
+	Options.Folder = TEXT("/Temp/MantleFiveMRebuildOut");
+	const FMantleVehicleBuildResult First = FMantleVehicleBuilder::BuildFromModel(Model, TEXT("sedan"), Options);
+	for (const FString& Problem : First.Problems)
+	{
+		AddError(Problem);
+	}
+	if (!TestTrue(TEXT("the first build works"), First.bOk && First.Source != nullptr))
+	{
+		return false;
+	}
+	const FMantleVehicleBuildResult Second = FMantleVehicleBuilder::BuildFromModel(Model, TEXT("sedan"), Options);
+	for (const FString& Problem : Second.Problems)
+	{
+		AddError(Problem);
+	}
+	TestTrue(TEXT("the second build works"), Second.bOk && Second.Source != nullptr);
+	TestEqual(TEXT("and has the first one's name"), Second.AssetName, First.AssetName);
+	TestTrue(TEXT("and is the first one's vehicle asset"), Second.Source == First.Source);
+	TestTrue(TEXT("and says it updated the earlier vehicle"), Second.Notes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("updated that vehicle")); }));
+	MantleVehicleScratchBody::Discard(Model);
 	return true;
 }
 
