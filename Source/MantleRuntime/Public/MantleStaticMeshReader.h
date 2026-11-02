@@ -22,7 +22,7 @@ struct FMantleStaticMeshLOD
 	/** #470: the second UV set (UV1, glTF's TEXCOORD_1), one per vertex when the file carries it, else empty. */
 	TArray<FVector2f> UV1s;
 
-	/** One per vertex when the file carries vertex colours (Unreal's FColor bytes), else empty. */
+	/** One per vertex when the file carries vertex colors (Unreal's FColor bytes), else empty. */
 	TArray<FColor> Colors;
 
 	TArray<uint32> Indices;
@@ -78,7 +78,7 @@ struct FMantleStaticMeshHull
 
 /**
  * #470: an uploaded mesh's simple collision (MRM2's COLL block), in the mesh's own space, Unreal
- * centimetres. Empty when the file has none: the mesh then collides with its triangles
+ * centimeters. Empty when the file has none: the mesh then collides with its triangles
  * (complex-as-simple), as every mesh did before #470.
  */
 struct FMantleStaticMeshCollision
@@ -97,8 +97,8 @@ struct FMantleStaticMeshCollision
 
 /**
  * An uploaded place mesh as the cook worker writes it (MRM2, backend/internal/cook/staticmesh.go,
- * F1 #335 / F2 #336): the sections, tangent frame and optional vertex colour a baked PBR material
- * needs. Unreal centimetres in the asset's own axes (Epic's glTF convention: the cook already
+ * F1 #335 / F2 #336): the sections, tangent frame and optional vertex color a baked PBR material
+ * needs. Unreal centimeters in the asset's own axes (Epic's glTF convention: the cook already
  * swapped glTF's y and z), triangles in glTF's index order, which is already Unreal's front face.
  *
  * The inherited streams are LOD0. #470 (backend/internal/cook/staticfidelity.go) adds, each from an

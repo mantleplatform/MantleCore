@@ -100,8 +100,8 @@ public:
 	 * Re-binds one LOD's mesh description from the reference pose OldComponent to NewComponent (component space, one per
 	 * reference bone, RefNames naming them): every vertex moves by linear blend skinning with its own weights,
 	 * v' = sum_i w_i * v * OldComponent_i^-1 * NewComponent_i; normals and tangents turn with the same blend (and are
-	 * normalised); morph target position and normal deltas are carried by the blend's linear part. The skin weights,
-	 * UVs, colours and triangles are untouched. The description's own bone poses, when it has them, become NewLocal.
+	 * normalized); morph target position and normal deltas are carried by the blend's linear part. The skin weights,
+	 * UVs, colors and triangles are untouched. The description's own bone poses, when it has them, become NewLocal.
 	 * The description's skin-weight bone indices are matched to RefNames by the description's bone names when it has
 	 * them, otherwise taken as reference skeleton indices. False, with why, when it has no skin weights.
 	 */

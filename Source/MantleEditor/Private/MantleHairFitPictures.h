@@ -6,7 +6,7 @@
 
 /**
  * #51/#52: the before and after pictures of a hair head fit, drawn with the catalog thumbnail's capture (FMantleCosmeticThumbnail):
- * the head the hair was fitted to, grey, with the hair brown, in one mesh on the engine's vertex colour material. The Cosmetics
+ * the head the hair was fitted to, gray, with the hair brown, in one mesh on the engine's vertex color material. The Cosmetics
  * panel shows them next to the fit's words, and Mantle.Dev.RenderHairFit writes them to files.
  */
 class FMantleHairFitPictures

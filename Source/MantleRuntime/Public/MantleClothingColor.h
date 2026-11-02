@@ -5,7 +5,7 @@
 #include "Containers/ArrayView.h"
 #include "MantleClothingColor.generated.h"
 
-/** A player's quantized colour for a region declared by the clothing creator. */
+/** A player's quantized color for a region declared by the clothing creator. */
 USTRUCT(BlueprintType)
 struct MANTLERUNTIME_API FMantleClothingColor
 {
@@ -49,7 +49,7 @@ namespace MantleClothingColor
 
 	/**
 	 * CPU reference for the fixed dye shader. Unchanged without an override; unmasked pixels retain
-	 * their authored colour. Only colour is remapped: normal and surface textures are independent.
+	 * their authored color. Only color is remapped: normal and surface textures are independent.
 	 * Overlapping active mask channels are normalized to keep the result independent of region order.
 	 */
 	MANTLERUNTIME_API FLinearColor Apply(const FLinearColor& Albedo, const FVector3f& Mask,

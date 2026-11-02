@@ -120,26 +120,26 @@ enum class EMantleMaterialLoss : uint32
 ENUM_CLASS_FLAGS(EMantleMaterialLoss);
 
 /**
- * #533: what AnalyzeMaterial recognised in a graph that the material document carries beyond GLTFExporter's
+ * #533: what AnalyzeMaterial recognized in a graph that the material document carries beyond GLTFExporter's
  * bake. Each clears its loss only for the exact pattern it names (see AnalyzeMaterial); anything else is still
  * a loss and warns.
  */
 struct MANTLEEDITOR_API FMantleMaterialFidelity2
 {
 	/**
-	 * Per slot (base colour, normal, ORM, emissive): the source texture the slot publishes instead of the bake,
+	 * Per slot (base color, normal, ORM, emissive): the source texture the slot publishes instead of the bake,
 	 * for a panned, world-aligned or layer-blended slot. GLTFExporter bakes those wrongly: it exports a source
 	 * texture only when a sample reads plain Texture Coordinates, and bakes anything else over one UV tile at
 	 * game time 0 (MaterialBaking's FSceneViewFamily time), so a panned sample comes out as one tile of its
 	 * tiled texture at the bake size, a world-aligned one as whatever world position the bake quad has, and a
-	 * layer blend as the layer alone (the bake's vertex colour is white).
+	 * layer blend as the layer alone (the bake's vertex color is white).
 	 */
 	TWeakObjectPtr<UTexture> SourceTextures[4];
 
 	/** A source slot's tiling on the first UV (Texture Coordinate's UTiling and VTiling), for its uvTransforms. */
 	double SourceTiling[4][2] = { { 1.0, 1.0 }, { 1.0, 1.0 }, { 1.0, 1.0 }, { 1.0, 1.0 } };
 
-	/** The base colour's source keeps its alpha: the material's opacity (mask) reads the same sample's A. */
+	/** The base color's source keeps its alpha: the material's opacity (mask) reads the same sample's A. */
 	bool bSourceAlpha = false;
 
 	/**
@@ -171,19 +171,19 @@ struct MANTLEEDITOR_API FMantleMaterialFidelity2
 	double WindSpeed = 0.0;
 	FString WindWeight;
 
-	/** worldAligned: base colour, normal and ORM from WorldAlignedTexture / WorldAlignedNormal with one constant size and contrast. */
+	/** worldAligned: base color, normal and ORM from WorldAlignedTexture / WorldAlignedNormal with one constant size and contrast. */
 	bool bWorldAligned = false;
 	double TileSizeCm = 0.0;
 	double Sharpness = 1.0;
 
-	/** layerBlend: a Lerp by one vertex-colour channel (r, g, b, a) whose B is the layer's texture per slot (base colour, normal, ORM). */
+	/** layerBlend: a Lerp by one vertex-color channel (r, g, b, a) whose B is the layer's texture per slot (base color, normal, ORM). */
 	bool bLayerBlend = false;
 	FString LayerChannel;
 	TWeakObjectPtr<UTexture> LayerTextures[3];
 
 	/**
 	 * foliage (#628): the Two Sided Foliage shading model on a masked, two-sided material (exact, from the shading model).
-	 * The values the document carries; the graph's own subsurface colour is not read (the base colour stands in for it).
+	 * The values the document carries; the graph's own subsurface color is not read (the base color stands in for it).
 	 */
 	bool bFoliage = false;
 	double FoliageTint[3] = { 1.0, 1.0, 1.0 };
@@ -191,7 +191,7 @@ struct MANTLEEDITOR_API FMantleMaterialFidelity2
 	double FoliageVertexColorWeight = 0.0;
 
 	/**
-	 * water (#628): a translucent material whose opacity is a depth fade. Opacity (and the deep colour, when the graph
+	 * water (#628): a translucent material whose opacity is a depth fade. Opacity (and the deep color, when the graph
 	 * gives one) is baked to a constant, because the bake sees the fade's near end and writes opacity 0.
 	 */
 	FMantleWaterBake Water;
@@ -230,8 +230,8 @@ struct MANTLEEDITOR_API FMantleMaterialAnalysis
 	bool bCarPaint = false;
 
 	/**
-	 * #471: the only vertex colour the flattened outputs read is Vertex Color's RGB multiplying the base
-	 * colour (directly, or through Multiply and reroute nodes). The material publishes with vertexColor
+	 * #471: the only vertex color the flattened outputs read is Vertex Color's RGB multiplying the base
+	 * color (directly, or through Multiply and reroute nodes). The material publishes with vertexColor
 	 * multiplyBaseColor, so it is not a VertexColor loss. Any other use (a single channel, a blend, emissive,
 	 * inside a function) is the loss, and this is false.
 	 */
@@ -242,7 +242,7 @@ struct MANTLEEDITOR_API FMantleMaterialAnalysis
 
 	/**
 	 * #628: a flattened output reads a per-instance value (Per Instance Random, Per Instance Custom Data, Per Instance Fade Amount).
-	 * It has no value at bake time, so the bake is made at a representative one (FMantlePlaceAssets::NeutralisePerInstanceValues)
+	 * It has no value at bake time, so the bake is made at a representative one (FMantlePlaceAssets::NeutralizePerInstanceValues)
 	 * and the per-instance variation is averaged out.
 	 */
 	bool bPerInstanceVariation = false;
@@ -284,14 +284,14 @@ struct MANTLEEDITOR_API FMantleGatheredMesh
 };
 
 /**
- * What a material is baked on beyond the material itself: GLTFExporter draws it on a card, and Unreal's own card has white vertex colours
- * and UVs 0 to 1. A material whose graph reads vertex colour (a puddle layer by Vertex Color's blue) is baked with the colour its meshes
+ * What a material is baked on beyond the material itself: GLTFExporter draws it on a card, and Unreal's own card has white vertex colors
+ * and UVs 0 to 1. A material whose graph reads vertex color (a puddle layer by Vertex Color's blue) is baked with the color its meshes
  * really have, and a landscape's own material over many landscape quads, so its tiling repeats in the bake. The plain surface is
  * Unreal's card, so it bakes as every material always has.
  */
 struct MANTLEEDITOR_API FMantleBakeSurface
 {
-	/** The vertex colour every corner of the card has, as the material's Vertex Color node reads it (the bytes over 255). */
+	/** The vertex color every corner of the card has, as the material's Vertex Color node reads it (the bytes over 255). */
 	FColor VertexColor = FColor::White;
 
 	/** The card's UVs run 0 to this on both axes. */
@@ -328,8 +328,8 @@ struct MANTLEEDITOR_API FMantleGatheredMaterial
 	TArray<FString> UsedBy;
 
 	/**
-	 * The vertex colours of the meshes drawing it, summed (RGBA, 0 to 1) over their vertices, and how many vertices: a component's painted
-	 * colours where it has them, else its mesh's, else white (a mesh with none is drawn white). Only the vertices of the sections it draws.
+	 * The vertex colors of the meshes drawing it, summed (RGBA, 0 to 1) over their vertices, and how many vertices: a component's painted
+	 * colors where it has them, else its mesh's, else white (a mesh with none is drawn white). Only the vertices of the sections it draws.
 	 */
 	FVector4d VertexColorSum = FVector4d(0.0, 0.0, 0.0, 0.0);
 	double VertexColorWeight = 0.0;
@@ -340,7 +340,7 @@ struct MANTLEEDITOR_API FMantleGatheredMaterial
 	/** The average of VertexColorSum, white when nothing was counted. */
 	FColor AverageVertexColor() const;
 
-	/** What this material is baked on: its average vertex colour and its UV range. The converter keeps the colour only for a material that reads it. */
+	/** What this material is baked on: its average vertex color and its UV range. The converter keeps the color only for a material that reads it. */
 	FMantleBakeSurface BakeSurface() const;
 };
 
@@ -392,7 +392,7 @@ struct MANTLEEDITOR_API FMantleSkeletalPlayback
 
 /**
  * One texture a decal publishes (#472): uploaded as it is, never through a material. The same
- * texture as a decal's base colour and as another's normal map is two entries (two roles).
+ * texture as a decal's base color and as another's normal map is two entries (two roles).
  */
 struct MANTLEEDITOR_API FMantleGatheredTexture
 {
@@ -402,10 +402,10 @@ struct MANTLEEDITOR_API FMantleGatheredTexture
 	FString Key;
 	FString Name;
 
-	/** A normal map rather than a base colour. */
+	/** A normal map rather than a base color. */
 	bool bNormal = false;
 
-	/** #488: first gathered as a vehicle's livery (a base colour with alpha as coverage), not a decal's: for messages. */
+	/** #488: first gathered as a vehicle's livery (a base color with alpha as coverage), not a decal's: for messages. */
 	bool bLivery = false;
 
 	/** #168 step 6: first gathered as a block world's tile, uploaded as it is, at its own size: for messages. */
@@ -560,7 +560,7 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 
 	/**
 	 * Adds one Mantle Voxel World (#168 step 6): its blocks, when it has any, and each block type's tiles, as a decal's base
-	 * colour is added (uploaded as they are, alpha kept). Check names a missing or wrongly sized tile.
+	 * color is added (uploaded as they are, alpha kept). Check names a missing or wrongly sized tile.
 	 */
 	void AddVoxelWorld(const AActor* Actor);
 
@@ -594,7 +594,7 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	void AddDecal(const AActor* Actor);
 
 	/**
-	 * Adds a sprites Effect's texture (#628) as a decal's base colour is added: uploaded as it is, alpha kept. Used for a
+	 * Adds a sprites Effect's texture (#628) as a decal's base color is added: uploaded as it is, alpha kept. Used for a
 	 * Mantle Effect actor's SpritesTexture and for the texture FMantleEffectExport::Translate names on a translated
 	 * particle emitter; nothing for a null texture.
 	 */
@@ -644,7 +644,7 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	FMantleGatheredMaterial* AddMaterial(UMaterialInterface* Material, const FString& Label);
 
 	/**
-	 * Adds the materials a landscape's layers draw with that Mantle makes itself (transient: read from the landscape's material, or the plain grey of an
+	 * Adds the materials a landscape's layers draw with that Mantle makes itself (transient: read from the landscape's material, or the plain gray of an
 	 * unpainted one), which Export names and so Gather must upload. A Place Settings entry's own material is a project asset, gathered with the settings.
 	 */
 	void AddTerrainLayerMaterials(const TArray<FMantleTerrainLayerChoice>& Choices, const FString& Label);
@@ -691,10 +691,10 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	void AddTerrain(const AActor* Landscape);
 
 private:
-	/** Counts the vertex colours slot Slot of Mesh is drawn with on Component (null: the mesh's own) into Entry (FMantlePlaceAssets::SlotVertexColors). */
+	/** Counts the vertex colors slot Slot of Mesh is drawn with on Component (null: the mesh's own) into Entry (FMantlePlaceAssets::SlotVertexColors). */
 	void AddSlotVertexColors(FMantleGatheredMaterial* Entry, const UStaticMesh* Mesh, const UStaticMeshComponent* Component, int32 Slot);
 
-	/** A mesh slot's own colours, counted once per mesh however many components draw it unpainted. */
+	/** A mesh slot's own colors, counted once per mesh however many components draw it unpainted. */
 	TMap<TPair<const UStaticMesh*, int32>, TPair<FVector4d, double>> MeshSlotColors;
 };
 
@@ -862,8 +862,8 @@ public:
 	static UMaterialInterface* MeshSlotMaterial(const UStaticMesh* Mesh, int32 Slot);
 
 	/**
-	 * The vertex colours of the LOD 0 sections of Mesh that draw slot Slot, as the material's Vertex Color node reads them (0 to 1), summed
-	 * into OutSum with their vertex count in OutVertices: Component's painted colours (Override Vertex Colors) where it has them for every
+	 * The vertex colors of the LOD 0 sections of Mesh that draw slot Slot, as the material's Vertex Color node reads them (0 to 1), summed
+	 * into OutSum with their vertex count in OutVertices: Component's painted colors (Override Vertex Colors) where it has them for every
 	 * vertex, else the mesh's own, else white for each vertex. A section's vertices are sampled (at most 65,536) and the average counted for all.
 	 * False, adding nothing, when the mesh has no render data or no such section.
 	 */
@@ -891,12 +891,12 @@ public:
 	/**
 	 * What flattening Material loses, and what its bake depends on. Reads the graph; compiles nothing.
 	 *
-	 * #533 recognises four patterns and carries them in the document instead of reporting their loss (each
+	 * #533 recognizes four patterns and carries them in the document instead of reporting their loss (each
 	 * through reroutes only; any other shape is walked as before and warns):
 	 * - uvPanning: Base Color, Normal or Emissive Color is a Texture Sample (or Texture Sample Parameter 2D)
 	 *   whose UVs are a Panner with no Time or Speed input, over nothing or a Texture Coordinate on UV 0; the ORM
 	 *   group (Roughness from G, Metallic from B or the constant 0, Ambient Occlusion from R or unconnected) is
-	 *   one such sample. A panned base colour on a masked or translucent material also needs its opacity to be
+	 *   one such sample. A panned base color on a masked or translucent material also needs its opacity to be
 	 *   that sample's A.
 	 * - wind: World Position Offset is a SimpleGrassWind call with constant WindIntensity and WindSpeed (0..4),
 	 *   no AdditionalWPO, and a WindWeight of Vertex Color's R, 1 - TexCoord[0].G, or the constant 1.
@@ -904,10 +904,10 @@ public:
 	 *   the ORM group channels of one WorldAlignedTexture's, all with one constant TextureSize (the same on every
 	 *   axis, 1..100000) and ProjectionTransitionContrast (1..16), and no WorldPosition input; each other of those
 	 *   outputs unconnected or a constant.
-	 * - layerBlend (opaque only, not with the vertex-colour tint): Base Color is a Lerp whose A and B are plain
+	 * - layerBlend (opaque only, not with the vertex-color tint): Base Color is a Lerp whose A and B are plain
 	 *   samples on one UV and whose Alpha is one Vertex Color channel; Normal and the ORM group the same Lerp by
 	 *   the same channel, or a plain sample (the layer then keeps the base's texture).
-	 * At most one of wind, worldAligned and layerBlend is recognised (in that order).
+	 * At most one of wind, worldAligned and layerBlend is recognized (in that order).
 	 */
 	static FMantleMaterialAnalysis AnalyzeMaterial(const UMaterialInterface* Material);
 
@@ -939,10 +939,10 @@ public:
 	 * #628: a transient copy of Material (its instance chain, base graph and the functions it calls) in which each per-instance
 	 * node is replaced by a constant at a representative value, for the bake: Per Instance Random 0.5, Per Instance Custom Data
 	 * its default value, Per Instance Fade Amount 1. The bake has no instance, so the nodes read 0 there, which blacks out a
-	 * base colour multiplied by Per Instance Random. Null when the material has none (or a chain this cannot copy: a dynamic
+	 * base color multiplied by Per Instance Random. Null when the material has none (or a chain this cannot copy: a dynamic
 	 * instance); the copy lives as long as the pointer does, and the source is never touched.
 	 */
-	static TStrongObjectPtr<UMaterialInterface> NeutralisePerInstanceValues(const UMaterialInterface* Material);
+	static TStrongObjectPtr<UMaterialInterface> NeutralizePerInstanceValues(const UMaterialInterface* Material);
 
 	/** The sentence Check and the converter give a material whose bake averaged its per-instance variation, following "Material 'M_X': ". */
 	static FString DescribePerInstanceVariation();

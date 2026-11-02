@@ -675,7 +675,7 @@ namespace
 	 * (getfenv, _G, globalThis, globals()), code built at run time (loadstring, eval, exec), or
 	 * reflection with a computed name.
 	 */
-	FString UnanalysableAt(const TArray<FApiUsageToken>& Tokens, int32 Index, EApiUsageLexer Lang, bool bAfterAccess)
+	FString UnanalyzableAt(const TArray<FApiUsageToken>& Tokens, int32 Index, EApiUsageLexer Lang, bool bAfterAccess)
 	{
 		const FApiUsageToken& T = Tokens[Index];
 		if (T.Kind == EApiUsageTokenKind::Punct && T.Text == TEXT("[") && Index > 0)
@@ -746,11 +746,11 @@ namespace
 		}
 	}
 
-	FMantleScriptApiNeed MakeUnanalysable(const FString& Construct)
+	FMantleScriptApiNeed MakeUnanalyzable(const FString& Construct)
 	{
 		FMantleScriptApiNeed Need;
-		Need.bAnalysed = false;
-		Need.Unanalysable = Construct;
+		Need.bAnalyzed = false;
+		Need.Unanalyzable = Construct;
 		Need.Minor = FMantleApiManifest::Get().Minor;
 		return Need;
 	}
@@ -763,10 +763,10 @@ void FMantleScriptApiNeed::Merge(const FMantleScriptApiNeed& Other)
 		Minor = Other.Minor;
 		NeededFor = Other.NeededFor;
 	}
-	if (!Other.bAnalysed && bAnalysed)
+	if (!Other.bAnalyzed && bAnalyzed)
 	{
-		bAnalysed = false;
-		Unanalysable = Other.Unanalysable;
+		bAnalyzed = false;
+		Unanalyzable = Other.Unanalyzable;
 	}
 }
 
@@ -780,7 +780,7 @@ FMantleScriptApiNeed FMantleScriptApiUsage::ForSource(const FString& Source, EMa
 	case EMantleScriptCatalogLanguage::TypeScript: Lang = EApiUsageLexer::JavaScript; break;
 	case EMantleScriptCatalogLanguage::Python:     Lang = EApiUsageLexer::Python; break;
 	default:
-		return MakeUnanalysable(TEXT("a language Mantle can't scan"));
+		return MakeUnanalyzable(TEXT("a language Mantle can't scan"));
 	}
 
 	TArray<FApiUsageToken> Tokens;
@@ -832,10 +832,10 @@ FMantleScriptApiNeed FMantleScriptApiUsage::ForSource(const FString& Source, EMa
 		const FApiUsageToken& Token = Tokens[i];
 		const bool bAfterAccess = AfterAccess(i);
 
-		const FString Construct = UnanalysableAt(Tokens, i, Lang, bAfterAccess);
+		const FString Construct = UnanalyzableAt(Tokens, i, Lang, bAfterAccess);
 		if (!Construct.IsEmpty())
 		{
-			return MakeUnanalysable(Construct);
+			return MakeUnanalyzable(Construct);
 		}
 
 		if (Token.Kind == EApiUsageTokenKind::Ident || Token.Kind == EApiUsageTokenKind::String)
@@ -882,12 +882,12 @@ FMantleScriptApiNeed FMantleScriptApiUsage::ForGraph(const FMantleGraph& Graph)
 	return Need;
 }
 
-void FMantleScriptApiUsage::DescribeUnanalysable(const FString& RelativePath, const FMantleScriptApiNeed& Need, FString& OutProblem, FString& OutRemedy)
+void FMantleScriptApiUsage::DescribeUnanalyzable(const FString& RelativePath, const FMantleScriptApiNeed& Need, FString& OutProblem, FString& OutRemedy)
 {
 	OutProblem = FString::Printf(
 		TEXT("Scripts/%s uses %s, so Mantle can't tell which script API members it reaches. The place records script API %d.%d, "
 			"this editor's newest, and won't run for players whose Mantle is older."),
-		*RelativePath, *Need.Unanalysable, FMantleApiManifest::Get().Major, FMantleApiManifest::Get().Minor);
+		*RelativePath, *Need.Unanalyzable, FMantleApiManifest::Get().Major, FMantleApiManifest::Get().Minor);
 	OutRemedy = TEXT("If the place should run on older Mantle versions, name Mantle members directly (player.Avatar, not a looked-up name). "
 		"Otherwise there is nothing to fix.");
 }

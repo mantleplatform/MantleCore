@@ -15,7 +15,7 @@ class UStaticMesh;
  * a developer's editor build. What publishing would upload is resolved here as the cook resolves it (backend cook resolveVehicle:
  * each wheel's size measured from the body with its tires merged, one collision box around the chassis, the seat, the shift points)
  * and then read by the client's own document reader (FMantleVehicleAssetReader::ParseDocument), so a definition made from Vehicle
- * (FMantlePlaceVehicleDefinitions::Make) maps the tuning, wheels, linkage, seats, steering wheel, doors, trunk, collision and centre
+ * (FMantlePlaceVehicleDefinitions::Make) maps the tuning, wheels, linkage, seats, steering wheel, doors, trunk, collision and center
  * of mass exactly as a published car's does.
  *
  * What an upload carries by id stays local, named by stand-in ids ("ast_u" and a counter) that Meshes and Materials resolve: the

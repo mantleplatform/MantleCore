@@ -90,7 +90,7 @@ namespace MantleVehicleBodySplitTestPrivate
 		}
 	}
 
-	/** A static mesh of 14 quads in a row, each its own material, neighbours sharing their edge's vertex instances (so the render sections share vertices). */
+	/** A static mesh of 14 quads in a row, each its own material, neighbors sharing their edge's vertex instances (so the render sections share vertices). */
 	UStaticMesh* MakeStrip()
 	{
 		UObject* Outer = GetTransientPackage();

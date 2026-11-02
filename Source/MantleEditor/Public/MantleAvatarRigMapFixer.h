@@ -13,7 +13,7 @@ class USkeletalMesh;
  * skeleton (FMantleCosmeticExport::AvatarSkeletonId). Its bones are renamed, re-parented and completed: required bones
  * the rig lacks are inserted with no weights, unweighted bones with nothing kept below them (Mixamo's *_End) are dropped,
  * and weighted bones the target has no place for stay, to fold into their nearest kept ancestor at upload (#592). The
- * mesh is scaled to centimetres and turned Z-up, facing +Y with its left side on +X (the skeleton fixtures' axes). The
+ * mesh is scaled to centimeters and turned Z-up, facing +Y with its left side on +X (the skeleton fixtures' axes). The
  * pose is left as it is: the Repose fixer after this one takes it to the skeleton's A-pose.
  *
  * Known rigs are data (Resources/AvatarConvert/rig-profiles.json, FMantleRigProfiles). An unknown rig gets a suggested

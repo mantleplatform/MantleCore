@@ -11,7 +11,7 @@ class MANTLEEDITOR_API FMantleClothingColorMeasure
 public:
 	static constexpr int64 MaxRasterTexelVisits = 64ll * 1024 * 1024;
 	/**
-	 * One byte per texel of a Size image: 1 where a triangle of MaterialIndex covers the texel centre on UV0 (a sub-texel
+	 * One byte per texel of a Size image: 1 where a triangle of MaterialIndex covers the texel center on UV0 (a sub-texel
 	 * triangle marks its centroid texel). The area Measure averages over and #756 detection scores over. UVs outside the
 	 * unit tile wrap, as the runtime's textures do.
 	 */

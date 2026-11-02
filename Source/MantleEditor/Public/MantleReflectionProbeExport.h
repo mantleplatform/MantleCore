@@ -37,7 +37,7 @@ public:
 
 	/**
 	 * The transform the entity is written with: the capture's world location with its CaptureOffset folded in (the
-	 * client captures from the entity's location, which is also where the influence volume is centred) and its
+	 * client captures from the entity's location, which is also where the influence volume is centerd) and its
 	 * rotation, at scale 1 (the box's size is in the properties). Relative to ExportedParent's actor transform when
 	 * the entity has a parent.
 	 */

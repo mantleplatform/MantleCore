@@ -247,7 +247,7 @@ bool SMantleCosmeticPreviewViewport::ShowAccessory(UStaticMesh* Mesh, const FStr
 	// Mantle's standardized accessory sockets sit at identity on these bones. An imported MetaHuman need not
 	// contain Mantle sockets to preview: attaching to the contract bone reproduces the published anchor.
 	AccessoryComponent->AttachToComponent(BodyComponent, FAttachmentTransformRules::KeepRelativeTransform, Bone);
-	// The creator sees what uploads: the reduced copy when the mesh is over the triangle limit, and centred on the socket
+	// The creator sees what uploads: the reduced copy when the mesh is over the triangle limit, and centerd on the socket
 	// when its pivot is out of reach (the export does both).
 	Mesh = const_cast<UStaticMesh*>(FMantleAccessorySettings::UploadMesh(Mesh, Contract->RigidAccessory));
 	AccessoryComponent->SetStaticMesh(Mesh);

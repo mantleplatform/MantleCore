@@ -180,7 +180,7 @@ namespace
 	using FWriterFactory = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>;
 
 
-	FString SanitiseId(const FString& In)
+	FString SanitizeId(const FString& In)
 	{
 		FString Out;
 		Out.Reserve(In.Len());
@@ -241,7 +241,7 @@ namespace
 		return Candidate;
 	}
 
-	/** Maps a catalogue source language to what the schema/place file can express. */
+	/** Maps a catalog source language to what the schema/place file can express. */
 	bool MapCatalogLanguage(EMantleScriptCatalogLanguage In, EMantleScriptLanguage& Out)
 	{
 		switch (In)
@@ -251,7 +251,7 @@ namespace
 		case EMantleScriptCatalogLanguage::TypeScript: Out = EMantleScriptLanguage::TypeScript; return true;
 		case EMantleScriptCatalogLanguage::Python: Out = EMantleScriptLanguage::Python; return true;
 		default:
-			// Unknown, or a language the catalogue has learned that this schema/exporter
+			// Unknown, or a language the catalog has learned that this schema/exporter
 			// hasn't caught up with yet. Callers report this clearly rather than
 			// guess at a mapping.
 			return false;
@@ -302,7 +302,7 @@ namespace
 	 * folder, since creators install the plugin from Fab and have no repo) and the lowest minor
 	 * the place's scripts actually use (#394, "record what's used"), so a place that uses nothing
 	 * new still runs on older clients. Need is every exported script's FMantleScriptApiUsage
-	 * result merged; an unanalysable script has already raised it to CurrentMinor.
+	 * result merged; an unanalyzable script has already raised it to CurrentMinor.
 	 */
 	FMantleScriptApiVersion RequiredScriptApiVersion(const FMantleScriptApiNeed& Need)
 	{
@@ -829,7 +829,7 @@ namespace
 	/**
 	 * A VoxelWorld entity's properties (#168 step 6), from a Mantle Voxel World: its size and settings, its blocks by the id of
 	 * their VoxelWorldData upload (none when the world is all air), and each block type's tiles by the ids of their texture
-	 * uploads, gathered as a decal's base colour is (FMantlePlaceDependencies::AddVoxelWorld). Placed at its location only: a
+	 * uploads, gathered as a decal's base color is (FMantlePlaceDependencies::AddVoxelWorld). Placed at its location only: a
 	 * block world is never rotated, scaled or parented. What of it cannot publish (AMantleVoxelWorldActor::DescribeProblems)
 	 * refuses the export, in the words Check uses.
 	 */
@@ -1518,7 +1518,7 @@ bool FMantlePlaceExporter::IsEngineInfrastructure(const AActor* Actor)
 namespace
 {
 	/** Whether Class is, or derives from, a class of this short name. Matching by name keeps
-	 *  MantleEditor free of module dependencies just to recognise a class (PCG's among them). */
+	 *  MantleEditor free of module dependencies just to recognize a class (PCG's among them). */
 	bool IsOrDerivesFromClassNamed(const UClass* Class, const TCHAR* Name)
 	{
 		for (; Class; Class = Class->GetSuperClass())
@@ -1655,7 +1655,7 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 	if (HasNothingToShow(Actor))
 	{
 		OutWhat = FString::Printf(TEXT("is a %s, which Mantle does not publish, and it has nothing a player could see, hear or touch, so it is left out of the place."), *Class->GetName());
-		OutRemedy = TEXT("Nothing to change: the rest of the place publishes without it. Blueprint logic never travels; use a place script for behaviour.");
+		OutRemedy = TEXT("Nothing to change: the rest of the place publishes without it. Blueprint logic never travels; use a place script for behavior.");
 		return true;
 	}
 	return false;
@@ -1829,7 +1829,7 @@ void FMantlePlaceExporter::DescribeUnpublishedParts(const AActor* Actor, TArray<
 		OutParts.Add(FMantleUnpublishedPart{
 			FString::Printf(TEXT("was spawned by a PCG graph (Spawn Actor) as a %s%s, which Mantle can't publish: only the actor types Mantle knows travel, and Blueprint logic never does."),
 				bBlueprint ? TEXT("Blueprint ") : TEXT(""), *Class->GetName()),
-			TEXT("Spawn static meshes with a Static Mesh Spawner instead, or spawn supported actors (Static Mesh Actors, lights). For behaviour, use a place script.") });
+			TEXT("Spawn static meshes with a Static Mesh Spawner instead, or spawn supported actors (Static Mesh Actors, lights). For behavior, use a place script.") });
 	}
 }
 
@@ -2514,7 +2514,7 @@ bool FMantlePlaceExporter::ClassifyActor(const AActor* Actor, EMantleEntityType&
 	// #528: one that can't publish never gets here (IsEngineInfrastructure, DescribeUnpublishedContent).
 	if (Actor->IsA(APhysicsConstraintActor::StaticClass())) { OutType = EMantleEntityType::Constraint; return true; }
 
-	// Trigger volumes and groups are recognised by their root component rather than their
+	// Trigger volumes and groups are recognized by their root component rather than their
 	// class, so both engine trigger actors and plain actors round-trip.
 	if (const USceneComponent* Root = Actor->GetRootComponent())
 	{
@@ -2582,7 +2582,7 @@ FString FMantlePlaceExporter::EntityIdFor(const AActor* Actor)
 	// ActorGuid is editor-only data; outside the editor only the object name is available.
 	const FString Label = Actor->GetName();
 #endif
-	return TEXT("ent_") + SanitiseId(Label);
+	return TEXT("ent_") + SanitizeId(Label);
 }
 
 bool FMantlePlaceExporter::ReadSoundEmitter(const AActor* Actor, FMantleSoundEmitterProps& OutProps, FString& OutProblem,
@@ -3254,7 +3254,7 @@ namespace
 		return Normalized;
 	}
 
-	/** What Export does with one instance of an instanced mesh, by its normalised scale. Gather asks the same question, so they agree. */
+	/** What Export does with one instance of an instanced mesh, by its normalized scale. Gather asks the same question, so they agree. */
 	enum class EExporterInstanceKind : uint8 { Plain, Mirrored, Flat };
 
 	EExporterInstanceKind ExporterClassifyInstance(const FVector& NormalizedScale)
@@ -3646,7 +3646,7 @@ void FMantlePlaceExporter::CollectPrefabParts(
 						OutUnsupported->Add(FMantleUnpublishedPart{
 							FString::Printf(TEXT("has a static mesh component ('%s') with a scale of %s, and a mirrored copy of its mesh could not be made (%s), so it is left out."),
 								*Scene->GetName(), *MeshScale.ToString(), *Mirror.Why),
-							TEXT("Use a mesh mirrored in your modelling tool, or a positive scale."),
+							TEXT("Use a mesh mirrored in your modeling tool, or a positive scale."),
 							/*bBlocksPublish*/ false, MantleCoverageCategory::StaticMeshes });
 					}
 					continue;
@@ -3662,7 +3662,7 @@ void FMantlePlaceExporter::CollectPrefabParts(
 					OutUnsupported->Add(FMantleUnpublishedPart{
 						FString::Printf(TEXT("has a skeletal mesh component ('%s') with a scale of %s, and Mantle can't mirror a skeletal mesh, so it is left out; the rest of the actor publishes."),
 							*Scene->GetName(), *MeshScale.ToString()),
-						TEXT("Use a positive scale, or a skeletal mesh mirrored in your modelling tool."),
+						TEXT("Use a positive scale, or a skeletal mesh mirrored in your modeling tool."),
 						/*bBlocksPublish*/ false, MantleCoverageCategory::SkeletalMeshes });
 				}
 				continue;
@@ -4059,8 +4059,8 @@ TArray<FMantleEntity> FMantlePlaceExporter::ChunkInstancedMeshes(const TArray<FM
 			{
 				ChunkBounds += Instances[Order[First + Offset].Value].GetLocation();
 			}
-			const FVector Centre = ChunkBounds.GetCenter();
-			const FVector Anchor(FMath::RoundToDouble(Centre.X), FMath::RoundToDouble(Centre.Y), FMath::RoundToDouble(Centre.Z));
+			const FVector Center = ChunkBounds.GetCenter();
+			const FVector Anchor(FMath::RoundToDouble(Center.X), FMath::RoundToDouble(Center.Y), FMath::RoundToDouble(Center.Z));
 
 			FMantleInstancedMeshProps Props;
 			Props.Mesh = Group->Mesh;
@@ -4951,7 +4951,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 
 		for (const FMantleScriptCollectionIssue& Issue : Issues)
 		{
-			// Wasm is a dropped language (S1.6), not merely an unrecognised extension -- a
+			// Wasm is a dropped language (S1.6), not merely an unrecognized extension -- a
 			// creator who still has a .wasm file under Scripts/ gets a message that says so
 			// exactly, instead of the generic "unknown extension" one below.
 			if (Issue.bLanguageUnknown &&
@@ -5122,7 +5122,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		}
 	}
 
-	// #786: the catalogue picture Publish captured and prepared, a texture upload like any other. Only a publish has
+	// #786: the catalog picture Publish captured and prepared, a texture upload like any other. Only a publish has
 	// one; an export for a preview or a file leaves metadata.thumbnail out.
 	if (Options.Assets && !Options.Assets->Thumbnail.IsEmpty())
 	{
@@ -6405,7 +6405,7 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 		}
 		else if (const FMantleTextProps* P20 = Entity.Props.TryGet<FMantleTextProps>())
 		{
-			// A new type (GhzGarage/mantle#724): its keys ship with it, so each is written. The colour is linear RGBA.
+			// A new type (GhzGarage/mantle#724): its keys ship with it, so each is written. The color is linear RGBA.
 			Writer->WriteValue(TEXT("text"), P20->Text);
 			Writer->WriteArrayStart(TEXT("color"));
 			Writer->WriteValue(static_cast<double>(P20->Color.R));
@@ -7039,8 +7039,8 @@ TArray<FString> FMantlePlaceExporter::MakeUIDocumentIds(const TArray<FString>& P
 	{
 		FString UnderUI = Path;
 		UnderUI.RemoveFromStart(TEXT("UI/"), ESearchCase::CaseSensitive);
-		// SanitiseId keeps at most 36 characters, so "_" and a suffix up to 64 still fit uid_'s 40.
-		const FString Base = TEXT("uid_") + SanitiseId(UnderUI);
+		// SanitizeId keeps at most 36 characters, so "_" and a suffix up to 64 still fit uid_'s 40.
+		const FString Base = TEXT("uid_") + SanitizeId(UnderUI);
 		FString Candidate = Base;
 		int32 Suffix = 2;
 		while (Used.Contains(Candidate)) Candidate = FString::Printf(TEXT("%s_%d"), *Base, Suffix++);
@@ -7071,7 +7071,7 @@ void FMantlePlaceExporter::CollectScriptFiles(
 	FMantleDiskScriptCatalogSource Source(FPaths::Combine(LevelDir, TEXT("place.json")));
 	OutEntries = Source.GetEntries();
 
-	// The catalogue silently skips a file it cannot classify (a UE_LOG warning only, per
+	// The catalog silently skips a file it cannot classify (a UE_LOG warning only, per
 	// MantleScriptCatalog.cpp). Walk the same directory by hand so nothing a creator put in
 	// Scripts/ is ever dropped without a word (#129).
 	TArray<FString> Files;
@@ -7228,7 +7228,7 @@ TArray<FString> FMantlePlaceExporter::MakeScriptIds(const TArray<FString>& Paths
 	TSet<FString> Used;
 	for (const FString& Path : Paths)
 	{
-		const FString Base = TEXT("scr_") + SanitiseId(FPaths::GetBaseFilename(Path, /*bRemovePath*/ false));
+		const FString Base = TEXT("scr_") + SanitizeId(FPaths::GetBaseFilename(Path, /*bRemovePath*/ false));
 		FString Candidate = Base;
 		int32 Suffix = 2;
 		while (Used.Contains(Candidate)) Candidate = FString::Printf(TEXT("%s_%d"), *Base, Suffix++);

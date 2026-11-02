@@ -830,7 +830,7 @@ bool FMantleMetaHumanBuild::Build(UObject& CharacterObject, const FString& Chara
 		return false;
 	}
 
-	// 2. Opened for editing (closed again only if this step opened it); the skin: Epic's centre skin tone, no underwear.
+	// 2. Opened for editing (closed again only if this step opened it); the skin: Epic's center skin tone, no underwear.
 	const bool bWasEditing = Subsystem->IsObjectAddedForEditing(Character);
 	if (!bWasEditing && !Subsystem->TryAddObjectToEdit(Character))
 	{
@@ -871,7 +871,7 @@ bool FMantleMetaHumanBuild::Build(UObject& CharacterObject, const FString& Chara
 		Character->HasHighResolutionTextures() ? 1 : 0);
 	if (!Character->HasHighResolutionTextures())
 	{
-		OutError = TEXT("Epic's cloud gave no skin textures (sign-in, licence agreement, network or service). Nothing was built; try again.");
+		OutError = TEXT("Epic's cloud gave no skin textures (sign-in, license agreement, network or service). Nothing was built; try again.");
 		return false;
 	}
 	FMetaHumanCharacterAutoRiggingRequestParams RigRequest;
@@ -896,7 +896,7 @@ bool FMantleMetaHumanBuild::Build(UObject& CharacterObject, const FString& Chara
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_CONVERT_BUILD auto-rig (joints and blend shapes): %.1f s, state %d"), FPlatformTime::Seconds() - Started, static_cast<int32>(Rig));
 	if (Rig != EMetaHumanCharacterRigState::Rigged)
 	{
-		OutError = TEXT("Epic's auto-rig didn't finish (sign-in, licence agreement, network or service). Nothing was built; try again.");
+		OutError = TEXT("Epic's auto-rig didn't finish (sign-in, license agreement, network or service). Nothing was built; try again.");
 		return false;
 	}
 
@@ -1746,7 +1746,7 @@ void FMantleMetaHumanBuildFixer::Analyze(const FMantleConvertContext& Context, T
 		{
 			continue;
 		}
-		Fix.Action = FString::Printf(TEXT("Builds it with Epic's MetaHuman tools: Epic's centre skin tone (players recolour it in game), no underwear, textures at most 2048. %s%s"),
+		Fix.Action = FString::Printf(TEXT("Builds it with Epic's MetaHuman tools: Epic's center skin tone (players recolor it in game), no underwear, textures at most 2048. %s%s"),
 			FMantleMetaHumanBuild::ConsentLine, bSignInUnchecked ? TEXT(" Your Epic sign-in is checked when you press Convert.") : TEXT(""));
 	}
 }
@@ -1824,7 +1824,7 @@ void FMantleMetaHumanSourceFixer::Analyze(const FMantleConvertContext& Context, 
 		{
 			continue;
 		}
-		Fix.Action = FString::Printf(TEXT("%s with Epic's MetaHuman tools at the default height (%.1f cm), Epic's centre skin tone (players recolour it in game), no underwear, textures at most 2048; %s itself is never changed. %s%s"),
+		Fix.Action = FString::Printf(TEXT("%s with Epic's MetaHuman tools at the default height (%.1f cm), Epic's center skin tone (players recolor it in game), no underwear, textures at most 2048; %s itself is never changed. %s%s"),
 			bAssembly ? (Context.MetaHuman.Find(PartIndex) && Context.MetaHuman.Find(PartIndex)->bFaceOnly
 					? TEXT("Fits a MetaHuman Creator character to its face mesh on MetaHuman's own body, then builds it")
 					: TEXT("Fits a MetaHuman Creator character to its face and body meshes, then builds it"))
@@ -1923,7 +1923,7 @@ bool FMantleMetaHumanSourceFixer::Apply(const FMantleConvertFix& Fix, FMantleCon
 		FMantleMetaHumanSteps::Discard(Made);
 		return false;
 	}
-	// Epic's centre skin tone, as MHBuild: the upload is geometry only, so a preset's own tone would show in its thumbnail and nowhere in game.
+	// Epic's center skin tone, as MHBuild: the upload is geometry only, so a preset's own tone would show in its thumbnail and nowhere in game.
 	if (!MantleMetaHumanBuildPrivate::BuildAndHandOff(Context, Fix.PartIndex, *Copy, CharacterFolder, OutError, /*bRequireUnclothed*/ true, /*bRetargetHeight*/ !bFixed, /*FirstRequestCm*/ RequestedCm, PredictedCm,
 		TFunction<UObject*(double, FString&)>(), /*bFixedBody*/ bFixed))
 	{

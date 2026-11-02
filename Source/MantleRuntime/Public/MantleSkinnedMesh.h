@@ -43,7 +43,7 @@ struct FMantleSkinnedMeshBone
  */
 struct FMantleSkinnedMeshLOD
 {
-	/** Unreal centimetres, component space of the reference pose. */
+	/** Unreal centimeters, component space of the reference pose. */
 	TArray<FVector3f> Positions;
 
 	/** One per vertex. */
@@ -66,7 +66,7 @@ struct FMantleSkinnedMeshLOD
 	/**
 	 * Hair card data (MSK1 flag bit 16): empty, or one per vertex. X and Y are the card's root UV (the
 	 * skin UV under the card's root, one value per card), Z is CoordU (0 at the root, 1 at the tip),
-	 * what MetaHuman's hair material reads for root-to-tip colour. Stored as half floats in MSK1, so
+	 * what MetaHuman's hair material reads for root-to-tip color. Stored as half floats in MSK1, so
 	 * these are exact. The builder hands them to the material as UV1 = root UV and UV2.x = CoordU.
 	 */
 	TArray<FVector3f> HairCards;
@@ -133,7 +133,7 @@ struct MANTLERUNTIME_API FMantleBodyOffsets
 	 * v > 0, its - shape for v < 0, nothing for a shape the mesh lacks. The deltas are added to every LOD's
 	 * positions and to each bone's local reference-pose translation (skipped when the mesh has no pose).
 	 * When anything moved, normals are recomputed per LOD (area-weighted, welded by identical position so the
-	 * copies split at UV seams agree) and tangents are re-orthogonalised against them, keeping their sign.
+	 * copies split at UV seams agree) and tangents are re-orthogonalized against them, keeping their sign.
 	 * All zeros, or no offsets, leave Mesh bit-identical. Adds to Mesh's current positions and keeps
 	 * Mesh.BodyOffsets, so run it on a copy of the base mesh, never twice on one mesh.
 	 */
@@ -192,7 +192,7 @@ struct MANTLERUNTIME_API FMantleSkinnedMesh
 	 * LOD0 render data and reference skeleton (LOD0 only: cooked meshes bring their own LODs). Positions, normals, tangents, UV0, indices, sections
 	 * (the LOD's material map applied), skin weights converted from section-local to mesh bone
 	 * indices, the raw bone table and its reference pose, and the vertex buffers' precision flags.
-	 * OutMaterials, when given, gets Source's material slots. Vertex colours and extra UV sets are
+	 * OutMaterials, when given, gets Source's material slots. Vertex colors and extra UV sets are
 	 * not carried (MSK1 has neither).
 	 *
 	 * Reads the render data's CPU copies, which editor builds always keep and cooked builds keep only

@@ -12,11 +12,11 @@
 // A value that is not a number in a mesh is set to a safe one before the export (the server refuses it otherwise).
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleGlbSanitiseNonFiniteTest,
+	FMantleGlbSanitizeNonFiniteTest,
 	"Mantle.Editor.GlbWriter.SetsValuesThatAreNotNumbers",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleGlbSanitiseNonFiniteTest::RunTest(const FString& Parameters)
+bool FMantleGlbSanitizeNonFiniteTest::RunTest(const FString& Parameters)
 {
 	const float NaN = std::numeric_limits<float>::quiet_NaN();
 	const float Infinity = std::numeric_limits<float>::infinity();
@@ -28,7 +28,7 @@ bool FMantleGlbSanitiseNonFiniteTest::RunTest(const FString& Parameters)
 	Glb.UVs = { FVector2f(0.25f, 0.5f), FVector2f(NaN, 0.5f), FVector2f(0.0f, Infinity) };
 	Glb.UV1s = { FVector2f(NaN, NaN), FVector2f(0.75f, 0.5f), FVector2f(0.0f, Infinity) };
 
-	const FMantleGlbNonFinite Found = FMantleGlbWriter::SanitiseNonFinite(Glb);
+	const FMantleGlbNonFinite Found = FMantleGlbWriter::SanitizeNonFinite(Glb);
 	TestEqual(TEXT("vertices with a bad texture coordinate, counted once each"), Found.TexCoords, 3);
 	TestEqual(TEXT("bad normals"), Found.Normals, 1);
 	TestEqual(TEXT("bad tangents"), Found.Tangents, 1);
@@ -55,12 +55,12 @@ bool FMantleGlbSanitiseNonFiniteTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("with w 1"), Tangent.W, 1.0f);
 
 	// A mesh with nothing wrong is not changed.
-	const FMantleGlbNonFinite Clean = FMantleGlbWriter::SanitiseNonFinite(Glb);
+	const FMantleGlbNonFinite Clean = FMantleGlbWriter::SanitizeNonFinite(Glb);
 	TestFalse(TEXT("a second pass finds nothing"), Clean.Any());
 
 	// A position cannot be repaired: counted, and left as it is.
 	Glb.Positions[1] = FVector3f(NaN, 0, 0);
-	const FMantleGlbNonFinite BadPosition = FMantleGlbWriter::SanitiseNonFinite(Glb);
+	const FMantleGlbNonFinite BadPosition = FMantleGlbWriter::SanitizeNonFinite(Glb);
 	TestEqual(TEXT("a bad position is counted"), BadPosition.Positions, 1);
 	TestTrue(TEXT("and left as it was"), Glb.Positions[1].ContainsNaN());
 	return true;

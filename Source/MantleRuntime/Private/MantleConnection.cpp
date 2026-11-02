@@ -76,7 +76,7 @@ FString FMantleConnection::ResolveAuthToken()
 	}
 
 #if !UE_BUILD_SHIPPING
-	// Local-development override only. A shipped client that honoured this would send a
+	// Local-development override only. A shipped client that honored this would send a
 	// developer token to the hosted API, be rejected, and never show Epic sign-in at all.
 	const FString DevelopmentOverride =
 		FPlatformMisc::GetEnvironmentVariable(TEXT("MANTLE_AUTH_TOKEN")).TrimStartAndEnd();

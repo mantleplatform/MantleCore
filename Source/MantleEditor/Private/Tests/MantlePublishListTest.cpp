@@ -68,14 +68,14 @@ bool FMantlePublishListTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("hair from the pack's rows, its own row only (bangs go with it, unticked brows and the accessory aren't listed)"),
 		Rows[1].Kind == EKind::PackHair && Rows[1].Index == 0 && Rows[1].Name == TEXT("Hair") && Rows[1].bTicked);
 	TestTrue(TEXT("corset with its edging, ticked"), Rows[2].Kind == EKind::Garment && Rows[2].Index == 0 && Rows[2].Name == TEXT("Corset with Lace Corset") && Rows[2].bTicked);
-	TestTrue(TEXT("high heels greyed with why, never ticked"), Rows[3].Kind == EKind::Garment && !Rows[3].bTicked && Rows[3].Why == Shoes.Why);
+	TestTrue(TEXT("high heels grayed with why, never ticked"), Rows[3].Kind == EKind::Garment && !Rows[3].bTicked && Rows[3].Why == Shoes.Why);
 	TestEqual(TEXT("slot word"), FMantlePublishList::SlotWord(TEXT("facial_hair")), FString(TEXT("Facial hair")));
 
-	// The walk: ticked, not greyed, not uploaded, in list order; untick means never opened.
+	// The walk: ticked, not grayed, not uploaded, in list order; untick means never opened.
 	TestEqual(TEXT("first: the body"), FMantlePublishList::Next(Rows, INDEX_NONE), 0);
 	TestEqual(TEXT("then the hair"), FMantlePublishList::Next(Rows, 0), 1);
 	TestEqual(TEXT("then the corset"), FMantlePublishList::Next(Rows, 1), 2);
-	TestEqual(TEXT("the greyed shoes never"), FMantlePublishList::Next(Rows, 2), INDEX_NONE);
+	TestEqual(TEXT("the grayed shoes never"), FMantlePublishList::Next(Rows, 2), INDEX_NONE);
 	Rows[1].bTicked = false;
 	TestEqual(TEXT("unticked hair skipped"), FMantlePublishList::Next(Rows, 0), 2);
 	Rows[0].bUploaded = true;
@@ -83,7 +83,7 @@ bool FMantlePublishListTest::RunTest(const FString& Parameters)
 	Rows[2].bTicked = false;
 	TestEqual(TEXT("nothing ticked left"), FMantlePublishList::Next(Rows, INDEX_NONE), INDEX_NONE);
 
-	// The Outfits made: a piece whose Outfit failed (high heels are found then) is greyed and unticked; a made one stays.
+	// The Outfits made: a piece whose Outfit failed (high heels are found then) is grayed and unticked; a made one stays.
 	{
 		Context.Garments[0].Outfit = TEXT("/Game/OA_Corset");
 		FMantleConvertGarment& Boots = Context.Garments.AddDefaulted_GetRef();
@@ -94,12 +94,12 @@ bool FMantlePublishListTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("boots ticked before the Outfits are made"), Synced.Last().bTicked && Synced.Last().Why.IsEmpty());
 		Context.Garments.Last().Error = TEXT("SK_Boots is a high heel");
 		FMantlePublishList::Sync(Context, Synced);
-		TestTrue(TEXT("failed Outfit: greyed and unticked"), !Synced.Last().bTicked && Synced.Last().Why.Contains(TEXT("high heel")));
+		TestTrue(TEXT("failed Outfit: grayed and unticked"), !Synced.Last().bTicked && Synced.Last().Why.Contains(TEXT("high heel")));
 		TestTrue(TEXT("made Outfit: still ticked"), Synced[2].bTicked && Synced[2].Why.IsEmpty());
 		TestEqual(TEXT("the walk never opens the failed piece"), FMantlePublishList::Next(Synced, 2), INDEX_NONE);
 	}
 
-	// A part Convert didn't make is greyed; a part left out starts unticked.
+	// A part Convert didn't make is grayed; a part left out starts unticked.
 	{
 		FMantleConvertContext Empty;
 		Empty.Parts.AddDefaulted_GetRef().Slot = TEXT("avatar");
@@ -108,8 +108,8 @@ bool FMantlePublishListTest::RunTest(const FString& Parameters)
 		Cloth.Mesh = Mesh(TEXT("SK_Cape"));
 		Cloth.bIncluded = false;
 		const TArray<FMantlePublishRow> Made = FMantlePublishList::Make(Empty, nullptr, HairSlots);
-		TestTrue(TEXT("no mesh: greyed"), Made.Num() == 2 && !Made[0].Why.IsEmpty() && !Made[0].bTicked);
-		TestTrue(TEXT("left out: unticked, not greyed"), Made.Num() == 2 && Made[1].Why.IsEmpty() && !Made[1].bTicked);
+		TestTrue(TEXT("no mesh: grayed"), Made.Num() == 2 && !Made[0].Why.IsEmpty() && !Made[0].bTicked);
+		TestTrue(TEXT("left out: unticked, not grayed"), Made.Num() == 2 && Made[1].Why.IsEmpty() && !Made[1].bTicked);
 	}
 
 	// A MetaHuman Blueprint on Convert: its clothing and hair kept as they are, listed after the body.

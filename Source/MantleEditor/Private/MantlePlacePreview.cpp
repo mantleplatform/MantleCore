@@ -277,7 +277,7 @@ FMantlePreviewResult FMantlePlacePreview::Build(UWorld* SourceWorld, const FMant
 	}
 	Result.SourceEntityCount = Exported.Place.Entities.Num();
 
-	// The long way round on purpose: serialise, then parse back. Anything that does not
+	// The long way round on purpose: serialize, then parse back. Anything that does not
 	// survive the data path is absent from the preview, exactly as it would be for players.
 	Result.PlaceJson = FMantlePlaceExporter::ToJson(Exported.Place);
 

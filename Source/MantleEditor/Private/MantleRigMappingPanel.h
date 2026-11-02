@@ -14,7 +14,7 @@ DECLARE_DELEGATE_OneParam(FOnMantleRigMappingChanged, const FMantleRigMapping&);
  * bone of the target skeleton, listing the rig's bones, pre-filled with the saved or suggested mapping; the bones the
  * converter cannot insert must be chosen, the others may be left empty (they are added with no weights). Every change
  * becomes the session's mapping for the mesh (FMantleAvatarRigMap::SetSessionMapping), which the fixer's Analyze and Apply
- * use, and is reported through OnMappingChanged so the fix list can analyse again. Save as profile writes the mapping to
+ * use, and is reported through OnMappingChanged so the fix list can analyze again. Save as profile writes the mapping to
  * <Project>/Saved/Mantle/RigProfiles, so the rig is known from then on. The fix list embeds it under an unknown rig's line.
  */
 class SMantleRigMappingPanel : public SCompoundWidget

@@ -26,7 +26,7 @@ namespace MantleChassisSpecTestPrivate
 
 	struct FGoldenWheel
 	{
-		double Centre[3];
+		double Center[3];
 	};
 
 	/** The document each preset's builder produced, captured from its code, that FMantleChassisSpec must reproduce. */
@@ -35,15 +35,15 @@ namespace MantleChassisSpecTestPrivate
 		const TCHAR* Id;
 		/** FMantleVehicleChassisBuilder::MakeDocument's text, as JSON (key order is not compared). */
 		const TCHAR* Document;
-		/** The grey body's vertices and triangles: the box's 24 and 12, and each wheel's 74 and 48 (a plane's six more boxes: a half-wing each, the tailplane, the fin and two propeller blades; a jet has a nozzle and an intake each side in place of the blades, one box more). */
+		/** The gray body's vertices and triangles: the box's 24 and 12, and each wheel's 74 and 48 (a plane's six more boxes: a half-wing each, the tailplane, the fin and two propeller blades; a jet has a nozzle and an intake each side in place of the blades, one box more). */
 		int32 Vertices;
 		int32 Triangles;
 		/** The body's bounds, cm: the box and the wheels. */
 		double Min[3];
 		double Max[3];
-		/** The skeleton: a root, then each wheel's bone (a steered centreline wheel hangs under its fork bone), with the reference pose's location. */
+		/** The skeleton: a root, then each wheel's bone (a steered centerline wheel hangs under its fork bone), with the reference pose's location. */
 		TArray<FGoldenBone> Bones;
-		/** Each wheel's centre, in wheel order. */
+		/** Each wheel's center, in wheel order. */
 		TArray<FGoldenWheel> Wheels;
 	};
 
@@ -366,7 +366,7 @@ namespace MantleChassisSpecTestPrivate
 		{
 			Doc->RemoveField(Key);
 		}
-		// A ground car's handling baked in: the steering's speed curve goes, and the tyres' friction is the preset's again (the front's is 6/7 of it, the rear's 8/7).
+		// A ground car's handling baked in: the steering's speed curve goes, and the tires' friction is the preset's again (the front's is 6/7 of it, the rear's 8/7).
 		const TSharedPtr<FJsonObject>* Steering = nullptr;
 		if (Doc->TryGetObjectField(TEXT("steering"), Steering) && Steering && Steering->IsValid())
 		{
@@ -428,7 +428,7 @@ bool FMantleChassisSpecComposesLikeBeforeTest::RunTest(const FString& Parameters
 		FMantleVehicleChassisBuilder::MakeDocument(Text, FromText, Error);
 		TestEqual(*FString::Printf(TEXT("%s: MakeDocument on the text is the spec's document"), *Id), FromText, Document);
 
-		// The skeleton and the grey body.
+		// The skeleton and the gray body.
 		FMantleVehicleAsset Asset;
 		FMantleVehicleAsset FromTextAsset;
 		if (!TestTrue(*FString::Printf(TEXT("%s: it makes an asset from the spec and from the text (%s)"), *Id, *Error),
@@ -452,8 +452,8 @@ bool FMantleChassisSpecComposesLikeBeforeTest::RunTest(const FString& Parameters
 		{
 			for (int32 Index = 0; Index < Want.Wheels.Num(); ++Index)
 			{
-				const double* Centre = Want.Wheels[Index].Centre;
-				TestTrue(*FString::Printf(TEXT("%s: wheel %d's centre"), *Id, Index), Asset.WheelPositions[Index].Equals(FVector(Centre[0], Centre[1], Centre[2]), 1.0e-6));
+				const double* Center = Want.Wheels[Index].Center;
+				TestTrue(*FString::Printf(TEXT("%s: wheel %d's center"), *Id, Index), Asset.WheelPositions[Index].Equals(FVector(Center[0], Center[1], Center[2]), 1.0e-6));
 			}
 		}
 		if (TestTrue(*FString::Printf(TEXT("%s: the body has a LOD"), *Id), Asset.Body.LODs.Num() == 1 && FromTextAsset.Body.LODs.Num() == 1))
@@ -633,7 +633,7 @@ bool FMantleChassisScaledMakesValidAssetsTest::RunTest(const FString& Parameters
 			TestEqual(*FString::Printf(TEXT("%s: the spring rate"), *Selector), Asset.Desc.SpringRate, Derived.SpringRate);
 			TestEqual(*FString::Printf(TEXT("%s: the engine's torque"), *Selector), Asset.Desc.MaxTorque, Derived.MaxTorque);
 			TestEqual(*FString::Printf(TEXT("%s: the steering lock"), *Selector), Asset.Desc.MaxSteeringAngle, Derived.MaxSteerAngle);
-			TestTrue(*FString::Printf(TEXT("%s: the centre of mass is the derived one"), *Selector), Asset.Desc.CenterOfMass.Equals(Derived.CenterOfMass, 1.0e-6));
+			TestTrue(*FString::Printf(TEXT("%s: the center of mass is the derived one"), *Selector), Asset.Desc.CenterOfMass.Equals(Derived.CenterOfMass, 1.0e-6));
 		}
 	}
 	return true;

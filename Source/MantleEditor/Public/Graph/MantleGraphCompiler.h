@@ -1,6 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 // Compiles a parsed FMantleGraph to Luau against the script API manifest via
-// FMantleGraphCatalogue. Covers the Blueprint-basics wave: branches, loops, variables, custom
+// FMantleGraphCatalog. Covers the Blueprint-basics wave: branches, loops, variables, custom
 // events/functions, on top of the event/call graph.
 #pragma once
 

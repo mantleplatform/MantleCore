@@ -124,7 +124,7 @@ enum class EMantleUploadPhase : uint8
 	Screening,
 	Done,
 	Failed,
-	Cancelled,
+	Canceled,
 };
 
 /**
@@ -192,7 +192,7 @@ public:
 	void Cancel();
 
 	EMantleUploadPhase GetPhase() const { return Phase; }
-	bool IsFinished() const { return Phase == EMantleUploadPhase::Done || Phase == EMantleUploadPhase::Failed || Phase == EMantleUploadPhase::Cancelled; }
+	bool IsFinished() const { return Phase == EMantleUploadPhase::Done || Phase == EMantleUploadPhase::Failed || Phase == EMantleUploadPhase::Canceled; }
 	bool Succeeded() const { return Phase == EMantleUploadPhase::Done; }
 
 	/** 0 to 1. */

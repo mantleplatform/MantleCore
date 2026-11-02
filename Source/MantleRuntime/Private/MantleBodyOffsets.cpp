@@ -44,7 +44,7 @@ namespace MantleBodyOffsetsPrivate
 
 	/**
 	 * Vertex normals from the triangles: area-weighted face normals summed per position (the copies a UV seam
-	 * splits share one sum) and normalised. A vertex whose faces are all degenerate keeps its old normal.
+	 * splits share one sum) and normalized. A vertex whose faces are all degenerate keeps its old normal.
 	 */
 	void RecomputeNormals(FMantleSkinnedMeshLOD& LOD)
 	{
@@ -91,7 +91,7 @@ namespace MantleBodyOffsetsPrivate
 	}
 
 	/** Gram-Schmidt each tangent against its new normal, keeping W (the binormal sign). */
-	void Reorthogonalise(FMantleSkinnedMeshLOD& LOD)
+	void Reorthogonalize(FMantleSkinnedMeshLOD& LOD)
 	{
 		if (LOD.Tangents.Num() != LOD.NumVertices())
 		{
@@ -144,7 +144,7 @@ void FMantleBodyOffsets::Apply(FMantleSkinnedMesh& Mesh, const int32 Weight, con
 			}
 		}
 		RecomputeNormals(LOD);
-		Reorthogonalise(LOD);
+		Reorthogonalize(LOD);
 	}
 
 	// Garments carry no pose (they borrow their wearer's), so there is nothing to move for them.

@@ -15,7 +15,7 @@ class UStaticMeshComponent;
  * A static mesh component is a sky mesh when any of these holds, in this order:
  *  1. Its actor is the engine's sky sphere (a class under /Engine/EngineSky/, BP_Sky_Sphere or a child of it).
  *  2. One of its materials is flagged Is Sky (UMaterial::bIsSky): the engine's own marker for a sky dome material.
- *  3. It is huge (a half-extent of MinHalfExtent or more), its bounds enclose the centre of every other mesh in
+ *  3. It is huge (a half-extent of MinHalfExtent or more), its bounds enclose the center of every other mesh in
  *     the level that is smaller than it, and its look says sky: its actor, Blueprint, component or one of its
  *     materials is named like a sky ("Sky", "Cloud") and its material is unlit or two-sided, or its material is
  *     unlit and two-sided.
@@ -25,7 +25,7 @@ class UStaticMeshComponent;
 class MANTLEEDITOR_API FMantleSkyMesh
 {
 public:
-	/** The smallest half-extent of a sky dome, in centimetres (100 m): a gazebo's dome is not a sky. */
+	/** The smallest half-extent of a sky dome, in centimeters (100 m): a gazebo's dome is not a sky. */
 	static constexpr double MinHalfExtent = 10000.0;
 
 	/** Whether Component is a sky mesh by the rule above. OutWhy, when given, says which part of it held. */

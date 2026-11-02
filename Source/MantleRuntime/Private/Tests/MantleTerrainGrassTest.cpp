@@ -325,7 +325,7 @@ bool FMantleTerrainGrassDeterministicTest::RunTest(const FString& Parameters)
 	// Another cell, or another entry's cell, is a different draw (the counts agree: only the draws differ).
 	FMantleTerrainGrassGenerator::GenerateCell(Entry, 2, FIntPoint(2, 2), Field, Map, 1.0, OtherCell);
 	FMantleTerrainGrassGenerator::GenerateCell(Entry, 3, FIntPoint(1, 2), Field, Map, 1.0, OtherEntry);
-	TestFalse(TEXT("a neighbouring cell differs"), SameInstances(First, OtherCell));
+	TestFalse(TEXT("a neighboring cell differs"), SameInstances(First, OtherCell));
 	TestFalse(TEXT("the same cell of another entry differs"), SameInstances(First, OtherEntry));
 	TestTrue(TEXT("cell seeds differ by cell"),
 		FMantleTerrainGrassGenerator::CellSeed(2, FIntPoint(1, 2)) != FMantleTerrainGrassGenerator::CellSeed(2, FIntPoint(2, 1)));
@@ -370,7 +370,7 @@ bool FMantleTerrainGrassWeightTest::RunTest(const FString& Parameters)
 	const FMantleTerrainGrass Entry = MakeEntry(2.0);
 	FMantleGrassCellInstances Cell;
 
-	// Weight 1 keeps every candidate: density x area, 2 per square metre over a 32 m cell.
+	// Weight 1 keeps every candidate: density x area, 2 per square meter over a 32 m cell.
 	FMantleTerrainGrassGenerator::GenerateCell(Entry, 0, FIntPoint(1, 1), Field, MakeMap(2, FColor(255, 255, 255, 255)), 1.0, Cell);
 	TestEqual(TEXT("a cell asks for density x area candidates"), Cell.Candidates, 2048);
 	TestEqual(TEXT("and at weight 1 keeps them all"), Cell.Instances.Num(), 2048);
@@ -513,16 +513,16 @@ bool FMantleTerrainGrassCellsTest::RunTest(const FString& Parameters)
 
 	// 32 m cells, halved while one would ask for more than 16384 candidates, never below 4 m.
 	TestEqual(TEXT("a sparse entry's cell"), FMantleTerrainGrassGenerator::CellSizeCm(MakeEntry(0.1)), 3200.0);
-	TestEqual(TEXT("10 a square metre keeps 32 m"), FMantleTerrainGrassGenerator::CellSizeCm(MakeEntry(10.0)), 3200.0);
-	TestEqual(TEXT("16 a square metre keeps 32 m"), FMantleTerrainGrassGenerator::CellSizeCm(MakeEntry(16.0)), 3200.0);
-	TestEqual(TEXT("17 a square metre halves it"), FMantleTerrainGrassGenerator::CellSizeCm(MakeEntry(17.0)), 1600.0);
+	TestEqual(TEXT("10 a square meter keeps 32 m"), FMantleTerrainGrassGenerator::CellSizeCm(MakeEntry(10.0)), 3200.0);
+	TestEqual(TEXT("16 a square meter keeps 32 m"), FMantleTerrainGrassGenerator::CellSizeCm(MakeEntry(16.0)), 3200.0);
+	TestEqual(TEXT("17 a square meter halves it"), FMantleTerrainGrassGenerator::CellSizeCm(MakeEntry(17.0)), 1600.0);
 	TestEqual(TEXT("the densest entry's cell"), FMantleTerrainGrassGenerator::CellSizeCm(MakeEntry(FMantlePlaceLimits::MaxTerrainGrassDensity)), 800.0);
 	for (const double Density : { 0.001, 1.0, 10.0, 17.0, 50.0, FMantlePlaceLimits::MaxTerrainGrassDensity })
 	{
 		TestTrue(FString::Printf(TEXT("density %g stays within the candidate cap"), Density),
 			FMantleTerrainGrassGenerator::CandidateCount(MakeEntry(Density), 1.0) <= FMantleTerrainGrassGenerator::MaxCandidatesPerCell);
 	}
-	TestEqual(TEXT("a 32 m cell at 2 a square metre"), FMantleTerrainGrassGenerator::CandidateCount(MakeEntry(2.0), 1.0), 2048);
+	TestEqual(TEXT("a 32 m cell at 2 a square meter"), FMantleTerrainGrassGenerator::CandidateCount(MakeEntry(2.0), 1.0), 2048);
 	TestEqual(TEXT("at half the density scale"), FMantleTerrainGrassGenerator::CandidateCount(MakeEntry(2.0), 0.5), 1024);
 	TestEqual(TEXT("at density scale 0"), FMantleTerrainGrassGenerator::CandidateCount(MakeEntry(2.0), 0.0), 0);
 
@@ -540,7 +540,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FMantleTerrainGrassMapSamplingTest::RunTest(const FString& Parameters)
 {
-	// Two texels across: red 0 on the left, 255 on the right. Texel centres are at 0.25 and 0.75 of the terrain.
+	// Two texels across: red 0 on the left, 255 on the right. Texel centers are at 0.25 and 0.75 of the terrain.
 	TArray<FColor> Pixels = { FColor(0, 10, 0, 0), FColor(255, 20, 0, 200) };
 	FMantleTerrainWeights Map;
 	if (!TestTrue(TEXT("the map builds"), FMantleTerrainWeights::FromPixels(2, 1, Pixels, Map, true)))
@@ -548,11 +548,11 @@ bool FMantleTerrainGrassMapSamplingTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	TestTrue(TEXT("and keeps its pixels"), Map.HasPixels());
-	TestEqual(TEXT("left of the first centre clamps"), Map.SampleChannel(0, 0.0, 0.5), 0.0);
-	TestEqual(TEXT("at the first centre"), Map.SampleChannel(0, 0.25, 0.5), 0.0);
+	TestEqual(TEXT("left of the first center clamps"), Map.SampleChannel(0, 0.0, 0.5), 0.0);
+	TestEqual(TEXT("at the first center"), Map.SampleChannel(0, 0.25, 0.5), 0.0);
 	TestTrue(TEXT("halfway is half"), FMath::IsNearlyEqual(Map.SampleChannel(0, 0.5, 0.5), 0.5, 1.0e-9));
-	TestEqual(TEXT("at the last centre"), Map.SampleChannel(0, 0.75, 0.5), 1.0);
-	TestEqual(TEXT("past the last centre clamps"), Map.SampleChannel(0, 1.0, 0.5), 1.0);
+	TestEqual(TEXT("at the last center"), Map.SampleChannel(0, 0.75, 0.5), 1.0);
+	TestEqual(TEXT("past the last center clamps"), Map.SampleChannel(0, 1.0, 0.5), 1.0);
 	TestTrue(TEXT("green is its own channel"), FMath::IsNearlyEqual(Map.SampleChannel(1, 0.75, 0.5), 20.0 / 255.0, 1.0e-9));
 	TestTrue(TEXT("alpha is the fourth"), FMath::IsNearlyEqual(Map.SampleChannel(3, 0.5, 0.5), 100.0 / 255.0, 1.0e-9));
 	TestEqual(TEXT("a channel that does not exist"), Map.SampleChannel(4, 0.5, 0.5), 0.0);

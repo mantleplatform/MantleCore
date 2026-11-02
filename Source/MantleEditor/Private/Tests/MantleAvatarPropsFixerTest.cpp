@@ -63,7 +63,7 @@ bool FMantleAvatarPropBonesTest::RunTest(const FString& Parameters)
 	Add(TEXT("pipe_bowl"), TEXT("pipe"));
 	Add(TEXT("helmet_blade"), TEXT("head"));
 	Add(TEXT("hip_eyelet_front_l_01"), TEXT("pelvis"));
-	// Wukong: shoulder armour named after the shoulder blade, under the upper arm.
+	// Wukong: shoulder armor named after the shoulder blade, under the upper arm.
 	Add(TEXT("shoulder_blade_out_r"), TEXT("upperarm_r"));
 	// Riktor (owner 2026-10-14: a chain held in the hand is a weapon): chains named after the arm and hand they hang from.
 	Add(TEXT("hand_l"), TEXT("lowerarm_r"));
@@ -207,7 +207,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 // mantle#861's fault: an invisible shell 1 cm over the legs went from LOD 0, and LOD 1's reduced legs (their points moved
-// half a centimetre towards it) went with it. A point goes only when it is clearly nearer what went than what stayed.
+// half a centimeter towards it) went with it. A point goes only when it is clearly nearer what went than what stayed.
 bool FMantleAvatarPropsShellTest::RunTest(const FString& Parameters)
 {
 	TestTrue(TEXT("on the removed shell, the body 1 cm away: goes"), FMantleAvatarPropsFixer::IsWhereRemoved(TOptional<float>(0.0f), TOptional<float>(1.0f)));

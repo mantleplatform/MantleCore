@@ -11,8 +11,8 @@ class FJsonObject;
 /**
  * What kind of vehicle a preset is (schema/vehicle-preset.schema.json `type`, #793): the family whose derive block it shares. A type selects
  * only that block, the stability target and the two camera constants. The cars are the sedan, sports car, limousine, pickup and van; the
- * trucks the truck and the six-wheeler; a motorcycle has one wheel on each axle, on the centreline, and balances itself; a plane flies on a
- * wing, a tailplane and a fin (chassis.aircraft) and stands on tricycle gear, its nose wheel on the centreline; a helicopter is lifted and steered
+ * trucks the truck and the six-wheeler; a motorcycle has one wheel on each axle, on the centerline, and balances itself; a plane flies on a
+ * wing, a tailplane and a fin (chassis.aircraft) and stands on tricycle gear, its nose wheel on the centerline; a helicopter is lifted and steered
  * by its main rotor (chassis.helicopter) and stands on two skids, each a pair of hidden wheels that are always braked; a hovercraft floats on four
  * pads (chassis.hovercraft), suspensions with no wheel at the layout's hidden wheel points, and is pushed by a fan.
  */
@@ -32,8 +32,8 @@ struct MANTLERUNTIME_API FMantleChassisAxle
 	bool bSteer = false;
 	bool bDrive = false;
 	bool bHandbrake = false;
-	/** One wheel, on the centreline, instead of a pair: a plane's nose wheel. (A layout whose every axle is like that is FMantleChassisSpec::bCentreline.) */
-	bool bCentreline = false;
+	/** One wheel, on the centerline, instead of a pair: a plane's nose wheel. (A layout whose every axle is like that is FMantleChassisSpec::bCenterline.) */
+	bool bCenterline = false;
 	/** How far back from the front axle, as a share of the wheelbase: 0 is the front axle, 1 the rearmost. */
 	double Position = 0.0;
 };
@@ -47,7 +47,7 @@ struct FMantleChassisBlock
 
 /**
  * One lifting surface of a plane (chassis.aircraft.wing, tailplane and fin): its planform, where its aerofoil is, and the angles it flies on.
- * Every surface is one block centred on Y that turns as a whole on a bone at its aerofoil: an aileron turns a half-wing, the elevator the
+ * Every surface is one block centered on Y that turns as a whole on a bone at its aerofoil: an aileron turns a half-wing, the elevator the
  * tailplane, the rudder the fin. A wing and a tailplane lie flat, so Span is tip to tip along Y and Z their height; a fin stands on the
  * fuselage's top, so Span is its height and it has no Z of its own. Lengths are cm, areas m^2 and angles degrees, which do not scale.
  */
@@ -81,7 +81,7 @@ struct MANTLERUNTIME_API FMantleChassisAircraft
 	FMantleChassisSurface Wing;
 	FMantleChassisSurface Tailplane;
 	FMantleChassisSurface Fin;
-	/** Propellers: one engine on the centreline at the nose, or two, one each side of it on the wing. Jets: one nozzle on the centreline behind the tail, or two side by side. */
+	/** Propellers: one engine on the centerline at the nose, or two, one each side of it on the wing. Jets: one nozzle on the centerline behind the tail, or two side by side. */
 	int32 EngineCount = 1;
 	/** Each engine's thrust at full throttle, N. The preset's own; a resized chassis's is in its handling. */
 	double EngineThrustNewtons = 0.0;
@@ -94,7 +94,7 @@ struct MANTLERUNTIME_API FMantleChassisAircraft
 	double PropellerRpm = 0.0;
 	/** The most the airframe is allowed to fly, cm/s (FMantleVehicleDefinition AirSpeedLimitCmPerSec). */
 	double AirSpeedLimitCmPerSec = 0.0;
-	/** The speed the airframe is trimmed to fly level at, elevator centred, cm/s (chassis.aircraft.cruiseSpeed). Not in a vehicle document: it is what
+	/** The speed the airframe is trimmed to fly level at, elevator centered, cm/s (chassis.aircraft.cruiseSpeed). Not in a vehicle document: it is what
 	 *  FMantleChassisDerive::LevelFlight solves the tailplane's camber and CruiseThrottle at, so a resized airframe flies level hands-off as the preset does. */
 	double CruiseSpeedCmPerSec = 0.0;
 	/** The throttle (0 to 1 of the engines' thrust) that flies the airframe level at its cruise speed: what the pilot's throttle returns to when W and S
@@ -107,7 +107,7 @@ struct MANTLERUNTIME_API FMantleChassisAircraft
 
 /**
  * What a helicopter preset adds to the chassis (schema/vehicle-preset.schema.json chassis.helicopter): the cabin is the chassis's body box, and this is
- * the rest, its rotors, tail and cockpit. Model space, cm. The main rotor's hub is over the centre of mass, so its lift turns nothing; the skids are the
+ * the rest, its rotors, tail and cockpit. Model space, cm. The main rotor's hub is over the center of mass, so its lift turns nothing; the skids are the
  * layout's wheels, which stay hidden.
  */
 struct MANTLERUNTIME_API FMantleChassisHelicopter
@@ -120,7 +120,7 @@ struct MANTLERUNTIME_API FMantleChassisHelicopter
 	double RotorZ = 0.0;
 	double RotorThrustNewtons = 0.0;
 	double RotorRpm = 0.0;
-	/** The tail boom, from the cabin's rear end back by its length, centred on Y, its middle at BoomZ. */
+	/** The tail boom, from the cabin's rear end back by its length, centered on Y, its middle at BoomZ. */
 	double BoomLength = 0.0;
 	double BoomWidth = 0.0;
 	double BoomHeight = 0.0;
@@ -177,7 +177,7 @@ struct MANTLERUNTIME_API FMantleChassisHovercraft
 	/** The drawn skirt: how much wider than the hull it is each way, and how far its underside is off the ground. */
 	double SkirtOverhang = 0.0;
 	double SkirtGap = 0.0;
-	/** What stands in for a tyre's grip while a pad touches the ground: per second against the sideways speed, the yaw rate and (the skirt brake) the
+	/** What stands in for a tire's grip while a pad touches the ground: per second against the sideways speed, the yaw rate and (the skirt brake) the
 	 *  velocity along the hull, each at most its cap (cm/s^2, degrees/s^2, cm/s^2). Accelerations, so they do not scale. */
 	double LateralPerSecond = 0.0;
 	double MaxLateralAccel = 0.0;
@@ -194,7 +194,7 @@ struct MANTLERUNTIME_API FMantleChassisHovercraft
  * A preset's own size (#793): the dimensions its hand-tuned handling belongs to. FMantleChassisDerive multiplies that handling by how a chassis's
  * dimensions differ from these, so a chassis with these dimensions has exactly the preset's handling and a dimension edited on its own moves only
  * the numbers that depend on it. Set when the preset is read; Scaled and any edit of the chassis leave it alone. WheelWidth is kept with the rest
- * but no rule reads it: how wide a tyre is does not change how a vehicle drives (#793, customisation never changes physics).
+ * but no rule reads it: how wide a tire is does not change how a vehicle drives (#793, customization never changes physics).
  */
 struct MANTLERUNTIME_API FMantleChassisSize
 {
@@ -208,7 +208,7 @@ struct MANTLERUNTIME_API FMantleChassisSize
 	double Clearance = 0.0;
 	/** The archetype's axles, front first: how many wheels it has. */
 	TArray<FMantleChassisAxle> Axles;
-	bool bCentreline = false;
+	bool bCenterline = false;
 	/** The archetype's airframe: a plane's wing, tailplane and fin areas follow how much their planforms differ from these. */
 	FMantleChassisAircraft Aircraft;
 	/** The archetype's rotors and tail. */
@@ -216,13 +216,13 @@ struct MANTLERUNTIME_API FMantleChassisSize
 	/** The archetype's pads, fan and fin: a hovercraft's spring rate follows how much its pads come down against these, and its rudder its fin's planform. */
 	FMantleChassisHovercraft Hovercraft;
 
-	/** A pair of wheels to an axle, or one for an axle on the centreline (the whole layout's, or the axle's own). */
+	/** A pair of wheels to an axle, or one for an axle on the centerline (the whole layout's, or the axle's own). */
 	int32 WheelCount() const
 	{
 		int32 Count = 0;
 		for (const FMantleChassisAxle& Axle : Axles)
 		{
-			Count += (bCentreline || Axle.bCentreline) ? 1 : 2;
+			Count += (bCenterline || Axle.bCenterline) ? 1 : 2;
 		}
 		return Count;
 	}
@@ -231,7 +231,7 @@ struct MANTLERUNTIME_API FMantleChassisSize
 /**
  * A chassis, read (#793): the size, layout, seats and handling a vehicle's body, wheels and document are made from. Parse reads a preset's
  * text; Scaled sizes one by a uniform factor and derives its handling from the new dimensions (FMantleChassisDerive); ComposeDocument writes
- * its vehicle document and FMantleVehicleChassisBuilder::MakeAsset builds its grey body, skeleton and Desc.
+ * its vehicle document and FMantleVehicleChassisBuilder::MakeAsset builds its gray body, skeleton and Desc.
  *
  * Model space, cm: +X forward, +Y right, +Z up, the origin on the ground under the middle of the wheelbase, the driver on -Y.
  * Value semantics: a copy shares nothing it can change. No UObjects: any thread.
@@ -260,7 +260,7 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 
 	/**
 	 * How wide a jet's square nozzle is, as a share of the fuselage's narrower side: a single engine's, and each of a twin's, whose two sit side by side
-	 * TwinNozzleSpread of the fuselage's width either side of the centreline (schema/validate.py PLANE_NOZZLE_SIZE and PLANE_TWIN_NOZZLE_SPREAD).
+	 * TwinNozzleSpread of the fuselage's width either side of the centerline (schema/validate.py PLANE_NOZZLE_SIZE and PLANE_TWIN_NOZZLE_SPREAD).
 	 */
 	static constexpr double SingleNozzleSize = 0.7;
 	static constexpr double TwinNozzleSize = 0.4;
@@ -274,7 +274,7 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	/** How far the tail rotor's hub stands out from the boom's left side, cm at scale 1 (schema/validate.py HELI_TAIL_ROTOR_GAP). */
 	static constexpr double TailRotorGap = 10.0;
 
-	/** A helicopter's grey parts, cm at scale 1: the mast's half-width, and each main and tail rotor blade's half-chord and half-thickness. */
+	/** A helicopter's gray parts, cm at scale 1: the mast's half-width, and each main and tail rotor blade's half-chord and half-thickness. */
 	static constexpr double MastHalfWidth = 12.0;
 	static constexpr double RotorBladeHalfChord = 15.0;
 	static constexpr double RotorBladeHalfThickness = 3.0;
@@ -301,7 +301,7 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 
 	/** The preset's `defaults`, read-only: a document fragment ComposeDocument completes in a copy. */
 	TSharedPtr<const FJsonObject> Defaults;
-	/** The preset's hand-tuned handling: `defaults` and the chassis's centre of mass, read. FMantleChassisDerive returns exactly this at ArchetypeSize. */
+	/** The preset's hand-tuned handling: `defaults` and the chassis's center of mass, read. FMantleChassisDerive returns exactly this at ArchetypeSize. */
 	FMantleChassisHandling Archetype;
 	/** The preset's derive block: what a ratio of dimensions cannot say. */
 	FMantleChassisDeriveConstants Constants;
@@ -325,15 +325,15 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	double RimRadius = 0.0;
 	/** seats.passenger is set: the car has a passenger seat, the driver's mirrored across Y. */
 	bool bPassenger = false;
-	/** One wheel per axle, on the centreline (layout.centreline): a motorcycle. A plane has only its nose axle so (FMantleChassisAxle::bCentreline). */
-	bool bCentreline = false;
+	/** One wheel per axle, on the centerline (layout.centerline): a motorcycle. A plane has only its nose axle so (FMantleChassisAxle::bCenterline). */
+	bool bCenterline = false;
 	/** The seat has a steering wheel (a rider's has handlebars instead, and a pilot's a stick and a throttle). */
 	bool bSteeringWheel = true;
 	FString DriverSeat = TEXT("car");
 	FName ForkBone;
 	FMantleVehicleChassisRider Rider;
 	/** Where the body box's middle is along X, cm: 0, the middle of the wheelbase, for everything but a plane or a helicopter, whose fuselage or cabin is not
-	 *  centred on its landing gear or skids. */
+	 *  centered on its landing gear or skids. */
 	double BodyX = 0.0;
 	/** A plane's airframe and cockpit (chassis.aircraft); bSet is false for everything else. */
 	FMantleChassisAircraft Aircraft;
@@ -342,27 +342,27 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	/** A hovercraft's pads, fan, fin, skirt and damping (chassis.hovercraft); bSet is false for everything else. */
 	FMantleChassisHovercraft Hovercraft;
 
-	/** Whether axle Axle has one wheel, on the centreline: the whole layout's, or the axle's own. */
-	bool AxleIsCentreline(const int32 Axle) const { return bCentreline || Axles[Axle].bCentreline; }
+	/** Whether axle Axle has one wheel, on the centerline: the whole layout's, or the axle's own. */
+	bool AxleIsCenterline(const int32 Axle) const { return bCenterline || Axles[Axle].bCenterline; }
 
-	/** A pair of wheels to an axle, or one for an axle on the centreline. */
+	/** A pair of wheels to an axle, or one for an axle on the centerline. */
 	int32 WheelCount() const
 	{
 		int32 Count = 0;
 		for (int32 Axle = 0; Axle < Axles.Num(); ++Axle)
 		{
-			Count += AxleIsCentreline(Axle) ? 1 : 2;
+			Count += AxleIsCenterline(Axle) ? 1 : 2;
 		}
 		return Count;
 	}
 
-	/** The first wheel of axle Axle, counted from the front axle's left (a pair is made left then right; a centreline axle has the one). */
+	/** The first wheel of axle Axle, counted from the front axle's left (a pair is made left then right; a centerline axle has the one). */
 	int32 FirstWheelOf(const int32 Axle) const
 	{
 		int32 First = 0;
 		for (int32 Before = 0; Before < Axle; ++Before)
 		{
-			First += AxleIsCentreline(Before) ? 1 : 2;
+			First += AxleIsCenterline(Before) ? 1 : 2;
 		}
 		return First;
 	}
@@ -372,7 +372,7 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	{
 		for (int32 Axle = 0; Axle < Axles.Num(); ++Axle)
 		{
-			if (Index < FirstWheelOf(Axle) + (AxleIsCentreline(Axle) ? 1 : 2))
+			if (Index < FirstWheelOf(Axle) + (AxleIsCenterline(Axle) ? 1 : 2))
 			{
 				return Axle;
 			}
@@ -383,14 +383,14 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	/** The bone of wheel Index. */
 	FName WheelBone(int32 Index) const;
 
-	/** The fork bone a steered centreline wheel on axle Axle hangs under. */
+	/** The fork bone a steered centerline wheel on axle Axle hangs under. */
 	FName ForkBoneOfAxle(int32 Axle) const;
 
-	/** The centre of wheel Index: its axle's X, the side (0 is left, -Y; a pair is left then right) across the track; a centreline wheel is on Y 0. */
-	FVector WheelCentre(const int32 Index) const
+	/** The center of wheel Index: its axle's X, the side (0 is left, -Y; a pair is left then right) across the track; a centerline wheel is on Y 0. */
+	FVector WheelCenter(const int32 Index) const
 	{
 		const int32 Axle = AxleOf(Index);
-		const double Y = AxleIsCentreline(Axle) ? 0.0 : (Index == FirstWheelOf(Axle) ? -0.5 : 0.5) * Track;
+		const double Y = AxleIsCenterline(Axle) ? 0.0 : (Index == FirstWheelOf(Axle) ? -0.5 : 0.5) * Track;
 		return FVector(Wheelbase * (0.5 - Axles[Axle].Position), Y, WheelRadius);
 	}
 
@@ -401,7 +401,7 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	FMantleChassisBlock BodyBlock() const;
 
 	/**
-	 * A plane's lifting surfaces as the blocks the grey body draws and the document collides (Aircraft.bSet), in the same frame: the whole wing, one
+	 * A plane's lifting surfaces as the blocks the gray body draws and the document collides (Aircraft.bSet), in the same frame: the whole wing, one
 	 * half of it (the left, -Y, or the right) with the aileron bone that turns it, the tailplane and the fin. A block is SurfaceThickness of its chord
 	 * thick, runs 0.25 chord ahead of its aerofoil's quarter-chord line to 0.75 behind, and a fin stands from BodyTop() up by its height.
 	 */
@@ -418,25 +418,25 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	/** Where an aileron's bone hinges: the middle of its half-wing's span, on the wing's quarter-chord line. */
 	FVector AileronBonePosition(bool bRight) const;
 
-	/** The hub of engine Engine's propeller (0 with one engine: the centreline; with two, 0 is the left): a third of the half-span out for two, at the fuselage's middle height. */
+	/** The hub of engine Engine's propeller (0 with one engine: the centerline; with two, 0 is the left): a third of the half-span out for two, at the fuselage's middle height. */
 	FVector PropellerHub(int32 Engine) const;
 
 	/**
-	 * The middle of jet engine Engine's nozzle exit (0 with one engine: the centreline; with two, 0 is the left), at EngineX behind the tail and the
-	 * fuselage's middle height; a twin's two are TwinNozzleSpread of the fuselage's width either side of the centreline.
+	 * The middle of jet engine Engine's nozzle exit (0 with one engine: the centerline; with two, 0 is the left), at EngineX behind the tail and the
+	 * fuselage's middle height; a twin's two are TwinNozzleSpread of the fuselage's width either side of the centerline.
 	 */
 	FVector NozzleLocation(int32 Engine) const;
 
 	/** Where engine Engine pushes from: its propeller's hub (Aircraft.bPropeller), or its jet's nozzle exit. */
 	FVector EngineLocation(int32 Engine) const;
 
-	/** A jet engine's nozzle as the grey body draws it (no collision): a square box from its exit back at EngineX forward to the fuselage's rear end. */
+	/** A jet engine's nozzle as the gray body draws it (no collision): a square box from its exit back at EngineX forward to the fuselage's rear end. */
 	FMantleChassisBlock NozzleBlock(int32 Engine) const;
 
 	/** A jet's intake on the left (-Y) or right side of the fuselage (no collision): a box against the fuselage's side, from the wing's leading edge forward. */
 	FMantleChassisBlock IntakeBlock(bool bRight) const;
 
-	/** A helicopter's main rotor hub: over the centre of mass, at the rotor's height, so the rotor's lift passes through the centre of mass when it is level. */
+	/** A helicopter's main rotor hub: over the center of mass, at the rotor's height, so the rotor's lift passes through the center of mass when it is level. */
 	FVector MainRotorHub() const;
 
 	/** A helicopter's tail rotor hub: half the fin's chord ahead of the boom's end, TailRotorGap out from the boom's left side, at the boom's middle height. */
@@ -487,7 +487,7 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 
 	/**
 	 * The vehicle document of Spec (schema/vehicle.schema.json, every default filled) as UTF-8 text: its defaults, with Derived's numbers over
-	 * them when it has any, completed with schema defaults, plus the chassis's own wheels, collision box, centre of mass and seats. Spec is
+	 * them when it has any, completed with schema defaults, plus the chassis's own wheels, collision box, center of mass and seats. Spec is
 	 * not changed. OutHeld, when given, gets a line for every number the document's ranges held ("path value held to limit",
 	 * FMantleVehicleChassisDocument::Derive's).
 	 */
@@ -496,7 +496,7 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	/**
 	 * Spec sized Factor times as large (#793): the layout, body, seat, steering wheel, rider and (for a plane, a helicopter or a hovercraft) airframe, rotors,
 	 * cockpit, pads, fan, fin and skirt geometry scaled by Factor, then the handling
-	 * re-derived from the new dimensions (FMantleChassisDerive, every feel slider at 0), its centre of mass the derived one. A Factor of 1
+	 * re-derived from the new dimensions (FMantleChassisDerive, every feel slider at 0), its center of mass the derived one. A Factor of 1
 	 * returns Spec itself, its hand-tuned handling untouched: a preset keeps its own numbers and only a resized chassis uses derived ones. A
 	 * A Factor that is not a finite number above 0 returns Spec too. The steering wheel's rim radius is held to the document's 10 to 30 cm.
 	 * A plane's tailplane camber and cruise throttle are then solved again (Trim): its weight, wings and thrust no longer follow the preset's trim.
@@ -505,7 +505,7 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 
 	/**
 	 * Trims a plane (Aircraft.bSet with a cruise speed): sets the tailplane's camber and Aircraft.CruiseThrottle to what flies it level at its cruise speed
-	 * with the elevator centred, from its current dimensions and handling (FMantleChassisDerive::LevelFlight; the same arithmetic as schema/validate.py's
+	 * with the elevator centered, from its current dimensions and handling (FMantleChassisDerive::LevelFlight; the same arithmetic as schema/validate.py's
 	 * trim). Scaled does it; call it after changing a plane's dimensions in any other way. Nothing changes for anything that is not a plane. When no camber
 	 * within the elevator's reach holds level flight at that speed (the plane is too heavy for its wings) the spec keeps its numbers, a line saying so is
 	 * added to the Clamped of its derived handling, and this returns false.

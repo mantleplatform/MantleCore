@@ -58,7 +58,7 @@ public:
 	USoundBase* LoadSound(const FString& AssetId, FString& OutError) const;
 
 	/**
-	 * A texture an entity names directly (a Decal's, #472), read with Role: Color for a base colour,
+	 * A texture an entity names directly (a Decal's, #472), read with Role: Color for a base color,
 	 * Normal for a normal map. An uploaded id is answered by the live set that prepared it in that
 	 * role; the built-in table has no textures today, so any other id is an error.
 	 */

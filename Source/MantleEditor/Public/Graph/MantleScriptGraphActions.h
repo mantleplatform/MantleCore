@@ -1,5 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
-// Content Browser presentation (icon colour, category, double-click) for UMantleScriptGraph.
+// Content Browser presentation (icon color, category, double-click) for UMantleScriptGraph.
 #pragma once
 
 #include "CoreMinimal.h"

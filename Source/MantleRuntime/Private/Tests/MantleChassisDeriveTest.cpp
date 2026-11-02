@@ -306,7 +306,7 @@ bool FMantleChassisScaledSpecScalesGeometryTest::RunTest(const FString& Paramete
 				Big.Scale == S && Big.ArchetypeSize.WheelRadius == Spec.ArchetypeSize.WheelRadius && Big.ArchetypeSize.Wheelbase == Spec.ArchetypeSize.Wheelbase
 				&& Big.ArchetypeSize.Track == Spec.ArchetypeSize.Track && Big.ArchetypeSize.WheelWidth == Spec.ArchetypeSize.WheelWidth && Big.ArchetypeSize.Length == Spec.ArchetypeSize.Length
 				&& Big.ArchetypeSize.Width == Spec.ArchetypeSize.Width && Big.ArchetypeSize.Height == Spec.ArchetypeSize.Height
-				&& Big.ArchetypeSize.Clearance == Spec.ArchetypeSize.Clearance && Big.ArchetypeSize.WheelCount() == Spec.WheelCount() && Big.ArchetypeSize.bCentreline == Spec.bCentreline);
+				&& Big.ArchetypeSize.Clearance == Spec.ArchetypeSize.Clearance && Big.ArchetypeSize.WheelCount() == Spec.WheelCount() && Big.ArchetypeSize.bCenterline == Spec.bCenterline);
 			TestTrue(*FString::Printf(TEXT("%s: the preset's size is its own"), *Label),
 				Spec.ArchetypeSize.WheelRadius == Spec.WheelRadius && Spec.ArchetypeSize.Wheelbase == Spec.Wheelbase && Spec.ArchetypeSize.Length == Spec.Length
 				&& Spec.ArchetypeSize.Axles.Num() == Spec.Axles.Num());
@@ -365,14 +365,14 @@ bool FMantleChassisScaledSpecScalesGeometryTest::RunTest(const FString& Paramete
 				}
 			}
 			TestTrue(*FString::Printf(TEXT("%s: the type, seats and flags"), *Label),
-				Big.Type == Spec.Type && Big.bPassenger == Spec.bPassenger && Big.bCentreline == Spec.bCentreline && Big.DriverSeat == Spec.DriverSeat
+				Big.Type == Spec.Type && Big.bPassenger == Spec.bPassenger && Big.bCenterline == Spec.bCenterline && Big.DriverSeat == Spec.DriverSeat
 				&& Big.ForkBone == Spec.ForkBone && Big.WheelCount() == Spec.WheelCount());
 
-			// The handling is the derived one for the new size, not the archetype's; the centre of mass is in it.
+			// The handling is the derived one for the new size, not the archetype's; the center of mass is in it.
 			if (TestTrue(*FString::Printf(TEXT("%s: it has derived handling"), *Label), Big.Derived.IsSet()))
 			{
 				TestTrue(*FString::Printf(TEXT("%s: the handling derives from the scaled dimensions"), *Label), Same(Big.Derived.GetValue(), FMantleChassisDerive::Derive(Big)));
-				TestTrue(*FString::Printf(TEXT("%s: the centre of mass is the derived one"), *Label), Big.CenterOfMass == Big.Derived->CenterOfMass);
+				TestTrue(*FString::Printf(TEXT("%s: the center of mass is the derived one"), *Label), Big.CenterOfMass == Big.Derived->CenterOfMass);
 				TestTrue(*FString::Printf(TEXT("%s: and the hand-tuned numbers are kept as the archetype's"), *Label), Same(Big.Archetype, Spec.Archetype));
 			}
 
@@ -554,7 +554,7 @@ bool FMantleChassisDeriveScalingLawsTest::RunTest(const FString& Parameters)
 			TestTrue(*FString::Printf(TEXT("%s: the brakes give the same deceleration, torque S^4"), *Label), ScalesRounded(H.BrakeTorque, Own.BrakeTorque, S * S * S * S));
 			// The lock is the archetype's own angle, so a uniform scale leaves it alone (and the turning circle, which follows the wheelbase, grows with the size).
 			TestEqual(*FString::Printf(TEXT("%s: the steering lock is an angle, the same"), *Label), H.MaxSteerAngle, Own.MaxSteerAngle);
-			TestTrue(*FString::Printf(TEXT("%s: the archetype's tyre, drag and damping are kept"), *Label),
+			TestTrue(*FString::Printf(TEXT("%s: the archetype's tire, drag and damping are kept"), *Label),
 				H.TireFriction == Own.TireFriction && H.DragCoefficient == Own.DragCoefficient && H.SpringDamping == Own.SpringDamping);
 			// A smaller wheel moves less road a step: the top speed falls with it, and the final drive keeps the top gear at the same share of the
 			// redline. A larger one keeps the archetype's top speed and gears down for it.
@@ -573,8 +573,8 @@ bool FMantleChassisDeriveScalingLawsTest::RunTest(const FString& Parameters)
 			}
 			if (Preset.Type != EMantleChassisType::Motorcycle)
 			{
-				// A bike's centre of mass sits within 3 cm of its wheel centres: at the smaller size the floor above them holds it.
-				TestTrue(*FString::Printf(TEXT("%s: the centre of mass keeps its place in the body, S"), *Label),
+				// A bike's center of mass sits within 3 cm of its wheel centers: at the smaller size the floor above them holds it.
+				TestTrue(*FString::Printf(TEXT("%s: the center of mass keeps its place in the body, S"), *Label),
 					ScalesRounded(H.CenterOfMass.Z, Own.CenterOfMass.Z, S) && ScalesRounded(H.CenterOfMass.X, Own.CenterOfMass.X, S));
 			}
 		}
@@ -639,14 +639,14 @@ bool FMantleChassisDeriveFollowsEachDimensionTest::RunTest(const FString& Parame
 		TestEqual(TEXT("a longer wheelbase alone: the lock is the archetype's"), H.MaxSteerAngle, Own.MaxSteerAngle);
 		TestTrue(TEXT("a longer wheelbase alone: the turning circle is 30% wider"), TurningCircle(Spec, H) > OwnCircle && ScalesRounded(TurningCircle(Spec, H), OwnCircle, 1.3));
 	}
-	// ... and the centre of mass sits at the same share of it.
+	// ... and the center of mass sits at the same share of it.
 	{
 		FMantleChassisSpec Six;
 		if (TestTrue(*FString::Printf(TEXT("the six-wheeler reads (%s)"), *Error), ReadPreset(TEXT("sixwheeler"), Six, Error)))
 		{
 			const FMantleChassisHandling SixOwn = FMantleChassisDerive::Derive(Six);
 			Six.Wheelbase *= 1.3;
-			TestTrue(TEXT("a longer wheelbase alone: the centre of mass moves with it"), ScalesRounded(FMantleChassisDerive::Derive(Six).CenterOfMass.X, SixOwn.CenterOfMass.X, 1.3));
+			TestTrue(TEXT("a longer wheelbase alone: the center of mass moves with it"), ScalesRounded(FMantleChassisDerive::Derive(Six).CenterOfMass.X, SixOwn.CenterOfMass.X, 1.3));
 		}
 	}
 
@@ -665,7 +665,7 @@ bool FMantleChassisDeriveFollowsEachDimensionTest::RunTest(const FString& Parame
 		TestEqual(TEXT("a longer body alone: the lock is the same"), H.MaxSteerAngle, Own.MaxSteerAngle);
 	}
 
-	// A taller body alone: more mass and a bigger face, the camera rises, the centre of mass rises with the body.
+	// A taller body alone: more mass and a bigger face, the camera rises, the center of mass rises with the body.
 	{
 		FMantleChassisSpec Spec = Sedan;
 		Spec.Height *= 1.5;
@@ -674,7 +674,7 @@ bool FMantleChassisDeriveFollowsEachDimensionTest::RunTest(const FString& Parame
 		TestTrue(TEXT("a taller body alone: the mass and the face follow (height + clearance)"), ScalesRounded(H.Mass, Own.Mass, Volume) && ScalesRounded(H.FrontalArea, Own.FrontalArea, Volume));
 		TestTrue(TEXT("a taller body alone: the camera rises by the type's share of it"),
 			ScalesRounded(H.CameraHeight, Own.CameraHeight + K.CameraHeightPerHeight * (Spec.Height - Sedan.Height), 1.0) && H.CameraArmLength == Own.CameraArmLength);
-		TestTrue(TEXT("a taller body alone: the centre of mass is higher"), H.CenterOfMass.Z > Own.CenterOfMass.Z);
+		TestTrue(TEXT("a taller body alone: the center of mass is higher"), H.CenterOfMass.Z > Own.CenterOfMass.Z);
 	}
 
 	// A bigger wheel alone: the same mass, speed and lock; softer springs (a lower frequency), longer travel, more brake torque, the final drive geared for the
@@ -694,13 +694,13 @@ bool FMantleChassisDeriveFollowsEachDimensionTest::RunTest(const FString& Parame
 		TestTrue(TEXT("a smaller wheel alone: stiffer springs"), ScalesRounded(S.SpringRate, Own.SpringRate, 1.0 / 0.8));
 	}
 
-	// A narrower track alone: the same numbers except the centre of mass, which is lowered to keep it upright, and the result says so.
+	// A narrower track alone: the same numbers except the center of mass, which is lowered to keep it upright, and the result says so.
 	{
 		FMantleChassisSpec Spec = Sedan;
 		Spec.Track *= 0.5;
 		const FMantleChassisHandling H = FMantleChassisDerive::Derive(Spec);
 		TestTrue(TEXT("a narrower track alone: the mass, springs and lock are the same"), H.Mass == Own.Mass && H.SpringRate == Own.SpringRate && H.MaxSteerAngle == Own.MaxSteerAngle);
-		TestTrue(TEXT("a narrower track alone: the centre of mass is lowered to the stability target"), H.CenterOfMass.Z < Own.CenterOfMass.Z && ScalesRounded(H.CenterOfMass.Z, Spec.Track / (2.0 * K.Stability), 1.0));
+		TestTrue(TEXT("a narrower track alone: the center of mass is lowered to the stability target"), H.CenterOfMass.Z < Own.CenterOfMass.Z && ScalesRounded(H.CenterOfMass.Z, Spec.Track / (2.0 * K.Stability), 1.0));
 		TestTrue(TEXT("and the result says it was lowered"), H.Clamped.ContainsByPredicate([](const FString& Entry) { return Entry.StartsWith(TEXT("centerOfMass/z ")); }));
 		FMantleChassisSpec Wider = Sedan;
 		Wider.Track *= 1.5;

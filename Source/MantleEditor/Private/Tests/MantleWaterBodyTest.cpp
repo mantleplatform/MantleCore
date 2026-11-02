@@ -14,11 +14,11 @@
 // An ordinary component is not a water body (GhzGarage/mantle#997). The Water plugin is not linked, so the body classes are built only when the plugin is loaded.
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleWaterBodyRecogniseTest,
+	FMantleWaterBodyRecognizeTest,
 	"Mantle.Editor.WaterBody.OnlyWaterBodiesAreWater",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleWaterBodyRecogniseTest::RunTest(const FString& Parameters)
+bool FMantleWaterBodyRecognizeTest::RunTest(const FString& Parameters)
 {
 	USceneComponent* Plain = NewObject<USceneComponent>(GetTransientPackage());
 	TestFalse(TEXT("a scene component is not a water body"), FMantleWaterBody::IsWaterBody(Plain));

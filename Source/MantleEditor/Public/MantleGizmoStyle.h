@@ -4,7 +4,7 @@
 #include "CoreMinimal.h"
 
 /**
- * The colours the plugin's viewport gizmos share, so every authoring marker reads the same way: the overlay placement
+ * The colors the plugin's viewport gizmos share, so every authoring marker reads the same way: the overlay placement
  * (#54) and a Mantle Seat's hip marker use these.
  */
 namespace MantleGizmoStyle

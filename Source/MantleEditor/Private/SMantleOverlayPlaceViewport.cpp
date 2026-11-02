@@ -69,16 +69,16 @@ bool MantleOverlayPlaceMath::DefaultPlacement(TConstArrayView<FMantleOverlayBake
 	{
 		return false;
 	}
-	FVector Centre = Bounds.GetCenter();
+	FVector Center = Bounds.GetCenter();
 	if (Bounds.GetSize().Z > 100.0)
 	{
-		Centre.Z = Bounds.Min.Z + Bounds.GetSize().Z * 0.72;
+		Center.Z = Bounds.Min.Z + Bounds.GetSize().Z * 0.72;
 	}
-	Centre += Offset;
+	Center += Offset;
 	for (const double Side : { 1.0, -1.0 })
 	{
 		FVector Point, Normal;
-		if (RayOnTriangles(Triangles, Centre + FVector(0.0, Side * 500.0, 0.0), FVector(0.0, -Side, 0.0), Point, Normal))
+		if (RayOnTriangles(Triangles, Center + FVector(0.0, Side * 500.0, 0.0), FVector(0.0, -Side, 0.0), Point, Normal))
 		{
 			OutTransform = FTransform(FaceSurface(Normal), Point);
 			return true;

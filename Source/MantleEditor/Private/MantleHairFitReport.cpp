@@ -35,26 +35,26 @@ TArray<FVector3f> FMantleHairFitMeshes::HeadInHairFrame() const
 {
 	TArray<FVector3f> Out = HeadPositions;
 	if (!IsValid()) return Out;
-	FVector CentreBefore = FVector::ZeroVector, CentreAfter = FVector::ZeroVector;
+	FVector CenterBefore = FVector::ZeroVector, CenterAfter = FVector::ZeroVector;
 	for (int32 I = 0; I < AfterPositions.Num(); ++I)
 	{
-		CentreBefore += FVector(BeforePositions[I]);
-		CentreAfter += FVector(AfterPositions[I]);
+		CenterBefore += FVector(BeforePositions[I]);
+		CenterAfter += FVector(AfterPositions[I]);
 	}
-	CentreBefore /= AfterPositions.Num();
-	CentreAfter /= AfterPositions.Num();
+	CenterBefore /= AfterPositions.Num();
+	CenterAfter /= AfterPositions.Num();
 	double SpreadBefore = 0.0, SpreadAfter = 0.0;
 	for (int32 I = 0; I < AfterPositions.Num(); ++I)
 	{
-		SpreadBefore += (FVector(BeforePositions[I]) - CentreBefore).SizeSquared();
-		SpreadAfter += (FVector(AfterPositions[I]) - CentreAfter).SizeSquared();
+		SpreadBefore += (FVector(BeforePositions[I]) - CenterBefore).SizeSquared();
+		SpreadAfter += (FVector(AfterPositions[I]) - CenterAfter).SizeSquared();
 	}
 	if (SpreadAfter < 1.e-12 || SpreadBefore < 1.e-12) return Out;
 	// The fit scaled the hair by Scale about nothing in particular: After = Scale * Before + Shift, so Before = (After - Shift) / Scale.
 	const double Scale = FMath::Sqrt(SpreadAfter / SpreadBefore);
 	for (FVector3f& P : Out)
 	{
-		const FVector Moved = (FVector(P) - CentreAfter) / Scale + CentreBefore;
+		const FVector Moved = (FVector(P) - CenterAfter) / Scale + CenterBefore;
 		P = FVector3f(static_cast<float>(Moved.X), static_cast<float>(Moved.Y), static_cast<float>(Moved.Z));
 	}
 	return Out;

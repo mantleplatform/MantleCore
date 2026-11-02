@@ -258,7 +258,7 @@ void FMantleCosmeticChecks::FitSkinToSkeleton(FMantleGlbMesh& Glb, TConstArrayVi
 		OutFit.Names.Add(FMantleSkinJointName{ Joint.Name, Joint.Parent });
 	}
 
-	// The weights onto the kept joints. A vertex a folded bone weighs has its influences on one joint merged, renormalised
+	// The weights onto the kept joints. A vertex a folded bone weighs has its influences on one joint merged, renormalized
 	// and sorted heaviest first; any other keeps its slots as they were, only renumbered.
 	const int32 Slots = Glb.NumInfluences;
 	const int32 NumVertices = Slots > 0 ? Glb.InfluenceJoints.Num() / Slots : 0;
@@ -990,14 +990,14 @@ float FMantleCosmeticChecks::CapInfluences(TArray<TPair<int32, float>>& Influenc
 
 	// Largest remainder to exactly 255, the worker's rounding: the file's weights are what MSK1 will store.
 	constexpr int32 FixedOne = 255;
-	TArray<int32, TInlineAllocator<8>> Quantised;
+	TArray<int32, TInlineAllocator<8>> Quantized;
 	TArray<double, TInlineAllocator<8>> Remainder;
 	int32 Sum = 0;
 	for (const TPair<int32, float>& Influence : Influences)
 	{
 		const double Exact = FMath::Max(0.0f, Influence.Value) / Kept * FixedOne;
 		const int32 Floor = FMath::FloorToInt32(Exact);
-		Quantised.Add(Floor);
+		Quantized.Add(Floor);
 		Remainder.Add(Exact - Floor);
 		Sum += Floor;
 	}
@@ -1009,12 +1009,12 @@ float FMantleCosmeticChecks::CapInfluences(TArray<TPair<int32, float>>& Influenc
 	ByRemainder.StableSort([&Remainder](int32 A, int32 B) { return Remainder[A] > Remainder[B]; });
 	for (int32 Step = 0; Sum < FixedOne; ++Step)
 	{
-		++Quantised[ByRemainder[Step % ByRemainder.Num()]];
+		++Quantized[ByRemainder[Step % ByRemainder.Num()]];
 		++Sum;
 	}
 	for (int32 Index = 0; Index < Influences.Num(); ++Index)
 	{
-		Influences[Index].Value = static_cast<float>(Quantised[Index]) / FixedOne;
+		Influences[Index].Value = static_cast<float>(Quantized[Index]) / FixedOne;
 	}
 	Influences.StableSort(Heaviest);
 	return LargestDropped;
@@ -1023,7 +1023,7 @@ float FMantleCosmeticChecks::CapInfluences(TArray<TPair<int32, float>>& Influenc
 FMantleCosmeticIssue FMantleCosmeticChecks::CappedInfluencesIssue(const FString& What, int32 Vertices, float LargestDropped, int32 MaxInfluences)
 {
 	const FString Lead = What.IsEmpty() ? FString() : What + TEXT(": ");
-	const FString Message = FString::Printf(TEXT("%s%d %s more than %d influences; the lightest were dropped and the rest renormalised (largest weight dropped: %.3f)."),
+	const FString Message = FString::Printf(TEXT("%s%d %s more than %d influences; the lightest were dropped and the rest renormalized (largest weight dropped: %.3f)."),
 		*Lead, Vertices, Vertices == 1 ? TEXT("vertex had") : TEXT("vertices had"), MaxInfluences, LargestDropped);
 	if (LargestDropped > CappedInfluenceWarning)
 	{

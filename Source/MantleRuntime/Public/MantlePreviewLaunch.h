@@ -6,7 +6,7 @@
 
 /**
  * One script a preview bundle lists (#563). Path is relative to Scripts/ ("Server/Health.luau"),
- * the same spelling a published place and the disk catalogue use.
+ * the same spelling a published place and the disk catalog use.
  */
 struct FMantlePreviewScript
 {

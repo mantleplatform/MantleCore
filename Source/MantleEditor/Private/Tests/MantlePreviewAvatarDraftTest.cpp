@@ -162,7 +162,7 @@ bool FMantlePreviewAvatarDraftManifestTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("converted"), Item->GetStringField(TEXT("avatarPublicationMode")), FString(TEXT("converted")));
 	TestEqual(TEXT("the cooked body's skeleton"), Item->GetStringField(TEXT("skeleton")), FString(TEXT("metahuman")));
 	TestTrue(TEXT("garment compatible, from the cook"), Item->GetBoolField(TEXT("garmentCompatible")));
-	TestTrue(TEXT("a converted MetaHuman with a face can be customised"), Item->GetBoolField(TEXT("customizationEligible")));
+	TestTrue(TEXT("a converted MetaHuman with a face can be customized"), Item->GetBoolField(TEXT("customizationEligible")));
 	TestEqual(TEXT("the face's jaw by default"), Item->GetStringField(TEXT("jawBone")), FString(TEXT("FACIAL_C_Jaw")));
 	const TSharedPtr<FJsonObject> Metrics = Item->GetObjectField(TEXT("bodyMetrics"));
 	TestEqual(TEXT("as tall as the face's top, to 0.1 cm"), Metrics->GetNumberField(TEXT("standingHeightCm")), 172.0);
@@ -257,7 +257,7 @@ bool FMantlePreviewAvatarDraftMaterialsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("orm"), Material->GetObjectField(TEXT("orm"))->GetIntegerField(TEXT("cookedBytes")), Color.Bytes.Num());
 	TestFalse(TEXT("no asset ids left"), Material->HasField(TEXT("albedoAssetId")) || Material->HasField(TEXT("normalAssetId")) || Material->HasField(TEXT("ormAssetId")));
 	TestEqual(TEXT("its role"), Material->GetStringField(TEXT("role")), FString(TEXT("skin")));
-	TestFalse(TEXT("an as-is body cannot be customised"), Item->GetBoolField(TEXT("customizationEligible")));
+	TestFalse(TEXT("an as-is body cannot be customized"), Item->GetBoolField(TEXT("customizationEligible")));
 	TestFalse(TEXT("no face, no jaw"), Item->HasField(TEXT("jawBone")));
 
 	const FString Bundle = TempBundle();

@@ -147,7 +147,7 @@ bool FMantleQuickJSRuntime::ValidateSource(
 	}
 
     // QuickJS resolves static imports even with COMPILE_ONLY, before module linking or
-    // evaluation. This single-file syntax check has no place catalogue. Satisfy only
+    // evaluation. This single-file syntax check has no place catalog. Satisfy only
     // that resolution step with inert modules; never read files or fetch dependencies.
     // Real import existence, exact case, side and exports remain the runtime loader's
     // responsibility. This loader belongs only to this disposable validation VM.

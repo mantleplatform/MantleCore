@@ -236,11 +236,11 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::Build(USkeletalMesh* Mesh, cons
 		return Out;
 	}
 	Out.Source = Source;
-	// The converter's notes on what it read from the model's physics (collision, centre of mass, where the driver sits) are left out:
+	// The converter's notes on what it read from the model's physics (collision, center of mass, where the driver sits) are left out:
 	// the chassis replaces all of them, and the creator would be told to edit values that are not used.
 	for (const FString& Note : Conversion.Notes)
 	{
-		if (!Note.StartsWith(TEXT("Collision:")) && !Note.StartsWith(TEXT("Centre of mass:")) && !Note.StartsWith(TEXT("The driver sits behind the middle")))
+		if (!Note.StartsWith(TEXT("Collision:")) && !Note.StartsWith(TEXT("Center of mass:")) && !Note.StartsWith(TEXT("The driver sits behind the middle")))
 		{
 			Out.Notes.Add(Note);
 		}
@@ -274,12 +274,12 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::Build(USkeletalMesh* Mesh, cons
 		Layout = FMantleVehicleChassisFit::LayoutFromWheels(Wheels);
 		if (!bHaveWheels || !Layout.bValid)
 		{
-			Out.Problems.Add(TEXT("Mantle could not find this model's wheels, so it cannot fit the vehicle chassis to it. Check that the model has a bone at the centre of each wheel, named like Wheel_FL, Wheel_FR, Wheel_BL and Wheel_BR, with the car facing +X, and build again."));
+			Out.Problems.Add(TEXT("Mantle could not find this model's wheels, so it cannot fit the vehicle chassis to it. Check that the model has a bone at the center of each wheel, named like Wheel_FL, Wheel_FR, Wheel_BL and Wheel_BR, with the car facing +X, and build again."));
 			return Out;
 		}
-		if (Layout.bCentreline != Chassis.bCentreline)
+		if (Layout.bCenterline != Chassis.bCenterline)
 		{
-			Out.Problems.Add(Layout.bCentreline
+			Out.Problems.Add(Layout.bCenterline
 				? FString::Printf(TEXT("This model's wheels are in a line down the middle, like a motorcycle's, but a %s has wheels on both sides. Pick Motorcycle, or a model with a wheel at each corner."), *Preset->Name)
 				: FString::Printf(TEXT("This model has wheels on both sides, but a %s has one wheel in front and one behind. Pick a car type, or a model with two wheels in a line."), *Preset->Name));
 			return Out;
@@ -298,8 +298,8 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::Build(USkeletalMesh* Mesh, cons
 		{
 			Source->Modify();
 			// A motorcycle's rider fit is flat numbers in the model's units, which the export does not resize, so a bike is built at the size of its model.
-			Source->FitScale = Chassis.bCentreline ? 1.f : static_cast<float>(Out.Fit->Scale);
-			if (!Chassis.bCentreline)
+			Source->FitScale = Chassis.bCenterline ? 1.f : static_cast<float>(Out.Fit->Scale);
+			if (!Chassis.bCenterline)
 			{
 				Out.Notes.Add(Out.Fit->Reason);
 			}
@@ -312,7 +312,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::Build(USkeletalMesh* Mesh, cons
 		const FMantleChassisStretch Stretch = FMantleVehicleChassisFit::Stretch(Chassis, Layout, Source->FitScale);
 		FMantleChassisPlacement Placement = FMantleVehicleChassisFit::Place(Chassis, Stretch);
 
-		// The collision follows the model's visible body above the chassis tub; weight, centre of mass and handling stay the chassis's.
+		// The collision follows the model's visible body above the chassis tub; weight, center of mass and handling stay the chassis's.
 		TArray<FVector> BodyPoints;
 		const bool bBodyRead = MantleVehicleBuilderPrivate::BodyPointsOffWheels(*Source, BodyPoints);
 		// The tub is the preset's length scaled by the wheelbase, but overhangs differ: it is kept inside the body's length and width, so no
@@ -561,7 +561,7 @@ namespace MantleVehicleBuilderPrivate
 			const FString Name = FMantleVehicleBuilder::FirstFreeChassisName(Args[0]);
 			const FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildChassis(Spec, FMantleVehicleBuilder::ChassisFolder() / Name, Name);
 			UE_LOG(LogTemp, Display, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS ok=%d saved=%d vehicle=%s type=%s shaped=%d %s"), Result.bOk ? 1 : 0, Result.bSaved ? 1 : 0,
-				Result.Source ? *Result.Source->GetPathName() : TEXT("none"), *Args[0], Spec.Derived.IsSet() ? 1 : 0, *FMantleVehicleShape::Describe(FMantleVehicleShape::Summarise(Spec)).ToString());
+				Result.Source ? *Result.Source->GetPathName() : TEXT("none"), *Args[0], Spec.Derived.IsSet() ? 1 : 0, *FMantleVehicleShape::Describe(FMantleVehicleShape::Summarize(Spec)).ToString());
 			for (const FText& Note : Held)
 			{
 				UE_LOG(LogTemp, Display, TEXT("MANTLE_VEHICLE_BUILD_CHASSIS held: %s"), *Note.ToString());
@@ -640,12 +640,12 @@ namespace MantleVehicleBuilderPrivate
 			for (const FMantleVehiclePreset* Preset : FMantleVehiclePresets::Publishable())
 			{
 				FMantleChassisSpec Archetype;
-				FMantleVehicleAsset Grey;
-				if (!FMantleVehicleChassisBuilder::LoadSpec(Preset->Id, Archetype, Error) || !FMantleVehicleChassisBuilder::MakeAsset(Archetype, Grey, Error))
+				FMantleVehicleAsset Gray;
+				if (!FMantleVehicleChassisBuilder::LoadSpec(Preset->Id, Archetype, Error) || !FMantleVehicleChassisBuilder::MakeAsset(Archetype, Gray, Error))
 				{
 					continue;
 				}
-				const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Archetype, Grey.Body);
+				const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Archetype, Gray.Body);
 				FMantleVehicleModelMap Map;
 				const double Yaw = FMantleVehicleChassisSkin::SuggestMapAndYaw(Slots, Model, Map);
 				FString Parts;
@@ -835,8 +835,8 @@ namespace MantleVehicleBuilderPrivate
 							if (Z > Depth[Y * PanelWidth + X])
 							{
 								Depth[Y * PanelWidth + X] = Z;
-								const uint8 Grey = static_cast<uint8>(FMath::Clamp(255.f * Shade, 0.f, 255.f));
-								Image[Y * PanelWidth * Views + View * PanelWidth + X] = FColor(Grey, Grey, Grey, 255);
+								const uint8 Gray = static_cast<uint8>(FMath::Clamp(255.f * Shade, 0.f, 255.f));
+								Image[Y * PanelWidth * Views + View * PanelWidth + X] = FColor(Gray, Gray, Gray, 255);
 							}
 						}
 					}
@@ -853,7 +853,7 @@ namespace MantleVehicleBuilderPrivate
 				for (int32 Bone = 1; Bone < Body.Bones.Num(); ++Bone)
 				{
 					const FString Name = Body.Bones[Bone].Name.ToString();
-					const FColor Colour = Name.StartsWith(TEXT("wheel")) || Name.StartsWith(TEXT("fork")) ? FColor(60, 230, 90, 255)
+					const FColor Color = Name.StartsWith(TEXT("wheel")) || Name.StartsWith(TEXT("fork")) ? FColor(60, 230, 90, 255)
 						: Name.StartsWith(TEXT("aileron")) || Name == TEXT("elevator") || Name == TEXT("rudder") ? FColor(255, 160, 40, 255)
 						: Name.StartsWith(TEXT("prop")) || Name.EndsWith(TEXT("rotor")) ? FColor(255, 60, 60, 255) : FColor(255, 255, 255, 255);
 					const FVector2f At = Project(FVector3f(Component[Bone].GetLocation()));
@@ -865,7 +865,7 @@ namespace MantleVehicleBuilderPrivate
 							const int32 Y = FMath::RoundToInt(At.Y) + Dy;
 							if (X >= 0 && X < PanelWidth && Y >= 0 && Y < PanelHeight)
 							{
-								Image[Y * PanelWidth * Views + View * PanelWidth + X] = Colour;
+								Image[Y * PanelWidth * Views + View * PanelWidth + X] = Color;
 							}
 						}
 					}
@@ -887,7 +887,7 @@ namespace MantleVehicleBuilderPrivate
 // Named, not anonymous: unity builds merge this file with others.
 namespace MantleVehicleBuilderPrivate
 {
-	/** The take-off run a plane or a jet needs, in centimetres (the flight probes' rolls with some to spare: about 130 m for the jet, 340 m for the plane). */
+	/** The take-off run a plane or a jet needs, in centimeters (the flight probes' rolls with some to spare: about 130 m for the jet, 340 m for the plane). */
 	constexpr double JetRunCm = 15000.0;
 	constexpr double PlaneRunCm = 35000.0;
 
@@ -916,7 +916,7 @@ namespace MantleVehicleBuilderPrivate
 	}
 
 	/**
-	 * How much the ground varies along a run of RunCm from Start in the direction Direction: the highest sample minus the lowest, in centimetres. False when a sample
+	 * How much the ground varies along a run of RunCm from Start in the direction Direction: the highest sample minus the lowest, in centimeters. False when a sample
 	 * finds no ground at all (the run leaves the level). The samples are taken from high above, so a roof, a tree or a hill in the way counts as the ground does.
 	 */
 	bool GroundVariation(UWorld& World, const FVector& Start, const FVector& Direction, const double RunCm, double& OutVariation, FVector& OutGroundAtStart)
@@ -991,7 +991,7 @@ bool FMantleVehicleBuilder::PlaceInLevel(UMantleVehicleSource& Source, FString& 
 	const FRotator Facing(0.0, CameraRotation.Yaw, 0.0);
 	const FVector Ahead = CameraLocation + Facing.Vector() * 600.0;
 
-	// Drop it onto whatever is below that spot; over nothing, it hangs a metre under the camera.
+	// Drop it onto whatever is below that spot; over nothing, it hangs a meter under the camera.
 	FVector Location(Ahead.X, Ahead.Y, CameraLocation.Z - 100.0);
 	FHitResult Hit;
 	const FVector TraceStart = Ahead + FVector(0.0, 0.0, 100.0);
@@ -1037,20 +1037,20 @@ bool FMantleVehicleBuilder::PlaceInLevel(UMantleVehicleSource& Source, FString& 
 					break;
 				}
 			}
-			const int32 RunMetres = FMath::RoundToInt(RunCm / 100.0);
+			const int32 RunMeters = FMath::RoundToInt(RunCm / 100.0);
 			if (BestDistance < 0.0)
 			{
 				*OutNote = FString::Printf(TEXT("A %s needs about %d m of flat, open ground in front of it to take off, and there is no ground that far ahead of you in this level. It is 6 m in front of you: move it to a runway or a flat field."),
-					*Kind, RunMetres);
+					*Kind, RunMeters);
 			}
 			else
 			{
 				Location = BestGround + FVector(0.0, 0.0, 50.0);
-				const int32 AheadMetres = FMath::RoundToInt(BestDistance / 100.0);
+				const int32 AheadMeters = FMath::RoundToInt(BestDistance / 100.0);
 				*OutNote = BestVariation <= MantleVehicleBuilderPrivate::FlatEnoughCm
-					? FString::Printf(TEXT("A %s needs about %d m of flat, open ground in front of it to take off. It is %d m in front of you, on a stretch that long and flat."), *Kind, RunMetres, AheadMetres)
+					? FString::Printf(TEXT("A %s needs about %d m of flat, open ground in front of it to take off. It is %d m in front of you, on a stretch that long and flat."), *Kind, RunMeters, AheadMeters)
 					: FString::Printf(TEXT("A %s needs about %d m of flat, open ground in front of it to take off, and there is none near you. It is %d m in front of you, where the ground is flattest, but it varies by about %d m there: move it to a runway or a flat field."),
-						*Kind, RunMetres, AheadMetres, FMath::Max(1, FMath::RoundToInt(BestVariation / 100.0)));
+						*Kind, RunMeters, AheadMeters, FMath::Max(1, FMath::RoundToInt(BestVariation / 100.0)));
 			}
 		}
 		else if (Source.MovementType == EMantleVehicleMovementKind::Helicopter)
@@ -1146,7 +1146,7 @@ namespace MantleVehicleBuilderPrivate
 
 	/**
 	 * A ground car's baked handling: the steering that eases off with speed and the front and rear grip split of the chassis cars, composed by the chassis document
-	 * (ComposeGroundHandling) over the tyre friction already in Source's tuning, so a car built from a model drives as the same type's chassis does. Nothing for a
+	 * (ComposeGroundHandling) over the tire friction already in Source's tuning, so a car built from a model drives as the same type's chassis does. Nothing for a
 	 * chassis that is not a ground car on more than two wheels.
 	 */
 	void ApplyGroundHandling(const FMantleChassisSpec& Spec, UMantleVehicleSource& Source)
@@ -1188,7 +1188,7 @@ namespace MantleVehicleBuilderPrivate
 	{
 		FMantleVehicleBuildResult Out;
 
-		// The grey body and the document, exactly as a published or driven chassis is made (FMantleVehicleChassisBuilder::MakeAsset).
+		// The gray body and the document, exactly as a published or driven chassis is made (FMantleVehicleChassisBuilder::MakeAsset).
 		FMantleVehicleAsset Asset;
 		FString Error;
 		if (!FMantleVehicleChassisBuilder::MakeAsset(Spec, Asset, Error))
@@ -1280,7 +1280,7 @@ namespace MantleVehicleBuilderPrivate
 			return Out;
 		}
 
-		// Collision, centre of mass and seats: the chassis's own, at the size the Source is (Size 1, so the model's units are the chassis's). A creator's model brings a collision
+		// Collision, center of mass and seats: the chassis's own, at the size the Source is (Size 1, so the model's units are the chassis's). A creator's model brings a collision
 		// shaped like itself: its first box (the one the driver sits in) is written as the chassis's box, the rest beside it, up to the document's box count.
 		FMantleChassisPlacement Placement = FMantleVehicleChassisFit::Place(FMantleVehicleChassisBuilder::ReferenceOf(Spec), FMantleChassisStretch());
 		int32 MaxBoxes = FMantleVehicleChassisFit::MaxBodyBoxes + 1;
@@ -1350,7 +1350,7 @@ bool FMantleVehicleBuilder::FitsOwnWheels(UObject* Model, const FString& PresetI
 	FString Text;
 	FString Error;
 	FMantleVehicleChassisReference Chassis;
-	if (!FMantleVehicleChassisBuilder::LoadPresetText(PresetId, Text, Error) || !FMantleVehicleChassisBuilder::ReadReference(Text, Chassis, Error) || Chassis.bCentreline)
+	if (!FMantleVehicleChassisBuilder::LoadPresetText(PresetId, Text, Error) || !FMantleVehicleChassisBuilder::ReadReference(Text, Chassis, Error) || Chassis.bCenterline)
 	{
 		return false;
 	}
@@ -1434,14 +1434,14 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		Out.Notes.Add(TEXT("Your plane has two propellers, so it is built with two engines."));
 	}
 
-	// The chassis's moving bones, from the grey chassis of the type (the same bones at any size).
-	FMantleVehicleAsset Grey;
-	if (!FMantleVehicleChassisBuilder::MakeAsset(Archetype, Grey, Error))
+	// The chassis's moving bones, from the gray chassis of the type (the same bones at any size).
+	FMantleVehicleAsset Gray;
+	if (!FMantleVehicleChassisBuilder::MakeAsset(Archetype, Gray, Error))
 	{
 		Out.Problems.Add(FString::Printf(TEXT("The %s chassis could not be made: %s."), *Preset->Name, *FMantleVehicleShape::PlainReason(Error)));
 		return Out;
 	}
-	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Archetype, Grey.Body);
+	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Archetype, Gray.Body);
 
 	// Which way the model faces, and which of its parts are the chassis's wheels, rotors and surfaces: the creator's choice, else what its names and its wheels say.
 	FMantleVehicleModelMap Map;
@@ -1512,10 +1512,10 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	Out.Notes.Append(Model.Notes);
 	if (Skinned.Extras.UVs.Num() > 0 || Skinned.Extras.Colors.Num() > 0)
 	{
-		// Kept on the vehicle's body in the editor; the published vehicle's mesh format carries one UV set and no vertex colours.
+		// Kept on the vehicle's body in the editor; the published vehicle's mesh format carries one UV set and no vertex colors.
 		const FString MoreUVs = Skinned.Extras.UVs.Num() > 0 ? FString::Printf(TEXT("%d more UV channel%s"), Skinned.Extras.UVs.Num(), Skinned.Extras.UVs.Num() == 1 ? TEXT("") : TEXT("s")) : FString();
-		const FString Painted = Skinned.Extras.Colors.Num() > 0 ? (MoreUVs.IsEmpty() ? FString(TEXT("vertex colours")) : FString(TEXT(" and vertex colours"))) : FString();
-		Out.Notes.Add(FString::Printf(TEXT("Your model has %s%s. They are kept on the vehicle in the editor, but a published vehicle carries only its first UV set and no vertex colours, so players see it without them: bake them into the textures if they matter."),
+		const FString Painted = Skinned.Extras.Colors.Num() > 0 ? (MoreUVs.IsEmpty() ? FString(TEXT("vertex colors")) : FString(TEXT(" and vertex colors"))) : FString();
+		Out.Notes.Add(FString::Printf(TEXT("Your model has %s%s. They are kept on the vehicle in the editor, but a published vehicle carries only its first UV set and no vertex colors, so players see it without them: bake them into the textures if they matter."),
 			*MoreUVs, *Painted));
 	}
 

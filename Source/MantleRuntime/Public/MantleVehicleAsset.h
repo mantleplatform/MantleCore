@@ -12,7 +12,7 @@ class USkeleton;
 /** One wheel of a creator vehicle (#435): schema/vehicle.schema.json wheels[], as the cook resolved it. */
 struct FMantleVehicleWheelDesc
 {
-	/** The wheel-centre bone of the body. */
+	/** The wheel-center bone of the body. */
 	FName Bone;
 	bool bSteering = false;
 	bool bDriven = true;
@@ -70,11 +70,11 @@ struct FMantleVehiclePartDesc
 	FString Mesh;
 	/** The body's bone it rides. */
 	FName Bone;
-	/** Where it sits on the bone (rotation normalised). */
+	/** Where it sits on the bone (rotation normalized). */
 	FTransform Transform = FTransform::Identity;
 	/** The uploaded material of each of the mesh's slots, slot 0 first; an empty entry, or a slot past the list, draws Mantle's default surface. */
 	TArray<FString> Materials;
-	/** The mesh's slots drawn with the vehicle's paint (its colour and livery), as the body's paint sections are; empty when none is. */
+	/** The mesh's slots drawn with the vehicle's paint (its color and livery), as the body's paint sections are; empty when none is. */
 	TArray<int32> PaintSlots;
 };
 
@@ -157,7 +157,7 @@ struct FMantleVehicleWeaponArcDesc
 	double PitchMax = 90.0;
 };
 
-/** One chassis collision box in the body's component space: centre and half size, cm. */
+/** One chassis collision box in the body's component space: center and half size, cm. */
 struct FMantleVehicleBoxDesc
 {
 	FVector Center = FVector::ZeroVector;
@@ -330,7 +330,7 @@ struct FMantleVehicleHoverRudderDesc
 	double StallAngle = 0.0;
 };
 
-/** What stands in for a tyre's grip on a hover (#821, FMantleVehicleHoverDamping). */
+/** What stands in for a tire's grip on a hover (#821, FMantleVehicleHoverDamping). */
 struct FMantleVehicleHoverDampingDesc
 {
 	double LateralPerSecond = 1.5;
@@ -370,9 +370,9 @@ struct FMantleVehicleRotationControlDesc
 	double RotationStiffness = 0.0;
 	double RotationDamping = 0.0;
 	double MaxAccel = 0.0;
-	double AutoCentreRollStrength = 0.0;
-	double AutoCentrePitchStrength = 0.0;
-	double AutoCentreYawStrength = 0.0;
+	double AutoCenterRollStrength = 0.0;
+	double AutoCenterPitchStrength = 0.0;
+	double AutoCenterYawStrength = 0.0;
 };
 
 /**
@@ -446,7 +446,7 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 
 	TArray<FMantleVehicleWheelDesc> Wheels;
 
-	/** Where the seated driver's capsule centre goes, in the body's space, cm. */
+	/** Where the seated driver's capsule center goes, in the body's space, cm. */
 	FVector SeatLocation = FVector::ZeroVector;
 	FMantleVehicleWeaponArcDesc SeatWeaponArc;
 
@@ -469,7 +469,7 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	bool bSeatHidden = false;
 
 	/**
-	 * A front passenger seat (#546). bPassengerSeat: the car has one. Where the seated passenger's capsule centre goes, in the
+	 * A front passenger seat (#546). bPassengerSeat: the car has one. Where the seated passenger's capsule center goes, in the
 	 * body's space (as SeatLocation), and the door beside it (unset without one).
 	 */
 	bool bPassengerSeat = false;

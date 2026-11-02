@@ -39,7 +39,7 @@ struct MANTLEEDITOR_API FMantleVehicleModel
 	TArray<FVector> BonePositions;
 	/**
 	 * The model's UV channels above 0 (channel 1 first), each one entry per vertex of LOD, up to the skeletal mesh's limit (4 channels in all), and its painted vertex
-	 * colours, one per vertex (empty when it has none, or all white). Carried onto the vehicle's body with the tangents in LOD (the creator's own).
+	 * colors, one per vertex (empty when it has none, or all white). Carried onto the vehicle's body with the tangents in LOD (the creator's own).
 	 */
 	TArray<TArray<FVector2f>> ExtraUVs;
 	TArray<FColor> Colors;
@@ -111,9 +111,9 @@ struct FMantleVehicleModelMap
 /** What a chassis bone does, which decides how its part is placed on it. */
 enum class EMantleVehiclePartKind : uint8
 {
-	/** A wheel: it spins about the chassis's wheel centre, so the part is moved onto that centre. */
+	/** A wheel: it spins about the chassis's wheel center, so the part is moved onto that center. */
 	Wheel,
-	/** A motorcycle's front fork: it turns with the steering about the chassis's wheel centre; the part is left where the model has it. */
+	/** A motorcycle's front fork: it turns with the steering about the chassis's wheel center; the part is left where the model has it. */
 	Fork,
 	/** A propeller or a rotor: it spins about its own hub, so the bone is moved to the part's hub. */
 	Spinner,
@@ -141,8 +141,8 @@ struct FMantleVehicleModelPlacement
 	/** Added after the turn and the scale. */
 	FVector Offset = FVector::ZeroVector;
 	/**
-	 * What fitting the model had to say in plain words, or empty: its size was held to the scale limits (a model modelled in metres or millimetres), or it was too
-	 * small to measure and is left as modelled. The build puts it in its notes, so a clamp is never silent.
+	 * What fitting the model had to say in plain words, or empty: its size was held to the scale limits (a model modeled in meters or millimeters), or it was too
+	 * small to measure and is left as modeled. The build puts it in its notes, so a clamp is never silent.
 	 */
 	FString Note;
 
@@ -173,7 +173,7 @@ struct FMantleVehicleSkinned
 	TArray<FSkeletalMaterial> Materials;
 	TArray<FString> Notes;
 	FMantleVehicleModelPlacement Placement;
-	/** The model's other UV channels and vertex colours, in the body's vertex order (vertices copied for a part are copied here too): for FMantleVehicleChassisMesh::Create. */
+	/** The model's other UV channels and vertex colors, in the body's vertex order (vertices copied for a part are copied here too): for FMantleVehicleChassisMesh::Create. */
 	FMantleVehicleBodyExtras Extras;
 };
 
@@ -201,7 +201,7 @@ struct FMantleVehicleSkinCollision
 };
 
 /**
- * Chassis from a model (#821 WP5, #793 step 5): the grey chassis is the physics and the skeleton, and the creator's mesh is its skin. A static or a skeletal
+ * Chassis from a model (#821 WP5, #793 step 5): the gray chassis is the physics and the skeleton, and the creator's mesh is its skin. A static or a skeletal
  * model is skinned whole to the chassis's root bone; the creator may assign parts of it to the chassis's moving bones (wheels, propellers, rotors, control
  * surfaces, the fork) so those parts move. An unassigned model still drives or flies; it just does not animate those parts. The chassis is sized to the model
  * (a Size from its footprint, or the eight sizes from its bounds and its assigned wheels), and the creator confirms with the sliders they already have.
@@ -225,7 +225,7 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	 */
 	static int32 CountPropellers(const FMantleVehicleModel& Model);
 
-	/** The moving bones of Chassis (Spec's grey body) that a part of the model can be assigned to, in a sensible order: wheels, fork, surfaces, propellers, rotors. */
+	/** The moving bones of Chassis (Spec's gray body) that a part of the model can be assigned to, in a sensible order: wheels, fork, surfaces, propellers, rotors. */
 	static TArray<FMantleVehiclePartSlot> PartSlots(const FMantleChassisSpec& Spec, const FMantleSkinnedMesh& Chassis);
 
 	/**
@@ -237,7 +237,7 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	/**
 	 * SuggestMap at each of the four turns (0, 90, 180, 270 degrees), keeping the first at which the model's front is ahead of its rear: a front wheel before a rear
 	 * wheel, or the main rotor before the tail rotor, along +X. Returns that turn and puts its map in OutMap. A model with no such pair keeps the way it was
-	 * modelled (0) and gets the map for that.
+	 * modeled (0) and gets the map for that.
 	 */
 	static double SuggestMapAndYaw(TConstArrayView<FMantleVehiclePartSlot> Slots, const FMantleVehicleModel& Model, FMantleVehicleModelMap& OutMap);
 
@@ -251,14 +251,14 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	static FMantleVehicleModelProposal Propose(const FMantleChassisSpec& Archetype, const FMantleVehiclePreset& Preset, const FMantleVehicleModel& Model, double YawDegrees,
 		const FMantleVehicleModelMap& Map);
 
-	/** Turns, scales and moves Model onto Spec's chassis (Chassis is its grey body): the scale fits the footprint (a flier, a hovercraft) or the length (a road vehicle). */
+	/** Turns, scales and moves Model onto Spec's chassis (Chassis is its gray body): the scale fits the footprint (a flier, a hovercraft) or the length (a road vehicle). */
 	static FMantleVehicleModelPlacement FitPlacement(const FMantleChassisSpec& Spec, const FMantleSkinnedMesh& Chassis, const FMantleVehicleModel& Model, double YawDegrees,
 		const FMantleVehicleModelMap& Map);
 
 	/**
 	 * Puts Model on Chassis as its skin with Placement: every vertex weighted whole to the chassis bone its part is assigned to, else to the root. A bone that
 	 * spins or turns about its hub or hinge (a propeller, a rotor, a control surface) is moved to the part's own, and a wheel's part is moved onto the chassis's
-	 * wheel centre when it is within MaxWheelMove cm of it (a wheel further off stays on the body, still, and is said so: moving it would tear it from its strut,
+	 * wheel center when it is within MaxWheelMove cm of it (a wheel further off stays on the body, still, and is said so: moving it would tear it from its strut,
 	 * and turning it about the chassis's wheel would swing it round that point). The sections and material slots are the model's (named uniquely). False, with the
 	 * reason in OutError, when the model has nothing to skin.
 	 */
@@ -266,7 +266,7 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 		const FMantleVehicleModelPlacement& Placement, const FMantleVehicleModelMap& Map, FMantleVehicleSkinned& Out, FString& OutError, double MaxWheelMove = 20.0);
 
 	/**
-	 * The collision a model gets (#821): shaped like the model and not the grey chassis's box. Taken from, in order, the model's own physics asset (box, sphere, capsule
+	 * The collision a model gets (#821): shaped like the model and not the gray chassis's box. Taken from, in order, the model's own physics asset (box, sphere, capsule
 	 * and convex bodies, except those of wheels, propellers and rotors, merged down to the document's box count), else, for a plane or a jet, an airframe split from the
 	 * placed model's surface (fuselage, wings, tail), else, for everything else, the chassis's box trimmed to the model with boxes over its roof and cabin. Every box is
 	 * kept inside the document's +-1000 cm and no lower than the chassis's own box, so a gear or a wheel the model draws below the body never drags on the ground.

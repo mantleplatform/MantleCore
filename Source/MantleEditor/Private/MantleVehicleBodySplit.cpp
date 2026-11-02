@@ -256,7 +256,7 @@ bool FMantleVehicleBodySplit::Split(FMantleSkinnedMesh& Body, TArray<FSkeletalMa
 			}
 		}
 	};
-	const bool bExtraColours = Extras.Colors.Num() == OldVertices;
+	const bool bExtraColors = Extras.Colors.Num() == OldVertices;
 	TArray<FVector3f> Positions;
 	TArray<FVector3f> Normals;
 	TArray<FVector4f> Tangents;
@@ -289,7 +289,7 @@ bool FMantleVehicleBodySplit::Split(FMantleSkinnedMesh& Body, TArray<FSkeletalMa
 		}
 		Channel = MoveTemp(Gathered);
 	}
-	if (bExtraColours)
+	if (bExtraColors)
 	{
 		TArray<FColor> Gathered;
 		Gather(Extras.Colors, Gathered, 1);

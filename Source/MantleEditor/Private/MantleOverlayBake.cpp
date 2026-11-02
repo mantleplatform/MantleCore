@@ -126,8 +126,8 @@ bool MantleOverlayBakePrivate::ReadLod(const USkeletalMesh& Mesh, const int32 Lo
 				continue;
 			}
 			// A layout in a UDIM tile other than 0..1 (the MetaHuman body's is) samples the same texture: fold it back.
-			const FVector2f Centre = (Out.UV[0] + Out.UV[1] + Out.UV[2]) / 3.f;
-			const FVector2f Tile(FMath::FloorToFloat(Centre.X), FMath::FloorToFloat(Centre.Y));
+			const FVector2f Center = (Out.UV[0] + Out.UV[1] + Out.UV[2]) / 3.f;
+			const FVector2f Tile(FMath::FloorToFloat(Center.X), FMath::FloorToFloat(Center.Y));
 			for (FVector2f& UV : Out.UV)
 			{
 				UV -= Tile;

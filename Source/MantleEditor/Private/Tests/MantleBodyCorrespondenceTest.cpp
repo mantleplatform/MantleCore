@@ -11,7 +11,7 @@
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleBodyCorrespondenceTestPrivate
 {
-	/** A 3x3 vertex grid (8 triangles) as the reference, with the centre vertex 4 optionally split into a twin, vertex 9. */
+	/** A 3x3 vertex grid (8 triangles) as the reference, with the center vertex 4 optionally split into a twin, vertex 9. */
 	struct FGrid
 	{
 		FMantleBodyCorrespondence Reference;
@@ -21,7 +21,7 @@ namespace MantleBodyCorrespondenceTestPrivate
 		TArray<uint16> Bones;
 		TArray<float> Weights;
 
-		FGrid(const bool bSplitCentre)
+		FGrid(const bool bSplitCenter)
 		{
 			for (int32 Row = 0; Row < 3; ++Row)
 			{
@@ -42,11 +42,11 @@ namespace MantleBodyCorrespondenceTestPrivate
 				}
 			}
 			Indices = Reference.Indices;
-			if (bSplitCentre)
+			if (bSplitCenter)
 			{
-				const FVector2f CentreUV = UVs[4]; const FVector3f CentrePosition = Positions[4], CentreNormal = Normals[4];
-				const uint16 CentreBone = Bones[4]; const float CentreWeight = Weights[4];
-				UVs.Add(CentreUV); Positions.Add(CentrePosition); Normals.Add(CentreNormal); Bones.Add(CentreBone); Weights.Add(CentreWeight);
+				const FVector2f CenterUV = UVs[4]; const FVector3f CenterPosition = Positions[4], CenterNormal = Normals[4];
+				const uint16 CenterBone = Bones[4]; const float CenterWeight = Weights[4];
+				UVs.Add(CenterUV); Positions.Add(CenterPosition); Normals.Add(CenterNormal); Bones.Add(CenterBone); Weights.Add(CenterWeight);
 				// The first cell's triangles use the twin; the rest keep vertex 4.
 				for (int32 I = 0; I < 6; ++I) if (Indices[I] == 4) Indices[I] = 9;
 			}

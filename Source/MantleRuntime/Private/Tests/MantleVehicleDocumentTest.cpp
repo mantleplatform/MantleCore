@@ -246,12 +246,12 @@ namespace MantleVehicleDocumentTestPrivate
 			EqV(TEXT("pelvis offset"), D.Rider.PelvisOffset, R.PelvisOffset);
 			EqV(TEXT("stop pelvis shift"), D.Rider.StopPelvisShift, R.StopPelvisShift);
 			Eq(TEXT("knee splay"), D.Rider.KneeSplayDegrees, R.KneeSplayDegrees);
-			// A rear tyre friction and brake torque of 0 keep the document's.
-			Expect(TEXT("a rear tyre friction exactly when above 0"), D.Rider.bRearTireFriction, R.RearTireFriction > 0.0);
+			// A rear tire friction and brake torque of 0 keep the document's.
+			Expect(TEXT("a rear tire friction exactly when above 0"), D.Rider.bRearTireFriction, R.RearTireFriction > 0.0);
 			Expect(TEXT("a rear brake torque exactly when above 0"), D.Rider.bRearBrakeTorque, R.RearBrakeTorque > 0.0);
 			if (R.RearTireFriction > 0.0)
 			{
-				Eq(TEXT("rear tyre friction"), D.Rider.RearTireFriction, R.RearTireFriction);
+				Eq(TEXT("rear tire friction"), D.Rider.RearTireFriction, R.RearTireFriction);
 			}
 			if (R.RearBrakeTorque > 0.0)
 			{
@@ -270,9 +270,9 @@ namespace MantleVehicleDocumentTestPrivate
 			Eq(TEXT("rotation stiffness"), O.RotationStiffness, C.RotationStiffness);
 			Eq(TEXT("rotation damping"), O.RotationDamping, C.RotationDamping);
 			Eq(TEXT("max accel"), O.MaxAccel, C.MaxAccel);
-			Eq(TEXT("auto centre roll"), O.AutoCentreRollStrength, C.AutoCentreRollStrength);
-			Eq(TEXT("auto centre pitch"), O.AutoCentrePitchStrength, C.AutoCentrePitchStrength);
-			Eq(TEXT("auto centre yaw"), O.AutoCentreYawStrength, C.AutoCentreYawStrength);
+			Eq(TEXT("auto center roll"), O.AutoCenterRollStrength, C.AutoCenterRollStrength);
+			Eq(TEXT("auto center pitch"), O.AutoCenterPitchStrength, C.AutoCenterPitchStrength);
+			Eq(TEXT("auto center yaw"), O.AutoCenterYawStrength, C.AutoCenterYawStrength);
 			// A bike is narrow: the rider steps off the side a body-width out, not a car's door.
 			Expect(TEXT("a bike sets its exit distance"), D.bSeatExitSideDistance, true);
 			Eq(TEXT("the bike's exit distance"), D.SeatExitSideDistance, 100.0);
@@ -282,7 +282,7 @@ namespace MantleVehicleDocumentTestPrivate
 		Expect(TEXT("a boom exactly when it flies"), D.bCameraBoom, bFlier);
 		if (bFlier)
 		{
-			EqV(TEXT("the chase camera orbits the cockpit's height over the centre of mass"), D.CameraBoomLocation,
+			EqV(TEXT("the chase camera orbits the cockpit's height over the center of mass"), D.CameraBoomLocation,
 				FVector(Spec.CenterOfMass.X, 0.0, Spec.Seat.Z + 7.0 * Spec.Scale));
 		}
 		if (!Spec.Rider.bSet)
@@ -710,7 +710,7 @@ bool FMantleVehicleDocumentGroundHandlingTest::RunTest(const FString& Parameters
 		const bool bGround = !Spec.Aircraft.bSet && !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet && Spec.WheelCount() > 2;
 		if (!bGround)
 		{
-			// A bike keeps its tyres' own, a plane's, a helicopter's and a hovercraft's are not a car's: neither key is written.
+			// A bike keeps its tires' own, a plane's, a helicopter's and a hovercraft's are not a car's: neither key is written.
 			TestTrue(*FString::Printf(TEXT("%s: no curve and no rear grip"), *Selector), D.SteeringSpeedCurve.IsEmpty() && !D.bTireRearFriction);
 			continue;
 		}
@@ -1179,7 +1179,7 @@ bool FMantleVehicleDocumentRefusalsTest::RunTest(const FString& Parameters)
 	{
 		Child(*Child(Doc, TEXT("seat")), TEXT("rider"))->SetField(TEXT("pelvisOffset"), Triple(0, 0, 500));
 	});
-	Refuses(TEXT("a rear tyre friction of 0"), TEXT("motorcycle"), TEXT("outside"), [](FJsonObject& Doc)
+	Refuses(TEXT("a rear tire friction of 0"), TEXT("motorcycle"), TEXT("outside"), [](FJsonObject& Doc)
 	{
 		Child(*Child(Doc, TEXT("seat")), TEXT("rider"))->SetNumberField(TEXT("rearTireFriction"), 0);
 	});
@@ -1766,14 +1766,14 @@ bool FMantleVehicleDocumentCookedGroundTest::RunTest(const FString& Parameters)
 				C.Number(TEXT("rotationControl/rotationStiffness"), Control, TEXT("rotationStiffness"), RC.RotationStiffness, 0.0);
 				C.Number(TEXT("rotationControl/rotationDamping"), Control, TEXT("rotationDamping"), RC.RotationDamping, 0.0);
 				C.Number(TEXT("rotationControl/maxAccel"), Control, TEXT("maxAccel"), RC.MaxAccel, 0.0);
-				C.Number(TEXT("rotationControl/autoCentreRollStrength"), Control, TEXT("autoCentreRollStrength"), RC.AutoCentreRollStrength, 0.0);
-				C.Number(TEXT("rotationControl/autoCentrePitchStrength"), Control, TEXT("autoCentrePitchStrength"), RC.AutoCentrePitchStrength, 0.0);
-				C.Number(TEXT("rotationControl/autoCentreYawStrength"), Control, TEXT("autoCentreYawStrength"), RC.AutoCentreYawStrength, 0.0);
+				C.Number(TEXT("rotationControl/autoCenterRollStrength"), Control, TEXT("autoCenterRollStrength"), RC.AutoCenterRollStrength, 0.0);
+				C.Number(TEXT("rotationControl/autoCenterPitchStrength"), Control, TEXT("autoCenterPitchStrength"), RC.AutoCenterPitchStrength, 0.0);
+				C.Number(TEXT("rotationControl/autoCenterYawStrength"), Control, TEXT("autoCenterYawStrength"), RC.AutoCenterYawStrength, 0.0);
 			}
 		}
 	}
 
-	// A car with its handling baked in: the steering's speed curve and the rear tyres' own grip, as flat numbers.
+	// A car with its handling baked in: the steering's speed curve and the rear tires' own grip, as flat numbers.
 	{
 		const FString Name = TEXT("valid-ground-handling");
 		TArray<uint8> Bytes;

@@ -50,7 +50,7 @@ namespace MantleActorDecomposePrivate
 			{
 				continue;
 			}
-			// An event does something when its output is wired; a new Blueprint's greyed-out BeginPlay and Tick are not.
+			// An event does something when its output is wired; a new Blueprint's grayed-out BeginPlay and Tick are not.
 			const bool bWired = Node->Pins.ContainsByPredicate([](const UEdGraphPin* Pin)
 			{
 				return Pin && Pin->Direction == EGPD_Output && Pin->LinkedTo.Num() > 0;
@@ -176,7 +176,7 @@ FString FMantleActorDecompose::EventNameOf(const UEdGraphNode* Node)
 	return Title.IsEmpty() ? Node->GetClass()->GetName() : Title;
 }
 
-bool FMantleActorDecompose::CollectBlueprintBehaviour(const AActor* Actor, TArray<FMantleBlueprintBehaviour>& Out)
+bool FMantleActorDecompose::CollectBlueprintBehavior(const AActor* Actor, TArray<FMantleBlueprintBehavior>& Out)
 {
 	Out.Reset();
 #if WITH_EDITORONLY_DATA
@@ -192,7 +192,7 @@ bool FMantleActorDecompose::CollectBlueprintBehaviour(const AActor* Actor, TArra
 		{
 			continue;
 		}
-		FMantleBlueprintBehaviour Level;
+		FMantleBlueprintBehavior Level;
 		Level.Blueprint = Blueprint->GetName();
 		for (const UEdGraph* Graph : Blueprint->UbergraphPages)
 		{
@@ -215,13 +215,13 @@ bool FMantleActorDecompose::CollectBlueprintBehaviour(const AActor* Actor, TArra
 	return Out.Num() > 0;
 }
 
-FString FMantleActorDecompose::ComposeBlueprintHint(const TArray<FMantleBlueprintBehaviour>& Levels)
+FString FMantleActorDecompose::ComposeBlueprintHint(const TArray<FMantleBlueprintBehavior>& Levels)
 {
 	using namespace MantleActorDecomposePrivate;
 	TArray<FString> Parts;
 	for (int32 Index = 0; Index < Levels.Num(); ++Index)
 	{
-		const FMantleBlueprintBehaviour& Level = Levels[Index];
+		const FMantleBlueprintBehavior& Level = Levels[Index];
 		FString Text;
 		if (Level.Events.Num() > 0)
 		{
@@ -245,12 +245,12 @@ FString FMantleActorDecompose::ComposeBlueprintHint(const TArray<FMantleBlueprin
 	return FString::Join(Parts, TEXT("; "));
 }
 
-bool FMantleActorDecompose::DescribeBlueprintBehaviour(const AActor* Actor, FString& OutBlueprint, FString& OutDetail)
+bool FMantleActorDecompose::DescribeBlueprintBehavior(const AActor* Actor, FString& OutBlueprint, FString& OutDetail)
 {
 	OutBlueprint.Reset();
 	OutDetail.Reset();
-	TArray<FMantleBlueprintBehaviour> Levels;
-	if (!CollectBlueprintBehaviour(Actor, Levels))
+	TArray<FMantleBlueprintBehavior> Levels;
+	if (!CollectBlueprintBehavior(Actor, Levels))
 	{
 		return false;
 	}
@@ -263,10 +263,10 @@ bool FMantleActorDecompose::DescribeBlueprintBehaviour(const AActor* Actor, FStr
 	// A parent's logic is marked as the parent's: the leaf's own level is first only when it has some.
 	if (Levels[0].Blueprint != OutBlueprint)
 	{
-		Levels.Insert(FMantleBlueprintBehaviour(), 0);
+		Levels.Insert(FMantleBlueprintBehavior(), 0);
 		Levels[0].Blueprint = OutBlueprint;
 	}
-	OutDetail = FString::Printf(TEXT("its behaviour isn't carried (e.g. %s)"), *ComposeBlueprintHint(Levels));
+	OutDetail = FString::Printf(TEXT("its behavior isn't carried (e.g. %s)"), *ComposeBlueprintHint(Levels));
 	return true;
 }
 
@@ -275,7 +275,7 @@ bool FMantleActorDecompose::IsReflectionCapture(const AActor* Actor)
 	return Actor && Actor->IsA(AReflectionCapture::StaticClass());
 }
 
-bool FMantleActorDecompose::IsVisualisation(const UActorComponent* Component)
+bool FMantleActorDecompose::IsVisualization(const UActorComponent* Component)
 {
 	return Component && (Component->IsEditorOnly() || Component->IsA(UBillboardComponent::StaticClass()) || Component->IsA(UArrowComponent::StaticClass()));
 }
@@ -314,7 +314,7 @@ void FMantleActorDecompose::ReportActor(const AActor* Actor, EMantleEntityType T
 
 	FString Blueprint;
 	FString Detail;
-	if (DescribeBlueprintBehaviour(Actor, Blueprint, Detail))
+	if (DescribeBlueprintBehavior(Actor, Blueprint, Detail))
 	{
 		Coverage.Add(Cat::BlueprintLogic, EMantleCoverageOutcome::Dropped, Blueprint, Detail);
 	}
@@ -324,7 +324,7 @@ void FMantleActorDecompose::ReportActor(const AActor* Actor, EMantleEntityType T
 
 	// A Blueprint's billboards and arrows are editor icons: said once per class, not once per actor.
 	if (Actor->GetClass()->HasAnyClassFlags(CLASS_CompiledFromBlueprint)
-		&& Components.ContainsByPredicate([](const UActorComponent* Component) { return IsVisualisation(Component); }))
+		&& Components.ContainsByPredicate([](const UActorComponent* Component) { return IsVisualization(Component); }))
 	{
 		Coverage.Add(Cat::OtherComponents, EMantleCoverageOutcome::Info, ClassNameOf(Actor),
 			TEXT("its billboard and arrow components are editor-only icons, so they are not published."));
@@ -344,7 +344,7 @@ void FMantleActorDecompose::ReportActor(const AActor* Actor, EMantleEntityType T
 	{
 		// Parts publish; content a player could see is named by CollectPrefabParts' unsupported list; audio, particles
 		// and instanced meshes are reported on their own; a plain scene component is only a transform.
-		if (!Component || Component->HasAnyFlags(RF_Transient) || IsVisualisation(Component)
+		if (!Component || Component->HasAnyFlags(RF_Transient) || IsVisualization(Component)
 			|| Component->GetClass() == USceneComponent::StaticClass()
 			|| Component->IsA(UPrimitiveComponent::StaticClass()) || Component->IsA(ULightComponentBase::StaticClass())
 			|| Component->IsA(UAudioComponent::StaticClass())

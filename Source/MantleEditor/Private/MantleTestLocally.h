@@ -19,9 +19,9 @@ enum class EMantleTestLocallyState : uint8
 	/** The client is running and has not said it is ready. */
 	Starting,
 	Ready,
-	/** Refused, cancelled-with-an-error or reported failed: ErrorText says what and how to fix it. */
+	/** Refused, canceled-with-an-error or reported failed: ErrorText says what and how to fix it. */
 	Failed,
-	/** Stopped by the creator, or an export the creator cancelled. */
+	/** Stopped by the creator, or an export the creator canceled. */
 	Stopped,
 	/** The preview process exited by itself after it was ready. */
 	Closed
@@ -50,8 +50,8 @@ public:
 
 	/**
 	 * The whole flow for World (the level open in the editor), blocking while it finds the client and exports (each
-	 * shows a cancellable progress dialog). Returns true once the client is launched; otherwise OutError, which is
-	 * also State/ErrorText, says what to fix. A cancelled export returns false with State Stopped and an empty OutError.
+	 * shows a cancelable progress dialog). Returns true once the client is launched; otherwise OutError, which is
+	 * also State/ErrorText, says what to fix. A canceled export returns false with State Stopped and an empty OutError.
 	 * Logs MANTLE_TEST_LOCALLY step lines as it goes.
 	 */
 	bool Run(UWorld* World, FString& OutError);

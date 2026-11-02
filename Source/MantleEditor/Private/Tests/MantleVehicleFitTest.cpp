@@ -12,11 +12,11 @@
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleVehicleFitTestPrivate
 {
-	/** A wheel at (X, Y) whose radius is its centre's height Z, as the pack's measurements are given. */
+	/** A wheel at (X, Y) whose radius is its center's height Z, as the pack's measurements are given. */
 	FMantleVehicleFitWheel W(const double X, const double Y, const double Radius)
 	{
 		FMantleVehicleFitWheel Wheel;
-		Wheel.Centre = FVector(X, Y, Radius);
+		Wheel.Center = FVector(X, Y, Radius);
 		Wheel.Radius = Radius;
 		return Wheel;
 	}
@@ -54,7 +54,7 @@ bool FMantleVehicleFitFabPackTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleFitTestPrivate;
 
-	// Wheel centres measured from the owner's Fab pack; the radius is the centre's height.
+	// Wheel centers measured from the owner's Fab pack; the radius is the center's height.
 	CheckFab(*this, TEXT("Vol2 Sedan"), TEXT("sedan"),
 		{ W(136.48, -83.38, 31.43), W(137.41, 83.70, 31.43), W(-136.06, 87.17, 31.44), W(-135.54, -87.17, 31.44) }, 0.95, 1.05);
 	CheckFab(*this, TEXT("Vol2 SUV"), TEXT("pickup"),
@@ -103,7 +103,7 @@ bool FMantleVehicleFitRulesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("three axles: mean radius 40"), TruckFit.MeanRadius, 40.0, 0.01);
 	TestTrue(TEXT("three axles: it has a scale from both signals"), TruckFit.RadiusScale > 0.0 && TruckFit.TrackScale > 0.0);
 
-	// A two-wheeler on the centre line has no track: the radius alone decides.
+	// A two-wheeler on the center line has no track: the radius alone decides.
 	const TArray<FMantleVehicleFitWheel> Bike = { W(60, 0, 32), W(-60, 0, 32) };
 	const FMantleVehicleFit BikeFit = FMantleVehicleFitter::Compute(*Sedan, Bike);
 	Report(*this, TEXT("two-wheeler"), BikeFit);
@@ -118,7 +118,7 @@ bool FMantleVehicleFitRulesTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a tiny model is clamped"), TinyFit.bClamped);
 	TestEqual(TEXT("a tiny model gets the largest size"), TinyFit.Scale, Sedan->FitMaxScale, 0.001);
 
-	// A model modelled a hundred times too big.
+	// A model modeled a hundred times too big.
 	const TArray<FMantleVehicleFitWheel> Huge = { W(13648, -8338, 3143), W(13741, 8370, 3143), W(-13606, 8717, 3144), W(-13554, -8717, 3144) };
 	const FMantleVehicleFit HugeFit = FMantleVehicleFitter::Compute(*Sedan, Huge);
 	Report(*this, TEXT("a hundred times too big"), HugeFit);
@@ -132,17 +132,17 @@ bool FMantleVehicleFitRulesTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("disagreeing signals are flagged"), OddFit.bSignalsDisagree);
 	TestFalse(TEXT("agreeing signals are not flagged"), SedanFit.bSignalsDisagree);
 
-	// No wheels at all: left as modelled, and says why.
+	// No wheels at all: left as modeled, and says why.
 	const FMantleVehicleFit NoneFit = FMantleVehicleFitter::Compute(*Sedan, TArray<FMantleVehicleFitWheel>());
 	Report(*this, TEXT("no wheels"), NoneFit);
 	TestEqual(TEXT("no wheels leaves the size alone"), NoneFit.Scale, 1.0);
 	TestFalse(TEXT("no wheels still explains itself"), NoneFit.Reason.IsEmpty());
 
-	// A model centred off the origin has the same size: the sides come from its own centre line.
+	// A model centerd off the origin has the same size: the sides come from its own center line.
 	TArray<FMantleVehicleFitWheel> Shifted = SedanWheels;
 	for (FMantleVehicleFitWheel& Wheel : Shifted)
 	{
-		Wheel.Centre.Y += 40.0;
+		Wheel.Center.Y += 40.0;
 	}
 	const FMantleVehicleFit ShiftedFit = FMantleVehicleFitter::Compute(*Sedan, Shifted);
 	Report(*this, TEXT("sedan shifted 40 sideways"), ShiftedFit);

@@ -531,7 +531,7 @@ namespace
 			if ((*Body)->HasField(TEXT("eyeColorId"))
 				&& (!(*Body)->TryGetStringField(TEXT("eyeColorId"), Out.EyeColorId) || !IsPrefixedId(Out.EyeColorId, TEXT("eye_"), 2, false)))
 			{
-				Ctx.Fail(Join(BodyPath, TEXT("eyeColorId")), TEXT("is not an eye colour id (eye_ + 2 digits)"));
+				Ctx.Fail(Join(BodyPath, TEXT("eyeColorId")), TEXT("is not an eye color id (eye_ + 2 digits)"));
 			}
 			double Height = 0.0;
 			if ((*Body)->HasField(TEXT("heightPct")) && RequireNumber(Ctx, *Body, TEXT("heightPct"), BodyPath, Height))
@@ -869,7 +869,7 @@ namespace
 		Out = Number;
 	}
 
-	/** An optional linear luminance colour of settings.environment.fog: three numbers, each 0 to MaxFogColor. */
+	/** An optional linear luminance color of settings.environment.fog: three numbers, each 0 to MaxFogColor. */
 	void ReadEnvironmentLuminance(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Obj, const TCHAR* Key, const FString& Path,
 		TOptional<FLinearColor>& Out)
 	{
@@ -1112,7 +1112,7 @@ namespace
 			}
 			else
 			{
-				Ctx.Fail(Join(EnvironmentPath, TEXT("colorTint")), TEXT("must be a colour \"#RRGGBB\""));
+				Ctx.Fail(Join(EnvironmentPath, TEXT("colorTint")), TEXT("must be a color \"#RRGGBB\""));
 			}
 		}
 	}
@@ -1897,7 +1897,7 @@ namespace
 		}
 	}
 
-	/** Two numbers at Path (a path point, an exclusion's centre or half extent); false, reported, when it is not. */
+	/** Two numbers at Path (a path point, an exclusion's center or half extent); false, reported, when it is not. */
 	bool ReadScatterPair(FParseContext& Ctx, const TSharedPtr<FJsonValue>& Value, const FString& Path, FVector2D& Out)
 	{
 		const TArray<TSharedPtr<FJsonValue>>* Array = nullptr;
@@ -2331,7 +2331,7 @@ namespace
 
 		if (RequireNumber(Ctx, Props, TEXT("density"), Path, P.Density) && !(P.Density >= 0.0))
 		{
-			Ctx.Fail(Join(Path, TEXT("density")), FString::Printf(TEXT("%g must be 0 or more instances per square metre"), P.Density));
+			Ctx.Fail(Join(Path, TEXT("density")), FString::Printf(TEXT("%g must be 0 or more instances per square meter"), P.Density));
 		}
 		ReadRangePair(Ctx, Props, TEXT("scale"), Path, FMantlePlaceLimits::MinScatterScale, FMantlePlaceLimits::MaxScatterScale,
 			/*bIntegers*/ false, P.MinScale, P.MaxScale);
@@ -2594,7 +2594,7 @@ namespace
 
 	/**
 	 * A Text entity's properties (GhzGarage/mantle#724): only `text` is required; a key left out keeps
-	 * FMantleTextProps' default. The colour is linear RGBA.
+	 * FMantleTextProps' default. The color is linear RGBA.
 	 */
 	void ParseText(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Props, const FString& Path, FMantleTextProps& P)
 	{
@@ -2670,7 +2670,7 @@ namespace
 		}
 	}
 
-	/** An optional linear RGB colour (a WaterBody's look): a colour left out is left unset. */
+	/** An optional linear RGB color (a WaterBody's look): a color left out is left unset. */
 	void ReadWaterLookColor(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Look, const TCHAR* Key, const FString& Path, TOptional<FLinearColor>& Out)
 	{
 		if (!Look->HasField(Key))
@@ -2983,8 +2983,8 @@ namespace
 		Out = Zone;
 	}
 
-	// An entity's interactable block (the schema's interactable). Colours are linear RGB arrays like every other
-	// colour of the place; entity references are checked for existence once every entity is read (ParseFromString).
+	// An entity's interactable block (the schema's interactable). Colors are linear RGB arrays like every other
+	// color of the place; entity references are checked for existence once every entity is read (ParseFromString).
 
 	bool IsInteractionPartId(const FString& Value)
 	{
@@ -4222,7 +4222,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		}
 	}
 
-	// audience — optional. Catalogue metadata the world never reads, but a place is
+	// audience — optional. Catalog metadata the world never reads, but a place is
 	// refused for a malformed one all the same, as the backend and validate.py refuse it.
 	const TSharedPtr<FJsonValue> AudienceValue = Root->TryGetField(TEXT("audience"));
 	if (AudienceValue.IsValid())

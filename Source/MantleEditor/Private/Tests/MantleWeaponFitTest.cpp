@@ -6,10 +6,10 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 // The weapon fit on synthetic guns built in code from boxes of points, so no asset is needed. The shape is a
-// rifle in centimetres along mesh +Y with up +Z, the way the pack TR15 is modelled:
+// rifle in centimeters along mesh +Y with up +Z, the way the pack TR15 is modeled:
 //   stock     y -5..15   z -2..8     receiver  y 15..50  z 0..9     barrel  y 50..80  z 4..6
 //   pistol grip y 18..24 z -9..0     magazine  y 28..34  z -14..0
-// so the muzzle tip is at (0, 80, 5), the grip box centre (0, 21, -4.5) and the magazine box centre (0, 31, -7).
+// so the muzzle tip is at (0, 80, 5), the grip box center (0, 21, -4.5) and the magazine box center (0, 31, -7).
 
 namespace MantleWeaponFitTestPrivate
 {
@@ -33,7 +33,7 @@ namespace MantleWeaponFitTestPrivate
 		}
 	}
 
-	/** The rifle, uniformly scaled by Unit (0.01 for a mesh made in metres) and then rotated. */
+	/** The rifle, uniformly scaled by Unit (0.01 for a mesh made in meters) and then rotated. */
 	static TArray<FVector3f> MakeRifle(double Unit, const FQuat& Rotation)
 	{
 		TArray<FVector3f> Local;
@@ -120,11 +120,11 @@ bool FMantleWeaponFitRifleTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleWeaponFitMetresTest,
-	"Mantle.Editor.WeaponFit.MeshInMetres",
+	FMantleWeaponFitMetersTest,
+	"Mantle.Editor.WeaponFit.MeshInMeters",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleWeaponFitMetresTest::RunTest(const FString& Parameters)
+bool FMantleWeaponFitMetersTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleWeaponFitTestPrivate;
 	FMantleWeaponFitInput In;
@@ -132,8 +132,8 @@ bool FMantleWeaponFitMetresTest::RunTest(const FString& Parameters)
 	In.Positions = MakeRifle(0.01, FQuat::Identity);
 	const FMantleWeaponFitResult Fit = FMantleWeaponFit::Fit(In);
 
-	TestEqual(TEXT("a mesh in metres is scaled up 100x"), Fit.Scale, 100.f, 0.01f);
-	TestTrue(TEXT("the reason mentions metres"), Fit.ScaleReason.Contains(TEXT("metres")));
+	TestEqual(TEXT("a mesh in meters is scaled up 100x"), Fit.Scale, 100.f, 0.01f);
+	TestTrue(TEXT("the reason mentions meters"), Fit.ScaleReason.Contains(TEXT("meters")));
 	TestFalse(TEXT("after the unit fix it is not flagged"), Fit.bOutsideTypicalRange);
 	CheckRifle(*this, Fit, 0.01, FQuat::Identity);
 	return true;
@@ -241,7 +241,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleWeaponFitLowStockTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleWeaponFitTestPrivate;
-	// The rifle plus a stock box at the rear whose centre (z -1) sits 6 cm below the barrel line (z 5), as on a real rifle.
+	// The rifle plus a stock box at the rear whose center (z -1) sits 6 cm below the barrel line (z 5), as on a real rifle.
 	FMantleWeaponFitInput In;
 	In.Hold = EMantleWeaponFitHold::Rifle;
 	In.Positions = MakeRifle(1.0, FQuat::Identity);
@@ -280,7 +280,7 @@ bool FMantleWeaponFitBladePalmTest::RunTest(const FString& Parameters)
 	{
 		return true;
 	}
-	// The handle's centre line, where Grip_R's distance along it crosses it.
+	// The handle's center line, where Grip_R's distance along it crosses it.
 	const FVector Handle = Fit.MeshToWeapon.TransformPosition(FVector(0, Fit.MeshToWeapon.InverseTransformPosition(GripR).Y, 0));
 	TestTrue(TEXT("the handle points to the tip (+X)"), Fit.MeshToWeapon.TransformPosition(FVector(0, 90, 0)).X > Handle.X + 60.0);
 	TestTrue(TEXT("Grip_R (the palm) is on the handle"), GripR.X > Fit.MeshToWeapon.TransformPosition(FVector(0, -2, 0)).X
@@ -347,15 +347,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleWeaponFitBowTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleWeaponFitTestPrivate;
-	// A bow shaped like the BowAndArrow pack's, in centimetres in its own frame: a front (a) toward the target, a thickness (b) and a
+	// A bow shaped like the BowAndArrow pack's, in centimeters in its own frame: a front (a) toward the target, a thickness (b) and a
 	// length (c). The riser is 16 cm of the middle (a -6..1.8, b +-1.8), the limbs curve toward the archer to tips at a -25.5 (27.3 deep, 135 long).
 	// Whichever way the file faces, the front is the riser's side, the palm is behind the riser's front face and past its hand-side face, and the
 	// string is just inside the limb tips with the nock a little above the middle.
 	struct FCase { const TCHAR* Name; double Unit; FQuat Rotation; bool bFlip; bool bFrontIsRiser; };
 	const FCase Cases[] = {
-		{TEXT("as modelled"), 1.0, FQuat::Identity, false, true},
+		{TEXT("as modeled"), 1.0, FQuat::Identity, false, true},
 		{TEXT("turned around"), 1.0, FQuat(FVector::YAxisVector, UE_PI), false, true},
-		{TEXT("tipped and in metres"), 0.01, FQuat(FRotator(20.0, 35.0, 50.0)), false, true},
+		{TEXT("tipped and in meters"), 0.01, FQuat(FRotator(20.0, 35.0, 50.0)), false, true},
 		{TEXT("flipped by the creator"), 1.0, FQuat::Identity, true, false},
 	};
 	for (const FCase& Case : Cases)
@@ -434,15 +434,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleWeaponFitStaffTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleWeaponFitTestPrivate;
-	// A staff shaped like the MagicStaff pack's, in centimetres in its own frame: a plain shaft from the butt at -119 to 10 on
+	// A staff shaped like the MagicStaff pack's, in centimeters in its own frame: a plain shaft from the butt at -119 to 10 on
 	// the line y 0, z 0, a neck curling up 5 cm, and a bulky orb at the top (62 cm), 181 cm in all. Whichever way the file faces, the head is the
 	// bulkier end and the front, the palm is on the shaft 0.65 of the length from the butt, the Focus is the middle of the head's top and the
 	// left hand's point is a sixth of the length back toward the butt. The creator's Flip puts the head at the other end.
 	struct FCase { const TCHAR* Name; double Unit; FQuat Rotation; bool bFlip; };
 	const FCase Cases[] = {
-		{TEXT("as modelled"), 1.0, FQuat::Identity, false},
+		{TEXT("as modeled"), 1.0, FQuat::Identity, false},
 		{TEXT("turned around"), 1.0, FQuat(FVector::ZAxisVector, UE_PI), false},
-		{TEXT("tipped and in metres"), 0.01, FQuat(FRotator(20.0, 35.0, 50.0)), false},
+		{TEXT("tipped and in meters"), 0.01, FQuat(FRotator(20.0, 35.0, 50.0)), false},
 		{TEXT("flipped by the creator"), 1.0, FQuat::Identity, true},
 	};
 	for (const FCase& Case : Cases)

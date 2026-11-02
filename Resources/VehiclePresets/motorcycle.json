@@ -3,7 +3,7 @@
   "id": "motorcycle",
   "name": "Motorcycle",
   "description": "A two-wheeled bike: motorcycles, scooters and dirt bikes. The rider leans into turns and the bike holds itself upright, so it steers by the front fork.",
-  "comment": "A vehicle preset (#728); see sedan.json for the format. A two-wheeler (#553): layout.centreline puts one wheel on each axle at Y 0 (bones wheel_f and wheel_r), and track is then only the fit's nominal width, kept equal to fit.trackWidth and the body's width, never used to place a wheel. The steered front wheel hangs under a fork bone (fork_f) that the front wheel's SteerBone yaws. seats.driver motorcycle plays the bike rider clip set; the seat sits on the centreline (Y 0), has no steeringWheel, and chassis.rider holds the rest of the rider: the handlebar grips (on the fork bone) and foot pegs (on the root bone) as [x, y, z] in the chassis frame with the left grip and peg on -Y, pelvisOffset, stopPelvisShift and kneeSplayDegrees as FMantleVehicleSeat's RiderPelvisOffset, RiderStopPelvisShift and RiderKneeSplayDegrees, rearTireFriction and rearBrakeTorque for the rear wheel (the document holds one of each, which the front wheel gets), and rotationControl, ChaosVehicles' arcade balance (FMantleVehicleRotationControl's keys, by the same names, torqueControl switching all of it on). Modelled on the tuned test bike with a 95 cm saddle, 140 cm wheelbase, and its numbers taken as they are in a frame with the ground at Z 0 and the wheelbase centred on X 0. The centre of mass sits just above the wheel centres, inside the body box.",
+  "comment": "A vehicle preset (#728); see sedan.json for the format. A two-wheeler (#553): layout.centerline puts one wheel on each axle at Y 0 (bones wheel_f and wheel_r), and track is then only the fit's nominal width, kept equal to fit.trackWidth and the body's width, never used to place a wheel. The steered front wheel hangs under a fork bone (fork_f) that the front wheel's SteerBone yaws. seats.driver motorcycle plays the bike rider clip set; the seat sits on the centerline (Y 0), has no steeringWheel, and chassis.rider holds the rest of the rider: the handlebar grips (on the fork bone) and foot pegs (on the root bone) as [x, y, z] in the chassis frame with the left grip and peg on -Y, pelvisOffset, stopPelvisShift and kneeSplayDegrees as FMantleVehicleSeat's RiderPelvisOffset, RiderStopPelvisShift and RiderKneeSplayDegrees, rearTireFriction and rearBrakeTorque for the rear wheel (the document holds one of each, which the front wheel gets), and rotationControl, ChaosVehicles' arcade balance (FMantleVehicleRotationControl's keys, by the same names, torqueControl switching all of it on). Modeled on the tuned test bike with a 95 cm saddle, 140 cm wheelbase, and its numbers taken as they are in a frame with the ground at Z 0 and the wheelbase centered on X 0. The center of mass sits just above the wheel centers, inside the body box.",
   "movementType": "wheeled",
   "publishable": true,
   "type": "motorcycle",
@@ -26,7 +26,7 @@
       "track": 40,
       "wheelRadius": 35,
       "wheelWidth": 30,
-      "centreline": true,
+      "centerline": true,
       "axles": [
         { "steer": true, "drive": false },
         { "steer": false, "drive": true, "handbrake": true }
@@ -55,7 +55,7 @@
         "rotationStiffness": 100,
         "rotationDamping": 10,
         "maxAccel": 100,
-        "autoCentreRollStrength": 1
+        "autoCenterRollStrength": 1
       }
     }
   },

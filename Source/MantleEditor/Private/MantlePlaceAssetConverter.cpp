@@ -201,7 +201,7 @@ namespace MantlePlaceAssetConverterPrivate
 
 	/**
 	 * A water document (#628, FMantlePlaceMaterialDocument::WritesWater): only what M_MantlePlace_Water reads. The surface
-	 * colour, roughness, normal scale, the first normal map and the water object (coefficients, the layers' layout and
+	 * color, roughness, normal scale, the first normal map and the water object (coefficients, the layers' layout and
 	 * pan, the second normal map); none of the keys the schema says do nothing on water.
 	 */
 	FString WriteWaterDocument(const FMantlePlaceMaterialDocument& Doc, const TMap<FString, FString>& Values)
@@ -523,11 +523,11 @@ namespace MantlePlaceAssetConverterPrivate
 		case EMantlePlaceTextureSlot::Normal: return TEXT("normal map");
 		case EMantlePlaceTextureSlot::Orm: return TEXT("occlusion, roughness and metallic");
 		case EMantlePlaceTextureSlot::Emissive: return TEXT("emissive");
-		case EMantlePlaceTextureSlot::LayerBaseColor: return TEXT("layer base colour");
+		case EMantlePlaceTextureSlot::LayerBaseColor: return TEXT("layer base color");
 		case EMantlePlaceTextureSlot::LayerNormal: return TEXT("layer normal map");
 		case EMantlePlaceTextureSlot::LayerOrm: return TEXT("layer occlusion, roughness and metallic");
 		case EMantlePlaceTextureSlot::WaterNormal2: return TEXT("second water normal map");
-		default: return TEXT("base colour");
+		default: return TEXT("base color");
 		}
 	}
 
@@ -539,14 +539,14 @@ namespace MantlePlaceAssetConverterPrivate
 	}
 
 	/** Decoded to BGRA8 without changing the bytes of an 8-bit image (no gamma conversion). */
-	bool DecodeBgra(TConstArrayView<uint8> Bytes, bool bColour, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight)
+	bool DecodeBgra(TConstArrayView<uint8> Bytes, bool bColor, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight)
 	{
 		FImage Decoded;
 		if (Bytes.Num() == 0 || !FImageUtils::DecompressImage(Bytes.GetData(), Bytes.Num(), Decoded))
 		{
 			return false;
 		}
-		const EGammaSpace Gamma = ERawImageFormat::IsHDR(Decoded.Format) ? (bColour ? EGammaSpace::sRGB : EGammaSpace::Linear) : Decoded.GammaSpace;
+		const EGammaSpace Gamma = ERawImageFormat::IsHDR(Decoded.Format) ? (bColor ? EGammaSpace::sRGB : EGammaSpace::Linear) : Decoded.GammaSpace;
 		FImage Bgra;
 		Decoded.CopyTo(Bgra, ERawImageFormat::BGRA8, Gamma);
 		OutWidth = Bgra.SizeX;
@@ -559,7 +559,7 @@ namespace MantlePlaceAssetConverterPrivate
 	/**
 	 * A texture's source pixels as a PNG: a decal's or livery's texture, or a slot #533 publishes from its source.
 	 * The pixels as stored: an 8-bit image's bytes are kept, whatever gamma it is tagged with, as DecodeBgra keeps
-	 * an image's; a floating-point one is encoded as sRGB colour or linear data (bLinear). A normal map (bNormal) is
+	 * an image's; a floating-point one is encoded as sRGB color or linear data (bLinear). A normal map (bNormal) is
 	 * flipped from Unreal's green-down to an upload's glTF green-up, which the cook flips back
 	 * (FMantlePlaceMaterials::PrepareForSlot), unless it is marked Flip Green Channel (green-up already). False with
 	 * the reason, a clause, when it has no pixels Mantle can take.
@@ -603,11 +603,11 @@ namespace MantlePlaceAssetConverterPrivate
 		return OutPng.Num() > 0;
 	}
 
-	void Resize(TArray<FColor>& Pixels, int32& Width, int32& Height, int32 NewWidth, int32 NewHeight, bool bColour)
+	void Resize(TArray<FColor>& Pixels, int32& Width, int32& Height, int32 NewWidth, int32 NewHeight, bool bColor)
 	{
 		TArray<FColor> Resized;
 		Resized.SetNumUninitialized(NewWidth * NewHeight);
-		FImageUtils::ImageResize(Width, Height, TArrayView<const FColor>(Pixels), NewWidth, NewHeight, TArrayView<FColor>(Resized), bColour, /*bForceOpaqueOutput*/ false);
+		FImageUtils::ImageResize(Width, Height, TArrayView<const FColor>(Pixels), NewWidth, NewHeight, TArrayView<FColor>(Resized), bColor, /*bForceOpaqueOutput*/ false);
 		Pixels = MoveTemp(Resized);
 		Width = NewWidth;
 		Height = NewHeight;
@@ -723,7 +723,7 @@ namespace MantlePlaceAssetConverterPrivate
 		{
 			Image->TryGetStringField(TEXT("name"), OutName);
 		}
-		// GLTFExporter tags a colour-space conversion onto the name; the creator knows the texture by its own.
+		// GLTFExporter tags a color-space conversion onto the name; the creator knows the texture by its own.
 		OutName.RemoveFromEnd(TEXT("_sRGB"));
 		OutName.RemoveFromEnd(TEXT("_Linear"));
 		const int32 View = static_cast<int32>(NumberField(Image, TEXT("bufferView"), INDEX_NONE));
@@ -741,7 +741,7 @@ namespace MantlePlaceAssetConverterPrivate
 	}
 
 	/**
-	 * #533: what the analysis recognised, with each source texture read (FMantleMaterialExtras). A world-aligned
+	 * #533: what the analysis recognized, with each source texture read (FMantleMaterialExtras). A world-aligned
 	 * mapping or layer blend any of whose textures cannot be read is dropped whole, a pan with its slot, each
 	 * with a warning (Check this place counted them as carried), and those slots keep GLTFExporter's bake.
 	 */
@@ -764,7 +764,7 @@ namespace MantlePlaceAssetConverterPrivate
 			Extras.SourceNames[Image] = Texture->GetName();
 			return true;
 		};
-		// Images in EMantlePlaceTextureSlot order: base colour, normal, orm, emissive, then the layer's base colour,
+		// Images in EMantlePlaceTextureSlot order: base color, normal, orm, emissive, then the layer's base color,
 		// normal, orm. Normal maps and orm are linear data.
 		auto ReadSlot = [&Read](const TWeakObjectPtr<UTexture>& Texture, const int32 Image)
 		{
@@ -807,7 +807,7 @@ namespace MantlePlaceAssetConverterPrivate
 			if (!bRead)
 			{
 				OutIssues.Add(WarningIssue(FString::Printf(TEXT("Material '%s': its %s could not be kept (%s), so it is baked onto the mesh's own UVs."), *MaterialName,
-					Fidelity.bWorldAligned ? TEXT("world-aligned mapping") : TEXT("vertex-colour layer blend"), *Failed)));
+					Fidelity.bWorldAligned ? TEXT("world-aligned mapping") : TEXT("vertex-color layer blend"), *Failed)));
 				Fidelity.bWorldAligned = false;
 				Fidelity.bLayerBlend = false;
 				for (int32 Slot = 0; Slot < 3; ++Slot)
@@ -913,7 +913,7 @@ namespace MantlePlaceAssetConverterPrivate
 
 	/**
 	 * #470: Mesh's simple collision as the cook accepts it (backend cook.StaticCollision): its boxes, spheres,
-	 * capsules and convex hulls (each hull's transform applied), in the mesh's space, Unreal centimetres. None
+	 * capsules and convex hulls (each hull's transform applied), in the mesh's space, Unreal centimeters. None
 	 * when its collision complexity is Use Complex As Simple (the project default resolved), or when it has no
 	 * shapes. A shape the cook would refuse, or a kind MRM2 does not carry, is left out and named in a warning;
 	 * past Limits' caps the whole simple collision is left off with a warning (the mesh then collides with its
@@ -1424,7 +1424,7 @@ bool FMantlePlaceAssetSet::WeaponBytes(const FMantleConvertedWeapon& Weapon, TAr
 		return false;
 	}
 	Root->SetStringField(TEXT("mesh"), MeshRef->Id);
-	// The hotbar icon is the library picture the weapon uploaded beside it (a colour texture). Create writes the icon's local name;
+	// The hotbar icon is the library picture the weapon uploaded beside it (a color texture). Create writes the icon's local name;
 	// a weapon whose picture could not be taken or uploaded names none.
 	const FMantlePlaceUploadedRef* IconRef = Weapon.ThumbnailKey.IsEmpty() ? nullptr : Uploaded.Find(Weapon.ThumbnailKey);
 	if (IconRef && !IconRef->Id.IsEmpty())
@@ -1831,8 +1831,8 @@ namespace MantlePlaceAssetConverterPrivate
 		const FName SlotName(TEXT("Bake"));
 		const FPolygonGroupID Group = Description.CreatePolygonGroup();
 		Attributes.GetPolygonGroupMaterialSlotNames()[Group] = SlotName;
-		// The bake writes the colour back out as sRGB bytes (FMeshMaterialRenderItem::PopulateWithMeshData), so the corners hold the bytes
-		// as linear: the Vertex Color node then reads exactly the bytes over 255, as it does on the meshes the colour was averaged from.
+		// The bake writes the color back out as sRGB bytes (FMeshMaterialRenderItem::PopulateWithMeshData), so the corners hold the bytes
+		// as linear: the Vertex Color node then reads exactly the bytes over 255, as it does on the meshes the color was averaged from.
 		const FVector4f Color(FLinearColor(Surface.VertexColor));
 		const float Range = static_cast<float>(FMath::Max(Surface.UvRange, 1));
 		const float Side = Surface.WorldTileCm > 0.0 ? static_cast<float>(Surface.WorldTileCm) : 100.0f;
@@ -1991,7 +1991,7 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 		FString::Printf(TEXT("%s_%s.glb"), *SafeName, *FGuid::NewGuid().ToString(EGuidFormats::Digits))));
 
 	// Any surface but GLTFExporter's own card is a card mesh of our own, baked with its mesh data: GLTFExporter then draws the material on
-	// the card's vertex colours and UVs (only for a material that reads such data, FGLTFMaterialUtilities::NeedsMeshData; any other bakes
+	// the card's vertex colors and UVs (only for a material that reads such data, FGLTFMaterialUtilities::NeedsMeshData; any other bakes
 	// over UVs 0 to 1 as before). The document then holds the card too, but its materials[0] is still the material.
 	TStrongObjectPtr<UStaticMesh> Card;
 	if (!Settings.Surface.IsPlain())
@@ -2177,7 +2177,7 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 	{
 		if (OnProgress && !OnProgress(Done, Total, Name))
 		{
-			Out.Issues.Add(ErrorIssue(TEXT("Preparing this place's meshes and materials was cancelled."), TEXT("Publish again to carry on; what was already converted is kept.")));
+			Out.Issues.Add(ErrorIssue(TEXT("Preparing this place's meshes and materials was canceled."), TEXT("Publish again to carry on; what was already converted is kept.")));
 			return false;
 		}
 		++Done;
@@ -2626,10 +2626,10 @@ bool FMantlePlaceAssetConverter::ConvertSkeletalMesh(USkeletalMesh* Mesh, FMantl
 	}
 	if (CappedVertices > 0)
 	{
-		// #484: the eight heaviest influences are kept and renormalised; a visible change is worth a warning.
+		// #484: the eight heaviest influences are kept and renormalized; a visible change is worth a warning.
 		Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Skeletal mesh '%s' has %d vertices weighted to more than 8 bones; each keeps its 8 heaviest (the most any lost was %.0f%% of its weight)."),
 			*Name, CappedVertices, LargestDropped * 100.0f),
-			TEXT("If it deforms differently in the published place, limit its skin to 8 influences a vertex in your modelling tool.")));
+			TEXT("If it deforms differently in the published place, limit its skin to 8 influences a vertex in your modeling tool.")));
 	}
 	if (!FMantleGlbWriter::Write(Glb, Converted.Bytes, Error))
 	{
@@ -2725,7 +2725,7 @@ bool FMantlePlaceAssetConverter::ConvertDecalTexture(const FMantleGatheredTextur
 	}
 	const UTexture* Texture = Gathered.Texture.Get();
 	const FString Users = FMantlePlaceAssets::DescribeUsers(Gathered.UsedBy);
-	// A vehicle's livery (#488) converts exactly as a decal's base colour does; only the words differ.
+	// A vehicle's livery (#488) converts exactly as a decal's base color does; only the words differ.
 	// So does a block world's tile (#168 step 6).
 	const TCHAR* Kind = Gathered.bLivery ? TEXT("Livery texture") : Gathered.bVoxelTile ? TEXT("Block tile") : TEXT("Decal texture");
 	const FString What = Users.IsEmpty()
@@ -2757,7 +2757,7 @@ bool FMantlePlaceAssetConverter::ConvertDecalTexture(const FMantleGatheredTextur
 	}
 	Converted.Name = Gathered.bLivery ? FString::Printf(TEXT("%s (vehicle livery)"), *Gathered.Name)
 		: Gathered.bVoxelTile ? FString::Printf(TEXT("%s (block tile)"), *Gathered.Name)
-		: FString::Printf(TEXT("%s (decal %s)"), *Gathered.Name, Gathered.bNormal ? TEXT("normal map") : TEXT("base colour"));
+		: FString::Printf(TEXT("%s (decal %s)"), *Gathered.Name, Gathered.bNormal ? TEXT("normal map") : TEXT("base color"));
 	Out.DecalTextures.Add(Gathered.Key, Out.AddTexture(MoveTemp(Converted)));
 	++Stats.DecalTexturesConverted;
 	return true;
@@ -2791,7 +2791,7 @@ bool FMantlePlaceAssetConverter::ConvertUIImage(const FString& PlacePath, const 
 	{
 		return Refuse(TEXT("the file could not be read"));
 	}
-	// The same preparation as a decal's base colour: alpha kept straight, size and bytes capped.
+	// The same preparation as a decal's base color: alpha kept straight, size and bytes capped.
 	FMantleConvertedTexture Converted;
 	if (!PrepareTexture(Bytes, EMantlePlaceTextureSlot::BaseColor, /*bKeepAlpha*/ true, Limits, What, /*bWarnDownscale*/ true, Converted, Out.Issues))
 	{
@@ -2808,17 +2808,17 @@ bool FMantlePlaceAssetConverter::ConvertThumbnail(TConstArrayView<FColor> Pixels
 	const FString What = TEXT("The place's thumbnail");
 	const TArray<uint8> Png = Width > 0 && Height > 0 && Pixels.Num() == Width * Height ? FMantlePng::EncodeRGBA8(Width, Height, Pixels) : TArray<uint8>();
 	FMantleConvertedTexture Converted;
-	// A colour picture whose alpha does not matter: JPEG, within the texture limits like any base colour.
+	// A color picture whose alpha does not matter: JPEG, within the texture limits like any base color.
 	if (Png.IsEmpty() || !PrepareTexture(Png, EMantlePlaceTextureSlot::BaseColor, /*bKeepAlpha*/ false, Limits, What, /*bWarnDownscale*/ false, Converted, Out.Issues))
 	{
 		Out.Issues.Add(WarningIssue(TEXT("The place's thumbnail could not be prepared, so it publishes without a picture."),
 			TEXT("Publish again; if it keeps happening, choose another view on Mantle Place Settings > Thumbnail.")));
 		return false;
 	}
-	// #796: uploaded with no role, so the backend keeps the JPEG as its cooked bytes and the catalogue's thumbnailUrl
-	// serves a picture SMantleRemoteImage decodes (a colour role cooks it to MTX1). A comment segment after the JPEG's
-	// start marker gives it bytes no colour texture has: one hash is one asset, and a texture cooked for a role serves
-	// only that role, so the thumbnails #786 uploaded as colour maps can never be handed back as this one.
+	// #796: uploaded with no role, so the backend keeps the JPEG as its cooked bytes and the catalog's thumbnailUrl
+	// serves a picture SMantleRemoteImage decodes (a color role cooks it to MTX1). A comment segment after the JPEG's
+	// start marker gives it bytes no color texture has: one hash is one asset, and a texture cooked for a role serves
+	// only that role, so the thumbnails #786 uploaded as color maps can never be handed back as this one.
 	static const ANSICHAR Marker[] = "Mantle place thumbnail";
 	constexpr int32 MarkerBytes = UE_ARRAY_COUNT(Marker) - 1;
 	const int64 Cap = FMath::Min(Limits.MaxTextureBytes, Limits.MaxUploadBytes);
@@ -2889,7 +2889,7 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 			Converted.SectionMaterialKeys.Add(Converted.Body.MaterialNames[Index], FMantlePlaceAssets::MaterialKey(Material));
 		}
 	}
-	// Its liveries (#488) convert as decal base colours (FMantlePlaceDependencies::AddVehicleSpawn gathers them), and
+	// Its liveries (#488) convert as decal base colors (FMantlePlaceDependencies::AddVehicleSpawn gathers them), and
 	// upload with the textures, before it.
 	Converted.LiveryTextureKeys = FMantleVehicleConverter::LiveryTextureKeys(*Vehicle);
 	// Its attached parts (#435 item 2): each mesh converts and uploads as a mesh does (FMantlePlaceDependencies::AddVehicleSpawn
@@ -3626,7 +3626,7 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface)
 {
 	// #628: a per-instance node is baked at a representative value; the salt keeps an earlier bake (which read it as 0) from standing in.
-	// A bake on anything but the plain surface (a vertex colour, a landscape's UV range) adds its tag, so a different colour is not served
+	// A bake on anything but the plain surface (a vertex color, a landscape's UV range) adds its tag, so a different color is not served
 	// another's bake, and every plain bake keeps the key it always had.
 	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
@@ -3662,7 +3662,7 @@ double FMantlePlaceAssetConverter::BakedBaseColorDifference(const FMantleGlbDocu
 		const FTextureRef Ref = ReadTextureRef(ObjectField(ObjectField((*Materials)[0]->AsObject(), TEXT("pbrMetallicRoughness")), TEXT("baseColorTexture")));
 		if (!Ref.IsSet())
 		{
-			// A constant colour does not move with the card.
+			// A constant color does not move with the card.
 			return 0.0;
 		}
 		TArray<uint8> Bytes;
@@ -3882,12 +3882,12 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	Converted.Name = Material->GetName();
 	Converted.Path = Material->GetPathName();
 
-	// #628: Per Instance Random and its kin have no value in a bake (they read 0, which blacks out a base colour they multiply),
+	// #628: Per Instance Random and its kin have no value in a bake (they read 0, which blacks out a base color they multiply),
 	// so the bake runs on a transient copy with each at a representative value, and the creator is told the variation is averaged.
 	TStrongObjectPtr<UMaterialInterface> Neutral;
 	if (Analysis.bPerInstanceVariation)
 	{
-		Neutral = FMantlePlaceAssets::NeutralisePerInstanceValues(Material);
+		Neutral = FMantlePlaceAssets::NeutralizePerInstanceValues(Material);
 		if (Neutral.IsValid())
 		{
 			Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Material '%s': %s"), *Converted.Name, *FMantlePlaceAssets::DescribePerInstanceVariation()),
@@ -3904,7 +3904,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	FlattenSettings.Surface = Surface;
 	if (!Surface.IsPlain())
 	{
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: baked on a card with vertex colour %s and UVs 0 to %d%s"), *Material->GetName(), *Surface.VertexColor.ToHex(), Surface.UvRange,
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: baked on a card with vertex color %s and UVs 0 to %d%s"), *Material->GetName(), *Surface.VertexColor.ToHex(), Surface.UvRange,
 			Surface.WorldTileCm > 0.0 ? *FString::Printf(TEXT(", %g cm a side for its world mapping"), Surface.WorldTileCm) : TEXT(""));
 	}
 	if (Flattener->Flatten(Neutral.IsValid() ? Neutral.Get() : Material, FlattenSettings, Flattened, Messages, FlattenError))
@@ -3928,7 +3928,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 			const double Difference = Flattener->Flatten(Neutral.IsValid() ? Neutral.Get() : Material, Shifted, Moved, MovedMessages, MovedError)
 				? BakedBaseColorDifference(Flattened, Moved) : 1.0;
 			const bool bWorldMapped = Difference >= WorldMappedDifference;
-			UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: moving its card changed its base colour by %.1f%%, so it is %s"), *Material->GetName(), 100.0 * Difference,
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: moving its card changed its base color by %.1f%%, so it is %s"), *Material->GetName(), 100.0 * Difference,
 				bWorldMapped ? TEXT("world-mapped: published to repeat by world position") : TEXT("mapped by UV: published on the mesh's UVs"));
 			if (bWorldMapped)
 			{
@@ -3939,7 +3939,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	else
 	{
 		// Friendlier than refusing the place: it publishes, plain, and the creator is told why.
-		Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Material '%s' could not be flattened (%s), so it publishes as plain grey."), *Converted.Name, *FlattenError),
+		Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Material '%s' could not be flattened (%s), so it publishes as plain gray."), *Converted.Name, *FlattenError),
 			TEXT("Try a simpler material on these meshes, or report it with the log if it keeps happening.")));
 		Converted.Document.BaseColorFactor[0] = Converted.Document.BaseColorFactor[1] = Converted.Document.BaseColorFactor[2] = 0.5;
 		Converted.Document.MetallicFactor = 0.0;
@@ -3957,7 +3957,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 			|| !Paint.VertexColor.Equals(TEXT("none"), ESearchCase::CaseSensitive) || Paint.HasFidelity2();
 		if (bDropsFidelity)
 		{
-			Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Material '%s' publishes as car paint, which keeps one texture tiling for all its textures, full-strength normal and occlusion, the first UV channel and no vertex-colour tint, so those parts of it are dropped."), *Converted.Name)));
+			Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Material '%s' publishes as car paint, which keeps one texture tiling for all its textures, full-strength normal and occlusion, the first UV channel and no vertex-color tint, so those parts of it are dropped."), *Converted.Name)));
 			Paint.UvTransforms.Reset();
 			Paint.NormalScale = 1.0;
 			Paint.OcclusionStrength = 1.0;
@@ -4080,7 +4080,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 	const TCHAR* const SecondUvWarning = TEXT("it samples a second UV channel; Mantle uses the first, so that texture may land in the wrong place.");
 	const TCHAR* const TilingClampWarning = TEXT("its texture tiling is beyond what Mantle keeps (1024), so it is clamped.");
 
-	// The shared UV transform (uvScale, uvOffset): the base colour's, else the first texture's, so a
+	// The shared UV transform (uvScale, uvOffset): the base color's, else the first texture's, so a
 	// material whose textures agree writes what it always did. A texture whose own transform differs
 	// (tiling, offset or any rotation) gets it in uvTransforms (#471) once its image is in. Only
 	// occlusion may sample the second UV (occlusionUV).
@@ -4247,16 +4247,16 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		Doc.EmissiveStrength = 1.0;
 		Doc.UvScale[0] = Doc.UvScale[1] = 1.0;
 		Doc.UvOffset[0] = Doc.UvOffset[1] = 0.0;
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_GLASS %s: scene-colour refraction published as see-through glass, opacity %.2f, glow %.4f %.4f %.4f (tint %s %.4f %.4f %.4f x %.3f)"),
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_GLASS %s: scene-color refraction published as see-through glass, opacity %.2f, glow %.4f %.4f %.4f (tint %s %.4f %.4f %.4f x %.3f)"),
 			*MaterialName, FMantleSeeThroughGlass::Opacity, Glow[0], Glow[1], Glow[2], Glass.bTint ? TEXT("read") : TEXT("neutral"),
 			Glass.Tint[0], Glass.Tint[1], Glass.Tint[2], Glass.Intensity);
 		return Doc;
 	}
 
 	// #628: additive blending (alphaMode additive): emissive-driven, so the glow is all there is of it. An unlit source (GLTFExporter
-	// keeps its glow as the base colour) and a lit one (its glow is the emissive) end up the same: emissive factor, strength and texture,
-	// the emissive slot's own transform and pan. A constant opacity scales the glow (additive adds colour x opacity); the base colour
-	// has no part in it (the bake's black is not carried), and a base colour texture's alpha is not read.
+	// keeps its glow as the base color) and a lit one (its glow is the emissive) end up the same: emissive factor, strength and texture,
+	// the emissive slot's own transform and pan. A constant opacity scales the glow (additive adds color x opacity); the base color
+	// has no part in it (the bake's black is not carried), and a base color texture's alpha is not read.
 	if (Fidelity.bAdditive)
 	{
 		Doc.AlphaMode = TEXT("additive");
@@ -4290,7 +4290,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		}
 		if (bVertexColorTintsBaseColor)
 		{
-			Warn(TEXT("its vertex-colour tint is dropped: additive blending shows the glow only, and vertex colour does not reach it."));
+			Warn(TEXT("its vertex-color tint is dropped: additive blending shows the glow only, and vertex color does not reach it."));
 		}
 		KeepPanningAndWind();
 		return Doc;
@@ -4298,7 +4298,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 
 	if (bUnlit)
 	{
-		// Unlit: the colour is light. M_MantlePlace is lit, so the colour moves to emissive over black.
+		// Unlit: the color is light. M_MantlePlace is lit, so the color moves to emissive over black.
 		Doc.EmissiveFactor[0] = Doc.BaseColorFactor[0];
 		Doc.EmissiveFactor[1] = Doc.BaseColorFactor[1];
 		Doc.EmissiveFactor[2] = Doc.BaseColorFactor[2];
@@ -4306,7 +4306,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		Doc.BaseColorFactor[0] = Doc.BaseColorFactor[1] = Doc.BaseColorFactor[2] = 0.0;
 		Doc.MetallicFactor = 0.0;
 		Doc.RoughnessFactor = 1.0;
-		// A panned glow (#533) publishes its source texture, which is what glTF calls the unlit base colour.
+		// A panned glow (#533) publishes its source texture, which is what glTF calls the unlit base color.
 		if (HasSource(EMantlePlaceTextureSlot::Emissive) && AddSource(EMantlePlaceTextureSlot::Emissive, false))
 		{
 			KeepSourceTransform(EMantlePlaceTextureSlot::Emissive);
@@ -4328,7 +4328,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		}
 		if (bVertexColorTintsBaseColor)
 		{
-			Warn(TEXT("its vertex-colour tint is dropped: it is unlit, and Mantle shows an unlit colour as glow, which vertex colour does not reach."));
+			Warn(TEXT("its vertex-color tint is dropped: it is unlit, and Mantle shows an unlit color as glow, which vertex color does not reach."));
 		}
 		KeepPanningAndWind();
 		return Doc;
@@ -4337,8 +4337,8 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 	// #628: a depth-faded translucent material (water) publishes its far-end opacity in place of the bake's.
 	const bool bWater = Fidelity.Water.bFound && (Doc.AlphaMode == TEXT("blend") || Fidelity.Water.bSingleLayer);
 
-	// #628: near-opaque water publishes with the water key (Single Layer Water, M_MantlePlace_Water): the surface colour, the
-	// roughness, the normal maps with their layout and pan, and coefficients from the deep colour and the fade distance. A client
+	// #628: near-opaque water publishes with the water key (Single Layer Water, M_MantlePlace_Water): the surface color, the
+	// roughness, the normal maps with their layout and pan, and coefficients from the deep color and the fade distance. A client
 	// that cannot read the key gets the opaque material it always did (FMantleTargetFeatures::DowngradeMaterial).
 	if (bWater && Fidelity.Water.PublishesOpaque())
 	{
@@ -4346,11 +4346,11 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		Doc.bWater = true;
 		Doc.AlphaMode = TEXT("opaque");
 		Doc.BaseColorFactor[3] = 1.0;
-		if (Water.bColour)
+		if (Water.bColor)
 		{
 			for (int32 Channel = 0; Channel < 3; ++Channel)
 			{
-				Doc.BaseColorFactor[Channel] = Water.Colour[Channel];
+				Doc.BaseColorFactor[Channel] = Water.Color[Channel];
 			}
 		}
 
@@ -4366,7 +4366,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		// What the schema says does nothing on water is not written; what the source had of it is said.
 		if (BaseColor.IsSet())
 		{
-			Warn(TEXT("its base colour texture is dropped: water has a surface colour and a volume, not a colour texture."));
+			Warn(TEXT("its base color texture is dropped: water has a surface color and a volume, not a color texture."));
 		}
 		if (MetallicRoughness.IsSet() || Occlusion.IsSet())
 		{
@@ -4378,7 +4378,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		}
 		if (bVertexColorTintsBaseColor)
 		{
-			Warn(TEXT("its vertex-colour tint is dropped: water has none."));
+			Warn(TEXT("its vertex-color tint is dropped: water has none."));
 		}
 		if (Doc.MetallicFactor > 0.01)
 		{
@@ -4386,7 +4386,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		}
 		Doc.MetallicFactor = 0.0;
 
-		// The volume: coefficients from the deep colour (the surface colour) and the fade distance (FMantleWaterMaterial::Coefficients).
+		// The volume: coefficients from the deep color (the surface color) and the fade distance (FMantleWaterMaterial::Coefficients).
 		double Deep[3];
 		for (int32 Channel = 0; Channel < 3; ++Channel)
 		{
@@ -4461,7 +4461,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		}
 
 		const FString FadeText = Water.bFadeDistance ? FString::Printf(TEXT("%.2f cm"), Water.FadeDistanceCm) : FString(TEXT("not read (100 cm assumed)"));
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_WATER %s: published with the water key, colour %.4f %.4f %.4f, fade distance %s, scattering %.4f %.4f %.4f, absorption %.4f %.4f %.4f, %d normal layer(s)%s%s"),
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_WATER %s: published with the water key, color %.4f %.4f %.4f, fade distance %s, scattering %.4f %.4f %.4f, absorption %.4f %.4f %.4f, %d normal layer(s)%s%s"),
 			*MaterialName, Doc.BaseColorFactor[0], Doc.BaseColorFactor[1], Doc.BaseColorFactor[2], *FadeText,
 			Doc.WaterScattering[0], Doc.WaterScattering[1], Doc.WaterScattering[2], Doc.WaterAbsorption[0], Doc.WaterAbsorption[1], Doc.WaterAbsorption[2],
 			Doc.Textures.Contains(WaterNormal2SlotKey) ? 2 : (Doc.Textures.Contains(TEXT("normal")) ? 1 : 0),
@@ -4469,7 +4469,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		return Doc;
 	}
 
-	// Vertex colour on the base colour (#471): the bake reads it as white, so the tint rides as a flag.
+	// Vertex color on the base color (#471): the bake reads it as white, so the tint rides as a flag.
 	if (bVertexColorTintsBaseColor && !Fidelity.bLayerBlend)
 	{
 		Doc.VertexColor = TEXT("multiplyBaseColor");
@@ -4481,7 +4481,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 			KeepSourceTransform(EMantlePlaceTextureSlot::BaseColor);
 		}
 	}
-	else if (BaseColor.IsSet() && !(bWater && Fidelity.Water.bColour))
+	else if (BaseColor.IsSet() && !(bWater && Fidelity.Water.bColor))
 	{
 		// Water's baked alpha is the fade's near end (0), so the image keeps no alpha; the opacity is the factor's.
 		AddImage(BaseColor, EMantlePlaceTextureSlot::BaseColor, Doc.AlphaMode != TEXT("opaque") && !bWater);
@@ -4489,7 +4489,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 	}
 	if (bWater)
 	{
-		// #628: the depth fade's far end (FMantleWaterMaterial): one constant opacity, and the deep colour when the graph gave one.
+		// #628: the depth fade's far end (FMantleWaterMaterial): one constant opacity, and the deep color when the graph gave one.
 		Doc.BaseColorFactor[3] = Fidelity.Water.Opacity;
 		if (Fidelity.Water.PublishesOpaque())
 		{
@@ -4497,17 +4497,17 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 			Doc.AlphaMode = TEXT("opaque");
 			Doc.BaseColorFactor[3] = 1.0;
 		}
-		if (Fidelity.Water.bColour)
+		if (Fidelity.Water.bColor)
 		{
 			for (int32 Channel = 0; Channel < 3; ++Channel)
 			{
-				Doc.BaseColorFactor[Channel] = Fidelity.Water.Colour[Channel];
+				Doc.BaseColorFactor[Channel] = Fidelity.Water.Color[Channel];
 			}
 		}
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_WATER %s: depth fade baked to opacity %.3f%s (%s), colour %s%s%s"), *MaterialName, Fidelity.Water.Opacity,
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_WATER %s: depth fade baked to opacity %.3f%s (%s), color %s%s%s"), *MaterialName, Fidelity.Water.Opacity,
 			Fidelity.Water.PublishesOpaque() ? TEXT(", published opaque") : TEXT(""),
-			Fidelity.Water.bOpacityRead ? TEXT("read from the graph") : TEXT("estimated"),
-			Fidelity.Water.bColour ? *FString::Printf(TEXT("%.4f %.4f %.4f"), Fidelity.Water.Colour[0], Fidelity.Water.Colour[1], Fidelity.Water.Colour[2]) : TEXT("kept from the bake"),
+			Fidelity.Water.bOpacitiread ? TEXT("read from the graph") : TEXT("estimated"),
+			Fidelity.Water.bColor ? *FString::Printf(TEXT("%.4f %.4f %.4f"), Fidelity.Water.Color[0], Fidelity.Water.Color[1], Fidelity.Water.Color[2]) : TEXT("kept from the bake"),
 			Fidelity.Water.Why.IsEmpty() ? TEXT("") : TEXT("; "), *Fidelity.Water.Why);
 	}
 	if (HasSource(EMantlePlaceTextureSlot::Normal))
@@ -4665,10 +4665,10 @@ bool FMantlePlaceAssetConverter::PrepareTexture(TConstArrayView<uint8> Image, EM
 	Out = FMantleConvertedTexture();
 	// A layer blend's slot (#533) is prepared as the base slot it mirrors.
 	const EMantlePlaceTextureSlot BaseSlot = BaseSlotOf(Slot);
-	const bool bColour = BaseSlot == EMantlePlaceTextureSlot::BaseColor || BaseSlot == EMantlePlaceTextureSlot::Emissive;
+	const bool bColor = BaseSlot == EMantlePlaceTextureSlot::BaseColor || BaseSlot == EMantlePlaceTextureSlot::Emissive;
 	TArray<FColor> Pixels;
 	int32 Width = 0, Height = 0;
-	if (!DecodeBgra(Image, bColour, Pixels, Width, Height))
+	if (!DecodeBgra(Image, bColor, Pixels, Width, Height))
 	{
 		return false;
 	}
@@ -4682,7 +4682,7 @@ bool FMantlePlaceAssetConverter::PrepareTexture(TConstArrayView<uint8> Image, EM
 			OutIssues.Add(MoveTemp(Downscale));
 		}
 		const FIntPoint Fitted = FMantlePlaceAssets::PublishedTextureSize(FIntPoint(Width, Height), Limits.MaxTextureSize);
-		Resize(Pixels, Width, Height, Fitted.X, Fitted.Y, bColour);
+		Resize(Pixels, Width, Height, Fitted.X, Fitted.Y, bColor);
 	}
 
 	bool bHasAlpha = false;
@@ -4694,7 +4694,7 @@ bool FMantlePlaceAssetConverter::PrepareTexture(TConstArrayView<uint8> Image, EM
 			break;
 		}
 	}
-	const bool bJpeg = bColour && !(bKeepAlpha && bHasAlpha && BaseSlot == EMantlePlaceTextureSlot::BaseColor);
+	const bool bJpeg = bColor && !(bKeepAlpha && bHasAlpha && BaseSlot == EMantlePlaceTextureSlot::BaseColor);
 	const int64 Cap = FMath::Min(Limits.MaxTextureBytes, Limits.MaxUploadBytes);
 
 	TArray<uint8> Bytes;
@@ -4730,7 +4730,7 @@ bool FMantlePlaceAssetConverter::PrepareTexture(TConstArrayView<uint8> Image, EM
 	bool bHalved = false;
 	while (Bytes.Num() > Cap && FMath::Max(Width, Height) > 256)
 	{
-		Resize(Pixels, Width, Height, FMath::Max(1, Width / 2), FMath::Max(1, Height / 2), bColour);
+		Resize(Pixels, Width, Height, FMath::Max(1, Width / 2), FMath::Max(1, Height / 2), bColor);
 		bHalved = true;
 		if (bJpeg)
 		{

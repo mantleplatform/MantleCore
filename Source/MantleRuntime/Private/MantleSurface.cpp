@@ -12,7 +12,7 @@
 
 namespace MantleSurfacePrivate
 {
-	/** In EMantleSurface order. The Name column of DefaultEngine.ini's PhysicalSurfaces is these, capitalised. */
+	/** In EMantleSurface order. The Name column of DefaultEngine.ini's PhysicalSurfaces is these, capitalized. */
 	const TCHAR* const GSurfaceNames[] = {
 		TEXT("default"), TEXT("concrete"), TEXT("stone"), TEXT("brick"), TEXT("asphalt"), TEXT("wood"),
 		TEXT("metal"), TEXT("glass"), TEXT("dirt"), TEXT("grass"), TEXT("sand"), TEXT("mud"), TEXT("snow"),

@@ -121,7 +121,7 @@ FMantleEffectLook FMantleEffects::DefaultLook(const EMantleEffectArchetype Arche
 		break;
 	case EMantleEffectArchetype::Fire:
 		// NS_MantleFire (#1028, from Vefects' Free Fire) is its own fire at these values: white keeps its flames' own
-		// colours (any other colour recolours them), and Size, Rate, Speed and Lifetime scale it from 40, 40, 120 and 1.
+		// colors (any other color recolors them), and Size, Rate, Speed and Lifetime scale it from 40, 40, 120 and 1.
 		Look.Color = FLinearColor::White;
 		Look.Size = 40.0;
 		Look.Rate = 40.0;
@@ -150,7 +150,7 @@ FMantleEffectLook FMantleEffects::DefaultLook(const EMantleEffectArchetype Arche
 		Look.Lifetime = 2.0;
 		break;
 	case EMantleEffectArchetype::Sprites:
-		// Colour and rate only: a sprites effect's size, lifetime and motion are its FMantleSpritesSettings
+		// Color and rate only: a sprites effect's size, lifetime and motion are its FMantleSpritesSettings
 		// (Size, Speed and Lifetime here are what an untouched sprites effect starts from, and are never written).
 		Look.Color = FLinearColor::White;
 		Look.Size = 25.0;

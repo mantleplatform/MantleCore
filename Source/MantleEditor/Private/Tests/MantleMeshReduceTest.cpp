@@ -647,15 +647,15 @@ bool FMantleMeshReduceVeryBigMeshTest::RunTest(const FString& Parameters)
 	FMantlePlaceAssets::CountMeshLOD(Reduced, 0, After);
 	TestTrue(FString::Printf(TEXT("within the limit (%d)"), After.Triangles), After.Triangles > 0 && After.Triangles <= TriangleLimit);
 
-	// Cancel is honoured between attempts, and is not remembered as a failure.
+	// Cancel is honored between attempts, and is not remembered as a failure.
 	FMantleMeshReduce::ClearCache();
 	FMeshDescription Original;
 	FReduceFixture::AddGrid(Original, BigGrid, 2);
 	FString CancelWhy;
 	const bool bFit = FMantleMeshReduce::ReduceUntilFits(Original, Limits,
 		[](const FMeshDescription&, int32& Triangles, int32& Vertices) { Triangles = 1; Vertices = 1; return true; }, CancelWhy, []() { return true; });
-	TestFalse(TEXT("a cancelled reduction does not fit"), bFit);
-	TestEqual(TEXT("and says it was cancelled"), CancelWhy, FString(FMantleMeshReduce::CancelledWhy));
+	TestFalse(TEXT("a canceled reduction does not fit"), bFit);
+	TestEqual(TEXT("and says it was canceled"), CancelWhy, FString(FMantleMeshReduce::CanceledWhy));
 	return true;
 }
 

@@ -12,7 +12,7 @@
 
 namespace MantleThumbnailPrivate
 {
-	/** The card transparent pixels sit on: nearly black, as the catalogue's own cards. */
+	/** The card transparent pixels sit on: nearly black, as the catalog's own cards. */
 	constexpr int32 BackgroundValue = 5;
 
 	/** A pixel laid over the dark card, as float 0..255 per channel (B, G, R). */

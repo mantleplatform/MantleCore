@@ -33,7 +33,7 @@ struct MANTLEEDITOR_API FMantleHandMeasure
 /** Where the front portrait's camera stands (step 04's framing). Component space, cm; the body faces +Y. */
 struct MANTLEEDITOR_API FMantlePortraitFraming
 {
-	/** What the camera looks at: the middle of the head region, 1 cm below its centre. */
+	/** What the camera looks at: the middle of the head region, 1 cm below its center. */
 	FVector Target = FVector::ZeroVector;
 
 	/** The camera: StandoffCm * Size beyond the face's front, at the target's height. */
@@ -82,7 +82,7 @@ struct MANTLEEDITOR_API FMantleMetaHumanConformResult
 /**
  * Pipeline step 04, with the hand re-estimate:
  *   1. input check: Epic's conform reader against the posed mesh as it renders (MATCH, 0.000 cm);
- *   2. a front portrait in a private preview scene (base colour and lit, 1024 square, FOV 30, three
+ *   2. a front portrait in a private preview scene (base color and lit, 1024 square, FOV 30, three
  *      directional lights and sky, every texture streamed in), captured until two captures agree; Epic's face landmark
  *      tracker on it. No landmarks on either is a clean stop: Convert needs a human-like face looking forward. Framing
  *      (FramePortrait) is aimed by the head joint the A-pose step found from the rig's Head chain, never a bone name;

@@ -4,7 +4,7 @@
 #include "CoreMinimal.h"
 #include "MantleChassisSpec.h"
 
-/** The sizes of a vehicle a creator shapes in the Build a vehicle window (#793 step 4), each in centimetres. */
+/** The sizes of a vehicle a creator shapes in the Build a vehicle window (#793 step 4), each in centimeters. */
 enum class EMantleVehicleDimension : uint8
 {
 	Wheelbase,
@@ -29,7 +29,7 @@ inline constexpr EMantleVehicleDimension MantleVehicleDimensions[] = {
 	EMantleVehicleDimension::GroundClearance,
 };
 
-/** The eight sizes a creator shapes, centimetres. Nothing else about a vehicle is chosen; Mantle derives the rest (FMantleChassisDerive). */
+/** The eight sizes a creator shapes, centimeters. Nothing else about a vehicle is chosen; Mantle derives the rest (FMantleChassisDerive). */
 struct MANTLEEDITOR_API FMantleVehicleDimensions
 {
 	double Wheelbase = 0.0;
@@ -44,14 +44,14 @@ struct MANTLEEDITOR_API FMantleVehicleDimensions
 	double Get(EMantleVehicleDimension Dimension) const;
 	void Set(EMantleVehicleDimension Dimension, double Value);
 
-	/** True when every size is within Tolerance centimetres of Other's. */
+	/** True when every size is within Tolerance centimeters of Other's. */
 	bool Equals(const FMantleVehicleDimensions& Other, double Tolerance = 1.0e-9) const;
 
-	/** The sizes as text, to the thousandth of a centimetre: what a vehicle built from them is told apart by. */
+	/** The sizes as text, to the thousandth of a centimeter: what a vehicle built from them is told apart by. */
 	FString Signature() const;
 };
 
-/** A closed range of centimetres. */
+/** A closed range of centimeters. */
 struct FMantleDimensionRange
 {
 	double Min = 0.0;
@@ -103,7 +103,7 @@ struct FMantleVehicleSummary
 	double TurningCircleCm = 0.0;
 	/** A ground vehicle's top speed (its speed limit), a plane's (its air-speed limit) or a hovercraft's. */
 	double TopSpeedKmh = 0.0;
-	/** A plane's wing loading, kg per square metre of wing. */
+	/** A plane's wing loading, kg per square meter of wing. */
 	double WingLoadingKgM2 = 0.0;
 	/** The speed a plane leaves the ground at, km/h. */
 	double TakeOffKmh = 0.0;
@@ -119,9 +119,9 @@ struct FMantleVehicleSummary
  *   - Edit holds a size to its range and says so in plain words (a range is the archetype's size from 0.25 to 2.5 times, held inside the vehicle
  *     document's limits, and apart enough that wheels never touch);
  *   - Reshape makes the spec for those sizes: the sizes themselves, the seat, the steering wheel and the rider moved with the body the way a
- *     real vehicle keeps its driver, the handling derived from the new sizes (FMantleChassisDerive, public API only) and the centre of mass
+ *     real vehicle keeps its driver, the handling derived from the new sizes (FMantleChassisDerive, public API only) and the center of mass
  *     the derived one, as FMantleChassisSpec::Scaled does for a uniform resize. The archetype's own sizes give the archetype back, hand-tuned;
- *   - Summarise and Warnings say what the result is like.
+ *   - Summarize and Warnings say what the result is like.
  * Pure: the same inputs give the same spec on every machine. No UObjects.
  */
 struct MANTLEEDITOR_API FMantleVehicleShape
@@ -129,7 +129,7 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 	/** The longest wheelbase a vehicle may have, cm (the size envelope of #793 section 4, provisional until it is measured). */
 	static constexpr double MaxWheelbase = 1200.0;
 
-	/** Axles stay at least this many wheel radii apart (a wheel is 2 radii across), so neighbouring wheels never touch. */
+	/** Axles stay at least this many wheel radii apart (a wheel is 2 radii across), so neighboring wheels never touch. */
 	static constexpr double MinAxleGapPerRadius = 2.2;
 
 	/** The track stays at least this many wheel widths, so the left and right wheels never touch. */
@@ -144,7 +144,7 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 	 */
 	static constexpr double TakeOffPitchDegrees = 8.0;
 
-	/** The air's density, kg per cubic metre, and gravity, m per second squared: the engine's own (schema/validate.py PLANE_AIR_DENSITY and PLANE_GRAVITY). */
+	/** The air's density, kg per cubic meter, and gravity, m per second squared: the engine's own (schema/validate.py PLANE_AIR_DENSITY and PLANE_GRAVITY). */
 	static constexpr double AirDensity = 1.225;
 	static constexpr double Gravity = 9.8;
 
@@ -162,7 +162,7 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 
 	/**
 	 * The speed a plane of this mass and wing leaves the ground at, km/h: the weight held by the wing's lift at TakeOffPitchDegrees of angle of attack.
-	 * The engine's aerofoil lifts 2 sin((angle of attack + camber) x 90 / stall angle) per square metre of dynamic pressure, none past the stall
+	 * The engine's aerofoil lifts 2 sin((angle of attack + camber) x 90 / stall angle) per square meter of dynamic pressure, none past the stall
 	 * angle's double. 0 for anything that is not a plane.
 	 */
 	static double TakeOffSpeedKmh(const FMantleChassisSpec& Spec);
@@ -179,7 +179,7 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 	/** The sizes of Spec's archetype (Spec.ArchetypeSize): the preset's own, whatever Spec has been changed to. A spec with none has its own sizes. */
 	static FMantleVehicleDimensions ArchetypeDimensionsOf(const FMantleChassisSpec& Spec);
 
-	/** False for the track of a vehicle whose wheels sit on its centreline (a motorcycle): it has none to change; and for the wheel size of one whose wheels are hidden. */
+	/** False for the track of a vehicle whose wheels sit on its centerline (a motorcycle): it has none to change; and for the wheel size of one whose wheels are hidden. */
 	static bool IsEditable(const FMantleChassisSpec& Archetype, EMantleVehicleDimension Dimension);
 
 	/** The range a size's slider covers whatever the other sizes are: 0.25 to 2.5 times the archetype's, inside the document's limits. */
@@ -195,13 +195,13 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 	static FMantleVehicleDimensions Edit(const FMantleChassisSpec& Archetype, const FMantleVehicleDimensions& Dimensions, EMantleVehicleDimension Dimension,
 		double Wanted, TArray<FText>& OutNotes);
 
-	/** True when the sizes differ from the archetype's by more than a hundredth of a centimetre. */
+	/** True when the sizes differ from the archetype's by more than a hundredth of a centimeter. */
 	static bool IsShaped(const FMantleChassisSpec& Archetype, const FMantleVehicleDimensions& Dimensions);
 
 	/**
 	 * The spec for these sizes (held already: Edit keeps them so). Unshaped sizes give the archetype itself, its hand-tuned handling untouched.
 	 * Otherwise a copy with the sizes set, the seat moved the way the body moved (along with the wheelbase, across with the body's width, up
-	 * with the ground clearance), the steering wheel and a rider's grips and pegs carried with the seat, the handling derived and the centre of
+	 * with the ground clearance), the steering wheel and a rider's grips and pegs carried with the seat, the handling derived and the center of
 	 * mass the derived one.
 	 */
 	static FMantleChassisSpec Reshape(const FMantleChassisSpec& Archetype, const FMantleVehicleDimensions& Dimensions);
@@ -214,11 +214,11 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 	 * weight, wing loading, take-off speed, and a top speed that is its air-speed limit. A helicopter: weight and hover throttle. A hovercraft: weight,
 	 * hover height and top speed.
 	 */
-	static FMantleVehicleSummary Summarise(const FMantleChassisSpec& Spec);
+	static FMantleVehicleSummary Summarize(const FMantleChassisSpec& Spec);
 
 	/**
-	 * The summary in a creator's words, the numbers of its Family. Ground: "Weighs about 1.6 tonnes. Turns in a circle about 8 m across. Top speed about
-	 * 160 km/h." Plane: "Weighs about 7 tonnes. Carries about 350 kg on each square metre of wing. Takes off at about 200 km/h. Top speed about 720 km/h."
+	 * The summary in a creator's words, the numbers of its Family. Ground: "Weighs about 1.6 metric tons. Turns in a circle about 8 m across. Top speed about
+	 * 160 km/h." Plane: "Weighs about 7 metric tons. Carries about 350 kg on each square meter of wing. Takes off at about 200 km/h. Top speed about 720 km/h."
 	 */
 	static FText Describe(const FMantleVehicleSummary& Summary);
 
@@ -231,7 +231,7 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 	/**
 	 * What a handling number the derivation held at a limit means for a creator, in a plain sentence. Path is the document path of the line in
 	 * FMantleChassisHandling::Clamped; bHeldDown: the rule gave more than the limit, so the number was held at its most, else at its least. Empty for a
-	 * number that does not change how it drives (the camera, the tyres' grip, the wind resistance) and for the centre of mass, which Warnings covers.
+	 * number that does not change how it drives (the camera, the tires' grip, the wind resistance) and for the center of mass, which Warnings covers.
 	 */
 	static FText ClampedSentence(const FString& Path, bool bHeldDown);
 
@@ -256,8 +256,8 @@ struct MANTLEEDITOR_API FMantleVehicleShape
 	/** A Size as text: "1.25x". */
 	static FText SizeText(double Size);
 
-	/** A length in words: "85 cm" under a metre, else "3.4 m". */
-	static FText LengthText(double Centimetres);
+	/** A length in words: "85 cm" under a meter, else "3.4 m". */
+	static FText LengthText(double Centimeters);
 
 	/** A reason from deeper down as a clause for a sentence of ours: trailing spaces and full stops cut, so the sentence's own full stop is the only one. */
 	static FString PlainReason(const FString& Reason);
@@ -327,7 +327,7 @@ public:
 	const FMantleChassisSpec& GetShaped() const { return Shaped; }
 	/** What the last change had to hold to a limit, in plain words; replaced by the next change. */
 	const TArray<FText>& GetHeldNotes() const { return HeldNotes; }
-	/** "Weighs about 1.5 tonnes. Turns in a circle about 7 m across. Top speed about 160 km/h." */
+	/** "Weighs about 1.5 metric tons. Turns in a circle about 7 m across. Top speed about 160 km/h." */
 	const FText& GetSummary() const { return Summary; }
 	/** The held notes and the warnings of the spec, one "- " line each; empty for none. */
 	const FText& GetWarnings() const { return Warnings; }

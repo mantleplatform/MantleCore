@@ -23,10 +23,10 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// What a material is baked on (FMantleBakeSurface). GLTFExporter's own card has white vertex colours, so a road whose puddles are painted
-// in Vertex Color's blue (DowntownWestModularPack's MI_Asphault_A) baked all puddle: a black mirror. Gather now averages the colours of the
-// meshes drawing a material (a component's painted ones where it has them), the converter bakes a material that reads vertex colour at that
-// colour, and the cache keys on it. A landscape's own material is baked over many quads, its texture transforms scaled back to one tile.
+// What a material is baked on (FMantleBakeSurface). GLTFExporter's own card has white vertex colors, so a road whose puddles are painted
+// in Vertex Color's blue (DowntownWestModularPack's MI_Asphault_A) baked all puddle: a black mirror. Gather now averages the colors of the
+// meshes drawing a material (a component's painted ones where it has them), the converter bakes a material that reads vertex color at that
+// color, and the cache keys on it. A landscape's own material is baked over many quads, its texture transforms scaled back to one tile.
 // The bake itself needs a renderer; what decides it does not.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
@@ -47,7 +47,7 @@ namespace MantleBakeSurfaceTestPrivate
 		return NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
 	}
 
-	/** Roughness is Vertex Color's blue: a puddle mask, which the bake must see the meshes' colour for. */
+	/** Roughness is Vertex Color's blue: a puddle mask, which the bake must see the meshes' color for. */
 	UMaterial* NewPuddleMaterial()
 	{
 		UMaterial* Material = NewMaterial();
@@ -56,8 +56,8 @@ namespace MantleBakeSurfaceTestPrivate
 		return Material;
 	}
 
-	/** A quad of 4 vertices drawing Material in its one slot; every corner Colour when given, else no vertex colours at all. */
-	UStaticMesh* NewQuad(UMaterialInterface* Material, const FColor* Colour)
+	/** A quad of 4 vertices drawing Material in its one slot; every corner Color when given, else no vertex colors at all. */
+	UStaticMesh* NewQuad(UMaterialInterface* Material, const FColor* Color)
 	{
 		FMeshDescription Description;
 		FStaticMeshAttributes Attributes(Description);
@@ -74,7 +74,7 @@ namespace MantleBakeSurfaceTestPrivate
 			Attributes.GetVertexInstanceTangents()[Instance] = FVector3f(1.0f, 0.0f, 0.0f);
 			Attributes.GetVertexInstanceBinormalSigns()[Instance] = 1.0f;
 			Attributes.GetVertexInstanceUVs().Set(Instance, 0, FVector2f(static_cast<float>(Corner & 1), static_cast<float>(Corner >> 1)));
-			Attributes.GetVertexInstanceColors()[Instance] = Colour ? FVector4f(FLinearColor(*Colour)) : FVector4f(1.0f, 1.0f, 1.0f, 1.0f);
+			Attributes.GetVertexInstanceColors()[Instance] = Color ? FVector4f(FLinearColor(*Color)) : FVector4f(1.0f, 1.0f, 1.0f, 1.0f);
 			Corners.Add(Instance);
 		}
 		Description.CreateTriangle(Group, { Corners[0], Corners[2], Corners[1] });
@@ -156,15 +156,15 @@ namespace MantleBakeSurfaceTestPrivate
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleBakeSurfaceGatherAveragesVertexColoursTest,
-	"Mantle.Editor.BakeSurface.GatherAveragesVertexColours",
+	FMantleBakeSurfaceGatherAveragesVertexColorsTest,
+	"Mantle.Editor.BakeSurface.GatherAveragesVertexColors",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleBakeSurfaceGatherAveragesVertexColoursTest::RunTest(const FString& Parameters)
+bool FMantleBakeSurfaceGatherAveragesVertexColorsTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleBakeSurfaceTestPrivate;
 
-	// The roads: a mesh with no colours of its own, painted on each component.
+	// The roads: a mesh with no colors of its own, painted on each component.
 	UMaterial* Asphalt = NewPuddleMaterial();
 	UStaticMesh* Plane = NewQuad(Asphalt, nullptr);
 	if (!TestNotNull(TEXT("the plane builds"), Plane))
@@ -179,7 +179,7 @@ bool FMantleBakeSurfaceGatherAveragesVertexColoursTest::RunTest(const FString& P
 		const FMantleGatheredMaterial* Gathered = Find(Dependencies, Asphalt);
 		if (TestNotNull(TEXT("the road material is gathered"), Gathered))
 		{
-			TestEqual(TEXT("its bake colour is the painted one, not the mesh's none"), Gathered->AverageVertexColor().ToHex(), Puddles.ToHex());
+			TestEqual(TEXT("its bake color is the painted one, not the mesh's none"), Gathered->AverageVertexColor().ToHex(), Puddles.ToHex());
 			TestFalse(TEXT("which is not the plain surface"), Gathered->BakeSurface().IsPlain());
 		}
 	}
@@ -209,19 +209,19 @@ bool FMantleBakeSurfaceGatherAveragesVertexColoursTest::RunTest(const FString& P
 		}
 	}
 
-	// A mesh with colours of its own, used by no component: the mesh's.
+	// A mesh with colors of its own, used by no component: the mesh's.
 	{
 		UMaterial* Painted = NewPuddleMaterial();
 		const FColor Red(200, 0, 0, 255);
-		UStaticMesh* Coloured = NewQuad(Painted, &Red);
-		if (TestNotNull(TEXT("the coloured quad builds"), Coloured))
+		UStaticMesh* Colored = NewQuad(Painted, &Red);
+		if (TestNotNull(TEXT("the colored quad builds"), Colored))
 		{
 			FMantlePlaceDependencies Dependencies;
-			Dependencies.AddMesh(Coloured, TEXT("Script Assets"));
+			Dependencies.AddMesh(Colored, TEXT("Script Assets"));
 			const FMantleGatheredMaterial* Gathered = Find(Dependencies, Painted);
 			if (TestNotNull(TEXT("gathered"), Gathered))
 			{
-				TestEqual(TEXT("the mesh's own colour"), Gathered->AverageVertexColor().ToHex(), Red.ToHex());
+				TestEqual(TEXT("the mesh's own color"), Gathered->AverageVertexColor().ToHex(), Red.ToHex());
 			}
 		}
 	}
@@ -229,17 +229,17 @@ bool FMantleBakeSurfaceGatherAveragesVertexColoursTest::RunTest(const FString& P
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleBakeSurfaceConverterKeepsColourForVertexColourMaterialsTest,
-	"Mantle.Editor.BakeSurface.ConverterKeepsColourOnlyWhereRead",
+	FMantleBakeSurfaceConverterKeepsColorForVertexColorMaterialsTest,
+	"Mantle.Editor.BakeSurface.ConverterKeepsColorOnlyWhereRead",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleBakeSurfaceConverterKeepsColourForVertexColourMaterialsTest::RunTest(const FString& Parameters)
+bool FMantleBakeSurfaceConverterKeepsColorForVertexColorMaterialsTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleBakeSurfaceTestPrivate;
 
 	UMaterial* Puddle = NewPuddleMaterial();
 	const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Puddle);
-	TestTrue(TEXT("a roughness from Vertex Color's blue is a vertex colour loss"), Analysis.Has(EMantleMaterialLoss::VertexColor));
+	TestTrue(TEXT("a roughness from Vertex Color's blue is a vertex color loss"), Analysis.Has(EMantleMaterialLoss::VertexColor));
 
 	FMantleBakeSurface Surface;
 	Surface.VertexColor = FColor(10, 20, 40, 255);
@@ -249,10 +249,10 @@ bool FMantleBakeSurfaceConverterKeepsColourForVertexColourMaterialsTest::RunTest
 		FMantlePlaceAssetSet Set;
 		TestTrue(TEXT("the puddle material converts"), Converter.ConvertMaterial(Puddle, Surface, Set));
 		TestEqual(TEXT("the flattener ran once"), Flattener->Calls, 1);
-		TestEqual(TEXT("baked at the meshes' colour"), Flattener->Seen.VertexColor.ToHex(), Surface.VertexColor.ToHex());
+		TestEqual(TEXT("baked at the meshes' color"), Flattener->Seen.VertexColor.ToHex(), Surface.VertexColor.ToHex());
 	}
 	{
-		// A material that reads no vertex colour bakes as it always has, whatever its meshes' colours.
+		// A material that reads no vertex color bakes as it always has, whatever its meshes' colors.
 		TSharedRef<FSurfaceFlattener> Flattener = MakeShared<FSurfaceFlattener>();
 		FMantlePlaceAssetConverter Converter(Flattener, FPaths::Combine(FPaths::AutomationTransientDir(), TEXT("MantleBakeSurface")));
 		FMantlePlaceAssetSet Set;
@@ -268,13 +268,13 @@ bool FMantleBakeSurfaceConverterKeepsColourForVertexColourMaterialsTest::RunTest
 		TestTrue(TEXT("on the plain surface"), Flattener->Seen.IsPlain());
 	}
 
-	// The UV range is kept for any material: a landscape's own reads no vertex colour.
+	// The UV range is kept for any material: a landscape's own reads no vertex color.
 	FMantleBakeSurface Tiled;
 	Tiled.UvRange = 10;
 	Tiled.VertexColor = FColor(10, 20, 40, 255);
 	const FMantleBakeSurface Kept = FMantlePlaceAssetConverter::EffectiveBakeSurface(FMantlePlaceAssets::AnalyzeMaterial(NewMaterial()), Tiled);
 	TestEqual(TEXT("the range is kept"), Kept.UvRange, 10);
-	TestTrue(TEXT("the colour is not"), Kept.VertexColor == FColor::White);
+	TestTrue(TEXT("the color is not"), Kept.VertexColor == FColor::White);
 	return true;
 }
 
@@ -305,10 +305,10 @@ bool FMantleBakeSurfaceCacheKeyTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the plain surface adds nothing, so every plain bake keeps its key"), Plain.CacheTag().IsEmpty());
 	TestEqual(TEXT("the plain salt is the one materials always had"), Salt(Plain),
 		FString::Printf(TEXT("material flattener bake=%d max=%d bytes=%lld %s"), Settings.DefaultBakeSize, Limits.MaxTextureSize, Limits.MaxTextureBytes, *Material->GetPathName()));
-	TestNotEqual(TEXT("a vertex colour changes the key"), Salt(Puddles), Salt(Plain));
-	TestNotEqual(TEXT("a different colour is a different key"), Salt(Puddles), Salt(Dry));
+	TestNotEqual(TEXT("a vertex color changes the key"), Salt(Puddles), Salt(Plain));
+	TestNotEqual(TEXT("a different color is a different key"), Salt(Puddles), Salt(Dry));
 	TestNotEqual(TEXT("a UV range changes the key"), Salt(Tiled), Salt(Plain));
-	TestEqual(TEXT("the same colour is the same key"), Salt(Puddles), Salt(Puddles));
+	TestEqual(TEXT("the same color is the same key"), Salt(Puddles), Salt(Puddles));
 	return true;
 }
 
@@ -321,7 +321,7 @@ bool FMantleBakeSurfaceScaleTransformsTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleBakeSurfaceTestPrivate;
 
-	// What GLTFExporter writes for a bake over UVs 0 to 10: the baked base colour covers the card, scale 1/10; a normal map it kept as
+	// What GLTFExporter writes for a bake over UVs 0 to 10: the baked base color covers the card, scale 1/10; a normal map it kept as
 	// the source texture, read at 0.1 of the card's UVs; an occlusion texture with no transform.
 	auto Info = [](const TOptional<double> Scale)
 	{
@@ -381,10 +381,10 @@ bool FMantleBakeSurfaceLargestUvRepeatTest::RunTest(const FString& Parameters)
 	UMaterialExpressionMultiply* Scaled = AddNode<UMaterialExpressionMultiply>(Material);
 	Scaled->A.Connect(0, Coordinates);
 	Scaled->B.Connect(0, Tiling);
-	UMaterialExpressionTextureSample* Colour = AddNode<UMaterialExpressionTextureSample>(Material);
-	Colour->Texture = Texture;
-	Colour->Coordinates.Connect(0, Scaled);
-	Material->GetEditorOnlyData()->BaseColor.Connect(0, Colour);
+	UMaterialExpressionTextureSample* Color = AddNode<UMaterialExpressionTextureSample>(Material);
+	Color->Texture = Texture;
+	Color->Coordinates.Connect(0, Scaled);
+	Material->GetEditorOnlyData()->BaseColor.Connect(0, Color);
 	UMaterialExpressionTextureSample* Plain = AddNode<UMaterialExpressionTextureSample>(Material);
 	Plain->Texture = Texture;
 	Material->GetEditorOnlyData()->Normal.Connect(0, Plain);
@@ -441,7 +441,7 @@ bool FMantleWorldTileBakeTest::RunTest(const FString& Parameters)
 }
 
 // Many materials with world position somewhere in their graph map their textures by UV (Downtown's trim sheets, signs and brick walls):
-// world-tiled, they came out as a grid of squares. A second bake on a moved card tells them apart by how much its base colour changes.
+// world-tiled, they came out as a grid of squares. A second bake on a moved card tells them apart by how much its base color changes.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleWorldMappedDifferenceTest,
 	"Mantle.Editor.BakeSurface.MovedCardDifferenceTellsWorldMapping",

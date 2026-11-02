@@ -173,7 +173,7 @@ namespace MantlePlaceAssetsPrivate
 		TSet<const UTexture*> NormalTextures;
 		int32 Budget = 50000;
 
-		/** Vertex Color's RGB reached from the base colour through Multiply and reroute nodes only (#471). */
+		/** Vertex Color's RGB reached from the base color through Multiply and reroute nodes only (#471). */
 		bool bBaseColorTint = false;
 
 		void AddDependency(const UObject* Object)
@@ -240,10 +240,10 @@ namespace MantlePlaceAssetsPrivate
 		}
 
 		/**
-		 * The base colour (#471): Vertex Color's RGB reached through Multiply and reroute nodes only is a
+		 * The base color (#471): Vertex Color's RGB reached through Multiply and reroute nodes only is a
 		 * tint the material document carries (vertexColor multiplyBaseColor), so it is noted, not walked
 		 * as a loss. Everything else on the way is walked as usual; a Multiply the chain passes through is
-		 * not marked visited, so reaching it from another output still walks (and counts) its vertex colour.
+		 * not marked visited, so reaching it from another output still walks (and counts) its vertex color.
 		 */
 		void WalkBaseColor(const FExpressionInput* Input)
 		{
@@ -323,7 +323,7 @@ namespace MantlePlaceAssetsPrivate
 				}
 				else if (IsPerInstanceNode(Expression))
 				{
-					// #628: no loss to flag; the bake is made at a representative value (NeutralisePerInstanceValues).
+					// #628: no loss to flag; the bake is made at a representative value (NeutralizePerInstanceValues).
 					Out->bPerInstanceVariation = true;
 				}
 				else if (const UMaterialExpressionTextureBase* Sample = Cast<UMaterialExpressionTextureBase>(Expression))
@@ -601,28 +601,28 @@ namespace MantlePlaceAssetsPrivate
 		}
 		int32 Output = 0;
 		const UMaterialExpression* Expression = Follow(&Input->Input, Output);
-		FLinearColor Colour = FLinearColor::Black;
+		FLinearColor Color = FLinearColor::Black;
 		if (const UMaterialExpressionConstant3Vector* Constant = Cast<UMaterialExpressionConstant3Vector>(Expression))
 		{
-			Colour = Constant->Constant;
+			Color = Constant->Constant;
 		}
 		else if (const UMaterialExpressionVectorParameter* Parameter = Cast<UMaterialExpressionVectorParameter>(Expression))
 		{
-			Colour = Parameter->DefaultValue;
+			Color = Parameter->DefaultValue;
 			if (Context)
 			{
-				Context->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(Parameter->ParameterName)), Colour);
+				Context->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(Parameter->ParameterName)), Color);
 			}
 		}
 		else
 		{
 			return false;
 		}
-		if (!(Colour.R == Colour.G && Colour.G == Colour.B))
+		if (!(Color.R == Color.G && Color.G == Color.B))
 		{
 			return false;
 		}
-		Out = Colour.R;
+		Out = Color.R;
 		return true;
 	}
 
@@ -653,8 +653,8 @@ namespace MantlePlaceAssetsPrivate
 		return true;
 	}
 
-	/** One recognised texture sample: the sample, which of its outputs is read, its texture, its tiling and (panned) speed. */
-	struct FRecognisedSample
+	/** One recognized texture sample: the sample, which of its outputs is read, its texture, its tiling and (panned) speed. */
+	struct FRecognizedSample
 	{
 		const UMaterialExpressionTextureSample* Sample = nullptr;
 		TCHAR Channel = 0;
@@ -1027,16 +1027,16 @@ namespace MantlePlaceAssetsPrivate
 			}
 			if (const UMaterialExpressionVectorParameter* VectorParameter = Cast<UMaterialExpressionVectorParameter>(Expression))
 			{
-				FLinearColor Colour = VectorParameter->DefaultValue;
+				FLinearColor Color = VectorParameter->DefaultValue;
 				if (Context)
 				{
-					Context->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(VectorParameter->ParameterName)), Colour);
+					Context->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(VectorParameter->ParameterName)), Color);
 				}
 				Out.N = 4;
-				Out.V[0].C = Colour.R;
-				Out.V[1].C = Colour.G;
-				Out.V[2].C = Colour.B;
-				Out.V[3].C = Colour.A;
+				Out.V[0].C = Color.R;
+				Out.V[1].C = Color.G;
+				Out.V[2].C = Color.B;
+				Out.V[3].C = Color.A;
 				return true;
 			}
 			if (const UMaterialExpressionFunctionInput* Declared = Cast<UMaterialExpressionFunctionInput>(Expression))
@@ -1251,7 +1251,7 @@ namespace MantlePlaceAssetsPrivate
 	 * whose UVs move: through a Panner, or by Time. A sample whose UVs do not move is not one. A constant added to its UVs is refused
 	 * (it would not be carried), unless bAllowOffset (the sample is one of several blended; the caller decides).
 	 */
-	bool RecogniseMovingSample(const FWalk& Walk, FGraphReader& Reader, const FGraphNode& Node, FRecognisedSample& Out, const bool bAllowOffset = false)
+	bool RecognizeMovingSample(const FWalk& Walk, FGraphReader& Reader, const FGraphNode& Node, FRecognizedSample& Out, const bool bAllowOffset = false)
 	{
 		const UMaterialExpressionTextureSample* Sample = PlainSampleClass(Node.Expression);
 		if (!Sample)
@@ -1273,7 +1273,7 @@ namespace MantlePlaceAssetsPrivate
 		{
 			return false;
 		}
-		FRecognisedSample Found;
+		FRecognizedSample Found;
 		Found.Sample = Sample;
 		Found.Channel = OutputChannel(Sample, Node.Output);
 		Found.Texture = Texture;
@@ -1296,14 +1296,14 @@ namespace MantlePlaceAssetsPrivate
 	 * with UVs that move: a Panner, or Time times a constant speed, with a tiling and, through function calls, scalar parameters and
 	 * constants for the speed and the tiling.
 	 */
-	bool RecogniseSample(const FWalk& Walk, const FExpressionInput* Input, const bool bPanned, FRecognisedSample& Out)
+	bool RecognizeSample(const FWalk& Walk, const FExpressionInput* Input, const bool bPanned, FRecognizedSample& Out)
 	{
 		if (bPanned)
 		{
 			FGraphReader Reader;
 			Reader.Context = Walk.Context;
 			FGraphNode Node;
-			return Reader.Resolve(Input, FCallStack(), Node) && RecogniseMovingSample(Walk, Reader, Node, Out);
+			return Reader.Resolve(Input, FCallStack(), Node) && RecognizeMovingSample(Walk, Reader, Node, Out);
 		}
 		int32 Output = 0;
 		const UMaterialExpressionTextureSample* Sample = PlainSampleClass(Follow(Input, Output));
@@ -1316,14 +1316,14 @@ namespace MantlePlaceAssetsPrivate
 		{
 			return false;
 		}
-		Out = FRecognisedSample();
+		Out = FRecognizedSample();
 		Out.Sample = Sample;
 		Out.Channel = OutputChannel(Sample, Output);
 		Out.Texture = Texture;
 		return FirstUVTiling(Sample->Coordinates, Sample->ConstCoordinate, Out.Tiling);
 	}
 
-	/** The one vertex-colour channel Input reads ('r', 'g', 'b', 'a'): an output of Vertex Color, or a one-channel Component Mask of it. */
+	/** The one vertex-color channel Input reads ('r', 'g', 'b', 'a'): an output of Vertex Color, or a one-channel Component Mask of it. */
 	TCHAR VertexColorChannel(const FExpressionInput* Input)
 	{
 		int32 Output = 0;
@@ -1347,7 +1347,7 @@ namespace MantlePlaceAssetsPrivate
 		return 0;
 	}
 
-	/** The Material's own inputs this recognises by, as the walk reads them. */
+	/** The Material's own inputs this recognizes by, as the walk reads them. */
 	struct FMaterialRoots
 	{
 		const FExpressionInput* BaseColor = nullptr;
@@ -1365,17 +1365,17 @@ namespace MantlePlaceAssetsPrivate
 		return Input && Input->Expression;
 	}
 
-	bool ReadsColour(const FRecognisedSample& Sample)
+	bool ReadsColor(const FRecognizedSample& Sample)
 	{
 		return Sample.Channel == TEXT('c') || Sample.Channel == TEXT('x');
 	}
 
 	/**
 	 * The ORM group read one way: Roughness from Read('g'), Metallic from Read('b') or the constant 0, Ambient
-	 * Occlusion from Read('r') or unconnected. Read returns false for anything it does not recognise. False when
+	 * Occlusion from Read('r') or unconnected. Read returns false for anything it does not recognize. False when
 	 * Roughness is not connected.
 	 */
-	bool RecogniseOrmGroup(const FMaterialRoots& Roots, const UMaterialInterface* Context, TFunctionRef<bool(const FExpressionInput*, TCHAR)> Read,
+	bool RecognizeOrmGroup(const FMaterialRoots& Roots, const UMaterialInterface* Context, TFunctionRef<bool(const FExpressionInput*, TCHAR)> Read,
 		double& OutMetallicFactor, double& OutOcclusionStrength)
 	{
 		if (!IsConnected(Roots.Roughness) || !Read(Roots.Roughness, TEXT('g')))
@@ -1402,9 +1402,9 @@ namespace MantlePlaceAssetsPrivate
 	}
 
 	/** The panned sample one root reads, as RGB (or RGBA). */
-	bool RecognisePanned(const FWalk& Walk, const FExpressionInput* Input, FRecognisedSample& Out)
+	bool RecognizePanned(const FWalk& Walk, const FExpressionInput* Input, FRecognizedSample& Out)
 	{
-		return IsConnected(Input) && RecogniseSample(Walk, Input, true, Out) && ReadsColour(Out);
+		return IsConnected(Input) && RecognizeSample(Walk, Input, true, Out) && ReadsColor(Out);
 	}
 
 	/** A flat tangent-space normal: the constant (0, 0, 1), or a Transform of one. */
@@ -1428,7 +1428,7 @@ namespace MantlePlaceAssetsPrivate
 	 * Normalize; function calls are followed by Resolve). An operand that is a constant is skipped. False when any operand is
 	 * neither, or a sample that is not a moving one (a still sample among moving ones is refused).
 	 */
-	bool CollectMovingSamples(const FWalk& Walk, FGraphReader& Reader, const FGraphNode& Node, TArray<FRecognisedSample>& Found, const int32 Depth)
+	bool CollectMovingSamples(const FWalk& Walk, FGraphReader& Reader, const FGraphNode& Node, TArray<FRecognizedSample>& Found, const int32 Depth)
 	{
 		if (Depth > 8)
 		{
@@ -1436,12 +1436,12 @@ namespace MantlePlaceAssetsPrivate
 		}
 		if (PlainSampleClass(Node.Expression))
 		{
-			FRecognisedSample Sample;
-			if (!RecogniseMovingSample(Walk, Reader, Node, Sample, true))
+			FRecognizedSample Sample;
+			if (!RecognizeMovingSample(Walk, Reader, Node, Sample, true))
 			{
 				return false;
 			}
-			for (const FRecognisedSample& Seen : Found)
+			for (const FRecognizedSample& Seen : Found)
 			{
 				if (Seen.Sample == Sample.Sample)
 				{
@@ -1516,7 +1516,7 @@ namespace MantlePlaceAssetsPrivate
 	 * (bOutMerged). Samples of different textures, a still sample among moving ones, a Lerp of two normals (a flow map's two phases
 	 * crossfaded by a clock), or anything else, are refused.
 	 */
-	bool RecogniseNormal(const FWalk& Walk, const FExpressionInput* Input, FRecognisedSample& Out, double& OutScale, bool& bOutFoamDropped, bool& bOutMerged)
+	bool RecognizeNormal(const FWalk& Walk, const FExpressionInput* Input, FRecognizedSample& Out, double& OutScale, bool& bOutFoamDropped, bool& bOutMerged)
 	{
 		FGraphReader Reader;
 		Reader.Context = Walk.Context;
@@ -1570,15 +1570,15 @@ namespace MantlePlaceAssetsPrivate
 				continue;
 			}
 			// One moving sample, or several of one texture blended (a flow function's two layers): the fastest stands for them.
-			TArray<FRecognisedSample> Found;
+			TArray<FRecognizedSample> Found;
 			if (!CollectMovingSamples(Walk, Reader, Node, Found, 0) || Found.Num() == 0)
 			{
 				return false;
 			}
-			const FRecognisedSample* Fastest = &Found[0];
-			for (const FRecognisedSample& Candidate : Found)
+			const FRecognizedSample* Fastest = &Found[0];
+			for (const FRecognizedSample& Candidate : Found)
 			{
-				if (!ReadsColour(Candidate) || Candidate.Texture != Found[0].Texture)
+				if (!ReadsColor(Candidate) || Candidate.Texture != Found[0].Texture)
 				{
 					return false;
 				}
@@ -1602,8 +1602,8 @@ namespace MantlePlaceAssetsPrivate
 		return false;
 	}
 
-	/** wind: World Position Offset = SimpleGrassWind(constant intensity and speed, a recognised weight), nothing added. */
-	bool RecogniseWind(const FMaterialRoots& Roots, const UMaterialInterface* Context, FMantleMaterialFidelity2& Out)
+	/** wind: World Position Offset = SimpleGrassWind(constant intensity and speed, a recognized weight), nothing added. */
+	bool RecognizeWind(const FMaterialRoots& Roots, const UMaterialInterface* Context, FMantleMaterialFidelity2& Out)
 	{
 		int32 Output = 0;
 		const UMaterialExpressionMaterialFunctionCall* Call = CallTo(Follow(Roots.WorldPositionOffset, Output), SimpleGrassWindPath);
@@ -1719,7 +1719,7 @@ namespace MantlePlaceAssetsPrivate
 	 * worldAligned (opaque only): Base Color, Normal and the ORM group each world-aligned with one size and
 	 * contrast, or flat; Base Color or Normal world-aligned.
 	 */
-	bool RecogniseWorldAligned(const FWalk& Walk, const FMaterialRoots& Roots, const UMaterialInterface* Context, FMantleMaterialFidelity2& Out)
+	bool RecognizeWorldAligned(const FWalk& Walk, const FMaterialRoots& Roots, const UMaterialInterface* Context, FMantleMaterialFidelity2& Out)
 	{
 		bool bFirst = true;
 		double Size = 0.0;
@@ -1779,7 +1779,7 @@ namespace MantlePlaceAssetsPrivate
 		const bool bOrmFlat = IsFlat(Roots.Roughness) && IsFlat(Roots.Metallic) && IsFlat(Roots.Occlusion);
 		if (!bOrmFlat)
 		{
-			if (!RecogniseOrmGroup(Roots, Context, ReadAligned, MetallicFactor, OcclusionStrength) || !Same(OrmCall, Sources[2]))
+			if (!RecognizeOrmGroup(Roots, Context, ReadAligned, MetallicFactor, OcclusionStrength) || !Same(OrmCall, Sources[2]))
 			{
 				return false;
 			}
@@ -1796,35 +1796,35 @@ namespace MantlePlaceAssetsPrivate
 		return true;
 	}
 
-	/** One Lerp by a vertex-colour channel between two plain samples, and what each reads. */
-	struct FRecognisedLerp
+	/** One Lerp by a vertex-color channel between two plain samples, and what each reads. */
+	struct FRecognizedLerp
 	{
-		FRecognisedSample A;
-		FRecognisedSample B;
+		FRecognizedSample A;
+		FRecognizedSample B;
 		TCHAR Channel = 0;
 	};
 
-	bool RecogniseLerp(const FWalk& Walk, const FExpressionInput* Input, FRecognisedLerp& Out)
+	bool RecognizeLerp(const FWalk& Walk, const FExpressionInput* Input, FRecognizedLerp& Out)
 	{
 		int32 Output = 0;
 		const UMaterialExpressionLinearInterpolate* Lerp = Cast<UMaterialExpressionLinearInterpolate>(Follow(Input, Output));
-		return Lerp && RecogniseSample(Walk, &Lerp->A, false, Out.A) && RecogniseSample(Walk, &Lerp->B, false, Out.B)
+		return Lerp && RecognizeSample(Walk, &Lerp->A, false, Out.A) && RecognizeSample(Walk, &Lerp->B, false, Out.B)
 			&& (Out.Channel = VertexColorChannel(&Lerp->Alpha)) != 0;
 	}
 
 	/**
-	 * layerBlend (opaque only): Base Color a Lerp by one vertex-colour channel between two plain samples; Normal and
+	 * layerBlend (opaque only): Base Color a Lerp by one vertex-color channel between two plain samples; Normal and
 	 * the ORM group the same Lerp by the same channel, or one plain sample (the layer keeps it), or nothing.
 	 */
-	bool RecogniseLayerBlend(const FWalk& Walk, const FMaterialRoots& Roots, const UMaterialInterface* Context, FMantleMaterialFidelity2& Out)
+	bool RecognizeLayerBlend(const FWalk& Walk, const FMaterialRoots& Roots, const UMaterialInterface* Context, FMantleMaterialFidelity2& Out)
 	{
-		FRecognisedLerp Base;
-		if (!RecogniseLerp(Walk, Roots.BaseColor, Base) || !ReadsColour(Base.A) || !ReadsColour(Base.B))
+		FRecognizedLerp Base;
+		if (!RecognizeLerp(Walk, Roots.BaseColor, Base) || !ReadsColor(Base.A) || !ReadsColor(Base.B))
 		{
 			return false;
 		}
-		// The layer samples on the base colour's UVs, so every layer texture must tile as the base colour does.
-		auto OnBaseUV = [&Base](const FRecognisedSample& Layer)
+		// The layer samples on the base color's UVs, so every layer texture must tile as the base color does.
+		auto OnBaseUV = [&Base](const FRecognizedSample& Layer)
 		{
 			return Layer.Tiling[0] == Base.A.Tiling[0] && Layer.Tiling[1] == Base.A.Tiling[1];
 		};
@@ -1838,11 +1838,11 @@ namespace MantlePlaceAssetsPrivate
 
 		if (IsConnected(Roots.Normal))
 		{
-			FRecognisedLerp Normal;
-			FRecognisedSample Plain;
-			if (RecogniseLerp(Walk, Roots.Normal, Normal))
+			FRecognizedLerp Normal;
+			FRecognizedSample Plain;
+			if (RecognizeLerp(Walk, Roots.Normal, Normal))
 			{
-				if (Normal.Channel != Base.Channel || !ReadsColour(Normal.A) || !ReadsColour(Normal.B) || !OnBaseUV(Normal.B))
+				if (Normal.Channel != Base.Channel || !ReadsColor(Normal.A) || !ReadsColor(Normal.B) || !OnBaseUV(Normal.B))
 				{
 					return false;
 				}
@@ -1851,7 +1851,7 @@ namespace MantlePlaceAssetsPrivate
 				Tiling[1][0] = Normal.A.Tiling[0];
 				Tiling[1][1] = Normal.A.Tiling[1];
 			}
-			else if (RecogniseSample(Walk, Roots.Normal, false, Plain) && ReadsColour(Plain))
+			else if (RecognizeSample(Walk, Roots.Normal, false, Plain) && ReadsColor(Plain))
 			{
 				Sources[1] = Layers[1] = Plain.Texture;
 				Tiling[1][0] = Plain.Tiling[0];
@@ -1866,13 +1866,13 @@ namespace MantlePlaceAssetsPrivate
 		// The ORM group: every channel the same Lerp shape between one A sample and one B sample, or every channel one plain sample.
 		const UMaterialExpressionTextureSample* OrmA = nullptr;
 		const UMaterialExpressionTextureSample* OrmB = nullptr;
-		FRecognisedLerp OrmLerp;
+		FRecognizedLerp OrmLerp;
 		bool bLayered = false;
 		bool bPlain = false;
 		auto ReadLayered = [&](const FExpressionInput* Input, const TCHAR Channel)
 		{
-			FRecognisedLerp Lerp;
-			if (bPlain || !RecogniseLerp(Walk, Input, Lerp) || Lerp.Channel != Base.Channel || Lerp.A.Channel != Channel || Lerp.B.Channel != Channel
+			FRecognizedLerp Lerp;
+			if (bPlain || !RecognizeLerp(Walk, Input, Lerp) || Lerp.Channel != Base.Channel || Lerp.A.Channel != Channel || Lerp.B.Channel != Channel
 				|| (OrmA && (Lerp.A.Sample != OrmA || Lerp.B.Sample != OrmB)))
 			{
 				return false;
@@ -1883,11 +1883,11 @@ namespace MantlePlaceAssetsPrivate
 			OrmLerp = Lerp;
 			return true;
 		};
-		FRecognisedSample OrmPlain;
+		FRecognizedSample OrmPlain;
 		auto ReadPlain = [&](const FExpressionInput* Input, const TCHAR Channel)
 		{
-			FRecognisedSample Sample;
-			if (bLayered || !RecogniseSample(Walk, Input, false, Sample) || Sample.Channel != Channel || (OrmA && Sample.Sample != OrmA))
+			FRecognizedSample Sample;
+			if (bLayered || !RecognizeSample(Walk, Input, false, Sample) || Sample.Channel != Channel || (OrmA && Sample.Sample != OrmA))
 			{
 				return false;
 			}
@@ -1900,13 +1900,13 @@ namespace MantlePlaceAssetsPrivate
 		double OcclusionStrength = 1.0;
 		if (IsConnected(Roots.Roughness) || IsConnected(Roots.Metallic) || IsConnected(Roots.Occlusion))
 		{
-			bool bRead = RecogniseOrmGroup(Roots, Context, ReadLayered, MetallicFactor, OcclusionStrength);
+			bool bRead = RecognizeOrmGroup(Roots, Context, ReadLayered, MetallicFactor, OcclusionStrength);
 			if (!bRead)
 			{
 				OrmA = nullptr;
 				OrmB = nullptr;
 				bLayered = false;
-				bRead = RecogniseOrmGroup(Roots, Context, ReadPlain, MetallicFactor, OcclusionStrength);
+				bRead = RecognizeOrmGroup(Roots, Context, ReadPlain, MetallicFactor, OcclusionStrength);
 			}
 			if (!bRead || (bLayered && !OnBaseUV(OrmLerp.B)))
 			{
@@ -1968,7 +1968,7 @@ namespace MantlePlaceAssetsPrivate
 		case BLEND_Modulate: return TEXT("modulate");
 		case BLEND_AlphaComposite: return TEXT("alpha composite");
 		case BLEND_AlphaHoldout: return TEXT("alpha holdout");
-		default: return TEXT("coloured transmittance");
+		default: return TEXT("colored transmittance");
 		}
 	}
 
@@ -2183,7 +2183,7 @@ void FMantlePlaceDependencies::AddVoxelWorld(const AActor* Actor)
 		Entry.Key = Key;
 		Entry.Name = Label;
 	}
-	// Each tile once, under the key the exporter names it by (FMantlePlaceAssets::DecalTextureKey, a base colour).
+	// Each tile once, under the key the exporter names it by (FMantlePlaceAssets::DecalTextureKey, a base color).
 	for (const FMantleVoxelBlockTypeSettings& Type : World->BlockTypes)
 	{
 		for (UTexture2D* Tile : { Type.Top.Get(), Type.Side.Get(), Type.Bottom.Get() })
@@ -2228,7 +2228,7 @@ void FMantlePlaceDependencies::AddComponent(const UStaticMeshComponent* Componen
 	if (FMantlePlaceAssets::IsLibraryAsset(Mesh))
 	{
 		// A library mesh brings its own materials; only overrides are published (and uploaded when not library). An override is still
-		// drawn with the colours painted on the component (DowntownWestModularPack's roads: the engine's plane, painted for its puddles).
+		// drawn with the colors painted on the component (DowntownWestModularPack's roads: the engine's plane, painted for its puddles).
 		for (int32 Slot = 0; Slot < Component->OverrideMaterials.Num(); ++Slot)
 		{
 			AddSlotVertexColors(AddMaterial(Component->OverrideMaterials[Slot], Label), Mesh, Component, Slot);
@@ -2259,7 +2259,7 @@ void FMantlePlaceDependencies::AddSlotVertexColors(FMantleGatheredMaterial* Entr
 	{
 		return;
 	}
-	// Painted colours are the component's own; unpainted, every component drawing the mesh has the mesh's, so those are read once.
+	// Painted colors are the component's own; unpainted, every component drawing the mesh has the mesh's, so those are read once.
 	const bool bPainted = Component && Component->LODData.Num() > 0 && Component->LODData[0].OverrideVertexColors != nullptr;
 	FVector4d Sum(0.0, 0.0, 0.0, 0.0);
 	double Vertices = 0.0;
@@ -2343,7 +2343,7 @@ void FMantlePlaceDependencies::AddTerrainLayerMaterials(const TArray<FMantleTerr
 			}
 			continue;
 		}
-		// Transient, not bDerived, is the test: a landscape with nothing painted and no Place Settings entry is drawn with a plain grey
+		// Transient, not bDerived, is the test: a landscape with nothing painted and no Place Settings entry is drawn with a plain gray
 		// layer made the same way (MakeLayerMaterial) that is not derived from its material; Export names it too.
 		if (Choice.Material && Choice.Material->HasAnyFlags(RF_Transient))
 		{
@@ -2370,7 +2370,7 @@ void FMantlePlaceDependencies::AddMesh(const UStaticMesh* Mesh, const FString& L
 	Existing->UsedBy.AddUnique(Label);
 
 	// No component overrides anything, so each slot uploads the mesh's own material, which a script
-	// can then put back on what it spawns. With no component, it is drawn with the mesh's own vertex colours.
+	// can then put back on what it spawns. With no component, it is drawn with the mesh's own vertex colors.
 	for (const int32 Slot : FMantlePlaceAssets::UploadSlots(Mesh))
 	{
 		AddSlotVertexColors(AddMaterial(FMantlePlaceAssets::MeshSlotMaterial(Mesh, Slot), Label), Mesh, nullptr, Slot);
@@ -2722,7 +2722,7 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 	Existing->Name = Source->GetName();
 	Existing->UsedBy.Add(Label);
 
-	// Its liveries (#488): uploaded as they are, as a decal's base colour is (alpha kept), before the vehicle. A livery
+	// Its liveries (#488): uploaded as they are, as a decal's base color is (alpha kept), before the vehicle. A livery
 	// that does not load gathers nothing: Check says so.
 	for (const TSoftObjectPtr<UTexture2D>& Livery : Source->Paint.Liveries)
 	{
@@ -3518,7 +3518,7 @@ bool FMantlePlaceAssets::SlotVertexColors(const UStaticMesh* Mesh, const UStatic
 	}
 	const FStaticMeshLODResources& LOD = RenderData->LODResources[0];
 	const uint32 VertexCount = LOD.GetNumVertices();
-	// The painted colours replace the mesh's only when there is one for every vertex, as Unreal draws them.
+	// The painted colors replace the mesh's only when there is one for every vertex, as Unreal draws them.
 	const FColorVertexBuffer* Painted = Component && Component->LODData.Num() > 0 ? Component->LODData[0].OverrideVertexColors : nullptr;
 	const FColorVertexBuffer* Colors = Painted && Painted->GetNumVertices() == VertexCount && Painted->GetVertexData() ? Painted : nullptr;
 	if (!Colors && LOD.VertexBuffers.ColorVertexBuffer.GetNumVertices() == VertexCount && LOD.VertexBuffers.ColorVertexBuffer.GetVertexData())
@@ -3536,7 +3536,7 @@ bool FMantlePlaceAssets::SlotVertexColors(const UStaticMesh* Mesh, const UStatic
 		const uint32 Count = Section.MaxVertexIndex - Section.MinVertexIndex + 1;
 		if (!Colors)
 		{
-			// No colours at all: Unreal draws the mesh white.
+			// No colors at all: Unreal draws the mesh white.
 			OutSum += FVector4d(1.0, 1.0, 1.0, 1.0) * static_cast<double>(Count);
 			OutVertices += Count;
 			continue;
@@ -3748,9 +3748,9 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 	};
 
 	// GhzGarage/mantle#818: a Single Layer Water surface material (a Water plugin body's) is water already, whatever its graph: it
-	// always publishes with the water key (FMantleWaterMaterial::RecogniseSingleLayer), and its shading is then no loss. The Water
+	// always publishes with the water key (FMantleWaterMaterial::RecognizeSingleLayer), and its shading is then no loss. The Water
 	// plugin's Water_Material is masked (a depth mask, which Mantle's opaque water does without) and builds its outputs with Set
-	// Material Attributes, so it has no output roots to read and never reached the branch below; its coefficients and colour come
+	// Material Attributes, so it has no output roots to read and never reached the branch below; its coefficients and color come
 	// from its named parameters, else from a clear lake's defaults. Its waves are world position offset, which the water key has none
 	// of: the offset is dropped and said (bWavesDropped).
 	const bool bSingleLayerWater = !Out.bCarPaint && Base->MaterialDomain == MD_Surface && Models.HasShadingModel(MSM_SingleLayerWater);
@@ -3764,7 +3764,7 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 	if (Base->bUseMaterialAttributes)
 	{
 		Walk.WalkInput(Root(MP_MaterialAttributes), ERoot::Surface);
-		if (bSingleLayerWater && FMantleWaterMaterial::RecogniseSingleLayer(Material, nullptr, nullptr, Out.Fidelity2.Water))
+		if (bSingleLayerWater && FMantleWaterMaterial::RecognizeSingleLayer(Material, nullptr, nullptr, Out.Fidelity2.Water))
 		{
 			// Published as Mantle's water, which is Single Layer Water: no longer a loss of special shading. The walk flagged a
 			// world position offset pin of the Set Material Attributes node as the loss; it is the water's waves, dropped and said.
@@ -3806,7 +3806,7 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		const bool bCarries = !Out.bCarPaint;
 		const bool bLit = bCarries && !Models.HasShadingModel(MSM_Unlit);
 
-		if (bCarries && Connected(MP_WorldPositionOffset) && !Walk.bTranslucent && RecogniseWind(Roots, Material, Fidelity))
+		if (bCarries && Connected(MP_WorldPositionOffset) && !Walk.bTranslucent && RecognizeWind(Roots, Material, Fidelity))
 		{
 			Carry({ MP_WorldPositionOffset });
 		}
@@ -3816,14 +3816,14 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		// #628: an unlit translucent material whose emissive is the scene behind it (fake refraction) publishes as tinted see-through
 		// glass: the bake sees black there, an opaque solid. The whole emissive graph is replaced by the tint, so it is walked no more.
 		if (bCarries && Blend == BLEND_Translucent && Models.HasOnlyShadingModel(MSM_Unlit)
-			&& FMantleGlowMaterial::RecogniseSceneColourGlass(Material, Roots.Emissive, Fidelity.Glass))
+			&& FMantleGlowMaterial::RecognizeSceneColorGlass(Material, Roots.Emissive, Fidelity.Glass))
 		{
 			Carry({ MP_EmissiveColor });
 			Out.Losses &= ~EMantleMaterialLoss::Unlit;
 		}
 
 		if (!Fidelity.bWind && bOpaque && bLit
-			&& (RecogniseWorldAligned(Walk, Roots, Material, Fidelity) || RecogniseLayerBlend(Walk, Roots, Material, Fidelity)))
+			&& (RecognizeWorldAligned(Walk, Roots, Material, Fidelity) || RecognizeLayerBlend(Walk, Roots, Material, Fidelity)))
 		{
 			Carry({ MP_BaseColor, MP_Normal, MP_Roughness, MP_Metallic, MP_AmbientOcclusion });
 			for (int32 Slot = 0; Slot < 3; ++Slot)
@@ -3844,11 +3844,11 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		}
 
 		// #628: a depth-faded translucent material (water): the bake sees the fade's near end and writes opacity 0, so its
-		// opacity (and deep colour, when the graph gives one) is carried as constants read at the far end.
+		// opacity (and deep color, when the graph gives one) is carried as constants read at the far end.
 		// GhzGarage/mantle#818: a Single Layer Water material (a Water plugin body's) is water already, before any fade is looked for.
 		// Its waves are world position offset, which reads as wind: the water key has no waves, so the offset is dropped and said (bWavesDropped).
-		if ((bSingleLayerWater && FMantleWaterMaterial::RecogniseSingleLayer(Material, Roots.BaseColor, Roots.Normal, Fidelity.Water))
-			|| (bCarries && bLit && Walk.bTranslucent && !Fidelity.bWind && FMantleWaterMaterial::Recognise(Material, Roots.Opacity, Roots.BaseColor, Roots.Normal, Fidelity.Water)))
+		if ((bSingleLayerWater && FMantleWaterMaterial::RecognizeSingleLayer(Material, Roots.BaseColor, Roots.Normal, Fidelity.Water))
+			|| (bCarries && bLit && Walk.bTranslucent && !Fidelity.bWind && FMantleWaterMaterial::Recognize(Material, Roots.Opacity, Roots.BaseColor, Roots.Normal, Fidelity.Water)))
 		{
 			if (Fidelity.Water.bSingleLayer)
 			{
@@ -3862,13 +3862,13 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 			}
 			// A depth fade whose opacity is a shape the evaluator cannot read (a gradient function, noise) and with no normal map, no
 			// single-layer water: a cloud card, not water. The guessed opacity would draw one even sheet, so the mesh is left out.
-			if (!Fidelity.Water.bSingleLayer && !Fidelity.Water.bOpacityRead && Fidelity.Water.Normals.Num() == 0 && !Fidelity.Water.bNormalPanned)
+			if (!Fidelity.Water.bSingleLayer && !Fidelity.Water.bOpacitiread && Fidelity.Water.Normals.Num() == 0 && !Fidelity.Water.bNormalPanned)
 			{
 				Out.UnpublishableWhy = FString::Printf(TEXT("is translucent with a shape the export cannot read (%s), which would publish as one even see-through sheet"),
 					Fidelity.Water.Why.IsEmpty() ? TEXT("a depth fade over a gradient or noise") : *Fidelity.Water.Why);
 			}
 			Carry({ MP_Opacity });
-			if (Fidelity.Water.bColour)
+			if (Fidelity.Water.bColor)
 			{
 				Carry({ MP_BaseColor });
 			}
@@ -3906,7 +3906,7 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		}
 
 		// Panning, on each output nothing above carried.
-		auto CarryPanned = [&](const int32 Slot, const FRecognisedSample& Sample)
+		auto CarryPanned = [&](const int32 Slot, const FRecognizedSample& Sample)
 		{
 			Fidelity.SourceTextures[Slot] = Sample.Texture;
 			Fidelity.SourceTiling[Slot][0] = Sample.Tiling[0];
@@ -3921,12 +3921,12 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 				Walk.AddDependency(Function);
 			}
 		};
-		FRecognisedSample Panned;
-		if (bLit && !IsCarried(MP_BaseColor) && RecognisePanned(Walk, Roots.BaseColor, Panned))
+		FRecognizedSample Panned;
+		if (bLit && !IsCarried(MP_BaseColor) && RecognizePanned(Walk, Roots.BaseColor, Panned))
 		{
 			// On a masked or translucent material the opacity must be the same sample's alpha (it moves with it).
-			FRecognisedSample Alpha;
-			const bool bAlphaMoves = !bOpaque && RecogniseSample(Walk, Roots.Opacity, true, Alpha) && Alpha.Sample == Panned.Sample && Alpha.Channel == TEXT('a');
+			FRecognizedSample Alpha;
+			const bool bAlphaMoves = !bOpaque && RecognizeSample(Walk, Roots.Opacity, true, Alpha) && Alpha.Sample == Panned.Sample && Alpha.Channel == TEXT('a');
 			if (bOpaque || bAlphaMoves)
 			{
 				CarryPanned(0, Panned);
@@ -3944,7 +3944,7 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		double NormalScale = 1.0;
 		bool bNormalFoamDropped = false;
 		bool bNormalMerged = false;
-		if (bLit && !IsCarried(MP_Normal) && IsConnected(Roots.Normal) && RecogniseNormal(Walk, Roots.Normal, Panned, NormalScale, bNormalFoamDropped, bNormalMerged))
+		if (bLit && !IsCarried(MP_Normal) && IsConnected(Roots.Normal) && RecognizeNormal(Walk, Roots.Normal, Panned, NormalScale, bNormalFoamDropped, bNormalMerged))
 		{
 			CarryPanned(1, Panned);
 			Fidelity.NormalScale = NormalScale;
@@ -3952,18 +3952,18 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 			Fidelity.bNormalLayersMerged = bNormalMerged;
 			Carry({ MP_Normal });
 		}
-		if (bCarries && !IsCarried(MP_EmissiveColor) && RecognisePanned(Walk, Roots.Emissive, Panned))
+		if (bCarries && !IsCarried(MP_EmissiveColor) && RecognizePanned(Walk, Roots.Emissive, Panned))
 		{
 			CarryPanned(3, Panned);
 			Carry({ MP_EmissiveColor });
 		}
 		if (bLit && !IsCarried(MP_Roughness))
 		{
-			FRecognisedSample Orm;
+			FRecognizedSample Orm;
 			auto ReadPanned = [&](const FExpressionInput* Input, const TCHAR Channel)
 			{
-				FRecognisedSample Sample;
-				if (!RecogniseSample(Walk, Input, true, Sample) || Sample.Channel != Channel || (Orm.Sample && Sample.Sample != Orm.Sample))
+				FRecognizedSample Sample;
+				if (!RecognizeSample(Walk, Input, true, Sample) || Sample.Channel != Channel || (Orm.Sample && Sample.Sample != Orm.Sample))
 				{
 					return false;
 				}
@@ -3972,7 +3972,7 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 			};
 			double MetallicFactor = 1.0;
 			double OcclusionStrength = 1.0;
-			if (RecogniseOrmGroup(Roots, Material, ReadPanned, MetallicFactor, OcclusionStrength))
+			if (RecognizeOrmGroup(Roots, Material, ReadPanned, MetallicFactor, OcclusionStrength))
 			{
 				CarryPanned(2, Orm);
 				Fidelity.OrmMetallicFactor = MetallicFactor;
@@ -4027,7 +4027,7 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 	{
 		Out.Losses |= EMantleMaterialLoss::DetailNormal;
 	}
-	// #471: a pure base-colour tint is carried; any other vertex colour use is the loss, and then the tint is not carried either.
+	// #471: a pure base-color tint is carried; any other vertex color use is the loss, and then the tint is not carried either.
 	Out.bVertexColorTintsBaseColor = Walk.bBaseColorTint && !Out.Has(EMantleMaterialLoss::VertexColor);
 	return Out;
 }
@@ -4106,7 +4106,7 @@ namespace MantlePlaceAssetsPrivate
 	 * and re-pointing everything that read it. Per Instance Custom Data keeps what feeds its Default Value input, else its
 	 * constant default; Per Instance Fade Amount is 1 (the instance fully faded in).
 	 */
-	struct FPerInstanceNeutraliser
+	struct FPerInstanceNeutralizer
 	{
 		TMap<const UMaterialFunction*, bool> Contains;
 		TMap<const UMaterialFunction*, UMaterialFunction*> Copies;
@@ -4294,7 +4294,7 @@ namespace MantlePlaceAssetsPrivate
 	};
 }
 
-TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::NeutralisePerInstanceValues(const UMaterialInterface* Material)
+TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::NeutralizePerInstanceValues(const UMaterialInterface* Material)
 {
 	using namespace MantlePlaceAssetsPrivate;
 	if (!Material)
@@ -4314,8 +4314,8 @@ TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::NeutralisePerInstanceVa
 	{
 		return nullptr;
 	}
-	FPerInstanceNeutraliser Neutraliser;
-	if (!Neutraliser.GraphHasPerInstance(Base->GetExpressions()))
+	FPerInstanceNeutralizer Neutralizer;
+	if (!Neutralizer.GraphHasPerInstance(Base->GetExpressions()))
 	{
 		return nullptr;
 	}
@@ -4324,7 +4324,7 @@ TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::NeutralisePerInstanceVa
 		MakeUniqueObjectName(GetTransientPackage(), UMaterial::StaticClass(), *FString::Printf(TEXT("%s_MantleBake"), *Base->GetName())));
 	BaseCopy->ClearFlags(RF_Public | RF_Standalone);
 	BaseCopy->SetFlags(RF_Transient);
-	Neutraliser.Rewrite(BaseCopy, nullptr);
+	Neutralizer.Rewrite(BaseCopy, nullptr);
 	// The editor's own finishing step: it builds what GLTFExporter reads the graph through.
 	BaseCopy->PostEditChange();
 
@@ -4364,7 +4364,7 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 	case EMantleMaterialLoss::Parallax:
 		return TEXT("parallax depth is flattened, so the surface looks flat up close.");
 	case EMantleMaterialLoss::VertexColor:
-		return TEXT("vertex-colour blending is dropped, so layers painted per vertex will not show (only Vertex Color's RGB multiplying the base colour, and on an opaque material a Lerp between two textures by one Vertex Color channel, are kept).");
+		return TEXT("vertex-color blending is dropped, so layers painted per vertex will not show (only Vertex Color's RGB multiplying the base color, and on an opaque material a Lerp between two textures by one Vertex Color channel, are kept).");
 	case EMantleMaterialLoss::DetailNormal:
 		return TEXT("its detail normals are baked at the material's texture size, so fine surface detail may soften.");
 	case EMantleMaterialLoss::PixelDepthOffset:
@@ -4604,13 +4604,13 @@ void FMantlePlaceAssets::CheckMesh(const UStaticMesh* Mesh, const FString& UsedB
 	{
 		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, FString(),
 			FString::Printf(TEXT("%s has %d vertex positions that are not numbers, so it cannot be published."), *Subject, NonFinite.Positions),
-			TEXT("Fix or delete those vertices in a modelling tool and re-import the mesh.") });
+			TEXT("Fix or delete those vertices in a modeling tool and re-import the mesh.") });
 	}
 	if (NonFinite.TexCoords > 0)
 	{
 		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
 			FString::Printf(TEXT("%s had %d texture coordinates that were not numbers; they were set to 0."), *Subject, NonFinite.TexCoords),
-			TEXT("Nothing to do: your mesh is unchanged. Textures near those vertices may look stretched; fix the UVs in a modelling tool to correct that.") });
+			TEXT("Nothing to do: your mesh is unchanged. Textures near those vertices may look stretched; fix the UVs in a modeling tool to correct that.") });
 	}
 
 	if (Mesh->IsNaniteEnabled())
@@ -4665,7 +4665,7 @@ void FMantlePlaceAssets::CheckMaterial(const UMaterialInterface* Material, const
 	{
 		// A note, not a loss: the validator has no severity below a warning, and this never blocks.
 		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
-			FString::Printf(TEXT("%s: it is a Clear Coat material, so it publishes as Mantle's car-paint shading (a clear coat over its base colour)."), *Subject),
+			FString::Printf(TEXT("%s: it is a Clear Coat material, so it publishes as Mantle's car-paint shading (a clear coat over its base color)."), *Subject),
 			CarPaintRemedy });
 	}
 	if (Analysis.bPerInstanceVariation)

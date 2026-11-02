@@ -14,7 +14,7 @@
 
 /**
  * The rights declaration a creator ticks to publish a public item (#614). The version names the
- * declaration text shown in the panel ("I own this content or its licence permits public
+ * declaration text shown in the panel ("I own this content or its license permits public
  * redistribution on Mantle"); the server stores it with the account and the time. Change it here,
  * once, when the wording changes.
  */
@@ -199,7 +199,7 @@ struct MANTLEEDITOR_API FMantleCosmeticPackage
 	FString DefaultGarmentVariant;
 
 	/**
-	 * #756, local only (not sent): every clothing material's colour area detection, found or not, including areas the
+	 * #756, local only (not sent): every clothing material's color area detection, found or not, including areas the
 	 * creator unticked. The panel lists and names areas from it; Materials carries only what uploads.
 	 */
 	TArray<FMantleClothingColorDetection> DetectedClothingColors;

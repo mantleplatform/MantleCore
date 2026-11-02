@@ -19,7 +19,7 @@ namespace MantleGarmentClearancePrivate
 	constexpr uint8 RestoreDirGarment = 1;
 	constexpr uint8 RestoreDirSurface = 2;
 
-	/** Unnormalised face normal (index winding) of triangle Triangle over Positions, in double as FMantleFaceFlips measures it. */
+	/** Unnormalized face normal (index winding) of triangle Triangle over Positions, in double as FMantleFaceFlips measures it. */
 	FVector3d FaceCross(TConstArrayView<FVector3f> Positions, TConstArrayView<uint32> Indices, const int32 Triangle)
 	{
 		const FVector3d P0(Positions[Indices[Triangle * 3]]);
@@ -450,8 +450,8 @@ bool FMantleClearanceRestore::Restore(FMantleSkinnedMeshLOD& Garment, const FMan
 		PointNormal[Point] = Own;
 		PointSurface[Point] = PointSurface[Point].GetSafeNormal();
 	}
-	FPointNeighbours Neighbours;
-	PointNeighbours(Garment.Indices, Weld, NumPoints, Neighbours);
+	FPointNeighbors Neighbors;
+	PointNeighbors(Garment.Indices, Weld, NumPoints, Neighbors);
 
 	// 3. The push field, smoothed; never below a point's own requirement, so the clearance is still
 	// restored everywhere.
@@ -463,10 +463,10 @@ bool FMantleClearanceRestore::Restore(FMantleSkinnedMeshLOD& Garment, const FMan
 		Next.SetNumZeroed(NumPoints);
 		for (int32 Pass = 0; Pass < SmoothIters; ++Pass)
 		{
-			ParallelFor(NumPoints, [&Push, &Next, &Neighbours, &PointRequired](const int32 Point)
+			ParallelFor(NumPoints, [&Push, &Next, &Neighbors, &PointRequired](const int32 Point)
 			{
 				float Smoothed = Push[Point];
-				const TArray<int32, TInlineAllocator<8>>& Around = Neighbours[Point];
+				const TArray<int32, TInlineAllocator<8>>& Around = Neighbors[Point];
 				if (Around.Num() > 0)
 				{
 					float Sum = 0.0f;
@@ -485,7 +485,7 @@ bool FMantleClearanceRestore::Restore(FMantleSkinnedMeshLOD& Garment, const FMan
 
 	// 4. Direction per point: its own normal, moved p / dot so the clearance along the surface normal
 	// grows by p; the surface triangle's normal where the two disagree (the inside of a folded collar
-	// faces the skin). Untracked points the smoothing reached borrow their neighbours' surface normal.
+	// faces the skin). Untracked points the smoothing reached borrow their neighbors' surface normal.
 	TArray<FVector3f> Disp;
 	Disp.Init(FVector3f::ZeroVector, NumPoints);
 	TArray<uint8> DirKind;
@@ -506,7 +506,7 @@ bool FMantleClearanceRestore::Restore(FMantleSkinnedMeshLOD& Garment, const FMan
 		{
 			Untracked[Point] = true;
 			FVector3f Sum = FVector3f::ZeroVector;
-			for (const int32 Other : Neighbours[Point])
+			for (const int32 Other : Neighbors[Point])
 			{
 				Sum += PointSurface[Other];
 			}
@@ -537,7 +537,7 @@ bool FMantleClearanceRestore::Restore(FMantleSkinnedMeshLOD& Garment, const FMan
 	}
 
 	// The push VECTORS smoothed as many passes as the scalars were (at a concave corner of the
-	// wearer neighbouring points were pushed along normals 90 degrees apart); each keeps at least its
+	// wearer neighboring points were pushed along normals 90 degrees apart); each keeps at least its
 	// smoothed scalar length, so the clearance is still restored.
 	if (SmoothIters > 0)
 	{
@@ -545,9 +545,9 @@ bool FMantleClearanceRestore::Restore(FMantleSkinnedMeshLOD& Garment, const FMan
 		NextDisp.SetNumUninitialized(NumPoints);
 		for (int32 Pass = 0; Pass < SmoothIters; ++Pass)
 		{
-			ParallelFor(NumPoints, [&Disp, &NextDisp, &Neighbours](const int32 Point)
+			ParallelFor(NumPoints, [&Disp, &NextDisp, &Neighbors](const int32 Point)
 			{
-				const TArray<int32, TInlineAllocator<8>>& Around = Neighbours[Point];
+				const TArray<int32, TInlineAllocator<8>>& Around = Neighbors[Point];
 				if (Around.Num() == 0)
 				{
 					NextDisp[Point] = Disp[Point];

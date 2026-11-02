@@ -68,7 +68,7 @@ enum class EMantleSpritesShape : uint8
 
 /**
  * What a sprites effect (#628) looks like beyond the five values every archetype has (FMantleEffectLook: the
- * colour at birth, and the rate). The schema's keys of the same names, each already held to the schema's ranges
+ * color at birth, and the rate). The schema's keys of the same names, each already held to the schema's ranges
  * and pairs by the parser, with the schema's defaults: a key a place file leaves out takes the default here, and
  * a lone min or max takes the other's value (FMantleEffects::ResolveSprites). Lengths are cm, speeds cm/s,
  * accelerations cm/s^2, times seconds, in the effect's own space.
@@ -78,11 +78,11 @@ struct MANTLERUNTIME_API FMantleSpritesSettings
 {
 	GENERATED_BODY()
 
-	/** Translucent uses the texture's alpha; additive adds its colour to the scene. */
+	/** Translucent uses the texture's alpha; additive adds its color to the scene. */
 	UPROPERTY(EditAnywhere, Category = "Sprites")
 	EMantleSpritesBlend Blend = EMantleSpritesBlend::Translucent;
 
-	/** The colour at the end of a particle's life, blended linearly from the effect's Color. */
+	/** The color at the end of a particle's life, blended linearly from the effect's Color. */
 	UPROPERTY(EditAnywhere, Category = "Sprites", meta = (HideAlphaChannel))
 	FLinearColor ColorEnd = FLinearColor::White;
 
@@ -211,7 +211,7 @@ struct MANTLERUNTIME_API FMantleEffects
 	 * What the sprites system (/Game/Mantle/Effects/NS_MantleSprites, #628) reads, on top of User.Rate. Each is a
 	 * user parameter the runtime writes and the system binds where it can; one the system does not bind is simply ignored. Floats unless noted.
 	 * User.Material is the sprite material instance (a MaterialInterface) the system's renderer binds, which
-	 * carries the texture, blend, colours, opacity and end scale; User.Size* and User.Lifetime* are the range a
+	 * carries the texture, blend, colors, opacity and end scale; User.Size* and User.Lifetime* are the range a
 	 * particle's size (cm) and life (s) is drawn from; User.Velocity* and User.Acceleration are Vector3s;
 	 * User.BoxSize a Vector3 (the box's full size, twice its half extent), User.SphereRadius, User.CylinderRadius and User.CylinderHeight (full) floats
 	 * for the three volume emitters. The emitters "Box" (which a point uses with a zero extent), "Sphere" and
@@ -237,7 +237,7 @@ struct MANTLERUNTIME_API FMantleEffects
 	 * The sprite master materials in Folder: M_MantleSprite_Translucent and M_MantleSprite_Additive. Their
 	 * parameters: texture SpriteTexture; scalars UseTexture (1 with a texture, else a soft round dot), Alpha,
 	 * AlphaEnd, FadeIn and SizeEndScale; vectors Color and ColorEnd (RGB). The material reads each particle's
-	 * normalized age, so colour, opacity and size follow the particle's life without Niagara curves. A flipbook sheet
+	 * normalized age, so color, opacity and size follow the particle's life without Niagara curves. A flipbook sheet
 	 * (#628): the vector SubImages (columns, rows) and the scalar SubImageOverLife (1 plays the frames across a
 	 * particle's life by its normalized age, 0 shows one frame picked by its Particle Random, which the system's
 	 * Initialize Particle writes); the material picks the frame, so no Niagara SubUV setup is involved.
@@ -283,7 +283,7 @@ struct MANTLERUNTIME_API FMantleEffects
 
 	/**
 	 * Settings held to the schema's ranges and pairs, as a system is given them: every number clamped (one that is
-	 * not finite takes the default's), the max of each pair raised to its min (per axis for velocity), the colour's
+	 * not finite takes the default's), the max of each pair raised to its min (per axis for velocity), the color's
 	 * channels held to 0..1.
 	 */
 	static FMantleSpritesSettings ClampSprites(const FMantleSpritesSettings& In);

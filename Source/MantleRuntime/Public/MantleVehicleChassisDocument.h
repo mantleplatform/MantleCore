@@ -36,8 +36,8 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	/** How far to the side a bike's rider steps off, cm: a body-width, not a car's door (seat.exitSideDistance). */
 	static constexpr double BikeExitSideDistance = 100.0;
 	/**
-	 * A car's (a ground chassis on more than two wheels) tyre grip per axle, as shares of its preset's one friction: the steered front's and the rest's, 3.0 and 4.0
-	 * of a 3.5, the built-in sports car's balance. The front's is written as tires.friction and the rear's as tires.rearFriction. A bike's tyres keep their own.
+	 * A car's (a ground chassis on more than two wheels) tire grip per axle, as shares of its preset's one friction: the steered front's and the rest's, 3.0 and 4.0
+	 * of a 3.5, the built-in sports car's balance. The front's is written as tires.friction and the rear's as tires.rearFriction. A bike's tires keep their own.
 	 */
 	static constexpr double FrontTireGripShare = 6.0 / 7.0;
 	static constexpr double RearTireGripShare = 8.0 / 7.0;
@@ -67,14 +67,14 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	/**
 	 * A ground car's handling, baked into Document (#821; a published vehicle's handling is fixed when it is published, so Make adds none of its own): for a
 	 * chassis on more than two wheels that is not a plane, a helicopter or a hovercraft, the steering eases off with speed (steering.speedCurve, the built-in
-	 * sports car's curve: mph, share of the lock) and the tyres grip front and rear as the built-in sports car's do (tires.friction times FrontTireGripShare, and
-	 * tires.rearFriction times RearTireGripShare): at full lock at 100 km/h a tap of the key slid the front tyres past their grip and spun the car, and equal
-	 * tyres let the driven rear go first. Document's tires and steering objects must exist. Nothing for any other chassis.
+	 * sports car's curve: mph, share of the lock) and the tires grip front and rear as the built-in sports car's do (tires.friction times FrontTireGripShare, and
+	 * tires.rearFriction times RearTireGripShare): at full lock at 100 km/h a tap of the key slid the front tires past their grip and spun the car, and equal
+	 * tires let the driven rear go first. Document's tires and steering objects must exist. Nothing for any other chassis.
 	 */
 	static void ComposeGroundHandling(const FMantleChassisSpec& Spec, FJsonObject& Document, TArray<FString>* OutHeld = nullptr);
 
 	/**
-	 * Every number a document made from Spec has to hold to the contract's ranges (Derive's, and a ground car's tyre grip), in plain words for a creator: "The
+	 * Every number a document made from Spec has to hold to the contract's ranges (Derive's, and a ground car's tire grip), in plain words for a creator: "The
 	 * area of a wing, tail or fin would be 120, past what Mantle allows: it is held to 100 (the most)." One line for each thing held, however many of its axes
 	 * or surfaces were. Empty when the document says everything Spec asks for, as it does inside the presets' fit ranges. The silent clamps a published
 	 * vehicle would otherwise carry.

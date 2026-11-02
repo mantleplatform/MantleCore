@@ -7,8 +7,8 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// A helicopter's chassis: two skids of hidden wheels, a main rotor whose hub stands over the centre of mass, a tail boom whose rotor clears the
-// main disc, a grey body of blocks with each rotor's blades on its own bone, and a rotor thrust that follows the mass so the hover collective never moves.
+// A helicopter's chassis: two skids of hidden wheels, a main rotor whose hub stands over the center of mass, a tail boom whose rotor clears the
+// main disc, a gray body of blocks with each rotor's blades on its own bone, and a rotor thrust that follows the mass so the hover collective never moves.
 
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleChassisHelicopterTestPrivate
@@ -83,20 +83,20 @@ bool FMantleChassisHelicopterSpecTest::RunTest(const FString& Parameters)
 	if (TestEqual(TEXT("four skid wheels"), Heli.WheelCount(), 4))
 	{
 		const FName Bones[] = { TEXT("wheel_fl"), TEXT("wheel_fr"), TEXT("wheel_rl"), TEXT("wheel_rr") };
-		const FVector Centres[] = { FVector(120.0, -110.0, 20.0), FVector(120.0, 110.0, 20.0), FVector(-120.0, -110.0, 20.0), FVector(-120.0, 110.0, 20.0) };
+		const FVector Centers[] = { FVector(120.0, -110.0, 20.0), FVector(120.0, 110.0, 20.0), FVector(-120.0, -110.0, 20.0), FVector(-120.0, 110.0, 20.0) };
 		for (int32 Index = 0; Index < 4; ++Index)
 		{
 			TestEqual(*FString::Printf(TEXT("skid wheel %d's bone"), Index), Heli.WheelBone(Index), Bones[Index]);
-			TestTrue(*FString::Printf(TEXT("skid wheel %d's centre"), Index), Near(Heli.WheelCentre(Index), Centres[Index]));
+			TestTrue(*FString::Printf(TEXT("skid wheel %d's center"), Index), Near(Heli.WheelCenter(Index), Centers[Index]));
 		}
 	}
 	TestTrue(TEXT("every skid wheel is braked by its axle"), Heli.Axles.Num() == 2 && Heli.Axles[0].bHandbrake && Heli.Axles[1].bHandbrake);
 
-	// The main rotor's hub is over the centre of mass, so its lift turns nothing while the helicopter is level, and well above the pilot's seat.
+	// The main rotor's hub is over the center of mass, so its lift turns nothing while the helicopter is level, and well above the pilot's seat.
 	const FVector Hub = Heli.MainRotorHub();
-	TestTrue(TEXT("the hub is over the centre of mass"), FMath::IsNearlyEqual(Hub.X, Heli.CenterOfMass.X) && Hub.Y == 0.0);
+	TestTrue(TEXT("the hub is over the center of mass"), FMath::IsNearlyEqual(Hub.X, Heli.CenterOfMass.X) && Hub.Y == 0.0);
 	TestTrue(TEXT("at the rotor's height"), FMath::IsNearlyEqual(Hub.Z, 350.0));
-	TestTrue(TEXT("a metre above the seat"), Hub.Z >= Heli.Seat.Z + 100.0);
+	TestTrue(TEXT("a meter above the seat"), Hub.Z >= Heli.Seat.Z + 100.0);
 	TestTrue(TEXT("on a mast from the cabin's top"), Heli.MastBlock().Min.Z == Heli.BodyTop() && Heli.MastBlock().Max.Z <= Heli.MainRotorBladeBlock(0).Min.Z + 1.0e-6);
 
 	// The tail rotor turns beside the boom's end, clear of the main disc.
@@ -115,7 +115,7 @@ bool FMantleChassisHelicopterSpecTest::RunTest(const FString& Parameters)
 		const double Y = bRight ? 110.0 : -110.0;
 		TestTrue(*FString::Printf(TEXT("the %s skid runs past both its wheels"), bRight ? TEXT("right") : TEXT("left")),
 			Skid.Min.X < -120.0 && Skid.Max.X > 120.0 && Skid.Min.Y < Y && Skid.Max.Y > Y);
-		TestTrue(*FString::Printf(TEXT("the %s skid is just off the ground, below the wheel centres"), bRight ? TEXT("right") : TEXT("left")),
+		TestTrue(*FString::Printf(TEXT("the %s skid is just off the ground, below the wheel centers"), bRight ? TEXT("right") : TEXT("left")),
 			Skid.Min.Z > 0.0 && Skid.Max.Z < Heli.WheelRadius);
 	}
 
@@ -280,7 +280,7 @@ bool FMantleChassisHelicopterScaledTest::RunTest(const FString& Parameters)
 			FMath::IsNearlyEqual(Handling.RotorThrustNewtons / Handling.Mass, Ratio, 1.0e-3 * Ratio));
 		TestEqual(*FString::Printf(TEXT("x%g: the hover collective is the preset's"), Factor), Sized.Helicopter.HoverCollective, Heli.Helicopter.HoverCollective);
 		TestTrue(*FString::Printf(TEXT("x%g: the rotor grows with it"), Factor), FMath::IsNearlyEqual(Sized.Helicopter.RotorDiameter, Factor * Heli.Helicopter.RotorDiameter));
-		TestTrue(*FString::Printf(TEXT("x%g: its hub stays over the centre of mass"), Factor), FMath::IsNearlyEqual(Sized.MainRotorHub().X, Sized.CenterOfMass.X));
+		TestTrue(*FString::Printf(TEXT("x%g: its hub stays over the center of mass"), Factor), FMath::IsNearlyEqual(Sized.MainRotorHub().X, Sized.CenterOfMass.X));
 		TestTrue(*FString::Printf(TEXT("x%g: the tail rotor stays clear of the main disc"), Factor),
 			FMath::Abs(Sized.TailRotorHub().X - Sized.MainRotorHub().X) > 0.5 * (Sized.Helicopter.RotorDiameter + Sized.Helicopter.TailRotorDiameter));
 	}

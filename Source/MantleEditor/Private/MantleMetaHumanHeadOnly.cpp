@@ -121,7 +121,7 @@ bool FMantleMetaHumanHeadOnly::IsCovered(const FMantleStripPlan& Plan, FString& 
 		OutWhy = TEXT("no material on it reads as bare skin");
 		return true;
 	}
-	// A skin slot with clothing modelled into it is not bare (FMantleFusedClothing), whatever it is called.
+	// A skin slot with clothing modeled into it is not bare (FMantleFusedClothing), whatever it is called.
 	for (const FMantleStripSlot& Slot : Plan.Slots)
 	{
 		if (Slot.bSkin && Slot.Fused == EMantleFusedVerdict::FusedClothing)
@@ -503,7 +503,7 @@ bool FMantleMetaHumanHeadOnly::MakeCleanHeadUnrigged(UStaticMesh* StaticSource, 
 bool FMantleMetaHumanHeadOnly::MeasureBuild(UObject& Source, const double StandingHeightCm, FMantleSilhouette& Out, FString& OutError)
 {
 	Out = FMantleSilhouette();
-	// Only bare skin tells the body's shape: clothing, armour and robes (their own materials, or modelled into a skin slot) are left out.
+	// Only bare skin tells the body's shape: clothing, armor and robes (their own materials, or modeled into a skin slot) are left out.
 	USkeletalMesh* Skeletal = Cast<USkeletalMesh>(&Source);
 	UStaticMesh* Static = Cast<UStaticMesh>(&Source);
 	FMantleStripPlan Plan;
@@ -522,7 +522,7 @@ bool FMantleMetaHumanHeadOnly::MeasureBuild(UObject& Source, const double Standi
 	}
 	if (Bare.Num() == 0)
 	{
-		OutError = TEXT("none of its materials is bare skin (it is clothed or armoured), so its build can't be seen");
+		OutError = TEXT("none of its materials is bare skin (it is clothed or armored), so its build can't be seen");
 		return false;
 	}
 	UDynamicMesh* Mesh = NewObject<UDynamicMesh>(GetTransientPackage());
@@ -572,7 +572,7 @@ bool FMantleMetaHumanHeadOnly::MeasureBuild(UObject& Source, const double Standi
 		OutError = TEXT("no bare torso could be found at its chest, waist or hips (they are under clothing)");
 		return false;
 	}
-	Out = FMantleBodySilhouette::Normalised(Cm, StandingHeightCm);
+	Out = FMantleBodySilhouette::Normalized(Cm, StandingHeightCm);
 	return true;
 }
 

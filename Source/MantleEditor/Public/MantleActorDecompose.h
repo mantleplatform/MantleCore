@@ -33,7 +33,7 @@ struct FMantleMirrorResult
 };
 
 /** What one Blueprint class of an actor's hierarchy does at run time: the wired events and functions of its graphs. */
-struct FMantleBlueprintBehaviour
+struct FMantleBlueprintBehavior
 {
 	FString Blueprint;
 	TArray<FString> Events;
@@ -45,7 +45,7 @@ struct FMantleBlueprintBehaviour
  * FMantlePlaceExporter::CollectPrefabParts decomposes such an actor (a Blueprint prefab: a fridge's body, doors
  * and lights) into a Group with one child entity per component; this holds the pieces of that which need no
  * exporter internals: the mirrored copies for negative scales, the Effect properties a particle component
- * translates to, the cheap honest description of a Blueprint's behaviour, and the coverage lines for whatever
+ * translates to, the cheap honest description of a Blueprint's behavior, and the coverage lines for whatever
  * is ignored or dropped. The shared exporter, validator and survey files only call it.
  */
 class MANTLEEDITOR_API FMantleActorDecompose
@@ -85,7 +85,7 @@ public:
 	 */
 	static bool EffectPropsFromJson(const FJsonObject& Properties, FMantleEffectProps& Out);
 
-	// ---- Blueprint behaviour ----
+	// ---- Blueprint behavior ----
 
 	/** Whether Node is an event of a Blueprint graph (an event, a custom event, a bound event, an input event). */
 	static bool IsEventNode(const UEdGraphNode* Node);
@@ -94,20 +94,20 @@ public:
 	static FString EventNameOf(const UEdGraphNode* Node);
 
 	/**
-	 * The behaviour a Blueprint class hierarchy would run: for each Blueprint of Actor's class chain, child first, the
+	 * The behavior a Blueprint class hierarchy would run: for each Blueprint of Actor's class chain, child first, the
 	 * wired events of its event graphs and the wired functions of its function graphs. The construction script is not
 	 * counted: it ran in the editor, and what it made is in the level. False, with Out empty, when there is nothing.
 	 */
-	static bool CollectBlueprintBehaviour(const AActor* Actor, TArray<FMantleBlueprintBehaviour>& Out);
+	static bool CollectBlueprintBehavior(const AActor* Actor, TArray<FMantleBlueprintBehavior>& Out);
 
 	/** "BeginPlay, Tick from parent BP_BaseRotator": the events (or functions) of each Blueprint with some, a parent's marked as such. Pure. */
-	static FString ComposeBlueprintHint(const TArray<FMantleBlueprintBehaviour>& Levels);
+	static FString ComposeBlueprintHint(const TArray<FMantleBlueprintBehavior>& Levels);
 
 	/**
-	 * OutBlueprint is the actor's own Blueprint class, OutDetail the coverage line's text: "its behaviour isn't
-	 * carried (e.g. <hint>)". False when the actor's class has no Blueprint behaviour.
+	 * OutBlueprint is the actor's own Blueprint class, OutDetail the coverage line's text: "its behavior isn't
+	 * carried (e.g. <hint>)". False when the actor's class has no Blueprint behavior.
 	 */
-	static bool DescribeBlueprintBehaviour(const AActor* Actor, FString& OutBlueprint, FString& OutDetail);
+	static bool DescribeBlueprintBehavior(const AActor* Actor, FString& OutBlueprint, FString& OutDetail);
 
 	// ---- Ignored and dropped ----
 
@@ -117,14 +117,14 @@ public:
 	/** A placed Reflection Capture that has no place form, a Plane one (planar reflections): Export leaves it out, and ReportIgnoredActor says so. */
 	static bool IsUnpublishedReflectionCapture(const AActor* Actor);
 
-	/** Editor-only visualisation: an editor-only component, a billboard or an arrow. */
-	static bool IsVisualisation(const UActorComponent* Component);
+	/** Editor-only visualization: an editor-only component, a billboard or an arrow. */
+	static bool IsVisualization(const UActorComponent* Component);
 
 	/** Reports an actor Export leaves out on purpose (a reflection capture with no place form, IsUnpublishedReflectionCapture) as Dropped. True when it was one. */
 	static bool ReportIgnoredActor(const AActor* Actor, FMantleCoverage& Coverage);
 
 	/**
-	 * What an exported actor of Type loses that no entity says: its Blueprint behaviour (Dropped, one line per Blueprint
+	 * What an exported actor of Type loses that no entity says: its Blueprint behavior (Dropped, one line per Blueprint
 	 * class), the editor-only icons of a Blueprint actor (Info, one line per class), and, for a Group made of parts, every
 	 * component that is neither a part nor content a player sees (movement, camera, child actor...) as Dropped by class.
 	 */

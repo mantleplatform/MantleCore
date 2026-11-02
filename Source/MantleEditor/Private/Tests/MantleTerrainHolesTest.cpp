@@ -33,14 +33,14 @@ namespace MantleTerrainHolesTestPrivate
 		return Source;
 	}
 
-	FMantleLandscapeLayerLook MakeFlatLook(const TCHAR* Layer, const FLinearColor Colour)
+	FMantleLandscapeLayerLook MakeFlatLook(const TCHAR* Layer, const FLinearColor Color)
 	{
 		FMantleLandscapeLayerLook Look;
 		Look.Layer = Layer;
-		Look.bHasFlatColour = true;
-		Look.FlatColour = Colour;
+		Look.bHasFlatColor = true;
+		Look.FlatColor = Color;
 		Look.bHasAverage = true;
-		Look.Average = Colour;
+		Look.Average = Color;
 		return Look;
 	}
 
@@ -168,7 +168,7 @@ bool FMantleTerrainUnpaintedGetsDefaultLayerTest::RunTest(const FString& Paramet
 {
 	using namespace MantleTerrainHolesTestPrivate;
 
-	// Nothing painted, no Place Settings entry, and the landscape's material could not be read: plain grey, with a warning.
+	// Nothing painted, no Place Settings entry, and the landscape's material could not be read: plain gray, with a warning.
 	FMantleTerrainSource Bare = MakeFlatSource({});
 	TArray<FMantleTerrainLayerChoice> Layers;
 	TArray<FMantleValidationIssue> Issues;
@@ -180,7 +180,7 @@ bool FMantleTerrainUnpaintedGetsDefaultLayerTest::RunTest(const FString& Paramet
 		TestFalse(TEXT("which is not read from a landscape material"), Layers[0].bDerived);
 	}
 	TestEqual(TEXT("no error"), CountIssues(Issues, EMantleIssueSeverity::Error, TEXT("")), 0);
-	TestEqual(TEXT("a warning that says it is drawn plain grey"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("plain grey")), 1);
+	TestEqual(TEXT("a warning that says it is drawn plain gray"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("plain gray")), 1);
 	TestEqual(TEXT("and an approximated layer line"), static_cast<int64>(Coverage.Count(MantleCoverageCategory::TerrainLayers, EMantleCoverageOutcome::Approximated)), static_cast<int64>(1));
 	if (Layers.Num() == 1)
 	{
@@ -206,7 +206,7 @@ bool FMantleTerrainUnpaintedGetsDefaultLayerTest::RunTest(const FString& Paramet
 	}
 	TestEqual(TEXT("no error"), CountIssues(Issues, EMantleIssueSeverity::Error, TEXT("")), 0);
 	TestEqual(TEXT("the warning says it is baked from the landscape's material"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("baked whole")), 1);
-	TestEqual(TEXT("and not that it is plain grey"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("plain grey")), 0);
+	TestEqual(TEXT("and not that it is plain gray"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("plain gray")), 0);
 	TestEqual(TEXT("with an approximated layer line"), static_cast<int64>(UnreadCoverage.Count(MantleCoverageCategory::TerrainLayers, EMantleCoverageOutcome::Approximated)), static_cast<int64>(1));
 
 	// With the landscape's material read, the first look it states is the ground.
@@ -228,14 +228,14 @@ bool FMantleTerrainUnpaintedGetsDefaultLayerTest::RunTest(const FString& Paramet
 	return true;
 }
 
-// The plain grey ground an unpainted landscape gets is not read from its material (bDerived false), yet Export names it: Gather must
+// The plain gray ground an unpainted landscape gets is not read from its material (bDerived false), yet Export names it: Gather must
 // upload it, or Publish finds it "exported but not uploaded" until it gives up with "the level kept changing" (HellCage, ValleyofGuldur).
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleTerrainPlainGreyLayerIsGatheredTest,
-	"Mantle.Editor.Terrain.PlainGreyLayerIsGathered",
+	FMantleTerrainPlainGrayLayerIsGatheredTest,
+	"Mantle.Editor.Terrain.PlainGrayLayerIsGathered",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleTerrainPlainGreyLayerIsGatheredTest::RunTest(const FString& Parameters)
+bool FMantleTerrainPlainGrayLayerIsGatheredTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleTerrainHolesTestPrivate;
 
@@ -252,14 +252,14 @@ bool FMantleTerrainPlainGreyLayerIsGatheredTest::RunTest(const FString& Paramete
 	FMantlePlaceDependencies Dependencies;
 	Dependencies.AddTerrainLayerMaterials(Layers, TEXT("Landscape"));
 	const FString Key = FMantlePlaceAssets::MaterialKey(Layers[0].Material);
-	TestTrue(TEXT("the grey layer's material is gathered, as Export names it"),
+	TestTrue(TEXT("the gray layer's material is gathered, as Export names it"),
 		Dependencies.Materials.ContainsByPredicate([&Key](const FMantleGatheredMaterial& Gathered) { return Gathered.Key == Key; }));
 	return true;
 }
 
 // A painted layer whose landscape material could not be read (MedievalVillage: no Landscape Layer Blend feeding Base Color) is drawn with that
 // material baked whole, with a warning, instead of stopping the publish, and Gather uploads the material baked over the same UV range. With
-// no landscape material it is plain grey, as before.
+// no landscape material it is plain gray, as before.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleTerrainUnreadableLayersBakeLandscapeMaterialTest,
 	"Mantle.Editor.Terrain.UnreadableLayersBakeLandscapeMaterial",
@@ -282,7 +282,7 @@ bool FMantleTerrainUnreadableLayersBakeLandscapeMaterialTest::RunTest(const FStr
 	TestTrue(TEXT("painted layers with an unreadable material are not refused"), FMantleTerrainExport::ChooseLayers(nullptr, Source, TEXT("Landscape"), Layers, Issues, &Coverage));
 	TestEqual(TEXT("no error"), CountIssues(Issues, EMantleIssueSeverity::Error, TEXT("")), 0);
 	TestEqual(TEXT("a warning for each layer that it is baked from the landscape's material"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("baked whole")), 2);
-	TestEqual(TEXT("none says plain grey"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("plain grey")), 0);
+	TestEqual(TEXT("none says plain gray"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("plain gray")), 0);
 	TestEqual(TEXT("and an approximated layer line for each"), static_cast<int64>(Coverage.Count(MantleCoverageCategory::TerrainLayers, EMantleCoverageOutcome::Approximated)), static_cast<int64>(2));
 	if (!TestEqual(TEXT("both layers are kept"), Layers.Num(), 2))
 	{
@@ -306,29 +306,29 @@ bool FMantleTerrainUnreadableLayersBakeLandscapeMaterialTest::RunTest(const FStr
 	{
 		TestEqual(TEXT("once"), Dependencies.Materials.Num(), 1);
 		TestEqual(TEXT("baked over the layers' range"), Gathered->BakeSurface().UvRange, Range);
-		TestTrue(TEXT("with white vertex colours: a landscape has none"), Gathered->BakeSurface().VertexColor == FColor::White);
+		TestTrue(TEXT("with white vertex colors: a landscape has none"), Gathered->BakeSurface().VertexColor == FColor::White);
 	}
 
-	// No landscape material: plain grey, and the grey materials are gathered, as Export names them.
+	// No landscape material: plain gray, and the gray materials are gathered, as Export names them.
 	Source.LandscapeMaterial = nullptr;
 	Layers.Reset();
 	Issues.Reset();
 	TestTrue(TEXT("without a landscape material it is still not refused"), FMantleTerrainExport::ChooseLayers(nullptr, Source, TEXT("Landscape"), Layers, Issues));
-	TestEqual(TEXT("a plain grey warning for each layer"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("plain grey")), 2);
+	TestEqual(TEXT("a plain gray warning for each layer"), CountIssues(Issues, EMantleIssueSeverity::Warning, TEXT("plain gray")), 2);
 	if (!TestEqual(TEXT("both layers are kept"), Layers.Num(), 2))
 	{
 		return false;
 	}
-	FMantlePlaceDependencies Grey;
-	Grey.AddTerrainLayerMaterials(Layers, TEXT("Landscape"));
+	FMantlePlaceDependencies Gray;
+	Gray.AddTerrainLayerMaterials(Layers, TEXT("Landscape"));
 	for (const FMantleTerrainLayerChoice& Layer : Layers)
 	{
 		TestNotNull(TEXT("each with a material"), Layer.Material);
 		TestFalse(TEXT("which is not read from a landscape material"), Layer.bDerived);
 		TestFalse(TEXT("nor the landscape's material baked whole"), Layer.bLandscapeMaterialBake);
-		const FString GreyKey = FMantlePlaceAssets::MaterialKey(Layer.Material);
-		TestTrue(TEXT("each grey material is gathered"),
-			Grey.Materials.ContainsByPredicate([&GreyKey](const FMantleGatheredMaterial& Entry) { return Entry.Key == GreyKey; }));
+		const FString GrayKey = FMantlePlaceAssets::MaterialKey(Layer.Material);
+		TestTrue(TEXT("each gray material is gathered"),
+			Gray.Materials.ContainsByPredicate([&GrayKey](const FMantleGatheredMaterial& Entry) { return Entry.Key == GrayKey; }));
 	}
 	return true;
 }

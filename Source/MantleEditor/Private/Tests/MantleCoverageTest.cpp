@@ -74,7 +74,7 @@ namespace MantleCoverageTestPrivate
 		return Root;
 	}
 
-	/** Whether any validation issue of the given severity is about the actor labelled Label. */
+	/** Whether any validation issue of the given severity is about the actor labeled Label. */
 	bool HasIssue(const FMantleValidationResult& Validation, const FString& Label, EMantleIssueSeverity Severity)
 	{
 		return Validation.Issues.ContainsByPredicate([&](const FMantleValidationIssue& Issue)
@@ -408,7 +408,7 @@ bool FMantleCoverageExportTest::RunTest(const FString& Parameters)
 		Crate->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
 	}
 	Test.Spawn<APointLight>(TEXT("Lamp"));
-	// A fog the creator tuned in a way the place has no setting for (its density, falloff, colours and start are carried): it is dropped (an untouched one is kept, see the Mantle.Editor.EnvironmentExport tests).
+	// A fog the creator tuned in a way the place has no setting for (its density, falloff, colors and start are carried): it is dropped (an untouched one is kept, see the Mantle.Editor.EnvironmentExport tests).
 	if (AExponentialHeightFog* Mist = Test.Spawn<AExponentialHeightFog>(TEXT("Mist")))
 	{
 		Mist->GetComponent()->FogMaxOpacity = 0.5f;

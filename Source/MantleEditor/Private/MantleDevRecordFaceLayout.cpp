@@ -1,7 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 //
 // Maintainer command: Mantle.Dev.RecordFaceLayout [face=<package path of a built face>] [out=<path>]
-// Records, once, the layout of a built MetaHuman face (Epic's UE Optimized / Medium LOD0, 6872 triangles): quantised UVs, triangles and render
+// Records, once, the layout of a built MetaHuman face (Epic's UE Optimized / Medium LOD0, 6872 triangles): quantized UVs, triangles and render
 // sections in the built order, no geometry. Default source is the converted Aera's face. Writes the plugin-only resource
 // Resources/FaceLayout/face-layout-v1.json that FMantleFaceLayout::Reorder puts MetaHuman Creator's in-memory faces into.
 #include "MantleBodyTopologyData.h"
@@ -57,7 +57,7 @@ namespace MantleDevRecordFaceLayoutPrivate
 			UE_LOG(LogMantleRecordFaceLayout, Display, TEXT("MANTLE_FACE_LAYOUT section %s: vertices %d..%d, %d triangles"), *Section.Material, Section.FirstVertex,
 				Section.FirstVertex + Section.NumVertices - 1, Section.NumTriangles);
 		}
-		// Repeated UVs per section: the vertices the match tells apart by their neighbours.
+		// Repeated UVs per section: the vertices the match tells apart by their neighbors.
 		for (const FMantleFaceLayoutSection& Section : Layout.Sections)
 		{
 			TMap<FIntPoint, int32> Counts;

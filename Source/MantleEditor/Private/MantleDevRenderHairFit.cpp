@@ -5,7 +5,7 @@
 // which runs the automatic head fit) and renders the result as the catalog thumbnail does (FMantleCosmeticThumbnail, the engine's
 // thumbnail scene): the head it was fitted to with the hair as authored ("before") and as fitted ("after"), from the front, a
 // three-quarter view, the side and the back, into <Directory>/<Label>_{before,after}_{front,angled,side,back}.png. The head and the
-// hair are the geometry the export used (Package.HairHeadFitMeshes), drawn in one mesh (vertex colours, which the engine's vertex colour material may or may not show).
+// hair are the geometry the export used (Package.HairHeadFitMeshes), drawn in one mesh (vertex colors, which the engine's vertex color material may or may not show).
 // Nothing is saved or uploaded. Logs MANTLE_RENDER_HAIRFIT lines: the notes, the fit's words and each picture.
 #include "MantleAvatarContract.h"
 #include "MantleCosmeticExport.h"

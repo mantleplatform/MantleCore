@@ -20,7 +20,7 @@ struct MANTLERUNTIME_API FMantleVoxelStroke
 		Fill,
 		/** Pulls density toward a level floor at PlaneZ. */
 		Flatten,
-		/** Averages each voxel with its six neighbours. */
+		/** Averages each voxel with its six neighbors. */
 		Smooth,
 		/** Changes the solid voxels' material, not the shape. */
 		Paint,
@@ -38,7 +38,7 @@ struct MANTLERUNTIME_API FMantleVoxelStroke
 	/** 1 to 100. */
 	uint8 Strength = 50;
 	int32 Radius = 2 * Fixed;
-	FIntVector Centre = FIntVector::ZeroValue;
+	FIntVector Center = FIntVector::ZeroValue;
 	/** Flatten: the floor's height. */
 	int32 PlaneZ = 0;
 

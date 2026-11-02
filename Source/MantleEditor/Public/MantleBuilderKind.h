@@ -41,7 +41,7 @@ struct FMantleBuilderPointRole
 	/** The parents this role may have; empty is any. */
 	TArray<FName> AllowedParents;
 
-	/** The role this mirrors into across the mesh's centre line (Hand_L and Hand_R, exits, driver and passenger); NAME_None for none. */
+	/** The role this mirrors into across the mesh's center line (Hand_L and Hand_R, exits, driver and passenger); NAME_None for none. */
 	FName MirrorRole;
 };
 
@@ -63,7 +63,7 @@ struct FMantleBuilderOverlayLine
 	FLinearColor Color = FLinearColor::White;
 };
 
-/** A small labelled marker (a sphere and a name) a kind asks the viewport to draw, in the mesh's own unscaled space. */
+/** A small labeled marker (a sphere and a name) a kind asks the viewport to draw, in the mesh's own unscaled space. */
 struct FMantleBuilderOverlayMarker
 {
 	FVector Location = FVector::ZeroVector;

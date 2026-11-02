@@ -879,7 +879,7 @@ void FMantleAssetStore::Pump()
 			TSharedRef<FJob>* Found = Jobs.Find(Hash);
 			if (!Found || (*Found)->State != EJobState::Queued || (*Found)->Urls.Num() == 0)
 			{
-				continue; // cancelled, or a duplicate entry for a job already started
+				continue; // canceled, or a duplicate entry for a job already started
 			}
 
 			const TSharedRef<FJob> Job = *Found;
@@ -1189,7 +1189,7 @@ void FMantleAssetStore::Deliver(const TSharedRef<FJob>& Job, bool bFromCache, in
 		}
 		for (const FWaiter& Waiter : Delivered)
 		{
-			// Cancelled after delivery was posted: stay silent, as Cancel promises.
+			// Canceled after delivery was posted: stay silent, as Cancel promises.
 			if (!Self->TakeRequest(Waiter.RequestId))
 			{
 				continue;

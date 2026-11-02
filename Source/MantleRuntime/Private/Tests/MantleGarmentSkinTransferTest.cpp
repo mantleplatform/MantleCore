@@ -130,27 +130,27 @@ namespace MantleGarmentSkinTransferTestPrivate
 
 	/**
 	 * The rim skinned with neck_01 tipped forward by Degrees about the X axis through (0, 0, -3) (spine_04 stays):
-	 * the largest bump in its radius about the posed rim's centre, |r(i) - (r(i - 1) + r(i + 1)) / 2|, in cm.
+	 * the largest bump in its radius about the posed rim's center, |r(i) - (r(i - 1) + r(i + 1)) / 2|, in cm.
 	 */
 	float PosedRimBump(const FMantleSkinnedMeshLOD& LOD, const float Degrees)
 	{
 		const FQuat4f Tip(FVector3f(1.0f, 0.0f, 0.0f), FMath::DegreesToRadians(Degrees));
 		const FVector3f Pivot(0.0f, 0.0f, -3.0f);
 		TArray<FVector3f> Posed;
-		FVector3f Centre = FVector3f::ZeroVector;
+		FVector3f Center = FVector3f::ZeroVector;
 		for (int32 Index = 0; Index < RingCount; ++Index)
 		{
 			const FVector3f P = LOD.Positions[Index];
 			const float Neck = NeckShare(LOD, Index);
 			Posed.Add((1.0f - Neck) * P + Neck * (Pivot + Tip.RotateVector(P - Pivot)));
-			Centre += Posed.Last() / static_cast<float>(RingCount);
+			Center += Posed.Last() / static_cast<float>(RingCount);
 		}
 		float Bump = 0.0f;
 		for (int32 Index = 0; Index < RingCount; ++Index)
 		{
-			const float Here = FVector3f::Dist(Posed[Index], Centre);
-			const float Before = FVector3f::Dist(Posed[(Index + RingCount - 1) % RingCount], Centre);
-			const float After = FVector3f::Dist(Posed[(Index + 1) % RingCount], Centre);
+			const float Here = FVector3f::Dist(Posed[Index], Center);
+			const float Before = FVector3f::Dist(Posed[(Index + RingCount - 1) % RingCount], Center);
+			const float After = FVector3f::Dist(Posed[(Index + 1) % RingCount], Center);
 			Bump = FMath::Max(Bump, FMath::Abs(Here - 0.5f * (Before + After)));
 		}
 		return Bump;
@@ -215,7 +215,7 @@ bool FMantleGarmentSkinTransferCollarTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("at the face's edge the vertex sums to 255"), Sum(Edge), 255);
 	TestTrue(TEXT("and mostly the body's"), Edge.FindRef(Spine04) > 230 && Edge.FindRef(Neck01) > 0);
 
-	// Without the face the same garment stays on the chest, the old behaviour.
+	// Without the face the same garment stays on the chest, the old behavior.
 	FMantleSkinnedMeshLOD BodyOnly = Triangle(1.0f, 1, { Root }, { 255 });
 	TestTrue(TEXT("the body-only transfer runs"), FMantleGarmentSkinTransfer::Transfer(BodyOnly, GarmentBones, Authored, Wearer));
 	TestEqual(TEXT("body only: the collar vertex is all spine_04"), WeightsOf(BodyOnly, 0).FindRef(Spine04), 255);
@@ -269,7 +269,7 @@ bool FMantleGarmentSkinTransferRingTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("a face share per vertex"), FaceShare.Num(), 2 * RingCount);
 	TestEqual(TEXT("the unrigged collar grows to its two bones"), Garment.NumInfluences, 2);
-	TestEqual(TEXT("every vertex took some of the face's weights, the untracked ones through their neighbours"), Stats.FromFace, 2 * RingCount);
+	TestEqual(TEXT("every vertex took some of the face's weights, the untracked ones through their neighbors"), Stats.FromFace, 2 * RingCount);
 
 	float LargestStep = 0.0f;
 	float Lowest = 1.0f;
@@ -282,8 +282,8 @@ bool FMantleGarmentSkinTransferRingTest::RunTest(const FString& Parameters)
 		Mean += Neck / static_cast<float>(RingCount);
 		TestEqual(FString::Printf(TEXT("rim vertex %d sums to 255"), Index), Sum(WeightsOf(Garment, Index)), 255);
 	}
-	AddInfo(FString::Printf(TEXT("rim neck_01 share: mean %.3f, lowest %.3f, largest step between neighbours %.3f"), Mean, Lowest, LargestStep));
-	TestTrue(TEXT("neighbouring rim vertices get about the same neck share"), LargestStep < 0.15f);
+	AddInfo(FString::Printf(TEXT("rim neck_01 share: mean %.3f, lowest %.3f, largest step between neighbors %.3f"), Mean, Lowest, LargestStep));
+	TestTrue(TEXT("neighboring rim vertices get about the same neck share"), LargestStep < 0.15f);
 	TestTrue(TEXT("the collar still follows the neck: a substantial neck share on average"), Mean > 0.3f);
 	TestTrue(TEXT("and on every rim vertex, the untracked ones too"), Lowest > 0.25f);
 

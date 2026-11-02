@@ -91,8 +91,8 @@ namespace MantleGlowMaterialPrivate
 		}
 	};
 
-	/** A colour node's value as Context sets it: a Vector Parameter's (the instance's own, else its default) or a Constant3Vector's. */
-	bool ColourOf(const UMaterialExpression* Expression, const UMaterialInterface* Context, FLinearColor& Out)
+	/** A color node's value as Context sets it: a Vector Parameter's (the instance's own, else its default) or a Constant3Vector's. */
+	bool ColorOf(const UMaterialExpression* Expression, const UMaterialInterface* Context, FLinearColor& Out)
 	{
 		if (const UMaterialExpressionVectorParameter* Parameter = Cast<UMaterialExpressionVectorParameter>(Expression))
 		{
@@ -135,11 +135,11 @@ namespace MantleGlowMaterialPrivate
 	}
 
 	/**
-	 * The first colour node in pre-order, through the material's own graph (not into functions); only a Vector Parameter
+	 * The first color node in pre-order, through the material's own graph (not into functions); only a Vector Parameter
 	 * when bParametersOnly (a tint is an exposed parameter far more often than a constant, which is as often a zero or a
 	 * one used in the maths).
 	 */
-	const UMaterialExpression* FirstColour(const FExpressionInput* Input, const UMaterialInterface* Context, const bool bParametersOnly,
+	const UMaterialExpression* FirstColor(const FExpressionInput* Input, const UMaterialInterface* Context, const bool bParametersOnly,
 		TSet<const UMaterialExpression*>& Seen, int32& Budget)
 	{
 		const UMaterialExpression* Expression = Through(Input);
@@ -149,14 +149,14 @@ namespace MantleGlowMaterialPrivate
 		}
 		Seen.Add(Expression);
 		FLinearColor Unused;
-		if ((!bParametersOnly || Expression->IsA<UMaterialExpressionVectorParameter>()) && ColourOf(Expression, Context, Unused))
+		if ((!bParametersOnly || Expression->IsA<UMaterialExpressionVectorParameter>()) && ColorOf(Expression, Context, Unused))
 		{
 			return Expression;
 		}
 		UMaterialExpression* Mutable = const_cast<UMaterialExpression*>(Expression);
 		for (FExpressionInputIterator It{ Mutable }; It; ++It)
 		{
-			if (const UMaterialExpression* Found = FirstColour(It.Input, Context, bParametersOnly, Seen, Budget))
+			if (const UMaterialExpression* Found = FirstColor(It.Input, Context, bParametersOnly, Seen, Budget))
 			{
 				return Found;
 			}
@@ -189,7 +189,7 @@ namespace MantleGlowMaterialPrivate
 	}
 
 	/**
-	 * The scalar the colour Target is multiplied by: the first Multiply (in pre-order from Input) with Target on one side
+	 * The scalar the color Target is multiplied by: the first Multiply (in pre-order from Input) with Target on one side
 	 * and a constant or Scalar Parameter on the other.
 	 */
 	bool IntensityOf(const FExpressionInput* Input, const UMaterialExpression* Target, const UMaterialInterface* Context,
@@ -235,7 +235,7 @@ void FMantleSeeThroughGlass::Glow(double (&Out)[3]) const
 	}
 }
 
-bool FMantleGlowMaterial::RecogniseSceneColourGlass(const UMaterialInterface* Context, const FExpressionInput* Emissive, FMantleSeeThroughGlass& Out)
+bool FMantleGlowMaterial::RecognizeSceneColorGlass(const UMaterialInterface* Context, const FExpressionInput* Emissive, FMantleSeeThroughGlass& Out)
 {
 	using namespace MantleGlowMaterialPrivate;
 
@@ -252,19 +252,19 @@ bool FMantleGlowMaterial::RecogniseSceneColourGlass(const UMaterialInterface* Co
 	}
 	Out.bFound = true;
 
-	const UMaterialExpression* Colour = nullptr;
+	const UMaterialExpression* Color = nullptr;
 	for (const bool bParametersOnly : { true, false })
 	{
 		TSet<const UMaterialExpression*> Seen;
 		int32 Budget = NodeBudget;
-		Colour = FirstColour(Emissive, Context, bParametersOnly, Seen, Budget);
-		if (Colour)
+		Color = FirstColor(Emissive, Context, bParametersOnly, Seen, Budget);
+		if (Color)
 		{
 			break;
 		}
 	}
 	FLinearColor Value;
-	if (Colour && ColourOf(Colour, Context, Value))
+	if (Color && ColorOf(Color, Context, Value))
 	{
 		Out.bTint = true;
 		Out.Tint[0] = FMath::Max(Value.R, 0.0f);
@@ -273,7 +273,7 @@ bool FMantleGlowMaterial::RecogniseSceneColourGlass(const UMaterialInterface* Co
 		TSet<const UMaterialExpression*> Visited;
 		int32 IntensityBudget = NodeBudget;
 		double Intensity = 1.0;
-		if (IntensityOf(Emissive, Colour, Context, Visited, IntensityBudget, Intensity) && FMath::IsFinite(Intensity))
+		if (IntensityOf(Emissive, Color, Context, Visited, IntensityBudget, Intensity) && FMath::IsFinite(Intensity))
 		{
 			Out.Intensity = FMath::Max(Intensity, 0.0);
 		}

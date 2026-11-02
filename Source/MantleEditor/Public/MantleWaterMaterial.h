@@ -56,7 +56,7 @@ struct MANTLEEDITOR_API FMantleWaterBake
 
 	/**
 	 * The material is already Single Layer Water (a Water plugin body's material, GhzGarage/mantle#818): opaque in blend mode, with no
-	 * depth fade to read. Opacity is 1 and read, so it publishes with the water key; the colour and normals are read as for a fade.
+	 * depth fade to read. Opacity is 1 and read, so it publishes with the water key; the color and normals are read as for a fade.
 	 */
 	bool bSingleLayer = false;
 
@@ -74,11 +74,11 @@ struct MANTLEEDITOR_API FMantleWaterBake
 	double Opacity = 0.0;
 
 	/** Opacity is what the graph gives; false means the estimate stands in (Why says what stopped the read). */
-	bool bOpacityRead = false;
+	bool bOpacitiread = false;
 
-	/** The base colour at the far end of the fade (the deep colour), linear 0..1; set only when the graph evaluated to a colour. */
-	bool bColour = false;
-	double Colour[3] = { 0.0, 0.0, 0.0 };
+	/** The base color at the far end of the fade (the deep color), linear 0..1; set only when the graph evaluated to a color. */
+	bool bColor = false;
+	double Color[3] = { 0.0, 0.0, 0.0 };
 
 	/**
 	 * The water's panned normal as a document without the water key can carry it (translucent water, or a client that
@@ -107,7 +107,7 @@ struct MANTLEEDITOR_API FMantleWaterBake
 	 */
 	double NormalScale = 1.0;
 
-	/** The depth fade's fade distance, in centimetres, when the graph has a Depth Fade node and its distance could be read. */
+	/** The depth fade's fade distance, in centimeters, when the graph has a Depth Fade node and its distance could be read. */
 	bool bFadeDistance = false;
 	double FadeDistanceCm = 0.0;
 
@@ -116,11 +116,11 @@ struct MANTLEEDITOR_API FMantleWaterBake
 
 	/**
 	 * A far-end opacity at or above this (read from the graph) publishes the water opaque: Mantle's translucent
-	 * materials get no screen-space or Lumen reflections, so a near-opaque river would render as a flat dark colour.
+	 * materials get no screen-space or Lumen reflections, so a near-opaque river would render as a flat dark color.
 	 */
 	static constexpr double OpaqueAtOrAbove = 0.9;
 
-	bool PublishesOpaque() const { return bFound && bOpacityRead && Opacity >= OpaqueAtOrAbove; }
+	bool PublishesOpaque() const { return bFound && bOpacitiread && Opacity >= OpaqueAtOrAbove; }
 };
 
 /** Reads a depth-faded translucent material's far end (FMantleWaterBake). */
@@ -139,13 +139,13 @@ struct MANTLEEDITOR_API FMantleWaterMaterial
 	 * parameters (as Context sets them), Add, Subtract, Multiply, Divide, Min, Max, Lerp, Clamp, Saturate,
 	 * OneMinus, Abs, Power, Component Mask, Append, reroutes and static switches; anything else (a texture
 	 * sample, Time, a function) stops that read. Two more are read for a pool's foam (#628): Distance To Nearest Surface is
-	 * far (no shoreline; bShorelineFoamDropped), and an If whose A is a product of colour or mask textures (0..1) against a
-	 * B at or above 1 takes its A-less-than-B branch. BaseColor is read the same way for the deep colour, and also models
-	 * World, Object and Camera Position (the camera above the water) for a Scene Depth colour gradient. Normal (may be
+	 * far (no shoreline; bShorelineFoamDropped), and an If whose A is a product of color or mask textures (0..1) against a
+	 * B at or above 1 takes its A-less-than-B branch. BaseColor is read the same way for the deep color, and also models
+	 * World, Object and Camera Position (the camera above the water) for a Scene Depth color gradient. Normal (may be
 	 * null) is read for its panned samples (FMantleWaterBake::bNormalPanned): a Lerp with a constant alpha takes the side it
 	 * weights, and the engine's Motion_4WayChaos_Normal is two world-laid layers panning in opposite directions.
 	 */
-	static bool Recognise(const UMaterialInterface* Context, const FExpressionInput* Opacity, const FExpressionInput* BaseColor, const FExpressionInput* Normal, FMantleWaterBake& Out);
+	static bool Recognize(const UMaterialInterface* Context, const FExpressionInput* Opacity, const FExpressionInput* BaseColor, const FExpressionInput* Normal, FMantleWaterBake& Out);
 
 	/** Whether Input's graph reaches a Depth Fade node, a Scene Depth node or a depth fade function (a fade by what is behind the surface). */
 	static bool FadesByDepth(const FExpressionInput* Input);
@@ -153,28 +153,28 @@ struct MANTLEEDITOR_API FMantleWaterMaterial
 	/**
 	 * Out.bFound for a material whose shading model is Single Layer Water (GhzGarage/mantle#818): it is water already, so there is no
 	 * fade to find; opacity is 1 and the water publishes opaque with the water key. BaseColor and Normal (either may be null: a material
-	 * built with Set Material Attributes has no roots) are read as Recognise reads them, and the Single Layer Water output node's
+	 * built with Set Material Attributes has no roots) are read as Recognize reads them, and the Single Layer Water output node's
 	 * absorption and scattering, when its graph evaluates, become Out.Volume. What the graph does not give, the Water plugin's named
-	 * parameters do ("Absorption", "Scattering", "Water Albedo", as the instance chain sets them), and the colour falls back to
-	 * ClearLakeColour, so the water always has a volume and a surface colour.
+	 * parameters do ("Absorption", "Scattering", "Water Albedo", as the instance chain sets them), and the color falls back to
+	 * ClearLakeColor, so the water always has a volume and a surface color.
 	 */
-	static bool RecogniseSingleLayer(const UMaterialInterface* Context, const FExpressionInput* BaseColor, const FExpressionInput* Normal, FMantleWaterBake& Out);
+	static bool RecognizeSingleLayer(const UMaterialInterface* Context, const FExpressionInput* BaseColor, const FExpressionInput* Normal, FMantleWaterBake& Out);
 
-	/** The deep colour a Single Layer Water material gets when neither its graph nor its parameters give one: a clear lake's teal (linear RGB). */
-	static constexpr double ClearLakeColour[3] = { 0.02, 0.08, 0.10 };
+	/** The deep color a Single Layer Water material gets when neither its graph nor its parameters give one: a clear lake's teal (linear RGB). */
+	static constexpr double ClearLakeColor[3] = { 0.02, 0.08, 0.10 };
 
 	/** The fade distance the coefficients assume when the source has none (a Scene Depth fade, Camera Depth Fade). */
 	static constexpr double DefaultFadeDistanceCm = 100.0;
 
 	/**
-	 * The water key's scattering and absorption (1/cm) from a deep colour C (linear RGB, 0..1) and a fade distance D (cm;
+	 * The water key's scattering and absorption (1/cm) from a deep color C (linear RGB, 0..1) and a fade distance D (cm;
 	 * DefaultFadeDistanceCm when D is not above 0). A starting point, not a measurement: the source's fade is a
 	 * see-through edge and Single Layer Water's volume is physical, so the two are tied by "about three
-	 * extinction lengths across the fade distance", and the deep colour is the volume's albedo:
+	 * extinction lengths across the fade distance", and the deep color is the volume's albedo:
 	 *   sigma = min(3 / D, 1)            the extinction (the schema's coefficients stop at 1)
-	 *   albedo_c = clamp(C_c, 0, 0.9)    the deep colour itself: a boosted albedo turned the Spruce river's dark
+	 *   albedo_c = clamp(C_c, 0, 0.9)    the deep color itself: a boosted albedo turned the Spruce river's dark
 	 *                                    teal (0.024) into bright cyan, where the editor shows it near black
 	 *   scattering_c = sigma * albedo_c  absorption_c = sigma * (1 - albedo_c)
 	 */
-	static FMantleWaterCoefficients Coefficients(const double (&Colour)[3], double FadeDistanceCm);
+	static FMantleWaterCoefficients Coefficients(const double (&Color)[3], double FadeDistanceCm);
 };

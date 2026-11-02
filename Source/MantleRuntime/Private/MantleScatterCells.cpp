@@ -92,7 +92,7 @@ struct UMantleScatterCellsComponent::FShared
 {
 	FMantleScatterParams Params;
 	FMantleScatterGenerateOptions Options;
-	std::atomic<bool> bCancelled{ false };
+	std::atomic<bool> bCanceled{ false };
 
 	TQueue<FBuiltCell, EQueueMode::Mpsc> Results;
 };
@@ -136,10 +136,10 @@ void UMantleScatterCellsComponent::OnComponentDestroyed(const bool bDestroyingHi
 {
 	if (Shared.IsValid())
 	{
-		Shared->bCancelled.store(true);
+		Shared->bCanceled.store(true);
 	}
 	// The cells' mesh components belong to the actor, which outlives this component (ClearScatter, a settings change), so they are taken
-	// down here; the ones still being read come back to a cancelled task and are never counted.
+	// down here; the ones still being read come back to a canceled task and are never counted.
 	ReleaseAll();
 	MantleScatterCellsPrivate::GBudget.LiveInstances -= LiveInstances;
 	MantleScatterCellsPrivate::GBudget.InFlight -= InFlight;
@@ -376,7 +376,7 @@ void UMantleScatterCellsComponent::StartGenerating(const FWanted& Want)
 	const int32 ForGeneration = Generation;
 	UE::Tasks::Launch(TEXT("MantleScatterCell"), [Work, Grid, Coord, ForGeneration]()
 	{
-		if (Work->bCancelled.load())
+		if (Work->bCanceled.load())
 		{
 			return;
 		}

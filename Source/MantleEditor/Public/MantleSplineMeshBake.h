@@ -80,7 +80,7 @@ struct MANTLEEDITOR_API FMantleSplineBakeResult
  * (USplineMeshComponent::PropagateSplineDeformationToMesh, what Merge Actors uses), merged by owning actor
  * and material set, and cut into meshes within the place mesh limits.
  *
- * What a baked mesh keeps: the deformed visible triangles, tangents, UVs, vertex colours and the effective
+ * What a baked mesh keeps: the deformed visible triangles, tangents, UVs, vertex colors and the effective
  * material of each slot. Collision is the visible triangles (complex as simple), where the source
  * components collide at all.
  */

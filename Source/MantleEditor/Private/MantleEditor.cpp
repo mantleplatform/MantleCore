@@ -90,7 +90,7 @@ namespace
 	}
 
 	/** Validation issues, phrased for a person, capped so a broken level does not produce a wall of text. */
-	FText SummariseIssues(const FMantleValidationResult& Validation, int32 MaxLines = 12)
+	FText SummarizeIssues(const FMantleValidationResult& Validation, int32 MaxLines = 12)
 	{
 		if (Validation.Issues.Num() == 0)
 		{
@@ -140,7 +140,7 @@ namespace
 				LibraryId.IsEmpty() ? TEXT("(uploaded when you publish; the Publish log gives its id)") : *LibraryId);
 		}
 
-		FMessageDialog::Open(EAppMsgType::Ok, SummariseIssues(Validation));
+		FMessageDialog::Open(EAppMsgType::Ok, SummarizeIssues(Validation));
 	}
 
 	/** Makes Actor the only selected actor in the level editor. */
@@ -272,7 +272,7 @@ namespace
 
 	void OnSaveToCloud()
 	{
-		// Just in time (#94): no token, no upload. Asked before anything else so a cancelled
+		// Just in time (#94): no token, no upload. Asked before anything else so a canceled
 		// sign-in costs the creator nothing.
 		if (!FMantleCreatorSignIn::EnsureSignedIn(LOCTEXT("SaveSignInReason", "Sign in to save this place to Mantle.")))
 		{
@@ -284,7 +284,7 @@ namespace
 
 	/**
 	 * Asks for this revision's notes before publishing, showing the thumbnail the publish will take (#786) in the shared
-	 * Thumbnail section (#124): Automatic, Choose the angle or a Custom image. Empty notes are fine; false means the creator cancelled, and so nothing is published.
+	 * Thumbnail section (#124): Automatic, Choose the angle or a Custom image. Empty notes are fine; false means the creator canceled, and so nothing is published.
 	 */
 	bool AskForRevisionNotes(UWorld* World, FString& OutNotes)
 	{
@@ -324,7 +324,7 @@ namespace
 					.HintText(LOCTEXT("PublishNotesHint", "Revision notes (optional)"))
 					.AutoWrapText(true)
 				]
-				// #786, #124: the catalogue picture this publish takes: the Thumbnail section every Mantle uploader shows.
+				// #786, #124: the catalog picture this publish takes: the Thumbnail section every Mantle uploader shows.
 				+ SVerticalBox::Slot()
 				.AutoHeight()
 				.Padding(0.0f, 12.0f, 0.0f, 0.0f)
@@ -509,7 +509,7 @@ namespace
 			FMessageDialog::Open(EAppMsgType::Ok,
 				LOCTEXT("ConvertVehicleNoMesh",
 					"Select the vehicle's skeletal mesh in the Content Browser first: its body, with a bone at each wheel "
-					"centre named like Wheel_FL, Wheel_FR, Wheel_BL and Wheel_BR. Or select a vehicle placed in the level "
+					"center named like Wheel_FL, Wheel_FR, Wheel_BL and Wheel_BR. Or select a vehicle placed in the level "
 					"(a car Blueprint): the meshes attached to its body come along as its parts."));
 			return;
 		}
@@ -581,7 +581,7 @@ namespace
 		const FText Summary = FText::Format(
 			LOCTEXT("PreviewSummary", "{0}\n\n{1}"),
 			FText::FromString(FMantlePlacePreview::DescribeForCreator(Preview)),
-			SummariseIssues(Preview.Validation));
+			SummarizeIssues(Preview.Validation));
 
 		FMantlePlacePreview::Destroy(Preview);
 
@@ -842,7 +842,7 @@ void FillMantleSection(FToolMenuSection& Section)
 		TEXT("MantleImportBlockWorld"),
 		LOCTEXT("ImportBlockWorldLabel", "Import block world (.mbw)..."),
 		LOCTEXT("ImportBlockWorldTooltip",
-			"Add a block world from a saved .mbw file (a blocky world's blocks or a smooth world's ground). Its block types come in as block_1, block_2 and so on with grey "
+			"Add a block world from a saved .mbw file (a blocky world's blocks or a smooth world's ground). Its block types come in as block_1, block_2 and so on with gray "
 			"tiles: give each its name and tiles in the Details panel."),
 		FSlateIcon(),
 		FUIAction(FExecuteAction::CreateStatic(&FMantleVoxelize::ImportWithDialog)));
@@ -891,7 +891,7 @@ void FillMantleSection(FToolMenuSection& Section)
 		LOCTEXT("ConvertVehicleTooltip",
 			"Make a Mantle vehicle from the skeletal mesh selected in the Content Browser, or from a vehicle selected in the level: "
 			"finds the wheel bones (Wheel_FL and the like), measures the wheels, carries the meshes attached to the body as its parts, "
-			"reads its collision and centre of mass from its physics, and writes <Mesh>_Vehicle with default tuning to adjust."),
+			"reads its collision and center of mass from its physics, and writes <Mesh>_Vehicle with default tuning to adjust."),
 		FSlateIcon(),
 		FUIAction(FExecuteAction::CreateStatic(&OnConvertVehicle)));
 

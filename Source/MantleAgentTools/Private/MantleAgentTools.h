@@ -33,7 +33,7 @@ struct FMantleAgentTools
 	/** FMantlePlaceValidator::Validate, as CheckPlace describes it. */
 	static FString CheckPlace(UWorld* World);
 
-	/** FMantlePlaceExporter::Export with offline options, summarised as ExportPreview describes it. */
+	/** FMantlePlaceExporter::Export with offline options, summarized as ExportPreview describes it. */
 	static FString ExportPreview(UWorld* World);
 
 	/**

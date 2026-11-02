@@ -30,7 +30,7 @@ public:
 	static void Run(UWorld* World, FMantleExportResult& Result);
 
 	/**
-	 * Adds the project materials in Dependencies (a Fab pack's, not Mantle's library ones) to Out as recognised, baked or lost,
+	 * Adds the project materials in Dependencies (a Fab pack's, not Mantle's library ones) to Out as recognized, baked or lost,
 	 * by what FMantlePlaceAssets::AnalyzeMaterial finds in each, and sorts Out. Export does not do this itself: it would gather
 	 * the level's dependencies a second time, a landscape's grass maps among them. Whoever gathered them for the upload (Test
 	 * Locally's export, Publish) calls it with what it has.

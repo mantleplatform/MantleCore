@@ -29,7 +29,7 @@ namespace MantleWeaponBuilderKindPrivate
 	/** A pistol is held out in both hands in front of the face, so the eye sits this far behind the sight. */
 	constexpr double ExtendedEyeReliefCm = 32.0;
 
-	/** Shouldered hold: the head's centre sits this far to the left of the bore line (cheek beside the stock) and this far behind the eye. */
+	/** Shouldered hold: the head's center sits this far to the left of the bore line (cheek beside the stock) and this far behind the eye. */
 	constexpr double CheekOffsetCm = 10.0;
 	constexpr double HeadBehindEyeCm = 6.0;
 
@@ -44,7 +44,7 @@ namespace MantleWeaponBuilderKindPrivate
 	constexpr double ShoulderedBodyYawDegrees = 40.0;
 	constexpr double MaxShoulderBehindHeadCm = 28.0;
 
-	/** Aiming: the eye is about this far to the right of the head's centre, so the head's centre sits this far left of the eye (cm). */
+	/** Aiming: the eye is about this far to the right of the head's center, so the head's center sits this far left of the eye (cm). */
 	constexpr double AimHeadLeftOfEyeCm = 3.5;
 
 	/** The surface samples are about this far apart (cm) and never more than this many. */
@@ -180,7 +180,7 @@ namespace MantleWeaponBuilderKindPrivate
 	}
 
 	/** Solves one arm from the shoulder and adds its capsules to Arm; the elbow bends toward Outward and Down (the body's own down).
-	 *  To a hand point (no Wrist): the forearm stops at the wrist and a hand capsule is centred on the point (the palm, where the
+	 *  To a hand point (no Wrist): the forearm stops at the wrist and a hand capsule is centerd on the point (the palm, where the
 	 *  game puts it). To a Wrist (a hand drawn on its own, which starts there): the upper arm and forearm only, the forearm ending on
 	 *  the wrist, so the arm runs into the hand with no gap. */
 	void SolveArm(FArm& Arm, const TCHAR* Side, const FVector& Shoulder, const FVector& Hand, const FVector& Outward, const FVector* Wrist = nullptr,
@@ -215,7 +215,7 @@ namespace MantleWeaponBuilderKindPrivate
 	 * The ghost holding the gun, in the weapon frame (bore +X, up +Z, +Y to the shooter's right), each arm solved to its hand point.
 	 * Shouldered (rifle and the like): the right shoulder sits just behind the stock's rear on the bore line, the body is turned
 	 * about it so the left shoulder comes forward, and the head leans in with the cheek beside the stock, the eye behind the sight.
-	 * Otherwise (pistol, revolver): arms out in front, the head centred behind the gun with the eye well back from the sight.
+	 * Otherwise (pistol, revolver): arms out in front, the head centerd behind the gun with the eye well back from the sight.
 	 */
 	FPose BuildPose(const TArray<FMantleBuilderPoint>& Points, const FTransform& MeshToWeapon, bool bShouldered, double RearXCm, const FVector* AimEye = nullptr,
 		const double* ButtZ = nullptr, const FVector* WristR = nullptr, const FVector* WristL = nullptr)
@@ -417,7 +417,7 @@ TArray<FMantleBuilderPoint> FMantleWeaponBuilderKind::GuessPointsFromPositions(c
 	In.Triangles = Triangles;
 	In.Hold = Hold;
 	In.GripRule = GripRule;
-	In.LeftHandBelowCentreCm = FMantleWeaponFit::LeftHandBelowHandguardCm;
+	In.LeftHandBelowCenterCm = FMantleWeaponFit::LeftHandBelowHandguardCm;
 	// A blade's Flip swaps its handle and tip: the fit puts the grip at the other end, and only what is left of the turn
 	// (a roll) is applied below. Turning the mesh about a grip that sat on the wrong end would leave the hand there.
 	FQuat Turn = Flip;
@@ -478,7 +478,7 @@ TArray<FMantleBuilderPoint> FMantleWeaponBuilderKind::GuessPointsFromPositions(c
 
 namespace
 {
-	// A closed fist round a blade's handle, in the weapon frame: the handle runs along X, 2 cm on the +Z side of the palm's centre.
+	// A closed fist round a blade's handle, in the weapon frame: the handle runs along X, 2 cm on the +Z side of the palm's center.
 	// Side is +1 for the right hand and -1 for the left, which is the right hand mirrored across Y.
 	TArray<FMantleGhostCapsule> MakeFistCapsules(const FVector& Palm, double Side, bool bWarning)
 	{
@@ -496,7 +496,7 @@ namespace
 		const double HandleOffsetCm = 2.0;
 		const double Pr = HandPalmRadiusCm;
 		const double PalmSeg = 4.0 - Pr;
-		const double WrapCm = HandleOffsetCm + HandFingerRadiusCm; // the finger ring's radius round the handle's centre line
+		const double WrapCm = HandleOffsetCm + HandFingerRadiusCm; // the finger ring's radius round the handle's center line
 		const FVector Handle = Palm + FVector(0.0, 0.0, HandleOffsetCm);
 		// A point on a ring of radius R round the handle, Degrees round from the palm's side: 0 is under the handle, 90 on the +Side flank,
 		// 180 over the top, 270 on the other flank.
@@ -801,7 +801,7 @@ TArray<FMantleGhostCapsule> FMantleWeaponBuilderKind::GhostPose(const TArray<FMa
 		const double HandRX = PointR ? MeshToWeapon.TransformPosition(PointR->Transform.GetLocation()).X : 0.0;
 		// A shouldered gun is always shown as the game holds it when aiming: the eye where the game puts it, the butt in the shoulder.
 		const TOptional<FVector> Aim = (bShowAiming || IsTwoHanded(Hold)) ? AimEye(Points) : TOptional<FVector>();
-		const TOptional<double> Butt = ButtCentreZ(RearX(LastFit, HandRX));
+		const TOptional<double> Butt = ButtCenterZ(RearX(LastFit, HandRX));
 		const FPose Pose = BuildPose(Points, MeshToWeapon, IsTwoHanded(Hold), RearX(LastFit, HandRX), Aim.IsSet() ? &Aim.GetValue() : nullptr,
 			Butt.IsSet() ? &Butt.GetValue() : nullptr, Right.bSet ? &Right.Wrist : nullptr, Left.bSet ? &Left.Wrist : nullptr);
 		InWeapon.Append(Right.Capsules);
@@ -871,7 +871,7 @@ TArray<FText> FMantleWeaponBuilderKind::Check(const TArray<FMantleBuilderPoint>&
 
 	const double HandRX = PointR ? LastFit.MeshToWeapon.TransformPosition(PointR->Transform.GetLocation()).X : 0.0;
 	const TOptional<FVector> Aim = (bShowAiming || IsTwoHanded(Hold)) ? AimEye(Points) : TOptional<FVector>();
-	const TOptional<double> Butt = ButtCentreZ(RearX(LastFit, HandRX));
+	const TOptional<double> Butt = ButtCenterZ(RearX(LastFit, HandRX));
 	const FPose Pose = BuildPose(Points, LastFit.MeshToWeapon, IsTwoHanded(Hold), RearX(LastFit, HandRX), Aim.IsSet() ? &Aim.GetValue() : nullptr,
 		Butt.IsSet() ? &Butt.GetValue() : nullptr);
 	if (Pose.Right.bPosed && !Pose.Right.bReached)
@@ -1031,7 +1031,7 @@ TArray<FMantleGhostCapsule> MantleWeaponBuilderMath::MakeHandCapsules(const FVec
 
 bool MantleWeaponBuilderMath::IsLeftPalmInsideGun(const TArray<FVector3f>& Samples, const FTransform& SamplesToWeapon, const FVector& GripL)
 {
-	// The gun cutting through the palm's box only: a palm wrapped round a vertical foregrip has the grip at its centre, which must
+	// The gun cutting through the palm's box only: a palm wrapped round a vertical foregrip has the grip at its center, which must
 	// not be flagged, so a palm sunk wholly inside a thick handguard is not caught.
 	return CountSamplesInsidePalm(Samples, SamplesToWeapon, MakePalmBox(GripL, false)) > LeftPalmInsideLimit;
 }
@@ -1175,7 +1175,7 @@ const FMantleWeaponBuilderKind::FContactCache& FMantleWeaponBuilderKind::Contact
 	return Cache;
 }
 
-TOptional<double> FMantleWeaponBuilderKind::ButtCentreZ(double RearXCm) const
+TOptional<double> FMantleWeaponBuilderKind::ButtCenterZ(double RearXCm) const
 {
 	// The middle of the gun's height over its last 4 cm (weapon frame): where the butt meets the shoulder.
 	double Low = TNumericLimits<double>::Max();

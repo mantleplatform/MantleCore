@@ -46,7 +46,7 @@ public:
 	/** Passes. */
 	static constexpr int32 Passes = 3;
 
-	/** Vertices further than this from the body do not steer the move (cm); a nail is within a centimetre of its fingertip. */
+	/** Vertices further than this from the body do not steer the move (cm); a nail is within a centimeter of its fingertip. */
 	static constexpr float SearchCm = 10.0f;
 
 	/**

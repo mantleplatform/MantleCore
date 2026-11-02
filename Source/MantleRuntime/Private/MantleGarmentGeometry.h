@@ -270,7 +270,7 @@ namespace MantleGarmentGeometry
 		}
 	};
 
-	/** One id per distinct position (quantised to WeldQuantumCm): vertices split at seams share it. Returns the id count. */
+	/** One id per distinct position (quantized to WeldQuantumCm): vertices split at seams share it. Returns the id count. */
 	inline int32 WeldByPosition(TConstArrayView<FVector3f> Positions, TArray<int32>& OutWeld)
 	{
 		const float Inv = 1.0f / WeldQuantumCm;
@@ -370,7 +370,7 @@ namespace MantleGarmentGeometry
 	}
 
 	/**
-	 * WeldByPosition within each section: one id per (section, quantised position), so split copies of a
+	 * WeldByPosition within each section: one id per (section, quantized position), so split copies of a
 	 * vertex share an id and two sections never do. Returns the id count.
 	 */
 	inline int32 WeldBySection(TConstArrayView<FVector3f> Positions, TConstArrayView<int32> VertexSection, TArray<int32>& OutWeld)
@@ -401,10 +401,10 @@ namespace MantleGarmentGeometry
 		return Count;
 	}
 
-	using FPointNeighbours = TArray<TArray<int32, TInlineAllocator<8>>>;
+	using FPointNeighbors = TArray<TArray<int32, TInlineAllocator<8>>>;
 
 	/** Welded points' adjacency from the triangle edges. */
-	inline void PointNeighbours(TConstArrayView<uint32> Indices, TConstArrayView<int32> Weld, const int32 NumPoints, FPointNeighbours& Out)
+	inline void PointNeighbors(TConstArrayView<uint32> Indices, TConstArrayView<int32> Weld, const int32 NumPoints, FPointNeighbors& Out)
 	{
 		Out.Reset();
 		Out.SetNum(NumPoints);

@@ -135,10 +135,10 @@ FMantleEnvironmentSettings AMantlePlaceSettingsActor::MakeEnvironmentSettings() 
 	{
 		Out.ColorTint = Tint;
 	}
-	const double Colourfulness = Clamped(Saturation, 0.0, MantleEnvironmentDefaults::MaxScriptSaturation, 1.0);
-	if (Colourfulness != 1.0)
+	const double Colorfulness = Clamped(Saturation, 0.0, MantleEnvironmentDefaults::MaxScriptSaturation, 1.0);
+	if (Colorfulness != 1.0)
 	{
-		Out.Saturation = Colourfulness;
+		Out.Saturation = Colorfulness;
 	}
 	if (bSetBloom)
 	{

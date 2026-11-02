@@ -104,7 +104,7 @@ struct MANTLEEDITOR_API FMantleGarmentOutfit
 	/**
 	 * A piece reaching this far below the MetaHuman's sole (cm) or further is a high heel, and gets no Outfit: on a flat
 	 * foot its heel goes into the ground, and the resize crumples it (until the game lifts the foot, GhzGarage/mantle#1051).
-	 * A shoe's own sole reaches a centimetre or two below it.
+	 * A shoe's own sole reaches a centimeter or two below it.
 	 */
 	static constexpr double HeelMinCm = 4.0;
 
@@ -112,7 +112,7 @@ struct MANTLEEDITOR_API FMantleGarmentOutfit
 	static constexpr double PoseCheckCm = 1.0;
 
 	/** Skin vertices blended per garment vertex. */
-	static constexpr int32 TransferNeighbours = 4;
+	static constexpr int32 TransferNeighbors = 4;
 
 	/**
 	 * Pure (tested): Mesh's vertices (bind pose, Mesh.Joints' reference pose) skinned into Posed (one component-space
@@ -129,7 +129,7 @@ struct MANTLEEDITOR_API FMantleGarmentOutfit
 
 	/**
 	 * Pure (tested): Garment takes Body's joints, and each of its vertices the blend of the skin weights of its
-	 * TransferNeighbours nearest Body vertices (by inverse distance), the heaviest 8 kept and renormalised. OutFar counts
+	 * TransferNeighbors nearest Body vertices (by inverse distance), the heaviest 8 kept and renormalized. OutFar counts
 	 * vertices with no Body vertex within NearCm; OutMeanCm is the average distance to the nearest one. False with why when
 	 * Body has no skin.
 	 */
@@ -171,7 +171,7 @@ struct MANTLEEDITOR_API FMantleGarmentOutfit
 	/**
 	 * Pure (tested): Garment carried the way its skin moves from the original body From to the MetaHuman To, so it keeps
 	 * the clearance it had: each point of From moves onto its closest point of To (FMantleGarmentClearance; points with
-	 * none within its search take their neighbours' moves), smoothed CarrySmoothIters passes; a garment point takes the
+	 * none within its search take their neighbors' moves), smoothed CarrySmoothIters passes; a garment point takes the
 	 * moves of the corners of its closest From triangle by its barycentrics, or the inverse-distance blend of its nearest
 	 * From points' when none is within the search. Where the MetaHuman is smaller than the original body (a fuller bust,
 	 * a rounder seat) the garment comes in with it instead of floating; where it is bigger, the garment goes out with it.

@@ -18,7 +18,7 @@ namespace MantleVehicleThumbnailPrivate
 	/** Subpixels per side: the drawing is made at this many times the picture's size and averaged down, which softens the edges. */
 	constexpr int32 Supersample = 2;
 
-	/** Twice the signed area of the triangle (A, B, P) as the rasteriser's edge function. */
+	/** Twice the signed area of the triangle (A, B, P) as the rasterizer's edge function. */
 	double Edge(const FVector2D& A, const FVector2D& B, const FVector2D& P)
 	{
 		return (B.X - A.X) * (P.Y - A.Y) - (B.Y - A.Y) * (P.X - A.X);
@@ -68,7 +68,7 @@ bool FMantleVehicleThumbnail::Draw(const FMantleSkinnedMesh& Body, TArray<FColor
 	{
 		return false;
 	}
-	// Orthographic: the vehicle fills about four fifths of the card, centred.
+	// Orthographic: the vehicle fills about four fifths of the card, centerd.
 	const double Scale = 0.82 * static_cast<double>(Full) / Span;
 	const FVector Middle = Extent.GetCenter();
 	const auto ToScreen = [&](const FVector& Point)
@@ -114,7 +114,7 @@ bool FMantleVehicleThumbnail::Draw(const FMantleSkinnedMesh& Body, TArray<FColor
 			Normal = -Normal;
 		}
 		const double Shade = 0.28 + 0.72 * FMath::Max(0.0, FVector::DotProduct(Normal, Light));
-		const FColor Colour(static_cast<uint8>(FMath::Clamp(BaseR * Shade, 0.0, 255.0)), static_cast<uint8>(FMath::Clamp(BaseG * Shade, 0.0, 255.0)),
+		const FColor Color(static_cast<uint8>(FMath::Clamp(BaseR * Shade, 0.0, 255.0)), static_cast<uint8>(FMath::Clamp(BaseG * Shade, 0.0, 255.0)),
 			static_cast<uint8>(FMath::Clamp(BaseB * Shade, 0.0, 255.0)), 255);
 
 		const FVector2D S0 = ToScreen(Projected[I0]);
@@ -146,7 +146,7 @@ bool FMantleVehicleThumbnail::Draw(const FMantleSkinnedMesh& Body, TArray<FColor
 				if (Z < Depth[Pixel])
 				{
 					Depth[Pixel] = Z;
-					Layer[Pixel] = Colour;
+					Layer[Pixel] = Color;
 				}
 			}
 		}

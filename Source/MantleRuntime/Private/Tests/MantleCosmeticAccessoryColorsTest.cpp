@@ -5,7 +5,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// #966: the API sends colour regions on a rigid item in an accessory slot (a hat). The item batch reader takes
+// #966: the API sends color regions on a rigid item in an accessory slot (a hat). The item batch reader takes
 // them there, as on clothing, and still refuses them on other slots (hair).
 
 namespace MantleCosmeticAccessoryColorsTest
@@ -33,7 +33,7 @@ bool FMantleCosmeticAccessoryColorsTest::RunTest(const FString& Parameters)
 	TArray<FMantleCosmeticItem> Items;
 	TArray<FString> Missing;
 	FString WhyNot;
-	if (!TestTrue(TEXT("a hat with colour regions reads"), MantleCosmetic::ParseItemBatch(Batch(TEXT("acc_hat"), TEXT("rigid")), Items, Missing, WhyNot)))
+	if (!TestTrue(TEXT("a hat with color regions reads"), MantleCosmetic::ParseItemBatch(Batch(TEXT("acc_hat"), TEXT("rigid")), Items, Missing, WhyNot)))
 	{
 		AddInfo(WhyNot);
 		return false;
@@ -41,8 +41,8 @@ bool FMantleCosmeticAccessoryColorsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the hat keeps its region"), Items.Num() == 1 && Items[0].Materials.Num() == 1 && Items[0].Materials[0].ColorRegions.Num() == 1
 		&& Items[0].Materials[0].ColorRegions[0].Id == TEXT("main") && Items[0].Materials[0].ColorMask.IsLoadable());
 
-	TestTrue(TEXT("a top with colour regions reads"), MantleCosmetic::ParseItemBatch(Batch(TEXT("top"), TEXT("skinned")), Items, Missing, WhyNot));
-	TestFalse(TEXT("hair refuses colour regions"), MantleCosmetic::ParseItemBatch(Batch(TEXT("hair"), TEXT("skinned")), Items, Missing, WhyNot));
+	TestTrue(TEXT("a top with color regions reads"), MantleCosmetic::ParseItemBatch(Batch(TEXT("top"), TEXT("skinned")), Items, Missing, WhyNot));
+	TestFalse(TEXT("hair refuses color regions"), MantleCosmetic::ParseItemBatch(Batch(TEXT("hair"), TEXT("skinned")), Items, Missing, WhyNot));
 	return true;
 }
 

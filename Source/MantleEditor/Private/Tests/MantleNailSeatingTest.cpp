@@ -41,8 +41,8 @@ namespace MantleNailSeatingTestPrivate
 		return Sheet;
 	}
 
-	/** A 3 x 3 vertex patch, 1 cm by 2 cm, tilted TiltDegrees about X, centred at Centre. */
-	void NailTestPatch(const FVector3f& Centre, const float TiltDegrees, TArray<FVector3f>& Positions, TArray<uint32>& Indices)
+	/** A 3 x 3 vertex patch, 1 cm by 2 cm, tilted TiltDegrees about X, centerd at Center. */
+	void NailTestPatch(const FVector3f& Center, const float TiltDegrees, TArray<FVector3f>& Positions, TArray<uint32>& Indices)
 	{
 		const uint32 First = static_cast<uint32>(Positions.Num());
 		const FQuat Tilt(FVector(1.0, 0.0, 0.0), FMath::DegreesToRadians(static_cast<double>(TiltDegrees)));
@@ -51,7 +51,7 @@ namespace MantleNailSeatingTestPrivate
 			for (int32 X = 0; X < 3; ++X)
 			{
 				const FVector Local(0.5 * (X - 1), 1.0 * (Y - 1), 0.0);
-				Positions.Add(Centre + FVector3f(Tilt.RotateVector(Local)));
+				Positions.Add(Center + FVector3f(Tilt.RotateVector(Local)));
 			}
 		}
 		for (uint32 Y = 0; Y < 2; ++Y)

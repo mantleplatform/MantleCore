@@ -10,7 +10,7 @@
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleHairScalpFitTestPrivate
 {
-	/** A flat "head" over [-Half, Half]^2 cm at Z = 0, facing +Z, one vertex per centimetre. */
+	/** A flat "head" over [-Half, Half]^2 cm at Z = 0, facing +Z, one vertex per centimeter. */
 	void ScalpFitFlatHead(int32 Half, TArray<FVector3f>& Positions, TArray<uint32>& Indices)
 	{
 		const int32 Side = 2 * Half + 1;
@@ -71,15 +71,15 @@ bool FMantleHairScalpFitSignedDistanceTest::RunTest(const FString& Parameters)
 	FMantleScalpHeadSurface Head; FString Error;
 	if (!TestTrue(TEXT("head builds"), Head.Build(Positions, Indices, Error))) { AddError(Error); return false; }
 
-	// The centre is 10 / sqrt(3) from every face, inside.
+	// The center is 10 / sqrt(3) from every face, inside.
 	const FMantleScalpHeadSurface::FHit Inside = Head.Query(FVector::ZeroVector);
 	TestNearlyEqual(TEXT("inside distance"), Inside.SignedDistance, -10.0 / FMath::Sqrt(3.0), 1.e-6);
-	// The centre is equidistant from all eight faces, so which face wins is a tie; any of them is right. Whichever it is,
-	// the closest point is that face's centre (every component +-10/3) ...
-	const double FaceCentre = 10.0 / 3.0;
-	TestTrue(TEXT("closest point is a face centre"), FMath::IsNearlyEqual(FMath::Abs(Inside.Point.X), FaceCentre, 1.e-6)
-		&& FMath::IsNearlyEqual(FMath::Abs(Inside.Point.Y), FaceCentre, 1.e-6) && FMath::IsNearlyEqual(FMath::Abs(Inside.Point.Z), FaceCentre, 1.e-6));
-	// ... and the normal there points out of that face: from the centre of the octahedron, along the closest point.
+	// The center is equidistant from all eight faces, so which face wins is a tie; any of them is right. Whichever it is,
+	// the closest point is that face's center (every component +-10/3) ...
+	const double FaceCenter = 10.0 / 3.0;
+	TestTrue(TEXT("closest point is a face center"), FMath::IsNearlyEqual(FMath::Abs(Inside.Point.X), FaceCenter, 1.e-6)
+		&& FMath::IsNearlyEqual(FMath::Abs(Inside.Point.Y), FaceCenter, 1.e-6) && FMath::IsNearlyEqual(FMath::Abs(Inside.Point.Z), FaceCenter, 1.e-6));
+	// ... and the normal there points out of that face: from the center of the octahedron, along the closest point.
 	TestTrue(TEXT("normal points out of the face"), Inside.Normal.Equals(Inside.Point.GetSafeNormal(), 1.e-6));
 
 	// Above the top corner: nearest is the corner, the normal there is straight up.
@@ -98,11 +98,11 @@ bool FMantleHairScalpFitSignedDistanceTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleHairScalpFitGaussianNormalisesTest,
+	FMantleHairScalpFitGaussianNormalizesTest,
 	"Mantle.Editor.HairScalpFit.GaussianKeepsAConstantFieldConstant",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleHairScalpFitGaussianNormalisesTest::RunTest(const FString& Parameters)
+bool FMantleHairScalpFitGaussianNormalizesTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleHairScalpFitTestPrivate;
 	TArray<FVector3f> Positions; TArray<uint32> Indices;
@@ -141,7 +141,7 @@ bool FMantleHairScalpFitGaussianNormalisesTest::RunTest(const FString& Parameter
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleHairScalpFitSunkVertexTest,
-	"Mantle.Editor.HairScalpFit.SunkVertexEndsAtLeastOneMillimetreOut",
+	"Mantle.Editor.HairScalpFit.SunkVertexEndsAtLeastOneMillimeterOut",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantleHairScalpFitSunkVertexTest::RunTest(const FString& Parameters)
@@ -168,7 +168,7 @@ bool FMantleHairScalpFitSunkVertexTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("unused vertices are not lifted"), FMantleScalpFit::LiftSunk(Head, V, Skip, FMantleScalpFit::ClearanceCm, MaxLift), 0);
 	}
 
-	// Through the whole fit: hair sunk half a centimetre comes out 1 mm clear of the skin.
+	// Through the whole fit: hair sunk half a centimeter comes out 1 mm clear of the skin.
 	TArray<FVector3f> CardP; TArray<uint32> CardI;
 	ScalpFitCardLattice(4, -0.5f, CardP, CardI);
 	FMantleScalpFit::FResult Result;
@@ -185,7 +185,7 @@ bool FMantleHairScalpFitSunkVertexTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleHairScalpFitFloatingRootTest,
-	"Mantle.Editor.HairScalpFit.FloatingRootsWithoutACapPullToThreeMillimetres",
+	"Mantle.Editor.HairScalpFit.FloatingRootsWithoutACapPullToThreeMillimeters",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantleHairScalpFitFloatingRootTest::RunTest(const FString& Parameters)
@@ -218,7 +218,7 @@ bool FMantleHairScalpFitFloatingRootTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleHairScalpFitCapEdgeTest,
-	"Mantle.Editor.HairScalpFit.CapEdgeSnapIsCappedAtThreeCentimetres",
+	"Mantle.Editor.HairScalpFit.CapEdgeSnapIsCappedAtThreeCentimeters",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantleHairScalpFitCapEdgeTest::RunTest(const FString& Parameters)

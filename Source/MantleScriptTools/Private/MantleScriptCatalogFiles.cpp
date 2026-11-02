@@ -21,7 +21,7 @@ EMantleScriptCatalogLanguage MantleScriptLanguageFromExtension(const FString& Ex
 	{
 		return EMantleScriptCatalogLanguage::Luau;
 	}
-	// .js and .ts are two catalogue languages (so Script.* and error logs still name the
+	// .js and .ts are two catalog languages (so Script.* and error logs still name the
 	// file's real extension) but share one QuickJS runtime -- see
 	// UMantleScriptWorldSubsystem::EnsureLanguageRuntime.
 	if (Extension.Equals(TEXT("js"), ESearchCase::CaseSensitive))
@@ -32,7 +32,7 @@ EMantleScriptCatalogLanguage MantleScriptLanguageFromExtension(const FString& Ex
 	{
 		return EMantleScriptCatalogLanguage::TypeScript;
 	}
-	// .py gets its own catalogue language and its own PocketPy VM per world (unlike
+	// .py gets its own catalog language and its own PocketPy VM per world (unlike
 	// JavaScript/TypeScript, which share one QuickJS runtime) -- see
 	// UMantleScriptWorldSubsystem::EnsureLanguageRuntime.
 	if (Extension.Equals(TEXT("py"), ESearchCase::CaseSensitive))
@@ -48,7 +48,7 @@ namespace
 	 * Classifies one Scripts/-relative path (already split on '/'). Every comparison here is
 	 * case-sensitive by construction (FString::Equals defaults to ESearchCase::IgnoreCase, so
 	 * every call below spells out CaseSensitive) -- a folder named "server" or "modules" is not
-	 * recognised and is skipped with a warning rather than silently accepted.
+	 * recognized and is skipped with a warning rather than silently accepted.
 	 */
 	bool ClassifyPath(const TArray<FString>& Segments, EMantleSide& OutSide, bool& OutModuleOnly)
 	{
@@ -87,7 +87,7 @@ namespace
 		return true;
 	}
 
-	/** The catalogue prefix every script package is mounted under (#838). */
+	/** The catalog prefix every script package is mounted under (#838). */
 	const TCHAR* const GMantleScriptPackagesPrefix = TEXT("Packages/");
 }
 
@@ -345,7 +345,7 @@ bool FMantleDiskScriptCatalogSource::Poll(TArray<int32>& OutChangedIds, bool& bO
 		if (File.bPackage && !ClassifyFile(File, UnusedSide, bUnusedModuleOnly))
 		{
 			// #838: a package file Discover skips is never an entry, so it must not read as a structure change on every
-			// poll. (A place file outside Server/, Client/ and Shared/ keeps its old behaviour.)
+			// poll. (A place file outside Server/, Client/ and Shared/ keeps its old behavior.)
 			continue;
 		}
 		++SeenCount;

@@ -323,7 +323,7 @@ bool FMantleHairCardsFitClearFaceTest::RunTest(const FString& Parameters)
 	FMantleHairHeadSamples Head; FString Error;
 	if (!TestTrue(TEXT("head samples build"), Head.Build(HeadP, HeadI, Error))) { AddError(Error); return false; }
 
-	// The sphere is centred on the origin (radius 9, top 9, +Y forward): at z = -5 the skin is in the face zone.
+	// The sphere is centerd on the origin (radius 9, top 9, +Y forward): at z = -5 the skin is in the face zone.
 	const FVector3f Fringe(0.f, 8.f, -5.f);   // in front of the face
 	const FVector3f Clear(0.f, 12.f, -5.f);   // well in front of it
 	const FVector3f Crown(0.f, 0.f, 9.1f);
@@ -385,7 +385,7 @@ bool FMantleHairCardsFitCapGuardTest::RunTest(const FString& Parameters)
 	if (!TestTrue(TEXT("head builds"), Head.Build(HeadP, HeadI, Error))) { AddError(Error); return false; }
 
 	TArray<FVector3f> Near, Far; TArray<uint32> NearI, FarI;
-	CapTestSheet(10, 4.f, 9.5f, Near, NearI); // a small sheet half a centimetre off the crown
+	CapTestSheet(10, 4.f, 9.5f, Near, NearI); // a small sheet half a centimeter off the crown
 	CapTestSheet(10, 4.f, 30.f, Far, FarI);  // the same sheet 21 cm above it
 	const double NearMedian = FMantleHairCardsFit::MedianDistanceToSkin(Head, Near, NearI);
 	const double FarMedian = FMantleHairCardsFit::MedianDistanceToSkin(Head, Far, FarI);

@@ -33,7 +33,7 @@ struct MANTLEEDITOR_API FMantleCleanHead
 };
 
 /**
- * #770, "keep the face, choose a body": a character with no bare body under its clothing or armour (Paragon heroes, one
+ * #770, "keep the face, choose a body": a character with no bare body under its clothing or armor (Paragon heroes, one
  * clothed mesh) keeps its face only. Its head is cut clean (MakeCleanHead), conformed on its own (MetaHuman's head_only
  * pipeline, FMantleMetaHumanConform::ConformHeadOnly) and set on MetaHuman's own parametric body at Mantle's default
  * height, which players shape with the body sliders (#849).
@@ -111,7 +111,7 @@ public:
 	/**
 	 * Source's build (#50; a skeletal or static mesh): its LOD 0 (bind pose) torso widths and depths at the chest, waist and hips, as shares of StandingHeightCm
 	 * (a clean head's SourceHeightCm). Only bare skin is measured: the slots that read as skin and have no clothing built into them
-	 * (FMantleAvatarStrip::Plan, FMantleFusedClothing). A band with no bare torso (under a robe, armour or a jacket) stays unmeasured and
+	 * (FMantleAvatarStrip::Plan, FMantleFusedClothing). A band with no bare torso (under a robe, armor or a jacket) stays unmeasured and
 	 * seeds nothing. False with why when the geometry can't be read or no band has bare skin to measure.
 	 */
 	static bool MeasureBuild(UObject& Source, double StandingHeightCm, FMantleSilhouette& Out, FString& OutError);

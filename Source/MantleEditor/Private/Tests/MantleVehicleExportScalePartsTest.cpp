@@ -32,7 +32,7 @@ namespace MantleVehicleExportScalePartsTestPrivate
 	const TCHAR* PartMeshPath = TEXT("/Engine/BasicShapes/Cube.Cube");
 	const TCHAR* PartPackagePath = TEXT("/Temp/MantleVehicleExportScalePartsTest");
 
-	/** A vehicle of Body (the sedan chassis's grey mesh) at the given Size with one part of its own at a known place and size; null, with OutProblem, when it cannot be made. */
+	/** A vehicle of Body (the sedan chassis's gray mesh) at the given Size with one part of its own at a known place and size; null, with OutProblem, when it cannot be made. */
 	UMantleVehicleSource* MakeSource(USkeletalMesh* Body, const float Size, FString& OutProblem)
 	{
 		UStaticMesh* PartMesh = FindObject<UStaticMesh>(nullptr, *(FString(PartPackagePath) + TEXT(".ScalePartsCube")));
@@ -54,7 +54,7 @@ namespace MantleVehicleExportScalePartsTestPrivate
 			OutProblem = FString::Join(Conversion.Problems, TEXT(" "));
 			return nullptr;
 		}
-		// Give each wheel its size, as a creator would for a model whose tyres are separate meshes, so the upload check has
+		// Give each wheel its size, as a creator would for a model whose tires are separate meshes, so the upload check has
 		// nothing to measure.
 		for (FMantleVehicleSourceWheel& Wheel : Source->Wheels)
 		{
@@ -145,7 +145,7 @@ bool FMantleVehicleExportScalePartsTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleExportScalePartsTestPrivate;
 
-	// The body is the sedan chassis's own grey mesh, so the test needs no project content and cannot silently skip. Anything that goes wrong here is a failure.
+	// The body is the sedan chassis's own gray mesh, so the test needs no project content and cannot silently skip. Anything that goes wrong here is a failure.
 	FString Problem;
 	USkeletalMesh* Body = MantleVehicleScratchBody::Make(TEXT("/Temp/MantleVehicleExportScalePartsTest"), TEXT("ScalePartsBody"), Problem);
 	if (!TestNotNull(FString::Printf(TEXT("the test body (%s)"), *Problem), Body))

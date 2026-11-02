@@ -25,7 +25,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Additive blending (alphaMode additive) and scene-colour "fake refraction" glass: what the analysis recognises in
+// Additive blending (alphaMode additive) and scene-color "fake refraction" glass: what the analysis recognizes in
 // a material's graph, what the converter makes of GLTFExporter's bake of it, what an older target client gets, and the
 // coverage lines. The materials are small graphs built in code, so no level or asset is needed.
 
@@ -48,18 +48,18 @@ namespace MantleGlowMaterialTestPrivate
 		return Constant;
 	}
 
-	UMaterialExpressionConstant3Vector* AddColour(UMaterial* Material, const FLinearColor& Colour)
+	UMaterialExpressionConstant3Vector* AddColor(UMaterial* Material, const FLinearColor& Color)
 	{
 		UMaterialExpressionConstant3Vector* Constant = AddNode<UMaterialExpressionConstant3Vector>(Material);
-		Constant->Constant = Colour;
+		Constant->Constant = Color;
 		return Constant;
 	}
 
-	UMaterialExpressionVectorParameter* AddColourParameter(UMaterial* Material, const TCHAR* Name, const FLinearColor& Colour)
+	UMaterialExpressionVectorParameter* AddColorParameter(UMaterial* Material, const TCHAR* Name, const FLinearColor& Color)
 	{
 		UMaterialExpressionVectorParameter* Parameter = AddNode<UMaterialExpressionVectorParameter>(Material);
 		Parameter->ParameterName = Name;
-		Parameter->DefaultValue = Colour;
+		Parameter->DefaultValue = Color;
 		return Parameter;
 	}
 
@@ -79,7 +79,7 @@ namespace MantleGlowMaterialTestPrivate
 		return Multiply;
 	}
 
-	/** An unlit, two-sided, translucent material, with Opacity a scalar parameter of 1: the shape of a scene-colour glass. */
+	/** An unlit, two-sided, translucent material, with Opacity a scalar parameter of 1: the shape of a scene-color glass. */
 	UMaterial* NewUnlitTranslucent()
 	{
 		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
@@ -94,11 +94,11 @@ namespace MantleGlowMaterialTestPrivate
 	 * M_Base_WaterGlass's emissive, cut down: Lerp(Multiply(Multiply(SceneColor, WaterColor), WaterColorIntensity), SceneColor, 0.3),
 	 * with WaterColor a vector parameter of (0, 0.706457, 1) and WaterColorIntensity a scalar parameter of 2.
 	 */
-	UMaterial* NewSceneColourGlass()
+	UMaterial* NewSceneColorGlass()
 	{
 		UMaterial* Material = NewUnlitTranslucent();
 		UMaterialExpressionSceneColor* Scene = AddNode<UMaterialExpressionSceneColor>(Material);
-		UMaterialExpressionMultiply* Tinted = AddMultiply(Material, Scene, AddColourParameter(Material, TEXT("WaterColor"), FLinearColor(0.0f, 0.706457f, 1.0f, 0.0f)));
+		UMaterialExpressionMultiply* Tinted = AddMultiply(Material, Scene, AddColorParameter(Material, TEXT("WaterColor"), FLinearColor(0.0f, 0.706457f, 1.0f, 0.0f)));
 		UMaterialExpressionMultiply* Boosted = AddMultiply(Material, Tinted, AddNumberParameter(Material, TEXT("WaterColorIntensity"), 2.0f));
 		UMaterialExpressionLinearInterpolate* Mixed = AddNode<UMaterialExpressionLinearInterpolate>(Material);
 		Mixed->A.Connect(0, Boosted);
@@ -108,7 +108,7 @@ namespace MantleGlowMaterialTestPrivate
 		return Material;
 	}
 
-	/** An additive material whose emissive is the colour given (a constant), lit or unlit; Rim multiplies it by a Fresnel. */
+	/** An additive material whose emissive is the color given (a constant), lit or unlit; Rim multiplies it by a Fresnel. */
 	UMaterial* NewAdditive(const bool bUnlit, const FLinearColor& Glow, const bool bRim = false)
 	{
 		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
@@ -118,7 +118,7 @@ namespace MantleGlowMaterialTestPrivate
 		{
 			Material->SetShadingModel(MSM_Unlit);
 		}
-		UMaterialExpression* Emissive = AddColour(Material, Glow);
+		UMaterialExpression* Emissive = AddColor(Material, Glow);
 		if (bRim)
 		{
 			Emissive = AddMultiply(Material, Emissive, AddNode<UMaterialExpressionFresnel>(Material));
@@ -138,13 +138,13 @@ namespace MantleGlowMaterialTestPrivate
 	}
 
 	/**
-	 * What GLTFExporter writes for a flattened material: Alpha ("BLEND"), the base colour factor, an emissive factor with its strength
-	 * (empty for none), and KHR_materials_unlit when Unlit (its base colour is then the bake of Emissive Color).
+	 * What GLTFExporter writes for a flattened material: Alpha ("BLEND"), the base color factor, an emissive factor with its strength
+	 * (empty for none), and KHR_materials_unlit when Unlit (its base color is then the bake of Emissive Color).
 	 */
-	FMantleGlbDocument Baked(const TCHAR* Alpha, std::initializer_list<double> BaseColour, const bool bUnlit, std::initializer_list<double> Emissive, const double EmissiveStrength, const bool bTwoSided)
+	FMantleGlbDocument Baked(const TCHAR* Alpha, std::initializer_list<double> BaseColor, const bool bUnlit, std::initializer_list<double> Emissive, const double EmissiveStrength, const bool bTwoSided)
 	{
 		const TSharedRef<FJsonObject> Pbr = MakeShared<FJsonObject>();
-		Pbr->SetArrayField(TEXT("baseColorFactor"), NumberValues(BaseColour));
+		Pbr->SetArrayField(TEXT("baseColorFactor"), NumberValues(BaseColor));
 		Pbr->SetNumberField(TEXT("metallicFactor"), 0.0);
 		Pbr->SetNumberField(TEXT("roughnessFactor"), 1.0);
 		const TSharedRef<FJsonObject> Material = MakeShared<FJsonObject>();
@@ -227,15 +227,15 @@ namespace MantleGlowMaterialTestPrivate
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleGlowGlassRecognisedTest,
-	"Mantle.Editor.Glow.SceneColourGlassIsRecognised",
+	FMantleGlowGlassRecognizedTest,
+	"Mantle.Editor.Glow.SceneColorGlassIsRecognized",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleGlowGlassRecognisedTest::RunTest(const FString& Parameters)
+bool FMantleGlowGlassRecognizedTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleGlowMaterialTestPrivate;
 
-	UMaterial* Material = NewSceneColourGlass();
+	UMaterial* Material = NewSceneColorGlass();
 	const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Material);
 	const FMantleSeeThroughGlass& Glass = Analysis.Fidelity2.Glass;
 	if (!TestTrue(TEXT("an unlit translucent material whose emissive reaches a Scene Color is glass"), Glass.bFound))
@@ -255,10 +255,10 @@ bool FMantleGlowGlassRecognisedTest::RunTest(const FString& Parameters)
 	// The emissive graph is carried, so nothing in it (Scene Color, distortion) is a loss, and unlit is exact here.
 	TestEqual(TEXT("it has no losses"), static_cast<uint32>(Analysis.Losses), static_cast<uint32>(EMantleMaterialLoss::None));
 
-	// A tint that is a constant colour is found when there is no parameter, with the multiplier beside it.
+	// A tint that is a constant color is found when there is no parameter, with the multiplier beside it.
 	UMaterial* Constant = NewUnlitTranslucent();
 	UMaterialExpressionSceneColor* Scene = AddNode<UMaterialExpressionSceneColor>(Constant);
-	Constant->GetEditorOnlyData()->EmissiveColor.Connect(0, AddMultiply(Constant, AddMultiply(Constant, Scene, AddColour(Constant, FLinearColor(0.2f, 0.4f, 0.6f))), AddNumber(Constant, 3.0f)));
+	Constant->GetEditorOnlyData()->EmissiveColor.Connect(0, AddMultiply(Constant, AddMultiply(Constant, Scene, AddColor(Constant, FLinearColor(0.2f, 0.4f, 0.6f))), AddNumber(Constant, 3.0f)));
 	const FMantleMaterialAnalysis ConstantAnalysis = FMantlePlaceAssets::AnalyzeMaterial(Constant);
 	if (TestTrue(TEXT("a constant tint is glass too"), ConstantAnalysis.Fidelity2.Glass.bFound))
 	{
@@ -271,14 +271,14 @@ bool FMantleGlowGlassRecognisedTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleGlowGlassNeutralTintTest,
-	"Mantle.Editor.Glow.SceneColourGlassWithoutATintIsNeutral",
+	"Mantle.Editor.Glow.SceneColorGlassWithoutATintIsNeutral",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantleGlowGlassNeutralTintTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleGlowMaterialTestPrivate;
 
-	// The scene behind it, as it is: no colour anywhere in the graph.
+	// The scene behind it, as it is: no color anywhere in the graph.
 	UMaterial* Material = NewUnlitTranslucent();
 	Material->GetEditorOnlyData()->EmissiveColor.Connect(0, AddNode<UMaterialExpressionSceneColor>(Material));
 	const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Material);
@@ -292,7 +292,7 @@ bool FMantleGlowGlassNeutralTintTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("with no multiplier"), Glass.Intensity, 1.0, 1.0e-6);
 	double Glow[3];
 	Glass.Glow(Glow);
-	TestEqual(TEXT("and a grey glow"), Glow[0], FMantleSeeThroughGlass::GlowScale, 1.0e-6);
+	TestEqual(TEXT("and a gray glow"), Glow[0], FMantleSeeThroughGlass::GlowScale, 1.0e-6);
 	TestEqual(TEXT("equal in every channel"), Glow[2], Glow[0], 1.0e-9);
 
 	FMantlePlaceAssetSet Set;
@@ -304,7 +304,7 @@ bool FMantleGlowGlassNeutralTintTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleGlowGlassOnlyUnlitTranslucentTest,
-	"Mantle.Editor.Glow.OnlyUnlitTranslucentSceneColourIsGlass",
+	"Mantle.Editor.Glow.OnlyUnlitTranslucentSceneColorIsGlass",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantleGlowGlassOnlyUnlitTranslucentTest::RunTest(const FString& Parameters)
@@ -312,23 +312,23 @@ bool FMantleGlowGlassOnlyUnlitTranslucentTest::RunTest(const FString& Parameters
 	using namespace MantleGlowMaterialTestPrivate;
 
 	// A lit translucent material with a Scene Color is not this pattern.
-	UMaterial* Lit = NewSceneColourGlass();
+	UMaterial* Lit = NewSceneColorGlass();
 	Lit->SetShadingModel(MSM_DefaultLit);
 	TestFalse(TEXT("a lit material is not glass"), FMantlePlaceAssets::AnalyzeMaterial(Lit).Fidelity2.Glass.bFound);
 
 	// Nor is an opaque or a masked one.
-	UMaterial* Opaque = NewSceneColourGlass();
+	UMaterial* Opaque = NewSceneColorGlass();
 	Opaque->BlendMode = BLEND_Opaque;
 	TestFalse(TEXT("an opaque material is not glass"), FMantlePlaceAssets::AnalyzeMaterial(Opaque).Fidelity2.Glass.bFound);
 
 	// An unlit translucent material that does not read the scene is a glow, not glass.
 	UMaterial* Glow = NewUnlitTranslucent();
-	Glow->GetEditorOnlyData()->EmissiveColor.Connect(0, AddMultiply(Glow, AddColour(Glow, FLinearColor(0.0f, 1.0f, 1.0f)), AddNumber(Glow, 4.0f)));
+	Glow->GetEditorOnlyData()->EmissiveColor.Connect(0, AddMultiply(Glow, AddColor(Glow, FLinearColor(0.0f, 1.0f, 1.0f)), AddNumber(Glow, 4.0f)));
 	TestFalse(TEXT("a glow with no Scene Color is not glass"), FMantlePlaceAssets::AnalyzeMaterial(Glow).Fidelity2.Glass.bFound);
 
 	// A Scene Color that is not on the emissive path (here, only in Opacity) does not count.
 	UMaterial* OpacityOnly = NewUnlitTranslucent();
-	OpacityOnly->GetEditorOnlyData()->EmissiveColor.Connect(0, AddColour(OpacityOnly, FLinearColor(1.0f, 0.0f, 0.0f)));
+	OpacityOnly->GetEditorOnlyData()->EmissiveColor.Connect(0, AddColor(OpacityOnly, FLinearColor(1.0f, 0.0f, 0.0f)));
 	OpacityOnly->GetEditorOnlyData()->Opacity.Connect(0, AddNode<UMaterialExpressionSceneColor>(OpacityOnly));
 	TestFalse(TEXT("a Scene Color only in Opacity is not glass"), FMantlePlaceAssets::AnalyzeMaterial(OpacityOnly).Fidelity2.Glass.bFound);
 
@@ -351,7 +351,7 @@ bool FMantleGlowGlassDocumentTest::RunTest(const FString& Parameters)
 	using namespace MantleGlowMaterialTestPrivate;
 
 	// GLTFExporter's bake of M_Base_WaterGlass: Scene Color is black there, so an opaque black unlit solid.
-	UMaterial* Material = NewSceneColourGlass();
+	UMaterial* Material = NewSceneColorGlass();
 	const FMantleGlbDocument Bake = Baked(TEXT("BLEND"), { 0.0, 0.0, 0.0, 1.0 }, true, {}, 1.0, true);
 	FMantlePlaceAssetSet Set;
 	FMantleMaterialAnalysis Analysis;
@@ -359,7 +359,7 @@ bool FMantleGlowGlassDocumentTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("it publishes translucent"), Doc.AlphaMode, FString(TEXT("blend")));
 	TestTrue(TEXT("two-sided"), Doc.bDoubleSided);
 	TestEqual(TEXT("with the glass opacity, not the bake's 1"), Doc.BaseColorFactor[3], FMantleSeeThroughGlass::Opacity, 1.0e-9);
-	TestEqual(TEXT("over a black base colour"), Doc.BaseColorFactor[1], 0.0, 1.0e-9);
+	TestEqual(TEXT("over a black base color"), Doc.BaseColorFactor[1], 0.0, 1.0e-9);
 	TestEqual(TEXT("the tint's green is the glow's"), Doc.EmissiveFactor[1], 0.706457 * 2.0 * FMantleSeeThroughGlass::GlowScale, 1.0e-4);
 	TestEqual(TEXT("and its blue"), Doc.EmissiveFactor[2], FMath::Min(2.0 * FMantleSeeThroughGlass::GlowScale, 1.0), 1.0e-4);
 	TestEqual(TEXT("and not its red"), Doc.EmissiveFactor[0], 0.0, 1.0e-9);
@@ -379,7 +379,7 @@ bool FMantleGlowGlassDocumentTest::RunTest(const FString& Parameters)
 
 	// Without the recognition (a material that is not glass), the bake stands: the fix is the pattern, not every unlit material.
 	UMaterial* Plain = NewUnlitTranslucent();
-	Plain->GetEditorOnlyData()->EmissiveColor.Connect(0, AddColour(Plain, FLinearColor::Black));
+	Plain->GetEditorOnlyData()->EmissiveColor.Connect(0, AddColor(Plain, FLinearColor::Black));
 	FMantlePlaceAssetSet PlainSet;
 	const FMantlePlaceMaterialDocument PlainDoc = Convert(Plain, Bake, PlainSet);
 	TestEqual(TEXT("a material that is not glass keeps the bake's opacity"), PlainDoc.BaseColorFactor[3], 1.0, 1.0e-9);
@@ -390,7 +390,7 @@ bool FMantleGlowGlassDocumentTest::RunTest(const FString& Parameters)
 	if (TestNotNull(TEXT("glass is one approximated material"), Example))
 	{
 		TestEqual(TEXT("it names the material"), Example->Name, FString(TEXT("MI_Test")));
-		TestTrue(TEXT("and says what became of it"), Example->Detail.Contains(TEXT("scene-colour refraction drawn as tinted see-through glass")));
+		TestTrue(TEXT("and says what became of it"), Example->Detail.Contains(TEXT("scene-color refraction drawn as tinted see-through glass")));
 	}
 
 	// Check this place warns once, in plain words.
@@ -403,7 +403,7 @@ bool FMantleGlowGlassDocumentTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleGlowAdditiveAnalysisTest,
-	"Mantle.Editor.Glow.AdditiveIsRecognised",
+	"Mantle.Editor.Glow.AdditiveIsRecognized",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantleGlowAdditiveAnalysisTest::RunTest(const FString& Parameters)
@@ -412,7 +412,7 @@ bool FMantleGlowAdditiveAnalysisTest::RunTest(const FString& Parameters)
 
 	// Unlit additive is exact: neither the blend mode nor unlit is a loss.
 	const FMantleMaterialAnalysis Unlit = FMantlePlaceAssets::AnalyzeMaterial(NewAdditive(true, FLinearColor(0.037f, 0.91f, 1.0f)));
-	TestTrue(TEXT("an additive material is recognised"), Unlit.Fidelity2.bAdditive);
+	TestTrue(TEXT("an additive material is recognized"), Unlit.Fidelity2.bAdditive);
 	TestFalse(TEXT("an unlit one is not lit"), Unlit.Fidelity2.bAdditiveLit);
 	TestFalse(TEXT("and has no rim"), Unlit.Fidelity2.bAdditiveRim);
 	TestFalse(TEXT("the blend mode is not a loss"), Unlit.Has(EMantleMaterialLoss::BlendMode));
@@ -420,7 +420,7 @@ bool FMantleGlowAdditiveAnalysisTest::RunTest(const FString& Parameters)
 
 	// A lit one loses its lighting (said, not a feature loss).
 	const FMantleMaterialAnalysis Lit = FMantlePlaceAssets::AnalyzeMaterial(NewAdditive(false, FLinearColor(0.037f, 0.91f, 1.0f)));
-	TestTrue(TEXT("a lit additive material is recognised"), Lit.Fidelity2.bAdditive);
+	TestTrue(TEXT("a lit additive material is recognized"), Lit.Fidelity2.bAdditive);
 	TestTrue(TEXT("and is lit"), Lit.Fidelity2.bAdditiveLit);
 	TestFalse(TEXT("its blend mode is still not a loss"), Lit.Has(EMantleMaterialLoss::BlendMode));
 
@@ -433,7 +433,7 @@ bool FMantleGlowAdditiveAnalysisTest::RunTest(const FString& Parameters)
 
 	// Translucent is not additive, and its blend mode was never a loss.
 	UMaterial* Translucent = NewUnlitTranslucent();
-	Translucent->GetEditorOnlyData()->EmissiveColor.Connect(0, AddColour(Translucent, FLinearColor::White));
+	Translucent->GetEditorOnlyData()->EmissiveColor.Connect(0, AddColor(Translucent, FLinearColor::White));
 	const FMantleMaterialAnalysis Blend = FMantlePlaceAssets::AnalyzeMaterial(Translucent);
 	TestFalse(TEXT("a translucent material is not additive"), Blend.Fidelity2.bAdditive);
 	TestTrue(TEXT("and unlit still is a loss on it"), Blend.Has(EMantleMaterialLoss::Unlit));
@@ -465,7 +465,7 @@ bool FMantleGlowAdditiveDocumentTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleGlowMaterialTestPrivate;
 
-	// M_Base_Hologram: lit, additive. GLTFExporter writes blend over a black base colour, and the emissive as a factor with a strength.
+	// M_Base_Hologram: lit, additive. GLTFExporter writes blend over a black base color, and the emissive as a factor with a strength.
 	{
 		UMaterial* Material = NewAdditive(false, FLinearColor(0.2f, 0.9f, 1.0f));
 		FMantlePlaceAssetSet Set;
@@ -477,7 +477,7 @@ bool FMantleGlowAdditiveDocumentTest::RunTest(const FString& Parameters)
 		const FString Json = JsonOf(Doc);
 		TestTrue(TEXT("it writes additive"), Json.Contains(TEXT("\"alphaMode\":\"additive\"")));
 		TestTrue(TEXT("the glow"), Json.Contains(TEXT("\"emissiveFactor\":[0.2,0.9,1],\"emissiveStrength\":3")));
-		TestFalse(TEXT("no base colour: it does nothing on additive"), Json.Contains(TEXT("baseColorFactor")));
+		TestFalse(TEXT("no base color: it does nothing on additive"), Json.Contains(TEXT("baseColorFactor")));
 		TestFalse(TEXT("no metallic"), Json.Contains(TEXT("metallicFactor")));
 		TestFalse(TEXT("no roughness"), Json.Contains(TEXT("roughnessFactor")));
 		FMantlePlaceMaterialDesc Desc;
@@ -489,20 +489,20 @@ bool FMantleGlowAdditiveDocumentTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("it picks the one-sided Additive permutation"), FMantlePlaceMaterials::PermutationIndex(Desc), FMantlePlaceMaterials::AdditivePermutationBase);
 	}
 
-	// M_Base_FakeVolume: unlit, additive, two-sided. The unlit bake keeps the glow as its base colour, which moves to the emissive;
-	// a constant opacity (the base colour's alpha) scales it, and the strength stays 1.
+	// M_Base_FakeVolume: unlit, additive, two-sided. The unlit bake keeps the glow as its base color, which moves to the emissive;
+	// a constant opacity (the base color's alpha) scales it, and the strength stays 1.
 	{
 		UMaterial* Material = NewAdditive(true, FLinearColor(0.037f, 0.91f, 1.0f));
 		FMantlePlaceAssetSet Set;
 		const FMantlePlaceMaterialDocument Doc = Convert(Material, Baked(TEXT("BLEND"), { 0.037, 0.91, 1.0, 0.5 }, true, {}, 1.0, true), Set);
 		TestEqual(TEXT("an unlit additive material publishes as additive"), Doc.AlphaMode, FString(TEXT("additive")));
 		TestTrue(TEXT("two-sided"), Doc.bDoubleSided);
-		TestEqual(TEXT("its glow is the base colour times the opacity (green)"), Doc.EmissiveFactor[1], 0.455, 1.0e-9);
+		TestEqual(TEXT("its glow is the base color times the opacity (green)"), Doc.EmissiveFactor[1], 0.455, 1.0e-9);
 		TestEqual(TEXT("(blue)"), Doc.EmissiveFactor[2], 0.5, 1.0e-9);
 		TestEqual(TEXT("with strength 1"), Doc.EmissiveStrength, 1.0, 1.0e-9);
 		const FString Json = JsonOf(Doc);
 		TestTrue(TEXT("two-sided is written"), Json.Contains(TEXT("\"doubleSided\":true")));
-		TestFalse(TEXT("no base colour"), Json.Contains(TEXT("baseColorFactor")));
+		TestFalse(TEXT("no base color"), Json.Contains(TEXT("baseColorFactor")));
 		FMantlePlaceMaterialDesc Desc;
 		FString Error;
 		const bool bRead = Readable(Json, Desc, Error);
@@ -510,10 +510,10 @@ bool FMantleGlowAdditiveDocumentTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("it picks the two-sided Additive permutation"), FMantlePlaceMaterials::PermutationIndex(Desc), FMantlePlaceMaterials::AdditivePermutationBase + 1);
 	}
 
-	// A translucent material is untouched: it keeps blend and its base colour.
+	// A translucent material is untouched: it keeps blend and its base color.
 	{
 		UMaterial* Material = NewUnlitTranslucent();
-		Material->GetEditorOnlyData()->EmissiveColor.Connect(0, AddColour(Material, FLinearColor(0.1f, 0.2f, 0.3f)));
+		Material->GetEditorOnlyData()->EmissiveColor.Connect(0, AddColor(Material, FLinearColor(0.1f, 0.2f, 0.3f)));
 		FMantlePlaceAssetSet Set;
 		const FMantlePlaceMaterialDocument Doc = Convert(Material, Baked(TEXT("BLEND"), { 0.1, 0.2, 0.3, 0.4 }, true, {}, 1.0, true), Set);
 		TestEqual(TEXT("a translucent unlit material stays blend"), Doc.AlphaMode, FString(TEXT("blend")));
@@ -567,12 +567,12 @@ bool FMantleGlowAdditiveDowngradeTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("a client that reads materialAdditive downgrades nothing"), FMantleTargetFeatures::All().DowngradeMaterial(Kept));
 	TestEqual(TEXT("and the document is still additive"), Kept.AlphaMode, FString(TEXT("additive")));
 
-	// One that does not gets translucent blending: a black base colour and an opacity from the glow, clamp(luminance x strength, 0, 1).
+	// One that does not gets translucent blending: a black base color and an opacity from the glow, clamp(luminance x strength, 0, 1).
 	const double Luminance = 0.2126 * 0.037 + 0.7152 * 0.91 + 0.0722 * 1.0;
 	FMantlePlaceMaterialDocument Faint = Additive(0.5);
 	TestTrue(TEXT("a client without it downgrades"), FMantleTargetFeatures::None().DowngradeMaterial(Faint));
 	TestEqual(TEXT("to blend"), Faint.AlphaMode, FString(TEXT("blend")));
-	TestEqual(TEXT("with a black base colour"), Faint.BaseColorFactor[1], 0.0, 1.0e-9);
+	TestEqual(TEXT("with a black base color"), Faint.BaseColorFactor[1], 0.0, 1.0e-9);
 	TestEqual(TEXT("and an opacity from the glow's luminance times its strength"), Faint.BaseColorFactor[3], Luminance * 0.5, 1.0e-9);
 	TestEqual(TEXT("the glow is the emissive, kept (green)"), Faint.EmissiveFactor[1], 0.91, 1.0e-9);
 	TestEqual(TEXT("and its strength"), Faint.EmissiveStrength, 0.5, 1.0e-9);
@@ -589,13 +589,13 @@ bool FMantleGlowAdditiveDowngradeTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("materialFidelity alone does not read additive"), FidelityOnly.DowngradeMaterial(Between));
 	TestEqual(TEXT("so it is blend"), Between.AlphaMode, FString(TEXT("blend")));
 
-	// What it writes: blend with the black base colour and the opacity, no additive.
+	// What it writes: blend with the black base color and the opacity, no additive.
 	FString Json;
 	FString Error;
 	TestTrue(TEXT("the downgraded document writes"), Faint.ToJson(TMap<FString, FString>(), Json, Error));
 	TestTrue(TEXT("as blend"), Json.Contains(TEXT("\"alphaMode\":\"blend\"")));
 	TestFalse(TEXT("not additive"), Json.Contains(TEXT("additive")));
-	TestTrue(TEXT("with a black base colour"), Json.Contains(TEXT("\"baseColorFactor\":[0,0,0,")));
+	TestTrue(TEXT("with a black base color"), Json.Contains(TEXT("\"baseColorFactor\":[0,0,0,")));
 	TestTrue(TEXT("and the glow as emissive"), Json.Contains(TEXT("\"emissiveFactor\":[0.037,0.91,1]")));
 
 	// The asset set writes it through the export's target, and says what it left out.
@@ -643,13 +643,13 @@ bool FMantleGlowAdditiveCoverageTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleGlowMaterialTestPrivate;
 
-	// An unlit additive material with a constant glow is kept, recognised as additive.
+	// An unlit additive material with a constant glow is kept, recognized as additive.
 	{
 		FMantleCoverage Coverage;
 		const FMantleCoverageExample* Example = SurveyExample(NewAdditive(true, FLinearColor(0.037f, 0.91f, 1.0f)), Coverage, EMantleCoverageOutcome::Kept);
 		if (TestNotNull(TEXT("an unlit additive material is kept"), Example))
 		{
-			TestTrue(TEXT("recognised as additive blending"), Example->Detail.Contains(TEXT("additive blending")));
+			TestTrue(TEXT("recognized as additive blending"), Example->Detail.Contains(TEXT("additive blending")));
 		}
 	}
 	// A lit one is approximated, and says its lighting is lost.
@@ -659,7 +659,7 @@ bool FMantleGlowAdditiveCoverageTest::RunTest(const FString& Parameters)
 		if (TestNotNull(TEXT("a lit additive material is approximated"), Example))
 		{
 			TestTrue(TEXT("it says it is drawn unlit"), Example->Detail.Contains(TEXT("lit additive drawn unlit")));
-			TestTrue(TEXT("and that additive blending is recognised"), Example->Detail.Contains(TEXT("additive blending")));
+			TestTrue(TEXT("and that additive blending is recognized"), Example->Detail.Contains(TEXT("additive blending")));
 		}
 	}
 	// A rim glow is dropped, and said.

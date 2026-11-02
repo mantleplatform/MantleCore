@@ -154,7 +154,7 @@ FMantleAreaChannelScore FMantleClothingColorDetect::ScoreChannel(TConstArrayView
 			if (Value < Low || Value > High) ++Binary; else ++Mid;
 			const bool bOn = Value >= 128;
 			On += bOn ? 1 : 0;
-			// Crossings between used neighbours only: a UV island's border is not an edge of the map.
+			// Crossings between used neighbors only: a UV island's border is not an edge of the map.
 			if (X + 1 < Size.X && Used[Index + 1] && (ChannelOf(Pixels[Index + 1], Channel) >= 128) != bOn) ++Crossings;
 			if (Y + 1 < Size.Y && Used[Index + Size.X] && (ChannelOf(Pixels[Index + Size.X], Channel) >= 128) != bOn) ++Crossings;
 		}
@@ -174,7 +174,7 @@ void FMantleClothingColorDetect::Choose(TConstArrayView<FColor> Pixels, TConstAr
 	for (uint8 Channel = 0; Channel < 3; ++Channel)
 	{
 		FMantleAreaChannelScore Score = ScoreChannel(Pixels, Used, Size, Channel);
-		// A greyscale map repeats one area in every channel: an accepted channel that matches one already taken is the same area.
+		// A grayscale map repeats one area in every channel: an accepted channel that matches one already taken is the same area.
 		if (Score.bAccepted && InOut.SourceChannels.ContainsByPredicate([&](uint8 Taken) { return MantleClothingColorDetectPrivate::SameArea(Pixels, Used, Taken, Channel); }))
 		{
 			Score.bAccepted = false;
@@ -184,9 +184,9 @@ void FMantleClothingColorDetect::Choose(TConstArrayView<FColor> Pixels, TConstAr
 	}
 	if (InOut.SourceChannels.Num() > 2)
 	{
-		// Every channel a clean region: a many-colour ID map, whose colours mix channels. Not split in v1.
+		// Every channel a clean region: a many-color ID map, whose colors mix channels. Not split in v1.
 		InOut.SourceChannels.Reset();
-		InOut.Why = TEXT("its colour map uses many colours, which Mantle can't split into areas yet");
+		InOut.Why = TEXT("its color map uses many colors, which Mantle can't split into areas yet");
 	}
 	else if (InOut.SourceChannels.IsEmpty())
 	{
@@ -219,7 +219,7 @@ bool FMantleClothingColorDetect::Detect(const FMantleGlbMesh& Mesh, int32 Materi
 	InOut.Areas.Reset();
 	OutCleanMask.Reset();
 	OutUsed.Reset();
-	if (SourceMask.Num() != static_cast<int64>(Size.X) * Size.Y) { OutError = TEXT("The colour map and its size disagree."); return false; }
+	if (SourceMask.Num() != static_cast<int64>(Size.X) * Size.Y) { OutError = TEXT("The color map and its size disagree."); return false; }
 	if (!FMantleClothingColorMeasure::MarkUsedTexels(Mesh, MaterialIndex, Size, OutUsed, OutError)) return false;
 	Choose(SourceMask, OutUsed, Size, InOut);
 	if (InOut.SourceChannels.IsEmpty()) return true;

@@ -36,8 +36,8 @@ namespace MantleVehicleChassisFitTestPrivate
 		return Chassis;
 	}
 
-	/** Four wheels of a model whose axles are at FrontX and RearX, its track Track about CentreY, wheel centres CentreZ up, radius Radius. */
-	TArray<FMantleVehicleFitWheel> FourWheels(const double FrontX, const double RearX, const double Track, const double CentreY, const double CentreZ, const double Radius)
+	/** Four wheels of a model whose axles are at FrontX and RearX, its track Track about CenterY, wheel centers CenterZ up, radius Radius. */
+	TArray<FMantleVehicleFitWheel> FourWheels(const double FrontX, const double RearX, const double Track, const double CenterY, const double CenterZ, const double Radius)
 	{
 		TArray<FMantleVehicleFitWheel> Wheels;
 		for (const double X : { FrontX, RearX })
@@ -45,7 +45,7 @@ namespace MantleVehicleChassisFitTestPrivate
 			for (const double Side : { -0.5, 0.5 })
 			{
 				FMantleVehicleFitWheel& Wheel = Wheels.AddDefaulted_GetRef();
-				Wheel.Centre = FVector(X, CentreY + Side * Track, CentreZ);
+				Wheel.Center = FVector(X, CenterY + Side * Track, CenterZ);
 				Wheel.Radius = Radius;
 			}
 		}
@@ -61,7 +61,7 @@ namespace MantleVehicleChassisFitTestPrivate
 			for (const double Side : { -0.5, 0.5 })
 			{
 				FMantleVehicleFitWheel& Wheel = Wheels.AddDefaulted_GetRef();
-				Wheel.Centre = FVector(Chassis.AxleX(Axle), Side * Chassis.Track, Chassis.WheelRadius);
+				Wheel.Center = FVector(Chassis.AxleX(Axle), Side * Chassis.Track, Chassis.WheelRadius);
 				Wheel.Radius = Chassis.WheelRadius;
 			}
 		}
@@ -80,15 +80,15 @@ bool FMantleVehicleChassisFitLayoutTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleChassisFitTestPrivate;
 
-	// A model modelled off its origin: the layout is read from the wheels alone.
+	// A model modeled off its origin: the layout is read from the wheels alone.
 	const FMantleChassisLayout Layout = FMantleVehicleChassisFit::LayoutFromWheels(FourWheels(300.0, 20.0, 160.0, 15.0, 40.0, 38.0));
 	TestTrue(TEXT("four wheels make a layout"), Layout.bValid);
 	TestEqual(TEXT("the front axle"), Layout.FrontX, 300.0);
 	TestEqual(TEXT("the rear axle"), Layout.RearX, 20.0);
 	TestEqual(TEXT("the wheelbase"), Layout.Wheelbase(), 280.0);
 	TestEqual(TEXT("the track"), Layout.Track, 160.0);
-	TestEqual(TEXT("the middle across the car"), Layout.CentreY, 15.0);
-	TestEqual(TEXT("the wheel centres' height"), Layout.CentreZ, 40.0);
+	TestEqual(TEXT("the middle across the car"), Layout.CenterY, 15.0);
+	TestEqual(TEXT("the wheel centers' height"), Layout.CenterZ, 40.0);
 	TestEqual(TEXT("the radius"), Layout.Radius, 38.0);
 
 	// Six wheels (a tandem rear): the end axles give the wheelbase.
@@ -96,18 +96,18 @@ bool FMantleVehicleChassisFitLayoutTest::RunTest(const FString& Parameters)
 	for (const double Side : { -0.5, 0.5 })
 	{
 		FMantleVehicleFitWheel& Extra = Six.AddDefaulted_GetRef();
-		Extra.Centre = FVector(60.0, Side * 160.0, 40.0);
+		Extra.Center = FVector(60.0, Side * 160.0, 40.0);
 		Extra.Radius = 38.0;
 	}
 	const FMantleChassisLayout SixLayout = FMantleVehicleChassisFit::LayoutFromWheels(Six);
 	TestEqual(TEXT("six wheels: the wheelbase is front to rear"), SixLayout.Wheelbase(), 300.0);
 	TestEqual(TEXT("six wheels: the track is still one axle's"), SixLayout.Track, 160.0);
 
-	// A radius that could not be read leaves the ground at the wheel centres' height below nothing: Z = 0.
+	// A radius that could not be read leaves the ground at the wheel centers' height below nothing: Z = 0.
 	TArray<FMantleVehicleFitWheel> Unknown = FourWheels(300.0, 0.0, 160.0, 0.0, 40.0, 0.0);
 	const FMantleChassisLayout UnknownLayout = FMantleVehicleChassisFit::LayoutFromWheels(Unknown);
 	TestTrue(TEXT("wheels with no radius still make a layout"), UnknownLayout.bValid);
-	TestEqual(TEXT("an unknown radius is the centres' height"), UnknownLayout.FitRadius(), 40.0);
+	TestEqual(TEXT("an unknown radius is the centers' height"), UnknownLayout.FitRadius(), 40.0);
 
 	TestFalse(TEXT("one wheel is no layout"), FMantleVehicleChassisFit::LayoutFromWheels(TConstArrayView<FMantleVehicleFitWheel>(Unknown.GetData(), 1)).bValid);
 	TestFalse(TEXT("no wheels is no layout"), FMantleVehicleChassisFit::LayoutFromWheels(TConstArrayView<FMantleVehicleFitWheel>()).bValid);
@@ -135,9 +135,9 @@ bool FMantleVehicleChassisFitIdentityTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the chassis origin is the origin"), Near(Stretch.Origin, FVector::ZeroVector));
 
 	const FMantleChassisPlacement Placed = FMantleVehicleChassisFit::Place(Chassis, Stretch);
-	TestTrue(TEXT("the box is the chassis body box's centre"), Near(Placed.CollisionCenter, FVector(0.0, 0.0, 96.0)));
+	TestTrue(TEXT("the box is the chassis body box's center"), Near(Placed.CollisionCenter, FVector(0.0, 0.0, 96.0)));
 	TestTrue(TEXT("the box is the chassis body box's size"), Near(Placed.CollisionExtent, FVector(320.0, 102.5, 48.0)));
-	TestTrue(TEXT("the centre of mass"), Near(Placed.CenterOfMass, FVector(0.0, 0.0, 61.0)));
+	TestTrue(TEXT("the center of mass"), Near(Placed.CenterOfMass, FVector(0.0, 0.0, 61.0)));
 	TestTrue(TEXT("the driver's seat (cab forward)"), Near(Placed.Seat, FVector(73.2, -42.0, 130.0)));
 	TestTrue(TEXT("the steering wheel's hub"), Near(Placed.SteeringWheelHub, FVector(120.0, -42.0, 133.0)));
 	TestEqual(TEXT("the steering wheel's radius"), Placed.SteeringWheelRadius, 21.0);
@@ -156,18 +156,18 @@ bool FMantleVehicleChassisFitIdentityTest::RunTest(const FString& Parameters)
 		{
 			continue;
 		}
-		if (Read.bCentreline)
+		if (Read.bCenterline)
 		{
-			// A two-wheeler has no track to measure, and is a centreline layout rather than an invalid one.
-			TArray<FMantleVehicleFitWheel> Centre;
+			// A two-wheeler has no track to measure, and is a centerline layout rather than an invalid one.
+			TArray<FMantleVehicleFitWheel> Center;
 			for (int32 Axle = 0; Axle < Read.AxlePositions.Num(); ++Axle)
 			{
-				FMantleVehicleFitWheel& Wheel = Centre.AddDefaulted_GetRef();
-				Wheel.Centre = FVector(Read.AxleX(Axle), 0.0, Read.WheelRadius);
+				FMantleVehicleFitWheel& Wheel = Center.AddDefaulted_GetRef();
+				Wheel.Center = FVector(Read.AxleX(Axle), 0.0, Read.WheelRadius);
 				Wheel.Radius = Read.WheelRadius;
 			}
-			const FMantleChassisLayout CentreLayout = FMantleVehicleChassisFit::LayoutFromWheels(Centre);
-			TestTrue(*FString::Printf(TEXT("preset %s: centreline wheels make a centreline layout with no track"), *Id), CentreLayout.bValid && CentreLayout.bCentreline && CentreLayout.Track == 0.0);
+			const FMantleChassisLayout CenterLayout = FMantleVehicleChassisFit::LayoutFromWheels(Center);
+			TestTrue(*FString::Printf(TEXT("preset %s: centerline wheels make a centerline layout with no track"), *Id), CenterLayout.bValid && CenterLayout.bCenterline && CenterLayout.Track == 0.0);
 			continue;
 		}
 		const FMantleChassisLayout Own = FMantleVehicleChassisFit::LayoutFromWheels(AxleWheels(Read));
@@ -177,8 +177,8 @@ bool FMantleVehicleChassisFitIdentityTest::RunTest(const FString& Parameters)
 		const FMantleChassisPlacement OwnPlaced = FMantleVehicleChassisFit::Place(Read, OwnStretch);
 		TestFalse(*FString::Printf(TEXT("preset %s fits its own wheels without stretching"), *Id), OwnStretch.IsStretched());
 		TestTrue(*FString::Printf(TEXT("preset %s seat is its chassis seat"), *Id), Near(OwnPlaced.Seat, Read.Seat));
-		TestTrue(*FString::Printf(TEXT("preset %s centre of mass is its chassis's"), *Id), Near(OwnPlaced.CenterOfMass, Read.CenterOfMass));
-		TestTrue(*FString::Printf(TEXT("preset %s centre of mass is above the wheel centres"), *Id), OwnPlaced.CenterOfMass.Z > Read.WheelRadius);
+		TestTrue(*FString::Printf(TEXT("preset %s center of mass is its chassis's"), *Id), Near(OwnPlaced.CenterOfMass, Read.CenterOfMass));
+		TestTrue(*FString::Printf(TEXT("preset %s center of mass is above the wheel centers"), *Id), OwnPlaced.CenterOfMass.Z > Read.WheelRadius);
 	}
 	return true;
 }
@@ -205,7 +205,7 @@ bool FMantleVehicleChassisFitThreeAxlesTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	// A six-wheel model of 700 cm (1.25x the chassis), its middle axle 21 cm behind where the chassis's share puts it, centred
+	// A six-wheel model of 700 cm (1.25x the chassis), its middle axle 21 cm behind where the chassis's share puts it, centerd
 	// off its origin. The end axles give the wheelbase and track; the middle axle is not asked for.
 	TArray<FMantleVehicleFitWheel> Wheels;
 	const double ModelWheelbase = 1.25 * Chassis.Wheelbase;
@@ -214,7 +214,7 @@ bool FMantleVehicleChassisFitThreeAxlesTest::RunTest(const FString& Parameters)
 		for (const double Side : { -0.5, 0.5 })
 		{
 			FMantleVehicleFitWheel& Wheel = Wheels.AddDefaulted_GetRef();
-			Wheel.Centre = FVector(X, 20.0 + Side * Chassis.Track, Chassis.WheelRadius);
+			Wheel.Center = FVector(X, 20.0 + Side * Chassis.Track, Chassis.WheelRadius);
 			Wheel.Radius = Chassis.WheelRadius;
 		}
 	}
@@ -222,7 +222,7 @@ bool FMantleVehicleChassisFitThreeAxlesTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("six wheels on three axles make a layout"), Layout.bValid);
 	TestTrue(TEXT("the wheelbase is front to rearmost axle"), FMath::IsNearlyEqual(Layout.Wheelbase(), ModelWheelbase, 1e-6));
 	TestTrue(TEXT("the track is one axle's, not the whole spread"), FMath::IsNearlyEqual(Layout.Track, Chassis.Track, 1e-6));
-	TestEqual(TEXT("the middle across the car"), Layout.CentreY, 20.0);
+	TestEqual(TEXT("the middle across the car"), Layout.CenterY, 20.0);
 
 	const FMantleChassisStretch Stretch = FMantleVehicleChassisFit::Stretch(Chassis, Layout, 1.0);
 	TestTrue(TEXT("the chassis is 1.25x longer"), FMath::IsNearlyEqual(Stretch.Kx, 1.25, 1e-6));
@@ -265,7 +265,7 @@ bool FMantleVehicleChassisFitStretchTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the box is 1.5x longer, its height and width unchanged"), Near(Placed.CollisionExtent, FVector(480.0, 102.5, 48.0)));
 	TestTrue(TEXT("the box's underside is the chassis's clearance above the ground"), FMath::IsNearlyEqual(Placed.CollisionCenter.Z - Placed.CollisionExtent.Z, 48.0));
 	TestTrue(TEXT("the seat is 1.5x further forward and as high"), Near(Placed.Seat, FVector(109.8, -42.0, 130.0)));
-	TestTrue(TEXT("the centre of mass is still mid-wheelbase"), Near(Placed.CenterOfMass, FVector(0.0, 0.0, 61.0)));
+	TestTrue(TEXT("the center of mass is still mid-wheelbase"), Near(Placed.CenterOfMass, FVector(0.0, 0.0, 61.0)));
 
 	// Past the band: held to it, and the creator is told.
 	const FMantleChassisLayout Huge = FMantleVehicleChassisFit::LayoutFromWheels(FourWheels(875.0, -875.0, 168.0, 0.0, 42.0, 42.0));
@@ -288,17 +288,17 @@ bool FMantleVehicleChassisFitOriginTest::RunTest(const FString& Parameters)
 	using namespace MantleVehicleChassisFitTestPrivate;
 	const FMantleVehicleChassisReference Chassis = TruckChassis();
 
-	// A model whose origin is not at the axle midpoint: front axle at 300, rear at 20 (middle 160), wheel centres 50 up with radius 42
-	// (so the ground is at 8), the track centred 10 across. The chassis is laid on that middle, that ground and that centre line.
+	// A model whose origin is not at the axle midpoint: front axle at 300, rear at 20 (middle 160), wheel centers 50 up with radius 42
+	// (so the ground is at 8), the track centerd 10 across. The chassis is laid on that middle, that ground and that center line.
 	const FMantleChassisLayout Layout = FMantleVehicleChassisFit::LayoutFromWheels(FourWheels(300.0, 20.0, 168.0, 10.0, 50.0, 42.0));
 	const FMantleChassisStretch Stretch = FMantleVehicleChassisFit::Stretch(Chassis, Layout, 1.0);
-	TestTrue(TEXT("the origin is the axle middle, the ground, the track centre"), Near(Stretch.Origin, FVector(160.0, 10.0, 8.0)));
+	TestTrue(TEXT("the origin is the axle middle, the ground, the track center"), Near(Stretch.Origin, FVector(160.0, 10.0, 8.0)));
 	TestEqual(TEXT("the wheelbase is 280 against the chassis's 350"), Stretch.Kx, 0.8);
 
 	const FMantleChassisPlacement Placed = FMantleVehicleChassisFit::Place(Chassis, Stretch);
-	TestTrue(TEXT("the box is centred on the axle middle and track centre"), FMath::IsNearlyEqual(Placed.CollisionCenter.X, 160.0) && FMath::IsNearlyEqual(Placed.CollisionCenter.Y, 10.0));
+	TestTrue(TEXT("the box is centerd on the axle middle and track center"), FMath::IsNearlyEqual(Placed.CollisionCenter.X, 160.0) && FMath::IsNearlyEqual(Placed.CollisionCenter.Y, 10.0));
 	TestTrue(TEXT("the box's underside is the clearance above the model's ground"), FMath::IsNearlyEqual(Placed.CollisionCenter.Z - Placed.CollisionExtent.Z, 8.0 + 48.0));
-	TestTrue(TEXT("the centre of mass is over the axle middle, above the wheel centres"), FMath::IsNearlyEqual(Placed.CenterOfMass.X, 160.0) && FMath::IsNearlyEqual(Placed.CenterOfMass.Y, 10.0) && Placed.CenterOfMass.Z > 50.0);
+	TestTrue(TEXT("the center of mass is over the axle middle, above the wheel centers"), FMath::IsNearlyEqual(Placed.CenterOfMass.X, 160.0) && FMath::IsNearlyEqual(Placed.CenterOfMass.Y, 10.0) && Placed.CenterOfMass.Z > 50.0);
 	TestTrue(TEXT("the seat is the chassis's, stretched about the origin"), Near(Placed.Seat, FVector(160.0 + 73.2 * 0.8, 10.0 - 42.0, 8.0 + 130.0)));
 	TestTrue(TEXT("a wheel's chassis position lands on the model's wheel"), Near(Stretch.PointToModel(FVector(0.5 * Chassis.Wheelbase, 0.5 * Chassis.Track, Chassis.WheelRadius)), FVector(300.0, 10.0 + 84.0, 50.0)));
 	return true;
@@ -314,7 +314,7 @@ bool FMantleVehicleChassisFitSizeTest::RunTest(const FString& Parameters)
 	using namespace MantleVehicleChassisFitTestPrivate;
 	const FMantleVehicleChassisReference Chassis = TruckChassis();
 
-	// A model modelled at half the chassis's scale, with Size 2: scaled up it is the chassis, so nothing stretches, and every value
+	// A model modeled at half the chassis's scale, with Size 2: scaled up it is the chassis, so nothing stretches, and every value
 	// written is the chassis's divided by 2 (the export multiplies it by Size again).
 	const FMantleChassisLayout Layout = FMantleVehicleChassisFit::LayoutFromWheels(FourWheels(87.5, -87.5, 84.0, 0.0, 21.0, 21.0));
 	const FMantleChassisStretch Stretch = FMantleVehicleChassisFit::Stretch(Chassis, Layout, 2.0);
@@ -323,7 +323,7 @@ bool FMantleVehicleChassisFitSizeTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("at Size 2 height is not stretched"), Stretch.Kz, 1.0);
 	const FMantleChassisPlacement Placed = FMantleVehicleChassisFit::Place(Chassis, Stretch);
 	TestTrue(TEXT("the box is half the chassis's, in model units"), Near(Placed.CollisionExtent, FVector(160.0, 51.25, 24.0)));
-	TestTrue(TEXT("the centre of mass is half the chassis's"), Near(Placed.CenterOfMass, FVector(0.0, 0.0, 30.5)));
+	TestTrue(TEXT("the center of mass is half the chassis's"), Near(Placed.CenterOfMass, FVector(0.0, 0.0, 30.5)));
 	TestTrue(TEXT("the seat is half the chassis's"), Near(Placed.Seat, FVector(36.6, -21.0, 65.0)));
 	TestTrue(TEXT("the steering wheel's hub is half the chassis's"), Near(Placed.SteeringWheelHub, FVector(60.0, -21.0, 66.5)));
 	TestEqual(TEXT("the steering wheel's radius is half the chassis's"), Placed.SteeringWheelRadius, 10.5);
@@ -345,7 +345,7 @@ bool FMantleVehicleChassisFitApplyTest::RunTest(const FString& Parameters)
 	const FMantleChassisLayout Layout = FMantleVehicleChassisFit::LayoutFromWheels(FourWheels(175.0, -175.0, 168.0, 0.0, 42.0, 42.0));
 	const FMantleChassisPlacement Placed = FMantleVehicleChassisFit::Place(Chassis, FMantleVehicleChassisFit::Stretch(Chassis, Layout, 1.0));
 
-	// A vehicle the converter filled from the model's physics: three boxes, a centre of mass underground, no passenger seat.
+	// A vehicle the converter filled from the model's physics: three boxes, a center of mass underground, no passenger seat.
 	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage());
 	Source->Tuning.Collision.AddDefaulted(3);
 	Source->Tuning.bOverrideCenterOfMass = true;
@@ -360,7 +360,7 @@ bool FMantleVehicleChassisFitApplyTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("the box is the chassis's"), Near(Tuning.Collision[0].Center, Placed.CollisionCenter) && Near(Tuning.Collision[0].Extent, Placed.CollisionExtent));
 	}
-	TestTrue(TEXT("the centre of mass is overridden with the chassis's"), Tuning.bOverrideCenterOfMass && Near(Tuning.CenterOfMass, Placed.CenterOfMass));
+	TestTrue(TEXT("the center of mass is overridden with the chassis's"), Tuning.bOverrideCenterOfMass && Near(Tuning.CenterOfMass, Placed.CenterOfMass));
 	TestTrue(TEXT("the driver's seat is placed"), Tuning.bSeatLocation && Near(Tuning.SeatLocation, Placed.Seat));
 	TestTrue(TEXT("the steering wheel is placed"), Tuning.bSteeringWheel && Near(Tuning.SteeringWheelLocation, Placed.SteeringWheelHub)
 		&& Tuning.SteeringWheelRadius == 21.f && Tuning.SteeringWheelRotation.Pitch == -20.0);
@@ -467,7 +467,7 @@ bool FMantleVehicleChassisFitBodyBoxesTest::RunTest(const FString& Parameters)
 		for (const FMantleChassisBox& Box : FMantleVehicleChassisFit::FitBodyBoxes(Points, TubCenter, TubExtent))
 		{
 			TestTrue(TEXT("a box's extent is in 1 to 1000"), Box.Extent.GetMin() >= 1.0 && Box.Extent.GetMax() <= 1000.0);
-			TestTrue(TEXT("a box's centre is in -1000 to 1000"), Box.Center.GetAbsMax() <= 1000.0);
+			TestTrue(TEXT("a box's center is in -1000 to 1000"), Box.Center.GetAbsMax() <= 1000.0);
 		}
 	}
 

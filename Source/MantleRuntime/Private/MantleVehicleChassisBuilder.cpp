@@ -10,10 +10,10 @@
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleChassisBuilderPrivate
 {
-	/** Sides of a wheel's grey cylinder. */
+	/** Sides of a wheel's gray cylinder. */
 	constexpr int32 WheelSides = 12;
 
-	/** Metres a texture repeat covers on the grey shapes, as UV per cm. */
+	/** Meters a texture repeat covers on the gray shapes, as UV per cm. */
 	constexpr float UVPerCm = 0.01f;
 
 	/** The section's material name: the body is drawn with Mantle's default surface. */
@@ -30,7 +30,7 @@ namespace MantleChassisBuilderPrivate
 		return false;
 	}
 
-	/** Grey geometry into one LOD: flat-shaded faces, every vertex skinned wholly to one bone. */
+	/** Gray geometry into one LOD: flat-shaded faces, every vertex skinned wholly to one bone. */
 	struct FShapeBuilder
 	{
 		FMantleSkinnedMeshLOD& LOD;
@@ -77,7 +77,7 @@ namespace MantleChassisBuilderPrivate
 		/** An axis-aligned box. */
 		void AddBox(const FVector3f& Min, const FVector3f& Max, const int32 Bone)
 		{
-			const FVector3f Centre = 0.5f * (Min + Max);
+			const FVector3f Center = 0.5f * (Min + Max);
 			const FVector3f Half = 0.5f * (Max - Min);
 			for (int32 Axis = 0; Axis < 3; ++Axis)
 			{
@@ -93,7 +93,7 @@ namespace MantleChassisBuilderPrivate
 					const float CornerV[4] = { -1.0f, -1.0f, 1.0f, 1.0f };
 					for (int32 Corner = 0; Corner < 4; ++Corner)
 					{
-						Corners[Corner] = Centre;
+						Corners[Corner] = Center;
 						Corners[Corner][Axis] += Sign * Half[Axis];
 						Corners[Corner][U] += CornerU[Corner] * Half[U];
 						Corners[Corner][V] += CornerV[Corner] * Half[V];
@@ -104,14 +104,14 @@ namespace MantleChassisBuilderPrivate
 			}
 		}
 
-		/** A cylinder about the Y axis (a wheel): Radius in X and Z, Width along Y, centred on Centre. */
-		void AddWheel(const FVector3f& Centre, const float Radius, const float Width, const int32 Bone)
+		/** A cylinder about the Y axis (a wheel): Radius in X and Z, Width along Y, centered on Center. */
+		void AddWheel(const FVector3f& Center, const float Radius, const float Width, const int32 Bone)
 		{
 			const float HalfWidth = 0.5f * Width;
-			auto Rim = [&Centre, Radius](const int32 Step, const float Y)
+			auto Rim = [&Center, Radius](const int32 Step, const float Y)
 			{
 				const float Angle = UE_TWO_PI * static_cast<float>(Step) / static_cast<float>(WheelSides);
-				return FVector3f(Centre.X + Radius * FMath::Cos(Angle), Centre.Y + Y, Centre.Z + Radius * FMath::Sin(Angle));
+				return FVector3f(Center.X + Radius * FMath::Cos(Angle), Center.Y + Y, Center.Z + Radius * FMath::Sin(Angle));
 			};
 			for (int32 Step = 0; Step < WheelSides; ++Step)
 			{
@@ -126,7 +126,7 @@ namespace MantleChassisBuilderPrivate
 			for (const float Sign : { -1.0f, 1.0f })
 			{
 				const FVector3f Normal(0.0f, Sign, 0.0f);
-				const int32 Hub = AddVertex(Centre + FVector3f(0.0f, Sign * HalfWidth, 0.0f), Normal, FVector2f(0.5f, 0.5f), Bone);
+				const int32 Hub = AddVertex(Center + FVector3f(0.0f, Sign * HalfWidth, 0.0f), Normal, FVector2f(0.5f, 0.5f), Bone);
 				int32 Ring[WheelSides];
 				for (int32 Step = 0; Step < WheelSides; ++Step)
 				{
@@ -266,7 +266,7 @@ FMantleVehicleChassisReference FMantleVehicleChassisBuilder::ReferenceOf(const F
 	Reference.SteeringWheelRadius = Spec.RimRadius;
 	Reference.SteeringWheelPitch = FMantleChassisSpec::SteeringWheelPitch;
 	Reference.bPassenger = Spec.bPassenger;
-	Reference.bCentreline = Spec.bCentreline;
+	Reference.bCenterline = Spec.bCenterline;
 	Reference.DriverSeat = Spec.DriverSeat;
 	Reference.bSteeringWheel = Spec.bSteeringWheel;
 	Reference.ForkBone = Spec.ForkBone;
@@ -321,28 +321,28 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 		return Refuse(OutError, FString::Printf(TEXT("the chassis's vehicle document is not valid: %s"), *Why));
 	}
 
-	// The skeleton: a root at the origin and a bone at each wheel centre, the root's children. A steered centreline wheel hangs under a
-	// fork bone at its centre instead, so the fork can yaw it.
+	// The skeleton: a root at the origin and a bone at each wheel center, the root's children. A steered centerline wheel hangs under a
+	// fork bone at its center instead, so the fork can yaw it.
 	FMantleSkinnedMesh& Body = Asset.Body;
 	Body.Bones.Add({ FMantleVehicleChassisBuilder::RootBoneName(), INDEX_NONE });
 	Body.ReferencePose.Add(FTransform::Identity);
 	TArray<int32> WheelBones;
 	for (int32 Index = 0; Index < Spec.WheelCount(); ++Index)
 	{
-		const FVector Centre = Spec.WheelCentre(Index);
+		const FVector Center = Spec.WheelCenter(Index);
 		int32 Parent = 0;
-		FTransform Pose(Centre);
-		if (Spec.bCentreline && Spec.Axles[Spec.AxleOf(Index)].bSteer)
+		FTransform Pose(Center);
+		if (Spec.bCenterline && Spec.Axles[Spec.AxleOf(Index)].bSteer)
 		{
 			Parent = Body.Bones.Num();
 			Body.Bones.Add({ Spec.ForkBoneOfAxle(Spec.AxleOf(Index)), 0 });
-			Body.ReferencePose.Add(FTransform(Centre));
+			Body.ReferencePose.Add(FTransform(Center));
 			Pose = FTransform::Identity;
 		}
 		WheelBones.Add(Body.Bones.Num());
 		Body.Bones.Add({ Spec.WheelBone(Index), Parent });
 		Body.ReferencePose.Add(Pose);
-		Asset.WheelPositions.Add(Centre);
+		Asset.WheelPositions.Add(Center);
 	}
 
 	// A plane's control surfaces and engines: a bone each under the root, posed at the surface's hinge (its aerofoil), so a surface turns about its own
@@ -393,7 +393,7 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 		return Refuse(OutError, FString::Printf(TEXT("the chassis's vehicle document does not fit its body: %s"), *Why));
 	}
 
-	// The grey shapes: the body box on the root, a cylinder on each wheel bone.
+	// The gray shapes: the body box on the root, a cylinder on each wheel bone.
 	FMantleSkinnedMeshLOD& LOD = Body.LODs.AddDefaulted_GetRef();
 	LOD.NumInfluences = 4;
 	FShapeBuilder Shapes(LOD);
@@ -404,7 +404,7 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 	const bool bDrawWheels = !Spec.Helicopter.bSet && !Spec.Hovercraft.bSet;
 	for (int32 Index = 0; bDrawWheels && Index < Spec.WheelCount(); ++Index)
 	{
-		Shapes.AddWheel(FVector3f(Spec.WheelCentre(Index)), static_cast<float>(Spec.WheelRadius), static_cast<float>(Spec.WheelWidth), WheelBones[Index]);
+		Shapes.AddWheel(FVector3f(Spec.WheelCenter(Index)), static_cast<float>(Spec.WheelRadius), static_cast<float>(Spec.WheelWidth), WheelBones[Index]);
 	}
 	// A hovercraft's: the skirt under the hull, the fan's pod behind it and the fin on its top, all on the root.
 	if (Spec.Hovercraft.bSet)

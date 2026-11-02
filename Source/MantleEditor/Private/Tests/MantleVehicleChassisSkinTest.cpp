@@ -19,7 +19,7 @@
 
 // Chassis from a model, as arithmetic: the creator's mesh worn as the skin of a type's chassis. The models here are boxes made in the test, as arrays,
 // so nothing depends on an asset: how they are turned, scaled and stood on the ground, which bone each vertex rides, where a spinning part's bone goes, and what the
-// fit makes of two wheels on the centre line. The end-to-end builds (a jet from a static mesh, a plane, a bike, a helicopter) are in MantleGameplayEditor's
+// fit makes of two wheels on the center line. The end-to-end builds (a jet from a static mesh, a plane, a bike, a helicopter) are in MantleGameplayEditor's
 // Mantle.Vehicle.ChassisSkin.* tests, which also make the definitions.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
@@ -29,7 +29,7 @@ namespace MantleVehicleChassisSkinTestPrivate
 	void AddBox(FMantleVehicleModel& Model, const FVector3f& Min, const FVector3f& Max, const int32 Bone, const int32 Section)
 	{
 		FMantleSkinnedMeshLOD& LOD = Model.LOD;
-		const FVector3f Centre = 0.5f * (Min + Max);
+		const FVector3f Center = 0.5f * (Min + Max);
 		const FVector3f Half = 0.5f * (Max - Min);
 		if (LOD.Sections.Num() <= Section)
 		{
@@ -46,10 +46,10 @@ namespace MantleVehicleChassisSkinTestPrivate
 				FVector3f V(0.0f);
 				V[(Axis + 2) % 3] = 1.0f;
 				const uint32 First = static_cast<uint32>(LOD.Positions.Num());
-				const FVector3f FaceCentre = Centre + Normal * Half[Axis];
+				const FVector3f FaceCenter = Center + Normal * Half[Axis];
 				const float Du = Half[(Axis + 1) % 3];
 				const float Dv = Half[(Axis + 2) % 3];
-				const FVector3f Corners[4] = { FaceCentre - U * Du - V * Dv, FaceCentre + U * Du - V * Dv, FaceCentre + U * Du + V * Dv, FaceCentre - U * Du + V * Dv };
+				const FVector3f Corners[4] = { FaceCenter - U * Du - V * Dv, FaceCenter + U * Du - V * Dv, FaceCenter + U * Du + V * Dv, FaceCenter - U * Du + V * Dv };
 				for (int32 Corner = 0; Corner < 4; ++Corner)
 				{
 					LOD.Positions.Add(Corners[Corner]);
@@ -98,10 +98,10 @@ namespace MantleVehicleChassisSkinTestPrivate
 		return Model;
 	}
 
-	bool Load(FAutomationTestBase& Test, const TCHAR* Id, FMantleChassisSpec& OutSpec, FMantleVehicleAsset& OutGrey)
+	bool Load(FAutomationTestBase& Test, const TCHAR* Id, FMantleChassisSpec& OutSpec, FMantleVehicleAsset& OutGray)
 	{
 		FString Error;
-		const bool bOk = FMantleVehicleChassisBuilder::LoadSpec(Id, OutSpec, Error) && FMantleVehicleChassisBuilder::MakeAsset(OutSpec, OutGrey, Error);
+		const bool bOk = FMantleVehicleChassisBuilder::LoadSpec(Id, OutSpec, Error) && FMantleVehicleChassisBuilder::MakeAsset(OutSpec, OutGray, Error);
 		Test.TestTrue(*FString::Printf(TEXT("the %s chassis loads (%s)"), Id, *Error), bOk);
 		return bOk;
 	}
@@ -118,25 +118,25 @@ namespace MantleVehicleChassisSkinTestPrivate
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleVehicleChassisSkinCentrelineFitTest,
-	"Mantle.Vehicle.ChassisFit.CentrelineBike",
+	FMantleVehicleChassisSkinCenterlineFitTest,
+	"Mantle.Vehicle.ChassisFit.CenterlineBike",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
-bool FMantleVehicleChassisSkinCentrelineFitTest::RunTest(const FString& Parameters)
+bool FMantleVehicleChassisSkinCenterlineFitTest::RunTest(const FString& Parameters)
 {
-	// A bike's two wheels, on the model's centre line: not an invalid layout with no track.
+	// A bike's two wheels, on the model's center line: not an invalid layout with no track.
 	const TArray<FMantleVehicleFitWheel> Bike = { { FVector(70, 0.4, 34), 34.0 }, { FVector(-80, -0.3, 34), 34.0 } };
 	const FMantleChassisLayout BikeLayout = FMantleVehicleChassisFit::LayoutFromWheels(Bike);
-	TestTrue(TEXT("two wheels on the centre line are a valid layout"), BikeLayout.bValid);
-	TestTrue(TEXT("a centreline one"), BikeLayout.bCentreline);
+	TestTrue(TEXT("two wheels on the center line are a valid layout"), BikeLayout.bValid);
+	TestTrue(TEXT("a centerline one"), BikeLayout.bCenterline);
 	TestEqual(TEXT("with no track"), BikeLayout.Track, 0.0);
 	TestEqual(TEXT("and a 150 cm wheelbase"), BikeLayout.Wheelbase(), 150.0);
 
-	// Negative control: a car's four wheels have a track, and are not centreline.
+	// Negative control: a car's four wheels have a track, and are not centerline.
 	const TArray<FMantleVehicleFitWheel> Car = { { FVector(140, -80, 33), 33.0 }, { FVector(140, 80, 33), 33.0 }, { FVector(-140, -80, 33), 33.0 }, { FVector(-140, 80, 33), 33.0 } };
 	const FMantleChassisLayout CarLayout = FMantleVehicleChassisFit::LayoutFromWheels(Car);
 	TestTrue(TEXT("a car's layout is valid"), CarLayout.bValid);
-	TestFalse(TEXT("and has wheels on both sides"), CarLayout.bCentreline);
+	TestFalse(TEXT("and has wheels on both sides"), CarLayout.bCenterline);
 	TestEqual(TEXT("with its track"), CarLayout.Track, 160.0);
 
 	// A motorcycle chassis stretched to that bike has finite stretches in every direction, and its seat has no steering wheel to be forced on.
@@ -148,7 +148,7 @@ bool FMantleVehicleChassisSkinCentrelineFitTest::RunTest(const FString& Paramete
 	{
 		return false;
 	}
-	TestTrue(TEXT("the chassis is a centreline one"), Chassis.bCentreline);
+	TestTrue(TEXT("the chassis is a centerline one"), Chassis.bCenterline);
 	const FMantleChassisStretch Stretch = FMantleVehicleChassisFit::Stretch(Chassis, BikeLayout, 1.0);
 	TestTrue(TEXT("its stretches are finite and in range"), FMath::IsFinite(Stretch.Kx) && FMath::IsFinite(Stretch.Ky) && FMath::IsFinite(Stretch.Kz) && Stretch.Ky >= FMantleVehicleChassisFit::MinStretch);
 	const FMantleChassisPlacement Placement = FMantleVehicleChassisFit::Place(Chassis, Stretch);
@@ -208,12 +208,12 @@ bool FMantleVehicleChassisSkinPlacementTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleChassisSkinTestPrivate;
 	FMantleChassisSpec Spec;
-	FMantleVehicleAsset Grey;
-	if (!Load(*this, TEXT("jet"), Spec, Grey))
+	FMantleVehicleAsset Gray;
+	if (!Load(*this, TEXT("jet"), Spec, Gray))
 	{
 		return false;
 	}
-	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Spec, Grey.Body);
+	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Spec, Gray.Body);
 
 	// A static model long along Y (a nose on +Y): 12 m by 18 m, 3 m tall, off to one side of the origin and floating 10 m up.
 	FMantleVehicleModel Model;
@@ -226,22 +226,22 @@ bool FMantleVehicleChassisSkinPlacementTest::RunTest(const FString& Parameters)
 	// Turned to face +X it is 18 m long and 12 m across; the chassis's footprint is matched.
 	const FVector Extent = FMantleVehicleChassisSkin::Extent(Model, 270.0);
 	TestTrue(*FString::Printf(TEXT("turned 270 degrees its length is the Y it had (%.0f x %.0f)"), Extent.X, Extent.Y), FMath::IsNearlyEqual(Extent.X, 1800.0, 1.0) && FMath::IsNearlyEqual(Extent.Y, 1200.0, 1.0));
-	const FMantleVehicleModelPlacement Placement = FMantleVehicleChassisSkin::FitPlacement(Spec, Grey.Body, Model, 270.0, FMantleVehicleModelMap());
+	const FMantleVehicleModelPlacement Placement = FMantleVehicleChassisSkin::FitPlacement(Spec, Gray.Body, Model, 270.0, FMantleVehicleModelMap());
 	FMantleVehicleSkinned Skinned;
 	FString Error;
-	if (!TestTrue(*FString::Printf(TEXT("the model skins (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Grey.Body, Slots, Model, Placement, FMantleVehicleModelMap(), Skinned, Error)))
+	if (!TestTrue(*FString::Printf(TEXT("the model skins (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Gray.Body, Slots, Model, Placement, FMantleVehicleModelMap(), Skinned, Error)))
 	{
 		return false;
 	}
-	const FBox3f GreyBox = Grey.Body.ComputeBounds(0);
+	const FBox3f GrayBox = Gray.Body.ComputeBounds(0);
 	const FBox3f Box = Skinned.Body.ComputeBounds(0);
-	const double GreyArea = (GreyBox.Max.X - GreyBox.Min.X) * (GreyBox.Max.Y - GreyBox.Min.Y);
+	const double GrayArea = (GrayBox.Max.X - GrayBox.Min.X) * (GrayBox.Max.Y - GrayBox.Min.Y);
 	const double Area = (Box.Max.X - Box.Min.X) * (Box.Max.Y - Box.Min.Y);
-	TestTrue(*FString::Printf(TEXT("it covers the chassis's ground (%.0f against %.0f square cm)"), Area, GreyArea), FMath::Abs(Area - GreyArea) < 0.01 * GreyArea);
+	TestTrue(*FString::Printf(TEXT("it covers the chassis's ground (%.0f against %.0f square cm)"), Area, GrayArea), FMath::Abs(Area - GrayArea) < 0.01 * GrayArea);
 	TestTrue(TEXT("it is longer than wide, nose on +X"), Box.Max.X - Box.Min.X > Box.Max.Y - Box.Min.Y);
 	TestTrue(TEXT("it stands on the ground"), FMath::Abs(Box.Min.Z) < 0.01f);
-	TestTrue(*FString::Printf(TEXT("and is centred on the chassis (x %.0f)"), 0.5f * (Box.Min.X + Box.Max.X)),
-		FMath::Abs(0.5f * (Box.Min.X + Box.Max.X) - 0.5f * (GreyBox.Min.X + GreyBox.Max.X)) < 1.0f && FMath::Abs(0.5f * (Box.Min.Y + Box.Max.Y)) < 1.0f);
+	TestTrue(*FString::Printf(TEXT("and is centerd on the chassis (x %.0f)"), 0.5f * (Box.Min.X + Box.Max.X)),
+		FMath::Abs(0.5f * (Box.Min.X + Box.Max.X) - 0.5f * (GrayBox.Min.X + GrayBox.Max.X)) < 1.0f && FMath::Abs(0.5f * (Box.Min.Y + Box.Max.Y)) < 1.0f);
 
 	// Whole to the root, one influence of full weight each, the model's triangles and its material slot kept.
 	const FMantleSkinnedMeshLOD& LOD = Skinned.Body.LODs[0];
@@ -253,7 +253,7 @@ bool FMantleVehicleChassisSkinPlacementTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("every vertex is weighted whole to the root bone"), bAllRoot);
 	TestEqual(TEXT("the triangles are the model's"), LOD.NumTriangles(), 12);
 	TestEqual(TEXT("and so is its one material slot"), Skinned.Materials.Num(), 1);
-	TestEqual(TEXT("the skeleton is the chassis's"), Skinned.Body.Bones.Num(), Grey.Body.Bones.Num());
+	TestEqual(TEXT("the skeleton is the chassis's"), Skinned.Body.Bones.Num(), Gray.Body.Bones.Num());
 
 	// Positive control: the placement is what moved it. Unturned, the model keeps its Y as its width.
 	const FVector Unturned = FMantleVehicleChassisSkin::Extent(Model, 0.0);
@@ -270,12 +270,12 @@ bool FMantleVehicleChassisSkinPartsTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleChassisSkinTestPrivate;
 	FMantleChassisSpec Spec;
-	FMantleVehicleAsset Grey;
-	if (!Load(*this, TEXT("plane"), Spec, Grey))
+	FMantleVehicleAsset Gray;
+	if (!Load(*this, TEXT("plane"), Spec, Gray))
 	{
 		return false;
 	}
-	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Spec, Grey.Body);
+	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Spec, Gray.Body);
 	const auto HasSlot = [&Slots](const TCHAR* Name) { return Slots.ContainsByPredicate([Name](const FMantleVehiclePartSlot& Slot) { return Slot.ChassisBone == FName(Name); }); };
 	TestTrue(TEXT("a plane's slots are its nose and main wheels, ailerons, elevator, rudder and propeller"),
 		HasSlot(TEXT("wheel_f")) && HasSlot(TEXT("wheel_rl")) && HasSlot(TEXT("wheel_rr")) && HasSlot(TEXT("aileron_l")) && HasSlot(TEXT("aileron_r")) && HasSlot(TEXT("elevator"))
@@ -332,11 +332,11 @@ bool FMantleVehicleChassisSkinPartsTest::RunTest(const FString& Parameters)
 	FMantleVehicleModelMap Map;
 	Map.Parts.Add(FName(TEXT("propeller")), FMantleVehicleModelPiece::OfBone(FName(TEXT("Spinner"))));
 	Map.Parts.Add(FName(TEXT("wheel_rl")), FMantleVehicleModelPiece::OfBone(FName(TEXT("WheelMainL"))));
-	const FMantleVehicleModelPlacement Placement = FMantleVehicleChassisSkin::FitPlacement(Spec, Grey.Body, Model, 0.0, Map);
+	const FMantleVehicleModelPlacement Placement = FMantleVehicleChassisSkin::FitPlacement(Spec, Gray.Body, Model, 0.0, Map);
 	FMantleVehicleSkinned Skinned;
 	FString Error;
-	// First with a limit that lets any wheel move (the model's wheel is a metre from the chassis's): the part is put on the wheel.
-	if (!TestTrue(*FString::Printf(TEXT("the model skins (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Grey.Body, Slots, Model, Placement, Map, Skinned, Error, 100000.0)))
+	// First with a limit that lets any wheel move (the model's wheel is a meter from the chassis's): the part is put on the wheel.
+	if (!TestTrue(*FString::Printf(TEXT("the model skins (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Gray.Body, Slots, Model, Placement, Map, Skinned, Error, 100000.0)))
 	{
 		return false;
 	}
@@ -374,14 +374,14 @@ bool FMantleVehicleChassisSkinPartsTest::RunTest(const FString& Parameters)
 	// A spinning part spins about its own hub: the bone is moved to it.
 	TestTrue(*FString::Printf(TEXT("the propeller bone is at the propeller's hub (%s against %s)"), *ComponentLocation(Body, Propeller).ToString(), *FVector(PropBox.GetCenter()).ToString()),
 		FVector::Dist(ComponentLocation(Body, Propeller), FVector(PropBox.GetCenter())) < 0.5);
-	TestFalse(TEXT("and that is not where the chassis had it"), ComponentLocation(Body, Propeller).Equals(ComponentLocation(Grey.Body, Propeller), 0.5));
-	// A wheel turns about the chassis's wheel centre, so the part is moved onto it and the bone stays.
-	TestTrue(*FString::Printf(TEXT("the left wheel bone stays at the chassis's wheel (%s)"), *ComponentLocation(Body, LeftWheel).ToString()), ComponentLocation(Body, LeftWheel).Equals(ComponentLocation(Grey.Body, LeftWheel), 0.01));
-	TestTrue(*FString::Printf(TEXT("and the wheel part is centred on it (%s)"), *FVector(WheelBox.GetCenter()).ToString()), FVector::Dist(ComponentLocation(Body, LeftWheel), FVector(WheelBox.GetCenter())) < 0.5);
+	TestFalse(TEXT("and that is not where the chassis had it"), ComponentLocation(Body, Propeller).Equals(ComponentLocation(Gray.Body, Propeller), 0.5));
+	// A wheel turns about the chassis's wheel center, so the part is moved onto it and the bone stays.
+	TestTrue(*FString::Printf(TEXT("the left wheel bone stays at the chassis's wheel (%s)"), *ComponentLocation(Body, LeftWheel).ToString()), ComponentLocation(Body, LeftWheel).Equals(ComponentLocation(Gray.Body, LeftWheel), 0.01));
+	TestTrue(*FString::Printf(TEXT("and the wheel part is centerd on it (%s)"), *FVector(WheelBox.GetCenter()).ToString()), FVector::Dist(ComponentLocation(Body, LeftWheel), FVector(WheelBox.GetCenter())) < 0.5);
 
-	// Positive control: with the default limit that same wheel, a metre from the chassis's, is not torn off its strut or swung about the wrong point: it stays still.
+	// Positive control: with the default limit that same wheel, a meter from the chassis's, is not torn off its strut or swung about the wrong point: it stays still.
 	FMantleVehicleSkinned Still;
-	if (TestTrue(*FString::Printf(TEXT("the model skins again (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Grey.Body, Slots, Model, Placement, Map, Still, Error)))
+	if (TestTrue(*FString::Printf(TEXT("the model skins again (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Gray.Body, Slots, Model, Placement, Map, Still, Error)))
 	{
 		int32 StillOnWheel = 0;
 		for (int32 Vertex = 0; Vertex < Still.Body.LODs[0].NumVertices(); ++Vertex)
@@ -404,12 +404,12 @@ bool FMantleVehicleChassisSkinSectionsTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleChassisSkinTestPrivate;
 	FMantleChassisSpec Spec;
-	FMantleVehicleAsset Grey;
-	if (!Load(*this, TEXT("helicopter"), Spec, Grey))
+	FMantleVehicleAsset Gray;
+	if (!Load(*this, TEXT("helicopter"), Spec, Gray))
 	{
 		return false;
 	}
-	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Spec, Grey.Body);
+	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Spec, Gray.Body);
 	TestFalse(TEXT("a helicopter's skids are never drawn, so it has no wheel slots"), Slots.ContainsByPredicate([](const FMantleVehiclePartSlot& Slot) { return Slot.ChassisBone.ToString().StartsWith(TEXT("wheel_")); }));
 	TestTrue(TEXT("but it has a main and a tail rotor"), Slots.ContainsByPredicate([](const FMantleVehiclePartSlot& Slot) { return Slot.ChassisBone == FName(TEXT("main_rotor")); })
 		&& Slots.ContainsByPredicate([](const FMantleVehiclePartSlot& Slot) { return Slot.ChassisBone == FName(TEXT("tail_rotor")); }));
@@ -427,14 +427,14 @@ bool FMantleVehicleChassisSkinSectionsTest::RunTest(const FString& Parameters)
 
 	FMantleVehicleModelMap Suggested;
 	const double Yaw = FMantleVehicleChassisSkin::SuggestMapAndYaw(Slots, Model, Suggested);
-	TestEqual(TEXT("with no wheels or rotors to lead, the model is left as modelled"), Yaw, 0.0);
+	TestEqual(TEXT("with no wheels or rotors to lead, the model is left as modeled"), Yaw, 0.0);
 	const FMantleVehicleModelPiece* Main = Suggested.Find(FName(TEXT("main_rotor")));
 	TestTrue(TEXT("the section named for the main rotor is suggested for it"), Main && Main->Kind == FMantleVehicleModelPiece::EKind::Section && Main->Section == 1);
 
-	const FMantleVehicleModelPlacement Placement = FMantleVehicleChassisSkin::FitPlacement(Spec, Grey.Body, Model, Yaw, Suggested);
+	const FMantleVehicleModelPlacement Placement = FMantleVehicleChassisSkin::FitPlacement(Spec, Gray.Body, Model, Yaw, Suggested);
 	FMantleVehicleSkinned Skinned;
 	FString Error;
-	if (!TestTrue(*FString::Printf(TEXT("the model skins (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Grey.Body, Slots, Model, Placement, Suggested, Skinned, Error)))
+	if (!TestTrue(*FString::Printf(TEXT("the model skins (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Gray.Body, Slots, Model, Placement, Suggested, Skinned, Error)))
 	{
 		return false;
 	}
@@ -482,7 +482,7 @@ bool FMantleVehicleChassisSkinGroundHandlingTest::RunTest(const FString& Paramet
 		const FMantleVehicleSourceTuning& Tuning = Built.Source->Tuning;
 		TestEqual(TEXT("the steering eases off with speed over four points"), Tuning.SteeringSpeedCurve.Num(), 4);
 		TestTrue(TEXT("with the full lock at a standstill and less at speed"), Tuning.SteeringSpeedCurve.Num() == 4 && Tuning.SteeringSpeedCurve[0].Y == 1.0 && Tuning.SteeringSpeedCurve[3].Y < 0.5);
-		TestTrue(TEXT("the rear tyres grip more than the front"), Tuning.bTireRearFriction && Tuning.TireRearFriction > Tuning.TireFriction);
+		TestTrue(TEXT("the rear tires grip more than the front"), Tuning.bTireRearFriction && Tuning.TireRearFriction > Tuning.TireFriction);
 		TestEqual(TEXT("it is a car: the wheeled movement type"), static_cast<int32>(Built.Source->MovementType), static_cast<int32>(EMantleVehicleMovementKind::Wheeled));
 	}
 	MantleVehicleScratchBody::Discard(Body);
@@ -492,24 +492,24 @@ bool FMantleVehicleChassisSkinGroundHandlingTest::RunTest(const FString& Paramet
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleVehicleChassisSkinWheelNamesTest,
-	"Mantle.Vehicle.ChassisSkin.CentrelineWheelNames",
+	"Mantle.Vehicle.ChassisSkin.CenterlineWheelNames",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FMantleVehicleChassisSkinWheelNamesTest::RunTest(const FString& Parameters)
 {
-	// A wheel on the centre line is a wheel: a bike's two and a plane's nose wheel are not "no wheels" to the converter.
+	// A wheel on the center line is a wheel: a bike's two and a plane's nose wheel are not "no wheels" to the converter.
 	const auto Parse = [](const TCHAR* Name, FMantleVehicleWheelBone& Out) { return FMantleVehicleConverter::ParseWheelBoneName(Name, Out); };
 	FMantleVehicleWheelBone Wheel;
 	TestTrue(TEXT("wheel_f is a wheel"), Parse(TEXT("wheel_f"), Wheel));
-	TestTrue(TEXT("on the front axle, on the centre line"), Wheel.Axle == 0 && Wheel.bCentre);
-	TestTrue(TEXT("wheel_r is a wheel on the back axle"), Parse(TEXT("wheel_r"), Wheel) && Wheel.Axle == 2 && Wheel.bCentre);
-	TestTrue(TEXT("Front_Wheel is the front one"), Parse(TEXT("Front_Wheel"), Wheel) && Wheel.Axle == 0 && Wheel.bCentre);
-	TestTrue(TEXT("and wheel_rear the back one"), Parse(TEXT("wheel_rear"), Wheel) && Wheel.Axle == 2 && Wheel.bCentre);
+	TestTrue(TEXT("on the front axle, on the center line"), Wheel.Axle == 0 && Wheel.bCenter);
+	TestTrue(TEXT("wheel_r is a wheel on the back axle"), Parse(TEXT("wheel_r"), Wheel) && Wheel.Axle == 2 && Wheel.bCenter);
+	TestTrue(TEXT("Front_Wheel is the front one"), Parse(TEXT("Front_Wheel"), Wheel) && Wheel.Axle == 0 && Wheel.bCenter);
+	TestTrue(TEXT("and wheel_rear the back one"), Parse(TEXT("wheel_rear"), Wheel) && Wheel.Axle == 2 && Wheel.bCenter);
 
 	// Positive control: the corner names are what they were, and a bone with no position is no wheel.
-	TestTrue(TEXT("Wheel_FL is still the front left corner"), Parse(TEXT("Wheel_FL"), Wheel) && Wheel.Axle == 0 && Wheel.bLeft && !Wheel.bCentre);
-	TestTrue(TEXT("wheel_rr the back right"), Parse(TEXT("wheel_rr"), Wheel) && Wheel.Axle == 2 && !Wheel.bLeft && !Wheel.bCentre);
-	TestTrue(TEXT("wheel_front_l is the front left"), Parse(TEXT("wheel_front_l"), Wheel) && Wheel.Axle == 0 && Wheel.bLeft && !Wheel.bCentre);
+	TestTrue(TEXT("Wheel_FL is still the front left corner"), Parse(TEXT("Wheel_FL"), Wheel) && Wheel.Axle == 0 && Wheel.bLeft && !Wheel.bCenter);
+	TestTrue(TEXT("wheel_rr the back right"), Parse(TEXT("wheel_rr"), Wheel) && Wheel.Axle == 2 && !Wheel.bLeft && !Wheel.bCenter);
+	TestTrue(TEXT("wheel_front_l is the front left"), Parse(TEXT("wheel_front_l"), Wheel) && Wheel.Axle == 0 && Wheel.bLeft && !Wheel.bCenter);
 	TestFalse(TEXT("a spare wheel is not a wheel of the vehicle"), Parse(TEXT("spare_wheel"), Wheel));
 	TestFalse(TEXT("a bone with 'wheel', front and rear is no wheel"), Parse(TEXT("wheel_front_rear"), Wheel));
 	TestFalse(TEXT("a steering pivot is not a wheel"), Parse(TEXT("steer_wheel_f"), Wheel));

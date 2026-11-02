@@ -297,7 +297,7 @@ void FMantleEnvironment::Apply(UWorld* World, const FMantlePlace& Place, FMantle
 
 	if (AExponentialHeightFog* Fog = SpawnEnvironmentActor<AExponentialHeightFog>(World, TEXT("MantleDefaultHeightFog")))
 	{
-		// The place's own fog look (#628), before the weather records the fog's density and colour as its baselines.
+		// The place's own fog look (#628), before the weather records the fog's density and color as its baselines.
 		// A place with no fog of its own gets Mantle's default fog; a place with a fog keeps the engine's value for
 		// every key it left alone, as its creator saw it in the editor.
 		if (Place.Settings.Environment.Fog.IsSet())

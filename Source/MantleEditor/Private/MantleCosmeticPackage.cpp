@@ -249,7 +249,7 @@ bool FMantleCosmeticPackage::MakeItemJson(const TMap<FString, FString>& IdsByKey
 		{
 			if (!ValidateNativeHairRef(Ref, Class, &Refs == &FaceMaterials, OutError)) return false;
 			if (Ref.ColorRegions.IsEmpty() && Ref.ColorMaskKey.IsEmpty()) continue;
-			// Clothing (top, bottom, footwear) and rigid accessories (a hat) carry colour areas.
+			// Clothing (top, bottom, footwear) and rigid accessories (a hat) carry color areas.
 			const bool bColorClass = (Class == EMantleCosmeticClass::Garment && (Slot == TEXT("top") || Slot == TEXT("bottom") || Slot == TEXT("footwear")))
 				|| Class == EMantleCosmeticClass::Accessory;
 			if (!bColorClass || Ref.ColorMaskKey.IsEmpty() || Ref.ColorRegions.IsEmpty() || !MantleClothingColor::ValidateRegions(Ref.ColorRegions, OutError))
@@ -395,7 +395,7 @@ bool FMantleCosmeticPackage::MakeItemJson(const TMap<FString, FString>& IdsByKey
 				Declaration->SetArrayField(TEXT("regions"), Regions);
 				Material->SetObjectField(TEXT("colorCustomization"), Declaration);
 			}
-			// Only hair may say hair_cards (a groom's cards), always with the colour they are drawn in: the API requires
+			// Only hair may say hair_cards (a groom's cards), always with the color they are drawn in: the API requires
 			// it, linear RGB in [0, 1].
 			if (Class == EMantleCosmeticClass::Hair && Ref.Role.Equals(MantleHairCardsRole, ESearchCase::CaseSensitive))
 			{

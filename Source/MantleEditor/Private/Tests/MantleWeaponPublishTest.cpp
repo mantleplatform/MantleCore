@@ -318,11 +318,11 @@ namespace MantleWeaponPublishTestPrivate
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleWeaponPublishModelledTest,
+	FMantleWeaponPublishModeledTest,
 	"Mantle.WeaponPublish.LibraryOnly.UploadsTheModelThenMakesAWeaponItem",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleWeaponPublishModelledTest::RunTest(const FString& Parameters)
+bool FMantleWeaponPublishModeledTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleWeaponPublishTestPrivate;
 	const TSharedRef<FFakeMantle> Mantle = MakeShared<FFakeMantle>();

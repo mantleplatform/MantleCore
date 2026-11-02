@@ -1,5 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
-// The registry-driven node catalogue. "Nothing is listed by hand, so a new API member
+// The registry-driven node catalog. "Nothing is listed by hand, so a new API member
 // appears in graphs automatically" -- this walks FMantleApiManifest (mantle_api.json, generated from
 // the game's API registry along with mantle.d.luau/.ts/.pyi) once, and
 // turns every method, property and signal into a palette entry with typed pins. The compiler
@@ -63,11 +63,11 @@ struct MANTLEEDITOR_API FMantleGraphNodeDef
 };
 
 /**
- * Builds and caches the full node catalogue from FMantleApiManifest::Get() on first use. Rebuilding is
+ * Builds and caches the full node catalog from FMantleApiManifest::Get() on first use. Rebuilding is
  * cheap (a few hundred entries) but there is no reason to redo it inside one compile, let alone
  * once per node -- FindByDotted is called once per member-referencing node.
  */
-class MANTLEEDITOR_API FMantleGraphCatalogue
+class MANTLEEDITOR_API FMantleGraphCatalog
 {
 public:
 	/** Every method/property-get/property-set/signal in the registry, as palette entries. Order

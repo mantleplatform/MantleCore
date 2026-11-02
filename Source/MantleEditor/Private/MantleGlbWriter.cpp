@@ -27,7 +27,7 @@ namespace MantleGlbWriterPrivate
 	constexpr int32 ComponentFloat = 5126;
 	constexpr int32 TargetArrayBuffer = 34962;
 	constexpr int32 TargetElementArrayBuffer = 34963;
-	constexpr double MetresPerCentimetre = 0.01;
+	constexpr double MetersPerCentimeter = 0.01;
 
 	/** Column-major 4x4, the glTF layout (element [Col * 4 + Row]). */
 	struct FGlbMatrix
@@ -203,7 +203,7 @@ namespace MantleGlbWriterPrivate
 	}
 }
 
-FMantleGlbNonFinite FMantleGlbWriter::SanitiseNonFinite(FMantleGlbMesh& Mesh)
+FMantleGlbNonFinite FMantleGlbWriter::SanitizeNonFinite(FMantleGlbMesh& Mesh)
 {
 	FMantleGlbNonFinite Found;
 	for (const FVector3f& Position : Mesh.Positions)
@@ -259,7 +259,7 @@ FMantleGlbNonFinite FMantleGlbWriter::SanitiseNonFinite(FMantleGlbMesh& Mesh)
 FVector3d FMantleGlbWriter::ToGltfPosition(const FVector3d& Unreal)
 {
 	using namespace MantleGlbWriterPrivate;
-	return FVector3d(Unreal.X * MetresPerCentimetre, Unreal.Z * MetresPerCentimetre, Unreal.Y * MetresPerCentimetre);
+	return FVector3d(Unreal.X * MetersPerCentimeter, Unreal.Z * MetersPerCentimeter, Unreal.Y * MetersPerCentimeter);
 }
 
 FVector3d FMantleGlbWriter::ToGltfDirection(const FVector3d& Unreal)
@@ -300,7 +300,7 @@ namespace MantleGlbWriterPrivate
 		}
 		if ((Mesh.UV1s.Num() != 0 && Mesh.UV1s.Num() != NumVertices) || (Mesh.Colors.Num() != 0 && Mesh.Colors.Num() != NumVertices))
 		{
-			return Fail(OutError, FString::Printf(TEXT("%s's second UVs or vertex colours do not match its vertices"), What));
+			return Fail(OutError, FString::Printf(TEXT("%s's second UVs or vertex colors do not match its vertices"), What));
 		}
 		if ((Mesh.HairRootUV.Num() > 0) != (Mesh.HairCoordU.Num() > 0)
 			|| (Mesh.HairRootUV.Num() > 0 && (Mesh.HairRootUV.Num() != NumVertices || Mesh.HairCoordU.Num() != NumVertices)))
@@ -427,7 +427,7 @@ namespace MantleGlbWriterPrivate
 		const int32 TangentView = Tangents.Num() > 0
 			? Buffer.AddView(Tangents.GetData(), Tangents.Num() * sizeof(float), TargetArrayBuffer) : INDEX_NONE;
 
-		// #470: the second UV set and the vertex colours, when the mesh has them. Colours are written R, G, B, A
+		// #470: the second UV set and the vertex colors, when the mesh has them. Colors are written R, G, B, A
 		// (FColor's memory order is not), as the normalized unsigned bytes GLTFExporter writes.
 		int32 UV1View = INDEX_NONE;
 		if (Mesh.UV1s.Num() > 0)
@@ -915,7 +915,7 @@ bool FMantleGlbWriter::WriteStatic(const TConstArrayView<FMantleGlbMesh> LODs, c
 			Accessors.Add(WeightView, 0, ComponentFloat, Mesh.WarpInterpolationWeights.Num(), TEXT("SCALAR")));
 		if (Mesh.HasNeck())
 		{
-			// #430 (backend cook.readNeck): the neck samples in glTF's axes and metres like every position, their ids,
+			// #430 (backend cook.readNeck): the neck samples in glTF's axes and meters like every position, their ids,
 			// and the RBF weights over the positions followed by them.
 			TArray<float> NeckPositions;
 			NeckPositions.Reserve(Mesh.NeckPositions.Num() * 3);
@@ -945,7 +945,7 @@ bool FMantleGlbWriter::WriteStatic(const TConstArrayView<FMantleGlbMesh> LODs, c
 
 	if (Mesh.BodyOffsets.Num() > 0)
 	{
-		// #849: deltas convert like POSITION and the joints' translations (centimetres to metres, y and z swapped), without a
+		// #849: deltas convert like POSITION and the joints' translations (centimeters to meters, y and z swapped), without a
 		// translation: they are differences. One accessor a LOD, one for the joints, in skin.joints order (= Mesh.Joints).
 		auto AddDeltas = [&Buffer, &Accessors](const TArray<FVector3f>& Deltas)
 		{
@@ -985,7 +985,7 @@ bool FMantleGlbWriter::WriteStatic(const TConstArrayView<FMantleGlbMesh> LODs, c
 	if (!Extras.IsEmpty())
 	{
 		// #470 (backend cook.readStaticMeshExtension): screen sizes, and the simple collision in Unreal's frame and
-		// centimetres as FKAggregateGeom has it, each hull's points an accessor.
+		// centimeters as FKAggregateGeom has it, each hull's points an accessor.
 		const TSharedRef<FJsonObject> Static = MakeShared<FJsonObject>();
 		if (Extras.ScreenSizes.Num() > 0)
 		{

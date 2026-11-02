@@ -115,7 +115,7 @@
       "mechanism": "skin_tint",
       "palette": "skin-tones.json",
       "descriptorField": "body.skinToneId",
-      "comment": "Recolour of the avatar's skin sections: the baked MetaHuman post-bake parameters on MetaHuman avatars, M_MantleAvatar SkinTint otherwise."
+      "comment": "Recolor of the avatar's skin sections: the baked MetaHuman post-bake parameters on MetaHuman avatars, M_MantleAvatar SkinTint otherwise."
     },
     {
       "id": "eye_color",
@@ -125,7 +125,7 @@
       "mechanism": "eye_tint",
       "palette": "eye-colors.json",
       "descriptorField": "body.eyeColorId",
-      "comment": "Iris recolour of the avatar's eyes sections: the baked MetaHuman Iris Color Multiply, or M_MantleEye EyeTint through the iris mask."
+      "comment": "Iris recolor of the avatar's eyes sections: the baked MetaHuman Iris Color Multiply, or M_MantleEye EyeTint through the iris mask."
     },
     {
       "id": "height",
@@ -431,7 +431,7 @@
     },
     {
       "id": "eyes",
-      "comment": "Takes the eye colour on the iris."
+      "comment": "Takes the eye color on the iris."
     },
     {
       "id": "other",
@@ -583,7 +583,7 @@
           "FACIAL_L_Eye",
           "FACIAL_R_Eye"
         ],
-        "comment": "#582: body measurements the cook derives from the reference pose (component space, cm) and POST /avatar/items stores on the avatar item as bodyMetrics, for normalisation (#581), retarget profiles and IK. standingHeightCm is the top of the mesh (the body's, or on a MetaHuman avatar the higher of the body and its face, set at item creation); eyeHeightCm is the mean height of the eyeBones present, from the face on a MetaHuman avatar, absent when there are none; pelvisHeightCm is pelvis's height; armLengthCm is upperarm to lowerarm plus lowerarm to hand (the Arm chain, shoulder to wrist) and legLengthCm thigh to calf plus calf to foot (the Leg chain, hip to ankle), each the mean of left and right; shoulderWidthCm is upperarm_l to upperarm_r and hipWidthCm thigh_l to thigh_r. Rounded to 0.1 cm."
+        "comment": "#582: body measurements the cook derives from the reference pose (component space, cm) and POST /avatar/items stores on the avatar item as bodyMetrics, for normalization (#581), retarget profiles and IK. standingHeightCm is the top of the mesh (the body's, or on a MetaHuman avatar the higher of the body and its face, set at item creation); eyeHeightCm is the mean height of the eyeBones present, from the face on a MetaHuman avatar, absent when there are none; pelvisHeightCm is pelvis's height; armLengthCm is upperarm to lowerarm plus lowerarm to hand (the Arm chain, shoulder to wrist) and legLengthCm thigh to calf plus calf to foot (the Leg chain, hip to ankle), each the mean of left and right; shoulderWidthCm is upperarm_l to upperarm_r and hipWidthCm thigh_l to thigh_r. Rounded to 0.1 cm."
       },
       "jawBone": "optional; must exist in the avatar's skeleton",
       "secondaryMotion": {
@@ -620,7 +620,7 @@
           "metahuman"
         ],
         "maxBytes": 8388608,
-        "comment": "The body's DNA (behaviour layer) as a content-addressed .dna blob; the cook worker size-checks it and never parses it. A DNA fits only its own body."
+        "comment": "The body's DNA (behavior layer) as a content-addressed .dna blob; the cook worker size-checks it and never parses it. A DNA fits only its own body."
       }
     },
     "avatar_face": {
@@ -734,7 +734,7 @@
             "coordU": "_MANTLE_HAIR_COORD_U"
           },
           "msk1": "flag bit 4: per vertex root U, root V, CoordU as float16 (6 bytes), after the skin weights of each LOD",
-          "comment": "Optional per-vertex card data for hair card meshes (root-to-tip colour in MetaHuman's hair material, #325/#326); other meshes carry none."
+          "comment": "Optional per-vertex card data for hair card meshes (root-to-tip color in MetaHuman's hair material, #325/#326); other meshes carry none."
         }
       },
       "sourceBodyShape": "required: the body_shape it was authored on; the garment's bind pose must match that shape's reference pose",
@@ -913,7 +913,7 @@
       "maxSections": 8,
       "maxBones": 256,
       "maxInfluencesPerVertex": 8,
-      "comment": "One uploaded skeletal mesh on its own skeleton (#469): a skinned GLB cooked to MSK1 with role 3 (place skeletal mesh), its bone table and reference pose embedded, and its skeleton hash (cook.SkeletonHash: skel_ + 16 hex digits of the SHA-256 over each bone's lower-cased name, a zero byte and its parent index) in the skeleton field. One LOD. The plugin keeps the eight heaviest influences of a vertex and renormalises them (#484); the cook refuses more. maxTriangles is a starting value the owner may retune."
+      "comment": "One uploaded skeletal mesh on its own skeleton (#469): a skinned GLB cooked to MSK1 with role 3 (place skeletal mesh), its bone table and reference pose embedded, and its skeleton hash (cook.SkeletonHash: skel_ + 16 hex digits of the SHA-256 over each bone's lower-cased name, a zero byte and its parent index) in the skeleton field. One LOD. The plugin keeps the eight heaviest influences of a vertex and renormalizes them (#484); the cook refuses more. maxTriangles is a starting value the owner may retune."
     },
     "animClip": {
       "format": "MAN1",
@@ -1142,9 +1142,9 @@
         "seat/rider/rotationControl/rotationStiffness": [0, 1000],
         "seat/rider/rotationControl/rotationDamping": [0, 1000],
         "seat/rider/rotationControl/maxAccel": [0, 1000],
-        "seat/rider/rotationControl/autoCentreRollStrength": [0, 10],
-        "seat/rider/rotationControl/autoCentrePitchStrength": [0, 10],
-        "seat/rider/rotationControl/autoCentreYawStrength": [0, 10],
+        "seat/rider/rotationControl/autoCenterRollStrength": [0, 10],
+        "seat/rider/rotationControl/autoCenterPitchStrength": [0, 10],
+        "seat/rider/rotationControl/autoCenterYawStrength": [0, 10],
         "camera/boomLocation/*": [-1000, 1000],
         "flight/airSpeedLimit": [500, 60000],
         "flight/cruiseThrottle": [0, 1],
@@ -1207,7 +1207,7 @@
         "hover/damping/maxSkirtBrakeAccel": [0, 5000],
         "hover/angularDamping": [0, 5]
       },
-      "comment": "A creator-published vehicle (#435): one binary glTF whose skinned body has a bone at every wheel centre, with the vehicle document (schema/vehicle.schema.json) at extras.mantleVehicle. The cook worker writes MVH1 (backend/internal/cook/vehicle.go): the resolved document, then the body as MSK1 role 4 on its own bone table (skeleton 'vehicle', reference pose included; distinct from the place skeletal mesh role 3). body caps the mesh; minWheels to maxWheels, maxTorqueCurvePoints, maxGears and maxCollisionBoxes are the document's array sizes; ranges is every number the document may hold, by path (* for any array item), and each is the schema's minimum and maximum there (validate.py checks both ways). A wheel's radius and width come from the body vertices weighted only to its bone when there are at least wheelMinVertices of them; otherwise the document gives them. maxLinkageRules caps the document's linkage (the aim, stretch and copy rules that move a body's suspension bones after its wheels, #435 b). maxParts caps the document's parts (#435 item 2: static meshes uploaded beside the vehicle, each riding a bone of the body, drawn only): a body shell, glass, an interior, lights and bumpers, and a tire each on up to eight wheels fit in 16; each part is one more mesh component per car, and a place may park 32 cars. A part's materials list is at most placeAssets.staticMesh.maxSections long, one per slot of its mesh. A seat's contact points (#612: pelvis, hands, feet and exits, in the vehicle's own space) hold at most maxSeatExits exits; a pelvis, hand or foot target in the body's space (no bone) is at most contactReach cm from its seat's location, and a hand holding the steering wheel (hands.kind wheel) is within wheelHandTolerance cm of the rim. maxAerofoils, maxThrusters, maxSpinBones (a flight or helicopter block), maxRotors and minHoverPads to maxHoverPads (a hover block) cap the non-wheeled kinds' arrays (#821); every number in those blocks, the rider's and the camera boom's has its ranges entry like any other. The plugin's Convert vehicle command applies the same numbers."
+      "comment": "A creator-published vehicle (#435): one binary glTF whose skinned body has a bone at every wheel center, with the vehicle document (schema/vehicle.schema.json) at extras.mantleVehicle. The cook worker writes MVH1 (backend/internal/cook/vehicle.go): the resolved document, then the body as MSK1 role 4 on its own bone table (skeleton 'vehicle', reference pose included; distinct from the place skeletal mesh role 3). body caps the mesh; minWheels to maxWheels, maxTorqueCurvePoints, maxGears and maxCollisionBoxes are the document's array sizes; ranges is every number the document may hold, by path (* for any array item), and each is the schema's minimum and maximum there (validate.py checks both ways). A wheel's radius and width come from the body vertices weighted only to its bone when there are at least wheelMinVertices of them; otherwise the document gives them. maxLinkageRules caps the document's linkage (the aim, stretch and copy rules that move a body's suspension bones after its wheels, #435 b). maxParts caps the document's parts (#435 item 2: static meshes uploaded beside the vehicle, each riding a bone of the body, drawn only): a body shell, glass, an interior, lights and bumpers, and a tire each on up to eight wheels fit in 16; each part is one more mesh component per car, and a place may park 32 cars. A part's materials list is at most placeAssets.staticMesh.maxSections long, one per slot of its mesh. A seat's contact points (#612: pelvis, hands, feet and exits, in the vehicle's own space) hold at most maxSeatExits exits; a pelvis, hand or foot target in the body's space (no bone) is at most contactReach cm from its seat's location, and a hand holding the steering wheel (hands.kind wheel) is within wheelHandTolerance cm of the rim. maxAerofoils, maxThrusters, maxSpinBones (a flight or helicopter block), maxRotors and minHoverPads to maxHoverPads (a hover block) cap the non-wheeled kinds' arrays (#821); every number in those blocks, the rider's and the camera boom's has its ranges entry like any other. The plugin's Convert vehicle command applies the same numbers."
     },
     "livery": {
       "maxLiveries": 8,

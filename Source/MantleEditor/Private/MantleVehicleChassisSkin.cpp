@@ -53,8 +53,8 @@ namespace MantleVehicleChassisSkinPrivate
 	}
 
 	/**
-	 * The model's UV channels above 0 (up to the skeletal mesh's limit of MAX_TEXCOORDS channels in all) and its painted vertex colours, from the vertex buffers of the LOD
-	 * whose vertices are already in Out.LOD. A colour buffer that is every white means no colours at all, as the upload takes it.
+	 * The model's UV channels above 0 (up to the skeletal mesh's limit of MAX_TEXCOORDS channels in all) and its painted vertex colors, from the vertex buffers of the LOD
+	 * whose vertices are already in Out.LOD. A color buffer that is every white means no colors at all, as the upload takes it.
 	 */
 	void ReadExtras(const FStaticMeshVertexBuffer& Vertices, const FColorVertexBuffer& Colors, const bool bHasColors, FMantleVehicleModel& Out)
 	{
@@ -150,7 +150,7 @@ namespace MantleVehicleChassisSkinPrivate
 		const TArray<FTransform> Pose = ComponentTransforms(Skinned);
 		Out.BonePositions = ComponentPositions(Skinned);
 
-		// The model's other UV channels and vertex colours (the extraction above keeps the first UV set only), and its physics asset's bodies: what its collision is shaped like.
+		// The model's other UV channels and vertex colors (the extraction above keeps the first UV set only), and its physics asset's bodies: what its collision is shaped like.
 		const FSkeletalMeshLODRenderData& SourceLOD = RenderData->LODRenderData[0];
 		ReadExtras(SourceLOD.StaticVertexBuffers.StaticMeshVertexBuffer, SourceLOD.StaticVertexBuffers.ColorVertexBuffer, /*bHasColors*/ true, Out);
 		if (const UPhysicsAsset* Physics = Mesh->GetPhysicsAsset())
@@ -289,7 +289,7 @@ namespace MantleVehicleChassisSkinPrivate
 			}
 		}
 		LOD.NumInfluences = 1;
-		// An all-white colour list is no colours.
+		// An all-white color list is no colors.
 		if (Out.Colors.Num() > 0 && !Out.Colors.ContainsByPredicate([](const FColor& Color) { return Color != FColor::White; }))
 		{
 			Out.Colors.Reset();
@@ -340,7 +340,7 @@ namespace MantleVehicleChassisSkinPrivate
 			LOD.Tangents[Vertex] = FVector4f(TangentX.X, TangentX.Y, TangentX.Z, TangentZ.W < 0.0f ? -1.0f : 1.0f);
 			LOD.UVs[Vertex] = Vertices.GetVertexUV(Vertex, 0);
 		}
-		// Its other UV channels and painted vertex colours go onto the body with its own tangents.
+		// Its other UV channels and painted vertex colors go onto the body with its own tangents.
 		ReadExtras(Vertices, Resources.VertexBuffers.ColorVertexBuffer, Resources.bHasColorVertexData, Out);
 
 		const TArray<FStaticMaterial>& StaticMaterials = Mesh->GetStaticMaterials();
@@ -592,10 +592,10 @@ namespace MantleVehicleChassisSkinPrivate
 		return Top;
 	}
 
-	/** What the build says about a model too small to measure (under a centimetre across): it is left as modelled, which is usually far too small or too big. */
+	/** What the build says about a model too small to measure (under a centimeter across): it is left as modeled, which is usually far too small or too big. */
 	FString TooSmallNote()
 	{
-		return TEXT("This model is under 1 cm across, so Mantle can't measure it to fit it to the vehicle and leaves it at the size it was modelled. It was probably modelled in metres or exported with the wrong units: rescale it in your 3D program, export it again and pick it again.");
+		return TEXT("This model is under 1 cm across, so Mantle can't measure it to fit it to the vehicle and leaves it at the size it was modeled. It was probably modeled in meters or exported with the wrong units: rescale it in your 3D program, export it again and pick it again.");
 	}
 
 	/** Scale limits the placement holds a model to: a model further off than this from the vehicle's size is not scaled all the way. */
@@ -615,7 +615,7 @@ namespace MantleVehicleChassisSkinPrivate
 			const double Times = bTooSmall ? Wanted : 1.0 / FMath::Max(Wanted, KINDA_SMALL_NUMBER);
 			Note = FString::Printf(TEXT("This model is about %.0f times %s than this vehicle%s. Mantle %s it by the most it will, %.2f times, so it is still %s than the vehicle. Rescale it in your 3D program, export it again and pick it again."),
 				Times, bTooSmall ? TEXT("smaller") : TEXT("bigger"),
-				bTooSmall ? (Times >= 50.0 ? TEXT(" (it looks like it was modelled in metres, not centimetres)") : TEXT("")) : (Times >= 50.0 ? TEXT(" (it looks like it was modelled in millimetres)") : TEXT("")),
+				bTooSmall ? (Times >= 50.0 ? TEXT(" (it looks like it was modeled in meters, not centimeters)") : TEXT("")) : (Times >= 50.0 ? TEXT(" (it looks like it was modeled in millimeters)") : TEXT("")),
 				bTooSmall ? TEXT("scaled it up") : TEXT("scaled it down"), Used, bTooSmall ? TEXT("small") : TEXT("big"));
 		}
 		return Used;
@@ -911,7 +911,7 @@ FMantleVehicleModelMap FMantleVehicleChassisSkin::SuggestMap(const TConstArrayVi
 	// when there are as many candidates as slots, so a model with a spare wheel bone is not guessed at.
 	if (Model.bSkeletal)
 	{
-		TArray<const FMantleVehiclePartSlot*> Centre;
+		TArray<const FMantleVehiclePartSlot*> Center;
 		TArray<const FMantleVehiclePartSlot*> Left;
 		TArray<const FMantleVehiclePartSlot*> Right;
 		for (const FMantleVehiclePartSlot& Slot : Slots)
@@ -921,59 +921,59 @@ FMantleVehicleModelMap FMantleVehicleChassisSkin::SuggestMap(const TConstArrayVi
 				continue;
 			}
 			const FString Name = Slot.ChassisBone.ToString();
-			// wheel_f and wheel_r (front and rear: not "right") and wheel_a1 are on the centre line; wheel_fl, wheel_rr, wheel_a1_l and the like have a side.
+			// wheel_f and wheel_r (front and rear: not "right") and wheel_a1 are on the center line; wheel_fl, wheel_rr, wheel_a1_l and the like have a side.
 			const bool bAxleSided = Name.StartsWith(TEXT("wheel_a")) && (Name.EndsWith(TEXT("_l")) || Name.EndsWith(TEXT("_r")));
 			const bool bCornerSided = Name.EndsWith(TEXT("_fl")) || Name.EndsWith(TEXT("_fr")) || Name.EndsWith(TEXT("_rl")) || Name.EndsWith(TEXT("_rr"));
 			if (!bAxleSided && !bCornerSided)
 			{
-				Centre.Add(&Slot);
+				Center.Add(&Slot);
 			}
 			else
 			{
 				(Name.EndsWith(TEXT("l")) ? Left : Right).Add(&Slot);
 			}
 		}
-		const int32 Wanted = Centre.Num() + Left.Num() + Right.Num();
+		const int32 Wanted = Center.Num() + Left.Num() + Right.Num();
 		TArray<int32> Candidates = Bones([](const FString& Name) { return Has(Name, TEXT("wheel")) && !Has(Name, TEXT("steer")) && !Has(Name, TEXT("hub")); });
-		if (Candidates.Num() == 0 && Wanted == 2 && Centre.Num() == 2)
+		if (Candidates.Num() == 0 && Wanted == 2 && Center.Num() == 2)
 		{
 			// "FR" and "RR": by their names, which say which is the front.
 			const TArray<int32> FrontNamed = Bones([](const FString& Name) { return Name == TEXT("fr") || Name == TEXT("fw") || Name == TEXT("front"); });
 			const TArray<int32> RearNamed = Bones([](const FString& Name) { return Name == TEXT("rr") || Name == TEXT("rw") || Name == TEXT("rear"); });
 			if (FrontNamed.Num() == 1 && RearNamed.Num() == 1)
 			{
-				AssignBone(*Centre[0], FrontNamed[0]);
-				AssignBone(*Centre[1], RearNamed[0]);
+				AssignBone(*Center[0], FrontNamed[0]);
+				AssignBone(*Center[1], RearNamed[0]);
 			}
 		}
 		else if (Candidates.Num() == Wanted && Wanted > 0)
 		{
-			// The model's own middle, from the candidates themselves; a wheel within a few centimetres of it is on the centre line.
+			// The model's own middle, from the candidates themselves; a wheel within a few centimeters of it is on the center line.
 			double MidY = 0.0;
 			for (const int32 Bone : Candidates)
 			{
 				MidY += Y(Bone);
 			}
 			MidY /= Candidates.Num();
-			TArray<int32> OnCentre;
+			TArray<int32> OnCenter;
 			TArray<int32> OnLeft;
 			TArray<int32> OnRight;
 			for (const int32 Bone : Candidates)
 			{
 				const double Across = Y(Bone) - MidY;
 				const bool bMiddle = FMath::Abs(Across) < 4.0 || (Left.Num() + Right.Num() == 0);
-				(bMiddle ? OnCentre : (Across < 0.0 ? OnLeft : OnRight)).Add(Bone);
+				(bMiddle ? OnCenter : (Across < 0.0 ? OnLeft : OnRight)).Add(Bone);
 			}
 			const auto ByFront = [&X](const int32 A, const int32 B) { return X(A) > X(B); };
-			OnCentre.Sort(ByFront);
+			OnCenter.Sort(ByFront);
 			OnLeft.Sort(ByFront);
 			OnRight.Sort(ByFront);
-			if (OnCentre.Num() == Centre.Num() && OnLeft.Num() == Left.Num() && OnRight.Num() == Right.Num())
+			if (OnCenter.Num() == Center.Num() && OnLeft.Num() == Left.Num() && OnRight.Num() == Right.Num())
 			{
 				// The chassis lists its wheels front to rear, so the model's go front to rear too.
-				for (int32 Index = 0; Index < Centre.Num(); ++Index)
+				for (int32 Index = 0; Index < Center.Num(); ++Index)
 				{
-					AssignBone(*Centre[Index], OnCentre[Index]);
+					AssignBone(*Center[Index], OnCenter[Index]);
 				}
 				for (int32 Index = 0; Index < Left.Num(); ++Index)
 				{
@@ -993,7 +993,7 @@ double FMantleVehicleChassisSkin::SuggestMapAndYaw(const TConstArrayView<FMantle
 {
 	using namespace MantleVehicleChassisSkinPrivate;
 	// Which way is forward: with the model turned by a trial angle, a front wheel (or the main rotor) is ahead of a rear wheel (or the tail rotor), along the length.
-	// The turn that puts them so is the answer. Without such a pair the model is left facing the way it was modelled.
+	// The turn that puts them so is the answer. Without such a pair the model is left facing the way it was modeled.
 	auto IsFront = [](const FString& Name) { return Name == TEXT("wheel_f") || Name == TEXT("wheel_fl") || Name == TEXT("wheel_fr") || Name.StartsWith(TEXT("wheel_a1")); };
 	for (const double Turn : { 0.0, 90.0, 180.0, 270.0 })
 	{
@@ -1055,23 +1055,23 @@ FMantleVehicleModelProposal FMantleVehicleChassisSkin::Propose(const FMantleChas
 
 	if (Out.bUsesSize)
 	{
-		FMantleVehicleAsset Grey;
+		FMantleVehicleAsset Gray;
 		FString Why;
-		if (!FMantleVehicleChassisBuilder::MakeAsset(Archetype, Grey, Why) || Grey.Body.LODs.Num() == 0)
+		if (!FMantleVehicleChassisBuilder::MakeAsset(Archetype, Gray, Why) || Gray.Body.LODs.Num() == 0)
 		{
 			Out.Notes.Add(FString::Printf(TEXT("Mantle could not size the %s to your model, so it is at its standard size."), *Kind));
 			return Out;
 		}
-		const FBox3f Box = Grey.Body.ComputeBounds(0);
+		const FBox3f Box = Gray.Body.ComputeBounds(0);
 		double ModelLength = Size.X;
 		double ModelWidth = Size.Y;
-		double GreyLength = Box.Max.X - Box.Min.X;
-		double GreyWidth = Box.Max.Y - Box.Min.Y;
+		double GrayLength = Box.Max.X - Box.Min.X;
+		double GrayWidth = Box.Max.Y - Box.Min.Y;
 		if (Archetype.Helicopter.bSet)
 		{
 			// A helicopter's footprint is its rotor's: what a creator's model shows at rest depends on where its blades lie, so it is sized by its longest side.
 			ModelLength = ModelWidth = FMath::Max(Size.X, Size.Y);
-			GreyLength = GreyWidth = FMath::Max(GreyLength, GreyWidth);
+			GrayLength = GrayWidth = FMath::Max(GrayLength, GrayWidth);
 		}
 		if (Archetype.Aircraft.bSet)
 		{
@@ -1083,7 +1083,7 @@ FMantleVehicleModelProposal FMantleVehicleChassisSkin::Propose(const FMantleChas
 				Out.Notes.Add(TooSmallNote());
 				return Out;
 			}
-			const double Ratio = FMath::Sqrt((ModelLength * ModelWidth) / (GreyLength * GreyWidth));
+			const double Ratio = FMath::Sqrt((ModelLength * ModelWidth) / (GrayLength * GrayWidth));
 			// The percentage quoted is the one the model is really placed at, which the scale limits may hold short of what its size asks for.
 			FString HeldNote;
 			const double Placed = HeldModelScale(1.0 / Ratio, HeldNote);
@@ -1096,7 +1096,7 @@ FMantleVehicleModelProposal FMantleVehicleChassisSkin::Propose(const FMantleChas
 			}
 			return Out;
 		}
-		const FMantleVehicleFit Fit = FMantleVehicleFitter::ComputeFromFootprint(Preset, ModelLength, ModelWidth, GreyLength, GreyWidth);
+		const FMantleVehicleFit Fit = FMantleVehicleFitter::ComputeFromFootprint(Preset, ModelLength, ModelWidth, GrayLength, GrayWidth);
 		Out.Size = Fit.Scale;
 		Out.bClamped = Fit.bClamped;
 		Out.Notes.Add(Fit.Reason);
@@ -1211,19 +1211,19 @@ FMantleVehicleModelPlacement FMantleVehicleChassisSkin::FitPlacement(const FMant
 		}
 		return Placement;
 	}
-	const FBox3f GreyBox = Chassis.ComputeBounds(0);
-	const double GreyLength = GreyBox.Max.X - GreyBox.Min.X;
-	const double GreyWidth = GreyBox.Max.Y - GreyBox.Min.Y;
-	const FVector GreyCentre(0.5 * (GreyBox.Min.X + GreyBox.Max.X), 0.5 * (GreyBox.Min.Y + GreyBox.Max.Y), 0.0);
+	const FBox3f GrayBox = Chassis.ComputeBounds(0);
+	const double GrayLength = GrayBox.Max.X - GrayBox.Min.X;
+	const double GrayWidth = GrayBox.Max.Y - GrayBox.Min.Y;
+	const FVector GrayCenter(0.5 * (GrayBox.Min.X + GrayBox.Max.X), 0.5 * (GrayBox.Min.Y + GrayBox.Max.Y), 0.0);
 
 	// The scale: a vehicle shaped by one Size covers the same ground as the model; a road vehicle is as long as it.
 	if (Spec.Helicopter.bSet)
 	{
-		Placement.Scale = FMath::Max(GreyLength, GreyWidth) / FMath::Max(Size.X, Size.Y);
+		Placement.Scale = FMath::Max(GrayLength, GrayWidth) / FMath::Max(Size.X, Size.Y);
 	}
 	else if (FMantleVehicleShape::UsesSize(Spec))
 	{
-		Placement.Scale = FMath::Sqrt((GreyLength * GreyWidth) / (Size.X * Size.Y));
+		Placement.Scale = FMath::Sqrt((GrayLength * GrayWidth) / (Size.X * Size.Y));
 	}
 	else
 	{
@@ -1231,7 +1231,7 @@ FMantleVehicleModelPlacement FMantleVehicleChassisSkin::FitPlacement(const FMant
 	}
 	Placement.Scale = HeldModelScale(Placement.Scale, Placement.Note);
 
-	// Where it stands: the model's own box centred on the chassis's (wheels, when two or more are assigned, decide the length instead), its lowest point, or its
+	// Where it stands: the model's own box centerd on the chassis's (wheels, when two or more are assigned, decide the length instead), its lowest point, or its
 	// wheels' lowest, on the ground.
 	FMantleVehicleModelPlacement Turned = Placement;
 	FBox Moved(ForceInit);
@@ -1239,7 +1239,7 @@ FMantleVehicleModelPlacement FMantleVehicleChassisSkin::FitPlacement(const FMant
 	{
 		Moved += Turned.Point(FVector(Position));
 	}
-	FVector Centre = Moved.GetCenter();
+	FVector Center = Moved.GetCenter();
 	double Floor = Moved.Min.Z;
 
 	const TArray<int32> Heaviest = HeaviestBones(Model);
@@ -1267,7 +1267,7 @@ FMantleVehicleModelPlacement FMantleVehicleChassisSkin::FitPlacement(const FMant
 	if (FrontWheels.IsValid && RearWheels.IsValid && !FMantleVehicleShape::UsesSize(Spec))
 	{
 		// A road vehicle with its wheels assigned: the middle of the wheelbase is the chassis's origin.
-		Centre.X = 0.5 * (FrontWheels.GetCenter().X + RearWheels.GetCenter().X);
+		Center.X = 0.5 * (FrontWheels.GetCenter().X + RearWheels.GetCenter().X);
 		Floor = WheelFloor;
 	}
 	else if (WheelFloor < TNumericLimits<double>::Max() && FMantleVehicleShape::UsesSize(Spec))
@@ -1275,10 +1275,10 @@ FMantleVehicleModelPlacement FMantleVehicleChassisSkin::FitPlacement(const FMant
 		// A plane with its wheels assigned stands on them.
 		Floor = WheelFloor;
 	}
-	Placement.Offset = FVector(GreyCentre.X - Centre.X, GreyCentre.Y - Centre.Y, -Floor);
+	Placement.Offset = FVector(GrayCenter.X - Center.X, GrayCenter.Y - Center.Y, -Floor);
 	if (FrontWheels.IsValid && RearWheels.IsValid && !FMantleVehicleShape::UsesSize(Spec))
 	{
-		Placement.Offset.X = -Centre.X;
+		Placement.Offset.X = -Center.X;
 	}
 	return Placement;
 }
@@ -1307,7 +1307,7 @@ bool FMantleVehicleChassisSkin::Skin(const FMantleSkinnedMesh& Chassis, const TC
 	LOD.Normals.SetNumUninitialized(NumVertices);
 	LOD.UVs = Source.UVs;
 	LOD.Indices = Source.Indices;
-	// The model's other UV channels and vertex colours ride along, one entry per vertex like the rest (a copied vertex below copies them too).
+	// The model's other UV channels and vertex colors ride along, one entry per vertex like the rest (a copied vertex below copies them too).
 	for (const TArray<FVector2f>& Channel : Model.ExtraUVs)
 	{
 		if (Channel.Num() == NumVertices)
@@ -1489,12 +1489,12 @@ bool FMantleVehicleChassisSkin::Skin(const FMantleSkinnedMesh& Chassis, const TC
 		else if (Slot.Kind == EMantleVehiclePartKind::Wheel)
 		{
 			// Where the chassis's wheel is: its bone's place in the chassis (the fork it hangs under adds its own).
-			FVector Centre = FVector::ZeroVector;
+			FVector Center = FVector::ZeroVector;
 			for (int32 Bone = *BoneIndex; Bone != INDEX_NONE; Bone = Body.Bones[Bone].ParentIndex)
 			{
-				Centre += Chassis.ReferencePose[Bone].GetLocation();
+				Center += Chassis.ReferencePose[Bone].GetLocation();
 			}
-			const FVector Move = Centre - Pivot;
+			const FVector Move = Center - Pivot;
 			if (Move.Size() > MaxWheelMove)
 			{
 				// Too far to move without tearing the wheel from its strut, and turning it about the chassis's wheel would swing it round that point: it stays still.
@@ -1929,7 +1929,7 @@ FMantleVehicleSkinCollision FMantleVehicleChassisSkin::ProposeCollision(const FM
 	const FMantleSkinnedMeshLOD& LOD = Body.LODs[0];
 	constexpr int32 MaxBoxes = FMantleVehicleLimits::MaxCollisionBoxes;
 
-	// The chassis's own box: where the grey body collides, and the lowest any box of the model's may reach.
+	// The chassis's own box: where the gray body collides, and the lowest any box of the model's may reach.
 	const FMantleChassisPlacement Tub = FMantleVehicleChassisFit::Place(FMantleVehicleChassisBuilder::ReferenceOf(Spec), FMantleChassisStretch());
 	const double Floor = Tub.CollisionCenter.Z - Tub.CollisionExtent.Z;
 

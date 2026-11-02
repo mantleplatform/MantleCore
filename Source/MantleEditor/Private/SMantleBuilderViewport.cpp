@@ -414,7 +414,7 @@ void FMantleBuilderViewportClient::Draw(const FSceneView* View, FPrimitiveDrawIn
 	using namespace MantleBuilderViewportPrivate;
 	FEditorViewportClient::Draw(View, PDI);
 
-	// The ghost: the solid body in the scene (UpdateSolidGhost), else its wire outline, grey, red where the kind says it cannot reach.
+	// The ghost: the solid body in the scene (UpdateSolidGhost), else its wire outline, gray, red where the kind says it cannot reach.
 	for (const FMantleGhostCapsule& Capsule : bSolidGhost ? TArray<FMantleGhostCapsule>() : Ghost)
 	{
 		const FVector Start = ToView(Capsule.Start);

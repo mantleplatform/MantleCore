@@ -671,7 +671,7 @@ void FMantleAvatarReposeFixer::Analyze(const FMantleConvertContext& Context, TAr
 		if (!FMantleAvatarRepose::MeasureChains(Names, Parents, Local, *Skeleton, Chains, Error))
 		{
 			// A rig RigMap maps (VRoid's J_Bip_L_UpperArm, no upperarm_l yet) is measured after its bones are renamed, when
-			// Convert analyses again; a line here, off, would stay off for that run.
+			// Convert analyzes again; a line here, off, would stay off for that run.
 			if (!FMantleAvatarRigMap::IsOnSupportedSkeleton(FMantleAvatarRigMap::ReadBones(Mesh), *Contract))
 			{
 				continue;

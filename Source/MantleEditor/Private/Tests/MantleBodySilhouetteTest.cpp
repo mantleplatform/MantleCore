@@ -69,20 +69,20 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleBodySilhouetteSeedTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleBodySilhouetteTestPrivate;
-	const FMantleSilhouette Default = FMantleBodySilhouette::Normalised(SilhouetteTestMeasure(15.0, 10.0, false), 170.0);
+	const FMantleSilhouette Default = FMantleBodySilhouette::Normalized(SilhouetteTestMeasure(15.0, 10.0, false), 170.0);
 
 	const FMantleSliderSeed Same = FMantleBodySilhouette::Seed(Default, Default);
 	TestTrue(TEXT("the same build moves nothing"), FMath::IsNearlyZero(Same.Weight) && FMath::IsNearlyZero(Same.Fat) && FMath::IsNearlyZero(Same.Muscularity));
 
-	const FMantleSliderSeed Wide = FMantleBodySilhouette::Seed(FMantleBodySilhouette::Normalised(SilhouetteTestMeasure(19.5, 13.0, false), 170.0), Default);
+	const FMantleSliderSeed Wide = FMantleBodySilhouette::Seed(FMantleBodySilhouette::Normalized(SilhouetteTestMeasure(19.5, 13.0, false), 170.0), Default);
 	TestTrue(TEXT("a wider, deeper torso raises Weight"), Wide.Weight > 0.1);
 	TestTrue(TEXT("and Fat"), Wide.Fat > 0.1);
 	TestTrue(TEXT("and Muscularity"), Wide.Muscularity > 0.1);
 
-	const FMantleSliderSeed Thin = FMantleBodySilhouette::Seed(FMantleBodySilhouette::Normalised(SilhouetteTestMeasure(12.0, 8.0, false), 170.0), Default);
+	const FMantleSliderSeed Thin = FMantleBodySilhouette::Seed(FMantleBodySilhouette::Normalized(SilhouetteTestMeasure(12.0, 8.0, false), 170.0), Default);
 	TestTrue(TEXT("a thinner torso goes below the default"), Thin.Weight < -0.1 && Thin.Fat < -0.1 && Thin.Muscularity < -0.1);
 
-	const FMantleSliderSeed Huge = FMantleBodySilhouette::Seed(FMantleBodySilhouette::Normalised(SilhouetteTestMeasure(60.0, 40.0, false), 170.0), Default);
+	const FMantleSliderSeed Huge = FMantleBodySilhouette::Seed(FMantleBodySilhouette::Normalized(SilhouetteTestMeasure(60.0, 40.0, false), 170.0), Default);
 	TestTrue(TEXT("a huge one is clamped"), FMath::IsNearlyEqual(Huge.Weight, FMantleBodySilhouette::SeedLimit) && FMath::IsNearlyEqual(Huge.Fat, FMantleBodySilhouette::SeedLimit));
 
 	TestTrue(TEXT("an unmeasured build moves nothing"), FMath::IsNearlyZero(FMantleBodySilhouette::Seed(FMantleSilhouette(), Default).Weight));

@@ -106,9 +106,9 @@ namespace MantlePreviewExportPrivate
 		int64 TotalAssetBytes = 0;
 		int32 CookCount = 0;
 
-		/** Run's progress dialog (null when none) and whether the creator cancelled it. */
+		/** Run's progress dialog (null when none) and whether the creator canceled it. */
 		FScopedSlowTask* Progress = nullptr;
-		bool bCancelled = false;
+		bool bCanceled = false;
 	};
 
 	/** The progress dialog's share of the whole export, in units of a total of 100. The cook stages split the rest evenly. */
@@ -121,23 +121,23 @@ namespace MantlePreviewExportPrivate
 	static_assert(ProgressValidate + ProgressConvert + ProgressCookStages + ProgressScripts + ProgressManifest <= 100.f, "the export's steps fit the dialog's 100");
 
 	/** True once the creator pressed Cancel (and remembered in State, so Run reports it). Also keeps the dialog responsive. */
-	bool PreviewCancelled(FExportState& State)
+	bool PreviewCanceled(FExportState& State)
 	{
-		if (!State.bCancelled && State.Progress && State.Progress->ShouldCancel())
+		if (!State.bCanceled && State.Progress && State.Progress->ShouldCancel())
 		{
-			State.bCancelled = true;
+			State.bCanceled = true;
 		}
-		return State.bCancelled;
+		return State.bCanceled;
 	}
 
-	/** Starts the next progress frame (Work units, Message) and returns true when the creator has cancelled. */
-	bool PreviewStageCancelled(FExportState& State, float Work, const FString& Message)
+	/** Starts the next progress frame (Work units, Message) and returns true when the creator has canceled. */
+	bool PreviewStageCanceled(FExportState& State, float Work, const FString& Message)
 	{
 		if (State.Progress)
 		{
 			State.Progress->EnterProgressFrame(Work, FText::FromString(Message));
 		}
-		return PreviewCancelled(State);
+		return PreviewCanceled(State);
 	}
 
 	/** Deletes its files when it goes out of scope. */
@@ -388,7 +388,7 @@ namespace MantlePreviewExportPrivate
 	/**
 	 * The worker's check of a vehicle (cook.checkVehicleMaterials), against the bundle: the uploaded
 	 * materials, livery textures, part meshes and horn sounds its cooked info names are in it, of the
-	 * right kind (a livery with no role or colour, and with alpha when the contract requires it), and
+	 * right kind (a livery with no role or color, and with alpha when the contract requires it), and
 	 * each part names no more materials than its mesh's cooked info says it has slots, and paints
 	 * only slots it has.
 	 */
@@ -438,7 +438,7 @@ namespace MantlePreviewExportPrivate
 				}
 				if (Named->Kind.Equals(TEXT("texture"), ESearchCase::CaseSensitive) && !Named->Role.IsEmpty() && !Named->Role.Equals(TEXT("color"), ESearchCase::CaseSensitive))
 				{
-					OutError = FString::Printf(TEXT("Vehicle '%s' names livery %s, which was prepared as a %s texture; a livery is a colour texture."), *Name, *Id, *Named->Role);
+					OutError = FString::Printf(TEXT("Vehicle '%s' names livery %s, which was prepared as a %s texture; a livery is a color texture."), *Name, *Id, *Named->Role);
 					return false;
 				}
 				bool bAlpha = false;
@@ -565,11 +565,11 @@ namespace MantlePreviewExportPrivate
 				return false;
 			}
 			// A long cook must not make Cancel unreachable: this also keeps the dialog drawn.
-			if (PreviewCancelled(State))
+			if (PreviewCanceled(State))
 			{
 				FPlatformProcess::TerminateProc(Process, /*KillTree*/ true);
 				FPlatformProcess::CloseProc(Process);
-				OutError = TEXT("Cancelled.");
+				OutError = TEXT("Canceled.");
 				return false;
 			}
 			FPlatformProcess::Sleep(0.02f);
@@ -899,7 +899,7 @@ namespace MantlePreviewExportPrivate
 		}
 
 		// --- Validate exactly as Publish does -------------------------------------------------------
-		if (PreviewStageCancelled(State, ProgressValidate, TEXT("Checking the level")))
+		if (PreviewStageCanceled(State, ProgressValidate, TEXT("Checking the level")))
 		{
 			return false;
 		}
@@ -918,7 +918,7 @@ namespace MantlePreviewExportPrivate
 		}
 
 		// --- Gather and convert every dependency (what Publish converts, with nothing sent) ---------
-		if (PreviewStageCancelled(State, ProgressConvert, TEXT("Converting the level's assets")))
+		if (PreviewStageCanceled(State, ProgressConvert, TEXT("Converting the level's assets")))
 		{
 			return false;
 		}
@@ -993,7 +993,7 @@ namespace MantlePreviewExportPrivate
 		for (int32 StageIndex = 0; StageIndex < UE_ARRAY_COUNT(Stages); ++StageIndex)
 		{
 			const EMantlePlaceUploadStage Stage = Stages[StageIndex];
-			if (PreviewStageCancelled(State, ProgressCookStages / static_cast<float>(UE_ARRAY_COUNT(Stages)), FString::Printf(TEXT("Cooking %s assets"), StageNames[StageIndex])))
+			if (PreviewStageCanceled(State, ProgressCookStages / static_cast<float>(UE_ARRAY_COUNT(Stages)), FString::Printf(TEXT("Cooking %s assets"), StageNames[StageIndex])))
 			{
 				return false;
 			}
@@ -1012,7 +1012,7 @@ namespace MantlePreviewExportPrivate
 			for (const FMantlePlaceUpload& Upload : Uploads)
 			{
 				CookTask.EnterProgressFrame(1.f, FText::FromString(FString::Printf(TEXT("Cooking %s %d of %d: %s"), StageNames[StageIndex], ++CookIndex, Uploads.Num(), *Upload.SourceName)));
-				if (PreviewCancelled(State))
+				if (PreviewCanceled(State))
 				{
 					return false;
 				}
@@ -1052,7 +1052,7 @@ namespace MantlePreviewExportPrivate
 		}
 
 		// --- The place, with the provisional ids and src_ ids the exporter writes offline --------------
-		if (PreviewStageCancelled(State, ProgressScripts, TEXT("Writing the place, scripts and UI")))
+		if (PreviewStageCanceled(State, ProgressScripts, TEXT("Writing the place, scripts and UI")))
 		{
 			return false;
 		}
@@ -1063,7 +1063,7 @@ namespace MantlePreviewExportPrivate
 		ExportOptions.Assets = &Set;
 		ExportOptions.bThinInstances = Options.bThinInstances;
 		const FMantleExportResult Exported = FMantlePlaceExporter::Export(World, ExportOptions);
-		// The materials it gathered for the cook, recognised, baked or lost, join the report (Export leaves them to whoever gathered).
+		// The materials it gathered for the cook, recognized, baked or lost, join the report (Export leaves them to whoever gathered).
 		Result.Coverage = Exported.Coverage;
 		FMantleCoverageSurvey::AddMaterials(Dependencies, Result.Coverage);
 		Options.Features.ReportMaterialDowngrades(Set, Result.Coverage);
@@ -1230,7 +1230,7 @@ namespace MantlePreviewExportPrivate
 			}
 			for (const FMantleGraphScriptEntry& Entry : GraphEntries)
 			{
-				// The graph's generated Luau, as it sits beside the .graph in a disk catalogue.
+				// The graph's generated Luau, as it sits beside the .graph in a disk catalog.
 				if (!AddScript(FPaths::ChangeExtension(Entry.Path, TEXT("luau")), Entry.CompiledLuau, FString()))
 				{
 					return false;
@@ -1415,7 +1415,7 @@ namespace MantlePreviewExportPrivate
 		}
 
 		// --- The manifest, last: pending, validated, then renamed ---------------------------------------------
-		if (PreviewStageCancelled(State, ProgressManifest, TEXT("Writing the manifest")))
+		if (PreviewStageCanceled(State, ProgressManifest, TEXT("Writing the manifest")))
 		{
 			return false;
 		}
@@ -1678,11 +1678,11 @@ bool FMantlePreviewExport::Run(UWorld* World, const FMantlePreviewExportOptions&
 		{
 			IFileManager::Get().DeleteDirectory(*State.BundleDir, /*RequireExists*/ false, /*Tree*/ true);
 		}
-		if (State.bCancelled)
+		if (State.bCanceled)
 		{
-			OutResult.bCancelled = true;
+			OutResult.bCanceled = true;
 			OutResult.Errors.Reset();
-			OutResult.Errors.Add(TEXT("Cancelled."));
+			OutResult.Errors.Add(TEXT("Canceled."));
 		}
 		else if (OutResult.Errors.Num() == 0)
 		{

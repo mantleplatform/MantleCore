@@ -10,7 +10,7 @@ struct FMantleBodyShapeHeader
 	/** The skeleton of the shape's reference pose ("metahuman"). */
 	FString Skeleton;
 
-	/** The quantised UV hash of the topology the positions are in (body-topology-v1.json's, checked at cook). */
+	/** The quantized UV hash of the topology the positions are in (body-topology-v1.json's, checked at cook). */
 	uint32 UVHash = 0;
 
 	/** The positions' bounds as the cook worker wrote them, cm. */

@@ -44,7 +44,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Effect")
 	EMantleEffectArchetype Archetype = EMantleEffectArchetype::Smoke;
 
-	/** The particles' tint, linear RGB (alpha is ignored). Fire recolours its flames to it; white keeps their own colours. */
+	/** The particles' tint, linear RGB (alpha is ignored). Fire recolors its flames to it; white keeps their own colors. */
 	UPROPERTY(EditAnywhere, Category = "Effect", meta = (HideAlphaChannel))
 	FLinearColor Color;
 
@@ -145,7 +145,7 @@ public:
 	static bool SetSystemVariableVec3(UFXSystemComponent& Component, const TCHAR* FunctionName, const FName Name, const FVector& Value);
 
 	/**
-	 * Hands Look, as given, to Component's user parameters (FMantleEffects' names and types): the colour a
+	 * Hands Look, as given, to Component's user parameters (FMantleEffects' names and types): the color a
 	 * LinearColor, the size a Vector2D (Size, Size), the rate, speed and lifetime floats. The Vector2D goes
 	 * through Niagara's SetVariableVec2 by reflection, as UFXSystemComponent has no such setter. False when
 	 * Component has none (it is not Niagara's): the size is then unwritten, the rest written anyway.
@@ -165,7 +165,7 @@ public:
 
 	/**
 	 * The material instance a sprites effect draws with: the translucent or additive master (FMantleEffects::SpritesMaterialPath),
-	 * with the texture (Texture, or the soft dot when null), colours, opacity envelope and end scale set. Null where the master
+	 * with the texture (Texture, or the soft dot when null), colors, opacity envelope and end scale set. Null where the master
 	 * is missing from this build (logged once).
 	 */
 	static UMaterialInstanceDynamic* MakeSpritesMaterial(UObject* Outer, const FMantleEffectLook& Look, const FMantleSpritesSettings& Sprites, UTexture* Texture);

@@ -35,7 +35,7 @@
 
 // Decomposing a multi-component actor: a Blueprint prefab becomes a Group with one entity per component, and
 // whatever is not carried is reported, never an error: lights keep their units, editor-only components are ignored,
-// an unknown component is dropped with a line, a reflection capture is an Info line, a Blueprint's behaviour is one
+// an unknown component is dropped with a line, a reflection capture is an Info line, a Blueprint's behavior is one
 // Dropped line per class.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
@@ -271,7 +271,7 @@ bool FMantleDecomposeEditorOnlyTest::RunTest(const FString& Parameters)
 	}
 	AddMesh(Actor, TEXT("Body"), Cube, FVector::ZeroVector);
 	UBillboardComponent* Icon = AddScene<UBillboardComponent>(Actor, TEXT("Icon"), FVector::ZeroVector);
-	TestTrue(TEXT("a billboard is editor-only"), FMantleActorDecompose::IsVisualisation(Icon));
+	TestTrue(TEXT("a billboard is editor-only"), FMantleActorDecompose::IsVisualization(Icon));
 
 	TArray<FMantlePrefabPart> Parts;
 	TArray<FMantleUnpublishedPart> Unsupported;
@@ -306,7 +306,7 @@ bool FMantleDecomposeUnknownComponentTest::RunTest(const FString& Parameters)
 	URotatingMovementComponent* Spin = NewObject<URotatingMovementComponent>(Actor, TEXT("Spin"));
 	Spin->RegisterComponent();
 
-	// A capsule a player could touch has no entity: named, not an error. A movement component is behaviour: dropped by class.
+	// A capsule a player could touch has no entity: named, not an error. A movement component is behavior: dropped by class.
 	TArray<FMantlePrefabPart> Parts;
 	TArray<FMantleUnpublishedPart> Unsupported;
 	FMantlePlaceExporter::CollectPrefabParts(Actor, Parts, &Unsupported);
@@ -389,21 +389,21 @@ bool FMantleDecomposeBlueprintLogicTest::RunTest(const FString& Parameters)
 	using namespace MantleActorDecomposeTestPrivate;
 
 	// The hint, pure: the events of the actor's own Blueprint, then each parent's, marked as the parent's.
-	FMantleBlueprintBehaviour Gate;
+	FMantleBlueprintBehavior Gate;
 	Gate.Blueprint = TEXT("BP_Gate");
 	Gate.Events.Add(TEXT("BeginPlay"));
-	FMantleBlueprintBehaviour Door;
+	FMantleBlueprintBehavior Door;
 	Door.Blueprint = TEXT("BP_BaseDoor");
 	Door.Events.Add(TEXT("ActorBeginOverlap"));
 	Door.Events.Add(TEXT("Tick"));
-	FMantleBlueprintBehaviour Rotator;
+	FMantleBlueprintBehavior Rotator;
 	Rotator.Blueprint = TEXT("BP_BaseRotator");
 	Rotator.Functions.Add(TEXT("Spin"));
 	TestEqual(TEXT("the hint names events and parents"), FMantleActorDecompose::ComposeBlueprintHint({ Gate, Door }),
 		FString(TEXT("BeginPlay; ActorBeginOverlap, Tick from parent BP_BaseDoor")));
 	TestEqual(TEXT("a function stands in when there is no event"), FMantleActorDecompose::ComposeBlueprintHint({ Rotator }),
 		FString(TEXT("function Spin")));
-	FMantleBlueprintBehaviour Many;
+	FMantleBlueprintBehavior Many;
 	Many.Blueprint = TEXT("BP_Many");
 	Many.Events = { TEXT("A"), TEXT("B"), TEXT("C"), TEXT("D"), TEXT("E") };
 	TestEqual(TEXT("a long list is cut and counted"), FMantleActorDecompose::ComposeBlueprintHint({ Many }), FString(TEXT("A, B, C and 2 more")));
@@ -434,7 +434,7 @@ bool FMantleDecomposeBlueprintLogicTest::RunTest(const FString& Parameters)
 		AddWarning(TEXT("a new Blueprint has no default event nodes in this engine; the wired-event half is skipped"));
 		return true;
 	}
-	// A new Blueprint's events are greyed out and unwired: no behaviour yet.
+	// A new Blueprint's events are grayed out and unwired: no behavior yet.
 	FDecomposeWorld Fixture;
 	AActor* First = Fixture.World->SpawnActor<AActor>(Blueprint->GeneratedClass);
 	AActor* Second = Fixture.World->SpawnActor<AActor>(Blueprint->GeneratedClass);
@@ -444,7 +444,7 @@ bool FMantleDecomposeBlueprintLogicTest::RunTest(const FString& Parameters)
 	}
 	FString Name;
 	FString Detail;
-	TestFalse(TEXT("an untouched Blueprint has no behaviour"), FMantleActorDecompose::DescribeBlueprintBehaviour(First, Name, Detail));
+	TestFalse(TEXT("an untouched Blueprint has no behavior"), FMantleActorDecompose::DescribeBlueprintBehavior(First, Name, Detail));
 
 	// Enable the event and give it somewhere to go.
 	EventNode->SetEnabledState(ENodeEnabledState::Enabled);
@@ -458,10 +458,10 @@ bool FMantleDecomposeBlueprintLogicTest::RunTest(const FString& Parameters)
 	}
 	EventPin->MakeLinkTo(SinkPin);
 
-	TestTrue(TEXT("a wired event is behaviour"), FMantleActorDecompose::DescribeBlueprintBehaviour(First, Name, Detail));
+	TestTrue(TEXT("a wired event is behavior"), FMantleActorDecompose::DescribeBlueprintBehavior(First, Name, Detail));
 	TestEqual(TEXT("named after the Blueprint"), Name, FString(TEXT("BP_DecomposeTest")));
 	TestTrue(TEXT("with its event"), Detail.Contains(FMantleActorDecompose::EventNameOf(EventNode)));
-	TestTrue(TEXT("and the honest wording"), Detail.StartsWith(TEXT("its behaviour isn't carried (e.g. ")));
+	TestTrue(TEXT("and the honest wording"), Detail.StartsWith(TEXT("its behavior isn't carried (e.g. ")));
 
 	FMantleCoverage Coverage;
 	FMantleActorDecompose::ReportActor(First, EMantleEntityType::Group, Coverage);
@@ -492,7 +492,7 @@ bool FMantleDecomposeEffectJsonTest::RunTest(const FString& Parameters)
 	FMantleEffectProps Props;
 	TestTrue(TEXT("a built-in archetype reads"), FMantleActorDecompose::EffectPropsFromJson(*Json, Props));
 	TestTrue(TEXT("the archetype"), Props.Archetype == EMantleEffectArchetype::Fire);
-	TestTrue(TEXT("the colour"), Props.Look.Color.Equals(FLinearColor(1.0f, 0.5f, 0.25f)));
+	TestTrue(TEXT("the color"), Props.Look.Color.Equals(FLinearColor(1.0f, 0.5f, 0.25f)));
 	TestEqual(TEXT("the size"), Props.Look.Size, 12.0);
 	TestEqual(TEXT("a key left out keeps the archetype's own"), Props.Look.Rate, FMantleEffects::DefaultLook(EMantleEffectArchetype::Fire).Rate);
 	TestFalse(TEXT("loop"), Props.bLoop);

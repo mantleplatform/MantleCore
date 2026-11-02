@@ -66,7 +66,7 @@ namespace MantleCosmeticPreviewRetargetPrivate
 	}
 
 	/**
-	 * The client's proxy (FMantleBodyAnimInstanceProxy) reduced to its retarget: the node is initialised, fed on the game
+	 * The client's proxy (FMantleBodyAnimInstanceProxy) reduced to its retarget: the node is initialized, fed on the game
 	 * thread in PreUpdate and run from the proxy's own update and evaluate, reading the driver component. The node lives
 	 * in memory the node's own struct constructs; its properties are set by name. Without a node, a retargeter or a
 	 * driver the body holds its reference pose.

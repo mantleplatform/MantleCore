@@ -27,7 +27,7 @@ namespace MantleAvatarBakePrivate
 	 */
 	const TCHAR* const BakeHiddenParts[] = { TEXT("eyeshell"), TEXT("eyeedge"), TEXT("eyelash"), TEXT("saliva"), TEXT("cartilage") };
 
-	/** The smallest bake: a flat colour needs little. */
+	/** The smallest bake: a flat color needs little. */
 	constexpr int32 MinBakeSize = 64;
 
 	/** The section name the upload gives a slot (FMantleCosmeticExport's SlotName): the slot name, else the material's. */
@@ -293,7 +293,7 @@ void FMantleAvatarBakeFixer::AnalyzePart(const FMantleConvertContext& Context, i
 			continue;
 		}
 		// On a MetaHuman Convert built (Context.IsBuiltMetaHuman) this is the step that turns Epic's
-		// virtual-textured skin, with its face wrinkle maps, into plain textures the upload can read, at Epic's centre skin
+		// virtual-textured skin, with its face wrinkle maps, into plain textures the upload can read, at Epic's center skin
 		// tone; the game tints that. It is not source-texture baking: the source's own
 		// textures never reach a converted MetaHuman. Bake changes materials and textures only, never the geometry its DNA rigs.
 		TArray<FMantleBakeTarget> Targets;
@@ -318,11 +318,11 @@ void FMantleAvatarBakeFixer::AnalyzePart(const FMantleConvertContext& Context, i
 			Largest = FMath::Max(Largest, Target.Size);
 			Sampled += Target.bRendered ? 0 : 1;
 		}
-		Fix.Problem = FString::Printf(TEXT("%s: the upload reads plain textures, and %s its colour in the shader (%s)."), *Mesh->GetName(),
+		Fix.Problem = FString::Printf(TEXT("%s: the upload reads plain textures, and %s its color in the shader (%s)."), *Mesh->GetName(),
 			Targets.Num() == 1 ? TEXT("this material builds") : TEXT("these materials build"), *FString::Join(Reasons, TEXT("; ")));
 		const FString What = bFace ? FString::Printf(TEXT("the face's skin (%d section%s, every LOD)"), Sections, Sections == 1 ? TEXT("") : TEXT("s"))
 			: FString::Printf(TEXT("%d section%s"), Sections, Sections == 1 ? TEXT("") : TEXT("s"));
-		Fix.Action = FString::Printf(TEXT("Bakes %d material%s for %s into texture sets on their own UVs (up to %d%c; base colour, normal, ORM) on a converted copy%s."),
+		Fix.Action = FString::Printf(TEXT("Bakes %d material%s for %s into texture sets on their own UVs (up to %d%c; base color, normal, ORM) on a converted copy%s."),
 			Targets.Num(), Targets.Num() == 1 ? TEXT("") : TEXT("s"), *What, Largest, static_cast<TCHAR>(0x00B2),
 			Sampled > 0 ? *FString::Printf(TEXT("; %d sampled from %s textures (no renderer), so shader tints are not kept"),
 				Sampled, Sampled == 1 ? TEXT("its") : TEXT("their")) : TEXT(""));

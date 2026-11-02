@@ -32,7 +32,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 // A landscape material with no paint layers that picks its ground from the slope and height of the surface: the chain of
-// blends is recognised, its masks compiled and run per heightfield sample, and its layers' weights baked. Like the other terrain
+// blends is recognized, its masks compiled and run per heightfield sample, and its layers' weights baked. Like the other terrain
 // tests, the material graphs are built in code, so no level or asset is needed (except the engine's own SlopeMask function).
 
 // Named, not anonymous: MantleEditor builds as a unity build.
@@ -55,7 +55,7 @@ namespace MantleTerrainAutoTestPrivate
 		return Expression;
 	}
 
-	UMaterialExpressionVectorParameter* AddColour(UMaterial* Material, const TCHAR* Name, const FLinearColor Value)
+	UMaterialExpressionVectorParameter* AddColor(UMaterial* Material, const TCHAR* Name, const FLinearColor Value)
 	{
 		UMaterialExpressionVectorParameter* Parameter = AddNode<UMaterialExpressionVectorParameter>(Material);
 		Parameter->ParameterName = Name;
@@ -110,7 +110,7 @@ namespace MantleTerrainAutoTestPrivate
 		return AddSaturate(Material, Scaled);
 	}
 
-	/** A material function "Blend" of two colour inputs, "Ground Color" and "Rock Color", by the steepness mask above, one output "Result". */
+	/** A material function "Blend" of two color inputs, "Ground Color" and "Rock Color", by the steepness mask above, one output "Result". */
 	UMaterialFunction* MakeBlendFunction()
 	{
 		UMaterialFunction* Function = NewObject<UMaterialFunction>(GetTransientPackage());
@@ -251,7 +251,7 @@ namespace MantleTerrainAutoTestPrivate
 		Zero->ConstB = 0.0f;
 		Mask->B.Connect(0, Zero);
 		Material->GetEditorOnlyData()->BaseColor.Connect(0,
-			AddBlend(Material, AddColour(Material, TEXT("GroundColor"), FLinearColor::Green), AddColour(Material, TEXT("RockColor"), FLinearColor::Gray), AddSaturate(Material, Mask)));
+			AddBlend(Material, AddColor(Material, TEXT("GroundColor"), FLinearColor::Green), AddColor(Material, TEXT("RockColor"), FLinearColor::Gray), AddSaturate(Material, Mask)));
 		return Material;
 	}
 
@@ -276,20 +276,20 @@ namespace MantleTerrainAutoTestPrivate
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleTerrainAutoRecognisesChainTest,
-	"Mantle.Editor.Terrain.AutoRecognisesChain",
+	FMantleTerrainAutoRecognizesChainTest,
+	"Mantle.Editor.Terrain.AutoRecognizesChain",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleTerrainAutoRecognisesChainTest::RunTest(const FString& Parameters)
+bool FMantleTerrainAutoRecognizesChainTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleTerrainAutoTestPrivate;
 
 	// A function blends "Ground Color" and "Rock Color" by the surface's steepness; a variation scalar multiplies that, and
-	// a snow colour is blended over it by height: three layers, base first.
+	// a snow color is blended over it by height: three layers, base first.
 	UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
 	UMaterialExpressionMaterialFunctionCall* Call = AddCall(Material, MakeBlendFunction(),
-		{ { TEXT("Ground Color"), AddColour(Material, TEXT("GroundTint"), FLinearColor(0.2f, 0.3f, 0.1f)) },
-			{ TEXT("Rock Color"), AddColour(Material, TEXT("RockTint"), FLinearColor(0.5f, 0.5f, 0.5f)) } });
+		{ { TEXT("Ground Color"), AddColor(Material, TEXT("GroundTint"), FLinearColor(0.2f, 0.3f, 0.1f)) },
+			{ TEXT("Rock Color"), AddColor(Material, TEXT("RockTint"), FLinearColor(0.5f, 0.5f, 0.5f)) } });
 	UMaterialExpressionMultiply* Tinted = AddNode<UMaterialExpressionMultiply>(Material);
 	Tinted->A.Connect(0, Call);
 	Tinted->B.Connect(0, AddScalar(Material, TEXT("Variation"), 1.2f));
@@ -298,7 +298,7 @@ bool FMantleTerrainAutoRecognisesChainTest::RunTest(const FString& Parameters)
 	UMaterialExpressionMultiply* Height = AddNode<UMaterialExpressionMultiply>(Material);
 	Height->A.Connect(2, Position);
 	Height->B.Connect(0, AddScalar(Material, TEXT("SnowHeightScale"), 0.001f));
-	UMaterialExpressionLinearInterpolate* Top = AddBlend(Material, Tinted, AddColour(Material, TEXT("SnowBaseColor"), FLinearColor(0.9f, 0.9f, 0.95f)), AddSaturate(Material, Height));
+	UMaterialExpressionLinearInterpolate* Top = AddBlend(Material, Tinted, AddColor(Material, TEXT("SnowBaseColor"), FLinearColor(0.9f, 0.9f, 0.95f)), AddSaturate(Material, Height));
 	Material->GetEditorOnlyData()->BaseColor.Connect(0, Top);
 
 	FMantleLandscapeMaterialRead Read;
@@ -325,8 +325,8 @@ bool FMantleTerrainAutoRecognisesChainTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("the looks are in the chain's order"), Read.Layers[Index].Layer == Read.AutoChain.LayerNames[Index]);
 			TestTrue(TEXT("each look says it is baked"), HasNote(Read.Layers[Index].Approximations, TEXT("baked from the material's slope and height")));
 		}
-		TestTrue(TEXT("a flat colour look is a look"), Read.Layers[0].bHasFlatColour && FMath::IsNearlyEqual(Read.Layers[0].FlatColour.G, 0.3f, 0.001f));
-		TestTrue(TEXT("the snow's too"), Read.Layers[2].bHasFlatColour && FMath::IsNearlyEqual(Read.Layers[2].FlatColour.B, 0.95f, 0.001f));
+		TestTrue(TEXT("a flat color look is a look"), Read.Layers[0].bHasFlatColor && FMath::IsNearlyEqual(Read.Layers[0].FlatColor.G, 0.3f, 0.001f));
+		TestTrue(TEXT("the snow's too"), Read.Layers[2].bHasFlatColor && FMath::IsNearlyEqual(Read.Layers[2].FlatColor.B, 0.95f, 0.001f));
 	}
 	TestTrue(TEXT("the variation over the layers is said to be lost"), HasNote(Read.Approximations, TEXT("after the layers")));
 	TestFalse(TEXT("the masks that are baked are not reported as lost"), HasNote(Read.Approximations, TEXT("surface normal")) || HasNote(Read.Approximations, TEXT("by height")));
@@ -368,7 +368,7 @@ bool FMantleTerrainAutoEvaluatesSlopeMaskTest::RunTest(const FString& Parameters
 	UMaterialExpressionAdd* Sum = AddNode<UMaterialExpressionAdd>(Material);
 	Sum->A.Connect(0, Pixel);
 	Sum->B.Connect(0, Plain);
-	UMaterialExpressionLinearInterpolate* Blend = AddBlend(Material, AddColour(Material, TEXT("A"), FLinearColor::Red), AddColour(Material, TEXT("B"), FLinearColor::Blue), Sum);
+	UMaterialExpressionLinearInterpolate* Blend = AddBlend(Material, AddColor(Material, TEXT("A"), FLinearColor::Red), AddColor(Material, TEXT("B"), FLinearColor::Blue), Sum);
 	Material->GetEditorOnlyData()->BaseColor.Connect(0, Blend);
 
 	FMantleLandscapeMaterialRead Read;
@@ -418,15 +418,15 @@ bool FMantleTerrainAutoBakesWeightsTest::RunTest(const FString& Parameters)
 
 	// Ground, then rock over it by steepness (4 times 1 - the normal's Z), then snow over both by height ((Z - 1000 cm) at 0.001 a cm).
 	UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
-	UMaterialExpressionLinearInterpolate* Rocky = AddBlend(Material, AddColour(Material, TEXT("GroundColor"), FLinearColor(0.2f, 0.3f, 0.1f)),
-		AddColour(Material, TEXT("RockColor"), FLinearColor(0.5f, 0.5f, 0.5f)), AddSteepness(Material, 4.0f));
+	UMaterialExpressionLinearInterpolate* Rocky = AddBlend(Material, AddColor(Material, TEXT("GroundColor"), FLinearColor(0.2f, 0.3f, 0.1f)),
+		AddColor(Material, TEXT("RockColor"), FLinearColor(0.5f, 0.5f, 0.5f)), AddSteepness(Material, 4.0f));
 	UMaterialExpressionSubtract* Above = AddNode<UMaterialExpressionSubtract>(Material);
 	Above->A.Connect(2, AddNode<UMaterialExpressionWorldPosition>(Material));
 	Above->ConstB = 1000.0f;
 	UMaterialExpressionMultiply* Snowy = AddNode<UMaterialExpressionMultiply>(Material);
 	Snowy->A.Connect(0, Above);
 	Snowy->ConstB = 0.001f;
-	UMaterialExpressionLinearInterpolate* Top = AddBlend(Material, Rocky, AddColour(Material, TEXT("SnowColor"), FLinearColor(0.9f, 0.9f, 0.95f)), AddSaturate(Material, Snowy));
+	UMaterialExpressionLinearInterpolate* Top = AddBlend(Material, Rocky, AddColor(Material, TEXT("SnowColor"), FLinearColor(0.9f, 0.9f, 0.95f)), AddSaturate(Material, Snowy));
 	Material->GetEditorOnlyData()->BaseColor.Connect(0, Top);
 
 	FMantleLandscapeMaterialRead Read;
@@ -550,10 +550,10 @@ bool FMantleTerrainAutoLeavesPaintedMaterialsAloneTest::RunTest(const FString& P
 	UMaterialExpressionLandscapeLayerBlend* Blend = AddNode<UMaterialExpressionLandscapeLayerBlend>(Painted);
 	FLayerBlendInput& Grass = Blend->Layers.AddDefaulted_GetRef();
 	Grass.LayerName = TEXT("Grass");
-	Grass.LayerInput.Connect(0, AddColour(Painted, TEXT("GrassColor"), FLinearColor(0.1f, 0.5f, 0.1f)));
+	Grass.LayerInput.Connect(0, AddColor(Painted, TEXT("GrassColor"), FLinearColor(0.1f, 0.5f, 0.1f)));
 	FLayerBlendInput& Dirt = Blend->Layers.AddDefaulted_GetRef();
 	Dirt.LayerName = TEXT("Dirt");
-	Dirt.LayerInput.Connect(0, AddColour(Painted, TEXT("DirtColor"), FLinearColor(0.4f, 0.3f, 0.2f)));
+	Dirt.LayerInput.Connect(0, AddColor(Painted, TEXT("DirtColor"), FLinearColor(0.4f, 0.3f, 0.2f)));
 	Painted->GetEditorOnlyData()->BaseColor.Connect(0, Blend);
 
 	FMantleLandscapeMaterialRead Read;
@@ -574,11 +574,11 @@ bool FMantleTerrainAutoLeavesPaintedMaterialsAloneTest::RunTest(const FString& P
 	UMaterialExpressionLandscapeLayerBlend* OverlaidBlend = AddNode<UMaterialExpressionLandscapeLayerBlend>(Overlaid);
 	FLayerBlendInput& OverlaidGrass = OverlaidBlend->Layers.AddDefaulted_GetRef();
 	OverlaidGrass.LayerName = TEXT("Grass");
-	OverlaidGrass.LayerInput.Connect(0, AddColour(Overlaid, TEXT("GrassColor"), FLinearColor(0.1f, 0.5f, 0.1f)));
+	OverlaidGrass.LayerInput.Connect(0, AddColor(Overlaid, TEXT("GrassColor"), FLinearColor(0.1f, 0.5f, 0.1f)));
 	FLayerBlendInput& OverlaidDirt = OverlaidBlend->Layers.AddDefaulted_GetRef();
 	OverlaidDirt.LayerName = TEXT("Dirt");
-	OverlaidDirt.LayerInput.Connect(0, AddColour(Overlaid, TEXT("DirtColor"), FLinearColor(0.4f, 0.3f, 0.2f)));
-	UMaterialExpressionLinearInterpolate* Overlay = AddBlend(Overlaid, OverlaidBlend, AddColour(Overlaid, TEXT("RockColor"), FLinearColor(0.5f, 0.5f, 0.5f)), AddSteepness(Overlaid, 4.0f));
+	OverlaidDirt.LayerInput.Connect(0, AddColor(Overlaid, TEXT("DirtColor"), FLinearColor(0.4f, 0.3f, 0.2f)));
+	UMaterialExpressionLinearInterpolate* Overlay = AddBlend(Overlaid, OverlaidBlend, AddColor(Overlaid, TEXT("RockColor"), FLinearColor(0.5f, 0.5f, 0.5f)), AddSteepness(Overlaid, 4.0f));
 	Overlaid->GetEditorOnlyData()->BaseColor.Connect(0, Overlay);
 
 	FMantleLandscapeMaterialRead OverlaidRead;
@@ -597,7 +597,7 @@ bool FMantleTerrainAutoLeavesPaintedMaterialsAloneTest::RunTest(const FString& P
 	Mask->A.Connect(0, AddSteepness(Unreadable, 4.0f));
 	Mask->B.Connect(0, AddNode<UMaterialExpressionTextureCoordinate>(Unreadable));
 	Unreadable->GetEditorOnlyData()->BaseColor.Connect(0,
-		AddBlend(Unreadable, AddColour(Unreadable, TEXT("GroundColor"), FLinearColor::Green), AddColour(Unreadable, TEXT("RockColor"), FLinearColor::Gray), AddSaturate(Unreadable, Mask)));
+		AddBlend(Unreadable, AddColor(Unreadable, TEXT("GroundColor"), FLinearColor::Green), AddColor(Unreadable, TEXT("RockColor"), FLinearColor::Gray), AddSaturate(Unreadable, Mask)));
 	FMantleLandscapeMaterialRead UnreadableRead;
 	TestFalse(TEXT("a blend by a mask it cannot evaluate is not read"), FMantleLandscapeMaterialReader::Read(Unreadable, 100.0, UnreadableRead, Problem));
 	TestTrue(TEXT("and says what it could not evaluate"), Problem.Contains(TEXT("TextureCoordinate")));
@@ -615,19 +615,19 @@ bool FMantleTerrainAutoReadsLayerNormalsTest::RunTest(const FString& Parameters)
 	using namespace MantleTerrainAutoTestPrivate;
 
 	// Ground, rock over it by steepness, snow over both by height: in the Base Color and, as a parallel chain of normal maps, in the Normal.
-	// The normal chain shares the steepness node with the colour chain, so rock and the ground under it match; its snow blend is by a mask of
+	// The normal chain shares the steepness node with the color chain, so rock and the ground under it match; its snow blend is by a mask of
 	// its own that merely computes the same thing, so the snow has no normal.
 	UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
-	UTexture2D* GroundColour = MakeTexture(false);
-	UTexture2D* RockColour = MakeTexture(false);
-	UTexture2D* SnowColour = MakeTexture(false);
+	UTexture2D* GroundColor = MakeTexture(false);
+	UTexture2D* RockColor = MakeTexture(false);
+	UTexture2D* SnowColor = MakeTexture(false);
 	UTexture2D* GroundNormal = MakeTexture(true);
 	UTexture2D* RockNormal = MakeTexture(true);
 	UTexture2D* SnowNormal = MakeTexture(true);
 
 	UMaterialExpression* Steep = AddSteepness(Material, 4.0f);
-	UMaterialExpressionLinearInterpolate* Rocky = AddBlend(Material, AddSample(Material, GroundColour), AddSample(Material, RockColour), Steep);
-	Material->GetEditorOnlyData()->BaseColor.Connect(0, AddBlend(Material, Rocky, AddSample(Material, SnowColour), AddHeightMask(Material, 1000.0f)));
+	UMaterialExpressionLinearInterpolate* Rocky = AddBlend(Material, AddSample(Material, GroundColor), AddSample(Material, RockColor), Steep);
+	Material->GetEditorOnlyData()->BaseColor.Connect(0, AddBlend(Material, Rocky, AddSample(Material, SnowColor), AddHeightMask(Material, 1000.0f)));
 	UMaterialExpressionLinearInterpolate* RockyNormal = AddBlend(Material, AddSample(Material, GroundNormal), AddSample(Material, RockNormal), Steep);
 	Material->GetEditorOnlyData()->Normal.Connect(0, AddBlend(Material, RockyNormal, AddSample(Material, SnowNormal), AddHeightMask(Material, 1000.0f)));
 
@@ -642,22 +642,22 @@ bool FMantleTerrainAutoReadsLayerNormalsTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	TestTrue(TEXT("the ground's colour"), Read.Layers[0].BaseColor == GroundColour);
-	TestTrue(TEXT("the rock's colour"), Read.Layers[1].BaseColor == RockColour);
-	TestTrue(TEXT("the snow's colour"), Read.Layers[2].BaseColor == SnowColour);
+	TestTrue(TEXT("the ground's color"), Read.Layers[0].BaseColor == GroundColor);
+	TestTrue(TEXT("the rock's color"), Read.Layers[1].BaseColor == RockColor);
+	TestTrue(TEXT("the snow's color"), Read.Layers[2].BaseColor == SnowColor);
 	TestTrue(TEXT("the base takes the normal under the first blend"), Read.Layers[0].Normal == GroundNormal);
 	TestTrue(TEXT("the layer over it takes the normal that shares its mask"), Read.Layers[1].Normal == RockNormal);
 	TestNull(TEXT("a layer whose mask no normal blend shares keeps a flat normal"), Read.Layers[2].Normal);
-	TestTrue(TEXT("a normal's tiling is read as a colour's is"), Read.Layers[1].NormalTilingCm > 0.0);
+	TestTrue(TEXT("a normal's tiling is read as a color's is"), Read.Layers[1].NormalTilingCm > 0.0);
 
 	// A material with no Normal chain gives no normals.
-	UMaterial* ColourOnly = NewObject<UMaterial>(GetTransientPackage());
-	ColourOnly->GetEditorOnlyData()->BaseColor.Connect(0, AddBlend(ColourOnly, AddSample(ColourOnly, GroundColour), AddSample(ColourOnly, RockColour), AddSteepness(ColourOnly, 4.0f)));
-	FMantleLandscapeMaterialRead ColourOnlyRead;
-	if (TestTrue(TEXT("a colour chain alone is read"), FMantleLandscapeMaterialReader::Read(ColourOnly, 100.0, ColourOnlyRead, Problem)) && TestEqual(TEXT("two layers"), ColourOnlyRead.Layers.Num(), 2))
+	UMaterial* ColorOnly = NewObject<UMaterial>(GetTransientPackage());
+	ColorOnly->GetEditorOnlyData()->BaseColor.Connect(0, AddBlend(ColorOnly, AddSample(ColorOnly, GroundColor), AddSample(ColorOnly, RockColor), AddSteepness(ColorOnly, 4.0f)));
+	FMantleLandscapeMaterialRead ColorOnlyRead;
+	if (TestTrue(TEXT("a color chain alone is read"), FMantleLandscapeMaterialReader::Read(ColorOnly, 100.0, ColorOnlyRead, Problem)) && TestEqual(TEXT("two layers"), ColorOnlyRead.Layers.Num(), 2))
 	{
-		TestNull(TEXT("the first has no normal"), ColourOnlyRead.Layers[0].Normal);
-		TestNull(TEXT("nor the second"), ColourOnlyRead.Layers[1].Normal);
+		TestNull(TEXT("the first has no normal"), ColorOnlyRead.Layers[0].Normal);
+		TestNull(TEXT("nor the second"), ColorOnlyRead.Layers[1].Normal);
 	}
 	return true;
 }
@@ -755,7 +755,7 @@ bool FMantleTerrainAutoSamplesMaskTexturesTest::RunTest(const FString& Parameter
 		Xy->A = false;
 		return Xy;
 	}, true);
-	// Texel centres are at 50 and 150 cm: the top row is 0 then 1, the bottom 1 then 0; the texture wraps; between centres it is bilinear.
+	// Texel centers are at 50 and 150 cm: the top row is 0 then 1, the bottom 1 then 0; the texture wraps; between centers it is bilinear.
 	const struct { double X; double Y; double Expected; const TCHAR* What; } Cases[] = {
 		{ 50.0, 50.0, 0.0, TEXT("texel (0, 0)") },
 		{ 150.0, 50.0, 1.0, TEXT("texel (1, 0)") },
@@ -821,13 +821,13 @@ bool FMantleTerrainAutoReadsLayerRoughnessTest::RunTest(const FString& Parameter
 		return Constant;
 	};
 
-	// Through a chain: ground, rock over it by steepness, snow over both by height, in the colour and, by the same two mask nodes, in the roughness.
+	// Through a chain: ground, rock over it by steepness, snow over both by height, in the color and, by the same two mask nodes, in the roughness.
 	UMaterial* Chained = NewObject<UMaterial>(GetTransientPackage());
 	UMaterialExpression* Steep = AddSteepness(Chained, 4.0f);
 	UMaterialExpression* Snowy = AddHeightMask(Chained, 1000.0f);
 	Chained->GetEditorOnlyData()->BaseColor.Connect(0, AddBlend(Chained,
-		AddBlend(Chained, AddColour(Chained, TEXT("GroundColor"), FLinearColor(0.2f, 0.3f, 0.1f)), AddColour(Chained, TEXT("RockColor"), FLinearColor(0.5f, 0.5f, 0.5f)), Steep),
-		AddColour(Chained, TEXT("SnowColor"), FLinearColor(0.9f, 0.9f, 0.95f)), Snowy));
+		AddBlend(Chained, AddColor(Chained, TEXT("GroundColor"), FLinearColor(0.2f, 0.3f, 0.1f)), AddColor(Chained, TEXT("RockColor"), FLinearColor(0.5f, 0.5f, 0.5f)), Steep),
+		AddColor(Chained, TEXT("SnowColor"), FLinearColor(0.9f, 0.9f, 0.95f)), Snowy));
 	Chained->GetEditorOnlyData()->Roughness.Connect(0, AddBlend(Chained, AddBlend(Chained, Scalar(Chained, 0.9f), Scalar(Chained, 0.6f), Steep), Scalar(Chained, 0.3f), Snowy));
 
 	FMantleLandscapeMaterialRead Read;
@@ -864,7 +864,7 @@ bool FMantleTerrainAutoReadsLayerRoughnessTest::RunTest(const FString& Parameter
 	// which is as glossy as the client draws (0.01); the ground is 0.8.
 	UMaterial* Wet = NewObject<UMaterial>(GetTransientPackage());
 	UMaterialExpression* Water = AddHeightMask(Wet, 1000.0f);
-	Wet->GetEditorOnlyData()->BaseColor.Connect(0, AddBlend(Wet, AddColour(Wet, TEXT("GroundColor"), FLinearColor(0.2f, 0.3f, 0.1f)), AddColour(Wet, TEXT("WaterColor"), FLinearColor(0.0f, 0.1f, 0.2f)), Water));
+	Wet->GetEditorOnlyData()->BaseColor.Connect(0, AddBlend(Wet, AddColor(Wet, TEXT("GroundColor"), FLinearColor(0.2f, 0.3f, 0.1f)), AddColor(Wet, TEXT("WaterColor"), FLinearColor(0.0f, 0.1f, 0.2f)), Water));
 	UMaterialExpressionOneMinus* Dry = AddNode<UMaterialExpressionOneMinus>(Wet);
 	Dry->Input.Connect(0, Water);
 	UMaterialExpressionPower* Fourth = AddNode<UMaterialExpressionPower>(Wet);
@@ -888,7 +888,7 @@ bool FMantleTerrainAutoReadsLayerRoughnessTest::RunTest(const FString& Parameter
 	// A roughness that reads the world position outside any mask is not a number per layer: the default stands, and the layer says so.
 	UMaterial* Unreadable = NewObject<UMaterial>(GetTransientPackage());
 	UMaterialExpression* UnreadableMask = AddHeightMask(Unreadable, 1000.0f);
-	Unreadable->GetEditorOnlyData()->BaseColor.Connect(0, AddBlend(Unreadable, AddColour(Unreadable, TEXT("GroundColor"), FLinearColor::Green), AddColour(Unreadable, TEXT("RockColor"), FLinearColor::Gray), UnreadableMask));
+	Unreadable->GetEditorOnlyData()->BaseColor.Connect(0, AddBlend(Unreadable, AddColor(Unreadable, TEXT("GroundColor"), FLinearColor::Green), AddColor(Unreadable, TEXT("RockColor"), FLinearColor::Gray), UnreadableMask));
 	Unreadable->GetEditorOnlyData()->Roughness.Connect(2, AddNode<UMaterialExpressionWorldPosition>(Unreadable));
 	FMantleLandscapeMaterialRead UnreadableRead;
 	if (TestTrue(TEXT("the material is read"), FMantleLandscapeMaterialReader::Read(Unreadable, 100.0, UnreadableRead, Problem)) && TestEqual(TEXT("two layers"), UnreadableRead.Layers.Num(), 2))
@@ -899,7 +899,7 @@ bool FMantleTerrainAutoReadsLayerRoughnessTest::RunTest(const FString& Parameter
 
 	// No Roughness output: no roughness, and no note.
 	UMaterial* Bare = NewObject<UMaterial>(GetTransientPackage());
-	Bare->GetEditorOnlyData()->BaseColor.Connect(0, AddBlend(Bare, AddColour(Bare, TEXT("GroundColor"), FLinearColor::Green), AddColour(Bare, TEXT("RockColor"), FLinearColor::Gray), AddSteepness(Bare, 4.0f)));
+	Bare->GetEditorOnlyData()->BaseColor.Connect(0, AddBlend(Bare, AddColor(Bare, TEXT("GroundColor"), FLinearColor::Green), AddColor(Bare, TEXT("RockColor"), FLinearColor::Gray), AddSteepness(Bare, 4.0f)));
 	FMantleLandscapeMaterialRead BareRead;
 	if (TestTrue(TEXT("a material without roughness is read"), FMantleLandscapeMaterialReader::Read(Bare, 100.0, BareRead, Problem)) && TestEqual(TEXT("two layers"), BareRead.Layers.Num(), 2))
 	{
@@ -916,7 +916,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FMantleTerrainAutoLayerNamesTest::RunTest(const FString& Parameters)
 {
-	// A short leading token and a trailing colour word come off a name taken from a parameter or texture.
+	// A short leading token and a trailing color word come off a name taken from a parameter or texture.
 	auto Name = [](const TCHAR* From) { return FMantleLandscapeMaterialReader::LayerNameFromParameter(From); };
 	TestEqual(TEXT("MW_WaterColor"), Name(TEXT("MW_WaterColor")), FString(TEXT("Water")));
 	TestEqual(TEXT("M_GrassBaseColor"), Name(TEXT("M_GrassBaseColor")), FString(TEXT("Grass")));
@@ -925,7 +925,7 @@ bool FMantleTerrainAutoLayerNamesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("a name with no prefix"), Name(TEXT("SnowBaseColor")), FString(TEXT("Snow")));
 	TestEqual(TEXT("a prefix too long to be one stays"), Name(TEXT("Grass_Moss")), FString(TEXT("Grass_Moss")));
 	TestEqual(TEXT("a token with a digit stays"), Name(TEXT("T2_Rock")), FString(TEXT("T2_Rock")));
-	TestEqual(TEXT("a trailing colour word alone is taken off"), Name(TEXT("Dirt_Color")), FString(TEXT("Dirt")));
+	TestEqual(TEXT("a trailing color word alone is taken off"), Name(TEXT("Dirt_Color")), FString(TEXT("Dirt")));
 	TestEqual(TEXT("a prefix is not taken off when nothing would be left"), Name(TEXT("MW_")), FString(TEXT("MW")));
 	return true;
 }

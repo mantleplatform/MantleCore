@@ -10,7 +10,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// The place's catalogue picture: the automatic view's framing, the picture prepared as a role-less JPEG, and the
+// The place's catalog picture: the automatic view's framing, the picture prepared as a role-less JPEG, and the
 // exporter naming it in metadata.thumbnail only when Publish prepared one. The capture itself needs a renderer and is
 // checked by publishing.
 
@@ -88,7 +88,7 @@ bool FMantlePlaceThumbnailConvertTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	// No role, so the backend keeps the JPEG the catalogue serves instead of cooking it to MTX1.
+	// No role, so the backend keeps the JPEG the catalog serves instead of cooking it to MTX1.
 	TestTrue(TEXT("no texture role"), Texture->Role.IsEmpty());
 	TestEqual(TEXT("a JPEG"), Texture->Format, FString(TEXT("jpeg")));
 	TestTrue(TEXT("starting with the JPEG start marker and the Mantle comment segment"), Texture->Bytes.Num() > 4
@@ -106,14 +106,14 @@ bool FMantlePlaceThumbnailConvertTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("with no role option"), Upload->Options.Role.IsEmpty());
 	}
 
-	// The same pixels prepared as a colour map hash differently from the role-less JPEG thumbnail, so dedupe can't hand back that MTX1 asset.
-	FMantleConvertedTexture Colour;
+	// The same pixels prepared as a color map hash differently from the role-less JPEG thumbnail, so dedupe can't hand back that MTX1 asset.
+	FMantleConvertedTexture Color;
 	TArray<FMantleValidationIssue> Issues;
-	TestTrue(TEXT("the same pixels prepare as a colour map"), FMantlePlaceAssetConverter::PrepareTexture(
+	TestTrue(TEXT("the same pixels prepare as a color map"), FMantlePlaceAssetConverter::PrepareTexture(
 		FMantlePng::EncodeRGBA8(FMantlePlaceThumbnail::Width, FMantlePlaceThumbnail::Height, Pixels), EMantlePlaceTextureSlot::BaseColor,
-		/*bKeepAlpha*/ false, FMantlePlaceAssetLimits(), TEXT("colour"), /*bWarnDownscale*/ false, Colour, Issues));
-	TestEqual(TEXT("which has the colour role"), Colour.Role, FString(TEXT("color")));
-	TestNotEqual(TEXT("and other bytes than the thumbnail"), Colour.Hash, Texture->Hash);
+		/*bKeepAlpha*/ false, FMantlePlaceAssetLimits(), TEXT("color"), /*bWarnDownscale*/ false, Color, Issues));
+	TestEqual(TEXT("which has the color role"), Color.Role, FString(TEXT("color")));
+	TestNotEqual(TEXT("and other bytes than the thumbnail"), Color.Hash, Texture->Hash);
 	TestEqual(TEXT("16:9 at full size"), FIntPoint(Texture->Width, Texture->Height), FIntPoint(FMantlePlaceThumbnail::Width, FMantlePlaceThumbnail::Height));
 
 	FMantlePlaceAssetSet Bad;

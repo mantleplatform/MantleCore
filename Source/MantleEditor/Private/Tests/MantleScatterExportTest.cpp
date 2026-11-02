@@ -322,7 +322,7 @@ bool FMantleScatterEditorGroundTest::RunTest(const FString& Parameters)
 		return true;
 	};
 	TArray<FMantleScatterInstance> Expected;
-	TestTrue(TEXT("the same scatter on a modelled ground"), FMantleScatter::Generate(Params, Expected, Error, Options));
+	TestTrue(TEXT("the same scatter on a modeled ground"), FMantleScatter::Generate(Params, Expected, Error, Options));
 	TestEqual(TEXT("keeps as many"), Volume->GetInstanceCount(), Expected.Num());
 	TestEqual(TEXT("and hashes as the volume does"), FMantleScatter::HashText(Volume->GetInstanceHash()),
 		FMantleScatter::HashText(FMantleScatter::Hash(Expected)));
@@ -344,7 +344,7 @@ bool FMantleScatterCollisionCheckTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleScatterExportTestPrivate;
 
-	// Two colliding scatters of 1500 each (400 square metres at 3.75): the second crosses the place's 2000, and Check names it.
+	// Two colliding scatters of 1500 each (400 square meters at 3.75): the second crosses the place's 2000, and Check names it.
 	FScatterWorld Fixture;
 	if (!TestNotNull(TEXT("a world"), Fixture.World))
 	{
@@ -587,7 +587,7 @@ bool FMantleScatterCellsCheckTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	Volume->SetActorLabel(TEXT("Jungle"));
-	Volume->HalfExtent = FVector(10000.0, 10000.0, 0.0); // 40,000 square metres
+	Volume->HalfExtent = FVector(10000.0, 10000.0, 0.0); // 40,000 square meters
 	Volume->Density = 6.0; // 240,000 instances
 	Volume->Meshes.SetNum(1);
 	Volume->Meshes[0].MeshId = TEXT("ast_cube");

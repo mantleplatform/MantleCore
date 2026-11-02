@@ -302,7 +302,7 @@ bool FMantleEnvironmentMapsTheLevelTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("and the clock is stopped there"), Environment.TimeScale.IsSet() && *Environment.TimeScale == 0.0);
 	if (const FMantleDirectionalLightProps* Props = Sun.Props.TryGet<FMantleDirectionalLightProps>())
 	{
-		TestTrue(TEXT("the light's 4000 K is baked into its colour: warm, red over blue"), Props->Color.R > Props->Color.B);
+		TestTrue(TEXT("the light's 4000 K is baked into its color: warm, red over blue"), Props->Color.R > Props->Color.B);
 		TestNearlyEqual(TEXT("its intensity is untouched"), Props->Intensity, 8.0, 0.0001);
 	}
 	if (TestTrue(TEXT("the volume's saturation is carried"), Environment.Saturation.IsSet()))
@@ -313,7 +313,7 @@ bool FMantleEnvironmentMapsTheLevelTest::RunTest(const FString& Parameters)
 	{
 		TestNearlyEqual(TEXT("as it is"), *Environment.Bloom, 2.0, 0.001);
 	}
-	TestTrue(TEXT("and its white balance as a colour tint"), Environment.ColorTint.IsSet() && *Environment.ColorTint != 0xFFFFFF);
+	TestTrue(TEXT("and its white balance as a color tint"), Environment.ColorTint.IsSet() && *Environment.ColorTint != 0xFFFFFF);
 	TestTrue(TEXT("a sky with no cloud holds the weather clear"), Environment.Weather.IsSet() && *Environment.Weather == EMantleWeatherState::Clear);
 
 	TestEqual(TEXT("the sun is reported once, approximated"), CountOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Approximated), static_cast<int64>(1));
@@ -419,7 +419,7 @@ bool FMantleEnvironmentOlderClientTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the place has no environment block"), Level.Place.Settings.Environment.IsEmpty());
 	if (const FMantleDirectionalLightProps* Props = Level.Place.Entities[0].Props.TryGet<FMantleDirectionalLightProps>())
 	{
-		TestTrue(TEXT("but the sun's temperature is still in its colour, which every client reads"), Props->Color.R > Props->Color.B);
+		TestTrue(TEXT("but the sun's temperature is still in its color, which every client reads"), Props->Color.R > Props->Color.B);
 	}
 	TestTrue(TEXT("the sun's angle says it needs a newer client"),
 		DetailsOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Approximated).Contains(FMantleTargetFeatures::NeedsNewerClient));
@@ -679,15 +679,15 @@ bool FMantleEnvironmentFogMapsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("its density"), Mapped.Density.IsSet() && FMath::IsNearlyEqual(*Mapped.Density, 0.005, 1.0e-7));
 	TestFalse(TEXT("its height falloff is Mantle's own, so unwritten"), Mapped.HeightFalloff.IsSet());
 	TestFalse(TEXT("and its start distance"), Mapped.StartDistance.IsSet());
-	if (TestTrue(TEXT("its inscattering colour"), Mapped.InscatteringColor.IsSet()))
+	if (TestTrue(TEXT("its inscattering color"), Mapped.InscatteringColor.IsSet()))
 	{
 		TestNearlyEqual(TEXT("blue"), Mapped.InscatteringColor->B, 1.0f, 1.0e-4f);
 		TestNearlyEqual(TEXT("green, rounded"), Mapped.InscatteringColor->G, 0.638f, 1.0e-4f);
 	}
-	TestTrue(TEXT("its directional colour"), Mapped.DirectionalInscatteringColor.IsSet() && FMath::IsNearlyEqual(Mapped.DirectionalInscatteringColor->B, 0.125f, 1.0e-4f));
+	TestTrue(TEXT("its directional color"), Mapped.DirectionalInscatteringColor.IsSet() && FMath::IsNearlyEqual(Mapped.DirectionalInscatteringColor->B, 0.125f, 1.0e-4f));
 	TestEqual(TEXT("the fog is approximated"), CountOf(Coverage, MantleCoverageCategory::Fog, EOutcome::Approximated), static_cast<int64>(1));
 	const FString Report = DetailsOf(Coverage, MantleCoverageCategory::Fog, EOutcome::Approximated);
-	TestTrue(TEXT("saying what was carried"), Report.Contains(TEXT("density")) && Report.Contains(TEXT("inscattering colour")) && Report.Contains(TEXT("directional")));
+	TestTrue(TEXT("saying what was carried"), Report.Contains(TEXT("density")) && Report.Contains(TEXT("inscattering color")) && Report.Contains(TEXT("directional")));
 	TestTrue(TEXT("and what was not, by name"), Report.Contains(TEXT("not carried")) && Report.Contains(TEXT("Max Opacity")));
 	TestFalse(TEXT("what was carried is not listed as left out"), Report.Contains(TEXT("not carried: Fog Density")));
 
@@ -733,7 +733,7 @@ bool FMantleEnvironmentApplyFogTest::RunTest(const FString& Parameters)
 	Settings.InscatteringColor = FLinearColor(0.447f, 0.638f, 1.0f);
 	FMantleEnvironment::ApplyFogSettings(Spawned, Settings);
 	TestNearlyEqual(TEXT("the density"), Fog->FogDensity, 0.005f, 1.0e-6f);
-	TestNearlyEqual(TEXT("the colour"), Fog->FogInscatteringLuminance.G, 0.638f, 1.0e-4f);
+	TestNearlyEqual(TEXT("the color"), Fog->FogInscatteringLuminance.G, 0.638f, 1.0e-4f);
 	TestEqual(TEXT("the falloff keeps the fog's own"), Fog->FogHeightFalloff, OwnFalloff);
 	TestEqual(TEXT("and the start distance"), Fog->StartDistance, 0.0f);
 
@@ -744,7 +744,7 @@ bool FMantleEnvironmentApplyFogTest::RunTest(const FString& Parameters)
 	FMantleEnvironment::ApplyFogSettings(Spawned, More);
 	TestNearlyEqual(TEXT("the falloff"), Fog->FogHeightFalloff, 0.7f, 1.0e-6f);
 	TestEqual(TEXT("the start distance"), Fog->StartDistance, 5000.0f);
-	TestNearlyEqual(TEXT("the directional colour"), Fog->DirectionalInscatteringLuminance.B, 0.125f, 1.0e-4f);
+	TestNearlyEqual(TEXT("the directional color"), Fog->DirectionalInscatteringLuminance.B, 0.125f, 1.0e-4f);
 	TestNearlyEqual(TEXT("the earlier density stays"), Fog->FogDensity, 0.005f, 1.0e-6f);
 
 	FMantleEnvironment::ApplyFogSettings(nullptr, Settings);
@@ -849,7 +849,7 @@ bool FMantleEnvironmentCubemapMeanTest::RunTest(const FString& Parameters)
 	constexpr int32 Texels = Size * Size * 6;
 	TestTrue(TEXT("no cubemap is unreadable"), FMantleEnvironmentExport::CubemapMeanLuminance(nullptr, false) < 0.0);
 
-	// A float cubemap of one grey: its mean is that grey, whatever the weights.
+	// A float cubemap of one gray: its mean is that gray, whatever the weights.
 	UTextureCube* Float = NewObject<UTextureCube>(GetTransientPackage());
 	if (!TestNotNull(TEXT("a cubemap"), Float))
 	{
@@ -1099,7 +1099,7 @@ bool FMantleEnvironmentSunShadeTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	// A flat roof, a hundred metres wide, six metres up.
+	// A flat roof, a hundred meters wide, six meters up.
 	AStaticMeshActor* Roof = Test.World->SpawnActor<AStaticMeshActor>(FVector(0.0, 0.0, 600.0), FRotator::ZeroRotator);
 	if (!TestNotNull(TEXT("a roof"), Roof))
 	{
@@ -1310,7 +1310,7 @@ bool FMantleEnvironmentLightingKeysTest::RunTest(const FString& Parameters)
 	}));
 	TestTrue(TEXT("an unknown key is refused"), Refused([](const TSharedPtr<FJsonObject>& Env)
 	{
-		Env->GetObjectField(TEXT("skyLight"))->SetNumberField(TEXT("colour"), 1.0);
+		Env->GetObjectField(TEXT("skyLight"))->SetNumberField(TEXT("color"), 1.0);
 	}));
 	TestFalse(TEXT("and the unedited file is not"), Refused([](const TSharedPtr<FJsonObject>&) {}));
 	return true;

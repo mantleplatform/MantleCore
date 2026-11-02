@@ -38,7 +38,7 @@ namespace MantleRigMapParagonTestPrivate
 	/**
 	 * Terra's layout: root with the ik_ bones beside the pelvis, three spine bones, the clavicles and neck on spine_03, the _01
 	 * twist bones the UE4 Mannequin has and the _02 ones it does not (bones of the UE5 Mannequin and MetaHuman), a weapon bone and
-	 * an armour bone. bWeightTwist02: the heroes weight the _02 twist bones, which is what the upload refuses.
+	 * an armor bone. bWeightTwist02: the heroes weight the _02 twist bones, which is what the upload refuses.
 	 */
 	FParagonRig MakeParagonRig(const bool bWeightTwist02)
 	{

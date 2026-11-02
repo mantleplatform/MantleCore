@@ -653,9 +653,9 @@ FMantleSplineBakeResult FMantleSplineMeshBake::BakeComponents(TConstArrayView<US
 				{
 					ChunkBounds += Source->WorldBounds;
 				}
-				const FVector Centre = ChunkBounds.GetCenter();
+				const FVector Center = ChunkBounds.GetCenter();
 				FCachedChunk Chunk;
-				Chunk.Pivot = FVector(FMath::RoundToDouble(Centre.X), FMath::RoundToDouble(Centre.Y), FMath::RoundToDouble(Centre.Z));
+				Chunk.Pivot = FVector(FMath::RoundToDouble(Center.X), FMath::RoundToDouble(Center.Y), FMath::RoundToDouble(Center.Z));
 				Chunk.Components = Chunks[ChunkIndex].Num();
 				Chunk.Name = FString::Printf(TEXT("%s splines (%s) %d/%d"), *Group.Owner->GetActorLabel(), *Group.Materials[0]->GetName(), ChunkIndex + 1, Chunks.Num());
 				Chunk.IdSeed = FString::Printf(TEXT("%s|%d"), *Group.Key, ChunkIndex);

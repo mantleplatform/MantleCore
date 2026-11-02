@@ -15,7 +15,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Colour areas found from a clothing material's own mask texture. The masks are synthetic and the mesh is one quad
+// Color areas found from a clothing material's own mask texture. The masks are synthetic and the mesh is one quad
 // over the whole UV tile, so no asset is needed.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
@@ -42,7 +42,7 @@ namespace MantleClothingColorDetectTestPrivate
 	bool InBlue(int32 X, int32 Y) { return X >= 20 && Y >= 44; }
 
 	/**
-	 * The Parametric Outfit layout: R a smooth greyscale shading ramp (never an area), G and B clean hard-edged areas that
+	 * The Parametric Outfit layout: R a smooth grayscale shading ramp (never an area), G and B clean hard-edged areas that
 	 * do not overlap, A opaque.
 	 */
 	TArray<FColor> PackLikeMask()
@@ -78,8 +78,8 @@ namespace MantleClothingColorDetectTestPrivate
 		return Material;
 	}
 
-	/** A garment package as the export has it just before detection: one material with an exported grey albedo. */
-	FMantleCosmeticPackage GreyGarmentPackage()
+	/** A garment package as the export has it just before detection: one material with an exported gray albedo. */
+	FMantleCosmeticPackage GrayGarmentPackage()
 	{
 		FMantleCosmeticPackage Package;
 		Package.Class = EMantleCosmeticClass::Garment;
@@ -182,7 +182,7 @@ bool FMantleClothingColorDetectSyntheticTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the ramp is mostly near 0 or 1"), Soft.Binary >= FMantleClothingColorDetect::MinBinary);
 	TestFalse(TEXT("but its soft edge keeps it from being an area"), Soft.bAccepted);
 
-	// Three clean channels look like a many-colour ID map: not split in v1.
+	// Three clean channels look like a many-color ID map: not split in v1.
 	TArray<FColor> ThreeWay = Mask;
 	for (int32 Y = 0; Y < Size; ++Y) for (int32 X = 0; X < Size; ++X) ThreeWay[Y * Size + X].R = Y < 10 ? 255 : 0;
 	FMantleClothingColorDetection Many;
@@ -195,16 +195,16 @@ bool FMantleClothingColorDetectSyntheticTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Region ID mask names one"), FMantleClothingColorDetect::IsMaskParameterName(TEXT("Region_ID_Mask")));
 	TestTrue(TEXT("ID names one"), FMantleClothingColorDetect::IsMaskParameterName(TEXT("id")));
 	TestFalse(TEXT("an opacity mask does not"), FMantleClothingColorDetect::IsMaskParameterName(TEXT("OpacityMask")));
-	TestFalse(TEXT("a base colour does not"), FMantleClothingColorDetect::IsMaskParameterName(TEXT("BaseColor")));
+	TestFalse(TEXT("a base color does not"), FMantleClothingColorDetect::IsMaskParameterName(TEXT("BaseColor")));
 
-	// A greyscale map (one area repeated in every channel) is one area, not a many-colour ID map.
-	TArray<FColor> Grey = Mask;
-	for (int32 Y = 0; Y < Size; ++Y) for (int32 X = 0; X < Size; ++X) { const uint8 On = InGreen(X, Y) ? 255 : 0; Grey[Y * Size + X] = FColor(On, On, On, 255); }
-	FMantleClothingColorDetection GreyDetection;
+	// A grayscale map (one area repeated in every channel) is one area, not a many-color ID map.
+	TArray<FColor> Gray = Mask;
+	for (int32 Y = 0; Y < Size; ++Y) for (int32 X = 0; X < Size; ++X) { const uint8 On = InGreen(X, Y) ? 255 : 0; Gray[Y * Size + X] = FColor(On, On, On, 255); }
+	FMantleClothingColorDetection GrayDetection;
 	MainNumber = AccentNumber = 1;
-	FMantleClothingColorDetect::Detect(Mesh, 0, FIntPoint(Size, Size), Grey, GreyDetection, Clean, Used, MainNumber, AccentNumber, Error);
-	TestEqual(TEXT("a greyscale map takes one channel"), GreyDetection.SourceChannels, TArray<uint8>({ 0 }));
-	TestEqual(TEXT("Main plus one accent"), GreyDetection.Areas.Num(), 2);
+	FMantleClothingColorDetect::Detect(Mesh, 0, FIntPoint(Size, Size), Gray, GrayDetection, Clean, Used, MainNumber, AccentNumber, Error);
+	TestEqual(TEXT("a grayscale map takes one channel"), GrayDetection.SourceChannels, TArray<uint8>({ 0 }));
+	TestEqual(TEXT("Main plus one accent"), GrayDetection.Areas.Num(), 2);
 
 	// Tiled UVs (the quad one tile over) read the same texels: textures repeat at runtime.
 	FMantleGlbMesh Tiled = Mesh;
@@ -246,10 +246,10 @@ bool FMantleClothingColorDetectBlackTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("a plain reason"), Detection.Why.IsEmpty());
 	TestEqual(TEXT("numbering untouched"), MainNumber, 1);
 
-	// Through the export step: a map with no areas falls back to the whole material as one colour area, with no error.
+	// Through the export step: a map with no areas falls back to the whole material as one color area, with no error.
 	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get(&Error);
 	if (!TestNotNull(TEXT("the avatar contract loads"), Contract)) { AddError(Error); return false; }
-	FMantleCosmeticPackage Package = GreyGarmentPackage();
+	FMantleCosmeticPackage Package = GrayGarmentPackage();
 	UMaterial* Material = MaterialWithMask(Black);
 	TArray<UMaterialInterface*> Materials = { Material };
 	FMantleCosmeticExport::AddDetectedClothingColors(Package, Quad(), Materials, GarmentDraft(), 2048, *Contract);
@@ -280,7 +280,7 @@ bool FMantleClothingColorDetectExportTest::RunTest(const FString& Parameters)
 	const FMantleGlbMesh Mesh = Quad();
 
 	// Nothing changed by the creator: every area found uploads.
-	FMantleCosmeticPackage Package = GreyGarmentPackage();
+	FMantleCosmeticPackage Package = GrayGarmentPackage();
 	FMantleCosmeticExport::AddDetectedClothingColors(Package, Mesh, Materials, GarmentDraft(), 2048, *Contract);
 	TestFalse(TEXT("no error"), Package.HasErrors());
 	const FMantleCosmeticMaterialRef& Ref = Package.Materials[0];
@@ -288,12 +288,12 @@ bool FMantleClothingColorDetectExportTest::RunTest(const FString& Parameters)
 	const FMantleCosmeticUploadAsset* MaskAsset = Package.FindAsset(Ref.ColorMaskKey);
 	if (TestNotNull(TEXT("the clean area map is an upload asset"), MaskAsset))
 	{
-		TestEqual(TEXT("as data, not colour"), MaskAsset->Options.Role, FString(TEXT("data")));
+		TestEqual(TEXT("as data, not color"), MaskAsset->Options.Role, FString(TEXT("data")));
 	}
 	for (const FMantleClothingColorRegion& Region : Ref.ColorRegions)
 	{
 		TestTrue(FString::Printf(TEXT("%s is measured"), *Region.Id), Region.ReferenceLuminance > 0.0f);
-		TestEqual(FString::Printf(TEXT("%s's default is the item's own grey"), *Region.Id), Region.DefaultColor, FColor(128, 128, 128, 255));
+		TestEqual(FString::Printf(TEXT("%s's default is the item's own gray"), *Region.Id), Region.DefaultColor, FColor(128, 128, 128, 255));
 	}
 
 	// Unticking Accent 1 leaves it out of the package; renaming Accent 2 carries the name.
@@ -302,7 +302,7 @@ bool FMantleClothingColorDetectExportTest::RunTest(const FString& Parameters)
 	Untick.MaterialName = TEXT("Shirt"); Untick.RegionId = TEXT("accent_1"); Untick.bEnabled = false;
 	FMantleClothingColorChoice& Rename = Draft.ClothingColorChoices.AddDefaulted_GetRef();
 	Rename.MaterialName = TEXT("Shirt"); Rename.RegionId = TEXT("accent_2"); Rename.Label = TEXT("Laces");
-	FMantleCosmeticPackage Chosen = GreyGarmentPackage();
+	FMantleCosmeticPackage Chosen = GrayGarmentPackage();
 	FMantleCosmeticExport::AddDetectedClothingColors(Chosen, Mesh, Materials, Draft, 2048, *Contract);
 	TestFalse(TEXT("no error with choices"), Chosen.HasErrors());
 	TestEqual(TEXT("the unticked area is omitted"), RegionIds(Chosen.Materials[0]), TArray<FString>({ TEXT("main"), TEXT("accent_2") }));
@@ -315,16 +315,16 @@ bool FMantleClothingColorDetectExportTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("three of them"), Chosen.DetectedClothingColors[0].Areas.Num(), 3);
 	}
 
-	// Hand-made colours override detection for the whole item.
+	// Hand-made colors override detection for the whole item.
 	FMantleCosmeticDraft HandMade = GarmentDraft();
 	HandMade.ClothingColors.AddDefaulted();
-	FMantleCosmeticPackage Manual = GreyGarmentPackage();
+	FMantleCosmeticPackage Manual = GrayGarmentPackage();
 	FMantleCosmeticExport::AddDetectedClothingColors(Manual, Mesh, Materials, HandMade, 2048, *Contract);
-	TestEqual(TEXT("hand-made colours turn detection off"), Manual.Materials[0].ColorRegions.Num(), 0);
+	TestEqual(TEXT("hand-made colors turn detection off"), Manual.Materials[0].ColorRegions.Num(), 0);
 
 	// A seller's own name for the map ("PatternMask") finds the same areas.
 	TArray<UMaterialInterface*> Named = { MaterialWithMask(PackLikeMask(), TEXT("PatternMask")) };
-	FMantleCosmeticPackage NamedPackage = GreyGarmentPackage();
+	FMantleCosmeticPackage NamedPackage = GrayGarmentPackage();
 	FMantleCosmeticExport::AddDetectedClothingColors(NamedPackage, Mesh, Named, GarmentDraft(), 2048, *Contract);
 	TestEqual(TEXT("a PatternMask map finds all three areas"), RegionIds(NamedPackage.Materials[0]), TArray<FString>({ TEXT("main"), TEXT("accent_1"), TEXT("accent_2") }));
 
@@ -334,7 +334,7 @@ bool FMantleClothingColorDetectExportTest::RunTest(const FString& Parameters)
 	FMantleGlbPrimitive Second = Pair.Primitives[0];
 	Second.MaterialIndex = 1;
 	Pair.Primitives.Add(Second);
-	FMantleCosmeticPackage PairPackage = GreyGarmentPackage();
+	FMantleCosmeticPackage PairPackage = GrayGarmentPackage();
 	const FMantleCosmeticMaterialRef FirstShoe = PairPackage.Materials[0];
 	PairPackage.Materials.Add(FirstShoe);
 	PairPackage.MaterialNames = { TEXT("Shoe"), TEXT("Shoe_2") };
@@ -346,15 +346,15 @@ bool FMantleClothingColorDetectExportTest::RunTest(const FString& Parameters)
 	// Off for anything that is not a top, bottom or footwear.
 	FMantleCosmeticDraft Hat = GarmentDraft();
 	Hat.Slot = TEXT("hat");
-	FMantleCosmeticPackage HatPackage = GreyGarmentPackage();
+	FMantleCosmeticPackage HatPackage = GrayGarmentPackage();
 	FMantleCosmeticExport::AddDetectedClothingColors(HatPackage, Mesh, Materials, Hat, 2048, *Contract);
 	TestEqual(TEXT("no areas on other slots"), HatPackage.Materials[0].ColorRegions.Num(), 0);
 
-	// A rigid accessory (a baseball cap) gets its colour areas as clothing does.
+	// A rigid accessory (a baseball cap) gets its color areas as clothing does.
 	FMantleCosmeticDraft Cap = GarmentDraft();
 	Cap.Class = EMantleCosmeticClass::Accessory;
 	Cap.Slot = TEXT("acc_hat");
-	FMantleCosmeticPackage CapPackage = GreyGarmentPackage();
+	FMantleCosmeticPackage CapPackage = GrayGarmentPackage();
 	FMantleCosmeticExport::AddDetectedClothingColors(CapPackage, Mesh, Materials, Cap, 2048, *Contract);
 	TestFalse(TEXT("no error on an accessory"), CapPackage.HasErrors());
 	TestEqual(TEXT("an accessory finds all three areas"), RegionIds(CapPackage.Materials[0]), TArray<FString>({ TEXT("main"), TEXT("accent_1"), TEXT("accent_2") }));

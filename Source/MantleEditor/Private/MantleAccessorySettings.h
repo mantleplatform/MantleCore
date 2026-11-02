@@ -39,7 +39,7 @@ struct FMantleAccessorySettings
 
 	/**
 	 * The shift to take off every vertex so a mesh whose pivot is out of the slot's reach (a model exported with its pivot at
-	 * the feet) is centred on its pivot, or zero when the pivot already reaches or the mesh is too big for the slot either way.
+	 * the feet) is centerd on its pivot, or zero when the pivot already reaches or the mesh is too big for the slot either way.
 	 */
 	static FVector3f RecenterOffset(const FBox3f& Bounds, const FMantleContractAccessoryBounds& Limits);
 

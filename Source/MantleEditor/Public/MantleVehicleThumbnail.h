@@ -14,7 +14,7 @@ struct FMantleSkinnedMesh;
  * (UMantleVehicleSource::ThumbnailPng) and publishing uploads it with the vehicle and names it on the item.
  *
  * It is the vehicle as a player first sees it, from the front and a little above: the editor's own thumbnail scene through a scene capture when this process can
- * render (the model's own materials and paint), else drawn on the CPU from the body's triangles (flat shaded, one colour), so a headless build, the tests and a
+ * render (the model's own materials and paint), else drawn on the CPU from the body's triangles (flat shaded, one color), so a headless build, the tests and a
  * build on a machine without a renderer still get a picture and never a blank card.
  */
 struct MANTLEEDITOR_API FMantleVehicleThumbnail

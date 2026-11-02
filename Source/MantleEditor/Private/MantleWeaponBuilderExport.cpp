@@ -341,7 +341,7 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 	}
 	if (Source.bOverrideStyle) Desc.Effects.Set(static_cast<EMantleWeaponDocEffects>(Source.Style));
 	else if (Info.bHasEffects && Desc.GetDelivery() != EMantleWeaponDocDelivery::Sweep) Desc.Effects.Set(Info.Effects);
-	// The custom colour tints an element's effects (effectsColor); on a gun it is the accent colour.
+	// The custom color tints an element's effects (effectsColor); on a gun it is the accent color.
 	EMantleWeaponDocEffects Element = EMantleWeaponDocEffects::Arcane;
 	if (Source.bOverrideColor && Desc.GetElement(Element)) Desc.EffectsColor.Set(Source.Color);
 	else if (Source.bOverrideColor) Desc.Color.Set(Source.Color);

@@ -98,7 +98,7 @@ public:
 
 	/**
 	 * How much nearer a lower LOD's point must be to LOD 0's removed points than to its kept ones to go with them. A lower
-	 * LOD's reduction moves points by a centimetre or so, so a nearest-point match alone ate body under a thin shell over
+	 * LOD's reduction moves points by a centimeter or so, so a nearest-point match alone ate body under a thin shell over
 	 * it (mantle#861, Sevarog's legs under an invisible shell).
 	 */
 	static constexpr float ReferenceMarginCm = 1.0f;

@@ -54,7 +54,7 @@ struct MANTLERUNTIME_API FMantleVoxelWorldFile
 	static FMantleVoxelWorldFile FromGridSections(const FMantleVoxelGrid& Grid, TConstArrayView<int32> Indices);
 
 	/**
-	 * Fills an initialised grid of the same size and look; a block id past the grid's types reads as air and is counted in
+	 * Fills an initialized grid of the same size and look; a block id past the grid's types reads as air and is counted in
 	 * OutUnknownIds. Only the listed sections change. False when the sizes or looks differ (grid untouched) or a section is over
 	 * the grid's cap (grid partly filled).
 	 */

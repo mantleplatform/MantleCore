@@ -8,9 +8,9 @@
  * (hair-trial pack_prep.py): random points on every triangle, each with its triangle's normal, then all normals flipped
  * once if the top quarter of the head faces inward. The whole-piece fit scores thousands of candidates against it, so
  * the query is a nearest sample (a k-d tree), not the exact distance the stage-2 head surface gives; a sample is never
- * farther than a fraction of a millimetre from the true surface, which is far below the fit's 1 cm grid.
+ * farther than a fraction of a millimeter from the true surface, which is far below the fit's 1 cm grid.
  *
- * Space is the caller's, in centimetres. Pure: no UObjects.
+ * Space is the caller's, in centimeters. Pure: no UObjects.
  */
 class MANTLEEDITOR_API FMantleHairHeadSamples
 {
@@ -42,9 +42,9 @@ public:
 	int32 NumScalpPoints() const { return ScalpPoints.Num(); }
 	const FVector& ScalpPoint(int32 Index) const { return ScalpPoints[Index]; }
 	/** The scalp points within twice CoverReachCm of a scalp point: every point a root seated near it can cover. */
-	TConstArrayView<int32> ScalpNeighbours(int32 Index) const
+	TConstArrayView<int32> ScalpNeighbors(int32 Index) const
 	{
-		return MakeArrayView(ScalpNeighbourIds.GetData() + ScalpNeighbourStart[Index], ScalpNeighbourStart[Index + 1] - ScalpNeighbourStart[Index]);
+		return MakeArrayView(ScalpNeighborIds.GetData() + ScalpNeighborStart[Index], ScalpNeighborStart[Index + 1] - ScalpNeighborStart[Index]);
 	}
 
 	/** The nearest sample to P: its id and the squared distance. */
@@ -61,8 +61,8 @@ private:
 	TArray<FVector> Normals;
 	TArray<int32> ScalpOf;
 	TArray<FVector> ScalpPoints;
-	TArray<int32> ScalpNeighbourStart;
-	TArray<int32> ScalpNeighbourIds;
+	TArray<int32> ScalpNeighborStart;
+	TArray<int32> ScalpNeighborIds;
 	/** Implicit tree: the median of each [Lo, Hi) range sits at its middle. */
 	TArray<int32> Order;
 	double Top = 0.0;
@@ -77,7 +77,7 @@ private:
  *     That is only a starting size: long hair is far wider at the shoulders than at the scalp, so the search reaches 3x.
  *  2. Search. A coarse grid over a further uniform scale, a Y offset and a top offset, then a finer grid around the
  *     best coarse candidate (FSearch). The Z offset is not free: it puts the piece's highest point at the head's top plus
- *     the top offset. X is not offset (hair is centred on the head's plane of symmetry).
+ *     the top offset. X is not offset (hair is centerd on the head's plane of symmetry).
  *  3. Score (#51, roots). Hair belongs where its roots meet the scalp, not where its top lines up with the head's top
  *     (that floated ponytails, braids and long hair above the crown). Each card's root is the end of the card nearer the
  *     head; a root is seated when it is within SeatCm of a scalp sample. A candidate scores the share of cards seated

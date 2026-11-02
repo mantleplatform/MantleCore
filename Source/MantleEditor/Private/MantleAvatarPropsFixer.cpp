@@ -537,7 +537,7 @@ TArray<bool> FMantleAvatarPropsFixer::PropBones(TConstArrayView<FName> Names, TC
 				Prop[Bone] = bMouthWord;
 				break;
 			}
-			// A shoulder blade is anatomy or armour, not a blade (Wukong's and Feng Mao's shoulder_blade_*).
+			// A shoulder blade is anatomy or armor, not a blade (Wukong's and Feng Mao's shoulder_blade_*).
 			bPropWord |= (FMantleOutfitSections::IsPropName(Names[Walk].ToString()) && !FMantleOutfitSections::Words(Names[Walk].ToString()).Contains(TEXT("shoulder")))
 				|| PropsIsHeldWeaponWord(Names[Walk]);
 			bMouthWord |= PropsIsMouthProp(Names[Walk]);

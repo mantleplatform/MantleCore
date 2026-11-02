@@ -1,7 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 // The script API as the editor sees it: the committed manifest the game's API registry generates
 // (Resources/ScriptApi/mantle_api.json, a copy of schema/script/generated/), so the graph
-// catalogue, the script API version check and the creator type files work without MantleScript.
+// catalog, the script API version check and the creator type files work without MantleScript.
 // Mantle.Script.Api.ManifestCopiesAreCurrent keeps both copies equal to the live registry.
 
 #pragma once

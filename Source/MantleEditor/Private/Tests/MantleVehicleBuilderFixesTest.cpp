@@ -89,10 +89,10 @@ namespace MantleVehicleBuilderFixTestPrivate
 				FVector3f V(0.0f);
 				V[(Axis + 2) % 3] = 1.0f;
 				const uint32 First = static_cast<uint32>(LOD.Positions.Num());
-				const FVector3f FaceCentre = Normal * Half[Axis];
+				const FVector3f FaceCenter = Normal * Half[Axis];
 				const float Du = Half[(Axis + 1) % 3];
 				const float Dv = Half[(Axis + 2) % 3];
-				const FVector3f Corners[4] = { FaceCentre - U * Du - V * Dv, FaceCentre + U * Du - V * Dv, FaceCentre + U * Du + V * Dv, FaceCentre - U * Du + V * Dv };
+				const FVector3f Corners[4] = { FaceCenter - U * Du - V * Dv, FaceCenter + U * Du - V * Dv, FaceCenter + U * Du + V * Dv, FaceCenter - U * Du + V * Dv };
 				for (const FVector3f& Corner : Corners)
 				{
 					LOD.Positions.Add(Corner);
@@ -116,11 +116,11 @@ namespace MantleVehicleBuilderFixTestPrivate
 		return Model;
 	}
 
-	/** The chassis of a type and its grey body. */
-	bool Load(FAutomationTestBase& Test, const TCHAR* Id, FMantleChassisSpec& OutSpec, FMantleVehicleAsset& OutGrey)
+	/** The chassis of a type and its gray body. */
+	bool Load(FAutomationTestBase& Test, const TCHAR* Id, FMantleChassisSpec& OutSpec, FMantleVehicleAsset& OutGray)
 	{
 		FString Error;
-		const bool bOk = FMantleVehicleChassisBuilder::LoadSpec(Id, OutSpec, Error) && FMantleVehicleChassisBuilder::MakeAsset(OutSpec, OutGrey, Error);
+		const bool bOk = FMantleVehicleChassisBuilder::LoadSpec(Id, OutSpec, Error) && FMantleVehicleChassisBuilder::MakeAsset(OutSpec, OutGray, Error);
 		Test.TestTrue(*FString::Printf(TEXT("the %s chassis loads (%s)"), Id, *Error), bOk);
 		return bOk;
 	}
@@ -319,9 +319,9 @@ bool FMantleVehicleBuilderFlierAdviceTest::RunTest(const FString& Parameters)
 		AddWarning(TEXT("SKIPPED, not passed: the engine's cube mesh could not be loaded, so there is no ground to place a flier on."));
 		return true;
 	}
-	const auto MakeSolid = [World, Cube, &Heading](const FVector& Centre, const FVector& Scale)
+	const auto MakeSolid = [World, Cube, &Heading](const FVector& Center, const FVector& Scale)
 	{
-		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(Centre, Heading);
+		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(Center, Heading);
 		Actor->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
 		Actor->GetStaticMeshComponent()->SetStaticMesh(Cube);
 		Actor->SetActorScale3D(Scale);
@@ -418,48 +418,48 @@ bool FMantleVehicleBuilderScaleNoteTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleBuilderFixTestPrivate;
 	FMantleChassisSpec Sedan;
-	FMantleVehicleAsset SedanGrey;
-	if (!Load(*this, TEXT("sedan"), Sedan, SedanGrey))
+	FMantleVehicleAsset SedanGray;
+	if (!Load(*this, TEXT("sedan"), Sedan, SedanGray))
 	{
 		return false;
 	}
 
 	// A car as long as the sedan: nothing to say (control).
 	const FMantleVehicleModelMap NoParts;
-	const FMantleVehicleModelPlacement Fine = FMantleVehicleChassisSkin::FitPlacement(Sedan, SedanGrey.Body, BoxModel(FVector3f(static_cast<float>(Sedan.Length), 180.f, 140.f)), 0.0, NoParts);
+	const FMantleVehicleModelPlacement Fine = FMantleVehicleChassisSkin::FitPlacement(Sedan, SedanGray.Body, BoxModel(FVector3f(static_cast<float>(Sedan.Length), 180.f, 140.f)), 0.0, NoParts);
 	TestTrue(TEXT("a model as long as its vehicle is placed with no note"), Fine.Note.IsEmpty() && FMath::IsNearlyEqual(Fine.Scale, 1.0, 0.01));
 
-	// A car modelled in metres: 4.5 units long where the sedan is 450 cm, a hundred times too small. The scale stops at 20, and the note says what is wrong.
-	const FMantleVehicleModelPlacement Metres = FMantleVehicleChassisSkin::FitPlacement(Sedan, SedanGrey.Body, BoxModel(FVector3f(4.5f, 1.8f, 1.4f)), 0.0, NoParts);
-	TestEqual(TEXT("the scale is held to 20"), Metres.Scale, 20.0);
-	TestTrue(*FString::Printf(TEXT("and the note says it is far too small and probably in metres (%s)"), *Metres.Note),
-		Metres.Note.Contains(TEXT("times smaller")) && Metres.Note.Contains(TEXT("metres")) && Metres.Note.Contains(TEXT("20.00 times")));
+	// A car modeled in meters: 4.5 units long where the sedan is 450 cm, a hundred times too small. The scale stops at 20, and the note says what is wrong.
+	const FMantleVehicleModelPlacement Meters = FMantleVehicleChassisSkin::FitPlacement(Sedan, SedanGray.Body, BoxModel(FVector3f(4.5f, 1.8f, 1.4f)), 0.0, NoParts);
+	TestEqual(TEXT("the scale is held to 20"), Meters.Scale, 20.0);
+	TestTrue(*FString::Printf(TEXT("and the note says it is far too small and probably in meters (%s)"), *Meters.Note),
+		Meters.Note.Contains(TEXT("times smaller")) && Meters.Note.Contains(TEXT("meters")) && Meters.Note.Contains(TEXT("20.00 times")));
 
-	// One modelled in millimetres is held at the least.
-	const FMantleVehicleModelPlacement Millimetres = FMantleVehicleChassisSkin::FitPlacement(Sedan, SedanGrey.Body, BoxModel(FVector3f(450000.f, 180000.f, 140000.f)), 0.0, NoParts);
-	TestEqual(TEXT("a huge model is held at 0.05"), Millimetres.Scale, 0.05);
-	TestTrue(*FString::Printf(TEXT("and the note says it is far too big (%s)"), *Millimetres.Note), Millimetres.Note.Contains(TEXT("times bigger")) && Millimetres.Note.Contains(TEXT("millimetres")));
+	// One modeled in millimeters is held at the least.
+	const FMantleVehicleModelPlacement Millimeters = FMantleVehicleChassisSkin::FitPlacement(Sedan, SedanGray.Body, BoxModel(FVector3f(450000.f, 180000.f, 140000.f)), 0.0, NoParts);
+	TestEqual(TEXT("a huge model is held at 0.05"), Millimeters.Scale, 0.05);
+	TestTrue(*FString::Printf(TEXT("and the note says it is far too big (%s)"), *Millimeters.Note), Millimeters.Note.Contains(TEXT("times bigger")) && Millimeters.Note.Contains(TEXT("millimeters")));
 
-	// Under a centimetre: it cannot be measured, so it is left as modelled, and that is said too.
-	const FMantleVehicleModelPlacement Speck = FMantleVehicleChassisSkin::FitPlacement(Sedan, SedanGrey.Body, BoxModel(FVector3f(0.4f, 0.2f, 0.1f)), 0.0, NoParts);
-	TestTrue(*FString::Printf(TEXT("a model under a centimetre is left alone and says so (%s)"), *Speck.Note), Speck.Note.Contains(TEXT("under 1 cm")) && Speck.Scale == 1.0);
+	// Under a centimeter: it cannot be measured, so it is left as modeled, and that is said too.
+	const FMantleVehicleModelPlacement Speck = FMantleVehicleChassisSkin::FitPlacement(Sedan, SedanGray.Body, BoxModel(FVector3f(0.4f, 0.2f, 0.1f)), 0.0, NoParts);
+	TestTrue(*FString::Printf(TEXT("a model under a centimeter is left alone and says so (%s)"), *Speck.Note), Speck.Note.Contains(TEXT("under 1 cm")) && Speck.Scale == 1.0);
 
 	// The proposal for a plane quotes the percentage the model really ends up at, not the one it asked for.
 	FMantleChassisSpec Plane;
-	FMantleVehicleAsset PlaneGrey;
+	FMantleVehicleAsset PlaneGray;
 	const FMantleVehiclePreset* PlanePreset = FMantleVehiclePresets::Find(TEXT("plane"));
-	if (!Load(*this, TEXT("plane"), Plane, PlaneGrey) || !TestNotNull(TEXT("the plane preset"), PlanePreset))
+	if (!Load(*this, TEXT("plane"), Plane, PlaneGray) || !TestNotNull(TEXT("the plane preset"), PlanePreset))
 	{
 		return false;
 	}
-	const FBox3f PlaneBox = PlaneGrey.Body.ComputeBounds(0);
+	const FBox3f PlaneBox = PlaneGray.Body.ComputeBounds(0);
 	const FMantleVehicleModelProposal Same = FMantleVehicleChassisSkin::Propose(Plane, *PlanePreset, BoxModel(FVector3f(PlaneBox.Max.X - PlaneBox.Min.X, PlaneBox.Max.Y - PlaneBox.Min.Y, 100.f)), 0.0, NoParts);
 	TestTrue(*FString::Printf(TEXT("a model the size of the plane says so and holds nothing (%s)"), *FString::Join(Same.Notes, TEXT(" "))), Says(Same.Notes, TEXT("size of a standard")) && Same.Notes.Num() == 1);
 	const FMantleVehicleModelProposal Tiny = FMantleVehicleChassisSkin::Propose(Plane, *PlanePreset, BoxModel(FVector3f(2.f, 2.f, 1.f)), 0.0, NoParts);
 	TestTrue(*FString::Printf(TEXT("a model a few units long is enlarged to 2000%% and not to the thousands it asked for (%s)"), *FString::Join(Tiny.Notes, TEXT(" "))),
 		Says(Tiny.Notes, TEXT("2000%")) && Says(Tiny.Notes, TEXT("times smaller")));
 	const FMantleVehicleModelProposal Speck2 = FMantleVehicleChassisSkin::Propose(Plane, *PlanePreset, BoxModel(FVector3f(0.4f, 0.4f, 0.2f)), 0.0, NoParts);
-	TestTrue(*FString::Printf(TEXT("and one under a centimetre is not sized, and says why (%s)"), *FString::Join(Speck2.Notes, TEXT(" "))), Says(Speck2.Notes, TEXT("under 1 cm")));
+	TestTrue(*FString::Printf(TEXT("and one under a centimeter is not sized, and says why (%s)"), *FString::Join(Speck2.Notes, TEXT(" "))), Says(Speck2.Notes, TEXT("under 1 cm")));
 	return true;
 }
 
@@ -472,20 +472,20 @@ bool FMantleVehicleBuilderPropellerCountTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleBuilderFixTestPrivate;
 	FMantleChassisSpec Plane;
-	FMantleVehicleAsset PlaneGrey;
-	if (!Load(*this, TEXT("plane"), Plane, PlaneGrey))
+	FMantleVehicleAsset PlaneGray;
+	if (!Load(*this, TEXT("plane"), Plane, PlaneGray))
 	{
 		return false;
 	}
 	const FMantleChassisSpec Twin = FMantleVehicleChassisSkin::AsTwin(Plane);
-	FMantleVehicleAsset TwinGrey;
+	FMantleVehicleAsset TwinGray;
 	FString Error;
-	if (!TestTrue(TEXT("the twin chassis is made"), FMantleVehicleChassisBuilder::MakeAsset(Twin, TwinGrey, Error)))
+	if (!TestTrue(TEXT("the twin chassis is made"), FMantleVehicleChassisBuilder::MakeAsset(Twin, TwinGray, Error)))
 	{
 		return false;
 	}
-	const TArray<FMantleVehiclePartSlot> TwinSlots = FMantleVehicleChassisSkin::PartSlots(Twin, TwinGrey.Body);
-	const TArray<FMantleVehiclePartSlot> SingleSlots = FMantleVehicleChassisSkin::PartSlots(Plane, PlaneGrey.Body);
+	const TArray<FMantleVehiclePartSlot> TwinSlots = FMantleVehicleChassisSkin::PartSlots(Twin, TwinGray.Body);
+	const TArray<FMantleVehiclePartSlot> SingleSlots = FMantleVehicleChassisSkin::PartSlots(Plane, PlaneGray.Body);
 
 	const auto Skeletal = [](const TArray<TPair<FName, int32>>& Bones, const TArray<FVector>& Positions)
 	{
@@ -684,10 +684,10 @@ bool FMantleVehicleBuilderFeelTest::RunTest(const FString& Parameters)
 		const FMantleChassisHandling Own = Archetype.Archetype;
 
 		// Each slider moves its own number by the reach of the derive (30 percent at the end), positive control; the others stay where they were.
-		// Half the slider, not the end: a sports car's tyres at 30% more would pass the document's friction limit, and Mantle holds them there (HeldNumbers says so).
+		// Half the slider, not the end: a sports car's tires at 30% more would pass the document's friction limit, and Mantle holds them there (HeldNumbers says so).
 		TestTrue(*FString::Printf(TEXT("%s: grip moves"), Id), Session.SetFeel(EMantleVehicleFeel::Grip, 0.5));
 		TestTrue(*FString::Printf(TEXT("%s: it is shaped now"), Id), Session.IsShaped() && Session.GetShaped().Derived.IsSet());
-		TestTrue(*FString::Printf(TEXT("%s: grip at half is 15%% more tyre friction (%.3f from %.3f)"), Id, Session.GetShaped().Derived->TireFriction, Own.TireFriction),
+		TestTrue(*FString::Printf(TEXT("%s: grip at half is 15%% more tire friction (%.3f from %.3f)"), Id, Session.GetShaped().Derived->TireFriction, Own.TireFriction),
 			Near(Session.GetShaped().Derived->TireFriction, Own.TireFriction * 1.15, 0.01));
 		TestTrue(*FString::Printf(TEXT("%s: and the engine is the preset's"), Id), Near(Session.GetShaped().Derived->MaxTorque, Own.MaxTorque, 0.01));
 		Session.Reset();
@@ -710,7 +710,7 @@ bool FMantleVehicleBuilderFeelTest::RunTest(const FString& Parameters)
 		TestFalse(*FString::Printf(TEXT("%s: a feel that is not a number changes nothing"), Id), Session.SetFeel(EMantleVehicleFeel::Power, std::numeric_limits<double>::quiet_NaN()));
 
 		// The feel and the sizes together: a longer wheelbase and a firmer ride are both in the vehicle, and they are different vehicles from either alone.
-		if (!Archetype.bCentreline)
+		if (!Archetype.bCenterline)
 		{
 			Session.Reset();
 			Session.SetFeel(EMantleVehicleFeel::Grip, 0.5);
@@ -732,7 +732,7 @@ bool FMantleVehicleBuilderFeelTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	// The motorcycle's rear tyre keeps its share of the front's when the grip moves (the rider block's own friction).
+	// The motorcycle's rear tire keeps its share of the front's when the grip moves (the rider block's own friction).
 	FMantleChassisSpec Bike;
 	FString Error;
 	if (FMantleVehicleChassisBuilder::LoadSpec(TEXT("motorcycle"), Bike, Error) && TestTrue(TEXT("the motorcycle has a rider"), Bike.Rider.bSet))
@@ -740,7 +740,7 @@ bool FMantleVehicleBuilderFeelTest::RunTest(const FString& Parameters)
 		FMantleVehicleShapeSession Session;
 		Session.Start(Bike);
 		Session.SetFeel(EMantleVehicleFeel::Grip, 0.5);
-		TestTrue(TEXT("the bike's rear tyre grips 15% more too"), Near(Session.GetShaped().Rider.RearTireFriction, Bike.Rider.RearTireFriction * 1.15, 0.01));
+		TestTrue(TEXT("the bike's rear tire grips 15% more too"), Near(Session.GetShaped().Rider.RearTireFriction, Bike.Rider.RearTireFriction * 1.15, 0.01));
 	}
 
 	// What does not have them: a plane's handling is tuned to fly, and a hovercraft has the top speed alone.

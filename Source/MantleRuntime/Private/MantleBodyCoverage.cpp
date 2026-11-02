@@ -405,7 +405,7 @@ void FMantleBodySinkApply::Sink(TConstArrayView<FVector3f> Base, TConstArrayView
 		return;
 	}
 
-	// Per point: the direction (the normalised sum of its copies' normals; the first copy's own when they cancel).
+	// Per point: the direction (the normalized sum of its copies' normals; the first copy's own when they cancel).
 	TArray<FVector3f> Dir;
 	Dir.Init(FVector3f::ZeroVector, NumPoints);
 	for (TConstSetBitIterator<> It(Moved); It; ++It)
@@ -785,15 +785,15 @@ bool FMantleBodySink::Compute(TConstArrayView<FVector3f> BodyPositions, TConstAr
 				PointMay[Weld[It.GetIndex()]] = true;
 			}
 		}
-		FPointNeighbours Neighbours;
-		PointNeighbours(KeptIndices, Weld, NumPoints, Neighbours);
+		FPointNeighbors Neighbors;
+		PointNeighbors(KeptIndices, Weld, NumPoints, Neighbors);
 		TArray<float> Next;
 		Next.SetNumUninitialized(NumPoints);
 		for (int32 Pass = 0; Pass < Out.SmoothIters; ++Pass)
 		{
 			ParallelFor(NumPoints, [&](const int32 Point)
 			{
-				const TArray<int32, TInlineAllocator<8>>& Around = Neighbours[Point];
+				const TArray<int32, TInlineAllocator<8>>& Around = Neighbors[Point];
 				if (!PointMay[Point])
 				{
 					Next[Point] = 0.0f;

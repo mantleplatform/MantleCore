@@ -8,7 +8,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// A resized plane or jet flies level hands-off: the tailplane camber that centres the elevator at the preset's cruise speed, and the cruise throttle,
+// A resized plane or jet flies level hands-off: the tailplane camber that centers the elevator at the preset's cruise speed, and the cruise throttle,
 // are solved again for the new size (FMantleChassisDerive::LevelFlight and SolveTrim, matching schema/validate.py's trim). The positive control comes
 // first: at the preset's own size the C++ solve reproduces the arithmetic validate.py holds every preset to. Then the numbers a document has to hold to
 // its ranges are listed in plain words (FMantleVehicleChassisDocument::HeldNumbers), so a clamp is never silent.
@@ -78,12 +78,12 @@ bool FMantleChassisTrimMatchesValidatePyTest::RunTest(const FString& Parameters)
 		TestTrue(*FString::Printf(TEXT("%s: the pitch matches validate.py (%.5f, validate.py %.5f)"), *Label, Trim.PitchDegrees, Want.Pitch), FMath::Abs(Trim.PitchDegrees - Want.Pitch) < 1.0e-5);
 		TestTrue(*FString::Printf(TEXT("%s: the elevator matches validate.py (%.6f, validate.py %.6f)"), *Label, Trim.Elevator, Want.Elevator), FMath::Abs(Trim.Elevator - Want.Elevator) < 1.0e-5);
 		TestTrue(*FString::Printf(TEXT("%s: the throttle matches validate.py (%.6f, validate.py %.6f)"), *Label, Trim.Throttle, Want.Throttle), FMath::Abs(Trim.Throttle - Want.Throttle) < 1.0e-5);
-		// Inside validate.py's tolerances: the elevator within 0.05 of centre (PLANE_TRIM_TOLERANCE), the throttle within 0.02 of the preset's (PLANE_CRUISE_THROTTLE_TOLERANCE).
-		TestTrue(*FString::Printf(TEXT("%s: the preset's own camber leaves the elevator within 0.05 of centre (%+.4f)"), *Label, Trim.Elevator), FMath::Abs(Trim.Elevator) <= 0.05);
+		// Inside validate.py's tolerances: the elevator within 0.05 of center (PLANE_TRIM_TOLERANCE), the throttle within 0.02 of the preset's (PLANE_CRUISE_THROTTLE_TOLERANCE).
+		TestTrue(*FString::Printf(TEXT("%s: the preset's own camber leaves the elevator within 0.05 of center (%+.4f)"), *Label, Trim.Elevator), FMath::Abs(Trim.Elevator) <= 0.05);
 		TestTrue(*FString::Printf(TEXT("%s: the preset's own cruise throttle is within 0.02 of level flight's (%.4f against %.4f)"), *Label, Want.PresetThrottle, Trim.Throttle),
 			FMath::Abs(Trim.Throttle - Want.PresetThrottle) <= 0.02);
 
-		// The solve: the camber that would centre the elevator, and the throttle, for the same preset.
+		// The solve: the camber that would center the elevator, and the throttle, for the same preset.
 		double Camber = 0.0;
 		double Throttle = 0.0;
 		if (TestTrue(*FString::Printf(TEXT("%s: the trim solves"), *Label), FMantleChassisDerive::SolveTrim(Spec, HandlingOf(Spec), Camber, Throttle)))
@@ -91,13 +91,13 @@ bool FMantleChassisTrimMatchesValidatePyTest::RunTest(const FString& Parameters)
 			TestTrue(*FString::Printf(TEXT("%s: the solved camber (%.3f) is within the elevator's 0.05 of the preset's %g"), *Label, Camber, Want.PresetCamber),
 				FMath::Abs(Camber - Want.PresetCamber) <= 0.05 * Spec.Aircraft.Tailplane.MaxControlAngle);
 			TestTrue(*FString::Printf(TEXT("%s: the solved throttle (%.4f) is within 0.02 of the preset's %g"), *Label, Throttle, Want.PresetThrottle), FMath::Abs(Throttle - Want.PresetThrottle) <= 0.02);
-			// Camber and control angle only act as a sum, so the camber the solve gives centres the elevator exactly.
+			// Camber and control angle only act as a sum, so the camber the solve gives centers the elevator exactly.
 			FMantleChassisSpec Trimmed = Spec;
 			Trimmed.Aircraft.Tailplane.Camber = Camber;
 			FMantleChassisTrim After;
 			if (TestTrue(*FString::Printf(TEXT("%s: level flight holds with the solved camber"), *Label), LevelAtCruise(Trimmed, After)))
 			{
-				TestTrue(*FString::Printf(TEXT("%s: and the elevator is centred (%+.6f)"), *Label, After.Elevator), FMath::Abs(After.Elevator) < 1.0e-3);
+				TestTrue(*FString::Printf(TEXT("%s: and the elevator is centered (%+.6f)"), *Label, After.Elevator), FMath::Abs(After.Elevator) < 1.0e-3);
 				TestTrue(*FString::Printf(TEXT("%s: at the same throttle"), *Label), FMath::Abs(After.Throttle - Throttle) < 1.0e-3);
 			}
 		}
@@ -151,7 +151,7 @@ bool FMantleChassisTrimFollowsSizeTest::RunTest(const FString& Parameters)
 		const FString Label = FMantleChassisSpec::MakeSelector(Size.Id, Size.Factor);
 		TestEqual(*FString::Printf(TEXT("%s: it keeps the preset's cruise speed"), *Label), Scaled.Aircraft.CruiseSpeedCmPerSec, Preset.Aircraft.CruiseSpeedCmPerSec);
 
-		// The positive control: the preset's own trim, on the resized airframe, is what leaves it off balance. Without the solve the elevator is held off centre,
+		// The positive control: the preset's own trim, on the resized airframe, is what leaves it off balance. Without the solve the elevator is held off center,
 		// by a good deal more than validate.py allows a preset (0.05).
 		FMantleChassisSpec Untrimmed = Scaled;
 		Untrimmed.Aircraft.Tailplane.Camber = Preset.Aircraft.Tailplane.Camber;
@@ -171,11 +171,11 @@ bool FMantleChassisTrimFollowsSizeTest::RunTest(const FString& Parameters)
 		}
 		AddInfo(FString::Printf(TEXT("%s: re-trimmed camber %.3f (was %g), cruise throttle %.4f (was %g); elevator %+.5f, throttle %.4f at the cruise speed"), *Label, Scaled.Aircraft.Tailplane.Camber,
 			Preset.Aircraft.Tailplane.Camber, Scaled.Aircraft.CruiseThrottle, Preset.Aircraft.CruiseThrottle, On.Elevator, On.Throttle));
-		TestTrue(*FString::Printf(TEXT("%s: with the solved camber the elevator is centred (%+.5f)"), *Label, On.Elevator), FMath::Abs(On.Elevator) <= 0.005);
+		TestTrue(*FString::Printf(TEXT("%s: with the solved camber the elevator is centered (%+.5f)"), *Label, On.Elevator), FMath::Abs(On.Elevator) <= 0.005);
 		TestTrue(*FString::Printf(TEXT("%s: and the cruise throttle is the throttle level flight needs (%.4f against %.4f)"), *Label, Scaled.Aircraft.CruiseThrottle, On.Throttle),
 			FMath::Abs(Scaled.Aircraft.CruiseThrottle - On.Throttle) <= 0.002);
 
-		// The direction: the camber moved by the elevator the preset's trim left off centre, so it removes it. (The throttle has no one direction for every airframe: a
+		// The direction: the camber moved by the elevator the preset's trim left off center, so it removes it. (The throttle has no one direction for every airframe: a
 		// bigger plane has more weight for its wings (S^3 for S^2) and so pays more drag per newton of thrust, but its thrust grows with the weight too, and which of
 		// the two wins depends on the airframe: the plane needs more throttle at a larger size and the jet less. The positive control is that it moves at all.)
 		const double Moved = Scaled.Aircraft.Tailplane.Camber - Preset.Aircraft.Tailplane.Camber;

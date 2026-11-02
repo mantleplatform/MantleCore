@@ -25,7 +25,7 @@ namespace MantleGarmentSkinTransferPrivate
 		float Weight;
 	};
 
-	/** A blend of several vertices' influences (three triangle corners, a point and its neighbours). */
+	/** A blend of several vertices' influences (three triangle corners, a point and its neighbors). */
 	using FGarmentInfluenceBlend = TArray<FGarmentInfluence, TInlineAllocator<3 * MAX_TOTAL_INFLUENCES>>;
 
 	/** One vertex's (or welded point's) influences. */
@@ -95,23 +95,23 @@ namespace MantleGarmentSkinTransferPrivate
 	}
 
 	/**
-	 * Writes a sorted, trimmed List (Sum = its total, > 0) into one vertex's Slots, quantised so the
+	 * Writes a sorted, trimmed List (Sum = its total, > 0) into one vertex's Slots, quantized so the
 	 * weights sum exactly to FullWeight: floors first, then the remainder one step at a time to the
 	 * largest fractions. Unused slots get bone 0, weight 0. Returns the used slot count.
 	 */
 	template <typename AllocatorType>
-	int32 WriteQuantised(const TArray<FGarmentInfluence, AllocatorType>& List, const float Sum, const int32 Slots, uint16* OutBones, uint8* OutWeights)
+	int32 WriteQuantized(const TArray<FGarmentInfluence, AllocatorType>& List, const float Sum, const int32 Slots, uint16* OutBones, uint8* OutWeights)
 	{
 		const int32 Num = FMath::Min3(List.Num(), static_cast<int32>(MAX_TOTAL_INFLUENCES), Slots);
-		int32 Quantised[MAX_TOTAL_INFLUENCES] = {};
+		int32 Quantized[MAX_TOTAL_INFLUENCES] = {};
 		float Fraction[MAX_TOTAL_INFLUENCES] = {};
 		int32 Assigned = 0;
 		for (int32 Index = 0; Index < Num; ++Index)
 		{
 			const float Exact = List[Index].Weight / Sum * static_cast<float>(FullWeight);
-			Quantised[Index] = FMath::Clamp(FMath::FloorToInt32(Exact), 0, FullWeight);
-			Fraction[Index] = Exact - static_cast<float>(Quantised[Index]);
-			Assigned += Quantised[Index];
+			Quantized[Index] = FMath::Clamp(FMath::FloorToInt32(Exact), 0, FullWeight);
+			Fraction[Index] = Exact - static_cast<float>(Quantized[Index]);
+			Assigned += Quantized[Index];
 		}
 		for (int32 Left = FullWeight - Assigned; Left > 0 && Num > 0; --Left)
 		{
@@ -120,20 +120,20 @@ namespace MantleGarmentSkinTransferPrivate
 			{
 				Pick = Fraction[Index] > Fraction[Pick] ? Index : Pick;
 			}
-			++Quantised[Pick];
+			++Quantized[Pick];
 			Fraction[Pick] -= 1.0f;
 		}
 		for (int32 Over = Assigned - FullWeight; Over > 0 && Num > 0; --Over)
 		{
 			// Float round-off only: the excess comes off the largest weight.
-			--Quantised[0];
+			--Quantized[0];
 		}
 		int32 Used = 0;
 		for (int32 Slot = 0; Slot < Slots; ++Slot)
 		{
-			const bool bUsed = Slot < Num && Quantised[Slot] > 0;
+			const bool bUsed = Slot < Num && Quantized[Slot] > 0;
 			OutBones[Slot] = bUsed ? static_cast<uint16>(List[Slot].Bone) : static_cast<uint16>(0);
-			OutWeights[Slot] = bUsed ? static_cast<uint8>(Quantised[Slot]) : static_cast<uint8>(0);
+			OutWeights[Slot] = bUsed ? static_cast<uint8>(Quantized[Slot]) : static_cast<uint8>(0);
 			Used += bUsed ? 1 : 0;
 		}
 		return Used;
@@ -175,7 +175,7 @@ namespace MantleGarmentSkinTransferPrivate
 	 * face's weights at (INDEX_NONE: no share). The raw share, dB / (dB + dF) faded over the face's last
 	 * FaceFadeCm (1 where only the face tracks), is smoothed over the welded points' edges as S, the share
 	 * of the face-tracked points (0 elsewhere), and C, the face-tracked fraction; the share is S / max(C,
-	 * FaceShareMinCoverage), so the holes the face's untracked boundary leaves fill from their neighbours,
+	 * FaceShareMinCoverage), so the holes the face's untracked boundary leaves fill from their neighbors,
 	 * and the share fades out evenly where the face-tracked points thin out. A point the face does not
 	 * track samples the face at the nearest one (in edges) it does.
 	 */
@@ -190,8 +190,8 @@ namespace MantleGarmentSkinTransferPrivate
 		VertexSections(Garment, Sections);
 		TArray<int32> Weld;
 		const int32 NumPoints = WeldBySection(Garment.Positions, Sections, Weld);
-		FPointNeighbours Neighbours;
-		PointNeighbours(Garment.Indices, Weld, NumPoints, Neighbours);
+		FPointNeighbors Neighbors;
+		PointNeighbors(Garment.Indices, Weld, NumPoints, Neighbors);
 
 		// Per point the copies' mean raw share and face-tracked fraction, and a copy the face tracks.
 		TArray<float> Share;
@@ -223,16 +223,16 @@ namespace MantleGarmentSkinTransferPrivate
 			Coverage[Point] /= static_cast<float>(FMath::Max(Copies[Point], 1));
 		}
 
-		// Passes: half own, half the neighbours' mean, both fields.
+		// Passes: half own, half the neighbors' mean, both fields.
 		TArray<float> NextShare;
 		NextShare.SetNumUninitialized(NumPoints);
 		TArray<float> NextCoverage;
 		NextCoverage.SetNumUninitialized(NumPoints);
 		for (int32 Pass = 0; Pass < FMantleGarmentSkinTransfer::FaceShareSmoothIters; ++Pass)
 		{
-			ParallelFor(NumPoints, [&Neighbours, &Share, &Coverage, &NextShare, &NextCoverage](const int32 Point)
+			ParallelFor(NumPoints, [&Neighbors, &Share, &Coverage, &NextShare, &NextCoverage](const int32 Point)
 			{
-				const TArray<int32, TInlineAllocator<8>>& Around = Neighbours[Point];
+				const TArray<int32, TInlineAllocator<8>>& Around = Neighbors[Point];
 				float AroundShare = 0.0f;
 				float AroundCoverage = 0.0f;
 				for (const int32 Other : Around)
@@ -263,7 +263,7 @@ namespace MantleGarmentSkinTransferPrivate
 			TArray<int32> Next;
 			for (const int32 Point : Frontier)
 			{
-				for (const int32 Other : Neighbours[Point])
+				for (const int32 Other : Neighbors[Point])
 				{
 					if (Source[Other] == INDEX_NONE)
 					{
@@ -409,7 +409,7 @@ bool FMantleGarmentSkinTransfer::Transfer(FMantleSkinnedMeshLOD& Garment, const 
 	};
 
 	// (1) The face's share of each vertex, smoothed over the garment's mesh (FaceShares): from each vertex's
-	// own distances it jumps around a collar, and neighbours with different neck / chest mixes make the rim
+	// own distances it jumps around a collar, and neighbors with different neck / chest mixes make the rim
 	// wavy once the neck bends.
 	TArray<float> FaceShareOf;
 	TArray<int32> FaceSampleOf;
@@ -466,7 +466,7 @@ bool FMantleGarmentSkinTransfer::Transfer(FMantleSkinnedMeshLOD& Garment, const 
 		{
 			return;
 		}
-		WriteQuantised(Blend, Sum, Slots, &Garment.InfluenceBones[Vertex * Slots], &Garment.InfluenceWeights[Vertex * Slots]);
+		WriteQuantized(Blend, Sum, Slots, &Garment.InfluenceBones[Vertex * Slots], &Garment.InfluenceWeights[Vertex * Slots]);
 		Origin[Vertex] = OriginBody;
 		TookFace[Vertex] = FaceShare > 0.0f ? 1 : 0;
 	});
@@ -747,17 +747,17 @@ bool FMantleGarmentSkinTransfer::Smooth(FMantleSkinnedMeshLOD& Garment, const in
 		}
 	}
 
-	FPointNeighbours Neighbours;
-	PointNeighbours(Garment.Indices, Weld, NumPoints, Neighbours);
+	FPointNeighbors Neighbors;
+	PointNeighbors(Garment.Indices, Weld, NumPoints, Neighbors);
 
-	// Passes: (1 - f/2) own + f/2 neighbour mean over the union of bones; top Keep kept, renormalised.
+	// Passes: (1 - f/2) own + f/2 neighbor mean over the union of bones; top Keep kept, renormalized.
 	TArray<FGarmentInfluenceList> Next;
 	Next.SetNum(NumPoints);
 	for (int32 Pass = 0; Pass < Passes; ++Pass)
 	{
-		ParallelFor(NumPoints, [&Neighbours, &PointFactor, &Current, &Next, Keep](const int32 Point)
+		ParallelFor(NumPoints, [&Neighbors, &PointFactor, &Current, &Next, Keep](const int32 Point)
 		{
-			const TArray<int32, TInlineAllocator<8>>& Around = Neighbours[Point];
+			const TArray<int32, TInlineAllocator<8>>& Around = Neighbors[Point];
 			const float Fade = PointFactor[Point];
 			if (Around.Num() == 0 || Fade <= 0.0f)
 			{
@@ -792,7 +792,7 @@ bool FMantleGarmentSkinTransfer::Smooth(FMantleSkinnedMeshLOD& Garment, const in
 		Swap(Current, Next);
 	}
 
-	// Quantise per point, then every copy takes its point's slots (a point without weight leaves its vertices as they were).
+	// Quantize per point, then every copy takes its point's slots (a point without weight leaves its vertices as they were).
 	TArray<uint16> PointBones;
 	TArray<uint8> PointWeights;
 	PointBones.SetNumZeroed(NumPoints * Slots);
@@ -805,7 +805,7 @@ bool FMantleGarmentSkinTransfer::Smooth(FMantleSkinnedMeshLOD& Garment, const in
 		const float Sum = SortAndTrim(List, Keep);
 		if (Sum > UE_SMALL_NUMBER)
 		{
-			WriteQuantised(List, Sum, Slots, &PointBones[Point * Slots], &PointWeights[Point * Slots]);
+			WriteQuantized(List, Sum, Slots, &PointBones[Point * Slots], &PointWeights[Point * Slots]);
 			PointOk[Point] = 1;
 		}
 	});

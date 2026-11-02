@@ -42,7 +42,7 @@ struct FMantleVehicleBuilderPanelAccess
 		return Panel.BuiltSource.IsValid() || Panel.bHaveLastBuild || Panel.SuggestedSize.IsSet() || !Panel.SaveStatus.IsEmpty();
 	}
 	static void SetMesh(SMantleVehicleBuilder& Panel, USkeletalMesh* Mesh) { Panel.SetMesh(FAssetData(Mesh)); }
-	static void AddGrey(SMantleVehicleBuilder& Panel, AMantleVehicleSpawnPoint* Spawn) { Panel.GreySpawns.Add(Spawn); }
+	static void AddGray(SMantleVehicleBuilder& Panel, AMantleVehicleSpawnPoint* Spawn) { Panel.GraySpawns.Add(Spawn); }
 	static void Finish(SMantleVehicleBuilder& Panel) { Panel.FinishWindow(); }
 };
 
@@ -67,7 +67,7 @@ namespace MantleVehicleBuilderTypesTestPrivate
 		return FMath::Sqrt(2.0 * MassKg * 9.8 / (1.225 * WingAreaM2 * Lift)) * 3.6;
 	}
 
-	/** The range of every number a Scaled chassis keeps in step with the size (centimetres, so they follow the factor, not its square). */
+	/** The range of every number a Scaled chassis keeps in step with the size (centimeters, so they follow the factor, not its square). */
 	bool Near(const double A, const double B, const double Relative)
 	{
 		return FMath::Abs(A - B) <= Relative * FMath::Max(FMath::Abs(A), FMath::Abs(B)) + 1.0e-9;
@@ -169,7 +169,7 @@ bool FMantleVehicleBuilderSizeTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("a sedan has no Size"), Session.UsesSize());
 		TestFalse(TEXT("a Size set on it changes nothing"), Session.SetSize(1.5));
 		TestTrue(TEXT("its wheelbase moves"), Session.SetDimension(EMantleVehicleDimension::Wheelbase, 300.0));
-		TestTrue(TEXT("its summary is the ground one"), FMantleVehicleShape::Summarise(Session.GetShaped()).Family == EMantleVehicleFamily::Ground);
+		TestTrue(TEXT("its summary is the ground one"), FMantleVehicleShape::Summarize(Session.GetShaped()).Family == EMantleVehicleFamily::Ground);
 	}
 
 	for (const TCHAR* Id : { TEXT("plane"), TEXT("jet"), TEXT("helicopter"), TEXT("hovercraft") })
@@ -349,7 +349,7 @@ bool FMantleVehicleBuilderSummaryTest::RunTest(const FString& Parameters)
 		{
 			continue;
 		}
-		const FMantleVehicleSummary Own = FMantleVehicleShape::Summarise(Archetype);
+		const FMantleVehicleSummary Own = FMantleVehicleShape::Summarize(Archetype);
 		TestTrue(*FString::Printf(TEXT("%s is an aircraft"), Id), Own.Family == EMantleVehicleFamily::Aircraft);
 		TestTrue(*FString::Printf(TEXT("%s weighs what its preset says"), Id), Near(Own.MassKg, Archetype.Archetype.Mass, 1.0e-9));
 		TestTrue(*FString::Printf(TEXT("%s's wing loading is its weight over its wing"), Id), Near(Own.WingLoadingKgM2, Archetype.Archetype.Mass / Archetype.Aircraft.Wing.AreaM2, 1.0e-9));
@@ -359,7 +359,7 @@ bool FMantleVehicleBuilderSummaryTest::RunTest(const FString& Parameters)
 		TestTrue(*FString::Printf(TEXT("%s's top speed is its air-speed limit"), Id), Near(Own.TopSpeedKmh, Archetype.Aircraft.AirSpeedLimitCmPerSec * 0.036, 1.0e-9));
 		const FString Said = FMantleVehicleShape::Describe(Own).ToString();
 		TestTrue(*FString::Printf(TEXT("%s says what it weighs"), Id), Said.StartsWith(TEXT("Weighs about ")));
-		TestTrue(*FString::Printf(TEXT("%s says its wing loading"), Id), Said.Contains(TEXT(" kg on each square metre of wing.")));
+		TestTrue(*FString::Printf(TEXT("%s says its wing loading"), Id), Said.Contains(TEXT(" kg on each square meter of wing.")));
 		TestTrue(*FString::Printf(TEXT("%s says its take-off speed"), Id), Said.Contains(TEXT("Takes off at about ")) && Said.Contains(TEXT(" km/h. Top speed about ")));
 		TestFalse(*FString::Printf(TEXT("%s does not turn like a car"), Id), Said.Contains(TEXT("Turns in a circle")));
 
@@ -368,7 +368,7 @@ bool FMantleVehicleBuilderSummaryTest::RunTest(const FString& Parameters)
 		FMantleVehicleShapeSession Session;
 		Session.Start(Archetype, 0.5, 2.0);
 		Session.SetSize(1.2);
-		const FMantleVehicleSummary Bigger = FMantleVehicleShape::Summarise(Session.GetShaped());
+		const FMantleVehicleSummary Bigger = FMantleVehicleShape::Summarize(Session.GetShaped());
 		TestTrue(*FString::Printf(TEXT("%s's wing loading rises by 1.2 with Size 1.2 (%.1f to %.1f)"), Id, Own.WingLoadingKgM2, Bigger.WingLoadingKgM2),
 			Near(Bigger.WingLoadingKgM2, Own.WingLoadingKgM2 * 1.2, 0.03));
 		TestTrue(*FString::Printf(TEXT("%s's take-off speed rises by the square root of 1.2 (%.1f to %.1f)"), Id, Own.TakeOffKmh, Bigger.TakeOffKmh),
@@ -392,7 +392,7 @@ bool FMantleVehicleBuilderSummaryTest::RunTest(const FString& Parameters)
 	FMantleChassisSpec Heli;
 	if (Load(*this, TEXT("helicopter"), Heli))
 	{
-		const FMantleVehicleSummary Own = FMantleVehicleShape::Summarise(Heli);
+		const FMantleVehicleSummary Own = FMantleVehicleShape::Summarize(Heli);
 		TestTrue(TEXT("it is a helicopter"), Own.Family == EMantleVehicleFamily::Helicopter);
 		TestTrue(TEXT("its hover throttle is the preset's own collective"), Near(Own.HoverThrottle, Heli.Helicopter.HoverCollective, 0.02));
 		const FString Said = FMantleVehicleShape::Describe(Own).ToString();
@@ -403,7 +403,7 @@ bool FMantleVehicleBuilderSummaryTest::RunTest(const FString& Parameters)
 		FMantleVehicleShapeSession Session;
 		Session.Start(Heli, 0.5, 2.0);
 		Session.SetSize(1.5);
-		const FMantleVehicleSummary Bigger = FMantleVehicleShape::Summarise(Session.GetShaped());
+		const FMantleVehicleSummary Bigger = FMantleVehicleShape::Summarize(Session.GetShaped());
 		TestTrue(TEXT("a bigger helicopter is heavier"), Bigger.MassKg > Own.MassKg * 3.0);
 		TestTrue(TEXT("and hovers at the same throttle"), Near(Bigger.HoverThrottle, Own.HoverThrottle, 0.02));
 
@@ -416,7 +416,7 @@ bool FMantleVehicleBuilderSummaryTest::RunTest(const FString& Parameters)
 	FMantleChassisSpec Hover;
 	if (Load(*this, TEXT("hovercraft"), Hover))
 	{
-		const FMantleVehicleSummary Own = FMantleVehicleShape::Summarise(Hover);
+		const FMantleVehicleSummary Own = FMantleVehicleShape::Summarize(Hover);
 		TestTrue(TEXT("it is a hovercraft"), Own.Family == EMantleVehicleFamily::Hovercraft);
 		TestTrue(TEXT("it floats at its ground clearance"), Near(Own.HoverHeightCm, Hover.Clearance, 1.0e-9));
 		// schema/validate.py holds the preset to a top speed of 15 to 25 m/s on the flat.
@@ -432,16 +432,16 @@ bool FMantleVehicleBuilderSummaryTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("a hovercraft has the top-speed feel"), Session.HasTopSpeedFeel());
 		TestTrue(TEXT("and the passenger seat to turn off"), Session.HasPassengerOption() && Session.GetPassenger());
 		TestTrue(TEXT("the feel moves"), Session.SetTopSpeedFeel(1.0));
-		const double Fast = FMantleVehicleShape::Summarise(Session.GetShaped()).TopSpeedKmh;
+		const double Fast = FMantleVehicleShape::Summarize(Session.GetShaped()).TopSpeedKmh;
 		Session.SetTopSpeedFeel(-1.0);
-		const double Slow = FMantleVehicleShape::Summarise(Session.GetShaped()).TopSpeedKmh;
+		const double Slow = FMantleVehicleShape::Summarize(Session.GetShaped()).TopSpeedKmh;
 		TestTrue(*FString::Printf(TEXT("faster at the top of the slider (%.1f) than the preset (%.1f) and slower at the bottom (%.1f)"), Fast, Own.TopSpeedKmh, Slow),
 			Fast > Own.TopSpeedKmh * 1.1 && Slow < Own.TopSpeedKmh * 0.9);
 		TestTrue(TEXT("the passenger seat comes off"), Session.SetPassenger(false) && !Session.GetShaped().bPassenger);
 		Session.Reset();
 		TestTrue(TEXT("Reset puts the feel and the seat back"), !Session.IsShaped() && Session.GetTopSpeedFeel() == 0.0 && Session.GetPassenger());
 		Session.SetSize(2.0);
-		TestTrue(TEXT("sized up it floats higher"), Near(FMantleVehicleShape::Summarise(Session.GetShaped()).HoverHeightCm, Hover.Clearance * 2.0, 1.0e-9));
+		TestTrue(TEXT("sized up it floats higher"), Near(FMantleVehicleShape::Summarize(Session.GetShaped()).HoverHeightCm, Hover.Clearance * 2.0, 1.0e-9));
 	}
 
 	// A plane has no feel or seat to turn off; a ground vehicle's summary is what it was.
@@ -456,7 +456,7 @@ bool FMantleVehicleBuilderSummaryTest::RunTest(const FString& Parameters)
 	FMantleChassisSpec Sedan;
 	if (Load(*this, TEXT("sedan"), Sedan))
 	{
-		const FString Said = FMantleVehicleShape::Describe(FMantleVehicleShape::Summarise(Sedan)).ToString();
+		const FString Said = FMantleVehicleShape::Describe(FMantleVehicleShape::Summarize(Sedan)).ToString();
 		TestTrue(TEXT("a car still says how it turns"), Said.StartsWith(TEXT("Weighs about ")) && Said.Contains(TEXT("Turns in a circle about ")) && Said.EndsWith(TEXT(" km/h.")));
 	}
 	return true;
@@ -552,11 +552,11 @@ bool FMantleVehicleBuilderSetMeshTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleVehicleBuilderGreySpawnTest,
-	"Mantle.Vehicle.Builder.CancelTakesTheGreyVehicleOut",
+	FMantleVehicleBuilderGraySpawnTest,
+	"Mantle.Vehicle.Builder.CancelTakesTheGrayVehicleOut",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
-bool FMantleVehicleBuilderGreySpawnTest::RunTest(const FString& Parameters)
+bool FMantleVehicleBuilderGraySpawnTest::RunTest(const FString& Parameters)
 {
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	if (!FSlateApplication::IsInitialized() || !World || !World->PersistentLevel)
@@ -583,53 +583,53 @@ bool FMantleVehicleBuilderGreySpawnTest::RunTest(const FString& Parameters)
 		}
 		return Spawn;
 	};
-	UMantleVehicleSource* Grey = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	UMantleVehicleSource* Gray = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
 	UMantleVehicleSource* Model = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
 	const int32 Before = Count();
 
-	// Cancel (the window closed any way but Done): the grey vehicle goes.
+	// Cancel (the window closed any way but Done): the gray vehicle goes.
 	{
 		TSharedRef<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
-		AMantleVehicleSpawnPoint* Spawn = PlaceOne(*Grey);
+		AMantleVehicleSpawnPoint* Spawn = PlaceOne(*Gray);
 		if (!Spawn)
 		{
 			return false;
 		}
-		FMantleVehicleBuilderPanelAccess::AddGrey(*Panel, Spawn);
-		TestEqual(TEXT("the grey vehicle is in the level"), Count(), Before + 1);
+		FMantleVehicleBuilderPanelAccess::AddGray(*Panel, Spawn);
+		TestEqual(TEXT("the gray vehicle is in the level"), Count(), Before + 1);
 		Panel = SNew(SMantleVehicleBuilder);
 		TestEqual(TEXT("closing the window without Done took it out"), Count(), Before);
 	}
 
-	// Done with no model: the grey vehicle is the result and stays.
+	// Done with no model: the gray vehicle is the result and stays.
 	{
 		TSharedPtr<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
-		AMantleVehicleSpawnPoint* Spawn = PlaceOne(*Grey);
+		AMantleVehicleSpawnPoint* Spawn = PlaceOne(*Gray);
 		if (!Spawn)
 		{
 			return false;
 		}
-		FMantleVehicleBuilderPanelAccess::AddGrey(*Panel, Spawn);
+		FMantleVehicleBuilderPanelAccess::AddGray(*Panel, Spawn);
 		FMantleVehicleBuilderPanelAccess::Finish(*Panel);
 		Panel.Reset();
-		TestEqual(TEXT("Done with no model leaves the grey vehicle in the level"), Count(), Before + 1);
+		TestEqual(TEXT("Done with no model leaves the gray vehicle in the level"), Count(), Before + 1);
 		World->EditorDestroyActor(Spawn, /*bShouldModifyLevel*/ true);
 	}
 
-	// Done with a model whose vehicle is in the level: the grey one it replaced goes, the model's stays.
+	// Done with a model whose vehicle is in the level: the gray one it replaced goes, the model's stays.
 	{
 		TSharedPtr<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
-		AMantleVehicleSpawnPoint* GreySpawn = PlaceOne(*Grey);
+		AMantleVehicleSpawnPoint* GraySpawn = PlaceOne(*Gray);
 		AMantleVehicleSpawnPoint* ModelSpawn = PlaceOne(*Model);
-		if (!GreySpawn || !ModelSpawn)
+		if (!GraySpawn || !ModelSpawn)
 		{
 			return false;
 		}
-		FMantleVehicleBuilderPanelAccess::AddGrey(*Panel, GreySpawn);
+		FMantleVehicleBuilderPanelAccess::AddGray(*Panel, GraySpawn);
 		FMantleVehicleBuilderPanelAccess::Give(*Panel, Model);
 		FMantleVehicleBuilderPanelAccess::Finish(*Panel);
 		Panel.Reset();
-		TestEqual(TEXT("Done with the model's vehicle in the level took out only the grey one"), Count(), Before + 1);
+		TestEqual(TEXT("Done with the model's vehicle in the level took out only the gray one"), Count(), Before + 1);
 		TestTrue(TEXT("and the model's is the one left"), IsValid(ModelSpawn) && ModelSpawn->GetLevel() != nullptr);
 		World->EditorDestroyActor(ModelSpawn, /*bShouldModifyLevel*/ true);
 	}

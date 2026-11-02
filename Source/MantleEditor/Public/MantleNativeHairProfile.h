@@ -13,7 +13,7 @@ struct MANTLEEDITOR_API FMantleNativeHairProfile
 	static constexpr const TCHAR* Version = TEXT("metahuman_cards_v1");
 	static bool ValidateParameters(bool bFacial, const FString& BaseMaterialName, EBlendMode BlendMode, float MaskClip,
 		TFunctionRef<bool(FName, float&)> Scalar, FString& Description, FString& Error);
-	/** Repaired fixed recipe: full parameter identities, source values and supported single-colour modes. */
+	/** Repaired fixed recipe: full parameter identities, source values and supported single-color modes. */
 	static bool FromMaterialRecipe(const UMaterialInterface* Material, FString& Profile, FMantleNativeHairSettings& Settings, FString& Description, FString& Error);
 
 	/** Audited effective material family, independent of cosmetic slot or pose leader. */

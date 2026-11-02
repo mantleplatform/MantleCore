@@ -60,7 +60,7 @@ namespace MantleWaterMaterialPrivate
 	/** A distance to the nearest surface (a distance field's) far past any shoreline: the far end of the water has none. */
 	constexpr double FarSurfaceDistanceCm = 1.0e6;
 
-	/** The camera's height over the water, when a colour read models positions (FFarEvaluator::bModelPositions): above the surface, as water is seen from. */
+	/** The camera's height over the water, when a color read models positions (FFarEvaluator::bModelPositions): above the surface, as water is seen from. */
 	constexpr double ModelCameraHeightCm = 1000.0;
 
 	/** One to four numbers; a scalar (one) broadcasts against a wider value. */
@@ -184,8 +184,8 @@ namespace MantleWaterMaterialPrivate
 
 		/**
 		 * World Position, Camera Position and Object Position are read as a model of the water seen from above (#628: Stylized
-		 * Village's MM_Water colours its depth by them): the surface at the origin, the object there too, the camera
-		 * ModelCameraHeightCm over it. Off unless a colour read asks, so an opacity graph that reads a position still stops the read.
+		 * Village's MM_Water colors its depth by them): the surface at the origin, the object there too, the camera
+		 * ModelCameraHeightCm over it. Off unless a color read asks, so an opacity graph that reads a position still stops the read.
 		 */
 		bool bModelPositions = false;
 
@@ -275,7 +275,7 @@ namespace MantleWaterMaterialPrivate
 
 		/**
 		 * What an input's first lane can be: Low and High, equal when the graph evaluates exactly. When it does not, a texture
-		 * sample of a colour or mask texture is somewhere in 0..1 and a Multiply or Add of such bounds is bounded by theirs
+		 * sample of a color or mask texture is somewhere in 0..1 and a Multiply or Add of such bounds is bounded by theirs
 		 * (on a copy, so a failed exact read leaves no failure behind). Why gets the first node that stopped the exact read.
 		 */
 		bool Bounds(const FExpressionInput& In, const bool bHasConstant, const double Constant, double& Low, double& High, FString& Why, const int32 Depth = 0)
@@ -306,7 +306,7 @@ namespace MantleWaterMaterialPrivate
 			}
 			if (const UMaterialExpressionTextureBase* Texture = Cast<UMaterialExpressionTextureBase>(Expression))
 			{
-				// Normal maps (and data) run below 0 or above 1: only a colour, grayscale, alpha or mask sample is bounded.
+				// Normal maps (and data) run below 0 or above 1: only a color, grayscale, alpha or mask sample is bounded.
 				const EMaterialSamplerType Sampler = Texture->SamplerType;
 				switch (Sampler)
 				{
@@ -516,10 +516,10 @@ namespace MantleWaterMaterialPrivate
 			{
 				return Conditional(*If, Out);
 			}
-			// A colour read's model of the water seen from above: the surface and the object at the origin, the camera over them.
+			// A color read's model of the water seen from above: the surface and the object at the origin, the camera over them.
 			// Scene Depth over Pixel Depth is a ratio with a pixel depth of 0 here, which the divide below reads as 0 (not infinity):
 			// the point behind the water, camera + ratio x (surface - camera), is then the camera itself, above the water, with no depth
-			// under it. That is the shallow end of a Scene Depth colour gradient, which is what a pool's colour is read as.
+			// under it. That is the shallow end of a Scene Depth color gradient, which is what a pool's color is read as.
 			if (bModelPositions)
 			{
 				if (Expression->IsA<UMaterialExpressionWorldPosition>() || Expression->IsA<UMaterialExpressionObjectPositionWS>())
@@ -1494,28 +1494,28 @@ namespace MantleWaterMaterialPrivate
 
 namespace MantleWaterMaterialPrivate
 {
-	/** The deep colour and the normal samples, as every water material is read (a depth fade or Single Layer Water). */
+	/** The deep color and the normal samples, as every water material is read (a depth fade or Single Layer Water). */
 	void ReadSurface(const UMaterialInterface* Context, const FExpressionInput* BaseColor, const FExpressionInput* Normal, FMantleWaterBake& Out)
 	{
 		if (BaseColor && BaseColor->Expression)
 		{
-			FFarEvaluator Colour;
-			Colour.Context = Context;
-			Colour.bModelPositions = true;
+			FFarEvaluator Color;
+			Color.Context = Context;
+			Color.bModelPositions = true;
 			FValue Deep;
-			const bool bRead = Colour.Input(*BaseColor, false, 0.0, Deep);
-			Out.bShorelineFoamDropped = Out.bShorelineFoamDropped || Colour.bShorelineFoamDropped;
+			const bool bRead = Color.Input(*BaseColor, false, 0.0, Deep);
+			Out.bShorelineFoamDropped = Out.bShorelineFoamDropped || Color.bShorelineFoamDropped;
 			if (bRead && Deep.N >= 3)
 			{
-				Out.bColour = true;
+				Out.bColor = true;
 				for (int32 Channel = 0; Channel < 3; ++Channel)
 				{
-					Out.Colour[Channel] = FMath::Clamp(Deep.V[Channel], 0.0, 1.0);
+					Out.Color[Channel] = FMath::Clamp(Deep.V[Channel], 0.0, 1.0);
 				}
 			}
 			else if (Out.Why.IsEmpty())
 			{
-				Out.Why = FString::Printf(TEXT("colour: %s"), Colour.Failure.IsEmpty() ? TEXT("not a colour") : *Colour.Failure);
+				Out.Why = FString::Printf(TEXT("color: %s"), Color.Failure.IsEmpty() ? TEXT("not a color") : *Color.Failure);
 			}
 		}
 
@@ -1567,7 +1567,7 @@ bool FMantleWaterMaterial::FadesByDepth(const FExpressionInput* Input)
 	return ReachesDepthFade(Input, Seen, Budget);
 }
 
-bool FMantleWaterMaterial::Recognise(const UMaterialInterface* Context, const FExpressionInput* Opacity, const FExpressionInput* BaseColor, const FExpressionInput* Normal, FMantleWaterBake& Out)
+bool FMantleWaterMaterial::Recognize(const UMaterialInterface* Context, const FExpressionInput* Opacity, const FExpressionInput* BaseColor, const FExpressionInput* Normal, FMantleWaterBake& Out)
 {
 	using namespace MantleWaterMaterialPrivate;
 	Out = FMantleWaterBake();
@@ -1605,7 +1605,7 @@ bool FMantleWaterMaterial::Recognise(const UMaterialInterface* Context, const FE
 	Out.bShorelineFoamDropped = Evaluator.bShorelineFoamDropped;
 	if (bOpacityEvaluated && Value.Lane(0) >= MinimumOpacity)
 	{
-		Out.bOpacityRead = true;
+		Out.bOpacitiread = true;
 		Out.Opacity = FMath::Clamp(Value.Lane(0), 0.0, 1.0);
 	}
 	else
@@ -1618,7 +1618,7 @@ bool FMantleWaterMaterial::Recognise(const UMaterialInterface* Context, const FE
 	return true;
 }
 
-bool FMantleWaterMaterial::RecogniseSingleLayer(const UMaterialInterface* Context, const FExpressionInput* BaseColor, const FExpressionInput* Normal, FMantleWaterBake& Out)
+bool FMantleWaterMaterial::RecognizeSingleLayer(const UMaterialInterface* Context, const FExpressionInput* BaseColor, const FExpressionInput* Normal, FMantleWaterBake& Out)
 {
 	using namespace MantleWaterMaterialPrivate;
 	Out = FMantleWaterBake();
@@ -1628,10 +1628,10 @@ bool FMantleWaterMaterial::RecogniseSingleLayer(const UMaterialInterface* Contex
 	}
 	Out.bFound = true;
 	Out.bSingleLayer = true;
-	Out.bOpacityRead = true;
+	Out.bOpacitiread = true;
 	Out.Opacity = 1.0;
 
-	// The output node's own coefficients, where the graph is constants and parameters; else the deep colour derives them.
+	// The output node's own coefficients, where the graph is constants and parameters; else the deep color derives them.
 	if (const UMaterial* Base = Context->GetMaterial())
 	{
 		for (const UMaterialExpression* Expression : Base->GetExpressionCollection().Expressions)
@@ -1666,28 +1666,28 @@ bool FMantleWaterMaterial::RecogniseSingleLayer(const UMaterialInterface* Contex
 
 	// The Water plugin's Water_Material (GhzGarage/mantle#818) builds its outputs with Set Material Attributes (no roots to read) and
 	// feeds its output node through foam and depth graphs this cannot evaluate, so what it holds is read by its parameter names
-	// instead: "Absorption" and "Scattering" (the output node's coefficients, 1/cm) and "Water Albedo" (the surface colour), as
+	// instead: "Absorption" and "Scattering" (the output node's coefficients, 1/cm) and "Water Albedo" (the surface color), as
 	// the body's instance chain sets them. Its waves are world position offset in every case: dropped and said.
-	auto NamedColour = [Context](const TCHAR* Name, double (&Value)[3])
+	auto NamedColor = [Context](const TCHAR* Name, double (&Value)[3])
 	{
-		FLinearColor Colour;
-		if (!Context->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(FName(Name))), Colour))
+		FLinearColor Color;
+		if (!Context->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(FName(Name))), Color))
 		{
 			return false;
 		}
-		Value[0] = Colour.R;
-		Value[1] = Colour.G;
-		Value[2] = Colour.B;
+		Value[0] = Color.R;
+		Value[1] = Color.G;
+		Value[2] = Color.B;
 		return true;
 	};
 	if (!Out.bVolume)
 	{
 		double Absorption[3];
 		double Scattering[3];
-		if (NamedColour(TEXT("Absorption"), Absorption) && NamedColour(TEXT("Scattering"), Scattering))
+		if (NamedColor(TEXT("Absorption"), Absorption) && NamedColor(TEXT("Scattering"), Scattering))
 		{
 			// Believed only within the schema's 0..1 (1/cm): a value above it is one the graph scales on the way to the node
-			// (water that absorbs everything within a centimetre is no lake), and then the deep colour derives the coefficients.
+			// (water that absorbs everything within a centimeter is no lake), and then the deep color derives the coefficients.
 			bool bPlausible = true;
 			for (int32 Channel = 0; Channel < 3; ++Channel)
 			{
@@ -1708,24 +1708,24 @@ bool FMantleWaterMaterial::RecogniseSingleLayer(const UMaterialInterface* Contex
 			}
 		}
 	}
-	if (!Out.bColour)
+	if (!Out.bColor)
 	{
 		double Albedo[3];
-		if (NamedColour(TEXT("Water Albedo"), Albedo) || NamedColour(TEXT("WaterAlbedo"), Albedo) || NamedColour(TEXT("Water Color"), Albedo))
+		if (NamedColor(TEXT("Water Albedo"), Albedo) || NamedColor(TEXT("WaterAlbedo"), Albedo) || NamedColor(TEXT("Water Color"), Albedo))
 		{
-			Out.bColour = true;
+			Out.bColor = true;
 			for (int32 Channel = 0; Channel < 3; ++Channel)
 			{
-				Out.Colour[Channel] = FMath::Clamp(Albedo[Channel], 0.0, 1.0);
+				Out.Color[Channel] = FMath::Clamp(Albedo[Channel], 0.0, 1.0);
 			}
 		}
 		else
 		{
-			// Nothing to read: a clear lake, rather than the bake's colour (white where a texture fed the colour, or the near end of a fade).
-			Out.bColour = true;
+			// Nothing to read: a clear lake, rather than the bake's color (white where a texture fed the color, or the near end of a fade).
+			Out.bColor = true;
 			for (int32 Channel = 0; Channel < 3; ++Channel)
 			{
-				Out.Colour[Channel] = ClearLakeColour[Channel];
+				Out.Color[Channel] = ClearLakeColor[Channel];
 			}
 		}
 	}
@@ -1737,7 +1737,7 @@ bool FMantleWaterMaterial::RecogniseSingleLayer(const UMaterialInterface* Contex
 	return true;
 }
 
-FMantleWaterCoefficients FMantleWaterMaterial::Coefficients(const double (&Colour)[3], const double FadeDistanceCm)
+FMantleWaterCoefficients FMantleWaterMaterial::Coefficients(const double (&Color)[3], const double FadeDistanceCm)
 {
 	// The derivation, in the header: sigma = min(3 / D, 1); albedo_c = clamp(C_c, 0, 0.9);
 	// scattering_c = sigma albedo_c; absorption_c = sigma (1 - albedo_c). Both stay within the schema's 0..1 because sigma does.
@@ -1746,7 +1746,7 @@ FMantleWaterCoefficients FMantleWaterMaterial::Coefficients(const double (&Colou
 	FMantleWaterCoefficients Out;
 	for (int32 Channel = 0; Channel < 3; ++Channel)
 	{
-		const double Albedo = FMath::Clamp(Colour[Channel], 0.0, 0.9);
+		const double Albedo = FMath::Clamp(Color[Channel], 0.0, 0.9);
 		Out.Scattering[Channel] = Sigma * Albedo;
 		Out.Absorption[Channel] = Sigma * (1.0 - Albedo);
 	}

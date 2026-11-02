@@ -380,7 +380,7 @@ bool FMantlePackageSettingsExportTest::RunTest(const FString& Parameters)
 	Settings->Storage[0].Settings.Add(TEXT("RoundLength"), TEXT("5"));
 	Settings->Storage[0].Settings.Add(TEXT("Difficulty"), TEXT("Medium"));
 	Settings->Storage[0].Settings.Add(TEXT("Speedd"), TEXT("1"));
-	Settings->Storage[1].Settings.Add(TEXT("Colour"), TEXT("Red"));
+	Settings->Storage[1].Settings.Add(TEXT("Color"), TEXT("Red"));
 	const FMantleExportResult Bad = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
 	TestTrue(TEXT("out of range"), PkgSettingsHasError(Bad, TEXT("/storage/0/settings/RoundLength"), TEXT("KillBricks's RoundLength must be between 10 and 600.")));
 	TestTrue(TEXT("not one of the options"), PkgSettingsHasError(Bad, TEXT("/storage/0/settings/Difficulty"), TEXT("must be one of Easy, Hard")));
@@ -432,12 +432,12 @@ bool FMantlePackageSettingsValidatorTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	Settings->Storage[0].Settings.Add(TEXT("Hardcore"), TEXT("maybe"));
-	Settings->Storage[1].Settings.Add(TEXT("Colour"), TEXT("Red"));
+	Settings->Storage[1].Settings.Add(TEXT("Color"), TEXT("Red"));
 	if (AMantleScriptPoint* Point = Fixture.AddPoint(TEXT("Brick"), TEXT("KillBricks")))
 	{
 		Point->Parameters.Add(TEXT("Target"), TEXT("Spawn"));
 		Point->Parameters.Add(TEXT("Speed"), TEXT("0"));
-		Point->Parameters.Add(TEXT("Colour"), TEXT("Red"));
+		Point->Parameters.Add(TEXT("Color"), TEXT("Red"));
 	}
 
 	const FMantleValidationResult Result = FMantlePlaceValidator::Validate(Fixture.World);
@@ -445,7 +445,7 @@ bool FMantlePackageSettingsValidatorTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a wrong-typed setting"), PkgSettingsHasIssue(Result, TEXT("KillBricks's Hardcore must be true or false")));
 	TestTrue(TEXT("settings on a vehicle"), PkgSettingsHasIssue(Result, TEXT("Truck is a vehicle, and only a script package takes settings.")));
 	TestTrue(TEXT("a parameter out of range"), PkgSettingsHasIssue(Result, TEXT("KillBricks's Speed must be between 1 and 10.")));
-	TestTrue(TEXT("a parameter the package does not declare is now an error"), PkgSettingsHasIssue(Result, TEXT("KillBricks has no parameter called Colour")));
+	TestTrue(TEXT("a parameter the package does not declare is now an error"), PkgSettingsHasIssue(Result, TEXT("KillBricks has no parameter called Color")));
 	TestFalse(TEXT("a required parameter the point sets is fine"), PkgSettingsHasIssue(Result, TEXT("KillBricks needs Target.")));
 	return true;
 }

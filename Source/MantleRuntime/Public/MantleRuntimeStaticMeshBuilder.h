@@ -54,15 +54,15 @@ struct FMantleStaticMeshBuildParams
 	 * False builds a CPU-only mesh for collision: no render resources (GPU buffers, ray tracing representation),
 	 * everything else as usual. A build also skips them in a cooked process that can never render
 	 * (!FApp::CanEverRenderOrProduceRenderData: a dedicated server, a cooked -NullRHI run), where the engine
-	 * refuses to initialise them (UStaticMesh::InitResources asserts). An uncooked process (the editor, a
-	 * commandlet) initialises them as before. See FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources.
+	 * refuses to initialize them (UStaticMesh::InitResources asserts). An uncooked process (the editor, a
+	 * commandlet) initializes them as before. See FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources.
 	 */
 	bool bInitRenderResources = true;
 
 	/**
 	 * #149: the mesh's baked Lumen data (FMantleMeshLumenFile), or null. The build takes both halves (they move to
 	 * LOD0's DistanceFieldData and CardRepresentationData, which the mesh then owns) before the render resources
-	 * are initialised, so the scene proxy finds them: Lumen's software tracing and distance field lighting see the
+	 * are initialized, so the scene proxy finds them: Lumen's software tracing and distance field lighting see the
 	 * mesh. Left alone on a build without render resources.
 	 */
 	FMantleMeshLumenData* Lumen = nullptr;
@@ -86,7 +86,7 @@ struct FMantleStaticMeshBuildParams
  *
  * MRM2 (FMantleStaticMeshReader, Fab F8 #342): uploaded place meshes and rigid accessories. Every
  * attribute is taken as cooked: positions, normals, tangents with their binormal sign, UVs and vertex
- * colours; nothing is recomputed. Indices keep glTF's order, which in Epic's axis convention is
+ * colors; nothing is recomputed. Indices keep glTF's order, which in Epic's axis convention is
  * already Unreal's front face (never reversed here). One polygon group per section in table (draw)
  * order; material slot i is the section whose MaterialIndex is i and is named after that section's
  * material, so a component's SetMaterial(i) and a place's materials[i] address the same slot.
@@ -105,7 +105,7 @@ class MANTLERUNTIME_API FMantleRuntimeStaticMeshBuilder
 public:
 	/**
 	 * Whether a runtime-built mesh gets render resources: bRequested (the build params' bInitRenderResources) and
-	 * a process the engine lets initialise them (FApp::CanEverRenderOrProduceRenderData). A dedicated server builds its meshes for collision only, and
+	 * a process the engine lets initialize them (FApp::CanEverRenderOrProduceRenderData). A dedicated server builds its meshes for collision only, and
 	 * UStaticMesh::InitResources asserts there. The static mesh and terrain builders share this one answer.
 	 */
 	static bool ShouldInitRenderResources(bool bRequested);

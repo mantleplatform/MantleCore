@@ -56,7 +56,7 @@ struct MANTLERUNTIME_API FMantleScatterExclusionSettings
 {
 	GENERATED_BODY()
 
-	/** The box's centre, cm. */
+	/** The box's center, cm. */
 	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (Units = "cm"))
 	FVector2D Center = FVector2D::ZeroVector;
 
@@ -125,7 +125,7 @@ public:
 	FVector HalfExtent = FVector(1000.0, 1000.0, 0.0);
 
 	/**
-	 * Instances per square metre of the box's footprint. A scatter makes at most 2,000,000, and a place holds 2,000,000 in all. One of more than
+	 * Instances per square meter of the box's footprint. A scatter makes at most 2,000,000, and a place holds 2,000,000 in all. One of more than
 	 * 200,000 needs a Draw Distance: a game builds it in cells around the player, not all at once.
 	 */
 	UPROPERTY(EditAnywhere, Category = "Scatter", meta = (ClampMin = "0", UIMin = "0", UIMax = "10"))
@@ -260,7 +260,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Scatter|Shape", meta = (ClampMin = "0", ClampMax = "100000", Units = "cm"))
 	double MinSpacing = 0.0;
 
-	/** 0 spreads instances evenly; 1 to 1000 gathers them into that many clusters, each of Cluster Radius, centred inside the footprint. */
+	/** 0 spreads instances evenly; 1 to 1000 gathers them into that many clusters, each of Cluster Radius, centered inside the footprint. */
 	UPROPERTY(EditAnywhere, Category = "Scatter|Shape", meta = (ClampMin = "0", ClampMax = "1000", UIMin = "0", UIMax = "50"))
 	int32 ClusterCount = 0;
 

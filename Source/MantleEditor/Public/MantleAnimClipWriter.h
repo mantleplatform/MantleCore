@@ -76,7 +76,7 @@ struct MANTLEEDITOR_API FMantleAnimClipData
 /**
  * The plugin's MAN1 writer (A2.4 #283): samples an emote on the UEFN driver skeleton at 30 fps and
  * encodes it the way the cook worker re-encodes it (cook/animclip.go CookAnimClip: tracks in
- * skeleton order, constant tracks collapsed to one key, rotations normalised, events by time), so
+ * skeleton order, constant tracks collapsed to one key, rotations normalized, events by time), so
  * the bytes a creator uploads are already the canonical ones.
  *
  * A clip on another rig has to be retargeted onto the UEFN mannequin first. #535: the export does it
@@ -102,7 +102,7 @@ struct MANTLEEDITOR_API FMantleAnimClipWriter
 	 */
 	static bool SampleOnMesh(const UAnimSequence* Sequence, const USkeletalMesh* Mesh, float FrameRate, FMantleAnimClipData& OutClip, FString& OutError);
 
-	/** Collapses constant tracks, normalises rotations, sorts events, as the worker does before encoding. */
+	/** Collapses constant tracks, normalizes rotations, sorts events, as the worker does before encoding. */
 	static void Canonicalize(FMantleAnimClipData& Clip);
 
 	/** Every rule of cook.ValidateAnimClip, with its messages. */

@@ -8,7 +8,7 @@
 /** The pure parts of the weapon builder's contact checks (the hands, the sight, the aiming eye), all in the weapon frame, so they run without a mesh. */
 namespace MantleWeaponBuilderMath
 {
-	/** The game puts the palm's centre on Grip_R / Grip_L; a palm is about this big (cm). */
+	/** The game puts the palm's center on Grip_R / Grip_L; a palm is about this big (cm). */
 	constexpr double PalmLengthCm = 9.0;
 	constexpr double PalmWidthCm = 8.0;
 	constexpr double PalmThicknessCm = 3.0;
@@ -40,7 +40,7 @@ namespace MantleWeaponBuilderMath
 	};
 
 	/**
-	 * The palm centred on a grip point. bWrapGrip: the fingers wrap round a grip, so the thin side faces the gun's side (thin along Y,
+	 * The palm centerd on a grip point. bWrapGrip: the fingers wrap round a grip, so the thin side faces the gun's side (thin along Y,
 	 * long along the grip's height, wide along the bore). Otherwise the palm is under the gun, thin side vertical (long along the bore, wide across it).
 	 */
 	MANTLEEDITOR_API FPalmBox MakePalmBox(const FVector& GripWeapon, bool bWrapGrip);
@@ -57,9 +57,9 @@ namespace MantleWeaponBuilderMath
 	};
 
 	/**
-	 * A simple wire hand in the weapon frame: three palm capsules (about 8 x 8 cm, centred on HandPoint) plus four fingers and a
+	 * A simple wire hand in the weapon frame: three palm capsules (about 8 x 8 cm, centerd on HandPoint) plus four fingers and a
 	 * thumb of two capsules each. FarReachCm is how far the gun's far surface is from the hand point across the gun (its half-width
-	 * when the hand is on the gun's centre line); each digit curls so its tip ends 0.8 cm beyond it, or as far as it can reach on a wide gun.
+	 * when the hand is on the gun's center line); each digit curls so its tip ends 0.8 cm beyond it, or as far as it can reach on a wide gun.
 	 * bWarning marks every capsule (red). Part names: Palm_n, Finger_n_A/B (n 0 is the index), Thumb_A/B.
 	 */
 	MANTLEEDITOR_API TArray<FMantleGhostCapsule> MakeHandCapsules(const FVector& HandPoint, EHandStyle Style, double FarReachCm, bool bWarning);
@@ -102,7 +102,7 @@ public:
 	/** The creator's Flip and Turn corrections: a turn about the grip in the weapon frame, applied after the fit. Points stay in the mesh's own space. */
 	void SetFlipRotation(const FQuat& InFlip) { Flip = InFlip; }
 
-	/** The creator's own size (centimetres per mesh unit) in place of the fit's guess; 0 or less goes back to the guess. */
+	/** The creator's own size (centimeters per mesh unit) in place of the fit's guess; 0 or less goes back to the guess. */
 	void SetScaleOverride(float InScale) { ScaleOverride = InScale; }
 
 	/** The fit from the last GuessPoints, for the panel to show the scale, why, the suggestion and the notes. */
@@ -144,7 +144,7 @@ private:
 	/** The eye's place in the weapon frame when aiming, or unset without a Sight point. */
 	TOptional<FVector> AimEye(const TArray<FMantleBuilderPoint>& Points) const;
 	/** The middle of the gun's height at its back end (weapon frame), from the cached surface samples; unset before any. */
-	TOptional<double> ButtCentreZ(double RearXCm) const;
+	TOptional<double> ButtCenterZ(double RearXCm) const;
 
 	EMantleWeaponFitHold Hold;
 	// Proportion since #729: on the seven held-out pack guns its median grip error is 9.3 cm against 17.6 cm for Protrusion

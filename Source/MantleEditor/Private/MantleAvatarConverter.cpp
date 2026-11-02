@@ -1254,7 +1254,7 @@ FString FMantleAvatarConverter::RunForAgent(const FString& Path, const FString& 
 	Options.Slot = Slot.TrimStartAndEnd();
 
 	// Chunk 8, agent = panel: the Avatar door's choices, made as the panel makes them (FMantleConvertSection). The route:
-	// Convert unless As is is asked for, offered (MakeContext refuses it while As-is uploads are off) and not greyed.
+	// Convert unless As is is asked for, offered (MakeContext refuses it while As-is uploads are off) and not grayed.
 	const FString RouteName = Route.TrimStartAndEnd();
 	EMantleAvatarRoute Picked = EMantleAvatarRoute::Convert;
 	if (RouteName.Equals(TEXT("asis"), ESearchCase::IgnoreCase) || RouteName.Equals(TEXT("as_is"), ESearchCase::IgnoreCase)
@@ -1271,11 +1271,11 @@ FString FMantleAvatarConverter::RunForAgent(const FString& Path, const FString& 
 	FMantleAvatarSight Sight = FMantleConvertSection::SeeKind(Asset);
 	if (Picked == EMantleAvatarRoute::AsIs)
 	{
-		const FString Greyed = FMantleConvertSection::AsIsGreyedWhy(Sight);
-		if (!Greyed.IsEmpty())
+		const FString Grayed = FMantleConvertSection::AsIsGrayedWhy(Sight);
+		if (!Grayed.IsEmpty())
 		{
-			return ConverterRefusal(TEXT("as_is_greyed"), FString::Printf(
-				TEXT("As is is greyed for %s: %s. Convert it instead (Route \"convert\")."), *Sight.Name, *Greyed));
+			return ConverterRefusal(TEXT("as_is_grayed"), FString::Printf(
+				TEXT("As is is grayed for %s: %s. Convert it instead (Route \"convert\")."), *Sight.Name, *Grayed));
 		}
 	}
 	Options.Route = FMantleConvertSection::DoorRoute(Picked, Sight);

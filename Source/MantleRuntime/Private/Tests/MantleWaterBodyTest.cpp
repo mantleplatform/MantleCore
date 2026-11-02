@@ -124,7 +124,7 @@ bool FMantleWaterBodyParseTest::RunTest(const FString& Parameters)
 		const FMantleWaterBodyProps* Props = WaterOf(Ocean);
 		TestTrue(TEXT("collision extent"), Props->CollisionExtent.IsSet() && Props->CollisionExtent->Equals(FVector(200000.0, 200000.0, 10000.0)));
 		TestTrue(TEXT("ocean extent"), Props->OceanExtent.IsSet() && Props->OceanExtent->X == 409600.0);
-		TestTrue(TEXT("centred on the zone"), Props->CenterOnZone.IsSet() && Props->CenterOnZone.GetValue());
+		TestTrue(TEXT("centered on the zone"), Props->CenterOnZone.IsSet() && Props->CenterOnZone.GetValue());
 		TestEqual(TEXT("two waves"), Props->Waves.Num(), 2);
 		TestEqual(TEXT("phase offset"), Props->Waves[1].PhaseOffset, 2.5);
 		TestEqual(TEXT("phase offset defaults to 0"), Props->Waves[0].PhaseOffset, 0.0);
@@ -201,7 +201,7 @@ bool FMantleWaterBodyRefusalsTest::RunTest(const FString& Parameters)
 		{ TEXT("an empty wave list"), TEXT("\"bodyType\":\"lake\",") + Spline(4) + TEXT(",\"waves\":{\"list\":[]}"), TEXT("/entities/0/properties/waves/list") },
 		{ TEXT("an ocean extent past the limit"),
 			TEXT("\"bodyType\":\"ocean\",") + Spline(4) + TEXT(",\"oceanExtent\":[409601,1000]"), TEXT("/entities/0/properties/oceanExtent/0") },
-		{ TEXT("a look colour past 1"), TEXT("\"bodyType\":\"lake\",") + Spline(4) + TEXT(",\"look\":{\"albedo\":[0,2,0]}"),
+		{ TEXT("a look color past 1"), TEXT("\"bodyType\":\"lake\",") + Spline(4) + TEXT(",\"look\":{\"albedo\":[0,2,0]}"),
 			TEXT("/entities/0/properties/look/albedo/1") },
 		{ TEXT("a collision that is not a boolean"), TEXT("\"bodyType\":\"lake\",") + Spline(4) + TEXT(",\"collision\":\"yes\""),
 			TEXT("/entities/0/properties/collision") },

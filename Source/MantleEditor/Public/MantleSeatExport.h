@@ -18,7 +18,7 @@ struct FMantleValidationResult;
 class MANTLEEDITOR_API FMantleSeatExport
 {
 public:
-	/** Lowest and highest a hip may be above the floor under it, in centimetres: a low ledge to a tall stool. */
+	/** Lowest and highest a hip may be above the floor under it, in centimeters: a low ledge to a tall stool. */
 	static constexpr double MinHipHeight = 15.0;
 	static constexpr double MaxHipHeight = 110.0;
 

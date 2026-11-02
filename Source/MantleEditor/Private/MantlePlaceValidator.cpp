@@ -139,7 +139,7 @@ namespace
 	 */
 	bool IsContentKind(const UActorComponent* Component)
 	{
-		if (FMantleActorDecompose::IsVisualisation(Component))
+		if (FMantleActorDecompose::IsVisualization(Component))
 		{
 			return false;
 		}
@@ -321,7 +321,7 @@ namespace
 	 * errors: the rest of the actor still publishes. One per actor for the logic, and one per
 	 * actor listing every dropped component.
 	 */
-	void CheckDroppedBehaviourForCheck(const AActor* Actor, FMantleValidationResult& Result)
+	void CheckDroppedBehaviorForCheck(const AActor* Actor, FMantleValidationResult& Result)
 	{
 		// The actor's own Blueprint and every Blueprint parent: a parent's graphs run too.
 		TArray<FString> LogicWhere;
@@ -331,7 +331,7 @@ namespace
 				EMantleIssueSeverity::Warning,
 				LabelOf(Actor),
 				FString::Printf(
-					TEXT("has Blueprint logic (%s). Blueprint logic isn't published: the place gets this actor's components, not its behaviour."),
+					TEXT("has Blueprint logic (%s). Blueprint logic isn't published: the place gets this actor's components, not its behavior."),
 					*FString::Join(LogicWhere, TEXT(", "))),
 				TEXT("Do this through a place script (a .luau, .js, .ts or .py file under the level's Scripts/Server or Scripts/Client folder).") });
 		}
@@ -361,7 +361,7 @@ namespace
 			if (!Component
 				|| (bPrefab && Audio && Audio->Sound.Get())
 				|| (Component == Root && !bPrefab)
-				|| FMantleActorDecompose::IsVisualisation(Component)
+				|| FMantleActorDecompose::IsVisualization(Component)
 				|| IsContentKind(Component)
 				|| Component->GetClass() == USceneComponent::StaticClass()
 				|| Component->HasAnyFlags(RF_Transient)
@@ -1227,7 +1227,7 @@ namespace
 					Label,
 					FString::Printf(TEXT("has a scale of %s and a mirrored copy of its mesh could not be made (%s), so it is left out of the place."),
 						*DescribeVector(PublishedScale), *Mirror.Why),
-					TEXT("Use a mesh mirrored in your modelling tool, or a positive scale.") });
+					TEXT("Use a mesh mirrored in your modeling tool, or a positive scale.") });
 				return;
 			}
 			if (Mirror.bNeeded)
@@ -1480,11 +1480,11 @@ namespace
 		for (const FMantleScriptCatalogEntry& Entry : Entries)
 		{
 			const FMantleScriptApiNeed Need = FMantleScriptApiUsage::ForSource(Entry.Source, Entry.Language);
-			if (!Need.bAnalysed)
+			if (!Need.bAnalyzed)
 			{
 				FMantleValidationIssue& Note = Result.Issues.AddDefaulted_GetRef();
 				Note.Severity = EMantleIssueSeverity::Warning;
-				FMantleScriptApiUsage::DescribeUnanalysable(Entry.Path, Need, Note.Problem, Note.Remedy);
+				FMantleScriptApiUsage::DescribeUnanalyzable(Entry.Path, Need, Note.Problem, Note.Remedy);
 			}
 		}
 
@@ -1949,7 +1949,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 						: bAttached ? TEXT("This light is attached to another actor, so its pitch is not kept.")
 						: !bSolved ? TEXT("This sun is at or below the horizon, so its pitch is not kept.")
 						: FString::Printf(TEXT("This light's pitch is not kept: %s."), FMantleTargetFeatures::NeedsNewerClient),
-					TEXT("Its intensity, colour and heading (yaw) are kept; Mantle's sky clock sets its angle. "
+					TEXT("Its intensity, color and heading (yaw) are kept; Mantle's sky clock sets its angle. "
 						"To keep the pitch, leave Clock Time and Time Scale unset, keep the light unattached and at least 1 degree above the horizon, "
 						"and target a Mantle client that reads environment settings.") });
 			}
@@ -2017,7 +2017,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 		}
 		CheckPublishedSizeLimits(Actor, Type, Result);
 		CheckPublishedRanges(Actor, Type, Result);
-		CheckDroppedBehaviourForCheck(Actor, Result);
+		CheckDroppedBehaviorForCheck(Actor, Result);
 		PhysicsObjects += CheckPhysicsForCheck(Actor, Type, Result) ? 1 : 0;
 	}
 

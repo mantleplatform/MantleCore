@@ -187,9 +187,9 @@ namespace MantleLandscapeMaterialReaderPrivate
 	struct FLmCollected
 	{
 		TArray<FLmHit> Hits;
-		bool bHasColour = false;
-		double ColourWeight = -1.0;
-		FLinearColor Colour = FLinearColor::Black;
+		bool bHasColor = false;
+		double ColorWeight = -1.0;
+		FLinearColor Color = FLinearColor::Black;
 		int32 NextOrder = 0;
 	};
 
@@ -549,8 +549,8 @@ namespace MantleLandscapeMaterialReaderPrivate
 			return ScalarValue(Resolve(Input, Frame), Out, Depth + 1);
 		}
 
-		/** A colour constant or parameter (for a layer's flat colour). */
-		bool ColourValue(const FLmRef& Node, FLinearColor& Out) const
+		/** A color constant or parameter (for a layer's flat color). */
+		bool ColorValue(const FLmRef& Node, FLinearColor& Out) const
 		{
 			const UMaterialExpression* Expression = Node.Expression;
 			if (const UMaterialExpressionConstant3Vector* Vector3 = Cast<UMaterialExpressionConstant3Vector>(Expression))
@@ -834,7 +834,7 @@ namespace MantleLandscapeMaterialReaderPrivate
 		 * product of the normal with the up vector), with NormalZ as that Z: Add, Subtract, Multiply, Divide, Power, Clamp,
 		 * Saturate, One Minus and Abs over constants and parameters (as the instance sets them), through material
 		 * functions. A subgraph that does not read the normal and is not a constant or parameter (the layer's own
-		 * colour, used as a height by a height-blended overlay) is taken as Height; bUsedHeight says one was. False for
+		 * color, used as a height by a height-blended overlay) is taken as Height; bUsedHeight says one was. False for
 		 * anything else that reads the normal: it is not a slope mask this can evaluate.
 		 */
 		bool EvalSlope(const FLmRef& Node, const double NormalZ, const double Height, double& Out, bool& bUsedHeight, const int32 Depth = 0)
@@ -1174,9 +1174,9 @@ namespace MantleLandscapeMaterialReaderPrivate
 		// ---- Reading a layer's look ----------------------------------------------------------------------
 
 		/**
-		 * The texture samples (and flat colours) under Node, each with the share of the layer it makes up: a Lerp
-		 * with a constant alpha splits by it; one by the camera distance favours its A (the near tiling); one by
-		 * the surface normal or height favours A (the flat ground); any other splits evenly. The heaviest, then the
+		 * The texture samples (and flat colors) under Node, each with the share of the layer it makes up: a Lerp
+		 * with a constant alpha splits by it; one by the camera distance favors its A (the near tiling); one by
+		 * the surface normal or height favors A (the flat ground); any other splits evenly. The heaviest, then the
 		 * finest tiled, is what the layer looks like.
 		 */
 		void Collect(const FLmRef& Node, const ELmProp Prop, const double Weight, FLmCollected& Out, FLmVisit& Visit)
@@ -1208,14 +1208,14 @@ namespace MantleLandscapeMaterialReaderPrivate
 			{
 				return; // a texture object a function passes on, or a texture that is not 2D
 			}
-			FLinearColor Colour;
-			if (Prop == ELmProp::BaseColor && ColourValue(Node, Colour))
+			FLinearColor Color;
+			if (Prop == ELmProp::BaseColor && ColorValue(Node, Color))
 			{
-				if (Weight > Out.ColourWeight)
+				if (Weight > Out.ColorWeight)
 				{
-					Out.bHasColour = true;
-					Out.ColourWeight = Weight;
-					Out.Colour = Colour;
+					Out.bHasColor = true;
+					Out.ColorWeight = Weight;
+					Out.Color = Color;
 				}
 				return;
 			}
@@ -1408,7 +1408,7 @@ namespace MantleLandscapeMaterialReaderPrivate
 			return bSrgb ? FLinearColor::FromSRGBColor(Pixel) : FLinearColor(Pixel.R / 255.0f, Pixel.G / 255.0f, Pixel.B / 255.0f, Pixel.A / 255.0f);
 		}
 
-		/** The bilinear sample at (U, V), with texel centres at (i + 0.5) / size and V counted down from the top row, as a texture sample reads it. */
+		/** The bilinear sample at (U, V), with texel centers at (i + 0.5) / size and V counted down from the top row, as a texture sample reads it. */
 		void Sample(const double U, const double V, double* OutRgba) const
 		{
 			const double X = U * SizeX - 0.5;
@@ -2125,7 +2125,7 @@ namespace MantleLandscapeMaterialReaderPrivate
 				{
 					return Sampled;
 				}
-				if (!FMantleLandscapeMaterialReader::AverageColour(Texture, Average))
+				if (!FMantleLandscapeMaterialReader::AverageColor(Texture, Average))
 				{
 					return Fail(FString::Printf(TEXT("samples the texture '%s' in one of its masks, which has no source pixels to take an average of"), *Texture->GetName()));
 				}
@@ -2384,7 +2384,7 @@ namespace MantleLandscapeMaterialReaderPrivate
 		TArray<FLmRef> Covered;
 	};
 
-	/** Finds the chain of blends by the normal and the world position under a material's base colour: Lerps whose alpha an FLmProgramBuilder can compile. */
+	/** Finds the chain of blends by the normal and the world position under a material's base color: Lerps whose alpha an FLmProgramBuilder can compile. */
 	class FLmAutoChainFinder
 	{
 	public:
@@ -2586,7 +2586,7 @@ namespace MantleLandscapeMaterialReaderPrivate
 				{
 					if (Why.IsEmpty())
 					{
-						Why = TEXT("changes the colour by the slope or height after the layers in a way that is not a blend Mantle can read");
+						Why = TEXT("changes the color by the slope or height after the layers in a way that is not a blend Mantle can read");
 					}
 					return nullptr;
 				}
@@ -2604,15 +2604,15 @@ namespace MantleLandscapeMaterialReaderPrivate
 					Names.AddUnique(Hit.Name);
 				}
 				Chain->Notes.AddUnique(Names.Num() > 0
-					? FString::Printf(TEXT("it also changes the ground's colour after the layers with %s (a tint or variation), which is not kept."), *JoinNames(Names))
-					: FString(TEXT("it also changes the ground's colour after the layers (a tint or blend), which is not kept.")));
+					? FString::Printf(TEXT("it also changes the ground's color after the layers with %s (a tint or variation), which is not kept."), *JoinNames(Names))
+					: FString(TEXT("it also changes the ground's color after the layers (a tint or blend), which is not kept.")));
 			}
 			return Chain;
 		}
 	};
 
 	/** What a name from the graph is as a layer's name: the trailing "BaseColor" or "Color" taken off, and what that leaves of "_" and spaces. */
-	FString StripColourWord(FString Name)
+	FString StripColorWord(FString Name)
 	{
 		for (const TCHAR* Suffix : { TEXT("BaseColor"), TEXT("Base Color"), TEXT("Colour"), TEXT("Color") })
 		{
@@ -2629,7 +2629,7 @@ namespace MantleLandscapeMaterialReaderPrivate
 		return Name;
 	}
 
-	/** What a parameter or texture's name is as a layer's name: a short leading token ("MW_", "T_", "TEX_") taken off, then StripColourWord. */
+	/** What a parameter or texture's name is as a layer's name: a short leading token ("MW_", "T_", "TEX_") taken off, then StripColorWord. */
 	FString LayerNameOfParameter(const FString& Name)
 	{
 		FString Stripped = Name;
@@ -2646,8 +2646,8 @@ namespace MantleLandscapeMaterialReaderPrivate
 				Stripped.RightChopInline(Underscore + 1);
 			}
 		}
-		const FString Result = StripColourWord(Stripped);
-		return Result.IsEmpty() ? StripColourWord(Name) : Result;
+		const FString Result = StripColorWord(Stripped);
+		return Result.IsEmpty() ? StripColorWord(Name) : Result;
 	}
 
 	/**
@@ -2658,7 +2658,7 @@ namespace MantleLandscapeMaterialReaderPrivate
 	{
 		if (!InputName.IsNone())
 		{
-			const FString Name = StripColourWord(InputName.ToString());
+			const FString Name = StripColorWord(InputName.ToString());
 			if (!Name.IsEmpty())
 			{
 				return Name;
@@ -2718,7 +2718,7 @@ namespace MantleLandscapeMaterialReaderPrivate
 			{
 				if (Level < 2 && Near.IsEmpty() && !Names[Index].IsNone())
 				{
-					Near = StripColourWord(Names[Index].ToString());
+					Near = StripColorWord(Names[Index].ToString());
 				}
 				Queue.Emplace(Next[Index], Level + 1);
 			}
@@ -2726,7 +2726,7 @@ namespace MantleLandscapeMaterialReaderPrivate
 		return !Near.IsEmpty() ? Near : !Parameter.IsEmpty() ? Parameter : TextureName;
 	}
 
-	/** Whether the graph under Node adds a Fresnel term to a colour. Texture samples are not entered. */
+	/** Whether the graph under Node adds a Fresnel term to a color. Texture samples are not entered. */
 	bool ReadsFresnel(FLmGraphReader& Reader, const FLmRef& Node, FLmVisit& Visit)
 	{
 		if (!Visit.Enter(Node))
@@ -2878,47 +2878,47 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 	Out.MaterialName = LandscapeMaterial->GetName();
 
 	UMaterial* MutableBase = const_cast<UMaterial*>(Base);
-	const FExpressionInput* ColourRoot = MutableBase->GetExpressionInputForProperty(Base->bUseMaterialAttributes ? MP_MaterialAttributes : MP_BaseColor);
+	const FExpressionInput* ColorRoot = MutableBase->GetExpressionInputForProperty(Base->bUseMaterialAttributes ? MP_MaterialAttributes : MP_BaseColor);
 	const FExpressionInput* NormalRoot = MutableBase->GetExpressionInputForProperty(Base->bUseMaterialAttributes ? MP_MaterialAttributes : MP_Normal);
 	const FExpressionInput* RoughnessRoot = MutableBase->GetExpressionInputForProperty(Base->bUseMaterialAttributes ? MP_MaterialAttributes : MP_Roughness);
 
 	FLmGraphReader Reader(LandscapeMaterial, SpacingCm > 0.0 ? SpacingCm : 100.0);
 
-	FLmLayerSet Colour;
+	FLmLayerSet Color;
 	FLmLayerSet Normal;
 	FLmFlags Flags;
-	FLmFlags NormalFlags; // what only the Normal output reads: its own line when the colour reads none of it
+	FLmFlags NormalFlags; // what only the Normal output reads: its own line when the color reads none of it
 	FLmAutoChain AutoChain;
 	TArray<FLmLayerSource> AutoNormals; // the normal look of each layer of the chain, in its order, unset where the Normal chain has none to match
 	TSharedPtr<FMantleSurfaceProgram> AutoProgram;
 	TArray<FString> AutoNotes;
 	FString AutoWhy;
-	if (ColourRoot && ColourRoot->Expression)
+	if (ColorRoot && ColorRoot->Expression)
 	{
-		const FLmRef Root = Reader.Resolve(*ColourRoot, nullptr);
+		const FLmRef Root = Reader.Resolve(*ColorRoot, nullptr);
 		FLmVisit Visit;
-		Reader.FindLayers(Root, ELmProp::BaseColor, Colour, Visit);
+		Reader.FindLayers(Root, ELmProp::BaseColor, Color, Visit);
 
 		// With no paint layer, the material may pick its ground from slope and height rules; each look of the chain becomes a layer of its own.
-		if (Colour.Sources.Num() == 0 && !Colour.Slope.bFound)
+		if (Color.Sources.Num() == 0 && !Color.Slope.bFound)
 		{
 			AutoProgram = BuildAutoChain(Reader, Root, AutoChain, AutoNotes, AutoWhy);
 			if (AutoProgram.IsValid())
 			{
 				TSet<FName> Used;
-				auto AddLayer = [&Reader, &Colour, &Used](const FLmRef& Look, const FName InputName)
+				auto AddLayer = [&Reader, &Color, &Used](const FLmRef& Look, const FName InputName)
 				{
 					FString Wanted = FindLookName(Reader, Look, InputName);
 					if (Wanted.IsEmpty())
 					{
-						Wanted = FString::Printf(TEXT("Auto %d"), Colour.Sources.Num() + 1);
+						Wanted = FString::Printf(TEXT("Auto %d"), Color.Sources.Num() + 1);
 					}
 					FString Candidate = Wanted;
 					for (int32 Suffix = 2; Used.Contains(FName(*Candidate)); ++Suffix)
 					{
 						Candidate = FString::Printf(TEXT("%s %d"), *Wanted, Suffix);
 					}
-					FLmLayerSource& Source = Colour.Sources.AddDefaulted_GetRef();
+					FLmLayerSource& Source = Color.Sources.AddDefaulted_GetRef();
 					Source.Layer = FName(*Candidate);
 					Source.Look = Look;
 					Used.Add(Source.Layer);
@@ -2944,12 +2944,12 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 				}
 				FLmLayerSet Outside;
 				Reader.FindLayers(Root, ELmProp::BaseColor, Outside, OutsideVisit);
-				Colour.GlobalSampleNames = Outside.GlobalSampleNames;
+				Color.GlobalSampleNames = Outside.GlobalSampleNames;
 			}
 		}
 
 		FLmVisit FlagVisit;
-		FlagVisit.Enter(Colour.Slope.Alpha); // the slope overlay is baked, not something the material does that is lost
+		FlagVisit.Enter(Color.Slope.Alpha); // the slope overlay is baked, not something the material does that is lost
 		for (const FLmAutoStep& Step : AutoChain.Steps)
 		{
 			FlagVisit.Enter(Step.Alpha); // and so are the chain's masks
@@ -2974,13 +2974,13 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 			{
 				return A.Expression == B.Expression && A.Output == B.Output && A.Frame == B.Frame;
 			};
-			// A mask function often gives the normal its own output (a softer mask beside the colour's): the same call of
+			// A mask function often gives the normal its own output (a softer mask beside the color's): the same call of
 			// the same function, so the same frame, is the same layer's mask too. Tried only after the exact matches.
 			auto SameMaskCall = [](const FLmRef& A, const FLmRef& B)
 			{
 				return A.Frame != nullptr && A.Frame == B.Frame;
 			};
-			AutoNormals.SetNum(Colour.Sources.Num());
+			AutoNormals.SetNum(Color.Sources.Num());
 			TArray<bool> Taken;
 			Taken.Init(false, AutoChain.Steps.Num());
 			TArray<bool> NormalTaken;
@@ -3014,7 +3014,7 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 				}
 			}
 
-			// The masks of the normal's blends are baked as the colour's are; anything else the Normal output reads from the slope or height is still said.
+			// The masks of the normal's blends are baked as the color's are; anything else the Normal output reads from the slope or height is still said.
 			for (const FLmAutoStep& Step : NormalChain.Steps)
 			{
 				FlagVisit.Enter(Step.Alpha);
@@ -3025,35 +3025,35 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 	// Only the height is told apart by output; the slope and the camera distance are one line however they are reached.
 	Flags.bSlope = Flags.bSlope || NormalFlags.bSlope;
 	Flags.bDistance = Flags.bDistance || NormalFlags.bDistance;
-	if (Colour.Sources.Num() == 0)
+	if (Color.Sources.Num() == 0)
 	{
 		OutProblem = FString::Printf(TEXT("Its landscape material '%s' has no Landscape Layer Blend (or Layer Weight or Layer Sample) feeding its Base Color, so it does not say what the paint layers look like."),
 			*Out.MaterialName);
 		if (!AutoWhy.IsEmpty())
 		{
-			OutProblem += FString::Printf(TEXT(" It does blend its colour by the slope or height of the ground, but it %s, so that is not baked either."), *AutoWhy);
+			OutProblem += FString::Printf(TEXT(" It does blend its color by the slope or height of the ground, but it %s, so that is not baked either."), *AutoWhy);
 		}
 		return false;
 	}
 
-	// A layer's look: the texture or colour its input is, and the normal map the Normal output blends for the same layer.
+	// A layer's look: the texture or color its input is, and the normal map the Normal output blends for the same layer.
 	auto ReadLook = [&Reader](FMantleLandscapeLayerLook& Look, const FLmLayerSource& Source, const FLmLayerSource* NormalSource)
 	{
 		Look.Layer = Source.Layer;
 
-		FLmCollected Colours;
+		FLmCollected Colors;
 		if (Source.Look.IsSet())
 		{
 			FLmVisit Visit;
-			Reader.Collect(Source.Look, ELmProp::BaseColor, 1.0, Colours, Visit);
+			Reader.Collect(Source.Look, ELmProp::BaseColor, 1.0, Colors, Visit);
 		}
-		const FLmHit* Best = PickBest(Colours.Hits);
+		const FLmHit* Best = PickBest(Colors.Hits);
 		if (Best)
 		{
 			Look.BaseColor = Best->Texture;
 			Look.BaseColorTilingCm = Best->TileCm;
 			bool bMacro = false;
-			const TArray<FString> Others = OtherTextures(Colours.Hits, Best, bMacro);
+			const TArray<FString> Others = OtherTextures(Colors.Hits, Best, bMacro);
 			if (Others.Num() > 0)
 			{
 				Look.Approximations.Add(FString::Printf(TEXT("it also blends %d other texture%s (%s)%s, which %s kept: only '%s' is."),
@@ -3066,23 +3066,23 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 				Look.Approximations.Add(FString::Printf(TEXT("its texture '%s' is tiled in a way the graph does not say, so it repeats every 400 cm."), *Best->Name));
 			}
 			FLinearColor Average;
-			if (AverageColour(Best->Texture, Average))
+			if (AverageColor(Best->Texture, Average))
 			{
 				Look.bHasAverage = true;
 				Look.Average = Average;
 			}
 		}
-		else if (Colours.bHasColour)
+		else if (Colors.bHasColor)
 		{
-			Look.bHasFlatColour = true;
-			Look.FlatColour = Colours.Colour;
+			Look.bHasFlatColor = true;
+			Look.FlatColor = Colors.Color;
 			Look.bHasAverage = true;
-			Look.Average = Colours.Colour;
+			Look.Average = Colors.Color;
 		}
 		else if (Source.bConstant)
 		{
-			Look.bHasFlatColour = true;
-			Look.FlatColour = Source.Constant;
+			Look.bHasFlatColor = true;
+			Look.FlatColor = Source.Constant;
 			Look.bHasAverage = true;
 			Look.Average = Source.Constant;
 		}
@@ -3104,14 +3104,14 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 					Look.NormalTilingCm = BestNormal->TileCm;
 					if (Look.BaseColorTilingCm > 0.0 && BestNormal->TileCm > 0.0 && !FMath::IsNearlyEqual(Look.BaseColorTilingCm, BestNormal->TileCm, Look.BaseColorTilingCm * 0.15))
 					{
-						Look.Approximations.Add(FString::Printf(TEXT("its normal map repeats every %.0f cm but its colour every %.0f cm; Mantle repeats both the same, every %.0f cm."),
+						Look.Approximations.Add(FString::Printf(TEXT("its normal map repeats every %.0f cm but its color every %.0f cm; Mantle repeats both the same, every %.0f cm."),
 							BestNormal->TileCm, Look.BaseColorTilingCm, Look.BaseColorTilingCm));
 					}
 				}
 			}
 		}
 	};
-	for (const FLmLayerSource& Source : Colour.Sources)
+	for (const FLmLayerSource& Source : Color.Sources)
 	{
 		const int32 Index = Out.Layers.Num();
 		const FLmLayerSource* NormalSource = Normal.Find(Source.Layer);
@@ -3133,9 +3133,9 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 			Out.AutoChain.LayerNames.Add(Look.Layer);
 			Look.Approximations.Insert(FMantleLandscapeAutoChain::BakedNote(), 0);
 			FLmVisit FresnelVisit;
-			if (Colour.Sources[Index].Look.IsSet() && ReadsFresnel(Reader, Colour.Sources[Index].Look, FresnelVisit))
+			if (Color.Sources[Index].Look.IsSet() && ReadsFresnel(Reader, Color.Sources[Index].Look, FresnelVisit))
 			{
-				Look.Approximations.Add(TEXT("its colour also adds a Fresnel (rim) term, which is not kept."));
+				Look.Approximations.Add(TEXT("its color also adds a Fresnel (rim) term, which is not kept."));
 			}
 		}
 	}
@@ -3169,18 +3169,18 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 
 	// The slope overlay: its look read like a layer's, and its weight tabulated by the normal's Z for the exporter to bake from the heightfield.
 	bool bSlopeBaked = false;
-	if (Colour.Slope.bFound)
+	if (Color.Slope.bFound)
 	{
 		FLmLayerSource OverlaySource;
-		OverlaySource.Layer = Colour.Find(TEXT("Slope")) ? FName(TEXT("Slope overlay")) : FName(TEXT("Slope"));
-		OverlaySource.Look = Colour.Slope.Look;
+		OverlaySource.Layer = Color.Find(TEXT("Slope")) ? FName(TEXT("Slope overlay")) : FName(TEXT("Slope"));
+		OverlaySource.Look = Color.Slope.Look;
 		FLmLayerSource OverlayNormal;
 		OverlayNormal.Layer = OverlaySource.Layer;
 		OverlayNormal.Look = Normal.Slope.Look;
 		FMantleLandscapeLayerLook OverlayLook;
 		ReadLook(OverlayLook, OverlaySource, Normal.Slope.bFound ? &OverlayNormal : nullptr);
 
-		// The alpha that blends the painted layers over it, as the heights of the overlay's own colour (its average) would give it.
+		// The alpha that blends the painted layers over it, as the heights of the overlay's own color (its average) would give it.
 		const double Height = OverlayLook.bHasAverage ? OverlayLook.Average.R : 0.5;
 		FMantleLandscapeSlopeOverlay& Overlay = Out.SlopeOverlay;
 		Overlay.Layer = OverlaySource.Layer;
@@ -3191,13 +3191,13 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 		for (int32 Step = 0; Step < FMantleLandscapeSlopeOverlay::LutSize; ++Step)
 		{
 			double Alpha = 0.0;
-			if (!Reader.EvalSlope(Colour.Slope.Alpha, static_cast<double>(Step) / (FMantleLandscapeSlopeOverlay::LutSize - 1), Height, Alpha, bUsedHeight) || !FMath::IsFinite(Alpha))
+			if (!Reader.EvalSlope(Color.Slope.Alpha, static_cast<double>(Step) / (FMantleLandscapeSlopeOverlay::LutSize - 1), Height, Alpha, bUsedHeight) || !FMath::IsFinite(Alpha))
 			{
 				bAllEvaluated = false;
 				break;
 			}
 			Alpha = FMath::Clamp(Alpha, 0.0, 1.0);
-			const float Weight = static_cast<float>(Colour.Slope.bOverlayIsA ? 1.0 - Alpha : Alpha);
+			const float Weight = static_cast<float>(Color.Slope.bOverlayIsA ? 1.0 - Alpha : Alpha);
 			Overlay.WeightByNormalZ[Step] = Weight;
 			MostWeight = FMath::Max(MostWeight, Weight);
 		}
@@ -3209,7 +3209,7 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 			OverlayLook.Approximations.Insert(FMantleLandscapeSlopeOverlay::BakedNote(), 0);
 			if (bUsedHeight)
 			{
-				OverlayLook.Approximations.Add(FString::Printf(TEXT("its blend also reads the overlay colour's own brightness as a height, which is taken as the texture's average (%.2f)."), Height));
+				OverlayLook.Approximations.Add(FString::Printf(TEXT("its blend also reads the overlay color's own brightness as a height, which is taken as the texture's average (%.2f)."), Height));
 			}
 			Out.Layers.Add(MoveTemp(OverlayLook));
 		}
@@ -3230,11 +3230,11 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 	{
 		Said.Add(TEXT("it changes the ground by the slope of the surface (it reads the surface normal), which Mantle's flat tiled layers cannot do; the overlay is not kept."));
 	}
-	if (Colour.Slope.bFound && !bSlopeBaked)
+	if (Color.Slope.bFound && !bSlopeBaked)
 	{
 		Said.Add(TEXT("its slope overlay never shows, so no layer is baked for it."));
 	}
-	if (Flags.bHeight || Colour.bHeightBlend || Normal.bHeightBlend)
+	if (Flags.bHeight || Color.bHeightBlend || Normal.bHeightBlend)
 	{
 		Said.Add(TEXT("it changes or blends the ground by height (a height mask or a height-blended layer); Mantle blends the layers by their painted weights alone."));
 	}
@@ -3246,11 +3246,11 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 	{
 		Said.Add(TEXT("it changes texture tiling or detail with the camera distance (near and far textures); Mantle keeps one tiling a layer, the near one."));
 	}
-	if (Colour.GlobalSampleNames.Num() > 0)
+	if (Color.GlobalSampleNames.Num() > 0)
 	{
 		Said.Add(FString::Printf(TEXT("it applies %d texture%s to the ground outside the paint layers (%s), such as a macro variation, an overlay or an unmasked base layer; %s not kept."),
-			Colour.GlobalSampleNames.Num(), Colour.GlobalSampleNames.Num() == 1 ? TEXT("") : TEXT("s"), *JoinNames(Colour.GlobalSampleNames),
-			Colour.GlobalSampleNames.Num() == 1 ? TEXT("it is") : TEXT("they are")));
+			Color.GlobalSampleNames.Num(), Color.GlobalSampleNames.Num() == 1 ? TEXT("") : TEXT("s"), *JoinNames(Color.GlobalSampleNames),
+			Color.GlobalSampleNames.Num() == 1 ? TEXT("it is") : TEXT("they are")));
 	}
 	bool bWorldMapping = false;
 	bool bSlopeNamed = false;
@@ -3259,7 +3259,7 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 		bWorldMapping = bWorldMapping || NameHasAny(Name, { TEXT("WorldAligned"), TEXT("Triplanar"), TEXT("WorldCoordinate3Way") });
 		bSlopeNamed = bSlopeNamed || NameHasAny(Name, { TEXT("Slope"), TEXT("Cliff") });
 	}
-	if (bSlopeNamed && !Flags.bSlope && !Colour.Slope.bFound && !AutoProgram.IsValid())
+	if (bSlopeNamed && !Flags.bSlope && !Color.Slope.bFound && !AutoProgram.IsValid())
 	{
 		Said.Add(TEXT("it calls a slope function, which changes the ground by the slope of the surface; Mantle's flat tiled layers cannot do that, so it is not kept."));
 	}
@@ -3278,7 +3278,7 @@ FString FMantleLandscapeMaterialReader::LayerMaterialName(const FMantleLandscape
 {
 	using namespace MantleLandscapeMaterialReaderPrivate;
 	FString Seed = FString::Printf(TEXT("%s|%s|%s|%d|%f,%f,%f"), *Look.Layer.ToString(), Look.BaseColor ? *Look.BaseColor->GetPathName() : TEXT(""),
-		Look.Normal ? *Look.Normal->GetPathName() : TEXT(""), Look.bHasFlatColour ? 1 : 0, Look.FlatColour.R, Look.FlatColour.G, Look.FlatColour.B);
+		Look.Normal ? *Look.Normal->GetPathName() : TEXT(""), Look.bHasFlatColor ? 1 : 0, Look.FlatColor.R, Look.FlatColor.G, Look.FlatColor.B);
 	if (Look.bHasRoughness)
 	{
 		// Only a stated roughness is part of the name, so every look without one keeps the name it always had.
@@ -3366,11 +3366,11 @@ UMaterialInterface* FMantleLandscapeMaterialReader::MakeLayerMaterial(const FMan
 	}
 	else
 	{
-		// A flat colour, or mid grey where the look could not be read.
-		const FLinearColor Colour = Look.bHasFlatColour ? Look.FlatColour : FLinearColor(0.18f, 0.18f, 0.18f, 1.0f);
+		// A flat color, or mid gray where the look could not be read.
+		const FLinearColor Color = Look.bHasFlatColor ? Look.FlatColor : FLinearColor(0.18f, 0.18f, 0.18f, 1.0f);
 		UMaterialExpressionConstant3Vector* Constant = NewObject<UMaterialExpressionConstant3Vector>(Material);
 		Constant->Material = Material;
-		Constant->Constant = Colour;
+		Constant->Constant = Color;
 		Material->GetExpressionCollection().AddExpression(Constant);
 		Graph->BaseColor.Connect(0, Constant);
 	}
@@ -3388,7 +3388,7 @@ UMaterialInterface* FMantleLandscapeMaterialReader::MakeLayerMaterial(const FMan
 	return Material;
 }
 
-bool FMantleLandscapeMaterialReader::AverageColour(UTexture* Texture, FLinearColor& OutColour)
+bool FMantleLandscapeMaterialReader::AverageColor(UTexture* Texture, FLinearColor& OutColor)
 {
 	if (!Texture || !Texture->Source.IsValid() || Texture->Source.GetNumBlocks() > 1 || Texture->Source.GetNumSlices() > 1)
 	{
@@ -3399,7 +3399,7 @@ bool FMantleLandscapeMaterialReader::AverageColour(UTexture* Texture, FLinearCol
 	const FString Key = Texture->GetPathName() + TEXT("|") + Texture->Source.GetId().ToString();
 	if (const FLinearColor* Cached = Cache.Find(Key))
 	{
-		OutColour = *Cached;
+		OutColor = *Cached;
 		return true;
 	}
 
@@ -3438,7 +3438,7 @@ bool FMantleLandscapeMaterialReader::AverageColour(UTexture* Texture, FLinearCol
 	{
 		return false;
 	}
-	OutColour = FLinearColor(static_cast<float>(Sum[0] / Count), static_cast<float>(Sum[1] / Count), static_cast<float>(Sum[2] / Count), 1.0f);
-	Cache.Add(Key, OutColour);
+	OutColor = FLinearColor(static_cast<float>(Sum[0] / Count), static_cast<float>(Sum[1] / Count), static_cast<float>(Sum[2] / Count), 1.0f);
+	Cache.Add(Key, OutColor);
 	return true;
 }

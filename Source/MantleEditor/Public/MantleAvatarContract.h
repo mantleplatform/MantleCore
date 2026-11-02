@@ -118,7 +118,7 @@ public:
 	/** By contract id; a fixture the plugin does not ship yet (ue5mannequin before A2.5) is absent. */
 	TMap<FString, FMantleContractSkeleton> Skeletons;
 
-	/** body-topology-v1.json: the reference LOD's vertex count and quantised UV hash. */
+	/** body-topology-v1.json: the reference LOD's vertex count and quantized UV hash. */
 	int32 TopologyVertexCount = 0;
 	uint32 TopologyUVHash = 0;
 

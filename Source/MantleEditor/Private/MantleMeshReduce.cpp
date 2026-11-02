@@ -200,7 +200,7 @@ namespace MantleMeshReducePrivate
 	}
 }
 
-const TCHAR* const FMantleMeshReduce::CancelledWhy = TEXT("reducing it was cancelled");
+const TCHAR* const FMantleMeshReduce::CanceledWhy = TEXT("reducing it was canceled");
 
 bool FMantleMeshReduce::IsAvailable()
 {
@@ -327,7 +327,7 @@ bool FMantleMeshReduce::ReduceUntilFits(const FMeshDescription& In, const FMantl
 	{
 		if (ShouldCancel())
 		{
-			OutWhy = CancelledWhy;
+			OutWhy = CanceledWhy;
 			return false;
 		}
 		FMeshDescription Reduced;
@@ -424,16 +424,16 @@ UStaticMesh* FMantleMeshReduce::ReducedCopy(const UStaticMesh* Source, const FMa
 	ReducingTask.MakeDialogDelayed(0.5f, true);
 	const FText CancelNote = FText::FromString(TEXT("Cancel works between steps, not in the middle of one: a very large mesh can keep the editor busy for several minutes inside a step."));
 	ReducingTask.EnterProgressFrame(1.0f, CancelNote);
-	bool bCancelled = ReducingTask.ShouldCancel();
+	bool bCanceled = ReducingTask.ShouldCancel();
 
 	UStaticMesh* Result = nullptr;
 	FString Why;
 	const double ReduceStart = FPlatformTime::Seconds();
 	do
 	{
-		if (bCancelled)
+		if (bCanceled)
 		{
-			Why = CancelledWhy;
+			Why = CanceledWhy;
 			break;
 		}
 		if (!IsAvailable())
@@ -495,7 +495,7 @@ UStaticMesh* FMantleMeshReduce::ReducedCopy(const UStaticMesh* Source, const FMa
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_804 MeshReduce: '%s' was not reduced: %s"), *Source->GetName(), *Why);
 	}
-	if (!Result && Why == CancelledWhy)
+	if (!Result && Why == CanceledWhy)
 	{
 		// Not remembered as a failure: the next Check tries again.
 		OutWhy = Why;

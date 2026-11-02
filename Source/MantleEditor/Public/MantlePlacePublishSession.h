@@ -235,7 +235,7 @@ public:
 	 */
 	virtual void ConversionFinished() {}
 
-	/** #804: the publish is over (done, failed or cancelled): let go of whatever was held for it. */
+	/** #804: the publish is over (done, failed or canceled): let go of whatever was held for it. */
 	virtual void EndPublish() {}
 
 	/**
@@ -342,7 +342,7 @@ enum class EMantlePublishPhase : uint8
 	Publishing,
 	Done,
 	Failed,
-	Cancelled,
+	Canceled,
 };
 
 /** The rows of the panel's checklist. */
@@ -374,7 +374,7 @@ enum class EMantlePublishStepState : uint8
  *
  * - Runs in the background, a step per Tick: the creator keeps working.
  * - Cancel leaves nothing half-published: nothing is saved or published until every upload is
- *   approved, and once the publish request itself is sent it can no longer be cancelled (it is
+ *   approved, and once the publish request itself is sent it can no longer be canceled (it is
  *   one atomic call). Uploads stay on Mantle, so the next Publish resumes from them.
  * - A republish with nothing changed converts from the cache and uploads nothing.
  * - Every refusal is a sentence naming the Unreal asset, never an id or a hash (GetAttention).
@@ -466,7 +466,7 @@ public:
 	bool CanCancel() const;
 
 	EMantlePublishPhase GetPhase() const { return Phase; }
-	bool IsFinished() const { return Phase == EMantlePublishPhase::Done || Phase == EMantlePublishPhase::Failed || Phase == EMantlePublishPhase::Cancelled; }
+	bool IsFinished() const { return Phase == EMantlePublishPhase::Done || Phase == EMantlePublishPhase::Failed || Phase == EMantlePublishPhase::Canceled; }
 	bool Succeeded() const { return Phase == EMantlePublishPhase::Done; }
 	bool IsGoLive() const { return bGoLive; }
 	FString GetLevelName() const;
@@ -549,7 +549,7 @@ private:
 	void Fail(const FString& Why);
 	void Finish(const FString& Message);
 	/**
-	 * #804: the session has ended (done, failed or cancelled). Frees every converted file's and queued file's bytes (a finished
+	 * #804: the session has ended (done, failed or canceled). Frees every converted file's and queued file's bytes (a finished
 	 * session is kept by the panel until the next Publish and only shows statuses, ids and sizes), deletes the spilled files, lets
 	 * go of the gathered objects and, when no other publish or preview is running, drops the bake caches. Once.
 	 */
@@ -566,7 +566,7 @@ private:
 	TFunction<double()> Clock;
 
 	EMantlePublishPhase Phase = EMantlePublishPhase::Idle;
-	/** Where it was when it failed or was cancelled (the panel marks that step). */
+	/** Where it was when it failed or was canceled (the panel marks that step). */
 	EMantlePublishPhase FailedPhase = EMantlePublishPhase::Idle;
 	FMantlePublishResult Result;
 	FMantlePlaceAssetSet Set;

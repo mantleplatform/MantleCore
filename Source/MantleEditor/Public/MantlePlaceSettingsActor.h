@@ -112,14 +112,14 @@ enum class EMantlePlaceOutdoors : uint8
 };
 
 /**
- * The colour-grading preset a place starts in (#532), the place file's
+ * The color-grading preset a place starts in (#532), the place file's
  * settings.environment.colorGrading. None is the key left out; the rest are Environment.ColorGrading's
  * presets, numbered as MantleEnvironmentOverrideValues numbers them.
  */
 UENUM()
 enum class EMantlePlaceColorGrading : uint8
 {
-	/** No preset: the game's own colour grading. */
+	/** No preset: the game's own color grading. */
 	None,
 	Warm,
 	Cool,
@@ -143,7 +143,7 @@ struct MANTLEEDITOR_API FMantleTerrainLayerSetting
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName Layer;
 
-	/** The material the layer is drawn with in Mantle: its base colour, normal and roughness maps and values. */
+	/** The material the layer is drawn with in Mantle: its base color, normal and roughness maps and values. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	TObjectPtr<UMaterialInterface> Material;
 
@@ -316,11 +316,11 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle|Environment")
 	EMantlePlaceOutdoors Outdoors = EMantlePlaceOutdoors::Automatic;
 
-	/** A colour multiplied over the whole picture. White leaves it unchanged. */
+	/** A color multiplied over the whole picture. White leaves it unchanged. */
 	UPROPERTY(EditAnywhere, Category = "Mantle|Environment", meta = (HideAlphaChannel))
 	FColor ColorTint = FColor::White;
 
-	/** How colourful the picture is: 0 is black and white, 1 unchanged, 2 doubled. */
+	/** How colorful the picture is: 0 is black and white, 1 unchanged, 2 doubled. */
 	UPROPERTY(EditAnywhere, Category = "Mantle|Environment", meta = (ClampMin = "0", ClampMax = "2", UIMin = "0", UIMax = "2"))
 	double Saturation = 1.0;
 
@@ -333,19 +333,19 @@ public:
 		meta = (EditCondition = "bSetBloom", ClampMin = "0", ClampMax = "4", UIMin = "0", UIMax = "4"))
 	double Bloom = 1.0;
 
-	/** A colour-grading look for the whole picture. None keeps the game's own. */
+	/** A color-grading look for the whole picture. None keeps the game's own. */
 	UPROPERTY(EditAnywhere, Category = "Mantle|Environment")
 	EMantlePlaceColorGrading ColorGrading = EMantlePlaceColorGrading::None;
 
 	/**
-	 * How strongly the colour grading shows, this one or one a script picks: 1 is the full look, 0
+	 * How strongly the color grading shows, this one or one a script picks: 1 is the full look, 0
 	 * none of it.
 	 */
 	UPROPERTY(EditAnywhere, Category = "Mantle|Environment", meta = (ClampMin = "0", ClampMax = "1", UIMin = "0", UIMax = "1"))
 	double ColorGradingIntensity = 1.0;
 
 	/**
-	 * Who this place is for. Carried on its catalogue card and used by the catalogue's filters;
+	 * Who this place is for. Carried on its catalog card and used by the catalog's filters;
 	 * nothing restricts who can join yet. Places that set a rating or limit their platforms
 	 * need a Mantle client from after #320 to load.
 	 */
@@ -399,7 +399,7 @@ public:
 		meta = (ToolTip = "The library items this place holds, at most 32. Vehicle Spawns name one by its Name in their Storage Item. Find and add items with Tools > Mantle > Library."))
 	TArray<FMantleStorageSetting> Storage;
 
-	// The place's picture in the catalogue (#786): taken at every publish, from the view below or, when none is chosen,
+	// The place's picture in the catalog (#786): taken at every publish, from the view below or, when none is chosen,
 	// from above and behind the first Player Start. Publish shows it before anything is sent.
 
 	/**

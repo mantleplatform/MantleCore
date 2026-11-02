@@ -52,18 +52,18 @@ struct MANTLEEDITOR_API FMantleExposureProject
  * Maps a level's sun, sky, fog, clouds and post-process onto what the place format already carries (#628), so the
  * preview and a published place keep the level's look instead of replacing it with Mantle's defaults.
  *
- * What the place can say about its look is little: the first DirectionalLight entity's intensity, colour and heading
- * (the sky clock owns its pitch), and settings.environment (the clock's hour and rate, a held weather, a colour tint,
+ * What the place can say about its look is little: the first DirectionalLight entity's intensity, color and heading
+ * (the sky clock owns its pitch), and settings.environment (the clock's hour and rate, a held weather, a color tint,
  * saturation and bloom). Export calls Apply once the entities are built and before the coverage survey. It writes:
  *
- * - the sun's temperature into the colour of its entity (the place has no temperature for a directional light);
+ * - the sun's temperature into the color of its entity (the place has no temperature for a directional light);
  * - its pitch as a clock hour and its yaw as the heading, with the clock stopped there, so the sun stands where the
  *   level's did (a level's sun does not move);
- * - the post-process volume's saturation, bloom and white balance as the place's saturation, bloom and colour tint;
+ * - the post-process volume's saturation, bloom and white balance as the place's saturation, bloom and color tint;
  * - its exposure (metering method, compensation and brightness range) as the place's exposure: mode auto when the level
  *   meters automatically, which is the engine's default for a level with no volume or no override, with the bias relative to
  *   the project's own compensation and the range when the volume overrides one;
- * - the level's first height fog's density, height falloff, inscattering colours and start distance as the place's fog,
+ * - the level's first height fog's density, height falloff, inscattering colors and start distance as the place's fog,
  *   the keys that differ from Mantle's own fog;
  * - the level's sky light as a scale on Mantle's own (settings.environment.skyLight.intensity, #722): the captured scene's
  *   average brightness against Mantle's sky at the clock's hour (SkyLightScaleFor), so a closed room is not lit by an
@@ -76,7 +76,7 @@ struct MANTLEEDITOR_API FMantleExposureProject
  *
  * A value Mantle Place Settings sets explicitly wins over the level's actor: Place.Settings.Environment already holds
  * what the settings actor set (only what differs from the default is set), and Apply fills only the keys it left
- * unset. The sky light's colour, atmosphere, the fog's other settings and the post-process's contrast and the rest have no key in
+ * unset. The sky light's color, atmosphere, the fog's other settings and the post-process's contrast and the rest have no key in
  * the place, so they are not carried; the report says so. The exposure is written only for a level with an environment
  * of its own (a sun, sky, fog or post-process volume), as the weather is. Nothing is written for a target client that does not read
  * settings.environment (FMantleTargetFeatures).
@@ -125,7 +125,7 @@ public:
 
 	/**
 	 * The scale (0 to 1) on Mantle's sky light that makes it as bright as a level's own, from the level's sky light's average
-	 * brightness (LevelMeanLuminance: the captured sky's mean radiance, times the light's intensity and colour) and Mantle's sky
+	 * brightness (LevelMeanLuminance: the captured sky's mean radiance, times the light's intensity and color) and Mantle's sky
 	 * at the clock's Hour: Mantle's mean is MantleSkyMeanLuminanceAtNoon at noon, falling with the sun's elevation to a
 	 * floor at night. The ratio, clamped to 0..1: a sky light as bright as Mantle's open sky (or brighter) is 1, Mantle's own.
 	 */
@@ -137,7 +137,7 @@ public:
 	/**
 	 * A sky light's average brightness: for a captured scene the mean radiance over the sphere (the zeroth spherical harmonic of
 	 * the capture, taken from a one-off capture when the light's own is not readable), for a specified cubemap that cubemap's
-	 * mean (CubemapMeanLuminance), as a luminance, times the light's intensity, indirect lighting intensity and colour. OutSource, when
+	 * mean (CubemapMeanLuminance), as a luminance, times the light's intensity, indirect lighting intensity and color. OutSource, when
 	 * given, says in words where the mean was read from. Negative
 	 * when it cannot be read (a capture is a render-thread result a headless export may not have).
 	 */
@@ -173,7 +173,7 @@ public:
 	static EMantleWeatherState WeatherForCloudCoverage(double CloudGlobalCoverage);
 
 	/**
-	 * The sRGB colour tint (0xRRGGBB) that a post-process white balance at Kelvin amounts to: a temperature above the
+	 * The sRGB color tint (0xRRGGBB) that a post-process white balance at Kelvin amounts to: a temperature above the
 	 * neutral 6500 K gives a warmer picture, below it a cooler one. 0xFFFFFF at the neutral temperature.
 	 */
 	static uint32 TintForWhiteBalance(double Kelvin);

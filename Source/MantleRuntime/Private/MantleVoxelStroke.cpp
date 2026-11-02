@@ -39,8 +39,8 @@ void FMantleVoxelStroke::GetBounds(FIntVector& OutMin, FIntVector& OutMax) const
 	using namespace MantleVoxelStrokePrivate;
 	for (int32 Axis = 0; Axis < 3; ++Axis)
 	{
-		OutMin[Axis] = FloorDiv(Centre[Axis] - Radius, Fixed);
-		OutMax[Axis] = FloorDiv(Centre[Axis] + Radius, Fixed) + 1;
+		OutMin[Axis] = FloorDiv(Center[Axis] - Radius, Fixed);
+		OutMax[Axis] = FloorDiv(Center[Axis] + Radius, Fixed) + 1;
 	}
 }
 
@@ -48,9 +48,9 @@ void FMantleVoxelStroke::Encode(TArray<uint8>& Out) const
 {
 	using namespace MantleVoxelStrokePrivate;
 	Out.Append({ uint8(Tool), Material, Strength, uint8(Radius & 0xFF), uint8(Radius >> 8) });
-	PutInt(Out, Centre.X);
-	PutInt(Out, Centre.Y);
-	PutInt(Out, Centre.Z);
+	PutInt(Out, Center.X);
+	PutInt(Out, Center.Y);
+	PutInt(Out, Center.Z);
 	PutInt(Out, PlaneZ);
 }
 
@@ -66,7 +66,7 @@ bool FMantleVoxelStroke::Decode(TConstArrayView<uint8> Bytes, int32& Offset, FMa
 	Out.Material = P[1];
 	Out.Strength = P[2];
 	Out.Radius = P[3] | (P[4] << 8);
-	Out.Centre = FIntVector(GetInt(P + 5), GetInt(P + 9), GetInt(P + 13));
+	Out.Center = FIntVector(GetInt(P + 5), GetInt(P + 9), GetInt(P + 13));
 	Out.PlaneZ = GetInt(P + 17);
 	Offset += EncodedBytes;
 	return Out.IsValid();
@@ -164,13 +164,13 @@ int32 MantleVoxelStrokePrivate::ApplyStroke(const FMantleVoxelStroke& Stroke, TA
 	const ETool Tool = Stroke.Tool;
 	const uint8 Material = Stroke.Material;
 	const int32 Strength = Stroke.Strength;
-	const FIntVector Centre = Stroke.Centre;
+	const FIntVector Center = Stroke.Center;
 	const int32 PlaneZ = Stroke.PlaneZ;
 	FIntVector Min, Max;
 	Stroke.GetBounds(Min, Max);
 	const int64 R2 = int64(Stroke.Radius) * Stroke.Radius;
 	const bool bKnownMaterial = Material > 0 && Material < Grid.NumTypes();
-	// Worked out from the voxels as they were, then written: no voxel sees another's new value (Smooth reads neighbours).
+	// Worked out from the voxels as they were, then written: no voxel sees another's new value (Smooth reads neighbors).
 	TArray<FNew> Writes;
 	for (int32 Z = Min.Z; Z <= Max.Z; ++Z)
 	{
@@ -183,15 +183,15 @@ int32 MantleVoxelStrokePrivate::ApplyStroke(const FMantleVoxelStroke& Stroke, TA
 				{
 					continue;
 				}
-				const int64 DX = int64(X) * Fixed - Centre.X;
-				const int64 DY = int64(Y) * Fixed - Centre.Y;
-				const int64 DZ = int64(Z) * Fixed - Centre.Z;
+				const int64 DX = int64(X) * Fixed - Center.X;
+				const int64 DY = int64(Y) * Fixed - Center.Y;
+				const int64 DZ = int64(Z) * Fixed - Center.Z;
 				const int64 D2 = DX * DX + DY * DY + DZ * DZ;
 				if (D2 >= R2)
 				{
 					continue;
 				}
-				// 256 at the centre, 0 at the edge; times strength (1 to 100): 0 to 25,600.
+				// 256 at the center, 0 at the edge; times strength (1 to 100): 0 to 25,600.
 				const int32 Amount = int32(((R2 - D2) * 256) / R2) * Strength;
 				const int32 D = Grid.GetDensity(P);
 				const uint8 M = Grid.GetBlock(P);
@@ -231,7 +231,7 @@ int32 MantleVoxelStrokePrivate::ApplyStroke(const FMantleVoxelStroke& Stroke, TA
 				NewD = FMath::Clamp(NewD, -127, 127);
 				if (NewD > 0 && M == 0)
 				{
-					// Ground that appears takes the stroke's material, else its first solid neighbour's, else stays empty.
+					// Ground that appears takes the stroke's material, else its first solid neighbor's, else stays empty.
 					NewM = bKnownMaterial ? Material : uint8(0);
 					static const FIntVector Around[6] = { { -1, 0, 0 }, { 1, 0, 0 }, { 0, -1, 0 }, { 0, 1, 0 }, { 0, 0, -1 }, { 0, 0, 1 } };
 					for (int32 I = 0; I < 6 && NewM == 0; ++I)

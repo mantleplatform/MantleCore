@@ -160,7 +160,7 @@ namespace MantlePlacePublishSessionPrivate
 
 	const TCHAR* SlotWords(const FString& Slot)
 	{
-		if (Slot == TEXT("baseColor")) return TEXT("base colour");
+		if (Slot == TEXT("baseColor")) return TEXT("base color");
 		if (Slot == TEXT("normal")) return TEXT("normal");
 		if (Slot == TEXT("orm")) return TEXT("roughness, metal and occlusion");
 		if (Slot == TEXT("emissive")) return TEXT("emissive");
@@ -350,7 +350,7 @@ bool FMantleLevelPublishSource::Prepare(FMantleValidationResult& OutValidation, 
 			UIImages.Emplace(Image.Path, Image.DiskPath);
 		}
 	}
-	// #786: the catalogue picture, captured after everything else converts. Without a renderer (a headless publish)
+	// #786: the catalog picture, captured after everything else converts. Without a renderer (a headless publish)
 	// the place publishes without one.
 	FString NoCapture;
 	// A custom image (#124) needs no renderer.
@@ -611,7 +611,7 @@ EMantlePlaceExportOutcome FMantleLevelPublishSource::Export(const FMantlePlaceAs
 	Options.bThinInstances = bThinInstances;
 	const FMantleExportResult Exported = FMantlePlaceExporter::Export(Level, Options);
 	// #628: what the export kept, approximated and dropped, as MANTLE_COVERAGE lines in the log (the publish log gets it below).
-	// The materials gathered for the upload, recognised, baked or lost, join the report here: Export leaves them to whoever gathered.
+	// The materials gathered for the upload, recognized, baked or lost, join the report here: Export leaves them to whoever gathered.
 	FMantleCoverage Coverage = Exported.Coverage;
 	FMantleCoverageSurvey::AddMaterials(Dependencies, Coverage);
 	Coverage.Log();
@@ -1258,12 +1258,12 @@ bool FMantlePlacePublishSession::Cancel()
 		Queue->Cancel();
 	}
 	FailedPhase = Phase;
-	Phase = EMantlePublishPhase::Cancelled;
+	Phase = EMantlePublishPhase::Canceled;
 	Result.bSuccess = false;
-	Result.bCancelled = true;
+	Result.bCanceled = true;
 	Result.Message = bDraftSaved
-		? FString(TEXT("Cancelled. Nothing went live (only your private draft on Mantle was updated). Everything uploaded stays, so Publish again continues from here."))
-		: FString(TEXT("Cancelled. Nothing was published. Everything already uploaded stays on Mantle, so Publish again continues from here."));
+		? FString(TEXT("Canceled. Nothing went live (only your private draft on Mantle was updated). Everything uploaded stays, so Publish again continues from here."))
+		: FString(TEXT("Canceled. Nothing was published. Everything already uploaded stays on Mantle, so Publish again continues from here."));
 	AddLog(Result.Message);
 	ReleaseHeldMemory();
 	return true;
@@ -1695,7 +1695,7 @@ void FMantlePlacePublishSession::TickUploading()
 	case EMantleUploadQueueOutcome::Failed:
 		Fail(Queue->GetFailure());
 		return;
-	case EMantleUploadQueueOutcome::Cancelled:
+	case EMantleUploadQueueOutcome::Canceled:
 		return;
 	case EMantleUploadQueueOutcome::WaitingForReview:
 		{
@@ -2824,7 +2824,7 @@ EMantlePublishStepState FMantlePlacePublishSession::GetStepState(EMantlePublishS
 	{
 		return bSkipped ? EMantlePublishStepState::Skipped : bNotes ? EMantlePublishStepState::DoneWithNotes : EMantlePublishStepState::Done;
 	}
-	const bool bStopped = Phase == EMantlePublishPhase::Failed || Phase == EMantlePublishPhase::Cancelled;
+	const bool bStopped = Phase == EMantlePublishPhase::Failed || Phase == EMantlePublishPhase::Canceled;
 	const EMantlePublishStep Current = StepOf(bStopped ? FailedPhase : Phase);
 	if (Step < Current)
 	{
@@ -2872,7 +2872,7 @@ FString FMantlePlacePublishSession::GetStepDetail(EMantlePublishStep Step) const
 	case EMantlePublishStep::Upload:
 		if (!Queue.IsValid())
 		{
-			return Phase > EMantlePublishPhase::Uploading && Phase != EMantlePublishPhase::Failed && Phase != EMantlePublishPhase::Cancelled
+			return Phase > EMantlePublishPhase::Uploading && Phase != EMantlePublishPhase::Failed && Phase != EMantlePublishPhase::Canceled
 				? FString(TEXT("Nothing to upload")) : FString();
 		}
 		{

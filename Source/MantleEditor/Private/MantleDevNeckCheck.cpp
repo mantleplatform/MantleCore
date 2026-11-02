@@ -141,7 +141,7 @@ namespace MantleDevNeckCheckPrivate
 		}
 		for (const FVector3f& P : Case.FacePositions) { FaceBox += FVector(P); }
 		Case.BaseZ = BaseZ;
-		// The face's neck column just over the base: the axis the client casts or centres on.
+		// The face's neck column just over the base: the axis the client casts or centers on.
 		FVector2f Sum = FVector2f::ZeroVector;
 		int32 Column = 0;
 		for (const FVector3f& P : Case.FacePositions)
@@ -159,7 +159,7 @@ namespace MantleDevNeckCheckPrivate
 		int32 Region = 0;
 		for (const FVector3f& Centroid : Case.Centroids) { Region += InRegion(Centroid, BaseZ) ? 1 : 0; }
 		UE_LOG(LogMantleNeckCheck, Display,
-			TEXT("MANTLE_NECK_CHECK case=%s faceLODTris=%s faceNumbering=%08x bodyLOD=%d bodyVerts=%d faceLOD=%d faceTris=%d baseZ=%.2f bodyZ=[%.2f, %.2f] faceZ=[%.2f, %.2f] faceColumnVerts=%d faceColumnCentre=(%.2f, %.2f) ringVerts=%d ringToFaceAvgCm=%.3f ringToFaceMaxCm=%.3f regionTris=%d"),
+			TEXT("MANTLE_NECK_CHECK case=%s faceLODTris=%s faceNumbering=%08x bodyLOD=%d bodyVerts=%d faceLOD=%d faceTris=%d baseZ=%.2f bodyZ=[%.2f, %.2f] faceZ=[%.2f, %.2f] faceColumnVerts=%d faceColumnCenter=(%.2f, %.2f) ringVerts=%d ringToFaceAvgCm=%.3f ringToFaceMaxCm=%.3f regionTris=%d"),
 			*Case.Name, *Case.FaceLODs, Case.FaceNumbering, Case.BodyLOD, Case.Body.Num(), Case.FaceLOD, Case.Centroids.Num(), BaseZ, BodyBox.Min.Z, BodyBox.Max.Z, FaceBox.Min.Z, FaceBox.Max.Z, Column,
 			Column ? Sum.X / Column : 0.0f, Column ? Sum.Y / Column : 0.0f, Ring.Num(), RingAverage, RingMax, Region);
 	}

@@ -304,15 +304,15 @@ bool FMantleUnriggedBodyTPoseTest::RunTest(const FString& Parameters)
 	const FMantleArmBend Up = FMantleUnriggedBody::EstimateArmBend(UnriggedTestFigure(FVector2D(60.0, 164.0)));
 	TestFalse(TEXT("arms raised high are not a T-pose"), Up.bTPose);
 
-	// Size does not matter: the same figure in metres (or a tenth of a millimetre) is judged and bent alike.
+	// Size does not matter: the same figure in meters (or a tenth of a millimeter) is judged and bent alike.
 	const double Scale = 0.01;
 	const FMantleArmBend Small = FMantleUnriggedBody::EstimateArmBend(UnriggedTestFigure(FVector2D(75.0, 127.0), Scale));
-	TestTrue(TEXT("a figure in metres is a T-pose too"), Small.bTPose);
-	TestTrue(TEXT("a figure in metres has the pivot scaled"), UnriggedNear(Small.PivotX, TPose.PivotX * Scale, 1e-9));
+	TestTrue(TEXT("a figure in meters is a T-pose too"), Small.bTPose);
+	TestTrue(TEXT("a figure in meters has the pivot scaled"), UnriggedNear(Small.PivotX, TPose.PivotX * Scale, 1e-9));
 	const FVector OnArm(60.0, 5.0, 127.0);
 	const FVector Bent = FMantleUnriggedBody::BendPoint(TPose, OnArm);
 	const FVector SmallBent = FMantleUnriggedBody::BendPoint(Small, OnArm * Scale);
-	TestTrue(TEXT("a figure in metres bends the same way, scaled"), (SmallBent / Scale).Equals(Bent, 1e-6));
+	TestTrue(TEXT("a figure in meters bends the same way, scaled"), (SmallBent / Scale).Equals(Bent, 1e-6));
 
 	// Nothing to estimate from.
 	TestFalse(TEXT("no points are not a figure"), FMantleUnriggedBody::EstimateArmBend(TConstArrayView<FVector>()).bValid);

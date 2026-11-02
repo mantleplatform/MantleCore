@@ -9,7 +9,7 @@ class MANTLERUNTIME_API FMantleHairHeadFit
 {
 public:
 	static constexpr int32 Version = 3;
-	/** Conservative same-chart LOD boundary drift: at most four texels at 2048 and one millimetre on either surface. */
+	/** Conservative same-chart LOD boundary drift: at most four texels at 2048 and one millimeter on either surface. */
 	static constexpr float MaxBoundaryUV = 1.f/512.f;
 	static constexpr float MaxBoundaryCorrectionCm = .1f;
 	/** #784: card roots with no corresponding target skin borrow the nearest mapped root's offset, up to this share of an LOD's roots. */

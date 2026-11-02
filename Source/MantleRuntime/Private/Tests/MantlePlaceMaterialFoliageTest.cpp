@@ -29,7 +29,7 @@ bool FMantlePlaceMaterialFoliageParseTest::RunTest(const FString& Parameters)
 {
 	using namespace MantlePlaceMaterialFoliageTestPrivate;
 
-	// An empty object is the defaults: the tinted base colour as it is.
+	// An empty object is the defaults: the tinted base color as it is.
 	FMantlePlaceMaterialDesc Desc;
 	FString Error;
 	if (!TestTrue(TEXT("an empty foliage object parses"), Parse(FString(Head) + TEXT(",\"foliage\":{}}"), Desc, &Error)))
@@ -40,7 +40,7 @@ bool FMantlePlaceMaterialFoliageParseTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("it has foliage"), Desc.bHasFoliage);
 	TestTrue(TEXT("tint defaults to white"), Desc.Foliage.Tint.Equals(FLinearColor::White));
 	TestEqual(TEXT("strength defaults to 1"), Desc.Foliage.Strength, 1.0f);
-	TestEqual(TEXT("the vertex-colour weight defaults to 0"), Desc.Foliage.VertexColorWeight, 0.0f);
+	TestEqual(TEXT("the vertex-color weight defaults to 0"), Desc.Foliage.VertexColorWeight, 0.0f);
 	TestTrue(TEXT("foliage alone builds on M_MantlePlace_Extended"), Desc.UsesExtended());
 	TestTrue(TEXT("and is the Foliage variant"), Desc.ExtendedVariant() == EMantlePlaceExtendedVariant::Foliage);
 
@@ -54,7 +54,7 @@ bool FMantlePlaceMaterialFoliageParseTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("tint"), Desc.Foliage.Tint.Equals(FLinearColor(1.0f, 0.5f, 0.25f, 1.0f)));
 	TestEqual(TEXT("strength"), Desc.Foliage.Strength, 2.5f);
-	TestEqual(TEXT("vertex-colour weight"), Desc.Foliage.VertexColorWeight, 0.75f);
+	TestEqual(TEXT("vertex-color weight"), Desc.Foliage.VertexColorWeight, 0.75f);
 	TestTrue(TEXT("foliage with wind is the FoliageWind variant"), Desc.ExtendedVariant() == EMantlePlaceExtendedVariant::FoliageWind);
 
 	// What it refuses.

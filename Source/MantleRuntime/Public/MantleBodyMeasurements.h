@@ -11,12 +11,12 @@ struct FMantleGhostCapsule
 	FVector End = FVector::ZeroVector;
 	float RadiusCm = 4.f;
 
-	/** Drawn in the warning colour, e.g. a hand that cannot reach its point. */
+	/** Drawn in the warning color, e.g. a hand that cannot reach its point. */
 	bool bWarning = false;
 };
 
 /**
- * The Mantle character's body sizes in centimetres, from standard anthropometric ratios of its height, so a builder can show a
+ * The Mantle character's body sizes in centimeters, from standard anthropometric ratios of its height, so a builder can show a
  * creator the real character against their mesh (no mesh, no licensed content: just numbers and capsules). Used by both the
  * weapon and the vehicle builder.
  *

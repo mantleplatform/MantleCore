@@ -1081,7 +1081,7 @@ bool FMantlePlaceMaterials::ParseMaterial(const TConstArrayView<uint8> Bytes, FM
 	}
 	if (Desc.bHasLayerBlend && Desc.VertexColor != EMantlePlaceVertexColor::None)
 	{
-		return FailMaterial(Out, OutError, TEXT("/vertexColor must be none when layerBlend is set (both read the vertex colour)"));
+		return FailMaterial(Out, OutError, TEXT("/vertexColor must be none when layerBlend is set (both read the vertex color)"));
 	}
 
 	if (const TSharedPtr<FJsonValue> Field = Root->TryGetField(TEXT("textures")))
@@ -1626,7 +1626,7 @@ void FMantlePlaceMaterials::ApplyWater(UMaterialInstanceDynamic* Instance, const
 	Instance->SetScalarParameterValue(P::WaterPhaseG, Water.PhaseG);
 	Instance->SetScalarParameterValue(P::WaterColorScale, Water.ColorScaleBehindWater);
 
-	// Each layer: its UV tiling, its world scale (repeats per centimetre) and which of the two it reads, and its pan.
+	// Each layer: its UV tiling, its world scale (repeats per centimeter) and which of the two it reads, and its pan.
 	const auto SetLayer = [Instance](const FMantlePlaceWaterNormal& Layer, const TCHAR* Tiling, const TCHAR* WorldSpace,
 		const TCHAR* WorldScale, const TCHAR* Panning)
 	{
@@ -1709,8 +1709,8 @@ UMaterialInstanceDynamic* FMantlePlaceMaterials::BuildOnParent(UMaterialInterfac
 	}
 	Instance->SetFlags(RF_Transient);
 
-	// #628: additive is emissive-driven, so the base colour has no part in it: black with full opacity (the Additive permutations are
-	// unlit, so the colour is unused there; the Translucent fallback, when they are missing, shows the glow over black and not over white).
+	// #628: additive is emissive-driven, so the base color has no part in it: black with full opacity (the Additive permutations are
+	// unlit, so the color is unused there; the Translucent fallback, when they are missing, shows the glow over black and not over white).
 	Instance->SetVectorParameterValue(P::BaseColorFactor, Desc.AlphaMode == EMantlePlaceAlphaMode::Additive ? FLinearColor(0.0f, 0.0f, 0.0f, 1.0f) : Desc.BaseColorFactor);
 	Instance->SetVectorParameterValue(P::EmissiveFactor, FLinearColor(Desc.EmissiveFactor.R, Desc.EmissiveFactor.G, Desc.EmissiveFactor.B, 1.0f));
 	Instance->SetVectorParameterValue(P::UVScale, FLinearColor(Desc.UVScale.X, Desc.UVScale.Y, 0.0f, 0.0f));
@@ -1736,7 +1736,7 @@ UMaterialInstanceDynamic* FMantlePlaceMaterials::BuildOnParent(UMaterialInterfac
 		P::LayerBaseColor, P::LayerNormal, P::LayerORM, P::Normal2 };
 	for (int32 Slot = 0; Slot < MantlePlaceMaterialTextureCount && Slot < Textures.Num(); ++Slot)
 	{
-		// An additive material ignores its base colour texture (its alpha would be the opacity).
+		// An additive material ignores its base color texture (its alpha would be the opacity).
 		if (Textures[Slot] && !(Desc.AlphaMode == EMantlePlaceAlphaMode::Additive && Slot == static_cast<int32>(EMantlePlaceTextureSlot::BaseColor)))
 		{
 			Instance->SetTextureParameterValue(TextureParameters[Slot], Textures[Slot]);
@@ -1796,7 +1796,7 @@ bool FMantlePlaceMaterials::PrepareForSlot(const EMantlePlaceTextureSlot Slot, F
 			}
 			return true;
 		}
-		return FailSlot(OutError, FString::Printf(TEXT("a normal map must be BC5 or 8-bit colour, not %s"), GetPixelFormatString(Texture.Format)));
+		return FailSlot(OutError, FString::Printf(TEXT("a normal map must be BC5 or 8-bit color, not %s"), GetPixelFormatString(Texture.Format)));
 	}
 
 	if (BaseSlot == EMantlePlaceTextureSlot::Orm && Texture.Format == PF_BC4)

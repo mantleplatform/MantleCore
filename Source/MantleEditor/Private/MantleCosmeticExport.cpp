@@ -678,7 +678,7 @@ namespace MantleCosmeticExportPrivate
 					PerVertex[Vertex].Add(TPair<int32, float>(Bone, Weight));
 				}
 			}
-			// Heaviest first; past MaxSkinInfluences the lightest are dropped and the rest renormalised.
+			// Heaviest first; past MaxSkinInfluences the lightest are dropped and the rest renormalized.
 			const bool bCapped = PerVertex[Vertex].Num() > MaxSkinInfluences;
 			const float Dropped = FMantleCosmeticChecks::CapInfluences(PerVertex[Vertex], MaxSkinInfluences);
 			if (bCapped)
@@ -751,7 +751,7 @@ namespace MantleCosmeticExportPrivate
 		}
 
 		// The second UV set (UV channel 1, often the lightmap or a livery layout) and the painted vertex
-		// colours, when the LOD has them; the cook and the client carry both through.
+		// colors, when the LOD has them; the cook and the client carry both through.
 		if (VertexBuffer.GetNumTexCoords() >= 2)
 		{
 			Glb.UV1s.SetNumUninitialized(NumVertices);
@@ -770,7 +770,7 @@ namespace MantleCosmeticExportPrivate
 				Glb.Colors[Vertex] = ColorBuffer.VertexColor(static_cast<uint32>(Vertex));
 				bAllWhite = bAllWhite && Glb.Colors[Vertex] == FColor::White;
 			}
-			// All white is what no colours means everywhere downstream: not worth four bytes a vertex.
+			// All white is what no colors means everywhere downstream: not worth four bytes a vertex.
 			if (bAllWhite)
 			{
 				Glb.Colors.Reset();
@@ -779,10 +779,10 @@ namespace MantleCosmeticExportPrivate
 
 		// The cook refuses a value that is not a number (a texture coordinate, normal or tangent): set to a safe one here, and
 		// Check says so (CountNonFiniteStaticMesh). A position cannot be set to anything sensible.
-		const FMantleGlbNonFinite NonFinite = FMantleGlbWriter::SanitiseNonFinite(Glb);
+		const FMantleGlbNonFinite NonFinite = FMantleGlbWriter::SanitizeNonFinite(Glb);
 		if (NonFinite.Positions > 0)
 		{
-			OutError = FString::Printf(TEXT("%s LOD %d has %d vertex positions that are not numbers. Fix or delete those vertices in a modelling tool and re-import it."),
+			OutError = FString::Printf(TEXT("%s LOD %d has %d vertex positions that are not numbers. Fix or delete those vertices in a modeling tool and re-import it."),
 				*Mesh->GetName(), LODIndex, NonFinite.Positions);
 			return false;
 		}
@@ -1530,7 +1530,7 @@ namespace MantleCosmeticExportPrivate
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------
-	// What a material's base colour really is (FMantleCosmeticExport::ResolveMaterialTextures)
+	// What a material's base color really is (FMantleCosmeticExport::ResolveMaterialTextures)
 
 	/** How a texture sample's UVs reach it. */
 	enum class EMaterialSampleUV : uint8
@@ -1707,8 +1707,8 @@ namespace MantleCosmeticExportPrivate
 		UTexture* Opacity = nullptr;
 		TArray<uint8> BakedAlbedo;
 		TArray<uint8> BakedNormal;
-		FLinearColor FlatColour = FLinearColor(0.5f, 0.5f, 0.5f, 1.0f);
-		bool bFlatColourFound = false;
+		FLinearColor FlatColor = FLinearColor(0.5f, 0.5f, 0.5f, 1.0f);
+		bool bFlatColorFound = false;
 	};
 
 	/**
@@ -1794,7 +1794,7 @@ namespace MantleCosmeticExportPrivate
 	}
 
 	/**
-	 * GLTFExporter's material bake: the material's base colour and normal flattened to PNGs, for a
+	 * GLTFExporter's material bake: the material's base color and normal flattened to PNGs, for a
 	 * material whose textures are not plain parameters.
 	 */
 	bool BakeMaterialWithGltfExporter(UMaterialInterface* Material, TArray<uint8>& OutAlbedo, TArray<uint8>& OutNormal, FString& OutNote,
@@ -1843,19 +1843,19 @@ namespace MantleCosmeticExportPrivate
 		}
 		const TSharedPtr<FJsonObject> Baked = (*Materials)[0]->AsObject();
 		const TSharedPtr<FJsonObject>* Pbr = nullptr;
-		const TSharedPtr<FJsonObject>* BaseColour = nullptr;
+		const TSharedPtr<FJsonObject>* BaseColor = nullptr;
 		const TSharedPtr<FJsonObject>* Normal = nullptr;
 		if (Baked.IsValid() && Baked->TryGetObjectField(TEXT("pbrMetallicRoughness"), Pbr) && Pbr
-			&& (*Pbr)->TryGetObjectField(TEXT("baseColorTexture"), BaseColour) && BaseColour)
+			&& (*Pbr)->TryGetObjectField(TEXT("baseColorTexture"), BaseColor) && BaseColor)
 		{
-			ReadGlbTextureImage(Doc, *BaseColour, OutAlbedo);
+			ReadGlbTextureImage(Doc, *BaseColor, OutAlbedo);
 		}
 		if (Baked.IsValid() && Baked->TryGetObjectField(TEXT("normalTexture"), Normal) && Normal)
 		{
 			ReadGlbTextureImage(Doc, *Normal, OutNormal);
 		}
 		OutNote = FString::Printf(TEXT("baked %s through GLTFExporter (%s)"), *Material->GetName(),
-			OutAlbedo.Num() > 0 ? TEXT("base colour") : TEXT("no base colour texture"));
+			OutAlbedo.Num() > 0 ? TEXT("base color") : TEXT("no base color texture"));
 		// The bake's size follows the textures the material samples. A pattern the material draws itself over a tiny
 		// texture (a 16 x 16 blank decal under a plaid cap) then bakes to a smear: bake those at the default size instead.
 		const int32 BakedWidth = OutAlbedo.Num() >= 24 && OutAlbedo[1] == 'P' && OutAlbedo[2] == 'N' && OutAlbedo[3] == 'G'
@@ -1876,16 +1876,16 @@ namespace MantleCosmeticExportPrivate
 	}
 
 	/**
-	 * Finds what a PBR material has for a section: base colour, normal and (avatars) ORM, by
+	 * Finds what a PBR material has for a section: base color, normal and (avatars) ORM, by
 	 * parameter name, then by the textures the material uses, then by GLTFExporter's bake, then a
-	 * flat colour.
+	 * flat color.
 	 */
 	FSectionTextures ResolveSectionTextures(UMaterialInterface* Material, TArray<FString>& OutNotes, bool bPickOpacity = false)
 	{
 		FSectionTextures Out;
 		if (!Material)
 		{
-			OutNotes.Add(TEXT("a section has no material: it gets a flat grey"));
+			OutNotes.Add(TEXT("a section has no material: it gets a flat gray"));
 			return Out;
 		}
 
@@ -1898,11 +1898,11 @@ namespace MantleCosmeticExportPrivate
 		Out.Opacity = Found.Opacity;
 		if (Out.Albedo && Found.bBaseColorFromLargest)
 		{
-			OutNotes.Add(FString::Printf(TEXT("%s: base colour taken from %s (largest colour texture it uses)"), *Material->GetName(), *Out.Albedo->GetName()));
+			OutNotes.Add(FString::Printf(TEXT("%s: base color taken from %s (largest color texture it uses)"), *Material->GetName(), *Out.Albedo->GetName()));
 		}
 		if (!Found.bPlain && Out.Albedo)
 		{
-			// A computed or layered colour (material attributes, tints, masks) is not its one texture; the
+			// A computed or layered color (material attributes, tints, masks) is not its one texture; the
 			// picked texture can be an AO, mask or stitch map. Bake the whole material when a renderer is here.
 			FString Note;
 			if (!GUsingNullRHI && BakeMaterialWithGltfExporter(Material, Out.BakedAlbedo, Out.BakedNormal, Note))
@@ -1915,14 +1915,14 @@ namespace MantleCosmeticExportPrivate
 			{
 				Out.BakedAlbedo.Reset();
 				Out.BakedNormal.Reset();
-				OutNotes.Add(FString::Printf(TEXT("%s: %s, so %s is only part of its colour (%s)"),
+				OutNotes.Add(FString::Printf(TEXT("%s: %s, so %s is only part of its color (%s)"),
 					*Material->GetName(), *Found.Why, *Out.Albedo->GetName(), GUsingNullRHI ? TEXT("no renderer here to bake it") : *Note));
 			}
 		}
 
 		if (!Out.Albedo && GUsingNullRHI)
 		{
-			OutNotes.Add(FString::Printf(TEXT("%s: no renderer here to bake its base colour through GLTFExporter"), *Material->GetName()));
+			OutNotes.Add(FString::Printf(TEXT("%s: no renderer here to bake its base color through GLTFExporter"), *Material->GetName()));
 		}
 		else if (!Out.Albedo)
 		{
@@ -1941,11 +1941,11 @@ namespace MantleCosmeticExportPrivate
 		{
 			for (const TCHAR* Name : { TEXT("BaseColor"), TEXT("Base Color"), TEXT("Color"), TEXT("Tint") })
 			{
-				FLinearColor Colour;
-				if (Material->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(FName(Name))), Colour))
+				FLinearColor Color;
+				if (Material->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(FName(Name))), Color))
 				{
-					Out.FlatColour = Colour;
-					Out.bFlatColourFound = true;
+					Out.FlatColor = Color;
+					Out.bFlatColorFound = true;
 					break;
 				}
 			}
@@ -2001,7 +2001,7 @@ namespace MantleCosmeticExportPrivate
 	}
 
 	/**
-	 * A texture's source pixels as BGRA (sRGB colour, or linear data when bLinear), scaled down to MaxSize on the longer
+	 * A texture's source pixels as BGRA (sRGB color, or linear data when bLinear), scaled down to MaxSize on the longer
 	 * side when larger: what TextureToPng encodes. A UDIM texture gives its tile 1001. False with a reason for a texture
 	 * with no source, a UDIM texture without tile 1001, or a cube or array texture.
 	 */
@@ -2050,7 +2050,7 @@ namespace MantleCosmeticExportPrivate
 		return true;
 	}
 
-	enum class ETextureUse : uint8 { Colour, Normal, Data };
+	enum class ETextureUse : uint8 { Color, Normal, Data };
 
 	bool NormalizeGroomAtlas(const FMantleGroomCardsEntry& Entry, int32 MaxSize, TArray<uint8>& Png, FString& Description, FString& Error)
 	{
@@ -2105,7 +2105,7 @@ namespace MantleCosmeticExportPrivate
 	FString AddTexture(FMantleCosmeticPackage& Package, UTexture* Texture, const TArray<uint8>* Baked, ETextureUse Use, int32 MaxSize,
 		const FString& What, const FMantleAvatarContract& Contract)
 	{
-		const TCHAR* Role = Use == ETextureUse::Colour ? TEXT("color") : Use == ETextureUse::Normal ? TEXT("normal") : TEXT("data");
+		const TCHAR* Role = Use == ETextureUse::Color ? TEXT("color") : Use == ETextureUse::Normal ? TEXT("normal") : TEXT("data");
 		const FString Key = FString::Printf(TEXT("texture.%s.%s"), Texture ? *Texture->GetPathName() : *(TEXT("baked.") + What), Role);
 		if (Package.FindAsset(Key))
 		{
@@ -2119,9 +2119,9 @@ namespace MantleCosmeticExportPrivate
 		{
 			if (!Texture)
 			{
-				return Baked && NormalizePng(*Baked, Limit, Use != ETextureUse::Colour, Png, Size);
+				return Baked && NormalizePng(*Baked, Limit, Use != ETextureUse::Color, Png, Size);
 			}
-			if (!FMantleCosmeticExport::TextureToPng(Texture, Limit, Use != ETextureUse::Colour, Png, Size, Error))
+			if (!FMantleCosmeticExport::TextureToPng(Texture, Limit, Use != ETextureUse::Color, Png, Size, Error))
 			{
 				return false;
 			}
@@ -2166,17 +2166,17 @@ namespace MantleCosmeticExportPrivate
 		}
 		// A texture scaled down to Limit says so in the check list, not only in Files and details.
 		FMantleCosmeticExport::CheckSourceTextureSize(Texture, Limit, What, Contract, Package.Issues);
-		// The API refuses a grey normal map (backend/internal/cook/texturecook.go scanPixels: every pixel R = G = B). Grey holds
+		// The API refuses a gray normal map (backend/internal/cook/texturecook.go scanPixels: every pixel R = G = B). Gray holds
 		// no X and Y, so it bends no light: the section goes without one.
-		if (Use == ETextureUse::Normal && FMantleCosmeticExport::IsGreyPng(Png))
+		if (Use == ETextureUse::Normal && FMantleCosmeticExport::IsGrayPng(Png))
 		{
-			Package.Issues.Add(FMantleCosmeticChecks::Info(FString::Printf(TEXT("%s is plain grey, so it holds no surface detail: it is left out."), *What)));
+			Package.Issues.Add(FMantleCosmeticChecks::Info(FString::Printf(TEXT("%s is plain gray, so it holds no surface detail: it is left out."), *What)));
 			return FString();
 		}
-		// The API keeps one role per exact file: a flat mask can match a flat colour map uploaded before, byte for byte, and
+		// The API keeps one role per exact file: a flat mask can match a flat color map uploaded before, byte for byte, and
 		// is then refused (uploaded_differently). A normal or data PNG carries its role
-		// in a text chunk, so it never shares bytes with a colour map; colour maps stay plain so they keep matching earlier uploads.
-		if (Use != ETextureUse::Colour)
+		// in a text chunk, so it never shares bytes with a color map; color maps stay plain so they keep matching earlier uploads.
+		if (Use != ETextureUse::Color)
 		{
 			FMantleCosmeticExport::TagPngRole(Png, Role);
 		}
@@ -2189,15 +2189,15 @@ namespace MantleCosmeticExportPrivate
 	}
 
 	/**
-	 * The section's base colour (its texture, its bake, or its flat colour) with Textures.Opacity packed into the
-	 * alpha, as one colour texture, at the base colour's upload size (a flat colour takes the opacity's). The shipped
+	 * The section's base color (its texture, its bake, or its flat color) with Textures.Opacity packed into the
+	 * alpha, as one color texture, at the base color's upload size (a flat color takes the opacity's). The shipped
 	 * client draws hair masked with the albedo's alpha as the mask, and the worker keeps that alpha (BC3). The key, or
 	 * empty with an error added.
 	 */
 	FString AddAlbedoWithOpacity(FMantleCosmeticPackage& Package, const FSectionTextures& Textures, int32 MaxSize, const FString& What,
 		const FMantleAvatarContract& Contract)
 	{
-		const FColor Flat = Textures.FlatColour.ToFColorSRGB();
+		const FColor Flat = Textures.FlatColor.ToFColorSRGB();
 		const FString AlbedoName = Textures.Albedo ? Textures.Albedo->GetPathName()
 			: Textures.BakedAlbedo.Num() > 0 ? TEXT("baked.") + What : FString::Printf(TEXT("flat.%02x%02x%02x"), Flat.R, Flat.G, Flat.B);
 		const FString Key = FString::Printf(TEXT("texture.%s+opacity.%s.color"), *AlbedoName, *Textures.Opacity->GetPathName());
@@ -2258,8 +2258,8 @@ namespace MantleCosmeticExportPrivate
 		Options.Kind = TEXT("texture");
 		Options.Role = TEXT("color");
 		Package.AddAsset(Key, FString::Printf(TEXT("%s with opacity (%dx%d)"), *What, Size.X, Size.Y), Options, MoveTemp(Png));
-		Package.Notes.Add(FString::Printf(TEXT("%s: opacity from %s (%s) packed into the base colour's alpha, %dx%d"), *What, *Textures.Opacity->GetName(),
-			Channel == EMantleOpacityChannel::Red ? TEXT("its grey or red channel") : TEXT("its alpha"), Size.X, Size.Y));
+		Package.Notes.Add(FString::Printf(TEXT("%s: opacity from %s (%s) packed into the base color's alpha, %dx%d"), *What, *Textures.Opacity->GetName(),
+			Channel == EMantleOpacityChannel::Red ? TEXT("its gray or red channel") : TEXT("its alpha"), Size.X, Size.Y));
 		return Key;
 	}
 
@@ -2495,7 +2495,7 @@ namespace MantleCosmeticExportPrivate
 
 	/**
 	 * The item's material entries for Source's glTF materials: textures resolved, exported and added. With
-	 * bOpacityInAlpha (hair), a section's separate opacity texture is packed into its base colour's alpha.
+	 * bOpacityInAlpha (hair), a section's separate opacity texture is packed into its base color's alpha.
 	 */
 	void AddSectionMaterials(FMantleCosmeticPackage& Package, const FMeshSource& Source, bool bNormal, bool bOrm, const FMantleContractClass& Class,
 		const TArray<FString>& Roles, const FString& Prefix, TArray<FMantleCosmeticMaterialRef>& OutRefs, const FMantleAvatarContract& Contract,
@@ -2516,7 +2516,7 @@ namespace MantleCosmeticExportPrivate
 					for (const TCHAR* Parameter : FMantleNativeEye::TextureParameters())
 					{
 						const FString TextureRole = FMantleNativeEye::TextureRole(FName(Parameter));
-						const ETextureUse Use = TextureRole == TEXT("normal") ? ETextureUse::Normal : TextureRole == TEXT("data") ? ETextureUse::Data : ETextureUse::Colour;
+						const ETextureUse Use = TextureRole == TEXT("normal") ? ETextureUse::Normal : TextureRole == TEXT("data") ? ETextureUse::Data : ETextureUse::Color;
 						const int32 ClassLimit = Use == ETextureUse::Normal ? Class.NormalMax : Class.AlbedoMax;
 						const int32 Limit = FMantleCosmeticExport::FaceSectionTextureLimit(ClassLimit, Role, Section);
 						Ref.NativeEyeTextureKeys.Add(FName(Parameter), AddTexture(Package, NativeTextures.FindChecked(FName(Parameter)), nullptr, Use, Limit,
@@ -2555,7 +2555,7 @@ namespace MantleCosmeticExportPrivate
 			{
 				Package.Notes.Add(FString::Printf(TEXT("Face \"%s\": auxiliary eye/teeth textures normalized to at most 1024 pixels to preserve wardrobe memory headroom"), *Section));
 			}
-			const FString What = FString::Printf(TEXT("%s \"%s\" base colour"), *Prefix, *Section);
+			const FString What = FString::Printf(TEXT("%s \"%s\" base color"), *Prefix, *Section);
 			const EBlendMode Blend = Material ? Material->GetBlendMode() : BLEND_Opaque;
 			if (bOpacityInAlpha && Blend != BLEND_Opaque && Blend != BLEND_Masked)
 			{
@@ -2566,7 +2566,7 @@ namespace MantleCosmeticExportPrivate
 			const bool bPackOpacity = bOpacityInAlpha && Textures.Opacity != nullptr;
 			if (bOpacityInAlpha && !Textures.Opacity && Blend != BLEND_Opaque)
 			{
-				Package.Notes.Add(FString::Printf(TEXT("%s \"%s\": no separate opacity texture was found, so the base colour's own alpha is the mask"), *Prefix, *Section));
+				Package.Notes.Add(FString::Printf(TEXT("%s \"%s\": no separate opacity texture was found, so the base color's own alpha is the mask"), *Prefix, *Section));
 			}
 			if (bPackOpacity)
 			{
@@ -2574,23 +2574,23 @@ namespace MantleCosmeticExportPrivate
 			}
 			else if (Textures.Albedo || Textures.BakedAlbedo.Num() > 0)
 			{
-				Ref.AlbedoKey = AddTexture(Package, Textures.Albedo, &Textures.BakedAlbedo, ETextureUse::Colour, AlbedoLimit, What, Contract);
+				Ref.AlbedoKey = AddTexture(Package, Textures.Albedo, &Textures.BakedAlbedo, ETextureUse::Color, AlbedoLimit, What, Contract);
 			}
 			else
 			{
-				const FColor Flat = Textures.FlatColour.ToFColorSRGB();
+				const FColor Flat = Textures.FlatColor.ToFColorSRGB();
 				const FString Key = FString::Printf(TEXT("texture.flat.%02x%02x%02x%02x.color"), Flat.R, Flat.G, Flat.B, Flat.A);
 				FMantleAssetUploadOptions Options;
 				Options.Kind = TEXT("texture");
 				Options.Role = TEXT("color");
 				if (!Package.FindAsset(Key))
 				{
-					Package.AddAsset(Key, FString::Printf(TEXT("Flat colour #%02x%02x%02x"), Flat.R, Flat.G, Flat.B), Options, FMantlePng::EncodeSolid(4, 4, Flat));
+					Package.AddAsset(Key, FString::Printf(TEXT("Flat color #%02x%02x%02x"), Flat.R, Flat.G, Flat.B), Options, FMantlePng::EncodeSolid(4, 4, Flat));
 				}
 				Ref.AlbedoKey = Key;
 				Package.Issues.Add(FMantleCosmeticChecks::Warning(
-					FString::Printf(TEXT("%s: no base colour texture was found, so it uploads as a flat %s colour."), *What,
-						Textures.bFlatColourFound ? TEXT("material") : TEXT("grey")),
+					FString::Printf(TEXT("%s: no base color texture was found, so it uploads as a flat %s color."), *What,
+						Textures.bFlatColorFound ? TEXT("material") : TEXT("gray")),
 					TEXT("Give the material a BaseColor texture parameter if it should look textured.")));
 			}
 			if (bNormal && (Textures.Normal || Textures.BakedNormal.Num() > 0))
@@ -2626,7 +2626,7 @@ namespace MantleCosmeticExportPrivate
 			if (Declaration.NeutralAlbedo.IsValid())
 			{
 				ReplacedAlbedos.Add(Ref.AlbedoKey);
-				Ref.AlbedoKey = AddTexture(Package, Declaration.NeutralAlbedo.Get(), nullptr, ETextureUse::Colour, Class.AlbedoMax,
+				Ref.AlbedoKey = AddTexture(Package, Declaration.NeutralAlbedo.Get(), nullptr, ETextureUse::Color, Class.AlbedoMax,
 					What + TEXT(" explicit neutral albedo"), Contract);
 				Package.Notes.Add(What + TEXT(": the creator explicitly replaced its albedo with a neutral authored texture for dyeing."));
 			}
@@ -3552,7 +3552,7 @@ TArray<FMantleGroomCardsEntry> FMantleCosmeticExport::ReadGroomCards(const UObje
 	const FNameProperty* EntrySlotProperty = FindFProperty<FNameProperty>(Entry, TEXT("MaterialSlotName"));
 
 	// The groom's materials (UGroomAsset::HairGroupsMaterials, FHairGroupsMaterial: Material, SlotName), where its hair
-	// colour lives.
+	// color lives.
 	TArray<TPair<FName, UMaterialInterface*>> GroomMaterials;
 	if (const FArrayProperty* MaterialList = FindFProperty<FArrayProperty>(Groom->GetClass(), TEXT("HairGroupsMaterials")))
 	{
@@ -3939,7 +3939,7 @@ int32 FMantleCosmeticExport::FindReferenceLOD(const USkeletalMesh* Mesh, const F
 
 namespace MantleCosmeticExportPrivate
 {
-	/** A vertex by where it is and its UV, quantised (0.01 mm, 1/65536): the render-to-description bridge's fallback. */
+	/** A vertex by where it is and its UV, quantized (0.01 mm, 1/65536): the render-to-description bridge's fallback. */
 	struct FReferenceOrderKey
 	{
 		FIntVector Position = FIntVector::ZeroValue;
@@ -4363,7 +4363,7 @@ bool FMantleCosmeticExport::BuildClientAppearanceMaterials(const FMantleGlbMesh&
 
 int32 FMantleCosmeticExport::FaceSectionTextureLimit(int32 ClassLimit, const FString& Role, const FString& Section)
 {
-	// Teeth are intentionally catalogued as "other"; do not reduce unrelated eye edges,
+	// Teeth are intentionally catalogd as "other"; do not reduce unrelated eye edges,
 	// lashes or arbitrary "other" sections. This policy is called only for avatar face materials.
 	const bool bAuxiliary = Role == TEXT("eyes") || (Role == TEXT("other") && Section.Contains(TEXT("teeth"), ESearchCase::IgnoreCase));
 	return bAuxiliary ? (ClassLimit > 0 ? FMath::Min(ClassLimit, 1024) : 1024) : ClassLimit;
@@ -4599,7 +4599,7 @@ int32 FMantleCosmeticExport::PickAuthoringFace(const FString& BodyName, TConstAr
 	return Best;
 }
 
-bool FMantleCosmeticExport::IsGreyPng(const TArray<uint8>& Png)
+bool FMantleCosmeticExport::IsGrayPng(const TArray<uint8>& Png)
 {
 	IImageWrapperModule& Module = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
 	const TSharedPtr<IImageWrapper> Reader = Module.CreateImageWrapper(EImageFormat::PNG);
@@ -4915,18 +4915,18 @@ int32 FMantleCosmeticExport::PickOpacityTexture(TConstArrayView<FMantleTexturePa
 
 EMantleOpacityChannel FMantleCosmeticExport::ChooseOpacityChannel(TConstArrayView<FColor> OpacityPixels)
 {
-	bool bGrey = true;
+	bool bGray = true;
 	bool bRgbConstant = true;
 	bool bAlphaVaries = false;
 	for (const FColor& Pixel : OpacityPixels)
 	{
-		bGrey = bGrey && Pixel.R == Pixel.G && Pixel.G == Pixel.B;
+		bGray = bGray && Pixel.R == Pixel.G && Pixel.G == Pixel.B;
 		bRgbConstant = bRgbConstant && Pixel.R == OpacityPixels[0].R && Pixel.G == OpacityPixels[0].G && Pixel.B == OpacityPixels[0].B;
 		bAlphaVaries = bAlphaVaries || Pixel.A != 255;
 	}
-	// Alpha when it carries something and the colour does not (a flat colour, or a colour image): a grey image whose
-	// grey varies is a single-channel mask, whatever its alpha.
-	return bAlphaVaries && (bRgbConstant || !bGrey) ? EMantleOpacityChannel::Alpha : EMantleOpacityChannel::Red;
+	// Alpha when it carries something and the color does not (a flat color, or a color image): a gray image whose
+	// gray varies is a single-channel mask, whatever its alpha.
+	return bAlphaVaries && (bRgbConstant || !bGray) ? EMantleOpacityChannel::Alpha : EMantleOpacityChannel::Red;
 }
 
 void FMantleCosmeticExport::PackOpacityIntoAlpha(TArrayView<FColor> AlbedoPixels, TConstArrayView<FColor> OpacityPixels, EMantleOpacityChannel Channel)
@@ -4953,10 +4953,10 @@ bool FMantleCosmeticExport::IsAnimatedMaskTexture(const FString& Name)
 	Spaced.ParseIntoArrayWS(Tokens);
 	for (const FString& Token : Tokens)
 	{
-		// "wm1", "WM13", "cm2", "wm1a": a wrinkle map or colour mask by number; "wm" alone ("T_head_wm_msk_Array").
+		// "wm1", "WM13", "cm2", "wm1a": a wrinkle map or color mask by number; "wm" alone ("T_head_wm_msk_Array").
 		const bool bWrinkle = Token.StartsWith(TEXT("wm"), ESearchCase::IgnoreCase);
-		const bool bColourMask = Token.StartsWith(TEXT("cm"), ESearchCase::IgnoreCase);
-		if ((bWrinkle && Token.Len() == 2) || ((bWrinkle || bColourMask) && Token.Len() > 2 && FChar::IsDigit(Token[2])))
+		const bool bColorMask = Token.StartsWith(TEXT("cm"), ESearchCase::IgnoreCase);
+		if ((bWrinkle && Token.Len() == 2) || ((bWrinkle || bColorMask) && Token.Len() > 2 && FChar::IsDigit(Token[2])))
 		{
 			return true;
 		}
@@ -4970,7 +4970,7 @@ FMantleMaterialTextures FMantleCosmeticExport::ResolveMaterialTextures(UMaterial
 	FMantleMaterialTextures Out;
 	if (!Material)
 	{
-		// Nothing to evaluate: the upload gives it a flat grey.
+		// Nothing to evaluate: the upload gives it a flat gray.
 		Out.bPlain = true;
 		return Out;
 	}
@@ -5032,7 +5032,7 @@ FMantleMaterialTextures FMantleCosmeticExport::ResolveMaterialTextures(UMaterial
 		}
 		else
 		{
-			PlainBaseColor = PlainInputTexture(Editor->BaseColor, Material, TEXT("base colour"), Out.Why);
+			PlainBaseColor = PlainInputTexture(Editor->BaseColor, Material, TEXT("base color"), Out.Why);
 			Out.bPlain = PlainBaseColor != nullptr;
 			FString NormalWhy;
 			PlainNormal = PlainInputTexture(Editor->Normal, Material, TEXT("normal"), NormalWhy);
@@ -5101,7 +5101,7 @@ FMantleMaterialTextures FMantleCosmeticExport::ResolveMaterialTextures(UMaterial
 		Out.Normal = PlainNormal;
 	}
 
-	// A separate opacity texture, before the base colour fallback below so that never takes it.
+	// A separate opacity texture, before the base color fallback below so that never takes it.
 	if (bPickOpacity)
 	{
 		for (int32 Index = 0; Index < Parameters.Num(); ++Index)
@@ -5115,7 +5115,7 @@ FMantleMaterialTextures FMantleCosmeticExport::ResolveMaterialTextures(UMaterial
 
 	if (!Out.BaseColor)
 	{
-		// The largest colour texture the material uses.
+		// The largest color texture the material uses.
 		TArray<UTexture*> Used;
 		Material->GetUsedTextures(Used);
 		int64 Best = 0;
@@ -5168,7 +5168,7 @@ void FMantleCosmeticExport::AddDetectedClothingColors(FMantleCosmeticPackage& Pa
 		return;
 	}
 	int32 MainNumber = 1, AccentNumber = 1, Found = 0;
-	// The item's logical colour controls: a region id declared by several sections is one control.
+	// The item's logical color controls: a region id declared by several sections is one control.
 	TSet<FString> Declared;
 	for (const FMantleCosmeticMaterialRef& Ref : Package.Materials) for (const FMantleClothingColorRegion& Region : Ref.ColorRegions) Declared.Add(Region.Id);
 	for (int32 Index = 0; Index < Mesh.MaterialNames.Num() && Index < Package.Materials.Num(); ++Index)
@@ -5179,7 +5179,7 @@ void FMantleCosmeticExport::AddDetectedClothingColors(FMantleCosmeticPackage& Pa
 		const FString What = TEXT("Clothing ") + Detection.MaterialName;
 		if (!Package.Materials[Index].ColorRegions.IsEmpty() || Package.Materials[Index].AlbedoKey.IsEmpty())
 		{
-			Detection.Why = TEXT("its colours are already set up");
+			Detection.Why = TEXT("its colors are already set up");
 			continue;
 		}
 		const FMantleCosmeticUploadAsset* AlbedoAsset = Package.FindAsset(Package.Materials[Index].AlbedoKey);
@@ -5189,7 +5189,7 @@ void FMantleCosmeticExport::AddDetectedClothingColors(FMantleCosmeticPackage& Pa
 		if (!AlbedoAsset || !DecodePngPixels(AlbedoAsset->Bytes, MaxTextureSize, false, AlbedoPixels, AlbedoSize))
 		{
 			Detection.Why = TEXT("its textures could not be read");
-			Package.Notes.Add(What + TEXT(": colour areas: its colour texture could not be read; original colours only."));
+			Package.Notes.Add(What + TEXT(": color areas: its color texture could not be read; original colors only."));
 			continue;
 		}
 		// Sellers name their area maps every way ("Mask_01", "PatternMask", "Albedo_RGB_Mask"): every map named like
@@ -5206,7 +5206,7 @@ void FMantleCosmeticExport::AddDetectedClothingColors(FMantleCosmeticPackage& Pa
 			Error.Reset();
 			if (!ReadTexturePixels(Candidate.Value, MaxTextureSize, true, MaskPixels, MaskSize, Error))
 			{
-				Package.Notes.Add(FString::Printf(TEXT("%s: colour areas: %s on %s could not be read%s."), *What, *Detection.TextureName,
+				Package.Notes.Add(FString::Printf(TEXT("%s: color areas: %s on %s could not be read%s."), *What, *Detection.TextureName,
 					*Detection.Parameter, Error.IsEmpty() ? TEXT("") : *(TEXT(" (") + Error + TEXT(")"))));
 				continue;
 			}
@@ -5219,12 +5219,12 @@ void FMantleCosmeticExport::AddDetectedClothingColors(FMantleCosmeticPackage& Pa
 			if (!FMantleClothingColorDetect::Detect(Mesh, Index, AlbedoSize, MaskPixels, Detection, Clean, Used, MainNumber, AccentNumber, Error))
 			{
 				bUnchecked = true;
-				Package.Notes.Add(What + TEXT(": colour areas not checked: ") + Error);
+				Package.Notes.Add(What + TEXT(": color areas not checked: ") + Error);
 				break;
 			}
 			for (const FMantleAreaChannelScore& Score : Detection.Scores)
 			{
-				Package.Notes.Add(FString::Printf(TEXT("%s: colour areas: %s %s %c: near-binary %.3f, coverage %.3f, edge width %.2f, %s."), *What, *Detection.TextureName,
+				Package.Notes.Add(FString::Printf(TEXT("%s: color areas: %s %s %c: near-binary %.3f, coverage %.3f, edge width %.2f, %s."), *What, *Detection.TextureName,
 					*Detection.Parameter, TEXT("RGB")[Score.Channel], Score.Binary, Score.Coverage, Score.EdgeWidth, Score.bAccepted ? TEXT("accepted") : TEXT("rejected")));
 			}
 			if (!Detection.Areas.IsEmpty()) break;
@@ -5236,20 +5236,20 @@ void FMantleCosmeticExport::AddDetectedClothingColors(FMantleCosmeticPackage& Pa
 		}
 		if (Detection.Areas.IsEmpty())
 		{
-			// No map with separate areas: the whole material is one colour players can change.
+			// No map with separate areas: the whole material is one color players can change.
 			Detection.Parameter.Reset();
 			Detection.TextureName.Reset();
 			Detection.Scores.Reset();
 			if (!FMantleClothingColorDetect::DetectWhole(Mesh, Index, AlbedoSize, Detection, Clean, Used, MainNumber, Error))
 			{
 				Detection.Why = TEXT("its texture layout could not be checked");
-				Package.Notes.Add(What + TEXT(": colour areas not checked: ") + Error);
+				Package.Notes.Add(What + TEXT(": color areas not checked: ") + Error);
 				continue;
 			}
-			Package.Notes.Add(What + TEXT(": colour areas: no texture marks out separate areas, so the whole material is one colour area."));
+			Package.Notes.Add(What + TEXT(": color areas: no texture marks out separate areas, so the whole material is one color area."));
 		}
 		// One material drawn by several sections (a left and right shoe) is one set of controls: its areas take the ids
-		// the first such section's did, so players colour the pair together.
+		// the first such section's did, so players color the pair together.
 		int32 SharedWith = INDEX_NONE;
 		for (int32 Prev = 0; Prev < Index && Materials.IsValidIndex(Index) && Materials[Index]; ++Prev)
 		{
@@ -5274,7 +5274,7 @@ void FMantleCosmeticExport::AddDetectedClothingColors(FMantleCosmeticPackage& Pa
 		// Each area's swatch starts at what the item looks like there.
 		for (int32 Area = 0; Area < Detection.Areas.Num(); ++Area)
 		{
-			// One control has one starting colour: a shared area keeps the first section's.
+			// One control has one starting color: a shared area keeps the first section's.
 			Detection.Areas[Area].DefaultColor = SharedWith != INDEX_NONE ? Package.DetectedClothingColors[SharedWith].Areas[Area].DefaultColor
 				: FMantleClothingColorDetect::AverageColor(AlbedoPixels, Clean, Used, Detection.Areas[Area].Channel);
 		}
@@ -5284,19 +5284,19 @@ void FMantleCosmeticExport::AddDetectedClothingColors(FMantleCosmeticPackage& Pa
 			TArray<FMantleClothingColorRegion> One = { Region };
 			FString WhyNot;
 			if (FMantleClothingColorMeasure::Measure(Mesh, Index, AlbedoSize, AlbedoPixels, Clean, One, WhyNot)) Measured.Add(One[0]);
-			else Package.Notes.Add(FString::Printf(TEXT("%s: colour area %s keeps its original colours: %s"), *What, *Region.Label, *WhyNot));
+			else Package.Notes.Add(FString::Printf(TEXT("%s: color area %s keeps its original colors: %s"), *What, *Region.Label, *WhyNot));
 		}
 		if (Measured.IsEmpty()) continue;
 		TSet<FString> WithThese = Declared;
 		for (const FMantleClothingColorRegion& Region : Measured) WithThese.Add(Region.Id);
 		if (WithThese.Num() > MantleClothingColor::MaxColorsPerItem)
 		{
-			Package.Issues.Add(FMantleCosmeticChecks::Info(FString::Printf(TEXT("%s: players can recolour at most %d areas of one item, so this part keeps its original colours."),
+			Package.Issues.Add(FMantleCosmeticChecks::Info(FString::Printf(TEXT("%s: players can recolor at most %d areas of one item, so this part keeps its original colors."),
 				*What, MantleClothingColor::MaxColorsPerItem)));
 			continue;
 		}
 		const TArray<uint8> Png = FMantlePng::EncodeRGBA8(AlbedoSize.X, AlbedoSize.Y, Clean);
-		const FString MaskKey = AddTexture(Package, nullptr, &Png, ETextureUse::Data, MaxTextureSize, What + TEXT(" colour areas"), Contract);
+		const FString MaskKey = AddTexture(Package, nullptr, &Png, ETextureUse::Data, MaxTextureSize, What + TEXT(" color areas"), Contract);
 		if (MaskKey.IsEmpty()) continue;
 		FMantleCosmeticMaterialRef& Ref = Package.Materials[Index];
 		Ref.ColorMaskKey = MaskKey;
@@ -5304,13 +5304,13 @@ void FMantleCosmeticExport::AddDetectedClothingColors(FMantleCosmeticPackage& Pa
 		Declared = MoveTemp(WithThese);
 		for (const FMantleClothingColorRegion& Region : Ref.ColorRegions)
 		{
-			Package.Notes.Add(FString::Printf(TEXT("%s: colour area %s (\"%s\") found from %s, default #%s, measured linear reference luminance %.8f."), *What, *Region.Id,
+			Package.Notes.Add(FString::Printf(TEXT("%s: color area %s (\"%s\") found from %s, default #%s, measured linear reference luminance %.8f."), *What, *Region.Id,
 				*Region.Label, Detection.Parameter.IsEmpty() ? TEXT("the whole material") : *Detection.Parameter, *Region.DefaultColor.ToHex().Left(6), Region.ReferenceLuminance));
 		}
 	}
 	if (Found == 0)
 	{
-		Package.Notes.Add(TEXT("Colour areas: none found; this item uploads in its original colours."));
+		Package.Notes.Add(TEXT("Color areas: none found; this item uploads in its original colors."));
 	}
 }
 
@@ -5434,7 +5434,7 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 			}
 			if (!Result.GarmentVariants.IsEmpty())
 			{
-				// A found area's default colour is its average over this source's texels; one logical control keeps
+				// A found area's default color is its average over this source's texels; one logical control keeps
 				// the first source's default (and name), so the variants declare the same controls.
 				for (FMantleCosmeticMaterialRef& Material : Part.Materials)
 				{
@@ -5615,7 +5615,7 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 			TArray<TArray<uint8>> GroomTangents;
 			TArray<FMantleNativeHairSettings> GroomNativeSettings;
 			TArray<TArray<UMaterialInterface*>> GroomColorSources;
-			// The materials a groom's cards take their colour from: the groom's, then the cards mesh's.
+			// The materials a groom's cards take their color from: the groom's, then the cards mesh's.
 			TArray<UMaterialInterface*> HairColorSources;
 			// Hair always takes LOD 0 of its source; a garment the first LOD within the limit.
 			int32 SourceLODs = 1;
@@ -5727,7 +5727,7 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 				const UGroomAsset* NativeGroom = Cast<UGroomAsset>(Source);
 				if (!NativeGroom || GroupOrder.IsEmpty())
 				{ Issues.Add(FMantleCosmeticChecks::Error(TEXT("native v2 needs a groom with at least one cards group"), TEXT("Export standalone artist cards, or use a groom with hair cards."))); return Package; }
-				// Each physical cards group is its own section with its own atlas, tangent and colour. Groups with strands but
+				// Each physical cards group is its own section with its own atlas, tangent and color. Groups with strands but
 				// no cards (MetaHuman's ponytail tie, for one) have nothing to draw at cards LODs and stay out.
 				for (int32 Group = 0; Group < NativeGroom->GetHairGroupsInfo().Num(); ++Group)
 				{
@@ -6233,7 +6233,7 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 			else if (bHair && CardTextures.Num() > 0)
 			{
 				// MetaHuman's cards layout 2: the attribute atlas (coverage R, depth G, seed B) and the
-				// tangent atlas (tangent RGB, CoordU A), both data, not colour. The runtime hair material
+				// tangent atlas (tangent RGB, CoordU A), both data, not color. The runtime hair material
 				// (M_MantleHair's HairAtlas) reads a hair_cards section's coverage and seed from the first.
 				UTexture2D* Attribute = nullptr;
 				UTexture2D* Tangent = nullptr;
@@ -6250,7 +6250,7 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 				}
 				Attribute = Attribute ? Attribute : CardTextures[0];
 				Tangent = Tangent ? Tangent : (CardTextures.IsValidIndex(1) && CardTextures[1] != Attribute ? CardTextures[1] : nullptr);
-				// The atlases hold coverage, not colour, so the sections say hair_cards and carry the colour the
+				// The atlases hold coverage, not color, so the sections say hair_cards and carry the color the
 				// cards are drawn in: the creator's, else the groom's material's (MetaHuman keeps it in Melanin and Redness).
 				for (UMaterialInterface* Material : Mesh.Materials)
 				{
@@ -6267,13 +6267,13 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 					ColorCandidates.Add(Material);
 				}
 				const FLinearColor HairColor = FMantleHairColor::Resolve(Draft.HairColor, ColorCandidates, ColorSource, &ColorMaterial);
-				Package.Notes.Add(FString::Printf(TEXT("Hair colour %s (linear %.3f, %.3f, %.3f) from %s%s"), *FMantleHairColor::ToHex(HairColor),
+				Package.Notes.Add(FString::Printf(TEXT("Hair color %s (linear %.3f, %.3f, %.3f) from %s%s"), *FMantleHairColor::ToHex(HairColor),
 					HairColor.R, HairColor.G, HairColor.B, FMantleHairColor::Describe(ColorSource),
 					ColorMaterial ? *FString::Printf(TEXT(" (%s)"), *ColorMaterial->GetName()) : TEXT("")));
 				if (ColorSource == FMantleHairColor::ESource::Default)
 				{
 					Issues.Add(FMantleCosmeticChecks::Info(FString::Printf(
-						TEXT("no hair colour was found in the groom's materials, so its cards upload in a default brown (%s); set one under Hair colour."),
+						TEXT("no hair color was found in the groom's materials, so its cards upload in a default brown (%s); set one under Hair color."),
 						*FMantleHairColor::ToHex(HairColor))));
 				}
 				for (int32 Index = 0; Index < Mesh.Glb.MaterialNames.Num(); ++Index)
@@ -6340,7 +6340,7 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 				else
 				{
 					Issues.Add(FMantleCosmeticChecks::Warning(FString::Printf(TEXT("The accessory could not be reduced automatically: %s"), *ReduceWhy),
-						TEXT("Lower its triangle count in a modelling tool, or add a smaller LOD0.")));
+						TEXT("Lower its triangle count in a modeling tool, or add a smaller LOD0.")));
 				}
 			}
 			// A model exported with its pivot at the feet is out of the slot's reach: its box is moved onto the pivot in the
@@ -6354,7 +6354,7 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 			{
 				for (FVector3f& Position : Mesh.Glb.Positions) Position -= Recenter;
 				Mesh.Bounds = Mesh.Bounds.ShiftBy(-Recenter);
-				Package.Notes.Add(FString::Printf(TEXT("Accessory: its pivot was out of reach of %s, so the mesh is centred on the socket (moved %.1f, %.1f, %.1f cm)."),
+				Package.Notes.Add(FString::Printf(TEXT("Accessory: its pivot was out of reach of %s, so the mesh is centerd on the socket (moved %.1f, %.1f, %.1f cm)."),
 					*Draft.Slot, Recenter.X, Recenter.Y, Recenter.Z));
 			}
 			FMantleCosmeticChecks::CheckMeshLimits(Mesh.NumTriangles, Mesh.Glb.Positions.Num(), 0, 0, Class, Issues, 1, EMantleLODPick::LODZeroOnly);
@@ -6437,7 +6437,7 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 			Package.Notes.Add(FString::Printf(TEXT("Accessory: %d LODs; rigid, opaque albedo material with an optional normal map; no collision or physics."), LODs.Num()));
 			// An accessory takes an optional normal map within the class's normalMax, as a garment does.
 			AddSectionMaterials(Package, Mesh, Class.NormalMax > 0, false, Class, TArray<FString>(), TEXT("Accessory"), Package.Materials, Contract);
-			// Colour areas players can change, found and measured as clothing's are.
+			// Color areas players can change, found and measured as clothing's are.
 			Package.MaterialNames = Mesh.Glb.MaterialNames;
 			AddClothingColors(Package, Mesh, Draft.ClothingColors, Class, Contract);
 			AddDetectedClothingColors(Package, Mesh.Glb, Mesh.Materials, Draft, Class.AlbedoMax, Contract);
@@ -6494,7 +6494,7 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 				const TCHAR* ShapeHint = ShapeError.StartsWith(TEXT("the skin has no"), ESearchCase::CaseSensitive)
 					? TEXT("Export the whole body skeleton: keep every bone of the MetaHuman, UE5 Mannequin, UE4 Mannequin or UEFN Mannequin body skeleton, even ones no vertex uses.")
 					: ShapeError.Contains(TEXT("has scale"), ESearchCase::CaseSensitive)
-					? TEXT("Apply the scale to the mesh and skeleton in your modelling tool (every bone at scale 1), then reimport.")
+					? TEXT("Apply the scale to the mesh and skeleton in your modeling tool (every bone at scale 1), then reimport.")
 					: TEXT("Pose the body in its skeleton's reference pose before exporting it: arms angled down and out, legs straight down, as the stock MetaHuman, UE5 Mannequin, UE4 Mannequin or UEFN Mannequin body stands. A T-pose or arms-down body is refused.");
 				Issues.Add(FMantleCosmeticChecks::Error(FMantleCosmeticChecks::EndWithFullStop(ShapeError), ShapeHint));
 			}

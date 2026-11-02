@@ -1290,7 +1290,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			continue;
 		}
 
-		// A sprites Effect's texture (#628), read as a decal's base colour is: nothing renders on a dedicated server.
+		// A sprites Effect's texture (#628), read as a decal's base color is: nothing renders on a dedicated server.
 		if (const FMantleEffectProps* Effect = Entity.Props.TryGet<FMantleEffectProps>())
 		{
 			if (IsUploadedId(Effect->TextureId))
@@ -1557,7 +1557,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 		EnsureRecord(StoredWeaponId, EAssetKind::Weapon);
 	}
 
-	// #556 item 5: the images the place's UI documents show, colour textures with straight alpha
+	// #556 item 5: the images the place's UI documents show, color textures with straight alpha
 	// as the document host draws them (MantleRml::ResolveAssetTexture). Only the uiDocuments entry
 	// names them, so nothing above takes them; a dedicated server shows no UI and takes none.
 	for (const FMantleUIDocument& Document : Place.UIDocuments)
@@ -2025,7 +2025,7 @@ void FMantlePlaceAssets::QueueLiveriesOf(const FString& VehicleId, const TArray<
 				*VehicleId, *TextureId);
 			continue;
 		}
-		// A livery is colour with alpha as coverage (limits.json placeAssets.livery.role), read as a base colour is.
+		// A livery is color with alpha as coverage (limits.json placeAssets.livery.role), read as a base color is.
 		FRecord& Record = EnsureRecord(TextureId, EAssetKind::Texture, EMantleTextureRole::Color);
 		if (!Record.bResolved && !Record.bResolving && !Record.bFailed)
 		{
@@ -2177,7 +2177,7 @@ void FMantlePlaceAssets::QueueWeaponPartsOf(const FString& WeaponId, const FMant
 	}
 	QueueMaterialsOf(WeaponId, MaterialIds);
 	QueueSoundsOf(WeaponId, Named.Sounds);
-	// The hotbar icon is a colour texture, as a livery is; a dedicated server draws no hotbar and fetches none.
+	// The hotbar icon is a color texture, as a livery is; a dedicated server draws no hotbar and fetches none.
 	if (!Named.Icon.IsEmpty())
 	{
 		QueueLiveriesOf(WeaponId, { Named.Icon });

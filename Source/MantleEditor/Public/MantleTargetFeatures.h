@@ -55,7 +55,7 @@ struct MANTLEEDITOR_API FMantleTargetFeatures
 	 * material without the foliage key, and water (#628) so it is written as the opaque material near-opaque water
 	 * published as before the water key: its fastest normal map panned (uvTransforms, uvPanning), no second normal.
 	 * Without materialAdditive, takes alphaMode additive off Document (#628) so it is written as the translucent material an older
-	 * client reads: a black base colour, the glow as emissive and an opacity of clamp(luminance of the emissive factor x its
+	 * client reads: a black base color, the glow as emissive and an opacity of clamp(luminance of the emissive factor x its
 	 * strength, 0, 1). True when that changed what the document writes.
 	 */
 	bool DowngradeMaterial(FMantlePlaceMaterialDocument& Document) const;

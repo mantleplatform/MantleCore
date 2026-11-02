@@ -84,12 +84,12 @@ namespace MantleLibraryPanelPrivate
 		return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	}
 
-	FSlateColor ErrorColour()
+	FSlateColor ErrorColor()
 	{
 		return FSlateColor(FLinearColor(0.95f, 0.35f, 0.30f));
 	}
 
-	FSlateColor GoodColour()
+	FSlateColor GoodColor()
 	{
 		return FSlateColor(FLinearColor(0.55f, 0.80f, 0.55f));
 	}
@@ -746,7 +746,7 @@ void SMantleLibraryPanel::Construct(const FArguments& InArgs)
 					SNew(STextBlock)
 					.AutoWrapText(true)
 					.Visibility_Lambda([this] { return bLoading || !ListError.IsEmpty() || (bLoaded && Cards.IsEmpty()) ? EVisibility::Visible : EVisibility::Collapsed; })
-					.ColorAndOpacity_Lambda([this] { return ListError.IsEmpty() ? FSlateColor::UseSubduedForeground() : ErrorColour(); })
+					.ColorAndOpacity_Lambda([this] { return ListError.IsEmpty() ? FSlateColor::UseSubduedForeground() : ErrorColor(); })
 					.Text_Lambda([this]
 					{
 						if (!ListError.IsEmpty())
@@ -987,7 +987,7 @@ TSharedRef<SWidget> SMantleLibraryPanel::BuildTile(const FMantleLibraryCard& Car
 	{
 		KindWord = Card.Kind.Left(1).ToUpper() + Card.Kind.Mid(1);
 	}
-	const FLinearColor PlaceholderColour = bIsWeapon ? FLinearColor(0.26f, 0.13f, 0.11f)
+	const FLinearColor PlaceholderColor = bIsWeapon ? FLinearColor(0.26f, 0.13f, 0.11f)
 		: bIsVehicle ? FLinearColor(0.10f, 0.17f, 0.27f)
 		: bIsScript ? FLinearColor(0.12f, 0.22f, 0.14f) : FLinearColor(0.15f, 0.15f, 0.15f);
 	// A package's tooltip lists its files (another creator's code: what is about to run in your place).
@@ -1025,7 +1025,7 @@ TSharedRef<SWidget> SMantleLibraryPanel::BuildTile(const FMantleLibraryCard& Car
 		[
 			SNew(SBorder)
 			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-			.BorderBackgroundColor(PlaceholderColour)
+			.BorderBackgroundColor(PlaceholderColor)
 			.HAlign(HAlign_Center)
 			.VAlign(VAlign_Center)
 			[
@@ -1128,7 +1128,7 @@ TSharedRef<SWidget> SMantleLibraryPanel::BuildTile(const FMantleLibraryCard& Car
 			SNew(STextBlock)
 			.AutoWrapText(true)
 			.Font(FAppStyle::GetFontStyle("SmallFont"))
-			.ColorAndOpacity(Note->bError ? ErrorColour() : GoodColour())
+			.ColorAndOpacity(Note->bError ? ErrorColor() : GoodColor())
 			.Text(FText::FromString(Note->Text))
 		];
 	}
@@ -1556,7 +1556,7 @@ TSharedRef<SWidget> SMantleLibraryPanel::MakeStorageSection()
 			SNew(STextBlock)
 			.AutoWrapText(true)
 			.Visibility_Lambda([this] { return StorageNote.Text.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
-			.ColorAndOpacity_Lambda([this] { return StorageNote.bError ? ErrorColour() : GoodColour(); })
+			.ColorAndOpacity_Lambda([this] { return StorageNote.bError ? ErrorColor() : GoodColor(); })
 			.Text_Lambda([this] { return FText::FromString(StorageNote.Text); })
 		]
 		+ SVerticalBox::Slot().FillHeight(1.0f)
@@ -1832,7 +1832,7 @@ void SMantleLibraryPanel::RebuildStorage()
 						SNew(STextBlock)
 						.AutoWrapText(true)
 						.Font(FAppStyle::GetFontStyle("SmallFont"))
-						.ColorAndOpacity(bError ? ErrorColour() : FSlateColor::UseSubduedForeground())
+						.ColorAndOpacity(bError ? ErrorColor() : FSlateColor::UseSubduedForeground())
 						.Text(FText::FromString(Detail))
 					]
 				]

@@ -11,14 +11,14 @@
 // Named, not anonymous: unity builds merge this file with others.
 namespace MantleVehicleFitPrivate
 {
-	/** Wheels whose centres are this close along the vehicle's length (cm) are on the same axle. */
+	/** Wheels whose centers are this close along the vehicle's length (cm) are on the same axle. */
 	constexpr double AxleTolerance = 25.0;
-	/** A size this close to 1 is left as modelled: a change this small is invisible, and "made 1.03x bigger" is only noise to a creator. */
+	/** A size this close to 1 is left as modeled: a change this small is invisible, and "made 1.03x bigger" is only noise to a creator. */
 	constexpr double SnapToOne = 0.05;
 	/** The two signals disagree when one asks for more than this times the other. */
 	constexpr double DisagreeRatio = 1.2;
-	/** A wheel this close to the model's centre line (cm) is on neither side. */
-	constexpr double CentreLineTolerance = 5.0;
+	/** A wheel this close to the model's center line (cm) is on neither side. */
+	constexpr double CenterLineTolerance = 5.0;
 
 	/** A size as a creator reads it: hundredths, without trailing zeros. */
 	FString SizeText(const double Value)
@@ -75,17 +75,17 @@ FMantleVehicleFit FMantleVehicleFitter::Compute(const FMantleVehiclePreset& Pres
 	}
 
 	// The track: axles are wheels at about the same place along the length; an axle with a wheel on each side has a track. Sides are
-	// taken from the model's own centre line (the mean of all its wheels), so a model modelled off the origin still has a track.
+	// taken from the model's own center line (the mean of all its wheels), so a model modeled off the origin still has a track.
 	TArray<FVector> Sorted;
-	double CentreY = 0.0;
+	double CenterY = 0.0;
 	for (const FMantleVehicleFitWheel& Wheel : Wheels)
 	{
-		Sorted.Add(Wheel.Centre);
-		CentreY += Wheel.Centre.Y;
+		Sorted.Add(Wheel.Center);
+		CenterY += Wheel.Center.Y;
 	}
 	if (Sorted.Num() > 0)
 	{
-		CentreY /= Sorted.Num();
+		CenterY /= Sorted.Num();
 	}
 	Sorted.Sort([](const FVector& A, const FVector& B) { return A.X < B.X; });
 	double TrackSum = 0.0;
@@ -101,7 +101,7 @@ FMantleVehicleFit FMantleVehicleFitter::Compute(const FMantleVehiclePreset& Pres
 			MaxY = FMath::Max(MaxY, Sorted[End].Y);
 			++End;
 		}
-		if (End - Start >= 2 && MinY < CentreY - CentreLineTolerance && MaxY > CentreY + CentreLineTolerance)
+		if (End - Start >= 2 && MinY < CenterY - CenterLineTolerance && MaxY > CenterY + CenterLineTolerance)
 		{
 			TrackSum += MaxY - MinY;
 			++TrackCount;
@@ -121,7 +121,7 @@ FMantleVehicleFit FMantleVehicleFitter::Compute(const FMantleVehiclePreset& Pres
 	const bool bHasTrack = Fit.TrackScale > 0.0;
 	if (!bHasRadius && !bHasTrack)
 	{
-		Fit.Reason = TEXT("Mantle could not tell how big this vehicle is, because it could not measure its wheels. It was left as modelled.");
+		Fit.Reason = TEXT("Mantle could not tell how big this vehicle is, because it could not measure its wheels. It was left as modeled.");
 		return Fit;
 	}
 
@@ -161,14 +161,14 @@ FMantleVehicleFit FMantleVehicleFitter::Compute(const FMantleVehiclePreset& Pres
 	FString Reason;
 	if (Fit.bSignalsDisagree)
 	{
-		const FString Outcome = Fit.Scale == 1.0 ? FString(TEXT("left as modelled")) : TEXT("made ") + ChangeText(Fit.Scale);
+		const FString Outcome = Fit.Scale == 1.0 ? FString(TEXT("left as modeled")) : TEXT("made ") + ChangeText(Fit.Scale);
 		Reason = FString::Printf(TEXT("Its wheels suggest %sx but its track suggests %sx, so it was %s. Check the driver in the preview and adjust the size if it looks wrong."),
 			*SizeText(Fit.RadiusScale), *SizeText(Fit.TrackScale), *Outcome);
 	}
 	else if (Fit.bClamped && Fit.Scale == 1.0)
 	{
 		const FString Parts = bHasRadius && bHasTrack ? TEXT("its wheels and track are") : bHasRadius ? TEXT("its wheels are") : TEXT("its track is");
-		Reason = FString::Printf(TEXT("%s %s than a typical %s, but it was left as modelled."),
+		Reason = FString::Printf(TEXT("%s %s than a typical %s, but it was left as modeled."),
 			*(Parts.Left(1).ToUpper() + Parts.Mid(1)), bBigger ? TEXT("smaller") : TEXT("bigger"), *Kind);
 	}
 	else if (Fit.Scale == 1.0)
@@ -248,7 +248,7 @@ bool FMantleVehicleFitter::WheelsFromMesh(const USkeletalMesh& Mesh, const UMant
 			continue;
 		}
 		FMantleVehicleFitWheel Wheel;
-		Wheel.Centre = Pose[Bone].GetLocation();
+		Wheel.Center = Pose[Bone].GetLocation();
 		if (Entry.Radius > 0.f)
 		{
 			Wheel.Radius = Entry.Radius;

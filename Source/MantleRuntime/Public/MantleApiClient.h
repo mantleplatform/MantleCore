@@ -330,7 +330,7 @@ public:
 	/**
 	 * Fetches one numbered revision — live or archived, never a draft — and calls back on the game thread. Never
 	 * what /live would currently answer: a session pins to whatever revision was live when it started, and this
-	 * is how a client honours that pin instead of quietly reconstructing whatever is live now.
+	 * is how a client honors that pin instead of quietly reconstructing whatever is live now.
 	 */
 	static void GetRevisionAsync(const FString& PlaceId, int32 RevisionNumber, FMantleApiCallback OnDone);
 

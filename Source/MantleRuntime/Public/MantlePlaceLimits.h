@@ -173,7 +173,7 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** Terrain grass[], 0 to this many entries (#628). */
 	static constexpr int32 MaxTerrainGrass = 32;
 
-	/** A Terrain grass entry's density, above 0 and at most this many instances per square metre (#628). */
+	/** A Terrain grass entry's density, above 0 and at most this many instances per square meter (#628). */
 	static constexpr double MaxTerrainGrassDensity = 100.0;
 
 	/** A Terrain grass entry's cullDistance, each at most this many cm (#628). */
@@ -228,7 +228,7 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** Seats in one place (GhzGarage/MantleCore#142). Cross-entity: the schema states it in prose. */
 	static constexpr int32 MaxSeatsPerPlace = 256;
 
-	/** A seat's hip position, each axis in centimetres from its entity's origin (#142). */
+	/** A seat's hip position, each axis in centimeters from its entity's origin (#142). */
 	static constexpr double MaxSeatOffset = 100000.0;
 
 	/** ScriptPoint entities in one place (#838). Cross-entity: the schema states it in prose. */
@@ -345,11 +345,11 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** pi in millionths, the constant a Scatter disc's instance count uses (#169). */
 	static constexpr int32 ScatterPiMicro = 3141593;
 
-	/** A Scatter's path point, exclusion centre or terrain height filter (#169): each at most this many cm either way. */
+	/** A Scatter's path point, exclusion center or terrain height filter (#169): each at most this many cm either way. */
 	static constexpr double MaxScatterCoordinate = 1000000.0;
 
 	/**
-	 * Instances one Scatter makes (#530, #189): its footprint in square metres times its density, rounded. Cross-field (halfExtent times
+	 * Instances one Scatter makes (#530, #189): its footprint in square meters times its density, rounded. Cross-field (halfExtent times
 	 * density), so validate.py's MAX_SCATTER_INSTANCES states it. A Scatter of up to ScatterWholeInstances is built whole when the place
 	 * loads; a bigger one is built in cells near each camera (MantleScatterCells.h), so only the position index (12 bytes a candidate,
 	 * 24 MB at this cap) is paid for everywhere, and what stands is held to the live-instance budget.
@@ -361,7 +361,7 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 
 	/**
 	 * The candidates a Scatter built in cells (above ScatterWholeInstances) keeps in one minSpacing square when its density is higher than
-	 * that (#189): density times (minSpacing in metres) squared over this thins the candidates to it, each picked by its own hash. A cell reads
+	 * that (#189): density times (minSpacing in meters) squared over this thins the candidates to it, each picked by its own hash. A cell reads
 	 * every candidate within the spacing of its own to tell which stand, so a spacing far wider than the candidates are apart would make
 	 * each read check without end. Nothing is refused; the Scatter just has fewer candidates, which fill the spacing as well.
 	 */

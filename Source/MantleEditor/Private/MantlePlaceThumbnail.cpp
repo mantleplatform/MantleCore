@@ -110,7 +110,7 @@ FMantlePlaceThumbnailView FMantlePlaceThumbnail::AutoView(const FBox& Bounds, co
 	}
 	View.Rotation = FRotator(AutoPitch, Direction.Rotation().Yaw, 0.0);
 
-	// Far enough back that the whole frame fits the 16:9 picture: each corner at depth d past the centre and a across
+	// Far enough back that the whole frame fits the 16:9 picture: each corner at depth d past the center and a across
 	// needs the camera a / tan(half angle) - d behind it, the vertical half angle being the narrower one.
 	const FRotationMatrix Axes(View.Rotation);
 	const FVector Forward = Axes.GetUnitAxis(EAxis::X), Right = Axes.GetUnitAxis(EAxis::Y), Up = Axes.GetUnitAxis(EAxis::Z);
@@ -220,7 +220,7 @@ bool FMantlePlaceThumbnail::Capture(UWorld* World, const FMantlePlaceThumbnailVi
 
 	UTextureRenderTarget2D* Target = NewObject<UTextureRenderTarget2D>(GetTransientPackage(), NAME_None, RF_Transient);
 	Target->ClearColor = FLinearColor::Black;
-	// 8-bit with the display gamma: the final LDR colour as a player's screen shows it.
+	// 8-bit with the display gamma: the final LDR color as a player's screen shows it.
 	Target->InitCustomFormat(Width, Height, PF_B8G8R8A8, false);
 	Target->UpdateResourceImmediate(true);
 
@@ -288,7 +288,7 @@ bool FMantlePlaceThumbnail::Capture(UWorld* World, const FMantlePlaceThumbnailVi
 		}
 	}
 
-	// Everything the picture needs in before it is taken, or a material draws as the engine's grey world grid. A
+	// Everything the picture needs in before it is taken, or a material draws as the engine's gray world grid. A
 	// material the editor compiles only when first drawn asks at the first capture, so warm-ups run until none is left.
 	Settle();
 	int32 WarmUps = 0;

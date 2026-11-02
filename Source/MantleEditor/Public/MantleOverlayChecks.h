@@ -9,7 +9,7 @@
  * picked (a PNG file or a texture asset), in plain words. Pure: no editor state, so it is tested headless.
  *
  * An overlay is a mask (and, for the scar slots, a normal map) painted to the converted MetaHuman UV layout of the
- * body or the face. The mask is one channel: a greyscale image, or an image painted only in its red channel.
+ * body or the face. The mask is one channel: a grayscale image, or an image painted only in its red channel.
  */
 struct MANTLEEDITOR_API FMantleOverlayChecks
 {
@@ -30,12 +30,12 @@ struct MANTLEEDITOR_API FMantleOverlayChecks
 	/** Textures are square, a power of two. */
 	static bool IsPowerOfTwoSquare(int32 Width, int32 Height);
 
-	/** Pixels in a PNG file as BGRA, raw bytes, no colour conversion. False with a plain reason. */
+	/** Pixels in a PNG file as BGRA, raw bytes, no color conversion. False with a plain reason. */
 	static bool ReadPngFile(const FString& File, TArray<FColor>& OutPixels, FIntPoint& OutSize, FString& OutError);
 
 	/**
 	 * The mask rules, on Width x Height pixels read as stored: square, power of two, at most MaxSize; one channel
-	 * (greyscale, or red only); some paint, and not all white. Errors are added to OutIssues; What names the image
+	 * (grayscale, or red only); some paint, and not all white. Errors are added to OutIssues; What names the image
 	 * ("The mask"). Returns true when none was added.
 	 */
 	static bool CheckMask(const FString& What, int32 Width, int32 Height, TConstArrayView<FColor> Pixels, TArray<FMantleCosmeticIssue>& OutIssues);

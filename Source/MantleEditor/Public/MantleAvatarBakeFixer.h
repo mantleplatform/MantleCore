@@ -29,7 +29,7 @@ struct MANTLEEDITOR_API FMantleBakeTarget
 
 /**
  * #620, the converter's Bake step (after Atlas): every section the upload would read wrongly gets its material baked,
- * on its own UVs, into a base colour, normal and ORM texture set on Mantle's own material, which the upload reads as it
+ * on its own UVs, into a base color, normal and ORM texture set on Mantle's own material, which the upload reads as it
  * is. A section needs the bake when its material is not plain (FMantleMaterialTextures): MetaHuman Creator clothing's
  * tints over tiling detail maps, a UDIM or virtual-textured skin, a MetaHuman face whose texture slots also hold
  * animated wrinkle maps, any blend, mask or layered material.

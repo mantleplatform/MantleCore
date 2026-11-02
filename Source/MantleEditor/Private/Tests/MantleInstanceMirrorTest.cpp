@@ -117,7 +117,7 @@ bool FMantleInstanceMirrorTest::RunTest(const FString& Parameters)
 		}
 	}
 	TestEqual(TEXT("three of the four instances are published"), Instances, 3);
-	// Normalising an instance (ExporterNormalizeInstance) decomposes its matrix, which always puts a single mirror on X and turns the rest
+	// Normalizing an instance (ExporterNormalizeInstance) decomposes its matrix, which always puts a single mirror on X and turns the rest
 	// into rotation, so a mirror on X and one on Y share one mirrored copy: two sets, the plain cube and the mirrored one.
 	TestEqual(TEXT("in one set for the plain cube and one for the mirrored copy"), Sets, 2);
 	TestEqual(TEXT("two are reported as approximated"), Result.Coverage.Count(MantleCoverageCategory::StaticMeshes, EOutcome::Approximated), static_cast<int64>(2));

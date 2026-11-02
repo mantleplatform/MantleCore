@@ -133,13 +133,13 @@ namespace MantleMetaHumanConformPrivate
 		}
 
 		/** A camera at Location looking at Target (FOV 30, manual exposure at bias 0, the mesh alone). */
-		USceneCaptureComponent2D* Camera(const bool bBaseColour, const FVector& Location, const FRotator& Rotation, UTextureRenderTarget2D*& OutTarget)
+		USceneCaptureComponent2D* Camera(const bool bBaseColor, const FVector& Location, const FRotator& Rotation, UTextureRenderTarget2D*& OutTarget)
 		{
 			OutTarget = UKismetRenderingLibrary::CreateRenderTarget2D(Scene.GetWorld(), FMantleMetaHumanConform::PortraitSize, FMantleMetaHumanConform::PortraitSize,
-				bBaseColour ? RTF_RGBA8_SRGB : RTF_RGBA8);
+				bBaseColor ? RTF_RGBA8_SRGB : RTF_RGBA8);
 			USceneCaptureComponent2D* Capture = NewObject<USceneCaptureComponent2D>(GetTransientPackage(), NAME_None, RF_Transient);
 			Capture->TextureTarget = OutTarget;
-			Capture->CaptureSource = bBaseColour ? ESceneCaptureSource::SCS_BaseColor : ESceneCaptureSource::SCS_FinalColorLDR;
+			Capture->CaptureSource = bBaseColor ? ESceneCaptureSource::SCS_BaseColor : ESceneCaptureSource::SCS_FinalColorLDR;
 			Capture->FOVAngle = FMantleMetaHumanConform::PortraitFov;
 			Capture->bCaptureEveryFrame = false;
 			Capture->bCaptureOnMovement = false;
@@ -165,8 +165,8 @@ namespace MantleMetaHumanConformPrivate
 		}
 	};
 
-	/** The summed colour of about 4000 samples, as the settle step compares it. */
-	double ConformColourSum(const TArray<FColor>& Pixels)
+	/** The summed color of about 4000 samples, as the settle step compares it. */
+	double ConformColorSum(const TArray<FColor>& Pixels)
 	{
 		const int32 Step = FMath::Max(1, Pixels.Num() / 4000);
 		double Sum = 0.0;
@@ -266,7 +266,7 @@ namespace MantleMetaHumanConformPrivate
 	}
 
 	/**
-	 * Step 2, shared by the whole-body and the face-only conform: the front portrait of Mesh (base colour and lit) and
+	 * Step 2, shared by the whole-body and the face-only conform: the front portrait of Mesh (base color and lit) and
 	 * Epic's face landmarks on it. Curves empty is "no face found"; false only when a portrait could not be taken.
 	 */
 	bool ConformPortraitLandmarks(UStaticMesh& Posed, TConstArrayView<FVector3f> Vertices, const TOptional<FVector>& HeadJoint, const FString& Name,
@@ -296,7 +296,7 @@ namespace MantleMetaHumanConformPrivate
 				FlushRenderingCommands();
 				TArray<FColor> Pixels;
 				UKismetRenderingLibrary::ReadRenderTarget(World, BaseTarget, Pixels, false);
-				const double Sum = ConformColourSum(Pixels);
+				const double Sum = ConformColorSum(Pixels);
 				const bool bAgrees = Last >= 0.0 && FMath::Abs(Sum - Last) <= 0.002 * FMath::Max(1.0, Sum);
 				Last = Sum;
 				if (Try >= 3 && bAgrees)
@@ -683,7 +683,7 @@ namespace MantleMetaHumanConformSeedPrivate
 			UE_LOG(LogMantle, Warning, TEXT("MANTLE_CONVERT_FACEONLY %s: the default body's silhouette could not be measured, so the sliders keep their defaults"), *Character.GetPathName());
 			return;
 		}
-		const FMantleSliderSeed Seed = FMantleBodySilhouette::Seed(SourceBuild, FMantleBodySilhouette::Normalised(Default, Height));
+		const FMantleSliderSeed Seed = FMantleBodySilhouette::Seed(SourceBuild, FMantleBodySilhouette::Normalized(Default, Height));
 		TArray<FMetaHumanCharacterBodyConstraint> Constraints = Subsystem.GetBodyConstraints(&Character);
 		FString Moved;
 		for (FMetaHumanCharacterBodyConstraint& Constraint : Constraints)
@@ -716,7 +716,7 @@ namespace MantleMetaHumanConformSeedPrivate
 		Subsystem.SetBodyConstraints(&Character, Constraints);
 		Subsystem.CommitBodyState(&Character);
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_CONVERT_FACEONLY %s: sliders seeded from the silhouette (source %s; default %s; %s):%s"), *Character.GetPathName(),
-			*SourceBuild.ToString(true), *FMantleBodySilhouette::Normalised(Default, Height).ToString(true), *Seed.ToString(), *Moved);
+			*SourceBuild.ToString(true), *FMantleBodySilhouette::Normalized(Default, Height).ToString(true), *Seed.ToString(), *Moved);
 	}
 }
 

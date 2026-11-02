@@ -100,7 +100,7 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 		UStaticMesh* Built = NewObject<UStaticMesh>(MeshOuter, MeshName, RF_Transient);
 		for (const FName& SlotName : Slots.SlotNames)
 		{
-			// UVChannelData starts uninitialised, and only the editor fills it later; UStaticMesh::GetUVChannelData
+			// UVChannelData starts uninitialized, and only the editor fills it later; UStaticMesh::GetUVChannelData
 			// ensures it is set. The engine's AddMaterial gives a new slot the same default density.
 			FStaticMaterial& Slot = Built->GetStaticMaterials().Add_GetRef(FStaticMaterial(Params.Material, SlotName));
 			Slot.UVChannelData = FMeshUVChannelInfo(1.0f);
@@ -116,7 +116,7 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 
 		// UStaticMesh::BuildFromMeshDescriptions' fast path (UE 5.8 StaticMesh.cpp, for a mesh with no render
 		// resources yet), step for step, with one step added: each LOD's texture coordinates are cut to the
-		// channels its description has before the resources are initialised (TrimTexCoordChannels). No source
+		// channels its description has before the resources are initialized (TrimTexCoordChannels). No source
 		// model is kept (a non-editor build has none to keep).
 		if (Descriptions.Num() < 1 || Descriptions.Num() > MAX_STATIC_MESH_LODS)
 		{
@@ -318,7 +318,7 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 		if (LOD.Normals.Num() != N || LOD.Tangents.Num() != N || LOD.UVs.Num() != N || (LOD.UV1s.Num() != 0 && LOD.UV1s.Num() != N)
 			|| (LOD.Colors.Num() != 0 && LOD.Colors.Num() != N))
 		{
-			OutError = FString::Printf(TEXT("%s has %d vertices but %d normals, %d tangents, %d UVs, %d second UVs and %d colours"),
+			OutError = FString::Printf(TEXT("%s has %d vertices but %d normals, %d tangents, %d UVs, %d second UVs and %d colors"),
 				*What, N, LOD.Normals.Num(), LOD.Tangents.Num(), LOD.UVs.Num(), LOD.UV1s.Num(), LOD.Colors.Num());
 			return false;
 		}
@@ -394,7 +394,7 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 			if (bColors)
 			{
 				// The fast build stores FLinearColor(attribute).ToFColor(true): the sRGB table here is its
-				// inverse, so the vertex colour buffer holds the cooked bytes.
+				// inverse, so the vertex color buffer holds the cooked bytes.
 				Colors[Instance] = FVector4f(FLinearColor(LOD.Colors[Vertex]));
 			}
 			Instances.Add(Instance);
@@ -437,7 +437,7 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 bool FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources(const bool bRequested)
 {
 	// The engine's own condition (the check in FStaticMeshRenderData::InitResources): a process that can render,
-	// or an uncooked one (the editor, a commandlet), which may initialise render resources as it always has.
+	// or an uncooked one (the editor, a commandlet), which may initialize render resources as it always has.
 	return bRequested && FApp::CanEverRenderOrProduceRenderData();
 }
 

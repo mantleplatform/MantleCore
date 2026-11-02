@@ -35,7 +35,7 @@ public:
 	 * Result.Actors — as the atmosphere sun. A place with no DirectionalLight gets a synthesized
 	 * default sun instead (also recorded in Result.EnvironmentActors), so the sky still renders.
 	 * Either way the sun is then bound to the environment subsystem, which owns its angle from
-	 * then on (the day/night cycle); the place's own sun keeps its intensity, colour and yaw.
+	 * then on (the day/night cycle); the place's own sun keeps its intensity, color and yaw.
 	 *
 	 * Also spawns the night sky (#445 ticket 4), the star dome and the moon (SpawnNightSkySphere),
 	 * recorded in Result.EnvironmentActors too and handed to the subsystem with the sun, which
@@ -46,7 +46,7 @@ public:
 	static void Apply(UWorld* World, const FMantlePlace& Place, FMantleBuildResult& Result);
 
 	/**
-	 * Sets the fog's density, height falloff, inscattering colour, start distance and directional inscattering colour from
+	 * Sets the fog's density, height falloff, inscattering color, start distance and directional inscattering color from
 	 * the keys the place sets (settings.environment.fog, #628); a key left unset keeps the fog's own value. Apply does it to
 	 * the fog it spawns before the sky is bound, so the weather scales from these values. Does nothing for a null fog.
 	 */
@@ -60,7 +60,7 @@ public:
 
 	/**
 	 * Spawns one body of the night sky: the engine sphere with a dynamic instance of
-	 * MaterialPath, scaled to Radius (cm) and centred on the world. Like the rest of the sky it
+	 * MaterialPath, scaled to Radius (cm) and centered on the world. Like the rest of the sky it
 	 * is transient, non-replicated and Movable; it also has no collision, casts no shadow, takes
 	 * no part in distance-field or indirect lighting, and starts hidden until the environment
 	 * subsystem gives it a fade above zero. The materials are two-sided, so the dome's inside
@@ -114,7 +114,7 @@ public:
 	 * - Cloud_GlobalDensity, scalar, default 0.008: how opaque the clouds are;
 	 * - StormClouds, scalar, default 0 (0 to 1): the blend to storm clouds, and the lerp alpha of
 	 *   the lightning glow, so there is no glow at 0;
-	 * - Storm_LightningColor, vector (2, 1.8, 2, 10): RGB the flash colour, A its brightness;
+	 * - Storm_LightningColor, vector (2, 1.8, 2, 10): RGB the flash color, A its brightness;
 	 * - Storm_LightningAnim, vector (0, 0.1, 0, 1): R LightningFlicker, G DynamicLightingAnim (the
 	 *   frames per second of the material's own lightning, on each machine's own clock), B
 	 *   ManualLightningAnim (the frame, added to time times G), A unused.

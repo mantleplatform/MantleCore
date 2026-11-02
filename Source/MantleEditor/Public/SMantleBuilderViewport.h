@@ -37,7 +37,7 @@ namespace MantleBuilderViewportMath
 		FVector2D Screen = FVector2D::ZeroVector;
 	};
 
-	/** How close (pixels) a click must be to a handle's centre to pick it; a handle is only a few pixels across. */
+	/** How close (pixels) a click must be to a handle's center to pick it; a handle is only a few pixels across. */
 	constexpr double PickTolerancePx = 20.0;
 
 	/** The role of the handle nearest the click within TolerancePx, or NAME_None when none is that close. */
@@ -49,7 +49,7 @@ namespace MantleBuilderViewportMath
 }
 
 /**
- * The builders' shared point-placement viewport: the creator's mesh at its own unscaled size, a coloured handle for every
+ * The builders' shared point-placement viewport: the creator's mesh at its own unscaled size, a colored handle for every
  * point the kind defines, and the Mantle character as a ghost so a creator sees at once whether a hand reaches its grip or a
  * seat fits. Click a handle, drag the gizmo; problems turn the ghost red and are listed in red on the picture. It draws and
  * edits the points it is given; the kind decides what the roles mean (weapon builder #729, vehicle builder #728).

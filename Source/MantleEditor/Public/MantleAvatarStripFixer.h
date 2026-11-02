@@ -26,7 +26,7 @@ struct MANTLEEDITOR_API FMantleStripSlot
 	/** Read as bare skin (kept by default): FMantleAvatarStrip::LooksLikeSkin. */
 	bool bSkin = false;
 
-	/** For a skin slot, whether clothing is modelled into it (FMantleFusedClothing); Unknown for any other, and when Plan was given the creator's choices. */
+	/** For a skin slot, whether clothing is modeled into it (FMantleFusedClothing); Unknown for any other, and when Plan was given the creator's choices. */
 	EMantleFusedVerdict Fused = EMantleFusedVerdict::Unknown;
 	FString FusedWhy;
 };

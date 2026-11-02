@@ -4,7 +4,7 @@
 // directly by UMantleScriptEdGraph's own UPROPERTY arrays so add/remove/rename come for free from
 // IDetailsView), a details panel for the selected node, and a compiler results panel. Save
 // compiles first (SaveAsset_Execute override): success writes the Luau next to the asset so the
-// non-Shipping disk script catalogue picks it up on its next poll (no separate step -- see
+// non-Shipping disk script catalog picks it up on its next poll (no separate step -- see
 // FMantleScriptGraphSerializer::CompiledLuauPathForAsset); failure marks the offending node and
 // leaves the previously-compiled Luau on disk alone, then still saves the uasset itself, so a
 // creator's in-progress graph is never lost to a compile error.

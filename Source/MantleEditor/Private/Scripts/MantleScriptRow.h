@@ -3,7 +3,7 @@
 // folder, plus whatever Check All has told us about it.
 //
 // Language classification goes through MantleScriptLanguageFromExtension (MantleScriptCatalog.h)
-// so the panel agrees with what the game's disk catalogue source (FMantleDiskScriptCatalogSource) would
+// so the panel agrees with what the game's disk catalog source (FMantleDiskScriptCatalogSource) would
 // classify the same file as.
 
 #pragma once

@@ -45,7 +45,7 @@ struct MANTLERUNTIME_API FMantleConnection
 	static FString ResolveApiBaseUrl(const FString& Fallback = FString());
 
 	/**
-	 * The bearer token. MANTLE_AUTH_TOKEN is the override, honoured only in non-Shipping builds
+	 * The bearer token. MANTLE_AUTH_TOKEN is the override, honored only in non-Shipping builds
 	 * (the editor, CI, local development): a developer token for a local API, or a creator token
 	 * (mct1., #94) against the hosted one. Otherwise the in-memory token SetRuntimeAuthToken
 	 * holds: the client's short-lived EOS token after sign-in, or the creator token pasted into

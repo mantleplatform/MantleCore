@@ -60,7 +60,7 @@ namespace MantleTerrainBuilderPrivate
 		return GTerrainMaterial.Get();
 	}
 
-	/** Whether Material is an M_MantlePlace instance (it has the base colour texture parameter the layers copy). */
+	/** Whether Material is an M_MantlePlace instance (it has the base color texture parameter the layers copy). */
 	bool IsPlaceMaterial(const UMaterialInterface* Material)
 	{
 		UTexture* Unused = nullptr;
@@ -437,7 +437,7 @@ bool FMantleTerrainBuilder::BuildChunks(const FMantleHeightfield& Field, const F
 			const FName MeshName = MakeUniqueObjectName(MeshOuter, UStaticMesh::StaticClass(),
 				FName(*FString::Printf(TEXT("MantleTerrainChunk_%d_%d"), ChunkX, ChunkY)));
 			UStaticMesh* Mesh = NewObject<UStaticMesh>(MeshOuter, MeshName, RF_Transient);
-			// UVChannelData must be initialised (UStaticMesh::GetUVChannelData ensures it); see the static mesh builder.
+			// UVChannelData must be initialized (UStaticMesh::GetUVChannelData ensures it); see the static mesh builder.
 			FStaticMaterial& Slot = Mesh->GetStaticMaterials().Add_GetRef(FStaticMaterial(nullptr, FName(MaterialSlotName)));
 			Slot.UVChannelData = FMeshUVChannelInfo(1.0f);
 			// A non-editor build reads collision triangles back from the render data, and only from a mesh

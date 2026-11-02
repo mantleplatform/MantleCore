@@ -83,7 +83,7 @@ bool FMantleEffectSpritesParseDefaultsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("with no texture"), Props->TextureId, FString());
 	TestTrue(TEXT("translucent"), Props->Sprites.Blend == EMantleSpritesBlend::Translucent);
 	TestTrue(TEXT("white"), Props->Look.Color.Equals(FLinearColor::White));
-	TestTrue(TEXT("whose end colour is its colour"), Props->Sprites.ColorEnd.Equals(Props->Look.Color));
+	TestTrue(TEXT("whose end color is its color"), Props->Sprites.ColorEnd.Equals(Props->Look.Color));
 	TestEqual(TEXT("alpha 1"), Props->Sprites.Alpha, 1.0);
 	TestEqual(TEXT("alpha end 0"), Props->Sprites.AlphaEnd, 0.0);
 	TestEqual(TEXT("size"), Props->Sprites.SizeMin, Own.SizeMin);
@@ -129,8 +129,8 @@ bool FMantleEffectSpritesParseFullTest::RunTest(const FString& Parameters)
 	const FMantleSpritesSettings& S = Props->Sprites;
 	TestEqual(TEXT("texture"), Props->TextureId, FString(TextureId));
 	TestTrue(TEXT("additive"), S.Blend == EMantleSpritesBlend::Additive);
-	TestTrue(TEXT("colour"), Props->Look.Color.Equals(FLinearColor(0.6f, 0.9f, 1.0f)));
-	TestTrue(TEXT("end colour"), S.ColorEnd.Equals(FLinearColor(0.3f, 0.6f, 1.0f)));
+	TestTrue(TEXT("color"), Props->Look.Color.Equals(FLinearColor(0.6f, 0.9f, 1.0f)));
+	TestTrue(TEXT("end color"), S.ColorEnd.Equals(FLinearColor(0.3f, 0.6f, 1.0f)));
 	TestEqual(TEXT("alpha"), S.Alpha, 0.8);
 	TestEqual(TEXT("alpha end"), S.AlphaEnd, 0.1);
 	TestEqual(TEXT("fade in"), S.FadeIn, 0.15);

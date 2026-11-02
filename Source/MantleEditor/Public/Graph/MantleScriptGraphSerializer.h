@@ -20,7 +20,7 @@ public:
 	 *  FMantleGraphCompiler::Compile. GraphName becomes FMantleGraph::Name; Side is normally the
 	 *  result of ClassifySide on the owning asset's package path. Fails (returns false, fills
 	 *  OutError) only for a structural problem the compiler could never explain on its own, e.g. a
-	 *  node this build doesn't recognise; per-node semantic problems (a missing input, a wrong-side
+	 *  node this build doesn't recognize; per-node semantic problems (a missing input, a wrong-side
 	 *  member, ...) are left for the compiler to report by design, so there is exactly one place
 	 *  that explains why a graph doesn't compile. */
 	static bool BuildGraph(const UMantleScriptEdGraph& EdGraph, const FString& GraphName, EMantleSide Side, FMantleGraph& OutGraph, FString& OutError);
@@ -49,7 +49,7 @@ public:
 
 	/** The on-disk .luau path compile-on-save writes to: the same folder PackageName's own .uasset
 	 *  lives in (a plain script file's Scripts/<Side>/ folder, per FMantleScriptTemplates), same
-	 *  base name, ".luau" extension -- so the non-Shipping disk script catalogue
+	 *  base name, ".luau" extension -- so the non-Shipping disk script catalog
 	 *  (FMantleDiskScriptCatalogSource) picks it up on its next poll with no extra step. Empty if
 	 *  PackageName can't be mapped to a file on disk. */
 	static FString CompiledLuauPathForAsset(const FString& PackageName);

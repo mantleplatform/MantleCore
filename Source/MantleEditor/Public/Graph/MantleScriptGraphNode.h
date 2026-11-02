@@ -13,7 +13,7 @@
 #include "MantleScriptGraphNode.generated.h"
 
 /** Pin category names this editor uses. Distinct from Unreal's own K2 pin categories (this isn't
- *  a Blueprint graph) but chosen to mean the same things, and coloured to match
+ *  a Blueprint graph) but chosen to mean the same things, and colored to match
  *  (MantleScriptGraphSchema::GetPinTypeColor). */
 struct MANTLEEDITOR_API FMantleGraphPinCategory
 {
@@ -59,11 +59,11 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Mantle")
 	FString LiteralType;
 
-	/** Event-category catalogue nodes only, and only when the registry couldn't name the
+	/** Event-category catalog nodes only, and only when the registry couldn't name the
 	 *  handler's own parameters (a fully variadic signature, e.g. Remote.OnClientEvent's
 	 *  "(...any) -> ()"): the output pin names to use instead, mirroring the JSON model's
 	 *  own "outputs" fallback field (MantleGraphCompiler.cpp's EmitEventNode). Ignored -- and the
-	 *  registry's own names used instead -- whenever the catalogue already knows them. */
+	 *  registry's own names used instead -- whenever the catalog already knows them. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	TArray<FString> ExtraOutputNames;
 
@@ -122,8 +122,8 @@ public:
 	void AddExtraPin();
 	void RemoveExtraPin();
 
-	/** Doc string shown as the tooltip for a catalogue-driven node (event/call/get/set); empty for
+	/** Doc string shown as the tooltip for a catalog-driven node (event/call/get/set); empty for
 	 *  everything else, which falls back to a static per-kind description. */
 	UPROPERTY()
-	FString CatalogueDoc;
+	FString CatalogDoc;
 };

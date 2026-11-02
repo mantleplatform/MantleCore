@@ -35,7 +35,7 @@ namespace MantleVehicleThumbnailTestPrivate
 		return Object;
 	}
 
-	/** The sedan chassis's grey body, built as a vehicle in a scratch package (nothing reaches the disk). */
+	/** The sedan chassis's gray body, built as a vehicle in a scratch package (nothing reaches the disk). */
 	FMantleVehicleBuildResult BuildSedan(const TCHAR* Name)
 	{
 		FMantleChassisSpec Spec;
@@ -69,11 +69,11 @@ namespace MantleVehicleThumbnailTestPrivate
 		Result.Source->MarkAsGarbage();
 	}
 
-	/** How many pixels of a picture differ from the card's backdrop at the same row, and how many different colours they hold. */
-	void CountVehiclePixels(const FImage& Image, int32& OutVehicle, int32& OutColours)
+	/** How many pixels of a picture differ from the card's backdrop at the same row, and how many different colors they hold. */
+	void CountVehiclePixels(const FImage& Image, int32& OutVehicle, int32& OutColors)
 	{
 		OutVehicle = 0;
-		TSet<uint32> Colours;
+		TSet<uint32> Colors;
 		const auto Pixels = Image.AsBGRA8();
 		for (int64 Row = 0; Row < Image.SizeY; ++Row)
 		{
@@ -84,11 +84,11 @@ namespace MantleVehicleThumbnailTestPrivate
 				if (Pixel != Backdrop)
 				{
 					++OutVehicle;
-					Colours.Add(Pixel.DWColor());
+					Colors.Add(Pixel.DWColor());
 				}
 			}
 		}
-		OutColours = Colours.Num();
+		OutColors = Colors.Num();
 	}
 }
 
@@ -103,18 +103,18 @@ bool FMantleVehicleThumbnailBuiltTest::RunTest(const FString& Parameters)
 
 	// Drawn on the CPU from a body's triangles: a picture of the vehicle on a card, not a blank one.
 	FMantleChassisSpec Spec;
-	FMantleVehicleAsset Grey;
+	FMantleVehicleAsset Gray;
 	FString Error;
-	if (!TestTrue(*FString::Printf(TEXT("the sedan chassis loads (%s)"), *Error), FMantleVehicleChassisBuilder::LoadSpec(TEXT("sedan"), Spec, Error) && FMantleVehicleChassisBuilder::MakeAsset(Spec, Grey, Error)))
+	if (!TestTrue(*FString::Printf(TEXT("the sedan chassis loads (%s)"), *Error), FMantleVehicleChassisBuilder::LoadSpec(TEXT("sedan"), Spec, Error) && FMantleVehicleChassisBuilder::MakeAsset(Spec, Gray, Error)))
 	{
 		return false;
 	}
 	TArray<FColor> Pixels;
-	if (TestTrue(TEXT("the grey body is drawn"), FMantleVehicleThumbnail::Draw(Grey.Body, Pixels)) && TestEqual(TEXT("512 x 512 pixels"), Pixels.Num(), FMantleVehicleThumbnail::Size * FMantleVehicleThumbnail::Size))
+	if (TestTrue(TEXT("the gray body is drawn"), FMantleVehicleThumbnail::Draw(Gray.Body, Pixels)) && TestEqual(TEXT("512 x 512 pixels"), Pixels.Num(), FMantleVehicleThumbnail::Size * FMantleVehicleThumbnail::Size))
 	{
 		int32 Opaque = 0;
 		int32 Vehicle = 0;
-		TSet<uint32> Colours;
+		TSet<uint32> Colors;
 		for (int32 Row = 0; Row < FMantleVehicleThumbnail::Size; ++Row)
 		{
 			const FColor Backdrop = Pixels[Row * FMantleVehicleThumbnail::Size];
@@ -125,19 +125,19 @@ bool FMantleVehicleThumbnailBuiltTest::RunTest(const FString& Parameters)
 				if (Pixel != Backdrop)
 				{
 					++Vehicle;
-					Colours.Add(Pixel.DWColor());
+					Colors.Add(Pixel.DWColor());
 				}
 			}
 		}
 		const int32 Total = FMantleVehicleThumbnail::Size * FMantleVehicleThumbnail::Size;
 		TestEqual(TEXT("every pixel is opaque"), Opaque, Total);
 		TestTrue(*FString::Printf(TEXT("the vehicle fills part of the card (%d of %d pixels)"), Vehicle, Total), Vehicle > Total / 25 && Vehicle < Total * 4 / 5);
-		TestTrue(*FString::Printf(TEXT("and is shaded, not one flat colour (%d colours)"), Colours.Num()), Colours.Num() >= 4);
+		TestTrue(*FString::Printf(TEXT("and is shaded, not one flat color (%d colors)"), Colors.Num()), Colors.Num() >= 4);
 		TestTrue(TEXT("the card is a backdrop that is lighter at the top"), Pixels[0].R > Pixels[(FMantleVehicleThumbnail::Size - 1) * FMantleVehicleThumbnail::Size].R);
 	}
 	// Negative control: a body with no triangles draws nothing.
 	{
-		FMantleSkinnedMesh Empty = Grey.Body;
+		FMantleSkinnedMesh Empty = Gray.Body;
 		Empty.LODs[0].Indices.Reset();
 		TArray<FColor> None;
 		TestFalse(TEXT("a body with no triangles is not drawn"), FMantleVehicleThumbnail::Draw(Empty, None));
@@ -168,9 +168,9 @@ bool FMantleVehicleThumbnailBuiltTest::RunTest(const FString& Parameters)
 	{
 		Image.ChangeFormat(ERawImageFormat::BGRA8, EGammaSpace::sRGB);
 		int32 Vehicle = 0;
-		int32 Colours = 0;
-		CountVehiclePixels(Image, Vehicle, Colours);
-		TestTrue(*FString::Printf(TEXT("and shows a shaded vehicle on its card (%d pixels, %d colours)"), Vehicle, Colours), Vehicle > 10000 && Colours >= 4);
+		int32 Colors = 0;
+		CountVehiclePixels(Image, Vehicle, Colors);
+		TestTrue(*FString::Printf(TEXT("and shows a shaded vehicle on its card (%d pixels, %d colors)"), Vehicle, Colors), Vehicle > 10000 && Colors >= 4);
 	}
 	TestTrue(TEXT("the notes do not say the picture failed"), !Built.Notes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("library picture could not be made")); }));
 

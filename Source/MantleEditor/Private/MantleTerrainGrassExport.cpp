@@ -316,7 +316,7 @@ namespace MantleTerrainGrassExportPrivate
 	}
 }
 
-double FMantleTerrainGrassExport::DensityPerSquareMetre(const float EngineDensity)
+double FMantleTerrainGrassExport::DensityPerSquareMeter(const float EngineDensity)
 {
 	return static_cast<double>(EngineDensity) / 100.0;
 }
@@ -347,7 +347,7 @@ bool FMantleTerrainGrassExport::ReadVariety(const FGrassVariety& Variety, const 
 {
 	Out = FMantleTerrainGrass();
 
-	double Density = DensityPerSquareMetre(Variety.GetDensity());
+	double Density = DensityPerSquareMeter(Variety.GetDensity());
 	if (Density <= 0.0)
 	{
 		Warnings.Add(FMantleGrassNote(EMantleCoverageOutcome::Dropped, Label, FString::Printf(TEXT("%s has a grass density of 0, so it grows nothing and is left out."), *Label)));
@@ -355,7 +355,7 @@ bool FMantleTerrainGrassExport::ReadVariety(const FGrassVariety& Variety, const 
 	}
 	if (Density > FMantlePlaceLimits::MaxTerrainGrassDensity)
 	{
-		Warnings.Add(FMantleGrassNote(EMantleCoverageOutcome::Approximated, Label, FString::Printf(TEXT("%s has %g instances per square metre; Mantle grows at most %g, so it gets that."), *Label, Density, FMantlePlaceLimits::MaxTerrainGrassDensity)));
+		Warnings.Add(FMantleGrassNote(EMantleCoverageOutcome::Approximated, Label, FString::Printf(TEXT("%s has %g instances per square meter; Mantle grows at most %g, so it gets that."), *Label, Density, FMantlePlaceLimits::MaxTerrainGrassDensity)));
 		Density = FMantlePlaceLimits::MaxTerrainGrassDensity;
 	}
 	Out.Density = Density;
@@ -490,7 +490,7 @@ TArray<FColor> FMantleTerrainGrassExport::MakeMap(const TArray<TArray<uint8>>& W
 	Pixels.SetNumZeroed(Size.X * Size.Y);
 	for (int32 TexelY = 0; TexelY < Size.Y; ++TexelY)
 	{
-		// As FMantleTerrainExport::MakeWeightmap: the texel's centre as a fraction of the terrain, then in samples.
+		// As FMantleTerrainExport::MakeWeightmap: the texel's center as a fraction of the terrain, then in samples.
 		const double SampleY = (TexelY + 0.5) / Size.Y * (Height - 1);
 		for (int32 TexelX = 0; TexelX < Size.X; ++TexelX)
 		{

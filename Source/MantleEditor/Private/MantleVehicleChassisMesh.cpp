@@ -132,7 +132,7 @@ namespace MantleVehicleChassisMeshPrivate
 	/**
 	 * The geometry as a mesh description: one vertex and one vertex instance for each of the body's vertices (the shapes are flat-shaded, so none is
 	 * shared), each vertex weighted as the body says, its triangles in the body's order (a description's order is the render order). OutSlotNames are the
-	 * material slots' names: the one slot of a grey body, or the slots of the creator's model (ModelMaterials) that its sections name by MaterialIndex.
+	 * material slots' names: the one slot of a gray body, or the slots of the creator's model (ModelMaterials) that its sections name by MaterialIndex.
 	 */
 	void MakeDescription(const FMantleSkinnedMesh& Body, const TArray<FSkeletalMaterial>* ModelMaterials, const FMantleVehicleBodyExtras* Extras, FMeshDescription& OutDescription,
 		TArray<FName>& OutSlotNames)
@@ -140,7 +140,7 @@ namespace MantleVehicleChassisMeshPrivate
 		const FMantleSkinnedMeshLOD& LOD = Body.LODs[0];
 		FSkeletalMeshAttributes Attributes(OutDescription);
 		Attributes.Register();
-		// The other UV channels the model brought (one entry per vertex each, up to the skeletal mesh's limit) and its vertex colours, when they fit the body.
+		// The other UV channels the model brought (one entry per vertex each, up to the skeletal mesh's limit) and its vertex colors, when they fit the body.
 		TArray<const TArray<FVector2f>*> ExtraUVs;
 		const bool bColors = Extras && Extras->Colors.Num() == LOD.Positions.Num() && LOD.Positions.Num() > 0;
 		if (Extras)
@@ -168,7 +168,7 @@ namespace MantleVehicleChassisMeshPrivate
 			}
 		}
 
-		// The grey chassis has one slot, left empty; a creator's model has the slots it came with, and a polygon group for each of them its sections use.
+		// The gray chassis has one slot, left empty; a creator's model has the slots it came with, and a polygon group for each of them its sections use.
 		OutSlotNames.Reset();
 		if (ModelMaterials)
 		{
@@ -247,7 +247,7 @@ namespace MantleVehicleChassisMeshPrivate
 			}
 			if (bColors)
 			{
-				// A skeletal mesh's colour attribute is the byte colour over 255 (the build writes it back with no gamma), so an FColor round trips exactly.
+				// A skeletal mesh's color attribute is the byte color over 255 (the build writes it back with no gamma), so an FColor round trips exactly.
 				Colors.Set(Instance, FVector4f(Extras->Colors[Vertex].ReinterpretAsLinear()));
 			}
 			Instances.Add(Instance);
@@ -277,7 +277,7 @@ namespace MantleVehicleChassisMeshPrivate
 	void SetLodZeroSettings(FSkeletalMeshLODInfo& LODInfo, const bool bRecomputeTangents)
 	{
 		LODInfo.BuildSettings.bRecomputeNormals = false;
-		// A body with tangents of its own (a creator's model) keeps them; the grey chassis has none and takes them from its UVs.
+		// A body with tangents of its own (a creator's model) keeps them; the gray chassis has none and takes them from its UVs.
 		LODInfo.BuildSettings.bRecomputeTangents = bRecomputeTangents;
 		LODInfo.ReductionSettings.NumOfTrianglesPercentage = 1.0f;
 		LODInfo.ReductionSettings.NumOfVertPercentage = 1.0f;

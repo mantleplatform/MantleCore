@@ -133,7 +133,7 @@ bool FMantleLibraryPublishRewritesSpawnsTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("the stored vehicle leaves the place's assets"), Assets.Contains(AssetTruck));
 	TestTrue(TEXT("the other vehicle stays"), Assets.Contains(AssetBus));
 	TestTrue(TEXT("and so does the material"), Assets.Contains(AssetMaterial));
-	// 0.1 and 1e3 are what a re-serialise would change (to 0.10000000000000001 and 1000): they must survive byte for byte.
+	// 0.1 and 1e3 are what a re-serialize would change (to 0.10000000000000001 and 1000): they must survive byte for byte.
 	TestTrue(TEXT("a number the rewrite did not touch keeps its exact text"), Out.Contains(TEXT("\"respawnSeconds\":0.1,")));
 	TestTrue(TEXT("and so does one written with an exponent"), Out.Contains(TEXT("\"spawnWeight\":1e3,")));
 	return true;

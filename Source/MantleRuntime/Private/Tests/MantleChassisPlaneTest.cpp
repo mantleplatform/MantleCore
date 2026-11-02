@@ -6,8 +6,8 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// A plane's chassis: tricycle gear with its nose wheel on the centreline, a grey airframe of blocks on bones that hinge where the
-// aerofoils act, and a document whose collision is the fuselage, wing, tailplane and fin. The cars' layouts are untouched by the per-axle centreline.
+// A plane's chassis: tricycle gear with its nose wheel on the centerline, a gray airframe of blocks on bones that hinge where the
+// aerofoils act, and a document whose collision is the fuselage, wing, tailplane and fin. The cars' layouts are untouched by the per-axle centerline.
 
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleChassisPlaneTestPrivate
@@ -85,15 +85,15 @@ bool FMantleChassisPlaneSpecTest::RunTest(const FString& Parameters)
 	EMantleChassisType Parsed = EMantleChassisType::Car;
 	TestTrue(TEXT("and it parses back"), FMantleChassisSpec::ParseType(TEXT("plane"), Parsed) && Parsed == EMantleChassisType::Plane);
 
-	// Tricycle gear: the layout is not centreline all through, but its nose axle is.
-	TestFalse(TEXT("the layout as a whole is not a centreline one"), Plane.bCentreline);
+	// Tricycle gear: the layout is not centerline all through, but its nose axle is.
+	TestFalse(TEXT("the layout as a whole is not a centerline one"), Plane.bCenterline);
 	if (!TestEqual(TEXT("two axles"), Plane.Axles.Num(), 2))
 	{
 		return false;
 	}
-	TestTrue(TEXT("the nose axle is one steered wheel on the centreline"), Plane.Axles[0].bCentreline && Plane.Axles[0].bSteer && !Plane.Axles[0].bDrive);
-	TestTrue(TEXT("the mains are a pair"), !Plane.Axles[1].bCentreline && !Plane.Axles[1].bSteer);
-	TestTrue(TEXT("axle 0 has one wheel, axle 1 two"), Plane.AxleIsCentreline(0) && !Plane.AxleIsCentreline(1));
+	TestTrue(TEXT("the nose axle is one steered wheel on the centerline"), Plane.Axles[0].bCenterline && Plane.Axles[0].bSteer && !Plane.Axles[0].bDrive);
+	TestTrue(TEXT("the mains are a pair"), !Plane.Axles[1].bCenterline && !Plane.Axles[1].bSteer);
+	TestTrue(TEXT("axle 0 has one wheel, axle 1 two"), Plane.AxleIsCenterline(0) && !Plane.AxleIsCenterline(1));
 	TestEqual(TEXT("three wheels"), Plane.WheelCount(), 3);
 	TestEqual(TEXT("the archetype's size counts three too"), Plane.ArchetypeSize.WheelCount(), 3);
 	TestTrue(TEXT("wheel 0 is the nose axle's, wheels 1 and 2 the mains'"), Plane.AxleOf(0) == 0 && Plane.AxleOf(1) == 1 && Plane.AxleOf(2) == 1);
@@ -101,17 +101,17 @@ bool FMantleChassisPlaneSpecTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("the nose wheel is wheel_f"), Plane.WheelBone(0), FName(TEXT("wheel_f")));
 	TestEqual(TEXT("the left main is wheel_rl"), Plane.WheelBone(1), FName(TEXT("wheel_rl")));
 	TestEqual(TEXT("the right main is wheel_rr"), Plane.WheelBone(2), FName(TEXT("wheel_rr")));
-	TestTrue(TEXT("the nose wheel is ahead on the centreline"), Same(Plane.WheelCentre(0), FVector(190.0, 0.0, 40.0)));
-	TestTrue(TEXT("the left main is behind, on the left"), Same(Plane.WheelCentre(1), FVector(-190.0, -160.0, 40.0)));
-	TestTrue(TEXT("the right main is across from it"), Same(Plane.WheelCentre(2), FVector(-190.0, 160.0, 40.0)));
+	TestTrue(TEXT("the nose wheel is ahead on the centerline"), Same(Plane.WheelCenter(0), FVector(190.0, 0.0, 40.0)));
+	TestTrue(TEXT("the left main is behind, on the left"), Same(Plane.WheelCenter(1), FVector(-190.0, -160.0, 40.0)));
+	TestTrue(TEXT("the right main is across from it"), Same(Plane.WheelCenter(2), FVector(-190.0, 160.0, 40.0)));
 	TestTrue(TEXT("no fork: a plane's nose wheel steers on its own bone"), Plane.ForkBone.IsNone());
 
-	// The centre of mass is ahead of the mains, so the nose wheel carries a part of the weight and the mains most of it.
-	const double NoseShare = (Plane.CenterOfMass.X - Plane.WheelCentre(1).X) / (Plane.WheelCentre(0).X - Plane.WheelCentre(1).X);
+	// The center of mass is ahead of the mains, so the nose wheel carries a part of the weight and the mains most of it.
+	const double NoseShare = (Plane.CenterOfMass.X - Plane.WheelCenter(1).X) / (Plane.WheelCenter(0).X - Plane.WheelCenter(1).X);
 	TestTrue(*FString::Printf(TEXT("the nose wheel carries %.0f%% of the weight, 5 to 25"), 100.0 * NoseShare), NoseShare > 0.05 && NoseShare < 0.25);
 
-	// The cars' and the motorcycle's layouts are as they were: no axle has a centreline of its own, and the motorcycle's whole layout has. (The planes, the
-	// plane and the jet, are the ones with a nose wheel of their own; the helicopter, whose cabin is not centred on its skids, has its own test.)
+	// The cars' and the motorcycle's layouts are as they were: no axle has a centerline of its own, and the motorcycle's whole layout has. (The planes, the
+	// plane and the jet, are the ones with a nose wheel of their own; the helicopter, whose cabin is not centered on its skids, has its own test.)
 	for (const FString& Id : FMantleVehicleChassisBuilder::PresetIds())
 	{
 		FMantleChassisSpec Other;
@@ -122,10 +122,10 @@ bool FMantleChassisPlaneSpecTest::RunTest(const FString& Parameters)
 		{
 			continue;
 		}
-		TestFalse(*FString::Printf(TEXT("%s: no axle has a centreline of its own"), *Id), Other.Axles.ContainsByPredicate([](const FMantleChassisAxle& Axle) { return Axle.bCentreline; }));
-		TestEqual(*FString::Printf(TEXT("%s: a wheel each side, or one on the centreline all through"), *Id), Other.WheelCount(), (Other.bCentreline ? 1 : 2) * Other.Axles.Num());
+		TestFalse(*FString::Printf(TEXT("%s: no axle has a centerline of its own"), *Id), Other.Axles.ContainsByPredicate([](const FMantleChassisAxle& Axle) { return Axle.bCenterline; }));
+		TestEqual(*FString::Printf(TEXT("%s: a wheel each side, or one on the centerline all through"), *Id), Other.WheelCount(), (Other.bCenterline ? 1 : 2) * Other.Axles.Num());
 		TestFalse(*FString::Printf(TEXT("%s: it has no airframe"), *Id), Other.Aircraft.bSet);
-		TestEqual(*FString::Printf(TEXT("%s: its body is centred on the wheelbase"), *Id), Other.BodyX, 0.0);
+		TestEqual(*FString::Printf(TEXT("%s: its body is centered on the wheelbase"), *Id), Other.BodyX, 0.0);
 	}
 	return true;
 }
@@ -242,8 +242,8 @@ bool FMantleChassisPlaneAirframeTest::RunTest(const FString& Parameters)
 			TestTrue(*FString::Printf(TEXT("collision box %d is block %d"), Index, Index),
 				Same(Box.Center - Box.Extent, Blocks[Index].Min) && Same(Box.Center + Box.Extent, Blocks[Index].Max));
 		}
-		// The fuselage is first: the body box the cars' tests read, with the centre of mass inside it.
-		TestTrue(TEXT("the centre of mass is inside the fuselage's box"), FMath::Abs(Asset.Desc.CenterOfMass.X - Asset.Desc.Collision[0].Center.X) <= Asset.Desc.Collision[0].Extent.X
+		// The fuselage is first: the body box the cars' tests read, with the center of mass inside it.
+		TestTrue(TEXT("the center of mass is inside the fuselage's box"), FMath::Abs(Asset.Desc.CenterOfMass.X - Asset.Desc.Collision[0].Center.X) <= Asset.Desc.Collision[0].Extent.X
 			&& Asset.Desc.CenterOfMass.Z > Asset.WheelPositions[0].Z);
 	}
 
@@ -371,7 +371,7 @@ bool FMantleChassisJetSpecTest::RunTest(const FString& Parameters)
 	// The nozzle: at engines.x, behind the fuselage's rear end, level with the fuselage's middle; it is where the engine pushes from.
 	const FMantleChassisBlock Body = Jet.BodyBlock();
 	TestTrue(TEXT("the fuselage runs from -950 to 550"), Same(Body.Min, FVector(-950.0, -60.0, 110.0)) && Same(Body.Max, FVector(550.0, 60.0, 290.0)));
-	TestTrue(TEXT("the nozzle's exit is on the centreline at the fuselage's middle height"), Same(Jet.NozzleLocation(0), FVector(-1000.0, 0.0, 200.0)));
+	TestTrue(TEXT("the nozzle's exit is on the centerline at the fuselage's middle height"), Same(Jet.NozzleLocation(0), FVector(-1000.0, 0.0, 200.0)));
 	TestTrue(TEXT("and it is behind the fuselage"), Jet.NozzleLocation(0).X < Body.Min.X);
 	TestTrue(TEXT("the engine pushes from the nozzle"), Same(Jet.EngineLocation(0), Jet.NozzleLocation(0)));
 	const FMantleChassisBlock Nozzle = Jet.NozzleBlock(0);
@@ -513,7 +513,7 @@ bool FMantleChassisJetTwinTest::RunTest(const FString& Parameters)
 	const int32 Right = BoneIndex(Asset, TEXT("nozzle_r"));
 	TestTrue(TEXT("nozzle_l and nozzle_r, and no nozzle or propeller"),
 		Left != INDEX_NONE && Right != INDEX_NONE && BoneIndex(Asset, TEXT("nozzle")) == INDEX_NONE && BoneIndex(Asset, TEXT("propeller_l")) == INDEX_NONE);
-	TestTrue(TEXT("the exits are a quarter of the fuselage's width either side of the centreline, the left on -Y"),
+	TestTrue(TEXT("the exits are a quarter of the fuselage's width either side of the centerline, the left on -Y"),
 		Same(Jet.NozzleLocation(0), FVector(-1000.0, -30.0, 200.0)) && Same(Jet.NozzleLocation(1), FVector(-1000.0, 30.0, 200.0)));
 	if (Left != INDEX_NONE && Right != INDEX_NONE)
 	{

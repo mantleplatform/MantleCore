@@ -70,10 +70,10 @@ using FMantlePreviewDiff = TFunction<bool(const TArray<FString>& Hashes, TArray<
  * a data file. Those two drift, and without a preview that goes through the real path,
  * every divergence becomes a bug discovered after publishing.
  *
- * So the preview deliberately takes the long way round: export the level, serialise it to
+ * So the preview deliberately takes the long way round: export the level, serialize it to
  * JSON, parse that JSON back, prepare its uploaded meshes and materials the way a client does
  * (FMantlePlaceAssets::Prepare, through FMantlePreparedPlaceAssets), and build from the result.
- * Anything lost in serialisation is lost in the preview too, which is the entire point.
+ * Anything lost in serialization is lost in the preview too, which is the entire point.
  */
 class MANTLEEDITOR_API FMantlePlacePreview
 {

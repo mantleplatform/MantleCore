@@ -55,7 +55,7 @@ namespace MantleVoxelizeTestPrivate
 		return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
 	}
 
-	/** The engine cube (100 cm, centred on its pivot) at Location, at Scale, drawn with Material when one is given. */
+	/** The engine cube (100 cm, centerd on its pivot) at Location, at Scale, drawn with Material when one is given. */
 	AStaticMeshActor* SpawnCube(UWorld* World, UStaticMesh* Cube, const FVector& Location, const TCHAR* Label, double Scale = 1.0, UMaterialInterface* Material = nullptr)
 	{
 		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(Location, FRotator::ZeroRotator);
@@ -296,7 +296,7 @@ bool FMantleVoxelizeImportTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("block_1 first"), World->BlockTypes[0].Name, FString(TEXT("block_1")));
 		TestEqual(TEXT("block_5 last"), World->BlockTypes[4].Name, FString(TEXT("block_5")));
 		const UTexture2D* Tile = World->BlockTypes[0].Top.Get();
-		if (TestNotNull(TEXT("with a grey tile"), Tile))
+		if (TestNotNull(TEXT("with a gray tile"), Tile))
 		{
 			TestEqual(TEXT("of the tile size"), Tile->Source.GetSizeX(), int64(World->TileSize));
 		}
@@ -478,7 +478,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FMantleVoxelizeShapesTest::RunTest(const FString& Parameters)
 {
-	// #64: a closed mesh fills only the cells whose centre is inside it, and an open one the cells its surface passes through.
+	// #64: a closed mesh fills only the cells whose center is inside it, and an open one the cells its surface passes through.
 	using namespace MantleVoxelizeTestPrivate;
 	UStaticMesh* Sphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
 	UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane"));
@@ -559,7 +559,7 @@ bool FMantleVoxelizeLargestSourceTest::RunTest(const FString& Parameters)
 
 namespace MantleVoxelizeTestPrivate
 {
-	/** A transient Side x Side grey texture with source pixels: a tile for a block type made by hand. */
+	/** A transient Side x Side gray texture with source pixels: a tile for a block type made by hand. */
 	UTexture2D* MakeTestTile(int32 Side = 32)
 	{
 		UTexture2D* Tile = NewObject<UTexture2D>(GetTransientPackage(), NAME_None, RF_Transient);

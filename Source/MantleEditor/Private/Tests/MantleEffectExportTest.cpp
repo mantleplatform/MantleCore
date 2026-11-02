@@ -100,7 +100,7 @@ namespace MantleEffectExportTestPrivate
 		Cylinder->HeightAxis = PMLPC_HEIGHTAXIS_Z;
 		Lod->Modules.Add(Cylinder);
 
-		// Colour from light blue to blue, and an alpha that fades in to half life and out again.
+		// Color from light blue to blue, and an alpha that fades in to half life and out again.
 		UParticleModuleColorOverLife* ColorOverLife = NewObject<UParticleModuleColorOverLife>(System);
 		UDistributionVectorConstantCurve* Colors = NewObject<UDistributionVectorConstantCurve>(ColorOverLife);
 		Colors->ConstantCurve.AddPoint(0.0f, FVector(0.6, 0.9, 1.0));

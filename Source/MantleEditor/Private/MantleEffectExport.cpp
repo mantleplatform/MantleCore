@@ -146,7 +146,7 @@ namespace MantleEffectExportPrivate
 	}
 
 	/**
-	 * True for a heat-distortion material: it writes Refraction and has no colour texture to draw. Its alpha comes from a
+	 * True for a heat-distortion material: it writes Refraction and has no color texture to draw. Its alpha comes from a
 	 * ParameterDynamic module we do not read, so as a sprite it would only be an opaque white box.
 	 */
 	bool IsDistortionOnly(const UMaterialInterface* Material)
@@ -565,7 +565,7 @@ namespace MantleEffectExportPrivate
 					bColorOverLife = true;
 					if (bCurve || bEndCurve)
 					{
-						Out.Approximations.Add(TEXT("colour over life reduced to its start and end"));
+						Out.Approximations.Add(TEXT("color over life reduced to its start and end"));
 					}
 				}
 				// Alpha over life: its start, its peak and its end, so a fade in and out survives.

@@ -1,7 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "Graph/MantleScriptGraphSchema.h"
 
-#include "Graph/MantleGraphCatalogue.h"
+#include "Graph/MantleGraphCatalog.h"
 #include "Graph/MantleScriptEdGraph.h"
 #include "Graph/MantleScriptGraphNode.h"
 #include "Graph/MantleScriptGraphSerializer.h"
@@ -65,14 +65,14 @@ void UMantleScriptGraphSchema::CollectActions(const UEdGraph* Graph, const UEdGr
 	// data wire: an output pin wants a consumer (a Call/Set's input, or exec kinds in general,
 	// since exec-kind palette entries still expose their own data input pins to wire into); an
 	// input pin wants a producer (Get/Call/pure kinds). Precise per-pin *type* filtering for the
-	// ~25 static control/expression kinds happens in the "pure" block further down; catalogue and
+	// ~25 static control/expression kinds happens in the "pure" block further down; catalog and
 	// dynamic (variable/event/function) actions only get this coarse exec-vs-data filter -- see
 	// the header comment on this method's declaration.
 	const bool bFromExec = FromPin == nullptr || FromPin->PinType.PinCategory == FMantleGraphPinCategory::Exec;
 	const bool bFromDataInput = FromPin && FromPin->PinType.PinCategory != FMantleGraphPinCategory::Exec && FromPin->Direction == EGPD_Input;
 
-	// ---- Catalogue: event / call / get / set -------------------------------------------------
-	for (const FMantleGraphNodeDef& Def : FMantleGraphCatalogue::All())
+	// ---- Catalog: event / call / get / set -------------------------------------------------
+	for (const FMantleGraphNodeDef& Def : FMantleGraphCatalog::All())
 	{
 		if (Def.Side != EMantleSide::Both && Def.Side != Side)
 		{

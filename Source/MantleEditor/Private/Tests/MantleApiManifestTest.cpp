@@ -1,5 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
-#include "Graph/MantleGraphCatalogue.h"
+#include "Graph/MantleGraphCatalog.h"
 #include "MantleApiManifest.h"
 #include "MantleScriptApiUsage.h"
 
@@ -39,12 +39,12 @@ bool FMantleApiManifestReadTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleApiManifestUsersTest,
-	"Mantle.Editor.ApiManifest.GraphCatalogueAndApiNeed",
+	"Mantle.Editor.ApiManifest.GraphCatalogAndApiNeed",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantleApiManifestUsersTest::RunTest(const FString& Parameters)
 {
-	const TArray<FMantleGraphNodeDef>& Nodes = FMantleGraphCatalogue::All();
+	const TArray<FMantleGraphNodeDef>& Nodes = FMantleGraphCatalog::All();
 	TestTrue(TEXT("Entity.Destroy is a graph node"),
 		Nodes.ContainsByPredicate([](const FMantleGraphNodeDef& Def) { return Def.Dotted == TEXT("Entity.Destroy"); }));
 	TestTrue(TEXT("a settable property gets a Set node"),

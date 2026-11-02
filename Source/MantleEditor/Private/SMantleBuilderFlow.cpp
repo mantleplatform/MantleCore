@@ -94,7 +94,7 @@ TSharedRef<SWidget> SMantleBuilderFlow::MakeStepBar()
 
 TSharedRef<SWidget> SMantleBuilderFlow::MakeStepButton(int32 Index)
 {
-	// A done step shows a tick and goes back when clicked, the current one is lit, the ones ahead are greyed.
+	// A done step shows a tick and goes back when clicked, the current one is lit, the ones ahead are grayed.
 	return SNew(SButton)
 		.ButtonStyle(FAppStyle::Get(), "SimpleButton")
 		.IsEnabled_Lambda([this, Index] { return Index < Current; })

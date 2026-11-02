@@ -35,8 +35,8 @@ struct FMantlePublishResult
 	/** Everything else is done, and some uploads wait for a human moderator: Publish again later. */
 	bool bWaitingForReview = false;
 
-	/** The creator cancelled. Nothing was published; what was uploaded stays for the next Publish. */
-	bool bCancelled = false;
+	/** The creator canceled. Nothing was published; what was uploaded stays for the next Publish. */
+	bool bCanceled = false;
 
 	/**
 	 * GhzGarage/mantle#818: set when the place is over a limit that even thinning can fix: what thinning would do, in plain words. The
@@ -98,7 +98,7 @@ public:
 	/**
 	 * Runs a started session to its end: Pump between ticks (the HTTP manager, or a test's fake
 	 * Mantle), and once Clock passes MaxBlockingSeconds from the call, cancels it and returns. A
-	 * session whose publish request is already on its way cannot be cancelled and runs to its end.
+	 * session whose publish request is already on its way cannot be canceled and runs to its end.
 	 */
 	static FMantlePublishResult RunToEnd(const TSharedRef<FMantlePlacePublishSession>& Session, double MaxBlockingSeconds,
 		TFunctionRef<void()> Pump, TFunctionRef<double()> Clock);

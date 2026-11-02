@@ -510,13 +510,13 @@ bool FMantleRuntimeTextureBuilder::Decode(const TConstArrayView<uint8> Bytes, co
 		return RefuseTexture(OutError, TEXT("That image could not be decoded."));
 	}
 
-	// To BGRA8 without changing the encoding: 8-bit images keep their bytes, 16-bit ones are quantised
+	// To BGRA8 without changing the encoding: 8-bit images keep their bytes, 16-bit ones are quantized
 	// as stored. The role decides later whether the bytes are sampled as sRGB.
 	FImage Converted;
 	Decoded.CopyTo(Converted, ERawImageFormat::BGRA8, Decoded.GammaSpace);
 	if (Converted.RawData.Num() != static_cast<int64>(W) * H * 4)
 	{
-		return RefuseTexture(OutError, TEXT("That image could not be converted to 8-bit colour."));
+		return RefuseTexture(OutError, TEXT("That image could not be converted to 8-bit color."));
 	}
 
 	Out.Format = PF_B8G8R8A8;

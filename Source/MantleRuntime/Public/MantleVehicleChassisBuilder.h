@@ -25,9 +25,9 @@ struct FMantleVehicleChassisRotationControl
 	double RotationStiffness = 0.0;
 	double RotationDamping = 0.0;
 	double MaxAccel = 0.0;
-	double AutoCentreRollStrength = 0.0;
-	double AutoCentrePitchStrength = 0.0;
-	double AutoCentreYawStrength = 0.0;
+	double AutoCenterRollStrength = 0.0;
+	double AutoCenterPitchStrength = 0.0;
+	double AutoCenterYawStrength = 0.0;
 };
 
 /**
@@ -46,7 +46,7 @@ struct FMantleVehicleChassisRider
 	FVector PelvisOffset = FVector::ZeroVector;
 	FVector StopPelvisShift = FVector::ZeroVector;
 	double KneeSplayDegrees = 8.0;
-	/** The rear wheel's own tyre friction and brake torque (the document holds one of each, which the front wheel gets); 0 keeps the document's. */
+	/** The rear wheel's own tire friction and brake torque (the document holds one of each, which the front wheel gets); 0 keeps the document's. */
 	double RearTireFriction = 0.0;
 	double RearBrakeTorque = 0.0;
 	FMantleVehicleChassisRotationControl RotationControl;
@@ -65,8 +65,8 @@ struct FMantleVehicleChassisReference
 	double Track = 0.0;
 	double WheelRadius = 0.0;
 	double WheelWidth = 0.0;
-	/** One wheel per axle, on the centreline (a motorcycle): Track is then only the fit's nominal width, and the chassis has no left or right wheel. */
-	bool bCentreline = false;
+	/** One wheel per axle, on the centerline (a motorcycle): Track is then only the fit's nominal width, and the chassis has no left or right wheel. */
+	bool bCenterline = false;
 	/** The body box: its length (X), width (Y), height (Z) and how far its underside is above the ground. */
 	double BodyLength = 0.0;
 	double BodyWidth = 0.0;
@@ -84,7 +84,7 @@ struct FMantleVehicleChassisReference
 	FString DriverSeat = TEXT("car");
 	/** A steering wheel is drawn and held; a rider seat has handlebars instead and no steering wheel. */
 	bool bSteeringWheel = true;
-	/** The bone a steered centreline wheel hangs under (yawed by SteerBone); None when no wheel has one. */
+	/** The bone a steered centerline wheel hangs under (yawed by SteerBone); None when no wheel has one. */
 	FName ForkBone;
 	FMantleVehicleChassisRider Rider;
 
@@ -99,8 +99,8 @@ struct FMantleVehicleChassisReference
  * needs no creator model, so each vehicle type is Mantle's to tune and the creator's model is only a skin on it.
  *
  * MakeAsset builds what a published vehicle's MVH1 read yields (FMantleVehicleAsset): a skeleton of a root bone and one bone per
- * wheel at the layout's positions (two to four axles), a grey body (the body box, plus a cylinder per wheel skinned to its bone), and a Desc made by
- * composing a vehicle document, the preset's `defaults` plus the chassis's wheels, collision box, centre of mass and seats, and
+ * wheel at the layout's positions (two to four axles), a gray body (the body box, plus a cylinder per wheel skinned to its bone), and a Desc made by
+ * composing a vehicle document, the preset's `defaults` plus the chassis's wheels, collision box, center of mass and seats, and
  * reading it with FMantleVehicleAssetReader::ParseDocument, so it passes the validation a published document does. UMantleBuiltVehicle::Build
  * and FMantlePlaceVehicleDefinitions::Make then turn it into a drivable definition exactly as they do a published vehicle.
  *
@@ -110,7 +110,7 @@ struct FMantleVehicleChassisReference
  * Model space, cm: +X forward, +Y right, +Z up, the origin on the ground under the middle of the wheelbase, the driver on -Y.
  * Wheels are in the order front axle left, front axle right, then each axle behind it (left is -Y). The bones of a two-axle chassis are
  * wheel_fl, wheel_fr, wheel_rl and wheel_rr; three or four axles are wheel_a1_l, wheel_a1_r, wheel_a2_l and so on, front axle first.
- * A centreline chassis (a motorcycle) has one wheel on each axle, at Y 0: wheel_f and wheel_r (wheel_a1, wheel_a2 and so on for three or
+ * A centerline chassis (a motorcycle) has one wheel on each axle, at Y 0: wheel_f and wheel_r (wheel_a1, wheel_a2 and so on for three or
  * four axles), and a steered one hangs under a fork bone (fork_f, fork_a1 and so on) that a wheel's SteerBone yaws. A plane has one axle
  * so and one not: its nose wheel is wheel_f and its mains wheel_rl and wheel_rr, then the bones of its control surfaces and engines (below),
  * and its body is the fuselage, a block per half-wing, the tailplane, the fin and a cross for each propeller (a jet: a nozzle box behind the
@@ -126,7 +126,7 @@ struct MANTLERUNTIME_API FMantleVehicleChassisBuilder
 	/** The chassis body's root bone. */
 	static FName RootBoneName();
 
-	/** The fork bone of the steered centreline axle of a two-axle chassis (fork_f), the parent of wheel_f. */
+	/** The fork bone of the steered centerline axle of a two-axle chassis (fork_f), the parent of wheel_f. */
 	static FName FrontForkBoneName();
 
 	/**

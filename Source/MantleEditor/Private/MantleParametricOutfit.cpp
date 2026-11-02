@@ -335,7 +335,7 @@ namespace MantleParametricOutfitPrivate
 	/**
 	 * The canonical body exported with half-precision UVs: every vertex lies within one 1/2048 step of its reference UV
 	 * (exact Match quantizes at 1/2048, finer than a half float above 1.0). Each input vertex takes the one reference
-	 * vertex within that step whose already-placed mesh neighbours are its reference neighbours; the result must be a
+	 * vertex within that step whose already-placed mesh neighbors are its reference neighbors; the result must be a
 	 * complete bijection, and the mapped triangles may differ from the reference only by flipped quad diagonals (at most
 	 * 1% of them). Outputs reference -> input vertex.
 	 */
@@ -349,7 +349,7 @@ namespace MantleParametricOutfitPrivate
 		}
 		TMultiMap<FIntPoint, int32> ReferenceAt;
 		for (int32 Reference = 0; Reference < NumVertices; ++Reference) { ReferenceAt.Add(Layout.QuantizedUVs[Reference], Reference); }
-		const auto Neighbours = [NumVertices](TConstArrayView<uint32> Indices)
+		const auto Neighbors = [NumVertices](TConstArrayView<uint32> Indices)
 		{
 			TArray<TSet<int32>> Out;
 			Out.SetNum(NumVertices);
@@ -364,8 +364,8 @@ namespace MantleParametricOutfitPrivate
 			return Out;
 		};
 		for (const uint32 Index : InputIndices) { if (Index >= static_cast<uint32>(NumVertices)) { Error = TEXT("the body has an out-of-range index"); return false; } }
-		const TArray<TSet<int32>> ReferenceNeighbours = Neighbours(Layout.Indices);
-		const TArray<TSet<int32>> InputNeighbours = Neighbours(InputIndices);
+		const TArray<TSet<int32>> ReferenceNeighbors = Neighbors(Layout.Indices);
+		const TArray<TSet<int32>> InputNeighbors = Neighbors(InputIndices);
 		TArray<TArray<int32>> Candidates;
 		Candidates.SetNum(NumVertices);
 		for (int32 Input = 0; Input < NumVertices; ++Input)
@@ -394,16 +394,16 @@ namespace MantleParametricOutfitPrivate
 				{
 					if (OutInputOfReference[Reference] != INDEX_NONE) { continue; }
 					bool bFits = true;
-					for (const int32 Neighbour : InputNeighbours[Input])
+					for (const int32 Neighbor : InputNeighbors[Input])
 					{
-						if (ReferenceOfInput[Neighbour] != INDEX_NONE && !ReferenceNeighbours[Reference].Contains(ReferenceOfInput[Neighbour])) { bFits = false; break; }
+						if (ReferenceOfInput[Neighbor] != INDEX_NONE && !ReferenceNeighbors[Reference].Contains(ReferenceOfInput[Neighbor])) { bFits = false; break; }
 					}
 					if (bFits) { Only = Reference; ++Count; }
 				}
 				if (Count == 1) { ReferenceOfInput[Input] = Only; OutInputOfReference[Only] = Input; ++Placed; bChanged = true; }
 			}
 		}
-		// A flipped diagonal leaves its four vertices with one neighbour more or less than the reference: place the last
+		// A flipped diagonal leaves its four vertices with one neighbor more or less than the reference: place the last
 		// unplaced vertices by their only remaining candidate, and let the triangle check below judge the result.
 		for (int32 Input = 0; Input < NumVertices; ++Input)
 		{

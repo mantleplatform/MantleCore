@@ -227,7 +227,7 @@ struct MANTLEEDITOR_API FMantleCosmeticChecks
 	 * given the skeleton's spelling: FNames match without regard to case, so a MetaHuman outfit's "Root" is the
 	 * fixture's "root", as the worker's cooked bone table says (#286). A bone off Skeleton that no vertex weights is left
 	 * out silently (cloth and corrective helpers). #592: a weighted bone off Skeleton is folded: its weights move to its
-	 * nearest kept ancestor, each vertex's influences on one joint are merged and renormalised, heaviest first, within
+	 * nearest kept ancestor, each vertex's influences on one joint are merged and renormalized, heaviest first, within
 	 * Glb.NumInfluences; then it is left out too. A weighted bone with no kept ancestor stays (MatchSkeleton refuses it):
 	 * folding never fixes a hierarchy, and a fixture bone under the wrong parent is still refused. #594: the jaw slot
 	 * (JawSlotBone) is kept only when bKeepJawSlot (the creator picked it, KeepJawBone); otherwise a bone of that name is
@@ -420,8 +420,8 @@ struct MANTLEEDITOR_API FMantleCosmeticChecks
 
 	/**
 	 * #484: keeps the MaxInfluences heaviest of one vertex's influences (bone, weight > 0; any order in, heaviest first
-	 * out) and, when any were dropped, renormalises the rest in the fixed point MSK1 stores: 8-bit weights summing to
-	 * exactly 255 by largest remainder (as cook.quantizeSkin quantises), written back as q / 255. A vertex within the
+	 * out) and, when any were dropped, renormalizes the rest in the fixed point MSK1 stores: 8-bit weights summing to
+	 * exactly 255 by largest remainder (as cook.quantizeSkin quantizes), written back as q / 255. A vertex within the
 	 * limit keeps its weights. Returns the largest weight dropped as a share of the vertex's total, 0 when none was.
 	 * Pure (tested).
 	 */

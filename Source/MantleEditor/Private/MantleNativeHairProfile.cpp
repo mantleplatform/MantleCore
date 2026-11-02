@@ -116,7 +116,7 @@ bool FMantleNativeHairProfile::FromMaterialFamily(const UMaterialInterface* Mate
 	return true;
 }
 
-// The fixed v2 shader permits source colour controls; every other connected control is a measured recipe constant.
+// The fixed v2 shader permits source color controls; every other connected control is a measured recipe constant.
 bool FMantleNativeHairProfile::FromMaterialRecipe(const UMaterialInterface* Material, FString& Profile,
     FMantleNativeHairSettings& Settings, FString& Description, FString& Error)
 {
@@ -180,7 +180,7 @@ bool FMantleNativeHairProfile::FromMaterialRecipe(const UMaterialInterface* Mate
     TArray<FMaterialParameterInfo> SwitchInfos; Guids.Reset(); Material->GetAllStaticSwitchParameterInfo(SwitchInfos, Guids);
     if (!ValidateFamilySwitches(bTranslucent, [&](FName Name, bool& Value)
         { FMaterialParameterInfo Info; FGuid Guid; return Unique(SwitchInfos, Name, Info) && Material->GetStaticSwitchParameterValue(FHashedMaterialParameterInfo(Info), Value, Guid); }, Error)) return false;
-    // Every effective source control must match the frozen recipe except the three explicitly transported colour controls.
+    // Every effective source control must match the frozen recipe except the three explicitly transported color controls.
     // This also catches unused or newly connected overrides rather than silently dropping settings not in the short display list below.
     auto IdentitySet = [&Error](const TArray<FMaterialParameterInfo>& Actual, const TArray<FMaterialParameterInfo>& ExpectedInfos)
     {
@@ -238,7 +238,7 @@ bool FMantleNativeHairProfile::FromMaterialRecipe(const UMaterialInterface* Mate
     }
     TArray<FMaterialParameterInfo> MaskInfos; Guids.Reset(); Material->GetAllStaticComponentMaskParameterInfo(MaskInfos, Guids);
     if (!MaskInfos.IsEmpty()) { Error = TEXT("native v2 component-mask overrides are outside the frozen recipe"); return false; }
-    // Native colour only reads RGB; catalog and shader transport have an explicit opaque RGB value.
+    // Native color only reads RGB; catalog and shader transport have an explicit opaque RGB value.
     Settings.DyeColor.A = 1.f;
     if (!Settings.IsValid()) { Error = TEXT("native v2 melanin/redness/dye RGB must be finite in [0,1]"); return false; }
     TArray<TPair<FName, float>> Expected = {

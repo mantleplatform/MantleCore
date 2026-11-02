@@ -91,7 +91,7 @@ bool FMantleHairGeneration::Generate(UObject* Object, FString& Error, const FStr
 	if (!Generator.IsCompatibleSettings(Cards.GenerationSettings))
 	{ Error = TEXT("the active hair-card generator does not accept these generation settings; use its Groom editor action"); return false; }
 	if (!Generator.GenerateHairCardsForLOD(Groom,Cards) || !Cards.ImportedMesh)
-	{ Groom->SetHairGroupsCards(Original); Error = TEXT("native card generation was cancelled or produced no mesh; check its editor/Python diagnostics, or use existing optimized cards"); return false; }
+	{ Groom->SetHairGroupsCards(Original); Error = TEXT("native card generation was canceled or produced no mesh; check its editor/Python diagnostics, or use existing optimized cards"); return false; }
 	Groom->Modify(); auto Updated = Original;
 	Updated.RemoveAll([&Cards](const auto& Existing) { return Existing.GroupIndex == Cards.GroupIndex && Existing.LODIndex == Cards.LODIndex; });
 	Updated.Add(Cards); Groom->SetHairGroupsCards(Updated); Groom->MarkPackageDirty();

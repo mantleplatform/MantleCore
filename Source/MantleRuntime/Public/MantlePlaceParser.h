@@ -22,7 +22,7 @@ public:
 	/**
 	 * #838: ParseFromString, except that a ScriptPoint whose storageItem names none of the place's storage entries
 	 * is accepted when it names one of DiskScriptPackages exactly (case-sensitive): the Packages/<Name>/ folders
-	 * beside a local -MantlePlace file (FMantlePlaceLoader::LoadFromFile), which the disk script catalogue mounts.
+	 * beside a local -MantlePlace file (FMantlePlaceLoader::LoadFromFile), which the disk script catalog mounts.
 	 * Every other rule is unchanged; a published place is never parsed this way.
 	 */
 	static FMantleParseResult ParseFromString(const FString& Json, const TArray<FString>& DiskScriptPackages);

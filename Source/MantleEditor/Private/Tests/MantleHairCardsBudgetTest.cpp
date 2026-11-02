@@ -41,13 +41,13 @@ bool FMantleHairCardsBudgetEvenTest::RunTest(const FString& Parameters)
 	const TArray<int32> Kept = FMantleHairCards::SelectWholeCards(P, I, 80);
 	TestEqual(TEXT("40 cards of 2 triangles fit 80"), Kept.Num(), 80);
 
-	TArray<FVector2f> Centres;
-	for (const int32 T : Kept) if (T % 2 == 0) Centres.Add(FVector2f(P[I[T * 3]].X + 0.25f, P[I[T * 3]].Y));
+	TArray<FVector2f> Centers;
+	for (const int32 T : Kept) if (T % 2 == 0) Centers.Add(FVector2f(P[I[T * 3]].X + 0.25f, P[I[T * 3]].Y));
 	float Worst = 0.f;
 	for (int32 Y = 0; Y < 20; ++Y) for (int32 X = 0; X < 20; ++X)
 	{
 		float Nearest = TNumericLimits<float>::Max();
-		for (const FVector2f& C : Centres) Nearest = FMath::Min(Nearest, FVector2f::Distance(C, FVector2f(X * 2.f + 0.25f, Y * 2.f)));
+		for (const FVector2f& C : Centers) Nearest = FMath::Min(Nearest, FVector2f::Distance(C, FVector2f(X * 2.f + 0.25f, Y * 2.f)));
 		Worst = FMath::Max(Worst, Nearest);
 	}
 	// 40 cards over a 38 x 38 cm patch is about 6 cm apart; no card may be more than 9 cm from a kept one (a random pick leaves holes twice that).

@@ -221,7 +221,7 @@ namespace MantleTestLocallyPrivate
 			else
 			{
 				UE_LOG(LogMantle, Error, TEXT("MANTLE_TEST_LOCALLY_FAILED %s"),
-					Error.IsEmpty() ? TEXT("cancelled") : *OneLine(Error));
+					Error.IsEmpty() ? TEXT("canceled") : *OneLine(Error));
 			}
 		}));
 
@@ -251,7 +251,7 @@ namespace MantleTestLocallyPrivate
 			}
 			else
 			{
-				UE_LOG(LogMantle, Error, TEXT("MANTLE_TEST_LOCALLY_FAILED %s"), Error.IsEmpty() ? TEXT("cancelled") : *OneLine(Error));
+				UE_LOG(LogMantle, Error, TEXT("MANTLE_TEST_LOCALLY_FAILED %s"), Error.IsEmpty() ? TEXT("canceled") : *OneLine(Error));
 			}
 		}));
 
@@ -309,7 +309,7 @@ namespace MantleTestLocallyPrivate
 			}
 			else
 			{
-				UE_LOG(LogMantle, Error, TEXT("MANTLE_TEST_LOCALLY_FAILED %s"), Error.IsEmpty() ? TEXT("cancelled") : *OneLine(Error));
+				UE_LOG(LogMantle, Error, TEXT("MANTLE_TEST_LOCALLY_FAILED %s"), Error.IsEmpty() ? TEXT("canceled") : *OneLine(Error));
 			}
 		}));
 
@@ -629,11 +629,11 @@ bool FMantleTestLocally::RunInternal(UWorld* World, const TArray<FMantleWeaponTo
 	Options.DraftAvatar = DraftAvatar;
 	FMantlePreviewExportResult Export;
 	FMantlePreviewExport::Run(World, Options, Export);
-	if (Export.bCancelled)
+	if (Export.bCanceled)
 	{
 		State = EMantleTestLocallyState::Stopped;
-		SetNotice(TEXT("Test Locally was cancelled during the export."), /*bError*/ false);
-		LogStep(TEXT("cancelled"), TEXT("the creator cancelled the export"));
+		SetNotice(TEXT("Test Locally was canceled during the export."), /*bError*/ false);
+		LogStep(TEXT("canceled"), TEXT("the creator canceled the export"));
 		return false;
 	}
 	// The coverage report, for the panel (the export logged it as MANTLE_COVERAGE lines).
@@ -863,7 +863,7 @@ bool FMantleTestLocally::ChooseClient(FString& OutMessage)
 		Files);
 	if (!bPicked || Files.Num() == 0)
 	{
-		// Cancelled: nothing changes and there is nothing to say.
+		// Canceled: nothing changes and there is nothing to say.
 		return false;
 	}
 

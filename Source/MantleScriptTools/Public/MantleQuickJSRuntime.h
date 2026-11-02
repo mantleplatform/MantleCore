@@ -9,7 +9,7 @@ class MANTLESCRIPTTOOLS_API FMantleQuickJSRuntime
 {
 public:
 	/** Parses and bytecode-compiles one ES module without evaluating code or loading dependencies.
-     * Static import/export syntax is checked; catalogue existence, path case, side and exported
+     * Static import/export syntax is checked; catalog existence, path case, side and exported
      * names are checked by the real runtime module loader, not this single-file gate. */
 	static bool ValidateSource(
 		const FString& Source,

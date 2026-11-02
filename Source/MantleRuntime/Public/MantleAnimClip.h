@@ -130,7 +130,7 @@ struct FMantleAnimClipReadResult
 /**
  * Reads MAN1, the cooked emote clip or place clip (#469, flag bit 0: the skeleton block of the bone table
  * it was authored on), into FMantleAnimClip. Quaternion components are int16 / 32767 and
- * are renormalised after the length is checked; translations are uint16 steps across each track's own
+ * are renormalized after the length is checked; translations are uint16 steps across each track's own
  * [min, max] range. Strict like the other cooked readers: counts against the bytes left and sanity caps
  * before allocating, flags and floats checked, duplicate tracks, unknown flags and trailing bytes
  * refused, unknown extensions skipped, then FMantleAnimClip::Validate. Touches no UObjects.

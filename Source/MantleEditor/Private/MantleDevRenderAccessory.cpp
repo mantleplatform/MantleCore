@@ -3,7 +3,7 @@
 // Maintainer command: Mantle.Dev.RenderAccessory <StaticMesh> <Directory> <Label> [slot] [size] [upload] [body]
 // Renders an accessory as the catalog thumbnail does (FMantleCosmeticThumbnail, AccessorySubject: the engine's thumbnail scene,
 // framed on the mesh), from the front and angled, into <Directory>/<Label>_{front,angled}.png. With "upload" it draws what the
-// export uploads instead of the source: the reduced copy when the mesh is over the triangle limit, centred on the socket when
+// export uploads instead of the source: the reduced copy when the mesh is over the triangle limit, centerd on the socket when
 // its pivot is out of the slot's reach (FMantleAccessorySettings). Nothing is saved or uploaded. Logs MANTLE_RENDER_ACCESSORY lines.
 #include "MantleAccessorySettings.h"
 #include "MantleAccessoryPlacement.h"
@@ -151,6 +151,6 @@ namespace MantleDevRenderAccessoryPrivate
 	FAutoConsoleCommand GMantleDevRenderAccessoryCommand(
 		TEXT("Mantle.Dev.RenderAccessory"),
 		TEXT("Mantle.Dev.RenderAccessory <StaticMesh> <Directory> <Label> [slot] [size] [upload] [body|body:<type>] -- renders an accessory as the catalog thumbnail does, front and angled, ")
-		TEXT("into Directory; with upload, as the export would upload it (reduced, centred on the socket); with body, also worn on a standard body. Saves and uploads nothing."),
+		TEXT("into Directory; with upload, as the export would upload it (reduced, centerd on the socket); with body, also worn on a standard body. Saves and uploads nothing."),
 		FConsoleCommandWithArgsDelegate::CreateStatic(&Run));
 }

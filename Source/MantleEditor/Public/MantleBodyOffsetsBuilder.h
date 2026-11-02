@@ -7,7 +7,7 @@ class UMetaHumanCharacter;
 class USkeletalMesh;
 
 /**
- * #849 S6a: one body-shape offset (weight+, muscle-, ...) in the plugin's own space: Unreal axes, centimetres,
+ * #849 S6a: one body-shape offset (weight+, muscle-, ...) in the plugin's own space: Unreal axes, centimeters,
  * the converter's built body. FMantleGlbWriter converts it to glTF and writes it in the root extension
  * MANTLE_body_offsets (backend cook/bodyoffsets.go).
  */
@@ -73,7 +73,7 @@ public:
 	 * Like LearnVertexMap, for a state whose vertices only come near the built ones (the face: Creator refits its neck to
 	 * the body, and the built face LOD0 is exact on ~91% of its vertices and within 1.5 mm on the rest). Each built vertex
 	 * takes the NEAREST state vertex (the lowest index on a tie) provided it is within TolCm; ambiguity is not an error,
-	 * because neighbouring vertices of a smooth surface move together. Fails, naming the vertex, when one has none in
+	 * because neighboring vertices of a smooth surface move together. Fails, naming the vertex, when one has none in
 	 * reach. OutExact counts the vertices matched to within 0.001 cm and OutWorstCm is the largest distance used.
 	 */
 	static bool LearnNearestVertexMap(TConstArrayView<FVector3f> Built, TConstArrayView<FVector3f> StateAll,

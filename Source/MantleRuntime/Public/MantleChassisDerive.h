@@ -51,15 +51,15 @@ struct MANTLERUNTIME_API FMantleChassisHandling
 	/**
 	 * What a limit held back when FMantleChassisDerive made this, one line each: the document path, the number the rule gave and what it was held to
 	 * ("brakes/handbrakeTorque 39321.6 held to 20000"). The rules do not stop at a limit quietly: a number that is not the rule's answer is here.
-	 * Also the centre of mass when the stability target or its floor above the wheels moved it ("centerOfMass/z"). Empty for the archetype's own.
+	 * Also the center of mass when the stability target or its floor above the wheels moved it ("centerOfMass/z"). Empty for the archetype's own.
 	 */
 	TArray<FString> Clamped;
 };
 
 /**
- * The four feel sliders of a chassis (#793), each from -1 to 1 and 0 for the archetype's own: grip scales the tyre friction, power the
+ * The four feel sliders of a chassis (#793), each from -1 to 1 and 0 for the archetype's own: grip scales the tire friction, power the
  * engine's power-to-weight, stiffness the ride frequency and topSpeed the top speed, each by up to 30 percent either way. Never
- * physics beyond that: customisation does not change how a vehicle drives (#793).
+ * physics beyond that: customization does not change how a vehicle drives (#793).
  */
 struct MANTLERUNTIME_API FMantleChassisFeel
 {
@@ -79,7 +79,7 @@ struct MANTLERUNTIME_API FMantleChassisFeel
  */
 struct MANTLERUNTIME_API FMantleChassisDeriveConstants
 {
-	/** Least track / (2 x centre of mass height) the centre of mass is lowered to meet; 0 for none (a two-wheeler balances itself). */
+	/** Least track / (2 x center of mass height) the center of mass is lowered to meet; 0 for none (a two-wheeler balances itself). */
 	double Stability = 0.0;
 	/** How much longer the chase camera's arm is per cm the body is longer than the preset's, and its height per cm of body height above the ground. */
 	double CameraArmPerLength = 0.0;
@@ -106,7 +106,7 @@ struct MANTLERUNTIME_API FMantleChassisTrim
  *
  * The rules, with L W H the body box, c its clearance, r the wheel radius, n the wheels, m the mass, a 0 for the archetype's own:
  *   mass            m0 x (L W (H + c)) / (L0 W0 (H0 + c0))
- *   centre of mass  X the archetype's x its wheelbase ratio; Z r + the archetype's share of the body above the wheel centres x (H + c - r), lowered to
+ *   center of mass  X the archetype's x its wheelbase ratio; Z r + the archetype's share of the body above the wheel centers x (H + c - r), lowered to
  *                   meet derive.stability (track / (2 x Z)), never below r + 2 cm
  *   spring rate     rate0 x (m / m0) x (n0 / n) x (f / f0)^2, with f / f0 = 1 / sqrt(r / r0) (the sag stays the same share of the travel); preload
  *                   follows the rate
@@ -125,7 +125,7 @@ struct MANTLERUNTIME_API FMantleChassisTrim
  *   a hovercraft's fan, pads and rudder   the fan's push thrust0 x (m / m0); each pad's spring rate0 x (m / m0) x (n0 / n) x (d0 / d), d a pad's travel
  *                   less the hover height (how far it comes down at rest, at least 1 cm), so the hull rests at its own hover height; the rudder's
  *                   area area0 x (height x chord) / (height0 x chord0)
- * What no rule moves is the archetype's own: the drag coefficient, the spring damping and the tyre friction (the friction by the grip slider), the
+ * What no rule moves is the archetype's own: the drag coefficient, the spring damping and the tire friction (the friction by the grip slider), the
  * torque curve, gear ratios and rpm limits. A ratio is held to 0.001 to 1000 so a dimension that is zero or not a number gives a held number and not
  * a NaN. Every handling number is held inside the document's absolute ranges (limits.json), and each hold is listed in the result's
  * Clamped; the geometry is not held: a wheel radius or a body outside the document's ranges makes a document the reader refuses. Results are rounded to
@@ -143,9 +143,9 @@ struct MANTLERUNTIME_API FMantleChassisDerive
 
 	/**
 	 * Steady level flight of Spec's plane (Spec.Aircraft.bSet) at SpeedMs m/s, with Handling's mass, drag and areas (a spec's own, or a resized one's): the
-	 * port of schema/validate.py's _plane_level_flight, the engine's own forces in the body frame (X forward, Z up) about the centre of mass. Each aerofoil
-	 * gives its lift and drag at its quarter-chord line (a wing's lift acts (centre of lift - 50) cm aft of it, FAerofoilSimModule::GetCenterOfLiftOffset),
-	 * the fin its drag, the fuselage its drag at the chassis module's own position (the root body's origin, not the centre of mass: FChassisSimModule adds
+	 * port of schema/validate.py's _plane_level_flight, the engine's own forces in the body frame (X forward, Z up) about the center of mass. Each aerofoil
+	 * gives its lift and drag at its quarter-chord line (a wing's lift acts (center of lift - 50) cm aft of it, FAerofoilSimModule::GetCenterOfLiftOffset),
+	 * the fin its drag, the fuselage its drag at the chassis module's own position (the root body's origin, not the center of mass: FChassisSimModule adds
 	 * it with AddLocalForce), and each engine its thrust along X at its own height. Level flight is the lift holding the weight with the pitch moment zero:
 	 * the pitch is where the lift matches the weight, the elevator the one that zeroes the moment, the throttle the thrust that holds the speed. False when
 	 * the plane cannot hold level flight there with the elevator in reach (-1 to 1), or Spec is not a plane. The tailplane's own camber is the elevator's
@@ -154,7 +154,7 @@ struct MANTLERUNTIME_API FMantleChassisDerive
 	static bool LevelFlight(const FMantleChassisSpec& Spec, const FMantleChassisHandling& Handling, double SpeedMs, FMantleChassisTrim& OutTrim);
 
 	/**
-	 * The trim of Spec's plane at its own cruise speed (Aircraft.CruiseSpeedCmPerSec): OutCamber, the tailplane camber that centres the elevator there (the
+	 * The trim of Spec's plane at its own cruise speed (Aircraft.CruiseSpeedCmPerSec): OutCamber, the tailplane camber that centers the elevator there (the
 	 * camber now, plus the elevator the plane needs times the tailplane's control angle: only their sum acts on the air), and OutCruiseThrottle, the throttle
 	 * that holds the speed. Both are rounded (0.001 degrees, 0.0001) so every machine writes the same document text. On false, neither is changed.
 	 */

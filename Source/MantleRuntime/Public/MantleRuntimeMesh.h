@@ -16,7 +16,7 @@
  */
 struct FMantleRuntimeMesh
 {
-	/** Unreal centimetres, in Unreal's coordinate system. The worker already converted them. */
+	/** Unreal centimeters, in Unreal's coordinate system. The worker already converted them. */
 	TArray<FVector3f> Positions;
 
 	/** Empty when the upload carried none. */

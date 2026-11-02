@@ -39,7 +39,7 @@ namespace MantleGarmentFitterPrivate
 	/**
 	 * Source warped by Field into Fitted (a copy of Source): positions through the field; normals and
 	 * tangents by warping a 1 cm offset along them and taking the difference (the engine's DeformPoints
-	 * does the same for normals), the tangent re-orthogonalised to the new normal, the binormal sign kept;
+	 * does the same for normals), the tangent re-orthogonalized to the new normal, the binormal sign kept;
 	 * degenerate results keep the original direction.
 	 */
 	void WarpLOD(const FMantleWarpField& Field, const FMantleSkinnedMeshLOD& Source, FMantleSkinnedMeshLOD& Fitted)
@@ -520,7 +520,7 @@ namespace MantleGarmentFitterPrivate
 
 	/**
 	 * LOD's seams between sections, from its positions as authored (before the warp): OutSeams gets
-	 * per vertex its seam id when it shares its position (quantised to MantleGarmentGeometry::
+	 * per vertex its seam id when it shares its position (quantized to MantleGarmentGeometry::
 	 * WeldQuantumCm) with a vertex of another section, else INDEX_NONE. The restores push each seam's
 	 * copies as one (FMantleClearanceRestore::Restore). Adds to Stats.
 	 */

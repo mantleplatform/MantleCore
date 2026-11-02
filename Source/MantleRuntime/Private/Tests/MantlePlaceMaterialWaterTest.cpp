@@ -72,7 +72,7 @@ bool FMantlePlaceMaterialWaterParseTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("scattering defaults"), Desc.Water.Scattering.Equals(FLinearColor(0.002f, 0.002f, 0.002f, 1.0f)));
 	TestTrue(TEXT("absorption defaults"), Desc.Water.Absorption.Equals(FLinearColor(0.02f, 0.007f, 0.005f, 1.0f)));
 	TestEqual(TEXT("phaseG defaults to 0"), Desc.Water.PhaseG, 0.0f);
-	TestEqual(TEXT("the colour scale defaults to 1"), Desc.Water.ColorScaleBehindWater, 1.0f);
+	TestEqual(TEXT("the color scale defaults to 1"), Desc.Water.ColorScaleBehindWater, 1.0f);
 	TestTrue(TEXT("the first normal is in UV space"), Desc.Water.Normal.Space == EMantlePlaceWaterSpace::Uv);
 	TestTrue(TEXT("with no tiling or pan"), Desc.Water.Normal.Tiling == FVector2f(1.0f, 1.0f) && Desc.Water.Normal.Panning == FVector2f(0.0f, 0.0f));
 	TestFalse(TEXT("and no second normal"), Desc.Water.bHasNormal2);
@@ -93,7 +93,7 @@ bool FMantlePlaceMaterialWaterParseTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("scattering"), Desc.Water.Scattering.Equals(FLinearColor(0.003f, 0.017f, 0.018f, 1.0f)));
 	TestTrue(TEXT("absorption"), Desc.Water.Absorption.Equals(FLinearColor(0.027f, 0.013f, 0.012f, 1.0f)));
 	TestEqual(TEXT("phaseG"), Desc.Water.PhaseG, -0.25f);
-	TestEqual(TEXT("colour scale"), Desc.Water.ColorScaleBehindWater, 0.5f);
+	TestEqual(TEXT("color scale"), Desc.Water.ColorScaleBehindWater, 0.5f);
 	TestTrue(TEXT("first tiling"), Desc.Water.Normal.Tiling == FVector2f(0.25f, 0.25f));
 	TestTrue(TEXT("first pan"), Desc.Water.Normal.Panning == FVector2f(-0.0025f, 0.0f));
 	TestTrue(TEXT("a second normal"), Desc.Water.bHasNormal2);
@@ -135,7 +135,7 @@ bool FMantlePlaceMaterialWaterParseTest::RunTest(const FString& Parameters)
 		{ TEXT("an absorption above 1"), FString(Head) + TEXT(",\"water\":{\"absorption\":[0,2,0]}}") },
 		{ TEXT("a negative scattering"), FString(Head) + TEXT(",\"water\":{\"scattering\":[0,-0.1,0]}}") },
 		{ TEXT("a phaseG above 1"), FString(Head) + TEXT(",\"water\":{\"phaseG\":1.5}}") },
-		{ TEXT("a colour scale below 0"), FString(Head) + TEXT(",\"water\":{\"colorScaleBehindWater\":-0.1}}") },
+		{ TEXT("a color scale below 0"), FString(Head) + TEXT(",\"water\":{\"colorScaleBehindWater\":-0.1}}") },
 		{ TEXT("a normal array"), FString(Head) + TEXT(",\"water\":{\"normal\":[]}}") },
 		{ TEXT("a texture on the first normal"), FString(Head) + TEXT(",\"water\":{\"normal\":{\"texture\":\"ast_u22222222222222222222222222222222\"}}}") },
 		{ TEXT("an unknown space"), FString(Head) + TEXT(",\"water\":{\"normal\":{\"space\":\"screen\"}}}") },
@@ -271,12 +271,12 @@ bool FMantlePlaceMaterialWaterApplyTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("scattering"), VectorOf(Instance, P::WaterScattering).Equals(FLinearColor(0.003f, 0.017f, 0.018f, 1.0f)));
 	TestTrue(TEXT("absorption"), VectorOf(Instance, P::WaterAbsorption).Equals(FLinearColor(0.027f, 0.013f, 0.012f, 1.0f)));
 	TestEqual(TEXT("phaseG"), ScalarOf(Instance, P::WaterPhaseG), 0.5f);
-	TestEqual(TEXT("colour scale"), ScalarOf(Instance, P::WaterColorScale), 0.25f);
+	TestEqual(TEXT("color scale"), ScalarOf(Instance, P::WaterColorScale), 0.25f);
 	TestTrue(TEXT("first tiling"), VectorOf(Instance, P::NormalUVTiling).Equals(FLinearColor(0.25f, 0.5f, 0.0f, 0.0f)));
 	TestEqual(TEXT("first layer is mesh UVs"), ScalarOf(Instance, P::NormalWorldSpace), 0.0f);
 	TestTrue(TEXT("first pan"), VectorOf(Instance, P::NormalUVPanning).Equals(FLinearColor(-0.0025f, 0.0f, 0.0f, 0.0f)));
 	TestEqual(TEXT("second layer is world space"), ScalarOf(Instance, P::Normal2WorldSpace), 1.0f);
-	TestEqual(TEXT("its world scale is repeats a centimetre"), ScalarOf(Instance, P::Normal2WorldScale), 1.0f / 400.0f);
+	TestEqual(TEXT("its world scale is repeats a centimeter"), ScalarOf(Instance, P::Normal2WorldScale), 1.0f / 400.0f);
 	TestTrue(TEXT("second pan"), VectorOf(Instance, P::Normal2UVPanning).Equals(FLinearColor(0.01f, -0.02f, 0.0f, 0.0f)));
 
 	// ApplyExtended on a water document also writes the water values, and keeps the first normal's tiling in the

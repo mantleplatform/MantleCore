@@ -94,7 +94,7 @@ namespace MantleCoverageSurveyPrivate
 	/** Geometry or light: what a place loses when an actor has more of it than its entity type can express (the validator's definition). */
 	bool CoverageIsContent(const UActorComponent* Component)
 	{
-		if (FMantleActorDecompose::IsVisualisation(Component) || Component->IsA(USplineMeshComponent::StaticClass())
+		if (FMantleActorDecompose::IsVisualization(Component) || Component->IsA(USplineMeshComponent::StaticClass())
 			|| FMantleCableBake::IsCableComponent(Component) || CoverageIsOrDerives(Component->GetClass(), TEXT("DynamicMeshComponent")))
 		{
 			return false;
@@ -198,7 +198,7 @@ namespace MantleCoverageSurveyPrivate
 		int32 Seen = 0;
 		for (const UActorComponent* Component : Components)
 		{
-			if (!Component || Component->HasAnyFlags(RF_Transient) || FMantleActorDecompose::IsVisualisation(Component))
+			if (!Component || Component->HasAnyFlags(RF_Transient) || FMantleActorDecompose::IsVisualization(Component))
 			{
 				continue;
 			}
@@ -370,7 +370,7 @@ namespace MantleCoverageSurveyPrivate
 				}
 			}
 
-			// #628: its Blueprint behaviour (one Dropped line per Blueprint class, with the events that run), the editor icons
+			// #628: its Blueprint behavior (one Dropped line per Blueprint class, with the events that run), the editor icons
 			// it carries, and the components of a prefab that no entity says (FMantleActorDecompose::ReportActor).
 			FMantleActorDecompose::ReportActor(Actor, Type, Coverage);
 			CoverageSurveyComponents(Actor, Type, Label, Coverage);
@@ -519,7 +519,7 @@ namespace MantleCoverageSurveyPrivate
 		case EMantleMaterialLoss::Refraction: return TEXT("refraction shown as smooth tinted glass with the reflectance of its index (the bending of the scene behind is not drawn)");
 		case EMantleMaterialLoss::Subsurface: return TEXT("subsurface");
 		case EMantleMaterialLoss::Parallax: return TEXT("parallax");
-		case EMantleMaterialLoss::VertexColor: return TEXT("vertex-colour blending");
+		case EMantleMaterialLoss::VertexColor: return TEXT("vertex-color blending");
 		case EMantleMaterialLoss::DetailNormal: return TEXT("detail normals baked");
 		case EMantleMaterialLoss::PixelDepthOffset: return TEXT("pixel depth offset");
 		case EMantleMaterialLoss::Displacement: return TEXT("displacement");
@@ -536,7 +536,7 @@ namespace MantleCoverageSurveyPrivate
 		EMantleMaterialLoss::DetailNormal | EMantleMaterialLoss::Unlit | EMantleMaterialLoss::BlendMode | EMantleMaterialLoss::NotSurface;
 
 	/** The features the material document carries beyond a plain bake. */
-	FString CoverageRecognised(const FMantleMaterialAnalysis& Analysis)
+	FString CoverageRecognized(const FMantleMaterialAnalysis& Analysis)
 	{
 		const FMantleMaterialFidelity2& Fidelity = Analysis.Fidelity2;
 		TArray<FString> Features;
@@ -582,17 +582,17 @@ namespace MantleCoverageSurveyPrivate
 			{
 				Features.Add(Water.PublishesOpaque()
 					? FString::Printf(TEXT("near-opaque depth-fade water (opacity %.2f) published opaque, so it reflects; the see-through edge is lost"), Water.Opacity)
-					: FString::Printf(TEXT("depth fade baked to a constant opacity (%.2f%s)"), Water.Opacity, Water.bOpacityRead ? TEXT("") : TEXT(", estimated")));
+					: FString::Printf(TEXT("depth fade baked to a constant opacity (%.2f%s)"), Water.Opacity, Water.bOpacitiread ? TEXT("") : TEXT(", estimated")));
 			}
 		}
-		if (Fidelity.bAdditive) { Features.Add(TEXT("additive blending (the glow only: the base colour has no part in it)")); }
+		if (Fidelity.bAdditive) { Features.Add(TEXT("additive blending (the glow only: the base color has no part in it)")); }
 		if (Fidelity.Glass.bFound)
 		{
-			Features.Add(FString::Printf(TEXT("scene-colour refraction drawn as tinted see-through glass (opacity %.2f, %s tint)"), FMantleSeeThroughGlass::Opacity,
+			Features.Add(FString::Printf(TEXT("scene-color refraction drawn as tinted see-through glass (opacity %.2f, %s tint)"), FMantleSeeThroughGlass::Opacity,
 				Fidelity.Glass.bTint ? TEXT("the source's") : TEXT("a neutral")));
 		}
 		if (Analysis.bCarPaint) { Features.Add(TEXT("car paint")); }
-		if (Analysis.bVertexColorTintsBaseColor) { Features.Add(TEXT("vertex-colour tint")); }
+		if (Analysis.bVertexColorTintsBaseColor) { Features.Add(TEXT("vertex-color tint")); }
 		return FString::Join(Features, TEXT(", "));
 	}
 
@@ -629,7 +629,7 @@ namespace MantleCoverageSurveyPrivate
 		}
 	}
 
-	/** Each project material (a Fab pack's) is recognised, baked or lost, by what AnalyzeMaterial finds in it. */
+	/** Each project material (a Fab pack's) is recognized, baked or lost, by what AnalyzeMaterial finds in it. */
 	void CoverageSurveyProjectMaterials(const FMantlePlaceDependencies& Dependencies, FMantleCoverage& Coverage)
 	{
 		for (const FMantleGatheredMaterial& Gathered : Dependencies.Materials)
@@ -669,12 +669,12 @@ namespace MantleCoverageSurveyPrivate
 			// #628: the bake has no instance, so per-instance variation is baked at its average.
 			if (Analysis.bPerInstanceVariation)
 			{
-				Losses.Add(TEXT("per-instance colour variation averaged"));
+				Losses.Add(TEXT("per-instance color variation averaged"));
 			}
-			const FString Recognised = CoverageRecognised(Analysis);
+			const FString Recognized = CoverageRecognized(Analysis);
 			if (Losses.Num() == 0)
 			{
-				if (Recognised.IsEmpty())
+				if (Recognized.IsEmpty())
 				{
 					Coverage.Add(Cat::Materials, EOutcome::Approximated, Gathered.Name, TEXT("baked to PBR textures."));
 				}
@@ -682,20 +682,20 @@ namespace MantleCoverageSurveyPrivate
 				{
 					// Water's depth fade is a constant here, never the real fade, and see-through glass (#628) is the source's look drawn as
 					// a tinted translucent surface: approximated, not kept.
-					Coverage.Add(Cat::Materials, EOutcome::Approximated, Gathered.Name, FString::Printf(TEXT("%s."), *Recognised));
+					Coverage.Add(Cat::Materials, EOutcome::Approximated, Gathered.Name, FString::Printf(TEXT("%s."), *Recognized));
 				}
 				else
 				{
-					Coverage.Add(Cat::Materials, EOutcome::Kept, Gathered.Name, FString::Printf(TEXT("recognised: %s."), *Recognised));
+					Coverage.Add(Cat::Materials, EOutcome::Kept, Gathered.Name, FString::Printf(TEXT("recognized: %s."), *Recognized));
 				}
 				continue;
 			}
 			// The material itself is exported either way, so it is approximated, never dropped; what it lost is the detail.
 			FString Detail = FString::Printf(TEXT("%s: %s."), (Analysis.Losses & ~CoverageSoftLosses) == EMantleMaterialLoss::None ? TEXT("baked, changed") : TEXT("exported without"),
 				*FString::Join(Losses, TEXT(", ")));
-			if (!Recognised.IsEmpty())
+			if (!Recognized.IsEmpty())
 			{
-				Detail += FString::Printf(TEXT(" Recognised: %s."), *Recognised);
+				Detail += FString::Printf(TEXT(" Recognized: %s."), *Recognized);
 			}
 			Coverage.Add(Cat::Materials, EOutcome::Approximated, Gathered.Name, Detail);
 		}
@@ -938,7 +938,7 @@ void FMantleCoverageSurvey::ReportTerrainLayers(FMantleCoverage& Out, const FStr
 			Choice.Material ? *Choice.Material->GetName() : TEXT("none"), Choice.TilingCm, Choice.bDerived ? TEXT(", read from the landscape's material") : TEXT(""));
 		if (Look && Look->bUnreadable)
 		{
-			Detail += TEXT(" Its look is not a texture or colour the material states: plain grey.");
+			Detail += TEXT(" Its look is not a texture or color the material states: plain gray.");
 		}
 		if (Look)
 		{

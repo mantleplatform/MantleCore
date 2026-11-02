@@ -241,9 +241,9 @@ namespace MantleVehicleChassisDocumentPrivate
 		Control->SetField(TEXT("rotationStiffness"), Number(C.RotationStiffness));
 		Control->SetField(TEXT("rotationDamping"), Number(C.RotationDamping));
 		Control->SetField(TEXT("maxAccel"), Number(C.MaxAccel));
-		Control->SetField(TEXT("autoCentreRollStrength"), Number(C.AutoCentreRollStrength));
-		Control->SetField(TEXT("autoCentrePitchStrength"), Number(C.AutoCentrePitchStrength));
-		Control->SetField(TEXT("autoCentreYawStrength"), Number(C.AutoCentreYawStrength));
+		Control->SetField(TEXT("autoCenterRollStrength"), Number(C.AutoCenterRollStrength));
+		Control->SetField(TEXT("autoCenterPitchStrength"), Number(C.AutoCenterPitchStrength));
+		Control->SetField(TEXT("autoCenterYawStrength"), Number(C.AutoCenterYawStrength));
 		Out->SetObjectField(TEXT("rotationControl"), Control);
 		return Out;
 	}
@@ -312,9 +312,9 @@ namespace MantleVehicleChassisDocumentPrivate
 		C.RotationStiffness = Control.RotationStiffness;
 		C.RotationDamping = Control.RotationDamping;
 		C.MaxAccel = Control.MaxAccel;
-		C.AutoCentreRollStrength = Control.AutoCentreRollStrength;
-		C.AutoCentrePitchStrength = Control.AutoCentrePitchStrength;
-		C.AutoCentreYawStrength = Control.AutoCentreYawStrength;
+		C.AutoCenterRollStrength = Control.AutoCenterRollStrength;
+		C.AutoCenterPitchStrength = Control.AutoCenterPitchStrength;
+		C.AutoCenterYawStrength = Control.AutoCenterYawStrength;
 		D.bRider = true;
 		D.bSeatExitSideDistance = true;
 		D.SeatExitSideDistance = FMantleVehicleChassisDocument::BikeExitSideDistance;
@@ -381,12 +381,12 @@ namespace MantleVehicleChassisDocumentPrivate
 			}
 		}
 
-		// The pilot's hands: the left on the throttle, the right on the stick, both on the root bone (neither lever is modelled to move).
+		// The pilot's hands: the left on the throttle, the right on the stick, both on the root bone (neither lever is modeled to move).
 		F.bPilotGrips = true;
 		F.PilotGrips.Left = MakeGrip(Root, Plane.ThrottleGrip);
 		F.PilotGrips.Right = MakeGrip(Root, Plane.StickGrip);
 
-		// The chase camera orbits the cockpit's height over the plane's centre of mass; a pilot steps out beside the fuselage.
+		// The chase camera orbits the cockpit's height over the plane's center of mass; a pilot steps out beside the fuselage.
 		D.bCameraBoom = true;
 		D.CameraBoomLocation = FVector(Spec.CenterOfMass.X, 0.0, Spec.Seat.Z + 7.0 * Spec.Scale);
 		D.bSeatExitSideDistance = true;
@@ -408,7 +408,7 @@ namespace MantleVehicleChassisDocumentPrivate
 		// No angular damping: the rotor's stability assist damps its turning.
 		H.AngularDamping = 0.0;
 
-		// The main rotor, at its hub over the centre of mass; the rotor's other numbers are its defaults, which act through the body's inertia, so at any size.
+		// The main rotor, at its hub over the center of mass; the rotor's other numbers are its defaults, which act through the body's inertia, so at any size.
 		FMantleVehicleRotorDesc& Rotor = H.Rotors.AddDefaulted_GetRef();
 		Rotor.Bone = FMantleVehicleChassisBuilder::MainRotorBoneName();
 		Rotor.Location = Spec.MainRotorHub();
@@ -424,7 +424,7 @@ namespace MantleVehicleChassisDocumentPrivate
 		H.PilotGrips.Left = MakeGrip(Root, Heli.CollectiveGrip);
 		H.PilotGrips.Right = MakeGrip(Root, Heli.CyclicGrip);
 
-		// The chase camera orbits the cockpit's height over the centre of mass, as a plane's; the pilot steps out beside the cabin, past the skids.
+		// The chase camera orbits the cockpit's height over the center of mass, as a plane's; the pilot steps out beside the cabin, past the skids.
 		D.bCameraBoom = true;
 		D.CameraBoomLocation = FVector(Spec.CenterOfMass.X, 0.0, Spec.Seat.Z + 7.0 * Spec.Scale);
 		D.bSeatExitSideDistance = true;
@@ -466,7 +466,7 @@ namespace MantleVehicleChassisDocumentPrivate
 		H.Rudder.MaxControlAngle = Craft.FinMaxControlAngle;
 		H.Rudder.StallAngle = Craft.FinStallAngle;
 
-		// What stands in for a tyre's grip, and the skirt brake.
+		// What stands in for a tire's grip, and the skirt brake.
 		H.Damping.LateralPerSecond = Craft.LateralPerSecond;
 		H.Damping.MaxLateralAccel = Craft.MaxLateralAccel;
 		H.Damping.YawPerSecond = Craft.YawPerSecond;
@@ -578,9 +578,9 @@ namespace MantleVehicleChassisDocumentPrivate
 			Hold(TEXT("seat/rider/rotationControl/rotationStiffness"), C.RotationStiffness);
 			Hold(TEXT("seat/rider/rotationControl/rotationDamping"), C.RotationDamping);
 			Hold(TEXT("seat/rider/rotationControl/maxAccel"), C.MaxAccel);
-			Hold(TEXT("seat/rider/rotationControl/autoCentreRollStrength"), C.AutoCentreRollStrength);
-			Hold(TEXT("seat/rider/rotationControl/autoCentrePitchStrength"), C.AutoCentrePitchStrength);
-			Hold(TEXT("seat/rider/rotationControl/autoCentreYawStrength"), C.AutoCentreYawStrength);
+			Hold(TEXT("seat/rider/rotationControl/autoCenterRollStrength"), C.AutoCenterRollStrength);
+			Hold(TEXT("seat/rider/rotationControl/autoCenterPitchStrength"), C.AutoCenterPitchStrength);
+			Hold(TEXT("seat/rider/rotationControl/autoCenterYawStrength"), C.AutoCenterYawStrength);
 		}
 
 		if (D.MovementType == EMantleVehicleMovementKind::Plane)
@@ -689,8 +689,8 @@ namespace MantleVehicleChassisDocumentPrivate
 		{ TEXT("camera/boomLocation"), TEXT("The chase camera's position") },
 		{ TEXT("seat/exitSideDistance"), TEXT("How far to the side the driver steps out") },
 		{ TEXT("seat/rider"), TEXT("The rider's pose") },
-		{ TEXT("tires/friction"), TEXT("The front tyres' grip") },
-		{ TEXT("tires/rearFriction"), TEXT("The rear tyres' grip") },
+		{ TEXT("tires/friction"), TEXT("The front tires' grip") },
+		{ TEXT("tires/rearFriction"), TEXT("The rear tires' grip") },
 		{ TEXT("flight/airSpeedLimit"), TEXT("The air-speed limit") },
 		{ TEXT("flight/cruiseThrottle"), TEXT("The cruise throttle") },
 		{ TEXT("flight/aerofoils/*/location"), TEXT("The position of a wing, tail or fin") },

@@ -12,7 +12,7 @@
 // Mantle's "busy with other uploads" answer: POST /assets answers 503 upload_busy with a
 // Retry-After when it is already taking its limit of large uploads. The upload queue waits that long
 // for the one file, without spending one of its attempts and without holding up the others; the
-// cosmetic upload honours the Retry-After. Pure: a scripted transport and a fake clock, no network.
+// cosmetic upload honors the Retry-After. Pure: a scripted transport and a fake clock, no network.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleUploadQueueBusyTestPrivate
@@ -236,11 +236,11 @@ bool FMantleUploadQueueBusyWaitIsBoundedTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleUploadQueueBusyIsRecognisedTest,
-	"Mantle.Editor.UploadQueue.BusyIsRecognisedAndPlain503StillSpendsAnAttempt",
+	FMantleUploadQueueBusyIsRecognizedTest,
+	"Mantle.Editor.UploadQueue.BusyIsRecognizedAndPlain503StillSpendsAnAttempt",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleUploadQueueBusyIsRecognisedTest::RunTest(const FString& Parameters)
+bool FMantleUploadQueueBusyIsRecognizedTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleUploadQueueBusyTestPrivate;
 	TestTrue(TEXT("upload_busy"), FMantleAssetUploadQueue::IsUploadBusy(Refused(503, TEXT("upload_busy"), 0.0f)));
@@ -365,7 +365,7 @@ bool FMantleUploadQueueBusyJitterTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleCosmeticUploadRetryAfter503Test,
-	"Mantle.Editor.CosmeticUpload.RetryLaterHonoursRetryAfterFor503",
+	"Mantle.Editor.CosmeticUpload.RetryLaterHonorsRetryAfterFor503",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantleCosmeticUploadRetryAfter503Test::RunTest(const FString& Parameters)

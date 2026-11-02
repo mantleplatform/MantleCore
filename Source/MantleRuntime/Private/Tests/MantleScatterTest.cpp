@@ -190,7 +190,7 @@ bool FMantleScatterShapesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("an exclusion drops exactly what is inside it"), Holed.Num(), Expected);
 	TestTrue(TEXT("an exclusion drops some"), Holed.Num() < Whole.Num());
 
-	// Clusters: instances gather about a few centres, and the same parameters give the same ones.
+	// Clusters: instances gather about a few centers, and the same parameters give the same ones.
 	FMantleScatterParams Clustered = BoxParams();
 	Clustered.HalfExtent = FVector(5000.0, 5000.0, 0.0);
 	Clustered.Density = 0.1;
@@ -371,7 +371,7 @@ bool FMantleScatterRoundedFiltersTest::RunTest(const FString& Parameters)
 	P.Placement = EMantleScatterPlacement::Terrain;
 	P.MinHeight = 100.0; // 1000 mm
 
-	// A surface 0.04 mm under the limit (and 0.04 mm over) rounds to the limit's millimetre: kept both times, however the float came out.
+	// A surface 0.04 mm under the limit (and 0.04 mm over) rounds to the limit's millimeter: kept both times, however the float came out.
 	FMantleScatterGenerateOptions Options;
 	for (const double HeightCm : { 99.996, 100.004 })
 	{
@@ -382,9 +382,9 @@ bool FMantleScatterRoundedFiltersTest::RunTest(const FString& Parameters)
 			Out.WorldZCm = HeightCm;
 			return true;
 		};
-		TestTrue(TEXT("a height within half a millimetre of the limit is on the limit"), GenerateOk(*this, P, Options).Num() > 0);
+		TestTrue(TEXT("a height within half a millimeter of the limit is on the limit"), GenerateOk(*this, P, Options).Num() > 0);
 	}
-	// 0.6 mm under is a different millimetre: dropped.
+	// 0.6 mm under is a different millimeter: dropped.
 	Options.Ground = [](const int64, const int64, FMantleScatterGround& Out) -> bool
 	{
 		Out.ZMm = 0;
@@ -392,7 +392,7 @@ bool FMantleScatterRoundedFiltersTest::RunTest(const FString& Parameters)
 		Out.WorldZCm = 99.94;
 		return true;
 	};
-	TestEqual(TEXT("a height a millimetre under the limit is dropped"), GenerateOk(*this, P, Options).Num(), 0);
+	TestEqual(TEXT("a height a millimeter under the limit is dropped"), GenerateOk(*this, P, Options).Num(), 0);
 
 	// A normal within half a millionth of the threshold is on it (kept); a clearly steeper one is dropped.
 	P.MinHeight.Reset();
@@ -857,7 +857,7 @@ bool FMantleScatterGroundAlignmentTest::RunTest(const FString& Parameters)
 		Ground.MaxTiltDegrees = 0.0;
 		const TArray<FMantleScatterInstance> Long = GenerateOk(*this, Ground, SlopeOptions(Normals[0] * 3.0));
 		const TArray<FMantleScatterInstance> Unit = GenerateOk(*this, Ground, SlopeOptions(Normals[0]));
-		TestTrue(TEXT("the normal is normalised"), Long == Unit);
+		TestTrue(TEXT("the normal is normalized"), Long == Unit);
 		const TArray<FMantleScatterInstance> Upside = GenerateOk(*this, Ground, SlopeOptions(FVector(0.0, 0.0, -1.0)));
 		TestTrue(TEXT("a normal pointing down leaves the instances as they were"), Upside == FlatInstances);
 	}
@@ -1002,7 +1002,7 @@ namespace MantleScatterTestPrivate
 		return true;
 	}
 
-	/** Millimetres from (Px, Py) to the segment A-B, in floating point: the independent model of the strip test. */
+	/** Millimeters from (Px, Py) to the segment A-B, in floating point: the independent model of the strip test. */
 	double DistanceToSegmentMm(const double Px, const double Py, const FVector2D& A, const FVector2D& B)
 	{
 		const FVector2D P(Px, Py);
@@ -1263,7 +1263,7 @@ bool FMantleScatterPathExclusionTest::RunTest(const FString& Parameters)
 	for (const FMantleScatterInstance& Instance : Everything)
 	{
 		const double Distance = DistanceMm(Instance);
-		// Within a millimetre of the edge either result is right: the strip is rounded to whole mm.
+		// Within a millimeter of the edge either result is right: the strip is rounded to whole mm.
 		if (Distance <= HalfWidthMm - 1.0)
 		{
 			bModelAgrees = bModelAgrees && !Kept.Contains(Instance);

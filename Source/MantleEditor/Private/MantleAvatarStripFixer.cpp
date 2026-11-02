@@ -74,7 +74,7 @@ void FMantleAvatarStripFixer::AddBodyRow(TArray<FMantleConvertFix>& OutFixes, co
 	Face.bEnabled = Row.bFaceOnBody;
 	Face.Problem = Row.Why;
 	Face.Action = Row.bCanKeep
-		? TEXT("Puts the face on a MetaHuman body (Women's or Men's) at Mantle's default height; players shape it with the Weight, Muscle, Chest and Hips sliders. Everything below the face (clothing, armour, hair) is left out of the body. Untick it to keep this character's body, which needs bare skin from head to feet.")
+		? TEXT("Puts the face on a MetaHuman body (Women's or Men's) at Mantle's default height; players shape it with the Weight, Muscle, Chest and Hips sliders. Everything below the face (clothing, armor, hair) is left out of the body. Untick it to keep this character's body, which needs bare skin from head to feet.")
 		: TEXT("Puts the face on a MetaHuman body (Women's or Men's) at Mantle's default height; players shape it with the Weight, Muscle, Chest and Hips sliders. This body can't be kept: untick it and the conversion stops.");
 	for (const bool bFeminine : { false, true })
 	{
@@ -85,7 +85,7 @@ void FMantleAvatarStripFixer::AddBodyRow(TArray<FMantleConvertFix>& OutFixes, co
 	}
 	FMantleConvertFix& Bare = Add(KindBareSkin);
 	Bare.bNeedsConfirm = true;
-	// A body that can't be kept has no bare skin to confirm: the panel greys "Keep this character's body".
+	// A body that can't be kept has no bare skin to confirm: the panel grays "Keep this character's body".
 	Bare.bCanFix = Row.bCanKeep;
 	Bare.bEnabled = Row.bBareFound;
 	Bare.Problem = Row.BareProblem;
@@ -239,7 +239,7 @@ namespace MantleAvatarStripPrivate
 	}
 
 	/**
-	 * #50: for each skin slot of Plan (read from Mesh), whether clothing is modelled into it (FMantleFusedClothing on its triangles);
+	 * #50: for each skin slot of Plan (read from Mesh), whether clothing is modeled into it (FMantleFusedClothing on its triangles);
 	 * the character's height is the whole mesh's.
 	 */
 	void StripJudgeFused(const UDynamicMesh& Mesh, FMantleStripPlan& Plan)

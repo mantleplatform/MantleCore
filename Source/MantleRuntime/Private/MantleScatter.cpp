@@ -74,7 +74,7 @@ namespace MantleScatterPrivate
 		}
 		if (!FMath::IsFinite(Params.Density) || Params.Density < 0.0)
 		{
-			OutError = FString::Printf(TEXT("density %g must be 0 or more instances per square metre"), Params.Density);
+			OutError = FString::Printf(TEXT("density %g must be 0 or more instances per square meter"), Params.Density);
 			return false;
 		}
 		// Written so a NaN fails too.
@@ -182,7 +182,7 @@ namespace MantleScatterPrivate
 				&& Exclusion.HalfExtent.X > 0.0 && Exclusion.HalfExtent.Y > 0.0
 				&& Exclusion.HalfExtent.X <= FMantleScatter::MaxHalfExtentCm && Exclusion.HalfExtent.Y <= FMantleScatter::MaxHalfExtentCm))
 			{
-				OutError = TEXT("an exclusion's centre must be within 1000000 cm either way and its half extent above 0 and at most 1000000 cm");
+				OutError = TEXT("an exclusion's center must be within 1000000 cm either way and its half extent above 0 and at most 1000000 cm");
 				return false;
 			}
 		}
@@ -264,13 +264,13 @@ namespace MantleScatterPrivate
 		return true;
 	}
 
-	/** Half a size in whole millimetres, rounded half up: the fixed point every count starts from. */
-	int64 ScatterHalfMillimetres(double HalfCm)
+	/** Half a size in whole millimeters, rounded half up: the fixed point every count starts from. */
+	int64 ScatterHalfMillimeters(double HalfCm)
 	{
 		// Two statements, not one expression, so no compiler fuses the multiply and the add into one
 		// rounding: the backend and validate.py round each step, and the counts must agree exactly.
-		const double Millimetres = HalfCm * 10.0;
-		return static_cast<int64>(FMath::FloorToDouble(Millimetres + 0.5));
+		const double Millimeters = HalfCm * 10.0;
+		return static_cast<int64>(FMath::FloorToDouble(Millimeters + 0.5));
 	}
 
 	/** A 0 to 1 value in whole millionths, rounded half up, the multiply and the add as separate steps (see above). */
@@ -543,7 +543,7 @@ namespace MantleScatterPrivate
 		Roll = static_cast<int16>(NewRoll);
 	}
 
-	/** A path in whole millimetres: its points, each segment's length rounded to whole mm (a segment that rounds to 0 is skipped), and the strip's width. */
+	/** A path in whole millimeters: its points, each segment's length rounded to whole mm (a segment that rounds to 0 is skipped), and the strip's width. */
 	struct FScatterPath
 	{
 		TArray<int64> X;
@@ -562,10 +562,10 @@ namespace MantleScatterPrivate
 		FScatterPath Path;
 		for (const FVector2D& Point : Params.Path)
 		{
-			Path.X.Add(ScatterHalfMillimetres(Point.X));
-			Path.Y.Add(ScatterHalfMillimetres(Point.Y));
+			Path.X.Add(ScatterHalfMillimeters(Point.X));
+			Path.Y.Add(ScatterHalfMillimeters(Point.Y));
 		}
-		Path.WidthMm = ScatterHalfMillimetres(Params.Width);
+		Path.WidthMm = ScatterHalfMillimeters(Params.Width);
 		for (int32 Index = 0; Index + 1 < Path.X.Num(); ++Index)
 		{
 			const int64 Dx = Path.X[Index + 1] - Path.X[Index];
@@ -584,14 +584,14 @@ namespace MantleScatterPrivate
 		return Path;
 	}
 
-	/** A point in whole millimetres. */
+	/** A point in whole millimeters. */
 	struct FScatterPoint
 	{
 		int64 X = 0;
 		int64 Y = 0;
 	};
 
-	/** A box in whole millimetres. */
+	/** A box in whole millimeters. */
 	struct FScatterBoxMm
 	{
 		int64 CenterX = 0;
@@ -600,7 +600,7 @@ namespace MantleScatterPrivate
 		int64 HalfY = 0;
 	};
 
-	/** A path exclusion (#190) in whole millimetres: its points, each segment's rounded length, the strip's half width and the box around it. */
+	/** A path exclusion (#190) in whole millimeters: its points, each segment's rounded length, the strip's half width and the box around it. */
 	struct FScatterStripMm
 	{
 		TArray<int64> X;
@@ -617,11 +617,11 @@ namespace MantleScatterPrivate
 	{
 		FScatterStripMm Out;
 		const double HalfWidth = Strip.Width * 0.5;
-		Out.Radius = ScatterHalfMillimetres(HalfWidth);
+		Out.Radius = ScatterHalfMillimeters(HalfWidth);
 		for (const FVector2D& Point : Strip.Path)
 		{
-			Out.X.Add(ScatterHalfMillimetres(Point.X));
-			Out.Y.Add(ScatterHalfMillimetres(Point.Y));
+			Out.X.Add(ScatterHalfMillimeters(Point.X));
+			Out.Y.Add(ScatterHalfMillimeters(Point.Y));
 		}
 		Out.MinX = Out.MaxX = Out.X[0];
 		Out.MinY = Out.MaxY = Out.Y[0];
@@ -836,7 +836,7 @@ namespace MantleScatterPrivate
 		bool bMinSlopeFilter = false;
 		bool bAlignToGround = false;
 		// The filters compare whole numbers: the normal's up component and the threshold (the cosine of the limit) each rounded to
-		// millionths, heights in whole millimetres, so a last bit of float maths on another machine cannot flip a decision.
+		// millionths, heights in whole millimeters, so a last bit of float maths on another machine cannot flip a decision.
 		int64 SlopeLimitMicro = 0;
 		// The minimum slope (#188) is the same test the other way round: kept where the up component is at most the cosine of the limit.
 		int64 MinSlopeLimitMicro = 0;
@@ -861,13 +861,13 @@ namespace MantleScatterPrivate
 
 		/**
 		 * The share of candidates kept, in millionths (1,000,000 for all). A Scatter built in cells (#189) whose spacing is wide for its density
-		 * would make every cell check thousands of neighbours, so it keeps about ScatterSpacingCandidates candidates per spacing square, each picked
+		 * would make every cell check thousands of neighbors, so it keeps about ScatterSpacingCandidates candidates per spacing square, each picked
 		 * by its own hash: the same on every machine, and the same for a cell and the whole build. The spacing then fills the same as it would with all.
 		 */
 		int64 ThinKeepMicro = 1000000;
 
-		/** Cluster centres: each from its own stream, numbered past any instance's so the two never share one. */
-		TArray<FScatterPoint> Centres;
+		/** Cluster centers: each from its own stream, numbered past any instance's so the two never share one. */
+		TArray<FScatterPoint> Centers;
 		int64 ClusterRadiusMm = 0;
 
 		/** Cumulative weights: a draw below Cumulative[i] and at or above Cumulative[i - 1] picks mesh i, so a weight of 0 is never picked. */
@@ -878,10 +878,10 @@ namespace MantleScatterPrivate
 			: Params(InParams)
 			, Options(InOptions)
 		{
-			HalfX = ScatterHalfMillimetres(Params.HalfExtent.X);
-			HalfY = ScatterHalfMillimetres(Params.HalfExtent.Y);
-			HalfZ = ScatterHalfMillimetres(Params.HalfExtent.Z);
-			RadiusMm = ScatterHalfMillimetres(Params.Radius);
+			HalfX = ScatterHalfMillimeters(Params.HalfExtent.X);
+			HalfY = ScatterHalfMillimeters(Params.HalfExtent.Y);
+			HalfZ = ScatterHalfMillimeters(Params.HalfExtent.Z);
+			RadiusMm = ScatterHalfMillimeters(Params.Radius);
 			ScaleLo = FMath::Clamp<int64>(FMath::RoundToInt64(Params.MinScale * 1000.0), 1, MAX_uint16);
 			ScaleHi = FMath::Clamp<int64>(FMath::RoundToInt64(Params.MaxScale * 1000.0), ScaleLo, MAX_uint16);
 			Tilt = FMath::Clamp<int64>(FMath::RoundToInt64(Params.MaxTiltDegrees * 100.0), 0, 9000);
@@ -903,24 +903,24 @@ namespace MantleScatterPrivate
 			MaxLayerMicro = bMaxLayer ? ScatterMillionths(Params.MaxLayerWeight.GetValue()) : 0;
 			bMinHeight = Params.MinHeight.IsSet();
 			bMaxHeight = Params.MaxHeight.IsSet();
-			MinHeightMm = bMinHeight ? ScatterHalfMillimetres(Params.MinHeight.GetValue()) : 0;
-			MaxHeightMm = bMaxHeight ? ScatterHalfMillimetres(Params.MaxHeight.GetValue()) : 0;
+			MinHeightMm = bMinHeight ? ScatterHalfMillimeters(Params.MinHeight.GetValue()) : 0;
+			MaxHeightMm = bMaxHeight ? ScatterHalfMillimeters(Params.MaxHeight.GetValue()) : 0;
 
 			for (const FMantleScatterExclusion& Exclusion : Params.Exclusions)
 			{
 				FScatterBoxMm& Box = Exclusions.AddDefaulted_GetRef();
-				Box.CenterX = ScatterHalfMillimetres(Exclusion.Center.X);
-				Box.CenterY = ScatterHalfMillimetres(Exclusion.Center.Y);
-				Box.HalfX = ScatterHalfMillimetres(Exclusion.HalfExtent.X);
-				Box.HalfY = ScatterHalfMillimetres(Exclusion.HalfExtent.Y);
+				Box.CenterX = ScatterHalfMillimeters(Exclusion.Center.X);
+				Box.CenterY = ScatterHalfMillimeters(Exclusion.Center.Y);
+				Box.HalfX = ScatterHalfMillimeters(Exclusion.HalfExtent.X);
+				Box.HalfY = ScatterHalfMillimeters(Exclusion.HalfExtent.Y);
 			}
 			for (const FMantleScatterPathExclusion& Strip : Params.PathExclusions)
 			{
 				Strips.Add(ScatterBuildStrip(Strip));
 			}
 
-			SpacingMm = Params.MinSpacing > 0.0 ? FMath::Max<int64>(ScatterHalfMillimetres(Params.MinSpacing), 1) : 0;
-			StepMm = Params.Shape == EMantleScatterShape::Path && Params.PathStep > 0.0 ? FMath::Max<int64>(ScatterHalfMillimetres(Params.PathStep), 1) : 0;
+			SpacingMm = Params.MinSpacing > 0.0 ? FMath::Max<int64>(ScatterHalfMillimeters(Params.MinSpacing), 1) : 0;
+			StepMm = Params.Shape == EMantleScatterShape::Path && Params.PathStep > 0.0 ? FMath::Max<int64>(ScatterHalfMillimeters(Params.PathStep), 1) : 0;
 			if (SpacingMm > 0)
 			{
 				FString Ignored;
@@ -940,12 +940,12 @@ namespace MantleScatterPrivate
 				}
 			}
 
-			ClusterRadiusMm = ScatterHalfMillimetres(Params.ClusterRadius);
+			ClusterRadiusMm = ScatterHalfMillimeters(Params.ClusterRadius);
 			for (int32 Cluster = 0; Cluster < Params.ClusterCount; ++Cluster)
 			{
 				FScatterStream Stream(Params.Seed, 0x80000000u + static_cast<uint32>(Cluster));
-				FScatterPoint& Centre = Centres.AddDefaulted_GetRef();
-				ScatterInShape(Params, Path, HalfX, HalfY, RadiusMm, Stream.Next(), Stream, Centre.X, Centre.Y);
+				FScatterPoint& Center = Centers.AddDefaulted_GetRef();
+				ScatterInShape(Params, Path, HalfX, HalfY, RadiusMm, Stream.Next(), Stream, Center.X, Center.Y);
 			}
 
 			for (const FMantleScatterMesh& Mesh : Params.Meshes)
@@ -980,14 +980,14 @@ namespace MantleScatterPrivate
 			int64 X = 0;
 			int64 Y = 0;
 			int64 TangentYaw = 0;
-			if (Centres.Num() > 0)
+			if (Centers.Num() > 0)
 			{
-				const FScatterPoint& Centre = Centres[static_cast<int32>(ScatterPick(ScatterLow(Group), 0, Centres.Num() - 1))];
+				const FScatterPoint& Center = Centers[static_cast<int32>(ScatterPick(ScatterLow(Group), 0, Centers.Num() - 1))];
 				int64 OffsetX = 0;
 				int64 OffsetY = 0;
 				ScatterOnDisc(ClusterRadiusMm, PlaceDraw, Stream, OffsetX, OffsetY);
-				X = Centre.X + OffsetX;
-				Y = Centre.Y + OffsetY;
+				X = Center.X + OffsetX;
+				Y = Center.Y + OffsetY;
 			}
 			else if (StepMm > 0)
 			{
@@ -1059,7 +1059,7 @@ namespace MantleScatterPrivate
 				}
 				if (bMinHeight || bMaxHeight)
 				{
-					const int64 HeightMm = ScatterHalfMillimetres(Ground.WorldZCm);
+					const int64 HeightMm = ScatterHalfMillimeters(Ground.WorldZCm);
 					if ((bMinHeight && HeightMm < MinHeightMm) || (bMaxHeight && HeightMm > MaxHeightMm))
 					{
 						return false;
@@ -1081,7 +1081,7 @@ namespace MantleScatterPrivate
 					AlignZ = ScatterMillionths(Ground.LocalNormalZ);
 				}
 			}
-			// The fixed point is 32-bit millimetres (2147 km): a position past it cannot be a place's.
+			// The fixed point is 32-bit millimeters (2147 km): a position past it cannot be a place's.
 			if (FMath::Abs(X) > MAX_int32 || FMath::Abs(Y) > MAX_int32 || FMath::Abs(Z) > MAX_int32)
 			{
 				return false;
@@ -1158,14 +1158,14 @@ int64 FMantleScatter::CountFor(const FMantleScatterParams& Params, FString& OutE
 		return -1;
 	}
 
-	// The footprint in square metres, from whole millimetres. Each step is its own statement and its own IEEE
+	// The footprint in square meters, from whole millimeters. Each step is its own statement and its own IEEE
 	// operation (no fused multiply-add), exactly as validate.py and the backend do them, so all three agree on every count.
 	double AreaM2 = 0.0;
 	switch (Params.Shape)
 	{
 	case EMantleScatterShape::Disc:
 	{
-		const int64 Radius = ScatterHalfMillimetres(Params.Radius);
+		const int64 Radius = ScatterHalfMillimeters(Params.Radius);
 		const double RadiusSquared = static_cast<double>(Radius * Radius);
 		const double Scaled = RadiusSquared * 3141593.0;
 		const double AreaMm2 = Scaled / 1000000.0;
@@ -1178,7 +1178,7 @@ int64 FMantleScatter::CountFor(const FMantleScatterParams& Params, FString& OutE
 		if (Params.PathStep > 0.0)
 		{
 			// A fixed step (#190): the whole steps that fit, plus the one at the start; the density is not used.
-			const int64 Steps = Path.Total / FMath::Max<int64>(ScatterHalfMillimetres(Params.PathStep), 1) + 1;
+			const int64 Steps = Path.Total / FMath::Max<int64>(ScatterHalfMillimeters(Params.PathStep), 1) + 1;
 			// A stepped path is built whole, never in cells, so it keeps the whole-Scatter cap (#189).
 			if (Steps > WholeInstances)
 			{
@@ -1195,9 +1195,9 @@ int64 FMantleScatter::CountFor(const FMantleScatterParams& Params, FString& OutE
 	case EMantleScatterShape::Box:
 	default:
 	{
-		// The footprint in whole square millimetres (exact in a double up to the extent cap), then
-		// square metres by one division, so 100 m x 100 m at density 1 is 10000.
-		const int64 AreaMm2 = 4 * ScatterHalfMillimetres(Params.HalfExtent.X) * ScatterHalfMillimetres(Params.HalfExtent.Y);
+		// The footprint in whole square millimeters (exact in a double up to the extent cap), then
+		// square meters by one division, so 100 m x 100 m at density 1 is 10000.
+		const int64 AreaMm2 = 4 * ScatterHalfMillimeters(Params.HalfExtent.X) * ScatterHalfMillimeters(Params.HalfExtent.Y);
 		AreaM2 = static_cast<double>(AreaMm2) / 1.0e6;
 		break;
 	}
@@ -1206,7 +1206,7 @@ int64 FMantleScatter::CountFor(const FMantleScatterParams& Params, FString& OutE
 	const double Rounded = FMath::FloorToDouble(Wanted + 0.5);
 	if (!(Rounded <= static_cast<double>(MaxInstances)))
 	{
-		OutError = FString::Printf(TEXT("%.0f square metres at density %g makes %.0f instances; a scatter makes at most %d"),
+		OutError = FString::Printf(TEXT("%.0f square meters at density %g makes %.0f instances; a scatter makes at most %d"),
 			AreaM2, Params.Density, Rounded, MaxInstances);
 		return -1;
 	}
@@ -1252,7 +1252,7 @@ bool FMantleScatter::Generate(const FMantleScatterParams& Params, TArray<FMantle
 		{
 			continue;
 		}
-		// Last of the filters, so an instance another filter dropped never keeps its neighbours away (#190).
+		// Last of the filters, so an instance another filter dropped never keeps its neighbors away (#190).
 		if (Spacing.Spacing > 0)
 		{
 			if (Spacing.IsTooClose(X, Y))
@@ -1285,7 +1285,7 @@ namespace MantleScatterPrivate
 		uint32 Candidate = 0;
 	};
 
-	/** The cell side the density asks for, in whole metres' worth of mm, integers only so every machine files a candidate in the same cell. */
+	/** The cell side the density asks for, in whole meters' worth of mm, integers only so every machine files a candidate in the same cell. */
 	int64 ScatterCellSideForDensity(const double Density)
 	{
 		const int64 DensityMicro = ScatterMillionths(Density);
@@ -1293,7 +1293,7 @@ namespace MantleScatterPrivate
 		{
 			return CellMaxSideMm;
 		}
-		// The cell area for the target is target / density square metres; its side in mm is the square root of target x 1e12 / (density in millionths).
+		// The cell area for the target is target / density square meters; its side in mm is the square root of target x 1e12 / (density in millionths).
 		const int64 SquareMm = CellTargetCandidates * 1000000000000ll / DensityMicro;
 		const int64 Side = (ScatterISqrt(SquareMm) / 1000) * 1000;
 		return FMath::Clamp<int64>(Side, CellMinSideMm, CellMaxSideMm);
@@ -1320,12 +1320,12 @@ namespace MantleScatterPrivate
 	}
 
 	/**
-	 * Reads instances out of an index, a slot at a time, with the minimum spacing exact whatever cell a neighbour is in (#189).
+	 * Reads instances out of an index, a slot at a time, with the minimum spacing exact whatever cell a neighbor is in (#189).
 	 *
 	 * Without spacing an instance is Finish and nothing else. With it, a candidate is kept when it passes every other filter and no
 	 * lower-numbered KEPT candidate lies closer than the spacing: the same rule Generate walks in order, here asked per candidate. Whether
-	 * a neighbour is kept is itself worked out the same way (from its own lower-numbered neighbours), and remembered, so the answer for a
-	 * candidate is a pure function of the stream and never of which cells were read. The chain from neighbour to neighbour runs on an
+	 * a neighbor is kept is itself worked out the same way (from its own lower-numbered neighbors), and remembered, so the answer for a
+	 * candidate is a pure function of the stream and never of which cells were read. The chain from neighbor to neighbor runs on an
 	 * explicit stack, not the call stack: it can be long, and a worker thread's stack is small.
 	 */
 	struct FScatterCellReader
@@ -1336,7 +1336,7 @@ namespace MantleScatterPrivate
 		enum EState : uint8
 		{
 			Unknown = 0,
-			/** Passes every filter but spacing; its neighbours are not all known yet. */
+			/** Passes every filter but spacing; its neighbors are not all known yet. */
 			Passed = 1,
 			Dropped = 2,
 			Kept = 3
@@ -1386,7 +1386,7 @@ namespace MantleScatterPrivate
 		}
 
 		/** The slots of lower-numbered candidates closer than the spacing to Slot's, loading the cells they might be in. */
-		void EarlierNeighbours(const uint32 Slot, TArray<uint32, TInlineAllocator<16>>& Out)
+		void EarlierNeighbors(const uint32 Slot, TArray<uint32, TInlineAllocator<16>>& Out)
 		{
 			Out.Reset();
 			const int64 Spacing = Pipeline.SpacingMm;
@@ -1443,7 +1443,7 @@ namespace MantleScatterPrivate
 			}
 			TArray<uint32> Stack;
 			Stack.Add(Slot);
-			TArray<uint32, TInlineAllocator<16>> Neighbours;
+			TArray<uint32, TInlineAllocator<16>> Neighbors;
 			while (Stack.Num() > 0)
 			{
 				const uint32 Top = Stack.Last();
@@ -1464,10 +1464,10 @@ namespace MantleScatterPrivate
 						continue;
 					}
 				}
-				EarlierNeighbours(Top, Neighbours);
+				EarlierNeighbors(Top, Neighbors);
 				bool bBlocked = false;
 				const int32 StackBefore = Stack.Num();
-				for (const uint32 Other : Neighbours)
+				for (const uint32 Other : Neighbors)
 				{
 					const FEntry* Known = Entries.Find(Other);
 					if (Known && Known->State == Kept)
@@ -1480,7 +1480,7 @@ namespace MantleScatterPrivate
 						Stack.Add(Other);
 					}
 				}
-				// Re-find: the map may have moved while the neighbours were looked at.
+				// Re-find: the map may have moved while the neighbors were looked at.
 				Entry = Entries.Find(Top);
 				if (bBlocked)
 				{
@@ -1636,7 +1636,7 @@ TSharedPtr<const FMantleScatterCellIndex> FMantleScatter::BuildCellIndex(const F
 		return Index;
 	}
 
-	// The side: from the density, never under the spacing (a neighbour within the spacing is then in the same or an adjacent cell),
+	// The side: from the density, never under the spacing (a neighbor within the spacing is then in the same or an adjacent cell),
 	// halved while a cell is hotter than CellHotCandidates and the grid stays small enough.
 	int64 Side = FMath::Max(ScatterCellSideForDensity(Params.Density), Pipeline.SpacingMm);
 	int64 CellsX = 0, CellsY = 0, Most = 0;

@@ -39,8 +39,8 @@ namespace MantleOverlayTestPrivate
 		return Pixels;
 	}
 
-	/** A painted disc in the middle on black: greyscale, some paint, not saturated. */
-	TArray<FColor> GreyDisc(const int32 Size)
+	/** A painted disc in the middle on black: grayscale, some paint, not saturated. */
+	TArray<FColor> GrayDisc(const int32 Size)
 	{
 		return OverlayImage(Size, [Size](const int32 X, const int32 Y)
 		{
@@ -54,7 +54,7 @@ namespace MantleOverlayTestPrivate
 	/** The same disc in the red channel only. */
 	TArray<FColor> RedDisc(const int32 Size)
 	{
-		TArray<FColor> Pixels = GreyDisc(Size);
+		TArray<FColor> Pixels = GrayDisc(Size);
 		for (FColor& Pixel : Pixels)
 		{
 			Pixel.G = 0;
@@ -115,17 +115,17 @@ bool FMantleOverlayMaskChecksTest::RunTest(const FString& Parameters)
 	using namespace MantleOverlayTestPrivate;
 	TArray<FMantleCosmeticIssue> Issues;
 
-	TestTrue(TEXT("a greyscale 256 mask passes"), MaskPasses(256, 256, GreyDisc(256), Issues));
-	TestTrue(TEXT("a 1024 mask passes"), MaskPasses(1024, 1024, GreyDisc(1024), Issues));
+	TestTrue(TEXT("a grayscale 256 mask passes"), MaskPasses(256, 256, GrayDisc(256), Issues));
+	TestTrue(TEXT("a 1024 mask passes"), MaskPasses(1024, 1024, GrayDisc(1024), Issues));
 	TestTrue(TEXT("a red-channel-only mask passes"), MaskPasses(64, 64, RedDisc(64), Issues));
 	TestEqual(TEXT("and none of them raised anything"), Issues.Num(), 0);
 
 	Issues.Reset();
-	TestFalse(TEXT("a non-square mask fails"), MaskPasses(64, 32, GreyDisc(64), Issues));
+	TestFalse(TEXT("a non-square mask fails"), MaskPasses(64, 32, GrayDisc(64), Issues));
 	TestTrue(TEXT("and says it must be square"), HasError(Issues, TEXT("square")));
 
 	Issues.Reset();
-	TestFalse(TEXT("a 60 x 60 mask fails"), MaskPasses(60, 60, GreyDisc(60), Issues));
+	TestFalse(TEXT("a 60 x 60 mask fails"), MaskPasses(60, 60, GrayDisc(60), Issues));
 	TestTrue(TEXT("and says power of two"), HasError(Issues, TEXT("power of two")));
 
 	Issues.Reset();
@@ -143,15 +143,15 @@ bool FMantleOverlayMaskChecksTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("and says it covers everything"), HasError(Issues, TEXT("solid white")));
 
 	Issues.Reset();
-	const TArray<FColor> Colour = OverlayImage(64, [](const int32 X, const int32 Y) { return FColor(static_cast<uint8>(X * 4), static_cast<uint8>(Y * 4), 200, 255); });
-	TestFalse(TEXT("a colour image fails"), MaskPasses(64, 64, Colour, Issues));
+	const TArray<FColor> Color = OverlayImage(64, [](const int32 X, const int32 Y) { return FColor(static_cast<uint8>(X * 4), static_cast<uint8>(Y * 4), 200, 255); });
+	TestFalse(TEXT("a color image fails"), MaskPasses(64, 64, Color, Issues));
 	TestTrue(TEXT("and says the mask must be one channel"), HasError(Issues, TEXT("one channel")));
 
 	// The normal map rules.
 	Issues.Reset();
 	TestTrue(TEXT("a normal map passes"), FMantleOverlayChecks::CheckNormal(TEXT("The normal map"), 128, 128, NormalImage(128), Issues));
 	TestEqual(TEXT("without issues"), Issues.Num(), 0);
-	TestFalse(TEXT("a colour photo is not a normal map"), FMantleOverlayChecks::CheckNormal(TEXT("The normal map"), 64, 64,
+	TestFalse(TEXT("a color photo is not a normal map"), FMantleOverlayChecks::CheckNormal(TEXT("The normal map"), 64, 64,
 		OverlayImage(64, [](const int32, const int32) { return FColor(220, 40, 30, 255); }), Issues));
 	TestTrue(TEXT("and says so"), HasError(Issues, TEXT("normal map")));
 	Issues.Reset();
@@ -173,14 +173,14 @@ bool FMantleOverlayMaskChecksTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("tattoo_body is on the body"), FMantleOverlayChecks::IsFaceSlot(TEXT("tattoo_body")));
 	TestFalse(TEXT("hair is no overlay slot"), FMantleOverlayChecks::IsOverlaySlot(TEXT("hair")));
 
-	// The exported mask is one canonical image: the mask value in every colour channel, opaque.
+	// The exported mask is one canonical image: the mask value in every color channel, opaque.
 	const TArray<FColor> Canonical = FMantleOverlayChecks::CanonicalMask(RedDisc(32));
 	bool bCanonical = Canonical.Num() == 32 * 32;
 	for (const FColor& Pixel : Canonical)
 	{
 		bCanonical &= Pixel.R == Pixel.G && Pixel.R == Pixel.B && Pixel.A == 255;
 	}
-	TestTrue(TEXT("a red-only mask exports as grey"), bCanonical);
+	TestTrue(TEXT("a red-only mask exports as gray"), bCanonical);
 	return true;
 }
 

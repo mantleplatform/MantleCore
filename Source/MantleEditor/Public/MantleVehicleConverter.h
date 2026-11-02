@@ -48,7 +48,7 @@ struct MANTLEEDITOR_API FMantleVehicleWheelSetup
 
 /**
  * What Convert Vehicle finds around a body besides the mesh (#435): the static meshes riding it, the physics asset its
- * chassis simulates on, and a vehicle movement component's centre-of-mass override, mass and wheel setups.
+ * chassis simulates on, and a vehicle movement component's center-of-mass override, mass and wheel setups.
  */
 struct MANTLEEDITOR_API FMantleVehicleSurroundings
 {
@@ -69,15 +69,15 @@ struct MANTLEEDITOR_API FMantleVehicleSurroundings
 	FString From;
 };
 
-/** A wheel-centre bone Convert Vehicle recognised, and which corner of the car it is. */
+/** A wheel-center bone Convert Vehicle recognized, and which corner of the car it is. */
 struct MANTLEEDITOR_API FMantleVehicleWheelBone
 {
 	FName Bone;
 	/** 0 front, 1 middle, 2 back. */
 	int32 Axle = 0;
 	bool bLeft = false;
-	/** The name has no side: a wheel on the centre line (wheel_f and wheel_r, a motorcycle's two or a plane's nose wheel). */
-	bool bCentre = false;
+	/** The name has no side: a wheel on the center line (wheel_f and wheel_r, a motorcycle's two or a plane's nose wheel). */
+	bool bCenter = false;
 };
 
 /** What Convert Vehicle made of a skeletal mesh, or why it could not. */
@@ -96,13 +96,13 @@ struct MANTLEEDITOR_API FMantleVehicleConversion
  * Creator-published vehicles (#435), the plugin side: the Convert Vehicle command and the upload a Mantle Vehicle
  * Spawn's vehicle becomes.
  *
- * The recipe's naming (the Vehicle template's PhysWheel_FL and Phys_Wheel_BR): a wheel-centre
+ * The recipe's naming (the Vehicle template's PhysWheel_FL and Phys_Wheel_BR): a wheel-center
  * bone's name contains "wheel" (any case) and ends in its corner, "_FL"/"_FR" front, "_ML"/"_MR" middle, "_BL"/"_BR"
  * or "_RL"/"_RR" back. The word naming a common free car pack uses is read too: words split on "_", one containing
  * "wheel", a position word (front; middle or mid; rear or back) and a side word first or last (l or left, r or right), as
  * in wheel_front_l or left_rear_wheel. A wheel-named bone that is a helper (a word with turn, steer, pivot, hub, knuckle,
  * upright, spindle or carrier, or "no spin") is not a wheel; a wheel hanging from a steering pivot of its corner makes the
- * pivot the wheel (FindWheelBones). A centre-line wheel has no side: "wheel" and f or front, r or rear or back (wheel_f, wheel_rear). Convert Vehicle finds those bones, makes front wheels steer and back wheels drive and hold the
+ * pivot the wheel (FindWheelBones). A center-line wheel has no side: "wheel" and f or front, r or rear or back (wheel_f, wheel_rear). Convert Vehicle finds those bones, makes front wheels steer and back wheels drive and hold the
  * handbrake (middle wheels drive), measures each wheel from the geometry weighted to its bone (as the cook does), and
  * writes a UMantleVehicleSource with the schema's default tuning for the creator to adjust. It refuses, saying what
  * to rename or fix, when it finds fewer than two or more than eight wheels, a skeleton past the body's bone cap, or a
@@ -135,11 +135,11 @@ public:
 	/** ast_u and 32 lowercase hex digits: an uploaded asset's id (a spawn's VehicleId from a place file). */
 	static bool IsUploadedId(const FString& Id);
 
-	/** The recipe's naming, or the word naming, for a wheel-centre bone (see the class comment). False when Bone is not one, or is a wheel's helper. */
+	/** The recipe's naming, or the word naming, for a wheel-center bone (see the class comment). False when Bone is not one, or is a wheel's helper. */
 	static bool ParseWheelBoneName(const FString& Bone, FMantleVehicleWheelBone& Out);
 
 	/**
-	 * Every wheel-centre bone of Skeleton, front to back, left before right. A wheel-named bone at the same place as
+	 * Every wheel-center bone of Skeleton, front to back, left before right. A wheel-named bone at the same place as
 	 * another of its corner, hanging from something other than the root while the other hangs from the root, is a
 	 * visual copy of it (the Vehicle template's VisWheel_FL under its hub, beside PhysWheel_FL): the root's child is
 	 * the wheel, and DetectLinkage copies the other onto it. A wheel hanging from a steering pivot of its corner (wheel_front_l
@@ -183,14 +183,14 @@ public:
 
 	/**
 	 * Convert, with what surrounds the body (#435): its attached meshes become Source's Parts when it has none (the one shaped like
-	 * a wheel's tire becomes that wheel's Tire Mesh when it has none: AddParts), and the chassis collision and centre of mass are
+	 * a wheel's tire becomes that wheel's Tire Mesh when it has none: AddParts), and the chassis collision and center of mass are
 	 * read from its physics (ReadChassisPhysics) when the tuning sets neither. A movement component's wheel setups size the wheels
 	 * that have no size of their own, and its mass and steering angle replace the tuning's while those are the defaults.
 	 */
 	static FMantleVehicleConversion Convert(USkeletalMesh* Mesh, UMantleVehicleSource& Source, const FMantleVehicleSurroundings& Around);
 
 	/**
-	 * Convert, into <Mesh>_Vehicle beside the mesh (made, or updated keeping its tuning, parts and the collision and centre of
+	 * Convert, into <Mesh>_Vehicle beside the mesh (made, or updated keeping its tuning, parts and the collision and center of
 	 * mass it has), left unsaved for the creator to look at. Around defaults to the mesh's own surroundings. Null, with
 	 * OutResult saying why, when the mesh will not convert.
 	 */
@@ -202,15 +202,15 @@ public:
 	/**
 	 * A body component's surroundings (a level actor's vehicle, or a ChaosVehicles pawn placed in a level): every static mesh
 	 * component among Components attached under Body (through any scene components between, their offsets folded in), the
-	 * physics asset Body simulates on (its override, else its mesh's), and a movement component's centre-of-mass override.
+	 * physics asset Body simulates on (its override, else its mesh's), and a movement component's center-of-mass override.
 	 */
 	static FMantleVehicleSurroundings SurroundingsOfComponent(const USkeletalMeshComponent& Body, TConstArrayView<const UActorComponent*> Components);
 
 	/**
-	 * The chassis's collision boxes and centre of mass from a physics asset (#435): every body not on a wheel's bone or under
+	 * The chassis's collision boxes and center of mass from a physics asset (#435): every body not on a wheel's bone or under
 	 * one, each shape's axis-aligned box in the body's component space (a turned shape widened to its bounds; more than
-	 * FMantleVehicleLimits::MaxCollisionBoxes merged into one around them all), and the centre as the shapes' volume-weighted
-	 * centres plus each body's COM nudge. False, with a note, when there is no chassis body or its boxes fall outside the ranges.
+	 * FMantleVehicleLimits::MaxCollisionBoxes merged into one around them all), and the center as the shapes' volume-weighted
+	 * centers plus each body's COM nudge. False, with a note, when there is no chassis body or its boxes fall outside the ranges.
 	 */
 	static bool ReadChassisPhysics(const UPhysicsAsset& Physics, const FReferenceSkeleton& Skeleton, TConstArrayView<FName> WheelBones,
 		TArray<FMantleVehicleSourceBox>& OutBoxes, FVector& OutCenterOfMass, TArray<FString>& OutNotes);
@@ -218,8 +218,8 @@ public:
 	/**
 	 * #435 item 2: the found meshes as Source's parts, each on its socket's bone (or its bone, or the root) with the socket's offset
 	 * folded in, in the bone's space. A wheel with no Tire Mesh takes the widest mesh shaped like its tire (round across X and Z,
-	 * narrower in Y, centred on its spin axis, within a fifth of twice its radius when that is known: as set, else MeasuredRadii),
-	 * hung from the root, its bone or a bone of its corner (a tire modelled in car space, or on a steering pivot), re-expressed about
+	 * narrower in Y, centerd on its spin axis, within a fifth of twice its radius when that is known: as set, else MeasuredRadii),
+	 * hung from the root, its bone or a bone of its corner (a tire modeled in car space, or on a steering pivot), re-expressed about
 	 * its bone; failing any, the first mesh on its bone or on a bone within 1 cm of it with the same corner. Other tire-shaped meshes
 	 * ride the wheel's bone and spin with it; any other mesh on a wheel's bone (a brake caliper) moves to its hub, which steers
 	 * without spinning, or the root. Parts are added only when Source has none; its notes say what was done.
@@ -256,9 +256,9 @@ public:
 	/**
 	 * The vehicle as it exports (#728): Source with its Size (FitScale) applied, so every consumer sees the same scaled vehicle. Returns
 	 * Source itself, unchanged, when its FitScale is 1; otherwise a transient copy with FitScale 1 and every geometric number multiplied by it.
-	 * Geometric (scaled): a wheel's Radius, Width and TireTransform (location and scale); the centre of mass; the seat, passenger seat,
+	 * Geometric (scaled): a wheel's Radius, Width and TireTransform (location and scale); the center of mass; the seat, passenger seat,
 	 * steering wheel (location and radius), hinge pivots (doors, trunk lid), trunk stand, every contact point and exit location, every
-	 * collision box's centre and extent, and a part's location and scale (a part rides the scaled body, so it grows with it). Everything
+	 * collision box's center and extent, and a part's location and scale (a part rides the scaled body, so it grows with it). Everything
 	 * else is tuning or not a length and keeps its value: mass, speeds, drag, engine, gears, suspension travel and springs, steering angle,
 	 * brakes, friction, camera arm and height, rotations, axes, a hinge's Scale lever, yaws, paint, linkage, ids and names. The body's own
 	 * geometry is scaled by ReadBody (bApplyFitScale), which must be given the original, not this copy. The copy is not rooted: hold it
@@ -328,7 +328,7 @@ public:
 
 	/**
 	 * The local keys Source's liveries (#488) upload under, in its order: each is gathered and converted as a decal's base
-	 * colour is (FMantlePlaceAssets::DecalTextureKey), alpha kept. Empty entries for liveries that do not load.
+	 * color is (FMantlePlaceAssets::DecalTextureKey), alpha kept. Empty entries for liveries that do not load.
 	 */
 	static TArray<FString> LiveryTextureKeys(const UMantleVehicleSource& Source);
 

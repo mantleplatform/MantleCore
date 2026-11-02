@@ -137,14 +137,14 @@ struct MANTLEEDITOR_API FMantlePlaceMaterialDocument
 	double TileSizeCm = 100.0;
 	double Sharpness = 1.0;
 
-	/** layerBlend: channel r | g | b | a and the layer's base colour factor; its textures are Textures' layer keys. */
+	/** layerBlend: channel r | g | b | a and the layer's base color factor; its textures are Textures' layer keys. */
 	bool bLayerBlend = false;
 	FString LayerChannel = TEXT("r");
 	double LayerBaseColorFactor[4] = { 1.0, 1.0, 1.0, 1.0 };
 
 	/**
 	 * foliage (#628): Two Sided Foliage shading on a masked, two-sided document; goes with wind. Tint 0..1 each,
-	 * strength 0..4, vertex-colour weight 0..1; written only when the document is masked and two-sided.
+	 * strength 0..4, vertex-color weight 0..1; written only when the document is masked and two-sided.
 	 */
 	bool bFoliage = false;
 	double FoliageTint[3] = { 1.0, 1.0, 1.0 };
@@ -153,10 +153,10 @@ struct MANTLEEDITOR_API FMantlePlaceMaterialDocument
 
 	/**
 	 * water (#628): Single Layer Water on its own master, an opaque document. It writes only baseColorFactor (the surface
-	 * colour), roughnessFactor, normalScale, textures.normal and the water object (the schema: no baseColor, orm or
-	 * emissive texture, vertex colour, occlusion, metallic, emissive, uvScale, uvOffset, uvTransforms or uvPanning on
+	 * color), roughnessFactor, normalScale, textures.normal and the water object (the schema: no baseColor, orm or
+	 * emissive texture, vertex color, occlusion, metallic, emissive, uvScale, uvOffset, uvTransforms or uvPanning on
 	 * it), so a document that is not written as water keeps all of those for the client that cannot read the key
-	 * (FMantleTargetFeatures::DowngradeMaterial). Coefficients are per centimetre, 0..1; phase g -1..1. The first
+	 * (FMantleTargetFeatures::DowngradeMaterial). Coefficients are per centimeter, 0..1; phase g -1..1. The first
 	 * normal map is Textures["normal"] with WaterNormal's layout; the second (when there is one) is
 	 * Textures["waterNormal2"] with WaterNormal2's.
 	 */
@@ -206,12 +206,12 @@ struct MANTLEEDITOR_API FMantlePlaceMaterialDocument
 	/** The document is written with the foliage key: wind-driven foliage, masked and two-sided only. */
 	bool WritesFoliage() const { return bFoliage && AlphaMode == TEXT("mask") && bDoubleSided && !bWorldAligned && !bLayerBlend; }
 
-	/** The document is written as alphaMode additive (#628): emissive-driven, nothing of its base colour. */
+	/** The document is written as alphaMode additive (#628): emissive-driven, nothing of its base color. */
 	bool WritesAdditive() const { return AlphaMode == TEXT("additive") && !bCarPaint; }
 };
 
 /**
- * #533: what ConvertMaterial hands MaterialFromGltf beyond GLTFExporter's glTF: the graph's vertex-colour tint
+ * #533: what ConvertMaterial hands MaterialFromGltf beyond GLTFExporter's glTF: the graph's vertex-color tint
  * (#471) and FMantleMaterialFidelity2 with its source textures already read.
  */
 struct MANTLEEDITOR_API FMantleMaterialExtras
@@ -219,11 +219,11 @@ struct MANTLEEDITOR_API FMantleMaterialExtras
 	/** FMantleMaterialAnalysis::bVertexColorTintsBaseColor. */
 	bool bVertexColorTintsBaseColor = false;
 
-	/** The recognised patterns (FMantlePlaceAssets::AnalyzeMaterial); its texture pointers are not read here. */
+	/** The recognized patterns (FMantlePlaceAssets::AnalyzeMaterial); its texture pointers are not read here. */
 	FMantleMaterialFidelity2 Fidelity;
 
 	/**
-	 * Per slot (base colour, normal, ORM, emissive, then the layer's base colour, normal, ORM): the image a
+	 * Per slot (base color, normal, ORM, emissive, then the layer's base color, normal, ORM): the image a
 	 * source slot publishes instead of GLTFExporter's bake (PNG; a normal map in glTF's green-up convention),
 	 * and a name for messages, then water's second normal map (#628, EMantlePlaceTextureSlot::WaterNormal2, slot 7).
 	 * Empty where the slot keeps the bake.
@@ -238,7 +238,7 @@ struct MANTLEEDITOR_API FMantleConvertedTexture
 	/** "texture:" + role + ":" + the bytes' SHA-256: equal pixels in the same role are one upload. */
 	FString Key;
 
-	/** For messages: the Unreal texture (or the bake) and where it is used, e.g. "T_Crate_D (base colour of MI_Crate)". */
+	/** For messages: the Unreal texture (or the bake) and where it is used, e.g. "T_Crate_D (base color of MI_Crate)". */
 	FString Name;
 
 	/** color | normal | data: the upload's role option (F9 #343), which picks the GPU format. */
@@ -588,7 +588,7 @@ struct MANTLEEDITOR_API FMantlePlaceAssetSet
 	 */
 	TMap<FString, FString> UIImages;
 
-	/** #786: the key of the converted texture in Textures that is the place's catalogue picture; empty when there is none. */
+	/** #786: the key of the converted texture in Textures that is the place's catalog picture; empty when there is none. */
 	FString Thumbnail;
 
 	bool HasErrors() const;
@@ -688,8 +688,8 @@ struct MANTLEEDITOR_API FMantleFlattenSettings
 	int32 MaxBakeSize = 2048;
 
 	/**
-	 * What the material is drawn on for the bake. The plain surface is GLTFExporter's own card (white vertex colours, UVs 0 to 1); any
-	 * other is a one-quad mesh with that vertex colour and UV range, baked with GLTFExporter's mesh data (FMantleGltfMaterialFlattener).
+	 * What the material is drawn on for the bake. The plain surface is GLTFExporter's own card (white vertex colors, UVs 0 to 1); any
+	 * other is a one-quad mesh with that vertex color and UV range, baked with GLTFExporter's mesh data (FMantleGltfMaterialFlattener).
 	 */
 	FMantleBakeSurface Surface;
 };
@@ -769,7 +769,7 @@ struct MANTLEEDITOR_API FMantlePlaceConversionStats
  * - Meshes: LOD 0's render data (a Nanite mesh's fallback) through A2.4's reader and GLB writer:
  *   Epic's axes, glTF triangle order, one primitive per section, one named glTF material per
  *   slot, no images (FMantleCosmeticExport::ReadStaticMesh, FMantleGlbWriter), with UV channel 1
- *   and vertex colours when the mesh has them (#470). Also #470: the mesh's own lower LODs, up to
+ *   and vertex colors when the mesh has them (#470). Also #470: the mesh's own lower LODs, up to
  *   limits.json placeAssets.staticMesh.lods (each within its triangle cap, no larger than the LOD
  *   before, drawing only LOD0's slots; the first that is not, and every LOD after it, is left off
  *   with a warning) at the mesh's screen sizes; and its simple collision (boxes, spheres, capsules,
@@ -782,10 +782,10 @@ struct MANTLEEDITOR_API FMantlePlaceConversionStats
  * - Materials: flattened through the flattener (GLTFExporter), then mapped to
  *   material.schema.json: alpha mode, two-sided, factors, emissive strength, one UV transform (and
  *   per-texture ones where textures differ), normal and occlusion strength, occlusion's UV set, and
- *   vertex colour tinting the base colour (#471); UV panning, foliage wind, world-aligned mapping and
- *   vertex-colour layer blends the graph shows in a recognised shape (#533), a panned, world-aligned or
+ *   vertex color tinting the base color (#471); UV panning, foliage wind, world-aligned mapping and
+ *   vertex-color layer blends the graph shows in a recognized shape (#533), a panned, world-aligned or
  *   layered slot publishing its source texture instead of the bake;
- *   base colour and emissive as JPEG (PNG when the alpha matters), normal and ORM as PNG
+ *   base color and emissive as JPEG (PNG when the alpha matters), normal and ORM as PNG
  *   (occlusion merged into ORM's red), each at most MaxTextureSize and MaxTextureBytes,
  *   downscaled or re-encoded with a warning otherwise.
  * - Sounds (#324): an AmbientSound's own sound wave, its imported PCM16 samples written as a
@@ -810,13 +810,13 @@ public:
 	bool ConvertMaterial(UMaterialInterface* Material, FMantlePlaceAssetSet& Out);
 
 	/**
-	 * ConvertMaterial baked on Surface (gather's FMantleGatheredMaterial::BakeSurface): the vertex colour is kept only for a material whose
-	 * graph reads vertex colour beyond a base colour tint (EffectiveBakeSurface), and the cache keys on what is kept.
+	 * ConvertMaterial baked on Surface (gather's FMantleGatheredMaterial::BakeSurface): the vertex color is kept only for a material whose
+	 * graph reads vertex color beyond a base color tint (EffectiveBakeSurface), and the cache keys on what is kept.
 	 */
 	bool ConvertMaterial(UMaterialInterface* Material, const FMantleBakeSurface& Surface, FMantlePlaceAssetSet& Out);
 
 	/**
-	 * The surface a material is really baked on: Surface with its vertex colour put back to white unless Analysis has a VertexColor loss
+	 * The surface a material is really baked on: Surface with its vertex color put back to white unless Analysis has a VertexColor loss
 	 * (a tint, bVertexColorTintsBaseColor, publishes as one and so needs none in the bake).
 	 */
 	static FMantleBakeSurface EffectiveBakeSurface(const FMantleMaterialAnalysis& Analysis, const FMantleBakeSurface& Surface);
@@ -848,13 +848,13 @@ public:
 	/** How far the comparison bake's card is moved, as a share of the tile: not a whole number of any likely repeat. */
 	static constexpr double WorldShiftFraction = 0.37;
 
-	/** The base colour a moved card must change by (MeanPixelDifference) for the material to count as world-mapped. */
+	/** The base color a moved card must change by (MeanPixelDifference) for the material to count as world-mapped. */
 	static constexpr double WorldMappedDifference = 0.03;
 
 	/** The mean difference of two equal-sized images' RGB, 0 (the same) to 1; 1 when their sizes differ or one is empty. */
 	static double MeanPixelDifference(const TArray<FColor>& A, const TArray<FColor>& B);
 
-	/** MeanPixelDifference of two bakes' first material's base colour images: 0 for a constant colour, 1 when either cannot be read. */
+	/** MeanPixelDifference of two bakes' first material's base color images: 0 for a constant color, 1 when either cannot be read. */
 	static double BakedBaseColorDifference(const FMantleGlbDocument& First, const FMantleGlbDocument& Second);
 
 	/** A collision box's full size with one side of zero (a flat sheet) made 2 x FlatHullHalfThicknessCm; a box flat on two or three sides is returned as it is. */
@@ -868,7 +868,7 @@ public:
 
 	/**
 	 * #469: a skeletal mesh on its own skeleton, LOD 0 through A2.4's skeletal reader (the eight heaviest influences of a
-	 * vertex kept and renormalised, #484, with a note naming how many were capped) and GLB writer. Held to
+	 * vertex kept and renormalized, #484, with a note naming how many were capped) and GLB writer. Held to
 	 * FMantlePlaceAssets::CheckSkeletalMesh first.
 	 */
 	bool ConvertSkeletalMesh(USkeletalMesh* Mesh, FMantlePlaceAssetSet& Out);
@@ -902,7 +902,7 @@ public:
 	void ConvertDependencyStep(const FMantlePlaceDependencies& Dependencies, int32 Step, FMantlePlaceAssetSet& Out);
 
 	/**
-	 * One of a decal's textures (#472), from its source pixels: a base colour as PNG with its alpha
+	 * One of a decal's textures (#472), from its source pixels: a base color as PNG with its alpha
 	 * (the decal's coverage), a normal map as PNG in glTF's green-up convention (the cook flips it
 	 * back to Unreal's), each held to MaxTextureSize and MaxTextureBytes like a material's. Records
 	 * Texture.Key in Out.DecalTextures. False, with an error issue naming the decal, when the
@@ -912,7 +912,7 @@ public:
 
 	/**
 	 * #556 item 5: one PNG or JPEG file from the level's UI/ folder (PlacePath "UI/...", read from
-	 * DiskPath), prepared exactly as a decal's base colour is (straight alpha kept, held to
+	 * DiskPath), prepared exactly as a decal's base color is (straight alpha kept, held to
 	 * MaxTextureSize and MaxTextureBytes), so it takes the same texture upload, cook and screening.
 	 * Records the texture's key in Out.UIImages. False, with an error issue naming the file, when it
 	 * is missing, over FMantlePlaceLimits::MaxUIImageBytes or not a readable PNG or JPEG.
@@ -920,9 +920,9 @@ public:
 	bool ConvertUIImage(const FString& PlacePath, const FString& DiskPath, FMantlePlaceAssetSet& Out);
 
 	/**
-	 * #786: the place's captured catalogue picture (Width x Height opaque pixels, top row first), encoded as a base
-	 * colour would be (JPEG, held to MaxTextureSize and MaxTextureBytes) but uploaded with no role (#796), so the backend
-	 * keeps the JPEG file the catalogue serves; a comment segment keeps its bytes apart from any colour texture's.
+	 * #786: the place's captured catalog picture (Width x Height opaque pixels, top row first), encoded as a base
+	 * color would be (JPEG, held to MaxTextureSize and MaxTextureBytes) but uploaded with no role (#796), so the backend
+	 * keeps the JPEG file the catalog serves; a comment segment keeps its bytes apart from any color texture's.
 	 * Records the texture's key in Out.Thumbnail. False, with a warning, when it cannot be encoded: the place publishes
 	 * without a picture rather than not at all.
 	 */
@@ -1016,7 +1016,7 @@ public:
 	 * (added to OutSet) and reporting what did not carry over. MaterialName names the Unreal
 	 * material in messages. bSourceTexturesReported: the material's oversized source textures
 	 * were already named by Check this place, so their downscale is not repeated.
-	 * bVertexColorTintsBaseColor: the Unreal graph multiplies its base colour by Vertex Color
+	 * bVertexColorTintsBaseColor: the Unreal graph multiplies its base color by Vertex Color
 	 * (FMantleMaterialAnalysis, #471), which the bake cannot carry; the document says vertexColor
 	 * multiplyBaseColor instead (a lit material only).
 	 */
@@ -1026,7 +1026,7 @@ public:
 	/**
 	 * As above with #533's extras: a slot with a source image publishes that image instead of the bake's (with its
 	 * own tiling as its uvTransforms entry, and the ORM factors the graph gives), a panned slot its uvPanning, and
-	 * wind, worldAligned and layerBlend (with the layer's images) as recognised. World-aligned, layer-blended and
+	 * wind, worldAligned and layerBlend (with the layer's images) as recognized. World-aligned, layer-blended and
 	 * unlit documents keep their rules: an unlit material carries panning on its emissive (glow) only.
 	 */
 	static FMantlePlaceMaterialDocument MaterialFromGltf(const FMantleGlbDocument& Document, int32 Index, const FString& MaterialName,
@@ -1034,7 +1034,7 @@ public:
 
 	/**
 	 * One image as an upload for Slot: decoded, downscaled to Limits.MaxTextureSize, encoded (JPEG
-	 * for colour whose alpha does not matter, PNG otherwise), then made to fit MaxTextureBytes
+	 * for color whose alpha does not matter, PNG otherwise), then made to fit MaxTextureBytes
 	 * (lower JPEG quality, or halved). What names it in messages. False when the image cannot be read.
 	 */
 	static bool PrepareTexture(TConstArrayView<uint8> Image, EMantlePlaceTextureSlot Slot, bool bKeepAlpha, const FMantlePlaceAssetLimits& Limits,

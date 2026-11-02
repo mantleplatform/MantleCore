@@ -25,7 +25,7 @@ struct MANTLEEDITOR_API FMantleGlbPrimitive
 };
 
 /**
- * A mesh as the plugin uploads it, in Unreal space (centimetres, Z up, the asset's own axes),
+ * A mesh as the plugin uploads it, in Unreal space (centimeters, Z up, the asset's own axes),
  * written to GLB by FMantleGlbWriter in Epic's glTF convention.
  */
 struct MANTLEEDITOR_API FMantleGlbMesh
@@ -48,7 +48,7 @@ struct MANTLEEDITOR_API FMantleGlbMesh
 	/** #470, optional: empty, or one per vertex: the second UV set (a static mesh's UV channel 1), written as TEXCOORD_1. */
 	TArray<FVector2f> UV1s;
 
-	/** #470, optional: empty, or one per vertex: the vertex colour, written as normalized unsigned-byte COLOR_0 (R, G, B, A). */
+	/** #470, optional: empty, or one per vertex: the vertex color, written as normalized unsigned-byte COLOR_0 (R, G, B, A). */
 	TArray<FColor> Colors;
 
 	/** One glTF material per entry, named: sections are identified by material name, which must be unique. */
@@ -76,7 +76,7 @@ struct MANTLEEDITOR_API FMantleGlbMesh
 	/**
 	 * #849, optional: the body-shape offsets (weight+, ...), written as the root extension MANTLE_body_offsets from LOD0's
 	 * mesh. Each shape needs a delta array per LOD written (matching that LOD's vertex count) and one joint delta per
-	 * skin joint, in Unreal axes and centimetres like Positions; the writer converts them (without a translation).
+	 * skin joint, in Unreal axes and centimeters like Positions; the writer converts them (without a translation).
 	 */
 	TArray<FMantleBodyOffsetShape> BodyOffsets;
 
@@ -113,7 +113,7 @@ struct MANTLEEDITOR_API FMantleGlbStaticExtras
 	TArray<float> ScreenSizes;
 
 	/**
-	 * The mesh's simple collision in Unreal's frame and centimetres, in the mesh's own space: written as it
+	 * The mesh's simple collision in Unreal's frame and centimeters, in the mesh's own space: written as it
 	 * is, not converted to glTF's axes (it is the plugin's reading of FKAggregateGeom, which the cook stores
 	 * in the same frame). None when it has no shapes.
 	 */
@@ -124,7 +124,7 @@ struct MANTLEEDITOR_API FMantleGlbStaticExtras
 
 /**
  * How many vertices had a value that was not a finite number (NaN or infinity), by stream: what
- * FMantleGlbWriter::SanitiseNonFinite found. The cook refuses such a mesh (backend cook readFiniteFloats).
+ * FMantleGlbWriter::SanitizeNonFinite found. The cook refuses such a mesh (backend cook readFiniteFloats).
  */
 struct MANTLEEDITOR_API FMantleGlbNonFinite
 {
@@ -149,13 +149,13 @@ struct MANTLEEDITOR_API FMantleGlbNonFinite
  *
  * Coordinates are Epic's own glTF convention, the one GLTFExporter writes and Interchange reads
  * and the one the worker undoes for skinned content (A2.2 decision): Unreal (x, y, z) in
- * centimetres is glTF (x, z, y) in metres; directions swap y and z the same way; a rotation
+ * centimeters is glTF (x, z, y) in meters; directions swap y and z the same way; a rotation
  * (qx, qy, qz, qw) is (-qx, -qz, -qy, qw); a scale swaps y and z; a tangent's w is kept. Triangle
  * indices keep their order: the axis swap is itself the change of handedness.
  *
  * Why its own writer rather than UGLTFSkeletalMeshExporter for geometry: the exporter re-indexes
  * each section's vertices in the order the index buffer first uses them (FGLTFMeshSection), and
- * the reference-topology check (a quantised UV hash over the vertices in order) needs the render
+ * the reference-topology check (a quantized UV hash over the vertices in order) needs the render
  * vertices exactly in their own order; the plugin also has to add the hair card attributes, the
  * body-shape extension and meshes built from groom cards, which the exporter cannot. GLTFExporter
  * is still what the plugin bakes materials through (FMantleCosmeticExport).
@@ -181,7 +181,7 @@ public:
 	/**
 	 * A converted avatar's body or face: geometry, rig and section-name metadata only. This is
 	 * deliberately separate from Write/WriteLODs so the As-Is route retains authored vertex
-	 * colours, while converted publication can never emit COLOR_* appearance attributes.
+	 * colors, while converted publication can never emit COLOR_* appearance attributes.
 	 */
 	static bool WriteGeometryOnly(const FMantleGlbMesh& Mesh, TArray<uint8>& OutBytes, FString& OutError);
 	static bool WriteGeometryOnlyLODs(TConstArrayView<FMantleGlbMesh> LODs, TArray<uint8>& OutBytes, FString& OutError);
@@ -200,7 +200,7 @@ public:
 	 * (0, 0), a normal (0, 0, 1), a tangent a unit direction at right angles to the normal with w 1. A position cannot be
 	 * repaired, so it is only counted. Returns what was found.
 	 */
-	static FMantleGlbNonFinite SanitiseNonFinite(FMantleGlbMesh& Mesh);
+	static FMantleGlbNonFinite SanitizeNonFinite(FMantleGlbMesh& Mesh);
 
 	/** The extension that carries a static mesh's screen sizes and simple collision (backend cook.StaticMeshExtension). */
 	static const TCHAR* StaticMeshExtension;
@@ -211,13 +211,13 @@ public:
 	/** The LOD node names' prefix (backend cook.LODNodePrefix): LOD0, LOD1, LOD2. */
 	static const TCHAR* LODNodePrefix;
 
-	/** Unreal centimetres to glTF metres, Epic's axes. */
+	/** Unreal centimeters to glTF meters, Epic's axes. */
 	static FVector3d ToGltfPosition(const FVector3d& Unreal);
 
 	/** A direction (normal, tangent xyz): y and z swap. */
 	static FVector3d ToGltfDirection(const FVector3d& Unreal);
 
-	/** A rotation: (qx, qy, qz, qw) becomes (-qx, -qz, -qy, qw), normalised. */
+	/** A rotation: (qx, qy, qz, qw) becomes (-qx, -qz, -qy, qw), normalized. */
 	static FQuat ToGltfRotation(const FQuat& Unreal);
 
 	/** A scale: y and z swap. */
@@ -243,7 +243,7 @@ struct MANTLEEDITOR_API FMantleGlbDocument
 	/** Reads the header, the JSON chunk and the optional BIN chunk. */
 	static bool Parse(TConstArrayView<uint8> Bytes, FMantleGlbDocument& Out, FString& OutError);
 
-	/** Every component of accessor Index as doubles (float, unsigned byte/short/int; normalised integers scaled). */
+	/** Every component of accessor Index as doubles (float, unsigned byte/short/int; normalized integers scaled). */
 	bool ReadAccessor(int32 Index, TArray<double>& OutValues, int32* OutComponents = nullptr, int32* OutCount = nullptr) const;
 
 	/** The bytes of buffer view Index (an embedded image, say). */

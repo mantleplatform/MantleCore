@@ -191,7 +191,7 @@ namespace MantleEffectActorPrivate
 		return true;
 	}
 
-	/** Sets a sprites material instance's values: the texture (or the soft dot), the colours, the opacity envelope, the end scale and the flipbook sheet. */
+	/** Sets a sprites material instance's values: the texture (or the soft dot), the colors, the opacity envelope, the end scale and the flipbook sheet. */
 	void WriteSpritesMaterialValues(UMaterialInstanceDynamic& Material, const FMantleEffectLook& Look, const FMantleSpritesSettings& Sprites, UTexture* Texture)
 	{
 		Material.SetScalarParameterValue(FName(FMantleEffects::UseTextureParameter), Texture ? 1.0f : 0.0f);

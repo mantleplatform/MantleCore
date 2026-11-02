@@ -209,7 +209,7 @@ public:
 	~FMantleAssetStore();
 
 	/**
-	 * Asks for one asset. OnDone fires on the game thread exactly once, unless cancelled.
+	 * Asks for one asset. OnDone fires on the game thread exactly once, unless canceled.
 	 * Returns an id for Cancel. A hash already being resolved or downloaded gains a waiter
 	 * instead of a second request.
 	 */
@@ -305,7 +305,7 @@ private:
 	/** Runs Body on a background task (after the startup scan when asked), counted for IsIdle. */
 	void LaunchTask(const TCHAR* DebugName, TUniqueFunction<void()> Body, bool bAfterScan);
 
-	/** Consumes a request id; false when it was cancelled (or already delivered). */
+	/** Consumes a request id; false when it was canceled (or already delivered). */
 	bool TakeRequest(uint64 RequestId);
 	FString PartialDir() const;
 	bool IsIdle() const;
