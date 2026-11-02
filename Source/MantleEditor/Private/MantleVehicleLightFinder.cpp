@@ -6,6 +6,7 @@
 #include "Engine/SkinnedAssetCommon.h"
 #include "Engine/Texture.h"
 #include "Engine/Texture2D.h"
+#include "HAL/IConsoleManager.h"
 #include "ImageCore.h"
 #include "MantleGlowMaterial.h"
 #include "MantleSkinnedMesh.h"
@@ -1002,6 +1003,92 @@ void FMantleVehicleLights::ApplyMaterials(UMantleVehicleSource& Source, TArray<F
 			OutNotes.Add(FString::Printf(TEXT("The lights were set on %s, but it could not be saved (check that your project's files are not read-only)."), *Mesh->GetName()));
 		}
 	}
+}
+
+namespace MantleVehicleLightsPrivate
+{
+	// Mantle.Dev.VehicleFindLights: what the light finder makes of a model, from a headless editor. Read-only: nothing is saved (the light copies are made under /Temp,
+	// in memory), so it is safe to point at a creator's pack.
+	FAutoConsoleCommand FindLightsCommand(
+		TEXT("Mantle.Dev.VehicleFindLights"),
+		TEXT("Mantle.Dev.VehicleFindLights <skeletal mesh object path> -- logs MANTLE_FIND_LIGHTS lines: each slot's glow textures (name and parameter), the triangles found per light "
+			 "kind and the whole slots, and for each kind which texture parameters its light material copy keeps or blacks out. Writes nothing to disk."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+		{
+			if (Args.Num() < 1)
+			{
+				UE_LOG(LogTemp, Error, TEXT("MANTLE_FIND_LIGHTS ok=0 usage: Mantle.Dev.VehicleFindLights <skeletal mesh object path>"));
+				return;
+			}
+			USkeletalMesh* Mesh = Cast<USkeletalMesh>(StaticLoadObject(USkeletalMesh::StaticClass(), nullptr, *Args[0], nullptr, LOAD_NoWarn | LOAD_Quiet));
+			FMantleSkinnedMesh Body;
+			TArray<FSkeletalMaterial> Materials;
+			FString Error;
+			if (!Mesh || !FMantleSkinnedMesh::ExtractFromSkeletalMesh(Mesh, Body, &Error, &Materials))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("MANTLE_FIND_LIGHTS ok=0 model=%s problem: %s"), *Args[0], Mesh ? *Error : TEXT("not a skeletal mesh"));
+				return;
+			}
+			const FMantleVehicleLightGuess Guess = FMantleVehicleLights::Find(Body, Materials, false);
+			UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS ok=1 model=%s slots=%d found=%d"), *Args[0], Materials.Num(), Guess.FoundAny() ? 1 : 0);
+			for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
+			{
+				FString Whole;
+				for (const int32 Slot : Guess.WholeSlots[Kind])
+				{
+					Whole += FString::Printf(TEXT(" %d"), Slot);
+				}
+				UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS kind=%s triangles=%d whole slots:%s"), FMantleVehicleLights::Key(static_cast<EMantleLightKind>(Kind)),
+					Guess.Triangles[Kind].Num(), Whole.IsEmpty() ? TEXT(" none") : *Whole);
+			}
+			for (int32 Slot = 0; Slot < Materials.Num(); ++Slot)
+			{
+				UMaterialInterface* Material = Materials[Slot].MaterialInterface.Get();
+				FMantleMaterialGlow Glow;
+				if (!FMantleMaterialGlow::Read(Material, Glow))
+				{
+					continue;
+				}
+				UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS slot %d %s material=%s glow textures=%d"), Slot, *Materials[Slot].MaterialSlotName.ToString(),
+					Material ? *Material->GetName() : TEXT("none"), Glow.Textures.Num());
+				for (const FMantleGlowTexture& Texture : Glow.Textures)
+				{
+					const TOptional<EMantleLightKind> Named = GlowKind(Texture);
+					UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS slot %d texture=%s parameter=%s named=%s"), Slot, *Texture.Texture->GetName(),
+						Texture.Parameter.IsNone() ? TEXT("none") : *Texture.Parameter.ToString(), Named ? FMantleVehicleLights::Key(*Named) : TEXT("generic"));
+				}
+				if (Glow.Textures.Num() < 2)
+				{
+					continue;
+				}
+				for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
+				{
+					const EMantleLightKind Each = static_cast<EMantleLightKind>(Kind);
+					const FString AssetName = FString::Printf(TEXT("MI_FindLights_%d_%s"), Slot, FMantleVehicleLights::Key(Each));
+					FString CopyError;
+					UMaterialInterface* Copy = FMantleVehicleLights::MakeLightMaterial(Material, Each, TEXT("/Temp/MantleFindLights"), AssetName, CopyError);
+					if (!Copy)
+					{
+						UE_LOG(LogTemp, Warning, TEXT("MANTLE_FIND_LIGHTS slot %d kind=%s copy failed: %s"), Slot, FMantleVehicleLights::Key(Each), *CopyError);
+						continue;
+					}
+					FString Keeps;
+					FString Blacks;
+					for (const FMantleGlowTexture& Texture : Glow.Textures)
+					{
+						if (Texture.Parameter.IsNone())
+						{
+							continue;
+						}
+						UTexture* Now = nullptr;
+						Copy->GetTextureParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(Texture.Parameter)), Now);
+						(Now == Texture.Texture ? Keeps : Blacks) += FString::Printf(TEXT(" %s"), *Texture.Parameter.ToString());
+					}
+					UE_LOG(LogTemp, Display, TEXT("MANTLE_FIND_LIGHTS slot %d kind=%s copy keeps:%s blacks out:%s"), Slot, FMantleVehicleLights::Key(Each),
+						Keeps.IsEmpty() ? TEXT(" none") : *Keeps, Blacks.IsEmpty() ? TEXT(" none") : *Blacks);
+				}
+			}
+		}));
 }
 
 #undef LOCTEXT_NAMESPACE

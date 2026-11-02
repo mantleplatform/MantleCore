@@ -406,9 +406,9 @@ bool FMantleVehicleLightsGlowTexturesTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("the first is the lights texture"), Glow.Textures[0].Texture->GetName(), FString(TEXT("T_Vehicle_emissive_Light")));
 	TestTrue(TEXT("and Texture is still the first"), Glow.Texture == Glow.Textures[0].Texture);
-	TestEqual(TEXT("the stop texture's parameter"), Glow.Textures[1].Parameter, FName(TEXT("Stop")));
-	TestEqual(TEXT("the stop switch belongs to the stop texture"), Glow.Textures[1].OffScalars, TArray<FName>{ FName(TEXT("StopIntensity")) });
-	TestEqual(TEXT("the reverse switch belongs to the reverse texture"), Glow.Textures[2].OffScalars, TArray<FName>{ FName(TEXT("ReverseIntensity")) });
+	TestEqual(TEXT("the stop texture's parameter"), Glow.Textures[1].Parameter.ToString(), FString(TEXT("Stop")));
+	TestTrue(TEXT("the stop switch belongs to the stop texture"), Glow.Textures[1].OffScalars.Num() == 1 && Glow.Textures[1].OffScalars[0] == FName(TEXT("StopIntensity")));
+	TestTrue(TEXT("the reverse switch belongs to the reverse texture"), Glow.Textures[2].OffScalars.Num() == 1 && Glow.Textures[2].OffScalars[0] == FName(TEXT("ReverseIntensity")));
 	TestTrue(TEXT("the lights texture has no switch"), Glow.Textures[0].OffScalars.IsEmpty());
 	TestEqual(TEXT("both switches are still listed off"), Glow.OffScalars.Num(), 2);
 	UMaterial* Single = MakeLightsMaterial(false);
