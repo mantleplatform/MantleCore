@@ -243,6 +243,60 @@ namespace MantleLandscapeMaterialReaderPrivate
 		return Text;
 	}
 
+	/**
+	 * Whether the texture's pixels are a tangent-space normal map: red and green around one half, blue near one. Asset packs often
+	 * import their normal maps with the default compression, so the texture does not say it is one; its pixels do. The stored
+	 * values are compared as they are, whatever the texture's sRGB flag says. Read once per texture content.
+	 */
+	bool HoldsNormalPixels(UTexture* Texture)
+	{
+		if (!Texture || !Texture->Source.IsValid() || Texture->Source.GetNumBlocks() > 1 || Texture->Source.GetNumSlices() > 1)
+		{
+			return false;
+		}
+		static TMap<FString, bool> Cache;
+		const FString Key = Texture->GetPathName() + TEXT("|") + Texture->Source.GetId().ToString();
+		if (const bool* Cached = Cache.Find(Key))
+		{
+			return *Cached;
+		}
+
+		FImage Image;
+		if (!Texture->Source.GetMipImage(Image, 0))
+		{
+			return false;
+		}
+		FImage Bgra;
+		Image.CopyTo(Bgra, ERawImageFormat::BGRA8, ERawImageFormat::IsHDR(Image.Format) ? EGammaSpace::sRGB : Image.GammaSpace);
+		const TArrayView64<FColor> Pixels = Bgra.AsBGRA8();
+		if (Pixels.Num() == 0 || Bgra.SizeX <= 0 || Bgra.SizeY <= 0)
+		{
+			return false;
+		}
+		const int32 Steps = 32;
+		double Sum[3] = { 0.0, 0.0, 0.0 };
+		int32 Count = 0;
+		int32 Upright = 0;
+		for (int32 Row = 0; Row < Steps; ++Row)
+		{
+			const int64 Y = FMath::Min<int64>(static_cast<int64>((Row + 0.5) / Steps * Bgra.SizeY), Bgra.SizeY - 1);
+			for (int32 Column = 0; Column < Steps; ++Column)
+			{
+				const int64 X = FMath::Min<int64>(static_cast<int64>((Column + 0.5) / Steps * Bgra.SizeX), Bgra.SizeX - 1);
+				const FColor Pixel = Pixels[Y * Bgra.SizeX + X];
+				Sum[0] += Pixel.R / 255.0;
+				Sum[1] += Pixel.G / 255.0;
+				Sum[2] += Pixel.B / 255.0;
+				Upright += Pixel.B >= 128 ? 1 : 0;
+				++Count;
+			}
+		}
+		const bool bNormals = Count > 0 && FMath::Abs(Sum[0] / Count - 0.5) <= 0.12 && FMath::Abs(Sum[1] / Count - 0.5) <= 0.12
+			&& Sum[2] / Count >= 0.7 && Upright >= Count * 0.95;
+		Cache.Add(Key, bNormals);
+		return bNormals;
+	}
+
 	/** The graph walker: resolves what feeds what through reroutes, material function calls and the instance's static switches, and reads values the way the instance sets them. */
 	class FLmGraphReader
 	{
@@ -643,6 +697,25 @@ namespace MantleLandscapeMaterialReaderPrivate
 			}
 			OutSample = Sample;
 			return Texture;
+		}
+
+		/** Whether Sample (at Node, reading Texture) reads a normal map: the texture says so, the sampler says so, or the pixels are one. */
+		bool SamplesNormalMap(const FLmRef& Node, const UMaterialExpressionTextureSample* Sample, UTexture* Texture)
+		{
+			if (Texture->IsNormalMap() || Sample->SamplerType == SAMPLERTYPE_Normal)
+			{
+				return true;
+			}
+			if (Sample->TextureObject.Expression)
+			{
+				const FLmRef Object = Resolve(Sample->TextureObject, Node.Frame);
+				const UMaterialExpressionTextureBase* Base = Cast<UMaterialExpressionTextureBase>(Object.Expression);
+				if (Base && Base->SamplerType == SAMPLERTYPE_Normal)
+				{
+					return true;
+				}
+			}
+			return HoldsNormalPixels(Texture);
 		}
 
 		/**
@@ -1193,7 +1266,9 @@ namespace MantleLandscapeMaterialReaderPrivate
 			const UMaterialExpressionTextureSample* Sample = nullptr;
 			if (UTexture* Texture = SampledTexture(Node, Sample))
 			{
-				if ((Prop == ELmProp::Normal) == Texture->IsNormalMap())
+				// The Normal output keeps the normal maps however they are imported; the color keeps every texture that is not one.
+				const bool bNormalMap = Prop == ELmProp::Normal ? SamplesNormalMap(Node, Sample, Texture) : Texture->IsNormalMap();
+				if ((Prop == ELmProp::Normal) == bNormalMap)
 				{
 					FLmHit& Hit = Out.Hits.AddDefaulted_GetRef();
 					Hit.Texture = Texture;
@@ -3098,6 +3173,18 @@ bool FMantleLandscapeMaterialReader::Read(const UMaterialInterface* LandscapeMat
 				FLmCollected Normals;
 				FLmVisit Visit;
 				Reader.Collect(NormalSource->Look, ELmProp::Normal, 1.0, Normals, Visit);
+				// A layer's own normal map repeats like its color does; a finer detail normal laid over it is not the layer's look.
+				if (Look.BaseColorTilingCm > 0.0)
+				{
+					const TArray<FLmHit> Same = Normals.Hits.FilterByPredicate([&Look](const FLmHit& Hit)
+					{
+						return Hit.TileCm > 0.0 && FMath::IsNearlyEqual(Look.BaseColorTilingCm, Hit.TileCm, Look.BaseColorTilingCm * 0.15);
+					});
+					if (Same.Num() > 0)
+					{
+						Normals.Hits = Same;
+					}
+				}
 				if (const FLmHit* BestNormal = PickBest(Normals.Hits))
 				{
 					Look.Normal = BestNormal->Texture;

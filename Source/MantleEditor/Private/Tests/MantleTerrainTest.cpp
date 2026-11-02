@@ -632,6 +632,80 @@ bool FMantleLandscapeMaterialReaderInstanceLayersTest::RunTest(const FString& Pa
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleLandscapeMaterialReaderDefaultNormalsTest,
+	"Mantle.Editor.Terrain.LandscapeMaterialDefaultNormals",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleLandscapeMaterialReaderDefaultNormalsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTerrainTestPrivate;
+
+	// Spruce's normal maps are imported with the default compression and linear color, so the texture does not say it is a normal
+	// map; its pixels do (red and green around one half, blue near one). The Normal output keeps them. A texture of the same
+	// import settings that is not a normal map (a mask) is not taken for one.
+	auto MakePixels = [](UTexture2D* Texture, const FColor Color)
+	{
+		TArray<uint8> Data;
+		for (int32 Pixel = 0; Pixel < 16; ++Pixel)
+		{
+			Data.Add(Color.B);
+			Data.Add(Color.G);
+			Data.Add(Color.R);
+			Data.Add(Color.A);
+		}
+		Texture->Source.Init(4, 4, 1, 1, TSF_BGRA8, Data.GetData());
+		Texture->SRGB = false;
+		Texture->CompressionSettings = TC_Default;
+	};
+	UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
+	UTexture2D* Grass = UTexture2D::CreateTransient(4, 4);
+	UTexture2D* GrassNormal = UTexture2D::CreateTransient(4, 4);
+	MakePixels(GrassNormal, FColor(120, 134, 250, 255));
+	UTexture2D* MudNormal = UTexture2D::CreateTransient(4, 4);
+	MakePixels(MudNormal, FColor(128, 128, 255, 255));
+	UTexture2D* Mask = UTexture2D::CreateTransient(4, 4);
+	MakePixels(Mask, FColor(255, 255, 255, 255));
+
+	UMaterialFunction* Function = MakeLayerFunction();
+	UMaterialExpressionLandscapeLayerBlend* ColorBlend = AddExpression<UMaterialExpressionLandscapeLayerBlend>(Material);
+	UMaterialExpressionLandscapeLayerBlend* NormalBlend = AddExpression<UMaterialExpressionLandscapeLayerBlend>(Material);
+	for (int32 Layer = 1; Layer <= 3; ++Layer)
+	{
+		const FString Name = FString::Printf(TEXT("L%d"), Layer);
+		UMaterialExpressionMaterialFunctionCall* Call = AddLayerCall(Material, Function, Name, Grass, Layer == 3 ? Mask : GrassNormal, 1.0f);
+		FLayerBlendInput& ColorLayer = ColorBlend->Layers.AddDefaulted_GetRef();
+		ColorLayer.LayerName = FName(*Name);
+		ColorLayer.LayerInput.Connect(OutputIndexOf(Call, TEXT("Result")), Call);
+		FLayerBlendInput& NormalLayer = NormalBlend->Layers.AddDefaulted_GetRef();
+		NormalLayer.LayerName = FName(*Name);
+		NormalLayer.LayerInput.Connect(OutputIndexOf(Call, TEXT("Normal")), Call);
+	}
+	Material->GetEditorOnlyData()->BaseColor.Connect(0, ColorBlend);
+	Material->GetEditorOnlyData()->Normal.Connect(0, NormalBlend);
+	UMaterialInstanceConstant* Instance = NewObject<UMaterialInstanceConstant>(GetTransientPackage());
+	Instance->SetParentEditorOnly(Material, false);
+	Instance->SetTextureParameterValueEditorOnly(FMaterialParameterInfo(TEXT("L2 Normal")), MudNormal);
+
+	FMantleLandscapeMaterialRead Read;
+	FString Problem;
+	if (!TestTrue(TEXT("the instance is read"), FMantleLandscapeMaterialReader::Read(Instance, 100.0, Read, Problem)))
+	{
+		AddError(Problem);
+		return false;
+	}
+	const FMantleLandscapeLayerLook* L1 = Read.Find(TEXT("L1"));
+	const FMantleLandscapeLayerLook* L2 = Read.Find(TEXT("L2"));
+	const FMantleLandscapeLayerLook* L3 = Read.Find(TEXT("L3"));
+	if (TestNotNull(TEXT("L1"), L1) && TestNotNull(TEXT("L2"), L2) && TestNotNull(TEXT("L3"), L3))
+	{
+		TestTrue(TEXT("L1 keeps its normal map though it is imported as a default texture"), L1->Normal == GrassNormal);
+		TestTrue(TEXT("L2 keeps the instance's"), L2->Normal == MudNormal);
+		TestNull(TEXT("L3's white texture is not a normal map"), L3->Normal);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleLandscapeMaterialReaderSlopeOverlayTest,
 	"Mantle.Editor.Terrain.LandscapeMaterialSlopeOverlay",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
