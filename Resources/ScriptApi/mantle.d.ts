@@ -74,6 +74,8 @@ interface Entity {
 	readonly name: string;
 	/** A physics entity's surface: "default", "rubber" (bouncy), "ice" (slippery), "metal", "wood" or "stone"; the place's physics.material says how it starts. Set it on the server, anchored or not, and every player sees the change. nil for an entity with no physics block, and setting it on one errors, as does any other name. */
 	physicsMaterial: string | undefined;
+	/** For a piece made by placing mode (a player placing it, or Placing:PlaceAsPlayer), the placer's UserId; nil for any other entity and on a client. Read only, and it survives saves. */
+	readonly placedBy: string | undefined;
 	/** World location in centimeters. Setting it on the server replicates to everyone; on a client it only changes that client's view. Setting it (or Rotation or Scale) on an entity the place did not mark dynamic is a script error; clones are always dynamic. */
 	position: Vector3;
 	/** Rotation in degrees as (pitch, yaw, roll). */
@@ -978,6 +980,41 @@ interface NoiseService {
 	perlin3D(seed: number, x: number, y: number, z: number, frequency?: number | undefined): number;
 }
 const Noise: NoiseService;
+
+/** Placing mode: a ghost that follows a player's camera, snapping, a server check and cancellable events, switched on by a script (server: Start, Stop; client: the controls). Nothing is on unless a script calls Start. Costs, owners, build zones and health are the place's own scripts. */
+interface PlacingService {
+	/** Places the ghost's piece: sends the request to the server, which checks it again. Returns "sent", or the reason the ghost is red ("out_of_reach", "overlaps", "cap", a hint from SetItemHint) and nothing is sent. (client only) */
+	confirm(): string;
+	/** The ghost now, or nil while placing mode is off for this player. Valid says whether Confirm would send; Reason says why not. (client only) */
+	getGhost(): { item: string; position: Vector3; rotation: Vector3; valid: boolean; reason: string } | undefined;
+	/** The ghost's item, place, rotation, validity or reason changed (at most once a frame). Draw your own hotbar or cost tooltip from it. (client only) */
+	onGhostChanged(handler: (ghost: { item: string; position: Vector3; rotation: Vector3; valid: boolean; reason: string }) => void): Connection;
+	/** A player left placing mode with the default keys (right mouse or Escape). Their mode is off now; call Start again to bring it back. (server only) */
+	onLeft(handler: (info: { player: Player }) => void): Connection;
+	/** A piece went in. Piece is an ordinary Entity: give it attributes, tags and health, move it or Destroy it. Piece.PlacedBy is the placer's UserId. (server only) */
+	onPiecePlaced(handler: (info: { player: Player; item: string; piece: Entity }) => void): Connection;
+	/** Called before a player's piece goes in, on the spot (the handler may not wait). Return false to refuse it, and as a second value the reason the player sees (Luau: return false, "Not enough wood"; any language: return the reason text on its own). The player's ghost shows it. Raised for placing by keys and for PlaceAsPlayer, after the engine's own checks. (server only) */
+	onPiecePlacing(handler: (info: { player: Player; item: string; position: Vector3; rotation: Vector3; socket?: string | undefined }) => any): Connection;
+	/** The pieces saved by an earlier run of this place are back (the place file's settings.placing.persistence is "server"). Raised once, before players join, with how many. Their attributes came back too, so rebuild your own tables here. (server only) */
+	onPiecesLoaded(handler: (info: { count: number }) => void): Connection;
+	/** Places a piece for a player, as if they did it with placing mode: the rate limit (5 a second), reach from their eyes, overlap, the caps and OnPiecePlacing all apply. The player does not need Start, but item must be a place StaticMesh asset id or an entity id of the place. position is where the piece's origin goes and rotation its pitch, yaw and roll in degrees; no snapping. Returns "applied" or why not: "no_player", "unknown_item", "rate", "out_of_reach", "overlaps", "cap", "canceled" or the text OnPiecePlacing gave. (server only) */
+	placeAsPlayer(player: Player, item: string, position: Vector3, rotation?: Vector3 | undefined): string;
+	/** Turns the ghost by steps of RotationStep (negative turns the other way). (client only) */
+	rotate(steps: number): void;
+	/** Picks the ghost's item: its place in the Start list, from 1. For Keys = "script" (the wheel does it with the default keys). (client only) */
+	selectItem(index: number): void;
+	/** Tells a player's ghost that item is not allowed right now, and why ("Need 10 wood"): it shows red with this text before they click, which the player's own machine cannot know. nil clears it. At most 120 characters. The server's check still decides. (server only) */
+	setItemHint(player: Player, item: string, hint?: string | undefined): void;
+	/** Turns socket snapping on or off for the ghost (G does it with the default keys). (client only) */
+	setSnap(enabled: boolean): void;
+	/** Gives an item its sockets, replacing the ones its mesh has in the place file (an empty list removes them). A socket is a named point on a piece: Position in cm and Rotation in degrees in the mesh's own space (a template's scale stretches it with the mesh, so a cube's edge is at 50), its facing the forward (+X) axis, a Kind ("wall_bottom") and the kinds it Accepts. A piece snaps where a socket meets one of another piece whose kind it accepts, or whose Accepts lists its kind. Up to 32 sockets, names and kinds of letters, digits and _. Use it for a template entity or a piece made at runtime, which have no mesh sockets. (server only) */
+	setSockets(item: string, sockets: ({ name: string; kind: string; position: Vector3; rotation?: Vector3 | undefined; accepts?: (string)[] | undefined })[]): void;
+	/** Turns placing mode on for one player (a second Start replaces the first). Items lists what they can place, 1 to 64 entries: ids of the place's StaticMesh assets or of entities of the place used as templates (cloned as they are, so keep one out of players' sight; a physics entity or an NPC is refused). Grid (cm, none by default) snaps a piece's position, RotationStep (degrees, 90) is one rotate press, Snap (true) joins pieces at their sockets, Reach (cm from the eyes, 800, at most 2,000) is how far they can place, MaxPieces (200, at most 2,000) is the most pieces this player may have in the place, SnapRadius (cm, 60; 1 to 500) is how close a socket must be held to another to join it. Keys is "default" (left mouse places, the wheel picks the item, R and Shift+R rotate, G toggles snap, right mouse leaves) or "script" (no keys: the place's client scripts drive the mode with SelectItem, Rotate, SetSnap and Confirm). The ghost follows the camera on the player's machine; nothing goes to the server until they place. OnPiecePlacing can refuse. (server only) */
+	start(player: Player, options: { items: (string)[]; grid?: number | undefined; rotationStep?: number | undefined; snap?: boolean | undefined; reach?: number | undefined; maxPieces?: number | undefined; keys?: string | undefined; snapRadius?: number | undefined }): void;
+	/** Turns placing mode off for one player and removes their ghost. Pieces they placed stay. (server only) */
+	stop(player: Player): void;
+}
+const Placing: PlacingService;
 
 /** Everyone in the session. */
 interface PlayersService {
