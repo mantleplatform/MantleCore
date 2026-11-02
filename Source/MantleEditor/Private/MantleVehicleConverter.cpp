@@ -2737,6 +2737,11 @@ bool FMantleVehicleConverter::WriteUpload(const FMantleGlbMesh& Body, const TSha
 	Extras->SetObjectField(ExtrasKey, Document);
 	Upload.Extras = Extras;
 	LODs.Append(LowerLODs.GetData(), LowerLODs.Num());
+	// The upload's bytes, not what the cook stores: shared vertices once, the skin and indices compact (it keeps a heavy car's LODs under the upload size).
+	for (FMantleGlbMesh& LOD : LODs)
+	{
+		FMantleVehicleBodyLODs::Slim(LOD);
+	}
 	return FMantleGlbWriter::WriteLODs(LODs, OutBytes, OutError);
 }
 

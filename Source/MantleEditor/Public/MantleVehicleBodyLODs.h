@@ -32,6 +32,12 @@ struct MANTLEEDITOR_API FMantleVehicleBodyLODs
 	 */
 	static TArray<FMantleGlbMesh> MakeFor(const UMantleVehicleSource& Source, const FMantleGlbMesh& Body, TArray<FString>& OutNotes, FString& OutWarning);
 
+	/**
+	 * A vehicle LOD as it uploads, slimmed without changing what the cook stores: vertices that are the same in every stream (position, normal,
+	 * tangent, UVs, color, skin) are written once per primitive, and the skin and indices in their compact forms (FMantleGlbMesh::bCompactStreams).
+	 */
+	static void Slim(FMantleGlbMesh& Mesh);
+
 	/** Triangles in a GLB mesh, every primitive. */
 	static int32 CountTriangles(const FMantleGlbMesh& Mesh);
 };

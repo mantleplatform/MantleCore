@@ -294,6 +294,11 @@ namespace MantleGlbWriterPrivate
 		{
 			return Fail(OutError, FString::Printf(TEXT("%s's normals or texture coordinates do not match its vertices"), What));
 		}
+		if (Mesh.bCompactStreams && Mesh.IsSkinned() && (Mesh.NumInfluences > 4 || Mesh.Joints.Num() > 256))
+		{
+			return Fail(OutError, FString::Printf(TEXT("%s has %d influences and %d joints; compact streams hold at most 4 and 256"), What,
+				Mesh.NumInfluences, Mesh.Joints.Num()));
+		}
 		if (Mesh.Tangents.Num() != 0 && Mesh.Tangents.Num() != NumVertices)
 		{
 			return Fail(OutError, FString::Printf(TEXT("%s's tangents do not match its vertices"), What));
@@ -456,7 +461,59 @@ namespace MantleGlbWriterPrivate
 		const int32 SkinSets = bSkinned ? (Mesh.NumInfluences > 4 ? 2 : 1) : 0;
 		int32 JointViews[2] = { INDEX_NONE, INDEX_NONE };
 		int32 WeightViews[2] = { INDEX_NONE, INDEX_NONE };
-		for (int32 Set = 0; Set < SkinSets; ++Set)
+		// Compact (a vehicle's upload): one set of bytes, weights by largest remainder to exactly 255, the cook's own rounding (cook.quantizeWeights).
+		const bool bCompactSkin = Mesh.bCompactStreams && SkinSets == 1;
+		if (bCompactSkin)
+		{
+			TArray<uint8> Joints;
+			TArray<uint8> Weights;
+			Joints.SetNumZeroed(NumVertices * 4);
+			Weights.SetNumZeroed(NumVertices * 4);
+			for (int32 Vertex = 0; Vertex < NumVertices; ++Vertex)
+			{
+				float Raw[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+				float Total = 0.0f;
+				for (int32 Slot = 0; Slot < Mesh.NumInfluences; ++Slot)
+				{
+					Raw[Slot] = FMath::Max(0.0f, Mesh.InfluenceWeights[Vertex * Mesh.NumInfluences + Slot]);
+					Total += Raw[Slot];
+					Joints[Vertex * 4 + Slot] = static_cast<uint8>(Mesh.InfluenceJoints[Vertex * Mesh.NumInfluences + Slot]);
+				}
+				int32 Given = 0;
+				float Remainder[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+				for (int32 Slot = 0; Slot < 4; ++Slot)
+				{
+					const float Exact = Total > 0.0f ? Raw[Slot] / Total * 255.0f : (Slot == 0 ? 255.0f : 0.0f);
+					const int32 Whole = FMath::FloorToInt(Exact);
+					Weights[Vertex * 4 + Slot] = static_cast<uint8>(Whole);
+					Remainder[Slot] = Exact - static_cast<float>(Whole);
+					Given += Whole;
+				}
+				for (; Given < 255; ++Given)
+				{
+					int32 Best = 0;
+					for (int32 Slot = 1; Slot < 4; ++Slot)
+					{
+						if (Remainder[Slot] > Remainder[Best])
+						{
+							Best = Slot;
+						}
+					}
+					++Weights[Vertex * 4 + Best];
+					Remainder[Best] = -1.0f;
+				}
+				for (int32 Slot = 0; Slot < 4; ++Slot)
+				{
+					if (Weights[Vertex * 4 + Slot] == 0)
+					{
+						Joints[Vertex * 4 + Slot] = 0;
+					}
+				}
+			}
+			JointViews[0] = Buffer.AddView(Joints.GetData(), Joints.Num(), TargetArrayBuffer);
+			WeightViews[0] = Buffer.AddView(Weights.GetData(), Weights.Num(), TargetArrayBuffer);
+		}
+		for (int32 Set = 0; Set < SkinSets && !bCompactSkin; ++Set)
 		{
 			TArray<uint16> Joints;
 			TArray<float> Weights;
@@ -503,16 +560,37 @@ namespace MantleGlbWriterPrivate
 			CoordUView = Buffer.AddView(Mesh.HairCoordU.GetData(), Mesh.HairCoordU.Num() * sizeof(float), TargetArrayBuffer);
 		}
 
-		TArray<uint32> AllIndices;
+		// Indices: unsigned ints, or (compact) unsigned shorts for a primitive of under 65,536 vertices; each primitive's run starts 4-aligned.
+		TArray<uint8> IndexBytes;
+		TArray<int64> IndexStart;
+		TArray<bool> IndexShort;
 		for (const FMantleGlbPrimitive& Primitive : Mesh.Primitives)
 		{
-			AllIndices.Append(Primitive.Indices);
+			const bool bShort = Mesh.bCompactStreams && Primitive.NumVertices < 65536;
+			IndexStart.Add(IndexBytes.Num());
+			IndexShort.Add(bShort);
+			for (const uint32 Index : Primitive.Indices)
+			{
+				if (bShort)
+				{
+					const uint16 Short = static_cast<uint16>(Index);
+					IndexBytes.Append(reinterpret_cast<const uint8*>(&Short), sizeof(uint16));
+				}
+				else
+				{
+					IndexBytes.Append(reinterpret_cast<const uint8*>(&Index), sizeof(uint32));
+				}
+			}
+			while (IndexBytes.Num() % 4 != 0)
+			{
+				IndexBytes.Add(0);
+			}
 		}
-		const int32 IndexView = Buffer.AddView(AllIndices.GetData(), AllIndices.Num() * sizeof(uint32), TargetElementArrayBuffer);
+		const int32 IndexView = Buffer.AddView(IndexBytes.GetData(), IndexBytes.Num(), TargetElementArrayBuffer);
 
 		// Primitives: accessors into the shared views at each primitive's first vertex.
 		TArray<TSharedPtr<FJsonValue>> Primitives;
-		int64 IndexOffset = 0;
+		int32 PrimitiveIndex = 0;
 		for (const FMantleGlbPrimitive& Primitive : Mesh.Primitives)
 		{
 			const int64 First = Primitive.FirstVertex;
@@ -548,7 +626,14 @@ namespace MantleGlbWriterPrivate
 				Accessors.Accessors[ColorAccessor]->AsObject()->SetBoolField(TEXT("normalized"), true);
 				Attributes->SetNumberField(TEXT("COLOR_0"), ColorAccessor);
 			}
-			for (int32 Set = 0; Set < SkinSets; ++Set)
+			if (bCompactSkin)
+			{
+				Attributes->SetNumberField(TEXT("JOINTS_0"), Accessors.Add(JointViews[0], First * 4, ComponentUnsignedByte, Count, TEXT("VEC4")));
+				const int32 WeightAccessor = Accessors.Add(WeightViews[0], First * 4, ComponentUnsignedByte, Count, TEXT("VEC4"));
+				Accessors.Accessors[WeightAccessor]->AsObject()->SetBoolField(TEXT("normalized"), true);
+				Attributes->SetNumberField(TEXT("WEIGHTS_0"), WeightAccessor);
+			}
+			for (int32 Set = 0; Set < SkinSets && !bCompactSkin; ++Set)
 			{
 				Attributes->SetNumberField(FString::Printf(TEXT("JOINTS_%d"), Set),
 					Accessors.Add(JointViews[Set], First * 8, ComponentUnsignedShort, Count, TEXT("VEC4")));
@@ -563,11 +648,12 @@ namespace MantleGlbWriterPrivate
 
 			const TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 			Json->SetObjectField(TEXT("attributes"), Attributes);
-			Json->SetNumberField(TEXT("indices"), Accessors.Add(IndexView, IndexOffset * 4, ComponentUnsignedInt, Primitive.Indices.Num(), TEXT("SCALAR")));
+			Json->SetNumberField(TEXT("indices"), Accessors.Add(IndexView, IndexStart[PrimitiveIndex],
+				IndexShort[PrimitiveIndex] ? ComponentUnsignedShort : ComponentUnsignedInt, Primitive.Indices.Num(), TEXT("SCALAR")));
 			Json->SetNumberField(TEXT("material"), MaterialOf[Primitive.MaterialIndex]);
 			Json->SetNumberField(TEXT("mode"), 4);
 			Primitives.Add(MakeShared<FJsonValueObject>(Json));
-			IndexOffset += Primitive.Indices.Num();
+			++PrimitiveIndex;
 		}
 		return Primitives;
 	}

@@ -148,6 +148,40 @@ bool FMantleVehicleBodyLODsTest::RunTest(const FString& Parameters)
 		? FString(static_cast<int32>(JsonBytes), reinterpret_cast<const ANSICHAR*>(Bytes.GetData() + 20)) : FString();
 	TestTrue(TEXT("its nodes are LOD0, LOD1 and LOD2"), Json.Contains(TEXT("\"LOD0\"")) && Json.Contains(TEXT("\"LOD1\"")) && Json.Contains(TEXT("\"LOD2\"")));
 	TestEqual(TEXT("no fractions, no lower LODs"), FMantleVehicleBodyLODs::Make(Body, TArray<float>(), Keep, Notes, Warning).Num(), 0);
+	TestTrue(TEXT("the skin is written as bytes"), Json.Contains(TEXT("\"normalized\":true")) && Json.Contains(TEXT("\"componentType\":5121")));
+
+	// Slim: a body whose every triangle has its own three corners (as many imports do) is written with its shared corners once, the same triangles.
+	FMantleGlbMesh Split = MakeBody();
+	{
+		FMantleGlbMesh Unwelded = Split;
+		Unwelded.Positions.Reset(); Unwelded.Normals.Reset(); Unwelded.Tangents.Reset(); Unwelded.UVs.Reset();
+		Unwelded.InfluenceJoints.Reset(); Unwelded.InfluenceWeights.Reset();
+		for (FMantleGlbPrimitive& Primitive : Unwelded.Primitives)
+		{
+			const int32 First = Unwelded.Positions.Num();
+			TArray<uint32> Indices;
+			for (const uint32 Local : Primitive.Indices)
+			{
+				const int32 Old = Primitive.FirstVertex + static_cast<int32>(Local);
+				Indices.Add(static_cast<uint32>(Unwelded.Positions.Num() - First));
+				Unwelded.Positions.Add(Split.Positions[Old]);
+				Unwelded.Normals.Add(Split.Normals[Old]);
+				Unwelded.Tangents.Add(Split.Tangents[Old]);
+				Unwelded.UVs.Add(Split.UVs[Old]);
+				Unwelded.InfluenceJoints.Add(Split.InfluenceJoints[Old]);
+				Unwelded.InfluenceWeights.Add(Split.InfluenceWeights[Old]);
+			}
+			Primitive.FirstVertex = First;
+			Primitive.NumVertices = Unwelded.Positions.Num() - First;
+			Primitive.Indices = MoveTemp(Indices);
+		}
+		Split = MoveTemp(Unwelded);
+	}
+	TestEqual(TEXT("the split body has three corners a triangle"), Split.Positions.Num(), Triangles * 3);
+	FMantleVehicleBodyLODs::Slim(Split);
+	TestEqual(TEXT("slimmed, it has the original's vertices"), Split.Positions.Num(), Body.Positions.Num());
+	TestEqual(TEXT("and the same triangles"), FMantleVehicleBodyLODs::CountTriangles(Split), Triangles);
+	TestTrue(TEXT("and compact streams"), Split.bCompactStreams);
 	return true;
 }
 

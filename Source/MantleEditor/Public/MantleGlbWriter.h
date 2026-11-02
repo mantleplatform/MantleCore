@@ -98,6 +98,13 @@ struct MANTLEEDITOR_API FMantleGlbMesh
 	 */
 	TSharedPtr<FJsonObject> Extras;
 
+	/**
+	 * Vehicle uploads (FMantleVehicleBodyLODs::Slim): the skin as unsigned-byte joints and normalized unsigned-byte weights, rounded to sum to
+	 * 255 as the cook stores them, and each primitive's indices as unsigned shorts when it has under 65,536 vertices. For at most four
+	 * influences and joints under 256 (the writer refuses otherwise); the cook reads back exactly what it would have stored from floats.
+	 */
+	bool bCompactStreams = false;
+
 	bool IsSkinned() const { return Joints.Num() > 0; }
 
 	bool HasNeck() const { return !NeckMethod.IsEmpty() || NeckPositions.Num() > 0 || NeckSampleIndices.Num() > 0; }

@@ -153,6 +153,16 @@ namespace MantleVehicleBodyLODsPrivate
 		Primitive.NumVertices = To.Positions.Num() - Primitive.FirstVertex;
 	}
 
+	/** A vertex's bytes in every stream, hashed once. */
+	struct FVertexKey
+	{
+		TArray<uint8> Bytes;
+		uint32 Hash = 0;
+
+		bool operator==(const FVertexKey& Other) const { return Hash == Other.Hash && Bytes == Other.Bytes; }
+		friend uint32 GetTypeHash(const FVertexKey& Key) { return Key.Hash; }
+	};
+
 	/** The triangles (absolute indices) Body draws with material Material. */
 	TArray<uint32> TrianglesOf(const FMantleGlbMesh& Body, const int32 Material)
 	{
@@ -187,6 +197,75 @@ TArray<FMantleGlbMesh> FMantleVehicleBodyLODs::MakeFor(const UMantleVehicleSourc
 		Keep.Append(FMantleVehicleLights::Sections(Source.Lights, Kind));
 	}
 	return Make(Body, Fractions, Keep, OutNotes, OutWarning);
+}
+
+void FMantleVehicleBodyLODs::Slim(FMantleGlbMesh& Mesh)
+{
+	Mesh.bCompactStreams = Mesh.IsSkinned() && Mesh.NumInfluences <= 4 && Mesh.Joints.Num() <= 256;
+	const int32 Slots = FMath::Max(1, Mesh.NumInfluences);
+	if (Mesh.Positions.Num() == 0 || (Mesh.IsSkinned() && (Mesh.InfluenceJoints.Num() != Mesh.Positions.Num() * Slots
+		|| Mesh.InfluenceWeights.Num() != Mesh.Positions.Num() * Slots)) || !Mesh.HairRootUV.IsEmpty() || !Mesh.BodyOffsets.IsEmpty())
+	{
+		return;
+	}
+	// A vertex's bytes in every stream it has: two vertices with the same bytes are one.
+	const auto Key = [&Mesh, Slots](const int32 Vertex)
+	{
+		MantleVehicleBodyLODsPrivate::FVertexKey Made;
+		TArray<uint8>& Bytes = Made.Bytes;
+		const auto Add = [&Bytes](const void* Data, const int32 Size) { Bytes.Append(static_cast<const uint8*>(Data), Size); };
+		Add(&Mesh.Positions[Vertex], sizeof(FVector3f));
+		Add(&Mesh.Normals[Vertex], sizeof(FVector3f));
+		Add(&Mesh.UVs[Vertex], sizeof(FVector2f));
+		if (Mesh.Tangents.Num() > 0) { Add(&Mesh.Tangents[Vertex], sizeof(FVector4f)); }
+		if (Mesh.UV1s.Num() > 0) { Add(&Mesh.UV1s[Vertex], sizeof(FVector2f)); }
+		if (Mesh.Colors.Num() > 0) { Add(&Mesh.Colors[Vertex], sizeof(FColor)); }
+		if (Mesh.IsSkinned())
+		{
+			Add(&Mesh.InfluenceJoints[Vertex * Slots], Slots * sizeof(uint16));
+			Add(&Mesh.InfluenceWeights[Vertex * Slots], Slots * sizeof(float));
+		}
+		Made.Hash = FCrc::MemCrc32(Bytes.GetData(), Bytes.Num());
+		return Made;
+	};
+	FMantleGlbMesh Out = Mesh;
+	Out.Positions.Reset(); Out.Normals.Reset(); Out.UVs.Reset(); Out.Tangents.Reset(); Out.UV1s.Reset(); Out.Colors.Reset();
+	Out.InfluenceJoints.Reset(); Out.InfluenceWeights.Reset();
+	for (FMantleGlbPrimitive& Primitive : Out.Primitives)
+	{
+		TMap<MantleVehicleBodyLODsPrivate::FVertexKey, uint32> Seen;
+		TArray<uint32> Indices;
+		Indices.Reserve(Primitive.Indices.Num());
+		const int32 First = Out.Positions.Num();
+		for (const uint32 Local : Primitive.Indices)
+		{
+			const int32 Old = Primitive.FirstVertex + static_cast<int32>(Local);
+			MantleVehicleBodyLODsPrivate::FVertexKey Bytes = Key(Old);
+			if (const uint32* Found = Seen.Find(Bytes))
+			{
+				Indices.Add(*Found);
+				continue;
+			}
+			const uint32 New = static_cast<uint32>(Out.Positions.Num() - First);
+			Seen.Add(MoveTemp(Bytes), New);
+			Out.Positions.Add(Mesh.Positions[Old]);
+			Out.Normals.Add(Mesh.Normals[Old]);
+			Out.UVs.Add(Mesh.UVs[Old]);
+			if (Mesh.Tangents.Num() > 0) { Out.Tangents.Add(Mesh.Tangents[Old]); }
+			if (Mesh.UV1s.Num() > 0) { Out.UV1s.Add(Mesh.UV1s[Old]); }
+			if (Mesh.Colors.Num() > 0) { Out.Colors.Add(Mesh.Colors[Old]); }
+			if (Mesh.IsSkinned())
+			{
+				Out.InfluenceJoints.Append(&Mesh.InfluenceJoints[Old * Slots], Slots);
+				Out.InfluenceWeights.Append(&Mesh.InfluenceWeights[Old * Slots], Slots);
+			}
+			Indices.Add(New);
+		}
+		Primitive.FirstVertex = First;
+		Primitive.NumVertices = Out.Positions.Num() - First;
+		Primitive.Indices = MoveTemp(Indices);
+	}
+	Mesh = MoveTemp(Out);
 }
 
 int32 FMantleVehicleBodyLODs::CountTriangles(const FMantleGlbMesh& Mesh)
