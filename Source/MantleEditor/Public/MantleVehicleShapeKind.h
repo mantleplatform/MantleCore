@@ -7,7 +7,7 @@
 
 /**
  * The vehicle side of the shared builder viewport (#793 step 4): there are no points to place, so it only tells the viewport what to draw
- * around the gray chassis the window shows (the window sets the mesh itself): the Mantle character seated at the driver's seat (a rider's or a pilot's),
+ * around the creator's model on its frame (the window sets the mesh itself), and a dot on each wheel (FMantleVehicleBuilder::MakeModelPreview): the Mantle character seated at the driver's seat (a rider's or a pilot's),
  * so a creator sees how big the vehicle is for a person, and a label on each seat and on the center of mass.
  */
 class MANTLEEDITOR_API FMantleVehicleShapeKind : public IMantleBuilderKind

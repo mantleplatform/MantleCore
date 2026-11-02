@@ -1,32 +1,33 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "SMantleVehicleBuilder.h"
 
+#include "MantleVehicleBlueprint.h"
 #include "MantleVehicleBuilder.h"
 #include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleChassisSkin.h"
+#include "MantleVehicleConverter.h"
 #include "MantleVehiclePreset.h"
 #include "MantleVehicleShapeKind.h"
 #include "MantleVehicleSource.h"
-#include "MantleVehicleSpawnPoint.h"
 #include "SMantleBuilderViewport.h"
 
 #include "AssetRegistry/AssetData.h"
 #include "DesktopPlatformModule.h"
 #include "Editor.h"
+#include "Engine/Blueprint.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
-#include "Engine/World.h"
 #include "Engine/StreamableRenderAsset.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Docking/TabManager.h"
 #include "IDesktopPlatform.h"
+#include "Materials/MaterialInterface.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "PropertyCustomizationHelpers.h"
 #include "ScopedTransaction.h"
 #include "Styling/AppStyle.h"
 #include "Subsystems/AssetEditorSubsystem.h"
-#include "UObject/Package.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
@@ -39,6 +40,7 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/SBoxPanel.h"
+#include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "MantleVehicleBuilder"
@@ -73,7 +75,7 @@ void SMantleVehicleBuilder::RegisterTab()
 {
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(TabName, FOnSpawnTab::CreateStatic(&MantleVehicleBuilderPanelPrivate::SpawnTab))
 		.SetDisplayName(LOCTEXT("TabTitle", "Build a vehicle"))
-		.SetTooltipText(LOCTEXT("TabTooltip", "Shape a vehicle players can drive in your place, or put your own model on one."))
+		.SetTooltipText(LOCTEXT("TabTooltip", "Make a vehicle players can drive from your own 3D model: pick its type, pick your model, check how it fits, and try it in your level."))
 		.SetMenuType(ETabSpawnerMenuType::Hidden);
 }
 
@@ -95,10 +97,12 @@ void SMantleVehicleBuilder::OpenTab()
 
 void SMantleVehicleBuilder::Construct(const FArguments& InArgs)
 {
+	PreviewKind = MakeShared<FMantleVehicleShapeKind>();
+
 	SAssignNew(Flow, SMantleBuilderFlow)
 		.Steps(MakeSteps())
 		.FinishLabel(LOCTEXT("Done", "Done"))
-		.OnFinish(FSimpleDelegate::CreateSP(this, &SMantleVehicleBuilder::FinishWindow));
+		.OnFinish(FSimpleDelegate::CreateSP(this, &SMantleVehicleBuilder::CloseWindow));
 
 	ChildSlot
 	[
@@ -112,14 +116,14 @@ TArray<FMantleBuilderStep> SMantleVehicleBuilder::MakeSteps()
 
 	{
 		FMantleBuilderStep& Step = Steps.AddDefaulted_GetRef();
-		Step.Title = LOCTEXT("StepType", "What are you building?");
-		Step.Help = LOCTEXT("StepTypeHelp", "Pick the closest match. Next you can change its size and shape, or use your own 3D model for its body.");
+		Step.Title = LOCTEXT("StepType", "What kind of vehicle?");
+		Step.Help = LOCTEXT("StepTypeHelp", "Pick the closest match. This decides how your vehicle drives or flies. Next you choose your own 3D model for it.");
 		Step.MakeContent = [this] { return MakeTypeStep(); };
 		Step.CanContinue = [this](FText& OutWhyNot)
 		{
 			if (SelectedPresetId.IsEmpty())
 			{
-				OutWhyNot = LOCTEXT("NeedType", "Pick what you are building to continue.");
+				OutWhyNot = LOCTEXT("NeedType", "Pick what kind of vehicle it is to continue.");
 				return false;
 			}
 			return true;
@@ -127,70 +131,53 @@ TArray<FMantleBuilderStep> SMantleVehicleBuilder::MakeSteps()
 	}
 	{
 		FMantleBuilderStep& Step = Steps.AddDefaulted_GetRef();
-		Step.Title = LOCTEXT("StepShape", "Shape it");
-		Step.Help = LOCTEXT("StepShapeHelp", "Change the size and shape and watch the gray picture change. Mantle works out how heavy it is and how it handles from them. If you will use your own 3D model, you can skip this.");
-		Step.MakeContent = [this] { return MakeShapeStep(); };
-	}
-	{
-		FMantleBuilderStep& Step = Steps.AddDefaulted_GetRef();
-		Step.Title = LOCTEXT("StepDrive", "Drive it");
-		Step.Help = LOCTEXT("StepDriveHelp", "Put your vehicle in your level, then try it out. No model needed: the gray vehicle drives as it is. You can go back and change the shape any time.");
-		Step.MakeContent = [this] { return MakeDriveStep(); };
-	}
-	{
-		FMantleBuilderStep& Step = Steps.AddDefaulted_GetRef();
-		Step.Title = LOCTEXT("StepModel", "Use your own model (optional)");
-		Step.Help = LOCTEXT("StepModelHelp", "Have a 3D model of your own? Pick it here and Mantle puts it on this type of vehicle. No model? Press Done: your gray vehicle is all set.");
+		Step.Title = LOCTEXT("StepModel", "Choose your vehicle's model");
+		Step.Help = LOCTEXT("StepModelHelp", "Every vehicle needs a 3D model. Pick one already in your project (a mesh or a vehicle Blueprint), or import a file from your computer. You will see it in the picture.");
 		Step.MakeContent = [this] { return MakeModelStep(); };
+		Step.CanContinue = [this](FText& OutWhyNot)
+		{
+			if (!Mesh.IsValid() || !MeshProblem.IsEmpty() || !bHaveModelInfo)
+			{
+				OutWhyNot = MeshProblem.IsEmpty() ? LOCTEXT("NeedModel", "Choose your vehicle's model to continue. A vehicle can't be made without one.") : MeshProblem;
+				return false;
+			}
+			return true;
+		};
+	}
+	{
+		FMantleBuilderStep& Step = Steps.AddDefaulted_GetRef();
+		Step.Title = LOCTEXT("StepFit", "Check the fit");
+		Step.Help = LOCTEXT("StepFitHelp", "Check that your model faces the right way, is the right size, and that its wheels and other moving parts are the right ones. Mantle filled in what it could find. The green dots in the picture are the wheels.");
+		Step.MakeContent = [this] { return MakeFitStep(); };
+	}
+	{
+		FMantleBuilderStep& Step = Steps.AddDefaulted_GetRef();
+		Step.Title = LOCTEXT("StepSeats", "Seats and paint");
+		Step.Help = LOCTEXT("StepSeatsHelp", "Check what Mantle found on your model: where the driver sits, and which parts of it are painted so players can change their color.");
+		Step.MakeContent = [this] { return MakeSeatsAndPaintStep(); };
+	}
+	{
+		FMantleBuilderStep& Step = Steps.AddDefaulted_GetRef();
+		Step.Title = FMantleThumbnailText::Heading();
+		Step.Help = LOCTEXT("StepThumbnailHelp", "The picture of this item in the library. Mantle takes one for you; you can choose the angle or use your own picture.");
+		Step.MakeContent = [this] { return MakeThumbnailStep(); };
+	}
+	{
+		FMantleBuilderStep& Step = Steps.AddDefaulted_GetRef();
+		Step.Title = LOCTEXT("StepBuild", "Build and drive");
+		Step.Help = LOCTEXT("StepBuildHelp", "Build your vehicle, put it in your level, then press Test Locally to drive it. You can go back to any step first and build again.");
+		Step.MakeContent = [this] { return MakeBuildStep(); };
+		Step.CanContinue = [this](FText& OutWhyNot)
+		{
+			if (!BuiltSource.IsValid())
+			{
+				OutWhyNot = LOCTEXT("NeedBuild", "Press Build my vehicle first.");
+				return false;
+			}
+			return true;
+		};
 	}
 	return Steps;
-}
-
-SMantleVehicleBuilder::~SMantleVehicleBuilder()
-{
-	// Closed any way but Done is a cancel: nothing of this window should be left in the level. (An editor that is shutting down is left alone.)
-	if (!bFinished && !IsEngineExitRequested())
-	{
-		RemoveGraySpawns();
-	}
-}
-
-void SMantleVehicleBuilder::FinishWindow()
-{
-	bFinished = true;
-	// With no model, the gray vehicle in the level is the result and stays. With a model, the model's vehicle is the one to drive and publish once it
-	// is in the level, and the gray one it replaced would be a second, unused vehicle left behind.
-	const UMantleVehicleSource* Built = BuiltSource.Get();
-	if (Built && FMantleVehicleBuilder::FindSpawn(*Built))
-	{
-		RemoveGraySpawns();
-	}
-	CloseWindow();
-}
-
-void SMantleVehicleBuilder::RemoveGraySpawns()
-{
-	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-	TArray<AMantleVehicleSpawnPoint*> Alive;
-	for (const TWeakObjectPtr<AMantleVehicleSpawnPoint>& Weak : GraySpawns)
-	{
-		// One the creator already deleted is gone from its level (an undo may bring it back; that is theirs to decide).
-		AMantleVehicleSpawnPoint* Spawn = Weak.Get();
-		if (IsValid(Spawn) && Spawn->GetLevel() && Spawn->GetWorld() == World)
-		{
-			Alive.Add(Spawn);
-		}
-	}
-	GraySpawns.Reset();
-	if (Alive.Num() == 0 || !World)
-	{
-		return;
-	}
-	const FScopedTransaction Transaction(LOCTEXT("RemoveGrayVehicles", "Remove gray vehicle from level"));
-	for (AMantleVehicleSpawnPoint* Spawn : Alive)
-	{
-		World->EditorDestroyActor(Spawn, /*bShouldModifyLevel*/ true);
-	}
 }
 
 void SMantleVehicleBuilder::CloseWindow()
@@ -202,7 +189,139 @@ void SMantleVehicleBuilder::CloseWindow()
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// 1. What are you building?
+// The picture.
+
+TSharedRef<SWidget> SMantleVehicleBuilder::WithPicture(const TSharedRef<SWidget>& Left)
+{
+	return SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot().AutoWidth().Padding(0.f, 0.f, 12.f, 0.f)
+		[
+			SNew(SBox).WidthOverride(420.f)
+			[
+				Left
+			]
+		]
+		+ SHorizontalBox::Slot().FillWidth(1.f)
+		[
+			MakePicture()
+		];
+}
+
+TSharedRef<SWidget> SMantleVehicleBuilder::MakePicture()
+{
+	using namespace MantleVehicleBuilderPanelPrivate;
+
+	const TSharedRef<SMantleBuilderViewport> Viewport = SNew(SMantleBuilderViewport).Kind(PreviewKind);
+	PreviewViewport = Viewport;
+	if (Preview.bOk && !bPreviewDirty)
+	{
+		// Opened again with nothing changed: the same picture, in a new viewport.
+		Viewport->SetMesh(Preview.Mesh.Get(), true);
+		Viewport->RefreshFromKind();
+	}
+	else
+	{
+		RebuildPreview(/*bFrame*/ true);
+	}
+
+	return SNew(SBox).MinDesiredHeight(320.f)
+		[
+			SNew(SOverlay)
+			+ SOverlay::Slot()
+			[
+				SNew(SBox)
+					.Visibility_Lambda([this] { return Preview.bOk ? EVisibility::Visible : EVisibility::Collapsed; })
+					[
+						Viewport
+					]
+			]
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(16.f)
+			[
+				SNew(STextBlock)
+					.AutoWrapText(true)
+					.Justification(ETextJustify::Center)
+					.Visibility_Lambda([this] { return Preview.bOk ? EVisibility::Collapsed : EVisibility::Visible; })
+					.ColorAndOpacity_Lambda([this] { return PreviewProblem.IsEmpty() ? FSlateColor::UseSubduedForeground() : FSlateColor(Bad); })
+					.Text_Lambda([this]
+					{
+						if (!PreviewProblem.IsEmpty())
+						{
+							return PreviewProblem;
+						}
+						if (SelectedPresetId.IsEmpty())
+						{
+							return LOCTEXT("PictureNoType", "Pick what kind of vehicle it is.");
+						}
+						return LOCTEXT("PictureNoModel", "Choose your vehicle's model next.");
+					})
+			]
+		];
+}
+
+void SMantleVehicleBuilder::MarkPreviewDirty()
+{
+	bPreviewDirty = true;
+	if (!bPreviewTimerPending)
+	{
+		bPreviewTimerPending = true;
+		RegisterActiveTimer(0.1f, FWidgetActiveTimerDelegate::CreateSP(this, &SMantleVehicleBuilder::OnPreviewTimer));
+	}
+}
+
+void SMantleVehicleBuilder::FlushPreview()
+{
+	if (bPreviewDirty)
+	{
+		RebuildPreview(/*bFrame*/ false);
+	}
+}
+
+EActiveTimerReturnType SMantleVehicleBuilder::OnPreviewTimer(double CurrentTime, float DeltaTime)
+{
+	bPreviewTimerPending = false;
+	FlushPreview();
+	return EActiveTimerReturnType::Stop;
+}
+
+void SMantleVehicleBuilder::RebuildPreview(const bool bFrame)
+{
+	bPreviewDirty = false;
+	PreviewProblem = FText::GetEmpty();
+	const TSharedPtr<SMantleBuilderViewport> Viewport = PreviewViewport.Pin();
+	// The viewport lets go of the old picture before it is discarded.
+	if (Viewport.IsValid())
+	{
+		Viewport->SetMesh(nullptr, false);
+	}
+	Preview.Discard();
+	PreviewKind->SetWheelDots(TArray<FVector>());
+
+	UObject* Model = Mesh.Get();
+	if (Model && !SelectedPresetId.IsEmpty() && bHaveModelInfo)
+	{
+		if (FMantleVehicleBuilder::MakeModelPreview(Model, SelectedPresetId, MakeBuildOptions(), Preview))
+		{
+			PreviewKind->SetSpec(Preview.Spec);
+			PreviewKind->SetWheelDots(Preview.WheelDots);
+			if (Viewport.IsValid())
+			{
+				Viewport->SetMesh(Preview.Mesh.Get(), bFrame);
+			}
+		}
+		else
+		{
+			PreviewProblem = MantleVehicleBuilderPanelPrivate::JoinSentences(Preview.Problems);
+		}
+	}
+	if (Viewport.IsValid())
+	{
+		Viewport->RefreshFromKind();
+	}
+	RefreshPaintChoices();
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 1. What kind of vehicle?
 
 TSharedRef<SWidget> SMantleVehicleBuilder::MakeTypeStep()
 {
@@ -229,22 +348,33 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeTypeStep()
 		];
 	}
 
-	return SNew(SScrollBox)
-		+ SScrollBox::Slot()
+	return SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot().AutoWidth().Padding(0.f, 0.f, 12.f, 0.f)
 		[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()
+			SNew(SBox).WidthOverride(420.f)
 			[
-				Cards
+				SNew(SScrollBox)
+				+ SScrollBox::Slot()
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						Cards
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
+					[
+						SNew(STextBlock)
+							.AutoWrapText(true)
+							.ColorAndOpacity(FSlateColor(Bad))
+							.Visibility_Lambda([this]() { return TypeProblem.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
+							.Text_Lambda([this]() { return TypeProblem; })
+					]
+				]
 			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
-			[
-				SNew(STextBlock)
-					.AutoWrapText(true)
-					.ColorAndOpacity(FSlateColor(Bad))
-					.Visibility_Lambda([this]() { return TypeProblem.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
-					.Text_Lambda([this]() { return TypeProblem; })
-			]
+		]
+		+ SHorizontalBox::Slot().FillWidth(1.f)
+		[
+			MakePicture()
 		];
 }
 
@@ -285,7 +415,7 @@ void SMantleVehicleBuilder::PickPreset(const FString& PresetId, const FText& Nam
 	{
 		return;
 	}
-	// The type's chassis at its own size: the starting point of the shape, and what Reset goes back to.
+	// The type's frame at its own size: the starting point of its sizes and feel.
 	FMantleChassisSpec Loaded;
 	FString Error;
 	if (!FMantleVehicleChassisBuilder::LoadSpec(PresetId, Loaded, Error))
@@ -297,44 +427,20 @@ void SMantleVehicleBuilder::PickPreset(const FString& PresetId, const FText& Nam
 	TypeProblem = FText::GetEmpty();
 	SelectedPresetId = PresetId;
 	SelectedPresetName = Name;
-	// A plane, helicopter or hovercraft is shaped by one Size held to the preset's own fit range.
+	// A plane, helicopter or hovercraft is sized by one Size held to the preset's own fit range.
 	const FMantleVehiclePreset* Picked = FMantleVehiclePresets::Find(PresetId);
 	Shape.Start(Loaded, Picked ? Picked->FitMinScale : 0.0, Picked ? Picked->FitMaxScale : 0.0);
 	bPreviewDirty = false;
 
 	// A different type is a different vehicle: what was made for the last one stays in the project, and this window stops pointing at it.
-	GrayName.Reset();
-	GrayPresetId.Reset();
-	GraySource.Reset();
-	GraySignature.Reset();
-	GrayExtra.Reset();
-	DriveStatus = FText::GetEmpty();
-	GrayPlaceNote.Reset();
-	BuiltSource.Reset();
-	if (ThumbnailSection.IsValid())
-	{
-		ThumbnailSection->Refresh();
-	}
-	bHaveLastBuild = false;
-	SuggestedSize.Reset();
-	SaveStatus = FText::GetEmpty();
+	ForgetBuild();
 
-	// A model already picked is read again for the new type: its moving parts, its facing and its size are the new type's.
+	// A model already picked is read again for the new type: its moving parts, its facing, its size and whether it fits are the new type's.
 	ReadModel();
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// 2. Shape it.
-
-void SMantleVehicleBuilder::SetDimension(const EMantleVehicleDimension Dimension, const double Value)
-{
-	// The session holds the size to its range and writes the note, the summary and the warnings at once; it says whether a size really changed (the
-	// same size again, as a drag's last step and its commit are, changes nothing). Only the picture waits: it is redrawn once, shortly.
-	if (Shape.SetDimension(Dimension, Value))
-	{
-		ShapeChanged();
-	}
-}
+// Size and feel.
 
 void SMantleVehicleBuilder::SetShapeSize(const double Value)
 {
@@ -362,9 +468,7 @@ void SMantleVehicleBuilder::SetPassengerSeat(const bool bOn)
 
 void SMantleVehicleBuilder::ShapeChanged()
 {
-	// What it said about the vehicle in the level was about the shape before.
-	DriveStatus = FText::GetEmpty();
-	// So is the build: a vehicle built from the old shape is not this shape's, and "Put it in my level", "Show its settings" and Done would hand on its old numbers.
+	// A vehicle built before the change is not this one's: "Put it in my level", "Show its settings" and Done would hand on its old numbers.
 	if (BuiltSource.IsValid() || bHaveLastBuild)
 	{
 		ForgetBuild();
@@ -372,121 +476,9 @@ void SMantleVehicleBuilder::ShapeChanged()
 	MarkPreviewDirty();
 }
 
-FReply SMantleVehicleBuilder::OnResetShape()
-{
-	if (Shape.Reset())
-	{
-		DriveStatus = FText::GetEmpty();
-		bPreviewDirty = false;
-		RebuildPreview(/*bFrame*/ true);
-	}
-	return FReply::Handled();
-}
-
-void SMantleVehicleBuilder::MarkPreviewDirty()
-{
-	bPreviewDirty = true;
-	if (!bPreviewTimerPending)
-	{
-		bPreviewTimerPending = true;
-		RegisterActiveTimer(0.1f, FWidgetActiveTimerDelegate::CreateSP(this, &SMantleVehicleBuilder::OnPreviewTimer));
-	}
-}
-
-void SMantleVehicleBuilder::FlushPreview()
-{
-	if (bPreviewDirty)
-	{
-		bPreviewDirty = false;
-		RebuildPreview(/*bFrame*/ false);
-	}
-}
-
-EActiveTimerReturnType SMantleVehicleBuilder::OnPreviewTimer(double CurrentTime, float DeltaTime)
-{
-	bPreviewTimerPending = false;
-	FlushPreview();
-	return EActiveTimerReturnType::Stop;
-}
-
-void SMantleVehicleBuilder::RebuildPreview(const bool bFrame)
-{
-	PreviewProblem = FText::GetEmpty();
-	if (ShapeKind.IsValid())
-	{
-		ShapeKind->SetSpec(Shape.GetShaped());
-	}
-	const TSharedPtr<SMantleBuilderViewport> Viewport = ShapeViewport.Pin();
-	if (!Viewport.IsValid())
-	{
-		return;
-	}
-	FMantleVehicleAsset Asset;
-	FString Error;
-	if (!FMantleVehicleChassisBuilder::MakeAsset(Shape.GetShaped(), Asset, Error))
-	{
-		PreviewProblem = FText::Format(LOCTEXT("PreviewNotMade", "The picture can't show these sizes ({0}). Change a size."), FText::FromString(FMantleVehicleShape::PlainReason(Error)));
-		Viewport->RefreshFromKind();
-		return;
-	}
-	UMantleBuiltVehicle* Built = UMantleBuiltVehicle::Build(Asset, GetTransientPackage(), &Error);
-	if (!Built)
-	{
-		PreviewProblem = FText::Format(LOCTEXT("PreviewNotBuilt", "The picture can't show these sizes ({0}). Change a size."), FText::FromString(FMantleVehicleShape::PlainReason(Error)));
-		Viewport->RefreshFromKind();
-		return;
-	}
-	PreviewVehicle.Reset(Built);
-	Viewport->SetMesh(Built->Mesh.Get(), bFrame);
-	Viewport->RefreshFromKind();
-}
-
-TSharedRef<SWidget> SMantleVehicleBuilder::MakeDimensionRow(const EMantleVehicleDimension Dimension)
-{
-	// The slider's range depends on the other sizes (wheels never touch), so it asks again each time it is drawn. Only the slider has it: the
-	// spin box's own limits stay unset, because it would snap a typed or dragged number to them before the session sees it, and a size held to its
-	// range is the session's to say so (FMantleVehicleShape::Edit writes the note).
-	const FText Label = FText::Format(LOCTEXT("DimensionLabel", "{0} (cm)"), FMantleVehicleShape::Label(Dimension));
-	return SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 4.f, 8.f, 4.f)
-		[
-			SNew(SBox).WidthOverride(150.f)
-			[
-				SNew(STextBlock).Text(Label).ToolTipText(FMantleVehicleShape::Help(Dimension))
-			]
-		]
-		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(0.f, 4.f)
-		[
-			SNew(SSpinBox<float>)
-				.MinSliderValue_Lambda([this, Dimension] { return TOptional<float>(static_cast<float>(Shape.GetHeldRange(Dimension).Min)); })
-				.MaxSliderValue_Lambda([this, Dimension] { return TOptional<float>(static_cast<float>(Shape.GetHeldRange(Dimension).Max)); })
-				.Delta(1.f)
-				.MinFractionalDigits(0)
-				.MaxFractionalDigits(1)
-				.ToolTipText(FMantleVehicleShape::Help(Dimension))
-				.Value_Lambda([this, Dimension] { return static_cast<float>(Shape.GetDimensions().Get(Dimension)); })
-				.OnValueChanged_Lambda([this, Dimension](float Value) { SetDimension(Dimension, Value); })
-				.OnEndSliderMovement_Lambda([this](float) { FlushPreview(); })
-				.OnValueCommitted_Lambda([this, Dimension](float Value, ETextCommit::Type)
-				{
-					SetDimension(Dimension, Value);
-					FlushPreview();
-				})
-		]
-		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.f, 0.f, 0.f, 0.f)
-		[
-			SNew(SBox).WidthOverride(64.f)
-			[
-				SNew(STextBlock)
-					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-					.Text_Lambda([this, Dimension] { return FMantleVehicleShape::LengthText(Shape.GetDimensions().Get(Dimension)); })
-			]
-		];
-}
-
 TSharedRef<SWidget> SMantleVehicleBuilder::MakeSizeRow()
 {
-	// The Size is shaped through the session, which holds it to the preset's own fit range and says so; the slider only covers that range.
+	// The Size is set through the session, which holds it to the preset's own fit range and says so; the slider only covers that range.
 	const FText Help = FMantleVehicleShape::SizeHelp(FMantleVehicleShape::FamilyOf(Shape.GetArchetype()));
 	return SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 4.f, 8.f, 4.f)
@@ -584,297 +576,43 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakePassengerRow()
 
 void SMantleVehicleBuilder::AddFeelRows(const TSharedRef<SVerticalBox>& Rows)
 {
-	bool bAnyFeel = false;
 	for (const EMantleVehicleFeel Feel : MantleVehicleFeels)
 	{
 		if (Shape.HasFeel(Feel))
 		{
-			bAnyFeel = true;
 			Rows->AddSlot().AutoHeight()
 			[
 				MakeFeelRow(Feel)
 			];
 		}
 	}
-	if (Shape.HasPassengerOption())
-	{
-		Rows->AddSlot().AutoHeight().Padding(0.f, bAnyFeel ? 8.f : 4.f, 0.f, 4.f)
-		[
-			MakePassengerRow()
-		];
-	}
-}
-
-TSharedRef<SWidget> SMantleVehicleBuilder::MakeShapeStep()
-{
-	using namespace MantleVehicleBuilderPanelPrivate;
-	if (SelectedPresetId.IsEmpty())
-	{
-		return SNew(STextBlock).Text(LOCTEXT("PickTypeFirst", "Pick what you are building first."));
-	}
-
-	ShapeKind = MakeShared<FMantleVehicleShapeKind>();
-	ShapeKind->SetSpec(Shape.GetShaped());
-	const TSharedRef<SMantleBuilderViewport> Viewport = SNew(SMantleBuilderViewport).Kind(ShapeKind);
-	ShapeViewport = Viewport;
-	bPreviewDirty = false;
-	RebuildPreview(/*bFrame*/ true);
-
-	TSharedRef<SVerticalBox> Rows = SNew(SVerticalBox);
-	if (Shape.UsesSize())
-	{
-		// A plane, helicopter or hovercraft grows as one (its wing, rotor or pads are sized for what it lifts), so it has a Size and not eight sizes;
-		// and a seat or a top-speed feel where its type has one.
-		Rows->AddSlot().AutoHeight()
-		[
-			MakeSizeRow()
-		];
-		AddFeelRows(Rows);
-	}
-	else
-	{
-		for (const EMantleVehicleDimension Dimension : MantleVehicleDimensions)
-		{
-			// A motorcycle's wheels are in a line: it has no track to change.
-			if (FMantleVehicleShape::IsEditable(Shape.GetArchetype(), Dimension))
-			{
-				Rows->AddSlot().AutoHeight()
-				[
-					MakeDimensionRow(Dimension)
-				];
-			}
-		}
-		// How it handles, beyond its sizes: grip, power, suspension and top speed, and the passenger seat where it has one.
-		Rows->AddSlot().AutoHeight().Padding(0.f, 10.f, 0.f, 2.f)
-		[
-			SNew(STextBlock)
-				.Font(FAppStyle::GetFontStyle("BoldFont"))
-				.Text(LOCTEXT("HandlingTitle", "How it feels to drive"))
-		];
-		AddFeelRows(Rows);
-	}
-
-	return SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot().AutoWidth().Padding(0.f, 0.f, 12.f, 0.f)
-		[
-			SNew(SBox).WidthOverride(400.f)
-			[
-				SNew(SScrollBox)
-				+ SScrollBox::Slot()
-				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()
-					[
-						Rows
-					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 8.f, 0.f, 8.f)
-					[
-						SNew(SButton)
-							.ToolTipText(LOCTEXT("ResetShapeTip", "Put the shape back to what this type starts with."))
-							.IsEnabled_Lambda([this] { return Shape.IsShaped(); })
-							.OnClicked(this, &SMantleVehicleBuilder::OnResetShape)
-							.Text_Lambda([this] { return FText::Format(LOCTEXT("ResetShape", "Reset to {0}"), SelectedPresetName); })
-					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 4.f)
-					[
-						SNew(STextBlock)
-							.Font(FAppStyle::GetFontStyle("BoldFont"))
-							.AutoWrapText(true)
-							.Text_Lambda([this] { return Shape.GetSummary(); })
-					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 4.f)
-					[
-						SNew(STextBlock)
-							.AutoWrapText(true)
-							.ColorAndOpacity(Warn)
-							.Visibility_Lambda([this] { return Shape.GetWarnings().IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
-							.Text_Lambda([this] { return Shape.GetWarnings(); })
-					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 4.f)
-					[
-						SNew(STextBlock)
-							.AutoWrapText(true)
-							.ColorAndOpacity(FSlateColor(Bad))
-							.Visibility_Lambda([this] { return PreviewProblem.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
-							.Text_Lambda([this] { return PreviewProblem; })
-					]
-				]
-			]
-		]
-		+ SHorizontalBox::Slot().FillWidth(1.f)
-		[
-			SNew(SBox).MinDesiredHeight(320.f)
-			[
-				Viewport
-			]
-		];
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// 3. Drive it.
-
-TSharedRef<SWidget> SMantleVehicleBuilder::MakeDriveStep()
-{
-	using namespace MantleVehicleBuilderPanelPrivate;
-	return SNew(SScrollBox)
-		+ SScrollBox::Slot()
-		[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 0.f, 0.f, 8.f)
-			[
-				SNew(STextBlock)
-					.AutoWrapText(true)
-					.Text_Lambda([this] { return FText::Format(LOCTEXT("DriveSummary", "Your {0}. {1}"), SelectedPresetName, Shape.GetSummary()); })
-			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 0.f, 0.f, 8.f)
-			[
-				SNew(STextBlock)
-					.AutoWrapText(true)
-					.ColorAndOpacity(Warn)
-					.Visibility_Lambda([this] { return FMantleVehicleShape::DriveAdvice(Shape.GetArchetype()).IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
-					.Text_Lambda([this] { return FMantleVehicleShape::DriveAdvice(Shape.GetArchetype()); })
-			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 4.f, 0.f, 8.f)
-			[
-				SNew(SBox).HeightOverride(44.f)
-				[
-					SNew(SButton)
-						.HAlign(HAlign_Center)
-						.VAlign(VAlign_Center)
-						.ButtonStyle(FAppStyle::Get(), "PrimaryButton")
-						.OnClicked(this, &SMantleVehicleBuilder::OnPutGrayInLevel)
-						.ToolTipText(LOCTEXT("PutGrayTip", "Saves your vehicle in your project and adds it to the level you have open, in front of you. Then press Test Locally to drive it."))
-						[
-							SNew(STextBlock)
-								.Font(FAppStyle::GetFontStyle("BoldFont"))
-								.Text(LOCTEXT("PutGrayButton", "Put it in my level"))
-						]
-				]
-			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 0.f, 0.f, 8.f)
-			[
-				SNew(STextBlock)
-					.AutoWrapText(true)
-					.Visibility_Lambda([this] { return DriveStatus.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
-					.ColorAndOpacity_Lambda([this] { return bDriveFailed ? FSlateColor(Bad) : FSlateColor(Good); })
-					.Text_Lambda([this] { return DriveStatus; })
-			]
-			+ SVerticalBox::Slot().AutoHeight()
-			[
-				SNew(STextBlock)
-					.AutoWrapText(true)
-					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-					.Text(LOCTEXT("DriveNext", "Next: press Test Locally (in the toolbar, next to Play) to drive it. Changed your mind about the shape? Go back, change it, and press Put it in my level again: the vehicle in your level is updated."))
-			]
-		];
-}
-
-FReply SMantleVehicleBuilder::OnPutGrayInLevel()
-{
-	using namespace MantleVehicleBuilderPanelPrivate;
-	if (SelectedPresetId.IsEmpty())
-	{
-		return FReply::Handled();
-	}
-	bDriveFailed = true;
-
-	// A new vehicle takes the first free name; the same one again (the shape changed) is remade under its own.
-	if (GrayName.IsEmpty() || GrayPresetId != SelectedPresetId)
-	{
-		GrayName = FMantleVehicleBuilder::FirstFreeChassisName(SelectedPresetName.ToString());
-		GrayPresetId = SelectedPresetId;
-	}
-	// The same sizes as the vehicle already made for them: nothing to remake, only to put in the level (or to find there).
-	const FString Signature = GrayPresetId + TEXT("|") + GrayName + TEXT("|") + Shape.Signature();
-	UMantleVehicleSource* Source = GraySource.Get();
-	const bool bRemade = !Source || Signature != GraySignature;
-	if (bRemade)
-	{
-		const FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildChassis(Shape.GetShaped(), FMantleVehicleBuilder::ChassisFolder() / GrayName, GrayName);
-		if (!Result.bOk || !Result.Source)
-		{
-			DriveStatus = FText::Format(LOCTEXT("GrayNotMade", "Your vehicle could not be made. {0}"), JoinSentences(Result.Problems));
-			return FReply::Handled();
-		}
-		Source = Result.Source;
-		GraySource = Source;
-		GraySignature = Signature;
-		GrayExtra.Reset();
-		if (Result.bSaved)
-		{
-			GrayExtra = FString::Printf(TEXT(" Saved as %s in the MantleVehicles folder of your Content Browser."), *GrayName);
-		}
-		else if (!Result.SaveProblem.IsEmpty())
-		{
-			GrayExtra = FString::Printf(TEXT(" Not saved: %s"), *Result.SaveProblem);
-		}
-		for (const FString& Note : Result.Notes)
-		{
-			GrayExtra += TEXT(" ") + Note;
-		}
-		bGrayNotSaved = !Result.bSaved && !Result.SaveProblem.IsEmpty();
-	}
-
-	// One spawn for the vehicle: a second press updates it (the spawn names the asset, which was just remade) instead of adding another.
-	FString Problem;
-	FText Said;
-	AMantleVehicleSpawnPoint* Placed = nullptr;
-	if (AMantleVehicleSpawnPoint* Existing = FMantleVehicleBuilder::FindSpawn(*Source))
-	{
-		GraySpawns.AddUnique(Existing);
-		if (GEditor)
-		{
-			GEditor->SelectNone(/*bNoteSelectionChange*/ false, /*bDeselectBSPSurfs*/ true);
-			GEditor->SelectActor(Existing, /*bInSelected*/ true, /*bNotify*/ true);
-		}
-		Said = bRemade ? FText::Format(LOCTEXT("GrayUpdated", "Your {0} in your level is updated to the new shape."), SelectedPresetName)
-			: FText::Format(LOCTEXT("GrayAlreadyThere", "Your {0} is already in your level, and nothing about it has changed."), SelectedPresetName);
-	}
-	else if (FMantleVehicleBuilder::PlaceInLevel(*Source, Problem, &Placed, &GrayPlaceNote))
-	{
-		// Remembered, so Cancel (or Done with a model on it instead) takes it out of the level again.
-		if (Placed)
-		{
-			GraySpawns.AddUnique(Placed);
-		}
-		Said = FText::Format(LOCTEXT("GrayPlaced", "Your {0} is in your level."), SelectedPresetName);
-	}
-	else
-	{
-		DriveStatus = FText::FromString(Problem);
-		return FReply::Handled();
-	}
-	DriveStatus = FText::Format(LOCTEXT("GrayStatus", "{0}{1}{2} Press Test Locally (in the toolbar, next to Play) to drive it."), Said, FText::FromString(GrayExtra),
-		FText::FromString(GrayPlaceNote.IsEmpty() ? FString() : FString(TEXT(" ")) + GrayPlaceNote));
-	bDriveFailed = bGrayNotSaved;
-	return FReply::Handled();
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// 4. Use your own model (optional): the model flow.
+// 2. Choose your vehicle's model.
 
 TSharedRef<SWidget> SMantleVehicleBuilder::MakeModelStep()
 {
 	using namespace MantleVehicleBuilderPanelPrivate;
-	ResultBox = SNew(SVerticalBox);
 
-	TSharedRef<SWidget> Content = SNew(SScrollBox)
+	TSharedRef<SWidget> Left = SNew(SScrollBox)
 		+ SScrollBox::Slot()
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 4)
 			[
 				SNew(SObjectPropertyEntryBox)
-					.AllowedClass(UStreamableRenderAsset::StaticClass())
+					.AllowedClass(UObject::StaticClass())
 					.OnShouldFilterAsset_Lambda([](const FAssetData& Asset)
 					{
-						// Only models are listed; a solid one is accepted so the window can say why it won't do.
+						// Meshes and vehicle Blueprints are listed; a solid mesh is accepted so the window can say why it won't do.
 						const UClass* AssetClass = Asset.GetClass();
-						return !AssetClass || !(AssetClass->IsChildOf(USkeletalMesh::StaticClass()) || AssetClass->IsChildOf(UStaticMesh::StaticClass()));
+						return !AssetClass || !(AssetClass->IsChildOf(USkeletalMesh::StaticClass()) || AssetClass->IsChildOf(UStaticMesh::StaticClass())
+							|| AssetClass->IsChildOf(UBlueprint::StaticClass()));
 					})
 					.AllowClear(true)
 					.DisplayThumbnail(true)
-					.ObjectPath_Lambda([this] { return Mesh.IsValid() ? Mesh->GetPathName() : FString(); })
+					.ObjectPath_Lambda([this] { return BuildSource.IsValid() ? BuildSource->GetPathName() : (Mesh.IsValid() ? Mesh->GetPathName() : FString()); })
 					.OnObjectChanged_Lambda([this](const FAssetData& Asset) { SetMesh(Asset); })
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 4)
@@ -884,9 +622,9 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeModelStep()
 				[
 					SNew(SButton)
 						.ContentPadding(FMargin(12, 4))
-						.OnClicked(this, &SMantleVehicleBuilder::OnPickFbx)
-						.ToolTipText(LOCTEXT("PickFbxTip", "Choose a model file (.fbx, .obj, .gltf or .glb) on your computer. Mantle imports it into your project (under MantleVehicles > Imported) and picks it here."))
-						.Text(LOCTEXT("PickFbx", "Pick a model file..."))
+						.OnClicked(this, &SMantleVehicleBuilder::OnPickFile)
+						.ToolTipText(LOCTEXT("PickFileTip", "Choose a model file (.fbx, .obj, .gltf or .glb) on your computer. Mantle imports it into your project (under MantleVehicles > Imported) and picks it here."))
+						.Text(LOCTEXT("PickFile", "Import a file..."))
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(8, 0, 0, 0)
 				[
@@ -905,62 +643,46 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeModelStep()
 					.Visibility_Lambda([this]() { return MeshProblem.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
 					.Text_Lambda([this]() { return MeshProblem; })
 			]
+			// The model does not look like the type picked in step 1: say so, and offer the type it looks like.
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 4)
+			[
+				SNew(STextBlock)
+					.AutoWrapText(true)
+					.ColorAndOpacity(FSlateColor(Warn))
+					.Visibility_Lambda([this]() { return bHaveModelInfo && TypeMatch.Verdict != EMantleVehicleTypeVerdict::Fits && !TypeMatch.Message.IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed; })
+					.Text_Lambda([this]() { return FText::FromString(TypeMatch.Message); })
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
+			[
+				SNew(SButton)
+					.HAlign(HAlign_Left)
+					.ContentPadding(FMargin(12, 4))
+					.Visibility_Lambda([this]() { return bHaveModelInfo && TypeMatch.Suggests() ? EVisibility::Visible : EVisibility::Collapsed; })
+					.OnClicked(this, &SMantleVehicleBuilder::OnSwitchType)
+					.ToolTipText(LOCTEXT("SwitchTip", "Change step 1's answer to the kind of vehicle your model looks like."))
+					.Text_Lambda([this]() { return FText::FromString(TypeMatch.ButtonText); })
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 4)
+			[
+				SNew(STextBlock)
+					.AutoWrapText(true)
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					.Visibility_Lambda([this]() { return BlueprintNotes.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
+					.Text_Lambda([this]() { return JoinSentences(BlueprintNotes); })
+			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
 			[
 				SNew(STextBlock)
 					.AutoWrapText(true)
 					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-					.Text(LOCTEXT("ModelHelp", "Pick the model you imported or bought: a Static Mesh or a Skeletal Mesh. A car whose wheels are separate parts named like Wheel_FL and Wheel_FR is fitted to its own wheels. Any other model, such as a spaceship, a plane or a bike, goes on the gray vehicle as its skin: the gray vehicle stays the physics, and you can point out which parts of your model are its wheels, propellers or rotors so they move. Have an FBX, OBJ or glTF file? Press Pick a model file, and Mantle imports it and picks it for you."))
-			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 16)
-			[
-				SAssignNew(ModelRowsBox, SVerticalBox)
-			]
-			// #124: the library card's picture, the same Thumbnail section every Mantle uploader shows.
-			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)
-			[
-				SAssignNew(ThumbnailSection, SMantleThumbnailSection)
-					.Target(FMantleThumbnailTarget::Square())
-					.AngleSliders(true)
-					.DefaultAngle(FMantleModelThumbnail::DefaultView())
-					.Choice_Lambda([this] { return ThumbnailChoice; })
-					.OnChoiceChanged_Raw(this, &SMantleVehicleBuilder::ThumbnailChoiceChanged)
-					.Render(FMantleVehicleThumbnail::PreviewFor([this]() -> const UMantleVehicleSource* { return BuiltSource.Get(); }, [this]() -> UObject* { return Mesh.Get(); }))
-			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)
-			[
-				SNew(SBox).HeightOverride(44.f)
-				[
-					SNew(SButton)
-						.HAlign(HAlign_Center)
-						.VAlign(VAlign_Center)
-						.ButtonStyle(FAppStyle::Get(), "PrimaryButton")
-						.IsEnabled_Raw(this, &SMantleVehicleBuilder::CanBuild)
-						.OnClicked(this, &SMantleVehicleBuilder::OnBuild)
-						.ToolTipText(LOCTEXT("BuildTooltip", "Pick a vehicle type and a model first, then press this."))
-						[
-							SNew(STextBlock)
-								.Font(FAppStyle::GetFontStyle("BoldFont"))
-								.Text(LOCTEXT("BuildButton", "Build my vehicle"))
-						]
-				]
-			]
-			+ SVerticalBox::Slot().AutoHeight()
-			[
-				ResultBox.ToSharedRef()
+					.Text(LOCTEXT("ModelHelp", "You can pick a Static Mesh, a Skeletal Mesh, or a vehicle Blueprint (such as a Chaos vehicle from a marketplace pack). A Blueprint made of several pieces is merged into one model for you. Have an FBX, OBJ, glTF or GLB file? Press Import a file and Mantle imports it and picks it for you."))
 			]
 		];
 
-	// The step is built again each time it is opened: the model's rows and what the last build said are shown again.
-	RebuildModelRows();
-	if (bHaveLastBuild)
-	{
-		ShowResult(LastBuild);
-	}
-	return Content;
+	return WithPicture(Left);
 }
 
-FReply SMantleVehicleBuilder::OnPickFbx()
+FReply SMantleVehicleBuilder::OnPickFile()
 {
 	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
 	if (!DesktopPlatform)
@@ -971,18 +693,18 @@ FReply SMantleVehicleBuilder::OnPickFbx()
 	}
 	const void* ParentWindow = FSlateApplication::IsInitialized() ? FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr) : nullptr;
 	TArray<FString> Files;
-	if (!DesktopPlatform->OpenFileDialog(ParentWindow, TEXT("Pick your model"), LastFbxFolder, FString(), TEXT("3D model (*.fbx;*.obj;*.gltf;*.glb)|*.fbx;*.obj;*.gltf;*.glb|FBX (*.fbx)|*.fbx|OBJ (*.obj)|*.obj|glTF (*.gltf;*.glb)|*.gltf;*.glb"), EFileDialogFlags::None, Files)
+	if (!DesktopPlatform->OpenFileDialog(ParentWindow, TEXT("Pick your model"), LastImportFolder, FString(), TEXT("3D model (*.fbx;*.obj;*.gltf;*.glb)|*.fbx;*.obj;*.gltf;*.glb|FBX (*.fbx)|*.fbx|OBJ (*.obj)|*.obj|glTF (*.gltf;*.glb)|*.gltf;*.glb"), EFileDialogFlags::None, Files)
 		|| Files.IsEmpty())
 	{
 		// Canceled: nothing changes and there is nothing to say.
 		return FReply::Handled();
 	}
-	LastFbxFolder = FPaths::GetPath(Files[0]);
-	ImportFbx(Files[0]);
+	LastImportFolder = FPaths::GetPath(Files[0]);
+	ImportFile(Files[0]);
 	return FReply::Handled();
 }
 
-void SMantleVehicleBuilder::ImportFbx(const FString& File)
+void SMantleVehicleBuilder::ImportFile(const FString& File)
 {
 	FString Error;
 	UObject* Model = FMantleVehicleBuilder::ImportModelFile(File, Error);
@@ -993,14 +715,23 @@ void SMantleVehicleBuilder::ImportFbx(const FString& File)
 		return;
 	}
 	bImportFailed = false;
-	ImportStatus = FText::Format(LOCTEXT("Imported", "Imported {0} into {1}. It is picked below."), FText::FromString(Model->GetName()),
+	ImportStatus = FText::Format(LOCTEXT("Imported", "Imported {0} into {1}. It is picked above."), FText::FromString(Model->GetName()),
 		FText::FromString(FPackageName::GetLongPackagePath(Model->GetOutermost()->GetName())));
 	SetMesh(FAssetData(Model));
 }
 
+FReply SMantleVehicleBuilder::OnSwitchType()
+{
+	if (TypeMatch.Suggests() && !TypeMatch.SuggestedType.IsEmpty())
+	{
+		PickPreset(TypeMatch.SuggestedType, FText::FromString(TypeMatch.SuggestedName));
+	}
+	return FReply::Handled();
+}
+
 bool SMantleVehicleBuilder::CanBuild() const
 {
-	return !SelectedPresetId.IsEmpty() && Mesh.IsValid();
+	return !SelectedPresetId.IsEmpty() && Mesh.IsValid() && BuildSource.IsValid() && MeshProblem.IsEmpty();
 }
 
 void SMantleVehicleBuilder::ForgetBuild()
@@ -1036,20 +767,46 @@ FVector2f SMantleVehicleBuilder::ModelSizeRange() const
 void SMantleVehicleBuilder::SetMesh(const FAssetData& Asset)
 {
 	UObject* Picked = Asset.GetAsset();
-	UObject* Model = Cast<USkeletalMesh>(Picked) || Cast<UStaticMesh>(Picked) ? Picked : nullptr;
+	UObject* Model = nullptr;
+	UObject* Source = nullptr;
+	TArray<FString> Notes;
+	FText Problem;
+	if (UBlueprint* Blueprint = Cast<UBlueprint>(Picked))
+	{
+		// A vehicle Blueprint: its skeletal body (a Chaos vehicle, the wheels and parts on it riding along), or its static pieces merged into one model.
+		const FMantleVehicleBlueprintModel Resolved = FMantleVehicleBlueprint::Resolve(Blueprint);
+		Notes = Resolved.Notes;
+		if (Resolved.Model)
+		{
+			Model = Resolved.Model;
+			Source = Resolved.Around.IsSet() ? static_cast<UObject*>(Blueprint) : Resolved.Model;
+		}
+		else
+		{
+			Problem = MantleVehicleBuilderPanelPrivate::JoinSentences(Resolved.Problems);
+		}
+	}
+	else if (Cast<USkeletalMesh>(Picked) || Cast<UStaticMesh>(Picked))
+	{
+		Model = Picked;
+		Source = Picked;
+	}
 	// Another model (or none) is another vehicle: the last build was of the old one, so it is forgotten and cannot be placed by mistake.
 	if (!Model || Model != Mesh.Get())
 	{
 		ForgetBuild();
 	}
 	Mesh = Model;
-	MeshProblem = FText::GetEmpty();
+	BuildSource = Source;
+	BlueprintNotes = Notes;
+	MeshProblem = Problem;
+	bPaintEdited = false;
 	LoadThumbnailChoice();
 	ReadModel();
-	if (Asset.IsValid() && !Model)
+	if (Asset.IsValid() && !Model && MeshProblem.IsEmpty())
 	{
-		// The picker lets any model through so a wrong one can be explained here, instead of being refused without a word.
-		MeshProblem = LOCTEXT("NotAModel", "That isn't a model. Pick a Static Mesh or a Skeletal Mesh.");
+		// The picker lets any asset through so a wrong one can be explained here, instead of being refused without a word.
+		MeshProblem = LOCTEXT("NotAModel", "That isn't a model. Pick a Static Mesh, a Skeletal Mesh or a vehicle Blueprint.");
 	}
 }
 
@@ -1092,6 +849,9 @@ void SMantleVehicleBuilder::ApplyThumbnailChoice(FMantleVehicleBuildResult& Resu
 	}
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Reading the model.
+
 void SMantleVehicleBuilder::SetTwinEngine(const bool bOn)
 {
 	if (bOn == bTwinEngine)
@@ -1111,10 +871,12 @@ void SMantleVehicleBuilder::ReadModel(const TOptional<bool> Twin)
 	PartMap = FMantleVehicleModelMap();
 	ModelYaw = 0.0;
 	ProposalText.Reset();
+	TypeMatch = FMantleVehicleTypeMatch();
 	UObject* Picked = Mesh.Get();
 	if (!Picked || SelectedPresetId.IsEmpty())
 	{
 		RebuildModelRows();
+		RebuildPreview(/*bFrame*/ true);
 		return;
 	}
 	FString Error;
@@ -1122,13 +884,16 @@ void SMantleVehicleBuilder::ReadModel(const TOptional<bool> Twin)
 	{
 		MeshProblem = FText::FromString(Error);
 		RebuildModelRows();
+		RebuildPreview(/*bFrame*/ true);
 		return;
 	}
 	bHaveModelInfo = true;
+	// Does the model look like the type picked? Advice only: the build is never stopped by it.
+	TypeMatch = FMantleVehicleTypeMatchCheck::Check(ModelInfo, SelectedPresetId);
 	bUseSkin = !FMantleVehicleBuilder::FitsOwnWheels(Picked, SelectedPresetId);
 	if (bUseSkin)
 	{
-		// A plane with two propellers is a twin: the gray vehicle has a propeller bone for each. The shape starts again from that chassis.
+		// A plane with two propellers is a twin: the frame has a propeller bone for each. The sizes start again from that frame.
 		FMantleChassisSpec Base;
 		if (FMantleVehicleChassisBuilder::LoadSpec(SelectedPresetId, Base, Error))
 		{
@@ -1140,15 +905,16 @@ void SMantleVehicleBuilder::ReadModel(const TOptional<bool> Twin)
 				ShapeChanged();
 			}
 		}
-		FMantleVehicleAsset Gray;
-		if (FMantleVehicleChassisBuilder::MakeAsset(Shape.GetArchetype(), Gray, Error))
+		FMantleVehicleAsset Frame;
+		if (FMantleVehicleChassisBuilder::MakeAsset(Shape.GetArchetype(), Frame, Error))
 		{
-			PartSlots = FMantleVehicleChassisSkin::PartSlots(Shape.GetArchetype(), Gray.Body);
+			PartSlots = FMantleVehicleChassisSkin::PartSlots(Shape.GetArchetype(), Frame.Body);
 			ModelYaw = FMantleVehicleChassisSkin::SuggestMapAndYaw(PartSlots, ModelInfo, PartMap);
 		}
 		ProposeShape();
 	}
 	RebuildModelRows();
+	RebuildPreview(/*bFrame*/ true);
 }
 
 void SMantleVehicleBuilder::ProposeShape()
@@ -1182,10 +948,11 @@ void SMantleVehicleBuilder::SetModelYaw(const double Degrees)
 		return;
 	}
 	ModelYaw = Degrees;
-	// The model's length and width change with the way it faces, and so does the size the chassis is proposed at.
+	// The model's length and width change with the way it faces, and so does the size the frame is proposed at.
 	ForgetBuild();
 	ProposeShape();
 	RebuildModelRows();
+	RebuildPreview(/*bFrame*/ false);
 }
 
 void SMantleVehicleBuilder::SetPart(const FName ChassisBone, const FMantleVehicleModelPiece& Piece)
@@ -1198,10 +965,63 @@ void SMantleVehicleBuilder::SetPart(const FName ChassisBone, const FMantleVehicl
 	{
 		PartMap.Parts.Remove(ChassisBone);
 	}
-	// Assigned wheels place the chassis's wheels: the sizes are proposed again; what was built is of the old assignment.
+	// Assigned wheels place the frame's wheels: the sizes are proposed again; what was built is of the old assignment.
 	ForgetBuild();
 	ProposeShape();
 	RebuildModelRows();
+	RebuildPreview(/*bFrame*/ false);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 3. Check the fit.
+
+TSharedRef<SWidget> SMantleVehicleBuilder::MakeFitStep()
+{
+	using namespace MantleVehicleBuilderPanelPrivate;
+
+	TSharedRef<SVerticalBox> Feel = SNew(SVerticalBox);
+	if (Shape.IsStarted())
+	{
+		// How it feels to drive, beyond its size: grip, power, suspension and top speed, where the type has them.
+		Feel->AddSlot().AutoHeight().Padding(0.f, 10.f, 0.f, 2.f)
+		[
+			SNew(STextBlock)
+				.Font(FAppStyle::GetFontStyle("BoldFont"))
+				.Text(LOCTEXT("HandlingTitle", "How it feels to drive"))
+		];
+		AddFeelRows(Feel);
+		Feel->AddSlot().AutoHeight().Padding(0.f, 4.f)
+		[
+			SNew(STextBlock)
+				.Font(FAppStyle::GetFontStyle("BoldFont"))
+				.AutoWrapText(true)
+				.Text_Lambda([this] { return Shape.GetSummary(); })
+		];
+		Feel->AddSlot().AutoHeight().Padding(0.f, 4.f)
+		[
+			SNew(STextBlock)
+				.AutoWrapText(true)
+				.ColorAndOpacity(Warn)
+				.Visibility_Lambda([this] { return Shape.GetWarnings().IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
+				.Text_Lambda([this] { return Shape.GetWarnings(); })
+		];
+	}
+
+	ModelRowsBox = SNew(SVerticalBox);
+	RebuildModelRows();
+	return WithPicture(SNew(SScrollBox)
+		+ SScrollBox::Slot()
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				ModelRowsBox.ToSharedRef()
+			]
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				Feel
+			]
+		]);
 }
 
 void SMantleVehicleBuilder::RebuildModelRows()
@@ -1229,7 +1049,7 @@ void SMantleVehicleBuilder::RebuildModelRows()
 			SNew(STextBlock)
 				.AutoWrapText(true)
 				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-				.Text(LOCTEXT("OwnWheels", "Its wheels are named like a car's, so Mantle fits the gray vehicle to them and your wheels turn as they are."))
+				.Text(LOCTEXT("OwnWheels", "Its wheels are named like a car's, so Mantle fits the vehicle's frame to them and your wheels turn as they are."))
 		];
 		return;
 	}
@@ -1298,7 +1118,7 @@ void SMantleVehicleBuilder::RebuildModelRows()
 		ModelRowsBox->AddSlot().AutoHeight().Padding(0, 0, 0, 6)
 		[
 			SNew(SCheckBox)
-				.ToolTipText(LOCTEXT("TwinTip", "Turn this on if your plane has two propellers, like a P-38. The gray plane then has two engines and you can point out each propeller."))
+				.ToolTipText(LOCTEXT("TwinTip", "Turn this on if your plane has two propellers, like a P-38. The plane then has two engines and you can point out each propeller."))
 				.IsChecked_Lambda([this] { return bTwinEngine ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
 				.OnCheckStateChanged_Lambda([this](ECheckBoxState State) { SetTwinEngine(State == ECheckBoxState::Checked); })
 				[
@@ -1307,7 +1127,7 @@ void SMantleVehicleBuilder::RebuildModelRows()
 		];
 	}
 
-	// What Mantle proposed for the chassis, and the Size slider of a type shaped by one Size (the sizes of a road vehicle are in the Shape step).
+	// What Mantle proposed for the frame, and the Size slider of a type that has one Size.
 	if (!ProposalText.IsEmpty())
 	{
 		ModelRowsBox->AddSlot().AutoHeight().Padding(0, 0, 0, 6)
@@ -1332,11 +1152,11 @@ void SMantleVehicleBuilder::RebuildModelRows()
 			SNew(STextBlock)
 				.AutoWrapText(true)
 				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-				.Text(LOCTEXT("SizesInShape", "The gray vehicle's sizes now match your model. Change any of them in the Shape it step; your model is scaled to fit."))
+				.Text(LOCTEXT("SizeFitted", "Mantle sized the vehicle's frame to fit your model, so there is no size to set."))
 		];
 	}
 
-	// The parts of the model that move: one row for each moving part of the chassis.
+	// The parts of the model that move: one row for each moving part of the frame.
 	if (PartSlots.Num() > 0)
 	{
 		PieceChoices.Reset();
@@ -1352,15 +1172,25 @@ void SMantleVehicleBuilder::RebuildModelRows()
 		[
 			SNew(STextBlock)
 				.Font(FAppStyle::GetFontStyle("BoldFont"))
-				.Text(LOCTEXT("PartsTitle", "Parts that move (optional)"))
+				.Text(LOCTEXT("PartsTitle", "Wheels and other moving parts"))
 		];
 		ModelRowsBox->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
 		[
 			SNew(STextBlock)
 				.AutoWrapText(true)
 				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-				.Text(LOCTEXT("PartsHelp", "Point out which part of your model is each of these, so it moves. A bone picks that bone and everything attached to it; a section picks one material of the mesh. Leave a row at (nothing) and your model still drives or flies, that part just does not move."))
+				.Text(LOCTEXT("PartsHelp", "Mantle filled in the parts it found. Fix any it got wrong. A bone picks that bone and everything attached to it; a section picks one material of the mesh. Leave a row at (nothing) and your model still drives or flies, that part just does not move."))
 		];
+		if (PartMap.IsEmpty())
+		{
+			ModelRowsBox->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+			[
+				SNew(STextBlock)
+					.AutoWrapText(true)
+					.ColorAndOpacity(Warn)
+					.Text(LOCTEXT("NoPartsFound", "Mantle couldn't tell which parts are the wheels, so they won't spin. If the wheels have their own material, pick it for each wheel below. Otherwise separate the wheels in your 3D tool and import the model again."))
+			];
+		}
 		for (const FMantleVehiclePartSlot& Slot : PartSlots)
 		{
 			const FMantleVehicleModelPiece* Assigned = PartMap.Find(Slot.ChassisBone);
@@ -1411,9 +1241,258 @@ void SMantleVehicleBuilder::RebuildModelRows()
 	}
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// 4. Seats and paint.
+
+TSharedRef<SWidget> SMantleVehicleBuilder::MakeSeatsAndPaintStep()
+{
+	using namespace MantleVehicleBuilderPanelPrivate;
+
+	// The person in the seat is a pilot in a plane or a helicopter, a rider on a bike and a driver otherwise.
+	const FMantleChassisSpec& Seated = Shape.GetArchetype();
+	const FText SeatedWord = Seated.Aircraft.bSet || Seated.Helicopter.bSet ? LOCTEXT("SeatPilot", "pilot") : Seated.bCenterline ? LOCTEXT("SeatRider", "rider") : LOCTEXT("SeatDriver", "driver");
+
+	TSharedRef<SVerticalBox> Rows = SNew(SVerticalBox);
+	Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+	[
+		SNew(STextBlock)
+			.Font(FAppStyle::GetFontStyle("BoldFont"))
+			.Text(LOCTEXT("SeatsTitle", "Seats"))
+	];
+	Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 6)
+	[
+		SNew(STextBlock)
+			.AutoWrapText(true)
+			.Text(FText::Format(LOCTEXT("SeatFound", "Mantle put the {0}'s seat where the orange dot is in the picture. It is fitted to your model, and you can move it later in the vehicle's settings (Show its settings)."), SeatedWord))
+	];
+	if (Shape.HasPassengerOption())
+	{
+		Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 6)
+		[
+			MakePassengerRow()
+		];
+	}
+	Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 12)
+	[
+		SNew(SCheckBox)
+			.ToolTipText(LOCTEXT("NoInsideTip", "Turn this on if your model is just the outside shell, with no seats or steering wheel inside. People in it won't be drawn while they ride."))
+			.IsChecked_Lambda([this]() { return bHideRiders ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+			.OnCheckStateChanged_Lambda([this](ECheckBoxState State) { SetHideRiders(State == ECheckBoxState::Checked); })
+			[
+				SNew(STextBlock).Text(LOCTEXT("NoInside", "This model has no inside: hide the driver and passenger"))
+			]
+	];
+
+	Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+	[
+		SNew(STextBlock)
+			.Font(FAppStyle::GetFontStyle("BoldFont"))
+			.Text(LOCTEXT("PaintTitle", "Paint"))
+	];
+	Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+	[
+		SNew(STextBlock)
+			.AutoWrapText(true)
+			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+			.Text(LOCTEXT("PaintHelp", "Ticked parts take the color and liveries players choose. Mantle ticked the parts of your model that look like car paint. Untick any it got wrong, or tick others."))
+	];
+	if (PaintChoices.IsEmpty())
+	{
+		Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+		[
+			SNew(STextBlock)
+				.AutoWrapText(true)
+				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				.Text(LOCTEXT("NoPaintSections", "Your model has no parts to list yet. Go back and choose your vehicle's model."))
+		];
+	}
+	for (int32 Index = 0; Index < PaintChoices.Num(); ++Index)
+	{
+		Rows->AddSlot().AutoHeight().Padding(0, 1)
+		[
+			SNew(SCheckBox)
+				.IsChecked_Lambda([this, Index]() { return PaintChoices.IsValidIndex(Index) && PaintChoices[Index].bOn ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+				.OnCheckStateChanged_Lambda([this, Index](ECheckBoxState State) { SetPaintSection(Index, State == ECheckBoxState::Checked); })
+				[
+					SNew(STextBlock).Text(FText::FromString(PaintChoices[Index].Section))
+				]
+		];
+	}
+
+	// Lights (a later step): the headlight and taillight rows go here, under Paint, with the gizmos that place them in the picture.
+
+	return WithPicture(SNew(SScrollBox) + SScrollBox::Slot()[Rows]);
+}
+
+void SMantleVehicleBuilder::RefreshPaintChoices()
+{
+	TArray<FPaintChoice> Fresh;
+	if (Preview.bOk && Preview.Mesh.IsValid())
+	{
+		const TArray<FSkeletalMaterial>& Materials = Preview.Mesh->GetMaterials();
+		TArray<FString> Names;
+		for (const FSkeletalMaterial& Material : Materials)
+		{
+			Names.Add(Material.MaterialSlotName.ToString());
+		}
+		const TArray<FString> Sections = FMantleVehicleConverter::UniqueSectionNames(Names);
+		for (int32 Index = 0; Index < Sections.Num(); ++Index)
+		{
+			FPaintChoice& Choice = Fresh.AddDefaulted_GetRef();
+			Choice.Section = Sections[Index];
+			Choice.bOn = FMantleVehicleConverter::LooksLikePaint(Materials[Index].MaterialInterface);
+			if (bPaintEdited)
+			{
+				// The creator's ticks stay across a redraw of the picture.
+				for (const FPaintChoice& Old : PaintChoices)
+				{
+					if (Old.Section == Choice.Section)
+					{
+						Choice.bOn = Old.bOn;
+					}
+				}
+			}
+		}
+	}
+	PaintChoices = Fresh;
+}
+
+void SMantleVehicleBuilder::SetPaintSection(const int32 Index, const bool bOn)
+{
+	if (!PaintChoices.IsValidIndex(Index) || PaintChoices[Index].bOn == bOn)
+	{
+		return;
+	}
+	PaintChoices[Index].bOn = bOn;
+	bPaintEdited = true;
+	// Already built: the vehicle takes the ticks at once.
+	if (UMantleVehicleSource* Source = BuiltSource.Get())
+	{
+		ApplyChoices(*Source);
+		SaveNow();
+	}
+}
+
+void SMantleVehicleBuilder::SetHideRiders(const bool bOn)
+{
+	if (bHideRiders == bOn)
+	{
+		return;
+	}
+	bHideRiders = bOn;
+	if (UMantleVehicleSource* Source = BuiltSource.Get())
+	{
+		FMantleVehicleBuilder::SetHiddenRiders(*Source, Cast<USkeletalMesh>(Mesh.Get()), bOn);
+		SaveNow();
+	}
+}
+
+void SMantleVehicleBuilder::ApplyChoices(UMantleVehicleSource& Source)
+{
+	if (bPaintEdited)
+	{
+		Source.Modify();
+		Source.Paint.Sections.Reset();
+		for (const FPaintChoice& Choice : PaintChoices)
+		{
+			if (Choice.bOn)
+			{
+				Source.Paint.Sections.Add(Choice.Section);
+			}
+		}
+		Source.MarkPackageDirty();
+	}
+	if (bHideRiders)
+	{
+		FMantleVehicleBuilder::SetHiddenRiders(Source, Cast<USkeletalMesh>(Mesh.Get()), true);
+	}
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 5. Thumbnail.
+
+TSharedRef<SWidget> SMantleVehicleBuilder::MakeThumbnailStep()
+{
+	// The library card's picture, the same Thumbnail section every Mantle uploader shows.
+	return SNew(SScrollBox)
+		+ SScrollBox::Slot()
+		[
+			SAssignNew(ThumbnailSection, SMantleThumbnailSection)
+				.Target(FMantleThumbnailTarget::Square())
+				.AngleSliders(true)
+				.DefaultAngle(FMantleModelThumbnail::DefaultView())
+				.Choice_Lambda([this] { return ThumbnailChoice; })
+				.OnChoiceChanged_Raw(this, &SMantleVehicleBuilder::ThumbnailChoiceChanged)
+				.Render(FMantleVehicleThumbnail::PreviewFor([this]() -> const UMantleVehicleSource* { return BuiltSource.Get(); }, [this]() -> UObject* { return Mesh.Get(); }))
+		];
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 6. Build and drive.
+
+TSharedRef<SWidget> SMantleVehicleBuilder::MakeBuildStep()
+{
+	using namespace MantleVehicleBuilderPanelPrivate;
+	ResultBox = SNew(SVerticalBox);
+
+	TSharedRef<SWidget> Content = SNew(SScrollBox)
+		+ SScrollBox::Slot()
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
+			[
+				SNew(STextBlock)
+					.AutoWrapText(true)
+					.Text_Lambda([this]
+					{
+						return FText::Format(LOCTEXT("BuildSummary", "Your {0}, made from {1}. {2}"), SelectedPresetName,
+							Mesh.IsValid() ? FText::FromString(Mesh->GetName()) : FText::GetEmpty(), Shape.IsStarted() ? Shape.GetSummary() : FText::GetEmpty());
+					})
+			]
+			// What a plane, jet or helicopter needs to take off, so the creator puts it somewhere it can.
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
+			[
+				SNew(STextBlock)
+					.AutoWrapText(true)
+					.ColorAndOpacity(Warn)
+					.Visibility_Lambda([this] { return Shape.IsStarted() && !FMantleVehicleShape::DriveAdvice(Shape.GetArchetype()).IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed; })
+					.Text_Lambda([this] { return Shape.IsStarted() ? FMantleVehicleShape::DriveAdvice(Shape.GetArchetype()) : FText::GetEmpty(); })
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)
+			[
+				SNew(SBox).HeightOverride(44.f)
+				[
+					SNew(SButton)
+						.HAlign(HAlign_Center)
+						.VAlign(VAlign_Center)
+						.ButtonStyle(FAppStyle::Get(), "PrimaryButton")
+						.IsEnabled_Raw(this, &SMantleVehicleBuilder::CanBuild)
+						.OnClicked(this, &SMantleVehicleBuilder::OnBuild)
+						.ToolTipText(LOCTEXT("BuildTooltip", "Pick a vehicle type and a model first, then press this."))
+						[
+							SNew(STextBlock)
+								.Font(FAppStyle::GetFontStyle("BoldFont"))
+								.Text(LOCTEXT("BuildButton", "Build my vehicle"))
+						]
+				]
+			]
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				ResultBox.ToSharedRef()
+			]
+		];
+
+	// The step is built again each time it is opened: what the last build said is shown again.
+	if (bHaveLastBuild)
+	{
+		ShowResult(LastBuild);
+	}
+	return Content;
+}
+
 FMantleVehicleModelOptions SMantleVehicleBuilder::MakeBuildOptions() const
 {
-	// A model with the type's wheels is fitted to them; any other is worn on the gray vehicle as its skin, with the shape, the facing and the parts as the page has them.
+	// A model with the type's wheels is fitted to them; any other is worn on the type's frame as its skin, with the sizes, the facing and the parts as the page has them.
 	FMantleVehicleModelOptions Options;
 	if (bUseSkin)
 	{
@@ -1445,7 +1524,16 @@ FReply SMantleVehicleBuilder::OnBuild()
 	{
 		return FReply::Handled();
 	}
-	FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildAny(Mesh.Get(), SelectedPresetId, MakeBuildOptions());
+	FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildAny(BuildSource.Get(), SelectedPresetId, MakeBuildOptions());
+	if (Result.bOk && Result.Source)
+	{
+		// The seats and paint step's choices go into the vehicle before it is saved.
+		ApplyChoices(*Result.Source);
+		if (Result.bSaved)
+		{
+			Result.bSaved = FMantleVehicleBuilder::SaveVehicle(*Result.Source, Result.SaveProblem);
+		}
+	}
 	ApplyThumbnailChoice(Result);
 	if (Result.bOk && Result.Source)
 	{
@@ -1498,13 +1586,13 @@ void SMantleVehicleBuilder::ShowResult(const FMantleVehicleBuildResult& Result)
 		}
 		if (Result.bOnChassis)
 		{
-			// The Size of a vehicle worn on the gray chassis is the chassis's own: it was set above and the build made the numbers for it.
+			// The size of a vehicle worn on the type's frame is the frame's: it was set in Check the fit and the build made the numbers for it.
 			ResultBox->AddSlot().AutoHeight().Padding(0, 8, 0, 8)
 			[
 				SNew(STextBlock)
 					.AutoWrapText(true)
 					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-					.Text(LOCTEXT("ChassisSizeNote", "Its size is the gray vehicle's. To change it, use the Size or the sizes above (or in the Shape it step) and press Build my vehicle again."))
+					.Text(LOCTEXT("FrameSizeNote", "Mantle sized the vehicle to your model. To change it, go back to Check the fit and press Build my vehicle again."))
 			];
 		}
 		else
@@ -1557,27 +1645,6 @@ void SMantleVehicleBuilder::ShowResult(const FMantleVehicleBuildResult& Result)
 				]
 			];
 		}
-		ResultBox->AddSlot().AutoHeight().Padding(8, 0, 0, 8)
-		[
-			SNew(SCheckBox)
-				.ToolTipText(LOCTEXT("NoInsideTip", "Turn this on if your model is just the outside shell, with no seats or steering wheel inside. People in it won't be drawn while they ride."))
-				.IsChecked_Lambda([this]()
-				{
-					const UMantleVehicleSource* Source = BuiltSource.Get();
-					return Source && Source->Tuning.bHideDriver && Source->Tuning.bHidePassenger ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-				})
-				.OnCheckStateChanged_Lambda([this](ECheckBoxState State)
-					{
-						if (UMantleVehicleSource* Source = BuiltSource.Get())
-						{
-							FMantleVehicleBuilder::SetHiddenRiders(*Source, Cast<USkeletalMesh>(Mesh.Get()), State == ECheckBoxState::Checked);
-						}
-						SaveNow();
-					})
-				[
-					SNew(STextBlock).Text(LOCTEXT("NoInside", "This model has no inside — hide the driver and passenger"))
-				]
-		];
 		ResultBox->AddSlot().AutoHeight().Padding(0, 8, 0, 4)
 		[
 			SNew(STextBlock)
@@ -1621,7 +1688,7 @@ void SMantleVehicleBuilder::ShowResult(const FMantleVehicleBuildResult& Result)
 			SNew(STextBlock)
 				.AutoWrapText(true)
 				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-				.Text(LOCTEXT("NextStep", "Next: press Put it in my level, then press Test Locally (in the toolbar, next to Play) to drive it."))
+				.Text(LOCTEXT("NextStep", "Next: press Put it in my level, then press Test Locally (in the toolbar, next to Play) to drive it. Press Done when you are finished."))
 		];
 		return;
 	}

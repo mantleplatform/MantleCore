@@ -8,7 +8,7 @@
 #include "MantleVehicleBuilder.h"
 #include "MantleVehicleChassisSkin.h"
 #include "MantleVehicleShape.h"
-#include "MantleVehicleSpawnPoint.h"
+#include "MantleVehicleTypeMatch.h"
 #include "SMantleBuilderFlow.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/WeakObjectPtrTemplates.h"
@@ -18,19 +18,18 @@
 class FMantleVehicleShapeKind;
 class SMantleBuilderViewport;
 class SVerticalBox;
-class UMantleBuiltVehicle;
 class UMantleVehicleSource;
 class UObject;
 struct FAssetData;
 class FScopedTransaction;
 
 /**
- * Tools > Mantle > Build a vehicle...: four short steps, one decision each. Pick what you are building (a vehicle type: a card for
- * every publishable preset). Shape it while a gray picture of it changes, and read what it is like: a road vehicle has eight sliders in
- * centimeters and says what it weighs, how it turns and how fast it goes; a plane, helicopter or hovercraft has one Size slider (and a seat or a
- * top-speed feel where it has one) and says what suits it (FMantleVehicleShape::Describe). Drive it: put the gray vehicle in your level with no
- * model at all. Or, as an option, use your own 3D model as its body. The result, good or bad, shows in the window; there are no dialogs.
- * The logic is FMantleVehicleShape (the shape) and FMantleVehicleBuilder (the vehicle assets); this is only the page. Native Slate.
+ * Tools > Mantle > Build a vehicle...: six short steps, one decision each, the way the weapon builder goes. Pick what kind of vehicle it is (a card for every
+ * publishable preset). Choose your vehicle's model: a Static or Skeletal Mesh, a vehicle Blueprint, or a file from your computer; there is always a model. Check the fit:
+ * which way it faces, its size, which of its parts are wheels, propellers or rotors, and how it feels to drive. Seats and paint. The Thumbnail every uploader has.
+ * Then build it, put it in your level and drive it. From the second step on, the picture shows the creator's own model on the vehicle's frame
+ * (FMantleVehicleBuilder::MakeModelPreview) with a dot on each wheel; there is no stand-in vehicle. The result, good or bad, shows in the window; there are no dialogs.
+ * The logic is FMantleVehicleBuilder (the vehicle assets), FMantleVehicleShape (the feel) and FMantleVehicleTypeMatchCheck; this is only the page. Native Slate.
  */
 class SMantleVehicleBuilder : public SCompoundWidget
 {
@@ -38,17 +37,18 @@ class SMantleVehicleBuilder : public SCompoundWidget
 	friend struct FMantleVehicleBuilderPanelAccess;
 	/** The model step's state, for its own tests. */
 	friend struct FMantleVehicleBuilderModelAccess;
-	/** The tests of the stale build after a shape edit, the names a build again reuses and the .fbx import. */
+	/** The tests of the stale build after an edit, the names a build again reuses and the file import. */
 	friend struct FMantleVehicleBuilderFixAccess;
+	/** The tests of the new flow: the steps, the type check, the paint list and what Build applies. */
+	friend struct FMantleVehicleBuilderFlowAccess;
+	/** Mantle.Dev.VehicleBuilderShots: the window, step by step, drawn offscreen. */
+	friend struct FMantleVehicleBuilderShotAccess;
 
 public:
 	SLATE_BEGIN_ARGS(SMantleVehicleBuilder) {}
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
-
-	/** Canceling (closing the window other than with Done) takes the gray vehicles this window put in the level back out. */
-	virtual ~SMantleVehicleBuilder() override;
 
 	/** The nomad tab: registered at module startup, opened from the Tools menu. */
 	static const FName TabName;
@@ -58,35 +58,42 @@ public:
 
 private:
 	TArray<FMantleBuilderStep> MakeSteps();
+	// The six steps.
 	TSharedRef<SWidget> MakeTypeStep();
-	TSharedRef<SWidget> MakeShapeStep();
-	TSharedRef<SWidget> MakeDriveStep();
 	TSharedRef<SWidget> MakeModelStep();
+	TSharedRef<SWidget> MakeFitStep();
+	TSharedRef<SWidget> MakeSeatsAndPaintStep();
+	TSharedRef<SWidget> MakeThumbnailStep();
+	TSharedRef<SWidget> MakeBuildStep();
+
 	TSharedRef<SWidget> MakePresetCard(const FString& PresetId, const FText& Name, const FText& Description);
-	TSharedRef<SWidget> MakeDimensionRow(EMantleVehicleDimension Dimension);
-	/** The rows of a type shaped by one Size (a plane, helicopter or hovercraft): the Size, its feel and its passenger seat, where it has them. */
+	/** A step's content with the picture of the model on its frame beside it: Left is the step's own controls. */
+	TSharedRef<SWidget> WithPicture(const TSharedRef<SWidget>& Left);
+	/** The picture: the model on its frame once there is one, else the line that says what to do next. */
+	TSharedRef<SWidget> MakePicture();
+	/** The Size row of a type shaped by one Size (a plane, helicopter or hovercraft). */
 	TSharedRef<SWidget> MakeSizeRow();
 	/** One feel slider (grip, power, suspension or top speed), -1 to 1. A road vehicle has all four, a hovercraft its top speed. */
 	TSharedRef<SWidget> MakeFeelRow(EMantleVehicleFeel Feel);
 	TSharedRef<SWidget> MakePassengerRow();
-	/** The feel sliders the shaped type has, and its passenger tickbox where its preset has a passenger seat, one under the other. */
+	/** The feel sliders the picked type has, and its passenger tickbox where its preset has a passenger seat, one under the other. */
 	void AddFeelRows(const TSharedRef<SVerticalBox>& Rows);
 
-	/** Picks a type: loads its chassis as the archetype and starts the shape from it. Picking the type already picked changes nothing. */
+	/** Picks a type: loads its frame as the archetype. Picking the type already picked changes nothing. */
 	void PickPreset(const FString& PresetId, const FText& Name);
 
-	// Shape.
-	void SetDimension(EMantleVehicleDimension Dimension, double Value);
+	// Feel and size.
 	void SetShapeSize(double Value);
 	void SetFeel(EMantleVehicleFeel Feel, double Value);
 	void SetPassengerSeat(bool bOn);
 	/**
-	 * What a change of the shape that really changed something leaves to do: the vehicle in the level is no longer this one, the build made from the old shape is
-	 * forgotten (it would otherwise be put in the level, shown in its settings and kept by Done with the old numbers), and the picture is redrawn.
+	 * What a change that really changed something leaves to do: the build made before it is forgotten (it would otherwise be put in the level, shown in its settings and
+	 * kept by Done with the old numbers), and the picture is redrawn.
 	 */
 	void ShapeChanged();
-	FReply OnResetShape();
-	/** Shows the shaped chassis in the picture: a transient copy of the gray body, made the way a published chassis is (FMantleVehicleChassisBuilder::MakeAsset). */
+
+	// The picture.
+	/** Shows the model on its frame in the picture (FMantleVehicleBuilder::MakeModelPreview), made again from what the page has now. */
 	void RebuildPreview(bool bFrame);
 	/** The picture is out of date: it is redrawn in a moment, once, however many sizes changed meanwhile (a drag changes them every frame). */
 	void MarkPreviewDirty();
@@ -94,14 +101,11 @@ private:
 	void FlushPreview();
 	EActiveTimerReturnType OnPreviewTimer(double CurrentTime, float DeltaTime);
 
-	// Drive (the gray vehicle, no model).
-	FReply OnPutGrayInLevel();
-
-	// Your own model (the vehicle on a creator's static or skeletal mesh).
+	// The model.
 	bool CanBuild() const;
 	FReply OnBuild();
 	/**
-	 * What Build my vehicle asks for (FMantleVehicleBuilder::BuildAny's options): for a model worn as a skin, the shape, the facing and the parts as the page has them,
+	 * What the picture and Build my vehicle ask for (FMantleVehicleBuilder::BuildAny's options): for a model worn as a skin, the frame, the facing and the parts as the page has them,
 	 * and, when this window already built this type and model, the name that build was saved under, to be updated in place and not added to.
 	 */
 	FMantleVehicleModelOptions MakeBuildOptions() const;
@@ -109,27 +113,29 @@ private:
 	void RememberBuilt(const FMantleVehicleBuildResult& Result);
 	FReply OnShowSettings();
 	FReply OnPlaceInLevel();
-	/** Pick an .fbx file...: asks for a file and imports it. */
-	FReply OnPickFbx();
-	/** Imports an .fbx file into the project (FMantleVehicleBuilder::ImportModelFile) and picks the model it made, or says in the window why it could not. */
-	void ImportFbx(const FString& File);
+	/** Import a file...: asks for a file and imports it. */
+	FReply OnPickFile();
+	/** Imports a model file into the project (FMantleVehicleBuilder::ImportModelFile) and picks the model it made, or says in the window why it could not. */
+	void ImportFile(const FString& File);
 	void ShowResult(const FMantleVehicleBuildResult& Result);
+	/** Picks a Static Mesh, a Skeletal Mesh or a vehicle Blueprint (FMantleVehicleBlueprint::Resolve) as the vehicle's model. */
 	void SetMesh(const FAssetData& Asset);
 	/**
-	 * Reads the picked model for the picked type: the chassis's moving parts it can be assigned to, Mantle's suggestions for which part is which and which way
-	 * the model faces, and, when the model is worn as a skin on the chassis, the Size or sizes the chassis is proposed at (set on the shape, where the creator already
-	 * has the sliders). Called when a model or a type is picked.
+	 * Reads the picked model for the picked type: the frame's moving parts it can be assigned to, Mantle's suggestions for which part is which and which way
+	 * the model faces, whether it fits the type (FMantleVehicleTypeMatchCheck), and the frame's Size or sizes proposed for it. Called when a model or a type is picked.
 	 */
 	void ReadModel(TOptional<bool> Twin = TOptional<bool>());
-	/** A propeller plane with two engines (a P-38): the gray vehicle gets a propeller bone for each, and the parts list a left and a right propeller. */
+	/** The model looks like another type of vehicle: Switch to it. */
+	FReply OnSwitchType();
+	/** A propeller plane with two engines (a P-38): the frame gets a propeller bone for each, and the parts list a left and a right propeller. */
 	void SetTwinEngine(bool bOn);
 	/** The model's nose faces this way (a turn about Z, 0 / 90 / 180 / 270); the model's size is read again for it. */
 	void SetModelYaw(double Degrees);
-	/** Assigns a part of the model (or, for an unset piece, nothing) to one of the chassis's moving bones. */
+	/** Assigns a part of the model (or, for an unset piece, nothing) to one of the frame's moving bones. */
 	void SetPart(FName ChassisBone, const FMantleVehicleModelPiece& Piece);
-	/** The parts and facing rows under the picker, made again for the model and type picked. */
+	/** The parts and facing rows, made again for the model and type picked. */
 	void RebuildModelRows();
-	/** Sets the chassis's Size or sizes on the shape from the model (FMantleVehicleChassisSkin::Propose) for the way it faces now; the sliders show and change them. */
+	/** Sets the frame's Size or sizes from the model (FMantleVehicleChassisSkin::Propose) for the way it faces now. */
 	void ProposeShape();
 	/** A different model is a different vehicle: the last build, its Size and its notes are forgotten, and the result shown is cleared. */
 	void ForgetBuild();
@@ -142,58 +148,46 @@ private:
 	/** Saves the built vehicle when it has unsaved changes, and says on the page whether that worked. */
 	void SaveNow();
 
-	/** Done: closes the window, first taking out the gray vehicle when the model's vehicle is in the level instead. */
-	void FinishWindow();
+	// Seats and paint.
+	/** The paint list for the picked model: every section of its body, ticked where it reads as car paint (FMantleVehicleConverter::LooksLikePaint). Made from the picture. */
+	void RefreshPaintChoices();
+	void SetPaintSection(int32 Index, bool bOn);
+	void SetHideRiders(bool bOn);
+	/** Writes the paint ticks and the "no inside" choice into a built vehicle. */
+	void ApplyChoices(UMantleVehicleSource& Source);
+
 	void CloseWindow();
-	/** Takes every gray vehicle this window put in the level out of it again (one undo step). */
-	void RemoveGraySpawns();
 
 	TSharedPtr<SMantleBuilderFlow> Flow;
 
 	/** The vehicle type picked in step 1 (a preset id); empty until one is picked. */
 	FString SelectedPresetId;
 	FText SelectedPresetName;
-	/** Why the picked type's chassis could not be read; empty when it was. Shown in red under the cards. */
+	/** Why the picked type's frame could not be read; empty when it was. Shown in red under the cards. */
 	FText TypeProblem;
 
-	// Shape.
-	/** The picked type's chassis, the sizes the sliders show and everything that follows from them (the summary, the warnings). */
+	// The frame and how it feels.
+	/** The picked type's frame, the Size or sizes proposed for the model, the feel sliders and everything that follows from them. */
 	FMantleVehicleShapeSession Shape;
 	bool bPreviewDirty = false;
 	bool bPreviewTimerPending = false;
-	/** Why the picture could not be redrawn at these sizes; empty when it could. */
+	/** Why the picture could not be made; empty when it could. */
 	FText PreviewProblem;
-	TSharedPtr<FMantleVehicleShapeKind> ShapeKind;
-	/** Weak: the picture lives only while the Shape step is open. */
-	TWeakPtr<SMantleBuilderViewport> ShapeViewport;
-	/** The transient gray vehicle the picture shows; replaced with every change. */
-	TStrongObjectPtr<UMantleBuiltVehicle> PreviewVehicle;
+	TSharedPtr<FMantleVehicleShapeKind> PreviewKind;
+	/** Weak: the picture lives only while a step that shows it is open. */
+	TWeakPtr<SMantleBuilderViewport> PreviewViewport;
+	/** The model on its frame, in memory; replaced with every change. */
+	FMantleVehicleModelPreview Preview;
 
-	// Drive.
-	/** The name the gray vehicle is saved under (a folder and assets of this name); empty until it is first put in the level, new for each type. */
-	FString GrayName;
-	FString GrayPresetId;
-	/** The vehicle made for the sizes GraySignature names, if it is still there: pressing Put it in my level again for the same sizes remakes nothing. */
-	TWeakObjectPtr<UMantleVehicleSource> GraySource;
-	FString GraySignature;
-	/** What the last build of it said besides that it worked: where it was saved, and its notes. */
-	FString GrayExtra;
-	bool bGrayNotSaved = false;
-	/** What Put it in my level said, under the button, in plain words. */
-	FText DriveStatus;
-	/** What the placement said about where a flier went and what it needs, kept so a second press repeats it. */
-	FString GrayPlaceNote;
-	bool bDriveFailed = false;
-	/** The gray vehicles Put it in my level added to the level, so Cancel and Done can take them out again. */
-	TArray<TWeakObjectPtr<AMantleVehicleSpawnPoint>> GraySpawns;
-	/** Done was pressed: closing the window now is not canceling. */
-	bool bFinished = false;
-
-	// Your own model.
-	/** The model picked: a static mesh or a skeletal mesh. */
+	// Your model.
+	/** The model picked, as the builder reads it: a Static Mesh or a Skeletal Mesh (the one a Blueprint gave, or its merged pieces). */
 	TWeakObjectPtr<UObject> Mesh;
+	/** What Build my vehicle is given: the model, or the vehicle Blueprint a Chaos body came from (its wheels and parts ride along). */
+	TWeakObjectPtr<UObject> BuildSource;
+	/** What Mantle did with a Blueprint (merged its pieces, which pieces move), in plain words; empty for a mesh. */
+	TArray<FString> BlueprintNotes;
 
-	/** #124: how this vehicle's library picture is made, kept for the model (FMantleThumbnailStore). */
+	/** The library picture's choice, kept for the model (FMantleThumbnailStore). */
 	FMantleThumbnailChoice ThumbnailChoice;
 	TSharedPtr<class SMantleThumbnailSection> ThumbnailSection;
 	/** Reads the saved choice for the picked model and redraws the section. */
@@ -202,15 +196,17 @@ private:
 	/** After a build: a Custom image or a chosen angle replaces the picture the build took by itself. Notes and saving go into Result. */
 	void ApplyThumbnailChoice(FMantleVehicleBuildResult& Result);
 	TWeakObjectPtr<UMantleVehicleSource> BuiltSource;
-	/** The model read for the picked type (ReadModel), the chassis's moving parts, which part of it is which, and which way it faces. */
+	/** The model read for the picked type (ReadModel), the frame's moving parts, which part of it is which, and which way it faces. */
 	FMantleVehicleModel ModelInfo;
 	bool bHaveModelInfo = false;
+	/** Whether the model fits the picked type; Check's answer, kept for the message and the Switch button. */
+	FMantleVehicleTypeMatch TypeMatch;
 	TArray<FMantleVehiclePartSlot> PartSlots;
 	FMantleVehicleModelMap PartMap;
 	double ModelYaw = 0.0;
-	/** What Mantle proposed for the chassis's size from the model, in plain words. */
+	/** What Mantle proposed for the frame's size from the model, in plain words. */
 	FString ProposalText;
-	/** The rows under the picker: the facing, the Size and one row for each part the chassis can move. */
+	/** The rows of the fit step: the facing, the Size and one row for each part the frame can move. */
 	TSharedPtr<SVerticalBox> ModelRowsBox;
 	/** The choices of a part row's list, kept alive for as long as the rows are. */
 	TArray<TSharedPtr<FString>> PieceChoices;
@@ -218,23 +214,23 @@ private:
 	/** The four ways a model's nose may face and the turn each one needs. */
 	TArray<TSharedPtr<FString>> YawChoices;
 	TArray<double> YawValues;
-	/** The picked model is worn as a skin on the chassis (else its own wheels are fitted). Worked out when the model or the type is picked. */
+	/** The picked model is worn as a skin on the frame (else its own wheels are fitted). Worked out when the model or the type is picked. */
 	bool bUseSkin = false;
-	/** The gray vehicle is the twin-engined plane (FMantleVehicleChassisSkin::AsTwin): set when the model has two propellers, or by the creator. */
+	/** The frame is the twin-engined plane (FMantleVehicleChassisSkin::AsTwin): set when the model has two propellers, or by the creator. */
 	bool bTwinEngine = false;
 	TSharedPtr<SVerticalBox> ResultBox;
-	/** What Pick an .fbx file... did, in plain words, under the picker; red when it failed. */
+	/** What Import a file... did, in plain words, under the picker; red when it failed. */
 	FText ImportStatus;
 	bool bImportFailed = false;
-	/** The folder the last .fbx was picked from, so the next dialog opens there. */
-	FString LastFbxFolder;
+	/** The folder the last file was picked from, so the next dialog opens there. */
+	FString LastImportFolder;
 	/**
-	 * The name the last build of a model on a chassis was saved under, and which type and model it was for: pressing Build again for the same pair updates those assets
+	 * The name the last build of a model on a frame was saved under, and which type and model it was for: pressing Build again for the same pair updates those assets
 	 * instead of adding a new set each press.
 	 */
 	FString BuiltAssetName;
 	FString BuiltAssetKey;
-	/** Why the model picked cannot be used (a solid-piece model, or not a model at all); empty when it is fine. Shown in red under the picker. */
+	/** Why the model picked cannot be used (not a model, no geometry, a Blueprint with nothing to take); empty when it is fine. Shown in red under the picker. */
 	FText MeshProblem;
 	/** Where Put it in my level says it worked or why not, under the button; rebuilt with the result. */
 	TSharedPtr<SVerticalBox> PlaceResultBox;
@@ -242,9 +238,21 @@ private:
 	FMantleVehicleBuildResult LastBuild;
 	bool bHaveLastBuild = false;
 
+	// Seats and paint.
+	/** "This model has no inside": the driver and passenger are not drawn. Written into the vehicle when it is built, and at once when it is already built. */
+	bool bHideRiders = false;
+	struct FPaintChoice
+	{
+		FString Section;
+		bool bOn = false;
+	};
+	TArray<FPaintChoice> PaintChoices;
+	/** The creator ticked or unticked a section: the ticks replace Mantle's own guess on the built vehicle. */
+	bool bPaintEdited = false;
+
 	/** The size Mantle proposed for the last build, for Reset to suggested; unset when the wheels could not be read. */
 	TOptional<float> SuggestedSize;
-	/** The "Saved." line under the Size and checkbox; empty when there is nothing to say (a scratch vehicle). */
+	/** The "Saved." line under the Size; empty when there is nothing to say (a scratch vehicle). */
 	FText SaveStatus;
 	/** True when the last save failed, which shows the line in red. */
 	bool bSaveFailed = false;

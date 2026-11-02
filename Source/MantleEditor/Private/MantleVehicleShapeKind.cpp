@@ -65,7 +65,7 @@ FMantleBuilderOverlay FMantleVehicleShapeKind::Overlay(const TArray<FMantleBuild
 
 FText FMantleVehicleShapeKind::Hint() const
 {
-	return LOCTEXT("Hint", "Right-drag to turn the view, scroll to zoom, press F to frame the vehicle. The gray figure is a character, so you can see how big the vehicle is.");
+	return LOCTEXT("Hint", "Right-drag to turn the view, scroll to zoom, press F to frame the vehicle. The gray figure is a character, so you can see how big the vehicle is. Green dots are where Mantle thinks the wheels are.");
 }
 
 #undef LOCTEXT_NAMESPACE

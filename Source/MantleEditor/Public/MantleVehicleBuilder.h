@@ -175,7 +175,7 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * Chassis from a model (#821 WP5, #793 step 5): the creator's static or skeletal Model worn whole as the skin of PresetId's own chassis. The chassis is the
 	 * physics and the skeleton (its bones are wheels, control surfaces, propellers or nozzle, rotors, fork), its numbers the type's at the Size or sizes proposed from
 	 * the model's bounds; the model is skinned to the chassis's root bone, with the parts the creator assigned (Options.Map) riding the moving bones, so an unassigned
-	 * model still drives or flies and only fails to animate those parts. Saved under Options.Folder (or MantleVehicles), as BuildChassis saves a gray chassis.
+	 * model still drives or flies and only fails to animate those parts. Saved under Options.Folder (or MantleVehicles).
 	 *
 	 * Takes any model: a spaceship's static mesh (no wheels) is a jet, a plane's skeletal mesh with its own bones is a plane, two wheels on the center line a
 	 * motorcycle, a wheel-less cabin a helicopter. The result has bOnChassis set. Problems say, in plain words, what stopped it. One undo step ("Build vehicle from model"),
@@ -250,34 +250,19 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 */
 	static bool PlaceInLevel(UMantleVehicleSource& Source, FString& OutProblem, AMantleVehicleSpawnPoint** OutActor = nullptr, FString* OutNote = nullptr);
 
-	/** The project folder vehicles made with no model are saved under: "/Game/MantleVehicles", one folder for each vehicle. */
+	/** The project folder built vehicles are saved under: "/Game/MantleVehicles", one folder for each vehicle. */
 	static FString ChassisFolder();
 
 	/**
-	 * A name for a new vehicle made with no model that no vehicle under ChassisFolder has yet: Wanted made safe to save under ("Sedan"), then with
-	 * "_2", "_3" and so on added until it is free.
+	 * A name for a new vehicle that is free: Wanted made safe to save under ("Sedan"), then with "_2", "_3" and so on added until IsTaken says it is free. IsTaken is
+	 * given so it can be tested without a project: it says whether something of that name is already saved.
 	 */
-	static FString FirstFreeChassisName(const FString& Wanted);
-
-	/** FirstFreeChassisName with the check for a taken name given, so it can be tested without a project: IsTaken says whether a vehicle of that name is already saved. */
 	static FString FirstFreeName(const FString& Wanted, TFunctionRef<bool(const FString&)> IsTaken);
 
 	/**
-	 * The vehicle of a chassis with no creator model (#793 step 4): the chassis's gray body saved as a skeletal mesh (FMantleVehicleChassisMesh), and a
-	 * vehicle asset on it whose wheels, tuning, collision, center of mass and seats are the chassis's (its handling derived from its sizes when it was
-	 * shaped), saved the way Build saves one. Made as <Name>_Vehicle in PackagePath beside SKM_<Name> and SK_<Name>; a vehicle already there is
-	 * updated in place, so a spawn in the level that names it follows (Size 1; its paint, liveries and parts are kept). Press Put it in my level
-	 * (PlaceInLevel) on the result, then Test Locally.
-	 *
-	 * A chassis that was shaped (its Derived handling set) carries no preset: its numbers are its own, held to the document's limits and not to a
-	 * preset's narrower ranges. An unshaped one is its preset, hand-tuned. A path under /Temp is a test's: nothing is registered or written to disk.
-	 * Result.Source is the vehicle; Problems say, in plain words, what stopped it.
-	 */
-	static FMantleVehicleBuildResult BuildChassis(const FMantleChassisSpec& Spec, const FString& PackagePath, const FString& Name);
-
-	/**
-	 * BuildChassis with a body of its own (#821): the chassis's skeleton wearing a creator's model, from FMantleVehicleChassisSkin::Skin, and the model's material
-	 * slots. The vehicle asset is the chassis's, the body is Body.
+	 * The vehicle of a frame wearing a creator's model (#821), from FMantleVehicleChassisSkin::Skin, and the model's material slots, saved the way Build saves one.
+	 * Made as <Name>_Vehicle in PackagePath beside SKM_<Name>; a vehicle already there is updated in place, so a spawn in the level that names it follows. The vehicle
+	 * asset's wheels, tuning, collision, center of mass and seats are the frame's, the body is Body. A path under /Temp is a test's: nothing is registered or written to disk.
 	 *
 	 * Collision, when given and not empty (FMantleVehicleChassisSkin::ProposeCollision), is the vehicle's collision in place of the chassis's one box: its first box is
 	 * the one the driver sits in, the rest are added beside it. Extras are the model's other UV channels and vertex colors, written onto the body with its own tangents.

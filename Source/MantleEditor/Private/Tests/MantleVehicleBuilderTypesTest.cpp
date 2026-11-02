@@ -42,8 +42,6 @@ struct FMantleVehicleBuilderPanelAccess
 		return Panel.BuiltSource.IsValid() || Panel.bHaveLastBuild || Panel.SuggestedSize.IsSet() || !Panel.SaveStatus.IsEmpty();
 	}
 	static void SetMesh(SMantleVehicleBuilder& Panel, USkeletalMesh* Mesh) { Panel.SetMesh(FAssetData(Mesh)); }
-	static void AddGray(SMantleVehicleBuilder& Panel, AMantleVehicleSpawnPoint* Spawn) { Panel.GraySpawns.Add(Spawn); }
-	static void Finish(SMantleVehicleBuilder& Panel) { Panel.FinishWindow(); }
 };
 
 namespace MantleVehicleBuilderTypesTestPrivate
@@ -550,91 +548,4 @@ bool FMantleVehicleBuilderSetMeshTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("clearing the model forgets it too"), FMantleVehicleBuilderPanelAccess::HasBuild(*Panel));
 	return true;
 }
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleVehicleBuilderGraySpawnTest,
-	"Mantle.Vehicle.Builder.CancelTakesTheGrayVehicleOut",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
-
-bool FMantleVehicleBuilderGraySpawnTest::RunTest(const FString& Parameters)
-{
-	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-	if (!FSlateApplication::IsInitialized() || !World || !World->PersistentLevel)
-	{
-		AddWarning(TEXT("SKIPPED, not passed: there is no Slate application or editor world in this runner, so the level cannot be checked."));
-		return true;
-	}
-	const auto Count = [World]()
-	{
-		int32 Total = 0;
-		for (TActorIterator<AMantleVehicleSpawnPoint> It(World); It; ++It)
-		{
-			++Total;
-		}
-		return Total;
-	};
-	const auto PlaceOne = [this](UMantleVehicleSource& Source) -> AMantleVehicleSpawnPoint*
-	{
-		FString Problem;
-		AMantleVehicleSpawnPoint* Spawn = nullptr;
-		if (!FMantleVehicleBuilder::PlaceInLevel(Source, Problem, &Spawn) || !Spawn)
-		{
-			AddError(FString::Printf(TEXT("A spawn could not be placed: %s"), *Problem));
-		}
-		return Spawn;
-	};
-	UMantleVehicleSource* Gray = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
-	UMantleVehicleSource* Model = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
-	const int32 Before = Count();
-
-	// Cancel (the window closed any way but Done): the gray vehicle goes.
-	{
-		TSharedRef<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
-		AMantleVehicleSpawnPoint* Spawn = PlaceOne(*Gray);
-		if (!Spawn)
-		{
-			return false;
-		}
-		FMantleVehicleBuilderPanelAccess::AddGray(*Panel, Spawn);
-		TestEqual(TEXT("the gray vehicle is in the level"), Count(), Before + 1);
-		Panel = SNew(SMantleVehicleBuilder);
-		TestEqual(TEXT("closing the window without Done took it out"), Count(), Before);
-	}
-
-	// Done with no model: the gray vehicle is the result and stays.
-	{
-		TSharedPtr<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
-		AMantleVehicleSpawnPoint* Spawn = PlaceOne(*Gray);
-		if (!Spawn)
-		{
-			return false;
-		}
-		FMantleVehicleBuilderPanelAccess::AddGray(*Panel, Spawn);
-		FMantleVehicleBuilderPanelAccess::Finish(*Panel);
-		Panel.Reset();
-		TestEqual(TEXT("Done with no model leaves the gray vehicle in the level"), Count(), Before + 1);
-		World->EditorDestroyActor(Spawn, /*bShouldModifyLevel*/ true);
-	}
-
-	// Done with a model whose vehicle is in the level: the gray one it replaced goes, the model's stays.
-	{
-		TSharedPtr<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
-		AMantleVehicleSpawnPoint* GraySpawn = PlaceOne(*Gray);
-		AMantleVehicleSpawnPoint* ModelSpawn = PlaceOne(*Model);
-		if (!GraySpawn || !ModelSpawn)
-		{
-			return false;
-		}
-		FMantleVehicleBuilderPanelAccess::AddGray(*Panel, GraySpawn);
-		FMantleVehicleBuilderPanelAccess::Give(*Panel, Model);
-		FMantleVehicleBuilderPanelAccess::Finish(*Panel);
-		Panel.Reset();
-		TestEqual(TEXT("Done with the model's vehicle in the level took out only the gray one"), Count(), Before + 1);
-		TestTrue(TEXT("and the model's is the one left"), IsValid(ModelSpawn) && ModelSpawn->GetLevel() != nullptr);
-		World->EditorDestroyActor(ModelSpawn, /*bShouldModifyLevel*/ true);
-	}
-	TestEqual(TEXT("the level is as it was"), Count(), Before);
-	return true;
-}
-
 #endif

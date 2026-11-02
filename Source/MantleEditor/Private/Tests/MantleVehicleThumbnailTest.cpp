@@ -7,6 +7,7 @@
 #include "MantleVehicleAsset.h"
 #include "MantleVehicleBuilder.h"
 #include "MantleVehicleChassisBuilder.h"
+#include "MantleVehicleScratchBody.h"
 #include "MantleVehicleSource.h"
 #include "MantleVehicleThumbnail.h"
 
@@ -35,18 +36,25 @@ namespace MantleVehicleThumbnailTestPrivate
 		return Object;
 	}
 
-	/** The sedan chassis's gray body, built as a vehicle in a scratch package (nothing reaches the disk). */
+	/** A sample car model (the scratch sedan body) built as a sedan in a scratch package (nothing reaches the disk). */
 	FMantleVehicleBuildResult BuildSedan(const TCHAR* Name)
 	{
-		FMantleChassisSpec Spec;
-		FString Error;
 		FMantleVehicleBuildResult Result;
-		if (!FMantleVehicleChassisBuilder::LoadSpec(TEXT("sedan"), Spec, Error))
+		FString Error;
+		USkeletalMesh* Model = MantleVehicleScratchBody::Make(TEXT("/Temp/MantleVehicleThumbnailTest"), FString(Name) + TEXT("Model"), Error);
+		if (!Model)
 		{
 			Result.Problems.Add(Error);
 			return Result;
 		}
-		return FMantleVehicleBuilder::BuildChassis(Spec, TEXT("/Temp/MantleVehicleThumbnailTest"), Name);
+		FMantleVehicleModelOptions Options;
+		Options.Folder = TEXT("/Temp/MantleVehicleThumbnailTest");
+		Options.Name = Name;
+		Options.bOverwrite = true;
+		Result = FMantleVehicleBuilder::BuildFromModel(Model, TEXT("sedan"), Options);
+		// The vehicle has its own body: the model it was made from is not needed.
+		MantleVehicleScratchBody::Discard(Model);
+		return Result;
 	}
 
 	void DiscardBuild(FMantleVehicleBuildResult& Result)

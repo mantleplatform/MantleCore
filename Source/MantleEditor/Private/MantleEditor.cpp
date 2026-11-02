@@ -448,110 +448,6 @@ namespace
 		SMantlePublishPanel::Start(World, /*bGoLive*/ true, Notes);
 	}
 
-	/**
-	 * Convert vehicle (#435): each selected skeletal mesh becomes (or updates) <Mesh>_Vehicle beside it, the asset the
-	 * vehicle builder puts in the level and publishing stores in the library (#679). What it found, measured or refused is shown, each refusal saying what to fix. A vehicle
-	 * selected in the level (a car Blueprint or pawn placed there) converts its body's mesh with the static meshes attached to
-	 * the body as its parts and its body's physics as its chassis (#435 item 2); a mesh selected in the Content Browser takes
-	 * its own preview attachments and physics asset.
-	 */
-	void OnConvertVehicle()
-	{
-		if (!GEditor)
-		{
-			return;
-		}
-		FEditorDelegates::LoadSelectedAssetsIfNeeded.Broadcast();
-		TArray<USkeletalMesh*> Meshes;
-		if (USelection* Selection = GEditor->GetSelectedObjects())
-		{
-			Selection->GetSelectedObjects<USkeletalMesh>(Meshes);
-		}
-		// Level actors with a skeletal body: the root component when it is one, else the first with a mesh.
-		struct FActorBody
-		{
-			USkeletalMesh* Mesh = nullptr;
-			FMantleVehicleSurroundings Around;
-		};
-		TArray<FActorBody> ActorBodies;
-		TArray<AActor*> Actors;
-		if (USelection* ActorSelection = GEditor->GetSelectedActors())
-		{
-			ActorSelection->GetSelectedObjects<AActor>(Actors);
-		}
-		for (const AActor* Actor : Actors)
-		{
-			const USkeletalMeshComponent* Body = Actor ? Cast<USkeletalMeshComponent>(Actor->GetRootComponent()) : nullptr;
-			if (Actor && (!Body || !Body->GetSkeletalMeshAsset()))
-			{
-				TArray<USkeletalMeshComponent*> Skeletal;
-				Actor->GetComponents(Skeletal);
-				const USkeletalMeshComponent* const* First = Skeletal.FindByPredicate([](const USkeletalMeshComponent* Candidate)
-				{
-					return Candidate && Candidate->GetSkeletalMeshAsset();
-				});
-				Body = First ? *First : nullptr;
-			}
-			if (!Body)
-			{
-				continue;
-			}
-			TArray<UActorComponent*> Components;
-			Actor->GetComponents(Components);
-			const TArray<const UActorComponent*> ConstComponents(Components);
-			FActorBody& Entry = ActorBodies.AddDefaulted_GetRef();
-			Entry.Mesh = Body->GetSkeletalMeshAsset();
-			Entry.Around = FMantleVehicleConverter::SurroundingsOfComponent(*Body, ConstComponents);
-			Meshes.Remove(Entry.Mesh);
-		}
-		if (Meshes.Num() == 0 && ActorBodies.Num() == 0)
-		{
-			FMessageDialog::Open(EAppMsgType::Ok,
-				LOCTEXT("ConvertVehicleNoMesh",
-					"Select the vehicle's skeletal mesh in the Content Browser first: its body, with a bone at each wheel "
-					"center named like Wheel_FL, Wheel_FR, Wheel_BL and Wheel_BR. Or select a vehicle placed in the level "
-					"(a car Blueprint): the meshes attached to its body come along as its parts."));
-			return;
-		}
-
-		TArray<TPair<USkeletalMesh*, const FMantleVehicleSurroundings*>> Conversions;
-		for (const FActorBody& Entry : ActorBodies)
-		{
-			Conversions.Emplace(Entry.Mesh, &Entry.Around);
-		}
-		for (USkeletalMesh* Mesh : Meshes)
-		{
-			Conversions.Emplace(Mesh, nullptr);
-		}
-		TArray<FString> Lines;
-		for (const TPair<USkeletalMesh*, const FMantleVehicleSurroundings*>& Conversion : Conversions)
-		{
-			USkeletalMesh* Mesh = Conversion.Key;
-			FMantleVehicleConversion Result;
-			const UMantleVehicleSource* Source = FMantleVehicleConverter::ConvertAsset(Mesh, Result, Conversion.Value);
-			if (Source)
-			{
-				Lines.Add(FString::Printf(TEXT("%s: made %s (not saved yet). Open Tools > Mantle > Build a vehicle to put it in your level. Publishing your place then adds it to your library and the place's Storage, and the spawn parks that library item."),
-					*Mesh->GetName(), *Source->GetName()));
-			}
-			else
-			{
-				Lines.Add(FString::Printf(TEXT("%s: not converted."), *Mesh->GetName()));
-			}
-			for (const FString& Problem : Result.Problems)
-			{
-				Lines.Add(TEXT("  ") + Problem);
-				UE_LOG(LogMantle, Warning, TEXT("Convert vehicle %s: %s"), *Mesh->GetName(), *Problem);
-			}
-			for (const FString& Note : Result.Notes)
-			{
-				Lines.Add(TEXT("  ") + Note);
-				UE_LOG(LogMantle, Log, TEXT("Convert vehicle %s: %s"), *Mesh->GetName(), *Note);
-			}
-		}
-		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(FString::Join(Lines, TEXT("\n"))));
-	}
-
 	void OnPreview()
 	{
 		UWorld* World = CurrentEditorWorld();
@@ -881,19 +777,9 @@ void FillMantleSection(FToolMenuSection& Section)
 		TEXT("MantleBuildVehicle"),
 		LOCTEXT("BuildVehicleLabel", "Build a vehicle..."),
 		LOCTEXT("BuildVehicleTooltip",
-			"Make a vehicle players can drive: pick the kind of vehicle, shape it with sliders and put it in your level, or put your own car model on it."),
+			"Make a vehicle players can drive from your own 3D model: pick the kind of vehicle, choose your model (a mesh, a vehicle Blueprint or a model file), check how it fits, and put it in your level."),
 		FSlateIcon(),
 		FUIAction(FExecuteAction::CreateStatic(&SMantleVehicleBuilder::OpenTab)));
-
-	Section.AddMenuEntry(
-		TEXT("MantleConvertVehicle"),
-		LOCTEXT("ConvertVehicleLabel", "Convert vehicle"),
-		LOCTEXT("ConvertVehicleTooltip",
-			"Make a Mantle vehicle from the skeletal mesh selected in the Content Browser, or from a vehicle selected in the level: "
-			"finds the wheel bones (Wheel_FL and the like), measures the wheels, carries the meshes attached to the body as its parts, "
-			"reads its collision and center of mass from its physics, and writes <Mesh>_Vehicle with default tuning to adjust."),
-		FSlateIcon(),
-		FUIAction(FExecuteAction::CreateStatic(&OnConvertVehicle)));
 
 	Section.AddMenuEntry(
 		TEXT("MantleCosmetics"),
