@@ -109,7 +109,7 @@ bool FMantleVehicleBodyJoin::Join(FMantleSkinnedMesh& Body, TArray<FSkeletalMate
 		for (int32 Vertex = 0; Vertex < Source.NumVertices(); ++Vertex)
 		{
 			LOD.Positions.Add(FVector3f(Piece.Placement.TransformPosition(FVector(Source.Positions[Vertex]))));
-			LOD.Normals.Add(FVector3f(NormalMatrix.TransformVector(FVector(Source.Normals[Vertex])).GetSafeNormal()));
+			LOD.Normals.Add(FVector3f(FVector(NormalMatrix.TransformVector(FVector(Source.Normals[Vertex]))).GetSafeNormal()));
 			LOD.UVs.Add(Source.UVs[Vertex]);
 			if (bTangents)
 			{
