@@ -29,6 +29,14 @@ FMantleBuilderOverlay FMantleVehicleShapeKind::Overlay(const TArray<FMantleBuild
 {
 	FMantleBuilderOverlay Out;
 
+	for (const FVector& Dot : WheelDots)
+	{
+		FMantleBuilderOverlayMarker& Wheel = Out.Markers.AddDefaulted_GetRef();
+		Wheel.Location = Dot;
+		Wheel.Color = FLinearColor(0.2f, 0.9f, 0.3f);
+		Wheel.RadiusCm = 3.f;
+	}
+
 	FMantleBuilderOverlayMarker& Driver = Out.Markers.AddDefaulted_GetRef();
 	Driver.Location = Spec.Seat;
 	// A two-wheeler's seat is a rider's, an aircraft's a pilot's.

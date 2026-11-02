@@ -1368,60 +1368,35 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildAny(UObject* Model, const 
 	return BuildFromModel(Model, PresetId, Options);
 }
 
-FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAsset, const FString& PresetId, const FMantleVehicleModelOptions& Options)
+bool FMantleVehicleBuilder::PrepareFromModel(UObject* ModelAsset, const FString& PresetId, const FMantleVehicleModelOptions& Options, FMantleVehicleOnChassis& Out, TArray<FString>& Problems)
 {
-	FMantleVehicleBuildResult Out;
-	Out.bOnChassis = true;
 	const FMantleVehiclePreset* Preset = FMantleVehiclePresets::Find(PresetId);
 	if (!Preset)
 	{
-		Out.Problems.Add(TEXT("Pick a vehicle type first."));
+		Problems.Add(TEXT("Pick a vehicle type first."));
 	}
 	if (!ModelAsset)
 	{
-		Out.Problems.Add(TEXT("Pick the model to use as the vehicle's body."));
+		Problems.Add(TEXT("Pick the model to use as the vehicle's body."));
 	}
 	if (!Preset || !ModelAsset)
 	{
-		return Out;
+		return false;
 	}
-
-	// One undo step for the whole build, as Build has, so Ctrl+Z puts back the vehicle a build again changed.
-	const FScopedTransaction Transaction(NSLOCTEXT("MantleVehicleBuilder", "BuildVehicleFromModel", "Build vehicle from model"));
-
-	FMantleVehicleModel Model;
+	Out.PresetName = Preset->Name;
+	FMantleVehicleModel& Model = Out.Model;
 	FString Error;
 	if (!FMantleVehicleModel::Read(ModelAsset, Model, Error))
 	{
-		Out.Problems.Add(Error);
-		return Out;
+		Problems.Add(Error);
+		return false;
 	}
 
-	// The vehicle's name: the one asked for (to update that vehicle, or refused when it is somebody else's), else the first free one. Pressing Build again in the window
-	// asks for the name it built under, so one vehicle stays one set of assets and not a new set for every press.
-	FString Name = Options.Name;
-	const FString Folder = Options.Folder.IsEmpty() ? ChassisFolder() : Options.Folder;
-	if (Name.IsEmpty())
-	{
-		Name = FirstFreeName(Model.Name + TEXT("_") + Preset->Name, [&Folder](const FString& Candidate)
-		{
-			return FPackageName::DoesPackageExist(Folder / Candidate / (Candidate + TEXT("_Vehicle")));
-		});
-	}
-	else if (!Options.bOverwrite)
-	{
-		const FString ExistingPackage = Folder / Name / (Name + TEXT("_Vehicle"));
-		if (FPackageName::DoesPackageExist(ExistingPackage) || FindObject<UMantleVehicleSource>(nullptr, *(ExistingPackage + TEXT(".") + Name + TEXT("_Vehicle"))))
-		{
-			Out.Problems.Add(FString::Printf(TEXT("A vehicle called %s is already in %s, and this build did not make it. Pick another name, or build over it on purpose (the console takes overwrite=1)."), *Name, *Folder));
-			return Out;
-		}
-	}
 	FMantleChassisSpec Archetype;
 	if (!FMantleVehicleChassisBuilder::LoadSpec(PresetId, Archetype, Error))
 	{
-		Out.Problems.Add(FString::Printf(TEXT("The %s chassis could not be read: %s."), *Preset->Name, *Error));
-		return Out;
+		Problems.Add(FString::Printf(TEXT("The %s chassis could not be read: %s."), *Preset->Name, *Error));
+		return false;
 	}
 	// A plane with two propellers is a twin: its chassis has a propeller bone for each.
 	if (Options.Spec.IsSet())
@@ -1438,14 +1413,14 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	FMantleVehicleAsset Gray;
 	if (!FMantleVehicleChassisBuilder::MakeAsset(Archetype, Gray, Error))
 	{
-		Out.Problems.Add(FString::Printf(TEXT("The %s chassis could not be made: %s."), *Preset->Name, *FMantleVehicleShape::PlainReason(Error)));
-		return Out;
+		Problems.Add(FString::Printf(TEXT("The %s chassis could not be made: %s."), *Preset->Name, *FMantleVehicleShape::PlainReason(Error)));
+		return false;
 	}
-	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Archetype, Gray.Body);
+	TArray<FMantleVehiclePartSlot>& Slots = Out.Slots; Slots = FMantleVehicleChassisSkin::PartSlots(Archetype, Gray.Body);
 
 	// Which way the model faces, and which of its parts are the chassis's wheels, rotors and surfaces: the creator's choice, else what its names and its wheels say.
-	FMantleVehicleModelMap Map;
-	double Yaw = 0.0;
+	FMantleVehicleModelMap& Map = Out.Map;
+	double& Yaw = Out.Yaw;
 	if (Options.Map.IsSet())
 	{
 		Map = Options.Map.GetValue();
@@ -1462,7 +1437,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	}
 
 	// The chassis for the model: the window's own when it has shaped one, else the type's sized to the model's bounds.
-	FMantleChassisSpec Spec;
+	FMantleChassisSpec& Spec = Out.Spec;
 	if (Options.Spec.IsSet())
 	{
 		Spec = Options.Spec.GetValue();
@@ -1489,23 +1464,23 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	}
 
 	// The chassis's own skeleton at that size, and the model on it.
-	FMantleVehicleAsset Chassis;
+	FMantleVehicleAsset& Chassis = Out.Chassis;
 	if (!FMantleVehicleChassisBuilder::MakeAsset(Spec, Chassis, Error))
 	{
-		Out.Problems.Add(FString::Printf(TEXT("These sizes don't make a vehicle (%s). Change a size and try again."), *FMantleVehicleShape::PlainReason(Error)));
-		return Out;
+		Problems.Add(FString::Printf(TEXT("These sizes don't make a vehicle (%s). Change a size and try again."), *FMantleVehicleShape::PlainReason(Error)));
+		return false;
 	}
-	const FMantleVehicleModelPlacement Placement = FMantleVehicleChassisSkin::FitPlacement(Spec, Chassis.Body, Model, Yaw, Map);
+	const FMantleVehicleModelPlacement& Placement = Out.Placement =  FMantleVehicleChassisSkin::FitPlacement(Spec, Chassis.Body, Model, Yaw, Map);
 	if (!Placement.Note.IsEmpty())
 	{
 		// A model far from the vehicle's size is scaled only so far, or not at all when it is too small to measure: said, so the vehicle that looks wrong has a reason.
 		Out.Notes.AddUnique(Placement.Note);
 	}
-	FMantleVehicleSkinned Skinned;
+	FMantleVehicleSkinned& Skinned = Out.Skinned;
 	if (!FMantleVehicleChassisSkin::Skin(Chassis.Body, Slots, Model, Placement, Map, Skinned, Error))
 	{
-		Out.Problems.Add(FString::Printf(TEXT("Your model could not be put on the %s: %s."), *Preset->Name, *Error));
-		return Out;
+		Problems.Add(FString::Printf(TEXT("Your model could not be put on the %s: %s."), *Preset->Name, *Error));
+		return false;
 	}
 	Out.Notes.Append(Skinned.Notes);
 	// What reading the model had to say (a Nanite mesh read from its source or from its fallback, and why).
@@ -1520,8 +1495,54 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	}
 
 	// Collision shaped like the model: its own physics asset, else a plane's airframe split from its shape, else the chassis's box fitted to its hull.
-	const FMantleVehicleSkinCollision Collision = FMantleVehicleChassisSkin::ProposeCollision(Spec, Skinned.Body, Slots, Model, Placement, Map);
+	Out.Collision = FMantleVehicleChassisSkin::ProposeCollision(Spec, Skinned.Body, Slots, Model, Placement, Map);
+	return true;
+}
 
+FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAsset, const FString& PresetId, const FMantleVehicleModelOptions& Options)
+{
+	FMantleVehicleBuildResult Out;
+	Out.bOnChassis = true;
+	// One undo step for the whole build, as Build has, so Ctrl+Z puts back the vehicle a build again changed.
+	const FScopedTransaction Transaction(NSLOCTEXT("MantleVehicleBuilder", "BuildVehicleFromModel", "Build vehicle from model"));
+
+	// How the model sits on the vehicle: the same work the window's picture does (MakeModelPreview), so what the creator saw is what is built.
+	FMantleVehicleOnChassis Prepared;
+	if (!PrepareFromModel(ModelAsset, PresetId, Options, Prepared, Out.Problems))
+	{
+		return Out;
+	}
+	const FMantleVehiclePreset* Preset = FMantleVehiclePresets::Find(PresetId);
+	const FMantleVehicleModel& Model = Prepared.Model;
+	const FMantleChassisSpec& Spec = Prepared.Spec;
+	const TArray<FMantleVehiclePartSlot>& Slots = Prepared.Slots;
+	const FMantleVehicleModelMap& Map = Prepared.Map;
+	const double Yaw = Prepared.Yaw;
+	FMantleVehicleSkinned& Skinned = Prepared.Skinned;
+	const FMantleVehicleSkinCollision& Collision = Prepared.Collision;
+	Out.Notes = Prepared.Notes;
+	FString Error;
+
+	// The vehicle's name: the one asked for (to update that vehicle, or refused when it is somebody else's), else the first free one. Pressing Build again in the window
+	// asks for the name it built under, so one vehicle stays one set of assets and not a new set for every press.
+	FString Name = Options.Name;
+	const FString Folder = Options.Folder.IsEmpty() ? ChassisFolder() : Options.Folder;
+	if (Name.IsEmpty())
+	{
+		Name = FirstFreeName(Model.Name + TEXT("_") + Preset->Name, [&Folder](const FString& Candidate)
+		{
+			return FPackageName::DoesPackageExist(Folder / Candidate / (Candidate + TEXT("_Vehicle")));
+		});
+	}
+	else if (!Options.bOverwrite)
+	{
+		const FString ExistingPackage = Folder / Name / (Name + TEXT("_Vehicle"));
+		if (FPackageName::DoesPackageExist(ExistingPackage) || FindObject<UMantleVehicleSource>(nullptr, *(ExistingPackage + TEXT(".") + Name + TEXT("_Vehicle"))))
+		{
+			Out.Problems.Add(FString::Printf(TEXT("A vehicle called %s is already in %s, and this build did not make it. Pick another name, or build over it on purpose (the console takes overwrite=1)."), *Name, *Folder));
+			return Out;
+		}
+	}
 	// A model that draws more materials than a published body may: the body keeps the ones with the most triangles and the rest are split off as parts of the
 	// vehicle, each triangle with its material, its place and its bone, so the vehicle looks as the model does. The creator is told what was done, in plain words.
 	TArray<FMantleVehicleSourcePart> SplitParts;
@@ -1634,6 +1655,145 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		}
 	}
 	return Out;
+}
+
+void FMantleVehicleModelPreview::Discard()
+{
+	if (USkeletalMesh* Picture = Mesh.Get())
+	{
+		// Only the picture needed them: never saved, never registered.
+		if (USkeleton* Skeleton = Picture->GetSkeleton())
+		{
+			Skeleton->ClearFlags(RF_Public | RF_Standalone);
+			Skeleton->MarkAsGarbage();
+		}
+		Picture->ClearFlags(RF_Public | RF_Standalone);
+		Picture->MarkAsGarbage();
+	}
+	Mesh.Reset();
+	Body = FMantleSkinnedMesh();
+	WheelDots.Reset();
+	bOk = false;
+}
+
+bool FMantleVehicleBuilder::MakeModelPreview(UObject* ModelAsset, const FString& PresetId, const FMantleVehicleModelOptions& Options, FMantleVehicleModelPreview& Out)
+{
+	Out.Discard();
+	Out.Notes.Reset();
+	Out.Problems.Reset();
+	FMantleVehicleOnChassis Prepared;
+	if (!PrepareFromModel(ModelAsset, PresetId, Options, Prepared, Out.Problems))
+	{
+		return false;
+	}
+	FString Error;
+	const FString PictureName = FString::Printf(TEXT("Preview%s"), *FGuid::NewGuid().ToString(EGuidFormats::Digits).Left(8));
+	USkeletalMesh* Picture = FMantleVehicleChassisMesh::Create(Prepared.Skinned.Body, TEXT("/Temp/MantleVehiclePreview"), PictureName, Error, &Prepared.Skinned.Materials, &Prepared.Skinned.Extras);
+	if (!Picture)
+	{
+		Out.Problems.Add(FString::Printf(TEXT("The picture of your model on the %s could not be made: %s."), *Prepared.PresetName, *FMantleVehicleShape::PlainReason(Error)));
+		return false;
+	}
+	Out.Mesh.Reset(Picture);
+	Out.Body = Prepared.Skinned.Body;
+	Out.WheelDots = Prepared.Chassis.WheelPositions;
+	Out.Spec = Prepared.Spec;
+	Out.Map = Prepared.Map;
+	Out.Yaw = Prepared.Yaw;
+	Out.Notes = Prepared.Notes;
+	Out.bOk = true;
+	return true;
+}
+
+bool FMantleVehicleBuilder::PreviewMatchesBuild(const FMantleVehicleModelPreview& Preview, const FMantleVehicleBuildResult& Built, FString& Why)
+{
+	if (!Preview.bOk || !Built.bOk || !Built.Source)
+	{
+		Why = TEXT("the preview or the build did not succeed");
+		return false;
+	}
+	FMantleSkinnedMesh BuiltBody;
+	FString Error;
+	if (!FMantleSkinnedMesh::ExtractFromSkeletalMesh(Built.Source->Body.LoadSynchronous(), BuiltBody, &Error) || BuiltBody.LODs.Num() == 0 || !BuiltBody.HasReferencePose())
+	{
+		Why = FString::Printf(TEXT("the built body could not be read: %s"), *Error);
+		return false;
+	}
+	TArray<FTransform> Component;
+	for (int32 Bone = 0; Bone < BuiltBody.Bones.Num(); ++Bone)
+	{
+		const int32 Parent = BuiltBody.Bones[Bone].ParentIndex;
+		Component.Add(Parent >= 0 ? BuiltBody.ReferencePose[Bone] * Component[Parent] : BuiltBody.ReferencePose[Bone]);
+	}
+	if (Built.Source->Wheels.Num() != Preview.WheelDots.Num())
+	{
+		Why = FString::Printf(TEXT("the build has %d wheels and the picture %d dots"), Built.Source->Wheels.Num(), Preview.WheelDots.Num());
+		return false;
+	}
+	for (int32 Index = 0; Index < Preview.WheelDots.Num(); ++Index)
+	{
+		const FName WheelBone = Built.Source->Wheels[Index].Bone;
+		const int32 Bone = BuiltBody.Bones.IndexOfByPredicate([WheelBone](const FMantleSkinnedMeshBone& B) { return B.Name == WheelBone; });
+		if (Bone == INDEX_NONE)
+		{
+			Why = FString::Printf(TEXT("the built body has no bone %s"), *WheelBone.ToString());
+			return false;
+		}
+		const double Off = FVector::Dist(Component[Bone].GetLocation(), Preview.WheelDots[Index]);
+		if (Off > 0.05)
+		{
+			Why = FString::Printf(TEXT("wheel %d: the dot is %.2f cm from the built wheel"), Index + 1, Off);
+			return false;
+		}
+	}
+	if (Built.Source->Parts.Num() == 0)
+	{
+		if (Preview.Body.LODs.Num() == 0 || Preview.Body.LODs[0].Positions.Num() != BuiltBody.LODs[0].Positions.Num() || Preview.Body.LODs[0].Indices.Num() != BuiltBody.LODs[0].Indices.Num())
+		{
+			Why = TEXT("the picture's body and the built body have different triangles");
+			return false;
+		}
+		const FBox3f A = Preview.Body.ComputeBounds(0);
+		const FBox3f B = BuiltBody.ComputeBounds(0);
+		if (!A.Min.Equals(B.Min, 0.05f) || !A.Max.Equals(B.Max, 0.05f))
+		{
+			Why = TEXT("the picture's body and the built body are not the same size or in the same place");
+			return false;
+		}
+	}
+	return true;
+}
+
+namespace MantleVehicleBuilderPrivate
+{
+	// Mantle.Vehicle.PreviewCheck: the window's picture and the real build of one model, compared.
+	FAutoConsoleCommand PreviewCheckCommand(
+		TEXT("Mantle.Vehicle.PreviewCheck"),
+		TEXT("Mantle.Vehicle.PreviewCheck <model asset path> <vehicle type> -- makes the picture of the model on the type's frame (MakeModelPreview) and the build (BuildFromModel, in a scratch package), compares them and logs MANTLE_VEHICLE_PREVIEW_CHECK."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+		{
+			if (Args.Num() < 2)
+			{
+				UE_LOG(LogTemp, Error, TEXT("MANTLE_VEHICLE_PREVIEW_CHECK ok=0 usage: Mantle.Vehicle.PreviewCheck <model asset path> <vehicle type>"));
+				return;
+			}
+			UObject* Asset = LoadObject<UObject>(nullptr, *Args[0], nullptr, LOAD_NoWarn | LOAD_Quiet);
+			FMantleVehicleModelOptions Options;
+			Options.Folder = TEXT("/Temp/MantleVehiclePreviewCheck");
+			Options.Name = TEXT("PreviewCheck");
+			Options.bOverwrite = true;
+			FMantleVehicleModelPreview Preview;
+			const bool bPreview = FMantleVehicleBuilder::MakeModelPreview(Asset, Args[1], Options, Preview);
+			const FMantleVehicleBuildResult Built = FMantleVehicleBuilder::BuildFromModel(Asset, Args[1], Options);
+			FString Why;
+			const bool bSame = bPreview && FMantleVehicleBuilder::PreviewMatchesBuild(Preview, Built, Why);
+			UE_LOG(LogTemp, Display, TEXT("MANTLE_VEHICLE_PREVIEW_CHECK ok=%d preview=%d built=%d dots=%d tris=%d why=%s model=%s type=%s"), bSame ? 1 : 0, bPreview ? 1 : 0, Built.bOk ? 1 : 0,
+				Preview.WheelDots.Num(), Preview.Body.LODs.Num() > 0 ? Preview.Body.LODs[0].Indices.Num() / 3 : 0, *Why, *Args[0], *Args[1]);
+			for (const FString& Problem : Preview.Problems)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("MANTLE_VEHICLE_PREVIEW_CHECK problem: %s"), *Problem);
+			}
+		}));
 }
 
 FString FMantleVehicleBuilder::ImportFolder()
