@@ -493,6 +493,22 @@ struct FMantleMapBoundary
 	}
 };
 
+/** Whether the pieces players place with placing mode are kept (#184): not at all, or per server (saved like a VoxelWorld's blocks). */
+enum class EMantlePlacingPersistence : uint8
+{
+	None,
+	Server
+};
+
+/** settings.placing (#184): placing mode's persistence and per-place piece cap. Nothing here turns placing mode on; a script does. */
+struct FMantlePlacingSettings
+{
+	/** settings.placing.persistence; none unless the file says server. */
+	EMantlePlacingPersistence Persistence = EMantlePlacingPersistence::None;
+	/** settings.placing.maxPieces: the most placed pieces the place holds, 1 to FMantlePlaceLimits::MaxPlacedPieces (2000, also the default). */
+	int32 MaxPieces = 2000;
+};
+
 struct FMantleSettings
 {
 	int32 MaxPlayers = 16;
@@ -542,6 +558,8 @@ struct FMantleSettings
 	FMantleEnvironmentSettings Environment;
 	/** The place's Water Zone (#997). Unset when the file has no settings.water. */
 	TOptional<FMantleWaterZone> Water;
+	/** settings.placing (#184). The defaults when the file has none: no persistence, a cap of 2000. */
+	FMantlePlacingSettings Placing;
 };
 
 /**
@@ -586,6 +604,24 @@ struct FMantleLocalization
 	TMap<FString, TMap<FString, FString>> Translations;
 };
 
+/**
+ * One snap point of a StaticMesh asset (#184), the place file's assets[].sockets[]: where placing mode joins this mesh to
+ * another. Position and Rotation are in the mesh's own space; the socket faces along its forward (+X) axis.
+ */
+struct FMantlePlaceSocket
+{
+	/** Unique within the asset: [A-Za-z0-9_], 1 to 32 characters. */
+	FString Name;
+	/** What the socket is: [A-Za-z0-9_], 1 to 32 characters. */
+	FString Kind;
+	/** The socket kinds this socket joins to, at most 8; empty when the file gives none. */
+	TArray<FString> Accepts;
+	/** Centimeters, each axis within 100000 of the mesh's origin. */
+	FVector Position = FVector::ZeroVector;
+	/** The file's [pitch, yaw, roll] in degrees; zero when the file gives none. */
+	FRotator Rotation = FRotator::ZeroRotator;
+};
+
 struct FMantleAssetRef
 {
 	FString Id;
@@ -598,6 +634,9 @@ struct FMantleAssetRef
 
 	/** Lumen (#149): the engine the file was baked by (FMantleMeshLumenFile::EngineTag). A client of another engine skips it. */
 	FString Engine;
+
+	/** StaticMesh, optional (#184): the snap sockets placing mode joins this mesh with, at most FMantlePlaceLimits::MaxMeshSockets. */
+	TArray<FMantlePlaceSocket> Sockets;
 };
 
 /**
