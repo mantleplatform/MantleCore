@@ -359,10 +359,94 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 		}
 		return Texture;
 	};
-	TSet<const UMaterialExpression*> TextureSeen;
-	if (const UMaterialExpressionTextureBase* Sample = FirstTexture(Emissive, TextureSeen))
+	// Every texture on the emissive path, in pre-order. A Scalar Parameter set to 0 belongs to the textures beside it at the first node that has both (the Multiply
+	// of a texture and its intensity), so one switched by a parameter of its own is known by its texture; one with no texture at its node goes on up to the next.
+	struct FBranch
 	{
-		Out.Texture = TextureOf(Sample);
+		TArray<int32> Textures;
+		TArray<FName> Loose;
+	};
+	TMap<const UMaterialExpression*, FBranch> Memo;
+	int32 WalkBudget = NodeBudget;
+	TFunction<FBranch(const FExpressionInput*)> Walk;
+	Walk = [&](const FExpressionInput* Input) -> FBranch
+	{
+		FBranch Branch;
+		const UMaterialExpression* Expression = Through(Input);
+		if (!Expression)
+		{
+			return Branch;
+		}
+		if (const FBranch* Done = Memo.Find(Expression))
+		{
+			return *Done;
+		}
+		if (--WalkBudget < 0)
+		{
+			return Branch;
+		}
+		// Empty while it is walked, so a cycle ends.
+		Memo.Add(Expression);
+		if (const UMaterialExpressionTextureBase* Sample = Cast<UMaterialExpressionTextureBase>(Expression))
+		{
+			if (UTexture* Texture = TextureOf(Sample))
+			{
+				const UMaterialExpressionTextureSampleParameter* Parameter = Cast<UMaterialExpressionTextureSampleParameter>(Sample);
+				int32 Index = Out.Textures.IndexOfByPredicate([Texture](const FMantleGlowTexture& Each) { return Each.Texture == Texture; });
+				if (Index == INDEX_NONE)
+				{
+					Index = Out.Textures.AddDefaulted();
+					Out.Textures[Index].Texture = Texture;
+				}
+				if (Parameter && Out.Textures[Index].Parameter.IsNone())
+				{
+					Out.Textures[Index].Parameter = Parameter->ParameterName;
+				}
+				Branch.Textures.Add(Index);
+			}
+			Memo.Add(Expression, Branch);
+			return Branch;
+		}
+		if (const UMaterialExpressionScalarParameter* Scalar = Cast<UMaterialExpressionScalarParameter>(Expression))
+		{
+			double Value = 1.0;
+			if (ScalarOf(Scalar, Material, Value) && Value == 0.0)
+			{
+				Branch.Loose.Add(Scalar->ParameterName);
+			}
+		}
+		TArray<FBranch> Children;
+		UMaterialExpression* Mutable = const_cast<UMaterialExpression*>(Expression);
+		for (FExpressionInputIterator It{ Mutable }; It; ++It)
+		{
+			Children.Add(Walk(It.Input));
+			for (const int32 Texture : Children.Last().Textures)
+			{
+				Branch.Textures.AddUnique(Texture);
+			}
+		}
+		for (const FBranch& Child : Children)
+		{
+			for (const FName& Scalar : Child.Loose)
+			{
+				if (Branch.Textures.Num() == 0)
+				{
+					Branch.Loose.AddUnique(Scalar);
+					continue;
+				}
+				for (const int32 Texture : Branch.Textures)
+				{
+					Out.Textures[Texture].OffScalars.AddUnique(Scalar);
+				}
+			}
+		}
+		Memo.Add(Expression, Branch);
+		return Branch;
+	};
+	Walk(Emissive);
+	if (Out.Textures.Num() > 0)
+	{
+		Out.Texture = Out.Textures[0].Texture;
 	}
 	TSet<const UMaterialExpression*> BaseSeen;
 	Budget = NodeBudget;

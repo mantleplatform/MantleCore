@@ -43,7 +43,8 @@ struct FMantleVehicleLightGuess
  * section's glow up and down. A slot named for a light (head, tail, brake, reverse, indicator, signal, blinker, lamp, light) is a light as it is.
  *
  * Each kind has one fixed color (Color) and the light's material copy glows with it (MakeLightMaterial), keeping the model's glow texture as
- * the lens's shape. Nothing here refuses a model: a model with no glow and no named slots gets no light sections and the beams alone.
+ * the lens's shape (of a material with several glow textures, the ones named for another kind are switched off in the copy). Nothing here
+ * refuses a model: a model with no glow and no named slots gets no light sections and the beams alone.
  */
 struct MANTLEEDITOR_API FMantleVehicleLights
 {
@@ -72,6 +73,13 @@ struct MANTLEEDITOR_API FMantleVehicleLights
 	static TOptional<EMantleLightKind> FromName(const FString& Name, const FVector3f& Center, const FBox3f& Bounds);
 
 	/**
+	 * The light a glow texture's name (its asset's or its parameter's) says it is, for a material with several glow textures: stop, brake, tail is Rear; reverse,
+	 * backup is Reverse; signal, indicator, blinker, turn is a signal (returned as Left; the caller splits it by side). Unset for a generic name (lights, head,
+	 * emissive) or one that says nothing, which the finder reads by color and position (Classify) instead. Pure.
+	 */
+	static TOptional<EMantleLightKind> FromGlowName(const FString& Name);
+
+	/**
 	 * Finds the lights on Body (LOD 0, the vehicle's space: +X forward, cm) with Materials its slots. bCenterline (a bike) gets one beam on the middle line.
 	 * Reads the materials' glow and their glow textures, so game thread.
 	 */
@@ -89,7 +97,9 @@ struct MANTLEEDITOR_API FMantleVehicleLights
 
 	/**
 	 * The glowing copy of a light section's material: a Material Instance of Original (or of the instance's parent when Original is already one of these), saved
-	 * beside the vehicle as MI_<Vehicle>_<Section>, with the glow the model switched off turned on and the kind recorded on it (KindOf). Null with OutError when it
+	 * beside the vehicle as MI_<Vehicle>_<Section>, with the glow the model switched off turned on and the kind recorded on it (KindOf). A material with several glow textures
+	 * (FMantleMaterialGlow::Textures) keeps, in the copy, the ones that are generic or named for Kind; a texture parameter named for another kind is set to black, and
+	 * the glow switches that belong only to such textures stay off. Null with OutError when it
 	 * cannot be made or saved. A /Temp package is not written. Game thread.
 	 */
 	static UMaterialInterface* MakeLightMaterial(UMaterialInterface* Original, EMantleLightKind Kind, const FString& PackagePath, const FString& AssetName, FString& OutError);
