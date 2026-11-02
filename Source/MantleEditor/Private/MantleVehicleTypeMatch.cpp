@@ -19,9 +19,16 @@ namespace MantleVehicleTypeMatchPrivate
 		return false;
 	}
 
+	/** The wheel a driver turns (steeringwheel, steering_wheel), which sits in the cabin and is not one of the vehicle's wheels. */
+	bool IsSteeringWheelName(const FString& Lower)
+	{
+		return HasAny(Lower, { TEXT("steeringwheel"), TEXT("steering_wheel"), TEXT("steering wheel"), TEXT("steering-wheel"), TEXT("steerwheel"), TEXT("steer_wheel"),
+			TEXT("wheel_steering"), TEXT("wheelsteering") });
+	}
+
 	bool IsWheelName(const FString& Lower)
 	{
-		return HasAny(Lower, { TEXT("wheel"), TEXT("tire"), TEXT("tyre") });
+		return HasAny(Lower, { TEXT("wheel"), TEXT("tire"), TEXT("tyre") }) && !IsSteeringWheelName(Lower);
 	}
 
 	/** A rotor bone is a helicopter's main rotor; a car's brake rotor is not. */

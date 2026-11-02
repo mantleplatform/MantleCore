@@ -6,6 +6,7 @@
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "Materials/MaterialExpressionFresnel.h"
+#include "Materials/MaterialExpressionFunctionInput.h"
 #include "Materials/MaterialExpressionFunctionOutput.h"
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "Materials/MaterialExpressionMultiply.h"
@@ -27,9 +28,10 @@ namespace MantleGlowMaterialPrivate
 	/** How deep a call's function is followed into the functions it calls. */
 	constexpr int32 MaxFunctionDepth = 4;
 
-	/** The node an input reads through reroutes; null when nothing is connected. */
-	const UMaterialExpression* Through(const FExpressionInput* Input)
+	/** The node an input reads through reroutes, and which of its outputs; null when nothing is connected. */
+	const UMaterialExpression* ThroughPin(const FExpressionInput* Input, int32& OutputIndex)
 	{
+		OutputIndex = 0;
 		for (int32 Depth = 0; Input && Input->Expression && Depth < 32; ++Depth)
 		{
 			if (const UMaterialExpressionReroute* Reroute = Cast<UMaterialExpressionReroute>(Input->Expression))
@@ -37,9 +39,161 @@ namespace MantleGlowMaterialPrivate
 				Input = &Reroute->Input;
 				continue;
 			}
+			OutputIndex = Input->OutputIndex;
 			return Input->Expression;
 		}
 		return nullptr;
+	}
+
+	/** The node an input reads through reroutes; null when nothing is connected. */
+	const UMaterialExpression* Through(const FExpressionInput* Input)
+	{
+		int32 OutputIndex = 0;
+		return ThroughPin(Input, OutputIndex);
+	}
+
+	/** What feeds one output of a function call: the call's inputs that output depends on, and the nodes inside the function on the way. */
+	struct FCallFeed
+	{
+		TArray<const FExpressionInput*> Inputs;
+		TArray<const UMaterialExpression*> Inside;
+	};
+
+	/**
+	 * Follows one output of Call back through its function (and the functions that one calls) to the function inputs it reads, and returns the call's inputs for
+	 * those. A glTF material is one call of this kind: its Emissive Color output reads the emissive texture and factor, not the base color, normal or anisotropy
+	 * that go into the same call. False when the function cannot be followed (none set, no such output): the caller then takes every input.
+	 */
+	bool TraceCall(const UMaterialExpressionMaterialFunctionCall* Call, const int32 OutputIndex, const int32 FunctionDepth, FCallFeed& Out)
+	{
+		if (!Call->MaterialFunction || FunctionDepth >= MaxFunctionDepth)
+		{
+			return false;
+		}
+		// The output by name when the call lists it (its outputs and the function's can be ordered alike), else by position.
+		int32 Which = OutputIndex;
+		if (Call->Outputs.IsValidIndex(OutputIndex))
+		{
+			for (int32 Each = 0; Each < Call->FunctionOutputs.Num(); ++Each)
+			{
+				if (Call->FunctionOutputs[Each].ExpressionOutput && Call->FunctionOutputs[Each].ExpressionOutput->OutputName == Call->Outputs[OutputIndex].OutputName)
+				{
+					Which = Each;
+					break;
+				}
+			}
+		}
+		if (!Call->FunctionOutputs.IsValidIndex(Which))
+		{
+			return false;
+		}
+		// The call's links to the function's nodes are not saved: they are made again when the material loads, and found here by id when they are not there.
+		const UMaterialExpressionFunctionOutput* FunctionOutput = Call->FunctionOutputs[Which].ExpressionOutput;
+		TArray<const UMaterialExpressionFunctionInput*> FunctionInputs;
+		for (const TObjectPtr<UMaterialExpression>& Inner : Call->MaterialFunction->GetExpressions())
+		{
+			if (const UMaterialExpressionFunctionOutput* Output = Cast<UMaterialExpressionFunctionOutput>(Inner))
+			{
+				if (!FunctionOutput && Output->Id == Call->FunctionOutputs[Which].ExpressionOutputId)
+				{
+					FunctionOutput = Output;
+				}
+			}
+			else if (const UMaterialExpressionFunctionInput* Input = Cast<UMaterialExpressionFunctionInput>(Inner))
+			{
+				FunctionInputs.Add(Input);
+			}
+		}
+		if (!FunctionOutput)
+		{
+			return false;
+		}
+		TSet<const UMaterialExpressionFunctionInput*> Reached;
+		TSet<TTuple<const UMaterialExpression*, int32>> Seen;
+		int32 Budget = NodeBudget;
+		TFunction<void(const FExpressionInput*)> Trace = [&](const FExpressionInput* Input)
+		{
+			int32 Pin = 0;
+			const UMaterialExpression* Expression = ThroughPin(Input, Pin);
+			bool bAlready = false;
+			if (!Expression || --Budget < 0)
+			{
+				return;
+			}
+			Seen.Add(MakeTuple(Expression, Pin), &bAlready);
+			if (bAlready)
+			{
+				return;
+			}
+			Out.Inside.Add(Expression);
+			if (const UMaterialExpressionFunctionInput* FunctionInput = Cast<UMaterialExpressionFunctionInput>(Expression))
+			{
+				Reached.Add(FunctionInput);
+				return;
+			}
+			if (const UMaterialExpressionMaterialFunctionCall* Nested = Cast<UMaterialExpressionMaterialFunctionCall>(Expression))
+			{
+				FCallFeed Inner;
+				if (TraceCall(Nested, Pin, FunctionDepth + 1, Inner))
+				{
+					Out.Inside.Append(Inner.Inside);
+					for (const FExpressionInput* Feed : Inner.Inputs)
+					{
+						Trace(Feed);
+					}
+					return;
+				}
+			}
+			UMaterialExpression* Mutable = const_cast<UMaterialExpression*>(Expression);
+			for (FExpressionInputIterator It{ Mutable }; It; ++It)
+			{
+				Trace(It.Input);
+			}
+		};
+		Trace(&FunctionOutput->A);
+		for (const FFunctionExpressionInput& CallInput : Call->FunctionInputs)
+		{
+			const UMaterialExpressionFunctionInput* Node = CallInput.ExpressionInput;
+			if (!Node)
+			{
+				const UMaterialExpressionFunctionInput* const* Found = FunctionInputs.FindByPredicate([&CallInput](const UMaterialExpressionFunctionInput* Each) { return Each->Id == CallInput.ExpressionInputId; });
+				Node = Found ? *Found : nullptr;
+			}
+			if (Node && Reached.Contains(Node))
+			{
+				Out.Inputs.Add(&CallInput.Input);
+			}
+		}
+		return true;
+	}
+
+	/** The inputs of the node Input reads that feed the output Input reads (all of them, unless it is a function call whose function can be followed). */
+	void FeedingInputs(const FExpressionInput* Input, TArray<const FExpressionInput*>& Out, TArray<const UMaterialExpression*>* Inside = nullptr)
+	{
+		int32 Pin = 0;
+		const UMaterialExpression* Expression = ThroughPin(Input, Pin);
+		if (!Expression)
+		{
+			return;
+		}
+		if (const UMaterialExpressionMaterialFunctionCall* Call = Cast<UMaterialExpressionMaterialFunctionCall>(Expression))
+		{
+			FCallFeed Feed;
+			if (TraceCall(Call, Pin, 0, Feed))
+			{
+				Out.Append(Feed.Inputs);
+				if (Inside)
+				{
+					Inside->Append(Feed.Inside);
+				}
+				return;
+			}
+		}
+		UMaterialExpression* Mutable = const_cast<UMaterialExpression*>(Expression);
+		for (FExpressionInputIterator It{ Mutable }; It; ++It)
+		{
+			Out.Add(It.Input);
+		}
 	}
 
 	/** Every node an emissive graph reaches, and whether one is a Scene Color or a Fresnel. */
@@ -114,6 +268,13 @@ namespace MantleGlowMaterialPrivate
 		return false;
 	}
 
+	/** Whether a Scalar Parameter's name is a switch for the glow, and not what places a texture (a glTF material's EmissiveTexture_TexCoord is 0 for the first UV set). */
+	bool IsGlowSwitchName(const FName Name)
+	{
+		const FString Text = Name.ToString();
+		return !Text.Contains(TEXT("TexCoord")) && !Text.Contains(TEXT("Rotation")) && !Text.Contains(TEXT("Tiling")) && !Text.Contains(TEXT("UVSet"));
+	}
+
 	/** A constant or a Scalar Parameter, as Context sets it. */
 	bool ScalarOf(const UMaterialExpression* Expression, const UMaterialInterface* Context, double& Out)
 	{
@@ -155,10 +316,11 @@ namespace MantleGlowMaterialPrivate
 		{
 			return Expression;
 		}
-		UMaterialExpression* Mutable = const_cast<UMaterialExpression*>(Expression);
-		for (FExpressionInputIterator It{ Mutable }; It; ++It)
+		TArray<const FExpressionInput*> Feeds;
+		FeedingInputs(Input, Feeds);
+		for (const FExpressionInput* Feed : Feeds)
 		{
-			if (const UMaterialExpression* Found = FirstColor(It.Input, Context, bParametersOnly, Seen, Budget))
+			if (const UMaterialExpression* Found = FirstColor(Feed, Context, bParametersOnly, Seen, Budget))
 			{
 				return Found;
 			}
@@ -307,14 +469,35 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 	{
 		return false;
 	}
-	FGraphScan Scan;
-	Scan.ScanInput(Emissive, MaxFunctionDepth);
-	for (const UMaterialExpression* Expression : Scan.Seen)
+	// What feeds the emissive output, through the functions it calls by the pin it reads (so a glTF material's base color and normal are not on the path).
+	TSet<const UMaterialExpression*> Reached;
+	{
+		int32 ReachBudget = NodeBudget;
+		TFunction<void(const FExpressionInput*)> Reach = [&](const FExpressionInput* Input)
+		{
+			const UMaterialExpression* Expression = Through(Input);
+			if (!Expression || --ReachBudget < 0 || Reached.Contains(Expression))
+			{
+				return;
+			}
+			Reached.Add(Expression);
+			TArray<const FExpressionInput*> Feeds;
+			TArray<const UMaterialExpression*> Inside;
+			FeedingInputs(Input, Feeds, &Inside);
+			Reached.Append(Inside);
+			for (const FExpressionInput* Feed : Feeds)
+			{
+				Reach(Feed);
+			}
+		};
+		Reach(Emissive);
+	}
+	for (const UMaterialExpression* Expression : Reached)
 	{
 		if (const UMaterialExpressionScalarParameter* Scalar = Cast<UMaterialExpressionScalarParameter>(Expression))
 		{
 			double Value = 1.0;
-			if (ScalarOf(Scalar, Material, Value) && Value == 0.0)
+			if (IsGlowSwitchName(Scalar->ParameterName) && ScalarOf(Scalar, Material, Value) && Value == 0.0)
 			{
 				Out.OffScalars.AddUnique(Scalar->ParameterName);
 			}
@@ -335,10 +518,11 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 		{
 			return Texture;
 		}
-		UMaterialExpression* Mutable = const_cast<UMaterialExpression*>(Expression);
-		for (FExpressionInputIterator It{ Mutable }; It; ++It)
+		TArray<const FExpressionInput*> Feeds;
+		FeedingInputs(Input, Feeds);
+		for (const FExpressionInput* Feed : Feeds)
 		{
-			if (const UMaterialExpressionTextureBase* Found = FirstTexture(It.Input, Seen))
+			if (const UMaterialExpressionTextureBase* Found = FirstTexture(Feed, Seen))
 			{
 				return Found;
 			}
@@ -410,16 +594,17 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 		if (const UMaterialExpressionScalarParameter* Scalar = Cast<UMaterialExpressionScalarParameter>(Expression))
 		{
 			double Value = 1.0;
-			if (ScalarOf(Scalar, Material, Value) && Value == 0.0)
+			if (IsGlowSwitchName(Scalar->ParameterName) && ScalarOf(Scalar, Material, Value) && Value == 0.0)
 			{
 				Branch.Loose.Add(Scalar->ParameterName);
 			}
 		}
 		TArray<FBranch> Children;
-		UMaterialExpression* Mutable = const_cast<UMaterialExpression*>(Expression);
-		for (FExpressionInputIterator It{ Mutable }; It; ++It)
+		TArray<const FExpressionInput*> Feeds;
+		FeedingInputs(Input, Feeds);
+		for (const FExpressionInput* Feed : Feeds)
 		{
-			Children.Add(Walk(It.Input));
+			Children.Add(Walk(Feed));
 			for (const int32 Texture : Children.Last().Textures)
 			{
 				Branch.Textures.AddUnique(Texture);
@@ -462,6 +647,8 @@ bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMateri
 		if (const UMaterialExpression* Color = FirstColor(Emissive, Material, bParametersOnly, Seen, ColorBudget); Color && ColorOf(Color, Material, Value))
 		{
 			Out.Color = Value;
+			// An exposed tint set to black switches the glow off (a glTF's Emissive Factor of 0 ships on every material that does not glow).
+			Out.bColorOff = Color->IsA<UMaterialExpressionVectorParameter>() && FMath::Max3(Value.R, Value.G, Value.B) <= 0.0f;
 			break;
 		}
 	}

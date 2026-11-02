@@ -53,6 +53,8 @@ struct FMantleVehicleBuildResult
 	 * built, and a Size changed later means a build again. False for a model whose own wheels the chassis was fitted to (Build).
 	 */
 	bool bOnChassis = false;
+	/** For bOnChassis: the body had more triangles than a published vehicle may have, so Mantle reduced it (the picture of the model shows the full one). */
+	bool bBodyReduced = false;
 	/** For bOnChassis: the turn that put the model's nose on +X and the parts of the model that were assigned to the chassis's moving bones. */
 	double ModelYaw = 0.0;
 	FMantleVehicleModelMap ModelMap;
@@ -176,7 +178,8 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 
 	/**
 	 * True when Model is a skeletal mesh whose own wheels (bones named like Wheel_FL) a car type's chassis can be fitted to, which Build does. Not a motorcycle's
-	 * (its model is worn as a skin, with the wheels assigned), not a plane's, a helicopter's or a hovercraft's, and not a static mesh.
+	 * (its model is worn as a skin, with the wheels assigned), not a plane's, a helicopter's or a hovercraft's, not a static mesh, and not a model over the published
+	 * limits (more triangles or materials than a vehicle may have): that one is worn as a skin, reduced and with its extra materials carried as parts.
 	 */
 	static bool FitsOwnWheels(UObject* Model, const FString& PresetId);
 

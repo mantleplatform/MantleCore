@@ -3,6 +3,7 @@
 
 #include "MantleChassisSpec.h"
 #include "MantleVehicleBlueprint.h"
+#include "MantleVehicleBodyReduce.h"
 #include "MantlePlaceValidator.h"
 #include "MantleVehicleBodySplit.h"
 #include "MantleVehicleLightFinder.h"
@@ -26,12 +27,14 @@
 #include "Engine/Blueprint.h"
 #include "Factories/FbxFactory.h"
 #include "Factories/FbxImportUI.h"
+#include "Factories/FbxStaticMeshImportData.h"
 #include "IAssetTools.h"
 #include "Editor.h"
 #include "ImageUtils.h"
 #include "Misc/FileHelper.h"
 #include "Editor/EditorEngine.h"
 #include "Engine/SkeletalMesh.h"
+#include "Rendering/SkeletalMeshModel.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -43,12 +46,45 @@
 #include "ScopedTransaction.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "UObject/MetaData.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
 
 // Named, not anonymous: unity builds merge this file with others, and the test declares ApplyChosenPreset to reach it.
 namespace MantleVehicleBuilderPrivate
 {
+	/**
+	 * An Interchange pipeline stack for an import task: the engine's generic assets pipeline with its mesh pipeline set to combine all static meshes into one. Reached
+	 * by class and property name, so Mantle links nothing of Interchange; null (the default import) when the classes are not in this engine.
+	 */
+	UObject* MakeCombineStaticMeshesStack(UObject* Outer)
+	{
+		UClass* StackClass = FindObject<UClass>(nullptr, TEXT("/Script/InterchangeEngine.InterchangePipelineStackOverride"));
+		UClass* AssetsClass = FindObject<UClass>(nullptr, TEXT("/Script/InterchangePipelines.InterchangeGenericAssetsPipeline"));
+		UFunction* AddPipeline = StackClass ? StackClass->FindFunctionByName(TEXT("AddPipeline")) : nullptr;
+		if (!AssetsClass || !AddPipeline)
+		{
+			return nullptr;
+		}
+		UObject* Assets = NewObject<UObject>(GetTransientPackage(), AssetsClass);
+		const FObjectProperty* MeshProperty = FindFProperty<FObjectProperty>(AssetsClass, TEXT("MeshPipeline"));
+		UObject* Mesh = MeshProperty ? MeshProperty->GetObjectPropertyValue_InContainer(Assets) : nullptr;
+		const FEnumProperty* Combine = Mesh ? FindFProperty<FEnumProperty>(Mesh->GetClass(), TEXT("CombineStaticMeshesBehavior")) : nullptr;
+		if (!Combine)
+		{
+			return nullptr;
+		}
+		// "Combine All" is the enum's first value.
+		Combine->GetUnderlyingProperty()->SetIntPropertyValue(Combine->ContainerPtrToValuePtr<void>(Mesh), static_cast<int64>(0));
+		UObject* Stack = NewObject<UObject>(Outer, StackClass);
+		struct FAddPipelineParams
+		{
+			UObject* Pipeline;
+		} Params{ Assets };
+		Stack->ProcessEvent(AddPipeline, &Params);
+		return Stack;
+	}
+
 	/**
 	 * Gives Source the chosen type. A new vehicle has no type yet, so it takes the type's defaults. One built from this same type
 	 * before is the creator's to tune: pressing the button again keeps their edits, and picking a different type starts again from
@@ -98,6 +134,46 @@ namespace MantleVehicleBuilderPrivate
 			Out += FString::Printf(TEXT("%s|%.1f|%.1f;"), *Wheel.Bone.ToString(), Wheel.Radius, Wheel.Width);
 		}
 		return Out;
+	}
+
+	/** What a vehicle built on a chassis remembers about the model it was made from, in its package's metadata, so a build again of that model finds it. */
+	const TCHAR* const BuiltFromModelKey = TEXT("MantleBuiltFromModel");
+
+	UMantleVehicleSource* LoadVehicle(const FString& Folder, const FString& Name)
+	{
+		const FString AssetName = Name + TEXT("_Vehicle");
+		const FString PackageName = Folder / Name / AssetName;
+		const FString ObjectPath = PackageName + TEXT(".") + AssetName;
+		UObject* Existing = StaticFindObject(UMantleVehicleSource::StaticClass(), nullptr, *ObjectPath);
+		if (!Existing && FPackageName::DoesPackageExist(PackageName))
+		{
+			Existing = StaticLoadObject(UMantleVehicleSource::StaticClass(), nullptr, *ObjectPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		}
+		return Cast<UMantleVehicleSource>(Existing);
+	}
+
+	/**
+	 * The name of the vehicle already built on a chassis from this model (the default name, or the default with _2, _3... after it), or empty. Built again over, so one
+	 * model and type stay one vehicle however many times the window, a script or a new session builds it, and not a new set of assets each time.
+	 */
+	FString NameOfVehicleBuiltFrom(const FString& Folder, const FString& DefaultBase, const FString& ModelPath)
+	{
+		for (int32 Number = 1; Number < 100; ++Number)
+		{
+			const FString Candidate = Number == 1 ? DefaultBase : FString::Printf(TEXT("%s_%d"), *DefaultBase, Number);
+			const FString PackageName = Folder / Candidate / (Candidate + TEXT("_Vehicle"));
+			if (!FPackageName::DoesPackageExist(PackageName) && !FindPackage(nullptr, *PackageName))
+			{
+				break;
+			}
+			const UMantleVehicleSource* Existing = LoadVehicle(Folder, Candidate);
+			const FString* From = Existing ? Existing->GetOutermost()->GetMetaData().FindValue(Existing, BuiltFromModelKey) : nullptr;
+			if (From && *From == ModelPath)
+			{
+				return Candidate;
+			}
+		}
+		return FString();
 	}
 
 	/** The vehicle a model was already built into (ConvertAsset's <Model>_Vehicle beside it), loaded if it is on disk; null for a model never built. */
@@ -1211,6 +1287,22 @@ bool FMantleVehicleBuilder::FitsOwnWheels(UObject* Model, const FString& PresetI
 	{
 		return false;
 	}
+	// A model over the published limits (triangles, materials) is not used as it is: worn as a skin it is reduced and its extra materials are carried as parts,
+	// where its own body would have to be refused.
+	if (const FSkeletalMeshModel* Imported = Skeletal->GetImportedModel(); Imported && Imported->LODModels.Num() > 0)
+	{
+		int32 Triangles = 0;
+		TSet<int32> Materials;
+		for (const FSkelMeshSection& Section : Imported->LODModels[0].Sections)
+		{
+			Triangles += Section.NumTriangles;
+			Materials.Add(Section.MaterialIndex);
+		}
+		if (Triangles > FMantleVehicleLimits::MaxTriangles || Materials.Num() > FMantleVehicleLimits::MaxSections)
+		{
+			return false;
+		}
+	}
 	const TArray<FMantleVehicleWheelBone> Wheels = FMantleVehicleConverter::FindWheelBones(Skeletal->GetRefSkeleton());
 	return Wheels.Num() >= FMantleVehicleLimits::MinWheels && Wheels.Num() <= FMantleVehicleLimits::MaxWheels
 		&& Wheels.ContainsByPredicate([](const FMantleVehicleWheelBone& Wheel) { return Wheel.Axle == 0; });
@@ -1474,12 +1566,21 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	// asks for the name it built under, so one vehicle stays one set of assets and not a new set for every press.
 	FString Name = Options.Name;
 	const FString Folder = Options.Folder.IsEmpty() ? ChassisFolder() : Options.Folder;
+	const FString ModelPath = ModelAsset->GetPathName();
 	if (Name.IsEmpty())
 	{
-		Name = FirstFreeName(Model.Name + TEXT("_") + Preset->Name, [&Folder](const FString& Candidate)
+		const auto IsTaken = [&Folder](const FString& Candidate)
 		{
 			return FPackageName::DoesPackageExist(Folder / Candidate / (Candidate + TEXT("_Vehicle")));
-		});
+		};
+		const FString Fresh = FirstFreeName(Model.Name + TEXT("_") + Preset->Name, IsTaken);
+		// The same model built again, in a new window or by a script, is the vehicle it already made, updated.
+		const FString Earlier = MantleVehicleBuilderPrivate::NameOfVehicleBuiltFrom(Folder, FirstFreeName(Model.Name + TEXT("_") + Preset->Name, [](const FString&) { return false; }), ModelPath);
+		Name = Earlier.IsEmpty() ? Fresh : Earlier;
+		if (!Earlier.IsEmpty())
+		{
+			Out.Notes.Add(FString::Printf(TEXT("You built this model before, so Mantle updated that vehicle (%s) and did not make a second one."), *Earlier));
+		}
 	}
 	else if (!Options.bOverwrite)
 	{
@@ -1488,6 +1589,26 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		{
 			Out.Problems.Add(FString::Printf(TEXT("A vehicle called %s is already in %s, and this build did not make it. Pick another name, or build over it on purpose (the console takes overwrite=1)."), *Name, *Folder));
 			return Out;
+		}
+	}
+	// A model with more triangles than a published vehicle may have is reduced for the creator (the model they made is not touched), and told so. The materials are
+	// split after, so the pieces that ride along are already within the limit too.
+	{
+		FMantleVehicleBodyReduceResult Reduced;
+		const int32 Limit = FMantleVehicleLimits::MaxTriangles;
+		if (FMantleVehicleBodyReduce::CountTriangles(Skinned.Body) > Limit)
+		{
+			if (FMantleVehicleBodyReduce::ReduceToFit(Skinned.Body, Skinned.Extras, Limit, Reduced))
+			{
+				Out.bBodyReduced = Reduced.bReduced;
+				Out.Notes.Add(FString::Printf(TEXT("Your model has %d triangles, and a published vehicle may have %d, so Mantle made a lighter copy for the vehicle: %d triangles, with every material, part and wheel where they were. Your own model was not changed and there is nothing for you to do."),
+					Reduced.Before, Limit, Reduced.After));
+			}
+			else
+			{
+				Out.Notes.Add(FString::Printf(TEXT("Your model has %d triangles, and a published vehicle may have %d. Mantle tried to make a lighter copy for the vehicle, but %s. Use a lower-detail version of the model, then build again."),
+					Reduced.Before, Limit, *Reduced.Problem));
+			}
 		}
 	}
 	// A model that draws more materials than a published body may: the body keeps the ones with the most triangles and the rest are split off as parts of the
@@ -1596,6 +1717,8 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	{
 		return Out;
 	}
+	// Remembered with the vehicle, so a build again of this model finds it.
+	Out.Source->GetOutermost()->GetMetaData().SetValue(Out.Source, MantleVehicleBuilderPrivate::BuiltFromModelKey, *ModelPath);
 	// The lights: the creator's rows and beams, else what the finder found; each light section gets its glowing copy of its material.
 	ApplyLights(*Out.Source, Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights, Out.Notes);
 	if (Out.bSaved)
@@ -1734,7 +1857,7 @@ bool FMantleVehicleBuilder::PreviewMatchesBuild(const FMantleVehicleModelPreview
 			return false;
 		}
 	}
-	if (Built.Source->Parts.Num() == 0)
+	if (Built.Source->Parts.Num() == 0 && !Built.bBodyReduced)
 	{
 		// Both are read back from a mesh the editor built (it welds vertices and drops degenerate triangles), so they are compared the same way.
 		FMantleSkinnedMesh PictureBody;
@@ -1851,10 +1974,20 @@ UObject* FMantleVehicleBuilder::ImportModelFile(const FString& FbxFile, FString&
 			Factory->ImportUI->bImportAnimations = false;
 			Factory->ImportUI->bCreatePhysicsAsset = false;
 			Factory->ImportUI->bAutomatedImportShouldDetectType = true;
+			// A car exported as many pieces (a door, a bumper, each wheel) is one model: a static file's meshes come in as one.
+			if (Factory->ImportUI->StaticMeshImportData)
+			{
+				Factory->ImportUI->StaticMeshImportData->bCombineMeshes = true;
+			}
 		}
 		Task->Factory = Factory;
 	}
-	// OBJ and glTF/GLB have no factory set: the editor picks its own importer for the file type (Interchange, which is on by default).
+	else
+	{
+		// OBJ and glTF/GLB have no factory set: the editor picks its own importer for the file type (Interchange, which is on by default), told to combine the file's
+		// static meshes into one (it makes one asset per piece otherwise, and a car in 56 pieces would keep only the first).
+		Task->Options = MantleVehicleBuilderPrivate::MakeCombineStaticMeshesStack(Task);
+	}
 
 	FAssetToolsModule::GetModule().Get().ImportAssetTasks({ Task });
 
