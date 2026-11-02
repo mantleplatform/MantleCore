@@ -438,7 +438,7 @@ bool FMantleVehicleBodyJoinLightMilitaryTest::RunTest(const FString& Parameters)
 			Kinds += (Guess.Triangles[Kind].Num() > 0 || Guess.WholeSlots[Kind].Num() > 0) ? 1 : 0;
 			AddInfo(FString::Printf(TEXT("light kind %s: %d triangles, %d whole slots"), FMantleVehicleLights::Key(static_cast<EMantleLightKind>(Kind)), Guess.Triangles[Kind].Num(), Guess.WholeSlots[Kind].Num()));
 		}
-		TestTrue(*FString::Printf(TEXT("at least the head and rear lights (%d kinds)"), Kinds), Kinds >= 2);
+		TestTrue(*FString::Printf(TEXT("the headlights and the rear lights, which share one material (%d kinds)"), Kinds), Kinds >= 2);
 	}
 	return true;
 }

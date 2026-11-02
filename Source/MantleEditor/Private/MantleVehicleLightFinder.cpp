@@ -525,17 +525,29 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 			Middle += Centroid(LOD, Triangle);
 		}
 		Middle /= static_cast<float>(FMath::Max(Triangles.Num(), 1));
-		TOptional<EMantleLightKind> Named = Materials.IsValidIndex(Slot) ? FromName(Materials[Slot].MaterialSlotName.ToString(), Middle, Bounds) : TOptional<EMantleLightKind>();
+		FString NamedBy = Materials.IsValidIndex(Slot) ? Materials[Slot].MaterialSlotName.ToString() : FString();
+		TOptional<EMantleLightKind> Named = Materials.IsValidIndex(Slot) ? FromName(NamedBy, Middle, Bounds) : TOptional<EMantleLightKind>();
 		if (!Named && Material)
 		{
-			Named = FromName(Material->GetName(), Middle, Bounds);
+			NamedBy = Material->GetName();
+			Named = FromName(NamedBy, Middle, Bounds);
 		}
 		if (Named)
 		{
-			// A slot named for a light is that light; one named for a signal is split by side, for a model with one material for both.
+			// A slot named for a light is that light; one named for a signal is split by side, for a model with one material for both. A name that only says "light"
+			// leaves the end to where each triangle sits (one material for the headlights and the tail lights): the ones at the other end are that end's light, the rest
+			// are the slot's.
+			const bool bByEnd = !IsSignal(*Named) && !FromName(NamedBy, Bounds.GetCenter(), Bounds);
 			for (int32 Index = 0; Index < Triangles.Num(); ++Index)
 			{
-				Kind[Index] = IsSignal(*Named) ? SideOf(Centroid(LOD, Triangles[Index]).Y, Bounds) : *Named;
+				if (IsSignal(*Named))
+				{
+					Kind[Index] = SideOf(Centroid(LOD, Triangles[Index]).Y, Bounds);
+				}
+				else
+				{
+					Kind[Index] = bByEnd ? FromName(NamedBy, Centroid(LOD, Triangles[Index]), Bounds).Get(*Named) : *Named;
+				}
 			}
 		}
 		else
