@@ -1347,14 +1347,14 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeSeatsAndPaintStep()
 				bool bAny = false;
 				for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
 				{
-					bAny = bAny || FMantleVehicleLights::Sections(Lights, static_cast<EMantleVehicleLightKind>(Kind)).Num() > 0;
+					bAny = bAny || FMantleVehicleLights::Sections(Lights, static_cast<EMantleLightKind>(Kind)).Num() > 0;
 				}
 				return Preview.bOk && !bAny ? EVisibility::Visible : EVisibility::Collapsed;
 			})
 			.Text(LOCTEXT("NoLightsFound", "Mantle found no lights on your model. If its lights are parts of their own, pick them below. The headlight beams still light the road."))
 	];
-	for (const EMantleVehicleLightKind Kind : { EMantleVehicleLightKind::Head, EMantleVehicleLightKind::Rear, EMantleVehicleLightKind::Reverse,
-		EMantleVehicleLightKind::Left, EMantleVehicleLightKind::Right })
+	for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse,
+		EMantleLightKind::Left, EMantleLightKind::Right })
 	{
 		Rows->AddSlot().AutoHeight().Padding(0, 1)
 		[
@@ -1428,7 +1428,7 @@ void SMantleVehicleBuilder::RefreshPaintChoices()
 			bool bLight = false;
 			for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
 			{
-				bLight = bLight || FMantleVehicleLights::Sections(Lights, static_cast<EMantleVehicleLightKind>(Kind)).Contains(Choice.Section);
+				bLight = bLight || FMantleVehicleLights::Sections(Lights, static_cast<EMantleLightKind>(Kind)).Contains(Choice.Section);
 			}
 			Choice.bOn = !bLight && FMantleVehicleConverter::LooksLikePaint(Materials[Index].MaterialInterface);
 			if (bPaintEdited)
@@ -1498,7 +1498,7 @@ void SMantleVehicleBuilder::ApplyChoices(UMantleVehicleSource& Source)
 	}
 }
 
-TSharedRef<SWidget> SMantleVehicleBuilder::MakeLightRow(const EMantleVehicleLightKind Kind)
+TSharedRef<SWidget> SMantleVehicleBuilder::MakeLightRow(const EMantleLightKind Kind)
 {
 	return SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 6, 0)
@@ -1541,13 +1541,13 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeLightRow(const EMantleVehicleLigh
 		];
 }
 
-FText SMantleVehicleBuilder::LightRowText(const EMantleVehicleLightKind Kind) const
+FText SMantleVehicleBuilder::LightRowText(const EMantleLightKind Kind) const
 {
 	const TArray<FString>& Sections = FMantleVehicleLights::Sections(Lights, Kind);
 	return Sections.IsEmpty() ? LOCTEXT("LightNone", "(none)") : FText::FromString(FString::Join(Sections, TEXT(", ")));
 }
 
-void SMantleVehicleBuilder::ToggleLightSection(const EMantleVehicleLightKind Kind, const FString& Section)
+void SMantleVehicleBuilder::ToggleLightSection(const EMantleLightKind Kind, const FString& Section)
 {
 	TArray<FString>& Picked = FMantleVehicleLights::Sections(Lights, Kind);
 	if (Picked.Contains(Section))
@@ -1559,7 +1559,7 @@ void SMantleVehicleBuilder::ToggleLightSection(const EMantleVehicleLightKind Kin
 		// A section glows as one light.
 		for (int32 Other = 0; Other < FMantleVehicleLights::NumKinds; ++Other)
 		{
-			FMantleVehicleLights::Sections(Lights, static_cast<EMantleVehicleLightKind>(Other)).Remove(Section);
+			FMantleVehicleLights::Sections(Lights, static_cast<EMantleLightKind>(Other)).Remove(Section);
 		}
 		Picked.Add(Section);
 		// And it is not painted: it glows in its own color.
@@ -1589,7 +1589,7 @@ void SMantleVehicleBuilder::RefreshLights()
 	// The creator's picks stay across a redraw of the picture, for the sections the model still has.
 	for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
 	{
-		FMantleVehicleLights::Sections(Lights, static_cast<EMantleVehicleLightKind>(Kind)).RemoveAll([this](const FString& Section) { return !Preview.Sections.Contains(Section); });
+		FMantleVehicleLights::Sections(Lights, static_cast<EMantleLightKind>(Kind)).RemoveAll([this](const FString& Section) { return !Preview.Sections.Contains(Section); });
 	}
 }
 
@@ -1627,7 +1627,7 @@ void SMantleVehicleBuilder::PushLightsToPicture()
 		const FMantleSkinnedMeshLOD& LOD = Preview.Body.LODs[0];
 		for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
 		{
-			const EMantleVehicleLightKind LightKind = static_cast<EMantleVehicleLightKind>(Kind);
+			const EMantleLightKind LightKind = static_cast<EMantleLightKind>(Kind);
 			for (const FString& Section : FMantleVehicleLights::Sections(Lights, LightKind))
 			{
 				const int32 Slot = Preview.Sections.IndexOfByKey(Section);
@@ -1653,7 +1653,7 @@ void SMantleVehicleBuilder::PushLightsToPicture()
 				Marker.Location = Sum / Count;
 				Marker.Label = FMantleVehicleLights::Label(LightKind);
 				// Reverse lights are white too: gray tells them apart from the headlights in the picture.
-				Marker.Color = LightKind == EMantleVehicleLightKind::Reverse ? FLinearColor(0.6f, 0.6f, 0.6f) : FMantleVehicleLights::Color(LightKind);
+				Marker.Color = LightKind == EMantleLightKind::Reverse ? FLinearColor(0.6f, 0.6f, 0.6f) : FMantleVehicleLights::Color(LightKind);
 				Marker.RadiusCm = 3.f;
 			}
 		}

@@ -2,7 +2,7 @@
 #include "MantleSkinnedMesh.h"
 #include "MantleVehicleAsset.h"
 #include "MantleVehicleConverter.h"
-#include "MantleVehicleLights.h"
+#include "MantleVehicleLightFinder.h"
 #include "MantleVehicleSource.h"
 
 #include "Dom/JsonObject.h"
@@ -160,41 +160,41 @@ bool FMantleVehicleLightsClassifyTest::RunTest(const FString& Parameters)
 	const FLinearColor Red(0.9f, 0.05f, 0.05f);
 	const FLinearColor Amber(1.f, 0.5f, 0.05f);
 	const FLinearColor Blue(0.1f, 0.3f, 1.f);
-	const auto Is = [this, &Car](const TCHAR* What, const FVector3f& At, const FLinearColor& Glow, const TOptional<EMantleVehicleLightKind> Expected)
+	const auto Is = [this, &Car](const TCHAR* What, const FVector3f& At, const FLinearColor& Glow, const TOptional<EMantleLightKind> Expected)
 	{
-		const TOptional<EMantleVehicleLightKind> Got = FMantleVehicleLights::Classify(At, Glow, Car);
+		const TOptional<EMantleLightKind> Got = FMantleVehicleLights::Classify(At, Glow, Car);
 		TestTrue(What, Got == Expected);
 	};
-	Is(TEXT("white at the front is a headlight"), FVector3f(190.f, -50.f, 50.f), White, EMantleVehicleLightKind::Head);
-	Is(TEXT("warm white at the front is a headlight"), FVector3f(190.f, 50.f, 50.f), WarmWhite, EMantleVehicleLightKind::Head);
-	Is(TEXT("red at the back is a rear light"), FVector3f(-195.f, 50.f, 60.f), Red, EMantleVehicleLightKind::Rear);
-	Is(TEXT("white at the back is a reverse light"), FVector3f(-195.f, 30.f, 60.f), White, EMantleVehicleLightKind::Reverse);
-	Is(TEXT("amber on the left (-Y) is the left signal"), FVector3f(180.f, -70.f, 50.f), Amber, EMantleVehicleLightKind::Left);
-	Is(TEXT("amber on the right is the right signal"), FVector3f(-180.f, 70.f, 50.f), Amber, EMantleVehicleLightKind::Right);
-	Is(TEXT("amber on a mirror, mid-car, is still a signal"), FVector3f(40.f, 75.f, 70.f), Amber, EMantleVehicleLightKind::Right);
-	Is(TEXT("white in the middle (a dashboard) is no light"), FVector3f(20.f, 0.f, 60.f), White, TOptional<EMantleVehicleLightKind>());
-	Is(TEXT("red at the front is no light"), FVector3f(190.f, 0.f, 50.f), Red, TOptional<EMantleVehicleLightKind>());
-	Is(TEXT("blue is no light"), FVector3f(190.f, 0.f, 50.f), Blue, TOptional<EMantleVehicleLightKind>());
-	Is(TEXT("black is no light"), FVector3f(190.f, 0.f, 50.f), FLinearColor::Black, TOptional<EMantleVehicleLightKind>());
+	Is(TEXT("white at the front is a headlight"), FVector3f(190.f, -50.f, 50.f), White, EMantleLightKind::Head);
+	Is(TEXT("warm white at the front is a headlight"), FVector3f(190.f, 50.f, 50.f), WarmWhite, EMantleLightKind::Head);
+	Is(TEXT("red at the back is a rear light"), FVector3f(-195.f, 50.f, 60.f), Red, EMantleLightKind::Rear);
+	Is(TEXT("white at the back is a reverse light"), FVector3f(-195.f, 30.f, 60.f), White, EMantleLightKind::Reverse);
+	Is(TEXT("amber on the left (-Y) is the left signal"), FVector3f(180.f, -70.f, 50.f), Amber, EMantleLightKind::Left);
+	Is(TEXT("amber on the right is the right signal"), FVector3f(-180.f, 70.f, 50.f), Amber, EMantleLightKind::Right);
+	Is(TEXT("amber on a mirror, mid-car, is still a signal"), FVector3f(40.f, 75.f, 70.f), Amber, EMantleLightKind::Right);
+	Is(TEXT("white in the middle (a dashboard) is no light"), FVector3f(20.f, 0.f, 60.f), White, TOptional<EMantleLightKind>());
+	Is(TEXT("red at the front is no light"), FVector3f(190.f, 0.f, 50.f), Red, TOptional<EMantleLightKind>());
+	Is(TEXT("blue is no light"), FVector3f(190.f, 0.f, 50.f), Blue, TOptional<EMantleLightKind>());
+	Is(TEXT("black is no light"), FVector3f(190.f, 0.f, 50.f), FLinearColor::Black, TOptional<EMantleLightKind>());
 
-	const auto Named = [this, &Car](const TCHAR* Name, const FVector3f& At, const TOptional<EMantleVehicleLightKind> Expected)
+	const auto Named = [this, &Car](const TCHAR* Name, const FVector3f& At, const TOptional<EMantleLightKind> Expected)
 	{
 		TestTrue(*FString::Printf(TEXT("'%s' reads as expected"), Name), FMantleVehicleLights::FromName(Name, At, Car) == Expected);
 	};
 	const FVector3f Front(190.f, -50.f, 50.f);
 	const FVector3f Back(-190.f, 50.f, 50.f);
-	Named(TEXT("M_Headlight"), Back, EMantleVehicleLightKind::Head);
-	Named(TEXT("HeadLight_Glass"), Back, EMantleVehicleLightKind::Head);
-	Named(TEXT("MI_TailLights"), Front, EMantleVehicleLightKind::Rear);
-	Named(TEXT("Brake_Light"), Front, EMantleVehicleLightKind::Rear);
-	Named(TEXT("reverse_light"), Front, EMantleVehicleLightKind::Reverse);
-	Named(TEXT("Indicator"), Front, EMantleVehicleLightKind::Left);
-	Named(TEXT("Blinker"), Back, EMantleVehicleLightKind::Right);
-	Named(TEXT("Lamp"), Front, EMantleVehicleLightKind::Head);
-	Named(TEXT("Light"), Back, EMantleVehicleLightKind::Rear);
-	Named(TEXT("P38_Lightning"), Front, TOptional<EMantleVehicleLightKind>());
-	Named(TEXT("M_Body"), Front, TOptional<EMantleVehicleLightKind>());
-	Named(TEXT("Brake"), Back, TOptional<EMantleVehicleLightKind>());
+	Named(TEXT("M_Headlight"), Back, EMantleLightKind::Head);
+	Named(TEXT("HeadLight_Glass"), Back, EMantleLightKind::Head);
+	Named(TEXT("MI_TailLights"), Front, EMantleLightKind::Rear);
+	Named(TEXT("Brake_Light"), Front, EMantleLightKind::Rear);
+	Named(TEXT("reverse_light"), Front, EMantleLightKind::Reverse);
+	Named(TEXT("Indicator"), Front, EMantleLightKind::Left);
+	Named(TEXT("Blinker"), Back, EMantleLightKind::Right);
+	Named(TEXT("Lamp"), Front, EMantleLightKind::Head);
+	Named(TEXT("Light"), Back, EMantleLightKind::Rear);
+	Named(TEXT("P38_Lightning"), Front, TOptional<EMantleLightKind>());
+	Named(TEXT("M_Body"), Front, TOptional<EMantleLightKind>());
+	Named(TEXT("Brake"), Back, TOptional<EMantleLightKind>());
 	return true;
 }
 
@@ -213,8 +213,8 @@ bool FMantleVehicleLightsCutTest::RunTest(const FString& Parameters)
 
 	// The two front quads are headlights (triangles 0-3), the back left the left signal (4, 5); the back right and the roof stay body.
 	FMantleVehicleLightGuess Guess;
-	Guess.Triangles[static_cast<int32>(EMantleVehicleLightKind::Head)] = { 0, 1, 2, 3 };
-	Guess.Triangles[static_cast<int32>(EMantleVehicleLightKind::Left)] = { 4, 5 };
+	Guess.Triangles[static_cast<int32>(EMantleLightKind::Head)] = { 0, 1, 2, 3 };
+	Guess.Triangles[static_cast<int32>(EMantleLightKind::Left)] = { 4, 5 };
 	FMantleVehicleSourceLightBeam Beam;
 	Beam.Position = FVector(200.0, -60.0, 50.0);
 	Guess.Beams = { Beam };
@@ -261,7 +261,7 @@ bool FMantleVehicleLightsCutTest::RunTest(const FString& Parameters)
 	TArray<FSkeletalMaterial> LampMaterials;
 	MakeBody(Lamp, LampMaterials, TEXT("TailLights"));
 	FMantleVehicleLightGuess Whole;
-	Whole.WholeSlots[static_cast<int32>(EMantleVehicleLightKind::Rear)] = { 0 };
+	Whole.WholeSlots[static_cast<int32>(EMantleLightKind::Rear)] = { 0 };
 	FMantleVehicleSourceLights LampLights;
 	FMantleVehicleLights::Cut(Lamp, LampMaterials, Whole, LampLights);
 	TestEqual(TEXT("a whole slot keeps its one section"), Lamp.LODs[0].Sections.Num(), 1);
@@ -269,7 +269,7 @@ bool FMantleVehicleLightsCutTest::RunTest(const FString& Parameters)
 
 	// The finder reads a slot named for a light without any glow: the named slot here is a rear light, as one.
 	const FMantleVehicleLightGuess Found = FMantleVehicleLights::Find(Lamp, LampMaterials, false);
-	TestEqual(TEXT("the finder takes the named slot whole"), Found.WholeSlots[static_cast<int32>(EMantleVehicleLightKind::Rear)].Num(), 1);
+	TestEqual(TEXT("the finder takes the named slot whole"), Found.WholeSlots[static_cast<int32>(EMantleLightKind::Rear)].Num(), 1);
 	TestEqual(TEXT("with no headlights, two beams at the front corners"), Found.Beams.Num(), 2);
 	if (Found.Beams.Num() == 2)
 	{

@@ -1,5 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
-#include "MantleVehicleLights.h"
+#include "MantleVehicleLightFinder.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/SkeletalMesh.h"
@@ -21,8 +21,8 @@
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleVehicleLightsPrivate
 {
-	constexpr EMantleVehicleLightKind Kinds[] = { EMantleVehicleLightKind::Head, EMantleVehicleLightKind::Rear, EMantleVehicleLightKind::Reverse,
-		EMantleVehicleLightKind::Left, EMantleVehicleLightKind::Right };
+	constexpr EMantleLightKind Kinds[] = { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse,
+		EMantleLightKind::Left, EMantleLightKind::Right };
 
 	/** How bright (0..1, the brightest channel) a glow texture must be under a triangle for the triangle to glow: the dark of a glow texture is near 0. */
 	constexpr float GlowThreshold = 0.3f;
@@ -33,15 +33,15 @@ namespace MantleVehicleLightsPrivate
 	/** Which way a new beam points: forward and a little down, at the road ahead. */
 	const FVector BeamDirection(1.0, 0.0, -0.05);
 
-	bool IsSignal(const EMantleVehicleLightKind Kind)
+	bool IsSignal(const EMantleLightKind Kind)
 	{
-		return Kind == EMantleVehicleLightKind::Left || Kind == EMantleVehicleLightKind::Right;
+		return Kind == EMantleLightKind::Left || Kind == EMantleLightKind::Right;
 	}
 
 	/** Left is -Y (the vehicle faces +X). */
-	EMantleVehicleLightKind SideOf(const float Y, const FBox3f& Bounds)
+	EMantleLightKind SideOf(const float Y, const FBox3f& Bounds)
 	{
-		return Y < Bounds.GetCenter().Y ? EMantleVehicleLightKind::Left : EMantleVehicleLightKind::Right;
+		return Y < Bounds.GetCenter().Y ? EMantleLightKind::Left : EMantleLightKind::Right;
 	}
 
 	/** A glow texture's pixels, read once per texture. */
@@ -187,76 +187,76 @@ bool FMantleVehicleLightGuess::FoundAny() const
 	return false;
 }
 
-const TCHAR* FMantleVehicleLights::Key(const EMantleVehicleLightKind Kind)
+const TCHAR* FMantleVehicleLights::Key(const EMantleLightKind Kind)
 {
 	switch (Kind)
 	{
-	case EMantleVehicleLightKind::Head: return TEXT("head");
-	case EMantleVehicleLightKind::Rear: return TEXT("rear");
-	case EMantleVehicleLightKind::Reverse: return TEXT("reverse");
-	case EMantleVehicleLightKind::Left: return TEXT("left");
-	case EMantleVehicleLightKind::Right: return TEXT("right");
+	case EMantleLightKind::Head: return TEXT("head");
+	case EMantleLightKind::Rear: return TEXT("rear");
+	case EMantleLightKind::Reverse: return TEXT("reverse");
+	case EMantleLightKind::Left: return TEXT("left");
+	case EMantleLightKind::Right: return TEXT("right");
 	}
 	return TEXT("head");
 }
 
-FText FMantleVehicleLights::Label(const EMantleVehicleLightKind Kind)
+FText FMantleVehicleLights::Label(const EMantleLightKind Kind)
 {
 	switch (Kind)
 	{
-	case EMantleVehicleLightKind::Head: return LOCTEXT("Head", "Headlights");
-	case EMantleVehicleLightKind::Rear: return LOCTEXT("Rear", "Rear lights");
-	case EMantleVehicleLightKind::Reverse: return LOCTEXT("Reverse", "Reverse lights");
-	case EMantleVehicleLightKind::Left: return LOCTEXT("Left", "Left signal");
-	case EMantleVehicleLightKind::Right: return LOCTEXT("Right", "Right signal");
+	case EMantleLightKind::Head: return LOCTEXT("Head", "Headlights");
+	case EMantleLightKind::Rear: return LOCTEXT("Rear", "Rear lights");
+	case EMantleLightKind::Reverse: return LOCTEXT("Reverse", "Reverse lights");
+	case EMantleLightKind::Left: return LOCTEXT("Left", "Left signal");
+	case EMantleLightKind::Right: return LOCTEXT("Right", "Right signal");
 	}
 	return FText::GetEmpty();
 }
 
-FString FMantleVehicleLights::SectionName(const EMantleVehicleLightKind Kind)
+FString FMantleVehicleLights::SectionName(const EMantleLightKind Kind)
 {
 	switch (Kind)
 	{
-	case EMantleVehicleLightKind::Head: return TEXT("Headlights");
-	case EMantleVehicleLightKind::Rear: return TEXT("RearLights");
-	case EMantleVehicleLightKind::Reverse: return TEXT("ReverseLights");
-	case EMantleVehicleLightKind::Left: return TEXT("LeftSignal");
-	case EMantleVehicleLightKind::Right: return TEXT("RightSignal");
+	case EMantleLightKind::Head: return TEXT("Headlights");
+	case EMantleLightKind::Rear: return TEXT("RearLights");
+	case EMantleLightKind::Reverse: return TEXT("ReverseLights");
+	case EMantleLightKind::Left: return TEXT("LeftSignal");
+	case EMantleLightKind::Right: return TEXT("RightSignal");
 	}
 	return TEXT("Light");
 }
 
-FLinearColor FMantleVehicleLights::Color(const EMantleVehicleLightKind Kind)
+FLinearColor FMantleVehicleLights::Color(const EMantleLightKind Kind)
 {
 	switch (Kind)
 	{
-	case EMantleVehicleLightKind::Head: return FLinearColor(1.0f, 0.95f, 0.85f);
-	case EMantleVehicleLightKind::Rear: return FLinearColor(1.0f, 0.02f, 0.01f);
-	case EMantleVehicleLightKind::Reverse: return FLinearColor(1.0f, 1.0f, 1.0f);
-	case EMantleVehicleLightKind::Left:
-	case EMantleVehicleLightKind::Right: return FLinearColor(1.0f, 0.35f, 0.0f);
+	case EMantleLightKind::Head: return FLinearColor(1.0f, 0.95f, 0.85f);
+	case EMantleLightKind::Rear: return FLinearColor(1.0f, 0.02f, 0.01f);
+	case EMantleLightKind::Reverse: return FLinearColor(1.0f, 1.0f, 1.0f);
+	case EMantleLightKind::Left:
+	case EMantleLightKind::Right: return FLinearColor(1.0f, 0.35f, 0.0f);
 	}
 	return FLinearColor::White;
 }
 
-TArray<FString>& FMantleVehicleLights::Sections(FMantleVehicleSourceLights& Lights, const EMantleVehicleLightKind Kind)
+TArray<FString>& FMantleVehicleLights::Sections(FMantleVehicleSourceLights& Lights, const EMantleLightKind Kind)
 {
 	switch (Kind)
 	{
-	case EMantleVehicleLightKind::Rear: return Lights.Rear;
-	case EMantleVehicleLightKind::Reverse: return Lights.Reverse;
-	case EMantleVehicleLightKind::Left: return Lights.Left;
-	case EMantleVehicleLightKind::Right: return Lights.Right;
+	case EMantleLightKind::Rear: return Lights.Rear;
+	case EMantleLightKind::Reverse: return Lights.Reverse;
+	case EMantleLightKind::Left: return Lights.Left;
+	case EMantleLightKind::Right: return Lights.Right;
 	default: return Lights.Head;
 	}
 }
 
-const TArray<FString>& FMantleVehicleLights::Sections(const FMantleVehicleSourceLights& Lights, const EMantleVehicleLightKind Kind)
+const TArray<FString>& FMantleVehicleLights::Sections(const FMantleVehicleSourceLights& Lights, const EMantleLightKind Kind)
 {
 	return Sections(const_cast<FMantleVehicleSourceLights&>(Lights), Kind);
 }
 
-TOptional<EMantleVehicleLightKind> FMantleVehicleLights::Classify(const FVector3f& Center, const FLinearColor& Glow, const FBox3f& Bounds)
+TOptional<EMantleLightKind> FMantleVehicleLights::Classify(const FVector3f& Center, const FLinearColor& Glow, const FBox3f& Bounds)
 {
 	using namespace MantleVehicleLightsPrivate;
 	const float Max = Glow.GetMax();
@@ -278,24 +278,24 @@ TOptional<EMantleVehicleLightKind> FMantleVehicleLights::Classify(const FVector3
 	// Red: a rear light, at the back.
 	if (bRedMost && G < 0.25f && B < 0.4f)
 	{
-		return Along <= -EndShare ? TOptional<EMantleVehicleLightKind>(EMantleVehicleLightKind::Rear) : TOptional<EMantleVehicleLightKind>();
+		return Along <= -EndShare ? TOptional<EMantleLightKind>(EMantleLightKind::Rear) : TOptional<EMantleLightKind>();
 	}
 	// White or warm white: a headlight at the front, a reverse light at the back.
 	if (G > 0.8f && (B > 0.45f || bRedMost))
 	{
 		if (Along >= EndShare)
 		{
-			return EMantleVehicleLightKind::Head;
+			return EMantleLightKind::Head;
 		}
 		if (Along <= -EndShare)
 		{
-			return EMantleVehicleLightKind::Reverse;
+			return EMantleLightKind::Reverse;
 		}
 	}
 	return {};
 }
 
-TOptional<EMantleVehicleLightKind> FMantleVehicleLights::FromName(const FString& Name, const FVector3f& Center, const FBox3f& Bounds)
+TOptional<EMantleLightKind> FMantleVehicleLights::FromName(const FString& Name, const FVector3f& Center, const FBox3f& Bounds)
 {
 	using namespace MantleVehicleLightsPrivate;
 	const TArray<FString> Said = Words(Name);
@@ -311,15 +311,15 @@ TOptional<EMantleVehicleLightKind> FMantleVehicleLights::FromName(const FString&
 	}
 	if (AnyWord(Said, { TEXT("reverse"), TEXT("backup") }) && bLight)
 	{
-		return EMantleVehicleLightKind::Reverse;
+		return EMantleLightKind::Reverse;
 	}
 	if (AnyWord(Said, { TEXT("taillight"), TEXT("taillamp"), TEXT("brakelight") }) || (bLight && AnyWord(Said, { TEXT("tail"), TEXT("brake"), TEXT("rear"), TEXT("stop") })))
 	{
-		return EMantleVehicleLightKind::Rear;
+		return EMantleLightKind::Rear;
 	}
 	if (AnyWord(Said, { TEXT("headlight"), TEXT("headlamp") }) || (bLight && AnyWord(Said, { TEXT("head"), TEXT("front") })))
 	{
-		return EMantleVehicleLightKind::Head;
+		return EMantleLightKind::Head;
 	}
 	if (bLight && Bounds.IsValid)
 	{
@@ -327,11 +327,11 @@ TOptional<EMantleVehicleLightKind> FMantleVehicleLights::FromName(const FString&
 		const float Along = (Center.X - Bounds.GetCenter().X) / FMath::Max(Bounds.GetExtent().X, 1.f);
 		if (Along >= EndShare)
 		{
-			return EMantleVehicleLightKind::Head;
+			return EMantleLightKind::Head;
 		}
 		if (Along <= -EndShare)
 		{
-			return EMantleVehicleLightKind::Rear;
+			return EMantleLightKind::Rear;
 		}
 	}
 	return {};
@@ -375,7 +375,7 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 	{
 		const TArray<int32>& Triangles = SlotTriangles[Slot];
 		UMaterialInterface* Material = Materials.IsValidIndex(Slot) ? Materials[Slot].MaterialInterface.Get() : nullptr;
-		TArray<TOptional<EMantleVehicleLightKind>> Kind;
+		TArray<TOptional<EMantleLightKind>> Kind;
 		Kind.SetNum(Triangles.Num());
 
 		FVector3f Middle = FVector3f::ZeroVector;
@@ -384,7 +384,7 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 			Middle += Centroid(LOD, Triangle);
 		}
 		Middle /= static_cast<float>(FMath::Max(Triangles.Num(), 1));
-		TOptional<EMantleVehicleLightKind> Named = Materials.IsValidIndex(Slot) ? FromName(Materials[Slot].MaterialSlotName.ToString(), Middle, Bounds) : TOptional<EMantleVehicleLightKind>();
+		TOptional<EMantleLightKind> Named = Materials.IsValidIndex(Slot) ? FromName(Materials[Slot].MaterialSlotName.ToString(), Middle, Bounds) : TOptional<EMantleLightKind>();
 		if (!Named && Material)
 		{
 			Named = FromName(Material->GetName(), Middle, Bounds);
@@ -458,7 +458,7 @@ FMantleVehicleLightGuess FMantleVehicleLights::Find(const FMantleSkinnedMesh& Bo
 	}
 
 	// The beams: one at the middle of each side's headlights, at their front; with no headlights, at the front corners.
-	const int32 Head = static_cast<int32>(EMantleVehicleLightKind::Head);
+	const int32 Head = static_cast<int32>(EMantleLightKind::Head);
 	TArray<int32> HeadTriangles = Out.Triangles[Head];
 	for (const int32 Slot : Out.WholeSlots[Head])
 	{
@@ -584,7 +584,7 @@ void FMantleVehicleLights::Cut(FMantleSkinnedMesh& Body, TArray<FSkeletalMateria
 			}
 			for (const TPair<int32, int32>& Key : MovedOrder)
 			{
-				const EMantleVehicleLightKind Kind = static_cast<EMantleVehicleLightKind>(Key.Key);
+				const EMantleLightKind Kind = static_cast<EMantleLightKind>(Key.Key);
 				FString Name = SectionName(Kind);
 				for (int32 Number = 2; Taken.Contains(Name.ToLower()); ++Number)
 				{
@@ -613,7 +613,7 @@ void FMantleVehicleLights::Cut(FMantleSkinnedMesh& Body, TArray<FSkeletalMateria
 	const TArray<FString> Names = SectionNames(Materials);
 	for (int32 Kind = 0; Kind < NumKinds; ++Kind)
 	{
-		TArray<FString>& List = Sections(OutLights, static_cast<EMantleVehicleLightKind>(Kind));
+		TArray<FString>& List = Sections(OutLights, static_cast<EMantleLightKind>(Kind));
 		for (const int32 Slot : Guess.WholeSlots[Kind])
 		{
 			if (Names.IsValidIndex(Slot))
@@ -631,25 +631,17 @@ void FMantleVehicleLights::Cut(FMantleSkinnedMesh& Body, TArray<FSkeletalMateria
 	}
 }
 
-TOptional<EMantleVehicleLightKind> FMantleVehicleLights::KindOf(const UMaterialInterface* Material)
+TOptional<EMantleLightKind> FMantleVehicleLights::KindOf(const UMaterialInterface* Material)
 {
 	using namespace MantleVehicleLightsPrivate;
-	const UMaterialInstanceConstant* Instance = Cast<UMaterialInstanceConstant>(Material);
-	const TArray<UAssetUserData*>* Data = Instance ? Instance->GetAssetUserDataArray() : nullptr;
-	if (!Data)
+	UMaterialInstanceConstant* Instance = const_cast<UMaterialInstanceConstant*>(Cast<UMaterialInstanceConstant>(Material));
+	if (const UMantleVehicleLightData* Light = Instance ? Cast<UMantleVehicleLightData>(Instance->GetAssetUserDataOfClass(UMantleVehicleLightData::StaticClass())) : nullptr)
 	{
-		return {};
-	}
-	for (const UAssetUserData* Entry : *Data)
-	{
-		if (const UMantleVehicleLightData* Light = Cast<UMantleVehicleLightData>(Entry))
+		for (const EMantleLightKind Kind : Kinds)
 		{
-			for (const EMantleVehicleLightKind Kind : Kinds)
+			if (Light->Kind == Key(Kind))
 			{
-				if (Light->Kind == Key(Kind))
-				{
-					return Kind;
-				}
+				return Kind;
 			}
 		}
 	}
@@ -662,7 +654,7 @@ UMaterialInterface* FMantleVehicleLights::OriginalOf(UMaterialInterface* Materia
 	return Instance && KindOf(Instance) ? Instance->Parent.Get() : Material;
 }
 
-UMaterialInterface* FMantleVehicleLights::MakeLightMaterial(UMaterialInterface* Original, const EMantleVehicleLightKind Kind, const FString& PackagePath, const FString& AssetName,
+UMaterialInterface* FMantleVehicleLights::MakeLightMaterial(UMaterialInterface* Original, const EMantleLightKind Kind, const FString& PackagePath, const FString& AssetName,
 	FString& OutError)
 {
 	UMaterialInterface* Parent = OriginalOf(Original);
@@ -755,8 +747,8 @@ void FMantleVehicleLights::ApplyMaterials(UMantleVehicleSource& Source, TArray<F
 	bool bChanged = false;
 	for (int32 Slot = 0; Slot < Materials.Num() && Slot < Names.Num(); ++Slot)
 	{
-		TOptional<EMantleVehicleLightKind> Kind;
-		for (const EMantleVehicleLightKind Each : Kinds)
+		TOptional<EMantleLightKind> Kind;
+		for (const EMantleLightKind Each : Kinds)
 		{
 			if (Sections(Source.Lights, Each).Contains(Names[Slot]))
 			{
@@ -789,7 +781,7 @@ void FMantleVehicleLights::ApplyMaterials(UMantleVehicleSource& Source, TArray<F
 		}
 	}
 	// A light section is not painted: it glows in its own color.
-	for (const EMantleVehicleLightKind Kind : Kinds)
+	for (const EMantleLightKind Kind : Kinds)
 	{
 		for (const FString& Section : Sections(Source.Lights, Kind))
 		{

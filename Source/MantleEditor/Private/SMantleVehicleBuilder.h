@@ -7,7 +7,7 @@
 #include "MantleVehicleAsset.h"
 #include "MantleVehicleBuilder.h"
 #include "MantleVehicleChassisSkin.h"
-#include "MantleVehicleLights.h"
+#include "MantleVehicleLightFinder.h"
 #include "MantleVehicleShape.h"
 #include "MantleVehicleTypeMatch.h"
 #include "SMantleBuilderFlow.h"
@@ -159,11 +159,11 @@ private:
 
 	// Lights.
 	/** One light's row: its name and the body sections that glow as it, picked from a menu of every section. */
-	TSharedRef<SWidget> MakeLightRow(EMantleVehicleLightKind Kind);
+	TSharedRef<SWidget> MakeLightRow(EMantleLightKind Kind);
 	/** What the light row's button says: the sections picked, or (none). */
-	FText LightRowText(EMantleVehicleLightKind Kind) const;
+	FText LightRowText(EMantleLightKind Kind) const;
 	/** Picks or unpicks a section for a light; a section glows as one light only, so picking it takes it from any other. */
-	void ToggleLightSection(EMantleVehicleLightKind Kind, const FString& Section);
+	void ToggleLightSection(EMantleLightKind Kind, const FString& Section);
 	/** Mantle's lights for the picked model (the picture's), unless the creator changed them; sections the model no longer has are dropped. */
 	void RefreshLights();
 	/** The creator changed a light: the picture shows it, and a built vehicle takes it at once. */

@@ -5,7 +5,7 @@
 #include "MantleVehicleBlueprint.h"
 #include "MantlePlaceValidator.h"
 #include "MantleVehicleBodySplit.h"
-#include "MantleVehicleLights.h"
+#include "MantleVehicleLightFinder.h"
 #include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleChassisDocument.h"
 #include "MantleVehicleChassisFit.h"
@@ -1510,8 +1510,8 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		TSet<int32> LightSlots;
 		for (int32 Slot = 0; Slot < SectionsBefore.Num(); ++Slot)
 		{
-			for (const EMantleVehicleLightKind Kind : { EMantleVehicleLightKind::Head, EMantleVehicleLightKind::Rear, EMantleVehicleLightKind::Reverse,
-				EMantleVehicleLightKind::Left, EMantleVehicleLightKind::Right })
+			for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse,
+				EMantleLightKind::Left, EMantleLightKind::Right })
 			{
 				if (FMantleVehicleLights::Sections(LightsWanted, Kind).Contains(SectionsBefore[Slot]))
 				{
@@ -1631,8 +1631,8 @@ void FMantleVehicleBuilder::ApplyLights(UMantleVehicleSource& Source, const FMan
 	const USkeletalMesh* Mesh = Source.Body.LoadSynchronous();
 	const TArray<FString> Sections = Mesh ? FMantleVehicleLights::SectionNames(Mesh->GetMaterials()) : TArray<FString>();
 	FMantleVehicleSourceLights Kept = Lights;
-	for (const EMantleVehicleLightKind Kind : { EMantleVehicleLightKind::Head, EMantleVehicleLightKind::Rear, EMantleVehicleLightKind::Reverse,
-		EMantleVehicleLightKind::Left, EMantleVehicleLightKind::Right })
+	for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse,
+		EMantleLightKind::Left, EMantleLightKind::Right })
 	{
 		TArray<FString>& List = FMantleVehicleLights::Sections(Kept, Kind);
 		List.RemoveAll([&Sections](const FString& Section) { return !Sections.Contains(Section); });

@@ -11,7 +11,7 @@ struct FMantleSkinnedMesh;
 struct FSkeletalMaterial;
 
 /** The five kinds of vehicle light (schema/vehicle.schema.json lights), in the document's order. */
-enum class EMantleVehicleLightKind : uint8
+enum class EMantleLightKind : uint8
 {
 	Head,
 	Rear,
@@ -50,26 +50,26 @@ struct MANTLEEDITOR_API FMantleVehicleLights
 	static constexpr int32 NumKinds = 5;
 
 	/** The document's key: head, rear, reverse, left, right. */
-	static const TCHAR* Key(EMantleVehicleLightKind Kind);
+	static const TCHAR* Key(EMantleLightKind Kind);
 	/** Plain words for the row: Headlights, Rear lights, Reverse lights, Left signal, Right signal. */
-	static FText Label(EMantleVehicleLightKind Kind);
+	static FText Label(EMantleLightKind Kind);
 	/** The name a cut section gets: Headlights, RearLights, ReverseLights, LeftSignal, RightSignal (made unique by the caller). */
-	static FString SectionName(EMantleVehicleLightKind Kind);
+	static FString SectionName(EMantleLightKind Kind);
 	/** The kind's one color (linear): white headlights and reverse lights, red rear lights, amber signals. */
-	static FLinearColor Color(EMantleVehicleLightKind Kind);
+	static FLinearColor Color(EMantleLightKind Kind);
 
 	/** The kind's list in Lights. */
-	static TArray<FString>& Sections(FMantleVehicleSourceLights& Lights, EMantleVehicleLightKind Kind);
-	static const TArray<FString>& Sections(const FMantleVehicleSourceLights& Lights, EMantleVehicleLightKind Kind);
+	static TArray<FString>& Sections(FMantleVehicleSourceLights& Lights, EMantleLightKind Kind);
+	static const TArray<FString>& Sections(const FMantleVehicleSourceLights& Lights, EMantleLightKind Kind);
 
 	/**
 	 * Which light a glowing spot is, from where it sits in the body's bounds (+X is the front, left is -Y) and the color it glows; unset when it reads as no light
 	 * (a glowing dashboard in the middle of the car, a red spot at the front). Pure.
 	 */
-	static TOptional<EMantleVehicleLightKind> Classify(const FVector3f& Center, const FLinearColor& Glow, const FBox3f& Bounds);
+	static TOptional<EMantleLightKind> Classify(const FVector3f& Center, const FLinearColor& Glow, const FBox3f& Bounds);
 
 	/** The light a slot's or material's name says it is, from its words (case and separators ignored); unset when it names none. Pure. */
-	static TOptional<EMantleVehicleLightKind> FromName(const FString& Name, const FVector3f& Center, const FBox3f& Bounds);
+	static TOptional<EMantleLightKind> FromName(const FString& Name, const FVector3f& Center, const FBox3f& Bounds);
 
 	/**
 	 * Finds the lights on Body (LOD 0, the vehicle's space: +X forward, cm) with Materials its slots. bCenterline (a bike) gets one beam on the middle line.
@@ -92,10 +92,10 @@ struct MANTLEEDITOR_API FMantleVehicleLights
 	 * beside the vehicle as MI_<Vehicle>_<Section>, with the glow the model switched off turned on and the kind recorded on it (KindOf). Null with OutError when it
 	 * cannot be made or saved. A /Temp package is not written. Game thread.
 	 */
-	static UMaterialInterface* MakeLightMaterial(UMaterialInterface* Original, EMantleVehicleLightKind Kind, const FString& PackagePath, const FString& AssetName, FString& OutError);
+	static UMaterialInterface* MakeLightMaterial(UMaterialInterface* Original, EMantleLightKind Kind, const FString& PackagePath, const FString& AssetName, FString& OutError);
 
 	/** The kind a light material (MakeLightMaterial) glows as; unset for any other material. */
-	static TOptional<EMantleVehicleLightKind> KindOf(const UMaterialInterface* Material);
+	static TOptional<EMantleLightKind> KindOf(const UMaterialInterface* Material);
 
 	/** The material a light material was made from; Material itself when it is not one. */
 	static UMaterialInterface* OriginalOf(UMaterialInterface* Material);

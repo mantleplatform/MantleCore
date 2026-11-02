@@ -1,6 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleConverter.h"
-#include "MantleVehicleLights.h"
+#include "MantleVehicleLightFinder.h"
 #include "MantleCosmeticExport.h"
 #include "MantlePlaceAssets.h"
 #include "MantleRuntime.h"
@@ -3135,8 +3135,8 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		}
 	}
 	// Lights: each section a section of the body, as paint's are.
-	for (const EMantleVehicleLightKind Kind : { EMantleVehicleLightKind::Head, EMantleVehicleLightKind::Rear, EMantleVehicleLightKind::Reverse,
-		EMantleVehicleLightKind::Left, EMantleVehicleLightKind::Right })
+	for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse,
+		EMantleLightKind::Left, EMantleLightKind::Right })
 	{
 		for (const FString& Section : FMantleVehicleLights::Sections(Source->Lights, Kind))
 		{
