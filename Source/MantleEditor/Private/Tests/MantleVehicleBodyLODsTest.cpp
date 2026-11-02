@@ -4,6 +4,9 @@
 #include "MantleVehicleBodyLODs.h"
 #include "MantleVehicleConverter.h"
 #include "Dom/JsonObject.h"
+#include "MantleVehicleAsset.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -182,6 +185,81 @@ bool FMantleVehicleBodyLODsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("slimmed, it has the original's vertices"), Split.Positions.Num(), Body.Positions.Num());
 	TestEqual(TEXT("and the same triangles"), FMantleVehicleBodyLODs::CountTriangles(Split), Triangles);
 	TestTrue(TEXT("and compact streams"), Split.bCompactStreams);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleCompactStreamsTest,
+	"Mantle.Vehicle.LODs.CompactStreamsFallBack",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleCompactStreamsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleBodyLODsTestPrivate;
+	// A section past what unsigned-short indices reach (256 x 256 = 66,049 vertices) beside a small one; the deepest joint a vehicle may have.
+	FMantleGlbMesh Body = MakeBody();
+	AddGrid(Body, 256, 0, 1, FVector3f(0.0f, 0.0f, 300.0f));
+	const int32 Big = Body.Primitives.Num() - 1;
+	TestTrue(TEXT("the big section has more vertices than 16-bit indices reach"), Body.Primitives[Big].NumVertices > 65535);
+	TestTrue(TEXT("a vehicle's bones fit in a byte"), FMantleVehicleLimits::MaxBones <= 256);
+	while (Body.Joints.Num() < FMantleVehicleLimits::MaxBones)
+	{
+		FMantleGlbJoint Joint;
+		Joint.Name = FName(*FString::Printf(TEXT("part_%d"), Body.Joints.Num()));
+		Joint.Parent = 0;
+		Body.Joints.Add(Joint);
+	}
+	const uint16 Deepest = static_cast<uint16>(FMantleVehicleLimits::MaxBones - 1);
+	Body.InfluenceJoints[Body.Primitives[0].FirstVertex] = Deepest;
+
+	TArray<uint8> Bytes;
+	FString Error;
+	if (!TestTrue(*FString::Printf(TEXT("it writes (%s)"), *Error), FMantleVehicleConverter::WriteUpload(Body, MakeShared<FJsonObject>(), Bytes, Error)))
+	{
+		return false;
+	}
+	const uint32 JsonBytes = *reinterpret_cast<const uint32*>(Bytes.GetData() + 12);
+	TSharedPtr<FJsonObject> Gltf;
+	FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(FString(static_cast<int32>(JsonBytes), reinterpret_cast<const ANSICHAR*>(Bytes.GetData() + 20))), Gltf);
+	if (!TestTrue(TEXT("its JSON reads"), Gltf.IsValid()))
+	{
+		return false;
+	}
+	const TArray<TSharedPtr<FJsonValue>>& Accessors = Gltf->GetArrayField(TEXT("accessors"));
+	const TArray<TSharedPtr<FJsonValue>>& Primitives = Gltf->GetArrayField(TEXT("meshes"))[0]->AsObject()->GetArrayField(TEXT("primitives"));
+	const auto ComponentOf = [&Accessors](const TSharedPtr<FJsonObject>& Primitive, const TCHAR* Attribute) -> int32
+	{
+		const int32 Accessor = Attribute ? static_cast<int32>(Primitive->GetObjectField(TEXT("attributes"))->GetNumberField(Attribute))
+			: static_cast<int32>(Primitive->GetNumberField(TEXT("indices")));
+		return static_cast<int32>(Accessors[Accessor]->AsObject()->GetNumberField(TEXT("componentType")));
+	};
+	// Slim welds the grids, so the big one is found by its vertex count.
+	int32 Shorts = 0, Ints = 0, ByteJoints = 0;
+	for (const TSharedPtr<FJsonValue>& Value : Primitives)
+	{
+		const TSharedPtr<FJsonObject> Primitive = Value->AsObject();
+		const int32 Vertices = static_cast<int32>(Accessors[static_cast<int32>(Primitive->GetObjectField(TEXT("attributes"))->GetNumberField(TEXT("POSITION")))]->AsObject()->GetNumberField(TEXT("count")));
+		const int32 Indices = ComponentOf(Primitive, nullptr);
+		TestEqual(*FString::Printf(TEXT("a section of %d vertices has %s indices"), Vertices, Vertices > 65535 ? TEXT("32-bit") : TEXT("16-bit")), Indices, Vertices > 65535 ? 5125 : 5123);
+		(Indices == 5123 ? Shorts : Ints)++;
+		ByteJoints += ComponentOf(Primitive, TEXT("JOINTS_0")) == 5121 ? 1 : 0;
+	}
+	TestTrue(TEXT("both index sizes are in the one file"), Shorts > 0 && Ints == 1);
+	TestEqual(TEXT("every section's joints are bytes"), ByteJoints, Primitives.Num());
+
+	// Past what bytes hold, the writer refuses rather than writing a wrong joint.
+	FMantleGlbMesh TooMany = Body;
+	while (TooMany.Joints.Num() <= 256)
+	{
+		FMantleGlbJoint Joint;
+		Joint.Name = FName(*FString::Printf(TEXT("extra_%d"), TooMany.Joints.Num()));
+		Joint.Parent = 0;
+		TooMany.Joints.Add(Joint);
+	}
+	TooMany.bCompactStreams = true;
+	TestFalse(TEXT("compact streams refuse more than 256 joints"), FMantleGlbWriter::Write(TooMany, Bytes, Error));
+	FMantleVehicleBodyLODs::Slim(TooMany);
+	TestFalse(TEXT("and Slim leaves such a mesh in full streams"), TooMany.bCompactStreams);
 	return true;
 }
 
