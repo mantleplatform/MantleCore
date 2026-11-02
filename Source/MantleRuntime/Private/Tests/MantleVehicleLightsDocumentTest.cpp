@@ -1,3 +1,4 @@
+// Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleAsset.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/FileHelper.h"
