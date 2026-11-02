@@ -26,6 +26,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Interfaces/IPluginManager.h"
 #include "HAL/FileManager.h"
 #include "LevelEditorViewport.h"
 #include "Misc/AutomationTest.h"
@@ -149,11 +150,15 @@ bool FMantleVehicleBuilderImportFbxTest::RunTest(const FString& Parameters)
 	// What goes wrong first, said in plain words: no file, a missing one, one that is not an .fbx.
 	FString Error;
 	TestNull(TEXT("no file imports nothing"), FMantleVehicleBuilder::ImportModelFile(FString(), Error));
-	TestTrue(TEXT("and asks for one"), Error.Contains(TEXT("Pick an .fbx file")));
+	TestTrue(TEXT("and asks for one"), Error.Contains(TEXT("Pick a model file")));
 	TestNull(TEXT("a missing file imports nothing"), FMantleVehicleBuilder::ImportModelFile(TEXT("C:/NoSuchFolder/Nothing.fbx"), Error, FString(), /*bSave*/ false));
 	TestTrue(TEXT("and says it cannot find it"), Error.Contains(TEXT("can't find")) && Error.Contains(TEXT("Nothing.fbx")));
-	TestNull(TEXT("a file that is not an .fbx imports nothing"), FMantleVehicleBuilder::ImportModelFile(TEXT("C:/NoSuchFolder/Car.obj"), Error, FString(), /*bSave*/ false));
-	TestTrue(TEXT("and says what to do"), Error.Contains(TEXT("isn't an .fbx file")));
+	TestNull(TEXT("a file of another kind imports nothing"), FMantleVehicleBuilder::ImportModelFile(TEXT("C:/NoSuchFolder/Car.stl"), Error, FString(), /*bSave*/ false));
+	TestTrue(TEXT("and says what to do"), Error.Contains(TEXT("isn't a model file")));
+	TestNull(TEXT("a USD file imports nothing"), FMantleVehicleBuilder::ImportModelFile(TEXT("C:/NoSuchFolder/Car.usd"), Error, FString(), /*bSave*/ false));
+	TestTrue(TEXT("and says USD isn't supported"), Error.Contains(TEXT("USD files aren't supported")));
+	TestNull(TEXT("a missing .obj, .gltf and .glb are known kinds, so they get the missing-file message"), FMantleVehicleBuilder::ImportModelFile(TEXT("C:/NoSuchFolder/Car.glb"), Error, FString(), /*bSave*/ false));
+	TestTrue(TEXT("which is not the wrong-kind message"), Error.Contains(TEXT("can't find")));
 
 	// The window says so too, and picks nothing.
 	if (FSlateApplication::IsInitialized())
@@ -204,6 +209,50 @@ bool FMantleVehicleBuilderImportFbxTest::RunTest(const FString& Parameters)
 	if (Cleanup.Num() > 0)
 	{
 		FMantleAssetCleanup::MoveAside(Cleanup);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleBuilderImportOtherFormatsTest,
+	"Mantle.Vehicle.Builder.ImportsObjAndGltfFiles",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleBuilderImportOtherFormatsTest::RunTest(const FString& Parameters)
+{
+	// One tiny cube of each kind, kept with the tests (Private/Tests/Samples), never in the plugin's Content.
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("MantleCore"));
+	if (!TestTrue(TEXT("the plugin is found"), Plugin.IsValid()))
+	{
+		return false;
+	}
+	const FString SampleFolder = Plugin->GetBaseDir() / TEXT("Source/MantleEditor/Private/Tests/Samples");
+	const FString Folder = TEXT("/Game/MantleVehicles/Imported/_AutomationTest");
+
+	TArray<UObject*> AllMade;
+	for (const TCHAR* Name : { TEXT("TinyCube.obj"), TEXT("TinyCube.gltf"), TEXT("TinyCube.glb") })
+	{
+		const FString File = SampleFolder / Name;
+		if (!TestTrue(*FString::Printf(TEXT("the sample %s is there"), Name), IFileManager::Get().FileExists(*File)))
+		{
+			continue;
+		}
+		FString Error;
+		TArray<UObject*> Made;
+		UObject* Model = FMantleVehicleBuilder::ImportModelFile(File, Error, Folder / FPaths::GetExtension(File), /*bSave*/ false, &Made);
+		AllMade.Append(Made);
+		if (TestNotNull(*FString::Printf(TEXT("%s is imported (%s)"), Name, *Error), Model))
+		{
+			TestTrue(*FString::Printf(TEXT("%s becomes a static mesh"), Name), Model->IsA<UStaticMesh>());
+			FMantleVehicleModel Read;
+			TestTrue(*FString::Printf(TEXT("and the vehicle builder can read %s as a model (%s)"), Name, *Error), FMantleVehicleModel::Read(Model, Read, Error) && Read.NumTriangles() == 12);
+		}
+	}
+
+	AllMade.RemoveAll([](UObject* Object) { return Object == nullptr; });
+	if (AllMade.Num() > 0)
+	{
+		FMantleAssetCleanup::MoveAside(AllMade);
 	}
 	return true;
 }

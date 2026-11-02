@@ -885,8 +885,8 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeModelStep()
 					SNew(SButton)
 						.ContentPadding(FMargin(12, 4))
 						.OnClicked(this, &SMantleVehicleBuilder::OnPickFbx)
-						.ToolTipText(LOCTEXT("PickFbxTip", "Choose an .fbx file on your computer. Mantle imports it into your project (under MantleVehicles > Imported) and picks it here."))
-						.Text(LOCTEXT("PickFbx", "Pick an .fbx file..."))
+						.ToolTipText(LOCTEXT("PickFbxTip", "Choose a model file (.fbx, .obj, .gltf or .glb) on your computer. Mantle imports it into your project (under MantleVehicles > Imported) and picks it here."))
+						.Text(LOCTEXT("PickFbx", "Pick a model file..."))
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(8, 0, 0, 0)
 				[
@@ -910,7 +910,7 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeModelStep()
 				SNew(STextBlock)
 					.AutoWrapText(true)
 					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-					.Text(LOCTEXT("ModelHelp", "Pick the model you imported or bought: a Static Mesh or a Skeletal Mesh. A car whose wheels are separate parts named like Wheel_FL and Wheel_FR is fitted to its own wheels. Any other model, such as a spaceship, a plane or a bike, goes on the gray vehicle as its skin: the gray vehicle stays the physics, and you can point out which parts of your model are its wheels, propellers or rotors so they move. Have an FBX file? Press Pick an .fbx file, and Mantle imports it and picks it for you."))
+					.Text(LOCTEXT("ModelHelp", "Pick the model you imported or bought: a Static Mesh or a Skeletal Mesh. A car whose wheels are separate parts named like Wheel_FL and Wheel_FR is fitted to its own wheels. Any other model, such as a spaceship, a plane or a bike, goes on the gray vehicle as its skin: the gray vehicle stays the physics, and you can point out which parts of your model are its wheels, propellers or rotors so they move. Have an FBX, OBJ or glTF file? Press Pick a model file, and Mantle imports it and picks it for you."))
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 16)
 			[
@@ -965,13 +965,13 @@ FReply SMantleVehicleBuilder::OnPickFbx()
 	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
 	if (!DesktopPlatform)
 	{
-		ImportStatus = LOCTEXT("NoFileDialog", "This computer can't open a file picker here. Drag your .fbx into the Content Browser to import it, then pick it from the list.");
+		ImportStatus = LOCTEXT("NoFileDialog", "This computer can't open a file picker here. Drag your model file into the Content Browser to import it, then pick it from the list.");
 		bImportFailed = true;
 		return FReply::Handled();
 	}
 	const void* ParentWindow = FSlateApplication::IsInitialized() ? FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr) : nullptr;
 	TArray<FString> Files;
-	if (!DesktopPlatform->OpenFileDialog(ParentWindow, TEXT("Pick your model (.fbx)"), LastFbxFolder, FString(), TEXT("FBX model (*.fbx)|*.fbx"), EFileDialogFlags::None, Files)
+	if (!DesktopPlatform->OpenFileDialog(ParentWindow, TEXT("Pick your model"), LastFbxFolder, FString(), TEXT("3D model (*.fbx;*.obj;*.gltf;*.glb)|*.fbx;*.obj;*.gltf;*.glb|FBX (*.fbx)|*.fbx|OBJ (*.obj)|*.obj|glTF (*.gltf;*.glb)|*.gltf;*.glb"), EFileDialogFlags::None, Files)
 		|| Files.IsEmpty())
 	{
 		// Canceled: nothing changes and there is nothing to say.

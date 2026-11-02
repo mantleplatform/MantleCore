@@ -1651,13 +1651,19 @@ UObject* FMantleVehicleBuilder::ImportModelFile(const FString& FbxFile, FString&
 	const FString File = FbxFile.TrimStartAndEnd();
 	if (File.IsEmpty())
 	{
-		OutError = TEXT("Pick an .fbx file first.");
+		OutError = TEXT("Pick a model file first (.fbx, .obj, .gltf or .glb).");
 		return nullptr;
 	}
 	const FString Full = FPaths::ConvertRelativePathToFull(File);
-	if (!FPaths::GetExtension(Full).Equals(TEXT("fbx"), ESearchCase::IgnoreCase))
+	const FString Extension = FPaths::GetExtension(Full).ToLower();
+	if (Extension == TEXT("usd") || Extension == TEXT("usda") || Extension == TEXT("usdc") || Extension == TEXT("usdz"))
 	{
-		OutError = FString::Printf(TEXT("%s isn't an .fbx file. Export your model from your 3D program as FBX and pick that file, or import it into your project and pick it from the list."), *FPaths::GetCleanFilename(Full));
+		OutError = FString::Printf(TEXT("%s is a USD file, and USD files aren't supported. Export your model as FBX, OBJ or glTF and pick that file."), *FPaths::GetCleanFilename(Full));
+		return nullptr;
+	}
+	if (Extension != TEXT("fbx") && Extension != TEXT("obj") && Extension != TEXT("gltf") && Extension != TEXT("glb"))
+	{
+		OutError = FString::Printf(TEXT("%s isn't a model file Mantle can import. Export your model from your 3D program as FBX, OBJ or glTF and pick that file, or import it into your project and pick it from the list."), *FPaths::GetCleanFilename(Full));
 		return nullptr;
 	}
 	if (!IFileManager::Get().FileExists(*Full))
@@ -1681,15 +1687,19 @@ UObject* FMantleVehicleBuilder::ImportModelFile(const FString& FbxFile, FString&
 	Task->bReplaceExisting = true;
 	Task->bSave = bSave;
 	Task->bAsync = false;
-	// The editor's own FBX importer, told to work out for itself whether the file is a static or a skinned mesh, and to leave animations and the physics asset out.
-	UFbxFactory* Factory = NewObject<UFbxFactory>(Task);
-	if (Factory->ImportUI)
+	if (Extension == TEXT("fbx"))
 	{
-		Factory->ImportUI->bImportAnimations = false;
-		Factory->ImportUI->bCreatePhysicsAsset = false;
-		Factory->ImportUI->bAutomatedImportShouldDetectType = true;
+		// The editor's own FBX importer, told to work out for itself whether the file is a static or a skinned mesh, and to leave animations and the physics asset out.
+		UFbxFactory* Factory = NewObject<UFbxFactory>(Task);
+		if (Factory->ImportUI)
+		{
+			Factory->ImportUI->bImportAnimations = false;
+			Factory->ImportUI->bCreatePhysicsAsset = false;
+			Factory->ImportUI->bAutomatedImportShouldDetectType = true;
+		}
+		Task->Factory = Factory;
 	}
-	Task->Factory = Factory;
+	// OBJ and glTF/GLB have no factory set: the editor picks its own importer for the file type (Interchange, which is on by default).
 
 	FAssetToolsModule::GetModule().Get().ImportAssetTasks({ Task });
 
