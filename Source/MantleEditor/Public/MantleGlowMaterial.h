@@ -68,3 +68,33 @@ struct MANTLEEDITOR_API FMantleGlowMaterial
 	 */
 	static bool HasFresnel(const FExpressionInput* Emissive);
 };
+
+class UTexture;
+
+/** Where a material glows, for the vehicle builder's light finder: what its emissive graph reads, as the material (or its instance) sets it. */
+struct MANTLEEDITOR_API FMantleMaterialGlow
+{
+	/** The emissive input is connected to a texture or to a color that is not black. */
+	bool bGlows = false;
+
+	/** The first texture on the emissive path (a Texture Sample, or a Texture Sample Parameter as the instance sets it); null for a glow of one color. */
+	UTexture* Texture = nullptr;
+
+	/** The first texture on the base color path: the lens's own color, for a glow texture that is only a white mask. Null when the base color has none. */
+	UTexture* BaseTexture = nullptr;
+
+	/** The first color on the path (a Vector Parameter before a constant), white when there is none. */
+	FLinearColor Color = FLinearColor::White;
+
+	/**
+	 * The Scalar Parameters on the path the material sets to 0: a glow switched off in the model ("Emissive Intensity" 0, the way the Fab cars ship). The glow is
+	 * still where the texture says; a light made from it turns these on so it has something to glow with.
+	 */
+	TArray<FName> OffScalars;
+
+	/**
+	 * Reads Material's emissive graph (its own, not into functions). False, with Out.bGlows false, when nothing is connected or the graph holds no texture and
+	 * only black. Game thread (reads the material's editor-only graph).
+	 */
+	static bool Read(const UMaterialInterface* Material, FMantleMaterialGlow& Out);
+};

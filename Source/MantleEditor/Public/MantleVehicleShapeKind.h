@@ -19,8 +19,16 @@ public:
 	/** Where Mantle thinks each wheel is, in the mesh's space (FMantleVehicleModelPreview::WheelDots): a dot goes on each. Refresh the viewport after changing it. */
 	void SetWheelDots(const TArray<FVector>& InDots) { WheelDots = InDots; }
 
+	/**
+	 * The lights (the seats and paint step): BeamCount headlight beams as points to drag and turn (roles Beam1, Beam2, ...; a yellow arrow each), and a colored marker on
+	 * each light section. Zero beams and no markers outside that step. Refresh the viewport after changing it.
+	 */
+	void SetLights(int32 InBeamCount, const TArray<FMantleBuilderOverlayMarker>& InMarkers) { BeamCount = InBeamCount; LightMarkers = InMarkers; }
+	/** The role of beam Index (from 0): Beam1, Beam2, ... */
+	static FName BeamRole(int32 Index);
+
 	// IMantleBuilderKind
-	virtual TArray<FMantleBuilderPointRole> GetRoles() const override { return TArray<FMantleBuilderPointRole>(); }
+	virtual TArray<FMantleBuilderPointRole> GetRoles() const override;
 	virtual TArray<FMantleBuilderPoint> GuessPoints(const UObject* Mesh) const override { return TArray<FMantleBuilderPoint>(); }
 	virtual TArray<FMantleGhostCapsule> GhostPose(const TArray<FMantleBuilderPoint>& Points) const override;
 	virtual FMantleBuilderOverlay Overlay(const TArray<FMantleBuilderPoint>& Points) const override;
@@ -29,4 +37,6 @@ public:
 private:
 	FMantleChassisSpec Spec;
 	TArray<FVector> WheelDots;
+	int32 BeamCount = 0;
+	TArray<FMantleBuilderOverlayMarker> LightMarkers;
 };

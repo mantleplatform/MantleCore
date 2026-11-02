@@ -75,7 +75,18 @@ struct FMantleVehicleBuilderShotAccess
 		Panel->SetMesh(FAssetData(Model));
 		Shot(1, TEXT("model"));
 		Shot(2, TEXT("fit"));
+		UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_LIGHTS head=[%s] rear=[%s] reverse=[%s] left=[%s] right=[%s] beams=%d sections=[%s]"),
+			*FString::Join(Panel->Lights.Head, TEXT(",")), *FString::Join(Panel->Lights.Rear, TEXT(",")), *FString::Join(Panel->Lights.Reverse, TEXT(",")),
+			*FString::Join(Panel->Lights.Left, TEXT(",")), *FString::Join(Panel->Lights.Right, TEXT(",")), Panel->Lights.Beams.Num(),
+			*FString::Join(Panel->Preview.Sections, TEXT(",")));
 		Shot(3, TEXT("seats_paint"));
+		// The lights' handles: the first headlight beam picked, its gizmo showing.
+		if (const TSharedPtr<SMantleBuilderViewport> Picture = Panel->PreviewViewport.Pin())
+		{
+			Picture->SetSelectedRole(FMantleVehicleShapeKind::BeamRole(0));
+			const FString File = FPaths::Combine(Args[2], TEXT("builder_step4_seats_paint_beam.png"));
+			UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT %s %s"), *File, Draw(Panel, File) ? TEXT("saved") : TEXT("NOT saved"));
+		}
 		Shot(4, TEXT("thumbnail"));
 		// The build button is on the last step, so that is where it is pressed.
 		Panel->Flow->GoTo(5);
@@ -399,7 +410,8 @@ namespace MantleThumbnailSectionDevShot
 	/** Widget rendered offscreen at Width over the editor's panel gray, as a PNG (the same way as the Cosmetics panel's dev shots). */
 	bool Save(const TSharedRef<SWidget>& Widget, const FString& File, const float Width, const float MaxHeight)
 	{
-		FWidgetRenderer Renderer(true, false);
+		// The target is cleared before each draw: the second, at the widget's own height, would otherwise land on the first.
+		FWidgetRenderer Renderer(true, true);
 		UTextureRenderTarget2D* Target = FWidgetRenderer::CreateTargetFor(FVector2D(Width, MaxHeight), TF_Bilinear, true);
 		Target->AddToRoot();
 		Renderer.DrawWidget(Target, Widget, FVector2D(Width, MaxHeight), 0.0f);

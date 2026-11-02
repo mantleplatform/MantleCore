@@ -7,6 +7,7 @@
 #include "MantleVehicleAsset.h"
 #include "MantleVehicleBuilder.h"
 #include "MantleVehicleChassisSkin.h"
+#include "MantleVehicleLightFinder.h"
 #include "MantleVehicleShape.h"
 #include "MantleVehicleTypeMatch.h"
 #include "SMantleBuilderFlow.h"
@@ -68,7 +69,7 @@ private:
 
 	TSharedRef<SWidget> MakePresetCard(const FString& PresetId, const FText& Name, const FText& Description);
 	/** A step's content with the picture of the model on its frame beside it: Left is the step's own controls. */
-	TSharedRef<SWidget> WithPicture(const TSharedRef<SWidget>& Left);
+	TSharedRef<SWidget> WithPicture(const TSharedRef<SWidget>& Left, bool bLights = false);
 	/** The picture: the model on its frame once there is one, else the line that says what to do next. */
 	TSharedRef<SWidget> MakePicture();
 	/** The Size row of a type shaped by one Size (a plane, helicopter or hovercraft). */
@@ -153,8 +154,27 @@ private:
 	void RefreshPaintChoices();
 	void SetPaintSection(int32 Index, bool bOn);
 	void SetHideRiders(bool bOn);
-	/** Writes the paint ticks and the "no inside" choice into a built vehicle. */
+	/** Writes the paint ticks, the lights and the "no inside" choice into a built vehicle. */
 	void ApplyChoices(UMantleVehicleSource& Source);
+
+	// Lights.
+	/** One light's row: its name and the body sections that glow as it, picked from a menu of every section. */
+	TSharedRef<SWidget> MakeLightRow(EMantleLightKind Kind);
+	/** What the light row's button says: the sections picked, or (none). */
+	FText LightRowText(EMantleLightKind Kind) const;
+	/** Picks or unpicks a section for a light; a section glows as one light only, so picking it takes it from any other. */
+	void ToggleLightSection(EMantleLightKind Kind, const FString& Section);
+	/** Mantle's lights for the picked model (the picture's), unless the creator changed them; sections the model no longer has are dropped. */
+	void RefreshLights();
+	/** The creator changed a light: the picture shows it, and a built vehicle takes it at once. */
+	void LightsChanged();
+	/** The beams as the picture's points, and a colored marker on each light section. */
+	void PushLightsToPicture();
+	/** The creator dragged a beam in the picture. */
+	void OnPicturePointsChanged();
+	FReply OnAddBeam();
+	FReply OnRemoveBeam();
+	FReply OnResetLights();
 
 	void CloseWindow();
 
@@ -249,6 +269,11 @@ private:
 	TArray<FPaintChoice> PaintChoices;
 	/** The creator ticked or unticked a section: the ticks replace Mantle's own guess on the built vehicle. */
 	bool bPaintEdited = false;
+	/** The lights: which sections glow as which light and the headlight beams (the body's space, the picture's). Mantle's guess until the creator changes one. */
+	FMantleVehicleSourceLights Lights;
+	bool bLightsEdited = false;
+	/** The picture shows the lights (the seats and paint step): the beams to drag and the light markers. */
+	bool bPictureLights = false;
 
 	/** The size Mantle proposed for the last build, for Reset to suggested; unset when the wheels could not be read. */
 	TOptional<float> SuggestedSize;

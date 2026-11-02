@@ -6,6 +6,7 @@
 #include "MantleVehicleChassisSkin.h"
 #include "MantleVehicleFit.h"
 #include "MantleVehicleAsset.h"
+#include "MantleVehicleSource.h"
 #include "UObject/StrongObjectPtr.h"
 
 class AMantleVehicleSpawnPoint;
@@ -80,6 +81,16 @@ struct FMantleVehicleModelOptions
 	 * vehicle the creator made some other way; the window sets it for the vehicle it made itself, which is how pressing Build again updates one vehicle instead of adding another.
 	 */
 	bool bOverwrite = false;
+	/**
+	 * The lights: which body sections glow as which light, and the headlight beams (FMantleVehicleLights). Unset, what the light finder found on the model
+	 * (FMantleVehicleOnChassis::Lights); the window sets it once the creator changes a row or moves a beam.
+	 */
+	TOptional<FMantleVehicleSourceLights> Lights;
+	/**
+	 * The space Lights' beams were placed in: the bounds of the window's picture's body. A model that keeps its own wheels (Build) is built in its own space, and the beams
+	 * are moved to the same place on it. Invalid: the beams are in the built body's space already.
+	 */
+	FBox3f LightsBounds = FBox3f(ForceInit);
 };
 
 /**
@@ -102,6 +113,11 @@ struct FMantleVehicleOnChassis
 	/** The model skinned to the chassis's bones. */
 	FMantleVehicleSkinned Skinned;
 	FMantleVehicleSkinCollision Collision;
+	/**
+	 * The lights the finder found on the model (FMantleVehicleLights::Find): their triangles are already cut into sections of their own in Skinned, and this names
+	 * them by kind, with the headlight beams. Empty lists for a model with no glow and no light named.
+	 */
+	FMantleVehicleSourceLights Lights;
 	/** What Mantle chose and what the creator should look at, in the order BuildFromModel has always said it. */
 	TArray<FString> Notes;
 };
@@ -127,6 +143,9 @@ struct MANTLEEDITOR_API FMantleVehicleModelPreview
 	FMantleChassisSpec Spec;
 	FMantleVehicleModelMap Map;
 	double Yaw = 0.0;
+	/** The lights Mantle found (FMantleVehicleOnChassis::Lights), and every section of the body by the names the vehicle lists, for the lights' rows. */
+	FMantleVehicleSourceLights Lights;
+	TArray<FString> Sections;
 	TArray<FString> Notes;
 	TArray<FString> Problems;
 	bool bOk = false;
@@ -208,6 +227,19 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * the exits and camera hang from. Nothing happens when the choice is already so.
 	 */
 	static void SetHiddenRiders(UMantleVehicleSource& Source, const USkeletalMesh* Model, bool bHide);
+
+	/**
+	 * Sets a built vehicle's lights (FMantleVehicleLights): the sections that glow as each light, kept only where the body has them, and the headlight beams. Each light
+	 * section gets its glowing copy of its material and every other section its own material back; a light section is taken off the paint. Notes say what could not be done.
+	 */
+	static void ApplyLights(UMantleVehicleSource& Source, const FMantleVehicleSourceLights& Lights, TArray<FString>& OutNotes);
+
+	/**
+	 * The lights of a vehicle built on its own wheels (Build): its body is the creator's model, which is never changed, so when the light finder cuts spots out of it the
+	 * cut body is a copy saved beside the vehicle (<Model>_Lights) and becomes the vehicle's body. Options.Lights, when set, are the creator's rows and beams (the beams moved
+	 * from Options.LightsBounds onto the model); else what the finder found. Saves the vehicle again when the build saved it.
+	 */
+	static void LightOwnBody(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
 
 	/**
 	 * Where the driver sits when Source has no seat placed. A vehicle of a type gets its chassis's seat fitted to the model's wheels,

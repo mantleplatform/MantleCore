@@ -327,6 +327,8 @@ void FMantleBuilderViewportClient::Refresh()
 {
 	if (Kind.IsValid())
 	{
+		// A kind's roles may change with its settings (the vehicle builder's headlight beams come and go).
+		Roles = Kind->GetRoles();
 		Ghost = Kind->GhostPose(Points);
 		ViewTurn = Kind->ViewTurn();
 		Warnings = Kind->Check(Points);

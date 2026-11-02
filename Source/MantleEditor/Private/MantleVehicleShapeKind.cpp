@@ -25,9 +25,31 @@ TArray<FMantleGhostCapsule> FMantleVehicleShapeKind::GhostPose(const TArray<FMan
 	return Ghost;
 }
 
+FName FMantleVehicleShapeKind::BeamRole(const int32 Index)
+{
+	return FName(*FString::Printf(TEXT("Beam%d"), Index + 1));
+}
+
+TArray<FMantleBuilderPointRole> FMantleVehicleShapeKind::GetRoles() const
+{
+	TArray<FMantleBuilderPointRole> Roles;
+	for (int32 Index = 0; Index < BeamCount; ++Index)
+	{
+		FMantleBuilderPointRole& Role = Roles.AddDefaulted_GetRef();
+		Role.Role = BeamRole(Index);
+		Role.Label = FText::Format(LOCTEXT("BeamLabel", "Headlight beam {0}"), FText::AsNumber(Index + 1));
+		Role.Help = LOCTEXT("BeamHelp", "A real light that lights the road while the headlights are on. Put it at a headlight and point the arrow where the light should shine.");
+		Role.Shape = EMantleBuilderPointShape::Arrow;
+		Role.bRequired = false;
+		Role.bRotates = true;
+	}
+	return Roles;
+}
+
 FMantleBuilderOverlay FMantleVehicleShapeKind::Overlay(const TArray<FMantleBuilderPoint>& Points) const
 {
 	FMantleBuilderOverlay Out;
+	Out.Markers = LightMarkers;
 
 	for (const FVector& Dot : WheelDots)
 	{
@@ -65,6 +87,10 @@ FMantleBuilderOverlay FMantleVehicleShapeKind::Overlay(const TArray<FMantleBuild
 
 FText FMantleVehicleShapeKind::Hint() const
 {
+	if (BeamCount > 0)
+	{
+		return LOCTEXT("HintBeams", "Click a yellow arrow (a headlight beam), then drag the handles to move it or turn it to aim. Colored dots are the lights Mantle found: white headlights, red rear lights, gray reverse lights, amber signals. Right-drag to turn the view, scroll to zoom.");
+	}
 	return LOCTEXT("Hint", "Right-drag to turn the view, scroll to zoom, press F to frame the vehicle. The gray figure is a character, so you can see how big the vehicle is. Green dots are where Mantle thinks the wheels are.");
 }
 
