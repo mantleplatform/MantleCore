@@ -660,7 +660,7 @@ bool FMantleLandscapeMaterialReaderDefaultNormalsTest::RunTest(const FString& Pa
 	UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
 	UTexture2D* Grass = UTexture2D::CreateTransient(4, 4);
 	UTexture2D* GrassNormal = UTexture2D::CreateTransient(4, 4);
-	MakePixels(GrassNormal, FColor(120, 134, 250, 255));
+	MakePixels(GrassNormal, FColor(124, 126, 175, 255));
 	UTexture2D* MudNormal = UTexture2D::CreateTransient(4, 4);
 	MakePixels(MudNormal, FColor(128, 128, 255, 255));
 	UTexture2D* Mask = UTexture2D::CreateTransient(4, 4);

@@ -244,7 +244,7 @@ namespace MantleLandscapeMaterialReaderPrivate
 	}
 
 	/**
-	 * Whether the texture's pixels are a tangent-space normal map: red and green around one half, blue near one. Asset packs often
+	 * Whether the texture's pixels are a tangent-space normal map: red and green around one half, blue well above one half. Asset packs often
 	 * import their normal maps with the default compression, so the texture does not say it is one; its pixels do. The stored
 	 * values are compared as they are, whatever the texture's sRGB flag says. Read once per texture content.
 	 */
@@ -292,7 +292,7 @@ namespace MantleLandscapeMaterialReaderPrivate
 			}
 		}
 		const bool bNormals = Count > 0 && FMath::Abs(Sum[0] / Count - 0.5) <= 0.12 && FMath::Abs(Sum[1] / Count - 0.5) <= 0.12
-			&& Sum[2] / Count >= 0.7 && Upright >= Count * 0.95;
+			&& Sum[2] / Count >= 0.6 && Upright >= Count * 0.95;
 		Cache.Add(Key, bNormals);
 		return bNormals;
 	}
