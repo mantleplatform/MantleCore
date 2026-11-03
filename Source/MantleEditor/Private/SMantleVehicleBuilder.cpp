@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "SMantleVehicleBuilder.h"
+#include "MantleVehicleRimFinder.h"
 
 #include "MantleVehicleBlueprint.h"
 #include "MantleVehicleBuilder.h"
@@ -1361,6 +1362,37 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeSeatsAndPaintStep()
 			]
 		];
 	}
+
+	// Wheels: whether players and scripts can swap this car's wheels for wheel items. It needs the rims to be parts of their own in the model.
+	Rows->AddSlot().AutoHeight().Padding(0, 12, 0, 4)
+	[
+		SNew(STextBlock)
+			.Font(FAppStyle::GetFontStyle("BoldFont"))
+			.Text(LOCTEXT("WheelsTitle", "Wheels"))
+	];
+	Rows->AddSlot().AutoHeight().Padding(0, 0, 0, 4)
+	[
+		SNew(STextBlock)
+			.AutoWrapText(true)
+			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+			.Text_Lambda([this]
+			{
+				TArray<FString> Rims;
+				for (const FPaintChoice& Choice : PaintChoices)
+				{
+					if (FMantleVehicleRims::NameIsRim(Choice.Section))
+					{
+						Rims.Add(Choice.Section);
+					}
+				}
+				if (Rims.IsEmpty())
+				{
+					return LOCTEXT("WheelsNone", "No part of your model is named like a rim (rim, wheel, alloy, hub or spoke), so players cannot swap this car's wheels. Nothing else changes. To allow it, give the rims their own material, named for them, in your model.");
+				}
+				return FText::Format(LOCTEXT("WheelsFound", "Players can swap this car's wheels for wheel items. Mantle takes {0} for the rims (it checks they are only the wheels when it builds, and says so under Build). The car's tires stay."),
+					FText::FromString(FString::Join(Rims, TEXT(", "))));
+			})
+	];
 
 	// Lights: which parts of the model glow as which light, and the headlight beams, dragged in the picture.
 	Rows->AddSlot().AutoHeight().Padding(0, 12, 0, 4)
