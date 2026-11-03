@@ -3243,6 +3243,58 @@ bool FMantlePlaceAssetConverter::ConvertWeapon(const FMantleGatheredWeapon& Weap
 	return true;
 }
 
+FString FMantlePlaceAssetConverter::WheelThumbnailStoreKey(const FString& WheelName)
+{
+	return TEXT("/Game/MantleWheels/") + WheelName;
+}
+
+FString FMantlePlaceAssetConverter::WheelPictureKey(const FString& Hash)
+{
+	return FString::Printf(TEXT("wheelpicture:%s"), *MantlePlaceAssetConverterPrivate::HexOfHash(Hash));
+}
+
+void FMantlePlaceAssetConverter::ConvertWheelThumbnail(UStaticMesh* Model, FMantleConvertedWheel& Wheel, FMantlePlaceAssetSet& Out)
+{
+	using namespace MantlePlaceAssetConverterPrivate;
+	Wheel.ThumbnailKey.Reset();
+	if (!Model)
+	{
+		return;
+	}
+	// #124: the creator's choice for this wheel (Automatic when none was saved): the model in the catalog's thumbnail scene, like a weapon's.
+	FMantleThumbnailChoice Choice;
+	FMantleThumbnailStore::Load(WheelThumbnailStoreKey(Wheel.Name), TEXT("wheel"), Choice, FMantleThumbnailStore::DefaultConfigFile());
+	const FMantleThumbnailResult Picture = FMantleThumbnailResolver::Resolve(Choice, FMantleThumbnailTarget::Square(),
+		FMantleModelThumbnail::RenderFor([Model]() -> UObject* { return Model; }));
+	if (Picture.Succeeded())
+	{
+		FMantleConvertedTexture Texture;
+		Texture.Format = TEXT("png");
+		Texture.Width = FMantleThumbnailTarget::Square().Width;
+		Texture.Height = FMantleThumbnailTarget::Square().Height;
+		Texture.Bytes = FMantleThumbnailResolver::ToPng(Picture, FMantleThumbnailTarget::Square());
+		Texture.Hash = FMantleSha256::AssetHash(Texture.Bytes);
+		Texture.Key = WheelPictureKey(Texture.Hash);
+		Texture.Name = FString::Printf(TEXT("%s library picture"), *Wheel.Name);
+		Wheel.ThumbnailKey = Out.AddTexture(MoveTemp(Texture));
+		if (!Picture.Warning.IsEmpty())
+		{
+			Out.Issues.Add(WarningIssue(FString::Printf(TEXT("The wheel '%s' thumbnail: %s"), *Wheel.Name, *Picture.Warning), TEXT("Use a bigger custom image for the wheel's thumbnail.")));
+		}
+	}
+	else if (Choice.Mode == EMantleThumbnailMode::Custom)
+	{
+		// The wheel still publishes, without a picture, as a weapon's does when its renderer is missing; the creator is told why.
+		Out.Issues.Add(WarningIssue(FString::Printf(TEXT("The wheel '%s' thumbnail's custom image could not be used (%s), so its library card has no picture."), *Wheel.Name, *Picture.Error),
+			TEXT("Choose another custom image for the wheel's thumbnail, then publish again.")));
+	}
+	else if (FMantleCosmeticThumbnail::CanCapture())
+	{
+		Out.Issues.Add(WarningIssue(FString::Printf(TEXT("The wheel '%s' thumbnail could not be taken (%s), so its library card has no picture."), *Wheel.Name, *Picture.Error),
+			TEXT("Publish again; if it keeps happening, choose a Custom image for the wheel's thumbnail.")));
+	}
+}
+
 int32 FMantlePlaceAssetConverter::NumDependencySteps(const FMantlePlaceDependencies& Dependencies)
 {
 	return Dependencies.Meshes.Num() + Dependencies.Materials.Num() + Dependencies.Textures.Num() + Dependencies.Sounds.Num()
