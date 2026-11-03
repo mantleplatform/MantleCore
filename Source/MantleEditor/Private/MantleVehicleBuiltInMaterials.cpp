@@ -7,7 +7,7 @@
 #include "Materials/MaterialInterface.h"
 #include "MantlePlaceAssets.h"
 #include "MantleVehicleConverter.h"
-#include "MantleVehicleLights.h"
+#include "MantleVehicleLightFinder.h"
 #include "MantleVehicleSource.h"
 
 #define LOCTEXT_NAMESPACE "MantleVehicleBuiltInMaterials"
