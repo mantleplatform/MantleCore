@@ -334,6 +334,13 @@ struct MANTLEEDITOR_API FMantleBakeSurface
 	 */
 	double WorldShiftCm = 0.0;
 
+	/**
+	 * The material is a GTA model's tint layer (PRIMARY, SECONDARY or WHEEL in its name) on a vehicle's painted section: its base color picture is a mask for the game
+	 * to tint, so it is published as a light gray version of itself (FMantlePlaceAssetConverter::NormalizeTintMask), the variation kept. It is part of the cache tag only:
+	 * the bake itself is the plain one.
+	 */
+	bool bTintMask = false;
+
 	bool IsPlain() const { return VertexColor == FColor::White && UvRange <= 1 && WorldTileCm <= 0.0; }
 
 	/** What the conversion cache keys on: empty for the plain surface, so those bakes keep their keys. */
@@ -357,6 +364,9 @@ struct MANTLEEDITOR_API FMantleGatheredMaterial
 
 	/** The UV range a landscape layer bakes it over (FMantleTerrainLayerChoice::BakeUvRange); 1 for everything else. */
 	int32 BakeUvRange = 1;
+
+	/** Set by a vehicle's gather for the tint-mask variant of a material (AddMaterial with bTintMask, key TintMaskKey): FMantleBakeSurface::bTintMask. */
+	bool bTintMask = false;
 
 	/** The average of VertexColorSum, white when nothing was counted. */
 	FColor AverageVertexColor() const;
@@ -662,7 +672,11 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	 * Returns the entry that now draws it (the stand-in's for a capped instance), null for a library material or none. The pointer is
 	 * only good until the next material is added.
 	 */
-	FMantleGatheredMaterial* AddMaterial(UMaterialInterface* Material, const FString& Label);
+	/**
+	 * Gathers Material. With bTintMask it is the tint-mask variant of the material (a GTA tint layer on a painted vehicle section): its own entry under TintMaskKey, so the same
+	 * material on an unticked section or a map prop keeps its plain upload.
+	 */
+	FMantleGatheredMaterial* AddMaterial(UMaterialInterface* Material, const FString& Label, bool bTintMask = false);
 
 	/**
 	 * Adds the materials a landscape's layers draw with that Mantle makes itself (transient: read from the landscape's material, or the plain gray of an
@@ -745,6 +759,9 @@ public:
 	 * of its content (IsTransientMaterialInstance), so identical ones share one upload and one bake.
 	 */
 	static FString MaterialKey(const UMaterialInterface* Material);
+
+	/** The key of Material's tint-mask variant (FMantleBakeSurface::bTintMask): the material's own key and a suffix. */
+	static FString TintMaskKey(const FString& MaterialKey);
 
 	/** A material instance that is not on disk: a Material Instance Dynamic, or an instance that is transient or in the transient package. */
 	static bool IsTransientMaterialInstance(const UMaterialInterface* Material);

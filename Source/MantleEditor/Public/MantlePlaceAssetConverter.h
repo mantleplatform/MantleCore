@@ -218,6 +218,9 @@ struct MANTLEEDITOR_API FMantlePlaceMaterialDocument
  */
 struct MANTLEEDITOR_API FMantleMaterialExtras
 {
+	/** FMantleBakeSurface::bTintMask: the base color picture is published as a light gray mask (FMantlePlaceAssetConverter::NormalizeTintMask). */
+	bool bTintMask = false;
+
 	/** FMantleMaterialAnalysis::bVertexColorTintsBaseColor. */
 	bool bVertexColorTintsBaseColor = false;
 
@@ -1059,7 +1062,14 @@ public:
 	 * (lower JPEG quality, or halved). What names it in messages. False when the image cannot be read.
 	 */
 	static bool PrepareTexture(TConstArrayView<uint8> Image, EMantlePlaceTextureSlot Slot, bool bKeepAlpha, const FMantlePlaceAssetLimits& Limits,
-		const FString& What, bool bWarnDownscale, FMantleConvertedTexture& Out, TArray<FMantleValidationIssue>& OutIssues);
+		const FString& What, bool bWarnDownscale, FMantleConvertedTexture& Out, TArray<FMantleValidationIssue>& OutIssues, bool bTintMask = false);
+
+	/**
+	 * A GTA model's tint layer picture (PRIMARY, SECONDARY, WHEEL) is a mask: the game multiplies it by the car's color. Its light and dark are kept, rescaled so the picture
+	 * reads light (the scale stops at 12 times, so a very dark picture lands under white and its brightest grain clips), and its color is dropped to gray. Alpha is untouched.
+	 * A picture that is already light, or has no pixels, is left as it is; an all-black picture (no variation to keep) becomes flat light. Exposed for tests.
+	 */
+	static void NormalizeTintMask(TArray<FColor>& Pixels);
 
 private:
 	TSharedRef<IMantleMaterialFlattener> Flattener;

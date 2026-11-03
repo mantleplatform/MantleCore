@@ -2390,15 +2390,16 @@ void FMantlePlaceDependencies::AddSlotVertexColors(FMantleGatheredMaterial* Entr
 	Entry->VertexColorWeight += Vertices;
 }
 
-FMantleGatheredMaterial* FMantlePlaceDependencies::AddMaterial(UMaterialInterface* Material, const FString& Label)
+FMantleGatheredMaterial* FMantlePlaceDependencies::AddMaterial(UMaterialInterface* Material, const FString& Label, const bool bTintMask)
 {
 	if (!Material || FMantlePlaceAssets::IsLibraryAsset(Material))
 	{
 		return nullptr;
 	}
-	const FString Key = FMantlePlaceAssets::MaterialKey(Material);
+	const FString Key = bTintMask ? FMantlePlaceAssets::TintMaskKey(FMantlePlaceAssets::MaterialKey(Material)) : FMantlePlaceAssets::MaterialKey(Material);
 	FMantleGatheredMaterial* Existing = Materials.FindByPredicate([&Key](const FMantleGatheredMaterial& Entry) { return Entry.Key == Key; });
-	if (!Existing && FMantlePlaceAssets::IsTransientMaterialInstance(Material))
+	// A tint-mask variant is never a variant stand-in: it is its own entry, and nothing else is flagged through it.
+	if (!Existing && !bTintMask && FMantlePlaceAssets::IsTransientMaterialInstance(Material))
 	{
 		const UMaterialInterface* Varied = FMantlePlaceAssets::VariedMaterial(Material);
 		const FString VariedName = Varied ? Varied->GetName() : FString(TEXT("none"));
@@ -2425,6 +2426,7 @@ FMantleGatheredMaterial* FMantlePlaceDependencies::AddMaterial(UMaterialInterfac
 		Existing->Material = Material;
 		Existing->Key = Key;
 		Existing->Name = Material->GetName();
+		Existing->bTintMask = bTintMask;
 	}
 	else if (Existing->Material.Get() != Material && FMantlePlaceAssets::IsTransientMaterialInstance(Material))
 	{
@@ -2876,7 +2878,7 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 			{
 				continue;
 			}
-			AddMaterial(FMantleVehicleConverter::PartSlotMaterial(Part, PartMesh, Slot), Label);
+			AddMaterial(FMantleVehicleConverter::PartSlotMaterial(Part, PartMesh, Slot), Label, FMantleVehicleConverter::PartSlotIsTintMask(Part, PartMesh, Slot));
 		}
 	}
 
@@ -2900,7 +2902,7 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 		{
 			continue;
 		}
-		AddMaterial(BodyMaterials[Index], Label);
+		AddMaterial(BodyMaterials[Index], Label, BodySections.IsValidIndex(Index) && FMantleVehicleConverter::BodySectionIsTintMask(*Source, BodySections[Index], BodyMaterials[Index]));
 	}
 }
 
@@ -3516,6 +3518,11 @@ void FMantlePlaceAssets::ClearVariantStandIns()
 	MantlePlaceAssetsPrivate::VariantStandIns().Reset();
 }
 
+FString FMantlePlaceAssets::TintMaskKey(const FString& MaterialKey)
+{
+	return MaterialKey + TEXT("#tintmask");
+}
+
 FString FMantlePlaceAssets::MaterialKey(const UMaterialInterface* Material)
 {
 	if (!Material)
@@ -3673,12 +3680,12 @@ bool FMantlePlaceAssets::SlotVertexColors(const UStaticMesh* Mesh, const UStatic
 
 FString FMantleBakeSurface::CacheTag() const
 {
-	if (IsPlain())
+	if (IsPlain() && !bTintMask)
 	{
 		return FString();
 	}
-	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%d%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1),
-		WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""));
+	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%d%s%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1),
+		WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""), bTintMask ? TEXT(" tintmask=1") : TEXT(""));
 	// The shift is not in the tag: the shifted bake is only compared with, never stored.
 }
 
@@ -3698,6 +3705,7 @@ FMantleBakeSurface FMantleGatheredMaterial::BakeSurface() const
 	FMantleBakeSurface Surface;
 	Surface.VertexColor = AverageVertexColor();
 	Surface.UvRange = FMath::Max(BakeUvRange, 1);
+	Surface.bTintMask = bTintMask;
 	return Surface;
 }
 
