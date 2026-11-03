@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleBuilder.h"
+#include "MantleVehicleRimFinder.h"
 
 #include "MantleChassisSpec.h"
 #include "MantleVehicleBlueprint.h"
@@ -1724,6 +1725,14 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 				{
 					LightSlots.Add(Slot);
 				}
+			}
+		}
+		// So do the rims (sections named for one): a wheel swap hides them, and only the body's sections can be hidden.
+		for (int32 Slot = 0; Slot < SectionsBefore.Num(); ++Slot)
+		{
+			if (FMantleVehicleRims::NameIsRim(SectionsBefore[Slot]))
+			{
+				LightSlots.Add(Slot);
 			}
 		}
 		if (!FMantleVehicleBodySplit::Split(Skinned.Body, Skinned.Materials, Skinned.Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials,

@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleConverter.h"
+#include "MantleVehicleRimFinder.h"
 #include "MantleVehicleBodyLODs.h"
 #include "MantleVehicleBuiltInMaterials.h"
 #include "MantleVehicleCollision.h"
@@ -1307,6 +1308,47 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 		{
 			Result.Notes.Add(FString::Printf(TEXT("%s %s; measured from its tire mesh when published."), *Wheel.Bone.ToString(), Role));
 		}
+	}
+
+	// Rims (vehicle-customization-plan.md section 3): the sections a wheel swap hides, where the creator set none. A rim the model has
+	// no section for leaves its wheel as it is: a car with its wheels welded into the body is simply not swappable.
+	{
+		TArray<FName> RimBones;
+		TArray<double> RimRadii;
+		for (const FMantleVehicleSourceWheel& Entry : Source.Wheels)
+		{
+			double Radius = Entry.Radius;
+			double Width = 0.0;
+			if (Radius <= 0.0)
+			{
+				MeasureWheel(Body, Entry.Bone, Radius, Width);
+			}
+			RimBones.Add(Entry.Bone);
+			RimRadii.Add(Radius);
+		}
+		TArray<FString> RimNotes;
+		const TArray<TArray<FString>> Found = FMantleVehicleRims::Find(Body, RimBones, RimRadii, UniqueSectionNames(Body.MaterialNames), RimNotes);
+		TArray<FString> Hidden;
+		for (int32 Index = 0; Index < Source.Wheels.Num() && Found.IsValidIndex(Index); ++Index)
+		{
+			if (Source.Wheels[Index].RimSections.IsEmpty())
+			{
+				Source.Wheels[Index].RimSections = Found[Index];
+			}
+			for (const FString& Rim : Source.Wheels[Index].RimSections)
+			{
+				Hidden.AddUnique(Rim);
+			}
+		}
+		if (Hidden.Num() > 0)
+		{
+			Result.Notes.Add(FString::Printf(TEXT("Wheels: the rims are %s, so players can swap them for other wheels. Change this under Wheels > Rim Sections in the vehicle asset."), *FString::Join(Hidden, TEXT(", "))));
+		}
+		else if (Source.Wheels.Num() > 0)
+		{
+			Result.Notes.Add(TEXT("Wheels: no section of the model is a wheel's rim on its own, so players cannot swap this car's wheels (nothing else changes). To allow it, give the rims their own material, named for them (rim or wheel), in your model."));
+		}
+		Result.Notes.Append(RimNotes);
 	}
 	Result.Notes.Append(SetupNotes);
 	Result.Notes.Append(PartNotes);
@@ -2765,6 +2807,15 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 		if (Wheel.Width > 0.f)
 		{
 			Entry->SetField(TEXT("width"), VehicleNumber(Wheel.Width));
+		}
+		if (Wheel.RimSections.Num() > 0)
+		{
+			TArray<TSharedPtr<FJsonValue>> Rims;
+			for (const FString& Rim : Wheel.RimSections)
+			{
+				Rims.Add(MakeShared<FJsonValueString>(Rim));
+			}
+			Entry->SetArrayField(TEXT("rimSections"), Rims);
 		}
 		Wheels.Add(MakeShared<FJsonValueObject>(Entry));
 	}
