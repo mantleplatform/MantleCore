@@ -157,6 +157,7 @@ class Player:
     drown_damage: Optional[float]
     grab_enabled: Optional[bool]
     health: Optional[float]
+    held_tool_id: Optional[str]
     is_crouched: Optional[bool]
     is_ragdolled: Optional[bool]
     is_sprinting: Optional[bool]
@@ -186,6 +187,7 @@ class Player:
     user_id: str
     walk_speed: Optional[float]
     wearing: dict[str, Any]
+    ammo_changed: Signal
     breath_changed: Signal
     breath_restored: Signal
     crouch_started: Signal
@@ -209,6 +211,9 @@ class Player:
     stunned: Signal
     def force_crouch(self, crouched: bool, /) -> bool:
         """Hold the player crouched (true) or standing (false) whatever they press, until ReleaseCrouch. A player held crouched can still walk (sprinting is off while crouched); one held standing cannot crouch or slide. CrouchEnabled false wins over a crouch hold. Returns false when the player has no character on foot. The hold ends with the character: a respawn gives the key back."""
+        ...
+    def get_ammo(self) -> Optional[dict[str, Any]]:
+        """The ammo of the weapon in the player's hands: toolId, rounds (in the magazine), magazineSize (what a full magazine holds now, after any attachment or stat change), reserve (rounds outside the magazine) and reloading. nil when the Tool in the hands has no magazine (a sword, bare hands) and while the player has no character. Works on the server and on every client for any player, so a client script can draw its own ammo readout after UI:SetBuiltInHUD(false, 'ammo'); AmmoChanged says when to read it again."""
         ...
     def heal(self, amount: float, /) -> bool:
         """Raise the character's health by amount, up to MaxHealth. Never brings a dead character back (use Respawn). Returns false when the player has no character on foot, is dead, or is already at full health."""
@@ -620,14 +625,36 @@ Avatar: _AvatarService
 class _BackpackService:
     """Give players weapons, take them away, and equip them (server only)."""
     item_used: Signal
+    loadout_changed: Signal
+    def apply_loadout(self, player: Player, toolId: str, loadout: dict[str, Any], /) -> dict[str, Any]:
+        """Put a whole loadout on the weapon, all or nothing: the slots it does not name end up empty, the stats it does not name go back to 1. Returns { ok = true }, or { ok = false, error = ... } as SetAttachment does ('not an option' when the loadout names an option the weapon no longer has, for the script to decide what to do). A loadout that is not the right shape errors."""
+        ...
     def clear(self, player: Player, /) -> float:
         """Empty the player's Backpack, leaving only fists. Returns how many Tools were removed."""
         ...
     def equip_slot(self, player: Player, slot: float, /) -> bool:
         """Put the Tool in this Backpack slot in the player's hands. Slots count from 0, so the hotbar key 1 is slot 0. Returns false when the slot is empty or the player is dead."""
         ...
+    def get_ammo(self, player: Player, toolId: str, /) -> Optional[dict[str, Any]]:
+        """The ammo of one of the player's weapons: rounds in the magazine, magazineSize (what a full magazine holds now), reserve and whether it is reloading. nil when the player does not have that Tool or it has no magazine. (Player:GetAmmo reads the weapon in the hands.)"""
+        ...
+    def get_attachment_options(self, player: Player, toolId: str, /) -> Optional[dict[str, Any]]:
+        """The attachment options the weapon's builder setup offers, by slot ('sight', 'muzzle', 'underbarrel', 'magazine', 'light', 'extra'): each slot lists its option names. An empty table for a weapon with none; nil when the player does not have that weapon."""
+        ...
+    def get_attachments(self, player: Player, toolId: str, /) -> Optional[dict[str, Any]]:
+        """What is fitted now, by slot: slot = option name (an empty slot is absent). nil when the player does not have that weapon."""
+        ...
     def get_capacity(self, player: Player, /) -> float:
         """How many Tools the player's Backpack holds (fists not counted): the place's settings.maxCarriedTools (32 unless the place sets it) until a script calls SetCapacity. Answers while the player is respawning too."""
+        ...
+    def get_loadout(self, player: Player, toolId: str, /) -> Optional[dict[str, Any]]:
+        """Everything done to the weapon as one plain table: { attachments = { sight = 'Holo' }, stats = { damage = 1.2 }, color = '#3A5F2B' } (only what differs from a new weapon's stats; color only if the weapon was painted). Save it with DataStore or inside an inventory entry and hand it back to ApplyLoadout or Grant. Ammo is not in it. nil when the player does not have that weapon."""
+        ...
+    def get_stat(self, player: Player, toolId: str, stat: str, /) -> Optional[float]:
+        """Your own multiplier for a stat (1 until SetStat), 0.25 to 4. Errors on an unknown stat; nil when the player does not have that weapon."""
+        ...
+    def get_stats(self, player: Player, toolId: str, /) -> Optional[dict[str, Any]]:
+        """The numbers the weapon has now, after its fitted attachments and your multipliers, for a creator's own UI: damage, fireRate (shots a minute), spread (degrees, the widest cone), recoil, reloadTime (seconds), magazineSize and range (cm). nil when the player does not have that weapon."""
         ...
     def get_swap_allowed(self, player: Player, /) -> bool:
         """Whether a full Backpack's pickup swaps the weapon in the player's hand for it: the place's settings.allowToolSwap (true unless the place turns it off) until a script calls SetSwapAllowed."""
@@ -635,14 +662,23 @@ class _BackpackService:
     def get_tools(self, player: Player, /) -> list[str]:
         """The ids of the Tools in the player's Backpack, in slot order. Fists, which every player always has, is never listed. Empty while the player has no character (respawning)."""
         ...
-    def grant(self, player: Player, item: str, /) -> str:
-        """Give the player a weapon this place stores: item is the library item id Storage:Get returns for one of the place's storage names. Returns the new Tool's stable id. Errors for anything else -- an asset id, an object path, an item the place does not store, or a vehicle. Also errors if the stored weapon has not finished preparing or the player cannot receive it."""
+    def grant(self, player: Player, item: str, loadout: Optional[dict[str, Any]] = ..., /) -> str:
+        """Give the player a weapon this place stores: item is the library item id Storage:Get returns for one of the place's storage names. Returns the new Tool's stable id. Errors for anything else -- an asset id, an object path, an item the place does not store, or a vehicle. Also errors if the stored weapon has not finished preparing or the player cannot receive it. With a loadout (the table GetLoadout returns), the weapon arrives with it on, with no pop: options the weapon no longer has are left off and the rest are fitted; a loadout that is not the right shape errors before anything is granted."""
         ...
     def remove(self, player: Player, toolId: str, /) -> bool:
         """Take the Tool with this id out of the player's Backpack (unequipping it first). Returns false when the player does not have it. Fists can never be removed."""
         ...
+    def set_attachment(self, player: Player, toolId: str, slot: str, option: Optional[str] = ..., /) -> dict[str, Any]:
+        """Fit an option of the weapon in its slot, or empty the slot with nil. Every player sees the change; a weapon in the hands dips while it happens, and the new attachments last as long as the Tool does. Returns { ok = true }, or { ok = false, error = ... } with error 'no tool', 'not a weapon', 'unknown slot', 'not an option' (not an option of this weapon for this slot) or 'busy' (reloading or already changing). A smaller magazine moves the extra rounds to the reserve; a bigger one does not fill itself."""
+        ...
     def set_capacity(self, player: Player, capacity: float, /) -> None:
         """Set how many Tools the player's Backpack holds, a whole number from 1 to 64 (fists not counted). It lasts for the rest of the session, through respawns. Lowering it below what the player carries keeps every Tool they have; it only stops new ones until they are under it. With a full Backpack a pickup offers to swap the weapon in hand for it (see SetSwapAllowed), or shows 'Backpack full'."""
+        ...
+    def set_light_on(self, player: Player, toolId: str, on: bool, /) -> bool:
+        """Turn the fitted light option's flashlight and laser on or off. A light starts off, and shows only while the weapon is in the hands. Returns false when no light option is fitted or the player does not have that weapon."""
+        ...
+    def set_stat(self, player: Player, toolId: str, stat: str, multiplier: float, /) -> bool:
+        """Set your own multiplier for one of the weapon's numbers (1 until set): stat is 'damage', 'fireRate', 'spread', 'recoil', 'reloadTime', 'magazineSize' or 'range', multiplier from 0.25 to 4. It stacks with the multipliers of the fitted attachments (the product is held to 0.25 to 4, then to the weapon file's own limits), is the same on every machine, and lasts as long as the Tool. Errors on an unknown stat or an out-of-range multiplier; returns false when the player does not have that weapon."""
         ...
     def set_swap_allowed(self, player: Player, allowed: bool, /) -> None:
         """Turn full-Backpack swaps on or off for the player. On, a pickup with a full Backpack and a weapon in hand reads 'Swap <held> for <new>': one kneel puts the held weapon on the floor and the new one in the hand. Off (or with bare hands), the prompt shows 'Backpack full' and does nothing. It lasts for the rest of the session, through respawns."""

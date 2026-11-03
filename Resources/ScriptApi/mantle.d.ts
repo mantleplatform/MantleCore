@@ -180,6 +180,8 @@ interface Player {
 	grabEnabled: boolean | undefined;
 	/** The character's health, from 0 to MaxHealth; nil while the player has no character. Weapons and TakeDamage lower this same value. Setting it (server only) clamps to 0..MaxHealth, and 0 kills the character with no killer. Setting it on a dead player, or one driving a vehicle, does nothing: use Respawn to bring a player back. */
 	health: number | undefined;
+	/** The id of the Tool in the player's hands (the id Backpack:GetTools lists); nil with bare hands, and while the player has no character. Readable on the server and on every client. */
+	readonly heldToolId: string | undefined;
 	/** Whether the character is crouched right now (by the key, a slide or ForceCrouch). nil while the player has no character. Read-only. */
 	readonly isCrouched: boolean | undefined;
 	/** Whether the character is limp on the ground right now: from Ragdoll, or a hard hit, a blast or being thrown off a vehicle knocked it down. nil while the player has no character. Read-only. */
@@ -238,6 +240,8 @@ interface Player {
 	walkSpeed: number | undefined;
 	/** What the player is wearing: slot name ("hair", "top", "footwear", "acc_hat", ...) to item id. Empty when nothing is worn or their look has not arrived. Read-only; a fresh table on every read. (server only) */
 	readonly wearing: Record<string, string>;
+	/** The ammo state of the player's held weapon changed: a shot, a reload starting or finishing, a pickup, a different Tool in the hands, or an attachment or stat change that resized the magazine. Fires on the server and on every client, at most once per frame per player; read the numbers with Player:GetAmmo. */
+	readonly ammoChanged: Signal<[player: Player]>;
 	/** The character's Breath changed: holding it underwater, getting it back at the surface or a script setting it. It reports steps of about half a percent of MaxBreath, not every frame. Fires on the server and on every client while BreathEnabled is true. */
 	readonly breathChanged: Signal<[player: Player, old: number, new: number]>;
 	/** The character's Breath is full again after it had used some. Fires on the server and on every client. */
@@ -282,6 +286,8 @@ interface Player {
 	readonly stunned: Signal<[player: Player]>;
 	/** Hold the player crouched (true) or standing (false) whatever they press, until ReleaseCrouch. A player held crouched can still walk (sprinting is off while crouched); one held standing cannot crouch or slide. CrouchEnabled false wins over a crouch hold. Returns false when the player has no character on foot. The hold ends with the character: a respawn gives the key back. (server only) */
 	forceCrouch(crouched: boolean): boolean;
+	/** The ammo of the weapon in the player's hands: toolId, rounds (in the magazine), magazineSize (what a full magazine holds now, after any attachment or stat change), reserve (rounds outside the magazine) and reloading. nil when the Tool in the hands has no magazine (a sword, bare hands) and while the player has no character. Works on the server and on every client for any player, so a client script can draw its own ammo readout after UI:SetBuiltInHUD(false, "ammo"); AmmoChanged says when to read it again. */
+	getAmmo(): { toolId: string; rounds: number; magazineSize: number; reserve: number; reloading: boolean } | undefined;
 	/** Raise the character's health by amount, up to MaxHealth. Never brings a dead character back (use Respawn). Returns false when the player has no character on foot, is dead, or is already at full health. (server only) */
 	heal(amount: number): boolean;
 	/** Remove the player from the session with a message. (server only) */
@@ -628,22 +634,44 @@ const Avatar: AvatarService;
 interface BackpackService {
 	/** A consumable (a potion, a medkit, food: a weapon-builder item with the Consumable hold) was used, on the server, at the moment its effect lands: halfway through its drink or use clip. It fires for every use, whether the item has a built-in effect or not, and never for a use that was canceled (sprinting, jumping or dodging first spends nothing). toolId is the item's Tool id in the player's Backpack, docName the name the creator gave it in the builder, usesLeft how many uses it has left (0: it is gone from the Backpack), and builtInEffect whether its own heal also ran (false for an item whose effect is "none": your script is the whole effect). */
 	readonly itemUsed: Signal<[player: Player, toolId: string, docName: string, usesLeft: number, builtInEffect: boolean]>;
+	/** A weapon's attachments, stat multipliers or light changed: a script call, a pickup that brought a loadout, or the player's light key. Fires on the server, once the change has taken effect. */
+	readonly loadoutChanged: Signal<[player: Player, toolId: string]>;
+	/** Put a whole loadout on the weapon, all or nothing: the slots it does not name end up empty, the stats it does not name go back to 1. Returns { ok = true }, or { ok = false, error = ... } as SetAttachment does ("not an option" when the loadout names an option the weapon no longer has, for the script to decide what to do). A loadout that is not the right shape errors. (server only) */
+	applyLoadout(player: Player, toolId: string, loadout: { attachments?: Record<string, string> | undefined; stats?: Record<string, number> | undefined; color?: string | undefined }): { ok: boolean; error?: string | undefined };
 	/** Empty the player's Backpack, leaving only fists. Returns how many Tools were removed. (server only) */
 	clear(player: Player): number;
 	/** Put the Tool in this Backpack slot in the player's hands. Slots count from 0, so the hotbar key 1 is slot 0. Returns false when the slot is empty or the player is dead. (server only) */
 	equipSlot(player: Player, slot: number): boolean;
+	/** The ammo of one of the player's weapons: rounds in the magazine, magazineSize (what a full magazine holds now), reserve and whether it is reloading. nil when the player does not have that Tool or it has no magazine. (Player:GetAmmo reads the weapon in the hands.) (server only) */
+	getAmmo(player: Player, toolId: string): { rounds: number; magazineSize: number; reserve: number; reloading: boolean } | undefined;
+	/** The attachment options the weapon's builder setup offers, by slot ("sight", "muzzle", "underbarrel", "magazine", "light", "extra"): each slot lists its option names. An empty table for a weapon with none; nil when the player does not have that weapon. (server only) */
+	getAttachmentOptions(player: Player, toolId: string): Record<string, (string)[]> | undefined;
+	/** What is fitted now, by slot: slot = option name (an empty slot is absent). nil when the player does not have that weapon. (server only) */
+	getAttachments(player: Player, toolId: string): Record<string, string> | undefined;
 	/** How many Tools the player's Backpack holds (fists not counted): the place's settings.maxCarriedTools (32 unless the place sets it) until a script calls SetCapacity. Answers while the player is respawning too. (server only) */
 	getCapacity(player: Player): number;
+	/** Everything done to the weapon as one plain table: { attachments = { sight = "Holo" }, stats = { damage = 1.2 }, color = "#3A5F2B" } (only what differs from a new weapon's stats; color only if the weapon was painted). Save it with DataStore or inside an inventory entry and hand it back to ApplyLoadout or Grant. Ammo is not in it. nil when the player does not have that weapon. (server only) */
+	getLoadout(player: Player, toolId: string): { attachments: Record<string, string>; stats: Record<string, number>; color?: string | undefined } | undefined;
+	/** Your own multiplier for a stat (1 until SetStat), 0.25 to 4. Errors on an unknown stat; nil when the player does not have that weapon. (server only) */
+	getStat(player: Player, toolId: string, stat: string): number | undefined;
+	/** The numbers the weapon has now, after its fitted attachments and your multipliers, for a creator's own UI: damage, fireRate (shots a minute), spread (degrees, the widest cone), recoil, reloadTime (seconds), magazineSize and range (cm). nil when the player does not have that weapon. (server only) */
+	getStats(player: Player, toolId: string): Record<string, number> | undefined;
 	/** Whether a full Backpack's pickup swaps the weapon in the player's hand for it: the place's settings.allowToolSwap (true unless the place turns it off) until a script calls SetSwapAllowed. (server only) */
 	getSwapAllowed(player: Player): boolean;
 	/** The ids of the Tools in the player's Backpack, in slot order. Fists, which every player always has, is never listed. Empty while the player has no character (respawning). (server only) */
 	getTools(player: Player): (string)[];
-	/** Give the player a weapon this place stores: item is the library item id Storage:Get returns for one of the place's storage names. Returns the new Tool's stable id. Errors for anything else -- an asset id, an object path, an item the place does not store, or a vehicle. Also errors if the stored weapon has not finished preparing or the player cannot receive it. (server only) */
-	grant(player: Player, item: string): string;
+	/** Give the player a weapon this place stores: item is the library item id Storage:Get returns for one of the place's storage names. Returns the new Tool's stable id. Errors for anything else -- an asset id, an object path, an item the place does not store, or a vehicle. Also errors if the stored weapon has not finished preparing or the player cannot receive it. With a loadout (the table GetLoadout returns), the weapon arrives with it on, with no pop: options the weapon no longer has are left off and the rest are fitted; a loadout that is not the right shape errors before anything is granted. (server only) */
+	grant(player: Player, item: string, loadout?: { attachments?: Record<string, string> | undefined; stats?: Record<string, number> | undefined; color?: string | undefined } | undefined): string;
 	/** Take the Tool with this id out of the player's Backpack (unequipping it first). Returns false when the player does not have it. Fists can never be removed. (server only) */
 	remove(player: Player, toolId: string): boolean;
+	/** Fit an option of the weapon in its slot, or empty the slot with nil. Every player sees the change; a weapon in the hands dips while it happens, and the new attachments last as long as the Tool does. Returns { ok = true }, or { ok = false, error = ... } with error "no tool", "not a weapon", "unknown slot", "not an option" (not an option of this weapon for this slot) or "busy" (reloading or already changing). A smaller magazine moves the extra rounds to the reserve; a bigger one does not fill itself. (server only) */
+	setAttachment(player: Player, toolId: string, slot: string, option?: string | undefined): { ok: boolean; error?: string | undefined };
 	/** Set how many Tools the player's Backpack holds, a whole number from 1 to 64 (fists not counted). It lasts for the rest of the session, through respawns. Lowering it below what the player carries keeps every Tool they have; it only stops new ones until they are under it. With a full Backpack a pickup offers to swap the weapon in hand for it (see SetSwapAllowed), or shows "Backpack full". (server only) */
 	setCapacity(player: Player, capacity: number): void;
+	/** Turn the fitted light option's flashlight and laser on or off. A light starts off, and shows only while the weapon is in the hands. Returns false when no light option is fitted or the player does not have that weapon. (server only) */
+	setLightOn(player: Player, toolId: string, on: boolean): boolean;
+	/** Set your own multiplier for one of the weapon's numbers (1 until set): stat is "damage", "fireRate", "spread", "recoil", "reloadTime", "magazineSize" or "range", multiplier from 0.25 to 4. It stacks with the multipliers of the fitted attachments (the product is held to 0.25 to 4, then to the weapon file's own limits), is the same on every machine, and lasts as long as the Tool. Errors on an unknown stat or an out-of-range multiplier; returns false when the player does not have that weapon. (server only) */
+	setStat(player: Player, toolId: string, stat: string, multiplier: number): boolean;
 	/** Turn full-Backpack swaps on or off for the player. On, a pickup with a full Backpack and a weapon in hand reads "Swap <held> for <new>": one kneel puts the held weapon on the floor and the new one in the hand. Off (or with bare hands), the prompt shows "Backpack full" and does nothing. It lasts for the rest of the session, through respawns. (server only) */
 	setSwapAllowed(player: Player, allowed: boolean): void;
 	/** Paint one of the player's weapons: color is "#RRGGBB", the same format as Vehicles:SetPaintColor. Every player sees the new color. Returns false when the player does not have that Tool or it is not a weapon. (server only) */

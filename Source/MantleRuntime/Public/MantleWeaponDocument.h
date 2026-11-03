@@ -259,6 +259,18 @@ enum class EMantleWeaponDocInterp : uint8
 	Count
 };
 
+/** schema attachment.slot (#234), in the schema's order: the slot an attachment option fills. */
+enum class EMantleWeaponDocSlot : uint8
+{
+	Sight,
+	Muzzle,
+	Underbarrel,
+	Magazine,
+	Light,
+	Extra,
+	Count,
+};
+
 /** schema x-holds (#840; x-archetypes before it, whose rows are the firearm holds'): what the client's animation set for a
  *  hold does. */
 struct FMantleWeaponDocHoldInfo
@@ -313,6 +325,10 @@ struct FMantleWeaponDocHoldInfo
 	bool bHasExtra = false;
 	/** Round 3 step 16: the hold may be a gravity gun (x-gravity: the firearm holds). */
 	bool bHasGravity = false;
+	/** #234 (x-attachmentSlots): the slots the hold's attachment options may fill. The firearm holds take all six; the others none this round. */
+	TArray<EMantleWeaponDocSlot> AttachmentSlots;
+	/** #234 (x-attachmentStats): the stats an option may scale, by name (damage, fireRate, spread, recoil, reloadTime, magazineSize, range). */
+	TArray<FString> AttachmentStats;
 	/** Round 3: the shooting style ids (x-shootingStyles) of a hold held more than one way to shoot (the bow), the default first. Empty: one way. */
 	TArray<FString> ShootingStyles;
 	/** Round 4 step 2: the tap looks (x-tapLooks) of a hold whose tap can look more than one way (the staff), the default first. Empty: no choice. */
@@ -382,6 +398,51 @@ struct FMantleWeaponDocParts
 	const TMantleWeaponDocValue<FMantleWeaponDocPart>& operator[](const EMantleWeaponDocRole Role) const { return Roles[static_cast<int32>(Role)]; }
 };
 
+/** schema attachment.stats (#234): the multipliers an option applies while fitted, each 0.25 to 4. */
+struct FMantleWeaponDocStats
+{
+	TMantleWeaponDocValue<double> Damage{ 1.0 };
+	TMantleWeaponDocValue<double> FireRate{ 1.0 };
+	TMantleWeaponDocValue<double> Spread{ 1.0 };
+	TMantleWeaponDocValue<double> Recoil{ 1.0 };
+	TMantleWeaponDocValue<double> ReloadTime{ 1.0 };
+	TMantleWeaponDocValue<double> MagazineSize{ 1.0 };
+	TMantleWeaponDocValue<double> Range{ 1.0 };
+};
+
+/** schema attachment.sight (#234): a sight option's aim point (relative to the option's own place), zoom and sight distance. */
+struct FMantleWeaponDocSightOption
+{
+	TMantleWeaponDocValue<FVector> Location{ FVector::ZeroVector };
+	TMantleWeaponDocValue<FQuat> Rotation{ FQuat::Identity };
+	TMantleWeaponDocValue<double> Zoom{ 1.0 };
+	/** Unset: the weapon's own firstPerson.sightDistance. */
+	TMantleWeaponDocValue<double> SightDistance;
+};
+
+/** schema attachment.light.flashlight (#234). */
+struct FMantleWeaponDocFlashlight
+{
+	TMantleWeaponDocValue<FColor> Color{ FColor::White };
+	TMantleWeaponDocValue<double> Brightness{ 1.0 };
+	TMantleWeaponDocValue<double> Range{ 2000.0 };
+	TMantleWeaponDocValue<double> ConeDegrees{ 25.0 };
+};
+
+/** schema attachment.light.laser (#234). */
+struct FMantleWeaponDocLaser
+{
+	TMantleWeaponDocValue<FColor> Color{ FColor(255, 0, 0) };
+	TMantleWeaponDocValue<double> Range{ 5000.0 };
+};
+
+/** schema attachment.light (#234): a flashlight, a laser or both. */
+struct FMantleWeaponDocLight
+{
+	TMantleWeaponDocValue<FMantleWeaponDocFlashlight> Flashlight;
+	TMantleWeaponDocValue<FMantleWeaponDocLaser> Laser;
+};
+
 /** A mesh, an effect or both that the weapon carries on its mesh (mesh or effect is required). */
 struct FMantleWeaponDocAttachment
 {
@@ -405,6 +466,21 @@ struct FMantleWeaponDocAttachment
 	 * untextured (a published weapon: an uploaded mesh carries only its slots' names).
 	 */
 	TMantleWeaponDocValue<TArray<FString>> Materials;
+	/** #234: the slot this attachment is an option of; unset: a fixed part. */
+	TMantleWeaponDocValue<EMantleWeaponDocSlot> Slot;
+	/** #234: the option the weapon comes with (needs Slot). */
+	TMantleWeaponDocValue<bool> bFitted{ false };
+	/** #234: multipliers applied while fitted (needs Slot, not on an extra). */
+	TMantleWeaponDocValue<FMantleWeaponDocStats> Stats;
+	/** #234: fixed parts (attachment names) and bones hidden while this option is fitted. */
+	TMantleWeaponDocValue<TArray<FString>> HideAttachments;
+	TMantleWeaponDocValue<TArray<FString>> HideBones;
+	/** #234: a sight option's aim (slot sight only). */
+	TMantleWeaponDocValue<FMantleWeaponDocSightOption> Sight;
+	/** #234: a muzzle option plays the suppressed shot while fitted (slot muzzle only). */
+	TMantleWeaponDocValue<bool> bSuppressed{ false };
+	/** #234: a light option's lights (slot light only). */
+	TMantleWeaponDocValue<FMantleWeaponDocLight> Light;
 };
 
 struct FMantleWeaponDocFire
@@ -865,6 +941,12 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	 * published). Unset: the slots draw untextured, or with whatever the caller passes beside the document.
 	 */
 	TMantleWeaponDocValue<TArray<FString>> Materials;
+	/**
+	 * Optional (#234, recolor): the mesh's material slots (their place in slot order, as Materials) a script or player can paint with one color on the
+	 * car-paint material; every other slot keeps the creator's material. Unset or empty: nothing to paint. Needs Mesh; a number past the mesh's last
+	 * slot is ignored. Every hold.
+	 */
+	TMantleWeaponDocValue<TArray<int32>> PaintSlots;
 	/**
 	 * Optional: the texture the hotbar shows for the weapon, a local name (an uploaded texture's id once published), the
 	 * library thumbnail. Empty: the hotbar shows no picture.

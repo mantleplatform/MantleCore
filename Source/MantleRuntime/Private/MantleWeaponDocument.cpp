@@ -46,7 +46,7 @@ namespace MantleWeaponDocumentPrivate
 	const TCHAR* const GWeaponDocV2Fields[] = {
 		TEXT("hold"), TEXT("delivery"), TEXT("charge"), TEXT("block"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"),
 		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("bash"),
-		TEXT("throw"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance"), TEXT("staffMelee"), TEXT("extra"), TEXT("gravity"), TEXT("suppressor"), TEXT("bipod")
+		TEXT("throw"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance"), TEXT("staffMelee"), TEXT("extra"), TEXT("gravity"), TEXT("suppressor"), TEXT("bipod"), TEXT("paintSlots")
 	};
 	// #1025: consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
 	const TCHAR* const GWeaponDocUseStyleNames[] = { TEXT("eatDrink"), TEXT("use") };
@@ -101,6 +101,9 @@ namespace MantleWeaponDocumentPrivate
 	const TCHAR* const GWeaponDocUseRefused[] = {
 		TEXT("fire"), TEXT("attachments"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil")
 	};
+	// #234: attachment.slot, the schema's enum in order; attachment.stats keys, the stat names of x-attachmentStats.
+	const TCHAR* const GWeaponDocSlotNames[] = { TEXT("sight"), TEXT("muzzle"), TEXT("underbarrel"), TEXT("magazine"), TEXT("light"), TEXT("extra") };
+	const TCHAR* const GWeaponDocStatNames[] = { TEXT("damage"), TEXT("fireRate"), TEXT("spread"), TEXT("recoil"), TEXT("reloadTime"), TEXT("magazineSize"), TEXT("range") };
 	const TCHAR* const GWeaponDocInterpNames[] = { TEXT("linear"), TEXT("constant"), TEXT("cubic") };
 
 	/** A name table's length. */
@@ -127,6 +130,7 @@ namespace MantleWeaponDocumentPrivate
 	static_assert(WeaponDocCount(GWeaponDocConsumableEffectNames) == static_cast<int32>(EMantleWeaponDocConsumableEffect::Count), "one name per consumable effect");
 	static_assert(WeaponDocCount(GWeaponDocExtraNames) == static_cast<int32>(EMantleWeaponDocExtra::Count), "one name per extra");
 	static_assert(WeaponDocCount(GWeaponDocBlinkLookNames) == static_cast<int32>(EMantleWeaponDocBlinkLook::Count), "one name per blink look");
+	static_assert(WeaponDocCount(GWeaponDocSlotNames) == static_cast<int32>(EMantleWeaponDocSlot::Count), "one name per attachment slot");
 
 	/** Names[Index], or "" past the table. */
 	template <int32 N>
@@ -337,6 +341,10 @@ namespace MantleWeaponDocumentPrivate
 		Info.OptionalSockets = { ESocket::GripL, ESocket::Magazine, ESocket::ShellEject };
 		// Round 3: every firearm can toggle a suppressor (x-suppressor).
 		Info.bHasSuppressor = true;
+		// #234: and take attachment options in every slot, scaling every stat (x-attachmentSlots, x-attachmentStats).
+		Info.AttachmentSlots = { EMantleWeaponDocSlot::Sight, EMantleWeaponDocSlot::Muzzle, EMantleWeaponDocSlot::Underbarrel,
+			EMantleWeaponDocSlot::Magazine, EMantleWeaponDocSlot::Light, EMantleWeaponDocSlot::Extra };
+		Info.AttachmentStats = { TEXT("damage"), TEXT("fireRate"), TEXT("spread"), TEXT("recoil"), TEXT("reloadTime"), TEXT("magazineSize"), TEXT("range") };
 		return Info;
 	}
 
@@ -480,6 +488,8 @@ namespace MantleWeaponDocumentPrivate
 			Bow.Quivers = { TEXT("back"), TEXT("hip"), TEXT("side") };
 			// Round 3: the Melee key bashes (on by default; the document's bash can turn it off).
 			Bow.bHasBash = true;
+			// #234: a bow takes no attachment options yet (the firearm holds only, this round).
+			Bow.AttachmentSlots.Reset();
 			// Round 3: how the bow is held to shoot, a (the classic archer) the default; c has its own clip set (HCS_Bow_C).
 			Bow.ShootingStyles = { TEXT("a"), TEXT("c") };
 			Table.Add(Bow);
@@ -1104,7 +1114,8 @@ namespace MantleWeaponDocumentPrivate
 		void ReadAttachment(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocAttachment& Out)
 		{
 			Keys(Obj, Path, { TEXT("name"), TEXT("mesh"), TEXT("effect"), TEXT("bone"), TEXT("socket"), TEXT("location"), TEXT("rotation"),
-				TEXT("scale"), TEXT("hidden"), TEXT("materials") }, { TEXT("name") });
+				TEXT("scale"), TEXT("hidden"), TEXT("slot"), TEXT("fitted"), TEXT("stats"), TEXT("hideAttachments"), TEXT("hideBones"), TEXT("sight"),
+				TEXT("suppressed"), TEXT("light"), TEXT("materials") }, { TEXT("name") });
 			if (const TSharedPtr<FJsonValue> Name = Field(Obj, TEXT("name")))
 			{
 				Text(Name, At(Path, TEXT("name")), EWeaponDocText::AttachmentName, Out.Name);
@@ -1120,7 +1131,93 @@ namespace MantleWeaponDocumentPrivate
 			OptRotation(Obj, Path, TEXT("rotation"), Out.Rotation);
 			OptVector3(Obj, Path, TEXT("scale"), WeaponDocScaleLimit, Out.Scale);
 			OptBoolean(Obj, Path, TEXT("hidden"), Out.bHidden);
+			OptChoice(Obj, Path, TEXT("slot"), GWeaponDocSlotNames, Out.Slot);
+			OptBoolean(Obj, Path, TEXT("fitted"), Out.bFitted);
+			OptBlock(Obj, Path, TEXT("stats"), Out.Stats, &FWeaponDocReader::ReadStats);
+			ReadNameList(Obj, Path, TEXT("hideAttachments"), EWeaponDocText::AttachmentName, Out.HideAttachments);
+			ReadNameList(Obj, Path, TEXT("hideBones"), EWeaponDocText::Any, Out.HideBones);
+			OptBlock(Obj, Path, TEXT("sight"), Out.Sight, &FWeaponDocReader::ReadSightOption);
+			OptBoolean(Obj, Path, TEXT("suppressed"), Out.bSuppressed);
+			OptBlock(Obj, Path, TEXT("light"), Out.Light, &FWeaponDocReader::ReadLight);
 			ReadMaterials(Obj, Path, Out.Materials);
+		}
+
+		/** A list of up to 8 unique names (hideAttachments, hideBones), set only when every entry reads. */
+		void ReadNameList(const TSharedPtr<FJsonObject>& Obj, const FString& Path, const TCHAR* Key, const EWeaponDocText Rule,
+			TMantleWeaponDocValue<TArray<FString>>& Out)
+		{
+			const TSharedPtr<FJsonValue> Names = Field(Obj, Key);
+			const FString ListPath = At(Path, Key);
+			if (!Names.IsValid())
+			{
+				return;
+			}
+			if (const FWeaponDocItems* List = Items(Names, ListPath, 0, 8))
+			{
+				UniqueStrings(*List, ListPath);
+				TArray<FString> Parsed;
+				bool bAllOk = true;
+				for (int32 Index = 0; Index < List->Num(); ++Index)
+				{
+					FString Name;
+					if (Text((*List)[Index], AtIndex(ListPath, Index), Rule, Name))
+					{
+						Parsed.Add(Name);
+					}
+					else
+					{
+						bAllOk = false;
+					}
+				}
+				if (bAllOk)
+				{
+					Out.Set(Parsed);
+				}
+			}
+		}
+
+		void ReadStats(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocStats& Out)
+		{
+			KeysIn(Obj, Path, GWeaponDocStatNames, WeaponDocCount(GWeaponDocStatNames), nullptr, 0);
+			OptNumber(Obj, Path, TEXT("damage"), 0.25, 4.0, Out.Damage);
+			OptNumber(Obj, Path, TEXT("fireRate"), 0.25, 4.0, Out.FireRate);
+			OptNumber(Obj, Path, TEXT("spread"), 0.25, 4.0, Out.Spread);
+			OptNumber(Obj, Path, TEXT("recoil"), 0.25, 4.0, Out.Recoil);
+			OptNumber(Obj, Path, TEXT("reloadTime"), 0.25, 4.0, Out.ReloadTime);
+			OptNumber(Obj, Path, TEXT("magazineSize"), 0.25, 4.0, Out.MagazineSize);
+			OptNumber(Obj, Path, TEXT("range"), 0.25, 4.0, Out.Range);
+		}
+
+		void ReadSightOption(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocSightOption& Out)
+		{
+			Keys(Obj, Path, { TEXT("location"), TEXT("rotation"), TEXT("zoom"), TEXT("sightDistance") });
+			OptVector3(Obj, Path, TEXT("location"), WeaponDocVectorLimit, Out.Location);
+			OptRotation(Obj, Path, TEXT("rotation"), Out.Rotation);
+			OptNumber(Obj, Path, TEXT("zoom"), 1.0, 12.0, Out.Zoom);
+			OptNumber(Obj, Path, TEXT("sightDistance"), 0.0, 100.0, Out.SightDistance);
+		}
+
+		void ReadFlashlight(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocFlashlight& Out)
+		{
+			Keys(Obj, Path, { TEXT("color"), TEXT("brightness"), TEXT("range"), TEXT("coneDegrees") });
+			OptColorAt(Obj, Path, TEXT("color"), Out.Color);
+			OptNumber(Obj, Path, TEXT("brightness"), 0.1, 4.0, Out.Brightness);
+			OptNumber(Obj, Path, TEXT("range"), 500.0, 5000.0, Out.Range);
+			OptNumber(Obj, Path, TEXT("coneDegrees"), 10.0, 60.0, Out.ConeDegrees);
+		}
+
+		void ReadLaser(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocLaser& Out)
+		{
+			Keys(Obj, Path, { TEXT("color"), TEXT("range") });
+			OptColorAt(Obj, Path, TEXT("color"), Out.Color);
+			OptNumber(Obj, Path, TEXT("range"), 100.0, 10000.0, Out.Range);
+		}
+
+		void ReadLight(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocLight& Out)
+		{
+			Keys(Obj, Path, { TEXT("flashlight"), TEXT("laser") });
+			OptBlock(Obj, Path, TEXT("flashlight"), Out.Flashlight, &FWeaponDocReader::ReadFlashlight);
+			OptBlock(Obj, Path, TEXT("laser"), Out.Laser, &FWeaponDocReader::ReadLaser);
 		}
 
 		/** A materials list (the weapon's own, an attachment's): local names, at most MaxWeaponMaterials; set only when every entry reads. */
@@ -1153,6 +1250,60 @@ namespace MantleWeaponDocumentPrivate
 					Out.Set(Parsed);
 				}
 			}
+		}
+
+		/** #234 (recolor): the weapon's paintable material slots, whole numbers from 0 to MaxWeaponMaterials - 1, each once; set only when every entry reads. */
+		void ReadPaintSlots(const TSharedPtr<FJsonObject>& Root, TMantleWeaponDocValue<TArray<int32>>& Out)
+		{
+			const TSharedPtr<FJsonValue> Slots = Field(Root, TEXT("paintSlots"));
+			if (!Slots.IsValid())
+			{
+				return;
+			}
+			const FWeaponDocItems* List = Items(Slots, TEXT("paintSlots"), 0, FMantlePlaceLimits::MaxWeaponMaterials);
+			if (!List)
+			{
+				return;
+			}
+			TArray<int32> Parsed;
+			bool bAllOk = true;
+			for (int32 Index = 0; Index < List->Num(); ++Index)
+			{
+				int32 Slot = 0;
+				if (Integer((*List)[Index], AtIndex(TEXT("paintSlots"), Index), 0, FMantlePlaceLimits::MaxWeaponMaterials - 1, Slot))
+				{
+					Parsed.Add(Slot);
+				}
+				else
+				{
+					bAllOk = false;
+				}
+			}
+			if (bAllOk && Parsed.Num() > 0 && !UniqueNumbers(Parsed))
+			{
+				Add(TEXT("paintSlots"), TEXT("uniqueItems"), TEXT("lists a material slot twice: list it once"));
+				bAllOk = false;
+			}
+			if (bAllOk)
+			{
+				Out.Set(Parsed);
+			}
+		}
+
+		/** Whether every number in List differs from the others. */
+		static bool UniqueNumbers(const TArray<int32>& List)
+		{
+			TSet<int32> Seen;
+			for (const int32 Number : List)
+			{
+				bool bAlready = false;
+				Seen.Add(Number, &bAlready);
+				if (bAlready)
+				{
+					return false;
+				}
+			}
+			return true;
 		}
 
 		void ReadFire(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocFire& Out)
@@ -1613,7 +1764,7 @@ namespace MantleWeaponDocumentPrivate
 			}
 			if (!Field(Root, TEXT("mesh")).IsValid())
 			{
-				for (const TCHAR* Key : { TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("materials") })
+				for (const TCHAR* Key : { TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("materials"), TEXT("paintSlots") })
 				{
 					if (Field(Root, Key).IsValid())
 					{
@@ -1643,8 +1794,15 @@ namespace MantleWeaponDocumentPrivate
 		/** An sRGB color, three integers 0..255 (color, effectsColor). */
 		void OptColor(const TSharedPtr<FJsonObject>& Obj, const TCHAR* Key, TMantleWeaponDocValue<FColor>& Out)
 		{
+			OptColorAt(Obj, FString(), Key, Out);
+		}
+
+		/** An sRGB color under Path (a flashlight's, a laser's). */
+		void OptColorAt(const TSharedPtr<FJsonObject>& Obj, const FString& Path, const TCHAR* Key, TMantleWeaponDocValue<FColor>& Out)
+		{
 			const TSharedPtr<FJsonValue> Color = Field(Obj, Key);
-			const FWeaponDocItems* List = Color ? Items(Color, Key, 3, 3) : nullptr;
+			const FString ColorPath = At(Path, Key);
+			const FWeaponDocItems* List = Color ? Items(Color, ColorPath, 3, 3) : nullptr;
 			if (!List)
 			{
 				return;
@@ -1654,7 +1812,7 @@ namespace MantleWeaponDocumentPrivate
 			for (int32 Index = 0; Index < List->Num(); ++Index)
 			{
 				int32 Channel = 0;
-				if (Integer((*List)[Index], AtIndex(Key, Index), 0, 255, Channel))
+				if (Integer((*List)[Index], AtIndex(ColorPath, Index), 0, 255, Channel))
 				{
 					if (Index < 3)
 					{
@@ -1677,7 +1835,7 @@ namespace MantleWeaponDocumentPrivate
 			const FString Path;
 			Keys(Root, Path,
 				{ TEXT("schemaVersion"), TEXT("name"), TEXT("archetype"), TEXT("hold"), TEXT("delivery"), TEXT("twoHanded"), TEXT("effects"),
-				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("suppressor"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance"), TEXT("staffMelee"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
+				  TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("suppressor"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance"), TEXT("staffMelee"), TEXT("color"), TEXT("effectsColor"), TEXT("mesh"), TEXT("materials"), TEXT("paintSlots"), TEXT("icon"), TEXT("sockets"), TEXT("parts"), TEXT("attachments"), TEXT("fire"),
 				  TEXT("charge"), TEXT("magazine"), TEXT("reload"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"),
 				  TEXT("consumable"), TEXT("block"), TEXT("bash"), TEXT("bipod"), TEXT("throw"), TEXT("extra"), TEXT("gravity"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
 				{ TEXT("schemaVersion"), TEXT("name") });
@@ -1763,6 +1921,7 @@ namespace MantleWeaponDocumentPrivate
 				Text(Mesh, TEXT("mesh"), EWeaponDocText::LocalName, Out.Mesh);
 			}
 			ReadMaterials(Root, Path, Out.Materials);
+			ReadPaintSlots(Root, Out.PaintSlots);
 			if (const TSharedPtr<FJsonValue> Icon = Field(Root, TEXT("icon")))
 			{
 				Text(Icon, TEXT("icon"), EWeaponDocText::LocalName, Out.Icon);
@@ -1778,7 +1937,7 @@ namespace MantleWeaponDocumentPrivate
 			OptBlock(Root, Path, TEXT("parts"), Out.Parts, &FWeaponDocReader::ReadParts);
 			if (const TSharedPtr<FJsonValue> Attachments = Field(Root, TEXT("attachments")))
 			{
-				if (const FWeaponDocItems* List = Items(Attachments, TEXT("attachments"), 0, 16))
+				if (const FWeaponDocItems* List = Items(Attachments, TEXT("attachments"), 0, 48))
 				{
 					TArray<FMantleWeaponDocAttachment> Parsed;
 					for (int32 Index = 0; Index < List->Num(); ++Index)
@@ -2171,7 +2330,90 @@ namespace MantleWeaponDocumentPrivate
 			Rotation(Node, TEXT("rotation"), In.Rotation);
 			Vector3(Node, TEXT("scale"), In.Scale);
 			Boolean(Node, TEXT("hidden"), In.bHidden);
+			if (In.Slot.bSet)
+			{
+				WeaponDocPut(Node, TEXT("slot"), WeaponDocStringNode(WeaponDocNameAt(GWeaponDocSlotNames, static_cast<int32>(In.Slot.Value))));
+			}
+			Boolean(Node, TEXT("fitted"), In.bFitted);
+			Block(Node, TEXT("stats"), In.Stats, &FWeaponDocWriter::Stats);
+			StringList(Node, TEXT("hideAttachments"), In.HideAttachments);
+			StringList(Node, TEXT("hideBones"), In.HideBones);
+			Block(Node, TEXT("sight"), In.Sight, &FWeaponDocWriter::SightOption);
+			Boolean(Node, TEXT("suppressed"), In.bSuppressed);
+			Block(Node, TEXT("light"), In.Light, &FWeaponDocWriter::Light);
 			Materials(Node, In.Materials);
+			return Node;
+		}
+
+		/** A list of names under Key, when set. */
+		static void StringList(const FWeaponDocNodePtr& Obj, const TCHAR* Key, const TMantleWeaponDocValue<TArray<FString>>& Value)
+		{
+			if (Value.bSet)
+			{
+				FWeaponDocNodePtr List = WeaponDocArrayNode();
+				for (const FString& Name : Value.Value)
+				{
+					List->Children.Add(WeaponDocStringNode(Name));
+				}
+				WeaponDocPut(Obj, Key, List);
+			}
+		}
+
+		static void Color(const FWeaponDocNodePtr& Obj, const TCHAR* Key, const TMantleWeaponDocValue<FColor>& Value)
+		{
+			if (Value.bSet)
+			{
+				WeaponDocPut(Obj, Key, WeaponDocNumbersNode({ static_cast<double>(Value.Value.R), static_cast<double>(Value.Value.G),
+					static_cast<double>(Value.Value.B) }));
+			}
+		}
+
+		static FWeaponDocNodePtr Stats(const FMantleWeaponDocStats& In)
+		{
+			FWeaponDocNodePtr Node = WeaponDocObjectNode();
+			Number(Node, TEXT("damage"), In.Damage);
+			Number(Node, TEXT("fireRate"), In.FireRate);
+			Number(Node, TEXT("spread"), In.Spread);
+			Number(Node, TEXT("recoil"), In.Recoil);
+			Number(Node, TEXT("reloadTime"), In.ReloadTime);
+			Number(Node, TEXT("magazineSize"), In.MagazineSize);
+			Number(Node, TEXT("range"), In.Range);
+			return Node;
+		}
+
+		static FWeaponDocNodePtr SightOption(const FMantleWeaponDocSightOption& In)
+		{
+			FWeaponDocNodePtr Node = WeaponDocObjectNode();
+			Vector3(Node, TEXT("location"), In.Location);
+			Rotation(Node, TEXT("rotation"), In.Rotation);
+			Number(Node, TEXT("zoom"), In.Zoom);
+			Number(Node, TEXT("sightDistance"), In.SightDistance);
+			return Node;
+		}
+
+		static FWeaponDocNodePtr Flashlight(const FMantleWeaponDocFlashlight& In)
+		{
+			FWeaponDocNodePtr Node = WeaponDocObjectNode();
+			Color(Node, TEXT("color"), In.Color);
+			Number(Node, TEXT("brightness"), In.Brightness);
+			Number(Node, TEXT("range"), In.Range);
+			Number(Node, TEXT("coneDegrees"), In.ConeDegrees);
+			return Node;
+		}
+
+		static FWeaponDocNodePtr Laser(const FMantleWeaponDocLaser& In)
+		{
+			FWeaponDocNodePtr Node = WeaponDocObjectNode();
+			Color(Node, TEXT("color"), In.Color);
+			Number(Node, TEXT("range"), In.Range);
+			return Node;
+		}
+
+		static FWeaponDocNodePtr Light(const FMantleWeaponDocLight& In)
+		{
+			FWeaponDocNodePtr Node = WeaponDocObjectNode();
+			Block(Node, TEXT("flashlight"), In.Flashlight, &FWeaponDocWriter::Flashlight);
+			Block(Node, TEXT("laser"), In.Laser, &FWeaponDocWriter::Laser);
 			return Node;
 		}
 
@@ -2624,6 +2866,15 @@ namespace MantleWeaponDocumentPrivate
 				WeaponDocPut(Node, TEXT("mesh"), WeaponDocStringNode(D.Mesh));
 			}
 			Materials(Node, D.Materials);
+			if (D.PaintSlots.bSet)
+			{
+				FWeaponDocNodePtr List = WeaponDocArrayNode();
+				for (const int32 Slot : D.PaintSlots.Value)
+				{
+					List->Children.Add(WeaponDocNumberNode(static_cast<double>(Slot)));
+				}
+				WeaponDocPut(Node, TEXT("paintSlots"), List);
+			}
 			if (!D.Icon.IsEmpty())
 			{
 				WeaponDocPut(Node, TEXT("icon"), WeaponDocStringNode(D.Icon));
@@ -2946,6 +3197,205 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 							Axis, *WeaponDocNumber(WeaponDocMinScale)));
 					}
 				}
+			}
+		}
+	}
+
+	// Attachment options (#234): an attachment with a slot shows only while fitted. Which holds take which slots, one fitted option per slot, at
+	// most 12 to a slot, the stats the hold uses, the slot's own block, the fixed parts an option hides, and the toggles naming fixed parts.
+	if (D.Attachments.bSet)
+	{
+		const TArray<FMantleWeaponDocAttachment>& Attachments = D.Attachments.Value;
+		int32 OptionCounts[static_cast<int32>(EMantleWeaponDocSlot::Count)] = {};
+		int32 FittedFirst[static_cast<int32>(EMantleWeaponDocSlot::Count)];
+		for (int32& First : FittedFirst)
+		{
+			First = INDEX_NONE;
+		}
+		bool bAnySuppressed = false;
+		bool bAnyMuzzle = false;
+		const auto IsFixed = [&Attachments](const FString& Name)
+		{
+			for (const FMantleWeaponDocAttachment& Other : Attachments)
+			{
+				if (!Other.Slot.bSet && Other.Name.Equals(Name, ESearchCase::CaseSensitive))
+				{
+					return true;
+				}
+			}
+			return false;
+		};
+		for (int32 Index = 0; Index < Attachments.Num(); ++Index)
+		{
+			const FMantleWeaponDocAttachment& Attachment = Attachments[Index];
+			const FString Path = FString::Printf(TEXT("attachments/%d"), Index);
+			if (!Attachment.Slot.bSet)
+			{
+				const auto Refuse = [&R, &Path](const bool bPresent, const TCHAR* Field)
+				{
+					if (bPresent)
+					{
+						R.Add(Path + TEXT("/") + Field, TEXT("mantle"),
+							FString::Printf(TEXT("is an option's field: give the attachment a slot, or drop %s"), Field));
+					}
+				};
+				Refuse(Attachment.bFitted.bSet, TEXT("fitted"));
+				Refuse(Attachment.Stats.bSet, TEXT("stats"));
+				Refuse(Attachment.HideAttachments.bSet, TEXT("hideAttachments"));
+				Refuse(Attachment.HideBones.bSet, TEXT("hideBones"));
+				Refuse(Attachment.Sight.bSet, TEXT("sight"));
+				Refuse(Attachment.bSuppressed.bSet, TEXT("suppressed"));
+				Refuse(Attachment.Light.bSet, TEXT("light"));
+				continue;
+			}
+			if (D.ReadSchemaVersion != 2)
+			{
+				R.Add(Path + TEXT("/slot"), TEXT("mantle"), TEXT("a version-1 document has no attachment slots: drop slot"));
+				continue;
+			}
+			const EMantleWeaponDocSlot Slot = Attachment.Slot.Value;
+			const int32 SlotIndex = static_cast<int32>(Slot);
+			const TCHAR* SlotName = WeaponDocNameAt(GWeaponDocSlotNames, SlotIndex);
+			if (!Info.AttachmentSlots.Contains(Slot))
+			{
+				TArray<FString> Takes;
+				for (const EMantleWeaponDocSlot Held : Info.AttachmentSlots)
+				{
+					Takes.Add(WeaponDocNameAt(GWeaponDocSlotNames, static_cast<int32>(Held)));
+				}
+				R.Add(Path + TEXT("/slot"), TEXT("mantle"), FString::Printf(TEXT("a %s takes no %s option (its slots: %s)"), Hold, SlotName,
+					Takes.Num() ? *FString::Join(Takes, TEXT(", ")) : TEXT("none")));
+			}
+			if (++OptionCounts[SlotIndex] == 13)
+			{
+				R.Add(Path + TEXT("/slot"), TEXT("mantle"), FString::Printf(TEXT("more than 12 options in the %s slot"), SlotName));
+			}
+			if (Attachment.bFitted.bSet && Attachment.bFitted.Value)
+			{
+				if (FittedFirst[SlotIndex] != INDEX_NONE)
+				{
+					R.Add(Path + TEXT("/fitted"), TEXT("mantle"), FString::Printf(TEXT("the %s slot starts with \"%s\" fitted already: one fitted option per slot"),
+						SlotName, *Attachments[FittedFirst[SlotIndex]].Name));
+				}
+				else
+				{
+					FittedFirst[SlotIndex] = Index;
+				}
+			}
+			if (Slot == EMantleWeaponDocSlot::Extra)
+			{
+				const auto Look = [&R, &Path](const bool bPresent, const TCHAR* Field)
+				{
+					if (bPresent)
+					{
+						R.Add(Path + TEXT("/") + Field, TEXT("mantle"), FString::Printf(TEXT("an extra option is a look only: drop %s"), Field));
+					}
+				};
+				Look(Attachment.Stats.bSet, TEXT("stats"));
+				Look(Attachment.Sight.bSet, TEXT("sight"));
+				Look(Attachment.bSuppressed.bSet, TEXT("suppressed"));
+				Look(Attachment.Light.bSet, TEXT("light"));
+			}
+			if (Attachment.Sight.bSet && Slot != EMantleWeaponDocSlot::Sight)
+			{
+				R.Add(Path + TEXT("/sight"), TEXT("mantle"), FString::Printf(TEXT("only a sight option has a sight block (this is the %s slot)"), SlotName));
+			}
+			if (Attachment.bSuppressed.bSet && Slot != EMantleWeaponDocSlot::Muzzle)
+			{
+				R.Add(Path + TEXT("/suppressed"), TEXT("mantle"), FString::Printf(TEXT("only a muzzle option can be suppressed (this is the %s slot)"), SlotName));
+			}
+			if (Attachment.Light.bSet && Slot != EMantleWeaponDocSlot::Light)
+			{
+				R.Add(Path + TEXT("/light"), TEXT("mantle"), FString::Printf(TEXT("only a light option has a light block (this is the %s slot)"), SlotName));
+			}
+			if (Slot == EMantleWeaponDocSlot::Light && !Attachment.Light.bSet)
+			{
+				R.Add(Path + TEXT("/light"), TEXT("mantle"), TEXT("a light option needs a light block: add flashlight, laser or both"));
+			}
+			else if (Attachment.Light.bSet && !Attachment.Light.Value.Flashlight.bSet && !Attachment.Light.Value.Laser.bSet)
+			{
+				R.Add(Path + TEXT("/light"), TEXT("mantle"), TEXT("a light block needs a flashlight, a laser or both"));
+			}
+			if (Slot == EMantleWeaponDocSlot::Muzzle)
+			{
+				bAnyMuzzle = true;
+				bAnySuppressed |= Attachment.bSuppressed.bSet && Attachment.bSuppressed.Value;
+			}
+			if (Attachment.Stats.bSet)
+			{
+				const FMantleWeaponDocStats& Stats = Attachment.Stats.Value;
+				const auto Check = [&R, &Path, &Info, Hold](const bool bPresent, const TCHAR* Stat)
+				{
+					if (bPresent && !Info.AttachmentStats.Contains(Stat))
+					{
+						R.Add(Path + TEXT("/stats/") + Stat, TEXT("mantle"), FString::Printf(TEXT("a %s has no %s to scale"), Hold, Stat));
+					}
+				};
+				Check(Stats.Damage.bSet, TEXT("damage"));
+				Check(Stats.FireRate.bSet, TEXT("fireRate"));
+				Check(Stats.Spread.bSet, TEXT("spread"));
+				Check(Stats.Recoil.bSet, TEXT("recoil"));
+				Check(Stats.ReloadTime.bSet, TEXT("reloadTime"));
+				Check(Stats.MagazineSize.bSet, TEXT("magazineSize"));
+				Check(Stats.Range.bSet, TEXT("range"));
+			}
+			if (Attachment.HideAttachments.bSet)
+			{
+				for (const FString& Hidden : Attachment.HideAttachments.Value)
+				{
+					if (!IsFixed(Hidden))
+					{
+						R.Add(Path + TEXT("/hideAttachments"), TEXT("mantle"),
+							FString::Printf(TEXT("\"%s\" is not a fixed part (an attachment without a slot): name one, or drop it"), *Hidden));
+					}
+				}
+			}
+			if (Attachment.Sight.bSet && Attachment.Sight.Value.Rotation.bSet)
+			{
+				CheckWeaponDocRotation(R, Attachment.Sight.Value.Rotation.Value, Path + TEXT("/sight/rotation"));
+			}
+		}
+		const bool bSuppressedShot = D.Sounds.bSet && D.Sounds.Value.FireSuppressed.bSet;
+		if (bAnySuppressed && !bSuppressedShot)
+		{
+			R.Add(TEXT("sounds/fireSuppressed"), TEXT("mantle"), TEXT("a suppressed muzzle option needs the shot it makes: add sounds.fireSuppressed"));
+		}
+		if (bAnyMuzzle && D.ReadSchemaVersion == 2)
+		{
+			if (D.Suppressor.bSet)
+			{
+				R.Add(TEXT("suppressor"), TEXT("mantle"), TEXT("a gun with muzzle options suppresses with them: drop suppressor, or drop the muzzle options"));
+			}
+			if (D.Parts.bSet && D.Parts.Value[EMantleWeaponDocRole::Suppressor].bSet)
+			{
+				R.Add(TEXT("parts/suppressor"), TEXT("mantle"),
+					TEXT("a gun with muzzle options suppresses with them: drop parts.suppressor, or drop the muzzle options"));
+			}
+		}
+		const auto IsOption = [&Attachments](const FString& Name)
+		{
+			for (const FMantleWeaponDocAttachment& Other : Attachments)
+			{
+				if (Other.Slot.bSet && Other.Name.Equals(Name, ESearchCase::CaseSensitive))
+				{
+					return true;
+				}
+			}
+			return false;
+		};
+		if (D.Suppressor.bSet && IsOption(D.Suppressor.Value))
+		{
+			R.Add(TEXT("suppressor"), TEXT("mantle"), TEXT("names an option (it has a slot): the toggle needs a fixed part"));
+		}
+		if (D.Bipod.bSet)
+		{
+			if (IsOption(D.Bipod.Value.Folded))
+			{
+				R.Add(TEXT("bipod/folded"), TEXT("mantle"), TEXT("names an option (it has a slot): the bipod needs fixed parts"));
+			}
+			if (IsOption(D.Bipod.Value.Deployed))
+			{
+				R.Add(TEXT("bipod/deployed"), TEXT("mantle"), TEXT("names an option (it has a slot): the bipod needs fixed parts"));
 			}
 		}
 	}
@@ -3293,7 +3743,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 			{
 				for (const FMantleWeaponDocAttachment& Attachment : D.Attachments.Value)
 				{
-					if (Attachment.Name == Name)
+					if (Attachment.Name.Equals(Name, ESearchCase::CaseSensitive))
 					{
 						return true;
 					}

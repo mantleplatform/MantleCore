@@ -4,6 +4,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetThumbnail.h"
 #include "Engine/SkeletalMesh.h"
+#include "MantlePlaceLimits.h"
 #include "Engine/StaticMesh.h"
 #include "Editor.h"
 #include "Framework/Application/SlateApplication.h"
@@ -567,6 +568,234 @@ namespace MantleWeaponBuilderPanelPrivate
 			.Value_Lambda([Get] { return Get(); })
 			.OnValueChanged_Lambda([Set](int32 Value) { Set(Value); })
 			.OnValueCommitted_Lambda([Set](int32 Value, ETextCommit::Type) { Set(Value); });
+	}
+
+	/** #234: the rows of one attachment that make it an option (a sight, a muzzle device, a light...): its slot, whether it comes fitted, the stats it scales,
+	 *  what it hides and its slot's own settings. Each row reads and writes the same field the weapon file has, so a file round-trips unchanged. */
+	TSharedRef<SWidget> MakeAttachmentOptionRows(TWeakObjectPtr<UMantleWeaponSource> Weak, const int32 Index, TFunction<void()> Refresh)
+	{
+		const auto Attachment = [Weak, Index]() -> FMantleWeaponSourceAttachment*
+		{
+			UMantleWeaponSource* Source = Weak.Get();
+			return Source && Source->Attachments.IsValidIndex(Index) ? &Source->Attachments[Index] : nullptr;
+		};
+		const auto Slot = [Attachment] { const FMantleWeaponSourceAttachment* A = Attachment(); return A ? A->Slot : EMantleWeaponSourceSlot::Fixed; };
+		const auto SlotIs = [Slot](const EMantleWeaponSourceSlot Wanted) { return Slot() == Wanted; };
+		const auto ShownWhen = [](TFunction<bool()> Condition) { return TAttribute<EVisibility>::CreateLambda([Condition] { return Condition() ? EVisibility::Visible : EVisibility::Collapsed; }); };
+		const auto Check = [Attachment](const FText& Label, TFunction<bool(const FMantleWeaponSourceAttachment&)> Get, TFunction<void(FMantleWeaponSourceAttachment&, bool)> Set) -> TSharedRef<SWidget>
+		{
+			return SNew(SCheckBox)
+				.IsChecked_Lambda([Attachment, Get] { const FMantleWeaponSourceAttachment* A = Attachment(); return A && Get(*A) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+				.OnCheckStateChanged_Lambda([Attachment, Set](ECheckBoxState State) { if (FMantleWeaponSourceAttachment* A = Attachment()) Set(*A, State == ECheckBoxState::Checked); })
+				[
+					SNew(STextBlock).Text(Label)
+				];
+		};
+		const auto Spin = [Attachment](const FText& Label, const FText& Tip, const float Min, const float Max, const float Delta, TFunction<float(const FMantleWeaponSourceAttachment&)> Get,
+			TFunction<void(FMantleWeaponSourceAttachment&, float)> Set) -> TSharedRef<SWidget>
+		{
+			return MakeRow(Label, Tip, MakeFloatSpin(Min, Max, Delta,
+				[Attachment, Get] { const FMantleWeaponSourceAttachment* A = Attachment(); return A ? Get(*A) : 0.f; },
+				[Attachment, Set](float Value) { if (FMantleWeaponSourceAttachment* A = Attachment()) Set(*A, Value); }));
+		};
+		const auto ColorRow = [Attachment](const FText& Label, TFunction<FColor(const FMantleWeaponSourceAttachment&)> Get, TFunction<void(FMantleWeaponSourceAttachment&, FColor)> Set) -> TSharedRef<SWidget>
+		{
+			return MakeRow(Label, LOCTEXT("OptionColorTip", "Red, green and blue, each 0 to 255."), MakeVectorControl(
+				[Attachment, Get] { const FMantleWeaponSourceAttachment* A = Attachment(); const FColor C = A ? Get(*A) : FColor::White; return FVector(C.R, C.G, C.B); },
+				[Attachment, Set](const FVector& V)
+				{
+					if (FMantleWeaponSourceAttachment* A = Attachment())
+					{
+						Set(*A, FColor(static_cast<uint8>(FMath::Clamp(V.X, 0.0, 255.0)), static_cast<uint8>(FMath::Clamp(V.Y, 0.0, 255.0)), static_cast<uint8>(FMath::Clamp(V.Z, 0.0, 255.0))));
+					}
+				}, 0.f, 255.f, 1.f));
+		};
+		// A comma list of names (hideAttachments, hideBones).
+		const auto NameList = [Attachment](const FText& Label, const FText& Tip, TFunction<TArray<FString>&(FMantleWeaponSourceAttachment&)> Field) -> TSharedRef<SWidget>
+		{
+			return MakeRow(Label, Tip,
+				SNew(SEditableTextBox)
+				.Text_Lambda([Attachment, Field] { FMantleWeaponSourceAttachment* A = Attachment(); return A ? FText::FromString(FString::Join(Field(*A), TEXT(", "))) : FText::GetEmpty(); })
+				.OnTextCommitted_Lambda([Attachment, Field](const FText& Value, ETextCommit::Type)
+				{
+					FMantleWeaponSourceAttachment* A = Attachment();
+					if (!A) return;
+					TArray<FString> Names;
+					Value.ToString().ParseIntoArray(Names, TEXT(","), true);
+					TArray<FString>& Out = Field(*A);
+					Out.Reset();
+					for (FString& Name : Names)
+					{
+						Name.TrimStartAndEndInline();
+						if (!Name.IsEmpty() && Out.Num() < 8) Out.AddUnique(Name);
+					}
+				}));
+		};
+
+		// The slots this weapon's hold takes: Fixed first.
+		const EMantleWeaponHold Hold = Weak.IsValid() ? Weak->Hold : EMantleWeaponHold::Rifle;
+		TArray<TPair<EMantleWeaponSourceSlot, FText>> Slots;
+		Slots.Emplace(EMantleWeaponSourceSlot::Fixed, LOCTEXT("SlotFixed", "Fixed detail (always there)"));
+		for (const EMantleWeaponDocSlot DocSlot : HoldInfo(Hold).AttachmentSlots)
+		{
+			const EMantleWeaponSourceSlot Source = static_cast<EMantleWeaponSourceSlot>(static_cast<int32>(DocSlot) + 1);
+			static const FText Names[] = { LOCTEXT("SlotSight", "Sight"), LOCTEXT("SlotMuzzle", "Muzzle"), LOCTEXT("SlotUnderbarrel", "Underbarrel"),
+				LOCTEXT("SlotMagazine", "Magazine"), LOCTEXT("SlotLight", "Light"), LOCTEXT("SlotExtra", "Look only (charm, wrap, skin)") };
+			Slots.Emplace(Source, Names[static_cast<int32>(DocSlot)]);
+		}
+		const TArray<FString> StatNames = HoldInfo(Hold).AttachmentStats;
+		const auto Takes = [StatNames](const TCHAR* Stat) { return StatNames.Contains(Stat); };
+
+		const auto IsOption = [Slot] { return Slot() != EMantleWeaponSourceSlot::Fixed; };
+		const auto OptionWithStats = [Slot] { return Slot() != EMantleWeaponSourceSlot::Fixed && Slot() != EMantleWeaponSourceSlot::Extra; };
+		TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
+		Box->AddSlot().AutoHeight().Padding(0.f, 4.f)
+		[
+			MakeRow(LOCTEXT("OptionSlot", "Slot"),
+				LOCTEXT("OptionSlotTip", "A detail in a slot is an option: it shows only while a place's script (or the weapon's start setting) has it fitted, one option per slot at a time. A fixed detail is always there."),
+				MakeChoiceControl<EMantleWeaponSourceSlot>(Slots, Slot,
+					[Attachment, Refresh](EMantleWeaponSourceSlot Value)
+					{
+						FMantleWeaponSourceAttachment* A = Attachment();
+						if (A && A->Slot != Value)
+						{
+							A->Slot = Value;
+							if (Value == EMantleWeaponSourceSlot::Fixed) A->bFitted = false;
+							Refresh();
+						}
+					}))
+		];
+		Box->AddSlot().AutoHeight().Padding(0.f, 3.f)
+		[
+			SNew(SBox).Visibility(ShownWhen(IsOption))
+			[
+				Check(LOCTEXT("OptionFitted", "Fitted when the weapon is new"), [](const FMantleWeaponSourceAttachment& A) { return A.bFitted; },
+					[](FMantleWeaponSourceAttachment& A, bool V) { A.bFitted = V; })
+			]
+		];
+		const auto StatRow = [&](const TCHAR* Stat, const FText& Label, TFunction<float(const FMantleWeaponSourceAttachment&)> Get, TFunction<void(FMantleWeaponSourceAttachment&, float)> Set)
+		{
+			if (!Takes(Stat)) return;
+			Box->AddSlot().AutoHeight().Padding(0.f, 2.f)
+			[
+				SNew(SBox).Visibility(ShownWhen(OptionWithStats))
+				[
+					Spin(Label, LOCTEXT("OptionStatTip", "Multiplies this number while the option is fitted: 0.25 to 4, 1 changes nothing."), 0.25f, 4.f, 0.05f, Get, Set)
+				]
+			];
+		};
+		StatRow(TEXT("damage"), LOCTEXT("StatDamage", "Damage x"), [](const FMantleWeaponSourceAttachment& A) { return A.Stats.Damage; }, [](FMantleWeaponSourceAttachment& A, float V) { A.Stats.Damage = V; });
+		StatRow(TEXT("fireRate"), LOCTEXT("StatFireRate", "Fire rate x"), [](const FMantleWeaponSourceAttachment& A) { return A.Stats.FireRate; }, [](FMantleWeaponSourceAttachment& A, float V) { A.Stats.FireRate = V; });
+		StatRow(TEXT("spread"), LOCTEXT("StatSpread", "Spread x"), [](const FMantleWeaponSourceAttachment& A) { return A.Stats.Spread; }, [](FMantleWeaponSourceAttachment& A, float V) { A.Stats.Spread = V; });
+		StatRow(TEXT("recoil"), LOCTEXT("StatRecoil", "Recoil x"), [](const FMantleWeaponSourceAttachment& A) { return A.Stats.Recoil; }, [](FMantleWeaponSourceAttachment& A, float V) { A.Stats.Recoil = V; });
+		StatRow(TEXT("reloadTime"), LOCTEXT("StatReload", "Reload time x"), [](const FMantleWeaponSourceAttachment& A) { return A.Stats.ReloadTime; }, [](FMantleWeaponSourceAttachment& A, float V) { A.Stats.ReloadTime = V; });
+		StatRow(TEXT("magazineSize"), LOCTEXT("StatMagazine", "Magazine size x"), [](const FMantleWeaponSourceAttachment& A) { return A.Stats.MagazineSize; }, [](FMantleWeaponSourceAttachment& A, float V) { A.Stats.MagazineSize = V; });
+		StatRow(TEXT("range"), LOCTEXT("StatRange", "Range x"), [](const FMantleWeaponSourceAttachment& A) { return A.Stats.Range; }, [](FMantleWeaponSourceAttachment& A, float V) { A.Stats.Range = V; });
+
+		Box->AddSlot().AutoHeight().Padding(0.f, 2.f)
+		[
+			SNew(SBox).Visibility(ShownWhen(IsOption))
+			[
+				NameList(LOCTEXT("OptionHidesDetails", "Hides these details"), LOCTEXT("OptionHidesDetailsTip", "Names of fixed details (up to 8, separated by commas) that hide while this option is fitted, such as the iron sight under a scope."),
+					[](FMantleWeaponSourceAttachment& A) -> TArray<FString>& { return A.HideAttachments; })
+			]
+		];
+		Box->AddSlot().AutoHeight().Padding(0.f, 2.f)
+		[
+			SNew(SBox).Visibility(ShownWhen(IsOption))
+			[
+				NameList(LOCTEXT("OptionHidesBones", "Hides these model bones"), LOCTEXT("OptionHidesBonesTip", "Bones of the weapon model (up to 8, separated by commas) that hide while this option is fitted, such as its own magazine under a drum."),
+					[](FMantleWeaponSourceAttachment& A) -> TArray<FString>& { return A.HideBones; })
+			]
+		];
+
+		// Sight.
+		Box->AddSlot().AutoHeight().Padding(0.f, 2.f)
+		[
+			SNew(SBox).Visibility(ShownWhen([SlotIs] { return SlotIs(EMantleWeaponSourceSlot::Sight); }))
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					MakeRow(LOCTEXT("SightAim", "Aim point (cm)"), LOCTEXT("SightAimTip", "Where the line of sight is while this sight is fitted, from the detail's own place."),
+						MakeVectorControl(
+							[Attachment] { const FMantleWeaponSourceAttachment* A = Attachment(); return A ? A->SightAim.GetLocation() : FVector::ZeroVector; },
+							[Attachment](const FVector& V) { if (FMantleWeaponSourceAttachment* A = Attachment()) A->SightAim.SetLocation(V); },
+							-1000.f, 1000.f, 0.5f))
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					Spin(LOCTEXT("SightZoom", "Zoom"), LOCTEXT("SightZoomTip", "1 is no zoom; 4 is a 4x scope. The aim view narrows by this much."), 1.f, 12.f, 0.1f,
+						[](const FMantleWeaponSourceAttachment& A) { return A.SightZoom; }, [](FMantleWeaponSourceAttachment& A, float V) { A.SightZoom = V; })
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					Check(LOCTEXT("SightOwnDistance", "Set how far in front of the eye the sight sits"), [](const FMantleWeaponSourceAttachment& A) { return A.bHasSightDistance; },
+						[](FMantleWeaponSourceAttachment& A, bool V) { A.bHasSightDistance = V; })
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					Spin(LOCTEXT("SightDistance", "Sight distance (cm)"), LOCTEXT("SightDistanceTip", "How far in front of the eye the sight is held while aiming."), 0.f, 100.f, 0.5f,
+						[](const FMantleWeaponSourceAttachment& A) { return A.SightDistance; }, [](FMantleWeaponSourceAttachment& A, float V) { A.SightDistance = V; })
+				]
+			]
+		];
+
+		// Muzzle.
+		Box->AddSlot().AutoHeight().Padding(0.f, 2.f)
+		[
+			SNew(SBox).Visibility(ShownWhen([SlotIs] { return SlotIs(EMantleWeaponSourceSlot::Muzzle); }))
+			[
+				Check(LOCTEXT("MuzzleSuppressed", "Suppressed: the shot plays the suppressed sound"), [](const FMantleWeaponSourceAttachment& A) { return A.bSuppressed; },
+					[](FMantleWeaponSourceAttachment& A, bool V) { A.bSuppressed = V; })
+			]
+		];
+
+		// Light.
+		Box->AddSlot().AutoHeight().Padding(0.f, 2.f)
+		[
+			SNew(SBox).Visibility(ShownWhen([SlotIs] { return SlotIs(EMantleWeaponSourceSlot::Light); }))
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					Check(LOCTEXT("LightFlashlight", "Flashlight"), [](const FMantleWeaponSourceAttachment& A) { return A.bFlashlight; }, [](FMantleWeaponSourceAttachment& A, bool V) { A.bFlashlight = V; })
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					ColorRow(LOCTEXT("FlashlightColor", "Flashlight color"), [](const FMantleWeaponSourceAttachment& A) { return A.FlashlightColor; }, [](FMantleWeaponSourceAttachment& A, FColor V) { A.FlashlightColor = V; })
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					Spin(LOCTEXT("FlashlightBrightness", "Flashlight brightness"), LOCTEXT("FlashlightBrightnessTip", "0.1 to 4. 1 is an ordinary torch."), 0.1f, 4.f, 0.05f,
+						[](const FMantleWeaponSourceAttachment& A) { return A.FlashlightBrightness; }, [](FMantleWeaponSourceAttachment& A, float V) { A.FlashlightBrightness = V; })
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					Spin(LOCTEXT("FlashlightRange", "Flashlight reach (cm)"), LOCTEXT("FlashlightRangeTip", "500 to 5000."), 500.f, 5000.f, 50.f,
+						[](const FMantleWeaponSourceAttachment& A) { return A.FlashlightRange; }, [](FMantleWeaponSourceAttachment& A, float V) { A.FlashlightRange = V; })
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					Spin(LOCTEXT("FlashlightCone", "Flashlight beam width (°)"), LOCTEXT("FlashlightConeTip", "10 to 60."), 10.f, 60.f, 1.f,
+						[](const FMantleWeaponSourceAttachment& A) { return A.FlashlightConeDegrees; }, [](FMantleWeaponSourceAttachment& A, float V) { A.FlashlightConeDegrees = V; })
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					Check(LOCTEXT("LightLaser", "Laser"), [](const FMantleWeaponSourceAttachment& A) { return A.bLaser; }, [](FMantleWeaponSourceAttachment& A, bool V) { A.bLaser = V; })
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					ColorRow(LOCTEXT("LaserColor", "Laser color"), [](const FMantleWeaponSourceAttachment& A) { return A.LaserColor; }, [](FMantleWeaponSourceAttachment& A, FColor V) { A.LaserColor = V; })
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					Spin(LOCTEXT("LaserRange", "Laser reach (cm)"), LOCTEXT("LaserRangeTip", "100 to 10000."), 100.f, 10000.f, 100.f,
+						[](const FMantleWeaponSourceAttachment& A) { return A.LaserRange; }, [](FMantleWeaponSourceAttachment& A, float V) { A.LaserRange = V; })
+				]
+			]
+		];
+		return Box;
 	}
 
 	void CopySourceProperties(const UMantleWeaponSource& Source, UMantleWeaponSource& Destination)
@@ -2592,9 +2821,37 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakePartsAndSoundStep()
 		];
 	}
 
+	if (const USkeletalMesh* PaintMesh = Cast<USkeletalMesh>(LoadModel()))
+	{
+		const TArray<FSkeletalMaterial>& PaintMaterials = PaintMesh->GetMaterials();
+		if (PaintMaterials.Num() > 0)
+		{
+			AddHeading(LOCTEXT("PaintableHeading", "Paintable parts"));
+			AddText(LOCTEXT("PaintableHelp", "Tick the material slots a player or a script can recolor. Ticked parts take one color; every other slot keeps your own material and texture."));
+			for (int32 PaintSlot = 0; PaintSlot < PaintMaterials.Num() && PaintSlot < FMantlePlaceLimits::MaxWeaponMaterials; ++PaintSlot)
+			{
+				const int32 Slot = PaintSlot;
+				const FName SlotName = PaintMaterials[Slot].MaterialSlotName;
+				Rows->AddSlot().AutoHeight().Padding(0.f, 1.f)
+				[
+					SNew(SCheckBox)
+					.IsChecked_Lambda([this, Slot] { return Working->PaintSlots.Contains(Slot) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+					.OnCheckStateChanged_Lambda([this, Slot](ECheckBoxState State)
+					{
+						if (State == ECheckBoxState::Checked) Working->PaintSlots.AddUnique(Slot);
+						else Working->PaintSlots.Remove(Slot);
+					})
+					[
+						SNew(STextBlock).Text(FText::Format(LOCTEXT("PaintableSlot", "Slot {0}: {1}"), FText::AsNumber(Slot), FText::FromName(SlotName)))
+					]
+				];
+			}
+		}
+	}
+
 	if (!Working->Model.IsNull())
 	{
-		AddHeading(LOCTEXT("FixedDetailsHeading", "Fixed details and effects"));
+		AddHeading(LOCTEXT("FixedDetailsHeading", "Details, attachment options and effects"));
 		AddText(LOCTEXT("FixedDetailsHelp", "Add a model detail, a built-in effect, or both. Place it on the weapon root or at one of the points you placed earlier."));
 		AddText(LOCTEXT("AttachmentNameRules", "Each detail name must be different. Use letters, numbers and underscores only; spaces and punctuation are not allowed."));
 		for (int32 AttachmentIndex = 0; AttachmentIndex < Working->Attachments.Num(); ++AttachmentIndex)
@@ -2723,6 +2980,10 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakePartsAndSoundStep()
 				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 4.f)
 				[
+					MakeAttachmentOptionRows(Working.Get(), Index, [this] { if (Flow.IsValid()) Flow->Refresh(); })
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 4.f)
+				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
 					[
@@ -2758,10 +3019,10 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakePartsAndSoundStep()
 		[
 			SNew(SButton)
 			.Text(LOCTEXT("AddModelDetail", "Add model detail"))
-			.IsEnabled_Lambda([this] { return Working->Attachments.Num() < 16; })
+			.IsEnabled_Lambda([this] { return Working->Attachments.Num() < 48; })
 			.OnClicked_Lambda([this]
 			{
-				if (Working->Attachments.Num() < 16)
+				if (Working->Attachments.Num() < 48)
 				{
 					FMantleWeaponSourceAttachment& Attachment = Working->Attachments.AddDefaulted_GetRef();
 					Attachment.Name = FString::Printf(TEXT("Detail_%d"), Working->Attachments.Num());
@@ -2775,10 +3036,10 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakePartsAndSoundStep()
 		[
 			SNew(SButton)
 			.Text(LOCTEXT("AddEffect", "Add built-in effect"))
-			.IsEnabled_Lambda([this] { return Working->Attachments.Num() < 16; })
+			.IsEnabled_Lambda([this] { return Working->Attachments.Num() < 48; })
 			.OnClicked_Lambda([this]
 			{
-				if (Working->Attachments.Num() < 16)
+				if (Working->Attachments.Num() < 48)
 				{
 					FMantleWeaponSourceAttachment& Attachment = Working->Attachments.AddDefaulted_GetRef();
 					Attachment.Name = FString::Printf(TEXT("Effect_%d"), Working->Attachments.Num());
@@ -2793,7 +3054,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakePartsAndSoundStep()
 	}
 	else
 	{
-		AddHeading(LOCTEXT("FixedDetailsHeading", "Fixed details and effects"));
+		AddHeading(LOCTEXT("FixedDetailsHeading", "Details, attachment options and effects"));
 		AddText(LOCTEXT("NoWeaponBodyForDetails", "Choose your weapon's 3D model first: fixed models and effects attach to it."));
 	}
 
