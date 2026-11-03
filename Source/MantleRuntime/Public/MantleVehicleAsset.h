@@ -61,6 +61,35 @@ struct FMantleVehicleLinkageRule
 };
 
 /**
+ * The paint's other layers beyond the primary (the document's paint.layers and a part's layerSlots): a second paint color, the wheels'
+ * rims, the interior's trim and the dashboard, each with its own color and finish.
+ */
+struct MANTLERUNTIME_API FMantleVehiclePaintNames
+{
+	/** Whether Layer is one of secondary, wheels, interior, dashboard. */
+	static bool IsLayer(const FString& Layer);
+
+	/** Whether Finish is one of gloss, metallic, pearl, matte, satin, metal, chrome, trim. */
+	static bool IsFinish(const FString& Finish);
+};
+
+/** One of the paint's other layers, as the cook resolved it: the body sections it covers, its default color (linear RGB) and finish. */
+struct FMantleVehiclePaintLayerDesc
+{
+	FString Layer;
+	TArray<FString> Sections;
+	FLinearColor Color = FLinearColor::White;
+	FString Finish;
+};
+
+/** The slots of a part that wear one paint layer. */
+struct FMantleVehiclePartLayerSlotsDesc
+{
+	FString Layer;
+	TArray<int32> Slots;
+};
+
+/**
  * One attached part of a creator vehicle (#435 item 2), as the cook resolved it: an uploaded static mesh riding Bone (in the
  * body's own spelling) at Transform, in the bone's space. Drawn only: it neither collides nor weighs anything.
  */
@@ -76,6 +105,8 @@ struct FMantleVehiclePartDesc
 	TArray<FString> Materials;
 	/** The mesh's slots drawn with the vehicle's paint (its color and livery), as the body's paint sections are; empty when none is. */
 	TArray<int32> PaintSlots;
+	/** The mesh's slots drawn with one of the paint's other layers, each layer once; empty when none is. */
+	TArray<FMantleVehiclePartLayerSlotsDesc> LayerSlots;
 };
 
 /**
@@ -551,6 +582,12 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	FLinearColor FlakeTint = FLinearColor::White;
 	double ClearCoat = 1.0;
 	double ClearCoatRoughness = 0.05;
+	/** The pearlescent color (linear RGB) and how strongly it shows; bPaintPearl: the document gives one. */
+	bool bPaintPearl = false;
+	FLinearColor PaintPearlColor = FLinearColor::White;
+	double PaintPearlStrength = 0.6;
+	/** The paint's other layers (secondary, wheels, interior, dashboard), each once; empty when it has none. */
+	TArray<FMantleVehiclePaintLayerDesc> PaintLayers;
 
 	/** The liveries (#488): uploaded texture ids, picked by index; empty when it has none. Needs paint. */
 	TArray<FString> Liveries;
@@ -582,7 +619,7 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	/** Whether any part has a painted slot (#435 item 2). */
 	bool HasPartPaint() const
 	{
-		return Parts.ContainsByPredicate([](const FMantleVehiclePartDesc& Part) { return Part.PaintSlots.Num() > 0; });
+		return Parts.ContainsByPredicate([](const FMantleVehiclePartDesc& Part) { return Part.PaintSlots.Num() > 0 || Part.LayerSlots.Num() > 0; });
 	}
 
 	/** Every uploaded material the vehicle draws with, its body's sections' and then its parts', each once. */

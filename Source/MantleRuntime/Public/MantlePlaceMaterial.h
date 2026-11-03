@@ -405,7 +405,7 @@ namespace MantlePlaceMaterialParameters
 	constexpr const TCHAR* AlphaCutoff = TEXT("AlphaCutoff");
 
 	/**
-	 * M_MantlePlace_CarPaint only (tools/materials/Create-CarPaintMaterial.py, #487). It also has every
+	 * M_MantlePlace_CarPaint only (the committed M_MantlePlace_CarPaint asset; its creation script was removed in e1e7b57e0, #487). It also has every
 	 * parameter above except AlphaCutoff. PaintTint is UMantleVehicleDefinition::PaintParameter's
 	 * default, so AMantleVehicle recolors a car-paint body the same way as an authored one.
 	 */
@@ -415,6 +415,9 @@ namespace MantlePlaceMaterialParameters
 	constexpr const TCHAR* FlakeTint = TEXT("FlakeTint");
 	constexpr const TCHAR* ClearCoat = TEXT("ClearCoat");
 	constexpr const TCHAR* ClearCoatRoughness = TEXT("ClearCoatRoughness");
+	/** The pearlescent color (linear RGB) the base color shifts toward at glancing angles, and its strength 0..1 (0: no pearl). */
+	constexpr const TCHAR* PearlTint = TEXT("PearlTint");
+	constexpr const TCHAR* PearlStrength = TEXT("PearlStrength");
 
 	/** The livery layer (#488): sRGB texture with alpha as coverage, its opacity, and 0 = UV0 / 1 = UV1. */
 	constexpr const TCHAR* Livery = TEXT("Livery");

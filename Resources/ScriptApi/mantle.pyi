@@ -1299,11 +1299,20 @@ class _VehiclesService:
     def get_max_health(self, vehicle: Entity, /) -> float:
         """The most health the car can have (100 unless you change it)."""
         ...
+    def get_paint_finish(self, vehicle: Entity, layer: str, /) -> Optional[str]:
+        """A layer's finish name ('gloss', 'metallic', 'pearl', 'matte', 'satin', 'metal', 'chrome' or 'trim'): the one set, or the car's own (a car's usual body paint reads 'metallic'). Nil when the entity is not a car or the car has no paint on that layer."""
+        ...
+    def get_paint_layer_color(self, vehicle: Entity, layer: str, /) -> Optional[str]:
+        """A layer's color as '#RRGGBB': the one set, or the color the car was published with. Save it to restore a car's look later. Nil when the entity is not a car or the car has no paint on that layer."""
+        ...
     def get_parked(self, spawn: Entity, /) -> Optional[Entity]:
         """The car a VehicleSpawn entity keeps parked, as an Entity every Vehicles member takes (World:FindFirst finds the VehicleSpawn by its name). Returns nil while the spawn has no car standing: it is turned off, its car was destroyed and is waiting to come back, or the car is still being built, so ask again later. A car that comes back after a respawn is a new Entity: ask again. Errors if the entity is not a VehicleSpawn or no longer exists."""
         ...
     def get_speed(self, vehicle: Entity, /) -> float:
         """The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists."""
+        ...
+    def has_paint_layer(self, vehicle: Entity, layer: str, /) -> bool:
+        """Whether the car has paint on the layer ('primary', 'secondary', 'pearl', 'wheels', 'interior' or 'dashboard'). The pearl is part of the primary paint. Cars differ: only layers their model gives color to exist, so ask before offering a color picker."""
         ...
     def is_boost_enabled(self, vehicle: Entity, /) -> bool:
         """Whether the car has a boost (SetBoostEnabled)."""
@@ -1388,6 +1397,12 @@ class _VehiclesService:
         ...
     def set_paint_color(self, vehicle: Entity, color: str, /) -> bool:
         """Paint the car: color is '#RRGGBB', the same format as Backpack:SetWeaponColor. Returns false when the entity is not a car."""
+        ...
+    def set_paint_finish(self, vehicle: Entity, layer: str, finish: str, /) -> bool:
+        """Give one layer of the car's paint a finish: layer is 'primary', 'secondary', 'wheels', 'interior' or 'dashboard', and finish is 'gloss', 'metallic', 'pearl', 'matte', 'satin', 'metal', 'chrome' or 'trim'. Chrome ignores the layer's color. Every player sees the change. Returns false when the entity is not a car or the car has no paint on that layer."""
+        ...
+    def set_paint_layer_color(self, vehicle: Entity, layer: str, color: str, /) -> bool:
+        """Color one layer of the car's paint: layer is 'primary' (the body, as SetPaintColor), 'secondary', 'pearl', 'wheels', 'interior' or 'dashboard', and color is '#RRGGBB'. The pearl is the color the body paint shifts toward at glancing angles; it shows with the 'pearl' finish (SetPaintFinish). Every player sees the change. Returns false when the entity is not a car or the car has no paint on that layer (see HasPaintLayer)."""
         ...
     def spawn(self, item: str, position: Vector3, /) -> Entity:
         """Spawn a car at position and return it as an Entity. item is the library item id of a vehicle this place stores: the string Storage:Get returns for one of the place's storage names. Any other value errors -- an asset id, an object path, a built-in car's name, an item the place does not store, or a weapon. The car is a real replicated vehicle: every player sees it, walks up to it and can drive it. Read its Position, tag it, or Destroy it like any entity. The server builds cars one per frame, so the Entity comes back at once but the car is not ready to use: connect to Vehicles.Ready, which fires with the car when it is built, before you Seat, paint or Lock it or touch its health, fuel or boost (those error until then)."""
