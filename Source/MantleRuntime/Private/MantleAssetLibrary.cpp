@@ -53,6 +53,17 @@ FMantleAssetLibrary::FMantleAssetLibrary()
 	Add(TEXT("ast_mat_basic"), EMantleAssetKind::Material,
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 
+		// Vehicle presets, instances of M_MantlePlace's permutations (tools/materials/create_vehicle_materials.py).
+		// A creator names them where a vehicle names a material, like ast_mat_basic.
+		Add(TEXT("ast_mat_rubber"), EMantleAssetKind::Material,
+			TEXT("/Game/Mantle/Materials/MI_MantleVehicle_Rubber.MI_MantleVehicle_Rubber"));
+		Add(TEXT("ast_mat_glass"), EMantleAssetKind::Material,
+			TEXT("/Game/Mantle/Materials/MI_MantleVehicle_Glass.MI_MantleVehicle_Glass"));
+		Add(TEXT("ast_mat_chrome"), EMantleAssetKind::Material,
+			TEXT("/Game/Mantle/Materials/MI_MantleVehicle_Chrome.MI_MantleVehicle_Chrome"));
+		Add(TEXT("ast_mat_light_lens"), EMantleAssetKind::Material,
+			TEXT("/Game/Mantle/Materials/MI_MantleVehicle_LightLens.MI_MantleVehicle_LightLens"));
+
 	// No sounds (#263): Mantle ships no preset audio, ever. Creators upload their own with their
 	// place (#324), and LoadSound answers those uploaded ids from the live place asset set.
 }
