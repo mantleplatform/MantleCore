@@ -946,6 +946,14 @@ public:
 	static bool PublishesAsCarPaint(const UMaterialInterface* Material);
 
 	/**
+	 * The base color a material shows, averaged over its base color picture (every pixel of a small one, a stride of a big one) times its base color factor,
+	 * as sRGB. bOutPicture: it has a picture. False when the picture cannot be read (a format other than 8-bit color, no source data): its color is then unknown
+	 * and a material is never taken for light on it. A material with no picture and no color is a plain white surface. Used to tell whether a paint color
+	 * would tint a part (FMantleVehicleConverter::TakesTint).
+	 */
+	static bool BaseColorAverage(const UMaterialInterface* Material, FColor& OutColor, bool& bOutPicture);
+
+	/**
 	 * Material's car-paint finish. Clear coat and its roughness come from what feeds the material's
 	 * Clear Coat inputs (a Constant, or a scalar parameter as the instance sets it), else from a
 	 * parameter named ClearCoat / ClearCoatRoughness; the flakes from parameters named

@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "MantleGlbWriter.h"
 #include "MantlePlaceValidator.h"
+#include "MantleVehicleSource.h"
 
 class FJsonObject;
 class UActorComponent;
@@ -254,6 +255,44 @@ public:
 	 */
 	static bool LooksLikePaint(const UMaterialInterface* Material);
 
+	/** Which paint layer a section or slot is for, as GuessPaintLayer reads it from what the model says. */
+	struct FPaintLayerGuess
+	{
+		/** Painted at all: false for a part that takes no paint (glass, tires, lamps, a dark seat a color would barely change). */
+		bool bPainted = false;
+		/** The body paint (the primary layer); else Layer. */
+		bool bPrimary = true;
+		EMantleVehicleSourcePaintLayer Layer = EMantleVehicleSourcePaintLayer::Secondary;
+		/** Why a part that looks like it belongs to a layer is left out (a dark picture); empty otherwise. */
+		FString LeftOut;
+	};
+
+	/**
+	 * Which paint layer the section or slot named Name, drawn with Material, is for, in this order (Joshua's rule: the converter detects, the creator
+	 * never picks a master material): a GTA model's PRIMARY and SECONDARY materials are the body paint and the second paint; the words rim, wheel, alloy, hub or
+	 * spoke make the wheels, dash or dashboard the dashboard, interior, seat or carpet the interior, trim, stripe, roof, accent or mirror the second paint (never
+	 * glass, a tire, rubber, chrome, a lamp or a brake, and only when TakesTint says a color would show); a material that LooksLikePaint is the body paint.
+	 */
+	static FPaintLayerGuess GuessPaintLayer(const FString& Name, const UMaterialInterface* Material);
+
+	/**
+	 * Whether a paint color would tint Material's picture (the layer's color multiplies it): its base color is light (at least 45% bright) and fairly neutral
+	 * (little color), or it has no picture. False when its picture is too dark or too colored to take a tint, or cannot be read. Why goes to OutWhy.
+	 */
+	static bool TakesTint(const UMaterialInterface* Material, FString* OutWhy = nullptr);
+
+	/** The slots of Part's mesh that wear a paint layer other than the primary, by the mesh's slot index, found with GuessPaintLayer from each slot's name and material. */
+	static TArray<FMantleVehicleSourcePartLayerSlots> SuggestPartLayerSlots(const FMantleVehicleSourcePart& Part);
+
+	/** A part's layer slots as its upload counts them, as PartUploadPaintSlots does the primary's. */
+	static TArray<FMantleVehicleSourcePartLayerSlots> PartUploadLayerSlots(const FMantleVehicleSourcePart& Part, const UStaticMesh* Mesh);
+
+	/** Layer slots with every layer once: entries for the same layer are merged (their slots joined, each once), the order kept. The vehicle file lists a layer once. */
+	static TArray<FMantleVehicleSourcePartLayerSlots> MergeLayerSlots(const TArray<FMantleVehicleSourcePartLayerSlots>& Entries);
+
+	/** The layers a part lists in more than one Layer Slots entry, each once: a hand-edited part can, and the vehicle file lists a layer once. */
+	static TArray<EMantleVehicleSourcePaintLayer> LayersListedTwice(const FMantleVehicleSourcePart& Part);
+
 	/**
 	 * #435 item 2: the slots of Part's mesh to paint, by the mesh's slot index: each upload slot whose material LooksLikePaint or
 	 * is one of BodyPaintMaterials (the painted body sections' own), so a shell drawn with the body's paint wears it too.
@@ -325,6 +364,8 @@ public:
 		FTransform Transform;
 		TArray<FString> Materials;
 		TArray<int32> PaintSlots;
+		/** The slots (in the upload's order) that wear a paint layer other than the primary. */
+		TArray<FMantleVehicleSourcePartLayerSlots> LayerSlots;
 	};
 
 	/** A copy of Document with its parts set (#435 item 2), last, as the schema orders them; none when empty. */

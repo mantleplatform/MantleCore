@@ -8,6 +8,7 @@
 #include "MantlePlaceMaterial.h"
 #include "MantlePlaceValidator.h"
 #include "MantleVehicleCollision.h"
+#include "MantleVehicleSource.h"
 
 class AActor;
 class FJsonObject;
@@ -451,6 +452,8 @@ struct MANTLEEDITOR_API FMantleConvertedVehicle
 		TArray<FString> BuiltInIds;
 		/** The upload slots that wear the vehicle's paint (FMantleVehicleConverter::PartUploadPaintSlots). */
 		TArray<int32> PaintSlots;
+		/** The upload slots that wear one of the paint's other layers (FMantleVehicleConverter::PartUploadLayerSlots). */
+		TArray<FMantleVehicleSourcePartLayerSlots> LayerSlots;
 	};
 
 	/** Its attached parts (#435 item 2), in the source's order. */

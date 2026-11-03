@@ -93,7 +93,11 @@ FString FMantleVehicleBuiltInMaterials::Detect(const UMaterialInterface* Materia
 
 FString FMantleVehicleBuiltInMaterials::ForSection(const UMantleVehicleSource& Source, const FString& SectionName, const UMaterialInterface* Material)
 {
-	if (Source.Paint.Sections.ContainsByPredicate([&SectionName](const FString& Painted) { return Painted.Equals(SectionName, ESearchCase::IgnoreCase); }))
+	if (Source.Paint.Sections.ContainsByPredicate([&SectionName](const FString& Painted) { return Painted.Equals(SectionName, ESearchCase::IgnoreCase); })
+		|| Source.Paint.Layers.ContainsByPredicate([&SectionName](const FMantleVehicleSourcePaintLayer& Layer)
+		{
+			return Layer.Sections.ContainsByPredicate([&SectionName](const FString& Painted) { return Painted.Equals(SectionName, ESearchCase::IgnoreCase); });
+		}))
 	{
 		return FString();
 	}
@@ -108,7 +112,8 @@ FString FMantleVehicleBuiltInMaterials::ForSection(const UMantleVehicleSource& S
 
 FString FMantleVehicleBuiltInMaterials::ForPartSlot(const FMantleVehicleSourcePart& Part, const UStaticMesh* Mesh, const int32 Slot)
 {
-	if (!Mesh || Part.PaintSlots.Contains(Slot))
+	if (!Mesh || Part.PaintSlots.Contains(Slot)
+		|| Part.LayerSlots.ContainsByPredicate([Slot](const FMantleVehicleSourcePartLayerSlots& Layer) { return Layer.Slots.Contains(Slot); }))
 	{
 		return FString();
 	}

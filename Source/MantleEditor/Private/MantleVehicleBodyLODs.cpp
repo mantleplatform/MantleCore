@@ -192,6 +192,10 @@ TArray<FMantleGlbMesh> FMantleVehicleBodyLODs::MakeFor(const UMantleVehicleSourc
 		}
 	}
 	TArray<FString> Keep = Source.Paint.Sections;
+	for (const FMantleVehicleSourcePaintLayer& Layer : Source.Paint.Layers)
+	{
+		Keep.Append(Layer.Sections);
+	}
 	for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse, EMantleLightKind::Left, EMantleLightKind::Right })
 	{
 		Keep.Append(FMantleVehicleLights::Sections(Source.Lights, Kind));

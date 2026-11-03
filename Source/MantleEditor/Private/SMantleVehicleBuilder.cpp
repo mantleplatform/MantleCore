@@ -6,6 +6,7 @@
 #include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleChassisSkin.h"
 #include "MantleVehicleConverter.h"
+#include "MantleVehicleBuiltInMaterials.h"
 #include "MantleVehiclePreset.h"
 #include "MantleVehicleShapeKind.h"
 #include "MantleVehicleSource.h"
@@ -1298,7 +1299,7 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeSeatsAndPaintStep()
 		SNew(STextBlock)
 			.AutoWrapText(true)
 			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-			.Text(LOCTEXT("PaintHelp", "Ticked parts take the color and liveries players choose. Mantle ticked the parts of your model that look like car paint. Untick any it got wrong, or tick others."))
+			.Text(LOCTEXT("PaintHelp", "Ticked parts take the color players and scripts choose, and the body color also takes liveries. Mantle ticked the parts of your model that look like car paint and sorted the rest by their names into a second color, wheels, interior and dashboard, where a color will show on their picture. Untick any it got wrong, tick others, or change the layer beside a part."))
 	];
 	if (PaintChoices.IsEmpty())
 	{
@@ -1314,12 +1315,41 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeSeatsAndPaintStep()
 	{
 		Rows->AddSlot().AutoHeight().Padding(0, 1)
 		[
-			SNew(SCheckBox)
-				.IsChecked_Lambda([this, Index]() { return PaintChoices.IsValidIndex(Index) && PaintChoices[Index].bOn ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
-				.OnCheckStateChanged_Lambda([this, Index](ECheckBoxState State) { SetPaintSection(Index, State == ECheckBoxState::Checked); })
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+			[
+				SNew(SCheckBox)
+					.IsChecked_Lambda([this, Index]() { return PaintChoices.IsValidIndex(Index) && PaintChoices[Index].bOn ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })
+					.OnCheckStateChanged_Lambda([this, Index](ECheckBoxState State) { SetPaintSection(Index, State == ECheckBoxState::Checked); })
+					[
+						SNew(STextBlock).Text(FText::FromString(PaintChoices[Index].Section))
+					]
+			]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8, 0, 0, 0)
+			[
+				SNew(SBox).WidthOverride(130.f)
 				[
-					SNew(STextBlock).Text(FText::FromString(PaintChoices[Index].Section))
+					SNew(SComboButton)
+						.IsEnabled_Lambda([this, Index] { return PaintChoices.IsValidIndex(Index) && PaintChoices[Index].bOn; })
+						.ToolTipText(LOCTEXT("PaintLayerTip", "Which color this part takes: the body color (with liveries), a second color, the wheels', the interior's or the dashboard's. Scripts and players set each separately."))
+						.ButtonContent()
+						[
+							SNew(STextBlock).Text_Lambda([this, Index] { return PaintChoices.IsValidIndex(Index) ? PaintPickLabel(PaintChoices[Index].Pick) : FText::GetEmpty(); })
+						]
+						.OnGetMenuContent_Lambda([this, Index]
+						{
+							FMenuBuilder Menu(/*bInShouldCloseWindowAfterMenuSelection*/ true, nullptr);
+							for (uint8 Pick = 0; Pick <= FMantleVehicleBuilder::PaintPick(EMantleVehicleSourcePaintLayer::Dashboard); ++Pick)
+							{
+								Menu.AddMenuEntry(PaintPickLabel(Pick), FText::GetEmpty(), FSlateIcon(),
+									FUIAction(FExecuteAction::CreateLambda([this, Index, Pick] { SetPaintPick(Index, Pick); }), FCanExecuteAction(),
+										FIsActionChecked::CreateLambda([this, Index, Pick] { return PaintChoices.IsValidIndex(Index) && PaintChoices[Index].Pick == Pick; })),
+									NAME_None, EUserInterfaceActionType::RadioButton);
+							}
+							return Menu.MakeWidget();
+						})
 				]
+			]
 		];
 	}
 
@@ -1430,15 +1460,20 @@ void SMantleVehicleBuilder::RefreshPaintChoices()
 			{
 				bLight = bLight || FMantleVehicleLights::Sections(Lights, static_cast<EMantleLightKind>(Kind)).Contains(Choice.Section);
 			}
-			Choice.bOn = !bLight && FMantleVehicleConverter::LooksLikePaint(Materials[Index].MaterialInterface);
+			// Mantle's guess: the body paint, or a layer by the names (the same guess the builder and Convert Vehicle make). Never a light, nor what becomes glass, a tire, chrome or a lens.
+			const FMantleVehicleConverter::FPaintLayerGuess Guess = FMantleVehicleConverter::GuessPaintLayer(Choice.Section, Materials[Index].MaterialInterface);
+			const bool bBuiltIn = !Guess.bPrimary && Materials[Index].MaterialInterface && !FMantleVehicleBuiltInMaterials::Detect(Materials[Index].MaterialInterface, Choice.Section, false).IsEmpty();
+			Choice.bOn = !bLight && Guess.bPainted && !bBuiltIn;
+			Choice.Pick = Guess.bPrimary ? 0 : FMantleVehicleBuilder::PaintPick(Guess.Layer);
 			if (bPaintEdited)
 			{
-				// The creator's ticks stay across a redraw of the picture.
+				// The creator's ticks and layers stay across a redraw of the picture.
 				for (const FPaintChoice& Old : PaintChoices)
 				{
 					if (Old.Section == Choice.Section)
 					{
 						Choice.bOn = Old.bOn;
+						Choice.Pick = Old.Pick;
 					}
 				}
 			}
@@ -1463,6 +1498,33 @@ void SMantleVehicleBuilder::SetPaintSection(const int32 Index, const bool bOn)
 	}
 }
 
+void SMantleVehicleBuilder::SetPaintPick(const int32 Index, const uint8 Pick)
+{
+	if (!PaintChoices.IsValidIndex(Index) || PaintChoices[Index].Pick == Pick)
+	{
+		return;
+	}
+	PaintChoices[Index].Pick = Pick;
+	bPaintEdited = true;
+	if (UMantleVehicleSource* Source = BuiltSource.Get())
+	{
+		ApplyChoices(*Source);
+		SaveNow();
+	}
+}
+
+FText SMantleVehicleBuilder::PaintPickLabel(const uint8 Pick)
+{
+	switch (Pick)
+	{
+	case 1: return LOCTEXT("PickSecondary", "Second color");
+	case 2: return LOCTEXT("PickWheels", "Wheels");
+	case 3: return LOCTEXT("PickInterior", "Interior");
+	case 4: return LOCTEXT("PickDashboard", "Dashboard");
+	default: return LOCTEXT("PickBody", "Body color");
+	}
+}
+
 void SMantleVehicleBuilder::SetHideRiders(const bool bOn)
 {
 	if (bHideRiders == bOn)
@@ -1484,13 +1546,15 @@ void SMantleVehicleBuilder::ApplyChoices(UMantleVehicleSource& Source)
 		// The ticked sections the body still draws are Paint > Sections; one a split put on a part is that part's Paint Slot.
 		TArray<FString> AllSections;
 		TArray<bool> Painted;
+		TArray<uint8> Picks;
 		for (const FPaintChoice& Choice : PaintChoices)
 		{
 			AllSections.Add(Choice.Section);
 			Painted.Add(Choice.bOn);
+			Picks.Add(Choice.Pick);
 		}
 		TArray<FString> PaintNotes;
-		FMantleVehicleBuilder::ApplyPaint(Source, AllSections, Painted, PaintNotes);
+		FMantleVehicleBuilder::ApplyPaint(Source, AllSections, Painted, PaintNotes, &Picks);
 	}
 	if (bHideRiders)
 	{
@@ -1837,6 +1901,10 @@ FMantleVehicleModelOptions SMantleVehicleBuilder::MakeBuildOptions() const
 			if (Choice.bOn)
 			{
 				Ticked.Add(Choice.Section);
+				if (Choice.Pick > 0)
+				{
+					Options.PaintLayers.Add(Choice.Section, static_cast<EMantleVehicleSourcePaintLayer>(Choice.Pick - 1));
+				}
 			}
 		}
 		Options.PaintedSections = Ticked;

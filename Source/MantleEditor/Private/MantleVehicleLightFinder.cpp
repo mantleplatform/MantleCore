@@ -1092,6 +1092,13 @@ void FMantleVehicleLights::ApplyMaterials(UMantleVehicleSource& Source, TArray<F
 			{
 				Source.Modify();
 			}
+			for (FMantleVehicleSourcePaintLayer& Layer : Source.Paint.Layers)
+			{
+				if (Layer.Sections.Remove(Section) > 0)
+				{
+					Source.Modify();
+				}
+			}
 		}
 	}
 	if (!bChanged)
