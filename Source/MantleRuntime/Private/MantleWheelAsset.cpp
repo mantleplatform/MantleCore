@@ -92,7 +92,7 @@ bool FMantleWheelDocument::Parse(const FString& Json, FMantleWheelDesc& Out, TAr
 
 	static const TCHAR* const Known[] = { TEXT("schemaVersion"), TEXT("name"), TEXT("mesh"), TEXT("materials"), TEXT("referenceRadius"),
 		TEXT("referenceWidth"), TEXT("wheelSlots") };
-	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Root->Values)
+	for (const auto& Pair : Root->Values)
 	{
 		bool bKnown = false;
 		for (const TCHAR* Key : Known)

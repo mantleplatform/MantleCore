@@ -57,6 +57,13 @@ struct MANTLERUNTIME_API FMantleVehicleSourceWheel
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wheel")
 	TArray<FString> RimSections;
+
+	/**
+	 * cm: how far the car's own rim reaches from the wheel bone (its outer edge, inside the tire). A swapped wheel is scaled so its outer edge meets this, which
+	 * leaves the car's tire around it. 0 lets Convert Vehicle measure it from the rim sections; none found, the wheel's Radius (the tire's outer edge) is used.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wheel", meta = (ClampMin = "0", ClampMax = "150", Units = "cm"))
+	float RimRadius = 0.f;
 };
 
 /** A paint layer beyond the primary (the document's paint.layers): a second paint color, the rims, the interior's trim or the dashboard. */
