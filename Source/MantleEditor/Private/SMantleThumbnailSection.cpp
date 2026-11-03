@@ -45,7 +45,7 @@ struct FMantleVehicleBuilderShotAccess
 	{
 		if (Args.Num() < 3)
 		{
-			UE_LOG(LogMantle, Error, TEXT("MANTLE_BUILDER_SHOT usage: Mantle.Dev.VehicleBuilderShots <Model> <Vehicle type> <Directory> [Exit]"));
+			UE_LOG(LogMantle, Error, TEXT("MANTLE_BUILDER_SHOT usage: Mantle.Dev.VehicleBuilderShots <Model> <Vehicle type> <Directory> [Exit] [Livery texture...]"));
 			return;
 		}
 		FString Path = Args[0];
@@ -87,11 +87,33 @@ struct FMantleVehicleBuilderShotAccess
 			const FString File = FPaths::Combine(Args[2], TEXT("builder_step4_seats_paint_beam.png"));
 			UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT %s %s"), *File, Draw(Panel, File) ? TEXT("saved") : TEXT("NOT saved"));
 		}
-		Shot(4, TEXT("thumbnail"));
+		// The Liveries step: empty, then with each image named after the Exit word added, each shown on the model.
+		Shot(4, TEXT("liveries_none"));
+		for (int32 Which = 3; Which < Args.Num(); ++Which)
+		{
+			if (Args[Which].Equals(TEXT("Exit"), ESearchCase::IgnoreCase))
+			{
+				continue;
+			}
+			FString TexturePath = Args[Which];
+			if (!FPackageName::GetShortName(TexturePath).Contains(TEXT(".")))
+			{
+				TexturePath += TEXT(".") + FPackageName::GetShortName(TexturePath);
+			}
+			UTexture2D* Livery = LoadObject<UTexture2D>(nullptr, *TexturePath);
+			if (!Livery)
+			{
+				UE_LOG(LogMantle, Error, TEXT("MANTLE_BUILDER_SHOT livery %s did not load"), *Args[Which]);
+				continue;
+			}
+			Panel->AddLivery(Livery);
+			Shot(4, *FString::Printf(TEXT("liveries_%s"), *Livery->GetName()));
+		}
+		Shot(5, TEXT("thumbnail"));
 		// The build button is on the last step, so that is where it is pressed.
-		Panel->Flow->GoTo(5);
+		Panel->Flow->GoTo(6);
 		Panel->OnBuild();
-		Shot(5, TEXT("build"));
+		Shot(6, TEXT("build"));
 		UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT built=%d"), Panel->BuiltSource.IsValid() ? 1 : 0);
 		if (Args.Num() > 3 && Args[3].Equals(TEXT("Exit"), ESearchCase::IgnoreCase))
 		{
@@ -658,7 +680,7 @@ namespace MantleThumbnailSectionDevShot
 
 	FAutoConsoleCommand VehicleBuilderShotsCommand(
 		TEXT("Mantle.Dev.VehicleBuilderShots"),
-		TEXT("Mantle.Dev.VehicleBuilderShots <Model> <Vehicle type> <Directory> [Exit]: the Build a vehicle window, step by step, drawn offscreen (the type, the model, the fit, seats and paint, the thumbnail, and the build). Builds the vehicle for real, in the project. Uploads nothing."),
+		TEXT("Mantle.Dev.VehicleBuilderShots <Model> <Vehicle type> <Directory> [Exit] [Livery texture...]: the Build a vehicle window, step by step, drawn offscreen (the type, the model, the fit, seats and paint, the liveries with each given image added, the thumbnail, and the build). Builds the vehicle for real, in the project. Uploads nothing."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 		{
 			FMantleVehicleBuilderShotAccess::Run(Args, [](const TSharedRef<SWidget>& Window, const FString& File) { return Save(SNew(SBox).Padding(8.0f)[Window], File, 1180.0f, 760.0f); });
