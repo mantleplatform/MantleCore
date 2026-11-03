@@ -4,6 +4,8 @@
 #include "MantleVehicleConverter.h"
 
 #include "Materials/Material.h"
+#include "Materials/MaterialExpressionVectorParameter.h"
+#include "MantleVehicleSource.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/Package.h"
 #include "UObject/StrongObjectPtr.h"
@@ -79,7 +81,9 @@ bool FMantleGtaTintMaskPicturesTest::RunTest(const FString&)
 	TestTrue(TEXT("a plain surface is plain, with no cache tag"), Plain.IsPlain() && Plain.CacheTag().IsEmpty());
 	FMantleBakeSurface Masked;
 	Masked.bTintMask = true;
-	TestTrue(TEXT("a tint mask is not the plain surface"), !Masked.IsPlain() && Masked.CacheTag().Contains(TEXT("tintmask")));
+	TestTrue(TEXT("a tint mask keeps the plain bake but has its own cache tag"), Masked.IsPlain() && Masked.CacheTag().Contains(TEXT("tintmask")));
+	const FString MaterialKey = TEXT("material:/Game/Car/M_Body");
+	TestTrue(TEXT("the tint-mask variant has its own key, and the plain key is not it"), FMantlePlaceAssets::TintMaskKey(MaterialKey) != MaterialKey && FMantlePlaceAssets::TintMaskKey(MaterialKey).StartsWith(MaterialKey));
 	return true;
 }
 
@@ -100,6 +104,34 @@ bool FMantleGtaTintMaskNamesTest::RunTest(const FString&)
 		TestFalse(*FString::Printf(TEXT("%s is not a GTA tint layer"), Name), FMantleVehicleConverter::IsGtaTintLayer(Name, Plain.Get()));
 	}
 	TestFalse(TEXT("no material and no name: not one"), FMantleVehicleConverter::IsGtaTintLayer(FString(), nullptr));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleGtaTintMaskSectionsTest, "Mantle.Vehicle.PaintLayers.TintMaskSections",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleGtaTintMaskSectionsTest::RunTest(const FString&)
+{
+	const TStrongObjectPtr<UMaterial> Gta(NewObject<UMaterial>(GetTransientPackage(), TEXT("vehicle_generic__PRIMARY_")));
+	// A real paint material (the built-in cars' contract: a Paint Tint parameter) named like a tint layer.
+	const TStrongObjectPtr<UMaterial> RealPaint(NewObject<UMaterial>(GetTransientPackage(), TEXT("car_PRIMARY_paint")));
+	UMaterialExpressionVectorParameter* Tint = NewObject<UMaterialExpressionVectorParameter>(RealPaint.Get());
+	Tint->ParameterName = TEXT("Paint Tint");
+	Tint->DefaultValue = FLinearColor::White;
+	RealPaint->GetExpressionCollection().AddExpression(Tint);
+	RealPaint->UpdateCachedExpressionData();
+
+	const TStrongObjectPtr<UMantleVehicleSource> Source(NewObject<UMantleVehicleSource>(GetTransientPackage()));
+	Source->Paint.Sections = { TEXT("body_PRIMARY_") };
+	FMantleVehicleSourcePaintLayer Layer;
+	Layer.Sections = { TEXT("seat__SECONDARY_") };
+	Source->Paint.Layers.Add(Layer);
+
+	TestTrue(TEXT("a ticked GTA tint section is a tint mask"), FMantleVehicleConverter::BodySectionIsTintMask(*Source, TEXT("body_PRIMARY_"), Gta.Get()));
+	TestTrue(TEXT("so is one in a paint layer"), FMantleVehicleConverter::BodySectionIsTintMask(*Source, TEXT("seat__SECONDARY_"), Gta.Get()));
+	TestFalse(TEXT("the same material on an unticked section is not (it keeps its plain upload)"), FMantleVehicleConverter::BodySectionIsTintMask(*Source, TEXT("trim_PRIMARY_"), Gta.Get()));
+	TestFalse(TEXT("a real paint material named like a tint layer is left alone"), FMantleVehicleConverter::BodySectionIsTintMask(*Source, TEXT("body_PRIMARY_"), RealPaint.Get()));
+	TestFalse(TEXT("no material, no mask"), FMantleVehicleConverter::BodySectionIsTintMask(*Source, TEXT("body_PRIMARY_"), nullptr));
 	return true;
 }
 

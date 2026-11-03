@@ -287,6 +287,15 @@ public:
 	 */
 	static bool IsGtaTintLayer(const FString& Name, const UMaterialInterface* Material);
 
+	/**
+	 * Whether the body section Section drawn with Material publishes its picture as a tint mask: it is painted (in Source's paint sections or one of its layers), it is a GTA tint layer
+	 * (IsGtaTintLayer) and it is not a real paint material (one that already publishes as car paint, or has a Paint Tint). The gather and the conversion both ask this, so they agree.
+	 */
+	static bool BodySectionIsTintMask(const UMantleVehicleSource& Source, const FString& Section, const UMaterialInterface* Material);
+
+	/** The same for the upload slot Slot of the part's mesh. */
+	static bool PartSlotIsTintMask(const FMantleVehicleSourcePart& Part, const UStaticMesh* PartMesh, int32 Slot);
+
 	/** The slots of Part's mesh that wear a paint layer other than the primary, by the mesh's slot index, found with GuessPaintLayer from each slot's name and material. */
 	static TArray<FMantleVehicleSourcePartLayerSlots> SuggestPartLayerSlots(const FMantleVehicleSourcePart& Part);
 

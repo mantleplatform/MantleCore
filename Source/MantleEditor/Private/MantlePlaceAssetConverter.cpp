@@ -2908,7 +2908,9 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 				Converted.BuiltInSections.Add(Converted.Body.MaterialNames[Index], BuiltIn);
 				continue;
 			}
-			Converted.SectionMaterialKeys.Add(Converted.Body.MaterialNames[Index], FMantlePlaceAssets::MaterialKey(Material));
+			const FString SectionKey = FMantlePlaceAssets::MaterialKey(Material);
+			Converted.SectionMaterialKeys.Add(Converted.Body.MaterialNames[Index],
+				FMantleVehicleConverter::BodySectionIsTintMask(*Vehicle, Converted.Body.MaterialNames[Index], Material) ? FMantlePlaceAssets::TintMaskKey(SectionKey) : SectionKey);
 		}
 	}
 	// Its liveries (#488) convert as decal base colors (FMantlePlaceDependencies::AddVehicleSpawn gathers them), and
@@ -2935,7 +2937,12 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 			const UMaterialInterface* Material = FMantleVehicleConverter::PartSlotMaterial(Part, PartMesh, Slot);
 			const FString BuiltIn = Material && !FMantlePlaceAssets::IsLibraryAsset(Material) ? FMantleVehicleBuiltInMaterials::ForPartSlot(Part, PartMesh, Slot) : FString();
 			ConvertedPart.BuiltInIds.Add(BuiltIn);
-			ConvertedPart.MaterialKeys.Add(BuiltIn.IsEmpty() && Material && !FMantlePlaceAssets::IsLibraryAsset(Material) ? FMantlePlaceAssets::MaterialKey(Material) : FString());
+			FString PartKey = BuiltIn.IsEmpty() && Material && !FMantlePlaceAssets::IsLibraryAsset(Material) ? FMantlePlaceAssets::MaterialKey(Material) : FString();
+			if (!PartKey.IsEmpty() && FMantleVehicleConverter::PartSlotIsTintMask(Part, PartMesh, Slot))
+			{
+				PartKey = FMantlePlaceAssets::TintMaskKey(PartKey);
+			}
+			ConvertedPart.MaterialKeys.Add(PartKey);
 		}
 		// Its painted slots, counted as the upload counts them.
 		ConvertedPart.PaintSlots = FMantleVehicleConverter::PartUploadPaintSlots(Part, PartMesh);
@@ -3911,7 +3918,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 		Out.Issues.Add(ErrorIssue(TEXT("A material this place uses could not be loaded."), TEXT("Check the level for missing assets, then try again.")));
 		return false;
 	}
-	const FString Key = FMantlePlaceAssets::MaterialKey(Material);
+	const FString Key = InSurface.bTintMask ? FMantlePlaceAssets::TintMaskKey(FMantlePlaceAssets::MaterialKey(Material)) : FMantlePlaceAssets::MaterialKey(Material);
 	if (Out.FindMaterial(Key))
 	{
 		return true;
@@ -3961,7 +3968,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	const int32 FirstIssue = Out.Issues.Num();
 	FMantleConvertedMaterial Converted;
 	Converted.Key = Key;
-	Converted.Name = Material->GetName();
+	Converted.Name = Surface.bTintMask ? Material->GetName() + TEXT(" (tint mask)") : Material->GetName();
 	Converted.Path = Material->GetPathName();
 
 	// #628: Per Instance Random and its kin have no value in a bake (they read 0, which blacks out a base color they multiply),
@@ -4248,7 +4255,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		const FString What = FString::Printf(TEXT("%s (%s of material '%s')"), TextureName.IsEmpty() ? TEXT("baked texture") : *TextureName,
 			SlotLabel(Slot), *MaterialName);
 		FMantleConvertedTexture Texture;
-		if (!PrepareTexture(Bytes, Slot, bKeepAlpha, Limits, What, !bSourceTexturesReported, Texture, OutSet.Issues, Extras.bTintMask && Slot == EMantlePlaceTextureSlot::BaseColor))
+		if (!PrepareTexture(Bytes, Slot, bKeepAlpha, Limits, What, !bSourceTexturesReported, Texture, OutSet.Issues, Extras.bTintMask && BaseSlotOf(Slot) == EMantlePlaceTextureSlot::BaseColor))
 		{
 			Warn(FString::Printf(TEXT("its %s image could not be decoded, so it is left out."), SlotLabel(Slot)));
 			return false;
@@ -4265,7 +4272,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		const FString What = FString::Printf(TEXT("%s (%s of material '%s')"), Extras.SourceNames[Source].IsEmpty() ? TEXT("source texture") : *Extras.SourceNames[Source],
 			SlotLabel(Slot), *MaterialName);
 		FMantleConvertedTexture Texture;
-		if (!PrepareTexture(Extras.SourceImages[Source], Slot, bKeepAlpha, Limits, What, !bSourceTexturesReported, Texture, OutSet.Issues, Extras.bTintMask && Slot == EMantlePlaceTextureSlot::BaseColor))
+		if (!PrepareTexture(Extras.SourceImages[Source], Slot, bKeepAlpha, Limits, What, !bSourceTexturesReported, Texture, OutSet.Issues, Extras.bTintMask && BaseSlotOf(Slot) == EMantlePlaceTextureSlot::BaseColor))
 		{
 			Warn(FString::Printf(TEXT("its %s texture could not be decoded, so it is left out."), SlotLabel(Slot)));
 			return false;

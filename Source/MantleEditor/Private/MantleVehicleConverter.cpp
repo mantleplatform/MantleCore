@@ -2261,6 +2261,29 @@ bool FMantleVehicleConverter::IsGtaTintLayer(const FString& Name, const UMateria
 	return !bExcluded && HasWord(Words, { TEXT("primary"), TEXT("secondary"), TEXT("wheel") });
 }
 
+bool FMantleVehicleConverter::BodySectionIsTintMask(const UMantleVehicleSource& Source, const FString& Section, const UMaterialInterface* Material)
+{
+	if (!Material || LooksLikePaint(Material))
+	{
+		return false;
+	}
+	const bool bPainted = Source.Paint.Sections.Contains(Section)
+		|| Source.Paint.Layers.ContainsByPredicate([&Section](const FMantleVehicleSourcePaintLayer& Layer) { return Layer.Sections.Contains(Section); });
+	return bPainted && IsGtaTintLayer(Section, Material);
+}
+
+bool FMantleVehicleConverter::PartSlotIsTintMask(const FMantleVehicleSourcePart& Part, const UStaticMesh* PartMesh, const int32 Slot)
+{
+	const UMaterialInterface* Material = PartSlotMaterial(Part, PartMesh, Slot);
+	if (!PartMesh || !Material || LooksLikePaint(Material) || !PartMesh->GetStaticMaterials().IsValidIndex(Slot))
+	{
+		return false;
+	}
+	const bool bPainted = Part.PaintSlots.Contains(Slot)
+		|| Part.LayerSlots.ContainsByPredicate([Slot](const FMantleVehicleSourcePartLayerSlots& Layer) { return Layer.Slots.Contains(Slot); });
+	return bPainted && IsGtaTintLayer(PartMesh->GetStaticMaterials()[Slot].MaterialSlotName.ToString(), Material);
+}
+
 bool FMantleVehicleConverter::TakesTint(const UMaterialInterface* Material, FString* OutWhy)
 {
 	FColor Average;
