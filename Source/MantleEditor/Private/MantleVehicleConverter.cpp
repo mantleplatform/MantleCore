@@ -128,7 +128,7 @@ namespace MantleVehicleConverterPrivate
 		return MakeShared<FJsonValueArray>(Items);
 	}
 
-	/** A hinge (#546: a door, the trunk lid) as the schema's $defs.hinge, every key written. */
+	/** A hinge (#546: a door, the hood, the trunk lid) as the schema's $defs.hinge, every key written. */
 	TSharedRef<FJsonObject> VehicleHinge(const FMantleVehicleSourceHinge& Hinge)
 	{
 		TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
@@ -2708,6 +2708,12 @@ const UMantleVehicleSource* FMantleVehicleConverter::MakeExportView(const UMantl
 	Hinge(T.PassengerDoor);
 	Hinge(T.TrunkLid);
 	T.TrunkStand = Longer(T.TrunkStand);
+	Hinge(T.HoodLid);
+	T.HoodStand = Longer(T.HoodStand);
+	Hinge(T.RearLeftDoor);
+	T.RearLeftDoorStand = Longer(T.RearLeftDoorStand);
+	Hinge(T.RearRightDoor);
+	T.RearRightDoorStand = Longer(T.RearRightDoorStand);
 	Seat(T.DriverContacts);
 	Seat(T.PassengerContacts);
 	for (FMantleVehicleSourceBox& Box : T.Collision)
@@ -2915,6 +2921,31 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 		Trunk->SetField(TEXT("stand"), VehicleTriple(T.TrunkStand));
 		Trunk->SetField(TEXT("yaw"), VehicleNumber(FRotator::NormalizeAxis(T.TrunkYaw)));
 		Doc->SetObjectField(TEXT("trunk"), Trunk);
+	}
+	// The hood and the two rear doors open as the trunk does (someone standing at the stand opens them), each only when set.
+	if (T.bHood)
+	{
+		TSharedRef<FJsonObject> Hood = MakeShared<FJsonObject>();
+		Hood->SetObjectField(TEXT("lid"), VehicleHinge(T.HoodLid));
+		Hood->SetField(TEXT("stand"), VehicleTriple(T.HoodStand));
+		Hood->SetField(TEXT("yaw"), VehicleNumber(FRotator::NormalizeAxis(T.HoodYaw)));
+		Doc->SetObjectField(TEXT("hood"), Hood);
+	}
+	if (T.bRearLeftDoor)
+	{
+		TSharedRef<FJsonObject> Door = MakeShared<FJsonObject>();
+		Door->SetObjectField(TEXT("door"), VehicleHinge(T.RearLeftDoor));
+		Door->SetField(TEXT("stand"), VehicleTriple(T.RearLeftDoorStand));
+		Door->SetField(TEXT("yaw"), VehicleNumber(FRotator::NormalizeAxis(T.RearLeftDoorYaw)));
+		Doc->SetObjectField(TEXT("rearLeftDoor"), Door);
+	}
+	if (T.bRearRightDoor)
+	{
+		TSharedRef<FJsonObject> Door = MakeShared<FJsonObject>();
+		Door->SetObjectField(TEXT("door"), VehicleHinge(T.RearRightDoor));
+		Door->SetField(TEXT("stand"), VehicleTriple(T.RearRightDoorStand));
+		Door->SetField(TEXT("yaw"), VehicleNumber(FRotator::NormalizeAxis(T.RearRightDoorYaw)));
+		Doc->SetObjectField(TEXT("rearRightDoor"), Door);
 	}
 
 	TSharedRef<FJsonObject> Camera = MakeShared<FJsonObject>();
@@ -3521,6 +3552,33 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 			VehicleCheckRange(Subject, TEXT("Trunk Stand"), TEXT("trunk/stand/*"), T.TrunkStand[Axis], OutIssues);
 		}
 	}
+	if (T.bHood)
+	{
+		CheckHinge(TEXT("Hood Lid"), TEXT("hood/lid"), T.HoodLid);
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			VehicleCheckRange(Subject, TEXT("Hood Stand"), TEXT("hood/stand/*"), T.HoodStand[Axis], OutIssues);
+		}
+		VehicleCheckRange(Subject, TEXT("Hood Yaw"), TEXT("hood/yaw"), FRotator::NormalizeAxis(T.HoodYaw), OutIssues);
+	}
+	if (T.bRearLeftDoor)
+	{
+		CheckHinge(TEXT("Rear Left Door"), TEXT("rearLeftDoor/door"), T.RearLeftDoor);
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			VehicleCheckRange(Subject, TEXT("Rear Left Door Stand"), TEXT("rearLeftDoor/stand/*"), T.RearLeftDoorStand[Axis], OutIssues);
+		}
+		VehicleCheckRange(Subject, TEXT("Rear Left Door Yaw"), TEXT("rearLeftDoor/yaw"), FRotator::NormalizeAxis(T.RearLeftDoorYaw), OutIssues);
+	}
+	if (T.bRearRightDoor)
+	{
+		CheckHinge(TEXT("Rear Right Door"), TEXT("rearRightDoor/door"), T.RearRightDoor);
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			VehicleCheckRange(Subject, TEXT("Rear Right Door Stand"), TEXT("rearRightDoor/stand/*"), T.RearRightDoorStand[Axis], OutIssues);
+		}
+		VehicleCheckRange(Subject, TEXT("Rear Right Door Yaw"), TEXT("rearRightDoor/yaw"), FRotator::NormalizeAxis(T.RearRightDoorYaw), OutIssues);
+	}
 	// #612: each seat's contact points, as the cook holds them (vehicle.go seatContacts and contactRules); their bones are the body's,
 	// checked once the body is read.
 	auto CheckContacts = [&Subject, &OutIssues, &AddError, &T, Source](const TCHAR* Seat, const FString& Path, const FVector& SeatLocation,
@@ -4048,7 +4106,7 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		const TCHAR* What;
 		FName Bone;
 	};
-	TArray<FCarPart, TInlineAllocator<4>> CarParts;
+	TArray<FCarPart, TInlineAllocator<8>> CarParts;
 	if (T.bSteeringWheel && !T.SteeringWheelBone.IsNone())
 	{
 		CarParts.Add({ TEXT("Steering Wheel"), T.SteeringWheelBone });
@@ -4064,6 +4122,18 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	if (T.bTrunk)
 	{
 		CarParts.Add({ TEXT("Trunk Lid"), T.TrunkLid.Bone });
+	}
+	if (T.bHood)
+	{
+		CarParts.Add({ TEXT("Hood Lid"), T.HoodLid.Bone });
+	}
+	if (T.bRearLeftDoor)
+	{
+		CarParts.Add({ TEXT("Rear Left Door"), T.RearLeftDoor.Bone });
+	}
+	if (T.bRearRightDoor)
+	{
+		CarParts.Add({ TEXT("Rear Right Door"), T.RearRightDoor.Bone });
 	}
 	for (int32 Index = 0; Index < CarParts.Num(); ++Index)
 	{

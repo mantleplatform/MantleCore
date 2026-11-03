@@ -163,6 +163,12 @@ TArray<FMantleBuilderStep> SMantleVehicleBuilder::MakeSteps()
 	}
 	{
 		FMantleBuilderStep& Step = Steps.AddDefaulted_GetRef();
+		Step.Title = LOCTEXT("StepDoors", "Doors, hood and trunk");
+		Step.Help = LOCTEXT("StepDoorsHelp", "Pick which part of your model is each door, the hood and the trunk, so players can open them. Mantle filled in what it could find. Leave a part on None if your model doesn't have it.");
+		Step.MakeContent = [this] { return MakeDoorsStep(); };
+	}
+	{
+		FMantleBuilderStep& Step = Steps.AddDefaulted_GetRef();
 		Step.Title = LOCTEXT("StepLiveries", "Liveries");
 		Step.Help = LOCTEXT("StepLiveriesHelp", "Optional. A livery is an image laid over the painted parts, like a racing stripe or a police design. Add up to eight, name each, and choose which one the car starts with. Skip this step if your vehicle has none.");
 		Step.MakeContent = [this] { return MakeLiveriesStep(); };
@@ -884,6 +890,7 @@ void SMantleVehicleBuilder::ReadModel(const TOptional<bool> Twin)
 	bTwinEngine = false;
 	PartSlots.Reset();
 	PartMap = FMantleVehicleModelMap();
+	HingeChoice = FMantleVehicleHingeMap();
 	ModelYaw = 0.0;
 	ProposalText.Reset();
 	TypeMatch = FMantleVehicleTypeMatch();
@@ -903,6 +910,8 @@ void SMantleVehicleBuilder::ReadModel(const TOptional<bool> Twin)
 		return;
 	}
 	bHaveModelInfo = true;
+	// Which of its bones open (doors, hood, trunk): what their names say, until the creator changes one.
+	HingeChoice = FMantleVehicleChassisSkin::SuggestHinges(ModelInfo);
 	// Does the model look like the type picked? Advice only: the build is never stopped by it.
 	TypeMatch = FMantleVehicleTypeMatchCheck::Check(ModelInfo, SelectedPresetId);
 	bUseSkin = !FMantleVehicleBuilder::FitsOwnWheels(Picked, SelectedPresetId);
@@ -1042,6 +1051,8 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakeFitStep()
 void SMantleVehicleBuilder::RebuildModelRows()
 {
 	using namespace MantleVehicleBuilderPanelPrivate;
+	// The Doors step lists the same model's bones, so it is made again whenever the model is read.
+	RebuildDoorRows();
 	if (!ModelRowsBox.IsValid())
 	{
 		return;
@@ -1925,6 +1936,11 @@ FMantleVehicleModelOptions SMantleVehicleBuilder::MakeBuildOptions() const
 {
 	// A model with the type's wheels is fitted to them; any other is worn on the type's frame as its skin, with the sizes, the facing and the parts as the page has them.
 	FMantleVehicleModelOptions Options;
+	if (bHaveModelInfo)
+	{
+		// The doors, hood and trunk as the Doors step has them (Mantle's suggestion unless the creator changed it).
+		Options.Hinges = HingeChoice;
+	}
 	if (bUseSkin)
 	{
 		Options.Spec = Shape.GetShaped();

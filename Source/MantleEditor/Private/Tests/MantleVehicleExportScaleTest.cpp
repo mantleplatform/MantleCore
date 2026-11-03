@@ -93,6 +93,23 @@ namespace MantleVehicleExportScaleTestPrivate
 		T.TrunkLid.Bone = TEXT("Trunk");
 		T.TrunkLid.Pivot = FVector(-140.5, 0.5, 70.5);
 		T.TrunkStand = FVector(-260.5, 0.5, -30.5);
+		T.bHood = true;
+		T.HoodLid.Bone = TEXT("Hood");
+		T.HoodLid.Pivot = FVector(130.5, 0.5, 80.5);
+		T.HoodLid.Axis = FVector(0.0, -1.0, 0.0);
+		T.HoodStand = FVector(250.5, 0.5, -30.5);
+		T.HoodYaw = 180.f;
+		T.bRearLeftDoor = true;
+		T.RearLeftDoor.Bone = TEXT("Door_RL");
+		T.RearLeftDoor.Pivot = FVector(-20.5, -85.5, 50.5);
+		T.RearLeftDoorStand = FVector(-60.5, -150.5, -30.5);
+		T.RearLeftDoorYaw = 90.f;
+		T.bRearRightDoor = true;
+		T.RearRightDoor.Bone = TEXT("Door_RR");
+		T.RearRightDoor.Pivot = FVector(-20.5, 85.5, 50.5);
+		T.RearRightDoor.Axis = FVector(0.0, 0.0, -1.0);
+		T.RearRightDoorStand = FVector(-60.5, 150.5, -30.5);
+		T.RearRightDoorYaw = -90.f;
 		FMantleVehicleSourceBox& Box = T.Collision.AddDefaulted_GetRef();
 		Box.Center = FVector(2.5, 0.5, 20.5);
 		Box.Extent = FVector(220.5, 95.5, 45.5);
@@ -267,6 +284,9 @@ bool FMantleVehicleExportScaleTest::RunTest(const FString& Parameters)
 		TEXT("passengerSeat/location/0"), TEXT("passengerSeat/location/1"), TEXT("passengerSeat/location/2"),
 		TEXT("trunk/lid/pivot/0"), TEXT("trunk/lid/pivot/2"),
 		TEXT("trunk/stand/0"), TEXT("trunk/stand/2"),
+		TEXT("hood/lid/pivot/0"), TEXT("hood/lid/pivot/2"), TEXT("hood/stand/0"), TEXT("hood/stand/2"),
+		TEXT("rearLeftDoor/door/pivot/0"), TEXT("rearLeftDoor/door/pivot/1"), TEXT("rearLeftDoor/stand/1"),
+		TEXT("rearRightDoor/door/pivot/1"), TEXT("rearRightDoor/stand/1"),
 		TEXT("collision/0/center/0"), TEXT("collision/0/center/2"),
 		TEXT("collision/0/extent/0"), TEXT("collision/0/extent/1"), TEXT("collision/0/extent/2") };
 	for (const TCHAR* Path : Lengths)
@@ -283,6 +303,7 @@ bool FMantleVehicleExportScaleTest::RunTest(const FString& Parameters)
 		TEXT("mass"), TEXT("maxSpeed"), TEXT("engine/maxTorque"), TEXT("transmission/gearRatios/0"), TEXT("transmission/gearRatios/2"),
 		TEXT("suspension/maxRaise"), TEXT("suspension/maxDrop"), TEXT("suspension/springRate"), TEXT("tires/friction"), TEXT("brakes/brakeTorque"),
 		TEXT("camera/armLength"), TEXT("camera/height"), TEXT("seat/door/axis/2"), TEXT("seat/door/scale"), TEXT("seat/exits/0/yaw"),
+		TEXT("hood/yaw"), TEXT("hood/lid/axis/1"), TEXT("rearLeftDoor/yaw"), TEXT("rearRightDoor/yaw"), TEXT("rearRightDoor/door/axis/2"),
 		TEXT("seat/weaponArc/yawMin"), TEXT("seat/weaponArc/yawMax"), TEXT("seat/weaponArc/pitchMin"), TEXT("seat/weaponArc/pitchMax"),
 		TEXT("passengerSeat/weaponArc/yawMin"), TEXT("passengerSeat/weaponArc/yawMax"),
 		TEXT("passengerSeat/weaponArc/pitchMin"), TEXT("passengerSeat/weaponArc/pitchMax") };

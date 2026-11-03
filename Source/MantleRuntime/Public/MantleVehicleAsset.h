@@ -114,7 +114,7 @@ struct FMantleVehiclePartDesc
 };
 
 /**
- * A part of a creator vehicle the car clips turn on a hinge (#546): a door, the trunk lid, as the cook resolved it. Bone turns
+ * A part of a creator vehicle the car clips turn on a hinge (#546): a door, the trunk lid, the hood, as the cook resolved it. Bone turns
  * (in the body's own spelling; NAME_None: no hinge) about the line through Pivot along Axis, both in the body's space as the
  * seat is, by the clips' angle times Scale. Axis is as the document gives it, never near zero length: only its direction counts.
  */
@@ -126,6 +126,18 @@ struct FMantleVehicleHingeDesc
 	double Scale = 1.0;
 
 	bool IsSet() const { return !Bone.IsNone(); }
+};
+
+/**
+ * A part someone standing outside opens and shuts with the trunk clips (#546): the hood, a rear door. Its hinge (as a door's), where
+ * a character stands to open it (in the body's space) and the way it faces there, degrees about Z (0: the body's +X). bSet: the car has one.
+ */
+struct FMantleVehicleOpeningDesc
+{
+	bool bSet = false;
+	FMantleVehicleHingeDesc Hinge;
+	FVector Stand = FVector::ZeroVector;
+	double Yaw = 0.0;
 };
 
 /** What a seat's hands hold (#612): schema/vehicle.schema.json $defs.hands kind. Bikes and aircraft (#559) add their grips. */
@@ -533,6 +545,14 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	double TrunkYaw = 0.0;
 
 	/**
+	 * The hood and the two rear doors (#546), opened from outside as the trunk is. The left door is on the car's -Y side (the driver's),
+	 * the right on +Y.
+	 */
+	FMantleVehicleOpeningDesc Hood;
+	FMantleVehicleOpeningDesc RearLeftDoor;
+	FMantleVehicleOpeningDesc RearRightDoor;
+
+	/**
 	 * The horn (#546): the uploaded sound (kind sound, as a SoundEmitter's) the driver's horn plays; empty on a car without one,
 	 * which plays Mantle's built-in horn instead.
 	 */
@@ -727,12 +747,12 @@ struct MANTLERUNTIME_API FMantleVehicleLimits
  * exactly the schema's keys with every value the cook resolves (each wheel's radius and width, the seat,
  * the collision boxes, the shift points; with paint, its every finish value; with liveries, liveryUV; with
  * linkage, each rule's weight and a copy's parts; with parts, each one's location, rotation and scale; with a
- * steering wheel, its rotation; with a door or a trunk lid, its scale; with a trunk, its yaw; with a contact point, its
+ * steering wheel, its rotation; with a door, the hood or a trunk lid, its scale; with a trunk, the hood or a rear door, its yaw; with a contact point, its
  * rotation; with an exit, its yaw), numbers finite and within FMantleVehicleLimits' ranges, a seat's contact points held
  * to its reach and a hand on the steering wheel to its rim (the cook's contactRules); the body must read
  * (FMantleSkinnedMeshReader) as a vehicle body with every wheel bone in it, none of them the root, every bone a linkage
  * rule names, none it moves the root, a wheel bone or a bone a wheel hangs from, every bone a part rides, every bone the
- * car clips turn (the steering wheel's, the doors', the trunk lid's), none of them the root, a wheel bone or a bone a
+ * car clips turn (the steering wheel's, the doors', the trunk lid's, the hood's), none of them the root, a wheel bone or a bone a
  * wheel hangs from, every bone a contact point is on, and every bone a movement block or the rider names
  * (ResolveMovementBones). A document with a movement type has its block and no other; a block's optional
  * numbers read as the contract's defaults when left out, and a key the reader does not know is refused. A refusal is false

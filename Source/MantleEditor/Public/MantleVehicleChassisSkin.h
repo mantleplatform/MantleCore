@@ -99,10 +99,40 @@ struct FMantleVehicleModelPiece
 	bool operator==(const FMantleVehicleModelPiece& Other) const { return Kind == Other.Kind && Bone == Other.Bone && Section == Other.Section; }
 };
 
+/** The parts of a car that open (#546): the six a player can swing. Left is the driver's side (-Y), right the passenger's (+Y). */
+enum class EMantleVehicleHingePart : uint8
+{
+	DriverDoor,
+	PassengerDoor,
+	RearLeftDoor,
+	RearRightDoor,
+	Hood,
+	Trunk,
+};
+
+/**
+ * Which of the model's bones is each part that opens, and which of them the creator flipped (a part that swings the wrong way). Partial: a part that is not in Bones does not
+ * open. A bone carries its children and everything weighted to them, so a door bone with its handle and window below it opens all of it.
+ */
+struct FMantleVehicleHingeMap
+{
+	/** The part to the model's bone it is on. */
+	TMap<EMantleVehicleHingePart, FName> Bones;
+	/** The parts whose hinge turns the other way (the axis is negated). */
+	TSet<EMantleVehicleHingePart> Flipped;
+
+	bool IsEmpty() const { return Bones.Num() == 0; }
+	/** The model bone Part is on; none when it is not set. */
+	FName BoneOf(const EMantleVehicleHingePart Part) const { const FName* Found = Bones.Find(Part); return Found ? *Found : FName(); }
+	bool IsFlipped(const EMantleVehicleHingePart Part) const { return Flipped.Contains(Part); }
+};
+
 /** The parts of a model the creator has assigned to the chassis's moving bones: the chassis bone's name to where it comes from. Optional, and partial. */
 struct FMantleVehicleModelMap
 {
 	TMap<FName, FMantleVehicleModelPiece> Parts;
+	/** The model's doors, hood and trunk: bones that open. Skin gives each its own bone under the chassis's root. */
+	FMantleVehicleHingeMap Hinges;
 
 	bool IsEmpty() const { return Parts.Num() == 0; }
 	const FMantleVehicleModelPiece* Find(const FName ChassisBone) const { return Parts.Find(ChassisBone); }
@@ -164,6 +194,20 @@ struct FMantleVehicleModelProposal
 	TArray<FString> Notes;
 };
 
+/** One part that opens, worked out from where its vertices and its bone are: the numbers the vehicle's hinge, stand and yaw take, in the body's space, cm. */
+struct FMantleVehicleSkinnedHinge
+{
+	EMantleVehicleHingePart Part = EMantleVehicleHingePart::DriverDoor;
+	/** The bone that turns: the model's own bone (its own skeleton), or the bone Skin added for it under the root. */
+	FName Bone;
+	FVector Pivot = FVector::ZeroVector;
+	FVector Axis = FVector::UpVector;
+	double Scale = 1.0;
+	/** Where the character stands to open it, on the ground, and the way they face (yaw 0 faces +X). */
+	FVector Stand = FVector::ZeroVector;
+	double Yaw = 0.0;
+};
+
 /** The result of putting a model on a chassis as its skin. */
 struct FMantleVehicleSkinned
 {
@@ -175,6 +219,8 @@ struct FMantleVehicleSkinned
 	FMantleVehicleModelPlacement Placement;
 	/** The model's other UV channels and vertex colors, in the body's vertex order (vertices copied for a part are copied here too): for FMantleVehicleChassisMesh::Create. */
 	FMantleVehicleBodyExtras Extras;
+	/** The doors, hood and trunk of the model that open (Map.Hinges), each on a bone of its own under the root, with the vertices of the part weighted to it. */
+	TArray<FMantleVehicleSkinnedHinge> Hinges;
 };
 
 /** Where a proposed collision came from. */
@@ -259,7 +305,9 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	 * Puts Model on Chassis as its skin with Placement: every vertex weighted whole to the chassis bone its part is assigned to, else to the root. A bone that
 	 * spins or turns about its hub or hinge (a propeller, a rotor, a control surface) is moved to the part's own, and a wheel's part is moved onto the chassis's
 	 * wheel center when it is within MaxWheelMove cm of it (a wheel further off stays on the body, still, and is said so: moving it would tear it from its strut,
-	 * and turning it about the chassis's wheel would swing it round that point). The sections and material slots are the model's (named uniquely). False, with the
+	 * and turning it about the chassis's wheel would swing it round that point). Each door, the hood and the trunk in Map.Hinges whose bone the model has gets a new bone
+	 * under the root, last in the table (named as the model's bone, suffixed when a chassis bone has the name), posed at the part's hinge, with the vertices of that model bone and
+	 * its children weighted to it; the hinges are in Out.Hinges (HingeFor). The sections and material slots are the model's (named uniquely). False, with the
 	 * reason in OutError, when the model has nothing to skin.
 	 */
 	static bool Skin(const FMantleSkinnedMesh& Chassis, TConstArrayView<FMantleVehiclePartSlot> Slots, const FMantleVehicleModel& Model,
@@ -284,6 +332,38 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 
 	/** Merges Boxes down to MaxBoxes, each time the two whose union adds the least volume (of more than 64, the smallest are dropped first). */
 	static TArray<FBox> ReduceBoxes(TArray<FBox> Boxes, int32 MaxBoxes);
+
+	/** The six parts that open, in the order the window lists them. */
+	static TConstArrayView<EMantleVehicleHingePart> HingeParts();
+
+	/** A part's name in plain words, for the window and the notes: "Driver door", "Hood". */
+	static FText HingeLabel(EMantleVehicleHingePart Part);
+
+	/**
+	 * The parts of Model that obviously open, by the names of its bones (any case): GTA's door_dside_f (driver), door_pside_f (passenger), door_dside_r (rear left),
+	 * door_pside_r (rear right), bonnet (hood) and boot (trunk), and the usual door_fl / door_fr / door_rl / door_rr (also door_lf and the like), hood, trunk and
+	 * tailgate. A bone matches by its whole name once a "_dummy", a "_l" or "_r" side mark and a number at the end are set aside, so doorhandle or door_handle_fl is
+	 * not a door. A static model, or one with none of these, gives an empty map. Nothing is flipped.
+	 */
+	static FMantleVehicleHingeMap SuggestHinges(const FMantleVehicleModel& Model);
+
+	/**
+	 * Where Part's hinge goes, from the box around its vertices and where its bone is (the pure part of Skin, also used for a model that keeps its own skeleton), all in the
+	 * body's space. PartBox is the box around the part's vertices, BodyBox the box around the whole body, BonePosition the bone's place when it is known. A door turns about
+	 * its front edge (the bone's place when it is within a quarter of the door's length from the front, else the front edge at the outer side, halfway up) on an upright
+	 * axis; the hood about its rear edge and the trunk about its front edge, at the top, on a sideways one. Flipped turns the axis the other way. Doors turn at 0.75, lids
+	 * at 1. The character stands on the ground (Z = 0) 60 cm out from the body: at the door's side halfway along it, in front of the hood, behind the trunk, facing the car.
+	 * Every number is held to the document's +-1000 cm.
+	 */
+	static FMantleVehicleSkinnedHinge HingeFor(EMantleVehicleHingePart Part, FName Bone, const FBox& PartBox, const FBox& BodyBox, const FVector* BonePosition, bool bFlipped);
+
+	/**
+	 * The hinges of a model that keeps its own skeleton, or the whole model placed (Placement): for each part in Hinges whose bone Model has (not its root), the vertices
+	 * that bone and its children carry (the heaviest weight decides, a nearer mapped bone takes its own) give the box, and HingeFor the numbers. A part with no bone in
+	 * the model, or no vertices on it, is left out and OutNotes says so in plain words.
+	 */
+	static TArray<FMantleVehicleSkinnedHinge> FindHingesOnModel(const FMantleVehicleModel& Model, const FMantleVehicleModelPlacement& Placement, const FMantleVehicleHingeMap& Hinges,
+		TArray<FString>* OutNotes = nullptr);
 
 	/** Plain words for a piece of the model, as the window's pickers list it: "bone FR" or "section 2: Glass". */
 	static FString DescribePiece(const FMantleVehicleModel& Model, const FMantleVehicleModelPiece& Piece);

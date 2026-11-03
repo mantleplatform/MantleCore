@@ -79,7 +79,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("seat/steeringWheel/location/*"), -1000.0, 1000.0 },
 		{ TEXT("seat/steeringWheel/rotation/*"), -180.0, 180.0 },
 		{ TEXT("seat/steeringWheel/radius"), 10.0, 30.0 },
-		// #546 the doors, the passenger seat and the trunk.
+		// #546 the doors, the passenger seat, the trunk, the hood and the rear doors.
 		{ TEXT("seat/door/pivot/*"), -1000.0, 1000.0 },
 		{ TEXT("seat/door/axis/*"), -1.0, 1.0 },
 		{ TEXT("seat/door/scale"), -2.0, 2.0 },
@@ -96,6 +96,21 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("trunk/lid/scale"), -2.0, 2.0 },
 		{ TEXT("trunk/stand/*"), -1000.0, 1000.0 },
 		{ TEXT("trunk/yaw"), -180.0, 180.0 },
+		{ TEXT("hood/lid/pivot/*"), -1000.0, 1000.0 },
+		{ TEXT("hood/lid/axis/*"), -1.0, 1.0 },
+		{ TEXT("hood/lid/scale"), -2.0, 2.0 },
+		{ TEXT("hood/stand/*"), -1000.0, 1000.0 },
+		{ TEXT("hood/yaw"), -180.0, 180.0 },
+		{ TEXT("rearLeftDoor/door/pivot/*"), -1000.0, 1000.0 },
+		{ TEXT("rearLeftDoor/door/axis/*"), -1.0, 1.0 },
+		{ TEXT("rearLeftDoor/door/scale"), -2.0, 2.0 },
+		{ TEXT("rearLeftDoor/stand/*"), -1000.0, 1000.0 },
+		{ TEXT("rearLeftDoor/yaw"), -180.0, 180.0 },
+		{ TEXT("rearRightDoor/door/pivot/*"), -1000.0, 1000.0 },
+		{ TEXT("rearRightDoor/door/axis/*"), -1.0, 1.0 },
+		{ TEXT("rearRightDoor/door/scale"), -2.0, 2.0 },
+		{ TEXT("rearRightDoor/stand/*"), -1000.0, 1000.0 },
+		{ TEXT("rearRightDoor/yaw"), -180.0, 180.0 },
 		// #612 the seats' contact points.
 		{ TEXT("seat/pelvis/location/*"), -1000.0, 1000.0 },
 		{ TEXT("seat/pelvis/rotation/*"), -180.0, 180.0 },
@@ -627,6 +642,9 @@ namespace MantleVehicleAssetPrivate
 			{ TEXT("/seat/door/bone"), D.SeatDoor.Bone },
 			{ TEXT("/passengerSeat/door/bone"), D.PassengerSeatDoor.Bone },
 			{ TEXT("/trunk/lid/bone"), D.TrunkLid.Bone },
+			{ TEXT("/hood/lid/bone"), D.Hood.Hinge.Bone },
+			{ TEXT("/rearLeftDoor/door/bone"), D.RearLeftDoor.Hinge.Bone },
+			{ TEXT("/rearRightDoor/door/bone"), D.RearRightDoor.Hinge.Bone },
 		};
 		for (int32 Index = 0; Index < static_cast<int32>(UE_ARRAY_COUNT(Turned)); ++Index)
 		{
@@ -1028,7 +1046,7 @@ namespace MantleVehicleAssetPrivate
 	}
 
 	/**
-	 * A resolved hinge (#546: a door, the trunk lid) at Parent's Key: exactly the hinge's keys, its bone's name, a point on it
+	 * A resolved hinge (#546: a door, the trunk lid, the hood) at Parent's Key: exactly the hinge's keys, its bone's name, a point on it
 	 * and its direction (not near zero length) within RangePath's ranges ("seat/door"), and the scale the cook filled. Whether
 	 * the bone is the body's is Read's to check, with the body.
 	 */
@@ -1245,6 +1263,28 @@ namespace MantleVehicleAssetPrivate
 			return;
 		}
 		D.bTrunk = true;
+	}
+
+	/**
+	 * A resolved hood or rear door (#546), at Key ("hood", "rearLeftDoor"): exactly its keys, its hinge under HingeKey ("lid", "door"), where
+	 * to stand to open it and the yaw the cook filled, within Key's ranges. Out is left unset when it does not read.
+	 */
+	void ReadVehicleOpening(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, const TCHAR* Key, const TCHAR* HingeKey, FMantleVehicleOpeningDesc& Out)
+	{
+		const FString Pointer = FString(TEXT("/")) + Key;
+		const FString RangePath = Key;
+		TSharedPtr<FJsonObject> Opening;
+		FMantleVehicleOpeningDesc O;
+		if (!P.Object(Root, TEXT(""), Key, Opening)
+			|| !P.Keys(Opening, Pointer, { HingeKey, TEXT("stand"), TEXT("yaw") }, { HingeKey, TEXT("stand"), TEXT("yaw") })
+			|| !ReadVehicleHinge(P, Opening, Pointer, HingeKey, RangePath + TEXT("/") + HingeKey, O.Hinge)
+			|| !P.Vector(Opening->TryGetField(TEXT("stand")), Pointer + TEXT("/stand"), *(RangePath + TEXT("/stand/*")), O.Stand)
+			|| !P.Number(Opening, Pointer, TEXT("yaw"), *(RangePath + TEXT("/yaw")), O.Yaw))
+		{
+			return;
+		}
+		O.bSet = true;
+		Out = O;
 	}
 
 	/** The resolved horn (#546): exactly its key, its sound an uploaded id (never Mantle's built-in horn, which is what a car without one plays). */
@@ -2166,7 +2206,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("maxSpeed"), TEXT("centerOfMass"), TEXT("dragCoefficient"), TEXT("frontalArea"),
 		  TEXT("engine"), TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"),
 		  TEXT("seat"), TEXT("camera"), TEXT("collision"), TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryNames"), TEXT("liveryUV"),
-		  TEXT("defaultLivery"), TEXT("linkage"), TEXT("parts"), TEXT("passengerSeat"), TEXT("trunk"), TEXT("horn"), TEXT("preset"), TEXT("movementType"),
+		  TEXT("defaultLivery"), TEXT("linkage"), TEXT("parts"), TEXT("passengerSeat"), TEXT("trunk"), TEXT("hood"), TEXT("rearLeftDoor"), TEXT("rearRightDoor"), TEXT("horn"), TEXT("preset"), TEXT("movementType"),
 		  TEXT("flight"), TEXT("helicopter"), TEXT("hover") },
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("maxSpeed"), TEXT("dragCoefficient"), TEXT("frontalArea"), TEXT("engine"),
 		  TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"), TEXT("seat"),
@@ -2425,6 +2465,18 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	if (P.Ok() && Root->HasField(TEXT("trunk")))
 	{
 		ReadVehicleTrunk(P, Root, D);
+	}
+	if (P.Ok() && Root->HasField(TEXT("hood")))
+	{
+		ReadVehicleOpening(P, Root, TEXT("hood"), TEXT("lid"), D.Hood);
+	}
+	if (P.Ok() && Root->HasField(TEXT("rearLeftDoor")))
+	{
+		ReadVehicleOpening(P, Root, TEXT("rearLeftDoor"), TEXT("door"), D.RearLeftDoor);
+	}
+	if (P.Ok() && Root->HasField(TEXT("rearRightDoor")))
+	{
+		ReadVehicleOpening(P, Root, TEXT("rearRightDoor"), TEXT("door"), D.RearRightDoor);
 	}
 	if (P.Ok() && Root->HasField(TEXT("horn")))
 	{
@@ -2885,9 +2937,10 @@ bool FMantleVehicleAssetReader::Read(const TConstArrayView<uint8> Data, FMantleV
 		}
 	}
 
-	// #546: every bone the car clips turn (the steering wheel's, the doors', the trunk lid's) is the body's (in its spelling), and
+	// #546: every bone the car clips turn (the steering wheel's, the doors', the trunk lid's, the hood's) is the body's (in its spelling), and
 	// none is the root, a wheel bone or a bone a wheel hangs from: the cook refuses those (resolveCarParts).
-	for (FName* Name : { &Out.Desc.SteeringWheelBone, &Out.Desc.SeatDoor.Bone, &Out.Desc.PassengerSeatDoor.Bone, &Out.Desc.TrunkLid.Bone })
+	for (FName* Name : { &Out.Desc.SteeringWheelBone, &Out.Desc.SeatDoor.Bone, &Out.Desc.PassengerSeatDoor.Bone, &Out.Desc.TrunkLid.Bone,
+		&Out.Desc.Hood.Hinge.Bone, &Out.Desc.RearLeftDoor.Hinge.Bone, &Out.Desc.RearRightDoor.Hinge.Bone })
 	{
 		if (Name->IsNone())
 		{
