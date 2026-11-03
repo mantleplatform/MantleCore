@@ -839,7 +839,9 @@ bool FMantleVehicleSkinKeepsHingesTest::RunTest(const FString& Parameters)
 	TestTrue(*FString::Printf(TEXT("the door's hinge is its bone, which sits at its front (%s against %s)"), *Driver->Pivot.ToString(), *DriverBone.ToString()), Driver->Pivot.Equals(DriverBone, 0.5));
 	TestTrue(TEXT("the pose of its bone is the hinge"), Body.ReferencePose[Body.Bones.IndexOfByPredicate([](const FMantleSkinnedMeshBone& Candidate) { return Candidate.Name == FName(TEXT("door_dside_f")); })]
 		.GetLocation().Equals(Driver->Pivot, 0.01));
-	TestTrue(TEXT("the hood's hinge is at its rear edge, on top"), Hood->Pivot.X < Box.Max.X && Hood->Pivot.Z > 0.0 && FMath::Abs(Hood->Pivot.Y) < 1.0);
+	// The model is not quite even side to side (the handle and window stick out on the left), so its fit is a little off the middle: the hood's own middle is the mark.
+	const FVector HoodRearTop = Placement.Point(FVector(110.0, 0.0, 106.0));
+	TestTrue(*FString::Printf(TEXT("the hood's hinge is at its rear edge, on top (%s against %s)"), *Hood->Pivot.ToString(), *HoodRearTop.ToString()), Hood->Pivot.Equals(HoodRearTop, 0.5));
 	TestTrue(TEXT("the trunk's hinge is at its front edge, on top"), Trunk->Pivot.X < Hood->Pivot.X && Trunk->Pivot.Z > 0.0);
 	TestEqual(TEXT("everyone stands on the ground"), Driver->Stand.Z + Passenger->Stand.Z + Hood->Stand.Z + Trunk->Stand.Z, 0.0);
 	TestTrue(*FString::Printf(TEXT("the driver door's stand is 60 cm out on the left, facing the car (%s, yaw %.0f)"), *Driver->Stand.ToString(), Driver->Yaw),
