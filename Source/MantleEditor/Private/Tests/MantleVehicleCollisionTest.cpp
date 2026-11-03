@@ -150,18 +150,40 @@ bool FMantleVehicleCollisionIsInTheUploadTest::RunTest(const FString&)
 	TestEqual(TEXT("four welded vertices"), static_cast<int32>(Positions->GetNumberField(TEXT("count"))), 4);
 	TestEqual(TEXT("as float VEC3"), Positions->GetStringField(TEXT("type")), FString(TEXT("VEC3")));
 	TestEqual(TEXT("of six indices"), static_cast<int32>(Indices->GetNumberField(TEXT("count"))), 6);
-	TestEqual(TEXT("unsigned ints (the streams are not compact)"), static_cast<int32>(Indices->GetNumberField(TEXT("componentType"))), 5125);
+	// WriteUpload slims the streams as publishing does, so a shape of under 65,536 vertices has unsigned-short indices.
+	TestEqual(TEXT("unsigned shorts, as the upload's compact streams write them"), static_cast<int32>(Indices->GetNumberField(TEXT("componentType"))), 5123);
 
-	// Compact streams (a slimmed upload) write the indices as unsigned shorts when the vertices fit.
-	FMantleGlbMesh Compact = Body;
-	Compact.bCompactStreams = true;
-	TArray<uint8> CompactBytes;
-	if (TestTrue(TEXT("a compact upload writes"), FMantleVehicleConverter::WriteUpload(Compact, MakeShared<FJsonObject>(), CompactBytes, Error, {}, &Shape)))
+	// A shape of more vertices than 16-bit indices reach (a 257 x 257 grid, 66,049 vertices) is written with unsigned ints.
+	FMantleVehicleCollision Big;
 	{
-		const TSharedPtr<FJsonObject> CompactGltf = GltfJsonOf(CompactBytes);
-		const TSharedPtr<FJsonObject> CompactNamed = CompactGltf->GetObjectField(TEXT("extras"))->GetObjectField(TEXT("mantleVehicleCollision"));
-		const TSharedPtr<FJsonObject> CompactIndices = CompactGltf->GetArrayField(TEXT("accessors"))[static_cast<int32>(CompactNamed->GetNumberField(TEXT("indices")))]->AsObject();
-		TestEqual(TEXT("unsigned shorts"), static_cast<int32>(CompactIndices->GetNumberField(TEXT("componentType"))), 5123);
+		TArray<FVector3f> Grid;
+		TArray<uint32> GridIndices;
+		const int32 N = 256;
+		for (int32 Y = 0; Y <= N; ++Y)
+		{
+			for (int32 X = 0; X <= N; ++X)
+			{
+				Grid.Add(FVector3f(X * 2.0f, Y * 2.0f, 0.0f));
+			}
+		}
+		for (int32 Y = 0; Y < N; ++Y)
+		{
+			for (int32 X = 0; X < N; ++X)
+			{
+				const uint32 A = Y * (N + 1) + X, B = A + 1, C = A + N + 1, D = C + 1;
+				GridIndices.Append({ A, C, B, B, C, D });
+			}
+		}
+		Big.AddTriangles(Grid, GridIndices, FTransform::Identity);
+	}
+	TestTrue(*FString::Printf(TEXT("the big shape has more vertices than 16-bit indices reach (%d)"), Big.Positions.Num()), Big.Positions.Num() > 65535);
+	TArray<uint8> BigBytes;
+	if (TestTrue(TEXT("a car with it writes"), FMantleVehicleConverter::WriteUpload(Body, MakeShared<FJsonObject>(), BigBytes, Error, {}, &Big)))
+	{
+		const TSharedPtr<FJsonObject> BigGltf = GltfJsonOf(BigBytes);
+		const TSharedPtr<FJsonObject> BigNamed = BigGltf->GetObjectField(TEXT("extras"))->GetObjectField(TEXT("mantleVehicleCollision"));
+		const TSharedPtr<FJsonObject> BigIndices = BigGltf->GetArrayField(TEXT("accessors"))[static_cast<int32>(BigNamed->GetNumberField(TEXT("indices")))]->AsObject();
+		TestEqual(TEXT("unsigned ints"), static_cast<int32>(BigIndices->GetNumberField(TEXT("componentType"))), 5125);
 	}
 	return true;
 }
