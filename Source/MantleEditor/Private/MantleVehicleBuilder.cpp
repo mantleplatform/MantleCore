@@ -1821,15 +1821,16 @@ void FMantleVehicleBuilder::ApplyPaint(UMantleVehicleSource& Source, const TArra
 	};
 	Source.Modify();
 
-	// The body: the ticked sections it still draws.
+	// The body: every ticked section, as the paint step always set them; on a car that was split, only the ticked ones the body still draws (the rest are on parts).
+	const bool bSplit = Source.Parts.ContainsByPredicate([](const FMantleVehicleSourcePart& Part) { return Part.FoundOn == FMantleVehicleBodySplit::FoundOn(); });
 	const USkeletalMesh* Mesh = Source.Body.LoadSynchronous();
 	const TArray<FString> BodySections = Mesh ? FMantleVehicleLights::SectionNames(Mesh->GetMaterials()) : TArray<FString>();
 	Source.Paint.Sections.Reset();
-	for (const FString& Section : BodySections)
+	for (int32 Index = 0; Index < AllSections.Num(); ++Index)
 	{
-		if (IsPainted(Section))
+		if (Painted.IsValidIndex(Index) && Painted[Index] && (!bSplit || BodySections.ContainsByPredicate([&AllSections, Index](const FString& Section) { return Section.Equals(AllSections[Index], ESearchCase::IgnoreCase); })))
 		{
-			Source.Paint.Sections.Add(Section);
+			Source.Paint.Sections.Add(AllSections[Index]);
 		}
 	}
 
