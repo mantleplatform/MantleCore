@@ -63,6 +63,24 @@ bool FMantleVehiclePaintLayersGuessTest::RunTest(const FString&)
 	}
 	TestFalse(TEXT("a part named for none of it, with a plain material, is not painted"), FMantleVehicleConverter::GuessPaintLayer(TEXT("vehicle_cab"), Plain.Get()).bPainted);
 
+	// "Light" is a color as often as a lamp: a light grey interior is still the interior.
+	const FGuess LightGrey = FMantleVehicleConverter::GuessPaintLayer(TEXT("M_Interior_LightGrey"), Plain.Get());
+	TestTrue(TEXT("M_Interior_LightGrey is the interior"), LightGrey.bPainted && !LightGrey.bPrimary && LightGrey.Layer == EMantleVehicleSourcePaintLayer::Interior);
+	TestFalse(TEXT("but interior_light is a lamp"), FMantleVehicleConverter::GuessPaintLayer(TEXT("interior_lights"), Plain.Get()).bPainted && !FMantleVehicleConverter::GuessPaintLayer(TEXT("interior_lights"), Plain.Get()).bPrimary);
+
+	// What already reads as the car's paint stays the body color, whatever the section is called: a Roof or Mirrors section on the car's own paint is painted as it was.
+	const TStrongObjectPtr<UMaterial> CarPaint(NewObject<UMaterial>(GetTransientPackage()));
+	CarPaint->SetShadingModel(MSM_ClearCoat);
+	CarPaint->PostEditChange();
+	if (TestTrue(TEXT("the test's car paint reads as car paint"), FMantleVehicleConverter::LooksLikePaint(CarPaint.Get())))
+	{
+		for (const TCHAR* Name : { TEXT("Roof"), TEXT("Mirrors"), TEXT("Trim"), TEXT("Rim_FL") })
+		{
+			const FGuess Result = FMantleVehicleConverter::GuessPaintLayer(Name, CarPaint.Get());
+			TestTrue(*FString::Printf(TEXT("%s on the car's own paint stays the body color"), Name), Result.bPainted && Result.bPrimary);
+		}
+	}
+
 	// No material at all does not crash; a layer word with no material is left out (its color is unknown).
 	TestFalse(TEXT("no material, no name: not painted"), FMantleVehicleConverter::GuessPaintLayer(TEXT("cab"), nullptr).bPainted);
 	TestFalse(TEXT("a layer word with no material: its color is unknown, so it is left out"), FMantleVehicleConverter::GuessPaintLayer(TEXT("rim"), nullptr).bPainted);
@@ -105,6 +123,39 @@ bool FMantleVehiclePaintLayersApplyTest::RunTest(const FString&)
 	FMantleVehicleBuilder::ApplyPaint(*Source, Sections, Painted, Notes);
 	TestEqual(TEXT("ticked, with no layers given, they are all the body paint"), Source->Paint.Sections.Num(), 4);
 	TestEqual(TEXT("and there are no other layers"), Source->Paint.Layers.Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleVehiclePaintLayersMergeTest, "Mantle.Vehicle.PaintLayers.OneEntryPerLayer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehiclePaintLayersMergeTest::RunTest(const FString&)
+{
+	// A hand-edited part with Wheels {0} and Wheels {2}: the vehicle file lists a layer once, so the entries are merged, and the check says so.
+	FMantleVehicleSourcePart Part;
+	FMantleVehicleSourcePartLayerSlots& First = Part.LayerSlots.AddDefaulted_GetRef();
+	First.Layer = EMantleVehicleSourcePaintLayer::Wheels;
+	First.Slots = { 0 };
+	FMantleVehicleSourcePartLayerSlots& Interior = Part.LayerSlots.AddDefaulted_GetRef();
+	Interior.Layer = EMantleVehicleSourcePaintLayer::Interior;
+	Interior.Slots = { 1 };
+	FMantleVehicleSourcePartLayerSlots& Second = Part.LayerSlots.AddDefaulted_GetRef();
+	Second.Layer = EMantleVehicleSourcePaintLayer::Wheels;
+	Second.Slots = { 2, 0 };
+
+	const TArray<EMantleVehicleSourcePaintLayer> Twice = FMantleVehicleConverter::LayersListedTwice(Part);
+	TestTrue(TEXT("the check finds the layer listed twice"), Twice.Num() == 1 && Twice[0] == EMantleVehicleSourcePaintLayer::Wheels);
+
+	const TArray<FMantleVehicleSourcePartLayerSlots> Merged = FMantleVehicleConverter::MergeLayerSlots(Part.LayerSlots);
+	if (TestEqual(TEXT("merged, each layer is once"), Merged.Num(), 2))
+	{
+		TestTrue(TEXT("the wheels come first, as they were first listed"), Merged[0].Layer == EMantleVehicleSourcePaintLayer::Wheels);
+		TestTrue(TEXT("with every slot once: 0 and 2"), Merged[0].Slots == TArray<int32>({ 0, 2 }));
+		TestTrue(TEXT("and the interior's one slot"), Merged[1].Layer == EMantleVehicleSourcePaintLayer::Interior && Merged[1].Slots == TArray<int32>({ 1 }));
+	}
+	FMantleVehicleSourcePart Fine;
+	Fine.LayerSlots = Merged;
+	TestEqual(TEXT("a part that lists each layer once has nothing to report"), FMantleVehicleConverter::LayersListedTwice(Fine).Num(), 0);
 	return true;
 }
 

@@ -287,6 +287,12 @@ public:
 	/** A part's layer slots as its upload counts them, as PartUploadPaintSlots does the primary's. */
 	static TArray<FMantleVehicleSourcePartLayerSlots> PartUploadLayerSlots(const FMantleVehicleSourcePart& Part, const UStaticMesh* Mesh);
 
+	/** Layer slots with every layer once: entries for the same layer are merged (their slots joined, each once), the order kept. The vehicle file lists a layer once. */
+	static TArray<FMantleVehicleSourcePartLayerSlots> MergeLayerSlots(const TArray<FMantleVehicleSourcePartLayerSlots>& Entries);
+
+	/** The layers a part lists in more than one Layer Slots entry, each once: a hand-edited part can, and the vehicle file lists a layer once. */
+	static TArray<EMantleVehicleSourcePaintLayer> LayersListedTwice(const FMantleVehicleSourcePart& Part);
+
 	/**
 	 * #435 item 2: the slots of Part's mesh to paint, by the mesh's slot index: each upload slot whose material LooksLikePaint or
 	 * is one of BodyPaintMaterials (the painted body sections' own), so a shell drawn with the body's paint wears it too.

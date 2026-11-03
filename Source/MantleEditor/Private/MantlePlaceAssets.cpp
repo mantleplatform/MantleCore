@@ -4215,30 +4215,61 @@ bool FMantlePlaceAssets::BaseColorAverage(const UMaterialInterface* Material, FC
 	{
 		bOutPicture = true;
 		UTexture2D* Texture = Cast<UTexture2D>(Picture);
-		const ETextureSourceFormat Format = Texture ? Texture->Source.GetFormat() : TSF_Invalid;
-		TArray64<uint8> Pixels;
-		if (!Texture || Format != TSF_BGRA8 || !Texture->Source.GetMipData(Pixels, 0) || Pixels.Num() < 4)
+		if (!Texture)
 		{
 			return false;
 		}
-		const int64 Count = Pixels.Num() / 4;
-		const int64 Stride = Count > 1024 * 1024 ? Count / (1024 * 1024) : 1;
-		double Sum[3] = { 0.0, 0.0, 0.0 };
-		int64 Taken = 0;
-		for (int64 Pixel = 0; Pixel < Count; Pixel += Stride)
+		// Read once per picture (a redraw of the paint step asks for every section again): by the source's id, so an edited picture is read again.
+		struct FRead
 		{
-			const uint8* Bytes = Pixels.GetData() + Pixel * 4;
-			// BGRA8 stores blue first.
-			const FColor Color(Bytes[2], Bytes[1], Bytes[0], 255);
-			const FLinearColor Linear = Texture->SRGB ? FLinearColor::FromSRGBColor(Color) : FLinearColor(Color);
-			Sum[0] += Linear.R;
-			Sum[1] += Linear.G;
-			Sum[2] += Linear.B;
-			++Taken;
+			bool bReadable = false;
+			FLinearColor Average = FLinearColor::White;
+		};
+		static TMap<FGuid, FRead> Known;
+		const FGuid Id = Texture->Source.GetId();
+		if (const FRead* Found = Known.Find(Id))
+		{
+			if (!Found->bReadable)
+			{
+				return false;
+			}
+			Average = Found->Average;
 		}
-		if (Taken > 0)
+		else
 		{
-			Average = FLinearColor(static_cast<float>(Sum[0] / Taken), static_cast<float>(Sum[1] / Taken), static_cast<float>(Sum[2] / Taken), 1.f);
+			FRead Read;
+			const ETextureSourceFormat Format = Texture->Source.GetFormat();
+			TArray64<uint8> Pixels;
+			if (Format == TSF_BGRA8 && Texture->Source.GetMipData(Pixels, Texture->Source.GetNumMips() - 1) && Pixels.Num() >= 4)
+			{
+				// The smallest mip the source has: its average is the picture's, and it is read in no time.
+				const int64 Count = Pixels.Num() / 4;
+				const int64 Stride = Count > 1024 * 1024 ? Count / (1024 * 1024) : 1;
+				double Sum[3] = { 0.0, 0.0, 0.0 };
+				int64 Taken = 0;
+				for (int64 Pixel = 0; Pixel < Count; Pixel += Stride)
+				{
+					const uint8* Bytes = Pixels.GetData() + Pixel * 4;
+					// BGRA8 stores blue first.
+					const FColor Color(Bytes[2], Bytes[1], Bytes[0], 255);
+					const FLinearColor Linear = Texture->SRGB ? FLinearColor::FromSRGBColor(Color) : FLinearColor(Color);
+					Sum[0] += Linear.R;
+					Sum[1] += Linear.G;
+					Sum[2] += Linear.B;
+					++Taken;
+				}
+				if (Taken > 0)
+				{
+					Read.bReadable = true;
+					Read.Average = FLinearColor(static_cast<float>(Sum[0] / Taken), static_cast<float>(Sum[1] / Taken), static_cast<float>(Sum[2] / Taken), 1.f);
+				}
+			}
+			Known.Add(Id, Read);
+			if (!Read.bReadable)
+			{
+				return false;
+			}
+			Average = Read.Average;
 		}
 	}
 	OutColor = FLinearColor(Average.R * Factor.R, Average.G * Factor.G, Average.B * Factor.B, 1.f).ToFColorSRGB();

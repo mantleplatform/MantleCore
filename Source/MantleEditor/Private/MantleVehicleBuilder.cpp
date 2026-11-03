@@ -710,28 +710,46 @@ namespace MantleVehicleBuilderPrivate
 					}
 				}
 				Options.PaintedSections = Ticked;
-				}
-				if (LayerContains.Num() > 0)
+			}
+			if (LayerContains.Num() > 0)
+			{
+				// secondary=, wheels=, interior= and dashboard=: the sections whose name has the text are ticked as that layer (and not notpaint's). Without paint=, the sections
+				// they do not name keep Mantle's own guess (the body color or a layer by the names), as the builder's window starts them.
+				TArray<FString> Ticked = Options.PaintedSections.IsSet() ? Options.PaintedSections.GetValue() : TArray<FString>();
+				if (const USkeletalMesh* Skeletal = Cast<USkeletalMesh>(Asset))
 				{
-					// secondary=, wheels=, interior= and dashboard=: the sections whose name has the text are ticked as that layer (and not notpaint's).
-					TArray<FString> Ticked = Options.PaintedSections.IsSet() ? Options.PaintedSections.GetValue() : TArray<FString>();
-					if (const USkeletalMesh* Skeletal = Cast<USkeletalMesh>(Asset))
+					if (!Options.PaintedSections.IsSet())
 					{
-						for (const FString& Section : FMantleVehicleLights::SectionNames(Skeletal->GetMaterials()))
+						const TArray<FSkeletalMaterial>& Materials = Skeletal->GetMaterials();
+						const TArray<FString> Names = FMantleVehicleLights::SectionNames(Materials);
+						for (int32 Index = 0; Index < Names.Num(); ++Index)
 						{
-							for (const TPair<EMantleVehicleSourcePaintLayer, FString>& Pair : LayerContains)
+							const FMantleVehicleConverter::FPaintLayerGuess Guess = FMantleVehicleConverter::GuessPaintLayer(Names[Index], Materials[Index].MaterialInterface);
+							if (Guess.bPainted && (PaintNot.IsEmpty() || !Names[Index].Contains(PaintNot, ESearchCase::IgnoreCase)))
 							{
-								if (Section.Contains(Pair.Value, ESearchCase::IgnoreCase) && (PaintNot.IsEmpty() || !Section.Contains(PaintNot, ESearchCase::IgnoreCase)))
+								Ticked.AddUnique(Names[Index]);
+								if (!Guess.bPrimary)
 								{
-									Ticked.AddUnique(Section);
-									Options.PaintLayers.Add(Section, Pair.Key);
+									Options.PaintLayers.Add(Names[Index], Guess.Layer);
 								}
 							}
 						}
 					}
-					Options.PaintedSections = Ticked;
+					for (const FString& Section : FMantleVehicleLights::SectionNames(Skeletal->GetMaterials()))
+					{
+						for (const TPair<EMantleVehicleSourcePaintLayer, FString>& Pair : LayerContains)
+						{
+							if (Section.Contains(Pair.Value, ESearchCase::IgnoreCase) && (PaintNot.IsEmpty() || !Section.Contains(PaintNot, ESearchCase::IgnoreCase)))
+							{
+								Ticked.AddUnique(Section);
+								Options.PaintLayers.Add(Section, Pair.Key);
+							}
+						}
+					}
 				}
-				const FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildFromModel(Asset, Args[1], Options);
+				Options.PaintedSections = Ticked;
+			}
+			const FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildFromModel(Asset, Args[1], Options);
 			FString Parts;
 			for (const TPair<FName, FMantleVehicleModelPiece>& Part : Result.ModelMap.Parts)
 			{
@@ -2004,9 +2022,9 @@ void FMantleVehicleBuilder::ApplyPaint(UMantleVehicleSource& Source, const TArra
 		});
 	});
 	Source.MarkPackageDirty();
-	}
+}
 
-	void FMantleVehicleModelPreview::Discard()
+void FMantleVehicleModelPreview::Discard()
 {
 	if (USkeletalMesh* Picture = Mesh.Get())
 	{

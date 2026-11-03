@@ -2181,6 +2181,12 @@ FMantleVehicleConverter::FPaintLayerGuess FMantleVehicleConverter::GuessPaintLay
 {
 	using namespace MantleVehicleConverterPrivate;
 	FPaintLayerGuess Guess;
+	// What already reads as the car's paint is the body color, whatever the section is called: a Roof or Mirrors section drawn with the car's paint is painted as it was.
+	if (LooksLikePaint(Material))
+	{
+		Guess.bPainted = true;
+		return Guess;
+	}
 	TArray<FString> Words = NameWords(Name);
 	if (Material)
 	{
@@ -2204,7 +2210,7 @@ FMantleVehicleConverter::FPaintLayerGuess FMantleVehicleConverter::GuessPaintLay
 		}
 	}
 	const bool bExcluded = HasWord(Words, { TEXT("glass"), TEXT("window"), TEXT("windows"), TEXT("windshield"), TEXT("windscreen"), TEXT("tire"), TEXT("tires"), TEXT("tyre"), TEXT("tyres"),
-		TEXT("rubber"), TEXT("chrome"), TEXT("lens"), TEXT("light"), TEXT("lights"), TEXT("lamp"), TEXT("lamps"), TEXT("headlight"), TEXT("headlights"), TEXT("taillight"),
+		TEXT("rubber"), TEXT("chrome"), TEXT("lens"), TEXT("lights"), TEXT("lamp"), TEXT("lamps"), TEXT("headlight"), TEXT("headlights"), TEXT("taillight"),
 		TEXT("taillights"), TEXT("brake"), TEXT("brakes"), TEXT("steering"), TEXT("signal"), TEXT("signals") });
 	bool bLayer = false;
 	if (!bExcluded)
@@ -2337,9 +2343,43 @@ TArray<FMantleVehicleSourcePartLayerSlots> FMantleVehicleConverter::PartUploadLa
 		{
 			Out.Add(MoveTemp(Entry));
 		}
-	}
-	return Out;
-}
+		}
+		return MergeLayerSlots(Out);
+		}
+
+		TArray<FMantleVehicleSourcePartLayerSlots> FMantleVehicleConverter::MergeLayerSlots(const TArray<FMantleVehicleSourcePartLayerSlots>& Entries)
+		{
+		TArray<FMantleVehicleSourcePartLayerSlots> Out;
+		for (const FMantleVehicleSourcePartLayerSlots& Entry : Entries)
+		{
+		FMantleVehicleSourcePartLayerSlots* Same = Out.FindByPredicate([&Entry](const FMantleVehicleSourcePartLayerSlots& Has) { return Has.Layer == Entry.Layer; });
+		if (!Same)
+		{
+			Same = &Out.AddDefaulted_GetRef();
+			Same->Layer = Entry.Layer;
+		}
+		for (const int32 Slot : Entry.Slots)
+		{
+			Same->Slots.AddUnique(Slot);
+		}
+		}
+		return Out;
+		}
+
+		TArray<EMantleVehicleSourcePaintLayer> FMantleVehicleConverter::LayersListedTwice(const FMantleVehicleSourcePart& Part)
+		{
+		TArray<EMantleVehicleSourcePaintLayer> Seen;
+		TArray<EMantleVehicleSourcePaintLayer> Twice;
+		for (const FMantleVehicleSourcePartLayerSlots& Entry : Part.LayerSlots)
+		{
+		if (Seen.Contains(Entry.Layer))
+		{
+			Twice.AddUnique(Entry.Layer);
+		}
+		Seen.Add(Entry.Layer);
+		}
+		return Twice;
+		}
 
 TArray<int32> FMantleVehicleConverter::SuggestPartPaintSlots(const FMantleVehicleSourcePart& Part, const TConstArrayView<const UMaterialInterface*> BodyPaintMaterials)
 {
@@ -2999,24 +3039,24 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::WithParts(const TSharedRef<FJso
 					Painted.Add(VehicleInteger(Slot));
 				}
 				Entry->SetArrayField(TEXT("paintSlots"), Painted);
-				}
-				if (Part.LayerSlots.Num() > 0)
+			}
+			if (Part.LayerSlots.Num() > 0)
+			{
+				TArray<TSharedPtr<FJsonValue>> Layers;
+				for (const FMantleVehicleSourcePartLayerSlots& Layer : Part.LayerSlots)
 				{
-					TArray<TSharedPtr<FJsonValue>> Layers;
-					for (const FMantleVehicleSourcePartLayerSlots& Layer : Part.LayerSlots)
+					TSharedRef<FJsonObject> LayerEntry = MakeShared<FJsonObject>();
+					LayerEntry->SetStringField(TEXT("layer"), PaintLayerName(Layer.Layer));
+					TArray<TSharedPtr<FJsonValue>> LayerSlots;
+					for (const int32 Slot : Layer.Slots)
 					{
-						TSharedRef<FJsonObject> LayerEntry = MakeShared<FJsonObject>();
-						LayerEntry->SetStringField(TEXT("layer"), PaintLayerName(Layer.Layer));
-						TArray<TSharedPtr<FJsonValue>> LayerSlots;
-						for (const int32 Slot : Layer.Slots)
-						{
-							LayerSlots.Add(VehicleInteger(Slot));
-						}
-						LayerEntry->SetArrayField(TEXT("slots"), LayerSlots);
-						Layers.Add(MakeShared<FJsonValueObject>(LayerEntry));
+						LayerSlots.Add(VehicleInteger(Slot));
 					}
-					Entry->SetArrayField(TEXT("layerSlots"), Layers);
+					LayerEntry->SetArrayField(TEXT("slots"), LayerSlots);
+					Layers.Add(MakeShared<FJsonValueObject>(LayerEntry));
 				}
+				Entry->SetArrayField(TEXT("layerSlots"), Layers);
+			}
 			List.Add(MakeShared<FJsonValueObject>(Entry));
 		}
 		Value = MakeShared<FJsonValueArray>(List);
@@ -3963,7 +4003,12 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 					TEXT("Give that slot a material of your own to publish its look.") });
 			}
 		}
-		// Its layer slots: each layer one the paint has, each slot a slot of the mesh that draws something and wears one layer.
+		// Its layer slots: each layer listed once, each one the paint has, each slot a slot of the mesh that draws something and wears one layer.
+		for (const EMantleVehicleSourcePaintLayer Twice : LayersListedTwice(Part))
+		{
+			AddError(FString::Printf(TEXT("has %s listing the %s layer in two Layer Slots entries."), *What, MantleVehicleConverterPrivate::PaintLayerName(Twice)),
+				TEXT("List each layer once under the part's Layer Slots: put all of its slots in one entry."));
+		}
 		{
 			TArray<int32> Worn = Part.PaintSlots;
 			for (const FMantleVehicleSourcePartLayerSlots& LayerSlots : Part.LayerSlots)
