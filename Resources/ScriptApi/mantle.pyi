@@ -1306,7 +1306,7 @@ class _VehiclesService:
         """The most health the car can have (100 unless you change it)."""
         ...
     def get_paint_finish(self, vehicle: Entity, layer: str, /) -> Optional[str]:
-        """A layer's finish name ('gloss', 'metallic', 'pearl', 'matte', 'satin', 'metal', 'chrome' or 'trim'): the one set, or the car's own (a car's usual body paint reads 'metallic'). Nil when the entity is not a car or the car has no paint on that layer."""
+        """A layer's finish name ('gloss', 'metallic', 'pearl', 'matte', 'satin', 'metal', 'chrome', 'trim', 'carbon', 'brushed', 'sandblast', 'anodized', 'leather', 'perforated', 'suede', 'fabric', 'woven', 'carpet', 'plastic_smooth', 'plastic_grain', 'plastic_soft', 'wood' or 'soft_rubber'): the one set, or the car's own (a car's usual body paint reads 'metallic'). Nil when the entity is not a car or the car has no paint on that layer."""
         ...
     def get_paint_layer_color(self, vehicle: Entity, layer: str, /) -> Optional[str]:
         """A layer's color as '#RRGGBB': the one set, or the color the car was published with. Save it to restore a car's look later. Nil when the entity is not a car or the car has no paint on that layer."""
@@ -1420,7 +1420,7 @@ class _VehiclesService:
         """Paint the car: color is '#RRGGBB', the same format as Backpack:SetWeaponColor. Returns false when the entity is not a car."""
         ...
     def set_paint_finish(self, vehicle: Entity, layer: str, finish: str, /) -> bool:
-        """Give one layer of the car's paint a finish: layer is 'primary', 'secondary', 'wheels', 'interior' or 'dashboard', and finish is 'gloss', 'metallic', 'pearl', 'matte', 'satin', 'metal', 'chrome' or 'trim'. Chrome ignores the layer's color. Every player sees the change. Returns false when the entity is not a car or the car has no paint on that layer."""
+        """Give one layer of the car's paint a finish: layer is 'primary', 'secondary', 'wheels', 'interior' or 'dashboard', and finish is 'gloss', 'metallic', 'pearl', 'matte', 'satin', 'metal', 'chrome', 'trim', 'carbon', 'brushed', 'sandblast', 'anodized', 'leather', 'perforated', 'suede', 'fabric', 'woven', 'carpet', 'plastic_smooth', 'plastic_grain', 'plastic_soft', 'wood' or 'soft_rubber'. Chrome ignores the layer's color. Every player sees the change. Returns false when the entity is not a car or the car has no paint on that layer."""
         ...
     def set_paint_layer_color(self, vehicle: Entity, layer: str, color: str, /) -> bool:
         """Color one layer of the car's paint: layer is 'primary' (the body, as SetPaintColor), 'secondary', 'pearl', 'wheels', 'interior' or 'dashboard', and color is '#RRGGBB'. The pearl is the color the body paint shifts toward at glancing angles; it shows with the 'pearl' finish (SetPaintFinish). Every player sees the change. Returns false when the entity is not a car or the car has no paint on that layer (see HasPaintLayer)."""
