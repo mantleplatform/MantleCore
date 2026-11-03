@@ -1664,7 +1664,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 				Part.Mesh = PieceMesh;
 				Part.Bone = Piece.Bone;
 				Part.Transform = Piece.ToBone;
-				Part.FoundOn = TEXT("split off the model's extra materials");
+				Part.FoundOn = FMantleVehicleBodySplit::FoundOn();
 			}
 		}
 		if (SplitProblem.IsEmpty())
@@ -1736,6 +1736,28 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	}
 	// Remembered with the vehicle, so a build again of this model finds it.
 	Out.Source->GetOutermost()->GetMetaData().SetValue(Out.Source, MantleVehicleBuilderPrivate::BuiltFromModelKey, *ModelPath);
+	// A model that was split into a body and parts: the paint the creator ticked (else what looks like paint) goes onto whichever holds each painted material.
+	if (SplitParts.Num() > 0)
+	{
+		const TArray<FString> ModelSections = FMantleVehicleLights::SectionNames(PictureMaterials);
+		const FMantleVehicleSourceLights& LightsForPaint = Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights;
+		TArray<bool> Painted;
+		for (int32 Index = 0; Index < ModelSections.Num(); ++Index)
+		{
+			if (Options.PaintedSections.IsSet())
+			{
+				Painted.Add(Options.PaintedSections.GetValue().ContainsByPredicate([&ModelSections, Index](const FString& Ticked) { return Ticked.Equals(ModelSections[Index], ESearchCase::IgnoreCase); }));
+				continue;
+			}
+			bool bLight = false;
+			for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
+			{
+				bLight = bLight || FMantleVehicleLights::Sections(LightsForPaint, static_cast<EMantleLightKind>(Kind)).Contains(ModelSections[Index]);
+			}
+			Painted.Add(!bLight && PictureMaterials.IsValidIndex(Index) && FMantleVehicleConverter::LooksLikePaint(PictureMaterials[Index].MaterialInterface));
+		}
+		ApplyPaint(*Out.Source, ModelSections, Painted, Out.Notes);
+	}
 	// The lights: the creator's rows and beams, else what the finder found; each light section gets its glowing copy of its material.
 	ApplyLights(*Out.Source, Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights, Out.Notes);
 	if (Out.bSaved)
@@ -1780,6 +1802,68 @@ void FMantleVehicleBuilder::ApplyLights(UMantleVehicleSource& Source, const FMan
 	Source.Modify();
 	Source.Lights = Kept;
 	FMantleVehicleLights::ApplyMaterials(Source, OutNotes);
+	Source.MarkPackageDirty();
+}
+
+void FMantleVehicleBuilder::ApplyPaint(UMantleVehicleSource& Source, const TArray<FString>& AllSections, const TArray<bool>& Painted, TArray<FString>& OutNotes)
+{
+	const auto IsPainted = [&AllSections, &Painted](const FString& Section)
+	{
+		const int32 Index = AllSections.IndexOfByPredicate([&Section](const FString& Other) { return Other.Equals(Section, ESearchCase::IgnoreCase); });
+		return Index != INDEX_NONE && Painted.IsValidIndex(Index) && Painted[Index];
+	};
+	Source.Modify();
+
+	// The body: the ticked sections it still draws.
+	const USkeletalMesh* Mesh = Source.Body.LoadSynchronous();
+	const TArray<FString> BodySections = Mesh ? FMantleVehicleLights::SectionNames(Mesh->GetMaterials()) : TArray<FString>();
+	Source.Paint.Sections.Reset();
+	for (const FString& Section : BodySections)
+	{
+		if (IsPainted(Section))
+		{
+			Source.Paint.Sections.Add(Section);
+		}
+	}
+
+	// The parts the split made: a slot is painted when the section of its name is ticked. A slot the split renamed (material_<N>, for a name it could not keep) is the
+	// model's Nth section.
+	TArray<FString> OnParts;
+	for (FMantleVehicleSourcePart& Part : Source.Parts)
+	{
+		if (Part.FoundOn != FMantleVehicleBodySplit::FoundOn())
+		{
+			continue;
+		}
+		const UStaticMesh* PartMesh = Part.Mesh.LoadSynchronous();
+		if (!PartMesh)
+		{
+			continue;
+		}
+		Part.PaintSlots.Reset();
+		const TArray<FStaticMaterial>& Slots = PartMesh->GetStaticMaterials();
+		for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)
+		{
+			const FString Name = Slots[Slot].MaterialSlotName.ToString();
+			bool bPainted = IsPainted(Name);
+			int32 Renamed = INDEX_NONE;
+			if (!bPainted && Name.StartsWith(TEXT("material_")) && Name.RightChop(9).IsNumeric())
+			{
+				Renamed = FCString::Atoi(*Name.RightChop(9));
+				bPainted = AllSections.IsValidIndex(Renamed) && Painted.IsValidIndex(Renamed) && Painted[Renamed];
+			}
+			if (bPainted)
+			{
+				Part.PaintSlots.Add(Slot);
+				OnParts.AddUnique(Name);
+			}
+		}
+	}
+	if (OnParts.Num() > 0)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Paint: %s %s ticked and ride%s on extra parts, so those parts take the color and liveries too."), *FString::Join(OnParts, TEXT(", ")),
+			OnParts.Num() == 1 ? TEXT("is") : TEXT("are"), OnParts.Num() == 1 ? TEXT("s") : TEXT("")));
+	}
 	Source.MarkPackageDirty();
 }
 

@@ -80,6 +80,9 @@ struct MANTLEEDITOR_API FMantleVehicleBodySplit
 	static bool Split(FMantleSkinnedMesh& Body, TArray<FSkeletalMaterial>& Materials, FMantleVehicleBodyExtras& Extras, int32 MaxBodyMaterials, int32 MaxPieceMaterials,
 		int32 MaxPieces, FMantleVehicleBodySplitResult& OutResult, const TSet<int32>& KeepInBody = TSet<int32>());
 
+	/** FMantleVehicleSourcePart::FoundOn of a part made from a piece: how the paint step tells the parts the split made from the ones a creator added. */
+	static const TCHAR* FoundOn() { return TEXT("split off the model's extra materials"); }
+
 	/** The name a piece's static mesh is saved under: SM_<Name>_Part<N> (N from 1). */
 	static FString PieceAssetName(const FString& Name, int32 Number) { return FString::Printf(TEXT("SM_%s_Part%d"), *Name, Number); }
 

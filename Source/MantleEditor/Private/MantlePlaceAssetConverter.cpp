@@ -3674,14 +3674,15 @@ FMantleBakeSurface FMantlePlaceAssetConverter::EffectiveBakeSurface(const FMantl
 }
 
 FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& InSettings, const FMantlePlaceAssetLimits& InLimits,
-	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface)
+	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface, const bool bOpaqueInDisguise)
 {
 	// #628: a per-instance node is baked at a representative value; the salt keeps an earlier bake (which read it as 0) from standing in.
 	// A bake on anything but the plain surface (a vertex color, a landscape's UV range) adds its tag, so a different color is not served
 	// another's bake, and every plain bake keeps the key it always had.
-	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s"), *Describe, InSettings.DefaultBakeSize,
+	// A translucent material whose opacity is always 1 publishes opaque: an earlier conversion of it (as see-through) must not stand in.
+	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
-		*Surface.CacheTag());
+		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""));
 }
 
 double FMantlePlaceAssetConverter::MeanPixelDifference(const TArray<FColor>& A, const TArray<FColor>& B)
@@ -3901,7 +3902,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	}
 
 	const FMantleBakeSurface Surface = EffectiveBakeSurface(Analysis, InSurface);
-	const FString Salt = MaterialCacheSalt(Flattener->Describe(), Settings, Limits, Material, Analysis.bPerInstanceVariation, Surface);
+	const FString Salt = MaterialCacheSalt(Flattener->Describe(), Settings, Limits, Material, Analysis.bPerInstanceVariation, Surface, Analysis.bOpaqueInDisguise);
 	FString CacheKey, WhyNot;
 	const bool bCacheable = ComputeCacheKey(Salt, Objects, CacheKey, WhyNot);
 	{
@@ -3966,6 +3967,14 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 			UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 GLTFExporter on %s: %s"), *Material->GetName(), *Message);
 		}
 		Converted.Document = MaterialFromGltf(Flattened, 0, Converted.Name, Limits, bOversizeReported, Out, MaterialExtras(Analysis, Converted.Name, Out.Issues));
+		if (Analysis.bOpaqueInDisguise && Converted.Document.AlphaMode == TEXT("blend"))
+		{
+			// Set to Translucent, but nothing in it is ever see-through: a solid surface in the see-through pass looks white and ghostly. Glass keeps its blend.
+			Converted.Document.AlphaMode = TEXT("opaque");
+			Converted.Document.BaseColorFactor[3] = 1.0;
+			Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Material '%s' is set to Translucent, but nothing in it is see-through (its opacity is always 1), so it publishes as a solid surface."), *Converted.Name),
+				TEXT("Nothing needs fixing. Set its Blend Mode to Opaque to keep Unreal's view of it the same.")));
+		}
 		if (Surface.WorldTileCm > 0.0)
 		{
 			// The analysis flags any world position in the graph; many such materials (Downtown's trim sheets, signs, brick walls) map their
