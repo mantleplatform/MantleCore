@@ -1515,7 +1515,7 @@ bool FMantleGarmentOutfit::MakeFromWork(const FMantleConvertMetaHumanWork& Work,
 		if (Piece.HeelCm >= HeelMinCm)
 		{
 			Piece.Error = FString::Printf(TEXT("%s is a high heel: made for a foot on tiptoe, it reaches %.1f cm below a flat foot, and MetaHuman bodies stand on flat feet. ")
-				TEXT("Heeled shoes aren't offered until the game lifts the foot when they are worn (GhzGarage/mantle#1051)."), *Garment->GetName(), Piece.HeelCm);
+				TEXT("Heeled shoes aren't offered until the game lifts the foot when they're worn."), *Garment->GetName(), Piece.HeelCm);
 			continue;
 		}
 		UE_LOG(LogMantleGarmentOutfit, Display, TEXT("MANTLE_GARMENT_OUTFIT push out %s: %s"), *Garment->GetName(), *Piece.PushOut);
