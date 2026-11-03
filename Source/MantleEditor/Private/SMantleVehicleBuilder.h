@@ -196,6 +196,8 @@ private:
 	};
 	/** Adds a texture of the project as the next livery (named after it); says why in the step when it cannot. */
 	void AddLivery(UTexture2D* Texture);
+	/** AddLivery's work: false (with OutProblem filled in when there is a reason to show) when nothing was added. */
+	bool TryAddLivery(UTexture2D* Texture, FText& OutProblem);
 	/** Add image...: asks for a PNG, TGA or DDS (or another image), imports it into the project and adds it. */
 	FReply OnAddLiveryImage();
 	void RemoveLivery(int32 Index);

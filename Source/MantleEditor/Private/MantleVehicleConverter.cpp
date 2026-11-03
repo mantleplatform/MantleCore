@@ -2894,7 +2894,7 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 		TArray<TSharedPtr<FJsonValue>> Names;
 		for (int32 Index = 0; Index < P.Liveries.Num(); ++Index)
 		{
-			const FString Name = P.LiveryNames.IsValidIndex(Index) ? P.LiveryNames[Index].TrimStartAndEnd().Left(FMantleVehicleConverter::MaxLiveryNameLength) : FString();
+			const FString Name = P.LiveryNames.IsValidIndex(Index) ? FMantleVehicleConverter::CutToCodePoints(P.LiveryNames[Index].TrimStartAndEnd(), FMantleVehicleConverter::MaxLiveryNameLength) : FString();
 			bNamed = bNamed || !Name.IsEmpty();
 			Names.Add(MakeShared<FJsonValueString>(Name));
 		}
@@ -3107,6 +3107,31 @@ TArray<FString> FMantleVehicleConverter::UniqueSectionNames(const TArray<FString
 		Out.Add(Unique);
 	}
 	return Out;
+}
+
+int32 FMantleVehicleConverter::CountCodePoints(const FString& Text)
+{
+	int32 Count = 0;
+	for (const TCHAR Unit : Text)
+	{
+		// A low surrogate (0xDC00 to 0xDFFF) is the second half of a pair; the pair is one code point.
+		Count += (Unit >= 0xDC00 && Unit <= 0xDFFF) ? 0 : 1;
+	}
+	return Count;
+}
+
+FString FMantleVehicleConverter::CutToCodePoints(const FString& Text, const int32 MaxCodePoints)
+{
+	int32 Count = 0;
+	for (int32 Index = 0; Index < Text.Len(); ++Index)
+	{
+		const TCHAR Unit = Text[Index];
+		if (!(Unit >= 0xDC00 && Unit <= 0xDFFF) && ++Count > MaxCodePoints)
+		{
+			return Text.Left(Index);
+		}
+	}
+	return Text;
 }
 
 void FMantleVehicleConverter::LiveryImageIssues(const FString& Subject, const UTexture2D& Texture, TArray<FMantleValidationIssue>& OutIssues)
@@ -3609,7 +3634,7 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	}
 	for (int32 Index = 0; Index < Paint.LiveryNames.Num(); ++Index)
 	{
-		if (Paint.LiveryNames[Index].TrimStartAndEnd().Len() > FMantleVehicleConverter::MaxLiveryNameLength)
+		if (FMantleVehicleConverter::CountCodePoints(Paint.LiveryNames[Index].TrimStartAndEnd()) > FMantleVehicleConverter::MaxLiveryNameLength)
 		{
 			AddError(FString::Printf(TEXT("has a name for livery %d longer than %d characters."), Index, FMantleVehicleConverter::MaxLiveryNameLength), TEXT("Shorten the name."));
 		}

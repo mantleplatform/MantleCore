@@ -20,6 +20,7 @@
 #include "IAssetTools.h"
 #include "IDesktopPlatform.h"
 #include "Materials/MaterialInterface.h"
+#include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "PropertyCustomizationHelpers.h"
 #include "Styling/AppStyle.h"
@@ -249,24 +250,32 @@ void SMantleVehicleBuilder::AddLivery(UTexture2D* Texture)
 {
 	LiveryStatus = FText::GetEmpty();
 	bLiveryStatusFailed = false;
+	FText Problem;
+	if (!TryAddLivery(Texture, Problem) && !Problem.IsEmpty())
+	{
+		LiveryStatus = Problem;
+		bLiveryStatusFailed = true;
+	}
+}
+
+bool SMantleVehicleBuilder::TryAddLivery(UTexture2D* Texture, FText& OutProblem)
+{
 	if (!Texture)
 	{
-		return;
+		return false;
 	}
 	if (LiveryChoices.Num() >= FMantleVehicleLimits::MaxLiveries)
 	{
-		LiveryStatus = FText::Format(LOCTEXT("TooManyLiveries", "A vehicle has at most {0} liveries. Remove one first."), FMantleVehicleLimits::MaxLiveries);
-		bLiveryStatusFailed = true;
-		return;
+		OutProblem = FText::Format(LOCTEXT("TooManyLiveries", "A vehicle has at most {0} liveries. Remove one first."), FMantleVehicleLimits::MaxLiveries);
+		return false;
 	}
 	const TSoftObjectPtr<UTexture2D> Soft(Texture);
 	for (const FLiveryChoice& Choice : LiveryChoices)
 	{
 		if (Choice.Texture.ToSoftObjectPath() == Soft.ToSoftObjectPath())
 		{
-			LiveryStatus = LOCTEXT("LiveryAlreadyAdded", "That image is already one of the liveries.");
-			bLiveryStatusFailed = true;
-			return;
+			OutProblem = LOCTEXT("LiveryAlreadyAdded", "That image is already one of the liveries.");
+			return false;
 		}
 	}
 	FLiveryChoice& Choice = LiveryChoices.AddDefaulted_GetRef();
@@ -281,6 +290,7 @@ void SMantleVehicleBuilder::AddLivery(UTexture2D* Texture)
 	}
 	RebuildLiveryRows();
 	LiveriesChanged();
+	return true;
 }
 
 FReply SMantleVehicleBuilder::OnAddLiveryImage()
@@ -293,7 +303,7 @@ FReply SMantleVehicleBuilder::OnAddLiveryImage()
 	const void* ParentWindow = FSlateApplication::IsInitialized() ? FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr) : nullptr;
 	TArray<FString> Files;
 	if (!DesktopPlatform->OpenFileDialog(ParentWindow, TEXT("Pick a livery image"), LastImportFolder, FString(),
-			TEXT("Image (*.png;*.tga;*.dds;*.jpg;*.jpeg;*.bmp)|*.png;*.tga;*.dds;*.jpg;*.jpeg;*.bmp|PNG (*.png)|*.png|TGA (*.tga)|*.tga|DDS (*.dds)|*.dds"), EFileDialogFlags::Multiple, Files)
+			TEXT("Image (*.png;*.tga;*.dds;*.jpg;*.jpeg;*.bmp)|*.png;*.tga;*.dds;*.jpg;*.jpeg;*.bmp|PNG (*.png)|*.png|TGA (*.tga)|*.tga|DDS (*.dds)|*.dds|GTA texture dictionary (*.ytd)|*.ytd"), EFileDialogFlags::Multiple, Files)
 		|| Files.IsEmpty())
 	{
 		return FReply::Handled();
@@ -301,23 +311,34 @@ FReply SMantleVehicleBuilder::OnAddLiveryImage()
 	LastImportFolder = FPaths::GetPath(Files[0]);
 	LiveryStatus = FText::GetEmpty();
 	bLiveryStatusFailed = false;
+	// Every file gets its say: the problems are collected and shown together, not overwritten by the next file.
+	TArray<FText> Problems;
+	int32 Dropped = 0;
+	const FString LiveryFolder = FMantleVehicleBuilder::ImportFolder() / TEXT("Liveries");
 	for (const FString& File : Files)
 	{
 		if (LiveryChoices.Num() >= FMantleVehicleLimits::MaxLiveries)
 		{
-			break;
+			++Dropped;
+			continue;
 		}
 		if (FPaths::GetExtension(File).Equals(TEXT("ytd"), ESearchCase::IgnoreCase))
 		{
-			LiveryStatus = LOCTEXT("YtdNo", "Mantle can't read GTA .ytd files. Open it in your usual tool, save the picture as a PNG or DDS, and add that.");
-			bLiveryStatusFailed = true;
+			Problems.Add(FText::Format(LOCTEXT("YtdNo", "Mantle can't read GTA .ytd files ({0}). Open it in your usual tool, save the picture as a PNG or DDS, and add that."), FText::FromString(FPaths::GetCleanFilename(File))));
 			continue;
 		}
+		// A free name, so a second stripe.png does not replace the image another livery (or another car) already uses.
+		const FString FreeName = FMantleVehicleBuilder::FirstFreeName(FPaths::GetBaseFilename(File), [&LiveryFolder](const FString& Candidate)
+		{
+			const FString Package = LiveryFolder / Candidate;
+			return FPackageName::DoesPackageExist(Package) || FindPackage(nullptr, *Package) != nullptr;
+		});
 		UAssetImportTask* Task = NewObject<UAssetImportTask>(GetTransientPackage());
 		Task->Filename = FPaths::ConvertRelativePathToFull(File);
-		Task->DestinationPath = FMantleVehicleBuilder::ImportFolder() / TEXT("Liveries");
+		Task->DestinationPath = LiveryFolder;
+		Task->DestinationName = FreeName;
 		Task->bAutomated = true;
-		Task->bReplaceExisting = true;
+		Task->bReplaceExisting = false;
 		Task->bSave = true;
 		Task->bAsync = false;
 		FAssetToolsModule::GetModule().Get().ImportAssetTasks({ Task });
@@ -328,11 +349,23 @@ FReply SMantleVehicleBuilder::OnAddLiveryImage()
 		}
 		if (!Made)
 		{
-			LiveryStatus = FText::Format(LOCTEXT("ImageNotImported", "Mantle could not import {0}. Use a PNG, TGA or DDS file."), FText::FromString(FPaths::GetCleanFilename(File)));
-			bLiveryStatusFailed = true;
+			Problems.Add(FText::Format(LOCTEXT("ImageNotImported", "Mantle could not import {0}. Use a PNG, TGA or DDS file."), FText::FromString(FPaths::GetCleanFilename(File))));
 			continue;
 		}
-		AddLivery(Made);
+		FText Problem;
+		if (!TryAddLivery(Made, Problem) && !Problem.IsEmpty())
+		{
+			Problems.Add(Problem);
+		}
+	}
+	if (Dropped > 0)
+	{
+		Problems.Add(FText::Format(LOCTEXT("LiveriesDropped", "A vehicle has at most {0} liveries, so {1} of the images were not added."), FMantleVehicleLimits::MaxLiveries, Dropped));
+	}
+	if (!Problems.IsEmpty())
+	{
+		LiveryStatus = FText::Join(FText::FromString(TEXT("\n")), Problems);
+		bLiveryStatusFailed = true;
 	}
 	return FReply::Handled();
 }
@@ -368,7 +401,7 @@ void SMantleVehicleBuilder::SetLiveryName(const int32 Index, const FString& Name
 	{
 		return;
 	}
-	const FString Cut = Name.TrimStartAndEnd().Left(FMantleVehicleConverter::MaxLiveryNameLength);
+	const FString Cut = FMantleVehicleConverter::CutToCodePoints(Name.TrimStartAndEnd(), FMantleVehicleConverter::MaxLiveryNameLength);
 	if (LiveryChoices[Index].Name == Cut)
 	{
 		return;

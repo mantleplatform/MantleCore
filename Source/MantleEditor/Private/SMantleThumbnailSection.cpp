@@ -24,7 +24,6 @@
 #include "Slate/WidgetRenderer.h"
 #include "TextureResource.h"
 #include "Engine/Texture2D.h"
-#include "RenderingThread.h"
 #include "ShaderCompiler.h"
 #include "Framework/Application/SlateApplication.h"
 #include "IDesktopPlatform.h"

@@ -132,6 +132,52 @@ bool FMantleVehicleLiveryDocumentNamesTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// A livery name is counted in code points, as the cook, the schema and the game count it: an emoji is one, though FString holds it as two UTF-16 units.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleLiveryNameLengthTest,
+	"Mantle.Vehicle.Livery.NamesCountCodePoints",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleLiveryNameLengthTest::RunTest(const FString& Parameters)
+{
+	const int32 Max = FMantleVehicleConverter::MaxLiveryNameLength;
+	FString Emoji;
+	for (int32 Count = 0; Count < Max; ++Count)
+	{
+		Emoji += TEXT("😀");
+	}
+	TestEqual(TEXT("40 emoji are 40 code points"), FMantleVehicleConverter::CountCodePoints(Emoji), Max);
+	TestEqual(TEXT("though FString holds 80 units"), Emoji.Len(), Max * 2);
+	TestEqual(TEXT("a name of 40 emoji is not cut"), FMantleVehicleConverter::CutToCodePoints(Emoji, Max), Emoji);
+
+	const FString TooLong = Emoji + TEXT("😀");
+	const FString Cut = FMantleVehicleConverter::CutToCodePoints(TooLong, Max);
+	TestEqual(TEXT("41 emoji are cut back to 40"), Cut, Emoji);
+	TestEqual(TEXT("a cut between letters keeps whole code points"), FMantleVehicleConverter::CutToCodePoints(FString(TEXT("a😀b")), 2), FString(TEXT("a😀")));
+
+	UTexture2D* Image = MantleVehicleLiveryStepTestPrivate::MakeImage();
+	ON_SCOPE_EXIT { Image->RemoveFromRoot(); };
+	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	Source->Paint.Liveries = { TSoftObjectPtr<UTexture2D>(Image) };
+	const auto RefusesName = [&](const FString& Name)
+	{
+		Source->Paint.LiveryNames = { Name };
+		TArray<FMantleValidationIssue> Issues;
+		FMantleVehicleConverter::CheckSource(Source, TEXT("test"), Issues);
+		for (const FMantleValidationIssue& Issue : Issues)
+		{
+			if (Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("longer than")))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	TestFalse(TEXT("a name of 40 emoji is accepted"), RefusesName(Emoji));
+	TestTrue(TEXT("a name of 41 emoji is refused"), RefusesName(TooLong));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleVehicleLiveryGuideTest,
 	"Mantle.Vehicle.Livery.UvGuideOutlinesThePaint",

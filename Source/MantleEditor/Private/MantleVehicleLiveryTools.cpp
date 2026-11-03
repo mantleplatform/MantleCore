@@ -250,5 +250,5 @@ FString FMantleVehicleLiveryTools::NameFromImage(const FString& ImageName)
 	FString Name = ImageName;
 	Name.ReplaceInline(TEXT("_"), TEXT(" "));
 	Name.ReplaceInline(TEXT("-"), TEXT(" "));
-	return Name.TrimStartAndEnd().Left(FMantleVehicleConverter::MaxLiveryNameLength);
+	return FMantleVehicleConverter::CutToCodePoints(Name.TrimStartAndEnd(), FMantleVehicleConverter::MaxLiveryNameLength);
 }

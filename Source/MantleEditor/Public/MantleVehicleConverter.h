@@ -393,6 +393,10 @@ public:
 
 	/** The longest a livery's name may be (the cap M4's liveryNames in schema/vehicle.schema.json has). */
 	static constexpr int32 MaxLiveryNameLength = 40;
+	/** A name's length in code points, the way the cook, the schema and the game count it (FString::Len counts UTF-16 units, so an emoji is two). */
+	static int32 CountCodePoints(const FString& Text);
+	/** Text cut to at most MaxCodePoints code points, never between the two halves of a surrogate pair. */
+	static FString CutToCodePoints(const FString& Text, int32 MaxCodePoints);
 
 	/**
 	 * What CheckSource says of one livery image: past the texture size rule, and no alpha (a warning each). The Liveries step shows the
