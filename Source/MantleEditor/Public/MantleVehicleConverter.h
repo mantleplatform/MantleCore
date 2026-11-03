@@ -281,6 +281,12 @@ public:
 	 */
 	static bool TakesTint(const UMaterialInterface* Material, FString* OutWhy = nullptr);
 
+	/**
+	 * Whether the section or slot named Name drawn with Material is a GTA model's tint layer: the word PRIMARY, SECONDARY or WHEEL in its name or its material's, and not glass,
+	 * a tire, a lamp, a brake or the like. Such a picture is a mask for the game to tint (FMantleBakeSurface::bTintMask), the one place a picture's color is changed.
+	 */
+	static bool IsGtaTintLayer(const FString& Name, const UMaterialInterface* Material);
+
 	/** The slots of Part's mesh that wear a paint layer other than the primary, by the mesh's slot index, found with GuessPaintLayer from each slot's name and material. */
 	static TArray<FMantleVehicleSourcePartLayerSlots> SuggestPartLayerSlots(const FMantleVehicleSourcePart& Part);
 

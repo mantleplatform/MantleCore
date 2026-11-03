@@ -2876,7 +2876,13 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 			{
 				continue;
 			}
-			AddMaterial(FMantleVehicleConverter::PartSlotMaterial(Part, PartMesh, Slot), Label);
+			FMantleGatheredMaterial* Gathered = AddMaterial(FMantleVehicleConverter::PartSlotMaterial(Part, PartMesh, Slot), Label);
+			if (Gathered && PartMesh->GetStaticMaterials().IsValidIndex(Slot)
+				&& (Part.PaintSlots.Contains(Slot) || Part.LayerSlots.ContainsByPredicate([Slot](const FMantleVehicleSourcePartLayerSlots& Layer) { return Layer.Slots.Contains(Slot); }))
+				&& FMantleVehicleConverter::IsGtaTintLayer(PartMesh->GetStaticMaterials()[Slot].MaterialSlotName.ToString(), FMantleVehicleConverter::PartSlotMaterial(Part, PartMesh, Slot)))
+			{
+				Gathered->bTintMask = true;
+			}
 		}
 	}
 
@@ -2900,7 +2906,14 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 		{
 			continue;
 		}
-		AddMaterial(BodyMaterials[Index], Label);
+		FMantleGatheredMaterial* Gathered = AddMaterial(BodyMaterials[Index], Label);
+		if (Gathered && BodySections.IsValidIndex(Index)
+			&& (Source->Paint.Sections.Contains(BodySections[Index])
+				|| Source->Paint.Layers.ContainsByPredicate([&BodySections, Index](const FMantleVehicleSourcePaintLayer& Layer) { return Layer.Sections.Contains(BodySections[Index]); }))
+			&& FMantleVehicleConverter::IsGtaTintLayer(BodySections[Index], BodyMaterials[Index]))
+		{
+			Gathered->bTintMask = true;
+		}
 	}
 }
 
@@ -3677,8 +3690,8 @@ FString FMantleBakeSurface::CacheTag() const
 	{
 		return FString();
 	}
-	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%d%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1),
-		WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""));
+	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%d%s%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1),
+		WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""), bTintMask ? TEXT(" tintmask=1") : TEXT(""));
 	// The shift is not in the tag: the shifted bake is only compared with, never stored.
 }
 
@@ -3698,6 +3711,7 @@ FMantleBakeSurface FMantleGatheredMaterial::BakeSurface() const
 	FMantleBakeSurface Surface;
 	Surface.VertexColor = AverageVertexColor();
 	Surface.UvRange = FMath::Max(BakeUvRange, 1);
+	Surface.bTintMask = bTintMask;
 	return Surface;
 }
 

@@ -334,7 +334,13 @@ struct MANTLEEDITOR_API FMantleBakeSurface
 	 */
 	double WorldShiftCm = 0.0;
 
-	bool IsPlain() const { return VertexColor == FColor::White && UvRange <= 1 && WorldTileCm <= 0.0; }
+	/**
+		 * The material is a GTA model's tint layer (PRIMARY, SECONDARY or WHEEL in its name) on a vehicle's painted section: its base color picture is a mask for the game
+		 * to tint, so it is published as a light gray version of itself (FMantlePlaceAssetConverter::NormalizeTintMask), the variation kept.
+		 */
+		bool bTintMask = false;
+
+		bool IsPlain() const { return VertexColor == FColor::White && UvRange <= 1 && WorldTileCm <= 0.0 && !bTintMask; }
 
 	/** What the conversion cache keys on: empty for the plain surface, so those bakes keep their keys. */
 	FString CacheTag() const;
@@ -358,7 +364,10 @@ struct MANTLEEDITOR_API FMantleGatheredMaterial
 	/** The UV range a landscape layer bakes it over (FMantleTerrainLayerChoice::BakeUvRange); 1 for everything else. */
 	int32 BakeUvRange = 1;
 
-	/** The average of VertexColorSum, white when nothing was counted. */
+	/** Set by a vehicle's gather when this is a GTA tint layer on a painted section (FMantleBakeSurface::bTintMask). */
+		bool bTintMask = false;
+
+		/** The average of VertexColorSum, white when nothing was counted. */
 	FColor AverageVertexColor() const;
 
 	/** What this material is baked on: its average vertex color and its UV range. The converter keeps the color only for a material that reads it. */

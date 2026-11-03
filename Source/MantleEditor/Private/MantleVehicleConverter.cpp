@@ -2247,6 +2247,20 @@ FMantleVehicleConverter::FPaintLayerGuess FMantleVehicleConverter::GuessPaintLay
 	return Guess;
 }
 
+bool FMantleVehicleConverter::IsGtaTintLayer(const FString& Name, const UMaterialInterface* Material)
+{
+	using namespace MantleVehicleConverterPrivate;
+	TArray<FString> Words = NameWords(Name);
+	if (Material)
+	{
+		Words.Append(NameWords(Material->GetName()));
+	}
+	const bool bExcluded = HasWord(Words, { TEXT("glass"), TEXT("window"), TEXT("windows"), TEXT("windshield"), TEXT("windscreen"), TEXT("tire"), TEXT("tires"), TEXT("tyre"), TEXT("tyres"),
+		TEXT("rubber"), TEXT("chrome"), TEXT("lens"), TEXT("lights"), TEXT("lamp"), TEXT("lamps"), TEXT("headlight"), TEXT("headlights"), TEXT("taillight"),
+		TEXT("taillights"), TEXT("brake"), TEXT("brakes"), TEXT("steering"), TEXT("signal"), TEXT("signals") });
+	return !bExcluded && HasWord(Words, { TEXT("primary"), TEXT("secondary"), TEXT("wheel") });
+}
+
 bool FMantleVehicleConverter::TakesTint(const UMaterialInterface* Material, FString* OutWhy)
 {
 	FColor Average;

@@ -3996,7 +3996,9 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 		{
 			UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 GLTFExporter on %s: %s"), *Material->GetName(), *Message);
 		}
-		Converted.Document = MaterialFromGltf(Flattened, 0, Converted.Name, Limits, bOversizeReported, Out, MaterialExtras(Analysis, Converted.Name, Out.Issues));
+		FMantleMaterialExtras Extras = MaterialExtras(Analysis, Converted.Name, Out.Issues);
+		Extras.bTintMask = Surface.bTintMask;
+		Converted.Document = MaterialFromGltf(Flattened, 0, Converted.Name, Limits, bOversizeReported, Out, Extras);
 		{
 			const UMaterial* BaseMaterial = Material->GetMaterial();
 			const UMaterialEditorOnlyData* EditorData = BaseMaterial ? BaseMaterial->GetEditorOnlyData() : nullptr;
@@ -4246,7 +4248,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		const FString What = FString::Printf(TEXT("%s (%s of material '%s')"), TextureName.IsEmpty() ? TEXT("baked texture") : *TextureName,
 			SlotLabel(Slot), *MaterialName);
 		FMantleConvertedTexture Texture;
-		if (!PrepareTexture(Bytes, Slot, bKeepAlpha, Limits, What, !bSourceTexturesReported, Texture, OutSet.Issues))
+		if (!PrepareTexture(Bytes, Slot, bKeepAlpha, Limits, What, !bSourceTexturesReported, Texture, OutSet.Issues, Extras.bTintMask && Slot == EMantlePlaceTextureSlot::BaseColor))
 		{
 			Warn(FString::Printf(TEXT("its %s image could not be decoded, so it is left out."), SlotLabel(Slot)));
 			return false;
@@ -4263,7 +4265,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		const FString What = FString::Printf(TEXT("%s (%s of material '%s')"), Extras.SourceNames[Source].IsEmpty() ? TEXT("source texture") : *Extras.SourceNames[Source],
 			SlotLabel(Slot), *MaterialName);
 		FMantleConvertedTexture Texture;
-		if (!PrepareTexture(Extras.SourceImages[Source], Slot, bKeepAlpha, Limits, What, !bSourceTexturesReported, Texture, OutSet.Issues))
+		if (!PrepareTexture(Extras.SourceImages[Source], Slot, bKeepAlpha, Limits, What, !bSourceTexturesReported, Texture, OutSet.Issues, Extras.bTintMask && Slot == EMantlePlaceTextureSlot::BaseColor))
 		{
 			Warn(FString::Printf(TEXT("its %s texture could not be decoded, so it is left out."), SlotLabel(Slot)));
 			return false;
@@ -4767,8 +4769,39 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 	return Doc;
 }
 
+void FMantlePlaceAssetConverter::NormalizeTintMask(TArray<FColor>& Pixels)
+{
+	// The average brightness (perceived, from the picture's own sRGB values) over the pixels that show (alpha counts as weight).
+	double Sum = 0.0;
+	double Weight = 0.0;
+	for (const FColor& Pixel : Pixels)
+	{
+		const double Brightness = (0.2126 * Pixel.R + 0.7152 * Pixel.G + 0.0722 * Pixel.B) / 255.0;
+		Sum += Brightness * Pixel.A;
+		Weight += Pixel.A;
+	}
+	if (Weight <= 0.0)
+	{
+		return;
+	}
+	const double Average = Sum / Weight;
+	constexpr double Target = 0.92;
+	if (Average >= 0.85)
+	{
+		return; // already light: a tint shows as it is
+	}
+	// No variation to keep (all black): a flat light mask. Else rescale, but not past 12 times (a nearly black picture with a little detail).
+	const double Scale = Average < 0.002 ? 0.0 : FMath::Min(Target / Average, 12.0);
+	for (FColor& Pixel : Pixels)
+	{
+		const double Brightness = (0.2126 * Pixel.R + 0.7152 * Pixel.G + 0.0722 * Pixel.B) / 255.0;
+		const uint8 Gray = static_cast<uint8>(FMath::Clamp(FMath::RoundToInt((Scale > 0.0 ? Brightness * Scale : Target) * 255.0), 0, 255));
+		Pixel.R = Pixel.G = Pixel.B = Gray;
+	}
+}
+
 bool FMantlePlaceAssetConverter::PrepareTexture(TConstArrayView<uint8> Image, EMantlePlaceTextureSlot Slot, bool bKeepAlpha, const FMantlePlaceAssetLimits& Limits,
-	const FString& What, bool bWarnDownscale, FMantleConvertedTexture& Out, TArray<FMantleValidationIssue>& OutIssues)
+	const FString& What, bool bWarnDownscale, FMantleConvertedTexture& Out, TArray<FMantleValidationIssue>& OutIssues, const bool bTintMask)
 {
 	using namespace MantlePlaceAssetConverterPrivate;
 	Out = FMantleConvertedTexture();
@@ -4780,6 +4813,10 @@ bool FMantlePlaceAssetConverter::PrepareTexture(TConstArrayView<uint8> Image, EM
 	if (!DecodeBgra(Image, bColor, Pixels, Width, Height))
 	{
 		return false;
+	}
+	if (bTintMask && BaseSlot == EMantlePlaceTextureSlot::BaseColor)
+	{
+		NormalizeTintMask(Pixels);
 	}
 
 	// The one texture-size rule and its message, shared with Check this place (#452).
