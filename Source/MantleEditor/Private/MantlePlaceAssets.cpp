@@ -1,4 +1,4 @@
-// Copyright Joshua Eger. All Rights Reserved.
+﻿// Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceAssets.h"
 #include "MantleWaterBodyExport.h"
 #include "MantleActorDecompose.h"
@@ -569,7 +569,7 @@ namespace MantlePlaceAssetsPrivate
 		bool bOpaque = false;
 		const ETextureSourceFormat Format = Texture->Source.GetFormat();
 		TArray64<uint8> Pixels;
-		if ((Format == TSF_BGRA8 || Format == TSF_RGBA8) && Texture->Source.GetMipData(Pixels, 0))
+		if (Format == TSF_BGRA8 && Texture->Source.GetMipData(Pixels, 0))
 		{
 			bOpaque = true;
 			const int64 Count = Pixels.Num() / 4;
