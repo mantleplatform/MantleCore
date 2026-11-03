@@ -58,7 +58,7 @@ bool FMantleWheelItemMeasureTest::RunTest(const FString& Parameters)
 	TArray<FVector3f> Side;
 	for (int32 Index = 0; Index < 16; ++Index)
 	{
-		Side.Add(FVector3f(Index * 10.f, 5.f * FMath::Cos(Index), 5.f * FMath::Sin(Index)));
+		Side.Add(FVector3f(Index * 10.f, 5.f * FMath::Cos(static_cast<float>(Index)), 5.f * FMath::Sin(static_cast<float>(Index))));
 	}
 	TestFalse(TEXT("a wheel on its side is refused"), FMantleWheelItem::Measure(Side).bOk);
 

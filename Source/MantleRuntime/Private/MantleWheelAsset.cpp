@@ -94,14 +94,15 @@ bool FMantleWheelDocument::Parse(const FString& Json, FMantleWheelDesc& Out, TAr
 		TEXT("referenceWidth"), TEXT("wheelSlots") };
 	for (const auto& Pair : Root->Values)
 	{
+		const FString FieldName(Pair.Key.ToView());
 		bool bKnown = false;
 		for (const TCHAR* Key : Known)
 		{
-			bKnown = bKnown || Pair.Key.Equals(Key, ESearchCase::CaseSensitive);
+			bKnown = bKnown || FieldName.Equals(Key, ESearchCase::CaseSensitive);
 		}
 		if (!bKnown)
 		{
-			AddError(OutErrors, FString(TEXT("/")) + Pair.Key, TEXT("is not a wheel field; remove it"));
+			AddError(OutErrors, FString(TEXT("/")) + FieldName, TEXT("is not a wheel field; remove it"));
 		}
 	}
 

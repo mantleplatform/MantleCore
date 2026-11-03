@@ -33,7 +33,10 @@ namespace MantleWheelPublishTestPrivate
 	TArray<FString> KeysOf(const FJsonObject& Object)
 	{
 		TArray<FString> Keys;
-		Object.Values.GetKeys(Keys);
+		for (const auto& Pair : Object.Values)
+		{
+			Keys.Add(FString(Pair.Key.ToView()));
+		}
 		Keys.Sort();
 		return Keys;
 	}
@@ -114,7 +117,7 @@ bool FMantleWheelPublishRefusalsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a radius over the maximum is refused"), Refused(TEXT("W"), MeshId, { MaterialId }, 151.0, 22.0, {}, Why));
 	TestTrue(TEXT("a width under the minimum is refused"), Refused(TEXT("W"), MeshId, { MaterialId }, 34.0, 1.0, {}, Why));
 	TestTrue(TEXT("a width over the maximum is refused"), Refused(TEXT("W"), MeshId, { MaterialId }, 34.0, 101.0, {}, Why));
-	TestTrue(TEXT("a size that is not a number is refused"), Refused(TEXT("W"), MeshId, { MaterialId }, TNumericLimits<double>::QuietNaN(), 22.0, {}, Why));
+	TestTrue(TEXT("a size that is not a number is refused"), Refused(TEXT("W"), MeshId, { MaterialId }, FMath::Sqrt(-1.0), 22.0, {}, Why));
 
 	TArray<FString> TooMany;
 	TooMany.Init(MaterialId, FMantleWheelDocument::MaxMaterials + 1);
