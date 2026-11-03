@@ -1115,6 +1115,70 @@ bool FMantleVehicleConverter::MeasureWheel(const FMantleGlbMesh& Body, FName Bon
 	return true;
 }
 
+void FMantleVehicleConverter::ApplyRims(const FMantleGlbMesh& Body, UMantleVehicleSource& Source, TArray<FString>& OutNotes)
+{
+	using namespace MantleVehicleConverterPrivate;
+	// A rim the model has no section for leaves its wheel as it is: a car with its wheels welded into the body is simply not swappable.
+
+	TArray<FName> RimBones;
+	TArray<double> RimRadii;
+	for (const FMantleVehicleSourceWheel& Entry : Source.Wheels)
+	{
+		double Radius = Entry.Radius;
+		double Width = 0.0;
+		if (Radius <= 0.0)
+		{
+			MeasureWheel(Body, Entry.Bone, Radius, Width);
+		}
+		RimBones.Add(Entry.Bone);
+		RimRadii.Add(Radius);
+	}
+	TArray<FString> RimNotes;
+	TArray<double> RimReach;
+	const TArray<FString> BodySections = UniqueSectionNames(Body.MaterialNames);
+	// Rim sections the creator's source already has are kept, unless the model no longer has a section of that name (a re-import renamed a
+	// material): the publish would refuse it, so it is dropped here, said, and the wheel looks again.
+	for (FMantleVehicleSourceWheel& Entry : Source.Wheels)
+	{
+		const int32 Before = Entry.RimSections.Num();
+		Entry.RimSections.RemoveAll([&BodySections](const FString& Rim) { return !BodySections.Contains(Rim); });
+		if (Entry.RimSections.Num() != Before)
+		{
+			RimNotes.Add(FString::Printf(TEXT("Wheels: %s lists a rim section the model no longer has, so Mantle looked for the rims again."), *Entry.Bone.ToString()));
+			if (Entry.RimSections.IsEmpty())
+			{
+				Entry.RimRadius = 0.f;
+			}
+		}
+	}
+	const TArray<TArray<FString>> Found = FMantleVehicleRims::Find(Body, RimBones, RimRadii, BodySections, RimNotes, &RimReach);
+	TArray<FString> Hidden;
+	for (int32 Index = 0; Index < Source.Wheels.Num() && Found.IsValidIndex(Index); ++Index)
+	{
+		if (Source.Wheels[Index].RimSections.IsEmpty())
+		{
+			Source.Wheels[Index].RimSections = Found[Index];
+			if (Source.Wheels[Index].RimRadius <= 0.f && RimReach.IsValidIndex(Index))
+			{
+				Source.Wheels[Index].RimRadius = static_cast<float>(RimReach[Index]);
+			}
+		}
+		for (const FString& Rim : Source.Wheels[Index].RimSections)
+		{
+			Hidden.AddUnique(Rim);
+		}
+	}
+	if (Hidden.Num() > 0)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Wheels: the rims are %s, so players can swap them for other wheels. Change this under Wheels > Rim Sections in the vehicle asset."), *FString::Join(Hidden, TEXT(", "))));
+	}
+	else if (Source.Wheels.Num() > 0)
+	{
+		OutNotes.Add(TEXT("Wheels: no section of the model is a wheel's rim on its own, so players cannot swap this car's wheels (nothing else changes). To allow it, give the rims their own material, named for them (rim or wheel), in your model."));
+	}
+	OutNotes.Append(RimNotes);
+}
+
 FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, UMantleVehicleSource& Source)
 {
 	return Convert(Mesh, Source, Mesh ? SurroundingsOfMesh(*Mesh) : FMantleVehicleSurroundings());
@@ -1310,67 +1374,9 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 		}
 	}
 
-	// Rims (vehicle-customization-plan.md section 3): the sections a wheel swap hides, where the creator set none. A rim the model has
-	// no section for leaves its wheel as it is: a car with its wheels welded into the body is simply not swappable.
-	{
-		TArray<FName> RimBones;
-		TArray<double> RimRadii;
-		for (const FMantleVehicleSourceWheel& Entry : Source.Wheels)
-		{
-			double Radius = Entry.Radius;
-			double Width = 0.0;
-			if (Radius <= 0.0)
-			{
-				MeasureWheel(Body, Entry.Bone, Radius, Width);
-			}
-			RimBones.Add(Entry.Bone);
-			RimRadii.Add(Radius);
-		}
-		TArray<FString> RimNotes;
-		TArray<double> RimReach;
-		const TArray<FString> BodySections = UniqueSectionNames(Body.MaterialNames);
-		// Rim sections the creator's source already has are kept, unless the model no longer has a section of that name (a re-import renamed a
-		// material): the publish would refuse it, so it is dropped here, said, and the wheel looks again.
-		for (FMantleVehicleSourceWheel& Entry : Source.Wheels)
-		{
-			const int32 Before = Entry.RimSections.Num();
-			Entry.RimSections.RemoveAll([&BodySections](const FString& Rim) { return !BodySections.Contains(Rim); });
-			if (Entry.RimSections.Num() != Before)
-			{
-				RimNotes.Add(FString::Printf(TEXT("Wheels: %s lists a rim section the model no longer has, so Mantle looked for the rims again."), *Entry.Bone.ToString()));
-				if (Entry.RimSections.IsEmpty())
-				{
-					Entry.RimRadius = 0.f;
-				}
-			}
-		}
-		const TArray<TArray<FString>> Found = FMantleVehicleRims::Find(Body, RimBones, RimRadii, BodySections, RimNotes, &RimReach);
-		TArray<FString> Hidden;
-		for (int32 Index = 0; Index < Source.Wheels.Num() && Found.IsValidIndex(Index); ++Index)
-		{
-			if (Source.Wheels[Index].RimSections.IsEmpty())
-			{
-				Source.Wheels[Index].RimSections = Found[Index];
-				if (Source.Wheels[Index].RimRadius <= 0.f && RimReach.IsValidIndex(Index))
-				{
-					Source.Wheels[Index].RimRadius = static_cast<float>(RimReach[Index]);
-				}
-			}
-			for (const FString& Rim : Source.Wheels[Index].RimSections)
-			{
-				Hidden.AddUnique(Rim);
-			}
-		}
-		if (Hidden.Num() > 0)
-		{
-			Result.Notes.Add(FString::Printf(TEXT("Wheels: the rims are %s, so players can swap them for other wheels. Change this under Wheels > Rim Sections in the vehicle asset."), *FString::Join(Hidden, TEXT(", "))));
-		}
-		else if (Source.Wheels.Num() > 0)
-		{
-			Result.Notes.Add(TEXT("Wheels: no section of the model is a wheel's rim on its own, so players cannot swap this car's wheels (nothing else changes). To allow it, give the rims their own material, named for them (rim or wheel), in your model."));
-		}
-		Result.Notes.Append(RimNotes);
-	}
+	// Rims (vehicle-customization-plan.md section 3): the sections a wheel swap hides, where the creator set none.
+	ApplyRims(Body, Source, Result.Notes);
+
 	Result.Notes.Append(SetupNotes);
 	Result.Notes.Append(PartNotes);
 

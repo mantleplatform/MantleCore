@@ -189,6 +189,12 @@ public:
 	 */
 	static bool MeasureWheel(const FMantleGlbMesh& Body, FName Bone, double& OutRadius, double& OutWidth);
 
+	/**
+	 * Finds the rim sections of Source's wheels in Body (FMantleVehicleRims) where a wheel has none, and each wheel's rim radius; says what it found in OutNotes.
+	 * A section the model no longer has is dropped from a wheel that listed it. Used by Convert, and by the vehicle builder on the car it has just made.
+	 */
+	static void ApplyRims(const FMantleGlbMesh& Body, UMantleVehicleSource& Source, TArray<FString>& OutNotes);
+
 	/** Fills Source from Mesh: its wheels (the recipe's naming), measured, and the schema's default tuning; Mesh's own surroundings (SurroundingsOfMesh). */
 	static FMantleVehicleConversion Convert(USkeletalMesh* Mesh, UMantleVehicleSource& Source);
 
