@@ -608,7 +608,7 @@ namespace MantleVehicleBuilderPrivate
 	// Mantle.Vehicle.BuildModel: what the Build a vehicle window's Build button does for a model that is worn as a skin, from the console or a script.
 	FAutoConsoleCommand BuildModelCommand(
 		TEXT("Mantle.Vehicle.BuildModel"),
-		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] "
+		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [paint=<text>] [notpaint=<text>] "
 			 "-- puts a static or skeletal mesh on the type's chassis (BuildFromModel), saves it under the folder (default /Game/MantleVehicles) and logs MANTLE_VEHICLE_BUILD_MODEL "
 			 "ok=<0|1> with the vehicle's path, its Size and every note. With no yaw or parts given Mantle chooses them. A name= that a vehicle already has is refused unless overwrite=1."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
@@ -623,6 +623,8 @@ namespace MantleVehicleBuilderPrivate
 			FMantleVehicleModelOptions Options;
 			FMantleVehicleModelMap Map;
 			bool bMapGiven = false;
+			FString PaintContains;
+			FString PaintNot;
 			for (int32 Index = 2; Index < Args.Num(); ++Index)
 			{
 				FString Key;
@@ -648,6 +650,15 @@ namespace MantleVehicleBuilderPrivate
 				{
 					Options.bOverwrite = Value == TEXT("1") || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
 				}
+				else if (Key.Equals(TEXT("paint"), ESearchCase::IgnoreCase))
+				{
+					// What a creator does in the paint step, for a script: tick every section of the model whose name has this text (and not notpaint's).
+					PaintContains = Value;
+				}
+				else if (Key.Equals(TEXT("notpaint"), ESearchCase::IgnoreCase))
+				{
+					PaintNot = Value;
+				}
 				else if (Key.StartsWith(TEXT("bone."), ESearchCase::IgnoreCase))
 				{
 					Map.Parts.Add(FName(*Key.RightChop(5)), FMantleVehicleModelPiece::OfBone(FName(*Value)));
@@ -667,6 +678,21 @@ namespace MantleVehicleBuilderPrivate
 			if (bMapGiven)
 			{
 				Options.Map = Map;
+			}
+			if (!PaintContains.IsEmpty())
+			{
+				TArray<FString> Ticked;
+				if (const USkeletalMesh* Skeletal = Cast<USkeletalMesh>(Asset))
+				{
+					for (const FString& Section : FMantleVehicleLights::SectionNames(Skeletal->GetMaterials()))
+					{
+						if (Section.Contains(PaintContains, ESearchCase::IgnoreCase) && (PaintNot.IsEmpty() || !Section.Contains(PaintNot, ESearchCase::IgnoreCase)))
+						{
+							Ticked.Add(Section);
+						}
+					}
+				}
+				Options.PaintedSections = Ticked;
 			}
 			const FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildFromModel(Asset, Args[1], Options);
 			FString Parts;
