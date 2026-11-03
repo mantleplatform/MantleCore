@@ -139,6 +139,10 @@ bool FMantleVehiclePresetApplyLeavesOthersTest::RunTest(const FString& Parameter
 	T.PassengerSeatLocation = FVector(4.0, 5.0, 6.0);
 	T.bTrunk = true;
 	T.TrunkYaw = 90.f;
+	T.bHood = true;
+	T.HoodYaw = 170.f;
+	T.bRearLeftDoor = true;
+	T.RearLeftDoor.Bone = TEXT("Door_RL");
 	T.bHasDriverDoor = true;
 	T.DriverDoor.Bone = TEXT("Door_L");
 	T.Collision.AddDefaulted();
@@ -159,6 +163,10 @@ bool FMantleVehiclePresetApplyLeavesOthersTest::RunTest(const FString& Parameter
 	TestTrue(TEXT("passenger seat location"), T.PassengerSeatLocation.Equals(FVector(4.0, 5.0, 6.0)));
 	TestTrue(TEXT("trunk is still on"), T.bTrunk);
 	TestEqual(TEXT("trunk yaw"), T.TrunkYaw, 90.f);
+	TestTrue(TEXT("hood is still on"), T.bHood);
+	TestEqual(TEXT("hood yaw"), T.HoodYaw, 170.f);
+	TestTrue(TEXT("rear left door is still on"), T.bRearLeftDoor);
+	TestEqual(TEXT("rear left door bone"), T.RearLeftDoor.Bone.ToString(), FString(TEXT("Door_RL")));
 	TestEqual(TEXT("driver door bone"), T.DriverDoor.Bone.ToString(), FString(TEXT("Door_L")));
 	TestEqual(TEXT("collision box count"), T.Collision.Num(), 1);
 	if (T.Collision.Num() == 1)

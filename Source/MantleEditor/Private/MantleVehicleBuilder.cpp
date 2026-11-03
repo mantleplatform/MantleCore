@@ -1406,6 +1406,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildAny(UObject* Model, const 
 			{
 				Out = Build(Cast<USkeletalMesh>(Source.Model), PresetId, Around);
 				LightOwnBody(Out, Options);
+				ApplyOwnHinges(Out, Options);
 			}
 			else
 			{
@@ -1420,6 +1421,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildAny(UObject* Model, const 
 	{
 		FMantleVehicleBuildResult Out = Build(Cast<USkeletalMesh>(Model), PresetId);
 		LightOwnBody(Out, Options);
+		ApplyOwnHinges(Out, Options);
 		return Out;
 	}
 	return BuildFromModel(Model, PresetId, Options);
@@ -1483,6 +1485,110 @@ void FMantleVehicleBuilder::LightOwnBody(FMantleVehicleBuildResult& Built, const
 	}
 	ApplyLights(*Source, Lights, Built.Notes);
 	if (Built.bSaved)
+	{
+		Built.bSaved = SaveVehicle(*Source, Built.SaveProblem);
+	}
+}
+
+void FMantleVehicleBuilder::ApplyHinges(UMantleVehicleSource& Source, const TConstArrayView<FMantleVehicleSkinnedHinge> Hinges, TArray<FString>& OutNotes)
+{
+	if (Hinges.Num() == 0)
+	{
+		return;
+	}
+	Source.Modify();
+	FMantleVehicleSourceTuning& T = Source.Tuning;
+	TArray<FString> Opens;
+	for (const FMantleVehicleSkinnedHinge& Found : Hinges)
+	{
+		FMantleVehicleSourceHinge Hinge;
+		Hinge.Bone = Found.Bone;
+		Hinge.Pivot = Found.Pivot;
+		Hinge.Axis = Found.Axis;
+		Hinge.Scale = static_cast<float>(Found.Scale);
+		const FString Label = FMantleVehicleChassisSkin::HingeLabel(Found.Part).ToString().ToLower();
+		switch (Found.Part)
+		{
+		case EMantleVehicleHingePart::DriverDoor:
+			if (!T.bSeatLocation)
+			{
+				OutNotes.Add(TEXT("The driver door was left shut: it belongs to the driver's seat, and this vehicle has none placed."));
+				continue;
+			}
+			T.bHasDriverDoor = true;
+			T.DriverDoor = Hinge;
+			break;
+		case EMantleVehicleHingePart::PassengerDoor:
+			if (!T.bPassengerSeat)
+			{
+				OutNotes.Add(TEXT("The passenger door was left shut: this vehicle has no passenger seat."));
+				continue;
+			}
+			T.bHasPassengerDoor = true;
+			T.PassengerDoor = Hinge;
+			break;
+		case EMantleVehicleHingePart::RearLeftDoor:
+			T.bRearLeftDoor = true;
+			T.RearLeftDoor = Hinge;
+			T.RearLeftDoorStand = Found.Stand;
+			T.RearLeftDoorYaw = static_cast<float>(Found.Yaw);
+			break;
+		case EMantleVehicleHingePart::RearRightDoor:
+			T.bRearRightDoor = true;
+			T.RearRightDoor = Hinge;
+			T.RearRightDoorStand = Found.Stand;
+			T.RearRightDoorYaw = static_cast<float>(Found.Yaw);
+			break;
+		case EMantleVehicleHingePart::Hood:
+			T.bHood = true;
+			T.HoodLid = Hinge;
+			T.HoodStand = Found.Stand;
+			T.HoodYaw = static_cast<float>(Found.Yaw);
+			break;
+		case EMantleVehicleHingePart::Trunk:
+			T.bTrunk = true;
+			T.TrunkLid = Hinge;
+			T.TrunkStand = Found.Stand;
+			T.TrunkYaw = static_cast<float>(Found.Yaw);
+			break;
+		}
+		Opens.Add(Label);
+	}
+	if (Opens.Num() == 0)
+	{
+		return;
+	}
+	FString List = Opens[0];
+	for (int32 Index = 1; Index < Opens.Num(); ++Index)
+	{
+		List += (Index == Opens.Num() - 1 ? TEXT(" and ") : TEXT(", ")) + Opens[Index];
+	}
+	OutNotes.Add(FString::Printf(TEXT("The %s open%s in the game."), *List, Opens.Num() == 1 ? TEXT("s") : TEXT("")));
+}
+
+void FMantleVehicleBuilder::ApplyOwnHinges(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options)
+{
+	UMantleVehicleSource* Source = Built.Source;
+	USkeletalMesh* Model = Source && Built.bOk ? Source->Body.LoadSynchronous() : nullptr;
+	if (!Model)
+	{
+		return;
+	}
+	FMantleVehicleModel Read;
+	FString Error;
+	if (!FMantleVehicleModel::Read(Model, Read, Error))
+	{
+		return;
+	}
+	const FMantleVehicleHingeMap Wanted = Options.Hinges.IsSet() ? Options.Hinges.GetValue() : FMantleVehicleChassisSkin::SuggestHinges(Read);
+	if (Wanted.IsEmpty())
+	{
+		return;
+	}
+	// The model keeps its own bones and is in its own space, so there is no turn, scale or move.
+	const TArray<FMantleVehicleSkinnedHinge> Found = FMantleVehicleChassisSkin::FindHingesOnModel(Read, FMantleVehicleModelPlacement(), Wanted, &Built.Notes);
+	ApplyHinges(*Source, Found, Built.Notes);
+	if (Found.Num() > 0 && Built.bSaved)
 	{
 		Built.bSaved = SaveVehicle(*Source, Built.SaveProblem);
 	}
@@ -1555,6 +1661,9 @@ bool FMantleVehicleBuilder::PrepareFromModel(UObject* ModelAsset, const FString&
 	{
 		Yaw = FMantleVehicleChassisSkin::SuggestMapAndYaw(Slots, Model, Map);
 	}
+
+	// Which of its bones are the doors, hood and trunk: the creator's choice, else what the bones' names say.
+	Map.Hinges = Options.Hinges.IsSet() ? Options.Hinges.GetValue() : FMantleVehicleChassisSkin::SuggestHinges(Model);
 
 	// The chassis for the model: the window's own when it has shaped one, else the type's sized to the model's bounds.
 	FMantleChassisSpec& Spec = Out.Spec;
@@ -1828,6 +1937,8 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	}
 	// Remembered with the vehicle, so a build again of this model finds it.
 	Out.Source->GetOutermost()->GetMetaData().SetValue(Out.Source, MantleVehicleBuilderPrivate::BuiltFromModelKey, *ModelPath);
+	// The model's doors, hood and trunk open: each is on a bone of its own in the body (Skin gave it one), and its hinge goes into the vehicle's settings.
+	ApplyHinges(*Out.Source, Skinned.Hinges, Out.Notes);
 	// A model that was split into a body and parts: the paint the creator ticked (else what looks like paint) goes onto whichever holds each painted material.
 	if (SplitParts.Num() > 0)
 	{

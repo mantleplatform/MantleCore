@@ -3,6 +3,7 @@
 #include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleChassisDocument.h"
 #include "MantleVehicleChassisFit.h"
+#include "MantleVehicleChassisMesh.h"
 #include "MantleVehicleChassisSkin.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleFit.h"
@@ -11,7 +12,10 @@
 #include "SMantleVehicleBuilder.h"
 #include "MantleVehicleScratchBody.h"
 
+#include "Animation/Skeleton.h"
 #include "AssetRegistry/AssetData.h"
+#include "Dom/JsonObject.h"
+#include "Engine/SkeletalMesh.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Misc/AutomationTest.h"
 
@@ -643,6 +647,346 @@ bool FMantleVehicleChassisSkinTwinTest::RunTest(const FString& Parameters)
 	const FMantleChassisSpec TwinBigger = FMantleChassisSpec::Scaled(Twin, 1.1);
 	TestTrue(*FString::Printf(TEXT("and at 1.1 (%.0f against %.0f N)"), TotalThrust(TwinBigger, TwinEngines), TotalThrust(SingleBigger, SingleEngines)),
 		FMath::IsNearlyEqual(TotalThrust(TwinBigger, TwinEngines), TotalThrust(SingleBigger, SingleEngines), 1.0));
+	return true;
+}
+
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantleVehicleHingeTestPrivate
+{
+	/**
+	 * A car as a skeletal model, nose on +X: a body on bone 0, a door on each side front and rear, a bonnet and a boot, each on a bone named as GTA's are; a window on a bone
+	 * under the driver's door, and a door handle on a bone that is not a door (it stays on the body).
+	 */
+	FMantleVehicleModel HingeCar()
+	{
+		using namespace MantleVehicleChassisSkinTestPrivate;
+		FMantleVehicleModel Model = SkeletalModel({ { FName(TEXT("chassis_dummy")), INDEX_NONE }, { FName(TEXT("door_dside_f")), 0 }, { FName(TEXT("door_pside_f")), 0 },
+			{ FName(TEXT("door_dside_r")), 0 }, { FName(TEXT("door_pside_r")), 0 }, { FName(TEXT("bonnet")), 0 }, { FName(TEXT("boot")), 0 }, { FName(TEXT("window_dside_f")), 1 },
+			{ FName(TEXT("doorhandle")), 0 } },
+			{ FVector(0, 0, 0), FVector(105, -95, 100), FVector(105, 95, 100), FVector(5, -95, 100), FVector(5, 95, 100), FVector(110, 0, 100), FVector(-120, 0, 100), FVector(100, -95, 110),
+			FVector(60, -96, 100) });
+		AddBox(Model, FVector3f(-220.f, -90.f, 20.f), FVector3f(220.f, 90.f, 70.f), 0, 0);       // the body
+		AddBox(Model, FVector3f(30.f, -96.f, 70.f), FVector3f(110.f, -86.f, 130.f), 1, 0);       // the driver's door
+		AddBox(Model, FVector3f(30.f, 86.f, 70.f), FVector3f(110.f, 96.f, 130.f), 2, 0);         // the passenger's door
+		AddBox(Model, FVector3f(-70.f, -96.f, 70.f), FVector3f(10.f, -86.f, 130.f), 3, 0);       // the rear left door
+		AddBox(Model, FVector3f(-70.f, 86.f, 70.f), FVector3f(10.f, 96.f, 130.f), 4, 0);         // the rear right door
+		AddBox(Model, FVector3f(110.f, -70.f, 100.f), FVector3f(220.f, 70.f, 106.f), 5, 0);      // the bonnet
+		AddBox(Model, FVector3f(-220.f, -70.f, 100.f), FVector3f(-120.f, 70.f, 106.f), 6, 0);    // the boot
+		AddBox(Model, FVector3f(40.f, -98.f, 100.f), FVector3f(100.f, -96.f, 125.f), 7, 0);      // the driver's window, under the door's bone
+		AddBox(Model, FVector3f(55.f, -98.f, 90.f), FVector3f(65.f, -96.f, 94.f), 8, 0);         // the handle
+		CloseSections(Model, { 9 * 12 });
+		return Model;
+	}
+
+	/** How many vertices of Body's first LOD ride Bone. */
+	int32 VerticesOn(const FMantleSkinnedMesh& Body, const int32 Bone)
+	{
+		int32 Count = 0;
+		const FMantleSkinnedMeshLOD& LOD = Body.LODs[0];
+		for (int32 Vertex = 0; Vertex < LOD.NumVertices(); ++Vertex)
+		{
+			Count += LOD.InfluenceBones[Vertex] == Bone ? 1 : 0;
+		}
+		return Count;
+	}
+
+	const FMantleVehicleSkinnedHinge* FindHinge(const FMantleVehicleSkinned& Skinned, const EMantleVehicleHingePart Part)
+	{
+		return Skinned.Hinges.FindByPredicate([Part](const FMantleVehicleSkinnedHinge& Hinge) { return Hinge.Part == Part; });
+	}
+
+	/** A skeletal model with only bones (no triangles), for the name suggestions. */
+	FMantleVehicleModel NamedBones(const TArray<FString>& Names)
+	{
+		using namespace MantleVehicleChassisSkinTestPrivate;
+		TArray<TPair<FName, int32>> Bones;
+		TArray<FVector> Positions;
+		Bones.Add({ FName(TEXT("root")), INDEX_NONE });
+		Positions.Add(FVector::ZeroVector);
+		for (const FString& Name : Names)
+		{
+			Bones.Add({ FName(*Name), 0 });
+			Positions.Add(FVector::ZeroVector);
+		}
+		return SkeletalModel(Bones, Positions);
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleSuggestHingesTest,
+	"Mantle.Vehicle.ChassisSkin.SuggestHingesFromNames",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleSuggestHingesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleHingeTestPrivate;
+	const auto Is = [this](const FMantleVehicleHingeMap& Map, const EMantleVehicleHingePart Part, const TCHAR* Bone, const TCHAR* What)
+	{
+		TestEqual(*FString::Printf(TEXT("%s is the bone %s"), What, Bone), Map.BoneOf(Part).ToString(), FString(Bone));
+	};
+
+	// GTA's names.
+	const FMantleVehicleHingeMap Gta = FMantleVehicleChassisSkin::SuggestHinges(NamedBones({ TEXT("chassis"), TEXT("door_dside_f"), TEXT("door_pside_f"), TEXT("door_dside_r"),
+		TEXT("door_pside_r"), TEXT("bonnet"), TEXT("boot"), TEXT("wheel_lf") }));
+	TestEqual(TEXT("all six are found from GTA's names"), Gta.Bones.Num(), 6);
+	Is(Gta, EMantleVehicleHingePart::DriverDoor, TEXT("door_dside_f"), TEXT("the driver door"));
+	Is(Gta, EMantleVehicleHingePart::PassengerDoor, TEXT("door_pside_f"), TEXT("the passenger door"));
+	Is(Gta, EMantleVehicleHingePart::RearLeftDoor, TEXT("door_dside_r"), TEXT("the rear left door"));
+	Is(Gta, EMantleVehicleHingePart::RearRightDoor, TEXT("door_pside_r"), TEXT("the rear right door"));
+	Is(Gta, EMantleVehicleHingePart::Hood, TEXT("bonnet"), TEXT("the hood"));
+	Is(Gta, EMantleVehicleHingePart::Trunk, TEXT("boot"), TEXT("the trunk"));
+	TestEqual(TEXT("nothing is flipped by a guess"), Gta.Flipped.Num(), 0);
+
+	// The usual names, in any case, with a number or a dummy on the end.
+	const FMantleVehicleHingeMap Plain = FMantleVehicleChassisSkin::SuggestHinges(NamedBones({ TEXT("Door_FL"), TEXT("door_fr.001"), TEXT("Door_RL_dummy"), TEXT("DOOR_RR"), TEXT("Hood"),
+		TEXT("Tailgate") }));
+	TestEqual(TEXT("all six are found from the usual names"), Plain.Bones.Num(), 6);
+	Is(Plain, EMantleVehicleHingePart::DriverDoor, TEXT("Door_FL"), TEXT("the driver door"));
+	Is(Plain, EMantleVehicleHingePart::PassengerDoor, TEXT("door_fr.001"), TEXT("the passenger door"));
+	Is(Plain, EMantleVehicleHingePart::RearLeftDoor, TEXT("Door_RL_dummy"), TEXT("the rear left door"));
+	Is(Plain, EMantleVehicleHingePart::RearRightDoor, TEXT("DOOR_RR"), TEXT("the rear right door"));
+	Is(Plain, EMantleVehicleHingePart::Hood, TEXT("Hood"), TEXT("the hood"));
+	Is(Plain, EMantleVehicleHingePart::Trunk, TEXT("Tailgate"), TEXT("the trunk"));
+	const FMantleVehicleHingeMap Swapped = FMantleVehicleChassisSkin::SuggestHinges(NamedBones({ TEXT("door_lf"), TEXT("door_rf"), TEXT("door_lr"), TEXT("trunk") }));
+	Is(Swapped, EMantleVehicleHingePart::DriverDoor, TEXT("door_lf"), TEXT("the driver door by door_lf"));
+	Is(Swapped, EMantleVehicleHingePart::PassengerDoor, TEXT("door_rf"), TEXT("the passenger door by door_rf"));
+	Is(Swapped, EMantleVehicleHingePart::RearLeftDoor, TEXT("door_lr"), TEXT("the rear left door by door_lr"));
+	Is(Swapped, EMantleVehicleHingePart::Trunk, TEXT("trunk"), TEXT("the trunk"));
+
+	// Negative controls: a handle or a frame is not a door, a static model has no bones, and the root is never a door.
+	const FMantleVehicleHingeMap Handles = FMantleVehicleChassisSkin::SuggestHinges(NamedBones({ TEXT("doorhandle"), TEXT("door_handle_fl"), TEXT("doorframe"), TEXT("hoodornament"),
+		TEXT("trunk_latch") }));
+	TestTrue(TEXT("doorhandle, door_handle_fl, doorframe and the like are not parts that open"), Handles.IsEmpty());
+	FMantleVehicleModel Static = NamedBones({ TEXT("door_dside_f") });
+	Static.bSkeletal = false;
+	TestTrue(TEXT("a model that is not skeletal has nothing to open"), FMantleVehicleChassisSkin::SuggestHinges(Static).IsEmpty());
+	FMantleVehicleModel RootDoor = NamedBones({});
+	RootDoor.Bones[0].Name = FName(TEXT("door_dside_f"));
+	TestTrue(TEXT("the root bone is never picked"), FMantleVehicleChassisSkin::SuggestHinges(RootDoor).IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleSkinKeepsHingesTest,
+	"Mantle.Vehicle.ChassisSkin.SkinKeepsDoorBones",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleSkinKeepsHingesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleChassisSkinTestPrivate;
+	using namespace MantleVehicleHingeTestPrivate;
+	FMantleChassisSpec Spec;
+	FMantleVehicleAsset Gray;
+	if (!Load(*this, TEXT("sedan"), Spec, Gray))
+	{
+		return false;
+	}
+	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Spec, Gray.Body);
+	const FMantleVehicleModel Model = HingeCar();
+	FMantleVehicleModelMap Map;
+	Map.Hinges = FMantleVehicleChassisSkin::SuggestHinges(Model);
+	TestEqual(TEXT("the model's six parts are found by name"), Map.Hinges.Bones.Num(), 6);
+	const FMantleVehicleModelPlacement Placement = FMantleVehicleChassisSkin::FitPlacement(Spec, Gray.Body, Model, 0.0, Map);
+	FMantleVehicleSkinned Skinned;
+	FString Error;
+	if (!TestTrue(*FString::Printf(TEXT("the model skins (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Gray.Body, Slots, Model, Placement, Map, Skinned, Error)))
+	{
+		return false;
+	}
+
+	// The chassis's bones are all still there, in order, and the six model bones come after them, each a child of the root.
+	const FMantleSkinnedMesh& Body = Skinned.Body;
+	TestEqual(TEXT("six bones were added to the chassis's"), Body.Bones.Num(), Gray.Body.Bones.Num() + 6);
+	bool bChassisKept = true;
+	for (int32 Bone = 0; Bone < Gray.Body.Bones.Num(); ++Bone)
+	{
+		bChassisKept &= Body.Bones[Bone].Name == Gray.Body.Bones[Bone].Name && Body.Bones[Bone].ParentIndex == Gray.Body.Bones[Bone].ParentIndex;
+	}
+	TestTrue(TEXT("the chassis's own bones keep their order and parents"), bChassisKept);
+	TestEqual(TEXT("six hinges come out"), Skinned.Hinges.Num(), 6);
+	const TCHAR* const Names[] = { TEXT("door_dside_f"), TEXT("door_pside_f"), TEXT("door_dside_r"), TEXT("door_pside_r"), TEXT("bonnet"), TEXT("boot") };
+	const int32 Expected[] = { 2 * 24, 24, 24, 24, 24, 24 };
+	for (int32 Index = 0; Index < 6; ++Index)
+	{
+		const int32 Bone = Body.Bones.IndexOfByPredicate([&Names, Index](const FMantleSkinnedMeshBone& Candidate) { return Candidate.Name == FName(Names[Index]); });
+		if (!TestTrue(*FString::Printf(TEXT("the body has a bone %s"), Names[Index]), Bone >= Gray.Body.Bones.Num()))
+		{
+			continue;
+		}
+		TestEqual(*FString::Printf(TEXT("%s hangs from the root"), Names[Index]), Body.Bones[Bone].ParentIndex, 0);
+		TestEqual(*FString::Printf(TEXT("%s's vertices ride it (a window under a door's bone rides it too)"), Names[Index]), VerticesOn(Body, Bone), Expected[Index]);
+		TestTrue(*FString::Printf(TEXT("%s has no turn in its pose"), Names[Index]), Body.ReferencePose[Bone].GetRotation().Equals(FQuat::Identity, 0.0001));
+	}
+	TestEqual(TEXT("the body, the door handle and the chassis's own bones carry the rest"), VerticesOn(Body, 0), 2 * 24);
+
+	// The hinges: where they turn, which way, and where someone stands to open them.
+	const FBox3f Box = Body.ComputeBounds(0);
+	const FMantleVehicleSkinnedHinge* Driver = FindHinge(Skinned, EMantleVehicleHingePart::DriverDoor);
+	const FMantleVehicleSkinnedHinge* Passenger = FindHinge(Skinned, EMantleVehicleHingePart::PassengerDoor);
+	const FMantleVehicleSkinnedHinge* Hood = FindHinge(Skinned, EMantleVehicleHingePart::Hood);
+	const FMantleVehicleSkinnedHinge* Trunk = FindHinge(Skinned, EMantleVehicleHingePart::Trunk);
+	if (!TestTrue(TEXT("the driver door, passenger door, hood and trunk have hinges"), Driver && Passenger && Hood && Trunk))
+	{
+		return false;
+	}
+	TestTrue(TEXT("the driver door turns about an upright axis"), Driver->Axis.Equals(FVector(0, 0, 1)));
+	TestTrue(TEXT("the passenger door turns the other way about it"), Passenger->Axis.Equals(FVector(0, 0, -1)));
+	TestTrue(TEXT("the hood turns about a sideways axis"), Hood->Axis.Equals(FVector(0, -1, 0)));
+	TestTrue(TEXT("and the trunk the other way"), Trunk->Axis.Equals(FVector(0, 1, 0)));
+	TestEqual(TEXT("a door turns at three quarters"), Driver->Scale, 0.75);
+	TestEqual(TEXT("a lid at one"), Hood->Scale, 1.0);
+	const FVector DriverBone = Placement.Point(Model.BonePositions[1]);
+	TestTrue(*FString::Printf(TEXT("the door's hinge is its bone, which sits at its front (%s against %s)"), *Driver->Pivot.ToString(), *DriverBone.ToString()), Driver->Pivot.Equals(DriverBone, 0.5));
+	TestTrue(TEXT("the pose of its bone is the hinge"), Body.ReferencePose[Body.Bones.IndexOfByPredicate([](const FMantleSkinnedMeshBone& Candidate) { return Candidate.Name == FName(TEXT("door_dside_f")); })]
+		.GetLocation().Equals(Driver->Pivot, 0.01));
+	TestTrue(TEXT("the hood's hinge is at its rear edge, on top"), Hood->Pivot.X < Box.Max.X && Hood->Pivot.Z > 0.0 && FMath::Abs(Hood->Pivot.Y) < 1.0);
+	TestTrue(TEXT("the trunk's hinge is at its front edge, on top"), Trunk->Pivot.X < Hood->Pivot.X && Trunk->Pivot.Z > 0.0);
+	TestEqual(TEXT("everyone stands on the ground"), Driver->Stand.Z + Passenger->Stand.Z + Hood->Stand.Z + Trunk->Stand.Z, 0.0);
+	TestTrue(*FString::Printf(TEXT("the driver door's stand is 60 cm out on the left, facing the car (%s, yaw %.0f)"), *Driver->Stand.ToString(), Driver->Yaw),
+		FMath::IsNearlyEqual(Driver->Stand.Y, static_cast<double>(Box.Min.Y) - 60.0, 0.5) && Driver->Yaw == 90.0);
+	TestTrue(TEXT("the passenger door's is 60 cm out on the right, facing the car"), FMath::IsNearlyEqual(Passenger->Stand.Y, static_cast<double>(Box.Max.Y) + 60.0, 0.5) && Passenger->Yaw == -90.0);
+	TestTrue(TEXT("the hood's is 60 cm in front, facing back"), FMath::IsNearlyEqual(Hood->Stand.X, static_cast<double>(Box.Max.X) + 60.0, 0.5) && Hood->Yaw == 180.0);
+	TestTrue(TEXT("the trunk's is 60 cm behind, facing forward"), FMath::IsNearlyEqual(Trunk->Stand.X, static_cast<double>(Box.Min.X) - 60.0, 0.5) && Trunk->Yaw == 0.0);
+
+	// Flipped, the hood turns the other way and nothing else changes.
+	FMantleVehicleModelMap Flipped = Map;
+	Flipped.Hinges.Flipped.Add(EMantleVehicleHingePart::Hood);
+	FMantleVehicleSkinned Again;
+	if (TestTrue(TEXT("the model skins again flipped"), FMantleVehicleChassisSkin::Skin(Gray.Body, Slots, Model, Placement, Flipped, Again, Error)))
+	{
+		const FMantleVehicleSkinnedHinge* FlippedHood = FindHinge(Again, EMantleVehicleHingePart::Hood);
+		const FMantleVehicleSkinnedHinge* SameTrunk = FindHinge(Again, EMantleVehicleHingePart::Trunk);
+		TestTrue(TEXT("the flipped hood's axis is reversed"), FlippedHood && FlippedHood->Axis.Equals(FVector(0, 1, 0)));
+		TestTrue(TEXT("the trunk's is not"), SameTrunk && SameTrunk->Axis.Equals(FVector(0, 1, 0)));
+	}
+
+	// Negative controls: a bone the model does not have opens nothing and says so; a bone the chassis already has the name of is renamed, not duplicated.
+	FMantleVehicleModelMap Missing;
+	Missing.Hinges.Bones.Add(EMantleVehicleHingePart::Hood, FName(TEXT("no_such_bone")));
+	FMantleVehicleSkinned None;
+	if (TestTrue(TEXT("a model skins with a bone that is not there"), FMantleVehicleChassisSkin::Skin(Gray.Body, Slots, Model, Placement, Missing, None, Error)))
+	{
+		TestEqual(TEXT("it adds no bone"), None.Body.Bones.Num(), Gray.Body.Bones.Num());
+		TestEqual(TEXT("it makes no hinge"), None.Hinges.Num(), 0);
+		TestTrue(TEXT("and says why"), None.Notes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("no_such_bone")); }));
+	}
+	FMantleVehicleModel Clash = Model;
+	Clash.Bones[5].Name = Gray.Body.Bones.Last().Name;
+	FMantleVehicleModelMap ClashMap;
+	ClashMap.Hinges.Bones.Add(EMantleVehicleHingePart::Hood, Clash.Bones[5].Name);
+	FMantleVehicleSkinned Renamed;
+	if (TestTrue(TEXT("a model with a bone named like a chassis bone skins"), FMantleVehicleChassisSkin::Skin(Gray.Body, Slots, Clash, Placement, ClashMap, Renamed, Error)))
+	{
+		const FMantleVehicleSkinnedHinge* ClashHood = FindHinge(Renamed, EMantleVehicleHingePart::Hood);
+		TestTrue(TEXT("its hinge bone has a name of its own"), ClashHood && ClashHood->Bone != Gray.Body.Bones.Last().Name && Renamed.Body.Bones.Num() == Gray.Body.Bones.Num() + 1);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleHingesPublishTest,
+	"Mantle.Vehicle.ChassisSkin.AllSixHingesPublish",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleHingesPublishTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleChassisSkinTestPrivate;
+	using namespace MantleVehicleHingeTestPrivate;
+	FMantleChassisSpec Spec;
+	FMantleVehicleAsset Gray;
+	if (!Load(*this, TEXT("sedan"), Spec, Gray))
+	{
+		return false;
+	}
+	const TArray<FMantleVehiclePartSlot> Slots = FMantleVehicleChassisSkin::PartSlots(Spec, Gray.Body);
+	const FMantleVehicleModel Model = HingeCar();
+	FMantleVehicleModelMap Map;
+	Map.Hinges = FMantleVehicleChassisSkin::SuggestHinges(Model);
+	const FMantleVehicleModelPlacement Placement = FMantleVehicleChassisSkin::FitPlacement(Spec, Gray.Body, Model, 0.0, Map);
+	FMantleVehicleSkinned Skinned;
+	FString Error;
+	if (!TestTrue(*FString::Printf(TEXT("the model skins (%s)"), *Error), FMantleVehicleChassisSkin::Skin(Gray.Body, Slots, Model, Placement, Map, Skinned, Error)))
+	{
+		return false;
+	}
+	// The body as a mesh, as a build makes it, and a vehicle that wears it with both seats.
+	const FString MeshName = FString::Printf(TEXT("HingeBody%s"), *FGuid::NewGuid().ToString(EGuidFormats::Digits).Left(8));
+	USkeletalMesh* Mesh = FMantleVehicleChassisMesh::Create(Skinned.Body, TEXT("/Temp/MantleHingeTest"), MeshName, Error, &Skinned.Materials, &Skinned.Extras);
+	if (!TestNotNull(*FString::Printf(TEXT("the body becomes a mesh (%s)"), *Error), Mesh))
+	{
+		return false;
+	}
+	ON_SCOPE_EXIT
+	{
+		if (USkeleton* Skeleton = Mesh->GetSkeleton())
+		{
+			Skeleton->ClearFlags(RF_Public | RF_Standalone);
+			Skeleton->MarkAsGarbage();
+		}
+		Mesh->ClearFlags(RF_Public | RF_Standalone);
+		Mesh->MarkAsGarbage();
+	};
+	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	Source->Body = Mesh;
+	Source->Tuning.bSeatLocation = true;
+	Source->Tuning.bPassengerSeat = true;
+	TArray<FString> Notes;
+	FMantleVehicleBuilder::ApplyHinges(*Source, Skinned.Hinges, Notes);
+	const FMantleVehicleSourceTuning& T = Source->Tuning;
+	TestTrue(TEXT("all six are on"), T.bHasDriverDoor && T.bHasPassengerDoor && T.bRearLeftDoor && T.bRearRightDoor && T.bHood && T.bTrunk);
+	TestEqual(TEXT("the driver door is on its bone"), T.DriverDoor.Bone.ToString(), FString(TEXT("door_dside_f")));
+	TestEqual(TEXT("the hood's stand faces back"), T.HoodYaw, 180.f);
+	TestEqual(TEXT("the rear right door's stand faces the car"), T.RearRightDoorYaw, -90.f);
+	TestTrue(TEXT("the build says what opens, in one plain sentence"), Notes.ContainsByPredicate([](const FString& Note)
+	{
+		return Note.Contains(TEXT("driver door")) && Note.Contains(TEXT("hood")) && Note.Contains(TEXT("trunk")) && Note.EndsWith(TEXT("open in the game."));
+	}));
+
+	// The check finds nothing wrong with any of them (the vehicle has no wheels and so on, which are not what is asked here).
+	const auto AboutParts = [](const FMantleValidationIssue& Issue)
+	{
+		return Issue.Problem.Contains(TEXT("Door")) || Issue.Problem.Contains(TEXT("Hood")) || Issue.Problem.Contains(TEXT("Trunk")) || Issue.Problem.Contains(TEXT("hinge"));
+	};
+	TArray<FMantleValidationIssue> Issues;
+	FMantleVehicleConverter::CheckSource(Source, FString(), Issues);
+	TestFalse(TEXT("the check has nothing to say about the doors, the hood or the trunk"), Issues.ContainsByPredicate(AboutParts));
+
+	// Negative control, so that silence above means something: a hinge on a bone the body does not have is an error.
+	Source->Tuning.DriverDoor.Bone = FName(TEXT("no_such_bone"));
+	Issues.Reset();
+	FMantleVehicleConverter::CheckSource(Source, FString(), Issues);
+	TestTrue(TEXT("a door on a bone the body does not have is refused"), Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+	{
+		return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("Driver Door")) && Issue.Problem.Contains(TEXT("does not have"));
+	}));
+	Source->Tuning.DriverDoor.Bone = FName(TEXT("door_dside_f"));
+
+	// The document carries each, in the places the schema has them.
+	FString Why;
+	const TSharedRef<FJsonObject> Doc = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>(), &Why);
+	const TSharedPtr<FJsonObject>* Seat = nullptr;
+	const TSharedPtr<FJsonObject>* Passenger = nullptr;
+	TestTrue(TEXT("seat.door is written"), Doc->TryGetObjectField(TEXT("seat"), Seat) && Seat && (*Seat)->HasField(TEXT("door")));
+	TestTrue(TEXT("passengerSeat.door is written"), Doc->TryGetObjectField(TEXT("passengerSeat"), Passenger) && Passenger && (*Passenger)->HasField(TEXT("door")));
+	const auto HasOpening = [this, &Doc](const TCHAR* Key, const TCHAR* Hinge)
+	{
+		const TSharedPtr<FJsonObject>* Part = nullptr;
+		const bool bThere = Doc->TryGetObjectField(Key, Part) && Part;
+		TestTrue(*FString::Printf(TEXT("%s is written"), Key), bThere);
+		if (bThere)
+		{
+			TestTrue(*FString::Printf(TEXT("%s has its hinge (%s), stand and yaw"), Key, Hinge), (*Part)->HasField(Hinge) && (*Part)->HasField(TEXT("stand")) && (*Part)->HasField(TEXT("yaw")));
+		}
+	};
+	HasOpening(TEXT("rearLeftDoor"), TEXT("door"));
+	HasOpening(TEXT("rearRightDoor"), TEXT("door"));
+	HasOpening(TEXT("hood"), TEXT("lid"));
+	HasOpening(TEXT("trunk"), TEXT("lid"));
+
+	// A part left out stays out of the document.
+	Source->Tuning.bHood = false;
+	const TSharedRef<FJsonObject> Without = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>(), &Why);
+	TestFalse(TEXT("a hood that is off is not written"), Without->HasField(TEXT("hood")));
 	return true;
 }
 

@@ -28,9 +28,9 @@ struct FAssetData;
 class FScopedTransaction;
 
 /**
- * Tools > Mantle > Build a vehicle...: seven short steps, one decision each, the way the weapon builder goes. Pick what kind of vehicle it is (a card for every
+ * Tools > Mantle > Build a vehicle...: eight short steps, one decision each, the way the weapon builder goes. Pick what kind of vehicle it is (a card for every
  * publishable preset). Choose your vehicle's model: a Static or Skeletal Mesh, a vehicle Blueprint, or a file from your computer; there is always a model. Check the fit:
- * which way it faces, its size, which of its parts are wheels, propellers or rotors, and how it feels to drive. Seats and paint. Liveries: images laid over the paint, each named,
+ * which way it faces, its size, which of its parts are wheels, propellers or rotors, and how it feels to drive. Seats and paint. Doors, hood and trunk: which bone of the model is each, so they open. Liveries: images laid over the paint, each named,
  * with the one the car starts in and a guide to paint them on. The Thumbnail every uploader has.
  * Then build it, put it in your level and drive it. From the second step on, the picture shows the creator's own model on the vehicle's frame
  * (FMantleVehicleBuilder::MakeModelPreview) with a dot on each wheel; there is no stand-in vehicle. The result, good or bad, shows in the window; there are no dialogs.
@@ -65,11 +65,12 @@ public:
 
 private:
 	TArray<FMantleBuilderStep> MakeSteps();
-	// The seven steps.
+	// The eight steps.
 	TSharedRef<SWidget> MakeTypeStep();
 	TSharedRef<SWidget> MakeModelStep();
 	TSharedRef<SWidget> MakeFitStep();
 	TSharedRef<SWidget> MakeSeatsAndPaintStep();
+	TSharedRef<SWidget> MakeDoorsStep();
 	TSharedRef<SWidget> MakeLiveriesStep();
 	TSharedRef<SWidget> MakeThumbnailStep();
 	TSharedRef<SWidget> MakeBuildStep();
@@ -168,6 +169,14 @@ private:
 	/** Writes the paint ticks, the lights and the "no inside" choice into a built vehicle. */
 	void ApplyChoices(UMantleVehicleSource& Source);
 
+	// Doors, hood and trunk.
+	/** Picks the model's bone for a part that opens (an unset name: it does not open); what was built is of the old choice. */
+	void SetHingeBone(EMantleVehicleHingePart Part, FName Bone);
+	/** Flips the way a part swings. */
+	void SetHingeFlip(EMantleVehicleHingePart Part, bool bFlipped);
+	/** The rows of the Doors step, made again for the model picked and the choice made. */
+	void RebuildDoorRows();
+
 	// Lights.
 	/** One light's row: its name and the body sections that glow as it, picked from a menu of every section. */
 	TSharedRef<SWidget> MakeLightRow(EMantleLightKind Kind);
@@ -264,6 +273,13 @@ private:
 	FMantleVehicleTypeMatch TypeMatch;
 	TArray<FMantleVehiclePartSlot> PartSlots;
 	FMantleVehicleModelMap PartMap;
+	/** Which of the model's bones are its doors, hood and trunk and which are flipped: Mantle's suggestion from the bones' names (FMantleVehicleChassisSkin::SuggestHinges) until the creator changes one. */
+	FMantleVehicleHingeMap HingeChoice;
+	/** The rows of the Doors step. */
+	TSharedPtr<SVerticalBox> DoorRowsBox;
+	/** The bones a Doors row's list offers, None first, and the bone each stands for (kept alive for as long as the rows are). */
+	TArray<TSharedPtr<FString>> HingeChoices;
+	TArray<FName> HingeValues;
 	double ModelYaw = 0.0;
 	/** What Mantle proposed for the frame's size from the model, in plain words. */
 	FString ProposalText;

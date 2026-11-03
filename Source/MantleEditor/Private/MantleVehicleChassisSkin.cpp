@@ -1283,6 +1283,321 @@ FMantleVehicleModelPlacement FMantleVehicleChassisSkin::FitPlacement(const FMant
 	return Placement;
 }
 
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantleVehicleChassisSkinPrivate
+{
+	/** A part that opens whose bone the model has. */
+	struct FResolvedHinge
+	{
+		EMantleVehicleHingePart Part = EMantleVehicleHingePart::DriverDoor;
+		int32 ModelBone = INDEX_NONE;
+	};
+
+	/** The parts of Hinges whose bone Model has (not its root), in the window's order; what is left out is said in OutNotes. */
+	TArray<FResolvedHinge> ResolveHingeBones(const FMantleVehicleModel& Model, const FMantleVehicleHingeMap& Hinges, TArray<FString>* OutNotes)
+	{
+		TArray<FResolvedHinge> Out;
+		if (!Model.bSkeletal)
+		{
+			return Out;
+		}
+		for (const EMantleVehicleHingePart Part : FMantleVehicleChassisSkin::HingeParts())
+		{
+			const FName Bone = Hinges.BoneOf(Part);
+			if (Bone.IsNone())
+			{
+				continue;
+			}
+			const int32 ModelBone = Model.FindBone(Bone);
+			if (ModelBone == INDEX_NONE || ModelBone == 0)
+			{
+				if (OutNotes)
+				{
+					OutNotes->Add(FString::Printf(TEXT("Your model has no bone called %s that can open, so its %s will not open."), *Bone.ToString(),
+						*FMantleVehicleChassisSkin::HingeLabel(Part).ToString().ToLower()));
+				}
+				continue;
+			}
+			FResolvedHinge& Added = Out.AddDefaulted_GetRef();
+			Added.Part = Part;
+			Added.ModelBone = ModelBone;
+		}
+		return Out;
+	}
+
+	/** For each model bone, which of Resolved it rides (an index into it): itself, else the nearest ancestor that is one; INDEX_NONE for none. Parents come first in the table. */
+	TArray<int32> HingeOfBones(const FMantleVehicleModel& Model, const TArray<FResolvedHinge>& Resolved)
+	{
+		TArray<int32> Out;
+		Out.Init(INDEX_NONE, Model.Bones.Num());
+		for (int32 Bone = 0; Bone < Model.Bones.Num(); ++Bone)
+		{
+			const int32 Parent = Model.Bones[Bone].ParentIndex;
+			Out[Bone] = Parent >= 0 && Parent < Bone ? Out[Parent] : INDEX_NONE;
+			for (int32 Index = 0; Index < Resolved.Num(); ++Index)
+			{
+				if (Resolved[Index].ModelBone == Bone)
+				{
+					Out[Bone] = Index;
+					break;
+				}
+			}
+		}
+		return Out;
+	}
+
+	/** Wanted, or Wanted with a suffix when a bone of Bones already has the name (names compare without regard to case). */
+	FName UniqueBoneName(const TArray<FMantleSkinnedMeshBone>& Bones, const FName Wanted)
+	{
+		const auto Taken = [&Bones](const FName Name)
+		{
+			return Bones.ContainsByPredicate([Name](const FMantleSkinnedMeshBone& Bone) { return Bone.Name == Name; });
+		};
+		if (!Taken(Wanted))
+		{
+			return Wanted;
+		}
+		const FName Suffixed(*FString::Printf(TEXT("%s_hinge"), *Wanted.ToString()));
+		if (!Taken(Suffixed))
+		{
+			return Suffixed;
+		}
+		for (int32 Number = 2; Number < 1000; ++Number)
+		{
+			const FName Numbered(*FString::Printf(TEXT("%s_hinge_%d"), *Wanted.ToString(), Number));
+			if (!Taken(Numbered))
+			{
+				return Numbered;
+			}
+		}
+		return Suffixed;
+	}
+
+	/** A bone's name set down to the word that says what it is: lowercase, "-" and spaces as "_", a "bone_" or "jnt_" at the front and a number, "_dummy" or "_jnt" at the end dropped. */
+	FString PlainBoneName(const FName Bone)
+	{
+		FString Name = Bone.ToString().ToLower();
+		Name.ReplaceInline(TEXT("-"), TEXT("_"));
+		Name.ReplaceInline(TEXT(" "), TEXT("_"));
+		for (const TCHAR* Prefix : { TEXT("bone_"), TEXT("jnt_"), TEXT("joint_") })
+		{
+			if (Name.StartsWith(Prefix))
+			{
+				Name.RightChopInline(FCString::Strlen(Prefix));
+			}
+		}
+		bool bChanged = true;
+		while (bChanged)
+		{
+			bChanged = false;
+			while (Name.Len() > 0 && (FChar::IsDigit(Name[Name.Len() - 1]) || Name[Name.Len() - 1] == TEXT('_') || Name[Name.Len() - 1] == TEXT('.')))
+			{
+				Name.LeftChopInline(1);
+				bChanged = true;
+			}
+			for (const TCHAR* Suffix : { TEXT("_dummy"), TEXT("_jnt"), TEXT("_joint"), TEXT("_bone"), TEXT("_geo") })
+			{
+				if (Name.EndsWith(Suffix))
+				{
+					Name.LeftChopInline(FCString::Strlen(Suffix));
+					bChanged = true;
+				}
+			}
+		}
+		return Name;
+	}
+
+	/** The words (after PlainBoneName) that name each part, whole. A name with anything more on it is not the part (door_handle_fl is a handle). */
+	TConstArrayView<const TCHAR*> HingeNames(const EMantleVehicleHingePart Part)
+	{
+		static const TCHAR* const Driver[] = { TEXT("door_dside_f"), TEXT("door_fl"), TEXT("door_lf"), TEXT("door_front_left"), TEXT("door_driver"), TEXT("driver_door") };
+		static const TCHAR* const Passenger[] = { TEXT("door_pside_f"), TEXT("door_fr"), TEXT("door_rf"), TEXT("door_front_right"), TEXT("door_passenger"), TEXT("passenger_door") };
+		static const TCHAR* const RearLeft[] = { TEXT("door_dside_r"), TEXT("door_rl"), TEXT("door_lr"), TEXT("door_rear_left") };
+		static const TCHAR* const RearRight[] = { TEXT("door_pside_r"), TEXT("door_rr"), TEXT("door_rear_right") };
+		static const TCHAR* const Hood[] = { TEXT("bonnet"), TEXT("hood") };
+		static const TCHAR* const Trunk[] = { TEXT("boot"), TEXT("trunk"), TEXT("tailgate"), TEXT("trunk_lid"), TEXT("boot_lid") };
+		switch (Part)
+		{
+		case EMantleVehicleHingePart::DriverDoor: return Driver;
+		case EMantleVehicleHingePart::PassengerDoor: return Passenger;
+		case EMantleVehicleHingePart::RearLeftDoor: return RearLeft;
+		case EMantleVehicleHingePart::RearRightDoor: return RearRight;
+		case EMantleVehicleHingePart::Hood: return Hood;
+		default: return Trunk;
+		}
+	}
+
+	/** Which side of the car a part is on: -1 the left (the driver's, -Y), +1 the right; 0 for the hood and trunk, which are on the middle line. */
+	int32 HingeSide(const EMantleVehicleHingePart Part)
+	{
+		switch (Part)
+		{
+		case EMantleVehicleHingePart::DriverDoor:
+		case EMantleVehicleHingePart::RearLeftDoor:
+			return -1;
+		case EMantleVehicleHingePart::PassengerDoor:
+		case EMantleVehicleHingePart::RearRightDoor:
+			return 1;
+		default:
+			return 0;
+		}
+	}
+}
+
+TConstArrayView<EMantleVehicleHingePart> FMantleVehicleChassisSkin::HingeParts()
+{
+	static const EMantleVehicleHingePart Parts[] = { EMantleVehicleHingePart::DriverDoor, EMantleVehicleHingePart::PassengerDoor, EMantleVehicleHingePart::RearLeftDoor,
+		EMantleVehicleHingePart::RearRightDoor, EMantleVehicleHingePart::Hood, EMantleVehicleHingePart::Trunk };
+	return Parts;
+}
+
+FText FMantleVehicleChassisSkin::HingeLabel(const EMantleVehicleHingePart Part)
+{
+	switch (Part)
+	{
+	case EMantleVehicleHingePart::DriverDoor: return NSLOCTEXT("MantleVehicleChassisSkin", "DriverDoor", "Driver door");
+	case EMantleVehicleHingePart::PassengerDoor: return NSLOCTEXT("MantleVehicleChassisSkin", "PassengerDoor", "Passenger door");
+	case EMantleVehicleHingePart::RearLeftDoor: return NSLOCTEXT("MantleVehicleChassisSkin", "RearLeftDoor", "Rear left door");
+	case EMantleVehicleHingePart::RearRightDoor: return NSLOCTEXT("MantleVehicleChassisSkin", "RearRightDoor", "Rear right door");
+	case EMantleVehicleHingePart::Hood: return NSLOCTEXT("MantleVehicleChassisSkin", "Hood", "Hood");
+	default: return NSLOCTEXT("MantleVehicleChassisSkin", "Trunk", "Trunk");
+	}
+}
+
+FMantleVehicleHingeMap FMantleVehicleChassisSkin::SuggestHinges(const FMantleVehicleModel& Model)
+{
+	using namespace MantleVehicleChassisSkinPrivate;
+	FMantleVehicleHingeMap Out;
+	if (!Model.bSkeletal)
+	{
+		return Out;
+	}
+	for (const EMantleVehicleHingePart Part : HingeParts())
+	{
+		for (int32 Bone = 1; Bone < Model.Bones.Num() && !Out.Bones.Contains(Part); ++Bone)
+		{
+			const FName Name = Model.Bones[Bone].Name;
+			if (Out.Bones.FindKey(Name))
+			{
+				continue;
+			}
+			const FString Plain = PlainBoneName(Name);
+			for (const TCHAR* Word : HingeNames(Part))
+			{
+				if (Plain == Word)
+				{
+					Out.Bones.Add(Part, Name);
+					break;
+				}
+			}
+		}
+	}
+	return Out;
+}
+
+FMantleVehicleSkinnedHinge FMantleVehicleChassisSkin::HingeFor(const EMantleVehicleHingePart Part, const FName Bone, const FBox& PartBox, const FBox& BodyBox, const FVector* BonePosition,
+	const bool bFlipped)
+{
+	using namespace MantleVehicleChassisSkinPrivate;
+	constexpr double StandOut = 60.0;
+	constexpr double Limit = 1000.0;
+	FMantleVehicleSkinnedHinge Out;
+	Out.Part = Part;
+	Out.Bone = Bone;
+	const FBox Box = PartBox.IsValid ? PartBox : BodyBox;
+	const FBox Body = BodyBox.IsValid ? BodyBox : Box;
+	if (!Box.IsValid)
+	{
+		return Out;
+	}
+	const FVector Center = Box.GetCenter();
+	const int32 Side = HingeSide(Part);
+	if (Side != 0)
+	{
+		// A door turns about its front edge on an upright axis; the bone is the hinge when it sits at the front.
+		const double Length = Box.GetSize().X;
+		FVector Pivot(Box.Max.X, Side < 0 ? Box.Min.Y : Box.Max.Y, Center.Z);
+		if (BonePosition && FMath::Abs(Box.Max.X - BonePosition->X) <= 0.25 * Length)
+		{
+			Pivot = *BonePosition;
+		}
+		Out.Pivot = Pivot;
+		Out.Axis = FVector(0.0, 0.0, Side < 0 ? 1.0 : -1.0);
+		Out.Scale = 0.75;
+		Out.Stand = FVector(Center.X, Side < 0 ? Body.Min.Y - StandOut : Body.Max.Y + StandOut, 0.0);
+		Out.Yaw = Side < 0 ? 90.0 : -90.0;
+	}
+	else if (Part == EMantleVehicleHingePart::Hood)
+	{
+		// The hood turns about its rear edge, at the top; someone in front of the car opens it.
+		Out.Pivot = FVector(Box.Min.X, Center.Y, Box.Max.Z);
+		Out.Axis = FVector(0.0, -1.0, 0.0);
+		Out.Stand = FVector(Body.Max.X + StandOut, Center.Y, 0.0);
+		Out.Yaw = 180.0;
+	}
+	else
+	{
+		// The trunk turns about its front edge, at the top; someone behind the car opens it.
+		Out.Pivot = FVector(Box.Max.X, Center.Y, Box.Max.Z);
+		Out.Axis = FVector(0.0, 1.0, 0.0);
+		Out.Stand = FVector(Body.Min.X - StandOut, Center.Y, 0.0);
+		Out.Yaw = 0.0;
+	}
+	if (bFlipped)
+	{
+		Out.Axis = -Out.Axis;
+	}
+	for (int32 Axis = 0; Axis < 3; ++Axis)
+	{
+		Out.Pivot[Axis] = FMath::Clamp(Out.Pivot[Axis], -Limit, Limit);
+		Out.Stand[Axis] = FMath::Clamp(Out.Stand[Axis], -Limit, Limit);
+	}
+	return Out;
+}
+
+TArray<FMantleVehicleSkinnedHinge> FMantleVehicleChassisSkin::FindHingesOnModel(const FMantleVehicleModel& Model, const FMantleVehicleModelPlacement& Placement,
+	const FMantleVehicleHingeMap& Hinges, TArray<FString>* OutNotes)
+{
+	using namespace MantleVehicleChassisSkinPrivate;
+	TArray<FMantleVehicleSkinnedHinge> Out;
+	const TArray<FResolvedHinge> Resolved = ResolveHingeBones(Model, Hinges, OutNotes);
+	if (Resolved.Num() == 0)
+	{
+		return Out;
+	}
+	const TArray<int32> Owner = HingeOfBones(Model, Resolved);
+	const TArray<int32> Heaviest = HeaviestBones(Model);
+	TArray<FBox> Boxes;
+	Boxes.Init(FBox(ForceInit), Resolved.Num());
+	FBox BodyBox(ForceInit);
+	for (int32 Vertex = 0; Vertex < Model.LOD.Positions.Num(); ++Vertex)
+	{
+		const FVector Point = Placement.Point(FVector(Model.LOD.Positions[Vertex]));
+		BodyBox += Point;
+		const int32 Bone = Heaviest.IsValidIndex(Vertex) ? Heaviest[Vertex] : INDEX_NONE;
+		if (Owner.IsValidIndex(Bone) && Owner[Bone] != INDEX_NONE)
+		{
+			Boxes[Owner[Bone]] += Point;
+		}
+	}
+	for (int32 Index = 0; Index < Resolved.Num(); ++Index)
+	{
+		if (!Boxes[Index].IsValid)
+		{
+			if (OutNotes)
+			{
+				OutNotes->Add(FString::Printf(TEXT("Nothing in your model is weighted to the bone you picked for the %s, so it will not open."), *HingeLabel(Resolved[Index].Part).ToString().ToLower()));
+			}
+			continue;
+		}
+		const int32 ModelBone = Resolved[Index].ModelBone;
+		const bool bKnown = Model.BonePositions.IsValidIndex(ModelBone);
+		const FVector BonePosition = bKnown ? Placement.Point(Model.BonePositions[ModelBone]) : Boxes[Index].GetCenter();
+		Out.Add(HingeFor(Resolved[Index].Part, Model.Bones[ModelBone].Name, Boxes[Index], BodyBox, bKnown ? &BonePosition : nullptr, Hinges.IsFlipped(Resolved[Index].Part)));
+	}
+	return Out;
+}
+
 bool FMantleVehicleChassisSkin::Skin(const FMantleSkinnedMesh& Chassis, const TConstArrayView<FMantleVehiclePartSlot> Slots, const FMantleVehicleModel& Model,
 	const FMantleVehicleModelPlacement& Placement, const FMantleVehicleModelMap& Map, FMantleVehicleSkinned& Out, FString& OutError, const double MaxWheelMove)
 {
@@ -1344,6 +1659,10 @@ bool FMantleVehicleChassisSkin::Skin(const FMantleSkinnedMesh& Chassis, const TC
 		ChassisIndex.Add(Body.Bones[Bone].Name, Bone);
 	}
 
+	// The doors, hood and trunk: a vertex on the bone of one (or below it) rides a bone of its own, added below; until then it is marked with -(index + 1).
+	const TArray<FResolvedHinge> HingeList = ResolveHingeBones(Model, Map.Hinges, &Out.Notes);
+	const TArray<int32> HingeOwner = HingeList.Num() > 0 ? HingeOfBones(Model, HingeList) : TArray<int32>();
+
 	// A model bone's part: the nearest assigned bone at or above it (a wheel assigned inside an assigned fork stays the wheel's).
 	if (Model.bSkeletal)
 	{
@@ -1367,6 +1686,10 @@ bool FMantleVehicleChassisSkin::Skin(const FMantleSkinnedMesh& Chassis, const TC
 			if (Heaviest[Vertex] != INDEX_NONE && Target.IsValidIndex(Heaviest[Vertex]) && Target[Heaviest[Vertex]] != INDEX_NONE)
 			{
 				BoneOf[Vertex] = Target[Heaviest[Vertex]];
+			}
+			else if (HingeOwner.IsValidIndex(Heaviest[Vertex]) && HingeOwner[Heaviest[Vertex]] != INDEX_NONE)
+			{
+				BoneOf[Vertex] = -(HingeOwner[Heaviest[Vertex]] + 1);
 			}
 		}
 	}
@@ -1516,6 +1839,52 @@ bool FMantleVehicleChassisSkin::Skin(const FMantleSkinnedMesh& Chassis, const TC
 					LOD.Positions[Vertex] += FVector3f(Move);
 				}
 			}
+		}
+	}
+
+	// Each door, the hood and the trunk get a bone of their own under the root (new bones go last, so no other bone's index changes), at the part's hinge, with the
+	// part's vertices weighted to it. A part with no vertices on it is left out.
+	if (HingeList.Num() > 0)
+	{
+		FBox BodyBox(ForceInit);
+		for (int32 Vertex = 0; Vertex < LOD.Positions.Num(); ++Vertex)
+		{
+			BodyBox += FVector(LOD.Positions[Vertex]);
+		}
+		for (int32 Index = 0; Index < HingeList.Num(); ++Index)
+		{
+			const int32 Marker = -(Index + 1);
+			FBox PartBox(ForceInit);
+			for (int32 Vertex = 0; Vertex < LOD.Positions.Num(); ++Vertex)
+			{
+				if (BoneOf[Vertex] == Marker)
+				{
+					PartBox += FVector(LOD.Positions[Vertex]);
+				}
+			}
+			if (!PartBox.IsValid)
+			{
+				Out.Notes.Add(FString::Printf(TEXT("Nothing in your model is weighted to the bone you picked for the %s, so it will not open."), *HingeLabel(HingeList[Index].Part).ToString().ToLower()));
+				continue;
+			}
+			const int32 ModelBone = HingeList[Index].ModelBone;
+			const FName BoneName = UniqueBoneName(Body.Bones, Model.Bones[ModelBone].Name);
+			const bool bKnown = Model.BonePositions.IsValidIndex(ModelBone);
+			const FVector BonePosition = bKnown ? Turn.Point(Model.BonePositions[ModelBone]) : PartBox.GetCenter();
+			const FMantleVehicleSkinnedHinge Hinge = HingeFor(HingeList[Index].Part, BoneName, PartBox, BodyBox, bKnown ? &BonePosition : nullptr, Map.Hinges.IsFlipped(HingeList[Index].Part));
+			const int32 NewBone = Body.Bones.Num();
+			FMantleSkinnedMeshBone& Added = Body.Bones.AddDefaulted_GetRef();
+			Added.Name = BoneName;
+			Added.ParentIndex = 0;
+			Body.ReferencePose.Add(FTransform(FRotator::ZeroRotator, Hinge.Pivot));
+			for (int32 Vertex = 0; Vertex < LOD.Positions.Num(); ++Vertex)
+			{
+				if (BoneOf[Vertex] == Marker)
+				{
+					BoneOf[Vertex] = NewBone;
+				}
+			}
+			Out.Hinges.Add(Hinge);
 		}
 	}
 

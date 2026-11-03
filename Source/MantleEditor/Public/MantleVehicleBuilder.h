@@ -68,6 +68,11 @@ struct FMantleVehicleModelOptions
 	/** The parts of the model assigned to the chassis's moving bones; unset, Mantle's suggestions (FMantleVehicleChassisSkin::SuggestMap). */
 	TOptional<FMantleVehicleModelMap> Map;
 	/**
+	 * Which of the model's bones are its doors, hood and trunk (the builder's Doors step), and which of those are flipped; unset, Mantle's suggestions from the bones' names
+	 * (FMantleVehicleChassisSkin::SuggestHinges). An empty map, set, means nothing opens. Wins over Map's own Hinges.
+	 */
+	TOptional<FMantleVehicleHingeMap> Hinges;
+	/**
 	 * A propeller plane with two engines (a P-38): the chassis gets a propeller bone each (FMantleVehicleChassisSkin::AsTwin). Unset, it is when the model has two
 	 * propeller bones. Ignored when Spec is given: that chassis is the one used.
 	 */
@@ -268,6 +273,19 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * from Options.LightsBounds onto the model); else what the finder found. Saves the vehicle again when the build saved it.
 	 */
 	static void LightOwnBody(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
+
+	/**
+	 * Makes the doors, hood and trunk of a built vehicle open (#546): puts each hinge (FMantleVehicleSkinnedHinge: bone, pivot, axis, scale) and, for the hood, trunk and rear
+	 * doors, the place and way the character stands, in Source's tuning, and turns the part on. The driver door needs the driver's seat (Seat Location) and the passenger door
+	 * the passenger seat, else it is left off and said so in OutNotes. A part not in Hinges is left as it is. OutNotes also gets the one plain sentence saying what opens.
+	 */
+	static void ApplyHinges(UMantleVehicleSource& Source, TConstArrayView<FMantleVehicleSkinnedHinge> Hinges, TArray<FString>& OutNotes);
+
+	/**
+	 * The doors, hood and trunk of a vehicle built on its own skeleton (Build): the bones are already in the model, so the hinges are worked out on the model as it is
+	 * (FMantleVehicleChassisSkin::FindHingesOnModel) from Options.Hinges or, unset, the bones' names, and applied (ApplyHinges). Saves the vehicle again when the build saved it.
+	 */
+	static void ApplyOwnHinges(FMantleVehicleBuildResult& Built, const FMantleVehicleModelOptions& Options);
 
 	/**
 	 * Where the driver sits when Source has no seat placed. A vehicle of a type gets its chassis's seat fitted to the model's wheels,
