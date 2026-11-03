@@ -1293,6 +1293,9 @@ class _VehiclesService:
     def get_lights(self, vehicle: Entity, light: str, /) -> str:
         """The script's word on a light: 'on', 'off' or 'auto' (the game decides). light is 'head', 'rear', 'reverse', 'left' or 'right'. Errors if the entity is not a car or no longer exists."""
         ...
+    def get_liveries(self, vehicle: Entity, /) -> list[str]:
+        """The names of the car's liveries, in the order SetLivery counts them: the first name is livery index 0, the next is 1, and so on. A name is what the vehicle's creator called it, or 'Livery 1', 'Livery 2' and so on for one without a name. The list is empty for a car published with no liveries, for the built-in cars, and for an entity that is not a car."""
+        ...
     def get_max_boost(self, vehicle: Entity, /) -> float:
         """The most boost the car can store (100 unless you change it)."""
         ...

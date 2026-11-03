@@ -591,6 +591,8 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 
 	/** The liveries (#488): uploaded texture ids, picked by index; empty when it has none. Needs paint. */
 	TArray<FString> Liveries;
+	/** What a menu calls each livery, by the same index as Liveries: empty (no names) or one per livery, each at most 40 characters; an entry may be empty. */
+	TArray<FString> LiveryNames;
 	/** The body's UV set the liveries are laid out on: always 0, the one UV set a vehicle body carries. */
 	int32 LiveryUV = 0;
 	/** The livery a spawned car wears, an index into Liveries; INDEX_NONE for none. */
