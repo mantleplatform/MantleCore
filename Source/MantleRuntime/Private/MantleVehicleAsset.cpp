@@ -6,6 +6,7 @@
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Engine/SkeletalMesh.h"
+#include "MantleAssetLibrary.h"
 #include "MantleCookedCursor.h"
 #include "MantleRuntime.h"
 #include "MantleRuntimeSkeletalMeshBuilder.h"
@@ -226,6 +227,9 @@ namespace MantleVehicleAssetPrivate
 	/** The longest section name a materials key may be (the schema's propertyNames maxLength). */
 	constexpr int32 MaxSectionNameLength = 256;
 
+	/** A material a vehicle may name: an upload, or a built-in library material (ast_mat_rubber and the like). */
+	bool IsVehicleMaterialId(const FString& Id);
+
 	bool IsUploadedAssetId(const FString& Id)
 	{
 		if (Id.Len() != 37 || !Id.StartsWith(TEXT("ast_u"), ESearchCase::CaseSensitive))
@@ -241,6 +245,16 @@ namespace MantleVehicleAssetPrivate
 			}
 		}
 		return true;
+	}
+
+	bool IsVehicleMaterialId(const FString& Id)
+	{
+		if (IsUploadedAssetId(Id))
+		{
+			return true;
+		}
+		const FMantleAssetEntry* Entry = FMantleAssetLibrary::Get().Find(Id);
+		return Entry && Entry->Kind == EMantleAssetKind::Material;
 	}
 
 	/** Walks the resolved document; the first problem wins and names its JSON pointer. */
@@ -1172,13 +1186,13 @@ namespace MantleVehicleAssetPrivate
 					{
 						Desc.Materials.Add(FString());
 					}
-					else if (Entry->TryGetString(Id) && IsUploadedAssetId(Id))
+					else if (Entry->TryGetString(Id) && IsVehicleMaterialId(Id))
 					{
 						Desc.Materials.Add(Id);
 					}
 					else
 					{
-						P.Fail(FString::Printf(TEXT("%s/materials/%d"), *Pointer, Slot), TEXT("must be an uploaded material's id or null"));
+						P.Fail(FString::Printf(TEXT("%s/materials/%d"), *Pointer, Slot), TEXT("must be an uploaded or built-in material's id or null"));
 					}
 				}
 			}
@@ -1837,16 +1851,20 @@ namespace MantleVehicleAssetPrivate
 
 TArray<FString> FMantleVehicleDesc::MaterialIds() const
 {
+	// The uploads only: a built-in material ships in the client, so nothing downloads or waits for it.
 	TArray<FString> Ids;
 	for (const TPair<FString, FString>& Section : Materials)
 	{
-		Ids.AddUnique(Section.Value);
+		if (FMantleAssetLibrary::Get().Find(Section.Value) == nullptr)
+		{
+			Ids.AddUnique(Section.Value);
+		}
 	}
 	for (const FMantleVehiclePartDesc& Part : Parts)
 	{
 		for (const FString& Id : Part.Materials)
 		{
-			if (!Id.IsEmpty())
+			if (!Id.IsEmpty() && FMantleAssetLibrary::Get().Find(Id) == nullptr)
 			{
 				Ids.AddUnique(Id);
 			}
@@ -2212,9 +2230,9 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 				const FString Section(Pair.Key.ToView());
 				FString Id;
 				if (Section.IsEmpty() || Section.Len() > MaxSectionNameLength || !Pair.Value.IsValid()
-					|| !Pair.Value->TryGetString(Id) || !IsUploadedAssetId(Id))
+					|| !Pair.Value->TryGetString(Id) || !IsVehicleMaterialId(Id))
 				{
-					P.Fail(TEXT("/materials/") + Section, TEXT("must name a body section and an uploaded material's id"));
+					P.Fail(TEXT("/materials/") + Section, TEXT("must name a body section and an uploaded or built-in material's id"));
 					break;
 				}
 				D.Materials.Add(Section, Id);
