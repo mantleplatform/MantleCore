@@ -1,9 +1,11 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "Engine/StaticMesh.h"
 #include "MantleWeaponBuilderExport.h"
 #include "MantleWeaponBuilderLogic.h"
 #include "MantleWeaponDocument.h"
 #include "MantleWeaponSource.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/Package.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 namespace MantleWeaponBuilderOptionsTestPrivate
@@ -93,6 +95,17 @@ bool FMantleWeaponBuilderOptionsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("zoom and sight distance"), Out[1].Sight.bSet && FMath::IsNearlyEqual(Out[1].Sight.Value.Zoom.Value, 4.0) && Out[1].Sight.Value.SightDistance.bSet);
 	TestTrue(TEXT("the silencer is a muzzle option"), Out[2].Slot.Value == EMantleWeaponDocSlot::Muzzle && !Out[2].bFitted.bSet);
 	TestTrue(TEXT("the torch has both lights"), Out[3].Light.bSet && Out[3].Light.Value.Flashlight.bSet && Out[3].Light.Value.Laser.bSet);
+
+	// #234 (recolor): the builder lists a model's material slots, a static (rigid) model's as well as a skeletal one's.
+	{
+		UStaticMesh* RigidModel = NewObject<UStaticMesh>(GetTransientPackage());
+		RigidModel->GetStaticMaterials().Add(FStaticMaterial(nullptr, TEXT("Body")));
+		RigidModel->GetStaticMaterials().Add(FStaticMaterial(nullptr, TEXT("Grip")));
+		const TArray<FName> RigidSlots = MantleWeaponBuilderLogic::MaterialSlotNames(RigidModel);
+		TestEqual(TEXT("a static model lists its two material slots"), RigidSlots.Num(), 2);
+		TestTrue(TEXT("by name, in slot order"), RigidSlots.Num() == 2 && RigidSlots[0] == FName(TEXT("Body")) && RigidSlots[1] == FName(TEXT("Grip")));
+		TestEqual(TEXT("anything else lists none"), MantleWeaponBuilderLogic::MaterialSlotNames(GetTransientPackage()).Num(), 0);
+	}
 
 	// #234 (recolor): the paintable material slots, each once, in range and in slot order; none unless ticked.
 	TestFalse(TEXT("no paintable slots unless ticked"), Desc.PaintSlots.bSet);

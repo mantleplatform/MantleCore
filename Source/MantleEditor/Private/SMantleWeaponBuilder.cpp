@@ -767,7 +767,7 @@ namespace MantleWeaponBuilderPanelPrivate
 				]
 				+ SVerticalBox::Slot().AutoHeight()
 				[
-					Spin(LOCTEXT("FlashlightBrightness", "Flashlight brightness"), LOCTEXT("FlashlightBrightnessTip", "0.1 to 4. 1 is an ordinary torch."), 0.1f, 4.f, 0.05f,
+					Spin(LOCTEXT("FlashlightBrightness", "Flashlight brightness"), LOCTEXT("FlashlightBrightnessTip", "0.1 to 4. 1 is an ordinary flashlight."), 0.1f, 4.f, 0.05f,
 						[](const FMantleWeaponSourceAttachment& A) { return A.FlashlightBrightness; }, [](FMantleWeaponSourceAttachment& A, float V) { A.FlashlightBrightness = V; })
 				]
 				+ SVerticalBox::Slot().AutoHeight()
@@ -2821,9 +2821,9 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakePartsAndSoundStep()
 		];
 	}
 
-	if (const USkeletalMesh* PaintMesh = Cast<USkeletalMesh>(LoadModel()))
 	{
-		const TArray<FSkeletalMaterial>& PaintMaterials = PaintMesh->GetMaterials();
+		// A skeletal model's slots, or a static (rigid) model's.
+		const TArray<FName> PaintMaterials = MantleWeaponBuilderLogic::MaterialSlotNames(LoadModel());
 		if (PaintMaterials.Num() > 0)
 		{
 			AddHeading(LOCTEXT("PaintableHeading", "Paintable parts"));
@@ -2831,7 +2831,7 @@ TSharedRef<SWidget> SMantleWeaponBuilder::MakePartsAndSoundStep()
 			for (int32 PaintSlot = 0; PaintSlot < PaintMaterials.Num() && PaintSlot < FMantlePlaceLimits::MaxWeaponMaterials; ++PaintSlot)
 			{
 				const int32 Slot = PaintSlot;
-				const FName SlotName = PaintMaterials[Slot].MaterialSlotName;
+				const FName SlotName = PaintMaterials[Slot];
 				Rows->AddSlot().AutoHeight().Padding(0.f, 1.f)
 				[
 					SNew(SCheckBox)

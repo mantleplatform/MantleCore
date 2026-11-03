@@ -26,6 +26,9 @@ namespace MantleWeaponBuilderLogic
 	MANTLEEDITOR_API FName SocketRole(EMantleWeaponDocSocket Socket);
 	MANTLEEDITOR_API bool DocSocket(FName Role, EMantleWeaponDocSocket& OutSocket);
 
+	/** The names of a model's material slots in slot order (#234, "Paintable parts"): a skeletal mesh's or a static mesh's, empty for anything else. */
+	MANTLEEDITOR_API TArray<FName> MaterialSlotNames(const UObject* Model);
+
 	/** Whether Hold is a real hold (every hold is available; the Count sentinel and out-of-range values are not). */
 	MANTLEEDITOR_API bool IsHoldAvailable(EMantleWeaponHold Hold);
 
