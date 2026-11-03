@@ -22,6 +22,8 @@
 #include "Slate/WidgetRenderer.h"
 #include "TextureResource.h"
 #include "Engine/Texture2D.h"
+#include "RenderingThread.h"
+#include "ShaderCompiler.h"
 #include "Framework/Application/SlateApplication.h"
 #include "IDesktopPlatform.h"
 #include "Misc/Paths.h"
@@ -127,6 +129,12 @@ struct FMantleVehicleBuilderShotAccess
 			Livery->SetForceMipLevelsToBeResident(30.f);
 			Livery->WaitForStreaming();
 			Panel->AddLivery(Livery);
+			// The picture's stand-in material has to be compiled before the picture is drawn offscreen (in the window it pops in a moment later).
+			if (GShaderCompilingManager)
+			{
+				GShaderCompilingManager->FinishAllCompilation();
+			}
+			FlushRenderingCommands();
 			Shot(4, *FString::Printf(TEXT("liveries_%s"), *Livery->GetName()));
 		}
 		Shot(5, TEXT("thumbnail"));
