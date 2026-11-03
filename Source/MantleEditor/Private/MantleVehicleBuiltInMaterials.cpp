@@ -191,7 +191,23 @@ namespace MantleVehicleBuiltInMaterialsPrivate
 		const UMantleVehicleSource* Source = LoadObject<UMantleVehicleSource>(nullptr, *Args[0]);
 		if (!Source)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("MANTLE_BUILTIN %s is not a Mantle vehicle asset"), *Args[0]);
+			// A model that has no vehicle yet: its slots by name and material alone (the lights and paint are a built vehicle's).
+			if (const USkeletalMesh* Model = LoadObject<USkeletalMesh>(nullptr, *Args[0]))
+			{
+				int32 ModelReplaced = 0;
+				const TArray<FString> Sections = FMantleVehicleLights::SectionNames(Model->GetMaterials());
+				for (int32 Index = 0; Index < Sections.Num(); ++Index)
+				{
+					const UMaterialInterface* Material = Model->GetMaterials()[Index].MaterialInterface;
+					const FString Id = FMantleVehicleBuiltInMaterials::Detect(Material, Sections[Index], /*bLight*/ false);
+					UE_LOG(LogTemp, Display, TEXT("MANTLE_BUILTIN model %s section '%s' (%s) -> %s"), *Model->GetName(), *Sections[Index], Material ? *Material->GetName() : TEXT("no material"),
+						Id.IsEmpty() ? TEXT("its own material") : *Id);
+					ModelReplaced += Id.IsEmpty() ? 0 : 1;
+				}
+				UE_LOG(LogTemp, Display, TEXT("MANTLE_BUILTIN %s: %d of %d sections replaced by Mantle's materials"), *Model->GetName(), ModelReplaced, Sections.Num());
+				return;
+			}
+			UE_LOG(LogTemp, Warning, TEXT("MANTLE_BUILTIN %s is not a Mantle vehicle asset or a skeletal mesh"), *Args[0]);
 			return;
 		}
 		int32 Replaced = 0;
