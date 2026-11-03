@@ -6,6 +6,7 @@
 #include "MantleVehicleBodyReduce.h"
 #include "MantlePlaceValidator.h"
 #include "MantleVehicleBodySplit.h"
+#include "MantleVehicleBuiltInMaterials.h"
 #include "MantleVehicleLightFinder.h"
 #include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleChassisDocument.h"
@@ -1760,6 +1761,12 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	}
 	// The lights: the creator's rows and beams, else what the finder found; each light section gets its glowing copy of its material.
 	ApplyLights(*Out.Source, Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights, Out.Notes);
+	// Said, not asked: glass, tires, chrome and lamps are Mantle's own materials when it is published (FMantleVehicleBuiltInMaterials).
+	const FString BuiltIns = FMantleVehicleBuiltInMaterials::Describe(*Out.Source);
+	if (!BuiltIns.IsEmpty())
+	{
+		Out.Notes.Add(BuiltIns);
+	}
 	if (Out.bSaved)
 	{
 		Out.bSaved = SaveVehicle(*Out.Source, Out.SaveProblem);

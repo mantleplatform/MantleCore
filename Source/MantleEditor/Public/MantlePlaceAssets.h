@@ -262,6 +262,13 @@ struct MANTLEEDITOR_API FMantleMaterialAnalysis
 	bool bOpaqueInDisguise = false;
 
 	/**
+	 * A lit Translucent material whose opacity is one flat number (a constant or a scalar parameter as the material sets it, nothing connected counting as 1): FlatOpacity.
+	 * Clear glass is this (an opacity under 1); a cutout or a decal, whose opacity comes from a texture, is not.
+	 */
+	bool bOpacityFlat = false;
+	double FlatOpacity = 1.0;
+
+	/**
 	 * The bake of this material is a flat white card, so a mesh drawn with only such materials is left out of the place (and said):
 	 * a Volume domain material (volume fog has no surface to bake), or a translucent material whose shape is a depth fade over a
 	 * gradient or noise the graph evaluator cannot read and that has no water in it (a cloud card): the guessed constant opacity

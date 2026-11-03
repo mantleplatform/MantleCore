@@ -16,6 +16,7 @@
 #include "MantleSplineMeshBake.h"
 #include "MantleTerrainExport.h"
 #include "MantleTerrainGrassExport.h"
+#include "MantleVehicleBuiltInMaterials.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleLightFinder.h"
 #include "MantleVehicleSource.h"
@@ -2819,6 +2820,11 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 		GatheredMesh->UsedBy.AddUnique(Label);
 		for (const int32 Slot : FMantlePlaceAssets::UploadSlots(PartMesh))
 		{
+			// Glass, tires, chrome and lamps are Mantle's own materials: nothing to convert or upload for them.
+			if (!FMantleVehicleBuiltInMaterials::ForPartSlot(Part, PartMesh, Slot).IsEmpty())
+			{
+				continue;
+			}
 			AddMaterial(FMantleVehicleConverter::PartSlotMaterial(Part, PartMesh, Slot), Label);
 		}
 	}
@@ -2836,9 +2842,14 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 	{
 		return;
 	}
-	for (UMaterialInterface* Material : BodyMaterials)
+	const TArray<FString> BodySections = FMantleVehicleConverter::UniqueSectionNames(Body.MaterialNames);
+	for (int32 Index = 0; Index < BodyMaterials.Num(); ++Index)
 	{
-		AddMaterial(Material, Label);
+		if (BodySections.IsValidIndex(Index) && !FMantleVehicleBuiltInMaterials::ForSection(*Source, BodySections[Index], BodyMaterials[Index]).IsEmpty())
+		{
+			continue;
+		}
+		AddMaterial(BodyMaterials[Index], Label);
 	}
 }
 
@@ -3888,6 +3899,15 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		if (bCarries && bLit && Blend == BLEND_Translucent && !Fidelity.bVehicleLight && IsAlwaysOne(Roots.Opacity, Material))
 		{
 			Out.bOpaqueInDisguise = true;
+		}
+		if (bCarries && bLit && Blend == BLEND_Translucent && !Fidelity.bVehicleLight && IsFlat(Roots.Opacity))
+		{
+			double Flat = 1.0;
+			if (!Connected(MP_Opacity) || ConstantScalar(Roots.Opacity, Material, Flat))
+			{
+				Out.bOpacityFlat = true;
+				Out.FlatOpacity = Connected(MP_Opacity) ? Flat : 1.0;
+			}
 		}
 
 		if (!Fidelity.bWind && bOpaque && bLit

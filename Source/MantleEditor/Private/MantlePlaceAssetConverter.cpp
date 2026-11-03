@@ -19,6 +19,7 @@
 #include "MantleTerrainExport.h"
 #include "MantleTerrainGrassExport.h"
 #include "MantleVehicleBodyLODs.h"
+#include "MantleVehicleBuiltInMaterials.h"
 #include "MantleVehicleCollision.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
@@ -1344,6 +1345,11 @@ bool FMantlePlaceAssetSet::VehicleBytes(const FMantleConvertedVehicle& Vehicle, 
 		}
 		Ids.Add(Section, Ref->Id);
 	}
+	// A glass, tire, chrome or lamp section names Mantle's own material: nothing uploaded for it.
+	for (const TPair<FString, FString>& BuiltIn : Vehicle.BuiltInSections)
+	{
+		Ids.Add(BuiltIn.Key, BuiltIn.Value);
+	}
 	TArray<FString> LiveryIds;
 	if (!VehicleLiveryIds(Vehicle, LiveryIds, OutError))
 	{
@@ -1367,8 +1373,14 @@ bool FMantlePlaceAssetSet::VehicleBytes(const FMantleConvertedVehicle& Vehicle, 
 		Entry.Bone = Part.Bone;
 		Entry.Transform = Part.Transform;
 		Entry.PaintSlots = Part.PaintSlots;
-		for (const FString& MaterialKey : Part.MaterialKeys)
+		for (int32 Slot = 0; Slot < Part.MaterialKeys.Num(); ++Slot)
 		{
+			const FString& MaterialKey = Part.MaterialKeys[Slot];
+			if (Part.BuiltInIds.IsValidIndex(Slot) && !Part.BuiltInIds[Slot].IsEmpty())
+			{
+				Entry.Materials.Add(Part.BuiltInIds[Slot]);
+				continue;
+			}
 			if (MaterialKey.IsEmpty())
 			{
 				Entry.Materials.Add(FString());
@@ -2888,6 +2900,13 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 		UMaterialInterface* Material = Materials.IsValidIndex(Index) ? Materials[Index] : nullptr;
 		if (Material && !FMantlePlaceAssets::IsLibraryAsset(Material))
 		{
+			// Glass, tires, chrome and lamps are Mantle's own materials every car shares; every other section keeps the creator's.
+			const FString BuiltIn = FMantleVehicleBuiltInMaterials::ForSection(*Vehicle, Converted.Body.MaterialNames[Index], Material);
+			if (!BuiltIn.IsEmpty())
+			{
+				Converted.BuiltInSections.Add(Converted.Body.MaterialNames[Index], BuiltIn);
+				continue;
+			}
 			Converted.SectionMaterialKeys.Add(Converted.Body.MaterialNames[Index], FMantlePlaceAssets::MaterialKey(Material));
 		}
 	}
@@ -2913,7 +2932,9 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 		for (const int32 Slot : FMantlePlaceAssets::UploadSlots(PartMesh))
 		{
 			const UMaterialInterface* Material = FMantleVehicleConverter::PartSlotMaterial(Part, PartMesh, Slot);
-			ConvertedPart.MaterialKeys.Add(Material && !FMantlePlaceAssets::IsLibraryAsset(Material) ? FMantlePlaceAssets::MaterialKey(Material) : FString());
+			const FString BuiltIn = Material && !FMantlePlaceAssets::IsLibraryAsset(Material) ? FMantleVehicleBuiltInMaterials::ForPartSlot(Part, PartMesh, Slot) : FString();
+			ConvertedPart.BuiltInIds.Add(BuiltIn);
+			ConvertedPart.MaterialKeys.Add(BuiltIn.IsEmpty() && Material && !FMantlePlaceAssets::IsLibraryAsset(Material) ? FMantlePlaceAssets::MaterialKey(Material) : FString());
 		}
 		// Its painted slots, counted as the upload counts them.
 		ConvertedPart.PaintSlots = FMantleVehicleConverter::PartUploadPaintSlots(Part, PartMesh);
@@ -2970,6 +2991,10 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 	{
 		Placeholders.Add(Section.Key, FMantlePlaceAssets::ProvisionalId(Section.Value));
 	}
+	for (const TPair<FString, FString>& BuiltIn : Converted.BuiltInSections)
+	{
+		Placeholders.Add(BuiltIn.Key, BuiltIn.Value);
+	}
 	TArray<FString> LiveryPlaceholders;
 	for (const FString& LiveryKey : Converted.LiveryTextureKeys)
 	{
@@ -2983,9 +3008,11 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 		Entry.Bone = Part.Bone;
 		Entry.Transform = Part.Transform;
 		Entry.PaintSlots = Part.PaintSlots;
-		for (const FString& MaterialKey : Part.MaterialKeys)
+		for (int32 Slot = 0; Slot < Part.MaterialKeys.Num(); ++Slot)
 		{
-			Entry.Materials.Add(MaterialKey.IsEmpty() ? FString() : FMantlePlaceAssets::ProvisionalId(MaterialKey));
+			const FString& MaterialKey = Part.MaterialKeys[Slot];
+			Entry.Materials.Add(Part.BuiltInIds.IsValidIndex(Slot) && !Part.BuiltInIds[Slot].IsEmpty() ? Part.BuiltInIds[Slot]
+				: MaterialKey.IsEmpty() ? FString() : FMantlePlaceAssets::ProvisionalId(MaterialKey));
 		}
 	}
 	const FString HornPlaceholder = Converted.HornSoundKey.IsEmpty() ? FString() : FMantlePlaceAssets::ProvisionalId(Converted.HornSoundKey);
