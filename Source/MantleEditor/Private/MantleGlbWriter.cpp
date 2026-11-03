@@ -1174,16 +1174,16 @@ bool FMantleGlbWriter::WriteStatic(const TConstArrayView<FMantleGlbMesh> LODs, c
 		Collision->SetNumberField(TEXT("positions"), Accessors.Add(PositionView, 0, ComponentFloat, Mesh.CollisionPositions.Num(), TEXT("VEC3")));
 		Collision->SetNumberField(TEXT("indices"),
 			Accessors.Add(IndexView, 0, bShortIndices ? ComponentUnsignedShort : ComponentUnsignedInt, Mesh.CollisionIndices.Num(), TEXT("SCALAR")));
-		const TSharedRef<FJsonObject> Extras = MakeShared<FJsonObject>();
+		const TSharedRef<FJsonObject> RootExtras = MakeShared<FJsonObject>();
 		if (Mesh.Extras.IsValid())
 		{
 			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Mesh.Extras->Values)
 			{
-				Extras->SetField(Field.Key, Field.Value);
+				RootExtras->SetField(Field.Key, Field.Value);
 			}
 		}
-		Extras->SetObjectField(TEXT("mantleVehicleCollision"), Collision);
-		Root->SetObjectField(TEXT("extras"), Extras);
+		RootExtras->SetObjectField(TEXT("mantleVehicleCollision"), Collision);
+		Root->SetObjectField(TEXT("extras"), RootExtras);
 	}
 	else if (Mesh.Extras.IsValid())
 	{
