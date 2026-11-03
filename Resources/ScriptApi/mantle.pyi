@@ -1400,6 +1400,9 @@ class _VehiclesService:
     def get_max_health(self, vehicle: Entity, /) -> float:
         """The most health the car can have (100 unless you change it)."""
         ...
+    def get_openable_parts(self, vehicle: Entity, /) -> Optional[list[str]]:
+        """The parts of the car that open, those it has of 'driverDoor', 'passengerDoor', 'rearLeftDoor', 'rearRightDoor', 'hood' and 'trunk', in that order. A two-door car has no rear doors; a car its creator gave no hood hinge has no hood. Nil when the entity is not a car."""
+        ...
     def get_paint_finish(self, vehicle: Entity, layer: str, /) -> Optional[str]:
         """A layer's finish name ('gloss', 'metallic', 'pearl', 'matte', 'satin', 'metal', 'chrome', 'trim', 'carbon', 'brushed', 'sandblast', 'anodized', 'leather', 'perforated', 'suede', 'fabric', 'woven', 'carpet', 'plastic_smooth', 'plastic_grain', 'plastic_soft', 'wood' or 'soft_rubber'): the one set, or the car's own (a car's usual body paint reads 'metallic'). Nil when the entity is not a car or the car has no paint on that layer."""
         ...
@@ -1414,6 +1417,9 @@ class _VehiclesService:
         ...
     def get_parked(self, spawn: Entity, /) -> Optional[Entity]:
         """The car a VehicleSpawn entity keeps parked, as an Entity every Vehicles member takes (World:FindFirst finds the VehicleSpawn by its name). Returns nil while the spawn has no car standing: it is turned off, its car was destroyed and is waiting to come back, or the car is still being built, so ask again later. A car that comes back after a respawn is a new Entity: ask again. Errors if the entity is not a VehicleSpawn or no longer exists."""
+        ...
+    def get_part_stand_spot(self, vehicle: Entity, part: str, /) -> Optional[dict[str, Any]]:
+        """Where someone stands to open one of the car's parts, where the car is now: position is on the ground beside the part, and yaw (degrees) the way they face it. In front of the hood, behind the trunk, a step out from a door. Use it to check that a player is at the part, or to walk an NPC there. Nil when the entity is not a car or the car does not have that part."""
         ...
     def get_speed(self, vehicle: Entity, /) -> float:
         """The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists."""
@@ -1456,6 +1462,9 @@ class _VehiclesService:
         ...
     def is_locked(self, vehicle: Entity, /) -> bool:
         """Whether the car is locked. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Errors if the entity is not a car or no longer exists."""
+        ...
+    def is_part_open(self, vehicle: Entity, part: str, /) -> Optional[bool]:
+        """Whether one of the car's parts is open (see SetPartOpen). Nil when the entity is not a car or the car does not have that part."""
         ...
     def lock(self, vehicle: Entity, /) -> bool:
         """Lock the car. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Returns false when the entity is not a car."""
@@ -1531,6 +1540,9 @@ class _VehiclesService:
         ...
     def set_paint_preset(self, vehicle: Entity, layer: str, preset: str, /) -> bool:
         """Give one layer of the car's paint a named look (see GetPaintPresets): its color, its finish and, for a pearl look on the body, its pearl color. Every player sees the change. Returns false when the entity is not a car, the car has no paint on that layer, or the name is not a look for that layer; an unknown name is not an error, so ask GetPaintPresets first."""
+        ...
+    def set_part_open(self, vehicle: Entity, part: str, open: bool, player: Optional[Player] = ..., /) -> bool:
+        """Open or shut one of the car's parts: part is 'driverDoor', 'passengerDoor', 'rearLeftDoor', 'rearRightDoor', 'hood' or 'trunk'. Without a player the part swings there by itself (a remote, a script's own timing). With a player, their character walks round the car to the part's stand spot (GetPartStandSpot), faces it and lifts or pushes it with their hands, the part moving with them; that works for the trunk, the hood and the rear doors (a front door swings as someone gets in or out). Either way it stays, and every player sees it, also one who joins later. Returns false when the entity is not a car, the car does not have that part (see GetOpenableParts), or the player is not on foot and alive. Example: Interaction.Interacted:Connect(function(car, player, part) Vehicles:SetPartOpen(car, part, true, player) end)"""
         ...
     def set_underglow(self, vehicle: Entity, color: Optional[str] = ..., /) -> bool:
         """Neon underglow: color is '#RRGGBB', a glowing strip under the car and a soft glow on the ground beneath it (no real light, so it costs almost nothing). Nil turns it off. Every player sees the change. Returns false when the entity is not a car."""
