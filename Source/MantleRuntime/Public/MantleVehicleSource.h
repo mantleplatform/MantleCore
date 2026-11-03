@@ -180,7 +180,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceBox
 };
 
 /**
- * A part of the body the car clips turn on a hinge (#546): a door, the trunk lid (schema/vehicle.schema.json $defs.hinge). The
+ * A part of the body the car clips turn on a hinge (#546): a door, the trunk lid, the hood (schema/vehicle.schema.json $defs.hinge). The
  * clips carry how far the pack sedan's opens; Mantle turns Bone about the line through Pivot along Axis by that angle times Scale,
  * the right-hand way round, so the axis's sign picks the way it opens. The bone carries its children, and the parts riding them.
  */
@@ -526,6 +526,51 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	/** The way the character faces there, about Z: 0 faces the car's +X, towards the car from behind it. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trunk", meta = (EditCondition = "bTrunk", Units = "deg"))
 	float TrunkYaw = 0.f;
+
+	/** A hood (#546): a lid that someone standing in front of the car opens and shuts with the trunk clips. It holds nothing. Off: the car has none. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hood")
+	bool bHood = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hood", meta = (EditCondition = "bHood"))
+	FMantleVehicleSourceHinge HoodLid;
+
+	/** Where the character stands to open it, in the body's space, cm: on the ground in front of the car. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hood", meta = (EditCondition = "bHood"))
+	FVector HoodStand = FVector::ZeroVector;
+
+	/** The way the character faces there, about Z: 0 faces the car's +X, so a character in front of the car faces 180. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hood", meta = (EditCondition = "bHood", Units = "deg"))
+	float HoodYaw = 180.f;
+
+	/** A rear door on the left (-Y, the driver's side) (#546): a door that someone standing beside it opens and shuts with the trunk clips. Off: the car has none. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rear Doors")
+	bool bRearLeftDoor = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rear Doors", meta = (EditCondition = "bRearLeftDoor"))
+	FMantleVehicleSourceHinge RearLeftDoor;
+
+	/** Where the character stands to open it, in the body's space, cm: on the ground beside the door. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rear Doors", meta = (EditCondition = "bRearLeftDoor"))
+	FVector RearLeftDoorStand = FVector::ZeroVector;
+
+	/** The way the character faces there, about Z: 0 faces the car's +X; beside the left door facing the car is 90. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rear Doors", meta = (EditCondition = "bRearLeftDoor", Units = "deg"))
+	float RearLeftDoorYaw = 90.f;
+
+	/** A rear door on the right (+Y) (#546): a door that someone standing beside it opens and shuts with the trunk clips. Off: the car has none. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rear Doors")
+	bool bRearRightDoor = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rear Doors", meta = (EditCondition = "bRearRightDoor"))
+	FMantleVehicleSourceHinge RearRightDoor;
+
+	/** Where the character stands to open it, in the body's space, cm: on the ground beside the door. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rear Doors", meta = (EditCondition = "bRearRightDoor"))
+	FVector RearRightDoorStand = FVector::ZeroVector;
+
+	/** The way the character faces there, about Z: 0 faces the car's +X; beside the right door facing the car is -90. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rear Doors", meta = (EditCondition = "bRearRightDoor", Units = "deg"))
+	float RearRightDoorYaw = -90.f;
 
 	/**
 	 * The horn (#546): a sound wave of your own project (imported from a WAV file), which publishes with the vehicle as its own
