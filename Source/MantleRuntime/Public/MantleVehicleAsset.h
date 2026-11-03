@@ -69,7 +69,7 @@ struct MANTLERUNTIME_API FMantleVehiclePaintNames
 	/** Whether Layer is one of secondary, wheels, interior, dashboard. */
 	static bool IsLayer(const FString& Layer);
 
-	/** Whether Finish is one of gloss, metallic, pearl, matte, satin, metal, chrome, trim. */
+	/** Whether Finish is one of gloss, metallic, pearl, matte, satin, metal, chrome, trim, or one of the pattern finishes (carbon, brushed, ..., soft_rubber). */
 	static bool IsFinish(const FString& Finish);
 };
 

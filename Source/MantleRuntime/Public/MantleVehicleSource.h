@@ -73,6 +73,21 @@ enum class EMantleVehicleSourcePaintFinish : uint8
 	Metal,
 	Chrome,
 	Trim,
+	Carbon,
+	Brushed,
+	Sandblast,
+	Anodized,
+	Leather,
+	Perforated,
+	Suede,
+	Fabric,
+	Woven,
+	Carpet,
+	PlasticSmooth,
+	PlasticGrain,
+	PlasticSoft,
+	Wood,
+	SoftRubber,
 };
 
 /** The slots of a part (by index, as the mesh editor lists them) that wear one of the paint's other layers. */
