@@ -4217,7 +4217,7 @@ bool FMantlePlaceAssets::BaseColorAverage(const UMaterialInterface* Material, FC
 		UTexture2D* Texture = Cast<UTexture2D>(Picture);
 		const ETextureSourceFormat Format = Texture ? Texture->Source.GetFormat() : TSF_Invalid;
 		TArray64<uint8> Pixels;
-		if (!Texture || (Format != TSF_BGRA8 && Format != TSF_RGBA8) || !Texture->Source.GetMipData(Pixels, 0) || Pixels.Num() < 4)
+		if (!Texture || Format != TSF_BGRA8 || !Texture->Source.GetMipData(Pixels, 0) || Pixels.Num() < 4)
 		{
 			return false;
 		}
@@ -4228,8 +4228,8 @@ bool FMantlePlaceAssets::BaseColorAverage(const UMaterialInterface* Material, FC
 		for (int64 Pixel = 0; Pixel < Count; Pixel += Stride)
 		{
 			const uint8* Bytes = Pixels.GetData() + Pixel * 4;
-			// BGRA8 stores blue first, RGBA8 red first.
-			const FColor Color = Format == TSF_BGRA8 ? FColor(Bytes[2], Bytes[1], Bytes[0], 255) : FColor(Bytes[0], Bytes[1], Bytes[2], 255);
+			// BGRA8 stores blue first.
+			const FColor Color(Bytes[2], Bytes[1], Bytes[0], 255);
 			const FLinearColor Linear = Texture->SRGB ? FLinearColor::FromSRGBColor(Color) : FLinearColor(Color);
 			Sum[0] += Linear.R;
 			Sum[1] += Linear.G;
