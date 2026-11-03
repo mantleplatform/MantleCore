@@ -1141,7 +1141,51 @@ bool FMantleGlbWriter::WriteStatic(const TConstArrayView<FMantleGlbMesh> LODs, c
 	}
 
 	// #435: a vehicle's document rides in the root's extras (backend cook.VehicleExtrasKey).
-	if (Mesh.Extras.IsValid())
+	// A split car's attached parts' collision triangles ride beside it as two accessors (backend cook.VehicleCollisionExtrasKey): welded positions in glTF's axes and
+	// meters like every position, and the triangles' indices, unsigned shorts when they fit.
+	if (Mesh.CollisionIndices.Num() > 0 && Mesh.CollisionPositions.Num() > 0)
+	{
+		TArray<float> CollisionPositions;
+		CollisionPositions.Reserve(Mesh.CollisionPositions.Num() * 3);
+		for (const FVector3f& Position : Mesh.CollisionPositions)
+		{
+			const FVector3d P = FMantleGlbWriter::ToGltfPosition(FVector3d(Position));
+			CollisionPositions.Add(static_cast<float>(P.X));
+			CollisionPositions.Add(static_cast<float>(P.Y));
+			CollisionPositions.Add(static_cast<float>(P.Z));
+		}
+		const int32 PositionView = Buffer.AddView(CollisionPositions.GetData(), CollisionPositions.Num() * sizeof(float), 0);
+		const bool bShortIndices = Mesh.bCompactStreams && Mesh.CollisionPositions.Num() < 65536;
+		TArray<uint8> IndexBytes;
+		for (const uint32 Index : Mesh.CollisionIndices)
+		{
+			if (bShortIndices)
+			{
+				const uint16 Short = static_cast<uint16>(Index);
+				IndexBytes.Append(reinterpret_cast<const uint8*>(&Short), sizeof(uint16));
+			}
+			else
+			{
+				IndexBytes.Append(reinterpret_cast<const uint8*>(&Index), sizeof(uint32));
+			}
+		}
+		const int32 IndexView = Buffer.AddView(IndexBytes.GetData(), IndexBytes.Num(), 0);
+		const TSharedRef<FJsonObject> Collision = MakeShared<FJsonObject>();
+		Collision->SetNumberField(TEXT("positions"), Accessors.Add(PositionView, 0, ComponentFloat, Mesh.CollisionPositions.Num(), TEXT("VEC3")));
+		Collision->SetNumberField(TEXT("indices"),
+			Accessors.Add(IndexView, 0, bShortIndices ? ComponentUnsignedShort : ComponentUnsignedInt, Mesh.CollisionIndices.Num(), TEXT("SCALAR")));
+		const TSharedRef<FJsonObject> RootExtras = MakeShared<FJsonObject>();
+		if (Mesh.Extras.IsValid())
+		{
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Mesh.Extras->Values)
+			{
+				RootExtras->SetField(Field.Key, Field.Value);
+			}
+		}
+		RootExtras->SetObjectField(TEXT("mantleVehicleCollision"), Collision);
+		Root->SetObjectField(TEXT("extras"), RootExtras);
+	}
+	else if (Mesh.Extras.IsValid())
 	{
 		Root->SetObjectField(TEXT("extras"), Mesh.Extras);
 	}

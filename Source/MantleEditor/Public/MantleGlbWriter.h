@@ -99,6 +99,13 @@ struct MANTLEEDITOR_API FMantleGlbMesh
 	TSharedPtr<FJsonObject> Extras;
 
 	/**
+	 * Vehicle uploads, optional: the attached parts' collision triangles (FMantleVehicleCollision) in Unreal space and centimeters like Positions (the writer converts
+	 * them), written as two accessors named by the root's extras.mantleVehicleCollision (backend cook vehicle_collision.go). LOD0's are written; lower LODs' are ignored.
+	 */
+	TArray<FVector3f> CollisionPositions;
+	TArray<uint32> CollisionIndices;
+
+	/**
 	 * Vehicle uploads (FMantleVehicleBodyLODs::Slim): the skin as unsigned-byte joints and normalized unsigned-byte weights, rounded to sum to
 	 * 255 as the cook stores them, and each primitive's indices as unsigned shorts when it has under 65,536 vertices. For at most four
 	 * influences and joints under 256 (the writer refuses otherwise); the cook reads back exactly what it would have stored from floats.

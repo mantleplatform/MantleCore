@@ -19,6 +19,7 @@
 #include "MantleTerrainExport.h"
 #include "MantleTerrainGrassExport.h"
 #include "MantleVehicleBodyLODs.h"
+#include "MantleVehicleCollision.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
 #include "MantleVehicleThumbnail.h"
@@ -1401,7 +1402,7 @@ bool FMantlePlaceAssetSet::VehicleBytes(const FMantleConvertedVehicle& Vehicle, 
 	FString WriteError;
 	const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::WithHorn(FMantleVehicleConverter::WithParts(FMantleVehicleConverter::WithLiveries(
 		FMantleVehicleConverter::WithMaterials(Vehicle.Document.ToSharedRef(), Ids), LiveryIds), PartIds), HornSoundId);
-	if (!FMantleVehicleConverter::WriteUpload(Vehicle.Body, Document, OutBytes, WriteError, Vehicle.LowerLODs))
+	if (!FMantleVehicleConverter::WriteUpload(Vehicle.Body, Document, OutBytes, WriteError, Vehicle.LowerLODs, &Vehicle.Collision))
 	{
 		OutError = FString::Printf(TEXT("Vehicle '%s' could not be written: %s"), *Vehicle.Name, *WriteError);
 		return false;
@@ -2917,6 +2918,20 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 		// Its painted slots, counted as the upload counts them.
 		ConvertedPart.PaintSlots = FMantleVehicleConverter::PartUploadPaintSlots(Part, PartMesh);
 	}
+	// The parts' triangles for the car's shape (FMantleVehicleCollision): a server loads no part mesh, so the vehicle's own upload carries them.
+	{
+		TArray<FString> CollisionNotes;
+		Converted.Collision = FMantleVehicleCollision::ForParts(*SizedView, Converted.Body.Joints, CollisionNotes);
+		for (const FString& Note : CollisionNotes)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Vehicle '%s': %s"), *Vehicle->GetName(), *Note);
+			Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Vehicle '%s': %s"), *Vehicle->GetName(), *Note), TEXT("Nothing needs fixing for it to work.")));
+		}
+		if (!Converted.Collision.IsEmpty())
+		{
+			UE_LOG(LogTemp, Log, TEXT("Vehicle '%s': its parts add %d triangles to the car's collision shape"), *Vehicle->GetName(), Converted.Collision.NumTriangles());
+		}
+	}
 	// Its horn's sound (#546): converted and uploaded as a SoundEmitter's is (FMantlePlaceDependencies::AddVehicleSpawn gathers it),
 	// before it. CheckSource refused one that is not a sound wave of the project's own.
 	if (const USoundBase* Horn = Vehicle->Tuning.HornSound.LoadSynchronous())
@@ -2979,7 +2994,7 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 	const TSharedRef<FJsonObject> SizedDocument = FMantleVehicleConverter::WithHorn(FMantleVehicleConverter::WithParts(
 		FMantleVehicleConverter::WithLiveries(FMantleVehicleConverter::WithMaterials(Converted.Document.ToSharedRef(), Placeholders), LiveryPlaceholders),
 		PartPlaceholders), HornPlaceholder);
-	if (!FMantleVehicleConverter::WriteUpload(Converted.Body, SizedDocument, Bytes, WriteError, Converted.LowerLODs))
+	if (!FMantleVehicleConverter::WriteUpload(Converted.Body, SizedDocument, Bytes, WriteError, Converted.LowerLODs, &Converted.Collision))
 	{
 		Out.Issues.Add(ErrorIssue(FString::Printf(TEXT("Vehicle '%s' could not be written: %s"), *Vehicle->GetName(), *WriteError),
 			TEXT("Re-import its body and try again; if it keeps failing, report it with the log.")));
@@ -2990,7 +3005,7 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 	while (Bytes.Num() > Limits.MaxUploadBytes && Converted.LowerLODs.Num() > 0)
 	{
 		Converted.LowerLODs.Pop();
-		if (!FMantleVehicleConverter::WriteUpload(Converted.Body, SizedDocument, Bytes, WriteError, Converted.LowerLODs))
+		if (!FMantleVehicleConverter::WriteUpload(Converted.Body, SizedDocument, Bytes, WriteError, Converted.LowerLODs, &Converted.Collision))
 		{
 			Out.Issues.Add(ErrorIssue(FString::Printf(TEXT("Vehicle '%s' could not be written: %s"), *Vehicle->GetName(), *WriteError),
 				TEXT("Re-import its body and try again; if it keeps failing, report it with the log.")));

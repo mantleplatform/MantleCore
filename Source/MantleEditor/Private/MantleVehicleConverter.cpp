@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleBodyLODs.h"
+#include "MantleVehicleCollision.h"
 #include "MantleVehicleLightFinder.h"
 #include "MantleCosmeticExport.h"
 #include "MantlePlaceAssets.h"
@@ -2728,7 +2729,7 @@ TArray<FString> FMantleVehicleConverter::LiveryTextureKeys(const UMantleVehicleS
 }
 
 bool FMantleVehicleConverter::WriteUpload(const FMantleGlbMesh& Body, const TSharedRef<FJsonObject>& Document, TArray<uint8>& OutBytes, FString& OutError,
-	const TConstArrayView<FMantleGlbMesh> LowerLODs)
+	const TConstArrayView<FMantleGlbMesh> LowerLODs, const FMantleVehicleCollision* Collision)
 {
 	TArray<FMantleGlbMesh> LODs;
 	LODs.Reserve(1 + LowerLODs.Num());
@@ -2736,6 +2737,11 @@ bool FMantleVehicleConverter::WriteUpload(const FMantleGlbMesh& Body, const TSha
 	TSharedRef<FJsonObject> Extras = MakeShared<FJsonObject>();
 	Extras->SetObjectField(ExtrasKey, Document);
 	Upload.Extras = Extras;
+	if (Collision && !Collision->IsEmpty())
+	{
+		Upload.CollisionPositions = Collision->Positions;
+		Upload.CollisionIndices = Collision->Indices;
+	}
 	LODs.Append(LowerLODs.GetData(), LowerLODs.Num());
 	// The upload's bytes, not what the cook stores: shared vertices once, the skin and indices compact (it keeps a heavy car's LODs under the upload size).
 	for (FMantleGlbMesh& LOD : LODs)
@@ -3633,18 +3639,26 @@ namespace MantleVehicleConverterPrivate
 		{
 			UE_LOG(LogMantle, Warning, TEXT("MANTLE_VEHICLE_UPLOAD %s"), *LODWarning);
 		}
+		// Its attached parts' collision triangles ride in the file (the parts' meshes themselves do not), as publishing writes them.
+		const TStrongObjectPtr<UMantleVehicleSource> SizedView(const_cast<UMantleVehicleSource*>(FMantleVehicleConverter::MakeExportView(*Source)));
+		TArray<FString> CollisionNotes;
+		const FMantleVehicleCollision Collision = FMantleVehicleCollision::ForParts(*SizedView, Body.Joints, CollisionNotes);
+		for (const FString& Note : CollisionNotes)
+		{
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_VEHICLE_UPLOAD %s"), *Note);
+		}
 		TArray<uint8> Bytes;
 		const FString Out = FPaths::ConvertRelativePathToFull(Args[1]);
-		if (!FMantleVehicleConverter::WriteUpload(Body, Document, Bytes, Error, LowerLODs) || !FFileHelper::SaveArrayToFile(Bytes, *Out))
+		if (!FMantleVehicleConverter::WriteUpload(Body, Document, Bytes, Error, LowerLODs, &Collision) || !FFileHelper::SaveArrayToFile(Bytes, *Out))
 		{
 			UE_LOG(LogMantle, Warning, TEXT("MANTLE_VEHICLE_UPLOAD could not write %s: %s"), *Out, *Error);
 			return;
 		}
-		// Its attached parts (#435 item 2) name mesh uploads this file does not carry: they are left out, as the materials are. The
-		// chassis's collision boxes and center of mass, which the parity run drives on, are in the document.
-		UE_LOG(LogMantle, Display, TEXT("MANTLE_VEHICLE_UPLOAD wrote %s: %d bytes, %d wheels, %d linkage rules, %d collision boxes%s (%d attached parts left out)"),
+		// Its attached parts (#435 item 2) name mesh uploads this file does not carry: they are left out, as the materials are (their
+		// collision triangles are in it). The chassis's collision boxes and center of mass, which the parity run drives on, are in the document.
+		UE_LOG(LogMantle, Display, TEXT("MANTLE_VEHICLE_UPLOAD wrote %s: %d bytes, %d wheels, %d linkage rules, %d collision boxes%s (%d attached parts left out, %d collision triangles of them kept)"),
 			*Out, Bytes.Num(), Source->Wheels.Num(), Source->Linkage.Num(), Source->Tuning.Collision.Num(),
-			Source->Tuning.bOverrideCenterOfMass ? TEXT(", a center of mass") : TEXT(""), Source->Parts.Num());
+			Source->Tuning.bOverrideCenterOfMass ? TEXT(", a center of mass") : TEXT(""), Source->Parts.Num(), Collision.NumTriangles());
 	}
 
 	FAutoConsoleCommand WriteVehicleUploadCommand(

@@ -608,6 +608,13 @@ struct FMantleVehicleAsset
 
 	/** The body's root bone in its reference pose, component space. */
 	FTransform RootBoneTransform = FTransform::Identity;
+
+	/**
+	 * A car split into a body and attached parts: the parts' triangles at their rest pose, component space, cm (MVH1 version 2's collision section),
+	 * to add to the body's own for characters, cameras and weapon traces. Empty for a car whose surface is all in its body.
+	 */
+	TArray<FVector3f> CollisionPositions;
+	TArray<uint32> CollisionIndices;
 };
 
 /**
@@ -668,9 +675,10 @@ struct MANTLERUNTIME_API FMantleVehicleLimits
 };
 
 /**
- * Reads MVH1, a creator vehicle the cook wrote (backend/internal/cook/vehicle.go): "MVH1", version 1,
+ * Reads MVH1, a creator vehicle the cook wrote (backend/internal/cook/vehicle.go): "MVH1", version 1 or 2,
  * the resolved document (length-prefixed UTF-8 JSON), then the body as MSK1 role 4 on skeleton
- * "vehicle" (length-prefixed). Nothing may follow.
+ * "vehicle" (length-prefixed). Version 2 has one section more, the attached parts' collision triangles
+ * (length-prefixed: uint32 vertexCount, uint32 indexCount, float32 x3 per vertex, uint32 per index). Nothing else may follow.
  *
  * Strict, like every cooked-format reader: these bytes came from a stranger. The document must hold
  * exactly the schema's keys with every value the cook resolves (each wheel's radius and width, the seat,
@@ -690,8 +698,8 @@ struct MANTLERUNTIME_API FMantleVehicleLimits
 class MANTLERUNTIME_API FMantleVehicleAssetReader
 {
 public:
-	/** The MVH1 version this build reads. Must match VehicleVersion in the worker. */
-	static constexpr uint32 SupportedVersion = 1;
+	/** The newest MVH1 version this build reads (the worker writes 2 when a car has collision triangles of parts, else 1). Must match VehicleVersion in the worker. */
+	static constexpr uint32 SupportedVersion = 2;
 
 	/** The document's size cap (MaxVehicleDocumentBytes in the worker). */
 	static constexpr int32 MaxDocumentBytes = 64 * 1024;
@@ -735,6 +743,17 @@ struct MANTLERUNTIME_API FMantleVehicleBodyCollision
 	 * Null when the body has no LOD or skin data to tell by, or nothing is left.
 	 */
 	static TSharedPtr<const FMantleVehicleBodyCollision> FromBody(const FMantleSkinnedMesh& Body, TConstArrayView<FName> WheelBones);
+
+	/**
+	 * Body's shape with the triangles of a car's attached parts added (FMantleVehicleAsset::CollisionPositions and CollisionIndices, already at
+	 * their rest pose in the body's component space), as one shape for characters, cameras and weapon traces: a car that was split into a body and
+	 * parts (a model with more materials than a body may draw) has most of its surface in its parts. Body may be null (a car whose body is all
+	 * wheels or whose triangles all went to parts). The reader has checked the arrays (whole triangles, indices in range, finite); the cook dropped
+	 * the triangles with no area. Null when nothing is left. Pure arithmetic over the arrays, so the same on a server and a client: built once for a
+	 * vehicle type, with the body's cook shared by its cars.
+	 */
+	static TSharedPtr<const FMantleVehicleBodyCollision> WithParts(const TSharedPtr<const FMantleVehicleBodyCollision>& Body, TConstArrayView<FVector3f> PartPositions,
+		TConstArrayView<uint32> PartIndices);
 };
 
 /**

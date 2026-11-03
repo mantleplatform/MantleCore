@@ -2424,6 +2424,53 @@ bool FMantleVehicleAssetReader::ResolveMovementBones(FMantleVehicleDesc& D, cons
 	return true;
 }
 
+namespace MantleVehicleAssetPrivate
+{
+	/**
+	 * The collision section: uint32 byte length, then uint32 vertexCount, uint32 indexCount, float32 x3 per vertex, uint32 per index. Strict: the length
+	 * is exactly what the counts say, whole triangles, at most the body's triangle limit, every number finite, every index a vertex.
+	 */
+	bool ReadVehicleCollision(MantleCookedFormat::FCursor& Cursor, FMantleVehicleAsset& Out, FString& OutError)
+	{
+		const uint32 SectionBytes = Cursor.U32();
+		if (Cursor.Failed() || SectionBytes < 8 || !Cursor.Has(SectionBytes))
+		{
+			return FailVehicle(OutError, TEXT("that vehicle is incomplete or corrupt (collision)"));
+		}
+		const uint32 NumVertices = Cursor.U32();
+		const uint32 NumIndices = Cursor.U32();
+		const uint32 MaxIndices = 3u * static_cast<uint32>(FMantleVehicleLimits::MaxTriangles);
+		if (Cursor.Failed() || NumVertices == 0 || NumIndices == 0 || NumIndices % 3 != 0 || NumIndices > MaxIndices || NumVertices > NumIndices)
+		{
+			return FailVehicle(OutError, FString::Printf(TEXT("that vehicle's collision has %u vertices and %u indices, which are not whole triangles within the limit"), NumVertices, NumIndices));
+		}
+		const uint64 Expected = 8ull + 12ull * NumVertices + 4ull * NumIndices;
+		if (Expected != SectionBytes)
+		{
+			return FailVehicle(OutError, TEXT("that vehicle's collision is not the size its counts say"));
+		}
+		if (!Cursor.Array(Out.CollisionPositions, NumVertices) || !Cursor.Array(Out.CollisionIndices, NumIndices))
+		{
+			return FailVehicle(OutError, TEXT("that vehicle is incomplete or corrupt (collision)"));
+		}
+		for (const FVector3f& Position : Out.CollisionPositions)
+		{
+			if (!FMath::IsFinite(Position.X) || !FMath::IsFinite(Position.Y) || !FMath::IsFinite(Position.Z))
+			{
+				return FailVehicle(OutError, TEXT("that vehicle's collision has a vertex that is not a finite number"));
+			}
+		}
+		for (const uint32 Index : Out.CollisionIndices)
+		{
+			if (Index >= NumVertices)
+			{
+				return FailVehicle(OutError, TEXT("that vehicle's collision has an index past its vertices"));
+			}
+		}
+		return true;
+	}
+}
+
 bool FMantleVehicleAssetReader::Read(const TConstArrayView<uint8> Data, FMantleVehicleAsset& Out, FString& OutError)
 {
 	using namespace MantleVehicleAssetPrivate;
@@ -2440,7 +2487,7 @@ bool FMantleVehicleAssetReader::Read(const TConstArrayView<uint8> Data, FMantleV
 	{
 		return FailVehicle(OutError, TEXT("that vehicle is incomplete (header)"));
 	}
-	if (Version != SupportedVersion)
+	if (Version < 1 || Version > SupportedVersion)
 	{
 		return FailVehicle(OutError, FString::Printf(
 			TEXT("that vehicle was cooked for a newer version of Mantle (format %u, this build reads %u)"), Version, SupportedVersion));
@@ -2461,6 +2508,12 @@ bool FMantleVehicleAssetReader::Read(const TConstArrayView<uint8> Data, FMantleV
 	}
 	const TConstArrayView<uint8> BodyData(Data.GetData() + Cursor.Offset(), static_cast<int32>(BodyBytes));
 	Cursor.Skip(BodyBytes);
+
+	// Version 2: the attached parts' collision triangles (the cook's encodeVehicleCollision). Version 1 has none.
+	if (Version >= 2 && !ReadVehicleCollision(Cursor, Out, OutError))
+	{
+		return false;
+	}
 	if (Cursor.Failed() || Cursor.Remaining() != 0)
 	{
 		return FailVehicle(OutError, TEXT("that vehicle has bytes after its body"));
@@ -2697,6 +2750,36 @@ TSharedPtr<const FMantleVehicleBodyCollision> FMantleVehicleBodyCollision::FromB
 	return Out;
 }
 
+TSharedPtr<const FMantleVehicleBodyCollision> FMantleVehicleBodyCollision::WithParts(const TSharedPtr<const FMantleVehicleBodyCollision>& Body,
+	const TConstArrayView<FVector3f> PartPositions, const TConstArrayView<uint32> PartIndices)
+{
+	TSharedRef<FMantleVehicleBodyCollision> Out = MakeShared<FMantleVehicleBodyCollision>();
+	if (Body.IsValid())
+	{
+		Out->Positions = Body->Positions;
+		Out->Indices = Body->Indices;
+	}
+	const int32 FirstVertex = Out->Positions.Num();
+	const uint32 NumVertices = static_cast<uint32>(PartPositions.Num());
+	Out->Positions.Append(PartPositions.GetData(), PartPositions.Num());
+	for (int32 First = 0; First + 2 < PartIndices.Num(); First += 3)
+	{
+		if (PartIndices[First] >= NumVertices || PartIndices[First + 1] >= NumVertices || PartIndices[First + 2] >= NumVertices)
+		{
+			continue;
+		}
+		for (int32 Corner = 0; Corner < 3; ++Corner)
+		{
+			Out->Indices.Add(FirstVertex + static_cast<int32>(PartIndices[First + Corner]));
+		}
+	}
+	if (Out->Indices.Num() == 0)
+	{
+		return nullptr;
+	}
+	return Out;
+}
+
 UMantleBuiltVehicle* UMantleBuiltVehicle::Build(const FMantleVehicleAsset& Asset, UObject* Outer, FString* OutError)
 {
 	check(IsInGameThread());
@@ -2757,5 +2840,9 @@ UMantleBuiltVehicle* UMantleBuiltVehicle::Build(const FMantleVehicleAsset& Asset
 		WheelBones.Add(Wheel.Bone);
 	}
 	Vehicle->BodyCollision = FMantleVehicleBodyCollision::FromBody(Body, WheelBones);
+	if (Asset.CollisionIndices.Num() > 0)
+	{
+		Vehicle->BodyCollision = FMantleVehicleBodyCollision::WithParts(Vehicle->BodyCollision, Asset.CollisionPositions, Asset.CollisionIndices);
+	}
 	return Vehicle;
 }
