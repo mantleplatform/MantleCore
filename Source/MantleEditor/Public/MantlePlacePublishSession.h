@@ -453,7 +453,7 @@ public:
 	 * True for a go-live that uploads vehicles or weapons (known once they are converted) or, #838, publishes script packages (known
 	 * once the scripts are collected): the panel shows the visibility choice then. One choice covers all of them.
 	 */
-	bool NeedsVehicleChoice() const { return bGoLive && (Set.Vehicles.Num() > 0 || Set.Weapons.Num() > 0 || Packages.Num() > 0) && !IsFinished(); }
+	bool NeedsVehicleChoice() const { return bGoLive && (Set.Vehicles.Num() > 0 || Set.Weapons.Num() > 0 || Set.Wheels.Num() > 0 || Packages.Num() > 0) && !IsFinished(); }
 
 	/** True while the Library step has nothing to do but wait for a valid VehicleChoice. */
 	bool IsWaitingForVehicleChoice() const { return Phase == EMantlePublishPhase::Library && !VehicleChoice.IsReady(); }
@@ -544,6 +544,7 @@ private:
 	bool PrepareMaterial(const FString& Key, FMantleQueuedUpload& Item, FString& OutWhyNot);
 	bool PrepareVehicle(const FString& Key, FMantleQueuedUpload& Item, FString& OutWhyNot);
 	bool PrepareWeapon(const FString& Key, FMantleQueuedUpload& Item, FString& OutWhyNot);
+	bool PrepareWheel(const FString& Key, FMantleQueuedUpload& Item, FString& OutWhyNot);
 	void ForgetGonePlace();
 	void AddAttention(EMantleIssueSeverity Severity, const FString& Problem, const FString& Remedy);
 	void Fail(const FString& Why);
@@ -627,6 +628,10 @@ private:
 		enum class EStep : uint8 { Start, Looking, Patching, Creating, Versioning } Step = EStep::Start;
 		/** #789: a weapon, not a vehicle: its item is made with kind "weapon". */
 		bool bWeapon = false;
+		/** A wheel: its item is made with kind "wheel". */
+		bool bWheel = false;
+		/** The library item kind this job makes. */
+		const TCHAR* Kind() const { return bWheel ? TEXT("wheel") : bWeapon ? TEXT("weapon") : TEXT("vehicle"); }
 		/** #838: a script package, Packages[PackageIndex]: its item is made with kind "script" from its files and manifest. */
 		bool bPackage = false;
 		int32 PackageIndex = INDEX_NONE;

@@ -78,6 +78,16 @@ bool FMantleVehicleRimsFindTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("nothing to say"), Notes.Num(), 0);
 
+	// How far each wheel's rim reaches from its bone: the ring is 30 cm out.
+	TArray<double> Reach;
+	FMantleVehicleRims::Find(Body, Bones, Radii, Sections, Notes, &Reach);
+	TestEqual(TEXT("a reach for each wheel"), Reach.Num(), 2);
+	if (Reach.Num() == 2)
+	{
+		TestEqual(TEXT("the left rim reaches 30 cm"), Reach[0], 30.0, 0.5);
+		TestEqual(TEXT("the right rim reaches 30 cm"), Reach[1], 30.0, 0.5);
+	}
+
 	// A section named like a rim that is mixed with the body (half its vertices are far from any wheel) is left alone, and says so.
 	FMantleGlbMesh Mixed = MakeBody();
 	AddSection(Mixed, TEXT("body_wheel_arch"), 0, FVector(0.0, 0.0, 100.0), 50.0, 20);

@@ -1327,13 +1327,18 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 			RimRadii.Add(Radius);
 		}
 		TArray<FString> RimNotes;
-		const TArray<TArray<FString>> Found = FMantleVehicleRims::Find(Body, RimBones, RimRadii, UniqueSectionNames(Body.MaterialNames), RimNotes);
+		TArray<double> RimReach;
+		const TArray<TArray<FString>> Found = FMantleVehicleRims::Find(Body, RimBones, RimRadii, UniqueSectionNames(Body.MaterialNames), RimNotes, &RimReach);
 		TArray<FString> Hidden;
 		for (int32 Index = 0; Index < Source.Wheels.Num() && Found.IsValidIndex(Index); ++Index)
 		{
 			if (Source.Wheels[Index].RimSections.IsEmpty())
 			{
 				Source.Wheels[Index].RimSections = Found[Index];
+				if (Source.Wheels[Index].RimRadius <= 0.f && RimReach.IsValidIndex(Index))
+				{
+					Source.Wheels[Index].RimRadius = static_cast<float>(RimReach[Index]);
+				}
 			}
 			for (const FString& Rim : Source.Wheels[Index].RimSections)
 			{
@@ -2816,6 +2821,10 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 				Rims.Add(MakeShared<FJsonValueString>(Rim));
 			}
 			Entry->SetArrayField(TEXT("rimSections"), Rims);
+			if (Wheel.RimRadius > 0.f)
+			{
+				Entry->SetField(TEXT("rimRadius"), VehicleNumber(Wheel.RimRadius));
+			}
 		}
 		Wheels.Add(MakeShared<FJsonValueObject>(Entry));
 	}

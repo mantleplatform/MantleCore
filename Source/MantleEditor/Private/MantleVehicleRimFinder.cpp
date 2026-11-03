@@ -31,10 +31,14 @@ bool FMantleVehicleRims::NameIsRim(const FString& Section)
 }
 
 TArray<TArray<FString>> FMantleVehicleRims::Find(const FMantleGlbMesh& Body, const TConstArrayView<FName> Bones, const TConstArrayView<double> Radii,
-	const TArray<FString>& SectionNames, TArray<FString>& OutNotes)
+	const TArray<FString>& SectionNames, TArray<FString>& OutNotes, TArray<double>* OutRimRadii)
 {
 	TArray<TArray<FString>> Out;
 	Out.SetNum(Bones.Num());
+	if (OutRimRadii)
+	{
+		OutRimRadii->Init(0.0, Bones.Num());
+	}
 	const int32 N = Body.NumInfluences;
 	if (N <= 0 || Bones.IsEmpty())
 	{
@@ -74,6 +78,8 @@ TArray<TArray<FString>> FMantleVehicleRims::Find(const FMantleGlbMesh& Body, con
 		// Whose each of its vertices is: the wheel its heaviest influence is, when the vertex sits inside that wheel's radius.
 		TArray<int32> Owned;
 		Owned.Init(0, Bones.Num());
+		TArray<double> Reach;
+		Reach.Init(0.0, Bones.Num());
 		int32 NumOwned = 0;
 		for (int32 Vertex = Primitive.FirstVertex; Vertex < Primitive.FirstVertex + Primitive.NumVertices; ++Vertex)
 		{
@@ -88,11 +94,12 @@ TArray<TArray<FString>> FMantleVehicleRims::Find(const FMantleGlbMesh& Body, con
 			}
 			const int32 Wheel = WheelOfJoint[Joint];
 			const double Radius = Radii.IsValidIndex(Wheel) ? Radii[Wheel] : 0.0;
-			if (Radius > 0.0
-				&& FVector::Dist(FVector(Body.Positions[Vertex]), World[Joint].GetLocation()) > Radius * RadiusMargin)
+			const double Distance = FVector::Dist(FVector(Body.Positions[Vertex]), World[Joint].GetLocation());
+			if (Radius > 0.0 && Distance > Radius * RadiusMargin)
 			{
 				continue;
 			}
+			Reach[Wheel] = FMath::Max(Reach[Wheel], Distance);
 			++Owned[Wheel];
 			++NumOwned;
 		}
@@ -107,6 +114,10 @@ TArray<TArray<FString>> FMantleVehicleRims::Find(const FMantleGlbMesh& Body, con
 			if (Owned[Wheel] > 0)
 			{
 				Out[Wheel].AddUnique(Section);
+				if (OutRimRadii)
+				{
+					(*OutRimRadii)[Wheel] = FMath::Max((*OutRimRadii)[Wheel], Reach[Wheel]);
+				}
 			}
 		}
 	}

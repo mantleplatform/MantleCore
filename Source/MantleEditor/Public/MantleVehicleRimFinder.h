@@ -28,8 +28,9 @@ struct MANTLEEDITOR_API FMantleVehicleRims
 	/**
 	 * Per wheel (by Bones), the names of the body sections that are its rim. SectionNames is the body's unique section names by
 	 * material index (FMantleVehicleConverter::UniqueSectionNames); Radii the wheels' radii, cm (0: not known, the section's geometry
-	 * is then only checked to be the wheel's own). OutNotes says what was found, and why a section named like a rim was left.
+	 * is then only checked to be the wheel's own). OutNotes says what was found, and why a section named like a rim was left. OutRimRadii, when given, gets
+	 * per wheel how far its rim reaches from the bone (the farthest vertex of its rim sections, cm; 0 for a wheel with none).
 	 */
 	static TArray<TArray<FString>> Find(const FMantleGlbMesh& Body, TConstArrayView<FName> Bones, TConstArrayView<double> Radii,
-		const TArray<FString>& SectionNames, TArray<FString>& OutNotes);
+		const TArray<FString>& SectionNames, TArray<FString>& OutNotes, TArray<double>* OutRimRadii = nullptr);
 };

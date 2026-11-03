@@ -12,6 +12,7 @@
 #include "MantleRuntime.h"
 #include "MantleSha256.h"
 #include "MantleWeaponSpawnPoint.h"
+#include "MantleWheelDocument.h"
 #include "MaterialDomain.h"
 #include "Materials/Material.h"
 #include "MantleSkeletonHash.h"
@@ -1283,6 +1284,11 @@ const FMantleConvertedWeapon* FMantlePlaceAssetSet::FindWeapon(const FString& Ke
 	return Weapons.FindByPredicate([&Key](const FMantleConvertedWeapon& Weapon) { return Weapon.Key == Key; });
 }
 
+const FMantleConvertedWheel* FMantlePlaceAssetSet::FindWheel(const FString& Key) const
+{
+	return Wheels.FindByPredicate([&Key](const FMantleConvertedWheel& Wheel) { return Wheel.Key == Key; });
+}
+
 void FMantlePlaceAssetSet::RecordUpload(const FString& Key, const FString& Id, const FString& Hash, int64 Bytes)
 {
 	FMantlePlaceUploadedRef& Ref = Uploaded.FindOrAdd(Key);
@@ -1420,6 +1426,36 @@ bool FMantlePlaceAssetSet::VehicleBytes(const FMantleConvertedVehicle& Vehicle, 
 		OutError = FString::Printf(TEXT("Vehicle '%s' could not be written: %s"), *Vehicle.Name, *WriteError);
 		return false;
 	}
+	return true;
+}
+
+bool FMantlePlaceAssetSet::WheelBytes(const FMantleConvertedWheel& Wheel, TArray<uint8>& OutBytes, FString& OutError) const
+{
+	const FMantlePlaceUploadedRef* MeshRef = Uploaded.Find(Wheel.MeshKey);
+	if (!MeshRef || MeshRef->Id.IsEmpty())
+	{
+		OutError = FString::Printf(TEXT("Wheel '%s' was not uploaded because its 3D model could not be."), *Wheel.Name);
+		return false;
+	}
+	TArray<FString> MaterialIds;
+	for (const FString& MaterialKey : Wheel.MaterialKeys)
+	{
+		const FMantlePlaceUploadedRef* MaterialRef = Uploaded.Find(MaterialKey);
+		if (!MaterialRef || MaterialRef->Id.IsEmpty())
+		{
+			OutError = FString::Printf(TEXT("Wheel '%s' was not uploaded because its material '%s' could not be."), *Wheel.Name, *MaterialKey);
+			return false;
+		}
+		MaterialIds.Add(MaterialRef->Id);
+	}
+	FString Json;
+	if (!FMantleWheelDocument::Build(Wheel.Name, MeshRef->Id, MaterialIds, Wheel.ReferenceRadius, Wheel.ReferenceWidth, Wheel.WheelSlots, Json, OutError))
+	{
+		return false;
+	}
+	const FTCHARToUTF8 Utf8(*Json);
+	OutBytes.SetNumUninitialized(Utf8.Length());
+	FMemory::Memcpy(OutBytes.GetData(), Utf8.Get(), Utf8.Length());
 	return true;
 }
 
@@ -1683,6 +1719,23 @@ bool FMantlePlaceAssetSet::TakeUploads(EMantlePlaceUploadStage Stage, TArray<FMa
 			}
 			Upload.Hash = FMantleSha256::AssetHash(Upload.Bytes);
 			Upload.SourceName = Weapon.Name;
+			OutUploads.Add(MoveTemp(Upload));
+		}
+		return true;
+	case EMantlePlaceUploadStage::Wheel:
+		for (const FMantleConvertedWheel& Wheel : Wheels)
+		{
+			FMantlePlaceUpload Upload;
+			Upload.Key = Wheel.Key;
+			Upload.Stage = Stage;
+			Upload.Options.Kind = TEXT("wheel");
+			if (!WheelBytes(Wheel, Upload.Bytes, OutError))
+			{
+				OutUploads.Reset();
+				return false;
+			}
+			Upload.Hash = FMantleSha256::AssetHash(Upload.Bytes);
+			Upload.SourceName = Wheel.Name;
 			OutUploads.Add(MoveTemp(Upload));
 		}
 		return true;
