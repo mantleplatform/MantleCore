@@ -62,6 +62,9 @@ bool FMantleVehicleRimsFindTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("rim, wheel, alloy, hub and spoke read as rims"), FMantleVehicleRims::NameIsRim(TEXT("Chrome_Rim")) && FMantleVehicleRims::NameIsRim(TEXT("vehicle [WHEEL]"))
 		&& FMantleVehicleRims::NameIsRim(TEXT("alloy_01")) && FMantleVehicleRims::NameIsRim(TEXT("hubcap")) && FMantleVehicleRims::NameIsRim(TEXT("spokes")));
+	TestFalse(TEXT("trim and primary are not rim: only whole words count"), FMantleVehicleRims::NameIsRim(TEXT("trim_chrome")) || FMantleVehicleRims::NameIsRim(TEXT("Primary_Paint"))
+		|| FMantleVehicleRims::NameIsRim(TEXT("PRIMARY")) || FMantleVehicleRims::NameIsRim(TEXT("whee_l")));
+	TestTrue(TEXT("a word inside a camel-case or numbered name still counts"), FMantleVehicleRims::NameIsRim(TEXT("ChromeRim01")) && FMantleVehicleRims::NameIsRim(TEXT("front-alloy.001")));
 	TestFalse(TEXT("tires, brakes and the steering wheel do not"), FMantleVehicleRims::NameIsRim(TEXT("rs7_tire")) || FMantleVehicleRims::NameIsRim(TEXT("wheel_rubber"))
 		|| FMantleVehicleRims::NameIsRim(TEXT("brake_disc")) || FMantleVehicleRims::NameIsRim(TEXT("steeringwheel")) || FMantleVehicleRims::NameIsRim(TEXT("body")));
 
@@ -116,6 +119,58 @@ bool FMantleVehicleRimsFindTest::RunTest(const FString& Parameters)
 	Notes.Reset();
 	Rims = FMantleVehicleRims::Find(Welded, Bones, Radii, { TEXT("vehicle_body") }, Notes);
 	TestTrue(TEXT("a welded car has no rims"), Rims[0].IsEmpty() && Rims[1].IsEmpty() && Notes.IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleRimsGeometryTest,
+	"Mantle.Vehicle.Rims.Geometry",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleRimsGeometryTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleRimsTestPrivate;
+	TArray<FString> Notes;
+
+	// A wide rim (radius 18, 25 wide) is not far from its bone: it is wide. The distance that counts is round the axle.
+	{
+		FMantleGlbMesh Wide = MakeBody();
+		AddSection(Wide, TEXT("wide_rim"), 1, FVector(-150.0, 0.0, 40.0), 18.0, 24);
+		const FMantleGlbPrimitive& Section = Wide.Primitives.Last();
+		for (int32 Index = 0; Index < Section.NumVertices; ++Index)
+		{
+			Wide.Positions[Section.FirstVertex + Index].Y += (Index % 2 == 0) ? 12.5f : -12.5f;
+		}
+		const TArray<double> TightRadii = { 18.0, 18.0 };
+		const TArray<TArray<FString>> Rims = FMantleVehicleRims::Find(Wide, Bones, TightRadii, { TEXT("alloy [WHEEL]"), TEXT("rs7_tire"), TEXT("wide_rim") }, Notes);
+		TestTrue(TEXT("a wide rim is found"), Rims[0].Contains(TEXT("wide_rim")));
+	}
+
+	// A section the body draws in two chunks is judged as one: half of it on the root is a section mixed with the body, whichever chunk is looked at.
+	{
+		FMantleGlbMesh Chunked = MakeBody();
+		AddSection(Chunked, TEXT("chunk_rim"), 1, FVector(-150.0, 0.0, 40.0), 30.0, 20);
+		const int32 Material = Chunked.Primitives.Last().MaterialIndex;
+		AddSection(Chunked, TEXT("unused"), 0, FVector(0.0, 0.0, 100.0), 50.0, 20);
+		Chunked.Primitives.Last().MaterialIndex = Material;
+		Notes.Reset();
+		const TArray<TArray<FString>> Rims = FMantleVehicleRims::Find(Chunked, Bones, Radii, { TEXT("alloy [WHEEL]"), TEXT("rs7_tire"), TEXT("chunk_rim"), TEXT("unused") }, Notes);
+		TestFalse(TEXT("half of a section on the body, in another chunk, is not a rim"), Rims[0].Contains(TEXT("chunk_rim")));
+		TestEqual(TEXT("and the creator is told once"), Notes.Num(), 1);
+	}
+
+	// One stray vertex of another wheel does not give that wheel the rim.
+	{
+		FMantleGlbMesh Stray = MakeBody();
+		AddSection(Stray, TEXT("stray_rim"), 1, FVector(-150.0, 0.0, 40.0), 30.0, 40);
+		const FMantleGlbPrimitive& Section = Stray.Primitives.Last();
+		Stray.InfluenceJoints[Section.FirstVertex] = 2;
+		Stray.Positions[Section.FirstVertex] = FVector3f(150.f, 0.f, 70.f);
+		Notes.Reset();
+		const TArray<TArray<FString>> Rims = FMantleVehicleRims::Find(Stray, Bones, Radii, { TEXT("alloy [WHEEL]"), TEXT("rs7_tire"), TEXT("stray_rim") }, Notes);
+		TestTrue(TEXT("the wheel that owns the section has it"), Rims[0].Contains(TEXT("stray_rim")));
+		TestFalse(TEXT("the wheel with one stray vertex does not"), Rims[1].Contains(TEXT("stray_rim")));
+	}
 	return true;
 }
 

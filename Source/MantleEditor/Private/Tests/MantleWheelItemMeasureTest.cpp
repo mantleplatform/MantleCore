@@ -42,18 +42,25 @@ bool FMantleWheelItemMeasureTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a rim measures"), Good.bOk);
 	TestEqual(TEXT("radius, cm"), Good.ReferenceRadius, 40.0, 0.01);
 	TestEqual(TEXT("width, cm"), Good.ReferenceWidth, 20.0, 0.01);
-	TestEqual(TEXT("the face is toward +X when the hub sits toward +X"), Good.FaceSign, 1);
-	TestEqual(TEXT("a centered rim has nothing to fix"), Good.Notes.Num(), 0);
+	TestTrue(TEXT("a centered rim has nothing to say"), Good.Problem.IsEmpty());
 
-	const FMantleWheelItemMeasure Back = FMantleWheelItem::Measure(MakeRim(-5.f));
-	TestEqual(TEXT("the face is toward -X when the hub sits toward -X"), Back.FaceSign, -1);
-	TestEqual(TEXT("and the creator is told"), Back.Notes.Num(), 1);
+	// Which side is the face is not guessed: a hub toward either end (or none) measures the same.
+	TestTrue(TEXT("a deep-dish rim, hub toward -X, is not refused"), FMantleWheelItem::Measure(MakeRim(-5.f)).bOk);
+	TestTrue(TEXT("a flat face is not refused"), FMantleWheelItem::Measure(MakeRim(0.f)).bOk);
 
-	const FMantleWheelItemMeasure Flat = FMantleWheelItem::Measure(MakeRim(0.f));
-	TestEqual(TEXT("a hub in the middle cannot be read"), Flat.FaceSign, 0);
-
+	// A rim off its axle or off-center is refused, with what to do, not fitted wrongly.
 	const FMantleWheelItemMeasure Off = FMantleWheelItem::Measure(MakeRim(5.f, FVector3f(0.f, 30.f, 0.f)));
-	TestTrue(TEXT("an off-axle rim still measures, with a note"), Off.bOk && Off.Notes.Num() >= 1);
+	TestFalse(TEXT("an off-axle rim is refused"), Off.bOk);
+	TestTrue(TEXT("and told where"), Off.Problem.Contains(TEXT("origin")));
+	TestFalse(TEXT("an off-center rim is refused"), FMantleWheelItem::Measure(MakeRim(5.f, FVector3f(30.f, 0.f, 0.f))).bOk);
+
+	// A wheel on its side (long along X, small across).
+	TArray<FVector3f> Side;
+	for (int32 Index = 0; Index < 16; ++Index)
+	{
+		Side.Add(FVector3f(Index * 10.f, 5.f * FMath::Cos(Index), 5.f * FMath::Sin(Index)));
+	}
+	TestFalse(TEXT("a wheel on its side is refused"), FMantleWheelItem::Measure(Side).bOk);
 
 	TestFalse(TEXT("too few points do not measure"), FMantleWheelItem::Measure(TArray<FVector3f>{ FVector3f::ZeroVector }).bOk);
 	return true;

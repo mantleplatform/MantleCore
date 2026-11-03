@@ -1328,7 +1328,23 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 		}
 		TArray<FString> RimNotes;
 		TArray<double> RimReach;
-		const TArray<TArray<FString>> Found = FMantleVehicleRims::Find(Body, RimBones, RimRadii, UniqueSectionNames(Body.MaterialNames), RimNotes, &RimReach);
+		const TArray<FString> BodySections = UniqueSectionNames(Body.MaterialNames);
+		// Rim sections the creator's source already has are kept, unless the model no longer has a section of that name (a re-import renamed a
+		// material): the publish would refuse it, so it is dropped here, said, and the wheel looks again.
+		for (FMantleVehicleSourceWheel& Entry : Source.Wheels)
+		{
+			const int32 Before = Entry.RimSections.Num();
+			Entry.RimSections.RemoveAll([&BodySections](const FString& Rim) { return !BodySections.Contains(Rim); });
+			if (Entry.RimSections.Num() != Before)
+			{
+				RimNotes.Add(FString::Printf(TEXT("Wheels: %s lists a rim section the model no longer has, so Mantle looked for the rims again."), *Entry.Bone.ToString()));
+				if (Entry.RimSections.IsEmpty())
+				{
+					Entry.RimRadius = 0.f;
+				}
+			}
+		}
+		const TArray<TArray<FString>> Found = FMantleVehicleRims::Find(Body, RimBones, RimRadii, BodySections, RimNotes, &RimReach);
 		TArray<FString> Hidden;
 		for (int32 Index = 0; Index < Source.Wheels.Num() && Found.IsValidIndex(Index); ++Index)
 		{

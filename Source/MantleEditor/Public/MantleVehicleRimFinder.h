@@ -8,9 +8,9 @@ struct FMantleGlbMesh;
 /**
  * The vehicle builder's rims (vehicle-customization-plan.md section 3): which sections of a car's body are the rims a wheel swap hides.
  *
- * A section is a rim when its name reads as one (rim, wheel, alloy, hub, spoke; never tire, tyre, rubber, brake, disc or caliper) and its
- * geometry agrees: nearly all of its vertices (RimShare) are weighted mostly to a wheel's bone and sit within that wheel's radius around the
- * bone. A GTA car's `[WHEEL]` material is one section for all four wheels, so a section belongs to every wheel that owns some of it. A section
+ * A section is a rim when its name reads as one (the whole words rim, wheel, alloy, hub, spoke; never tire, tyre, rubber, brake, disc or caliper;
+ * "trim" and "primary" are not "rim") and its geometry agrees: nearly all of its vertices (RimShare) are weighted mostly to a wheel's bone and sit within that wheel's radius around its axle (the
+ * distance in the plane the wheel turns in). A GTA car's `[WHEEL]` material is one section for all four wheels, so a section belongs to every wheel that owns some of it. A section
  * that mixes the wheel's triangles with the rest of the body (brake discs inside the body's own material) is left alone: hiding it would hide
  * the car. A car with no such section (the wheels are welded into the body) gets none, and its wheels simply cannot be swapped.
  */
@@ -18,6 +18,10 @@ struct MANTLEEDITOR_API FMantleVehicleRims
 {
 	/** The share of a section's vertices that must be a wheel's own and inside its radius. */
 	static constexpr float RimShare = 0.9f;
+
+	/** The fewest vertices, and the least share of the wheels' part of the section, a wheel needs to count the section as its own: one stray vertex is not a rim. */
+	static constexpr int32 MinWheelVertices = 8;
+	static constexpr float MinWheelShare = 0.1f;
 
 	/** How far past the wheel's radius (as a multiple) a rim vertex may sit from the bone: the rim is inside the tire, the margin covers a flared lip. */
 	static constexpr double RadiusMargin = 1.15;

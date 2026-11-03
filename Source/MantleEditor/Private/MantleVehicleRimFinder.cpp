@@ -7,14 +7,51 @@
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleVehicleRimsPrivate
 {
-	const TCHAR* const RimWords[] = { TEXT("rim"), TEXT("wheel"), TEXT("alloy"), TEXT("hub"), TEXT("spoke") };
-	const TCHAR* const NotRimWords[] = { TEXT("tire"), TEXT("tyre"), TEXT("rubber"), TEXT("brake"), TEXT("disc"), TEXT("caliper"), TEXT("steering") };
+	/** Whole words only: "trim" and "primary" are not "rim". */
+	const TCHAR* const RimWords[] = { TEXT("rim"), TEXT("rims"), TEXT("wheel"), TEXT("wheels"), TEXT("alloy"), TEXT("alloys"), TEXT("hub"), TEXT("hubs"),
+		TEXT("hubcap"), TEXT("hubcaps"), TEXT("spoke"), TEXT("spokes") };
+	const TCHAR* const NotRimWords[] = { TEXT("tire"), TEXT("tires"), TEXT("tyre"), TEXT("tyres"), TEXT("rubber"), TEXT("brake"), TEXT("brakes"), TEXT("disc"),
+		TEXT("discs"), TEXT("rotor"), TEXT("rotors"), TEXT("caliper"), TEXT("calipers"), TEXT("steering") };
 
-	bool HasAny(const FString& Lower, TConstArrayView<const TCHAR*> Words)
+	/** A name cut into lower-case words at anything that is not a letter or digit, at a lower-to-upper step (HubCap) and between letters and digits. */
+	TArray<FString> NameWords(const FString& Name)
 	{
-		for (const TCHAR* Word : Words)
+		TArray<FString> Words;
+		FString Word;
+		TCHAR Last = 0;
+		for (const TCHAR Character : Name)
 		{
-			if (Lower.Contains(Word, ESearchCase::CaseSensitive))
+			if (!FChar::IsAlnum(Character))
+			{
+				if (!Word.IsEmpty())
+				{
+					Words.Add(Word.ToLower());
+					Word.Reset();
+				}
+				Last = 0;
+				continue;
+			}
+			const bool bStep = Last != 0 && ((FChar::IsLower(Last) && FChar::IsUpper(Character)) || (FChar::IsAlpha(Last) != FChar::IsAlpha(Character)));
+			if (bStep && !Word.IsEmpty())
+			{
+				Words.Add(Word.ToLower());
+				Word.Reset();
+			}
+			Word.AppendChar(Character);
+			Last = Character;
+		}
+		if (!Word.IsEmpty())
+		{
+			Words.Add(Word.ToLower());
+		}
+		return Words;
+	}
+
+	bool HasAny(const TArray<FString>& Words, TConstArrayView<const TCHAR*> Wanted)
+	{
+		for (const TCHAR* Word : Wanted)
+		{
+			if (Words.Contains(FString(Word)))
 			{
 				return true;
 			}
@@ -26,8 +63,8 @@ namespace MantleVehicleRimsPrivate
 bool FMantleVehicleRims::NameIsRim(const FString& Section)
 {
 	using namespace MantleVehicleRimsPrivate;
-	const FString Lower = Section.ToLower();
-	return HasAny(Lower, MakeArrayView(RimWords)) && !HasAny(Lower, MakeArrayView(NotRimWords));
+	const TArray<FString> Words = NameWords(Section);
+	return HasAny(Words, MakeArrayView(RimWords)) && !HasAny(Words, MakeArrayView(NotRimWords));
 }
 
 TArray<TArray<FString>> FMantleVehicleRims::Find(const FMantleGlbMesh& Body, const TConstArrayView<FName> Bones, const TConstArrayView<double> Radii,
@@ -64,23 +101,28 @@ TArray<TArray<FString>> FMantleVehicleRims::Find(const FMantleGlbMesh& Body, con
 		}
 	}
 
+	// A section is one material, however many chunks (primitives) of the body draw it: count over all of them before judging.
+	struct FSectionCount
+	{
+		int32 Vertices = 0;
+		int32 Owned = 0;
+		TArray<int32> OwnedBy;
+		TArray<double> Reach;
+	};
+	TMap<int32, FSectionCount> Counts;
 	for (const FMantleGlbPrimitive& Primitive : Body.Primitives)
 	{
-		if (!SectionNames.IsValidIndex(Primitive.MaterialIndex) || Primitive.NumVertices <= 0)
+		if (!SectionNames.IsValidIndex(Primitive.MaterialIndex) || Primitive.NumVertices <= 0 || !FMantleVehicleRims::NameIsRim(SectionNames[Primitive.MaterialIndex]))
 		{
 			continue;
 		}
-		const FString& Section = SectionNames[Primitive.MaterialIndex];
-		if (!FMantleVehicleRims::NameIsRim(Section))
+		FSectionCount& Count = Counts.FindOrAdd(Primitive.MaterialIndex);
+		if (Count.OwnedBy.IsEmpty())
 		{
-			continue;
+			Count.OwnedBy.Init(0, Bones.Num());
+			Count.Reach.Init(0.0, Bones.Num());
 		}
-		// Whose each of its vertices is: the wheel its heaviest influence is, when the vertex sits inside that wheel's radius.
-		TArray<int32> Owned;
-		Owned.Init(0, Bones.Num());
-		TArray<double> Reach;
-		Reach.Init(0.0, Bones.Num());
-		int32 NumOwned = 0;
+		Count.Vertices += Primitive.NumVertices;
 		for (int32 Vertex = Primitive.FirstVertex; Vertex < Primitive.FirstVertex + Primitive.NumVertices; ++Vertex)
 		{
 			if (!Body.InfluenceJoints.IsValidIndex(Vertex * N) || !Body.Positions.IsValidIndex(Vertex))
@@ -94,29 +136,39 @@ TArray<TArray<FString>> FMantleVehicleRims::Find(const FMantleGlbMesh& Body, con
 			}
 			const int32 Wheel = WheelOfJoint[Joint];
 			const double Radius = Radii.IsValidIndex(Wheel) ? Radii[Wheel] : 0.0;
-			const double Distance = FVector::Dist(FVector(Body.Positions[Vertex]), World[Joint].GetLocation());
-			if (Radius > 0.0 && Distance > Radius * RadiusMargin)
+			// Around the wheel's axle (a car's wheels turn about Y), not in all directions: a wide rim is not far from its bone, it is wide.
+			const FVector Offset = FVector(Body.Positions[Vertex]) - World[Joint].GetLocation();
+			const double Around = FMath::Sqrt(FMath::Square(Offset.X) + FMath::Square(Offset.Z));
+			if (Radius > 0.0 && Around > Radius * RadiusMargin)
 			{
 				continue;
 			}
-			Reach[Wheel] = FMath::Max(Reach[Wheel], Distance);
-			++Owned[Wheel];
-			++NumOwned;
+			Count.Reach[Wheel] = FMath::Max(Count.Reach[Wheel], Around);
+			++Count.OwnedBy[Wheel];
+			++Count.Owned;
 		}
-		if (NumOwned < Primitive.NumVertices * RimShare)
+	}
+
+	for (const TPair<int32, FSectionCount>& Pair : Counts)
+	{
+		const FString& Section = SectionNames[Pair.Key];
+		const FSectionCount& Count = Pair.Value;
+		if (Count.Owned < Count.Vertices * RimShare)
 		{
 			OutNotes.Add(FString::Printf(TEXT("Section \"%s\" is named like a rim, but only %d%% of it belongs to the wheels, so it stays on the car: it is mixed with the body, and a wheel swap cannot hide it."),
-				*Section, FMath::RoundToInt(100.f * NumOwned / Primitive.NumVertices)));
+				*Section, FMath::RoundToInt(100.f * Count.Owned / Count.Vertices)));
 			continue;
 		}
+		// A wheel has the section when a real share of the wheels' part of it is its own, not one stray vertex.
+		const int32 Least = FMath::Max(MinWheelVertices, FMath::CeilToInt(Count.Owned * MinWheelShare));
 		for (int32 Wheel = 0; Wheel < Bones.Num(); ++Wheel)
 		{
-			if (Owned[Wheel] > 0)
+			if (Count.OwnedBy[Wheel] >= Least)
 			{
 				Out[Wheel].AddUnique(Section);
 				if (OutRimRadii)
 				{
-					(*OutRimRadii)[Wheel] = FMath::Max((*OutRimRadii)[Wheel], Reach[Wheel]);
+					(*OutRimRadii)[Wheel] = FMath::Max((*OutRimRadii)[Wheel], Count.Reach[Wheel]);
 				}
 			}
 		}

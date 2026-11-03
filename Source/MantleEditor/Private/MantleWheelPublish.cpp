@@ -133,12 +133,6 @@ bool FMantleWheelPublishSource::Prepare(FMantleValidationResult& OutValidation, 
 		OutMessage = Problem;
 		return false;
 	}
-	// What the measure noticed is for the creator to know, not a reason to stop.
-	for (const FString& Note : Measure.Notes)
-	{
-		OutValidation.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(), FString::Printf(TEXT("The wheel '%s': %s"), *WheelName, *Note),
-			TEXT("Fix the model and publish again, or publish it as it is.") });
-	}
 	// The item is remembered per API and account, as a place's vehicles and weapons are.
 	LinkApi = FMantleApiClient::BaseUrlResolver();
 	FString WhyNot;

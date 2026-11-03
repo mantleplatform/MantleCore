@@ -34,45 +34,23 @@ FMantleWheelItemMeasure FMantleWheelItem::Measure(const TConstArrayView<FVector3
 			: TEXT("The wheel is smaller than a centimeter across.");
 		return Out;
 	}
-	Out.bOk = true;
-
-	// The axle runs along X through the origin: a rim modeled on its side (axle on Y or Z) is long along X and short across.
+	// The axle runs along X through the origin, and the rim sits on it: a wheel that does not is not fitted wrongly, it is refused, with what to do.
 	if (Out.ReferenceWidth > 2.0 * Out.ReferenceRadius)
 	{
-		Out.Notes.Add(TEXT("The wheel is longer along X than it is round: its axle should run along the X axis, so turn the model."));
+		Out.Problem = TEXT("The wheel is longer along X than it is round: its axle should run along the X axis, so turn the model.");
+		return Out;
 	}
 	if (Out.AxleOffset > 0.1 * Out.ReferenceRadius)
 	{
-		Out.Notes.Add(TEXT("The wheel's axle does not run through the model's origin (the point it turns about). Move the model so the middle of the rim is at the origin."));
+		Out.Problem = TEXT("The wheel's axle does not run through the model's origin (the point it turns about). Move the model so the middle of the rim is at the origin.");
+		return Out;
 	}
 	if (FMath::Abs(Out.AxialCenter) > 0.1 * Out.ReferenceWidth + 0.1)
 	{
-		Out.Notes.Add(TEXT("The wheel is not centered on its origin along the axle. Move the model so the middle of its width is at the origin."));
+		Out.Problem = TEXT("The wheel is not centered on its origin along the axle. Move the model so the middle of its width is at the origin.");
+		return Out;
 	}
-
-	// Which way it faces: the middle of the rim (the hub and the inner spokes) sits toward the face.
-	double HubX = 0.0;
-	int32 HubCount = 0;
-	for (const FVector3f& Point : Positions)
-	{
-		if (FVector2D(Point.Y, Point.Z).Size() < 0.5 * MaxRadius)
-		{
-			HubX += Point.X;
-			++HubCount;
-		}
-	}
-	if (HubCount > 0)
-	{
-		const double Shift = HubX / HubCount - Out.AxialCenter;
-		if (FMath::Abs(Shift) > FaceShare * Out.ReferenceWidth)
-		{
-			Out.FaceSign = Shift > 0.0 ? 1 : -1;
-		}
-	}
-	if (Out.FaceSign < 0)
-	{
-		Out.Notes.Add(TEXT("The wheel's face looks to be turned inward: face it toward +X, or it will be fitted back to front."));
-	}
+	Out.bOk = true;
 	return Out;
 }
 
