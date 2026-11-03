@@ -87,7 +87,24 @@ struct FMantleVehicleBuilderShotAccess
 			const FString File = FPaths::Combine(Args[2], TEXT("builder_step4_seats_paint_beam.png"));
 			UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT %s %s"), *File, Draw(Panel, File) ? TEXT("saved") : TEXT("NOT saved"));
 		}
-		// The Liveries step: empty, then with each image named after the Exit word added, each shown on the model.
+		// The Liveries step: empty, then with each image given after Exit added, each shown on the model. A livery needs paint, so when
+		// images are given and the model's own paint was not found, the PRIMARY sections (the GTA body paint) are ticked first.
+		if (Args.Num() > 4)
+		{
+			bool bAnyPaint = false;
+			for (const SMantleVehicleBuilder::FPaintChoice& Choice : Panel->PaintChoices)
+			{
+				bAnyPaint = bAnyPaint || Choice.bOn;
+			}
+			for (int32 Index = 0; !bAnyPaint && Index < Panel->PaintChoices.Num(); ++Index)
+			{
+				if (Panel->PaintChoices[Index].Section.Contains(TEXT("PRIMARY"), ESearchCase::IgnoreCase))
+				{
+					Panel->SetPaintSection(Index, true);
+					UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT ticked %s"), *Panel->PaintChoices[Index].Section);
+				}
+			}
+		}
 		Shot(4, TEXT("liveries_none"));
 		for (int32 Which = 3; Which < Args.Num(); ++Which)
 		{
@@ -106,6 +123,9 @@ struct FMantleVehicleBuilderShotAccess
 				UE_LOG(LogMantle, Error, TEXT("MANTLE_BUILDER_SHOT livery %s did not load"), *Args[Which]);
 				continue;
 			}
+			// The image is shown at full size in the strip: its mips have to be in memory for the offscreen picture.
+			Livery->SetForceMipLevelsToBeResident(30.f);
+			Livery->WaitForStreaming();
 			Panel->AddLivery(Livery);
 			Shot(4, *FString::Printf(TEXT("liveries_%s"), *Livery->GetName()));
 		}
