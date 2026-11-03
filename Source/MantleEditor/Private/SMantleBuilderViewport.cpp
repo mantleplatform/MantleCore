@@ -902,6 +902,16 @@ void SMantleBuilderViewport::SetMesh(UObject* InMesh, const bool bFrame)
 	Client->SetMesh(Mesh, bFrame);
 }
 
+void SMantleBuilderViewport::SetSlotMaterials(const TMap<int32, UMaterialInterface*>& Materials)
+{
+	SkeletalComponent->EmptyOverrideMaterials();
+	for (const TPair<int32, UMaterialInterface*>& Slot : Materials)
+	{
+		SkeletalComponent->SetMaterial(Slot.Key, Slot.Value);
+	}
+	Client->Invalidate();
+}
+
 void SMantleBuilderViewport::SetPoints(const TArray<FMantleBuilderPoint>& Points)
 {
 	Client->SetPoints(Points);
