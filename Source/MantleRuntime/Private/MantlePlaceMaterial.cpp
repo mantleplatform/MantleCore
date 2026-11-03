@@ -1493,7 +1493,7 @@ UMaterialInterface* FMantlePlaceMaterials::LoadPermutation(const FMantlePlaceMat
 	{
 		GWarnedCarPaintMissing = true;
 		UE_LOG(LogMantle, Warning,
-			TEXT("MANTLE_PLACE_MATERIAL M_MantlePlace_CarPaint is missing (%s not found): car-paint materials use MI_MantlePlace_Opaque, without the clear coat, until tools/materials/Create-CarPaintMaterial.py has run"),
+			TEXT("MANTLE_PLACE_MATERIAL M_MantlePlace_CarPaint is missing (%s not found): car-paint materials use MI_MantlePlace_Opaque, without the clear coat, until the committed car-paint asset is present"),
 			*CarPaintPermutationPath().ToString());
 	}
 	UMaterialInterface* Fallback = LoadPermutation(EMantlePlaceAlphaMode::Opaque, false, nullptr);

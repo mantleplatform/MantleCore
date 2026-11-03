@@ -1238,10 +1238,16 @@ declare extern type VehiclesService with
 	function GetMaxFuel(self, vehicle: Entity): number
 	--- The most health the car can have (100 unless you change it). (server only)
 	function GetMaxHealth(self, vehicle: Entity): number
+	--- A layer's finish name ("gloss", "metallic", "pearl", "matte", "satin", "metal", "chrome" or "trim"): the one set, or the car's own (a car's usual body paint reads "metallic"). Nil when the entity is not a car or the car has no paint on that layer. (server only)
+	function GetPaintFinish(self, vehicle: Entity, layer: string): string?
+	--- A layer's color as "#RRGGBB": the one set, or the color the car was published with. Save it to restore a car's look later. Nil when the entity is not a car or the car has no paint on that layer. (server only)
+	function GetPaintLayerColor(self, vehicle: Entity, layer: string): string?
 	--- The car a VehicleSpawn entity keeps parked, as an Entity every Vehicles member takes (World:FindFirst finds the VehicleSpawn by its name). Returns nil while the spawn has no car standing: it is turned off, its car was destroyed and is waiting to come back, or the car is still being built, so ask again later. A car that comes back after a respawn is a new Entity: ask again. Errors if the entity is not a VehicleSpawn or no longer exists. (server only)
 	function GetParked(self, spawn: Entity): Entity?
 	--- The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists. (server only)
 	function GetSpeed(self, vehicle: Entity): number
+	--- Whether the car has paint on the layer ("primary", "secondary", "pearl", "wheels", "interior" or "dashboard"). The pearl is part of the primary paint. Cars differ: only layers their model gives color to exist, so ask before offering a color picker. (server only)
+	function HasPaintLayer(self, vehicle: Entity, layer: string): boolean
 	--- Whether the car has a boost (SetBoostEnabled). (server only)
 	function IsBoostEnabled(self, vehicle: Entity): boolean
 	--- Whether the car's driver is boosting right now. (server only)
@@ -1298,6 +1304,10 @@ declare extern type VehiclesService with
 	function SetMaxHealth(self, vehicle: Entity, max: number): ()
 	--- Paint the car: color is "#RRGGBB", the same format as Backpack:SetWeaponColor. Returns false when the entity is not a car. (server only)
 	function SetPaintColor(self, vehicle: Entity, color: string): boolean
+	--- Give one layer of the car's paint a finish: layer is "primary", "secondary", "wheels", "interior" or "dashboard", and finish is "gloss", "metallic", "pearl", "matte", "satin", "metal", "chrome" or "trim". Chrome ignores the layer's color. Every player sees the change. Returns false when the entity is not a car or the car has no paint on that layer. (server only)
+	function SetPaintFinish(self, vehicle: Entity, layer: string, finish: string): boolean
+	--- Color one layer of the car's paint: layer is "primary" (the body, as SetPaintColor), "secondary", "pearl", "wheels", "interior" or "dashboard", and color is "#RRGGBB". The pearl is the color the body paint shifts toward at glancing angles; it shows with the "pearl" finish (SetPaintFinish). Every player sees the change. Returns false when the entity is not a car or the car has no paint on that layer (see HasPaintLayer). (server only)
+	function SetPaintLayerColor(self, vehicle: Entity, layer: string, color: string): boolean
 	--- Spawn a car at position and return it as an Entity. item is the library item id of a vehicle this place stores: the string Storage:Get returns for one of the place's storage names. Any other value errors -- an asset id, an object path, a built-in car's name, an item the place does not store, or a weapon. The car is a real replicated vehicle: every player sees it, walks up to it and can drive it. Read its Position, tag it, or Destroy it like any entity. The server builds cars one per frame, so the Entity comes back at once but the car is not ready to use: connect to Vehicles.Ready, which fires with the car when it is built, before you Seat, paint or Lock it or touch its health, fuel or boost (those error until then). (server only)
 	function Spawn(self, item: string, position: Vector3): Entity
 	--- Unlock the car, so anyone can open it again. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Returns false when the entity is not a car. (server only)

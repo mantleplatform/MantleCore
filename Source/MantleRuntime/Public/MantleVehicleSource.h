@@ -51,6 +51,44 @@ struct MANTLERUNTIME_API FMantleVehicleSourceWheel
 	FTransform TireTransform;
 };
 
+/** A paint layer beyond the primary (the document's paint.layers): a second paint color, the rims, the interior's trim or the dashboard. */
+UENUM(BlueprintType)
+enum class EMantleVehicleSourcePaintLayer : uint8
+{
+	Secondary,
+	Wheels,
+	Interior,
+	Dashboard,
+};
+
+/** A paint finish (the game's finish table): the numbers a layer's material is given. */
+UENUM(BlueprintType)
+enum class EMantleVehicleSourcePaintFinish : uint8
+{
+	Gloss,
+	Metallic,
+	Pearl,
+	Matte,
+	Satin,
+	Metal,
+	Chrome,
+	Trim,
+};
+
+/** The slots of a part (by index, as the mesh editor lists them) that wear one of the paint's other layers. */
+USTRUCT(BlueprintType)
+struct MANTLERUNTIME_API FMantleVehicleSourcePartLayerSlots
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Part")
+	EMantleVehicleSourcePaintLayer Layer = EMantleVehicleSourcePaintLayer::Secondary;
+
+	/** The mesh's material slots drawn with this layer's color and finish. A slot wears one layer: not also in Paint Slots or another layer. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Part")
+	TArray<int32> Slots;
+};
+
 /**
  * One attached part of a creator vehicle (#435 item 2): a static mesh riding a bone of the body, such as a body shell, glass
  * or a bumper. Published as its own mesh upload beside the vehicle; drawn only (the chassis collides as its boxes). Convert
@@ -85,6 +123,13 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePart
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Part")
 	TArray<int32> PaintSlots;
+
+	/**
+	 * The mesh's material slots drawn with one of the paint's other layers (secondary, wheels, interior, dashboard) instead of the vehicle's
+	 * primary paint: a rim that is a part wears the Wheels layer. Each layer must be in the vehicle's Paint > Layers. Convert Vehicle fills it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Part")
+	TArray<FMantleVehicleSourcePartLayerSlots> LayerSlots;
 
 	/** Where Convert Vehicle found it (a component's name, or "preview attachment"), for its notes. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Part")
@@ -520,6 +565,30 @@ struct MANTLERUNTIME_API FMantleVehicleSourceLights
 };
 
 /**
+ * One of a creator vehicle's other paint layers (the document's paint.layers): body sections that wear their own color and finish, so a script can
+ * recolor them apart from the body (Vehicles:SetPaintLayerColor). A part's slots join a layer in its Layer Slots.
+ */
+USTRUCT(BlueprintType)
+struct MANTLERUNTIME_API FMantleVehicleSourcePaintLayer
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
+	EMantleVehicleSourcePaintLayer Layer = EMantleVehicleSourcePaintLayer::Secondary;
+
+	/** The body's sections (the names Convert Vehicle lists) that wear the layer; each in no other layer and not in Paint > Sections. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
+	TArray<FString> Sections;
+
+	/** The color the layer wears when the car spawns (linear). White shows the model's own picture untinted. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint", meta = (HideAlphaChannel))
+	FLinearColor Color = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
+	EMantleVehicleSourcePaintFinish Finish = EMantleVehicleSourcePaintFinish::Gloss;
+};
+
+/**
  * A creator vehicle's paint (#435 f) and liveries (#488): schema/vehicle.schema.json paint, liveries, liveryUV and
  * defaultLivery, every default the schema's. Mantle holds each number to limits.json placeAssets.vehicle.ranges and the
  * liveries to placeAssets.livery when the place is checked and again when it is cooked.
@@ -564,6 +633,24 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePaint
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint", meta = (ClampMin = "0", ClampMax = "1"))
 	float ClearCoatRoughness = 0.05f;
+
+	/** The pearlescent color: a second color the paint shifts toward at glancing angles. Off: none until a script sets one. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
+	bool bPearl = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint", meta = (EditCondition = "bPearl", HideAlphaChannel))
+	FLinearColor PearlColor = FLinearColor::White;
+
+	/** How strongly the pearl shows; 0 is none. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint", meta = (EditCondition = "bPearl", ClampMin = "0", ClampMax = "1"))
+	float PearlStrength = 0.6f;
+
+	/**
+	 * The paint's other layers, each listed once: secondary, wheels, interior, dashboard. Convert Vehicle fills them from the section and material
+	 * names (PRIMARY and SECONDARY, rim and wheel, seat and interior, dash). A section wears one layer.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
+	TArray<FMantleVehicleSourcePaintLayer> Layers;
 
 	/**
 	 * Liveries: images laid over the paint and under its clear coat, on the body's UV 0 (a vehicle body carries one UV

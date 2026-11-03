@@ -121,6 +121,9 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("paint/flakeTint/*"), 0.0, 1.0 },
 		{ TEXT("paint/clearCoat"), 0.0, 1.0 },
 		{ TEXT("paint/clearCoatRoughness"), 0.0, 1.0 },
+		{ TEXT("paint/pearl/color/*"), 0.0, 1.0 },
+		{ TEXT("paint/pearl/strength"), 0.0, 1.0 },
+		{ TEXT("paint/layers/*/color/*"), 0.0, 1.0 },
 		// Vehicle lights.
 		{ TEXT("lights/beams/*/position/*"), -1000.0, 1000.0 },
 		{ TEXT("lights/beams/*/direction/*"), -1.0, 1.0 },
@@ -133,6 +136,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("parts/*/rotation/*"), -1.0, 1.0 },
 		{ TEXT("parts/*/scale/*"), -100.0, 100.0 },
 		{ TEXT("parts/*/paintSlots/*"), 0.0, 7.0 },
+		{ TEXT("parts/*/layerSlots/*/slots/*"), 0.0, 7.0 },
 		// #821 seat kinds, the rider's fit and the chase camera's boom.
 		{ TEXT("seat/exitSideDistance"), 0.0, 1000.0 },
 		{ TEXT("seat/rider/handlebar/left/location/*"), -1000.0, 1000.0 },
@@ -555,7 +559,47 @@ namespace MantleVehicleAssetPrivate
 				return P.Fail(FString::Printf(TEXT("/parts/%d/paintSlots"), Index), TEXT("paints with no paint to wear"));
 			}
 		}
-		if (D.bPaint && D.PaintSections.IsEmpty() && !D.HasPartPaint())
+		// The paint layers: a part's layer slots name a layer the paint has, a slot wears one layer, and each layer covers something.
+		for (int32 Index = 0; Index < D.Parts.Num(); ++Index)
+		{
+			const FMantleVehiclePartDesc& Part = D.Parts[Index];
+			if (Part.LayerSlots.Num() > 0 && !D.bPaint)
+			{
+				return P.Fail(FString::Printf(TEXT("/parts/%d/layerSlots"), Index), TEXT("paints with no paint to wear"));
+			}
+			TArray<int32> Named = Part.PaintSlots;
+			for (int32 Entry = 0; Entry < Part.LayerSlots.Num(); ++Entry)
+			{
+				const FMantleVehiclePartLayerSlotsDesc& Layer = Part.LayerSlots[Entry];
+				const FString LayerPointer = FString::Printf(TEXT("/parts/%d/layerSlots/%d"), Index, Entry);
+				if (!D.PaintLayers.ContainsByPredicate([&Layer](const FMantleVehiclePaintLayerDesc& Has) { return Has.Layer == Layer.Layer; }))
+				{
+					return P.Fail(LayerPointer + TEXT("/layer"), FString::Printf(TEXT("is %s, which paint.layers does not have"), *Layer.Layer));
+				}
+				for (const int32 Slot : Layer.Slots)
+				{
+					if (Named.Contains(Slot))
+					{
+						return P.Fail(LayerPointer + TEXT("/slots"), FString::Printf(TEXT("names slot %d, which already wears a layer"), Slot));
+					}
+					Named.Add(Slot);
+				}
+			}
+		}
+		for (int32 Index = 0; Index < D.PaintLayers.Num(); ++Index)
+		{
+			const FMantleVehiclePaintLayerDesc& Layer = D.PaintLayers[Index];
+			const bool bSlots = D.Parts.ContainsByPredicate([&Layer](const FMantleVehiclePartDesc& Part)
+			{
+				return Part.LayerSlots.ContainsByPredicate([&Layer](const FMantleVehiclePartLayerSlotsDesc& Has) { return Has.Layer == Layer.Layer; });
+			});
+			if (Layer.Sections.IsEmpty() && !bSlots)
+			{
+				return P.Fail(FString::Printf(TEXT("/paint/layers/%d"), Index), TEXT("paints nothing (no body section and no part's slot)"));
+			}
+		}
+		const bool bLayerSections = D.PaintLayers.ContainsByPredicate([](const FMantleVehiclePaintLayerDesc& Layer) { return !Layer.Sections.IsEmpty(); });
+		if (D.bPaint && D.PaintSections.IsEmpty() && !D.HasPartPaint() && !bLayerSections)
 		{
 			return P.Fail(TEXT("/paint"), TEXT("paints nothing (no body section and no part's slot)"));
 		}
@@ -601,6 +645,89 @@ namespace MantleVehicleAssetPrivate
 		return true;
 	}
 
+	/** The resolved document's pearlescent color (the paint's pearl, when it has one): its color and strength, both written by the cook. */
+	void ReadVehiclePaintPearl(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Paint, FMantleVehicleDesc& D)
+	{
+		if (!P.Ok() || !Paint->HasField(TEXT("pearl")))
+		{
+			return;
+		}
+		TSharedPtr<FJsonObject> Pearl;
+		if (!P.Object(Paint, TEXT("/paint"), TEXT("pearl"), Pearl) || !P.Keys(Pearl, TEXT("/paint/pearl"), { TEXT("color"), TEXT("strength") }, { TEXT("color"), TEXT("strength") }))
+		{
+			return;
+		}
+		D.bPaintPearl = true;
+		FVector Color = FVector::OneVector;
+		if (P.Vector(Pearl->TryGetField(TEXT("color")), TEXT("/paint/pearl/color"), TEXT("paint/pearl/color/*"), Color))
+		{
+			D.PaintPearlColor = FLinearColor(static_cast<float>(Color.X), static_cast<float>(Color.Y), static_cast<float>(Color.Z), 1.f);
+		}
+		P.Number(Pearl, TEXT("/paint/pearl"), TEXT("strength"), TEXT("paint/pearl/strength"), D.PaintPearlStrength);
+	}
+
+	/** The resolved document's paint layers: each of secondary, wheels, interior and dashboard once, its sections each once across every layer and the primary. */
+	void ReadVehiclePaintLayers(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Paint, FMantleVehicleDesc& D)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Layers = nullptr;
+		if (!P.Ok() || !Paint->HasField(TEXT("layers")) || !P.Array(Paint->TryGetField(TEXT("layers")), TEXT("/paint/layers"), 1, 4, Layers))
+		{
+			return;
+		}
+		TArray<FString> Named = D.PaintSections;
+		for (int32 Index = 0; Index < Layers->Num() && P.Ok(); ++Index)
+		{
+			const FString Pointer = FString::Printf(TEXT("/paint/layers/%d"), Index);
+			const TSharedPtr<FJsonObject>* Entry = nullptr;
+			if (!(*Layers)[Index].IsValid() || !(*Layers)[Index]->TryGetObject(Entry) || !Entry || !Entry->IsValid())
+			{
+				P.Fail(Pointer, TEXT("must be an object"));
+				return;
+			}
+			if (!P.Keys(*Entry, Pointer, { TEXT("layer"), TEXT("sections"), TEXT("color"), TEXT("finish") }, { TEXT("layer"), TEXT("sections"), TEXT("color"), TEXT("finish") }))
+			{
+				return;
+			}
+			FMantleVehiclePaintLayerDesc Layer;
+			if (!(*Entry)->TryGetStringField(TEXT("layer"), Layer.Layer) || !FMantleVehiclePaintNames::IsLayer(Layer.Layer)
+				|| D.PaintLayers.ContainsByPredicate([&Layer](const FMantleVehiclePaintLayerDesc& Seen) { return Seen.Layer == Layer.Layer; }))
+			{
+				P.Fail(Pointer + TEXT("/layer"), TEXT("must be secondary, wheels, interior or dashboard, each once"));
+				return;
+			}
+			const TArray<TSharedPtr<FJsonValue>>* Sections = nullptr;
+			if (!P.Array((*Entry)->TryGetField(TEXT("sections")), Pointer + TEXT("/sections"), 0, FMantleVehicleLimits::MaxSections, Sections))
+			{
+				return;
+			}
+			for (int32 Section = 0; Section < Sections->Num() && P.Ok(); ++Section)
+			{
+				FString Name;
+				const TSharedPtr<FJsonValue>& Value = (*Sections)[Section];
+				if (!Value.IsValid() || !Value->TryGetString(Name) || Name.IsEmpty() || Name.Len() > MaxSectionNameLength
+					|| Named.ContainsByPredicate([&Name](const FString& Seen) { return Seen.Equals(Name, ESearchCase::CaseSensitive); }))
+				{
+					P.Fail(FString::Printf(TEXT("%s/sections/%d"), *Pointer, Section), TEXT("must name a body section that wears one layer"));
+					return;
+				}
+				Named.Add(Name);
+				Layer.Sections.Add(Name);
+			}
+			FVector Color = FVector::OneVector;
+			if (!P.Vector((*Entry)->TryGetField(TEXT("color")), Pointer + TEXT("/color"), TEXT("paint/layers/*/color/*"), Color))
+			{
+				return;
+			}
+			Layer.Color = FLinearColor(static_cast<float>(Color.X), static_cast<float>(Color.Y), static_cast<float>(Color.Z), 1.f);
+			if (!(*Entry)->TryGetStringField(TEXT("finish"), Layer.Finish) || !FMantleVehiclePaintNames::IsFinish(Layer.Finish))
+			{
+				P.Fail(Pointer + TEXT("/finish"), TEXT("must be gloss, metallic, pearl, matte, satin, metal, chrome or trim"));
+				return;
+			}
+			D.PaintLayers.Add(MoveTemp(Layer));
+		}
+	}
+
 	/** The resolved document's paint (#435 f): every key the cook fills, the sections each once. */
 	void ReadVehiclePaint(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
@@ -608,7 +735,7 @@ namespace MantleVehicleAssetPrivate
 		if (!P.Object(Root, TEXT(""), TEXT("paint"), Paint)
 			|| !P.Keys(Paint, TEXT("/paint"),
 				{ TEXT("sections"), TEXT("color"), TEXT("metallic"), TEXT("roughness"), TEXT("flakeDensity"), TEXT("flakeSize"),
-				  TEXT("flakeTint"), TEXT("clearCoat"), TEXT("clearCoatRoughness") },
+				  TEXT("flakeTint"), TEXT("clearCoat"), TEXT("clearCoatRoughness"), TEXT("pearl"), TEXT("layers") },
 				{ TEXT("sections"), TEXT("color"), TEXT("metallic"), TEXT("roughness"), TEXT("flakeDensity"), TEXT("flakeSize"),
 				  TEXT("flakeTint"), TEXT("clearCoat"), TEXT("clearCoatRoughness") }))
 		{
@@ -640,6 +767,8 @@ namespace MantleVehicleAssetPrivate
 		P.Number(Paint, TEXT("/paint"), TEXT("flakeSize"), TEXT("paint/flakeSize"), D.FlakeSize);
 		P.Number(Paint, TEXT("/paint"), TEXT("clearCoat"), TEXT("paint/clearCoat"), D.ClearCoat);
 		P.Number(Paint, TEXT("/paint"), TEXT("clearCoatRoughness"), TEXT("paint/clearCoatRoughness"), D.ClearCoatRoughness);
+		ReadVehiclePaintPearl(P, Paint, D);
+		ReadVehiclePaintLayers(P, Paint, D);
 	}
 
 	/** The resolved document's lights: every key the cook fills, a section once within its kind, and the beams. */
@@ -1126,7 +1255,7 @@ namespace MantleVehicleAssetPrivate
 				P.Fail(Pointer, TEXT("must be an object"));
 				break;
 			}
-			if (!P.Keys(Part, Pointer, { TEXT("mesh"), TEXT("bone"), TEXT("location"), TEXT("rotation"), TEXT("scale"), TEXT("materials"), TEXT("paintSlots") },
+			if (!P.Keys(Part, Pointer, { TEXT("mesh"), TEXT("bone"), TEXT("location"), TEXT("rotation"), TEXT("scale"), TEXT("materials"), TEXT("paintSlots"), TEXT("layerSlots") },
 				{ TEXT("mesh"), TEXT("bone"), TEXT("location"), TEXT("rotation"), TEXT("scale") }))
 			{
 				break;
@@ -1216,6 +1345,55 @@ namespace MantleVehicleAssetPrivate
 						}
 						Desc.PaintSlots.Add(static_cast<int32>(Slot));
 					}
+				}
+			}
+			// The slots drawn with one of the paint's other layers: each layer once, each slot an index.
+			if (P.Ok() && Part->HasField(TEXT("layerSlots")))
+			{
+				const TArray<TSharedPtr<FJsonValue>>* Layers = nullptr;
+				if (!P.Array(Part->TryGetField(TEXT("layerSlots")), Pointer + TEXT("/layerSlots"), 1, 4, Layers))
+				{
+					break;
+				}
+				for (int32 Entry = 0; Entry < Layers->Num() && P.Ok(); ++Entry)
+				{
+					const FString LayerPointer = FString::Printf(TEXT("%s/layerSlots/%d"), *Pointer, Entry);
+					const TSharedPtr<FJsonObject>* Object = nullptr;
+					if (!(*Layers)[Entry].IsValid() || !(*Layers)[Entry]->TryGetObject(Object) || !Object || !Object->IsValid())
+					{
+						P.Fail(LayerPointer, TEXT("must be an object"));
+						break;
+					}
+					if (!P.Keys(*Object, LayerPointer, { TEXT("layer"), TEXT("slots") }, { TEXT("layer"), TEXT("slots") }))
+					{
+						break;
+					}
+					FMantleVehiclePartLayerSlotsDesc Layer;
+					if (!(*Object)->TryGetStringField(TEXT("layer"), Layer.Layer) || !FMantleVehiclePaintNames::IsLayer(Layer.Layer)
+						|| Desc.LayerSlots.ContainsByPredicate([&Layer](const FMantleVehiclePartLayerSlotsDesc& Seen) { return Seen.Layer == Layer.Layer; }))
+					{
+						P.Fail(LayerPointer + TEXT("/layer"), TEXT("must be secondary, wheels, interior or dashboard, each once"));
+						break;
+					}
+					const TArray<TSharedPtr<FJsonValue>>* Slots = nullptr;
+					if (!P.Array((*Object)->TryGetField(TEXT("slots")), LayerPointer + TEXT("/slots"), 1, FMantleVehicleLimits::MaxPartMaterials, Slots))
+					{
+						break;
+					}
+					for (int32 Slot = 0; Slot < Slots->Num() && P.Ok(); ++Slot)
+					{
+						double SlotIndex = 0.0;
+						const FString SlotPointer = FString::Printf(TEXT("%s/slots/%d"), *LayerPointer, Slot);
+						if (P.NumberValue((*Slots)[Slot], SlotPointer, TEXT("parts/*/layerSlots/*/slots/*"), true, SlotIndex))
+						{
+							if (Layer.Slots.Contains(static_cast<int32>(SlotIndex)))
+							{
+								P.Fail(SlotPointer, TEXT("names a slot twice"));
+							}
+							Layer.Slots.Add(static_cast<int32>(SlotIndex));
+						}
+					}
+					Desc.LayerSlots.Add(MoveTemp(Layer));
 				}
 			}
 			if (!P.Ok())
@@ -1847,6 +2025,24 @@ namespace MantleVehicleAssetPrivate
 		OutError = Why;
 		return false;
 	}
+}
+
+bool FMantleVehiclePaintNames::IsLayer(const FString& Layer)
+{
+	return Layer == TEXT("secondary") || Layer == TEXT("wheels") || Layer == TEXT("interior") || Layer == TEXT("dashboard");
+}
+
+bool FMantleVehiclePaintNames::IsFinish(const FString& Finish)
+{
+	static const TCHAR* const Finishes[] = { TEXT("gloss"), TEXT("metallic"), TEXT("pearl"), TEXT("matte"), TEXT("satin"), TEXT("metal"), TEXT("chrome"), TEXT("trim") };
+	for (const TCHAR* Name : Finishes)
+	{
+		if (Finish == Name)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 TArray<FString> FMantleVehicleDesc::MaterialIds() const
