@@ -43,7 +43,9 @@ enum class EMantlePlaceUploadStage : uint8
 	/** A creator vehicle (#435): its document names its materials' ids, so it goes after everything else. */
 	Vehicle,
 	/** A creator weapon (#789): its document names its skeletal mesh's and materials' ids, so it goes after them. */
-	Weapon
+	Weapon,
+	/** A creator wheel: its document names its static mesh's and materials' ids, so it goes after them. */
+	Wheel
 };
 
 /** A uploaded asset as the upload queue recorded it: what the exporter writes for its local key. */
@@ -536,6 +538,37 @@ struct MANTLEEDITOR_API FMantleConvertedWeapon
 	FString FireSuppressedSoundKey;
 };
 
+/**
+ * One creator wheel (the wheel publish), ready but for its ids: its measured size, the key of its static mesh, the key of the material
+ * of each of the mesh's upload slots and which of those slots wear the wheels paint layer. FMantlePlaceAssetSet::WheelBytes writes the
+ * upload (FMantleWheelDocument::Build) once they have ids.
+ */
+struct MANTLEEDITOR_API FMantleConvertedWheel
+{
+	/** The wheel publish's key. */
+	FString Key;
+	FString Name;
+
+	/** /Game/MantleWheels/<Name>: what its library item is remembered under. */
+	FString Path;
+
+	/** The file name the 3D model was imported from, cleaned; empty when it has none. */
+	FString ImportFilename;
+
+	/** FMantlePlaceAssets::MeshKey of its model, converted and uploaded as a place mesh is. */
+	FString MeshKey;
+
+	/** One per upload slot of the model, in slot order: the key of its material, always uploaded. */
+	TArray<FString> MaterialKeys;
+
+	/** cm, as FMantleWheelItem measured them. */
+	double ReferenceRadius = 0.0;
+	double ReferenceWidth = 0.0;
+
+	/** Indexes into MaterialKeys of the slots that wear the car's wheels paint layer. */
+	TArray<int32> WheelSlots;
+};
+
 /** One file for the upload queue (F4 #338): its kind and options, bytes, content address, and the Unreal asset to name in messages. */
 struct MANTLEEDITOR_API FMantlePlaceUpload
 {
@@ -594,6 +627,9 @@ struct MANTLEEDITOR_API FMantlePlaceAssetSet
 	/** Creator weapons (#789), uploaded after the vehicles: their documents name their model's and materials' ids. */
 	TArray<FMantleConvertedWeapon> Weapons;
 
+	/** Creator wheels, uploaded after the weapons: their documents name their model's and materials' ids. */
+	TArray<FMantleConvertedWheel> Wheels;
+
 	/** What conversion changed or could not do, in plain words, naming the Unreal asset. Errors stop the publish. */
 	TArray<FMantleValidationIssue> Issues;
 
@@ -627,6 +663,7 @@ struct MANTLEEDITOR_API FMantlePlaceAssetSet
 	const FMantleConvertedVoxelWorld* FindVoxelWorld(const FString& Key) const;
 	const FMantleConvertedVehicle* FindVehicle(const FString& Key) const;
 	const FMantleConvertedWeapon* FindWeapon(const FString& Key) const;
+	const FMantleConvertedWheel* FindWheel(const FString& Key) const;
 
 	/** Records an uploaded (or already held) asset under its local key. */
 	void RecordUpload(const FString& Key, const FString& Id, const FString& Hash, int64 Bytes);
@@ -691,6 +728,9 @@ struct MANTLEEDITOR_API FMantlePlaceAssetSet
 	 * JSON. False naming the first model or material without an id.
 	 */
 	bool WeaponBytes(const FMantleConvertedWeapon& Weapon, TArray<uint8>& OutBytes, FString& OutError) const;
+
+	/** A wheel's upload bytes: its document (FMantleWheelDocument::Build) with the uploaded ids of its model and materials. False naming the first without an id. */
+	bool WheelBytes(const FMantleConvertedWheel& Wheel, TArray<uint8>& OutBytes, FString& OutError) const;
 
 	/** #488: the uploaded ids of a vehicle's liveries, in order; false naming the first without one. */
 	bool VehicleLiveryIds(const FMantleConvertedVehicle& Vehicle, TArray<FString>& OutIds, FString& OutError) const;

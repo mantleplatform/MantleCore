@@ -216,7 +216,8 @@ namespace MantlePlaceStoragePrivate
 			const bool bScript = IsScriptKind(Resolved->Kind);
 			if (!bScript && (!FMantlePlaceAssets::IsUploadedId(Resolved->PrimaryAssetId)
 				|| (!Resolved->Kind.Equals(FString(FMantleStorage::KindVehicle), ESearchCase::CaseSensitive)
-					&& !Resolved->Kind.Equals(FString(FMantleStorage::KindWeapon), ESearchCase::CaseSensitive))))
+					&& !Resolved->Kind.Equals(FString(FMantleStorage::KindWeapon), ESearchCase::CaseSensitive)
+					&& !Resolved->Kind.Equals(FString(FMantleStorage::KindWheel), ESearchCase::CaseSensitive))))
 			{
 				continue;
 			}
@@ -920,6 +921,35 @@ TArray<FString> FMantleStorage::StoredWeaponAssetIds(const FMantlePlace& Place)
 		}
 	}
 	return Ids;
+}
+
+TArray<FString> FMantleStorage::StoredWheelAssetIds(const FMantlePlace& Place)
+{
+	TArray<FString> Ids;
+	for (const FMantleResolvedStorageEntry& Entry : Place.StorageResolved)
+	{
+		if (Entry.Kind.Equals(FString(KindWheel), ESearchCase::CaseSensitive) && FMantlePlaceAssets::IsUploadedId(Entry.PrimaryAssetId))
+		{
+			Ids.AddUnique(Entry.PrimaryAssetId);
+		}
+	}
+	return Ids;
+}
+
+TArray<FMantleStoredWheel> FMantleStorage::StoredWheels(const FMantlePlace& Place)
+{
+	TArray<FMantleStoredWheel> Wheels;
+	for (const FMantleStorageEntry& Stored : Place.Storage)
+	{
+		const FMantleResolvedStorageEntry* Resolved = MantlePlaceStoragePrivate::FindResolvedFor(Place, Stored);
+		if (Resolved && Resolved->Kind.Equals(FString(KindWheel), ESearchCase::CaseSensitive) && FMantlePlaceAssets::IsUploadedId(Resolved->PrimaryAssetId))
+		{
+			FMantleStoredWheel& Wheel = Wheels.AddDefaulted_GetRef();
+			Wheel.Name = Stored.Name;
+			Wheel.AssetId = Resolved->PrimaryAssetId;
+		}
+	}
+	return Wheels;
 }
 
 FMantleScriptPackageManifest FMantleStorage::ReadScriptPackageManifest(const TSharedPtr<FJsonObject>& Object)

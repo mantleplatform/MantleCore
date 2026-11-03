@@ -1524,6 +1524,23 @@ bool FMantlePlacePublishSession::PrepareWeapon(const FString& Key, FMantleQueued
 	return true;
 }
 
+bool FMantlePlacePublishSession::PrepareWheel(const FString& Key, FMantleQueuedUpload& Item, FString& OutWhyNot)
+{
+	const FMantleConvertedWheel* Wheel = Set.FindWheel(Key);
+	if (!Wheel)
+	{
+		OutWhyNot = FString::Printf(TEXT("Wheel '%s' was not prepared."), *Item.Name);
+		return false;
+	}
+	// Its document names its 3D model's and materials' ids, which the earlier stages have just recorded.
+	if (!Set.WheelBytes(*Wheel, Item.Bytes, OutWhyNot))
+	{
+		return false;
+	}
+	Item.Hash = FMantleSha256::AssetHash(Item.Bytes);
+	return true;
+}
+
 void FMantlePlacePublishSession::StartUploads()
 {
 	// A credit Mantle would refuse is said now, before anything is sent, rather than after the uploads.
@@ -1651,6 +1668,21 @@ void FMantlePlacePublishSession::StartUploads()
 		{
 			const TSharedPtr<FMantlePlacePublishSession> This = WeakThis.Pin();
 			return This.IsValid() && This->PrepareWeapon(Key, Out, OutWhyNot);
+		};
+	}
+	// Wheels, after them: their documents name their model's and materials' ids.
+	for (const FMantleConvertedWheel& Wheel : Set.Wheels)
+	{
+		FMantleQueuedUpload& Item = Items.AddDefaulted_GetRef();
+		Item.Key = Wheel.Key;
+		Item.Stage = static_cast<int32>(EMantlePlaceUploadStage::Wheel);
+		Item.Name = Wheel.Name;
+		Item.Options.Kind = TEXT("wheel");
+		const FString Key = Wheel.Key;
+		Item.Prepare = [WeakThis, Key](FMantleQueuedUpload& Out, FString& OutWhyNot)
+		{
+			const TSharedPtr<FMantlePlacePublishSession> This = WeakThis.Pin();
+			return This.IsValid() && This->PrepareWheel(Key, Out, OutWhyNot);
 		};
 	}
 	if (Items.Num() == 0)
@@ -1947,7 +1979,7 @@ void FMantlePlacePublishSession::TickExporting()
 		AddLog(Note);
 	}
 	Result.PlaceJson = MoveTemp(Json);
-	if (Set.Vehicles.Num() > 0 || Set.Weapons.Num() > 0 || Packages.Num() > 0)
+	if (Set.Vehicles.Num() > 0 || Set.Weapons.Num() > 0 || Set.Wheels.Num() > 0 || Packages.Num() > 0)
 	{
 		if (bGoLive)
 		{
@@ -1958,7 +1990,7 @@ void FMantlePlacePublishSession::TickExporting()
 			Tick();
 			return;
 		}
-		if (Set.Vehicles.Num() > 0 || Set.Weapons.Num() > 0)
+		if (Set.Vehicles.Num() > 0 || Set.Weapons.Num() > 0 || Set.Wheels.Num() > 0)
 		{
 			AddLog(TEXT("Vehicles and weapons are uploaded and saved in the draft by their upload id; they become library items when you publish"));
 		}
@@ -2065,6 +2097,28 @@ void FMantlePlacePublishSession::TickLibrary()
 				Job.ThumbnailId = WeaponPicture->Id;
 			}
 		}
+		// Wheels: library only, never named by a place file.
+		for (const FMantleConvertedWheel& Wheel : Set.Wheels)
+		{
+			const FMantlePlaceUploadedRef* Uploaded = Set.Uploaded.Find(Wheel.Key);
+			if (!Uploaded || !bLibraryOnly)
+			{
+				continue;
+			}
+			const FString SourcePath = MantlePlacePublishSessionPrivate::ConvertedObjectPath(Wheel.Path, Wheel.Key);
+			if (FLibraryJob* Same = FindJobByAsset(Uploaded->Id))
+			{
+				Same->Paths.AddUnique(SourcePath);
+				continue;
+			}
+			FLibraryJob& Job = LibraryJobs.AddDefaulted_GetRef();
+			Job.bWheel = true;
+			Job.Name = Wheel.Name;
+			Job.Path = SourcePath;
+			Job.Paths.Add(SourcePath);
+			Job.AssetId = Uploaded->Id;
+			Job.Provenance = FMantleProvenance::Make(SourcePath, Wheel.ImportFilename);
+		}
 		// #838: each script package, once all its files are on Mantle; remembered by its folder like a vehicle by its asset.
 		PackageRefs.Reset();
 		for (int32 PackageIndex = 0; PackageIndex < Packages.Num(); ++PackageIndex)
@@ -2168,9 +2222,9 @@ void FMantlePlacePublishSession::StartLibraryJob()
 		Request.Json = FMantleLibraryPublish::MakeVersionBody(Job.AssetId, bLibraryPublic, Job.Provenance);
 		break;
 	default:
-		AddLog(FString::Printf(TEXT("Adding %s '%s' to your library (%s)"), Job.bWeapon ? TEXT("weapon") : TEXT("vehicle"), *Job.Name, bLibraryPublic ? TEXT("public") : TEXT("private")));
+		AddLog(FString::Printf(TEXT("Adding %s '%s' to your library (%s)"), Job.Kind(), *Job.Name, bLibraryPublic ? TEXT("public") : TEXT("private")));
 		Request.Call = EMantleUploadCall::CreateLibraryItem;
-		Request.Json = FMantleLibraryPublish::MakeItemBody(Job.Name, bLibraryPublic, Job.AssetId, Job.Provenance, Job.bWeapon ? TEXT("weapon") : TEXT("vehicle"), Job.ThumbnailId);
+		Request.Json = FMantleLibraryPublish::MakeItemBody(Job.Name, bLibraryPublic, Job.AssetId, Job.Provenance, Job.Kind(), Job.ThumbnailId);
 		Request.IdempotencyKey = FMantleLibraryPublish::MakeIdempotencyKey(Job.Path, Job.AssetId, bLibraryPublic, Source->LibraryGeneration(Job.Path));
 		break;
 	}
@@ -2354,7 +2408,7 @@ void FMantlePlacePublishSession::FinishLibrary()
 		for (const FMantleLibraryVehicleRef& Ref : LibraryRefs)
 		{
 			const FLibraryJob* Job = LibraryJobs.FindByPredicate([&Ref](const FLibraryJob& Candidate) { return Candidate.AssetId.Equals(Ref.AssetId, ESearchCase::CaseSensitive); });
-			UE_LOG(LogMantle, Log, TEXT("MANTLE_LIBRARY_PUBLISHED kind=%s name=%s item=%s version=%d asset=%s visibility=%s"), Job && Job->bWeapon ? TEXT("weapon") : TEXT("vehicle"),
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_LIBRARY_PUBLISHED kind=%s name=%s item=%s version=%d asset=%s visibility=%s"), Job ? Job->Kind() : TEXT("vehicle"),
 				*Ref.Name, *Ref.ItemId, Ref.Version, *Ref.AssetId, bLibraryPublic ? TEXT("public") : TEXT("private"));
 		}
 		if (LibraryRefs.Num() == 0)

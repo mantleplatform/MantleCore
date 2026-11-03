@@ -14,12 +14,14 @@
 #include "MantleStaticMeshReader.h"
 #include "MantleVehicleAsset.h"
 #include "MantleWeaponAsset.h"
+#include "MantleWheelAsset.h"
 #include "UObject/GCObject.h"
 #include "UObject/ObjectPtr.h"
 
 class UMaterialInterface;
 class UMantleBuiltVehicle;
 class UMantleBuiltWeapon;
+class UMantleBuiltWheel;
 class UObject;
 class USkeletalMesh;
 class UStaticMesh;
@@ -392,6 +394,17 @@ public:
 	/** #789: where an uploaded weapon id stands in the newest live set that has it, as GetLiveMeshState. */
 	static EMantleLiveAssetState GetLiveWeaponState(const FString& Id, FString* OutError = nullptr);
 
+	/**
+	 * The built creator wheel for an uploaded Wheel id in the newest live set that has it: the document, and on a machine
+	 * that renders its static mesh and materials (a material that did not load is the default surface). Null with the reason
+	 * otherwise. Every wheel a place's storage lists is prepared with the place; a dedicated server keeps only the document
+	 * (Mesh null, Materials empty) and fetches none of the wheel's mesh, material or texture bytes.
+	 */
+	static UMantleBuiltWheel* FindLiveWheel(const FString& Id, FString& OutError);
+
+	/** Where an uploaded wheel id stands in the newest live set that has it, as GetLiveMeshState. */
+	static EMantleLiveAssetState GetLiveWheelState(const FString& Id, FString* OutError = nullptr);
+
 	/** #462: where an uploaded mesh id stands in the newest live set that has it; OutError says why when it failed or was never prepared. */
 	static EMantleLiveAssetState GetLiveMeshState(const FString& Id, FString* OutError = nullptr);
 
@@ -446,6 +459,7 @@ public:
 	TSharedPtr<const FMantleAnimClip> FindClip(const FString& Id, FString* OutError = nullptr, bool* bOutStillLoading = nullptr) const;
 	UMantleBuiltVehicle* FindVehicle(const FString& Id, FString* OutError = nullptr) const;
 	UMantleBuiltWeapon* FindWeapon(const FString& Id, FString* OutError = nullptr) const;
+	UMantleBuiltWheel* FindWheel(const FString& Id, FString* OutError = nullptr) const;
 
 	/** The decoded sound for an uploaded id; null with the reason otherwise, bOutStillLoading when it has not arrived yet. */
 	TSharedPtr<const FMantleSoundData> FindSound(const FString& Id, FString* OutError = nullptr, bool* bOutStillLoading = nullptr) const;
@@ -465,7 +479,7 @@ private:
 	 * TerrainWeights (#596) is an uploaded Texture (the API's kind) read on the CPU into a Terrain's
 	 * heaviest layer per texel, beside (not instead of) the GPU texture a client builds from the same id.
 	 */
-	enum class EAssetKind : uint8 { Mesh, Material, Texture, Sound, SkeletalMesh, AnimClip, Heightfield, Vehicle, TerrainWeights, Weapon, Lumen, VoxelWorld, VoxelTile };
+	enum class EAssetKind : uint8 { Mesh, Material, Texture, Sound, SkeletalMesh, AnimClip, Heightfield, Vehicle, TerrainWeights, Weapon, Lumen, VoxelWorld, VoxelTile, Wheel };
 
 	using FSoundSettled = TFunction<void(TSharedPtr<const FMantleSoundData>, const FString&)>;
 
@@ -558,6 +572,12 @@ private:
 
 		/** Weapons (#789): the read MWP1, until the game thread wraps it in its UMantleBuiltWeapon. */
 		TSharedPtr<FMantleWeaponAsset> Weapon;
+
+		/** Wheels: the read MWL1, until the game thread wraps it in its UMantleBuiltWheel. */
+		TSharedPtr<FMantleWheelAsset> Wheel;
+
+		/** Wheels: the mesh and material records the wheel waits for before it builds (WaitingForTextures, as a material waits). */
+		TArray<FString> PartRecords;
 
 		/** Materials: the texture record per slot, a layer blend's included (#533; empty when the slot has none). */
 		FString TextureRecords[MantlePlaceMaterialTextureCount];
@@ -655,7 +675,7 @@ private:
 	void OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStaticMeshData> MeshV2, TSharedPtr<FMantleRuntimeMesh> MeshV1,
 		TSharedPtr<FMantleDecodedTexture> Texture, TSharedPtr<FMantlePlaceMaterialDesc> Material, TSharedPtr<const FMantleSoundData> Sound,
 		TSharedPtr<FMantleSkinnedMesh> Skinned, TSharedPtr<const FMantleAnimClip> Clip, TSharedPtr<const FMantleHeightfield> Heightfield,
-		TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, const FString& Error);
+		TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, TSharedPtr<FMantleWheelAsset> Wheel, const FString& Error);
 	/** #435: a vehicle's materials, from its document, as material records (off a dedicated server). */
 	void QueueMaterialsOf(const FString& VehicleId, const TArray<FString>& MaterialIds);
 	/** #488: a vehicle's liveries, from its document, as color texture records (off a dedicated server). */
@@ -672,6 +692,11 @@ private:
 	 * builds the weapon definition too, and the definition needs them); its materials and sounds off a dedicated server.
 	 */
 	void QueueWeaponPartsOf(const FString& WeaponId, const FMantleWeaponAsset& Named);
+	/**
+	 * What a wheel's document names: its static mesh (no collision) and materials, on a machine that renders only; a dedicated
+	 * server keeps the document alone. Returns the records the wheel waits for (empty off a rendering machine).
+	 */
+	TArray<FString> QueueWheelPartsOf(const FString& WheelId, const FMantleWheelAsset& Named);
 	void QueueBuild(const FBuildKey& Key);
 	void PromoteMaterials();
 	void RunBuilds();

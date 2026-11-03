@@ -152,6 +152,20 @@ namespace MantlePlaceAssetsPrivate
 		}
 	}
 
+	/** The mesh and materials a stored wheel's document names, once a live set has read it (as for a weapon's). */
+	void AddLiveWheelDependencies(const FString& WheelId, TSet<FString>& Used)
+	{
+		FString Unread;
+		if (const UMantleBuiltWheel* Wheel = FMantlePlaceAssets::FindLiveWheel(WheelId, Unread))
+		{
+			for (const FString& MaterialId : Wheel->Desc.MaterialIds)
+			{
+				Used.Add(MaterialId);
+			}
+			Used.Add(Wheel->Desc.MeshId);
+		}
+	}
+
 	TSet<FString> UploadedIdsPlaceSetTakes(
 		const FMantlePlace& Place,
 		const TFunctionRef<void(const FString&, TSet<FString>&)> AddWeaponDependencies)
@@ -288,6 +302,12 @@ namespace MantlePlaceAssetsPrivate
 		{
 			Used.Add(StoredId);
 			WeaponIds.AddUnique(StoredId);
+		}
+		// Stored wheels, likewise: Prepare takes each with what its document names (the mesh and materials), where something draws.
+		for (const FString& StoredId : FMantleStorage::StoredWheelAssetIds(Place))
+		{
+			Used.Add(StoredId);
+			AddLiveWheelDependencies(StoredId, Used);
 		}
 		// What a weapon's document names, once a live set has read it (as for a vehicle's parts): its meshes and materials.
 		for (const FString& WeaponId : WeaponIds)
@@ -565,6 +585,11 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 	}
 	// So is a stored weapon (#614 stage 5): Backpack:Grant needs its definition built before a script asks for it.
 	if (FMantleStorage::StoredWeaponAssetIds(Place).Num() > 0)
+	{
+		return true;
+	}
+	// So is a stored wheel: a script asks for the built wheel by its asset id.
+	if (FMantleStorage::StoredWheelAssetIds(Place).Num() > 0)
 	{
 		return true;
 	}
@@ -894,6 +919,25 @@ EMantleLiveAssetState FMantlePlaceAssets::GetLiveWeaponState(const FString& Id, 
 	return LiveStateOf(Id, EAssetKind::Weapon, OutError);
 }
 
+UMantleBuiltWheel* FMantlePlaceAssets::FindLiveWheel(const FString& Id, FString& OutError)
+{
+	using namespace MantlePlaceAssetsPrivate;
+	for (int32 Index = GLiveSets.Num() - 1; Index >= 0; --Index)
+	{
+		if (GLiveSets[Index]->FindRecord(Id, EAssetKind::Wheel))
+		{
+			return GLiveSets[Index]->FindWheel(Id, &OutError);
+		}
+	}
+	OutError = FString::Printf(TEXT("'%s' is an uploaded wheel no loaded place prepared (the place must store it)"), *Id);
+	return nullptr;
+}
+
+EMantleLiveAssetState FMantlePlaceAssets::GetLiveWheelState(const FString& Id, FString* OutError)
+{
+	return LiveStateOf(Id, EAssetKind::Wheel, OutError);
+}
+
 TSharedPtr<const FMantleSoundData> FMantlePlaceAssets::FindLiveSound(const FString& Id, FString& OutError, bool* bOutStillLoading)
 {
 	using namespace MantlePlaceAssetsPrivate;
@@ -1110,6 +1154,7 @@ const TCHAR* FMantlePlaceAssets::KindName(const EAssetKind Kind)
 	case EAssetKind::AnimClip: return TEXT("animclip");
 	case EAssetKind::Vehicle: return TEXT("vehicle");
 	case EAssetKind::Weapon: return TEXT("weapon");
+	case EAssetKind::Wheel: return TEXT("wheel");
 	// #149: a static mesh's Lumen side file (MLD1), stored as the plugin baked it.
 	case EAssetKind::Lumen: return TEXT("lumen");
 	// #168: a VoxelWorld's blocks (MBW1); its tiles are uploaded textures, held to the API's "texture" like a weightmap.
@@ -1557,6 +1602,13 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 		EnsureRecord(StoredWeaponId, EAssetKind::Weapon);
 	}
 
+	// A stored wheel is available to scripts by its asset id. Its document is read on every machine; its mesh and materials
+	// are queued from the document (QueueWheelPartsOf), off a dedicated server only.
+	for (const FString& StoredWheelId : FMantleStorage::StoredWheelAssetIds(Place))
+	{
+		EnsureRecord(StoredWheelId, EAssetKind::Wheel);
+	}
+
 	// #556 item 5: the images the place's UI documents show, color textures with straight alpha
 	// as the document host draws them (MantleRml::ResolveAssetTexture). Only the uiDocuments entry
 	// names them, so nothing above takes them; a dedicated server shows no UI and takes none.
@@ -1589,13 +1641,15 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 	int32 HeightfieldCount = 0;
 	int32 VehicleCount = 0;
 	int32 WeaponCount = 0;
+	int32 WheelCount = 0;
 	int32 LumenCount = 0;
 	for (const TPair<FString, FRecord>& Pair : Records)
 	{
 		const EAssetKind Kind = Pair.Value.Kind;
 		(Kind == EAssetKind::Lumen ? LumenCount : Kind == EAssetKind::Mesh ? MeshCount : Kind == EAssetKind::Material ? MaterialCount : Kind == EAssetKind::Sound ? SoundCount
 			: (Kind == EAssetKind::SkeletalMesh || Kind == EAssetKind::AnimClip) ? SkeletalCount : Kind == EAssetKind::Heightfield ? HeightfieldCount
-			: Kind == EAssetKind::Vehicle ? VehicleCount : Kind == EAssetKind::Weapon ? WeaponCount : TextureCount) += 1;
+			: Kind == EAssetKind::Vehicle ? VehicleCount : Kind == EAssetKind::Weapon ? WeaponCount
+			: Kind == EAssetKind::Wheel ? WheelCount : TextureCount) += 1;
 	}
 	UE_LOG(LogMantle, Log,
 		TEXT("MANTLE_PLACE_ASSETS preflight place %s: %d uploaded assets in the manifest (about %.1f MB as uploaded); entities use %d uploaded meshes, %d uploaded materials, %d uploaded decal textures and %d uploaded skeletal meshes and clips; %d uploaded sounds (emitters' and the manifest's)"),
@@ -1611,6 +1665,10 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 	if (WeaponCount > 0)
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS preflight place %s: %d uploaded weapon(s) (#789)"), *Place.PlaceId, WeaponCount);
+	}
+	if (WheelCount > 0)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS preflight place %s: %d uploaded wheel(s)"), *Place.PlaceId, WheelCount);
 	}
 	if (Settings.bRenderAssets)
 	{
@@ -1958,7 +2016,9 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 		&& RecordKind != EAssetKind::Heightfield && RecordKind != EAssetKind::TerrainWeights && RecordKind != EAssetKind::Lumen
 		&& RecordKind != EAssetKind::VoxelWorld && RecordKind != EAssetKind::VoxelTile
 		// A weapon is read again, not reused: queuing what its document names happens when it is decoded (#789).
-		&& RecordKind != EAssetKind::Weapon)
+		&& RecordKind != EAssetKind::Weapon
+		// Likewise a wheel: its mesh and materials are queued from its document when it is decoded.
+		&& RecordKind != EAssetKind::Wheel)
 	{
 		const FString ObjectKey = FString::Printf(TEXT("%s:%d:%d"), *Hash.ToHex(), static_cast<int32>(Key.Kind), static_cast<int32>(Key.Variant));
 		if (const TWeakObjectPtr<UObject>* Alive = MantlePlaceAssetsPrivate::GBuiltObjects.Find(ObjectKey); Alive && Alive->IsValid())
@@ -2184,6 +2244,51 @@ void FMantlePlaceAssets::QueueWeaponPartsOf(const FString& WeaponId, const FMant
 	}
 }
 
+TArray<FString> FMantlePlaceAssets::QueueWheelPartsOf(const FString& WheelId, const FMantleWheelAsset& Named)
+{
+	TArray<FString> Parts;
+	if (!Settings.bRenderAssets)
+	{
+		// A dedicated server draws nothing: a wheel is client-render-only, so it keeps the document and fetches no mesh,
+		// material or texture bytes (the materials are counted as skipped).
+		Result.SkippedMaterials += Named.Desc.MaterialIds.Num();
+		return Parts;
+	}
+	if (IsUploadedId(Named.Desc.MeshId))
+	{
+		// No collision: a wheel on a car collides through the car's own physics.
+		FRecord& Record = EnsureRecord(Named.Desc.MeshId, EAssetKind::Mesh);
+		Parts.AddUnique(RecordKey(Named.Desc.MeshId, EAssetKind::Mesh, EMantleTextureRole::Color));
+		if (!Record.bResolved && !Record.bResolving && !Record.bFailed)
+		{
+			if (const FMantleUploadedAsset* Cached = ResolvedCache.Find(Record.Id))
+			{
+				const FMantleUploadedAsset Asset = *Cached;
+				ApplyResolved(Record, Asset);
+			}
+		}
+	}
+	for (const FString& MaterialId : Named.Desc.MaterialIds)
+	{
+		if (!IsUploadedId(MaterialId))
+		{
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_PLACE_ASSETS wheel %s names material '%s', which is not an uploaded id; ignored"), *WheelId, *MaterialId);
+			continue;
+		}
+		FRecord& Record = EnsureRecord(MaterialId, EAssetKind::Material);
+		Parts.AddUnique(RecordKey(MaterialId, EAssetKind::Material, EMantleTextureRole::Color));
+		if (!Record.bResolved && !Record.bResolving && !Record.bFailed)
+		{
+			if (const FMantleUploadedAsset* Cached = ResolvedCache.Find(Record.Id))
+			{
+				const FMantleUploadedAsset Asset = *Cached;
+				ApplyResolved(Record, Asset);
+			}
+		}
+	}
+	return Parts;
+}
+
 // ---- Fetch --------------------------------------------------------------------------------------------
 
 void FMantlePlaceAssets::StartFetches()
@@ -2326,6 +2431,7 @@ void FMantlePlaceAssets::StartDecodes()
 			TSharedPtr<const FMantleAnimClip> Clip;
 			TSharedPtr<FMantleVehicleAsset> Vehicle;
 			TSharedPtr<FMantleWeaponAsset> Weapon;
+			TSharedPtr<FMantleWheelAsset> Wheel;
 			FString Error;
 			const TConstArrayView<uint8> View = Bytes.IsValid() ? TConstArrayView<uint8>(*Bytes) : TConstArrayView<uint8>();
 
@@ -2488,11 +2594,22 @@ void FMantlePlaceAssets::StartDecodes()
 				}
 				break;
 			}
+
+			case EAssetKind::Wheel:
+			{
+				// MWL1: the wheel document, read strictly; the game thread wraps it once its mesh and materials settle.
+				const TSharedPtr<FMantleWheelAsset> Read = MakeShared<FMantleWheelAsset>();
+				if (FMantleWheelAsset::Read(View, *Read, Error))
+				{
+					Wheel = Read;
+				}
+				break;
+			}
 			}
 
-			Queue->Push([Key, MeshV2, MeshV1, Texture, Material, Sound, Skinned, Clip, Heightfield, TerrainWeights, Vehicle, Weapon, Error](FMantlePlaceAssets& Self)
+			Queue->Push([Key, MeshV2, MeshV1, Texture, Material, Sound, Skinned, Clip, Heightfield, TerrainWeights, Vehicle, Weapon, Wheel, Error](FMantlePlaceAssets& Self)
 			{
-				Self.OnDecoded(Key, MeshV2, MeshV1, Texture, Material, Sound, Skinned, Clip, Heightfield, TerrainWeights, Vehicle, Weapon, Error);
+				Self.OnDecoded(Key, MeshV2, MeshV1, Texture, Material, Sound, Skinned, Clip, Heightfield, TerrainWeights, Vehicle, Weapon, Wheel, Error);
 			});
 		});
 	}
@@ -2502,7 +2619,7 @@ void FMantlePlaceAssets::StartDecodes()
 void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStaticMeshData> MeshV2, TSharedPtr<FMantleRuntimeMesh> MeshV1,
 	TSharedPtr<FMantleDecodedTexture> Texture, TSharedPtr<FMantlePlaceMaterialDesc> Material, TSharedPtr<const FMantleSoundData> Sound,
 	TSharedPtr<FMantleSkinnedMesh> Skinned, TSharedPtr<const FMantleAnimClip> Clip, TSharedPtr<const FMantleHeightfield> Heightfield,
-	TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, const FString& Error)
+	TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, TSharedPtr<FMantleWheelAsset> Wheel, const FString& Error)
 {
 	--DecodesInFlight;
 	FBuild* Build = Builds.Find(Key);
@@ -2541,7 +2658,7 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 		return;
 	}
 	if (!Error.IsEmpty()
-		|| (!MeshV2 && !MeshV1 && !Texture && !Material && !Sound && !Skinned && !Clip && !Heightfield && !TerrainWeights && !Vehicle && !Weapon))
+		|| (!MeshV2 && !MeshV1 && !Texture && !Material && !Sound && !Skinned && !Clip && !Heightfield && !TerrainWeights && !Vehicle && !Weapon && !Wheel))
 	{
 		FailBuild(*Build, FString::Printf(TEXT("could not be read: %s"), Error.IsEmpty() ? TEXT("unknown error") : *Error));
 		return;
@@ -2565,6 +2682,7 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 	Build->TerrainWeights = TerrainWeights;
 	Build->Vehicle = Vehicle;
 	Build->Weapon = Weapon;
+	Build->Wheel = Wheel;
 
 	if (Key.Kind == EAssetKind::Weapon)
 	{
@@ -2579,6 +2697,31 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 		const FString WeaponId = Build->Id;
 		QueueBuild(Key);
 		QueueWeaponPartsOf(WeaponId, Named);
+		return;
+	}
+	if (Key.Kind == EAssetKind::Wheel)
+	{
+		// The document names the wheel's mesh and materials: they load beside it (off a dedicated server, which keeps the
+		// document alone), and the wheel builds once they settle, as a material waits for its textures. Queued after this build
+		// is last touched: a cached answer adds builds, which may move it.
+		const FMantleWheelAsset Named = *Wheel;
+		const FString WheelId = Build->Id;
+		const TArray<FString> Parts = QueueWheelPartsOf(WheelId, Named);
+		FBuild* Again = Builds.Find(Key);
+		if (!Again)
+		{
+			return;
+		}
+		if (Parts.IsEmpty())
+		{
+			QueueBuild(Key);
+		}
+		else
+		{
+			Again->PartRecords = Parts;
+			Again->State = EBuildState::WaitingForTextures;
+			WaitingMaterials.Add(Key);
+		}
 		return;
 	}
 	if (Key.Kind == EAssetKind::Vehicle)
@@ -2656,23 +2799,36 @@ void FMantlePlaceAssets::PromoteMaterials()
 			continue;
 		}
 		bool bTexturesSettled = true;
-		for (const FString& TextureRecord : Build->TextureRecords)
+		const auto IsUnsettled = [this](const FString& RecordKeyToCheck)
 		{
-			if (TextureRecord.IsEmpty())
+			if (RecordKeyToCheck.IsEmpty())
 			{
-				continue;
+				return false;
 			}
-			const FRecord* Record = Records.Find(TextureRecord);
+			const FRecord* Record = Records.Find(RecordKeyToCheck);
 			if (!Record || Record->bFailed)
 			{
-				continue;
+				return false;
 			}
 			const FBuild* TextureBuild = Record->Build.IsSet() ? Builds.Find(Record->Build.GetValue()) : nullptr;
-			if (!TextureBuild || !TextureBuild->IsTerminal())
+			return !TextureBuild || !TextureBuild->IsTerminal();
+		};
+		for (const FString& TextureRecord : Build->TextureRecords)
+		{
+			if (IsUnsettled(TextureRecord))
 			{
 				bTexturesSettled = false;
 				break;
 			}
+		}
+		// A wheel waits for its mesh and materials the same way (a material waits for its textures).
+		for (const FString& PartRecord : Build->PartRecords)
+		{
+			if (!bTexturesSettled)
+			{
+				break;
+			}
+			bTexturesSettled = !IsUnsettled(PartRecord);
 		}
 		if (bTexturesSettled)
 		{
@@ -3013,6 +3169,46 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		MarkReady(Build, Weapon);
 		return;
 	}
+
+	case EAssetKind::Wheel:
+	{
+		if (!Build.Wheel)
+		{
+			FailBuild(Build, TEXT("has nothing decoded to build"));
+			return;
+		}
+		// The document, with the mesh and materials it names as this set built them (none off a rendering machine: a dedicated
+		// server's wheel is the document alone). A mesh that did not load leaves Mesh null (the place reports it as that mesh's
+		// own failure); a material that did not load is the default surface, as a vehicle part's is.
+		UMantleBuiltWheel* Wheel = NewObject<UMantleBuiltWheel>(GetTransientPackage());
+		Wheel->Desc = Build.Wheel->Desc;
+		if (Settings.bRenderAssets)
+		{
+			FString Why;
+			Wheel->Mesh = FindMesh(Wheel->Desc.MeshId, &Why);
+			UMaterialInterface* DefaultSurface = nullptr;
+			for (const FString& MaterialId : Wheel->Desc.MaterialIds)
+			{
+				UMaterialInterface* Material = FindMaterial(MaterialId, &Why);
+				if (!Material)
+				{
+					if (!DefaultSurface)
+					{
+						DefaultSurface = FMantleAssetLibrary::Get().LoadMaterial(TEXT("ast_mat_basic"), Why);
+					}
+					Material = DefaultSurface;
+				}
+				Wheel->Materials.Add(Material);
+			}
+		}
+		Build.Detail = FString::Printf(TEXT("MWL1, \"%s\", mesh %s, %d material slot(s), %d wheel slot(s), %s"), *Wheel->Desc.Name,
+			*Wheel->Desc.MeshId, Wheel->Desc.MaterialIds.Num(), Wheel->Desc.WheelSlots.Num(),
+			!Settings.bRenderAssets ? TEXT("document only") : Wheel->Mesh ? TEXT("mesh built") : TEXT("mesh not built"));
+		Build.Wheel.Reset();
+		ReleasePending(Build);
+		MarkReady(Build, Wheel);
+		return;
+	}
 	}
 }
 
@@ -3082,6 +3278,7 @@ void FMantlePlaceAssets::FailBuild(FBuild& Build, const FString& Error)
 	Build.TerrainWeights.Reset();
 	Build.Vehicle.Reset();
 	Build.Weapon.Reset();
+	Build.Wheel.Reset();
 	Build.LumenFile.Reset();
 	Build.VoxelFile.Reset();
 	ReleasePending(Build);
@@ -3235,6 +3432,7 @@ void FMantlePlaceAssets::CheckComplete()
 		case EAssetKind::Texture: ++Result.Textures; break;
 		case EAssetKind::Vehicle: ++Result.Vehicles; break;
 		case EAssetKind::Weapon: break;
+		case EAssetKind::Wheel: break;
 		case EAssetKind::Sound: break;
 		case EAssetKind::SkeletalMesh: ++Result.SkeletalMeshes; break;
 		case EAssetKind::AnimClip: ++Result.Clips; break;
@@ -3621,6 +3819,11 @@ UMantleBuiltVehicle* FMantlePlaceAssets::FindVehicle(const FString& Id, FString*
 UMantleBuiltWeapon* FMantlePlaceAssets::FindWeapon(const FString& Id, FString* OutError) const
 {
 	return Cast<UMantleBuiltWeapon>(FindObject(Id, EAssetKind::Weapon, OutError));
+}
+
+UMantleBuiltWheel* FMantlePlaceAssets::FindWheel(const FString& Id, FString* OutError) const
+{
+	return Cast<UMantleBuiltWheel>(FindObject(Id, EAssetKind::Wheel, OutError));
 }
 
 TSharedPtr<const FMantleSoundData> FMantlePlaceAssets::FindSound(const FString& Id, FString* OutError, bool* bOutStillLoading) const

@@ -1,5 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleBuilder.h"
+#include "MantleGlbWriter.h"
+#include "MantleVehicleRimFinder.h"
 
 #include "MantleChassisSpec.h"
 #include "MantleVehicleBlueprint.h"
@@ -1726,6 +1728,14 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 				}
 			}
 		}
+		// So do the rims (sections named for one): a wheel swap hides them, and only the body's sections can be hidden.
+		for (int32 Slot = 0; Slot < SectionsBefore.Num(); ++Slot)
+		{
+			if (FMantleVehicleRims::NameIsRim(SectionsBefore[Slot]))
+			{
+				LightSlots.Add(Slot);
+			}
+		}
 		if (!FMantleVehicleBodySplit::Split(Skinned.Body, Skinned.Materials, Skinned.Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials,
 			FMantleVehicleLimits::MaxParts, Split, LightSlots))
 		{
@@ -1853,6 +1863,16 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 			Layers[Index] = Guess.bPrimary ? 0 : PaintPick(Guess.Layer);
 		}
 		ApplyPaint(*Out.Source, ModelSections, Painted, Out.Notes, &Layers);
+	}
+	// The rims a wheel swap hides: found on the car as built (the body keeps the rim-named sections when a model is split), not on the model it came from.
+	{
+		FMantleGlbMesh RimBody;
+		TArray<UMaterialInterface*> RimMaterials;
+		FString RimError;
+		if (FMantleVehicleConverter::ReadBody(*Out.Source, RimBody, RimMaterials, RimError, /*bApplyFitScale*/ true))
+		{
+			FMantleVehicleConverter::ApplyRims(RimBody, *Out.Source, Out.Notes);
+		}
 	}
 	// The lights: the creator's rows and beams, else what the finder found; each light section gets its glowing copy of its material.
 	ApplyLights(*Out.Source, Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights, Out.Notes);
