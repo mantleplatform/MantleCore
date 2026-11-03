@@ -10,6 +10,7 @@
 #include "MantleVehicleChassisBuilder.h"
 #include "MantleVehiclePreset.h"
 #include "SMantleVehicleBuilder.h"
+#include "MantleVehicleLiveryTools.h"
 #include "MantleVehicleShapeKind.h"
 #include "SMantleBuilderViewport.h"
 #include "MantleVehicleSource.h"
@@ -18,6 +19,7 @@
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
+#include "AssetCompilingManager.h"
 #include "RenderingThread.h"
 #include "Slate/WidgetRenderer.h"
 #include "TextureResource.h"
@@ -90,7 +92,7 @@ struct FMantleVehicleBuilderShotAccess
 			UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT %s %s"), *File, Draw(Panel, File) ? TEXT("saved") : TEXT("NOT saved"));
 		}
 		// The Liveries step: empty, then with each image given after Exit added, each shown on the model. A livery needs paint, so when
-		// images are given and the model's own paint was not found, the PRIMARY sections (the GTA body paint) are ticked first.
+		// images are given and the model's own paint was not found, the PRIMARY and SECONDARY sections (the GTA paint layers) are ticked first.
 		if (Args.Num() > 4)
 		{
 			bool bAnyPaint = false;
@@ -100,12 +102,27 @@ struct FMantleVehicleBuilderShotAccess
 			}
 			for (int32 Index = 0; !bAnyPaint && Index < Panel->PaintChoices.Num(); ++Index)
 			{
-				if (Panel->PaintChoices[Index].Section.Contains(TEXT("PRIMARY"), ESearchCase::IgnoreCase))
+				if (Panel->PaintChoices[Index].Section.Contains(TEXT("PRIMARY"), ESearchCase::IgnoreCase) || Panel->PaintChoices[Index].Section.Contains(TEXT("SECONDARY"), ESearchCase::IgnoreCase))
 				{
 					Panel->SetPaintSection(Index, true);
 					UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT ticked %s"), *Panel->PaintChoices[Index].Section);
 				}
 			}
+		}
+		if (Args.Num() > 4 && Panel->Preview.bOk)
+		{
+			// The UV guide an artist paints a livery on, of the paint ticked so far.
+			TSet<int32> Painted;
+			for (int32 Index = 0; Index < Panel->PaintChoices.Num(); ++Index)
+			{
+				if (Panel->PaintChoices[Index].bOn)
+				{
+					Painted.Add(Index);
+				}
+			}
+			FString GuideError;
+			const FString Guide = FPaths::Combine(Args[2], TEXT("uv_guide.png"));
+			UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT %s %s %s"), *Guide, FMantleVehicleLiveryTools::WriteUvGuide(Panel->Preview.Body, Painted, 2048, Guide, GuideError) ? TEXT("saved") : TEXT("NOT saved"), *GuideError);
 		}
 		Shot(4, TEXT("liveries_none"));
 		for (int32 Which = 3; Which < Args.Num(); ++Which)
@@ -130,6 +147,7 @@ struct FMantleVehicleBuilderShotAccess
 			Livery->WaitForStreaming();
 			Panel->AddLivery(Livery);
 			// The picture's stand-in material has to be compiled before the picture is drawn offscreen (in the window it pops in a moment later).
+			FAssetCompilingManager::Get().FinishAllCompilation();
 			if (GShaderCompilingManager)
 			{
 				GShaderCompilingManager->FinishAllCompilation();

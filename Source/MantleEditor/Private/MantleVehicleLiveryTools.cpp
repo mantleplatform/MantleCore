@@ -9,6 +9,7 @@
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
 #include "Materials/Material.h"
+#include "MaterialShared.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
@@ -65,7 +66,7 @@ namespace MantleVehicleLiveryToolsPrivate
 	}
 
 	/** Fills the triangle's pixels with Color, blended over what is there by Alpha (0 to 1). */
-	void Fill(TArray<FColor>& Pixels, const int32 Size, const FVector2f& A, const FVector2f& B, const FVector2f& C, const FColor Color, const float Alpha)
+	void Fill(TArray<FColor>& Pixels, TBitArray<>& Filled, const int32 Size, const FVector2f& A, const FVector2f& B, const FVector2f& C, const FColor Color, const float Alpha)
 	{
 		const int32 MinX = FMath::Max(0, FMath::FloorToInt(FMath::Min3(A.X, B.X, C.X)));
 		const int32 MaxX = FMath::Min(Size - 1, FMath::CeilToInt(FMath::Max3(A.X, B.X, C.X)));
@@ -84,8 +85,10 @@ namespace MantleVehicleLiveryToolsPrivate
 				const float W0 = ((B.X - P.X) * (C.Y - P.Y) - (B.Y - P.Y) * (C.X - P.X)) / Area;
 				const float W1 = ((C.X - P.X) * (A.Y - P.Y) - (C.Y - P.Y) * (A.X - P.X)) / Area;
 				const float W2 = 1.f - W0 - W1;
-				if (W0 >= 0.f && W1 >= 0.f && W2 >= 0.f)
+				// Only pixels no section has filled yet, so sections that share UV space do not stack into one solid color.
+				if (W0 >= 0.f && W1 >= 0.f && W2 >= 0.f && !Filled[Y * Size + X])
 				{
+					Filled[Y * Size + X] = true;
 					FColor& Pixel = Pixels[Y * Size + X];
 					Pixel.R = static_cast<uint8>(FMath::Lerp<float>(Pixel.R, Color.R, Alpha));
 					Pixel.G = static_cast<uint8>(FMath::Lerp<float>(Pixel.G, Color.G, Alpha));
@@ -150,6 +153,7 @@ TArray<FColor> FMantleVehicleLiveryTools::DrawUvGuide(const FMantleSkinnedMesh& 
 	}
 	const FMantleSkinnedMeshLOD& LOD = Body.LODs[0];
 	Pixels.Init(FColor(24, 26, 30, 255), Size * Size);
+	TBitArray<> Filled(false, Size * Size);
 	// A faint grid every tenth of the picture, so an artist can place things by eye.
 	for (int32 Tenth = 1; Tenth < 10; ++Tenth)
 	{
@@ -192,7 +196,7 @@ TArray<FColor> FMantleVehicleLiveryTools::DrawUvGuide(const FMantleSkinnedMesh& 
 			{
 				if (bPainted)
 				{
-					Fill(Pixels, Size, Corner(First), Corner(First + 1), Corner(First + 2), Color, 0.22f);
+					Fill(Pixels, Filled, Size, Corner(First), Corner(First + 1), Corner(First + 2), Color, 0.22f);
 				}
 				Edges(First, bPainted ? Color : FColor(70, 76, 88, 255));
 			}
