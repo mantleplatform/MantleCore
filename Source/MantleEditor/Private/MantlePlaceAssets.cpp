@@ -547,6 +547,43 @@ namespace MantlePlaceAssetsPrivate
 	}
 
 	/**
+	 * Whether every pixel of Texture's alpha is (nearly) opaque: a format with no alpha channel is, and an 8-bit color texture is read from its source (every pixel of a
+	 * small one, a stride of the big ones, at least 1 in 7). False when it cannot tell (another format, no source): a texture it cannot read is never taken for solid.
+	 */
+	bool TextureAlphaIsOpaque(UTexture2D* Texture)
+	{
+		if (!Texture)
+		{
+			return false;
+		}
+		if (!Texture->HasAlphaChannel())
+		{
+			return true;
+		}
+		static TMap<FGuid, bool> Known;
+		const FGuid Id = Texture->Source.GetId();
+		if (const bool* Found = Known.Find(Id))
+		{
+			return *Found;
+		}
+		bool bOpaque = false;
+		const ETextureSourceFormat Format = Texture->Source.GetFormat();
+		TArray64<uint8> Pixels;
+		if ((Format == TSF_BGRA8 || Format == TSF_RGBA8) && Texture->Source.GetMipData(Pixels, 0))
+		{
+			bOpaque = true;
+			const int64 Count = Pixels.Num() / 4;
+			const int64 Stride = Count > 4 * 1024 * 1024 ? 7 : 1;
+			for (int64 Pixel = 0; Pixel < Count && bOpaque; Pixel += Stride)
+			{
+				bOpaque = Pixels[Pixel * 4 + 3] >= 250;
+			}
+		}
+		Known.Add(Id, bOpaque);
+		return bOpaque;
+	}
+
+	/**
 	 * Whether Input is 1 over the whole surface, as far as a plain reading can tell: nothing connected (opacity's default), a constant or scalar parameter of 1
 	 * (as Context sets it), the alpha of a texture that has no alpha channel, or a product of such. False for anything that can vary or that it cannot read, so
 	 * a material whose opacity is a gradient, a fade, a mask or a node this does not know is never taken for solid.
@@ -592,8 +629,22 @@ namespace MantlePlaceAssetsPrivate
 					Texture = Set;
 				}
 			}
-			const UTexture2D* Texture2D = Cast<UTexture2D>(Texture);
-			return Texture2D && !Texture2D->HasAlphaChannel();
+			return TextureAlphaIsOpaque(Cast<UTexture2D>(Texture));
+		}
+		// Unreal's glTF import (Interchange) makes every material an instance of one master whose Opacity is the glTF body function's: the base color texture's alpha times
+		// the base color factor's alpha. A model whose glTF said BLEND for materials that need no blending (common in downloaded cars) comes in as the Blend variant, so a
+		// carpet or a seat is translucent in Unreal. It is solid when the factor is 1 and the texture's alpha is.
+		if (const UMaterialExpressionMaterialFunctionCall* Call = Cast<UMaterialExpressionMaterialFunctionCall>(Expression))
+		{
+			if (Context && Call->MaterialFunction && Call->MaterialFunction->GetOutermost()->GetName().StartsWith(TEXT("/InterchangeAssets/gltf/MaterialBodies/"))
+				&& Call->FunctionOutputs.IsValidIndex(Output) && Call->FunctionOutputs[Output].Output.OutputName.ToString().Contains(TEXT("Opacity")))
+			{
+				FLinearColor Factor = FLinearColor::White;
+				Context->GetVectorParameterValue(FHashedMaterialParameterInfo(FName(TEXT("BaseColorFactor"))), Factor);
+				UTexture* BaseColor = nullptr;
+				Context->GetTextureParameterValue(FHashedMaterialParameterInfo(FName(TEXT("BaseColorTexture"))), BaseColor);
+				return Factor.A >= AlmostOne && (!BaseColor || TextureAlphaIsOpaque(Cast<UTexture2D>(BaseColor)));
+			}
 		}
 		return false;
 	}
