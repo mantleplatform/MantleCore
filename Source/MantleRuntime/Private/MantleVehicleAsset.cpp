@@ -25,7 +25,8 @@ namespace MantleVehicleAssetPrivate
 		int32 Count = 0;
 		for (const TCHAR Unit : Text)
 		{
-			Count += FChar::IsLowSurrogate(Unit) ? 0 : 1;
+			// A low surrogate (0xDC00 to 0xDFFF) is the second half of a pair; the pair is one code point.
+			Count += (Unit >= 0xDC00 && Unit <= 0xDFFF) ? 0 : 1;
 		}
 		return Count;
 	}
