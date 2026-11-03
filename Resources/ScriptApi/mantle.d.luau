@@ -1228,6 +1228,8 @@ declare extern type VehiclesService with
 	function GetFuel(self, vehicle: Entity): number
 	--- How much fuel the car burns each second while it is driven and moving (1 unless you change it). (server only)
 	function GetFuelConsumption(self, vehicle: Entity): number
+	--- The headlight color set with SetHeadlightColor as "#RRGGBB". Nil when the car has its own headlights or the entity is not a car. (server only)
+	function GetHeadlightColor(self, vehicle: Entity): string?
 	--- The car's health, from 0 to MaxHealth. It only changes while health is on. (server only)
 	function GetHealth(self, vehicle: Entity): number
 	--- The script's word on a light: "on", "off" or "auto" (the game decides). light is "head", "rear", "reverse", "left" or "right". Errors if the entity is not a car or no longer exists. (server only)
@@ -1246,6 +1248,10 @@ declare extern type VehiclesService with
 	function GetParked(self, spawn: Entity): Entity?
 	--- The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists. (server only)
 	function GetSpeed(self, vehicle: Entity): number
+	--- The underglow color set with SetUnderglow as "#RRGGBB". Nil when the underglow is off or the entity is not a car. (server only)
+	function GetUnderglow(self, vehicle: Entity): string?
+	--- The car's window tint level, 0 to 4 (see SetWindowTint). Nil when the entity is not a car. (server only)
+	function GetWindowTint(self, vehicle: Entity): number?
 	--- Whether the car has paint on the layer ("primary", "secondary", "pearl", "wheels", "interior" or "dashboard"). The pearl is part of the primary paint. Cars differ: only layers their model gives color to exist, so ask before offering a color picker. (server only)
 	function HasPaintLayer(self, vehicle: Entity, layer: string): boolean
 	--- Whether the car has a boost (SetBoostEnabled). (server only)
@@ -1288,6 +1294,8 @@ declare extern type VehiclesService with
 	function SetFuelConsumption(self, vehicle: Entity, perSecond: number): ()
 	--- Give the car a fuel tank (true) or take it away (false). Off for every car until you turn it on. With fuel on, the car burns FuelConsumption units a second while someone drives it and it is moving, and with none left it cannot accelerate (it rolls to a stop). It starts full (MaxFuel, 100 unless you change it). (server only)
 	function SetFuelEnabled(self, vehicle: Entity, enabled: boolean): ()
+	--- Color the car's headlights: color is "#RRGGBB", for the beams and a little in the lens. Nil gives the car's own headlights back. Every player sees the change. Returns false when the entity is not a car. (server only)
+	function SetHeadlightColor(self, vehicle: Entity, color: string?): boolean
 	--- Set the car's health, clamped to 0..MaxHealth. Lowering it counts as damage (Vehicles.Damaged fires, and Vehicles.Destroyed if it reaches 0). (server only)
 	function SetHealth(self, vehicle: Entity, health: number): ()
 	--- Give the car health (true) or take it away again (false). It is off for every car until you turn it on, so a car you never touch crashes as it always did. With health on, crashes wear the car down (a hard enough crash wrecks it in one hit), and at 0 health the car is destroyed: it cannot accelerate until you Repair it. It starts full (MaxHealth, 100 unless you change it). (server only)
@@ -1308,6 +1316,10 @@ declare extern type VehiclesService with
 	function SetPaintFinish(self, vehicle: Entity, layer: string, finish: string): boolean
 	--- Color one layer of the car's paint: layer is "primary" (the body, as SetPaintColor), "secondary", "pearl", "wheels", "interior" or "dashboard", and color is "#RRGGBB". The pearl is the color the body paint shifts toward at glancing angles; it shows with the "pearl" finish (SetPaintFinish). Every player sees the change. Returns false when the entity is not a car or the car has no paint on that layer (see HasPaintLayer). (server only)
 	function SetPaintLayerColor(self, vehicle: Entity, layer: string, color: string): boolean
+	--- Neon underglow: color is "#RRGGBB", a glowing strip under the car and a soft glow on the ground beneath it (no real light, so it costs almost nothing). Nil turns it off. Every player sees the change. Returns false when the entity is not a car. (server only)
+	function SetUnderglow(self, vehicle: Entity, color: string?): boolean
+	--- Tint the car's windows: level is 0 (none, the glass the car was published with), 1 (light), 2 (dark), 3 (limo) or 4 (pure black). Every player sees the change. Returns false when the entity is not a car (a car with no glass shows nothing). (server only)
+	function SetWindowTint(self, vehicle: Entity, level: number): boolean
 	--- Spawn a car at position and return it as an Entity. item is the library item id of a vehicle this place stores: the string Storage:Get returns for one of the place's storage names. Any other value errors -- an asset id, an object path, a built-in car's name, an item the place does not store, or a weapon. The car is a real replicated vehicle: every player sees it, walks up to it and can drive it. Read its Position, tag it, or Destroy it like any entity. The server builds cars one per frame, so the Entity comes back at once but the car is not ready to use: connect to Vehicles.Ready, which fires with the car when it is built, before you Seat, paint or Lock it or touch its health, fuel or boost (those error until then). (server only)
 	function Spawn(self, item: string, position: Vector3): Entity
 	--- Unlock the car, so anyone can open it again. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Returns false when the entity is not a car. (server only)
