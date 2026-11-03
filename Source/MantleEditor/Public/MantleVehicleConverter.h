@@ -294,6 +294,9 @@ public:
 	 */
 	static bool IsGtaTintLayer(const FString& Name, const UMaterialInterface* Material);
 
+	/** The name the vehicle document writes for a paint finish ("gloss", ..., "plastic_smooth", "soft_rubber"). Exposed for tests. */
+	static const TCHAR* PaintFinishDocumentName(EMantleVehicleSourcePaintFinish Finish);
+
 	/**
 	 * Whether the body section Section drawn with Material publishes its picture as a tint mask: it is painted (in Source's paint sections or one of its layers), it is a GTA tint layer
 	 * (IsGtaTintLayer) and it is not a real paint material (one that already publishes as car paint, or has a Paint Tint). The gather and the conversion both ask this, so they agree.

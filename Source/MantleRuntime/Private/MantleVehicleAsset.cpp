@@ -734,7 +734,7 @@ namespace MantleVehicleAssetPrivate
 			Layer.Color = FLinearColor(static_cast<float>(Color.X), static_cast<float>(Color.Y), static_cast<float>(Color.Z), 1.f);
 			if (!(*Entry)->TryGetStringField(TEXT("finish"), Layer.Finish) || !FMantleVehiclePaintNames::IsFinish(Layer.Finish))
 			{
-				P.Fail(Pointer + TEXT("/finish"), TEXT("must be gloss, metallic, pearl, matte, satin, metal, chrome or trim"));
+				P.Fail(Pointer + TEXT("/finish"), TEXT("must be gloss, metallic, pearl, matte, satin, metal, chrome, trim, carbon, brushed, sandblast, anodized, leather, perforated, suede, fabric, woven, carpet, plastic_smooth, plastic_grain, plastic_soft, wood or soft_rubber"));
 				return;
 			}
 			D.PaintLayers.Add(MoveTemp(Layer));
@@ -2066,7 +2066,7 @@ bool FMantleVehiclePaintNames::IsLayer(const FString& Layer)
 
 bool FMantleVehiclePaintNames::IsFinish(const FString& Finish)
 {
-	static const TCHAR* const Finishes[] = { TEXT("gloss"), TEXT("metallic"), TEXT("pearl"), TEXT("matte"), TEXT("satin"), TEXT("metal"), TEXT("chrome"), TEXT("trim") };
+	static const TCHAR* const Finishes[] = { TEXT("gloss"), TEXT("metallic"), TEXT("pearl"), TEXT("matte"), TEXT("satin"), TEXT("metal"), TEXT("chrome"), TEXT("trim"), TEXT("carbon"), TEXT("brushed"), TEXT("sandblast"), TEXT("anodized"), TEXT("leather"), TEXT("perforated"), TEXT("suede"), TEXT("fabric"), TEXT("woven"), TEXT("carpet"), TEXT("plastic_smooth"), TEXT("plastic_grain"), TEXT("plastic_soft"), TEXT("wood"), TEXT("soft_rubber") };
 	for (const TCHAR* Name : Finishes)
 	{
 		if (Finish == Name)

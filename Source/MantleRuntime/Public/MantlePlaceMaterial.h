@@ -418,6 +418,11 @@ namespace MantlePlaceMaterialParameters
 	/** The pearlescent color (linear RGB) the base color shifts toward at glancing angles, and its strength 0..1 (0: no pearl). */
 	constexpr const TCHAR* PearlTint = TEXT("PearlTint");
 	constexpr const TCHAR* PearlStrength = TEXT("PearlStrength");
+	/** A pattern finish (M1c): the pattern atlas picture (a 4 by 4 grid of cells, red = brightness, green = roughness), the cell to show, its repeats over UV0, and its strength (0: none). */
+	constexpr const TCHAR* PatternAtlas = TEXT("PatternAtlas");
+	constexpr const TCHAR* PatternCell = TEXT("PatternCell");
+	constexpr const TCHAR* PatternTile = TEXT("PatternTile");
+	constexpr const TCHAR* PatternStrength = TEXT("PatternStrength");
 
 	/** The livery layer (#488): sRGB texture with alpha as coverage, its opacity, and 0 = UV0 / 1 = UV1. */
 	constexpr const TCHAR* Livery = TEXT("Livery");

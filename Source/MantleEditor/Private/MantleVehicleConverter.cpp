@@ -2215,7 +2215,9 @@ namespace MantleVehicleConverterPrivate
 	/** The document's name of a finish, in the order of EMantleVehicleSourcePaintFinish. */
 	const TCHAR* PaintFinishName(const EMantleVehicleSourcePaintFinish Finish)
 	{
-		static const TCHAR* const Names[] = { TEXT("gloss"), TEXT("metallic"), TEXT("pearl"), TEXT("matte"), TEXT("satin"), TEXT("metal"), TEXT("chrome"), TEXT("trim") };
+		static const TCHAR* const Names[] = { TEXT("gloss"), TEXT("metallic"), TEXT("pearl"), TEXT("matte"), TEXT("satin"), TEXT("metal"), TEXT("chrome"), TEXT("trim"), TEXT("carbon"), TEXT("brushed"), TEXT("sandblast"), TEXT("anodized"), TEXT("leather"), TEXT("perforated"), TEXT("suede"), TEXT("fabric"), TEXT("woven"), TEXT("carpet"), TEXT("plastic_smooth"), TEXT("plastic_grain"), TEXT("plastic_soft"), TEXT("wood"), TEXT("soft_rubber") };
+		// One name for every finish: a finish added to the enum without a name here would otherwise be written as the last one.
+		static_assert(UE_ARRAY_COUNT(Names) == static_cast<int32>(EMantleVehicleSourcePaintFinish::SoftRubber) + 1, "PaintFinishName needs a name for every EMantleVehicleSourcePaintFinish");
 		return Names[FMath::Clamp(static_cast<int32>(Finish), 0, static_cast<int32>(UE_ARRAY_COUNT(Names)) - 1)];
 	}
 
@@ -2314,6 +2316,11 @@ FMantleVehicleConverter::FPaintLayerGuess FMantleVehicleConverter::GuessPaintLay
 		Guess.bPainted = true;
 	}
 	return Guess;
+}
+
+const TCHAR* FMantleVehicleConverter::PaintFinishDocumentName(const EMantleVehicleSourcePaintFinish Finish)
+{
+	return MantleVehicleConverterPrivate::PaintFinishName(Finish);
 }
 
 bool FMantleVehicleConverter::IsGtaTintLayer(const FString& Name, const UMaterialInterface* Material)

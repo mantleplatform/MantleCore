@@ -1242,7 +1242,7 @@ declare extern type VehiclesService with
 	function GetMaxFuel(self, vehicle: Entity): number
 	--- The most health the car can have (100 unless you change it). (server only)
 	function GetMaxHealth(self, vehicle: Entity): number
-	--- A layer's finish name ("gloss", "metallic", "pearl", "matte", "satin", "metal", "chrome" or "trim"): the one set, or the car's own (a car's usual body paint reads "metallic"). Nil when the entity is not a car or the car has no paint on that layer. (server only)
+	--- A layer's finish name ("gloss", "metallic", "pearl", "matte", "satin", "metal", "chrome", "trim", "carbon", "brushed", "sandblast", "anodized", "leather", "perforated", "suede", "fabric", "woven", "carpet", "plastic_smooth", "plastic_grain", "plastic_soft", "wood" or "soft_rubber"): the one set, or the car's own (a car's usual body paint reads "metallic"). Nil when the entity is not a car or the car has no paint on that layer. (server only)
 	function GetPaintFinish(self, vehicle: Entity, layer: string): string?
 	--- A layer's color as "#RRGGBB": the one set, or the color the car was published with. Save it to restore a car's look later. Nil when the entity is not a car or the car has no paint on that layer. (server only)
 	function GetPaintLayerColor(self, vehicle: Entity, layer: string): string?
@@ -1322,7 +1322,7 @@ declare extern type VehiclesService with
 	function SetMaxHealth(self, vehicle: Entity, max: number): ()
 	--- Paint the car: color is "#RRGGBB", the same format as Backpack:SetWeaponColor. Returns false when the entity is not a car. (server only)
 	function SetPaintColor(self, vehicle: Entity, color: string): boolean
-	--- Give one layer of the car's paint a finish: layer is "primary", "secondary", "wheels", "interior" or "dashboard", and finish is "gloss", "metallic", "pearl", "matte", "satin", "metal", "chrome" or "trim". Chrome ignores the layer's color. Every player sees the change. Returns false when the entity is not a car or the car has no paint on that layer. (server only)
+	--- Give one layer of the car's paint a finish: layer is "primary", "secondary", "wheels", "interior" or "dashboard", and finish is "gloss", "metallic", "pearl", "matte", "satin", "metal", "chrome", "trim", "carbon", "brushed", "sandblast", "anodized", "leather", "perforated", "suede", "fabric", "woven", "carpet", "plastic_smooth", "plastic_grain", "plastic_soft", "wood" or "soft_rubber". Chrome ignores the layer's color. Every player sees the change. Returns false when the entity is not a car or the car has no paint on that layer. (server only)
 	function SetPaintFinish(self, vehicle: Entity, layer: string, finish: string): boolean
 	--- Color one layer of the car's paint: layer is "primary" (the body, as SetPaintColor), "secondary", "pearl", "wheels", "interior" or "dashboard", and color is "#RRGGBB". The pearl is the color the body paint shifts toward at glancing angles; it shows with the "pearl" finish (SetPaintFinish). Every player sees the change. Returns false when the entity is not a car or the car has no paint on that layer (see HasPaintLayer). (server only)
 	function SetPaintLayerColor(self, vehicle: Entity, layer: string, color: string): boolean
