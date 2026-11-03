@@ -2146,7 +2146,7 @@ namespace MantleVehicleConverterPrivate
 	/** The document's name of a finish, in the order of EMantleVehicleSourcePaintFinish. */
 	const TCHAR* PaintFinishName(const EMantleVehicleSourcePaintFinish Finish)
 	{
-		static const TCHAR* const Names[] = { TEXT("gloss"), TEXT("metallic"), TEXT("pearl"), TEXT("matte"), TEXT("satin"), TEXT("metal"), TEXT("chrome"), TEXT("trim") };
+		static const TCHAR* const Names[] = { TEXT("gloss"), TEXT("metallic"), TEXT("pearl"), TEXT("matte"), TEXT("satin"), TEXT("metal"), TEXT("chrome"), TEXT("trim"), TEXT("carbon"), TEXT("brushed"), TEXT("sandblast"), TEXT("anodized"), TEXT("leather"), TEXT("perforated"), TEXT("suede"), TEXT("fabric"), TEXT("woven"), TEXT("carpet"), TEXT("plastic_smooth"), TEXT("plastic_grain"), TEXT("plastic_soft"), TEXT("wood"), TEXT("soft_rubber") };
 		return Names[FMath::Clamp(static_cast<int32>(Finish), 0, static_cast<int32>(UE_ARRAY_COUNT(Names)) - 1)];
 	}
 
