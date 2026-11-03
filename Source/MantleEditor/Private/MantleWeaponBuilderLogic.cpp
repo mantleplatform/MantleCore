@@ -1,5 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleWeaponBuilderLogic.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
 #include "HAL/FileManager.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
@@ -98,6 +100,26 @@ FName MantleWeaponBuilderLogic::SocketRole(EMantleWeaponDocSocket Socket)
 	static_assert(UE_ARRAY_COUNT(Names) == static_cast<int32>(EMantleWeaponDocSocket::Count), "one builder role per socket");
 	const int32 Index = static_cast<int32>(Socket);
 	return Index >= 0 && Index < UE_ARRAY_COUNT(Names) ? FName(Names[Index]) : NAME_None;
+}
+
+TArray<FName> MantleWeaponBuilderLogic::MaterialSlotNames(const UObject* Model)
+{
+	TArray<FName> Names;
+	if (const USkeletalMesh* Skeletal = Cast<USkeletalMesh>(Model))
+	{
+		for (const FSkeletalMaterial& Material : Skeletal->GetMaterials())
+		{
+			Names.Add(Material.MaterialSlotName);
+		}
+	}
+	else if (const UStaticMesh* Static = Cast<UStaticMesh>(Model))
+	{
+		for (const FStaticMaterial& Material : Static->GetStaticMaterials())
+		{
+			Names.Add(Material.MaterialSlotName);
+		}
+	}
+	return Names;
 }
 
 bool MantleWeaponBuilderLogic::DocSocket(FName Role, EMantleWeaponDocSocket& OutSocket)

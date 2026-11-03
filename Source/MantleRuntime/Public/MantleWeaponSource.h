@@ -151,7 +151,34 @@ struct MANTLERUNTIME_API FMantleWeaponSourcePart
 	UPROPERTY(EditAnywhere, Category = "Mantle") TArray<EMantleWeaponSourceAction> ShownDuring;
 };
 
-/** Fixed mesh/effect attachment, positioned relative to a builder role, or the weapon root when Socket is unset. */
+/** #234: the slot an attachment option fills (the weapon file's attachment.slot); Fixed is a part that is always there. */
+UENUM()
+enum class EMantleWeaponSourceSlot : uint8
+{
+	Fixed,
+	Sight,
+	Muzzle,
+	Underbarrel,
+	Magazine,
+	Light,
+	Extra,
+};
+
+/** #234: the multipliers an attachment option applies while fitted, 0.25 to 4 each, 1 = unchanged (the weapon file's attachment.stats). */
+USTRUCT()
+struct MANTLERUNTIME_API FMantleWeaponSourceOptionStats
+{
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, Category = "Mantle") float Damage = 1.f;
+	UPROPERTY(EditAnywhere, Category = "Mantle") float FireRate = 1.f;
+	UPROPERTY(EditAnywhere, Category = "Mantle") float Spread = 1.f;
+	UPROPERTY(EditAnywhere, Category = "Mantle") float Recoil = 1.f;
+	UPROPERTY(EditAnywhere, Category = "Mantle") float ReloadTime = 1.f;
+	UPROPERTY(EditAnywhere, Category = "Mantle") float MagazineSize = 1.f;
+	UPROPERTY(EditAnywhere, Category = "Mantle") float Range = 1.f;
+};
+
+/** Fixed mesh/effect attachment, positioned relative to a builder role, or the weapon root when Socket is unset. With a Slot it is an option: it shows only while fitted (#234). */
 USTRUCT()
 struct MANTLERUNTIME_API FMantleWeaponSourceAttachment
 {
@@ -163,6 +190,32 @@ struct MANTLERUNTIME_API FMantleWeaponSourceAttachment
 	UPROPERTY(EditAnywhere, Category = "Mantle") FName Socket;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FTransform RelativeTransform = FTransform::Identity;
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bHidden = false;
+
+	/** #234: Fixed, or the slot this attachment is an option of. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") EMantleWeaponSourceSlot Slot = EMantleWeaponSourceSlot::Fixed;
+	/** The option the weapon comes with (one per slot). */
+	UPROPERTY(EditAnywhere, Category = "Mantle") bool bFitted = false;
+	/** Multipliers while fitted; the ones left at 1 are not written. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceOptionStats Stats;
+	/** Names of fixed details, and bones of the weapon model, hidden while this option is fitted. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") TArray<FString> HideAttachments;
+	UPROPERTY(EditAnywhere, Category = "Mantle") TArray<FString> HideBones;
+	/** A sight option's aim point (relative to the option's own place), zoom 1 to 12 and, when bHasSightDistance, its sight distance. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") FTransform SightAim = FTransform::Identity;
+	UPROPERTY(EditAnywhere, Category = "Mantle") float SightZoom = 1.f;
+	UPROPERTY(EditAnywhere, Category = "Mantle") bool bHasSightDistance = false;
+	UPROPERTY(EditAnywhere, Category = "Mantle") float SightDistance = 30.f;
+	/** A muzzle option that makes the suppressed shot while fitted. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") bool bSuppressed = false;
+	/** A light option's flashlight and laser. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") bool bFlashlight = false;
+	UPROPERTY(EditAnywhere, Category = "Mantle") FColor FlashlightColor = FColor::White;
+	UPROPERTY(EditAnywhere, Category = "Mantle") float FlashlightBrightness = 1.f;
+	UPROPERTY(EditAnywhere, Category = "Mantle") float FlashlightRange = 2000.f;
+	UPROPERTY(EditAnywhere, Category = "Mantle") float FlashlightConeDegrees = 25.f;
+	UPROPERTY(EditAnywhere, Category = "Mantle") bool bLaser = false;
+	UPROPERTY(EditAnywhere, Category = "Mantle") FColor LaserColor = FColor(255, 0, 0);
+	UPROPERTY(EditAnywhere, Category = "Mantle") float LaserRange = 5000.f;
 };
 
 /** The numbers a creator tunes in the weapon builder, within the ranges the builder allows. */
@@ -328,6 +381,8 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle") float BowStringRadiusCm = 1.5f;
 	UPROPERTY(EditAnywhere, Category = "Mantle") TArray<FMantleWeaponSourcePart> Parts;
 	UPROPERTY(EditAnywhere, Category = "Mantle") TArray<FMantleWeaponSourceAttachment> Attachments;
+	/** #234 (recolor): the model's material slots (their place in slot order) a player or a script can recolor; every other slot keeps its own material. */
+	UPROPERTY(EditAnywhere, Category = "Mantle") TArray<int32> PaintSlots;
 	/** A SoundWave copied into the weapon's assets; hold/style sounds apply when unset. */
 	UPROPERTY(EditAnywhere, Category = "Mantle") TSoftObjectPtr<class USoundWave> FireSound;
 	UPROPERTY(EditAnywhere, Category = "Mantle") TSoftObjectPtr<class USoundWave> FireSuppressedSound;

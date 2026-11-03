@@ -3,6 +3,7 @@
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/SkeletalMesh.h"
+#include "MantlePlaceLimits.h"
 #include "Engine/StaticMesh.h"
 #include "HAL/FileManager.h"
 #include "MantleBuilderPoint.h"
@@ -228,6 +229,16 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 	const FMantleWeaponDocHoldInfo& Info = FMantleWeaponDocument::GetHoldInfo(Desc.GetHold());
 	Desc.Name = Source.DisplayName.TrimStartAndEnd().IsEmpty() ? DefaultName(Source.Hold) : Source.DisplayName.TrimStartAndEnd().Left(64);
 	Desc.Mesh = MeshName;
+	{
+		// #234: the paintable material slots, each once and in range, in slot order.
+		TArray<int32> PaintSlots;
+		for (const int32 Slot : Source.PaintSlots)
+		{
+			if (Slot >= 0 && Slot < FMantlePlaceLimits::MaxWeaponMaterials) PaintSlots.AddUnique(Slot);
+		}
+		PaintSlots.Sort();
+		if (!PaintSlots.IsEmpty()) Desc.PaintSlots.Set(PaintSlots);
+	}
 	if (!Source.EquipStyle.IsNone())
 	{
 		const FString Style = Source.EquipStyle.ToString();
@@ -666,6 +677,64 @@ bool FMantleWeaponBuilderExport::BuildDocument(const UMantleWeaponSource& Source
 			Attachment.Rotation.Set(DocumentRotation(In.RelativeTransform.GetRotation()));
 			Attachment.Scale.Set(In.RelativeTransform.GetScale3D());
 			Attachment.bHidden.Set(In.bHidden);
+			// #234: an option of a slot, with its stats, hides and the slot's own block. Only what differs from the default is written, so a
+			// file round-trips through the builder unchanged.
+			if (In.Slot != EMantleWeaponSourceSlot::Fixed)
+			{
+				Attachment.Slot.Set(static_cast<EMantleWeaponDocSlot>(static_cast<int32>(In.Slot) - 1));
+				if (In.bFitted) Attachment.bFitted.Set(true);
+				FMantleWeaponDocStats Stats;
+				bool bAnyStat = false;
+				// Only the stats the builder shows a row for: not on a look-only (extra) option, and only the ones the hold scales. A number left over from
+				// before the slot or the hold changed has no row to fix, so it is dropped here, not refused.
+				const FMantleWeaponDocHoldInfo& OptionHold = FMantleWeaponDocument::GetHoldInfo(ToDocHold(Source.Hold));
+				const bool bTakesStats = In.Slot != EMantleWeaponSourceSlot::Extra;
+				const auto Scale = [&bAnyStat, &OptionHold, bTakesStats](const TCHAR* Stat, TMantleWeaponDocValue<double>& Out, const float Value)
+				{
+					if (bTakesStats && OptionHold.AttachmentStats.Contains(Stat) && !FMath::IsNearlyEqual(Value, 1.f)) { Out.Set(Value); bAnyStat = true; }
+				};
+				Scale(TEXT("damage"), Stats.Damage, In.Stats.Damage);
+				Scale(TEXT("fireRate"), Stats.FireRate, In.Stats.FireRate);
+				Scale(TEXT("spread"), Stats.Spread, In.Stats.Spread);
+				Scale(TEXT("recoil"), Stats.Recoil, In.Stats.Recoil);
+				Scale(TEXT("reloadTime"), Stats.ReloadTime, In.Stats.ReloadTime);
+				Scale(TEXT("magazineSize"), Stats.MagazineSize, In.Stats.MagazineSize);
+				Scale(TEXT("range"), Stats.Range, In.Stats.Range);
+				if (bAnyStat) Attachment.Stats.Set(Stats);
+				if (!In.HideAttachments.IsEmpty()) Attachment.HideAttachments.Set(In.HideAttachments);
+				if (!In.HideBones.IsEmpty()) Attachment.HideBones.Set(In.HideBones);
+				if (In.Slot == EMantleWeaponSourceSlot::Sight)
+				{
+					FMantleWeaponDocSightOption Sight;
+					Sight.Location.Set(In.SightAim.GetLocation());
+					Sight.Rotation.Set(DocumentRotation(In.SightAim.GetRotation()));
+					Sight.Zoom.Set(In.SightZoom);
+					if (In.bHasSightDistance) Sight.SightDistance.Set(In.SightDistance);
+					Attachment.Sight.Set(Sight);
+				}
+				if (In.Slot == EMantleWeaponSourceSlot::Muzzle && In.bSuppressed) Attachment.bSuppressed.Set(true);
+				if (In.Slot == EMantleWeaponSourceSlot::Light)
+				{
+					FMantleWeaponDocLight Light;
+					if (In.bFlashlight)
+					{
+						FMantleWeaponDocFlashlight Flashlight;
+						Flashlight.Color.Set(In.FlashlightColor);
+						Flashlight.Brightness.Set(In.FlashlightBrightness);
+						Flashlight.Range.Set(In.FlashlightRange);
+						Flashlight.ConeDegrees.Set(In.FlashlightConeDegrees);
+						Light.Flashlight.Set(Flashlight);
+					}
+					if (In.bLaser)
+					{
+						FMantleWeaponDocLaser Laser;
+						Laser.Color.Set(In.LaserColor);
+						Laser.Range.Set(In.LaserRange);
+						Light.Laser.Set(Laser);
+					}
+					Attachment.Light.Set(Light);
+				}
+			}
 			Attachments.Add(Attachment);
 		}
 		Desc.Attachments.Set(Attachments);
