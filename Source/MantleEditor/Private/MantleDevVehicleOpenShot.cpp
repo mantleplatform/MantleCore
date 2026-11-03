@@ -4,6 +4,7 @@
 // Draws a built vehicle as its library card does (FMantleVehicleThumbnail: the engine's thumbnail scene through
 // FMantleCosmeticThumbnail), once shut and once with every hinge it has turned open: the doors, the hood and the trunk.
 // Each hinge turns its bone about its pivot and axis by degrees (default 70) times its scale, as the game turns it.
+// The vehicle's parts (a body split by material leaves its painted panels as parts) ride their bones, so a door's panel swings with it.
 // Writes <Directory>/<Name>_shut_front.png, _open_front.png, _shut_back.png and _open_back.png. Nothing is saved or uploaded.
 // Logs MANTLE_VEHICLE_OPEN_SHOT lines.
 #include "MantleCosmeticThumbnail.h"
@@ -13,10 +14,12 @@
 
 #include "AnimationRuntime.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "PreviewScene.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogMantleVehicleOpenShot, Log, All);
 
@@ -106,20 +109,41 @@ namespace MantleDevVehicleOpenShotPrivate
 				Shot.Frame = Frame;
 				Shot.View = View.Value;
 				Shot.Describe = FString::Printf(TEXT("%s, %s, %s"), *Mesh->GetName(), bOpen ? TEXT("open") : TEXT("shut"), View.Key);
-				if (bOpen)
+				Shot.Pose = [&Pose, Source, bOpen](FPreviewScene& Scene, TConstArrayView<USkeletalMeshComponent*> Components, FBox&)
 				{
-					Shot.Pose = [&Pose](FPreviewScene&, TConstArrayView<USkeletalMeshComponent*> Components, FBox&)
+					USkeletalMeshComponent* Body = Components.Num() > 0 ? Components[0] : nullptr;
+					if (!Body)
 					{
-						USkeletalMeshComponent* Body = Components.Num() > 0 ? Components[0] : nullptr;
-						if (Body && Body->GetEditableComponentSpaceTransforms().Num() == Pose.Num())
+						return;
+					}
+					if (bOpen && Body->GetEditableComponentSpaceTransforms().Num() == Pose.Num())
+					{
+						// Written straight into the pose the component draws (the editor's own bone tools do the same); it plays no animation to undo it.
+						Body->bNoSkeletonUpdate = true;
+						Body->GetEditableComponentSpaceTransforms() = Pose;
+						Body->ApplyEditedComponentSpaceTransforms();
+					}
+					for (const FMantleVehicleSourcePart& Part : Source->Parts)
+					{
+						UStaticMesh* PartMesh = Part.Mesh.LoadSynchronous();
+						if (!PartMesh)
 						{
-							// Written straight into the pose the component draws (the editor's own bone tools do the same); it plays no animation to undo it.
-							Body->bNoSkeletonUpdate = true;
-							Body->GetEditableComponentSpaceTransforms() = Pose;
-							Body->ApplyEditedComponentSpaceTransforms();
+							continue;
 						}
-					};
-				}
+						UStaticMeshComponent* Piece = NewObject<UStaticMeshComponent>(GetTransientPackage());
+						Piece->SetStaticMesh(PartMesh);
+						for (int32 Slot = 0; Slot < Part.Materials.Num(); ++Slot)
+						{
+							if (UMaterialInterface* Material = Part.Materials[Slot].LoadSynchronous())
+							{
+								Piece->SetMaterial(Slot, Material);
+							}
+						}
+						Scene.AddComponent(Piece, FTransform::Identity);
+						Piece->AttachToComponent(Body, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Part.Bone);
+						Piece->SetRelativeTransform(Part.Transform);
+					}
+				};
 				TArray<FColor> Pixels;
 				FString Error;
 				const FString File = FPaths::Combine(Args[1], FString::Printf(TEXT("%s_%s_%s.png"), *Source->GetName(), bOpen ? TEXT("open") : TEXT("shut"), View.Key));
