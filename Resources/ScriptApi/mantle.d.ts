@@ -1229,6 +1229,8 @@ interface VehiclesService {
 	getFuel(vehicle: Entity): number;
 	/** How much fuel the car burns each second while it is driven and moving (1 unless you change it). (server only) */
 	getFuelConsumption(vehicle: Entity): number;
+	/** The headlight color set with SetHeadlightColor as "#RRGGBB". Nil when the car has its own headlights or the entity is not a car. (server only) */
+	getHeadlightColor(vehicle: Entity): string | undefined;
 	/** The car's health, from 0 to MaxHealth. It only changes while health is on. (server only) */
 	getHealth(vehicle: Entity): number;
 	/** The script's word on a light: "on", "off" or "auto" (the game decides). light is "head", "rear", "reverse", "left" or "right". Errors if the entity is not a car or no longer exists. (server only) */
@@ -1243,10 +1245,18 @@ interface VehiclesService {
 	getPaintFinish(vehicle: Entity, layer: string): string | undefined;
 	/** A layer's color as "#RRGGBB": the one set, or the color the car was published with. Save it to restore a car's look later. Nil when the entity is not a car or the car has no paint on that layer. (server only) */
 	getPaintLayerColor(vehicle: Entity, layer: string): string | undefined;
+	/** The car's whole paint as one table: for each layer it has (primary, secondary, wheels, interior, dashboard), {color = "#RRGGBB", finish = "gloss"...}, and pearl = "#RRGGBB" when it has body paint. Save it (a DataStore takes tables) and put it back with SetPaintLook. Nil when the entity is not a car or has no paint. (server only) */
+	getPaintLook(vehicle: Entity): { primary?: { color: string; finish: string } | undefined; secondary?: { color: string; finish: string } | undefined; wheels?: { color: string; finish: string } | undefined; interior?: { color: string; finish: string } | undefined; dashboard?: { color: string; finish: string } | undefined; pearl?: string | undefined } | undefined;
+	/** The names of the looks a layer can wear with SetPaintPreset, in the order they are listed: layer is "primary", "secondary", "wheels", "interior" or "dashboard". A look is a color and a finish (a pearl look also has a pearl color), such as "silver_pearl" or "gold". (server only) */
+	getPaintPresets(layer: string): (string)[];
 	/** The car a VehicleSpawn entity keeps parked, as an Entity every Vehicles member takes (World:FindFirst finds the VehicleSpawn by its name). Returns nil while the spawn has no car standing: it is turned off, its car was destroyed and is waiting to come back, or the car is still being built, so ask again later. A car that comes back after a respawn is a new Entity: ask again. Errors if the entity is not a VehicleSpawn or no longer exists. (server only) */
 	getParked(spawn: Entity): Entity | undefined;
 	/** The car's speed in centimeters per second, as the simulation reports it. Errors if the entity is not a car or no longer exists. (server only) */
 	getSpeed(vehicle: Entity): number;
+	/** The underglow color set with SetUnderglow as "#RRGGBB". Nil when the underglow is off or the entity is not a car. (server only) */
+	getUnderglow(vehicle: Entity): string | undefined;
+	/** The car's window tint level, 0 to 4 (see SetWindowTint). Nil when the entity is not a car. (server only) */
+	getWindowTint(vehicle: Entity): number | undefined;
 	/** Whether the car has paint on the layer ("primary", "secondary", "pearl", "wheels", "interior" or "dashboard"). The pearl is part of the primary paint. Cars differ: only layers their model gives color to exist, so ask before offering a color picker. (server only) */
 	hasPaintLayer(vehicle: Entity, layer: string): boolean;
 	/** Whether the car has a boost (SetBoostEnabled). (server only) */
@@ -1289,6 +1299,8 @@ interface VehiclesService {
 	setFuelConsumption(vehicle: Entity, perSecond: number): void;
 	/** Give the car a fuel tank (true) or take it away (false). Off for every car until you turn it on. With fuel on, the car burns FuelConsumption units a second while someone drives it and it is moving, and with none left it cannot accelerate (it rolls to a stop). It starts full (MaxFuel, 100 unless you change it). (server only) */
 	setFuelEnabled(vehicle: Entity, enabled: boolean): void;
+	/** Color the car's headlights: color is "#RRGGBB", for the beams and a little in the lens. Nil gives the car's own headlights back. Every player sees the change. Returns false when the entity is not a car. (server only) */
+	setHeadlightColor(vehicle: Entity, color?: string | undefined): boolean;
 	/** Set the car's health, clamped to 0..MaxHealth. Lowering it counts as damage (Vehicles.Damaged fires, and Vehicles.Destroyed if it reaches 0). (server only) */
 	setHealth(vehicle: Entity, health: number): void;
 	/** Give the car health (true) or take it away again (false). It is off for every car until you turn it on, so a car you never touch crashes as it always did. With health on, crashes wear the car down (a hard enough crash wrecks it in one hit), and at 0 health the car is destroyed: it cannot accelerate until you Repair it. It starts full (MaxHealth, 100 unless you change it). (server only) */
@@ -1309,6 +1321,14 @@ interface VehiclesService {
 	setPaintFinish(vehicle: Entity, layer: string, finish: string): boolean;
 	/** Color one layer of the car's paint: layer is "primary" (the body, as SetPaintColor), "secondary", "pearl", "wheels", "interior" or "dashboard", and color is "#RRGGBB". The pearl is the color the body paint shifts toward at glancing angles; it shows with the "pearl" finish (SetPaintFinish). Every player sees the change. Returns false when the entity is not a car or the car has no paint on that layer (see HasPaintLayer). (server only) */
 	setPaintLayerColor(vehicle: Entity, layer: string, color: string): boolean;
+	/** Put a look from GetPaintLook on the car: each layer in the table gets its color and finish, and pearl sets the pearl color. A layer the car does not have is skipped, so a look saved from one car still fits another; a missing key leaves that part as it is. Returns true when the car had paint to change, false when it is not a car or has none. A color that is not "#RRGGBB", a finish that is not one of the finish names or an unknown key is an error. (server only) */
+	setPaintLook(vehicle: Entity, look: { primary?: { color: string; finish: string } | undefined; secondary?: { color: string; finish: string } | undefined; wheels?: { color: string; finish: string } | undefined; interior?: { color: string; finish: string } | undefined; dashboard?: { color: string; finish: string } | undefined; pearl?: string | undefined }): boolean;
+	/** Give one layer of the car's paint a named look (see GetPaintPresets): its color, its finish and, for a pearl look on the body, its pearl color. Every player sees the change. Returns false when the entity is not a car, the car has no paint on that layer, or the name is not a look for that layer; an unknown name is not an error, so ask GetPaintPresets first. (server only) */
+	setPaintPreset(vehicle: Entity, layer: string, preset: string): boolean;
+	/** Neon underglow: color is "#RRGGBB", a glowing strip under the car and a soft glow on the ground beneath it (no real light, so it costs almost nothing). Nil turns it off. Every player sees the change. Returns false when the entity is not a car. (server only) */
+	setUnderglow(vehicle: Entity, color?: string | undefined): boolean;
+	/** Tint the car's windows: level is 0 (none, the glass the car was published with), 1 (light), 2 (dark), 3 (limo) or 4 (pure black). Every player sees the change. Returns false when the entity is not a car (a car with no glass shows nothing). (server only) */
+	setWindowTint(vehicle: Entity, level: number): boolean;
 	/** Spawn a car at position and return it as an Entity. item is the library item id of a vehicle this place stores: the string Storage:Get returns for one of the place's storage names. Any other value errors -- an asset id, an object path, a built-in car's name, an item the place does not store, or a weapon. The car is a real replicated vehicle: every player sees it, walks up to it and can drive it. Read its Position, tag it, or Destroy it like any entity. The server builds cars one per frame, so the Entity comes back at once but the car is not ready to use: connect to Vehicles.Ready, which fires with the car when it is built, before you Seat, paint or Lock it or touch its health, fuel or boost (those error until then). (server only) */
 	spawn(item: string, position: Vector3): Entity;
 	/** Unlock the car, so anyone can open it again. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Returns false when the entity is not a car. (server only) */
