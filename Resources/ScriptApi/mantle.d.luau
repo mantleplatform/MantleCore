@@ -1256,6 +1256,10 @@ declare extern type VehiclesService with
 	function GetSpeed(self, vehicle: Entity): number
 	--- The underglow color set with SetUnderglow as "#RRGGBB". Nil when the underglow is off or the entity is not a car. (server only)
 	function GetUnderglow(self, vehicle: Entity): string?
+	--- The names of the wheels the car can wear: "stock" (its own wheels) first, then the wheels in the place's Storage, in Storage order. A car whose wheels are part of its body cannot swap and lists only "stock". Empty when the entity is not a car. (server only)
+	function GetWheelOptions(self, vehicle: Entity): {string}
+	--- The name of the wheels the car wears now ("stock" for its own). Save it to restore a car's look later. Nil when the entity is not a car. (server only)
+	function GetWheels(self, vehicle: Entity): string?
 	--- The car's window tint level, 0 to 4 (see SetWindowTint). Nil when the entity is not a car. (server only)
 	function GetWindowTint(self, vehicle: Entity): number?
 	--- Whether the car has paint on the layer ("primary", "secondary", "pearl", "wheels", "interior" or "dashboard"). The pearl is part of the primary paint. Cars differ: only layers their model gives color to exist, so ask before offering a color picker. (server only)
@@ -1328,6 +1332,8 @@ declare extern type VehiclesService with
 	function SetPaintPreset(self, vehicle: Entity, layer: string, preset: string): boolean
 	--- Neon underglow: color is "#RRGGBB", a glowing strip under the car and a soft glow on the ground beneath it (no real light, so it costs almost nothing). Nil turns it off. Every player sees the change. Returns false when the entity is not a car. (server only)
 	function SetUnderglow(self, vehicle: Entity, color: string?): boolean
+	--- Put the wheels called name on the car (see GetWheelOptions); "stock" takes the car's own wheels back. Every player sees the change, and the wheel wears the car's wheels paint color and finish. Looks only: driving does not change. Returns false when the entity is not a car, the car cannot swap, or name is not one of its options. (server only)
+	function SetWheels(self, vehicle: Entity, name: string): boolean
 	--- Tint the car's windows: level is 0 (none, the glass the car was published with), 1 (light), 2 (dark), 3 (limo) or 4 (pure black). Every player sees the change. Returns false when the entity is not a car (a car with no glass shows nothing). (server only)
 	function SetWindowTint(self, vehicle: Entity, level: number): boolean
 	--- Spawn a car at position and return it as an Entity. item is the library item id of a vehicle this place stores: the string Storage:Get returns for one of the place's storage names. Any other value errors -- an asset id, an object path, a built-in car's name, an item the place does not store, or a weapon. The car is a real replicated vehicle: every player sees it, walks up to it and can drive it. Read its Position, tag it, or Destroy it like any entity. The server builds cars one per frame, so the Entity comes back at once but the car is not ready to use: connect to Vehicles.Ready, which fires with the car when it is built, before you Seat, paint or Lock it or touch its health, fuel or boost (those error until then). (server only)

@@ -856,7 +856,7 @@ struct FMantleResolvedStorageEntry
 
 	int32 Version = 0;
 
-	/** "vehicle", "weapon" or (#838) "script". */
+	/** "vehicle", "weapon", "wheel" or (#838) "script". */
 	FString Kind;
 
 	/** "active" or "delisted" both still load for a place that pinned the version; "taken_down" (#614 stage 7) never loads. */

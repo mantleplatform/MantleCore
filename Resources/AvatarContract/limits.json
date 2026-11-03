@@ -1058,6 +1058,7 @@
         "tires/rearFriction": [0.1, 10],
         "wheels/*/radius": [5, 150],
         "wheels/*/width": [2, 100],
+        "wheels/*/rimRadius": [2, 150],
         "seat/location/*": [-1000, 1000],
         "seat/weaponArc/yawMin": [-180, 180],
         "seat/weaponArc/yawMax": [-180, 180],
