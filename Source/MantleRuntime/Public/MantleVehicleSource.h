@@ -49,6 +49,14 @@ struct MANTLERUNTIME_API FMantleVehicleSourceWheel
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wheel")
 	FTransform TireTransform;
+
+	/**
+	 * The body's sections (material names) that are this wheel's rim, which a wheel swap hides to show another wheel in its place. Convert
+	 * Vehicle fills it from the sections named like a rim whose geometry is the wheel's own (FMantleVehicleRims); a car whose wheels are
+	 * welded into the body has none, and its wheels simply cannot be swapped.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wheel")
+	TArray<FString> RimSections;
 };
 
 /** A paint layer beyond the primary (the document's paint.layers): a second paint color, the rims, the interior's trim or the dashboard. */
