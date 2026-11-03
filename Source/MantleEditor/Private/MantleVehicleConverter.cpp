@@ -2170,11 +2170,6 @@ namespace MantleVehicleConverterPrivate
 		return Made;
 	}
 
-	/** PRIMARY and SECONDARY, a GTA model's tint layers: the word alone, or with a number after it (PRIMARY_2). */
-	bool IsGtaLayer(const TArray<FString>& Words, const TCHAR* Which)
-	{
-		return Words.Num() > 0 && Words[0] == Which && (Words.Num() == 1 || FChar::IsDigit(Words[1][0]));
-	}
 }
 
 FMantleVehicleConverter::FPaintLayerGuess FMantleVehicleConverter::GuessPaintLayer(const FString& Name, const UMaterialInterface* Material)
@@ -2194,25 +2189,21 @@ FMantleVehicleConverter::FPaintLayerGuess FMantleVehicleConverter::GuessPaintLay
 	}
 	// A GTA model names its tint layers: the word PRIMARY or SECONDARY in the name (vehicle_generic_smallspecmap__PRIMARY_, leather_1__SECONDARY_); its pictures are white for the
 	// game to tint. A word of the model's, so glass or a tire called PRIMARY is still not painted (checked below).
-	for (const FString& Chunk : { Name, Material ? Material->GetName() : FString() })
-	{
-		const TArray<FString> Own = NameWords(Chunk);
-		if (IsGtaLayer(Own, TEXT("primary")))
-		{
-			Guess.bPainted = true;
-			return Guess;
-		}
-		if (IsGtaLayer(Own, TEXT("secondary")))
-		{
-			Guess.bPainted = true;
-			Guess.bPrimary = false;
-			Guess.Layer = EMantleVehicleSourcePaintLayer::Secondary;
-			return Guess;
-		}
-	}
 	const bool bExcluded = HasWord(Words, { TEXT("glass"), TEXT("window"), TEXT("windows"), TEXT("windshield"), TEXT("windscreen"), TEXT("tire"), TEXT("tires"), TEXT("tyre"), TEXT("tyres"),
 		TEXT("rubber"), TEXT("chrome"), TEXT("lens"), TEXT("lights"), TEXT("lamp"), TEXT("lamps"), TEXT("headlight"), TEXT("headlights"), TEXT("taillight"),
 		TEXT("taillights"), TEXT("brake"), TEXT("brakes"), TEXT("steering"), TEXT("signal"), TEXT("signals") });
+	if (!bExcluded && HasWord(Words, { TEXT("primary") }))
+	{
+		Guess.bPainted = true;
+		return Guess;
+	}
+	if (!bExcluded && HasWord(Words, { TEXT("secondary") }))
+	{
+		Guess.bPainted = true;
+		Guess.bPrimary = false;
+		Guess.Layer = EMantleVehicleSourcePaintLayer::Secondary;
+		return Guess;
+	}
 	bool bLayer = false;
 	if (!bExcluded)
 	{

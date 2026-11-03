@@ -29,6 +29,14 @@ bool FMantleVehiclePaintLayersGuessTest::RunTest(const FString&)
 	TestTrue(TEXT("PRIMARY is the body paint"), Primary.bPainted && Primary.bPrimary);
 	Primary = FMantleVehicleConverter::GuessPaintLayer(TEXT("PRIMARY_2"), Plain.Get());
 	TestTrue(TEXT("and so is PRIMARY_2"), Primary.bPainted && Primary.bPrimary);
+	// As a GTA model spells it once exported: the word inside the material's name.
+	Primary = FMantleVehicleConverter::GuessPaintLayer(TEXT("vehicle_generic_smallspecmap__PRIMARY__001"), Plain.Get());
+	TestTrue(TEXT("vehicle_generic_smallspecmap__PRIMARY__001 is the body paint"), Primary.bPainted && Primary.bPrimary);
+	const FGuess GtaSecondary = FMantleVehicleConverter::GuessPaintLayer(TEXT("leather_1__SECONDARY_"), Plain.Get());
+	TestTrue(TEXT("leather_1__SECONDARY_ is the second paint"), GtaSecondary.bPainted && !GtaSecondary.bPrimary && GtaSecondary.Layer == EMantleVehicleSourcePaintLayer::Secondary);
+	const FGuess GtaWheel = FMantleVehicleConverter::GuessPaintLayer(TEXT("vehicle_generic_smallspecmap__WHEEL_"), Plain.Get());
+	TestTrue(TEXT("vehicle_generic_smallspecmap__WHEEL_ is the wheels'"), GtaWheel.bPainted && !GtaWheel.bPrimary && GtaWheel.Layer == EMantleVehicleSourcePaintLayer::Wheels);
+	TestFalse(TEXT("glass called PRIMARY is not painted"), FMantleVehicleConverter::GuessPaintLayer(TEXT("glass__PRIMARY_"), Plain.Get()).bPainted);
 	const FGuess Secondary = FMantleVehicleConverter::GuessPaintLayer(TEXT("SECONDARY"), Plain.Get());
 	TestTrue(TEXT("SECONDARY is the second paint"), Secondary.bPainted && !Secondary.bPrimary && Secondary.Layer == EMantleVehicleSourcePaintLayer::Secondary);
 
