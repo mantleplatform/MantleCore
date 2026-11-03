@@ -19,6 +19,17 @@
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleVehicleAssetPrivate
 {
+	/** A string's length in code points, as the cook and the schema count it (FString::Len counts UTF-16 units, so an emoji is two). */
+	int32 CountCodePoints(const FString& Text)
+	{
+		int32 Count = 0;
+		for (const TCHAR Unit : Text)
+		{
+			Count += FChar::IsLowSurrogate(Unit) ? 0 : 1;
+		}
+		return Count;
+	}
+
 	struct FVehicleRange
 	{
 		const TCHAR* Path;
@@ -877,7 +888,7 @@ namespace MantleVehicleAssetPrivate
 			for (int32 Index = 0; Index < Names->Num() && P.Ok(); ++Index)
 			{
 				FString Name;
-				if (!(*Names)[Index].IsValid() || !(*Names)[Index]->TryGetString(Name) || Name.Len() > 40)
+				if (!(*Names)[Index].IsValid() || !(*Names)[Index]->TryGetString(Name) || CountCodePoints(Name) > 40)
 				{
 					P.Fail(FString::Printf(TEXT("/liveryNames/%d"), Index), TEXT("must be a name of at most 40 characters"));
 					break;
