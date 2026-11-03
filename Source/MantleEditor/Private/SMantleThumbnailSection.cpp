@@ -10,6 +10,7 @@
 #include "MantleVehicleChassisBuilder.h"
 #include "MantleVehiclePreset.h"
 #include "SMantleVehicleBuilder.h"
+#include "MantleVehicleLiveryTools.h"
 #include "MantleVehicleShapeKind.h"
 #include "SMantleBuilderViewport.h"
 #include "MantleVehicleSource.h"
@@ -18,10 +19,12 @@
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
+#include "AssetCompilingManager.h"
 #include "RenderingThread.h"
 #include "Slate/WidgetRenderer.h"
 #include "TextureResource.h"
 #include "Engine/Texture2D.h"
+#include "ShaderCompiler.h"
 #include "Framework/Application/SlateApplication.h"
 #include "IDesktopPlatform.h"
 #include "Misc/Paths.h"
@@ -45,7 +48,7 @@ struct FMantleVehicleBuilderShotAccess
 	{
 		if (Args.Num() < 3)
 		{
-			UE_LOG(LogMantle, Error, TEXT("MANTLE_BUILDER_SHOT usage: Mantle.Dev.VehicleBuilderShots <Model> <Vehicle type> <Directory> [Exit]"));
+			UE_LOG(LogMantle, Error, TEXT("MANTLE_BUILDER_SHOT usage: Mantle.Dev.VehicleBuilderShots <Model> <Vehicle type> <Directory> [Exit] [Livery texture...]"));
 			return;
 		}
 		FString Path = Args[0];
@@ -87,11 +90,75 @@ struct FMantleVehicleBuilderShotAccess
 			const FString File = FPaths::Combine(Args[2], TEXT("builder_step4_seats_paint_beam.png"));
 			UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT %s %s"), *File, Draw(Panel, File) ? TEXT("saved") : TEXT("NOT saved"));
 		}
-		Shot(4, TEXT("thumbnail"));
+		// The Liveries step: empty, then with each image given after Exit added, each shown on the model. A livery needs paint, so when
+		// images are given and the model's own paint was not found, the PRIMARY and SECONDARY sections (the GTA paint layers) are ticked first.
+		if (Args.Num() > 4)
+		{
+			bool bAnyPaint = false;
+			for (const SMantleVehicleBuilder::FPaintChoice& Choice : Panel->PaintChoices)
+			{
+				bAnyPaint = bAnyPaint || Choice.bOn;
+			}
+			for (int32 Index = 0; !bAnyPaint && Index < Panel->PaintChoices.Num(); ++Index)
+			{
+				if (Panel->PaintChoices[Index].Section.Contains(TEXT("PRIMARY"), ESearchCase::IgnoreCase) || Panel->PaintChoices[Index].Section.Contains(TEXT("SECONDARY"), ESearchCase::IgnoreCase))
+				{
+					Panel->SetPaintSection(Index, true);
+					UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT ticked %s"), *Panel->PaintChoices[Index].Section);
+				}
+			}
+		}
+		if (Args.Num() > 4 && Panel->Preview.bOk)
+		{
+			// The UV guide an artist paints a livery on, of the paint ticked so far.
+			TSet<int32> Painted;
+			for (int32 Index = 0; Index < Panel->PaintChoices.Num(); ++Index)
+			{
+				if (Panel->PaintChoices[Index].bOn)
+				{
+					Painted.Add(Index);
+				}
+			}
+			FString GuideError;
+			const FString Guide = FPaths::Combine(Args[2], TEXT("uv_guide.png"));
+			UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT %s %s %s"), *Guide, FMantleVehicleLiveryTools::WriteUvGuide(Panel->Preview.Body, Painted, 2048, Guide, GuideError) ? TEXT("saved") : TEXT("NOT saved"), *GuideError);
+		}
+		Shot(4, TEXT("liveries_none"));
+		for (int32 Which = 3; Which < Args.Num(); ++Which)
+		{
+			if (Args[Which].Equals(TEXT("Exit"), ESearchCase::IgnoreCase))
+			{
+				continue;
+			}
+			FString TexturePath = Args[Which];
+			if (!FPackageName::GetShortName(TexturePath).Contains(TEXT(".")))
+			{
+				TexturePath += TEXT(".") + FPackageName::GetShortName(TexturePath);
+			}
+			UTexture2D* Livery = LoadObject<UTexture2D>(nullptr, *TexturePath);
+			if (!Livery)
+			{
+				UE_LOG(LogMantle, Error, TEXT("MANTLE_BUILDER_SHOT livery %s did not load"), *Args[Which]);
+				continue;
+			}
+			// The image is shown at full size in the strip: its mips have to be in memory for the offscreen picture.
+			Livery->SetForceMipLevelsToBeResident(30.f);
+			Livery->WaitForStreaming();
+			Panel->AddLivery(Livery);
+			// The picture's stand-in material has to be compiled before the picture is drawn offscreen (in the window it pops in a moment later).
+			FAssetCompilingManager::Get().FinishAllCompilation();
+			if (GShaderCompilingManager)
+			{
+				GShaderCompilingManager->FinishAllCompilation();
+			}
+			FlushRenderingCommands();
+			Shot(4, *FString::Printf(TEXT("liveries_%s"), *Livery->GetName()));
+		}
+		Shot(5, TEXT("thumbnail"));
 		// The build button is on the last step, so that is where it is pressed.
-		Panel->Flow->GoTo(5);
+		Panel->Flow->GoTo(6);
 		Panel->OnBuild();
-		Shot(5, TEXT("build"));
+		Shot(6, TEXT("build"));
 		UE_LOG(LogMantle, Display, TEXT("MANTLE_BUILDER_SHOT built=%d"), Panel->BuiltSource.IsValid() ? 1 : 0);
 		if (Args.Num() > 3 && Args[3].Equals(TEXT("Exit"), ESearchCase::IgnoreCase))
 		{
@@ -658,7 +725,7 @@ namespace MantleThumbnailSectionDevShot
 
 	FAutoConsoleCommand VehicleBuilderShotsCommand(
 		TEXT("Mantle.Dev.VehicleBuilderShots"),
-		TEXT("Mantle.Dev.VehicleBuilderShots <Model> <Vehicle type> <Directory> [Exit]: the Build a vehicle window, step by step, drawn offscreen (the type, the model, the fit, seats and paint, the thumbnail, and the build). Builds the vehicle for real, in the project. Uploads nothing."),
+		TEXT("Mantle.Dev.VehicleBuilderShots <Model> <Vehicle type> <Directory> [Exit] [Livery texture...]: the Build a vehicle window, step by step, drawn offscreen (the type, the model, the fit, seats and paint, the liveries with each given image added, the thumbnail, and the build). Builds the vehicle for real, in the project. Uploads nothing."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 		{
 			FMantleVehicleBuilderShotAccess::Run(Args, [](const TSharedRef<SWidget>& Window, const FString& File) { return Save(SNew(SBox).Padding(8.0f)[Window], File, 1180.0f, 760.0f); });

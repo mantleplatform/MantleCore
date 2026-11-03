@@ -60,13 +60,13 @@ bool FMantleVehicleBuilderFlowStepsTest::RunTest(const FString& Parameters)
 	const TSharedRef<SMantleVehicleBuilder> Panel = SNew(SMantleVehicleBuilder);
 	const TArray<FMantleBuilderStep> Steps = Access::Steps(*Panel);
 
-	// The order: the type, then the model, the fit, seats and paint, the shared Thumbnail, and the build.
-	if (!TestEqual(TEXT("six steps"), Steps.Num(), 6))
+	// The order: the type, then the model, the fit, seats and paint, the liveries, the shared Thumbnail, and the build.
+	if (!TestEqual(TEXT("seven steps"), Steps.Num(), 7))
 	{
 		return false;
 	}
-	const TCHAR* const Expect[] = { TEXT("kind of vehicle"), TEXT("model"), TEXT("fit"), TEXT("Seats and paint"), TEXT("humbnail"), TEXT("Build") };
-	for (int32 Index = 0; Index < 6; ++Index)
+	const TCHAR* const Expect[] = { TEXT("kind of vehicle"), TEXT("model"), TEXT("fit"), TEXT("Seats and paint"), TEXT("Liveries"), TEXT("humbnail"), TEXT("Build") };
+	for (int32 Index = 0; Index < 7; ++Index)
 	{
 		TestTrue(*FString::Printf(TEXT("step %d is about \"%s\" (it is \"%s\")"), Index + 1, Expect[Index], *Steps[Index].Title.ToString()), Steps[Index].Title.ToString().Contains(Expect[Index]));
 	}
@@ -91,7 +91,7 @@ bool FMantleVehicleBuilderFlowStepsTest::RunTest(const FString& Parameters)
 	TestTrue(*FString::Printf(TEXT("and says so in plain words (%s)"), *WhyNot.ToString()), WhyNot.ToString().Contains(TEXT("model")));
 	TestFalse(TEXT("the build button is off without a model"), Access::CanBuild(*Panel));
 	WhyNot = FText::GetEmpty();
-	TestFalse(TEXT("the last step needs the vehicle built"), Steps[5].CanContinue(WhyNot));
+	TestFalse(TEXT("the last step needs the vehicle built"), Steps[6].CanContinue(WhyNot));
 	return true;
 }
 
@@ -122,7 +122,7 @@ bool FMantleVehicleBuilderFlowPictureTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("picking a type draws no vehicle: the picture waits for the model"), Access::PreviewMade(*Panel));
 
 	// Every step's page can be made, with and without a model.
-	for (int32 Step = 0; Step < 6; ++Step)
+	for (int32 Step = 0; Step < 7; ++Step)
 	{
 		Access::Content(*Panel, Step);
 	}
@@ -138,7 +138,7 @@ bool FMantleVehicleBuilderFlowPictureTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a sedan model picked as a sedan fits, so there is no message"), !Access::Match(*Panel).Suggests());
 
 	// The same pages again, with the picture and the paint list there.
-	for (int32 Step = 0; Step < 6; ++Step)
+	for (int32 Step = 0; Step < 7; ++Step)
 	{
 		Access::Content(*Panel, Step);
 	}
