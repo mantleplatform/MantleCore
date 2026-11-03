@@ -1177,9 +1177,9 @@ bool FMantleGlbWriter::WriteStatic(const TConstArrayView<FMantleGlbMesh> LODs, c
 		const TSharedRef<FJsonObject> RootExtras = MakeShared<FJsonObject>();
 		if (Mesh.Extras.IsValid())
 		{
-			for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Mesh.Extras->Values)
+			for (const auto& Field : Mesh.Extras->Values)
 			{
-				RootExtras->SetField(Field.Key, Field.Value);
+				RootExtras->SetField(FString(Field.Key.ToView()), Field.Value);
 			}
 		}
 		RootExtras->SetObjectField(TEXT("mantleVehicleCollision"), Collision);
