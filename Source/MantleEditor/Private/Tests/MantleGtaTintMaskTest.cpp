@@ -135,4 +135,24 @@ bool FMantleGtaTintMaskSectionsTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleVehicleFinishNamesTest, "Mantle.Vehicle.PaintLayers.FinishDocumentNames",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleFinishNamesTest::RunTest(const FString&)
+{
+	// Every finish is written under its own name, and a pattern finish under its pattern name (not as the last one in the table).
+	TSet<FString> Seen;
+	for (uint8 Index = 0; Index <= static_cast<uint8>(EMantleVehicleSourcePaintFinish::SoftRubber); ++Index)
+	{
+		const FString Name = FMantleVehicleConverter::PaintFinishDocumentName(static_cast<EMantleVehicleSourcePaintFinish>(Index));
+		TestTrue(*FString::Printf(TEXT("finish %d has a lower snake case name (%s)"), Index, *Name), !Name.IsEmpty() && Name == Name.ToLower());
+		TestFalse(*FString::Printf(TEXT("%s is written once"), *Name), Seen.Contains(Name));
+		Seen.Add(Name);
+	}
+	TestEqual(TEXT("trim"), FString(FMantleVehicleConverter::PaintFinishDocumentName(EMantleVehicleSourcePaintFinish::Trim)), FString(TEXT("trim")));
+	TestEqual(TEXT("plastic smooth"), FString(FMantleVehicleConverter::PaintFinishDocumentName(EMantleVehicleSourcePaintFinish::PlasticSmooth)), FString(TEXT("plastic_smooth")));
+	TestEqual(TEXT("soft rubber"), FString(FMantleVehicleConverter::PaintFinishDocumentName(EMantleVehicleSourcePaintFinish::SoftRubber)), FString(TEXT("soft_rubber")));
+	return true;
+}
+
 #endif
