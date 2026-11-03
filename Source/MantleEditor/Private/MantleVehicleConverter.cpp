@@ -142,7 +142,7 @@ namespace MantleVehicleConverterPrivate
 	 * The document keys after the collision, in the schema's order, then the horn (#546), whose sound's id is filled in at upload
 	 * as theirs are (the cook reads the keys in any order); every writer rebuilds around them so they stay there.
 	 */
-	const TCHAR* const VehicleTailKeys[] = { TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryNames"), TEXT("liveryUV"), TEXT("defaultLivery"),
+	const TCHAR* const VehicleTailKeys[] = { TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryUV"), TEXT("defaultLivery"),
 		TEXT("linkage"), TEXT("parts"), TEXT("horn") };
 
 	/** How near two bones must sit for a mesh on one to be a tire on the other (a visual wheel beside the wheel), cm. */
@@ -2889,19 +2889,6 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	}
 	if (P.Liveries.Num() > 0)
 	{
-		// The names ride beside the ids (absent when none is named), each cut to the schema's 40 characters.
-		bool bNamed = false;
-		TArray<TSharedPtr<FJsonValue>> Names;
-		for (int32 Index = 0; Index < P.Liveries.Num(); ++Index)
-		{
-			const FString Name = P.LiveryNames.IsValidIndex(Index) ? P.LiveryNames[Index].TrimStartAndEnd().Left(FMantleVehicleConverter::MaxLiveryNameLength) : FString();
-			bNamed = bNamed || !Name.IsEmpty();
-			Names.Add(MakeShared<FJsonValueString>(Name));
-		}
-		if (bNamed)
-		{
-			Doc->SetArrayField(TEXT("liveryNames"), Names);
-		}
 		Doc->SetField(TEXT("liveryUV"), VehicleInteger(0));
 		if (P.Liveries.IsValidIndex(P.DefaultLivery))
 		{
@@ -3603,17 +3590,6 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		AddError(FString::Printf(TEXT("wears livery %d by default, but has %d liveries."), Paint.DefaultLivery, NumLiveries),
 			TEXT("Set Default Livery to -1 (none) or to one of its Liveries' index (the first is 0)."));
 	}
-	if (Paint.LiveryNames.Num() > NumLiveries)
-	{
-		AddError(FString::Printf(TEXT("names %d liveries but has %d."), Paint.LiveryNames.Num(), NumLiveries), TEXT("Give each livery at most one name, in the order of Liveries."));
-	}
-	for (int32 Index = 0; Index < Paint.LiveryNames.Num(); ++Index)
-	{
-		if (Paint.LiveryNames[Index].TrimStartAndEnd().Len() > FMantleVehicleConverter::MaxLiveryNameLength)
-		{
-			AddError(FString::Printf(TEXT("has a name for livery %d longer than %d characters."), Index, FMantleVehicleConverter::MaxLiveryNameLength), TEXT("Shorten the name."));
-		}
-	}
 	for (int32 Index = 0; Index < NumLiveries; ++Index)
 	{
 		const UTexture2D* Texture = Paint.Liveries[Index].LoadSynchronous();
@@ -4112,7 +4088,6 @@ namespace MantleVehicleConverterPrivate
 		}
 		// Its livery choices name textures this file does not carry.
 		const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
-		Document->RemoveField(TEXT("liveryNames"));
 		Document->RemoveField(TEXT("liveryUV"));
 		Document->RemoveField(TEXT("defaultLivery"));
 		// Paint only on parts' slots (#435 item 2) paints nothing without the parts, which this file leaves out.

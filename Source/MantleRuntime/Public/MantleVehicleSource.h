@@ -660,13 +660,6 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePaint
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Liveries")
 	TArray<TSoftObjectPtr<UTexture2D>> Liveries;
 
-	/**
-	 * What a menu calls each livery ("Racing stripe"), by its index in Liveries: at most 40 characters. A livery with no name
-	 * here (or an empty one) is shown as "Livery <number>".
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Liveries")
-	TArray<FString> LiveryNames;
-
 	/** The livery a car wears when it spawns, by its index in Liveries; -1 for none. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Liveries", meta = (ClampMin = "-1", ClampMax = "7"))
 	int32 DefaultLivery = -1;

@@ -391,7 +391,7 @@ public:
 	 */
 	static TArray<FString> LiveryTextureKeys(const UMantleVehicleSource& Source);
 
-	/** The longest a livery's name may be (schema/vehicle.schema.json liveryNames). */
+	/** The longest a livery's name may be (the cap M4's liveryNames in schema/vehicle.schema.json has). */
 	static constexpr int32 MaxLiveryNameLength = 40;
 
 	/**

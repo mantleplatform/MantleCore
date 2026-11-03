@@ -142,7 +142,6 @@ bool FMantleVehiclePreview::Make(const UMantleVehicleSource& Source, FMantleVehi
 	}
 	const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*AsModeled, TMap<FString, FString>());
 	// Liveries upload as textures, which a local car has none of.
-	Document->RemoveField(TEXT("liveryNames"));
 	Document->RemoveField(TEXT("liveryUV"));
 	Document->RemoveField(TEXT("defaultLivery"));
 	if (Source.Paint.Liveries.Num() > 0)

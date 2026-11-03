@@ -69,8 +69,6 @@ bool FMantleVehicleLiveryStepWindowTest::RunTest(const FString& Parameters)
 	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
 	Access::Apply(*Panel, *Source);
 	TestEqual(TEXT("both images reach the vehicle"), Source->Paint.Liveries.Num(), 2);
-	TestEqual(TEXT("with a name each"), Source->Paint.LiveryNames.Num(), 2);
-	TestEqual(TEXT("the name is trimmed"), Source->Paint.LiveryNames[1], FString(TEXT("Racing stripe")));
 	TestEqual(TEXT("the first image added is the one the car starts in"), Source->Paint.DefaultLivery, 0);
 
 	Access::Start(*Panel, 1);
@@ -79,7 +77,6 @@ bool FMantleVehicleLiveryStepWindowTest::RunTest(const FString& Parameters)
 	Access::Remove(*Panel, 0);
 	Access::Apply(*Panel, *Source);
 	TestEqual(TEXT("removing an earlier one keeps the start on the same image"), Source->Paint.DefaultLivery, 0);
-	TestEqual(TEXT("and its name"), Source->Paint.LiveryNames[0], FString(TEXT("Racing stripe")));
 	Access::Remove(*Panel, 0);
 	Access::Apply(*Panel, *Source);
 	TestEqual(TEXT("removing the one it starts in leaves the plain paint"), Source->Paint.DefaultLivery, static_cast<int32>(INDEX_NONE));
@@ -89,46 +86,6 @@ bool FMantleVehicleLiveryStepWindowTest::RunTest(const FString& Parameters)
 		Access::Add(*Panel, Image);
 	}
 	TestEqual(TEXT("at most eight liveries"), Access::Count(*Panel), 8);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleVehicleLiveryDocumentNamesTest,
-	"Mantle.Vehicle.Livery.DocumentCarriesNames",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
-
-bool FMantleVehicleLiveryDocumentNamesTest::RunTest(const FString& Parameters)
-{
-	UTexture2D* A = MantleVehicleLiveryStepTestPrivate::MakeImage();
-	UTexture2D* B = MantleVehicleLiveryStepTestPrivate::MakeImage();
-	ON_SCOPE_EXIT { A->RemoveFromRoot(); B->RemoveFromRoot(); };
-
-	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
-	Source->Paint.Liveries = { TSoftObjectPtr<UTexture2D>(A), TSoftObjectPtr<UTexture2D>(B) };
-	Source->Paint.DefaultLivery = 0;
-	TSharedRef<FJsonObject> Plain = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
-	TestFalse(TEXT("no names, no liveryNames"), Plain->HasField(TEXT("liveryNames")));
-
-	Source->Paint.LiveryNames = { TEXT("Racing stripe"), FString() };
-	TSharedRef<FJsonObject> Named = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
-	const TArray<TSharedPtr<FJsonValue>>* Names = nullptr;
-	if (TestTrue(TEXT("a named livery writes liveryNames"), Named->TryGetArrayField(TEXT("liveryNames"), Names) && Names))
-	{
-		TestEqual(TEXT("one name per livery"), Names->Num(), 2);
-		FString First;
-		(*Names)[0]->TryGetString(First);
-		TestEqual(TEXT("the first is its name"), First, FString(TEXT("Racing stripe")));
-	}
-
-	Source->Paint.LiveryNames = { FString::ChrN(FMantleVehicleConverter::MaxLiveryNameLength + 5, TEXT('x')) };
-	TArray<FMantleValidationIssue> Issues;
-	FMantleVehicleConverter::CheckSource(Source, TEXT("test"), Issues);
-	bool bTooLong = false;
-	for (const FMantleValidationIssue& Issue : Issues)
-	{
-		bTooLong = bTooLong || (Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("longer than")));
-	}
-	TestTrue(TEXT("a name past 40 characters is refused"), bTooLong);
 	return true;
 }
 
