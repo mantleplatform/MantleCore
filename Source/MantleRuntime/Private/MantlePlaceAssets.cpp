@@ -1910,7 +1910,7 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 	FBuildKey Key;
 	Key.Hash = Hash;
 	Key.Kind = Record.Kind;
-	Key.Variant = static_cast<uint8>(Record.Kind == EAssetKind::Mesh ? ((Record.bCollision ? 1 : 0) | (Record.bKeepCpuData ? 2 : 0))
+	Key.Variant = static_cast<uint8>(Record.Kind == EAssetKind::Mesh ? (Record.bCollision ? 1 : 0)
 		: Record.Kind == EAssetKind::Texture ? static_cast<int32>(Record.Role)
 		: Record.Kind == EAssetKind::TerrainWeights ? (Record.bKeepPixels ? 1 : 0) : 0);
 	Record.bResolved = true;
@@ -2040,8 +2040,9 @@ void FMantlePlaceAssets::QueueLiveriesOf(const FString& VehicleId, const TArray<
 
 void FMantlePlaceAssets::QueueMeshesOf(const FString& VehicleId, const TArray<FString>& MeshIds)
 {
-	if (MeshIds.IsEmpty())
+	if (MeshIds.IsEmpty() || !Settings.bRenderAssets)
 	{
+		// A dedicated server draws nothing: a part neither collides nor weighs anything, so it needs none of them.
 		return;
 	}
 	for (const FString& MeshId : MeshIds)
@@ -2052,11 +2053,8 @@ void FMantlePlaceAssets::QueueMeshesOf(const FString& VehicleId, const TArray<FS
 				*VehicleId, *MeshId);
 			continue;
 		}
-		// Every machine loads them, a dedicated server too: the part is a surface of the car characters and weapons meet, and the server and its clients
-		// must make the same shape (FMantleVehicleBodyCollision::WithParts). The part's own collision stays as the place asks for it (none, unless an
-		// entity uses the same mesh with collision); its CPU data is kept for the shape. A server builds LOD0 only and draws none of it.
+		// Its collision stays as the place asks for it (none, unless an entity uses the same mesh with collision).
 		FRecord& Record = EnsureRecord(MeshId, EAssetKind::Mesh);
-		Record.bKeepCpuData = true;
 		if (!Record.bResolved && !Record.bResolving && !Record.bFailed)
 		{
 			if (const FMantleUploadedAsset* Cached = ResolvedCache.Find(Record.Id))
@@ -2730,8 +2728,6 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		const bool bCollision = (Build.Key.Variant & 1) != 0;
 		FMantleStaticMeshBuildParams Params;
 		Params.bComplexCollision = bCollision;
-		// A vehicle's part keeps its CPU data: the car's collision shape is made of its triangles.
-		Params.bAllowCPUAccess = (Build.Key.Variant & 2) != 0;
 		Params.bCookCollisionNow = !Settings.bAsyncCollisionCook;
 		// #470: a dedicated server never draws, and its collision is LOD0's.
 		Params.bBuildLowerLODs = !IsRunningDedicatedServer();

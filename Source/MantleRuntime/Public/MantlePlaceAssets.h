@@ -579,12 +579,6 @@ private:
 		/** Meshes: an entity collides with it. */
 		bool bCollision = false;
 
-		/**
-		 * Meshes: a vehicle's attached part, whose triangles the car's shape for characters and weapons is made of (FMantleVehicleBodyCollision::WithParts): its
-		 * CPU data is kept, on a dedicated server too (which draws no part but collides with it as the car's surface).
-		 */
-		bool bKeepCpuData = false;
-
 		/** Terrain weights: a grass map (#628), whose four channels are read too, so the decode keeps the pixels. */
 		bool bKeepPixels = false;
 

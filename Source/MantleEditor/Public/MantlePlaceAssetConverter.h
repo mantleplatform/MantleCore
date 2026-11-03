@@ -7,6 +7,7 @@
 #include "MantlePlaceAssets.h"
 #include "MantlePlaceMaterial.h"
 #include "MantlePlaceValidator.h"
+#include "MantleVehicleCollision.h"
 
 class AActor;
 class FJsonObject;
@@ -446,6 +447,12 @@ struct MANTLEEDITOR_API FMantleConvertedVehicle
 
 	/** Its attached parts (#435 item 2), in the source's order. */
 	TArray<FPart> Parts;
+
+	/**
+	 * Its attached parts' collision triangles (FMantleVehicleCollision), written into the vehicle's upload so the car's shape for characters and weapons has them
+	 * without a server loading any part mesh; empty for a car with no parts off the wheels.
+	 */
+	FMantleVehicleCollision Collision;
 
 	/**
 	 * Its horn's sound (#546): FMantlePlaceAssets::SoundKey, converted and uploaded as a SoundEmitter's sound is, before the

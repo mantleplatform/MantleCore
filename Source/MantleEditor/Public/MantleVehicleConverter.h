@@ -13,6 +13,7 @@ class UPhysicsAsset;
 class USkeletalMesh;
 class USkeletalMeshComponent;
 class UStaticMesh;
+struct FMantleVehicleCollision;
 struct FMantleVehicleSourceBox;
 struct FMantleVehicleSourceLinkage;
 struct FMantleVehicleSourcePart;
@@ -348,9 +349,12 @@ public:
 	 */
 	static TArray<FString> LiveryTextureKeys(const UMantleVehicleSource& Source);
 
-	/** The upload: Body with Document at extras.mantleVehicle, and its lower LODs (FMantleVehicleBodyLODs) after it. */
+	/**
+	 * The upload: Body with Document at extras.mantleVehicle, and its lower LODs (FMantleVehicleBodyLODs) after it. A split car's attached parts' collision
+	 * triangles (FMantleVehicleCollision) ride beside the document; none for a car whose surface is all in its body.
+	 */
 	static bool WriteUpload(const FMantleGlbMesh& Body, const TSharedRef<FJsonObject>& Document, TArray<uint8>& OutBytes, FString& OutError,
-		TConstArrayView<FMantleGlbMesh> LowerLODs = TConstArrayView<FMantleGlbMesh>());
+		TConstArrayView<FMantleGlbMesh> LowerLODs = TConstArrayView<FMantleGlbMesh>(), const FMantleVehicleCollision* Collision = nullptr);
 
 	/**
 	 * Check this place's rules for one vehicle a spawn uses: a body with every wheel bone (not the root), 2 to 8
