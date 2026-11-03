@@ -8,6 +8,7 @@
 #include "MantlePlaceMaterial.h"
 #include "MantlePlaceValidator.h"
 #include "MantleVehicleCollision.h"
+#include "MantleVehicleSource.h"
 
 class AActor;
 class FJsonObject;

@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "MantleGlbWriter.h"
 #include "MantlePlaceValidator.h"
+#include "MantleVehicleSource.h"
 
 class FJsonObject;
 class UActorComponent;
