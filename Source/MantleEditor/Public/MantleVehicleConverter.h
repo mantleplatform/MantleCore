@@ -11,6 +11,7 @@ class UActorComponent;
 class UMaterialInterface;
 class UMantleVehicleSource;
 class UPhysicsAsset;
+class UTexture2D;
 class USkeletalMesh;
 class USkeletalMeshComponent;
 class UStaticMesh;
@@ -389,6 +390,19 @@ public:
 	 * color is (FMantlePlaceAssets::DecalTextureKey), alpha kept. Empty entries for liveries that do not load.
 	 */
 	static TArray<FString> LiveryTextureKeys(const UMantleVehicleSource& Source);
+
+	/** The longest a livery's name may be (the cap M4's liveryNames in schema/vehicle.schema.json has). */
+	static constexpr int32 MaxLiveryNameLength = 40;
+	/** A name's length in code points, the way the cook, the schema and the game count it (FString::Len counts UTF-16 units, so an emoji is two). */
+	static int32 CountCodePoints(const FString& Text);
+	/** Text cut to at most MaxCodePoints code points, never between the two halves of a surrogate pair. */
+	static FString CutToCodePoints(const FString& Text, int32 MaxCodePoints);
+
+	/**
+	 * What CheckSource says of one livery image: past the texture size rule, and no alpha (a warning each). The Liveries step shows the
+	 * same lines under the image. Subject names the vehicle.
+	 */
+	static void LiveryImageIssues(const FString& Subject, const UTexture2D& Texture, TArray<FMantleValidationIssue>& OutIssues);
 
 	/**
 	 * The upload: Body with Document at extras.mantleVehicle, and its lower LODs (FMantleVehicleBodyLODs) after it. A split car's attached parts' collision

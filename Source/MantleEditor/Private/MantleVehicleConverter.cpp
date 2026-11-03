@@ -142,7 +142,7 @@ namespace MantleVehicleConverterPrivate
 	 * The document keys after the collision, in the schema's order, then the horn (#546), whose sound's id is filled in at upload
 	 * as theirs are (the cook reads the keys in any order); every writer rebuilds around them so they stay there.
 	 */
-	const TCHAR* const VehicleTailKeys[] = { TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryUV"), TEXT("defaultLivery"),
+	const TCHAR* const VehicleTailKeys[] = { TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryNames"), TEXT("liveryUV"), TEXT("defaultLivery"),
 		TEXT("linkage"), TEXT("parts"), TEXT("horn") };
 
 	/** How near two bones must sit for a mesh on one to be a tire on the other (a visual wheel beside the wheel), cm. */
@@ -2889,6 +2889,19 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	}
 	if (P.Liveries.Num() > 0)
 	{
+		// The names ride beside the ids (absent when none is named), each cut to the schema's 40 characters.
+		bool bNamed = false;
+		TArray<TSharedPtr<FJsonValue>> Names;
+		for (int32 Index = 0; Index < P.Liveries.Num(); ++Index)
+		{
+			const FString Name = P.LiveryNames.IsValidIndex(Index) ? FMantleVehicleConverter::CutToCodePoints(P.LiveryNames[Index].TrimStartAndEnd(), FMantleVehicleConverter::MaxLiveryNameLength) : FString();
+			bNamed = bNamed || !Name.IsEmpty();
+			Names.Add(MakeShared<FJsonValueString>(Name));
+		}
+		if (bNamed)
+		{
+			Doc->SetArrayField(TEXT("liveryNames"), Names);
+		}
 		Doc->SetField(TEXT("liveryUV"), VehicleInteger(0));
 		if (P.Liveries.IsValidIndex(P.DefaultLivery))
 		{
@@ -3094,6 +3107,49 @@ TArray<FString> FMantleVehicleConverter::UniqueSectionNames(const TArray<FString
 		Out.Add(Unique);
 	}
 	return Out;
+}
+
+int32 FMantleVehicleConverter::CountCodePoints(const FString& Text)
+{
+	int32 Count = 0;
+	for (const TCHAR Unit : Text)
+	{
+		// A low surrogate (0xDC00 to 0xDFFF) is the second half of a pair; the pair is one code point.
+		Count += (Unit >= 0xDC00 && Unit <= 0xDFFF) ? 0 : 1;
+	}
+	return Count;
+}
+
+FString FMantleVehicleConverter::CutToCodePoints(const FString& Text, const int32 MaxCodePoints)
+{
+	int32 Count = 0;
+	for (int32 Index = 0; Index < Text.Len(); ++Index)
+	{
+		const TCHAR Unit = Text[Index];
+		if (!(Unit >= 0xDC00 && Unit <= 0xDFFF) && ++Count > MaxCodePoints)
+		{
+			return Text.Left(Index);
+		}
+	}
+	return Text;
+}
+
+void FMantleVehicleConverter::LiveryImageIssues(const FString& Subject, const UTexture2D& Texture, TArray<FMantleValidationIssue>& OutIssues)
+{
+	using namespace MantleVehicleConverterPrivate;
+	const FMantlePlaceAssetLimits TextureLimits = FMantlePlaceAssetLimits::FromContract();
+	FMantleValidationIssue Downscale;
+	if (FMantlePlaceAssets::TextureDownscaleIssue(FString::Printf(TEXT("%s's livery '%s'"), *Subject, *Texture.GetName()),
+		FMantlePlaceAssets::TextureSize(&Texture), TextureLimits.MaxTextureSize, Downscale))
+	{
+		OutIssues.Add(Downscale);
+	}
+	if (!VehicleLiveryHasAlpha(Texture))
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("%s's livery '%s' has no alpha, so it covers the paint everywhere its layout reaches."), *Subject, *Texture.GetName()),
+			TEXT("Give the image alpha that is clear where the paint should show, unless the livery is meant to cover the whole body.") });
+	}
 }
 
 TArray<FString> FMantleVehicleConverter::LiveryTextureKeys(const UMantleVehicleSource& Source)
@@ -3572,7 +3628,17 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		AddError(FString::Printf(TEXT("wears livery %d by default, but has %d liveries."), Paint.DefaultLivery, NumLiveries),
 			TEXT("Set Default Livery to -1 (none) or to one of its Liveries' index (the first is 0)."));
 	}
-	const FMantlePlaceAssetLimits TextureLimits = FMantlePlaceAssetLimits::FromContract();
+	if (Paint.LiveryNames.Num() > NumLiveries)
+	{
+		AddError(FString::Printf(TEXT("names %d liveries but has %d."), Paint.LiveryNames.Num(), NumLiveries), TEXT("Give each livery at most one name, in the order of Liveries."));
+	}
+	for (int32 Index = 0; Index < Paint.LiveryNames.Num(); ++Index)
+	{
+		if (FMantleVehicleConverter::CountCodePoints(Paint.LiveryNames[Index].TrimStartAndEnd()) > FMantleVehicleConverter::MaxLiveryNameLength)
+		{
+			AddError(FString::Printf(TEXT("has a name for livery %d longer than %d characters."), Index, FMantleVehicleConverter::MaxLiveryNameLength), TEXT("Shorten the name."));
+		}
+	}
 	for (int32 Index = 0; Index < NumLiveries; ++Index)
 	{
 		const UTexture2D* Texture = Paint.Liveries[Index].LoadSynchronous();
@@ -3589,18 +3655,7 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 				AddError(FString::Printf(TEXT("lists livery '%s' twice (%d and %d)."), *Texture->GetName(), Before, Index), TEXT("List each livery once."));
 			}
 		}
-		FMantleValidationIssue Downscale;
-		if (FMantlePlaceAssets::TextureDownscaleIssue(FString::Printf(TEXT("%s's livery '%s'"), *Subject, *Texture->GetName()),
-			FMantlePlaceAssets::TextureSize(Texture), TextureLimits.MaxTextureSize, Downscale))
-		{
-			OutIssues.Add(Downscale);
-		}
-		if (!VehicleLiveryHasAlpha(*Texture))
-		{
-			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
-				FString::Printf(TEXT("%s's livery '%s' has no alpha, so it covers the paint everywhere its layout reaches."), *Subject, *Texture->GetName()),
-				TEXT("Give the image alpha that is clear where the paint should show, unless the livery is meant to cover the whole body.") });
-		}
+		LiveryImageIssues(Subject, *Texture, OutIssues);
 	}
 
 	// The horn (#546): a sound wave of the creator's own, which publishes with the vehicle as a SoundEmitter's does, so it is held
@@ -4082,6 +4137,7 @@ namespace MantleVehicleConverterPrivate
 		}
 		// Its livery choices name textures this file does not carry.
 		const TSharedRef<FJsonObject> Document = FMantleVehicleConverter::MakeDocument(*Source, TMap<FString, FString>());
+		Document->RemoveField(TEXT("liveryNames"));
 		Document->RemoveField(TEXT("liveryUV"));
 		Document->RemoveField(TEXT("defaultLivery"));
 		// Paint only on parts' slots (#435 item 2) paints nothing without the parts, which this file leaves out.

@@ -19,6 +19,18 @@
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleVehicleAssetPrivate
 {
+	/** A string's length in code points, as the cook and the schema count it (FString::Len counts UTF-16 units, so an emoji is two). */
+	int32 CountCodePoints(const FString& Text)
+	{
+		int32 Count = 0;
+		for (const TCHAR Unit : Text)
+		{
+			// A low surrogate (0xDC00 to 0xDFFF) is the second half of a pair; the pair is one code point.
+			Count += (Unit >= 0xDC00 && Unit <= 0xDFFF) ? 0 : 1;
+		}
+		return Count;
+	}
+
 	struct FVehicleRange
 	{
 		const TCHAR* Path;
@@ -865,6 +877,25 @@ namespace MantleVehicleAssetPrivate
 		if (P.Ok() && !Root->HasField(TEXT("liveryUV")))
 		{
 			P.Fail(TEXT(""), TEXT("is missing liveryUV (a cooked vehicle with liveries carries it)"));
+		}
+		// The names a menu shows, one per livery in the same order (a name may be empty).
+		if (P.Ok() && Root->HasField(TEXT("liveryNames")))
+		{
+			const TArray<TSharedPtr<FJsonValue>>* Names = nullptr;
+			if (!P.Array(Root->TryGetField(TEXT("liveryNames")), TEXT("/liveryNames"), D.Liveries.Num(), D.Liveries.Num(), Names))
+			{
+				return;
+			}
+			for (int32 Index = 0; Index < Names->Num() && P.Ok(); ++Index)
+			{
+				FString Name;
+				if (!(*Names)[Index].IsValid() || !(*Names)[Index]->TryGetString(Name) || CountCodePoints(Name) > 40)
+				{
+					P.Fail(FString::Printf(TEXT("/liveryNames/%d"), Index), TEXT("must be a name of at most 40 characters"));
+					break;
+				}
+				D.LiveryNames.Add(Name);
+			}
 		}
 	}
 
@@ -2133,7 +2164,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	P.Keys(Root, TEXT(""),
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("maxSpeed"), TEXT("centerOfMass"), TEXT("dragCoefficient"), TEXT("frontalArea"),
 		  TEXT("engine"), TEXT("transmission"), TEXT("suspension"), TEXT("steering"), TEXT("brakes"), TEXT("tires"), TEXT("wheels"),
-		  TEXT("seat"), TEXT("camera"), TEXT("collision"), TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryUV"),
+		  TEXT("seat"), TEXT("camera"), TEXT("collision"), TEXT("materials"), TEXT("paint"), TEXT("lights"), TEXT("liveries"), TEXT("liveryNames"), TEXT("liveryUV"),
 		  TEXT("defaultLivery"), TEXT("linkage"), TEXT("parts"), TEXT("passengerSeat"), TEXT("trunk"), TEXT("horn"), TEXT("preset"), TEXT("movementType"),
 		  TEXT("flight"), TEXT("helicopter"), TEXT("hover") },
 		{ TEXT("schemaVersion"), TEXT("mass"), TEXT("maxSpeed"), TEXT("dragCoefficient"), TEXT("frontalArea"), TEXT("engine"),
@@ -2448,6 +2479,10 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	if (P.Ok() && Root->HasField(TEXT("liveries")))
 	{
 		ReadVehicleLiveries(P, Root, D);
+	}
+	else if (P.Ok() && Root->HasField(TEXT("liveryNames")))
+	{
+		P.Fail(TEXT("/liveryNames"), TEXT("has no liveries to name"));
 	}
 	if (P.Ok() && Root->HasField(TEXT("liveryUV")))
 	{

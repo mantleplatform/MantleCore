@@ -11,6 +11,7 @@
 #include "MantleVehicleShape.h"
 #include "MantleVehicleTypeMatch.h"
 #include "SMantleBuilderFlow.h"
+#include "Styling/SlateBrush.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/WeakObjectPtrTemplates.h"
 #include "Widgets/SCompoundWidget.h"
@@ -20,14 +21,17 @@ class FMantleVehicleShapeKind;
 class SMantleBuilderViewport;
 class SVerticalBox;
 class UMantleVehicleSource;
+class UMaterialInterface;
+class UTexture2D;
 class UObject;
 struct FAssetData;
 class FScopedTransaction;
 
 /**
- * Tools > Mantle > Build a vehicle...: six short steps, one decision each, the way the weapon builder goes. Pick what kind of vehicle it is (a card for every
+ * Tools > Mantle > Build a vehicle...: seven short steps, one decision each, the way the weapon builder goes. Pick what kind of vehicle it is (a card for every
  * publishable preset). Choose your vehicle's model: a Static or Skeletal Mesh, a vehicle Blueprint, or a file from your computer; there is always a model. Check the fit:
- * which way it faces, its size, which of its parts are wheels, propellers or rotors, and how it feels to drive. Seats and paint. The Thumbnail every uploader has.
+ * which way it faces, its size, which of its parts are wheels, propellers or rotors, and how it feels to drive. Seats and paint. Liveries: images laid over the paint, each named,
+ * with the one the car starts in and a guide to paint them on. The Thumbnail every uploader has.
  * Then build it, put it in your level and drive it. From the second step on, the picture shows the creator's own model on the vehicle's frame
  * (FMantleVehicleBuilder::MakeModelPreview) with a dot on each wheel; there is no stand-in vehicle. The result, good or bad, shows in the window; there are no dialogs.
  * The logic is FMantleVehicleBuilder (the vehicle assets), FMantleVehicleShape (the feel) and FMantleVehicleTypeMatchCheck; this is only the page. Native Slate.
@@ -44,6 +48,8 @@ class SMantleVehicleBuilder : public SCompoundWidget
 	friend struct FMantleVehicleBuilderFlowAccess;
 	/** Mantle.Dev.VehicleBuilderShots: the window, step by step, drawn offscreen. */
 	friend struct FMantleVehicleBuilderShotAccess;
+	/** The tests of the Liveries step: its images, names and the one the car starts in. */
+	friend struct FMantleVehicleBuilderLiveryAccess;
 
 public:
 	SLATE_BEGIN_ARGS(SMantleVehicleBuilder) {}
@@ -59,17 +65,18 @@ public:
 
 private:
 	TArray<FMantleBuilderStep> MakeSteps();
-	// The six steps.
+	// The seven steps.
 	TSharedRef<SWidget> MakeTypeStep();
 	TSharedRef<SWidget> MakeModelStep();
 	TSharedRef<SWidget> MakeFitStep();
 	TSharedRef<SWidget> MakeSeatsAndPaintStep();
+	TSharedRef<SWidget> MakeLiveriesStep();
 	TSharedRef<SWidget> MakeThumbnailStep();
 	TSharedRef<SWidget> MakeBuildStep();
 
 	TSharedRef<SWidget> MakePresetCard(const FString& PresetId, const FText& Name, const FText& Description);
 	/** A step's content with the picture of the model on its frame beside it: Left is the step's own controls. */
-	TSharedRef<SWidget> WithPicture(const TSharedRef<SWidget>& Left, bool bLights = false);
+	TSharedRef<SWidget> WithPicture(const TSharedRef<SWidget>& Left, bool bLights = false, bool bLiveries = false);
 	/** The picture: the model on its frame once there is one, else the line that says what to do next. */
 	TSharedRef<SWidget> MakePicture();
 	/** The Size row of a type shaped by one Size (a plane, helicopter or hovercraft). */
@@ -180,6 +187,36 @@ private:
 	FReply OnRemoveBeam();
 	FReply OnResetLights();
 
+	// Liveries.
+	/** One image of the Liveries step: its texture and the name a menu shows. */
+	struct FLiveryChoice
+	{
+		TSoftObjectPtr<UTexture2D> Texture;
+		FString Name;
+	};
+	/** Adds a texture of the project as the next livery (named after it); says why in the step when it cannot. */
+	void AddLivery(UTexture2D* Texture);
+	/** AddLivery's work: false (with OutProblem filled in when there is a reason to show) when nothing was added. */
+	bool TryAddLivery(UTexture2D* Texture, FText& OutProblem);
+	/** Add image...: asks for a PNG, TGA or DDS (or another image), imports it into the project and adds it. */
+	FReply OnAddLiveryImage();
+	void RemoveLivery(int32 Index);
+	void SetLiveryName(int32 Index, const FString& Name);
+	/** The livery the car starts in (INDEX_NONE for the plain paint). */
+	void SetStartLivery(int32 Index);
+	/** The livery shown on the model in the picture (INDEX_NONE for the plain paint). */
+	void ShowLivery(int32 Index);
+	/** The rows of the Liveries step, made again after an add or a remove. */
+	void RebuildLiveryRows();
+	/** The creator changed a livery: the picture shows it, and a built vehicle takes it at once. */
+	void LiveriesChanged();
+	/** Draws the shown livery over the ticked paint sections in the picture (only while the Liveries step's picture is open). */
+	void ApplyLiveryPreview();
+	/** Export UV guide...: writes a PNG of the body's UV 0 with the painted sections outlined. */
+	FReply OnExportUvGuide();
+	/** The Liveries written into a vehicle (names, images and the one it starts in). */
+	void ApplyLiveries(UMantleVehicleSource& Source) const;
+
 	void CloseWindow();
 
 	TSharedPtr<SMantleBuilderFlow> Flow;
@@ -280,6 +317,25 @@ private:
 	bool bLightsEdited = false;
 	/** The picture shows the lights (the seats and paint step): the beams to drag and the light markers. */
 	bool bPictureLights = false;
+
+	// Liveries.
+	TArray<FLiveryChoice> LiveryChoices;
+	int32 StartLivery = INDEX_NONE;
+	int32 ShownLivery = INDEX_NONE;
+	/** The creator changed the liveries: they replace what the built vehicle had. */
+	bool bLiveriesEdited = false;
+	/** The picture shows the shown livery on the model (the Liveries step). */
+	bool bPictureLiveries = false;
+	TSharedPtr<SVerticalBox> LiveryRowsBox;
+	/** What the Liveries step says under its buttons (why an image was not added, or where the guide was saved); red when it failed. */
+	FText LiveryStatus;
+	bool bLiveryStatusFailed = false;
+	/** The thumbnails of the rows, kept alive for as long as the rows are. */
+	TArray<TSharedPtr<FSlateBrush>> LiveryBrushes;
+	/** The picture's stand-in materials for the shown livery, kept alive here. */
+	TArray<TStrongObjectPtr<UObject>> LiveryPreviewMaterials;
+	/** The last folder the guide was saved in. */
+	FString LastGuideFolder;
 
 	/** The size Mantle proposed for the last build, for Reset to suggested; unset when the wheels could not be read. */
 	TOptional<float> SuggestedSize;
