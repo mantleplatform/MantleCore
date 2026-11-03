@@ -20,6 +20,17 @@
 // Named, not anonymous: unity builds merge this file with others.
 namespace MantleVehiclePreviewPrivate
 {
+	/** The document's name of a paint layer. */
+	FString LayerName(const EMantleVehicleSourcePaintLayer Layer)
+	{
+		switch (Layer)
+		{
+		case EMantleVehicleSourcePaintLayer::Wheels: return TEXT("wheels");
+		case EMantleVehicleSourcePaintLayer::Interior: return TEXT("interior");
+		case EMantleVehicleSourcePaintLayer::Dashboard: return TEXT("dashboard");
+		default: return TEXT("secondary");
+		}
+	}
 	/** A number as the cook writes a derived one: rounded to hundredths. */
 	TSharedRef<FJsonValue> PreviewNumber(const double Value)
 	{
@@ -83,6 +94,7 @@ bool FMantleVehiclePreview::Make(const UMantleVehicleSource& Source, FMantleVehi
 	Scratch->Wheels = Source.Wheels;
 	Scratch->Tuning = Source.Tuning;
 	Scratch->Paint.Sections = Source.Paint.Sections;
+	Scratch->Paint.Layers = Source.Paint.Layers;
 	Scratch->Linkage = Source.Linkage;
 	Scratch->Parts = Source.Parts;
 	const FMantleVehicleConversion Conversion = FMantleVehicleConverter::Convert(Mesh, *Scratch);
@@ -298,13 +310,19 @@ bool FMantleVehiclePreview::Make(const UMantleVehicleSource& Source, FMantleVehi
 		Out.Materials.Add(Id, Slot.MaterialInterface.Get());
 	}
 	auto AddPart = [&Out, &Desc, &StandIn](UStaticMesh* PartMesh, const FName Bone, const FTransform& Transform, TFunctionRef<UMaterialInterface*(int32)> SlotMaterial,
-		const TArray<int32>& PaintSlots)
+		const TArray<int32>& PaintSlots, const TArray<FMantleVehicleSourcePartLayerSlots>& LayerSlots)
 	{
 		FMantleVehiclePartDesc& Part = Desc.Parts.AddDefaulted_GetRef();
 		Part.Mesh = StandIn();
 		Part.Bone = Bone;
 		Part.Transform = Transform;
 		Part.PaintSlots = PaintSlots;
+		for (const FMantleVehicleSourcePartLayerSlots& Layer : LayerSlots)
+		{
+			FMantleVehiclePartLayerSlotsDesc& Entry = Part.LayerSlots.AddDefaulted_GetRef();
+			Entry.Layer = MantleVehiclePreviewPrivate::LayerName(Layer.Layer);
+			Entry.Slots = Layer.Slots;
+		}
 		Out.Meshes.Add(Part.Mesh, PartMesh);
 		for (int32 Slot = 0; Slot < PartMesh->GetStaticMaterials().Num(); ++Slot)
 		{
@@ -322,14 +340,15 @@ bool FMantleVehiclePreview::Make(const UMantleVehicleSource& Source, FMantleVehi
 			continue;
 		}
 		AddPart(PartMesh, Part.Bone, Part.Transform, [&Part, PartMesh](const int32 Slot) { return FMantleVehicleConverter::PartSlotMaterial(Part, PartMesh, Slot); },
-			Part.PaintSlots);
+			Part.PaintSlots, Part.LayerSlots);
 	}
 	for (const FMantleVehicleSourceWheel& Wheel : Source.Wheels)
 	{
 		UStaticMesh* Tire = Wheel.TireMesh.LoadSynchronous();
 		if (Tire)
 		{
-			AddPart(Tire, Wheel.Bone, Wheel.TireTransform, [Tire](const int32 Slot) { return Tire->GetStaticMaterials()[Slot].MaterialInterface.Get(); }, TArray<int32>());
+			AddPart(Tire, Wheel.Bone, Wheel.TireTransform, [Tire](const int32 Slot) { return Tire->GetStaticMaterials()[Slot].MaterialInterface.Get(); }, TArray<int32>(),
+				TArray<FMantleVehicleSourcePartLayerSlots>());
 		}
 	}
 	Out.Horn = Source.Tuning.HornSound.LoadSynchronous();

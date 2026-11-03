@@ -95,6 +95,11 @@ struct FMantleVehicleModelOptions
 	 */
 	TOptional<TArray<FString>> PaintedSections;
 	/**
+	 * The paint layer each ticked section is for, by the model's section name: a ticked section not here is the body paint. The layers are the second paint, the wheels'
+	 * rims, the interior and the dashboard (EMantleVehicleSourcePaintLayer). Unset with PaintedSections unset, Mantle's own guess (FMantleVehicleConverter::GuessPaintLayer).
+	 */
+	TMap<FString, EMantleVehicleSourcePaintLayer> PaintLayers;
+	/**
 	 * The space Lights' beams were placed in: the bounds of the window's picture's body. A model that keeps its own wheels (Build) is built in its own space, and the beams
 	 * are moved to the same place on it. Invalid: the beams are in the built body's space already.
 	 */
@@ -249,7 +254,13 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * body and parts (FMantleVehicleBodySplit), a ticked section that moved to a part is that part's Paint Slot, found by the slot's name, so a split car paints exactly what
 	 * was ticked and nothing is set by hand. Parts a creator added are not touched. OutNotes says in plain words what rides on a part.
 	 */
-	static void ApplyPaint(UMantleVehicleSource& Source, const TArray<FString>& AllSections, const TArray<bool>& Painted, TArray<FString>& OutNotes);
+	static void ApplyPaint(UMantleVehicleSource& Source, const TArray<FString>& AllSections, const TArray<bool>& Painted, TArray<FString>& OutNotes,
+		const TArray<uint8>* Layers = nullptr);
+
+	/**
+	 * A ticked section's layer as ApplyPaint takes it: 0 is the body paint, else the EMantleVehicleSourcePaintLayer plus one (second paint 1, wheels 2, interior 3, dashboard 4).
+	 */
+	static uint8 PaintPick(EMantleVehicleSourcePaintLayer Layer) { return static_cast<uint8>(Layer) + 1; }
 
 	/**
 	 * The lights of a vehicle built on its own wheels (Build): its body is the creator's model, which is never changed, so when the light finder cuts spots out of it the

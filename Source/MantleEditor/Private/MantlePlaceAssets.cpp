@@ -4182,6 +4182,69 @@ bool FMantlePlaceAssets::UnpublishableMaterialWhy(const UMaterialInterface* Mate
 	return !OutWhy.IsEmpty();
 }
 
+bool FMantlePlaceAssets::BaseColorAverage(const UMaterialInterface* Material, FColor& OutColor, bool& bOutPicture)
+{
+	bOutPicture = false;
+	OutColor = FColor::White;
+	if (!Material)
+	{
+		return false;
+	}
+	FLinearColor Factor = FLinearColor::White;
+	for (const TCHAR* Name : { TEXT("BaseColorFactor"), TEXT("Base Color"), TEXT("BaseColor"), TEXT("Color"), TEXT("Diffuse Color"), TEXT("Albedo Tint") })
+	{
+		FLinearColor Found;
+		if (Material->GetVectorParameterValue(FHashedMaterialParameterInfo(FName(Name)), Found))
+		{
+			Factor = Found;
+			break;
+		}
+	}
+	UTexture* Picture = nullptr;
+	for (const TCHAR* Name : { TEXT("BaseColorTexture"), TEXT("BaseColor"), TEXT("Base Color"), TEXT("BaseColorMap"), TEXT("Albedo"), TEXT("Diffuse"), TEXT("Color") })
+	{
+		UTexture* Found = nullptr;
+		if (Material->GetTextureParameterValue(FHashedMaterialParameterInfo(FName(Name)), Found) && Found)
+		{
+			Picture = Found;
+			break;
+		}
+	}
+	FLinearColor Average = FLinearColor::White;
+	if (Picture)
+	{
+		bOutPicture = true;
+		UTexture2D* Texture = Cast<UTexture2D>(Picture);
+		const ETextureSourceFormat Format = Texture ? Texture->Source.GetFormat() : TSF_Invalid;
+		TArray64<uint8> Pixels;
+		if (!Texture || (Format != TSF_BGRA8 && Format != TSF_RGBA8) || !Texture->Source.GetMipData(Pixels, 0) || Pixels.Num() < 4)
+		{
+			return false;
+		}
+		const int64 Count = Pixels.Num() / 4;
+		const int64 Stride = Count > 1024 * 1024 ? Count / (1024 * 1024) : 1;
+		double Sum[3] = { 0.0, 0.0, 0.0 };
+		int64 Taken = 0;
+		for (int64 Pixel = 0; Pixel < Count; Pixel += Stride)
+		{
+			const uint8* Bytes = Pixels.GetData() + Pixel * 4;
+			// BGRA8 stores blue first, RGBA8 red first.
+			const FColor Color = Format == TSF_BGRA8 ? FColor(Bytes[2], Bytes[1], Bytes[0], 255) : FColor(Bytes[0], Bytes[1], Bytes[2], 255);
+			const FLinearColor Linear = Texture->SRGB ? FLinearColor::FromSRGBColor(Color) : FLinearColor(Color);
+			Sum[0] += Linear.R;
+			Sum[1] += Linear.G;
+			Sum[2] += Linear.B;
+			++Taken;
+		}
+		if (Taken > 0)
+		{
+			Average = FLinearColor(static_cast<float>(Sum[0] / Taken), static_cast<float>(Sum[1] / Taken), static_cast<float>(Sum[2] / Taken), 1.f);
+		}
+	}
+	OutColor = FLinearColor(Average.R * Factor.R, Average.G * Factor.G, Average.B * Factor.B, 1.f).ToFColorSRGB();
+	return true;
+}
+
 bool FMantlePlaceAssets::PublishesAsCarPaint(const UMaterialInterface* Material)
 {
 	const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;

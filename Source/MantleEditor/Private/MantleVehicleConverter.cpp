@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleBodyLODs.h"
+#include "MantleVehicleBuiltInMaterials.h"
 #include "MantleVehicleCollision.h"
 #include "MantleVehicleLightFinder.h"
 #include "MantleCosmeticExport.h"
@@ -50,6 +51,10 @@ const TCHAR* FMantleVehicleConverter::ExtrasKey = TEXT("mantleVehicle");
 
 namespace MantleVehicleConverterPrivate
 {
+	/** Paint layer names and the layer made on demand, defined with the layer guesses below. */
+	const TCHAR* PaintLayerName(EMantleVehicleSourcePaintLayer Layer);
+	FMantleVehicleSourcePaintLayer& EnsurePaintLayer(FMantleVehicleSourcePaint& Paint, EMantleVehicleSourcePaintLayer Layer);
+
 	/** Every bone's reference pose in component space: the raw skeleton lists parents before children. */
 	TArray<FTransform> VehicleComponentPose(const FReferenceSkeleton& Skeleton)
 	{
@@ -1356,14 +1361,40 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	// is kept. A part's slots (#435 item 2: the OffroadCar's painted shell is a part) are suggested the same way, and on the
 	// painted sections' own materials, when its parts were found just now.
 	const TArray<FString> Sections = UniqueSectionNames(Body.MaterialNames);
-	if (Source.Paint.Sections.IsEmpty())
+	if (Source.Paint.Sections.IsEmpty() && Source.Paint.Layers.IsEmpty())
 	{
+		// The body paint is what reads as car paint (or a GTA model's PRIMARY); the other layers are what the names say (a second paint, the rims, the interior,
+		// the dashboard) when a color would show on their picture. A lens or a glass section is never a layer.
+		TArray<FString> LeftOut;
 		for (int32 Index = 0; Index < Sections.Num(); ++Index)
 		{
-			if (Materials.IsValidIndex(Index) && LooksLikePaint(Materials[Index]))
+			const UMaterialInterface* SectionMaterial = Materials.IsValidIndex(Index) ? Materials[Index] : nullptr;
+			const FPaintLayerGuess Guess = GuessPaintLayer(Sections[Index], SectionMaterial);
+			if (Guess.bPainted && Guess.bPrimary)
 			{
 				Source.Paint.Sections.Add(Sections[Index]);
 			}
+			else if (Guess.bPainted)
+			{
+				if (SectionMaterial && !FMantleVehicleBuiltInMaterials::Detect(SectionMaterial, Sections[Index], false).IsEmpty())
+				{
+					continue;
+				}
+				MantleVehicleConverterPrivate::EnsurePaintLayer(Source.Paint, Guess.Layer).Sections.Add(Sections[Index]);
+			}
+			else if (!Guess.LeftOut.IsEmpty())
+			{
+				LeftOut.Add(FString::Printf(TEXT("%s (%s)"), *Sections[Index], *Guess.LeftOut));
+			}
+		}
+		for (const FMantleVehicleSourcePaintLayer& Layer : Source.Paint.Layers)
+		{
+			Result.Notes.Add(FString::Printf(TEXT("Paint layer %s: %s. A color a script picks tints the model's own picture. Change it under Paint > Layers in the vehicle asset."),
+				MantleVehicleConverterPrivate::PaintLayerName(Layer.Layer), *FString::Join(Layer.Sections, TEXT(", "))));
+		}
+		if (LeftOut.Num() > 0)
+		{
+			Result.Notes.Add(FString::Printf(TEXT("Not given a paint layer: %s."), *FString::Join(LeftOut, TEXT("; "))));
 		}
 	}
 	TArray<const UMaterialInterface*> BodyPaintMaterials;
@@ -1382,6 +1413,18 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 		if (bFreshParts && Part.PaintSlots.IsEmpty())
 		{
 			Part.PaintSlots = SuggestPartPaintSlots(Part, BodyPaintMaterials);
+		}
+		if (bFreshParts && Part.LayerSlots.IsEmpty())
+		{
+			Part.LayerSlots = SuggestPartLayerSlots(Part);
+		}
+		for (const FMantleVehicleSourcePartLayerSlots& LayerSlots : Part.LayerSlots)
+		{
+			MantleVehicleConverterPrivate::EnsurePaintLayer(Source.Paint, LayerSlots.Layer);
+			for (const int32 Slot : LayerSlots.Slots)
+			{
+				PaintedSlots.Add(FString::Printf(TEXT("%s slot %d (%s)"), *Part.Mesh.GetAssetName(), Slot, MantleVehicleConverterPrivate::PaintLayerName(LayerSlots.Layer)));
+			}
 		}
 		for (const int32 Slot : Part.PaintSlots)
 		{
@@ -1442,6 +1485,7 @@ UMantleVehicleSource* FMantleVehicleConverter::ConvertAsset(USkeletalMesh* Mesh,
 		Scratch->Wheels = Source->Wheels;
 		Scratch->Tuning = Source->Tuning;
 		Scratch->Paint.Sections = Source->Paint.Sections;
+		Scratch->Paint.Layers = Source->Paint.Layers;
 		Scratch->Linkage = Source->Linkage;
 		Scratch->Parts = Source->Parts;
 		OutResult = Convert(Mesh, *Scratch, Surroundings);
@@ -1456,6 +1500,7 @@ UMantleVehicleSource* FMantleVehicleConverter::ConvertAsset(USkeletalMesh* Mesh,
 		Source->Tuning = Scratch->Tuning;
 		// Its paint's finish and liveries are the creator's; only a suggestion for sections, when it had none, is new.
 		Source->Paint.Sections = Scratch->Paint.Sections;
+		Source->Paint.Layers = Scratch->Paint.Layers;
 		// So is its linkage, found afresh only when it had none (#435 b), and its parts (#435 item 2).
 		Source->Linkage = Scratch->Linkage;
 		Source->Parts = Scratch->Parts;
@@ -2038,6 +2083,264 @@ bool FMantleVehicleConverter::LooksLikePaint(const UMaterialInterface* Material)
 	return Material->GetVectorParameterValue(FHashedMaterialParameterInfo(FName(TEXT("Paint Tint"))), Tint);
 }
 
+namespace MantleVehicleConverterPrivate
+{
+	/** A name cut into lower-case words at anything that is not a letter or digit, at a lower-to-upper step (HubCap) and between letters and digits. */
+	TArray<FString> NameWords(const FString& Name)
+	{
+		TArray<FString> Words;
+		FString Word;
+		TCHAR Last = 0;
+		for (const TCHAR Character : Name)
+		{
+			if (!FChar::IsAlnum(Character))
+			{
+				if (!Word.IsEmpty())
+				{
+					Words.Add(Word.ToLower());
+					Word.Reset();
+				}
+				Last = 0;
+				continue;
+			}
+			const bool bStep = Last != 0 && ((FChar::IsLower(Last) && FChar::IsUpper(Character)) || (FChar::IsAlpha(Last) != FChar::IsAlpha(Character)));
+			if (bStep && !Word.IsEmpty())
+			{
+				Words.Add(Word.ToLower());
+				Word.Reset();
+			}
+			Word.AppendChar(Character);
+			Last = Character;
+		}
+		if (!Word.IsEmpty())
+		{
+			Words.Add(Word.ToLower());
+		}
+		return Words;
+	}
+
+	bool HasWord(const TArray<FString>& Words, std::initializer_list<const TCHAR*> Wanted)
+	{
+		for (const TCHAR* Word : Wanted)
+		{
+			if (Words.Contains(FString(Word)))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** The document's name of a paint layer (schema/vehicle.schema.json $defs.paintLayer). */
+	const TCHAR* PaintLayerName(const EMantleVehicleSourcePaintLayer Layer)
+	{
+		switch (Layer)
+		{
+		case EMantleVehicleSourcePaintLayer::Wheels: return TEXT("wheels");
+		case EMantleVehicleSourcePaintLayer::Interior: return TEXT("interior");
+		case EMantleVehicleSourcePaintLayer::Dashboard: return TEXT("dashboard");
+		default: return TEXT("secondary");
+		}
+	}
+
+	/** The document's name of a finish, in the order of EMantleVehicleSourcePaintFinish. */
+	const TCHAR* PaintFinishName(const EMantleVehicleSourcePaintFinish Finish)
+	{
+		static const TCHAR* const Names[] = { TEXT("gloss"), TEXT("metallic"), TEXT("pearl"), TEXT("matte"), TEXT("satin"), TEXT("metal"), TEXT("chrome"), TEXT("trim") };
+		return Names[FMath::Clamp(static_cast<int32>(Finish), 0, static_cast<int32>(UE_ARRAY_COUNT(Names)) - 1)];
+	}
+
+	/** The finish a layer wears until a script picks another: gloss for the second paint and the rims, trim for the interior and the dashboard. */
+	EMantleVehicleSourcePaintFinish PaintLayerDefaultFinish(const EMantleVehicleSourcePaintLayer Layer)
+	{
+		return Layer == EMantleVehicleSourcePaintLayer::Interior || Layer == EMantleVehicleSourcePaintLayer::Dashboard
+			? EMantleVehicleSourcePaintFinish::Trim : EMantleVehicleSourcePaintFinish::Gloss;
+	}
+
+	/** The source's layer of that name; made, with the layer's defaults, when it has none. */
+	FMantleVehicleSourcePaintLayer& EnsurePaintLayer(FMantleVehicleSourcePaint& Paint, const EMantleVehicleSourcePaintLayer Layer)
+	{
+		if (FMantleVehicleSourcePaintLayer* Has = Paint.Layers.FindByPredicate([Layer](const FMantleVehicleSourcePaintLayer& Existing) { return Existing.Layer == Layer; }))
+		{
+			return *Has;
+		}
+		FMantleVehicleSourcePaintLayer& Made = Paint.Layers.AddDefaulted_GetRef();
+		Made.Layer = Layer;
+		Made.Finish = PaintLayerDefaultFinish(Layer);
+		return Made;
+	}
+
+	/** PRIMARY and SECONDARY, a GTA model's tint layers: the word alone, or with a number after it (PRIMARY_2). */
+	bool IsGtaLayer(const TArray<FString>& Words, const TCHAR* Which)
+	{
+		return Words.Num() > 0 && Words[0] == Which && (Words.Num() == 1 || FChar::IsDigit(Words[1][0]));
+	}
+}
+
+FMantleVehicleConverter::FPaintLayerGuess FMantleVehicleConverter::GuessPaintLayer(const FString& Name, const UMaterialInterface* Material)
+{
+	using namespace MantleVehicleConverterPrivate;
+	FPaintLayerGuess Guess;
+	TArray<FString> Words = NameWords(Name);
+	if (Material)
+	{
+		Words.Append(NameWords(Material->GetName()));
+	}
+	// A GTA model names its two tint layers; its pictures are white for the game to tint.
+	for (const FString& Chunk : { Name, Material ? Material->GetName() : FString() })
+	{
+		const TArray<FString> Own = NameWords(Chunk);
+		if (IsGtaLayer(Own, TEXT("primary")))
+		{
+			Guess.bPainted = true;
+			return Guess;
+		}
+		if (IsGtaLayer(Own, TEXT("secondary")))
+		{
+			Guess.bPainted = true;
+			Guess.bPrimary = false;
+			Guess.Layer = EMantleVehicleSourcePaintLayer::Secondary;
+			return Guess;
+		}
+	}
+	const bool bExcluded = HasWord(Words, { TEXT("glass"), TEXT("window"), TEXT("windows"), TEXT("windshield"), TEXT("windscreen"), TEXT("tire"), TEXT("tires"), TEXT("tyre"), TEXT("tyres"),
+		TEXT("rubber"), TEXT("chrome"), TEXT("lens"), TEXT("light"), TEXT("lights"), TEXT("lamp"), TEXT("lamps"), TEXT("headlight"), TEXT("headlights"), TEXT("taillight"),
+		TEXT("taillights"), TEXT("brake"), TEXT("brakes"), TEXT("steering"), TEXT("signal"), TEXT("signals") });
+	bool bLayer = false;
+	if (!bExcluded)
+	{
+		if (HasWord(Words, { TEXT("rim"), TEXT("rims"), TEXT("wheel"), TEXT("wheels"), TEXT("alloy"), TEXT("alloys"), TEXT("hub"), TEXT("hubs"), TEXT("hubcap"), TEXT("hubcaps"), TEXT("spoke"), TEXT("spokes") }))
+		{
+			Guess.Layer = EMantleVehicleSourcePaintLayer::Wheels;
+			bLayer = true;
+		}
+		else if (HasWord(Words, { TEXT("dash"), TEXT("dashboard"), TEXT("console") }))
+		{
+			Guess.Layer = EMantleVehicleSourcePaintLayer::Dashboard;
+			bLayer = true;
+		}
+		else if (HasWord(Words, { TEXT("interior"), TEXT("seat"), TEXT("seats"), TEXT("carpet"), TEXT("upholstery"), TEXT("headliner"), TEXT("cabin") }))
+		{
+			Guess.Layer = EMantleVehicleSourcePaintLayer::Interior;
+			bLayer = true;
+		}
+		else if (HasWord(Words, { TEXT("trim"), TEXT("stripe"), TEXT("stripes"), TEXT("roof"), TEXT("accent"), TEXT("accents"), TEXT("mirror"), TEXT("mirrors") }))
+		{
+			Guess.Layer = EMantleVehicleSourcePaintLayer::Secondary;
+			bLayer = true;
+		}
+	}
+	if (bLayer)
+	{
+		FString Why;
+		if (!TakesTint(Material, &Why))
+		{
+			Guess.LeftOut = Why;
+			return Guess;
+		}
+		Guess.bPainted = true;
+		Guess.bPrimary = false;
+		return Guess;
+	}
+	if (LooksLikePaint(Material))
+	{
+		Guess.bPainted = true;
+	}
+	return Guess;
+}
+
+bool FMantleVehicleConverter::TakesTint(const UMaterialInterface* Material, FString* OutWhy)
+{
+	FColor Average;
+	bool bPicture = false;
+	if (!FMantlePlaceAssets::BaseColorAverage(Material, Average, bPicture))
+	{
+		if (OutWhy)
+		{
+			*OutWhy = TEXT("its color picture could not be read, so a color could not be promised to show");
+		}
+		return false;
+	}
+	const float High = FMath::Max3(Average.R, Average.G, Average.B) / 255.f;
+	const float Low = FMath::Min3(Average.R, Average.G, Average.B) / 255.f;
+	if (High < 0.45f)
+	{
+		if (OutWhy)
+		{
+			*OutWhy = TEXT("it is dark, so a color would barely show");
+		}
+		return false;
+	}
+	if ((High - Low) / High > 0.3f)
+	{
+		if (OutWhy)
+		{
+			*OutWhy = TEXT("it is already a strong color, so a color would barely change it");
+		}
+		return false;
+	}
+	return true;
+}
+
+TArray<FMantleVehicleSourcePartLayerSlots> FMantleVehicleConverter::SuggestPartLayerSlots(const FMantleVehicleSourcePart& Part)
+{
+	TArray<FMantleVehicleSourcePartLayerSlots> Out;
+	const UStaticMesh* PartMesh = Part.Mesh.LoadSynchronous();
+	if (!PartMesh)
+	{
+		return Out;
+	}
+	for (const int32 Slot : FMantlePlaceAssets::UploadSlots(PartMesh))
+	{
+		if (Part.PaintSlots.Contains(Slot) || !PartMesh->GetStaticMaterials().IsValidIndex(Slot))
+		{
+			continue;
+		}
+		const UMaterialInterface* Material = PartSlotMaterial(Part, PartMesh, Slot);
+		if (!Material || !FMantleVehicleBuiltInMaterials::Detect(Material, PartMesh->GetStaticMaterials()[Slot].MaterialSlotName.ToString(), false).IsEmpty())
+		{
+			continue;
+		}
+		const FPaintLayerGuess Guess = GuessPaintLayer(PartMesh->GetStaticMaterials()[Slot].MaterialSlotName.ToString(), Material);
+		if (!Guess.bPainted || Guess.bPrimary)
+		{
+			continue;
+		}
+		FMantleVehicleSourcePartLayerSlots* Entry = Out.FindByPredicate([&Guess](const FMantleVehicleSourcePartLayerSlots& Has) { return Has.Layer == Guess.Layer; });
+		if (!Entry)
+		{
+			Entry = &Out.AddDefaulted_GetRef();
+			Entry->Layer = Guess.Layer;
+		}
+		Entry->Slots.Add(Slot);
+	}
+	return Out;
+}
+
+TArray<FMantleVehicleSourcePartLayerSlots> FMantleVehicleConverter::PartUploadLayerSlots(const FMantleVehicleSourcePart& Part, const UStaticMesh* Mesh)
+{
+	TArray<FMantleVehicleSourcePartLayerSlots> Out;
+	const TArray<int32> Slots = FMantlePlaceAssets::UploadSlots(Mesh);
+	for (const FMantleVehicleSourcePartLayerSlots& Layer : Part.LayerSlots)
+	{
+		FMantleVehicleSourcePartLayerSlots Entry;
+		Entry.Layer = Layer.Layer;
+		for (const int32 Slot : Layer.Slots)
+		{
+			const int32 Uploaded = Slots.IndexOfByKey(Slot);
+			if (Uploaded != INDEX_NONE)
+			{
+				Entry.Slots.AddUnique(Uploaded);
+			}
+		}
+		if (Entry.Slots.Num() > 0)
+		{
+			Out.Add(MoveTemp(Entry));
+		}
+	}
+	return Out;
+}
+
 TArray<int32> FMantleVehicleConverter::SuggestPartPaintSlots(const FMantleVehicleSourcePart& Part, const TConstArrayView<const UMaterialInterface*> BodyPaintMaterials)
 {
 	TArray<int32> Out;
@@ -2478,8 +2781,9 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 	// (WithLiveries); the UV set and default ride with them.
 	// Painted body sections or a part's painted slots (#435 item 2): either gives the car its paint, and sections may be empty.
 	const FMantleVehicleSourcePaint& P = Source.Paint;
-	const bool bPartPaint = Source.Parts.ContainsByPredicate([](const FMantleVehicleSourcePart& Part) { return Part.PaintSlots.Num() > 0; });
-	if (P.Sections.Num() > 0 || bPartPaint)
+	const bool bPartPaint = Source.Parts.ContainsByPredicate([](const FMantleVehicleSourcePart& Part) { return Part.PaintSlots.Num() > 0 || Part.LayerSlots.Num() > 0; });
+	const bool bLayerSections = P.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Layer) { return Layer.Sections.Num() > 0; });
+	if (P.Sections.Num() > 0 || bPartPaint || bLayerSections)
 	{
 		TSharedRef<FJsonObject> Paint = MakeShared<FJsonObject>();
 		TArray<TSharedPtr<FJsonValue>> Sections;
@@ -2496,6 +2800,32 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::MakeDocument(const UMantleVehic
 		Paint->SetField(TEXT("flakeTint"), VehicleColor(P.FlakeTint));
 		Paint->SetField(TEXT("clearCoat"), VehicleNumber(P.ClearCoat));
 		Paint->SetField(TEXT("clearCoatRoughness"), VehicleNumber(P.ClearCoatRoughness));
+		if (P.bPearl)
+		{
+			TSharedRef<FJsonObject> Pearl = MakeShared<FJsonObject>();
+			Pearl->SetField(TEXT("color"), VehicleColor(P.PearlColor));
+			Pearl->SetField(TEXT("strength"), VehicleNumber(P.PearlStrength));
+			Paint->SetObjectField(TEXT("pearl"), Pearl);
+		}
+		if (P.Layers.Num() > 0)
+		{
+			TArray<TSharedPtr<FJsonValue>> Layers;
+			for (const FMantleVehicleSourcePaintLayer& Layer : P.Layers)
+			{
+				TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+				Entry->SetStringField(TEXT("layer"), PaintLayerName(Layer.Layer));
+				TArray<TSharedPtr<FJsonValue>> LayerSections;
+				for (const FString& Section : Layer.Sections)
+				{
+					LayerSections.Add(MakeShared<FJsonValueString>(Section));
+				}
+				Entry->SetArrayField(TEXT("sections"), LayerSections);
+				Entry->SetField(TEXT("color"), VehicleColor(Layer.Color));
+				Entry->SetStringField(TEXT("finish"), PaintFinishName(Layer.Finish));
+				Layers.Add(MakeShared<FJsonValueObject>(Entry));
+			}
+			Paint->SetArrayField(TEXT("layers"), Layers);
+		}
 		Doc->SetObjectField(TEXT("paint"), Paint);
 	}
 	// Lights: only with something in them, every kind written (the cook fills the empty ones).
@@ -2669,7 +2999,24 @@ TSharedRef<FJsonObject> FMantleVehicleConverter::WithParts(const TSharedRef<FJso
 					Painted.Add(VehicleInteger(Slot));
 				}
 				Entry->SetArrayField(TEXT("paintSlots"), Painted);
-			}
+				}
+				if (Part.LayerSlots.Num() > 0)
+				{
+					TArray<TSharedPtr<FJsonValue>> Layers;
+					for (const FMantleVehicleSourcePartLayerSlots& Layer : Part.LayerSlots)
+					{
+						TSharedRef<FJsonObject> LayerEntry = MakeShared<FJsonObject>();
+						LayerEntry->SetStringField(TEXT("layer"), PaintLayerName(Layer.Layer));
+						TArray<TSharedPtr<FJsonValue>> LayerSlots;
+						for (const int32 Slot : Layer.Slots)
+						{
+							LayerSlots.Add(VehicleInteger(Slot));
+						}
+						LayerEntry->SetArrayField(TEXT("slots"), LayerSlots);
+						Layers.Add(MakeShared<FJsonValueObject>(LayerEntry));
+					}
+					Entry->SetArrayField(TEXT("layerSlots"), Layers);
+				}
 			List.Add(MakeShared<FJsonValueObject>(Entry));
 		}
 		Value = MakeShared<FJsonValueArray>(List);
@@ -3140,7 +3487,8 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 	// A part's painted slots (#435 item 2) give it paint as a body section does.
 	const FMantleVehicleSourcePaint& Paint = Source->Paint;
 	const bool bPaint = Paint.Sections.Num() > 0
-		|| Source->Parts.ContainsByPredicate([](const FMantleVehicleSourcePart& Part) { return Part.PaintSlots.Num() > 0; });
+		|| Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Layer) { return Layer.Sections.Num() > 0; })
+		|| Source->Parts.ContainsByPredicate([](const FMantleVehicleSourcePart& Part) { return Part.PaintSlots.Num() > 0 || Part.LayerSlots.Num() > 0; });
 	if (bPaint)
 	{
 		for (int32 Channel = 0; Channel < 3; ++Channel)
@@ -3154,6 +3502,21 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		VehicleCheckRange(Subject, TEXT("Paint Flake Size"), TEXT("paint/flakeSize"), Paint.FlakeSize, OutIssues);
 		VehicleCheckRange(Subject, TEXT("Paint Clear Coat"), TEXT("paint/clearCoat"), Paint.ClearCoat, OutIssues);
 		VehicleCheckRange(Subject, TEXT("Paint Clear Coat Roughness"), TEXT("paint/clearCoatRoughness"), Paint.ClearCoatRoughness, OutIssues);
+		if (Paint.bPearl)
+		{
+			for (int32 Channel = 0; Channel < 3; ++Channel)
+			{
+				VehicleCheckRange(Subject, TEXT("Paint Pearl Color"), TEXT("paint/pearl/color/*"), Paint.PearlColor.Component(Channel), OutIssues);
+			}
+			VehicleCheckRange(Subject, TEXT("Paint Pearl Strength"), TEXT("paint/pearl/strength"), Paint.PearlStrength, OutIssues);
+		}
+		for (const FMantleVehicleSourcePaintLayer& Layer : Paint.Layers)
+		{
+			for (int32 Channel = 0; Channel < 3; ++Channel)
+			{
+				VehicleCheckRange(Subject, TEXT("Paint Layer Color"), TEXT("paint/layers/*/color/*"), Layer.Color.Component(Channel), OutIssues);
+			}
+		}
 		if (Paint.Sections.Num() > FMantleVehicleLimits::MaxSections)
 		{
 			AddError(FString::Printf(TEXT("paints %d sections; a vehicle body has at most %d."), Paint.Sections.Num(), FMantleVehicleLimits::MaxSections),
@@ -3254,6 +3617,43 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 			if (Paint.Sections[Before].Equals(Section, ESearchCase::CaseSensitive))
 			{
 				AddError(FString::Printf(TEXT("paints section '%s' twice."), *Section), TEXT("List each section once under Paint > Sections."));
+			}
+		}
+	}
+	// Paint layers: each layer once, each section a section of the body that wears one layer, each layer covering something.
+	{
+		TArray<FString> Worn = Paint.Sections;
+		for (int32 LayerIndex = 0; LayerIndex < Paint.Layers.Num(); ++LayerIndex)
+		{
+			const FMantleVehicleSourcePaintLayer& Layer = Paint.Layers[LayerIndex];
+			const FString LayerName = MantleVehicleConverterPrivate::PaintLayerName(Layer.Layer);
+			for (int32 Before = 0; Before < LayerIndex; ++Before)
+			{
+				if (Paint.Layers[Before].Layer == Layer.Layer)
+				{
+					AddError(FString::Printf(TEXT("lists the paint layer %s twice."), *LayerName), TEXT("List each layer once under Paint > Layers."));
+				}
+			}
+			for (const FString& Section : Layer.Sections)
+			{
+				if (!SectionNames.ContainsByPredicate([&Section](const FString& Name) { return Name.Equals(Section, ESearchCase::CaseSensitive); }))
+				{
+					AddError(FString::Printf(TEXT("paints section '%s' in its %s layer, which its body does not have (its sections: %s)."), *Section, *LayerName, *FString::Join(SectionNames, TEXT(", "))),
+						TEXT("Name one of the body's sections under Paint > Layers, as Convert Vehicle lists them."));
+				}
+				else if (Worn.ContainsByPredicate([&Section](const FString& Name) { return Name.Equals(Section, ESearchCase::CaseSensitive); }))
+				{
+					AddError(FString::Printf(TEXT("paints section '%s' in its %s layer and in another paint layer."), *Section, *LayerName), TEXT("A section wears one layer: take it out of one of them."));
+				}
+				Worn.Add(Section);
+			}
+			const bool bSlots = Source->Parts.ContainsByPredicate([&Layer](const FMantleVehicleSourcePart& Part)
+			{
+				return Part.LayerSlots.ContainsByPredicate([&Layer](const FMantleVehicleSourcePartLayerSlots& Has) { return Has.Layer == Layer.Layer && Has.Slots.Num() > 0; });
+			});
+			if (Layer.Sections.IsEmpty() && !bSlots)
+			{
+				AddError(FString::Printf(TEXT("has a paint layer %s that paints nothing."), *LayerName), TEXT("Name a body section under Paint > Layers, give a part's Layer Slots that layer, or remove the layer."));
 			}
 		}
 	}
@@ -3561,6 +3961,32 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 					FString::Printf(TEXT("%s draws %s's slot %d with Mantle library material '%s', which a vehicle cannot name: it is drawn with Mantle's default surface."),
 						*Subject, *What, Slot, *Material->GetName()),
 					TEXT("Give that slot a material of your own to publish its look.") });
+			}
+		}
+		// Its layer slots: each layer one the paint has, each slot a slot of the mesh that draws something and wears one layer.
+		{
+			TArray<int32> Worn = Part.PaintSlots;
+			for (const FMantleVehicleSourcePartLayerSlots& LayerSlots : Part.LayerSlots)
+			{
+				const FString LayerName = MantleVehicleConverterPrivate::PaintLayerName(LayerSlots.Layer);
+				if (!Source->Paint.Layers.ContainsByPredicate([&LayerSlots](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer == LayerSlots.Layer; }))
+				{
+					AddError(FString::Printf(TEXT("has %s with slots in the %s layer, which the vehicle's Paint > Layers does not have."), *What, *LayerName),
+						TEXT("Add the layer under Paint > Layers, or take the slots out of the part's Layer Slots."));
+				}
+				for (const int32 LayerSlot : LayerSlots.Slots)
+				{
+					if (!Slots.Contains(LayerSlot))
+					{
+						AddError(FString::Printf(TEXT("has %s with slot %d in the %s layer, which its mesh does not draw with (its slots: %d)."), *What, LayerSlot, *LayerName,
+							PartMesh->GetStaticMaterials().Num()), TEXT("Name one of the mesh's material slots under the part's Layer Slots, the first being 0."));
+					}
+					if (Worn.Contains(LayerSlot))
+					{
+						AddError(FString::Printf(TEXT("has %s with slot %d in two paint layers."), *What, LayerSlot), TEXT("A slot wears one layer: list it under Paint Slots or one Layer Slots entry."));
+					}
+					Worn.Add(LayerSlot);
+				}
 			}
 		}
 		// Its painted slots: each a slot of the mesh that draws something, once.

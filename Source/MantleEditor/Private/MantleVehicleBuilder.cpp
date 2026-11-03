@@ -625,6 +625,7 @@ namespace MantleVehicleBuilderPrivate
 			bool bMapGiven = false;
 			FString PaintContains;
 			FString PaintNot;
+			TMap<EMantleVehicleSourcePaintLayer, FString> LayerContains;
 			for (int32 Index = 2; Index < Args.Num(); ++Index)
 			{
 				FString Key;
@@ -658,6 +659,22 @@ namespace MantleVehicleBuilderPrivate
 				else if (Key.Equals(TEXT("notpaint"), ESearchCase::IgnoreCase))
 				{
 					PaintNot = Value;
+				}
+				else if (Key.Equals(TEXT("secondary"), ESearchCase::IgnoreCase))
+				{
+					LayerContains.Add(EMantleVehicleSourcePaintLayer::Secondary, Value);
+				}
+				else if (Key.Equals(TEXT("wheels"), ESearchCase::IgnoreCase))
+				{
+					LayerContains.Add(EMantleVehicleSourcePaintLayer::Wheels, Value);
+				}
+				else if (Key.Equals(TEXT("interior"), ESearchCase::IgnoreCase))
+				{
+					LayerContains.Add(EMantleVehicleSourcePaintLayer::Interior, Value);
+				}
+				else if (Key.Equals(TEXT("dashboard"), ESearchCase::IgnoreCase))
+				{
+					LayerContains.Add(EMantleVehicleSourcePaintLayer::Dashboard, Value);
 				}
 				else if (Key.StartsWith(TEXT("bone."), ESearchCase::IgnoreCase))
 				{
@@ -693,8 +710,28 @@ namespace MantleVehicleBuilderPrivate
 					}
 				}
 				Options.PaintedSections = Ticked;
-			}
-			const FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildFromModel(Asset, Args[1], Options);
+				}
+				if (LayerContains.Num() > 0)
+				{
+					// secondary=, wheels=, interior= and dashboard=: the sections whose name has the text are ticked as that layer (and not notpaint's).
+					TArray<FString> Ticked = Options.PaintedSections.IsSet() ? Options.PaintedSections.GetValue() : TArray<FString>();
+					if (const USkeletalMesh* Skeletal = Cast<USkeletalMesh>(Asset))
+					{
+						for (const FString& Section : FMantleVehicleLights::SectionNames(Skeletal->GetMaterials()))
+						{
+							for (const TPair<EMantleVehicleSourcePaintLayer, FString>& Pair : LayerContains)
+							{
+								if (Section.Contains(Pair.Value, ESearchCase::IgnoreCase) && (PaintNot.IsEmpty() || !Section.Contains(PaintNot, ESearchCase::IgnoreCase)))
+								{
+									Ticked.AddUnique(Section);
+									Options.PaintLayers.Add(Section, Pair.Key);
+								}
+							}
+						}
+					}
+					Options.PaintedSections = Ticked;
+				}
+				const FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildFromModel(Asset, Args[1], Options);
 			FString Parts;
 			for (const TPair<FName, FMantleVehicleModelPiece>& Part : Result.ModelMap.Parts)
 			{
@@ -1769,11 +1806,20 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		const TArray<FString> ModelSections = FMantleVehicleLights::SectionNames(PictureMaterials);
 		const FMantleVehicleSourceLights& LightsForPaint = Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights;
 		TArray<bool> Painted;
+		TArray<uint8> Layers;
 		for (int32 Index = 0; Index < ModelSections.Num(); ++Index)
 		{
+			Layers.Add(0);
 			if (Options.PaintedSections.IsSet())
 			{
 				Painted.Add(Options.PaintedSections.GetValue().ContainsByPredicate([&ModelSections, Index](const FString& Ticked) { return Ticked.Equals(ModelSections[Index], ESearchCase::IgnoreCase); }));
+				for (const TPair<FString, EMantleVehicleSourcePaintLayer>& Pair : Options.PaintLayers)
+				{
+					if (Pair.Key.Equals(ModelSections[Index], ESearchCase::IgnoreCase))
+					{
+						Layers[Index] = PaintPick(Pair.Value);
+					}
+				}
 				continue;
 			}
 			bool bLight = false;
@@ -1781,9 +1827,14 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 			{
 				bLight = bLight || FMantleVehicleLights::Sections(LightsForPaint, static_cast<EMantleLightKind>(Kind)).Contains(ModelSections[Index]);
 			}
-			Painted.Add(!bLight && PictureMaterials.IsValidIndex(Index) && FMantleVehicleConverter::LooksLikePaint(PictureMaterials[Index].MaterialInterface));
+			// Mantle's guess from the names and how the material reads: the body paint, or a layer. Never a light, and never what becomes glass, a tire, chrome or a lens.
+			const UMaterialInterface* SectionMaterial = PictureMaterials.IsValidIndex(Index) ? PictureMaterials[Index].MaterialInterface.Get() : nullptr;
+			const FMantleVehicleConverter::FPaintLayerGuess Guess = FMantleVehicleConverter::GuessPaintLayer(ModelSections[Index], SectionMaterial);
+			const bool bBuiltIn = !Guess.bPrimary && SectionMaterial && !FMantleVehicleBuiltInMaterials::Detect(SectionMaterial, ModelSections[Index], false).IsEmpty();
+			Painted.Add(!bLight && Guess.bPainted && !bBuiltIn);
+			Layers[Index] = Guess.bPrimary ? 0 : PaintPick(Guess.Layer);
 		}
-		ApplyPaint(*Out.Source, ModelSections, Painted, Out.Notes);
+		ApplyPaint(*Out.Source, ModelSections, Painted, Out.Notes, &Layers);
 	}
 	// The lights: the creator's rows and beams, else what the finder found; each light section gets its glowing copy of its material.
 	ApplyLights(*Out.Source, Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights, Out.Notes);
@@ -1838,12 +1889,34 @@ void FMantleVehicleBuilder::ApplyLights(UMantleVehicleSource& Source, const FMan
 	Source.MarkPackageDirty();
 }
 
-void FMantleVehicleBuilder::ApplyPaint(UMantleVehicleSource& Source, const TArray<FString>& AllSections, const TArray<bool>& Painted, TArray<FString>& OutNotes)
+void FMantleVehicleBuilder::ApplyPaint(UMantleVehicleSource& Source, const TArray<FString>& AllSections, const TArray<bool>& Painted, TArray<FString>& OutNotes,
+	const TArray<uint8>* Layers)
 {
-	const auto IsPainted = [&AllSections, &Painted](const FString& Section)
+	// What a section is painted as: -1 not painted, 0 the body paint, else a layer's PaintPick.
+	const auto PickOf = [&Painted, Layers](const int32 Index) -> int32
 	{
-		const int32 Index = AllSections.IndexOfByPredicate([&Section](const FString& Other) { return Other.Equals(Section, ESearchCase::IgnoreCase); });
-		return Index != INDEX_NONE && Painted.IsValidIndex(Index) && Painted[Index];
+		if (!Painted.IsValidIndex(Index) || !Painted[Index])
+		{
+			return -1;
+		}
+		return Layers && Layers->IsValidIndex(Index) ? static_cast<int32>((*Layers)[Index]) : 0;
+	};
+	const auto IndexOfSection = [&AllSections](const FString& Section)
+	{
+		return AllSections.IndexOfByPredicate([&Section](const FString& Other) { return Other.Equals(Section, ESearchCase::IgnoreCase); });
+	};
+	const auto LayerOf = [](const int32 Pick) { return static_cast<EMantleVehicleSourcePaintLayer>(Pick - 1); };
+	const auto EnsureLayer = [&Source](const EMantleVehicleSourcePaintLayer Layer) -> FMantleVehicleSourcePaintLayer&
+	{
+		if (FMantleVehicleSourcePaintLayer* Has = Source.Paint.Layers.FindByPredicate([Layer](const FMantleVehicleSourcePaintLayer& Existing) { return Existing.Layer == Layer; }))
+		{
+			return *Has;
+		}
+		FMantleVehicleSourcePaintLayer& Made = Source.Paint.Layers.AddDefaulted_GetRef();
+		Made.Layer = Layer;
+		Made.Finish = Layer == EMantleVehicleSourcePaintLayer::Interior || Layer == EMantleVehicleSourcePaintLayer::Dashboard ? EMantleVehicleSourcePaintFinish::Trim
+			: EMantleVehicleSourcePaintFinish::Gloss;
+		return Made;
 	};
 	Source.Modify();
 
@@ -1852,11 +1925,23 @@ void FMantleVehicleBuilder::ApplyPaint(UMantleVehicleSource& Source, const TArra
 	const USkeletalMesh* Mesh = Source.Body.LoadSynchronous();
 	const TArray<FString> BodySections = Mesh ? FMantleVehicleLights::SectionNames(Mesh->GetMaterials()) : TArray<FString>();
 	Source.Paint.Sections.Reset();
+	for (FMantleVehicleSourcePaintLayer& Layer : Source.Paint.Layers)
+	{
+		Layer.Sections.Reset();
+	}
 	for (int32 Index = 0; Index < AllSections.Num(); ++Index)
 	{
-		if (Painted.IsValidIndex(Index) && Painted[Index] && (!bSplit || BodySections.ContainsByPredicate([&AllSections, Index](const FString& Section) { return Section.Equals(AllSections[Index], ESearchCase::IgnoreCase); })))
+		const int32 Pick = PickOf(Index);
+		if (Pick >= 0 && (!bSplit || BodySections.ContainsByPredicate([&AllSections, Index](const FString& Section) { return Section.Equals(AllSections[Index], ESearchCase::IgnoreCase); })))
 		{
-			Source.Paint.Sections.Add(AllSections[Index]);
+			if (Pick == 0)
+			{
+				Source.Paint.Sections.Add(AllSections[Index]);
+			}
+			else
+			{
+				EnsureLayer(LayerOf(Pick)).Sections.Add(AllSections[Index]);
+			}
 		}
 	}
 
@@ -1875,20 +1960,32 @@ void FMantleVehicleBuilder::ApplyPaint(UMantleVehicleSource& Source, const TArra
 			continue;
 		}
 		Part.PaintSlots.Reset();
+		Part.LayerSlots.Reset();
 		const TArray<FStaticMaterial>& Slots = PartMesh->GetStaticMaterials();
 		for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)
 		{
 			const FString Name = Slots[Slot].MaterialSlotName.ToString();
-			bool bPainted = IsPainted(Name);
-			int32 Renamed = INDEX_NONE;
-			if (!bPainted && Name.StartsWith(TEXT("material_")) && Name.RightChop(9).IsNumeric())
+			int32 Pick = PickOf(IndexOfSection(Name));
+			if (Pick < 0 && Name.StartsWith(TEXT("material_")) && Name.RightChop(9).IsNumeric())
 			{
-				Renamed = FCString::Atoi(*Name.RightChop(9));
-				bPainted = AllSections.IsValidIndex(Renamed) && Painted.IsValidIndex(Renamed) && Painted[Renamed];
+				Pick = PickOf(FCString::Atoi(*Name.RightChop(9)));
 			}
-			if (bPainted)
+			if (Pick == 0)
 			{
 				Part.PaintSlots.Add(Slot);
+				OnParts.AddUnique(Name);
+			}
+			else if (Pick > 0)
+			{
+				const EMantleVehicleSourcePaintLayer Layer = LayerOf(Pick);
+				FMantleVehicleSourcePartLayerSlots* Entry = Part.LayerSlots.FindByPredicate([Layer](const FMantleVehicleSourcePartLayerSlots& Has) { return Has.Layer == Layer; });
+				if (!Entry)
+				{
+					Entry = &Part.LayerSlots.AddDefaulted_GetRef();
+					Entry->Layer = Layer;
+				}
+				Entry->Slots.Add(Slot);
+				EnsureLayer(Layer);
 				OnParts.AddUnique(Name);
 			}
 		}
@@ -1898,10 +1995,18 @@ void FMantleVehicleBuilder::ApplyPaint(UMantleVehicleSource& Source, const TArra
 		OutNotes.Add(FString::Printf(TEXT("Paint: %s %s ticked and ride%s on extra parts, so those parts take the color and liveries too."), *FString::Join(OnParts, TEXT(", ")),
 			OnParts.Num() == 1 ? TEXT("is") : TEXT("are"), OnParts.Num() == 1 ? TEXT("s") : TEXT("")));
 	}
+	// A layer that no section or part slot wears any more is not kept.
+	Source.Paint.Layers.RemoveAll([&Source](const FMantleVehicleSourcePaintLayer& Layer)
+	{
+		return Layer.Sections.IsEmpty() && !Source.Parts.ContainsByPredicate([&Layer](const FMantleVehicleSourcePart& Part)
+		{
+			return Part.LayerSlots.ContainsByPredicate([&Layer](const FMantleVehicleSourcePartLayerSlots& Has) { return Has.Layer == Layer.Layer && Has.Slots.Num() > 0; });
+		});
+	});
 	Source.MarkPackageDirty();
-}
+	}
 
-void FMantleVehicleModelPreview::Discard()
+	void FMantleVehicleModelPreview::Discard()
 {
 	if (USkeletalMesh* Picture = Mesh.Get())
 	{

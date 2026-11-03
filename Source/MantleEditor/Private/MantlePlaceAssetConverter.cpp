@@ -1373,6 +1373,7 @@ bool FMantlePlaceAssetSet::VehicleBytes(const FMantleConvertedVehicle& Vehicle, 
 		Entry.Bone = Part.Bone;
 		Entry.Transform = Part.Transform;
 		Entry.PaintSlots = Part.PaintSlots;
+		Entry.LayerSlots = Part.LayerSlots;
 		for (int32 Slot = 0; Slot < Part.MaterialKeys.Num(); ++Slot)
 		{
 			const FString& MaterialKey = Part.MaterialKeys[Slot];
@@ -2938,6 +2939,7 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 		}
 		// Its painted slots, counted as the upload counts them.
 		ConvertedPart.PaintSlots = FMantleVehicleConverter::PartUploadPaintSlots(Part, PartMesh);
+		ConvertedPart.LayerSlots = FMantleVehicleConverter::PartUploadLayerSlots(Part, PartMesh);
 	}
 	// The parts' triangles for the car's shape (FMantleVehicleCollision): a server loads no part mesh, so the vehicle's own upload carries them.
 	{
@@ -3008,6 +3010,7 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 		Entry.Bone = Part.Bone;
 		Entry.Transform = Part.Transform;
 		Entry.PaintSlots = Part.PaintSlots;
+		Entry.LayerSlots = Part.LayerSlots;
 		for (int32 Slot = 0; Slot < Part.MaterialKeys.Num(); ++Slot)
 		{
 			const FString& MaterialKey = Part.MaterialKeys[Slot];

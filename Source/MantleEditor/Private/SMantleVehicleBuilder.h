@@ -153,6 +153,10 @@ private:
 	/** The paint list for the picked model: every section of its body, ticked where it reads as car paint (FMantleVehicleConverter::LooksLikePaint). Made from the picture. */
 	void RefreshPaintChoices();
 	void SetPaintSection(int32 Index, bool bOn);
+	/** The layer a ticked section is for: 0 the body color, else FMantleVehicleBuilder::PaintPick of a layer. */
+	void SetPaintPick(int32 Index, uint8 Pick);
+	/** What a row's layer is called in the window. */
+	static FText PaintPickLabel(uint8 Pick);
 	void SetHideRiders(bool bOn);
 	/** Writes the paint ticks, the lights and the "no inside" choice into a built vehicle. */
 	void ApplyChoices(UMantleVehicleSource& Source);
@@ -265,6 +269,8 @@ private:
 	{
 		FString Section;
 		bool bOn = false;
+		/** The layer it is painted as: 0 the body color, else FMantleVehicleBuilder::PaintPick of a layer. */
+		uint8 Pick = 0;
 	};
 	TArray<FPaintChoice> PaintChoices;
 	/** The creator ticked or unticked a section: the ticks replace Mantle's own guess on the built vehicle. */
