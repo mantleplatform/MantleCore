@@ -2192,7 +2192,8 @@ FMantleVehicleConverter::FPaintLayerGuess FMantleVehicleConverter::GuessPaintLay
 	{
 		Words.Append(NameWords(Material->GetName()));
 	}
-	// A GTA model names its two tint layers; its pictures are white for the game to tint.
+	// A GTA model names its tint layers: the word PRIMARY or SECONDARY in the name (vehicle_generic_smallspecmap__PRIMARY_, leather_1__SECONDARY_); its pictures are white for the
+	// game to tint. A word of the model's, so glass or a tire called PRIMARY is still not painted (checked below).
 	for (const FString& Chunk : { Name, Material ? Material->GetName() : FString() })
 	{
 		const TArray<FString> Own = NameWords(Chunk);
