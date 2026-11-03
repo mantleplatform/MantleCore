@@ -20,6 +20,8 @@ struct FMantleVehicleWheelDesc
 	/** cm: measured by the cook from the geometry weighted to the bone, or the document's. */
 	double Radius = 0.0;
 	double Width = 0.0;
+	/** The body sections (material names) that are this wheel's rim, which a wheel swap hides. Empty: nothing of this wheel can be swapped. */
+	TArray<FString> RimSections;
 };
 
 /** A suspension linkage rule's kind (#435 b): schema/vehicle.schema.json $defs.linkageRule type. */

@@ -2325,7 +2325,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 				break;
 			}
 			if (!P.Keys(Wheel, Pointer,
-				{ TEXT("bone"), TEXT("steering"), TEXT("driven"), TEXT("handbrake"), TEXT("radius"), TEXT("width") },
+				{ TEXT("bone"), TEXT("steering"), TEXT("driven"), TEXT("handbrake"), TEXT("radius"), TEXT("width"), TEXT("rimSections") },
 				{ TEXT("bone"), TEXT("steering"), TEXT("driven"), TEXT("handbrake"), TEXT("radius"), TEXT("width") }))
 			{
 				break;
@@ -2343,6 +2343,26 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 			P.Bool(Wheel, Pointer, TEXT("handbrake"), W.bHandbrake);
 			P.Number(Wheel, Pointer, TEXT("radius"), TEXT("wheels/*/radius"), W.Radius);
 			P.Number(Wheel, Pointer, TEXT("width"), TEXT("wheels/*/width"), W.Width);
+			if (Wheel->HasField(TEXT("rimSections")))
+			{
+				const TArray<TSharedPtr<FJsonValue>>* Rims = nullptr;
+				if (!P.Array(Wheel->TryGetField(TEXT("rimSections")), Pointer + TEXT("/rimSections"), 0, FMantleVehicleLimits::MaxSections, Rims))
+				{
+					break;
+				}
+				for (int32 Rim = 0; Rim < Rims->Num() && P.Ok(); ++Rim)
+				{
+					FString Name;
+					const TSharedPtr<FJsonValue>& Value = (*Rims)[Rim];
+					if (!Value.IsValid() || !Value->TryGetString(Name) || Name.IsEmpty() || Name.Len() > MaxSectionNameLength
+						|| W.RimSections.ContainsByPredicate([&Name](const FString& Seen) { return Seen.Equals(Name, ESearchCase::CaseSensitive); }))
+					{
+						P.Fail(FString::Printf(TEXT("%s/rimSections/%d"), *Pointer, Rim), TEXT("must name a body section, once"));
+						break;
+					}
+					W.RimSections.Add(Name);
+				}
+			}
 			D.Wheels.Add(W);
 		}
 	}

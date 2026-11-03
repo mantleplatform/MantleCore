@@ -71,6 +71,13 @@ struct FMantleStoredScriptPackage
 	TMap<FString, FString> Settings;
 };
 
+/** One stored wheel: the place's storage entry name and the wheel document's asset id. */
+struct FMantleStoredWheel
+{
+	FString Name;
+	FString AssetId;
+};
+
 /** One problem with a place's storage entries, located by a JSON-pointer-style path. */
 struct FMantleStorageProblem
 {
@@ -155,6 +162,9 @@ public:
 	/** The Kind of a resolved weapon entry. */
 	static constexpr const TCHAR* KindWeapon = TEXT("weapon");
 
+	/** The Kind of a resolved wheel entry. */
+	static constexpr const TCHAR* KindWheel = TEXT("wheel");
+
 	/** The Kind of a resolved script package entry (#838). It has no primary asset. */
 	static constexpr const TCHAR* KindScript = TEXT("script");
 
@@ -211,4 +221,16 @@ public:
 	 * prepared even when no WeaponSpawn uses them, so Backpack:Grant can build the same registered definition on every machine.
 	 */
 	static TArray<FString> StoredWeaponAssetIds(const FMantlePlace& Place);
+
+	/**
+	 * The primary asset ids (wheel documents) of the place's resolved wheels (Place.StorageResolved), distinct, in
+	 * storage order. Wheels are prepared even when nothing uses them, so a script can ask for a built wheel by id.
+	 */
+	static TArray<FString> StoredWheelAssetIds(const FMantlePlace& Place);
+
+	/**
+	 * The place's resolved wheels in the order of Place.Storage (Apply adds Place.StorageResolved in that order):
+	 * the storage entry's Name and the wheel document's asset id. Pure.
+	 */
+	static TArray<FMantleStoredWheel> StoredWheels(const FMantlePlace& Place);
 };
