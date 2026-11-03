@@ -427,6 +427,12 @@ struct MANTLEEDITOR_API FMantleConvertedVehicle
 	TMap<FString, FString> SectionMaterialKeys;
 
 	/**
+	 * A body section (glTF material name) to the built-in material the converter gives it (FMantleVehicleBuiltInMaterials: ast_mat_glass, ast_mat_rubber, ast_mat_chrome,
+	 * ast_mat_light_lens), because the section is glass, a tire, chrome or a lamp. Nothing uploads for it; the document names the built-in id.
+	 */
+	TMap<FString, FString> BuiltInSections;
+
+	/**
 	 * Its liveries (#488), in order: each one's gathered key (FMantleVehicleConverter::LiveryTextureKeys), which
 	 * FMantlePlaceAssetSet::DecalTextures maps to the converted texture that uploads it. The textures upload first.
 	 */
@@ -441,6 +447,8 @@ struct MANTLEEDITOR_API FMantleConvertedVehicle
 		FTransform Transform;
 		/** FMantlePlaceAssets::UploadSlots order; empty for a slot drawn with Mantle's default surface (a library material). */
 		TArray<FString> MaterialKeys;
+		/** Same length as MaterialKeys: the built-in material id an upload slot is given (its MaterialKeys entry is then empty), else empty. */
+		TArray<FString> BuiltInIds;
 		/** The upload slots that wear the vehicle's paint (FMantleVehicleConverter::PartUploadPaintSlots). */
 		TArray<int32> PaintSlots;
 	};
@@ -872,7 +880,7 @@ public:
 
 	/** The salt a material's cache key is made with (Describe is the flattener's): Surface's CacheTag is empty for the plain surface. */
 	static FString MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& Settings, const FMantlePlaceAssetLimits& Limits,
-		const UMaterialInterface* Material, bool bPerInstanceVariation, const FMantleBakeSurface& Surface);
+		const UMaterialInterface* Material, bool bPerInstanceVariation, const FMantleBakeSurface& Surface, bool bOpaqueInDisguise = false);
 
 	bool ConvertSound(USoundWave* Sound, FMantlePlaceAssetSet& Out);
 

@@ -1481,16 +1481,16 @@ void SMantleVehicleBuilder::ApplyChoices(UMantleVehicleSource& Source)
 {
 	if (bPaintEdited)
 	{
-		Source.Modify();
-		Source.Paint.Sections.Reset();
+		// The ticked sections the body still draws are Paint > Sections; one a split put on a part is that part's Paint Slot.
+		TArray<FString> AllSections;
+		TArray<bool> Painted;
 		for (const FPaintChoice& Choice : PaintChoices)
 		{
-			if (Choice.bOn)
-			{
-				Source.Paint.Sections.Add(Choice.Section);
-			}
+			AllSections.Add(Choice.Section);
+			Painted.Add(Choice.bOn);
 		}
-		Source.MarkPackageDirty();
+		TArray<FString> PaintNotes;
+		FMantleVehicleBuilder::ApplyPaint(Source, AllSections, Painted, PaintNotes);
 	}
 	if (bHideRiders)
 	{
@@ -1827,6 +1827,19 @@ FMantleVehicleModelOptions SMantleVehicleBuilder::MakeBuildOptions() const
 			Options.Name = BuiltAssetName;
 			Options.bOverwrite = true;
 		}
+	}
+	// The ticks of the paint step: a model split into a body and parts has them carried onto the parts that hold the painted materials.
+	if (!PaintChoices.IsEmpty())
+	{
+		TArray<FString> Ticked;
+		for (const FPaintChoice& Choice : PaintChoices)
+		{
+			if (Choice.bOn)
+			{
+				Ticked.Add(Choice.Section);
+			}
+		}
+		Options.PaintedSections = Ticked;
 	}
 	if (bLightsEdited)
 	{

@@ -89,6 +89,12 @@ struct FMantleVehicleModelOptions
 	 */
 	TOptional<FMantleVehicleSourceLights> Lights;
 	/**
+	 * The sections the creator ticked as paint in the builder's Seats and paint step, by the model's own section names (FMantleVehicleLights::SectionNames of its materials).
+	 * Unset, the ones that look like car paint (FMantleVehicleConverter::LooksLikePaint) and are not lights. A model split into a body and parts (more materials than a body
+	 * may draw) has them carried onto whichever part holds each painted material (FMantleVehicleBuilder::ApplyPaint).
+	 */
+	TOptional<TArray<FString>> PaintedSections;
+	/**
 	 * The space Lights' beams were placed in: the bounds of the window's picture's body. A model that keeps its own wheels (Build) is built in its own space, and the beams
 	 * are moved to the same place on it. Invalid: the beams are in the built body's space already.
 	 */
@@ -236,6 +242,14 @@ struct MANTLEEDITOR_API FMantleVehicleBuilder
 	 * section gets its glowing copy of its material and every other section its own material back; a light section is taken off the paint. Notes say what could not be done.
 	 */
 	static void ApplyLights(UMantleVehicleSource& Source, const FMantleVehicleSourceLights& Lights, TArray<FString>& OutNotes);
+
+	/**
+	 * Puts the creator's paint choices on a built vehicle. AllSections are the model's section names in the model's own order (FMantleVehicleLights::SectionNames), Painted
+	 * which of them are ticked (same length). A ticked section the body still draws is in Paint.Sections (and one that is not ticked is not); on a car that was split into a
+	 * body and parts (FMantleVehicleBodySplit), a ticked section that moved to a part is that part's Paint Slot, found by the slot's name, so a split car paints exactly what
+	 * was ticked and nothing is set by hand. Parts a creator added are not touched. OutNotes says in plain words what rides on a part.
+	 */
+	static void ApplyPaint(UMantleVehicleSource& Source, const TArray<FString>& AllSections, const TArray<bool>& Painted, TArray<FString>& OutNotes);
 
 	/**
 	 * The lights of a vehicle built on its own wheels (Build): its body is the creator's model, which is never changed, so when the light finder cuts spots out of it the

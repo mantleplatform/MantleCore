@@ -6,6 +6,7 @@
 #include "MantleVehicleBodyReduce.h"
 #include "MantlePlaceValidator.h"
 #include "MantleVehicleBodySplit.h"
+#include "MantleVehicleBuiltInMaterials.h"
 #include "MantleVehicleLightFinder.h"
 #include "MantleVehicleChassisBuilder.h"
 #include "MantleVehicleChassisDocument.h"
@@ -607,7 +608,7 @@ namespace MantleVehicleBuilderPrivate
 	// Mantle.Vehicle.BuildModel: what the Build a vehicle window's Build button does for a model that is worn as a skin, from the console or a script.
 	FAutoConsoleCommand BuildModelCommand(
 		TEXT("Mantle.Vehicle.BuildModel"),
-		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] "
+		TEXT("Mantle.Vehicle.BuildModel <model object path> <vehicle type id> [yaw=<deg>] [name=<Name>] [folder=</Game/...>] [bone.<chassis bone>=<model bone>] [section.<chassis bone>=<n>] [overwrite=1] [paint=<text>] [notpaint=<text>] "
 			 "-- puts a static or skeletal mesh on the type's chassis (BuildFromModel), saves it under the folder (default /Game/MantleVehicles) and logs MANTLE_VEHICLE_BUILD_MODEL "
 			 "ok=<0|1> with the vehicle's path, its Size and every note. With no yaw or parts given Mantle chooses them. A name= that a vehicle already has is refused unless overwrite=1."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
@@ -622,6 +623,8 @@ namespace MantleVehicleBuilderPrivate
 			FMantleVehicleModelOptions Options;
 			FMantleVehicleModelMap Map;
 			bool bMapGiven = false;
+			FString PaintContains;
+			FString PaintNot;
 			for (int32 Index = 2; Index < Args.Num(); ++Index)
 			{
 				FString Key;
@@ -647,6 +650,15 @@ namespace MantleVehicleBuilderPrivate
 				{
 					Options.bOverwrite = Value == TEXT("1") || Value.Equals(TEXT("true"), ESearchCase::IgnoreCase);
 				}
+				else if (Key.Equals(TEXT("paint"), ESearchCase::IgnoreCase))
+				{
+					// What a creator does in the paint step, for a script: tick every section of the model whose name has this text (and not notpaint's).
+					PaintContains = Value;
+				}
+				else if (Key.Equals(TEXT("notpaint"), ESearchCase::IgnoreCase))
+				{
+					PaintNot = Value;
+				}
 				else if (Key.StartsWith(TEXT("bone."), ESearchCase::IgnoreCase))
 				{
 					Map.Parts.Add(FName(*Key.RightChop(5)), FMantleVehicleModelPiece::OfBone(FName(*Value)));
@@ -666,6 +678,21 @@ namespace MantleVehicleBuilderPrivate
 			if (bMapGiven)
 			{
 				Options.Map = Map;
+			}
+			if (!PaintContains.IsEmpty())
+			{
+				TArray<FString> Ticked;
+				if (const USkeletalMesh* Skeletal = Cast<USkeletalMesh>(Asset))
+				{
+					for (const FString& Section : FMantleVehicleLights::SectionNames(Skeletal->GetMaterials()))
+					{
+						if (Section.Contains(PaintContains, ESearchCase::IgnoreCase) && (PaintNot.IsEmpty() || !Section.Contains(PaintNot, ESearchCase::IgnoreCase)))
+						{
+							Ticked.Add(Section);
+						}
+					}
+				}
+				Options.PaintedSections = Ticked;
 			}
 			const FMantleVehicleBuildResult Result = FMantleVehicleBuilder::BuildFromModel(Asset, Args[1], Options);
 			FString Parts;
@@ -1664,7 +1691,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 				Part.Mesh = PieceMesh;
 				Part.Bone = Piece.Bone;
 				Part.Transform = Piece.ToBone;
-				Part.FoundOn = TEXT("split off the model's extra materials");
+				Part.FoundOn = FMantleVehicleBodySplit::FoundOn();
 			}
 		}
 		if (SplitProblem.IsEmpty())
@@ -1736,8 +1763,36 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	}
 	// Remembered with the vehicle, so a build again of this model finds it.
 	Out.Source->GetOutermost()->GetMetaData().SetValue(Out.Source, MantleVehicleBuilderPrivate::BuiltFromModelKey, *ModelPath);
+	// A model that was split into a body and parts: the paint the creator ticked (else what looks like paint) goes onto whichever holds each painted material.
+	if (SplitParts.Num() > 0)
+	{
+		const TArray<FString> ModelSections = FMantleVehicleLights::SectionNames(PictureMaterials);
+		const FMantleVehicleSourceLights& LightsForPaint = Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights;
+		TArray<bool> Painted;
+		for (int32 Index = 0; Index < ModelSections.Num(); ++Index)
+		{
+			if (Options.PaintedSections.IsSet())
+			{
+				Painted.Add(Options.PaintedSections.GetValue().ContainsByPredicate([&ModelSections, Index](const FString& Ticked) { return Ticked.Equals(ModelSections[Index], ESearchCase::IgnoreCase); }));
+				continue;
+			}
+			bool bLight = false;
+			for (int32 Kind = 0; Kind < FMantleVehicleLights::NumKinds; ++Kind)
+			{
+				bLight = bLight || FMantleVehicleLights::Sections(LightsForPaint, static_cast<EMantleLightKind>(Kind)).Contains(ModelSections[Index]);
+			}
+			Painted.Add(!bLight && PictureMaterials.IsValidIndex(Index) && FMantleVehicleConverter::LooksLikePaint(PictureMaterials[Index].MaterialInterface));
+		}
+		ApplyPaint(*Out.Source, ModelSections, Painted, Out.Notes);
+	}
 	// The lights: the creator's rows and beams, else what the finder found; each light section gets its glowing copy of its material.
 	ApplyLights(*Out.Source, Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights, Out.Notes);
+	// Said, not asked: glass, tires, chrome and lamps are Mantle's own materials when it is published (FMantleVehicleBuiltInMaterials).
+	const FString BuiltIns = FMantleVehicleBuiltInMaterials::Describe(*Out.Source);
+	if (!BuiltIns.IsEmpty())
+	{
+		Out.Notes.Add(BuiltIns);
+	}
 	if (Out.bSaved)
 	{
 		Out.bSaved = SaveVehicle(*Out.Source, Out.SaveProblem);
@@ -1780,6 +1835,69 @@ void FMantleVehicleBuilder::ApplyLights(UMantleVehicleSource& Source, const FMan
 	Source.Modify();
 	Source.Lights = Kept;
 	FMantleVehicleLights::ApplyMaterials(Source, OutNotes);
+	Source.MarkPackageDirty();
+}
+
+void FMantleVehicleBuilder::ApplyPaint(UMantleVehicleSource& Source, const TArray<FString>& AllSections, const TArray<bool>& Painted, TArray<FString>& OutNotes)
+{
+	const auto IsPainted = [&AllSections, &Painted](const FString& Section)
+	{
+		const int32 Index = AllSections.IndexOfByPredicate([&Section](const FString& Other) { return Other.Equals(Section, ESearchCase::IgnoreCase); });
+		return Index != INDEX_NONE && Painted.IsValidIndex(Index) && Painted[Index];
+	};
+	Source.Modify();
+
+	// The body: every ticked section, as the paint step always set them; on a car that was split, only the ticked ones the body still draws (the rest are on parts).
+	const bool bSplit = Source.Parts.ContainsByPredicate([](const FMantleVehicleSourcePart& Part) { return Part.FoundOn == FMantleVehicleBodySplit::FoundOn(); });
+	const USkeletalMesh* Mesh = Source.Body.LoadSynchronous();
+	const TArray<FString> BodySections = Mesh ? FMantleVehicleLights::SectionNames(Mesh->GetMaterials()) : TArray<FString>();
+	Source.Paint.Sections.Reset();
+	for (int32 Index = 0; Index < AllSections.Num(); ++Index)
+	{
+		if (Painted.IsValidIndex(Index) && Painted[Index] && (!bSplit || BodySections.ContainsByPredicate([&AllSections, Index](const FString& Section) { return Section.Equals(AllSections[Index], ESearchCase::IgnoreCase); })))
+		{
+			Source.Paint.Sections.Add(AllSections[Index]);
+		}
+	}
+
+	// The parts the split made: a slot is painted when the section of its name is ticked. A slot the split renamed (material_<N>, for a name it could not keep) is the
+	// model's Nth section.
+	TArray<FString> OnParts;
+	for (FMantleVehicleSourcePart& Part : Source.Parts)
+	{
+		if (Part.FoundOn != FMantleVehicleBodySplit::FoundOn())
+		{
+			continue;
+		}
+		const UStaticMesh* PartMesh = Part.Mesh.LoadSynchronous();
+		if (!PartMesh)
+		{
+			continue;
+		}
+		Part.PaintSlots.Reset();
+		const TArray<FStaticMaterial>& Slots = PartMesh->GetStaticMaterials();
+		for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)
+		{
+			const FString Name = Slots[Slot].MaterialSlotName.ToString();
+			bool bPainted = IsPainted(Name);
+			int32 Renamed = INDEX_NONE;
+			if (!bPainted && Name.StartsWith(TEXT("material_")) && Name.RightChop(9).IsNumeric())
+			{
+				Renamed = FCString::Atoi(*Name.RightChop(9));
+				bPainted = AllSections.IsValidIndex(Renamed) && Painted.IsValidIndex(Renamed) && Painted[Renamed];
+			}
+			if (bPainted)
+			{
+				Part.PaintSlots.Add(Slot);
+				OnParts.AddUnique(Name);
+			}
+		}
+	}
+	if (OnParts.Num() > 0)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Paint: %s %s ticked and ride%s on extra parts, so those parts take the color and liveries too."), *FString::Join(OnParts, TEXT(", ")),
+			OnParts.Num() == 1 ? TEXT("is") : TEXT("are"), OnParts.Num() == 1 ? TEXT("s") : TEXT("")));
+	}
 	Source.MarkPackageDirty();
 }
 

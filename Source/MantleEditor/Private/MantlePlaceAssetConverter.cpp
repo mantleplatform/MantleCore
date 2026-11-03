@@ -19,6 +19,7 @@
 #include "MantleTerrainExport.h"
 #include "MantleTerrainGrassExport.h"
 #include "MantleVehicleBodyLODs.h"
+#include "MantleVehicleBuiltInMaterials.h"
 #include "MantleVehicleCollision.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
@@ -1344,6 +1345,11 @@ bool FMantlePlaceAssetSet::VehicleBytes(const FMantleConvertedVehicle& Vehicle, 
 		}
 		Ids.Add(Section, Ref->Id);
 	}
+	// A glass, tire, chrome or lamp section names Mantle's own material: nothing uploaded for it.
+	for (const TPair<FString, FString>& BuiltIn : Vehicle.BuiltInSections)
+	{
+		Ids.Add(BuiltIn.Key, BuiltIn.Value);
+	}
 	TArray<FString> LiveryIds;
 	if (!VehicleLiveryIds(Vehicle, LiveryIds, OutError))
 	{
@@ -1367,8 +1373,14 @@ bool FMantlePlaceAssetSet::VehicleBytes(const FMantleConvertedVehicle& Vehicle, 
 		Entry.Bone = Part.Bone;
 		Entry.Transform = Part.Transform;
 		Entry.PaintSlots = Part.PaintSlots;
-		for (const FString& MaterialKey : Part.MaterialKeys)
+		for (int32 Slot = 0; Slot < Part.MaterialKeys.Num(); ++Slot)
 		{
+			const FString& MaterialKey = Part.MaterialKeys[Slot];
+			if (Part.BuiltInIds.IsValidIndex(Slot) && !Part.BuiltInIds[Slot].IsEmpty())
+			{
+				Entry.Materials.Add(Part.BuiltInIds[Slot]);
+				continue;
+			}
 			if (MaterialKey.IsEmpty())
 			{
 				Entry.Materials.Add(FString());
@@ -2888,6 +2900,13 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 		UMaterialInterface* Material = Materials.IsValidIndex(Index) ? Materials[Index] : nullptr;
 		if (Material && !FMantlePlaceAssets::IsLibraryAsset(Material))
 		{
+			// Glass, tires, chrome and lamps are Mantle's own materials every car shares; every other section keeps the creator's.
+			const FString BuiltIn = FMantleVehicleBuiltInMaterials::ForSection(*Vehicle, Converted.Body.MaterialNames[Index], Material);
+			if (!BuiltIn.IsEmpty())
+			{
+				Converted.BuiltInSections.Add(Converted.Body.MaterialNames[Index], BuiltIn);
+				continue;
+			}
 			Converted.SectionMaterialKeys.Add(Converted.Body.MaterialNames[Index], FMantlePlaceAssets::MaterialKey(Material));
 		}
 	}
@@ -2913,7 +2932,9 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 		for (const int32 Slot : FMantlePlaceAssets::UploadSlots(PartMesh))
 		{
 			const UMaterialInterface* Material = FMantleVehicleConverter::PartSlotMaterial(Part, PartMesh, Slot);
-			ConvertedPart.MaterialKeys.Add(Material && !FMantlePlaceAssets::IsLibraryAsset(Material) ? FMantlePlaceAssets::MaterialKey(Material) : FString());
+			const FString BuiltIn = Material && !FMantlePlaceAssets::IsLibraryAsset(Material) ? FMantleVehicleBuiltInMaterials::ForPartSlot(Part, PartMesh, Slot) : FString();
+			ConvertedPart.BuiltInIds.Add(BuiltIn);
+			ConvertedPart.MaterialKeys.Add(BuiltIn.IsEmpty() && Material && !FMantlePlaceAssets::IsLibraryAsset(Material) ? FMantlePlaceAssets::MaterialKey(Material) : FString());
 		}
 		// Its painted slots, counted as the upload counts them.
 		ConvertedPart.PaintSlots = FMantleVehicleConverter::PartUploadPaintSlots(Part, PartMesh);
@@ -2970,6 +2991,10 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 	{
 		Placeholders.Add(Section.Key, FMantlePlaceAssets::ProvisionalId(Section.Value));
 	}
+	for (const TPair<FString, FString>& BuiltIn : Converted.BuiltInSections)
+	{
+		Placeholders.Add(BuiltIn.Key, BuiltIn.Value);
+	}
 	TArray<FString> LiveryPlaceholders;
 	for (const FString& LiveryKey : Converted.LiveryTextureKeys)
 	{
@@ -2983,9 +3008,11 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 		Entry.Bone = Part.Bone;
 		Entry.Transform = Part.Transform;
 		Entry.PaintSlots = Part.PaintSlots;
-		for (const FString& MaterialKey : Part.MaterialKeys)
+		for (int32 Slot = 0; Slot < Part.MaterialKeys.Num(); ++Slot)
 		{
-			Entry.Materials.Add(MaterialKey.IsEmpty() ? FString() : FMantlePlaceAssets::ProvisionalId(MaterialKey));
+			const FString& MaterialKey = Part.MaterialKeys[Slot];
+			Entry.Materials.Add(Part.BuiltInIds.IsValidIndex(Slot) && !Part.BuiltInIds[Slot].IsEmpty() ? Part.BuiltInIds[Slot]
+				: MaterialKey.IsEmpty() ? FString() : FMantlePlaceAssets::ProvisionalId(MaterialKey));
 		}
 	}
 	const FString HornPlaceholder = Converted.HornSoundKey.IsEmpty() ? FString() : FMantlePlaceAssets::ProvisionalId(Converted.HornSoundKey);
@@ -3674,14 +3701,15 @@ FMantleBakeSurface FMantlePlaceAssetConverter::EffectiveBakeSurface(const FMantl
 }
 
 FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& InSettings, const FMantlePlaceAssetLimits& InLimits,
-	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface)
+	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface, const bool bOpaqueInDisguise)
 {
 	// #628: a per-instance node is baked at a representative value; the salt keeps an earlier bake (which read it as 0) from standing in.
 	// A bake on anything but the plain surface (a vertex color, a landscape's UV range) adds its tag, so a different color is not served
 	// another's bake, and every plain bake keeps the key it always had.
-	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s"), *Describe, InSettings.DefaultBakeSize,
+	// A translucent material whose opacity is always 1 publishes opaque: an earlier conversion of it (as see-through) must not stand in.
+	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
-		*Surface.CacheTag());
+		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""));
 }
 
 double FMantlePlaceAssetConverter::MeanPixelDifference(const TArray<FColor>& A, const TArray<FColor>& B)
@@ -3901,7 +3929,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	}
 
 	const FMantleBakeSurface Surface = EffectiveBakeSurface(Analysis, InSurface);
-	const FString Salt = MaterialCacheSalt(Flattener->Describe(), Settings, Limits, Material, Analysis.bPerInstanceVariation, Surface);
+	const FString Salt = MaterialCacheSalt(Flattener->Describe(), Settings, Limits, Material, Analysis.bPerInstanceVariation, Surface, Analysis.bOpaqueInDisguise);
 	FString CacheKey, WhyNot;
 	const bool bCacheable = ComputeCacheKey(Salt, Objects, CacheKey, WhyNot);
 	{
@@ -3966,6 +3994,24 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 			UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 GLTFExporter on %s: %s"), *Material->GetName(), *Message);
 		}
 		Converted.Document = MaterialFromGltf(Flattened, 0, Converted.Name, Limits, bOversizeReported, Out, MaterialExtras(Analysis, Converted.Name, Out.Issues));
+		{
+			const UMaterial* BaseMaterial = Material->GetMaterial();
+			const UMaterialEditorOnlyData* EditorData = BaseMaterial ? BaseMaterial->GetEditorOnlyData() : nullptr;
+			const UMaterialExpression* OpacityNode = EditorData ? (Material->GetBlendMode() == BLEND_Masked ? EditorData->OpacityMask.Expression : EditorData->Opacity.Expression) : nullptr;
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_MATERIAL_BLEND %s: Unreal blend mode %s, published as %s%s%s; material %s, master %s%s, opacity from %s"), *Converted.Name,
+				*UEnum::GetValueAsString(Material->GetBlendMode()), *Converted.Document.AlphaMode, Analysis.bOpaqueInDisguise ? TEXT(", solid in disguise") : TEXT(""),
+				Analysis.bOpacityFlat ? *FString::Printf(TEXT(", flat opacity %.2f"), Analysis.FlatOpacity) : TEXT(""), *Material->GetPathName(),
+				BaseMaterial ? *BaseMaterial->GetPathName() : TEXT("none"), BaseMaterial && BaseMaterial->bUseMaterialAttributes ? TEXT(" (material attributes)") : TEXT(""),
+				OpacityNode ? *OpacityNode->GetClass()->GetName() : TEXT("nothing"));
+		}
+		if (Analysis.bOpaqueInDisguise && Converted.Document.AlphaMode == TEXT("blend"))
+		{
+			// Set to Translucent, but nothing in it is ever see-through: a solid surface in the see-through pass looks white and ghostly. Glass keeps its blend.
+			Converted.Document.AlphaMode = TEXT("opaque");
+			Converted.Document.BaseColorFactor[3] = 1.0;
+			Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Material '%s' is set to Translucent, but nothing in it is see-through (its opacity is always 1), so it publishes as a solid surface."), *Converted.Name),
+				TEXT("Nothing needs fixing. Set its Blend Mode to Opaque to keep Unreal's view of it the same.")));
+		}
 		if (Surface.WorldTileCm > 0.0)
 		{
 			// The analysis flags any world position in the graph; many such materials (Downtown's trim sheets, signs, brick walls) map their

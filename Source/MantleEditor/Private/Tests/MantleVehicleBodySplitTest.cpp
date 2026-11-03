@@ -340,4 +340,95 @@ bool FMantleVehicleBodySplitBuildTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleSplitPaintTest,
+	"Mantle.Vehicle.BodySplit.PaintGoesToWhicheverPartHoldsEachPaintedMaterial",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleSplitPaintTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleBodySplitTestPrivate;
+	const TStrongObjectPtr<UStaticMesh> Strip(MakeStrip());
+	if (!TestTrue(TEXT("the 14-material strip is built"), Strip.IsValid() && Strip->GetRenderData() && Strip->GetRenderData()->LODResources.Num() > 0))
+	{
+		return false;
+	}
+	// The creator ticks three of the fourteen sections in the paint step, whichever the split keeps on the body and whichever it puts on a part.
+	FMantleVehicleModelOptions Options;
+	Options.Folder = TEXT("/Temp/MantleBodySplitPaintTest");
+	Options.Name = TEXT("SplitPaintCar");
+	Options.bOverwrite = true;
+	const TArray<FString> Ticked = { TEXT("strip0"), TEXT("strip6"), TEXT("strip13") };
+	Options.PaintedSections = Ticked;
+	const FMantleVehicleBuildResult Built = FMantleVehicleBuilder::BuildFromModel(Strip.Get(), TEXT("sedan"), Options);
+	for (const FString& Problem : Built.Problems)
+	{
+		AddError(Problem);
+	}
+	if (!TestTrue(TEXT("the vehicle is built"), Built.bOk && Built.Source != nullptr) || !TestEqual(TEXT("with one part"), Built.Source->Parts.Num(), 1))
+	{
+		return false;
+	}
+	UMantleVehicleSource* Source = Built.Source;
+	USkeletalMesh* BodyMesh = Source->Body.LoadSynchronous();
+	const UStaticMesh* PartMesh = Source->Parts[0].Mesh.LoadSynchronous();
+	if (!TestNotNull(TEXT("it has a body"), BodyMesh) || !TestNotNull(TEXT("and a part mesh"), PartMesh))
+	{
+		return false;
+	}
+
+	// Each ticked section is painted wherever it is: on the body's Paint Sections when the body draws it, else on the part's Paint Slots by its slot.
+	TArray<FString> OnBody;
+	for (const FSkeletalMaterial& Slot : BodyMesh->GetMaterials())
+	{
+		OnBody.Add(Slot.MaterialSlotName.ToString());
+	}
+	int32 PaintedOnBody = 0;
+	int32 PaintedOnPart = 0;
+	for (const FString& Section : Ticked)
+	{
+		if (OnBody.Contains(Section))
+		{
+			++PaintedOnBody;
+			TestTrue(*FString::Printf(TEXT("%s is on the body and ticked, so it is in Paint Sections"), *Section), Source->Paint.Sections.Contains(Section));
+			continue;
+		}
+		const int32 Slot = PartMesh->GetStaticMaterials().IndexOfByPredicate([&Section](const FStaticMaterial& Material) { return Material.MaterialSlotName.ToString() == Section; });
+		if (TestTrue(*FString::Printf(TEXT("%s is on the body or on the part"), *Section), Slot != INDEX_NONE))
+		{
+			++PaintedOnPart;
+			TestTrue(*FString::Printf(TEXT("%s moved to the part and is ticked, so it is that part's Paint Slot %d"), *Section, Slot), Source->Parts[0].PaintSlots.Contains(Slot));
+		}
+	}
+	TestEqual(TEXT("exactly the ticked ones are painted: nothing on the body beyond them"), Source->Paint.Sections.Num(), PaintedOnBody);
+	TestEqual(TEXT("and nothing on the part beyond them"), Source->Parts[0].PaintSlots.Num(), PaintedOnPart);
+	TestTrue(*FString::Printf(TEXT("at least one ticked section rode on the part (%d), so the carry was tried"), PaintedOnPart), PaintedOnPart > 0);
+
+	// The paint step ticking another section later moves it with the same helper, and unticking one takes it off.
+	TArray<FString> AllSections;
+	TArray<bool> Painted;
+	for (int32 Index = 0; Index < 14; ++Index)
+	{
+		AllSections.Add(FString::Printf(TEXT("strip%d"), Index));
+		Painted.Add(Index == 1);
+	}
+	TArray<FString> Notes;
+	FMantleVehicleBuilder::ApplyPaint(*Source, AllSections, Painted, Notes);
+	const bool bOneOnBody = OnBody.Contains(TEXT("strip1"));
+	TestEqual(TEXT("one section ticked: one painted on the body or the part"), Source->Paint.Sections.Num() + Source->Parts[0].PaintSlots.Num(), 1);
+	TestEqual(TEXT("and it is on the body when the body draws it"), Source->Paint.Sections.Num(), bOneOnBody ? 1 : 0);
+
+	// Cleanup: the throwaway assets.
+	if (USkeleton* Skeleton = BodyMesh->GetSkeleton())
+	{
+		Skeleton->ClearFlags(RF_Public | RF_Standalone);
+		Skeleton->MarkAsGarbage();
+	}
+	BodyMesh->ClearFlags(RF_Public | RF_Standalone);
+	BodyMesh->MarkAsGarbage();
+	const_cast<UStaticMesh*>(PartMesh)->ClearFlags(RF_Public | RF_Standalone);
+	const_cast<UStaticMesh*>(PartMesh)->MarkAsGarbage();
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
