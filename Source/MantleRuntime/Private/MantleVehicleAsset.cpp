@@ -2353,8 +2353,8 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 				for (int32 Rim = 0; Rim < Rims->Num() && P.Ok(); ++Rim)
 				{
 					FString Name;
-					const TSharedPtr<FJsonValue>& Value = (*Rims)[Rim];
-					if (!Value.IsValid() || !Value->TryGetString(Name) || Name.IsEmpty() || Name.Len() > MaxSectionNameLength
+					const TSharedPtr<FJsonValue>& RimValue = (*Rims)[Rim];
+					if (!RimValue.IsValid() || !RimValue->TryGetString(Name) || Name.IsEmpty() || Name.Len() > MaxSectionNameLength
 						|| W.RimSections.ContainsByPredicate([&Name](const FString& Seen) { return Seen.Equals(Name, ESearchCase::CaseSensitive); }))
 					{
 						P.Fail(FString::Printf(TEXT("%s/rimSections/%d"), *Pointer, Rim), TEXT("must name a body section, once"));
