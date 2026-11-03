@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "Containers/Ticker.h"
 #include "MantleLibraryPublish.h"
+#include "MantleThumbnailChoice.h"
 #include "MantlePlacePublishSession.h"
 #include "MantleWheelItemMeasure.h"
 
@@ -84,8 +85,13 @@ public:
 	 * Starts publishing the static mesh at StaticMeshPath as a wheel called Name, with Choice (who may use it: public needs the rights
 	 * declaration). False, with OutError in plain words, when another publish is running, the choice is not ready or the wheel cannot
 	 * be published.
+	 *
+	 * The wheel's library picture (#124) is the creator's saved thumbnail choice for this wheel (FMantleThumbnailStore, class "wheel", under
+	 * FMantlePlaceAssetConverter::WheelThumbnailStoreKey), Automatic when none; read at conversion, so no argument is needed. A caller that
+	 * has a choice to make (a panel's Thumbnail section) passes it as ThumbnailChoice and it is saved first.
 	 */
-	bool Start(const FString& StaticMeshPath, const FString& Name, const FMantleVehicleLibraryChoice& Choice, FString& OutError);
+	bool Start(const FString& StaticMeshPath, const FString& Name, const FMantleVehicleLibraryChoice& Choice, FString& OutError,
+		const FMantleThumbnailChoice* ThumbnailChoice = nullptr);
 
 	bool IsBusy() const { return Session.IsValid() && !Session->IsFinished(); }
 

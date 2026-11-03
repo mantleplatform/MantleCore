@@ -712,7 +712,7 @@ void SMantleLibraryPanel::Construct(const FArguments& InArgs)
 					+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 2, 0)
 					[
 						MakeToggle(LOCTEXT("KindAll", "All"), [this] { return Query.Kind.IsEmpty(); }, [this] { SetKind(FString()); },
-							LOCTEXT("KindAllTip", "Vehicles, weapons and script packages."))
+							LOCTEXT("KindAllTip", "Vehicles, weapons, wheels and script packages."))
 					]
 					+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 2, 0)
 					[
@@ -723,6 +723,11 @@ void SMantleLibraryPanel::Construct(const FArguments& InArgs)
 					[
 						MakeToggle(LOCTEXT("KindWeapons", "Weapons"), [this] { return Query.Kind.Equals(TEXT("weapon"), ESearchCase::CaseSensitive); },
 							[this] { SetKind(TEXT("weapon")); }, LOCTEXT("KindWeaponsTip", "Only weapons."))
+					]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 2, 0)
+					[
+						MakeToggle(LOCTEXT("KindWheels", "Wheels"), [this] { return Query.Kind.Equals(FMantleStorage::KindWheel, ESearchCase::CaseSensitive); },
+							[this] { SetKind(FMantleStorage::KindWheel); }, LOCTEXT("KindWheelsTip", "Only wheels: rims any car that can swap its wheels may wear once stored in your place."))
 					]
 					+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 16, 0)
 					[
@@ -965,6 +970,7 @@ TSharedRef<SWidget> SMantleLibraryPanel::BuildTile(const FMantleLibraryCard& Car
 	const bool bIsWeapon = Card.Kind.Equals(TEXT("weapon"), ESearchCase::CaseSensitive);
 	const bool bIsVehicle = Card.Kind.Equals(TEXT("vehicle"), ESearchCase::CaseSensitive);
 	const bool bIsScript = Card.Kind.Equals(FMantleStorage::KindScript, ESearchCase::CaseSensitive);
+	const bool bIsWheel = Card.Kind.Equals(FMantleStorage::KindWheel, ESearchCase::CaseSensitive);
 	FString KindWord(TEXT("Item"));
 	if (bIsWeapon)
 	{
@@ -973,6 +979,10 @@ TSharedRef<SWidget> SMantleLibraryPanel::BuildTile(const FMantleLibraryCard& Car
 	else if (bIsVehicle)
 	{
 		KindWord = TEXT("Vehicle");
+	}
+	else if (bIsWheel)
+	{
+		KindWord = TEXT("Wheel");
 	}
 	else if (bIsScript)
 	{
@@ -989,7 +999,8 @@ TSharedRef<SWidget> SMantleLibraryPanel::BuildTile(const FMantleLibraryCard& Car
 	}
 	const FLinearColor PlaceholderColor = bIsWeapon ? FLinearColor(0.26f, 0.13f, 0.11f)
 		: bIsVehicle ? FLinearColor(0.10f, 0.17f, 0.27f)
-		: bIsScript ? FLinearColor(0.12f, 0.22f, 0.14f) : FLinearColor(0.15f, 0.15f, 0.15f);
+		: bIsScript ? FLinearColor(0.12f, 0.22f, 0.14f)
+		: bIsWheel ? FLinearColor(0.22f, 0.19f, 0.08f) : FLinearColor(0.15f, 0.15f, 0.15f);
 	// A package's tooltip lists its files (another creator's code: what is about to run in your place).
 	FString Tooltip = Card.Description.IsEmpty() ? Card.Name : Card.Description;
 	if (bIsScript)

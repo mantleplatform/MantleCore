@@ -981,12 +981,12 @@ namespace MantlePreviewExportPrivate
 		// --- Cook every upload, in Publish's order, recording each provisional id ----------------------
 		// Textures, then materials (their documents name the texture ids), meshes, skeletal meshes, clips, sounds,
 		// heightfields, then vehicles (their documents name the materials, meshes, liveries and horn sound), then weapons (#789: their
-		// documents name the skeletal mesh and materials).
+		// documents name the skeletal mesh and materials), then wheels (their documents name the mesh and materials).
 		const EMantlePlaceUploadStage Stages[] = {
 			EMantlePlaceUploadStage::Texture, EMantlePlaceUploadStage::Material, EMantlePlaceUploadStage::Mesh,
 			EMantlePlaceUploadStage::SkeletalMesh, EMantlePlaceUploadStage::AnimClip, EMantlePlaceUploadStage::Sound,
-			EMantlePlaceUploadStage::Heightfield, EMantlePlaceUploadStage::Vehicle, EMantlePlaceUploadStage::Weapon };
-		const TCHAR* const StageNames[] = { TEXT("texture"), TEXT("material"), TEXT("mesh"), TEXT("skeletal mesh"), TEXT("animation"), TEXT("sound"), TEXT("heightfield"), TEXT("vehicle"), TEXT("weapon") };
+			EMantlePlaceUploadStage::Heightfield, EMantlePlaceUploadStage::Vehicle, EMantlePlaceUploadStage::Weapon, EMantlePlaceUploadStage::Wheel };
+		const TCHAR* const StageNames[] = { TEXT("texture"), TEXT("material"), TEXT("mesh"), TEXT("skeletal mesh"), TEXT("animation"), TEXT("sound"), TEXT("heightfield"), TEXT("vehicle"), TEXT("weapon"), TEXT("wheel") };
 		static_assert(UE_ARRAY_COUNT(Stages) == UE_ARRAY_COUNT(StageNames), "one name per cook stage");
 		// A level with Weapon Spawns (#789) is tried on an avatar body, as a single weapon is (below).
 		bool bLevelHasWeapons = false;

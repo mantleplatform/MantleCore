@@ -8,6 +8,7 @@
 #include "MantleProvenance.h"
 #include "MantleRuntime.h"
 #include "MantleSettings.h"
+#include "MantleThumbnailStore.h"
 #include "MantleVehicleConverter.h"
 #include "MantleWheelDocument.h"
 
@@ -200,6 +201,8 @@ void FMantleWheelPublishSource::Convert(int32 Step, FMantlePlaceAssetSet& Set)
 	{
 		if (!Set.FindWheel(Converted.Key))
 		{
+			// The wheel's library picture (the shared thumbnail system, the creator's saved choice for this wheel), then the wheel itself.
+			FMantlePlaceAssetConverter::ConvertWheelThumbnail(LoadWheelMesh(StaticMeshPath), Converted, Set);
 			Set.Wheels.Add(Converted);
 		}
 		return;
@@ -257,7 +260,8 @@ FMantleWheelPublish& FMantleWheelPublish::Get()
 	return Instance;
 }
 
-bool FMantleWheelPublish::Start(const FString& StaticMeshPath, const FString& Name, const FMantleVehicleLibraryChoice& Choice, FString& OutError)
+bool FMantleWheelPublish::Start(const FString& StaticMeshPath, const FString& Name, const FMantleVehicleLibraryChoice& Choice, FString& OutError,
+	const FMantleThumbnailChoice* ThumbnailChoice)
 {
 	if (IsBusy())
 	{
@@ -275,6 +279,10 @@ bool FMantleWheelPublish::Start(const FString& StaticMeshPath, const FString& Na
 		return false;
 	}
 	WheelName = Name.TrimStartAndEnd();
+	if (ThumbnailChoice)
+	{
+		FMantleThumbnailStore::Save(FMantlePlaceAssetConverter::WheelThumbnailStoreKey(WheelName), TEXT("wheel"), *ThumbnailChoice, FMantleThumbnailStore::DefaultConfigFile());
+	}
 	const TSharedRef<FMantleWheelPublishSource> Source = MakeShared<FMantleWheelPublishSource>(StaticMeshPath, WheelName);
 	// A go-live: the uploads wait for Mantle's approval, which a library item needs.
 	Session = MakeShared<FMantlePlacePublishSession>(Source, MakeShared<FMantleApiUploadTransport>(), /*bGoLive*/ true, FString());
@@ -325,7 +333,8 @@ namespace MantleWheelPublishPrivate
 		TEXT("Mantle.Wheel.Publish"),
 		TEXT("Mantle.Wheel.Publish <StaticMeshAssetPath> <Name> [public|private] -- publishes the static mesh (axle along +X, face toward +X) as a ")
 		TEXT("library item of kind wheel called Name. private is the default; public ticks the rights declaration on the creator's behalf. Logs ")
-		TEXT("MANTLE_WHEEL_PUBLISH_DONE or MANTLE_WHEEL_PUBLISH_FAILED, and MANTLE_LIBRARY_PUBLISHED."),
+		TEXT("MANTLE_WHEEL_PUBLISH_DONE or MANTLE_WHEEL_PUBLISH_FAILED, and MANTLE_LIBRARY_PUBLISHED. The wheel's library picture is its saved ")
+		TEXT("thumbnail choice (Automatic when none)."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 		{
 			if (Args.Num() < 2 || Args.Num() > 3 || (Args.Num() == 3 && !(Args[2] == TEXT("public") || Args[2] == TEXT("private"))))

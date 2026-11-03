@@ -567,6 +567,9 @@ struct MANTLEEDITOR_API FMantleConvertedWheel
 
 	/** Indexes into MaterialKeys of the slots that wear the car's wheels paint layer. */
 	TArray<int32> WheelSlots;
+
+	/** The key (FMantlePlaceAssetSet::AddTexture) of the wheel's library picture, uploaded beside it; empty when it has none. */
+	FString ThumbnailKey;
 };
 
 /** One file for the upload queue (F4 #338): its kind and options, bytes, content address, and the Unreal asset to name in messages. */
@@ -955,6 +958,20 @@ public:
 	 * materials convert on their own, as gathered. Not cached: it is a small text file.
 	 */
 	bool ConvertWeapon(const FMantleGatheredWeapon& Weapon, FMantlePlaceAssetSet& Out);
+
+	/**
+	 * A wheel's library picture (#124), the same shared thumbnail system a weapon's uses: the creator's saved choice for this wheel
+	 * (FMantleThumbnailStore, class "wheel", under WheelThumbnailStoreKey; Automatic when none) resolved against a render of Model in the
+	 * catalog's thumbnail scene. A texture upload beside the wheel, its key in Wheel.ThumbnailKey. A picture that cannot be made is a warning
+	 * in Out.Issues and the wheel publishes without one. Model may be null (no picture).
+	 */
+	static void ConvertWheelThumbnail(UStaticMesh* Model, FMantleConvertedWheel& Wheel, FMantlePlaceAssetSet& Out);
+
+	/** What a wheel's thumbnail choice is remembered under: its library path, /Game/MantleWheels/<Name>. */
+	static FString WheelThumbnailStoreKey(const FString& WheelName);
+
+	/** The upload key of a wheel picture whose PNG has Hash ("sha256:..."): "wheelpicture:<hex>". Pure. */
+	static FString WheelPictureKey(const FString& Hash);
 
 	/**
 	 * A publish converts what it gathered one step at a time, so the editor keeps running between steps: meshes, materials, decal

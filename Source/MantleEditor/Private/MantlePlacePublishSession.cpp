@@ -2118,6 +2118,11 @@ void FMantlePlacePublishSession::TickLibrary()
 			Job.Paths.Add(SourcePath);
 			Job.AssetId = Uploaded->Id;
 			Job.Provenance = FMantleProvenance::Make(SourcePath, Wheel.ImportFilename);
+			// #124: the card's picture, the texture the wheel uploaded beside it.
+			if (const FMantlePlaceUploadedRef* WheelPicture = Wheel.ThumbnailKey.IsEmpty() ? nullptr : Set.Uploaded.Find(Wheel.ThumbnailKey))
+			{
+				Job.ThumbnailId = WheelPicture->Id;
+			}
 		}
 		// #838: each script package, once all its files are on Mantle; remembered by its folder like a vehicle by its asset.
 		PackageRefs.Reset();
