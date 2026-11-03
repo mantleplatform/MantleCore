@@ -162,6 +162,12 @@ TArray<FMantleBuilderStep> SMantleVehicleBuilder::MakeSteps()
 	}
 	{
 		FMantleBuilderStep& Step = Steps.AddDefaulted_GetRef();
+		Step.Title = LOCTEXT("StepLiveries", "Liveries");
+		Step.Help = LOCTEXT("StepLiveriesHelp", "Optional. A livery is an image laid over the painted parts, like a racing stripe or a police design. Add up to eight, name each, and choose which one the car starts with. Skip this step if your vehicle has none.");
+		Step.MakeContent = [this] { return MakeLiveriesStep(); };
+	}
+	{
+		FMantleBuilderStep& Step = Steps.AddDefaulted_GetRef();
 		Step.Title = FMantleThumbnailText::Heading();
 		Step.Help = LOCTEXT("StepThumbnailHelp", "The picture of this item in the library. Mantle takes one for you; you can choose the angle or use your own picture.");
 		Step.MakeContent = [this] { return MakeThumbnailStep(); };
@@ -195,9 +201,10 @@ void SMantleVehicleBuilder::CloseWindow()
 // ---------------------------------------------------------------------------------------------------------------------
 // The picture.
 
-TSharedRef<SWidget> SMantleVehicleBuilder::WithPicture(const TSharedRef<SWidget>& Left, const bool bLights)
+TSharedRef<SWidget> SMantleVehicleBuilder::WithPicture(const TSharedRef<SWidget>& Left, const bool bLights, const bool bLiveries)
 {
 	bPictureLights = bLights;
+	bPictureLiveries = bLiveries;
 	return SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot().AutoWidth().Padding(0.f, 0.f, 12.f, 0.f)
 		[
@@ -224,6 +231,7 @@ TSharedRef<SWidget> SMantleVehicleBuilder::MakePicture()
 		// Opened again with nothing changed: the same picture, in a new viewport.
 		Viewport->SetMesh(Preview.Mesh.Get(), true);
 		PushLightsToPicture();
+		ApplyLiveryPreview();
 	}
 	else
 	{
@@ -322,6 +330,7 @@ void SMantleVehicleBuilder::RebuildPreview(const bool bFrame)
 	RefreshLights();
 	RefreshPaintChoices();
 	PushLightsToPicture();
+	ApplyLiveryPreview();
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1559,6 +1568,10 @@ void SMantleVehicleBuilder::ApplyChoices(UMantleVehicleSource& Source)
 	if (bHideRiders)
 	{
 		FMantleVehicleBuilder::SetHiddenRiders(Source, Cast<USkeletalMesh>(Mesh.Get()), true);
+	}
+	if (bLiveriesEdited)
+	{
+		ApplyLiveries(Source);
 	}
 }
 

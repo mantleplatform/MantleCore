@@ -71,6 +71,8 @@ public:
 	 * (a mesh swapped while a creator is dragging a slider keeps the creator's view).
 	 */
 	void SetMesh(UObject* Mesh, bool bFrame = true);
+	/** Draws the skeletal model's material slots with these materials instead of its own (a slot not named keeps its own); empty puts them all back. Lost whenever SetMesh replaces the model. */
+	void SetSlotMaterials(const TMap<int32, UMaterialInterface*>& Materials);
 
 	void SetPoints(const TArray<FMantleBuilderPoint>& Points);
 	const TArray<FMantleBuilderPoint>& GetPoints() const;
