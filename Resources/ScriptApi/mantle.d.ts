@@ -250,8 +250,8 @@ interface Player {
 	readonly crouchStarted: Signal<[player: Player]>;
 	/** The character stood up from a crouch. Fires on the server and on every client. */
 	readonly crouchStopped: Signal<[player: Player]>;
-	/** The character was hurt, on the server. amount is what got through Armor (the Shield and health took it between them), so a hit the shield soaked up still counts; a killing hit fires Damaged first and then Died. damageType is the hit's tag ("Bullet", "Melee", "Explosion", ..., or your own) and attacker the player who dealt it, or nil. Not fired for a hit a held guard blocked, friendly fire that was switched off, or Health set directly. */
-	readonly damaged: Signal<[player: Player, amount: number, damageType: string, attacker: Player | undefined]>;
+	/** The character was hurt, on the server. amount is what got through Armor (the Shield and health took it between them), so a hit the shield soaked up still counts; a killing hit fires Damaged first and then Died. damageType is the hit's tag ("Bullet", "Melee", "Explosion", ..., or your own) and attacker the player who dealt it, or nil. weapon is the Tool id of the weapon that dealt the hit and round the name of the round loaded on it when it fired (Backpack:SetRound), so a script can tell a fire arrow from a plain one; both nil for a hit that was not a weapon's, round nil for a weapon with none loaded (weapon and round: script API 1.77). Not fired for a hit a held guard blocked, friendly fire that was switched off, or Health set directly. */
+	readonly damaged: Signal<[player: Player, amount: number, damageType: string, attacker: Player | undefined, weapon: string | undefined, round: string | undefined]>;
 	/** The player's character died, on the server and on every client. killer is the player whose damage finished it (a weapon, or TakeDamage with a source); nil for falling out of the world, Kill, Health set to 0, or their own damage. damageType is the tag of the killing hit ("Bullet", "Melee", "Explosion", ..., or your own); "Generic" when nothing named one. */
 	readonly died: Signal<[player: Player, killer: Player | undefined, damageType: string]>;
 	/** The player dodged (roll false: one tap of the dodge key) or rolled (roll true: a double tap), on the server, as it starts. For the first half second of it nothing hurts them. DodgeEnabled false stops the key; a firearm, or a weapon with no dodge animation, never dodges. */
@@ -272,6 +272,8 @@ interface Player {
 	readonly recovered: Signal<[player: Player]>;
 	/** The player got a fresh character after a death or a Respawn call, on the server. Not fired for the first character a player gets when they join. */
 	readonly respawned: Signal<[player: Player]>;
+	/** The round loaded on the player's held gun or bow changed: a script loaded or cleared it, a different Tool with another round came into the hands, or a dropped weapon was picked up with its round. Fires on the server and on every client, at most once per frame per player; read it with Player:GetRound. */
+	readonly roundChanged: Signal<[player: Player]>;
 	/** The character started sprinting. Fires on the server and on every client. */
 	readonly sprintStarted: Signal<[player: Player]>;
 	/** The character stopped sprinting: the key let go, stamina ran out, SprintEnabled turned off, or it stopped moving. Fires on the server and on every client. */
@@ -288,6 +290,8 @@ interface Player {
 	forceCrouch(crouched: boolean): boolean;
 	/** The ammo of the weapon in the player's hands: toolId, rounds (in the magazine), magazineSize (what a full magazine holds now, after any attachment or stat change), reserve (rounds outside the magazine) and reloading. nil when the Tool in the hands has no magazine (a sword, bare hands) and while the player has no character. Works on the server and on every client for any player, so a client script can draw its own ammo readout after UI:SetBuiltInHUD(false, "ammo"); AmmoChanged says when to read it again. */
 	getAmmo(): { toolId: string; rounds: number; magazineSize: number; reserve: number; reloading: boolean } | undefined;
+	/** The round a script loaded on the gun or bow in the player's hands (Backpack:SetRound): ToolId, Name, DamageMultiplier, Speed (the projectile speed multiplier) and Color ("#RRGGBB", absent when the round has none). nil when the Tool in the hands has no round loaded, and while the player has no character. Works on the server and on every client for any player, so a client script can show the round in its own UI; RoundChanged says when to read it again. */
+	getRound(): { toolId: string; name: string; damageMultiplier: number; speed: number; color?: string | undefined } | undefined;
 	/** Raise the character's health by amount, up to MaxHealth. Never brings a dead character back (use Respawn). Returns false when the player has no character on foot, is dead, or is already at full health. (server only) */
 	heal(amount: number): boolean;
 	/** Remove the player from the session with a message. (server only) */
@@ -374,6 +378,8 @@ interface NPC {
 	walkSpeed: number;
 	/** The NPC swung or fired at its target. damage is the hit's damage (the projectile's, for a ranged NPC) and damageType its tag. Fires at the moment of the attack, on the server only. Use it to play an attack clip or a sound. */
 	readonly attacked: Signal<[npc: NPC, entity: Entity | undefined, player: Player | undefined, damage: number, damageType: string]>;
+	/** The NPC was hurt, on the server. amount is what got through its armor (its shield and health took it between them); a killing hit fires Damaged first and then Died. damageType is the hit's tag ("Bullet", "Melee", "Explosion", ..., or your own) and attacker the player who dealt it, or nil. weapon is the Tool id of the weapon that dealt the hit and round the name of the round loaded on it when it fired (Backpack:SetRound), so a script can tell a fire arrow from a plain one; both nil for a hit that was not a weapon's, round nil for a weapon with none loaded. Not fired for a hit a held guard blocked or for Health set directly. */
+	readonly damaged: Signal<[npc: NPC, amount: number, damageType: string, attacker: Player | undefined, weapon: string | undefined, round: string | undefined]>;
 	/** The NPC died: its health reached 0. killer is the player whose damage finished it (a weapon, or TakeDamage with a source); nil for Kill, Health set to 0, or damage nobody is credited with. A dead NPC stops, falls limp (or plays the clip a Died handler starts with PlayClip or PlayAssetClip, holding its last frame) and stays where it fell, still counting toward the 50, until Respawn or Destroy. Fires on the server only. */
 	readonly died: Signal<[npc: NPC, killer: Player | undefined]>;
 	/** A drive DriveTo or DriveAlong started ended: result is "arrived" when the car stopped within ArriveRadius of the last point, "stuck" when it could not get further (it reversed and tried again, then gave up), or "canceled" (StopDriving, a new drive, ExitVehicle, the NPC dying or being destroyed, or the car going away). Fires on the server only, once per drive. */
@@ -640,6 +646,8 @@ interface BackpackService {
 	applyLoadout(player: Player, toolId: string, loadout: { attachments?: Record<string, string> | undefined; stats?: Record<string, number> | undefined; color?: string | undefined }): { ok: boolean; error?: string | undefined };
 	/** Empty the player's Backpack, leaving only fists. Returns how many Tools were removed. (server only) */
 	clear(player: Player): number;
+	/** Take the loaded round off the player's gun or bow: the weapon fires its own again. Returns { ok = true } (also when none was loaded), or { ok = false, error = ... } ("no tool" or "this weapon takes no rounds"). (server only) */
+	clearRound(player: Player, toolId: string): { ok: boolean; error?: string | undefined };
 	/** Put the Tool in this Backpack slot in the player's hands. Slots count from 0, so the hotbar key 1 is slot 0. Returns false when the slot is empty or the player is dead. (server only) */
 	equipSlot(player: Player, slot: number): boolean;
 	/** The ammo of one of the player's weapons: rounds in the magazine, magazineSize (what a full magazine holds now), reserve and whether it is reloading. nil when the player does not have that Tool or it has no magazine. (Player:GetAmmo reads the weapon in the hands.) (server only) */
@@ -652,6 +660,8 @@ interface BackpackService {
 	getCapacity(player: Player): number;
 	/** Everything done to the weapon as one plain table: { attachments = { sight = "Holo" }, stats = { damage = 1.2 }, color = "#3A5F2B" } (only what differs from a new weapon's stats; color only if the weapon was painted). Save it with DataStore or inside an inventory entry and hand it back to ApplyLoadout or Grant. Ammo is not in it. nil when the player does not have that weapon. (server only) */
 	getLoadout(player: Player, toolId: string): { attachments: Record<string, string>; stats: Record<string, number>; color?: string | undefined } | undefined;
+	/** The round loaded on one of the player's guns or bows: Name, DamageMultiplier, Speed and Color (absent when the round has none). nil when none is loaded, the weapon takes no rounds, or the player does not have that Tool. (Player:GetRound reads the weapon in the hands.) (server only) */
+	getRound(player: Player, toolId: string): { name: string; damageMultiplier: number; speed: number; color?: string | undefined } | undefined;
 	/** Your own multiplier for a stat (1 until SetStat), 0.25 to 4. Errors on an unknown stat; nil when the player does not have that weapon. (server only) */
 	getStat(player: Player, toolId: string, stat: string): number | undefined;
 	/** The numbers the weapon has now, after its fitted attachments and your multipliers, for a creator's own UI: damage, fireRate (shots a minute), spread (degrees, the widest cone), recoil, reloadTime (seconds), magazineSize and range (cm). nil when the player does not have that weapon. (server only) */
@@ -670,6 +680,8 @@ interface BackpackService {
 	setCapacity(player: Player, capacity: number): void;
 	/** Turn the fitted light option's flashlight and laser on or off. A light starts off, and shows only while the weapon is in the hands. Returns false when no light option is fitted or the player does not have that weapon. (server only) */
 	setLightOn(player: Player, toolId: string, on: boolean): boolean;
+	/** Load a round on the player's gun or bow: Name (what your script calls it, 1 to 32 characters), DamageMultiplier (0.1 to 10, 1 if left out; applied to every hit the weapon deals: hitscan, projectiles, arrows and beams), Color ("#RRGGBB": the tracer or projectile shows in it, on every client) and Speed (0.1 to 10, 1 if left out; how fast an arrow or a launched round flies: it does nothing for a hitscan shot). Mantle has no ammo types of its own: the name means what your script makes of it, and the hits report it (Player.Damaged's weapon and round). The round stays until ClearRound, goes with a dropped weapon and comes back when it is picked up. Returns { ok = true }, or { ok = false, error = ... } ("no tool", "this weapon takes no rounds", or what was out of range). (server only) */
+	setRound(player: Player, toolId: string, round: { name: string; damageMultiplier?: number | undefined; speed?: number | undefined; color?: string | undefined }): { ok: boolean; error?: string | undefined };
 	/** Set your own multiplier for one of the weapon's numbers (1 until set): stat is "damage", "fireRate", "spread", "recoil", "reloadTime", "magazineSize" or "range", multiplier from 0.25 to 4. It stacks with the multipliers of the fitted attachments (the product is held to 0.25 to 4, then to the weapon file's own limits), is the same on every machine, and lasts as long as the Tool. Errors on an unknown stat or an out-of-range multiplier; returns false when the player does not have that weapon. (server only) */
 	setStat(player: Player, toolId: string, stat: string, multiplier: number): boolean;
 	/** Turn full-Backpack swaps on or off for the player. On, a pickup with a full Backpack and a weapon in hand reads "Swap <held> for <new>": one kneel puts the held weapon on the floor and the new one in the hand. Off (or with bare hands), the prompt shows "Backpack full" and does nothing. It lasts for the rest of the session, through respawns. (server only) */

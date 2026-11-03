@@ -203,6 +203,7 @@ class Player:
     ragdolled: Signal
     recovered: Signal
     respawned: Signal
+    round_changed: Signal
     sprint_started: Signal
     sprint_stopped: Signal
     staff_extra_used: Signal
@@ -214,6 +215,9 @@ class Player:
         ...
     def get_ammo(self) -> Optional[dict[str, Any]]:
         """The ammo of the weapon in the player's hands: toolId, rounds (in the magazine), magazineSize (what a full magazine holds now, after any attachment or stat change), reserve (rounds outside the magazine) and reloading. nil when the Tool in the hands has no magazine (a sword, bare hands) and while the player has no character. Works on the server and on every client for any player, so a client script can draw its own ammo readout after UI:SetBuiltInHUD(false, 'ammo'); AmmoChanged says when to read it again."""
+        ...
+    def get_round(self) -> Optional[dict[str, Any]]:
+        """The round a script loaded on the gun or bow in the player's hands (Backpack:SetRound): ToolId, Name, DamageMultiplier, Speed (the projectile speed multiplier) and Color ('#RRGGBB', absent when the round has none). nil when the Tool in the hands has no round loaded, and while the player has no character. Works on the server and on every client for any player, so a client script can show the round in its own UI; RoundChanged says when to read it again."""
         ...
     def heal(self, amount: float, /) -> bool:
         """Raise the character's health by amount, up to MaxHealth. Never brings a dead character back (use Respawn). Returns false when the player has no character on foot, is dead, or is already at full health."""
@@ -291,6 +295,7 @@ class NPC:
     target_player: Optional[Player]
     walk_speed: float
     attacked: Signal
+    damaged: Signal
     died: Signal
     drive_finished: Signal
     health_changed: Signal
@@ -632,6 +637,9 @@ class _BackpackService:
     def clear(self, player: Player, /) -> float:
         """Empty the player's Backpack, leaving only fists. Returns how many Tools were removed."""
         ...
+    def clear_round(self, player: Player, toolId: str, /) -> dict[str, Any]:
+        """Take the loaded round off the player's gun or bow: the weapon fires its own again. Returns { ok = true } (also when none was loaded), or { ok = false, error = ... } ('no tool' or 'this weapon takes no rounds')."""
+        ...
     def equip_slot(self, player: Player, slot: float, /) -> bool:
         """Put the Tool in this Backpack slot in the player's hands. Slots count from 0, so the hotbar key 1 is slot 0. Returns false when the slot is empty or the player is dead."""
         ...
@@ -649,6 +657,9 @@ class _BackpackService:
         ...
     def get_loadout(self, player: Player, toolId: str, /) -> Optional[dict[str, Any]]:
         """Everything done to the weapon as one plain table: { attachments = { sight = 'Holo' }, stats = { damage = 1.2 }, color = '#3A5F2B' } (only what differs from a new weapon's stats; color only if the weapon was painted). Save it with DataStore or inside an inventory entry and hand it back to ApplyLoadout or Grant. Ammo is not in it. nil when the player does not have that weapon."""
+        ...
+    def get_round(self, player: Player, toolId: str, /) -> Optional[dict[str, Any]]:
+        """The round loaded on one of the player's guns or bows: Name, DamageMultiplier, Speed and Color (absent when the round has none). nil when none is loaded, the weapon takes no rounds, or the player does not have that Tool. (Player:GetRound reads the weapon in the hands.)"""
         ...
     def get_stat(self, player: Player, toolId: str, stat: str, /) -> Optional[float]:
         """Your own multiplier for a stat (1 until SetStat), 0.25 to 4. Errors on an unknown stat; nil when the player does not have that weapon."""
@@ -676,6 +687,9 @@ class _BackpackService:
         ...
     def set_light_on(self, player: Player, toolId: str, on: bool, /) -> bool:
         """Turn the fitted light option's flashlight and laser on or off. A light starts off, and shows only while the weapon is in the hands. Returns false when no light option is fitted or the player does not have that weapon."""
+        ...
+    def set_round(self, player: Player, toolId: str, round: dict[str, Any], /) -> dict[str, Any]:
+        """Load a round on the player's gun or bow: Name (what your script calls it, 1 to 32 characters), DamageMultiplier (0.1 to 10, 1 if left out; applied to every hit the weapon deals: hitscan, projectiles, arrows and beams), Color ('#RRGGBB': the tracer or projectile shows in it, on every client) and Speed (0.1 to 10, 1 if left out; how fast an arrow or a launched round flies: it does nothing for a hitscan shot). Mantle has no ammo types of its own: the name means what your script makes of it, and the hits report it (Player.Damaged's weapon and round). The round stays until ClearRound, goes with a dropped weapon and comes back when it is picked up. Returns { ok = true }, or { ok = false, error = ... } ('no tool', 'this weapon takes no rounds', or what was out of range)."""
         ...
     def set_stat(self, player: Player, toolId: str, stat: str, multiplier: float, /) -> bool:
         """Set your own multiplier for one of the weapon's numbers (1 until set): stat is 'damage', 'fireRate', 'spread', 'recoil', 'reloadTime', 'magazineSize' or 'range', multiplier from 0.25 to 4. It stacks with the multipliers of the fitted attachments (the product is held to 0.25 to 4, then to the weapon file's own limits), is the same on every machine, and lasts as long as the Tool. Errors on an unknown stat or an out-of-range multiplier; returns false when the player does not have that weapon."""
