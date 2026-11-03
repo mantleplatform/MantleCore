@@ -660,12 +660,16 @@ declare extern type CameraService with
 	function Follow(self, entity: Entity, offset: Vector3, relative: boolean?): ()
 	--- Give the camera back to Mantle: Mode "Default", Mantle's field of view, no shake. (client only)
 	function Reset(self): ()
+	--- A ray from the camera that draws the view now, through that screen spot: x and y run from 0, 0 (top-left of the game view) to 1, 1 (bottom-right), clamped to that, whatever the window size. Direction has length 1. Works in every camera mode: Mantle's own, fixed or tweening, following, first person, or the top-down camera. Pass it to World:Raycast to find what is under a screen spot. (client only)
+	function ScreenToRay(self, x: number, y: number): {Origin: Vector3, Direction: Vector3}
 	--- Hold the camera still at position, looking at lookAt (Mode becomes "Fixed"). The player still moves their character. Set Mode to "Default" or call Reset to give the camera back. (client only)
 	function SetFixed(self, position: Vector3, lookAt: Vector3): ()
 	--- Shake the view, fading out over duration seconds. intensity is clamped to 0 to 1 and duration to 0 to 3; a new shake replaces one still running, and 0 stops it. Does nothing when the player turned on Reduced motion or turned Camera shake off. (client only)
 	function Shake(self, intensity: number, duration: number): ()
 	--- Move the camera smoothly from where the view is now to position, looking at lookAt, over seconds (0 to 60), then hold it there like SetFixed. Mode is "Fixed" from the start. style and direction ease it as they do Entity:Tween (Linear and Out unless given). Returns a signal that fires once when the camera arrives; it never fires if SetFixed, TweenFixed, Follow, Mode or Reset takes the camera first. (client only)
 	function TweenFixed(self, position: Vector3, lookAt: Vector3, seconds: number, style: string?, direction: string?): Signal
+	--- Where a world point lands on screen (X and Y from 0 to 1, as in ScreenToRay), and whether it is in front of the camera and inside the view (OnScreen). A point in front of the camera but outside the view still gets its X and Y (below 0 or above 1) with OnScreen false, so you can point an arrow toward it; a point behind the camera gives X 0, Y 0 and OnScreen false. (client only)
+	function WorldToScreen(self, position: Vector3): {X: number, Y: number, OnScreen: boolean}
 end
 declare Camera: CameraService
 
@@ -1031,6 +1035,43 @@ declare extern type PlayersService with
 	function OnPlayer(self, handler: (player: Player) -> ()): Connection
 end
 declare Players: PlayersService
+
+--- Point at, click and drag 3D objects with the mouse or a gamepad (client only, apart from CanReach). Start turns picking on for the local player for the objects you list; nothing happens until a script calls it. The plain cursor-ray reads (GetScreenPosition, GetRay, Hit) change nothing and work without Start. Screen positions run from 0, 0 (top-left of the game view) to 1, 1 (bottom-right). Clients say what they want and the server decides: send Clicked and DragEnded over a Remote, check them on the server with CanReach and your own rules, then move the real object.
+declare extern type PointerService with
+	--- A press and release on the same listed target with no drag (client only). This is the one most scripts want; send it to the server over a Remote and let the server decide.
+	Clicked: Signal<(Entity, Player?, string)>
+	--- The drag ended (client only). Position and Rotation are where the ghost was. Valid is false when SetDragHint had the ghost red, with Reason its text. DroppedOn is the listed object under the cursor at release (drop a gem on a slot). Canceled is true for Cancel, or for a release where "Surface" found nothing. Send the move to the server over a Remote when it is not canceled; the real object has not moved until the server moves it.
+	DragEnded: Signal<(Entity, {Position: Vector3, Rotation: Vector3, Valid: boolean, Reason: string?, DroppedOn: Entity?, Canceled: boolean})>
+	--- A listed object started being dragged (client only; Drag must be true).
+	DragStarted: Signal<(Entity, Player?)>
+	--- The ghost moved while dragging (client only), at most once a frame. Do not fire a Remote on every one.
+	Dragged: Signal<(Entity, Vector3, Vector3)>
+	--- The hovered or snapped target changed (client only). nil means nothing. Fires whether or not Mantle draws the outline, so a script that turned the outline off (Outline = false) can draw its own.
+	HoverChanged: Signal<(Entity?, Player?)>
+	--- A pointer button went down (client only). button is "Select" or "Alt"; the target is whatever is under the cursor at that moment.
+	Pressed: Signal<(Entity?, Player?, string)>
+	--- A pointer button came up (client only). button is "Select" or "Alt".
+	Released: Signal<(Entity?, Player?, string)>
+	--- Whether the player can reach the target: one distance check and one trace. MaxDistance (cm, 800 by default, at most 100,000) is measured from From (the player's eyes by default) to the target's bounds center, or the point itself. LineOfSight (true by default) also needs a clear line from there, ignoring the player's character and the target. The server never knows a client's fixed camera, so a script that showed one passes the camera spot it told the client as From. false when the player has no character and no From is given. Counts toward the 256 spatial queries a frame per script. Use it to check a Clicked or DragEnded request before acting on it. (server only)
+	function CanReach(self, player: Player, target: Entity | Player | Vector3, options: {MaxDistance: number?, LineOfSight: boolean?, From: Vector3?}?): boolean
+	--- What is under the cursor (or snapped to) now: Entity, and Player when it is a player's character; both nil when nothing is. Only listed objects count. (client only)
+	function GetHovered(self): {Entity: Entity?, Player: Player?}
+	--- Camera:ScreenToRay at the cursor's spot (see GetScreenPosition); nil when there is no spot. Works under every camera, including a fixed or top-down one. (client only)
+	function GetRay(self): {Origin: Vector3, Direction: Vector3}?
+	--- The cursor's spot on screen, 0 to 1 each way. It reads the mouse while the mouse cursor shows, or the pad cursor in "cursor" mode; in "snap" mode it is the snapped target's screen point. nil when no cursor shows and nothing is snapped. (client only)
+	function GetScreenPosition(self): {X: number, Y: number}?
+	--- Where the cursor hits anything: World:Raycast along GetRay, with the same params (MaxDistance, by default and at most 1 km; Include, Exclude, Tag, IgnorePlayers) and the same result table. Counts toward the 256 spatial queries a frame per script. nil when there is no cursor or nothing is hit. Use it for map pins and click-to-move; picking listed objects is Start's job. (client only)
+	function Hit(self, params: {MaxDistance: number?, Include: {Entity | Player}?, Exclude: {Entity | Player}?, Tag: string?, IgnorePlayers: boolean?}?): {Entity: Entity, Player: Player?, Position: Vector3, Normal: Vector3, Distance: number}?
+	--- Makes the ghost red with this reason ("Slot full", at most 120 characters). nil makes it valid again. A red drop still fires DragEnded, with Valid false and the text as Reason, so your script decides what that means; the server's check still decides. (client only)
+	function SetDragHint(self, text: string?): ()
+	--- Turns the ghost while dragging: pitch, yaw and roll in degrees added to the object's own. Ignored when nothing is being dragged. The place's own keys call this through Input:BindAction. (client only)
+	function SetDragRotation(self, rotation: Vector3): ()
+	--- Turns picking on for the local player. A second Start, from any client script of the place, replaces the first; picking ends with Stop, or when the script that started it stops, and stays on through respawns. Options: Tag and/or Include (what can be picked: at least one is required; Include holds at most 256 Entities or Players, a player standing for their character; with both, only entries carrying the tag), Gamepad ("snap", the default, jumps between pickable objects; "cursor" moves a cursor with a stick), CursorStick ("Left" or "Right": the stick that moves the pad cursor, or flicks between targets in snap mode; the D-pad always works; "Left" by default), HoldMovement (true by default: stops moving, looking and attacking while picking, as a modal UI does; the menu key still works), MaxDistance (cm from the camera, 5,000 by default, at most 100,000), Outline ("#RRGGBB" for the hover outline on this player's screen, "#FFD140" by default, or false to draw none and use HoverChanged to draw your own), Drag (true lets listed objects be dragged; default false) and DragPlane ("Surface", the default: the ghost goes where the cursor hits anything but the ghost, the dragged object and characters; or "Horizontal": the flat plane through the point where the object was grabbed), Ghost (true by default; false draws no drag ghost and leaves the dragged object in place on this screen, so your own visuals, drawn from Dragged, replace it) and Cursor (true by default; false shows no mouse cursor icon, so you can draw your own at GetScreenPosition; picking works the same). Everything Mantle draws can be turned off this way, and HoverChanged, Dragged and GetScreenPosition give a script the same information. Start shows the mouse cursor as UI:SetCursorVisible(true) does and Stop puts back what was there. Script UI under the cursor comes first: nothing in the world is hovered and Select goes to the UI. The Pointer controls are listed in the Controls tab. Example: Pointer:Start({Tag = "MatItem", Drag = true, Outline = "#FFD140"}) (client only)
+	function Start(self, options: {Tag: string?, Include: {Entity | Player}?, Gamepad: string?, CursorStick: string?, HoldMovement: boolean?, MaxDistance: number?, Outline: string | boolean?, Drag: boolean?, DragPlane: string?, Ghost: boolean?, Cursor: boolean?}): ()
+	--- Turns picking off and puts back the cursor, the camera control and the movement exactly as they were before Start. Does nothing when picking is off. (client only)
+	function Stop(self): ()
+end
+declare Pointer: PointerService
 
 --- Fire projectiles from a server script: a ball, rocket, arrow or cube that flies under gravity, hits what is in its way, hurts it, and can explode. Each flies on the server and shows on every player's screen. Fire returns an id; Hit and Expired say how it ended. A projectile never hits the player or NPC that fired it, and a hit goes through the same damage path weapons use (armor, shield, friendly fire, Damaged and Died). Weapon damage, fire rate and ammo stay the game's: this is for your own gadgets, traps and turrets. At most 64 projectiles fly at once.
 declare extern type ProjectilesService with
