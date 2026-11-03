@@ -410,9 +410,11 @@ void SMantleVehicleBuilder::ApplyLiveries(UMantleVehicleSource& Source) const
 {
 	FMantleVehicleSourcePaint& Paint = Source.Paint;
 	Paint.Liveries.Reset();
+	Paint.LiveryNames.Reset();
 	for (const FLiveryChoice& Choice : LiveryChoices)
 	{
 		Paint.Liveries.Add(Choice.Texture);
+		Paint.LiveryNames.Add(Choice.Name);
 	}
 	Paint.DefaultLivery = LiveryChoices.IsValidIndex(StartLivery) ? StartLivery : INDEX_NONE;
 	Source.MarkPackageDirty();
