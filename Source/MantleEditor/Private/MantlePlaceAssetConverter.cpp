@@ -3994,6 +3994,8 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 			UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 GLTFExporter on %s: %s"), *Material->GetName(), *Message);
 		}
 		Converted.Document = MaterialFromGltf(Flattened, 0, Converted.Name, Limits, bOversizeReported, Out, MaterialExtras(Analysis, Converted.Name, Out.Issues));
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_MATERIAL_BLEND %s: Unreal blend mode %s, published as %s%s%s"), *Converted.Name, *UEnum::GetValueAsString(Material->GetBlendMode()),
+			*Converted.Document.AlphaMode, Analysis.bOpaqueInDisguise ? TEXT(", solid in disguise") : TEXT(""), Analysis.bOpacityFlat ? *FString::Printf(TEXT(", flat opacity %.2f"), Analysis.FlatOpacity) : TEXT(""));
 		if (Analysis.bOpaqueInDisguise && Converted.Document.AlphaMode == TEXT("blend"))
 		{
 			// Set to Translucent, but nothing in it is ever see-through: a solid surface in the see-through pass looks white and ghostly. Glass keeps its blend.
