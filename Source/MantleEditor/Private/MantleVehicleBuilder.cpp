@@ -1987,7 +1987,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	}
 	// The lights: the creator's rows and beams, else what the finder found; each light section gets its glowing copy of its material.
 	ApplyLights(*Out.Source, Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights, Out.Notes);
-	// Said, not asked: glass, tires, chrome and lamps are Mantle's own materials when it is published (FMantleVehicleBuiltInMaterials).
+	// Said, not asked: glass, tires, chrome, carbon fiber and lamps are Mantle's own materials when it is published (FMantleVehicleBuiltInMaterials).
 	const FString BuiltIns = FMantleVehicleBuiltInMaterials::Describe(*Out.Source);
 	if (!BuiltIns.IsEmpty())
 	{

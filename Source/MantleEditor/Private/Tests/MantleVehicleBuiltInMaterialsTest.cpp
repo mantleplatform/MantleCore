@@ -8,7 +8,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// The built-in vehicle materials the builder suggests by a section's name (mantle#239's ids): glass, tire rubber, chrome and light lenses; nothing for a name that says
+// The built-in vehicle materials the builder suggests by a section's name (mantle#239's ids): glass, tire rubber, chrome, carbon fiber and light lenses; nothing for a name that says
 // something else.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleVehicleBuiltInSuggestTest,
@@ -33,6 +33,11 @@ bool FMantleVehicleBuiltInSuggestTest::RunTest(const FString&)
 	Expect(TEXT("chrome3"), FMantleVehicleBuiltInMaterials::Chrome());
 	Expect(TEXT("headlight_lens"), FMantleVehicleBuiltInMaterials::LightLens());
 	Expect(TEXT("Lens_Glass"), FMantleVehicleBuiltInMaterials::LightLens());
+	Expect(TEXT("carbonfiber_005"), FMantleVehicleBuiltInMaterials::Carbon());
+	Expect(TEXT("Carbon_Fiber"), FMantleVehicleBuiltInMaterials::Carbon());
+	// Carbon wins over the parts it sits next to: a carbon mirror cap or windshield-base strip is carbon, though a plain mirror or windshield is not.
+	Expect(TEXT("carbonfiber_mirror"), FMantleVehicleBuiltInMaterials::Carbon());
+	Expect(TEXT("windshield_base_carbon"), FMantleVehicleBuiltInMaterials::Carbon());
 
 	// Not what they sit next to.
 	Expect(TEXT("tire_rim"), None);
@@ -45,7 +50,7 @@ bool FMantleVehicleBuiltInSuggestTest::RunTest(const FString&)
 	Expect(TEXT("carpet1"), None);
 	Expect(TEXT(""), None);
 
-	TestEqual(TEXT("four built-in materials"), FMantleVehicleBuiltInMaterials::All().Num(), 4);
+	TestEqual(TEXT("five built-in materials"), FMantleVehicleBuiltInMaterials::All().Num(), 5);
 	TestTrue(TEXT("they are recognized by id"), FMantleVehicleBuiltInMaterials::IsBuiltIn(TEXT("ast_mat_glass")));
 	TestFalse(TEXT("an uploaded material is not one"), FMantleVehicleBuiltInMaterials::IsBuiltIn(TEXT("ast_u0123456789abcdef0123456789abcdef")));
 	return true;
@@ -82,6 +87,8 @@ bool FMantleVehicleBuiltInDetectTest::RunTest(const FString&)
 	TestEqual(TEXT("a translucent material of opacity 1 is solid, not glass"), FMantleVehicleBuiltInMaterials::Detect(NewMaterial(BLEND_Translucent, 1.0f), TEXT("material_7"), false), FString());
 	TestEqual(TEXT("a translucent material with no opacity connected is solid, not glass"), FMantleVehicleBuiltInMaterials::Detect(NewMaterial(BLEND_Translucent), TEXT("material_7"), false), FString());
 	TestEqual(TEXT("an opaque body panel keeps its material"), FMantleVehicleBuiltInMaterials::Detect(NewMaterial(BLEND_Opaque), TEXT("body_panel"), false), FString());
+	TestEqual(TEXT("a null material named carbon_fiber is carbon"), FMantleVehicleBuiltInMaterials::Detect(nullptr, TEXT("carbon_fiber"), false), FString(FMantleVehicleBuiltInMaterials::Carbon()));
+	TestEqual(TEXT("a section named carbon but drawn as a light is a lens"), FMantleVehicleBuiltInMaterials::Detect(NewMaterial(BLEND_Opaque), TEXT("carbonfiber_005"), true), FString(FMantleVehicleBuiltInMaterials::LightLens()));
 	TestEqual(TEXT("a null material is read by its name"), FMantleVehicleBuiltInMaterials::Detect(nullptr, TEXT("Tire"), false), FString(FMantleVehicleBuiltInMaterials::Rubber()));
 	TestEqual(TEXT("and a null material with another name keeps nothing"), FMantleVehicleBuiltInMaterials::Detect(nullptr, TEXT("seat"), false), FString());
 	return true;

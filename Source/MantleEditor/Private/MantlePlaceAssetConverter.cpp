@@ -1351,7 +1351,7 @@ bool FMantlePlaceAssetSet::VehicleBytes(const FMantleConvertedVehicle& Vehicle, 
 		}
 		Ids.Add(Section, Ref->Id);
 	}
-	// A glass, tire, chrome or lamp section names Mantle's own material: nothing uploaded for it.
+	// A glass, tire, chrome, carbon fiber or lamp section names Mantle's own material: nothing uploaded for it.
 	for (const TPair<FString, FString>& BuiltIn : Vehicle.BuiltInSections)
 	{
 		Ids.Add(BuiltIn.Key, BuiltIn.Value);
@@ -2954,7 +2954,7 @@ bool FMantlePlaceAssetConverter::ConvertVehicle(UMantleVehicleSource* Vehicle, F
 		UMaterialInterface* Material = Materials.IsValidIndex(Index) ? Materials[Index] : nullptr;
 		if (Material && !FMantlePlaceAssets::IsLibraryAsset(Material))
 		{
-			// Glass, tires, chrome and lamps are Mantle's own materials every car shares; every other section keeps the creator's.
+			// Glass, tires, chrome, carbon fiber and lamps are Mantle's own materials every car shares; every other section keeps the creator's.
 			const FString BuiltIn = FMantleVehicleBuiltInMaterials::ForSection(*Vehicle, Converted.Body.MaterialNames[Index], Material);
 			if (!BuiltIn.IsEmpty())
 			{

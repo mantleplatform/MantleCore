@@ -29,7 +29,7 @@ namespace MantleVehicleBuiltInMaterialsPrivate
 
 TArray<FString> FMantleVehicleBuiltInMaterials::All()
 {
-	return { Rubber(), Glass(), Chrome(), LightLens() };
+	return { Rubber(), Glass(), Chrome(), LightLens(), Carbon() };
 }
 
 bool FMantleVehicleBuiltInMaterials::IsBuiltIn(const FString& Id)
@@ -41,6 +41,11 @@ FString FMantleVehicleBuiltInMaterials::Suggest(const FString& SectionName)
 {
 	using namespace MantleVehicleBuiltInMaterialsPrivate;
 	const FString Lower = SectionName.ToLower();
+	// Carbon fiber is its own part, mirror caps and glass-base strips included, so it is read before the parts that only sit next to glass or rubber (carbonfiber and carbon_fiber have carbon in them).
+	if (HasAny(Lower, { TEXT("carbon") }))
+	{
+		return Carbon();
+	}
 	// A part that sits next to glass or rubber but is not it.
 	if (HasAny(Lower, { TEXT("wiper"), TEXT("frame"), TEXT("seal"), TEXT("gasket"), TEXT("mirror"), TEXT("sticker"), TEXT("tint_film") }))
 	{
@@ -180,6 +185,10 @@ FText FMantleVehicleBuiltInMaterials::Label(const FString& Id)
 	{
 		return LOCTEXT("LightLens", "Light lens");
 	}
+	if (Id == Carbon())
+	{
+		return LOCTEXT("Carbon", "Carbon fiber");
+	}
 	return FText::FromString(Id);
 }
 
@@ -246,7 +255,7 @@ namespace MantleVehicleBuiltInMaterialsPrivate
 	}
 
 	FAutoConsoleCommand ListBuiltInsCommand(TEXT("Mantle.Vehicle.BuiltInMaterials"),
-		TEXT("Lists which sections and slots of a Mantle vehicle asset get Mantle's own glass, rubber, chrome or light lens when it is converted."),
+		TEXT("Lists which sections and slots of a Mantle vehicle asset get Mantle's own glass, rubber, chrome, carbon fiber or light lens when it is converted."),
 		FConsoleCommandWithArgsDelegate::CreateStatic(&ListBuiltIns));
 }
 
