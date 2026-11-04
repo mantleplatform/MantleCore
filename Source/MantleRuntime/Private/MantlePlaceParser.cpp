@@ -4,6 +4,7 @@
 #include "MantlePlaceAssets.h"
 #include "MantlePlaceLimits.h"
 #include "MantlePlaceStorage.h"
+#include "MantlePlayStyle.h"
 #include "MantleRuntime.h"
 
 #include "Dom/JsonObject.h"
@@ -3016,6 +3017,94 @@ namespace
 		}
 	}
 
+	/**
+	 * settings.playStyle (GhzGarage/mantle#232): style Default or TopDown, and for TopDown the options Player:SetPlayStyle takes, each
+	 * in its range with Distance between MinDistance and MaxDistance. Options on Default are refused. The rules are MantlePlayStyle's.
+	 */
+	void ReadPlayStyleSettings(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Settings, const FString& Path, FMantlePlayStyle& Out)
+	{
+		if (!Settings->HasField(TEXT("playStyle")))
+		{
+			return;
+		}
+		const FString StylePath = Join(Path, TEXT("playStyle"));
+		const TSharedPtr<FJsonObject>* PlayStyle = nullptr;
+		if (!Settings->TryGetObjectField(TEXT("playStyle"), PlayStyle))
+		{
+			Ctx.Fail(StylePath, TEXT("must be an object"));
+			return;
+		}
+		RequireNoUnknownKeys(Ctx, *PlayStyle, { TEXT("style"), TEXT("options") }, StylePath);
+		FMantlePlayStyle Result;
+		int32 Style = 0;
+		OptionalChoice(Ctx, *PlayStyle, TEXT("style"), StylePath, { TEXT("Default"), TEXT("TopDown") }, Style);
+		Result.Style = Style == 1 ? EMantlePlayStyle::TopDown : EMantlePlayStyle::Default;
+		if (!(*PlayStyle)->HasField(TEXT("options")))
+		{
+			Out = Result;
+			return;
+		}
+		const FString OptionsPath = Join(StylePath, TEXT("options"));
+		const TSharedPtr<FJsonObject>* Options = nullptr;
+		if (!(*PlayStyle)->TryGetObjectField(TEXT("options"), Options))
+		{
+			Ctx.Fail(OptionsPath, TEXT("must be an object"));
+			return;
+		}
+		if (Result.Style != EMantlePlayStyle::TopDown)
+		{
+			Ctx.Fail(OptionsPath, TEXT("is allowed only when style is TopDown"));
+			return;
+		}
+		bool bAllValid = true;
+		for (const auto& Pair : (*Options)->Values)
+		{
+			// UE 5.8 keys FJsonObject::Values by TSharedString, not FString.
+			const FString OptionKey(Pair.Key.ToView());
+			const FString OptionPath = Join(OptionsPath, OptionKey);
+			const TSharedPtr<FJsonValue>& Value = Pair.Value;
+			if (MantlePlayStyle::IsNumberOption(OptionKey))
+			{
+				FString Error;
+				if (!Value.IsValid() || Value->Type != EJson::Number)
+				{
+					Ctx.Fail(OptionPath, TEXT("must be a number"));
+					bAllValid = false;
+				}
+				else if (!MantlePlayStyle::ApplyNumber(Result.TopDown, OptionKey, Value->AsNumber(), Error))
+				{
+					Ctx.Fail(OptionPath, Error);
+					bAllValid = false;
+				}
+			}
+			else if (MantlePlayStyle::IsFlagOption(OptionKey))
+			{
+				if (!Value.IsValid() || Value->Type != EJson::Boolean)
+				{
+					Ctx.Fail(OptionPath, TEXT("must be true or false"));
+					bAllValid = false;
+				}
+				else
+				{
+					MantlePlayStyle::ApplyFlag(Result.TopDown, OptionKey, Value->AsBool());
+				}
+			}
+			else
+			{
+				Ctx.Fail(OptionPath, TEXT("is not a top-down play style option"));
+				bAllValid = false;
+			}
+		}
+		FString Error;
+		if (bAllValid && !MantlePlayStyle::Finish(Result.TopDown, Error))
+		{
+			// At the option at fault, as the Go validator and validate.py report it.
+			Ctx.Fail(Join(OptionsPath, Result.TopDown.MinDistance > Result.TopDown.MaxDistance ? TEXT("MinDistance") : TEXT("Distance")), Error);
+			return;
+		}
+		Out = Result;
+	}
+
 	/** A socket's name or kind (#184): [A-Za-z0-9_], 1 to FMantlePlaceLimits::MaxMeshSocketNameLength characters. */
 	bool IsSocketIdentifier(const FString& Value)
 	{
@@ -4262,7 +4351,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			{ TEXT("maxPlayers"), TEXT("gravity"), TEXT("skybox"), TEXT("ambientLight"),
 			  TEXT("respawnMode"), TEXT("streamingDistance"), TEXT("allowCommunityServers"),
 			  TEXT("allowPrivateServers"), TEXT("avatarHeight"), TEXT("environment"), TEXT("carjacking"), TEXT("water"),
-			  TEXT("maxCarriedTools"), TEXT("allowToolSwap"), TEXT("killZ"), TEXT("boundary"), TEXT("placing") },
+			  TEXT("maxCarriedTools"), TEXT("allowToolSwap"), TEXT("killZ"), TEXT("boundary"), TEXT("placing"), TEXT("playStyle") },
 			TEXT("/settings"));
 
 		double MaxPlayers = Place.Settings.MaxPlayers;
@@ -4363,6 +4452,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		ReadEnvironmentSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Environment);
 		ReadWaterZone(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Water);
 		ReadPlacingSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Placing);
+		ReadPlayStyleSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.PlayStyle);
 
 		// Deprecated: still accepted, so existing place files parse, but nothing reads it
 		// at runtime and the exporter no longer writes it.
