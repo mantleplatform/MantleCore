@@ -149,6 +149,8 @@ enum class EMantlePlacePlayStyle : uint8
 	Default,
 	/** A high camera over the character, with WASD and the left stick moving relative to the screen. */
 	TopDown UMETA(DisplayName = "Top-Down"),
+	/** A side-on camera that follows the character along a flat path, with movement held to that path. */
+	SideScroll UMETA(DisplayName = "Side-Scroll"),
 };
 
 /**
@@ -191,6 +193,62 @@ struct MANTLEEDITOR_API FMantleTopDownSetting
 	/** Hides what stands between the camera and the character, on each player's own screen. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	bool bHideWalls = true;
+};
+
+/** Where the Side-Scroll camera stops (#229), the place file's settings.playStyle.options.Bounds: cm along the Path from its first point. */
+USTRUCT()
+struct MANTLEEDITOR_API FMantleSideScrollBoundsSetting
+{
+	GENERATED_BODY()
+
+	/** The camera stops here going back along the path, cm from its first point. Must be below Max. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = "0", UIMin = "0"))
+	float Min = 0.0f;
+
+	/** The camera stops here going forward along the path, cm from its first point. At most the path's length. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = "0", UIMin = "0"))
+	float Max = 1000.0f;
+};
+
+/**
+ * The Side-Scroll play style's options (#229), the place file's settings.playStyle.options: the same ones Player:SetPlayStyle
+ * takes, with the schema's ranges and defaults. Lengths are cm, angles degrees. Only options changed from these are published.
+ */
+USTRUCT()
+struct MANTLEEDITOR_API FMantleSideScrollSetting
+{
+	GENERATED_BODY()
+
+	/**
+	 * The path players are held to, as world points joined by straight lines: 2 to 64 points, each line at least 50 cm long. Only X
+	 * and Y count; the path is flat. Empty: a straight line along +X through where each player stands when the style starts.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	TArray<FVector> Path;
+
+	/** How far the camera sits from the path, cm. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = "300", ClampMax = "5000", UIMin = "300", UIMax = "5000"))
+	float Distance = 1000.0f;
+
+	/** How far above the character the camera looks, cm. The camera never tilts. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = "-500", ClampMax = "1000", UIMin = "-500", UIMax = "1000"))
+	float Height = 100.0f;
+
+	/** How far ahead of the character, the way it faces, the camera aims, cm. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = "0", ClampMax = "1000", UIMin = "0", UIMax = "1000"))
+	float LookAhead = 150.0f;
+
+	/** How wide the camera sees, degrees. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (DisplayName = "Field of View", ClampMin = "30", ClampMax = "120", UIMin = "30", UIMax = "120"))
+	float FieldOfView = 65.0f;
+
+	/** Stop the camera at Bounds instead of letting it follow the whole path. Needs a Path. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (InlineEditConditionToggle))
+	bool bSetBounds = false;
+
+	/** Where the camera stops, cm along the Path from its first point. Needs a Path. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (EditCondition = "bSetBounds"))
+	FMantleSideScrollBoundsSetting Bounds;
 };
 
 /**
@@ -324,7 +382,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	bool bCarjacking = true;
 
-	// The play style (#232): how every player's camera and movement work from the start. A script can change it for one
+	// The play style (#232, #229): how every player's camera and movement work from the start. A script can change it for one
 	// player with Player:SetPlayStyle. Default publishes nothing.
 
 	/** The style every player starts in. Default is Mantle's normal first and third person play. */
@@ -335,6 +393,11 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle|Play Style",
 		meta = (DisplayName = "Top-Down Options", EditCondition = "PlayStyle == EMantlePlacePlayStyle::TopDown", EditConditionHides))
 	FMantleTopDownSetting TopDown;
+
+	/** The Side-Scroll camera's options and path. Only options changed from their defaults are published. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Play Style",
+		meta = (DisplayName = "Side-Scroll Options", EditCondition = "PlayStyle == EMantlePlacePlayStyle::SideScroll", EditConditionHides))
+	FMantleSideScrollSetting SideScroll;
 
 	// Placing mode (#184): what is kept of the pieces players place with the Placing API. A script
 	// turns placing mode on; nothing here does. Only values changed from these defaults are
@@ -553,13 +616,19 @@ public:
 	/** The place's placing mode settings (#184) from the Placing fields; the schema's defaults unless the creator changed them. */
 	FMantlePlacingSettings MakePlacingSettings() const;
 
-	/** The place's play style (#232) from the Play Style fields, each option clamped to its range. */
+	/**
+	 * The place's play style (#232, #229) from the Play Style fields, each option clamped to its range. A Side-Scroll Path or Bounds
+	 * that breaks the rules is left out; PlayStyleError names it.
+	 */
 	FMantlePlayStyle MakePlayStyle() const;
 
 	/** Sets the Play Style fields from a place file's settings.playStyle; options it leaves out reset to their defaults. */
 	void SetPlayStyleFrom(const FMantlePlayStyle& Style);
 
-	/** Why the Play Style fields cannot be published (Distance outside Min Distance to Max Distance), or empty when they can. */
+	/**
+	 * Why the Play Style fields cannot be published, or empty when they can: a Top-Down Distance outside Min Distance to Max Distance,
+	 * or a Side-Scroll Path or Bounds that breaks the rules (too few points, a line under 50 cm, Bounds without a Path or past its end).
+	 */
 	FString PlayStyleError() const;
 
 	/** Sets the Placing fields from a place file's settings.placing. */

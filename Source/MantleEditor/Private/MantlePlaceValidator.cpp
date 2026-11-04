@@ -2196,17 +2196,20 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 			TEXT("Select at least one platform, or turn All Platforms back on.") });
 	}
 
-	// #232: a Top-Down Distance outside its zoom range. The exporter refuses it too; here it is named before a publish.
+	// #232, #229: play style options every reader would refuse. The exporter refuses them too; here they are named before a publish.
 	if (const AMantlePlaceSettingsActor* PlaceSettings = AMantlePlaceSettingsActor::Find(World))
 	{
 		const FString PlayStyleError = PlaceSettings->PlayStyleError();
 		if (!PlayStyleError.IsEmpty())
 		{
+			const bool bSideScroll = PlaceSettings->PlayStyle == EMantlePlacePlayStyle::SideScroll;
 			Result.Issues.Add(FMantleValidationIssue{
 				EMantleIssueSeverity::Error,
 				LabelOf(PlaceSettings),
-				FString::Printf(TEXT("has Top-Down Options that do not fit together: %s."), *PlayStyleError),
-				TEXT("Keep Distance between Min Distance and Max Distance in Play Style's Top-Down Options.") });
+				FString::Printf(TEXT("has %s that cannot be published: %s."), bSideScroll ? TEXT("Side-Scroll Options") : TEXT("Top-Down Options"), *PlayStyleError),
+				bSideScroll
+					? TEXT("Give the Path 2 to 64 points with every line at least 50 cm long, and keep Bounds within the Path's length (Bounds needs a Path).")
+					: TEXT("Keep Distance between Min Distance and Max Distance in Play Style's Top-Down Options.") });
 		}
 	}
 
