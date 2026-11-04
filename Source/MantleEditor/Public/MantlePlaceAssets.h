@@ -615,6 +615,12 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	void AddWeaponSpawn(const AActor* Actor);
 
 	/**
+	 * Adds one Mantle Item Spawn's model (#235): the Static Mesh its Details panel picked (FMantleItemSpawnModel), with the material of
+	 * each slot, as a mesh no component uses (AddMesh). Nothing for a spawn with no model, a library mesh, or an asset id from a place file.
+	 */
+	void AddItemSpawn(const AActor* Actor);
+
+	/**
 	 * #840: adds the weapon builder's weapon in Content/MantleWeapons/<WeaponName>, as AddWeaponSpawn does for a spawn, with Label as
 	 * its user. False, adding nothing, when its settings file or its 3D model is missing (every weapon has one, #897: a fist
 	 * weapon's too).

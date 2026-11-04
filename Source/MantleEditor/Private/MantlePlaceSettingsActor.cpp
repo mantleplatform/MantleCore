@@ -97,6 +97,7 @@ void AMantlePlaceSettingsActor::ApplyTo(UWorld* World, FMantleSettings& Out)
 		Out.Environment = Settings->MakeEnvironmentSettings();
 		Out.Placing = Settings->MakePlacingSettings();
 		Out.PlayStyle = Settings->MakePlayStyle();
+		Out.WorldItems = Settings->MakeWorldItemsSettings();
 	}
 }
 
@@ -298,6 +299,19 @@ void AMantlePlaceSettingsActor::SetPlacingFrom(const FMantlePlacingSettings& Pla
 	MaxPlacedPieces = Placing.MaxPieces;
 }
 
+FMantleWorldItemsSettings AMantlePlaceSettingsActor::MakeWorldItemsSettings() const
+{
+	// The default is the schema's (nothing saved), so the exporter writes the block only when the creator turned saving on.
+	FMantleWorldItemsSettings Out;
+	Out.Persistence = bSaveWorldItems ? EMantleWorldItemsPersistence::Server : EMantleWorldItemsPersistence::None;
+	return Out;
+}
+
+void AMantlePlaceSettingsActor::SetWorldItemsFrom(const FMantleWorldItemsSettings& WorldItems)
+{
+	bSaveWorldItems = WorldItems.Persistence == EMantleWorldItemsPersistence::Server;
+}
+
 void AMantlePlaceSettingsActor::SetEnvironmentFrom(const FMantleEnvironmentSettings& Environment)
 {
 	bSetClockTime = Environment.ClockTime.IsSet();
@@ -350,6 +364,7 @@ void AMantlePlaceSettingsActor::SetFrom(UWorld* World, const FMantleSettings& Se
 		Actor->SetEnvironmentFrom(Settings.Environment);
 		Actor->SetPlacingFrom(Settings.Placing);
 		Actor->SetPlayStyleFrom(Settings.PlayStyle);
+		Actor->SetWorldItemsFrom(Settings.WorldItems);
 	}
 }
 

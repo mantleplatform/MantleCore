@@ -17,6 +17,8 @@
 #include "MantleTerrainExport.h"
 #include "MantleTerrainGrassExport.h"
 #include "MantleVehicleBuiltInMaterials.h"
+#include "MantleItemSpawnModel.h"
+#include "MantleItemSpawnPoint.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleLightFinder.h"
 #include "MantleVehicleSource.h"
@@ -2607,6 +2609,10 @@ FMantlePlaceDependencies FMantlePlaceDependencies::Gather(UWorld* World)
 		{
 			Out.AddWeaponSpawn(Actor);
 		}
+		else if (Type == EMantleEntityType::ItemSpawn)
+		{
+			Out.AddItemSpawn(Actor);
+		}
 		else if (Type == EMantleEntityType::Scatter)
 		{
 			Out.AddScatter(Actor);
@@ -2720,6 +2726,17 @@ void FMantlePlaceDependencies::AddWeaponSpawn(const AActor* Actor)
 	}
 	const FString Label = Actor->GetActorLabel();
 	AddBuiltWeapon(Spawn->Weapon, Label); // when it cannot be added, Check (FMantlePlaceValidator) names it
+}
+
+void FMantlePlaceDependencies::AddItemSpawn(const AActor* Actor)
+{
+	const AMantleItemSpawnPoint* Spawn = Cast<AMantleItemSpawnPoint>(Actor);
+	if (!Spawn)
+	{
+		return;
+	}
+	// A model that is not a project Static Mesh is Check's to name (FMantleItemSpawnModel::Problem).
+	AddMesh(FMantleItemSpawnModel::LoadMesh(Spawn->ModelId), Actor->GetActorLabel());
 }
 
 bool FMantlePlaceDependencies::AddBuiltWeapon(const FString& WeaponName, const FString& Label)

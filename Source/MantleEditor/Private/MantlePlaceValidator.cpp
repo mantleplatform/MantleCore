@@ -24,6 +24,8 @@
 #include "MantleScriptApiUsage.h"
 #include "MantleScriptCatalogFiles.h"
 #include "MantleScriptPackages.h"
+#include "MantleItemSpawnModel.h"
+#include "MantleItemSpawnPoint.h"
 #include "MantleScriptPoint.h"
 #include "MantleSplineMeshBake.h"
 #include "MantleTargetFeatures.h"
@@ -200,6 +202,7 @@ namespace
 		case EMantleEntityType::CrowdSpawner: // its lanes are skipped in CheckComponents
 		case EMantleEntityType::VehicleSpawn: // its arrow and icon are editor-only
 		case EMantleEntityType::WeaponSpawn: // its arrow, icon and gun preview are editor-only
+		case EMantleEntityType::ItemSpawn: // its arrow and icon are editor-only (#235)
 		case EMantleEntityType::ScriptPoint: // its arrow, icon and name labels are editor-only (#838)
 		case EMantleEntityType::Effect: // its icon and preview are editor-only, and skipped in CheckComponents
 		case EMantleEntityType::Constraint: // its root is the constraint itself, and its icon is editor-only
@@ -760,6 +763,35 @@ namespace
 				LabelOf(Actor),
 				TEXT("has no weapon to leave."),
 				TEXT("Pick one in its Weapon list in the Details panel. Make a weapon first with Tools > Mantle > Build a weapon.") });
+		}
+	}
+
+	/**
+	 * A Mantle Item Spawn (#235): its item, count and respawn time within the schema's limits (the runtime actor's ReadProps, which Export
+	 * holds it to as well), and a model that is a Static Mesh of the project or a place file's asset id. The mesh's own limits are checked
+	 * once per mesh by FMantlePlaceAssets::CheckLevel.
+	 */
+	void CheckItemSpawn(const AActor* Actor, EMantleEntityType Type, FMantleValidationResult& Result)
+	{
+		const AMantleItemSpawnPoint* Spawn = Type == EMantleEntityType::ItemSpawn ? Cast<AMantleItemSpawnPoint>(Actor) : nullptr;
+		if (!Spawn)
+		{
+			return;
+		}
+		FMantleItemSpawnProps Props;
+		FString Problem;
+		if (!Spawn->ReadProps(Props, Problem))
+		{
+			Result.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, LabelOf(Actor), Problem, TEXT("Change it in the spawn's Details panel.") });
+		}
+		const FString ModelProblem = FMantleItemSpawnModel::Problem(Spawn->ModelId);
+		if (!ModelProblem.IsEmpty())
+		{
+			Result.Issues.Add(FMantleValidationIssue{
+				EMantleIssueSeverity::Error,
+				LabelOf(Actor),
+				ModelProblem + TEXT("."),
+				TEXT("Pick a Static Mesh in the spawn's Model list in the Details panel, or clear it to use the model the item's script gave it.") });
 		}
 	}
 
@@ -1963,6 +1995,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 		CheckCrowdSpawner(Actor, Type, Result);
 		CheckVehicleSpawn(Actor, Type, VehicleSpawns, Result);
 		CheckWeaponSpawn(Actor, Type, WeaponSpawns, Result);
+		CheckItemSpawn(Actor, Type, Result);
 		if (const AMantleScriptPoint* ScriptPoint = Type == EMantleEntityType::ScriptPoint ? Cast<AMantleScriptPoint>(Actor) : nullptr)
 		{
 			ScriptPoints.Add(ScriptPoint);
