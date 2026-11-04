@@ -2196,6 +2196,20 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 			TEXT("Select at least one platform, or turn All Platforms back on.") });
 	}
 
+	// #232: a Top-Down Distance outside its zoom range. The exporter refuses it too; here it is named before a publish.
+	if (const AMantlePlaceSettingsActor* PlaceSettings = AMantlePlaceSettingsActor::Find(World))
+	{
+		const FString PlayStyleError = PlaceSettings->PlayStyleError();
+		if (!PlayStyleError.IsEmpty())
+		{
+			Result.Issues.Add(FMantleValidationIssue{
+				EMantleIssueSeverity::Error,
+				LabelOf(PlaceSettings),
+				FString::Printf(TEXT("has Top-Down Options that do not fit together: %s."), *PlayStyleError),
+				TEXT("Keep Distance between Min Distance and Max Distance in Play Style's Top-Down Options.") });
+		}
+	}
+
 	if (Publishable == 0)
 	{
 		Result.Issues.Add(FMantleValidationIssue{
