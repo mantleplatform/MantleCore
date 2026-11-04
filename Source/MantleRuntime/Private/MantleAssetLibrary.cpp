@@ -63,6 +63,9 @@ FMantleAssetLibrary::FMantleAssetLibrary()
 			TEXT("/Game/Mantle/Materials/MI_MantleVehicle_Chrome.MI_MantleVehicle_Chrome"));
 		Add(TEXT("ast_mat_light_lens"), EMantleAssetKind::Material,
 			TEXT("/Game/Mantle/Materials/MI_MantleVehicle_LightLens.MI_MantleVehicle_LightLens"));
+		// The "carbon" paint finish as a material (cell 0 of the pattern atlas under a clear coat), so a carbon part and a carbon-painted layer look alike. It reads Mantle's atlas, never a creator's texture.
+		Add(TEXT("ast_mat_carbon"), EMantleAssetKind::Material,
+			TEXT("/Game/Mantle/Materials/MI_MantleVehicle_Carbon.MI_MantleVehicle_Carbon"));
 
 	// No sounds (#263): Mantle ships no preset audio, ever. Creators upload their own with their
 	// place (#324), and LoadSound answers those uploaded ids from the live place asset set.
