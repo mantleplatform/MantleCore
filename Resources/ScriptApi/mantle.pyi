@@ -610,6 +610,42 @@ class VoxelWriter:
         """Smooth worlds: sets one voxel of the section, a material and a density (-127 to 127, solid above 0). For smooth ground, let the density run through 0 over two or three voxels (about 48 a voxel): the surface lies where it crosses 0. SetBlock, FillBox and FillColumn write full voxels."""
         ...
 
+class WorldItem:
+    """An item lying in the world (#235): a small server record, not an Entity. Players and scripts pick it up; it can time out, be locked to an owner and be saved with the world. A handle stays valid after the item is gone: Exists says false and the methods error."""
+    contents: Optional[list[dict[str, Any]]]
+    count: float
+    data: Optional[dict[str, Any]]
+    expires_in: Optional[float]
+    id: str
+    item: str
+    loadout: Optional[dict[str, Any]]
+    owner: Optional[str]
+    owner_team: bool
+    owner_until: Optional[float]
+    position: Vector3
+    yaw: float
+    def destroy(self) -> None:
+        """Removes the item (OnRemoved with 'script'). Does nothing if it is gone already."""
+        ...
+    def exists(self) -> bool:
+        """Whether the item is still in the world (picked up, expired, merged or destroyed items are not)."""
+        ...
+    def move_to(self, position: Vector3, /) -> None:
+        """Puts the item at a position, resting there (no toss, no merge)."""
+        ...
+    def set_count(self, count: float, /) -> None:
+        """Sets how many are in the stack, 1 to the item's MaxStack. 0 destroys the item (OnRemoved with 'script')."""
+        ...
+    def set_data(self, data: Optional[dict[str, Any]], /) -> None:
+        """Replaces the table carried with the stack (nil clears it). Booleans, numbers, strings and vectors, nested 2 deep, 1 KB encoded at most. A stack with different Data no longer merges with its neighbors."""
+        ...
+    def set_owner(self, player: Optional[(Player | string)] = ..., seconds: Optional[float] = ..., team: Optional[bool] = ..., /) -> None:
+        """Changes or clears the owner lock. player is a Player or a UserId; seconds is how long the lock lasts (-1 for good, 0 or left out: nothing is locked and the owner is only remembered); team true lets the owner's team take it too. Called with no player, it clears the owner. While locked, other players see the prompt as 'Locked' and cannot take it, auto pickup ignores them, and OnPickingUp is not called for them."""
+        ...
+    def take_stack(self, index: float, count: Optional[float] = ..., /) -> Optional[dict[str, Any]]:
+        """Takes from a bag: index is the stack's place in Contents (1 is the first), count how many of it (all of it when left out; more than it holds takes all). Returns what was taken as {Item, Count, Data} for your script to give the player, or nil when the bag has no such stack. An emptied stack leaves the bag, and an empty bag removes itself (OnRemoved with 'picked'). Errors for an item that is not a bag."""
+        ...
+
 class _AssetsService:
     """Spawn the place's own meshes at runtime (server only). Change any mesh's look through its Entity."""
     def spawn(self, assetId: str, position: Vector3, props: Optional[dict[str, Any]] = ..., /) -> Entity:
@@ -1074,13 +1110,13 @@ class _InventoryService:
     loaded: Signal
     local_changed: Signal
     opened: Signal
-    def add(self, target: Player | Entity, item: str, count: float, data: Optional[dict[str, Any]] = ..., loadout: Optional[dict[str, Any]] = ..., /) -> dict[str, Any]:
+    def add(self, target: Player | Entity | WorldItem, item: str, count: float, data: Optional[dict[str, Any]] = ..., loadout: Optional[dict[str, Any]] = ..., /) -> dict[str, Any]:
         """Puts items in: fills existing stacks first (those with equal Data), then empty slots. Returns {Result, Added}: Result is 'ok' when all of count went in, otherwise why not ('full', 'too_heavy', ...) and Added is how many did go in. Data is the script's own table (booleans, numbers, strings and vectors, nested 2 deep, up to 1 KB) and a stack only merges with entries whose Data is equal. Loadout is a weapon's upgrades ({attachments, stats, color}, up to 1 KB), kept apart from Data."""
         ...
-    def attach(self, entity: Entity, options: Optional[dict[str, Any]] = ..., /) -> None:
-        """Turns an entity into a storage box: an inventory that belongs to the entity. Slots (1 to 120, default 20), MaxWeight (kg; none by default), Name (up to 32 characters, shown on the screen), Owner (a Player: only they may open it). Save is a key (1 to 64 of A-Z, a-z, 0-9, _ and -): the box's contents are then saved in the place's world DataStore under the reserved key mantle.box.<key>, shared by every server of the place, so one key is one box everywhere. A place can have 256 saved boxes (they count toward the world scope's 1024 keys) and a server 512 attached ones. Attach again from Placing:OnPiecesLoaded with the same Save key and the contents come back. If the place already has 256 saved boxes the box works for the session but is not saved (logged), and Attach itself fails when the world's data is already known to be at the limit; a box whose saved contents were written by a newer game is never written over or deleted. The saved contents arrive a moment after Attach; until then the box returns 'not_loaded'. Every inventory call takes the box's Entity where it takes a Player."""
+    def attach(self, entity: Entity | WorldItem, options: Optional[dict[str, Any]] = ..., /) -> None:
+        """A WorldItem that is a bag (WorldItems:SpawnBag) already is a box: its stacks are the box's entries, a player who uses it opens the same screen, and the same calls and hooks work on it. Attach on a bag only sets how it looks and who may open it: Slots (up to 40, a bag starts with one per stack), MaxWeight, Name and Owner; it has no Save option, because the world save keeps a bag's stacks. A bag whose last stack is taken leaves the world. The rest of this is for an Entity. Turns an entity into a storage box: an inventory that belongs to the entity. Slots (1 to 120, default 20), MaxWeight (kg; none by default), Name (up to 32 characters, shown on the screen), Owner (a Player: only they may open it). Save is a key (1 to 64 of A-Z, a-z, 0-9, _ and -): the box's contents are then saved in the place's world DataStore under the reserved key mantle.box.<key>, shared by every server of the place, so one key is one box everywhere. A place can have 256 saved boxes (they count toward the world scope's 1024 keys) and a server 512 attached ones. Attach again from Placing:OnPiecesLoaded with the same Save key and the contents come back. If the place already has 256 saved boxes the box works for the session but is not saved (logged), and Attach itself fails when the world's data is already known to be at the limit; a box whose saved contents were written by a newer game is never written over or deleted. The saved contents arrive a moment after Attach; until then the box returns 'not_loaded'. Every inventory call takes the box's Entity where it takes a Player."""
         ...
-    def clear(self, target: Player | Entity, /) -> float:
+    def clear(self, target: Player | Entity | WorldItem, /) -> float:
         """Empties the inventory of every defined item and returns how many entries went. Saved items nobody defines any more stay."""
         ...
     def close(self) -> str:
@@ -1089,34 +1125,34 @@ class _InventoryService:
     def close_box(self, player: Player, /) -> None:
         """Closes the box the player has open, if any."""
         ...
-    def count(self, target: Player | Entity, item: str, /) -> float:
+    def count(self, target: Player | Entity | WorldItem, item: str, /) -> float:
         """How many of an item the inventory holds, in all its stacks (0 when it has none or is not started)."""
         ...
-    def detach(self, entity: Entity, /) -> list[dict[str, Any]]:
-        """Takes the box off the entity and hands its entries to the script, and deletes the box's saved key. Fails while a saved box's contents have not loaded yet."""
+    def detach(self, entity: Entity | WorldItem, /) -> list[dict[str, Any]]:
+        """Takes the box off the entity and hands its entries to the script, and deletes the box's saved key. Fails while a saved box's contents have not loaded yet. On a bag it hands the stacks over and removes the bag from the world."""
         ...
     def drop(self, player: Player, entryId: str, count: Optional[float] = ..., /) -> str:
-        """Drops an entry into the world. World items are not in this build yet, so it returns 'no_world_items'."""
+        """Drops an entry, or count of it, into the world as a world item (WorldItems:DropFromPlayer): 80 cm in front of the player, with the entry's Data, Loadout and uses left, owned by the player (no lock), lasting as long as the item's Lifetime says. An equipped weapon is put away first and its entry's loadout is what lies in the world. Returns 'ok' or why not: 'no_entry', 'not_enough', 'no_character' (no body to drop from), 'drop_failed' (the drop rate, or the place holds 2,000 world items none of which has a timer), 'not_on_foot' (a driver cannot put a weapon away), 'no_world_items'. This is the script's own call: OnDropping is asked only for a player's own drop (the screen's Drop button or key, the Drop-weapon key, RequestDrop)."""
         ...
     def equip(self, player: Player, entryId: str, /) -> dict[str, Any]:
         """Puts a weapon entry on the player's Backpack hotbar: the item's stored weapon is granted (as Backpack:Grant does) and its Tool id is recorded on the entry. Returns {Result, ToolId}: Result is 'ok' or why not ('not_weapon' for an item defined without Weapon, 'backpack_full' when the Backpack has no room, 'equipped' when it already is, 'no_character' with no character to give it to, 'no_entry', 'not_started', ...). The entry keeps its slot and its weight still counts; the entry's Loadout is put on the weapon, and a consumable arrives with the uses it has left. The player's own request (RequestEquip) runs OnMoving first (Action 'equip'); this call does not. The weapon stays in the inventory until it is unequipped: Remove, RemoveEntry and Clear take its Tool off the hotbar too (while the player is driving, the Tool is taken off as soon as they are on foot again). A thrown weapon that someone else picks up, is lost with its thrower or is used up by the throw takes its entry with it. A weapon a script gave with Backpack:Grant directly is not in the inventory."""
         ...
     def get_box(self) -> Optional[dict[str, Any]]:
-        """The box the local player has open: its Entity, Name, slots, MaxWeight (nil when there is no limit), weight (kg) and entries in slot order. A box's entry ids start with 'b' ('b12'), the player's own with 'e'. nil while no box is open. LocalChanged fires when the box changes too."""
+        """The box the local player has open: its Entity (or, for a bag lying in the world, its Bag as a WorldItem), Name, slots, MaxWeight (nil when there is no limit), weight (kg) and entries in slot order. A box's entry ids start with 'b' ('b12'), the player's own with 'e'. nil while no box is open. LocalChanged fires when the box changes too."""
         ...
-    def get_entries(self, target: Player | Entity, /) -> list[dict[str, Any]]:
+    def get_entries(self, target: Player | Entity | WorldItem, /) -> list[dict[str, Any]]:
         """The entries, in slot order: {Id, Item, Count, Slot, Data?, Loadout?, ToolId?, Uses?}. Id is a stable entry id ('e12'). ToolId is set while the entry is equipped on the Backpack hotbar, and Uses is a consumable's uses left once it has been used. Empty when the inventory is not started or not loaded."""
         ...
-    def get_entry(self, target: Player | Entity, entryId: str, /) -> Optional[dict[str, Any]]:
+    def get_entry(self, target: Player | Entity | WorldItem, entryId: str, /) -> Optional[dict[str, Any]]:
         """One entry, or nil when there is none with that id."""
         ...
     def get_local(self) -> Optional[dict[str, Any]]:
         """The local player's inventory: its slots, MaxWeight (nil when there is no limit), the weight now (kg), whether the saved inventory has arrived, Screen ('default' or 'script'), CanCombine (the place defines a hidden recipe, so there is something to find by combining; the default screen shows its Combine tab only then) and the entries in slot order. nil while no inventory is started for the local player. A place that draws its own screen reads everything it needs from here."""
         ...
-    def has(self, target: Player | Entity, item: str, count: float, /) -> bool:
+    def has(self, target: Player | Entity | WorldItem, item: str, count: float, /) -> bool:
         """Whether the inventory holds at least count of an item."""
         ...
-    def move(self, target: Player | Entity, entryId: str, slot: float, count: Optional[float] = ..., /) -> str:
+    def move(self, target: Player | Entity | WorldItem, entryId: str, slot: float, count: Optional[float] = ..., /) -> str:
         """Moves an entry, or count of it, to a slot (from 1). An empty slot takes it (a smaller count splits the stack). A stack of the same item and Data takes what fits, and an entry that does not merge swaps places with it (a split cannot: 'slot_taken')."""
         ...
     def on_dropping(self, handler: Callable[..., Any], /) -> Connection:
@@ -1128,20 +1164,20 @@ class _InventoryService:
     def open(self) -> str:
         """Opens the built-in inventory screen (Screen = 'default') for the local player: gameplay input stops and the cursor shows. Returns 'ok', or why not: 'not_started' when no inventory is started for them, 'script_screen' when their Screen is 'script' (a place that draws its own screen shows that instead), 'busy' (the settings drawer, the chat box, the avatar editor or the front end has the player). The inventory key, I or Back + X on a gamepad, does the same."""
         ...
-    def open_box(self, player: Player, entity: Entity, /) -> str:
-        """Opens a box for a player, beside their own grid on the default screen, or fires Inventory.BoxOpened on their client when their Screen is 'script'. Returns 'ok' or why not: 'not_started', 'not_loaded', 'no_box', 'not_owner' or 'too_far' (the player must be within 300 cm). The box closes by itself when the player walks past 400 cm. Only a player who has a box open is sent its contents. One box is open at a time."""
+    def open_box(self, player: Player, entity: Entity | WorldItem, /) -> str:
+        """Opens a box (an Entity's, or a bag's) for a player, beside their own grid on the default screen, or fires Inventory.BoxOpened on their client when their Screen is 'script'. Returns 'ok' or why not: 'not_started', 'not_loaded', 'no_box', 'not_owner' or 'too_far' (the player must be within 300 cm). The box closes by itself when the player walks past 400 cm. Only a player who has a box open is sent its contents. One box is open at a time."""
         ...
-    def remove(self, target: Player | Entity, item: str, count: float, /) -> str:
+    def remove(self, target: Player | Entity | WorldItem, item: str, count: float, /) -> str:
         """Takes count of an item out, all or nothing ('not_enough' and nothing changes when the inventory holds fewer). Smaller stacks go first."""
         ...
-    def remove_entry(self, target: Player | Entity, entryId: str, count: Optional[float] = ..., /) -> str:
+    def remove_entry(self, target: Player | Entity | WorldItem, entryId: str, count: Optional[float] = ..., /) -> str:
         """Takes count out of one entry, or the whole entry when count is left out."""
         ...
     def request_close_box(self) -> str:
         """Asks the server to close the box the local player has open. Returns 'sent', or 'no_box' when none is open."""
         ...
     def request_drop(self, entryId: str, count: Optional[float] = ..., /) -> str:
-        """Asks the server to drop an entry into the world. World items are not in this build yet."""
+        """Asks the server to drop an entry, or count of it, into the world (the default screen's Drop button and key do this). Returns 'sent' or why nothing was sent; the server decides (OnDropping may refuse it, with its reason shown as a toast) and LocalChanged follows when it has."""
         ...
     def request_equip(self, entryId: str, /) -> str:
         """Asks the server to put a weapon entry on the Backpack hotbar. Returns 'sent' or why nothing was sent; the server decides (OnMoving may refuse it, Action 'equip', and a full Backpack refuses it with 'Backpack full') and LocalChanged follows when it has."""
@@ -1158,10 +1194,10 @@ class _InventoryService:
     def request_unequip(self, entryId: str, /) -> str:
         """Asks the server to take a weapon entry off the Backpack hotbar. Returns 'sent' or why nothing was sent; the server decides (OnMoving may refuse it, Action 'unequip') and LocalChanged follows when it has."""
         ...
-    def set_data(self, target: Player | Entity, entryId: str, data: Optional[dict[str, Any]], /) -> str:
+    def set_data(self, target: Player | Entity | WorldItem, entryId: str, data: Optional[dict[str, Any]], /) -> str:
         """Replaces an entry's Data (nil clears it). The whole stack takes it."""
         ...
-    def set_loadout(self, target: Player | Entity, entryId: str, loadout: Optional[dict[str, Any]], /) -> str:
+    def set_loadout(self, target: Player | Entity | WorldItem, entryId: str, loadout: Optional[dict[str, Any]], /) -> str:
         """Replaces the weapon upgrades stored on an entry that is not equipped (nil clears them). This only stores them; the weapon upgrades (Backpack:GetLoadout and ApplyLoadout) do the checks."""
         ...
     def start(self, player: Player, options: Optional[dict[str, Any]] = ..., /) -> None:
@@ -1170,7 +1206,7 @@ class _InventoryService:
     def stop(self, player: Player, /) -> None:
         """Closes the player's inventory screen and stops changes. The items stay saved and come back on the next Start."""
         ...
-    def transfer(self, from_: Player | Entity, to: Player | Entity, entryId: str, count: Optional[float] = ..., /) -> str:
+    def transfer(self, from_: Player | Entity | WorldItem, to: Player | Entity | WorldItem, entryId: str, count: Optional[float] = ..., /) -> str:
         """Moves an entry, or count of it, from one inventory to another (a player's or a box's Entity), all or nothing ('full' or 'too_heavy' when the other cannot take it). Both sides are saved at once. Range and Owner are not checked here: this is the script's own call. A move between a player and a box that is saved is settled by the box's save: Transfer returns 'ok' once it has started, the items reach their new place when the backend has the box, and if the save is refused (another server changed the box, or the place is at its saved-data limit) the move is undone and Changed fires again. Until then the box returns 'box_busy' for any change. A move between two saved boxes works the same way (the first box is written without the items, then the second with them; if the second is refused the items go back into the first). Because 'ok' can still be undone, a script must not pay out, unlock or count anything on the 'ok': do it from Inventory.Changed of the box, which fires once the move has landed (a player's own side of a move into a box shows at once, and is given back if the move is undone; a shop that charges on 'ok' can be left having charged for a move that was undone). A box past the place's saved-box limit or without Save has no write to wait for: its moves are final at once."""
         ...
     def unequip(self, player: Player, entryId: str, /) -> str:
@@ -1821,6 +1857,56 @@ class _WorldService:
         ...
 
 World: _WorldService
+
+class _WorldItemsService:
+    """Items that lie in the world (#235): dropped things, pickups, loot piles. A world item is a small server record, not an Entity, so thousands are affordable (a place holds 2,000). Nothing is on unless a script calls this service."""
+    limit: float
+    selected: Signal
+    unselected: Signal
+    def define(self, item: str, options: dict[str, Any], /) -> None:
+        """Sets how an item lies in the world and is picked up. item is an id of lowercase letters, digits and _ (1 to 48 characters; an id may not start with _, which is reserved). Model is a StaticMesh of the place it lies as; without one it shows its Icon on a card. Pickup is 'Key' (default, a tap of the Interact key), 'Hold' (hold it for HoldSeconds, 0.5 by default, 0.1 to 5) or 'Auto' (walk over it). Lifetime is how many seconds a player's drop of it lasts (600 by default, 0 = never). Name, Icon and MaxStack (1 by default, up to 9,999) are the item's name, picture and stack size; an item the place also defines with Items:Define takes them from there (what is given here for them is ignored) and this call gives the world-side settings only. An item that only Items:Define defines needs no call here at all: it lies as its Icon on a card until this gives it a Model. An item must be defined here or by Items:Define (or be a stored weapon from Storage:Get) before Spawn uses it. Defining an item again replaces its settings for items dropped afterwards."""
+        ...
+    def drop_from_player(self, player: Player, item: str, count: float, options: Optional[dict[str, Any]] = ..., /) -> WorldItem:
+        """Drops count of an item as the player: 80 cm in front of them at chest height, tossed 300 cm/s forward and 150 cm/s up, lasting the item's Lifetime (600 s unless Define says otherwise). Owner is set to the player but locks nothing unless options give OwnerSeconds. Options are Spawn's. At most 10 drops a second per player; past that it errors. Inventory:Drop, the default inventory screen's Drop button and key, and the Drop-weapon key on an equipped inventory weapon call this, carrying the entry's Data, Loadout and uses left."""
+        ...
+    def get(self, id: str, /) -> Optional[WorldItem]:
+        """The item with that id (WorldItem.Id), or nil. A client only knows the items near it."""
+        ...
+    def get_count(self) -> float:
+        """How many world items the place holds. A client counts the ones near it."""
+        ...
+    def get_from_spawn(self, spawn: Entity, /) -> Optional[WorldItem]:
+        """The world item an Item Spawn entity of the place holds right now, or nil while it is empty (waiting to refill, paused, or its item not defined yet). The Item Spawn is the place entity the level editor puts down; items it makes never time out and are not saved with the world."""
+        ...
+    def get_in_radius(self, center: Vector3, radius: float, item: Optional[str] = ..., /) -> list[WorldItem]:
+        """The items within radius cm of center (at most 5,000 cm, 50 m; larger is cut to it), nearest first, 256 at most; item keeps only that item. A client sees only the items near it (within 150 m of the player), a server sees them all."""
+        ...
+    def on_bag_opened(self, handler: Callable[..., Any], /) -> Connection:
+        """A player used a bag (the Interact key on it). Show your own menu with Contents and give what they choose with Bag:TakeStack(index, count). Not called for a player an owner lock keeps out."""
+        ...
+    def on_loaded(self, handler: Callable[..., Any], /) -> Connection:
+        """The saved world items are back (a place whose settings.worldItems.persistence is 'server' saves them). Raised once, before players join, as Placing:OnPiecesLoaded is; Count is how many came back."""
+        ...
+    def on_picked_up(self, handler: Callable[..., Any], /) -> Connection:
+        """A pickup landed. Item is the item id, Count how many were taken, Data and Loadout what the stack carried."""
+        ...
+    def on_picking_up(self, handler: Callable[..., Any], /) -> Connection:
+        """Called on the spot before a pickup lands (the handler may not wait): a player is taking Count of Item. Return a number to take only that many (the rest stays), return false and a reason to refuse (the prompt shows the reason; Luau: return false, 'Too heavy'; any language: return the reason text on its own), or return nothing to accept. Accepting runs the default pickup: a stored weapon (Storage:Get) is given to the Backpack with its usual rules; for any other item, a player who has an inventory that defines the item (Inventory:Start, Items:Define) gets it through Inventory:Add, with its Data, Loadout and uses left: what fits goes in, the rest stays on the ground with its count lowered, and the player sees 'Inventory full'. Otherwise (no inventory) a pickup a handler accepted removes what was taken from the world and OnPickedUp follows: your script gives the player the item; with no handler a non-weapon item is refused with 'Nothing can carry this' and a warning in the log. OnPickedUp follows every pickup that landed. Not called for a player an owner lock keeps out."""
+        ...
+    def on_removed(self, handler: Callable[..., Any], /) -> Connection:
+        """An item left the world. Reason is 'picked', 'expired', 'cap', 'merged' or 'script'. The handle still answers in the handler."""
+        ...
+    def set_spawn_enabled(self, spawn: Entity, enabled: bool, /) -> None:
+        """Pauses or resumes an Item Spawn entity. A paused spawn removes its item (OnRemoved with 'script') and does not refill; resuming it refills at once. Errors for an entity that is not an Item Spawn."""
+        ...
+    def spawn(self, item: str, count: float, position: Vector3, options: Optional[dict[str, Any]] = ..., /) -> WorldItem:
+        """Puts count of an item in the world at position. item must be defined by WorldItems:Define or be a stored weapon (Storage:Get; always one). Options: Data (a table carried with the stack) and Loadout (a weapon's), Yaw, Lifetime (seconds it lasts; a script's spawn never times out unless you give one), Owner with OwnerSeconds (0 = no lock, the default; -1 = for good) and OwnerTeam, Merge (true by default; false for a display shelf), Save (true by default; false keeps the item out of the world save: use it for items your script spawns again at every start, or they pile up each restart) and Toss, a velocity in cm/s that makes it fly an arc and land. A resting item merges into the nearest like one within 150 cm. When the place already holds 2,000 the oldest item that has a timer is removed (OnRemoved with 'cap'); if none has, Spawn errors. The result is the item, or the stack it merged into."""
+        ...
+    def spawn_bag(self, position: Vector3, contents: list[dict[str, Any]], options: Optional[dict[str, Any]] = ..., /) -> WorldItem:
+        """Puts a bag (a loot crate, a death bag) in the world: one world item that holds several stacks. contents is a list of {Item, Count, Data}, at most 40 stacks (the bag has that many slots); every Item must be defined by WorldItems:Define (or be a stored weapon) and Count is 1 to its MaxStack. A player who uses the bag gets the inventory's container screen for it when they have an inventory (Inventory:Start; the bag is a box whose slots are its stacks, up to 40, with the same hooks and calls: Inventory:Transfer, OnMoving, GetEntries and Attach take the bag where they take an Entity), and OnBagOpened is raised too for a script that connects it (with no inventory it is the only way to open a bag): your script shows its menu and takes stacks with TakeStack. The bag lasts 600 seconds unless Lifetime says otherwise (0 = never) and removes itself when empty. Model is a StaticMesh of the place (the bag shows a plain card without one) and Name what its prompt calls it ('Bag'). Owner, OwnerTeam and OwnerSeconds lock it as for Spawn, and Save = false keeps it out of the world save (as for Spawn). A bag never merges. WorldItem.Item of a bag is '_bag'."""
+        ...
+
+WorldItems: _WorldItemsService
 
 class _Task:
     def wait(self, seconds: float = 0) -> WaitToken: ...

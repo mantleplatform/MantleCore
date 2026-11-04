@@ -8,6 +8,7 @@
 #include "MantleEffect.h"
 #include "MantleEnvironment.h"
 #include "MantleHoverChannel.h"
+#include "MantleItemSpawnPoint.h"
 #include "MantlePhysicsProp.h"
 #include "MantlePlaceAssets.h"
 #include "MantlePlaceMaterial.h"
@@ -1258,6 +1259,22 @@ namespace
 	}
 
 	/**
+	 * An ItemSpawn (#235) is data too: a hidden, unreplicated actor holding which item, how many, how soon it comes back, an optional
+	 * model and whether it is on, at the entity's transform. The item itself is MantleGameplay's world item.
+	 */
+	AActor* BuildItemSpawn(UWorld* World, const FMantleEntity& Entity, const FMantleItemSpawnProps& Props)
+	{
+		AMantleItemSpawnPoint* Actor = SpawnBare<AMantleItemSpawnPoint>(World, Entity.Name);
+		if (!Actor)
+		{
+			return nullptr;
+		}
+		MakeMovable(Actor);
+		Actor->ApplyProps(Props);
+		return Actor;
+	}
+
+	/**
 	 * A ScriptPoint (#838) is data too: a hidden, unreplicated actor at the entity's transform holding which stored
 	 * script package it anchors and its parameters. The package's scripts read it as an entity (Script.Points).
 	 */
@@ -1684,6 +1701,13 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 			if (const FMantleWeaponSpawnProps* Props = Entity.Props.TryGet<FMantleWeaponSpawnProps>())
 			{
 				Actor = BuildWeaponSpawn(World, Entity, *Props);
+			}
+			break;
+
+		case EMantleEntityType::ItemSpawn:
+			if (const FMantleItemSpawnProps* Props = Entity.Props.TryGet<FMantleItemSpawnProps>())
+			{
+				Actor = BuildItemSpawn(World, Entity, *Props);
 			}
 			break;
 

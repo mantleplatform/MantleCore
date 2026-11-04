@@ -41,9 +41,10 @@ namespace
 		TEXT("ScriptPoint"),
 		TEXT("Text"),
 		TEXT("WaterBody"),
-		TEXT("VoxelWorld")
+		TEXT("VoxelWorld"),
+		TEXT("ItemSpawn")
 	};
-	static_assert(UE_ARRAY_COUNT(GEntityTypeNames) == static_cast<SIZE_T>(EMantleEntityType::VoxelWorld) + 1, "one name per EMantleEntityType");
+	static_assert(UE_ARRAY_COUNT(GEntityTypeNames) == static_cast<SIZE_T>(EMantleEntityType::ItemSpawn) + 1, "one name per EMantleEntityType");
 
 	// In EMantleWaterBodyType and EMantleWaterSplinePointType order; a WaterBody's type and its spline points' interp (#997).
 	const TCHAR* const GWaterBodyTypeNames[] = {

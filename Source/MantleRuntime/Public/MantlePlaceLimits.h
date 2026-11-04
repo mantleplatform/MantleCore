@@ -238,6 +238,15 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** WeaponSpawn entities in one place (#789). Cross-entity: the schema states it in prose. */
 	static constexpr int32 MaxWeaponSpawnsPerPlace = 32;
 
+	/** ItemSpawn (#235): respawnSeconds from this to MaxItemSpawnRespawnSeconds, count from 1 to MaxItemSpawnCount (the most any stack holds). */
+	static constexpr double MinItemSpawnRespawnSeconds = 5.0;
+	static constexpr double MaxItemSpawnRespawnSeconds = 86400.0;
+	static constexpr int32 MaxItemSpawnCount = 9999;
+
+	/** An ItemSpawn's item: lowercase letters, digits and '_' (not first: that is reserved), 1 to 48 characters (the item plan's rule, a stored weapon's library id too). IsWorldItemId implements it. */
+	static constexpr int32 MaxWorldItemIdLength = 48;
+	static bool IsWorldItemId(const FString& Id);
+
 	/** Seats in one place (GhzGarage/MantleCore#142). Cross-entity: the schema states it in prose. */
 	static constexpr int32 MaxSeatsPerPlace = 256;
 
