@@ -642,8 +642,9 @@ class _BackpackService:
     """Give players weapons, take them away, and equip them (server only)."""
     item_used: Signal
     loadout_changed: Signal
+    local_changed: Signal
     def apply_loadout(self, player: Player, toolId: str, loadout: dict[str, Any], /) -> dict[str, Any]:
-        """Put a whole loadout on the weapon, all or nothing: the slots it does not name end up empty, the stats it does not name go back to 1. Returns { ok = true }, or { ok = false, error = ... } as SetAttachment does ('not an option' when the loadout names an option the weapon no longer has, for the script to decide what to do). A loadout that is not the right shape errors."""
+        """Put a whole loadout on the weapon, all or nothing: the slots it does not name end up empty, the stats it does not name go back to 1, and a loadout with no round key leaves the weapon's round as it is (1.81: ClearRound takes it off). Returns { ok = true }, or { ok = false, error = ... } as SetAttachment does ('not an option' when the loadout names an option the weapon no longer has, for the script to decide what to do). A loadout that is not the right shape errors."""
         ...
     def clear(self, player: Player, /) -> float:
         """Empty the player's Backpack, leaving only fists. Returns how many Tools were removed."""
@@ -667,7 +668,10 @@ class _BackpackService:
         """How many Tools the player's Backpack holds (fists not counted): the place's settings.maxCarriedTools (32 unless the place sets it) until a script calls SetCapacity. Answers while the player is respawning too."""
         ...
     def get_loadout(self, player: Player, toolId: str, /) -> Optional[dict[str, Any]]:
-        """Everything done to the weapon as one plain table: { attachments = { sight = 'Holo' }, stats = { damage = 1.2 }, color = '#3A5F2B' } (only what differs from a new weapon's stats; color only if the weapon was painted). Save it with DataStore or inside an inventory entry and hand it back to ApplyLoadout or Grant. Ammo is not in it. nil when the player does not have that weapon."""
+        """Everything done to the weapon as one plain table: { attachments = { sight = 'Holo' }, stats = { damage = 1.2 }, color = '#3A5F2B' } (only what differs from a new weapon's stats; color only if the weapon was painted; round, 1.81, only while a round is loaded: the table Backpack:SetRound took). Save it with DataStore or inside an inventory entry and hand it back to ApplyLoadout or Grant. Ammo is not in it. nil when the player does not have that weapon."""
+        ...
+    def get_local(self) -> Optional[dict[str, Any]]:
+        """The local player's Backpack as the hotbar shows it: Slots lists every Tool in a numbered slot, in slot order (Fists, which has no slot, is never listed). Slot counts from 0, as Backpack:EquipSlot does (hotbar key 1 is slot 0). Name is the inventory item's name for a Tool an inventory entry put there, else the Tool's own; Icon is that item's Icon (an ast_ image id) and is absent for a Tool without one; Item and EntryId are set for an inventory entry's Tool; Uses is a consumable's uses left. Equipped is the slot in the hands (nil with bare hands, or a Tool that holds no slot). nil while the local player has no character. Read-only: the keys and buttons for the hotbar keep working after UI:SetBuiltInHUD(false, 'hotbar')."""
         ...
     def get_round(self, player: Player, toolId: str, /) -> Optional[dict[str, Any]]:
         """The round loaded on one of the player's guns or bows: Name, DamageMultiplier, Speed and Color (absent when the round has none). nil when none is loaded, the weapon takes no rounds, or the player does not have that Tool. (Player:GetRound reads the weapon in the hands.)"""
@@ -689,6 +693,12 @@ class _BackpackService:
         ...
     def remove(self, player: Player, toolId: str, /) -> bool:
         """Take the Tool with this id out of the player's Backpack (unequipping it first). Returns false when the player does not have it. Fists can never be removed."""
+        ...
+    def request_equip_slot(self, slot: float, /) -> str:
+        """Asks the server to put the Tool in this Backpack slot (from 0) in the local player's hands, as pressing its hotbar key does. Returns 'sent' or why nothing was sent; the server decides, and LocalChanged follows when it has."""
+        ...
+    def request_unequip(self) -> str:
+        """Asks the server to put away whatever the local player holds and bring out bare hands (Fists). Returns 'sent' or why nothing was sent."""
         ...
     def set_attachment(self, player: Player, toolId: str, slot: str, option: Optional[str] = ..., /) -> dict[str, Any]:
         """Fit an option of the weapon in its slot, or empty the slot with nil. Every player sees the change; a weapon in the hands dips while it happens, and the new attachments last as long as the Tool does. Returns { ok = true }, or { ok = false, error = ... } with error 'no tool', 'not a weapon', 'unknown slot', 'not an option' (not an option of this weapon for this slot) or 'busy' (reloading or already changing). A smaller magazine moves the extra rounds to the reserve; a bigger one does not fill itself."""
@@ -797,6 +807,53 @@ class _ConstraintsService:
         ...
 
 Constraints: _ConstraintsService
+
+class _CraftingService:
+    """Recipes and a per-player craft queue. A server script defines recipes once, at startup; players craft them from the default screen or a script's own. It works on a player's Inventory: Craft takes a job's inputs when it is queued, then the server runs the job for its Seconds (through death, with the screen closed) and puts the outputs in the inventory. Results are 'ok' or why not: 'not_started', 'not_loaded', 'unknown_recipe', 'not_known', 'not_enough', 'unknown_item', 'queue_full', 'station', 'no_recipe', 'no_entry', 'too_large', or the text a hook gave."""
+    crafted: Signal
+    discovered: Signal
+    queue_changed: Signal
+    def cancel(self, player: Player, jobIndex: Optional[float] = ..., /) -> str:
+        """Cancels the job at jobIndex in the player's queue (from 1) and gives its inputs back, or cancels every job when jobIndex is left out. Returns 'ok' or 'no_job'."""
+        ...
+    def combine(self, player: Player, entryIds: list[str], /) -> str:
+        """Tries to find a hidden recipe by combining 2 to 8 of the player's entries: the recipe whose input items are exactly those items (Keep and counts ignored), and which the player holds every count of. It unlocks the recipe, fires Crafting.Discovered and shows the player 'New recipe: <name>'; it does not craft. Returns 'ok'; 'no_recipe' when nothing matches (the player sees 'Nothing happens'); 'already_known'; or 'no_entry'."""
+        ...
+    def craft(self, player: Player, id: str, times: Optional[float] = ..., /) -> str:
+        """Queues times (1 to 99, default 1) jobs of a recipe for the player. Each job is one place in the player's queue (at most 10) and takes its inputs now: all of them, or nothing is queued and the result is 'not_enough'. The queue runs one job after another on the server's clock, through death and with the screen closed, and stops when the player leaves (the inputs of unfinished jobs go back before the leave save). A job whose outputs do not fit waits at 100% and finishes once room is made. Returns 'ok' or why not ('unknown_recipe', 'not_known', 'queue_full', 'station', ...). OnCrafting is not called for the script's own Craft."""
+        ...
+    def define(self, recipe: dict[str, Any], /) -> None:
+        """Defines a recipe, or replaces the one with that Id. Id is 1 to 48 of a-z, 0-9 and _. Inputs is 1 to 8 of {Item, Count, Keep?}: Keep = true needs the item but does not use it up (a knife, a hammer). Outputs is 1 to 4 of {Item, Count, Data?, Loadout?}. Seconds (0 to 600, default 0: instant) is how long a job runs. Hidden recipes are unknown until a player finds them by combining their items (Crafting:Combine) or a script unlocks them; a recipe without Hidden is known to everyone. Station is a tag: the player must be within 300 cm of an entity with that tag when a job is queued and when it finishes. Category (up to 24 characters) groups recipes on the screen; Name (up to 48) defaults to the first output item's name. A place can define 1024 recipes."""
+        ...
+    def get_known(self) -> list[dict[str, Any]]:
+        """The recipes the local player knows, in the order they were defined: {Id, Name, Category?, Station?, Seconds, Inputs, Outputs}. A hidden recipe the player has not found is not in the list (the server never sends it). Empty while no inventory is started."""
+        ...
+    def get_queue(self) -> dict[str, Any]:
+        """The local player's craft queue, first job first. Id names a job for as long as it is queued (RequestCancel takes it). Now, StartTime and EndTime are on the same clock (seconds), so a progress bar is (Now - StartTime) / Seconds; StartTime and EndTime exist only for a job that has started. A job whose time is up but whose outputs cannot be delivered has Waiting = true and WaitReason 'full', 'too_large' or 'station'."""
+        ...
+    def is_known(self, player: Player, id: str, /) -> bool:
+        """Whether the player knows the recipe: it is not Hidden, or they found or were given it. false for a recipe nobody defined and for a player whose inventory is not started."""
+        ...
+    def lock(self, player: Player, id: str, /) -> str:
+        """Makes a hidden recipe unknown to the player again (a recipe without Hidden stays known to everyone). Returns 'ok' or 'unknown_recipe'."""
+        ...
+    def on_crafting(self, handler: Callable[..., Any], /) -> Connection:
+        """Called on the spot before a player's own craft request is queued (the handler may not wait). Return false to refuse it, and as a second value the reason the player sees (Luau: return false, 'Not yet'; any language: return the reason text on its own). A handler that errors refuses it too ('the place's script failed'). Raised for the player's own requests, not for the script's own Craft calls."""
+        ...
+    def request_cancel(self, jobId: Optional[float] = ..., /) -> str:
+        """Asks the server to cancel the job with this Id (from GetQueue: positions shift as jobs finish, an Id does not), or every job when it is left out. Returns 'sent' or why nothing was sent; a job that has finished by the time the server looks is 'no_job' and nothing else is cancelled."""
+        ...
+    def request_combine(self, entryIds: list[str], /) -> str:
+        """Asks the server to combine 2 to 8 of the local player's entries (see Combine). Returns 'sent' or why nothing was sent. At most 2 a second."""
+        ...
+    def request_craft(self, id: str, times: Optional[float] = ..., /) -> str:
+        """Asks the server to queue times (1 to 99, default 1) jobs of a recipe the local player knows. Returns 'sent' or why nothing was sent; the server decides (OnCrafting may refuse) and QueueChanged follows."""
+        ...
+    def unlock(self, player: Player, id: str, /) -> str:
+        """Makes a hidden recipe known to the player (saved with their inventory). Returns 'ok' or 'unknown_recipe'."""
+        ...
+
+Crafting: _CraftingService
 
 class _CrowdsService:
     """Control the ambient crowds a place's CrowdSpawners walk: how many, on or off, moving or frozen (server only). Hear where their people go (client only)."""
@@ -1006,6 +1063,135 @@ class _InteractionService:
         ...
 
 Interaction: _InteractionService
+
+class _InventoryService:
+    """Inventories: a player's slots of stacked items, held, checked and saved by the server, with a ready-made screen or none (Screen = 'script', for a place that draws its own). Nothing is on unless a script calls Start. Results are 'ok' or why not: 'not_started', 'not_loaded', 'unknown_item', 'full', 'too_heavy', 'not_enough', 'no_entry', 'bad_slot', 'slot_taken', 'too_large', 'no_box', 'box_busy', 'save_failed', or the text a hook gave. Slots count from 1. Server calls change state; client calls only read the local player's copy or send a request the server checks."""
+    box_closed: Signal
+    box_opened: Signal
+    box_removed: Signal
+    changed: Signal
+    closed: Signal
+    loaded: Signal
+    local_changed: Signal
+    opened: Signal
+    def add(self, target: Player | Entity, item: str, count: float, data: Optional[dict[str, Any]] = ..., loadout: Optional[dict[str, Any]] = ..., /) -> dict[str, Any]:
+        """Puts items in: fills existing stacks first (those with equal Data), then empty slots. Returns {Result, Added}: Result is 'ok' when all of count went in, otherwise why not ('full', 'too_heavy', ...) and Added is how many did go in. Data is the script's own table (booleans, numbers, strings and vectors, nested 2 deep, up to 1 KB) and a stack only merges with entries whose Data is equal. Loadout is a weapon's upgrades ({attachments, stats, color}, up to 1 KB), kept apart from Data."""
+        ...
+    def attach(self, entity: Entity, options: Optional[dict[str, Any]] = ..., /) -> None:
+        """Turns an entity into a storage box: an inventory that belongs to the entity. Slots (1 to 120, default 20), MaxWeight (kg; none by default), Name (up to 32 characters, shown on the screen), Owner (a Player: only they may open it). Save is a key (1 to 64 of A-Z, a-z, 0-9, _ and -): the box's contents are then saved in the place's world DataStore under the reserved key mantle.box.<key>, shared by every server of the place, so one key is one box everywhere. A place can have 256 saved boxes (they count toward the world scope's 1024 keys) and a server 512 attached ones. Attach again from Placing:OnPiecesLoaded with the same Save key and the contents come back. If the place already has 256 saved boxes the box works for the session but is not saved (logged), and Attach itself fails when the world's data is already known to be at the limit; a box whose saved contents were written by a newer game is never written over or deleted. The saved contents arrive a moment after Attach; until then the box returns 'not_loaded'. Every inventory call takes the box's Entity where it takes a Player."""
+        ...
+    def clear(self, target: Player | Entity, /) -> float:
+        """Empties the inventory of every defined item and returns how many entries went. Saved items nobody defines any more stay."""
+        ...
+    def close(self) -> str:
+        """Closes the built-in inventory screen. Returns 'ok', or 'not_started' when it was not open."""
+        ...
+    def close_box(self, player: Player, /) -> None:
+        """Closes the box the player has open, if any."""
+        ...
+    def count(self, target: Player | Entity, item: str, /) -> float:
+        """How many of an item the inventory holds, in all its stacks (0 when it has none or is not started)."""
+        ...
+    def detach(self, entity: Entity, /) -> list[dict[str, Any]]:
+        """Takes the box off the entity and hands its entries to the script, and deletes the box's saved key. Fails while a saved box's contents have not loaded yet."""
+        ...
+    def drop(self, player: Player, entryId: str, count: Optional[float] = ..., /) -> str:
+        """Drops an entry into the world. World items are not in this build yet, so it returns 'no_world_items'."""
+        ...
+    def equip(self, player: Player, entryId: str, /) -> dict[str, Any]:
+        """Puts a weapon entry on the player's Backpack hotbar: the item's stored weapon is granted (as Backpack:Grant does) and its Tool id is recorded on the entry. Returns {Result, ToolId}: Result is 'ok' or why not ('not_weapon' for an item defined without Weapon, 'backpack_full' when the Backpack has no room, 'equipped' when it already is, 'no_character' with no character to give it to, 'no_entry', 'not_started', ...). The entry keeps its slot and its weight still counts; the entry's Loadout is put on the weapon, and a consumable arrives with the uses it has left. The player's own request (RequestEquip) runs OnMoving first (Action 'equip'); this call does not. The weapon stays in the inventory until it is unequipped: Remove, RemoveEntry and Clear take its Tool off the hotbar too (while the player is driving, the Tool is taken off as soon as they are on foot again). A thrown weapon that someone else picks up, is lost with its thrower or is used up by the throw takes its entry with it. A weapon a script gave with Backpack:Grant directly is not in the inventory."""
+        ...
+    def get_box(self) -> Optional[dict[str, Any]]:
+        """The box the local player has open: its Entity, Name, slots, MaxWeight (nil when there is no limit), weight (kg) and entries in slot order. A box's entry ids start with 'b' ('b12'), the player's own with 'e'. nil while no box is open. LocalChanged fires when the box changes too."""
+        ...
+    def get_entries(self, target: Player | Entity, /) -> list[dict[str, Any]]:
+        """The entries, in slot order: {Id, Item, Count, Slot, Data?, Loadout?, ToolId?, Uses?}. Id is a stable entry id ('e12'). ToolId is set while the entry is equipped on the Backpack hotbar, and Uses is a consumable's uses left once it has been used. Empty when the inventory is not started or not loaded."""
+        ...
+    def get_entry(self, target: Player | Entity, entryId: str, /) -> Optional[dict[str, Any]]:
+        """One entry, or nil when there is none with that id."""
+        ...
+    def get_local(self) -> Optional[dict[str, Any]]:
+        """The local player's inventory: its slots, MaxWeight (nil when there is no limit), the weight now (kg), whether the saved inventory has arrived, Screen ('default' or 'script'), CanCombine (the place defines a hidden recipe, so there is something to find by combining; the default screen shows its Combine tab only then) and the entries in slot order. nil while no inventory is started for the local player. A place that draws its own screen reads everything it needs from here."""
+        ...
+    def has(self, target: Player | Entity, item: str, count: float, /) -> bool:
+        """Whether the inventory holds at least count of an item."""
+        ...
+    def move(self, target: Player | Entity, entryId: str, slot: float, count: Optional[float] = ..., /) -> str:
+        """Moves an entry, or count of it, to a slot (from 1). An empty slot takes it (a smaller count splits the stack). A stack of the same item and Data takes what fits, and an entry that does not merge swaps places with it (a split cannot: 'slot_taken')."""
+        ...
+    def on_dropping(self, handler: Callable[..., Any], /) -> Connection:
+        """Called on the spot before a player drops an entry into the world. Return false (and a reason) to refuse it; a handler that errors refuses it too. Drops arrive with world items."""
+        ...
+    def on_moving(self, handler: Callable[..., Any], /) -> Connection:
+        """Called on the spot before a player's own move or split goes through (the handler may not wait). Return false to refuse it, and as a second value the reason the player sees (Luau: return false, 'Locked'; any language: return the reason text on its own). A handler that errors refuses it too ('the place's script failed'). Action is 'move', 'split' or 'transfer' (between the player and a box: Box is the box's Entity, ToBox says which way). Raised for the player's own requests, not for the script's own Move and Transfer calls."""
+        ...
+    def open(self) -> str:
+        """Opens the built-in inventory screen (Screen = 'default') for the local player: gameplay input stops and the cursor shows. Returns 'ok', or why not: 'not_started' when no inventory is started for them, 'script_screen' when their Screen is 'script' (a place that draws its own screen shows that instead), 'busy' (the settings drawer, the chat box, the avatar editor or the front end has the player). The inventory key, I or Back + X on a gamepad, does the same."""
+        ...
+    def open_box(self, player: Player, entity: Entity, /) -> str:
+        """Opens a box for a player, beside their own grid on the default screen, or fires Inventory.BoxOpened on their client when their Screen is 'script'. Returns 'ok' or why not: 'not_started', 'not_loaded', 'no_box', 'not_owner' or 'too_far' (the player must be within 300 cm). The box closes by itself when the player walks past 400 cm. Only a player who has a box open is sent its contents. One box is open at a time."""
+        ...
+    def remove(self, target: Player | Entity, item: str, count: float, /) -> str:
+        """Takes count of an item out, all or nothing ('not_enough' and nothing changes when the inventory holds fewer). Smaller stacks go first."""
+        ...
+    def remove_entry(self, target: Player | Entity, entryId: str, count: Optional[float] = ..., /) -> str:
+        """Takes count out of one entry, or the whole entry when count is left out."""
+        ...
+    def request_close_box(self) -> str:
+        """Asks the server to close the box the local player has open. Returns 'sent', or 'no_box' when none is open."""
+        ...
+    def request_drop(self, entryId: str, count: Optional[float] = ..., /) -> str:
+        """Asks the server to drop an entry into the world. World items are not in this build yet."""
+        ...
+    def request_equip(self, entryId: str, /) -> str:
+        """Asks the server to put a weapon entry on the Backpack hotbar. Returns 'sent' or why nothing was sent; the server decides (OnMoving may refuse it, Action 'equip', and a full Backpack refuses it with 'Backpack full') and LocalChanged follows when it has."""
+        ...
+    def request_move(self, entryId: str, slot: float, count: Optional[float] = ..., /) -> str:
+        """Asks the server to move an entry, or count of it, to a slot (from 1), as dragging it would. Returns 'sent' or why nothing was sent; the server decides (and OnMoving may refuse) and LocalChanged follows when it has."""
+        ...
+    def request_split(self, entryId: str, count: Optional[float] = ..., /) -> str:
+        """Asks the server to split count off an entry (half, rounded down, when left out) into the first empty slot. Returns 'sent' or why nothing was sent."""
+        ...
+    def request_transfer(self, entryId: str, count: Optional[float] = ..., /) -> str:
+        """Asks the server to move an entry, or count of it, between the player's inventory and the box they have open: an entry of the player's ('e12') goes into the box, an entry of the box ('b12') comes out to the player. Returns 'sent' or why nothing was sent ('no_box' when none is open). The server checks the 300 cm range and the box's Owner on every request, runs OnMoving (Action 'transfer') and decides."""
+        ...
+    def request_unequip(self, entryId: str, /) -> str:
+        """Asks the server to take a weapon entry off the Backpack hotbar. Returns 'sent' or why nothing was sent; the server decides (OnMoving may refuse it, Action 'unequip') and LocalChanged follows when it has."""
+        ...
+    def set_data(self, target: Player | Entity, entryId: str, data: Optional[dict[str, Any]], /) -> str:
+        """Replaces an entry's Data (nil clears it). The whole stack takes it."""
+        ...
+    def set_loadout(self, target: Player | Entity, entryId: str, loadout: Optional[dict[str, Any]], /) -> str:
+        """Replaces the weapon upgrades stored on an entry that is not equipped (nil clears them). This only stores them; the weapon upgrades (Backpack:GetLoadout and ApplyLoadout) do the checks."""
+        ...
+    def start(self, player: Player, options: Optional[dict[str, Any]] = ..., /) -> None:
+        """Gives one player an inventory. Slots (1 to 120, default 24). MaxWeight (kg; none by default) caps what the items weigh. Screen is 'default' (Mantle's inventory screen, opened with I or Back + X) or 'script' (no screen and no keys: the place's client scripts draw their own from GetLocal and the Request calls). Save (default true) keeps the items across sessions; false keeps them for this session only. A second Start changes the options and keeps the items; lowering Slots below what is used keeps every entry and only stops new ones. Save can't be changed on an inventory that is running (Start with the other value is an error: Stop it first); Stop then Start with the other Save starts the inventory over (items saved earlier are not touched). The saved inventory arrives a moment after Start: until Inventory.Loaded fires, changes return 'not_loaded'."""
+        ...
+    def stop(self, player: Player, /) -> None:
+        """Closes the player's inventory screen and stops changes. The items stay saved and come back on the next Start."""
+        ...
+    def transfer(self, from_: Player | Entity, to: Player | Entity, entryId: str, count: Optional[float] = ..., /) -> str:
+        """Moves an entry, or count of it, from one inventory to another (a player's or a box's Entity), all or nothing ('full' or 'too_heavy' when the other cannot take it). Both sides are saved at once. Range and Owner are not checked here: this is the script's own call. A move between a player and a box that is saved is settled by the box's save: Transfer returns 'ok' once it has started, the items reach their new place when the backend has the box, and if the save is refused (another server changed the box, or the place is at its saved-data limit) the move is undone and Changed fires again. Until then the box returns 'box_busy' for any change. A move between two saved boxes works the same way (the first box is written without the items, then the second with them; if the second is refused the items go back into the first). Because 'ok' can still be undone, a script must not pay out, unlock or count anything on the 'ok': do it from Inventory.Changed of the box, which fires once the move has landed (a player's own side of a move into a box shows at once, and is given back if the move is undone; a shop that charges on 'ok' can be left having charged for a move that was undone). A box past the place's saved-box limit or without Save has no write to wait for: its moves are final at once."""
+        ...
+    def unequip(self, player: Player, entryId: str, /) -> str:
+        """Takes an equipped entry's Tool off the hotbar (Backpack:Remove). The entry keeps its slot, and what the weapon carries is read back into it first: its Loadout (attachments, stats, color, round) and a consumable's uses left. Returns 'ok', 'not_equipped', 'no_entry', 'not_on_foot' (the Tool is on a character the player is not controlling, such as one driving: nothing changes until they are back) or 'thrown' (the weapon is out of their hands), ..."""
+        ...
+
+Inventory: _InventoryService
+
+class _ItemsService:
+    """The items of this place: what a creator's server script defines once, at startup, so inventories, recipes and world items can name them. Define is server only; Get and List work on both sides, from the definitions the server sent."""
+    def define(self, definition: dict[str, Any], /) -> None:
+        """Defines an item, or replaces the one with that Id. Id (1 to 48 of a-z, 0-9 and _) is the id saves, recipes and world items use. Name is up to 48 characters and Description up to 200. Icon is an ast_ image id from the place's library; without one the slot shows the name's first letter. Stack (1 to 9999, default 1) is how many fit in one slot. Weight (0 to 1000 kg, two decimals, default 0) counts against an inventory's MaxWeight. Category (up to 24 characters) groups items on the screen. Tags are up to 8 strings of up to 24 characters. Weapon is the Storage name of a stored weapon (any hold, consumables included) and forces Stack to 1. A place can define 512 items. A lowered Stack keeps stacks that are already over-full until they move. Saved items nobody defines any more are kept in the save, hidden, and come back when the id is defined again."""
+        ...
+    def get(self, id: str, /) -> Optional[dict[str, Any]]:
+        """The definition of an item, or nil when the place defines none with that id."""
+        ...
+    def list(self) -> list[str]:
+        """Every defined item id, in the order they were first defined."""
+        ...
+
+Items: _ItemsService
 
 class _LeaderboardService:
     """The built-in leaderboard panel: players press Tab (or pick Leaderboard in the game menu) to see the top 10 of one of this place's ordered stores, with each player's name and picture (server only)."""
