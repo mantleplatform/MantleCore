@@ -3017,9 +3017,157 @@ namespace
 		}
 	}
 
+	/** settings.playStyle.options for TopDown: the options Player:SetPlayStyle takes, each in its range, Distance between MinDistance and MaxDistance. */
+	bool ReadTopDownPlayStyleOptions(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Options, const FString& OptionsPath, FMantleTopDownOptions& Result)
+	{
+		bool bAllValid = true;
+		for (const auto& Pair : Options->Values)
+		{
+			// UE 5.8 keys FJsonObject::Values by TSharedString, not FString.
+			const FString OptionKey(Pair.Key.ToView());
+			const FString OptionPath = Join(OptionsPath, OptionKey);
+			const TSharedPtr<FJsonValue>& Value = Pair.Value;
+			if (MantlePlayStyle::IsNumberOption(OptionKey))
+			{
+				FString Error;
+				if (!Value.IsValid() || Value->Type != EJson::Number)
+				{
+					Ctx.Fail(OptionPath, TEXT("must be a number"));
+					bAllValid = false;
+				}
+				else if (!MantlePlayStyle::ApplyNumber(Result, OptionKey, Value->AsNumber(), Error))
+				{
+					Ctx.Fail(OptionPath, Error);
+					bAllValid = false;
+				}
+			}
+			else if (MantlePlayStyle::IsFlagOption(OptionKey))
+			{
+				if (!Value.IsValid() || Value->Type != EJson::Boolean)
+				{
+					Ctx.Fail(OptionPath, TEXT("must be true or false"));
+					bAllValid = false;
+				}
+				else
+				{
+					MantlePlayStyle::ApplyFlag(Result, OptionKey, Value->AsBool());
+				}
+			}
+			else
+			{
+				Ctx.Fail(OptionPath, TEXT("is not a top-down play style option"));
+				bAllValid = false;
+			}
+		}
+		FString Error;
+		if (bAllValid && !MantlePlayStyle::Finish(Result, Error))
+		{
+			// At the option at fault, as the Go validator and validate.py report it.
+			Ctx.Fail(Join(OptionsPath, Result.MinDistance > Result.MaxDistance ? TEXT("MinDistance") : TEXT("Distance")), Error);
+			return false;
+		}
+		return bAllValid;
+	}
+
+	/** settings.playStyle.options for SideScroll (#229): Path (2 to 64 [x,y,z] points), Distance, Height, LookAhead, FieldOfView and Bounds {Min, Max}. */
+	bool ReadSideScrollPlayStyleOptions(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Options, const FString& OptionsPath, FMantleSideScrollOptions& Result)
+	{
+		bool bAllValid = true;
+		for (const auto& Pair : Options->Values)
+		{
+			const FString OptionKey(Pair.Key.ToView());
+			const FString OptionPath = Join(OptionsPath, OptionKey);
+			const TSharedPtr<FJsonValue>& Value = Pair.Value;
+			FString Error;
+			if (MantlePlayStyle::IsSideScrollNumberOption(OptionKey))
+			{
+				if (!Value.IsValid() || Value->Type != EJson::Number)
+				{
+					Ctx.Fail(OptionPath, TEXT("must be a number"));
+					bAllValid = false;
+				}
+				else if (!MantlePlayStyle::ApplySideScrollNumber(Result, OptionKey, Value->AsNumber(), Error))
+				{
+					Ctx.Fail(OptionPath, Error);
+					bAllValid = false;
+				}
+			}
+			else if (OptionKey == TEXT("Path"))
+			{
+				const TArray<TSharedPtr<FJsonValue>>* Items = nullptr;
+				if (!Value.IsValid() || !Value->TryGetArray(Items))
+				{
+					Ctx.Fail(OptionPath, TEXT("must be an array of [x, y, z] points"));
+					bAllValid = false;
+					continue;
+				}
+				TArray<FVector> Points;
+				bool bPointsValid = true;
+				for (int32 PointIndex = 0; PointIndex < Items->Num(); ++PointIndex)
+				{
+					const TArray<TSharedPtr<FJsonValue>>* Coordinates = nullptr;
+					double X = 0.0;
+					double Y = 0.0;
+					double Z = 0.0;
+					if (!(*Items)[PointIndex]->TryGetArray(Coordinates) || Coordinates->Num() != 3 || !(*Coordinates)[0]->TryGetNumber(X)
+						|| !(*Coordinates)[1]->TryGetNumber(Y) || !(*Coordinates)[2]->TryGetNumber(Z))
+					{
+						Ctx.Fail(Index(OptionPath, PointIndex), TEXT("must be a point of three numbers [x, y, z]"));
+						bPointsValid = false;
+						break;
+					}
+					Points.Add(FVector(X, Y, Z));
+				}
+				if (!bPointsValid)
+				{
+					bAllValid = false;
+				}
+				else if (!MantlePlayStyle::ApplySideScrollPath(Result, Points, Error))
+				{
+					Ctx.Fail(OptionPath, Error);
+					bAllValid = false;
+				}
+			}
+			else if (OptionKey == TEXT("Bounds"))
+			{
+				const TSharedPtr<FJsonObject>* BoundsObject = nullptr;
+				if (!Value.IsValid() || !Value->TryGetObject(BoundsObject))
+				{
+					Ctx.Fail(OptionPath, TEXT("must be an object {Min, Max}"));
+					bAllValid = false;
+					continue;
+				}
+				RequireNoUnknownKeys(Ctx, *BoundsObject, { TEXT("Min"), TEXT("Max") }, OptionPath);
+				double Min = 0.0;
+				double Max = 0.0;
+				if (!RequireNumber(Ctx, *BoundsObject, TEXT("Min"), OptionPath, Min) || !RequireNumber(Ctx, *BoundsObject, TEXT("Max"), OptionPath, Max))
+				{
+					bAllValid = false;
+				}
+				else if (!MantlePlayStyle::ApplySideScrollBounds(Result, Min, Max, Error))
+				{
+					Ctx.Fail(OptionPath, Error);
+					bAllValid = false;
+				}
+			}
+			else
+			{
+				Ctx.Fail(OptionPath, TEXT("is not a side-scroll play style option"));
+				bAllValid = false;
+			}
+		}
+		FString Error;
+		if (bAllValid && !MantlePlayStyle::FinishSideScroll(Result, Error))
+		{
+			Ctx.Fail(Join(OptionsPath, TEXT("Bounds")), Error);
+			return false;
+		}
+		return bAllValid;
+	}
+
 	/**
-	 * settings.playStyle (GhzGarage/mantle#232): style Default or TopDown, and for TopDown the options Player:SetPlayStyle takes, each
-	 * in its range with Distance between MinDistance and MaxDistance. Options on Default are refused. The rules are MantlePlayStyle's.
+	 * settings.playStyle (GhzGarage/mantle#232, #229): style Default, TopDown or SideScroll, and the options Player:SetPlayStyle takes for it,
+	 * each in its range. Options on Default are refused. The rules are MantlePlayStyle's.
 	 */
 	void ReadPlayStyleSettings(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Settings, const FString& Path, FMantlePlayStyle& Out)
 	{
@@ -3037,8 +3185,8 @@ namespace
 		RequireNoUnknownKeys(Ctx, *PlayStyle, { TEXT("style"), TEXT("options") }, StylePath);
 		FMantlePlayStyle Result;
 		int32 Style = 0;
-		OptionalChoice(Ctx, *PlayStyle, TEXT("style"), StylePath, { TEXT("Default"), TEXT("TopDown") }, Style);
-		Result.Style = Style == 1 ? EMantlePlayStyle::TopDown : EMantlePlayStyle::Default;
+		OptionalChoice(Ctx, *PlayStyle, TEXT("style"), StylePath, { TEXT("Default"), TEXT("TopDown"), TEXT("SideScroll") }, Style);
+		Result.Style = Style == 1 ? EMantlePlayStyle::TopDown : Style == 2 ? EMantlePlayStyle::SideScroll : EMantlePlayStyle::Default;
 		if (!(*PlayStyle)->HasField(TEXT("options")))
 		{
 			Out = Result;
@@ -3051,58 +3199,18 @@ namespace
 			Ctx.Fail(OptionsPath, TEXT("must be an object"));
 			return;
 		}
-		if (Result.Style != EMantlePlayStyle::TopDown)
+		if (Result.Style == EMantlePlayStyle::Default)
 		{
-			Ctx.Fail(OptionsPath, TEXT("is allowed only when style is TopDown"));
+			Ctx.Fail(OptionsPath, TEXT("is allowed only when style is TopDown or SideScroll"));
 			return;
 		}
-		bool bAllValid = true;
-		for (const auto& Pair : (*Options)->Values)
+		const bool bValid = Result.Style == EMantlePlayStyle::TopDown
+			? ReadTopDownPlayStyleOptions(Ctx, *Options, OptionsPath, Result.TopDown)
+			: ReadSideScrollPlayStyleOptions(Ctx, *Options, OptionsPath, Result.SideScroll);
+		if (bValid)
 		{
-			// UE 5.8 keys FJsonObject::Values by TSharedString, not FString.
-			const FString OptionKey(Pair.Key.ToView());
-			const FString OptionPath = Join(OptionsPath, OptionKey);
-			const TSharedPtr<FJsonValue>& Value = Pair.Value;
-			if (MantlePlayStyle::IsNumberOption(OptionKey))
-			{
-				FString Error;
-				if (!Value.IsValid() || Value->Type != EJson::Number)
-				{
-					Ctx.Fail(OptionPath, TEXT("must be a number"));
-					bAllValid = false;
-				}
-				else if (!MantlePlayStyle::ApplyNumber(Result.TopDown, OptionKey, Value->AsNumber(), Error))
-				{
-					Ctx.Fail(OptionPath, Error);
-					bAllValid = false;
-				}
-			}
-			else if (MantlePlayStyle::IsFlagOption(OptionKey))
-			{
-				if (!Value.IsValid() || Value->Type != EJson::Boolean)
-				{
-					Ctx.Fail(OptionPath, TEXT("must be true or false"));
-					bAllValid = false;
-				}
-				else
-				{
-					MantlePlayStyle::ApplyFlag(Result.TopDown, OptionKey, Value->AsBool());
-				}
-			}
-			else
-			{
-				Ctx.Fail(OptionPath, TEXT("is not a top-down play style option"));
-				bAllValid = false;
-			}
+			Out = Result;
 		}
-		FString Error;
-		if (bAllValid && !MantlePlayStyle::Finish(Result.TopDown, Error))
-		{
-			// At the option at fault, as the Go validator and validate.py report it.
-			Ctx.Fail(Join(OptionsPath, Result.TopDown.MinDistance > Result.TopDown.MaxDistance ? TEXT("MinDistance") : TEXT("Distance")), Error);
-			return;
-		}
-		Out = Result;
 	}
 
 	/** A socket's name or kind (#184): [A-Za-z0-9_], 1 to FMantlePlaceLimits::MaxMeshSocketNameLength characters. */
