@@ -47,6 +47,8 @@
 #include "MantleWaterBody.h"
 #include "MantleWaterBodyExport.h"
 #include "MantleWeaponSpawnPoint.h"
+#include "MantleItemSpawnModel.h"
+#include "MantleItemSpawnPoint.h"
 #include "MantleScriptPoint.h"
 #include "MantleScriptPackages.h"
 #include "MantleSkyMesh.h"
@@ -684,6 +686,58 @@ namespace
 	}
 
 	/**
+	 * An Item Spawn's model id (#235), from the actor's ModelId. A Static Mesh the Details panel picked (FMantleItemSpawnModel) is named
+	 * by its library id, or uploaded with the place and named by that upload's id, as a Scatter's mesh is. An asset id a place file
+	 * gave is kept as it is. Empty for no model; a model that cannot publish is an error at Path, in the words Check uses.
+	 */
+	FString ExporterItemSpawnModelId(
+		const FString& ModelId,
+		const FString& Path,
+		TSet<FString>& ReferencedAssets,
+		MantlePlaceExporterUploads::FContext& Uploads,
+		TArray<FMantleParseError>& Errors)
+	{
+		if (ModelId.IsEmpty())
+		{
+			return FString();
+		}
+		const FMantleAssetLibrary& Library = FMantleAssetLibrary::Get();
+		if (!FMantleItemSpawnModel::IsMeshPath(ModelId))
+		{
+			if (Library.IsKnown(ModelId))
+			{
+				ReferencedAssets.Add(ModelId);
+			}
+			else if (FMantleVehicleConverter::IsUploadedId(ModelId))
+			{
+				Uploads.NamedIds.Add(ModelId, EMantleAssetKind::StaticMesh);
+			}
+			return ModelId;
+		}
+		const UStaticMesh* Mesh = FMantleItemSpawnModel::LoadMesh(ModelId);
+		if (!Mesh)
+		{
+			return FString();
+		}
+		if (FMantlePlaceAssets::IsLibraryAsset(Mesh))
+		{
+			const FString LibraryId = Library.FindIdByPath(FSoftObjectPath(Mesh));
+			ReferencedAssets.Add(LibraryId);
+			return LibraryId;
+		}
+		TArray<FMantleValidationIssue> MeshIssues;
+		FMantlePlaceAssets::CheckMesh(Mesh, FString(), Uploads.Limits, MeshIssues);
+		for (const FMantleValidationIssue& Issue : MeshIssues)
+		{
+			if (Issue.Severity == EMantleIssueSeverity::Error)
+			{
+				Errors.Add(FMantleParseError{ Path + TEXT("/properties/model"), Issue.Problem + TEXT(" ") + Issue.Remedy });
+			}
+		}
+		return Uploads.IdFor(FMantlePlaceAssets::MeshKey(Mesh), EMantleAssetKind::StaticMesh, Mesh);
+	}
+
+	/**
 	 * A mesh component's mesh id, material ids by slot, collision and shadow: a StaticMesh actor's
 	 * component, or an exported instance source (#467), which is a UStaticMeshComponent too.
 	 */
@@ -1308,6 +1362,28 @@ namespace
 					FString::Printf(TEXT("'%s' has no weapon; pick one in its Weapon list (make one first with Tools > Mantle > Build a weapon)"), *Entity.Name) });
 			}
 			Entity.Props.Set<FMantleWeaponSpawnProps>(MoveTemp(Props));
+			break;
+		}
+
+		case EMantleEntityType::ItemSpawn:
+		{
+			// #235: the item that waits here. The model is the Static Mesh the spawn's Details panel picked, named by its upload's id.
+			const AMantleItemSpawnPoint* Spawn = CastChecked<AMantleItemSpawnPoint>(Actor);
+			FMantleItemSpawnProps Props;
+			FString Problem;
+			if (!Spawn->ReadProps(Props, Problem))
+			{
+				Errors.Add(FMantleParseError{
+					Path + (Problem.StartsWith(TEXT("holds")) ? TEXT("/properties/count") : Problem.StartsWith(TEXT("respawns")) ? TEXT("/properties/respawnSeconds") : TEXT("/properties/item")),
+					FString::Printf(TEXT("'%s' %s"), *Entity.Name, *Problem) });
+			}
+			const FString ModelProblem = FMantleItemSpawnModel::Problem(Spawn->ModelId);
+			if (!ModelProblem.IsEmpty())
+			{
+				Errors.Add(FMantleParseError{ Path + TEXT("/properties/model"), FString::Printf(TEXT("'%s' %s"), *Entity.Name, *ModelProblem) });
+			}
+			Props.Model = ExporterItemSpawnModelId(Spawn->ModelId, Path, ReferencedAssets, Uploads, Errors);
+			Entity.Props.Set<FMantleItemSpawnProps>(MoveTemp(Props));
 			break;
 		}
 
@@ -2509,6 +2585,7 @@ bool FMantlePlaceExporter::ClassifyActor(const AActor* Actor, EMantleEntityType&
 	if (Actor->IsA(AMantleCrowdSpawner::StaticClass())) { OutType = EMantleEntityType::CrowdSpawner; return true; }
 	if (Actor->IsA(AMantleVehicleSpawnPoint::StaticClass())) { OutType = EMantleEntityType::VehicleSpawn; return true; }
 	if (Actor->IsA(AMantleWeaponSpawnPoint::StaticClass())) { OutType = EMantleEntityType::WeaponSpawn; return true; }
+	if (Actor->IsA(AMantleItemSpawnPoint::StaticClass())) { OutType = EMantleEntityType::ItemSpawn; return true; }
 	if (Actor->IsA(AMantleScriptPoint::StaticClass())) { OutType = EMantleEntityType::ScriptPoint; return true; }
 	if (Actor->IsA(AMantleEffect::StaticClass())) { OutType = EMantleEntityType::Effect; return true; }
 	if (Actor->IsA(AMantleScatterVolume::StaticClass())) { OutType = EMantleEntityType::Scatter; return true; }
@@ -5753,6 +5830,13 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 		}
 		Writer->WriteObjectEnd();
 	}
+	// World items' settings (#235), only when saving is on: clients from before it refuse the key, so a place that keeps the default still reaches them.
+	if (Place.Settings.WorldItems.Persistence == EMantleWorldItemsPersistence::Server)
+	{
+		Writer->WriteObjectStart(TEXT("worldItems"));
+		Writer->WriteValue(TEXT("persistence"), TEXT("server"));
+		Writer->WriteObjectEnd();
+	}
 	// The place's default look (#532), only when it sets something, and only the keys it sets:
 	// clients from before it refuse the key, so a place that keeps the default look still reaches them.
 	const FMantleEnvironmentSettings& Environment = Place.Settings.Environment;
@@ -6298,6 +6382,27 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 			}
 			Writer->WriteValue(TEXT("respawnSeconds"), P12W->RespawnSeconds);
 			Writer->WriteValue(TEXT("enabled"), P12W->bEnabled);
+		}
+		else if (const FMantleItemSpawnProps* P12I = Entity.Props.TryGet<FMantleItemSpawnProps>())
+		{
+			// A new type (#235): only the keys that differ from the schema's defaults.
+			Writer->WriteValue(TEXT("item"), P12I->Item);
+			if (P12I->Count != 1)
+			{
+				Writer->WriteValue(TEXT("count"), P12I->Count);
+			}
+			if (P12I->RespawnSeconds != MANTLE_DEFAULT_ITEM_SPAWN_RESPAWN_SECONDS)
+			{
+				Writer->WriteValue(TEXT("respawnSeconds"), P12I->RespawnSeconds);
+			}
+			if (!P12I->Model.IsEmpty())
+			{
+				Writer->WriteValue(TEXT("model"), P12I->Model);
+			}
+			if (!P12I->bEnabled)
+			{
+				Writer->WriteValue(TEXT("enabled"), false);
+			}
 		}
 		else if (const FMantleScriptPointProps* P12S = Entity.Props.TryGet<FMantleScriptPointProps>())
 		{

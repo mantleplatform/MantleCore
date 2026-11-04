@@ -43,6 +43,8 @@
 #include "MantleWeaponBuilderPanel.h"
 #include "MantleWeaponSpawnPoint.h"
 #include "MantleScriptPoint.h"
+#include "MantleItemSpawnDetails.h"
+#include "MantleItemSpawnPoint.h"
 #include "MantlePlaceSecretsDetails.h"
 #include "MantleTestLocally.h"
 #include "MantleScriptPointDetails.h"
@@ -210,6 +212,28 @@ namespace
 					"Added a weapon spawn.\n\nYou have not built a weapon yet. Use Tools > Mantle > Build a weapon to make one, "
 					"then pick it in this spawn's Weapon list."));
 		}
+	}
+
+	/**
+	 * Tools > Mantle > Add Item Spawn (#235): puts a Mantle Item Spawn in the level, a little way in front of the viewport's camera and
+	 * facing the way it looks, and selects it, so the creator names its item, count and model in the Details panel.
+	 */
+	void OnAddItemSpawn()
+	{
+		UWorld* World = CurrentEditorWorld();
+		if (!World)
+		{
+			FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("AddItemSpawnNoLevel", "Open a level first, then add an item spawn."));
+			return;
+		}
+		const FScopedTransaction Transaction(LOCTEXT("AddItemSpawnUndo", "Add Item Spawn"));
+		AMantleItemSpawnPoint* Spawn = SpawnInFrontOfViewport<AMantleItemSpawnPoint>(World, TEXT("Item Spawn"));
+		if (!Spawn)
+		{
+			FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("AddItemSpawnFailed", "Could not add an item spawn to this level."));
+			return;
+		}
+		SelectOnly(Spawn);
 	}
 
 	/**
@@ -539,6 +563,8 @@ void FMantleEditorModule::StartupModule()
 	SMantlePublishPanel::RegisterTab();
 	// #838: a Script Point's Details panel: its package from the place's storage and Packages/, its parameters with the package's hints.
 	FMantleScriptPointDetails::Register();
+	// #235: an Item Spawn's Details panel: its model is a Static Mesh picker.
+	FMantleItemSpawnDetails::Register();
 	// GhzGarage/MantleCore#142: a Mantle Seat's hip marker. GUnrealEd does not exist yet while modules start up.
 	if (GUnrealEd)
 	{
@@ -627,6 +653,7 @@ void FMantleEditorModule::ShutdownModule()
 	SMantlePreviewPanel::UnregisterTab();
 	SMantlePublishPanel::UnregisterTab();
 	FMantleScriptPointDetails::Unregister();
+	FMantleItemSpawnDetails::Unregister();
 	if (GUnrealEd)
 	{
 		GUnrealEd->UnregisterComponentVisualizer(UMantleSeatSpotComponent::StaticClass()->GetFName());
@@ -704,6 +731,16 @@ void FillMantleSection(FToolMenuSection& Section)
 			"built weapons it holds in its Weapon list. The weapon is sent with your place when you publish."),
 		FSlateIcon(),
 		FUIAction(FExecuteAction::CreateStatic(&OnAddWeaponSpawn)));
+
+	Section.AddMenuEntry(
+		TEXT("MantleAddItemSpawn"),
+		LOCTEXT("AddItemSpawnLabel", "Add Item Spawn"),
+		LOCTEXT("AddItemSpawnTooltip",
+			"Put an item in this level where players can pick it up. It appears in front of you in the viewport; type the item's id "
+			"(one your script defines, or a weapon from your library), set how many and how soon it comes back, and pick a Static Mesh "
+			"for it to lie as. The mesh is sent with your place when you publish."),
+		FSlateIcon(),
+		FUIAction(FExecuteAction::CreateStatic(&OnAddItemSpawn)));
 
 	Section.AddMenuEntry(
 		TEXT("MantleAddScriptPoint"),

@@ -13,6 +13,7 @@ struct FMantleSettings;
 struct FMantleAudience;
 struct FMantleEnvironmentSettings;
 struct FMantlePlacingSettings;
+struct FMantleWorldItemsSettings;
 struct FMantleStorageEntry;
 struct FMantlePlayStyle;
 
@@ -416,6 +417,13 @@ public:
 		meta = (EditCondition = "bSetMaxPlacedPieces", ClampMin = "1", ClampMax = "2000", UIMin = "1", UIMax = "2000"))
 	int32 MaxPlacedPieces = 2000;
 
+	// World items (#235): the items scripts and Item Spawns put in the world. A script turns world items on; nothing here does. Only
+	// a value changed from its default is published; a place that changes one needs a Mantle client from after #235 to load.
+
+	/** Keep the items lying in the world when the server stops, and bring them back when it starts. Off by default: world items last until the server ends. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|World Items")
+	bool bSaveWorldItems = false;
+
 	// The place's default look (#532): what every player starts in, with or without a script. A
 	// server script's Environment writes change it from there. Only values changed from these
 	// defaults are published; a place that changes any needs a Mantle client from after #532 to load.
@@ -633,6 +641,12 @@ public:
 
 	/** Sets the Placing fields from a place file's settings.placing. */
 	void SetPlacingFrom(const FMantlePlacingSettings& Placing);
+
+	/** The place's world items settings (#235) from the World Items fields; the schema's defaults (nothing saved) unless the creator changed them. */
+	FMantleWorldItemsSettings MakeWorldItemsSettings() const;
+
+	/** Sets the World Items fields from a place file's settings.worldItems. */
+	void SetWorldItemsFrom(const FMantleWorldItemsSettings& WorldItems);
 
 	/** Sets the Environment fields from a place file's settings.environment; a key it leaves out resets its field. */
 	void SetEnvironmentFrom(const FMantleEnvironmentSettings& Environment);

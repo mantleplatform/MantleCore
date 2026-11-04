@@ -123,6 +123,7 @@ namespace MantleCoverageSurveyPrivate
 		case EMantleEntityType::CrowdSpawner:
 		case EMantleEntityType::VehicleSpawn:
 		case EMantleEntityType::WeaponSpawn:
+		case EMantleEntityType::ItemSpawn:
 		case EMantleEntityType::ScriptPoint:
 		case EMantleEntityType::Effect:
 		case EMantleEntityType::Constraint:
@@ -420,6 +421,7 @@ namespace MantleCoverageSurveyPrivate
 			case EMantleEntityType::CrowdSpawner:
 			case EMantleEntityType::VehicleSpawn:
 			case EMantleEntityType::WeaponSpawn:
+			case EMantleEntityType::ItemSpawn:
 			case EMantleEntityType::ScriptPoint:
 			case EMantleEntityType::Constraint:
 			case EMantleEntityType::Scatter:
