@@ -115,6 +115,22 @@ bool FMantlePlaceLimits::IsStorageName(const FString& Name)
 	return MantleIsLetterFirstName(Name, 64);
 }
 
+bool FMantlePlaceLimits::IsWorldItemId(const FString& Id)
+{
+	if (Id.IsEmpty() || Id.Len() > MaxWorldItemIdLength || Id[0] == TEXT('_'))
+	{
+		return false;
+	}
+	for (const TCHAR Character : Id)
+	{
+		if (!((Character >= TEXT('a') && Character <= TEXT('z')) || (Character >= TEXT('0') && Character <= TEXT('9')) || Character == TEXT('_')))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 bool FMantlePlaceLimits::IsScriptPointParameterName(const FString& Name)
 {
 	return MantleIsLetterFirstName(Name, MaxScriptPointParameterNameLength);

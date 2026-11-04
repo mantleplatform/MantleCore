@@ -110,7 +110,12 @@ enum class EMantleEntityType : uint8
 	 * VoxelWorldData (MBW1) it starts from. MantleGameplay builds it after the place (UMantleVoxelPlaceSubsystem). One per
 	 * place. Added without a schema version bump, gated at publish until a released build reads it.
 	 */
-	VoxelWorld
+	VoxelWorld,
+	/**
+	 * An item lying in the place that comes back after a player takes it (#235): a hidden data-only point on every
+	 * machine; MantleGameplay's world items own the item. Added without a schema version bump, like WeaponSpawn.
+	 */
+	ItemSpawn
 };
 
 /** A WaterBody's kind (#997), the place file's properties.bodyType: the Water plugin's lake, river, ocean or custom-mesh body. */
@@ -510,6 +515,20 @@ struct FMantlePlacingSettings
 	int32 MaxPieces = 2000;
 };
 
+/** Whether the world items scripts put down (#235) are kept: not at all, or per server (saved like placed pieces). */
+enum class EMantleWorldItemsPersistence : uint8
+{
+	None,
+	Server
+};
+
+/** settings.worldItems (#235): whether world items are saved with the world. Nothing here turns world items on; a script does. */
+struct FMantleWorldItemsSettings
+{
+	/** settings.worldItems.persistence; none unless the file says server. */
+	EMantleWorldItemsPersistence Persistence = EMantleWorldItemsPersistence::None;
+};
+
 struct FMantleSettings
 {
 	int32 MaxPlayers = 16;
@@ -561,6 +580,8 @@ struct FMantleSettings
 	TOptional<FMantleWaterZone> Water;
 	/** settings.placing (#184). The defaults when the file has none: no persistence, a cap of 2000. */
 	FMantlePlacingSettings Placing;
+	/** settings.worldItems (#235). The default when the file has none: nothing saved. */
+	FMantleWorldItemsSettings WorldItems;
 	/** settings.playStyle (#232): the style every player starts in. Default (Mantle's normal play) when the file has none. */
 	FMantlePlayStyle PlayStyle;
 };
@@ -1203,6 +1224,24 @@ struct FMantleWeaponSpawnProps
 	bool bEnabled = true;
 };
 
+/** An ItemSpawn's respawn delay when the place file gives none (#235). */
+#define MANTLE_DEFAULT_ITEM_SPAWN_RESPAWN_SECONDS 60.0
+
+/** An item waiting at the entity's transform (#235): it comes back RespawnSeconds after it is taken. */
+struct FMantleItemSpawnProps
+{
+	/** The item: an id a script defines (WorldItems:Define), or a stored weapon's library id. */
+	FString Item;
+	/** 1 to FMantlePlaceLimits::MaxItemSpawnCount; held to the item's MaxStack when it is made. */
+	int32 Count = 1;
+	/** FMantlePlaceLimits::MinItemSpawnRespawnSeconds to MaxItemSpawnRespawnSeconds. */
+	double RespawnSeconds = MANTLE_DEFAULT_ITEM_SPAWN_RESPAWN_SECONDS;
+	/** A place StaticMesh asset id the item lies as instead of its own Model; empty for none. */
+	FString Model;
+	/** False keeps the spawn without an item until a script turns it on (WorldItems:SetSpawnEnabled). */
+	bool bEnabled = true;
+};
+
 /** One of a Script Point's parameters (#838): a key the package declares, and its value as text. */
 struct FMantleScriptPointParameter
 {
@@ -1558,7 +1597,8 @@ using FMantleEntityProps = TVariant<
 	FMantleScriptPointProps,
 	FMantleTextProps,
 	FMantleWaterBodyProps,
-	FMantleVoxelWorldProps>;
+	FMantleVoxelWorldProps,
+	FMantleItemSpawnProps>;
 
 /** What happens to an interaction option once it has been used (the schema's afterUse). */
 enum class EMantleInteractableAfterUse : uint8

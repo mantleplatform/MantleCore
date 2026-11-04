@@ -622,6 +622,48 @@ declare extern type VoxelWriter with
 	function SetVoxel(self, x: number, y: number, z: number, material: string?, density: number): ()
 end
 
+--- An item lying in the world (#235): a small server record, not an Entity. Players and scripts pick it up; it can time out, be locked to an owner and be saved with the world. A handle stays valid after the item is gone: Exists says false and the methods error.
+declare extern type WorldItem with
+	--- A bag's stacks, in order: each {Item, Count, Data}. A copy; take from the bag with TakeStack. nil for anything that is not a bag. Server only. (server only)
+	Contents: {{Item: string, Count: number, Data: {[string]: any}?}}?
+	--- How many are in the stack, 1 to the item's MaxStack (a weapon is always 1).
+	Count: number
+	--- The table carried with the stack (durability, ammo left, quality): booleans, numbers, strings and vectors, nested 2 deep, 1 KB encoded at most. nil when it has none. A copy: change it with SetData. Server only. (server only)
+	Data: {[string]: any}?
+	--- Seconds left before it despawns, or nil when it never does. Server only. (server only)
+	ExpiresIn: number?
+	--- A stable id, "wi_" and a number, the same after a save and load.
+	Id: string
+	--- The item it holds: an id from WorldItems:Define, or a stored weapon's id (Storage:Get).
+	Item: string
+	--- A weapon's loadout (#234), up to 1 KB, kept apart from Data. nil when it has none. Server only. (server only)
+	Loadout: {[string]: any}?
+	--- The UserId of the player it belongs to, or nil. DropFromPlayer sets it to the dropper even when it locks nothing. Server only. (server only)
+	Owner: string?
+	--- Whether the owner's team may take it too. Server only. (server only)
+	OwnerTeam: boolean
+	--- Seconds the owner lock has left; -1 when it is for good; nil when nothing is locked. Server only. (server only)
+	OwnerUntil: number?
+	--- Where it rests (cm). While a toss is flying, where it will land.
+	Position: Vector3
+	--- Which way it faces, in degrees.
+	Yaw: number
+	--- Removes the item (OnRemoved with "script"). Does nothing if it is gone already. (server only)
+	function Destroy(self): ()
+	--- Whether the item is still in the world (picked up, expired, merged or destroyed items are not).
+	function Exists(self): boolean
+	--- Puts the item at a position, resting there (no toss, no merge). (server only)
+	function MoveTo(self, position: Vector3): ()
+	--- Sets how many are in the stack, 1 to the item's MaxStack. 0 destroys the item (OnRemoved with "script"). (server only)
+	function SetCount(self, count: number): ()
+	--- Replaces the table carried with the stack (nil clears it). Booleans, numbers, strings and vectors, nested 2 deep, 1 KB encoded at most. A stack with different Data no longer merges with its neighbors. (server only)
+	function SetData(self, data: {[string]: any}?): ()
+	--- Changes or clears the owner lock. player is a Player or a UserId; seconds is how long the lock lasts (-1 for good, 0 or left out: nothing is locked and the owner is only remembered); team true lets the owner's team take it too. Called with no player, it clears the owner. While locked, other players see the prompt as "Locked" and cannot take it, auto pickup ignores them, and OnPickingUp is not called for them. (server only)
+	function SetOwner(self, player: (Player | string)?, seconds: number?, team: boolean?): ()
+	--- Takes from a bag: index is the stack's place in Contents (1 is the first), count how many of it (all of it when left out; more than it holds takes all). Returns what was taken as {Item, Count, Data} for your script to give the player, or nil when the bag has no such stack. An emptied stack leaves the bag, and an empty bag removes itself (OnRemoved with "picked"). Errors for an item that is not a bag. (server only)
+	function TakeStack(self, index: number, count: number?): {Item: string, Count: number, Data: {[string]: any}?}?
+end
+
 --- Spawn the place's own meshes at runtime (server only). Change any mesh's look through its Entity.
 declare extern type AssetsService with
 	--- Spawn one of the place's StaticMesh assets (any mesh its asset list names, placed or not) that every player sees, and return it as an Entity. props sets how it starts: Rotation, Scale (a Vector3, or one number for all three), Material (one of the place's Material assets, for every slot), Color, Transparency, Collision ("Blocking" by default, "Overlap" or "None"), CastShadow (true by default) and Anchored (spawned meshes stay where scripts put them; false is refused). A mesh uploaded with the place may take a moment to appear on a player's screen while it downloads. Spawned meshes count towards the same limit as Entity:Clone; Destroy one to make room. (server only)
@@ -1016,8 +1058,8 @@ declare Interaction: InteractionService
 declare extern type InventoryService with
 	--- The local player's open box closed (they closed it, walked away, or it was removed).
 	BoxClosed: Signal<()>
-	--- The server opened a box for the local player (Inventory:OpenBox). A "script" screen draws it from GetBox. Fires for a "default" screen too.
-	BoxOpened: Signal<(Entity)>
+	--- The server opened a box for the local player (Inventory:OpenBox, or a bag they used): the Entity it is attached to, or the WorldItem of a bag. A "script" screen draws it from GetBox. Fires for a "default" screen too.
+	BoxOpened: Signal<(Entity | WorldItem)>
 	--- A box's entity was destroyed: the box is detached and its saved key deleted, and its entries come here so the script can drop or move them. A server shutting down never fires it.
 	BoxRemoved: Signal<(Entity, {{Id: string, Item: string, Count: number, Slot: number, Data: {[string]: any}?, Loadout: {[string]: any}?, ToolId: string?, Uses: number?}})>
 	--- An entry was added, resized, moved, changed or removed; entryId is its id. Fires on the server once the change has taken effect.
@@ -1031,50 +1073,50 @@ declare extern type InventoryService with
 	--- The built-in inventory screen opened for the local player (the key, a box opening, or Inventory:Open).
 	Opened: Signal<()>
 	--- Puts items in: fills existing stacks first (those with equal Data), then empty slots. Returns {Result, Added}: Result is "ok" when all of count went in, otherwise why not ("full", "too_heavy", ...) and Added is how many did go in. Data is the script's own table (booleans, numbers, strings and vectors, nested 2 deep, up to 1 KB) and a stack only merges with entries whose Data is equal. Loadout is a weapon's upgrades ({attachments, stats, color}, up to 1 KB), kept apart from Data. (server only)
-	function Add(self, target: Player | Entity, item: string, count: number, data: {[string]: any}?, loadout: {[string]: any}?): {Result: string, Added: number}
-	--- Turns an entity into a storage box: an inventory that belongs to the entity. Slots (1 to 120, default 20), MaxWeight (kg; none by default), Name (up to 32 characters, shown on the screen), Owner (a Player: only they may open it). Save is a key (1 to 64 of A-Z, a-z, 0-9, _ and -): the box's contents are then saved in the place's world DataStore under the reserved key mantle.box.<key>, shared by every server of the place, so one key is one box everywhere. A place can have 256 saved boxes (they count toward the world scope's 1024 keys) and a server 512 attached ones. Attach again from Placing:OnPiecesLoaded with the same Save key and the contents come back. If the place already has 256 saved boxes the box works for the session but is not saved (logged), and Attach itself fails when the world's data is already known to be at the limit; a box whose saved contents were written by a newer game is never written over or deleted. The saved contents arrive a moment after Attach; until then the box returns "not_loaded". Every inventory call takes the box's Entity where it takes a Player. (server only)
-	function Attach(self, entity: Entity, options: {Slots: number?, MaxWeight: number?, Name: string?, Owner: Player?, Save: string?}?): ()
+	function Add(self, target: Player | Entity | WorldItem, item: string, count: number, data: {[string]: any}?, loadout: {[string]: any}?): {Result: string, Added: number}
+	--- A WorldItem that is a bag (WorldItems:SpawnBag) already is a box: its stacks are the box's entries, a player who uses it opens the same screen, and the same calls and hooks work on it. Attach on a bag only sets how it looks and who may open it: Slots (up to 40, a bag starts with one per stack), MaxWeight, Name and Owner; it has no Save option, because the world save keeps a bag's stacks. A bag whose last stack is taken leaves the world. The rest of this is for an Entity. Turns an entity into a storage box: an inventory that belongs to the entity. Slots (1 to 120, default 20), MaxWeight (kg; none by default), Name (up to 32 characters, shown on the screen), Owner (a Player: only they may open it). Save is a key (1 to 64 of A-Z, a-z, 0-9, _ and -): the box's contents are then saved in the place's world DataStore under the reserved key mantle.box.<key>, shared by every server of the place, so one key is one box everywhere. A place can have 256 saved boxes (they count toward the world scope's 1024 keys) and a server 512 attached ones. Attach again from Placing:OnPiecesLoaded with the same Save key and the contents come back. If the place already has 256 saved boxes the box works for the session but is not saved (logged), and Attach itself fails when the world's data is already known to be at the limit; a box whose saved contents were written by a newer game is never written over or deleted. The saved contents arrive a moment after Attach; until then the box returns "not_loaded". Every inventory call takes the box's Entity where it takes a Player. (server only)
+	function Attach(self, entity: Entity | WorldItem, options: {Slots: number?, MaxWeight: number?, Name: string?, Owner: Player?, Save: string?}?): ()
 	--- Empties the inventory of every defined item and returns how many entries went. Saved items nobody defines any more stay. (server only)
-	function Clear(self, target: Player | Entity): number
+	function Clear(self, target: Player | Entity | WorldItem): number
 	--- Closes the built-in inventory screen. Returns "ok", or "not_started" when it was not open. (client only)
 	function Close(self): string
 	--- Closes the box the player has open, if any. (server only)
 	function CloseBox(self, player: Player): ()
 	--- How many of an item the inventory holds, in all its stacks (0 when it has none or is not started). (server only)
-	function Count(self, target: Player | Entity, item: string): number
-	--- Takes the box off the entity and hands its entries to the script, and deletes the box's saved key. Fails while a saved box's contents have not loaded yet. (server only)
-	function Detach(self, entity: Entity): {{Id: string, Item: string, Count: number, Slot: number, Data: {[string]: any}?, Loadout: {[string]: any}?, ToolId: string?, Uses: number?}}
-	--- Drops an entry into the world. World items are not in this build yet, so it returns "no_world_items". (server only)
+	function Count(self, target: Player | Entity | WorldItem, item: string): number
+	--- Takes the box off the entity and hands its entries to the script, and deletes the box's saved key. Fails while a saved box's contents have not loaded yet. On a bag it hands the stacks over and removes the bag from the world. (server only)
+	function Detach(self, entity: Entity | WorldItem): {{Id: string, Item: string, Count: number, Slot: number, Data: {[string]: any}?, Loadout: {[string]: any}?, ToolId: string?, Uses: number?}}
+	--- Drops an entry, or count of it, into the world as a world item (WorldItems:DropFromPlayer): 80 cm in front of the player, with the entry's Data, Loadout and uses left, owned by the player (no lock), lasting as long as the item's Lifetime says. An equipped weapon is put away first and its entry's loadout is what lies in the world. Returns "ok" or why not: "no_entry", "not_enough", "no_character" (no body to drop from), "drop_failed" (the drop rate, or the place holds 2,000 world items none of which has a timer), "not_on_foot" (a driver cannot put a weapon away), "no_world_items". This is the script's own call: OnDropping is asked only for a player's own drop (the screen's Drop button or key, the Drop-weapon key, RequestDrop). (server only)
 	function Drop(self, player: Player, entryId: string, count: number?): string
 	--- Puts a weapon entry on the player's Backpack hotbar: the item's stored weapon is granted (as Backpack:Grant does) and its Tool id is recorded on the entry. Returns {Result, ToolId}: Result is "ok" or why not ("not_weapon" for an item defined without Weapon, "backpack_full" when the Backpack has no room, "equipped" when it already is, "no_character" with no character to give it to, "no_entry", "not_started", ...). The entry keeps its slot and its weight still counts; the entry's Loadout is put on the weapon, and a consumable arrives with the uses it has left. The player's own request (RequestEquip) runs OnMoving first (Action "equip"); this call does not. The weapon stays in the inventory until it is unequipped: Remove, RemoveEntry and Clear take its Tool off the hotbar too (while the player is driving, the Tool is taken off as soon as they are on foot again). A thrown weapon that someone else picks up, is lost with its thrower or is used up by the throw takes its entry with it. A weapon a script gave with Backpack:Grant directly is not in the inventory. (server only)
 	function Equip(self, player: Player, entryId: string): {Result: string, ToolId: string?}
-	--- The box the local player has open: its Entity, Name, slots, MaxWeight (nil when there is no limit), weight (kg) and entries in slot order. A box's entry ids start with "b" ("b12"), the player's own with "e". nil while no box is open. LocalChanged fires when the box changes too. (client only)
-	function GetBox(self): {Entity: Entity, Name: string?, Slots: number, MaxWeight: number?, Weight: number, Entries: {{Id: string, Item: string, Count: number, Slot: number, Data: {[string]: any}?, Loadout: {[string]: any}?, ToolId: string?, Uses: number?}}}?
+	--- The box the local player has open: its Entity (or, for a bag lying in the world, its Bag as a WorldItem), Name, slots, MaxWeight (nil when there is no limit), weight (kg) and entries in slot order. A box's entry ids start with "b" ("b12"), the player's own with "e". nil while no box is open. LocalChanged fires when the box changes too. (client only)
+	function GetBox(self): {Entity: Entity?, Bag: WorldItem?, Name: string?, Slots: number, MaxWeight: number?, Weight: number, Entries: {{Id: string, Item: string, Count: number, Slot: number, Data: {[string]: any}?, Loadout: {[string]: any}?, ToolId: string?, Uses: number?}}}?
 	--- The entries, in slot order: {Id, Item, Count, Slot, Data?, Loadout?, ToolId?, Uses?}. Id is a stable entry id ("e12"). ToolId is set while the entry is equipped on the Backpack hotbar, and Uses is a consumable's uses left once it has been used. Empty when the inventory is not started or not loaded. (server only)
-	function GetEntries(self, target: Player | Entity): {{Id: string, Item: string, Count: number, Slot: number, Data: {[string]: any}?, Loadout: {[string]: any}?, ToolId: string?, Uses: number?}}
+	function GetEntries(self, target: Player | Entity | WorldItem): {{Id: string, Item: string, Count: number, Slot: number, Data: {[string]: any}?, Loadout: {[string]: any}?, ToolId: string?, Uses: number?}}
 	--- One entry, or nil when there is none with that id. (server only)
-	function GetEntry(self, target: Player | Entity, entryId: string): {Id: string, Item: string, Count: number, Slot: number, Data: {[string]: any}?, Loadout: {[string]: any}?, ToolId: string?, Uses: number?}?
+	function GetEntry(self, target: Player | Entity | WorldItem, entryId: string): {Id: string, Item: string, Count: number, Slot: number, Data: {[string]: any}?, Loadout: {[string]: any}?, ToolId: string?, Uses: number?}?
 	--- The local player's inventory: its slots, MaxWeight (nil when there is no limit), the weight now (kg), whether the saved inventory has arrived, Screen ("default" or "script"), CanCombine (the place defines a hidden recipe, so there is something to find by combining; the default screen shows its Combine tab only then) and the entries in slot order. nil while no inventory is started for the local player. A place that draws its own screen reads everything it needs from here. (client only)
 	function GetLocal(self): {Slots: number, MaxWeight: number?, Weight: number, Loaded: boolean, Screen: string, CanCombine: boolean, Entries: {{Id: string, Item: string, Count: number, Slot: number, Data: {[string]: any}?, Loadout: {[string]: any}?, ToolId: string?, Uses: number?}}}?
 	--- Whether the inventory holds at least count of an item. (server only)
-	function Has(self, target: Player | Entity, item: string, count: number): boolean
+	function Has(self, target: Player | Entity | WorldItem, item: string, count: number): boolean
 	--- Moves an entry, or count of it, to a slot (from 1). An empty slot takes it (a smaller count splits the stack). A stack of the same item and Data takes what fits, and an entry that does not merge swaps places with it (a split cannot: "slot_taken"). (server only)
-	function Move(self, target: Player | Entity, entryId: string, slot: number, count: number?): string
+	function Move(self, target: Player | Entity | WorldItem, entryId: string, slot: number, count: number?): string
 	--- Called on the spot before a player drops an entry into the world. Return false (and a reason) to refuse it; a handler that errors refuses it too. Drops arrive with world items. (server only)
 	function OnDropping(self, handler: (info: {Player: Player, EntryId: string, Item: string, Count: number}) -> (boolean?, string?)): Connection
 	--- Called on the spot before a player's own move or split goes through (the handler may not wait). Return false to refuse it, and as a second value the reason the player sees (Luau: return false, "Locked"; any language: return the reason text on its own). A handler that errors refuses it too ("the place's script failed"). Action is "move", "split" or "transfer" (between the player and a box: Box is the box's Entity, ToBox says which way). Raised for the player's own requests, not for the script's own Move and Transfer calls. (server only)
 	function OnMoving(self, handler: (info: {Player: Player, Action: string, EntryId: string, Item: string, Count: number, Slot: number?, ToPlayer: Player?, Box: Entity?, ToBox: boolean?}) -> (boolean?, string?)): Connection
 	--- Opens the built-in inventory screen (Screen = "default") for the local player: gameplay input stops and the cursor shows. Returns "ok", or why not: "not_started" when no inventory is started for them, "script_screen" when their Screen is "script" (a place that draws its own screen shows that instead), "busy" (the settings drawer, the chat box, the avatar editor or the front end has the player). The inventory key, I or Back + X on a gamepad, does the same. (client only)
 	function Open(self): string
-	--- Opens a box for a player, beside their own grid on the default screen, or fires Inventory.BoxOpened on their client when their Screen is "script". Returns "ok" or why not: "not_started", "not_loaded", "no_box", "not_owner" or "too_far" (the player must be within 300 cm). The box closes by itself when the player walks past 400 cm. Only a player who has a box open is sent its contents. One box is open at a time. (server only)
-	function OpenBox(self, player: Player, entity: Entity): string
+	--- Opens a box (an Entity's, or a bag's) for a player, beside their own grid on the default screen, or fires Inventory.BoxOpened on their client when their Screen is "script". Returns "ok" or why not: "not_started", "not_loaded", "no_box", "not_owner" or "too_far" (the player must be within 300 cm). The box closes by itself when the player walks past 400 cm. Only a player who has a box open is sent its contents. One box is open at a time. (server only)
+	function OpenBox(self, player: Player, entity: Entity | WorldItem): string
 	--- Takes count of an item out, all or nothing ("not_enough" and nothing changes when the inventory holds fewer). Smaller stacks go first. (server only)
-	function Remove(self, target: Player | Entity, item: string, count: number): string
+	function Remove(self, target: Player | Entity | WorldItem, item: string, count: number): string
 	--- Takes count out of one entry, or the whole entry when count is left out. (server only)
-	function RemoveEntry(self, target: Player | Entity, entryId: string, count: number?): string
+	function RemoveEntry(self, target: Player | Entity | WorldItem, entryId: string, count: number?): string
 	--- Asks the server to close the box the local player has open. Returns "sent", or "no_box" when none is open. (client only)
 	function RequestCloseBox(self): string
-	--- Asks the server to drop an entry into the world. World items are not in this build yet. (client only)
+	--- Asks the server to drop an entry, or count of it, into the world (the default screen's Drop button and key do this). Returns "sent" or why nothing was sent; the server decides (OnDropping may refuse it, with its reason shown as a toast) and LocalChanged follows when it has. (client only)
 	function RequestDrop(self, entryId: string, count: number?): string
 	--- Asks the server to put a weapon entry on the Backpack hotbar. Returns "sent" or why nothing was sent; the server decides (OnMoving may refuse it, Action "equip", and a full Backpack refuses it with "Backpack full") and LocalChanged follows when it has. (client only)
 	function RequestEquip(self, entryId: string): string
@@ -1087,15 +1129,15 @@ declare extern type InventoryService with
 	--- Asks the server to take a weapon entry off the Backpack hotbar. Returns "sent" or why nothing was sent; the server decides (OnMoving may refuse it, Action "unequip") and LocalChanged follows when it has. (client only)
 	function RequestUnequip(self, entryId: string): string
 	--- Replaces an entry's Data (nil clears it). The whole stack takes it. (server only)
-	function SetData(self, target: Player | Entity, entryId: string, data: {[string]: any}?): string
+	function SetData(self, target: Player | Entity | WorldItem, entryId: string, data: {[string]: any}?): string
 	--- Replaces the weapon upgrades stored on an entry that is not equipped (nil clears them). This only stores them; the weapon upgrades (Backpack:GetLoadout and ApplyLoadout) do the checks. (server only)
-	function SetLoadout(self, target: Player | Entity, entryId: string, loadout: {[string]: any}?): string
+	function SetLoadout(self, target: Player | Entity | WorldItem, entryId: string, loadout: {[string]: any}?): string
 	--- Gives one player an inventory. Slots (1 to 120, default 24). MaxWeight (kg; none by default) caps what the items weigh. Screen is "default" (Mantle's inventory screen, opened with I or Back + X) or "script" (no screen and no keys: the place's client scripts draw their own from GetLocal and the Request calls). Save (default true) keeps the items across sessions; false keeps them for this session only. A second Start changes the options and keeps the items; lowering Slots below what is used keeps every entry and only stops new ones. Save can't be changed on an inventory that is running (Start with the other value is an error: Stop it first); Stop then Start with the other Save starts the inventory over (items saved earlier are not touched). The saved inventory arrives a moment after Start: until Inventory.Loaded fires, changes return "not_loaded". (server only)
 	function Start(self, player: Player, options: {Slots: number?, MaxWeight: number?, Screen: string?, Save: boolean?}?): ()
 	--- Closes the player's inventory screen and stops changes. The items stay saved and come back on the next Start. (server only)
 	function Stop(self, player: Player): ()
 	--- Moves an entry, or count of it, from one inventory to another (a player's or a box's Entity), all or nothing ("full" or "too_heavy" when the other cannot take it). Both sides are saved at once. Range and Owner are not checked here: this is the script's own call. A move between a player and a box that is saved is settled by the box's save: Transfer returns "ok" once it has started, the items reach their new place when the backend has the box, and if the save is refused (another server changed the box, or the place is at its saved-data limit) the move is undone and Changed fires again. Until then the box returns "box_busy" for any change. A move between two saved boxes works the same way (the first box is written without the items, then the second with them; if the second is refused the items go back into the first). Because "ok" can still be undone, a script must not pay out, unlock or count anything on the "ok": do it from Inventory.Changed of the box, which fires once the move has landed (a player's own side of a move into a box shows at once, and is given back if the move is undone; a shop that charges on "ok" can be left having charged for a move that was undone). A box past the place's saved-box limit or without Save has no write to wait for: its moves are final at once. (server only)
-	function Transfer(self, from: Player | Entity, to: Player | Entity, entryId: string, count: number?): string
+	function Transfer(self, from: Player | Entity | WorldItem, to: Player | Entity | WorldItem, entryId: string, count: number?): string
 	--- Takes an equipped entry's Tool off the hotbar (Backpack:Remove). The entry keeps its slot, and what the weapon carries is read back into it first: its Loadout (attachments, stats, color, round) and a consumable's uses left. Returns "ok", "not_equipped", "no_entry", "not_on_foot" (the Tool is on a character the player is not controlling, such as one driving: nothing changes until they are back) or "thrown" (the weapon is out of their hands), ... (server only)
 	function Unequip(self, player: Player, entryId: string): string
 end
@@ -1637,6 +1679,45 @@ declare extern type WorldService with
 	function Spherecast(self, origin: Vector3, radius: number, direction: Vector3, params: {MaxDistance: number?, Include: {Entity | Player}?, Exclude: {Entity | Player}?, Tag: string?, IgnorePlayers: boolean?, Layers: {string}?, ExcludeLayers: {string}?}?): {Entity: Entity, Player: Player?, Position: Vector3, Normal: Vector3, Distance: number}?
 end
 declare World: WorldService
+
+--- Items that lie in the world (#235): dropped things, pickups, loot piles. A world item is a small server record, not an Entity, so thousands are affordable (a place holds 2,000). Nothing is on unless a script calls this service.
+declare extern type WorldItemsService with
+	--- The most world items a place holds: 2,000. Read only.
+	Limit: number
+	--- The local player's aim came onto a world item (it is the one the pickup prompt is about). For a script's own tooltip.
+	Selected: Signal<(WorldItem)>
+	--- The local player's aim left a world item.
+	Unselected: Signal<(WorldItem)>
+	--- Sets how an item lies in the world and is picked up. item is an id of lowercase letters, digits and _ (1 to 48 characters; an id may not start with _, which is reserved). Model is a StaticMesh of the place it lies as; without one it shows its Icon on a card. Pickup is "Key" (default, a tap of the Interact key), "Hold" (hold it for HoldSeconds, 0.5 by default, 0.1 to 5) or "Auto" (walk over it). Lifetime is how many seconds a player's drop of it lasts (600 by default, 0 = never). Name, Icon and MaxStack (1 by default, up to 9,999) are the item's name, picture and stack size; an item the place also defines with Items:Define takes them from there (what is given here for them is ignored) and this call gives the world-side settings only. An item that only Items:Define defines needs no call here at all: it lies as its Icon on a card until this gives it a Model. An item must be defined here or by Items:Define (or be a stored weapon from Storage:Get) before Spawn uses it. Defining an item again replaces its settings for items dropped afterwards. (server only)
+	function Define(self, item: string, options: {Model: string?, Pickup: string?, HoldSeconds: number?, Lifetime: number?, Name: string?, Icon: string?, MaxStack: number?}): ()
+	--- Drops count of an item as the player: 80 cm in front of them at chest height, tossed 300 cm/s forward and 150 cm/s up, lasting the item's Lifetime (600 s unless Define says otherwise). Owner is set to the player but locks nothing unless options give OwnerSeconds. Options are Spawn's. At most 10 drops a second per player; past that it errors. Inventory:Drop, the default inventory screen's Drop button and key, and the Drop-weapon key on an equipped inventory weapon call this, carrying the entry's Data, Loadout and uses left. (server only)
+	function DropFromPlayer(self, player: Player, item: string, count: number, options: {Data: {[string]: any}?, Loadout: {[string]: any}?, Yaw: number?, Lifetime: number?, Owner: (Player | string)?, OwnerTeam: boolean?, OwnerSeconds: number?, Merge: boolean?, Save: boolean?, Toss: Vector3?}?): WorldItem
+	--- The item with that id (WorldItem.Id), or nil. A client only knows the items near it.
+	function Get(self, id: string): WorldItem?
+	--- How many world items the place holds. A client counts the ones near it.
+	function GetCount(self): number
+	--- The world item an Item Spawn entity of the place holds right now, or nil while it is empty (waiting to refill, paused, or its item not defined yet). The Item Spawn is the place entity the level editor puts down; items it makes never time out and are not saved with the world. (server only)
+	function GetFromSpawn(self, spawn: Entity): WorldItem?
+	--- The items within radius cm of center (at most 5,000 cm, 50 m; larger is cut to it), nearest first, 256 at most; item keeps only that item. A client sees only the items near it (within 150 m of the player), a server sees them all.
+	function GetInRadius(self, center: Vector3, radius: number, item: string?): {WorldItem}
+	--- A player used a bag (the Interact key on it). Show your own menu with Contents and give what they choose with Bag:TakeStack(index, count). Not called for a player an owner lock keeps out. (server only)
+	function OnBagOpened(self, handler: (info: {Player: Player, Bag: WorldItem, Contents: {{Item: string, Count: number, Data: {[string]: any}?}}}) -> ()): Connection
+	--- The saved world items are back (a place whose settings.worldItems.persistence is "server" saves them). Raised once, before players join, as Placing:OnPiecesLoaded is; Count is how many came back. (server only)
+	function OnLoaded(self, handler: (info: {Count: number}) -> ()): Connection
+	--- A pickup landed. Item is the item id, Count how many were taken, Data and Loadout what the stack carried. (server only)
+	function OnPickedUp(self, handler: (info: {Player: Player, Item: string, Count: number, Data: {[string]: any}?, Loadout: {[string]: any}?}) -> ()): Connection
+	--- Called on the spot before a pickup lands (the handler may not wait): a player is taking Count of Item. Return a number to take only that many (the rest stays), return false and a reason to refuse (the prompt shows the reason; Luau: return false, "Too heavy"; any language: return the reason text on its own), or return nothing to accept. Accepting runs the default pickup: a stored weapon (Storage:Get) is given to the Backpack with its usual rules; for any other item, a player who has an inventory that defines the item (Inventory:Start, Items:Define) gets it through Inventory:Add, with its Data, Loadout and uses left: what fits goes in, the rest stays on the ground with its count lowered, and the player sees "Inventory full". Otherwise (no inventory) a pickup a handler accepted removes what was taken from the world and OnPickedUp follows: your script gives the player the item; with no handler a non-weapon item is refused with "Nothing can carry this" and a warning in the log. OnPickedUp follows every pickup that landed. Not called for a player an owner lock keeps out. (server only)
+	function OnPickingUp(self, handler: (info: {Player: Player, Item: WorldItem, Count: number}) -> (any, string?)): Connection
+	--- An item left the world. Reason is "picked", "expired", "cap", "merged" or "script". The handle still answers in the handler. (server only)
+	function OnRemoved(self, handler: (info: {Item: WorldItem, Reason: string}) -> ()): Connection
+	--- Pauses or resumes an Item Spawn entity. A paused spawn removes its item (OnRemoved with "script") and does not refill; resuming it refills at once. Errors for an entity that is not an Item Spawn. (server only)
+	function SetSpawnEnabled(self, spawn: Entity, enabled: boolean): ()
+	--- Puts count of an item in the world at position. item must be defined by WorldItems:Define or be a stored weapon (Storage:Get; always one). Options: Data (a table carried with the stack) and Loadout (a weapon's), Yaw, Lifetime (seconds it lasts; a script's spawn never times out unless you give one), Owner with OwnerSeconds (0 = no lock, the default; -1 = for good) and OwnerTeam, Merge (true by default; false for a display shelf), Save (true by default; false keeps the item out of the world save: use it for items your script spawns again at every start, or they pile up each restart) and Toss, a velocity in cm/s that makes it fly an arc and land. A resting item merges into the nearest like one within 150 cm. When the place already holds 2,000 the oldest item that has a timer is removed (OnRemoved with "cap"); if none has, Spawn errors. The result is the item, or the stack it merged into. (server only)
+	function Spawn(self, item: string, count: number, position: Vector3, options: {Data: {[string]: any}?, Loadout: {[string]: any}?, Yaw: number?, Lifetime: number?, Owner: (Player | string)?, OwnerTeam: boolean?, OwnerSeconds: number?, Merge: boolean?, Save: boolean?, Toss: Vector3?}?): WorldItem
+	--- Puts a bag (a loot crate, a death bag) in the world: one world item that holds several stacks. contents is a list of {Item, Count, Data}, at most 40 stacks (the bag has that many slots); every Item must be defined by WorldItems:Define (or be a stored weapon) and Count is 1 to its MaxStack. A player who uses the bag gets the inventory's container screen for it when they have an inventory (Inventory:Start; the bag is a box whose slots are its stacks, up to 40, with the same hooks and calls: Inventory:Transfer, OnMoving, GetEntries and Attach take the bag where they take an Entity), and OnBagOpened is raised too for a script that connects it (with no inventory it is the only way to open a bag): your script shows its menu and takes stacks with TakeStack. The bag lasts 600 seconds unless Lifetime says otherwise (0 = never) and removes itself when empty. Model is a StaticMesh of the place (the bag shows a plain card without one) and Name what its prompt calls it ("Bag"). Owner, OwnerTeam and OwnerSeconds lock it as for Spawn, and Save = false keeps it out of the world save (as for Spawn). A bag never merges. WorldItem.Item of a bag is "_bag". (server only)
+	function SpawnBag(self, position: Vector3, contents: {{Item: string, Count: number, Data: {[string]: any}?}}, options: {Model: string?, Name: string?, Yaw: number?, Lifetime: number?, Owner: (Player | string)?, OwnerTeam: boolean?, OwnerSeconds: number?, Save: boolean?, Toss: Vector3?}?): WorldItem
+end
+declare WorldItems: WorldItemsService
 
 declare task: {
 	wait: (seconds: number?) -> number,

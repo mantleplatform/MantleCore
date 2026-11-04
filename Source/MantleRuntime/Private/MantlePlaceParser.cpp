@@ -3017,6 +3017,26 @@ namespace
 		}
 	}
 
+	/** settings.worldItems (#235): persistence none or server. */
+	void ReadWorldItemsSettings(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Settings, const FString& Path, FMantleWorldItemsSettings& Out)
+	{
+		if (!Settings->HasField(TEXT("worldItems")))
+		{
+			return;
+		}
+		const FString ItemsPath = Join(Path, TEXT("worldItems"));
+		const TSharedPtr<FJsonObject>* WorldItems = nullptr;
+		if (!Settings->TryGetObjectField(TEXT("worldItems"), WorldItems))
+		{
+			Ctx.Fail(ItemsPath, TEXT("must be an object"));
+			return;
+		}
+		RequireNoUnknownKeys(Ctx, *WorldItems, { TEXT("persistence") }, ItemsPath);
+		int32 Persistence = 0;
+		OptionalChoice(Ctx, *WorldItems, TEXT("persistence"), ItemsPath, { TEXT("none"), TEXT("server") }, Persistence);
+		Out.Persistence = Persistence == 1 ? EMantleWorldItemsPersistence::Server : EMantleWorldItemsPersistence::None;
+	}
+
 	/** settings.playStyle.options for TopDown: the options Player:SetPlayStyle takes, each in its range, Distance between MinDistance and MaxDistance. */
 	bool ReadTopDownPlayStyleOptions(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Options, const FString& OptionsPath, FMantleTopDownOptions& Result)
 	{
@@ -4073,6 +4093,42 @@ namespace
 			break;
 		}
 
+		case EMantleEntityType::ItemSpawn:
+		{
+			// An item waiting here (#235): its id, how many, how soon it comes back, an optional model, and whether it is on.
+			RequireNoUnknownKeys(Ctx, Props, { TEXT("item"), TEXT("count"), TEXT("respawnSeconds"), TEXT("model"), TEXT("enabled") }, Path);
+			FMantleItemSpawnProps P;
+			if (RequireString(Ctx, Props, TEXT("item"), Path, P.Item) && !FMantlePlaceLimits::IsWorldItemId(P.Item))
+			{
+				Ctx.Fail(Join(Path, TEXT("item")), TEXT("must be an item id: lowercase letters, digits and '_' (not first), 1 to 48 characters"));
+			}
+			double Count = 1.0;
+			if (Props->HasField(TEXT("count")) && RequireNumber(Ctx, Props, TEXT("count"), Path, Count))
+			{
+				ReadBoundedInt(Ctx, Count, 1, FMantlePlaceLimits::MaxItemSpawnCount, Join(Path, TEXT("count")), P.Count);
+			}
+			if (Props->HasField(TEXT("respawnSeconds")) && RequireNumber(Ctx, Props, TEXT("respawnSeconds"), Path, P.RespawnSeconds))
+			{
+				RangeCheck(Ctx, P.RespawnSeconds, FMantlePlaceLimits::MinItemSpawnRespawnSeconds, FMantlePlaceLimits::MaxItemSpawnRespawnSeconds, Join(Path, TEXT("respawnSeconds")));
+			}
+			if (Props->HasField(TEXT("model")) && RequireString(Ctx, Props, TEXT("model"), Path, P.Model))
+			{
+				bool bShape = P.Model.Len() >= 8 && P.Model.Len() <= 44 && P.Model.StartsWith(TEXT("ast_"), ESearchCase::CaseSensitive);
+				for (int32 Index = 4; bShape && Index < P.Model.Len(); ++Index)
+				{
+					const TCHAR Character = P.Model[Index];
+					bShape = (Character >= TEXT('a') && Character <= TEXT('z')) || (Character >= TEXT('0') && Character <= TEXT('9')) || Character == TEXT('_');
+				}
+				if (!bShape)
+				{
+					Ctx.Fail(Join(Path, TEXT("model")), TEXT("must be an asset id (ast_ and 4 to 40 lowercase letters, digits or '_')"));
+				}
+			}
+			OptionalBool(Props, TEXT("enabled"), P.bEnabled);
+			Entity.Props.Set<FMantleItemSpawnProps>(MoveTemp(P));
+			break;
+		}
+
 		case EMantleEntityType::ScriptPoint:
 		{
 			// An anchor for a stored script package: the storage name it belongs to, up to 16 text parameters
@@ -4459,7 +4515,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			{ TEXT("maxPlayers"), TEXT("gravity"), TEXT("skybox"), TEXT("ambientLight"),
 			  TEXT("respawnMode"), TEXT("streamingDistance"), TEXT("allowCommunityServers"),
 			  TEXT("allowPrivateServers"), TEXT("avatarHeight"), TEXT("environment"), TEXT("carjacking"), TEXT("water"),
-			  TEXT("maxCarriedTools"), TEXT("allowToolSwap"), TEXT("killZ"), TEXT("boundary"), TEXT("placing"), TEXT("playStyle") },
+			  TEXT("maxCarriedTools"), TEXT("allowToolSwap"), TEXT("killZ"), TEXT("boundary"), TEXT("placing"), TEXT("playStyle"), TEXT("worldItems") },
 			TEXT("/settings"));
 
 		double MaxPlayers = Place.Settings.MaxPlayers;
@@ -4560,6 +4616,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		ReadEnvironmentSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Environment);
 		ReadWaterZone(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Water);
 		ReadPlacingSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.Placing);
+		ReadWorldItemsSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.WorldItems);
 		ReadPlayStyleSettings(Ctx, *SettingsObj, TEXT("/settings"), Place.Settings.PlayStyle);
 
 		// Deprecated: still accepted, so existing place files parse, but nothing reads it
