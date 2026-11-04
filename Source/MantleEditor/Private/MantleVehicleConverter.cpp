@@ -2261,7 +2261,7 @@ FMantleVehicleConverter::FPaintLayerGuess FMantleVehicleConverter::GuessPaintLay
 	// A GTA model names its tint layers: the word PRIMARY or SECONDARY in the name (vehicle_generic_smallspecmap__PRIMARY_, leather_1__SECONDARY_); its pictures are white for the
 	// game to tint. A word of the model's, so glass or a tire called PRIMARY is still not painted (checked below).
 	const bool bExcluded = HasWord(Words, { TEXT("glass"), TEXT("window"), TEXT("windows"), TEXT("windshield"), TEXT("windscreen"), TEXT("tire"), TEXT("tires"), TEXT("tyre"), TEXT("tyres"),
-		TEXT("rubber"), TEXT("chrome"), TEXT("lens"), TEXT("lights"), TEXT("lamp"), TEXT("lamps"), TEXT("headlight"), TEXT("headlights"), TEXT("taillight"),
+		TEXT("rubber"), TEXT("chrome"), TEXT("carbon"), TEXT("lens"), TEXT("lights"), TEXT("lamp"), TEXT("lamps"), TEXT("headlight"), TEXT("headlights"), TEXT("taillight"),
 		TEXT("taillights"), TEXT("brake"), TEXT("brakes"), TEXT("steering"), TEXT("signal"), TEXT("signals") });
 	if (!bExcluded && HasWord(Words, { TEXT("primary") }))
 	{
@@ -2332,7 +2332,7 @@ bool FMantleVehicleConverter::IsGtaTintLayer(const FString& Name, const UMateria
 		Words.Append(NameWords(Material->GetName()));
 	}
 	const bool bExcluded = HasWord(Words, { TEXT("glass"), TEXT("window"), TEXT("windows"), TEXT("windshield"), TEXT("windscreen"), TEXT("tire"), TEXT("tires"), TEXT("tyre"), TEXT("tyres"),
-		TEXT("rubber"), TEXT("chrome"), TEXT("lens"), TEXT("lights"), TEXT("lamp"), TEXT("lamps"), TEXT("headlight"), TEXT("headlights"), TEXT("taillight"),
+		TEXT("rubber"), TEXT("chrome"), TEXT("carbon"), TEXT("lens"), TEXT("lights"), TEXT("lamp"), TEXT("lamps"), TEXT("headlight"), TEXT("headlights"), TEXT("taillight"),
 		TEXT("taillights"), TEXT("brake"), TEXT("brakes"), TEXT("steering"), TEXT("signal"), TEXT("signals") });
 	return !bExcluded && HasWord(Words, { TEXT("primary"), TEXT("secondary"), TEXT("wheel") });
 }

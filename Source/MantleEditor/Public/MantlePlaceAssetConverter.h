@@ -434,7 +434,7 @@ struct MANTLEEDITOR_API FMantleConvertedVehicle
 
 	/**
 	 * A body section (glTF material name) to the built-in material the converter gives it (FMantleVehicleBuiltInMaterials: ast_mat_glass, ast_mat_rubber, ast_mat_chrome,
-	 * ast_mat_light_lens), because the section is glass, a tire, chrome or a lamp. Nothing uploads for it; the document names the built-in id.
+	 * ast_mat_light_lens, ast_mat_carbon), because the section is glass, a tire, chrome, carbon fiber or a lamp. Nothing uploads for it; the document names the built-in id.
 	 */
 	TMap<FString, FString> BuiltInSections;
 

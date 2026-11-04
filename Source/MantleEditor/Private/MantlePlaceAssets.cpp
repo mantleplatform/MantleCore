@@ -2873,7 +2873,7 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 		GatheredMesh->UsedBy.AddUnique(Label);
 		for (const int32 Slot : FMantlePlaceAssets::UploadSlots(PartMesh))
 		{
-			// Glass, tires, chrome and lamps are Mantle's own materials: nothing to convert or upload for them.
+			// Glass, tires, chrome, carbon fiber and lamps are Mantle's own materials: nothing to convert or upload for them.
 			if (!FMantleVehicleBuiltInMaterials::ForPartSlot(Part, PartMesh, Slot).IsEmpty())
 			{
 				continue;
