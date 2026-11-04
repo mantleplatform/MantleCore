@@ -890,6 +890,17 @@ declare extern type DataStoreService with
 end
 declare DataStore: DataStoreService
 
+--- The developer console the place's owner opens with F8 (Test Locally, a development build, or the owner of a private server). It shows this client's script output (print, warn, error) and monitors. Mantle defines no commands: a client script adds its own here and answers them when the owner types them. Nobody else sees the console, and nothing changes for players who never open it.
+declare extern type DevConsoleService with
+	--- The owner typed a registered command in the console. name is the command as registered; args are the words after it (double quotes keep spaces together). Every client script connected here hears every command: check name and ignore the ones that are not yours.
+	Command: Signal<(string, {string})>
+	--- Adds a console command. name is letters, digits, _, - and . (1 to 32 characters); help is one line shown in the console's command list (up to 120 characters). A place holds at most 32 commands, and a name another script already holds is refused. Registering your own name again updates its help. The command runs when the owner types it: the Command signal fires with the name and the arguments. Registered commands go away when the script stops. (client only)
+	function Register(self, name: string, help: string?): ()
+	--- Removes a command this script registered. Errors when the command is not this script's. (client only)
+	function Unregister(self, name: string): ()
+end
+declare DevConsole: DevConsoleService
+
 --- Show Mantle's built-in visual effects anywhere in the world. Play makes a puff of particles (smoke, fire, sparks, dust, glow, explosion, impact, muzzle flash, blood, splash, confetti, heal), Beam draws a short tracer line between two points, and Decal leaves a mark such as a bullet hole or a scorch on a surface. All are cosmetic: they do not hurt anyone or change the world. Example: Effects:Play("Explosion", Vector3.new(0, 5, 0))
 declare extern type EffectsService with
 	--- Draw a short-lived glowing beam (a tracer or a zap) from one point to another, then it fades. params: Color ("#RRGGBB", the beam's own look by default), Width (how thick, 0.5 to 100 cm, 4 by default) and Duration (how long it shows, 0 to 5 seconds, 0.15 by default); numbers out of range are clamped. A line longer than 1000 m is cut short. A client or a server holds at most 16 beams at once; a new one past that replaces the oldest. Use it for tracers, lightning bolts, lasers or showing a link between two things. Example: Effects:Beam(Vector3.new(0, 2, 0), Vector3.new(0, 2, 40), {Color = "#FF3030", Duration = 0.2}). From a client script only this player sees it; from a server script every player does, but not one who joins later. A dedicated server shows nothing. At most 10 effect calls a frame per script (Play, Beam and Decal count together), and a server script at most 10 a second (bursts of 20); past either the script stops.

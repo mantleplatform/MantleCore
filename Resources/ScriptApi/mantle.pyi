@@ -932,6 +932,18 @@ class _DataStoreService:
 
 DataStore: _DataStoreService
 
+class _DevConsoleService:
+    """The developer console the place's owner opens with F8 (Test Locally, a development build, or the owner of a private server). It shows this client's script output (print, warn, error) and monitors. Mantle defines no commands: a client script adds its own here and answers them when the owner types them. Nobody else sees the console, and nothing changes for players who never open it."""
+    command: Signal
+    def register(self, name: str, help: Optional[str], /) -> None:
+        """Adds a console command. name is letters, digits, _, - and . (1 to 32 characters); help is one line shown in the console's command list (up to 120 characters). A place holds at most 32 commands, and a name another script already holds is refused. Registering your own name again updates its help. The command runs when the owner types it: the Command signal fires with the name and the arguments. Registered commands go away when the script stops."""
+        ...
+    def unregister(self, name: str, /) -> None:
+        """Removes a command this script registered. Errors when the command is not this script's."""
+        ...
+
+DevConsole: _DevConsoleService
+
 class _EffectsService:
     """Show Mantle's built-in visual effects anywhere in the world. Play makes a puff of particles (smoke, fire, sparks, dust, glow, explosion, impact, muzzle flash, blood, splash, confetti, heal), Beam draws a short tracer line between two points, and Decal leaves a mark such as a bullet hole or a scorch on a surface. All are cosmetic: they do not hurt anyone or change the world. Example: Effects:Play('Explosion', Vector3.new(0, 5, 0))"""
     def beam(self, from_: Vector3, to: Vector3, params: Optional[dict[str, Any]] = ..., /) -> None:
