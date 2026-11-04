@@ -34,6 +34,8 @@ namespace MantleDevMaterialShotPrivate
 			UE_LOG(LogMantleMaterialShot, Error, TEXT("MANTLE_MATERIAL_SHOT failed: no material at %s (%s), or nothing can render (%s)"), *Args[0], *Why, *WhyNot);
 			return;
 		}
+		// A material nobody has drawn yet compiles in the background and draws as the engine's grid until it is done.
+		Material->EnsureIsComplete();
 		for (const TCHAR* Shape : { TEXT("Sphere"), TEXT("Cube") })
 		{
 			UStaticMesh* Source = LoadObject<UStaticMesh>(nullptr, *FString::Printf(TEXT("/Engine/BasicShapes/%s.%s"), Shape, Shape));
