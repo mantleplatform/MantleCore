@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "MantleEffectTypes.h"
 #include "MantlePlaceLimits.h"
+#include "MantlePlayStyle.h"
 #include "MantleScatter.h"
 #include "MantleSurface.h"
 #include "MantleWeather.h"
@@ -560,6 +561,8 @@ struct FMantleSettings
 	TOptional<FMantleWaterZone> Water;
 	/** settings.placing (#184). The defaults when the file has none: no persistence, a cap of 2000. */
 	FMantlePlacingSettings Placing;
+	/** settings.playStyle (#232): the style every player starts in. Default (Mantle's normal play) when the file has none. */
+	FMantlePlayStyle PlayStyle;
 };
 
 /**

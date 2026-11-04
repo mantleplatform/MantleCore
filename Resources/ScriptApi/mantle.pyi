@@ -170,6 +170,8 @@ class Player:
     max_shield: Optional[float]
     max_stamina: Optional[float]
     name: str
+    play_style: str
+    play_style_options: Optional[dict[str, Any]]
     position: Optional[Vector3]
     regen_delay: Optional[float]
     regen_rate: Optional[float]
@@ -239,6 +241,10 @@ class Player:
         ...
     def respawn(self, position: Optional[Vector3] = ..., /) -> bool:
         """Give the player a fresh character with full health right now, alive or dead: at position when given, otherwise at the spawn point the place's respawn mode picks. The old character (or a corpse waiting for its respawn) is removed. Returns false when the player is driving a vehicle (eject them first) or cannot be spawned."""
+        ...
+    def set_play_style(self, style: str, options: dict[str, Any] = ..., /) -> bool:
+        """Changes how this player's camera and movement work. style is 'Default' (Mantle's own first and third person play) or 'TopDown' (a high camera over the character; WASD and the left stick move relative to the screen; the mouse cursor or the right stick aims, and a Tool in hand always faces the aim; the mouse wheel and R3 zoom). Any other name is an error. A place can start every player in a style (settings.playStyle in the place file); this overrides it for one player, and 'Default' is the normal camera even in a top-down place. It lasts through respawns until the script that set it stops, when the player goes back to the place's style. Calling it with another style replaces the old one (the camera cuts, with no blend); calling it again with the same style replaces its options, and an option you leave out takes its default, not the previous value. Returns false while the player has no character; the style still applies from their next spawn.
+TopDown options: Distance (cm from the character, default 1400), MinDistance and MaxDistance (the zoom limits, 800 and 2400; Distance must sit between them, and setting both to Distance locks the zoom), all 400 to 5000; Pitch (degrees down, 20 to 89, default 55); Yaw (the world heading screen-up points along, any number, default 0, where 0 is world +X); FieldOfView (30 to 90, default 60); ClickToMove (default false: when true, a tap of the middle mouse button walks to the ground under the cursor along a path and holding it follows the cursor; the right button still aims down sights) and HideWalls (default true: what stands between the camera and the character is hidden on that player's own screen, and shows again just after it clears). An unknown option, the wrong type, an out-of-range value or Distance outside the zoom limits is an error that names the option. While the player sits in a vehicle the style pauses, and it resumes when they get out. Camera:Reset() on the player's client returns to the top-down camera, not Mantle's own. 'Default' takes no options."""
         ...
     def take_damage(self, amount: float, source: Optional[Player] = ..., damageType: Optional[str] = ..., /) -> bool:
         """Hurt the character through the same path weapons use, so the game's damage rules apply: friendly fire, Armor, then Shield, then health. source is the player to credit: if this hit kills, Died names them as the killer. damageType tags the hit for Damaged and Died ('Generic' when left out); use a built-in such as 'Bullet', 'Melee', 'Explosion', 'Fall', 'Vehicle', 'Area', 'Magic' or 'Drown', or any word of your own up to 32 characters, such as 'Poison'. Returns false when the player has no character on foot (respawning or driving), is already dead, or nothing got through (friendly fire off, or Armor 100)."""
@@ -711,7 +717,7 @@ class _CameraService:
         """Keep the camera at offset from entity, looking at it, wherever it goes (Mode becomes 'Follow'). offset is in world axes, so Vector3.new(0, -600, 300) keeps the camera 6 m along -Y and 3 m up; with relative true it turns with the entity's heading instead, so Vector3.new(-600, 0, 250) stays behind it. The player still moves their character. When the entity is destroyed the camera goes back to Mantle's; set Mode to 'Default' or call Reset to give it back sooner."""
         ...
     def reset(self) -> None:
-        """Give the camera back to Mantle: Mode 'Default', Mantle's field of view, no shake."""
+        """Give the camera back to Mantle: Mode 'Default', Mantle's field of view, no shake. While a play style is on (Player:SetPlayStyle), that is the play style's camera, the top-down one for TopDown, not Mantle's normal one."""
         ...
     def screen_to_ray(self, x: float, y: float, /) -> dict[str, Any]:
         """A ray from the camera that draws the view now, through that screen spot: x and y run from 0, 0 (top-left of the game view) to 1, 1 (bottom-right), clamped to that, whatever the window size. Direction has length 1. Works in every camera mode: Mantle's own, fixed or tweening, following, first person, or the top-down camera. Pass it to World:Raycast to find what is under a screen spot."""
