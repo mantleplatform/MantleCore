@@ -100,64 +100,123 @@ void AMantlePlaceSettingsActor::ApplyTo(UWorld* World, FMantleSettings& Out)
 	}
 }
 
-FMantlePlayStyle AMantlePlaceSettingsActor::MakePlayStyle() const
+namespace MantlePlaceSettingsPlayStyle
 {
-	FMantlePlayStyle Out;
-	Out.Style = static_cast<EMantlePlayStyle>(PlayStyle);
-	if (Out.Style != EMantlePlayStyle::TopDown)
-	{
-		return Out;
-	}
-	// Through MantlePlayStyle's own rules, so a value typed past a range (or not a number) lands on what the runtime would accept.
-	auto Clamped = [](float Value, float Min, float Max, float Default)
+	float Clamped(float Value, float Min, float Max, float Default)
 	{
 		return FMath::IsFinite(Value) ? FMath::Clamp(Value, Min, Max) : Default;
-	};
-	const FMantleTopDownOptions Defaults;
-	FMantleTopDownOptions& Options = Out.TopDown;
-	Options.Distance = Clamped(TopDown.Distance, MantlePlayStyle::MinDistanceLimit, MantlePlayStyle::MaxDistanceLimit, Defaults.Distance);
-	Options.MinDistance = Clamped(TopDown.MinDistance, MantlePlayStyle::MinDistanceLimit, MantlePlayStyle::MaxDistanceLimit, Defaults.MinDistance);
-	Options.MaxDistance = Clamped(TopDown.MaxDistance, MantlePlayStyle::MinDistanceLimit, MantlePlayStyle::MaxDistanceLimit, Defaults.MaxDistance);
-	Options.Pitch = Clamped(TopDown.Pitch, MantlePlayStyle::MinPitch, MantlePlayStyle::MaxPitch, Defaults.Pitch);
-	Options.FieldOfView = Clamped(TopDown.FieldOfView, MantlePlayStyle::MinFieldOfView, MantlePlayStyle::MaxFieldOfView, Defaults.FieldOfView);
-	FString Ignored;
-	if (!MantlePlayStyle::ApplyNumber(Options, TEXT("Yaw"), FMath::IsFinite(TopDown.Yaw) ? TopDown.Yaw : 0.0, Ignored))
-	{
-		Options.Yaw = Defaults.Yaw;
 	}
-	Options.bClickToMove = TopDown.bClickToMove;
-	Options.bHideWalls = TopDown.bHideWalls;
-	return Out;
+
+	/**
+	 * The play style from the actor's fields, through MantlePlayStyle's own rules, so a value typed past a range (or not a number) lands on
+	 * what the runtime would accept. A Side-Scroll Path or Bounds the rules refuse is left out, with the first error in OutError.
+	 */
+	FMantlePlayStyle Build(const AMantlePlaceSettingsActor& Actor, FString& OutError)
+	{
+		FMantlePlayStyle Out;
+		Out.Style = static_cast<EMantlePlayStyle>(Actor.PlayStyle);
+		if (Out.Style == EMantlePlayStyle::TopDown)
+		{
+			const FMantleTopDownSetting& TopDown = Actor.TopDown;
+			const FMantleTopDownOptions Defaults;
+			FMantleTopDownOptions& Options = Out.TopDown;
+			Options.Distance = Clamped(TopDown.Distance, MantlePlayStyle::MinDistanceLimit, MantlePlayStyle::MaxDistanceLimit, Defaults.Distance);
+			Options.MinDistance = Clamped(TopDown.MinDistance, MantlePlayStyle::MinDistanceLimit, MantlePlayStyle::MaxDistanceLimit, Defaults.MinDistance);
+			Options.MaxDistance = Clamped(TopDown.MaxDistance, MantlePlayStyle::MinDistanceLimit, MantlePlayStyle::MaxDistanceLimit, Defaults.MaxDistance);
+			Options.Pitch = Clamped(TopDown.Pitch, MantlePlayStyle::MinPitch, MantlePlayStyle::MaxPitch, Defaults.Pitch);
+			Options.FieldOfView = Clamped(TopDown.FieldOfView, MantlePlayStyle::MinFieldOfView, MantlePlayStyle::MaxFieldOfView, Defaults.FieldOfView);
+			FString Ignored;
+			if (!MantlePlayStyle::ApplyNumber(Options, TEXT("Yaw"), FMath::IsFinite(TopDown.Yaw) ? TopDown.Yaw : 0.0, Ignored))
+			{
+				Options.Yaw = Defaults.Yaw;
+			}
+			Options.bClickToMove = TopDown.bClickToMove;
+			Options.bHideWalls = TopDown.bHideWalls;
+			MantlePlayStyle::Finish(Options, OutError);
+		}
+		else if (Out.Style == EMantlePlayStyle::SideScroll)
+		{
+			const FMantleSideScrollSetting& SideScroll = Actor.SideScroll;
+			const FMantleSideScrollOptions Defaults;
+			FMantleSideScrollOptions& Options = Out.SideScroll;
+			Options.Distance = Clamped(SideScroll.Distance, MantlePlayStyle::MinSideDistance, MantlePlayStyle::MaxSideDistance, Defaults.Distance);
+			Options.Height = Clamped(SideScroll.Height, MantlePlayStyle::MinSideHeight, MantlePlayStyle::MaxSideHeight, Defaults.Height);
+			Options.LookAhead = Clamped(SideScroll.LookAhead, MantlePlayStyle::MinLookAhead, MantlePlayStyle::MaxLookAhead, Defaults.LookAhead);
+			Options.FieldOfView = Clamped(SideScroll.FieldOfView, MantlePlayStyle::MinSideFieldOfView, MantlePlayStyle::MaxSideFieldOfView, Defaults.FieldOfView);
+			FString Error;
+			if (SideScroll.Path.Num() > 0 && !MantlePlayStyle::ApplySideScrollPath(Options, SideScroll.Path, Error))
+			{
+				Options.Path.Reset();
+				OutError = Error;
+			}
+			if (SideScroll.bSetBounds)
+			{
+				if (!MantlePlayStyle::ApplySideScrollBounds(Options, SideScroll.Bounds.Min, SideScroll.Bounds.Max, Error))
+				{
+					OutError = OutError.IsEmpty() ? Error : OutError;
+				}
+				else if (!MantlePlayStyle::FinishSideScroll(Options, Error))
+				{
+					// Bounds without a Path, or past its end: left out, so the rest still publishes as the runtime reads it.
+					Options.bHasBounds = false;
+					OutError = OutError.IsEmpty() ? Error : OutError;
+				}
+			}
+		}
+		return Out;
+	}
+}
+
+FMantlePlayStyle AMantlePlaceSettingsActor::MakePlayStyle() const
+{
+	FString Ignored;
+	return MantlePlaceSettingsPlayStyle::Build(*this, Ignored);
 }
 
 void AMantlePlaceSettingsActor::SetPlayStyleFrom(const FMantlePlayStyle& Style)
 {
 	PlayStyle = static_cast<EMantlePlacePlayStyle>(Style.Style);
-	// A Default place's options are the defaults, so switching it to Top-Down later starts from them.
-	const FMantleTopDownOptions Options = Style.Style == EMantlePlayStyle::TopDown ? Style.TopDown : FMantleTopDownOptions();
-	TopDown.Distance = Options.Distance;
-	TopDown.MinDistance = Options.MinDistance;
-	TopDown.MaxDistance = Options.MaxDistance;
-	TopDown.Pitch = Options.Pitch;
-	TopDown.Yaw = Options.Yaw;
-	TopDown.FieldOfView = Options.FieldOfView;
-	TopDown.bClickToMove = Options.bClickToMove;
-	TopDown.bHideWalls = Options.bHideWalls;
+	// Another style's options are the defaults, so switching the place to it later starts from them.
+	const FMantleTopDownOptions TopDownOptions = Style.Style == EMantlePlayStyle::TopDown ? Style.TopDown : FMantleTopDownOptions();
+	TopDown.Distance = TopDownOptions.Distance;
+	TopDown.MinDistance = TopDownOptions.MinDistance;
+	TopDown.MaxDistance = TopDownOptions.MaxDistance;
+	TopDown.Pitch = TopDownOptions.Pitch;
+	TopDown.Yaw = TopDownOptions.Yaw;
+	TopDown.FieldOfView = TopDownOptions.FieldOfView;
+	TopDown.bClickToMove = TopDownOptions.bClickToMove;
+	TopDown.bHideWalls = TopDownOptions.bHideWalls;
+
+	const FMantleSideScrollOptions SideOptions = Style.Style == EMantlePlayStyle::SideScroll ? Style.SideScroll : FMantleSideScrollOptions();
+	SideScroll.Path.Reset();
+	for (const FVector2D& Point : SideOptions.Path)
+	{
+		SideScroll.Path.Add(FVector(Point, 0.0));
+	}
+	SideScroll.Distance = SideOptions.Distance;
+	SideScroll.Height = SideOptions.Height;
+	SideScroll.LookAhead = SideOptions.LookAhead;
+	SideScroll.FieldOfView = SideOptions.FieldOfView;
+	SideScroll.bSetBounds = SideOptions.bHasBounds;
+	SideScroll.Bounds = FMantleSideScrollBoundsSetting();
+	if (SideOptions.bHasBounds)
+	{
+		SideScroll.Bounds.Min = SideOptions.BoundsMin;
+		SideScroll.Bounds.Max = SideOptions.BoundsMax;
+	}
 }
 
 FString AMantlePlaceSettingsActor::PlayStyleError() const
 {
-	const FMantlePlayStyle Style = MakePlayStyle();
 	FString Error;
-	if (Style.Style == EMantlePlayStyle::TopDown && !MantlePlayStyle::Finish(Style.TopDown, Error))
-	{
-		return Error;
-	}
-	return FString();
+	MantlePlaceSettingsPlayStyle::Build(*this, Error);
+	return Error;
 }
 
 // EMantlePlacePlayStyle mirrors the runtime's EMantlePlayStyle member for member.
 static_assert(static_cast<int32>(EMantlePlacePlayStyle::TopDown) == static_cast<int32>(EMantlePlayStyle::TopDown),
+	"EMantlePlacePlayStyle must list EMantlePlayStyle's members in the same order");
+static_assert(static_cast<int32>(EMantlePlacePlayStyle::SideScroll) == static_cast<int32>(EMantlePlayStyle::SideScroll),
 	"EMantlePlacePlayStyle must list EMantlePlayStyle's members in the same order");
 
 FMantleEnvironmentSettings AMantlePlaceSettingsActor::MakeEnvironmentSettings() const

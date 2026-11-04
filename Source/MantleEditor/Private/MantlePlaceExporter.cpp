@@ -4119,7 +4119,8 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			TEXT("Mantle Place Settings limits the place to some platforms but selects none. Select at least one, or turn All Platforms back on.") });
 	}
 
-	// And its play style (#232): a Top-Down Distance outside its zoom range would be refused by every reader, so it is refused here.
+	// And its play style (#232, #229): options every reader would refuse (a Top-Down Distance outside its zoom range, a Side-Scroll
+	// Path or Bounds that breaks the rules) are refused here.
 	if (const AMantlePlaceSettingsActor* SettingsActor = AMantlePlaceSettingsActor::Find(World))
 	{
 		const FString PlayStyleError = SettingsActor->PlayStyleError();
@@ -4127,7 +4128,9 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		{
 			Result.Errors.Add(FMantleParseError{
 				TEXT("/settings/playStyle/options"),
-				FString::Printf(TEXT("Mantle Place Settings' Top-Down Options: %s."), *PlayStyleError) });
+				FString::Printf(TEXT("Mantle Place Settings' %s: %s."),
+					SettingsActor->PlayStyle == EMantlePlacePlayStyle::SideScroll ? TEXT("Side-Scroll Options") : TEXT("Top-Down Options"),
+					*PlayStyleError) });
 		}
 	}
 
@@ -5875,8 +5878,17 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 		}
 		Writer->WriteObjectEnd();
 	}
-	// The play style (#232), only when it is not Default, with only the options changed from their defaults.
+	// The play style (#232, #229), only when it is not Default, with only the options changed from their defaults.
 	const FMantlePlayStyle& PlayStyle = Place.Settings.PlayStyle;
+	// Rounded, so a float's own digits (55.1 as 55.0999985) are not written out.
+	auto Rounded = [](double Value) { return FMath::RoundToDouble(Value * 1000.0) / 1000.0; };
+	auto WriteNumber = [&Writer, &Rounded](const TCHAR* Key, float Value, float Default)
+	{
+		if (Value != Default)
+		{
+			Writer->WriteValue(Key, Rounded(Value));
+		}
+	};
 	if (PlayStyle.Style == EMantlePlayStyle::TopDown)
 	{
 		const FMantleTopDownOptions& Options = PlayStyle.TopDown;
@@ -5886,14 +5898,6 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 		if (Options != Defaults)
 		{
 			Writer->WriteObjectStart(TEXT("options"));
-			auto WriteNumber = [&Writer](const TCHAR* Key, float Value, float Default)
-			{
-				if (Value != Default)
-				{
-					// Rounded, so a float's own digits (55.1 as 55.0999985) are not written out.
-					Writer->WriteValue(Key, FMath::RoundToDouble(static_cast<double>(Value) * 1000.0) / 1000.0);
-				}
-			};
 			WriteNumber(TEXT("Distance"), Options.Distance, Defaults.Distance);
 			WriteNumber(TEXT("MinDistance"), Options.MinDistance, Defaults.MinDistance);
 			WriteNumber(TEXT("MaxDistance"), Options.MaxDistance, Defaults.MaxDistance);
@@ -5907,6 +5911,44 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 			if (Options.bHideWalls != Defaults.bHideWalls)
 			{
 				Writer->WriteValue(TEXT("HideWalls"), Options.bHideWalls);
+			}
+			Writer->WriteObjectEnd();
+		}
+		Writer->WriteObjectEnd();
+	}
+	else if (PlayStyle.Style == EMantlePlayStyle::SideScroll)
+	{
+		const FMantleSideScrollOptions& Options = PlayStyle.SideScroll;
+		const FMantleSideScrollOptions Defaults;
+		Writer->WriteObjectStart(TEXT("playStyle"));
+		Writer->WriteValue(TEXT("style"), MantlePlayStyle::StyleName(PlayStyle.Style));
+		if (Options != Defaults)
+		{
+			Writer->WriteObjectStart(TEXT("options"));
+			if (Options.Path.Num() > 0)
+			{
+				// [x, y, z] like every other point in the place file; the path is flat, so z is 0.
+				Writer->WriteArrayStart(TEXT("Path"));
+				for (const FVector2D& Point : Options.Path)
+				{
+					Writer->WriteArrayStart();
+					Writer->WriteValue(Rounded(Point.X));
+					Writer->WriteValue(Rounded(Point.Y));
+					Writer->WriteValue(0.0);
+					Writer->WriteArrayEnd();
+				}
+				Writer->WriteArrayEnd();
+			}
+			WriteNumber(TEXT("Distance"), Options.Distance, Defaults.Distance);
+			WriteNumber(TEXT("Height"), Options.Height, Defaults.Height);
+			WriteNumber(TEXT("LookAhead"), Options.LookAhead, Defaults.LookAhead);
+			WriteNumber(TEXT("FieldOfView"), Options.FieldOfView, Defaults.FieldOfView);
+			if (Options.bHasBounds)
+			{
+				Writer->WriteObjectStart(TEXT("Bounds"));
+				Writer->WriteValue(TEXT("Min"), Rounded(Options.BoundsMin));
+				Writer->WriteValue(TEXT("Max"), Rounded(Options.BoundsMax));
+				Writer->WriteObjectEnd();
 			}
 			Writer->WriteObjectEnd();
 		}
