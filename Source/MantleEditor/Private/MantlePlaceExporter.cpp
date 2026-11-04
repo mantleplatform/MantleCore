@@ -4119,6 +4119,18 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			TEXT("Mantle Place Settings limits the place to some platforms but selects none. Select at least one, or turn All Platforms back on.") });
 	}
 
+	// And its play style (#232): a Top-Down Distance outside its zoom range would be refused by every reader, so it is refused here.
+	if (const AMantlePlaceSettingsActor* SettingsActor = AMantlePlaceSettingsActor::Find(World))
+	{
+		const FString PlayStyleError = SettingsActor->PlayStyleError();
+		if (!PlayStyleError.IsEmpty())
+		{
+			Result.Errors.Add(FMantleParseError{
+				TEXT("/settings/playStyle/options"),
+				FString::Printf(TEXT("Mantle Place Settings' Top-Down Options: %s."), *PlayStyleError) });
+		}
+	}
+
 	// Pass 1 — classify and assign ids. Parents cannot be resolved until every actor has one.
 	TSet<FString> UsedIds;
 	TMap<const AActor*, FString> IdByActor;
@@ -5859,6 +5871,43 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 		{
 			Writer->WriteObjectStart(TEXT("sun"));
 			Writer->WriteValue(TEXT("direct"), false);
+			Writer->WriteObjectEnd();
+		}
+		Writer->WriteObjectEnd();
+	}
+	// The play style (#232), only when it is not Default, with only the options changed from their defaults.
+	const FMantlePlayStyle& PlayStyle = Place.Settings.PlayStyle;
+	if (PlayStyle.Style == EMantlePlayStyle::TopDown)
+	{
+		const FMantleTopDownOptions& Options = PlayStyle.TopDown;
+		const FMantleTopDownOptions Defaults;
+		Writer->WriteObjectStart(TEXT("playStyle"));
+		Writer->WriteValue(TEXT("style"), MantlePlayStyle::StyleName(PlayStyle.Style));
+		if (Options != Defaults)
+		{
+			Writer->WriteObjectStart(TEXT("options"));
+			auto WriteNumber = [&Writer](const TCHAR* Key, float Value, float Default)
+			{
+				if (Value != Default)
+				{
+					// Rounded, so a float's own digits (55.1 as 55.0999985) are not written out.
+					Writer->WriteValue(Key, FMath::RoundToDouble(static_cast<double>(Value) * 1000.0) / 1000.0);
+				}
+			};
+			WriteNumber(TEXT("Distance"), Options.Distance, Defaults.Distance);
+			WriteNumber(TEXT("MinDistance"), Options.MinDistance, Defaults.MinDistance);
+			WriteNumber(TEXT("MaxDistance"), Options.MaxDistance, Defaults.MaxDistance);
+			WriteNumber(TEXT("Pitch"), Options.Pitch, Defaults.Pitch);
+			WriteNumber(TEXT("Yaw"), Options.Yaw, Defaults.Yaw);
+			WriteNumber(TEXT("FieldOfView"), Options.FieldOfView, Defaults.FieldOfView);
+			if (Options.bClickToMove != Defaults.bClickToMove)
+			{
+				Writer->WriteValue(TEXT("ClickToMove"), Options.bClickToMove);
+			}
+			if (Options.bHideWalls != Defaults.bHideWalls)
+			{
+				Writer->WriteValue(TEXT("HideWalls"), Options.bHideWalls);
+			}
 			Writer->WriteObjectEnd();
 		}
 		Writer->WriteObjectEnd();

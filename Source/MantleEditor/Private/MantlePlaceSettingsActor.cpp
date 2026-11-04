@@ -3,6 +3,7 @@
 #include "MantleEnvironmentOverride.h"
 #include "MantlePlaceLimits.h"
 #include "MantlePlaceTypes.h"
+#include "MantlePlayStyle.h"
 
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -95,8 +96,69 @@ void AMantlePlaceSettingsActor::ApplyTo(UWorld* World, FMantleSettings& Out)
 		Out.bCarjacking = Settings->bCarjacking;
 		Out.Environment = Settings->MakeEnvironmentSettings();
 		Out.Placing = Settings->MakePlacingSettings();
+		Out.PlayStyle = Settings->MakePlayStyle();
 	}
 }
+
+FMantlePlayStyle AMantlePlaceSettingsActor::MakePlayStyle() const
+{
+	FMantlePlayStyle Out;
+	Out.Style = static_cast<EMantlePlayStyle>(PlayStyle);
+	if (Out.Style != EMantlePlayStyle::TopDown)
+	{
+		return Out;
+	}
+	// Through MantlePlayStyle's own rules, so a value typed past a range (or not a number) lands on what the runtime would accept.
+	auto Clamped = [](float Value, float Min, float Max, float Default)
+	{
+		return FMath::IsFinite(Value) ? FMath::Clamp(Value, Min, Max) : Default;
+	};
+	const FMantleTopDownOptions Defaults;
+	FMantleTopDownOptions& Options = Out.TopDown;
+	Options.Distance = Clamped(TopDown.Distance, MantlePlayStyle::MinDistanceLimit, MantlePlayStyle::MaxDistanceLimit, Defaults.Distance);
+	Options.MinDistance = Clamped(TopDown.MinDistance, MantlePlayStyle::MinDistanceLimit, MantlePlayStyle::MaxDistanceLimit, Defaults.MinDistance);
+	Options.MaxDistance = Clamped(TopDown.MaxDistance, MantlePlayStyle::MinDistanceLimit, MantlePlayStyle::MaxDistanceLimit, Defaults.MaxDistance);
+	Options.Pitch = Clamped(TopDown.Pitch, MantlePlayStyle::MinPitch, MantlePlayStyle::MaxPitch, Defaults.Pitch);
+	Options.FieldOfView = Clamped(TopDown.FieldOfView, MantlePlayStyle::MinFieldOfView, MantlePlayStyle::MaxFieldOfView, Defaults.FieldOfView);
+	FString Ignored;
+	if (!MantlePlayStyle::ApplyNumber(Options, TEXT("Yaw"), FMath::IsFinite(TopDown.Yaw) ? TopDown.Yaw : 0.0, Ignored))
+	{
+		Options.Yaw = Defaults.Yaw;
+	}
+	Options.bClickToMove = TopDown.bClickToMove;
+	Options.bHideWalls = TopDown.bHideWalls;
+	return Out;
+}
+
+void AMantlePlaceSettingsActor::SetPlayStyleFrom(const FMantlePlayStyle& Style)
+{
+	PlayStyle = static_cast<EMantlePlacePlayStyle>(Style.Style);
+	// A Default place's options are the defaults, so switching it to Top-Down later starts from them.
+	const FMantleTopDownOptions Options = Style.Style == EMantlePlayStyle::TopDown ? Style.TopDown : FMantleTopDownOptions();
+	TopDown.Distance = Options.Distance;
+	TopDown.MinDistance = Options.MinDistance;
+	TopDown.MaxDistance = Options.MaxDistance;
+	TopDown.Pitch = Options.Pitch;
+	TopDown.Yaw = Options.Yaw;
+	TopDown.FieldOfView = Options.FieldOfView;
+	TopDown.bClickToMove = Options.bClickToMove;
+	TopDown.bHideWalls = Options.bHideWalls;
+}
+
+FString AMantlePlaceSettingsActor::PlayStyleError() const
+{
+	const FMantlePlayStyle Style = MakePlayStyle();
+	FString Error;
+	if (Style.Style == EMantlePlayStyle::TopDown && !MantlePlayStyle::Finish(Style.TopDown, Error))
+	{
+		return Error;
+	}
+	return FString();
+}
+
+// EMantlePlacePlayStyle mirrors the runtime's EMantlePlayStyle member for member.
+static_assert(static_cast<int32>(EMantlePlacePlayStyle::TopDown) == static_cast<int32>(EMantlePlayStyle::TopDown),
+	"EMantlePlacePlayStyle must list EMantlePlayStyle's members in the same order");
 
 FMantleEnvironmentSettings AMantlePlaceSettingsActor::MakeEnvironmentSettings() const
 {
@@ -228,6 +290,7 @@ void AMantlePlaceSettingsActor::SetFrom(UWorld* World, const FMantleSettings& Se
 		Actor->bCarjacking = Settings.bCarjacking;
 		Actor->SetEnvironmentFrom(Settings.Environment);
 		Actor->SetPlacingFrom(Settings.Placing);
+		Actor->SetPlayStyleFrom(Settings.PlayStyle);
 	}
 }
 

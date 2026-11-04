@@ -14,6 +14,7 @@ struct FMantleAudience;
 struct FMantleEnvironmentSettings;
 struct FMantlePlacingSettings;
 struct FMantleStorageEntry;
+struct FMantlePlayStyle;
 
 /** How a player who dies is placed back into the world (the place file's settings.respawnMode). */
 UENUM()
@@ -138,6 +139,58 @@ enum class EMantlePlaceColorGrading : uint8
 	Sepia,
 	Vivid,
 	Faded,
+};
+
+/** How every player's camera and movement work from the start (#232), the place file's settings.playStyle. In EMantlePlayStyle's order. */
+UENUM()
+enum class EMantlePlacePlayStyle : uint8
+{
+	/** Mantle's normal first and third person camera. */
+	Default,
+	/** A high camera over the character, with WASD and the left stick moving relative to the screen. */
+	TopDown UMETA(DisplayName = "Top-Down"),
+};
+
+/**
+ * The Top-Down play style's options (#232), the place file's settings.playStyle.options: the same ones Player:SetPlayStyle
+ * takes, with the schema's ranges and defaults. Lengths are cm, angles degrees. Only options changed from these are published.
+ */
+USTRUCT()
+struct MANTLEEDITOR_API FMantleTopDownSetting
+{
+	GENERATED_BODY()
+
+	/** The camera's distance from the character, cm. Must sit between Min Distance and Max Distance. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = "400", ClampMax = "5000", UIMin = "400", UIMax = "5000"))
+	float Distance = 1400.0f;
+
+	/** The closest players can zoom in, cm. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = "400", ClampMax = "5000", UIMin = "400", UIMax = "5000"))
+	float MinDistance = 800.0f;
+
+	/** The farthest players can zoom out, cm. Set Min Distance and Max Distance to Distance to lock the zoom. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = "400", ClampMax = "5000", UIMin = "400", UIMax = "5000"))
+	float MaxDistance = 2400.0f;
+
+	/** Degrees the camera looks down: 89 is almost straight down. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = "20", ClampMax = "89", UIMin = "20", UIMax = "89"))
+	float Pitch = 55.0f;
+
+	/** The world heading the camera looks along, degrees: screen-up is that heading. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (UIMin = "-180", UIMax = "180"))
+	float Yaw = 0.0f;
+
+	/** How wide the camera sees, degrees. */
+	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (DisplayName = "Field of View", ClampMin = "30", ClampMax = "90", UIMin = "30", UIMax = "90"))
+	float FieldOfView = 60.0f;
+
+	/** Adds walking to where the player clicks the middle mouse button. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	bool bClickToMove = false;
+
+	/** Hides what stands between the camera and the character, on each player's own screen. */
+	UPROPERTY(EditAnywhere, Category = "Mantle")
+	bool bHideWalls = true;
 };
 
 /**
@@ -270,6 +323,18 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	bool bCarjacking = true;
+
+	// The play style (#232): how every player's camera and movement work from the start. A script can change it for one
+	// player with Player:SetPlayStyle. Default publishes nothing.
+
+	/** The style every player starts in. Default is Mantle's normal first and third person play. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Play Style")
+	EMantlePlacePlayStyle PlayStyle = EMantlePlacePlayStyle::Default;
+
+	/** The Top-Down camera's options. Only options changed from their defaults are published. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Play Style",
+		meta = (DisplayName = "Top-Down Options", EditCondition = "PlayStyle == EMantlePlacePlayStyle::TopDown", EditConditionHides))
+	FMantleTopDownSetting TopDown;
 
 	// Placing mode (#184): what is kept of the pieces players place with the Placing API. A script
 	// turns placing mode on; nothing here does. Only values changed from these defaults are
@@ -487,6 +552,15 @@ public:
 
 	/** The place's placing mode settings (#184) from the Placing fields; the schema's defaults unless the creator changed them. */
 	FMantlePlacingSettings MakePlacingSettings() const;
+
+	/** The place's play style (#232) from the Play Style fields, each option clamped to its range. */
+	FMantlePlayStyle MakePlayStyle() const;
+
+	/** Sets the Play Style fields from a place file's settings.playStyle; options it leaves out reset to their defaults. */
+	void SetPlayStyleFrom(const FMantlePlayStyle& Style);
+
+	/** Why the Play Style fields cannot be published (Distance outside Min Distance to Max Distance), or empty when they can. */
+	FString PlayStyleError() const;
 
 	/** Sets the Placing fields from a place file's settings.placing. */
 	void SetPlacingFrom(const FMantlePlacingSettings& Placing);
