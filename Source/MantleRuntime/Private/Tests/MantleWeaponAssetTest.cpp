@@ -7,7 +7,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// MWP1 (#789 stage 4): the uploaded weapon document, read back into the text and the ids it names.
+// MWP1: the uploaded weapon document, read back into the text and the ids it names.
 
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleWeaponAssetTestPrivate
@@ -73,7 +73,7 @@ bool FMantleWeaponAssetReadTest::RunTest(const FString& Parameters)
 	FMantleWeaponAsset FromBom;
 	TestTrue(TEXT("a UTF-8 byte-order mark is skipped"), FMantleWeaponAsset::Read(WithBom, FromBom, Error) && FromBom.Text == Text);
 
-	// #898: an attachment's own materials, in slot order, by its mesh id (the first attachment naming a mesh wins); named once.
+	// An attachment's own materials, in slot order, by its mesh id (the first attachment naming a mesh wins); named once.
 	const TCHAR* const PartMaterial = TEXT("ast_u00000000000000000000000000000007");
 	const FString WithPartMaterials = Text.Replace(*FString::Printf(TEXT("{\"name\":\"Scope\",\"mesh\":\"%s\"}"), ScopeId),
 		*FString::Printf(TEXT("{\"name\":\"Scope\",\"mesh\":\"%s\",\"materials\":[\"%s\",\"%s\"]}"), ScopeId, PartMaterial, MaterialA));
@@ -107,7 +107,7 @@ bool FMantleWeaponAssetReadTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-// #840: a version-2 weapon reads too; a shield is its own weapon whose mesh is its only id (decision 4), and an off-hand
+// A version-2 weapon reads too; a shield is its own weapon whose mesh is its only id (decision 4), and an off-hand
 // mesh inside a weapon is refused; fists name no mesh; the cap is on the bytes.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleWeaponAssetVersion2Test,
@@ -150,7 +150,7 @@ bool FMantleWeaponAssetVersion2Test::RunTest(const FString& Parameters)
 	TestFalse(TEXT("an off-hand mesh inside a weapon is refused"), FMantleWeaponAsset::Read(Utf8(SwordWithShield), WithOffhand, Error));
 	TestTrue(TEXT("naming offhand"), Error.Contains(TEXT("offhand")));
 
-	// #897: a fist weapon (unarmed) names its mesh like any; one with none is refused in a creator's words (empty hands are
+	// A fist weapon (unarmed) names its mesh like any; one with none is refused in a creator's words (empty hands are
 	// built into the game, never a document).
 	const FString Knuckles = FString::Printf(
 		TEXT("{\"schemaVersion\":2,\"name\":\"Brass knuckles\",\"hold\":\"unarmed\",\"delivery\":\"sweep\",\"mesh\":\"%s\",")

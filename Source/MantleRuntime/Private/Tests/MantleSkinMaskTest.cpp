@@ -7,7 +7,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// #877, the skin under clothing (D:\Mantle\Untracked\skin-hide-1022\DESIGN.md section 8), on synthetic bodies: an
+// The skin under clothing, on synthetic bodies: an
 // arm (a closed tube 8 cm in radius, 60 cm long) in a sleeve 40 cm long, with or without a 4 cm window cut in it, and
 // a flat patch of skin under a strap. No assets.
 
@@ -222,7 +222,7 @@ bool FMantleSkinMaskCutoutTest::RunTest(const FString& Parameters)
 		TestTrue(FString::Printf(TEXT("every hidden vertex is about 2.5 cm or more from the window (nearest %.2f cm)"), Nearest),
 			Nearest >= FMantleSkinMask::DefaultBorderCm - 0.2f);
 
-		// The rule before #877 removes skin right at the window's edge.
+		// The earlier rule removes skin right at the window's edge.
 		FMantleGarmentCoverage Old;
 		TestTrue(TEXT("the old coverage runs"), FMantleGarmentCoverage::Compute(Sleeve.Surface(), Body.Positions, Body.Normals, Old));
 		const float OldNearest = NearestHiddenToVisible(Body.Positions, Old.Covered, [&Body](const int32 Other) { return UnderWindow(Body.Positions[Other]); });
@@ -466,7 +466,7 @@ bool FMantleSeeThroughAuditCutoutTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the bare arm audits"), FMantleSeeThroughAudit::Run(Body, Body.Indices, Garments, Bare));
 	TestEqual(TEXT("the bare arm drops nothing"), Bare.DroppedTriangles, 0);
 
-	// The rule before #877: skin removed at the window's edge is seen through the window at an angle.
+	// The earlier rule: skin removed at the window's edge is seen through the window at an angle.
 	FMantleDressedBody Old;
 	TestTrue(TEXT("the old rule dresses"), FMantleDressedBody::Compute(Body, Garments, FMantleDressedBodyParams(), Old));
 	FMantleSeeThroughAudit OldAudit;

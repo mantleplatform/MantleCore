@@ -14,10 +14,10 @@ struct FMeshDescription;
 struct FMantleTerrainHoleGrid;
 
 /**
- * The parameter names M_MantleTerrain exposes (#466), which tools/materials/Create-TerrainMaterial.py
- * builds headless. The C++ side is written against these; per-layer names are "Layer<i>" plus a
+ * The parameter names M_MantleTerrain exposes.
+ * The C++ side is written against these; per-layer names are "Layer<i>" plus a
  * suffix, i from 0 to FMantlePlaceLimits::MaxTerrainLayers - 1 (FMantleTerrainBuilder::LayerParameter).
- * Eight layers (#628): the generator script's Weightmap/LayerMask weigh layers 0 to 3 and Weightmap2/LayerMask2 layers 4 to 7.
+ * Eight layers: the master's Weightmap/LayerMask weigh layers 0 to 3 and Weightmap2/LayerMask2 layers 4 to 7.
  * Kept as TCHAR literals, not FName globals, so nothing constructs an FName during static initialization.
  */
 namespace MantleTerrainMaterialParameters
@@ -25,13 +25,13 @@ namespace MantleTerrainMaterialParameters
 	/** Texture: the paint weights, R to A for layers 0 to 3, over the whole terrain (UV0). Default white. */
 	constexpr const TCHAR* Weightmap = TEXT("Weightmap");
 
-	/** Texture: the paint weights of layers 4 to 7 (#628), R to A, over the whole terrain (UV0). Default white. */
+	/** Texture: the paint weights of layers 4 to 7, R to A, over the whole terrain (UV0). Default white. */
 	constexpr const TCHAR* Weightmap2 = TEXT("Weightmap2");
 
 	/** Vector: 1 in each channel whose layer exists, 0 otherwise; multiplies the weights before they are normalized. */
 	constexpr const TCHAR* LayerMask = TEXT("LayerMask");
 
-	/** Vector: LayerMask for layers 4 to 7 (#628); default all 0. */
+	/** Vector: LayerMask for layers 4 to 7; default all 0. */
 	constexpr const TCHAR* LayerMask2 = TEXT("LayerMask2");
 
 	/** Per-layer suffixes. Textures: BaseColor (sRGB), Normal, ORM (masks), the layer material's own. */
@@ -102,7 +102,7 @@ struct FMantleTerrainLayerLook
 };
 
 /**
- * A Terrain entity at runtime (#466). A shipped client cannot build a ULandscape, so the heightfield
+ * A Terrain entity at runtime. A shipped client cannot build a ULandscape, so the heightfield
  * becomes a grid of chunks, each a transient UStaticMesh built through the engine's runtime path
  * (UStaticMesh::BuildFromMeshDescriptions, fast build, as FMantleRuntimeStaticMeshBuilder does):
  *
@@ -177,7 +177,7 @@ public:
 	 * The terrain's material: a dynamic instance of MI_MantleTerrain with each layer's textures and
 	 * factors copied from its place material (an uploaded material is an M_MantlePlace instance, whose
 	 * parameters it reads), its tiling across the terrain's extent, and the weightmaps (Weightmap2 holds
-	 * layers 4 to 7 and may be null for a terrain with up to four, #628). A single layer
+	 * layers 4 to 7 and may be null for a terrain with up to four). A single layer
 	 * whose material is not an M_MantlePlace instance (a built-in library material) is used as it is,
 	 * and so is layer 0's material when MI_MantleTerrain is missing (the content handoff not done yet),
 	 * with OutWarning set. Null for no layers. Game thread.

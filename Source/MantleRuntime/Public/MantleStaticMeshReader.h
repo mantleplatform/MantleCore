@@ -6,7 +6,7 @@
 
 /**
  * One LOD of an uploaded place mesh: MRM2's vertex streams, indices and section table. LOD0 is
- * FMantleStaticMeshData itself; its lower LODs (#470) are FMantleStaticMeshData::LowerLODs.
+ * FMantleStaticMeshData itself; its lower LODs are FMantleStaticMeshData::LowerLODs.
  */
 struct FMantleStaticMeshLOD
 {
@@ -19,7 +19,7 @@ struct FMantleStaticMeshLOD
 	/** The first UV set; (0, 0) is the image's top left in both glTF and Unreal. */
 	TArray<FVector2f> UVs;
 
-	/** #470: the second UV set (UV1, glTF's TEXCOORD_1), one per vertex when the file carries it, else empty. */
+	/** The second UV set (UV1, glTF's TEXCOORD_1), one per vertex when the file carries it, else empty. */
 	TArray<FVector2f> UV1s;
 
 	/** One per vertex when the file carries vertex colors (Unreal's FColor bytes), else empty. */
@@ -77,9 +77,9 @@ struct FMantleStaticMeshHull
 };
 
 /**
- * #470: an uploaded mesh's simple collision (MRM2's COLL block), in the mesh's own space, Unreal
+ * An uploaded mesh's simple collision (MRM2's COLL block), in the mesh's own space, Unreal
  * centimeters. Empty when the file has none: the mesh then collides with its triangles
- * (complex-as-simple), as every mesh did before #470.
+ * (complex-as-simple), as every mesh did before the fidelity blocks.
  */
 struct FMantleStaticMeshCollision
 {
@@ -96,12 +96,12 @@ struct FMantleStaticMeshCollision
 };
 
 /**
- * An uploaded place mesh as the cook worker writes it (MRM2, backend/internal/cook/staticmesh.go,
- * F1 #335 / F2 #336): the sections, tangent frame and optional vertex color a baked PBR material
+ * An uploaded place mesh as the cook worker writes it (MRM2, backend/internal/cook/staticmesh.go):
+ * the sections, tangent frame and optional vertex color a baked PBR material
  * needs. Unreal centimeters in the asset's own axes (Epic's glTF convention: the cook already
  * swapped glTF's y and z), triangles in glTF's index order, which is already Unreal's front face.
  *
- * The inherited streams are LOD0. #470 (backend/internal/cook/staticfidelity.go) adds, each from an
+ * The inherited streams are LOD0. The fidelity extension (backend/internal/cook/staticfidelity.go) adds, each from an
  * optional extension block a client from before it skips: UV1 on any LOD (TEX1 for LOD0), the
  * authored lower LODs with their screen sizes (LODS), and simple collision (COLL).
  */
@@ -152,7 +152,7 @@ struct FMantleStaticMeshData : public FMantleStaticMeshLOD
  * positions' extent, the sections must tile the index buffer in table order with non-empty unique
  * names and unique slots below the section count, unknown flags and trailing bytes are refused, and
  * unknown extension blocks are skipped. Mirrors StaticMesh.Validate in the Go writer, which pins the
- * shared fixtures schema/fixtures/runtime-mesh-v2.mrm and, for #470's blocks (TEX1, LODS, COLL, each
+ * shared fixtures schema/fixtures/runtime-mesh-v2.mrm and, for the fidelity blocks (TEX1, LODS, COLL, each
  * read with the same strictness and refused when it appears twice), runtime-mesh-v2-fidelity.mrm.
  *
  * No UObjects, no asserts, no logging: any thread, the dedicated server included.
@@ -167,7 +167,7 @@ public:
 	static constexpr uint32 MaxVertices = 1'500'000;
 	static constexpr uint32 MaxIndices = 1'500'000;
 
-	/** #470's structural caps (cook.MaxStaticLODs, MaxScreenSize, MaxCollisionPrimitives, MaxCollisionHulls, MaxHullVertices, MaxCollisionHullVertices, MaxCollisionExtent). */
+	/** The fidelity blocks' structural caps (cook.MaxStaticLODs, MaxScreenSize, MaxCollisionPrimitives, MaxCollisionHulls, MaxHullVertices, MaxCollisionHullVertices, MaxCollisionExtent). */
 	static constexpr int32 MaxLODs = 3;
 	static constexpr float MaxScreenSize = 16.0f;
 	static constexpr int32 MaxCollisionPrimitives = 256;

@@ -8,7 +8,7 @@
 
 /**
  * The bounds-checked little-endian cursor the cooked-format readers share (MSK1, MBS1, MAN1, and the
- * section table MRM2 reuses; AVATAR_CATALOG_PLAN.md section 3.4, writers in backend/internal/cook/). These bytes arrive over the
+ * section table MRM2 reuses; writers in backend/internal/cook/). These bytes arrive over the
  * network from content a stranger uploaded, so every read is checked against the bytes left, every
  * count is checked before anything is allocated from it, and a failure is sticky: after the first
  * short read every later read fails too and returns zeros, so a reader can check once per block.

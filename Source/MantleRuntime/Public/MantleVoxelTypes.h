@@ -4,7 +4,7 @@
 #include "CoreMinimal.h"
 
 /**
- * #168 block worlds: the numbers every voxel piece shares. A VoxelWorld is a grid of 100 cm blocks stored in
+ * Block worlds: the numbers every voxel piece shares. A VoxelWorld is a grid of 100 cm blocks stored in
  * 16 x 16 x 16 sections; a block is one byte, 0 is air, so a world has up to 255 block types.
  */
 namespace MantleVoxel
@@ -28,7 +28,7 @@ namespace MantleVoxel
 	constexpr uint8 MaxLight = 15;
 
 	/**
-	 * Smooth worlds (#168 section 10): 50 cm voxels, each a material (the block id) and a density, -127 to 127, solid above 0;
+	 * Smooth worlds: 50 cm voxels, each a material (the block id) and a density, -127 to 127, solid above 0;
 	 * the ground's surface is where density crosses 0. A voxel at or below 0 holds no material (air), so everything that reads
 	 * block ids (light, column tops, rays) sees a smooth world's solid voxels as blocks.
 	 */
@@ -59,7 +59,7 @@ struct FMantleVoxelBlockType
 {
 	FName Name;
 
-	/** Until the tile textures come (#168 step 2), the color the block is drawn with, linear. */
+	/** Until the tile textures come, the color the block is drawn with, linear. */
 	FLinearColor Color = FLinearColor::White;
 
 	EMantleVoxelRender Render = EMantleVoxelRender::Opaque;

@@ -56,7 +56,7 @@ struct FMantleCatalogFitResult
  *       the face slots always take the warp: their vertices sit on the head, which the body does not have, and
  *       the transfer would hand them the neck's weights.
  *
- * The collar's half of the fit (section 0.1 item 12; #430) runs when the faces are there, each part on its own:
+ * The collar's half of the fit runs when the faces are there, each part on its own:
  *   - the neck samples: when the source shape carries a neck (MBS1's NECK block, the plugin's ComputeNeck at upload)
  *     and ComputeField is given the wearer's face, the field is computed through the neck samples of both faces
  *     (FMantleNeckSamples::BuildWearer), so a collar follows the wearer's neck instead of being extrapolated from
@@ -72,9 +72,9 @@ struct MANTLERUNTIME_API FMantleCatalogGarmentFit
 {
 	/**
 	 * Out = Garment's authored clearance over Source's positions on Topology's LOD0 triangle list and vertex normals,
-	 * for every LOD of the garment (A3.8), and over SourceFace when given (#430: the face the garment was authored
+	 * for every LOD of the garment (A3.8), and over SourceFace when given (the face the garment was authored
 	 * with, the item's faceMeshAssetId at its FMantleFaceTopology::FitLOD; the collar's clearance, Out.Face).
-	 * Also Out.SkinMask (#877: FMantleSkinMask::Derive on the source body; null, with a warning, when it cannot be derived). False,
+	 * Also Out.SkinMask (FMantleSkinMask::Derive on the source body; null, with a warning, when it cannot be derived). False,
 	 * with the reason, when Topology has no LOD0, its vertex count or normals do not match Source's positions, or the
 	 * clearance refuses the garment.
 	 */
@@ -86,7 +86,7 @@ struct MANTLERUNTIME_API FMantleCatalogGarmentFit
 
 	/**
 	 * Garment fitted to WearerBody through Field (from the garment's source shape onto WearerBody's LOD0), rebound
-	 * to WearerBody's reference pose. Authored null: the warp path. WearerFace (#430, the wearer's face at its
+	 * to WearerBody's reference pose. Authored null: the warp path. WearerFace (the wearer's face at its
 	 * FitLOD): on the wearer path, with an Authored that has its face clearance, the collar is restored to that
 	 * clearance on it; with WearerFaceBones (the face's bone table) the collar also takes the face's skin weights
 	 * (FMantleGarmentSkinTransfer::Transfer). False (OutFitted unspecified), with the reason, when the chosen path fails; the wearer path
@@ -99,7 +99,7 @@ struct MANTLERUNTIME_API FMantleCatalogGarmentFit
 
 	/**
 	 * The warp field from Source onto WearerBody's LOD0 positions (both the reference topology; the fitter refuses
-	 * otherwise): the cosmetic cache's default field. #430: when Source carries a neck and WearerFace is given, the
+	 * otherwise): the cosmetic cache's default field. When Source carries a neck and WearerFace is given, the
 	 * field runs through the neck samples of both faces (Field->NumNeckSamples; OutNeck, when given, says how they
 	 * were made); when the wearer's face cannot take the shape's neck (FMantleNeckSamples::BuildWearer), from the
 	 * body alone, as without either. Null with the reason when WearerBody has no LOD0 or the fitter refuses.
@@ -108,7 +108,7 @@ struct MANTLERUNTIME_API FMantleCatalogGarmentFit
 		const FMantleSkinnedMeshLOD* WearerFace = nullptr, FMantleNeckSamples::FResult* OutNeck = nullptr);
 
 	/**
-	 * #430, the upload side (the plugin's export and preview): Out = the neck of Shape (reference-topology positions)
+	 * The upload side (the plugin's export and preview): Out = the neck of Shape (reference-topology positions)
 	 * measured on SourceFace, the face the body was authored with (FMantleNeckSamples::BuildSource), with the RBF
 	 * weights over Shape's positions followed by the samples at PointCount interpolation points (seconds: never on a
 	 * client). False, with the reason, when the face gives no samples or the weights do not generate.

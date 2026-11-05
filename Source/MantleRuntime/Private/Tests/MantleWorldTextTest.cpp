@@ -11,7 +11,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// World text (#724): what the parser reads and refuses, and that the builder makes a Text Render component in the
+// World text: what the parser reads and refuses, and that the builder makes a Text Render component in the
 // built-in font with every key applied. How the text looks beside the editor's is the visual check in a packaged client.
 
 // Named, not anonymous: MantleRuntime builds as a unity build.

@@ -72,7 +72,7 @@ namespace
 	}
 
 	/**
-	 * The game-thread time one Build spent inside asset-library loads (#126), for the per-build
+	 * The game-thread time one Build spent inside asset-library loads, for the per-build
 	 * MANTLE_PLACE_BUILD_TIMING line: a run without Insights still yields the load share and the
 	 * longest single load. Every call is counted, including ones the asset was already loaded for.
 	 */
@@ -124,7 +124,7 @@ namespace
 		}
 	}
 
-	/** The engine unit a place's intensityUnits names (#385). */
+	/** The engine unit a place's intensityUnits names. */
 	ELightUnits BuilderEngineLightUnits(EMantleLightUnits Units)
 	{
 		switch (Units)
@@ -137,14 +137,14 @@ namespace
 		}
 	}
 
-	/** A light's temperature (#472). The value is kept even when unused, as the editor keeps it. */
+	/** A light's temperature. The value is kept even when unused, as the editor keeps it. */
 	void BuilderApplyTemperature(ULightComponent* Light, bool bUseTemperature, double Temperature)
 	{
 		Light->SetTemperature(static_cast<float>(Temperature));
 		Light->SetUseTemperature(bUseTemperature);
 	}
 
-	/** A Point or Spot light's source shape (#472); zeros, the default, leave a point source. */
+	/** A Point or Spot light's source shape; zeros, the default, leave a point source. */
 	void BuilderApplySourceShape(UPointLightComponent* Light, const FMantleLightSourceShape& Source)
 	{
 		Light->SetSourceRadius(static_cast<float>(Source.SourceRadius));
@@ -172,7 +172,7 @@ namespace
 
 	/**
 	 * Mesh, shadow, collision and material overrides, shared by a StaticMesh's component and an
-	 * InstancedMesh's (#467), which is a UStaticMeshComponent too.
+	 * InstancedMesh's, which is a UStaticMeshComponent too.
 	 */
 	void ApplyMeshProps(
 		UWorld* World,
@@ -201,7 +201,7 @@ namespace
 		case EMantleCollision::Overlap:
 			Component->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 			Component->SetCollisionResponseToAllChannels(ECR_Overlap);
-			// #821: water a character wades through still holds a hovercraft up. The hover's pads trace their own channel (the client project's
+			// Water a character wades through still holds a hovercraft up. The hover's pads trace their own channel (the client project's
 			// "Hover", ECC_GameTraceChannel5) and keep only a blocking hit, so this one channel blocks. The surface is the place file's, which every
 			// machine reads alike (a dedicated server builds no uploaded materials, so the material cannot say). Nothing else traces that channel.
 			if (Props.Surface == EMantleSurface::Water)
@@ -216,7 +216,7 @@ namespace
 			break;
 		}
 
-		// #596: what the mesh is made of, as its Phys Material Override, on every net mode: a server
+		// What the mesh is made of, as its Phys Material Override, on every net mode: a server
 		// traces the bullets, and each client draws what they hit. A physics entity never has one (its
 		// physics.material sets the override), and a surface this build lacks leaves the mesh's own.
 		if (Props.Surface != EMantleSurface::Default)
@@ -234,7 +234,7 @@ namespace
 		{
 			if (Props.Materials[i].IsEmpty())
 			{
-				continue; // an unset slot keeps the mesh's own material (#262)
+				continue; // an unset slot keeps the mesh's own material
 			}
 			if (bDedicatedServer && FMantlePlaceAssets::IsUploadedId(Props.Materials[i]))
 			{
@@ -247,7 +247,7 @@ namespace
 			if (Material)
 			{
 				Component->SetMaterial(i, Material);
-				// #533: an uploaded wind material sways only near the camera.
+				// An uploaded wind material sways only near the camera.
 				if (FMantlePlaceMaterials::IsWindMaterial(Material))
 				{
 					Component->SetWorldPositionOffsetDisableDistance(FMantlePlaceMaterials::WindDisableDistance);
@@ -263,13 +263,13 @@ namespace
 	}
 
 	/**
-	 * The share of an InstancedMesh's drawDistance (#630) at which its instances start to fade (dithered, per instance,
+	 * The share of an InstancedMesh's drawDistance at which its instances start to fade (dithered, per instance,
 	 * as terrain grass does): they fade over the last fifth and are gone past the whole.
 	 */
 	constexpr double InstanceFadeStartShare = 0.8;
 
 	/**
-	 * A mesh with a drawDistance (#630) that casts shadows stops casting them past a share of it, decided per view by
+	 * A mesh with a drawDistance that casts shadows stops casting them past a share of it, decided per view by
 	 * UMantleShadowDistanceSubsystem, which exists only where something draws in a played world.
 	 */
 	void TrackShadowDistance(UWorld* World, UPrimitiveComponent* Component, const FMantleStaticMeshProps& Props)
@@ -301,7 +301,7 @@ namespace
 			return nullptr;
 		}
 
-		// A physics entity (#456) is the replicated, simulating prop wherever the place is played
+		// A physics entity is the replicated, simulating prop wherever the place is played
 		// with authority; a connected client builds a plain placeholder the server's prop takes
 		// over; an authoring build (the importer) keeps a plain actor with the settings on it.
 		const FMantlePhysicsProps* Physics = Props.Physics.IsSet() ? &Props.Physics.GetValue() : nullptr;
@@ -321,7 +321,7 @@ namespace
 		MakeMovable(Actor);
 		ApplyMeshProps(World, Actor->GetStaticMeshComponent(), Mesh, Props, Path, Errors, LoadStats);
 
-		// #630: drawn, and so shadowed, no farther than its drawDistance. Absent, never culled (0). The editor's Max Draw
+		// Drawn, and so shadowed, no farther than its drawDistance. Absent, never culled (0). The editor's Max Draw
 		// Distance too, so an imported place exports it again. A physics entity keeps its shadow: its prop, which copies
 		// the placeholder's draw distance and shadow when it takes over, moves where no distance check follows it.
 		if (Props.DrawDistance > 0.0)
@@ -357,7 +357,7 @@ namespace
 	}
 
 	/**
-	 * One actor whose root is one UInstancedStaticMeshComponent holding every instance (#467), in
+	 * One actor whose root is one UInstancedStaticMeshComponent holding every instance, in
 	 * the entity's space: the actor takes the entity's transform in pass 3 like any other. Movable
 	 * until then, and frozen to Static afterwards under the same rule as a StaticMesh.
 	 */
@@ -391,7 +391,7 @@ namespace
 		Instances->SetMobility(EComponentMobility::Movable);
 		ApplyMeshProps(World, Instances, Mesh, Props.Mesh, Path, Errors, LoadStats);
 
-		// #630: each instance fades out over the last fifth of the drawDistance and is gone past it, as terrain grass
+		// Each instance fades out over the last fifth of the drawDistance and is gone past it, as terrain grass
 		// culls. Per instance, not the component's Max Draw Distance: that is measured to the whole set's bounds, which
 		// spread far past any one instance. Absent, never culled (0, 0). The editor's instance cull distances too, so an
 		// imported place exports them again.
@@ -444,7 +444,7 @@ namespace
 
 		if (UPointLightComponent* Light = Cast<UPointLightComponent>(Actor->GetLightComponent()))
 		{
-			// Units before intensity (#385): the intensity is a number in those units, and a
+			// Units before intensity: the intensity is a number in those units, and a
 			// spawned light starts Unitless whatever r.DefaultFeature.LightUnits says, so an
 			// editor light authored in candelas would otherwise come back hundreds of times dimmer.
 			Light->SetIntensityUnits(BuilderEngineLightUnits(Props.IntensityUnits));
@@ -482,7 +482,7 @@ namespace
 		return Actor;
 	}
 
-	/** An area light (#472), in its units like a Point or Spot light (#385). */
+	/** An area light, in its units like a Point or Spot light. */
 	AActor* BuildRectLight(UWorld* World, const FMantleEntity& Entity, const FMantleRectLightProps& Props)
 	{
 		ARectLight* Actor = SpawnBare<ARectLight>(World, Entity.Name);
@@ -509,7 +509,7 @@ namespace
 	}
 
 	/**
-	 * A decal (#472): its uploaded textures, prepared by FMantlePlaceAssets before the build, on a
+	 * A decal: its uploaded textures, prepared by FMantlePlaceAssets before the build, on a
 	 * dynamic instance of the cooked decal master. A dedicated server draws nothing and prepared
 	 * neither texture, so it spawns the actor (the entity exists for scripts) without a material.
 	 * A texture that did not load is an error at its property, and the decal is not built, as for a
@@ -629,7 +629,7 @@ namespace
 			USphereComponent* Sphere = NewObject<USphereComponent>(Actor, TEXT("Trigger"));
 			Actor->SetRootComponent(Sphere);
 			Sphere->SetMobility(EComponentMobility::Movable);
-			// A sphere has one radius; validation requires its three extents to match (#451).
+			// A sphere has one radius; validation requires its three extents to match.
 			Sphere->SetSphereRadius(static_cast<float>(Props.Extent.X));
 			Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 			Sphere->SetCollisionResponseToAllChannels(ECR_Overlap);
@@ -650,8 +650,8 @@ namespace
 	}
 
 	/**
-	 * Gives an emitter's component its sound and, in a game world, starts it as the place file says
-	 * (#263): shared by library sounds, bound as the place builds, and uploaded ones (#324), bound
+	 * Gives an emitter's component its sound and, in a game world, starts it as the place file says:
+	 * shared by library sounds, bound as the place builds, and uploaded ones, bound
 	 * then or when their bytes arrive.
 	 */
 	void StartBuiltSoundEmitter(UWorld* World, UAudioComponent* Audio, USoundBase* Sound, const FMantleSoundEmitterProps& Props)
@@ -662,7 +662,7 @@ namespace
 		}
 
 		// The component auto-activated when the actor spawned, before it had a sound, so it
-		// never started. Playback is started explicitly below instead (#263).
+		// never started. Playback is started explicitly below instead.
 		Audio->SetSound(Sound);
 
 		// Only a game world plays: an editor level a place is imported into stays silent, and
@@ -672,7 +672,7 @@ namespace
 			return;
 		}
 
-		// A script stopped this emitter before its sound arrived (Entity:StopSound, #459), or the
+		// A script stopped this emitter before its sound arrived (Entity:StopSound), or the
 		// place said not to autoplay it: bound, but left silent until a script plays it.
 		if (Audio->ComponentHasTag(MantleSoundEmitterHeldTag()))
 		{
@@ -681,7 +681,7 @@ namespace
 
 		if (const UMantleSoundWave* Uploaded = Cast<UMantleSoundWave>(Sound))
 		{
-			// An uploaded sound loops inside its own wave (gapless, #324), which was made for this
+			// An uploaded sound loops inside its own wave (gapless), which was made for this
 			// emitter's looping flag. A procedural wave never ends by itself, so a one-shot is
 			// stopped once its samples have played, with a moment for the last buffer to drain.
 			if (!Props.bLooping)
@@ -749,7 +749,7 @@ namespace
 		// sound's kind was checked when the place was published (the backend refuses an id of
 		// another kind), and the server resolves nothing it cannot hear.
 		const bool bDedicatedServer = World->GetNetMode() == NM_DedicatedServer;
-		// A library entry wins over the uploaded-id shape, so every sound id that built before #324 still does.
+		// A library entry wins over the uploaded-id shape, so every sound id that built before uploaded sounds still does.
 		const bool bUploaded = FMantlePlaceAssets::IsUploadedSoundId(Props.Sound);
 
 		FString Error;
@@ -769,7 +769,7 @@ namespace
 		}
 		else if (bUploaded)
 		{
-			// A creator's uploaded sound (#324), from the live place asset set. One still on its way
+			// A creator's uploaded sound, from the live place asset set. One still on its way
 			// does not hold the place up: the emitter is built silent and bound when it arrives. One
 			// that failed (missing, rejected, another kind of asset) is refused like a library miss.
 			UploadedSound = FMantlePlaceAssets::FindLiveSound(Props.Sound, Error, &bStillLoading);
@@ -808,14 +808,14 @@ namespace
 
 		// Always spatialised, reaching silence at Radius: a 10% full-volume core and a linear
 		// falloff over the rest, the proportions of UE's default attenuation (shared with the 3D
-		// sounds scripts play, #459). The exporter reads the same GetMaxDimension() back, so an
+		// sounds scripts play). The exporter reads the same GetMaxDimension() back, so an
 		// imported place re-exports its own radius.
 		Audio->bOverrideAttenuation = true;
 		Audio->SetAttenuationOverrides(MantleSoundAttenuationForRadius(Props.Radius));
 
 		if (!Props.bAutoplay)
 		{
-			// #459: silent until a script's Entity:PlaySound. An editor level a place is imported
+			// Silent until a script's Entity:PlaySound. An editor level a place is imported
 			// into keeps it as the component's Auto Activate, which the exporter reads back; a game
 			// holds it the way Entity:StopSound does, so its sound arriving later does not start it
 			// either, and PlaySound lifts the hold. Written directly: the component is registered.
@@ -865,7 +865,7 @@ namespace
 	}
 
 	/**
-	 * A SkeletalMesh (#469): an ASkeletalMeshActor showing the uploaded mesh, built on a skeleton of its own
+	 * A SkeletalMesh: an ASkeletalMeshActor showing the uploaded mesh, built on a skeleton of its own
 	 * bones (FMantlePlaceAssets), playing its clip through UMantleClipAnimInstance at the server's clock
 	 * (StartOffset + server time x PlayRate), so every client shows the same frame and nothing replicates. It
 	 * has no collision, and ticks its pose only while rendered: its pose comes from the clock, not from what
@@ -981,11 +981,11 @@ namespace
 	}
 
 	/**
-	 * A Terrain (#466): the heightfield from the live place asset set (a Terrain's heightfield is
+	 * A Terrain: the heightfield from the live place asset set (a Terrain's heightfield is
 	 * always uploaded) as chunk meshes with collision under one actor, and on a client its material,
 	 * the layers' place materials blended by the weightmap in M_MantleTerrain. A dedicated server
 	 * builds LOD 0 and collision only, and resolves no material or weightmap texture (nothing renders
-	 * there). Where layers name surfaces (#596), every net mode adds a UMantleTerrainSurfaceComponent
+	 * there). Where layers name surfaces, every net mode adds a UMantleTerrainSurfaceComponent
 	 * with the weightmap's heaviest layers, read on the CPU. Movable until pass 3 places it, then frozen
 	 * to Static like a blocking mesh.
 	 */
@@ -1040,7 +1040,7 @@ namespace
 					Errors.Add(FMantleParseError{ Path + TEXT("/properties/weightmap"), WeightmapError });
 				}
 			}
-			// Layers 4 to 7 (#628) are weighed by the second one.
+			// Layers 4 to 7 are weighed by the second one.
 			UTexture* Weightmap2 = nullptr;
 			if (!Props.Weightmap2.IsEmpty())
 			{
@@ -1112,7 +1112,7 @@ namespace
 			LoadPaintMap(Props.Weightmap2, OutSurface->Weights2);
 		}
 
-		// #596: the layers' surfaces, on every net mode, so a hit on the terrain resolves to the layer
+		// The layers' surfaces, on every net mode, so a hit on the terrain resolves to the layer
 		// that weighs most there (MantleSurfaceFromHit). A terrain whose layers name none gets nothing.
 		if (UMantleTerrainSurfaceComponent::HasSurfaces(Props))
 		{
@@ -1126,7 +1126,7 @@ namespace
 				{
 					UE_LOG(LogMantle, Warning, TEXT("MANTLE_PLACE_BUILD %s: the terrain's surfaces fall back to layer 0's: %s"), *Path, *WeightsError);
 				}
-				// Layers 4 to 7 (#628): the second weightmap's heaviest layers, weighed against the first's.
+				// Layers 4 to 7: the second weightmap's heaviest layers, weighed against the first's.
 				if (!Props.Weightmap2.IsEmpty())
 				{
 					Weights2 = FMantlePlaceAssets::FindLiveTerrainWeights(Props.Weightmap2, WeightsError);
@@ -1147,7 +1147,7 @@ namespace
 			SurfaceComponent->RegisterComponent();
 		}
 
-		// #628: the terrain's grass, where something draws and a game is played: a component that grows each
+		// The terrain's grass, where something draws and a game is played: a component that grows each
 		// entry's grass around the local view. A dedicated server and an editor level (the importer's) get none.
 		// An entry whose mesh, material or map cannot load is an error at its path and grows nothing (a bad
 		// material leaves its slot on the mesh's own); the others still do.
@@ -1207,7 +1207,7 @@ namespace
 	}
 
 	/**
-	 * A CrowdSpawner (#477) is data, built the same on every net mode: a hidden, unreplicated
+	 * A CrowdSpawner is data, built the same on every net mode: a hidden, unreplicated
 	 * actor holding the spawner's settings with one linear spline per lane, for the editor's
 	 * preview and import round trip. The NPCs themselves come from MantleNPC, on clients only,
 	 * reading the retained FMantlePlace rather than this actor. Movable like every other non-mesh
@@ -1226,7 +1226,7 @@ namespace
 	}
 
 	/**
-	 * A VehicleSpawn (#435) is data too: a hidden, unreplicated actor holding which vehicle and how soon it
+	 * A VehicleSpawn is data too: a hidden, unreplicated actor holding which vehicle and how soon it
 	 * comes back, at the entity's transform. MantleGameplay's place vehicle bridge keeps a vehicle alive at
 	 * it on the server; the vehicle itself replicates. Movable like every other non-mesh entity.
 	 */
@@ -1243,7 +1243,7 @@ namespace
 	}
 
 	/**
-	 * A WeaponSpawn (#789) is data too: a hidden, unreplicated actor holding which weapon, how soon it comes
+	 * A WeaponSpawn is data too: a hidden, unreplicated actor holding which weapon, how soon it comes
 	 * back and whether it is on, at the entity's transform. The pickup itself is MantleGameplay's.
 	 */
 	AActor* BuildWeaponSpawn(UWorld* World, const FMantleEntity& Entity, const FMantleWeaponSpawnProps& Props)
@@ -1259,7 +1259,7 @@ namespace
 	}
 
 	/**
-	 * An ItemSpawn (#235) is data too: a hidden, unreplicated actor holding which item, how many, how soon it comes back, an optional
+	 * An ItemSpawn is data too: a hidden, unreplicated actor holding which item, how many, how soon it comes back, an optional
 	 * model and whether it is on, at the entity's transform. The item itself is MantleGameplay's world item.
 	 */
 	AActor* BuildItemSpawn(UWorld* World, const FMantleEntity& Entity, const FMantleItemSpawnProps& Props)
@@ -1275,7 +1275,7 @@ namespace
 	}
 
 	/**
-	 * A ScriptPoint (#838) is data too: a hidden, unreplicated actor at the entity's transform holding which stored
+	 * A ScriptPoint is data too: a hidden, unreplicated actor at the entity's transform holding which stored
 	 * script package it anchors and its parameters. The package's scripts read it as an entity (Script.Points).
 	 */
 	AActor* BuildScriptPoint(UWorld* World, const FMantleEntity& Entity, const FMantleScriptPointProps& Props)
@@ -1301,7 +1301,7 @@ namespace
 	AActor* BuildEffect(UWorld* World, const FMantleEntity& Entity, const FMantleEffectProps& Props, const FString& Path,
 		TArray<FMantleParseError>& Errors, FMantleBuilderLoadStats& LoadStats)
 	{
-		// A sprites effect's texture (#628), prepared by FMantlePlaceAssets before the build and not by a dedicated server,
+		// A sprites effect's texture, prepared by FMantlePlaceAssets before the build and not by a dedicated server,
 		// which draws nothing. One that did not load is an error at its property, and the effect is not built, as a decal's.
 		UTexture* Texture = nullptr;
 		if (Props.Archetype == EMantleEffectArchetype::Sprites && !Props.TextureId.IsEmpty() && World->GetNetMode() != NM_DedicatedServer)
@@ -1329,7 +1329,7 @@ namespace
 	}
 
 	/**
-	 * A Constraint (#528): an AMantleConstraint on every machine that plays the place, joined to its
+	 * A Constraint: an AMantleConstraint on every machine that plays the place, joined to its
 	 * props after they start simulating (and only where they are the simulating props, the server's);
 	 * an authoring build's is an engine Physics Constraint Actor the exporter reads back. Either is set
 	 * up once every entity stands where the place puts it.
@@ -1358,7 +1358,7 @@ namespace
 		const FString& PropsPath, TArray<FMantleParseError>& Errors);
 
 	/**
-	 * A Scatter (#530): an unreplicated AMantleScatterVolume at the entity's transform (applied in pass 3; its
+	 * A Scatter: an unreplicated AMantleScatterVolume at the entity's transform (applied in pass 3; its
 	 * instances are in its own space and follow its root). A machine that draws loads the meshes and generates
 	 * and builds the instances now, through FMantleScatter; a dedicated server keeps the actor as the entity's
 	 * transform node and builds nothing, since a scatter is visual only. A mesh or material that cannot load is
@@ -1419,7 +1419,7 @@ namespace
 	}
 
 	/**
-	 * A ReflectionProbe (#628): an AMantleReflectionProbe at the entity's transform (applied in pass 3) holding
+	 * A ReflectionProbe: an AMantleReflectionProbe at the entity's transform (applied in pass 3) holding
 	 * its numbers. A machine that draws registers it with UMantleReflectionProbeSubsystem, which captures every
 	 * probe once the build is over (NotifyPlaceBuilt); a dedicated server, a process that cannot render and a
 	 * client with r.ReflectionCapture.Runtime off keep the actor and capture nothing, so the place still builds.
@@ -1443,7 +1443,7 @@ namespace
 		return Actor;
 	}
 
-	/** The engine's alignment for a Text's horizontalAlignment (#724). */
+	/** The engine's alignment for a Text's horizontalAlignment. */
 	EHorizTextAligment BuilderTextHorizontalAlignment(EMantleTextHorizontalAlignment Alignment)
 	{
 		switch (Alignment)
@@ -1454,7 +1454,7 @@ namespace
 		}
 	}
 
-	/** The engine's alignment for a Text's verticalAlignment (#724): baseline is the engine's Quad Top. */
+	/** The engine's alignment for a Text's verticalAlignment: baseline is the engine's Quad Top. */
 	EVerticalTextAligment BuilderTextVerticalAlignment(EMantleTextVerticalAlignment Alignment)
 	{
 		switch (Alignment)
@@ -1467,7 +1467,7 @@ namespace
 	}
 
 	/**
-	 * A Text (#724): an ATextRenderActor at the entity's transform (applied in pass 3). Its component keeps the
+	 * A Text: an ATextRenderActor at the entity's transform (applied in pass 3). Its component keeps the
 	 * engine's built-in font and text material, the class defaults, and takes every other key from the place. A
 	 * dedicated server spawns the same actor, so the entity stands for attachment and scripts, and draws nothing.
 	 */
@@ -1516,7 +1516,7 @@ UMaterialInterface* FMantleDecalMaterials::Load(const bool bNormal)
 	UMaterialInterface* Loaded = Cast<UMaterialInterface>(Path.ResolveObject());
 	if (!Loaded && (GDecalMasterChecked[Index] || FPackageName::DoesPackageExist(Path.GetLongPackageName())))
 	{
-		// Synchronous, once per master per process: the first decal pays it (#126).
+		// Synchronous, once per master per process: the first decal pays it.
 		MANTLE_TRACE_SCOPE_DETAIL("MantleAssetLoad", Path.ToString());
 		Loaded = LoadObject<UMaterialInterface>(nullptr, *Path.ToString(), nullptr, LOAD_NoWarn | LOAD_Quiet);
 	}
@@ -1525,7 +1525,7 @@ UMaterialInterface* FMantleDecalMaterials::Load(const bool bNormal)
 	{
 		GDecalMasterMissing[Index] = true;
 		UE_LOG(LogMantle, Error,
-			TEXT("MANTLE_PLACE_DECAL %s is missing from this build (tools/materials/Create-DecalMaterial.py makes it): decals that need it draw nothing"),
+			TEXT("MANTLE_PLACE_DECAL %s is missing from this build (no tool in the repo authors the decal material): decals that need it draw nothing"),
 			*Path.ToString());
 	}
 	return Loaded;
@@ -1726,12 +1726,12 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 			break;
 
 		case EMantleEntityType::WaterBody:
-			// The parser reads and checks it (GhzGarage/mantle#997); the water is built by the runtime stage after this one,
+			// The parser reads and checks it; the water is built by the runtime stage after this one,
 			// so nothing stands for the entity yet and it is not an error.
 			continue;
 
 		case EMantleEntityType::VoxelWorld:
-			// #168: MantleGameplay's UMantleVoxelPlaceSubsystem builds it once the place is retained, as the water.
+			// MantleGameplay's UMantleVoxelPlaceSubsystem builds it once the place is retained, as the water.
 			continue;
 		}
 
@@ -1833,7 +1833,7 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 		}
 	}
 
-	// Physics props (#456) start once they stand where the place puts them: each detaches from its
+	// Physics props start once they stand where the place puts them: each detaches from its
 	// parent (keeping the world transform its Group composed for it) and, unless it starts anchored,
 	// begins simulating. It no longer follows that Group afterwards.
 	for (const FMantleEntity& Entity : Place.Entities)
@@ -1845,7 +1845,7 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 		}
 	}
 
-	// Constraints (#528) join their props once those stand where the place puts them and simulate:
+	// Constraints join their props once those stand where the place puts them and simulate:
 	// only where the props are the simulating AMantlePhysicsProps (the server, standalone play, the
 	// preview). A connected client's are placeholders the server's props take over, so its
 	// constraints stay unjoined: the server's joint moves the props every player sees. An authoring
@@ -1892,7 +1892,7 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 	// treats them as static bases and sends absolute corrections.
 	//
 	// A blocking mesh under a Group is the same place geometry (a Blueprint prefab's floor or
-	// walls, #468) when nothing above it can move: every ancestor a Group that is not dynamic.
+	// walls) when nothing above it can move: every ancestor a Group that is not dynamic.
 	// Those Groups are frozen too, before anything under them, since a Static child cannot
 	// follow a Movable parent. A mesh under anything else (a dynamic Group, a light, another
 	// mesh) stays Movable, as every parented mesh did before.
@@ -1902,10 +1902,10 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 	// would silently refuse the transform exactly as the comment above describes. A dynamic
 	// entity under a frozen Group stays Movable, which UE allows.
 	//
-	// An InstancedMesh (#467) is the same place geometry many times over, so it follows the same
-	// rule: blocking, not dynamic and under nothing that can move means Static. So does a Terrain
-	// (#466), which always blocks: its root and every chunk under it, the floor players stand on.
-	// A Scatter (#530) blocks nothing, but it is immovable scenery all the same: frozen by the same
+	// An InstancedMesh is the same place geometry many times over, so it follows the same
+	// rule: blocking, not dynamic and under nothing that can move means Static. So does a Terrain,
+	// which always blocks: its root and every chunk under it, the floor players stand on.
+	// A Scatter blocks nothing, but it is immovable scenery all the same: frozen by the same
 	// rule, its root and every instanced mesh under it, so its instances draw as static geometry.
 	{
 		TMap<FString, const FMantleEntity*> EntityById;
@@ -1963,8 +1963,8 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 			if (Actor && (*Actor)->GetRootComponent())
 			{
 				(*Actor)->GetRootComponent()->SetMobility(EComponentMobility::Static);
-				// A Terrain's chunks are components under its root (#466), each one place geometry; so
-				// are a Scatter's instanced meshes (#530).
+				// A Terrain's chunks are components under its root, each one place geometry; so
+				// are a Scatter's instanced meshes.
 				if (Entity->Type == EMantleEntityType::Terrain || Entity->Type == EMantleEntityType::Scatter)
 				{
 					TInlineComponentArray<USceneComponent*> Parts(*Actor);
@@ -1985,7 +1985,7 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 		}
 	}
 
-	// World gravity (#453). settings.gravity is a downward magnitude in cm/s^2 (980 is Earth), so
+	// World gravity. settings.gravity is a downward magnitude in cm/s^2 (980 is Earth), so
 	// the engine's gravity Z is its negative. Every net mode sets it: the server and each client
 	// both build the place, and character movement and physics read it on whichever side
 	// simulates. A creator's editor level (the importer) is left alone: its gravity lives on the
@@ -2012,7 +2012,7 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 		FMantleEnvironment::Apply(World, Place, Result);
 	}
 
-	// Reflection probes (#628) are captured once the place stands and the sky light has had a few frames:
+	// Reflection probes are captured once the place stands and the sky light has had a few frames:
 	// the builder only hands them over (UMantleReflectionProbeSubsystem), and says so when this world draws none.
 	UMantleReflectionProbeSubsystem::NotifyPlaceBuilt(World, Place);
 
@@ -2026,7 +2026,7 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 		Place.Entities.Num(),
 		Result.Errors.Num());
 
-	// One line per build (#126), so a run without Insights still yields the numbers: the whole
+	// One line per build, so a run without Insights still yields the numbers: the whole
 	// Build on the game thread, the part of it spent in asset-library loads, and the longest single load.
 	UE_LOG(LogMantle, Log,
 		TEXT("MANTLE_PLACE_BUILD_TIMING place=%s revision=%d entities=%d total_ms=%.2f load_ms=%.2f loads=%d longest_load_ms=%.2f longest_load=%s"),
@@ -2039,7 +2039,7 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 		LoadStats.LongestSeconds * 1000.0,
 		LoadStats.LongestId.IsEmpty() ? TEXT("-") : *LoadStats.LongestId);
 
-	// The process's memory once the place stands (#630), for the large-place benchmark (tools/bench) on a
+	// The process's memory once the place stands, for the large-place benchmark (tools/bench) on a
 	// client and a dedicated server alike: what is in use now, and the most the process has held so far.
 	const FPlatformMemoryStats MemoryStats = FPlatformMemory::GetStats();
 	UE_LOG(LogMantle, Log,

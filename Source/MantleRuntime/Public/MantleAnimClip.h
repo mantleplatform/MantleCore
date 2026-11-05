@@ -29,7 +29,7 @@ struct FMantleAnimClipEvent
 
 /**
  * Which bone of one skeleton each track drives: build it once per (clip, skeleton) with
- * FMantleAnimClip::Bind and keep it (the cached bone index map of AVATAR_CATALOG_PLAN.md A2.3), so
+ * FMantleAnimClip::Bind and keep it (the cached bone index map), so
  * sampling does no name lookups. Plain data, so it can be sampled on any thread.
  */
 struct FMantleAnimClipBinding
@@ -56,7 +56,7 @@ struct FMantleAnimClipSampleOptions
 };
 
 /**
- * An emote: the in-memory MAN1 clip (AVATAR_CATALOG_PLAN.md section 3.4; the worker's canonical
+ * An emote: the in-memory MAN1 clip (the worker's canonical
  * encoding, backend/internal/cook/animclip.go), on the UEFN driver skeleton. Sampling interpolates
  * between the two frames around a time: rotations by shortest-path slerp, translations linearly.
  *
@@ -77,7 +77,7 @@ struct MANTLERUNTIME_API FMantleAnimClip
 	TArray<FMantleAnimClipEvent> Events;
 
 	/**
-	 * A place clip's skeleton (#469, MAN1 flag bit 0): the hash of the bone table it was authored on
+	 * A place clip's skeleton (MAN1 flag bit 0): the hash of the bone table it was authored on
 	 * (FMantleSkeletonHash), and that table, parent-first. Empty for an emote. A place clip plays only on
 	 * a place skeletal mesh whose skeleton is SkeletonHash, and every track names a bone of the table.
 	 */
@@ -107,8 +107,8 @@ struct MANTLERUNTIME_API FMantleAnimClip
 	/**
 	 * Every structural rule sampling relies on: a finite positive frame rate, at least one frame and one
 	 * track, tracks with a unique non-None bone, 1 or FrameCount rotation keys (unit, finite), 0, 1 or
-	 * FrameCount translation keys (finite), events with a name inside the clip. A place clip's skeleton
-	 * (#469): a parent-first table with one root and unique names, its hash the one it names, every track
+	 * FrameCount translation keys (finite), events with a name inside the clip. A place clip's skeleton:
+	 * a parent-first table with one root and unique names, its hash the one it names, every track
 	 * on one of its bones, and no events. False with the first problem in OutError.
 	 */
 	bool Validate(FString& OutError) const;
@@ -128,7 +128,7 @@ struct FMantleAnimClipReadResult
 };
 
 /**
- * Reads MAN1, the cooked emote clip or place clip (#469, flag bit 0: the skeleton block of the bone table
+ * Reads MAN1, the cooked emote clip or place clip (flag bit 0: the skeleton block of the bone table
  * it was authored on), into FMantleAnimClip. Quaternion components are int16 / 32767 and
  * are renormalized after the length is checked; translations are uint16 steps across each track's own
  * [min, max] range. Strict like the other cooked readers: counts against the bytes left and sanity caps

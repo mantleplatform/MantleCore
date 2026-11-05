@@ -3,7 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "MantleGraphSourceMap.h"
-#include "MantlePlaceTypes.h" // FMantleScriptPackageManifest (#838)
+#include "MantlePlaceTypes.h" // FMantleScriptPackageManifest
 #include "MantleScriptSide.h"
 
 // The script catalog's file rules, shared by the editor and the game: which files under a place's
@@ -35,9 +35,9 @@ struct MANTLESCRIPTTOOLS_API FMantleScriptCatalogEntry
 	/**
 	 * Path relative to the place's Scripts/ folder, with the exact case it has on disk, e.g.
 	 * "Server/KillBricks.luau". Every path comparison against a require() request is
-	 * case-sensitive (#129) -- this field is the ground truth for "the file's real spelling".
+	 * case-sensitive -- this field is the ground truth for "the file's real spelling".
 	 *
-	 * #838: a stored script package's file is mounted at "Packages/<storage name>/<its path>", e.g.
+	 * A stored script package's file is mounted at "Packages/<storage name>/<its path>", e.g.
 	 * "Packages/KillBricks/Server/Main.luau" (MantleScriptPackageOf reads the package back out of it).
 	 */
 	FString Path;
@@ -70,7 +70,7 @@ struct MANTLESCRIPTTOOLS_API FMantleScriptCatalogEntry
 	 *  catalog source, so the runtime never imports MantleEditor to interpret a traceback. */
 	TArray<FMantleGraphSourceMapEntry> GraphSourceMap;
 	FDateTime LastModified;
-	/** #134: for a file of a script package, the storage names its package's manifest lists under "dependencies";
+	/** For a file of a script package, the storage names its package's manifest lists under "dependencies";
 	 *  the source that mounts the package copies them onto every file of it (MantleStampPackageDependencies).
 	 *  Empty for a place's own script and for a package that lists none. require() reads it from the calling file's package. */
 	TArray<FString> PackageDependencies;
@@ -105,14 +105,14 @@ public:
 	virtual bool Poll(TArray<int32>& OutChangedIds, bool& bOutStructureChanged) = 0;
 
 	/**
-	 * #838: the manifest of the script package mounted as Packages/<Package>/ (Package compared case-sensitively),
+	 * The manifest of the script package mounted as Packages/<Package>/ (Package compared case-sensitively),
 	 * or null when this source has no such package or it carries no manifest. Script Point parameters are typed
 	 * by it (MantleScriptPointAttributes).
 	 */
 	virtual const FMantleScriptPackageManifest* FindPackageManifest(const FString& Package) const { return nullptr; }
 
 	/**
-	 * #838 stage 6: the stored settings of the script package mounted as Packages/<Package>/ (raw text, by key), or null when
+	 * The stored settings of the script package mounted as Packages/<Package>/ (raw text, by key), or null when
 	 * this source does not carry them (a disk or preview source: the host then reads the loaded place's storage entry).
 	 */
 	virtual const TMap<FString, FString>* FindPackageSettings(const FString& Package) const { return nullptr; }
@@ -124,7 +124,7 @@ public:
  * every 0.5s by the owning world subsystem. Never compiled into a Shipping build -- see
  * MantleScriptWorldSubsystem.cpp, which only constructs this behind #if !UE_BUILD_SHIPPING.
  *
- * #838: also <PlaceDir>/Packages/<Name>/{Server,Client,Shared}, the script packages a creator authors beside the
+ * Also <PlaceDir>/Packages/<Name>/{Server,Client,Shared}, the script packages a creator authors beside the
  * level, mounted at "Packages/<Name>/..." exactly as a stored package is mounted under its storage name, so a package
  * runs locally as it will once published. <Name> must be a storage name (a letter, then letters, digits or '_');
  * Packages/<Name>/package.json, when present, is the package's manifest.
@@ -133,7 +133,7 @@ class MANTLESCRIPTTOOLS_API FMantleDiskScriptCatalogSource : public IMantleScrip
 {
 public:
 	/**
-	 * PlaceFilePath is the -MantlePlace file itself; Scripts/ and Packages/ are sibling directories of it. #838:
+	 * PlaceFilePath is the -MantlePlace file itself; Scripts/ and Packages/ are sibling directories of it.
 	 * Packages/ is read only with bIncludePackages (the runtime's local launch); the exporter's place-script
 	 * collection keeps the default and so never mistakes a package file for one of the place's own scripts.
 	 */
@@ -147,13 +147,13 @@ public:
 	/** The absolute Scripts/ directory this source reads from, or empty if there wasn't one. */
 	const FString& GetScriptsRoot() const { return ScriptsRoot; }
 
-	/** #838: the absolute Packages/ directory this source reads from, or empty if there wasn't one. */
+	/** The absolute Packages/ directory this source reads from, or empty if there wasn't one. */
 	const FString& GetPackagesRoot() const { return PackagesRoot; }
 
 	/**
 	 * True when this process was launched to run a local -MantlePlace file, whose path is then OutPlaceFilePath.
 	 * A hosted dedicated server also carries -MantlePlace=<its bootstrap file> (StartServer.sh, the community host),
-	 * but with MANTLE_SERVER_TOKEN, and its scripts are the published ones (#836): false for it, so it never reads
+	 * but with MANTLE_SERVER_TOKEN, and its scripts are the published ones: false for it, so it never reads
 	 * a Scripts/ folder beside a file the API wrote.
 	 */
 	static bool IsRequestedForLaunch(FString& OutPlaceFilePath);
@@ -164,7 +164,7 @@ private:
 	{
 		FString CatalogPath;
 		FString FullPath;
-		/** Read from Packages/ (#838), so CatalogPath starts with "Packages/". */
+		/** Read from Packages/, so CatalogPath starts with "Packages/". */
 		bool bPackage = false;
 	};
 
@@ -172,7 +172,7 @@ private:
 
 	/** Every file under Scripts/ and then Packages/ with a script extension and a non-dot name, each folder sorted. */
 	TArray<FDiskScriptFile> GatherFiles() const;
-	/** #134: each package folder's package.json time stamp, by package name; a change restarts the scripts like a new file does. */
+	/** Each package folder's package.json time stamp, by package name; a change restarts the scripts like a new file does. */
 	TMap<FString, FDateTime> ReadManifestStamps() const;
 
 	/** The side and require-only rule of a gathered file (MantleClassifyScriptCatalogPath's, by where it was read). */
@@ -184,25 +184,25 @@ private:
 	FString ScriptsRoot;
 	FString PackagesRoot;
 	TArray<FMantleScriptCatalogEntry> Entries;
-	/** #838: Packages/<Name>/package.json, by package name (compared case-sensitively). */
+	/** Packages/<Name>/package.json, by package name (compared case-sensitively). */
 	TArray<TPair<FString, FMantleScriptPackageManifest>> PackageManifests;
 	TMap<FString, FDateTime> ManifestStamps;
 	int32 NextId = 1;
 };
 
 /**
- * #838: the script package a catalog path belongs to -- "KillBricks" for "Packages/KillBricks/Server/Main.luau" --
+ * The script package a catalog path belongs to -- "KillBricks" for "Packages/KillBricks/Server/Main.luau" --
  * or empty for a place's own script (and for anything that is not Packages/<name>/<more>). Case-exact.
  */
 MANTLESCRIPTTOOLS_API FString MantleScriptPackageOf(const FString& CatalogPath);
 
-/** #134: sets PackageDependencies on every entry mounted under Packages/<Package>/ (Package compared case-sensitively). */
+/** Sets PackageDependencies on every entry mounted under Packages/<Package>/ (Package compared case-sensitively). */
 MANTLESCRIPTTOOLS_API void MantleStampPackageDependencies(TArray<FMantleScriptCatalogEntry>& Entries, const FString& Package, const TArray<FString>& Dependencies);
 
 /**
  * The side and require-only rule of a catalog path, the one rule every source applies: Server/ and Client/ run on
  * their side, Shared/ is require-only on both, and so is anything under a folder named exactly "Modules" at any
- * depth. #838: "Packages/<name>/<path>" is classified by <path> the same way, <name> being a storage name. False for
+ * depth. "Packages/<name>/<path>" is classified by <path> the same way, <name> being a storage name. False for
  * anything else (a top folder spelled in another case, a file directly under a top folder's parent).
  */
 MANTLESCRIPTTOOLS_API bool MantleClassifyScriptCatalogPath(const FString& CatalogPath, EMantleSide& OutSide, bool& bOutModuleOnly);
@@ -213,15 +213,15 @@ MANTLESCRIPTTOOLS_API bool MantleClassifyScriptCatalogPath(const FString& Catalo
  * Shared/Server/Client the calling script doesn't belong to), exactly as authored on disk.
  *
  * On failure, if a case-insensitive match exists, ExactCaseHint carries its real spelling so the
- * caller can build the #129 "did you mean" message; empty otherwise.
+ * caller can build the "did you mean" message; empty otherwise.
  *
- * #838, script packages (mounted at Packages/<name>/):
+ * Script packages (mounted at Packages/<name>/):
  *  - From a place script, require("@<name>/Thing") resolves to Packages/<name>/Shared/Thing, and only there, when a
  *    package of that name is mounted; otherwise the "@" is stripped as before ("@Shared/Config" is "Shared/Config").
  *    A place script never reaches a package file any other way (a literal Packages/ path is refused).
  *  - From a package file, a bare name resolves inside that package only: Packages/<name>/<Thing>, then its Shared/,
  *    then its own side's folder. A relative path must stay inside the package. A package cannot require the place's
- *    own scripts. #134: it can require another package's Shared/ modules with "@<name>/Thing", only when <name> is in
+ *    own scripts. It can require another package's Shared/ modules with "@<name>/Thing", only when <name> is in
  *    its own manifest's dependencies (entries carry them as PackageDependencies); otherwise it is refused with a
  *    message naming the dependencies field. Dependencies are not transitive.
  *    "@<its own name>/Thing" reaches its own Shared/Thing; any other "@" is stripped, then resolved inside the package.

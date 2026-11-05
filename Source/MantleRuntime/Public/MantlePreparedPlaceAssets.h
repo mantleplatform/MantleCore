@@ -10,7 +10,7 @@ struct FMantlePreparedPlaceAssetsState;
 
 /**
  * FMantlePlaceAssets::Prepare for a tool that waits for it: the editor's "Check what players
- * receive" (#394), which builds a place the way the client does, uploaded (ast_u) meshes and
+ * receive", which builds a place the way the client does, uploaded (ast_u) meshes and
  * materials included.
  *
  * Its own name and header on purpose: the editor module has a class of its own called

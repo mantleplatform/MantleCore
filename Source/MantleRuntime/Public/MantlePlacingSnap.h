@@ -4,7 +4,7 @@
 #include "CoreMinimal.h"
 
 /**
- * #184 placing mode: the one snap helper. Pure maths with no actor or world access: it takes the piece, its sockets, where the camera
+ * Placing mode: the one snap helper. Pure maths with no actor or world access: it takes the piece, its sockets, where the camera
  * ray hit, the sockets of the pieces around, the grid and the rotation, and returns where the piece goes. The player's ghost and the
  * server's check both call it, so they agree; the server's answer is the one that counts.
  *

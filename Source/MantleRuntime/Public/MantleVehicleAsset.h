@@ -9,7 +9,7 @@
 class USkeletalMesh;
 class USkeleton;
 
-/** One wheel of a creator vehicle (#435): schema/vehicle.schema.json wheels[], as the cook resolved it. */
+/** One wheel of a creator vehicle: schema/vehicle.schema.json wheels[], as the cook resolved it. */
 struct FMantleVehicleWheelDesc
 {
 	/** The wheel-center bone of the body. */
@@ -26,7 +26,7 @@ struct FMantleVehicleWheelDesc
 	double RimRadius = 0.0;
 };
 
-/** A suspension linkage rule's kind (#435 b): schema/vehicle.schema.json $defs.linkageRule type. */
+/** A suspension linkage rule's kind: schema/vehicle.schema.json $defs.linkageRule type. */
 UENUM(BlueprintType)
 enum class EMantleVehicleLinkageType : uint8
 {
@@ -39,7 +39,7 @@ enum class EMantleVehicleLinkageType : uint8
 };
 
 /**
- * One suspension linkage rule of a creator vehicle (#435 b), as the cook resolved it: every bone named in the body's
+ * One suspension linkage rule of a creator vehicle, as the cook resolved it: every bone named in the body's
  * own spelling, Weight set. A name the rule's type does not use is NAME_None.
  */
 struct FMantleVehicleLinkageRule
@@ -94,7 +94,7 @@ struct FMantleVehiclePartLayerSlotsDesc
 };
 
 /**
- * One attached part of a creator vehicle (#435 item 2), as the cook resolved it: an uploaded static mesh riding Bone (in the
+ * One attached part of a creator vehicle, as the cook resolved it: an uploaded static mesh riding Bone (in the
  * body's own spelling) at Transform, in the bone's space. Drawn only: it neither collides nor weighs anything.
  */
 struct FMantleVehiclePartDesc
@@ -114,7 +114,7 @@ struct FMantleVehiclePartDesc
 };
 
 /**
- * A part of a creator vehicle the car clips turn on a hinge (#546): a door, the trunk lid, the hood, as the cook resolved it. Bone turns
+ * A part of a creator vehicle the car clips turn on a hinge: a door, the trunk lid, the hood, as the cook resolved it. Bone turns
  * (in the body's own spelling; NAME_None: no hinge) about the line through Pivot along Axis, both in the body's space as the
  * seat is, by the clips' angle times Scale. Axis is as the document gives it, never near zero length: only its direction counts.
  */
@@ -129,7 +129,7 @@ struct FMantleVehicleHingeDesc
 };
 
 /**
- * A part someone standing outside opens and shuts with the trunk clips (#546): the hood, a rear door. Its hinge (as a door's), where
+ * A part someone standing outside opens and shuts with the trunk clips: the hood, a rear door. Its hinge (as a door's), where
  * a character stands to open it (in the body's space) and the way it faces there, degrees about Z (0: the body's +X). bSet: the car has one.
  */
 struct FMantleVehicleOpeningDesc
@@ -140,7 +140,7 @@ struct FMantleVehicleOpeningDesc
 	double Yaw = 0.0;
 };
 
-/** What a seat's hands hold (#612): schema/vehicle.schema.json $defs.hands kind. Bikes and aircraft (#559) add their grips. */
+/** What a seat's hands hold: schema/vehicle.schema.json $defs.hands kind. Bikes and aircraft add their grips. */
 UENUM(BlueprintType)
 enum class EMantleVehicleHandsKind : uint8
 {
@@ -153,7 +153,7 @@ enum class EMantleVehicleHandsKind : uint8
 };
 
 /**
- * One contact point of a seat (#612), as the cook resolved it: a target transform in the vehicle's own space, never a
+ * One contact point of a seat, as the cook resolved it: a target transform in the vehicle's own space, never a
  * character's skeleton. Location and Rotation are in the body's space (as the seat's location) when Bone is NAME_None, else in
  * Bone's reference-pose space (in the body's own spelling), so the point moves with the bone.
  */
@@ -164,7 +164,7 @@ struct FMantleVehicleContactDesc
 	FRotator Rotation = FRotator::ZeroRotator;
 };
 
-/** One standing spot beside the vehicle (#612): on the ground in the body's space, facing Yaw degrees about Z (0: the body's +X). */
+/** One standing spot beside the vehicle: on the ground in the body's space, facing Yaw degrees about Z (0: the body's +X). */
 struct FMantleVehicleExitDesc
 {
 	FVector Location = FVector::ZeroVector;
@@ -172,7 +172,7 @@ struct FMantleVehicleExitDesc
 };
 
 /**
- * A seat's contact points (#612, the document's seat or passengerSeat pelvis, hands, feet and exits): where a seated body puts
+ * A seat's contact points (the document's seat or passengerSeat pelvis, hands, feet and exits): where a seated body puts
  * its pelvis, palms and balls of its feet, and where it stands after getting out. Each group is optional; an unset one leaves
  * the seat clips' own.
  */
@@ -193,7 +193,7 @@ struct FMantleVehicleSeatContactsDesc
 	bool HasAny() const { return bPelvis || Hands != EMantleVehicleHandsKind::None || bFeet || Exits.Num() > 0; }
 };
 
-/** A seat's creator-set gun aim arc (#615, #840 step 5d): yaw and pitch bounds relative to the vehicle's +X, degrees, yaw positive toward +Y.
+/** A seat's creator-set gun aim arc: yaw and pitch bounds relative to the vehicle's +X, degrees, yaw positive toward +Y.
  *  bSet false (the document has no weaponArc): the seat's arc is worked out from where it sits (MantleSeatAim::ArcFor). */
 struct FMantleVehicleWeaponArcDesc
 {
@@ -219,7 +219,7 @@ struct FMantleVehicleLightBeamDesc
 };
 
 /**
- * Which simulation builds a vehicle (#821, the document's movementType). A truck, six-wheeler and motorcycle are Wheeled; a jet is a Plane.
+ * Which simulation builds a vehicle (the document's movementType). A truck, six-wheeler and motorcycle are Wheeled; a jet is a Plane.
  * (Not FMantleVehicleMovementType, the gameplay module's registry class.)
  */
 UENUM(BlueprintType)
@@ -231,7 +231,7 @@ enum class EMantleVehicleMovementKind : uint8
 	Hover,
 };
 
-/** A seat's kind (#821, the document's seat.kind): the clip set its occupant plays (MantleVehicleSeatAssets::ForDriverSeatKind). */
+/** A seat's kind (the document's seat.kind): the clip set its occupant plays (MantleVehicleSeatAssets::ForDriverSeatKind). */
 UENUM(BlueprintType)
 enum class EMantleVehicleSeatKind : uint8
 {
@@ -243,7 +243,7 @@ enum class EMantleVehicleSeatKind : uint8
 	Pilot,
 };
 
-/** An aerofoil's job (#821, schema/vehicle.schema.json $defs.aerofoil type). */
+/** An aerofoil's job (schema/vehicle.schema.json $defs.aerofoil type). */
 UENUM(BlueprintType)
 enum class EMantleVehicleAerofoilKind : uint8
 {
@@ -254,7 +254,7 @@ enum class EMantleVehicleAerofoilKind : uint8
 };
 
 /**
- * One point a hand or foot holds (#821 $defs.grip): Location in the body's space at the reference pose, moving with Bone. Bone is NAME_None only
+ * One point a hand or foot holds ($defs.grip): Location in the body's space at the reference pose, moving with Bone. Bone is NAME_None only
  * while a document is parsed that leaves it out; Read (and the chassis builder) name the root bone (or the rider's fork, for a handlebar) in its place.
  */
 struct FMantleVehicleGripDesc
@@ -271,7 +271,7 @@ struct FMantleVehicleGripPairDesc
 };
 
 /**
- * One lifting surface of a plane (#821, FMantleVehicleAerofoil), every default the contract's. Bone, when set, is the control-surface bone that
+ * One lifting surface of a plane (FMantleVehicleAerofoil), every default the contract's. Bone, when set, is the control-surface bone that
  * deflects; AreaM2 is m^2 and the angles degrees.
  */
 struct FMantleVehicleAerofoilDesc
@@ -286,7 +286,7 @@ struct FMantleVehicleAerofoilDesc
 	double StallAngle = 20.0;
 };
 
-/** One engine's push (#821, FMantleVehicleThruster). Bone, when set, is where it pushes from (a reference, never posed). Direction is as given: only its direction counts. */
+/** One engine's push (FMantleVehicleThruster). Bone, when set, is where it pushes from (a reference, never posed). Direction is as given: only its direction counts. */
 struct FMantleVehicleThrusterDesc
 {
 	FName Bone;
@@ -295,7 +295,7 @@ struct FMantleVehicleThrusterDesc
 	double MaxThrustNewtons = 0.0;
 };
 
-/** A propeller or rotor bone that turns while someone is aboard (#821, FMantleVehicleSpinBone); cosmetic. Axis is in the body's space. */
+/** A propeller or rotor bone that turns while someone is aboard (FMantleVehicleSpinBone); cosmetic. Axis is in the body's space. */
 struct FMantleVehicleSpinBoneDesc
 {
 	FName Bone;
@@ -303,7 +303,7 @@ struct FMantleVehicleSpinBoneDesc
 	double Rpm = 0.0;
 };
 
-/** A plane's flight block (#821, MovementType Plane): the numbers ApplyAircraft sets. Speeds cm/s, dampings per second. */
+/** A plane's flight block (MovementType Plane): the numbers ApplyAircraft sets. Speeds cm/s, dampings per second. */
 struct FMantleVehicleFlightDesc
 {
 	double AirSpeedLimit = 0.0;
@@ -320,7 +320,7 @@ struct FMantleVehicleFlightDesc
 	FMantleVehicleGripPairDesc PilotGrips;
 };
 
-/** One rotor (#821, FMantleVehicleRotor), every default the contract's. The accelerations are rad/s^2. */
+/** One rotor (FMantleVehicleRotor), every default the contract's. The accelerations are rad/s^2. */
 struct FMantleVehicleRotorDesc
 {
 	FName Bone;
@@ -336,7 +336,7 @@ struct FMantleVehicleRotorDesc
 	double StabilityMaxAcceleration = 4.0;
 };
 
-/** A helicopter's block (#821, MovementType Helicopter): the numbers ApplyHelicopter sets. */
+/** A helicopter's block (MovementType Helicopter): the numbers ApplyHelicopter sets. */
 struct FMantleVehicleHelicopterDesc
 {
 	double AirSpeedLimit = 0.0;
@@ -352,7 +352,7 @@ struct FMantleVehicleHelicopterDesc
 	FMantleVehicleGripPairDesc PilotGrips;
 };
 
-/** One hover pad (#821, FMantleVehicleHoverPad), every default the struct's. Lengths cm. */
+/** One hover pad (FMantleVehicleHoverPad), every default the struct's. Lengths cm. */
 struct FMantleVehicleHoverPadDesc
 {
 	FVector Location = FVector::ZeroVector;
@@ -362,7 +362,7 @@ struct FMantleVehicleHoverPadDesc
 	double SpringDamping = 0.6;
 };
 
-/** A hovercraft's fan (#821): its place and push, and FMantleVehicleHoverThrust. TopSpeedCmPerSec 0 is no falloff. */
+/** A hovercraft's fan: its place and push, and FMantleVehicleHoverThrust. TopSpeedCmPerSec 0 is no falloff. */
 struct FMantleVehicleHoverThrusterDesc
 {
 	FVector Location = FVector::ZeroVector;
@@ -374,7 +374,7 @@ struct FMantleVehicleHoverThrusterDesc
 	double BrakeFadeCmPerSec = 100.0;
 };
 
-/** A hovercraft's fin (#821): a rudder aerofoil with no bone that follows the steering. */
+/** A hovercraft's fin: a rudder aerofoil with no bone that follows the steering. */
 struct FMantleVehicleHoverRudderDesc
 {
 	FVector Location = FVector::ZeroVector;
@@ -384,7 +384,7 @@ struct FMantleVehicleHoverRudderDesc
 	double StallAngle = 0.0;
 };
 
-/** What stands in for a tire's grip on a hover (#821, FMantleVehicleHoverDamping). */
+/** What stands in for a tire's grip on a hover (FMantleVehicleHoverDamping). */
 struct FMantleVehicleHoverDampingDesc
 {
 	double LateralPerSecond = 1.5;
@@ -395,7 +395,7 @@ struct FMantleVehicleHoverDampingDesc
 	double MaxSkirtBrakeAccel = 500.0;
 };
 
-/** A hovercraft's block (#821, MovementType Hover): the numbers ApplyHovercraft sets. */
+/** A hovercraft's block (MovementType Hover): the numbers ApplyHovercraft sets. */
 struct FMantleVehicleHoverDesc
 {
 	TArray<FMantleVehicleHoverPadDesc> Pads;
@@ -408,7 +408,7 @@ struct FMantleVehicleHoverDesc
 };
 
 /**
- * ChaosVehicles' arcade rotation control as a rider writes it (#553, #821): an absent key is 0 or false here, not the definition's default, so a cooked
+ * ChaosVehicles' arcade rotation control as a rider writes it: an absent key is 0 or false here, not the definition's default, so a cooked
  * document writes all fourteen.
  */
 struct FMantleVehicleRotationControlDesc
@@ -430,7 +430,7 @@ struct FMantleVehicleRotationControlDesc
 };
 
 /**
- * A motorcycle rider's fit (#553, #821; the driver seat's rider block): the handlebar on the fork, the foot pegs, the rider's offsets and the rotation
+ * A motorcycle rider's fit (the driver seat's rider block): the handlebar on the fork, the foot pegs, the rider's offsets and the rotation
  * control. RearTireFriction and RearBrakeTorque, when set, are every non-steering wheel's own.
  */
 struct FMantleVehicleRiderDesc
@@ -486,7 +486,7 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	double MaxSteeringAngle = 35.0;
 	bool bAckermann = true;
 	/**
-	 * How much of the lock the steering gives at a speed (#821, steering.speedCurve): (mph, share) points, mph strictly rising; empty (absent) is the full lock at
+	 * How much of the lock the steering gives at a speed (steering.speedCurve): (mph, share) points, mph strictly rising; empty (absent) is the full lock at
 	 * every speed. A ground car's document carries the chassis cars' curve, so a published car steers as the developer build's does.
 	 */
 	TArray<FVector2D> SteeringSpeedCurve;
@@ -494,7 +494,7 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	double BrakeTorque = 1500.0;
 	double HandbrakeTorque = 3000.0;
 	double TireFriction = 2.0;
-	/** The grip of every wheel that does not steer (#821, tires.rearFriction), where TireFriction is the steered wheels'; unset, TireFriction is every wheel's. */
+	/** The grip of every wheel that does not steer (tires.rearFriction), where TireFriction is the steered wheels'; unset, TireFriction is every wheel's. */
 	bool bTireRearFriction = false;
 	double TireRearFriction = 0.0;
 
@@ -505,7 +505,7 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	FMantleVehicleWeaponArcDesc SeatWeaponArc;
 
 	/**
-	 * The seat's steering wheel (#546), the rim the driver's hands hold. bSteeringWheel: the seat has one. Its hub in the
+	 * The seat's steering wheel, the rim the driver's hands hold. bSteeringWheel: the seat has one. Its hub in the
 	 * body's space (as SeatLocation), turned so its X runs along the column away from the driver and its Z towards the top
 	 * of the rim; the rim's radius where the hands grip it, cm.
 	 */
@@ -513,30 +513,30 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	FVector SteeringWheelLocation = FVector::ZeroVector;
 	FRotator SteeringWheelRotation = FRotator::ZeroRotator;
 	double SteeringWheelRadius = 0.0;
-	/** The body's bone the steering wheel is on, which turns with it about the hub's X (#546); NAME_None: nothing turns. */
+	/** The body's bone the steering wheel is on, which turns with it about the hub's X; NAME_None: nothing turns. */
 	FName SteeringWheelBone;
-	/** The door beside the driver (#546); unset on a car without one. */
+	/** The door beside the driver; unset on a car without one. */
 	FMantleVehicleHingeDesc SeatDoor;
-	/** The driver's contact points (#612); none set on a seat without them. */
+	/** The driver's contact points; none set on a seat without them. */
 	FMantleVehicleSeatContactsDesc SeatContacts;
 	/** The document's seat.hidden: a model with no inside, so the driver is not drawn while seated. */
 	bool bSeatHidden = false;
 
 	/**
-	 * A front passenger seat (#546). bPassengerSeat: the car has one. Where the seated passenger's capsule center goes, in the
+	 * A front passenger seat. bPassengerSeat: the car has one. Where the seated passenger's capsule center goes, in the
 	 * body's space (as SeatLocation), and the door beside it (unset without one).
 	 */
 	bool bPassengerSeat = false;
 	FVector PassengerSeatLocation = FVector::ZeroVector;
 	FMantleVehicleWeaponArcDesc PassengerSeatWeaponArc;
 	FMantleVehicleHingeDesc PassengerSeatDoor;
-	/** The passenger's contact points (#612); never Wheel hands. */
+	/** The passenger's contact points; never Wheel hands. */
 	FMantleVehicleSeatContactsDesc PassengerSeatContacts;
 	/** The document's passengerSeat.hidden: the passenger is not drawn while seated. */
 	bool bPassengerSeatHidden = false;
 
 	/**
-	 * The trunk (#546). bTrunk: the car has one. Its lid, where a character stands to open it (on the ground behind the car, in
+	 * The trunk. bTrunk: the car has one. Its lid, where a character stands to open it (on the ground behind the car, in
 	 * the body's space) and the way it faces there, degrees about Z (0: the body's +X, towards the car).
 	 */
 	bool bTrunk = false;
@@ -545,7 +545,7 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	double TrunkYaw = 0.0;
 
 	/**
-	 * The hood and the two rear doors (#546), opened from outside as the trunk is. The left door is on the car's -Y side (the driver's),
+	 * The hood and the two rear doors, opened from outside as the trunk is. The left door is on the car's -Y side (the driver's),
 	 * the right on +Y.
 	 */
 	FMantleVehicleOpeningDesc Hood;
@@ -553,7 +553,7 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	FMantleVehicleOpeningDesc RearRightDoor;
 
 	/**
-	 * The horn (#546): the uploaded sound (kind sound, as a SoundEmitter's) the driver's horn plays; empty on a car without one,
+	 * The horn: the uploaded sound (kind sound, as a SoundEmitter's) the driver's horn plays; empty on a car without one,
 	 * which plays Mantle's built-in horn instead.
 	 */
 	FString HornSound;
@@ -561,7 +561,7 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	double CameraArmLength = 650.0;
 	double CameraHeight = 150.0;
 
-	/** The chase camera's orbit point (#821, camera.boomLocation), in the body's space; unset, the definition's own. A flier's sets it. */
+	/** The chase camera's orbit point (camera.boomLocation), in the body's space; unset, the definition's own. A flier's sets it. */
 	bool bCameraBoom = false;
 	FVector CameraBoomLocation = FVector::ZeroVector;
 
@@ -574,13 +574,13 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	FMantleVehicleHelicopterDesc Helicopter;
 	FMantleVehicleHoverDesc Hover;
 
-	/** The seats' kinds (#821, seat.kind and passengerSeat.kind). */
+	/** The seats' kinds (seat.kind and passengerSeat.kind). */
 	EMantleVehicleSeatKind SeatKind = EMantleVehicleSeatKind::Car;
 	EMantleVehicleSeatKind PassengerSeatKind = EMantleVehicleSeatKind::Car;
-	/** How far to the side an exiting driver is put, cm (#821, seat.exitSideDistance); unset, the client's car rule. */
+	/** How far to the side an exiting driver is put, cm (seat.exitSideDistance); unset, the client's car rule. */
 	bool bSeatExitSideDistance = false;
 	double SeatExitSideDistance = 0.0;
-	/** The driver's motorcycle rider fit (#821, seat.rider); needs SeatKind Motorcycle. */
+	/** The driver's motorcycle rider fit (seat.rider); needs SeatKind Motorcycle. */
 	bool bRider = false;
 	FMantleVehicleRiderDesc Rider;
 
@@ -590,7 +590,7 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	TMap<FString, FString> Materials;
 
 	/**
-	 * The paint (#435 f, the document's paint): the body sections, and the parts' PaintSlots (#435 item 2), drawn with
+	 * The paint (the document's paint): the body sections, and the parts' PaintSlots, drawn with
 	 * Mantle's car paint instead of their material, and its finish. bPaint: the document has paint (it paints a body
 	 * section, a part's slot or both); without it the vehicle draws every section as authored.
 	 */
@@ -613,7 +613,7 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	/** The paint's other layers (secondary, wheels, interior, dashboard), each once; empty when it has none. */
 	TArray<FMantleVehiclePaintLayerDesc> PaintLayers;
 
-	/** The liveries (#488): uploaded texture ids, picked by index; empty when it has none. Needs paint. */
+	/** The liveries: uploaded texture ids, picked by index; empty when it has none. Needs paint. */
 	TArray<FString> Liveries;
 	/** What a menu calls each livery, by the same index as Liveries: empty (no names) or one per livery, each at most 40 characters; an entry may be empty. */
 	TArray<FString> LiveryNames;
@@ -622,10 +622,10 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	/** The livery a spawned car wears, an index into Liveries; INDEX_NONE for none. */
 	int32 DefaultLivery = INDEX_NONE;
 
-	/** The suspension linkage (#435 b), applied in this order after the wheel bones are posed; empty when it has none. */
+	/** The suspension linkage, applied in this order after the wheel bones are posed; empty when it has none. */
 	TArray<FMantleVehicleLinkageRule> Linkage;
 
-	/** The attached parts (#435 item 2): static meshes riding the body's bones; empty when it has none. */
+	/** The attached parts: static meshes riding the body's bones; empty when it has none. */
 	TArray<FMantleVehiclePartDesc> Parts;
 
 	/**
@@ -642,7 +642,7 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 
 	bool HasPaint() const { return bPaint || PaintSections.Num() > 0; }
 
-	/** Whether any part has a painted slot (#435 item 2). */
+	/** Whether any part has a painted slot. */
 	bool HasPartPaint() const
 	{
 		return Parts.ContainsByPredicate([](const FMantleVehiclePartDesc& Part) { return Part.PaintSlots.Num() > 0 || Part.LayerSlots.Num() > 0; });
@@ -651,12 +651,12 @@ struct MANTLERUNTIME_API FMantleVehicleDesc
 	/** Every uploaded material the vehicle draws with, its body's sections' and then its parts', each once. */
 	TArray<FString> MaterialIds() const;
 
-	/** Every uploaded mesh its parts draw (#435 item 2), each once, in the parts' order. */
+	/** Every uploaded mesh its parts draw, each once, in the parts' order. */
 	TArray<FString> PartMeshIds() const;
 
 	bool HasHorn() const { return !HornSound.IsEmpty(); }
 
-	/** Every uploaded sound it plays (#546: its horn's), each once. */
+	/** Every uploaded sound it plays (its horn's), each once. */
 	TArray<FString> SoundIds() const;
 };
 
@@ -681,7 +681,7 @@ struct FMantleVehicleAsset
 };
 
 /**
- * limits.json placeAssets.vehicle as this build reads it (#435). The cook enforces the same numbers on
+ * limits.json placeAssets.vehicle as this build reads it. The cook enforces the same numbers on
  * every upload; the client checks them again because MVH1 arrives over the network.
  */
 struct MANTLERUNTIME_API FMantleVehicleLimits
@@ -699,35 +699,35 @@ struct MANTLERUNTIME_API FMantleVehicleLimits
 	static constexpr int32 MaxInfluences = 4;
 	/** placeAssets.vehicle.wheelMinVertices: vertices weighted to a wheel bone alone that a measurement needs. */
 	static constexpr int32 WheelMinVertices = 8;
-	/** placeAssets.livery.maxLiveries (#488): textures a vehicle's liveries list may hold. */
+	/** placeAssets.livery.maxLiveries: textures a vehicle's liveries list may hold. */
 	static constexpr int32 MaxLiveries = 8;
-	/** placeAssets.vehicle.maxLinkageRules (#435 b): rules a vehicle's linkage may hold. */
+	/** placeAssets.vehicle.maxLinkageRules: rules a vehicle's linkage may hold. */
 	static constexpr int32 MaxLinkageRules = 64;
-	/** placeAssets.vehicle.maxParts (#435 item 2): attached parts a vehicle may carry. */
+	/** placeAssets.vehicle.maxParts: attached parts a vehicle may carry. */
 	static constexpr int32 MaxParts = 16;
 	/** placeAssets.staticMesh.maxSections: the materials a part may list, one per slot of its mesh. */
 	static constexpr int32 MaxPartMaterials = 8;
 	/** How far from 1 a part's rotation quaternion's length may be, and how near 0 its scale on an axis (the cook's partRules). */
 	static constexpr double PartRotationTolerance = 0.01;
 	static constexpr double PartMinScale = 0.001;
-	/** How short a hinge's axis may be (#546, the cook's carRules): shorter, it has no direction to turn about. */
+	/** How short a hinge's axis may be (the cook's carRules): shorter, it has no direction to turn about. */
 	static constexpr double HingeMinAxis = 0.01;
-	/** placeAssets.vehicle.maxSeatExits (#612): the standing spots a seat's exits may list. */
+	/** placeAssets.vehicle.maxSeatExits: the standing spots a seat's exits may list. */
 	static constexpr int32 MaxSeatExits = 4;
-	/** placeAssets.vehicle.contactReach (#612): how far, cm, a pelvis, hand or foot target in the body's space may be from its seat's location. */
+	/** placeAssets.vehicle.contactReach: how far, cm, a pelvis, hand or foot target in the body's space may be from its seat's location. */
 	static constexpr double ContactReach = 150.0;
-	/** placeAssets.vehicle.wheelHandTolerance (#612): how far, cm, a hand holding the steering wheel may be from its rim. */
+	/** placeAssets.vehicle.wheelHandTolerance: how far, cm, a hand holding the steering wheel may be from its rim. */
 	static constexpr double WheelHandTolerance = 5.0;
-	/** placeAssets.vehicle maxAerofoils, maxThrusters, maxSpinBones (a flight or helicopter block), maxRotors and minHoverPads to maxHoverPads (#821). */
+	/** placeAssets.vehicle maxAerofoils, maxThrusters, maxSpinBones (a flight or helicopter block), maxRotors and minHoverPads to maxHoverPads. */
 	static constexpr int32 MaxAerofoils = 8;
 	static constexpr int32 MaxThrusters = 4;
 	static constexpr int32 MaxSpinBones = 8;
 	static constexpr int32 MaxRotors = 4;
 	static constexpr int32 MinHoverPads = 3;
 	static constexpr int32 MaxHoverPads = 8;
-	/** placeAssets.vehicle.maxSteeringCurvePoints (#821): the points of steering.speedCurve. */
+	/** placeAssets.vehicle.maxSteeringCurvePoints: the points of steering.speedCurve. */
 	static constexpr int32 MaxSteeringCurvePoints = 8;
-	/** How short a thrust direction, a spin axis or a rotor axis may be (#821, the cook's movementRules): shorter, it points nowhere. */
+	/** How short a thrust direction, a spin axis or a rotor axis may be (the cook's movementRules): shorter, it points nowhere. */
 	static constexpr double DirectionMinLength = 0.01;
 
 	/**
@@ -774,7 +774,7 @@ public:
 	static bool ParseDocument(TConstArrayView<uint8> Json, FMantleVehicleDesc& Out, FString& OutError);
 
 	/**
-	 * Checks the bones the movement blocks and the rider name against the body's (#821, the cook's resolveMovement) and names them as the body
+	 * Checks the bones the movement blocks and the rider name against the body's (the cook's resolveMovement) and names them as the body
 	 * does: a bone the body lacks is refused; a posed bone (an aerofoil's, a spin bone) is not the root, a wheel's bone or one a wheel hangs from; a
 	 * fork is neither the root nor a wheel's bone; a grip that names no bone is on the root (a handlebar: the fork). Read does this; so does the
 	 * chassis builder for the body it makes.
@@ -786,7 +786,7 @@ public:
 };
 
 /**
- * #728: the surface of a vehicle's body as the exact shape characters collide with ("what you see is what you stand on"), in the
+ * The surface of a vehicle's body as the exact shape characters collide with ("what you see is what you stand on"), in the
  * body's reference pose and component space, cm. The wheels are left out: a wheel moves, spins and steers, and the car's physics
  * owns where it is. Plain arrays, no engine collision types; the game module turns them into a query-only collision component.
  */
@@ -820,7 +820,7 @@ struct MANTLERUNTIME_API FMantleVehicleBodyCollision
 };
 
 /**
- * A creator vehicle built for this process (#435): its body as a transient USkeletalMesh on a transient
+ * A creator vehicle built for this process: its body as a transient USkeletalMesh on a transient
  * USkeleton made from the body's own bone table, with the document. FMantlePlaceAssets builds one per
  * uploaded vehicle id a place uses (on the game thread, after the MVH1 read); MantleGameplay turns it into
  * the vehicle definition AMantleVehicle builds from. No gameplay types here: MantleCore stays free of them.
@@ -845,7 +845,7 @@ public:
 	/** The root bone's reference pose in component space (the chassis boxes are authored in component space). */
 	FTransform RootBoneTransform = FTransform::Identity;
 
-	/** #728: the body's triangles off the wheels, for the exact character collision; null when there are none. */
+	/** The body's triangles off the wheels, for the exact character collision; null when there are none. */
 	TSharedPtr<const FMantleVehicleBodyCollision> BodyCollision;
 
 	/**

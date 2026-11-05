@@ -392,7 +392,7 @@ bool AMantleCrowdSpawner::ReadProps(FMantleCrowdSpawnerProps& Out, FString& OutP
 		NoteProblem(FString::Printf(TEXT("has an Idle Chance of %g. Set it from 0 to 1."), IdleChance));
 	}
 
-	// #513: points of interest, in the parser's order of checks.
+	// Points of interest, in the parser's order of checks.
 	if (PointsOfInterest.Num() > FMantlePlaceLimits::MaxCrowdPointsOfInterest)
 	{
 		NoteProblem(FString::Printf(TEXT("has %d points of interest; a crowd spawner may have at most %d. Remove points until %d are left."),
@@ -465,7 +465,7 @@ void AMantleCrowdSpawner::ApplyProps(const FMantleCrowdSpawnerProps& In)
 			WrittenWorn.ItemId = Worn.ItemId;
 		}
 	}
-	// #513: by entity id; no actor is known here, so the export names the same entity again.
+	// By entity id; no actor is known here, so the export names the same entity again.
 	PointsOfInterest.Reset(In.PointsOfInterest.Num());
 	for (const FMantleCrowdPointOfInterest& Point : In.PointsOfInterest)
 	{

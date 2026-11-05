@@ -4,7 +4,7 @@
 #include "CoreMinimal.h"
 
 /**
- * GhzGarage/mantle#595: the standard optional dynamic bone slots an avatar body may carry for secondary motion, and the
+ * The standard optional dynamic bone slots an avatar body may carry for secondary motion, and the
  * presets its chains move with. The one copy of limits.json contentLimits.avatar_body.secondaryMotion in C++, shared by
  * the game (the spring solver on the visible body, FMantleSecondaryMotion) and the creator plugin (mapping a creator's
  * bone chains onto the slots).

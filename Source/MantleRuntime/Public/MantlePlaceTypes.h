@@ -22,7 +22,7 @@
 #define MANTLE_PLACE_SCHEMA_VERSION 1
 
 // The texture dimension cap is limits.json's any_upload maxTextureSize, read by
-// FMantlePlaceAssetLimits and applied by FMantlePlaceAssets::PublishedTextureSize (#452).
+// FMantlePlaceAssetLimits and applied by FMantlePlaceAssets::PublishedTextureSize.
 
 enum class EMantleEntityType : uint8
 {
@@ -35,90 +35,90 @@ enum class EMantleEntityType : uint8
 	TriggerVolume,
 	SoundEmitter,
 	/**
-	 * Many instances of one mesh (#467): painted foliage, PCG output generated in the creator's
+	 * Many instances of one mesh: painted foliage, PCG output generated in the creator's
 	 * editor, any instanced static mesh component. Added without a schema version bump: older
 	 * clients refuse the unknown type, and publish refuses it until a released build reads it.
 	 */
 	InstancedMesh,
-	/** Ambient pedestrians (#477): data on every machine, NPCs only on clients (MantleNPC). */
+	/** Ambient pedestrians: data on every machine, NPCs only on clients (MantleNPC). */
 	CrowdSpawner,
-	/** An area light (#472). Added without a schema version bump, like InstancedMesh. */
+	/** An area light. Added without a schema version bump, like InstancedMesh. */
 	RectLight,
-	/** An uploaded texture projected onto the world (#472). Client-only content; a server keeps the entity. */
+	/** An uploaded texture projected onto the world. Client-only content; a server keeps the entity. */
 	Decal,
 	/**
-	 * An uploaded skeletal mesh on its own skeleton, optionally playing one clip (#469). Added
+	 * An uploaded skeletal mesh on its own skeleton, optionally playing one clip. Added
 	 * without a schema version bump, gated at publish until a released build reads it.
 	 */
 	SkeletalMesh,
 	/**
-	 * Landscape terrain (#466): an uploaded heightfield rebuilt as chunked runtime meshes with
+	 * Landscape terrain: an uploaded heightfield rebuilt as chunked runtime meshes with
 	 * collision, painted with up to four layer materials. One per place.
 	 */
 	Terrain,
 	/**
-	 * A creator-published vehicle parked in the place (#435): the server keeps one alive here (MantleGameplay's
+	 * A creator-published vehicle parked in the place: the server keeps one alive here (MantleGameplay's
 	 * bridge). Added without a schema version bump, like InstancedMesh.
 	 */
 	VehicleSpawn,
 	/**
-	 * A particle effect (#460): one of Mantle's built-in archetypes (MantleEffectTypes.h) with its look.
+	 * A particle effect: one of Mantle's built-in archetypes (MantleEffectTypes.h) with its look.
 	 * Client-only content; a server keeps the entity. Added without a schema version bump, like InstancedMesh.
 	 */
 	Effect,
 	/**
-	 * A joint between two physics entities, or one and the world (#528): weld, hinge or rope. The
+	 * A joint between two physics entities, or one and the world: weld, hinge or rope. The
 	 * server builds it (AMantleConstraint) and simulates it; nothing of it replicates. Added without a
 	 * schema version bump, like InstancedMesh.
 	 */
 	Constraint,
 	/**
-	 * A seeded field of instanced meshes (#530): FMantleScatterParams, generated on each client by
+	 * A seeded field of instanced meshes: FMantleScatterParams, generated on each client by
 	 * FMantleScatter (MantleScatter.h). Visual only; a server keeps the entity and builds nothing.
 	 * Added without a schema version bump, like InstancedMesh.
 	 */
 	Scatter,
 	/**
-	 * A reflection probe (#628): a box or sphere every client captures at run time, in the place's own
+	 * A reflection probe: a box or sphere every client captures at run time, in the place's own
 	 * lighting (FMantleReflectionProbes, MantleReflectionProbe.h). Client-only; a server keeps the entity and
 	 * captures nothing. Added without a schema version bump, like InstancedMesh.
 	 */
 	ReflectionProbe,
 	/**
-	 * A creator-published weapon waiting to be picked up (#789): a hidden data-only spawn point on every
+	 * A creator-published weapon waiting to be picked up: a hidden data-only spawn point on every
 	 * machine; MantleGameplay owns the pickup. Added without a schema version bump, like VehicleSpawn.
 	 */
 	WeaponSpawn,
 	/**
-	 * An anchor for a stored script package (#838): a hidden data-only point on every machine, carrying which
+	 * An anchor for a stored script package: a hidden data-only point on every machine, carrying which
 	 * package and its parameters. The package's scripts run once per side and read their points through
 	 * Script.Points. Added without a schema version bump, like WeaponSpawn.
 	 */
 	ScriptPoint,
 	/**
-	 * Text drawn in the world (GhzGarage/mantle#724): a UTextRenderComponent in Mantle's built-in font. Client-only
+	 * Text drawn in the world: a UTextRenderComponent in Mantle's built-in font. Client-only
 	 * content; a server keeps the entity. Added without a schema version bump, gated by the worldText client feature.
 	 */
 	Text,
 	/**
-	 * A body of the Water plugin (GhzGarage/mantle#997): a lake, river, ocean or custom-mesh body, with the place's Water Zone in
+	 * A body of the Water plugin: a lake, river, ocean or custom-mesh body, with the place's Water Zone in
 	 * settings.water. Added without a schema version bump, and not behind a client feature: every client reads it.
 	 */
 	WaterBody,
 	/**
-	 * A block world (#168): a grid of 100 cm blocks in 16 x 16 x 16 sections, its block types, and optionally an uploaded
+	 * A block world: a grid of 100 cm blocks in 16 x 16 x 16 sections, its block types, and optionally an uploaded
 	 * VoxelWorldData (MBW1) it starts from. MantleGameplay builds it after the place (UMantleVoxelPlaceSubsystem). One per
 	 * place. Added without a schema version bump, gated at publish until a released build reads it.
 	 */
 	VoxelWorld,
 	/**
-	 * An item lying in the place that comes back after a player takes it (#235): a hidden data-only point on every
+	 * An item lying in the place that comes back after a player takes it: a hidden data-only point on every
 	 * machine; MantleGameplay's world items own the item. Added without a schema version bump, like WeaponSpawn.
 	 */
 	ItemSpawn
 };
 
-/** A WaterBody's kind (#997), the place file's properties.bodyType: the Water plugin's lake, river, ocean or custom-mesh body. */
+/** A WaterBody's kind, the place file's properties.bodyType: the Water plugin's lake, river, ocean or custom-mesh body. */
 enum class EMantleWaterBodyType : uint8
 {
 	/** A closed spline loop, still water. */
@@ -131,14 +131,14 @@ enum class EMantleWaterBodyType : uint8
 	Custom
 };
 
-/** A seat's style (GhzGarage/MantleCore#142), the place file's seats[].style: it only picks the sit clip set. */
+/** A seat's style, the place file's seats[].style: it only picks the sit clip set. */
 enum class EMantleSeatStyle : uint8
 {
 	/** Sitting on a bench, a chair-height seat or a ledge; the game fits the hip to the floor under the seat. */
 	Bench
 };
 
-/** How a water spline runs out of one of its points (#997), the place file's point interp: the engine's ESplinePointType. */
+/** How a water spline runs out of one of its points, the place file's point interp: the engine's ESplinePointType. */
 enum class EMantleWaterSplinePointType : uint8
 {
 	Curve,
@@ -148,7 +148,7 @@ enum class EMantleWaterSplinePointType : uint8
 	CurveCustomTangent
 };
 
-/** A Text entity's horizontal alignment (#724), the place file's properties.horizontalAlignment. */
+/** A Text entity's horizontal alignment, the place file's properties.horizontalAlignment. */
 enum class EMantleTextHorizontalAlignment : uint8
 {
 	Left,
@@ -156,7 +156,7 @@ enum class EMantleTextHorizontalAlignment : uint8
 	Right
 };
 
-/** A Text entity's vertical alignment (#724), the place file's properties.verticalAlignment: where the entity's origin sits on the text. */
+/** A Text entity's vertical alignment, the place file's properties.verticalAlignment: where the entity's origin sits on the text. */
 enum class EMantleTextVerticalAlignment : uint8
 {
 	Top,
@@ -165,7 +165,7 @@ enum class EMantleTextVerticalAlignment : uint8
 	Baseline
 };
 
-/** A ReflectionProbe's influence volume (#628), the place file's properties.shape: "box" or "sphere". */
+/** A ReflectionProbe's influence volume, the place file's properties.shape: "box" or "sphere". */
 enum class EMantleReflectionProbeShape : uint8
 {
 	/** A box that turns with the entity, blended out over TransitionDistance at its faces. */
@@ -174,7 +174,7 @@ enum class EMantleReflectionProbeShape : uint8
 	Sphere
 };
 
-/** A Constraint's kind (#528), the place file's properties.type: "weld", "hinge" or "rope". */
+/** A Constraint's kind, the place file's properties.type: "weld", "hinge" or "rope". */
 enum class EMantleConstraintType : uint8
 {
 	/** No movement between the two. */
@@ -191,21 +191,21 @@ enum class EMantleAssetKind : uint8
 	Material,
 	Texture,
 	Sound,
-	/** A place skeletal mesh (MSK1 role 3, its skeleton embedded) and a clip for it (MAN1 with its skeleton), #469. */
+	/** A place skeletal mesh (MSK1 role 3, its skeleton embedded) and a clip for it (MAN1 with its skeleton). */
 	SkeletalMesh,
 	AnimClip,
-	/** A Terrain's heights (#466), cooked MHF1 (FMantleHeightfieldReader). */
+	/** A Terrain's heights, cooked MHF1 (FMantleHeightfieldReader). */
 	Heightfield,
-	/** A creator-published vehicle (#435): MVH1, its body and its document. */
+	/** A creator-published vehicle: MVH1, its body and its document. */
 	Vehicle,
-	/** A creator-published weapon (#789): MWP1, its mesh and its document. */
+	/** A creator-published weapon: MWP1, its mesh and its document. */
 	Weapon,
 	/**
 	 * A static mesh's Lumen side file (#149): MLD1 (FMantleMeshLumenFile), its distance field and Lumen cards, baked by the
 	 * plugin at publish and named by its mesh's entry (FMantleAssetRef::Lumen). Stored as baked, never cooked.
 	 */
 	Lumen,
-	/** A block world's starting blocks (#168): MBW1 (FMantleVoxelWorldFile), checked by the cook and stored as uploaded. */
+	/** A block world's starting blocks: MBW1 (FMantleVoxelWorldFile), checked by the cook and stored as uploaded. */
 	VoxelWorldData
 };
 
@@ -248,8 +248,8 @@ enum class EMantleScriptLanguage : uint8
 };
 
 /**
- * A place's maturity rating (#320), the place file's audience.maturity. A placeholder taxonomy
- * until #42 decides the real one, which replaces this. Unrated is what a place that never
+ * A place's maturity rating, the place file's audience.maturity. A placeholder taxonomy
+ * until the maturity-rating plan decides the real one, which replaces this. Unrated is what a place that never
  * declared one is. Catalog metadata only: nothing in the world reads it.
  */
 enum class EMantleMaturity : uint8
@@ -261,9 +261,9 @@ enum class EMantleMaturity : uint8
 };
 
 /**
- * The units a Point or Spot light's intensity is in (#385), the place file's intensityUnits.
+ * The units a Point or Spot light's intensity is in, the place file's intensityUnits.
  * Mirrors the engine's ELightUnits member for member and in the same order. A light without
- * the field is Unitless, the engine's constructor default and what every place before #385
+ * the field is Unitless, the engine's constructor default and what every place before the field existed
  * meant.
  */
 enum class EMantleLightUnits : uint8
@@ -276,7 +276,7 @@ enum class EMantleLightUnits : uint8
 };
 
 /**
- * A physics entity's surface preset (#528), the place file's physics.material. Each maps to a
+ * A physics entity's surface preset, the place file's physics.material. Each maps to a
  * UPhysicalMaterial shipped in MantleCore (MantlePhysicsMaterialAssetPath). The order is
  * the wire's: AMantlePhysicsProp replicates it as one byte, so append, never reorder.
  */
@@ -293,7 +293,7 @@ enum class EMantlePhysicsMaterial : uint8
 /** How many EMantlePhysicsMaterial values there are. */
 inline constexpr int32 MantlePhysicsMaterialCount = 6;
 
-/** A platform a place may be offered on (#320), one entry of the place file's audience.platforms. */
+/** A platform a place may be offered on, one entry of the place file's audience.platforms. */
 enum class EMantlePlatform : uint8
 {
 	PC,
@@ -329,27 +329,27 @@ MANTLERUNTIME_API const TCHAR* MantleLightUnitsToString(EMantleLightUnits Units)
 MANTLERUNTIME_API bool MantleParseLightUnits(const FString& In, EMantleLightUnits& Out);
 MANTLERUNTIME_API const TCHAR* MantlePlatformToString(EMantlePlatform Platform);
 MANTLERUNTIME_API bool MantleParsePlatform(const FString& In, EMantlePlatform& Out);
-/** "default", "rubber", "ice", "metal", "wood" or "stone" (#528). */
+/** "default", "rubber", "ice", "metal", "wood" or "stone". */
 MANTLERUNTIME_API const TCHAR* MantlePhysicsMaterialToString(EMantlePhysicsMaterial Material);
 /** Case-exact, as the schema's enum. */
 MANTLERUNTIME_API bool MantleParsePhysicsMaterial(const FString& In, EMantlePhysicsMaterial& Out);
-/** "weld", "hinge", "rope" (#528); parsing is case-exact, as the schema's enum is. */
+/** "weld", "hinge", "rope"; parsing is case-exact, as the schema's enum is. */
 MANTLERUNTIME_API const TCHAR* MantleConstraintTypeToString(EMantleConstraintType Type);
 MANTLERUNTIME_API bool MantleParseConstraintType(const FString& In, EMantleConstraintType& Out);
-/** "box", "sphere" (#628); parsing is case-exact, as the schema's enum is. */
+/** "box", "sphere"; parsing is case-exact, as the schema's enum is. */
 MANTLERUNTIME_API const TCHAR* MantleReflectionProbeShapeToString(EMantleReflectionProbeShape Shape);
 MANTLERUNTIME_API bool MantleParseReflectionProbeShape(const FString& In, EMantleReflectionProbeShape& Out);
 MANTLERUNTIME_API const TCHAR* MantleTextHorizontalAlignmentToString(EMantleTextHorizontalAlignment Alignment);
 MANTLERUNTIME_API bool MantleParseTextHorizontalAlignment(const FString& In, EMantleTextHorizontalAlignment& Out);
 MANTLERUNTIME_API const TCHAR* MantleTextVerticalAlignmentToString(EMantleTextVerticalAlignment Alignment);
 MANTLERUNTIME_API bool MantleParseTextVerticalAlignment(const FString& In, EMantleTextVerticalAlignment& Out);
-/** "lake", "river", "ocean", "custom" (#997); parsing is case-exact, as the schema's enum is. */
+/** "lake", "river", "ocean", "custom"; parsing is case-exact, as the schema's enum is. */
 MANTLERUNTIME_API const TCHAR* MantleWaterBodyTypeToString(EMantleWaterBodyType Type);
 MANTLERUNTIME_API bool MantleParseWaterBodyType(const FString& In, EMantleWaterBodyType& Out);
-/** "bench" (#142); parsing is case-exact, and any other text is refused, with no fallback. */
+/** "bench"; parsing is case-exact, and any other text is refused, with no fallback. */
 MANTLERUNTIME_API const TCHAR* MantleSeatStyleToString(EMantleSeatStyle Style);
 MANTLERUNTIME_API bool MantleParseSeatStyle(const FString& In, EMantleSeatStyle& Out);
-/** "curve", "linear", "constant", "curveClamped", "curveCustomTangent" (#997); parsing is case-exact. */
+/** "curve", "linear", "constant", "curveClamped", "curveCustomTangent"; parsing is case-exact. */
 MANTLERUNTIME_API const TCHAR* MantleWaterSplinePointTypeToString(EMantleWaterSplinePointType Type);
 MANTLERUNTIME_API bool MantleParseWaterSplinePointType(const FString& In, EMantleWaterSplinePointType& Out);
 
@@ -371,7 +371,7 @@ struct FMantleMetadata
 	FString Thumbnail;
 };
 
-/** settings.environment.exposure.mode (#628): the game's own constant exposure, or one that adapts to the view. */
+/** settings.environment.exposure.mode: the game's own constant exposure, or one that adapts to the view. */
 enum class EMantleExposureMode : uint8
 {
 	Fixed,
@@ -379,7 +379,7 @@ enum class EMantleExposureMode : uint8
 };
 
 /**
- * settings.environment.exposure (#628). Bias is in stops over the game's own exposure compensation (0 is the game's own).
+ * settings.environment.exposure. Bias is in stops over the game's own exposure compensation (0 is the game's own).
  * The brightness range is read only with Auto; an end the file leaves out is the engine's default one
  * (MantleEnvironmentDefaults::DefaultAutoExposureMin and Max).
  */
@@ -392,7 +392,7 @@ struct FMantleExposureSettings
 };
 
 /**
- * settings.environment.fog (#628): the height fog's look. Each value is unset when the file leaves its key out, which
+ * settings.environment.fog: the height fog's look. Each value is unset when the file leaves its key out, which
  * keeps the game's own fog value. Colors are linear luminance (0 to MaxFogColor a channel), the distance is in cm.
  */
 struct FMantleFogSettings
@@ -412,7 +412,7 @@ struct FMantleFogSettings
 };
 
 /**
- * The place's default look (#532), the place file's optional settings.environment: the clock,
+ * The place's default look, the place file's optional settings.environment: the clock,
  * weather, color grade, bloom and grading preset every player starts in, with or without a script. Each value is unset
  * when the file leaves its key out. The server seeds the replicated environment override from it
  * once, as the place loads (UMantleEnvironmentSubsystem::MakeSettingsOverride); a server script's
@@ -443,19 +443,19 @@ struct FMantleEnvironmentSettings
 	/** colorGradingIntensity: how much of the preset shows, 0 to 1; 1 is the full look. */
 	TOptional<double> ColorGradingIntensity;
 	/**
-	 * exposure (#628): how the picture's exposure is set. Unset: the game's own fixed exposure. Applied on clients as the place
+	 * exposure: how the picture's exposure is set. Unset: the game's own fixed exposure. Applied on clients as the place
 	 * loads (UMantleEnvironmentSubsystem::SetPlaceExposure), not through the replicated override: every client has the place.
 	 */
 	TOptional<FMantleExposureSettings> Exposure;
-	/** fog (#628): the height fog's look, applied to the fog Mantle spawns before the weather records its baselines. */
+	/** fog: the height fog's look, applied to the fog Mantle spawns before the weather records its baselines. */
 	TOptional<FMantleFogSettings> Fog;
 	/**
-	 * skyLight.intensity (#722): a scale, 0 to 1, on Mantle's own sky light, which captures the open sky. An indoor level
+	 * skyLight.intensity: a scale, 0 to 1, on Mantle's own sky light, which captures the open sky. An indoor level
 	 * lowers it so its walls are not lit by a sky the level does not show. Unset: 1, Mantle's own.
 	 */
 	TOptional<double> SkyLightIntensity;
 	/**
-	 * sun.direct (#722): false when the level's sun never reaches the places a player stands (a sealed room with its sun
+	 * sun.direct: false when the level's sun never reaches the places a player stands (a sealed room with its sun
 	 * baked), so the client does not light the place with it. Only false is written; true is Mantle's own.
 	 */
 	bool bNoDirectSun = false;
@@ -475,7 +475,7 @@ struct FMantleEnvironmentSettings
 	}
 };
 
-/** The place's Water Zone (#997), the place file's settings.water: the area the Water plugin simulates and draws water in. */
+/** The place's Water Zone, the place file's settings.water: the area the Water plugin simulates and draws water in. */
 struct FMantleWaterZone
 {
 	/** The zone's full size, cm, each axis FMantlePlaceLimits::MinWaterExtent to MaxWaterExtent. */
@@ -485,7 +485,7 @@ struct FMantleWaterZone
 	double ZoneYawDeg = 0.0;
 };
 
-/** settings.boundary (#5): the box, in cm, a player may stay inside; a character past any side falls out of the world (dies and respawns). */
+/** settings.boundary: the box, in cm, a player may stay inside; a character past any side falls out of the world (dies and respawns). */
 struct FMantleMapBoundary
 {
 	double MinX = 0.0;
@@ -499,14 +499,14 @@ struct FMantleMapBoundary
 	}
 };
 
-/** Whether the pieces players place with placing mode are kept (#184): not at all, or per server (saved like a VoxelWorld's blocks). */
+/** Whether the pieces players place with placing mode are kept: not at all, or per server (saved like a VoxelWorld's blocks). */
 enum class EMantlePlacingPersistence : uint8
 {
 	None,
 	Server
 };
 
-/** settings.placing (#184): placing mode's persistence and per-place piece cap. Nothing here turns placing mode on; a script does. */
+/** settings.placing: placing mode's persistence and per-place piece cap. Nothing here turns placing mode on; a script does. */
 struct FMantlePlacingSettings
 {
 	/** settings.placing.persistence; none unless the file says server. */
@@ -515,14 +515,14 @@ struct FMantlePlacingSettings
 	int32 MaxPieces = 2000;
 };
 
-/** Whether the world items scripts put down (#235) are kept: not at all, or per server (saved like placed pieces). */
+/** Whether the world items scripts put down are kept: not at all, or per server (saved like placed pieces). */
 enum class EMantleWorldItemsPersistence : uint8
 {
 	None,
 	Server
 };
 
-/** settings.worldItems (#235): whether world items are saved with the world. Nothing here turns world items on; a script does. */
+/** settings.worldItems: whether world items are saved with the world. Nothing here turns world items on; a script does. */
 struct FMantleWorldItemsSettings
 {
 	/** settings.worldItems.persistence; none unless the file says server. */
@@ -532,31 +532,31 @@ struct FMantleWorldItemsSettings
 struct FMantleSettings
 {
 	int32 MaxPlayers = 16;
-	/** Downward gravity in cm/s^2 (980 is Earth). The builder sets the world's gravity Z to its negative (#453). */
+	/** Downward gravity in cm/s^2 (980 is Earth). The builder sets the world's gravity Z to its negative. */
 	double Gravity = 980.0;
-	/** Reserved for a future creator-configurable sky. Accepted; every place gets the default sky (#445). */
+	/** Reserved for a future creator-configurable sky. Accepted; every place gets the default sky. */
 	FString Skybox;
 	/**
-	 * Deprecated (#445): accepted but ignored at runtime, and no longer exported. An ambient term
+	 * Deprecated: accepted but ignored at runtime, and no longer exported. An ambient term
 	 * on top of the real-time sky light would double up and fight the day/night cycle.
 	 */
 	FLinearColor AmbientLight = FLinearColor::Black;
 	FString RespawnMode = TEXT("nearest");
-	/** Deprecated (#453): accepted but ignored at runtime, and no longer exported. */
+	/** Deprecated: accepted but ignored at runtime, and no longer exported. */
 	double StreamingDistance = 15000.0;
-	/** Whether players other than the owner may host community servers for this place (#178). */
+	/** Whether players other than the owner may host community servers for this place. */
 	bool bAllowCommunityServers = false;
-	/** Whether players other than the owner may create private servers for this place (#416). */
+	/** Whether players other than the owner may create private servers for this place. */
 	bool bAllowPrivateServers = false;
 	/**
-	 * settings.avatarHeight (#581): false for "player" (the default: each character's capsule,
+	 * settings.avatarHeight: false for "player" (the default: each character's capsule,
 	 * hitboxes and eye follow its avatar's height), true for "uniform" (every character plays at
 	 * the one standard size; avatars still look as they are).
 	 */
 	bool bUniformAvatarHeight = false;
 
 	/**
-	 * Whether a player may pull another out of this place's cars (#546): the vehicle key at an
+	 * Whether a player may pull another out of this place's cars: the vehicle key at an
 	 * occupied seat takes it. On unless the file sets settings.carjacking to false.
 	 */
 	bool bCarjacking = true;
@@ -568,26 +568,26 @@ struct FMantleSettings
 	/** settings.allowToolSwap: whether a full Backpack's pickup swaps the weapon in hand for it. On unless the file sets it to false. */
 	bool bAllowToolSwap = true;
 	/**
-	 * settings.killZ (#5): the height, cm, below which a character has fallen out of the world. Unset: the game mode works it out
+	 * settings.killZ: the height, cm, below which a character has fallen out of the world. Unset: the game mode works it out
 	 * from the lowest geometry the place built, less a margin (AMantleGameMode::KillFloorMarginCm).
 	 */
 	TOptional<double> KillZ;
-	/** settings.boundary (#5). Unset: no side boundary (open worlds). */
+	/** settings.boundary. Unset: no side boundary (open worlds). */
 	TOptional<FMantleMapBoundary> Boundary;
-	/** The place's default look (#532). Empty when the file has no settings.environment. */
+	/** The place's default look. Empty when the file has no settings.environment. */
 	FMantleEnvironmentSettings Environment;
-	/** The place's Water Zone (#997). Unset when the file has no settings.water. */
+	/** The place's Water Zone. Unset when the file has no settings.water. */
 	TOptional<FMantleWaterZone> Water;
-	/** settings.placing (#184). The defaults when the file has none: no persistence, a cap of 2000. */
+	/** settings.placing. The defaults when the file has none: no persistence, a cap of 2000. */
 	FMantlePlacingSettings Placing;
-	/** settings.worldItems (#235). The default when the file has none: nothing saved. */
+	/** settings.worldItems. The default when the file has none: nothing saved. */
 	FMantleWorldItemsSettings WorldItems;
-	/** settings.playStyle (#232): the style every player starts in. Default (Mantle's normal play) when the file has none. */
+	/** settings.playStyle: the style every player starts in. Default (Mantle's normal play) when the file has none. */
 	FMantlePlayStyle PlayStyle;
 };
 
 /**
- * Who and where a place is for (#320), the place file's optional audience block. A place
+ * Who and where a place is for, the place file's optional audience block. A place
  * without the block is unrated and available on every platform.
  */
 struct FMantleAudience
@@ -608,7 +608,7 @@ struct FMantleAudience
 };
 
 /**
- * One sit spot (GhzGarage/MantleCore#142), the place file's seats[]: a place-level list rather than an entity, because
+ * One sit spot, the place file's seats[]: a place-level list rather than an entity, because
  * a prop can have several. Added without a schema version bump.
  */
 struct FMantleSeat
@@ -629,7 +629,7 @@ struct FMantleLocalization
 };
 
 /**
- * One snap point of a StaticMesh asset (#184), the place file's assets[].sockets[]: where placing mode joins this mesh to
+ * One snap point of a StaticMesh asset, the place file's assets[].sockets[]: where placing mode joins this mesh to
  * another. Position and Rotation are in the mesh's own space; the socket faces along its forward (+X) axis.
  */
 struct FMantlePlaceSocket
@@ -659,7 +659,7 @@ struct FMantleAssetRef
 	/** Lumen (#149): the engine the file was baked by (FMantleMeshLumenFile::EngineTag). A client of another engine skips it. */
 	FString Engine;
 
-	/** StaticMesh, optional (#184): the snap sockets placing mode joins this mesh with, at most FMantlePlaceLimits::MaxMeshSockets. */
+	/** StaticMesh, optional: the snap sockets placing mode joins this mesh with, at most FMantlePlaceLimits::MaxMeshSockets. */
 	TArray<FMantlePlaceSocket> Sockets;
 };
 
@@ -692,7 +692,7 @@ struct FMantleScript
 };
 
 /**
- * An RmlUi document or stylesheet a place ships (#549). Like a script, the place file carries a
+ * An RmlUi document or stylesheet a place ships. Like a script, the place file carries a
  * reference to separately stored, screened text, never the text itself. Only clients fetch it.
  */
 struct FMantleUIDocument
@@ -707,7 +707,7 @@ struct FMantleUIDocument
 	FString Source;
 
 	/**
-	 * #556 item 5: an image's (.png or .jpg) uploaded Texture asset, which the place's assets list;
+	 * An image's (.png or .jpg) uploaded Texture asset, which the place's assets list;
 	 * empty for a document or stylesheet. Exactly one of Source and Asset is set.
 	 */
 	FString Asset;
@@ -716,7 +716,7 @@ struct FMantleUIDocument
 };
 
 /**
- * One library item a place holds (#614 stage 4), the ServerStorage analogue: a creator-chosen name
+ * One library item a place holds, the ServerStorage analogue: a creator-chosen name
  * for an immutable item version. The place file carries only this reference; the backing asset ids
  * come from the storage resolve endpoint when the place loads.
  */
@@ -732,7 +732,7 @@ struct FMantleStorageEntry
 	int32 Version = 1;
 
 	/**
-	 * A script package's package-wide settings (#838 stage 6), the place file's optional "settings": {key: value}, every value
+	 * A script package's package-wide settings, the place file's optional "settings": {key: value}, every value
 	 * text whatever the setting's type. At most FMantlePlaceLimits::MaxStorageSettings keys. Only a script entry may carry any
 	 * (the backend refuses them on a vehicle or weapon). TMap's keys ignore case, so a lookup that matters compares the stored
 	 * key exactly (FindSetting).
@@ -774,7 +774,7 @@ struct FMantleStorageEntry
 };
 
 /**
- * One file of a stored script package (#838), as the storage resolve answers it: the same {path, side, language,
+ * One file of a stored script package, as the storage resolve answers it: the same {path, side, language,
  * source} a place's own scripts[] entry carries. Path is relative to the package ("Server/Main.luau"); the script
  * catalog mounts it at Packages/<storage name>/<Path>.
  */
@@ -788,7 +788,7 @@ struct FMantleStoredScriptFile
 };
 
 /**
- * The type a script package declares for one of its options (#838), a Script Point parameter or (stage 6) a package setting: how
+ * The type a script package declares for one of its options, a Script Point parameter or (stage 6) a package setting: how
  * the stored text value is read. Choice (stage 6) is text that must be one of the option's Options.
  */
 enum class EMantleScriptPackageParameterType : uint8
@@ -799,7 +799,7 @@ enum class EMantleScriptPackageParameterType : uint8
 	Choice
 };
 
-/** One option a script package declares in its manifest (#838): a parameter a Script Point sets, or (stage 6) a setting its storage entry sets. */
+/** One option a script package declares in its manifest: a parameter a Script Point sets, or (stage 6) a setting its storage entry sets. */
 struct FMantleScriptPackageParameter
 {
 	/** The key it describes (FMantlePlaceLimits::IsScriptPointParameterName). */
@@ -829,12 +829,12 @@ struct FMantleScriptPackageParameter
 	}
 };
 
-/** A script package's manifest (#838): package.json on disk, the resolve answer's manifest when stored. */
+/** A script package's manifest: package.json on disk, the resolve answer's manifest when stored. */
 struct FMantleScriptPackageManifest
 {
 	FString Name;
 	FString Description;
-	/** #134: the storage names of the script packages this one may require("@Name/...") from; at most FMantlePlaceLimits::MaxScriptPackageDependencies. */
+	/** The storage names of the script packages this one may require("@Name/...") from; at most FMantlePlaceLimits::MaxScriptPackageDependencies. */
 	TArray<FString> Dependencies;
 	TArray<FMantleScriptPackageParameter> Parameters;
 	/** Stage 6: the package-wide settings its storage entry may set, at most FMantlePlaceLimits::MaxStorageSettings. */
@@ -866,9 +866,9 @@ struct FMantleScriptPackageManifest
 };
 
 /**
- * One answer entry of the storage resolve routes (#614 stage 4): a stored library item version expanded into
+ * One answer entry of the storage resolve routes: a stored library item version expanded into
  * the uploaded assets that back it. Defined here, not in MantlePlaceStorage.h, because a loaded place keeps the
- * entries that resolved (FMantlePlace::StorageResolved, #614 stage 5): the script API's authorization reads them.
+ * entries that resolved (FMantlePlace::StorageResolved): the script API's authorization reads them.
  */
 struct FMantleResolvedStorageEntry
 {
@@ -880,10 +880,10 @@ struct FMantleResolvedStorageEntry
 
 	int32 Version = 0;
 
-	/** "vehicle", "weapon", "wheel" or (#838) "script". */
+	/** "vehicle", "weapon", "wheel" or "script". */
 	FString Kind;
 
-	/** "active" or "delisted" both still load for a place that pinned the version; "taken_down" (#614 stage 7) never loads. */
+	/** "active" or "delisted" both still load for a place that pinned the version; "taken_down" never loads. */
 	FString Status;
 
 	/** The item's own uploaded asset (a vehicle's document): ast_u and 32 lowercase hex digits. */
@@ -896,16 +896,16 @@ struct FMantleResolvedStorageEntry
 	TArray<FString> DependencyAssetIds;
 
 	/**
-	 * A script package's files (#838), empty for every other kind. The server's route answers its server and shared
+	 * A script package's files, empty for every other kind. The server's route answers its server and shared
 	 * files, a player's route its client and shared files. Read leniently: a malformed file is left out, not a failure.
 	 */
 	TArray<FMantleStoredScriptFile> Scripts;
 
-	/** A script package's manifest (#838), empty for every other kind or when the answer carries none. */
+	/** A script package's manifest, empty for every other kind or when the answer carries none. */
 	FMantleScriptPackageManifest Manifest;
 
 	/**
-	 * A script package's stored settings (#838 stage 6) as the sealed revision recorded them, raw text; bHasSettings says whether
+	 * A script package's stored settings as the sealed revision recorded them, raw text; bHasSettings says whether
 	 * the answer carried the key at all (an older backend's does not, and the place file's entry is read instead). Read leniently:
 	 * a key that is not a setting name or a value that is not text is left out.
 	 */
@@ -916,7 +916,7 @@ struct FMantleResolvedStorageEntry
 /** Per-entity-type properties. One struct per member of the closed vocabulary. */
 
 /**
- * A StaticMesh's physics block (#456): the entity is a rigid body the server simulates and every
+ * A StaticMesh's physics block: the entity is a rigid body the server simulates and every
  * client follows through the engine's replicated physics movement (AMantlePhysicsProp). Present at
  * all makes the entity dynamic, whether or not it starts simulating: a script can let an anchored
  * one fall later (Entity.Anchored).
@@ -936,7 +936,7 @@ struct FMantlePhysicsProps
 	/** Whether the place's gravity pulls it. */
 	bool bGravity = true;
 
-	/** The surface preset (#528): friction, restitution and density from a physical material MantleCore ships. */
+	/** The surface preset: friction, restitution and density from a physical material MantleCore ships. */
 	EMantlePhysicsMaterial Material = EMantlePhysicsMaterial::Default;
 };
 
@@ -947,18 +947,18 @@ struct FMantleStaticMeshProps
 	EMantleCollision Collision = EMantleCollision::Blocking;
 	bool bCastShadow = true;
 
-	/** A StaticMesh entity's physics block (#456). Never set on an InstancedMesh's copy of these props. */
+	/** A StaticMesh entity's physics block. Never set on an InstancedMesh's copy of these props. */
 	TOptional<FMantlePhysicsProps> Physics;
 
 	/**
-	 * What the mesh is made of (#596), the place file's surface: the builder gives the mesh that
+	 * What the mesh is made of, the place file's surface: the builder gives the mesh that
 	 * surface's physical material (MantleLoadSurfaceMaterial). Always Default beside Physics, whose
 	 * material carries the body's surface; the parser refuses the two together.
 	 */
 	EMantleSurface Surface = EMantleSurface::Default;
 
 	/**
-	 * drawDistance (#630 stage 2): how far from the camera the mesh is drawn, in cm, above 0 and at most
+	 * drawDistance: how far from the camera the mesh is drawn, in cm, above 0 and at most
 	 * FMantlePlaceLimits::MaxDrawDistance. The builder makes it a StaticMesh's Max Draw Distance, or an InstancedMesh's
 	 * instance cull distances with a dithered fade, and stops the mesh casting shadows past a share of it
 	 * (UMantleShadowDistanceSubsystem). 0, the key absent: never culled by distance, as before the key.
@@ -971,13 +971,13 @@ struct FMantleEmptyProps
 };
 
 /**
- * A light's temperature in kelvin when a place file gives none (#472): the engine's own default,
+ * A light's temperature in kelvin when a place file gives none: the engine's own default,
  * and a white light. Only used when bUseTemperature is set.
  */
 #define MANTLE_DEFAULT_LIGHT_TEMPERATURE 6500.0
 
 /**
- * A Point or Spot light's source shape (#472): the sphere (or, with SourceLength, the capsule) its
+ * A Point or Spot light's source shape: the sphere (or, with SourceLength, the capsule) its
  * light comes from, in cm. Zero, the default and what every place before the fields meant, is a
  * point source. The exporter writes each only when above zero.
  */
@@ -997,7 +997,7 @@ struct FMantlePointLightProps
 	FLinearColor Color = FLinearColor::White;
 	double Radius = 0.0;
 	bool bCastShadow = true;
-	/** Tint by Temperature (#472). Written only when set. */
+	/** Tint by Temperature. Written only when set. */
 	bool bUseTemperature = false;
 	double Temperature = MANTLE_DEFAULT_LIGHT_TEMPERATURE;
 	FMantleLightSourceShape Source;
@@ -1012,14 +1012,14 @@ struct FMantleSpotLightProps
 	double InnerCone = 0.0;
 	double OuterCone = 0.0;
 	bool bCastShadow = true;
-	/** Tint by Temperature (#472). Written only when set. */
+	/** Tint by Temperature. Written only when set. */
 	bool bUseTemperature = false;
 	double Temperature = MANTLE_DEFAULT_LIGHT_TEMPERATURE;
 	FMantleLightSourceShape Source;
 };
 
 /**
- * An area light (#472): a SourceWidth by SourceHeight cm rectangle facing along the entity's X
+ * An area light: a SourceWidth by SourceHeight cm rectangle facing along the entity's X
  * axis, with barn doors. The defaults are URectLightComponent's.
  */
 struct FMantleRectLightProps
@@ -1041,7 +1041,7 @@ struct FMantleRectLightProps
 };
 
 /**
- * A decal (#472): the BaseColor texture (its alpha the coverage) and an optional Normal map,
+ * A decal: the BaseColor texture (its alpha the coverage) and an optional Normal map,
  * projected along the entity's X axis through the box Size describes (UDecalComponent's DecalSize),
  * drawn with Mantle's cooked decal material. Both are Texture asset ids.
  */
@@ -1083,7 +1083,7 @@ struct FMantleSoundEmitterProps
 {
 	FString Sound;
 	double Volume = 1.0;
-	/** Distance in cm at which the sound has faded to silence. Always spatialised (#263). */
+	/** Distance in cm at which the sound has faded to silence. Always spatialised. */
 	double Radius = MANTLE_DEFAULT_SOUND_RADIUS;
 	/**
 	 * Loop for as long as the place is loaded. False plays the sound once, when the place is
@@ -1091,14 +1091,14 @@ struct FMantleSoundEmitterProps
 	 */
 	bool bLooping = false;
 	/**
-	 * Start when the place is built (#459). False builds it silent, its sound bound, until a
+	 * Start when the place is built. False builds it silent, its sound bound, until a
 	 * script's Entity:PlaySound; the place file carries the key only when it is false. Exported
 	 * from the AmbientSound's audio component's Auto Activate.
 	 */
 	bool bAutoplay = true;
 };
 
-/** One lane of a CrowdSpawner (#477): a polyline NPCs walk, in the spawner's local space. */
+/** One lane of a CrowdSpawner: a polyline NPCs walk, in the spawner's local space. */
 struct FMantleCrowdLane
 {
 	/** 2 to FMantlePlaceLimits::MaxCrowdLanePoints points, cm. Last == first makes a loop. */
@@ -1135,7 +1135,7 @@ struct FMantleCrowdLook
 };
 
 /**
- * A place a CrowdSpawner's NPCs walk over to and linger at (#513): another entity of the place,
+ * A place a CrowdSpawner's NPCs walk over to and linger at: another entity of the place,
  * where NPCs passing the nearest point of a lane may stand round it for a while.
  */
 struct FMantleCrowdPointOfInterest
@@ -1152,7 +1152,7 @@ struct FMantleCrowdPointOfInterest
 };
 
 /**
- * Ambient pedestrians (#477). Only this is place data: every client derives the same NPCs from
+ * Ambient pedestrians. Only this is place data: every client derives the same NPCs from
  * Seed plus server time, a dedicated server spawns none, and nothing per NPC replicates.
  */
 struct FMantleCrowdSpawnerProps
@@ -1174,42 +1174,42 @@ struct FMantleCrowdSpawnerProps
 	double MaxWalkSpeed = 160.0;
 	/** Chance an NPC stops for a while at each lane point it passes, 0 to 1. */
 	double IdleChance = 0.15;
-	/** Where NPCs gather (#513), at most FMantlePlaceLimits::MaxCrowdPointsOfInterest. */
+	/** Where NPCs gather, at most FMantlePlaceLimits::MaxCrowdPointsOfInterest. */
 	TArray<FMantleCrowdPointOfInterest> PointsOfInterest;
 	bool bEnabled = true;
 };
 
-/** A VehicleSpawn's respawn delay when the place file gives none (#435). */
+/** A VehicleSpawn's respawn delay when the place file gives none. */
 #define MANTLE_DEFAULT_VEHICLE_RESPAWN_SECONDS 5.0
 
 /**
- * A creator vehicle parked at the entity's transform (#435). The server spawns it when the place is
+ * A creator vehicle parked at the entity's transform. The server spawns it when the place is
  * built and again RespawnSeconds after it is destroyed; it belongs to no team.
  */
 struct FMantleVehicleSpawnProps
 {
 	/**
 	 * An uploaded Vehicle asset: ast_u and 32 lowercase hex digits. A spawn that names StorageItem
-	 * has none in the place file: it is empty until FMantleStorage::Apply (#614 stage 4) rewrites it
+	 * has none in the place file: it is empty until FMantleStorage::Apply rewrites it
 	 * to the stored item's resolved primaryAssetId, and holds that id from then on. Everything past
 	 * parsing (asset preparation, the gameplay bridge) reads it as an ordinary uploaded vehicle.
 	 */
 	FString Vehicle;
-	/** #614 stage 4: the name of a storage[] entry (a vehicle library item) to spawn instead of Vehicle. Exactly one of the two is set in a place file. */
+	/** Stage 4: the name of a storage[] entry (a vehicle library item) to spawn instead of Vehicle. Exactly one of the two is set in a place file. */
 	FString StorageItem;
 	/** 0 to FMantlePlaceLimits::MaxVehicleRespawnSeconds. */
 	double RespawnSeconds = MANTLE_DEFAULT_VEHICLE_RESPAWN_SECONDS;
 	/** False keeps the spawn without a vehicle. */
 	bool bEnabled = true;
-	/** #488: which of the vehicle's liveries the parked car wears, by index; -1 (the default) is the vehicle's defaultLivery. */
+	/** Which of the vehicle's liveries the parked car wears, by index; -1 (the default) is the vehicle's defaultLivery. */
 	int32 Livery = -1;
 };
 
-/** A WeaponSpawn's respawn delay when the place file gives none (#789). */
+/** A WeaponSpawn's respawn delay when the place file gives none. */
 #define MANTLE_DEFAULT_WEAPON_RESPAWN_SECONDS 10.0
 
 /**
- * A creator weapon waiting at the entity's transform (#789). Like FMantleVehicleSpawnProps: exactly one of
+ * A creator weapon waiting at the entity's transform. Like FMantleVehicleSpawnProps: exactly one of
  * Weapon and StorageItem is set in a place file; FMantleStorage::Apply rewrites a stored one into Weapon.
  */
 struct FMantleWeaponSpawnProps
@@ -1224,10 +1224,10 @@ struct FMantleWeaponSpawnProps
 	bool bEnabled = true;
 };
 
-/** An ItemSpawn's respawn delay when the place file gives none (#235). */
+/** An ItemSpawn's respawn delay when the place file gives none. */
 #define MANTLE_DEFAULT_ITEM_SPAWN_RESPAWN_SECONDS 60.0
 
-/** An item waiting at the entity's transform (#235): it comes back RespawnSeconds after it is taken. */
+/** An item waiting at the entity's transform: it comes back RespawnSeconds after it is taken. */
 struct FMantleItemSpawnProps
 {
 	/** The item: an id a script defines (WorldItems:Define), or a stored weapon's library id. */
@@ -1242,7 +1242,7 @@ struct FMantleItemSpawnProps
 	bool bEnabled = true;
 };
 
-/** One of a Script Point's parameters (#838): a key the package declares, and its value as text. */
+/** One of a Script Point's parameters: a key the package declares, and its value as text. */
 struct FMantleScriptPointParameter
 {
 	/** FMantlePlaceLimits::IsScriptPointParameterName: a letter, then up to 31 letters, digits or '_'. */
@@ -1252,7 +1252,7 @@ struct FMantleScriptPointParameter
 };
 
 /**
- * An anchor for a stored script package at the entity's transform (#838). The package's scripts read their points
+ * An anchor for a stored script package at the entity's transform. The package's scripts read their points
  * through Script.Points; each point's entity carries the storage name as a tag and its parameters as attributes.
  */
 struct FMantleScriptPointProps
@@ -1267,7 +1267,7 @@ struct FMantleScriptPointProps
 };
 
 /**
- * An InstancedMesh (#467): a StaticMesh's mesh, materials, collision and shadow, drawn at every
+ * An InstancedMesh: a StaticMesh's mesh, materials, collision and shadow, drawn at every
  * one of Instances. Each instance transform is relative to the entity's own transform.
  */
 struct FMantleInstancedMeshProps
@@ -1277,7 +1277,7 @@ struct FMantleInstancedMeshProps
 };
 
 /**
- * A SkeletalMesh (#469): an uploaded skeletal mesh on its own skeleton, its materials by slot, and
+ * A SkeletalMesh: an uploaded skeletal mesh on its own skeleton, its materials by slot, and
  * an optional uploaded clip authored on that skeleton. Every client samples the clip at
  * StartOffset + server time x PlayRate (UMantleClipAnimInstance), so nothing per frame replicates.
  * No collision.
@@ -1301,19 +1301,19 @@ struct FMantleSkeletalMeshProps
 /** A Terrain layer's tiling when the place file gives none: one repeat every 4 m. */
 #define MANTLE_DEFAULT_TERRAIN_TILING 400.0
 
-/** One paint layer of a Terrain (#466): a place material and how often its textures repeat. */
+/** One paint layer of a Terrain: a place material and how often its textures repeat. */
 struct FMantleTerrainLayer
 {
 	/** A Material asset id, uploaded or built in. */
 	FString Material;
 	/** cm per repeat, above 0 and at most FMantlePlaceLimits::MaxTerrainTilingCm. */
 	double Tiling = MANTLE_DEFAULT_TERRAIN_TILING;
-	/** What the layer is made of (#596): a hit where this layer weighs most resolves to it (UMantleTerrainSurfaceComponent). */
+	/** What the layer is made of: a hit where this layer weighs most resolves to it (UMantleTerrainSurfaceComponent). */
 	EMantleSurface Surface = EMantleSurface::Default;
 };
 
 /**
- * One Terrain grass entry (#628): a mesh every client scatters over the terrain near its camera,
+ * One Terrain grass entry: a mesh every client scatters over the terrain near its camera,
  * where a grass map's channel says so. Visual only: no collision, nothing replicated.
  */
 struct FMantleTerrainGrass
@@ -1340,7 +1340,7 @@ struct FMantleTerrainGrass
 };
 
 /**
- * Landscape terrain (#466). The entity's transform places heightfield sample (0, 0); the
+ * Landscape terrain. The entity's transform places heightfield sample (0, 0); the
  * heightfield carries its own spacing and height scale.
  */
 struct FMantleTerrainProps
@@ -1349,7 +1349,7 @@ struct FMantleTerrainProps
 	FString Heightfield;
 	/** An uploaded Texture: R, G, B, A weigh layers 0 to 3 across the terrain. Empty means layer 0 everywhere. */
 	FString Weightmap;
-	/** An uploaded Texture: R, G, B, A weigh layers 4 to 7 (#628), over the terrain like Weightmap. Present exactly when there are more than 4 layers. */
+	/** An uploaded Texture: R, G, B, A weigh layers 4 to 7, over the terrain like Weightmap. Present exactly when there are more than 4 layers. */
 	FString Weightmap2;
 	/**
 	 * An uploaded Texture marking holes: texel (x, y) is heightfield sample (x, y), only red counts, below 128 is a hole.
@@ -1359,11 +1359,11 @@ struct FMantleTerrainProps
 	/** 1 to FMantlePlaceLimits::MaxTerrainLayers. */
 	TArray<FMantleTerrainLayer> Layers;
 	bool bCastShadow = true;
-	/** Landscape grass (#628), 0 to FMantlePlaceLimits::MaxTerrainGrass entries. */
+	/** Landscape grass, 0 to FMantlePlaceLimits::MaxTerrainGrass entries. */
 	TArray<FMantleTerrainGrass> Grass;
 };
 
-/** How a VoxelWorld block type draws (#168). */
+/** How a VoxelWorld block type draws. */
 enum class EMantleVoxelRenderClass : uint8
 {
 	Opaque,
@@ -1372,7 +1372,7 @@ enum class EMantleVoxelRenderClass : uint8
 };
 
 /**
- * Who may change a VoxelWorld's blocks (#168): every player; no player; or players with the scripts deciding each edit (their
+ * Who may change a VoxelWorld's blocks: every player; no player; or players with the scripts deciding each edit (their
  * OnBlockPlacing / OnBlockBreaking or OnTerrainEditing). Scripts' own changes always go through.
  */
 enum class EMantleVoxelEdit : uint8
@@ -1382,7 +1382,7 @@ enum class EMantleVoxelEdit : uint8
 	Script
 };
 
-/** Whether a VoxelWorld's edits are kept (#168): not at all, per server, or per place. */
+/** Whether a VoxelWorld's edits are kept: not at all, per server, or per place. */
 enum class EMantleVoxelPersistence : uint8
 {
 	None,
@@ -1390,7 +1390,7 @@ enum class EMantleVoxelPersistence : uint8
 	Place
 };
 
-/** One block type of a VoxelWorld (#168). Its id is its index in the list plus one (0 is air). */
+/** One block type of a VoxelWorld. Its id is its index in the list plus one (0 is air). */
 struct FMantleVoxelBlockTypeProps
 {
 	/** Unique in the world, [a-z0-9_], not "air": what scripts call it. */
@@ -1412,7 +1412,7 @@ struct FMantleVoxelBlockTypeProps
 	TArray<FString> Tags;
 };
 
-/** A VoxelWorld (#168). The entity's location is the world's lowest corner; it is not rotated or scaled. */
+/** A VoxelWorld. The entity's location is the world's lowest corner; it is not rotated or scaled. */
 struct FMantleVoxelWorldProps
 {
 	/** In blocks: each a multiple of 16, at most FMantlePlaceLimits::MaxVoxelWorldSizeXY wide, MaxVoxelWorldSizeZ high. */
@@ -1422,7 +1422,7 @@ struct FMantleVoxelWorldProps
 	FString World;
 	/** 16, 32, 64 or 128: every tile texture is that square. */
 	int32 TileSize = 16;
-	/** look "smooth" (#168 steps 7-9): 50 cm voxels of ground with densities, the block types its materials, made by scripts. */
+	/** look "smooth": 50 cm voxels of ground with densities, the block types its materials, made by scripts. */
 	bool bSmooth = false;
 	/** Nearest (pixel art) or linear filtering of the tiles. */
 	bool bLinearFilter = false;
@@ -1434,7 +1434,7 @@ struct FMantleVoxelWorldProps
 };
 
 /**
- * A particle effect (#460): a built-in archetype and its look. The parser fills every key the place
+ * A particle effect: a built-in archetype and its look. The parser fills every key the place
  * file leaves out from the archetype's own look (FMantleEffects::DefaultLook), so Look is always whole.
  */
 struct FMantleEffectProps
@@ -1445,14 +1445,14 @@ struct FMantleEffectProps
 	bool bAutoplay = true;
 	/** Emit for as long as it plays; false emits for FMantleEffects::OneShotEmitSeconds each time it starts. */
 	bool bLoop = true;
-	/** The sprites archetype's (#628) keys, resolved: only read when Archetype is Sprites, and held to the schema's ranges and pairs by the parser. */
+	/** The sprites archetype's keys, resolved: only read when Archetype is Sprites, and held to the schema's ranges and pairs by the parser. */
 	FMantleSpritesSettings Sprites;
-	/** The sprites archetype's uploaded Texture asset (#628), empty for the built-in soft dot. */
+	/** The sprites archetype's uploaded Texture asset, empty for the built-in soft dot. */
 	FString TextureId;
 };
 
 /**
- * A joint (#528): Type between the physics entity EntityA and EntityB, or the world when EntityB is
+ * A joint: Type between the physics entity EntityA and EntityB, or the world when EntityB is
  * empty. Anchors are in each entity's own space, scale included (the world's for AnchorB without
  * EntityB). Axis, the hinge limits and Length are read for their own type only; the parser refuses
  * them on another.
@@ -1482,7 +1482,7 @@ struct FMantleConstraintProps
 };
 
 /**
- * A reflection probe (#628): Shape's volume, which only the keys of its own shape fill (the parser refuses the
+ * A reflection probe: Shape's volume, which only the keys of its own shape fill (the parser refuses the
  * others). The entity's transform places the center and, for a box, turns it; its scale plays no part.
  */
 struct FMantleReflectionProbeProps
@@ -1501,7 +1501,7 @@ struct FMantleReflectionProbeProps
 };
 
 /**
- * World text (GhzGarage/mantle#724), drawn in Mantle's built-in font and material. The entity's transform places the text
+ * World text, drawn in Mantle's built-in font and material. The entity's transform places the text
  * and turns it; its scale plays no part (WorldSize, XScale and YScale size it).
  */
 struct FMantleTextProps
@@ -1519,7 +1519,7 @@ struct FMantleTextProps
 	double YScale = 1.0;
 };
 
-/** One point of a WaterBody's spline (#997), in the body's own space, cm. */
+/** One point of a WaterBody's spline, in the body's own space, cm. */
 struct FMantleWaterSplinePoint
 {
 	FVector Location = FVector::ZeroVector;
@@ -1534,7 +1534,7 @@ struct FMantleWaterSplinePoint
 	double Velocity = 0.0;
 };
 
-/** One final Gerstner wave of a WaterBody (#997): as generated, not generator settings. */
+/** One final Gerstner wave of a WaterBody: as generated, not generator settings. */
 struct FMantleWaterWave
 {
 	/** FMantlePlaceLimits::MinWaterWavelength to MaxWaterWavelength, cm. */
@@ -1549,7 +1549,7 @@ struct FMantleWaterWave
 };
 
 /**
- * A body of the Water plugin (GhzGarage/mantle#997). The entity's transform is the body actor's; lengths are cm.
+ * A body of the Water plugin. The entity's transform is the body actor's; lengths are cm.
  * Lake, River and Ocean carry Spline (a lake's and an ocean's a closed loop, a river's open); Custom carries MeshId.
  */
 struct FMantleWaterBodyProps
@@ -1693,7 +1693,7 @@ struct FMantleEntity
 };
 
 /**
- * The mesh, materials, collision and shadow of a StaticMesh or an InstancedMesh entity (#467),
+ * The mesh, materials, collision and shadow of a StaticMesh or an InstancedMesh entity,
  * for everything that treats the two alike: asset resolution and download, the editor preview's
  * upload check. Null for every other type.
  */
@@ -1710,7 +1710,7 @@ inline const FMantleStaticMeshProps* MantleMeshPropsOf(const FMantleEntity& Enti
 	return nullptr;
 }
 
-/** A StaticMesh entity's physics block (#456), or null when it has none (and for every other type). */
+/** A StaticMesh entity's physics block, or null when it has none (and for every other type). */
 inline const FMantlePhysicsProps* MantlePhysicsOf(const FMantleEntity& Entity)
 {
 	const FMantleStaticMeshProps* Mesh = Entity.Props.TryGet<FMantleStaticMeshProps>();
@@ -1738,15 +1738,15 @@ struct FMantlePlace
 	TArray<FMantleEntity> Entities;
 	TArray<FMantleScript> Scripts;
 	FMantleScriptApiVersion ScriptApi;
-	/** uiDocuments (#549): at most FMantlePlaceLimits::MaxUIDocuments documents and MaxUIImages images (#556 item 5). */
+	/** uiDocuments: at most FMantlePlaceLimits::MaxUIDocuments documents and MaxUIImages images. */
 	TArray<FMantleUIDocument> UIDocuments;
-	/** storage (#614 stage 4): at most FMantlePlaceLimits::MaxStorageEntries library items, names unique. */
+	/** storage: at most FMantlePlaceLimits::MaxStorageEntries library items, names unique. */
 	TArray<FMantleStorageEntry> Storage;
-	/** seats (#142): at most FMantlePlaceLimits::MaxSeatsPerPlace sit spots, each on an entity of the place. */
+	/** seats: at most FMantlePlaceLimits::MaxSeatsPerPlace sit spots, each on an entity of the place. */
 	TArray<FMantleSeat> Seats;
 	/**
-	 * Not in the place file: what the storage resolve answered for Storage, kept by FMantleStorage::Apply (#614
-	 * stage 5). One entry per distinct item version that resolved to a usable vehicle or weapon, or (#838) a script
+	 * Not in the place file: what the storage resolve answered for Storage, kept by FMantleStorage::Apply.
+	 * One entry per distinct item version that resolved to a usable vehicle or weapon, or a script
 	 * package; an entry the
 	 * backend did not know, or that was not active or delisted, is absent. Empty until the loader has expanded
 	 * the place. Scripts are authorized against it (FMantleStorage::FindAuthorized), never against the raw file.
@@ -1754,14 +1754,14 @@ struct FMantlePlace
 	TArray<FMantleResolvedStorageEntry> StorageResolved;
 
 	/**
-	 * Not in the place file (#614 stage 7): the declared storage items whose pinned version the resolve answered as
+	 * Not in the place file: the declared storage items whose pinned version the resolve answered as
 	 * "taken_down", a moderator's removal after a copyright complaint. A takedown overrides the place's pin: these are never
 	 * in StorageResolved, so nothing spawns or grants them, and FMantleStorage::WhyNotAuthorized says why. Set by Apply.
 	 */
 	TArray<FString> StorageTakenDown;
 
 	/**
-	 * Not in the place file (#679 B3): one plain-language line for each stored VehicleSpawn that Apply turned off because its
+	 * Not in the place file: one plain-language line for each stored VehicleSpawn that Apply turned off because its
 	 * item did not resolve (missing, taken down, not a vehicle, or no answer), so the server can show a creator why no car is
 	 * parked there instead of leaving a warning in the log. Set by Apply.
 	 */

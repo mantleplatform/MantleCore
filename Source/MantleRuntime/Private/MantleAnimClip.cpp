@@ -10,7 +10,7 @@
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleAnimClipPrivate
 {
-	/** MAN1 flag bit 0: a place clip carrying its skeleton (#469). */
+	/** MAN1 flag bit 0: a place clip carrying its skeleton. */
 	constexpr uint32 ClipFlagSkeleton = 1 << 0;
 
 	constexpr uint8 TrackRotationAnimated = 1 << 0;
@@ -220,7 +220,7 @@ bool FMantleAnimClip::Validate(FString& OutError) const
 		}
 	}
 
-	// #469: a place clip's skeleton, the worker's own rules (cook.ValidatePlaceAnimClip).
+	// A place clip's skeleton, the worker's own rules (cook.ValidatePlaceAnimClip).
 	if (!HasSkeleton())
 	{
 		if (SkeletonBoneNames.Num() > 0 || SkeletonBoneParents.Num() > 0)
@@ -324,7 +324,7 @@ FMantleAnimClipReadResult FMantleAnimClipReader::Read(const TConstArrayView<uint
 	}
 	Clip.FrameCount = static_cast<int32>(FrameCount);
 
-	// #469: a place clip's skeleton block, the bone table it was authored on.
+	// A place clip's skeleton block, the bone table it was authored on.
 	if ((Flags & ClipFlagSkeleton) != 0)
 	{
 		Cursor.String(Clip.SkeletonHash);

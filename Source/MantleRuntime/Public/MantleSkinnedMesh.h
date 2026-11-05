@@ -22,8 +22,8 @@ struct FMantleSkinnedMeshSection
 
 	/**
 	 * The section's material name as uploaded (MSK1 carries it; unique within a cooked LOD). Bind
-	 * materials by this name, never by section or slot index (AVATAR_CATALOG_PLAN.md section 0.1
-	 * item 12). None when unknown; the spike helper fills it from the source asset's slot name.
+	 * materials by this name, never by section or slot index.
+	 * None when unknown; the spike helper fills it from the source asset's slot name.
 	 */
 	FName MaterialName;
 };
@@ -72,8 +72,8 @@ struct FMantleSkinnedMeshLOD
 	TArray<FVector3f> HairCards;
 
 	/**
-	 * Influence slots per vertex. MSK1 records its own count, 1 to 8 (AVATAR_CATALOG_PLAN.md section
-	 * 0.1 item 18); the spike helper keeps the source asset's own count (up to MAX_TOTAL_INFLUENCES)
+	 * Influence slots per vertex. MSK1 records its own count, 1 to 8;
+	 * the spike helper keeps the source asset's own count (up to MAX_TOTAL_INFLUENCES)
 	 * so a round trip stays exact.
 	 */
 	int32 NumInfluences = 4;
@@ -101,7 +101,7 @@ struct FMantleSkinnedMeshLOD
 struct FMantleSkinnedMesh;
 
 /**
- * Body-shape offsets (#849): the cooked avatar body's MSK1 extension block BOFS. Up to eight named
+ * Body-shape offsets: the cooked avatar body's MSK1 extension block BOFS. Up to eight named
  * shapes, each a per-LOD, per-vertex position delta and a per-bone local-translation delta (cm) that
  * the body sliders scale. Shape ids: 0 weight+, 1 weight-, 2 muscle+, 3 muscle-, 4 chest+, 5 chest-,
  * 6 hips+, 7 hips- (slider k uses 2k for a positive value and 2k+1 for a negative one).
@@ -144,8 +144,8 @@ struct MANTLERUNTIME_API FMantleBodyOffsets
 };
 
 /**
- * A skinned mesh as plain arrays: the in-memory form of the MSK1 cooked format (AVATAR_CATALOG_PLAN.md
- * section 3.4) that FMantleRuntimeSkeletalMeshBuilder turns into a transient USkeletalMesh.
+ * A skinned mesh as plain arrays: the in-memory form of the MSK1 cooked format
+ * that FMantleRuntimeSkeletalMeshBuilder turns into a transient USkeletalMesh.
  *
  * The bone table is by name so the mesh binds to whichever supported USkeleton it is built against.
  * Avatars and faces carry their own reference pose; garments carry none and are built against their

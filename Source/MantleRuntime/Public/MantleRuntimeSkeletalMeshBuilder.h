@@ -30,7 +30,7 @@ struct FMantleSkinnedMeshBuildParams
 	USkeleton* Skeleton = nullptr;
 
 	/**
-	 * #469, a place skeletal mesh on its own skeleton: build a transient USkeleton from the mesh's own bone
+	 * A place skeletal mesh on its own skeleton: build a transient USkeleton from the mesh's own bone
 	 * table and reference pose (USkeleton::MergeAllBonesToBoneTree over the built mesh) instead of binding to
 	 * a supported one. Skeleton and ReferencePose must be null, and the mesh must carry its reference pose.
 	 * The new skeleton is the built mesh's (GetSkeleton()), in the same outer.
@@ -44,12 +44,12 @@ struct FMantleSkinnedMeshBuildParams
 	 */
 	const FReferenceSkeleton* ReferencePose = nullptr;
 
-	/** Garments only: collapse missing helper-bone influences onto a retained ancestor (#641). Requires ReferencePose. */
+	/** Garments only: collapse missing helper-bone influences onto a retained ancestor. Requires ReferencePose. */
 	bool bAllowMissingHelperBones = false;
 
 	/**
 	 * Optional, one bit per LOD0 vertex: triangles whose three vertices are all set are left out
-	 * (the body under worn garments, AVATAR_CATALOG_PLAN.md section 0.1 item 4). Vertices are kept.
+	 * (the body under worn garments). Vertices are kept.
 	 * Lower LODs take each vertex's nearest LOD0 vertex's bit (TransferHiddenVertices).
 	 */
 	const TBitArray<>* HiddenVertices = nullptr;

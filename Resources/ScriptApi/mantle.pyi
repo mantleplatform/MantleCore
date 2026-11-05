@@ -464,7 +464,7 @@ class UiNode:
         ...
 
 class VoxelWorld:
-    """The place's block world (#168): read its blocks anywhere, change them (server), and hear players build. Block coordinates are whole blocks (x, y, z with z up, as every position), from the world's lowest corner."""
+    """The place's block world: read its blocks anywhere, change them (server), and hear players build. Block coordinates are whole blocks (x, y, z with z up, as every position), from the world's lowest corner."""
     def brush(self, tool: str, position: Vector3, radius: float, options: dict[str, Any] = ..., /) -> float:
         """Smooth worlds: one brush stroke, as a player's but with no checks: tool 'dig', 'fill', 'flatten', 'smooth' or 'paint', a sphere at position (cm) of radius 50 to 800 cm. options: Strength 1 to 100 (default 50), Material (fill and paint need it; new ground takes it), PlaneZ (flatten's floor height in cm; default the position's). Every player gets the stroke (about 21 bytes). Returns the voxels changed; OnTerrainEdited follows."""
         ...
@@ -611,7 +611,7 @@ class VoxelWriter:
         ...
 
 class WorldItem:
-    """An item lying in the world (#235): a small server record, not an Entity. Players and scripts pick it up; it can time out, be locked to an owner and be saved with the world. A handle stays valid after the item is gone: Exists says false and the methods error."""
+    """An item lying in the world: a small server record, not an Entity. Players and scripts pick it up; it can time out, be locked to an owner and be saved with the world. A handle stays valid after the item is gone: Exists says false and the methods error."""
     contents: Optional[list[dict[str, Any]]]
     count: float
     data: Optional[dict[str, Any]]
@@ -1303,7 +1303,7 @@ class _NetService:
 Net: _NetService
 
 class _NoiseService:
-    """Smooth seeded noise for generating worlds (#168, exact since 1.60): the same seed and position always give the same value, from -1 to 1, bit for bit on every machine (client and server)."""
+    """Smooth seeded noise for generating worlds (exact since 1.60): the same seed and position always give the same value, from -1 to 1, bit for bit on every machine (client and server)."""
     def fbm2_d(self, seed: float, x: float, y: float, octaves: Optional[float] = ..., frequency: Optional[float] = ..., /) -> float:
         """Layered noise (octaves, a whole number from 1 to 8, default 4: each twice as fine and half as strong) at (x, y) times frequency (default 1): natural terrain. Values are multiples of 1/65536, the same on every machine. A seed is a whole number from -2147483648 to 2147483647, and a coordinate times the frequency must stay within 8388608 either way; anything else is an error."""
         ...
@@ -1853,7 +1853,7 @@ class _WorldService:
         """Every entity and player character touching a ball of this radius (at most 50 m) around center, nearest first. Overlap-only entities (triggers) count; entities with no collision never do. A character is listed as its Entity; Players:GetPlayerFromCharacter tells whose it is. params: Include, Exclude, Tag, IgnorePlayers, Layers, ExcludeLayers (collision layers, server scripts only), and MaxResults (256 at most, and by default). Runs on this machine only; a script may make 256 spatial queries a frame."""
         ...
     def get_voxel_world(self, look: Optional[str] = ..., /) -> Optional[VoxelWorld]:
-        """The place's block world (#168), or nil when the place has none. A place may have two, one of each look: give 'blocky' or 'smooth' for that one; with no look, the place's first."""
+        """The place's block world, or nil when the place has none. A place may have two, one of each look: give 'blocky' or 'smooth' for that one; with no look, the place's first."""
         ...
     def on_tagged(self, tag: str, handler: Callable[..., Any], /) -> Connection:
         """Call handler for every entity that has the tag now, and for each one that gets it later."""
@@ -1871,7 +1871,7 @@ class _WorldService:
 World: _WorldService
 
 class _WorldItemsService:
-    """Items that lie in the world (#235): dropped things, pickups, loot piles. A world item is a small server record, not an Entity, so thousands are affordable (a place holds 2,000). Nothing is on unless a script calls this service."""
+    """Items that lie in the world: dropped things, pickups, loot piles. A world item is a small server record, not an Entity, so thousands are affordable (a place holds 2,000). Nothing is on unless a script calls this service."""
     limit: float
     selected: Signal
     unselected: Signal

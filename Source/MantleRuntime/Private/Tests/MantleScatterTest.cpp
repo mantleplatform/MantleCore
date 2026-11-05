@@ -7,7 +7,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Scatter (#530, #169): the generator's counts, determinism and filters, and what the parser reads and refuses. The golden
+// Scatter (#169): the generator's counts, determinism and filters, and what the parser reads and refuses. The golden
 // numbers come from an independent model of the generator (a script outside the engine), so a change to the maths shows here.
 
 // Named, not anonymous: MantleRuntime builds as a unity build.

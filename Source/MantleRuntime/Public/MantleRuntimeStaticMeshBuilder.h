@@ -30,7 +30,7 @@ struct FMantleStaticMeshBuildParams
 	bool bComplexCollision = false;
 
 	/**
-	 * With bComplexCollision, for an MRM2 that carries simple collision (#470): build its boxes, spheres,
+	 * With bComplexCollision, for an MRM2 that carries simple collision: build its boxes, spheres,
 	 * capsules and convex hulls into the body setup instead, with the trace flag the upload asked for
 	 * (CTF_UseSimpleAsComplex, or CTF_UseSimpleAndComplex, which keeps the triangles for complex queries). Off, or
 	 * for a mesh without simple collision, the collision is complex-as-simple as above.
@@ -38,7 +38,7 @@ struct FMantleStaticMeshBuildParams
 	bool bUseSimpleCollision = true;
 
 	/**
-	 * #470: build an MRM2's authored lower LODs, switched at its screen sizes. Off, only LOD0 is built:
+	 * Build an MRM2's authored lower LODs, switched at its screen sizes. Off, only LOD0 is built:
 	 * what a dedicated server wants, since it never draws and its collision is LOD0's.
 	 */
 	bool bBuildLowerLODs = true;
@@ -84,13 +84,13 @@ struct FMantleStaticMeshBuildParams
  * area and angle weighted), tangents are always computed from the UVs, positions and winding are used
  * as the worker wrote them (MRM1's own axis convention).
  *
- * MRM2 (FMantleStaticMeshReader, Fab F8 #342): uploaded place meshes and rigid accessories. Every
+ * MRM2 (FMantleStaticMeshReader): uploaded place meshes and rigid accessories. Every
  * attribute is taken as cooked: positions, normals, tangents with their binormal sign, UVs and vertex
  * colors; nothing is recomputed. Indices keep glTF's order, which in Epic's axis convention is
  * already Unreal's front face (never reversed here). One polygon group per section in table (draw)
  * order; material slot i is the section whose MaterialIndex is i and is named after that section's
  * material, so a component's SetMaterial(i) and a place's materials[i] address the same slot.
- * #470: a second UV channel when the LOD carries UV1; the authored lower LODs (each a mesh
+ * A second UV channel when the LOD carries UV1; the authored lower LODs (each a mesh
  * description of its own, its sections bound to LOD0's slots) with the file's screen sizes
  * (FStaticMeshRenderData::ScreenSize); and the file's simple collision in the body setup
  * (bUseSimpleCollision).

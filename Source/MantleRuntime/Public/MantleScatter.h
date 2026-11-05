@@ -1,5 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
-// GhzGarage/mantle#530: the Scatter place entity's generator. One fixed, seeded CPU scatter, driven by
+// The Scatter place entity's generator. One fixed, seeded CPU scatter, driven by
 // a closed parameter set (seed, half extent, density, scale range, alignment and tilt, weighted meshes)
 // and generated on each client into instanced static meshes (AMantleScatterVolume, MantleScatterVolume.h).
 // Visual only: no collision, nothing replicated, nothing on a dedicated server.
@@ -75,7 +75,7 @@ struct FMantleScatterPathExclusion
 };
 
 /**
- * One mesh a scatter draws from: a library or uploaded (#252) mesh id, its relative weight, and its
+ * One mesh a scatter draws from: a library or uploaded mesh id, its relative weight, and its
  * materials by slot as on a StaticMesh (an empty entry leaves the slot on the mesh's own material; an
  * uploaded mesh names one for every slot, since it carries none of its own).
  */

@@ -342,7 +342,7 @@ namespace MantlePlaceStoragePrivate
 		return false;
 	}
 
-	/** #134: the manifest's "dependencies", read leniently: texts that are storage names, unique ignoring case, at most the cap; anything else is left out. */
+	/** The manifest's "dependencies", read leniently: texts that are storage names, unique ignoring case, at most the cap; anything else is left out. */
 	void ReadDependencyList(const TSharedPtr<FJsonObject>& Object, TArray<FString>& Out)
 	{
 		const TArray<TSharedPtr<FJsonValue>>* Names = nullptr;

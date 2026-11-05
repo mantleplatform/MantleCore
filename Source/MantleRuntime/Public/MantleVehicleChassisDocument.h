@@ -65,7 +65,7 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	static void Compose(const FMantleChassisSpec& Spec, FJsonObject& Document, TArray<FString>* OutHeld = nullptr);
 
 	/**
-	 * A ground car's handling, baked into Document (#821; a published vehicle's handling is fixed when it is published, so Make adds none of its own): for a
+	 * A ground car's handling, baked into Document (a published vehicle's handling is fixed when it is published, so Make adds none of its own): for a
 	 * chassis on more than two wheels that is not a plane, a helicopter or a hovercraft, the steering eases off with speed (steering.speedCurve, the built-in
 	 * sports car's curve: mph, share of the lock) and the tires grip front and rear as the built-in sports car's do (tires.friction times FrontTireGripShare, and
 	 * tires.rearFriction times RearTireGripShare): at full lock at 100 km/h a tap of the key slid the front tires past their grip and spun the car, and equal
@@ -91,7 +91,7 @@ struct MANTLERUNTIME_API FMantleVehicleChassisDocument
 	static FString MovementBlocksJson(const FMantleChassisSpec& Spec);
 
 	/**
-	 * Merges a source's movement and optional seat firearm aim arcs into a document made from it (#821, #615): its movement type and seat kinds when they are
+	 * Merges a source's movement and optional seat firearm aim arcs into a document made from it: its movement type and seat kinds when they are
 	 * not the baseline, enabled arcs on placed seats, and the blocks MovementBlocks holds (top-level flight, helicopter and hover replace the document's;
 	 * seat, passengerSeat and camera objects add their keys to the document's own, which must already exist). A disabled arc is not written: the seat's arc is
 	 * then worked out from where it sits. False, with the reason in OutError, for invalid arcs or blocks that are not a JSON object or name a key a source may not

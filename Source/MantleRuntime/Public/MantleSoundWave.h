@@ -9,23 +9,23 @@
 #include "MantleSoundWave.generated.h"
 
 /**
- * How a place spatialises a sound that reaches silence at Radius cm (#263): a 10% full-volume core
+ * How a place spatialises a sound that reaches silence at Radius cm: a 10% full-volume core
  * and a linear falloff over the rest, the proportions of UE's default attenuation. SoundEmitters and
- * the 3D sounds scripts play (Sounds:Play, #459) share it, so a script sound placed beside an emitter
+ * the 3D sounds scripts play (Sounds:Play) share it, so a script sound placed beside an emitter
  * of the same radius fades out the same way.
  */
 MANTLERUNTIME_API FSoundAttenuationSettings MantleSoundAttenuationForRadius(double Radius);
 
 /**
  * The component tag a script puts on a SoundEmitter's audio component while it has stopped it
- * (Entity:StopSound, #459). The place builder binds an uploaded sound that arrives late without
+ * (Entity:StopSound). The place builder binds an uploaded sound that arrives late without
  * starting it while the tag is there, so an emitter a script silenced stays silent until
  * Entity:PlaySound takes the tag off again.
  */
 MANTLERUNTIME_API FName MantleSoundEmitterHeldTag();
 
 /**
- * One sound emitter's playback of a creator's uploaded sound (#324): the decoded MAU1 samples, shared
+ * One sound emitter's playback of a creator's uploaded sound: the decoded MAU1 samples, shared
  * read-only with every other emitter playing the same sound, fed to the audio mixer as they are.
  *
  * Procedural, so there is no per-asset cook and no codec: OnGeneratePCMAudio copies PCM16 straight
@@ -47,7 +47,7 @@ public:
 	static UMantleSoundWave* Create(UObject* Outer, const TSharedPtr<const FMantleSoundData>& InSound, bool bInLoop);
 
 	/**
-	 * #898: a one-shot any number of voices may play at once, such as a weapon's attack sound (every shot of every copy of the
+	 * A one-shot any number of voices may play at once, such as a weapon's attack sound (every shot of every copy of the
 	 * weapon plays it, fire and forget). Each voice gets its own reader over the shared samples (CreateSoundGenerator) and ends
 	 * by itself after the last sample, so nobody stops it. Null when InSound is.
 	 */

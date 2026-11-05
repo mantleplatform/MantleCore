@@ -6,7 +6,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// #235: world items' place format. settings.worldItems (persistence) and the ItemSpawn entity.
+// World items' place format. settings.worldItems (persistence) and the ItemSpawn entity.
 // Mirrors validate.py (and the schema) and the backend's validate.go.
 
 // Named, not anonymous: MantleRuntime builds as a unity build.

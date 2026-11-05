@@ -58,7 +58,7 @@ struct FMantleStorageExpandResult
 };
 
 /**
- * One stored script package a machine runs (#838): the place's storage name for it (what Script.Package reads and
+ * One stored script package a machine runs: the place's storage name for it (what Script.Package reads and
  * the catalog mounts it under, Packages/<StorageName>/), the files for this machine's sides plus Shared, and
  * its manifest.
  */
@@ -86,7 +86,7 @@ struct FMantleStorageProblem
 };
 
 /**
- * Place storage, the ServerStorage analogue (#614 stage 4): the library items a place pins, each by name, and what
+ * Place storage, the ServerStorage analogue: the library items a place pins, each by name, and what
  * it takes to load them. The place file carries only {name, item, version}; at load the entries are expanded through
  * the storage resolve routes and every VehicleSpawn that names a stored item is rewritten to the item's primary
  * asset id (Apply), so asset preparation and the gameplay bridge see an ordinary uploaded vehicle.
@@ -98,7 +98,7 @@ public:
 	 * The schema's rules for a storage array, shared by the parser, the exporter and the editor validator: at most
 	 * FMantlePlaceLimits::MaxStorageEntries entries, names matching FMantlePlaceLimits::StorageNamePattern and
 	 * unique (case-sensitively), items itm_u plus 32 lowercase hex digits and each stored once (a place pins one
-	 * version of an item: a repeat is reported at its own "/storage/<index>/item"), versions of at least 1, and (#838 stage 6)
+	 * version of an item: a repeat is reported at its own "/storage/<index>/item"), versions of at least 1, and
 	 * settings of at most FMantlePlaceLimits::MaxStorageSettings keys, each a setting name ("/storage/<index>/settings/<key>")
 	 * with a value of at most MaxStorageSettingValueLength characters. Paths are "/storage" or "/storage/<index>/<field>".
 	 */
@@ -140,7 +140,7 @@ public:
 	static void ExpandAsync(const FString& PlaceId, bool bServer, FMantlePlace Place, TFunction<void(FMantleStorageExpandResult)> OnDone);
 
 	/**
-	 * Rewrites every VehicleSpawn that names a StorageItem (and likewise every WeaponSpawn; a ScriptPoint (#838) keeps
+	 * Rewrites every VehicleSpawn that names a StorageItem (and likewise every WeaponSpawn; a ScriptPoint keeps
 	 * its properties and is only turned off when its entry is undeclared, missing, taken down, not a script, or not
 	 * active or delisted). A stored vehicle that resolved becomes the spawn's
 	 * Vehicle (the one place that happens: Vehicle holds the resolved id from then on, StorageItem stays as the
@@ -148,9 +148,9 @@ public:
 	 * usable primary asset id keeps no Vehicle, is turned off, and logs a warning naming it. Spawns without a
 	 * StorageItem are untouched. Returns how many spawns were turned off.
 	 *
-	 * Also keeps what resolved (#614 stage 5): Place.StorageResolved becomes one entry per declared item
+	 * Also keeps what resolved: Place.StorageResolved becomes one entry per declared item
 	 * that the answer lists as an active or delisted vehicle or weapon with a usable primary asset id, or as an
-	 * active or delisted script package (#838, which has no primary asset), in
+	 * active or delisted script package (which has no primary asset), in
 	 * declaration order. Missing, unanswered and wrong-status versions are left out, which is what scripts are
 	 * authorized against (FindAuthorized), whether or not a VehicleSpawn names them.
 	 */
@@ -165,11 +165,11 @@ public:
 	/** The Kind of a resolved wheel entry. */
 	static constexpr const TCHAR* KindWheel = TEXT("wheel");
 
-	/** The Kind of a resolved script package entry (#838). It has no primary asset. */
+	/** The Kind of a resolved script package entry. It has no primary asset. */
 	static constexpr const TCHAR* KindScript = TEXT("script");
 
 	/**
-	 * Reads a script package manifest (#838): {name, description, parameters: [option], settings: [option]} (settings: stage 6),
+	 * Reads a script package manifest: {name, description, parameters: [option], settings: [option]} (settings: stage 6),
 	 * each option {name, type, default, help, required, min, max, options}, the resolve answer's manifest and a package folder's
 	 * package.json alike. Lenient: a missing or wrong-typed field is left empty, and an option whose name is not a parameter key,
 	 * whose type is not "string", "number", "boolean" or "choice", or that repeats an earlier name of its list ignoring case, is
@@ -185,7 +185,7 @@ public:
 	static FMantleScriptPackageManifest ReadScriptPackageManifestJson(const FString& Json);
 
 	/**
-	 * The stored script packages a machine runs (#838), in storage declaration order: one per declared entry whose
+	 * The stored script packages a machine runs, in storage declaration order: one per declared entry whose
 	 * pinned version resolved as a script (Place.StorageResolved), with its files of the server side when
 	 * bServerSide, the client side when bClientSide, and Shared always. A package with no files for this machine
 	 * is still listed (its manifest describes its points). Pure.

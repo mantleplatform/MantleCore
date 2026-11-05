@@ -29,7 +29,7 @@ struct MANTLERUNTIME_API FMantleConnection
 
 	/**
 	 * Mantle's hosted API, the one a packaged client uses, in every build. The editor plugin
-	 * publishes there by default (#394): a creator who installed the plugin from Fab has no local
+	 * publishes there by default: a creator who installed the plugin from Fab has no local
 	 * API, whatever an editor-built -game process defaults to.
 	 */
 	static const TCHAR* HostedBaseUrl;
@@ -47,7 +47,7 @@ struct MANTLERUNTIME_API FMantleConnection
 	/**
 	 * The bearer token. MANTLE_AUTH_TOKEN is the override, honored only in non-Shipping builds
 	 * (the editor, CI, local development): a developer token for a local API, or a creator token
-	 * (mct1., #94) against the hosted one. Otherwise the in-memory token SetRuntimeAuthToken
+	 * (mct1.) against the hosted one. Otherwise the in-memory token SetRuntimeAuthToken
 	 * holds: the client's short-lived EOS token after sign-in, or the creator token pasted into
 	 * the editor. A Shipping client uses nothing but the former; a stray environment variable
 	 * must never be able to silence Epic sign-in in the client players install.
@@ -103,7 +103,7 @@ struct MANTLERUNTIME_API FMantleConnection
 	static FString ResolveServerToken();
 
 	/**
-	 * Private servers (PS7, GhzGarage/mantle#420): the private server a hosted session belongs to,
+	 * Private servers (PS7): the private server a hosted session belongs to,
 	 * from MANTLE_PRIVATE_SERVER_ID, which the API sets beside MANTLE_PLACE_ID only when it
 	 * allocates a private server's session. Empty for a public session, and for anything that
 	 * isn't a uuid. Lowercase, as the API writes ids.
@@ -117,7 +117,7 @@ struct MANTLERUNTIME_API FMantleConnection
 	static FString ResolvePrivateServerOwnerId();
 
 	/**
-	 * GhzGarage/mantle#527: the hard end of this hosted session, from MANTLE_SESSION_ENDS_AT,
+	 * The hard end of this hosted session, from MANTLE_SESSION_ENDS_AT,
 	 * which the API sets beside MANTLE_PRIVATE_SERVER_ID for every Edgegap deployment it
 	 * allocates (the allocation time plus the public or private lifetime). False, with
 	 * OutEndsAtUtc untouched, when it is unset (a community server, a local run) or not an

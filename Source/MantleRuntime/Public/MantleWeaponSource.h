@@ -6,7 +6,7 @@
 #include "MantleBuilderPoint.h"
 #include "MantleWeaponSource.generated.h"
 
-/** How the character holds and uses a creator weapon (#729). The same order as the editor's EMantleWeaponFitHold. */
+/** How the character holds and uses a creator weapon. The same order as the editor's EMantleWeaponFitHold. */
 UENUM()
 enum class EMantleWeaponHold : uint8
 {
@@ -27,7 +27,7 @@ enum class EMantleWeaponHold : uint8
 	Unarmed,
 	Shield,
 	Throwable,
-	/** #1025: a potion, a medkit, food: used on its holder (delivery Use, the Consumable numbers). */
+	/** A potion, a medkit, food: used on its holder (delivery Use, the Consumable numbers). */
 	Consumable,
 	Count UMETA(Hidden)
 };
@@ -50,10 +50,10 @@ enum class EMantleWeaponSourceAction : uint8
 	Equip, Holster, Idle, Fire, FireLast, ReloadTactical, ReloadEmpty, ReloadStart, ReloadStartEmpty, ReloadLoop, ReloadEnd,
 	ReloadPartial, Attack, Heavy, Block, Throw, Cast, Nock, Draw, Release, Use
 };
-/** #1025: which of each hold's two potion clips a consumable plays (the document's consumable.style). */
+/** Which of each hold's two potion clips a consumable plays (the document's consumable.style). */
 UENUM()
 enum class EMantleWeaponSourceUseStyle : uint8 { EatDrink, Use };
-/** #1025: what a consumable does by itself (the document's consumable.effect): heal, or nothing (the place's script does it). */
+/** What a consumable does by itself (the document's consumable.effect): heal, or nothing (the place's script does it). */
 UENUM()
 enum class EMantleWeaponSourceConsumableEffect : uint8 { Heal, None };
 
@@ -121,7 +121,7 @@ struct MANTLERUNTIME_API FMantleWeaponSourceCharges
 	UPROPERTY(EditAnywhere, Category = "Mantle") float RefillSeconds = 4.f;
 };
 
-/** #1025: a consumable's numbers (the document's consumable block). */
+/** A consumable's numbers (the document's consumable block). */
 USTRUCT()
 struct MANTLERUNTIME_API FMantleWeaponSourceConsumable
 {
@@ -151,7 +151,7 @@ struct MANTLERUNTIME_API FMantleWeaponSourcePart
 	UPROPERTY(EditAnywhere, Category = "Mantle") TArray<EMantleWeaponSourceAction> ShownDuring;
 };
 
-/** #234: the slot an attachment option fills (the weapon file's attachment.slot); Fixed is a part that is always there. */
+/** The slot an attachment option fills (the weapon file's attachment.slot); Fixed is a part that is always there. */
 UENUM()
 enum class EMantleWeaponSourceSlot : uint8
 {
@@ -164,7 +164,7 @@ enum class EMantleWeaponSourceSlot : uint8
 	Extra,
 };
 
-/** #234: the multipliers an attachment option applies while fitted, 0.25 to 4 each, 1 = unchanged (the weapon file's attachment.stats). */
+/** The multipliers an attachment option applies while fitted, 0.25 to 4 each, 1 = unchanged (the weapon file's attachment.stats). */
 USTRUCT()
 struct MANTLERUNTIME_API FMantleWeaponSourceOptionStats
 {
@@ -178,7 +178,7 @@ struct MANTLERUNTIME_API FMantleWeaponSourceOptionStats
 	UPROPERTY(EditAnywhere, Category = "Mantle") float Range = 1.f;
 };
 
-/** Fixed mesh/effect attachment, positioned relative to a builder role, or the weapon root when Socket is unset. With a Slot it is an option: it shows only while fitted (#234). */
+/** Fixed mesh/effect attachment, positioned relative to a builder role, or the weapon root when Socket is unset. With a Slot it is an option: it shows only while fitted. */
 USTRUCT()
 struct MANTLERUNTIME_API FMantleWeaponSourceAttachment
 {
@@ -191,7 +191,7 @@ struct MANTLERUNTIME_API FMantleWeaponSourceAttachment
 	UPROPERTY(EditAnywhere, Category = "Mantle") FTransform RelativeTransform = FTransform::Identity;
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bHidden = false;
 
-	/** #234: Fixed, or the slot this attachment is an option of. */
+	/** Fixed, or the slot this attachment is an option of. */
 	UPROPERTY(EditAnywhere, Category = "Mantle") EMantleWeaponSourceSlot Slot = EMantleWeaponSourceSlot::Fixed;
 	/** The option the weapon comes with (one per slot). */
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bFitted = false;
@@ -252,7 +252,7 @@ struct MANTLERUNTIME_API FMantleWeaponTuning
 };
 
 /**
- * A creator weapon as the weapon builder saves it (#729): the creator's own 3D model, which kind of hold it uses, the
+ * A creator weapon as the weapon builder saves it: the creator's own 3D model, which kind of hold it uses, the
  * points placed on the model and the tuning. Export turns this into the weapon's published files.
  */
 UCLASS()
@@ -271,31 +271,31 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName EquipStyle = NAME_None;
 
-	/** Round 2: the selected dodge for a hold with more than one (a shield, a sword beside one, knuckles); unset uses the hold's first. */
+	/** The selected dodge for a hold with more than one (a shield, a sword beside one, knuckles); unset uses the hold's first. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName DodgeStyle = NAME_None;
 
-	/** Round 3: the selected combo for a hold with more than one (a sword beside a shield, knuckles, a two-handed spear); unset uses the hold's first. */
+	/** The selected combo for a hold with more than one (a sword beside a shield, knuckles, a two-handed spear); unset uses the hold's first. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName ComboSet = NAME_None;
 
-	/** Round 3: where a bow's hand goes for the next arrow (back, hip or side); unset uses the hold's first, back. */
+	/** Where a bow's hand goes for the next arrow (back, hip or side); unset uses the hold's first, back. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName Quiver = NAME_None;
 
-	/** Round 3: how a bow is held to shoot (the document's style: a or c); unset uses the hold's first, a. */
+	/** How a bow is held to shoot (the document's style: a or c); unset uses the hold's first, a. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName ShootingStyle = NAME_None;
 
-	/** Round 4 step 2: what a tap does on a staff that casts spells (bolt, handFireball or aimedShock); unset uses the hold's first, bolt. */
+	/** What a tap does on a staff that casts spells (bolt, handFireball or aimedShock); unset uses the hold's first, bolt. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName TapLook = NAME_None;
 
-	/** Round 4 step 2: what a hold does on a staff (beam, chargedBlast, handFireballHeld, skyCall or whirlCharge); unset is beam on a staff with a beam, else chargedBlast. */
+	/** What a hold does on a staff (beam, chargedBlast, handFireballHeld, skyCall or whirlCharge); unset is beam on a staff with a beam, else chargedBlast. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName HoldLook = NAME_None;
 
-	/** Round 4 step 5: how the weapon is held for a hold with more than one stance (a spear beside a shield: ready or shoulder); unset uses the hold's first. */
+	/** How the weapon is held for a hold with more than one stance (a spear beside a shield: ready or shoulder); unset uses the hold's first. */
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	FName Stance = NAME_None;
 
@@ -338,50 +338,50 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bBreakOnHeavy = true;
 	/** Seconds a broken guard stuns the holder (0 to 5); 0 keeps the short guard break. */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 5.0)) float StunSeconds = 1.5f;
-	/** Round 3: a bow's bash on the Melee key: on by default; off, the Melee key does nothing with this bow. */
+	/** A bow's bash on the Melee key: on by default; off, the Melee key does nothing with this bow. */
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bBash = true;
-	/** Round 3: damage of each hit of the bash (the bare-hands punch's 20). */
+	/** Damage of each hit of the bash (the bare-hands punch's 20). */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 1000.0)) float BashDamage = 20.0f;
-	/** Round 3 step 12: a shield's throw that returns (guard + Melee): off by default. */
+	/** A shield's throw that returns (guard + Melee): off by default. */
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bShieldThrow = false;
-	/** Round 3 step 12: how far out the thrown shield flies before it comes back, cm (100 to 3000). */
+	/** How far out the thrown shield flies before it comes back, cm (100 to 3000). */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 100.0, ClampMax = 3000.0)) float ShieldThrowRange = 1000.0f;
-	/** Round 3 step 12: damage to each target the thrown shield hits (once per throw). */
+	/** Damage to each target the thrown shield hits (once per throw). */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 0.0, ClampMax = 1000.0)) float ShieldThrowDamage = 25.0f;
-	/** Round 4 step 7: a staff's own melee on the Melee key (the WZ three-hit combo, hold for the leap): off by default. */
+	/** A staff's own melee on the Melee key (the WZ three-hit combo, hold for the leap): off by default. */
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bStaffMelee = false;
-	/** Round 5 step 0: a staff's extra on Q, by its document spelling (telekinesis); none (unset) writes no extra. */
+	/** A staff's extra on Q, by its document spelling (telekinesis); none (unset) writes no extra. */
 	UPROPERTY(EditAnywhere, Category = "Mantle") FName Extra = NAME_None;
-	/** Round 5 step 0: seconds after the extra ends before Q works again. Below 0 (the default) means unset: the extra's own cooldown, nothing written. */
+	/** Seconds after the extra ends before Q works again. Below 0 (the default) means unset: the extra's own cooldown, nothing written. */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = -1.0, ClampMax = 60.0)) float ExtraCooldownSeconds = -1.0f;
-	/** Round 5 step 0: telekinesis's heaviest prop, kg. */
+	/** Telekinesis's heaviest prop, kg. */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 5000.0)) float ExtraMaxMass = 300.0f;
-	/** Round 5 step 2: telekinesis lifts players too (off writes liftPlayers false). */
+	/** Telekinesis lifts players too (off writes liftPlayers false). */
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bExtraLiftPlayers = true;
-	/** Round 5 step 6: levitate's highest over the floor below, cm. */
+	/** Levitate's highest over the floor below, cm. */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 100.0, ClampMax = 2000.0)) float ExtraMaxHeight = 500.0f;
-	/** Round 5 step 6: how long levitate's float lasts, s. */
+	/** How long levitate's float lasts, s. */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 30.0)) float ExtraDurationSeconds = 6.0f;
-	/** Round 5 step 3: blink's reach toward the crosshair, cm. */
+	/** Blink's reach toward the crosshair, cm. */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 300.0, ClampMax = 3000.0)) float ExtraRange = 1500.0f;
-	/** Round 5 step 3: blink's look, by its document spelling (overhead, curl, sink); none (unset) writes no look (overhead). */
+	/** Blink's look, by its document spelling (overhead, curl, sink); none (unset) writes no look (overhead). */
 	UPROPERTY(EditAnywhere, Category = "Mantle") FName ExtraLook = NAME_None;
-	/** Round 5 step 4: the health heal gives back. */
+	/** The health heal gives back. */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 1.0, ClampMax = 1000.0)) float ExtraHeal = 35.0f;
-	/** Round 5 step 5: how far the dash goes, cm (700 to 2500). */
+	/** How far the dash goes, cm (700 to 2500). */
 	UPROPERTY(EditAnywhere, Category = "Mantle", meta = (ClampMin = 700.0, ClampMax = 2500.0)) float ExtraDashDistance = 1200.0f;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceProjectile Projectile;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceSweep Sweep;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceBeam Beam;
-	/** #909: a staff with the held beam also throws spells (a tap casts, holding is the beam): the projectile's numbers go with the beam's. */
+	/** A staff with the held beam also throws spells (a tap casts, holding is the beam): the projectile's numbers go with the beam's. */
 	UPROPERTY(EditAnywhere, Category = "Mantle") bool bSpellsBesideBeam = false;
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceCharges Charges;
-	/** #1025: hold Consumable's numbers. */
+	/** Hold Consumable's numbers. */
 	UPROPERTY(EditAnywhere, Category = "Mantle") FMantleWeaponSourceConsumable Consumable;
 	UPROPERTY(EditAnywhere, Category = "Mantle") float BowStringRadiusCm = 1.5f;
 	UPROPERTY(EditAnywhere, Category = "Mantle") TArray<FMantleWeaponSourcePart> Parts;
 	UPROPERTY(EditAnywhere, Category = "Mantle") TArray<FMantleWeaponSourceAttachment> Attachments;
-	/** #234 (recolor): the model's material slots (their place in slot order) a player or a script can recolor; every other slot keeps its own material. */
+	/** (recolor): the model's material slots (their place in slot order) a player or a script can recolor; every other slot keeps its own material. */
 	UPROPERTY(EditAnywhere, Category = "Mantle") TArray<int32> PaintSlots;
 	/** A SoundWave copied into the weapon's assets; hold/style sounds apply when unset. */
 	UPROPERTY(EditAnywhere, Category = "Mantle") TSoftObjectPtr<class USoundWave> FireSound;

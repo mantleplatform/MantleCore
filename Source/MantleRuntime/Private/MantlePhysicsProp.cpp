@@ -81,7 +81,7 @@ UPhysicalMaterial* MantleLoadPhysicsMaterial(EMantlePhysicsMaterial Material)
 		bMissing[Index] = true;
 		UE_LOG(LogMantle, Warning,
 			TEXT("MANTLE_PHYSICS_MATERIAL_MISSING preset=%s path=%s: this build has no such physical material, so bodies with it keep their mesh's surface. ")
-			TEXT("Create it with tools/physics/Create-MantlePhysicalMaterials.py and cook /Game/Mantle/Physics."),
+			TEXT("No tool in the repo authors these physical materials; add the asset under /Game/Mantle/Physics and cook it."),
 			MantlePhysicsMaterialToString(Material), *Path);
 	}
 	return Loaded;
@@ -263,7 +263,7 @@ bool AMantlePhysicsProp::AdoptPlaceholder(AActor* Placeholder)
 		}
 	}
 	To->SetCastShadow(From->CastShadow);
-	// #630: the place's drawDistance, as the placeholder was built with it (0, never culled, when it has none).
+	// The place's drawDistance, as the placeholder was built with it (0, never culled, when it has none).
 	To->SetCullDistance(From->LDMaxDrawDistance);
 	To->SetCollisionProfileName(UCollisionProfile::CustomCollisionProfileName);
 	To->SetCollisionEnabled(From->GetCollisionEnabled());

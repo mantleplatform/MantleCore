@@ -20,7 +20,7 @@ class UMaterialInterface;
 class UStaticMesh;
 struct FPropertyChangedEvent;
 
-/** One mesh a Mantle Scatter Volume draws from (#530). */
+/** One mesh a Mantle Scatter Volume draws from. */
 USTRUCT()
 struct MANTLERUNTIME_API FMantleScatterMeshSettings
 {
@@ -96,7 +96,7 @@ struct FMantleScatterTerrainSurface
 };
 
 /**
- * A seeded field of instanced meshes (#530): the Scatter place entity. A creator places one, sizes its
+ * A seeded field of instanced meshes: the Scatter place entity. A creator places one, sizes its
  * box and picks its meshes, and the level shows the scatter as it is edited; the place builder spawns one
  * per Scatter entity. Both generate the instances with FMantleScatter from the same parameters, so the
  * editor preview is exactly what every player sees.

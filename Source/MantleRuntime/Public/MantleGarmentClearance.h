@@ -110,7 +110,7 @@ struct MANTLERUNTIME_API FMantleClearanceRestoreStats
 	int32 SmoothIters = 0;
 	int32 Points = 0;
 
-	/** #636: points (welded within their sections) joined into one at a seam between sections, and pushed as one. */
+	/** Points (welded within their sections) joined into one at a seam between sections, and pushed as one. */
 	int32 SeamJoined = 0;
 
 	/** Vertices moved in the end, and how: along the garment's normal, along the surface's, untracked ones the smoothing reached. */
@@ -192,7 +192,7 @@ struct MANTLERUNTIME_API FMantleClearanceRestore
 	 *     by p; the surface triangle's normal where the two dot below NormalMinDot; untracked points the
 	 *     smoothing reached borrow their neighbors' surface normal;
 	 *   - the push vectors are smoothed as many passes (P17e), each kept at least its scalar length;
-	 *   - #636, when Seams is given (per vertex a seam id, INDEX_NONE for none: copies of one position in
+	 *   - When Seams is given (per vertex a seam id, INDEX_NONE for none: copies of one position in
 	 *     different sections share an id): the points of one seam become one point, pushed along one
 	 *     shared direction (the mean of their pushes) by the largest length any of them needs, each
 	 *     point's push gain along its surface normal divided by that normal's cosine with the shared

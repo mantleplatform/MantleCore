@@ -6,7 +6,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Water bodies and the Water Zone (GhzGarage/mantle#997): what the parser reads and refuses. Places carry them and
+// Water bodies and the Water Zone: what the parser reads and refuses. Places carry them and
 // the game builds them; the runtime tests are in MantlePlaceWaterTest.cpp.
 
 // Named, not anonymous: MantleRuntime builds as a unity build.

@@ -17,7 +17,7 @@ namespace MantleReflectionProbePrivate
 	TAutoConsoleVariable<int32> CVarProbes(
 		TEXT("Mantle.ReflectionProbes"),
 		1,
-		TEXT("Capture a place's reflection probes at run time (1, the default since their brightness matches the editor, #722) or leave them out (0). Read when a place is built.\n"),
+		TEXT("Capture a place's reflection probes at run time (1, the default since their brightness matches the editor) or leave them out (0). Read when a place is built.\n"),
 		ECVF_Default);
 
 	/**

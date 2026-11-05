@@ -5,7 +5,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// #966: the API sends color regions on a rigid item in an accessory slot (a hat). The item batch reader takes
+// The API sends color regions on a rigid item in an accessory slot (a hat). The item batch reader takes
 // them there, as on clothing, and still refuses them on other slots (hair).
 
 namespace MantleCosmeticAccessoryColorsTest

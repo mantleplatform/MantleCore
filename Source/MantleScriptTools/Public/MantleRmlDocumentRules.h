@@ -18,9 +18,9 @@ namespace MantleRmlDocumentRules
 
 	/**
 	 * Element nesting, counted from <rml>. RmlUi's layout time doubles with each nesting level of
-	 * flex, inline-block and table content (#549 fuzz finding, release build: depth 12 about 10 ms,
+	 * flex, inline-block and table content (a fuzz finding, release build: depth 12 about 10 ms,
 	 * depth 15 about 80 ms, depth 17 about 300 ms), so the budget stays below that cliff. Applied to
-	 * each file's text (CheckFileSet) and, #571, to the loaded document (CheckLoadedStructure).
+	 * each file's text (CheckFileSet) and to the loaded document (CheckLoadedStructure).
 	 */
 	constexpr int32 MaxNestingDepth = 16;
 
@@ -80,7 +80,7 @@ namespace MantleRmlDocumentRules
 	MANTLESCRIPTTOOLS_API bool CheckFileSet(const TMap<FString, FString>& Files, FString& OutError);
 
 	/**
-	 * #571: the budgets on a loaded document's structure, which the script document host applies
+	 * The budgets on a loaded document's structure, which the script document host applies
 	 * after the load and after each SetData, and the editor's check applies to its offscreen load:
 	 * Elements (MantleRml::CountDescendants) within MaxElements, and Depth
 	 * (MantleRml::LoadedNestingDepth: templates expanded, data-for views counted) within
@@ -133,7 +133,7 @@ namespace MantleRmlDocumentRules
 
 	/**
 	 * A document's source as RmlUi is handed it, by the script document host and the editor's check
-	 * (#549 P6a) alike: ApplyDefaultDataModel, then BaseStyleSheet injected (InjectStyleSheet).
+	 * alike: ApplyDefaultDataModel, then BaseStyleSheet injected (InjectStyleSheet).
 	 * OutOtherModel as ApplyDefaultDataModel sets it.
 	 */
 	MANTLESCRIPTTOOLS_API FString PrepareMarkup(const FString& Source, FString& OutOtherModel);

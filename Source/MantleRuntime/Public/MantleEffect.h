@@ -18,7 +18,7 @@ class UTexture;
 struct FPropertyChangedEvent;
 
 /**
- * A particle effect (#460): the Effect place entity. A creator places one and picks a built-in archetype
+ * A particle effect: the Effect place entity. A creator places one and picks a built-in archetype
  * and its look; the place builder spawns one per Effect entity; a script's Effects:Play spawns a short-lived
  * one. Never replicated: a server script's changes reach clients through the script appearance map
  * (Entity:PlayEffect, StopEffect, SetEffectColor, SetEffectRate), and its one-shots through the script net
@@ -72,12 +72,12 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Effect")
 	bool bLoop = true;
 
-	/** The sprites archetype's keys (#628): read only when Archetype is Sprites. */
+	/** The sprites archetype's keys: read only when Archetype is Sprites. */
 	UPROPERTY(EditAnywhere, Category = "Sprites", meta = (EditCondition = "Archetype == EMantleEffectArchetype::Sprites", EditConditionHides))
 	FMantleSpritesSettings Sprites;
 
 	/**
-	 * The sprites archetype's texture (#628), drawn on every particle; empty draws a soft round dot. In the editor a
+	 * The sprites archetype's texture, drawn on every particle; empty draws a soft round dot. In the editor a
 	 * creator picks it; in a built place the place builder assigns the downloaded one.
 	 */
 	UPROPERTY(EditAnywhere, Category = "Sprites", meta = (EditCondition = "Archetype == EMantleEffectArchetype::Sprites", EditConditionHides))
@@ -213,7 +213,7 @@ private:
 	/** The archetype EffectComponent draws. */
 	EMantleEffectArchetype ComponentArchetype = EMantleEffectArchetype::Smoke;
 
-	/** A sprites effect's material instance (#628), made at runtime and remade when its blend changes; never saved. */
+	/** A sprites effect's material instance, made at runtime and remade when its blend changes; never saved. */
 	UPROPERTY(Transient, DuplicateTransient, TextExportTransient)
 	TObjectPtr<UMaterialInstanceDynamic> SpritesMaterial;
 

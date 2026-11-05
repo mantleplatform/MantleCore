@@ -523,7 +523,7 @@ interface UiNode {
 	setVisible(visible: boolean): boolean;
 }
 
-/** The place's block world (#168): read its blocks anywhere, change them (server), and hear players build. Block coordinates are whole blocks (x, y, z with z up, as every position), from the world's lowest corner. */
+/** The place's block world: read its blocks anywhere, change them (server), and hear players build. Block coordinates are whole blocks (x, y, z with z up, as every position), from the world's lowest corner. */
 interface VoxelWorld {
 	/** Smooth worlds: one brush stroke, as a player's but with no checks: tool "dig", "fill", "flatten", "smooth" or "paint", a sphere at position (cm) of radius 50 to 800 cm. options: Strength 1 to 100 (default 50), Material (fill and paint need it; new ground takes it), PlaneZ (flatten's floor height in cm; default the position's). Every player gets the stroke (about 21 bytes). Returns the voxels changed; OnTerrainEdited follows. (server only) */
 	brush(tool: string, position: Vector3, radius: number, options?: { strength?: number | undefined; material?: string | undefined; planeZ?: number | undefined }): number;
@@ -625,7 +625,7 @@ interface VoxelWriter {
 	setVoxel(x: number, y: number, z: number, material: string | undefined, density: number): void;
 }
 
-/** An item lying in the world (#235): a small server record, not an Entity. Players and scripts pick it up; it can time out, be locked to an owner and be saved with the world. A handle stays valid after the item is gone: Exists says false and the methods error. */
+/** An item lying in the world: a small server record, not an Entity. Players and scripts pick it up; it can time out, be locked to an owner and be saved with the world. A handle stays valid after the item is gone: Exists says false and the methods error. */
 interface WorldItem {
 	/** A bag's stacks, in order: each {Item, Count, Data}. A copy; take from the bag with TakeStack. nil for anything that is not a bag. Server only. (server only) */
 	readonly contents: ({ item: string; count: number; data?: Record<string, any> | undefined })[] | undefined;
@@ -639,7 +639,7 @@ interface WorldItem {
 	readonly id: string;
 	/** The item it holds: an id from WorldItems:Define, or a stored weapon's id (Storage:Get). */
 	readonly item: string;
-	/** A weapon's loadout (#234), up to 1 KB, kept apart from Data. nil when it has none. Server only. (server only) */
+	/** A weapon's loadout, up to 1 KB, kept apart from Data. nil when it has none. Server only. (server only) */
 	readonly loadout: Record<string, any> | undefined;
 	/** The UserId of the player it belongs to, or nil. DropFromPlayer sets it to the dropper even when it locks nothing. Server only. (server only) */
 	readonly owner: string | undefined;
@@ -1225,7 +1225,7 @@ interface NetService {
 }
 const Net: NetService;
 
-/** Smooth seeded noise for generating worlds (#168, exact since 1.60): the same seed and position always give the same value, from -1 to 1, bit for bit on every machine (client and server). */
+/** Smooth seeded noise for generating worlds (exact since 1.60): the same seed and position always give the same value, from -1 to 1, bit for bit on every machine (client and server). */
 interface NoiseService {
 	/** Layered noise (octaves, a whole number from 1 to 8, default 4: each twice as fine and half as strong) at (x, y) times frequency (default 1): natural terrain. Values are multiples of 1/65536, the same on every machine. A seed is a whole number from -2147483648 to 2147483647, and a coordinate times the frequency must stay within 8388608 either way; anything else is an error. */
 	fbm2D(seed: number, x: number, y: number, octaves?: number | undefined, frequency?: number | undefined): number;
@@ -1681,7 +1681,7 @@ interface WorldService {
 	getEntitiesInBox(center: Vector3, size: Vector3, params?: { include?: (Entity | Player)[] | undefined; exclude?: (Entity | Player)[] | undefined; tag?: string | undefined; ignorePlayers?: boolean | undefined; maxResults?: number | undefined; layers?: (string)[] | undefined; excludeLayers?: (string)[] | undefined }): (Entity)[];
 	/** Every entity and player character touching a ball of this radius (at most 50 m) around center, nearest first. Overlap-only entities (triggers) count; entities with no collision never do. A character is listed as its Entity; Players:GetPlayerFromCharacter tells whose it is. params: Include, Exclude, Tag, IgnorePlayers, Layers, ExcludeLayers (collision layers, server scripts only), and MaxResults (256 at most, and by default). Runs on this machine only; a script may make 256 spatial queries a frame. */
 	getEntitiesInRadius(center: Vector3, radius: number, params?: { include?: (Entity | Player)[] | undefined; exclude?: (Entity | Player)[] | undefined; tag?: string | undefined; ignorePlayers?: boolean | undefined; maxResults?: number | undefined; layers?: (string)[] | undefined; excludeLayers?: (string)[] | undefined }): (Entity)[];
-	/** The place's block world (#168), or nil when the place has none. A place may have two, one of each look: give "blocky" or "smooth" for that one; with no look, the place's first. */
+	/** The place's block world, or nil when the place has none. A place may have two, one of each look: give "blocky" or "smooth" for that one; with no look, the place's first. */
 	getVoxelWorld(look?: string | undefined): VoxelWorld | undefined;
 	/** Call handler for every entity that has the tag now, and for each one that gets it later. */
 	onTagged(tag: string, handler: (entity: Entity) => void): Connection;
@@ -1694,7 +1694,7 @@ interface WorldService {
 }
 const World: WorldService;
 
-/** Items that lie in the world (#235): dropped things, pickups, loot piles. A world item is a small server record, not an Entity, so thousands are affordable (a place holds 2,000). Nothing is on unless a script calls this service. */
+/** Items that lie in the world: dropped things, pickups, loot piles. A world item is a small server record, not an Entity, so thousands are affordable (a place holds 2,000). Nothing is on unless a script calls this service. */
 interface WorldItemsService {
 	/** The most world items a place holds: 2,000. Read only. */
 	readonly limit: number;

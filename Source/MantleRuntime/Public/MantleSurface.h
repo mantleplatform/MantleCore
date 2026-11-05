@@ -7,11 +7,11 @@ class UPhysicalMaterial;
 struct FHitResult;
 
 // Declared, not included: MantlePlaceTypes.h includes this header, since a place's meshes and
-// terrain layers carry an EMantleSurface (#596 step 1b). Defined there.
+// terrain layers carry an EMantleSurface. Defined there.
 enum class EMantlePhysicsMaterial : uint8;
 
 /**
- * What a surface is made of (#596): what an effect (bullet impact, decal, wheel dust, footstep)
+ * What a surface is made of: what an effect (bullet impact, decal, wheel dust, footstep)
  * should look like where something touched it.
  *
  * Each value is the project surface type of the same index: Default is SurfaceType_Default and
@@ -76,14 +76,14 @@ MANTLERUNTIME_API EMantleSurface MantleSurfaceFromPhysicalMaterial(const UPhysic
  */
 MANTLERUNTIME_API EMantleSurface MantleSurfaceFromHit(const FHitResult& Hit);
 
-/** The surface a physics.material preset carries (#528): default is Default, metal is Metal. */
+/** The surface a physics.material preset carries: default is Default, metal is Metal. */
 MANTLERUNTIME_API EMantleSurface MantlePhysicsMaterialSurface(EMantlePhysicsMaterial Material);
 
 /**
  * The shipped physical material for a surface. A surface a physics.material preset already
  * carries uses that preset's asset (/Game/Mantle/Physics/PM_MantleMetal); every other surface has
- * its own under /Game/Mantle/Physics/Surfaces (PM_MantleSurface_Concrete). Both are written by
- * tools/physics/Create-MantlePhysicalMaterials.py.
+ * its own under /Game/Mantle/Physics/Surfaces (PM_MantleSurface_Concrete).
+ * Both are content assets.
  */
 MANTLERUNTIME_API FString MantleSurfaceMaterialAssetPath(EMantleSurface Surface);
 

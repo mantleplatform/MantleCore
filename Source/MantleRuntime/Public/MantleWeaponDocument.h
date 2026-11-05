@@ -4,21 +4,21 @@
 #include "CoreMinimal.h"
 #include "MantleGravityGunDefaults.h"
 
-// #611: a creator weapon's document (schema/weapon.schema.json) as plain types, with its strict reader and its writer.
+// A creator weapon's document (schema/weapon.schema.json) as plain types, with its strict reader and its writer.
 // The plugin's weapon builder writes it; the client builds its weapon definition from it (MantleGameplay). A creator
 // supplies a weapon's mesh only: every clip it plays comes from the client's animation set for its hold, so the
 // document holds no clips, only which bones play which part of the hold's clips. Nothing here names an asset path:
 // meshes and sounds are local names inside the weapon's own set, which the reader of the document resolves. No UObjects:
 // any thread.
 //
-// #840: schema v2 names the hold (sixteen: the eight firearm archetypes, then melee_1h, melee_2h, spear, staff, bow,
+// Schema v2 names the hold (sixteen: the eight firearm archetypes, then melee_1h, melee_2h, spear, staff, bow,
 // unarmed, shield, throwable) and the delivery (hitscan, projectile, sweep, beam), with charge, block, a resource and each
 // delivery's numbers. A v1 document (archetype) reads as v2 with hold = archetype, delivery = hitscan and resource =
 // magazine; Write always writes v2. Decision 4 (2026-10-11): a shield is its own item (hold shield), which the client
 // pairs at run time with a main-hand weapon by the schema's x-pairings (MantleWeaponArchetypeLibrary::FindPairing); a
 // document has no off-hand mesh.
 //
-// #1025: the consumable hold (a potion, a medkit, food) with its one delivery, use, and the consumable block: an item used
+// The consumable hold (a potion, a medkit, food) with its one delivery, use, and the consumable block: an item used
 // on its holder, no fire. It has no clips of its own: its use plays the potion clip of whatever the holder holds.
 
 /**
@@ -55,7 +55,7 @@ enum class EMantleWeaponDocArchetype : uint8
 	Count
 };
 
-/** schema hold (#840): the animation set the weapon plays, in the schema's order. The first eight are the archetypes, in
+/** schema hold: the animation set the weapon plays, in the schema's order. The first eight are the archetypes, in
  *  their order, so a firearm hold and its archetype convert by value. EMantleWeaponDefHold (MantleGameplay) mirrors it value
  *  for value. Never stored by value: documents spell it, definitions are transient. */
 enum class EMantleWeaponDocHold : uint8
@@ -76,26 +76,26 @@ enum class EMantleWeaponDocHold : uint8
 	Unarmed,
 	/** Decision 4: a shield, the off-hand item (x-pairings). */
 	Shield,
-	/** Step 4b: one hand, thrown overhand; its projectile is the weapon itself. */
+	/** One hand, thrown overhand; its projectile is the weapon itself. */
 	Throwable,
-	/** #1025: an item used on its holder (delivery use, the consumable block). */
+	/** An item used on its holder (delivery use, the consumable block). */
 	Consumable,
 	Count
 };
 
-/** schema delivery (#840): what an attack does on the server. */
+/** schema delivery: what an attack does on the server. */
 enum class EMantleWeaponDocDelivery : uint8
 {
 	Hitscan,
 	Projectile,
 	Sweep,
 	Beam,
-	/** #1025: no attack; the item is used on its holder (a consumable). */
+	/** No attack; the item is used on its holder (a consumable). */
 	Use,
 	Count
 };
 
-/** schema resource (#840): what an attack spends. */
+/** schema resource: what an attack spends. */
 enum class EMantleWeaponDocResource : uint8
 {
 	Magazine,
@@ -105,7 +105,7 @@ enum class EMantleWeaponDocResource : uint8
 	Count
 };
 
-/** schema x-holds charge (#840): whether a hold's clips charge. */
+/** schema x-holds charge: whether a hold's clips charge. */
 enum class EMantleWeaponDocChargeRule : uint8
 {
 	/** No charge (the firearms): a document's charge is refused. */
@@ -116,7 +116,7 @@ enum class EMantleWeaponDocChargeRule : uint8
 	Required,
 };
 
-/** schema x-holds block (#840): whether a hold's clips block. */
+/** schema x-holds block: whether a hold's clips block. */
 enum class EMantleWeaponDocBlockRule : uint8
 {
 	/** No block (the firearms, staff, bow): a document's block is refused. */
@@ -128,8 +128,8 @@ enum class EMantleWeaponDocBlockRule : uint8
 };
 
 /**
- * schema effects: the firearms' three shot styles, then the elements (#904), in EMantleWeaponSourceStyle's order. An element is valid on a
- * projectile or beam weapon (IsElement; #905: a firearm's too, a laser rifle's beam, a launcher's trail); a firearm style only on a
+ * schema effects: the firearms' three shot styles, then the elements, in EMantleWeaponSourceStyle's order. An element is valid on a
+ * projectile or beam weapon (IsElement; a firearm's too, a laser rifle's beam, a launcher's trail); a firearm style only on a
  * firearm hold.
  */
 enum class EMantleWeaponDocEffects : uint8
@@ -190,9 +190,9 @@ enum class EMantleWeaponDocRole : uint8
 	Shell,
 	Cartridge,
 	SpeedLoader,
-	/** Guns Round 3: a bone of the mesh the suppressor toggle hides and shows (never moved by a clip). */
+	/** A bone of the mesh the suppressor toggle hides and shows (never moved by a clip). */
 	Suppressor,
-	/** #840: stowed roles (x-holds stowedRoles). */
+	/** Stowed roles (x-holds stowedRoles). */
 	Round,
 	Arrow,
 	Count
@@ -213,7 +213,7 @@ enum class EMantleWeaponDocAction : uint8
 	ReloadLoop,
 	ReloadEnd,
 	ReloadPartial,
-	/** #840: the melee, magic and bow holds' actions. */
+	/** The melee, magic and bow holds' actions. */
 	Attack,
 	Heavy,
 	Block,
@@ -222,7 +222,7 @@ enum class EMantleWeaponDocAction : uint8
 	Nock,
 	Draw,
 	Release,
-	/** #1025: a consumable's use. */
+	/** A consumable's use. */
 	Use,
 	Count
 };
@@ -236,7 +236,7 @@ enum class EMantleWeaponDocSocket : uint8
 	GripL,
 	Magazine,
 	ShellEject,
-	/** #840: the melee, magic and bow holds' points. */
+	/** The melee, magic and bow holds' points. */
 	EdgeBase,
 	EdgeTip,
 	Tip,
@@ -259,7 +259,7 @@ enum class EMantleWeaponDocInterp : uint8
 	Count
 };
 
-/** schema attachment.slot (#234), in the schema's order: the slot an attachment option fills. */
+/** schema attachment.slot, in the schema's order: the slot an attachment option fills. */
 enum class EMantleWeaponDocSlot : uint8
 {
 	Sight,
@@ -271,7 +271,7 @@ enum class EMantleWeaponDocSlot : uint8
 	Count,
 };
 
-/** schema x-holds (#840; x-archetypes before it, whose rows are the firearm holds'): what the client's animation set for a
+/** schema x-holds (x-archetypes before it, whose rows are the firearm holds'): what the client's animation set for a
  *  hold does. */
 struct FMantleWeaponDocHoldInfo
 {
@@ -298,54 +298,54 @@ struct FMantleWeaponDocHoldInfo
 	TArray<EMantleWeaponDocResource> Resources;
 	/** Whether a document blocks: never, may, or must (a shield). */
 	EMantleWeaponDocBlockRule BlockRule = EMantleWeaponDocBlockRule::None;
-	/** A document needs a mesh: x-holds mesh, required on every hold (#897: unarmed's is the fist weapon on the hand). */
+	/** A document needs a mesh: x-holds mesh, required on every hold (unarmed's is the fist weapon on the hand). */
 	bool bMeshRequired = true;
 	/** The points a document must place, and those it may. */
 	TArray<EMantleWeaponDocSocket> Sockets;
 	TArray<EMantleWeaponDocSocket> OptionalSockets;
 	/** The equip style ids available to this hold, in order; the first is the default. Empty means no style selection. */
 	TArray<FString> EquipStyles;
-	/** Round 2: the dodge style ids (x-dodgeStyles) of a hold with more than one dodge, the default first. Empty: one dodge, no choice. */
+	/** The dodge style ids (x-dodgeStyles) of a hold with more than one dodge, the default first. Empty: one dodge, no choice. */
 	TArray<FString> DodgeStyles;
-	/** Round 3: the combo set ids (x-comboSets) of a hold with more than one combo, the default first. Empty: one combo, no choice. */
+	/** The combo set ids (x-comboSets) of a hold with more than one combo, the default first. Empty: one combo, no choice. */
 	TArray<FString> ComboSets;
-	/** Round 3: the quiver positions (x-quivers) of a hold that places one (the bow), the default first. Empty: no quiver to place. */
+	/** The quiver positions (x-quivers) of a hold that places one (the bow), the default first. Empty: no quiver to place. */
 	TArray<FString> Quivers;
-	/** Round 3: the hold has a bash on the Melee key (x-bash: the bow). */
+	/** The hold has a bash on the Melee key (x-bash: the bow). */
 	bool bHasBash = false;
-	/** Round 3 (suppressor): the hold can toggle a suppressor with the toggle key (x-suppressor: every firearm). */
+	/** The hold can toggle a suppressor with the toggle key (x-suppressor: every firearm). */
 	bool bHasSuppressor = false;
-	/** Round 3 (bipod): the hold can deploy a bipod (x-bipod: the bolt sniper). */
+	/** The hold can deploy a bipod (x-bipod: the bolt sniper). */
 	bool bHasBipod = false;
-	/** Round 3 step 12: the hold may throw itself and catch it again (x-throw: the shield). */
+	/** The hold may throw itself and catch it again (x-throw: the shield). */
 	bool bHasShieldThrow = false;
-	/** Round 4 step 7: the hold may fight with the Melee key in its own combo (x-staffMelee: the staff). */
+	/** The hold may fight with the Melee key in its own combo (x-staffMelee: the staff). */
 	bool bHasStaffMelee = false;
-	/** Round 5 step 0: the hold carries one extra on Q (x-extra: the staff). */
+	/** The hold carries one extra on Q (x-extra: the staff). */
 	bool bHasExtra = false;
-	/** Round 3 step 16: the hold may be a gravity gun (x-gravity: the firearm holds). */
+	/** The hold may be a gravity gun (x-gravity: the firearm holds). */
 	bool bHasGravity = false;
-	/** #234 (x-attachmentSlots): the slots the hold's attachment options may fill. The firearm holds take all six; the others none this round. */
+	/** (x-attachmentSlots): the slots the hold's attachment options may fill. The firearm holds take all six; the others none this round. */
 	TArray<EMantleWeaponDocSlot> AttachmentSlots;
-	/** #234 (x-attachmentStats): the stats an option may scale, by name (damage, fireRate, spread, recoil, reloadTime, magazineSize, range). */
+	/** (x-attachmentStats): the stats an option may scale, by name (damage, fireRate, spread, recoil, reloadTime, magazineSize, range). */
 	TArray<FString> AttachmentStats;
-	/** Round 3: the shooting style ids (x-shootingStyles) of a hold held more than one way to shoot (the bow), the default first. Empty: one way. */
+	/** The shooting style ids (x-shootingStyles) of a hold held more than one way to shoot (the bow), the default first. Empty: one way. */
 	TArray<FString> ShootingStyles;
-	/** Round 4 step 2: the tap looks (x-tapLooks) of a hold whose tap can look more than one way (the staff), the default first. Empty: no choice. */
+	/** The tap looks (x-tapLooks) of a hold whose tap can look more than one way (the staff), the default first. Empty: no choice. */
 	TArray<FString> TapLooks;
-	/** Round 4 step 2: the hold looks (x-holdLooks) of a hold whose hold can look more than one way (the staff), the default first
+	/** The hold looks (x-holdLooks) of a hold whose hold can look more than one way (the staff), the default first
 	 *  (a staff's real default is beam when it has a beam block, else chargedBlast: see GetBeamLooks). Empty: no choice. */
 	TArray<FString> HoldLooks;
-	/** Round 4 step 5: the stance ids (x-stances) of a hold that can be held more than one way, the default first. Empty: one stance, no choice.
-	 *  Every one is built (step 8 built the Battle Mage, and x-stancesLater is gone). */
+	/** The stance ids (x-stances) of a hold that can be held more than one way, the default first. Empty: one stance, no choice.
+	 *  Every one is built, the Battle Mage included. */
 	TArray<FString> Stances;
-	/** Round 4 step 6 (x-withStance): the stance a document must hold the weapon in to pick one of EquipStyles / DodgeStyles. Empty: any stance of
+	/** x-withStance: the stance a document must hold the weapon in to pick one of EquipStyles / DodgeStyles. Empty: any stance of
 	 *  the hold (a sword's styles do not depend on one). A melee_2h picks its back or hip draw and its dodge only as a longsword. */
 	FString EquipStylesStance;
 	FString DodgeStylesStance;
 };
 
-/** The pre-#840 name: an archetype's entry is its firearm hold's. */
+/** The pre-hold name: an archetype's entry is its firearm hold's. */
 using FMantleWeaponDocArchetypeInfo = FMantleWeaponDocHoldInfo;
 
 /** A curve key: [time, value], [time, value, "linear" | "constant"] or [time, value, "cubic", arrive, leave]. */
@@ -398,7 +398,7 @@ struct FMantleWeaponDocParts
 	const TMantleWeaponDocValue<FMantleWeaponDocPart>& operator[](const EMantleWeaponDocRole Role) const { return Roles[static_cast<int32>(Role)]; }
 };
 
-/** schema attachment.stats (#234): the multipliers an option applies while fitted, each 0.25 to 4. */
+/** schema attachment.stats: the multipliers an option applies while fitted, each 0.25 to 4. */
 struct FMantleWeaponDocStats
 {
 	TMantleWeaponDocValue<double> Damage{ 1.0 };
@@ -410,7 +410,7 @@ struct FMantleWeaponDocStats
 	TMantleWeaponDocValue<double> Range{ 1.0 };
 };
 
-/** schema attachment.sight (#234): a sight option's aim point (relative to the option's own place), zoom and sight distance. */
+/** schema attachment.sight: a sight option's aim point (relative to the option's own place), zoom and sight distance. */
 struct FMantleWeaponDocSightOption
 {
 	TMantleWeaponDocValue<FVector> Location{ FVector::ZeroVector };
@@ -420,7 +420,7 @@ struct FMantleWeaponDocSightOption
 	TMantleWeaponDocValue<double> SightDistance;
 };
 
-/** schema attachment.light.flashlight (#234). */
+/** schema attachment.light.flashlight. */
 struct FMantleWeaponDocFlashlight
 {
 	TMantleWeaponDocValue<FColor> Color{ FColor::White };
@@ -429,14 +429,14 @@ struct FMantleWeaponDocFlashlight
 	TMantleWeaponDocValue<double> ConeDegrees{ 25.0 };
 };
 
-/** schema attachment.light.laser (#234). */
+/** schema attachment.light.laser. */
 struct FMantleWeaponDocLaser
 {
 	TMantleWeaponDocValue<FColor> Color{ FColor(255, 0, 0) };
 	TMantleWeaponDocValue<double> Range{ 5000.0 };
 };
 
-/** schema attachment.light (#234): a flashlight, a laser or both. */
+/** schema attachment.light: a flashlight, a laser or both. */
 struct FMantleWeaponDocLight
 {
 	TMantleWeaponDocValue<FMantleWeaponDocFlashlight> Flashlight;
@@ -450,36 +450,36 @@ struct FMantleWeaponDocAttachment
 	FString Name;
 	/** A local name; empty on an effect-only attachment. */
 	FString Mesh;
-	/** #904: an element's held effect, looping where the attachment sits (a staff's glowing head). */
+	/** An element's held effect, looping where the attachment sits (a staff's glowing head). */
 	TMantleWeaponDocValue<EMantleWeaponDocEffects> Effect;
 	/** Unset: the weapon mesh's origin. Never with Socket. */
 	TMantleWeaponDocValue<FString> Bone;
-	/** #904: one of the document's points it rides (location, rotation and scale then relative to it); the point must be set. */
+	/** One of the document's points it rides (location, rotation and scale then relative to it); the point must be set. */
 	TMantleWeaponDocValue<EMantleWeaponDocSocket> Socket;
 	TMantleWeaponDocValue<FVector> Location{ FVector::ZeroVector };
 	TMantleWeaponDocValue<FQuat> Rotation{ FQuat::Identity };
 	TMantleWeaponDocValue<FVector> Scale{ FVector::OneVector };
 	TMantleWeaponDocValue<bool> bHidden{ false };
 	/**
-	 * Optional (#898): the material for each slot of the attachment's mesh in slot order, local names (an uploaded material's id
+	 * Optional: the material for each slot of the attachment's mesh in slot order, local names (an uploaded material's id
 	 * once published), as the weapon's own Materials. Unset: the mesh draws with the materials it was built with (a local test) or
 	 * untextured (a published weapon: an uploaded mesh carries only its slots' names).
 	 */
 	TMantleWeaponDocValue<TArray<FString>> Materials;
-	/** #234: the slot this attachment is an option of; unset: a fixed part. */
+	/** The slot this attachment is an option of; unset: a fixed part. */
 	TMantleWeaponDocValue<EMantleWeaponDocSlot> Slot;
-	/** #234: the option the weapon comes with (needs Slot). */
+	/** The option the weapon comes with (needs Slot). */
 	TMantleWeaponDocValue<bool> bFitted{ false };
-	/** #234: multipliers applied while fitted (needs Slot, not on an extra). */
+	/** Multipliers applied while fitted (needs Slot, not on an extra). */
 	TMantleWeaponDocValue<FMantleWeaponDocStats> Stats;
-	/** #234: fixed parts (attachment names) and bones hidden while this option is fitted. */
+	/** Fixed parts (attachment names) and bones hidden while this option is fitted. */
 	TMantleWeaponDocValue<TArray<FString>> HideAttachments;
 	TMantleWeaponDocValue<TArray<FString>> HideBones;
-	/** #234: a sight option's aim (slot sight only). */
+	/** A sight option's aim (slot sight only). */
 	TMantleWeaponDocValue<FMantleWeaponDocSightOption> Sight;
-	/** #234: a muzzle option plays the suppressed shot while fitted (slot muzzle only). */
+	/** A muzzle option plays the suppressed shot while fitted (slot muzzle only). */
 	TMantleWeaponDocValue<bool> bSuppressed{ false };
-	/** #234: a light option's lights (slot light only). */
+	/** A light option's lights (slot light only). */
 	TMantleWeaponDocValue<FMantleWeaponDocLight> Light;
 };
 
@@ -511,7 +511,7 @@ struct FMantleWeaponDocReload
 	TMantleWeaponDocValue<double> Seconds{ 1.6 };
 };
 
-/** schema bipod (Round 3): the two attachments a bolt sniper swaps as its bipod deploys and stows. Names of the document's attachments. */
+/** schema bipod: the two attachments a bolt sniper swaps as its bipod deploys and stows. Names of the document's attachments. */
 struct FMantleWeaponDocBipod
 {
 	/** Shown while the bipod is stowed (required). */
@@ -530,7 +530,7 @@ struct FMantleWeaponDocSounds
 	TMantleWeaponDocValue<FString> Trigger;
 };
 
-/** schema charge (#840): hold to charge, release to attack. */
+/** schema charge: hold to charge, release to attack. */
 struct FMantleWeaponDocCharge
 {
 	/** Seconds to a full charge (required). */
@@ -540,7 +540,7 @@ struct FMantleWeaponDocCharge
 	TMantleWeaponDocValue<bool> bCancelable{ true };
 };
 
-/** schema block (#840). */
+/** schema block. */
 struct FMantleWeaponDocBlock
 {
 	TMantleWeaponDocValue<bool> bEnabled{ true };
@@ -548,14 +548,14 @@ struct FMantleWeaponDocBlock
 	double StunSeconds = 1.5;
 };
 
-/** schema bash (Round 3): a bow's bash on the Melee key. On unless enabled is false. */
+/** schema bash: a bow's bash on the Melee key. On unless enabled is false. */
 struct FMantleWeaponDocBash
 {
 	TMantleWeaponDocValue<bool> bEnabled{ true };
 	double Damage = 20.0;
 };
 
-/** schema throw (Round 3 step 12): a shield's throw that returns. Absent: off; present, on unless enabled is false. */
+/** schema throw: a shield's throw that returns. Absent: off; present, on unless enabled is false. */
 struct FMantleWeaponDocShieldThrow
 {
 	TMantleWeaponDocValue<bool> bEnabled{ true };
@@ -564,14 +564,14 @@ struct FMantleWeaponDocShieldThrow
 	double Damage = 25.0;
 };
 
-/** schema charges (#840): the charges resource's numbers. */
+/** schema charges: the charges resource's numbers. */
 struct FMantleWeaponDocCharges
 {
 	int32 Count = 1;
 	double RefillSeconds = 1.0;
 };
 
-/** schema projectile (#840). */
+/** schema projectile. */
 struct FMantleWeaponDocProjectile
 {
 	/** cm/s (required). */
@@ -587,21 +587,21 @@ struct FMantleWeaponDocProjectile
 	TMantleWeaponDocValue<double> LingerSeconds{ 0.0 };
 	TMantleWeaponDocValue<double> LingerDamagePerSecond{ 0.0 };
 	TMantleWeaponDocValue<double> LingerRadius{ 200.0 };
-	/** #905: a local name, the static or skeletal mesh that flies (a launcher's rocket, a creator's arrow); never on a thrown one, which
+	/** A local name, the static or skeletal mesh that flies (a launcher's rocket, a creator's arrow); never on a thrown one, which
 	 *  flies as the weapon itself. Unset: a bow's arrow is a thin shaft, a launcher's round its element's trail or a small dark ball. */
 	TMantleWeaponDocValue<FString> Mesh;
-	/** #905: that mesh's material per slot, as an attachment's (FMantleWeaponDocAttachment::Materials); without Mesh they go on nothing. */
+	/** That mesh's material per slot, as an attachment's (FMantleWeaponDocAttachment::Materials); without Mesh they go on nothing. */
 	TMantleWeaponDocValue<TArray<FString>> Materials;
 };
 
-/** schema sweep.edge (#840): the two sockets the edge sweeps between. */
+/** schema sweep.edge: the two sockets the edge sweeps between. */
 struct FMantleWeaponDocSweepEdge
 {
 	EMantleWeaponDocSocket Base = EMantleWeaponDocSocket::EdgeBase;
 	EMantleWeaponDocSocket Tip = EMantleWeaponDocSocket::EdgeTip;
 };
 
-/** schema sweep (#840). */
+/** schema sweep. */
 struct FMantleWeaponDocSweep
 {
 	/** cm (required). */
@@ -612,21 +612,21 @@ struct FMantleWeaponDocSweep
 	TMantleWeaponDocValue<double> HeavyMultiplier{ 2.0 };
 };
 
-/** schema beam (#840). */
+/** schema beam. */
 struct FMantleWeaponDocBeam
 {
 	TMantleWeaponDocValue<double> TickRate{ 10.0 };
 	/** Required. */
 	double DamagePerSecond = 0.0;
 	TMantleWeaponDocValue<double> MaxSeconds{ 5.0 };
-	/** #905: cm, the beam's thickness (a sphere swept along it, a flamethrower's stream); 0 traces a line (a laser). */
+	/** Cm, the beam's thickness (a sphere swept along it, a flamethrower's stream); 0 traces a line (a laser). */
 	TMantleWeaponDocValue<double> Radius{ 0.0 };
-	/** #905: cm the beam reaches; unset: fire.maxRange. */
+	/** Cm the beam reaches; unset: fire.maxRange. */
 	TMantleWeaponDocValue<double> Range{ 25000.0 };
 };
 
-/** schema consumable.style (#1025): which of each hold's two potion clips a use plays. */
-/** schema extra.kind (Round 5 step 0): a staff's one extra on Q, in the enum's order. Every one is built. */
+/** schema consumable.style: which of each hold's two potion clips a use plays. */
+/** schema extra.kind: a staff's one extra on Q, in the enum's order. Every one is built. */
 enum class EMantleWeaponDocExtra : uint8
 {
 	None,
@@ -638,7 +638,7 @@ enum class EMantleWeaponDocExtra : uint8
 	Count
 };
 
-/** schema extra.look (Round 5 step 3): how a blink leaves and arrives, in the enum's order (the pack's WZ_Teleport_01, _02 and _03). */
+/** schema extra.look: how a blink leaves and arrives, in the enum's order (the pack's WZ_Teleport_01, _02 and _03). */
 enum class EMantleWeaponDocBlinkLook : uint8
 {
 	/** The staff raised overhead, gone, a wide braced landing (Teleport_01). */
@@ -650,7 +650,7 @@ enum class EMantleWeaponDocBlinkLook : uint8
 	Count
 };
 
-/** schema extra (Round 5 step 0): a staff's extra on Q. Unset is none. */
+/** schema extra: a staff's extra on Q. Unset is none. */
 struct FMantleWeaponDocExtra
 {
 	/** Required. */
@@ -659,23 +659,23 @@ struct FMantleWeaponDocExtra
 	TMantleWeaponDocValue<double> CooldownSeconds{ 3.0 };
 	/** Telekinesis only: the heaviest prop it lifts, kg. */
 	TMantleWeaponDocValue<double> MaxMass{ 300.0 };
-	/** Round 5 step 2, telekinesis only: it lifts players too. Unset: true. */
+	/** Telekinesis only: it lifts players too. Unset: true. */
 	TMantleWeaponDocValue<bool> bLiftPlayers{ true };
-	/** Round 5 step 6, levitate only: the highest over the floor below, cm (100 to 2000). Unset: 500. */
+	/** Levitate only: the highest over the floor below, cm (100 to 2000). Unset: 500. */
 	TMantleWeaponDocValue<double> MaxHeight{ 500.0 };
-	/** Round 5 step 6, levitate only: how long a float lasts before it drifts down by itself, s (1 to 30). Unset: 6. */
+	/** Levitate only: how long a float lasts before it drifts down by itself, s (1 to 30). Unset: 6. */
 	TMantleWeaponDocValue<double> DurationSeconds{ 6.0 };
-	/** Round 5 step 3, blink only: how far it reaches toward the crosshair, cm in a straight line from the eyes (300 to 3000). */
+	/** Blink only: how far it reaches toward the crosshair, cm in a straight line from the eyes (300 to 3000). */
 	TMantleWeaponDocValue<double> Range{ 1500.0 };
-	/** Round 5 step 3, blink only: how the body leaves and arrives. Unset: overhead. */
+	/** Blink only: how the body leaves and arrives. Unset: overhead. */
 	TMantleWeaponDocValue<EMantleWeaponDocBlinkLook> Look{ EMantleWeaponDocBlinkLook::Overhead };
-	/** Round 5 step 4, heal only: the health it gives back (1 to 1000). */
+	/** Heal only: the health it gives back (1 to 1000). */
 	TMantleWeaponDocValue<double> Heal{ 35.0 };
-	/** Round 5 step 5, dash only: how far it goes, cm (700 to 2500). Unset: 1200. */
+	/** Dash only: how far it goes, cm (700 to 2500). Unset: 1200. */
 	TMantleWeaponDocValue<double> DashDistance{ 1200.0 };
 };
 
-/** schema gravity (Round 3 step 16): a gun that grabs props instead of shooting. Defaults: MantleGravityGunDefaults. */
+/** schema gravity: a gun that grabs props instead of shooting. Defaults: MantleGravityGunDefaults. */
 struct FMantleWeaponDocGravity
 {
 	/** cm the crosshair reaches for a prop. */
@@ -703,7 +703,7 @@ enum class EMantleWeaponDocUseStyle : uint8
 	Count
 };
 
-/** schema consumable.effect (#1025): what the item does by itself at the effect moment. */
+/** schema consumable.effect: what the item does by itself at the effect moment. */
 enum class EMantleWeaponDocConsumableEffect : uint8
 {
 	/** Heals the holder (Heal, HealSeconds). */
@@ -713,7 +713,7 @@ enum class EMantleWeaponDocConsumableEffect : uint8
 	Count
 };
 
-/** schema consumable (#1025): the use delivery's numbers. */
+/** schema consumable: the use delivery's numbers. */
 struct FMantleWeaponDocConsumable
 {
 	/** Required. */
@@ -881,7 +881,7 @@ struct FMantleWeaponDocRecoil
 };
 
 /**
- * A creator weapon's document, schema/weapon.schema.json v2 (#840), field for field; a v1 document reads into it as v2.
+ * A creator weapon's document, schema/weapon.schema.json v2, field for field; a v1 document reads into it as v2.
  * Units are Unreal's (cm, degrees, seconds, cm/s); the weapon's axes are +X down the bore, +Y right, +Z up. An unset block
  * (Spread, Sway, Recoil) means the hold's; IsTwoHanded and GetEffects apply the hold's when the document leaves them out.
  */
@@ -894,7 +894,7 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	/**
 	 * The firearm alias of the hold: Parse keeps it equal to Hold when Hold is a firearm (v1's archetype, v2's hold), and
 	 * leaves it at its default otherwise, so read it only through GetHold / IsFirearmHold. Write never writes it (v2
-	 * writers set hold). Code from before #840 that sets only Archetype gets that firearm as its hold (GetHold).
+	 * writers set hold). Code from before holds that sets only Archetype gets that firearm as its hold (GetHold).
 	 */
 	EMantleWeaponDocArchetype Archetype = EMantleWeaponDocArchetype::Rifle;
 	/** Unset: Archetype's firearm hold (GetHold). Parse always sets it. */
@@ -907,42 +907,42 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<EMantleWeaponDocEffects> Effects;
 	/** Unset: the first style in the hold's x-equipStyles (equipStyle is a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> EquipStyle;
-	/** Round 2. Unset: the first style in the hold's x-dodgeStyles (a creator selection, not an asset path). */
+	/** Unset: the first style in the hold's x-dodgeStyles (a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> DodgeStyle;
-	/** Round 3. Unset: the hold's first set in x-comboSets, its own chain (a creator selection, not an asset path). */
+	/** Unset: the hold's first set in x-comboSets, its own chain (a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> ComboSet;
-	/** Round 3. Unset: back, the first in the hold's x-quivers (a creator selection, not an asset path). */
+	/** Unset: back, the first in the hold's x-quivers (a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> Quiver;
-	/** Round 3: the document's style. Unset: a, the first in the hold's x-shootingStyles (a creator selection, not an asset path). */
+	/** The document's style. Unset: a, the first in the hold's x-shootingStyles (a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> ShootingStyle;
-	/** Round 3 (suppressor): the name of one of the document's attachments, the suppressor the toggle key puts on and takes off. Unset: no toggle.
+	/** The name of one of the document's attachments, the suppressor the toggle key puts on and takes off. Unset: no toggle.
 	 *  sounds.suppressed is the state the weapon starts in. */
 	TMantleWeaponDocValue<FString> Suppressor;
-	/** Round 3 (bipod): a bolt sniper's folded and deployed attachments. Unset: no bipod. */
+	/** A bolt sniper's folded and deployed attachments. Unset: no bipod. */
 	TMantleWeaponDocValue<FMantleWeaponDocBipod> Bipod;
-	/** Round 4 step 2: what a tap does on a staff. Unset: bolt, the first in the hold's x-tapLooks (a creator selection, not an asset path). */
+	/** What a tap does on a staff. Unset: bolt, the first in the hold's x-tapLooks (a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> TapLook;
-	/** Round 4 step 2: what a hold does on a staff. Unset: beam on a staff with a beam block, else chargedBlast (a creator selection, not an asset path). */
+	/** What a hold does on a staff. Unset: beam on a staff with a beam block, else chargedBlast (a creator selection, not an asset path). */
 	TMantleWeaponDocValue<FString> HoldLook;
-	/** Round 4 step 5: the stance the hold is held in. Unset: the first in the hold's x-stances, the hold's own clip set (a creator selection,
+	/** The stance the hold is held in. Unset: the first in the hold's x-stances, the hold's own clip set (a creator selection,
 	 *  not an asset path). A spear's shoulder plays only beside a shield (the pair's clip set, HCS_SpearShield_Shoulder). */
 	TMantleWeaponDocValue<FString> Stance;
-	/** Round 4 step 7: a staff's own melee on the Melee key (a three-hit combo, and a hold the leaping power move). Unset: off, the Melee key
+	/** A staff's own melee on the Melee key (a three-hit combo, and a hold the leaping power move). Unset: off, the Melee key
 	 *  keeps the generic weapon-butt strike. */
 	TMantleWeaponDocValue<bool> bStaffMelee{ false };
 	/** sRGB. */
 	TMantleWeaponDocValue<FColor> Color{ FColor(40, 110, 160) };
-	/** #904: sRGB, multiplied into the element's effects; only where the weapon has an element (GetElement). Unset: the element's own colors. */
+	/** sRGB, multiplied into the element's effects; only where the weapon has an element (GetElement). Unset: the element's own colors. */
 	TMantleWeaponDocValue<FColor> EffectsColor;
-	/** The weapon's skeletal mesh, a local name; every version-2 hold needs one (#897), so empty only on a refused document. */
+	/** The weapon's skeletal mesh, a local name; every version-2 hold needs one, so empty only on a refused document. */
 	FString Mesh;
 	/**
-	 * Optional (#789): the material for each slot of the mesh in slot order, local names (an uploaded material's id once
+	 * Optional: the material for each slot of the mesh in slot order, local names (an uploaded material's id once
 	 * published). Unset: the slots draw untextured, or with whatever the caller passes beside the document.
 	 */
 	TMantleWeaponDocValue<TArray<FString>> Materials;
 	/**
-	 * Optional (#234, recolor): the mesh's material slots (their place in slot order, as Materials) a script or player can paint with one color on the
+	 * Optional (recolor): the mesh's material slots (their place in slot order, as Materials) a script or player can paint with one color on the
 	 * car-paint material; every other slot keeps the creator's material. Unset or empty: nothing to paint. Needs Mesh; a number past the mesh's last
 	 * slot is ignored. Every hold.
 	 */
@@ -957,30 +957,30 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	TMantleWeaponDocValue<FMantleWeaponDocParts> Parts;
 	TMantleWeaponDocValue<TArray<FMantleWeaponDocAttachment>> Attachments;
 	FMantleWeaponDocFire Fire;
-	/** #840: the charge modifier (required on a bow, refused on a firearm). */
+	/** The charge modifier (required on a bow, refused on a firearm). */
 	TMantleWeaponDocValue<FMantleWeaponDocCharge> Charge;
 	/** In the document (read and written) exactly when the resource holds rounds (UsesRounds). */
 	FMantleWeaponDocMagazine Magazine;
 	FMantleWeaponDocReload Reload;
-	/** #840: unset: the hold's first resource (GetResource). */
+	/** Unset: the hold's first resource (GetResource). */
 	TMantleWeaponDocValue<EMantleWeaponDocResource> Resource;
-	/** #840: the charges resource's numbers, exactly when the resource is charges. */
+	/** The charges resource's numbers, exactly when the resource is charges. */
 	TMantleWeaponDocValue<FMantleWeaponDocCharges> Charges;
-	/** #840: each delivery's numbers: the delivery's own is required; no other but a spear's throw beside its sweep. */
+	/** Each delivery's numbers: the delivery's own is required; no other but a spear's throw beside its sweep. */
 	TMantleWeaponDocValue<FMantleWeaponDocProjectile> Projectile;
 	TMantleWeaponDocValue<FMantleWeaponDocSweep> Sweep;
 	TMantleWeaponDocValue<FMantleWeaponDocBeam> Beam;
-	/** #1025: the use delivery's numbers, exactly when the delivery is use. */
+	/** The use delivery's numbers, exactly when the delivery is use. */
 	TMantleWeaponDocValue<FMantleWeaponDocConsumable> Consumable;
-	/** #840: blocking, on a hold that blocks. */
+	/** Blocking, on a hold that blocks. */
 	TMantleWeaponDocValue<FMantleWeaponDocBlock> Block;
-	/** Round 3: a bow's bash; unset is on with 20 damage. */
+	/** A bow's bash; unset is on with 20 damage. */
 	TMantleWeaponDocValue<FMantleWeaponDocBash> Bash;
-	/** Round 3 step 12: a shield's throw (the document's throw); unset is off. */
+	/** A shield's throw (the document's throw); unset is off. */
 	TMantleWeaponDocValue<FMantleWeaponDocShieldThrow> ShieldThrow;
-	/** Round 5 step 0: a staff's extra on Q (the document's extra); unset is none. */
+	/** A staff's extra on Q (the document's extra); unset is none. */
 	TMantleWeaponDocValue<FMantleWeaponDocExtra> Extra;
-	/** Round 3 step 16: a firearm that grabs props instead of shooting (the document's gravity); unset is a plain gun. */
+	/** A firearm that grabs props instead of shooting (the document's gravity); unset is a plain gun. */
 	TMantleWeaponDocValue<FMantleWeaponDocGravity> Gravity;
 	TMantleWeaponDocValue<FMantleWeaponDocSounds> Sounds;
 	TMantleWeaponDocValue<FMantleWeaponDocFirstPerson> FirstPerson;
@@ -1012,7 +1012,7 @@ struct MANTLERUNTIME_API FMantleWeaponDesc
 	/** The weapon has a firearm's shot effects: the document names a firearm style, or its hold has them. */
 	bool HasEffects() const;
 
-	/** #904: the weapon's element: the document's effects when it is one, else Arcane on a staff (its hold's look); false for none. */
+	/** The weapon's element: the document's effects when it is one, else Arcane on a staff (its hold's look); false for none. */
 	bool GetElement(EMantleWeaponDocEffects& OutElement) const;
 
 	/** The part playing Role, or null when the weapon maps none. */
@@ -1043,7 +1043,7 @@ struct MANTLERUNTIME_API FMantleWeaponDocError
 class MANTLERUNTIME_API FMantleWeaponDocument
 {
 public:
-	/** The schemaVersion this build writes (#840); it reads it and every older one (1). */
+	/** The schemaVersion this build writes; it reads it and every older one (1). */
 	static constexpr int32 SchemaVersion = 2;
 
 	/** The oldest schemaVersion this build reads. */
@@ -1052,7 +1052,7 @@ public:
 	/** The longest document text read, in characters. */
 	static constexpr int32 MaxDocumentLength = 1024 * 1024;
 
-	/** The refusal of an unarmed document without a mesh (#897), in a creator's words and the same as validate.py's and the
+	/** The refusal of an unarmed document without a mesh, in a creator's words and the same as validate.py's and the
 	 *  cook's: a fist weapon is worn on the hand; empty hands are built into the game and are never a document. */
 	static constexpr const TCHAR* FistWeaponNeedsModel =
 		TEXT("needs a 3D model: a fist weapon is the knuckles, claws or gauntlet the hand wears; pick that model");
@@ -1067,7 +1067,7 @@ public:
 	 * The rules across fields (validate.py's check_weapon_rules) on a document whose every value is already within the
 	 * schema: the hold's hands, points, parts, actions and reload style; gripL on every two-handed weapon (optional on a
 	 * one-handed one, the support hand); unit rotations; no attachment scaled to nothing and none named twice; one role per
-	 * bone; curves in rising time; and the hold's allow-list (#840): its deliveries and the delivery's block, its charge
+	 * bone; curves in rising time; and the hold's allow-list: its deliveries and the delivery's block, its charge
 	 * and block rules, its resources and the charges' numbers, a mesh where the hold needs one. What depends on
 	 * which keys the text has (version 1's fields, the archetype alias, a magazine or reload the resource does not hold,
 	 * points without a mesh) is Parse's.
@@ -1077,23 +1077,23 @@ public:
 	/** Whether a document built in code (the converter's) is one Parse accepts: Write, then Parse. */
 	static bool Validate(const FMantleWeaponDesc& Desc, TArray<FMantleWeaponDocError>& OutErrors);
 
-	/** #1025: what a consumable (delivery use) refuses, the top-level keys of a weapon's numbers and attachments (its mesh shows alone). */
+	/** What a consumable (delivery use) refuses, the top-level keys of a weapon's numbers and attachments (its mesh shows alone). */
 	static TConstArrayView<const TCHAR*> GetUseRefusedFields();
 
-	/** Round 4 step 2: schema x-beamLooks, the hold looks that channel the staff's beam (they need its beam block; the others charge). */
+	/** schema x-beamLooks, the hold looks that channel the staff's beam (they need its beam block; the others charge). */
 	static TConstArrayView<const TCHAR*> GetBeamLooks();
 
-	/** Round 4 step 8: the staff's Battle Mage stance ("battleMage"). A document in it fights with its staff (staffMelee on: true or absent, never
+	/** The staff's Battle Mage stance ("battleMage"). A document in it fights with its staff (staffMelee on: true or absent, never
 	 *  false) and takes no tapLook or holdLook (the validator refuses them; the weapon builder hides their rows). */
 	static const TCHAR* GetBattleMageStance();
 
 	/** The document's text, UTF-8-ready, "\n" line ends, a line end at the end. */
 	static FString Write(const FMantleWeaponDesc& Desc);
 
-	/** schema x-holds' entry for Hold (#840). */
+	/** schema x-holds' entry for Hold. */
 	static const FMantleWeaponDocHoldInfo& GetHoldInfo(EMantleWeaponDocHold Hold);
 
-	/** schema x-holds' entry for Archetype's firearm hold (x-archetypes' before #840). */
+	/** schema x-holds' entry for Archetype's firearm hold (x-archetypes' before holds). */
 	static const FMantleWeaponDocArchetypeInfo& GetArchetypeInfo(EMantleWeaponDocArchetype Archetype);
 
 	/** A firearm hold: one of the eight archetypes. */
@@ -1117,13 +1117,13 @@ public:
 	static const TCHAR* EffectsName(EMantleWeaponDocEffects Effects);
 	static const TCHAR* UseStyleName(EMantleWeaponDocUseStyle Style);
 	static const TCHAR* ConsumableEffectName(EMantleWeaponDocConsumableEffect Effect);
-	/** Round 5 step 0: extra.kind's spelling (none, telekinesis, ...). */
+	/** extra.kind's spelling (none, telekinesis, ...). */
 	static const TCHAR* ExtraName(EMantleWeaponDocExtra Extra);
-	/** Round 5 step 3: extra.look's spelling ("overhead"). */
+	/** extra.look's spelling ("overhead"). */
 	static const TCHAR* BlinkLookName(EMantleWeaponDocBlinkLook Look);
-	/** Round 5 steps 3 and 4: the cooldown an extra has when the document sets none (telekinesis 3, blink 5, heal 20, dash 4, levitate 8; none 3). */
+	/** The cooldown an extra has when the document sets none (telekinesis 3, blink 5, heal 20, dash 4, levitate 8; none 3). */
 	static double DefaultExtraCooldownSeconds(EMantleWeaponDocExtra Extra);
 
-	/** #904: Effects is an element (not one of the firearms' rifle, pistol and shotgun). */
+	/** Effects is an element (not one of the firearms' rifle, pistol and shotgun). */
 	static bool IsElement(EMantleWeaponDocEffects Effects) { return Effects > EMantleWeaponDocEffects::Shotgun && Effects < EMantleWeaponDocEffects::Count; }
 };

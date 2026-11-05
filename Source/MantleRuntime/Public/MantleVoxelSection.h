@@ -6,7 +6,7 @@
 #include "Templates/SharedPointer.h"
 
 /**
- * #168: the blocks of one 16 x 16 x 16 section in one of three forms. Uniform (one id throughout, nothing
+ * The blocks of one 16 x 16 x 16 section in one of three forms. Uniform (one id throughout, nothing
  * allocated), 4-bit (a palette of up to 16 ids and 2 KB of indices) or 8-bit (4 KB of ids).
  *
  * The allocated forms are shared, not copied: a worker meshing the section holds a reference to the same data,
@@ -90,7 +90,7 @@ private:
 };
 
 /**
- * #168 smooth worlds: the densities of one section, beside its FMantleVoxelSection of materials. Uniform (one value, nothing
+ * Smooth worlds: the densities of one section, beside its FMantleVoxelSection of materials. Uniform (one value, nothing
  * allocated: all air or all solid) or 4096 values, shared copy-on-write like the blocks.
  */
 class MANTLERUNTIME_API FMantleVoxelDensity

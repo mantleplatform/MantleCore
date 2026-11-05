@@ -13,7 +13,7 @@ class UMantleVehicleSource;
 class UTextRenderComponent;
 
 /**
- * Where a creator vehicle is parked (#435): the VehicleSpawn place entity. It only holds and shows data:
+ * Where a creator vehicle is parked: the VehicleSpawn place entity. It only holds and shows data:
  * which uploaded vehicle, how soon it comes back, whether it is on. On the server (and in standalone play)
  * MantleGameplay's place vehicle bridge reads it from the retained place and keeps one vehicle alive at its
  * transform; clients build nothing from it (the vehicle replicates). Never replicated.
@@ -39,15 +39,15 @@ public:
 
 	/**
 	 * The uploaded Vehicle asset behind a draft spawn: ast_u and 32 lowercase hex digits. Set by a place built from a draft
-	 * file or an editor import; publishing never writes it (a published place names a Storage Item, #679).
+	 * file or an editor import; publishing never writes it (a published place names a Storage Item).
 	 */
 	UPROPERTY(VisibleAnywhere, Category = "Vehicle")
 	FString VehicleId;
 
 	/**
-	 * A vehicle held in the place's storage (#614 stage 4), by the Name of its entry in Mantle Place Settings >
+	 * A vehicle held in the place's storage, by the Name of its entry in Mantle Place Settings >
 	 * Storage, parked here instead of a Vehicle. Leave it empty while a Vehicle is set; publishing fills it in.
-	 * Places that use it need a Mantle client from after #614 stage 4 to load. Add items to the storage with
+	 * Places that use it need a Mantle client with place storage support to load. Add items to the storage with
 	 * Tools > Mantle > Library. The editor shows the name above the spawn; the vehicle itself is never loaded here.
 	 */
 	UPROPERTY(EditAnywhere, Category = "Vehicle")
@@ -62,7 +62,7 @@ public:
 	bool bEnabled = true;
 
 	/**
-	 * Which of the vehicle's liveries the parked car wears (#488): its index in the vehicle's Liveries list, the
+	 * Which of the vehicle's liveries the parked car wears: its index in the vehicle's Liveries list, the
 	 * first being 0. -1 wears the vehicle's Default Livery (none when it has none).
 	 */
 	UPROPERTY(EditAnywhere, Category = "Vehicle", meta = (ClampMin = "-1", ClampMax = "7", UIMin = "-1", UIMax = "7"))

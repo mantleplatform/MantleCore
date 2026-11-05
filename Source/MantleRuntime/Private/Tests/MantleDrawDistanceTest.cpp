@@ -8,7 +8,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Draw distances (#630 stage 2): what the parser reads and refuses on a StaticMesh and an InstancedMesh, and the
+// Draw distances: what the parser reads and refuses on a StaticMesh and an InstancedMesh, and the
 // shadow distance the console variable gives. How far a mesh is drawn, and that its instances fade, is the renderer's:
 // the before-and-after run of tools/bench measures it, and only a picture shows the fade.
 

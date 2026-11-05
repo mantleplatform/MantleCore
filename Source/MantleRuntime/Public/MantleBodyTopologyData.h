@@ -30,8 +30,8 @@ struct MANTLERUNTIME_API FMantleBodyLODTopology
 };
 
 /**
- * Mantle's reference body topology (AVATAR_CATALOG_PLAN.md section 3.3, amended by section 0.1
- * item 4): the vertex count and quantized UV hash of the MetaHuman body at UE Optimized Medium LOD0
+ * Mantle's reference body topology:
+ * the vertex count and quantized UV hash of the MetaHuman body at UE Optimized Medium LOD0
  * (= High LOD1), taken from the pinned converted Aera body by the MantleBuildBodyTopology commandlet and saved as
  * /Game/Avatars/Topology/DA_MantleBodyTopology. A body LOD with the same count and hash has the
  * same vertex order and UV layout, so garments authored on any such body fit any other (the

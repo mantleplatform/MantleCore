@@ -2,10 +2,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "MantlePlaceTypes.h" // FMantleScriptPackageManifest (#838)
+#include "MantlePlaceTypes.h" // FMantleScriptPackageManifest
 
 /**
- * One script a preview bundle lists (#563). Path is relative to Scripts/ ("Server/Health.luau"),
+ * One script a preview bundle lists. Path is relative to Scripts/ ("Server/Health.luau"),
  * the same spelling a published place and the disk catalog use.
  */
 struct FMantlePreviewScript
@@ -72,7 +72,7 @@ struct FMantlePreviewAsset
 };
 
 /**
- * One weapon document a schema 2 bundle carries (#729): the .weapon.json text, and the map from each local name the
+ * One weapon document a schema 2 bundle carries: the .weapon.json text, and the map from each local name the
  * document uses to the id of an asset of this bundle (a cooked skeletal mesh) that stands for it.
  */
 struct FMantlePreviewWeapon
@@ -94,7 +94,7 @@ struct FMantlePreviewWeapon
 };
 
 /**
- * One script package a schema 2 bundle carries (#838): its storage name (the Packages/<Name>/ its scripts are listed under)
+ * One script package a schema 2 bundle carries: its storage name (the Packages/<Name>/ its scripts are listed under)
  * and its package.json, read as a stored package's manifest is (FMantleStorage::ReadScriptPackageManifest), so a Script
  * Point's parameters are typed and defaulted in a preview exactly as in a published place.
  */
@@ -125,10 +125,10 @@ struct FMantlePreviewManifest
 	/** Schema 2: every uploaded asset the place (and its materials) names. Empty for schema 1. */
 	TArray<FMantlePreviewAsset> Assets;
 
-	/** Schema 2: the weapon documents (#729) to register and, when asked, equip. Empty when the manifest has no "weapons". */
+	/** Schema 2: the weapon documents to register and, when asked, equip. Empty when the manifest has no "weapons". */
 	TArray<FMantlePreviewWeapon> Weapons;
 
-	/** Schema 2: the script packages' manifests (#838), by storage name. Empty when the manifest has no "packages". */
+	/** Schema 2: the script packages' manifests, by storage name. Empty when the manifest has no "packages". */
 	TArray<FMantlePreviewPackage> Packages;
 
 	/** Schema 2: the avatar's descriptor file and builtin folder, absolute; both empty when the manifest has no avatar. */
@@ -157,7 +157,7 @@ namespace MantlePreviewLimits
 	constexpr int64 MaxAssetBytes = 128ll * 1024 * 1024;
 	constexpr int64 MaxTotalAssetBytes = 2048ll * 1024 * 1024;
 
-	/** Schema 2: the weapon documents a bundle may carry (#729), and one document's size. */
+	/** Schema 2: the weapon documents a bundle may carry, and one document's size. */
 	constexpr int32 MaxWeapons = 8;
 	constexpr int64 MaxWeaponBytes = 256 * 1024;
 }
@@ -187,7 +187,7 @@ namespace MantlePreviewLaunch
 	 * size is checked here and its blake3 when the asset store seeds it) and "avatar" ({ "descriptor", "builtin" },
 	 * resolved only). Schema 1 manifests are unchanged.
 	 *
-	 * #838: schema 2 may add "packages" ([ { "name": "KillBricks", "manifest": { ...package.json... } } ]): name a storage
+	 * Schema 2 may add "packages" ([ { "name": "KillBricks", "manifest": { ...package.json... } } ]): name a storage
 	 * name, listed once, under which the scripts list at least one Packages/<name>/ file; manifest an object, read leniently
 	 * as a stored package's manifest is. Optional, so a bundle without packages reads as before.
 	 */
@@ -204,7 +204,7 @@ namespace MantlePreviewLaunch
 	/** Strict lexical bundle-relative path: no absolute path, drive letter, UNC, "..", empty segment or backslash. */
 	MANTLERUNTIME_API bool IsBundleRelativePath(const FString& Path);
 
-	/** What preview protocol 1 is: stages 1 to 3 of #563 (offline run, status file, capabilities query). */
+	/** What preview protocol 1 is: its first three stages (offline run, status file, capabilities query). */
 	constexpr int32 PreviewProtocol = 1;
 
 	/**
@@ -219,7 +219,7 @@ namespace MantlePreviewLaunch
 
 	/**
 	 * Writes the capabilities file the editor reads: previewProtocol, manifestSchemas, scriptApi,
-	 * clientVersion, cookTool and features (MantleClientFeatures::All, #628). Temp file then replace, so a reader never sees half of it.
+	 * clientVersion, cookTool and features (MantleClientFeatures::All). Temp file then replace, so a reader never sees half of it.
 	 * ScriptApiMajor and ScriptApiMinor are FMantleApi's, which MantleScript owns and this module
 	 * can't see, so the caller hands them in. Returns false, writing nothing, when Path is not an
 	 * absolute file path or can't be written.

@@ -17,7 +17,7 @@ class FMantleAssetSink;
 /**
  * The content address of some cooked bytes: "blake3:" and 64 lowercase hex digits.
  *
- * BLAKE3 only. It is the standard PLACE_SCHEMA.md names for the backend, it is in the engine's
+ * BLAKE3 only. It is the standard the place schema names for the backend, it is in the engine's
  * Core module (FBlake3), and it runs on every platform the client and the dedicated server ship
  * on. The schema's other algorithms (sha256, sha1, md5) are refused by name rather than trusted
  * unverified: a store that skips verification for some hashes is a store that can be handed
@@ -168,7 +168,7 @@ struct MANTLERUNTIME_API FMantleAssetStoreSettings
 };
 
 /**
- * The content-addressed disk store for uploaded assets: F7 (#341), used by the place loader
+ * The content-addressed disk store for uploaded assets: F7, used by the place loader
  * (F8) and the avatar cosmetic cache (A3.1). Lives in MantleRuntime because the place builder
  * is here, and client/Source may depend on MantleCore but never the reverse.
  *
@@ -221,7 +221,7 @@ public:
 
 	/**
 	 * Puts a local copy of an asset into the store, as if it had been downloaded: the client's
-	 * Builtin bundle, a pre-warmed cache (#429). SourceFile is read on a
+	 * Builtin bundle, a pre-warmed cache. SourceFile is read on a
 	 * background task after the startup scan, checked against Ref.Hash (and Ref.Bytes when set)
 	 * and written in like a finished download; bytes that do not match are refused and nothing
 	 * is stored. A hash already stored is left alone (bFromCache). Ref.Url is not used, and

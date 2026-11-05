@@ -7,7 +7,7 @@
 struct FReferenceSkeleton;
 
 /**
- * The identity of a place skeleton (#469, the arbitrary-skeleton contract): which clips a place skeletal
+ * The identity of a place skeleton (the arbitrary-skeleton contract): which clips a place skeletal
  * mesh can play. A place skeletal mesh (MSK1 role 3) names its own bone table by this hash, and a place clip
  * (MAN1 flag bit 0) names the table it was authored on; a clip plays only on a mesh with the same hash.
  *
@@ -15,7 +15,7 @@ struct FReferenceSkeleton;
  * ASCII A-Z folded to lower case (as Unreal's FNames compare, and as the worker's cook.BoneKey folds), UTF-8,
  * one zero byte, then its parent index as a little-endian int32 (-1 for the root). Names and hierarchy only:
  * the reference pose is not part of it, since a clip's tracks are local transforms. The worker's
- * cook.SkeletonHash is the same function; Mantle.Place.SkeletalMesh.SkeletonHash and the Go test share test
+ * cook.SkeletonHash is the same function; the Go test uses the same test
  * vectors.
  *
  * Pure; any thread.

@@ -11,7 +11,7 @@ class UArrowComponent;
 class UBillboardComponent;
 
 /**
- * Where an item waits to be picked up and comes back after (#235): the ItemSpawn place entity. It only holds data: which item, how many,
+ * Where an item waits to be picked up and comes back after: the ItemSpawn place entity. It only holds data: which item, how many,
  * how soon it comes back, an optional model, whether it is on. MantleGameplay's world items own the item itself (a record, not an actor);
  * this actor is hidden in game, never replicated, and carries nothing a client draws.
  */

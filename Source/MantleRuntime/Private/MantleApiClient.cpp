@@ -31,7 +31,7 @@ bool FMantleApiClient::IsConfigured(FString& OutWhyNot)
 {
 	// No check for a missing address: every resolver falls back to a default one
 	// (FMantleConnection::DefaultBaseUrl), so an empty address cannot happen and a message
-	// telling the creator to set one could never be shown (#265).
+	// telling the creator to set one could never be shown.
 	if (FMantleConnection::ResolveAuthToken().IsEmpty())
 	{
 #if WITH_EDITOR
@@ -48,7 +48,7 @@ bool FMantleApiClient::IsConfigured(FString& OutWhyNot)
 namespace
 {
 	/**
-	 * Offline preview (#563): a preview process makes no production requests. The attempt is counted
+	 * Offline preview: a preview process makes no production requests. The attempt is counted
 	 * in the status file (path only, never a query string or token) and answers preview_offline.
 	 */
 	FMantleApiResult RefusePreviewRequest(const FString& Verb, const FString& Path)
@@ -256,7 +256,7 @@ namespace
 			if (Result.Code.Equals(TEXT("compatibility_failed"), ESearchCase::CaseSensitive))
 			{
 				// The report lists every check, passed ones first, so the first 400 characters of
-				// the body rarely reach the one that failed (#572): each failed check gets a line.
+				// the body rarely reach the one that failed: each failed check gets a line.
 				UE_LOG(LogMantle, Warning, TEXT("%s %s -> %d %s"), *Verb, *Path, Result.StatusCode, *Result.Message);
 				for (const FMantleCompatibilityFailure& Failure : FMantleApiClient::ParseCompatibilityFailures(Result.Body))
 				{
@@ -808,7 +808,7 @@ namespace MantleApiClientLibraryPrivate
 		return Value.IsValid() && Value->Type == EJson::Object ? Value->AsObject() : TSharedPtr<FJsonObject>();
 	}
 
-	/** A script version's scripts[] (#838): every object entry with a source; anything else is skipped. */
+	/** A script version's scripts[]: every object entry with a source; anything else is skipped. */
 	void ReadScriptFiles(const TSharedPtr<FJsonObject>& VersionObject, TArray<FMantleLibraryScriptFile>& Out)
 	{
 		const TArray<TSharedPtr<FJsonValue>>* Files = nullptr;
@@ -861,7 +861,7 @@ namespace MantleApiClientLibraryPrivate
 		}
 	}
 
-	/** One option list of a script version's manifest (#838): "parameters" or (stage 6) "settings". */
+	/** One option list of a script version's manifest: "parameters" or (stage 6) "settings". */
 	void ReadManifestOptions(const TSharedPtr<FJsonObject>& ManifestObject, const TCHAR* Field, TArray<FMantleLibraryScriptParameter>& Out)
 	{
 		const TArray<TSharedPtr<FJsonValue>>* Options = nullptr;
@@ -913,7 +913,7 @@ namespace MantleApiClientLibraryPrivate
 		}
 	}
 
-	/** A script version's manifest (#838): {name, description, parameters: [option], settings: [option]}. */
+	/** A script version's manifest: {name, description, parameters: [option], settings: [option]}. */
 	void ReadManifest(const TSharedPtr<FJsonObject>& ManifestObject, FMantleLibraryScriptManifest& Out)
 	{
 		Out = FMantleLibraryScriptManifest();
@@ -1282,7 +1282,7 @@ namespace
 {
 	/** scope/playerId/key never contain characters JSON needs escaped: scope is one of the two
 	    literals below, playerId is a plain UUID, and key matches the backend's own
-	    ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ (BACKEND.md) -- unlike ValueEnvelopeJson, none of
+	    ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ -- unlike ValueEnvelopeJson, none of
 	    these need FString::ReplaceInline treatment before going straight into the body. */
 	FString DataStoreRequestBody(const FString& Scope, const FString& PlayerId, const FString& Key)
 	{

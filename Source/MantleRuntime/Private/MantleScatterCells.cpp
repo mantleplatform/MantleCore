@@ -65,7 +65,7 @@ namespace MantleScatterCellsPrivate
 		ECVF_Default);
 
 	/**
-	 * The most instances added to components in one frame. 100,000 instances were measured to build into instanced meshes in 12.7 ms (#530), so
+	 * The most instances added to components in one frame. 100,000 instances were measured to build into instanced meshes in 12.7 ms, so
 	 * 20,000 is about 2.5 ms a frame: walking into new ground never hitches. A cell larger than this still goes in, alone.
 	 */
 	TAutoConsoleVariable<int32> CVarScatterMaxInstancesPerFrame(

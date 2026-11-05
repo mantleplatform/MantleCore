@@ -8,7 +8,7 @@ class FCardRepresentationData;
 class FDistanceFieldVolumeData;
 
 /**
- * #149 step 5: a place mesh's Lumen data, the mesh distance field and the Lumen card representation the
+ * #149: a place mesh's Lumen data, the mesh distance field and the Lumen card representation the
  * editor's MeshUtilities bakes (GenerateSignedDistanceFieldVolumeData, GenerateCardRepresentationData).
  * A runtime-built mesh has neither, and a cooked client cannot make them (both builders are editor only),
  * so the plugin bakes them at publish from the cooked mesh it ships and the client attaches them to LOD0.

@@ -12,7 +12,7 @@ class USoundBase;
 class UStaticMesh;
 class UTexture2D;
 
-/** One wheel of a creator vehicle (#435): a wheel-center bone of the body and how it behaves. */
+/** One wheel of a creator vehicle: a wheel-center bone of the body and how it behaves. */
 USTRUCT(BlueprintType)
 struct MANTLERUNTIME_API FMantleVehicleSourceWheel
 {
@@ -120,7 +120,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePartLayerSlots
 };
 
 /**
- * One attached part of a creator vehicle (#435 item 2): a static mesh riding a bone of the body, such as a body shell, glass
+ * One attached part of a creator vehicle: a static mesh riding a bone of the body, such as a body shell, glass
  * or a bumper. Published as its own mesh upload beside the vehicle; drawn only (the chassis collides as its boxes). Convert
  * Vehicle fills these from the static meshes attached to the body (in a level actor, or the mesh's preview attachments); a
  * socket is written as its bone, with the socket's offset folded into Transform.
@@ -180,7 +180,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceBox
 };
 
 /**
- * A part of the body the car clips turn on a hinge (#546): a door, the trunk lid, the hood (schema/vehicle.schema.json $defs.hinge). The
+ * A part of the body the car clips turn on a hinge: a door, the trunk lid, the hood (schema/vehicle.schema.json $defs.hinge). The
  * clips carry how far the pack sedan's opens; Mantle turns Bone about the line through Pivot along Axis by that angle times Scale,
  * the right-hand way round, so the axis's sign picks the way it opens. The bone carries its children, and the parts riding them.
  */
@@ -207,7 +207,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceHinge
 };
 
 /**
- * One contact point of a seat (#612, schema/vehicle.schema.json $defs.contactPoint): where a seated body puts its pelvis, a palm
+ * One contact point of a seat (schema/vehicle.schema.json $defs.contactPoint): where a seated body puts its pelvis, a palm
  * or the ball of a foot, in the vehicle's own space. Every body Mantle supports reaches the same point; nothing here names a
  * character's skeleton.
  */
@@ -229,7 +229,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceContact
 	FRotator Rotation = FRotator::ZeroRotator;
 };
 
-/** A standing spot beside the vehicle (#612, $defs.exit): where a character stands after getting out. */
+/** A standing spot beside the vehicle ($defs.exit): where a character stands after getting out. */
 USTRUCT(BlueprintType)
 struct MANTLERUNTIME_API FMantleVehicleSourceExit
 {
@@ -245,7 +245,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceExit
 };
 
 /**
- * A seat's contact points (#612): the pelvis, hands and feet targets a seated body is posed onto, and where it stands after
+ * A seat's contact points: the pelvis, hands and feet targets a seated body is posed onto, and where it stands after
  * getting out. Each group is optional. Convert Vehicle guesses them for a placed seat that has none (GuessSeatContacts): the
  * pelvis under the seat, the hands on the steering wheel's rim (or the lap), the feet ahead on the floor, an exit on each side.
  */
@@ -292,7 +292,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceSeatContacts
 	bool HasAny() const { return bPelvis || Hands != EMantleVehicleHandsKind::None || bFeet || Exits.Num() > 0; }
 };
 
-/** Where a gun held in this seat may aim and fire (#615, #840 step 5d), relative to the vehicle's front. Off: Mantle works the arc out from
+/** Where a gun held in this seat may aim and fire, relative to the vehicle's front. Off: Mantle works the arc out from
  *  where the seat sits (its side of the car and its row). */
 USTRUCT(BlueprintType)
 struct MANTLERUNTIME_API FMantleVehicleSourceWeaponArc
@@ -325,7 +325,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceWeaponArc
 };
 
 /**
- * How a creator vehicle drives (#435): schema/vehicle.schema.json, every default the schema's. Mantle holds
+ * How a creator vehicle drives: schema/vehicle.schema.json, every default the schema's. Mantle holds
  * each number to limits.json placeAssets.vehicle.ranges when the place is checked and again when it is cooked.
  */
 USTRUCT(BlueprintType)
@@ -407,7 +407,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	bool bAckermann = true;
 
 	/**
-	 * How much of the lock the steering gives at a speed (#821, steering.speedCurve): (mph, share of the lock) points, mph strictly rising, at most 8; empty is the
+	 * How much of the lock the steering gives at a speed (steering.speedCurve): (mph, share of the lock) points, mph strictly rising, at most 8; empty is the
 	 * full lock at every speed. A ground car built from a preset carries the chassis cars' curve.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Steering")
@@ -422,7 +422,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tires", meta = (ClampMin = "0.1", ClampMax = "5"))
 	float TireFriction = 2.f;
 
-	/** The grip of every wheel that does not steer (#821, tires.rearFriction), where Tire Friction is the steered wheels'; off, Tire Friction is every wheel's. */
+	/** The grip of every wheel that does not steer (tires.rearFriction), where Tire Friction is the steered wheels'; off, Tire Friction is every wheel's. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tires")
 	bool bTireRearFriction = false;
 
@@ -450,7 +450,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	FMantleVehicleSourceWeaponArc SeatWeaponArc;
 
 	/**
-	 * The driver's steering wheel (#546), so the seated driver's hands hold this car's own rim. Part of the seat: it needs
+	 * The driver's steering wheel, so the seated driver's hands hold this car's own rim. Part of the seat: it needs
 	 * Seat Location. Off: no steering wheel, and the driver's hands stay where the car clips hold theirs.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Driver")
@@ -473,7 +473,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	FName SteeringWheelBone;
 
 	/**
-	 * The door beside the driver (#546), which the car clips open and shut as the driver gets in and out. Part of the seat: it
+	 * The door beside the driver, which the car clips open and shut as the driver gets in and out. Part of the seat: it
 	 * needs Seat Location. Off: no door moves.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Driver")
@@ -482,12 +482,12 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Driver", meta = (EditCondition = "bHasDriverDoor"))
 	FMantleVehicleSourceHinge DriverDoor;
 
-	/** The driver's contact points (#612): pelvis, hands, feet and exits. Part of the seat: they need Seat Location. */
+	/** The driver's contact points: pelvis, hands, feet and exits. Part of the seat: they need Seat Location. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Driver", meta = (EditCondition = "bSeatLocation"))
 	FMantleVehicleSourceSeatContacts DriverContacts;
 
 	/**
-	 * A front passenger seat (#546). The passenger clips get in and out through the car's right-hand side (+Y), as the driver's
+	 * A front passenger seat. The passenger clips get in and out through the car's right-hand side (+Y), as the driver's
 	 * do through the left. Off: the car has no passenger seat.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passenger")
@@ -508,11 +508,11 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passenger", meta = (EditCondition = "bPassengerSeat && bHasPassengerDoor"))
 	FMantleVehicleSourceHinge PassengerDoor;
 
-	/** The passenger's contact points (#612), as the driver's; its hands are never on the steering wheel. */
+	/** The passenger's contact points, as the driver's; its hands are never on the steering wheel. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passenger", meta = (EditCondition = "bPassengerSeat"))
 	FMantleVehicleSourceSeatContacts PassengerContacts;
 
-	/** A trunk (#546): a lid that someone standing behind the car opens and shuts. It holds nothing. Off: the car has no trunk. */
+	/** A trunk: a lid that someone standing behind the car opens and shuts. It holds nothing. Off: the car has no trunk. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trunk")
 	bool bTrunk = false;
 
@@ -527,7 +527,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trunk", meta = (EditCondition = "bTrunk", Units = "deg"))
 	float TrunkYaw = 0.f;
 
-	/** A hood (#546): a lid that someone standing in front of the car opens and shuts with the trunk clips. It holds nothing. Off: the car has none. */
+	/** A hood: a lid that someone standing in front of the car opens and shuts with the trunk clips. It holds nothing. Off: the car has none. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hood")
 	bool bHood = false;
 
@@ -542,7 +542,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hood", meta = (EditCondition = "bHood", Units = "deg"))
 	float HoodYaw = 180.f;
 
-	/** A rear door on the left (-Y, the driver's side) (#546): a door that someone standing beside it opens and shuts with the trunk clips. Off: the car has none. */
+	/** A rear door on the left (-Y, the driver's side): a door that someone standing beside it opens and shuts with the trunk clips. Off: the car has none. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rear Doors")
 	bool bRearLeftDoor = false;
 
@@ -557,7 +557,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rear Doors", meta = (EditCondition = "bRearLeftDoor", Units = "deg"))
 	float RearLeftDoorYaw = 90.f;
 
-	/** A rear door on the right (+Y) (#546): a door that someone standing beside it opens and shuts with the trunk clips. Off: the car has none. */
+	/** A rear door on the right (+Y): a door that someone standing beside it opens and shuts with the trunk clips. Off: the car has none. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rear Doors")
 	bool bRearRightDoor = false;
 
@@ -573,7 +573,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceTuning
 	float RearRightDoorYaw = -90.f;
 
 	/**
-	 * The horn (#546): a sound wave of your own project (imported from a WAV file), which publishes with the vehicle as its own
+	 * The horn: a sound wave of your own project (imported from a WAV file), which publishes with the vehicle as its own
 	 * sound upload and plays once through each time the driver sounds the horn, for everyone near the car. None: a car
 	 * plays Mantle's built-in horn (a bike, a boat or an aircraft stays silent). Mantle's own sounds can't be named here.
 	 */
@@ -664,7 +664,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePaintLayer
 };
 
 /**
- * A creator vehicle's paint (#435 f) and liveries (#488): schema/vehicle.schema.json paint, liveries, liveryUV and
+ * A creator vehicle's paint and liveries: schema/vehicle.schema.json paint, liveries, liveryUV and
  * defaultLivery, every default the schema's. Mantle holds each number to limits.json placeAssets.vehicle.ranges and the
  * liveries to placeAssets.livery when the place is checked and again when it is cooked.
  */
@@ -676,7 +676,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePaint
 	/**
 	 * The body's sections (its material slots, by the names Convert Vehicle lists) drawn with Mantle's car paint: a clear
 	 * coat over metallic flakes, in a color every player sees and scripts can change. Empty, with no part's Paint Slots either:
-	 * no paint (and so no liveries); every section keeps its own material. A part's Paint Slots (#435 item 2) wear this paint
+	 * no paint (and so no liveries); every section keeps its own material. A part's Paint Slots wear this paint
 	 * too. Convert Vehicle fills it with the sections whose material is Clear Coat or has a Paint Tint parameter.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
@@ -747,7 +747,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourcePaint
 	int32 DefaultLivery = -1;
 };
 
-/** Which part of a copied rotation a linkage rule takes (#435 b): all of it, or its twist about one axis of the body. */
+/** Which part of a copied rotation a linkage rule takes: all of it, or its twist about one axis of the body. */
 UENUM(BlueprintType)
 enum class EMantleVehicleLinkageAxis : uint8
 {
@@ -759,7 +759,7 @@ enum class EMantleVehicleLinkageAxis : uint8
 };
 
 /**
- * One suspension linkage rule (#435 b): schema/vehicle.schema.json $defs.linkageRule. The published car runs no Control
+ * One suspension linkage rule: schema/vehicle.schema.json $defs.linkageRule. The published car runs no Control
  * Rig, so these move its visible suspension bones after the simulation has posed the wheels, every frame, in order:
  *   Aim: Bone turns so the direction it had toward Target (in the mesh's reference pose) points at Target; Up, if set,
  *        keeps its twist, as a Control Rig aim's secondary target does.
@@ -813,7 +813,7 @@ struct MANTLERUNTIME_API FMantleVehicleSourceLinkage
 };
 
 /**
- * A creator vehicle as authored (#435): the body skeletal mesh (a bone at each wheel center), its wheels and its
+ * A creator vehicle as authored: the body skeletal mesh (a bone at each wheel center), its wheels and its
  * tuning. The plugin's Convert Vehicle command makes one from a skeletal mesh, the vehicle builder puts it in the level, and
  * publishing uploads it as one Vehicle asset (the body as a GLB with the vehicle document in it) and its materials, which a library item and the place's Storage then name.
  * Nothing here is a class, a blueprint or code: a published vehicle runs on Mantle's own vehicle.
@@ -829,14 +829,14 @@ public:
 	TSoftObjectPtr<USkeletalMesh> Body;
 
 	/**
-	 * The preset this vehicle was built from (#728), such as "sedan". Empty for a vehicle converted the old way. When set, the
+	 * The preset this vehicle was built from, such as "sedan". Empty for a vehicle converted the old way. When set, the
 	 * preset's narrower ranges and wheel counts apply when the vehicle is checked and again on upload.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
 	FName Preset;
 
 	/**
-	 * The uniform size applied to the whole vehicle on export so the Mantle character fits it (#728). The vehicle builder proposes it
+	 * The uniform size applied to the whole vehicle on export so the Mantle character fits it. The vehicle builder proposes it
 	 * from the preset; the creator may change it. 1 is as modeled.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle", meta = (ClampMin = 0.25, ClampMax = 4.0, DisplayName = "Size"))
@@ -849,7 +849,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
 	FMantleVehicleSourceTuning Tuning;
 
-	/** Its paint and liveries (#435 f, #488). */
+	/** Its paint and liveries. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
 	FMantleVehicleSourcePaint Paint;
 
@@ -858,14 +858,14 @@ public:
 	FMantleVehicleSourceLights Lights;
 
 	/**
-	 * Its suspension linkage (#435 b): what moves the hubs, control arms and dampers after the wheels, at most 64 rules.
+	 * Its suspension linkage: what moves the hubs, control arms and dampers after the wheels, at most 64 rules.
 	 * Convert Vehicle detects them when this is empty; empty it and convert again to detect them afresh.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
 	TArray<FMantleVehicleSourceLinkage> Linkage;
 
 	/**
-	 * Its attached parts (#435 item 2): static meshes riding the body's bones, at most 16. Convert Vehicle finds them when this is
+	 * Its attached parts: static meshes riding the body's bones, at most 16. Convert Vehicle finds them when this is
 	 * empty (a static mesh attached to a wheel's bone becomes that wheel's Tire Mesh instead); empty it and convert again to
 	 * find them afresh.
 	 */
@@ -873,13 +873,13 @@ public:
 	TArray<FMantleVehicleSourcePart> Parts;
 
 	/**
-	 * Which simulation builds it (#821): wheeled for a car, truck, six-wheeler or motorcycle, plane for a plane or jet, helicopter, or hover. Anything but
+	 * Which simulation builds it: wheeled for a car, truck, six-wheeler or motorcycle, plane for a plane or jet, helicopter, or hover. Anything but
 	 * wheeled also needs its block in MovementBlocks. Written into the document as movementType (FMantleVehicleChassisDocument::MergeSource).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement")
 	EMantleVehicleMovementKind MovementType = EMantleVehicleMovementKind::Wheeled;
 
-	/** The driver's and the passenger's seat kind (#821): the clip set a seated character plays. A rider's fit (a motorcycle's) is in MovementBlocks. */
+	/** The driver's and the passenger's seat kind: the clip set a seated character plays. A rider's fit (a motorcycle's) is in MovementBlocks. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement")
 	EMantleVehicleSeatKind DriverSeatKind = EMantleVehicleSeatKind::Car;
 
@@ -895,7 +895,7 @@ public:
 	FString MovementBlocks;
 
 	/**
-	 * Its library card's picture (#821): a 512 x 512 PNG of the built vehicle, taken when the vehicle builder built it (FMantleVehicleThumbnail). Publishing uploads it
+	 * Its library card's picture: a 512 x 512 PNG of the built vehicle, taken when the vehicle builder built it (FMantleVehicleThumbnail). Publishing uploads it
 	 * with the vehicle and names it as the library item's thumbnail. Empty for a vehicle built before this, or converted by hand: its card has no picture.
 	 */
 	UPROPERTY()

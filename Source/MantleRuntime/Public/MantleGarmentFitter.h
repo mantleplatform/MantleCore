@@ -67,7 +67,7 @@ struct FMantleGarmentFitStats
 	/** Garment bones without weight the wearer does not have (dropped, harmless). */
 	int32 UnusedBonesDropped = 0;
 
-	/** Weighted helper-bone slots collapsed onto an existing ancestor (#641). */
+	/** Weighted helper-bone slots collapsed onto an existing ancestor. */
 	int32 AncestorRemappedInfluences = 0;
 };
 
@@ -94,7 +94,7 @@ struct MANTLERUNTIME_API FMantleGarmentAuthoredClearance
 	TArray<FMantleGarmentClearance> LowerFace;
 
 	/**
-	 * #877: the skin the garment hides on its own source body (FMantleSkinMask::Derive, run by
+	 * The skin the garment hides on its own source body (FMantleSkinMask::Derive, run by
 	 * FMantleCatalogGarmentFit::DeriveAuthoredClearance); null when it could not be derived. Shared by every wearer:
 	 * FMantleDressedBody ANDs it with each wearer's own coverage.
 	 */

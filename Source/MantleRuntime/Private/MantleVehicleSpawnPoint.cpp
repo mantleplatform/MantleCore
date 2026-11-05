@@ -43,7 +43,7 @@ AMantleVehicleSpawnPoint::AMantleVehicleSpawnPoint()
 		EditorBillboard->SetHiddenInGame(true);
 	}
 
-	// #614 stage 6: a stored vehicle is another creator's item that is never loaded into the project, so the spawn
+	// Stage 6: a stored vehicle is another creator's item that is never loaded into the project, so the spawn
 	// shows only its name. Two labels back to back: a text render faces one way, +X for the front one.
 	for (const bool bFront : { true, false })
 	{

@@ -22,7 +22,7 @@ enum class EMantleCosmeticKind : uint8
 	Skinned,
 	Rigid,
 	Emote,
-	/** A skin overlay (scar or tattoo, #736): a mask texture and an optional normal map, never a worn mesh. */
+	/** A skin overlay (scar or tattoo): a mask texture and an optional normal map, never a worn mesh. */
 	Overlay,
 	/** A kind this build does not know (a newer catalog, or the dropped 2D clothing): never loaded. */
 	Unknown,
@@ -31,7 +31,7 @@ enum class EMantleCosmeticKind : uint8
 /**
  * One cooked asset an item names: where to download it and what the downloaded bytes must hash to.
  *
- * The hash is the cooked object's BLAKE3 ("cookedHash", F2 #336), which FMantleAssetStore verifies
+ * The hash is the cooked object's BLAKE3 ("cookedHash"), which FMantleAssetStore verifies
  * every download against. An asset with a URL and no cooked hash cannot be verified, so the cache
  * does not load it (the item is reported NotLoadable), rather than trusting unverified bytes.
  */
@@ -68,7 +68,7 @@ struct MANTLERUNTIME_API FMantleCosmeticTransform
 
 /**
  * One mesh section's material: its role (skin, eyes, other, hair_cards) and cooked textures. Entry k is section k.
- * A hair_cards section (a groom's cards, #325, #326) has the cards attribute atlas as its albedo (coverage in R, seed
+ * A hair_cards section (a groom's cards) has the cards attribute atlas as its albedo (coverage in R, seed
  * in B: data, not color). Generic artist cards use HairColor. Native v2 cards additionally require
  * nativeHair with signed direction data and explicit source color settings; normal/ORM keep their ordinary meanings.
  */
@@ -109,10 +109,10 @@ struct MANTLERUNTIME_API FMantleCosmeticMaterial
 };
 
 /**
- * An avatar body's measurements as the catalog serves them ("bodyMetrics", #582: backend cook.AvatarMetrics,
+ * An avatar body's measurements as the catalog serves them ("bodyMetrics": backend cook.AvatarMetrics,
  * limits.json contentLimits.avatar_body.metrics), in cm, from its reference pose. standingHeightCm is the top of the
  * mesh (the face's on a MetaHuman avatar); eyeHeightCm the mean height of its eye bones, absent without any. Null on
- * an item cooked before #582, and on anything that is not an avatar. The character's gameplay size (#581) is the
+ * an item cooked before bodyMetrics existed, and on anything that is not an avatar. The character's gameplay size is the
  * dedicated server's own read of these (POST /server/avatar/metrics), never a client's.
  */
 struct MANTLERUNTIME_API FMantleAvatarBodyMetrics
@@ -164,7 +164,7 @@ struct MANTLERUNTIME_API FMantleCosmeticItem
 	FMantleCosmeticAssetRef Coverage;
 	FMantleCosmeticAssetRef IrisMask;
 	FMantleCosmeticAssetRef Dna;
-	/** Overlays (#736): the optional scar normal map ("normal"). The mask is the item's "texture". */
+	/** Overlays: the optional scar normal map ("normal"). The mask is the item's "texture". */
 	FMantleCosmeticAssetRef Normal;
 	TArray<FMantleCosmeticMaterial> Materials;
 	TArray<FMantleCosmeticMaterial> FaceMaterials;
@@ -179,10 +179,10 @@ struct MANTLERUNTIME_API FMantleCosmeticItem
 	FString JawBone;
 	/** Rigid accessories: the offset from the slot's socket. */
 	FMantleCosmeticTransform Attach;
-	/** Avatars: the body's measurements (#582); unset when the catalog has none or they were unreadable. */
+	/** Avatars: the body's measurements; unset when the catalog has none or they were unreadable. */
 	TOptional<FMantleAvatarBodyMetrics> BodyMetrics;
 	/**
-	 * Avatars: "secondaryMotion" (#595), each mapped secondary motion chain's preset by chain id ("hair_a": "hair"), as the
+	 * Avatars: "secondaryMotion", each mapped secondary motion chain's preset by chain id ("hair_a": "hair"), as the
 	 * API spells them. A chain the body carries and this leaves out moves with its default preset. Empty when the item has
 	 * none or it was unreadable.
 	 */
@@ -302,7 +302,7 @@ namespace MantleCosmetic
 		FString& OutWhyNot);
 
 	/**
-	 * An item's "secondaryMotion" (#595): an object of chain id to preset id, both strings. Absent or null: true and Out
+	 * An item's "secondaryMotion": an object of chain id to preset id, both strings. Absent or null: true and Out
 	 * empty. Ids are kept as sent (the runtime ignores ones it does not know). Anything else is false with a why-not and
 	 * Out empty. Where prefixes the why-not.
 	 */
@@ -310,7 +310,7 @@ namespace MantleCosmetic
 		FString& OutWhyNot);
 
 	/**
-	 * An item's "bodyMetrics" (#582). Absent or null: true with Out unset. An object: its six lengths are required,
+	 * An item's "bodyMetrics". Absent or null: true with Out unset. An object: its six lengths are required,
 	 * finite and not negative (standingHeightCm above 0), eyeHeightCm optional (absent or null: unset); keys it does not
 	 * know are ignored. Anything else is false with a why-not, and Out unset. Where prefixes the why-not.
 	 */
@@ -318,7 +318,7 @@ namespace MantleCosmetic
 		TOptional<FMantleAvatarBodyMetrics>& Out, FString& OutWhyNot);
 
 	/**
-	 * POST /server/avatar/metrics's answer (#581), {items: [{id, bodyMetrics}], missing: [id]}: every item's metrics by
+	 * POST /server/avatar/metrics's answer, {items: [{id, bodyMetrics}], missing: [id]}: every item's metrics by
 	 * id (unset for an item with none, or whose metrics are unreadable), and the ids the catalog does not serve. False
 	 * when the answer is not that shape.
 	 */

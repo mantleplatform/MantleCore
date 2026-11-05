@@ -105,7 +105,7 @@ namespace MantleGarmentGeometry
 	/**
 	 * Two-sided Moller-Trumbore: the ray Origin + t Dir hits ABC at t in [0, TMax]. EdgeTolerance (barycentric) widens the
 	 * triangle a little past its edges: a ray through an edge or corner several triangles share can otherwise slip
-	 * between all of them to rounding (#877: a garment made by pushing the body out along its normals puts every garment
+	 * between all of them to rounding (a garment made by pushing the body out along its normals puts every garment
 	 * vertex on a body vertex's normal ray). 0, the default, is the exact test.
 	 */
 	inline bool RayHitsTriangle(const FVector3f& Origin, const FVector3f& Dir, const FVector3f& A, const FVector3f& B, const FVector3f& C, const float TMax, float& OutT,

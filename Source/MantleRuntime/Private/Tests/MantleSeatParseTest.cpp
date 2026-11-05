@@ -6,7 +6,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Seats (GhzGarage/MantleCore#142): what the parser reads and refuses in a place's seats list.
+// Seats: what the parser reads and refuses in a place's seats list.
 
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleSeatTestPrivate

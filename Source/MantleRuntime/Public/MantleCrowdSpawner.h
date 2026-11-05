@@ -9,7 +9,7 @@
 #include "MantleCrowdSpawner.generated.h"
 
 /**
- * One lane of a Mantle Crowd Spawner (#477): the path its ambient NPCs walk. A creator shapes it
+ * One lane of a Mantle Crowd Spawner: the path its ambient NPCs walk. A creator shapes it
  * like any spline; export writes its points in the spawner's local space. Straight (linear)
  * points are written as they are; a lane with any curved point is sampled along its length.
  */
@@ -76,7 +76,7 @@ struct MANTLERUNTIME_API FMantleCrowdLookSettings
 };
 
 /**
- * A place the spawner's NPCs walk over to and linger at (#513): another actor of the level, such as
+ * A place the spawner's NPCs walk over to and linger at: another actor of the level, such as
  * a stall or a fountain. An NPC passing the lane point nearest to it (within 20 m) may leave its
  * lane, stand round it facing it for a while, then walk back.
  */
@@ -114,7 +114,7 @@ struct MANTLERUNTIME_API FMantleCrowdPointOfInterestSettings
 };
 
 /**
- * Ambient pedestrians (#477): the CrowdSpawner place entity. It only holds and shows data. Every
+ * Ambient pedestrians: the CrowdSpawner place entity. It only holds and shows data. Every
  * client derives the same NPCs from Seed plus server time (MantleNPC, reading the retained
  * FMantlePlace), a dedicated server spawns none, and neither this actor nor its NPCs replicate.
  *
@@ -166,7 +166,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Crowd|Movement", meta = (ClampMin = "0", ClampMax = "1", UIMin = "0", UIMax = "1"))
 	double IdleChance = 0.15;
 
-	/** Where NPCs gather (#513), at most 16: stalls, fountains, noticeboards. */
+	/** Where NPCs gather, at most 16: stalls, fountains, noticeboards. */
 	UPROPERTY(EditAnywhere, Category = "Crowd|Movement")
 	TArray<FMantleCrowdPointOfInterestSettings> PointsOfInterest;
 
@@ -181,7 +181,7 @@ public:
 	 * Reads the actor into CrowdSpawner properties: lanes from every UMantleCrowdLaneComponent in
 	 * name order, points in this actor's local space (a closed loop repeats its first point; a
 	 * lane with any non-linear point is sampled every LaneSampleSpacing cm, at most
-	 * FMantlePlaceLimits::MaxCrowdLanePoints points). Points of interest (#513) come out in
+	 * FMantlePlaceLimits::MaxCrowdLanePoints points). Points of interest come out in
 	 * PointsOfInterest's order, each with its setting's EntityId: an actor has no entity id until
 	 * the exporter gives it one (FMantlePlaceExporter::ResolveCrowdPoints). Out is filled either way. Returns false,
 	 * with OutProblem phrased to follow the actor's name and saying what to fix, when a value is

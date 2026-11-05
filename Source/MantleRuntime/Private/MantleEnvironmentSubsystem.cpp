@@ -298,7 +298,7 @@ void UMantleEnvironmentSubsystem::BindSky(const FMantleSkyBinding& Binding)
 	// The fog's own color, which a script's Environment.FogColor replaces and nil restores.
 	BaseFogColor = BoundFog ? BoundFog->FogInscatteringLuminance : FLinearColor::Black;
 	const USkyLightComponent* BoundSkyLight = SkyLightComponent.Get();
-	// The place's own scale (#722) is part of the base, so the weather scales from it.
+	// The place's own scale is part of the base, so the weather scales from it.
 	const float SkyLightScale = FMath::Clamp(Binding.SkyLightIntensityScale, 0.0f, 1.0f);
 	BaseSkyLightIntensity = BoundSkyLight ? BoundSkyLight->Intensity * SkyLightScale : 0.0f;
 	bWeatherSkyApplied = false;
@@ -323,7 +323,7 @@ void UMantleEnvironmentSubsystem::BindSky(const FMantleSkyBinding& Binding)
 		DayColor = Light->LightColor;
 		if (bNoDirectSun)
 		{
-			// A sealed level's sun (#722). The atmosphere and the clouds read the light's intensity and color (its
+			// A sealed level's sun. The atmosphere and the clouds read the light's intensity and color (its
 			// outer-space illuminance), so those stay as they are and the sky light still captures a lit sky. What
 			// the light adds to the place goes: its direct diffuse and specular light (Lumen's surface cache reads
 			// the same scales), its indirect light and its light in the volumetric fog.
@@ -1302,7 +1302,7 @@ UTexture* UMantleEnvironmentSubsystem::ResolveColorGradingLut(uint8 Preset)
 	{
 		ColorGradingLutMissing |= Bit;
 		UE_LOG(LogMantle, Warning,
-			TEXT("MANTLE_LUT missing %s: no %s color grading on this client (tools/materials/Create-MantleLUTs.py makes it)"),
+			TEXT("MANTLE_LUT missing %s: no %s color grading on this client (no tool in the repo authors the LUT assets)"),
 			*Path.ToString(), Name);
 		return nullptr;
 	}

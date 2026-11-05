@@ -46,14 +46,14 @@ namespace
 	};
 	static_assert(UE_ARRAY_COUNT(GEntityTypeNames) == static_cast<SIZE_T>(EMantleEntityType::ItemSpawn) + 1, "one name per EMantleEntityType");
 
-	// In EMantleWaterBodyType and EMantleWaterSplinePointType order; a WaterBody's type and its spline points' interp (#997).
+	// In EMantleWaterBodyType and EMantleWaterSplinePointType order; a WaterBody's type and its spline points' interp.
 	const TCHAR* const GWaterBodyTypeNames[] = {
 		TEXT("lake"),
 		TEXT("river"),
 		TEXT("ocean"),
 		TEXT("custom")
 	};
-	// In EMantleSeatStyle order; a seat's style (#142).
+	// In EMantleSeatStyle order; a seat's style.
 	const TCHAR* const GSeatStyleNames[] = {
 		TEXT("bench")
 	};
@@ -65,7 +65,7 @@ namespace
 		TEXT("curveCustomTangent")
 	};
 
-	// In EMantleTextHorizontalAlignment and EMantleTextVerticalAlignment order; a Text entity's alignments (#724).
+	// In EMantleTextHorizontalAlignment and EMantleTextVerticalAlignment order; a Text entity's alignments.
 	const TCHAR* const GTextHorizontalAlignmentNames[] = {
 		TEXT("left"),
 		TEXT("center"),
@@ -78,13 +78,13 @@ namespace
 		TEXT("baseline")
 	};
 
-	// In EMantleReflectionProbeShape order; a ReflectionProbe's shape (#628).
+	// In EMantleReflectionProbeShape order; a ReflectionProbe's shape.
 	const TCHAR* const GReflectionProbeShapeNames[] = {
 		TEXT("box"),
 		TEXT("sphere")
 	};
 
-	// In EMantleConstraintType order; a Constraint's type (#528).
+	// In EMantleConstraintType order; a Constraint's type.
 	const TCHAR* const GConstraintTypeNames[] = {
 		TEXT("weld"),
 		TEXT("hinge"),
@@ -144,7 +144,7 @@ namespace
 		TEXT("mature")
 	};
 
-	// In EMantleLightUnits order, which is ELightUnits order; a light's intensityUnits (#385).
+	// In EMantleLightUnits order, which is ELightUnits order; a light's intensityUnits.
 	const TCHAR* const GLightUnitsNames[] = {
 		TEXT("unitless"),
 		TEXT("candelas"),

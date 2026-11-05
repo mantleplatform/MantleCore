@@ -4,14 +4,14 @@
 #include "CoreMinimal.h"
 
 /**
- * One place's creator UI files as the client fetched them: `UI/...` path to UTF-8 text. #556 item 5:
- * an image's path (`UI/icons/sword.png`, see MantleDocumentImages) maps instead to where its pixels
+ * One place's creator UI files as the client fetched them: `UI/...` path to UTF-8 text. An image's
+ * path (`UI/icons/sword.png`, see MantleDocumentImages) maps instead to where its pixels
  * are, never to the pixels themselves.
  */
 using FMantleDocumentFiles = TMap<FString, FString>;
 
 /**
- * #556 item 5: images in an FMantleDocumentFiles. The key is the image's place path, ending in .png
+ * Images in an FMantleDocumentFiles. The key is the image's place path, ending in .png
  * or .jpg (case-exact, as the place format's IsUIImagePath says); the value is a reference: a
  * published place's uploaded Texture asset (`mantle-asset:<id>`, drawn from the downloaded place
  * assets), or on a local -MantlePlace run the file's absolute path on disk (`mantle-disk:<path>`,

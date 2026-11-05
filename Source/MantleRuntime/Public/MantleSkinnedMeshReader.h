@@ -11,13 +11,13 @@ enum class EMantleSkinnedMeshRole : uint8
 	AvatarFace = 1,
 	Garment = 2,
 	/**
-	 * A place's skeletal mesh on its own skeleton (#469): it carries its bone table and reference pose,
+	 * A place's skeletal mesh on its own skeleton: it carries its bone table and reference pose,
 	 * and its skeleton is the table's hash (FMantleSkeletonHash), which its clips carry too. Nothing that
 	 * loads avatar content accepts it.
 	 */
 	PlaceMesh = 3,
 	/**
-	 * A creator vehicle's body on its own bone table, skeleton "vehicle" (#435); only inside MVH1.
+	 * A creator vehicle's body on its own bone table, skeleton "vehicle"; only inside MVH1.
 	 */
 	VehicleBody = 4,
 };
@@ -29,8 +29,8 @@ struct FMantleSkinnedMeshHeader
 
 	/**
 	 * The supported skeleton the mesh is skinned to: "metahuman", "ue5mannequin", "ue4mannequin", "uefnmannequin" or "metahuman_face"; for a
-	 * place skeletal mesh (#469), its own bone table's hash ("skel_" + 16 hex digits), checked on read; "vehicle"
-	 * for a vehicle body (#435).
+	 * place skeletal mesh, its own bone table's hash ("skel_" + 16 hex digits), checked on read; "vehicle"
+	 * for a vehicle body.
 	 */
 	FString Skeleton;
 
@@ -72,7 +72,7 @@ struct FMantleSkinnedMeshReadResult
 /**
  * Reads MSK1, the cooked skinned mesh (avatar bodies, avatar faces, skinned garments and hair), into
  * FMantleSkinnedMesh. Written by backend/internal/cook/skinnedmesh.go; layout in
- * AVATAR_CATALOG_PLAN.md section 3.4 as A2.2 settled it. Positions are Unreal centimeters in the
+ * the cook worker's code. Positions are Unreal centimeters in the
  * asset's own axes (Epic's glTF convention, not MRM1's rotated one); sections carry their material
  * name, the only thing to bind materials by.
  *
@@ -99,7 +99,7 @@ public:
 	static constexpr int32 MaxVertices = 1'000'000;
 	static constexpr int32 MaxIndices = 3'000'000;
 
-	/** The skeleton field of every vehicle body (#435): its bone table is its own. */
+	/** The skeleton field of every vehicle body: its bone table is its own. */
 	static constexpr const TCHAR* VehicleSkeleton = TEXT("vehicle");
 
 	static FMantleSkinnedMeshReadResult Read(TConstArrayView<uint8> Data);

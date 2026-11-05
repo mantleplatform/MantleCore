@@ -16,7 +16,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// The movement part of a vehicle document (#821, WP2): a chassis spec written as flat numbers (movementType, the flight, helicopter or hover block, the
+// The movement part of a vehicle document (WP2): a chassis spec written as flat numbers (movementType, the flight, helicopter or hover block, the
 // seats' kinds, the rider, the camera boom), read back by the client's own reader, equal to what the chassis demo path computed from the spec and to the
 // examples the schema ships, and refused when malformed. Pure data; no UObjects.
 
@@ -1271,7 +1271,7 @@ bool FMantleVehicleDocumentBonesTest::RunTest(const FString& Parameters)
 
 // ---- The cook's own MVH1 -----------------------------------------------------------------------------------------------------------------------------
 
-// The Go-to-C++ contract (#821): schema/examples/vehicle/cooked/*.mvh1 are the bytes the real cook (backend/internal/cook, ProcessAsset) writes for the
+// The Go-to-C++ contract: schema/examples/vehicle/cooked/*.mvh1 are the bytes the real cook (backend/internal/cook, ProcessAsset) writes for the
 // valid-*.json examples; the Go side proves they are current (TestCookedVehicleFixturesAreCurrent). Reading them with the client's own entry point, whole,
 // and finding every number the example gave, is the one test that a change on either side cannot slip past.
 namespace MantleVehicleDocumentTestPrivate
