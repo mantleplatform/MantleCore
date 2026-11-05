@@ -69,7 +69,7 @@ struct MANTLERUNTIME_API FMantlePlaceAssetSettings
 	/**
 	 * Resolve, download and build textures and materials. Off on a dedicated server: nothing renders
 	 * there, so it resolves and downloads meshes only (for collision) and never touches a material, a
-	 * sound, a skeletal mesh or a clip (#469: a skeletal mesh has no collision).
+	 * sound, a skeletal mesh or a clip (a skeletal mesh has no collision).
 	 */
 	bool bRenderAssets = true;
 
@@ -110,7 +110,7 @@ struct MANTLERUNTIME_API FMantlePlaceAssetSettings
 	TSharedPtr<IMantleAssetResolver> Resolver;
 
 	/**
-	 * #462: FMantlePlaceAssets::PrepareManifestOnly takes at most this many of the manifest's
+	 * FMantlePlaceAssets::PrepareManifestOnly takes at most this many of the manifest's
 	 * uploaded assets that no entity uses, and at most MaxManifestOnlyBytes of them by the
 	 * manifest's own sizes; the rest are skipped with a log line, and a script that asks for one is
 	 * told it was not downloaded. Bounds what a place can make every joining player download for
@@ -123,14 +123,14 @@ struct MANTLERUNTIME_API FMantlePlaceAssetSettings
 	static FMantlePlaceAssetSettings ForThisProcess();
 
 	/**
-	 * #462: this process's settings for PrepareManifestOnly: ForThisProcess at a gentler pace (one
+	 * This process's settings for PrepareManifestOnly: ForThisProcess at a gentler pace (one
 	 * resolve, four downloads and two decodes at a time, a 2 ms build slice), since it runs while
 	 * the place is already being played.
 	 */
 	static FMantlePlaceAssetSettings ForManifestOnly();
 };
 
-/** #462: where an uploaded id stands in the live sets, for a caller that can wait for it (a script's spawn). */
+/** Where an uploaded id stands in the live sets, for a caller that can wait for it (a script's spawn). */
 enum class EMantleLiveAssetState : uint8
 {
 	/** No live set prepared it (not in the place, or skipped over the manifest-only cap). */
@@ -178,16 +178,16 @@ struct MANTLERUNTIME_API FMantlePlaceAssetsResult
 	int32 Materials = 0;
 	int32 Textures = 0;
 
-	/** Creator vehicles built (#435). */
+	/** Creator vehicles built. */
 	int32 Vehicles = 0;
 
-	/** Uploaded sounds decoded (#324). Filled in once they settle (FMantlePlaceAssets::AreSoundsSettled). */
+	/** Uploaded sounds decoded. Filled in once they settle (FMantlePlaceAssets::AreSoundsSettled). */
 	int32 Sounds = 0;
 
-	/** Uploaded skeletal meshes built and clips decoded (#469). */
+	/** Uploaded skeletal meshes built and clips decoded. */
 	int32 SkeletalMeshes = 0;
 	int32 Clips = 0;
-	/** Terrain heightfields decoded (#466). The server needs them too: they are the terrain's collision. */
+	/** Terrain heightfields decoded. The server needs them too: they are the terrain's collision. */
 	int32 Heightfields = 0;
 
 	/** Dedicated server: material slots it did not resolve (nothing renders there). */
@@ -196,7 +196,7 @@ struct MANTLERUNTIME_API FMantlePlaceAssetsResult
 	/** Dedicated server: uploaded sounds it did not resolve (nothing is heard there). */
 	int32 SkippedSounds = 0;
 
-	/** Dedicated server: uploaded skeletal meshes and clips it did not resolve (nothing renders there, #469). */
+	/** Dedicated server: uploaded skeletal meshes and clips it did not resolve (nothing renders there). */
 	int32 SkippedSkeletal = 0;
 
 	/** Cooked bytes of every distinct asset, and how many of them came over the network. */
@@ -220,7 +220,7 @@ DECLARE_DELEGATE_OneParam(FMantlePlaceAssetsDone, const FMantlePlaceAssetsResult
 
 /**
  * A place's uploaded assets (ast_u ids), resolved, downloaded, decoded and built before the place
- * builder spawns anything: Fab F8 (#342).
+ * builder spawns anything: Fab F8.
  *
  *   resolve   Ids to {kind, url, cookedHash, cookedBytes} in batches (IMantleAssetResolver). A
  *             material's textures are resolved once the material is (its cookInfo names them) and
@@ -237,34 +237,34 @@ DECLARE_DELEGATE_OneParam(FMantlePlaceAssetsDone, const FMantlePlaceAssetsResult
  * or entities share it, and an object still alive from an earlier set (the same place rebuilt) is
  * reused without any of the three.
  *
- * A Decal's textures (#472) are records of their own, read in the decal's roles, and built like a
+ * A Decal's textures are records of their own, read in the decal's roles, and built like a
  * material's. A dedicated server resolves and builds meshes only, and skips every material (and so
  * every texture) and every sound. While the set lives, FMantleAssetLibrary::LoadMesh/LoadMaterial/
  * LoadTexture answer its ids (the newest live set first), which is how the unchanged
  * FMantlePlaceBuilder finds them. A failed asset is an error naming its id, reported in the result
  * and logged, never a silent stand-in.
  *
- * Sounds (#324, a SoundEmitter's uploaded sound, #459, any sound the manifest lists, which scripts
- * may play through Sounds:Play, and #546, a creator vehicle's horn) take the same resolve, fetch and decode path (MAU1
+ * Sounds (a SoundEmitter's uploaded sound, any sound the manifest lists, which scripts
+ * may play through Sounds:Play, and a creator vehicle's horn) take the same resolve, fetch and decode path (MAU1
  * read on a background task) but never hold up the place: OnDone fires once everything else has
  * settled, sounds download after every other asset has started, and the builder binds each emitter
  * when its sound arrives (WhenLiveSoundSettles). Nothing is built on the game thread for a sound:
  * each emitter plays the shared decoded samples through its own UMantleSoundWave. The set keeps
  * pumping itself until its sounds have settled too.
  *
- * Skeletal meshes and clips (#469, a SkeletalMesh entity's uploaded mesh and clip) hold the place up like
+ * Skeletal meshes and clips (a SkeletalMesh entity's uploaded mesh and clip) hold the place up like
  * meshes: an MSK1 place skeletal mesh (role 3) is read on a background task and built on the game thread
  * as a USkeletalMesh on a transient skeleton of its own bones; a MAN1 place clip is read on a background
  * task and its decoded keys are the build (nothing is made on the game thread; each entity samples the
  * shared clip). A dedicated server resolves neither: nothing renders there.
  *
- * A Terrain (#466) adds three uses: its heightfield (MHF1, read on a background task; the decoded
+ * A Terrain adds three uses: its heightfield (MHF1, read on a background task; the decoded
  * grid is the build, as a sound's samples are, and the place builder turns it into chunk meshes),
  * which a dedicated server needs as well because it is the terrain's collision; its weightmap, a
  * texture read as linear data; and each layer's material. The last two are skipped on a server. When
- * its layers name surfaces (#596), the weightmap is also read on the CPU, on every net mode, into
+ * its layers name surfaces, the weightmap is also read on the CPU, on every net mode, into
  * the heaviest layer per texel (TerrainWeights), which is what a hit on the terrain resolves against.
- * Its grass (#628, drawn only) takes its meshes and materials like a Scatter's, and its grass maps as
+ * Its grass (drawn only) takes its meshes and materials like a Scatter's, and its grass maps as
  * TerrainWeights that keep their pixels, off a dedicated server.
  *
  * Log markers: MANTLE_PLACE_ASSETS preflight/resolved/built/collision/skip/FAIL/READY/SOUNDS.
@@ -281,18 +281,18 @@ public:
 	static bool IsUploadedId(const FString& Id);
 
 	/**
-	 * A SoundEmitter's sound that the live set answers (#324): an uploaded id the built-in library
+	 * A SoundEmitter's sound that the live set answers: an uploaded id the built-in library
 	 * does not know. A library entry wins, so a sound id the library resolves (tests register
 	 * ast_u-shaped ids there) builds exactly as it did before uploaded sounds existed.
 	 */
 	static bool IsUploadedSoundId(const FString& Id);
 
 	/**
-	 * True when an entity of the place uses an uploaded mesh, material, (a Decal's, #472) texture or (a
-	 * VehicleSpawn's, #435) vehicle, a Terrain (#466, whose heightfield is always uploaded), or (off a
-	 * dedicated server, which never hears or draws one) an uploaded sound, skeletal mesh or clip (#469), or
-	 * the manifest lists an uploaded sound (one scripts may play, #459) or vehicle (a script can spawn it),
-	 * or (off a dedicated server) a UI document shows an uploaded image (#556 item 5):
+	 * True when an entity of the place uses an uploaded mesh, material, (a Decal's) texture or (a
+	 * VehicleSpawn's) vehicle, a Terrain (whose heightfield is always uploaded), or (off a
+	 * dedicated server, which never hears or draws one) an uploaded sound, skeletal mesh or clip, or
+	 * the manifest lists an uploaded sound (one scripts may play) or vehicle (a script can spawn it),
+	 * or (off a dedicated server) a UI document shows an uploaded image:
 	 * whether Prepare is needed at all. Other manifest entries alone (an uploaded thumbnail) do not count.
 	 */
 	static bool HasUploadedAssets(const FMantlePlace& Place);
@@ -305,16 +305,16 @@ public:
 		FMantlePlaceAssetsDone OnDone);
 
 	/**
-	 * #462: true when the place's manifest lists uploaded meshes (and, when bRenderAssets, uploaded
+	 * True when the place's manifest lists uploaded meshes (and, when bRenderAssets, uploaded
 	 * materials) that no entity uses: assets a script can spawn (Assets:Spawn) or swap onto an
 	 * entity (Entity:SetMaterial). Prepare leaves those out, so they need PrepareManifestOnly. A
-	 * vehicle's part meshes and materials (#435) are Prepare's, not these: they count as used once a
+	 * vehicle's part meshes and materials are Prepare's, not these: they count as used once a
 	 * live set has built the vehicle, so ask only after the place's own set has completed.
 	 */
 	static bool HasManifestOnlyAssets(const FMantlePlace& Place, bool bRenderAssets);
 
 	/**
-	 * #462: prepares the manifest-only assets HasManifestOnlyAssets describes, exactly as Prepare
+	 * Prepares the manifest-only assets HasManifestOnlyAssets describes, exactly as Prepare
 	 * does the entities' (meshes with collision; materials and their textures only when
 	 * Settings.bRenderAssets), up to Settings.MaxManifestOnlyAssets and MaxManifestOnlyBytes. Start
 	 * it once the place is built, never before: the place and the join never wait for it. While it
@@ -324,7 +324,7 @@ public:
 		FMantlePlaceAssetsDone OnDone);
 
 	/**
-	 * #462: PrepareManifestOnly with ForManifestOnly settings for a place this process has just
+	 * PrepareManifestOnly with ForManifestOnly settings for a place this process has just
 	 * built, or null when the place has no manifest-only assets. Logs a summary when it completes.
 	 * Keep the result exactly as long as the place's own set.
 	 */
@@ -339,27 +339,27 @@ public:
 	/** The built material for an uploaded id, as FindLiveMesh. */
 	static UMaterialInterface* FindLiveMaterial(const FString& Id, FString& OutError);
 
-	/** The built texture an entity names directly (a Decal's, #472), read with Role, as FindLiveMesh. */
+	/** The built texture an entity names directly (a Decal's), read with Role, as FindLiveMesh. */
 	static UTexture* FindLiveTexture(const FString& Id, EMantleTextureRole Role, FString& OutError);
 
 	/**
-	 * #488: where an uploaded texture read with Role stands in the newest live set that has it, as GetLiveMeshState: a
+	 * Where an uploaded texture read with Role stands in the newest live set that has it, as GetLiveMeshState: a
 	 * vehicle's livery (read as color) is prepared with its vehicle off a dedicated server, so a car can wait for it.
 	 */
 	static EMantleLiveAssetState GetLiveTextureState(const FString& Id, EMantleTextureRole Role, FString* OutError = nullptr);
 
-	/** The built skeletal mesh (on its own skeleton) for an uploaded id, as FindLiveMesh (#469). */
+	/** The built skeletal mesh (on its own skeleton) for an uploaded id, as FindLiveMesh. */
 	static USkeletalMesh* FindLiveSkeletalMesh(const FString& Id, FString& OutError);
 
 	/**
-	 * The decoded place clip for an uploaded id, as FindLiveMesh (#469); shared by every entity playing it.
+	 * The decoded place clip for an uploaded id, as FindLiveMesh; shared by every entity playing it.
 	 * bOutStillLoading, when given, says the null is only because it has not arrived yet (a script's
 	 * Entity:PlayClip of a manifest-only clip, script API 1.18, waits for it).
 	 */
 	static TSharedPtr<const FMantleAnimClip> FindLiveClip(const FString& Id, FString& OutError, bool* bOutStillLoading = nullptr);
 
 	/**
-	 * The decoded sound for an uploaded id in the newest live set that has it (#324); null with the
+	 * The decoded sound for an uploaded id in the newest live set that has it; null with the
 	 * reason otherwise. bOutStillLoading, when given, says the null is only because it has not
 	 * arrived yet (WhenLiveSoundSettles then binds it later).
 	 */
@@ -373,17 +373,17 @@ public:
 	static bool WhenLiveSoundSettles(const FString& Id, TFunction<void(TSharedPtr<const FMantleSoundData> Sound, const FString& Error)> OnSettled);
 
 	/**
-	 * The built creator vehicle for an uploaded Vehicle id (#435) in the newest live set that has it; null
+	 * The built creator vehicle for an uploaded Vehicle id in the newest live set that has it; null
 	 * with the reason otherwise. Every vehicle a place's VehicleSpawns use or its manifest lists is prepared
 	 * with the place, on the server (for its physics) and on clients.
 	 */
 	static UMantleBuiltVehicle* FindLiveVehicle(const FString& Id, FString& OutError);
 
-	/** #435: where an uploaded vehicle id stands in the newest live set that has it, as GetLiveMeshState. */
+	/** Where an uploaded vehicle id stands in the newest live set that has it, as GetLiveMeshState. */
 	static EMantleLiveAssetState GetLiveVehicleState(const FString& Id, FString* OutError = nullptr);
 
 	/**
-	 * The read creator weapon (#789 stage 4) for an uploaded Weapon id in the newest live set that has it: the document text
+	 * The read creator weapon for an uploaded Weapon id in the newest live set that has it: the document text
 	 * and the ids it names. Null with the reason otherwise. Every weapon a place's WeaponSpawns use or its manifest lists is
 	 * prepared with the place on every machine, with the skeletal mesh and attachment meshes the document names (and, off a
 	 * dedicated server, its materials and sounds): FindLiveSkeletalMesh / FindLiveMesh / FindLiveMaterial / FindLiveSound
@@ -391,7 +391,7 @@ public:
 	 */
 	static UMantleBuiltWeapon* FindLiveWeapon(const FString& Id, FString& OutError);
 
-	/** #789: where an uploaded weapon id stands in the newest live set that has it, as GetLiveMeshState. */
+	/** Where an uploaded weapon id stands in the newest live set that has it, as GetLiveMeshState. */
 	static EMantleLiveAssetState GetLiveWeaponState(const FString& Id, FString* OutError = nullptr);
 
 	/**
@@ -405,26 +405,26 @@ public:
 	/** Where an uploaded wheel id stands in the newest live set that has it, as GetLiveMeshState. */
 	static EMantleLiveAssetState GetLiveWheelState(const FString& Id, FString* OutError = nullptr);
 
-	/** #462: where an uploaded mesh id stands in the newest live set that has it; OutError says why when it failed or was never prepared. */
+	/** Where an uploaded mesh id stands in the newest live set that has it; OutError says why when it failed or was never prepared. */
 	static EMantleLiveAssetState GetLiveMeshState(const FString& Id, FString* OutError = nullptr);
 
-	/** #462: the same for an uploaded material id. */
+	/** The same for an uploaded material id. */
 	static EMantleLiveAssetState GetLiveMaterialState(const FString& Id, FString* OutError = nullptr);
 
-	/** #789: the same for an uploaded skeletal mesh id (a weapon's mesh, or an attachment the API says is one). */
+	/** The same for an uploaded skeletal mesh id (a weapon's mesh, or an attachment the API says is one). */
 	static EMantleLiveAssetState GetLiveSkeletalMeshState(const FString& Id, FString* OutError = nullptr);
 
-	/** The decoded heightfield for an uploaded id in the newest live set that has it (#466); null with the reason otherwise. */
+	/** The decoded heightfield for an uploaded id in the newest live set that has it; null with the reason otherwise. */
 	static TSharedPtr<const FMantleHeightfield> FindLiveHeightfield(const FString& Id, FString& OutError);
 
 	/**
-	 * #168: a VoxelWorld's starting blocks (an MBW1 file) or one of its tile textures (the uploaded texture's file, MTX1 or an
+	 * A VoxelWorld's starting blocks (an MBW1 file) or one of its tile textures (the uploaded texture's file, MTX1 or an
 	 * image), as downloaded, from the newest live set that prepared it; null with OutError otherwise. Game thread.
 	 */
 	static TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> FindLiveVoxelFile(const FString& Id, bool bTile, FString& OutError);
 
 	/**
-	 * A Terrain weightmap's heaviest layer per texel (#596) for an uploaded id in the newest live set
+	 * A Terrain weightmap's heaviest layer per texel for an uploaded id in the newest live set
 	 * that has it; null with the reason otherwise. Prepared on every net mode, the server's included,
 	 * but only for a Terrain whose layers name a surface (UMantleTerrainSurfaceComponent::NeedsWeights).
 	 */
@@ -464,10 +464,10 @@ public:
 	/** The decoded sound for an uploaded id; null with the reason otherwise, bOutStillLoading when it has not arrived yet. */
 	TSharedPtr<const FMantleSoundData> FindSound(const FString& Id, FString* OutError = nullptr, bool* bOutStillLoading = nullptr) const;
 
-	/** The decoded heightfield for an uploaded id (#466); null with the reason otherwise. */
+	/** The decoded heightfield for an uploaded id; null with the reason otherwise. */
 	TSharedPtr<const FMantleHeightfield> FindHeightfield(const FString& Id, FString* OutError = nullptr) const;
 
-	/** A Terrain weightmap's heaviest layers for an uploaded id (#596); null with the reason otherwise. */
+	/** A Terrain weightmap's heaviest layers for an uploaded id; null with the reason otherwise. */
 	TSharedPtr<const FMantleTerrainWeights> FindTerrainWeights(const FString& Id, FString* OutError = nullptr) const;
 
 	// FGCObject
@@ -476,7 +476,7 @@ public:
 
 private:
 	/**
-	 * TerrainWeights (#596) is an uploaded Texture (the API's kind) read on the CPU into a Terrain's
+	 * TerrainWeights is an uploaded Texture (the API's kind) read on the CPU into a Terrain's
 	 * heaviest layer per texel, beside (not instead of) the GPU texture a client builds from the same id.
 	 */
 	enum class EAssetKind : uint8 { Mesh, Material, Texture, Sound, SkeletalMesh, AnimClip, Heightfield, Vehicle, TerrainWeights, Weapon, Lumen, VoxelWorld, VoxelTile, Wheel };
@@ -491,7 +491,7 @@ private:
 		FMantleContentHash Hash;
 		EAssetKind Kind = EAssetKind::Mesh;
 
-		/** Meshes: 1 with collision. Textures: the EMantleTextureRole. Terrain weights: 1 keeps the pixels (#628). Materials: 0. */
+		/** Meshes: 1 with collision. Textures: the EMantleTextureRole. Terrain weights: 1 keeps the pixels. Materials: 0. */
 		uint8 Variant = 0;
 
 		bool operator==(const FBuildKey& Other) const { return Hash == Other.Hash && Kind == Other.Kind && Variant == Other.Variant; }
@@ -534,7 +534,7 @@ private:
 		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> LumenFile;
 
 		/**
-		 * #168: a VoxelWorldData (MBW1) or a block tile texture, as downloaded: the voxel world reads both itself, the tiles
+		 * A VoxelWorldData (MBW1) or a block tile texture, as downloaded: the voxel world reads both itself, the tiles
 		 * into one texture array (kept while the set lives).
 		 */
 		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> VoxelFile;
@@ -555,22 +555,22 @@ private:
 		/** Sounds: the decoded samples, which are what a sound build is (kept while the set lives). */
 		TSharedPtr<const FMantleSoundData> Sound;
 
-		/** Skeletal meshes (#469): the decoded MSK1, until the game thread builds it. */
+		/** Skeletal meshes: the decoded MSK1, until the game thread builds it. */
 		TSharedPtr<FMantleSkinnedMesh> Skinned;
 
-		/** Clips (#469): the decoded keys, which are what a clip build is (kept while the set lives). */
+		/** Clips: the decoded keys, which are what a clip build is (kept while the set lives). */
 		TSharedPtr<const FMantleAnimClip> Clip;
 
-		/** Heightfields (#466): the decoded grid, likewise the build; the place builder makes the meshes. */
+		/** Heightfields: the decoded grid, likewise the build; the place builder makes the meshes. */
 		TSharedPtr<const FMantleHeightfield> Heightfield;
 
-		/** Terrain weights (#596): the heaviest layer per texel, likewise the build; the weightmap's pixels are dropped once read. */
+		/** Terrain weights: the heaviest layer per texel, likewise the build; the weightmap's pixels are dropped once read. */
 		TSharedPtr<const FMantleTerrainWeights> TerrainWeights;
 
-		/** Vehicles (#435): the read MVH1, until the game thread builds its UMantleBuiltVehicle. */
+		/** Vehicles: the read MVH1, until the game thread builds its UMantleBuiltVehicle. */
 		TSharedPtr<FMantleVehicleAsset> Vehicle;
 
-		/** Weapons (#789): the read MWP1, until the game thread wraps it in its UMantleBuiltWeapon. */
+		/** Weapons: the read MWP1, until the game thread wraps it in its UMantleBuiltWeapon. */
 		TSharedPtr<FMantleWeaponAsset> Weapon;
 
 		/** Wheels: the read MWL1, until the game thread wraps it in its UMantleBuiltWheel. */
@@ -579,7 +579,7 @@ private:
 		/** Wheels: the mesh and material records the wheel waits for before it builds (WaitingForTextures, as a material waits). */
 		TArray<FString> PartRecords;
 
-		/** Materials: the texture record per slot, a layer blend's included (#533; empty when the slot has none). */
+		/** Materials: the texture record per slot, a layer blend's included (empty when the slot has none). */
 		FString TextureRecords[MantlePlaceMaterialTextureCount];
 
 		TObjectPtr<UObject> Object;
@@ -599,11 +599,11 @@ private:
 		/** Meshes: an entity collides with it. */
 		bool bCollision = false;
 
-		/** Terrain weights: a grass map (#628), whose four channels are read too, so the decode keeps the pixels. */
+		/** Terrain weights: a grass map, whose four channels are read too, so the decode keeps the pixels. */
 		bool bKeepPixels = false;
 
 		/**
-		 * Meshes (#789): a weapon's attachment, which the API may say is a skeletal mesh instead. When it does, ApplyResolved
+		 * Meshes: a weapon's attachment, which the API may say is a skeletal mesh instead. When it does, ApplyResolved
 		 * swaps this record for a skeletal mesh one.
 		 */
 		bool bMeshOrSkeletal = false;
@@ -644,7 +644,7 @@ private:
 	static const TCHAR* KindName(EAssetKind Kind);
 
 	void Start(const FMantlePlace& Place);
-	/** #462: PrepareManifestOnly's Start: the manifest's uploaded meshes and materials no entity or built vehicle uses, within the caps. */
+	/** PrepareManifestOnly's Start: the manifest's uploaded meshes and materials no entity or built vehicle uses, within the caps. */
 	void StartManifestOnly(const FMantlePlace& Place);
 
 	/**
@@ -657,9 +657,9 @@ private:
 	TMap<FString, TPair<FString, FString>> MeshLumen;
 	static TSharedRef<FMantlePlaceAssets> PrepareWith(const FMantlePlace& Place, const FMantlePlaceAssetSettings& Settings,
 		FMantlePlaceAssetsDone OnDone, bool bManifestOnly);
-	/** #462: GetLiveMeshState / GetLiveMaterialState across the live sets, newest first. */
+	/** GetLiveMeshState / GetLiveMaterialState across the live sets, newest first. */
 	static EMantleLiveAssetState LiveStateOf(const FString& Id, EAssetKind Kind, FString* OutError);
-	/** #462: one record's state in this set. */
+	/** One record's state in this set. */
 	EMantleLiveAssetState StateOf(const FRecord& Record, FString* OutError) const;
 	FRecord& EnsureRecord(const FString& Id, EAssetKind Kind, EMantleTextureRole Role = EMantleTextureRole::Color);
 	void FailRecord(FRecord& Record, const FString& Error);
@@ -676,19 +676,19 @@ private:
 		TSharedPtr<FMantleDecodedTexture> Texture, TSharedPtr<FMantlePlaceMaterialDesc> Material, TSharedPtr<const FMantleSoundData> Sound,
 		TSharedPtr<FMantleSkinnedMesh> Skinned, TSharedPtr<const FMantleAnimClip> Clip, TSharedPtr<const FMantleHeightfield> Heightfield,
 		TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, TSharedPtr<FMantleWheelAsset> Wheel, const FString& Error);
-	/** #435: a vehicle's materials, from its document, as material records (off a dedicated server). */
+	/** A vehicle's materials, from its document, as material records (off a dedicated server). */
 	void QueueMaterialsOf(const FString& VehicleId, const TArray<FString>& MaterialIds);
-	/** #488: a vehicle's liveries, from its document, as color texture records (off a dedicated server). */
+	/** A vehicle's liveries, from its document, as color texture records (off a dedicated server). */
 	void QueueLiveriesOf(const FString& VehicleId, const TArray<FString>& TextureIds);
-	/** #435 item 2: a vehicle's part meshes, from its document, as mesh records without collision (off a dedicated server). */
+	/** Item 2: a vehicle's part meshes, from its document, as mesh records without collision (off a dedicated server). */
 	void QueueMeshesOf(const FString& VehicleId, const TArray<FString>& MeshIds);
 	/**
-	 * #546: a vehicle's sounds (its horn's), from its document, as sound records (off a dedicated server, which hears
+	 * A vehicle's sounds (its horn's), from its document, as sound records (off a dedicated server, which hears
 	 * nothing): they never hold the place up, as no sound does.
 	 */
 	void QueueSoundsOf(const FString& VehicleId, const TArray<FString>& SoundIds);
 	/**
-	 * #789: what a weapon's document names. Its skeletal mesh and attachment meshes on every machine (a dedicated server
+	 * What a weapon's document names. Its skeletal mesh and attachment meshes on every machine (a dedicated server
 	 * builds the weapon definition too, and the definition needs them); its materials and sounds off a dedicated server.
 	 */
 	void QueueWeaponPartsOf(const FString& WeaponId, const FMantleWeaponAsset& Named);
@@ -742,7 +742,7 @@ private:
 	TArray<TPair<FString, TMap<FString, FString>>> PendingMaterialTextures;
 
 	/**
-	 * #435/#488: a vehicle reused from an earlier set is never decoded here, so what its document names (its materials
+	 * A vehicle reused from an earlier set is never decoded here, so what its document names (its materials
 	 * and liveries) is taken from the built vehicle and turned into records at the next Pump, as a decoded one's are.
 	 */
 	struct FPendingVehicleLooks
@@ -750,9 +750,9 @@ private:
 		FString VehicleId;
 		TArray<FString> MaterialIds;
 		TArray<FString> LiveryIds;
-		/** #435 item 2: its parts' meshes. */
+		/** Item 2: its parts' meshes. */
 		TArray<FString> MeshIds;
-		/** #546: its horn's sound. */
+		/** Its horn's sound. */
 		TArray<FString> SoundIds;
 	};
 	TArray<FPendingVehicleLooks> PendingVehicleLooks;
@@ -778,7 +778,7 @@ private:
 
 	double StartSeconds = 0.0;
 	double NextProgressLogAt = 0.0;
-	/** Game-thread time spent in BuildOne (#126), for the TIMING line at completion. */
+	/** Game-thread time spent in BuildOne, for the TIMING line at completion. */
 	int32 GameThreadBuilds = 0;
 	double GameThreadBuildSeconds = 0.0;
 	double LongestBuildSeconds = 0.0;

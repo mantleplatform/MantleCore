@@ -4,7 +4,7 @@
 #include "CoreMinimal.h"
 
 /**
- * Round 3 step 16 (Gravity Gun, GitHub issue 139 part 1): the document's gravity block defaults, and the limits of its fields. The one place
+ * Gravity Gun (GitHub issue 139 part 1): the document's gravity block defaults, and the limits of its fields. The one place
  * they are written: the document (FMantleWeaponDocGravity), the weapon definition (FMantleGravitySettings) and the gun read them from here, so
  * changing a default is a one-line edit. The schema's defaults and limits (weapon.schema.json gravity) must match; Mantle.Weapon.Round3.Gravity
  * reads both.

@@ -8,7 +8,7 @@ struct FMantleChassisAircraft;
 struct FMantleChassisSpec;
 
 /**
- * ChaosVehicles' arcade rotation control as a motorcycle preset's chassis.rider.rotationControl writes it (#553): the keys of
+ * ChaosVehicles' arcade rotation control as a motorcycle preset's chassis.rider.rotationControl writes it: the keys of
  * FMantleVehicleRotationControl that matter, by the same names. An absent key is 0 or false. MantleRuntime cannot name the
  * gameplay struct, so MantleGameplay copies these across.
  */
@@ -31,7 +31,7 @@ struct FMantleVehicleChassisRotationControl
 };
 
 /**
- * What a rider-seat preset (seats.driver "motorcycle") adds to the chassis (#553). Chassis frame, cm. The grips ride the front fork
+ * What a rider-seat preset (seats.driver "motorcycle") adds to the chassis. Chassis frame, cm. The grips ride the front fork
  * bone and the pegs the root bone; the reference names the bones, so a preset never does.
  */
 struct FMantleVehicleChassisRider
@@ -53,7 +53,7 @@ struct FMantleVehicleChassisRider
 };
 
 /**
- * What a preset's chassis block says, read for sizing a creator's model onto it (#728 step 2). Model space, cm, the origin on the
+ * What a preset's chassis block says, read for sizing a creator's model onto it. Model space, cm, the origin on the
  * ground under the middle of the wheelbase, +X forward, the driver on -Y.
  */
 struct FMantleVehicleChassisReference
@@ -95,7 +95,7 @@ struct FMantleVehicleChassisReference
 };
 
 /**
- * A vehicle preset's own bare chassis (#728): schema/vehicle-presets/<id>.json's `chassis` block made into a complete vehicle that
+ * A vehicle preset's own bare chassis: schema/vehicle-presets/<id>.json's `chassis` block made into a complete vehicle that
  * needs no creator model, so each vehicle type is Mantle's to tune and the creator's model is only a skin on it.
  *
  * MakeAsset builds what a published vehicle's MVH1 read yields (FMantleVehicleAsset): a skeleton of a root bone and one bone per
@@ -104,7 +104,7 @@ struct FMantleVehicleChassisReference
  * reading it with FMantleVehicleAssetReader::ParseDocument, so it passes the validation a published document does. UMantleBuiltVehicle::Build
  * and FMantlePlaceVehicleDefinitions::Make then turn it into a drivable definition exactly as they do a published vehicle.
  *
- * The preset is read into an FMantleChassisSpec (MantleChassisSpec.h, #793), which can also be sized by a uniform scale with its handling
+ * The preset is read into an FMantleChassisSpec (MantleChassisSpec.h), which can also be sized by a uniform scale with its handling
  * re-derived (FMantleChassisDerive); every function here that takes a preset's text has a twin that takes the spec.
  *
  * Model space, cm: +X forward, +Y right, +Z up, the origin on the ground under the middle of the wheelbase, the driver on -Y.

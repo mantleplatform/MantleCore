@@ -4,7 +4,7 @@
 #include "CoreMinimal.h"
 
 /**
- * A creator's uploaded sound as the cook worker writes it (MAU1, backend/internal/cook/sound.go, #324):
+ * A creator's uploaded sound as the cook worker writes it (MAU1, backend/internal/cook/sound.go):
  * decoded PCM16 with nothing left to interpret. The plugin uploads a canonical WAV; the worker parses
  * it and stores this, so a player's client never parses a stranger's source format (the MRM1 rule).
  */

@@ -5,7 +5,7 @@
 #include "MantleEnvironmentDefaults.h"
 
 /**
- * Where the one environment light points and how bright it is, for one hour (#445). By day it
+ * Where the one environment light points and how bright it is, for one hour. By day it
  * is the sun, by night the moon, and near the horizon it fades to nothing before it swaps, so
  * there is only ever one light.
  */
@@ -22,7 +22,7 @@ struct FMantleSkyLightState
 };
 
 /**
- * The shared time of day (#445): pure maths, no world and no state beyond three numbers.
+ * The shared time of day: pure maths, no world and no state beyond three numbers.
  *
  *     hour = wrap24(StartHour + serverSeconds * TimeScale * 24 / DayLengthSeconds)
  *
@@ -62,7 +62,7 @@ struct MANTLERUNTIME_API FMantleSkyClock
 	/** The one environment light for Hour: see FMantleSkyLightState. */
 	static FMantleSkyLightState EvaluateLight(double Hour, double HeadingYawDegrees);
 
-	// ---- Night sky (#445 ticket 4) ----------------------------------------------------------
+	// ---- Night sky ----------------------------------------------------------
 
 	/**
 	 * 0-1, how strongly the stars show for a sun elevation in degrees: 0 while the sun is at or
@@ -94,7 +94,7 @@ struct MANTLERUNTIME_API FMantleSkyClock
 	double TotalHoursAt(double ServerSeconds) const;
 
 	/**
-	 * The same, from hours since day zero (TotalHoursAt, or a script's re-anchored clock, #454),
+	 * The same, from hours since day zero (TotalHoursAt, or a script's re-anchored clock),
 	 * so a clock a script jumped or sped up keeps its moon phase in step with its days.
 	 */
 	static double MoonLunationAtTotalHours(double TotalHours);

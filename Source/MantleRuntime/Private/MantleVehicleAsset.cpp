@@ -75,11 +75,11 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("seat/weaponArc/yawMax"), -180.0, 180.0 },
 		{ TEXT("seat/weaponArc/pitchMin"), -90.0, 90.0 },
 		{ TEXT("seat/weaponArc/pitchMax"), -90.0, 90.0 },
-		// #546 the seat's steering wheel.
+		// The seat's steering wheel.
 		{ TEXT("seat/steeringWheel/location/*"), -1000.0, 1000.0 },
 		{ TEXT("seat/steeringWheel/rotation/*"), -180.0, 180.0 },
 		{ TEXT("seat/steeringWheel/radius"), 10.0, 30.0 },
-		// #546 the doors, the passenger seat, the trunk, the hood and the rear doors.
+		// The doors, the passenger seat, the trunk, the hood and the rear doors.
 		{ TEXT("seat/door/pivot/*"), -1000.0, 1000.0 },
 		{ TEXT("seat/door/axis/*"), -1.0, 1.0 },
 		{ TEXT("seat/door/scale"), -2.0, 2.0 },
@@ -111,7 +111,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("rearRightDoor/door/scale"), -2.0, 2.0 },
 		{ TEXT("rearRightDoor/stand/*"), -1000.0, 1000.0 },
 		{ TEXT("rearRightDoor/yaw"), -180.0, 180.0 },
-		// #612 the seats' contact points.
+		// The seats' contact points.
 		{ TEXT("seat/pelvis/location/*"), -1000.0, 1000.0 },
 		{ TEXT("seat/pelvis/rotation/*"), -180.0, 180.0 },
 		{ TEXT("seat/hands/left/location/*"), -1000.0, 1000.0 },
@@ -140,7 +140,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("camera/height"), 0.0, 1000.0 },
 		{ TEXT("collision/*/center/*"), -1000.0, 1000.0 },
 		{ TEXT("collision/*/extent/*"), 1.0, 1000.0 },
-		// #435 (f) paint and #488 liveries.
+		// (f) paint and liveries.
 		{ TEXT("paint/color/*"), 0.0, 1.0 },
 		{ TEXT("paint/metallic"), 0.0, 1.0 },
 		{ TEXT("paint/roughness"), 0.0, 1.0 },
@@ -157,15 +157,15 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("lights/beams/*/direction/*"), -1.0, 1.0 },
 		{ TEXT("liveryUV"), 0.0, 0.0 },
 		{ TEXT("defaultLivery"), 0.0, 7.0 },
-		// #435 (b) suspension linkage.
+		// (b) suspension linkage.
 		{ TEXT("linkage/*/weight"), 0.0, 1.0 },
-		// #435 item 2 attached parts.
+		// Item 2 attached parts.
 		{ TEXT("parts/*/location/*"), -1000.0, 1000.0 },
 		{ TEXT("parts/*/rotation/*"), -1.0, 1.0 },
 		{ TEXT("parts/*/scale/*"), -100.0, 100.0 },
 		{ TEXT("parts/*/paintSlots/*"), 0.0, 7.0 },
 		{ TEXT("parts/*/layerSlots/*/slots/*"), 0.0, 7.0 },
-		// #821 seat kinds, the rider's fit and the chase camera's boom.
+		// Seat kinds, the rider's fit and the chase camera's boom.
 		{ TEXT("seat/exitSideDistance"), 0.0, 1000.0 },
 		{ TEXT("seat/rider/handlebar/left/location/*"), -1000.0, 1000.0 },
 		{ TEXT("seat/rider/handlebar/right/location/*"), -1000.0, 1000.0 },
@@ -188,7 +188,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("seat/rider/rotationControl/autoCenterPitchStrength"), 0.0, 10.0 },
 		{ TEXT("seat/rider/rotationControl/autoCenterYawStrength"), 0.0, 10.0 },
 		{ TEXT("camera/boomLocation/*"), -1000.0, 1000.0 },
-		// #821 a plane's flight block.
+		// A plane's flight block.
 		{ TEXT("flight/airSpeedLimit"), 500.0, 60000.0 },
 		{ TEXT("flight/cruiseThrottle"), 0.0, 1.0 },
 		{ TEXT("flight/pitchAuthority"), 0.0, 1.0 },
@@ -207,7 +207,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("flight/spinBones/*/rpm"), -10000.0, 10000.0 },
 		{ TEXT("flight/pilotGrips/left/location/*"), -1000.0, 1000.0 },
 		{ TEXT("flight/pilotGrips/right/location/*"), -1000.0, 1000.0 },
-		// #821 a helicopter's block.
+		// A helicopter's block.
 		{ TEXT("helicopter/airSpeedLimit"), 500.0, 60000.0 },
 		{ TEXT("helicopter/hoverCollective"), 0.05, 1.0 },
 		{ TEXT("helicopter/throttleLeverRate"), 0.05, 20.0 },
@@ -226,7 +226,7 @@ namespace MantleVehicleAssetPrivate
 		{ TEXT("helicopter/spinBones/*/rpm"), -10000.0, 10000.0 },
 		{ TEXT("helicopter/pilotGrips/left/location/*"), -1000.0, 1000.0 },
 		{ TEXT("helicopter/pilotGrips/right/location/*"), -1000.0, 1000.0 },
-		// #821 a hovercraft's block.
+		// A hovercraft's block.
 		{ TEXT("hover/pads/*/location/*"), -1000.0, 1000.0 },
 		{ TEXT("hover/pads/*/maxRaise"), 0.0, 100.0 },
 		{ TEXT("hover/pads/*/maxDrop"), 0.0, 200.0 },
@@ -447,7 +447,7 @@ namespace MantleVehicleAssetPrivate
 		}
 	};
 
-	/** How far Point is from a steering wheel's rim (#612): the circle of Radius round Hub, square to the hub's X (its column). */
+	/** How far Point is from a steering wheel's rim: the circle of Radius round Hub, square to the hub's X (its column). */
 	double VehicleOffRim(const FVector& Point, const FVector& Hub, const FRotator& Turn, const double Radius)
 	{
 		const FVector Axis = FRotator(Turn.Pitch, Turn.Yaw, 0.0).Vector();
@@ -458,7 +458,7 @@ namespace MantleVehicleAssetPrivate
 	}
 
 	/**
-	 * A seat's contact points (#612, the cook's contactRules): hands of kind Wheel are the driver's, on a seat with a steering
+	 * A seat's contact points (the cook's contactRules): hands of kind Wheel are the driver's, on a seat with a steering
 	 * wheel, in the body's space and within WheelHandTolerance of its rim; a pelvis, hand or foot in the body's space is within
 	 * ContactReach of the seat's location; none rides a wheel's bone. Seat is the document's key ("seat").
 	 */
@@ -570,7 +570,7 @@ namespace MantleVehicleAssetPrivate
 		{
 			return P.Fail(TEXT("/wheels"), TEXT("needs at least one driven and one steering wheel"));
 		}
-		// #488: a livery lies on the paint, and the default is one of the list.
+		// A livery lies on the paint, and the default is one of the list.
 		if (D.Liveries.Num() > 0 && !D.HasPaint())
 		{
 			return P.Fail(TEXT("/liveries"), TEXT("has no paint sections to lie on"));
@@ -579,7 +579,7 @@ namespace MantleVehicleAssetPrivate
 		{
 			return P.Fail(TEXT("/defaultLivery"), FString::Printf(TEXT("is %d, not one of the %d liveries"), D.DefaultLivery, D.Liveries.Num()));
 		}
-		// #435 item 2: a part's painted slots wear the vehicle's paint, and the paint paints something (a section or a part's slot).
+		// Item 2: a part's painted slots wear the vehicle's paint, and the paint paints something (a section or a part's slot).
 		for (int32 Index = 0; Index < D.Parts.Num(); ++Index)
 		{
 			if (D.Parts[Index].PaintSlots.Num() > 0 && !D.bPaint)
@@ -631,7 +631,7 @@ namespace MantleVehicleAssetPrivate
 		{
 			return P.Fail(TEXT("/paint"), TEXT("paints nothing (no body section and no part's slot)"));
 		}
-		// #546: no two of the parts the car clips turn share a bone (FName compares without regard to case, as the body's do).
+		// No two of the parts the car clips turn share a bone (FName compares without regard to case, as the body's do).
 		struct FTurned
 		{
 			const TCHAR* Pointer;
@@ -656,7 +656,7 @@ namespace MantleVehicleAssetPrivate
 				}
 			}
 		}
-		// #612: each seat's contact points.
+		// Each seat's contact points.
 		if (!CheckVehicleSeatContacts(P, D, TEXT("seat"), D.SeatLocation, D.SeatContacts, true))
 		{
 			return false;
@@ -759,7 +759,7 @@ namespace MantleVehicleAssetPrivate
 		}
 	}
 
-	/** The resolved document's paint (#435 f): every key the cook fills, the sections each once. */
+	/** The resolved document's paint: every key the cook fills, the sections each once. */
 	void ReadVehiclePaint(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
 		TSharedPtr<FJsonObject> Paint;
@@ -773,7 +773,7 @@ namespace MantleVehicleAssetPrivate
 			return;
 		}
 		D.bPaint = true;
-		// Empty when only parts' slots are painted (#435 item 2: the OffroadCar's shell is a part).
+		// Empty when only parts' slots are painted (the OffroadCar's shell is a part).
 		const TArray<TSharedPtr<FJsonValue>>* Sections = nullptr;
 		if (P.Array(Paint->TryGetField(TEXT("sections")), TEXT("/paint/sections"), 0, FMantleVehicleLimits::MaxSections, Sections))
 		{
@@ -873,7 +873,7 @@ namespace MantleVehicleAssetPrivate
 		}
 	}
 
-	/** The resolved document's liveries (#488): uploaded texture ids, each once, with liveryUV (the cook fills it). */
+	/** The resolved document's liveries: uploaded texture ids, each once, with liveryUV (the cook fills it). */
 	void ReadVehicleLiveries(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
 		const TArray<TSharedPtr<FJsonValue>>* Liveries = nullptr;
@@ -931,7 +931,7 @@ namespace MantleVehicleAssetPrivate
 	}
 
 	/**
-	 * The resolved document's linkage (#435 b): every rule with exactly its type's keys, the cook's resolved weight, a
+	 * The resolved document's linkage: every rule with exactly its type's keys, the cook's resolved weight, a
 	 * copy's rotation and translation; no rule moving a wheel bone or reading a bone it moves (the cook's linkageRules).
 	 */
 	void ReadVehicleLinkage(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
@@ -1019,7 +1019,7 @@ namespace MantleVehicleAssetPrivate
 	}
 
 	/**
-	 * The resolved seat's steering wheel (#546): exactly the wheel's keys, its hub's location and the rotation the cook filled
+	 * The resolved seat's steering wheel: exactly the wheel's keys, its hub's location and the rotation the cook filled
 	 * ([pitch, yaw, roll] degrees), and its rim's radius, each within its range, and the bone that turns with it when it names
 	 * one.
 	 */
@@ -1046,7 +1046,7 @@ namespace MantleVehicleAssetPrivate
 	}
 
 	/**
-	 * A resolved hinge (#546: a door, the trunk lid, the hood) at Parent's Key: exactly the hinge's keys, its bone's name, a point on it
+	 * A resolved hinge (a door, the trunk lid, the hood) at Parent's Key: exactly the hinge's keys, its bone's name, a point on it
 	 * and its direction (not near zero length) within RangePath's ranges ("seat/door"), and the scale the cook filled. Whether
 	 * the bone is the body's is Read's to check, with the body.
 	 */
@@ -1077,7 +1077,7 @@ namespace MantleVehicleAssetPrivate
 	}
 
 	/**
-	 * A resolved contact point (#612) at Parent's Key: exactly a contact point's keys, its location and the rotation the cook
+	 * A resolved contact point at Parent's Key: exactly a contact point's keys, its location and the rotation the cook
 	 * filled ([pitch, yaw, roll] degrees) within RangePath's ranges ("seat/pelvis"), and its bone when it names one. Whether the
 	 * bone is the body's is Read's to check, with the body.
 	 */
@@ -1104,7 +1104,7 @@ namespace MantleVehicleAssetPrivate
 	}
 
 	/**
-	 * A resolved seat's contact points (#612), each group where the seat has it: the pelvis, the hands (their kind, wheel or
+	 * A resolved seat's contact points, each group where the seat has it: the pelvis, the hands (their kind, wheel or
 	 * fixed, and both), the feet (both) and the exits (1 to MaxSeatExits, each with the yaw the cook filled). Seat is the seat's
 	 * object, Pointer its JSON pointer ("/seat") and RangePath its ranges' prefix ("seat").
 	 */
@@ -1194,7 +1194,7 @@ namespace MantleVehicleAssetPrivate
 		return true;
 	}
 
-	/** One seat's optional gun aim arc (#615). Without one the seat's arc is worked out from where it sits; Out.bSet says which. */
+	/** One seat's optional gun aim arc. Without one the seat's arc is worked out from where it sits; Out.bSet says which. */
 	bool ReadVehicleWeaponArc(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Seat, const FString& Pointer, const FString& RangePath,
 		FMantleVehicleWeaponArcDesc& Out)
 	{
@@ -1226,10 +1226,10 @@ namespace MantleVehicleAssetPrivate
 		return true;
 	}
 
-	// Defined with the rest of #821's readers below.
+	// Defined with the rest of the grip and spin-bone readers below.
 	bool ReadVehicleSeatKind(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Seat, const FString& Pointer, EMantleVehicleSeatKind& Out);
 
-	/** The resolved passenger seat (#546): exactly its keys, where the passenger sits, optionally the door beside it, and its kind (#821). */
+	/** The resolved passenger seat: exactly its keys, where the passenger sits, optionally the door beside it, and its kind. */
 	void ReadVehiclePassengerSeat(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
 		const FString Pointer = TEXT("/passengerSeat");
@@ -1249,7 +1249,7 @@ namespace MantleVehicleAssetPrivate
 		D.bPassengerSeat = true;
 	}
 
-	/** The resolved trunk (#546): exactly its keys, its lid, where to stand to open it and the yaw the cook filled. */
+	/** The resolved trunk: exactly its keys, its lid, where to stand to open it and the yaw the cook filled. */
 	void ReadVehicleTrunk(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
 		const FString Pointer = TEXT("/trunk");
@@ -1266,7 +1266,7 @@ namespace MantleVehicleAssetPrivate
 	}
 
 	/**
-	 * A resolved hood or rear door (#546), at Key ("hood", "rearLeftDoor"): exactly its keys, its hinge under HingeKey ("lid", "door"), where
+	 * A resolved hood or rear door, at Key ("hood", "rearLeftDoor"): exactly its keys, its hinge under HingeKey ("lid", "door"), where
 	 * to stand to open it and the yaw the cook filled, within Key's ranges. Out is left unset when it does not read.
 	 */
 	void ReadVehicleOpening(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, const TCHAR* Key, const TCHAR* HingeKey, FMantleVehicleOpeningDesc& Out)
@@ -1287,7 +1287,7 @@ namespace MantleVehicleAssetPrivate
 		Out = O;
 	}
 
-	/** The resolved horn (#546): exactly its key, its sound an uploaded id (never Mantle's built-in horn, which is what a car without one plays). */
+	/** The resolved horn: exactly its key, its sound an uploaded id (never Mantle's built-in horn, which is what a car without one plays). */
 	void ReadVehicleHorn(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
 		const FString Pointer = TEXT("/horn");
@@ -1306,7 +1306,7 @@ namespace MantleVehicleAssetPrivate
 	}
 
 	/**
-	 * The resolved document's parts (#435 item 2): each with exactly the part's keys, its mesh an uploaded id, its transform
+	 * The resolved document's parts: each with exactly the part's keys, its mesh an uploaded id, its transform
 	 * the cook filled (a unit quaternion, no axis of its scale near 0), and its materials, when it lists any, uploaded ids or
 	 * null. Whether its bone is the body's is Read's to check, with the body.
 	 */
@@ -1479,7 +1479,7 @@ namespace MantleVehicleAssetPrivate
 	// ---- the movement type, its blocks, the seat kinds and the rider -------------------------------------------------------------
 
 	/**
-	 * A grip (#821 $defs.grip) at Parent's Key: exactly its keys, its location within RangePath's ranges ("flight/pilotGrips/left") and the bone it
+	 * A grip ($defs.grip) at Parent's Key: exactly its keys, its location within RangePath's ranges ("flight/pilotGrips/left") and the bone it
 	 * moves with when it names one. Whether the bone is the body's is ResolveMovementBones'.
 	 */
 	bool ReadVehicleGrip(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Parent, const FString& ParentPointer, const TCHAR* Key,
@@ -1500,7 +1500,7 @@ namespace MantleVehicleAssetPrivate
 		return true;
 	}
 
-	/** A left grip and a right one (#821 $defs.gripPair), both required, within RangePath's ranges ("flight/pilotGrips"). */
+	/** A left grip and a right one ($defs.gripPair), both required, within RangePath's ranges ("flight/pilotGrips"). */
 	bool ReadVehicleGripPair(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Parent, const FString& ParentPointer, const TCHAR* Key,
 		const FString& RangePath, FMantleVehicleGripPairDesc& Out)
 	{
@@ -1540,7 +1540,7 @@ namespace MantleVehicleAssetPrivate
 		return !Obj->HasField(TEXT("bone")) || ReadLinkageBone(P, Obj, Pointer, TEXT("bone"), Out);
 	}
 
-	/** A block's spin bones (#821 $defs.spinBone), 0 to MaxSpinBones, each a bone, an axis and a speed, no bone twice. Block is "flight" or "helicopter". */
+	/** A block's spin bones ($defs.spinBone), 0 to MaxSpinBones, each a bone, an axis and a speed, no bone twice. Block is "flight" or "helicopter". */
 	bool ReadVehicleSpinBones(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& BlockObject, const TCHAR* Block, TArray<FMantleVehicleSpinBoneDesc>& Out)
 	{
 		if (!BlockObject->HasField(TEXT("spinBones")))
@@ -1608,7 +1608,7 @@ namespace MantleVehicleAssetPrivate
 		return P.Fail(Pointer + TEXT("/") + Key, FString::Printf(TEXT("must be one of %s"), *Choices));
 	}
 
-	/** A plane's flight block (#821): exactly its keys, aerofoils, thrusters and spin bones within their caps and ranges, the optional numbers the contract's defaults. */
+	/** A plane's flight block: exactly its keys, aerofoils, thrusters and spin bones within their caps and ranges, the optional numbers the contract's defaults. */
 	void ReadVehicleFlight(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
 		const FString Pointer = TEXT("/flight");
@@ -1706,7 +1706,7 @@ namespace MantleVehicleAssetPrivate
 		D.Flight = MoveTemp(F);
 	}
 
-	/** A helicopter's block (#821): exactly its keys, its rotors and spin bones within their caps and ranges, the optional numbers the contract's defaults. */
+	/** A helicopter's block: exactly its keys, its rotors and spin bones within their caps and ranges, the optional numbers the contract's defaults. */
 	void ReadVehicleHelicopter(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
 		const FString Pointer = TEXT("/helicopter");
@@ -1773,7 +1773,7 @@ namespace MantleVehicleAssetPrivate
 		D.Helicopter = MoveTemp(H);
 	}
 
-	/** A hovercraft's block (#821): exactly its keys, its pads within their caps, the fan, the optional fin and damping, and the optional numbers the contract's defaults. */
+	/** A hovercraft's block: exactly its keys, its pads within their caps, the fan, the optional fin and damping, and the optional numbers the contract's defaults. */
 	void ReadVehicleHover(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
 		const FString Pointer = TEXT("/hover");
@@ -1870,7 +1870,7 @@ namespace MantleVehicleAssetPrivate
 		D.Hover = MoveTemp(H);
 	}
 
-	/** A seat's kind (#821, seat.kind or passengerSeat.kind) when it names one: car, motorcycle or pilot. */
+	/** A seat's kind (seat.kind or passengerSeat.kind) when it names one: car, motorcycle or pilot. */
 	bool ReadVehicleSeatKind(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Seat, const FString& Pointer, EMantleVehicleSeatKind& Out)
 	{
 		if (!Seat->HasField(TEXT("kind")))
@@ -1887,7 +1887,7 @@ namespace MantleVehicleAssetPrivate
 		return true;
 	}
 
-	/** The rider's rotation control (#821): exactly its keys, an absent one 0 or false (not the definition's default), each number within its range. */
+	/** The rider's rotation control: exactly its keys, an absent one 0 or false (not the definition's default), each number within its range. */
 	bool ReadVehicleRotationControl(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Rider, const FString& RiderPointer, FMantleVehicleRotationControlDesc& Out)
 	{
 		TSharedPtr<FJsonObject> Control;
@@ -1919,7 +1919,7 @@ namespace MantleVehicleAssetPrivate
 		return true;
 	}
 
-	/** The driver's motorcycle rider fit (#821, seat.rider): exactly its keys, the fork bone, both grip pairs, the offsets and the rotation control. That the seat is a motorcycle's is CheckVehicleMovementRules'. */
+	/** The driver's motorcycle rider fit (seat.rider): exactly its keys, the fork bone, both grip pairs, the offsets and the rotation control. That the seat is a motorcycle's is CheckVehicleMovementRules'. */
 	void ReadVehicleRider(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Seat, FMantleVehicleDesc& D)
 	{
 		const FString Pointer = TEXT("/seat/rider");
@@ -1970,7 +1970,7 @@ namespace MantleVehicleAssetPrivate
 	}
 
 	/**
-	 * The movement blocks' rules across fields (the cook's movementRules, #821): each aerofoil bone once and not also a spin bone; no grip, and not the
+	 * The movement blocks' rules across fields (the cook's movementRules): each aerofoil bone once and not also a spin bone; no grip, and not the
 	 * fork, on a wheel's bone; a rider only on a motorcycle seat.
 	 */
 	bool CheckVehicleMovementRules(FVehicleDocParser& P, const FMantleVehicleDesc& D)
@@ -2041,7 +2041,7 @@ namespace MantleVehicleAssetPrivate
 		return true;
 	}
 
-	/** The movement type the document names (#821): wheeled when it names none, else wheeled, plane, helicopter or hover. */
+	/** The movement type the document names: wheeled when it names none, else wheeled, plane, helicopter or hover. */
 	bool ReadVehicleMovementType(FVehicleDocParser& P, const TSharedPtr<FJsonObject>& Root, FMantleVehicleDesc& D)
 	{
 		if (!Root->HasField(TEXT("movementType")))
@@ -2195,7 +2195,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 
 	FVehicleDocParser P;
 	FMantleVehicleDesc D;
-	// The preset the vehicle was built from (#728) is the cook's to enforce and it strips the key; it is accepted and ignored here,
+	// The preset the vehicle was built from is the cook's to enforce and it strips the key; it is accepted and ignored here,
 	// checked first so a wrong preset is named even when other keys are also wrong.
 	if (Root->HasField(TEXT("preset")) && !Root->HasTypedField<EJson::String>(TEXT("preset")))
 	{
@@ -2227,7 +2227,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		{
 			D.bCenterOfMass = P.Vector(Root->TryGetField(TEXT("centerOfMass")), TEXT("/centerOfMass"), TEXT("centerOfMass/*"), D.CenterOfMass);
 		}
-		// #821: wheeled when it names none.
+		// Wheeled when it names none.
 		if (P.Ok())
 		{
 			ReadVehicleMovementType(P, Root, D);
@@ -2305,7 +2305,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	{
 		P.Number(Steering, TEXT("/steering"), TEXT("maxAngle"), TEXT("steering/maxAngle"), D.MaxSteeringAngle);
 		P.Bool(Steering, TEXT("/steering"), TEXT("ackermann"), D.bAckermann);
-		// #821: optional, and absent from a car that steers its full lock at every speed.
+		// Optional, and absent from a car that steers its full lock at every speed.
 		const TArray<TSharedPtr<FJsonValue>>* Curve = nullptr;
 		if (P.Ok() && Steering->HasField(TEXT("speedCurve"))
 			&& P.Array(Steering->TryGetField(TEXT("speedCurve")), TEXT("/steering/speedCurve"), 1, FMantleVehicleLimits::MaxSteeringCurvePoints, Curve))
@@ -2345,7 +2345,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	if (P.Ok() && P.Object(Root, TEXT(""), TEXT("tires"), Tires) && P.Keys(Tires, TEXT("/tires"), { TEXT("friction"), TEXT("rearFriction") }, { TEXT("friction") }))
 	{
 		P.Number(Tires, TEXT("/tires"), TEXT("friction"), TEXT("tires/friction"), D.TireFriction);
-		// #821: optional, and absent from a vehicle whose every wheel grips alike.
+		// Optional, and absent from a vehicle whose every wheel grips alike.
 		if (P.Ok() && Tires->HasField(TEXT("rearFriction")))
 		{
 			D.bTireRearFriction = P.Number(Tires, TEXT("/tires"), TEXT("rearFriction"), TEXT("tires/rearFriction"), D.TireRearFriction);
@@ -2429,7 +2429,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		{
 			P.Bool(Seat, TEXT("/seat"), TEXT("hidden"), D.bSeatHidden);
 		}
-		// #546: optional, and absent from a seat without one.
+		// Optional, and absent from a seat without one.
 		if (P.Ok() && Seat->HasField(TEXT("steeringWheel")))
 		{
 			ReadVehicleSteeringWheel(P, Seat, D);
@@ -2438,12 +2438,12 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		{
 			ReadVehicleHinge(P, Seat, TEXT("/seat"), TEXT("door"), TEXT("seat/door"), D.SeatDoor);
 		}
-		// #612: optional, each group absent from a seat without it.
+		// Optional, each group absent from a seat without it.
 		if (P.Ok())
 		{
 			ReadVehicleSeatContacts(P, Seat, TEXT("/seat"), TEXT("seat"), D.SeatContacts);
 		}
-		// #821: the seat's kind, how far the driver steps out to the side, and a motorcycle rider's fit; each optional.
+		// The seat's kind, how far the driver steps out to the side, and a motorcycle rider's fit; each optional.
 		if (P.Ok())
 		{
 			ReadVehicleSeatKind(P, Seat, TEXT("/seat"), D.SeatKind);
@@ -2457,7 +2457,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 			ReadVehicleRider(P, Seat, D);
 		}
 	}
-	// #546: optional, and absent from a car without them.
+	// Optional, and absent from a car without them.
 	if (P.Ok() && Root->HasField(TEXT("passengerSeat")))
 	{
 		ReadVehiclePassengerSeat(P, Root, D);
@@ -2489,7 +2489,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	{
 		P.Number(Camera, TEXT("/camera"), TEXT("armLength"), TEXT("camera/armLength"), D.CameraArmLength);
 		P.Number(Camera, TEXT("/camera"), TEXT("height"), TEXT("camera/height"), D.CameraHeight);
-		// #821: where the chase camera orbits; optional.
+		// Where the chase camera orbits; optional.
 		if (P.Ok() && Camera->HasField(TEXT("boomLocation")))
 		{
 			D.bCameraBoom = P.Vector(Camera->TryGetField(TEXT("boomLocation")), TEXT("/camera/boomLocation"), TEXT("camera/boomLocation/*"), D.CameraBoomLocation);
@@ -2544,7 +2544,7 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 		}
 	}
 
-	// #435 (f) and #488: optional, and absent from a vehicle without them.
+	// (f) and liveries: optional, and absent from a vehicle without them.
 	if (P.Ok() && Root->HasField(TEXT("paint")))
 	{
 		ReadVehiclePaint(P, Root, D);
@@ -2569,18 +2569,18 @@ bool FMantleVehicleAssetReader::ParseDocument(const TConstArrayView<uint8> Json,
 	{
 		P.Int(Root, TEXT(""), TEXT("defaultLivery"), TEXT("defaultLivery"), D.DefaultLivery);
 	}
-	// #435 (b): after the wheels, which the linkage may not move.
+	// (b): after the wheels, which the linkage may not move.
 	if (P.Ok() && Root->HasField(TEXT("linkage")))
 	{
 		ReadVehicleLinkage(P, Root, D);
 	}
-	// #435 item 2: optional, and absent from a vehicle without parts.
+	// Item 2: optional, and absent from a vehicle without parts.
 	if (P.Ok() && Root->HasField(TEXT("parts")))
 	{
 		ReadVehicleParts(P, Root, D);
 	}
 
-	// #821: the movement type's block, after the wheels and the seats its rules read.
+	// The movement type's block, after the wheels and the seats its rules read.
 	if (P.Ok())
 	{
 		CheckVehicleMovementBlocks(P, Root, D.MovementType);
@@ -2899,7 +2899,7 @@ bool FMantleVehicleAssetReader::Read(const TConstArrayView<uint8> Data, FMantleV
 		Out.WheelPositions.Add(Component[Found].GetLocation());
 	}
 
-	// #435 (b): every bone the linkage names is the body's (in its spelling), and none it moves is the root, a wheel
+	// (b): every bone the linkage names is the body's (in its spelling), and none it moves is the root, a wheel
 	// bone or a bone a wheel hangs from: the cook refuses those (resolveLinkage), and the wheels are the simulation's.
 	auto FindBone = [&Bones](const FName Name)
 	{
@@ -2937,7 +2937,7 @@ bool FMantleVehicleAssetReader::Read(const TConstArrayView<uint8> Data, FMantleV
 		}
 	}
 
-	// #546: every bone the car clips turn (the steering wheel's, the doors', the trunk lid's, the hood's) is the body's (in its spelling), and
+	// Every bone the car clips turn (the steering wheel's, the doors', the trunk lid's, the hood's) is the body's (in its spelling), and
 	// none is the root, a wheel bone or a bone a wheel hangs from: the cook refuses those (resolveCarParts).
 	for (FName* Name : { &Out.Desc.SteeringWheelBone, &Out.Desc.SeatDoor.Bone, &Out.Desc.PassengerSeatDoor.Bone, &Out.Desc.TrunkLid.Bone,
 		&Out.Desc.Hood.Hinge.Bone, &Out.Desc.RearLeftDoor.Hinge.Bone, &Out.Desc.RearRightDoor.Hinge.Bone })
@@ -2959,7 +2959,7 @@ bool FMantleVehicleAssetReader::Read(const TConstArrayView<uint8> Data, FMantleV
 		*Name = Bones[Bone].Name;
 	}
 
-	// #612: every bone a contact point is on is the body's (in its spelling): the cook refuses others (resolveContacts), and a
+	// Every bone a contact point is on is the body's (in its spelling): the cook refuses others (resolveContacts), and a
 	// wheel's the rules already have.
 	for (FMantleVehicleSeatContactsDesc* Contacts : { &Out.Desc.SeatContacts, &Out.Desc.PassengerSeatContacts })
 	{
@@ -2979,7 +2979,7 @@ bool FMantleVehicleAssetReader::Read(const TConstArrayView<uint8> Data, FMantleV
 		}
 	}
 
-	// #435 item 2: every part rides a bone of the body (any one), named in the body's spelling for the socket it attaches to.
+	// Item 2: every part rides a bone of the body (any one), named in the body's spelling for the socket it attaches to.
 	for (int32 Index = 0; Index < Out.Desc.Parts.Num(); ++Index)
 	{
 		FMantleVehiclePartDesc& Part = Out.Desc.Parts[Index];
@@ -2992,7 +2992,7 @@ bool FMantleVehicleAssetReader::Read(const TConstArrayView<uint8> Data, FMantleV
 		Part.Bone = Bones[Bone].Name;
 	}
 
-	// #821: every bone the movement blocks and the rider name is the body's (in its spelling); the cook refuses the rest (resolveMovement).
+	// Every bone the movement blocks and the rider name is the body's (in its spelling); the cook refuses the rest (resolveMovement).
 	if (!ResolveMovementBones(Out.Desc, Out.Body.Bones, Why))
 	{
 		return FailVehicle(OutError, Why);

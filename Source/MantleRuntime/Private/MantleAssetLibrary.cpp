@@ -67,8 +67,8 @@ FMantleAssetLibrary::FMantleAssetLibrary()
 		Add(TEXT("ast_mat_carbon"), EMantleAssetKind::Material,
 			TEXT("/Game/Mantle/Materials/MI_MantleVehicle_Carbon.MI_MantleVehicle_Carbon"));
 
-	// No sounds (#263): Mantle ships no preset audio, ever. Creators upload their own with their
-	// place (#324), and LoadSound answers those uploaded ids from the live place asset set.
+	// No sounds: Mantle ships no preset audio, ever. Creators upload their own with their
+	// place, and LoadSound answers those uploaded ids from the live place asset set.
 }
 
 FMantleAssetLibrary& FMantleAssetLibrary::Get()
@@ -118,7 +118,7 @@ UObject* FMantleAssetLibrary::LoadChecked(const FString& AssetId, EMantleAssetKi
 		return nullptr;
 	}
 
-	// The synchronous game-thread load a place build pays per library asset (#126). The static scope
+	// The synchronous game-thread load a place build pays per library asset. The static scope
 	// aggregates in Insights; the detail scope names the asset.
 	UObject* Loaded = nullptr;
 	{
@@ -140,7 +140,7 @@ UObject* FMantleAssetLibrary::LoadChecked(const FString& AssetId, EMantleAssetKi
 
 UStaticMesh* FMantleAssetLibrary::LoadMesh(const FString& AssetId, FString& OutError) const
 {
-	// Uploaded ids (F8, #342) were resolved, downloaded and built before the place was: the live
+	// Uploaded ids (F8) were resolved, downloaded and built before the place was: the live
 	// place asset set answers them, never the built-in table.
 	if (FMantlePlaceAssets::IsUploadedId(AssetId))
 	{
@@ -205,9 +205,9 @@ UTexture* FMantleAssetLibrary::LoadTexture(const FString& AssetId, const EMantle
 
 USoundBase* FMantleAssetLibrary::LoadSound(const FString& AssetId, FString& OutError) const
 {
-	// A creator's uploaded sound (#324), decoded by the live place asset set: a new one-shot wave
+	// A creator's uploaded sound, decoded by the live place asset set: a new one-shot wave
 	// over its samples on each call, since a procedural wave's read position is its player's own.
-	// An id this table knows is loaded from it, as before #324, whatever its shape.
+	// An id this table knows is loaded from it, as before uploaded sounds, whatever its shape.
 	if (FMantlePlaceAssets::IsUploadedSoundId(AssetId))
 	{
 		const TSharedPtr<const FMantleSoundData> Sound = FMantlePlaceAssets::FindLiveSound(AssetId, OutError);

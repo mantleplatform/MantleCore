@@ -74,7 +74,7 @@ bool FMantleWeaponAsset::Read(const TConstArrayView<uint8> Bytes, FMantleWeaponA
 			}
 		}
 	}
-	// #905: the mesh a launcher's round or an arrow flies as is fetched and dressed as an attachment's mesh is.
+	// The mesh a launcher's round or an arrow flies as is fetched and dressed as an attachment's mesh is.
 	if (Desc.Projectile.bSet && Desc.Projectile.Value.Mesh.bSet)
 	{
 		const FMantleWeaponDocProjectile& Projectile = Desc.Projectile.Value;

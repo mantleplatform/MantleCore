@@ -23,7 +23,7 @@ enum class EMantlePlaceAlphaMode : uint8
 	Blend,
 
 	/**
-	 * "additive" (#628): Unreal Additive, unlit. Emissive-driven: baseColor, metallic, roughness, orm and normal have
+	 * "additive": Unreal Additive, unlit. Emissive-driven: baseColor, metallic, roughness, orm and normal have
 	 * no part in it. It builds on M_MantlePlace_Extended's Additive permutations (EMantlePlaceExtendedVariant::Additive);
 	 * among the six alpha-mode permutations it stands in as Blend (the fallback when the Additive ones are missing).
 	 */
@@ -32,8 +32,8 @@ enum class EMantlePlaceAlphaMode : uint8
 
 /**
  * The four texture slots of a material document, in the schema's order, then a layer blend's three
- * (#533: layerBlend.textures, sampled as the base slot each mirrors), then water's second normal map
- * (#628: water.normal2.texture, read as a normal map).
+ * (layerBlend.textures, sampled as the base slot each mirrors), then water's second normal map
+ * (water.normal2.texture, read as a normal map).
  */
 enum class EMantlePlaceTextureSlot : uint8
 {
@@ -50,10 +50,10 @@ enum class EMantlePlaceTextureSlot : uint8
 /** The document's own texture slots (textures, uvTransforms, uvPanning): BaseColor to Emissive. */
 constexpr int32 MantlePlaceTextureSlotCount = 4;
 
-/** Every texture a material binds: the four slots, a layer blend's three (#533) and water's second normal (#628). */
+/** Every texture a material binds: the four slots, a layer blend's three and water's second normal. */
 constexpr int32 MantlePlaceMaterialTextureCount = 8;
 
-/** #533: wind.weight, how much each vertex sways. */
+/** wind.weight, how much each vertex sways. */
 enum class EMantlePlaceWindWeight : uint8
 {
 	/** "vertexColorR": the vertex color's red. */
@@ -66,7 +66,7 @@ enum class EMantlePlaceWindWeight : uint8
 	Uniform,
 };
 
-/** #533: the document's wind object (SimpleGrassWind on World Position Offset). */
+/** The document's wind object (SimpleGrassWind on World Position Offset). */
 struct FMantlePlaceWind
 {
 	/** 0..4 each. */
@@ -75,7 +75,7 @@ struct FMantlePlaceWind
 	EMantlePlaceWindWeight Weight = EMantlePlaceWindWeight::Uniform;
 };
 
-/** #533: the document's worldAligned object (WorldAlignedTexture and WorldAlignedNormal). */
+/** The document's worldAligned object (WorldAlignedTexture and WorldAlignedNormal). */
 struct FMantlePlaceWorldAligned
 {
 	/** Centimeters one repeat covers, 1..100000. */
@@ -85,7 +85,7 @@ struct FMantlePlaceWorldAligned
 	float Sharpness = 1.0f;
 };
 
-/** #533: the vertex-color channel a layer blend paints with. */
+/** The vertex-color channel a layer blend paints with. */
 enum class EMantlePlaceLayerChannel : uint8
 {
 	R,
@@ -94,7 +94,7 @@ enum class EMantlePlaceLayerChannel : uint8
 	A,
 };
 
-/** #533: the document's layerBlend object; its textures are the desc's LayerBaseColor..LayerOrm slots. */
+/** The document's layerBlend object; its textures are the desc's LayerBaseColor..LayerOrm slots. */
 struct FMantlePlaceLayerBlend
 {
 	EMantlePlaceLayerChannel Channel = EMantlePlaceLayerChannel::R;
@@ -104,7 +104,7 @@ struct FMantlePlaceLayerBlend
 };
 
 /**
- * #628: the document's foliage object, Unreal's Two Sided Foliage shading. Subsurface Color is
+ * The document's foliage object, Unreal's Two Sided Foliage shading. Subsurface Color is
  * base color x Tint x lerp(1, vertex color red, VertexColorWeight) x Strength.
  */
 struct FMantlePlaceFoliage
@@ -119,7 +119,7 @@ struct FMantlePlaceFoliage
 	float VertexColorWeight = 0.0f;
 };
 
-/** #628: where a water normal map is laid out (water.normal's and water.normal2's space). */
+/** Where a water normal map is laid out (water.normal's and water.normal2's space). */
 enum class EMantlePlaceWaterSpace : uint8
 {
 	/** "uv": the mesh's first UV set, Tiling repeats across it. */
@@ -129,7 +129,7 @@ enum class EMantlePlaceWaterSpace : uint8
 	World,
 };
 
-/** #628: one water normal layer: how its map is laid out and how it moves. Defaults are the schema's. */
+/** One water normal layer: how its map is laid out and how it moves. Defaults are the schema's. */
 struct FMantlePlaceWaterNormal
 {
 	EMantlePlaceWaterSpace Space = EMantlePlaceWaterSpace::Uv;
@@ -150,7 +150,7 @@ struct FMantlePlaceWaterNormal
 };
 
 /**
- * #628: the document's water object, Unreal's Single Layer Water shading on M_MantlePlace_Water. The coefficients
+ * The document's water object, Unreal's Single Layer Water shading on M_MantlePlace_Water. The coefficients
  * are per centimeter; the first normal map is the document's textures.normal, the second (when there is one) is
  * Textures[WaterNormal2].
  */
@@ -174,7 +174,7 @@ struct FMantlePlaceWater
 };
 
 /**
- * #533: which family of M_MantlePlace_Extended permutations a document builds on. Plain is #471's six;
+ * Which family of M_MantlePlace_Extended permutations a document builds on. Plain is the six Extended permutations;
  * each other has its own static switch and instances, none translucent.
  */
 enum class EMantlePlaceExtendedVariant : uint8
@@ -190,23 +190,23 @@ enum class EMantlePlaceExtendedVariant : uint8
 	/** LayerBlend: Opaque, Opaque two-sided. */
 	LayerBlend,
 
-	/** #628 Foliage: Masked two-sided only, Two Sided Foliage shading, no wind. */
+	/** Foliage: Masked two-sided only, Two Sided Foliage shading, no wind. */
 	Foliage,
 
-	/** #628 FoliageWind: the same with wind (the one combination of two features). */
+	/** FoliageWind: the same with wind (the one combination of two features). */
 	FoliageWind,
 
-	/** #628 Water: M_MantlePlace_Water (not an Extended permutation), one normal map; opaque, either sidedness. */
+	/** Water: M_MantlePlace_Water (not an Extended permutation), one normal map; opaque, either sidedness. */
 	Water,
 
-	/** #628 WaterNormal2: M_MantlePlace_Water with its SecondNormal switch on. */
+	/** WaterNormal2: M_MantlePlace_Water with its SecondNormal switch on. */
 	WaterNormal2,
 
-	/** #628 Additive: alphaMode additive; Additive blending and the Unlit shading model, one- or two-sided (no static switch). */
+	/** Additive: alphaMode additive; Additive blending and the Unlit shading model, one- or two-sided (no static switch). */
 	Additive,
 };
 
-/** A material document's shading (schema/material.schema.json, #487): which cooked master it builds on. */
+/** A material document's shading (schema/material.schema.json): which cooked master it builds on. */
 enum class EMantlePlaceShading : uint8
 {
 	/** "default": M_MantlePlace, one of its six alpha-mode/two-sided permutations. */
@@ -217,7 +217,7 @@ enum class EMantlePlaceShading : uint8
 };
 
 /**
- * The car-paint finish (the document's carPaint object, #487); only read with EMantlePlaceShading::CarPaint.
+ * The car-paint finish (the document's carPaint object); only read with EMantlePlaceShading::CarPaint.
  * Defaults are the schema's. AMantleVehicle fills one from its definition for the built-in cars.
  */
 struct FMantlePlaceCarPaint
@@ -242,7 +242,7 @@ struct FMantlePlaceCarPaint
 	}
 };
 
-/** A material document's vertexColor (schema/material.schema.json, #471). */
+/** A material document's vertexColor (schema/material.schema.json). */
 enum class EMantlePlaceVertexColor : uint8
 {
 	/** "none": the mesh's vertex color is not used. */
@@ -253,7 +253,7 @@ enum class EMantlePlaceVertexColor : uint8
 };
 
 /**
- * One texture slot's own UV transform (the document's uvTransforms entry, #471; glTF
+ * One texture slot's own UV transform (the document's uvTransforms entry; glTF
  * KHR_texture_transform): uv' = Offset + R(Rotation) x (Scale x uv) in glTF's texture space (V down),
  * so a positive rotation turns the UVs counter-clockwise as the texture is seen. Defaults are the
  * schema's (the identity).
@@ -319,7 +319,7 @@ struct FMantlePlaceMaterialDesc
 	/** Only meaningful for CarPaint (the schema refuses the object otherwise). */
 	FMantlePlaceCarPaint CarPaint;
 
-	// #471's fidelity keys. Any of them away from its default builds the material on M_MantlePlace_Extended
+	// The fidelity keys. Any of them away from its default builds the material on M_MantlePlace_Extended
 	// (UsesExtended); the parser refuses them with CarPaint, whose master has none of them.
 
 	/** Normal map strength, 0..10 (glTF normalTexture.scale). */
@@ -337,7 +337,7 @@ struct FMantlePlaceMaterialDesc
 	bool bHasUVTransform[MantlePlaceTextureSlotCount] = {};
 	FMantlePlaceUVTransform UVTransforms[MantlePlaceTextureSlotCount];
 
-	// #533's keys, on M_MantlePlace_Extended too (UsesExtended); the parser refuses them with CarPaint.
+	// The wind, worldAligned and layerBlend keys, on M_MantlePlace_Extended too (UsesExtended); the parser refuses them with CarPaint.
 
 	/** Per slot (EMantlePlaceTextureSlot order): UV units a second, each component -10..10; zero when not listed. */
 	FVector2f UVPanning[MantlePlaceTextureSlotCount] = { FVector2f(0.0f, 0.0f), FVector2f(0.0f, 0.0f), FVector2f(0.0f, 0.0f), FVector2f(0.0f, 0.0f) };
@@ -350,11 +350,11 @@ struct FMantlePlaceMaterialDesc
 	bool bHasLayerBlend = false;
 	FMantlePlaceLayerBlend LayerBlend;
 
-	/** #628: foliage shading; the only key that goes with wind (the parser refuses worldAligned and layerBlend with it). */
+	/** Foliage shading; the only key that goes with wind (the parser refuses worldAligned and layerBlend with it). */
 	bool bHasFoliage = false;
 	FMantlePlaceFoliage Foliage;
 
-	/** #628: water shading, on its own master; exclusive with foliage, wind, worldAligned and layerBlend, and opaque only. */
+	/** Water shading, on its own master; exclusive with foliage, wind, worldAligned and layerBlend, and opaque only. */
 	bool bHasWater = false;
 	FMantlePlaceWater Water;
 
@@ -363,7 +363,7 @@ struct FMantlePlaceMaterialDesc
 	/** True when any slot pans (a non-zero uvPanning entry). */
 	MANTLERUNTIME_API bool HasPanning() const;
 
-	/** #533: the permutation family: Wind, WorldAligned or LayerBlend (or #628's Foliage, FoliageWind, Water, WaterNormal2) when the document has that key, Additive for alphaMode additive, else Plain. */
+	/** The permutation family: Wind, WorldAligned or LayerBlend (or the Foliage, FoliageWind, Water, WaterNormal2) when the document has that key, Additive for alphaMode additive, else Plain. */
 	MANTLERUNTIME_API EMantlePlaceExtendedVariant ExtendedVariant() const;
 
 	/** The transform a slot samples with: its own when the document gives one, else UVScale and UVOffset. */
@@ -371,8 +371,8 @@ struct FMantlePlaceMaterialDesc
 
 	/**
 	 * True when the material needs M_MantlePlace_Extended: a slot with its own transform, a normal scale or
-	 * occlusion strength other than 1, occlusion on UV 1, or a vertex color mode (#471); a panning slot, wind,
-	 * world-aligned mapping or a layer blend (#533). A key present at its default renders the same on
+	 * occlusion strength other than 1, occlusion on UV 1, or a vertex color mode; a panning slot, wind,
+	 * world-aligned mapping or a layer blend. A key present at its default renders the same on
 	 * M_MantlePlace, so it stays there. Never for CarPaint.
 	 */
 	MANTLERUNTIME_API bool UsesExtended() const;
@@ -380,8 +380,8 @@ struct FMantlePlaceMaterialDesc
 
 /**
  * The parameter names M_MantlePlace exposes. The C++ side is written against these; the master
- * material and its six permutation instances are content (tools/materials/build_m_mantleplace.py
- * builds them headless, look-dev is a GUI handoff). Kept as TCHAR literals, not FName globals, so
+ * material and its six permutation instances are content (look-dev is a GUI handoff).
+ * Kept as TCHAR literals, not FName globals, so
  * nothing constructs an FName during static initialization.
  */
 namespace MantlePlaceMaterialParameters
@@ -405,7 +405,7 @@ namespace MantlePlaceMaterialParameters
 	constexpr const TCHAR* AlphaCutoff = TEXT("AlphaCutoff");
 
 	/**
-	 * M_MantlePlace_CarPaint only (the committed M_MantlePlace_CarPaint asset; its creation script was removed in e1e7b57e0, #487). It also has every
+	 * M_MantlePlace_CarPaint only (the committed M_MantlePlace_CarPaint asset; its creation script was removed in e1e7b57e0). It also has every
 	 * parameter above except AlphaCutoff. PaintTint is UMantleVehicleDefinition::PaintParameter's
 	 * default, so AMantleVehicle recolors a car-paint body the same way as an authored one.
 	 */
@@ -424,13 +424,13 @@ namespace MantlePlaceMaterialParameters
 	constexpr const TCHAR* PatternTile = TEXT("PatternTile");
 	constexpr const TCHAR* PatternStrength = TEXT("PatternStrength");
 
-	/** The livery layer (#488): sRGB texture with alpha as coverage, its opacity, and 0 = UV0 / 1 = UV1. */
+	/** The livery layer: sRGB texture with alpha as coverage, its opacity, and 0 = UV0 / 1 = UV1. */
 	constexpr const TCHAR* Livery = TEXT("Livery");
 	constexpr const TCHAR* LiveryOpacity = TEXT("LiveryOpacity");
 	constexpr const TCHAR* LiveryUV1 = TEXT("LiveryUV1");
 
 	/**
-	 * M_MantlePlace_Extended only (tools/materials/Create-MantlePlaceExtendedMaterial.py, #471). It also has
+	 * M_MantlePlace_Extended only. It also has
 	 * every M_MantlePlace parameter except UVScale and UVOffset, which the per-slot rows below replace
 	 * (BuildOnParent derives a slot's rows from them when the document gives it no transform of its own).
 	 * Scalars: normal strength; occlusion strength; 0 or 1, the vertex color's RGB multiplying the base
@@ -452,7 +452,7 @@ namespace MantlePlaceMaterialParameters
 	constexpr const TCHAR* EmissiveUVTransformV = TEXT("EmissiveUVTransformV");
 
 	/**
-	 * M_MantlePlace_Extended, #533 (tools/materials/Extend-MantlePlaceExtendedMaterial.py). Vector parameters,
+	 * M_MantlePlace_Extended. Vector parameters,
 	 * one per texture slot: its uvPanning speed in R, G (UV units a second).
 	 */
 	constexpr const TCHAR* BaseColorUVPanning = TEXT("BaseColorUVPanning");
@@ -461,7 +461,7 @@ namespace MantlePlaceMaterialParameters
 	constexpr const TCHAR* EmissiveUVPanning = TEXT("EmissiveUVPanning");
 
 	/**
-	 * M_MantlePlace_Water only (#628). It also has BaseColorFactor, RoughnessFactor,
+	 * M_MantlePlace_Water only. It also has BaseColorFactor, RoughnessFactor,
 	 * NormalScale and the Normal texture (and NormalUVPanning, which M_MantlePlace_Extended has too). Vectors:
 	 * scattering and absorption coefficients (linear RGB, 1/cm). Scalars: the phase function's g, the scale of the
 	 * scene behind the water. Per normal layer (Normal, Normal2): UVTiling (R, G), WorldSpace (0 mesh UVs, 1 world X and Y),
@@ -490,7 +490,7 @@ namespace MantlePlaceMaterialParameters
 	constexpr const TCHAR* LayerBlendSwitch = TEXT("LayerBlend");
 
 	/**
-	 * Foliage (#628): SubsurfaceTint is a linear RGB vector; SubsurfaceStrength and SubsurfaceVertexColorWeight are
+	 * Foliage: SubsurfaceTint is a linear RGB vector; SubsurfaceStrength and SubsurfaceVertexColorWeight are
 	 * scalars. The foliage permutations are instances with the Two Sided Foliage shading model, so they have no switch.
 	 */
 	constexpr const TCHAR* SubsurfaceTint = TEXT("SubsurfaceTint");
@@ -519,7 +519,7 @@ namespace MantlePlaceMaterialParameters
 }
 
 /**
- * Uploaded place materials at runtime (Fab F8, #342): the material document reader, the choice of
+ * Uploaded place materials at runtime (Fab F8): the material document reader, the choice of
  * M_MantlePlace permutation, the dynamic instance, and the texture fix-ups the material slots need.
  *
  * A shipped client cannot compile shaders, so every uploaded material is a UMaterialInstanceDynamic
@@ -538,18 +538,18 @@ public:
 	/** Largest material document accepted (the worker's MaxMaterialBytes). */
 	static constexpr int32 MaxDocumentBytes = 16 * 1024;
 
-	/** Where the extended master lives (#471): M_MantlePlace plus per-slot UV transforms, normal and occlusion strength, occlusion UV, vertex color. */
+	/** Where the extended master lives: M_MantlePlace plus per-slot UV transforms, normal and occlusion strength, occlusion UV, vertex color. */
 	static constexpr const TCHAR* ExtendedMasterMaterialPath = TEXT("/Game/Mantle/Materials/M_MantlePlace_Extended.M_MantlePlace_Extended");
 
 	/**
 	 * The six M_MantlePlace permutations (0..5), the car-paint one (6), the six M_MantlePlace_Extended ones (7..12),
-	 * and #533's: Wind's four (13..16: Opaque, Opaque two-sided, Masked, Masked two-sided), WorldAligned's two
-	 * (17, 18: Opaque, Opaque two-sided) and LayerBlend's two (19, 20). None of #533's is translucent, and the three
+	 * and the wind, worldAligned and layerBlend ones: Wind's four (13..16: Opaque, Opaque two-sided, Masked, Masked two-sided), WorldAligned's two
+	 * (17, 18: Opaque, Opaque two-sided) and LayerBlend's two (19, 20). None of those is translucent, and the three
 	 * are exclusive, so each switch combination cooked is one a document can pick (not their full matrix).
-	 * #628's two: Foliage (21) and FoliageWind (22), both Masked and two-sided, shaded as Two Sided Foliage.
-	 * #628's water: Water (23) and WaterNormal2 (24), instances of M_MantlePlace_Water (Single Layer Water; opaque, and one
+	 * The foliage pair: Foliage (21) and FoliageWind (22), both Masked and two-sided, shaded as Two Sided Foliage.
+	 * The water pair: Water (23) and WaterNormal2 (24), instances of M_MantlePlace_Water (Single Layer Water; opaque, and one
 	 * instance for either sidedness).
-	 * #628's additive: Additive (25) and Additive two-sided (26), instances of M_MantlePlace_Extended with the Additive blend
+	 * The additive pair: Additive (25) and Additive two-sided (26), instances of M_MantlePlace_Extended with the Additive blend
 	 * mode and the Unlit shading model.
 	 */
 	static constexpr int32 PermutationCount = 27;
@@ -564,7 +564,7 @@ public:
 	static constexpr int32 WaterNormal2PermutationIndex = 24;
 	static constexpr int32 AdditivePermutationBase = 25;
 
-	/** #533: World Position Offset stops past this many centimeters on a component drawing a Wind material. */
+	/** World Position Offset stops past this many centimeters on a component drawing a Wind material. */
 	static constexpr int32 WindDisableDistance = 5000;
 
 	/** The car-paint permutation's asset name: MI_MantlePlace_CarPaint, an instance of M_MantlePlace_CarPaint. */
@@ -583,7 +583,7 @@ public:
 
 	/**
 	 * "baseColor", "normal", "orm", "emissive" (the schema's keys); a layer blend's "layerBaseColor", "layerNormal",
-	 * "layerOrm" (the backend's cook_info keys for them, #533).
+	 * "layerOrm" (the backend's cook_info keys for them).
 	 */
 	static const TCHAR* SlotName(EMantlePlaceTextureSlot Slot);
 
@@ -606,7 +606,7 @@ public:
 	static FSoftObjectPath PermutationPath(EMantlePlaceAlphaMode Mode, bool bTwoSided);
 
 	/**
-	 * The permutation a document builds on: the car-paint one (index 6); else, for a document using #471's or #533's
+	 * The permutation a document builds on: the car-paint one (index 6); else, for a document using the extended master's
 	 * keys (FMantlePlaceMaterialDesc::UsesExtended), M_MantlePlace_Extended's for its variant (13..20 for wind,
 	 * world-aligned mapping or a layer blend), alpha mode and sidedness (7..12 for the plain ones); else
 	 * M_MantlePlace's (0..5).
@@ -618,10 +618,10 @@ public:
 	/** "/Game/Mantle/Materials/MI_MantlePlace_CarPaint.MI_MantlePlace_CarPaint". */
 	static FSoftObjectPath CarPaintPermutationPath();
 
-	/** #628: the additive instances' asset names, "MI_MantlePlace_Extended_Additive" and the two-sided one with "_TwoSided" after it. */
+	/** The additive instances' asset names, "MI_MantlePlace_Extended_Additive" and the two-sided one with "_TwoSided" after it. */
 	static constexpr const TCHAR* AdditivePermutationName = TEXT("MI_MantlePlace_Extended_Additive");
 
-	/** #628: the water instances' asset names, instances of M_MantlePlace_Water. */
+	/** The water instances' asset names, instances of M_MantlePlace_Water. */
 	static constexpr const TCHAR* WaterPermutationName = TEXT("MI_MantlePlace_Water");
 	static constexpr const TCHAR* WaterNormal2PermutationName = TEXT("MI_MantlePlace_Water_Normal2");
 
@@ -631,31 +631,31 @@ public:
 	/** "/Game/Mantle/Materials/<name>.<name>". */
 	static FSoftObjectPath ExtendedPermutationPath(EMantlePlaceAlphaMode Mode, bool bTwoSided);
 
-	/** #533: "Wind", "WorldAligned", "LayerBlend" (#628: "Foliage", "FoliageWind", "Water", "WaterNormal2", "Additive"); "" for Plain. The static switch and the instance names use it. */
+	/** "Wind", "WorldAligned", "LayerBlend" ("Foliage", "FoliageWind", "Water", "WaterNormal2", "Additive"); "" for Plain. The static switch and the instance names use it. */
 	static const TCHAR* ExtendedVariantName(EMantlePlaceExtendedVariant Variant);
 
 	/**
-	 * #533: the permutation index of Variant for Mode and sidedness (Plain: 7..12), or INDEX_NONE when that variant
+	 * The permutation index of Variant for Mode and sidedness (Plain: 7..12), or INDEX_NONE when that variant
 	 * was not cooked for Mode (wind on blend or additive; world-aligned or a layer blend on anything but opaque; water on
-	 * anything but opaque, #628; Additive on anything but additive).
+	 * anything but opaque; Additive on anything but additive).
 	 */
 	static int32 ExtendedPermutationIndex(EMantlePlaceExtendedVariant Variant, EMantlePlaceAlphaMode Mode, bool bTwoSided);
 
-	/** #533: "MI_MantlePlace_Extended_Wind_Masked_TwoSided" and so on; Plain's are ExtendedPermutationName's. */
+	/** "MI_MantlePlace_Extended_Wind_Masked_TwoSided" and so on; Plain's are ExtendedPermutationName's. */
 	static FString ExtendedPermutationName(EMantlePlaceExtendedVariant Variant, EMantlePlaceAlphaMode Mode, bool bTwoSided);
 
 	/** "/Game/Mantle/Materials/<name>.<name>". */
 	static FSoftObjectPath ExtendedPermutationPath(EMantlePlaceExtendedVariant Variant, EMantlePlaceAlphaMode Mode, bool bTwoSided);
 
 	/**
-	 * #533: whether Material is built on one of the Wind permutations (PermutationIndexOf), so its component should
+	 * Whether Material is built on one of the Wind permutations (PermutationIndexOf), so its component should
 	 * stop World Position Offset past WindDisableDistance. Game thread.
 	 */
 	static bool IsWindMaterial(const UMaterialInterface* Material);
 
 	/**
-	 * #462: which permutation Material is built on (0..5, CarPaintPermutationIndex, or one of #471's
-	 * M_MantlePlace_Extended permutations, ExtendedPermutationBase..+5, or #533's, 13..20), walking its instance
+	 * Which permutation Material is built on (0..5, CarPaintPermutationIndex, or one of the
+	 * M_MantlePlace_Extended permutations, ExtendedPermutationBase..+5, or the wind, worldAligned and layerBlend ones, 13..20), walking its instance
 	 * parents: every uploaded material's dynamic instance, and any instance made from one.
 	 * INDEX_NONE for anything else (a built-in library material, the engine's default, the fallback
 	 * a missing permutation leaves). Game thread.
@@ -663,12 +663,12 @@ public:
 	static int32 PermutationIndexOf(const UMaterialInterface* Material);
 
 	/**
-	 * The M_MantlePlace_Extended permutation (#471) of Mode and sidedness, or null (no fallback, no
+	 * The M_MantlePlace_Extended permutation of Mode and sidedness, or null (no fallback, no
 	 * warning) when the content isn't there, like FindCarPaintPermutation. Game thread.
 	 */
 	static UMaterialInterface* FindExtendedPermutation(EMantlePlaceAlphaMode Mode, bool bTwoSided);
 
-	/** #533: as above for Variant's permutation; null too when Variant was not cooked for Mode. Game thread. */
+	/** As above for Variant's permutation; null too when Variant was not cooked for Mode. Game thread. */
 	static UMaterialInterface* FindExtendedPermutation(EMantlePlaceExtendedVariant Variant, EMantlePlaceAlphaMode Mode, bool bTwoSided);
 
 	/**
@@ -682,28 +682,28 @@ public:
 	 * As above for a document. A car-paint document whose permutation is missing falls back to
 	 * MI_MantlePlace_Opaque (same parameter names, so it keeps its color and textures without the
 	 * clear coat), with bOutFellBack set and one warning per process
-	 * ("MANTLE_PLACE_MATERIAL M_MantlePlace_CarPaint is missing"). A document using #471's keys whose
+	 * ("MANTLE_PLACE_MATERIAL M_MantlePlace_CarPaint is missing"). A document using the fidelity keys whose
 	 * M_MantlePlace_Extended permutation is missing falls back to the M_MantlePlace permutation of the same
 	 * alpha mode and sidedness (it keeps its factors, textures and uvScale/uvOffset, without the extras),
 	 * with bOutFellBack set and one warning per process ("MANTLE_PLACE_MATERIAL M_MantlePlace_Extended is
-	 * missing"). A #533 variant whose permutation is missing falls back to the plain M_MantlePlace_Extended
-	 * permutation of the same alpha mode and sidedness (panning and #471's keys kept, the variant's effect
+	 * missing"). A wind, worldAligned or layerBlend variant whose permutation is missing falls back to the plain M_MantlePlace_Extended
+	 * permutation of the same alpha mode and sidedness (panning and the fidelity keys kept, the variant's effect
 	 * dropped), then as above, with bOutFellBack set and one warning per process
 	 * ("MANTLE_PLACE_MATERIAL M_MantlePlace_Extended's <variant> permutations are missing"). Game thread.
 	 */
 	static UMaterialInterface* LoadPermutation(const FMantlePlaceMaterialDesc& Desc, bool* bOutFellBack = nullptr);
 
 	/**
-	 * Sets #471's parameters (strengths, occlusion UV, vertex color, every slot's UV rows) and #533's (every
+	 * Sets the fidelity parameters (strengths, occlusion UV, vertex color, every slot's UV rows) and the extended ones (every
 	 * slot's panning; the wind, world-aligned or layer-blend values the document has) on an instance of
-	 * M_MantlePlace_Extended. The static switches are the parent's (the permutation). A water document (#628) also gets
+	 * M_MantlePlace_Extended. The static switches are the parent's (the permutation). A water document also gets
 	 * ApplyWater's values, so the instance is right on M_MantlePlace_Water and keeps its first normal's tiling and
 	 * panning on the Extended fallback. Game thread.
 	 */
 	static void ApplyExtended(UMaterialInstanceDynamic* Instance, const FMantlePlaceMaterialDesc& Desc);
 
 	/**
-	 * #628: sets M_MantlePlace_Water's values from the document's water object: the coefficients, phase g, the
+	 * Sets M_MantlePlace_Water's values from the document's water object: the coefficients, phase g, the
 	 * scale behind the water, and each normal layer's space, tiling (or world scale) and panning. Game thread.
 	 */
 	static void ApplyWater(UMaterialInstanceDynamic* Instance, const FMantlePlaceWater& Water);
@@ -720,7 +720,7 @@ public:
 	/**
 	 * The dynamic instance for a material document: parented to its permutation (or the fallback),
 	 * every factor set (and the car-paint ones for a car-paint document, the extended ones for a document
-	 * using #471's or #533's keys), and each slot's texture where Textures has one, in EMantlePlaceTextureSlot
+	 * using the extended master's keys), and each slot's texture where Textures has one, in EMantlePlaceTextureSlot
 	 * order, a layer blend's last (a null or missing entry keeps the master material's default for that slot).
 	 * Game thread; also works under -NullRHI.
 	 */
@@ -744,7 +744,7 @@ public:
 	 *   Unreal's convention. Other formats are refused.
 	 * - ORM: a BC4 texture (the worker's choice for a gray data image) samples as (R, 0, 0), which
 	 *   would zero roughness and metallic, so it is expanded to gray BGRA8 (R = G = B).
-	 * - A layer blend's slot (#533) is treated as the base slot it mirrors.
+	 * - A layer blend's slot is treated as the base slot it mirrors.
 	 * False, with the reason, when the texture cannot serve the slot.
 	 */
 	static bool PrepareForSlot(EMantlePlaceTextureSlot Slot, FMantleDecodedTexture& Texture, FString* OutError = nullptr);

@@ -6,7 +6,7 @@
 #include "MantleWeaponAsset.generated.h"
 
 /**
- * An uploaded Weapon asset (#789 stage 4), read: the MWP1 the cook stored. MWP1 is the weapon document
+ * An uploaded Weapon asset, read: the MWP1 the cook stored. MWP1 is the weapon document
  * (schema/weapon.schema.json) as compact UTF-8 JSON, the backend's canonical copy (cook.WeaponFormat); there
  * is no header. The document names its skeletal mesh, attachment meshes, shot sounds and slot materials by
  * uploaded asset id, which is what the lists below hold. Reading is a pure function, safe off the game thread.
@@ -22,11 +22,11 @@ struct MANTLERUNTIME_API FMantleWeaponAsset
 	/** The weapon's display name. */
 	FString Name;
 
-	/** The weapon's skeletal mesh id; every weapon has one (#897: a fist weapon's too). A shield is its own weapon, so its mesh
-	 *  is this one (#840 decision 4). */
+	/** The weapon's skeletal mesh id; every weapon has one (a fist weapon's too). A shield is its own weapon, so its mesh
+	 *  is this one. */
 	FString Mesh;
 
-	/** Attachment mesh ids (a mesh or a skeletal mesh), each once; #905: the projectile's mesh (projectile.mesh) is one too. */
+	/** Attachment mesh ids (a mesh or a skeletal mesh), each once; the projectile's mesh (projectile.mesh) is one too. */
 	TArray<FString> Attachments;
 
 	/** Shot sound ids, each once. */
@@ -39,8 +39,8 @@ struct MANTLERUNTIME_API FMantleWeaponAsset
 	TArray<FString> Materials;
 
 	/**
-	 * #898: an attachment mesh id's slot material ids in slot order (attachments[].materials), for each attachment that names
-	 * them (#905: and projectile.materials for projectile.mesh). The materials go on the mesh itself, as the weapon's own do, so a mesh
+	 * An attachment mesh id's slot material ids in slot order (attachments[].materials), for each attachment that names
+	 * them (and projectile.materials for projectile.mesh). The materials go on the mesh itself, as the weapon's own do, so a mesh
 	 * two attachments share takes the first one's.
 	 */
 	TMap<FString, TArray<FString>> AttachmentMaterials;

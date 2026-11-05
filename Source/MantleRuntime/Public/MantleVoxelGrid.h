@@ -6,7 +6,7 @@
 #include "MantleVoxelTypes.h"
 
 /**
- * #168: a VoxelWorld's blocks. Sections in X-fastest order, the block types, and a per-column height of the highest
+ * A VoxelWorld's blocks. Sections in X-fastest order, the block types, and a per-column height of the highest
  * block that stops light (the sky light's start, kept up to date by every edit). Game thread; workers read section
  * copies (FMantleVoxelSection shares its data), never the grid.
  */
@@ -24,7 +24,7 @@ public:
 	};
 
 	/**
-	 * Size in blocks: each axis a multiple of 16, at most 1024 x 1024 x 256. Every block starts as air. bSmooth (#168 section 10):
+	 * Size in blocks: each axis a multiple of 16, at most 1024 x 1024 x 256. Every block starts as air. bSmooth:
 	 * every voxel also has a density, and the block types are its materials.
 	 */
 	bool Init(const FIntVector& SizeInBlocks, TArray<FMantleVoxelBlockType> Types, FString* OutError = nullptr, bool bSmooth = false);

@@ -58,7 +58,7 @@ namespace MantlePlaceAssetsPrivate
 		return Cooked;
 	}
 
-	/** Whether Body blocks anything: cooked triangles, or simple shapes (#470) that need no cooking or were cooked. */
+	/** Whether Body blocks anything: cooked triangles, or simple shapes that need no cooking or were cooked. */
 	bool HasCookedCollision(const UBodySetup* Body)
 	{
 		return Body && (Body->TriMeshGeometries.Num() > 0 || Body->AggGeom.BoxElems.Num() > 0 || Body->AggGeom.SphereElems.Num() > 0
@@ -104,7 +104,7 @@ namespace MantlePlaceAssetsPrivate
 		}
 	}
 
-	/** A cook_info textures key: a base slot's name, or a layer blend's (layerBaseColor, layerNormal, layerOrm; #533). */
+	/** A cook_info textures key: a base slot's name, or a layer blend's (layerBaseColor, layerNormal, layerOrm). */
 	bool SlotFromName(const FString& Name, EMantlePlaceTextureSlot& Out)
 	{
 		for (int32 Slot = 0; Slot < MantlePlaceMaterialTextureCount; ++Slot)
@@ -123,7 +123,7 @@ namespace MantlePlaceAssetsPrivate
 		return static_cast<double>(Bytes) / (1024.0 * 1024.0);
 	}
 
-	/** What a decoded skinned mesh holds in memory until the game thread builds it (#469). */
+	/** What a decoded skinned mesh holds in memory until the game thread builds it. */
 	int64 SkinnedMeshBytes(const FMantleSkinnedMesh& Mesh)
 	{
 		SIZE_T Bytes = Mesh.Bones.GetAllocatedSize() + Mesh.ReferencePose.GetAllocatedSize();
@@ -137,7 +137,7 @@ namespace MantlePlaceAssetsPrivate
 	}
 
 	/**
-	 * #462: every uploaded mesh and material id the place's own set covers (Prepare): what its entities use, and
+	 * Every uploaded mesh and material id the place's own set covers (Prepare): what its entities use, and
 	 * what its vehicles' documents name (below), so a manifest-only set never takes one of them again.
 	 */
 	void AddLiveWeaponDependencies(const FString& WeaponId, TSet<FString>& Used)
@@ -175,7 +175,7 @@ namespace MantlePlaceAssetsPrivate
 		TArray<FString> WeaponIds;
 		for (const FMantleEntity& Entity : Place.Entities)
 		{
-			// A WeaponSpawn's weapon (#789): Prepare takes every weapon, spawned or listed, with what its document names.
+			// A WeaponSpawn's weapon: Prepare takes every weapon, spawned or listed, with what its document names.
 			if (const FMantleWeaponSpawnProps* WeaponSpawn = Entity.Props.TryGet<FMantleWeaponSpawnProps>())
 			{
 				if (FMantlePlaceAssets::IsUploadedId(WeaponSpawn->Weapon))
@@ -185,7 +185,7 @@ namespace MantlePlaceAssetsPrivate
 				}
 				continue;
 			}
-			// A VehicleSpawn's vehicle (#435): Prepare takes every vehicle, placed or listed.
+			// A VehicleSpawn's vehicle: Prepare takes every vehicle, placed or listed.
 			if (const FMantleVehicleSpawnProps* Spawn = Entity.Props.TryGet<FMantleVehicleSpawnProps>())
 			{
 				if (FMantlePlaceAssets::IsUploadedId(Spawn->Vehicle))
@@ -195,7 +195,7 @@ namespace MantlePlaceAssetsPrivate
 				}
 				continue;
 			}
-			// A Scatter's meshes and materials (#530): Prepare takes them where something draws, and a
+			// A Scatter's meshes and materials: Prepare takes them where something draws, and a
 			// dedicated server, which draws no scatter, must not take them as manifest-only either.
 			if (const FMantleScatterParams* Scatter = Entity.Props.TryGet<FMantleScatterParams>())
 			{
@@ -215,7 +215,7 @@ namespace MantlePlaceAssetsPrivate
 				}
 				continue;
 			}
-			// A Terrain's grass (#628): the meshes and materials Prepare takes where something draws.
+			// A Terrain's grass: the meshes and materials Prepare takes where something draws.
 			if (const FMantleTerrainProps* Terrain = Entity.Props.TryGet<FMantleTerrainProps>())
 			{
 				for (const FMantleTerrainGrass& Grass : Terrain->Grass)
@@ -234,7 +234,7 @@ namespace MantlePlaceAssetsPrivate
 				}
 				continue;
 			}
-			// A custom WaterBody's surface mesh (#997): Prepare takes it on every machine, as a StaticMesh's.
+			// A custom WaterBody's surface mesh: Prepare takes it on every machine, as a StaticMesh's.
 			if (const FMantleWaterBodyProps* Water = Entity.Props.TryGet<FMantleWaterBodyProps>())
 			{
 				if (FMantlePlaceAssets::IsUploadedId(Water->MeshId))
@@ -257,7 +257,7 @@ namespace MantlePlaceAssetsPrivate
 					}
 				}
 			}
-			// A SkeletalMesh's materials (#469) are prepared with it, and so is the clip it plays (so the
+			// A SkeletalMesh's materials are prepared with it, and so is the clip it plays (so the
 			// manifest-only set, which script API 1.18's Entity:PlayClip reads, never takes it again).
 			else if (const FMantleSkeletalMeshProps* Skeletal = Entity.Props.TryGet<FMantleSkeletalMeshProps>())
 			{
@@ -275,7 +275,7 @@ namespace MantlePlaceAssetsPrivate
 			}
 		}
 
-		// A vehicle's part meshes and materials (#435 item 2), which only its document names: the place's set takes them
+		// A vehicle's part meshes and materials, which only its document names: the place's set takes them
 		// with the vehicle where something draws, and a dedicated server, which draws none of them, must not take them as
 		// manifest-only either. Known once a live set has built the vehicle, which the place's set has by the time a
 		// manifest-only set starts (after the place is built). A vehicle that failed names nothing.
@@ -291,7 +291,7 @@ namespace MantlePlaceAssetsPrivate
 				WeaponIds.AddUnique(Asset.Id);
 			}
 		}
-		// Stored vehicles and weapons (#614 stage 5), whether or not a spawn uses them: Prepare takes a vehicle for
+		// Stored vehicles and weapons, whether or not a spawn uses them: Prepare takes a vehicle for
 		// Vehicles:Spawn and a weapon for Backpack:Grant. Add their ids before expanding document-named dependencies below.
 		for (const FString& StoredId : FMantleStorage::StoredVehicleAssetIds(Place))
 		{
@@ -540,8 +540,8 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 {
 	// Entities, and the manifest's sounds: the manifest also lists things nothing in the world
 	// builds (the official places' uploaded thumbnails), which must not turn a place with none into
-	// an asynchronous load, but a sound it lists is one scripts may play (Sounds:Play, #459) even
-	// when no emitter uses it. A dedicated server never hears a sound (#324), so an uploaded one
+	// an asynchronous load, but a sound it lists is one scripts may play (Sounds:Play) even
+	// when no emitter uses it. A dedicated server never hears a sound, so an uploaded one
 	// needs no preparing there.
 	const bool bSoundsCount = !IsRunningDedicatedServer();
 	if (bSoundsCount)
@@ -553,7 +553,7 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 				return true;
 			}
 		}
-		// #556 item 5: an image a UI document shows, which Start takes where anything draws.
+		// Item 5: an image a UI document shows, which Start takes where anything draws.
 		for (const FMantleUIDocument& Document : Place.UIDocuments)
 		{
 			if (Document.IsImage() && IsUploadedId(Document.Asset))
@@ -562,7 +562,7 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 			}
 		}
 	}
-	// A vehicle the manifest lists is prepared even when nothing parks it: a script may spawn it (#435).
+	// A vehicle the manifest lists is prepared even when nothing parks it: a script may spawn it.
 	for (const FMantleAssetRef& Asset : Place.Assets)
 	{
 		if (Asset.Kind == EMantleAssetKind::Vehicle && IsUploadedId(Asset.Id))
@@ -570,7 +570,7 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 			return true;
 		}
 	}
-	// A weapon the manifest lists (#789), likewise: a pickup somewhere may hand it out.
+	// A weapon the manifest lists, likewise: a pickup somewhere may hand it out.
 	for (const FMantleAssetRef& Asset : Place.Assets)
 	{
 		if (Asset.Kind == EMantleAssetKind::Weapon && IsUploadedId(Asset.Id))
@@ -578,12 +578,12 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 			return true;
 		}
 	}
-	// So is a stored vehicle (#614 stage 5): a script spawns it by item id.
+	// So is a stored vehicle: a script spawns it by item id.
 	if (FMantleStorage::StoredVehicleAssetIds(Place).Num() > 0)
 	{
 		return true;
 	}
-	// So is a stored weapon (#614 stage 5): Backpack:Grant needs its definition built before a script asks for it.
+	// So is a stored weapon: Backpack:Grant needs its definition built before a script asks for it.
 	if (FMantleStorage::StoredWeaponAssetIds(Place).Num() > 0)
 	{
 		return true;
@@ -619,7 +619,7 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 			}
 			continue;
 		}
-		// A SkeletalMesh's mesh, materials and clip (#469): drawn only, so a dedicated server needs none.
+		// A SkeletalMesh's mesh, materials and clip: drawn only, so a dedicated server needs none.
 		if (const FMantleSkeletalMeshProps* Skeletal = Entity.Props.TryGet<FMantleSkeletalMeshProps>())
 		{
 			if (bSoundsCount && (IsUploadedId(Skeletal->Mesh) || IsUploadedId(Skeletal->Clip)
@@ -629,7 +629,7 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 			}
 			continue;
 		}
-		// A Scatter's meshes and materials (#530): drawn only, so a dedicated server needs none.
+		// A Scatter's meshes and materials: drawn only, so a dedicated server needs none.
 		if (const FMantleScatterParams* Scatter = Entity.Props.TryGet<FMantleScatterParams>())
 		{
 			if (bSoundsCount && Scatter->Meshes.ContainsByPredicate([](const FMantleScatterMesh& Mesh)
@@ -642,7 +642,7 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 			}
 			continue;
 		}
-		// A Terrain's heightfield is always uploaded (#466), and the server needs it for collision.
+		// A Terrain's heightfield is always uploaded, and the server needs it for collision.
 		if (const FMantleTerrainProps* Terrain = Entity.Props.TryGet<FMantleTerrainProps>())
 		{
 			if (IsUploadedId(Terrain->Heightfield))
@@ -651,7 +651,7 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 			}
 			continue;
 		}
-		// A VoxelWorld's starting blocks (#168): the server needs them for collision and the edits it checks. Its tiles are drawn only.
+		// A VoxelWorld's starting blocks: the server needs them for collision and the edits it checks. Its tiles are drawn only.
 		if (const FMantleVoxelWorldProps* Voxel = Entity.Props.TryGet<FMantleVoxelWorldProps>())
 		{
 			if (IsUploadedId(Voxel->World) || (bSoundsCount && Voxel->TileTextures().ContainsByPredicate([](const FString& Id) { return IsUploadedId(Id); })))
@@ -660,7 +660,7 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 			}
 			continue;
 		}
-		// A custom WaterBody's surface mesh (#997): the server needs it for the water's collision.
+		// A custom WaterBody's surface mesh: the server needs it for the water's collision.
 		if (const FMantleWaterBodyProps* Water = Entity.Props.TryGet<FMantleWaterBodyProps>())
 		{
 			if (IsUploadedId(Water->MeshId))
@@ -669,7 +669,7 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 			}
 			continue;
 		}
-		// A StaticMesh's, or an InstancedMesh's (#467), mesh and materials.
+		// A StaticMesh's, or an InstancedMesh's, mesh and materials.
 		if (const FMantleStaticMeshProps* Props = MantleMeshPropsOf(Entity))
 		{
 			if (IsUploadedId(Props->Mesh))
@@ -684,7 +684,7 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 				}
 			}
 		}
-		// A Decal's textures (#472).
+		// A Decal's textures.
 		if (const FMantleDecalProps* Decal = Entity.Props.TryGet<FMantleDecalProps>())
 		{
 			if (IsUploadedId(Decal->BaseColor) || IsUploadedId(Decal->Normal))
@@ -692,7 +692,7 @@ bool FMantlePlaceAssets::HasUploadedAssets(const FMantlePlace& Place)
 				return true;
 			}
 		}
-		// A sprites Effect's texture (#628).
+		// A sprites Effect's texture.
 		if (const FMantleEffectProps* Effect = Entity.Props.TryGet<FMantleEffectProps>())
 		{
 			if (IsUploadedId(Effect->TextureId))
@@ -1147,9 +1147,9 @@ const TCHAR* FMantlePlaceAssets::KindName(const EAssetKind Kind)
 	case EAssetKind::Texture: return TEXT("texture");
 	case EAssetKind::Sound: return TEXT("sound");
 	case EAssetKind::Heightfield: return TEXT("heightfield");
-	// #596: an uploaded texture read for its weights; ApplyResolved holds it to the API's "texture".
+	// An uploaded texture read for its weights; ApplyResolved holds it to the API's "texture".
 	case EAssetKind::TerrainWeights: return TEXT("weightmap");
-	// The API's kinds (#469): what a resolved asset's kind must be.
+	// The API's kinds: what a resolved asset's kind must be.
 	case EAssetKind::SkeletalMesh: return TEXT("skeletalmesh");
 	case EAssetKind::AnimClip: return TEXT("animclip");
 	case EAssetKind::Vehicle: return TEXT("vehicle");
@@ -1157,7 +1157,7 @@ const TCHAR* FMantlePlaceAssets::KindName(const EAssetKind Kind)
 	case EAssetKind::Wheel: return TEXT("wheel");
 	// #149: a static mesh's Lumen side file (MLD1), stored as the plugin baked it.
 	case EAssetKind::Lumen: return TEXT("lumen");
-	// #168: a VoxelWorld's blocks (MBW1); its tiles are uploaded textures, held to the API's "texture" like a weightmap.
+	// A VoxelWorld's blocks (MBW1); its tiles are uploaded textures, held to the API's "texture" like a weightmap.
 	case EAssetKind::VoxelWorld: return TEXT("voxelworld");
 	case EAssetKind::VoxelTile: return TEXT("voxeltile");
 	case EAssetKind::Mesh:
@@ -1234,7 +1234,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 	});
 	for (const FMantleEntity& Entity : Place.Entities)
 	{
-		// A SkeletalMesh's mesh, materials and clip (#469): nothing is drawn on a dedicated server.
+		// A SkeletalMesh's mesh, materials and clip: nothing is drawn on a dedicated server.
 		if (const FMantleSkeletalMeshProps* Skeletal = Entity.Props.TryGet<FMantleSkeletalMeshProps>())
 		{
 			const TPair<const FString*, EAssetKind> Parts[] = {
@@ -1275,7 +1275,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			continue;
 		}
 
-		// A VehicleSpawn's vehicle (#435): built on every machine, a dedicated server for its physics.
+		// A VehicleSpawn's vehicle: built on every machine, a dedicated server for its physics.
 		if (const FMantleVehicleSpawnProps* Spawn = Entity.Props.TryGet<FMantleVehicleSpawnProps>())
 		{
 			if (IsUploadedId(Spawn->Vehicle))
@@ -1285,7 +1285,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			continue;
 		}
 
-		// A WeaponSpawn's weapon (#789): read on every machine, a dedicated server for the definition it grants.
+		// A WeaponSpawn's weapon: read on every machine, a dedicated server for the definition it grants.
 		if (const FMantleWeaponSpawnProps* WeaponSpawn = Entity.Props.TryGet<FMantleWeaponSpawnProps>())
 		{
 			if (IsUploadedId(WeaponSpawn->Weapon))
@@ -1295,7 +1295,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			continue;
 		}
 
-		// A SoundEmitter's uploaded sound (#324): nothing is heard on a dedicated server.
+		// A SoundEmitter's uploaded sound: nothing is heard on a dedicated server.
 		if (const FMantleSoundEmitterProps* Emitter = Entity.Props.TryGet<FMantleSoundEmitterProps>())
 		{
 			if (IsUploadedSoundId(Emitter->Sound))
@@ -1312,7 +1312,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			continue;
 		}
 
-		// A Decal's textures (#472), each in the role the decal reads it with. Nothing renders on a
+		// A Decal's textures, each in the role the decal reads it with. Nothing renders on a
 		// dedicated server, which keeps the decal entity and loads neither.
 		if (const FMantleDecalProps* Decal = Entity.Props.TryGet<FMantleDecalProps>())
 		{
@@ -1335,7 +1335,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			continue;
 		}
 
-		// A sprites Effect's texture (#628), read as a decal's base color is: nothing renders on a dedicated server.
+		// A sprites Effect's texture, read as a decal's base color is: nothing renders on a dedicated server.
 		if (const FMantleEffectProps* Effect = Entity.Props.TryGet<FMantleEffectProps>())
 		{
 			if (IsUploadedId(Effect->TextureId))
@@ -1352,7 +1352,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			continue;
 		}
 
-		// A Scatter's meshes and materials (#530): drawn only, so a dedicated server, which builds no
+		// A Scatter's meshes and materials: drawn only, so a dedicated server, which builds no
 		// scatter, takes none of them. No collision is built for its meshes.
 		if (const FMantleScatterParams* Scatter = Entity.Props.TryGet<FMantleScatterParams>())
 		{
@@ -1388,7 +1388,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			continue;
 		}
 
-		// A VoxelWorld (#168): its blocks everywhere (a dedicated server builds collision from them), its tiles only where
+		// A VoxelWorld: its blocks everywhere (a dedicated server builds collision from them), its tiles only where
 		// something renders. Both are kept as downloaded; the voxel world reads them.
 		if (const FMantleVoxelWorldProps* Voxel = Entity.Props.TryGet<FMantleVoxelWorldProps>())
 		{
@@ -1414,8 +1414,8 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			continue;
 		}
 
-		// A Terrain (#466): its heightfield everywhere (a dedicated server builds the terrain's
-		// collision from it); its weightmaps (#628: the second holds layers 4 to 7), read as linear data,
+		// A Terrain: its heightfield everywhere (a dedicated server builds the terrain's
+		// collision from it); its weightmaps (the second holds layers 4 to 7), read as linear data,
 		// and its layers' materials only where something renders.
 		if (const FMantleTerrainProps* Terrain = Entity.Props.TryGet<FMantleTerrainProps>())
 		{
@@ -1448,12 +1448,12 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			{
 				EnsureRecord(Terrain->Holes, EAssetKind::TerrainWeights).bKeepPixels = true;
 			}
-			// #596: the same weightmap's heaviest layers, on every net mode (a server resolves bullet
+			// The same weightmap's heaviest layers, on every net mode (a server resolves bullet
 			// hits too), when a layer names a surface for them to pick between.
 			if (IsUploadedId(Terrain->Weightmap) && UMantleTerrainSurfaceComponent::NeedsWeights(*Terrain))
 			{
 				EnsureRecord(Terrain->Weightmap, EAssetKind::TerrainWeights);
-				// Layers 4 to 7 (#628): weighed against the first map's, so a hit on one of them names its surface.
+				// Layers 4 to 7: weighed against the first map's, so a hit on one of them names its surface.
 				if (IsUploadedId(Terrain->Weightmap2))
 				{
 					EnsureRecord(Terrain->Weightmap2, EAssetKind::TerrainWeights);
@@ -1475,7 +1475,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 					++SkippedSlots;
 				}
 			}
-			// Its grass (#628): meshes and materials like a Scatter's, no collision, and each grass map read on
+			// Its grass: meshes and materials like a Scatter's, no collision, and each grass map read on
 			// the CPU with its pixels kept. Drawn only, so a dedicated server takes none of them.
 			for (const FMantleTerrainGrass& Grass : Terrain->Grass)
 			{
@@ -1510,7 +1510,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			continue;
 		}
 
-		// A custom WaterBody's surface mesh (#997), on every machine: its collision is the water's.
+		// A custom WaterBody's surface mesh, on every machine: its collision is the water's.
 		if (const FMantleWaterBodyProps* Water = Entity.Props.TryGet<FMantleWaterBodyProps>())
 		{
 			if (IsUploadedId(Water->MeshId))
@@ -1521,7 +1521,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			continue;
 		}
 
-		// A StaticMesh's, or an InstancedMesh's (#467), mesh and materials.
+		// A StaticMesh's, or an InstancedMesh's, mesh and materials.
 		const FMantleStaticMeshProps* Props = MantleMeshPropsOf(Entity);
 		if (!Props)
 		{
@@ -1559,7 +1559,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			++ManifestCount;
 			ManifestBytes += FMath::Max<int64>(Asset.Bytes, 0);
 
-			// A sound the place publishes is one its scripts may play (Sounds:Play, #459), whether or
+			// A sound the place publishes is one its scripts may play (Sounds:Play), whether or
 			// not an emitter uses it: the same record an emitter's sound gets, so it is fetched once.
 			if (Asset.Kind == EMantleAssetKind::Sound)
 			{
@@ -1573,14 +1573,14 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 				}
 			}
 
-			// Every vehicle the place lists comes with it (#435): a script may spawn one, and a
+			// Every vehicle the place lists comes with it: a script may spawn one, and a
 			// client must be able to build any vehicle the server replicates to it.
 			if (Asset.Kind == EMantleAssetKind::Vehicle)
 			{
 				EnsureRecord(Asset.Id, EAssetKind::Vehicle);
 			}
 
-			// Every weapon the place lists comes with it (#789): a client must be able to build any weapon the server hands out.
+			// Every weapon the place lists comes with it: a client must be able to build any weapon the server hands out.
 			if (Asset.Kind == EMantleAssetKind::Weapon)
 			{
 				EnsureRecord(Asset.Id, EAssetKind::Weapon);
@@ -1588,7 +1588,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 		}
 	}
 
-	// Every vehicle the place's storage resolved (#614 stage 5), parked by a VehicleSpawn or not: a script spawns a
+	// Every vehicle the place's storage resolved, parked by a VehicleSpawn or not: a script spawns a
 	// stored vehicle by its item id, so the server must have built it (physics) and a client must be able to build
 	// the car the server replicates. Like the manifest's vehicles above, these are not held to the manifest-only cap.
 	for (const FString& StoredVehicleId : FMantleStorage::StoredVehicleAssetIds(Place))
@@ -1596,7 +1596,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 		EnsureRecord(StoredVehicleId, EAssetKind::Vehicle);
 	}
 
-	// A stored weapon (#614 stage 5) is available to Backpack:Grant even when the place has no WeaponSpawn.
+	// A stored weapon is available to Backpack:Grant even when the place has no WeaponSpawn.
 	for (const FString& StoredWeaponId : FMantleStorage::StoredWeaponAssetIds(Place))
 	{
 		EnsureRecord(StoredWeaponId, EAssetKind::Weapon);
@@ -1609,7 +1609,7 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 		EnsureRecord(StoredWheelId, EAssetKind::Wheel);
 	}
 
-	// #556 item 5: the images the place's UI documents show, color textures with straight alpha
+	// Item 5: the images the place's UI documents show, color textures with straight alpha
 	// as the document host draws them (MantleRml::ResolveAssetTexture). Only the uiDocuments entry
 	// names them, so nothing above takes them; a dedicated server shows no UI and takes none.
 	for (const FMantleUIDocument& Document : Place.UIDocuments)
@@ -1660,11 +1660,11 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 	}
 	if (VehicleCount > 0)
 	{
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS preflight place %s: %d uploaded vehicle(s) (#435)"), *Place.PlaceId, VehicleCount);
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS preflight place %s: %d uploaded vehicle(s)"), *Place.PlaceId, VehicleCount);
 	}
 	if (WeaponCount > 0)
 	{
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS preflight place %s: %d uploaded weapon(s) (#789)"), *Place.PlaceId, WeaponCount);
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS preflight place %s: %d uploaded weapon(s)"), *Place.PlaceId, WeaponCount);
 	}
 	if (WheelCount > 0)
 	{
@@ -1926,7 +1926,7 @@ void FMantlePlaceAssets::OnResolved(const TArray<FString>& Ids, const FMantleAss
 
 void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAsset& Asset)
 {
-	// A weapon's attachment (#789) may be a mesh or a skeletal mesh; the API says which. This record was made as a mesh: swap
+	// A weapon's attachment may be a mesh or a skeletal mesh; the API says which. This record was made as a mesh: swap
 	// it for a skeletal mesh one and let that one take the answer. Nothing touches Record after, which the swap removes.
 	if (Record.Kind == EAssetKind::Mesh && Record.bMeshOrSkeletal && Asset.Kind.Equals(KindName(EAssetKind::SkeletalMesh), ESearchCase::CaseSensitive))
 	{
@@ -2010,12 +2010,12 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 
 	// An object an earlier set built from the same bytes, still alive: nothing to download or build.
 	// A sound builds no object (its emitters make their own waves), nor does a clip (its decoded keys
-	// are the build, #469) or a heightfield (its decoded grid is the build, #466), or terrain weights
-	// (#596, likewise), so none has anything to reuse.
+	// are the build) or a heightfield (its decoded grid is the build), or terrain weights
+	// (likewise), so none has anything to reuse.
 	if (RecordKind != EAssetKind::Material && RecordKind != EAssetKind::Sound && RecordKind != EAssetKind::AnimClip
 		&& RecordKind != EAssetKind::Heightfield && RecordKind != EAssetKind::TerrainWeights && RecordKind != EAssetKind::Lumen
 		&& RecordKind != EAssetKind::VoxelWorld && RecordKind != EAssetKind::VoxelTile
-		// A weapon is read again, not reused: queuing what its document names happens when it is decoded (#789).
+		// A weapon is read again, not reused: queuing what its document names happens when it is decoded.
 		&& RecordKind != EAssetKind::Weapon
 		// Likewise a wheel: its mesh and materials are queued from its document when it is decoded.
 		&& RecordKind != EAssetKind::Wheel)
@@ -2224,7 +2224,7 @@ void FMantlePlaceAssets::QueueWeaponPartsOf(const FString& WeaponId, const FMant
 			MaterialIds.AddUnique(Material);
 		}
 	}
-	// #898: the attachments' own materials load beside the weapon's.
+	// The attachments' own materials load beside the weapon's.
 	for (const TPair<FString, TArray<FString>>& Attachment : Named.AttachmentMaterials)
 	{
 		for (const FString& Material : Attachment.Value)
@@ -2319,7 +2319,7 @@ void FMantlePlaceAssets::StartFetches()
 		Queue.RemoveAt(0, Next, EAllowShrinking::No);
 	};
 	StartFrom(FetchQueue);
-	// Sounds only once everything the place waits for has started (#324): audio never delays a join.
+	// Sounds only once everything the place waits for has started: audio never delays a join.
 	if (FetchQueue.IsEmpty())
 	{
 		StartFrom(SoundFetchQueue);
@@ -2413,7 +2413,7 @@ void FMantlePlaceAssets::StartDecodes()
 		}
 		if (Key.Kind == EAssetKind::VoxelWorld || Key.Kind == EAssetKind::VoxelTile)
 		{
-			// #168: likewise; the voxel world reads its blocks and tiles on its own workers.
+			// Likewise; the voxel world reads its blocks and tiles on its own workers.
 			Build->VoxelFile = Bytes;
 		}
 		const int64 MaxTextureGpuBytes = Settings.MaxTextureGpuBytes;
@@ -2495,7 +2495,7 @@ void FMantlePlaceAssets::StartDecodes()
 
 			case EAssetKind::Sound:
 			{
-				// MAU1 (#324): the whole decode is a checked copy of the samples.
+				// MAU1: the whole decode is a checked copy of the samples.
 				const TSharedPtr<FMantleSoundData> Decoded = MakeShared<FMantleSoundData>();
 				if (FMantleSoundReader::Read(View, *Decoded, &Error))
 				{
@@ -2506,7 +2506,7 @@ void FMantlePlaceAssets::StartDecodes()
 
 			case EAssetKind::SkeletalMesh:
 			{
-				// MSK1 role 3 (#469): a place skeletal mesh carrying its own skeleton. Avatar content is refused.
+				// MSK1 role 3: a place skeletal mesh carrying its own skeleton. Avatar content is refused.
 				FMantleSkinnedMeshReadResult Read = FMantleSkinnedMeshReader::Read(View);
 				if (!Read.bSuccess)
 				{
@@ -2525,7 +2525,7 @@ void FMantlePlaceAssets::StartDecodes()
 
 			case EAssetKind::AnimClip:
 			{
-				// MAN1 with its skeleton block (#469). An emote (no skeleton of its own) is refused.
+				// MAN1 with its skeleton block. An emote (no skeleton of its own) is refused.
 				FMantleAnimClipReadResult Read = FMantleAnimClipReader::Read(View);
 				if (!Read.bSuccess)
 				{
@@ -2544,7 +2544,7 @@ void FMantlePlaceAssets::StartDecodes()
 
 			case EAssetKind::Heightfield:
 			{
-				// MHF1 (#466): a checked copy of the heights; the place builder makes the meshes.
+				// MHF1: a checked copy of the heights; the place builder makes the meshes.
 				const TSharedPtr<FMantleHeightfield> Decoded = MakeShared<FMantleHeightfield>();
 				if (FMantleHeightfieldReader::Read(View, *Decoded, &Error))
 				{
@@ -2555,9 +2555,9 @@ void FMantlePlaceAssets::StartDecodes()
 
 			case EAssetKind::TerrainWeights:
 			{
-				// #596: the weightmap's top level on the CPU (no mips, nothing uploaded), reduced to the
+				// The weightmap's top level on the CPU (no mips, nothing uploaded), reduced to the
 				// heaviest layer per texel; the pixels go when this task ends, unless it is a grass map
-				// (#628, variant 1), whose four channels are what the grass is sampled from.
+				// (variant 1), whose four channels are what the grass is sampled from.
 				const bool bKeepPixels = Key.Variant == 1;
 				FMantleTextureBuildParams Params;
 				Params.Role = EMantleTextureRole::Data;
@@ -2575,7 +2575,7 @@ void FMantlePlaceAssets::StartDecodes()
 
 			case EAssetKind::Vehicle:
 			{
-				// MVH1 (#435): the document and the body, read strictly; the game thread builds the mesh.
+				// MVH1: the document and the body, read strictly; the game thread builds the mesh.
 				const TSharedPtr<FMantleVehicleAsset> Read = MakeShared<FMantleVehicleAsset>();
 				if (FMantleVehicleAssetReader::Read(View, *Read, Error))
 				{
@@ -2586,7 +2586,7 @@ void FMantlePlaceAssets::StartDecodes()
 
 			case EAssetKind::Weapon:
 			{
-				// MWP1 (#789): the weapon document, read strictly; the game thread wraps it.
+				// MWP1: the weapon document, read strictly; the game thread wraps it.
 				const TSharedPtr<FMantleWeaponAsset> Read = MakeShared<FMantleWeaponAsset>();
 				if (FMantleWeaponAsset::Read(View, *Read, Error))
 				{
@@ -2643,7 +2643,7 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 		QueueBuild(Key);
 		return;
 	}
-	// #168: a VoxelWorldData is its MBW1 bytes (only the magic is looked at here); a block tile is the texture's file.
+	// A VoxelWorldData is its MBW1 bytes (only the magic is looked at here); a block tile is the texture's file.
 	if (Key.Kind == EAssetKind::VoxelWorld || Key.Kind == EAssetKind::VoxelTile)
 	{
 		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> File = Build->VoxelFile;
@@ -2726,7 +2726,7 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 	}
 	if (Key.Kind == EAssetKind::Vehicle)
 	{
-		// The vehicle builds now; its materials (#435), its parts' meshes (#435 item 2) and its horn's sound (#546) load beside
+		// The vehicle builds now; its materials, its parts' meshes and its horn's sound load beside
 		// it, as a material's textures do. Queued after this build is last touched: a cached answer adds builds, which may move it.
 		const TArray<FString> MaterialIds = Vehicle->Desc.MaterialIds();
 		const TArray<FString> LiveryIds = Vehicle->Desc.Liveries;
@@ -2756,7 +2756,7 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 	}
 
 	// The document is the truth about the material's textures: one record per slot (a layer blend's
-	// included, #533), read with the slot's role. Their builds are added after this build is last
+	// included), read with the slot's role. Their builds are added after this build is last
 	// touched (adding may move it).
 	TMap<FString, FString> SlotTextures;
 	for (int32 Slot = 0; Slot < MantlePlaceMaterialTextureCount; ++Slot)
@@ -2853,7 +2853,7 @@ void FMantlePlaceAssets::RunBuilds()
 			continue;
 		}
 		bFirst = false;
-		// The game-thread half of an uploaded asset (#126): the downloads and decodes ran off it.
+		// The game-thread half of an uploaded asset: the downloads and decodes ran off it.
 		const double BuildStart = FPlatformTime::Seconds();
 		{
 			TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceAssets_BuildOne);
@@ -2885,7 +2885,7 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		FMantleStaticMeshBuildParams Params;
 		Params.bComplexCollision = bCollision;
 		Params.bCookCollisionNow = !Settings.bAsyncCollisionCook;
-		// #470: a dedicated server never draws, and its collision is LOD0's.
+		// A dedicated server never draws, and its collision is LOD0's.
 		Params.bBuildLowerLODs = !IsRunningDedicatedServer();
 		Params.Name = TEXT("MantlePlaceMesh");
 		// #149: the mesh's Lumen data, when its side file arrived and is this engine's and this mesh's; else none.
@@ -2974,7 +2974,7 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 
 	case EAssetKind::VoxelWorld:
 	case EAssetKind::VoxelTile:
-		// #168: likewise the downloaded file; the voxel world reads it.
+		// Likewise the downloaded file; the voxel world reads it.
 		MarkReady(Build, nullptr);
 		return;
 
@@ -3044,7 +3044,7 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 			FailBuild(Build, TEXT("has nothing decoded to build"));
 			return;
 		}
-		// Nothing to build here (#324): each emitter plays the shared samples through its own
+		// Nothing to build here: each emitter plays the shared samples through its own
 		// UMantleSoundWave. The decoded samples are the build, and stay held while the set lives.
 		Build.Detail = FString::Printf(TEXT("MAU1, %d Hz, %d channel(s), %.2f s, %.1f MB decoded"), Build.Sound->SampleRate,
 			Build.Sound->Channels, Build.Sound->DurationSeconds(), MantlePlaceAssetsPrivate::Megabytes(Build.Sound->GetAllocatedBytes()));
@@ -3060,7 +3060,7 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 			FailBuild(Build, TEXT("has nothing decoded to build"));
 			return;
 		}
-		// #469: on a transient skeleton of its own bones; nothing reads the vertices back, so the GPU
+		// On a transient skeleton of its own bones; nothing reads the vertices back, so the GPU
 		// copy is the only one kept.
 		FMantleSkinnedMeshBuildParams Params;
 		Params.bOwnSkeleton = true;
@@ -3088,7 +3088,7 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 			FailBuild(Build, TEXT("has nothing decoded to build"));
 			return;
 		}
-		// Nothing to build (#469): each SkeletalMesh samples the shared decoded keys.
+		// Nothing to build: each SkeletalMesh samples the shared decoded keys.
 		Build.Detail = FString::Printf(TEXT("MAN1, %d frames at %.0f fps (%.2f s), %d tracks, skeleton %s"), Build.Clip->FrameCount,
 			Build.Clip->FrameRate, Build.Clip->GetDuration(), Build.Clip->Tracks.Num(), *Build.Clip->SkeletonHash);
 		ReleasePending(Build);
@@ -3103,7 +3103,7 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 			FailBuild(Build, TEXT("has nothing decoded to build"));
 			return;
 		}
-		// Nothing to build here (#466): the place builder turns the heights into the terrain's chunk
+		// Nothing to build here: the place builder turns the heights into the terrain's chunk
 		// meshes, with collision, as it spawns the Terrain entity. The decoded grid stays held.
 		Build.Detail = FString::Printf(TEXT("MHF1, %d x %d samples, %g x %g cm apart, %.1f MB decoded"), Build.Heightfield->Width,
 			Build.Heightfield->Height, Build.Heightfield->SpacingX, Build.Heightfield->SpacingY,
@@ -3120,7 +3120,7 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 			FailBuild(Build, TEXT("has nothing decoded to build"));
 			return;
 		}
-		// Nothing to build here either (#596): the heaviest layer per texel is the build, and the place
+		// Nothing to build here either: the heaviest layer per texel is the build, and the place
 		// builder hands it to the terrain's UMantleTerrainSurfaceComponent. It stays held.
 		Build.Detail = FString::Printf(TEXT("terrain weights, %d x %d texels, %.1f MB"), Build.TerrainWeights->Width,
 			Build.TerrainWeights->Height, MantlePlaceAssetsPrivate::Megabytes(Build.TerrainWeights->GetAllocatedBytes()));
@@ -3136,7 +3136,7 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 			FailBuild(Build, TEXT("has nothing decoded to build"));
 			return;
 		}
-		// The body on a skeleton of its own (#435); MantleGameplay makes the drivable definition from it.
+		// The body on a skeleton of its own; MantleGameplay makes the drivable definition from it.
 		UMantleBuiltVehicle* Vehicle = UMantleBuiltVehicle::Build(*Build.Vehicle, GetTransientPackage(), &Error);
 		const FMantleVehicleAsset& Read = *Build.Vehicle;
 		Build.Detail = FString::Printf(TEXT("MVH1, %d wheels, %d bones, %d triangles, %.0f kg"), Read.Desc.Wheels.Num(), Read.Body.Bones.Num(),
@@ -3159,7 +3159,7 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 			FailBuild(Build, TEXT("has nothing decoded to build"));
 			return;
 		}
-		// The document, kept (#789): MantleGameplay builds the weapon definition from it and what it names.
+		// The document, kept: MantleGameplay builds the weapon definition from it and what it names.
 		UMantleBuiltWeapon* Weapon = NewObject<UMantleBuiltWeapon>(GetTransientPackage());
 		Weapon->Asset = *Build.Weapon;
 		Build.Detail = FString::Printf(TEXT("MWP1, \"%s\", mesh %s, %d attachment(s), %d sound(s), %d material slot(s)"), *Weapon->Asset.Name,
@@ -3355,7 +3355,7 @@ void FMantlePlaceAssets::Pump()
 
 bool FMantlePlaceAssets::WaitUntilComplete(const float TimeoutSeconds)
 {
-	// The whole wait blocks the calling thread (#126): the downloads, the decodes and every build.
+	// The whole wait blocks the calling thread: the downloads, the decodes and every build.
 	TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceAssets_WaitUntilComplete);
 	const TSharedRef<FMantlePlaceAssets> KeepAlive = AsShared();
 	const double Deadline = FPlatformTime::Seconds() + TimeoutSeconds;
@@ -3386,7 +3386,7 @@ void FMantlePlaceAssets::CheckComplete()
 	for (const TPair<FString, FRecord>& Pair : Records)
 	{
 		const FRecord& Record = Pair.Value;
-		// Sounds never hold the place up (#324): SettleSounds completes them.
+		// Sounds never hold the place up: SettleSounds completes them.
 		if (Record.bFailed || Record.Kind == EAssetKind::Sound)
 		{
 			continue;
@@ -3437,7 +3437,7 @@ void FMantlePlaceAssets::CheckComplete()
 		case EAssetKind::SkeletalMesh: ++Result.SkeletalMeshes; break;
 		case EAssetKind::AnimClip: ++Result.Clips; break;
 		case EAssetKind::Heightfield: ++Result.Heightfields; break;
-		case EAssetKind::TerrainWeights: break; // the weightmap's second use, not an asset of its own (#596)
+		case EAssetKind::TerrainWeights: break; // the weightmap's second use, not an asset of its own
 		case EAssetKind::Lumen: break;
 		case EAssetKind::VoxelWorld: break;
 		case EAssetKind::VoxelTile: break;
@@ -3472,7 +3472,7 @@ void FMantlePlaceAssets::CheckComplete()
 			Result.Errors.Num(), Result.Meshes, Result.Materials, Result.Textures, MantlePlaceAssetsPrivate::Megabytes(Result.Bytes),
 			MantlePlaceAssetsPrivate::Megabytes(Result.DownloadedBytes), Result.Seconds, *Result.ErrorSummary());
 	}
-	// The game-thread share of that time (#126): the builds are sliced, so this is the sum, and the
+	// The game-thread share of that time: the builds are sliced, so this is the sum, and the
 	// longest single build is the worst stall the set added to one frame.
 	UE_LOG(LogMantle, Log,
 		TEXT("MANTLE_PLACE_ASSETS TIMING total_ms=%.2f builds=%d build_ms=%.2f longest_build_ms=%.2f longest_build=%s"),

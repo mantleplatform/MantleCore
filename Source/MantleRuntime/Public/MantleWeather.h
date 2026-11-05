@@ -5,7 +5,7 @@
 #include "MantleEnvironmentDefaults.h"
 
 /**
- * The weather states (#446, #930). The first eight (Clear to LightRain) are the natural weather, which the seeded
+ * The weather states. The first eight (Clear to LightRain) are the natural weather, which the seeded
  * sequence draws; the rest (LightSnow to DustStorm) come only when a script or a place asks for them. Script-only
  * states stay last, so MantleIsNaturalWeather is a range check.
  */
@@ -40,11 +40,11 @@ constexpr bool MantleIsNaturalWeather(EMantleWeatherState State)
 /** "Clear", "PartlyCloudy", "Overcast", "Rain", "Storm", "Cloudy", ... "DustStorm": the names scripts see. */
 MANTLERUNTIME_API const TCHAR* MantleWeatherStateName(EMantleWeatherState State);
 
-/** The state MantleWeatherStateName names, case-exact (a place's settings.environment.weather, #532). */
+/** The state MantleWeatherStateName names, case-exact (a place's settings.environment.weather). */
 MANTLERUNTIME_API bool MantleParseWeatherState(const FString& Name, EMantleWeatherState& OutState);
 
 /**
- * What one weather state (or a blend of two) looks like. The states #930 added take Ultra Dynamic Weather's presets
+ * What one weather state (or a blend of two) looks like. The later states take Ultra Dynamic Weather's presets
  * (its 0-10 values over 10); the first five keep the values they were tuned to.
  */
 struct MANTLERUNTIME_API FMantleWeatherValues
@@ -80,7 +80,7 @@ struct MANTLERUNTIME_API FMantleWeatherValues
 };
 
 /**
- * What the weather does to the default sky (#446 ticket 2): the values the environment subsystem
+ * What the weather does to the default sky: the values the environment subsystem
  * writes to the cloud material, the height fog, the sky light, the sun and the night sky, from
  * the blended FMantleWeatherValues alone. Pure maths, so every client derives the same look from
  * the replicated seed and the clock.
@@ -195,14 +195,14 @@ struct FMantleLightningStrike
 };
 
 /**
- * The default weather sequence (#446): pure maths from one seed, so every machine that knows
+ * The default weather sequence: pure maths from one seed, so every machine that knows
  * the seed and the time computes the same weather, a late joiner included, with nothing
  * replicated but the seed.
  *
  * Time is cut into slots of 12-20 minutes. Each slot's length comes from
  * Hash(Seed, slotIndex), and its state from the same hash against a weighted table of the natural
  * states (Clear 32%, PartlyCloudy 25%, Cloudy 15%, Overcast 10%, Foggy 5%, LightRain 6%, Rain 5%,
- * Storm 2%; the owner's shares, #930). A storm is always followed by Rain, LightRain or Overcast;
+ * Storm 2%; the owner's shares). A storm is always followed by Rain, LightRain or Overcast;
  * the draw weights are compensated for that rule so the long-run shares still match the table.
  * The script-only states (snow and dust) are never drawn.
  *
@@ -248,7 +248,7 @@ public:
 	void CollectStrikes(double FromSeconds, double ToSeconds, TArray<FMantleLightningStrike>& Out);
 
 	/**
-	 * #454: the lightning of a weather a script forced (Environment:SetWeather), which no slot
+	 * The lightning of a weather a script forced (Environment:SetWeather), which no slot
 	 * describes. Environment time from StartSeconds is cut into ScriptLightningChunkSeconds
 	 * chunks; each chunk's candidates are spaced like a slot's, from the same hash under a key no
 	 * slot uses (it carries Revision, so every weather write gets fresh strikes), and thinned by

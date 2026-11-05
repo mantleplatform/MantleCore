@@ -793,7 +793,7 @@ namespace
 		}
 		OptionalBool(Props, TEXT("castShadow"), P.bCastShadow);
 
-		// #630: a typed number in (0, MaxDrawDistance]; absent leaves 0, never culled.
+		// A typed number in (0, MaxDrawDistance]; absent leaves 0, never culled.
 		if (const TSharedPtr<FJsonValue> Distance = Props->TryGetField(TEXT("drawDistance")))
 		{
 			const FString DistancePath = Join(Path, TEXT("drawDistance"));
@@ -994,7 +994,7 @@ namespace
 		Out = Parsed;
 	}
 
-	/** settings.environment.skyLight: the scale of Mantle's own sky light (#722), and settings.environment.sun: whether the sun reaches the place. */
+	/** settings.environment.skyLight: the scale of Mantle's own sky light, and settings.environment.sun: whether the sun reaches the place. */
 	void ReadEnvironmentLighting(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Environment, const FString& EnvironmentPath,
 		FMantleEnvironmentSettings& Out)
 	{
@@ -1477,7 +1477,7 @@ namespace
 		Out = int32(Value);
 	}
 
-	/** A VoxelWorld block type (#168): the schema's blockType, every rule reported at its own key. */
+	/** A VoxelWorld block type: the schema's blockType, every rule reported at its own key. */
 	void ParseVoxelBlockType(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleVoxelBlockTypeProps& P)
 	{
 		RequireNoUnknownKeys(Ctx, Obj, { TEXT("name"), TEXT("all"), TEXT("top"), TEXT("side"), TEXT("bottom"), TEXT("render"), TEXT("solid"),
@@ -1569,7 +1569,7 @@ namespace
 		}
 	}
 
-	/** A VoxelWorld's properties (#168): the schema's branch; one per place and a still transform are checked with the place. */
+	/** A VoxelWorld's properties: the schema's branch; one per place and a still transform are checked with the place. */
 	void ParseVoxelWorld(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Props, const FString& Path, FMantleVoxelWorldProps& P)
 	{
 		RequireNoUnknownKeys(Ctx, Props, { TEXT("size"), TEXT("blockTypes"), TEXT("world"), TEXT("tileSize"), TEXT("filter"), TEXT("edit"),
@@ -2594,7 +2594,7 @@ namespace
 	}
 
 	/**
-	 * A Text entity's properties (GhzGarage/mantle#724): only `text` is required; a key left out keeps
+	 * A Text entity's properties: only `text` is required; a key left out keeps
 	 * FMantleTextProps' default. The color is linear RGBA.
 	 */
 	void ParseText(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Props, const FString& Path, FMantleTextProps& P)
@@ -2733,7 +2733,7 @@ namespace
 	}
 
 	/**
-	 * A WaterBody's properties (GhzGarage/mantle#997): the schema's branch and its `if`/`not`, each failure reported at the
+	 * A WaterBody's properties: the schema's branch and its `if`/`not`, each failure reported at the
 	 * key as the backend does. bodyType decides which keys apply: lake, river and ocean take a spline and refuse a mesh,
 	 * custom takes a mesh and refuses a spline; width and velocity are a river point's; waves are never a river's;
 	 * collisionExtent, oceanExtent and centerOnZone are an ocean's. A key left out keeps FMantleWaterBodyProps' default.
@@ -2954,7 +2954,7 @@ namespace
 		}
 	}
 
-	/** settings.water, the place's Water Zone (GhzGarage/mantle#997): every key optional. */
+	/** settings.water, the place's Water Zone: every key optional. */
 	void ReadWaterZone(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Settings, const FString& Path, TOptional<FMantleWaterZone>& Out)
 	{
 		if (!Settings->HasField(TEXT("water")))
@@ -2984,7 +2984,7 @@ namespace
 		Out = Zone;
 	}
 
-	/** settings.placing (GhzGarage/mantle#184): persistence none or server, maxPieces a whole number 1 to FMantlePlaceLimits::MaxPlacedPieces. */
+	/** settings.placing: persistence none or server, maxPieces a whole number 1 to FMantlePlaceLimits::MaxPlacedPieces. */
 	void ReadPlacingSettings(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Settings, const FString& Path, FMantlePlacingSettings& Out)
 	{
 		if (!Settings->HasField(TEXT("placing")))
@@ -3017,7 +3017,7 @@ namespace
 		}
 	}
 
-	/** settings.worldItems (#235): persistence none or server. */
+	/** settings.worldItems: persistence none or server. */
 	void ReadWorldItemsSettings(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Settings, const FString& Path, FMantleWorldItemsSettings& Out)
 	{
 		if (!Settings->HasField(TEXT("worldItems")))
@@ -3089,7 +3089,7 @@ namespace
 		return bAllValid;
 	}
 
-	/** settings.playStyle.options for SideScroll (#229): Path (2 to 64 [x,y,z] points), Distance, Height, LookAhead, FieldOfView and Bounds {Min, Max}. */
+	/** settings.playStyle.options for SideScroll: Path (2 to 64 [x,y,z] points), Distance, Height, LookAhead, FieldOfView and Bounds {Min, Max}. */
 	bool ReadSideScrollPlayStyleOptions(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Options, const FString& OptionsPath, FMantleSideScrollOptions& Result)
 	{
 		bool bAllValid = true;
@@ -3186,7 +3186,7 @@ namespace
 	}
 
 	/**
-	 * settings.playStyle (GhzGarage/mantle#232, #229): style Default, TopDown or SideScroll, and the options Player:SetPlayStyle takes for it,
+	 * settings.playStyle: style Default, TopDown or SideScroll, and the options Player:SetPlayStyle takes for it,
 	 * each in its range. Options on Default are refused. The rules are MantlePlayStyle's.
 	 */
 	void ReadPlayStyleSettings(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Settings, const FString& Path, FMantlePlayStyle& Out)
@@ -3233,7 +3233,7 @@ namespace
 		}
 	}
 
-	/** A socket's name or kind (#184): [A-Za-z0-9_], 1 to FMantlePlaceLimits::MaxMeshSocketNameLength characters. */
+	/** A socket's name or kind: [A-Za-z0-9_], 1 to FMantlePlaceLimits::MaxMeshSocketNameLength characters. */
 	bool IsSocketIdentifier(const FString& Value)
 	{
 		if (Value.IsEmpty() || Value.Len() > FMantlePlaceLimits::MaxMeshSocketNameLength)
@@ -3304,7 +3304,7 @@ namespace
 	}
 
 	/**
-	 * A StaticMesh asset's sockets (GhzGarage/mantle#184): at most FMantlePlaceLimits::MaxMeshSockets, names unique within the
+	 * A StaticMesh asset's sockets: at most FMantlePlaceLimits::MaxMeshSockets, names unique within the
 	 * asset, each one's failures reported at its own key, as validate.py check_mesh_sockets and the backend do.
 	 */
 	void ReadMeshSockets(FParseContext& Ctx, const TSharedPtr<FJsonObject>& AssetObj, const FString& Path, TArray<FMantlePlaceSocket>& Out)
@@ -4095,7 +4095,7 @@ namespace
 
 		case EMantleEntityType::ItemSpawn:
 		{
-			// An item waiting here (#235): its id, how many, how soon it comes back, an optional model, and whether it is on.
+			// An item waiting here: its id, how many, how soon it comes back, an optional model, and whether it is on.
 			RequireNoUnknownKeys(Ctx, Props, { TEXT("item"), TEXT("count"), TEXT("respawnSeconds"), TEXT("model"), TEXT("enabled") }, Path);
 			FMantleItemSpawnProps P;
 			if (RequireString(Ctx, Props, TEXT("item"), Path, P.Item) && !FMantlePlaceLimits::IsWorldItemId(P.Item))
@@ -4261,7 +4261,7 @@ namespace
 
 		case EMantleEntityType::Text:
 		{
-			// World text, drawn on each client in Mantle's built-in font (GhzGarage/mantle#724).
+			// World text, drawn on each client in Mantle's built-in font.
 			FMantleTextProps P;
 			ParseText(Ctx, Props, Path, P);
 			Entity.Props.Set<FMantleTextProps>(MoveTemp(P));
@@ -4270,7 +4270,7 @@ namespace
 
 		case EMantleEntityType::WaterBody:
 		{
-			// A Water plugin body, built on each client once the place stands (GhzGarage/mantle#997).
+			// A Water plugin body, built on each client once the place stands.
 			FMantleWaterBodyProps P;
 			ParseWaterBody(Ctx, Props, Path, P);
 			Entity.Props.Set<FMantleWaterBodyProps>(MoveTemp(P));
@@ -4563,7 +4563,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			}
 		}
 		ReadStrictOptionalBool(Ctx, *SettingsObj, TEXT("allowToolSwap"), TEXT("/settings"), Place.Settings.bAllowToolSwap);
-		// #5: the kill floor's height in cm, any finite number; absent means the game mode works it out from the built place.
+		// The kill floor's height in cm, any finite number; absent means the game mode works it out from the built place.
 		if (const TSharedPtr<FJsonValue> KillZ = (*SettingsObj)->TryGetField(TEXT("killZ")))
 		{
 			if (KillZ->Type != EJson::Number || !FMath::IsFinite(KillZ->AsNumber()))
@@ -4575,7 +4575,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 				Place.Settings.KillZ = KillZ->AsNumber();
 			}
 		}
-		// #5: the map boundary, a box in cm; every side required, min below max.
+		// The map boundary, a box in cm; every side required, min below max.
 		if (const TSharedPtr<FJsonValue> BoundaryValue = (*SettingsObj)->TryGetField(TEXT("boundary")))
 		{
 			const TSharedPtr<FJsonObject>* BoundaryObj = nullptr;
@@ -4824,7 +4824,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 				Ctx.Fail(Join(Path, TEXT("engine")), TEXT("a Lumen entry must say the engine it was baked by"));
 			}
 
-			// #184: a StaticMesh may carry snap sockets for placing mode.
+			// A StaticMesh may carry snap sockets for placing mode.
 			if ((*Obj)->HasField(TEXT("sockets")))
 			{
 				if (Asset.Kind != EMantleAssetKind::StaticMesh)
@@ -4902,7 +4902,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		}
 	}
 
-	// At most two VoxelWorlds (#168), one of each look, neither rotated nor scaled (their voxels are a fixed grid): validate.py
+	// At most two VoxelWorlds, one of each look, neither rotated nor scaled (their voxels are a fixed grid): validate.py
 	// and the backend state both.
 	{
 		int32 VoxelWorlds = 0;
@@ -5485,7 +5485,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		}
 	}
 
-	// seats — optional. Sit spots (#142): {entity, position, yaw, style}, each on an entity of this place.
+	// seats — optional. Sit spots: {entity, position, yaw, style}, each on an entity of this place.
 	if (Root->HasField(TEXT("seats")))
 	{
 		const TArray<TSharedPtr<FJsonValue>>* SeatsArray = nullptr;
@@ -5770,7 +5770,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		}
 	}
 
-	// The Text budget (GhzGarage/mantle#724), stated in the schema's prose and reported the same way as the Effect's.
+	// The Text budget, stated in the schema's prose and reported the same way as the Effect's.
 	int32 Texts = 0;
 	for (int32 i = 0; i < Place.Entities.Num(); ++i)
 	{
@@ -5782,7 +5782,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		}
 	}
 
-	// The WaterBody budgets (GhzGarage/mantle#997), stated in the schema's prose and reported the same way as the Effect's: the
+	// The WaterBody budgets, stated in the schema's prose and reported the same way as the Effect's: the
 	// body that crosses the count, and the body that takes the spline points past their total, each at its type.
 	int32 WaterBodies = 0;
 	int32 WaterSplinePoints = 0;

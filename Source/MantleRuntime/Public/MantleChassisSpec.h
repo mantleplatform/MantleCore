@@ -9,7 +9,7 @@
 class FJsonObject;
 
 /**
- * What kind of vehicle a preset is (schema/vehicle-preset.schema.json `type`, #793): the family whose derive block it shares. A type selects
+ * What kind of vehicle a preset is (schema/vehicle-preset.schema.json `type`): the family whose derive block it shares. A type selects
  * only that block, the stability target and the two camera constants. The cars are the sedan, sports car, limousine, pickup and van; the
  * trucks the truck and the six-wheeler; a motorcycle has one wheel on each axle, on the centerline, and balances itself; a plane flies on a
  * wing, a tailplane and a fin (chassis.aircraft) and stands on tricycle gear, its nose wheel on the centerline; a helicopter is lifted and steered
@@ -191,10 +191,10 @@ struct MANTLERUNTIME_API FMantleChassisHovercraft
 };
 
 /**
- * A preset's own size (#793): the dimensions its hand-tuned handling belongs to. FMantleChassisDerive multiplies that handling by how a chassis's
+ * A preset's own size: the dimensions its hand-tuned handling belongs to. FMantleChassisDerive multiplies that handling by how a chassis's
  * dimensions differ from these, so a chassis with these dimensions has exactly the preset's handling and a dimension edited on its own moves only
  * the numbers that depend on it. Set when the preset is read; Scaled and any edit of the chassis leave it alone. WheelWidth is kept with the rest
- * but no rule reads it: how wide a tire is does not change how a vehicle drives (#793, customization never changes physics).
+ * but no rule reads it: how wide a tire is does not change how a vehicle drives (customization never changes physics).
  */
 struct MANTLERUNTIME_API FMantleChassisSize
 {
@@ -229,7 +229,7 @@ struct MANTLERUNTIME_API FMantleChassisSize
 };
 
 /**
- * A chassis, read (#793): the size, layout, seats and handling a vehicle's body, wheels and document are made from. Parse reads a preset's
+ * A chassis, read: the size, layout, seats and handling a vehicle's body, wheels and document are made from. Parse reads a preset's
  * text; Scaled sizes one by a uniform factor and derives its handling from the new dimensions (FMantleChassisDerive); ComposeDocument writes
  * its vehicle document and FMantleVehicleChassisBuilder::MakeAsset builds its gray body, skeleton and Desc.
  *
@@ -245,7 +245,7 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	static constexpr int32 MinAxles = 2;
 	static constexpr int32 MaxAxles = 4;
 
-	/** The smallest and largest uniform scale a selector (a preset id and a scale) names. Bounds on what a demo may ask a machine to build, not the size envelope (#793). */
+	/** The smallest and largest uniform scale a selector (a preset id and a scale) names. Bounds on what a demo may ask a machine to build, not the size envelope. */
 	static constexpr double MinScale = 0.25;
 	static constexpr double MaxScale = 2.5;
 
@@ -494,7 +494,7 @@ struct MANTLERUNTIME_API FMantleChassisSpec
 	static FString ComposeDocument(const FMantleChassisSpec& Spec, TArray<FString>* OutHeld = nullptr);
 
 	/**
-	 * Spec sized Factor times as large (#793): the layout, body, seat, steering wheel, rider and (for a plane, a helicopter or a hovercraft) airframe, rotors,
+	 * Spec sized Factor times as large: the layout, body, seat, steering wheel, rider and (for a plane, a helicopter or a hovercraft) airframe, rotors,
 	 * cockpit, pads, fan, fin and skirt geometry scaled by Factor, then the handling
 	 * re-derived from the new dimensions (FMantleChassisDerive, every feel slider at 0), its center of mass the derived one. A Factor of 1
 	 * returns Spec itself, its hand-tuned handling untouched: a preset keeps its own numbers and only a resized chassis uses derived ones. A

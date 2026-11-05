@@ -7,7 +7,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// WeaponSpawn (#789 stage 3): the parser's weapon / storageItem rules, the 32 budget, the Weapon asset kind, and the
+// WeaponSpawn: the parser's weapon / storageItem rules, the 32 budget, the Weapon asset kind, and the
 // weapon document's optional materials list.
 
 // Named, not anonymous: MantleRuntime builds as a unity build.

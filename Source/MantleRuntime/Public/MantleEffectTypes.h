@@ -1,13 +1,13 @@
 // Copyright Joshua Eger. All Rights Reserved.
-// GhzGarage/mantle#460: the vocabulary of place particle effects, shared by the place file (the Effect
+// The vocabulary of place particle effects, shared by the place file (the Effect
 // entity), the actor a creator places and the runtime builds (AMantleEffect, MantleEffect.h) and the
 // script API (Effects:Play, Entity:PlayEffect).
 //
 // Creators cannot publish a Niagara system of their own: a shipped client cannot compile one. Mantle
 // ships a small set of parametric archetypes instead, each a Niagara system cooked into every client
-// under /Game/Mantle/Effects (tools/effects/Create-MantleEffects.py makes them), each driven by the same
+// under /Game/Mantle/Effects, each driven by the same
 // five user parameters. An effect is an archetype plus those five values; nothing else reaches a player.
-// The exception (#628) is the sprites archetype, one general sprite emitter (NS_MantleSprites) with a closed,
+// The exception is the sprites archetype, one general sprite emitter (NS_MantleSprites) with a closed,
 // larger parameter set (FMantleSpritesSettings) and a texture, which the editor's effect export translates a
 // project's own particle systems onto.
 //
@@ -34,7 +34,7 @@ enum class EMantleEffectArchetype : uint8
 	Sparks,
 	Dust,
 	Glow,
-	/** #628: the general sprite emitter, tuned by FMantleSpritesSettings. Not offered to scripts. */
+	/** The general sprite emitter, tuned by FMantleSpritesSettings. Not offered to scripts. */
 	Sprites
 };
 
@@ -67,7 +67,7 @@ enum class EMantleSpritesShape : uint8
 };
 
 /**
- * What a sprites effect (#628) looks like beyond the five values every archetype has (FMantleEffectLook: the
+ * What a sprites effect looks like beyond the five values every archetype has (FMantleEffectLook: the
  * color at birth, and the rate). The schema's keys of the same names, each already held to the schema's ranges
  * and pairs by the parser, with the schema's defaults: a key a place file leaves out takes the default here, and
  * a lone min or max takes the other's value (FMantleEffects::ResolveSprites). Lengths are cm, speeds cm/s,
@@ -185,7 +185,7 @@ struct FMantleEffectLook
 
 struct MANTLERUNTIME_API FMantleEffects
 {
-	/** Every archetype, the sprites one (#628) last. */
+	/** Every archetype, the sprites one last. */
 	static constexpr int32 NumArchetypes = 6;
 
 	/** The archetypes with the five fixed looks above: the ones a script's Effects:Play can show (sprites needs its own keys). */
@@ -208,7 +208,7 @@ struct MANTLERUNTIME_API FMantleEffects
 	static constexpr const TCHAR* LifetimeParameter = TEXT("User.Lifetime");
 
 	/**
-	 * What the sprites system (/Game/Mantle/Effects/NS_MantleSprites, #628) reads, on top of User.Rate. Each is a
+	 * What the sprites system (/Game/Mantle/Effects/NS_MantleSprites) reads, on top of User.Rate. Each is a
 	 * user parameter the runtime writes and the system binds where it can; one the system does not bind is simply ignored. Floats unless noted.
 	 * User.Material is the sprite material instance (a MaterialInterface) the system's renderer binds, which
 	 * carries the texture, blend, colors, opacity and end scale; User.Size* and User.Lifetime* are the range a
@@ -237,8 +237,8 @@ struct MANTLERUNTIME_API FMantleEffects
 	 * The sprite master materials in Folder: M_MantleSprite_Translucent and M_MantleSprite_Additive. Their
 	 * parameters: texture SpriteTexture; scalars UseTexture (1 with a texture, else a soft round dot), Alpha,
 	 * AlphaEnd, FadeIn and SizeEndScale; vectors Color and ColorEnd (RGB). The material reads each particle's
-	 * normalized age, so color, opacity and size follow the particle's life without Niagara curves. A flipbook sheet
-	 * (#628): the vector SubImages (columns, rows) and the scalar SubImageOverLife (1 plays the frames across a
+	 * normalized age, so color, opacity and size follow the particle's life without Niagara curves. A flipbook sheet:
+	 * the vector SubImages (columns, rows) and the scalar SubImageOverLife (1 plays the frames across a
 	 * particle's life by its normalized age, 0 shows one frame picked by its Particle Random, which the system's
 	 * Initialize Particle writes); the material picks the frame, so no Niagara SubUV setup is involved.
 	 */

@@ -73,7 +73,7 @@ struct MANTLERUNTIME_API FMantleGarmentCoverage
 	static constexpr float LayerGapCm = 1.0f;
 
 	/**
-	 * #877: the barycentric edge tolerance of the skin-mask rule's rays (MantleGarmentGeometry::RayHitsTriangle), so a ray
+	 * The barycentric edge tolerance of the skin-mask rule's rays (MantleGarmentGeometry::RayHitsTriangle), so a ray
 	 * through a corner several garment triangles share never slips between them. About a micrometre on a 1 cm triangle.
 	 */
 	static constexpr float SkinMaskEdgeTolerance = 1.0e-4f;
@@ -84,7 +84,7 @@ struct MANTLERUNTIME_API FMantleGarmentCoverage
 	/** One bit per body vertex, set where the garment covers the skin. */
 	TBitArray<> Covered;
 
-	/** #877: one bit per body vertex, set where it is covered only from under the skin (P16; the CoveredUnder ones). */
+	/** One bit per body vertex, set where it is covered only from under the skin (P16; the CoveredUnder ones). */
 	TBitArray<> Under;
 	int32 NumCovered = 0;
 	float MaxDistanceCm = DefaultMaxDistanceCm;
@@ -107,7 +107,7 @@ struct MANTLERUNTIME_API FMantleGarmentCoverage
 	/** Covered only by a garment surface under the skin (P16). */
 	int32 CoveredUnder = 0;
 
-	/** #877: vertices a garment surface under the skin would have covered, refused by the near-half rule (NearShare). */
+	/** Vertices a garment surface under the skin would have covered, refused by the near-half rule (NearShare). */
 	int32 UnderFarSide = 0;
 
 	/** Non-degenerate garment triangles and the grid's cells. */
@@ -120,12 +120,12 @@ struct MANTLERUNTIME_API FMantleGarmentCoverage
 	 * (BodyPositions, BodyNormals: one per body vertex; a zero normal is never covered). False, with
 	 * the reason (Out.Covered all false, one bit per body vertex), on mismatched or empty inputs.
 	 *
-	 * #877, the near-half rule (on with BodyIndices, the whole body surface, and NearShare > 0): a garment surface under
+	 * The near-half rule (on with BodyIndices, the whole body surface, and NearShare > 0): a garment surface under
 	 * the skin covers the vertex only when it lies less than NearShare of the body's thickness deep, the thickness being
 	 * where the ray, going back from the vertex, first meets the body's surface. A sandal's footbed under a toe 1.5 cm
 	 * thick is the far side's garment, not this skin's; P16's shirt 3.5 cm inside a shoulder still covers it.
 	 *
-	 * EdgeTolerance: RayHitsTriangle's, for the garment hits (0, the default, is the exact test the rule before #877 uses).
+	 * EdgeTolerance: RayHitsTriangle's, for the garment hits (0, the default, is the exact test the earlier rule uses).
 	 */
 	static bool Compute(const FMantleGarmentSurface& Garment, TConstArrayView<FVector3f> BodyPositions, TConstArrayView<FVector3f> BodyNormals,
 		FMantleGarmentCoverage& Out, float ReachCm = DefaultMaxDistanceCm, FString* OutError = nullptr,
@@ -206,7 +206,7 @@ struct FMantleBodySinkParams
 	int32 SmoothIters = 4;
 
 	/**
-	 * #877, the near-half rule (FMantleGarmentCoverage::Compute's, needs the across-body indices): an outermost garment
+	 * The near-half rule (FMantleGarmentCoverage::Compute's, needs the across-body indices): an outermost garment
 	 * hit under the skin counts only when it lies less than NearShare of the body's thickness deep. 0: every hit counts.
 	 */
 	float NearShare = 0.0f;
@@ -271,7 +271,7 @@ struct MANTLERUNTIME_API FMantleBodySink
 	 */
 	int32 AcrossBody = 0;
 
-	/** #877: the vertices whose outermost hit the near-half rule (Params.NearShare) refused beyond AcrossBody's. No sink. */
+	/** The vertices whose outermost hit the near-half rule (Params.NearShare) refused beyond AcrossBody's. No sink. */
 	int32 FarSide = 0;
 
 	/** A body triangle this close to either end of the tested stretch of the ray is the vertex's own skin (or the hit's), not a surface between. */
@@ -282,7 +282,7 @@ struct MANTLERUNTIME_API FMantleBodySink
 	 * kept triangles) under Garments. False, with the reason (OutSinkCm all 0), on bad inputs; true with
 	 * all 0 when there is no garment triangle.
 	 *
-	 * #877, SinkOnly (one bit per body vertex): only these vertices sink, and the smoothing never spreads the sink onto
+	 * SinkOnly (one bit per body vertex): only these vertices sink, and the smoothing never spreads the sink onto
 	 * the others (welded points with no copy set stay at 0), so skin that is not under cloth never moves. Null: all.
 	 */
 	static bool Compute(TConstArrayView<FVector3f> BodyPositions, TConstArrayView<FVector3f> BodyNormals, TConstArrayView<uint32> KeptIndices,
@@ -299,32 +299,32 @@ struct FMantleDressedBodyParams
 	/** FMantleGarmentCoverage's reach. */
 	float CoverageReachCm = FMantleGarmentCoverage::DefaultMaxDistanceCm;
 
-	/** Covered vertices still on a kept triangle (the seam under a hem) sink this far (AVATAR_CATALOG_PLAN.md section 0.1 item 4; 0 = off). */
+	/** Covered vertices still on a kept triangle (the seam under a hem) sink this far (0 = off). */
 	float SeamShrinkCm = 0.8f;
 
 	/** The body sink; UnderCm 0 turns it off. */
 	FMantleBodySinkParams Sink;
 
 	/**
-	 * #877: the near-half rule for both the coverage and the sink (their NearShare; 0 = off). Garment found under the
+	 * The near-half rule for both the coverage and the sink (their NearShare; 0 = off). Garment found under the
 	 * skin past the middle of a thin part (a sandal's footbed under a toe) is the far side's, so it neither removes nor
 	 * sinks this skin.
 	 */
 	float NearShare = 0.5f;
 
 	/**
-	 * #877, Mantle.Avatar.SkinMask: a vertex is hidden only where its garment's source-body mask (FMantleDressedMask)
+	 * Mantle.Avatar.SkinMask: a vertex is hidden only where its garment's source-body mask (FMantleDressedMask)
 	 * and this wearer's coverage both hide it; without a mask, where the wearer's coverage hides it at least the mask's
 	 * border deep over the wearer's own surface. The sink then moves only skin under cloth on this wearer
 	 * (FMantleBodySink's SinkOnly), and the lower LODs keep a wider border (FMantleDressedBody::LowerLODHidden). Off:
-	 * the rule before #877 (the masks are ignored).
+	 * the earlier rule (the masks are ignored).
 	 */
 	bool bSkinMask = false;
 
 	/** The coverage rays' edge tolerance (FMantleGarmentCoverage::Compute's; the skin-mask rule's is SkinMaskEdgeTolerance). */
 	float EdgeTolerance = 0.0f;
 
-	/** The skin-mask rule with its tuning (DESIGN.md section 6): no seam shrink; a sink to 0.5 cm under the cloth, at most 1 cm. */
+	/** The skin-mask rule with its tuning: no seam shrink; a sink to 0.5 cm under the cloth, at most 1 cm. */
 	static FMantleDressedBodyParams SkinMaskDefaults()
 	{
 		FMantleDressedBodyParams Params;
@@ -337,7 +337,7 @@ struct FMantleDressedBodyParams
 	}
 };
 
-/** #877: one worn garment's source-body mask for FMantleDressedBodyParams::bSkinMask, in the order of the garments. */
+/** One worn garment's source-body mask for FMantleDressedBodyParams::bSkinMask, in the order of the garments. */
 struct FMantleDressedMask
 {
 	/** Null (or not one bit per body vertex): the wearer fallback. */
@@ -357,7 +357,7 @@ struct FMantleDressedMask
  * The output feeds FMantleRuntimeSkeletalMeshBuilder: the body with LOD0's positions replaced by
  * Positions, built with HiddenVertices = Hidden. Holds no UObjects; may run on any thread.
  *
- * #877, with Params.bSkinMask: per garment, its source mask's hidden bits (at its border) AND its coverage on this
+ * With Params.bSkinMask: per garment, its source mask's hidden bits (at its border) AND its coverage on this
  * wearer, then the union; the seam shrink is off and the sink moves only WearerCovered skin.
  */
 struct MANTLERUNTIME_API FMantleDressedBody
@@ -374,16 +374,16 @@ struct MANTLERUNTIME_API FMantleDressedBody
 	/** Per garment, in the order given. */
 	TArray<FMantleGarmentCoverage> Coverage;
 
-	/** #877 (bSkinMask): the union of the garments' coverage on this wearer, one bit per body vertex; the only skin the sink moves. */
+	/** (bSkinMask): the union of the garments' coverage on this wearer, one bit per body vertex; the only skin the sink moves. */
 	TBitArray<> WearerCovered;
 
 	/**
-	 * #877 (bSkinMask): per hidden body vertex, how far past its border it lies, in mm (the largest over the garments
+	 * (bSkinMask): per hidden body vertex, how far past its border it lies, in mm (the largest over the garments
 	 * hiding it); 0 elsewhere. Empty without bSkinMask. LowerLODHidden's input.
 	 */
 	TArray<uint8> SlackMm;
 
-	/** #877 (bSkinMask): vertices a garment's mask (or its wearer fallback) hides before the AND, the ones this wearer's coverage kept, and the garments without a mask. */
+	/** (bSkinMask): vertices a garment's mask (or its wearer fallback) hides before the AND, the ones this wearer's coverage kept, and the garments without a mask. */
 	int32 MaskHidden = 0;
 	int32 MaskKeptByWearer = 0;
 	int32 FallbackGarments = 0;
@@ -413,7 +413,7 @@ struct MANTLERUNTIME_API FMantleDressedBody
 		FMantleDressedBody& Out, FString* OutError = nullptr, TConstArrayView<FMantleDressedMask> Masks = TConstArrayView<FMantleDressedMask>());
 
 	/**
-	 * #877: the hidden bits of WearerBody's lower LODs (entry 0 is LOD1; FMantleSkinnedMeshBuildParams::LowerLODHiddenVertices).
+	 * The hidden bits of WearerBody's lower LODs (entry 0 is LOD1; FMantleSkinnedMeshBuildParams::LowerLODHiddenVertices).
 	 * A vertex of LOD k hides when its nearest LOD0 vertex (TransferHiddenVertices) is hidden at least half of LOD k's
 	 * mean edge length past its border (SlackMm), so the longer triangles of a coarse LOD never reach an edge. Out
 	 * empty (the builder's own transfer) when Dressed has no SlackMm or WearerBody one LOD. False with the reason.

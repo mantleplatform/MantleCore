@@ -12,7 +12,7 @@ public:
 	/** Conservative same-chart LOD boundary drift: at most four texels at 2048 and one millimeter on either surface. */
 	static constexpr float MaxBoundaryUV = 1.f/512.f;
 	static constexpr float MaxBoundaryCorrectionCm = .1f;
-	/** #784: card roots with no corresponding target skin borrow the nearest mapped root's offset, up to this share of an LOD's roots. */
+	/** Card roots with no corresponding target skin borrow the nearest mapped root's offset, up to this share of an LOD's roots. */
 	static constexpr float MaxBorrowedRootShare = .05f;
 	/** Facial slots use target-face weights; scalp hair keeps rigid head weights and is rebound to Body. OutBorrowedRoots counts the roots that borrowed. */
 	static bool Fit(const FMantleSkinnedMesh& Cards, const FMantleSkinnedMesh& SourceFace,

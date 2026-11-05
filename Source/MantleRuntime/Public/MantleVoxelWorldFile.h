@@ -7,8 +7,8 @@
 class FMantleVoxelGrid;
 
 /**
- * #168: a block world's blocks as a file, MBW1: the uploaded VoxelWorldData asset (backend/internal/cook/voxelworld.go checks it),
- * and a world save (step 5: only the sections that differ from the place's own world). Little-endian:
+ * A block world's blocks as a file, MBW1: the uploaded VoxelWorldData asset (backend/internal/cook/voxelworld.go checks it),
+ * and a world save (only the sections that differ from the place's own world). Little-endian:
  *
  *   0   "MBW1"
  *   4   u16 version (1)

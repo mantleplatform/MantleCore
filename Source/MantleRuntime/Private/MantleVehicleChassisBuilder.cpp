@@ -387,7 +387,7 @@ bool FMantleVehicleChassisBuilder::MakeAsset(const FMantleChassisSpec& Spec, FMa
 	}
 	Asset.RootBoneTransform = FTransform::Identity;
 
-	// The bones the movement blocks name are the body's, the posed ones free of the wheels (#821, the check Read makes of a published body).
+	// The bones the movement blocks name are the body's, the posed ones free of the wheels (the check Read makes of a published body).
 	if (!FMantleVehicleAssetReader::ResolveMovementBones(Asset.Desc, Body.Bones, Why))
 	{
 		return Refuse(OutError, FString::Printf(TEXT("the chassis's vehicle document does not fit its body: %s"), *Why));

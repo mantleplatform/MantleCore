@@ -85,7 +85,7 @@ namespace
 	 * A place with no DirectionalLight still needs a sun for the atmosphere and volumetric
 	 * clouds to render against. This sun is never part of Place.Entities and never given an
 	 * entity id — it exists only so the sky renders, matching the ticket's fixed defaults.
-	 * Its angle is the environment subsystem's (#445): the sun's path turns around +X, so the
+	 * Its angle is the environment subsystem's: the sun's path turns around +X, so the
 	 * rotation set here only matters in a world with no subsystem (an editor preview).
 	 */
 	ADirectionalLight* SpawnDefaultSun(UWorld* World)
@@ -108,7 +108,7 @@ namespace
 	}
 
 	/**
-	 * Loads one night-sky asset (#445 ticket 4) without the loader's own warnings, saying once
+	 * Loads one night-sky asset without the loader's own warnings, saying once
 	 * per process per path when it is missing: the sky then does without that body. Named for
 	 * the night sky, since unity builds merge this file with others.
 	 */
@@ -124,7 +124,7 @@ namespace
 			if (!bAlreadyReported)
 			{
 				UE_LOG(LogMantle, Warning,
-					TEXT("Night sky: %s is missing; the sky goes without it (tools/environment/Create-MantleSkyMaterials.py authors the sky materials)."),
+					TEXT("Night sky: %s is missing; the sky goes without it (no tool in the repo authors the sky materials)."),
 					Path);
 			}
 		}
@@ -230,7 +230,7 @@ void FMantleEnvironment::Apply(UWorld* World, const FMantlePlace& Place, FMantle
 		return;
 	}
 
-	// The clock runs on every net mode (#445): a dedicated server renders nothing, but its
+	// The clock runs on every net mode: a dedicated server renders nothing, but its
 	// scripts still read the hour. Started before the early return below for exactly that reason.
 	UMantleEnvironmentSubsystem* Environment = World->GetSubsystem<UMantleEnvironmentSubsystem>();
 	if (Environment)
@@ -249,7 +249,7 @@ void FMantleEnvironment::Apply(UWorld* World, const FMantlePlace& Place, FMantle
 	// `settings.skybox` is not read yet: every place gets the default sky.
 
 	FMantleSkyBinding Binding;
-	// Indoor levels (#722): the place's scale on the sky light, and a sun that never reaches it.
+	// Indoor levels: the place's scale on the sky light, and a sun that never reaches it.
 	Binding.SkyLightIntensityScale = static_cast<float>(Place.Settings.Environment.SkyLightIntensity.Get(1.0));
 	Binding.bNoDirectSun = Place.Settings.Environment.bNoDirectSun;
 
@@ -297,7 +297,7 @@ void FMantleEnvironment::Apply(UWorld* World, const FMantlePlace& Place, FMantle
 
 	if (AExponentialHeightFog* Fog = SpawnEnvironmentActor<AExponentialHeightFog>(World, TEXT("MantleDefaultHeightFog")))
 	{
-		// The place's own fog look (#628), before the weather records the fog's density and color as its baselines.
+		// The place's own fog look, before the weather records the fog's density and color as its baselines.
 		// A place with no fog of its own gets Mantle's default fog; a place with a fog keeps the engine's value for
 		// every key it left alone, as its creator saw it in the editor.
 		if (Place.Settings.Environment.Fog.IsSet())
@@ -332,7 +332,7 @@ void FMantleEnvironment::Apply(UWorld* World, const FMantlePlace& Place, FMantle
 	}
 	Binding.Sun = Sun;
 
-	// The night sky (#445 ticket 4): a star dome around the world and a moon inside it, turned,
+	// The night sky: a star dome around the world and a moon inside it, turned,
 	// placed and faded by the subsystem. Either is simply absent when its assets are missing.
 	if (AStaticMeshActor* StarDome = SpawnNightSkySphere(World, StarDomeMaterialPath,
 		MantleEnvironmentDefaults::StarDomeRadius, TEXT("MantleStarDome")))
@@ -348,12 +348,12 @@ void FMantleEnvironment::Apply(UWorld* World, const FMantlePlace& Place, FMantle
 		Binding.Moon = Moon;
 	}
 
-	// The day/night cycle (#445): from here on the subsystem owns the sun's angle, and aims it
+	// The day/night cycle: from here on the subsystem owns the sun's angle, and aims it
 	// for the current hour before the first frame renders.
 	if (Environment)
 	{
 		Environment->BindSky(Binding);
-		// The place's exposure (#628), or none: a place without one clears the last place's.
+		// The place's exposure, or none: a place without one clears the last place's.
 		Environment->SetPlaceExposure(Place.Settings.Environment.Exposure);
 		Environment->SetPlaceBloomThreshold(Place.Settings.Environment.BloomThreshold);
 	}

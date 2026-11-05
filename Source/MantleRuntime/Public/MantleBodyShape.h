@@ -11,7 +11,7 @@ struct FReferenceSkeleton;
 
 /**
  * A body's bone table (names, parents) and its reference pose (one local transform per bone): what
- * a fitted garment is rebound to (AVATAR_CATALOG_PLAN.md section 0.1 item 3) and what MBS1 carries.
+ * a fitted garment is rebound to and what MBS1 carries.
  * Plain arrays, so it can be read off the game thread.
  */
 struct MANTLERUNTIME_API FMantleReferencePose
@@ -35,7 +35,7 @@ struct MANTLERUNTIME_API FMantleReferencePose
 };
 
 /**
- * The neck a body shape may carry (#430, plan section 0.1 item 12; MBS1's NECK block): the source half of
+ * The neck a body shape may carry (MBS1's NECK block): the source half of
  * FMantleNeckSamples (BuildSource) measured by the plugin on the face the body was authored with, and the RBF
  * weights over the shape's positions followed by these samples, which the plugin computes at upload because a
  * client cannot in time. The client builds the wearer's half (FMantleNeckSamples::BuildWearer) from the wearer's
@@ -61,7 +61,7 @@ struct MANTLERUNTIME_API FMantleBodyShapeNeck
 };
 
 /**
- * A body shape: the in-memory form of MBS1 (AVATAR_CATALOG_PLAN.md section 3.4). The positions of a
+ * A body shape: the in-memory form of MBS1. The positions of a
  * body at Mantle's reference topology in canonical (vertex) order, its reference pose, and the RBF
  * weights FMantleGarmentFitter::ComputeSourceWeights generates from the positions. A garment is
  * uploaded with the shape of the body it was authored on; the client warps it from that shape onto
@@ -86,7 +86,7 @@ struct MANTLERUNTIME_API FMantleBodyShape
 	/** UMantleBodyTopologyData::ComputePositionsHash of Positions (set by whoever fills Positions); the fitter's cache key. */
 	uint32 PositionsHash = 0;
 
-	/** #430: the neck measured on the face the body was authored with; unset without one. */
+	/** The neck measured on the face the body was authored with; unset without one. */
 	FMantleBodyShapeNeck Neck;
 
 	bool HasWeights() const { return Weights.SampleIndices.Num() > 0; }

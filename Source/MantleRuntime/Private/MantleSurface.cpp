@@ -165,7 +165,7 @@ UPhysicalMaterial* MantleLoadSurfaceMaterial(EMantleSurface Surface)
 		bMissing[Index] = true;
 		UE_LOG(LogMantle, Warning,
 			TEXT("MANTLE_SURFACE_MATERIAL_MISSING surface=%s path=%s: this build has no such physical material, so geometry with it keeps its own surface. ")
-			TEXT("Create it with tools/physics/Create-MantlePhysicalMaterials.py and cook /Game/Mantle/Physics."),
+			TEXT("No tool in the repo authors these physical materials; add the asset under /Game/Mantle/Physics and cook it."),
 			MantleSurfaceToString(Surface), *Path);
 	}
 	return Loaded;

@@ -13,9 +13,9 @@ class UStaticMesh;
 class UWorld;
 
 /**
- * GhzGarage/mantle#456: simulated place objects.
+ * Simulated place objects.
  *
- * The replication model (decided for #456): the server simulates every physics entity and clients
+ * The replication model (decided up front): the server simulates every physics entity and clients
  * follow it through the engine's standard replicated physics movement, over Iris like everything
  * else. The server builds each StaticMesh entity that has a physics block as an AMantlePhysicsProp:
  * a replicated, always-relevant actor with bReplicateMovement, so FRepMovement (with bRepPhysics
@@ -65,8 +65,8 @@ MANTLERUNTIME_API const TCHAR* MantlePhysicsBodySourceToString(EMantlePhysicsBod
 MANTLERUNTIME_API FName MantlePhysicsAnchoredTag();
 
 /**
- * What one physics.material preset's UPhysicalMaterial holds. tools/physics/
- * Create-MantlePhysicalMaterials.py writes the assets from the same numbers. Density is in g/cm^3 and
+ * What one physics.material preset's UPhysicalMaterial holds.
+ * Density is in g/cm^3 and
  * only matters for a body whose place gives no mass.
  */
 struct FMantlePhysicsMaterialPreset
@@ -171,7 +171,7 @@ public:
 	static void ApplyBodySettings(UPrimitiveComponent* Component, const FMantlePhysicsProps& Physics);
 
 	/**
-	 * The preset's physical material as Component's override (#528), then its mass recomputed so
+	 * The preset's physical material as Component's override, then its mass recomputed so
 	 * the preset's density counts when no mass is set. Leaves the body as it is when the asset is
 	 * missing (MantleLoadPhysicsMaterial logs it).
 	 */
@@ -263,7 +263,7 @@ private:
 	FString EntityId;
 
 	/**
-	 * The surface preset (#528), an EMantlePhysicsMaterial as one byte. Replicated for the whole
+	 * The surface preset, an EMantlePhysicsMaterial as one byte. Replicated for the whole
 	 * life of the prop, since a server script may change it; a late joiner gets the current one in
 	 * the prop's initial state, and it takes precedence over the place's on a client.
 	 */

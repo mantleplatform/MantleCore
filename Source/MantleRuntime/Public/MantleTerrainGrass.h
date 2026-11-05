@@ -1,5 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
-// GhzGarage/mantle#628: a Terrain's grass. Meshes every client scatters over the terrain near its camera,
+// A Terrain's grass. Meshes every client scatters over the terrain near its camera,
 // where a grass map's channel says so (a Fab landscape's LandscapeGrassType, exported as one entry per
 // variety). Visual only: no collision, nothing replicated, nothing on a dedicated server.
 //
@@ -110,7 +110,7 @@ struct FMantleGrassEntryAssets
 };
 
 /**
- * A built Terrain's grass (#628), on its actor: grows each entry's grass in the cells around the local view
+ * A built Terrain's grass, on its actor: grows each entry's grass in the cells around the local view
  * and releases what the view leaves. Added by the place builder on a machine that draws, never on a dedicated
  * server or in an editor world; nothing of it replicates, since each machine builds the same terrain from the
  * same place.

@@ -9,8 +9,8 @@ class UMaterialInterface;
 class UWorld;
 
 /**
- * The cooked decal masters a Decal entity draws with (#472), made by
- * tools/materials/Create-DecalMaterial.py under /Game/Mantle/Materials and cooked into every client
+ * The cooked decal masters a Decal entity draws with, kept
+ * under /Game/Mantle/Materials and cooked into every client
  * with the rest of that folder. Both are deferred decals, translucent: M_MantleDecal projects
  * BaseColor (its alpha the coverage) times Opacity; M_MantleDecal_Normal projects Normal as well.
  * Two masters rather than a switch, because a decal material that writes a normal at all replaces

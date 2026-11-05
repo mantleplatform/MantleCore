@@ -7,7 +7,7 @@ class FJsonObject;
 struct FMantleChassisSpec;
 
 /**
- * The handling of a chassis (#793): the numbers of a vehicle document that follow from its size, as one set. FMantleChassisDerive makes
+ * The handling of a chassis: the numbers of a vehicle document that follow from its size, as one set. FMantleChassisDerive makes
  * one from a spec's dimensions; a preset's hand-tuned `defaults` read the same way are the archetype's (FMantleChassisSpec::Archetype).
  * Units are the document's (schema/vehicle.schema.json): cm, kg, N*m, degrees, cm/s, m^2.
  */
@@ -57,9 +57,9 @@ struct MANTLERUNTIME_API FMantleChassisHandling
 };
 
 /**
- * The four feel sliders of a chassis (#793), each from -1 to 1 and 0 for the archetype's own: grip scales the tire friction, power the
+ * The four feel sliders of a chassis, each from -1 to 1 and 0 for the archetype's own: grip scales the tire friction, power the
  * engine's power-to-weight, stiffness the ride frequency and topSpeed the top speed, each by up to 30 percent either way. Never
- * physics beyond that: customization does not change how a vehicle drives (#793).
+ * physics beyond that: customization does not change how a vehicle drives.
  */
 struct MANTLERUNTIME_API FMantleChassisFeel
 {
@@ -97,7 +97,7 @@ struct MANTLERUNTIME_API FMantleChassisTrim
 };
 
 /**
- * The handling of a chassis from its dimensions (#793). Every number of a vehicle document is the archetype's own, hand-tuned, times a ratio of
+ * The handling of a chassis from its dimensions. Every number of a vehicle document is the archetype's own, hand-tuned, times a ratio of
  * how the chassis's dimensions differ from the archetype's (FMantleChassisSpec::ArchetypeSize):
  *   H(spec) = Archetype x D(spec dimensions) / D(archetype dimensions)
  * so at the archetype's own dimensions every ratio is 1 and the result is exactly the preset's `defaults`, and a chassis resized by 1.001 is

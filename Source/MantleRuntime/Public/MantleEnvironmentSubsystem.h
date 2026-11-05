@@ -25,7 +25,7 @@ class UVolumetricCloudComponent;
 struct FMantleEnvironmentSettings;
 struct FPostProcessSettings;
 
-/** One lightning strike, as every client computes it from the weather seed (#446). */
+/** One lightning strike, as every client computes it from the weather seed. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FMantleLightningStrikeDelegate, const FMantleLightningStrike& /*Strike*/);
 
 /**
@@ -41,7 +41,7 @@ struct FMantleSkyBinding
 	bool bPlaceSun = false;
 
 	/**
-	 * The rest of the default sky cluster, which the weather drives (#446 ticket 2): the sky
+	 * The rest of the default sky cluster, which the weather drives: the sky
 	 * light's intensity, the fog's density and the cloud material, each relative to what it had
 	 * when bound. Any of them may be null; the rest are still driven.
 	 */
@@ -50,27 +50,27 @@ struct FMantleSkyBinding
 	AVolumetricCloud* Cloud = nullptr;
 
 	/**
-	 * The night sky (#445 ticket 4), from FMantleEnvironment::SpawnNightSkySphere: each carries a
+	 * The night sky, from FMantleEnvironment::SpawnNightSkySphere: each carries a
 	 * dynamic instance of its material. Either is null when its assets are missing.
 	 */
 	AStaticMeshActor* StarDome = nullptr;
 	AStaticMeshActor* Moon = nullptr;
 
 	/**
-	 * The place's settings.environment.skyLight.intensity (#722): a scale, 0 to 1, on the sky light's own intensity,
+	 * The place's settings.environment.skyLight.intensity: a scale, 0 to 1, on the sky light's own intensity,
 	 * applied to its base before the weather's. An indoor level lowers it so its walls are not lit by the open sky.
 	 */
 	float SkyLightIntensityScale = 1.0f;
 
 	/**
-	 * The place's settings.environment.sun.direct false (#722): the sun and the moon light nothing in the place. The
+	 * The place's settings.environment.sun.direct false: the sun and the moon light nothing in the place. The
 	 * light keeps its intensity, so the atmosphere, the clouds and the sky light's capture of them are unchanged.
 	 */
 	bool bNoDirectSun = false;
 };
 
 /**
- * The shared environment of one world (#445): the time of day every player on a server sees.
+ * The shared environment of one world: the time of day every player on a server sees.
  *
  * Exists on every net mode, the dedicated server included, so a script there can read the hour.
  * FMantleEnvironment::Apply starts the clock for the place it builds, before its own
@@ -85,14 +85,14 @@ struct FMantleSkyBinding
  * atmosphere light, so the real-time sky light capture and the height fog follow it on their own.
  * It also turns and fades the star dome and places the moon's disc opposite the sun (the night
  * sky, UpdateNightSky), all derived from the same clock, so nothing replicates for them either.
- * The weather (#446) is derived from the one replicated seed and the same clock: it drives the
+ * The weather is derived from the one replicated seed and the same clock: it drives the
  * clouds, the fog and the sky light (UpdateWeatherSky), dims the sun and fades the night sky.
  *
- * Server scripts change all of this through one replicated FMantleEnvironmentOverride (#454,
+ * Server scripts change all of this through one replicated FMantleEnvironmentOverride (
  * script API 1.11, SetOverride): the clock's hour and rate, a forced weather, the cloud cover, the
  * fog, the stars, the sun, and a post-process subset applied through one unbound volume this
  * subsystem owns on clients. Every getter here already includes the override. A client script can
- * lay its own look over that post-process on its own machine (SetLocalLook, #532 ticket 4).
+ * lay its own look over that post-process on its own machine (SetLocalLook).
  */
 UCLASS()
 class MANTLERUNTIME_API UMantleEnvironmentSubsystem : public UTickableWorldSubsystem
@@ -133,7 +133,7 @@ public:
 	/** The server time the clock reads, in seconds. */
 	double GetServerSeconds() const;
 
-	/** 0 to under 24: the clock, or a script's (#454). */
+	/** 0 to under 24: the clock, or a script's. */
 	double GetTimeOfDay() const;
 
 	/** Hours since day zero, not wrapped: what the hour and the moon's phase come from. */
@@ -172,7 +172,7 @@ public:
 	 */
 	void UpdateSky(bool bForce = false);
 
-	// ---- Night sky (clients only, #445 ticket 4) --------------------------------------------
+	// ---- Night sky (clients only) --------------------------------------------
 
 	/** True while a bound star dome or moon is still alive. */
 	bool HasNightSky() const;
@@ -191,7 +191,7 @@ public:
 	 */
 	void UpdateNightSky(bool bForce = false);
 
-	// ---- Weather (#446) ---------------------------------------------------------------------
+	// ---- Weather ---------------------------------------------------------------------
 
 	/**
 	 * Weather time: the server seconds the clock reads, times the clock's time scale.
@@ -213,7 +213,7 @@ public:
 	int32 GetWeatherSeed() const { return Weather.IsSet() ? Weather->GetSeed() : 0; }
 
 	/**
-	 * The weather now: the seeded sequence's, or what a script forced (#454) and the blend into
+	 * The weather now: the seeded sequence's, or what a script forced and the blend into
 	 * or back out of it, with a script's cloud cover on top. Clear, fully blended, until the seed
 	 * is known (a forced weather applies without it). SlotIndex is always the seeded slot's.
 	 */
@@ -247,7 +247,7 @@ public:
 	 */
 	void SetLightningLightsSun(bool bLightsSun) { bLightningLightsSun = bLightsSun; }
 
-	// ---- Weather on the sky (clients only, #446 ticket 2) -----------------------------------
+	// ---- Weather on the sky (clients only) -----------------------------------
 
 	/** True while a bound cloud material, fog or sky light is still alive. */
 	bool HasWeatherSky() const;
@@ -272,11 +272,11 @@ public:
 
 	/**
 	 * Fires on clients for every strike, at the same environment time on every client, with no
-	 * message per strike. The hook for the script API's LightningStrike signal (#446 ticket 4).
+	 * message per strike. The hook for the script API's LightningStrike signal.
 	 */
 	FMantleLightningStrikeDelegate OnLightningStrike;
 
-	// ---- Script overrides (#454, script API 1.11) -------------------------------------------
+	// ---- Script overrides (script API 1.11) -------------------------------------------
 
 	/** What server scripts have changed: the default (which changes nothing) until one writes. */
 	const FMantleEnvironmentOverride& GetOverride() const { return Override; }
@@ -318,7 +318,7 @@ public:
 	FMantleEnvironmentOverride MakeNaturalWeatherOverride(double BlendSeconds) const;
 
 	/**
-	 * A place's default look (#532, settings.environment) as an override built from the default,
+	 * A place's default look (settings.environment) as an override built from the default,
 	 * never from the current one: the clock anchored now at its clockTime (on the default clock's
 	 * day, so the moon's phase carries on) and running at its timeScale, its weather held with no
 	 * blend, its tint, saturation, bloom and color-grading preset and intensity. Each key the place
@@ -330,7 +330,7 @@ public:
 	 */
 	FMantleEnvironmentOverride MakeSettingsOverride(const FMantleEnvironmentSettings& Settings) const;
 
-	// ---- This player's own look (#532 ticket 4, script API 1.29) -----------------------------
+	// ---- This player's own look (script API 1.29) -----------------------------
 
 	/**
 	 * Replaces this machine's local look (Environment:SetLocalLook): sanitized, then merged field
@@ -357,7 +357,7 @@ public:
 	 */
 	void UpdatePostProcess();
 
-	// ---- The place's exposure (#628, settings.environment.exposure) -------------------------------
+	// ---- The place's exposure (settings.environment.exposure) -------------------------------
 
 	/**
 	 * Clients: sets the place's exposure (FMantleEnvironment::Apply, from settings.environment.exposure; unset clears it) and
@@ -415,14 +415,14 @@ public:
 	void SetExposureLift(float Stops);
 
 	/**
-	 * Clients: the weather's tint for the fog (#930): its own color moves Amount (0-1) of the way to Tint, as Ultra
+	 * Clients: the weather's tint for the fog: its own color moves Amount (0-1) of the way to Tint, as Ultra
 	 * Dynamic Sky's fog turns to its dust color in dust. A script's Environment.FogColor still replaces it. The game
 	 * client sets it; nothing else does, so the fog keeps its own color in the editor and on servers.
 	 */
 	void SetWeatherFogTint(const FLinearColor& Tint, float Amount);
 
 	/**
-	 * Clients (#532): the LUT texture of a ColorGrading preset, loaded by path
+	 * Clients: the LUT texture of a ColorGrading preset, loaded by path
 	 * (FMantleEnvironmentOverride::ColorGradingLutPath). Null for ColorGradingNone, and for a
 	 * preset whose texture is missing or is not a texture: that is logged once per preset per
 	 * world ("MANTLE_LUT missing ..."), and the picture keeps the project's own grading.
@@ -459,7 +459,7 @@ private:
 
 	/**
 	 * Gives the weather a dynamic instance of the cloud's current material (GetMaterial: the
-	 * MI_MantleDefaultCloud FMantleEnvironment::Apply set, never a path loaded here, #507), and
+	 * MI_MantleDefaultCloud FMantleEnvironment::Apply set, never a path loaded here), and
 	 * records which of the driven parameters it really has. Leaves the cloud's material alone
 	 * when it has none of them.
 	 */
@@ -483,7 +483,7 @@ private:
 	double HeadingYawDegrees = 0.0;
 	float DayIntensity = 0.0f;
 	FColor DayColor = FColor::White;
-	/** FMantleSkyBinding::bNoDirectSun for the bound place (#722). */
+	/** FMantleSkyBinding::bNoDirectSun for the bound place. */
 	bool bNoDirectSun = false;
 
 	/** What UpdateSky last applied, so it can step instead of re-aiming every frame. */
@@ -534,14 +534,14 @@ private:
 	float AppliedFogDensity = 0.0f;
 	float AppliedSkyLightIntensity = 0.0f;
 
-	/** #454: what server scripts changed, the fog color it replaces, and the post-process volume. */
+	/** What server scripts changed, the fog color it replaces, and the post-process volume. */
 	FMantleEnvironmentOverride Override;
-	/** #532 ticket 4: this player's own look, over Override's post-process only. */
+	/** Ticket 4: this player's own look, over Override's post-process only. */
 	FMantleEnvironmentLocalLook LocalLook;
 	FLinearColor BaseFogColor = FLinearColor::Black;
 	FLinearColor AppliedFogColor = FLinearColor::Black;
 	TWeakObjectPtr<APostProcessVolume> PostProcessVolume;
-	/** #628: the place's exposure, which UpdatePostProcess puts in that same volume. */
+	/** The place's exposure, which UpdatePostProcess puts in that same volume. */
 	TOptional<FMantleExposureSettings> PlaceExposure;
 	/** The place's Bloom Threshold, put in that same volume. */
 	TOptional<double> PlaceBloomThreshold;
@@ -555,7 +555,7 @@ private:
 	float WeatherFogTintAmount = 0.0f;
 
 	/**
-	 * #532: a bit per color-grading preset (1 << preset) already found missing, so each is looked for and logged once.
+	 * A bit per color-grading preset (1 << preset) already found missing, so each is looked for and logged once.
 	 * A found LUT needs no cache: the volume's settings hold it, and after that it resolves in memory.
 	 */
 	uint8 ColorGradingLutMissing = 0;

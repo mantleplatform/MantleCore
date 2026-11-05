@@ -10,7 +10,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// A creator car's hood and two rear doors (#546), opened from outside as the trunk is. The cook's own fixture (backend
+// A creator car's hood and two rear doors, opened from outside as the trunk is. The cook's own fixture (backend
 // TestVehicleOpeningsFixtureMatchesWhatWeWriteToday) is the car parts car with a hood, a left rear door and a right rear door.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleVehicleOpeningsAssetTest,

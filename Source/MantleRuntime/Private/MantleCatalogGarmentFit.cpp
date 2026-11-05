@@ -49,7 +49,7 @@ bool FMantleCatalogGarmentFit::DeriveAuthoredClearance(const FMantleSkinnedMesh&
 		return false;
 	}
 
-	// #877: the skin it hides, decided on the body it was made on. Without it the dressed body takes the wearer fallback.
+	// The skin it hides, decided on the body it was made on. Without it the dressed body takes the wearer fallback.
 	TSharedRef<FMantleSkinMask> Mask = MakeShared<FMantleSkinMask>();
 	FString MaskError;
 	if (Garment.LODs.Num() > 0

@@ -239,7 +239,7 @@ bool FMantleGarmentSkinTransferRingTest::RunTest(const FString& Parameters)
 
 	// A snug collar at the face's lower edge: the rim over the face at uneven distances, every few vertices past
 	// its open boundary (untracked, -1); the row below mostly past it. The raw shares jump between about 0.8 and 0
-	// from one rim vertex to the next, so the per-vertex share of #961 left this rim wavy (largest step 0.82,
+	// from one rim vertex to the next, so the earlier per-vertex share left this rim wavy (largest step 0.82,
 	// posed bump 1.2 cm, worked out by hand from the same numbers).
 	const TArray<float> RimFaceCm = { 0.4f, -1.0f, 0.6f, 2.5f, 0.3f, -1.0f, 0.8f, 4.0f, 0.5f, 1.8f, -1.0f, 0.4f, 0.7f, -1.0f, 0.3f, 3.0f, 0.5f, -1.0f, 0.9f, 0.4f, 2.2f, -1.0f, 0.6f, 0.5f };
 	const TArray<float> LowFaceCm = { -1.0f, 3.5f, -1.0f, -1.0f, 4.5f, -1.0f, -1.0f, -1.0f, 3.0f, -1.0f, -1.0f, 5.0f, -1.0f, -1.0f, 4.0f, -1.0f, -1.0f, -1.0f, 3.8f, -1.0f, -1.0f, -1.0f, 4.2f, -1.0f };

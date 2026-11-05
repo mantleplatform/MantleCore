@@ -12,7 +12,7 @@ class UPhysicsConstraintComponent;
 class UPrimitiveComponent;
 
 /**
- * GhzGarage/mantle#528 P3: joints between physics entities.
+ * Joints between physics entities.
  *
  * A Constraint joins a physics entity (a StaticMesh with a physics block, AMantlePhysicsProp) to
  * another, or to the world: a weld holds the two as they are, a hinge lets entityA turn about one

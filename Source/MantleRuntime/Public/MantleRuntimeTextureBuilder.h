@@ -10,7 +10,7 @@ class UTexture2D;
 
 /**
  * What a texture is for, which decides how its bytes are read: color is sRGB, everything else is
- * linear. Shared by avatar items (A2.3) and place materials (Fab F8: base color and emissive are
+ * linear. Shared by avatar items and place materials (base color and emissive are
  * Color, the normal map Normal, ORM Data).
  */
 enum class EMantleTextureRole : uint8
@@ -42,7 +42,7 @@ struct FMantleTextureBuildParams
 
 	/**
 	 * Largest width or height accepted, checked from the image header before anything is decoded. The
-	 * catalog's texture limit is 2048 (AVATAR_CATALOG_PLAN.md section 3.4).
+	 * catalog's texture limit is 2048.
 	 */
 	int32 MaxDimension = 2048;
 
@@ -81,7 +81,7 @@ struct FMantleTextureMip
 /**
  * A texture decoded on the CPU and ready for upload: the half of the build that needs no UObject, so
  * it can run on a worker thread. PF_B8G8R8A8 decoded from PNG/JPEG, or the BC1/BC3/BC4/BC5 blocks and
- * mips of an MTX1 container (Fab F9, #343) copied as they are, without a CPU decode. Build uploads
+ * mips of an MTX1 container (Fab F9) copied as they are, without a CPU decode. Build uploads
  * either the same way.
  */
 struct MANTLERUNTIME_API FMantleDecodedTexture
@@ -111,11 +111,11 @@ struct MANTLERUNTIME_API FMantleDecodedTexture
 };
 
 /**
- * Turns downloaded image bytes into a transient UTexture2D at runtime (AVATAR_CATALOG_PLAN.md A2.3;
- * shared with the Fab track's place materials, F8 #342, and extended by F9 #343 with BC blocks).
+ * Turns downloaded image bytes into a transient UTexture2D at runtime (shared with the Fab track's place materials,
+ * and extended with BC blocks).
  *
  *   Decode(bytes, params)   Any thread. The format is sniffed from the bytes, never trusted from a name.
- *                           MTX1 (F9's cooked BC container, BACKEND.md "The MTX1 format"): every header
+ *                           MTX1 (the cooked BC container): every header
  *                           field, mip size and offset checked against the format's rules and the
  *                           buffer before anything is allocated, then the blocks copied per mip; the
  *                           pixel format and role come from the file (BC1/BC3 sRGB: Color; BC1/BC3
@@ -133,7 +133,7 @@ struct MANTLERUNTIME_API FMantleDecodedTexture
 class MANTLERUNTIME_API FMantleRuntimeTextureBuilder
 {
 public:
-	/** Pixel formats Build uploads: BGRA8 today, the BC formats F9's MTX1 container carries. */
+	/** Pixel formats Build uploads: BGRA8 today, the BC formats the MTX1 container carries. */
 	static bool IsSupportedFormat(EPixelFormat Format);
 
 	/** Bytes of one mip of Format at Width x Height (block formats round up to whole blocks); -1 for an unsupported format. */

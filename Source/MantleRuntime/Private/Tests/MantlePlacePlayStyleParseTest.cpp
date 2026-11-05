@@ -6,7 +6,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// #232: the place's play style. settings.playStyle (style, options) and the option rules in MantlePlayStyle.
+// The place's play style. settings.playStyle (style, options) and the option rules in MantlePlayStyle.
 // Mirrors validate.py (check_play_style and the schema) and the backend's validate.go.
 
 // Named, not anonymous: MantleRuntime builds as a unity build.

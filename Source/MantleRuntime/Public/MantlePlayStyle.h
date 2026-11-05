@@ -4,11 +4,11 @@
 #include "CoreMinimal.h"
 
 /**
- * #232 play styles: the one description of a player's camera and movement style, shared by the place file
+ * Play styles: the one description of a player's camera and movement style, shared by the place file
  * (settings.playStyle), Player:SetPlayStyle and the character that replicates it, so the option rules exist once.
  *
  * Default is Mantle's normal first and third person play. TopDown is a high camera over the character with
- * screen-relative movement. SideScroll (#229) is a side-on camera that follows the character along a flat path, with
+ * screen-relative movement. SideScroll is a side-on camera that follows the character along a flat path, with
  * movement held to that path.
  *
  * The rules are applied one option at a time (ApplyNumber / ApplyFlag) and then checked together (Finish), so a
@@ -21,7 +21,7 @@ enum class EMantlePlayStyle : uint8
 	SideScroll
 };
 
-/** The TopDown options (#232), every one with its default. Lengths are cm, angles degrees. */
+/** The TopDown options, every one with its default. Lengths are cm, angles degrees. */
 struct FMantleTopDownOptions
 {
 	float Distance = 1400.0f;
@@ -46,7 +46,7 @@ struct FMantleTopDownOptions
 	bool operator!=(const FMantleTopDownOptions& Other) const { return !(*this == Other); }
 };
 
-/** The SideScroll options (#229), every one with its default. Lengths are cm, angles degrees. */
+/** The SideScroll options, every one with its default. Lengths are cm, angles degrees. */
 struct FMantleSideScrollOptions
 {
 	/**
@@ -123,7 +123,7 @@ namespace MantlePlayStyle
 	/** The checks across options: MinDistance not above MaxDistance, Distance between them. Names the option at fault in OutError. */
 	MANTLERUNTIME_API bool Finish(const FMantleTopDownOptions& Options, FString& OutError);
 
-	// ---- SideScroll (#229) -------------------------------------------------------------------------------------------------------
+	// ---- SideScroll -------------------------------------------------------------------------------------------------------
 
 	constexpr int32 MinPathPoints = 2;
 	constexpr int32 MaxPathPoints = 64;

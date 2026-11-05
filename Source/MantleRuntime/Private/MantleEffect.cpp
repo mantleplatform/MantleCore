@@ -595,7 +595,7 @@ void AMantleEffect::PushLook()
 	}
 	if (Archetype == EMantleEffectArchetype::Sprites)
 	{
-		// #628: the sprites system reads its own keys; its material instance is made once per blend and updated after.
+		// The sprites system reads its own keys; its material instance is made once per blend and updated after.
 		const FMantleEffectLook Look = FMantleEffects::ClampLook(GetLook(), Archetype);
 		const FMantleSpritesSettings Settings = FMantleEffects::ClampSprites(Sprites);
 		if (!SpritesMaterial || SpritesMaterialBlend != Settings.Blend)
@@ -667,7 +667,7 @@ UMaterialInstanceDynamic* AMantleEffect::MakeSpritesMaterial(UObject* Outer, con
 		if (!bAlreadyWarned)
 		{
 			bAlreadyWarned = true;
-			UE_LOG(LogMantle, Warning, TEXT("MANTLE_PLACE_EFFECT %s is missing from this build (Create-MantleEffectSprites.py makes it): sprites effects draw with the system's own material"), *Path);
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_PLACE_EFFECT %s is missing from this build (no tool in the repo authors this effect material): sprites effects draw with the system's own material"), *Path);
 		}
 		return nullptr;
 	}

@@ -12,7 +12,7 @@ class UReflectionCaptureComponent;
 class USceneComponent;
 
 /**
- * What the engine needs for a runtime-captured reflection probe (#628), and the numbers the pump works to.
+ * What the engine needs for a runtime-captured reflection probe, and the numbers the pump works to.
  *
  * A classic Box or Sphere Reflection Capture is baked in the editor and only uploads its MapBuildData in a game
  * (ReflectionEnvironmentCapture.cpp: "Capturing only supported in the editor"), and a place has no baked data, so
@@ -73,7 +73,7 @@ struct MANTLERUNTIME_API FMantleReflectionProbes
 };
 
 /**
- * One ReflectionProbe entity as an actor (#628). It holds the probe's numbers and stands where the place puts the
+ * One ReflectionProbe entity as an actor. It holds the probe's numbers and stands where the place puts the
  * entity; the capture component is not made until UMantleReflectionProbeSubsystem asks (SpawnCapture), once the
  * place is built, so a dedicated server or a process that cannot render keeps the entity and creates nothing.
  *
@@ -121,7 +121,7 @@ private:
 };
 
 /**
- * Captures a place's probes once it stands (#628). The builder registers each probe as it spawns it and tells
+ * Captures a place's probes once it stands. The builder registers each probe as it spawns it and tells
  * the subsystem when the build is over; after FMantleReflectionProbes::WarmupFrames the subsystem makes every
  * capture component, then queues one capture a frame (UReflectionCaptureComponent::MarkDirtyForRecaptureOrUpload)
  * for FMantleReflectionProbes::PumpFrames frames (and at least FMantleReflectionProbes::MinPumpSeconds), which is what

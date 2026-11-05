@@ -143,7 +143,7 @@ bool MantlePlayStyle::Finish(const FMantleTopDownOptions& Options, FString& OutE
 	return true;
 }
 
-// ---- SideScroll (#229) ------------------------------------------------------------------------------------------------------
+// ---- SideScroll ------------------------------------------------------------------------------------------------------
 
 TConstArrayView<const TCHAR*> MantlePlayStyle::SideScrollOptionNames()
 {

@@ -28,11 +28,11 @@ namespace MantlePlaceMaterialPrivate
 	bool GWarnedVariantMissing = false;
 	bool GWarnedWaterMissing = false;
 
-	/** The schema's normalScale maximum and a uvTransforms rotation's bound either way (#471). */
+	/** The schema's normalScale maximum and a uvTransforms rotation's bound either way. */
 	constexpr double MaxNormalScale = 10.0;
 	constexpr double MaxUVRotation = 3.1416;
 
-	/** #533's bounds: a uvPanning component either way, wind's intensity and speed, worldAligned's two. */
+	/** Bounds for the uvPanning, wind and worldAligned keys: a uvPanning component either way, wind's intensity and speed, worldAligned's two. */
 	constexpr double MaxUVPanning = 10.0;
 	constexpr double MaxWind = 4.0;
 	constexpr double MinTileSizeCm = 1.0;
@@ -40,7 +40,7 @@ namespace MantlePlaceMaterialPrivate
 	constexpr double MinSharpness = 1.0;
 	constexpr double MaxSharpness = 16.0;
 
-	/** #533's variants, in permutation order (13.., 17.., 19..), then #628's (21, 22, and water's 23, 24). */
+	/** The wind, worldAligned and layerBlend variants, in permutation order (13.., 17.., 19..), then the foliage ones (21, 22, and water's 23, 24). */
 	const EMantlePlaceExtendedVariant Variants[] = {
 		EMantlePlaceExtendedVariant::Wind, EMantlePlaceExtendedVariant::WorldAligned, EMantlePlaceExtendedVariant::LayerBlend,
 		EMantlePlaceExtendedVariant::Foliage, EMantlePlaceExtendedVariant::FoliageWind,
@@ -60,7 +60,7 @@ namespace MantlePlaceMaterialPrivate
 		UMaterialInterface* Loaded = Cast<UMaterialInterface>(Path.ResolveObject());
 		if (!Loaded && (GPermutationChecked[Index] || FPackageName::DoesPackageExist(Path.GetLongPackageName())))
 		{
-			// Synchronous, once per permutation per process: the first uploaded material of that kind pays it (#126).
+			// Synchronous, once per permutation per process: the first uploaded material of that kind pays it.
 			TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceMaterials_LoadPermutation);
 			MANTLE_TRACE_SCOPE_DETAIL("MantleAssetLoad", Path.ToString());
 			Loaded = LoadObject<UMaterialInterface>(nullptr, *Path.ToString(), nullptr, LOAD_NoWarn | LOAD_Quiet);
@@ -187,13 +187,13 @@ namespace MantlePlaceMaterialPrivate
 		TEXT("flakeDensity"), TEXT("flakeSize"), TEXT("flakeTint"), TEXT("clearCoat"), TEXT("clearCoatRoughness"),
 	};
 
-	/** #471's and #533's keys: they build on M_MantlePlace_Extended, so a car-paint document refuses them. */
+	/** The keys that build on M_MantlePlace_Extended, so a car-paint document refuses them. */
 	const TCHAR* const FidelityKeys[] = {
 		TEXT("uvTransforms"), TEXT("normalScale"), TEXT("occlusionStrength"), TEXT("occlusionUV"), TEXT("vertexColor"),
 		TEXT("uvPanning"), TEXT("wind"), TEXT("worldAligned"), TEXT("layerBlend"), TEXT("foliage"), TEXT("water"),
 	};
 
-	/** #533's keys with permutations of their own, in the order a second one is refused. */
+	/** The keys with permutations of their own (wind, worldAligned, layerBlend), in the order a second one is refused. */
 	const TCHAR* const VariantKeys[] = {
 		TEXT("wind"), TEXT("worldAligned"), TEXT("layerBlend"),
 	};
@@ -218,7 +218,7 @@ namespace MantlePlaceMaterialPrivate
 		TEXT("tint"), TEXT("strength"), TEXT("vertexColorWeight"),
 	};
 
-	/** The schema's foliage.strength maximum (#628). */
+	/** The schema's foliage.strength maximum. */
 	constexpr double MaxFoliageStrength = 4.0;
 
 	const TCHAR* const WaterKeys[] = {
@@ -229,7 +229,7 @@ namespace MantlePlaceMaterialPrivate
 		TEXT("space"), TEXT("tiling"), TEXT("worldSizeCm"), TEXT("panning"),
 	};
 
-	/** The schema's water normal worldSizeCm bounds (#628), and a tiling component's either way. */
+	/** The schema's water normal worldSizeCm bounds, and a tiling component's either way. */
 	constexpr double MinWaterWorldSizeCm = 1.0;
 	constexpr double MaxWaterWorldSizeCm = 100000.0;
 	constexpr double MaxUVTiling = 1024.0;
@@ -275,7 +275,7 @@ namespace MantlePlaceMaterialPrivate
 	}
 
 	/**
-	 * One water normal layer (#628): water.normal, or water.normal2 with its texture (bSecond; OutTextureId). The space is
+	 * One water normal layer: water.normal, or water.normal2 with its texture (bSecond; OutTextureId). The space is
 	 * uv (the default; a tiling, no worldSizeCm) or world (worldSizeCm required, no tiling). False, with the whole reason
 	 * (path included), on anything else.
 	 */
@@ -661,7 +661,7 @@ bool FMantlePlaceMaterials::ParseMaterial(const TConstArrayView<uint8> Bytes, FM
 		{
 			return FailMaterial(Out, OutError, TEXT("/doubleSided must be false when shading is carPaint"));
 		}
-		// #471's keys build on M_MantlePlace_Extended, which has no car paint.
+		// The fidelity keys build on M_MantlePlace_Extended, which has no car paint.
 		for (const TCHAR* Key : FidelityKeys)
 		{
 			if (Root->HasField(Key))
@@ -759,7 +759,7 @@ bool FMantlePlaceMaterials::ParseMaterial(const TConstArrayView<uint8> Bytes, FM
 		}
 	}
 
-	// #533: panning, wind, world-aligned mapping and a layer blend.
+	// Panning, wind, world-aligned mapping and a layer blend.
 	if (const TSharedPtr<FJsonValue> Field = Root->TryGetField(TEXT("uvPanning")))
 	{
 		if (Field->Type != EJson::Object || !Field->AsObject().IsValid())
@@ -926,7 +926,7 @@ bool FMantlePlaceMaterials::ParseMaterial(const TConstArrayView<uint8> Bytes, FM
 		}
 		Desc.bHasLayerBlend = true;
 	}
-	// #628: foliage shading; it goes with wind, nothing else.
+	// Foliage shading; it goes with wind, nothing else.
 	if (const TSharedPtr<FJsonValue> Field = Root->TryGetField(TEXT("foliage")))
 	{
 		if (Field->Type != EJson::Object || !Field->AsObject().IsValid())
@@ -968,7 +968,7 @@ bool FMantlePlaceMaterials::ParseMaterial(const TConstArrayView<uint8> Bytes, FM
 		}
 		Desc.bHasFoliage = true;
 	}
-	// #628: water shading, on a master of its own; it stands alone.
+	// Water shading, on a master of its own; it stands alone.
 	if (const TSharedPtr<FJsonValue> Field = Root->TryGetField(TEXT("water")))
 	{
 		if (Field->Type != EJson::Object || !Field->AsObject().IsValid())
@@ -1163,20 +1163,20 @@ int32 FMantlePlaceMaterials::PermutationIndexOf(const UMaterialInterface* Materi
 			}
 			if (Path == ExtendedPermutationPath(Mode, (Index % 2) == 1))
 			{
-				return ExtendedPermutationBase + Index; // #471's master, same order
+				return ExtendedPermutationBase + Index; // the plain Extended permutations, same order
 			}
 			for (const EMantlePlaceExtendedVariant Variant : MantlePlaceMaterialPrivate::Variants)
 			{
 				const int32 VariantIndex = ExtendedPermutationIndex(Variant, Mode, (Index % 2) == 1);
 				if (VariantIndex != INDEX_NONE && Path == ExtendedPermutationPath(Variant, Mode, (Index % 2) == 1))
 				{
-					return VariantIndex; // #533's permutations
+					return VariantIndex; // the wind, worldAligned and layerBlend permutations
 				}
 			}
 		}
 		for (int32 Side = 0; Side < 2; ++Side)
 		{
-			// #628: the Additive permutations are named for their variant alone, so the loop above does not reach them.
+			// The Additive permutations are named for their variant alone, so the loop above does not reach them.
 			if (Path == ExtendedPermutationPath(EMantlePlaceExtendedVariant::Additive, EMantlePlaceAlphaMode::Additive, Side == 1))
 			{
 				return AdditivePermutationBase + Side;
@@ -1299,7 +1299,7 @@ FString FMantlePlaceMaterials::ExtendedPermutationName(const EMantlePlaceExtende
 	{
 		return ExtendedPermutationName(Mode, bTwoSided);
 	}
-	// #628: M_MantlePlace_Water's instances are named for the water master, one for either sidedness.
+	// M_MantlePlace_Water's instances are named for the water master, one for either sidedness.
 	if (Variant == EMantlePlaceExtendedVariant::Water)
 	{
 		return FString(WaterPermutationName);
@@ -1308,7 +1308,7 @@ FString FMantlePlaceMaterials::ExtendedPermutationName(const EMantlePlaceExtende
 	{
 		return FString(WaterNormal2PermutationName);
 	}
-	// #628: the Additive instances are one per sidedness, named for the variant alone (there is no alpha-mode part).
+	// The Additive instances are one per sidedness, named for the variant alone (there is no alpha-mode part).
 	if (Variant == EMantlePlaceExtendedVariant::Additive)
 	{
 		return FString(AdditivePermutationName) + (bTwoSided ? TEXT("_TwoSided") : TEXT(""));
@@ -1421,8 +1421,8 @@ UMaterialInterface* FMantlePlaceMaterials::LoadPermutation(const FMantlePlaceMat
 
 	if (Desc.Shading != EMantlePlaceShading::CarPaint && Desc.UsesExtended())
 	{
-		// #533: a variant's own permutation first; without it, the plain extended one of the same alpha mode
-		// and sidedness below (panning and #471's keys kept, the variant's effect dropped).
+		// A variant's own permutation first; without it, the plain extended one of the same alpha mode
+		// and sidedness below (panning and the fidelity keys kept, the variant's effect dropped).
 		bool bVariantMissing = false;
 		const EMantlePlaceExtendedVariant Variant = CookedVariantOf(Desc);
 		if (Variant != EMantlePlaceExtendedVariant::Plain)
@@ -1448,7 +1448,7 @@ UMaterialInterface* FMantlePlaceMaterials::LoadPermutation(const FMantlePlaceMat
 			{
 				GWarnedVariantMissing = true;
 				UE_LOG(LogMantle, Warning,
-					TEXT("MANTLE_PLACE_MATERIAL M_MantlePlace_Extended's %s permutations are missing (%s not found): materials using wind, worldAligned, layerBlend, foliage or additive blending use M_MantlePlace_Extended without them until tools/materials/Extend-MantlePlaceExtendedMaterial.py has run"),
+					TEXT("MANTLE_PLACE_MATERIAL M_MantlePlace_Extended's %s permutations are missing (%s not found): materials using wind, worldAligned, layerBlend, foliage or additive blending use M_MantlePlace_Extended without them until those permutation instances are added to the content"),
 					ExtendedVariantName(Variant), *VariantPath.ToString());
 			}
 			bVariantMissing = true;
@@ -1467,7 +1467,7 @@ UMaterialInterface* FMantlePlaceMaterials::LoadPermutation(const FMantlePlaceMat
 		{
 			GWarnedExtendedMissing = true;
 			UE_LOG(LogMantle, Warning,
-				TEXT("MANTLE_PLACE_MATERIAL M_MantlePlace_Extended is missing (%s not found): materials using uvTransforms, normalScale, occlusionStrength, occlusionUV, vertexColor, uvPanning, wind, worldAligned, layerBlend, foliage or water use M_MantlePlace without them until tools/materials/Create-MantlePlaceExtendedMaterial.py has run"),
+				TEXT("MANTLE_PLACE_MATERIAL M_MantlePlace_Extended is missing (%s not found): materials using uvTransforms, normalScale, occlusionStrength, occlusionUV, vertexColor, uvPanning, wind, worldAligned, layerBlend, foliage or water use M_MantlePlace without them until M_MantlePlace_Extended is added to the content"),
 				*ExtendedPermutationPath(Desc.AlphaMode, Desc.bDoubleSided).ToString());
 		}
 		UMaterialInterface* Fallback = LoadPermutation(Desc.AlphaMode, Desc.bDoubleSided, nullptr);
@@ -1548,7 +1548,7 @@ void FMantlePlaceMaterials::ApplyExtended(UMaterialInstanceDynamic* Instance, co
 		Instance->SetVectorParameterValue(Rows[Slot][1], V);
 	}
 
-	// #533: every slot's pan (zero when the document gives none), then the variant's values. The variant's
+	// Every slot's pan (zero when the document gives none), then the variant's values. The variant's
 	// static switch is its parent permutation's, so a Plain document sets none of them.
 	const TCHAR* const Panning[MantlePlaceTextureSlotCount] = { P::BaseColorUVPanning, P::NormalUVPanning, P::ORMUVPanning, P::EmissiveUVPanning };
 	for (int32 Slot = 0; Slot < MantlePlaceTextureSlotCount; ++Slot)
@@ -1584,7 +1584,7 @@ void FMantlePlaceMaterials::ApplyExtended(UMaterialInstanceDynamic* Instance, co
 		break;
 	}
 
-	// #628: the water values (the Single Layer Water shading model is the master's).
+	// The water values (the Single Layer Water shading model is the master's).
 	if (Desc.bHasWater)
 	{
 		ApplyWater(Instance, Desc.Water);
@@ -1603,7 +1603,7 @@ void FMantlePlaceMaterials::ApplyExtended(UMaterialInstanceDynamic* Instance, co
 		}
 	}
 
-	// #628: the foliage values (the Two Sided Foliage shading model is the permutation's).
+	// The foliage values (the Two Sided Foliage shading model is the permutation's).
 	if (Desc.bHasFoliage)
 	{
 		const FLinearColor& Tint = Desc.Foliage.Tint;
@@ -1709,7 +1709,7 @@ UMaterialInstanceDynamic* FMantlePlaceMaterials::BuildOnParent(UMaterialInterfac
 	}
 	Instance->SetFlags(RF_Transient);
 
-	// #628: additive is emissive-driven, so the base color has no part in it: black with full opacity (the Additive permutations are
+	// Additive is emissive-driven, so the base color has no part in it: black with full opacity (the Additive permutations are
 	// unlit, so the color is unused there; the Translucent fallback, when they are missing, shows the glow over black and not over white).
 	Instance->SetVectorParameterValue(P::BaseColorFactor, Desc.AlphaMode == EMantlePlaceAlphaMode::Additive ? FLinearColor(0.0f, 0.0f, 0.0f, 1.0f) : Desc.BaseColorFactor);
 	Instance->SetVectorParameterValue(P::EmissiveFactor, FLinearColor(Desc.EmissiveFactor.R, Desc.EmissiveFactor.G, Desc.EmissiveFactor.B, 1.0f));
@@ -1730,7 +1730,7 @@ UMaterialInstanceDynamic* FMantlePlaceMaterials::BuildOnParent(UMaterialInterfac
 		ApplyExtended(Instance, Desc);
 	}
 
-	// A layer blend's textures (#533) bind to M_MantlePlace_Extended's Layer parameters, water's second normal (#628) to
+	// A layer blend's textures bind to M_MantlePlace_Extended's Layer parameters, water's second normal to
 	// M_MantlePlace_Water's Normal2; another parent ignores them.
 	const TCHAR* const TextureParameters[MantlePlaceMaterialTextureCount] = { P::BaseColor, P::Normal, P::ORM, P::Emissive,
 		P::LayerBaseColor, P::LayerNormal, P::LayerORM, P::Normal2 };
@@ -1774,7 +1774,7 @@ bool FMantlePlaceMaterials::PrepareForSlot(const EMantlePlaceTextureSlot Slot, F
 		return FailSlot(OutError, TEXT("the texture's mips do not fit its format"));
 	}
 
-	// A layer blend's slot (#533) is fixed up as the base slot it mirrors.
+	// A layer blend's slot is fixed up as the base slot it mirrors.
 	const EMantlePlaceTextureSlot BaseSlot = BaseSlotOf(Slot);
 	if (BaseSlot == EMantlePlaceTextureSlot::Normal)
 	{

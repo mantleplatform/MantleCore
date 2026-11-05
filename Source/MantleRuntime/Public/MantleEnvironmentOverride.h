@@ -23,7 +23,7 @@ namespace MantleEnvironmentOverrideValues
 	constexpr uint32 White = 0xFFFFFF;
 
 	/**
-	 * ColorGrading: none (the project's own grading), or one of the fixed presets (#532), in the
+	 * ColorGrading: none (the project's own grading), or one of the fixed presets, in the
 	 * order FMantleEnvironmentOverride::ColorGradingName lists them. The numbers replicate, so a
 	 * new preset only ever goes at the end.
 	 */
@@ -38,9 +38,9 @@ namespace MantleEnvironmentOverrideValues
 }
 
 /**
- * What server scripts have changed about the running environment (#454, script API 1.11): the
+ * What server scripts have changed about the running environment (script API 1.11): the
  * clock's anchor and rate, a forced weather and the blend into (or back out of) it, a cloud cover,
- * the fog, the stars, the sun and a small post-process subset, which #532 (script API 1.27) extends
+ * the fog, the stars, the sun and a small post-process subset, which script API 1.27 extends
  * with bloom and a fixed list of color-grading LUTs. The default value changes nothing.
  *
  * The server's script host writes the whole struct onto AMantleScriptReplicator, which Iris
@@ -172,7 +172,7 @@ struct MANTLERUNTIME_API FMantleEnvironmentOverride
 	UPROPERTY()
 	uint32 ColorTint = 0xFFFFFF;
 
-	/** Environment.Bloom (#532, 1.27): 0 to MaxScriptBloom, or below zero for the engine's own. */
+	/** Environment.Bloom (1.27): 0 to MaxScriptBloom, or below zero for the engine's own. */
 	UPROPERTY()
 	float Bloom = -1.0f;
 
@@ -240,7 +240,7 @@ struct MANTLERUNTIME_API FMantleEnvironmentOverride
 };
 
 /**
- * One player's own look (#532 ticket 4, script API 1.29): what a client script's
+ * One player's own look (script API 1.29): what a client script's
  * Environment:SetLocalLook asked for. It never replicates: each field that is set replaces the
  * replicated override's field of the same name on this machine only (ApplyTo), inside
  * UMantleEnvironmentSubsystem::UpdatePostProcess, so there is still one volume; a field left unset

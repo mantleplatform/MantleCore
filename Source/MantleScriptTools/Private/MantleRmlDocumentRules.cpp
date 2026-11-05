@@ -1,10 +1,10 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleRmlDocumentRules.h"
-#include "MantleDocumentImages.h" // #556 item 5
+#include "MantleDocumentImages.h"
 
 namespace
 {
-	/** Constructs a creator document may not use (#549), matched ignoring case. `data-rml` is
+	/** Constructs a creator document may not use, matched ignoring case. `data-rml` is
 	    handled on its own: only as an attribute name. */
 	const TCHAR* const MantleRmlRefusedSubstrings[] = {
 		TEXT("<script"),
@@ -455,7 +455,7 @@ namespace MantleRmlDocumentRules
 	{
 		for (const auto& File : Files)
 		{
-			// #556 item 5: an image's entry is a reference to its pixels, not text to scan.
+			// An image's entry is a reference to its pixels, not text to scan.
 			if (MantleDocumentImages::IsImagePath(File.Key))
 			{
 				continue;

@@ -21,7 +21,7 @@ namespace MantleWeaponDocumentPrivate
 	};
 	const TCHAR* const GWeaponDocDeliveryNames[] = { TEXT("hitscan"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"), TEXT("use") };
 	const TCHAR* const GWeaponDocResourceNames[] = { TEXT("magazine"), TEXT("quiver"), TEXT("charges"), TEXT("none") };
-	// #904: the firearms' three, then the elements (EMantleWeaponDocEffects).
+	// The firearms' three, then the elements (EMantleWeaponDocEffects).
 	const TCHAR* const GWeaponDocEffectsNames[] = {
 		TEXT("rifle"), TEXT("pistol"), TEXT("shotgun"), TEXT("laser"), TEXT("fire"), TEXT("ice"), TEXT("lightning"), TEXT("arcane"), TEXT("venom"),
 		TEXT("water"), TEXT("wind"), TEXT("rock"), TEXT("sand"), TEXT("void"), TEXT("dark"), TEXT("light"), TEXT("generic"), TEXT("heal"), TEXT("lava"),
@@ -42,40 +42,40 @@ namespace MantleWeaponDocumentPrivate
 		TEXT("sight"), TEXT("muzzle"), TEXT("gripR"), TEXT("gripL"), TEXT("magazine"), TEXT("shellEject"), TEXT("edgeBase"), TEXT("edgeTip"),
 		TEXT("tip"), TEXT("focus"), TEXT("stringTop"), TEXT("stringBottom"), TEXT("nock"), TEXT("grip"), TEXT("face")
 	};
-	// #840: version 2's fields, which a version-1 document has none of.
+	// Version 2's fields, which a version-1 document has none of.
 	const TCHAR* const GWeaponDocV2Fields[] = {
 		TEXT("hold"), TEXT("delivery"), TEXT("charge"), TEXT("block"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"),
 		TEXT("beam"), TEXT("effectsColor"), TEXT("consumable"), TEXT("equipStyle"), TEXT("dodgeStyle"), TEXT("comboSet"), TEXT("quiver"), TEXT("style"), TEXT("bash"),
 		TEXT("throw"), TEXT("tapLook"), TEXT("holdLook"), TEXT("stance"), TEXT("staffMelee"), TEXT("extra"), TEXT("gravity"), TEXT("suppressor"), TEXT("bipod"), TEXT("paintSlots")
 	};
-	// #1025: consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
+	// consumable.style, and what a consumable (delivery use) refuses: a weapon's numbers, and attachments (its mesh shows alone).
 	const TCHAR* const GWeaponDocUseStyleNames[] = { TEXT("eatDrink"), TEXT("use") };
 	// equipStyle: a shipped hold's named draw/put-away option.
 	const TCHAR* const GWeaponDocEquipStyleNames[] = {
 		TEXT("hip"), TEXT("back"), TEXT("overhead"), TEXT("bow_equip_01"), TEXT("bow_equip_02"), TEXT("bow_equip_03"), TEXT("bow_equip_04")
 	};
-	// dodgeStyle (Round 2): a shipped hold's named dodge, where it has more than one.
+	// dodgeStyle: a shipped hold's named dodge, where it has more than one.
 	const TCHAR* const GWeaponDocDodgeStyleNames[] = { TEXT("upright"), TEXT("crouched"), TEXT("dash"), TEXT("sidestep") };
-	// comboSet (Round 3): a shipped hold's named combo, where it has more than one.
+	// comboSet: a shipped hold's named combo, where it has more than one.
 	const TCHAR* const GWeaponDocComboSetNames[] = {
 		TEXT("chop"), TEXT("spin"), TEXT("second"), TEXT("punches"), TEXT("overhand"), TEXT("hammer"), TEXT("jab_cross"), TEXT("quick"), TEXT("long"), TEXT("lunge")
 	};
-	// quiver (Round 3): where a bow's hand goes for the next arrow.
+	// quiver: where a bow's hand goes for the next arrow.
 	const TCHAR* const GWeaponDocQuiverNames[] = { TEXT("back"), TEXT("hip"), TEXT("side") };
-	// style (Round 3): how a bow is held to shoot (B is not built).
+	// style: how a bow is held to shoot (only a and c are accepted).
 	const TCHAR* const GWeaponDocShootingStyleNames[] = { TEXT("a"), TEXT("c") };
-	// tapLook and holdLook (Round 4 step 2): what a tap and what a hold do on a staff. The hold looks are the schema's enum in order; x-beamLooks
-	// are the ones that channel the staff's beam (step 3 built the ground channel and the whirl as a beam).
+	// tapLook and holdLook: what a tap and what a hold do on a staff. The hold looks are the schema's enum in order; x-beamLooks
+	// are the ones that channel the staff's beam (groundChannel and whirlBeam channel it too).
 	const TCHAR* const GWeaponDocTapLookNames[] = { TEXT("bolt"), TEXT("handFireball"), TEXT("aimedShock") };
 	const TCHAR* const GWeaponDocHoldLookNames[] = {
 		TEXT("beam"), TEXT("chargedBlast"), TEXT("handFireballHeld"), TEXT("skyCall"), TEXT("groundChannel"), TEXT("whirlCharge"), TEXT("whirlBeam")
 	};
 	const TCHAR* const GWeaponDocBeamLookNames[] = { TEXT("beam"), TEXT("groundChannel"), TEXT("whirlBeam") };
-	// stance (Round 4 step 5): the schema's enum in order, every one built (step 6 the longsword, step 8 the Battle Mage).
+	// stance: the schema's enum in order, every one built (the longsword and the Battle Mage included).
 	const TCHAR* const GWeaponDocStanceNames[] = { TEXT("greatsword"), TEXT("longsword"), TEXT("wizard"), TEXT("battleMage"), TEXT("ready"), TEXT("shoulder") };
-	// Round 4 step 8: the staff's melee stance, which refuses tapLook, holdLook and staffMelee false.
+	// The staff's melee stance, which refuses tapLook, holdLook and staffMelee false.
 	const TCHAR* const GWeaponDocBattleMageStance = TEXT("battleMage");
-	// The Round 3 names match exactly, as the schema's enums do (TArray<FString>::Contains ignores case).
+	// The names match exactly, as the schema's enums do (TArray<FString>::Contains ignores case).
 	bool WeaponDocHasName(const TArray<FString>& Names, const FString& Name)
 	{
 		return Names.ContainsByPredicate([&Name](const FString& Known) { return Known.Equals(Name, ESearchCase::CaseSensitive); });
@@ -94,14 +94,14 @@ namespace MantleWeaponDocumentPrivate
 		return false;
 	}
 	const TCHAR* const GWeaponDocConsumableEffectNames[] = { TEXT("heal"), TEXT("none") };
-	// Round 5 step 0: extra.kind, the schema's enum in order. Every kind is built.
+	// extra.kind, the schema's enum in order. Every kind is built.
 	const TCHAR* const GWeaponDocExtraNames[] = { TEXT("none"), TEXT("telekinesis"), TEXT("blink"), TEXT("heal"), TEXT("dash"), TEXT("levitate") };
-	// Round 5 step 3: extra.look, blink's looks in the enum's order (overhead the default).
+	// extra.look, blink's looks in the enum's order (overhead the default).
 	const TCHAR* const GWeaponDocBlinkLookNames[] = { TEXT("overhead"), TEXT("curl"), TEXT("sink") };
 	const TCHAR* const GWeaponDocUseRefused[] = {
 		TEXT("fire"), TEXT("attachments"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil")
 	};
-	// #234: attachment.slot, the schema's enum in order; attachment.stats keys, the stat names of x-attachmentStats.
+	// attachment.slot, the schema's enum in order; attachment.stats keys, the stat names of x-attachmentStats.
 	const TCHAR* const GWeaponDocSlotNames[] = { TEXT("sight"), TEXT("muzzle"), TEXT("underbarrel"), TEXT("magazine"), TEXT("light"), TEXT("extra") };
 	const TCHAR* const GWeaponDocStatNames[] = { TEXT("damage"), TEXT("fireRate"), TEXT("spread"), TEXT("recoil"), TEXT("reloadTime"), TEXT("magazineSize"), TEXT("range") };
 	const TCHAR* const GWeaponDocInterpNames[] = { TEXT("linear"), TEXT("constant"), TEXT("cubic") };
@@ -313,7 +313,7 @@ namespace MantleWeaponDocumentPrivate
 		}
 	}
 
-	/** A firearm hold's entry: x-archetypes' row as it was before #840 (reload style, hands, effects, roles, actions), and
+	/** A firearm hold's entry: x-archetypes' row as it was before holds (reload style, hands, effects, roles, actions), and
 	 *  what every firearm shares: hitscan or projectile, no charge, a magazine, the sight, muzzle and gripR points (gripL,
 	 *  magazine and shellEject optional) and a stowed round. */
 	FMantleWeaponDocHoldInfo WeaponDocFirearm(const EMantleWeaponDocReloadStyle Style, const bool bTwoHanded,
@@ -329,26 +329,26 @@ namespace MantleWeaponDocumentPrivate
 		Info.Roles = TArray<EMantleWeaponDocRole>(Roles);
 		Info.StowedRoles = { EMantleWeaponDocRole::Round };
 		Info.Actions = TArray<EMantleWeaponDocAction>(Actions);
-		// #905: a gun may launch a round (a grenade or rocket launcher) or channel a beam (a laser, a flamethrower).
+		// A gun may launch a round (a grenade or rocket launcher) or channel a beam (a laser, a flamethrower).
 		Info.Deliveries = { EMantleWeaponDocDelivery::Hitscan, EMantleWeaponDocDelivery::Projectile, EMantleWeaponDocDelivery::Beam };
 		Info.Charge = EMantleWeaponDocChargeRule::None;
 		Info.Resources = { EMantleWeaponDocResource::Magazine };
 		Info.BlockRule = EMantleWeaponDocBlockRule::None;
-		// Round 3 step 16: and a firearm may grab props instead of shooting (the document's gravity).
+		// And a firearm may grab props instead of shooting (the document's gravity).
 		Info.bHasGravity = true;
 		Info.bMeshRequired = true;
 		Info.Sockets = { ESocket::Sight, ESocket::Muzzle, ESocket::GripR };
 		Info.OptionalSockets = { ESocket::GripL, ESocket::Magazine, ESocket::ShellEject };
-		// Round 3: every firearm can toggle a suppressor (x-suppressor).
+		// Every firearm can toggle a suppressor (x-suppressor).
 		Info.bHasSuppressor = true;
-		// #234: and take attachment options in every slot, scaling every stat (x-attachmentSlots, x-attachmentStats).
+		// And take attachment options in every slot, scaling every stat (x-attachmentSlots, x-attachmentStats).
 		Info.AttachmentSlots = { EMantleWeaponDocSlot::Sight, EMantleWeaponDocSlot::Muzzle, EMantleWeaponDocSlot::Underbarrel,
 			EMantleWeaponDocSlot::Magazine, EMantleWeaponDocSlot::Light, EMantleWeaponDocSlot::Extra };
 		Info.AttachmentStats = { TEXT("damage"), TEXT("fireRate"), TEXT("spread"), TEXT("recoil"), TEXT("reloadTime"), TEXT("magazineSize"), TEXT("range") };
 		return Info;
 	}
 
-	/** A hold that holds no rounds and has no shot effects (#840): melee, magic, unarmed. The bow is one of these with its
+	/** A hold that holds no rounds and has no shot effects: melee, magic, unarmed. The bow is one of these with its
 	 *  quiver and reload style set after. */
 	FMantleWeaponDocHoldInfo WeaponDocHold(const bool bTwoHanded, std::initializer_list<EMantleWeaponDocAction> Actions,
 		std::initializer_list<EMantleWeaponDocDelivery> Deliveries, const EMantleWeaponDocChargeRule Charge,
@@ -414,7 +414,7 @@ namespace MantleWeaponDocumentPrivate
 		// pump_shotgun
 		Table.Add(WeaponDocFirearm(EStyle::PerRound, true, EEffects::Shotgun,
 			{ ERole::Pump, ERole::Trigger, ERole::Feed, ERole::Shell, ERole::Suppressor }, PerRoundActions));
-		// bolt_sniper. Round 3: it can deploy a bipod (x-bipod).
+		// bolt_sniper. It can deploy a bipod (x-bipod).
 		{
 			FMantleWeaponDocHoldInfo Sniper = WeaponDocFirearm(EStyle::Magazine, true, EEffects::Rifle,
 				{ ERole::Bolt, ERole::Trigger, ERole::Magazine, ERole::MagazineRelease, ERole::Cartridge, ERole::Suppressor }, MagazineActions);
@@ -429,13 +429,13 @@ namespace MantleWeaponDocumentPrivate
 			FMantleWeaponDocHoldInfo Sword = WeaponDocHold(false, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
 				{ ESocket::GripR, ESocket::EdgeBase, ESocket::EdgeTip }, { ESocket::GripL });
 			Sword.EquipStyles = { TEXT("hip"), TEXT("back"), TEXT("overhead") };
-			// Round 2: the SwordShield pair's three dodges, which a paired sword picks.
+			// The SwordShield pair's three dodges, which a paired sword picks.
 			Sword.DodgeStyles = { TEXT("upright"), TEXT("crouched"), TEXT("dash") };
-			// Round 3: the SwordShield pair's three combos (a lone sword plays its one chain whatever the set).
+			// The SwordShield pair's three combos (a lone sword plays its one chain whatever the set).
 			Sword.ComboSets = { TEXT("chop"), TEXT("spin"), TEXT("second") };
 			Table.Add(Sword);
 		}
-		// melee_2h. Round 4 step 5: the greatsword stance is the default. Step 6: the longsword (HCS_Melee2h_Longsword) has three dodges and two draws,
+		// melee_2h. The greatsword stance is the default. The longsword (HCS_Melee2h_Longsword) has three dodges and two draws,
 		// which a document may pick only in that stance; the greatsword has one of each (x-withStance).
 		{
 			FMantleWeaponDocHoldInfo TwoHanded = WeaponDocHold(true, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None }, EBlock::Optional,
@@ -452,13 +452,13 @@ namespace MantleWeaponDocumentPrivate
 			FMantleWeaponDocHoldInfo Spear = WeaponDocHold(true, SpearActions, { EDelivery::Sweep, EDelivery::Projectile }, ECharge::Optional,
 				{ EResource::None }, EBlock::Optional, { ESocket::GripR, ESocket::GripL, ESocket::Tip, ESocket::EdgeBase }, { ESocket::EdgeTip });
 			Spear.EquipStyles = { TEXT("back") };
-			// Round 3: the two-handed spear's three combos (beside a shield the pair's one chain plays).
+			// The two-handed spear's three combos (beside a shield the pair's one chain plays).
 			Spear.ComboSets = { TEXT("quick"), TEXT("long"), TEXT("lunge") };
-			// Round 4 step 5: ready the default; shoulder plays only beside a shield (HCS_SpearShield_Shoulder).
+			// Ready the default; shoulder plays only beside a shield (HCS_SpearShield_Shoulder).
 			Spear.Stances = { TEXT("ready"), TEXT("shoulder") };
 			Table.Add(Spear);
 		}
-		// staff. Round 4 step 2: what a tap and what a hold do (step 3: every hold look, groundChannel and whirlBeam included). Step 4: it may block
+		// staff. What a tap and what a hold do (every hold look, groundChannel and whirlBeam included). It may block
 		// (right mouse raises its guard instead of the aim).
 		{
 			FMantleWeaponDocHoldInfo Staff = WeaponDocHold(true, { EAction::Equip, EAction::Holster, EAction::Idle, EAction::Cast, EAction::Heavy },
@@ -467,15 +467,15 @@ namespace MantleWeaponDocumentPrivate
 			Staff.TapLooks = { TEXT("bolt"), TEXT("handFireball"), TEXT("aimedShock") };
 			Staff.HoldLooks = { TEXT("beam"), TEXT("chargedBlast"), TEXT("handFireballHeld"), TEXT("skyCall"), TEXT("groundChannel"), TEXT("whirlCharge"),
 				TEXT("whirlBeam") };
-			// Round 4 step 5: the wizard stance is the default; the Battle Mage (step 8) is refused until it is built.
+			// The wizard stance is the default; the Battle Mage is built and accepted too.
 			Staff.Stances = { TEXT("wizard"), TEXT("battleMage") };
-			// Round 4 step 7: the Melee key may fight with the staff (the document's staffMelee, off by default).
+			// The Melee key may fight with the staff (the document's staffMelee, off by default).
 			Staff.bHasStaffMelee = true;
-			// Round 5 step 0: one extra on Q (the document's extra, none by default).
+			// One extra on Q (the document's extra, none by default).
 			Staff.bHasExtra = true;
 			Table.Add(Staff);
 		}
-		// bow: its quiver holds arrows, nocked by one clip (the magazine reload style). Round 3: it may block (right mouse raises its guard).
+		// bow: its quiver holds arrows, nocked by one clip (the magazine reload style). It may block (right mouse raises its guard).
 		{
 			FMantleWeaponDocHoldInfo Bow = WeaponDocHold(true, { EAction::Equip, EAction::Holster, EAction::Idle, EAction::Nock, EAction::Draw, EAction::Release },
 				{ EDelivery::Projectile }, ECharge::Required, { EResource::Quiver }, EBlock::Optional,
@@ -484,40 +484,40 @@ namespace MantleWeaponDocumentPrivate
 			Bow.ReloadStyle = EStyle::Magazine;
 			Bow.StowedRoles = { ERole::Arrow };
 			Bow.EquipStyles = { TEXT("back"), TEXT("bow_equip_01"), TEXT("bow_equip_02"), TEXT("bow_equip_03"), TEXT("bow_equip_04") };
-			// Round 3: where the nock's hand goes for the next arrow, the back the default.
+			// Where the nock's hand goes for the next arrow, the back the default.
 			Bow.Quivers = { TEXT("back"), TEXT("hip"), TEXT("side") };
-			// Round 3: the Melee key bashes (on by default; the document's bash can turn it off).
+			// The Melee key bashes (on by default; the document's bash can turn it off).
 			Bow.bHasBash = true;
-			// #234: a bow takes no attachment options yet (the firearm holds only, this round).
+			// A bow takes no attachment options yet (the firearm holds only, this round).
 			Bow.AttachmentSlots.Reset();
-			// Round 3: how the bow is held to shoot, a (the classic archer) the default; c has its own clip set (HCS_Bow_C).
+			// How the bow is held to shoot, a (the classic archer) the default; c has its own clip set (HCS_Bow_C).
 			Bow.ShootingStyles = { TEXT("a"), TEXT("c") };
 			Table.Add(Bow);
 		}
-		// unarmed (#897): a fist weapon worn on the hand (knuckles, claws, a gauntlet), its mesh required like any; empty hands
-		// are built into the game and are never a document. Round 2: two dodges, the long dash the default.
+		// unarmed: a fist weapon worn on the hand (knuckles, claws, a gauntlet), its mesh required like any; empty hands
+		// are built into the game and are never a document. Two dodges, the long dash the default.
 		{
 			FMantleWeaponDocHoldInfo Unarmed = WeaponDocHold(false, MeleeActions, { EDelivery::Sweep }, ECharge::Optional, { EResource::None },
 				EBlock::Optional, {}, { ESocket::GripR, ESocket::GripL });
 			Unarmed.DodgeStyles = { TEXT("dash"), TEXT("sidestep") };
-			// Round 3: four combos, the punches the default (bare hands always punch).
+			// Four combos, the punches the default (bare hands always punch).
 			Unarmed.ComboSets = { TEXT("punches"), TEXT("overhand"), TEXT("hammer"), TEXT("jab_cross") };
 			Table.Add(Unarmed);
 		}
-		// shield: its own item in the left hand; it blocks and bashes (a sweep from grip to face), never charges. Round 2: three
+		// shield: its own item in the left hand; it blocks and bashes (a sweep from grip to face), never charges. Three
 		// dodges, the upright step-hop the default.
 		{
 			FMantleWeaponDocHoldInfo Shield = WeaponDocHold(false, { EAction::Equip, EAction::Holster, EAction::Block, EAction::Attack },
 				{ EDelivery::Sweep }, ECharge::None, { EResource::None }, EBlock::Required, { ESocket::Grip, ESocket::Face }, {});
 			Shield.DodgeStyles = { TEXT("upright"), TEXT("crouched"), TEXT("dash") };
-			// Round 3 step 12: guard + Melee may throw it (the document's throw; off without it).
+			// Guard + Melee may throw it (the document's throw; off without it).
 			Shield.bHasShieldThrow = true;
 			Table.Add(Shield);
 		}
 		// throwable: one hand, thrown overhand; its projectile is the weapon itself (a press throws, no charge).
 		Table.Add(WeaponDocHold(false, { EAction::Equip, EAction::Holster, EAction::Idle, EAction::Throw }, { EDelivery::Projectile },
 			ECharge::None, { EResource::None }, EBlock::None, { ESocket::GripR }, { ESocket::Tip }));
-		// consumable (#1025): used on its holder, one hand; where the palm holds it is optional (grip).
+		// consumable: used on its holder, one hand; where the palm holds it is optional (grip).
 		Table.Add(WeaponDocHold(false, { EAction::Use }, { EDelivery::Use }, ECharge::None, { EResource::None }, EBlock::None, {}, { ESocket::Grip }));
 		check(Table.Num() == static_cast<int32>(EMantleWeaponDocHold::Count));
 		return Table;
@@ -621,7 +621,7 @@ namespace MantleWeaponDocumentPrivate
 			KeysIn(Obj, Path, Known.begin(), static_cast<int32>(Known.size()), Required.begin(), static_cast<int32>(Required.size()));
 		}
 
-		/** Every one of Names, which the object's other rules do not require (#840: each version requires its own). */
+		/** Every one of Names, which the object's other rules do not require (each version requires its own). */
 		void Required(const TSharedPtr<FJsonObject>& Obj, const FString& Path, std::initializer_list<const TCHAR*> Names)
 		{
 			for (const TCHAR* Name : Names)
@@ -1077,7 +1077,7 @@ namespace MantleWeaponDocumentPrivate
 
 		void ReadSockets(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDesc& Out)
 		{
-			// Which are required is the hold's (#840: CheckRules).
+			// Which are required is the hold's (CheckRules).
 			KeysIn(Obj, Path, GWeaponDocSocketNames, WeaponDocCount(GWeaponDocSocketNames), nullptr, 0);
 			for (int32 Index = 0; Index < static_cast<int32>(EMantleWeaponDocSocket::Count); ++Index)
 			{
@@ -1252,7 +1252,7 @@ namespace MantleWeaponDocumentPrivate
 			}
 		}
 
-		/** #234 (recolor): the weapon's paintable material slots, whole numbers from 0 to MaxWeaponMaterials - 1, each once; set only when every entry reads. */
+		/** (recolor): the weapon's paintable material slots, whole numbers from 0 to MaxWeaponMaterials - 1, each once; set only when every entry reads. */
 		void ReadPaintSlots(const TSharedPtr<FJsonObject>& Root, TMantleWeaponDocValue<TArray<int32>>& Out)
 		{
 			const TSharedPtr<FJsonValue> Slots = Field(Root, TEXT("paintSlots"));
@@ -1671,18 +1671,18 @@ namespace MantleWeaponDocumentPrivate
 			OptNumber(Obj, Path, TEXT("cooldownSeconds"), 0.0, 60.0, Out.CooldownSeconds);
 			OptNumber(Obj, Path, TEXT("maxMass"), 1.0, 5000.0, Out.MaxMass);
 			OptBoolean(Obj, Path, TEXT("liftPlayers"), Out.bLiftPlayers);
-			// Round 5 step 6: levitate's cap and time.
+			// Levitate's cap and time.
 			OptNumber(Obj, Path, TEXT("maxHeight"), 100.0, 2000.0, Out.MaxHeight);
 			OptNumber(Obj, Path, TEXT("durationSeconds"), 1.0, 30.0, Out.DurationSeconds);
-			// Round 5 steps 3 and 4: blink's reach and look, heal's amount.
+			// Blink's reach and look, heal's amount.
 			OptNumber(Obj, Path, TEXT("range"), 300.0, 3000.0, Out.Range);
 			OptChoice(Obj, Path, TEXT("look"), GWeaponDocBlinkLookNames, Out.Look);
 			OptNumber(Obj, Path, TEXT("heal"), 1.0, 1000.0, Out.Heal);
-			// Round 5 step 5: the dash's distance.
+			// The dash's distance.
 			OptNumber(Obj, Path, TEXT("dashDistance"), 700.0, 2500.0, Out.DashDistance);
 		}
 
-		// Round 3 step 16: a gun that grabs props. The limits are MantleGravityGunDefaults' (the schema's gravity).
+		// A gun that grabs props. The limits are MantleGravityGunDefaults' (the schema's gravity).
 		void ReadGravity(const TSharedPtr<FJsonObject>& Obj, const FString& Path, FMantleWeaponDocGravity& Out)
 		{
 			namespace D = MantleGravityGunDefaults;
@@ -1710,7 +1710,7 @@ namespace MantleWeaponDocumentPrivate
 		}
 
 		/**
-		 * #840: the rules that depend on which keys the text has, on a document within the schema (CheckRules reads the
+		 * The rules that depend on which keys the text has, on a document within the schema (CheckRules reads the
 		 * values): version 1 has none of version 2's fields; version 2's archetype is its hold's alias; a weapon without a
 		 * mesh has no points, parts, attachments or materials; a magazine and a reload exactly when the resource holds
 		 * rounds.
@@ -1751,7 +1751,7 @@ namespace MantleWeaponDocumentPrivate
 					}
 				}
 			}
-			// #1025: a consumable is used, never fired: no weapon numbers, and its mesh alone.
+			// A consumable is used, never fired: no weapon numbers, and its mesh alone.
 			if (D.GetDelivery() == EMantleWeaponDocDelivery::Use)
 			{
 				for (const TCHAR* Key : GWeaponDocUseRefused)
@@ -1839,7 +1839,7 @@ namespace MantleWeaponDocumentPrivate
 				  TEXT("charge"), TEXT("magazine"), TEXT("reload"), TEXT("resource"), TEXT("charges"), TEXT("projectile"), TEXT("sweep"), TEXT("beam"),
 				  TEXT("consumable"), TEXT("block"), TEXT("bash"), TEXT("bipod"), TEXT("throw"), TEXT("extra"), TEXT("gravity"), TEXT("sounds"), TEXT("firstPerson"), TEXT("spread"), TEXT("sway"), TEXT("recoil") },
 				{ TEXT("schemaVersion"), TEXT("name") });
-			// #840: 1 is the firearm document (archetype), 2 names the hold and the delivery; each requires its own fields.
+			// 1 is the firearm document (archetype), 2 names the hold and the delivery; each requires its own fields.
 			int32 Version = 0;
 			if (const TSharedPtr<FJsonValue> VersionValue = Field(Root, TEXT("schemaVersion")))
 			{
@@ -1897,7 +1897,7 @@ namespace MantleWeaponDocumentPrivate
 					Out.Delivery.Set(Delivery);
 				}
 			}
-			// #1025: fire on every delivery but use (a version-1 document's hitscan included); use refuses it (CheckKeys).
+			// Fire on every delivery but use (a version-1 document's hitscan included); use refuses it (CheckKeys).
 			if (!(Out.Delivery.bSet && Out.Delivery.Value == EMantleWeaponDocDelivery::Use))
 			{
 				Required(Root, Path, { TEXT("fire") });
@@ -2804,7 +2804,7 @@ namespace MantleWeaponDocumentPrivate
 		static FWeaponDocNodePtr Root(const FMantleWeaponDesc& D)
 		{
 			FWeaponDocNodePtr Node = WeaponDocObjectNode();
-			// Always version 2 (#840): hold and delivery, never the archetype alias.
+			// Always version 2: hold and delivery, never the archetype alias.
 			WeaponDocPut(Node, TEXT("schemaVersion"), WeaponDocNumberNode(static_cast<double>(FMantleWeaponDocument::SchemaVersion)));
 			WeaponDocPut(Node, TEXT("name"), WeaponDocStringNode(D.Name));
 			WeaponDocPut(Node, TEXT("hold"), WeaponDocStringNode(WeaponDocNameAt(GWeaponDocHoldNames, static_cast<int32>(D.GetHold()))));
@@ -2884,7 +2884,7 @@ namespace MantleWeaponDocumentPrivate
 			{
 				Block(Sockets, GWeaponDocSocketNames[Index], D.Sockets[Index], &FWeaponDocWriter::Socket);
 			}
-			// A fist weapon may place no points (#840: unarmed's are all optional): the sockets block only when there is one.
+			// A fist weapon may place no points (unarmed's are all optional): the sockets block only when there is one.
 			if (Sockets->Children.Num() > 0)
 			{
 				WeaponDocPut(Node, TEXT("sockets"), Sockets);
@@ -2899,13 +2899,13 @@ namespace MantleWeaponDocumentPrivate
 				}
 				WeaponDocPut(Node, TEXT("attachments"), Attachments);
 			}
-			// #1025: a consumable has no fire.
+			// A consumable has no fire.
 			if (D.GetDelivery() != EMantleWeaponDocDelivery::Use)
 			{
 				WeaponDocPut(Node, TEXT("fire"), Fire(D.Fire));
 			}
 			Block(Node, TEXT("charge"), D.Charge, &FWeaponDocWriter::Charge);
-			// The magazine and the reload exactly when the resource holds rounds (#840).
+			// The magazine and the reload exactly when the resource holds rounds.
 			if (D.UsesRounds())
 			{
 				WeaponDocPut(Node, TEXT("magazine"), Magazine(D.Magazine));
@@ -3074,7 +3074,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		return FString::Join(Names, TEXT(", "));
 	};
 
-	// The mesh (#840): every hold needs one. Unarmed's says so in a creator's words (#897): a fist weapon is worn on the hand.
+	// The mesh: every hold needs one. Unarmed's says so in a creator's words: a fist weapon is worn on the hand.
 	const bool bHasMesh = !D.Mesh.IsEmpty();
 	if (Info.bMeshRequired && !bHasMesh)
 	{
@@ -3161,7 +3161,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 					break;
 				}
 			}
-			// #904: a mesh, an element's effect or both; on a bone or one of the document's points, not both.
+			// A mesh, an element's effect or both; on a bone or one of the document's points, not both.
 			if (Attachment.Mesh.IsEmpty() && !Attachment.Effect.bSet)
 			{
 				R.Add(Path, TEXT("anyOf"), TEXT("has neither mesh nor effect: give it one"));
@@ -3201,7 +3201,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		}
 	}
 
-	// Attachment options (#234): an attachment with a slot shows only while fitted. Which holds take which slots, one fitted option per slot, at
+	// Attachment options: an attachment with a slot shows only while fitted. Which holds take which slots, one fitted option per slot, at
 	// most 12 to a slot, the stats the hold uses, the slot's own block, the fixed parts an option hides, and the toggles naming fixed parts.
 	if (D.Attachments.bSet)
 	{
@@ -3464,7 +3464,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		}
 	}
 
-	// Effects (#840): a firearm style only on a hold with shot effects. #904: an element only on a projectile or beam weapon (#905: a
+	// Effects: a firearm style only on a hold with shot effects. An element only on a projectile or beam weapon (a
 	// firearm's too, a laser rifle's beam or a launcher's trail; a hitscan gun keeps its firearm style); effectsColor only where the weapon
 	// has an element.
 	const bool bShoots = D.GetDelivery() == EMantleWeaponDocDelivery::Projectile || D.GetDelivery() == EMantleWeaponDocDelivery::Beam;
@@ -3521,12 +3521,12 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		}
 		else if (!Info.EquipStylesStance.IsEmpty() && !(D.Stance.bSet && D.Stance.Value.Equals(Info.EquipStylesStance, ESearchCase::CaseSensitive)))
 		{
-			// Round 4 step 6: a melee_2h draws one way unless it is held in the longsword stance.
+			// A melee_2h draws one way unless it is held in the longsword stance.
 			R.Add(TEXT("equipStyle"), TEXT("mantle"), FString::Printf(TEXT("a %s has one draw unless it is held in the %s stance: drop equipStyle, or set stance %s"),
 				Hold, *Info.EquipStylesStance, *Info.EquipStylesStance));
 		}
 	}
-	// Dodge style (Round 2), the same way: a known id, then one the hold offers. A hold with one dodge takes none.
+	// Dodge style, the same way: a known id, then one the hold offers. A hold with one dodge takes none.
 	if (D.DodgeStyle.bSet)
 	{
 		const FString& Style = D.DodgeStyle.Value;
@@ -3548,12 +3548,12 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		}
 		else if (!Info.DodgeStylesStance.IsEmpty() && !(D.Stance.bSet && D.Stance.Value.Equals(Info.DodgeStylesStance, ESearchCase::CaseSensitive)))
 		{
-			// Round 4 step 6: a melee_2h has one dodge unless it is held in the longsword stance.
+			// A melee_2h has one dodge unless it is held in the longsword stance.
 			R.Add(TEXT("dodgeStyle"), TEXT("mantle"), FString::Printf(TEXT("a %s has one dodge unless it is held in the %s stance: drop dodgeStyle, or set stance %s"),
 				Hold, *Info.DodgeStylesStance, *Info.DodgeStylesStance));
 		}
 	}
-	// Combo set (Round 3), the same way: a known id, then one the hold offers. A hold with one combo takes none.
+	// Combo set, the same way: a known id, then one the hold offers. A hold with one combo takes none.
 	if (D.ComboSet.bSet)
 	{
 		const FString& Set = D.ComboSet.Value;
@@ -3574,7 +3574,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 					*FString::Join(Info.ComboSets, TEXT(", "))));
 		}
 	}
-	// Quiver (Round 3), the same way: a known position, then one the hold offers. A hold with no quiver to place takes none.
+	// Quiver, the same way: a known position, then one the hold offers. A hold with no quiver to place takes none.
 	if (D.Quiver.bSet)
 	{
 		const FString& Position = D.Quiver.Value;
@@ -3595,7 +3595,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 					*FString::Join(Info.Quivers, TEXT(", "))));
 		}
 	}
-	// Shooting style (Round 3), the same way: a known style, then one the hold offers. A hold with one way to hold it takes none.
+	// Shooting style, the same way: a known style, then one the hold offers. A hold with one way to hold it takes none.
 	if (D.ShootingStyle.bSet)
 	{
 		const FString& Style = D.ShootingStyle.Value;
@@ -3616,7 +3616,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 					*FString::Join(Info.ShootingStyles, TEXT(", "))));
 		}
 	}
-	// Stance (Round 4 step 5), the same way: a known stance, then one the hold offers. A spear's shoulder is accepted on any spear: whether a shield
+	// Stance, the same way: a known stance, then one the hold offers. A spear's shoulder is accepted on any spear: whether a shield
 	// pairs with it is not in the document, so a lone spear ignores it.
 	bool bBattleMage = false;
 	if (D.Stance.bSet)
@@ -3642,7 +3642,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 			bBattleMage = Stance.Equals(GWeaponDocBattleMageStance, ESearchCase::CaseSensitive);
 		}
 	}
-	// The Battle Mage (Round 4 step 8): its left mouse swings the staff and it never charges or channels, so it has no tap or hold look; it always
+	// The Battle Mage: its left mouse swings the staff and it never charges or channels, so it has no tap or hold look; it always
 	// fights with its staff, so staffMelee may be true or absent but not false.
 	if (bBattleMage)
 	{
@@ -3668,7 +3668,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 			R.Add(TEXT("delivery"), TEXT("mantle"), TEXT("a Battle Mage never channels a beam; its spells are hand fireballs: use the projectile delivery"));
 		}
 	}
-	// Tap look (Round 4 step 2), the same way: a known look, then one the hold offers. A hold whose tap looks one way takes none.
+	// Tap look, the same way: a known look, then one the hold offers. A hold whose tap looks one way takes none.
 	if (D.TapLook.bSet)
 	{
 		const FString& Look = D.TapLook.Value;
@@ -3692,7 +3692,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 			R.Add(TEXT("tapLook"), TEXT("mantle"), FString::Printf(TEXT("a %s with only a beam casts no spell on a tap: add a projectile block, or drop tapLook"), Hold));
 		}
 	}
-	// Hold look (Round 4 step 2): a known look; then one the hold offers; a beam look needs the beam block, a charge look the charge block it
+	// Hold look: a known look; then one the hold offers; a beam look needs the beam block, a charge look the charge block it
 	// holds for.
 	if (D.HoldLook.bSet)
 	{
@@ -3728,12 +3728,12 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 			R.Add(TEXT("holdLook"), TEXT("mantle"), FString::Printf(TEXT("is %s, which charges: it needs a charge block to hold for; add charge, or pick beam"), *Look));
 		}
 	}
-	// Bash (Round 3): only a hold with a bash on the Melee key (the bow) takes one.
+	// Bash: only a hold with a bash on the Melee key (the bow) takes one.
 	if (D.Bash.bSet && !Info.bHasBash)
 	{
 		R.Add(TEXT("bash"), TEXT("mantle"), FString::Printf(TEXT("a %s has no bash: drop bash"), Hold));
 	}
-	// Suppressor toggle and bipod (Round 3): each names attachments of the document; only the holds that have them take them, a bipod gun has no
+	// Suppressor toggle and bipod: each names attachments of the document; only the holds that have them take them, a bipod gun has no
 	// suppressor toggle, and a suppressor needs the shot it makes (sounds.fireSuppressed). Version 1 has neither field (the reader says so).
 	if (D.ReadSchemaVersion == 2)
 	{
@@ -3810,18 +3810,18 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 			}
 		}
 	}
-	// Throw (Round 3 step 12): only a hold that throws itself and catches it again (the shield) takes one.
+	// Throw: only a hold that throws itself and catches it again (the shield) takes one.
 	if (D.ShieldThrow.bSet && !Info.bHasShieldThrow)
 	{
 		R.Add(TEXT("throw"), TEXT("mantle"), FString::Printf(TEXT("a %s does not throw and catch itself: drop throw"), Hold));
 	}
-	// Staff melee (Round 4 step 7): only a hold whose Melee key can fight with it (the staff) takes one.
+	// Staff melee: only a hold whose Melee key can fight with it (the staff) takes one.
 	if (D.bStaffMelee.bSet && !Info.bHasStaffMelee)
 	{
 		R.Add(TEXT("staffMelee"), TEXT("mantle"), FString::Printf(TEXT("a %s has no staff melee: drop staffMelee"), Hold));
 	}
-	// The extra (Round 5 step 0): only a hold with an extra on Q (the staff) takes one; maxMass only on the extra that lifts; (step 6) maxHeight and
-	// durationSeconds only on levitate; (steps 3 and 4) range and look only on blink, heal only on heal. A Battle Mage takes any one.
+	// The extra: only a hold with an extra on Q (the staff) takes one; maxMass only on the extra that lifts; maxHeight and
+	// durationSeconds only on levitate; range and look only on blink, heal only on heal. A Battle Mage takes any one.
 	if (D.Extra.bSet)
 	{
 		const FMantleWeaponDocExtra& Extra = D.Extra.Value;
@@ -3857,13 +3857,13 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		{
 			R.Add(TEXT("extra/heal"), TEXT("mantle"), TEXT("is set, but only heal has a heal: drop heal"));
 		}
-		// Round 5 step 5: dashDistance only on the dash.
+		// dashDistance only on the dash.
 		else if (Extra.DashDistance.bSet && Extra.Kind != EMantleWeaponDocExtra::Dash)
 		{
 			R.Add(TEXT("extra/dashDistance"), TEXT("mantle"), TEXT("is set, but only dash has a dashDistance: drop dashDistance"));
 		}
 	}
-	// The gravity block (Round 3 step 16): only a hold that can be a gravity gun (the firearms) takes one.
+	// The gravity block: only a hold that can be a gravity gun (the firearms) takes one.
 	if (D.Gravity.bSet && !Info.bHasGravity)
 	{
 		R.Add(TEXT("gravity"), TEXT("mantle"), FString::Printf(TEXT("a %s cannot be a gravity gun: drop gravity"), Hold));
@@ -3874,8 +3874,8 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		R.Add(TEXT("effectsColor"), TEXT("mantle"), TEXT("is set, but the weapon has no element: set effects to an element, or drop effectsColor"));
 	}
 
-	// The delivery (#840): one the hold allows; its block comes with it, and no other delivery's but a spear's throw beside
-	// its sweep (or its sweep beside the throw), or a staff's cast spells beside its beam (or its beam beside the spells, #909).
+	// The delivery: one the hold allows; its block comes with it, and no other delivery's but a spear's throw beside
+	// its sweep (or its sweep beside the throw), or a staff's cast spells beside its beam (or its beam beside the spells).
 	const EMantleWeaponDocDelivery Delivery = D.GetDelivery();
 	const bool bDeliveryAllowed = Info.Deliveries.Contains(Delivery);
 	if (!bDeliveryAllowed)
@@ -3945,7 +3945,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		{
 			R.Add(TEXT("projectile/pickup"), TEXT("mantle"), TEXT("is true, but only a thrown weapon or an arrow can be picked up: drop it"));
 		}
-		// #905: the mesh that flies; a thrown weapon flies as itself.
+		// The mesh that flies; a thrown weapon flies as itself.
 		if (Projectile.Mesh.bSet && bThrown)
 		{
 			R.Add(TEXT("projectile/mesh"), TEXT("mantle"), TEXT("is set, but a thrown weapon flies as its own mesh: drop it"));
@@ -3994,7 +3994,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		}
 	}
 
-	// #1025: a consumable whose effect is none does nothing itself, so it has no heal numbers.
+	// A consumable whose effect is none does nothing itself, so it has no heal numbers.
 	if (D.Consumable.bSet && D.Consumable.Value.Effect.Value == EMantleWeaponDocConsumableEffect::None)
 	{
 		if (D.Consumable.Value.Heal.bSet)
@@ -4007,7 +4007,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		}
 	}
 
-	// The charge (#840): required (a bow's draw), optional or none (the firearms) by the hold.
+	// The charge: required (a bow's draw), optional or none (the firearms) by the hold.
 	if (Info.Charge == EMantleWeaponDocChargeRule::None && D.Charge.bSet)
 	{
 		R.Add(TEXT("charge"), TEXT("mantle"), FString::Printf(TEXT("is set, but a %s's clips do not charge: drop charge"), Hold));
@@ -4023,7 +4023,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 			R.Add(TEXT("charge/required"), TEXT("mantle"), FString::Printf(TEXT("is not true, but a %s attacks only charged: write required true"), Hold));
 		}
 	}
-	// Blocking (#840): none (drop block), optional, or required (a shield: block present and enabled).
+	// Blocking: none (drop block), optional, or required (a shield: block present and enabled).
 	if (D.Block.bSet && Info.BlockRule == EMantleWeaponDocBlockRule::None)
 	{
 		R.Add(TEXT("block"), TEXT("mantle"), FString::Printf(TEXT("is set, but a %s does not block: drop block"), Hold));
@@ -4040,7 +4040,7 @@ void FMantleWeaponDocument::CheckRules(const FMantleWeaponDesc& D, TArray<FMantl
 		}
 	}
 
-	// The resource (#840): one the hold allows; charges come with their numbers (the magazine and reload are CheckKeys').
+	// The resource: one the hold allows; charges come with their numbers (the magazine and reload are CheckKeys').
 	const EMantleWeaponDocResource Resource = D.GetResource();
 	if (!Info.Resources.Contains(Resource))
 	{

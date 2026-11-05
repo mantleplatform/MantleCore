@@ -62,7 +62,7 @@ struct FMantleCompatibilityFailure
 DECLARE_DELEGATE_OneParam(FMantleApiCallback, const FMantleApiResult&);
 
 /**
- * The query options of POST /assets (BACKEND.md "Assets"; A2.2 and F9 #343). Empty ones are left
+ * The query options of POST /assets. Empty ones are left
  * out of the query. Which option fits which kind is the server's rule (invalid_options).
  */
 struct FMantleAssetUploadOptions
@@ -109,7 +109,7 @@ struct FMantleUploadedAsset
 	/** Where the cooked object downloads from (a CDN URL); empty until the asset is approved. */
 	FString Url;
 
-	/** "blake3:" + 64 hex over the cooked object at Url (F2 #336), what a download is verified against; empty until cooked. */
+	/** "blake3:" + 64 hex over the cooked object at Url, what a download is verified against; empty until cooked. */
 	FString CookedHash;
 
 	/** The cooked object's length; 0 until cooked. */
@@ -125,7 +125,7 @@ struct FMantleUploadedAsset
 	bool IsRejected() const { return Status == TEXT("rejected"); }
 };
 
-/** One file of a script package version (#838): what a place's scripts[] entry carries. */
+/** One file of a script package version: what a place's scripts[] entry carries. */
 struct FMantleLibraryScriptFile
 {
 	/** "Server/...", "Client/..." or "Shared/...", as the package laid it out. */
@@ -141,7 +141,7 @@ struct FMantleLibraryScriptFile
 	FString Source;
 };
 
-/** One parameter a script package declares in its manifest (#838). */
+/** One parameter a script package declares in its manifest. */
 struct FMantleLibraryScriptParameter
 {
 	FString Name;
@@ -167,18 +167,18 @@ struct FMantleLibraryScriptParameter
 	TArray<FString> Options;
 };
 
-/** A script package version's manifest (#838): {name, description, parameters, settings (stage 6)}. */
+/** A script package version's manifest: {name, description, parameters, settings (stage 6)}. */
 struct FMantleLibraryScriptManifest
 {
 	FString Name;
 	FString Description;
-	/** #134: storage names of the packages this one depends on. */
+	/** Storage names of the packages this one depends on. */
 	TArray<FString> Dependencies;
 	TArray<FMantleLibraryScriptParameter> Parameters;
 	TArray<FMantleLibraryScriptParameter> Settings;
 };
 
-/** One published version of a library item, from GET /library/items/{id}'s versions[] (#614 stage 6). */
+/** One published version of a library item, from GET /library/items/{id}'s versions[]. */
 struct FMantleLibraryVersion
 {
 	int32 Version = 0;
@@ -186,19 +186,19 @@ struct FMantleLibraryVersion
 	/** RFC 3339 time as the API wrote it; empty when absent. */
 	FString CreatedAt;
 
-	/** The version's main uploaded asset (ast_u...); empty for a script package (#838). */
+	/** The version's main uploaded asset (ast_u...); empty for a script package. */
 	FString PrimaryAssetId;
 
 	TArray<FString> DependencyAssetIds;
 
-	/** A script package's files (#838); empty for a vehicle or weapon. */
+	/** A script package's files; empty for a vehicle or weapon. */
 	TArray<FMantleLibraryScriptFile> Scripts;
 
-	/** A script package's manifest (#838); default for a vehicle or weapon. */
+	/** A script package's manifest; default for a vehicle or weapon. */
 	FMantleLibraryScriptManifest Manifest;
 };
 
-/** One of the caller's own places that stores an item, from GET /library/items/{id}'s storedByMyPlaces (#838). */
+/** One of the caller's own places that stores an item, from GET /library/items/{id}'s storedByMyPlaces. */
 struct FMantleLibraryPlaceRef
 {
 	FString Id;
@@ -219,7 +219,7 @@ struct FMantleLibraryUsePlace
 };
 
 /**
- * One library item as the library routes describe it (#614 stage 6): a card of GET /library/items or
+ * One library item as the library routes describe it: a card of GET /library/items or
  * GET /library/items/mine, or GET /library/items/{id}, which adds Versions.
  */
 struct FMantleLibraryCard
@@ -227,7 +227,7 @@ struct FMantleLibraryCard
 	/** itm_u and 32 lowercase hex digits. */
 	FString Id;
 
-	/** "vehicle", "weapon" or "script" (#838). */
+	/** "vehicle", "weapon" or "script". */
 	FString Kind;
 
 	FString Name;
@@ -259,16 +259,16 @@ struct FMantleLibraryCard
 	FString CreatedAt;
 	FString UpdatedAt;
 
-	/** The price (#838); 0 is free, and nothing sets another value before Phase 7. Absent is 0. */
+	/** The price; 0 is free, and nothing sets another value before Phase 7. Absent is 0. */
 	int32 Price = 0;
 
-	/** How the caller got it, on a got card ("free" today, #838); empty when absent or not got. */
+	/** How the caller got it, on a got card ("free" today); empty when absent or not got. */
 	FString Source;
 
 	/** GET /library/items/{id} only; empty on a list card. */
 	TArray<FMantleLibraryVersion> Versions;
 
-	/** GET /library/items/{id} only (#838): the caller's own places that store this item; empty when none or absent. */
+	/** GET /library/items/{id} only: the caller's own places that store this item; empty when none or absent. */
 	TArray<FMantleLibraryPlaceRef> StoredByMyPlaces;
 
 	/** True when the item costs nothing. */
@@ -284,7 +284,7 @@ struct FMantleLibraryCard
 /** The filters of a library list request (GET /library/items and /library/items/mine). */
 struct FMantleLibraryQuery
 {
-	/** "vehicle", "weapon" or "script" (#838); empty for every kind. */
+	/** "vehicle", "weapon" or "script"; empty for every kind. */
 	FString Kind;
 
 	/** Free text (q); empty for none. The API takes at most 100 characters. */
@@ -352,13 +352,13 @@ public:
 #endif
 
 	/**
-	 * Creator uploads (A2.4 #283; shared with the Fab track's bulk queue, F4 #338). All
+	 * Creator uploads (shared with the Fab track's bulk queue). All
 	 * asynchronous: an upload is a large body and the plugin shows progress while it runs.
 	 *
 	 * POST /assets/diff {hashes}: which of these content hashes the caller already holds a claim
 	 * on (known, returned whole) and which it must upload (unknown). An unknown hash may be bytes
 	 * the server already has from someone else: uploading them is cheap and is what gives the
-	 * caller its claim (#337), so unknown always means "upload".
+	 * caller its claim, so unknown always means "upload".
 	 */
 	static void DiffAssetsAsync(const TArray<FString>& Hashes, FMantleApiCallback OnDone);
 
@@ -385,7 +385,7 @@ public:
 	static void ResolveServerAssetsAsync(const TArray<FString>& Ids, FMantleApiCallback OnDone);
 
 	/**
-	 * POST /places/{placeId}/storage/resolve {"entries": [{"item", "version"}]} (#614 stage 4): expands the
+	 * POST /places/{placeId}/storage/resolve {"entries": [{"item", "version"}]}: expands the
 	 * library item versions a place stores into their backing asset ids. Answers 200 with
 	 * {"entries": [...], "missing": [{"item", "version"}]}, read by FMantleStorage::ParseResponse. The player's
 	 * credential, like ResolveAssetsAsync.
@@ -402,7 +402,7 @@ public:
 	static FString MakeResolveStorageBody(TConstArrayView<FMantleStorageRef> Entries);
 
 	/**
-	 * POST /server/avatar/metrics (#581), the dedicated server's read of avatar items' body metrics, authenticated
+	 * POST /server/avatar/metrics, the dedicated server's read of avatar items' body metrics, authenticated
 	 * with MANTLE_SERVER_TOKEN: {"ids": [...]} (1 to 100 item ids) answers {"items": [{"id", "bodyMetrics"}],
 	 * "missing": [id]} (MantleCosmetic::ParseServerBodyMetrics). What a character's gameplay size is computed from, so
 	 * it is never a client's claim. Never falls back to a player credential; without a server token OnDone gets a
@@ -411,7 +411,7 @@ public:
 	static void GetServerAvatarBodyMetricsAsync(const TArray<FString>& ItemIds, FMantleApiCallback OnDone);
 
 	/**
-	 * The library routes (#614 stage 6), all with the caller's token, all asynchronous.
+	 * The library routes, all with the caller's token, all asynchronous.
 	 *
 	 * GET /library/items (bMine false: the caller's own items and, while the server allows it, other accounts' public
 	 * ones) or GET /library/items/mine (bMine true: the caller's own and the ones they got). Answers
@@ -426,7 +426,7 @@ public:
 	static void AcquireLibraryItemAsync(const FString& ItemId, FMantleApiCallback OnDone);
 
 	/**
-	 * DELETE /library/items/{id}/get (#838): a got item leaves the caller's library. Answers 204; repeating it, or
+	 * DELETE /library/items/{id}/get: a got item leaves the caller's library. Answers 204; repeating it, or
 	 * naming the caller's own item, is harmless. A place that still stores it refuses its next publish.
 	 */
 	static void RemoveLibraryItemAsync(const FString& ItemId, FMantleApiCallback OnDone);
@@ -470,8 +470,8 @@ public:
 	static bool IsMissingRoute(const FMantleApiResult& Response);
 
 	/**
-	 * POST /avatar/items with a complete item body (A2.1): 201 and the creation, or {code, message,
-	 * field}. IdempotencyKey, when set, goes as the Idempotency-Key header (#394): a repeat with the
+	 * POST /avatar/items with a complete item body: 201 and the creation, or {code, message,
+	 * field}. IdempotencyKey, when set, goes as the Idempotency-Key header: a repeat with the
 	 * same key answers 200 with the item the first request made, so a retry never makes two.
 	 */
 	static void CreateAvatarItemAsync(const FString& ItemJson, const FString& IdempotencyKey, FMantleApiCallback OnDone);
@@ -509,7 +509,7 @@ public:
 
 	/**
 	 * Exchanges a single-use join credential for the verified account id that requested it,
-	 * plus the player's Epic display name. See BACKEND.md's "Join credential": POST
+	 * plus the player's Epic display name. The call is POST
 	 * /server/sessions/verify, server-token-only, body {"credential"}, response
 	 * {"userId", "displayName"}. Every failure — forged, expired, used, wrong session,
 	 * released seat, or no MANTLE_SERVER_TOKEN at all — comes back as the same generic 401
@@ -526,7 +526,7 @@ public:
 	static void VerifyJoinCredentialAsync(const FString& Credential, FMantleApiCallback OnDone);
 
 	/**
-	 * This binary's build, for the client version gate (GhzGarage/mantle#184): ReleaseBuild
+	 * This binary's build, for the client version gate: ReleaseBuild
 	 * under [Mantle] in DefaultGame.ini, which the release workflow stamps with the release's
 	 * git-<sha> into both the client package and the server image
 	 * (tools/ci/Set-ReleaseBuild.ps1). A client sends it on POST /sessions/join and a
@@ -546,8 +546,8 @@ public:
 	static FString BuildVerifyJoinCredentialBody(const FString& Credential, const FString& ServerBuild);
 
 	/**
-	 * S1.13's DataStore service (MantleScript/Private/MantleScriptDataStore.cpp): the four
-	 * server-token-only calls behind BACKEND.md's "Creator DataStore" --
+	 * The DataStore service (MantleScript/Private/MantleScriptDataStore.cpp): the four
+	 * server-token-only calls behind the Creator DataStore --
 	 * POST /server/datastore/{read,list,write,delete}. Scope is "world" or "player"; PlayerId is
 	 * the seated account UUID for "player" scope, empty for "world" (the backend's own
 	 * datastore.Subject maps that to its internal "*"). Every failure -- no MANTLE_SERVER_TOKEN,
@@ -559,7 +559,7 @@ public:
 		FMantleApiCallback OnDone);
 	/** Bounded prefix export, in key order; the backend clamps Limit to at most
 	    datastore.MaxKeysPerSubject (1024), and treats 0 or less as 100. Cursor is empty for the
-	    first page, or the "nextCursor" the previous page's response carried (#464): a response
+	    first page, or the "nextCursor" the previous page's response carried: a response
 	    names one only when more keys remain. */
 	static void DataStoreListAsync(const FString& Scope, const FString& PlayerId, const FString& Prefix,
 		const FString& Cursor, int32 Limit, FMantleApiCallback OnDone);
@@ -571,14 +571,14 @@ public:
 		const FString& ValueEnvelopeJson, TOptional<int64> ExpectedVersion, FMantleApiCallback OnDone);
 	static void DataStoreDeleteAsync(const FString& Scope, const FString& PlayerId, const FString& Key,
 		TOptional<int64> ExpectedVersion, FMantleApiCallback OnDone);
-	/** #464: one ordered-store call, POST /server/datastore/ordered/<Operation> (set, increment,
+	/** One ordered-store call, POST /server/datastore/ordered/<Operation> (set, increment,
 	    get, remove or sorted), with BodyJson already built by the caller (MantleScriptDataStore.cpp):
 	    {"store","key","value"|"delta"} or {"store","ascending","pageSize","cursor"}. Failures come
 	    back exactly as the four calls above report them. */
 	static void DataStoreOrderedAsync(const FString& Operation, const FString& BodyJson, FMantleApiCallback OnDone);
 
 	/**
-	 * GhzGarage/mantle#465: the chat service behind a place's server scripts
+	 * The chat service behind a place's server scripts
 	 * (MantleScript/Private/MantleScriptChat.cpp), server-token-only like DataStore. The session
 	 * is always the one this server's token names.
 	 *
@@ -601,7 +601,7 @@ public:
 		const TArray<FString>& PlayerIds = TArray<FString>());
 
 	/**
-	 * GhzGarage/mantle#813: players send chat to their game server, which relays it here.
+	 * Players send chat to their game server, which relays it here.
 	 * POST /server/chat/messages/ingest with BodyJson already built by the relay
 	 * (MantleChatRelay.cpp): {"lines":[{"playerId","clientMessageId","body"}]}, at most 32. The
 	 * answer holds one result per line, in order: its verdict, the stored line and hiddenFrom.
@@ -609,7 +609,7 @@ public:
 	static void ServerChatIngestAsync(const FString& BodyJson, FMantleApiCallback OnDone);
 
 	/**
-	 * ServerHttpSummaryAsync (GhzGarage/mantle#548, #1012): POST /server/http/summary, once a minute, what this server's
+	 * ServerHttpSummaryAsync: POST /server/http/summary, once a minute, what this server's
 	 * scripts did over outbound HTTP: {"minute":"<RFC 3339>","entries":[{"script","host","port","requests","status2xx",
 	 * "status3xx","status4xx","status5xx","failures","refusals","bytesOut","bytesIn"}]}, at most 200 entries. Metadata
 	 * only (a host, never a URL, path, header or body); the backend keeps it so an abuse report can be traced after this
@@ -617,7 +617,7 @@ public:
 	 */
 	static void ServerHttpSummaryAsync(const FString& BodyJson, FMantleApiCallback OnDone);
 	/**
-	 * GhzGarage/mantle#813: POST /server/seats/heartbeat, once a minute with the account ids of
+	 * POST /server/seats/heartbeat, once a minute with the account ids of
 	 * every player connected to this server, in place of each player's own heartbeat. Answers
 	 * {"alive":[...]}: the players whose seat it refreshed.
 	 */
@@ -641,7 +641,7 @@ public:
 	static FString ParseVerifiedDisplayName(const FMantleApiResult& Response);
 
 	/**
-	 * The failed checks of a compatibility_failed refusal, in the report's order (#572). Reads
+	 * The failed checks of a compatibility_failed refusal, in the report's order. Reads
 	 * {"code", "message", "report": {"checks": [{"name", "passed", "path", "message"}]}}; empty
 	 * when the body is not that shape or every check passed.
 	 */

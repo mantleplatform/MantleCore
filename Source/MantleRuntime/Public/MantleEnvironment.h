@@ -18,7 +18,7 @@ struct FMantleBuildResult;
  * SkyAtmosphere/SkyLight/VolumetricCloud/ExponentialHeightFog cluster UE's Default level
  * template ships, purely as a runtime default — never serialized, never part of the schema.
  * `settings.skybox` stays reserved for a future creator-configurable sky; until then a place
- * that sets it gets this default sky too (#445).
+ * that sets it gets this default sky too.
  */
 class MANTLERUNTIME_API FMantleEnvironment
 {
@@ -37,7 +37,7 @@ public:
 	 * Either way the sun is then bound to the environment subsystem, which owns its angle from
 	 * then on (the day/night cycle); the place's own sun keeps its intensity, color and yaw.
 	 *
-	 * Also spawns the night sky (#445 ticket 4), the star dome and the moon (SpawnNightSkySphere),
+	 * Also spawns the night sky, the star dome and the moon (SpawnNightSkySphere),
 	 * recorded in Result.EnvironmentActors too and handed to the subsystem with the sun, which
 	 * turns, places and fades them with the clock. Either is left out when its assets are missing.
 	 *
@@ -47,7 +47,7 @@ public:
 
 	/**
 	 * Sets the fog's density, height falloff, inscattering color, start distance and directional inscattering color from
-	 * the keys the place sets (settings.environment.fog, #628); a key left unset keeps the fog's own value. Apply does it to
+	 * the keys the place sets (settings.environment.fog); a key left unset keeps the fog's own value. Apply does it to
 	 * the fog it spawns before the sky is bound, so the weather scales from these values. Does nothing for a null fog.
 	 */
 	static void ApplyFogSettings(AExponentialHeightFog* Fog, const FMantleFogSettings& Settings);
@@ -73,8 +73,8 @@ public:
 
 	/**
 	 * The night sky's materials, unlit, additive and textureless, in /Game/Mantle/Materials/Sky
-	 * (always cooked, so the editor preview shows the same sky). Created by
-	 * tools/environment/Create-MantleSkyMaterials.py, whose docstring lists every parameter.
+	 * (always cooked, so the editor preview shows the same sky).
+	 * They are content assets.
 	 */
 	static constexpr const TCHAR* StarDomeMaterialPath =
 		TEXT("/Game/Mantle/Materials/Sky/M_MantleStarDome.M_MantleStarDome");
@@ -101,14 +101,14 @@ public:
 	 * instance with no overrides, so it looks the same. The engine component only soft-references
 	 * its default, so nothing cooked the engine material and cooked clients had no clouds. This
 	 * asset lives in /Game/Mantle/Materials, which is always cooked, and its hard parent reference
-	 * cooks the engine material with it. Created by
-	 * tools/environment/Create-MantleDefaultCloudMaterial.py.
+	 * cooks the engine material with it.
+	 * It is a content asset.
 	 */
 	static constexpr const TCHAR* DefaultCloudMaterialPath =
 		TEXT("/Game/Mantle/Materials/MI_MantleDefaultCloud.MI_MantleDefaultCloud");
 
 	/**
-	 * The default cloud material's parameters the weather drives (#446 ticket 2), read from the
+	 * The default cloud material's parameters the weather drives, read from the
 	 * engine's m_SimpleVolumetricCloud asset, which MI_MantleDefaultCloud inherits unchanged:
 	 * - Cloud_GlobalCoverage, scalar, default -0.2 (slider -2 to 2): added to the cloud layout;
 	 * - Cloud_GlobalDensity, scalar, default 0.008: how opaque the clouds are;

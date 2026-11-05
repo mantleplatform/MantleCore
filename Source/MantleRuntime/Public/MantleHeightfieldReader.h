@@ -4,8 +4,8 @@
 #include "CoreMinimal.h"
 
 /**
- * A Terrain's heights as the cook worker stores them (MHF1, backend/internal/cook/heightfield.go,
- * #466): a Width x Height grid of 16-bit samples, row-major, with the spacing and scale that place
+ * A Terrain's heights as the cook worker stores them (MHF1, backend/internal/cook/heightfield.go):
+ * a Width x Height grid of 16-bit samples, row-major, with the spacing and scale that place
  * them. Sample (X, Y) sits at (X x SpacingX, Y x SpacingY, HeightOffset + value x HeightScale) in the
  * Terrain entity's space, in cm.
  */

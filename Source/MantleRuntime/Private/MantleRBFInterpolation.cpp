@@ -280,7 +280,7 @@ void FMantleRBFInterpolation::GenerateWeights(const TConstArrayView<FVector3f> S
 {
 	using namespace MantleRBFInterpolationPrivate;
 
-	// Consider all points to be valid for now
+	// Every source point starts as a candidate; the sampler clears each flag as it picks the point
 	TArray<bool> ValidPoints;
 	ValidPoints.Init(true, SourcePositions.Num());
 

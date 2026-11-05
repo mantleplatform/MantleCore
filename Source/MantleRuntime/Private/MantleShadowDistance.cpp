@@ -21,7 +21,7 @@ namespace MantleShadowDistancePrivate
 
 	TAutoConsoleVariable<float> CVarShadowDistanceFraction(
 		TEXT("mantle.Place.ShadowDistanceFraction"), 0.5f,
-		TEXT("Place meshes with a drawDistance (#630): the share of it they cast shadows to. 1 or more, or 0 or less, leaves their shadows on to the draw distance."),
+		TEXT("Place meshes with a drawDistance: the share of it they cast shadows to. 1 or more, or 0 or less, leaves their shadows on to the draw distance."),
 		ECVF_Default);
 }
 

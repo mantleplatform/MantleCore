@@ -8,7 +8,7 @@
 class UPrimitiveComponent;
 
 /**
- * Stops far place meshes casting shadows (#630 stage 2). The engine has no per-primitive shadow distance: a mesh's
+ * Stops far place meshes casting shadows. The engine has no per-primitive shadow distance: a mesh's
  * Max Draw Distance ends its shadow where it ends the mesh, so clutter drawn to 60 m shadows to 60 m too. The place
  * builder hands this every StaticMesh and InstancedMesh that has a drawDistance and casts shadows; a few times a
  * second it turns off the shadow of each one whose bounds are past ShadowDistanceFor(its draw distance) from the

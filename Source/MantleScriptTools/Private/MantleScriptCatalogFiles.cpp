@@ -87,7 +87,7 @@ namespace
 		return true;
 	}
 
-	/** The catalog prefix every script package is mounted under (#838). */
+	/** The catalog prefix every script package is mounted under. */
 	const TCHAR* const GMantleScriptPackagesPrefix = TEXT("Packages/");
 }
 
@@ -155,7 +155,7 @@ FMantleDiskScriptCatalogSource::FMantleDiskScriptCatalogSource(const FString& Pl
 	{
 		ScriptsRoot = Candidate;
 	}
-	// #838: script packages authored beside the level, mounted as a stored package is.
+	// Script packages authored beside the level, mounted as a stored package is.
 	const FString PackagesCandidate = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::GetPath(PlaceFilePath), TEXT("Packages")));
 	if (bIncludePackages && IFileManager::Get().DirectoryExists(*PackagesCandidate))
 	{
@@ -282,7 +282,7 @@ void FMantleDiskScriptCatalogSource::Discover()
 		Entries.Add(MoveTemp(Entry));
 	}
 
-	// #838: each package folder's package.json is its manifest, read the way a stored package's manifest is.
+	// Each package folder's package.json is its manifest, read the way a stored package's manifest is.
 	if (!PackagesRoot.IsEmpty())
 	{
 		TArray<FString> Folders;
@@ -299,7 +299,7 @@ void FMantleDiskScriptCatalogSource::Discover()
 			}
 		}
 		ManifestStamps = ReadManifestStamps();
-		// #134: every file of a package carries its manifest's dependencies, which require() reads.
+		// Every file of a package carries its manifest's dependencies, which require() reads.
 		for (const TPair<FString, FMantleScriptPackageManifest>& Pair : PackageManifests)
 		{
 			MantleStampPackageDependencies(Entries, Pair.Key, Pair.Value.Dependencies);
@@ -344,7 +344,7 @@ bool FMantleDiskScriptCatalogSource::Poll(TArray<int32>& OutChangedIds, bool& bO
 		bool bUnusedModuleOnly = false;
 		if (File.bPackage && !ClassifyFile(File, UnusedSide, bUnusedModuleOnly))
 		{
-			// #838: a package file Discover skips is never an entry, so it must not read as a structure change on every
+			// A package file Discover skips is never an entry, so it must not read as a structure change on every
 			// poll. (A place file outside Server/, Client/ and Shared/ keeps its old behavior.)
 			continue;
 		}
@@ -376,7 +376,7 @@ bool FMantleDiskScriptCatalogSource::Poll(TArray<int32>& OutChangedIds, bool& bO
 	{
 		bOutStructureChanged = true;
 	}
-	// #134: a package.json edit (its dependencies, parameters, settings) restarts the scripts too.
+	// A package.json edit (its dependencies, parameters, settings) restarts the scripts too.
 	if (!bOutStructureChanged)
 	{
 		const TMap<FString, FDateTime> Stamps = ReadManifestStamps();
@@ -438,7 +438,7 @@ namespace
 		return WithoutExtension.Equals(Candidate, ESearchCase::IgnoreCase);
 	}
 
-	/** True when some entry is mounted under Packages/<Package>/ (#838), Package compared case-sensitively. */
+	/** True when some entry is mounted under Packages/<Package>/, Package compared case-sensitively. */
 	bool MantleRequireCatalogHasPackage(const TArray<FMantleScriptCatalogEntry>& Entries, const FString& Package)
 	{
 		return Entries.ContainsByPredicate([&Package](const FMantleScriptCatalogEntry& Entry)
@@ -447,7 +447,7 @@ namespace
 		});
 	}
 
-	/** #134: true when the package's files (the first one found carries them all) list Name as a dependency. */
+	/** True when the package's files (the first one found carries them all) list Name as a dependency. */
 	bool MantleRequireListsDependency(const TArray<FMantleScriptCatalogEntry>& Entries, const FString& Package, const FString& Name)
 	{
 		const FMantleScriptCatalogEntry* Found = Entries.FindByPredicate([&Package](const FMantleScriptCatalogEntry& Entry)
@@ -472,12 +472,12 @@ const FMantleScriptCatalogEntry* MantleResolveRequire(
 		return nullptr;
 	}
 
-	// #838: the script package the caller belongs to (empty for a place's own script). A package resolves inside
+	// The script package the caller belongs to (empty for a place's own script). A package resolves inside
 	// itself only; see the header comment for the whole rule set.
 	const FString FromPackage = MantleScriptPackageOf(FromPath);
 	const FString PackageRoot = FromPackage.IsEmpty() ? FString() : FString::Printf(TEXT("Packages/%s/"), *FromPackage);
 
-	// "@<name>/Thing" names a mounted package's Shared/Thing (#838). Any other "@" is an alias prefix that is
+	// "@<name>/Thing" names a mounted package's Shared/Thing. Any other "@" is an alias prefix that is
 	// ignored: "@Shared/Config" means "Shared/Config" when no package is named Shared.
 	FString Path = Request;
 	FString AliasPackage;
@@ -497,7 +497,7 @@ const FMantleScriptCatalogEntry* MantleResolveRequire(
 			else
 			{
 				UnknownAliasName = Name;
-				// #134: a package asking for a name that differs only in letter case from a mounted package (storage names are case-sensitive).
+				// A package asking for a name that differs only in letter case from a mounted package (storage names are case-sensitive).
 				if (!FromPackage.IsEmpty())
 				{
 					for (const FMantleScriptCatalogEntry& Candidate : Entries)
@@ -512,7 +512,7 @@ const FMantleScriptCatalogEntry* MantleResolveRequire(
 						}
 					}
 				}
-				// #134: a package listed this one as a dependency but the place has not mounted it.
+				// A package listed this one as a dependency but the place has not mounted it.
 				if (!FromPackage.IsEmpty() && MantleRequireListsDependency(Entries, FromPackage, Name))
 				{
 					OutError = FString::Printf(
@@ -526,7 +526,7 @@ const FMantleScriptCatalogEntry* MantleResolveRequire(
 
 	if (!AliasPackage.IsEmpty())
 	{
-		// #134: another package's Shared/ is reachable only from a package that lists it under "dependencies".
+		// Another package's Shared/ is reachable only from a package that lists it under "dependencies".
 		if (!FromPackage.IsEmpty() && !AliasPackage.Equals(FromPackage, ESearchCase::CaseSensitive)
 			&& !MantleRequireListsDependency(Entries, FromPackage, AliasPackage))
 		{
@@ -609,7 +609,7 @@ const FMantleScriptCatalogEntry* MantleResolveRequire(
 		{
 			if (PathMatches(Entry, Candidate))
 			{
-				// #838: a place script reaches a package only through "@<name>/", so only its Shared/ modules.
+				// A place script reaches a package only through "@<name>/", so only its Shared/ modules.
 				const FString TargetPackage = MantleScriptPackageOf(Entry.Path);
 				if (FromPackage.IsEmpty() && !TargetPackage.IsEmpty())
 				{
@@ -636,7 +636,7 @@ const FMantleScriptCatalogEntry* MantleResolveRequire(
 		}
 	}
 
-	// #838: nothing inside the package. If the place's own rules would have found one of the place's scripts, say why
+	// Nothing inside the package. If the place's own rules would have found one of the place's scripts, say why
 	// it is out of reach rather than "not found": Mantle provides no modules of its own for a package to fall back on.
 	if (!FromPackage.IsEmpty() && !Path.StartsWith(TEXT("./")) && !Path.StartsWith(TEXT("../")))
 	{
@@ -660,7 +660,7 @@ const FMantleScriptCatalogEntry* MantleResolveRequire(
 		}
 	}
 
-	// No exact-case match. If a case-insensitive one exists, name its real spelling (#129) --
+	// No exact-case match. If a case-insensitive one exists, name its real spelling --
 	// this is what tells a creator "it works on your PC but would fail on Linux" instead of a
 	// bare "not found".
 	for (const FString& Candidate : Candidates)

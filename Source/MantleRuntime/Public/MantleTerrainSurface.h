@@ -11,7 +11,7 @@ struct FMantleHeightfield;
 struct FMantleTerrainProps;
 
 /**
- * Which paint layer weighs most in each texel of a Terrain's weightmap (#596 step 1b): the CPU copy
+ * Which paint layer weighs most in each texel of a Terrain's weightmap: the CPU copy
  * the surface lookup reads, one byte a texel, on the server as well as every client (the weightmap
  * texture itself is only built where something renders, and its pixels then live on the GPU).
  *
@@ -117,7 +117,7 @@ struct MANTLERUNTIME_API FMantleTerrainHoleGrid
 };
 
 /**
- * The surfaces of a built Terrain (#596 step 1b), on its actor: what MantleSurfaceFromHit asks when a
+ * The surfaces of a built Terrain, on its actor: what MantleSurfaceFromHit asks when a
  * hit lands on the terrain's chunks, which carry no surface of their own. The place builder adds it
  * on the server and every client, wherever a layer names a surface other than default; nothing of it
  * replicates, since each machine builds the same terrain from the same place.

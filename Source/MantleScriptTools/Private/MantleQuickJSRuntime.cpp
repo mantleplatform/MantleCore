@@ -37,7 +37,7 @@ namespace
 
 	bool AddSafeIntrinsics(JSContext* Context)
 	{
-		// #386: deleting the global names below is not enough on its own -- Function,
+		// Deleting the global names below is not enough on its own -- Function,
 		// GeneratorFunction, AsyncFunction and AsyncGeneratorFunction stay reachable through
 		// any function literal's .constructor. The vendored engine's per-context switch refuses
 		// every string-to-code request made by running JS; this file's own JS_Eval calls
@@ -99,7 +99,7 @@ namespace
 	int TypeScriptCompilerInterrupt(JSRuntime*, void* Opaque)
 	{
 		FTypeScriptCompilerBudget& Budget = *static_cast<FTypeScriptCompilerBudget*>(Opaque);
-		// #492: TypeScriptCompilerInterruptChecks stays in upstream's 10000-poll unit.
+		// TypeScriptCompilerInterruptChecks stays in upstream's 10000-poll unit.
 		if (++Budget.Checks <= TypeScriptCompilerInterruptChecks * JS_MANTLE_INTERRUPTS_PER_BUDGET_UNIT)
 		{
 			return 0;

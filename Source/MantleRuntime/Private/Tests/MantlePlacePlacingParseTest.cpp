@@ -5,7 +5,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// #184: placing mode's place format. settings.placing (persistence, maxPieces) and a StaticMesh asset's sockets.
+// Placing mode's place format. settings.placing (persistence, maxPieces) and a StaticMesh asset's sockets.
 // Mirrors validate.py (check_mesh_sockets and the schema) and the backend's validate.go.
 
 // Named, not anonymous: MantleRuntime builds as a unity build.

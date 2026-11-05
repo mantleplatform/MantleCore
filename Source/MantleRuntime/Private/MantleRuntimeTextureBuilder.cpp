@@ -185,8 +185,8 @@ namespace MantleRuntimeTextureBuilderPrivate
 		return static_cast<uint32>(Bytes[0]) | (static_cast<uint32>(Bytes[1]) << 8) | (static_cast<uint32>(Bytes[2]) << 16) | (static_cast<uint32>(Bytes[3]) << 24);
 	}
 
-	// MTX1, the cook worker's block-compressed texture (Fab F9, #343; backend/internal/cook/texturecook.go,
-	// BACKEND.md "The MTX1 format"). Little-endian: magic, version, format, flags, width, height,
+	// MTX1, the cook worker's block-compressed texture (backend/internal/cook/texturecook.go,
+	// the MTX1 format). Little-endian: magic, version, format, flags, width, height,
 	// sourceWidth, sourceHeight, mipCount, then mipCount x {width, height, offset, size}, then the
 	// block data, mip 0 first and contiguous.
 	constexpr uint32 Mtx1Version = 1;
@@ -435,7 +435,7 @@ bool FMantleRuntimeTextureBuilder::Decode(const TConstArrayView<uint8> Bytes, co
 	}
 	if (FMemory::Memcmp(Bytes.GetData(), "MTX1", 4) == 0)
 	{
-		// Fab F9 (#343): the worker's BC container. The blocks and mips go to the GPU as they are.
+		// Fab F9: the worker's BC container. The blocks and mips go to the GPU as they are.
 		if (!DecodeMtx1(Bytes, Params, Out, OutError))
 		{
 			Out = FMantleDecodedTexture();

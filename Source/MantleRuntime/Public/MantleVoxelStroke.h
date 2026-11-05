@@ -6,7 +6,7 @@
 class FMantleVoxelGrid;
 
 /**
- * #168 step 8: one brush stroke on a smooth world, the unit that goes over the wire (21 bytes). The server applies it, orders
+ * One brush stroke on a smooth world, the unit that goes over the wire (21 bytes). The server applies it, orders
  * it and sends it on; every machine applies it again with whole-number maths only (Apply), so all copies of the world stay the
  * same to the last voxel. Positions are in 1/16 voxel.
  */

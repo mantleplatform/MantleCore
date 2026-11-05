@@ -8,7 +8,7 @@
 struct FMantleAnimClip;
 
 /**
- * How a SkeletalMesh entity plays its clip (#469), the place file's loop, playRate and startOffset.
+ * How a SkeletalMesh entity plays its clip, the place file's loop, playRate and startOffset.
  * Deterministic from the server's clock: every client samples the clip at the same time, so nothing
  * per frame replicates.
  */
@@ -39,7 +39,7 @@ struct MANTLERUNTIME_API FMantleClipPlayback
 };
 
 /**
- * The single-node anim instance of a place skeletal mesh (#469): one native node that samples a runtime
+ * The single-node anim instance of a place skeletal mesh: one native node that samples a runtime
  * MAN1 place clip (FMantleAnimClip) into the pose, the way UAnimSingleNodeInstance plays a UAnimSequence
  * (which a cooked client cannot build at runtime). No anim Blueprint. Bones the clip has no track for keep
  * the reference pose; the root's track is applied like any other (a prop has no capsule to keep it).
@@ -71,7 +71,7 @@ public:
 	void SetTimeSource(TFunction<double()> InTimeSource) { TimeSource = MoveTemp(InTimeSource); }
 
 	/**
-	 * #475: whether the root bone's translation track moves the root (true, the default: a prop has no
+	 * Whether the root bone's translation track moves the root (true, the default: a prop has no
 	 * capsule to keep it). A scripted NPC's body turns it off: its capsule carries it, so a clip with
 	 * root motion must not walk the body away from it. Game thread.
 	 */
@@ -79,7 +79,7 @@ public:
 	bool GetApplyRootTranslation() const { return bApplyRootTranslation; }
 
 	/**
-	 * #535: a MAN1 emote clip (no skeleton block) read from a file (FMantleAnimClipReader), for code that cannot include
+	 * A MAN1 emote clip (no skeleton block) read from a file (FMantleAnimClipReader), for code that cannot include
 	 * MantleAnimClip.h: MantleEditor has writer types of the same names (MantleAnimClipWriter.h). The avatar preview's
 	 * idle is read this way. Null, with OutError, when the file cannot be read or holds a place clip.
 	 */

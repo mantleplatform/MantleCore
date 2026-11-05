@@ -106,8 +106,8 @@ FString FMantleEffects::ArchetypeList()
 
 FMantleEffectLook FMantleEffects::DefaultLook(const EMantleEffectArchetype Archetype)
 {
-	// Starting points for the owner's visual check (DOC-CHANGES.md); each archetype's system is tuned to
-	// look right at these values, which is also what tools/effects/Create-MantleEffects.py sets as the
+	// Starting points for the owner's visual check; each archetype's system is tuned to
+	// look right at these values, which is also what the systems set as the
 	// user parameters' defaults.
 	FMantleEffectLook Look;
 	switch (Archetype)
@@ -120,7 +120,7 @@ FMantleEffectLook FMantleEffects::DefaultLook(const EMantleEffectArchetype Arche
 		Look.Lifetime = 4.0;
 		break;
 	case EMantleEffectArchetype::Fire:
-		// NS_MantleFire (#1028, from Vefects' Free Fire) is its own fire at these values: white keeps its flames' own
+		// NS_MantleFire (from Vefects' Free Fire) is its own fire at these values: white keeps its flames' own
 		// colors (any other color recolors them), and Size, Rate, Speed and Lifetime scale it from 40, 40, 120 and 1.
 		Look.Color = FLinearColor::White;
 		Look.Size = 40.0;
@@ -345,7 +345,7 @@ UFXSystemAsset* FMantleEffects::LoadSystem(const EMantleEffectArchetype Archetyp
 		GSystemMissing[Index] = true;
 		// A warning, not an error: the place is whole without its effects, and the log line is the handoff.
 		UE_LOG(LogMantle, Warning,
-			TEXT("MANTLE_PLACE_EFFECT %s is missing from this build (tools/effects/Create-MantleEffects.py makes it): %s effects draw nothing"),
+			TEXT("MANTLE_PLACE_EFFECT %s is missing from this build (no tool in the repo authors this effect material): %s effects draw nothing"),
 			*Path.ToString(), ArchetypeName(Archetype));
 	}
 	return Loaded;

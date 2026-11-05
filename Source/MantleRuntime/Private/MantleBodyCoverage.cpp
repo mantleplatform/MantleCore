@@ -746,7 +746,7 @@ bool FMantleBodySink::Compute(TConstArrayView<FVector3f> BodyPositions, TConstAr
 			return;
 		}
 		Kind[BodyVertex] = Height < 0.0f ? SinkInside : SinkOutside;
-		// #877: skin not under cloth on this wearer is measured (the skin-poke counts) but never moved.
+		// Skin not under cloth on this wearer is measured (the skin-poke counts) but never moved.
 		if (Height < RayUnderCm && (!SinkOnly || (*SinkOnly)[BodyVertex]))
 		{
 			Required[BodyVertex] = FMath::Min(RayUnderCm - Height, Params.MaxSinkCm);
@@ -776,7 +776,7 @@ bool FMantleBodySink::Compute(TConstArrayView<FVector3f> BodyPositions, TConstAr
 			Current[Weld[BodyVertex]] = FMath::Max(Current[Weld[BodyVertex]], Required[BodyVertex]);
 		}
 		const TArray<float> PointRequired = Current;
-		// #877: a point none of whose copies may sink stays at 0, so the smoothing never spreads onto it.
+		// A point none of whose copies may sink stays at 0, so the smoothing never spreads onto it.
 		TBitArray<> PointMay(SinkOnly == nullptr, NumPoints);
 		if (SinkOnly)
 		{
@@ -865,7 +865,7 @@ bool FMantleDressedBody::Compute(const FMantleSkinnedMeshLOD& Body, TConstArrayV
 		return true;
 	}
 
-	// 1. Coverage per garment on this wearer, and the union. #877 (bSkinMask): each garment hides its mask's bits (or,
+	// 1. Coverage per garment on this wearer, and the union. With bSkinMask, each garment hides its mask's bits (or,
 	// without one, its coverage at the border's depth over this body) AND its coverage here.
 	Out.Coverage.SetNum(Garments.Num());
 	if (Params.bSkinMask)

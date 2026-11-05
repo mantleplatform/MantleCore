@@ -7,7 +7,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Body-shape offsets (#849): the BOFS block of an avatar body's MSK1, and applying the four sliders to a mesh. The MSK1 is built by hand: two
+// Body-shape offsets: the BOFS block of an avatar body's MSK1, and applying the four sliders to a mesh. The MSK1 is built by hand: two
 // LODs of two triangles that share their diagonal's two positions but not its vertices (a UV seam, so 6 vertices for 4 positions), two bones
 // and a tangent per vertex. The offsets are small dyadic numbers, so sums and halves are exact in float.
 

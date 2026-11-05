@@ -4,15 +4,15 @@
 #include "CoreMinimal.h"
 
 /**
- * The platform's one default environment (#445, #446): every place gets the same day length,
+ * The platform's one default environment: every place gets the same day length,
  * start hour, sun path and weather table. These are constants, not settings, and nothing here is
  * part of the place schema. Server scripts change the running environment through script API
- * 1.11 (#454, FMantleEnvironmentOverride), within the ranges at the end of this file; a place's
- * settings.environment (#532) starts it elsewhere, within the same ranges, through the same override.
+ * 1.11 (FMantleEnvironmentOverride), within the ranges at the end of this file; a place's
+ * settings.environment starts it elsewhere, within the same ranges, through the same override.
  */
 namespace MantleEnvironmentDefaults
 {
-	// ---- Clock (#445) ----------------------------------------------------------------------
+	// ---- Clock ----------------------------------------------------------------------
 
 	/** One full day, sunrise to sunrise, in real seconds: 30 minutes, about 15 of them daylight. */
 	constexpr double DayLengthSeconds = 1800.0;
@@ -27,12 +27,12 @@ namespace MantleEnvironmentDefaults
 	/** The sun's elevation at noon, and the moon's at midnight. */
 	constexpr double PeakElevationDegrees = 60.0;
 
-	// ---- Sun and moon light (#445) ---------------------------------------------------------
+	// ---- Sun and moon light ---------------------------------------------------------
 
 	/**
 	 * The light is re-aimed only once the clock has moved it this far. Lumen and virtual shadow
 	 * maps run at engine defaults, so every re-aim invalidates shadow pages and lighting; at
-	 * 0.2 degrees a second this is one step about every 1.25 s. Measured in #445 ticket 3.
+	 * 0.2 degrees a second this is one step about every 1.25 s.
 	 */
 	constexpr double SunStepDegrees = 0.25;
 
@@ -58,7 +58,7 @@ namespace MantleEnvironmentDefaults
 	 */
 	constexpr float IntensityEpsilonScale = 0.002f;
 
-	// ---- Night sky: star dome and moon (#445 ticket 4) -------------------------------------
+	// ---- Night sky: star dome and moon -------------------------------------
 
 	/**
 	 * The stars start to fade in as the sun reaches the horizon and are fully out once it is this
@@ -103,7 +103,7 @@ namespace MantleEnvironmentDefaults
 	 */
 	constexpr double MoonLunationAtStart = 0.05;
 
-	// ---- Weather (#446) --------------------------------------------------------------------
+	// ---- Weather --------------------------------------------------------------------
 	// Weather time is environment time: server seconds times the clock's time scale.
 
 	/** Each weather slot lasts a whole number of seconds in this range, both ends included. */
@@ -136,10 +136,9 @@ namespace MantleEnvironmentDefaults
 	 */
 	constexpr double LightningCatchUpSeconds = 10.0;
 
-	// ---- Weather on the sky (#446 ticket 2), see FMantleWeatherLook -----------------------
+	// ---- Weather on the sky, see FMantleWeatherLook -----------------------
 	// Tuned by eye. The cloud values are the default cloud material's
-	// own parameters (m_SimpleVolumetricCloud, read from the asset; the test
-	// Mantle.Environment.Weather.CloudMaterialParameters pins its defaults).
+	// own parameters (m_SimpleVolumetricCloud, read from the asset).
 
 	/**
 	 * Cloud_GlobalCoverage at no cloud cover and at full cover, linear between. The material's
@@ -198,7 +197,7 @@ namespace MantleEnvironmentDefaults
 	 */
 	constexpr double WeatherLookEpsilon = 0.005;
 
-	// ---- Script overrides (#454, script API 1.11), see FMantleEnvironmentOverride ----------
+	// ---- Script overrides (script API 1.11), see FMantleEnvironmentOverride ----------
 	// The documented ranges: every script write is clamped to these, and so is every override a
 	// client receives.
 
@@ -220,13 +219,13 @@ namespace MantleEnvironmentDefaults
 	constexpr double MaxScriptSaturation = 2.0;
 	constexpr double MaxScriptContrast = 2.0;
 
-	/** Environment.Bloom (#532, script API 1.27): the bloom's intensity, 0 (none) to this. */
+	/** Environment.Bloom (script API 1.27): the bloom's intensity, 0 (none) to this. */
 	constexpr double MaxScriptBloom = 4.0;
 
 	/** settings.environment.bloomThreshold: the post-process Bloom Threshold, 0 to this (a place key; no script writes it). */
 	constexpr double MaxBloomThreshold = 8.0;
 
-	// ---- Exposure and height fog of a place's look (#628, settings.environment) -------------------
+	// ---- Exposure and height fog of a place's look (settings.environment) -------------------
 	// Place keys only: no script writes these. The ranges are the schema's, validate.py's and the backend's.
 
 	/** settings.environment.exposure.bias: stops brighter or darker than the game's own exposure compensation. */
@@ -248,8 +247,8 @@ namespace MantleEnvironmentDefaults
 	constexpr double MaxFogStartDistance = 1000000.0;
 
 	/**
-	 * Environment.ColorGrading's LUTs (#532): <folder>/<prefix><Preset>, a 256x16 color lookup
-	 * table each, made by tools/materials/Create-MantleLUTs.py. /Game/Mantle/Materials is in
+	 * Environment.ColorGrading's LUTs: <folder>/<prefix><Preset>, a 256x16 color lookup
+	 * table each. /Game/Mantle/Materials is in
 	 * DefaultGame.ini's DirectoriesToAlwaysCook, so every client has them without a reference.
 	 */
 	constexpr const TCHAR* ColorGradingLutFolder = TEXT("/Game/Mantle/Materials/Textures");

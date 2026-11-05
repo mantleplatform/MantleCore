@@ -12,7 +12,7 @@ class UBillboardComponent;
 class USkeletalMeshComponent;
 
 /**
- * Where a creator weapon waits to be picked up (#789): the WeaponSpawn place entity. It only holds data:
+ * Where a creator weapon waits to be picked up: the WeaponSpawn place entity. It only holds data:
  * which uploaded weapon, how soon it comes back, whether it is on. MantleGameplay owns the pickup (a later
  * stage); this actor is hidden in game, never replicated, and carries nothing a client draws.
  *

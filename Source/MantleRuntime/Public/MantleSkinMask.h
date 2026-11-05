@@ -4,7 +4,7 @@
 #include "CoreMinimal.h"
 #include "MantleBodyCoverage.h"
 
-/** FMantleSkinMask::Derive's tuning (#877, D:\Mantle\Untracked\skin-hide-1022\DESIGN.md section 5). */
+/** FMantleSkinMask::Derive's tuning. */
 struct FMantleSkinMaskParams
 {
 	/** Rays per body vertex: its normal plus Rays - 1 spread over the outer hemisphere (a cosine-weighted Fibonacci set). */
@@ -16,7 +16,7 @@ struct FMantleSkinMaskParams
 	/** A ray that meets neither garment nor body within this far escapes. */
 	float RayReachCm = 20.0f;
 
-	/** The normal ray's reach: FMantleGarmentCoverage's, with its P16 under-skin rule and the #879 near-half rule. */
+	/** The normal ray's reach: FMantleGarmentCoverage's, with its P16 under-skin rule and the near-half rule. */
 	float NormalReachCm = FMantleGarmentCoverage::DefaultMaxDistanceCm;
 
 	/** Rays that may escape while the vertex still counts as enclosed (numerical noise at grazing angles). */
@@ -30,7 +30,7 @@ struct FMantleSkinMaskParams
 };
 
 /**
- * #877: which skin of a garment's own source body the garment hides, decided where the fit is exact. Every
+ * Which skin of a garment's own source body the garment hides, decided where the fit is exact. Every
  * garment-compatible body shares one vertex order (schema/avatar/body-topology-v1.json), so these per-vertex bits
  * carry to every wearer; FMantleDressedBody ANDs them with the wearer's own coverage (the safety net).
  *
@@ -60,7 +60,7 @@ struct MANTLERUNTIME_API FMantleSkinMask
 	/** DepthMm of a vertex 25.5 cm or more from visible skin, or with none reachable. */
 	static constexpr uint8 FarDepthMm = 255;
 
-	/** One bit per body vertex: enclosed (step 1). */
+	/** One bit per body vertex: enclosed. */
 	TBitArray<> Enclosed;
 
 	/** One bit per body vertex: hidden at BorderCm (Hides(Vertex, BorderCm)). */
@@ -114,7 +114,7 @@ struct MANTLERUNTIME_API FMantleSkinMask
 };
 
 /**
- * #877's see-through audit (DESIGN.md section 8): looks at the body as built, every LOD, for holes. From each of
+ * The see-through audit: looks at the body as built, every LOD, for holes. From each of
  * Directions camera directions spread over the sphere, a ray runs from far outside to the center of every DROPPED body
  * triangle (in Body.Indices but not in KeptIndices). The ray is blocked by any garment triangle or kept body
  * triangle before it gets there (either side). It is also fine when it meets a garment within UnderReachCm past the

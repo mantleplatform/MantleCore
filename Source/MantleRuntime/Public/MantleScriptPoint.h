@@ -12,7 +12,7 @@ class UBillboardComponent;
 class UTextRenderComponent;
 
 /**
- * Where a stored script package is anchored in the level (#838): the ScriptPoint place entity. It only holds data:
+ * Where a stored script package is anchored in the level: the ScriptPoint place entity. It only holds data:
  * which package (by its name in the place's storage), the parameters the package declares, and whether the point is
  * on. The package's scripts run once per side, never once per point, and loop over their points with Script.Points;
  * each point is an ordinary entity there, tagged with the storage name, its parameters readable with

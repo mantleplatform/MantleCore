@@ -19,7 +19,7 @@ struct FMantleBodyShapeHeader
 	/** The file carried the plugin's RBF warp weights (FMantleBodyShape::HasWeights). */
 	bool bWarpWeights = false;
 
-	/** Tags of the extension blocks this build does not know and skipped (it reads NECK, #430). */
+	/** Tags of the extension blocks this build does not know and skipped (it reads NECK). */
 	TArray<FString> SkippedExtensions;
 
 	/** The NECK block's samples (FMantleBodyShape::Neck); 0 without one. */
@@ -48,11 +48,11 @@ struct FMantleBodyShapeCandidateReadResult
 };
 
 /**
- * Reads MBS1, the cooked body shape a garment was authored on (AVATAR_CATALOG_PLAN.md section 3.4),
+ * Reads MBS1, the cooked body shape a garment was authored on,
  * into FMantleBodyShape: positions in the reference topology's order, the bone table and reference
  * pose, the RBF warp weights when present (SampleRestPositions rebuilt from the positions at
  * SampleIndices, which MBS1 does not store), the neck from the NECK extension block when present
- * (#430: FMantleBodyShape::Neck, checked by ValidateNeck), and PositionsHash, which the reader recomputes from the
+ * (FMantleBodyShape::Neck, checked by ValidateNeck), and PositionsHash, which the reader recomputes from the
  * positions and requires to equal the file's (it is the fitter's cache key, so a wrong one would
  * reuse another shape's field). Written by backend/internal/cook/bodyshape.go.
  *
