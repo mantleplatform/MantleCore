@@ -319,9 +319,6 @@ public:
 	/** True when both an address and a token are available. */
 	static bool IsConfigured(FString& OutWhyNot);
 
-	/** Uploads the place file as the level's working copy. */
-	static FMantleApiResult SaveDraft(const FString& PlaceId, const FString& PlaceJson);
-
 	static FMantleApiResult Publish(const FString& PlaceId, const FString& Notes);
 
 	/** Fetches the published place file players receive; returns immediately and calls back on the game thread. */

@@ -4196,21 +4196,6 @@ const TCHAR* FMantleWeaponDocument::ReloadStyleName(const EMantleWeaponDocReload
 	return MantleWeaponDocumentPrivate::WeaponDocNameAt(MantleWeaponDocumentPrivate::GWeaponDocReloadStyleNames, static_cast<int32>(Style));
 }
 
-const TCHAR* FMantleWeaponDocument::UseStyleName(const EMantleWeaponDocUseStyle Style)
-{
-	return MantleWeaponDocumentPrivate::WeaponDocNameAt(MantleWeaponDocumentPrivate::GWeaponDocUseStyleNames, static_cast<int32>(Style));
-}
-
-const TCHAR* FMantleWeaponDocument::ConsumableEffectName(const EMantleWeaponDocConsumableEffect Effect)
-{
-	return MantleWeaponDocumentPrivate::WeaponDocNameAt(MantleWeaponDocumentPrivate::GWeaponDocConsumableEffectNames, static_cast<int32>(Effect));
-}
-
-TConstArrayView<const TCHAR*> FMantleWeaponDocument::GetUseRefusedFields()
-{
-	return MantleWeaponDocumentPrivate::GWeaponDocUseRefused;
-}
-
 TConstArrayView<const TCHAR*> FMantleWeaponDocument::GetBeamLooks()
 {
 	return MantleWeaponDocumentPrivate::GWeaponDocBeamLookNames;

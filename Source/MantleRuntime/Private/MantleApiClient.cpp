@@ -413,11 +413,6 @@ void FMantleApiClient::SendBytesAsync(
 	DispatchMantleAsyncRequest(Request, Verb, Path, OnDone);
 }
 
-FMantleApiResult FMantleApiClient::SaveDraft(const FString& PlaceId, const FString& PlaceJson)
-{
-	return Send(TEXT("PUT"), FString::Printf(TEXT("/places/%s/draft"), *PlaceId), PlaceJson);
-}
-
 FMantleApiResult FMantleApiClient::Publish(const FString& PlaceId, const FString& Notes)
 {
 	FString Escaped = Notes;
