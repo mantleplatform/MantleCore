@@ -1077,9 +1077,6 @@ public:
 	/** Whether a document built in code (the converter's) is one Parse accepts: Write, then Parse. */
 	static bool Validate(const FMantleWeaponDesc& Desc, TArray<FMantleWeaponDocError>& OutErrors);
 
-	/** What a consumable (delivery use) refuses, the top-level keys of a weapon's numbers and attachments (its mesh shows alone). */
-	static TConstArrayView<const TCHAR*> GetUseRefusedFields();
-
 	/** schema x-beamLooks, the hold looks that channel the staff's beam (they need its beam block; the others charge). */
 	static TConstArrayView<const TCHAR*> GetBeamLooks();
 
@@ -1115,8 +1112,6 @@ public:
 	static const TCHAR* SocketName(EMantleWeaponDocSocket Socket);
 	static const TCHAR* ReloadStyleName(EMantleWeaponDocReloadStyle Style);
 	static const TCHAR* EffectsName(EMantleWeaponDocEffects Effects);
-	static const TCHAR* UseStyleName(EMantleWeaponDocUseStyle Style);
-	static const TCHAR* ConsumableEffectName(EMantleWeaponDocConsumableEffect Effect);
 	/** extra.kind's spelling (none, telekinesis, ...). */
 	static const TCHAR* ExtraName(EMantleWeaponDocExtra Extra);
 	/** extra.look's spelling ("overhead"). */
