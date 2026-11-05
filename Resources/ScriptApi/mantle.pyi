@@ -156,6 +156,7 @@ class Player:
     dodge_enabled: Optional[bool]
     double_jump: Optional[bool]
     drown_damage: Optional[float]
+    gait: Optional[str]
     grab_enabled: Optional[bool]
     health: Optional[float]
     held_tool_id: Optional[str]
@@ -225,6 +226,9 @@ class Player:
         ...
     def heal(self, amount: float, /) -> bool:
         """Raise the character's health by amount, up to MaxHealth. Never brings a dead character back (use Respawn). Returns false when the player has no character on foot, is dead, or is already at full health."""
+        ...
+    def jump(self) -> bool:
+        """Make the character jump exactly as if the player pressed the jump key: the same jump height (JumpHeight), pose, double jump and wall jump rules, the stamina cost (JumpStaminaCost) and the same refusals. Returns true when it jumps and false when it does not: no character on foot, dead, stunned, seated, swimming, in the air with no jump left, held crouched by ForceCrouch, or too tired for JumpStaminaCost. A crouched or sliding character stands and jumps as the key does. Call it again for the next jump; it does not repeat on its own."""
         ...
     def kick(self, reason: Optional[str] = ..., /) -> None:
         """Remove the player from the session with a message."""
@@ -1295,7 +1299,7 @@ class _NPCsService:
         """The NPC an Entity is (a World:Raycast hit, or NPC:GetEntity()), or nil when it is not a live NPC."""
         ...
     def spawn(self, position: Vector3, look: Optional[dict[str, Any]] = ..., yaw: Optional[float] = ..., /) -> NPC:
-        """Spawn a character standing at position (its feet), facing yaw degrees (0 faces +X), and return it as an NPC. Every player sees it. look.AvatarItemId optionally selects a published avatar body; omit it to spawn an NPC with no rendered body. SkinTone and EyeColor are avatar palette ids ('tone_05'), Height is a percent from 95 to 105. A place holds at most 50 NPCs at once; Destroy one to make room."""
+        """Spawn a character standing at position (its feet), facing yaw degrees (0 faces +X), and return it as an NPC. Every player sees it. look.AvatarItemId optionally selects a published avatar body; omit it to spawn an NPC with no rendered body. SkinTone and EyeColor are avatar palette ids ('tone_05'), Height is a percent from 95 to 105. Wearing dresses the NPC the way a crowd member is dressed: a list of {Slot, ItemId} entries naming published clothing and hair items the place owner has acquired (Slot is hair, eyebrows, eyelashes, facial_hair, top, bottom, footwear or nails; one item per slot, at most 24). It needs AvatarItemId, and a body that cannot wear clothing shows none. An unknown slot, a repeated slot or a malformed item id fails the call. Every player sees the outfit, players who join later included. A place holds at most 50 NPCs at once; Destroy one to make room."""
         ...
 
 NPCs: _NPCsService

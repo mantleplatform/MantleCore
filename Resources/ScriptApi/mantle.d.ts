@@ -178,6 +178,8 @@ interface Player {
 	doubleJump: boolean | undefined;
 	/** How much health a character out of breath loses each second, dealt once a second and tagged "Drown" (10 unless a script changes it). It goes past Armor and Shield, and nobody is credited for the kill. 0 lets a character stay under forever once its breath is gone. nil while the player has no character. Setting it (server only) clamps to 0..10000 and lasts for the rest of the session. Only counts while BreathEnabled is true. */
 	drownDamage: number | undefined;
+	/** The gait mode a script gave the player: "Auto" (the default), "Walk", "Jog" or "Sprint"; nil while the player has no character. It is a toggle mode: once set, the character moves in that gait until it is changed, with the same speed, pose and animations, swimming stroke, Stamina use and Player.SprintStarted / SprintStopped events as when the matching key is used, and for every way of moving, ClickToMove of the top-down play style included. "Auto" leaves the gait to the player's keys as always (the walk toggle, how far the stick is pushed, the sprint key). "Walk" and "Jog" are the gait the character moves in with no key held: the walk toggle and the stick's depth stop mattering, and the player's sprint key still sprints on top, so set SprintEnabled to false to hold them to it. "Sprint" sprints whenever the character moves forward, whatever the keys do, and the character jogs while it cannot (moving backwards or sideways, SprintEnabled false, out of Stamina). A crouched or sliding character is never sprinting, and it takes the mode up again when it stands. WalkSpeed and SprintSpeed set how fast each gait is. Setting it (server only) takes the names in any capitals, fails on any other, and lasts for the rest of the session, through respawns. */
+	gait: string | undefined;
 	/** Whether the player's gravity gun works (true unless a script changes it); nil while the player has no character. A gun whose weapon has a gravity block grabs the physics prop under the crosshair with left mouse and launches it with the next click. Setting it (server only) to false makes the gun do nothing, and drops what it holds. A staff's telekinesis keeps StaffExtraEnabled. It lasts for the rest of the session, through respawns. */
 	grabEnabled: boolean | undefined;
 	/** The character's health, from 0 to MaxHealth; nil while the player has no character. Weapons and TakeDamage lower this same value. Setting it (server only) clamps to 0..MaxHealth, and 0 kills the character with no killer. Setting it on a dead player, or one driving a vehicle, does nothing: use Respawn to bring a player back. */
@@ -188,7 +190,7 @@ interface Player {
 	readonly isCrouched: boolean | undefined;
 	/** Whether the character is limp on the ground right now: from Ragdoll, or a hard hit, a blast or being thrown off a vehicle knocked it down. nil while the player has no character. Read-only. */
 	readonly isRagdolled: boolean | undefined;
-	/** Whether the character is sprinting right now: holding the sprint key and moving forward fast enough. nil while the player has no character. Read-only. */
+	/** Whether the character is sprinting right now: sprinting because the sprint key is held or because Gait is "Sprint", and moving forward fast enough. nil while the player has no character. Read-only. */
 	readonly isSprinting: boolean | undefined;
 	/** Whether the character is swimming in water right now (wading in the shallows is not swimming). nil while the player has no character. Read-only. */
 	readonly isSwimming: boolean | undefined;
@@ -302,6 +304,8 @@ interface Player {
 	getRound(): { toolId: string; name: string; damageMultiplier: number; speed: number; color?: string | undefined } | undefined;
 	/** Raise the character's health by amount, up to MaxHealth. Never brings a dead character back (use Respawn). Returns false when the player has no character on foot, is dead, or is already at full health. (server only) */
 	heal(amount: number): boolean;
+	/** Make the character jump exactly as if the player pressed the jump key: the same jump height (JumpHeight), pose, double jump and wall jump rules, the stamina cost (JumpStaminaCost) and the same refusals. Returns true when it jumps and false when it does not: no character on foot, dead, stunned, seated, swimming, in the air with no jump left, held crouched by ForceCrouch, or too tired for JumpStaminaCost. A crouched or sliding character stands and jumps as the key does. Call it again for the next jump; it does not repeat on its own. (server only) */
+	jump(): boolean;
 	/** Remove the player from the session with a message. (server only) */
 	kick(reason?: string | undefined): void;
 	/** Kill the character outright: Died fires with no killer, and the place's respawn rules take over as for any other death. Returns false when the player has no character on foot or is already dead. (server only) */
@@ -1217,8 +1221,8 @@ const Match: MatchService;
 interface NPCsService {
 	/** The NPC an Entity is (a World:Raycast hit, or NPC:GetEntity()), or nil when it is not a live NPC. (server only) */
 	fromEntity(entity: Entity): NPC | undefined;
-	/** Spawn a character standing at position (its feet), facing yaw degrees (0 faces +X), and return it as an NPC. Every player sees it. look.AvatarItemId optionally selects a published avatar body; omit it to spawn an NPC with no rendered body. SkinTone and EyeColor are avatar palette ids ("tone_05"), Height is a percent from 95 to 105. A place holds at most 50 NPCs at once; Destroy one to make room. (server only) */
-	spawn(position: Vector3, look?: { avatarItemId?: string | undefined; skinTone?: string | undefined; eyeColor?: string | undefined; height?: number | undefined } | undefined, yaw?: number | undefined): NPC;
+	/** Spawn a character standing at position (its feet), facing yaw degrees (0 faces +X), and return it as an NPC. Every player sees it. look.AvatarItemId optionally selects a published avatar body; omit it to spawn an NPC with no rendered body. SkinTone and EyeColor are avatar palette ids ("tone_05"), Height is a percent from 95 to 105. Wearing dresses the NPC the way a crowd member is dressed: a list of {Slot, ItemId} entries naming published clothing and hair items the place owner has acquired (Slot is hair, eyebrows, eyelashes, facial_hair, top, bottom, footwear or nails; one item per slot, at most 24). It needs AvatarItemId, and a body that cannot wear clothing shows none. An unknown slot, a repeated slot or a malformed item id fails the call. Every player sees the outfit, players who join later included. A place holds at most 50 NPCs at once; Destroy one to make room. (server only) */
+	spawn(position: Vector3, look?: { avatarItemId?: string | undefined; skinTone?: string | undefined; eyeColor?: string | undefined; height?: number | undefined; wearing?: ({ slot: string; itemId: string })[] | undefined } | undefined, yaw?: number | undefined): NPC;
 }
 const NPCs: NPCsService;
 
