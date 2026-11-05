@@ -60,6 +60,8 @@ namespace MantlePlacingSnap
 		double Grid = 0.0;
 		double RotationStepDegrees = 90.0;
 		int32 RotationSteps = 0;
+		/** The yaw the rotation steps are counted from (degrees): 0 for a new piece, a carried piece's own yaw. 0 gives exactly the results there were before. */
+		double BaseYaw = 0.0;
 		bool bSnap = true;
 		/** How close a socket must be held to another to join it (cm). The editor's preview widens it to join from anywhere. */
 		double SocketRadius = SocketRadiusCm;

@@ -47,7 +47,7 @@ MantlePlacingSnap::FResult MantlePlacingSnap::Compute(const FInput& Input)
 {
 	using namespace MantlePlacingSnapPrivate;
 	FResult Result;
-	const FRotator Turned(0.0, Input.RotationSteps * Input.RotationStepDegrees, 0.0);
+	const FRotator Turned(0.0, Input.BaseYaw + Input.RotationSteps * Input.RotationStepDegrees, 0.0);
 	Result.Rotation = Turned.GetNormalized();
 	if (!Input.bHit)
 	{
