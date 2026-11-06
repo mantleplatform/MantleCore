@@ -201,6 +201,7 @@ class Player:
     died: Signal
     dodged: Signal
     dropped: Signal
+    grab_refused: Signal
     health_changed: Signal
     lifted: Signal
     out_of_breath: Signal
@@ -1329,6 +1330,35 @@ class _NoiseService:
 
 Noise: _NoiseService
 
+class _PhysicsModeService:
+    """Physics mode: a per-player mode a script switches on (server: Start, Stop, GetHeld, ForceDrop) in which the player has the gravity gun's controls with no tool: left mouse (right trigger) grabs a physics prop in reach and, held, throws it; right mouse (left trigger) drops it; the wheel moves it nearer or farther; R and the mouse (LB and the right stick) turn it. The mode's controls win over whatever is in hand, which stays in hand and does nothing until Stop. Nothing is on unless a script calls Start. The client calls (PickUp, Throw, Drop, Adjust) drive it for Keys = 'script'. Player.Lifted, Dropped and GrabRefused report what happens, each with a via of 'physics_mode'."""
+    def adjust(self, distanceSteps: float, yaw: float, pitch: float, roll: float, /) -> None:
+        """Moves and turns the held prop, the job of the wheel and the turn keys; for Keys = 'script'. distanceSteps is whole 25 cm notches (positive moves the prop farther, negative nearer; fractions round), and yaw, pitch and roll are degrees, turned around the view's axes (the Start Rotate and RotateSnap rules apply, and Rotate = false ignores them). Does nothing when nothing is held. The server clamps every value to the hold's limits and takes a limited number of calls a second."""
+        ...
+    def drop(self) -> None:
+        """Lets go of what the player holds (Dropped, how 'dropped'); for Keys = 'script'. Does nothing when physics mode is off or nothing is held."""
+        ...
+    def force_drop(self, player: Player, /) -> bool:
+        """Makes the player let go of what they hold, any of the three ways (physics mode, the gravity gun or telekinesis); Dropped fires with how 'forced'. Returns whether they held anything. The mode itself stays on."""
+        ...
+    def get_held(self, player: Player, /) -> Optional[Entity]:
+        """The physics prop the player holds, any of the three ways (physics mode, the gravity gun or a staff's telekinesis), or nil when they hold nothing (or the prop has no Entity)."""
+        ...
+    def pick_up(self) -> str:
+        """Grabs the prop the aim is on, as the left mouse button does with nothing held; for Keys = 'script'. Sends the request to the server, which checks it (reach, mass, anchored, Entity.Grabbable, another holder) and answers with Player.Lifted or Player.GrabRefused. Returns 'sent', or 'not_active' when physics mode is off for this player."""
+        ...
+    def start(self, player: Player, options: Optional[dict[str, Any]] = ..., /) -> None:
+        """Turns physics mode on for one player (a second Start replaces the first; a prop they hold stays held if the new settings still allow it). Every option is optional. MaxMass (kg, 50; 1 to 5,000) is the heaviest prop they may grab. Reach (cm from the eyes, 300; 100 to 2,000) is how far a grab reaches. MinHold (cm, 75; at least 25, at most MaxHold) and MaxHold (cm, 300; MinHold to 2,000) are the closest and farthest hold; Hold (cm, 150) is where a grab starts, and a Hold outside them is read as the nearest end. A script that gives only a MinHold above 300 must give a MaxHold with it, and one that gives only a MaxHold below 75 a MinHold, or Start fails. ThrowSpeed (cm/s, 1,500; 0 to 10,000) is the throw's strength, 0 for no throw. ThrowDamage (0; up to 1,000) is the point damage a thrown prop does to what it hits: a held prop never hurts. Rotate (true) lets the turn keys turn the prop; RotateSnap (degrees, 0 for free; up to 180) turns it in whole steps. Cooldown (seconds, 0.25; up to 60) is the wait after a let-go. Keys is 'default' (the controls above) or 'script' (no keys at all, and the weapon in hand keeps working: the place's client scripts drive the mode with PickUp, Throw, Drop and Adjust). Cursor (false) aims with the mouse cursor instead of the crosshair (a gamepad keeps the crosshair). The mode refuses players, NPCs, vehicles, anchored props and props with Entity.Grabbable false, and drops a prop when the holder stands on it or is hit. Fails for a value out of range or the wrong type."""
+        ...
+    def stop(self, player: Player, /) -> None:
+        """Turns physics mode off for one player. A prop they hold drops (Dropped, how 'stopped'). The weapon in hand works again at once."""
+        ...
+    def throw(self) -> str:
+        """Throws what the player holds along the crosshair at the Start ThrowSpeed; for Keys = 'script'. Returns 'sent', or 'not_active' when physics mode is off for this player. The server decides: with nothing held, or a ThrowSpeed of 0, nothing happens."""
+        ...
+
+PhysicsMode: _PhysicsModeService
+
 class _PlacingService:
     """Placing mode: a ghost that follows a player's camera, snapping, a server check and cancellable events, switched on by a script (server: Start, Stop; client: the controls). Nothing is on unless a script calls Start. Costs, owners, build zones and health are the place's own scripts."""
     def cancel(self) -> None:
@@ -1602,7 +1632,7 @@ class _UIService:
         """Open one of the place's UI documents (a .rml file in its UI/ folder) on this player's screen. Mode is 'modal' (the default: gameplay input stops and Back closes it), 'overlay' (play goes on; the mouse works on its controls) or 'hud' (drawn only, never takes input). An unknown path or mode is an error, and so is opening on a server. Example: local shop = UI:OpenDocument('UI/shop.rml')"""
         ...
     def set_built_in_hud(self, enabled: bool, part: Optional[str] = ..., player: Optional[Player] = ..., /) -> None:
-        """Shows or hides Mantle's built-in HUD, which is on by default. part is 'reticle', 'health', 'ammo', 'hotbar', 'prompt' (the interaction prompt), 'voice' (the voice line), 'text' (UI:SetText lines and toasts) or 'all'; leave it out for all. 'all' also hides the vehicle readout, stats strip, notices and emote wheel. Your own UI (UI:Create, UI:OpenDocument) is never touched. A client script changes the local player's HUD (no player argument). A server script changes one player's, or everyone's now and later when player is left out; hides from the server and from the player's own scripts add up, and a change for everyone also resets earlier per-player changes of those parts. Example: UI:SetBuiltInHUD(false) for a cutscene, UI:SetBuiltInHUD(true) after."""
+        """Shows or hides Mantle's built-in HUD, which is on by default. part is 'reticle', 'health', 'ammo', 'hotbar', 'prompt' (the interaction prompt), 'voice' (the voice line), 'text' (UI:SetText lines and toasts) or 'all'; leave it out for all. 'all' also hides the vehicle readout, stats strip, notices, emote wheel and Placing's key instructions box. Your own UI (UI:Create, UI:OpenDocument) is never touched. A client script changes the local player's HUD (no player argument). A server script changes one player's, or everyone's now and later when player is left out; hides from the server and from the player's own scripts add up, and a change for everyone also resets earlier per-player changes of those parts. Example: UI:SetBuiltInHUD(false) for a cutscene, UI:SetBuiltInHUD(true) after."""
         ...
     def set_cursor_visible(self, visible: Optional[bool] = ..., /) -> None:
         """Force the mouse cursor on or off regardless of whether an interactive node is visible right now. Nil goes back to automatic: shown only while a modal UI (see SetInputMode) has a Button, a Toggle, or a Prompt with an action visible and enabled; an overlay UI shows no cursor, so the mouse keeps turning the camera. SetCursorVisible(true) shows it in either mode. A gamepad-only panel can call SetCursorVisible(false) to keep working through focus/Accept without ever drawing a cursor."""
