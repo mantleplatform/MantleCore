@@ -2,7 +2,7 @@
 using System.IO;
 using UnrealBuildTool;
 
-// Vendored quickjs-ng v0.16.2 (MIT). See VERSION for the exact tag, commit and retrieval
+// Vendored quickjs-ng v0.18.0 (MIT). See VERSION for the exact tag, commit and retrieval
 // date, and for the full list of what was pruned from upstream and why. upstream/ is
 // pristine except the creator-sandbox patches in patches/README.txt (#386), already
 // applied and marked MANTLE in the source; "pristine upstream" below means everything else.

@@ -1,4 +1,4 @@
-Vendoring quickjs-ng v0.16.2 for UE 5.8 / MSVC 14.44 itself needed no patch:
+Vendoring quickjs-ng v0.18.0 for UE 5.8 / MSVC 14.44 itself needed no patch:
 warnings that upstream's own code trips under UE's default warning level are
 relaxed at the module level in QuickJSLib.Build.cs instead of by editing
 upstream/ in place.
@@ -134,3 +134,36 @@ upstream code rather than forcing it.
   reached sooner. Deliberately left alone: the algorithms themselves (a
   hash-based de-duplication or a linear-time string search would be a
   larger divergence from upstream).
+
+Re-vendor record, v0.16.2 -> v0.18.0
+------------------------------------
+
+  Both patches were replayed against pristine v0.18.0 and regenerated from the
+  result (the .patch files here apply cleanly to a pristine v0.18.0 tree and
+  reproduce upstream/ byte for byte). Every quickjs.c and libregexp.c hunk
+  applied with line offsets only. The one quickjs.h hunk (0002 item 8) no
+  longer matched, because upstream's JSInterruptHandler now takes the
+  JSContext instead of the JSRuntime (upstream PR 1802); it was re-added by
+  hand after the new declaration. Mantle's handlers (MantleQuickJS.cpp,
+  MantleQuickJSRuntime.cpp) take the JSContext to match.
+
+  Checked in v0.18.0 and left unpatched, with reasons:
+  - String-to-code: JS_EvalObject is still the only funnel (direct eval,
+    indirect eval, js_function_constructor). The other runtime compile path,
+    JS_DetectModule (quickjs.c, QJS_DISABLE_PARSER guard), builds its own
+    throwaway runtime and is not reachable from JS.
+  - import(): the new JS_SetDynamicImportFunc / JS_FinishDynamicImport
+    (upstream PR 1860) only changes behaviour once an embedder registers
+    a dynamic-import function. Mantle does not, so import() still goes
+    through js_dynamic_import_job -> JS_LoadModuleInternal -> the module
+    loader Mantle installs.
+  - Array-like loops: no new Array.prototype or other length-driven loop was
+    added. Changed loops (String.prototype.repeat, copy_str16) allocate in
+    proportion to their length, so the memory limit bounds them.
+  - OOM and every InternalError (JS_ThrowInternalError, new InternalError(),
+    "string too long") are now uncatchable by script (upstream PRs 1810,
+    1814), like "interrupted" already was.
+
+  On Windows with core.autocrlf=true the checked-out .patch files carry CRLF
+  line endings, which git apply rejects ("corrupt patch"); apply the committed
+  text instead: git show HEAD:<path to patch> | git apply --directory=... -

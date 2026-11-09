@@ -112,7 +112,7 @@ struct CostVisitor : AstVisitor
 
     Cost model(AstExpr* node)
     {
-        if (const Constant* c = constants.find(node))
+        if (constants.contains(node))
             return Cost(0, Cost::kLiteral);
 
         if (AstExprGroup* expr = node->as<AstExprGroup>())
@@ -168,7 +168,7 @@ struct CostVisitor : AstVisitor
         {
             return model(expr->expr) + model(expr->index) + 1;
         }
-        else if (AstExprFunction* expr = node->as<AstExprFunction>())
+        else if (node->is<AstExprFunction>())
         {
             return 10; // high baseline cost due to allocation
         }
@@ -203,7 +203,13 @@ struct CostVisitor : AstVisitor
         }
         else if (AstExprIfElse* expr = node->as<AstExprIfElse>())
         {
-            return model(expr->condition) + model(expr->trueExpr) + model(expr->falseExpr) + 2;
+            Cost cond = model(expr->condition);
+
+            // propagate constant mask from condition to the local variable if it exists
+            if (expr->conditionLocal && cond.constant != 0)
+                vars[expr->conditionLocal] = cond.constant;
+
+            return cond + model(expr->trueExpr) + model(expr->falseExpr) + 2;
         }
         else if (AstExprInterpString* expr = node->as<AstExprInterpString>())
         {
@@ -284,6 +290,9 @@ struct CostVisitor : AstVisitor
     bool visit(AstStatWhile* node) override
     {
         Cost condition = model(node->condition);
+
+        if (node->conditionLocal && condition.constant != 0)
+            vars[node->conditionLocal] = condition.constant;
 
         loop(node->body, condition);
         return false;

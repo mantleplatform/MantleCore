@@ -2,15 +2,15 @@ Luau
 ====
 
 Upstream:     https://github.com/luau-lang/luau
-Tag:          0.738
-Commit:       c54f558b4d5748ab0658610b8ce0c432053e41eb
-Retrieved:    2026-09-12
+Tag:          0.746
+Commit:       12a6ba75883272c79b66b59815efef4c574196f6
+Retrieved:    2026-11-08
 License:      MIT (LICENSE) plus the original Lua 5.1 MIT notice (LICENSE-lua.txt),
               since Luau is a fork of Lua 5.1.
 
 Retrieval command:
 
-    git clone --depth 1 --branch 0.738 https://github.com/luau-lang/luau.git
+    git clone --depth 1 --branch 0.746 https://github.com/luau-lang/luau.git
 
 Vendored (pristine, under upstream/):
     Ast/        (include/ + src/)
@@ -37,7 +37,7 @@ Pruned from Bytecode/ specifically, because BytecodeBuilder.{h,cpp} do not
 transitively need them (verified by grepping their #includes) and they exist
 only to serve upstream's CLI dump/analysis tools this vendoring never builds:
     include/Luau/BytecodeCallInliner.h, BytecodeDump.h, BytecodeGraph.h,
-        BytecodeOps.h, BytecodeValidation.h, Sccp.h
+        BytecodeOps.h, BytecodeSlotAllocation.h, BytecodeValidation.h, Sccp.h
     src/BytecodeDump.cpp, BytecodeGraph.cpp, BytecodeGraphParser.h,
         BytecodeGraphSerializer.h, Sccp.cpp
 This is a stronger exclusion than the usual "leave it out of the .Build.cs":
@@ -90,3 +90,12 @@ Never compiled, and not vendored, for the reasons above:
 To update: re-run the retrieval command against the new tag, diff the file lists
 above against Sources.cmake in the new checkout, re-copy, and replay anything in
 patches/ (empty at this vendoring -- no UE-specific patch was needed).
+
+Warnings (checked at 0.746; redo after every update):
+    A clean build gave 34 MSVC warnings in upstream code (C4127 x13, C4389 x7, C4996 x6,
+    C4457 x4, C4324, C4310, C4505, C4702). Every site was read; none is a bug, so nothing is
+    patched (patches/ is still empty). They are silenced in MantleGameLuauLib.Build.cs:
+    _CRT_SECURE_NO_WARNINGS for C4996, and LuauWarnings.h (force-included, one reason per
+    code inside it) for the rest. After an update, rebuild the module, read any NEW
+    warning in the source before adding its code to LuauWarnings.h, and patch real bugs
+    in patches/ instead.

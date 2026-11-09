@@ -954,6 +954,8 @@ bool FMantlePublishMemoryQueueFileTest::RunTest(const FString& Parameters)
 	Missing.Name = TEXT("missing");
 	Missing.File = FPaths::Combine(Directory, TEXT("gone.bin"));
 	Missing.Hash = FMantleSha256::AssetHash(Payload(62, 10));
+	// gone.bin is never written, on purpose, so the engine's streaming reader warns once when the queue tries to send it.
+	AddExpectedMessagePlain(TEXT("Failed to read file"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 1);
 
 	// A file of the right size whose bytes are not the ones that were hashed: someone touched it.
 	const FString ChangedPath = FPaths::Combine(Directory, TEXT("changed.bin"));
@@ -1889,6 +1891,8 @@ bool FMantlePublishMemorySpillPolicyTest::RunTest(const FString& Parameters)
 		TArray<FString> Files;
 		IFileManager::Get().FindFilesRecursive(Files, *VanishRoot, TEXT("*.bin"), true, false);
 		TestEqual(TEXT("the prepared files are on disk"), Files.Num(), 3);
+		// The files are deleted on purpose, so the engine's streaming reader warns once for each when the session tries to send it.
+		AddExpectedMessagePlain(TEXT("Failed to read file"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 3);
 		for (const FString& File : Files)
 		{
 			IFileManager::Get().Delete(*File, false, true, true);

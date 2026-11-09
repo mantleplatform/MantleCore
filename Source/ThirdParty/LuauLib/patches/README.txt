@@ -1,4 +1,4 @@
-No patches were needed to vendor Luau 0.738 for UE 5.8 / MSVC 14.44. Warnings
+No patches were needed to vendor Luau 0.746 for UE 5.8 / MSVC 14.44. Warnings
 that upstream's own code trips under UE's default warning level are relaxed at
 the module level in LuauLib.Build.cs instead of by editing upstream/ in place.
 

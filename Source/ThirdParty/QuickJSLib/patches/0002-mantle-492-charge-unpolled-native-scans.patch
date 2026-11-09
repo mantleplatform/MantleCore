@@ -1,5 +1,5 @@
 diff --git a/libregexp.c b/libregexp.c
-index 49c474c4..b00730dd 100644
+index 49c474c..b00730d 100644
 --- a/libregexp.c
 +++ b/libregexp.c
 @@ -73,7 +73,11 @@ typedef enum {
@@ -12,27 +12,27 @@ index 49c474c4..b00730dd 100644
 +   so a handler call from a regexp still stands for the same number of
 +   steps as one from bytecode */
 +#define INTERRUPT_COUNTER_INIT 1000
-
+ 
  /* unicode code points */
  #define CP_LS   0x2028
 diff --git a/quickjs.c b/quickjs.c
-index 57bbc62c..fd78ef6b 100644
+index 67ca06b..5862977 100644
 --- a/quickjs.c
 +++ b/quickjs.c
-@@ -553,7 +553,8 @@ enum {
-
+@@ -555,7 +555,8 @@ enum {
+ 
  /* must be large enough to have a negligible runtime cost and small
     enough to call the interrupt callback often. */
 -#define JS_INTERRUPT_COUNTER_INIT 10000
 +/* MANTLE (#492): 10000 upstream; see JS_MANTLE_INTERRUPT_COUNTER_INIT */
 +#define JS_INTERRUPT_COUNTER_INIT JS_MANTLE_INTERRUPT_COUNTER_INIT
-
+ 
  struct JSContext {
      JSGCObjectHeader header; /* must come first */
-@@ -8668,6 +8669,27 @@ static inline __exception int js_poll_interrupts(JSContext *ctx)
+@@ -8683,6 +8684,27 @@ static inline __exception int js_poll_interrupts(JSContext *ctx)
      }
  }
-
+ 
 +/* MANTLE (#492): exactly equivalent to calling js_poll_interrupts() 'units'
 +   times, without a per-unit branch. Charged for a tight native scan that
 +   does 'units' steps of work and never polls (a linear duplicate check, a
@@ -57,7 +57,7 @@ index 57bbc62c..fd78ef6b 100644
  /* return -1 (exception) or true/false */
  static int JS_SetPrototypeInternal(JSContext *ctx, JSValueConst obj,
                                     JSValueConst proto_val, bool throw_flag)
-@@ -43807,6 +43829,10 @@ static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
+@@ -43914,6 +43936,10 @@ static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
          }
          if (js_get_fast_array(ctx, obj, &arrp, &count)) {
              for (; n < count; n++) {
@@ -68,7 +68,7 @@ index 57bbc62c..fd78ef6b 100644
                  if (js_strict_eq2(ctx, argv[0], arrp[n],
                                    JS_EQ_SAME_VALUE_ZERO)) {
                      goto done;
-@@ -43856,6 +43882,9 @@ static JSValue js_array_indexOf(JSContext *ctx, JSValueConst this_val,
+@@ -43963,6 +43989,9 @@ static JSValue js_array_indexOf(JSContext *ctx, JSValueConst this_val,
          }
          if (js_get_fast_array(ctx, obj, &arrp, &count)) {
              for (; n < count; n++) {
@@ -78,7 +78,7 @@ index 57bbc62c..fd78ef6b 100644
                  if (js_strict_eq2(ctx, argv[0], arrp[n], JS_EQ_STRICT)) {
                      goto done;
                  }
-@@ -43907,6 +43936,9 @@ static JSValue js_array_lastIndexOf(JSContext *ctx, JSValueConst this_val,
+@@ -44014,6 +44043,9 @@ static JSValue js_array_lastIndexOf(JSContext *ctx, JSValueConst this_val,
          }
          if (js_get_fast_array(ctx, obj, &arrp, &count) && count == len) {
              for (; n >= 0; n--) {
@@ -88,10 +88,10 @@ index 57bbc62c..fd78ef6b 100644
                  if (js_strict_eq2(ctx, argv[0], arrp[n],
                                    JS_EQ_STRICT)) {
                      goto done;
-@@ -47277,7 +47309,9 @@ static int string_indexof_char(JSString *p, int c, int from)
+@@ -47393,7 +47425,9 @@ static int string_indexof_char(JSString *p, int c, int from)
      return -1;
  }
-
+ 
 -static int string_indexof(JSString *p1, JSString *p2, int from)
 +/* MANTLE (#492): takes ctx to charge the interrupt budget; returns -2, with
 +   the interrupt exception pending, when the budget stops it */
@@ -99,7 +99,7 @@ index 57bbc62c..fd78ef6b 100644
  {
      /* assuming 0 <= from <= p1->len */
      int c, i, j, len1 = p1->len, len2 = p2->len;
-@@ -47285,6 +47319,11 @@ static int string_indexof(JSString *p1, JSString *p2, int from)
+@@ -47401,6 +47435,11 @@ static int string_indexof(JSString *p1, JSString *p2, int from)
          return from;
      for (i = from, c = string_get(p2, 0); i + len2 <= len1; i = j + 1) {
          j = string_indexof_char(p1, c, i);
@@ -111,7 +111,7 @@ index 57bbc62c..fd78ef6b 100644
          if (j < 0 || j + len2 > len1)
              break;
          if (!string_cmp(p1, p2, j + 1, 1, len2 - 1))
-@@ -47427,6 +47466,13 @@ static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,
+@@ -47543,6 +47582,13 @@ static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,
      ret = -1;
      if (len >= v_len && inc * (stop - start) >= 0) {
          for (i = start;; i += inc) {
@@ -125,7 +125,7 @@ index 57bbc62c..fd78ef6b 100644
              if (!string_cmp(p, p1, i, 0, v_len)) {
                  ret = i;
                  break;
-@@ -47493,6 +47539,11 @@ static JSValue js_string_includes(JSContext *ctx, JSValueConst this_val,
+@@ -47609,6 +47655,11 @@ static JSValue js_string_includes(JSContext *ctx, JSValueConst this_val,
      }
      if (start >= 0 && start <= stop) {
          for (i = start;; i++) {
@@ -137,7 +137,7 @@ index 57bbc62c..fd78ef6b 100644
              if (!string_cmp(p, p1, i, 0, v_len)) {
                  ret = 1;
                  break;
-@@ -47762,7 +47813,10 @@ static JSValue js_string_replace(JSContext *ctx, JSValueConst this_val,
+@@ -47878,7 +47929,10 @@ static JSValue js_string_replace(JSContext *ctx, JSValueConst this_val,
              else
                  pos = endOfLastMatch + 1;
          } else {
@@ -149,7 +149,7 @@ index 57bbc62c..fd78ef6b 100644
          }
          if (pos < 0) {
              if (is_first) {
-@@ -47873,7 +47927,10 @@ static JSValue js_string_split(JSContext *ctx, JSValueConst this_val,
+@@ -47989,7 +48043,10 @@ static JSValue js_string_split(JSContext *ctx, JSValueConst this_val,
      }
      q = p;
      for (q = p; (q += !r) <= s - r - !r; q = p = e + r) {
@@ -161,7 +161,7 @@ index 57bbc62c..fd78ef6b 100644
          if (e < 0)
              break;
          T = js_sub_string(ctx, sp, p, e);
-@@ -51755,6 +51812,10 @@ JSValue JS_JSONStringify(JSContext *ctx, JSValueConst obj,
+@@ -51881,6 +51938,10 @@ JSValue JS_JSONStringify(JSContext *ctx, JSValueConst obj,
                  goto exception;
              for (i = j = 0; i < n; i++) {
                  JSValue present;
@@ -172,7 +172,7 @@ index 57bbc62c..fd78ef6b 100644
                  v = JS_GetPropertyInt64(ctx, replacer, i);
                  if (JS_IsException(v))
                      goto exception;
-@@ -52756,6 +52817,9 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
+@@ -52882,6 +52943,9 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
      if (js_get_length32(ctx, &target_len, prop_array))
          goto fail;
      for(i = 0; i < target_len; i++) {
@@ -182,7 +182,7 @@ index 57bbc62c..fd78ef6b 100644
          val = JS_GetPropertyUint32(ctx, prop_array, i);
          if (JS_IsException(val))
              goto fail;
-@@ -52793,6 +52857,10 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
+@@ -52919,6 +52983,10 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
      /* check duplicate properties (XXX: inefficient, could store the
       * properties an a temporary object to use the hash) */
      for(i = 1; i < len; i++) {
@@ -193,7 +193,7 @@ index 57bbc62c..fd78ef6b 100644
          if (find_prop_key(tab, i, tab[i].atom) >= 0) {
              JS_ThrowTypeError(ctx, "proxy: duplicate property");
              goto fail;
-@@ -52824,6 +52892,10 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
+@@ -52950,6 +53018,10 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
                  goto fail;
              if (res) {  /* safety, property should be found */
                  if (!(desc_flags & JS_PROP_CONFIGURABLE) || !is_extensible) {
@@ -204,7 +204,7 @@ index 57bbc62c..fd78ef6b 100644
                      idx = find_prop_key(tab, len, tab2[i].atom);
                      if (idx < 0) {
                          JS_ThrowTypeError(ctx, "proxy: target property must be present in proxy ownKeys");
-@@ -60643,6 +60715,7 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
+@@ -60791,6 +60863,7 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
  {
      JSObject *p;
      int len, tag, is_int, is_bigint, k, stop, inc, res = -1;
@@ -212,15 +212,15 @@ index 57bbc62c..fd78ef6b 100644
      int64_t v64;
      double d;
      float f;
-@@ -60762,6 +60835,7 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
+@@ -60910,6 +60983,7 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
          goto done;
      }
-
+ 
 +    k0 = k; /* MANTLE (#492) */
      switch (p->class_id) {
      case JS_CLASS_INT8_ARRAY:
          if (is_int && (int8_t)v64 == v64)
-@@ -60781,6 +60855,8 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
+@@ -60929,6 +61003,8 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
                      pp = memchr(pv + k, v, len - k);
                  if (pp)
                      res = pp - pv;
@@ -229,7 +229,7 @@ index 57bbc62c..fd78ef6b 100644
              } else {
                  for (; k != stop; k += inc) {
                      if (pv[k] == v) {
-@@ -60931,6 +61007,12 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
+@@ -61079,6 +61155,12 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
          }
          break;
      }
@@ -239,16 +239,16 @@ index 57bbc62c..fd78ef6b 100644
 +       only once per call. */
 +    if (js_mantle_charge_interrupts(ctx, (int64_t)(k - k0) * inc + (res >= 0)))
 +        goto exception;
-
+ 
  done:
      if (special == special_includes)
 diff --git a/quickjs.h b/quickjs.h
-index 739cf614..11900c7f 100644
+index 0af4ec2..1fbf813 100644
 --- a/quickjs.h
 +++ b/quickjs.h
-@@ -1184,6 +1184,14 @@ JS_EXTERN void JS_SetHostPromiseRejectionTracker(JSRuntime *rt, JSHostPromiseRej
+@@ -1196,6 +1196,14 @@ JS_EXTERN void JS_SetHostPromiseRejectionTracker(JSRuntime *rt, JSHostPromiseRej
  /* return != 0 if the JS code needs to be interrupted */
- typedef int JSInterruptHandler(JSRuntime *rt, void *opaque);
+ typedef int JSInterruptHandler(JSContext *ctx, void *opaque);
  JS_EXTERN void JS_SetInterruptHandler(JSRuntime *rt, JSInterruptHandler *cb, void *opaque);
 +/* MANTLE (#492, see ../patches/README.txt): the handler above runs once per
 +   JS_MANTLE_INTERRUPT_COUNTER_INIT interrupt polls (upstream: 10000), so an

@@ -4,7 +4,6 @@
 #include "Luau/BytecodeBuilder.h"
 
 LUAU_FASTFLAG(LuauIntegerFastcalls)
-LUAU_FASTFLAGVARIABLE(LuauCompileRecursiveAliases)
 
 namespace Luau
 {
@@ -61,22 +60,15 @@ static LuauBytecodeType getType(
         {
             if (seenAliases.contains((*alias)->name))
             {
-                if (!FFlag::LuauCompileRecursiveAliases)
-                    seenAliases.clear();
-
                 return LBC_TYPE_ANY;
-            }
-            else if (FFlag::LuauCompileRecursiveAliases)
-            {
-                seenAliases.insert(ref->name);
-                LuauBytecodeType type = getType((*alias)->type, (*alias)->generics, typeAliases, hostVectorType, userdataTypes, bytecode, seenAliases);
-                seenAliases.erase(ref->name);
-                return type;
             }
             else
             {
                 seenAliases.insert(ref->name);
-                return getType((*alias)->type, (*alias)->generics, typeAliases, hostVectorType, userdataTypes, bytecode, seenAliases);
+                LuauBytecodeType type =
+                    getType((*alias)->type, (*alias)->generics, typeAliases, hostVectorType, userdataTypes, bytecode, seenAliases);
+                seenAliases.erase(ref->name);
+                return type;
             }
         }
 
@@ -98,11 +90,11 @@ static LuauBytecodeType getType(
         // not primitive or alias or generic => host-provided, we assume userdata for now
         return LBC_TYPE_USERDATA;
     }
-    else if (const AstTypeTable* table = ty->as<AstTypeTable>())
+    else if (ty->is<AstTypeTable>())
     {
         return LBC_TYPE_TABLE;
     }
-    else if (const AstTypeFunction* func = ty->as<AstTypeFunction>())
+    else if (ty->is<AstTypeFunction>())
     {
         return LBC_TYPE_FUNCTION;
     }
@@ -136,7 +128,7 @@ static LuauBytecodeType getType(
 
         return LuauBytecodeType(type | (optional && (type != LBC_TYPE_ANY) ? LBC_TYPE_OPTIONAL_BIT : 0));
     }
-    else if (const AstTypeIntersection* inter = ty->as<AstTypeIntersection>())
+    else if (ty->is<AstTypeIntersection>())
     {
         return LBC_TYPE_ANY;
     }
@@ -144,7 +136,7 @@ static LuauBytecodeType getType(
     {
         return getType(group->type, generics, typeAliases, hostVectorType, userdataTypes, bytecode, seenAliases);
     }
-    else if (const AstTypeOptional* optional = ty->as<AstTypeOptional>())
+    else if (ty->is<AstTypeOptional>())
     {
         return LBC_TYPE_NIL;
     }
@@ -735,6 +727,14 @@ struct TypeMapVisitor : AstVisitor
     bool visit(AstExprIfElse* node) override
     {
         node->condition->visit(this);
+
+        // propagate the condition's resolved type to the binding (unless annotated)
+        if (node->conditionLocal && node->conditionLocal->annotation == nullptr)
+        {
+            if (const AstType** typePtr = resolvedExprs.find(node->condition))
+                resolvedLocals[node->conditionLocal] = *typePtr;
+        }
+
         node->trueExpr->visit(this);
         node->falseExpr->visit(this);
 
@@ -761,6 +761,8 @@ struct TypeMapVisitor : AstVisitor
             case LBF_RAWGET:
             case LBF_TABLE_INSERT:
             case LBF_TABLE_UNPACK:
+            case LBF_TABLE_CREATE:
+            case LBF_TABLE_CLEAR:
             case LBF_SELECT_VARARG:
             case LBF_GETMETATABLE:
             case LBF_SETMETATABLE:

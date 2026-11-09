@@ -2,7 +2,7 @@
 using System.IO;
 using UnrealBuildTool;
 
-// Vendored Luau 0.738 (MIT). See VERSION for the exact tag, commit and retrieval date, and
+// Vendored Luau 0.746 (MIT). See VERSION for the exact tag, commit and retrieval date, and
 // for the full list of what was pruned from upstream and why.
 //
 // T4.8: this module exists only to compile Luau's Ast, Bytecode (one file), Compiler and VM
@@ -100,5 +100,13 @@ public class LuauLib : ModuleRules
 		// fixed by editing pristine upstream source. Analysis of first-party Mantle code is
 		// unaffected -- this flag is local to the LuauLib module only.
 		bDisableStaticAnalysis = true;
+
+		// Warnings upstream Luau trips under MSVC that were each read in the source and are harmless
+		// (the reasons are in LuauWarnings.h and VERSION). UBT has no raw per-module compiler flag, so
+		// the C4127/C4310/C4324/C4389/C4457/C4505/C4702 ones are disabled by a header force-included
+		// into this module's files, and the C4996 "unsafe C function" ones (strcpy/strcat on buffers
+		// luaO_chunkid and scanformat size first) by the CRT's own switch. upstream/ stays pristine.
+		ForceIncludeFiles.Add(Path.Combine(ModuleDirectory, "LuauWarnings.h"));
+		PrivateDefinitions.Add("_CRT_SECURE_NO_WARNINGS");
 	}
 }
