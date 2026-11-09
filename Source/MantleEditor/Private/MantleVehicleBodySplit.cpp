@@ -465,7 +465,7 @@ UStaticMesh* FMantleVehicleBodySplit::MakePieceMesh(const FMantleVehicleBodyPiec
 	}
 	Mesh->SetNumSourceModels(Pointers.Num());
 	// The switch distances are the ones the body's LODs use, not what the engine would work out from the geometry.
-	Mesh->bAutoComputeLODScreenSize = false;
+	Mesh->SetAutoComputeLODScreenSize(false);
 
 	// The geometry is final: nothing recomputed but the tangents of a body that brought none, and no lightmap, distance field or Lumen cards.
 	for (int32 LOD = 0; LOD < Pointers.Num(); ++LOD)

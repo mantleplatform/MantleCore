@@ -314,7 +314,7 @@ bool FMantleWeaponFitThrowableHandleTest::RunTest(const FString& Parameters)
 			In.Positions.Add(FVector3f(Rotation.RotateVector(FVector(P))));
 		}
 		const FMantleWeaponFitResult Fit = FMantleWeaponFit::Fit(In);
-		FVector GripR, Tip;
+		FVector GripR = FVector::ZeroVector, Tip = FVector::ZeroVector;
 		if (!TestTrue(TEXT("Grip_R and Tip exist"), PointLocation(Fit, TEXT("Grip_R"), GripR) && PointLocation(Fit, TEXT("Tip"), Tip)))
 		{
 			continue;
@@ -331,7 +331,7 @@ bool FMantleWeaponFitThrowableHandleTest::RunTest(const FString& Parameters)
 	Grenade.Hold = EMantleWeaponFitHold::Throwable;
 	AddBox(Grenade.Positions, FVector(-3, -4, -3), FVector(3, 4, 3));
 	const FMantleWeaponFitResult GrenadeFit = FMantleWeaponFit::Fit(Grenade);
-	FVector GrenadeGrip, GrenadeTip;
+	FVector GrenadeGrip = FVector::ZeroVector, GrenadeTip = FVector::ZeroVector;
 	if (TestTrue(TEXT("the grenade has Grip_R and Tip"), PointLocation(GrenadeFit, TEXT("Grip_R"), GrenadeGrip) && PointLocation(GrenadeFit, TEXT("Tip"), GrenadeTip)))
 	{
 		TestTrue(TEXT("a compact throwable is held at its middle"), FMath::IsNearlyEqual(GrenadeTip.X - GrenadeGrip.X, 4.0, 0.3));
@@ -380,7 +380,7 @@ bool FMantleWeaponFitBowTest::RunTest(const FString& Parameters)
 			In.Positions.Add(FVector3f(Case.Rotation.RotateVector(FVector(P) * Case.Unit)));
 		}
 		const FMantleWeaponFitResult Fit = FMantleWeaponFit::Fit(In);
-		FVector GripL, StringTop, StringBottom, Nock;
+		FVector GripL = FVector::ZeroVector, StringTop = FVector::ZeroVector, StringBottom = FVector::ZeroVector, Nock = FVector::ZeroVector;
 		if (!TestTrue(*FString::Printf(TEXT("%s: the bow has Grip_L, both string ends and the nock"), Case.Name),
 			PointLocation(Fit, TEXT("Grip_L"), GripL) && PointLocation(Fit, TEXT("StringTop"), StringTop)
 			&& PointLocation(Fit, TEXT("StringBottom"), StringBottom) && PointLocation(Fit, TEXT("Nock"), Nock)))
@@ -459,7 +459,7 @@ bool FMantleWeaponFitStaffTest::RunTest(const FString& Parameters)
 			In.Positions.Add(FVector3f(Case.Rotation.RotateVector(FVector(P) * Case.Unit)));
 		}
 		const FMantleWeaponFitResult Fit = FMantleWeaponFit::Fit(In);
-		FVector GripR, GripL, Focus;
+		FVector GripR = FVector::ZeroVector, GripL = FVector::ZeroVector, Focus = FVector::ZeroVector;
 		if (!TestTrue(*FString::Printf(TEXT("%s: the staff has both grips and a focus"), Case.Name),
 			PointLocation(Fit, TEXT("Grip_R"), GripR) && PointLocation(Fit, TEXT("Grip_L"), GripL) && PointLocation(Fit, TEXT("Focus"), Focus)))
 		{
