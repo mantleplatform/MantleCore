@@ -1,4 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "MantleAssetCleanup.h"
 #include "MantleWeaponBuilderExport.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -35,10 +36,7 @@ namespace MantleWeaponBuilderExportTestPrivate
 				{
 					if (UObject* Asset = FindObject<UObject>(Package, *(Prefix + ExportName)))
 					{
-						FAssetRegistryModule::AssetDeleted(Asset);
-						Asset->ClearFlags(RF_Public | RF_Standalone);
-						Asset->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_NonTransactional);
-						Asset->MarkAsGarbage();
+						FMantleAssetCleanup::MoveAside({ Asset });
 					}
 				}
 			}

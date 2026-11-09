@@ -1,4 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "MantleAssetCleanup.h"
 #include "MantleWeaponBuilderExport.h"
 #include "MantleWeaponBuilderKind.h"
 #include "MantleWeaponBuilderLogic.h"
@@ -35,13 +36,7 @@ namespace MantleWeaponBuilderV2TestPrivate
 			TArray<UObject*> Assets;
 			for (TObjectIterator<UObject> It; It; ++It)
 				if (It->IsAsset() && It->GetOutermost()->GetName().StartsWith(PackageFolder() + TEXT("/"))) Assets.Add(*It);
-			for (UObject* Asset : Assets)
-			{
-				FAssetRegistryModule::AssetDeleted(Asset);
-				Asset->ClearFlags(RF_Public | RF_Standalone);
-				Asset->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_NonTransactional);
-				Asset->MarkAsGarbage();
-			}
+			FMantleAssetCleanup::MoveAside(Assets);
 			const FString Base = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / TEXT("MantleWeapons")) + TEXT("/");
 			const FString Target = Folder();
 			if (Target.StartsWith(Base, ESearchCase::IgnoreCase) && Name.StartsWith(TEXT("WB840_")))

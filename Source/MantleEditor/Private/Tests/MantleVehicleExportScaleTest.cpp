@@ -222,7 +222,8 @@ namespace MantleVehicleExportScaleTestPrivate
 			{
 				if (UMantleVehicleSource* Asset = FindObject<UMantleVehicleSource>(Package, *AssetName))
 				{
-					FAssetRegistryModule::AssetDeleted(Asset);
+					// Deleted with its file, so a late change from its save trips no "marked as deleted" warning.
+					FMantleAssetCleanup::MoveAside({ Asset });
 				}
 				FText Error;
 				FMantleAssetCleanup::UnloadPackagesClean({ Package }, Error);
