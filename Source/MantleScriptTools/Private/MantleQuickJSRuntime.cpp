@@ -96,7 +96,7 @@ namespace
 	}
 
 #if WITH_EDITOR
-	int TypeScriptCompilerInterrupt(JSRuntime*, void* Opaque)
+	int TypeScriptCompilerInterrupt(JSContext*, void* Opaque)
 	{
 		FTypeScriptCompilerBudget& Budget = *static_cast<FTypeScriptCompilerBudget*>(Opaque);
 		// TypeScriptCompilerInterruptChecks stays in upstream's 10000-poll unit.

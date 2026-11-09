@@ -10,7 +10,9 @@
 #include <math.h>
 
 LUAU_FASTFLAG(LuauIntegerType2)
-LUAU_FASTFLAG(DebugLuauIfLocalSyntax)
+LUAU_FASTFLAG(LuauExperimentalIfLocalSyntax)
+LUAU_FASTFLAGVARIABLE(LuauCompileNoFoldVectorEqW)
+LUAU_FASTFLAGVARIABLE(LuauCompileTableFoldFix)
 
 namespace Luau
 {
@@ -57,6 +59,20 @@ static bool constantsEqual(const Constant& la, const Constant& ra)
         LUAU_ASSERT(!"Unexpected constant type in comparison");
         return false;
     }
+}
+
+// vector component 'w' is not visible to VM runtime configured with LUA_VECTOR_SIZE == 3, so vectors that only differ in 'w' can't be compared
+static bool vectorsDifferOnlyInW(const Constant& la, const Constant& ra)
+{
+    if (la.type == Constant::Type_Vectorf && ra.type == Constant::Type_Vectorf)
+        return la.valueVectorf[0] == ra.valueVectorf[0] && la.valueVectorf[1] == ra.valueVectorf[1] && la.valueVectorf[2] == ra.valueVectorf[2] &&
+               la.valueVectorf[3] != ra.valueVectorf[3];
+
+    if (la.type == Constant::Type_Vectord && ra.type == Constant::Type_Vectord)
+        return la.valueVectord[0] == ra.valueVectord[0] && la.valueVectord[1] == ra.valueVectord[1] && la.valueVectord[2] == ra.valueVectord[2] &&
+               la.valueVectord[3] != ra.valueVectord[3];
+
+    return false;
 }
 
 static void foldUnary(Constant& result, AstExprUnary::Op op, const Constant& arg)
@@ -474,7 +490,8 @@ static void foldBinary(Constant& result, AstExprBinary::Op op, const Constant& l
         break;
 
     case AstExprBinary::CompareNe:
-        if (la.type != Constant::Type_Unknown && ra.type != Constant::Type_Unknown)
+        if (la.type != Constant::Type_Unknown && ra.type != Constant::Type_Unknown &&
+            !(FFlag::LuauCompileNoFoldVectorEqW && vectorsDifferOnlyInW(la, ra)))
         {
             result.type = Constant::Type_Boolean;
             result.valueBoolean = !constantsEqual(la, ra);
@@ -482,7 +499,8 @@ static void foldBinary(Constant& result, AstExprBinary::Op op, const Constant& l
         break;
 
     case AstExprBinary::CompareEq:
-        if (la.type != Constant::Type_Unknown && ra.type != Constant::Type_Unknown)
+        if (la.type != Constant::Type_Unknown && ra.type != Constant::Type_Unknown &&
+            !(FFlag::LuauCompileNoFoldVectorEqW && vectorsDifferOnlyInW(la, ra)))
         {
             result.type = Constant::Type_Boolean;
             result.valueBoolean = constantsEqual(la, ra);
@@ -643,7 +661,7 @@ struct TableMutationTracker : AstVisitor
         }
     }
 
-    void markEscapedTableIndex(AstExpr* expr, bool isLvalue)
+    void markEscapedTableIndex(AstExpr* expr, bool isLvalue_DEPRECATED)
     {
         if (AstExprIndexName* idx = expr->as<AstExprIndexName>())
         {
@@ -653,9 +671,31 @@ struct TableMutationTracker : AstVisitor
         {
             markEscaped(idx->expr);
 
-            if (isLvalue)
+            if (!FFlag::LuauCompileTableFoldFix && isLvalue_DEPRECATED)
                 markEscaped(idx->index);
         }
+    }
+
+    void markEscapedBinaryOp(AstExpr* lhs, AstExpr* rhs, AstExprBinary::Op op)
+    {
+        // Comparisons do not support operands with different metamethods, and/or don't have a metamethod
+        switch (op)
+        {
+        case AstExprBinary::CompareLt:
+        case AstExprBinary::CompareLe:
+        case AstExprBinary::CompareGt:
+        case AstExprBinary::CompareGe:
+        case AstExprBinary::CompareEq:
+        case AstExprBinary::CompareNe:
+        case AstExprBinary::And:
+        case AstExprBinary::Or:
+            return;
+        default:
+            break;
+        }
+
+        markEscaped(lhs);
+        markEscaped(rhs);
     }
 
     bool visit(AstExprCall* node) override
@@ -681,6 +721,22 @@ struct TableMutationTracker : AstVisitor
 
             markEscaped(item.value);
         }
+
+        return true;
+    }
+
+    bool visit(AstExprBinary* node) override
+    {
+        if (FFlag::LuauCompileTableFoldFix)
+            markEscapedBinaryOp(node->left, node->right, node->op);
+
+        return true;
+    }
+
+    bool visit(AstExprIndexExpr* node) override
+    {
+        if (FFlag::LuauCompileTableFoldFix)
+            markEscaped(node->index);
 
         return true;
     }
@@ -711,6 +767,10 @@ struct TableMutationTracker : AstVisitor
     {
         // LHS index expressions mutate the table
         markEscapedTableIndex(node->var, true);
+
+        if (FFlag::LuauCompileTableFoldFix)
+            markEscapedBinaryOp(node->var, node->value, node->op);
+
         return true;
     }
 
@@ -1172,7 +1232,7 @@ struct ConstantVisitor : AstVisitor
         // all values that align wrt indexing are simple - we just match them 1-1
         for (size_t i = 0; i < node->vars.size && i < node->values.size; ++i)
         {
-            if (FFlag::DebugLuauIfLocalSyntax)
+            if (FFlag::LuauExperimentalIfLocalSyntax)
             {
                 recordLocal(node->vars.data[i], node->values.data[i]);
             }
@@ -1239,6 +1299,15 @@ struct ConstantVisitor : AstVisitor
         }
 
         return true;
+    }
+
+    bool visit(AstExprIfElse* node) override
+    {
+        if (node->conditionLocal)
+            recordLocal(node->conditionLocal, node->condition);
+
+        analyze(node);
+        return false;
     }
 };
 

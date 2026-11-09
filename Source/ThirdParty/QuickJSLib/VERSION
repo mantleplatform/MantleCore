@@ -2,14 +2,14 @@ quickjs-ng
 ==========
 
 Upstream:     https://github.com/quickjs-ng/quickjs
-Tag:          v0.16.2
-Commit:       1ab8676f4b6d6d669baeb5f21790fb9734636a20
-Retrieved:    2026-09-12
+Tag:          v0.18.0
+Commit:       d7215b0ad3fc2c562e8317fd9bca058fd4863804
+Retrieved:    2026-11-08
 License:      MIT (LICENSE)
 
 Retrieval command:
 
-    git clone --depth 1 --branch v0.16.2 https://github.com/quickjs-ng/quickjs.git
+    git clone --depth 1 --branch v0.18.0 https://github.com/quickjs-ng/quickjs.git
 
 Upstream is a flat repository (no include/src split); this vendoring keeps that
 flat layout under upstream/ rather than inventing one, so a future re-copy is a
