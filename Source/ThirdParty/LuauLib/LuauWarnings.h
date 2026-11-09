@@ -1,3 +1,5 @@
+// Copyright Joshua Eger. All Rights Reserved.
+
 // Force-included into every Luau translation unit by MantleGameLuauLib.Build.cs (ForceIncludeFiles). Nothing else
 // includes it. It turns off the MSVC warnings that upstream Luau trips on its own style, each read in the source
 // and found harmless. upstream/ stays untouched. UBT has no per-module raw compiler flag, which is why this is a
