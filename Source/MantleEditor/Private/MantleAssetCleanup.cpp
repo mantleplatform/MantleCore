@@ -10,10 +10,13 @@
 
 namespace
 {
-	/** Out of the registry and the package, into the transient package, and garbage. */
-	void MoveOne(UObject* Object)
+	/** Out of the package, into the transient package, and garbage; with bTellRegistry, out of the registry as a deleted asset too. */
+	void MoveOne(UObject* Object, const bool bTellRegistry)
 	{
-		FAssetRegistryModule::AssetDeleted(Object);
+		if (bTellRegistry)
+		{
+			FAssetRegistryModule::AssetDeleted(Object);
+		}
 		Object->ClearFlags(RF_Public | RF_Standalone);
 		Object->Rename(*MakeUniqueObjectName(GetTransientPackage(), Object->GetClass(), Object->GetFName()).ToString(),
 			GetTransientPackage(), REN_DontCreateRedirectors | REN_NonTransactional);
@@ -35,7 +38,11 @@ int32 FMantleAssetCleanup::MoveAside(const TArray<UObject*>& Objects, const bool
 		{
 			Packages.AddUnique(Package);
 		}
-		MoveOne(Object);
+		// With the files going too, the registry hears of it once per package below. AssetDeleted would mark the package empty
+		// ("deleted in editor"), and the change a save just before made reaches the registry a frame later, after that mark: it
+		// then warns "package was marked as deleted in editor, but has been modified on disk" (AssetRegistry.cpp) and returns
+		// the package from queries again until the file's removal arrives too.
+		MoveOne(Object, /*bTellRegistry*/ !bDeleteFiles);
 		++Moved;
 	}
 	for (UPackage* Package : Packages)
@@ -48,6 +55,8 @@ int32 FMantleAssetCleanup::MoveAside(const TArray<UObject*>& Objects, const bool
 			{
 				IFileManager::Get().Delete(*File, false, true, true);
 			}
+			// The package is gone from disk and memory: its registry data goes, with no empty-package mark for a late change to trip.
+			FAssetRegistryModule::PackageDeleted(Package);
 		}
 	}
 	return Moved;
@@ -65,7 +74,8 @@ bool FMantleAssetCleanup::UnloadPackagesClean(const TArray<UPackage*>& Packages,
 		GetObjectsWithPackage(Package, Contained, EGetObjectsFlags::None);
 		for (UObject* Object : Contained)
 		{
-			MoveOne(Object);
+			// The file stays and a reload reads it, so the registry keeps what it found on disk: nothing is deleted.
+			MoveOne(Object, /*bTellRegistry*/ false);
 		}
 		ResetLoaders(Package);
 		Package->ClearFlags(RF_Public | RF_Standalone);

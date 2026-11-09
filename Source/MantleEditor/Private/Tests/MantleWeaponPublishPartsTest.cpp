@@ -1,4 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "MantleAssetCleanup.h"
 #include "MantlePlaceAssetConverter.h"
 #include "MantlePlaceAssets.h"
 #include "MantlePng.h"
@@ -48,13 +49,7 @@ namespace MantleWeaponPublishPartsTestPrivate
 					Assets.Add(*It);
 				}
 			}
-			for (UObject* Asset : Assets)
-			{
-				FAssetRegistryModule::AssetDeleted(Asset);
-				Asset->ClearFlags(RF_Public | RF_Standalone);
-				Asset->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_NonTransactional);
-				Asset->MarkAsGarbage();
-			}
+			FMantleAssetCleanup::MoveAside(Assets);
 			IFileManager::Get().DeleteDirectory(*Folder(), /*RequireExists*/ false, /*Tree*/ true);
 		}
 	};

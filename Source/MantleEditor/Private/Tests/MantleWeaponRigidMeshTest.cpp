@@ -1,4 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "MantleAssetCleanup.h"
 #include "MantleWeaponRigidMesh.h"
 
 #include "Animation/Skeleton.h"
@@ -48,26 +49,13 @@ namespace MantleWeaponRigidMeshTestPrivate
 		{
 			if (Result)
 			{
-				Remove(Result->Mesh);
-				Remove(Result->Skeleton);
+				FMantleAssetCleanup::MoveAside({ Result->Mesh, Result->Skeleton });
 			}
 			for (const FString& Prefix : { FString(TEXT("SKM_")), FString(TEXT("SK_")) })
 			{
 				const FString File = FPackageName::LongPackageNameToFilename(FString(TestFolder) / (Prefix + Name), FPackageName::GetAssetPackageExtension());
 				IFileManager::Get().Delete(*File, false, true, true);
 			}
-		}
-
-		static void Remove(UObject* Asset)
-		{
-			if (!Asset)
-			{
-				return;
-			}
-			FAssetRegistryModule::AssetDeleted(Asset);
-			Asset->ClearFlags(RF_Public | RF_Standalone);
-			Asset->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_NonTransactional);
-			Asset->MarkAsGarbage();
 		}
 	};
 
