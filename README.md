@@ -22,11 +22,24 @@ The plugin turns on the Epic plugins it needs, such as IK Rig, Groom, glTF Expor
 
 ### Updating
 
-Close the editor, then install Mantle Core again from **Fab Library → Install to Engine** in the Epic Games Launcher. The new version replaces the old one in your engine, and your projects pick it up the next time you open them.
+**From Fab (recommended):** close the editor, then install Mantle Core again from **Fab Library → Install to Engine** in the Epic Games Launcher. The new version replaces the old one in your engine, and your projects pick it up the next time you open them.
 
-### Source zips
+**By hand, from GitHub:** use this if Fab doesn't have the newest version yet.
 
-Each [release](https://github.com/mantleplatform/MantleCore/releases) has a zip of the plugin's source code, which is what Fab builds from. It has no built files, so a Launcher engine can't use it directly. Use Fab unless you build plugins from source yourself.
+1. Close the editor.
+2. From the [latest release](https://github.com/mantleplatform/MantleCore/releases/latest), download the built zip, `MantleCore-<version>-UE5.8-Win64.zip`.
+3. Find the Mantle Core folder already in your engine: the one with `MantleCore.uplugin` in it. If you installed from Fab, it's under `Engine\Plugins\Marketplace` (for example `C:\Program Files\Epic Games\UE_5.8\Engine\Plugins\Marketplace`). Otherwise it's under `Engine\Plugins`.
+4. Delete that folder, then unzip the download into the folder that held it. The zip holds one `MantleCore` folder, so you end up with exactly one copy.
+5. Open your project.
+
+The engine must find only one copy of Mantle Core. If you leave the old one alongside the new one, the editor won't know which to load. Windows may ask for administrator permission to change files under `Program Files`.
+
+### Release zips
+
+Each [release](https://github.com/mantleplatform/MantleCore/releases) has two zips:
+
+- `MantleCore-<version>-UE5.8-Win64.zip` is the **built** plugin, ready for an engine from the Epic Games Launcher. It's the one to use when updating by hand.
+- `MantleCore-<version>-UE5.8.zip` is the **source code** only. Fab builds from it, and it suits engines built from source. A Launcher engine can't use it directly.
 
 ## After you open a project
 

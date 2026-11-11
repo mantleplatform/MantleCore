@@ -1,8 +1,14 @@
-# Release: package and check the Fab zip, then attach it to a GitHub release.
+# Release: package and check the Fab zip, build it, then attach both to a GitHub release.
+#
+# Each release has two zips:
+#   MantleCore-<VersionName>-UE5.8.zip        the plugin as source, for Fab (and source-built engines)
+#   MantleCore-<VersionName>-UE5.8-Win64.zip  the same plugin built by BuildPlugin, ready to unzip into
+#                                             a Launcher engine's Engine/Plugins folder
 #
 # Push a tag v<VersionName> (for example v0.1.0) to make a release. Run the workflow by hand
-# (Actions > Release > Run workflow) for a dry run: the same checks and zip, uploaded as a
-# workflow artifact instead of a release.
+# (Actions > Release > Run workflow) for a dry run: the same checks and zips, uploaded as
+# workflow artifacts instead of a release. Run it by hand with a tag (the "tag" input) to build
+# that tag again and replace its release's zips, for example to add a zip an older release lacks.
 #
 # Fab has no publisher API, so the last step is by hand: paste the release's zip link into the Fab
 # publishing portal. Fab needs a link that works without sign-in, which works because this repo is
@@ -14,12 +20,17 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "An existing release tag (for example v0.2.0) to build again and replace its zips. Empty: a dry run."
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -32,12 +43,14 @@ jobs:
       version: ${{ steps.package.outputs.version }}
     env:
       # The tag to compare with VersionName; empty for a dry run.
-      TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+      TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
     steps:
       - name: Check out (with LFS, for the IK assets)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
+          # A hand run with a tag builds that tag, not the branch it was started from.
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
 
       - name: Check the plugin
         run: python3 .github/scripts/fab_release.py check ${TAG:+--tag "$TAG"}
@@ -98,32 +111,85 @@ jobs:
           & "$env:UE_ROOT\Engine\Build\BatchFiles\RunUAT.bat" BuildPlugin "-Plugin=$plugin" "-Package=$package" -TargetPlatforms=Win64
           if ($LASTEXITCODE -ne 0) { throw "BuildPlugin failed with exit code $LASTEXITCODE" }
 
+      # The built plugin, zipped under a top-level MantleCore/ folder like the source zip, so it unzips
+      # straight into Engine/Plugins. BuildPlugin's scratch host project is left out.
+      - name: Zip the built plugin
+        id: built
+        shell: pwsh
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP 'BuildPluginPackage'
+          if (-not (Test-Path -LiteralPath (Join-Path $package 'Binaries\Win64'))) { throw "BuildPlugin left no Binaries\Win64 in $package" }
+          $stage = Join-Path $env:RUNNER_TEMP 'built'
+          Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          $plugin = Join-Path $stage 'MantleCore'
+          Copy-Item -Recurse -Path $package -Destination $plugin
+          Remove-Item -Recurse -Force (Join-Path $plugin 'HostProject') -ErrorAction SilentlyContinue
+          $name = '${{ needs.package.outputs.name }}' -replace '\.zip$', '-Win64.zip'
+          $zip = Join-Path $env:RUNNER_TEMP $name
+          Remove-Item -Force $zip -ErrorAction SilentlyContinue
+          Push-Location $stage
+          & tar.exe -a -c -f $zip MantleCore
+          $code = $LASTEXITCODE
+          Pop-Location
+          if ($code -ne 0) { throw "tar failed with exit code $code" }
+          $files = (Get-ChildItem -Recurse -File $plugin).Count
+          Write-Output ("Built zip: {0} ({1} files, {2:N0} bytes)" -f $name, $files, (Get-Item $zip).Length)
+          "name=$name" >> $env:GITHUB_OUTPUT
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+
+      - name: Upload the built zip
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.built.outputs.name }}
+          path: ${{ steps.built.outputs.zip }}
+          if-no-files-found: error
+          retention-days: 14
+    outputs:
+      built: ${{ steps.built.outputs.name }}
+
   release:
     name: GitHub release
     needs: [package, buildplugin]
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || inputs.tag
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
-      - name: Download the zip
+      - name: Download the source zip
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.package.outputs.name }}
           path: dist
 
-      - name: Create the release
+      - name: Download the built zip
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.buildplugin.outputs.built }}
+          path: dist
+
+      - name: Create or update the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
           NAME: ${{ needs.package.outputs.name }}
+          BUILT: ${{ needs.buildplugin.outputs.built }}
           VERSION: ${{ needs.package.outputs.version }}
         run: |
           cat > notes.md <<EOF
           Mantle Core $VERSION for Unreal Engine 5.8 (Win64).
 
+          **Most people:** get Mantle Core from Fab and update it there. To update by hand instead, close the editor, download \`$BUILT\`, and unzip it into your engine's \`Engine/Plugins\` folder (for example \`C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Plugins\`), replacing the MantleCore folder there. If you installed Mantle Core from Fab, it is in \`Engine/Plugins/Marketplace\`: replace that one, so the engine does not find two copies.
+
+          **Source:** \`$NAME\` is the plugin's source code, without built files. Fab builds from it, and it suits engines built from source.
+
           **Fab:** in the Fab publishing portal, add a Project Version for UE 5.8 and paste the link to \`$NAME\` below. Fab downloads it without signing in, so this works only while the repo is public.
           EOF
-          gh release create "$TAG" "dist/$NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
-            --title "Mantle Core $VERSION" --notes-file notes.md
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" "dist/$NAME" "dist/$BUILT" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+          else
+            gh release create "$TAG" "dist/$NAME" "dist/$BUILT" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "Mantle Core $VERSION" --notes-file notes.md
+          fi
