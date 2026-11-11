@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 1,
-	"VersionName": "0.1.0",
+	"Version": 2,
+	"VersionName": "0.2.0",
 	"EngineVersion": "5.8.0",
 	"FriendlyName": "Mantle Core",
 	"Description": "Build, test and publish worlds, avatars and items for Mantle.",
