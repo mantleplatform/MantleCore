@@ -319,11 +319,12 @@ bool FMantleSkyMeshLitDomeTest::RunTest(const FString& Parameters)
 	// A sky-named mesh that encloses the level goes whatever its material.
 	AStaticMeshActor* Detail = SpawnCube(Fixture.World, Cube, TEXT("SM_SkyDomeDetail"), FVector::ZeroVector, 40000.0);
 	// The same name but under 100 m across (half-extent 7500 cm): a gazebo's dome, not a sky.
-	AStaticMeshActor* Gazebo = SpawnCube(Fixture.World, Cube, TEXT("SkyGazeboDome"), FVector::ZeroVector, 15000.0);
+	// (Each kept mesh has a material of its own: identical static mesh actors are grouped into one instanced mesh at export, which would hide their names.)
+	AStaticMeshActor* Gazebo = SpawnCube(Fixture.World, Cube, TEXT("SkyGazeboDome"), FVector::ZeroVector, 15000.0, NewSkyMaterial(false, false));
 	// A sky-named lit mesh that does not enclose the level: off to one side, it stays.
-	AStaticMeshActor* Backdrop = SpawnCube(Fixture.World, Cube, TEXT("Sky Backdrop"), FVector(60000.0, 0.0, 0.0), 40000.0);
+	AStaticMeshActor* Backdrop = SpawnCube(Fixture.World, Cube, TEXT("Sky Backdrop"), FVector(60000.0, 0.0, 0.0), 40000.0, NewSkyMaterial(false, false));
 	// Big and lit, around the level, but not named like a sky: large geometry, it stays.
-	AStaticMeshActor* Hills = SpawnCube(Fixture.World, Cube, TEXT("Hills"), FVector::ZeroVector, 45000.0);
+	AStaticMeshActor* Hills = SpawnCube(Fixture.World, Cube, TEXT("Hills"), FVector::ZeroVector, 45000.0, NewSkyMaterial(false, false));
 	if (!TestNotNull(TEXT("the actors spawned"), Detail) || !TestNotNull(TEXT("all of them"), Gazebo) || !TestNotNull(TEXT("really"), Backdrop) || !TestNotNull(TEXT("yes"), Hills))
 	{
 		return false;
