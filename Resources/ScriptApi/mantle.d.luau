@@ -171,7 +171,7 @@ declare extern type Player with
 	CombatEnabled: boolean
 	--- Whether the player can crouch or slide (true unless a script changes it); nil while the player has no character. Setting it (server only) to false stands a crouching player up and the crouch key does nothing until it is true again. It lasts for the rest of the session, through respawns.
 	CrouchEnabled: boolean?
-	--- How fast the character moves while crouched, in centimeters per second (225 unless a script changes it; it scales with WalkSpeed until you set it). nil while the player has no character. Setting it (server only) clamps to 0..1500 and lasts for the rest of the session, through respawns.
+	--- How fast the character moves while crouched, in centimeters per second (165 unless a script changes it; it scales with WalkSpeed until you set it). nil while the player has no character. Setting it (server only) clamps to 0..1500 and lasts for the rest of the session, through respawns.
 	CrouchSpeed: number?
 	--- Whether the player can dodge and roll (true unless a script changes it); nil while the player has no character. Setting it (server only) to false makes the dodge key (Left Alt, gamepad B tap) do nothing; a dodge already under way plays out. It lasts for the rest of the session, through respawns.
 	DodgeEnabled: boolean?
@@ -229,7 +229,7 @@ declare extern type Player with
 	ShieldRegenRate: number?
 	--- Whether the player can sprint (true unless a script changes it); nil while the player has no character. Setting it (server only) to false stops a sprint at once and the sprint key does nothing until it is true again. It lasts for the rest of the session, through respawns.
 	SprintEnabled: boolean?
-	--- How fast the character sprints, in centimeters per second (700 unless a script changes it; it scales with WalkSpeed until you set it). nil while the player has no character. Setting it (server only) clamps to 0..1500 and lasts for the rest of the session, through respawns.
+	--- How fast the character sprints, in centimeters per second (585 unless a script changes it; it scales with WalkSpeed until you set it). nil while the player has no character. Setting it (server only) clamps to 0..1500 and lasts for the rest of the session, through respawns.
 	SprintSpeed: number?
 	--- Whether the player's staff extra works (true unless a script changes it); nil while the player has no character. A staff whose weapon names an extra (telekinesis, blink, heal, dash or levitate) uses it on Q (gamepad D-pad up). Setting it (server only) to false makes Q do nothing, and ends an extra under way: a held prop or player is dropped, a float ends and the body falls, a dash ends, a blink or heal is canceled. Use it for a safe zone or a cutscene. It lasts for the rest of the session, through respawns.
 	StaffExtraEnabled: boolean?
@@ -247,7 +247,7 @@ declare extern type Player with
 	Team: string?
 	--- The player's verified Mantle account id (a plain UUID).
 	UserId: string
-	--- How fast the character runs, in centimeters per second (500 unless a script changes it); walking, sprinting and crouching scale with it. nil while the player has no character. Setting it (server only) clamps to 0..1500 and lasts for the rest of the session, through respawns; 0 stops the character moving.
+	--- How fast the character runs, in centimeters per second (375 unless a script changes it); walking, sprinting and crouching scale with it. nil while the player has no character. Setting it (server only) clamps to 0..1500 and lasts for the rest of the session, through respawns; 0 stops the character moving.
 	WalkSpeed: number?
 	--- Whether pressing jump in the air while pushing into a wall within 50 cm bounces the player off it (false unless a script changes it); nil while the player has no character. The bounce sends them 5 m/s away from the wall and 1.4 times the jump speed up, and walking input is ignored for 0.3 s so it keeps its speed. A wall can be jumped from once until the player lands or bounces off a different one. It works in any play style, and out of one. Setting it (server only) lasts for the rest of the session, through respawns.
 	WallJump: boolean?
@@ -394,7 +394,7 @@ declare extern type NPC with
 	Target: Entity?
 	--- The player the NPC is attacking now, or nil when it has no target or the target is not a player. Read-only. (server only)
 	TargetPlayer: Player?
-	--- How fast the NPC walks, in centimeters per second (150 unless a script changes it; a player runs at 500). Clamped to 0..1500; 0 stops it where it is. The walk clip speeds up and slows down with it. (server only)
+	--- How fast the NPC walks, in centimeters per second (150 unless a script changes it; a player runs at 375). Clamped to 0..1500; 0 stops it where it is. The walk clip speeds up and slows down with it. (server only)
 	WalkSpeed: number
 	--- The NPC swung or fired at its target. damage is the hit's damage (the projectile's, for a ranged NPC) and damageType its tag. Fires at the moment of the attack, on the server only. Use it to play an attack clip or a sound.
 	Attacked: Signal<(NPC, Entity?, Player?, number, string)>
