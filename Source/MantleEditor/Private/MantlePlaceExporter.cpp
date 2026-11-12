@@ -5814,6 +5814,15 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 	{
 		Writer->WriteValue(TEXT("carjacking"), false);
 	}
+	// Health and combat (#332): only when on. Left out means off, so a creator who unticks one writes nothing.
+	if (Place.Settings.bHealth)
+	{
+		Writer->WriteValue(TEXT("health"), true);
+	}
+	if (Place.Settings.bCombat)
+	{
+		Writer->WriteValue(TEXT("combat"), true);
+	}
 	// Placing mode's settings (#184), only when the creator changed one, and only the keys changed: persistence
 	// when it is server, maxPieces when it is below the most a place may have.
 	const FMantlePlacingSettings& Placing = Place.Settings.Placing;

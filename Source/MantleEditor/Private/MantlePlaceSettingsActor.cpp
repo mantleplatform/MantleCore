@@ -94,6 +94,8 @@ void AMantlePlaceSettingsActor::ApplyTo(UWorld* World, FMantleSettings& Out)
 		Out.bAllowCommunityServers = Settings->bAllowCommunityServers;
 		Out.bAllowPrivateServers = Settings->bAllowPrivateServers;
 		Out.bCarjacking = Settings->bCarjacking;
+		Out.bHealth = Settings->bHealth;
+		Out.bCombat = Settings->bCombat;
 		Out.Environment = Settings->MakeEnvironmentSettings();
 		Out.Placing = Settings->MakePlacingSettings();
 		Out.PlayStyle = Settings->MakePlayStyle();
@@ -361,6 +363,8 @@ void AMantlePlaceSettingsActor::SetFrom(UWorld* World, const FMantleSettings& Se
 		Actor->bAllowCommunityServers = Settings.bAllowCommunityServers;
 		Actor->bAllowPrivateServers = Settings.bAllowPrivateServers;
 		Actor->bCarjacking = Settings.bCarjacking;
+		Actor->bHealth = Settings.bHealth;
+		Actor->bCombat = Settings.bCombat;
 		Actor->SetEnvironmentFrom(Settings.Environment);
 		Actor->SetPlacingFrom(Settings.Placing);
 		Actor->SetPlayStyleFrom(Settings.PlayStyle);
