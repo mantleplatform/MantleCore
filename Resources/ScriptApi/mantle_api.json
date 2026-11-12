@@ -1,4 +1,4 @@
-{"major":1,"minor":89,"classes":[
+{"major":1,"minor":90,"classes":[
 {"name":"Entity","service":false,"introducedMinor":0,"doc":"A thing in the world: any actor in the level.",
 "methods":[{"name":"AddTag","side":"server","params":[{"name":"tag","type":"string","optional":false}],"variadic":false,"returns":"()","kit":false,"doc":"Give the entity a tag (fires World:OnTagged handlers).","deprecated":false,"deprecatedReason":"","introducedMinor":0},
 {"name":"ApplyAngularImpulse","side":"server","params":[{"name":"impulse","type":"Vector3","optional":false}],"variadic":false,"returns":"()","kit":false,"doc":"Spin a physics entity: an angular impulse in kg*cm^2/s about the world axes, in degrees. Does nothing while it is Anchored. Errors on an entity with no physics block.","deprecated":false,"deprecatedReason":"","introducedMinor":15},
