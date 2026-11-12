@@ -4515,7 +4515,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			{ TEXT("maxPlayers"), TEXT("gravity"), TEXT("skybox"), TEXT("ambientLight"),
 			  TEXT("respawnMode"), TEXT("streamingDistance"), TEXT("allowCommunityServers"),
 			  TEXT("allowPrivateServers"), TEXT("avatarHeight"), TEXT("environment"), TEXT("carjacking"), TEXT("water"),
-			  TEXT("maxCarriedTools"), TEXT("allowToolSwap"), TEXT("killZ"), TEXT("boundary"), TEXT("placing"), TEXT("playStyle"), TEXT("worldItems") },
+			  TEXT("maxCarriedTools"), TEXT("allowToolSwap"), TEXT("killZ"), TEXT("boundary"), TEXT("placing"), TEXT("playStyle"), TEXT("worldItems"), TEXT("health"), TEXT("combat") },
 			TEXT("/settings"));
 
 		double MaxPlayers = Place.Settings.MaxPlayers;
@@ -4563,6 +4563,9 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			}
 		}
 		ReadStrictOptionalBool(Ctx, *SettingsObj, TEXT("allowToolSwap"), TEXT("/settings"), Place.Settings.bAllowToolSwap);
+		// Whether players have health and the built-in combat moves; both off unless the file turns them on.
+		ReadStrictOptionalBool(Ctx, *SettingsObj, TEXT("health"), TEXT("/settings"), Place.Settings.bHealth);
+		ReadStrictOptionalBool(Ctx, *SettingsObj, TEXT("combat"), TEXT("/settings"), Place.Settings.bCombat);
 		// The kill floor's height in cm, any finite number; absent means the game mode works it out from the built place.
 		if (const TSharedPtr<FJsonValue> KillZ = (*SettingsObj)->TryGetField(TEXT("killZ")))
 		{
