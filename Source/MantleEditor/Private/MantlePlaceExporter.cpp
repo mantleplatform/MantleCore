@@ -1669,7 +1669,7 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 		{
 			return false;
 		}
-		OutWhat = TEXT("is a Post Process Volume: Mantle uses its own post-process, so the volume's saturation, bloom and white balance are left out, and its exposure too unless the place is an interior or a sealed level.");
+		OutWhat = TEXT("is a Post Process Volume: Mantle's own post-process is used, so the volume's saturation, bloom and white balance are left out, and its exposure too unless the place is an interior or a sealed level.");
 		OutRemedy = TEXT("Nothing to change: the export reports what it leaves out. To choose a look on purpose, set Exposure, Saturation, Bloom or Color Tint in Mantle Place Settings.");
 		return true;
 	}
