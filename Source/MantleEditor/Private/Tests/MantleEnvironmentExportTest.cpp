@@ -115,6 +115,28 @@ namespace MantleEnvironmentExportTestPrivate
 			IdByActor.Add(Sun, TEXT("ent_sun"));
 			return true;
 		}
+
+		/** A second directional light (a blue fill sun), after the first in the place's entities. */
+		bool AddFill(FTestWorld& Test)
+		{
+			ADirectionalLight* Fill = Test.Spawn<ADirectionalLight>(TEXT("BlueFill"), FRotator(-30.0, 200.0, 0.0));
+			if (!Fill)
+			{
+				return false;
+			}
+			FMantleEntity Entity;
+			Entity.Id = TEXT("ent_fill");
+			Entity.Type = EMantleEntityType::DirectionalLight;
+			Entity.Name = TEXT("BlueFill");
+			Entity.Transform = Fill->GetActorTransform();
+			FMantleDirectionalLightProps Props;
+			Props.Intensity = 2.0;
+			Props.Color = FLinearColor(0.2f, 0.3f, 1.0f);
+			Entity.Props.Set<FMantleDirectionalLightProps>(Props);
+			Place.Entities.Add(MoveTemp(Entity));
+			IdByActor.Add(Fill, TEXT("ent_fill"));
+			return true;
+		}
 	};
 
 	/** Every detail the bucket has, joined. */
@@ -302,32 +324,27 @@ bool FMantleEnvironmentMapsTheLevelTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("and the clock is stopped there"), Environment.TimeScale.IsSet() && *Environment.TimeScale == 0.0);
 	if (const FMantleDirectionalLightProps* Props = Sun.Props.TryGet<FMantleDirectionalLightProps>())
 	{
-		TestTrue(TEXT("the light's 4000 K is baked into its color: warm, red over blue"), Props->Color.R > Props->Color.B);
-		TestNearlyEqual(TEXT("its intensity is untouched"), Props->Intensity, 8.0, 0.0001);
+		// The level's sun (8, with a 4000 K temperature) was tuned to its own sky: the place gets the game's.
+		TestNearlyEqual(TEXT("the sun is at the game's intensity, not the level's 8"), Props->Intensity, 3.5, 0.0001);
+		TestTrue(TEXT("and the game's color, not the light's 4000 K"), Props->Color.Equals(FLinearColor(1.0f, 0.97f, 0.92f), 0.0001f));
 	}
-	if (TestTrue(TEXT("the volume's saturation is carried"), Environment.Saturation.IsSet()))
-	{
-		TestNearlyEqual(TEXT("as it is"), *Environment.Saturation, 1.4, 0.001);
-	}
-	if (TestTrue(TEXT("and its bloom"), Environment.Bloom.IsSet()))
-	{
-		TestNearlyEqual(TEXT("as it is"), *Environment.Bloom, 2.0, 0.001);
-	}
-	TestTrue(TEXT("and its white balance as a color tint"), Environment.ColorTint.IsSet() && *Environment.ColorTint != 0xFFFFFF);
+	TestFalse(TEXT("the volume's saturation is not carried"), Environment.Saturation.IsSet());
+	TestFalse(TEXT("nor its bloom"), Environment.Bloom.IsSet());
+	TestFalse(TEXT("nor its white balance as a color tint"), Environment.ColorTint.IsSet());
+	TestFalse(TEXT("nor its exposure: this is an outdoor place"), Environment.Exposure.IsSet());
 	TestTrue(TEXT("a sky with no cloud holds the weather clear"), Environment.Weather.IsSet() && *Environment.Weather == EMantleWeatherState::Clear);
 
 	TestEqual(TEXT("the sun is reported once, approximated"), CountOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Approximated), static_cast<int64>(1));
 	TestEqual(TEXT("and nothing of it dropped"), CountOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Dropped), static_cast<int64>(0));
-	TestEqual(TEXT("the volume is approximated: some of it was carried"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(1));
-	const FString Grading = DetailsOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated);
-	TestTrue(TEXT("saying what was carried"), Grading.Contains(TEXT("saturation")) && Grading.Contains(TEXT("bloom")) && Grading.Contains(TEXT("white balance")));
-	TestTrue(TEXT("and the exposure"), Grading.Contains(TEXT("exposure (")) && Grading.Contains(TEXT("1.5 stops")));
-	if (TestTrue(TEXT("the exposure is the place's"), Environment.Exposure.IsSet()))
-	{
-		TestNearlyEqual(TEXT("its bias is the volume's compensation less the project's own"), Environment.Exposure->Bias, 1.5, 0.001);
-		TestTrue(TEXT("its mode is the project's metering, a volume that does not override it"),
-			(Environment.Exposure->Mode == EMantleExposureMode::Auto) == Project.bAuto);
-	}
+	const FString SunLine = DetailsOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Approximated);
+	TestTrue(TEXT("the sun's line says its brightness is the game's, not the level's"), SunLine.Contains(TEXT("game's own (3.5)")) && SunLine.Contains(TEXT("level's (8)")));
+	TestTrue(TEXT("and where to change it on purpose"), SunLine.Contains(TEXT("Sun Brightness in Mantle Place Settings")) && SunLine.Contains(TEXT("SunIntensityScale")));
+	TestEqual(TEXT("the volume is dropped: nothing of it is carried"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Dropped), static_cast<int64>(1));
+	TestEqual(TEXT("and not approximated"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(0));
+	const FString Grading = DetailsOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Dropped);
+	TestTrue(TEXT("saying what was left out"), Grading.Contains(TEXT("Saturation 1.40")) && Grading.Contains(TEXT("Bloom 2.00"))
+		&& Grading.Contains(TEXT("White balance 8000 K")) && Grading.Contains(TEXT("exposure (")) && Grading.Contains(TEXT("1.5 stops")));
+	TestTrue(TEXT("and where to set them on purpose"), Grading.Contains(TEXT("Mantle Place Settings")));
 	TestEqual(TEXT("the weather held for want of a cloud is its own approximated line"), CountOf(Coverage, MantleCoverageCategory::Sky, EOutcome::Approximated), static_cast<int64>(1));
 	TestEqual(TEXT("and an atmosphere at its defaults is kept"), CountOf(Coverage, MantleCoverageCategory::Sky, EOutcome::Kept), static_cast<int64>(1));
 	return true;
@@ -366,6 +383,8 @@ bool FMantleEnvironmentSettingsWinTest::RunTest(const FString& Parameters)
 	FMantleEnvironmentSettings& Environment = Level.Place.Settings.Environment;
 	Environment.ClockTime = 21.0;
 	Environment.Saturation = 0.5;
+	Environment.Bloom = 0.25;
+	Environment.ColorTint = 0xFFE0C0;
 	Environment.Weather = EMantleWeatherState::Storm;
 
 	FMantleCoverage Coverage;
@@ -375,11 +394,11 @@ bool FMantleEnvironmentSettingsWinTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("and the level's sun does not stop it"), Environment.TimeScale.IsSet());
 	TestTrue(TEXT("the settings' saturation wins"), Environment.Saturation.IsSet() && *Environment.Saturation == 0.5);
 	TestTrue(TEXT("the settings' weather wins over a sky with no cloud"), Environment.Weather.IsSet() && *Environment.Weather == EMantleWeatherState::Storm);
-	if (TestTrue(TEXT("what the settings left alone is carried: the bloom"), Environment.Bloom.IsSet()))
-	{
-		TestNearlyEqual(TEXT("as it is"), *Environment.Bloom, 2.0, 0.001);
-	}
-	TestTrue(TEXT("the report says the settings' value won"), DetailsOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated).Contains(TEXT("Mantle Place Settings")));
+	TestTrue(TEXT("the settings' bloom wins over the volume's 2"), Environment.Bloom.IsSet() && *Environment.Bloom == 0.25);
+	TestTrue(TEXT("and its color tint"), Environment.ColorTint.IsSet() && *Environment.ColorTint == 0xFFE0C0);
+	const FString Won = DetailsOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Dropped);
+	TestTrue(TEXT("the report says the settings' values won"), Won.Contains(TEXT("Saturation (Mantle Place Settings sets its own, which wins)"))
+		&& Won.Contains(TEXT("Bloom (Mantle Place Settings sets its own, which wins)")));
 	TestTrue(TEXT("and about the sun's angle"), DetailsOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Approximated).Contains(TEXT("Mantle Place Settings")));
 	TestEqual(TEXT("the held weather is dropped, not written"), CountOf(Coverage, MantleCoverageCategory::Sky, EOutcome::Dropped), static_cast<int64>(1));
 	return true;
@@ -419,12 +438,12 @@ bool FMantleEnvironmentOlderClientTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the place has no environment block"), Level.Place.Settings.Environment.IsEmpty());
 	if (const FMantleDirectionalLightProps* Props = Level.Place.Entities[0].Props.TryGet<FMantleDirectionalLightProps>())
 	{
-		TestTrue(TEXT("but the sun's temperature is still in its color, which every client reads"), Props->Color.R > Props->Color.B);
+		TestNearlyEqual(TEXT("but the sun is still at the game's intensity, which every client reads"), Props->Intensity, 3.5, 0.0001);
 	}
 	TestTrue(TEXT("the sun's angle says it needs a newer client"),
 		DetailsOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Approximated).Contains(FMantleTargetFeatures::NeedsNewerClient));
 	TestEqual(TEXT("the volume has nothing carried, so it is dropped"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Dropped), static_cast<int64>(1));
-	TestTrue(TEXT("saying why"), DetailsOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Dropped).Contains(FMantleTargetFeatures::NeedsNewerClient));
+	TestTrue(TEXT("saying it was tuned for a different sky"), DetailsOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Dropped).Contains(TEXT("different sky")));
 	return true;
 }
 
@@ -472,13 +491,15 @@ bool FMantleEnvironmentReportsActorsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("held at partly cloudy, never left to change on its own"),
 		Place.Settings.Environment.Weather.IsSet() && *Place.Settings.Environment.Weather == EMantleWeatherState::PartlyCloudy);
 	TestTrue(TEXT("and the report says how to choose another"), DetailsOf(Coverage, MantleCoverageCategory::Sky, EOutcome::Approximated).Contains(TEXT("Mantle Place Settings")));
-	// A project whose default is an auto exposure shows the level that way, so even a volume that overrides nothing carries it.
+	// A project whose default is an auto exposure shows the level that way, but an outdoor place (this level has a cloud) does not
+	// carry it: it is reported as dropped.
 	const bool bAutoProject = FMantleExposureProject::Current().bAuto;
 	TestEqual(TEXT("a volume that overrides nothing changes nothing, in a project with fixed exposure"),
 		CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Info), static_cast<int64>(bAutoProject ? 0 : 1));
-	TestEqual(TEXT("and carries the default auto exposure in one with auto"),
-		CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(bAutoProject ? 1 : 0));
-	TestEqual(TEXT("the exposure is written exactly then"), Place.Settings.Environment.Exposure.IsSet(), bAutoProject);
+	TestEqual(TEXT("and drops the default auto exposure in one with auto"),
+		CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Dropped), static_cast<int64>(bAutoProject ? 1 : 0));
+	TestEqual(TEXT("nothing of the volume is carried"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(0));
+	TestFalse(TEXT("so no exposure is written for an outdoor place, whatever the project"), Place.Settings.Environment.Exposure.IsSet());
 	TestFalse(TEXT("and it writes no saturation, bloom or tint"),
 		Place.Settings.Environment.Saturation.IsSet() || Place.Settings.Environment.Bloom.IsSet() || Place.Settings.Environment.ColorTint.IsSet());
 	TestFalse(TEXT("and no fog: the first fog is at Mantle's own"), Place.Settings.Environment.Fog.IsSet());
@@ -513,22 +534,21 @@ bool FMantleEnvironmentExportTest::RunTest(const FString& Parameters)
 	const FMantleCoverage& Coverage = Exported.Coverage;
 	TestEqual(TEXT("the sun is one approximated line, not two"), CountOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Approximated), static_cast<int64>(1));
 	TestEqual(TEXT("and none kept"), CountOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Kept), static_cast<int64>(0));
-	TestEqual(TEXT("the volume is one line, approximated"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(1));
-	TestEqual(TEXT("and not also dropped by the survey"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Dropped), static_cast<int64>(0));
-	TestEqual(TEXT("the fog is one approximated line: its density is carried"), CountOf(Coverage, MantleCoverageCategory::Fog, EOutcome::Approximated), static_cast<int64>(1));
-	TestEqual(TEXT("and not dropped"), CountOf(Coverage, MantleCoverageCategory::Fog, EOutcome::Dropped), static_cast<int64>(0));
-	TestTrue(TEXT("the density is the place's largest, 0.2 being past it"),
-		Exported.Place.Settings.Environment.Fog.IsSet() && Exported.Place.Settings.Environment.Fog->Density.IsSet()
-		&& *Exported.Place.Settings.Environment.Fog->Density == MantleEnvironmentDefaults::MaxFogDensity);
-	TestTrue(TEXT("and the report says it was clamped"), DetailsOf(Coverage, MantleCoverageCategory::Fog, EOutcome::Approximated).Contains(TEXT("past the place's largest")));
+	TestEqual(TEXT("the volume is one line, dropped: its saturation is not carried"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Dropped), static_cast<int64>(1));
+	TestEqual(TEXT("and not also approximated by the survey"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(0));
+	TestEqual(TEXT("the fog is one dropped line: Mantle's own is used"), CountOf(Coverage, MantleCoverageCategory::Fog, EOutcome::Dropped), static_cast<int64>(1));
+	TestEqual(TEXT("and not approximated"), CountOf(Coverage, MantleCoverageCategory::Fog, EOutcome::Approximated), static_cast<int64>(0));
+	TestFalse(TEXT("no fog is written"), Exported.Place.Settings.Environment.Fog.IsSet());
 	TestTrue(TEXT("a level with a sun and no cloud holds the weather clear"),
 		Exported.Place.Settings.Environment.Weather.IsSet() && *Exported.Place.Settings.Environment.Weather == EMantleWeatherState::Clear);
-	TestTrue(TEXT("the place says when the clock starts and what saturation is"), Exported.Place.Settings.Environment.ClockTime.IsSet() && Exported.Place.Settings.Environment.Saturation.IsSet());
+	TestTrue(TEXT("the place says when the clock starts"), Exported.Place.Settings.Environment.ClockTime.IsSet());
+	TestFalse(TEXT("but nothing of the level's saturation"), Exported.Place.Settings.Environment.Saturation.IsSet());
 
 	const FString Json = FMantlePlaceExporter::ToJson(Exported.Place);
-	TestTrue(TEXT("and writes them to the place file"), Json.Contains(TEXT("\"clockTime\"")) && Json.Contains(TEXT("\"timeScale\"")) && Json.Contains(TEXT("\"saturation\"")));
-	TestTrue(TEXT("with the fog's density"), Json.Contains(TEXT("\"fog\"")) && Json.Contains(TEXT("\"density\"")));
-	TestEqual(TEXT("and the exposure when the project's is auto"), Json.Contains(TEXT("\"exposure\"")), FMantleExposureProject::Current().bAuto);
+	TestTrue(TEXT("the file writes the clock"), Json.Contains(TEXT("\"clockTime\"")) && Json.Contains(TEXT("\"timeScale\"")));
+	TestFalse(TEXT("and none of the level's look: no saturation, fog, exposure, bloom or tint"),
+		Json.Contains(TEXT("\"saturation\"")) || Json.Contains(TEXT("\"fog\"")) || Json.Contains(TEXT("\"exposure\""))
+		|| Json.Contains(TEXT("\"bloom")) || Json.Contains(TEXT("\"colorTint\"")));
 	return true;
 }
 
@@ -641,11 +661,11 @@ bool FMantleEnvironmentExposureForTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleEnvironmentFogMapsTest,
-	"Mantle.Editor.EnvironmentExport.FogMapsTheLevel",
+	FMantleEnvironmentFogLeftOutTest,
+	"Mantle.Editor.EnvironmentExport.FogIsLeftOut",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleEnvironmentFogMapsTest::RunTest(const FString& Parameters)
+bool FMantleEnvironmentFogLeftOutTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleEnvironmentExportTestPrivate;
 	FTestWorld Test;
@@ -670,37 +690,27 @@ bool FMantleEnvironmentFogMapsTest::RunTest(const FString& Parameters)
 	FMantleCoverage Coverage;
 	FMantleEnvironmentExport::Apply(Test.World, IdByActor, Place, Coverage);
 
-	const FMantleEnvironmentSettings& Environment = Place.Settings.Environment;
-	if (!TestTrue(TEXT("the fog is the place's"), Environment.Fog.IsSet()))
-	{
-		return false;
-	}
-	const FMantleFogSettings& Mapped = *Environment.Fog;
-	TestTrue(TEXT("its density"), Mapped.Density.IsSet() && FMath::IsNearlyEqual(*Mapped.Density, 0.005, 1.0e-7));
-	TestFalse(TEXT("its height falloff is Mantle's own, so unwritten"), Mapped.HeightFalloff.IsSet());
-	TestFalse(TEXT("and its start distance"), Mapped.StartDistance.IsSet());
-	if (TestTrue(TEXT("its inscattering color"), Mapped.InscatteringColor.IsSet()))
-	{
-		TestNearlyEqual(TEXT("blue"), Mapped.InscatteringColor->B, 1.0f, 1.0e-4f);
-		TestNearlyEqual(TEXT("green, rounded"), Mapped.InscatteringColor->G, 0.638f, 1.0e-4f);
-	}
-	TestTrue(TEXT("its directional color"), Mapped.DirectionalInscatteringColor.IsSet() && FMath::IsNearlyEqual(Mapped.DirectionalInscatteringColor->B, 0.125f, 1.0e-4f));
-	TestEqual(TEXT("the fog is approximated"), CountOf(Coverage, MantleCoverageCategory::Fog, EOutcome::Approximated), static_cast<int64>(1));
-	const FString Report = DetailsOf(Coverage, MantleCoverageCategory::Fog, EOutcome::Approximated);
-	TestTrue(TEXT("saying what was carried"), Report.Contains(TEXT("density")) && Report.Contains(TEXT("inscattering color")) && Report.Contains(TEXT("directional")));
-	TestTrue(TEXT("and what was not, by name"), Report.Contains(TEXT("not carried")) && Report.Contains(TEXT("Max Opacity")));
-	TestFalse(TEXT("what was carried is not listed as left out"), Report.Contains(TEXT("not carried: Fog Density")));
+	TestFalse(TEXT("the level's fog is not the place's"), Place.Settings.Environment.Fog.IsSet());
+	TestTrue(TEXT("so the place writes no environment block for it"), Place.Settings.Environment.IsEmpty());
+	TestEqual(TEXT("the fog is one dropped line"), CountOf(Coverage, MantleCoverageCategory::Fog, EOutcome::Dropped), static_cast<int64>(1));
+	TestEqual(TEXT("and nothing of it approximated"), CountOf(Coverage, MantleCoverageCategory::Fog, EOutcome::Approximated), static_cast<int64>(0));
+	const FString Report = DetailsOf(Coverage, MantleCoverageCategory::Fog, EOutcome::Dropped);
+	TestTrue(TEXT("saying what was left out"), Report.Contains(TEXT("density (0.005)")) && Report.Contains(TEXT("inscattering color")) && Report.Contains(TEXT("directional")));
+	TestTrue(TEXT("and what else was tuned, by name"), Report.Contains(TEXT("Max Opacity")));
+	TestTrue(TEXT("saying Mantle supplies its own, and where to set one on purpose"),
+		Report.Contains(TEXT("Mantle supplies its own fog")) && Report.Contains(TEXT("Environment.FogDensity")) && Report.Contains(TEXT("Environment.FogColor")));
 
-	// A client that cannot read the key gets none of it, and the report says why.
-	FMantlePlace Older;
-	FMantleCoverage OlderCoverage;
+	// A second fog is not used by the engine: reported once, as such.
+	AExponentialHeightFog* Second = Test.Spawn<AExponentialHeightFog>(TEXT("SecondMist"));
+	if (TestNotNull(TEXT("a second fog"), Second))
 	{
-		const FMantleTargetFeaturesScope Scope(FMantleTargetFeatures::None());
-		FMantleEnvironmentExport::Apply(Test.World, IdByActor, Older, OlderCoverage);
+		FMantlePlace Both;
+		FMantleCoverage BothCoverage;
+		FMantleEnvironmentExport::Apply(Test.World, IdByActor, Both, BothCoverage);
+		TestFalse(TEXT("two fogs still write none"), Both.Settings.Environment.Fog.IsSet());
+		TestEqual(TEXT("and report both, one way or the other"),
+			CountOf(BothCoverage, MantleCoverageCategory::Fog, EOutcome::Dropped) + CountOf(BothCoverage, MantleCoverageCategory::Fog, EOutcome::Kept), static_cast<int64>(2));
 	}
-	TestFalse(TEXT("an older client's place has no fog"), Older.Settings.Environment.Fog.IsSet());
-	TestEqual(TEXT("the fog is dropped"), CountOf(OlderCoverage, MantleCoverageCategory::Fog, EOutcome::Dropped), static_cast<int64>(1));
-	TestTrue(TEXT("saying it needs a newer client"), DetailsOf(OlderCoverage, MantleCoverageCategory::Fog, EOutcome::Dropped).Contains(FMantleTargetFeatures::NeedsNewerClient));
 	return true;
 }
 
@@ -1157,19 +1167,16 @@ bool FMantleEnvironmentInteriorExportTest::RunTest(const FString& Parameters)
 		return true;
 	}
 	TestTrue(TEXT("a level with no environment of its own is an interior"), Environment.bNoOutdoors);
-	if (TestTrue(TEXT("the bloom threshold is carried"), Environment.BloomThreshold.IsSet()))
-	{
-		TestNearlyEqual(TEXT("as it is"), *Environment.BloomThreshold, 2.0, 0.001);
-	}
+	TestFalse(TEXT("the level's bloom threshold is not carried, even for an interior"), Environment.BloomThreshold.IsSet());
+	TestFalse(TEXT("nor its bloom"), Environment.Bloom.IsSet());
 	TestFalse(TEXT("the weather is not written for it: the client holds it"), Environment.Weather.IsSet());
 	const FString Json = FMantlePlaceExporter::ToJson(Place);
 	TestTrue(TEXT("outdoors false is written"), Json.Replace(TEXT(" "), TEXT("")).Contains(TEXT("\"outdoors\":false")));
-	TestTrue(TEXT("and the threshold"), Json.Replace(TEXT(" "), TEXT("")).Contains(TEXT("\"bloomThreshold\":2")));
+	TestFalse(TEXT("and no bloom threshold"), Json.Contains(TEXT("bloomThreshold")));
 	const FMantleParseResult Parsed = FMantlePlaceParser::ParseFromString(Json);
-	TestTrue(TEXT("the parser reads both back"),
-		Parsed.Place.Settings.Environment.bNoOutdoors && Parsed.Place.Settings.Environment.BloomThreshold.IsSet());
+	TestTrue(TEXT("the parser reads it back"), Parsed.Place.Settings.Environment.bNoOutdoors);
 
-	// An engine-default threshold (below zero) is not carried, and a level with an atmosphere is not an interior.
+	// A level with an atmosphere is not an interior.
 	Grade->Settings.BloomThreshold = -1.0f;
 	ASkyAtmosphere* Atmosphere = Test.Spawn<ASkyAtmosphere>(TEXT("Atmosphere"));
 	if (!TestNotNull(TEXT("a sky atmosphere"), Atmosphere))
@@ -1195,7 +1202,6 @@ bool FMantleEnvironmentInteriorExportTest::RunTest(const FString& Parameters)
 	FMantleCoverage ComponentCoverage;
 	FMantleEnvironmentExport::Apply(Test.World, IdByActor, ComponentSky, ComponentCoverage);
 	TestFalse(TEXT("a sky light inside a Blueprint actor makes the level outdoors"), ComponentSky.Settings.Environment.bNoOutdoors);
-	TestFalse(TEXT("and a default threshold is not carried"), Outdoor.Settings.Environment.BloomThreshold.IsSet());
 	return true;
 }
 
@@ -1313,6 +1319,412 @@ bool FMantleEnvironmentLightingKeysTest::RunTest(const FString& Parameters)
 		Env->GetObjectField(TEXT("skyLight"))->SetNumberField(TEXT("color"), 1.0);
 	}));
 	TestFalse(TEXT("and the unedited file is not"), Refused([](const TSharedPtr<FJsonObject>&) {}));
+	return true;
+}
+
+// ---- Upload no longer copies the level's look ---------------------------------------------------------------------
+// A level's sun brightness, exposure, fog, bloom, tint and saturation were tuned for its own sky and wash the picture out
+// under Mantle's. Outdoor places get the game's own; an interior keeps its exposure; what Mantle Place Settings sets still wins.
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleEnvironmentOutdoorDropsExposureTest,
+	"Mantle.Editor.EnvironmentExport.OutdoorPlaceDropsTheLevelsExposure",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleEnvironmentOutdoorDropsExposureTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleEnvironmentExportTestPrivate;
+	FTestWorld Test;
+	if (!TestNotNull(TEXT("a test world"), Test.World))
+	{
+		return false;
+	}
+	FSunLevel Level;
+	if (!TestTrue(TEXT("a sun"), Level.Build(Test, FRotator(-46.0, 30.0, 0.0), /*bTemperature*/ false)))
+	{
+		return false;
+	}
+	const FMantleExposureProject Project = FMantleExposureProject::Current();
+
+	// No volume: in a project with automatic exposure the editor shows the level that way, and an outdoor place does not carry it.
+	{
+		FMantleCoverage Coverage;
+		FMantleEnvironmentExport::Apply(Test.World, Level.IdByActor, Level.Place, Coverage);
+		TestFalse(TEXT("an outdoor level with no volume writes no exposure"), Level.Place.Settings.Environment.Exposure.IsSet());
+		const FString Dropped = DetailsOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Dropped);
+		TestEqual(TEXT("and says so once if the project's exposure is automatic"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Dropped), static_cast<int64>(Project.bAuto ? 1 : 0));
+		if (Project.bAuto)
+		{
+			TestTrue(TEXT("saying Mantle supplies its own and where to set one"),
+				Dropped.Contains(TEXT("Mantle supplies its own exposure")) && Dropped.Contains(TEXT("Mantle Place Settings")) && Dropped.Contains(TEXT("Environment.ExposureBias")));
+		}
+	}
+
+	// A volume with an exposure of its own, 1.5 stops over the project's: left out as well.
+	APostProcessVolume* Grade = Test.Spawn<APostProcessVolume>(TEXT("Grade"));
+	if (!TestNotNull(TEXT("a post-process volume"), Grade))
+	{
+		return false;
+	}
+	Grade->bUnbound = true;
+	Grade->Settings.bOverride_AutoExposureBias = true;
+	Grade->Settings.AutoExposureBias = static_cast<float>(Project.EngineBias + 1.5);
+	Grade->Settings.bOverride_AutoExposureMinBrightness = true;
+	Grade->Settings.AutoExposureMinBrightness = 5.0f;
+	Grade->Settings.bOverride_AutoExposureMaxBrightness = true;
+	Grade->Settings.AutoExposureMaxBrightness = 5.0f;
+	FMantleCoverage Coverage;
+	FMantleEnvironmentExport::Apply(Test.World, Level.IdByActor, Level.Place, Coverage);
+	TestFalse(TEXT("an outdoor level's volume exposure is not carried"), Level.Place.Settings.Environment.Exposure.IsSet());
+	const FString Dropped = DetailsOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Dropped);
+	TestTrue(TEXT("the report says what was left out"), Dropped.Contains(TEXT("exposure (")) && Dropped.Contains(TEXT("1.5 stops")));
+	TestTrue(TEXT("and where to set an exposure on purpose"), Dropped.Contains(TEXT("Exposure")) && Dropped.Contains(TEXT("Mantle Place Settings")));
+	const FString Json = FMantlePlaceExporter::ToJson(Level.Place);
+	TestFalse(TEXT("so the file has no exposure"), Json.Contains(TEXT("\"exposure\"")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleEnvironmentInteriorKeepsExposureTest,
+	"Mantle.Editor.EnvironmentExport.InteriorKeepsTheLevelsExposure",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleEnvironmentInteriorKeepsExposureTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleEnvironmentExportTestPrivate;
+	if (!FMantleTargetFeatures::Current().Reads(MantleClientFeatures::EnvironmentLighting))
+	{
+		AddInfo(TEXT("the target client does not read the lighting keys, so there is no interior"));
+		return true;
+	}
+	const FMantleExposureProject Project = FMantleExposureProject::Current();
+	const auto AddGrade = [&Project](FTestWorld& Test)
+	{
+		APostProcessVolume* Grade = Test.Spawn<APostProcessVolume>(TEXT("Grade"));
+		if (Grade)
+		{
+			Grade->bUnbound = true;
+			Grade->Settings.bOverride_AutoExposureBias = true;
+			Grade->Settings.AutoExposureBias = static_cast<float>(Project.EngineBias + 1.5);
+			Grade->Settings.bOverride_BloomIntensity = true;
+			Grade->Settings.BloomIntensity = 2.0f;
+		}
+		return Grade;
+	};
+
+	// A level with a volume and nothing else is an interior: its exposure travels as it did, its bloom does not.
+	{
+		FTestWorld Test;
+		if (!TestNotNull(TEXT("a test world"), Test.World) || !TestNotNull(TEXT("a volume"), AddGrade(Test)))
+		{
+			return false;
+		}
+		FMantlePlace Place;
+		TMap<const AActor*, FString> IdByActor;
+		FMantleCoverage Coverage;
+		FMantleEnvironmentExport::Apply(Test.World, IdByActor, Place, Coverage);
+		const FMantleEnvironmentSettings& Environment = Place.Settings.Environment;
+		TestTrue(TEXT("it is an interior"), Environment.bNoOutdoors);
+		if (TestTrue(TEXT("its exposure is the place's"), Environment.Exposure.IsSet()))
+		{
+			TestNearlyEqual(TEXT("with the volume's bias over the project's"), Environment.Exposure->Bias, 1.5, 0.001);
+		}
+		TestFalse(TEXT("its bloom is not"), Environment.Bloom.IsSet());
+		TestEqual(TEXT("the volume is approximated: its exposure was carried"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(1));
+		const FString Json = FMantlePlaceExporter::ToJson(Place);
+		TestTrue(TEXT("the file writes the exposure"), Json.Contains(TEXT("\"exposure\"")));
+	}
+
+	// A level with a sun that Mantle Place Settings makes an interior keeps its exposure too.
+	{
+		FTestWorld Test;
+		if (!TestNotNull(TEXT("a test world"), Test.World) || !TestNotNull(TEXT("a volume"), AddGrade(Test)))
+		{
+			return false;
+		}
+		FSunLevel Level;
+		AMantlePlaceSettingsActor* Settings = Test.Spawn<AMantlePlaceSettingsActor>(TEXT("Settings"));
+		if (!TestTrue(TEXT("a sun"), Level.Build(Test, FRotator(-46.0, 30.0, 0.0), /*bTemperature*/ false)) || !TestNotNull(TEXT("place settings"), Settings))
+		{
+			return false;
+		}
+		Settings->Outdoors = EMantlePlaceOutdoors::Interior;
+		Level.Place.Settings.Environment = Settings->MakeEnvironmentSettings();
+		FMantleCoverage Coverage;
+		FMantleEnvironmentExport::Apply(Test.World, Level.IdByActor, Level.Place, Coverage);
+		TestTrue(TEXT("the settings make it an interior"), Level.Place.Settings.Environment.bNoOutdoors);
+		TestTrue(TEXT("and its exposure is carried"), Level.Place.Settings.Environment.Exposure.IsSet());
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleEnvironmentSunAtGameBrightnessTest,
+	"Mantle.Editor.EnvironmentExport.SunIsTheGamesAndExtraSunsAreLeftOut",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleEnvironmentSunAtGameBrightnessTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleEnvironmentExportTestPrivate;
+	FTestWorld Test;
+	if (!TestNotNull(TEXT("a test world"), Test.World))
+	{
+		return false;
+	}
+	// The level's sun is 8 with a 4000 K temperature; a blue fill sun is 2.
+	FSunLevel Level;
+	if (!TestTrue(TEXT("a sun"), Level.Build(Test, FRotator(-46.0, 30.0, 0.0), /*bTemperature*/ true)) || !TestTrue(TEXT("a fill sun"), Level.AddFill(Test)))
+	{
+		return false;
+	}
+	FMantleCoverage Coverage;
+	FMantleEnvironmentExport::Apply(Test.World, Level.IdByActor, Level.Place, Coverage);
+
+	if (!TestEqual(TEXT("only the first sun is published"), Level.Place.Entities.Num(), 1))
+	{
+		return false;
+	}
+	TestEqual(TEXT("and it is the first one"), Level.Place.Entities[0].Name, FString(TEXT("Sun")));
+	const FMantleDirectionalLightProps* Props = Level.Place.Entities[0].Props.TryGet<FMantleDirectionalLightProps>();
+	if (TestNotNull(TEXT("with sun props"), Props))
+	{
+		TestEqual(TEXT("at the game's own intensity, 3.5"), Props->Intensity, 3.5);
+		TestTrue(TEXT("and color, (1, 0.97, 0.92)"), Props->Color.Equals(FLinearColor(1.0f, 0.97f, 0.92f), 0.0001f));
+	}
+	TestTrue(TEXT("the sun's angle is still carried as the clock"), Level.Place.Settings.Environment.ClockTime.IsSet());
+	TestEqual(TEXT("the fill sun is one dropped line"), CountOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Dropped), static_cast<int64>(1));
+	const FString Dropped = DetailsOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Dropped);
+	TestTrue(TEXT("naming the light"), Dropped.Contains(TEXT("BlueFill")));
+	TestTrue(TEXT("saying Mantle supplies its own and where to change the sun on purpose"),
+		Dropped.Contains(TEXT("Mantle supplies its own sun")) && Dropped.Contains(TEXT("Sun Brightness")) && Dropped.Contains(TEXT("SunIntensityScale")));
+
+	// A fill sun other parts hang from stays, dark, so they keep their parent; it is reported all the same.
+	FSunLevel Parented;
+	if (!TestTrue(TEXT("another sun"), Parented.Build(Test, FRotator(-46.0, 30.0, 0.0), false)) || !TestTrue(TEXT("another fill"), Parented.AddFill(Test)))
+	{
+		return false;
+	}
+	FMantleEntity Child;
+	Child.Id = TEXT("ent_child");
+	Child.Type = EMantleEntityType::Group;
+	Child.Name = TEXT("Child");
+	Child.Parent = TEXT("ent_fill");
+	Parented.Place.Entities.Add(MoveTemp(Child));
+	FMantleCoverage ParentedCoverage;
+	FMantleEnvironmentExport::Apply(Test.World, Parented.IdByActor, Parented.Place, ParentedCoverage);
+	TestEqual(TEXT("with a child the fill stays, with the child"), Parented.Place.Entities.Num(), 3);
+	if (const FMantleDirectionalLightProps* FillProps = Parented.Place.Entities[1].Props.TryGet<FMantleDirectionalLightProps>())
+	{
+		TestEqual(TEXT("but dark"), FillProps->Intensity, 0.0);
+	}
+	TestEqual(TEXT("and is still reported as dropped"), CountOf(ParentedCoverage, MantleCoverageCategory::Lights, EOutcome::Dropped), static_cast<int64>(1));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleEnvironmentPlaceSettingsStillWriteTest,
+	"Mantle.Editor.EnvironmentExport.PlaceSettingsStillWriteTheirLook",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleEnvironmentPlaceSettingsStillWriteTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleEnvironmentExportTestPrivate;
+	FTestWorld Test;
+	if (!TestNotNull(TEXT("a test world"), Test.World))
+	{
+		return false;
+	}
+	FSunLevel Level;
+	APostProcessVolume* Grade = Test.Spawn<APostProcessVolume>(TEXT("Grade"));
+	AMantlePlaceSettingsActor* Settings = Test.Spawn<AMantlePlaceSettingsActor>(TEXT("Settings"));
+	if (!TestTrue(TEXT("a sun"), Level.Build(Test, FRotator(-46.0, 30.0, 0.0), /*bTemperature*/ false)) || !TestNotNull(TEXT("a volume"), Grade)
+		|| !TestNotNull(TEXT("place settings"), Settings))
+	{
+		return false;
+	}
+	// The level's look: all of it left out. Place Settings' look: all of it written.
+	const FMantleExposureProject Project = FMantleExposureProject::Current();
+	Grade->bUnbound = true;
+	Grade->Settings.bOverride_ColorSaturation = true;
+	Grade->Settings.ColorSaturation = FVector4(1.4, 1.4, 1.4, 1.0);
+	Grade->Settings.bOverride_BloomIntensity = true;
+	Grade->Settings.BloomIntensity = 2.0f;
+	Grade->Settings.bOverride_WhiteTemp = true;
+	Grade->Settings.WhiteTemp = 8000.0f;
+	Grade->Settings.bOverride_AutoExposureBias = true;
+	Grade->Settings.AutoExposureBias = static_cast<float>(Project.EngineBias + 1.5);
+
+	Settings->ColorTint = FColor(255, 224, 192);
+	Settings->Saturation = 0.5;
+	Settings->bSetBloom = true;
+	Settings->Bloom = 0.25;
+	Settings->ColorGrading = EMantlePlaceColorGrading::Warm;
+	Settings->ColorGradingIntensity = 0.5;
+	Settings->bSetSkyLightIntensity = true;
+	Settings->SkyLightIntensity = 0.5;
+	Settings->bSetExposure = true;
+	Settings->Exposure = -1.5;
+	Settings->bSetSunBrightness = true;
+	Settings->SunBrightness = 2.0;
+	Level.Place.Settings.Environment = Settings->MakeEnvironmentSettings();
+
+	FMantleCoverage Coverage;
+	FMantleEnvironmentExport::Apply(Test.World, Level.IdByActor, Level.Place, Coverage);
+	const FMantleEnvironmentSettings& Environment = Level.Place.Settings.Environment;
+	TestTrue(TEXT("Color Tint is written"), Environment.ColorTint.IsSet() && *Environment.ColorTint == 0xFFE0C0);
+	TestTrue(TEXT("Saturation"), Environment.Saturation.IsSet() && *Environment.Saturation == 0.5);
+	TestTrue(TEXT("Bloom"), Environment.Bloom.IsSet() && *Environment.Bloom == 0.25);
+	TestTrue(TEXT("Color Grading and its strength"), Environment.ColorGrading.IsSet() && Environment.ColorGradingIntensity.IsSet() && *Environment.ColorGradingIntensity == 0.5);
+	TestTrue(TEXT("Sky Light Intensity"), Environment.SkyLightIntensity.IsSet() && *Environment.SkyLightIntensity == 0.5);
+	if (TestTrue(TEXT("the exposure is the settings' own, not the volume's +1.5"), Environment.Exposure.IsSet()))
+	{
+		TestEqual(TEXT("a bias of -1.5"), Environment.Exposure->Bias, -1.5);
+		TestTrue(TEXT("on the game's fixed exposure"), Environment.Exposure->Mode == EMantleExposureMode::Fixed);
+	}
+	if (const FMantleDirectionalLightProps* Props = Level.Place.Entities[0].Props.TryGet<FMantleDirectionalLightProps>())
+	{
+		TestEqual(TEXT("the sun is 2 times the game's, 7"), Props->Intensity, 7.0);
+		TestTrue(TEXT("in the game's color"), Props->Color.Equals(FLinearColor(1.0f, 0.97f, 0.92f), 0.0001f));
+	}
+	const FString Won = DetailsOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Dropped);
+	TestTrue(TEXT("the report says the settings won, for each"), Won.Contains(TEXT("Exposure (Mantle Place Settings sets its own, which wins)"))
+		&& Won.Contains(TEXT("Saturation (Mantle Place Settings sets its own, which wins)")) && Won.Contains(TEXT("Bloom (Mantle Place Settings sets its own, which wins)"))
+		&& Won.Contains(TEXT("Color Tint (Mantle Place Settings sets its own, which wins)")));
+	TestTrue(TEXT("and says the sun is set there"), DetailsOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Approximated).Contains(TEXT("2 times the game's sun")));
+
+	// The file holds them, with the exposure as a bias alone, and the parser accepts it.
+	const FString Json = FMantlePlaceExporter::ToJson(Level.Place);
+	TSharedPtr<FJsonObject> Root;
+	if (!TestTrue(TEXT("the file is JSON"), FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Root) && Root.IsValid()))
+	{
+		return false;
+	}
+	const TSharedPtr<FJsonObject>* SettingsJson = nullptr;
+	const TSharedPtr<FJsonObject>* EnvironmentJson = nullptr;
+	if (!TestTrue(TEXT("with an environment block"),
+		Root->TryGetObjectField(TEXT("settings"), SettingsJson) && (*SettingsJson)->TryGetObjectField(TEXT("environment"), EnvironmentJson)))
+	{
+		return false;
+	}
+	const TSharedPtr<FJsonObject>* ExposureJson = nullptr;
+	if (TestTrue(TEXT("with an exposure"), (*EnvironmentJson)->TryGetObjectField(TEXT("exposure"), ExposureJson)))
+	{
+		TestEqual(TEXT("whose bias is -1.5"), (*ExposureJson)->GetNumberField(TEXT("bias")), -1.5);
+		TestFalse(TEXT("and which names no mode"), (*ExposureJson)->HasField(TEXT("mode")));
+	}
+	TestEqual(TEXT("the saturation is the settings'"), (*EnvironmentJson)->GetNumberField(TEXT("saturation")), 0.5);
+	TestEqual(TEXT("and the bloom"), (*EnvironmentJson)->GetNumberField(TEXT("bloom")), 0.25);
+	const FMantleParseResult Parsed = FMantlePlaceParser::ParseFromString(Json);
+	TestFalse(TEXT("the parser has no complaint about the environment block"),
+		Parsed.Errors.ContainsByPredicate([](const FMantleParseError& Error) { return Error.Path.StartsWith(TEXT("/settings/environment")); }));
+	TestTrue(TEXT("it reads the exposure back"), Parsed.Place.Settings.Environment.Exposure.IsSet() && Parsed.Place.Settings.Environment.Exposure->Bias == -1.5);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleEnvironmentExposureAndSunFieldsTest,
+	"Mantle.Editor.EnvironmentExport.ExposureAndSunBrightnessFields",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleEnvironmentExposureAndSunFieldsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleEnvironmentExportTestPrivate;
+	AMantlePlaceSettingsActor* Settings = NewObject<AMantlePlaceSettingsActor>(GetTransientPackage());
+	if (!TestNotNull(TEXT("a settings actor"), Settings))
+	{
+		return false;
+	}
+	// Both fields are off by default, and write nothing.
+	TestFalse(TEXT("Exposure is off by default"), Settings->bSetExposure);
+	TestFalse(TEXT("Sun Brightness is off by default"), Settings->bSetSunBrightness);
+	TestFalse(TEXT("so no exposure is written"), Settings->MakeEnvironmentSettings().Exposure.IsSet());
+	TestTrue(TEXT("and the settings are empty"), Settings->MakeEnvironmentSettings().IsEmpty());
+
+	// Exposure: stops, -4 to +4. Zero is the game's own, so it writes nothing.
+	Settings->bSetExposure = true;
+	Settings->Exposure = 0.0;
+	TestFalse(TEXT("an exposure of 0 writes nothing"), Settings->MakeEnvironmentSettings().Exposure.IsSet());
+	Settings->Exposure = 1.25;
+	TestEqual(TEXT("1.25 stops brighter is a bias of 1.25"), Settings->MakeEnvironmentSettings().Exposure->Bias, 1.25);
+	TestTrue(TEXT("on the fixed exposure"), Settings->MakeEnvironmentSettings().Exposure->Mode == EMantleExposureMode::Fixed);
+	Settings->Exposure = 9.0;
+	TestEqual(TEXT("past +4 is held to it"), Settings->MakeEnvironmentSettings().Exposure->Bias, 4.0);
+	Settings->Exposure = -9.0;
+	TestEqual(TEXT("and past -4"), Settings->MakeEnvironmentSettings().Exposure->Bias, -4.0);
+	Settings->bSetExposure = false;
+	TestFalse(TEXT("turned off, a value is not written"), Settings->MakeEnvironmentSettings().Exposure.IsSet());
+
+	// Importing a place: a fixed bias fills the field; an automatic exposure, which the field cannot say, leaves it off.
+	FMantleEnvironmentSettings FromFile;
+	FMantleExposureSettings Fixed;
+	Fixed.Bias = -2.0;
+	FromFile.Exposure = Fixed;
+	Settings->SetEnvironmentFrom(FromFile);
+	TestTrue(TEXT("a fixed bias imports into the field"), Settings->bSetExposure && Settings->Exposure == -2.0);
+	FMantleExposureSettings Auto;
+	Auto.Mode = EMantleExposureMode::Auto;
+	FromFile.Exposure = Auto;
+	Settings->SetEnvironmentFrom(FromFile);
+	TestFalse(TEXT("an automatic exposure does not"), Settings->bSetExposure);
+
+	// The fields' ranges and tooltips, in plain words.
+	const FProperty* Exposure = AMantlePlaceSettingsActor::StaticClass()->FindPropertyByName(TEXT("Exposure"));
+	const FProperty* SunBrightness = AMantlePlaceSettingsActor::StaticClass()->FindPropertyByName(TEXT("SunBrightness"));
+	if (TestNotNull(TEXT("an Exposure property"), Exposure) && TestNotNull(TEXT("a Sun Brightness property"), SunBrightness))
+	{
+		TestEqual(TEXT("Exposure runs from -4"), Exposure->GetMetaData(TEXT("ClampMin")), FString(TEXT("-4")));
+		TestEqual(TEXT("to 4"), Exposure->GetMetaData(TEXT("ClampMax")), FString(TEXT("4")));
+		TestEqual(TEXT("Sun Brightness runs from 0"), SunBrightness->GetMetaData(TEXT("ClampMin")), FString(TEXT("0")));
+		TestEqual(TEXT("to 4"), SunBrightness->GetMetaData(TEXT("ClampMax")), FString(TEXT("4")));
+		TestTrue(TEXT("Exposure has a tooltip that says stops"), Exposure->GetToolTipText().ToString().Contains(TEXT("stops")));
+		TestTrue(TEXT("Sun Brightness has one that says it is a multiple of the game's sun"), SunBrightness->GetToolTipText().ToString().Contains(TEXT("multiple of the game's own sun")));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleEnvironmentSunBrightnessTest,
+	"Mantle.Editor.EnvironmentExport.SunBrightnessScalesTheGamesSun",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleEnvironmentSunBrightnessTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleEnvironmentExportTestPrivate;
+	FTestWorld Test;
+	AMantlePlaceSettingsActor* Settings = Test.World ? Test.Spawn<AMantlePlaceSettingsActor>(TEXT("Settings")) : nullptr;
+	FSunLevel Level;
+	if (!TestNotNull(TEXT("place settings"), Settings) || !TestTrue(TEXT("a sun"), Level.Build(Test, FRotator(-46.0, 30.0, 0.0), /*bTemperature*/ false)))
+	{
+		return false;
+	}
+	const auto SunIntensityFor = [&](const double Multiple)
+	{
+		FMantleCoverage Coverage;
+		Settings->bSetSunBrightness = true;
+		Settings->SunBrightness = Multiple;
+		FMantleEnvironmentExport::Apply(Test.World, Level.IdByActor, Level.Place, Coverage);
+		return Level.Place.Entities[0].Props.TryGet<FMantleDirectionalLightProps>()->Intensity;
+	};
+	TestEqual(TEXT("1 is the game's sun"), SunIntensityFor(1.0), 3.5);
+	TestEqual(TEXT("half is 1.75"), SunIntensityFor(0.5), 1.75);
+	TestEqual(TEXT("4 times is 14"), SunIntensityFor(4.0), 14.0);
+	TestEqual(TEXT("past 4 is held to it"), SunIntensityFor(9.0), 14.0);
+	TestEqual(TEXT("0 is no sun"), SunIntensityFor(0.0), 0.0);
+	Settings->bSetSunBrightness = false;
+	Settings->SunBrightness = 3.0;
+	FMantleCoverage OffCoverage;
+	FMantleEnvironmentExport::Apply(Test.World, Level.IdByActor, Level.Place, OffCoverage);
+	TestEqual(TEXT("turned off, the value is not used"), Level.Place.Entities[0].Props.TryGet<FMantleDirectionalLightProps>()->Intensity, 3.5);
+
+	// With no sun in the level there is nothing to scale, and the report says so.
+	FMantlePlace NoSun;
+	TMap<const AActor*, FString> NoIds;
+	FMantleCoverage NoSunCoverage;
+	Settings->bSetSunBrightness = true;
+	FMantleEnvironmentExport::Apply(Test.World, NoIds, NoSun, NoSunCoverage);
+	TestEqual(TEXT("no sun entity is made up"), NoSun.Entities.Num(), 0);
+	const FString Dropped = DetailsOf(NoSunCoverage, MantleCoverageCategory::Lights, EOutcome::Dropped);
+	TestTrue(TEXT("and the report says Sun Brightness had no sun to apply to"), Dropped.Contains(TEXT("Sun Brightness")) && Dropped.Contains(TEXT("no Directional Light")));
 	return true;
 }
 

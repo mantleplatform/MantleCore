@@ -510,6 +510,32 @@ public:
 		meta = (EditCondition = "bSetBloom", ClampMin = "0", ClampMax = "4", UIMin = "0", UIMax = "4"))
 	double Bloom = 1.0;
 
+	/** Set the exposure with Exposure instead of keeping the game's own. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Environment", meta = (InlineEditConditionToggle))
+	bool bSetExposure = false;
+
+	/**
+	 * Makes the picture brighter or darker, in stops: 0 is the game's own, +1 doubles the light the camera takes in, -1 halves it.
+	 * Upload leaves the level's own exposure out of an outdoor place, because it was tuned for a different sky; this is how you
+	 * choose one on purpose. Off by default.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Environment",
+		meta = (EditCondition = "bSetExposure", ClampMin = "-4", ClampMax = "4", UIMin = "-4", UIMax = "4"))
+	double Exposure = 0.0;
+
+	/** Set the sun's brightness with Sun Brightness instead of keeping the game's own. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Environment", meta = (InlineEditConditionToggle))
+	bool bSetSunBrightness = false;
+
+	/**
+	 * How bright the level's sun shines, as a multiple of the game's own sun: 1 is the game's sun, 0.5 half as bright, 2 twice as
+	 * bright, up to 4. Upload gives the sun the game's brightness, because the level's own was tuned for a different sky; this is how
+	 * you choose a different one on purpose. Off by default. Needs a Directional Light in the level.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Environment",
+		meta = (EditCondition = "bSetSunBrightness", ClampMin = "0", ClampMax = "4", UIMin = "0", UIMax = "4"))
+	double SunBrightness = 1.0;
+
 	/** A color-grading look for the whole picture. None keeps the game's own. */
 	UPROPERTY(EditAnywhere, Category = "Mantle|Environment")
 	EMantlePlaceColorGrading ColorGrading = EMantlePlaceColorGrading::None;

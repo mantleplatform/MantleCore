@@ -44,6 +44,13 @@ namespace MantleEnvironmentExportPrivate
 	/** Below this elevation the level's sun is a sunrise or sunset, which the clock's own day and night own. */
 	constexpr double MinSunElevationDegrees = 1.0;
 
+	/**
+	 * The sun a place is published with: the game's own, the intensity and color FMantleEnvironment gives the default sun
+	 * (MantleEnvironment.cpp, where it spawns). A level's own sun was tuned to its own sky, so upload does not carry it.
+	 */
+	constexpr double GameSunIntensity = 3.5;
+	const FLinearColor GameSunColor(1.0f, 0.97f, 0.92f);
+
 	/** The post-process white balance that changes nothing, in Kelvin. */
 	constexpr double NeutralWhiteKelvin = 6500.0;
 
@@ -100,17 +107,6 @@ namespace MantleEnvironmentExportPrivate
 	bool ColorDiffersFromDefault(const FLinearColor& Value, const FLinearColor& Default)
 	{
 		return DiffersFromDefault(Value.R, Default.R) || DiffersFromDefault(Value.G, Default.G) || DiffersFromDefault(Value.B, Default.B);
-	}
-
-	FLinearColor ClampedLuminance(const FLinearColor& Value, bool& bOutClamped)
-	{
-		const double Max = MantleEnvironmentDefaults::MaxFogColor;
-		bOutClamped = Value.R > Max || Value.G > Max || Value.B > Max || Value.R < 0.0 || Value.G < 0.0 || Value.B < 0.0;
-		return FLinearColor(
-			static_cast<float>(Rounded(FMath::Clamp<double>(Value.R, 0.0, Max), 10000.0)),
-			static_cast<float>(Rounded(FMath::Clamp<double>(Value.G, 0.0, Max), 10000.0)),
-			static_cast<float>(Rounded(FMath::Clamp<double>(Value.B, 0.0, Max), 10000.0)),
-			1.0f);
 	}
 
 	FString LabelOf(const AActor* Actor)
@@ -215,8 +211,12 @@ namespace MantleEnvironmentExportPrivate
 		return Out;
 	}
 
-	/** The level's first sun: its entity's color takes the light's temperature, and its angle becomes the place's clock. */
-	void MapSun(const TMap<const AActor*, FString>& IdByActor, FMantlePlace& Place, FMantleCoverage& Coverage, const bool bReadsEnvironment)
+	/**
+	 * The level's first sun: it is published at the game's own brightness and color, not the level's (a level's sun is tuned to its
+	 * own sky: Normandy's was 200 against the game's 3.5, which washes the picture out), unless Mantle Place Settings sets a
+	 * Sun Brightness. Its angle becomes the place's clock.
+	 */
+	void MapSun(UWorld* World, const TMap<const AActor*, FString>& IdByActor, FMantlePlace& Place, FMantleCoverage& Coverage, const bool bReadsEnvironment)
 	{
 		FMantleEntity* Sun = nullptr;
 		for (FMantleEntity& Entity : Place.Entities)
@@ -227,8 +227,16 @@ namespace MantleEnvironmentExportPrivate
 				break;
 			}
 		}
+		const AMantlePlaceSettingsActor* PlaceSettings = World ? AMantlePlaceSettingsActor::Find(World) : nullptr;
+		const bool bSunBrightnessSet = PlaceSettings && PlaceSettings->bSetSunBrightness;
 		if (!Sun)
 		{
+			if (bSunBrightnessSet)
+			{
+				Coverage.Add(Cat::Lights, EOutcome::Dropped, TEXT("Sun Brightness"),
+					TEXT("Mantle Place Settings sets a Sun Brightness, but the level has no Directional Light for it to apply to, so the game's own sun is used. "
+						"Add a Directional Light, or use a script's Environment.SunIntensityScale."));
+			}
 			return;
 		}
 		const AActor* SunActor = nullptr;
@@ -243,18 +251,37 @@ namespace MantleEnvironmentExportPrivate
 		const ADirectionalLight* Light = Cast<ADirectionalLight>(SunActor);
 		const UDirectionalLightComponent* Component = Light ? Cast<UDirectionalLightComponent>(Light->GetLightComponent()) : nullptr;
 
-		TArray<FString> Carried = { TEXT("intensity"), TEXT("color") };
+		// The game's own sun, or the multiple of it Mantle Place Settings asks for. The level's brightness, color and temperature stay behind.
 		FMantleDirectionalLightProps* Props = Sun->Props.TryGet<FMantleDirectionalLightProps>();
-		if (Props && Component && Component->bUseTemperature)
+		const double LevelIntensity = Props ? Props->Intensity : GameSunIntensity;
+		const bool bLevelDiffers = Props && (DiffersFromDefault(Props->Intensity, GameSunIntensity)
+			|| ColorDiffersFromDefault(Props->Color, GameSunColor) || (Component && Component->bUseTemperature));
+		double Multiple = 1.0;
+		if (bSunBrightnessSet)
 		{
-			// The place has no temperature for a directional light, so it goes into the color it is multiplied with.
-			const FLinearColor Tint = FLinearColor::MakeFromColorTemperature(Component->Temperature);
-			Props->Color = FLinearColor(
-				FMath::Clamp(Props->Color.R * Tint.R, 0.0f, 1.0f),
-				FMath::Clamp(Props->Color.G * Tint.G, 0.0f, 1.0f),
-				FMath::Clamp(Props->Color.B * Tint.B, 0.0f, 1.0f),
-				Props->Color.A);
-			Carried.Add(FString::Printf(TEXT("temperature (%.0f K, baked into the color)"), Component->Temperature));
+			Multiple = FMath::IsFinite(PlaceSettings->SunBrightness)
+				? FMath::Clamp(PlaceSettings->SunBrightness, 0.0, MantleEnvironmentDefaults::MaxScriptSunIntensityScale) : 1.0;
+		}
+		if (Props)
+		{
+			Props->Intensity = Rounded(GameSunIntensity * Multiple);
+			Props->Color = GameSunColor;
+		}
+		FString Brightness;
+		if (bSunBrightnessSet)
+		{
+			Brightness = FString::Printf(TEXT("its brightness is %g times the game's sun (%g), as Mantle Place Settings sets it, and its color is the game's own"),
+				Multiple, GameSunIntensity * Multiple);
+		}
+		else if (bLevelDiffers)
+		{
+			Brightness = FString::Printf(TEXT("its brightness and color are the game's own (%g), not the level's (%g), which was tuned for a different sky; "
+				"set Sun Brightness in Mantle Place Settings, or use a script's Environment.SunIntensityScale, to choose one on purpose"),
+				GameSunIntensity, LevelIntensity);
+		}
+		else
+		{
+			Brightness = FString::Printf(TEXT("its brightness (%g) and color are the game's own, and the level's match them"), GameSunIntensity);
 		}
 
 		FMantleEnvironmentSettings& Environment = Place.Settings.Environment;
@@ -297,7 +324,47 @@ namespace MantleEnvironmentExportPrivate
 			}
 		}
 		Coverage.Add(Cat::Lights, EOutcome::Approximated, Sun->Name,
-			FString::Printf(TEXT("Mantle drives the sun's angle; its %s are kept, and %s."), *FString::Join(Carried, TEXT(", ")), *Angle));
+			FString::Printf(TEXT("Mantle drives the sun's angle; %s; and %s."), *Brightness, *Angle));
+	}
+
+	/**
+	 * The level's other directional lights (a blue fill sun, a second moon) are left out: they were tuned to the level's own sky, and
+	 * the game's sky light does their job. Each is reported. One that other parts hang from stays, dark, so they keep their parent.
+	 */
+	void DropExtraSuns(FMantlePlace& Place, FMantleCoverage& Coverage)
+	{
+		bool bSunSeen = false;
+		for (int32 Index = 0; Index < Place.Entities.Num(); ++Index)
+		{
+			FMantleEntity& Entity = Place.Entities[Index];
+			if (Entity.Type != EMantleEntityType::DirectionalLight)
+			{
+				continue;
+			}
+			if (!bSunSeen)
+			{
+				bSunSeen = true;
+				continue;
+			}
+			const FString Name = Entity.Name;
+			const FString Id = Entity.Id;
+			const bool bHasChildren = Place.Entities.ContainsByPredicate([&Id](const FMantleEntity& Other) { return Other.Parent == Id; });
+			if (bHasChildren)
+			{
+				if (FMantleDirectionalLightProps* Props = Entity.Props.TryGet<FMantleDirectionalLightProps>())
+				{
+					Props->Intensity = 0.0;
+				}
+			}
+			else
+			{
+				Place.Entities.RemoveAt(Index);
+				--Index;
+			}
+			Coverage.Add(Cat::Lights, EOutcome::Dropped, Name,
+				TEXT("an extra directional light, which was tuned to the level's own sky, so it is left out; Mantle supplies its own sun and sky light. "
+					"Use a script's Environment.SunIntensityScale or a Sun Brightness in Mantle Place Settings to change the sun on purpose."));
+		}
 	}
 
 	/**
@@ -697,10 +764,27 @@ namespace MantleEnvironmentExportPrivate
 		return Candidate->bUnbound && !Current->bUnbound;
 	}
 
-	/** The look of the level's post-process volume as the place's saturation, bloom, color tint and exposure. */
+	/**
+	 * Whether the level's own exposure travels with the place. An interior's lights are the creator's own and its exposure was set
+	 * for them, so it keeps it. An outdoor place lives under Mantle's own sky, which the level's exposure was not tuned for, so it
+	 * gets Mantle's own exposure (and a creator sets one on purpose with Mantle Place Settings or a script).
+	 */
+	bool KeepsLevelExposure(const FMantleEnvironmentSettings& Environment)
+	{
+		return Environment.bNoOutdoors;
+	}
+
+	const TCHAR* const ExposureWhereToSet = TEXT("to choose one on purpose, set Exposure in Mantle Place Settings or use a script's Environment.ExposureBias");
+
+	/**
+	 * The look of the level's post-process volume. Its saturation, bloom, bloom threshold and white balance are never carried, and
+	 * its exposure only for an interior: they were tuned for the level's own sky, not Mantle's. What Mantle Place Settings sets is
+	 * already in Environment and wins.
+	 */
 	void MapPostProcess(const TArray<const APostProcessVolume*>& Volumes, FMantleEnvironmentSettings& Environment, FMantleCoverage& Coverage,
 		const bool bReadsEnvironment, const bool bHasEnvironment, const FMantleExposureProject& Project)
 	{
+		const bool bKeepsExposure = KeepsLevelExposure(Environment);
 		const APostProcessVolume* Primary = nullptr;
 		for (const APostProcessVolume* Volume : Volumes)
 		{
@@ -732,13 +816,22 @@ namespace MantleEnvironmentExportPrivate
 			FMantleExposureSettings Exposure;
 			TArray<FString> ExposureCarried;
 			TArray<FString> ExposureNotes;
-			if (bHasEnvironment && bReadsEnvironment && !Environment.Exposure.IsSet()
+			if (bHasEnvironment && !Environment.Exposure.IsSet()
 				&& FMantleEnvironmentExport::ExposureFor(nullptr, Project, Exposure, ExposureCarried, ExposureNotes))
 			{
-				Environment.Exposure = Exposure;
-				Coverage.Add(Cat::PostProcess, EOutcome::Approximated, TEXT("Exposure"),
-					FString::Printf(TEXT("the level has no post-process volume, so the editor's default exposure is carried as the place's; carried: %s."),
-						*FString::Join(ExposureCarried, TEXT(", "))));
+				if (!bKeepsExposure)
+				{
+					Coverage.Add(Cat::PostProcess, EOutcome::Dropped, TEXT("Exposure"),
+						FString::Printf(TEXT("the level has no post-process volume, so the editor's default exposure (%s) is not carried: Mantle supplies its own exposure for an outdoor place; %s."),
+							*FString::Join(ExposureCarried, TEXT(", ")), ExposureWhereToSet));
+				}
+				else if (bReadsEnvironment)
+				{
+					Environment.Exposure = Exposure;
+					Coverage.Add(Cat::PostProcess, EOutcome::Approximated, TEXT("Exposure"),
+						FString::Printf(TEXT("the level has no post-process volume, so the editor's default exposure is carried as the place's, since it is an interior; carried: %s."),
+							*FString::Join(ExposureCarried, TEXT(", "))));
+				}
 			}
 			return;
 		}
@@ -761,18 +854,25 @@ namespace MantleEnvironmentExportPrivate
 		{
 			Notes.Add(FString::Printf(TEXT("%s (Mantle Place Settings sets its own, which wins)"), What));
 		};
+		auto Left = [&Notes](const FString& What)
+		{
+			Notes.Add(FString::Printf(TEXT("%s (tuned for the level's own sky, so Mantle's own is used)"), *What));
+		};
 
 		// The exposure settings ExposureFor accounts for, whatever it says of them.
 		for (const TCHAR* Raw : { TEXT("AutoExposureMethod"), TEXT("AutoExposureBias"), TEXT("AutoExposureMinBrightness"), TEXT("AutoExposureMaxBrightness") })
 		{
 			TakeOverride(Overridden, Raw);
 		}
-		Notes.Append(ExposureNotes);
 		if (bExposure)
 		{
 			if (Environment.Exposure.IsSet())
 			{
 				Explicit(TEXT("Exposure"));
+			}
+			else if (!bKeepsExposure)
+			{
+				Left(FString::Join(ExposureCarried, TEXT(", ")));
 			}
 			else if (!bReadsEnvironment)
 			{
@@ -780,6 +880,7 @@ namespace MantleEnvironmentExportPrivate
 			}
 			else
 			{
+				Notes.Append(ExposureNotes);
 				Environment.Exposure = Exposure;
 				Carried.Append(ExposureCarried);
 			}
@@ -793,17 +894,9 @@ namespace MantleEnvironmentExportPrivate
 			{
 				Explicit(TEXT("Saturation"));
 			}
-			else if (!bReadsEnvironment)
+			else if (!FMath::IsNearlyEqual(Saturation, 1.0, 0.005))
 			{
-				Notes.Add(FString::Printf(TEXT("Saturation (%s)"), FMantleTargetFeatures::NeedsNewerClient));
-			}
-			else
-			{
-				if (!FMath::IsNearlyEqual(Saturation, 1.0, 0.005))
-				{
-					Environment.Saturation = FMath::RoundToDouble(Saturation * 1000.0) / 1000.0;
-					Carried.Add(FString::Printf(TEXT("saturation (%.2f)"), Saturation));
-				}
+				Left(FString::Printf(TEXT("Saturation %.2f"), Saturation));
 			}
 		}
 		if (Settings.bOverride_BloomIntensity)
@@ -813,28 +906,18 @@ namespace MantleEnvironmentExportPrivate
 			{
 				Explicit(TEXT("Bloom"));
 			}
-			else if (!bReadsEnvironment)
-			{
-				Notes.Add(FString::Printf(TEXT("Bloom (%s)"), FMantleTargetFeatures::NeedsNewerClient));
-			}
 			else
 			{
-				Environment.Bloom = FMath::Clamp(static_cast<double>(Settings.BloomIntensity), 0.0, MantleEnvironmentDefaults::MaxScriptBloom);
-				Carried.Add(FString::Printf(TEXT("bloom (%.2f)"), *Environment.Bloom));
+				Left(FString::Printf(TEXT("Bloom %.2f"), Settings.BloomIntensity));
 			}
 		}
 		if (Settings.bOverride_BloomThreshold)
 		{
 			TakeOverride(Overridden, TEXT("BloomThreshold"));
-			if (!bReadsEnvironment)
+			// Below zero is the engine's own (everything glows), which the client already has. Mantle Place Settings has no threshold.
+			if (Settings.BloomThreshold >= 0.0f)
 			{
-				Notes.Add(FString::Printf(TEXT("Bloom Threshold (%s)"), FMantleTargetFeatures::NeedsNewerClient));
-			}
-			else if (Settings.BloomThreshold >= 0.0f)
-			{
-				// Below zero is the engine's own (everything glows), which the client already has.
-				Environment.BloomThreshold = FMath::Clamp(static_cast<double>(Settings.BloomThreshold), 0.0, MantleEnvironmentDefaults::MaxBloomThreshold);
-				Carried.Add(FString::Printf(TEXT("bloom threshold (%.2f)"), *Environment.BloomThreshold));
+				Left(FString::Printf(TEXT("Bloom Threshold %.2f"), Settings.BloomThreshold));
 			}
 		}
 		if (Settings.bOverride_WhiteTemp)
@@ -844,35 +927,30 @@ namespace MantleEnvironmentExportPrivate
 			{
 				Explicit(TEXT("Color Tint"));
 			}
-			else if (!bReadsEnvironment)
+			else if (FMantleEnvironmentExport::TintForWhiteBalance(Settings.WhiteTemp) != 0xFFFFFF)
 			{
-				Notes.Add(FString::Printf(TEXT("White Temp (%s)"), FMantleTargetFeatures::NeedsNewerClient));
-			}
-			else
-			{
-				const uint32 Tint = FMantleEnvironmentExport::TintForWhiteBalance(Settings.WhiteTemp);
-				if (Tint != 0xFFFFFF)
-				{
-					Environment.ColorTint = Tint;
-					Carried.Add(FString::Printf(TEXT("white balance (%.0f K, as a color tint)"), Settings.WhiteTemp));
-				}
+				Left(FString::Printf(TEXT("White balance %.0f K"), Settings.WhiteTemp));
 			}
 		}
 
 		TArray<FString> NotCarried = Notes;
 		NotCarried.Append(DisplayNames(Overridden));
-		FString Extra = Primary->bUnbound ? FString() : FString(TEXT("a bounded volume, so what is carried applies everywhere"));
+		const FString Extra = (Carried.Num() > 0 && !Primary->bUnbound) ? FString(TEXT("a bounded volume, so what is carried applies everywhere")) : FString();
 		ReportLook(Coverage, Cat::PostProcess, LabelOf(Primary), Carried.Num() > 0, FString::Join(Carried, TEXT(", ")), NotCarried,
-			TEXT("Mantle's own post-process is used (the place carries only a volume's saturation, bloom, white balance and exposure)"), Extra);
+			bKeepsExposure
+				? TEXT("Mantle's own post-process is used; an interior carries only its exposure, and the level's saturation, bloom and white balance are left out because they were tuned for a different sky "
+					"(to choose them on purpose, set Saturation, Bloom or Color Tint in Mantle Place Settings)")
+				: TEXT("Mantle's own post-process and exposure are used; the level's exposure, saturation, bloom and white balance are left out because they were tuned for a different sky "
+					"(to choose them on purpose, set Exposure, Saturation, Bloom or Color Tint in Mantle Place Settings, or use a script's Environment)"),
+			Extra);
 	}
 
 	/**
-	 * The level's first height fog as the place's fog: each of its density, height falloff, inscattering color, start distance
-	 * and directional inscattering color that differs from Mantle's own fog's (the component's default). The engine draws
-	 * only the first fog, so a later one is reported as not used. What the place has no key for is listed as not carried.
+	 * The level's height fog is not carried: its density, falloff and colors were tuned for the level's own sky, and Mantle's own fog
+	 * follows the weather. Each fog is reported with the values that would have travelled, so a creator can set them again on purpose.
+	 * The engine draws only the first fog, so a later one is reported as not used.
 	 */
-	void MapFog(const TArray<const AExponentialHeightFog*>& Fogs, FMantleEnvironmentSettings& Environment, FMantleCoverage& Coverage,
-		const bool bReadsEnvironment)
+	void MapFog(const TArray<const AExponentialHeightFog*>& Fogs, FMantleCoverage& Coverage)
 	{
 		// Mantle spawns the plain actor class, so its fog is the actor's archetype's component.
 		const AExponentialHeightFog* DefaultFog = AExponentialHeightFog::StaticClass()->GetDefaultObject<AExponentialHeightFog>();
@@ -881,92 +959,54 @@ namespace MantleEnvironmentExportPrivate
 		{
 			const AExponentialHeightFog* Fog = Fogs[Index];
 			const UExponentialHeightFogComponent* Component = Fog->GetComponent();
+			TArray<FString> NotCarried;
 			if (Index > 0)
 			{
-				ReportLook(Coverage, Cat::Fog, LabelOf(Fog), false, FString(), FMantleEnvironmentExport::TunedProperties(Component),
-					TEXT("Mantle supplies its own fog"),
-					FString::Printf(TEXT("the engine draws only the level's first fog (%s), so the place carries that one's look"), *LabelOf(Fogs[0])));
+				NotCarried = FMantleEnvironmentExport::TunedProperties(Component);
+				ReportLook(Coverage, Cat::Fog, LabelOf(Fog), false, FString(), NotCarried, TEXT("Mantle supplies its own fog"),
+					FString::Printf(TEXT("the engine draws only the level's first fog (%s), so this one is not used"), *LabelOf(Fogs[0])));
 				continue;
 			}
 
-			const bool bSetByPlace = Environment.Fog.IsSet();
-			FMantleFogSettings Mapped;
-			TArray<FString> Carried;
-			TArray<FString> Notes;
-			TArray<FName> CarriedProperties;
-			if (Component && !bSetByPlace && bReadsEnvironment)
+			TArray<FName> Named;
+			if (Component && Default)
 			{
-				using namespace MantleEnvironmentDefaults;
 				if (DiffersFromDefault(Component->FogDensity, Default->FogDensity))
 				{
-					const double Density = FMath::Clamp<double>(Component->FogDensity, 0.0, MaxFogDensity);
-					Mapped.Density = Rounded(Density, 100000.0);
-					Carried.Add(FString::Printf(TEXT("density (%g)"), *Mapped.Density));
-					CarriedProperties.Add(FName(TEXT("FogDensity")));
-					if (Density != static_cast<double>(Component->FogDensity))
-					{
-						Notes.Add(FString::Printf(TEXT("Fog Density (%g is past the place's largest, %g)"), Component->FogDensity, MaxFogDensity));
-					}
+					NotCarried.Add(FString::Printf(TEXT("density (%g)"), Component->FogDensity));
+					Named.Add(FName(TEXT("FogDensity")));
 				}
 				if (DiffersFromDefault(Component->FogHeightFalloff, Default->FogHeightFalloff))
 				{
-					Mapped.HeightFalloff = Rounded(FMath::Clamp<double>(Component->FogHeightFalloff, MinFogHeightFalloff, MaxFogHeightFalloff), 100000.0);
-					Carried.Add(FString::Printf(TEXT("height falloff (%g)"), *Mapped.HeightFalloff));
-					CarriedProperties.Add(FName(TEXT("FogHeightFalloff")));
+					NotCarried.Add(FString::Printf(TEXT("height falloff (%g)"), Component->FogHeightFalloff));
+					Named.Add(FName(TEXT("FogHeightFalloff")));
 				}
 				if (ColorDiffersFromDefault(Component->FogInscatteringLuminance, Default->FogInscatteringLuminance))
 				{
-					bool bClamped = false;
-					Mapped.InscatteringColor = ClampedLuminance(Component->FogInscatteringLuminance, bClamped);
-					Carried.Add(TEXT("inscattering color"));
-					CarriedProperties.Add(FName(TEXT("FogInscatteringLuminance")));
-					if (bClamped)
-					{
-						Notes.Add(TEXT("Fog Inscattering Color (past the place's range, so clamped to it)"));
-					}
+					NotCarried.Add(TEXT("inscattering color"));
+					Named.Add(FName(TEXT("FogInscatteringLuminance")));
 				}
 				if (DiffersFromDefault(Component->StartDistance, Default->StartDistance))
 				{
-					Mapped.StartDistance = Rounded(FMath::Clamp<double>(Component->StartDistance, 0.0, MaxFogStartDistance), 100.0);
-					Carried.Add(FString::Printf(TEXT("start distance (%g cm)"), *Mapped.StartDistance));
-					CarriedProperties.Add(FName(TEXT("StartDistance")));
+					NotCarried.Add(FString::Printf(TEXT("start distance (%g cm)"), Component->StartDistance));
+					Named.Add(FName(TEXT("StartDistance")));
 				}
 				if (ColorDiffersFromDefault(Component->DirectionalInscatteringLuminance, Default->DirectionalInscatteringLuminance))
 				{
-					bool bClamped = false;
-					Mapped.DirectionalInscatteringColor = ClampedLuminance(Component->DirectionalInscatteringLuminance, bClamped);
-					Carried.Add(TEXT("directional inscattering color"));
-					CarriedProperties.Add(FName(TEXT("DirectionalInscatteringLuminance")));
-					if (bClamped)
-					{
-						Notes.Add(TEXT("Directional Inscattering Color (past the place's range, so clamped to it)"));
-					}
+					NotCarried.Add(TEXT("directional inscattering color"));
+					Named.Add(FName(TEXT("DirectionalInscatteringLuminance")));
 				}
-			}
-
-			TArray<FString> NotCarried = Notes;
-			if (bSetByPlace)
-			{
-				NotCarried.Add(TEXT("Fog (Mantle Place Settings sets its own, which wins)"));
-			}
-			else if (!bReadsEnvironment)
-			{
-				NotCarried.Add(FString::Printf(TEXT("Fog (%s)"), FMantleTargetFeatures::NeedsNewerClient));
 			}
 			// Where the fog sits in the level is the actor's, and Mantle's own fog sits at the origin.
 			if (Fog->GetActorLocation().Z != 0.0)
 			{
 				NotCarried.Add(FString::Printf(TEXT("the fog's height in the level (%.0f cm up; the place's fog is at ground level)"), Fog->GetActorLocation().Z));
 			}
-			NotCarried.Append(FMantleEnvironmentExport::TunedProperties(Component, CarriedProperties));
+			NotCarried.Append(FMantleEnvironmentExport::TunedProperties(Component, Named));
 
-			const bool bCarried = !Mapped.IsEmpty();
-			if (bCarried)
-			{
-				Environment.Fog = Mapped;
-			}
-			ReportLook(Coverage, Cat::Fog, LabelOf(Fog), bCarried, FString::Join(Carried, TEXT(", ")), NotCarried,
-				TEXT("Mantle's own fog is used for the rest (the place carries a fog's density, height falloff, colors and start distance)"));
+			ReportLook(Coverage, Cat::Fog, LabelOf(Fog), false, FString(), NotCarried,
+				TEXT("Mantle supplies its own fog, which follows the weather; the level's was tuned for a different sky "
+					"(to set one on purpose, use a script's Environment.FogDensity and Environment.FogColor)"));
 		}
 	}
 }
@@ -1484,7 +1524,8 @@ void FMantleEnvironmentExport::Apply(UWorld* World, const TMap<const AActor*, FS
 	const bool bHasSun = Place.Entities.ContainsByPredicate([](const FMantleEntity& Entity) { return Entity.Type == EMantleEntityType::DirectionalLight; });
 	const bool bHasEnvironment = bHasSun || Atmospheres.Num() > 0 || SkyLights.Num() > 0 || Clouds.Num() > 0 || Fogs.Num() > 0 || Volumes.Num() > 0;
 
-	MapSun(IdByActor, Place, Coverage, bReadsEnvironment);
+	MapSun(World, IdByActor, Place, Coverage, bReadsEnvironment);
+	DropExtraSuns(Place, Coverage);
 	// A post-process volume alone is no outdoor environment: it carries the look, not a sky.
 	MapOutdoors(World, bHasSun || bSkyComponents || Atmospheres.Num() > 0 || SkyLights.Num() > 0 || Clouds.Num() > 0 || Fogs.Num() > 0,
 		Place, Coverage, bReadsLighting);
@@ -1590,5 +1631,5 @@ void FMantleEnvironmentExport::Apply(UWorld* World, const TMap<const AActor*, FS
 		ReportLook(Coverage, Cat::Sky, LabelOf(Cloud), bThisCarries, HeldReason, NotCarried,
 			TEXT("Mantle supplies its own clouds (the place carries only their coverage, as the weather)"));
 	}
-	MapFog(Fogs, Environment, Coverage, bReadsEnvironment);
+	MapFog(Fogs, Coverage);
 }

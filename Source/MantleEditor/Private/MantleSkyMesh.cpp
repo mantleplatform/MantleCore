@@ -163,10 +163,13 @@ bool FMantleSkyMesh::IsSkyMesh(const UStaticMeshComponent* Component, FString* O
 	{
 		return false;
 	}
-	const bool bLooksLikeSky = (IsNamedLikeSky(Component) && (Look.bUnlit || Look.bTwoSided)) || (Look.bUnlit && Look.bTwoSided);
+	// A painted dome is a sky whatever its material: lit or not, one-sided or not (StylizedVillageSummer's SM_SkyDomeDetail is lit).
+	// Named like a sky is enough with a size of 100 m and up and the level inside it; one that is not named so must be unlit and
+	// two-sided as well.
+	const bool bLooksLikeSky = IsNamedLikeSky(Component) || (Look.bUnlit && Look.bTwoSided);
 	if (bLooksLikeSky && EnclosesTheLevel(Component, Box))
 	{
-		return Say(TEXT("it is a huge unlit or two-sided mesh, named like a sky, around the whole level"));
+		return Say(TEXT("it is a huge mesh, named like a sky or unlit and two-sided, around the whole level"));
 	}
 	return false;
 }
@@ -185,10 +188,10 @@ bool FMantleSkyMesh::IsSkyMeshActor(const AActor* Actor)
 
 FString FMantleSkyMesh::StandaloneDetail()
 {
-	return TEXT("a sky mesh; Mantle supplies its own sky, so it isn't published.");
+	return TEXT("a sky mesh; Mantle supplies its own sky, so it isn't published. To change the sky on purpose, set Weather and Clock Time in Mantle Place Settings.");
 }
 
 FString FMantleSkyMesh::ComponentDetail(const FString& ComponentName)
 {
-	return FString::Printf(TEXT("has a sky mesh ('%s'); Mantle supplies its own sky, so it isn't published."), *ComponentName);
+	return FString::Printf(TEXT("has a sky mesh ('%s'); Mantle supplies its own sky, so it isn't published. To change the sky on purpose, set Weather and Clock Time in Mantle Place Settings."), *ComponentName);
 }

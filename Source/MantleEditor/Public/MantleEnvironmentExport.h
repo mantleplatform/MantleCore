@@ -49,22 +49,23 @@ struct MANTLEEDITOR_API FMantleExposureProject
 };
 
 /**
- * Maps a level's sun, sky, fog, clouds and post-process onto what the place format already carries (#628), so the
- * preview and a published place keep the level's look instead of replacing it with Mantle's defaults.
+ * Maps a level's sun, sky, fog, clouds and post-process onto what the place format already carries (#628), without carrying
+ * the look the level was tuned to: a level's sun brightness, exposure, fog, bloom, tint and saturation were set for its own
+ * sky, and under Mantle's they wash the picture out. So Apply writes Mantle's own and reports what it left out.
  *
- * What the place can say about its look is little: the first DirectionalLight entity's intensity, color and heading
- * (the sky clock owns its pitch), and settings.environment (the clock's hour and rate, a held weather, a color tint,
- * saturation and bloom). Export calls Apply once the entities are built and before the coverage survey. It writes:
+ * What the place can say about its look is little: the first DirectionalLight entity's heading (the sky clock owns its
+ * pitch), and settings.environment (the clock's hour and rate, a held weather, a sky light scale). Export calls Apply once the
+ * entities are built and before the coverage survey. It writes:
  *
- * - the sun's temperature into the color of its entity (the place has no temperature for a directional light);
+ * - the first sun at the game's own intensity (3.5) and color (1, 0.97, 0.92), whatever the level's, or 3.5 times Mantle Place
+ *   Settings' Sun Brightness when that is set; any other directional light is left out;
  * - its pitch as a clock hour and its yaw as the heading, with the clock stopped there, so the sun stands where the
  *   level's did (a level's sun does not move);
- * - the post-process volume's saturation, bloom and white balance as the place's saturation, bloom and color tint;
- * - its exposure (metering method, compensation and brightness range) as the place's exposure: mode auto when the level
- *   meters automatically, which is the engine's default for a level with no volume or no override, with the bias relative to
- *   the project's own compensation and the range when the volume overrides one;
- * - the level's first height fog's density, height falloff, inscattering colors and start distance as the place's fog,
- *   the keys that differ from Mantle's own fog;
+ * - the post-process volume's exposure (metering method, compensation and brightness range) as the place's exposure for an
+ *   interior only (outdoors: false), whose lights are the creator's own; an outdoor place gets Mantle's own exposure, or the
+ *   bias Mantle Place Settings' Exposure sets;
+ * - never the volume's saturation, bloom, bloom threshold or white balance, nor the level's height fog: Mantle's own are
+ *   used, and a creator sets them on purpose in Mantle Place Settings or a script;
  * - the level's sky light as a scale on Mantle's own (settings.environment.skyLight.intensity, #722): the captured scene's
  *   average brightness against Mantle's sky at the clock's hour (SkyLightScaleFor), so a closed room is not lit by an
  *   outdoor sky;
@@ -76,13 +77,14 @@ struct MANTLEEDITOR_API FMantleExposureProject
  *
  * A value Mantle Place Settings sets explicitly wins over the level's actor: Place.Settings.Environment already holds
  * what the settings actor set (only what differs from the default is set), and Apply fills only the keys it left
- * unset. The sky light's color, atmosphere, the fog's other settings and the post-process's contrast and the rest have no key in
- * the place, so they are not carried; the report says so. The exposure is written only for a level with an environment
- * of its own (a sun, sky, fog or post-process volume), as the weather is. Nothing is written for a target client that does not read
+ * unset. The sky light's color, atmosphere and the post-process's contrast and the rest have no key in the place, so they are
+ * not carried; the report says so. An interior's exposure is written only for a level with an environment of its own (a sun,
+ * sky, fog or post-process volume), as the weather is. Nothing is written for a target client that does not read
  * settings.environment (FMantleTargetFeatures).
  *
  * Every actor it looks at is reported in the coverage report: Kept when Mantle's own matches it (the actor is at its
- * defaults), Approximated with what was carried and what was not, Dropped when nothing of it could be. The coverage
+ * defaults), Approximated with what was carried and what was not, Dropped when nothing of it could be, each dropped item with
+ * one plain line saying Mantle supplies its own and where to set it on purpose. The coverage
  * survey leaves these actors, and the first sun's entity, to it (IsReported).
  */
 class MANTLEEDITOR_API FMantleEnvironmentExport

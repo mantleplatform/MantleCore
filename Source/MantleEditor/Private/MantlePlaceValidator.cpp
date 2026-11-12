@@ -1953,7 +1953,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 		PlayerStarts += (Type == EMantleEntityType::PlayerStart) ? 1 : 0;
 
 		// #445: the place's first directional light (in the exporter's actor order) becomes the
-		// sun of the day/night cycle, which sets its angle. Other directional lights stay put.
+		// sun of the day/night cycle, which sets its angle, and is published at the game's own brightness and color. Other directional lights are left out.
 		if (Type == EMantleEntityType::DirectionalLight && !bWarnedSun)
 		{
 			bWarnedSun = true;
@@ -1981,7 +1981,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 						: bAttached ? TEXT("This light is attached to another actor, so its pitch is not kept.")
 						: !bSolved ? TEXT("This sun is at or below the horizon, so its pitch is not kept.")
 						: FString::Printf(TEXT("This light's pitch is not kept: %s."), FMantleTargetFeatures::NeedsNewerClient),
-					TEXT("Its intensity, color and heading (yaw) are kept; Mantle's sky clock sets its angle. "
+					TEXT("Its heading (yaw) is kept; Mantle's sky clock sets its angle, and its brightness and color are the game's own (set Sun Brightness in Mantle Place Settings to change it). "
 						"To keep the pitch, leave Clock Time and Time Scale unset, keep the light unattached and at least 1 degree above the horizon, "
 						"and target a Mantle client that reads environment settings.") });
 			}
