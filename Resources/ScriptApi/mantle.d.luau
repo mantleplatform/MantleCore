@@ -167,6 +167,8 @@ declare extern type Player with
 	BreathRegenDelay: number?
 	--- The player's body in the world, or nil while respawning.
 	Character: Entity?
+	--- Whether this player has Mantle's built-in combat moves: fists that punch and guard, and dodge and roll. false unless the place turns it on (settings.combat in the place file) or a script does. A weapon a script or a pickup gives the player works either way. Setting it (server only) lasts for the rest of the session, through respawns, until the script that set it stops, when the player goes back to the place's setting. DodgeEnabled stays a finer switch while this is on. Readable on the server and on that player's own client.
+	CombatEnabled: boolean
 	--- Whether the player can crouch or slide (true unless a script changes it); nil while the player has no character. Setting it (server only) to false stands a crouching player up and the crouch key does nothing until it is true again. It lasts for the rest of the session, through respawns.
 	CrouchEnabled: boolean?
 	--- How fast the character moves while crouched, in centimeters per second (225 unless a script changes it; it scales with WalkSpeed until you set it). nil while the player has no character. Setting it (server only) clamps to 0..1500 and lasts for the rest of the session, through respawns.
@@ -181,8 +183,10 @@ declare extern type Player with
 	Gait: string?
 	--- Whether the player's gravity gun works (true unless a script changes it); nil while the player has no character. A gun whose weapon has a gravity block grabs the physics prop under the crosshair with left mouse and launches it with the next click. Setting it (server only) to false makes the gun do nothing, and drops what it holds. A staff's telekinesis keeps StaffExtraEnabled. It lasts for the rest of the session, through respawns.
 	GrabEnabled: boolean?
-	--- The character's health, from 0 to MaxHealth; nil while the player has no character. Weapons and TakeDamage lower this same value. Setting it (server only) clamps to 0..MaxHealth, and 0 kills the character with no killer. Setting it on a dead player, or one driving a vehicle, does nothing: use Respawn to bring a player back.
+	--- The character's health, from 0 to MaxHealth; nil while the player has no character. Weapons and TakeDamage lower this same value. Setting it (server only) clamps to 0..MaxHealth, and 0 kills the character with no killer. Setting it on a dead player, or one driving a vehicle, does nothing: use Respawn to bring a player back. While HealthEnabled is false, setting it to 0 does nothing and prints a warning to the script output.
 	Health: number?
+	--- Whether this player has health: damage, death, and falling out of the map killing them. false unless the place turns it on (settings.health in the place file) or a script does. Setting it (server only) lasts for the rest of the session, through respawns, until the script that set it stops, when the player goes back to the place's setting. Armor and Shield only matter while it is on. While it is off nothing hurts the player (weapons, vehicles, crashes, drowning and TakeDamage do nothing), Kill and setting Health to 0 do nothing and print a warning to the script output, and falling out of the map moves the player to a spawn point with no death. Turning it on mid-game starts the player at full health. Readable on the server and on that player's own client.
+	HealthEnabled: boolean
 	--- The id of the Tool in the player's hands (the id Backpack:GetTools lists); nil with bare hands, and while the player has no character. Readable on the server and on every client.
 	HeldToolId: string?
 	--- Whether the character is crouched right now (by the key, a slide or ForceCrouch). nil while the player has no character. Read-only.
@@ -309,7 +313,7 @@ declare extern type Player with
 	function Jump(self): boolean
 	--- Remove the player from the session with a message. (server only)
 	function Kick(self, reason: string?): ()
-	--- Kill the character outright: Died fires with no killer, and the place's respawn rules take over as for any other death. Returns false when the player has no character on foot or is already dead. (server only)
+	--- Kill the character outright: Died fires with no killer, and the place's respawn rules take over as for any other death. Returns false when the player has no character on foot or is already dead. While HealthEnabled is false it does nothing, prints a warning to the script output and returns false. (server only)
 	function Kill(self): boolean
 	--- Knock the character down: it goes limp for everyone, the player cannot move or act, and when the time is up (or Recover is called) it stands back up where it lies with a get-up animation. seconds is how long to stay down, 0.1 to 300; leave it out to stay down until Recover (at most five minutes). velocity is an optional shove in centimeters per second; without it the character keeps the speed it had. Ragdolled fires now and Recovered when it gets up. Returns false when the player has no character on foot, is dead, is sitting in a vehicle or is already knocked down. (server only)
 	function Ragdoll(self, seconds: number?, velocity: Vector3?): boolean
@@ -1528,7 +1532,7 @@ declare extern type UIService with
 	function FormatNumber(self, value: number): string
 	--- Open one of the place's UI documents (a .rml file in its UI/ folder) on this player's screen. Mode is "modal" (the default: gameplay input stops, this place's own Input keys are silent, chat and the leaderboard key are off, and Esc, or Start on a pad, always closes it; three quick presses, within about 2 seconds, open the game menu over it instead, even if the place opens it again each time), "overlay" (play goes on; the mouse works on its controls) or "hud" (drawn only, never takes input). A modal document takes input over an overlay document and over a Pointer hold (Pointer picking waits while it is up), and gives it back when it closes. Modal documents stack: one opened while another is up goes on top, has the input, and is closed first by Esc or Start; the one under it then has input again. A modal UI:SetInputMode panel waits until the documents are closed. An unknown path or mode is an error, and so is opening on a server. Example: local shop = UI:OpenDocument("UI/shop.rml") (client only)
 	function OpenDocument(self, path: string, mode: string?): UiDocument
-	--- Shows or hides Mantle's built-in HUD, which is on by default. part is "reticle", "health", "ammo", "hotbar", "prompt" (the interaction prompt), "voice" (the voice line), "text" (UI:SetText lines and toasts) or "all"; leave it out for all. "all" also hides the vehicle readout, stats strip, notices, emote wheel and Placing's key instructions box. Your own UI (UI:Create, UI:OpenDocument) is never touched. A client script changes the local player's HUD (no player argument). A server script changes one player's, or everyone's now and later when player is left out; hides from the server and from the player's own scripts add up, and a change for everyone also resets earlier per-player changes of those parts. Example: UI:SetBuiltInHUD(false) for a cutscene, UI:SetBuiltInHUD(true) after.
+	--- Shows or hides Mantle's built-in HUD, which is on by default. part is "reticle", "ammo", "hotbar", "prompt" (the interaction prompt), "voice" (the voice line), "text" (UI:SetText lines and toasts) or "all"; leave it out for all. "all" also hides the stats strip, notices, emote wheel and Placing's key instructions box. Your own UI (UI:Create, UI:OpenDocument) is never touched. A client script changes the local player's HUD (no player argument). A server script changes one player's, or everyone's now and later when player is left out; hides from the server and from the player's own scripts add up, and a change for everyone also resets earlier per-player changes of those parts. Example: UI:SetBuiltInHUD(false) for a cutscene, UI:SetBuiltInHUD(true) after.
 	function SetBuiltInHUD(self, enabled: boolean, part: string?, player: Player?): ()
 	--- Force the mouse cursor on or off regardless of whether an interactive node is visible right now. Nil goes back to automatic: shown only while a modal UI (see SetInputMode) has a Button, a Toggle, or a Prompt with an action visible and enabled; an overlay UI shows no cursor, so the mouse keeps turning the camera. SetCursorVisible(true) shows it in either mode. A gamepad-only panel can call SetCursorVisible(false) to keep working through focus/Accept without ever drawing a cursor. (client only)
 	function SetCursorVisible(self, visible: boolean?): ()
@@ -1541,7 +1545,7 @@ declare extern type UIService with
 end
 declare UI: UIService
 
---- Spawn and seat cars: the vehicles in the place's storage (server only).
+--- Spawn and seat cars: the vehicles in the place's storage (server), and read the car the local player drives (client).
 declare extern type VehiclesService with
 	--- The car's driver started boosting.
 	BoostStarted: Signal<(Entity)>
@@ -1581,6 +1585,10 @@ declare extern type VehiclesService with
 	function GetLights(self, vehicle: Entity, light: string): string
 	--- The names of the car's liveries, in the order SetLivery counts them: the first name is livery index 0, the next is 1, and so on. A name is what the vehicle's creator called it, or "Livery 1", "Livery 2" and so on for one without a name. The list is empty for a car published with no liveries, for the built-in cars, and for an entity that is not a car. (server only)
 	function GetLiveries(self, vehicle: Entity): {string}
+	--- The speed of the vehicle the local player is driving, in centimeters per second (Vehicles:GetSpeed's unit; multiply by 0.036 for km/h): its whole velocity, so it is not negative in reverse. nil while the local player is not driving a vehicle. Works on a client script, where Vehicles:GetSpeed does not; read it every frame to draw a speedometer. (client only)
+	function GetLocalSpeed(self): number?
+	--- The throttle of the aircraft the local player is flying, from 0 to 1; for a helicopter it is the collective. nil while the local player is not flying a plane or a helicopter (a car has no throttle lever; read its speed instead). (client only)
+	function GetLocalThrottle(self): number?
 	--- The most boost the car can store (100 unless you change it). (server only)
 	function GetMaxBoost(self, vehicle: Entity): number
 	--- The tank's size (100 unless you change it). (server only)
@@ -1627,6 +1635,10 @@ declare extern type VehiclesService with
 	function IsHealthEnabled(self, vehicle: Entity): boolean
 	--- Whether a light is lit now, whoever decided it: the script's word, the J key, night, braking, reverse or the driver's signal keys. A signal counts as lit through its whole blink. light is "head", "rear", "reverse", "left", "right" or "signals" (either side). Errors if the entity is not a car or no longer exists. (server only)
 	function IsLightOn(self, vehicle: Entity, light: string): boolean
+	--- Whether the vehicle the local player is driving is a helicopter (true), rather than a car or a plane (false); a readout uses it to label GetLocalThrottle "collective" instead of "throttle". nil while the local player is not driving a vehicle. (client only)
+	function IsLocalHelicopter(self): boolean?
+	--- Whether the local player is holding reverse in the vehicle they drive: true as soon as reverse engages, even at a standstill, so a gear readout (D, N, R) can show R. false in an aircraft, which has no reverse. nil while the local player is not driving a vehicle. (client only)
+	function IsLocalReversing(self): boolean?
 	--- Whether the car is locked. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Errors if the entity is not a car or no longer exists. (server only)
 	function IsLocked(self, vehicle: Entity): boolean
 	--- Whether one of the car's parts is open (see SetPartOpen). Nil when the entity is not a car or the car does not have that part. (server only)
