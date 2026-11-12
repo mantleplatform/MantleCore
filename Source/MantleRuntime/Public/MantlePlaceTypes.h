@@ -567,6 +567,10 @@ struct FMantleSettings
 	int32 MaxCarriedTools = 32;
 	/** settings.allowToolSwap: whether a full Backpack's pickup swaps the weapon in hand for it. On unless the file sets it to false. */
 	bool bAllowToolSwap = true;
+	/** settings.health: whether players have health (damage, death, a health bar a script draws). Off unless the file sets it to true. */
+	bool bHealth = false;
+	/** settings.combat: whether players have the built-in combat moves (fists that punch and guard, dodge and roll). Off unless the file sets it to true. */
+	bool bCombat = false;
 	/**
 	 * settings.killZ: the height, cm, below which a character has fallen out of the world. Unset: the game mode works it out
 	 * from the lowest geometry the place built, less a margin (AMantleGameMode::KillFloorMarginCm).

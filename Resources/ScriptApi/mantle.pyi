@@ -151,6 +151,7 @@ class Player:
     breath_regen: Optional[float]
     breath_regen_delay: Optional[float]
     character: Optional[Entity]
+    combat_enabled: bool
     crouch_enabled: Optional[bool]
     crouch_speed: Optional[float]
     dodge_enabled: Optional[bool]
@@ -159,6 +160,7 @@ class Player:
     gait: Optional[str]
     grab_enabled: Optional[bool]
     health: Optional[float]
+    health_enabled: bool
     held_tool_id: Optional[str]
     is_crouched: Optional[bool]
     is_ragdolled: Optional[bool]
@@ -235,7 +237,7 @@ class Player:
         """Remove the player from the session with a message."""
         ...
     def kill(self) -> bool:
-        """Kill the character outright: Died fires with no killer, and the place's respawn rules take over as for any other death. Returns false when the player has no character on foot or is already dead."""
+        """Kill the character outright: Died fires with no killer, and the place's respawn rules take over as for any other death. Returns false when the player has no character on foot or is already dead. While HealthEnabled is false it does nothing, prints a warning to the script output and returns false."""
         ...
     def ragdoll(self, seconds: Optional[float] = ..., velocity: Optional[Vector3] = ..., /) -> bool:
         """Knock the character down: it goes limp for everyone, the player cannot move or act, and when the time is up (or Recover is called) it stands back up where it lies with a get-up animation. seconds is how long to stay down, 0.1 to 300; leave it out to stay down until Recover (at most five minutes). velocity is an optional shove in centimeters per second; without it the character keeps the speed it had. Ragdolled fires now and Recovered when it gets up. Returns false when the player has no character on foot, is dead, is sitting in a vehicle or is already knocked down."""
@@ -1643,7 +1645,7 @@ class _UIService:
         """Open one of the place's UI documents (a .rml file in its UI/ folder) on this player's screen. Mode is 'modal' (the default: gameplay input stops, this place's own Input keys are silent, chat and the leaderboard key are off, and Esc, or Start on a pad, always closes it; three quick presses, within about 2 seconds, open the game menu over it instead, even if the place opens it again each time), 'overlay' (play goes on; the mouse works on its controls) or 'hud' (drawn only, never takes input). A modal document takes input over an overlay document and over a Pointer hold (Pointer picking waits while it is up), and gives it back when it closes. Modal documents stack: one opened while another is up goes on top, has the input, and is closed first by Esc or Start; the one under it then has input again. A modal UI:SetInputMode panel waits until the documents are closed. An unknown path or mode is an error, and so is opening on a server. Example: local shop = UI:OpenDocument('UI/shop.rml')"""
         ...
     def set_built_in_hud(self, enabled: bool, part: Optional[str] = ..., player: Optional[Player] = ..., /) -> None:
-        """Shows or hides Mantle's built-in HUD, which is on by default. part is 'reticle', 'health', 'ammo', 'hotbar', 'prompt' (the interaction prompt), 'voice' (the voice line), 'text' (UI:SetText lines and toasts) or 'all'; leave it out for all. 'all' also hides the vehicle readout, stats strip, notices, emote wheel and Placing's key instructions box. Your own UI (UI:Create, UI:OpenDocument) is never touched. A client script changes the local player's HUD (no player argument). A server script changes one player's, or everyone's now and later when player is left out; hides from the server and from the player's own scripts add up, and a change for everyone also resets earlier per-player changes of those parts. Example: UI:SetBuiltInHUD(false) for a cutscene, UI:SetBuiltInHUD(true) after."""
+        """Shows or hides Mantle's built-in HUD, which is on by default. part is 'reticle', 'ammo', 'hotbar', 'prompt' (the interaction prompt), 'voice' (the voice line), 'text' (UI:SetText lines and toasts) or 'all'; leave it out for all. 'all' also hides the stats strip, notices, emote wheel and Placing's key instructions box. Your own UI (UI:Create, UI:OpenDocument) is never touched. A client script changes the local player's HUD (no player argument). A server script changes one player's, or everyone's now and later when player is left out; hides from the server and from the player's own scripts add up, and a change for everyone also resets earlier per-player changes of those parts. Example: UI:SetBuiltInHUD(false) for a cutscene, UI:SetBuiltInHUD(true) after."""
         ...
     def set_cursor_visible(self, visible: Optional[bool] = ..., /) -> None:
         """Force the mouse cursor on or off regardless of whether an interactive node is visible right now. Nil goes back to automatic: shown only while a modal UI (see SetInputMode) has a Button, a Toggle, or a Prompt with an action visible and enabled; an overlay UI shows no cursor, so the mouse keeps turning the camera. SetCursorVisible(true) shows it in either mode. A gamepad-only panel can call SetCursorVisible(false) to keep working through focus/Accept without ever drawing a cursor."""
@@ -1661,7 +1663,7 @@ class _UIService:
 UI: _UIService
 
 class _VehiclesService:
-    """Spawn and seat cars: the vehicles in the place's storage (server only)."""
+    """Spawn and seat cars: the vehicles in the place's storage (server), and read the car the local player drives (client)."""
     boost_started: Signal
     boost_stopped: Signal
     damaged: Signal
@@ -1704,6 +1706,12 @@ class _VehiclesService:
         ...
     def get_liveries(self, vehicle: Entity, /) -> list[str]:
         """The names of the car's liveries, in the order SetLivery counts them: the first name is livery index 0, the next is 1, and so on. A name is what the vehicle's creator called it, or 'Livery 1', 'Livery 2' and so on for one without a name. The list is empty for a car published with no liveries, for the built-in cars, and for an entity that is not a car."""
+        ...
+    def get_local_speed(self) -> Optional[float]:
+        """The speed of the vehicle the local player is driving, in centimeters per second (Vehicles:GetSpeed's unit; multiply by 0.036 for km/h): its whole velocity, so it is not negative in reverse. nil while the local player is not driving a vehicle. Works on a client script, where Vehicles:GetSpeed does not; read it every frame to draw a speedometer."""
+        ...
+    def get_local_throttle(self) -> Optional[float]:
+        """The throttle of the aircraft the local player is flying, from 0 to 1; for a helicopter it is the collective. nil while the local player is not flying a plane or a helicopter (a car has no throttle lever; read its speed instead)."""
         ...
     def get_max_boost(self, vehicle: Entity, /) -> float:
         """The most boost the car can store (100 unless you change it)."""
@@ -1773,6 +1781,12 @@ class _VehiclesService:
         ...
     def is_light_on(self, vehicle: Entity, light: str, /) -> bool:
         """Whether a light is lit now, whoever decided it: the script's word, the J key, night, braking, reverse or the driver's signal keys. A signal counts as lit through its whole blink. light is 'head', 'rear', 'reverse', 'left', 'right' or 'signals' (either side). Errors if the entity is not a car or no longer exists."""
+        ...
+    def is_local_helicopter(self) -> Optional[bool]:
+        """Whether the vehicle the local player is driving is a helicopter (true), rather than a car or a plane (false); a readout uses it to label GetLocalThrottle 'collective' instead of 'throttle'. nil while the local player is not driving a vehicle."""
+        ...
+    def is_local_reversing(self) -> Optional[bool]:
+        """Whether the local player is holding reverse in the vehicle they drive: true as soon as reverse engages, even at a standstill, so a gear readout (D, N, R) can show R. false in an aircraft, which has no reverse. nil while the local player is not driving a vehicle."""
         ...
     def is_locked(self, vehicle: Entity, /) -> bool:
         """Whether the car is locked. A locked car opens only for the last player who drove it: anyone else's vehicle key rattles the door, and holding the key breaks in -- the window on that side breaks, the car unlocks, and it must be hotwired before it starts. The lock stays when the driver gets out, and its driver can also lock and unlock it from the seat (L / D-pad left). Errors if the entity is not a car or no longer exists."""

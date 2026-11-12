@@ -383,6 +383,19 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Mantle")
 	bool bCarjacking = true;
 
+	// Health and combat (#332): both on by default in the editor, so a new place plays as Mantle always has. Only a switch that is
+	// on is published (settings.health, settings.combat); a place file that leaves one out means it is off at runtime, and a place
+	// that turns one on needs a Mantle client from after #332 to load. A script can change either for one player with
+	// Player.HealthEnabled and Player.CombatEnabled.
+
+	/** Players have health, take damage, can die and respawn. On by default. Turn it off for a place where nothing hurts a player and nobody dies. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Play Style")
+	bool bHealth = true;
+
+	/** Players can punch, guard and dodge. On by default. Weapons a script gives out work either way. */
+	UPROPERTY(EditAnywhere, Category = "Mantle|Play Style")
+	bool bCombat = true;
+
 	// The play style (#232, #229): how every player's camera and movement work from the start. A script can change it for one
 	// player with Player:SetPlayStyle. Default publishes nothing.
 
