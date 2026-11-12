@@ -62,8 +62,8 @@ struct MANTLEEDITOR_API FMantleExposureProject
  * - its pitch as a clock hour and its yaw as the heading, with the clock stopped there, so the sun stands where the
  *   level's did (a level's sun does not move);
  * - the post-process volume's exposure (metering method, compensation and brightness range) as the place's exposure for an
- *   interior only (outdoors: false), whose lights are the creator's own; an outdoor place gets Mantle's own exposure, or the
- *   bias Mantle Place Settings' Exposure sets;
+ *   interior (outdoors: false) or a sealed level (sun.direct false), whose lights are the creator's own; any other outdoor place
+ *   gets Mantle's own exposure, or the bias Mantle Place Settings' Exposure sets;
  * - never the volume's saturation, bloom, bloom threshold or white balance, nor the level's height fog: Mantle's own are
  *   used, and a creator sets them on purpose in Mantle Place Settings or a script;
  * - the level's sky light as a scale on Mantle's own (settings.environment.skyLight.intensity, #722): the captured scene's
@@ -78,7 +78,7 @@ struct MANTLEEDITOR_API FMantleExposureProject
  * A value Mantle Place Settings sets explicitly wins over the level's actor: Place.Settings.Environment already holds
  * what the settings actor set (only what differs from the default is set), and Apply fills only the keys it left
  * unset. The sky light's color, atmosphere and the post-process's contrast and the rest have no key in the place, so they are
- * not carried; the report says so. An interior's exposure is written only for a level with an environment of its own (a sun,
+ * not carried; the report says so. An interior's or sealed level's exposure is written only for a level with an environment of its own (a sun,
  * sky, fog or post-process volume), as the weather is. Nothing is written for a target client that does not read
  * settings.environment (FMantleTargetFeatures).
  *

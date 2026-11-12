@@ -1386,7 +1386,7 @@ bool FMantleEnvironmentOutdoorDropsExposureTest::RunTest(const FString& Paramete
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleEnvironmentInteriorKeepsExposureTest,
-	"Mantle.Editor.EnvironmentExport.InteriorKeepsTheLevelsExposure",
+	"Mantle.Editor.EnvironmentExport.InteriorAndSealedLevelKeepTheLevelsExposure",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantleEnvironmentInteriorKeepsExposureTest::RunTest(const FString& Parameters)
@@ -1454,6 +1454,34 @@ bool FMantleEnvironmentInteriorKeepsExposureTest::RunTest(const FString& Paramet
 		FMantleEnvironmentExport::Apply(Test.World, Level.IdByActor, Level.Place, Coverage);
 		TestTrue(TEXT("the settings make it an interior"), Level.Place.Settings.Environment.bNoOutdoors);
 		TestTrue(TEXT("and its exposure is carried"), Level.Place.Settings.Environment.Exposure.IsSet());
+	}
+
+	// A sealed level (no direct sun, as a dungeon or a room with a baked sun) is lit by its own lights too, so it keeps its exposure
+	// (SewerDungeon's is +2.567 stops, set for its dark dungeon); the bloom and the fog it brought are left out.
+	{
+		FTestWorld Test;
+		if (!TestNotNull(TEXT("a test world"), Test.World) || !TestNotNull(TEXT("a volume"), AddGrade(Test)))
+		{
+			return false;
+		}
+		FSunLevel Level;
+		AMantlePlaceSettingsActor* Settings = Test.Spawn<AMantlePlaceSettingsActor>(TEXT("Settings"));
+		if (!TestTrue(TEXT("a sun"), Level.Build(Test, FRotator(-46.0, 30.0, 0.0), /*bTemperature*/ false)) || !TestNotNull(TEXT("place settings"), Settings))
+		{
+			return false;
+		}
+		Settings->DirectSun = EMantlePlaceDirectSun::Never;
+		Level.Place.Settings.Environment = Settings->MakeEnvironmentSettings();
+		FMantleCoverage Coverage;
+		FMantleEnvironmentExport::Apply(Test.World, Level.IdByActor, Level.Place, Coverage);
+		const FMantleEnvironmentSettings& Environment = Level.Place.Settings.Environment;
+		TestTrue(TEXT("a level with no direct sun is sealed, not an interior"), Environment.bNoDirectSun && !Environment.bNoOutdoors);
+		if (TestTrue(TEXT("its exposure is carried"), Environment.Exposure.IsSet()))
+		{
+			TestNearlyEqual(TEXT("with the volume's bias"), Environment.Exposure->Bias, 1.5, 0.001);
+		}
+		TestFalse(TEXT("its bloom is not"), Environment.Bloom.IsSet());
+		TestEqual(TEXT("the volume is approximated: its exposure was carried"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(1));
 	}
 	return true;
 }

@@ -765,20 +765,22 @@ namespace MantleEnvironmentExportPrivate
 	}
 
 	/**
-	 * Whether the level's own exposure travels with the place. An interior's lights are the creator's own and its exposure was set
-	 * for them, so it keeps it. An outdoor place lives under Mantle's own sky, which the level's exposure was not tuned for, so it
-	 * gets Mantle's own exposure (and a creator sets one on purpose with Mantle Place Settings or a script).
+	 * Whether the level's own exposure travels with the place. An interior (outdoors: false) is lit by the creator's own lights, and
+	 * so is a sealed level (sun.direct: false: a sealed room, a cave, a dungeon, whose sun never reaches the player), so their
+	 * exposure was set for those lights and stays with them (SewerDungeon's is +2.567 stops, SoulCity's +2.5). An outdoor place with
+	 * a sun lives under Mantle's own sky, which the level's exposure was not tuned for, so it gets Mantle's own exposure (and a
+	 * creator sets one on purpose with Mantle Place Settings or a script).
 	 */
 	bool KeepsLevelExposure(const FMantleEnvironmentSettings& Environment)
 	{
-		return Environment.bNoOutdoors;
+		return Environment.bNoOutdoors || Environment.bNoDirectSun;
 	}
 
 	const TCHAR* const ExposureWhereToSet = TEXT("to choose one on purpose, set Exposure in Mantle Place Settings or use a script's Environment.ExposureBias");
 
 	/**
 	 * The look of the level's post-process volume. Its saturation, bloom, bloom threshold and white balance are never carried, and
-	 * its exposure only for an interior: they were tuned for the level's own sky, not Mantle's. What Mantle Place Settings sets is
+	 * its exposure only for an interior or a sealed level: they were tuned for the level's own sky, not Mantle's. What Mantle Place Settings sets is
 	 * already in Environment and wins.
 	 */
 	void MapPostProcess(const TArray<const APostProcessVolume*>& Volumes, FMantleEnvironmentSettings& Environment, FMantleCoverage& Coverage,
@@ -829,7 +831,7 @@ namespace MantleEnvironmentExportPrivate
 				{
 					Environment.Exposure = Exposure;
 					Coverage.Add(Cat::PostProcess, EOutcome::Approximated, TEXT("Exposure"),
-						FString::Printf(TEXT("the level has no post-process volume, so the editor's default exposure is carried as the place's, since it is an interior; carried: %s."),
+						FString::Printf(TEXT("the level has no post-process volume, so the editor's default exposure is carried as the place's, since it is an interior or a sealed level; carried: %s."),
 							*FString::Join(ExposureCarried, TEXT(", "))));
 				}
 			}
@@ -938,7 +940,7 @@ namespace MantleEnvironmentExportPrivate
 		const FString Extra = (Carried.Num() > 0 && !Primary->bUnbound) ? FString(TEXT("a bounded volume, so what is carried applies everywhere")) : FString();
 		ReportLook(Coverage, Cat::PostProcess, LabelOf(Primary), Carried.Num() > 0, FString::Join(Carried, TEXT(", ")), NotCarried,
 			bKeepsExposure
-				? TEXT("Mantle's own post-process is used; an interior carries only its exposure, and the level's saturation, bloom and white balance are left out because they were tuned for a different sky "
+				? TEXT("Mantle's own post-process is used; an interior or sealed level carries only its exposure, and the level's saturation, bloom and white balance are left out because they were tuned for a different sky "
 					"(to choose them on purpose, set Saturation, Bloom or Color Tint in Mantle Place Settings)")
 				: TEXT("Mantle's own post-process and exposure are used; the level's exposure, saturation, bloom and white balance are left out because they were tuned for a different sky "
 					"(to choose them on purpose, set Exposure, Saturation, Bloom or Color Tint in Mantle Place Settings, or use a script's Environment)"),
