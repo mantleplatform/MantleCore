@@ -388,10 +388,13 @@ public:
 	static void ApplyLocalExposureSettings(FPostProcessSettings& Settings, bool bLocalExposureOff);
 
 	/**
-	 * What this machine's renderer does with the sky light, from its console variables (a settings change moves them mid-game):
-	 * Lumen when r.DynamicGlobalIlluminationMethod is 1 and r.Lumen.DiffuseIndirect.Allow is not 0; else distance-field shading
-	 * when r.DistanceFieldAO is on and r.AOQuality is above 0; else none. A variable that is missing counts as on (Lumen, the
-	 * table every place had before this), so a process that renders nothing changes nothing.
+	 * What this machine's renderer does with the sky light, from its console variables (a settings change moves them mid-game).
+	 * Five states: with Lumen on (r.DynamicGlobalIlluminationMethod is 1 and r.Lumen.DiffuseIndirect.Allow is not 0), LumenRT when ray
+	 * tracing is on (r.RayTracing.Enable and r.Lumen.HardwareRayTracing), whatever the gather; else LumenLight when
+	 * r.Lumen.FinalGatherMethod is 0 (the lighter gather); else Lumen (no ray tracing, full gather). With Lumen off, DistanceField
+	 * when r.DistanceFieldAO is on and r.AOQuality is above 0; else Unshaded. A variable that is missing counts as on (the Lumen
+	 * family), except r.RayTracing.Enable, which the engine always defines (default 1): a dedicated server, or any process where the
+	 * graphics settings never ran, reads LumenRT (x4), the table every place had before the states.
 	 */
 	static EMantleSkyLightState GetSkyLightState();
 

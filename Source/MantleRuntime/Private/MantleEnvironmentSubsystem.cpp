@@ -1281,8 +1281,10 @@ EMantleSkyLightState UMantleEnvironmentSubsystem::GetSkyLightState()
 	const bool bDistanceFieldShadingOn = Read(DistanceFieldAo, 1) != 0 && Read(AoQuality, 1) > 0;
 	// r.Lumen.FinalGatherMethod 0 is the lighter irradiance field gather (Balanced); 1 is the screen probe gather. Missing counts as 1.
 	const bool bLumenLightGather = Read(FinalGather, 1) == 0;
-	// Ray tracing in force: r.RayTracing.Enable (the Ray tracing row in Settings sets it live) and Lumen's hardware ray tracing. A missing
-	// r.RayTracing.Enable counts as off; a missing hardware switch as on (its default).
+	// Ray tracing in force: r.RayTracing.Enable (the Ray tracing row in Settings sets it live) and Lumen's hardware ray tracing. The
+	// engine defines r.RayTracing.Enable with default 1 (RayTracingGeometryManager.cpp:33-36), so it is never missing: a dedicated server,
+	// or any process where the graphics settings never ran, reads it as 1 and gets LumenRT (x4), what every place had before the states.
+	// The fallback of 0 below is never taken. A missing hardware switch counts as on (its default).
 	const bool bRayTraced = Read(RayTracingEnable, 0) != 0 && Read(LumenHardwareRayTracing, 1) != 0;
 	return FMantleWeatherLook::SkyLightStateFor(bLumenOn, bDistanceFieldShadingOn, bLumenLightGather, bRayTraced);
 }

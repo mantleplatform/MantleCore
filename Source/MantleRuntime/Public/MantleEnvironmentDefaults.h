@@ -183,8 +183,9 @@ namespace MantleEnvironmentDefaults
 
 	/**
 	 * The sky light's table is picked by what this machine's renderer does with the sky light (FMantleWeatherLook::SkyLightFill),
-	 * not by the graphics preset's name. Each table's three values sit at SkyLightFillElevation. Every number in the last
-	 * two is provisional (the owner judges them in play): changing one is a one-line change here.
+	 * not by the graphics preset's name. Each table's three values sit at SkyLightFillElevation. Every number in the
+	 * Lumen, LumenLight, DistanceField and Unshaded rows is provisional (the owner judges them in play); LumenRT's is the one every place
+	 * had before the states. Changing one is a one-line change here.
 	 *   LumenRT      Lumen's bounce light is on and ray tracing is on (r.RayTracing.Enable and r.Lumen.HardwareRayTracing):
 	 *                Epic, or High with ray tracing switched on in Settings. The table above, x4 at dusk through night, the
 	 *                one every place had before the states (tested on Epic; High with ray tracing on landed on it, 2026-11-13:
