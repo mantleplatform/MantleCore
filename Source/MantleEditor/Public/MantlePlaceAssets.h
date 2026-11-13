@@ -996,6 +996,15 @@ public:
 	 */
 	static TStrongObjectPtr<UMaterialInterface> NeutralizePerInstanceValues(const UMaterialInterface* Material);
 
+	/**
+	 * A transient copy of Material (its instance chain and base graph) whose base color is multiplied by max(Vertex Color, 1), which is
+	 * 1: the look is unchanged, but the material now reads mesh data. GLTFExporter bakes a material on the card's own UVs only when it
+	 * reads mesh data (vertex color, world position); one that reads only texture coordinates, such as a landscape material, bakes over
+	 * UVs 0 to 1 whatever the card's, so a bake over a UV range (FMantleBakeSurface::UvRange) held one landscape quad stretched over the
+	 * whole tile. Null when no copy can be made (a dynamic instance, or nothing connected to the base color or attributes).
+	 */
+	static TStrongObjectPtr<UMaterialInterface> ReadsVertexColorCopy(const UMaterialInterface* Material);
+
 	/** The sentence Check and the converter give a material whose bake averaged its per-instance variation, following "Material 'M_X': ". */
 	static FString DescribePerInstanceVariation();
 

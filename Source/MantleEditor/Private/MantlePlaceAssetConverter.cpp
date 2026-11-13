@@ -2062,9 +2062,16 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 	// the card's vertex colors and UVs (only for a material that reads such data, FGLTFMaterialUtilities::NeedsMeshData; any other bakes
 	// over UVs 0 to 1 as before). The document then holds the card too, but its materials[0] is still the material.
 	TStrongObjectPtr<UStaticMesh> Card;
+	TStrongObjectPtr<UMaterialInterface> ReadsCard;
 	if (!Settings.Surface.IsPlain())
 	{
-		Card.Reset(MantlePlaceAssetConverterPrivate::MakeBakeCard(Material, Settings.Surface));
+		// A bake over a UV range must read the card's UVs, so a material that reads no mesh data (a landscape material reads only texture
+		// coordinates) is baked as a copy that does: without it GLTFExporter bakes UVs 0 to 1, one landscape quad stretched over the tile.
+		if (Settings.Surface.UvRange > 1)
+		{
+			ReadsCard = FMantlePlaceAssets::ReadsVertexColorCopy(Material);
+		}
+		Card.Reset(MantlePlaceAssetConverterPrivate::MakeBakeCard(ReadsCard.IsValid() ? ReadsCard.Get() : Material, Settings.Surface));
 		if (!Card.IsValid())
 		{
 			OutError = TEXT("the card to bake it on could not be built");
