@@ -214,7 +214,8 @@ namespace MantleEnvironmentExportPrivate
 	/**
 	 * The level's first sun: it is published at the game's own brightness and color, not the level's (a level's sun is tuned to its
 	 * own sky: Normandy's was 200 against the game's 3.5, which washes the picture out), unless Mantle Place Settings sets a
-	 * Sun Brightness. Its angle becomes the place's clock.
+	 * Sun Brightness. Its angle becomes the place's clock. A sealed level (no direct sun) keeps its sun's brightness and color: they were set
+	 * together with the exposure it keeps, and its sky light follows the sun. (Interiors never get here: no directional light is a sun there.)
 	 */
 	void MapSun(UWorld* World, const TMap<const AActor*, FString>& IdByActor, FMantlePlace& Place, FMantleCoverage& Coverage, const bool bReadsEnvironment)
 	{
@@ -229,6 +230,7 @@ namespace MantleEnvironmentExportPrivate
 		}
 		const AMantlePlaceSettingsActor* PlaceSettings = World ? AMantlePlaceSettingsActor::Find(World) : nullptr;
 		const bool bSunBrightnessSet = PlaceSettings && PlaceSettings->bSetSunBrightness;
+		const bool bKeepsLevelSun = Place.Settings.Environment.bNoDirectSun && !bSunBrightnessSet;
 		if (!Sun)
 		{
 			if (bSunBrightnessSet)
@@ -251,7 +253,8 @@ namespace MantleEnvironmentExportPrivate
 		const ADirectionalLight* Light = Cast<ADirectionalLight>(SunActor);
 		const UDirectionalLightComponent* Component = Light ? Cast<UDirectionalLightComponent>(Light->GetLightComponent()) : nullptr;
 
-		// The game's own sun, or the multiple of it Mantle Place Settings asks for. The level's brightness, color and temperature stay behind.
+		// The game's own sun, or the multiple of it Mantle Place Settings asks for. The level's brightness, color and temperature stay behind,
+		// except for a sealed level, which keeps them (its temperature goes into the color, the place having none for a directional light).
 		FMantleDirectionalLightProps* Props = Sun->Props.TryGet<FMantleDirectionalLightProps>();
 		const double LevelIntensity = Props ? Props->Intensity : GameSunIntensity;
 		const bool bLevelDiffers = Props && (DiffersFromDefault(Props->Intensity, GameSunIntensity)
@@ -262,13 +265,31 @@ namespace MantleEnvironmentExportPrivate
 			Multiple = FMath::IsFinite(PlaceSettings->SunBrightness)
 				? FMath::Clamp(PlaceSettings->SunBrightness, 0.0, MantleEnvironmentDefaults::MaxScriptSunIntensityScale) : 1.0;
 		}
-		if (Props)
+		if (Props && bKeepsLevelSun)
+		{
+			if (Component && Component->bUseTemperature)
+			{
+				const FLinearColor Tint = FLinearColor::MakeFromColorTemperature(Component->Temperature);
+				Props->Color = FLinearColor(
+					FMath::Clamp(Props->Color.R * Tint.R, 0.0f, 1.0f),
+					FMath::Clamp(Props->Color.G * Tint.G, 0.0f, 1.0f),
+					FMath::Clamp(Props->Color.B * Tint.B, 0.0f, 1.0f),
+					Props->Color.A);
+			}
+		}
+		else if (Props)
 		{
 			Props->Intensity = Rounded(GameSunIntensity * Multiple);
 			Props->Color = GameSunColor;
 		}
 		FString Brightness;
-		if (bSunBrightnessSet)
+		if (bKeepsLevelSun)
+		{
+			Brightness = FString::Printf(TEXT("its brightness (%g) and color are the level's, kept because this is a sealed level (no direct sun) that keeps its exposure, "
+				"which was set together with the sun; set Sun Brightness in Mantle Place Settings, or use a script's Environment.SunIntensityScale, to choose one on purpose"),
+				LevelIntensity);
+		}
+		else if (bSunBrightnessSet)
 		{
 			Brightness = FString::Printf(TEXT("its brightness is %g times the game's sun (%g), as Mantle Place Settings sets it, and its color is the game's own"),
 				Multiple, GameSunIntensity * Multiple);
@@ -765,7 +786,7 @@ namespace MantleEnvironmentExportPrivate
 	}
 
 	/**
-	 * Whether the level's own exposure travels with the place. An interior (outdoors: false) is lit by the creator's own lights, and
+	 * Whether the level's own exposure travels with the place, and with it the rest of the volume's look (saturation, bloom, bloom threshold, white balance). An interior (outdoors: false) is lit by the creator's own lights, and
 	 * so is a sealed level (sun.direct: false: a sealed room, a cave, a dungeon, whose sun never reaches the player), so their
 	 * exposure was set for those lights and stays with them (SewerDungeon's is +2.567 stops, SoulCity's +2.5). An outdoor place with
 	 * a sun lives under Mantle's own sky, which the level's exposure was not tuned for, so it gets Mantle's own exposure (and a
@@ -779,9 +800,9 @@ namespace MantleEnvironmentExportPrivate
 	const TCHAR* const ExposureWhereToSet = TEXT("to choose one on purpose, set Exposure in Mantle Place Settings or use a script's Environment.ExposureBias");
 
 	/**
-	 * The look of the level's post-process volume. Its saturation, bloom, bloom threshold and white balance are never carried, and
-	 * its exposure only for an interior or a sealed level: they were tuned for the level's own sky, not Mantle's. What Mantle Place Settings sets is
-	 * already in Environment and wins.
+	 * The look of the level's post-process volume. Its exposure, saturation, bloom, bloom threshold and white balance are carried only for
+	 * an interior or a sealed level (they were tuned together, with that level's own lights); an outdoor place gets none of them, since they
+	 * were tuned for the level's own sky, not Mantle's. What Mantle Place Settings sets is already in Environment and wins.
 	 */
 	void MapPostProcess(const TArray<const APostProcessVolume*>& Volumes, FMantleEnvironmentSettings& Environment, FMantleCoverage& Coverage,
 		const bool bReadsEnvironment, const bool bHasEnvironment, const FMantleExposureProject& Project)
@@ -888,6 +909,11 @@ namespace MantleEnvironmentExportPrivate
 			}
 		}
 
+		// An interior or sealed level keeps the rest of the volume's look with its exposure: they were tuned together, with the same lights.
+		auto NeedsNewer = [&Notes](const TCHAR* What)
+		{
+			Notes.Add(FString::Printf(TEXT("%s (%s)"), What, FMantleTargetFeatures::NeedsNewerClient));
+		};
 		if (Settings.bOverride_ColorSaturation)
 		{
 			const double Saturation = FMath::Clamp(SaturationOf(Settings.ColorSaturation), 0.0, MantleEnvironmentDefaults::MaxScriptSaturation);
@@ -896,9 +922,22 @@ namespace MantleEnvironmentExportPrivate
 			{
 				Explicit(TEXT("Saturation"));
 			}
-			else if (!FMath::IsNearlyEqual(Saturation, 1.0, 0.005))
+			else if (FMath::IsNearlyEqual(Saturation, 1.0, 0.005))
+			{
+				// Unchanged from the game's own: nothing to carry or to leave out.
+			}
+			else if (!bKeepsExposure)
 			{
 				Left(FString::Printf(TEXT("Saturation %.2f"), Saturation));
+			}
+			else if (!bReadsEnvironment)
+			{
+				NeedsNewer(TEXT("Saturation"));
+			}
+			else
+			{
+				Environment.Saturation = FMath::RoundToDouble(Saturation * 1000.0) / 1000.0;
+				Carried.Add(FString::Printf(TEXT("saturation (%.2f)"), Saturation));
 			}
 		}
 		if (Settings.bOverride_BloomIntensity)
@@ -908,30 +947,64 @@ namespace MantleEnvironmentExportPrivate
 			{
 				Explicit(TEXT("Bloom"));
 			}
-			else
+			else if (!bKeepsExposure)
 			{
 				Left(FString::Printf(TEXT("Bloom %.2f"), Settings.BloomIntensity));
+			}
+			else if (!bReadsEnvironment)
+			{
+				NeedsNewer(TEXT("Bloom"));
+			}
+			else
+			{
+				Environment.Bloom = FMath::Clamp(static_cast<double>(Settings.BloomIntensity), 0.0, MantleEnvironmentDefaults::MaxScriptBloom);
+				Carried.Add(FString::Printf(TEXT("bloom (%.2f)"), *Environment.Bloom));
 			}
 		}
 		if (Settings.bOverride_BloomThreshold)
 		{
 			TakeOverride(Overridden, TEXT("BloomThreshold"));
 			// Below zero is the engine's own (everything glows), which the client already has. Mantle Place Settings has no threshold.
-			if (Settings.BloomThreshold >= 0.0f)
+			if (Settings.BloomThreshold < 0.0f)
+			{
+			}
+			else if (!bKeepsExposure)
 			{
 				Left(FString::Printf(TEXT("Bloom Threshold %.2f"), Settings.BloomThreshold));
+			}
+			else if (!bReadsEnvironment)
+			{
+				NeedsNewer(TEXT("Bloom Threshold"));
+			}
+			else
+			{
+				Environment.BloomThreshold = FMath::Clamp(static_cast<double>(Settings.BloomThreshold), 0.0, MantleEnvironmentDefaults::MaxBloomThreshold);
+				Carried.Add(FString::Printf(TEXT("bloom threshold (%.2f)"), *Environment.BloomThreshold));
 			}
 		}
 		if (Settings.bOverride_WhiteTemp)
 		{
 			TakeOverride(Overridden, TEXT("WhiteTemp"));
+			const uint32 Tint = FMantleEnvironmentExport::TintForWhiteBalance(Settings.WhiteTemp);
 			if (Environment.ColorTint.IsSet())
 			{
 				Explicit(TEXT("Color Tint"));
 			}
-			else if (FMantleEnvironmentExport::TintForWhiteBalance(Settings.WhiteTemp) != 0xFFFFFF)
+			else if (Tint == 0xFFFFFF)
+			{
+			}
+			else if (!bKeepsExposure)
 			{
 				Left(FString::Printf(TEXT("White balance %.0f K"), Settings.WhiteTemp));
+			}
+			else if (!bReadsEnvironment)
+			{
+				NeedsNewer(TEXT("White Temp"));
+			}
+			else
+			{
+				Environment.ColorTint = Tint;
+				Carried.Add(FString::Printf(TEXT("white balance (%.0f K, as a color tint)"), Settings.WhiteTemp));
 			}
 		}
 
@@ -940,8 +1013,8 @@ namespace MantleEnvironmentExportPrivate
 		const FString Extra = (Carried.Num() > 0 && !Primary->bUnbound) ? FString(TEXT("a bounded volume, so what is carried applies everywhere")) : FString();
 		ReportLook(Coverage, Cat::PostProcess, LabelOf(Primary), Carried.Num() > 0, FString::Join(Carried, TEXT(", ")), NotCarried,
 			bKeepsExposure
-				? TEXT("Mantle's own post-process is used; an interior or sealed level carries only its exposure, and the level's saturation, bloom and white balance are left out because they were tuned for a different sky "
-					"(to choose them on purpose, set Saturation, Bloom or Color Tint in Mantle Place Settings)")
+				? TEXT("Mantle's own post-process is used for the rest; an interior or sealed level carries its volume's exposure, saturation, bloom and white balance, "
+					"which were tuned together with its own lights (to change them, set Exposure, Saturation, Bloom or Color Tint in Mantle Place Settings)")
 				: TEXT("Mantle's own post-process and exposure are used; the level's exposure, saturation, bloom and white balance are left out because they were tuned for a different sky "
 					"(to choose them on purpose, set Exposure, Saturation, Bloom or Color Tint in Mantle Place Settings, or use a script's Environment)"),
 			Extra);
@@ -1526,12 +1599,23 @@ void FMantleEnvironmentExport::Apply(UWorld* World, const TMap<const AActor*, FS
 	const bool bHasSun = Place.Entities.ContainsByPredicate([](const FMantleEntity& Entity) { return Entity.Type == EMantleEntityType::DirectionalLight; });
 	const bool bHasEnvironment = bHasSun || Atmospheres.Num() > 0 || SkyLights.Num() > 0 || Clouds.Num() > 0 || Fogs.Num() > 0 || Volumes.Num() > 0;
 
-	MapSun(World, IdByActor, Place, Coverage, bReadsEnvironment);
-	DropExtraSuns(Place, Coverage);
 	// A post-process volume alone is no outdoor environment: it carries the look, not a sky.
 	MapOutdoors(World, bHasSun || bSkyComponents || Atmospheres.Num() > 0 || SkyLights.Num() > 0 || Clouds.Num() > 0 || Fogs.Num() > 0,
 		Place, Coverage, bReadsLighting);
 	MapDirectSun(World, IdByActor, Place, Coverage, bReadsLighting);
+	// The sun and its extra lights come after the interior and sealed checks above: in an interior (the level's or Mantle Place Settings')
+	// no directional light is a sun, so they stay the level's own lamps, as they are; a sealed level keeps its sun's brightness.
+	if (!Environment.bNoOutdoors)
+	{
+		MapSun(World, IdByActor, Place, Coverage, bReadsEnvironment);
+		DropExtraSuns(Place, Coverage);
+	}
+	else if (const AMantlePlaceSettingsActor* InteriorSettings = World ? AMantlePlaceSettingsActor::Find(World) : nullptr;
+		InteriorSettings && InteriorSettings->bSetSunBrightness)
+	{
+		Coverage.Add(Cat::Lights, EOutcome::Dropped, TEXT("Sun Brightness"),
+			TEXT("Mantle Place Settings sets a Sun Brightness, but this place is an interior, which has no sun: its directional lights are its own lamps and keep their own brightness."));
+	}
 	MapPostProcess(Volumes, Environment, Coverage, bReadsEnvironment, bHasEnvironment, FMantleExposureProject::Current());
 
 	// The weather. A level with a sky of its own (an atmosphere, clouds, a sky light or a sun) has one look, so the place's

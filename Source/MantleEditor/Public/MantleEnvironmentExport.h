@@ -58,14 +58,14 @@ struct MANTLEEDITOR_API FMantleExposureProject
  * entities are built and before the coverage survey. It writes:
  *
  * - the first sun at the game's own intensity (3.5) and color (1, 0.97, 0.92), whatever the level's, or 3.5 times Mantle Place
- *   Settings' Sun Brightness when that is set; any other directional light is left out;
+ *   Settings' Sun Brightness when that is set; any other directional light is left out. A sealed level (sun.direct false) keeps its sun's
+ *   brightness and color, as it keeps its exposure. An interior (outdoors: false) skips all of this: no directional light is a sun there;
  * - its pitch as a clock hour and its yaw as the heading, with the clock stopped there, so the sun stands where the
  *   level's did (a level's sun does not move);
- * - the post-process volume's exposure (metering method, compensation and brightness range) as the place's exposure for an
- *   interior (outdoors: false) or a sealed level (sun.direct false), whose lights are the creator's own; any other outdoor place
- *   gets Mantle's own exposure, or the bias Mantle Place Settings' Exposure sets;
- * - never the volume's saturation, bloom, bloom threshold or white balance, nor the level's height fog: Mantle's own are
- *   used, and a creator sets them on purpose in Mantle Place Settings or a script;
+ * - the post-process volume's exposure (metering method, compensation and brightness range) and its saturation, bloom, bloom threshold
+ *   and white balance only for an interior or a sealed level, whose lights are the creator's own and were tuned with them; any other
+ *   outdoor place gets Mantle's own, or what Mantle Place Settings sets (Exposure is a bias on the game's own);
+ * - never the level's height fog: Mantle's own follows the weather (an interior has none);
  * - the level's sky light as a scale on Mantle's own (settings.environment.skyLight.intensity, #722): the captured scene's
  *   average brightness against Mantle's sky at the clock's hour (SkyLightScaleFor), so a closed room is not lit by an
  *   outdoor sky;

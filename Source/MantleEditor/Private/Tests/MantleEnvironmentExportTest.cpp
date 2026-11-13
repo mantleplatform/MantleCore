@@ -1167,14 +1167,17 @@ bool FMantleEnvironmentInteriorExportTest::RunTest(const FString& Parameters)
 		return true;
 	}
 	TestTrue(TEXT("a level with no environment of its own is an interior"), Environment.bNoOutdoors);
-	TestFalse(TEXT("the level's bloom threshold is not carried, even for an interior"), Environment.BloomThreshold.IsSet());
-	TestFalse(TEXT("nor its bloom"), Environment.Bloom.IsSet());
+	if (TestTrue(TEXT("the bloom threshold is carried: an interior keeps the look of its volume with its exposure"), Environment.BloomThreshold.IsSet()))
+	{
+		TestNearlyEqual(TEXT("as it is"), *Environment.BloomThreshold, 2.0, 0.001);
+	}
+	TestTrue(TEXT("and its bloom"), Environment.Bloom.IsSet() && *Environment.Bloom == 2.0);
 	TestFalse(TEXT("the weather is not written for it: the client holds it"), Environment.Weather.IsSet());
 	const FString Json = FMantlePlaceExporter::ToJson(Place);
 	TestTrue(TEXT("outdoors false is written"), Json.Replace(TEXT(" "), TEXT("")).Contains(TEXT("\"outdoors\":false")));
-	TestFalse(TEXT("and no bloom threshold"), Json.Contains(TEXT("bloomThreshold")));
+	TestTrue(TEXT("and the threshold"), Json.Replace(TEXT(" "), TEXT("")).Contains(TEXT("\"bloomThreshold\":2")));
 	const FMantleParseResult Parsed = FMantlePlaceParser::ParseFromString(Json);
-	TestTrue(TEXT("the parser reads it back"), Parsed.Place.Settings.Environment.bNoOutdoors);
+	TestTrue(TEXT("the parser reads both back"), Parsed.Place.Settings.Environment.bNoOutdoors && Parsed.Place.Settings.Environment.BloomThreshold.IsSet());
 
 	// A level with an atmosphere is not an interior.
 	Grade->Settings.BloomThreshold = -1.0f;
@@ -1386,7 +1389,7 @@ bool FMantleEnvironmentOutdoorDropsExposureTest::RunTest(const FString& Paramete
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleEnvironmentInteriorKeepsExposureTest,
-	"Mantle.Editor.EnvironmentExport.InteriorAndSealedLevelKeepTheLevelsExposure",
+	"Mantle.Editor.EnvironmentExport.InteriorAndSealedLevelKeepTheLevelsLook",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantleEnvironmentInteriorKeepsExposureTest::RunTest(const FString& Parameters)
@@ -1408,11 +1411,15 @@ bool FMantleEnvironmentInteriorKeepsExposureTest::RunTest(const FString& Paramet
 			Grade->Settings.AutoExposureBias = static_cast<float>(Project.EngineBias + 1.5);
 			Grade->Settings.bOverride_BloomIntensity = true;
 			Grade->Settings.BloomIntensity = 2.0f;
+			Grade->Settings.bOverride_ColorSaturation = true;
+			Grade->Settings.ColorSaturation = FVector4(1.3, 1.3, 1.3, 1.0);
+			Grade->Settings.bOverride_WhiteTemp = true;
+			Grade->Settings.WhiteTemp = 8000.0f;
 		}
 		return Grade;
 	};
 
-	// A level with a volume and nothing else is an interior: its exposure travels as it did, its bloom does not.
+	// A level with a volume and nothing else is an interior: its exposure travels as it did, and its bloom, saturation and tint with it.
 	{
 		FTestWorld Test;
 		if (!TestNotNull(TEXT("a test world"), Test.World) || !TestNotNull(TEXT("a volume"), AddGrade(Test)))
@@ -1429,8 +1436,10 @@ bool FMantleEnvironmentInteriorKeepsExposureTest::RunTest(const FString& Paramet
 		{
 			TestNearlyEqual(TEXT("with the volume's bias over the project's"), Environment.Exposure->Bias, 1.5, 0.001);
 		}
-		TestFalse(TEXT("its bloom is not"), Environment.Bloom.IsSet());
-		TestEqual(TEXT("the volume is approximated: its exposure was carried"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(1));
+		TestTrue(TEXT("its bloom is carried too"), Environment.Bloom.IsSet() && *Environment.Bloom == 2.0);
+		TestTrue(TEXT("and its saturation"), Environment.Saturation.IsSet() && *Environment.Saturation == 1.3);
+		TestTrue(TEXT("and its white balance as a tint"), Environment.ColorTint.IsSet() && *Environment.ColorTint != 0xFFFFFF);
+		TestEqual(TEXT("the volume is approximated: its look was carried"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(1));
 		const FString Json = FMantlePlaceExporter::ToJson(Place);
 		TestTrue(TEXT("the file writes the exposure"), Json.Contains(TEXT("\"exposure\"")));
 	}
@@ -1454,10 +1463,18 @@ bool FMantleEnvironmentInteriorKeepsExposureTest::RunTest(const FString& Paramet
 		FMantleEnvironmentExport::Apply(Test.World, Level.IdByActor, Level.Place, Coverage);
 		TestTrue(TEXT("the settings make it an interior"), Level.Place.Settings.Environment.bNoOutdoors);
 		TestTrue(TEXT("and its exposure is carried"), Level.Place.Settings.Environment.Exposure.IsSet());
+		TestTrue(TEXT("with its bloom"), Level.Place.Settings.Environment.Bloom.IsSet());
+		// No directional light is a sun in an interior: the level's own lamp keeps its brightness, and no clock is made of its angle.
+		if (const FMantleDirectionalLightProps* Props = Level.Place.Entities[0].Props.TryGet<FMantleDirectionalLightProps>())
+		{
+			TestEqual(TEXT("the directional light keeps the level's brightness, 8"), Props->Intensity, 8.0);
+		}
+		TestFalse(TEXT("and its angle is not turned into a clock"), Level.Place.Settings.Environment.ClockTime.IsSet());
+		TestEqual(TEXT("and it is not reported as the sun"), CountOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Approximated), static_cast<int64>(0));
 	}
 
 	// A sealed level (no direct sun, as a dungeon or a room with a baked sun) is lit by its own lights too, so it keeps its exposure
-	// (SewerDungeon's is +2.567 stops, set for its dark dungeon); the bloom and the fog it brought are left out.
+	// (SewerDungeon's is +2.567 stops, set for its dark dungeon), with the rest of its volume's look and its sun's brightness and color.
 	{
 		FTestWorld Test;
 		if (!TestNotNull(TEXT("a test world"), Test.World) || !TestNotNull(TEXT("a volume"), AddGrade(Test)))
@@ -1466,7 +1483,8 @@ bool FMantleEnvironmentInteriorKeepsExposureTest::RunTest(const FString& Paramet
 		}
 		FSunLevel Level;
 		AMantlePlaceSettingsActor* Settings = Test.Spawn<AMantlePlaceSettingsActor>(TEXT("Settings"));
-		if (!TestTrue(TEXT("a sun"), Level.Build(Test, FRotator(-46.0, 30.0, 0.0), /*bTemperature*/ false)) || !TestNotNull(TEXT("place settings"), Settings))
+		if (!TestTrue(TEXT("a sun"), Level.Build(Test, FRotator(-46.0, 30.0, 0.0), /*bTemperature*/ true)) || !TestTrue(TEXT("a fill sun"), Level.AddFill(Test))
+			|| !TestNotNull(TEXT("place settings"), Settings))
 		{
 			return false;
 		}
@@ -1480,8 +1498,41 @@ bool FMantleEnvironmentInteriorKeepsExposureTest::RunTest(const FString& Paramet
 		{
 			TestNearlyEqual(TEXT("with the volume's bias"), Environment.Exposure->Bias, 1.5, 0.001);
 		}
-		TestFalse(TEXT("its bloom is not"), Environment.Bloom.IsSet());
-		TestEqual(TEXT("the volume is approximated: its exposure was carried"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(1));
+		TestTrue(TEXT("its bloom, saturation and tint are carried with it"),
+			Environment.Bloom.IsSet() && *Environment.Bloom == 2.0 && Environment.Saturation.IsSet() && Environment.ColorTint.IsSet());
+		TestEqual(TEXT("the volume is approximated: its look was carried"), CountOf(Coverage, MantleCoverageCategory::PostProcess, EOutcome::Approximated), static_cast<int64>(1));
+		// The sun keeps the brightness it was set with, together with the exposure; its 4000 K goes into its color. The extra light is still left out.
+		TestEqual(TEXT("only the first sun is published"), Level.Place.Entities.Num(), 1);
+		if (const FMantleDirectionalLightProps* Props = Level.Place.Entities[0].Props.TryGet<FMantleDirectionalLightProps>())
+		{
+			TestEqual(TEXT("the sun keeps the level's brightness, 8"), Props->Intensity, 8.0);
+			TestTrue(TEXT("and its 4000 K goes into its color: warm, red over blue"), Props->Color.R > Props->Color.B);
+		}
+		TestTrue(TEXT("the sun's line says it is kept because the level is sealed"),
+			DetailsOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Approximated).Contains(TEXT("sealed level")));
+		TestTrue(TEXT("the sun's angle is still carried as the clock"), Environment.ClockTime.IsSet());
+		TestEqual(TEXT("and the fill sun is dropped"), CountOf(Coverage, MantleCoverageCategory::Lights, EOutcome::Dropped), static_cast<int64>(1));
+	}
+
+	// Sun Brightness set in Mantle Place Settings wins over the sealed level's sun.
+	{
+		FTestWorld Test;
+		FSunLevel Level;
+		AMantlePlaceSettingsActor* Settings = Test.World ? Test.Spawn<AMantlePlaceSettingsActor>(TEXT("Settings")) : nullptr;
+		if (!TestNotNull(TEXT("place settings"), Settings) || !TestTrue(TEXT("a sun"), Level.Build(Test, FRotator(-46.0, 30.0, 0.0), /*bTemperature*/ false)))
+		{
+			return false;
+		}
+		Settings->DirectSun = EMantlePlaceDirectSun::Never;
+		Settings->bSetSunBrightness = true;
+		Settings->SunBrightness = 2.0;
+		Level.Place.Settings.Environment = Settings->MakeEnvironmentSettings();
+		FMantleCoverage Coverage;
+		FMantleEnvironmentExport::Apply(Test.World, Level.IdByActor, Level.Place, Coverage);
+		if (const FMantleDirectionalLightProps* Props = Level.Place.Entities[0].Props.TryGet<FMantleDirectionalLightProps>())
+		{
+			TestEqual(TEXT("the settings' sun is 2 times the game's, 7, even in a sealed level"), Props->Intensity, 7.0);
+		}
 	}
 	return true;
 }
