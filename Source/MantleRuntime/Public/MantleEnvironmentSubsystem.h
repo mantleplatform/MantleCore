@@ -382,6 +382,20 @@ public:
 	static void ApplyBloomThresholdSettings(FPostProcessSettings& Settings, const TOptional<double>& Threshold);
 
 	/**
+	 * Writes the local exposure part of a post-process volume's Settings (UpdatePostProcess's, split out so it can be tested):
+	 * off sets both contrast scales to 1 (no local exposure), else it overrides nothing and the project's own (DefaultEngine.ini) stays.
+	 */
+	static void ApplyLocalExposureSettings(FPostProcessSettings& Settings, bool bLocalExposureOff);
+
+	/**
+	 * What this machine's renderer does with the sky light, from its console variables (a settings change moves them mid-game):
+	 * Lumen when r.DynamicGlobalIlluminationMethod is 1 and r.Lumen.DiffuseIndirect.Allow is not 0; else distance-field shading
+	 * when r.DistanceFieldAO is on and r.AOQuality is above 0; else none. A variable that is missing counts as on (Lumen, the
+	 * table every place had before this), so a process that renders nothing changes nothing.
+	 */
+	static EMantleSkyLightState GetSkyLightState();
+
+	/**
 	 * Every net mode: marks the place an interior (settings.environment.outdoors false; FMantleEnvironment::Apply). Its
 	 * natural weather is held at Clear and strikes nothing, so no rain falls through its ceiling; a script's weather still
 	 * applies. The server holds it too, so a script reads the weather the players see.
@@ -420,6 +434,14 @@ public:
 	 * client sets it; nothing else does, so the fog keeps its own color in the editor and on servers.
 	 */
 	void SetWeatherFogTint(const FLinearColor& Tint, float Amount);
+
+	/**
+	 * Clients: the color of the sky light's lower half (the ground bounce): what looks down at the ground gets a little of
+	 * the sky's color back, where the engine's default is black. A place's sky light intensity scales it as it scales the
+	 * sky light. The game client sets it every tick; nothing else does, so the lower half stays black in the editor and on
+	 * servers.
+	 */
+	void SetGroundBounce(const FLinearColor& Color);
 
 	/**
 	 * Clients: the LUT texture of a ColorGrading preset, loaded by path
@@ -525,6 +547,8 @@ private:
 	FLinearColor CloudLightningAnimBase = FLinearColor::Black;
 	float BaseFogDensity = 0.0f;
 	float BaseSkyLightIntensity = 0.0f;
+	/** The place's own sky light scale (already in BaseSkyLightIntensity), which scales the ground bounce too. */
+	float BaseSkyLightScale = 1.0f;
 	bool bWeatherSkyApplied = false;
 	float AppliedCloudCoverage = 0.0f;
 	float AppliedCloudDensity = 0.0f;
@@ -533,6 +557,17 @@ private:
 	float AppliedCloudFrame = 0.0f;
 	float AppliedFogDensity = 0.0f;
 	float AppliedSkyLightIntensity = 0.0f;
+
+	/** GetSkyLightState as the sky light and the post-process volume last used it (RefreshSkyLightState), and whether one was read yet. */
+	EMantleSkyLightState SkyLightState = EMantleSkyLightState::Lumen;
+	bool bSkyLightStateKnown = false;
+
+	/** The state UpdatePostProcess last built the volume with, and whether it has yet. The tick compares this rather than asking "did it change": any caller of RefreshSkyLightState may be the first to see a change. */
+	EMantleSkyLightState PostProcessSkyLightState = EMantleSkyLightState::Lumen;
+	bool bPostProcessSkyLightStateKnown = false;
+
+	/** Reads GetSkyLightState; on a change, logs one MANTLE_SKY_LIGHT_STATE line. */
+	void RefreshSkyLightState();
 
 	/** What server scripts changed, the fog color it replaces, and the post-process volume. */
 	FMantleEnvironmentOverride Override;
@@ -553,6 +588,10 @@ private:
 	/** SetWeatherFogTint's color and share. */
 	FLinearColor WeatherFogTint = FLinearColor::Black;
 	float WeatherFogTintAmount = 0.0f;
+
+	/** SetGroundBounce's color, and what UpdateWeatherSky last wrote to the sky light's lower half. */
+	FLinearColor GroundBounce = FLinearColor::Black;
+	FLinearColor AppliedGroundBounce = FLinearColor::Black;
 
 	/**
 	 * A bit per color-grading preset (1 << preset) already found missing, so each is looked for and logged once.

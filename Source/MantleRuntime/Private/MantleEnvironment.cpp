@@ -100,7 +100,7 @@ namespace
 
 		if (UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(Sun->GetLightComponent()))
 		{
-			Light->SetIntensity(3.5f);
+			Light->SetIntensity(MantleEnvironmentDefaults::DefaultSunIntensity);
 			Light->SetLightColor(FLinearColor(1.0f, 0.97f, 0.92f));
 		}
 

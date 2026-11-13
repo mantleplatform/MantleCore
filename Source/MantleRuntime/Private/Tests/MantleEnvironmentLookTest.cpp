@@ -7,7 +7,9 @@
 
 #include "Engine/DirectionalLight.h"
 #include "Engine/ExponentialHeightFog.h"
+#include "Engine/PostProcessVolume.h"
 #include "Engine/Scene.h"
+#include "HAL/IConsoleManager.h"
 #include "Engine/SkyLight.h"
 #include "Engine/World.h"
 #include "Components/SkyAtmosphereComponent.h"
@@ -362,6 +364,100 @@ bool FMantleEnvironmentInteriorTest::RunTest(const FString& Parameters)
 	CountEnvironmentActors(Outdoor, Suns, Others);
 	TestEqual(TEXT("an outdoor place with no sun of its own gets the default one"), Suns, 1);
 	TestTrue(TEXT("and the rest of the sky"), Others > 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleSkyLightStateOrderTest,
+	"Mantle.Runtime.Environment.SkyLightStateOrder",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleSkyLightStateOrderTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleEnvironmentLookTestPrivate;
+
+	// A settings change reaches the post-process volume (local exposure) whichever caller sees it first: the sky light update
+	// from outside the tick, then the tick. The tick used to ask only "did the state change just now", so the first caller
+	// used the change up and the volume kept its old state.
+	struct FScopedVariables
+	{
+		TArray<TPair<IConsoleVariable*, int32>> Saved;
+		void Set(const TCHAR* Name, const int32 Value)
+		{
+			if (IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(Name))
+			{
+				if (!Saved.ContainsByPredicate([Variable](const TPair<IConsoleVariable*, int32>& Entry) { return Entry.Key == Variable; }))
+				{
+					Saved.Emplace(Variable, Variable->GetInt());
+				}
+				Variable->Set(Value, ECVF_SetByConsole);
+			}
+		}
+		~FScopedVariables()
+		{
+			for (const TPair<IConsoleVariable*, int32>& Entry : Saved)
+			{
+				Entry.Key->Set(Entry.Value, ECVF_SetByConsole);
+			}
+		}
+	} Variables;
+	// Start from full Lumen (local exposure on).
+	Variables.Set(TEXT("r.DynamicGlobalIlluminationMethod"), 1);
+	Variables.Set(TEXT("r.Lumen.DiffuseIndirect.Allow"), 1);
+	Variables.Set(TEXT("r.DistanceFieldAO"), 1);
+	Variables.Set(TEXT("r.AOQuality"), 2);
+
+	const FMantleParseResult Outdoor = FMantlePlaceParser::ParseFromString(PlaceJson(TEXT("\"outdoors\":true")));
+	if (!TestTrue(TEXT("an outdoor place parses"), Outdoor.bSuccess))
+	{
+		AddError(Outdoor.ErrorSummary());
+		return false;
+	}
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, /*bInformEngineOfWorld*/ false, TEXT("MantleSkyLightStateOrderTestWorld"));
+	if (!TestNotNull(TEXT("a world"), World))
+	{
+		return false;
+	}
+	FMantleBuildResult Result;
+	FMantleEnvironment::Apply(World, Outdoor.Place, Result);
+	UMantleEnvironmentSubsystem* Subsystem = World->GetSubsystem<UMantleEnvironmentSubsystem>();
+	if (!TestNotNull(TEXT("the environment subsystem"), Subsystem))
+	{
+		World->DestroyWorld(/*bInformEngineOfWorld*/ false);
+		return false;
+	}
+	auto LocalExposureOverridden = [World]()
+	{
+		for (TActorIterator<APostProcessVolume> It(World); It; ++It)
+		{
+			const FPostProcessSettings& Settings = It->Settings;
+			if (It->bEnabled && Settings.bOverride_LocalExposureHighlightContrastScale && Settings.bOverride_LocalExposureShadowContrastScale
+				&& Settings.LocalExposureHighlightContrastScale == 1.0f && Settings.LocalExposureShadowContrastScale == 1.0f)
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
+	Subsystem->Tick(0.016f);
+	TestFalse(TEXT("full Lumen leaves local exposure alone"), LocalExposureOverridden());
+
+	// Nothing shades the sky light any more; the sky light update from outside the tick sees it first.
+	Variables.Set(TEXT("r.DistanceFieldAO"), 0);
+	Variables.Set(TEXT("r.DynamicGlobalIlluminationMethod"), 0);
+	Subsystem->UpdateWeatherSky();
+	Subsystem->Tick(0.016f);
+	TestTrue(TEXT("the tick still switches local exposure off outdoors"), LocalExposureOverridden());
+
+	// And back the other way, with the post-process update from outside the tick first.
+	Variables.Set(TEXT("r.DynamicGlobalIlluminationMethod"), 1);
+	Variables.Set(TEXT("r.DistanceFieldAO"), 1);
+	Subsystem->UpdatePostProcess();
+	Subsystem->Tick(0.016f);
+	TestFalse(TEXT("and switches it back on"), LocalExposureOverridden());
+
+	World->DestroyWorld(/*bInformEngineOfWorld*/ false);
 	return true;
 }
 
