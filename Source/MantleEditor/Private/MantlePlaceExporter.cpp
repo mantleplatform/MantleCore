@@ -1660,17 +1660,17 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 	}
 	// Painted foliage publishes (#467): an InstancedFoliageActor's components are instanced static
 	// meshes, which Export writes as InstancedMesh entities like any other instance source.
-	// A Post Process Volume (#628, #45): its saturation, bloom, white balance and exposure travel as the place's settings
-	// (FMantleEnvironmentExport); the rest is left out, with a warning. The one FMantleEnvironment spawns into a
-	// built place is infrastructure, not content.
+	// A Post Process Volume (#628, #45): none of its look travels as the level had it (FMantleEnvironmentExport): its saturation,
+	// bloom and white balance are left out, and its exposure unless the place is an interior or sealed, with a warning. The one
+	// FMantleEnvironment spawns into a built place is infrastructure, not content.
 	if (Actor->IsA(APostProcessVolume::StaticClass()))
 	{
 		if (Actor->ActorHasTag(FName(FMantleEnvironment::EnvironmentActorTag)))
 		{
 			return false;
 		}
-		OutWhat = TEXT("is a Post Process Volume: Mantle carries its saturation, bloom, white balance and exposure, and uses Mantle's own post-process for the rest.");
-		OutRemedy = TEXT("Nothing to change: the export reports what it carries and what it leaves out.");
+		OutWhat = TEXT("is a Post Process Volume: Mantle's own post-process is used, so the volume's saturation, bloom and white balance are left out, and its exposure too unless the place is an interior or a sealed level.");
+		OutRemedy = TEXT("Nothing to change: the export reports what it leaves out. To choose a look on purpose, set Exposure, Saturation, Bloom or Color Tint in Mantle Place Settings.");
 		return true;
 	}
 	// A volume that only drives editor-time generation (a Procedural Foliage Volume): what it grows, the painted

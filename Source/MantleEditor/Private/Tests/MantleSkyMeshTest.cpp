@@ -298,4 +298,72 @@ bool FMantleSkyMeshMaterialNameTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleSkyMeshLitDomeTest,
+	"Mantle.Editor.SkyMesh.LitSkyNamedDomeAroundTheLevelIsLeftOut",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleSkyMeshLitDomeTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleSkyMeshTestPrivate;
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, CubePath);
+	if (!Cube)
+	{
+		AddWarning(TEXT("the engine cube did not load; skipped"));
+		return true;
+	}
+	FSkyWorld Fixture;
+	SpawnCube(Fixture.World, Cube, TEXT("Ground"), FVector::ZeroVector, 5000.0);
+
+	// StylizedVillageSummer's SM_SkyDomeDetail: named like a sky, around the whole level, with an ordinary lit one-sided material.
+	// A sky-named mesh that encloses the level goes whatever its material.
+	AStaticMeshActor* Detail = SpawnCube(Fixture.World, Cube, TEXT("SM_SkyDomeDetail"), FVector::ZeroVector, 40000.0);
+	// The same name but under 100 m across (half-extent 7500 cm): a gazebo's dome, not a sky.
+	// (Each kept mesh has a material of its own: identical static mesh actors are grouped into one instanced mesh at export, which would hide their names.)
+	AStaticMeshActor* Gazebo = SpawnCube(Fixture.World, Cube, TEXT("SkyGazeboDome"), FVector::ZeroVector, 15000.0, NewSkyMaterial(false, false));
+	// A sky-named lit mesh that does not enclose the level: off to one side, it stays.
+	AStaticMeshActor* Backdrop = SpawnCube(Fixture.World, Cube, TEXT("Sky Backdrop"), FVector(60000.0, 0.0, 0.0), 40000.0, NewSkyMaterial(false, false));
+	// Big and lit, around the level, but not named like a sky: large geometry, it stays.
+	AStaticMeshActor* Hills = SpawnCube(Fixture.World, Cube, TEXT("Hills"), FVector::ZeroVector, 45000.0, NewSkyMaterial(false, false));
+	if (!TestNotNull(TEXT("the actors spawned"), Detail) || !TestNotNull(TEXT("all of them"), Gazebo) || !TestNotNull(TEXT("really"), Backdrop) || !TestNotNull(TEXT("yes"), Hills))
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("a lit, one-sided dome named like a sky around the whole level is a sky"), FMantleSkyMesh::IsSkyMeshActor(Detail));
+	FString Why;
+	TestTrue(TEXT("by the same rule for a component"), FMantleSkyMesh::IsSkyMesh(Detail->GetStaticMeshComponent(), &Why));
+	TestTrue(TEXT("and it says why"), Why.Contains(TEXT("named like a sky")));
+	TestFalse(TEXT("one under 100 m is not"), FMantleSkyMesh::IsSkyMeshActor(Gazebo));
+	TestFalse(TEXT("one that does not enclose the level is not"), FMantleSkyMesh::IsSkyMeshActor(Backdrop));
+	TestFalse(TEXT("a lit mesh not named like a sky is not"), FMantleSkyMesh::IsSkyMeshActor(Hills));
+
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	auto Has = [&Result](const TCHAR* Name)
+	{
+		return Result.Place.Entities.ContainsByPredicate([Name](const FMantleEntity& Entity) { return Entity.Name == Name; });
+	};
+	TestFalse(TEXT("the lit sky dome is left out"), Has(TEXT("SM_SkyDomeDetail")));
+	TestTrue(TEXT("the ground stays"), Has(TEXT("Ground")));
+	TestTrue(TEXT("the small dome stays"), Has(TEXT("SkyGazeboDome")));
+	TestTrue(TEXT("the backdrop stays"), Has(TEXT("Sky Backdrop")));
+	TestTrue(TEXT("the hills stay"), Has(TEXT("Hills")));
+
+	// Reported in the Sky category, in plain words, with where to set the sky on purpose.
+	const FMantleCoverageCategory* Sky = Result.Coverage.Find(MantleCoverageCategory::Sky);
+	if (TestNotNull(TEXT("a Sky line"), Sky))
+	{
+		bool bNamed = false;
+		for (const FMantleCoverageExample& Example : Sky->Get(EMantleCoverageOutcome::Dropped).Examples)
+		{
+			if (Example.Name == TEXT("SM_SkyDomeDetail"))
+			{
+				bNamed = Example.Detail.Contains(TEXT("Mantle supplies its own sky")) && Example.Detail.Contains(TEXT("Mantle Place Settings"));
+			}
+		}
+		TestTrue(TEXT("the dome is dropped there, saying Mantle supplies its own and where to set one"), bNamed);
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

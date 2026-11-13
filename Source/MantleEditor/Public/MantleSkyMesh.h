@@ -17,10 +17,10 @@ class UStaticMeshComponent;
  *  2. One of its materials is flagged Is Sky (UMaterial::bIsSky): the engine's own marker for a sky dome material.
  *  3. It is huge (a half-extent of MinHalfExtent or more), its bounds enclose the center of every other mesh in
  *     the level that is smaller than it, and its look says sky: its actor, Blueprint, component or one of its
- *     materials is named like a sky ("Sky", "Cloud") and its material is unlit or two-sided, or its material is
- *     unlit and two-sided.
+ *     materials is named like a sky ("Sky", "Cloud"), whatever its material (a painted dome can be lit and one-sided),
+ *     or its material is unlit and two-sided.
  * Real large geometry is kept: terrain, a mountain backdrop or a big building has to be huge, enclose the level
- * and look like a sky at once, and a lit mesh that is not named like a sky never does.
+ * and look like a sky at once, and a mesh that is not named like a sky is never one unless it is unlit and two-sided.
  */
 class MANTLEEDITOR_API FMantleSkyMesh
 {

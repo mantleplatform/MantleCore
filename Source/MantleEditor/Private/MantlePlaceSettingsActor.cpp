@@ -270,6 +270,17 @@ FMantleEnvironmentSettings AMantlePlaceSettingsActor::MakeEnvironmentSettings() 
 	{
 		Out.Bloom = Clamped(Bloom, 0.0, MantleEnvironmentDefaults::MaxScriptBloom, 1.0);
 	}
+	if (bSetExposure)
+	{
+		// A bias on the game's own fixed exposure; upload never carries the level's. No bias is the game's own, so nothing is written.
+		const double Bias = Clamped(Exposure, -MantleEnvironmentDefaults::MaxExposureBias, MantleEnvironmentDefaults::MaxExposureBias, 0.0);
+		if (Bias != 0.0)
+		{
+			FMantleExposureSettings Exposed;
+			Exposed.Bias = Bias;
+			Out.Exposure = Exposed;
+		}
+	}
 	if (ColorGrading != EMantlePlaceColorGrading::None)
 	{
 		Out.ColorGrading = static_cast<uint8>(ColorGrading);
@@ -331,6 +342,9 @@ void AMantlePlaceSettingsActor::SetEnvironmentFrom(const FMantleEnvironmentSetti
 	Saturation = Environment.Saturation.Get(1.0);
 	bSetBloom = Environment.Bloom.IsSet();
 	Bloom = Environment.Bloom.Get(1.0);
+	// Only a bias on the game's own fixed exposure has a field here; an auto one is a script's or a file's.
+	bSetExposure = Environment.Exposure.IsSet() && Environment.Exposure->Mode == EMantleExposureMode::Fixed;
+	Exposure = bSetExposure ? Environment.Exposure->Bias : 0.0;
 	const uint8 Preset = Environment.ColorGrading.Get(MantleEnvironmentOverrideValues::ColorGradingNone);
 	ColorGrading = Preset <= MantleEnvironmentOverrideValues::ColorGradingLast
 		? static_cast<EMantlePlaceColorGrading>(Preset)
