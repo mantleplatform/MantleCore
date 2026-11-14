@@ -64,6 +64,10 @@ namespace MantlePlaceInstancingPrivate
 				}
 			}
 		}
+		for (const FMantleSeat& Seat : Place.Seats)
+		{
+			Named.Add(Seat.Entity);
+		}
 		return Named;
 	}
 
@@ -82,33 +86,6 @@ namespace MantlePlaceInstancingPrivate
 		const FVector Scale = Entity.Transform.GetScale3D();
 		return Entity.Transform.IsValid() && Scale.GetMin() >= MinInstanceScale;
 	}
-}
-
-FString FMantleThinReport::Describe() const
-{
-	using namespace MantlePlaceInstancingPrivate;
-	if (!RemovesAnything())
-	{
-		return TEXT("Nothing needs thinning.");
-	}
-	FString What;
-	if (FoliageRemoved() > 0 && OthersRemoved() > 0)
-	{
-		What = FString::Printf(TEXT("%s foliage instances first, then %s of the other instances"), *Count(FoliageRemoved()), *Count(OthersRemoved()));
-	}
-	else if (FoliageRemoved() > 0)
-	{
-		What = FString::Printf(TEXT("%s foliage instances"), *Count(FoliageRemoved()));
-	}
-	else
-	{
-		What = FString::Printf(TEXT("%s instances of props and PCG output"), *Count(OthersRemoved()));
-	}
-	return FString::Printf(TEXT("%s evenly across the level, %s %s of %s instances (%s removed), and the place file %s %s to %s."),
-		bApplied ? TEXT("Thinned") : TEXT("Thinning would remove"), bApplied ? TEXT("kept") : TEXT("keeping"),
-		*Count(InstancesAfter), *Count(InstancesBefore), *What,
-		bApplied ? TEXT("went from") : TEXT("going from"), *FMantlePlaceInstancing::DescribeBytes(BytesBefore),
-		*FMantlePlaceInstancing::DescribeBytes(BytesAfter));
 }
 
 int64 FMantlePlaceInstancing::PlaceBytes(const FMantlePlace& Place)
@@ -173,8 +150,6 @@ FMantleGroupReport FMantlePlaceInstancing::GroupStaticMeshes(FMantlePlace& Place
 		if (const int32* Found = GroupByKey.Find(Key))
 		{
 			GroupIndex = *Found;
-			// Props beside painted foliage are not what thinning takes first.
-			Groups[GroupIndex].bThinFirst = false;
 		}
 		else
 		{
@@ -209,146 +184,12 @@ TArray<bool> FMantlePlaceInstancing::EvenKeepMask(const int64 Count, const int64
 	return Mask;
 }
 
-FMantleThinReport FMantlePlaceInstancing::ThinToFit(FMantlePlace& Place, const TSet<FString>& ThinFirstIds, const int64 MaxInstances, const int64 MaxBytes,
-	const bool bApply)
-{
-	using namespace MantlePlaceInstancingPrivate;
-	FMantleThinReport Report;
-	Report.bApplied = bApply;
-
-	// The instanced entities, in place order, with their instances as they are: every round starts from these.
-	TArray<int32> Indices;
-	TArray<TArray<FTransform>> Originals;
-	TArray<bool> bFirst;
-	int64 OthersBefore = 0;
-	for (int32 Index = 0; Index < Place.Entities.Num(); ++Index)
-	{
-		if (TArray<FTransform>* Instances = InstancesOf(Place.Entities[Index]))
-		{
-			Indices.Add(Index);
-			Originals.Add(*Instances);
-			const bool bThinFirst = ThinFirstIds.Contains(Place.Entities[Index].Id);
-			bFirst.Add(bThinFirst);
-			(bThinFirst ? Report.FoliageBefore : OthersBefore) += Instances->Num();
-		}
-	}
-
-	Report.InstancesBefore = Report.FoliageBefore + OthersBefore;
-	Report.InstancesAfter = Report.InstancesBefore;
-	Report.FoliageAfter = Report.FoliageBefore;
-	Report.BytesBefore = PlaceBytes(Place);
-	Report.BytesAfter = Report.BytesBefore;
-
-	const bool bOverCount = Report.InstancesBefore > MaxInstances;
-	const bool bOverBytes = Report.BytesBefore > MaxBytes;
-	if (!bOverCount && !bOverBytes)
-	{
-		return Report;
-	}
-	if (Report.InstancesBefore == 0)
-	{
-		Report.bFits = false;
-		return Report;
-	}
-
-	auto Restore = [&]()
-	{
-		for (int32 Slot = 0; Slot < Indices.Num(); ++Slot)
-		{
-			*InstancesOf(Place.Entities[Indices[Slot]]) = Originals[Slot];
-		}
-	};
-
-	// What one instance costs in the file: the place with every instance left out against the place with them.
-	int64 PerInstance = 1;
-	{
-		for (const int32 Index : Indices)
-		{
-			InstancesOf(Place.Entities[Index])->Reset();
-		}
-		const int64 Without = PlaceBytes(Place);
-		Restore();
-		PerInstance = FMath::Max<int64>(1, (Report.BytesBefore - Without) / Report.InstancesBefore);
-	}
-
-	const int64 TargetBytes = static_cast<int64>(static_cast<double>(MaxBytes) * SizeHeadroom);
-	const int64 FirstCap = static_cast<int64>(static_cast<double>(Report.FoliageBefore) * MaxFoliageThinFraction);
-	const int64 OtherCap = static_cast<int64>(static_cast<double>(OthersBefore) * MaxFoliageThinFraction);
-
-	int64 Remove = FMath::Max<int64>(0, Report.InstancesBefore - MaxInstances);
-	if (bOverBytes)
-	{
-		Remove = FMath::Max(Remove, (Report.BytesBefore - TargetBytes + PerInstance - 1) / PerInstance);
-	}
-
-	for (int32 Round = 0; Round < 6; ++Round)
-	{
-		Remove = FMath::Min(Remove, FirstCap + OtherCap);
-		const int64 RemoveFirst = FMath::Min(Remove, FirstCap);
-		const int64 RemoveOther = Remove - RemoveFirst;
-
-		// One order per tier, across all its entities: the n-th instance of the tier is kept by the same rule whichever entity holds it.
-		int64 FirstSeen = 0;
-		int64 OtherSeen = 0;
-		const int64 FirstKeep = Report.FoliageBefore - RemoveFirst;
-		const int64 OtherKeep = OthersBefore - RemoveOther;
-		for (int32 Slot = 0; Slot < Indices.Num(); ++Slot)
-		{
-			TArray<FTransform>& Instances = *InstancesOf(Place.Entities[Indices[Slot]]);
-			Instances.Reset();
-			int64& Seen = bFirst[Slot] ? FirstSeen : OtherSeen;
-			const int64 Total = bFirst[Slot] ? Report.FoliageBefore : OthersBefore;
-			const int64 Keep = bFirst[Slot] ? FirstKeep : OtherKeep;
-			for (const FTransform& Instance : Originals[Slot])
-			{
-				if (Keeps(Seen, Total, Keep))
-				{
-					Instances.Add(Instance);
-				}
-				++Seen;
-			}
-		}
-
-		Report.FoliageAfter = FirstKeep;
-		Report.InstancesAfter = FirstKeep + OtherKeep;
-		Report.BytesAfter = PlaceBytes(Place);
-		if (Report.BytesAfter <= MaxBytes && Report.InstancesAfter <= MaxInstances)
-		{
-			break;
-		}
-		if (Remove >= FirstCap + OtherCap)
-		{
-			break;
-		}
-		// The estimate ran short: take what is still over, and a quarter more.
-		const int64 StillOver = FMath::Max<int64>(Report.BytesAfter - TargetBytes, 0);
-		Remove += FMath::Max<int64>(1, (StillOver * 5 / 4 + PerInstance - 1) / PerInstance);
-	}
-
-	Report.bFits = Report.BytesAfter <= MaxBytes && Report.InstancesAfter <= MaxInstances;
-	if (!bApply)
-	{
-		Restore();
-		return Report;
-	}
-	// An entity left with no instance has nothing to place.
-	for (int32 Slot = Indices.Num() - 1; Slot >= 0; --Slot)
-	{
-		if (InstancesOf(Place.Entities[Indices[Slot]])->Num() == 0)
-		{
-			Place.Entities.RemoveAt(Indices[Slot]);
-		}
-	}
-	return Report;
-}
-
 FString FMantlePlaceInstancing::DescribeBytes(const int64 Bytes)
 {
 	return FString::Printf(TEXT("%.1f MiB"), static_cast<double>(Bytes) / (1024.0 * 1024.0));
 }
 
-FString FMantlePlaceInstancing::DescribeOverBudget(const int64 Instances, const int64 InstanceLimit, const int64 Bytes, const int64 ByteLimit,
-	const FMantleThinReport& Thin)
+FString FMantlePlaceInstancing::DescribeOverBudget(const int64 Instances, const int64 InstanceLimit, const int64 Bytes, const int64 ByteLimit)
 {
 	using namespace MantlePlaceInstancingPrivate;
 	const bool bOverCount = Instances > InstanceLimit;
@@ -361,28 +202,19 @@ FString FMantlePlaceInstancing::DescribeOverBudget(const int64 Instances, const 
 	FString Problem;
 	if (bOverCount && bOverBytes)
 	{
-		Problem = FString::Printf(TEXT("This place has %s instanced meshes (a place holds at most %s) and its place file would be %s (Mantle accepts at most %s)."),
+		Problem = FString::Printf(TEXT("The part of this place that always loads has %s instanced meshes (the limit is %s) and its place file would be %s (Mantle accepts at most %s)."),
 			*Count(Instances), *Count(InstanceLimit), *DescribeBytes(Bytes), *DescribeBytes(ByteLimit));
 	}
 	else if (bOverCount)
 	{
-		Problem = FString::Printf(TEXT("This place has %s instanced meshes (foliage, PCG output, instanced props); a place holds at most %s."),
+		Problem = FString::Printf(TEXT("The part of this place that always loads has %s instanced meshes (foliage, PCG output, instanced props); the limit is %s."),
 			*Count(Instances), *Count(InstanceLimit));
 	}
 	else
 	{
-		Problem = FString::Printf(TEXT("The place file would be %s; Mantle accepts at most %s."), *DescribeBytes(Bytes), *DescribeBytes(ByteLimit));
+		Problem = FString::Printf(TEXT("The part of this place that always loads would make a place file of %s; Mantle accepts at most %s."), *DescribeBytes(Bytes), *DescribeBytes(ByteLimit));
 	}
-
-	if (Thin.RemovesAnything() && Thin.bFits)
-	{
-		return Problem + TEXT(" Even thinning fixes it. ") + Thin.Describe()
-			+ TEXT(" Nothing is removed unless you choose it: use Thin and publish in the Mantle Publish window, or Mantle.Publish -Thin=auto when publishing without the editor.");
-	}
-	if (Thin.RemovesAnything())
-	{
-		return Problem + TEXT(" Thinning alone cannot fix it: ") + Thin.Describe()
-			+ TEXT(" That still leaves it over, so remove or merge more of the level's repeated objects, or split the world into more than one place.");
-	}
-	return Problem + TEXT(" There are no instances to thin: merge repeated props into fewer objects, delete what players never see, or split the world into more than one place.");
+	// Scenery with a draw distance moves to cell files, which have no such limit; what is left is what nothing can be culled from.
+	return Problem + TEXT(" Scenery that has a draw distance is stored in cells and does not count. What counts is what always loads: meshes with no draw distance, ")
+		TEXT("tagged, physics and interactable objects, and objects a script names. Set a draw distance on large repeated meshes, or merge or remove what players never see.");
 }

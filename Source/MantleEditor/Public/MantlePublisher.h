@@ -38,12 +38,6 @@ struct FMantlePublishResult
 	/** The creator canceled. Nothing was published; what was uploaded stays for the next Publish. */
 	bool bCanceled = false;
 
-	/**
-	 * GhzGarage/mantle#818: set when the place is over a limit that even thinning can fix: what thinning would do, in plain words. The
-	 * panel offers it (Thin and publish); Mantle.Publish -Thin=auto chooses it up front.
-	 */
-	FString ThinOffer;
-
 	/** The place file that was sent, kept for inspection and tests. */
 	FString PlaceJson;
 };
@@ -87,10 +81,8 @@ class MANTLEEDITOR_API FMantlePublisher
 public:
 	/**
 	 * Uploads the level and makes it live. Notes are the revision notes; empty is fine. Blocks until done or MaxBlockingSeconds pass.
-	 * bThinInstances (GhzGarage/mantle#818): when the place is over the instance or file-size limit, remove instances evenly until it
-	 * fits and say how many; off, such a place is refused before anything is uploaded.
 	 */
-	static FMantlePublishResult PublishToCloud(UWorld* World, const FString& Notes, double MaxBlockingSeconds, bool bThinInstances = false);
+	static FMantlePublishResult PublishToCloud(UWorld* World, const FString& Notes, double MaxBlockingSeconds);
 
 	/** #804: a blocking run collects garbage after this many conversion steps (FMantlePlacePublishSession::FTiming::CollectGarbageEverySteps). */
 	static constexpr int32 CollectGarbageEverySteps = 100;
@@ -141,5 +133,5 @@ public:
 	static FString MakePublishBody(const FString& Notes);
 
 private:
-	static FMantlePublishResult Run(UWorld* World, bool bGoLive, const FString& Notes, double MaxBlockingSeconds, bool bThinInstances = false);
+	static FMantlePublishResult Run(UWorld* World, bool bGoLive, const FString& Notes, double MaxBlockingSeconds);
 };

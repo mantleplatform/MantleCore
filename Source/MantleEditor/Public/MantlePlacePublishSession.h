@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "MantleAssetUploadQueue.h"
+#include "MantleCells.h"
 #include "MantleCosmeticUpload.h"
 #include "MantleLibraryPublish.h"
 #include "MantlePlaceAssetConverter.h"
@@ -102,18 +103,20 @@ struct MANTLEEDITOR_API FMantlePackagePublish
  */
 struct MANTLEEDITOR_API FMantlePlaceSizeCheck
 {
-	/** The place file's size in bytes and its instanced mesh count, as measured (after grouping and any thinning). */
+	/** The root place file's size in bytes and its instanced mesh count, as measured (the scenery in cells does not count). */
 	int64 Bytes = 0;
 	int64 Instances = 0;
 
-	/** Over the instance limit or the file-size limit with nothing left to try: the publish stops here. */
+	/** The root is over the instance limit or the file-size limit: the publish stops here. */
 	bool bOver = false;
 
 	/** Why, for the Check step's rows. */
 	TArray<FMantleValidationIssue> Issues;
 
-	/** When thinning is on offer: what it would do, in plain words. Empty when it is not (or already chosen). */
-	FString ThinOffer;
+	/** Cells the scenery goes to, and what is in them (cells-format 5), for the Check step's note; 0 for a place with none. */
+	int32 Cells = 0;
+	int64 CellEntities = 0;
+	int64 CellInstances = 0;
 };
 
 enum class EMantlePlaceExportOutcome : uint8
@@ -172,9 +175,29 @@ public:
 	 */
 	virtual void SetUIDocumentSourceIds(const TMap<FString, FString>& UIDocumentSourceIds) {}
 
-	/** The place file, with the uploaded assets' and scripts' ids. */
+	/**
+	 * The place file, with the uploaded assets' and scripts' ids. A place with scenery in cells (large places, stage 1) has no final
+	 * file yet: OutPlaceJson comes back empty, GetCellUploads names the cell files, and WriteRoot gives the file once they and the
+	 * cell index are uploaded.
+	 */
 	virtual EMantlePlaceExportOutcome Export(const FMantlePlaceAssetSet& Set, const TMap<FString, FString>& ScriptSourceIds,
 		const TMap<FString, FString>& ScriptAuthorSourceIds, FString& OutPlaceJson, TArray<FMantleValidationIssue>& OutIssues) = 0;
+
+	/**
+	 * After an Export: the cell files of the place's scenery (cells-format 3), each with its key (unique, the same bytes share one),
+	 * name for messages, bytes and hash. Empty for a place with no cells, and by default. False with a plain sentence when a cell
+	 * cannot be written.
+	 */
+	virtual bool GetCellUploads(TArray<FMantlePlaceUpload>& OutFiles, FString& OutMessage) { OutFiles.Reset(); return true; }
+
+	/**
+	 * Once the cell files are on Mantle: the cell index, named by each file's uploaded id, for upload (key, bytes and hash filled).
+	 * FilesByKey holds what the uploads returned, by the keys GetCellUploads gave.
+	 */
+	virtual bool MakeCellIndex(const TMap<FString, FMantleCellFileRef>& FilesByKey, FMantlePlaceUpload& OutIndex, FString& OutMessage) { return false; }
+
+	/** Once the index is uploaded: the root place file, naming it. */
+	virtual bool WriteRoot(const FMantleCellRoot& Index, FString& OutPlaceJson, FString& OutMessage) { return false; }
 
 	/** Lines for the publish log after a successful Export: each Script Asset's id ("Script asset <path> = <id>"). */
 	virtual TArray<FString> GetExportNotes() const { return TArray<FString>(); }
@@ -258,6 +281,9 @@ public:
 	virtual FString GetLevelName() const override;
 	virtual bool Prepare(FMantleValidationResult& OutValidation, FString& OutMessage) override;
 	virtual bool CheckPlaceSize(FMantlePlaceSizeCheck& OutCheck) override;
+	virtual bool GetCellUploads(TArray<FMantlePlaceUpload>& OutFiles, FString& OutMessage) override;
+	virtual bool MakeCellIndex(const TMap<FString, FMantleCellFileRef>& FilesByKey, FMantlePlaceUpload& OutIndex, FString& OutMessage) override;
+	virtual bool WriteRoot(const FMantleCellRoot& Index, FString& OutPlaceJson, FString& OutMessage) override;
 	virtual int32 NumConversionSteps() const override;
 	virtual int32 NumNonContentSteps() const override { return bThumbnailStep ? 1 : 0; }
 	virtual FString ConversionStepName(int32 Step) const override;
@@ -284,9 +310,6 @@ public:
 	virtual void ConversionFinished() override;
 	virtual void EndPublish() override;
 
-	/** GhzGarage/mantle#818: remove instances evenly when the place is over a limit (the creator chose it). Set before the session starts. */
-	void SetThinInstances(bool bThin) { bThinInstances = bThin; }
-
 private:
 	TWeakObjectPtr<UWorld> World;
 	FString LevelName;
@@ -307,8 +330,13 @@ private:
 	TArray<FString> ExportNotes;
 	/** #549: SetUIDocumentSourceIds, for the next Export. */
 	TMap<FString, FString> UIDocumentSourceIds;
-	/** GhzGarage/mantle#818: SetThinInstances. */
-	bool bThinInstances = false;
+	/** The last Export's root place (it names the cell index once that is uploaded), its grid, and its cells, for GetCellUploads and MakeCellIndex. */
+	FMantlePlace CellRootPlace;
+	FMantleCellGrid CellGrid;
+	TArray<FMantlePlannedCell> PlannedCells;
+	/** Each cell's files by cell (same order as PlannedCells), as written; the index names them by the ids their uploads return. */
+	TArray<TArray<FMantleCellFileBlob>> CellBlobs;
+	bool bHasCells = false;
 	/** GhzGarage/mantle#818: the World Partition cells Prepare loaded, let go in EndPublish. */
 	TWeakObjectPtr<UObject> LoadedCells;
 
@@ -331,6 +359,8 @@ enum class EMantlePublishPhase : uint8
 	Crediting,
 	Scripts,
 	Exporting,
+	/** The cell files of the place's scenery, then its cell index, uploaded (large places, stage 1); skipped for a place with none. */
+	Cells,
 	/**
 	 * Go live only, with vehicles (#614 stage 6): each uploaded vehicle becomes a library item (or a new version of
 	 * the one an earlier publish made) and the place file names it through storage. Waits for the creator's
@@ -525,6 +555,10 @@ private:
 	void HandleCredited(const FMantleApiResult& Response);
 	void TickScripts();
 	void TickExporting();
+	/** After the export (and the cells' upload, if any): the log notes, the library step or the save. */
+	void AfterExport(FString PlaceJson);
+	void StartCellUploads(TArray<FMantlePlaceUpload> Files);
+	void TickCells();
 	void EnterSaving();
 	/** After the uploads (and their credits): the scripts, or #840 for a library-only source, straight to the Library step. */
 	void EnterScriptsOrLibrary();
@@ -572,6 +606,13 @@ private:
 	FMantlePublishResult Result;
 	FMantlePlaceAssetSet Set;
 	TSharedPtr<FMantleAssetUploadQueue> Queue;
+	/** The cell files' upload, then the index's (large places, stage 1). */
+	TSharedPtr<FMantleAssetUploadQueue> CellQueue;
+	/** Cells step: the files' ids by their upload keys, the index being uploaded, and the root's pointer to it. */
+	TMap<FString, FMantleCellFileRef> CellFileRefs;
+	bool bCellIndexStarted = false;
+	FString CellIndexKey;
+	FMantleCellRoot CellRoot;
 	TArray<FString> Log;
 
 	/** #804: Start entered FMantlePublishCaches, and ReleaseHeldMemory has not left it yet. */

@@ -163,6 +163,9 @@ namespace MantlePlaceExporterUploads
 		/** Uploaded ids the level names as they are, with no local asset to convert (an imported spawn's vehicle, #435). */
 		TMap<FString, EMantleAssetKind> NamedIds;
 
+		/** A mesh's bounds in its own space, by the id its entities name it by: what a cell's bounds are made of (cells-format 4.1). */
+		TMap<FString, FBox> MeshBounds;
+
 		FString IdFor(const FString& Key, EMantleAssetKind Kind, const UObject* Source)
 		{
 			if (!KindOf.Contains(Key))
@@ -818,6 +821,10 @@ namespace
 		Props.Surface = FMantlePlaceExporter::ReadSurface(Component);
 		// GhzGarage/mantle#630: the component's cull distance, else a size-based default; nothing for a client that doesn't read them.
 		FMantleDrawDistance::Apply(FMantleDrawDistance::ReadComponent(Component, Mesh), FMantleTargetFeatures::Current(), Props);
+		if (Mesh && !Props.Mesh.IsEmpty() && !Uploads.MeshBounds.Contains(Props.Mesh))
+		{
+			Uploads.MeshBounds.Add(Props.Mesh, Mesh->GetBounds().GetBox());
+		}
 	}
 
 	/**
@@ -3295,19 +3302,43 @@ namespace
 	constexpr double GExporterMinInstanceScale = 0.00005;
 
 	/**
-	 * Whether Owner is the level's painted foliage (an InstancedFoliageActor, by class name: MantleEditor does not link the Foliage
-	 * module). Thinning takes these instances first (GhzGarage/mantle#818).
+	 * Adds every quoted string of a script, package or UI file's Text to Out, in any quote style (cells-format 5.2 rule 5): an entity whose
+	 * name a script quotes may be looked up by it (World:FindFirst), so it stays in the root. It over-keeps on purpose, and a quote that
+	 * never closes on its line (an apostrophe in a comment) is skipped.
 	 */
-	bool ExporterIsFoliageOwner(const AActor* Owner)
+	void ExporterAddQuotedStrings(const FString& Text, TSet<FString>& Out)
 	{
-		for (const UClass* Class = Owner ? Owner->GetClass() : nullptr; Class; Class = Class->GetSuperClass())
+		const int32 Length = Text.Len();
+		for (int32 Index = 0; Index < Length; ++Index)
 		{
-			if (Class->GetFName() == TEXT("InstancedFoliageActor"))
+			const TCHAR Quote = Text[Index];
+			if (Quote != TEXT('"') && Quote != TEXT(''') && Quote != TEXT('`'))
 			{
-				return true;
+				continue;
+			}
+			FString Run;
+			int32 End = Index + 1;
+			for (; End < Length && Text[End] != Quote; ++End)
+			{
+				if (Text[End] == TEXT('\') && End + 1 < Length)
+				{
+					Run.AppendChar(Text[++End]);
+					continue;
+				}
+				if (Text[End] == TEXT('
+') && Quote != TEXT('`'))
+				{
+					End = Length;
+					break;
+				}
+				Run.AppendChar(Text[End]);
+			}
+			if (End < Length)
+			{
+				Out.Add(Run);
+				Index = End;
 			}
 		}
-		return false;
 	}
 
 	FString ExporterLabelOf(const AActor* Actor)
@@ -3397,7 +3428,7 @@ namespace
 	}
 
 	/** Location's position along a Morton curve through Bounds, 21 bits an axis. */
-	uint64 ExporterMortonCode(const FVector& Location, const FBox& Bounds)
+	uint64 ExporterMortonCodeImpl(const FVector& Location, const FBox& Bounds)
 	{
 		const FVector Size = Bounds.GetSize();
 		auto Quantize = [](double Value, double Min, double Extent) -> uint64
@@ -4121,7 +4152,7 @@ TArray<FMantleEntity> FMantlePlaceExporter::ChunkInstancedMeshes(const TArray<FM
 		Order.Reserve(Instances.Num());
 		for (int32 InstanceIndex = 0; InstanceIndex < Instances.Num(); ++InstanceIndex)
 		{
-			Order.Emplace(ExporterMortonCode(Instances[InstanceIndex].GetLocation(), Bounds), InstanceIndex);
+			Order.Emplace(ExporterMortonCodeImpl(Instances[InstanceIndex].GetLocation(), Bounds), InstanceIndex);
 		}
 		Order.StableSort([](const TPair<uint64, int32>& A, const TPair<uint64, int32>& B) { return A.Key < B.Key; });
 
@@ -4444,6 +4475,9 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 
 	// Pass 2 — build entities now that every id exists.
 	TSet<FString> ReferencedAssets;
+	// Cells-format 5.2: the ids of entities whose actor has Is Spatially Loaded off, and the names scripts quote.
+	TSet<FString> NotSpatiallyLoaded;
+	TSet<FString> ScriptLiterals;
 	MantlePlaceExporterUploads::FContext Uploads;
 	Uploads.Assets = Options.Assets;
 	Uploads.Limits = FMantlePlaceAssetLimits::FromContract();
@@ -4461,6 +4495,10 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		FMantleEntity Entity;
 		Entity.Id = IdByActor[Actor];
 		ClassifyActor(Actor, Entity.Type);
+		if (!Actor->GetIsSpatiallyLoaded())
+		{
+			NotSpatiallyLoaded.Add(Entity.Id);
+		}
 
 		Entity.Name = ExporterLabelOf(Actor);
 
@@ -4613,6 +4651,10 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				const FString PartPath = FString::Printf(TEXT("/entities/%d"), Place.Entities.Num());
 				FMantleEntity Child;
 				Child.Id = Exported.Id;
+				if (!Actor->GetIsSpatiallyLoaded())
+				{
+					NotSpatiallyLoaded.Add(Child.Id);
+				}
 				Child.Type = Exported.Part.Type;
 				// A component's second and later effects are numbered after it (#628).
 				const FString PartSuffix = Exported.Part.EffectIndex > 0 ? FString::Printf(TEXT("_%d"), Exported.Part.EffectIndex + 1) : FString();
@@ -4631,11 +4673,10 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	// material set across the whole level in world space, then cut into entities of at most
 	// MaxInstancesPerEntity. Meshes and materials go through the library or the upload path exactly
 	// as a StaticMesh's do.
-	// Whether the place is over its instance limit is decided at the end (GhzGarage/mantle#818), once thinning, if asked for, has run.
-	// GhzGarage/mantle#818: the ids of the instanced entities painted foliage made, which thinning takes from first.
-	TSet<FString> ThinFirstIds;
+	// The sets are cut at the end (cell planning, then the root's own), once every pass has run: scripts name entities, so the
+	// planner needs to know what they name. Whether the root is over its instance limit is decided there too.
+	TArray<FMantleInstancedMeshGroup> Groups;
 	{
-		TArray<FMantleInstancedMeshGroup> Groups;
 		TMap<FString, int32> GroupByKey;
 		for (const UInstancedStaticMeshComponent* Component : CollectInstanceSources(World))
 		{
@@ -4660,7 +4701,8 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			}
 
 			// The group for this component's mesh, or for a mirrored copy of it (MeshOverride); same key, same group, level-wide.
-			const bool bFoliage = ExporterIsFoliageOwner(Owner);
+			// Cells-format 5.2 rule 6: an actor whose Is Spatially Loaded is off is always loaded, so its instances stay in the root.
+			const bool bSpatiallyLoaded = Owner->GetIsSpatiallyLoaded();
 			auto GroupFor = [&](const UStaticMesh* MeshOverride)
 			{
 				FMantleStaticMeshProps Mesh;
@@ -4668,7 +4710,6 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				const FString Key = InstancedGroupKey(Mesh);
 				if (const int32* Found = GroupByKey.Find(Key))
 				{
-					Groups[*Found].bThinFirst = Groups[*Found].bThinFirst && bFoliage;
 					return *Found;
 				}
 				const int32 Index = Groups.Num();
@@ -4676,7 +4717,6 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				FMantleInstancedMeshGroup& Added = Groups.AddDefaulted_GetRef();
 				Added.Mesh = Mesh;
 				Added.MeshName = Component->GetStaticMesh()->GetName();
-				Added.bThinFirst = bFoliage;
 				return Index;
 			};
 			const int32 GroupIndex = GroupFor(nullptr);
@@ -4692,7 +4732,11 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			FString UnmirroredWhy;
 
 			const int32 Count = Component->GetInstanceCount();
-			Groups[GroupIndex].WorldInstances.Reserve(Groups[GroupIndex].WorldInstances.Num() + Count);
+			auto InstancesFor = [&Groups, bSpatiallyLoaded](const int32 Group) -> TArray<FTransform>&
+			{
+				return bSpatiallyLoaded ? Groups[Group].WorldInstances : Groups[Group].RootOnlyInstances;
+			};
+			InstancesFor(GroupIndex).Reserve(InstancesFor(GroupIndex).Num() + Count);
 			for (int32 InstanceIndex = 0; InstanceIndex < Count; ++InstanceIndex)
 			{
 				FTransform Instance;
@@ -4727,7 +4771,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 					}
 					FTransform Placed = Normalized;
 					Placed.SetScale3D(Scale.GetAbs());
-					Groups[Mirrored->Group].WorldInstances.Add(Placed);
+					InstancesFor(Mirrored->Group).Add(Placed);
 					++MirroredCount;
 				}
 				else if (Kind == EExporterInstanceKind::Flat)
@@ -4736,7 +4780,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				}
 				else
 				{
-					Groups[GroupIndex].WorldInstances.Add(Normalized);
+					InstancesFor(GroupIndex).Add(Normalized);
 				}
 			}
 
@@ -4756,51 +4800,6 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				Result.Coverage.Add(MantleCoverageCategory::StaticMeshes, EMantleCoverageOutcome::Dropped, MeshName,
 					FString::Printf(TEXT("instances with a negative scale are left out: a mirrored copy of the mesh could not be made (%s)."), *UnmirroredWhy), UnmirroredCount);
 			}
-		}
-
-		// GhzGarage/mantle#818: static mesh actors that are the same mesh with the same materials become one instance set (the
-		// scratch grouping pass of Medieval Village), so a prop-heavy map is a few hundred entities, not thousands.
-		if (Options.bGroupStaticMeshes)
-		{
-			Result.Grouping = FMantlePlaceInstancing::GroupStaticMeshes(Place, Groups);
-			if (Result.Grouping.Actors > 0)
-			{
-				Result.Coverage.Add(MantleCoverageCategory::StaticMeshes, EMantleCoverageOutcome::Approximated, TEXT("identical mesh actors"),
-					FString::Printf(TEXT("%d actors that share a mesh and materials were published as %d instance sets: each keeps its place, rotation and scale, but they are no longer separate named objects."),
-						Result.Grouping.Actors, Result.Grouping.Sets),
-					Result.Grouping.Actors);
-				UE_LOG(LogMantle, Log, TEXT("Grouped %d identical static mesh actors into %d instance sets"), Result.Grouping.Actors, Result.Grouping.Sets);
-			}
-		}
-
-		TSet<FString> FoliagePrefixes;
-		for (const FMantleInstancedMeshGroup& Group : Groups)
-		{
-			if (Group.bThinFirst)
-			{
-				FoliagePrefixes.Add(InstancedEntityIdPrefix(Group.Mesh));
-			}
-		}
-		for (FMantleEntity& Entity : ChunkInstancedMeshes(Groups, FMantlePlaceLimits::MaxInstancesPerEntity))
-		{
-			// Hashed ids don't collide with guid-based ones in practice; if one ever does, the
-			// later entity is suffixed rather than failing the publish, as MakeEntityId does.
-			const FString Base = Entity.Id;
-			int32 Suffix = 2;
-			while (UsedIds.Contains(Entity.Id))
-			{
-				Entity.Id = FString::Printf(TEXT("%s_%d"), *Base.Left(36), Suffix++);
-			}
-			UsedIds.Add(Entity.Id);
-			for (const FString& Prefix : FoliagePrefixes)
-			{
-				if (Base.StartsWith(Prefix))
-				{
-					ThinFirstIds.Add(Entity.Id);
-					break;
-				}
-			}
-			Place.Entities.Add(MoveTemp(Entity));
 		}
 	}
 
@@ -5396,6 +5395,13 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 					Issue.Message + TEXT(" Its first publish stores it with no settings: give that setting a default in package.json.") });
 			}
 		}
+		for (const FMantleLocalScriptPackage& Package : LocalPackages)
+		{
+			for (const FMantleScriptCatalogEntry& Entry : Package.Entries)
+			{
+				ExporterAddQuotedStrings(Entry.Source, ScriptLiterals);
+			}
+		}
 		if (bUsesPackages)
 		{
 			// What the packages' own scripts use counts as the place's own does; running packages at all needs 1.35.
@@ -5711,41 +5717,107 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	// reported. Before the survey, which leaves those actors and the first sun to it.
 	FMantleEnvironmentExport::Apply(World, IdByActor, Place, Result.Coverage);
 
-	// GhzGarage/mantle#818: the place file's size and instance count against what the backend takes. Over a limit, the creator is
-	// told with the fix (even thinning, with its numbers); the instances are removed only when thinning was asked for.
+	// Large places, stage 1 (cells-format 5): the scenery goes to cell files and what must always load stays in the root. This runs
+	// last, because what scripts quote and what other entities name decide what may move.
+	{
+		for (const FMantleScript& Script : Place.Scripts)
+		{
+			ExporterAddQuotedStrings(Script.Source, ScriptLiterals);
+			ExporterAddQuotedStrings(Script.AuthorSource, ScriptLiterals);
+		}
+		for (const FMantleUIDocument& Document : Place.UIDocuments)
+		{
+			ExporterAddQuotedStrings(Document.Source, ScriptLiterals);
+		}
+
+		FMantleCellPlanInput PlanInput;
+		PlanInput.Grid = Options.CellGrid;
+		PlanInput.bFoldStaticMeshes = Options.bGroupStaticMeshes;
+		PlanInput.NotSpatiallyLoaded = MoveTemp(NotSpatiallyLoaded);
+		PlanInput.ScriptLiterals = MoveTemp(ScriptLiterals);
+		PlanInput.MeshBounds = Uploads.MeshBounds;
+		FMantleCellPlan CellPlan = FMantleCellPlanner::Plan(Place, Groups, PlanInput);
+		Result.CellGrid = PlanInput.Grid;
+		Result.Cells = MoveTemp(CellPlan.Cells);
+		Result.CellReport = CellPlan.Report;
+		if (Result.CellReport.NumCells() > 0)
+		{
+			UE_LOG(LogMantle, Log, TEXT("Cells: %d cells (%lld entities, %lld instances) hold the scenery; %lld entities and instances stay in the root"),
+				Result.CellReport.NumCells(), Result.CellReport.CellEntities, Result.CellReport.CellInstances, Result.CellReport.NumStayed());
+		}
+
+		// What stays is the root's own: grouped and cut into instance sets level-wide, as before cells.
+		for (FMantleInstancedMeshGroup& Group : Groups)
+		{
+			Group.WorldInstances.Append(MoveTemp(Group.RootOnlyInstances));
+			Group.RootOnlyInstances.Reset();
+		}
+		if (Options.bGroupStaticMeshes)
+		{
+			Result.Grouping = FMantlePlaceInstancing::GroupStaticMeshes(Place, Groups);
+			if (Result.Grouping.Actors > 0)
+			{
+				Result.Coverage.Add(MantleCoverageCategory::StaticMeshes, EMantleCoverageOutcome::Approximated, TEXT("identical mesh actors"),
+					FString::Printf(TEXT("%d actors that share a mesh and materials were published as %d instance sets: each keeps its place, rotation and scale, but they are no longer separate named objects."),
+						Result.Grouping.Actors + Result.CellReport.FoldedActors, Result.Grouping.Sets),
+					Result.Grouping.Actors + Result.CellReport.FoldedActors);
+				UE_LOG(LogMantle, Log, TEXT("Grouped %d identical static mesh actors into %d instance sets"), Result.Grouping.Actors, Result.Grouping.Sets);
+			}
+		}
+		if (Result.CellReport.FoldedActors > 0 && Result.Grouping.Actors == 0)
+		{
+			Result.Coverage.Add(MantleCoverageCategory::StaticMeshes, EMantleCoverageOutcome::Approximated, TEXT("identical mesh actors"),
+				TEXT("static mesh actors that share a mesh and materials were published as instance sets in their cells: each keeps its place, rotation and scale, but they are no longer separate named objects."),
+				Result.CellReport.FoldedActors);
+		}
+		for (FMantleEntity& Entity : ChunkInstancedMeshes(Groups, FMantlePlaceLimits::MaxInstancesPerEntity))
+		{
+			// Hashed ids don't collide with guid-based ones in practice; if one ever does, the
+			// later entity is suffixed rather than failing the publish, as MakeEntityId does.
+			const FString Base = Entity.Id;
+			int32 Suffix = 2;
+			while (UsedIds.Contains(Entity.Id))
+			{
+				Entity.Id = FString::Printf(TEXT("%s_%d"), *Base.Left(36), Suffix++);
+			}
+			UsedIds.Add(Entity.Id);
+			Place.Entities.Add(MoveTemp(Entity));
+		}
+	}
+
+	Result.bSuccess = Result.Errors.Num() == 0;
+
+	// What the root place file holds against what the backend takes (GhzGarage/mantle#818): the 8 MiB file and the 100,000 instances
+	// apply to the root only; cells have their own limits, and a dense cell gets more files instead of a refusal.
 	{
 		Result.InstanceTotal = FMantlePlaceInstancing::CountInstances(Place);
 		Result.DrawDistanceEntities = FMantleDrawDistance::CountEntities(Place);
+		for (const FMantlePlannedCell& Cell : Result.Cells)
+		{
+			for (const FMantleEntity& Entity : Cell.Entities)
+			{
+				const FMantleStaticMeshProps* Mesh = MantleMeshPropsOf(Entity);
+				Result.DrawDistanceEntities += Mesh && Mesh->DrawDistance > 0.0 ? 1 : 0;
+			}
+		}
 		if (!FMantleTargetFeatures::Current().Reads(MantleClientFeatures::DrawDistance) && FMantleDrawDistance::HasMeshEntities(Place))
 		{
 			Result.Coverage.Add(MantleCoverageCategory::StaticMeshes, EMantleCoverageOutcome::Approximated, TEXT("draw distances"),
 				FString::Printf(TEXT("left out, so meshes are drawn from any distance: %s"), FMantleTargetFeatures::NeedsNewerClient));
 		}
-		Result.PlaceBytes = FMantlePlaceInstancing::PlaceBytes(Place);
+		// With cells the root also names the cell index: measured with an index entry of the longest shape it can have.
+		FMantleCellRoot Measure;
+		Measure.IndexId = FMantlePlaceAssets::ProvisionalId(TEXT("cellindex"));
+		Measure.Hash = TEXT("sha256:") + FString::ChrN(64, TEXT('f'));
+		Measure.Bytes = FMantleCellFiles::MaxIndexBytes;
+		const FTCHARToUTF8 RootJson(*ToJson(Place, Result.Cells.Num() > 0 ? &Measure : nullptr));
+		Result.PlaceBytes = RootJson.Length();
 		if (Result.InstanceTotal > FMantlePlaceLimits::MaxInstancesPerPlace || Result.PlaceBytes > FMantlePlaceLimits::MaxPlaceFileBytes)
 		{
-			const int64 InstancesBefore = Result.InstanceTotal;
-			const int64 BytesBefore = Result.PlaceBytes;
-			const FMantleThinReport Thin = FMantlePlaceInstancing::ThinToFit(
-				Place, ThinFirstIds, FMantlePlaceLimits::MaxInstancesPerPlace, FMantlePlaceLimits::MaxPlaceFileBytes, Options.bThinInstances);
-			if (Options.bThinInstances)
-			{
-				Result.Thinning = Thin;
-				Result.InstanceTotal = Thin.InstancesAfter;
-				Result.PlaceBytes = Thin.BytesAfter;
-				UE_LOG(LogMantle, Log, TEXT("%s"), *Thin.Describe());
-			}
-			else
-			{
-				Result.ThinPreview = Thin;
-			}
-			if (!Options.bThinInstances || !Thin.bFits)
-			{
-				Result.bOverBudget = true;
-				Result.BudgetProblem = FMantlePlaceInstancing::DescribeOverBudget(InstancesBefore, FMantlePlaceLimits::MaxInstancesPerPlace,
-					BytesBefore, FMantlePlaceLimits::MaxPlaceFileBytes, Thin);
-				Result.Errors.Add(FMantleParseError{ TEXT("/entities"), Result.BudgetProblem });
-			}
+			Result.bOverBudget = true;
+			Result.BudgetProblem = FMantlePlaceInstancing::DescribeOverBudget(Result.InstanceTotal, FMantlePlaceLimits::MaxInstancesPerPlace,
+				Result.PlaceBytes, FMantlePlaceLimits::MaxPlaceFileBytes);
+			Result.Errors.Add(FMantleParseError{ TEXT("/entities"), Result.BudgetProblem });
 		}
 		Result.bSuccess = Result.Errors.Num() == 0;
 	}
@@ -5763,7 +5835,632 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	return Result;
 }
 
-FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
+namespace
+{
+	/** One entity as the place file and the cell files write it: the object, in the exporter's key order. */
+	void WriteEntityJson(const TSharedRef<FWriter>& Writer, const FMantleEntity& Entity)
+	{
+	Writer->WriteObjectStart();
+	Writer->WriteValue(TEXT("id"), Entity.Id);
+	Writer->WriteValue(TEXT("type"), MantleEntityTypeToString(Entity.Type));
+	if (!Entity.Name.IsEmpty())
+	{
+		Writer->WriteValue(TEXT("name"), Entity.Name);
+	}
+
+	if (Entity.Parent.IsEmpty())
+	{
+		Writer->WriteNull(TEXT("parent"));
+	}
+	else
+	{
+		Writer->WriteValue(TEXT("parent"), Entity.Parent);
+	}
+
+	WriteTransform(Writer, Entity.Transform);
+
+	Writer->WriteObjectStart(TEXT("properties"));
+	// A StaticMesh's, or an InstancedMesh's (#467), mesh, materials, collision and shadow.
+	if (const FMantleStaticMeshProps* P = MantleMeshPropsOf(Entity))
+	{
+		Writer->WriteValue(TEXT("mesh"), P->Mesh);
+		Writer->WriteArrayStart(TEXT("materials"));
+		for (const FString& Material : P->Materials)
+		{
+			if (Material.IsEmpty())
+			{
+				Writer->WriteNull(); // an unset slot (#262)
+			}
+			else
+			{
+				Writer->WriteValue(Material);
+			}
+		}
+		Writer->WriteArrayEnd();
+		Writer->WriteValue(TEXT("collision"), CollisionName(P->Collision));
+		Writer->WriteValue(TEXT("castShadow"), P->bCastShadow);
+		// GhzGarage/mantle#630: only above 0 (0 is never written: absent means no limit), and never without the drawDistance feature.
+		if (P->DrawDistance > 0.0)
+		{
+			Writer->WriteValue(TEXT("drawDistance"), P->DrawDistance);
+		}
+		// #596: only when not default, so every other mesh still reaches a client that predates the
+		// key (the backend gates it, SurfaceReleased), and never beside a physics block.
+		if (P->Surface != EMantleSurface::Default && !P->Physics.IsSet())
+		{
+			Writer->WriteValue(TEXT("surface"), FString(MantleSurfaceToString(P->Surface)));
+		}
+
+		// A StaticMesh's physics block (#456); an absent mass is computed by the runtime.
+		if (P->Physics.IsSet())
+		{
+			const FMantlePhysicsProps& Physics = P->Physics.GetValue();
+			Writer->WriteObjectStart(TEXT("physics"));
+			Writer->WriteValue(TEXT("simulate"), Physics.bSimulate);
+			if (Physics.Mass.IsSet())
+			{
+				Writer->WriteValue(TEXT("mass"), Physics.Mass.GetValue());
+			}
+			Writer->WriteValue(TEXT("linearDamping"), Physics.LinearDamping);
+			Writer->WriteValue(TEXT("angularDamping"), Physics.AngularDamping);
+			Writer->WriteValue(TEXT("gravity"), Physics.bGravity);
+			// #528: only when not default, so a physics block without one still reaches a client
+			// that predates the key (the backend gates it, PhysicsMaterialReleased).
+			if (Physics.Material != EMantlePhysicsMaterial::Default)
+			{
+				Writer->WriteValue(TEXT("material"), FString(MantlePhysicsMaterialToString(Physics.Material)));
+			}
+			Writer->WriteObjectEnd();
+		}
+
+		// One compact line per instance: the pretty printer would put each of the nine numbers
+		// on its own indented line, several times the bytes, and a place's file is capped at 8 MiB.
+		if (const FMantleInstancedMeshProps* Instanced = Entity.Props.TryGet<FMantleInstancedMeshProps>())
+		{
+			Writer->WriteArrayStart(TEXT("instances"));
+			for (const FTransform& Instance : Instanced->Instances)
+			{
+				Writer->WriteRawJSONValue(FStringView(ExporterFormatInstance(Instance)));
+			}
+			Writer->WriteArrayEnd();
+		}
+	}
+	else if (const FMantlePointLightProps* P2 = Entity.Props.TryGet<FMantlePointLightProps>())
+	{
+		Writer->WriteValue(TEXT("intensity"), P2->Intensity);
+		WriteLightUnits(Writer, P2->IntensityUnits);
+		WriteColor(Writer, TEXT("color"), P2->Color);
+		Writer->WriteValue(TEXT("radius"), P2->Radius);
+		Writer->WriteValue(TEXT("castShadow"), P2->bCastShadow);
+		WriteLightTemperature(Writer, P2->bUseTemperature, P2->Temperature);
+		WriteLightSourceShape(Writer, P2->Source);
+	}
+	else if (const FMantleSpotLightProps* P3 = Entity.Props.TryGet<FMantleSpotLightProps>())
+	{
+		Writer->WriteValue(TEXT("intensity"), P3->Intensity);
+		WriteLightUnits(Writer, P3->IntensityUnits);
+		WriteColor(Writer, TEXT("color"), P3->Color);
+		Writer->WriteValue(TEXT("radius"), P3->Radius);
+		Writer->WriteValue(TEXT("innerCone"), P3->InnerCone);
+		Writer->WriteValue(TEXT("outerCone"), P3->OuterCone);
+		Writer->WriteValue(TEXT("castShadow"), P3->bCastShadow);
+		WriteLightTemperature(Writer, P3->bUseTemperature, P3->Temperature);
+		WriteLightSourceShape(Writer, P3->Source);
+	}
+	else if (const FMantleRectLightProps* P8 = Entity.Props.TryGet<FMantleRectLightProps>())
+	{
+		// A new type (#472): every key ships with it, so its shape is always written.
+		Writer->WriteValue(TEXT("intensity"), P8->Intensity);
+		WriteLightUnits(Writer, P8->IntensityUnits);
+		WriteColor(Writer, TEXT("color"), P8->Color);
+		Writer->WriteValue(TEXT("radius"), P8->Radius);
+		Writer->WriteValue(TEXT("sourceWidth"), P8->SourceWidth);
+		Writer->WriteValue(TEXT("sourceHeight"), P8->SourceHeight);
+		Writer->WriteValue(TEXT("barnDoorAngle"), P8->BarnDoorAngle);
+		Writer->WriteValue(TEXT("barnDoorLength"), P8->BarnDoorLength);
+		WriteLightTemperature(Writer, P8->bUseTemperature, P8->Temperature);
+		Writer->WriteValue(TEXT("castShadow"), P8->bCastShadow);
+	}
+	else if (const FMantleDecalProps* P9 = Entity.Props.TryGet<FMantleDecalProps>())
+	{
+		Writer->WriteValue(TEXT("baseColor"), P9->BaseColor);
+		if (!P9->Normal.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("normal"), P9->Normal);
+		}
+		WriteVector(Writer, TEXT("size"), P9->Size);
+		Writer->WriteValue(TEXT("opacity"), P9->Opacity);
+		Writer->WriteValue(TEXT("sortOrder"), P9->SortOrder);
+		Writer->WriteValue(TEXT("fadeScreenSize"), P9->FadeScreenSize);
+	}
+	else if (const FMantleDirectionalLightProps* P4 = Entity.Props.TryGet<FMantleDirectionalLightProps>())
+	{
+		Writer->WriteValue(TEXT("intensity"), P4->Intensity);
+		WriteColor(Writer, TEXT("color"), P4->Color);
+		Writer->WriteValue(TEXT("castShadow"), P4->bCastShadow);
+	}
+	else if (const FMantleTriggerVolumeProps* P5 = Entity.Props.TryGet<FMantleTriggerVolumeProps>())
+	{
+		Writer->WriteValue(TEXT("shape"), P5->Shape == EMantleTriggerShape::Sphere ? TEXT("sphere") : TEXT("box"));
+		WriteVector(Writer, TEXT("extent"), P5->Extent);
+	}
+	else if (const FMantleSoundEmitterProps* P6 = Entity.Props.TryGet<FMantleSoundEmitterProps>())
+	{
+		Writer->WriteValue(TEXT("sound"), P6->Sound);
+		Writer->WriteValue(TEXT("volume"), P6->Volume);
+		Writer->WriteValue(TEXT("radius"), P6->Radius);
+		Writer->WriteValue(TEXT("looping"), P6->bLooping);
+		// #459: only when it is off, so a place that never turns it off reaches every client.
+		if (!P6->bAutoplay)
+		{
+			Writer->WriteValue(TEXT("autoplay"), false);
+		}
+	}
+	else if (const FMantleCrowdSpawnerProps* P7 = Entity.Props.TryGet<FMantleCrowdSpawnerProps>())
+	{
+		WriteCrowdSpawnerProperties(Writer, *P7);
+	}
+	else if (const FMantleSkeletalMeshProps* P10 = Entity.Props.TryGet<FMantleSkeletalMeshProps>())
+	{
+		// #469: the mesh and its slots; the clip and how it plays only when it plays one.
+		Writer->WriteValue(TEXT("mesh"), P10->Mesh);
+		Writer->WriteArrayStart(TEXT("materials"));
+		for (const FString& Material : P10->Materials)
+		{
+			if (Material.IsEmpty())
+			{
+				Writer->WriteNull();
+			}
+			else
+			{
+				Writer->WriteValue(Material);
+			}
+		}
+		Writer->WriteArrayEnd();
+		Writer->WriteValue(TEXT("castShadow"), P10->bCastShadow);
+		if (!P10->Clip.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("clip"), P10->Clip);
+			Writer->WriteValue(TEXT("loop"), P10->bLoop);
+			Writer->WriteValue(TEXT("playRate"), P10->PlayRate);
+			Writer->WriteValue(TEXT("startOffset"), P10->StartOffset);
+		}
+	}
+	else if (const FMantleTerrainProps* P11 = Entity.Props.TryGet<FMantleTerrainProps>())
+	{
+		// A Terrain (#466): its heights, weights and layers. weightmap only when it has one.
+		Writer->WriteValue(TEXT("heightfield"), P11->Heightfield);
+		if (!P11->Weightmap.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("weightmap"), P11->Weightmap);
+		}
+		if (!P11->Weightmap2.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("weightmap2"), P11->Weightmap2);
+		}
+		if (!P11->Holes.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("holes"), P11->Holes);
+		}
+		Writer->WriteArrayStart(TEXT("layers"));
+		for (const FMantleTerrainLayer& Layer : P11->Layers)
+		{
+			Writer->WriteObjectStart();
+			Writer->WriteValue(TEXT("material"), Layer.Material);
+			Writer->WriteValue(TEXT("tiling"), Layer.Tiling);
+			// #596: only when not default, as on a mesh.
+			if (Layer.Surface != EMantleSurface::Default)
+			{
+				Writer->WriteValue(TEXT("surface"), FString(MantleSurfaceToString(Layer.Surface)));
+			}
+			Writer->WriteObjectEnd();
+		}
+		Writer->WriteArrayEnd();
+		Writer->WriteValue(TEXT("castShadow"), P11->bCastShadow);
+		FMantleTerrainGrassExport::WriteJson(Writer, P11->Grass);
+	}
+	else if (const FMantleVehicleSpawnProps* P12 = Entity.Props.TryGet<FMantleVehicleSpawnProps>())
+	{
+		// A new type (#435): every key ships with it. A stored vehicle (#614 stage 4) names its storage entry
+		// instead of an uploaded id; exactly one of the two is written, and only a place that uses storage
+		// ever carries the new key.
+		if (!P12->StorageItem.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("storageItem"), P12->StorageItem);
+		}
+		else
+		{
+			Writer->WriteValue(TEXT("vehicle"), P12->Vehicle);
+		}
+		Writer->WriteValue(TEXT("respawnSeconds"), P12->RespawnSeconds);
+		Writer->WriteValue(TEXT("enabled"), P12->bEnabled);
+		// #488: only a picked livery; -1 (the vehicle's default) is the schema's default.
+		if (P12->Livery >= 0)
+		{
+			Writer->WriteValue(TEXT("livery"), P12->Livery);
+		}
+	}
+	else if (const FMantleWeaponSpawnProps* P12W = Entity.Props.TryGet<FMantleWeaponSpawnProps>())
+	{
+		// A new type (#789): every key ships with it. A stored weapon names its storage entry instead of an uploaded id;
+		// exactly one of the two is written.
+		if (!P12W->StorageItem.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("storageItem"), P12W->StorageItem);
+		}
+		else
+		{
+			Writer->WriteValue(TEXT("weapon"), P12W->Weapon);
+		}
+		Writer->WriteValue(TEXT("respawnSeconds"), P12W->RespawnSeconds);
+		Writer->WriteValue(TEXT("enabled"), P12W->bEnabled);
+	}
+	else if (const FMantleItemSpawnProps* P12I = Entity.Props.TryGet<FMantleItemSpawnProps>())
+	{
+		// A new type (#235): only the keys that differ from the schema's defaults.
+		Writer->WriteValue(TEXT("item"), P12I->Item);
+		if (P12I->Count != 1)
+		{
+			Writer->WriteValue(TEXT("count"), P12I->Count);
+		}
+		if (P12I->RespawnSeconds != MANTLE_DEFAULT_ITEM_SPAWN_RESPAWN_SECONDS)
+		{
+			Writer->WriteValue(TEXT("respawnSeconds"), P12I->RespawnSeconds);
+		}
+		if (!P12I->Model.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("model"), P12I->Model);
+		}
+		if (!P12I->bEnabled)
+		{
+			Writer->WriteValue(TEXT("enabled"), false);
+		}
+	}
+	else if (const FMantleScriptPointProps* P12S = Entity.Props.TryGet<FMantleScriptPointProps>())
+	{
+		// A new type (#838): every key ships with it. Parameters are written sorted by key (case-sensitive), so a repeat
+		// export of the same point is byte-identical.
+		Writer->WriteValue(TEXT("storageItem"), P12S->StorageItem);
+		TArray<FMantleScriptPointParameter> Sorted = P12S->Parameters;
+		Sorted.Sort([](const FMantleScriptPointParameter& A, const FMantleScriptPointParameter& B)
+		{
+			return A.Name.Compare(B.Name, ESearchCase::CaseSensitive) < 0;
+		});
+		Writer->WriteObjectStart(TEXT("parameters"));
+		for (const FMantleScriptPointParameter& Parameter : Sorted)
+		{
+			Writer->WriteValue(Parameter.Name, Parameter.Value);
+		}
+		Writer->WriteObjectEnd();
+		Writer->WriteValue(TEXT("enabled"), P12S->bEnabled);
+	}
+	else if (const FMantleEffectProps* P13 = Entity.Props.TryGet<FMantleEffectProps>())
+	{
+		// A new type (#460): every key ships with it, so the whole look is always written.
+		Writer->WriteValue(TEXT("archetype"), FMantleEffects::ArchetypeName(P13->Archetype));
+		WriteColor(Writer, TEXT("color"), P13->Look.Color);
+		if (P13->Archetype == EMantleEffectArchetype::Sprites)
+		{
+			// #628: the sprites keys in place of size, speed and lifetime; the texture only when it names one.
+			const FMantleSpritesSettings& S = P13->Sprites;
+			if (!P13->TextureId.IsEmpty())
+			{
+				Writer->WriteValue(TEXT("texture"), P13->TextureId);
+			}
+			Writer->WriteValue(TEXT("blend"), FString(FMantleEffects::BlendName(S.Blend)));
+			WriteColor(Writer, TEXT("colorEnd"), S.ColorEnd);
+			Writer->WriteValue(TEXT("alpha"), S.Alpha);
+			Writer->WriteValue(TEXT("alphaEnd"), S.AlphaEnd);
+			Writer->WriteValue(TEXT("fadeIn"), S.FadeIn);
+			Writer->WriteValue(TEXT("sizeMin"), S.SizeMin);
+			Writer->WriteValue(TEXT("sizeMax"), S.SizeMax);
+			Writer->WriteValue(TEXT("sizeEndScale"), S.SizeEndScale);
+			Writer->WriteValue(TEXT("rate"), P13->Look.Rate);
+			Writer->WriteValue(TEXT("lifetimeMin"), S.LifetimeMin);
+			Writer->WriteValue(TEXT("lifetimeMax"), S.LifetimeMax);
+			WriteVector(Writer, TEXT("velocityMin"), S.VelocityMin);
+			WriteVector(Writer, TEXT("velocityMax"), S.VelocityMax);
+			WriteVector(Writer, TEXT("acceleration"), S.Acceleration);
+			Writer->WriteObjectStart(TEXT("shape"));
+			Writer->WriteValue(TEXT("type"), FString(FMantleEffects::ShapeName(S.Shape)));
+			if (S.Shape == EMantleSpritesShape::Box)
+			{
+				WriteVector(Writer, TEXT("halfExtent"), S.BoxHalfExtent);
+			}
+			if (S.Shape == EMantleSpritesShape::Sphere)
+			{
+				Writer->WriteValue(TEXT("radius"), S.SphereRadius);
+			}
+			if (S.Shape == EMantleSpritesShape::Cylinder)
+			{
+				Writer->WriteValue(TEXT("radius"), S.CylinderRadius);
+				Writer->WriteValue(TEXT("height"), S.CylinderHeight);
+			}
+			Writer->WriteObjectEnd();
+			Writer->WriteValue(TEXT("maxParticles"), S.MaxParticles);
+			// #628: a flipbook sheet only when there is one (the schema's default is the whole texture).
+			if (S.SubImageColumns > 1 || S.SubImageRows > 1)
+			{
+				Writer->WriteArrayStart(TEXT("subImages"));
+				Writer->WriteValue(S.SubImageColumns);
+				Writer->WriteValue(S.SubImageRows);
+				Writer->WriteArrayEnd();
+				Writer->WriteValue(TEXT("subImageMode"), FString(FMantleEffects::SubImageModeName(S.SubImageMode)));
+			}
+		}
+		else
+		{
+			Writer->WriteValue(TEXT("size"), P13->Look.Size);
+			Writer->WriteValue(TEXT("rate"), P13->Look.Rate);
+			Writer->WriteValue(TEXT("speed"), P13->Look.Speed);
+			Writer->WriteValue(TEXT("lifetime"), P13->Look.Lifetime);
+		}
+		Writer->WriteValue(TEXT("autoplay"), P13->bAutoplay);
+		Writer->WriteValue(TEXT("loop"), P13->bLoop);
+	}
+	else if (const FMantleScatterParams* P15 = Entity.Props.TryGet<FMantleScatterParams>())
+	{
+		// A new type (#530): every key it ships with is written, at full precision, so the client generates exactly
+		// the instances the editor previewed; the #169 keys only where they apply. The runtime's own writer
+		// (FMantleScatter::ToJson), so the editor and a script's Scatter settings write one way.
+		const TSharedRef<FJsonObject> Scatter = FMantleScatter::ToJson(*P15); // held: a loop over a temporary's Values would dangle
+		for (const auto& Field : Scatter->Values)
+		{
+			const FString FieldKey(Field.Key.ToView());
+			WriteJsonValue(Writer, &FieldKey, Field.Value);
+		}
+	}
+	else if (const FMantleReflectionProbeProps* P16 = Entity.Props.TryGet<FMantleReflectionProbeProps>())
+	{
+		// A new type (#628): its keys ship with it, so each is written. A box's own keys only for a box, a sphere's for a
+		// sphere, as the schema holds them.
+		Writer->WriteValue(TEXT("shape"), FString(MantleReflectionProbeShapeToString(P16->Shape)));
+		if (P16->Shape == EMantleReflectionProbeShape::Box)
+		{
+			WriteVector(Writer, TEXT("halfExtent"), P16->HalfExtent);
+			Writer->WriteValue(TEXT("transitionDistance"), P16->TransitionDistance);
+		}
+		else
+		{
+			Writer->WriteValue(TEXT("influenceRadius"), P16->InfluenceRadius);
+		}
+		Writer->WriteValue(TEXT("brightness"), P16->Brightness);
+		Writer->WriteValue(TEXT("skylightScale"), P16->SkylightScale);
+	}
+	else if (const FMantleVoxelWorldProps* P22 = Entity.Props.TryGet<FMantleVoxelWorldProps>())
+	{
+		// A new type (#168 step 6): its keys ship with it. A block type with one tile on every face writes it as "all"; the
+		// optional keys (liquid, light, drops, tags) only when set.
+		Writer->WriteArrayStart(TEXT("size"));
+		Writer->WriteValue(P22->Size.X);
+		Writer->WriteValue(P22->Size.Y);
+		Writer->WriteValue(P22->Size.Z);
+		Writer->WriteArrayEnd();
+		Writer->WriteArrayStart(TEXT("blockTypes"));
+		for (const FMantleVoxelBlockTypeProps& Type : P22->BlockTypes)
+		{
+			Writer->WriteObjectStart();
+			Writer->WriteValue(TEXT("name"), Type.Name);
+			if (Type.Top == Type.Side && Type.Side == Type.Bottom)
+			{
+				Writer->WriteValue(TEXT("all"), Type.Top);
+			}
+			else
+			{
+				Writer->WriteValue(TEXT("top"), Type.Top);
+				Writer->WriteValue(TEXT("side"), Type.Side);
+				Writer->WriteValue(TEXT("bottom"), Type.Bottom);
+			}
+			const TCHAR* const RenderNames[] = { TEXT("opaque"), TEXT("cutout"), TEXT("translucent") };
+			Writer->WriteValue(TEXT("render"), FString(RenderNames[FMath::Min<int32>(static_cast<int32>(Type.Render), 2)]));
+			Writer->WriteValue(TEXT("solid"), Type.bSolid);
+			if (Type.bLiquid)
+			{
+				Writer->WriteValue(TEXT("liquid"), true);
+			}
+			if (Type.Light > 0)
+			{
+				Writer->WriteValue(TEXT("light"), Type.Light);
+			}
+			Writer->WriteValue(TEXT("hardness"), Type.Hardness);
+			Writer->WriteValue(TEXT("surface"), FString(MantleSurfaceToString(Type.Surface)));
+			if (!Type.Drops.IsEmpty())
+			{
+				Writer->WriteValue(TEXT("drops"), Type.Drops);
+			}
+			if (Type.Tags.Num() > 0)
+			{
+				Writer->WriteArrayStart(TEXT("tags"));
+				for (const FString& Tag : Type.Tags)
+				{
+					Writer->WriteValue(Tag);
+				}
+				Writer->WriteArrayEnd();
+			}
+			Writer->WriteObjectEnd();
+		}
+		Writer->WriteArrayEnd();
+		if (!P22->World.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("world"), P22->World);
+		}
+		Writer->WriteValue(TEXT("tileSize"), P22->TileSize);
+		Writer->WriteValue(TEXT("filter"), FString(P22->bLinearFilter ? TEXT("linear") : TEXT("nearest")));
+		const TCHAR* const EditNames[] = { TEXT("all"), TEXT("none"), TEXT("script") };
+		Writer->WriteValue(TEXT("edit"), FString(EditNames[FMath::Min<int32>(static_cast<int32>(P22->Edit), 2)]));
+		const TCHAR* const PersistenceNames[] = { TEXT("none"), TEXT("server"), TEXT("place") };
+		Writer->WriteValue(TEXT("persistence"), FString(PersistenceNames[FMath::Min<int32>(static_cast<int32>(P22->Persistence), 2)]));
+		Writer->WriteValue(TEXT("look"), FString(P22->bSmooth ? TEXT("smooth") : TEXT("blocky")));
+	}
+	else if (const FMantleWaterBodyProps* P21 = Entity.Props.TryGet<FMantleWaterBodyProps>())
+	{
+		// A new type (GhzGarage/mantle#997): its keys ship with it. A custom body writes its mesh, the others their spline; a river no waves.
+		Writer->WriteValue(TEXT("bodyType"), FString(MantleWaterBodyTypeToString(P21->BodyType)));
+		if (P21->BodyType == EMantleWaterBodyType::Custom)
+		{
+			Writer->WriteValue(TEXT("mesh"), P21->MeshId);
+		}
+		else
+		{
+			Writer->WriteObjectStart(TEXT("spline"));
+			Writer->WriteArrayStart(TEXT("points"));
+			for (const FMantleWaterSplinePoint& Point : P21->SplinePoints)
+			{
+				Writer->WriteObjectStart();
+				WriteVector(Writer, TEXT("location"), Point.Location);
+				WriteVector(Writer, TEXT("arriveTangent"), Point.ArriveTangent);
+				WriteVector(Writer, TEXT("leaveTangent"), Point.LeaveTangent);
+				Writer->WriteValue(TEXT("depth"), Point.Depth);
+				if (P21->BodyType == EMantleWaterBodyType::River)
+				{
+					Writer->WriteValue(TEXT("width"), Point.Width);
+					Writer->WriteValue(TEXT("velocity"), Point.Velocity);
+				}
+				if (Point.Interp != EMantleWaterSplinePointType::Curve)
+				{
+					Writer->WriteValue(TEXT("interp"), FString(MantleWaterSplinePointTypeToString(Point.Interp)));
+				}
+				Writer->WriteObjectEnd();
+			}
+			Writer->WriteArrayEnd();
+			Writer->WriteObjectEnd();
+		}
+		if (P21->Waves.Num() > 0)
+		{
+			Writer->WriteObjectStart(TEXT("waves"));
+			Writer->WriteArrayStart(TEXT("list"));
+			for (const FMantleWaterWave& Wave : P21->Waves)
+			{
+				Writer->WriteObjectStart();
+				Writer->WriteValue(TEXT("wavelength"), Wave.Wavelength);
+				Writer->WriteValue(TEXT("amplitude"), Wave.Amplitude);
+				Writer->WriteValue(TEXT("steepness"), Wave.Steepness);
+				Writer->WriteValue(TEXT("directionDeg"), Wave.DirectionDeg);
+				if (!FMath::IsNearlyZero(Wave.PhaseOffset))
+				{
+					Writer->WriteValue(TEXT("phaseOffset"), Wave.PhaseOffset);
+				}
+				Writer->WriteObjectEnd();
+			}
+			Writer->WriteArrayEnd();
+			Writer->WriteObjectEnd();
+		}
+		if (P21->Albedo.IsSet() || P21->Scattering.IsSet() || P21->Absorption.IsSet())
+		{
+			Writer->WriteObjectStart(TEXT("look"));
+			if (P21->Albedo.IsSet()) { WriteColor(Writer, TEXT("albedo"), *P21->Albedo); }
+			if (P21->Scattering.IsSet()) { WriteColor(Writer, TEXT("scattering"), *P21->Scattering); }
+			if (P21->Absorption.IsSet()) { WriteColor(Writer, TEXT("absorption"), *P21->Absorption); }
+			Writer->WriteObjectEnd();
+		}
+		Writer->WriteValue(TEXT("collision"), P21->bCollision);
+		if (P21->CollisionHeightOffset.IsSet())
+		{
+			Writer->WriteValue(TEXT("collisionHeightOffset"), *P21->CollisionHeightOffset);
+		}
+		if (P21->CollisionExtent.IsSet())
+		{
+			WriteVector(Writer, TEXT("collisionExtent"), *P21->CollisionExtent);
+		}
+		if (P21->OceanExtent.IsSet())
+		{
+			Writer->WriteArrayStart(TEXT("oceanExtent"));
+			Writer->WriteValue(P21->OceanExtent->X);
+			Writer->WriteValue(P21->OceanExtent->Y);
+			Writer->WriteArrayEnd();
+		}
+		if (P21->CenterOnZone.IsSet())
+		{
+			Writer->WriteValue(TEXT("centerOnZone"), *P21->CenterOnZone);
+		}
+	}
+	else if (const FMantleTextProps* P20 = Entity.Props.TryGet<FMantleTextProps>())
+	{
+		// A new type (GhzGarage/mantle#724): its keys ship with it, so each is written. The color is linear RGBA.
+		Writer->WriteValue(TEXT("text"), P20->Text);
+		Writer->WriteArrayStart(TEXT("color"));
+		Writer->WriteValue(static_cast<double>(P20->Color.R));
+		Writer->WriteValue(static_cast<double>(P20->Color.G));
+		Writer->WriteValue(static_cast<double>(P20->Color.B));
+		Writer->WriteValue(static_cast<double>(P20->Color.A));
+		Writer->WriteArrayEnd();
+		Writer->WriteValue(TEXT("worldSize"), P20->WorldSize);
+		Writer->WriteValue(TEXT("horizontalAlignment"), FString(MantleTextHorizontalAlignmentToString(P20->HorizontalAlignment)));
+		Writer->WriteValue(TEXT("verticalAlignment"), FString(MantleTextVerticalAlignmentToString(P20->VerticalAlignment)));
+		Writer->WriteValue(TEXT("xScale"), P20->XScale);
+		Writer->WriteValue(TEXT("yScale"), P20->YScale);
+	}
+	else if (const FMantleConstraintProps* P14 = Entity.Props.TryGet<FMantleConstraintProps>())
+	{
+		// A new type (#528): its keys ship with it. A hinge's and a rope's own keys only for that
+		// type, as the schema holds them; the optional ones only when set.
+		Writer->WriteValue(TEXT("type"), MantleConstraintTypeToString(P14->Type));
+		Writer->WriteValue(TEXT("entityA"), P14->EntityA);
+		if (!P14->EntityB.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("entityB"), P14->EntityB);
+		}
+		WriteVector(Writer, TEXT("anchorA"), P14->AnchorA);
+		if (P14->AnchorB.IsSet())
+		{
+			WriteVector(Writer, TEXT("anchorB"), P14->AnchorB.GetValue());
+		}
+		if (P14->Type == EMantleConstraintType::Hinge)
+		{
+			WriteVector(Writer, TEXT("axis"), P14->Axis);
+			if (P14->bLimited)
+			{
+				Writer->WriteArrayStart(TEXT("limits"));
+				Writer->WriteValue(P14->MinAngle);
+				Writer->WriteValue(P14->MaxAngle);
+				Writer->WriteArrayEnd();
+			}
+		}
+		if (P14->Type == EMantleConstraintType::Rope && P14->Length.IsSet())
+		{
+			Writer->WriteValue(TEXT("length"), P14->Length.GetValue());
+		}
+		if (P14->BreakForce.IsSet())
+		{
+			Writer->WriteValue(TEXT("breakForce"), P14->BreakForce.GetValue());
+		}
+	}
+	Writer->WriteObjectEnd();
+
+	if (Entity.Tags.Num() > 0)
+	{
+		Writer->WriteArrayStart(TEXT("tags"));
+		for (const FString& Tag : Entity.Tags)
+		{
+			Writer->WriteValue(Tag);
+		}
+		Writer->WriteArrayEnd();
+	}
+
+	if (Entity.bDynamic)
+	{
+		Writer->WriteValue(TEXT("dynamic"), true);
+	}
+
+	Writer->WriteObjectEnd();
+	}
+}
+
+uint64 FMantlePlaceExporter::MortonCode(const FVector& Location, const FBox& Bounds)
+{
+	return ExporterMortonCodeImpl(Location, Bounds);
+}
+
+FString FMantlePlaceExporter::EntityToJson(const FMantleEntity& Entity)
+{
+	FString Output;
+	const TSharedRef<FWriter> Writer = FWriterFactory::Create(&Output);
+	WriteEntityJson(Writer, Entity);
+	Writer->Close();
+	return Output;
+}
+
+FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place, const FMantleCellRoot* Cells)
 {
 	FString Output;
 	const TSharedRef<FWriter> Writer = FWriterFactory::Create(&Output);
@@ -6082,8 +6779,24 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 	}
 
 	Writer->WriteArrayStart(TEXT("assets"));
+	bool bCellIndexWritten = Cells == nullptr;
+	auto WriteCellIndexEntry = [&]()
+	{
+		bCellIndexWritten = true;
+		Writer->WriteObjectStart();
+		Writer->WriteValue(TEXT("id"), Cells->IndexId);
+		Writer->WriteValue(TEXT("kind"), TEXT("PlaceCellIndex"));
+		Writer->WriteValue(TEXT("hash"), Cells->Hash);
+		Writer->WriteValue(TEXT("bytes"), static_cast<double>(Cells->Bytes));
+		Writer->WriteObjectEnd();
+	};
 	for (const FMantleAssetRef& Asset : Place.Assets)
 	{
+		// The manifest is in id order (Export sorts it): the index entry goes where its id sorts.
+		if (!bCellIndexWritten && Cells->IndexId < Asset.Id)
+		{
+			WriteCellIndexEntry();
+		}
 		Writer->WriteObjectStart();
 		Writer->WriteValue(TEXT("id"), Asset.Id);
 		Writer->WriteValue(TEXT("kind"), AssetKindName(Asset.Kind));
@@ -6132,614 +6845,22 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 		}
 		Writer->WriteObjectEnd();
 	}
+	if (!bCellIndexWritten)
+	{
+		WriteCellIndexEntry();
+	}
 	Writer->WriteArrayEnd();
+	if (Cells)
+	{
+		Writer->WriteObjectStart(TEXT("cells"));
+		Writer->WriteValue(TEXT("index"), Cells->IndexId);
+		Writer->WriteObjectEnd();
+	}
 
 	Writer->WriteArrayStart(TEXT("entities"));
 	for (const FMantleEntity& Entity : Place.Entities)
 	{
-		Writer->WriteObjectStart();
-		Writer->WriteValue(TEXT("id"), Entity.Id);
-		Writer->WriteValue(TEXT("type"), MantleEntityTypeToString(Entity.Type));
-		if (!Entity.Name.IsEmpty())
-		{
-			Writer->WriteValue(TEXT("name"), Entity.Name);
-		}
-
-		if (Entity.Parent.IsEmpty())
-		{
-			Writer->WriteNull(TEXT("parent"));
-		}
-		else
-		{
-			Writer->WriteValue(TEXT("parent"), Entity.Parent);
-		}
-
-		WriteTransform(Writer, Entity.Transform);
-
-		Writer->WriteObjectStart(TEXT("properties"));
-		// A StaticMesh's, or an InstancedMesh's (#467), mesh, materials, collision and shadow.
-		if (const FMantleStaticMeshProps* P = MantleMeshPropsOf(Entity))
-		{
-			Writer->WriteValue(TEXT("mesh"), P->Mesh);
-			Writer->WriteArrayStart(TEXT("materials"));
-			for (const FString& Material : P->Materials)
-			{
-				if (Material.IsEmpty())
-				{
-					Writer->WriteNull(); // an unset slot (#262)
-				}
-				else
-				{
-					Writer->WriteValue(Material);
-				}
-			}
-			Writer->WriteArrayEnd();
-			Writer->WriteValue(TEXT("collision"), CollisionName(P->Collision));
-			Writer->WriteValue(TEXT("castShadow"), P->bCastShadow);
-			// GhzGarage/mantle#630: only above 0 (0 is never written: absent means no limit), and never without the drawDistance feature.
-			if (P->DrawDistance > 0.0)
-			{
-				Writer->WriteValue(TEXT("drawDistance"), P->DrawDistance);
-			}
-			// #596: only when not default, so every other mesh still reaches a client that predates the
-			// key (the backend gates it, SurfaceReleased), and never beside a physics block.
-			if (P->Surface != EMantleSurface::Default && !P->Physics.IsSet())
-			{
-				Writer->WriteValue(TEXT("surface"), FString(MantleSurfaceToString(P->Surface)));
-			}
-
-			// A StaticMesh's physics block (#456); an absent mass is computed by the runtime.
-			if (P->Physics.IsSet())
-			{
-				const FMantlePhysicsProps& Physics = P->Physics.GetValue();
-				Writer->WriteObjectStart(TEXT("physics"));
-				Writer->WriteValue(TEXT("simulate"), Physics.bSimulate);
-				if (Physics.Mass.IsSet())
-				{
-					Writer->WriteValue(TEXT("mass"), Physics.Mass.GetValue());
-				}
-				Writer->WriteValue(TEXT("linearDamping"), Physics.LinearDamping);
-				Writer->WriteValue(TEXT("angularDamping"), Physics.AngularDamping);
-				Writer->WriteValue(TEXT("gravity"), Physics.bGravity);
-				// #528: only when not default, so a physics block without one still reaches a client
-				// that predates the key (the backend gates it, PhysicsMaterialReleased).
-				if (Physics.Material != EMantlePhysicsMaterial::Default)
-				{
-					Writer->WriteValue(TEXT("material"), FString(MantlePhysicsMaterialToString(Physics.Material)));
-				}
-				Writer->WriteObjectEnd();
-			}
-
-			// One compact line per instance: the pretty printer would put each of the nine numbers
-			// on its own indented line, several times the bytes, and a place's file is capped at 8 MiB.
-			if (const FMantleInstancedMeshProps* Instanced = Entity.Props.TryGet<FMantleInstancedMeshProps>())
-			{
-				Writer->WriteArrayStart(TEXT("instances"));
-				for (const FTransform& Instance : Instanced->Instances)
-				{
-					Writer->WriteRawJSONValue(FStringView(ExporterFormatInstance(Instance)));
-				}
-				Writer->WriteArrayEnd();
-			}
-		}
-		else if (const FMantlePointLightProps* P2 = Entity.Props.TryGet<FMantlePointLightProps>())
-		{
-			Writer->WriteValue(TEXT("intensity"), P2->Intensity);
-			WriteLightUnits(Writer, P2->IntensityUnits);
-			WriteColor(Writer, TEXT("color"), P2->Color);
-			Writer->WriteValue(TEXT("radius"), P2->Radius);
-			Writer->WriteValue(TEXT("castShadow"), P2->bCastShadow);
-			WriteLightTemperature(Writer, P2->bUseTemperature, P2->Temperature);
-			WriteLightSourceShape(Writer, P2->Source);
-		}
-		else if (const FMantleSpotLightProps* P3 = Entity.Props.TryGet<FMantleSpotLightProps>())
-		{
-			Writer->WriteValue(TEXT("intensity"), P3->Intensity);
-			WriteLightUnits(Writer, P3->IntensityUnits);
-			WriteColor(Writer, TEXT("color"), P3->Color);
-			Writer->WriteValue(TEXT("radius"), P3->Radius);
-			Writer->WriteValue(TEXT("innerCone"), P3->InnerCone);
-			Writer->WriteValue(TEXT("outerCone"), P3->OuterCone);
-			Writer->WriteValue(TEXT("castShadow"), P3->bCastShadow);
-			WriteLightTemperature(Writer, P3->bUseTemperature, P3->Temperature);
-			WriteLightSourceShape(Writer, P3->Source);
-		}
-		else if (const FMantleRectLightProps* P8 = Entity.Props.TryGet<FMantleRectLightProps>())
-		{
-			// A new type (#472): every key ships with it, so its shape is always written.
-			Writer->WriteValue(TEXT("intensity"), P8->Intensity);
-			WriteLightUnits(Writer, P8->IntensityUnits);
-			WriteColor(Writer, TEXT("color"), P8->Color);
-			Writer->WriteValue(TEXT("radius"), P8->Radius);
-			Writer->WriteValue(TEXT("sourceWidth"), P8->SourceWidth);
-			Writer->WriteValue(TEXT("sourceHeight"), P8->SourceHeight);
-			Writer->WriteValue(TEXT("barnDoorAngle"), P8->BarnDoorAngle);
-			Writer->WriteValue(TEXT("barnDoorLength"), P8->BarnDoorLength);
-			WriteLightTemperature(Writer, P8->bUseTemperature, P8->Temperature);
-			Writer->WriteValue(TEXT("castShadow"), P8->bCastShadow);
-		}
-		else if (const FMantleDecalProps* P9 = Entity.Props.TryGet<FMantleDecalProps>())
-		{
-			Writer->WriteValue(TEXT("baseColor"), P9->BaseColor);
-			if (!P9->Normal.IsEmpty())
-			{
-				Writer->WriteValue(TEXT("normal"), P9->Normal);
-			}
-			WriteVector(Writer, TEXT("size"), P9->Size);
-			Writer->WriteValue(TEXT("opacity"), P9->Opacity);
-			Writer->WriteValue(TEXT("sortOrder"), P9->SortOrder);
-			Writer->WriteValue(TEXT("fadeScreenSize"), P9->FadeScreenSize);
-		}
-		else if (const FMantleDirectionalLightProps* P4 = Entity.Props.TryGet<FMantleDirectionalLightProps>())
-		{
-			Writer->WriteValue(TEXT("intensity"), P4->Intensity);
-			WriteColor(Writer, TEXT("color"), P4->Color);
-			Writer->WriteValue(TEXT("castShadow"), P4->bCastShadow);
-		}
-		else if (const FMantleTriggerVolumeProps* P5 = Entity.Props.TryGet<FMantleTriggerVolumeProps>())
-		{
-			Writer->WriteValue(TEXT("shape"), P5->Shape == EMantleTriggerShape::Sphere ? TEXT("sphere") : TEXT("box"));
-			WriteVector(Writer, TEXT("extent"), P5->Extent);
-		}
-		else if (const FMantleSoundEmitterProps* P6 = Entity.Props.TryGet<FMantleSoundEmitterProps>())
-		{
-			Writer->WriteValue(TEXT("sound"), P6->Sound);
-			Writer->WriteValue(TEXT("volume"), P6->Volume);
-			Writer->WriteValue(TEXT("radius"), P6->Radius);
-			Writer->WriteValue(TEXT("looping"), P6->bLooping);
-			// #459: only when it is off, so a place that never turns it off reaches every client.
-			if (!P6->bAutoplay)
-			{
-				Writer->WriteValue(TEXT("autoplay"), false);
-			}
-		}
-		else if (const FMantleCrowdSpawnerProps* P7 = Entity.Props.TryGet<FMantleCrowdSpawnerProps>())
-		{
-			WriteCrowdSpawnerProperties(Writer, *P7);
-		}
-		else if (const FMantleSkeletalMeshProps* P10 = Entity.Props.TryGet<FMantleSkeletalMeshProps>())
-		{
-			// #469: the mesh and its slots; the clip and how it plays only when it plays one.
-			Writer->WriteValue(TEXT("mesh"), P10->Mesh);
-			Writer->WriteArrayStart(TEXT("materials"));
-			for (const FString& Material : P10->Materials)
-			{
-				if (Material.IsEmpty())
-				{
-					Writer->WriteNull();
-				}
-				else
-				{
-					Writer->WriteValue(Material);
-				}
-			}
-			Writer->WriteArrayEnd();
-			Writer->WriteValue(TEXT("castShadow"), P10->bCastShadow);
-			if (!P10->Clip.IsEmpty())
-			{
-				Writer->WriteValue(TEXT("clip"), P10->Clip);
-				Writer->WriteValue(TEXT("loop"), P10->bLoop);
-				Writer->WriteValue(TEXT("playRate"), P10->PlayRate);
-				Writer->WriteValue(TEXT("startOffset"), P10->StartOffset);
-			}
-		}
-		else if (const FMantleTerrainProps* P11 = Entity.Props.TryGet<FMantleTerrainProps>())
-		{
-			// A Terrain (#466): its heights, weights and layers. weightmap only when it has one.
-			Writer->WriteValue(TEXT("heightfield"), P11->Heightfield);
-			if (!P11->Weightmap.IsEmpty())
-			{
-				Writer->WriteValue(TEXT("weightmap"), P11->Weightmap);
-			}
-			if (!P11->Weightmap2.IsEmpty())
-			{
-				Writer->WriteValue(TEXT("weightmap2"), P11->Weightmap2);
-			}
-			if (!P11->Holes.IsEmpty())
-			{
-				Writer->WriteValue(TEXT("holes"), P11->Holes);
-			}
-			Writer->WriteArrayStart(TEXT("layers"));
-			for (const FMantleTerrainLayer& Layer : P11->Layers)
-			{
-				Writer->WriteObjectStart();
-				Writer->WriteValue(TEXT("material"), Layer.Material);
-				Writer->WriteValue(TEXT("tiling"), Layer.Tiling);
-				// #596: only when not default, as on a mesh.
-				if (Layer.Surface != EMantleSurface::Default)
-				{
-					Writer->WriteValue(TEXT("surface"), FString(MantleSurfaceToString(Layer.Surface)));
-				}
-				Writer->WriteObjectEnd();
-			}
-			Writer->WriteArrayEnd();
-			Writer->WriteValue(TEXT("castShadow"), P11->bCastShadow);
-			FMantleTerrainGrassExport::WriteJson(Writer, P11->Grass);
-		}
-		else if (const FMantleVehicleSpawnProps* P12 = Entity.Props.TryGet<FMantleVehicleSpawnProps>())
-		{
-			// A new type (#435): every key ships with it. A stored vehicle (#614 stage 4) names its storage entry
-			// instead of an uploaded id; exactly one of the two is written, and only a place that uses storage
-			// ever carries the new key.
-			if (!P12->StorageItem.IsEmpty())
-			{
-				Writer->WriteValue(TEXT("storageItem"), P12->StorageItem);
-			}
-			else
-			{
-				Writer->WriteValue(TEXT("vehicle"), P12->Vehicle);
-			}
-			Writer->WriteValue(TEXT("respawnSeconds"), P12->RespawnSeconds);
-			Writer->WriteValue(TEXT("enabled"), P12->bEnabled);
-			// #488: only a picked livery; -1 (the vehicle's default) is the schema's default.
-			if (P12->Livery >= 0)
-			{
-				Writer->WriteValue(TEXT("livery"), P12->Livery);
-			}
-		}
-		else if (const FMantleWeaponSpawnProps* P12W = Entity.Props.TryGet<FMantleWeaponSpawnProps>())
-		{
-			// A new type (#789): every key ships with it. A stored weapon names its storage entry instead of an uploaded id;
-			// exactly one of the two is written.
-			if (!P12W->StorageItem.IsEmpty())
-			{
-				Writer->WriteValue(TEXT("storageItem"), P12W->StorageItem);
-			}
-			else
-			{
-				Writer->WriteValue(TEXT("weapon"), P12W->Weapon);
-			}
-			Writer->WriteValue(TEXT("respawnSeconds"), P12W->RespawnSeconds);
-			Writer->WriteValue(TEXT("enabled"), P12W->bEnabled);
-		}
-		else if (const FMantleItemSpawnProps* P12I = Entity.Props.TryGet<FMantleItemSpawnProps>())
-		{
-			// A new type (#235): only the keys that differ from the schema's defaults.
-			Writer->WriteValue(TEXT("item"), P12I->Item);
-			if (P12I->Count != 1)
-			{
-				Writer->WriteValue(TEXT("count"), P12I->Count);
-			}
-			if (P12I->RespawnSeconds != MANTLE_DEFAULT_ITEM_SPAWN_RESPAWN_SECONDS)
-			{
-				Writer->WriteValue(TEXT("respawnSeconds"), P12I->RespawnSeconds);
-			}
-			if (!P12I->Model.IsEmpty())
-			{
-				Writer->WriteValue(TEXT("model"), P12I->Model);
-			}
-			if (!P12I->bEnabled)
-			{
-				Writer->WriteValue(TEXT("enabled"), false);
-			}
-		}
-		else if (const FMantleScriptPointProps* P12S = Entity.Props.TryGet<FMantleScriptPointProps>())
-		{
-			// A new type (#838): every key ships with it. Parameters are written sorted by key (case-sensitive), so a repeat
-			// export of the same point is byte-identical.
-			Writer->WriteValue(TEXT("storageItem"), P12S->StorageItem);
-			TArray<FMantleScriptPointParameter> Sorted = P12S->Parameters;
-			Sorted.Sort([](const FMantleScriptPointParameter& A, const FMantleScriptPointParameter& B)
-			{
-				return A.Name.Compare(B.Name, ESearchCase::CaseSensitive) < 0;
-			});
-			Writer->WriteObjectStart(TEXT("parameters"));
-			for (const FMantleScriptPointParameter& Parameter : Sorted)
-			{
-				Writer->WriteValue(Parameter.Name, Parameter.Value);
-			}
-			Writer->WriteObjectEnd();
-			Writer->WriteValue(TEXT("enabled"), P12S->bEnabled);
-		}
-		else if (const FMantleEffectProps* P13 = Entity.Props.TryGet<FMantleEffectProps>())
-		{
-			// A new type (#460): every key ships with it, so the whole look is always written.
-			Writer->WriteValue(TEXT("archetype"), FMantleEffects::ArchetypeName(P13->Archetype));
-			WriteColor(Writer, TEXT("color"), P13->Look.Color);
-			if (P13->Archetype == EMantleEffectArchetype::Sprites)
-			{
-				// #628: the sprites keys in place of size, speed and lifetime; the texture only when it names one.
-				const FMantleSpritesSettings& S = P13->Sprites;
-				if (!P13->TextureId.IsEmpty())
-				{
-					Writer->WriteValue(TEXT("texture"), P13->TextureId);
-				}
-				Writer->WriteValue(TEXT("blend"), FString(FMantleEffects::BlendName(S.Blend)));
-				WriteColor(Writer, TEXT("colorEnd"), S.ColorEnd);
-				Writer->WriteValue(TEXT("alpha"), S.Alpha);
-				Writer->WriteValue(TEXT("alphaEnd"), S.AlphaEnd);
-				Writer->WriteValue(TEXT("fadeIn"), S.FadeIn);
-				Writer->WriteValue(TEXT("sizeMin"), S.SizeMin);
-				Writer->WriteValue(TEXT("sizeMax"), S.SizeMax);
-				Writer->WriteValue(TEXT("sizeEndScale"), S.SizeEndScale);
-				Writer->WriteValue(TEXT("rate"), P13->Look.Rate);
-				Writer->WriteValue(TEXT("lifetimeMin"), S.LifetimeMin);
-				Writer->WriteValue(TEXT("lifetimeMax"), S.LifetimeMax);
-				WriteVector(Writer, TEXT("velocityMin"), S.VelocityMin);
-				WriteVector(Writer, TEXT("velocityMax"), S.VelocityMax);
-				WriteVector(Writer, TEXT("acceleration"), S.Acceleration);
-				Writer->WriteObjectStart(TEXT("shape"));
-				Writer->WriteValue(TEXT("type"), FString(FMantleEffects::ShapeName(S.Shape)));
-				if (S.Shape == EMantleSpritesShape::Box)
-				{
-					WriteVector(Writer, TEXT("halfExtent"), S.BoxHalfExtent);
-				}
-				if (S.Shape == EMantleSpritesShape::Sphere)
-				{
-					Writer->WriteValue(TEXT("radius"), S.SphereRadius);
-				}
-				if (S.Shape == EMantleSpritesShape::Cylinder)
-				{
-					Writer->WriteValue(TEXT("radius"), S.CylinderRadius);
-					Writer->WriteValue(TEXT("height"), S.CylinderHeight);
-				}
-				Writer->WriteObjectEnd();
-				Writer->WriteValue(TEXT("maxParticles"), S.MaxParticles);
-				// #628: a flipbook sheet only when there is one (the schema's default is the whole texture).
-				if (S.SubImageColumns > 1 || S.SubImageRows > 1)
-				{
-					Writer->WriteArrayStart(TEXT("subImages"));
-					Writer->WriteValue(S.SubImageColumns);
-					Writer->WriteValue(S.SubImageRows);
-					Writer->WriteArrayEnd();
-					Writer->WriteValue(TEXT("subImageMode"), FString(FMantleEffects::SubImageModeName(S.SubImageMode)));
-				}
-			}
-			else
-			{
-				Writer->WriteValue(TEXT("size"), P13->Look.Size);
-				Writer->WriteValue(TEXT("rate"), P13->Look.Rate);
-				Writer->WriteValue(TEXT("speed"), P13->Look.Speed);
-				Writer->WriteValue(TEXT("lifetime"), P13->Look.Lifetime);
-			}
-			Writer->WriteValue(TEXT("autoplay"), P13->bAutoplay);
-			Writer->WriteValue(TEXT("loop"), P13->bLoop);
-		}
-		else if (const FMantleScatterParams* P15 = Entity.Props.TryGet<FMantleScatterParams>())
-		{
-			// A new type (#530): every key it ships with is written, at full precision, so the client generates exactly
-			// the instances the editor previewed; the #169 keys only where they apply. The runtime's own writer
-			// (FMantleScatter::ToJson), so the editor and a script's Scatter settings write one way.
-			const TSharedRef<FJsonObject> Scatter = FMantleScatter::ToJson(*P15); // held: a loop over a temporary's Values would dangle
-			for (const auto& Field : Scatter->Values)
-			{
-				const FString FieldKey(Field.Key.ToView());
-				WriteJsonValue(Writer, &FieldKey, Field.Value);
-			}
-		}
-		else if (const FMantleReflectionProbeProps* P16 = Entity.Props.TryGet<FMantleReflectionProbeProps>())
-		{
-			// A new type (#628): its keys ship with it, so each is written. A box's own keys only for a box, a sphere's for a
-			// sphere, as the schema holds them.
-			Writer->WriteValue(TEXT("shape"), FString(MantleReflectionProbeShapeToString(P16->Shape)));
-			if (P16->Shape == EMantleReflectionProbeShape::Box)
-			{
-				WriteVector(Writer, TEXT("halfExtent"), P16->HalfExtent);
-				Writer->WriteValue(TEXT("transitionDistance"), P16->TransitionDistance);
-			}
-			else
-			{
-				Writer->WriteValue(TEXT("influenceRadius"), P16->InfluenceRadius);
-			}
-			Writer->WriteValue(TEXT("brightness"), P16->Brightness);
-			Writer->WriteValue(TEXT("skylightScale"), P16->SkylightScale);
-		}
-		else if (const FMantleVoxelWorldProps* P22 = Entity.Props.TryGet<FMantleVoxelWorldProps>())
-		{
-			// A new type (#168 step 6): its keys ship with it. A block type with one tile on every face writes it as "all"; the
-			// optional keys (liquid, light, drops, tags) only when set.
-			Writer->WriteArrayStart(TEXT("size"));
-			Writer->WriteValue(P22->Size.X);
-			Writer->WriteValue(P22->Size.Y);
-			Writer->WriteValue(P22->Size.Z);
-			Writer->WriteArrayEnd();
-			Writer->WriteArrayStart(TEXT("blockTypes"));
-			for (const FMantleVoxelBlockTypeProps& Type : P22->BlockTypes)
-			{
-				Writer->WriteObjectStart();
-				Writer->WriteValue(TEXT("name"), Type.Name);
-				if (Type.Top == Type.Side && Type.Side == Type.Bottom)
-				{
-					Writer->WriteValue(TEXT("all"), Type.Top);
-				}
-				else
-				{
-					Writer->WriteValue(TEXT("top"), Type.Top);
-					Writer->WriteValue(TEXT("side"), Type.Side);
-					Writer->WriteValue(TEXT("bottom"), Type.Bottom);
-				}
-				const TCHAR* const RenderNames[] = { TEXT("opaque"), TEXT("cutout"), TEXT("translucent") };
-				Writer->WriteValue(TEXT("render"), FString(RenderNames[FMath::Min<int32>(static_cast<int32>(Type.Render), 2)]));
-				Writer->WriteValue(TEXT("solid"), Type.bSolid);
-				if (Type.bLiquid)
-				{
-					Writer->WriteValue(TEXT("liquid"), true);
-				}
-				if (Type.Light > 0)
-				{
-					Writer->WriteValue(TEXT("light"), Type.Light);
-				}
-				Writer->WriteValue(TEXT("hardness"), Type.Hardness);
-				Writer->WriteValue(TEXT("surface"), FString(MantleSurfaceToString(Type.Surface)));
-				if (!Type.Drops.IsEmpty())
-				{
-					Writer->WriteValue(TEXT("drops"), Type.Drops);
-				}
-				if (Type.Tags.Num() > 0)
-				{
-					Writer->WriteArrayStart(TEXT("tags"));
-					for (const FString& Tag : Type.Tags)
-					{
-						Writer->WriteValue(Tag);
-					}
-					Writer->WriteArrayEnd();
-				}
-				Writer->WriteObjectEnd();
-			}
-			Writer->WriteArrayEnd();
-			if (!P22->World.IsEmpty())
-			{
-				Writer->WriteValue(TEXT("world"), P22->World);
-			}
-			Writer->WriteValue(TEXT("tileSize"), P22->TileSize);
-			Writer->WriteValue(TEXT("filter"), FString(P22->bLinearFilter ? TEXT("linear") : TEXT("nearest")));
-			const TCHAR* const EditNames[] = { TEXT("all"), TEXT("none"), TEXT("script") };
-			Writer->WriteValue(TEXT("edit"), FString(EditNames[FMath::Min<int32>(static_cast<int32>(P22->Edit), 2)]));
-			const TCHAR* const PersistenceNames[] = { TEXT("none"), TEXT("server"), TEXT("place") };
-			Writer->WriteValue(TEXT("persistence"), FString(PersistenceNames[FMath::Min<int32>(static_cast<int32>(P22->Persistence), 2)]));
-			Writer->WriteValue(TEXT("look"), FString(P22->bSmooth ? TEXT("smooth") : TEXT("blocky")));
-		}
-		else if (const FMantleWaterBodyProps* P21 = Entity.Props.TryGet<FMantleWaterBodyProps>())
-		{
-			// A new type (GhzGarage/mantle#997): its keys ship with it. A custom body writes its mesh, the others their spline; a river no waves.
-			Writer->WriteValue(TEXT("bodyType"), FString(MantleWaterBodyTypeToString(P21->BodyType)));
-			if (P21->BodyType == EMantleWaterBodyType::Custom)
-			{
-				Writer->WriteValue(TEXT("mesh"), P21->MeshId);
-			}
-			else
-			{
-				Writer->WriteObjectStart(TEXT("spline"));
-				Writer->WriteArrayStart(TEXT("points"));
-				for (const FMantleWaterSplinePoint& Point : P21->SplinePoints)
-				{
-					Writer->WriteObjectStart();
-					WriteVector(Writer, TEXT("location"), Point.Location);
-					WriteVector(Writer, TEXT("arriveTangent"), Point.ArriveTangent);
-					WriteVector(Writer, TEXT("leaveTangent"), Point.LeaveTangent);
-					Writer->WriteValue(TEXT("depth"), Point.Depth);
-					if (P21->BodyType == EMantleWaterBodyType::River)
-					{
-						Writer->WriteValue(TEXT("width"), Point.Width);
-						Writer->WriteValue(TEXT("velocity"), Point.Velocity);
-					}
-					if (Point.Interp != EMantleWaterSplinePointType::Curve)
-					{
-						Writer->WriteValue(TEXT("interp"), FString(MantleWaterSplinePointTypeToString(Point.Interp)));
-					}
-					Writer->WriteObjectEnd();
-				}
-				Writer->WriteArrayEnd();
-				Writer->WriteObjectEnd();
-			}
-			if (P21->Waves.Num() > 0)
-			{
-				Writer->WriteObjectStart(TEXT("waves"));
-				Writer->WriteArrayStart(TEXT("list"));
-				for (const FMantleWaterWave& Wave : P21->Waves)
-				{
-					Writer->WriteObjectStart();
-					Writer->WriteValue(TEXT("wavelength"), Wave.Wavelength);
-					Writer->WriteValue(TEXT("amplitude"), Wave.Amplitude);
-					Writer->WriteValue(TEXT("steepness"), Wave.Steepness);
-					Writer->WriteValue(TEXT("directionDeg"), Wave.DirectionDeg);
-					if (!FMath::IsNearlyZero(Wave.PhaseOffset))
-					{
-						Writer->WriteValue(TEXT("phaseOffset"), Wave.PhaseOffset);
-					}
-					Writer->WriteObjectEnd();
-				}
-				Writer->WriteArrayEnd();
-				Writer->WriteObjectEnd();
-			}
-			if (P21->Albedo.IsSet() || P21->Scattering.IsSet() || P21->Absorption.IsSet())
-			{
-				Writer->WriteObjectStart(TEXT("look"));
-				if (P21->Albedo.IsSet()) { WriteColor(Writer, TEXT("albedo"), *P21->Albedo); }
-				if (P21->Scattering.IsSet()) { WriteColor(Writer, TEXT("scattering"), *P21->Scattering); }
-				if (P21->Absorption.IsSet()) { WriteColor(Writer, TEXT("absorption"), *P21->Absorption); }
-				Writer->WriteObjectEnd();
-			}
-			Writer->WriteValue(TEXT("collision"), P21->bCollision);
-			if (P21->CollisionHeightOffset.IsSet())
-			{
-				Writer->WriteValue(TEXT("collisionHeightOffset"), *P21->CollisionHeightOffset);
-			}
-			if (P21->CollisionExtent.IsSet())
-			{
-				WriteVector(Writer, TEXT("collisionExtent"), *P21->CollisionExtent);
-			}
-			if (P21->OceanExtent.IsSet())
-			{
-				Writer->WriteArrayStart(TEXT("oceanExtent"));
-				Writer->WriteValue(P21->OceanExtent->X);
-				Writer->WriteValue(P21->OceanExtent->Y);
-				Writer->WriteArrayEnd();
-			}
-			if (P21->CenterOnZone.IsSet())
-			{
-				Writer->WriteValue(TEXT("centerOnZone"), *P21->CenterOnZone);
-			}
-		}
-		else if (const FMantleTextProps* P20 = Entity.Props.TryGet<FMantleTextProps>())
-		{
-			// A new type (GhzGarage/mantle#724): its keys ship with it, so each is written. The color is linear RGBA.
-			Writer->WriteValue(TEXT("text"), P20->Text);
-			Writer->WriteArrayStart(TEXT("color"));
-			Writer->WriteValue(static_cast<double>(P20->Color.R));
-			Writer->WriteValue(static_cast<double>(P20->Color.G));
-			Writer->WriteValue(static_cast<double>(P20->Color.B));
-			Writer->WriteValue(static_cast<double>(P20->Color.A));
-			Writer->WriteArrayEnd();
-			Writer->WriteValue(TEXT("worldSize"), P20->WorldSize);
-			Writer->WriteValue(TEXT("horizontalAlignment"), FString(MantleTextHorizontalAlignmentToString(P20->HorizontalAlignment)));
-			Writer->WriteValue(TEXT("verticalAlignment"), FString(MantleTextVerticalAlignmentToString(P20->VerticalAlignment)));
-			Writer->WriteValue(TEXT("xScale"), P20->XScale);
-			Writer->WriteValue(TEXT("yScale"), P20->YScale);
-		}
-		else if (const FMantleConstraintProps* P14 = Entity.Props.TryGet<FMantleConstraintProps>())
-		{
-			// A new type (#528): its keys ship with it. A hinge's and a rope's own keys only for that
-			// type, as the schema holds them; the optional ones only when set.
-			Writer->WriteValue(TEXT("type"), MantleConstraintTypeToString(P14->Type));
-			Writer->WriteValue(TEXT("entityA"), P14->EntityA);
-			if (!P14->EntityB.IsEmpty())
-			{
-				Writer->WriteValue(TEXT("entityB"), P14->EntityB);
-			}
-			WriteVector(Writer, TEXT("anchorA"), P14->AnchorA);
-			if (P14->AnchorB.IsSet())
-			{
-				WriteVector(Writer, TEXT("anchorB"), P14->AnchorB.GetValue());
-			}
-			if (P14->Type == EMantleConstraintType::Hinge)
-			{
-				WriteVector(Writer, TEXT("axis"), P14->Axis);
-				if (P14->bLimited)
-				{
-					Writer->WriteArrayStart(TEXT("limits"));
-					Writer->WriteValue(P14->MinAngle);
-					Writer->WriteValue(P14->MaxAngle);
-					Writer->WriteArrayEnd();
-				}
-			}
-			if (P14->Type == EMantleConstraintType::Rope && P14->Length.IsSet())
-			{
-				Writer->WriteValue(TEXT("length"), P14->Length.GetValue());
-			}
-			if (P14->BreakForce.IsSet())
-			{
-				Writer->WriteValue(TEXT("breakForce"), P14->BreakForce.GetValue());
-			}
-		}
-		Writer->WriteObjectEnd();
-
-		if (Entity.Tags.Num() > 0)
-		{
-			Writer->WriteArrayStart(TEXT("tags"));
-			for (const FString& Tag : Entity.Tags)
-			{
-				Writer->WriteValue(Tag);
-			}
-			Writer->WriteArrayEnd();
-		}
-
-		if (Entity.bDynamic)
-		{
-			Writer->WriteValue(TEXT("dynamic"), true);
-		}
-
-		Writer->WriteObjectEnd();
+		WriteEntityJson(Writer, Entity);
 	}
 	Writer->WriteArrayEnd();
 

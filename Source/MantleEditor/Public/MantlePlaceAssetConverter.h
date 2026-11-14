@@ -45,7 +45,11 @@ enum class EMantlePlaceUploadStage : uint8
 	/** A creator weapon (#789): its document names its skeletal mesh's and materials' ids, so it goes after them. */
 	Weapon,
 	/** A creator wheel: its document names its static mesh's and materials' ids, so it goes after them. */
-	Wheel
+	Wheel,
+	/** A cell file of the place's scenery (large places): it names assets by id only, uploaded by a queue of its own after them. */
+	Cell,
+	/** The cell index: it names the cell files' uploaded ids, so it goes after them. */
+	CellIndex
 };
 
 /** A uploaded asset as the upload queue recorded it: what the exporter writes for its local key. */

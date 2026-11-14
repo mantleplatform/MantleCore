@@ -35,7 +35,6 @@ namespace MantlePublishPanelPrivate
 	FTSTicker::FDelegateHandle TickerHandle;
 	TWeakObjectPtr<UWorld> LastWorld;
 	bool bLastGoLive = true;
-	bool bLastThin = false;
 	FString LastNotes;
 
 	/**
@@ -148,7 +147,7 @@ bool SMantlePublishPanel::IsRunning()
 	return MantlePublishPanelPrivate::CurrentSession.IsValid() && !MantlePublishPanelPrivate::CurrentSession->IsFinished();
 }
 
-void SMantlePublishPanel::Start(UWorld* World, bool bGoLive, const FString& Notes, const bool bThinInstances)
+void SMantlePublishPanel::Start(UWorld* World, bool bGoLive, const FString& Notes)
 {
 	using namespace MantlePublishPanelPrivate;
 	if (IsRunning())
@@ -169,12 +168,10 @@ void SMantlePublishPanel::Start(UWorld* World, bool bGoLive, const FString& Note
 	}
 	LastWorld = World;
 	bLastGoLive = bGoLive;
-	bLastThin = bThinInstances;
 	LastNotes = Notes;
 	// Public or Private is remembered between publishes, the declaration is not: each go-live with vehicles asks for a fresh tick.
 	VehicleChoice.bRightsDeclared = false;
 	const TSharedRef<FMantleLevelPublishSource> Source = MakeShared<FMantleLevelPublishSource>(World, Notes);
-	Source->SetThinInstances(bThinInstances);
 	CurrentSession = MakeShared<FMantlePlacePublishSession>(Source, MakeShared<FMantleApiUploadTransport>(), bGoLive, Notes);
 	ApplyVehicleChoice();
 	FGlobalTabmanager::Get()->TryInvokeTab(TabName);
@@ -270,20 +267,6 @@ void SMantlePublishPanel::Construct(const FArguments& InArgs)
 						})
 						.ToolTipText(LOCTEXT("PublishAgainTooltip", "Run it again with the same notes. Nothing already uploaded is sent twice."))
 						.OnClicked(this, &SMantlePublishPanel::OnPublishAgain)
-					]
-					// GhzGarage/mantle#818: the place is too big and even thinning would fix it; the numbers are in the list below.
-					+ SHorizontalBox::Slot().AutoWidth().Padding(8, 0, 0, 0)
-					[
-						SNew(SButton)
-						.Visibility_Lambda([]
-						{
-							const TSharedPtr<FMantlePlacePublishSession> Session = SMantlePublishPanel::GetSession();
-							return Session.IsValid() && Session->IsFinished() && !Session->Succeeded() && !Session->GetResult().ThinOffer.IsEmpty()
-								? EVisibility::Visible : EVisibility::Collapsed;
-						})
-						.Text(LOCTEXT("ThinAndPublish", "Thin and publish"))
-						.ToolTipText(LOCTEXT("ThinAndPublishTooltip", "Remove foliage and instances evenly across the level until the place fits, then publish. The numbers are listed below; the coverage report says how many were removed. Your level is not changed."))
-						.OnClicked(this, &SMantlePublishPanel::OnThinAndPublish)
 					]
 				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 10)
@@ -474,11 +457,6 @@ void SMantlePublishPanel::RebuildAttention()
 		}
 	}
 	Rows.Append(Session->GetAttention());
-	// GhzGarage/mantle#818: the fix on offer, with its numbers, so choosing "Thin and publish" is an informed choice.
-	if (Session->IsFinished() && !Session->GetResult().ThinOffer.IsEmpty())
-	{
-		Rows.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(), TEXT("Thinning is on offer."), Session->GetResult().ThinOffer });
-	}
 	if (Rows.Num() == 0)
 	{
 		return;
@@ -625,24 +603,7 @@ FReply SMantlePublishPanel::OnPublishAgain()
 	{
 		return FReply::Handled();
 	}
-	Start(World, bLastGoLive, LastNotes, bLastThin);
-	return FReply::Handled();
-}
-
-FReply SMantlePublishPanel::OnThinAndPublish()
-{
-	using namespace MantlePublishPanelPrivate;
-	UWorld* World = LastWorld.Get();
-	if (!World)
-	{
-		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("ThinLevelGone", "The level that was being published is no longer open. Open it and choose Tools > Mantle > Publish."));
-		return FReply::Handled();
-	}
-	if (!FMantleCreatorSignIn::EnsureSignedIn(LOCTEXT("ThinSignInReason", "Sign in to publish this place to Mantle.")))
-	{
-		return FReply::Handled();
-	}
-	Start(World, bLastGoLive, LastNotes, /*bThinInstances*/ true);
+	Start(World, bLastGoLive, LastNotes);
 	return FReply::Handled();
 }
 

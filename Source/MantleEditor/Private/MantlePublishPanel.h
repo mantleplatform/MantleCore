@@ -33,7 +33,7 @@ public:
 	 * Starts publishing (or saving) World in the background and shows the panel. While one is
 	 * running, only the panel is shown: one publish at a time.
 	 */
-	static void Start(UWorld* World, bool bGoLive, const FString& Notes, bool bThinInstances = false);
+	static void Start(UWorld* World, bool bGoLive, const FString& Notes);
 
 	/** The publish running now, or the last one. */
 	static TSharedPtr<FMantlePlacePublishSession> GetSession();
@@ -53,8 +53,6 @@ private:
 	FText GetDetailsText() const;
 	FReply OnCancel();
 	FReply OnPublishAgain();
-	/** GhzGarage/mantle#818: Publish again with even thinning chosen, after the place was refused as too big. */
-	FReply OnThinAndPublish();
 
 	TSharedPtr<SVerticalBox> AttentionBox;
 	TWeakPtr<FMantlePlacePublishSession> ShownSession;

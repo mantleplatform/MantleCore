@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePreviewExport.h"
+#include "MantleSha256.h"
 #include "MantlePlaceSecrets.h"
 #include "MantleAssetStore.h"
 #include "MantlePlaceAssetConverter.h"
@@ -634,6 +635,53 @@ namespace MantlePreviewExportPrivate
 		return true;
 	}
 
+	/**
+	 * Puts bytes in the bundle's Assets/ folder as they are and lists them under Id: what a cell file and the cell index are (the
+	 * backend's cook stores them unchanged, as it does a Lumen file, so the local tool is not asked).
+	 */
+	bool PreviewStoreAsset(FExportState& State, const FString& Kind, const FString& Id, const TArray<uint8>& Bytes, FString& OutError)
+	{
+		if (State.AssetIndexById.Contains(Id))
+		{
+			return true;
+		}
+		if (State.Assets.Num() >= MaxAssets)
+		{
+			OutError = FString::Printf(TEXT("This place needs more than %d assets; a preview holds at most that many."), MaxAssets);
+			return false;
+		}
+		if (Bytes.Num() > MaxAssetFileBytes)
+		{
+			OutError = FString::Printf(TEXT("A %s is %lld bytes; a preview asset may be at most %lld."), *Kind, static_cast<int64>(Bytes.Num()), MaxAssetFileBytes);
+			return false;
+		}
+		const FMantleContentHash Hash = FMantleContentHash::OfBytes(Bytes);
+		FBundleAsset Asset;
+		Asset.Id = Id;
+		Asset.Kind = Kind;
+		Asset.File = TEXT("Assets/") + Hash.ToHex();
+		Asset.CookedHash = Hash.ToString();
+		Asset.CookedBytes = Bytes.Num();
+		if (!State.WrittenFiles.Contains(Asset.File))
+		{
+			if (State.TotalAssetBytes + Bytes.Num() > MaxAssetTotalBytes)
+			{
+				OutError = FString::Printf(TEXT("The preview's assets would pass %lld MiB; a %s does not fit."), MaxAssetTotalBytes >> 20, *Kind);
+				return false;
+			}
+			if (!PreviewWriteBytes(State.BundleDir / Asset.File, Bytes))
+			{
+				OutError = FString::Printf(TEXT("Could not write %s for a %s."), *Asset.File, *Kind);
+				return false;
+			}
+			State.WrittenFiles.Add(Asset.File);
+			State.TotalAssetBytes += Bytes.Num();
+		}
+		State.AssetIndexById.Add(Id, State.Assets.Num());
+		State.Assets.Add(MoveTemp(Asset));
+		return true;
+	}
+
 	/** Cooks one upload with the local tool (PreviewRunCook) and puts the result in the bundle's Assets/ folder. */
 	bool PreviewCookAsset(FExportState& State, const FMantlePlaceUpload& Upload, FBundleAsset& OutAsset, TSharedPtr<FJsonObject>& OutInfo, FString& OutError)
 	{
@@ -903,7 +951,7 @@ namespace MantlePreviewExportPrivate
 		{
 			return false;
 		}
-		const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(World, Options.bThinInstances);
+		const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(World);
 		PreviewAddIssueLines(Validation.Issues, Result.Errors, Result.Warnings);
 		if (Validation.HasErrors())
 		{
@@ -1061,7 +1109,6 @@ namespace MantlePreviewExportPrivate
 		ExportOptions.Name = World->GetName();
 		ExportOptions.AuthorId = TEXT("usr_preview");
 		ExportOptions.Assets = &Set;
-		ExportOptions.bThinInstances = Options.bThinInstances;
 		const FMantleExportResult Exported = FMantlePlaceExporter::Export(World, ExportOptions);
 		// The materials it gathered for the cook, recognized, baked or lost, join the report (Export leaves them to whoever gathered).
 		Result.Coverage = Exported.Coverage;
@@ -1126,7 +1173,28 @@ namespace MantlePreviewExportPrivate
 		{
 			Result.Warnings.Add(TEXT("The ids above are for this preview only: Publish gives each Script Asset a different id (logged as \"Script asset <path> = <id>\"), so a script that spells one out needs the published id after publishing."));
 		}
-		if (!PreviewWriteText(State.BundleDir / TEXT("place.json"), FMantlePlaceExporter::ToJson(PreviewPlace)))
+		// Scenery in cells (cells-format 10): each cell's files and the index go in the bundle as assets, under provisional ids (nothing
+		// was uploaded), and the root names the index.
+		FMantleCellRoot PreviewCellRoot;
+		if (Exported.Cells.Num() > 0)
+		{
+			TArray<FMantleCellOfflineFile> CellFiles;
+			FString CellError;
+			if (!FMantleCellFiles::BuildOffline(Exported.CellGrid, Exported.Cells, CellFiles, PreviewCellRoot, CellError))
+			{
+				Result.Errors.Add(CellError);
+				return false;
+			}
+			for (const FMantleCellOfflineFile& File : CellFiles)
+			{
+				if (!PreviewStoreAsset(State, File.bIndex ? TEXT("cellindex") : TEXT("cell"), File.Id, File.Bytes, CellError))
+				{
+					Result.Errors.Add(CellError);
+					return false;
+				}
+			}
+		}
+		if (!PreviewWriteText(State.BundleDir / TEXT("place.json"), FMantlePlaceExporter::ToJson(PreviewPlace, Exported.Cells.Num() > 0 ? &PreviewCellRoot : nullptr)))
 		{
 			Result.Errors.Add(TEXT("Could not write place.json."));
 			return false;
@@ -1715,19 +1783,18 @@ namespace MantlePreviewExportPrivate
 
 	FAutoConsoleCommandWithWorldAndArgs GMantlePreviewExportCommand(
 		TEXT("Mantle.Preview.Export"),
-		TEXT("Mantle.Preview.Export [-CookTool=<path to mantle-cook.exe>] [-Out=<folder>] [-Features=<comma list>|all] [-Thin=auto] -- writes a complete offline preview bundle for the open level ")
+		TEXT("Mantle.Preview.Export [-CookTool=<path to mantle-cook.exe>] [-Out=<folder>] [-Features=<comma list>|all] -- writes a complete offline preview bundle for the open level ")
 		TEXT("(validate, convert, cook every asset locally, scripts, UI, avatar), blocking the editor until it ends. ")
 		TEXT("Nothing is sent to Mantle. -CookTool defaults to MANTLE_COOK_TOOL; -Out replaces <Project>/Saved/Mantle/Preview as the folder bundles go under. ")
 		TEXT("-Features names the gated features the client you will preview in reads (MantleClientFeatures: materialFidelity, terrainGrass, ...): the cook lets their keys through, ")
 		TEXT("and an export for a client without materialFidelity or terrainGrass leaves foliage shading and landscape grass out, reported as needing a newer Mantle client. ")
-		TEXT("It defaults to all, so a bare export with no client is a dev export for a client as new as this build. -Thin=auto thins instanced meshes evenly to fit, as Publish's does. ")
+		TEXT("It defaults to all, so a bare export with no client is a dev export for a client as new as this build. ")
 		TEXT("Logs MANTLE_PREVIEW_EXPORT_DONE <manifest path> or MANTLE_PREVIEW_EXPORT_FAILED <reason> per problem."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			FMantlePreviewExportOptions Options;
 			Options.CookTool = PreviewArgValue(Args, TEXT("-CookTool="));
 			Options.OutputRoot = PreviewArgValue(Args, TEXT("-Out="));
-			Options.bThinInstances = PreviewArgValue(Args, TEXT("-Thin=")).Equals(TEXT("auto"), ESearchCase::IgnoreCase);
 			// #628: a bare export has no client to ask, so it is a dev export: every feature this build reads.
 			const bool bHasFeatures = Args.ContainsByPredicate([](const FString& Arg) { return Arg.StartsWith(TEXT("-Features="), ESearchCase::IgnoreCase); });
 			Options.Features = bHasFeatures ? FMantleTargetFeatures::Parse(PreviewArgValue(Args, TEXT("-Features="))) : FMantleTargetFeatures::All();

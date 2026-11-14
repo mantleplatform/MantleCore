@@ -310,7 +310,7 @@ bool FMantleLevelPublishSource::Prepare(FMantleValidationResult& OutValidation, 
 	}
 	// Validation first. Uploading a level with unpublishable content would either lose it
 	// silently or fail server-side with a worse message.
-	OutValidation = FMantlePlaceValidator::Validate(Level, bThinInstances);
+	OutValidation = FMantlePlaceValidator::Validate(Level);
 	if (!WorldPartitionNote.IsEmpty())
 	{
 		OutValidation.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(), WorldPartitionNote,
@@ -559,6 +559,86 @@ bool FMantleLevelPublishSource::CollectScripts(TArray<FMantlePlaceScriptUpload>&
 	return true;
 }
 
+bool FMantleLevelPublishSource::GetCellUploads(TArray<FMantlePlaceUpload>& OutFiles, FString& OutMessage)
+{
+	OutFiles.Reset();
+	CellBlobs.Reset();
+	TSet<FString> Seen;
+	for (const FMantlePlannedCell& Cell : PlannedCells)
+	{
+		TArray<FMantleCellFileBlob>& Blobs = CellBlobs.AddDefaulted_GetRef();
+		if (!FMantleCellFiles::WriteCell(Cell, Blobs, OutMessage))
+		{
+			return false;
+		}
+		for (const FMantleCellFileBlob& Blob : Blobs)
+		{
+			// The same bytes in two cells are one upload.
+			const FString Key = TEXT("cell:") + Blob.Hash;
+			if (Seen.Contains(Key))
+			{
+				continue;
+			}
+			Seen.Add(Key);
+			FMantlePlaceUpload& Upload = OutFiles.AddDefaulted_GetRef();
+			Upload.Key = Key;
+			Upload.Stage = EMantlePlaceUploadStage::Cell;
+			Upload.Options.Kind = TEXT("cell");
+			Upload.Bytes = Blob.Bytes;
+			Upload.Hash = Blob.Hash;
+			Upload.SourceName = FString::Printf(TEXT("scenery cell %s"), *Blob.Key.ToString());
+		}
+	}
+	return true;
+}
+
+bool FMantleLevelPublishSource::MakeCellIndex(const TMap<FString, FMantleCellFileRef>& FilesByKey, FMantlePlaceUpload& OutIndex, FString& OutMessage)
+{
+	TArray<FMantleCellIndexEntry> Entries;
+	for (int32 CellIndex = 0; CellIndex < PlannedCells.Num(); ++CellIndex)
+	{
+		const FMantlePlannedCell& Cell = PlannedCells[CellIndex];
+		FMantleCellIndexEntry& Entry = Entries.AddDefaulted_GetRef();
+		Entry.Key = Cell.Key;
+		Entry.Bounds = Cell.Bounds;
+		Entry.DrawDistance = Cell.DrawDistance;
+		for (const FMantleCellFileBlob& Blob : CellBlobs[CellIndex])
+		{
+			const FMantleCellFileRef* Ref = FilesByKey.Find(TEXT("cell:") + Blob.Hash);
+			if (!Ref || Ref->Id.IsEmpty())
+			{
+				OutMessage = FString::Printf(TEXT("Mantle did not give an id for the cell file of %s. Choose Publish again."), *Cell.Key.ToString());
+				return false;
+			}
+			Entry.Files.Add(*Ref);
+			Entry.Entities += Blob.Entities;
+			Entry.Instances += Blob.Instances;
+			Entry.Solid += Blob.Solid;
+		}
+	}
+	if (!FMantleCellFiles::WriteIndex(CellGrid, Entries, OutIndex.Bytes, OutMessage))
+	{
+		return false;
+	}
+	OutIndex.Hash = FMantleSha256::AssetHash(OutIndex.Bytes);
+	OutIndex.Key = TEXT("cellindex:") + OutIndex.Hash;
+	OutIndex.Stage = EMantlePlaceUploadStage::CellIndex;
+	OutIndex.Options.Kind = TEXT("cellindex");
+	OutIndex.SourceName = TEXT("scenery cell index");
+	return true;
+}
+
+bool FMantleLevelPublishSource::WriteRoot(const FMantleCellRoot& Index, FString& OutPlaceJson, FString& OutMessage)
+{
+	if (!bHasCells)
+	{
+		OutMessage = TEXT("There is no cell index to name: the level changed since it was exported.");
+		return false;
+	}
+	OutPlaceJson = FMantlePlaceExporter::ToJson(CellRootPlace, &Index);
+	return true;
+}
+
 bool FMantleLevelPublishSource::CheckPlaceSize(FMantlePlaceSizeCheck& OutCheck)
 {
 	UWorld* Level = World.Get();
@@ -566,28 +646,26 @@ bool FMantleLevelPublishSource::CheckPlaceSize(FMantlePlaceSizeCheck& OutCheck)
 	{
 		return true;
 	}
-	// GhzGarage/mantle#818: the place file as it would be written, with the ids an upload will give replaced by provisional ones of
+	// GhzGarage/mantle#818: the root place file as it would be written, with the ids an upload will give replaced by provisional ones of
 	// the same length (nothing is converted or uploaded yet). The backend refuses a file over 8 MiB only at the draft save, after
-	// every upload; this finds out first.
+	// every upload; this finds out first. The scenery in cells does not count: it has cell files of its own.
 	FMantleExportOptions Options;
 	Options.Name = LevelName;
 	Options.RevisionNotes = Notes;
-	Options.bThinInstances = bThinInstances;
 	const FMantleExportResult Exported = FMantlePlaceExporter::Export(Level, Options);
 	OutCheck.Bytes = Exported.PlaceBytes;
 	OutCheck.Instances = Exported.InstanceTotal;
-	UE_LOG(LogMantle, Log, TEXT("Place file before upload: %s, %lld instanced meshes%s"), *FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytes),
-		Exported.InstanceTotal, Exported.Thinning.RemovesAnything() ? *FString::Printf(TEXT(" (%s)"), *Exported.Thinning.Describe()) : TEXT(""));
+	OutCheck.Cells = Exported.CellReport.NumCells();
+	OutCheck.CellEntities = Exported.CellReport.CellEntities;
+	OutCheck.CellInstances = Exported.CellReport.CellInstances;
+	UE_LOG(LogMantle, Log, TEXT("Place file before upload: %s, %lld instanced meshes; %d cell(s) hold %lld entities and %lld instances"), *FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytes),
+		Exported.InstanceTotal, OutCheck.Cells, OutCheck.CellEntities, OutCheck.CellInstances);
 	if (!Exported.bOverBudget)
 	{
 		return true;
 	}
 	OutCheck.bOver = true;
 	OutCheck.Issues.Add({ EMantleIssueSeverity::Error, FString(), Exported.BudgetProblem, FString() });
-	if (!bThinInstances && Exported.ThinPreview.RemovesAnything() && Exported.ThinPreview.bFits)
-	{
-		OutCheck.ThinOffer = Exported.ThinPreview.Describe();
-	}
 	return false;
 }
 
@@ -608,7 +686,6 @@ EMantlePlaceExportOutcome FMantleLevelPublishSource::Export(const FMantlePlaceAs
 	Options.ScriptAuthorSourceIds = ScriptAuthorSourceIds;
 	Options.UIDocumentSourceIds = UIDocumentSourceIds;
 	Options.Assets = &Set;
-	Options.bThinInstances = bThinInstances;
 	const FMantleExportResult Exported = FMantlePlaceExporter::Export(Level, Options);
 	// #628: what the export kept, approximated and dropped, as MANTLE_COVERAGE lines in the log (the publish log gets it below).
 	// The materials gathered for the upload, recognized, baked or lost, join the report here: Export leaves them to whoever gathered.
@@ -646,7 +723,23 @@ EMantlePlaceExportOutcome FMantleLevelPublishSource::Export(const FMantlePlaceAs
 	{
 		return EMantlePlaceExportOutcome::NeedsNewAssets;
 	}
-	OutPlaceJson = FMantlePlaceExporter::ToJson(Exported.Place);
+	// Large places (cells-format): scenery in cells means no final root file yet, since it names the cell index, which is uploaded
+	// after the cell files that it names, after this export. The session asks GetCellUploads, MakeCellIndex and WriteRoot, in that order.
+	bHasCells = Exported.Cells.Num() > 0;
+	CellBlobs.Reset();
+	if (bHasCells)
+	{
+		CellRootPlace = Exported.Place;
+		CellGrid = Exported.CellGrid;
+		PlannedCells = Exported.Cells;
+		OutPlaceJson.Reset();
+	}
+	else
+	{
+		CellRootPlace = FMantlePlace();
+		PlannedCells.Reset();
+		OutPlaceJson = FMantlePlaceExporter::ToJson(Exported.Place);
+	}
 
 	// The ids scripts use for the Script Assets, which exist only once they are uploaded: the
 	// publish log names each one, and so does the settings actor's read-only list.
@@ -656,9 +749,10 @@ EMantlePlaceExportOutcome FMantleLevelPublishSource::Export(const FMantlePlaceAs
 	{
 		ExportNotes.Add(FString::Printf(TEXT("Grouped %d identical mesh actors into %d instance sets"), Exported.Grouping.Actors, Exported.Grouping.Sets));
 	}
-	if (Exported.Thinning.bApplied && Exported.Thinning.RemovesAnything())
+	if (bHasCells)
 	{
-		ExportNotes.Add(Exported.Thinning.Describe());
+		ExportNotes.Add(FString::Printf(TEXT("Scenery: %lld entities and %lld instances in %d cell(s); %lld entities and instances always load"),
+			Exported.CellReport.CellEntities, Exported.CellReport.CellInstances, Exported.CellReport.NumCells(), Exported.CellReport.NumStayed()));
 	}
 	ExportNotes.Add(FString::Printf(TEXT("Place file: %s, %lld instanced meshes"), *FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytes), Exported.InstanceTotal));
 	TArray<FString> Ids;
@@ -1257,6 +1351,10 @@ bool FMantlePlacePublishSession::Cancel()
 	{
 		Queue->Cancel();
 	}
+	if (CellQueue.IsValid())
+	{
+		CellQueue->Cancel();
+	}
 	FailedPhase = Phase;
 	Phase = EMantlePublishPhase::Canceled;
 	Result.bSuccess = false;
@@ -1278,6 +1376,11 @@ void FMantlePlacePublishSession::Tick()
 	if (Phase == EMantlePublishPhase::Uploading)
 	{
 		TickUploading();
+		return;
+	}
+	if (Phase == EMantlePublishPhase::Cells)
+	{
+		TickCells();
 		return;
 	}
 	if (bRequestInFlight || Clock() < NextActionAt)
@@ -1338,9 +1441,7 @@ void FMantlePlacePublishSession::TickChecking()
 	}
 	Result.Validation = MoveTemp(Validation);
 	SetIssuesCopied = 0;
-	// Too many instanced meshes is the one error thinning can fix, so it goes on to the size check below, which makes the offer.
-	const bool bBudgetOnly = !bSizeChecked && Result.Validation.OnlyInstanceBudgetErrors();
-	if (Result.Validation.HasErrors() && !bBudgetOnly)
+	if (Result.Validation.HasErrors())
 	{
 		Fail(FString::Printf(TEXT("This place has %d problem(s) to fix first."), Result.Validation.NumErrors()));
 		return;
@@ -1352,16 +1453,17 @@ void FMantlePlacePublishSession::TickChecking()
 		FMantlePlaceSizeCheck Size;
 		if (!Source->CheckPlaceSize(Size))
 		{
-			Result.Validation.Issues.RemoveAll([](const FMantleValidationIssue& Issue) { return Issue.bInstanceBudget; });
 			Result.Validation.Issues.Append(Size.Issues);
-			Result.ThinOffer = Size.ThinOffer;
 			AddLog(FString::Printf(TEXT("The place file would be %s with %lld instanced meshes"), *FMantlePlaceInstancing::DescribeBytes(Size.Bytes), Size.Instances));
-			Fail(FString::Printf(TEXT("This place is too big for Mantle (%s, %lld instanced meshes). Nothing was prepared or uploaded.%s"),
-				*FMantlePlaceInstancing::DescribeBytes(Size.Bytes), Size.Instances,
-				Size.ThinOffer.IsEmpty() ? TEXT("") : TEXT(" Thinning the foliage evenly would fix it; the list below says how many go.")));
+			Fail(FString::Printf(TEXT("The part of this place that always loads is too big for Mantle (%s, %lld instanced meshes). Nothing was prepared or uploaded."),
+				*FMantlePlaceInstancing::DescribeBytes(Size.Bytes), Size.Instances));
 			return;
 		}
 		AddLog(FString::Printf(TEXT("Place file size checked: %s, %lld instanced meshes"), *FMantlePlaceInstancing::DescribeBytes(Size.Bytes), Size.Instances));
+		if (Size.Cells > 0)
+		{
+			AddLog(FString::Printf(TEXT("The scenery goes to %d cell(s): %lld entities, %lld instances"), Size.Cells, Size.CellEntities, Size.CellInstances));
+		}
 	}
 	if (Result.Validation.HasErrors())
 	{
@@ -1974,6 +2076,24 @@ void FMantlePlacePublishSession::TickExporting()
 	default:
 		break;
 	}
+	// Scenery in cells: its files, then the index that names them, go up before the root place file can be written.
+	TArray<FMantlePlaceUpload> CellFiles;
+	FString CellProblem;
+	if (!Source->GetCellUploads(CellFiles, CellProblem))
+	{
+		Fail(CellProblem.IsEmpty() ? FString(TEXT("The place's cell files could not be written.")) : CellProblem);
+		return;
+	}
+	if (CellFiles.Num() > 0)
+	{
+		StartCellUploads(MoveTemp(CellFiles));
+		return;
+	}
+	AfterExport(MoveTemp(Json));
+}
+
+void FMantlePlacePublishSession::AfterExport(FString Json)
+{
 	for (const FString& Note : Source->GetExportNotes())
 	{
 		AddLog(Note);
@@ -2008,6 +2128,141 @@ void FMantlePlacePublishSession::TickExporting()
 		}
 	}
 	EnterSaving();
+}
+
+void FMantlePlacePublishSession::StartCellUploads(TArray<FMantlePlaceUpload> Files)
+{
+	TArray<FMantleQueuedUpload> Items;
+	int64 Bytes = 0;
+	for (FMantlePlaceUpload& File : Files)
+	{
+		FMantleQueuedUpload& Item = Items.AddDefaulted_GetRef();
+		Item.Key = File.Key;
+		Item.Stage = static_cast<int32>(EMantlePlaceUploadStage::Cell);
+		Item.Name = File.SourceName;
+		Item.Options = File.Options;
+		Bytes += File.Bytes.Num();
+		Item.Bytes = MoveTemp(File.Bytes);
+		Item.Hash = File.Hash;
+	}
+	CellFileRefs.Reset();
+	bCellIndexStarted = false;
+	CellIndexKey.Reset();
+	const TWeakPtr<FMantlePlacePublishSession> WeakThis = AsShared();
+	CellQueue = MakeShared<FMantleAssetUploadQueue>(Transport, Clock);
+	CellQueue->Settings = QueueSettings;
+	CellQueue->Settings.bWaitForApproval = bGoLive;
+	CellQueue->OnAssetId = [WeakThis](const FMantleQueuedUploadStatus& Status)
+	{
+		if (const TSharedPtr<FMantlePlacePublishSession> This = WeakThis.Pin())
+		{
+			This->CellFileRefs.Add(Status.Key, FMantleCellFileRef{ Status.AssetId, Status.Hash, Status.Bytes });
+		}
+	};
+	AddLog(FString::Printf(TEXT("Uploading the scenery: %d cell file(s), %.1f MB"), Items.Num(), Bytes / (1024.0 * 1024.0)));
+	Phase = EMantlePublishPhase::Cells;
+	CellQueue->Start(MoveTemp(Items));
+	TickCells();
+}
+
+void FMantlePlacePublishSession::TickCells()
+{
+	if (!CellQueue.IsValid())
+	{
+		return;
+	}
+	CellQueue->Tick();
+	if (!CellQueue->IsFinished() || IsFinished())
+	{
+		return;
+	}
+	CellQueue->ReleaseBytes();
+	switch (CellQueue->GetOutcome())
+	{
+	case EMantleUploadQueueOutcome::Failed:
+		Fail(CellQueue->GetFailure());
+		return;
+	case EMantleUploadQueueOutcome::Canceled:
+		return;
+	case EMantleUploadQueueOutcome::WaitingForReview:
+		Result.bWaitingForReview = true;
+		Fail(TEXT("The scenery's cell files are uploaded, but Mantle's moderators have to look at them first. Nothing went live yet. Choose Publish again once they are approved; nothing is uploaded twice."));
+		return;
+	default:
+		break;
+	}
+	int32 Refused = 0;
+	for (const FMantleQueuedUploadStatus& Status : CellQueue->GetStatuses())
+	{
+		if (Status.State == EMantleQueuedUploadState::Refused)
+		{
+			AddAttention(EMantleIssueSeverity::Error, Status.Message, FString());
+			++Refused;
+		}
+	}
+	if (Refused > 0)
+	{
+		Fail(FString::Printf(TEXT("%d file(s) of this place's scenery could not be published, so nothing went live. The list below says why and what to do. ")
+			TEXT("Everything else is uploaded and kept: the next Publish only sends what changed."), Refused));
+		return;
+	}
+
+	if (!bCellIndexStarted)
+	{
+		// The cell files are on Mantle: the index names them by their ids, and goes up after them.
+		FMantlePlaceUpload Index;
+		FString Why;
+		if (!Source->MakeCellIndex(CellFileRefs, Index, Why))
+		{
+			Fail(Why.IsEmpty() ? FString(TEXT("The place's cell index could not be written.")) : Why);
+			return;
+		}
+		bCellIndexStarted = true;
+		CellIndexKey = Index.Key;
+		FMantleQueuedUpload Item;
+		Item.Key = Index.Key;
+		Item.Stage = static_cast<int32>(EMantlePlaceUploadStage::CellIndex);
+		Item.Name = Index.SourceName;
+		Item.Options = Index.Options;
+		Item.Bytes = MoveTemp(Index.Bytes);
+		Item.Hash = Index.Hash;
+		const TWeakPtr<FMantlePlacePublishSession> WeakThis = AsShared();
+		CellQueue = MakeShared<FMantleAssetUploadQueue>(Transport, Clock);
+		CellQueue->Settings = QueueSettings;
+		CellQueue->Settings.bWaitForApproval = bGoLive;
+		CellQueue->OnAssetId = [WeakThis](const FMantleQueuedUploadStatus& Status)
+		{
+			if (const TSharedPtr<FMantlePlacePublishSession> This = WeakThis.Pin())
+			{
+				This->CellFileRefs.Add(Status.Key, FMantleCellFileRef{ Status.AssetId, Status.Hash, Status.Bytes });
+			}
+		};
+		AddLog(TEXT("Uploading the cell index"));
+		TArray<FMantleQueuedUpload> Items;
+		Items.Add(MoveTemp(Item));
+		CellQueue->Start(MoveTemp(Items));
+		TickCells();
+		return;
+	}
+
+	const FMantleCellFileRef* IndexRef = CellFileRefs.Find(CellIndexKey);
+	if (!IndexRef || IndexRef->Id.IsEmpty())
+	{
+		Fail(TEXT("Mantle did not give an id for the place's cell index. Choose Publish again."));
+		return;
+	}
+	CellRoot.IndexId = IndexRef->Id;
+	CellRoot.Hash = IndexRef->Hash;
+	CellRoot.Bytes = IndexRef->Bytes;
+	FString Json;
+	FString Why;
+	if (!Source->WriteRoot(CellRoot, Json, Why))
+	{
+		Fail(Why.IsEmpty() ? FString(TEXT("The place file could not be written.")) : Why);
+		return;
+	}
+	AddLog(TEXT("The scenery's cell files and index are on Mantle"));
+	AfterExport(MoveTemp(Json));
 }
 
 void FMantlePlacePublishSession::EnterSaving()
@@ -2813,6 +3068,7 @@ float FMantlePlacePublishSession::GetProgress() const
 		Value = 0.90f + 0.03f * (Scripts.Num() > 0 ? static_cast<float>(ScriptIndex) / Scripts.Num() : 0.0f);
 		break;
 	case EMantlePublishPhase::Exporting: Value = 0.94f; break;
+	case EMantlePublishPhase::Cells: Value = 0.942f; break;
 	case EMantlePublishPhase::Library: Value = 0.945f; break;
 	case EMantlePublishPhase::CreatingPlace: Value = 0.95f; break;
 	case EMantlePublishPhase::Saving: Value = 0.96f; break;
@@ -2839,6 +3095,7 @@ FString FMantlePlacePublishSession::GetStatusText() const
 	case EMantlePublishPhase::Scripts:
 		return Scripts.Num() > 0 ? FString::Printf(TEXT("Uploading scripts: %d of %d..."), ScriptIndex, Scripts.Num()) : FString(TEXT("Collecting scripts..."));
 	case EMantlePublishPhase::Exporting: return TEXT("Writing the place file...");
+	case EMantlePublishPhase::Cells: return CellQueue.IsValid() ? CellQueue->GetStatusText() : FString(TEXT("Uploading the scenery..."));
 	case EMantlePublishPhase::Library:
 		if (Source->IsLibraryOnly())
 		{

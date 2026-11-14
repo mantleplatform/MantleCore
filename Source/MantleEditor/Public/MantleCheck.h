@@ -24,12 +24,14 @@ struct MANTLEEDITOR_API FMantleCheckReport
 	/** Mesh entities and instance sets that got a drawDistance (GhzGarage/mantle#630). */
 	int32 DrawDistances = 0;
 
-	/** Static mesh actors folded into instance sets, and instances removed by -Thin=auto. */
+	/** Static mesh actors folded into instance sets. */
 	int32 GroupedActors = 0;
-	int64 ThinnedInstances = 0;
 
-	/** When the place is too big and thinning would fix it: what it would do. */
-	FString ThinOffer;
+	/** The cells the scenery went to (cells-format 5): how many, what is in them, and the lines Check prints for them. */
+	int32 Cells = 0;
+	int64 CellEntities = 0;
+	int64 CellInstances = 0;
+	TArray<FString> CellLines;
 
 	/** The Water plugin's bodies and zone in the level (GhzGarage/mantle#997), published as WaterBody entities and settings.water. Empty when the plugin is off. */
 	FMantleWaterBodies Water;
@@ -49,15 +51,14 @@ struct MANTLEEDITOR_API FMantleCheckReport
 };
 
 /**
- * Mantle.Check [-Export=<dir>] [-Thin=auto] (GhzGarage/mantle#818): Publish's check and export on the open level, without
+ * Mantle.Check [-Export=<dir>] (GhzGarage/mantle#818): Publish's check and export on the open level, without
  * publishing and without contacting the server (nothing is signed in, converted or uploaded).
  *
  * It loads every World Partition cell as Publish does, runs Check this place, and, when that passes, exports the place file the
- * way Publish writes it first (the same grouping, thinning and size measurement; assets carry the provisional ids an offline
- * export gives them). -Export=<dir> writes place.json and check.txt there. -Thin=auto removes instances evenly when the place is
- * over a limit, as Mantle.Publish -Thin=auto does. It ends with one line a harness can grep:
+ * way Publish writes it first (the same grouping and size measurement; assets carry the provisional ids an offline
+ * export gives them). -Export=<dir> writes place.json and check.txt there. It ends with one line a harness can grep:
  *
- *   MANTLE_CHECK_DONE ready=<1|0> errors=<n> warnings=<n> placeBytes=<n> instances=<n> grouped=<n> thinned=<n>
+ *   MANTLE_CHECK_DONE ready=<1|0> errors=<n> warnings=<n> placeBytes=<n> instances=<n> grouped=<n> drawDistances=<n> cells=<n>
  *
  * and before it, one line per finding: MANTLE_CHECK_ERROR <text> and MANTLE_CHECK_WARNING <text>, plus the usual MANTLE_COVERAGE
  * lines. Mesh and material conversion is not run (it is Publish's Prepare step), so its findings are not in the report.
@@ -69,9 +70,6 @@ struct MANTLEEDITOR_API FMantleCheck
 		/** -Export=<dir>; empty for none. */
 		FString ExportDir;
 
-		/** -Thin=auto. */
-		bool bThin = false;
-
 		/** Set when the arguments cannot be used; nothing is checked then. */
 		FString Error;
 	};
@@ -82,7 +80,13 @@ struct MANTLEEDITOR_API FMantleCheck
 	static FMantleCheckReport Run(UWorld* World, const FArgs& Args);
 
 	/** The check without logging or writing files: Check this place, then the export, as described above. */
-	static FMantleCheckReport Evaluate(UWorld* World, bool bThin);
+	static FMantleCheckReport Evaluate(UWorld* World);
+
+	/**
+	 * Check's lines for the cells (cells-format 10): cells per level, the biggest cells with their entities, instances, solid
+	 * bodies, files and bytes, and how much stayed in the root and why. Empty for a place with no scenery in cells.
+	 */
+	static TArray<FString> CellLines(const FMantleExportResult& Exported);
 
 	/** The finishing line, as described above. */
 	static FString DoneLine(const FMantleCheckReport& Report);
