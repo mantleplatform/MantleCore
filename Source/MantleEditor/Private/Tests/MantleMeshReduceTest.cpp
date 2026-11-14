@@ -433,7 +433,7 @@ bool FMantleMeshReduceFittingMeshTest::RunTest(const FString& Parameters)
 	}
 	const FString Original = FString::Printf(TEXT("mesh lods=%d/%s collision=%d/%d/%d/%d bytes=%lld %s"), Limits.MaxLODs, *FString::Join(Caps, TEXT(",")),
 		Limits.MaxCollisionPrimitives, Limits.MaxConvexHulls, Limits.MaxHullVertices, Limits.MaxTotalHullVertices, Limits.MaxUploadBytes, *Mesh->GetPathName())
-		+ FMantlePlaceAssetConverter::MeshLumenSalt(*Mesh) + FMantleMeshNaniteBake::CacheSalt();
+		+ FMantlePlaceAssetConverter::MeshLumenSalt(*Mesh) + FMantleMeshNaniteBake::CacheSalt() + FString::Printf(TEXT(" nanitebytes=%lld"), Limits.MaxNaniteBytes);
 	TestEqual(TEXT("the salt of a mesh that fits is unchanged"), FMantlePlaceAssetConverter::MeshCacheSalt(Limits, *Mesh, 0, FString()), Original);
 	TestEqual(TEXT("a mesh published from LOD 2 says so"), FMantlePlaceAssetConverter::MeshCacheSalt(Limits, *Mesh, 2, FString()), Original + TEXT(" fromlod=2"));
 	TestEqual(TEXT("a reduced mesh says so"), FMantlePlaceAssetConverter::MeshCacheSalt(Limits, *Mesh, 0, TEXT("1350/x")), Original + TEXT(" reduced=1350/x"));

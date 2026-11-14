@@ -895,7 +895,9 @@ bool FMantleMeshNaniteContainerTest::RunTest(const FString& Parameters)
 	TArray<uint8> Same;
 	TestTrue(TEXT("packing the same bytes again makes the same file (a re-upload is the same asset)"), FMantleMeshNaniteFile::Pack(Mnd1, Same, Why) && Same == Container);
 
-	// Damage and nonsense do not unpack.
+	// Damage and nonsense do not unpack. Unreal logs a damaged zlib stream as a warning and an error of its own, which are the point here.
+	AddExpectedMessagePlain(TEXT("appUncompressMemoryZLIB failed"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 0);
+	AddExpectedErrorPlain(TEXT("Failed to uncompress memory"), EAutomationExpectedErrorFlags::Contains, 0);
 	TArray<uint8> Damaged = Container;
 	Damaged[Damaged.Num() / 2] ^= 0xFF;
 	TestFalse(TEXT("a damaged stream is refused"), FMantleMeshNaniteFile::Unpack(Damaged, Back, &Why));
@@ -1196,7 +1198,10 @@ bool FMantleMeshNaniteUploadTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("named so the creator can tell what it is"), NaniteUpload->SourceName.Contains(TEXT("Nanite")));
 			TestEqual(TEXT("in the same stage as its mesh"), static_cast<int32>(NaniteUpload->Stage), static_cast<int32>(EMantlePlaceUploadStage::Mesh));
 		}
-		TestEqual(TEXT("a mesh and its Nanite file"), Uploads.Num(), 2);
+		// The mesh, its Lumen file and its Nanite file: one of each kind, the Nanite one under its own key.
+		TestEqual(TEXT("one Nanite upload"), Uploads.FilterByPredicate([](const FMantlePlaceUpload& Upload) { return Upload.Options.Kind == TEXT("nanite"); }).Num(), 1);
+		TestEqual(TEXT("and one mesh upload"), Uploads.FilterByPredicate([](const FMantlePlaceUpload& Upload) { return Upload.Options.Kind == TEXT("mesh"); }).Num(), 1);
+		TestEqual(TEXT("and every upload of the stage is one of the mesh's files"), Uploads.Num(), 1 + 1 + (Uploads.ContainsByPredicate([](const FMantlePlaceUpload& Upload) { return Upload.Options.Kind == TEXT("lumen"); }) ? 1 : 0));
 		TArray<FMantlePlaceUpload> Again;
 		TestTrue(TEXT("a stage taken again"), Set.TakeUploads(EMantlePlaceUploadStage::Mesh, Again, Error));
 		TestEqual(TEXT("gives nothing: what was taken is not sent twice"), Again.Num(), 0);
