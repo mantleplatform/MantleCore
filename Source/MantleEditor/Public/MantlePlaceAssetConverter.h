@@ -309,6 +309,20 @@ struct MANTLEEDITOR_API FMantleConvertedMesh
 	/** The upload key of the Lumen side file: the mesh's own key, marked. */
 	FString LumenKey() const { return Key + TEXT("#lumen"); }
 
+	/**
+	 * Stage N: the mesh's Nanite side file, MND1 raw (FMantleMeshNaniteFile, baked by FMantleMeshNaniteBake from the mesh the
+	 * converter was given: the creator's full-detail model, whatever the GLB had to drop). Empty when it has none, with the reason
+	 * in NaniteNone (a phrase finishing "so players see its plain model: ..."; a Check warning says it too). The upload stage
+	 * compresses it into the MNZ1 container the backend takes and measures the 64 MiB limit on that. NaniteHash is the hash of
+	 * these raw bytes, which the local cache checks; the uploaded file's own hash is the container's.
+	 */
+	TArray<uint8> Nanite;
+	FString NaniteHash;
+	FString NaniteNone;
+
+	/** The upload key of the Nanite side file: the mesh's own key, marked. */
+	FString NaniteKey() const { return Key + TEXT("#nanite"); }
+
 	bool bFromCache = false;
 };
 
@@ -828,6 +842,9 @@ struct MANTLEEDITOR_API FMantlePlaceConversionStats
 
 	/** #149: time spent baking meshes' Lumen data (FMantleMeshLumenBake), which a mesh from the cache does not repeat. */
 	double LumenSeconds = 0.0;
+
+	/** Stage N: time spent baking meshes' Nanite data (FMantleMeshNaniteBake), which a mesh from the cache does not repeat. */
+	double NaniteSeconds = 0.0;
 };
 
 /**

@@ -5,6 +5,7 @@
 #include "MantleHeightfieldReader.h"
 #include "MantleMeshLumenBake.h"
 #include "MantleMeshLumenData.h"
+#include "MantleMeshNaniteBake.h"
 #include "MantleMeshReduce.h"
 #include "MantlePlaceLimits.h"
 #include "MantlePng.h"
@@ -2361,6 +2362,15 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 		Out.Textures.Num(), Out.Sounds.Num(), Stats.FlattenerCalls, Out.Issues.Num());
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 Lumen data (#149): %d of %d mesh(es), %.2f MB, %.1f s baking"),
 		LumenFiles, Out.Meshes.Num(), LumenBytes / (1024.0 * 1024.0), Stats.LumenSeconds);
+	int32 NaniteFiles = 0;
+	int64 NaniteBytes = 0;
+	for (const FMantleConvertedMesh& Mesh : Out.Meshes)
+	{
+		NaniteFiles += Mesh.Nanite.Num() > 0 ? 1 : 0;
+		NaniteBytes += Mesh.Nanite.Num();
+	}
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 Nanite data: %d of %d mesh(es), %.2f MB raw, %.1f s baking"),
+		NaniteFiles, Out.Meshes.Num(), NaniteBytes / (1024.0 * 1024.0), Stats.NaniteSeconds);
 	return !Out.HasErrors();
 }
 
@@ -3465,6 +3475,7 @@ FString FMantlePlaceAssetConverter::MeshCacheSalt(const FMantlePlaceAssetLimits&
 	FString Salt = FString::Printf(TEXT("mesh lods=%d/%s collision=%d/%d/%d/%d bytes=%lld %s"), Limits.MaxLODs, *FString::Join(LODCaps, TEXT(",")),
 		Limits.MaxCollisionPrimitives, Limits.MaxConvexHulls, Limits.MaxHullVertices, Limits.MaxTotalHullVertices, Limits.MaxUploadBytes, *Mesh.GetPathName());
 	Salt += MeshLumenSalt(Mesh);
+	Salt += FMantleMeshNaniteBake::CacheSalt();
 	// #804: only a mesh published from a smaller version of itself says so; one that fits keeps the key it had.
 	if (FromLOD > 0)
 	{
@@ -3782,6 +3793,27 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 		Stats.LumenSeconds += FPlatformTime::Seconds() - BakeStart;
 		UE_LOG(LogMantle, Verbose, TEXT("MANTLE_LUMEN %s: %s (%.0f ms)"), *Mesh->GetName(),
 			Converted.Lumen.Num() > 0 ? *FString::Printf(TEXT("%d bytes"), Converted.Lumen.Num()) : *Converted.LumenNone, (FPlatformTime::Seconds() - BakeStart) * 1000.0);
+	}
+	// Stage N: its Nanite data, from the mesh the converter was given (the creator's own at full detail even where the GLB is a smaller
+	// version of it, or the mirrored, spline-baked or cable-baked mesh the converter made), each section as its slot's material
+	// draws it. None is no failure: the game draws the plain model, and Check this place says why.
+	{
+		const double BakeStart = FPlatformTime::Seconds();
+		FString NaniteWhy;
+		if (FMantleMeshNaniteBake::Bake(Mesh, Converted.Slots, Converted.Hash, Converted.Nanite, NaniteWhy))
+		{
+			Converted.NaniteHash = FMantleSha256::AssetHash(Converted.Nanite);
+		}
+		else
+		{
+			Converted.Nanite.Reset();
+			Converted.NaniteNone = NaniteWhy.IsEmpty() ? FString(TEXT("it could not be built")) : NaniteWhy;
+			MeshIssues.Add(WarningIssue(FString::Printf(TEXT("Mesh '%s' has no Nanite data, so players see its plain model: %s."), *Mesh->GetName(), *Converted.NaniteNone),
+				TEXT("It still publishes, drawn as its plain model. Fix what the message says to give it Nanite.")));
+		}
+		Stats.NaniteSeconds += FPlatformTime::Seconds() - BakeStart;
+		UE_LOG(LogMantle, Verbose, TEXT("MANTLE_NANITE %s: %s (%.0f ms)"), *Mesh->GetName(),
+			Converted.Nanite.Num() > 0 ? *FString::Printf(TEXT("%d bytes"), Converted.Nanite.Num()) : *Converted.NaniteNone, (FPlatformTime::Seconds() - BakeStart) * 1000.0);
 	}
 	++Stats.MeshesConverted;
 	Out.Issues.Append(MeshIssues);
@@ -5064,6 +5096,20 @@ bool FMantlePlaceAssetConverter::LoadCachedMesh(const FString& CacheKey, FMantle
 	{
 		return false;
 	}
+	// Stage N: the Nanite side file beside the GLB, or the reason it has none.
+	FString NaniteHash;
+	if (Meta->TryGetStringField(TEXT("naniteHash"), NaniteHash))
+	{
+		if (!FFileHelper::LoadFileToArray(Out.Nanite, *(Base + TEXT(".nanite")), FILEREAD_Silent) || FMantleSha256::AssetHash(Out.Nanite) != NaniteHash)
+		{
+			return false;
+		}
+		Out.NaniteHash = NaniteHash;
+	}
+	else if (!Meta->TryGetStringField(TEXT("naniteNone"), Out.NaniteNone))
+	{
+		return false;
+	}
 	ReadCachedIssues(Meta, OutIssues);
 	const TArray<TSharedPtr<FJsonValue>>* Slots = nullptr;
 	if (!Meta->TryGetArrayField(TEXT("slots"), Slots))
@@ -5115,14 +5161,23 @@ void FMantlePlaceAssetConverter::StoreCachedMesh(const FString& CacheKey, const 
 	{
 		Meta->SetStringField(TEXT("lumenNone"), Mesh.LumenNone);
 	}
+	if (Mesh.Nanite.Num() > 0)
+	{
+		Meta->SetStringField(TEXT("naniteHash"), Mesh.NaniteHash);
+	}
+	else
+	{
+		Meta->SetStringField(TEXT("naniteNone"), Mesh.NaniteNone);
+	}
 	TArray<TSharedPtr<FJsonValue>> IssueValues;
 	for (const FMantleValidationIssue& Issue : Issues)
 	{
 		IssueValues.Add(MakeShared<FJsonValueObject>(IssueJson(Issue)));
 	}
 	Meta->SetArrayField(TEXT("issues"), IssueValues);
-	// The GLB (and Lumen file) first: the metadata is what makes an entry count, so it goes last.
-	if (SaveAtomically(Mesh.Bytes, Base + TEXT(".glb")) && (Mesh.Lumen.Num() == 0 || SaveAtomically(Mesh.Lumen, Base + TEXT(".lumen"))))
+	// The GLB (and Lumen and Nanite files) first: the metadata is what makes an entry count, so it goes last.
+	if (SaveAtomically(Mesh.Bytes, Base + TEXT(".glb")) && (Mesh.Lumen.Num() == 0 || SaveAtomically(Mesh.Lumen, Base + TEXT(".lumen")))
+		&& (Mesh.Nanite.Num() == 0 || SaveAtomically(Mesh.Nanite, Base + TEXT(".nanite"))))
 	{
 		SaveStringAtomically(JsonText(Meta), Base + TEXT(".json"));
 	}
