@@ -3,6 +3,7 @@
 #include "MantleActorDecompose.h"
 #include "MantleMirrorBake.h"
 #include "MantleMeshLumenData.h"
+#include "MantleNaniteSideFile.h"
 #include "MantleSnapSockets.h"
 #include "MantleApiManifest.h"
 #include "MantleAssetLibrary.h"
@@ -617,7 +618,12 @@ namespace
 		case EMantleAssetKind::Weapon:   return TEXT("Weapon");
 		case EMantleAssetKind::Lumen:    return TEXT("Lumen");
 		case EMantleAssetKind::VoxelWorldData: return TEXT("VoxelWorldData");
-		default:                         return TEXT("StaticMesh");
+		case EMantleAssetKind::Nanite:   return TEXT("Nanite");
+		case EMantleAssetKind::StaticMesh: return TEXT("StaticMesh");
+		default:
+			// A kind added to the enum must be named above: a silent "StaticMesh" would publish its file as the wrong kind.
+			checkf(false, TEXT("EMantleAssetKind %d has no manifest name"), static_cast<int32>(Kind));
+			return TEXT("StaticMesh");
 		}
 	}
 
@@ -5588,6 +5594,45 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				Place.Assets.Add(MoveTemp(Ref));
 			}
 		};
+		// Stage N: a mesh's Nanite side file, listed after its Lumen file, the same way (the contract: nanite-entry.md in the build plan's contracts).
+		auto AddNanite = [&Place, &Listed, Assets](const FMantleConvertedMesh& Mesh)
+		{
+			const FMantlePlaceUploadedRef* MeshUploaded = Assets->Uploaded.Find(Mesh.Key);
+			const FString MeshId = MeshUploaded && !MeshUploaded->Id.IsEmpty() ? MeshUploaded->Id : FMantlePlaceAssets::ProvisionalId(Mesh.Key);
+			FMantleAssetRef Ref;
+			Ref.Kind = EMantleAssetKind::Nanite;
+			// The exact engine build the file was baked for, which the game compares with its own and reads nothing else from.
+			Ref.Engine = FMantleNaniteSideFile::EngineTag();
+			const FMantlePlaceUploadedRef* Uploaded = Assets->Uploaded.Find(Mesh.NaniteKey());
+			if (MeshUploaded && !MeshUploaded->Id.IsEmpty() && (!Uploaded || Uploaded->Id.IsEmpty()))
+			{
+				// The mesh is on Mantle but its Nanite file is not (Mantle refused it): the mesh goes without, as a client would.
+				return;
+			}
+			if (Uploaded && !Uploaded->Id.IsEmpty())
+			{
+				Ref.Id = Uploaded->Id;
+				Ref.Hash = Uploaded->Hash;
+				Ref.Bytes = Uploaded->Bytes;
+			}
+			else
+			{
+				Ref.Id = FMantlePlaceAssets::ProvisionalId(Mesh.NaniteKey());
+				Ref.Hash = Mesh.NaniteHash;
+				Ref.Bytes = Assets->UploadSize(Mesh.NaniteKey(), Mesh.Nanite.Num());
+			}
+			FMantleAssetRef* MeshRef = Place.Assets.FindByPredicate([&MeshId](const FMantleAssetRef& Asset) { return Asset.Id == MeshId; });
+			if (!MeshRef)
+			{
+				return;
+			}
+			MeshRef->Nanite = Ref.Id;
+			if (!Listed.Contains(Ref.Id))
+			{
+				Listed.Add(Ref.Id);
+				Place.Assets.Add(MoveTemp(Ref));
+			}
+		};
 		for (const FString& Key : Uploads.Keys)
 		{
 			const EMantleAssetKind Kind = Uploads.KindOf.FindChecked(Key);
@@ -5596,6 +5641,11 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			if (LumenMesh && !LumenMesh->LumenHash.IsEmpty())
 			{
 				AddLumen(*LumenMesh);
+			}
+			const FMantleConvertedMesh* NaniteMesh = Kind == EMantleAssetKind::StaticMesh && Assets ? Assets->FindMesh(Key) : nullptr;
+			if (NaniteMesh && !NaniteMesh->NaniteHash.IsEmpty())
+			{
+				AddNanite(*NaniteMesh);
 			}
 			const FMantleConvertedMaterial* Material = Kind == EMantleAssetKind::Material && Assets ? Assets->FindMaterial(Key) : nullptr;
 			if (Material)
@@ -6093,6 +6143,11 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place)
 		if (!Asset.Lumen.IsEmpty())
 		{
 			Writer->WriteValue(TEXT("lumen"), Asset.Lumen);
+		}
+		// Stage N: a mesh's Nanite side file (a mesh without one has no key), and the engine a Lumen or Nanite entry was baked by.
+		if (!Asset.Nanite.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("nanite"), Asset.Nanite);
 		}
 		if (!Asset.Engine.IsEmpty())
 		{

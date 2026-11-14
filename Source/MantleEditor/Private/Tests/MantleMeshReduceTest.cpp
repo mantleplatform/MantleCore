@@ -2,6 +2,7 @@
 #include "MantleMeshNaniteBake.h"
 #include "MantleMeshReduce.h"
 #include "MantleMirrorBake.h"
+#include "MantleNaniteTestSupport.h"
 #include "MantlePlaceAssetConverter.h"
 #include "MantlePlaceAssets.h"
 
@@ -267,16 +268,29 @@ namespace MantleMeshReduceTestPrivate
 	{
 		if (Converted.Nanite.Num() == 0)
 		{
-			Test.AddInfo(TEXT("no Nanite file: ") + Converted.NaniteNone);
+			// An editor that cannot build Nanite data (no graphics device) makes none, which the notices say; one that can must have made it.
+			if (MantleNaniteTestEditorBuildsNanite())
+			{
+				Test.AddError(TEXT("this editor builds Nanite data, but the conversion made no Nanite file: ") + Converted.NaniteNone);
+			}
+			else
+			{
+				Test.AddInfo(TEXT("no Nanite file (this editor builds no Nanite data): ") + Converted.NaniteNone);
+			}
 			return;
 		}
 		Nanite::FResources Back;
 		TArray<int32> Slots;
 		FString Why;
-		if (Test.TestTrue(TEXT("its Nanite file reads back for its GLB"), FMantleMeshNaniteFile::Read(Converted.Nanite, Converted.Hash, Back, Slots, &Why)))
+		if (Test.TestTrue(TEXT("its Nanite file reads back for its GLB"), FMantleMeshNaniteFile::ReadUploaded(Converted.Nanite, Converted.Hash, Back, Slots, &Why)))
 		{
 			Test.TestEqual(TEXT("with all of the source's triangles"), static_cast<int32>(Back.NumInputTriangles), SourceTriangles);
-			Test.TestEqual(TEXT("and one table entry for each glTF material"), Slots.Num(), Converted.Slots.Num());
+			TArray<int32> Identity;
+			for (int32 Slot = 0; Slot < Converted.Slots.Num(); ++Slot)
+			{
+				Identity.Add(Slot);
+			}
+			Test.TestEqual(TEXT("and the table 0, 1, 2, ... for each glTF material"), Slots, Identity);
 		}
 		else
 		{

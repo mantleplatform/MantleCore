@@ -1750,6 +1750,11 @@ bool FMantlePlaceAssetSet::TakeUploads(EMantlePlaceUploadStage Stage, TArray<FMa
 			{
 				Take(Mesh.LumenKey(), TEXT("lumen"), Mesh.LumenHash, Mesh.Name + TEXT(" (Lumen data)"), Mesh.Lumen);
 			}
+			// Stage N: its Nanite side file, the MNZ1 container the backend takes, the same way.
+			if (Mesh.Nanite.Num() > 0)
+			{
+				Take(Mesh.NaniteKey(), TEXT("nanite"), Mesh.NaniteHash, Mesh.Name + TEXT(" (Nanite data)"), Mesh.Nanite);
+			}
 		}
 		return true;
 	}
@@ -2369,7 +2374,7 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 		NaniteFiles += Mesh.Nanite.Num() > 0 ? 1 : 0;
 		NaniteBytes += Mesh.Nanite.Num();
 	}
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 Nanite data: %d of %d mesh(es), %.2f MB raw, %.1f s baking"),
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 Nanite data: %d of %d mesh(es), %.2f MB to upload, %.1f s baking"),
 		NaniteFiles, Out.Meshes.Num(), NaniteBytes / (1024.0 * 1024.0), Stats.NaniteSeconds);
 	return !Out.HasErrors();
 }
@@ -3464,7 +3469,7 @@ double FMantlePlaceAssetConverter::GlassOpacityFromIor(const double Ior, const d
 	return FMath::Clamp(FMath::Max(Opacity, MinGlassOpacity) + (F0 - 0.04), 0.0, 1.0);
 }
 
-FString FMantlePlaceAssetConverter::MeshCacheSalt(const FMantlePlaceAssetLimits& Limits, const UStaticMesh& Mesh, int32 FromLOD, const FString& ReducedTag)
+FString FMantlePlaceAssetConverter::MeshCacheSalt(const FMantlePlaceAssetLimits& Limits, const UStaticMesh& Mesh, int32 FromLOD, const FString& ReducedTag, const bool bNanite)
 {
 	// The LOD and collision caps change what is written, so they are part of the key.
 	TArray<FString> LODCaps;
@@ -3475,7 +3480,7 @@ FString FMantlePlaceAssetConverter::MeshCacheSalt(const FMantlePlaceAssetLimits&
 	FString Salt = FString::Printf(TEXT("mesh lods=%d/%s collision=%d/%d/%d/%d bytes=%lld %s"), Limits.MaxLODs, *FString::Join(LODCaps, TEXT(",")),
 		Limits.MaxCollisionPrimitives, Limits.MaxConvexHulls, Limits.MaxHullVertices, Limits.MaxTotalHullVertices, Limits.MaxUploadBytes, *Mesh.GetPathName());
 	Salt += MeshLumenSalt(Mesh);
-	Salt += FMantleMeshNaniteBake::CacheSalt();
+	Salt += bNanite ? FMantleMeshNaniteBake::CacheSalt() + FString::Printf(TEXT(" nanitebytes=%lld"), Limits.MaxNaniteBytes) : FString(TEXT(" nanite=off"));
 	// #804: only a mesh published from a smaller version of itself says so; one that fits keeps the key it had.
 	if (FromLOD > 0)
 	{
@@ -3568,7 +3573,7 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 	const int32 PublishedLOD = FMantlePlaceAssets::PublishedLODIndex(Mesh, Limits);
 	const int32 FromLOD = FMath::Max(PublishedLOD, 0);
 	const FString ReducedTag = PublishedLOD == INDEX_NONE ? FMantleMeshReduce::CacheTag(Limits) : FString();
-	const FString Salt = MeshCacheSalt(Limits, *Mesh, FromLOD, ReducedTag);
+	const FString Salt = MeshCacheSalt(Limits, *Mesh, FromLOD, ReducedTag, bBakeNanite);
 	FString CacheKey, WhyNot;
 	bool bCacheable = ComputeCacheKey(Salt, FMantleMeshNaniteBake::CacheObjects(*Mesh), CacheKey, WhyNot);
 	FMantleConvertedMesh Converted;
@@ -3800,16 +3805,23 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 	if (!bBakeNanite)
 	{
 		Converted.NaniteNone = TEXT("this upload does not carry Nanite data");
-		bCacheable = false;
 	}
 	else
 	{
 		const double BakeStart = FPlatformTime::Seconds();
 		FString NaniteWhy;
 		bool bRetryable = false;
-		if (FMantleMeshNaniteBake::Bake(Mesh, Converted.Slots, Converted.Hash, Converted.Nanite, NaniteWhy, nullptr, &bRetryable))
+		FMantleNaniteFit Fit;
+		if (FMantleMeshNaniteBake::BakeToFit(Mesh, Converted.Slots, Converted.Hash, Converted.Nanite, NaniteWhy, Fit, &bRetryable, Limits.MaxNaniteBytes))
 		{
 			Converted.NaniteHash = FMantleSha256::AssetHash(Converted.Nanite);
+			if (Fit.IsCoarser())
+			{
+				// Never refused for size: the file is baked with fewer triangles until it fits, and the creator is told.
+				MeshIssues.Add(WarningIssue(FString::Printf(TEXT("Mesh '%s' is too big for one Nanite file (%.0f MiB compressed; the limit is %.0f MiB), so its Nanite data is baked at %.0f%% of its triangles."),
+					*Mesh->GetName(), Fit.FirstPackedBytes / (1024.0 * 1024.0), Limits.MaxNaniteBytes / (1024.0 * 1024.0), Fit.KeepPercentTriangles * 100.0f),
+					TEXT("It still publishes with that Nanite data. To keep all of its detail, split the model into smaller meshes.")));
+			}
 		}
 		else
 		{
@@ -3822,8 +3834,9 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 			bCacheable = bCacheable && !bRetryable;
 		}
 		Stats.NaniteSeconds += FPlatformTime::Seconds() - BakeStart;
-		UE_LOG(LogMantle, Verbose, TEXT("MANTLE_NANITE %s: %s (%.0f ms)"), *Mesh->GetName(),
-			Converted.Nanite.Num() > 0 ? *FString::Printf(TEXT("%d bytes"), Converted.Nanite.Num()) : *Converted.NaniteNone, (FPlatformTime::Seconds() - BakeStart) * 1000.0);
+		UE_LOG(LogMantle, Verbose, TEXT("MANTLE_NANITE %s: %s (%.0f ms, %d bake(s), %.0f%% of its triangles)"), *Mesh->GetName(),
+			Converted.Nanite.Num() > 0 ? *FString::Printf(TEXT("%d bytes"), Converted.Nanite.Num()) : *Converted.NaniteNone, (FPlatformTime::Seconds() - BakeStart) * 1000.0,
+			Fit.Bakes, Fit.KeepPercentTriangles * 100.0f);
 	}
 	++Stats.MeshesConverted;
 	Out.Issues.Append(MeshIssues);

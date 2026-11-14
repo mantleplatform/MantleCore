@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleMeshNaniteBake.h"
 
+#include "MantleNaniteSideFile.h"
 #include "MantleRuntime.h"
 
 #include "Engine/NaniteAssemblyData.h"
@@ -10,6 +11,7 @@
 #include "Materials/MaterialInterface.h"
 #include "MeshDescription.h"
 #include "Matrix3x4.h"
+#include "Misc/Compression.h"
 #include "Misc/EngineVersion.h"
 #include "Rendering/NaniteResources.h"
 #include "RenderUtils.h"
@@ -127,6 +129,56 @@ FString FMantleMeshNaniteFile::EngineTag()
 	return FEngineVersion::Current().ToString(EVersionComponent::Changelist);
 }
 
+int64 FMantleMeshNaniteFile::MaxRawBytes()
+{
+	return FMantleNaniteSideFile::MaxInflatedBytes;
+}
+
+bool FMantleMeshNaniteFile::Pack(const TConstArrayView<uint8> Mnd1, TArray<uint8>& OutContainer, FString& OutReason)
+{
+	OutContainer.Reset();
+	if (Mnd1.Num() == 0 || Mnd1.Num() > MaxRawBytes())
+	{
+		OutReason = Mnd1.Num() == 0 ? FString(TEXT("there is no Nanite data to pack"))
+			: FString::Printf(TEXT("its Nanite data is %.0f MiB before compression, over the %.0f MiB a file may inflate to"),
+				Mnd1.Num() / (1024.0 * 1024.0), MaxRawBytes() / (1024.0 * 1024.0));
+		return false;
+	}
+	// One standard zlib stream at the default window, which is what the game and the backend read (FCompression's NAME_Zlib).
+	const int32 Bound = FCompression::CompressMemoryBound(NAME_Zlib, Mnd1.Num());
+	TArray<uint8> Packed;
+	Packed.SetNumUninitialized(Bound);
+	int32 PackedBytes = Bound;
+	if (!FCompression::CompressMemory(NAME_Zlib, Packed.GetData(), PackedBytes, Mnd1.GetData(), Mnd1.Num()))
+	{
+		OutReason = TEXT("it could not be compressed");
+		return false;
+	}
+	const uint32 RawBytes = static_cast<uint32>(Mnd1.Num());
+	OutContainer.SetNumUninitialized(FMantleNaniteSideFile::ContainerHeaderBytes + PackedBytes);
+	FMemory::Memcpy(OutContainer.GetData(), "MNZ1", 4);
+#if PLATFORM_LITTLE_ENDIAN
+	FMemory::Memcpy(OutContainer.GetData() + 4, &RawBytes, sizeof(RawBytes));
+#else
+	const uint32 Swapped = BYTESWAP_ORDER32(RawBytes);
+	FMemory::Memcpy(OutContainer.GetData() + 4, &Swapped, sizeof(Swapped));
+#endif
+	FMemory::Memcpy(OutContainer.GetData() + FMantleNaniteSideFile::ContainerHeaderBytes, Packed.GetData(), PackedBytes);
+	return true;
+}
+
+bool FMantleMeshNaniteFile::Unpack(const TConstArrayView<uint8> Container, TArray<uint8>& OutMnd1, FString* OutReason)
+{
+	return FMantleNaniteSideFile::Unpack(Container, OutMnd1, OutReason);
+}
+
+bool FMantleMeshNaniteFile::ReadUploaded(const TConstArrayView<uint8> Container, const FString& MeshTag, Nanite::FResources& OutResources,
+	TArray<int32>& OutSlotToPublished, FString* OutReason)
+{
+	TArray<uint8> Mnd1;
+	return Unpack(Container, Mnd1, OutReason) && Read(Mnd1, MeshTag, OutResources, OutSlotToPublished, OutReason);
+}
+
 bool FMantleMeshNaniteFile::Write(const FString& MeshTag, const TConstArrayView<int32> SlotToPublished, const Nanite::FResources& Resources,
 	TArray<uint8>& OutBytes, FString& OutReason)
 {
@@ -207,7 +259,7 @@ bool FMantleMeshNaniteFile::Read(const TConstArrayView<uint8> Bytes, const FStri
 }
 
 bool FMantleMeshNaniteBake::Bake(const UStaticMesh* Mesh, const TConstArrayView<int32> PublishedSlots, const FString& MeshTag, TArray<uint8>& OutFile,
-	FString& OutReason, uint64* OutVoxelMask, bool* OutRetryable)
+	FString& OutReason, uint64* OutVoxelMask, bool* OutRetryable, const float KeepPercentTriangles)
 {
 	OutFile.Reset();
 	bool bRetryable = false;
@@ -268,6 +320,8 @@ bool FMantleMeshNaniteBake::Bake(const UStaticMesh* Mesh, const TConstArrayView<
 				*Mesh->GetName());
 		}
 		Settings.TargetMinimumResidencyInKB = MAX_uint32;
+		// A coarser bake (BakeToFit): the copy keeps that share of what its own settings keep.
+		Settings.KeepPercentTriangles *= FMath::Clamp(KeepPercentTriangles, 0.0f, 1.0f);
 		Copy->SetNaniteSettings(Settings);
 		Copy->Build(/*bInSilent*/ true);
 		FStaticMeshCompilingManager::Get().FinishCompilation({ Copy });
@@ -301,6 +355,83 @@ bool FMantleMeshNaniteBake::Bake(const UStaticMesh* Mesh, const TConstArrayView<
 		*OutRetryable = !bWritten && bRetryable;
 	}
 	return bWritten;
+}
+
+float FMantleMeshNaniteBake::NextKeepPercent(const float Keep, const int64 PackedBytes, const int64 RawBytes, const int64 MaxPackedBytes,
+	const int64 MaxRawBytes)
+{
+	const double Over = FMath::Max(static_cast<double>(PackedBytes) / MaxPackedBytes, static_cast<double>(RawBytes) / MaxRawBytes);
+	if (Over <= 1.0)
+	{
+		return Keep;
+	}
+	return static_cast<float>(Keep * FMath::Clamp(0.9 / Over, 0.2, 0.9));
+}
+
+bool FMantleMeshNaniteBake::BakeToFit(const UStaticMesh* Mesh, const TConstArrayView<int32> PublishedSlots, const FString& MeshTag,
+	TArray<uint8>& OutContainer, FString& OutReason, FMantleNaniteFit& OutFit, bool* OutRetryable, const int64 MaxPackedBytes, const int64 MaxRawBytes)
+{
+	OutContainer.Reset();
+	OutFit = FMantleNaniteFit();
+	if (OutRetryable)
+	{
+		*OutRetryable = false;
+	}
+	float Keep = 1.0f;
+	for (int32 Attempt = 0; Attempt < MaxBakes; ++Attempt)
+	{
+		TArray<uint8> Mnd1;
+		bool bRetryable = false;
+		if (!Bake(Mesh, PublishedSlots, MeshTag, Mnd1, OutReason, nullptr, &bRetryable, Keep))
+		{
+			if (OutRetryable)
+			{
+				*OutRetryable = bRetryable;
+			}
+			return false;
+		}
+		++OutFit.Bakes;
+		OutFit.KeepPercentTriangles = Keep;
+		const int64 RawBytes = Mnd1.Num();
+		int64 PackedBytes = 0;
+		// A file over the raw limit is not compressed at all (Pack would refuse it): its size says how far over it is.
+		if (RawBytes <= FMantleMeshNaniteFile::MaxRawBytes())
+		{
+			if (!FMantleMeshNaniteFile::Pack(Mnd1, OutContainer, OutReason))
+			{
+				if (OutRetryable)
+				{
+					*OutRetryable = true;
+				}
+				return false;
+			}
+			PackedBytes = OutContainer.Num();
+		}
+		else
+		{
+			OutContainer.Reset();
+			PackedBytes = FMath::Max<int64>(1, static_cast<int64>(RawBytes * 0.6));
+		}
+		if (Attempt == 0)
+		{
+			OutFit.FirstPackedBytes = PackedBytes;
+			OutFit.FirstRawBytes = RawBytes;
+		}
+		if (OutContainer.Num() > 0 && PackedBytes <= MaxPackedBytes && RawBytes <= MaxRawBytes)
+		{
+			return true;
+		}
+		const float Next = NextKeepPercent(Keep, PackedBytes, RawBytes, MaxPackedBytes, MaxRawBytes);
+		if (Next < MinKeepPercentTriangles || Attempt + 1 == MaxBakes)
+		{
+			OutContainer.Reset();
+			OutReason = FString::Printf(TEXT("its Nanite data is %.0f MiB compressed, over the %.0f MiB a file may be, even baked at %.0f%% of its triangles"),
+				PackedBytes / (1024.0 * 1024.0), MaxPackedBytes / (1024.0 * 1024.0), Keep * 100.0f);
+			return false;
+		}
+		Keep = Next;
+	}
+	return false;
 }
 
 bool FMantleMeshNaniteBake::ConformAssembly(UStaticMesh* Copy, const TConstArrayView<int32> PublishedSlots, FString& OutReason, bool* OutRetryable)
@@ -507,6 +638,8 @@ TArray<const UObject*> FMantleMeshNaniteBake::CacheObjects(const UStaticMesh& Me
 
 FString FMantleMeshNaniteBake::CacheSalt()
 {
-	return FString::Printf(TEXT(" nanite=%u engine=%s voxels=%d assemblies=%d"), FMantleMeshNaniteFile::FormatVersion, *FMantleMeshNaniteFile::EngineTag(),
-		NaniteVoxelsSupported() ? 1 : 0, NaniteAssembliesSupported() ? 1 : 0);
+	// MNZ1: the cache holds the uploaded file, so a change to the container, its limits or how a too-large file is made coarser is a new key.
+	return FString::Printf(TEXT(" nanite=%u engine=%s voxels=%d assemblies=%d container=MNZ1 rawlimit=%lld bakes=%d min=%.2f"), FMantleMeshNaniteFile::FormatVersion,
+		*FMantleMeshNaniteFile::EngineTag(), NaniteVoxelsSupported() ? 1 : 0, NaniteAssembliesSupported() ? 1 : 0,
+		FMantleMeshNaniteFile::MaxRawBytes(), MaxBakes, MinKeepPercentTriangles);
 }

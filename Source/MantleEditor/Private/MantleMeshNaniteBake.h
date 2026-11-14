@@ -43,6 +43,44 @@ public:
 	/** False, with the reason, when Bytes is not an MND1 for MeshTag's mesh from this engine, or is damaged. */
 	static bool Read(TConstArrayView<uint8> Bytes, const FString& MeshTag, Nanite::FResources& OutResources, TArray<int32>& OutSlotToPublished,
 		FString* OutReason = nullptr);
+
+	/**
+	 * The most one uploaded Nanite file may be, measured on the container (the compressed bytes): the backend's assets.MaxNaniteBytes,
+	 * 64 MiB (build-plan contracts\nanite-entry.md). A mesh still over it is baked coarser (FMantleMeshNaniteBake::BakeToFit).
+	 */
+	static constexpr int64 MaxUploadBytes = 64ll * 1024 * 1024;
+
+	/** The most an uploaded file may inflate to: the backend's cook.NaniteMaxRawBytes, the game's FMantleNaniteSideFile::MaxInflatedBytes. */
+	static int64 MaxRawBytes();
+
+	/**
+	 * The container the backend takes: "MNZ1", a little-endian uint32 with Mnd1's length, then one zlib stream (RFC 1950, Unreal's
+	 * NAME_Zlib at its default window) of Mnd1. False, with the reason, when Mnd1 is empty or over MaxRawBytes, or the stream cannot be made.
+	 */
+	static bool Pack(TConstArrayView<uint8> Mnd1, TArray<uint8>& OutContainer, FString& OutReason);
+
+	/** The MND1 inside an uploaded file, through the game's own unpacker (FMantleNaniteSideFile::Unpack). False, with the reason, if it does not unpack. */
+	static bool Unpack(TConstArrayView<uint8> Container, TArray<uint8>& OutMnd1, FString* OutReason = nullptr);
+
+	/** Unpack, then Read: what the game does with an uploaded file. */
+	static bool ReadUploaded(TConstArrayView<uint8> Container, const FString& MeshTag, Nanite::FResources& OutResources,
+		TArray<int32>& OutSlotToPublished, FString* OutReason = nullptr);
+};
+
+/** How a mesh's Nanite file came to fit the upload limits: what FMantleMeshNaniteBake::BakeToFit did. */
+struct FMantleNaniteFit
+{
+	/** The share of the mesh's triangles the file was finally baked at (1 = the mesh's own detail). */
+	float KeepPercentTriangles = 1.0f;
+
+	/** Bakes made (1 when the mesh fit as it was). */
+	int32 Bakes = 0;
+
+	/** The container's and the MND1's size at the first bake, before anything was made coarser. */
+	int64 FirstPackedBytes = 0;
+	int64 FirstRawBytes = 0;
+
+	bool IsCoarser() const { return KeepPercentTriangles < 1.0f; }
 };
 
 /**
@@ -67,7 +105,34 @@ public:
 	 * its upload (see-through, a slot an assembly cannot drop, a hi-res source, no slot drawn). Only the latter may be cached.
 	 */
 	static bool Bake(const UStaticMesh* Mesh, TConstArrayView<int32> PublishedSlots, const FString& MeshTag, TArray<uint8>& OutFile, FString& OutReason,
-		uint64* OutVoxelMask = nullptr, bool* OutRetryable = nullptr);
+		uint64* OutVoxelMask = nullptr, bool* OutRetryable = nullptr, float KeepPercentTriangles = 1.0f);
+
+	/**
+	 * Bake (at 1, then coarser as needed), pack into the uploaded container (FMantleMeshNaniteFile::Pack) and keep it inside the upload
+	 * limits: the container at most FMantleMeshNaniteFile::MaxUploadBytes and its MND1 at most MaxRawBytes(). A file over either is baked
+	 * again with the copy's FMeshNaniteSettings::KeepPercentTriangles lowered (NextKeepPercent) until it fits. OutFit says what it took.
+	 * Nothing is refused for size: a mesh that still does not fit at MinKeepPercentTriangles, or after MaxBakes bakes, returns false with a
+	 * reason that belongs to the mesh (not retryable): the game draws it plain and Check says so. OutContainer is the file to upload.
+	 * Game thread. The other arguments are Bake's. MaxPackedBytes and MaxRawBytes are the limits, the upload's own unless a test asks for smaller.
+	 */
+	static bool BakeToFit(const UStaticMesh* Mesh, TConstArrayView<int32> PublishedSlots, const FString& MeshTag, TArray<uint8>& OutContainer,
+		FString& OutReason, FMantleNaniteFit& OutFit, bool* OutRetryable = nullptr, int64 MaxPackedBytes = FMantleMeshNaniteFile::MaxUploadBytes,
+		int64 MaxRawBytes = FMantleMeshNaniteFile::MaxRawBytes());
+
+	/** The share of a mesh's triangles BakeToFit never goes below. */
+	static constexpr float MinKeepPercentTriangles = 0.02f;
+
+	/** The bakes BakeToFit makes at most, the first one included. */
+	static constexpr int32 MaxBakes = 8;
+
+	/**
+	 * The share of its triangles to bake again at, after a bake at Keep came out PackedBytes (container) and RawBytes (MND1): Keep
+	 * scaled by how far over the limits it was (the larger of PackedBytes / MaxUploadBytes and RawBytes / MaxRawBytes) with a tenth
+	 * to spare, because a file does not shrink in step with its triangles. The step is never to less than a fifth of Keep nor to more
+	 * than nine tenths of it, so every step moves. Keep itself when the file fits.
+	 */
+	static float NextKeepPercent(float Keep, int64 PackedBytes, int64 RawBytes, int64 MaxPackedBytes = FMantleMeshNaniteFile::MaxUploadBytes,
+		int64 MaxRawBytes = FMantleMeshNaniteFile::MaxRawBytes());
 
 	/**
 	 * What the converter's cache key has to cover for Mesh: the mesh and, for a Nanite assembly, each part's mesh. An assembly names

@@ -7,6 +7,7 @@
 #include "MantlePreviewShared.h"
 #include "MantleCoverageSurvey.h"
 #include "MantleMeshLumenData.h"
+#include "MantleMeshNaniteBake.h"
 #include "MantlePlaceValidator.h"
 #include "MantleClientFeatures.h"
 #include "MantlePreparedPlaceAssets.h"
@@ -650,6 +651,21 @@ namespace MantlePreviewExportPrivate
 			if (!FMantleMeshLumenFile::ReadHeader(Upload.Bytes, Engine, MeshTag) || Upload.Bytes.Num() > FMantleMeshLumenFile::MaxBytes)
 			{
 				OutError = FString::Printf(TEXT("The Lumen data of '%s' is not a Lumen file the client reads."), *Name);
+				return false;
+			}
+			Cooked = Upload.Bytes;
+			Hash = FMantleContentHash::OfBytes(Cooked);
+			OutInfo.Reset();
+		}
+		else if (Kind == TEXT("nanite"))
+		{
+			// Stage N: a mesh's Nanite file is stored as uploaded (the backend's cook only checks its header and size), so the local
+			// tool is not asked; the MNZ1 container is unpacked to be sure the client reads it.
+			TArray<uint8> Mnd1;
+			FString Why;
+			if (Upload.Bytes.Num() > FMantleMeshNaniteFile::MaxUploadBytes || !FMantleMeshNaniteFile::Unpack(Upload.Bytes, Mnd1, &Why))
+			{
+				OutError = FString::Printf(TEXT("The Nanite data of '%s' is not a Nanite file the client reads%s."), *Name, Why.IsEmpty() ? TEXT("") : *(TEXT(" (it ") + Why + TEXT(")")));
 				return false;
 			}
 			Cooked = Upload.Bytes;

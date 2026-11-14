@@ -1,15 +1,24 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleMeshNaniteBake.h"
 #include "MantleMirrorBake.h"
+#include "MantleNaniteTestSupport.h"
+#include "MantleNaniteTestSupport.h"
 #include "MantlePlaceAssetConverter.h"
 #include "MantlePlaceAssets.h"
+#include "MantlePlaceExporter.h"
+#include "MantleNaniteSideFile.h"
+#include "MantleNaniteSideFile.h"
 #include "MantleSha256.h"
 #include "NaniteAssemblyDataBuilder.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 
 #include "Algo/Reverse.h"
+#include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
+#include "Engine/World.h"
+#include "Components/StaticMeshComponent.h"
 #include "HAL/IConsoleManager.h"
 #include "Materials/Material.h"
 #include "MeshDescription.h"
@@ -163,6 +172,17 @@ namespace MantleMeshNaniteBakeTestPrivate
 		return Mesh;
 	}
 
+	/** The slot table of a file whose slots are the upload's own: 0, 1, ..., Count - 1. */
+	TArray<int32> IdentityTable(const int32 Count)
+	{
+		TArray<int32> Table;
+		for (int32 Slot = 0; Slot < Count; ++Slot)
+		{
+			Table.Add(Slot);
+		}
+		return Table;
+	}
+
 	template <typename T>
 	bool SameBytes(const TArray<T>& A, const TArray<T>& B)
 	{
@@ -248,6 +268,16 @@ namespace MantleMeshNaniteBakeTestPrivate
 		IFileManager::Get().DeleteDirectory(*Dir, false, true);
 		return Dir;
 	}
+}
+
+bool MantleNaniteTestEditorBuildsNanite()
+{
+	return MantleMeshNaniteBakeTestPrivate::NaniteBuilds();
+}
+
+bool MantleNaniteTestEditorBuildsNanite()
+{
+	return MantleMeshNaniteBakeTestPrivate::NaniteBuilds();
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -754,14 +784,23 @@ bool FMantleMeshNaniteConverterTest::RunTest(const FString& Parameters)
 	FString Why;
 	Nanite::FResources Back;
 	TArray<int32> Slots;
-	if (TestTrue(TEXT("the file reads back for the GLB's hash"), FMantleMeshNaniteFile::Read(Converted.Nanite, Converted.Hash, Back, Slots, &Why)))
+	if (TestTrue(TEXT("the uploaded file unpacks and reads back for the GLB's hash"), FMantleMeshNaniteFile::ReadUploaded(Converted.Nanite, Converted.Hash, Back, Slots, &Why)))
 	{
 		TestEqual(TEXT("with all the grid's triangles"), Back.NumInputTriangles, 24u * 24u * 2u);
-		TestEqual(TEXT("one table entry for each glTF material"), Slots.Num(), Converted.Slots.Num());
+		TestEqual(TEXT("the table is 0, 1, 2, ... for each glTF material"), Slots, IdentityTable(Converted.Slots.Num()));
 	}
 	else
 	{
 		AddError(Why);
+	}
+	// What is uploaded is the container the backend takes: MNZ1, the inflated size, one zlib stream, inside the limit.
+	TestTrue(TEXT("it is an MNZ1 container"), Converted.Nanite.Num() > 8 && FMemory::Memcmp(Converted.Nanite.GetData(), "MNZ1", 4) == 0);
+	TestTrue(TEXT("inside the upload limit"), Converted.Nanite.Num() <= FMantleMeshNaniteFile::MaxUploadBytes);
+	TArray<uint8> Inflated;
+	if (TestTrue(TEXT("and unpacks"), FMantleMeshNaniteFile::Unpack(Converted.Nanite, Inflated, &Why)))
+	{
+		TestTrue(TEXT("to an MND1"), Inflated.Num() > 8 && FMemory::Memcmp(Inflated.GetData(), "MND1", 4) == 0);
+		TestTrue(TEXT("that the container's compression made smaller"), Inflated.Num() > Converted.Nanite.Num());
 	}
 	TestEqual(TEXT("the converter timed the bake"), Converter.GetStats().NaniteSeconds > 0.0, true);
 
@@ -799,10 +838,10 @@ bool FMantleMeshNaniteConverterTest::RunTest(const FString& Parameters)
 			const FMantleConvertedMesh& Copy = MirrorSet.Meshes[0];
 			Nanite::FResources MirrorBack;
 			TArray<int32> MirrorSlots;
-			if (TestTrue(TEXT("it has a Nanite file that reads back for its GLB"), Copy.Nanite.Num() > 0 && FMantleMeshNaniteFile::Read(Copy.Nanite, Copy.Hash, MirrorBack, MirrorSlots, &Why)))
+			if (TestTrue(TEXT("it has a Nanite file that reads back for its GLB"), Copy.Nanite.Num() > 0 && FMantleMeshNaniteFile::ReadUploaded(Copy.Nanite, Copy.Hash, MirrorBack, MirrorSlots, &Why)))
 			{
 				TestEqual(TEXT("with all the triangles"), MirrorBack.NumInputTriangles, 24u * 24u * 2u);
-				TestEqual(TEXT("and one table entry for each glTF material"), MirrorSlots.Num(), Copy.Slots.Num());
+				TestEqual(TEXT("and the table 0, 1, 2, ... for each glTF material"), MirrorSlots, IdentityTable(Copy.Slots.Num()));
 			}
 		}
 	}
@@ -819,6 +858,384 @@ bool FMantleMeshNaniteConverterTest::RunTest(const FString& Parameters)
 	const FString Salt = FMantleMeshNaniteBake::CacheSalt();
 	TestTrue(TEXT("the salt names the engine build"), Salt.Contains(FMantleMeshNaniteFile::EngineTag()));
 	TestTrue(TEXT("and the voxel and assembly switches"), Salt.Contains(TEXT("voxels=1")) && Salt.Contains(TEXT("assemblies=1")));
+	Grid->MarkAsGarbage();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteContainerTest,
+	"Mantle.Editor.Nanite.ContainerIsWhatTheBackendTakes",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteContainerTest::RunTest(const FString& Parameters)
+{
+	// The container of the build plan's contracts\nanite-entry.md: "MNZ1", a little-endian uint32 with the inflated length, one zlib stream.
+	TArray<uint8> Mnd1;
+	Mnd1.Append(reinterpret_cast<const uint8*>("MND1"), 4);
+	for (int32 Index = 0; Index < 50000; ++Index)
+	{
+		Mnd1.Add(static_cast<uint8>((Index * 7) % 13));
+	}
+	TArray<uint8> Container;
+	FString Why;
+	if (!TestTrue(TEXT("a file packs"), FMantleMeshNaniteFile::Pack(Mnd1, Container, Why)))
+	{
+		AddError(Why);
+		return false;
+	}
+	TestTrue(TEXT("it starts with MNZ1"), FMemory::Memcmp(Container.GetData(), "MNZ1", 4) == 0);
+	const uint32 SizeWord = Container[4] | (Container[5] << 8) | (Container[6] << 16) | (static_cast<uint32>(Container[7]) << 24);
+	TestEqual(TEXT("then the inflated length, little-endian"), static_cast<int32>(SizeWord), Mnd1.Num());
+	// A zlib stream (RFC 1950): deflate (method 8) in the low nibble of the first byte, and a header that is a multiple of 31.
+	TestEqual(TEXT("then a zlib stream (deflate)"), static_cast<int32>(Container[8] & 0x0F), 8);
+	TestEqual(TEXT("with a valid header check"), ((Container[8] << 8) | Container[9]) % 31, 0);
+	TestTrue(TEXT("smaller than what it holds"), Container.Num() < Mnd1.Num());
+
+	// The game's own unpacker takes it back to the same bytes.
+	TArray<uint8> Back;
+	if (TestTrue(TEXT("the game's unpacker reads it"), FMantleNaniteSideFile::Unpack(Container, Back, &Why)))
+	{
+		TestTrue(TEXT("to the same bytes"), Back == Mnd1);
+	}
+	TArray<uint8> Same;
+	TestTrue(TEXT("packing the same bytes again makes the same file (a re-upload is the same asset)"), FMantleMeshNaniteFile::Pack(Mnd1, Same, Why) && Same == Container);
+
+	// Damage and nonsense do not unpack.
+	TArray<uint8> Damaged = Container;
+	Damaged[Damaged.Num() / 2] ^= 0xFF;
+	TestFalse(TEXT("a damaged stream is refused"), FMantleMeshNaniteFile::Unpack(Damaged, Back, &Why));
+	TArray<uint8> Wrong = Container;
+	Wrong[0] = 'X';
+	TestFalse(TEXT("another magic is refused"), FMantleMeshNaniteFile::Unpack(Wrong, Back, &Why));
+	TestFalse(TEXT("a raw MND1 is refused (it is not a container)"), FMantleMeshNaniteFile::Unpack(Mnd1, Back, &Why));
+	TestFalse(TEXT("nothing packs to nothing"), FMantleMeshNaniteFile::Pack(TArray<uint8>(), Same, Why));
+
+	TestEqual(TEXT("the size limit is 64 MiB"), FMantleMeshNaniteFile::MaxUploadBytes, int64(67108864));
+	TestEqual(TEXT("and the converter's limit starts there"), FMantlePlaceAssetLimits().MaxNaniteBytes, FMantleMeshNaniteFile::MaxUploadBytes);
+	TestEqual(TEXT("the inflated limit is 512 MiB"), FMantleMeshNaniteFile::MaxRawBytes(), int64(536870912));
+	TestEqual(TEXT("the file is tied to the exact engine build, as the game compares it"), FMantleMeshNaniteFile::EngineTag(), FMantleNaniteSideFile::EngineTag());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteCoarserStepTest,
+	"Mantle.Editor.Nanite.CoarserStepsByHand",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteCoarserStepTest::RunTest(const FString& Parameters)
+{
+	constexpr int64 MiB = 1024 * 1024;
+	using FBake = FMantleMeshNaniteBake;
+	// A file that fits is left as it is: no step.
+	TestEqual(TEXT("64 MiB exactly fits"), FBake::NextKeepPercent(1.0f, 64 * MiB, 100 * MiB), 1.0f);
+	// Two times over (128 MiB against 64): 0.9 / 2.
+	TestEqual(TEXT("twice the limit steps to 0.45"), FBake::NextKeepPercent(1.0f, 128 * MiB, 200 * MiB), 0.45f);
+	// Just over (65 MiB): 0.9 / (65 / 64), a step that still moves.
+	TestTrue(TEXT("a little over steps a little"), FMath::IsNearlyEqual(FBake::NextKeepPercent(1.0f, 65 * MiB, 100 * MiB), 0.9f * 64.0f / 65.0f, 1e-5f));
+	// A hundred times over: the step is limited to a fifth of what was kept.
+	TestEqual(TEXT("far over steps to a fifth at most"), FBake::NextKeepPercent(1.0f, 6400 * MiB, 100 * MiB), 0.2f);
+	// The inflated limit counts too: 1 GiB inflated against 512 MiB is two times over, though the compressed file is small.
+	TestEqual(TEXT("the inflated size over its limit steps too"), FBake::NextKeepPercent(1.0f, 10 * MiB, 1024 * MiB), 0.45f);
+	// A later step scales what is kept already: 0.45 kept, 96 MiB against 64 is 1.5 times over, so 0.45 * 0.9 / 1.5 = 0.45 * 0.6.
+	TestTrue(TEXT("a step from a coarser bake scales it"), FMath::IsNearlyEqual(FBake::NextKeepPercent(0.45f, 96 * MiB, 100 * MiB), 0.45f * 0.6f, 1e-5f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteFitTest,
+	"Mantle.Editor.Nanite.CoarserBakeFitsTheLimit",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteFitTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshNaniteBakeTestPrivate;
+
+	if (!NaniteBuilds())
+	{
+		AddInfo(TEXT("skipped: this editor builds no Nanite data (started without a graphics device)"));
+		return true;
+	}
+
+	// A mesh that fits its limit is baked once, at its own detail.
+	UStaticMesh* Grid = MakeGrid(64, /*bNanite*/ false, 0);
+	TArray<uint8> Whole;
+	FString Why;
+	FMantleNaniteFit WholeFit;
+	if (!TestTrue(TEXT("a mesh bakes to its container"), FMantleMeshNaniteBake::BakeToFit(Grid, { 0 }, MeshTag, Whole, Why, WholeFit)))
+	{
+		AddError(Why);
+		return false;
+	}
+	TestEqual(TEXT("in one bake"), WholeFit.Bakes, 1);
+	TestFalse(TEXT("at its own detail"), WholeFit.IsCoarser());
+	TestEqual(TEXT("and says what the first bake came to"), WholeFit.FirstPackedBytes, static_cast<int64>(Whole.Num()));
+	AddInfo(FString::Printf(TEXT("the 64 x 64 grid: %d bytes uploaded, %lld inflated"), Whole.Num(), WholeFit.FirstRawBytes));
+
+	// The same mesh against a limit a third smaller than that file: baked coarser, never refused, and it fits.
+	const int64 Cap = static_cast<int64>(Whole.Num()) * 2 / 3;
+	TArray<uint8> Coarse;
+	FMantleNaniteFit CoarseFit;
+	bool bRetryable = true;
+	if (TestTrue(TEXT("against a smaller limit it still bakes"),
+			FMantleMeshNaniteBake::BakeToFit(Grid, { 0 }, MeshTag, Coarse, Why, CoarseFit, &bRetryable, Cap, FMantleMeshNaniteFile::MaxRawBytes())))
+	{
+		AddInfo(FString::Printf(TEXT("under %lld bytes: %d bake(s), %.2f of its triangles, %d bytes"), Cap, CoarseFit.Bakes, CoarseFit.KeepPercentTriangles, Coarse.Num()));
+		TestTrue(TEXT("with more than one bake"), CoarseFit.Bakes > 1);
+		TestTrue(TEXT("coarser"), CoarseFit.IsCoarser() && CoarseFit.KeepPercentTriangles >= FMantleMeshNaniteBake::MinKeepPercentTriangles);
+		TestTrue(TEXT("inside the limit"), Coarse.Num() <= Cap);
+		TestTrue(TEXT("and smaller than the whole"), Coarse.Num() < Whole.Num());
+		TestEqual(TEXT("the first bake is remembered as it came"), CoarseFit.FirstPackedBytes, WholeFit.FirstPackedBytes);
+		Nanite::FResources Back;
+		TArray<int32> Slots;
+		TestTrue(TEXT("the file reads back like any other"), FMantleMeshNaniteFile::ReadUploaded(Coarse, MeshTag, Back, Slots, &Why));
+		TestEqual(TEXT("with the table 0"), Slots, IdentityTable(1));
+	}
+	else
+	{
+		AddError(Why);
+	}
+
+	// The inflated size is limited as well as the compressed one.
+	TArray<uint8> Inflated;
+	if (FMantleMeshNaniteFile::Unpack(Whole, Inflated))
+	{
+		TArray<uint8> ByRaw;
+		FMantleNaniteFit RawFit;
+		const int64 RawCap = static_cast<int64>(Inflated.Num()) * 2 / 3;
+		if (TestTrue(TEXT("against a smaller inflated limit it still bakes"),
+				FMantleMeshNaniteBake::BakeToFit(Grid, { 0 }, MeshTag, ByRaw, Why, RawFit, nullptr, FMantleMeshNaniteFile::MaxUploadBytes, RawCap)))
+		{
+			TestTrue(TEXT("coarser"), RawFit.IsCoarser());
+			TArray<uint8> Mnd1;
+			TestTrue(TEXT("and its MND1 is inside the inflated limit"), FMantleMeshNaniteFile::Unpack(ByRaw, Mnd1) && Mnd1.Num() <= RawCap);
+		}
+		else
+		{
+			AddError(Why);
+		}
+	}
+
+	// A limit nothing can meet: no file, not a refusal; the reason is the mesh's own, so the cache may keep it.
+	TArray<uint8> None;
+	FMantleNaniteFit NoneFit;
+	bRetryable = true;
+	Why.Reset();
+	TestFalse(TEXT("a limit no bake can meet gives no file"),
+		FMantleMeshNaniteBake::BakeToFit(Grid, { 0 }, MeshTag, None, Why, NoneFit, &bRetryable, 16, FMantleMeshNaniteFile::MaxRawBytes()));
+	TestEqual(TEXT("with nothing to upload"), None.Num(), 0);
+	TestFalse(TEXT("that belongs to the mesh"), bRetryable);
+	TestTrue(TEXT("and says why in the creator's words"), Why.Contains(TEXT("compressed")) && Why.Contains(TEXT("even baked at")));
+	TestTrue(TEXT("having tried more than once, and no more than the loop's bakes"), NoneFit.Bakes > 1 && NoneFit.Bakes <= FMantleMeshNaniteBake::MaxBakes);
+	Grid->MarkAsGarbage();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteCoarserCheckTest,
+	"Mantle.Editor.Nanite.ConverterTellsWhenItBakesCoarser",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteCoarserCheckTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshNaniteBakeTestPrivate;
+
+	if (!NaniteBuilds())
+	{
+		AddInfo(TEXT("skipped: this editor builds no Nanite data (started without a graphics device)"));
+		return true;
+	}
+
+	UStaticMesh* Grid = MakeGrid(64, /*bNanite*/ false, 0);
+	const FString Dir = FPaths::Combine(FPaths::AutomationTransientDir(), TEXT("MantleNaniteBake"));
+
+	// What the grid's file is under the real limit.
+	FMantlePlaceAssetConverter Whole(MakeShared<FMantleGltfMaterialFlattener>(), Dir);
+	FMantlePlaceAssetSet WholeSet;
+	if (!TestTrue(TEXT("the mesh converts"), Whole.ConvertMesh(Grid, WholeSet)) || !TestEqual(TEXT("to one mesh"), WholeSet.Meshes.Num(), 1) || WholeSet.Meshes[0].Nanite.Num() == 0)
+	{
+		return false;
+	}
+	TestEqual(TEXT("with no notice when it fits"), WholeSet.Issues.Num(), 0);
+	const int64 WholeBytes = WholeSet.Meshes[0].Nanite.Num();
+
+	// A limit a third smaller: the converter bakes it coarser, and a warning (not an error) says so, naming the mesh and the share kept.
+	FMantlePlaceAssetConverter Coarse(MakeShared<FMantleGltfMaterialFlattener>(), Dir);
+	Coarse.Limits.MaxNaniteBytes = WholeBytes * 2 / 3;
+	FMantlePlaceAssetSet CoarseSet;
+	if (TestTrue(TEXT("against that limit it converts"), Coarse.ConvertMesh(Grid, CoarseSet)) && TestEqual(TEXT("to one mesh"), CoarseSet.Meshes.Num(), 1))
+	{
+		const FMantleConvertedMesh& Converted = CoarseSet.Meshes[0];
+		TestTrue(TEXT("with a Nanite file"), Converted.Nanite.Num() > 0);
+		TestTrue(TEXT("inside the limit"), Converted.Nanite.Num() <= Coarse.Limits.MaxNaniteBytes);
+		TestEqual(TEXT("and no reason for none"), Converted.NaniteNone, FString());
+		TestFalse(TEXT("nothing is refused"), CoarseSet.HasErrors());
+		if (TestEqual(TEXT("one notice"), CoarseSet.Issues.Num(), 1))
+		{
+			const FMantleValidationIssue& Issue = CoarseSet.Issues[0];
+			TestTrue(TEXT("a warning"), Issue.Severity == EMantleIssueSeverity::Warning);
+			TestTrue(TEXT("naming the mesh"), Issue.Problem.Contains(Grid->GetName()));
+			TestTrue(TEXT("and the share of its triangles kept"), Issue.Problem.Contains(TEXT("% of its triangles")));
+			TestFalse(TEXT("with a remedy"), Issue.Remedy.IsEmpty());
+		}
+		// The warning survives the local cache with the file: a republish says it again.
+		const FString CacheDir = FreshCacheDir(TEXT("Coarse"));
+		FSavedMesh Saved(TEXT("SM_Coarse"));
+		if (TestTrue(TEXT("a saved mesh"), Saved.Adopt(MakeGrid(64, /*bNanite*/ false, 0))))
+		{
+			FMantlePlaceAssetConverter First(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+			First.Limits.MaxNaniteBytes = WholeBytes * 2 / 3;
+			FMantlePlaceAssetSet SetA;
+			FMantlePlaceAssetConverter Second(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+			Second.Limits.MaxNaniteBytes = WholeBytes * 2 / 3;
+			FMantlePlaceAssetSet SetB;
+			if (TestTrue(TEXT("it converts"), First.ConvertMesh(Saved.Mesh, SetA)) && TestTrue(TEXT("and again"), Second.ConvertMesh(Saved.Mesh, SetB)) && SetB.Meshes.Num() == 1)
+			{
+				TestTrue(TEXT("the second time from the cache"), SetB.Meshes[0].bFromCache);
+				TestTrue(TEXT("with the same coarser file"), SetB.Meshes[0].Nanite == SetA.Meshes[0].Nanite);
+				TestEqual(TEXT("and the same notices"), SetB.Issues.Num(), SetA.Issues.Num());
+			}
+			// A converter with another limit is another entry: the file is the final one for that limit.
+			FMantlePlaceAssetConverter Other(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+			FMantlePlaceAssetSet SetC;
+			if (TestTrue(TEXT("under the real limit it converts"), Other.ConvertMesh(Saved.Mesh, SetC)) && SetC.Meshes.Num() == 1)
+			{
+				TestFalse(TEXT("not from the coarser entry"), SetC.Meshes[0].bFromCache);
+				TestEqual(TEXT("and with no notice"), SetC.Issues.Num(), 0);
+			}
+			Saved.Mesh->MarkAsGarbage();
+		}
+	}
+
+	// A limit no bake can meet: the model publishes plain, with a warning, never refused.
+	FMantlePlaceAssetConverter Tiny(MakeShared<FMantleGltfMaterialFlattener>(), Dir);
+	Tiny.Limits.MaxNaniteBytes = 16;
+	FMantlePlaceAssetSet TinySet;
+	if (TestTrue(TEXT("against a limit nothing meets it converts"), Tiny.ConvertMesh(Grid, TinySet)) && TestEqual(TEXT("to one mesh"), TinySet.Meshes.Num(), 1))
+	{
+		TestEqual(TEXT("with no Nanite file"), TinySet.Meshes[0].Nanite.Num(), 0);
+		TestTrue(TEXT("and the reason"), TinySet.Meshes[0].NaniteNone.Contains(TEXT("even baked at")));
+		TestFalse(TEXT("nothing is refused"), TinySet.HasErrors());
+		if (TestEqual(TEXT("one notice"), TinySet.Issues.Num(), 1))
+		{
+			TestTrue(TEXT("a warning that says players see the plain model"), TinySet.Issues[0].Severity == EMantleIssueSeverity::Warning && TinySet.Issues[0].Problem.Contains(TEXT("plain model")));
+		}
+	}
+	Grid->MarkAsGarbage();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteUploadTest,
+	"Mantle.Editor.Nanite.UploadStageAndPlaceFile",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteUploadTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshNaniteBakeTestPrivate;
+
+	if (!NaniteBuilds())
+	{
+		AddInfo(TEXT("skipped: this editor builds no Nanite data (started without a graphics device)"));
+		return true;
+	}
+
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, /*bInformEngineOfWorld*/ false);
+	if (!TestNotNull(TEXT("a world"), World))
+	{
+		return false;
+	}
+	FWorldContext& Context = GEngine->CreateNewWorldContext(EWorldType::Game);
+	Context.SetCurrentWorld(World);
+	UStaticMesh* Grid = MakeGrid(24, /*bNanite*/ false, 0);
+	AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>();
+	Actor->GetStaticMeshComponent()->SetMobility(EComponentMobility::Static);
+	Actor->GetStaticMeshComponent()->SetStaticMesh(Grid);
+
+	FMantlePlaceAssetConverter Converter(MakeShared<FMantleGltfMaterialFlattener>(), FPaths::Combine(FPaths::AutomationTransientDir(), TEXT("MantleNaniteBake")));
+	FMantlePlaceAssetSet Set;
+	if (TestTrue(TEXT("the mesh converts"), Converter.ConvertMesh(Grid, Set)) && TestEqual(TEXT("to one mesh"), Set.Meshes.Num(), 1) && Set.Meshes[0].Nanite.Num() > 0)
+	{
+		const FMantleConvertedMesh& Converted = Set.Meshes[0];
+		const FString MeshKey = Converted.Key;
+		const FString NaniteKey = Converted.NaniteKey();
+		const FString NaniteHash = Converted.NaniteHash;
+		const int64 NaniteBytes = Converted.Nanite.Num();
+		const FString MeshHash = Converted.Hash;
+
+		// Before anything is uploaded the place file names both files by their provisional ids.
+		FMantleExportOptions Options;
+		Options.Assets = &Set;
+		const FMantleExportResult Before = FMantlePlaceExporter::Export(World, Options);
+		const FMantleAssetRef* MeshRef = Before.Place.Assets.FindByPredicate([&MeshHash](const FMantleAssetRef& Ref) { return Ref.Kind == EMantleAssetKind::StaticMesh && Ref.Hash == MeshHash; });
+		if (TestNotNull(TEXT("the mesh is listed"), MeshRef) && TestFalse(TEXT("naming a Nanite file"), MeshRef->Nanite.IsEmpty()))
+		{
+			const FString NaniteId = MeshRef->Nanite;
+			const FMantleAssetRef* NaniteRef = Before.Place.Assets.FindByPredicate([&NaniteId](const FMantleAssetRef& Ref) { return Ref.Id == NaniteId; });
+			if (TestNotNull(TEXT("which is listed"), NaniteRef))
+			{
+				TestTrue(TEXT("as a Nanite entry"), NaniteRef->Kind == EMantleAssetKind::Nanite);
+				TestEqual(TEXT("saying the engine build it was baked for"), NaniteRef->Engine, FMantleNaniteSideFile::EngineTag());
+				TestEqual(TEXT("with the container's hash"), NaniteRef->Hash, NaniteHash);
+				TestEqual(TEXT("and the container's size"), NaniteRef->Bytes, NaniteBytes);
+				TestTrue(TEXT("and the mesh has no Lumen file here, so only the Nanite one"), MeshRef->Lumen.IsEmpty() || MeshRef->Lumen != NaniteId);
+			}
+			const FString Json = FMantlePlaceExporter::ToJson(Before.Place);
+			TestTrue(TEXT("the place file says kind Nanite"), Json.Contains(TEXT("\"kind\":\"Nanite\"")));
+			TestTrue(TEXT("the mesh's entry names it"), Json.Contains(TEXT("\"nanite\":\"") + NaniteId + TEXT("\"")));
+			TestTrue(TEXT("and the entry says its engine"), Json.Contains(TEXT("\"engine\":\"") + FMantleNaniteSideFile::EngineTag() + TEXT("\"")));
+		}
+
+		// The upload stage: the mesh and, beside it, the Nanite file under its own key with the container, its hash and kind "nanite".
+		TArray<FMantlePlaceUpload> Uploads;
+		FString Error;
+		TestTrue(TEXT("the mesh stage is taken"), Set.TakeUploads(EMantlePlaceUploadStage::Mesh, Uploads, Error));
+		const FMantlePlaceUpload* NaniteUpload = Uploads.FindByPredicate([&NaniteKey](const FMantlePlaceUpload& Upload) { return Upload.Key == NaniteKey; });
+		if (TestNotNull(TEXT("a Nanite upload is in it"), NaniteUpload))
+		{
+			TestEqual(TEXT("of kind nanite"), NaniteUpload->Options.Kind, FString(TEXT("nanite")));
+			TestEqual(TEXT("with its hash"), NaniteUpload->Hash, NaniteHash);
+			TestEqual(TEXT("the container's bytes"), NaniteUpload->Bytes.Num(), static_cast<int32>(NaniteBytes));
+			TestEqual(TEXT("hashed as Mantle hashes an upload"), FMantleSha256::AssetHash(NaniteUpload->Bytes), NaniteHash);
+			TestTrue(TEXT("a container"), NaniteUpload->Bytes.Num() > 8 && FMemory::Memcmp(NaniteUpload->Bytes.GetData(), "MNZ1", 4) == 0);
+			TestTrue(TEXT("inside the limit"), NaniteUpload->Bytes.Num() <= FMantleMeshNaniteFile::MaxUploadBytes);
+			TestTrue(TEXT("named so the creator can tell what it is"), NaniteUpload->SourceName.Contains(TEXT("Nanite")));
+			TestEqual(TEXT("in the same stage as its mesh"), static_cast<int32>(NaniteUpload->Stage), static_cast<int32>(EMantlePlaceUploadStage::Mesh));
+		}
+		TestEqual(TEXT("a mesh and its Nanite file"), Uploads.Num(), 2);
+		TArray<FMantlePlaceUpload> Again;
+		TestTrue(TEXT("a stage taken again"), Set.TakeUploads(EMantlePlaceUploadStage::Mesh, Again, Error));
+		TestEqual(TEXT("gives nothing: what was taken is not sent twice"), Again.Num(), 0);
+
+		// Uploaded: the place file lists the ids and hashes Mantle gave. A mesh whose Nanite file Mantle refused goes without.
+		const FString MeshId = TEXT("ast_u0123456789abcdef0123456789abcdef");
+		const FString UploadedNaniteId = TEXT("ast_ufedcba9876543210fedcba9876543210");
+		const FString BackendHash = TEXT("sha256:") + FString::ChrN(64, TEXT('a'));
+		Set.RecordUpload(MeshKey, MeshId, MeshHash, Set.UploadSize(MeshKey, 0));
+		const FMantleExportResult Refused = FMantlePlaceExporter::Export(World, Options);
+		const FMantleAssetRef* RefusedMesh = Refused.Place.Assets.FindByPredicate([&MeshId](const FMantleAssetRef& Ref) { return Ref.Id == MeshId; });
+		if (TestNotNull(TEXT("the uploaded mesh is listed"), RefusedMesh))
+		{
+			TestTrue(TEXT("with no Nanite file when Mantle has none of its own"), RefusedMesh->Nanite.IsEmpty());
+		}
+		TestFalse(TEXT("and no Nanite entry"), Refused.Place.Assets.ContainsByPredicate([](const FMantleAssetRef& Ref) { return Ref.Kind == EMantleAssetKind::Nanite; }));
+		Set.RecordUpload(NaniteKey, UploadedNaniteId, BackendHash, NaniteBytes);
+		const FMantleExportResult After = FMantlePlaceExporter::Export(World, Options);
+		const FMantleAssetRef* AfterMesh = After.Place.Assets.FindByPredicate([&MeshId](const FMantleAssetRef& Ref) { return Ref.Id == MeshId; });
+		if (TestNotNull(TEXT("the uploaded mesh is still listed"), AfterMesh))
+		{
+			TestEqual(TEXT("naming the uploaded Nanite file"), AfterMesh->Nanite, UploadedNaniteId);
+		}
+		const FMantleAssetRef* AfterNanite = After.Place.Assets.FindByPredicate([&UploadedNaniteId](const FMantleAssetRef& Ref) { return Ref.Id == UploadedNaniteId; });
+		if (TestNotNull(TEXT("and listing it"), AfterNanite))
+		{
+			TestEqual(TEXT("with the hash Mantle gave"), AfterNanite->Hash, BackendHash);
+			TestEqual(TEXT("and the size Mantle gave"), AfterNanite->Bytes, NaniteBytes);
+			TestEqual(TEXT("and the engine"), AfterNanite->Engine, FMantleNaniteSideFile::EngineTag());
+		}
+	}
+
+	GEngine->DestroyWorldContext(World);
+	World->DestroyWorld(false);
 	Grid->MarkAsGarbage();
 	return true;
 }
@@ -864,13 +1281,30 @@ bool FMantleMeshNaniteCacheTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("with the same Nanite file"), SetB.Meshes[0].Nanite == SetA.Meshes[0].Nanite);
 	TestEqual(TEXT("and hash"), SetB.Meshes[0].NaniteHash, SetA.Meshes[0].NaniteHash);
 
-	// A converter that makes no Nanite files (a weapon or wheel publish) reads the entry a place wrote.
+	// A converter that makes no Nanite files (a weapon or wheel publish) keeps entries of its own: they say "no file", so a place
+	// conversion must never read one (its salt says nanite=off), and it must not disturb the place's entry either.
 	FMantlePlaceAssetConverter Plain(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
 	Plain.bBakeNanite = false;
 	FMantlePlaceAssetSet SetD;
 	if (TestTrue(TEXT("it converts without Nanite"), Plain.ConvertMesh(Saved.Mesh, SetD)) && TestEqual(TEXT("to one mesh"), SetD.Meshes.Num(), 1))
 	{
-		TestTrue(TEXT("from the entry the place conversion wrote"), SetD.Meshes[0].bFromCache);
+		TestFalse(TEXT("its first time is a conversion, not the place's entry"), SetD.Meshes[0].bFromCache);
+		TestEqual(TEXT("with no Nanite file"), SetD.Meshes[0].Nanite.Num(), 0);
+	}
+	FMantlePlaceAssetConverter PlainAgain(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+	PlainAgain.bBakeNanite = false;
+	FMantlePlaceAssetSet SetE;
+	if (TestTrue(TEXT("it converts without Nanite again"), PlainAgain.ConvertMesh(Saved.Mesh, SetE)) && TestEqual(TEXT("to one mesh"), SetE.Meshes.Num(), 1))
+	{
+		TestTrue(TEXT("and now from the cache (weapon and wheel publishes are cached too)"), SetE.Meshes[0].bFromCache);
+		TestEqual(TEXT("still with no Nanite file"), SetE.Meshes[0].Nanite.Num(), 0);
+	}
+	FMantlePlaceAssetConverter PlaceAgain(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+	FMantlePlaceAssetSet SetF;
+	if (TestTrue(TEXT("a place conversion converts after them"), PlaceAgain.ConvertMesh(Saved.Mesh, SetF)) && TestEqual(TEXT("to one mesh"), SetF.Meshes.Num(), 1))
+	{
+		TestTrue(TEXT("from its own entry"), SetF.Meshes[0].bFromCache);
+		TestTrue(TEXT("which still has the Nanite file"), SetF.Meshes[0].Nanite == SetA.Meshes[0].Nanite);
 	}
 
 	// A change to the mesh is a miss.
