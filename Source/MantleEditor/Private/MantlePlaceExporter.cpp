@@ -3318,7 +3318,7 @@ namespace
 		for (int32 Index = 0; Index < Length; ++Index)
 		{
 			const TCHAR Quote = Text[Index];
-			if (Quote != TEXT('"') && Quote != TEXT(''') && Quote != TEXT('`'))
+			if (Quote != TEXT('\"') && Quote != TEXT('\'') && Quote != TEXT('`'))
 			{
 				continue;
 			}
@@ -3326,13 +3326,12 @@ namespace
 			int32 End = Index + 1;
 			for (; End < Length && Text[End] != Quote; ++End)
 			{
-				if (Text[End] == TEXT('\') && End + 1 < Length)
+				if (Text[End] == TEXT('\\') && End + 1 < Length)
 				{
 					Run.AppendChar(Text[++End]);
 					continue;
 				}
-				if (Text[End] == TEXT('
-') && Quote != TEXT('`'))
+				if (Text[End] == TEXT('\n') && Quote != TEXT('`'))
 				{
 					End = Length;
 					break;
