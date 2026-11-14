@@ -110,7 +110,11 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 				LOD.BuffersSize = FMath::Max<uint32>(1u, static_cast<uint32>(LOD.GetNumVertices()) * 32u + static_cast<uint32>(LOD.IndexBuffer.GetNumIndices()) * 4u);
 			}
 		}
+#if WITH_EDITORONLY_DATA
+		// Editor-only mirror of the asset setting (the editor UI and IsNaniteEnabled() read it). Packaged clients and servers have no such
+		// field; there the Nanite proxy is chosen from the render data alone (FNaniteResourcesHelper::HasValidNaniteData: PageStreamingStates.Num() > 0).
 		Mesh.GetNaniteSettings().bEnabled = true;
+#endif
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_NANITE attached %s: %u triangles, %d pages, %d bytes (%.1f ms)"),
 			*Params.NaniteMeshTag, SourceTriangles, Pages, RootBytes, (FPlatformTime::Seconds() - Start) * 1000.0);
 		return true;
