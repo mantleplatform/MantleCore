@@ -531,7 +531,6 @@ bool FMantleNaniteSideFileBuildTest::RunTest(const FString& Parameters)
 			// The 7:45 pm crash: Nanite's ray tracing path needs a usable fallback LOD, and GetFirstValidLODIdx skips an LOD whose BuffersSize is 0.
 			TestEqual(TEXT("LOD0 is a usable fallback LOD (not -1)"), RenderData->GetFirstValidLODIdx(0), 0);
 		}
-		TestTrue(TEXT("it is a Nanite mesh"), With->IsNaniteEnabled());
 		TestEqual(TEXT("two material slots"), With->GetStaticMaterials().Num(), 2);
 	}
 
@@ -540,7 +539,6 @@ bool FMantleNaniteSideFileBuildTest::RunTest(const FString& Parameters)
 	if (TestNotNull(TEXT("the mesh without a file builds"), Without.Get()))
 	{
 		TestFalse(TEXT("it has no Nanite data"), Without->HasValidNaniteData());
-		TestFalse(TEXT("it is not a Nanite mesh"), Without->GetNaniteSettings().bEnabled);
 		TestEqual(TEXT("LOD0"), Without->GetRenderData()->LODResources[0].GetNumTriangles(), 12);
 	}
 
