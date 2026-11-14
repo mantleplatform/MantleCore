@@ -4433,7 +4433,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		Ctx, Root,
 		{ TEXT("schemaVersion"), TEXT("placeId"), TEXT("revision"), TEXT("metadata"),
 		  TEXT("settings"), TEXT("assets"), TEXT("entities"), TEXT("scripts"), TEXT("scriptApi"),
-		  TEXT("uiDocuments"), TEXT("storage"), TEXT("seats"), TEXT("localization"), TEXT("audience") },
+		  TEXT("uiDocuments"), TEXT("storage"), TEXT("seats"), TEXT("localization"), TEXT("audience"), TEXT("cells") },
 		TEXT(""));
 
 	RequireString(Ctx, Root, TEXT("placeId"), TEXT(""), Place.PlaceId);
@@ -4888,6 +4888,51 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		if (!Nanite || Nanite->Kind != EMantleAssetKind::Nanite)
 		{
 			Ctx.Fail(Join(Index(TEXT("/assets"), i), TEXT("nanite")), FString::Printf(TEXT("'%s' is not a Nanite entry of this place's assets"), *NaniteId));
+		}
+	}
+
+	// cells — optional (cells-format.md section 2): the place's scenery lives in cell files, listed by one cell index asset. The key and the
+	// manifest's one PlaceCellIndex entry hold each other: no key without the entry, no entry without the key, and the key names the entry.
+	// The cell files themselves are read by FMantleCellLoader (stage 1 of large places), not here.
+	{
+		const bool bHasCellsKey = Root->HasField(TEXT("cells"));
+		if (bHasCellsKey)
+		{
+			const TSharedPtr<FJsonObject>* CellsObj = nullptr;
+			if (!Root->TryGetObjectField(TEXT("cells"), CellsObj))
+			{
+				Ctx.Fail(TEXT("/cells"), TEXT("expected an object"));
+			}
+			else
+			{
+				RequireNoUnknownKeys(Ctx, *CellsObj, { TEXT("index") }, TEXT("/cells"));
+				if (RequireString(Ctx, *CellsObj, TEXT("index"), TEXT("/cells"), Place.CellIndexId) && !FMantlePlaceAssets::IsUploadedId(Place.CellIndexId))
+				{
+					Ctx.Fail(TEXT("/cells/index"), TEXT("must be an uploaded asset id"));
+				}
+			}
+		}
+		int32 CellIndexEntries = 0;
+		bool bNamesEntry = false;
+		for (const FMantleAssetRef& Asset : Place.Assets)
+		{
+			if (Asset.Kind == EMantleAssetKind::PlaceCellIndex)
+			{
+				++CellIndexEntries;
+				bNamesEntry = bNamesEntry || (!Place.CellIndexId.IsEmpty() && Asset.Id.Equals(Place.CellIndexId, ESearchCase::CaseSensitive));
+			}
+		}
+		if (CellIndexEntries > 1)
+		{
+			Ctx.Fail(TEXT("/assets"), FString::Printf(TEXT("lists %d PlaceCellIndex entries; a place has at most one"), CellIndexEntries));
+		}
+		else if (CellIndexEntries == 1 && !bHasCellsKey)
+		{
+			Ctx.Fail(TEXT("/assets"), TEXT("lists a PlaceCellIndex entry but the place has no cells key"));
+		}
+		else if (bHasCellsKey && !bNamesEntry && !Place.CellIndexId.IsEmpty())
+		{
+			Ctx.Fail(TEXT("/cells/index"), TEXT("must name the PlaceCellIndex entry of the place's assets"));
 		}
 	}
 
@@ -5908,6 +5953,144 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 	Result.Errors = MoveTemp(Ctx.Errors);
 	Result.bSuccess = Result.Errors.Num() == 0;
 	return Result;
+}
+
+
+// Named, not anonymous: MantleRuntime builds as a unity build.
+namespace MantlePlaceParserCellsPrivate
+{
+	/**
+	 * The rules a cell file adds to a root entity (cells-format.md 6.2): the entity types a cell may hold, what it must not have, a drawDistance, an
+	 * InstancedMesh anchored at a whole-cm location, and every uploaded id it names listed in the root's manifest with the right kind.
+	 */
+	void CheckCellEntity(FParseContext& Ctx, const FMantleEntity& Entity, const FString& Path, const TMap<FString, EMantleAssetKind>& RootAssets)
+	{
+		const FMantleStaticMeshProps* Mesh = MantleMeshPropsOf(Entity);
+		if (!Mesh)
+		{
+			Ctx.Fail(Join(Path, TEXT("type")), TEXT("a cell file holds StaticMesh and InstancedMesh entities only"));
+			return;
+		}
+		if (!Entity.Parent.IsEmpty())
+		{
+			Ctx.Fail(Join(Path, TEXT("parent")), TEXT("a cell entity has no parent (it is written with its world transform)"));
+		}
+		if (!Entity.Tags.IsEmpty())
+		{
+			Ctx.Fail(Join(Path, TEXT("tags")), TEXT("a cell entity has no tags"));
+		}
+		if (Entity.bDynamic)
+		{
+			Ctx.Fail(Join(Path, TEXT("dynamic")), TEXT("a cell entity is not dynamic and has no physics block"));
+		}
+		if (Entity.Interactable.IsSet())
+		{
+			Ctx.Fail(Join(Path, TEXT("interactable")), TEXT("a cell entity is not interactable"));
+		}
+		const FString PropsPath = Join(Path, TEXT("properties"));
+		if (!(Mesh->DrawDistance > 0.0))
+		{
+			Ctx.Fail(Join(PropsPath, TEXT("drawDistance")), TEXT("a cell entity gives a drawDistance"));
+		}
+		if (Entity.Props.IsType<FMantleInstancedMeshProps>())
+		{
+			// The anchor keeps every instance close to its own cell: a whole-cm location, no rotation, unit scale.
+			const FVector Location = Entity.Transform.GetLocation();
+			if (!Entity.Transform.GetRotation().IsIdentity(KINDA_SMALL_NUMBER) || !Entity.Transform.GetScale3D().Equals(FVector::OneVector))
+			{
+				Ctx.Fail(Join(Path, TEXT("transform")), TEXT("an InstancedMesh in a cell is anchored at a location only (rotation [0, 0, 0], scale [1, 1, 1])"));
+			}
+			else if (Location.X != FMath::RoundToDouble(Location.X) || Location.Y != FMath::RoundToDouble(Location.Y) || Location.Z != FMath::RoundToDouble(Location.Z))
+			{
+				Ctx.Fail(Join(Join(Path, TEXT("transform")), TEXT("location")), TEXT("an InstancedMesh's anchor in a cell is a whole number of cm on each axis"));
+			}
+		}
+
+		const auto CheckListed = [&Ctx, &RootAssets](const FString& Id, const EMantleAssetKind Want, const FString& IdPath)
+		{
+			if (!FMantlePlaceAssets::IsUploadedId(Id))
+			{
+				return;
+			}
+			const EMantleAssetKind* Listed = RootAssets.Find(Id);
+			if (!Listed)
+			{
+				Ctx.Fail(IdPath, FString::Printf(TEXT("'%s' is not in the place's assets; a cell names only assets the place lists"), *Id));
+			}
+			else if (*Listed != Want)
+			{
+				Ctx.Fail(IdPath, FString::Printf(TEXT("'%s' is listed as another kind of asset"), *Id));
+			}
+		};
+		CheckListed(Mesh->Mesh, EMantleAssetKind::StaticMesh, Join(PropsPath, TEXT("mesh")));
+		for (int32 Slot = 0; Slot < Mesh->Materials.Num(); ++Slot)
+		{
+			CheckListed(Mesh->Materials[Slot], EMantleAssetKind::Material, Index(Join(PropsPath, TEXT("materials")), Slot));
+		}
+	}
+}
+
+bool FMantlePlaceParser::ParseCellEntities(const FString& Json, const TMap<FString, EMantleAssetKind>& RootAssets, TArray<FMantleEntity>& OutEntities, TArray<FMantleParseError>& OutErrors)
+{
+	FParseContext Ctx;
+
+	TSharedPtr<FJsonObject> Doc;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
+	if (!FJsonSerializer::Deserialize(Reader, Doc) || !Doc.IsValid())
+	{
+		OutErrors.Add(FMantleParseError{ TEXT(""), TEXT("not valid JSON") });
+		return false;
+	}
+	RequireNoUnknownKeys(Ctx, Doc, { TEXT("version"), TEXT("entities") }, TEXT(""));
+
+	double Version = 0.0;
+	if (!Doc->TryGetNumberField(TEXT("version"), Version))
+	{
+		Ctx.Fail(TEXT("/version"), TEXT("required integer is missing"));
+	}
+	else if (Version != 1.0)
+	{
+		Ctx.Fail(TEXT("/version"), FString::Printf(TEXT("is cell file version %g; this game reads version 1. Update Mantle to open this place."), Version));
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* EntitiesArray = nullptr;
+	if (!Doc->TryGetArrayField(TEXT("entities"), EntitiesArray))
+	{
+		Ctx.Fail(TEXT("/entities"), TEXT("required array is missing"));
+	}
+	else if (EntitiesArray->IsEmpty())
+	{
+		Ctx.Fail(TEXT("/entities"), TEXT("a cell file holds at least one entity"));
+	}
+	else
+	{
+		// The place's own entity reader, one entity at a time into a place of its own, so every property is checked as it is in the root.
+		FMantlePlace Scratch;
+		Scratch.Entities.Reserve(EntitiesArray->Num());
+		for (int32 i = 0; i < EntitiesArray->Num(); ++i)
+		{
+			const FString Path = Index(TEXT("/entities"), i);
+			const TSharedPtr<FJsonObject>* Obj = nullptr;
+			if (!(*EntitiesArray)[i]->TryGetObject(Obj))
+			{
+				Ctx.Fail(Path, TEXT("expected an object"));
+				continue;
+			}
+			const int32 Before = Scratch.Entities.Num();
+			ParseEntity(Ctx, *Obj, Path, Scratch);
+			if (Scratch.Entities.Num() == Before + 1)
+			{
+				MantlePlaceParserCellsPrivate::CheckCellEntity(Ctx, Scratch.Entities.Last(), Path, RootAssets);
+			}
+		}
+		if (Ctx.Errors.IsEmpty())
+		{
+			OutEntities.Append(MoveTemp(Scratch.Entities));
+		}
+	}
+
+	OutErrors.Append(MoveTemp(Ctx.Errors));
+	return OutErrors.IsEmpty();
 }
 
 FMantleParseResult FMantlePlaceParser::ParseFromFile(const FString& FilePath)

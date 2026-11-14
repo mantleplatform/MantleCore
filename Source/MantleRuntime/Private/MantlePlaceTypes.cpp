@@ -103,9 +103,10 @@ namespace
 		TEXT("Weapon"),
 		TEXT("Lumen"),
 		TEXT("VoxelWorldData"),
-		TEXT("Nanite")
+		TEXT("Nanite"),
+		TEXT("PlaceCellIndex")
 	};
-	static_assert(UE_ARRAY_COUNT(GAssetKindNames) == static_cast<SIZE_T>(EMantleAssetKind::Nanite) + 1, "one name per EMantleAssetKind");
+	static_assert(UE_ARRAY_COUNT(GAssetKindNames) == static_cast<SIZE_T>(EMantleAssetKind::PlaceCellIndex) + 1, "one name per EMantleAssetKind");
 
 	const TCHAR* const GCollisionNames[] = {
 		TEXT("none"),

@@ -42,6 +42,13 @@ public:
 	 */
 	static bool ParseScatterProperties(const TSharedPtr<FJsonObject>& Properties, FMantleScatterParams& Out, TArray<FMantleParseError>& OutErrors);
 
+	/**
+	 * Large places, stage 1: the entities of one cell file (MCF1, inflated), read with the place parser's own entity rules plus the cell rules of
+	 * cells-format.md section 6.2. RootAssets is the place's manifest (id to kind): a cell names assets by id only. False, with each problem at its
+	 * path in OutErrors, when anything is refused.
+	 */
+	static bool ParseCellEntities(const FString& Json, const TMap<FString, EMantleAssetKind>& RootAssets, TArray<FMantleEntity>& OutEntities, TArray<FMantleParseError>& OutErrors);
+
 	/** Parse from a file on disk. */
 	static FMantleParseResult ParseFromFile(const FString& FilePath);
 
