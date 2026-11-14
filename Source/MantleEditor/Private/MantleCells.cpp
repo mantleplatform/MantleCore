@@ -343,9 +343,10 @@ FMantleCellPlan FMantleCellPlanner::Plan(FMantlePlace& Place, TArray<FMantleInst
 			continue;
 		}
 		const FMantleStaticMeshProps* Mesh = Entity.Props.TryGet<FMantleStaticMeshProps>();
-		if (!Mesh)
+		if (Entity.Type != EMantleEntityType::StaticMesh || !Mesh)
 		{
-			// An InstancedMesh already in the place came from somewhere else than the exporter's own sets: it stays as it is.
+			// Lights and the rest always load; an InstancedMesh already in the place came from somewhere else than the exporter's own sets:
+			// it stays as it is.
 			Stay(EMantleCellStay::OtherType);
 			continue;
 		}

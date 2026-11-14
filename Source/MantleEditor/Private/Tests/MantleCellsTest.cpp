@@ -554,6 +554,9 @@ bool FMantleCellFilesTest::RunTest(const FString& Parameters)
 
 	// Refusals a reader makes.
 	FString Ignored;
+	// The cut stream makes the engine log that it could not inflate it, which is the refusal working.
+	AddExpectedError(TEXT("appUncompressMemoryZLIB failed"), EAutomationExpectedErrorFlags::Contains, 0);
+	AddExpectedError(TEXT("Failed to uncompress memory"), EAutomationExpectedErrorFlags::Contains, 0);
 	TestFalse(TEXT("the wrong magic"), FMantleCellFiles::ReadContainer(File.Bytes, FMantleCellFiles::IndexMagic(), FMantleCellFiles::MaxCellRawBytes, Ignored, Error));
 	TestFalse(TEXT("a raw length over the cap"), FMantleCellFiles::ReadContainer(File.Bytes, FMantleCellFiles::CellMagic(), 10, Ignored, Error));
 	TArray<uint8> Cut = File.Bytes;
