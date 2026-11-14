@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "MantleCells.h"
 #include "MantleCoverage.h"
 #include "MantlePlaceInstancing.h"
 #include "MantlePlaceTypes.h"
@@ -52,8 +53,11 @@ struct FMantleInstancedMeshGroup
 
 	TArray<FTransform> WorldInstances;
 
-	/** Painted foliage only (GhzGarage/mantle#818): the instances thinning takes first, before props and PCG output. */
-	bool bThinFirst = false;
+	/**
+	 * Instances of an actor whose "Is Spatially Loaded" is off (cells-format 5.2 rule 6): they stay in the root place file, so
+	 * the cell planner never moves them. Joined to WorldInstances when the root's own sets are cut.
+	 */
+	TArray<FTransform> RootOnlyInstances;
 };
 
 /**
@@ -127,10 +131,10 @@ struct FMantleExportResult
 	/** The upload key (for a material, "material:" and its path name) behind each provisional asset id Place.Assets lists, so a log can name an asset Gather never saw. */
 	TMap<FString, FString> ProvisionalKeys;
 
-	/** The place file's size in bytes, as ToJson writes it (GhzGarage/mantle#818), measured after grouping and any thinning. */
+	/** The root place file's size in bytes, as ToJson writes it (GhzGarage/mantle#818), measured after the scenery went to cells. */
 	int64 PlaceBytes = 0;
 
-	/** Instanced mesh entries in the place file, after grouping and any thinning. */
+	/** Instanced mesh entries in the root place file; the cells' instances are counted in CellReport. */
 	int64 InstanceTotal = 0;
 
 	/** Mesh entities and instance sets that got a drawDistance (GhzGarage/mantle#630); 0 when the target client does not read them. */
@@ -139,16 +143,12 @@ struct FMantleExportResult
 	/** Static mesh actors Export folded into instance sets. */
 	FMantleGroupReport Grouping;
 
-	/** Instances removed by Options.bThinInstances. Not applied (RemovesAnything false) unless it was asked for. */
-	FMantleThinReport Thinning;
+	/** The grid the cells were planned on, the scenery of the place in cells (sorted by key), and what the planner did (cells-format 5). */
+	FMantleCellGrid CellGrid;
+	TArray<FMantlePlannedCell> Cells;
+	FMantleCellReport CellReport;
 
-	/**
-	 * When the place is over the instance limit or the file-size limit and thinning was not asked for: what thinning would do,
-	 * so Check and Publish can offer it with its numbers. Empty (RemovesAnything false) otherwise.
-	 */
-	FMantleThinReport ThinPreview;
-
-	/** Over the instance limit or the file-size limit (Errors says which, with the fix). */
+	/** Over the root's instance limit or file-size limit (Errors says which, with the fix). Cells never count toward either. */
 	bool bOverBudget = false;
 
 	/** The creator-facing sentence for bOverBudget, with the fix (also in Errors). */
@@ -205,12 +205,8 @@ struct FMantleExportOptions
 	 */
 	bool bGroupStaticMeshes = true;
 
-	/**
-	 * GhzGarage/mantle#818: when the place is over the instance limit or the backend's file-size limit, remove instances evenly
-	 * until it fits (FMantlePlaceInstancing::ThinToFit), and say how many in the coverage report. Off by default: nothing is ever
-	 * thinned unless the creator chose it (Thin and publish, Mantle.Publish -Thin=auto, Mantle.Check -Thin=auto).
-	 */
-	bool bThinInstances = false;
+	/** The cell grid (cells-format 4.2); the exporter's own numbers unless a test wants another. */
+	FMantleCellGrid CellGrid = FMantleCellGrid::Default();
 };
 
 /**
@@ -684,8 +680,17 @@ public:
 	 */
 	static FTransform PublishedTransform(const AActor* Actor);
 
-	/** Serializes a place to JSON text. */
-	static FString ToJson(const FMantlePlace& Place);
+	/**
+	 * Serializes a place to JSON text. With Cells (cells-format 2) the root names its cell index: assets[] gets the PlaceCellIndex entry
+	 * (in id order) and the root gets {"cells":{"index": id}}. Without, the root is a whole place, as before.
+	 */
+	static FString ToJson(const FMantlePlace& Place, const FMantleCellRoot* Cells = nullptr);
+
+	/** One entity as the place file and the cell files write it: a JSON object, the same bytes either way. */
+	static FString EntityToJson(const FMantleEntity& Entity);
+
+	/** Location's position along a Morton curve through Bounds, 21 bits an axis: the order an instance set is cut in. */
+	static uint64 MortonCode(const FVector& Location, const FBox& Bounds);
 
 	/**
 	 * Absolute path to World's Scripts/ folder, beside its level package on disk -- for

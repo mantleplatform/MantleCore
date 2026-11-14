@@ -7,7 +7,7 @@
 class UWorld;
 
 /**
- * Mantle.Publish [-TimeoutMinutes=N] [-Thin=auto] [notes...] (#344): Tools > Mantle > Publish for automation.
+ * Mantle.Publish [-TimeoutMinutes=N] [notes...] (#344): Tools > Mantle > Publish for automation.
  *
  * The menu asks for notes and runs FMantlePlacePublishSession in the background under the Mantle
  * Publish panel; this runs the same session on the open level (FMantlePublisher::PublishToCloud:
@@ -33,13 +33,11 @@ struct MANTLEEDITOR_API FMantleHeadlessPublish
 	{
 		FString Notes;
 		double TimeoutSeconds = DefaultTimeoutMinutes * 60.0;
-		/** -Thin=auto (GhzGarage/mantle#818): remove instances evenly when the place is over the instance or file-size limit. */
-		bool bThin = false;
 		/** Set when the arguments cannot be used; nothing is published then. */
 		FString Error;
 	};
 
-	/** The console arguments: optional leading -TimeoutMinutes=N (N > 0) and -Thin=auto|off, in any order, then the notes, joined by spaces. */
+	/** The console arguments: optional leading -TimeoutMinutes=N (N > 0), then the notes, joined by spaces. */
 	static FArgs ParseArgs(const TArray<FString>& Args);
 
 	/**

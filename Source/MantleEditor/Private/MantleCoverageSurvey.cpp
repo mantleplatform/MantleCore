@@ -439,21 +439,6 @@ namespace MantleCoverageSurveyPrivate
 	{
 		FMantleCoverage& Coverage = Result.Coverage;
 		const TArray<UInstancedStaticMeshComponent*> Sources = FMantlePlaceExporter::CollectInstanceSources(World);
-		int64 Total = 0;
-		for (const UInstancedStaticMeshComponent* Source : Sources)
-		{
-			Total += Source->GetInstanceCount();
-		}
-
-		// GhzGarage/mantle#818: even thinning was asked for and removed instances. Each source keeps its share of its tier (painted
-		// foliage, or the rest) and the removed ones are Dropped, so the report adds up to what the level has and says how many went.
-		const FMantleThinReport& Thin = Result.Thinning;
-		const bool bThinned = Thin.bApplied && Thin.RemovesAnything();
-		const int64 OthersBefore = Thin.InstancesBefore - Thin.FoliageBefore;
-		const int64 OthersAfter = Thin.InstancesAfter - Thin.FoliageAfter;
-		int64 FoliageSeen = 0;
-		int64 OthersSeen = 0;
-
 		for (const UInstancedStaticMeshComponent* Source : Sources)
 		{
 			const AActor* Owner = Source->GetOwner();
@@ -474,30 +459,6 @@ namespace MantleCoverageSurveyPrivate
 			if (!Blocked.IsEmpty())
 			{
 				Coverage.Add(Category, EOutcome::Dropped, Name, Blocked, Count);
-			}
-			else if (bThinned)
-			{
-				// This source's share of the kept instances, rounded along the running count so the shares add up exactly.
-				const int64 Before = bFoliage ? Thin.FoliageBefore : OthersBefore;
-				const int64 After = bFoliage ? Thin.FoliageAfter : OthersAfter;
-				int64& Seen = bFoliage ? FoliageSeen : OthersSeen;
-				const int64 KeptBefore = Before > 0 ? (Seen * After) / Before : 0;
-				Seen += Count;
-				const int64 Kept = FMath::Min(Count, Before > 0 ? (Seen * After) / Before - KeptBefore : Count);
-				if (Kept > 0)
-				{
-					Coverage.Add(Category, Approx.IsEmpty() ? EOutcome::Kept : EOutcome::Approximated, Name, Approx, Kept);
-				}
-				if (Count - Kept > 0)
-				{
-					Coverage.Add(Category, EOutcome::Dropped, Name,
-						FString::Printf(TEXT("thinned evenly so the place fits (%s)."), *FMantlePlaceInstancing::DescribeBytes(Thin.BytesAfter)), Count - Kept);
-				}
-			}
-			else if (Total > FMantlePlaceLimits::MaxInstancesPerPlace)
-			{
-				Coverage.Add(Category, EOutcome::Dropped, Name,
-					FString::Printf(TEXT("the level has %lld instanced meshes; a place holds at most %d."), Total, FMantlePlaceLimits::MaxInstancesPerPlace), Count);
 			}
 			else if (!Approx.IsEmpty())
 			{

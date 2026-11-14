@@ -286,7 +286,7 @@ bool FMantleDrawDistanceJsonTest::RunTest(const FString& Parameters)
 	// The count reaches Mantle.Check's last line.
 	FMantleCheckReport Report;
 	Report.DrawDistances = FMantleDrawDistance::CountEntities(Place);
-	TestTrue(TEXT("Mantle.Check reports it"), FMantleCheck::DoneLine(Report).EndsWith(TEXT(" drawDistances=2")));
+	TestTrue(TEXT("Mantle.Check reports it"), FMantleCheck::DoneLine(Report).Contains(TEXT(" drawDistances=2 ")));
 	return true;
 }
 
