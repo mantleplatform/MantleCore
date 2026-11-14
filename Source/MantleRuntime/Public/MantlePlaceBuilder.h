@@ -88,6 +88,46 @@ struct FMantleBuildOptions
 };
 
 /**
+ * A build of one place, in steps. The passes of FMantlePlaceBuilder::Build are the same, but each runs a
+ * unit (one entity) at a time, so a step can stop between any two entities and the build can span frames:
+ * a big place no longer costs one long frame. Begin one with FMantlePlaceBuilder::Begin and call Step until
+ * it says it is finished (FMantlePlaceBuildRunner does that from the engine's ticker).
+ *
+ * Until it is finished the actors in the result are only partly set up (no parent, transform or mobility yet),
+ * so the result is not to be read, retained or shown to scripts before then.
+ */
+class MANTLERUNTIME_API FMantlePlaceBuildSession
+{
+public:
+	/** A step budget that means "all of it in this call": the one-frame build. */
+	static constexpr double NoBudget = 1.0e10;
+
+	~FMantlePlaceBuildSession();
+
+	/**
+	 * Does work for about MaxSeconds of game-thread time, and at least one unit of it (so a build always advances),
+	 * stopping after the unit that crosses the budget. A single entity is never split, and what one costs is what
+	 * the step overshoots by. Returns true once the build is finished.
+	 */
+	bool Step(double MaxSeconds);
+
+	bool IsFinished() const;
+
+	/** The result so far; final once Step has returned true. Moved out by the owner when the build is finished. */
+	FMantleBuildResult& GetResult();
+
+	/** How many entities have not been spawned yet (zero once the spawn pass is over). */
+	int32 EntitiesLeftToSpawn() const;
+
+private:
+	friend class FMantlePlaceBuilder;
+	FMantlePlaceBuildSession();
+
+	struct FState;
+	TUniquePtr<FState> State;
+};
+
+/**
  * Turns a parsed place into live actors.
  *
  * This is the half of the architecture that has to work: if a running client cannot
@@ -100,10 +140,23 @@ struct FMantleBuildOptions
 class MANTLERUNTIME_API FMantlePlaceBuilder
 {
 public:
-	/** Spawns every entity in Place into World. */
+	/** Spawns every entity in Place into World, all in this call. */
 	static FMantleBuildResult Build(
 		UWorld* World,
 		const FMantlePlace& Place,
+		const FMantleBuildOptions& Options = FMantleBuildOptions());
+
+	/**
+	 * The same build as Build, in steps (see FMantlePlaceBuildSession). The place must outlive the session:
+	 * the first overload only points at it, the second keeps it alive.
+	 */
+	static TSharedRef<FMantlePlaceBuildSession> Begin(
+		UWorld* World,
+		const FMantlePlace& Place,
+		const FMantleBuildOptions& Options = FMantleBuildOptions());
+	static TSharedRef<FMantlePlaceBuildSession> Begin(
+		UWorld* World,
+		TSharedRef<const FMantlePlace> Place,
 		const FMantleBuildOptions& Options = FMantleBuildOptions());
 
 	/** Destroys actors previously produced by Build. */

@@ -989,14 +989,27 @@ namespace
 	 * with the weightmap's heaviest layers, read on the CPU. Movable until pass 3 places it, then frozen
 	 * to Static like a blocking mesh.
 	 */
-	AActor* BuildTerrainEntity(
+	/**
+	 * A Terrain being built: BeginTerrainEntity does everything but the chunks, the staged spawn then builds one chunk a
+	 * step (the only part of a terrain that costs), and FinishTerrainEntity adds what goes on the actor once it stands.
+	 */
+	struct FPendingTerrain
+	{
+		TSharedPtr<const FMantleHeightfield> Field;
+		FMantleTerrainBuildParams Params;
+		TSharedPtr<FMantleTerrainSpawn> Spawn;
+		FMantleScatterTerrainSurface* OutSurface = nullptr;
+	};
+
+	bool BeginTerrainEntity(
 		UWorld* World,
 		const FMantleEntity& Entity,
 		const FMantleTerrainProps& Props,
 		const FString& Path,
 		TArray<FMantleParseError>& Errors,
 		FMantleBuilderLoadStats& LoadStats,
-		FMantleScatterTerrainSurface* OutSurface = nullptr)
+		FPendingTerrain& Pending,
+		FMantleScatterTerrainSurface* OutSurface)
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_Terrain);
 
@@ -1007,7 +1020,7 @@ namespace
 		if (!Field.IsValid())
 		{
 			Errors.Add(FMantleParseError{ Path + TEXT("/properties/heightfield"), Error });
-			return nullptr;
+			return false;
 		}
 
 		const bool bDedicatedServer = World->GetNetMode() == NM_DedicatedServer;
@@ -1079,12 +1092,41 @@ namespace
 			}
 		}
 		FString BuildError;
-		AActor* Actor = FMantleTerrainBuilder::Spawn(World, Entity.Name, *Field, Material, Props.bCastShadow, Params, &BuildError);
-		if (!Actor)
+		Pending.Spawn = FMantleTerrainSpawn::Begin(World, Entity.Name, *Field, Material, Props.bCastShadow, Params, &BuildError);
+		if (!Pending.Spawn.IsValid())
 		{
 			Errors.Add(FMantleParseError{ Path + TEXT("/properties/heightfield"), BuildError });
+			return false;
+		}
+		Pending.Field = Field;
+		Pending.Params = Params;
+		Pending.OutSurface = OutSurface;
+		return true;
+	}
+
+	/** The stood terrain's actor with everything that goes on it, or null (the error is in Errors) when a chunk failed. */
+	AActor* FinishTerrainEntity(
+		UWorld* World,
+		const FMantleTerrainProps& Props,
+		const FString& Path,
+		TArray<FMantleParseError>& Errors,
+		FMantleBuilderLoadStats& LoadStats,
+		FPendingTerrain& Pending)
+	{
+		if (Pending.Spawn->HasFailed())
+		{
+			Errors.Add(FMantleParseError{ Path + TEXT("/properties/heightfield"), Pending.Spawn->GetError() });
 			return nullptr;
 		}
+		AActor* Actor = Pending.Spawn->TakeActor();
+		if (!Actor)
+		{
+			Errors.Add(FMantleParseError{ Path + TEXT("/properties/heightfield"), TEXT("the terrain actor is gone") });
+			return nullptr;
+		}
+		const TSharedPtr<const FMantleHeightfield>& Field = Pending.Field;
+		const FMantleTerrainBuildParams& Params = Pending.Params;
+		FMantleScatterTerrainSurface* OutSurface = Pending.OutSurface;
 
 		// The surface a Scatter placed on terrain drops onto (#169); its transform is read once the place has put the terrain down.
 		if (OutSurface)
@@ -1531,492 +1573,793 @@ UMaterialInterface* FMantleDecalMaterials::Load(const bool bNormal)
 	return Loaded;
 }
 
-FMantleBuildResult FMantlePlaceBuilder::Build(
-	UWorld* World,
-	const FMantlePlace& Place,
-	const FMantleBuildOptions& Options)
+/**
+ * What a build in progress keeps between steps: the result so far, where it is in the passes, and the
+ * small lists the passes hand each other. Every pass of the old one-frame Build is a phase here that
+ * does its work a unit (an entity) at a time, so a step can stop between any two units.
+ */
+struct FMantlePlaceBuildSession::FState
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_Build);
-	MANTLE_TRACE_SCOPE_DETAIL("MantlePlaceBuild", Place.PlaceId);
-	const double BuildStartSeconds = FPlatformTime::Seconds();
-	FMantleBuilderLoadStats LoadStats;
-
-	FMantleBuildResult Result;
-
-	if (!World)
+	enum class EPhase : uint8
 	{
-		Result.Errors.Add(FMantleParseError{ TEXT(""), TEXT("no world to build into") });
-		return Result;
+		Spawn,
+		Attach,
+		Transforms,
+		TerrainScatters,
+		Physics,
+		Constraints,
+		FreezePlan,
+		FreezeGroups,
+		FreezeMeshes,
+		Finish,
+		Done
+	};
+
+	static const TCHAR* PhaseName(const EPhase Phase)
+	{
+		switch (Phase)
+		{
+		case EPhase::Spawn: return TEXT("spawn");
+		case EPhase::Attach: return TEXT("attach");
+		case EPhase::Transforms: return TEXT("transforms");
+		case EPhase::TerrainScatters: return TEXT("terrain_scatters");
+		case EPhase::Physics: return TEXT("physics");
+		case EPhase::Constraints: return TEXT("constraints");
+		case EPhase::FreezePlan: return TEXT("freeze_plan");
+		case EPhase::FreezeGroups: return TEXT("freeze_groups");
+		case EPhase::FreezeMeshes: return TEXT("freeze_meshes");
+		case EPhase::Finish: return TEXT("finish");
+		case EPhase::Done: return TEXT("done");
+		}
+		return TEXT("?");
 	}
 
-	// Terrains' surfaces by entity id, for the Scatters that drop onto terrain (#169); their transforms are read after pass 3.
+	/** A unit (or phase step) that takes this long is logged by name, so a long frame can be traced to what made it. */
+	static constexpr double SlowUnitSeconds = 0.1;
+
+	UWorld* World = nullptr;
+	const FMantlePlace* Place = nullptr;
+	/** Set when the session keeps the place alive itself (the staged path); null for a caller-held one. */
+	TSharedPtr<const FMantlePlace> Owner;
+	FMantleBuildOptions Options;
+
+	FMantleBuildResult Result;
+	FMantleBuilderLoadStats LoadStats;
+
+	// Terrains' surfaces by entity id, for the Scatters that drop onto terrain (#169); their transforms are read after the transform phase.
 	TMap<FString, FMantleScatterTerrainSurface> TerrainSurfaces;
 	// Every Scatter's entity id in place order: each is handed the terrains once every transform is applied (a script may switch
 	// one to terrain placement later), and the ones placed on terrain generate then.
 	TArray<FString> TerrainScatters;
+	TArray<FMantleScatterTerrainSurface> Surfaces;
 
-	// Pass 1 — spawn everything. Children may appear before their parents in the array,
-	// so nothing is attached until all actors exist.
-	for (int32 i = 0; i < Place.Entities.Num(); ++i)
+	TArray<const FMantleEntity*> GroupsToFreeze;
+	TArray<const FMantleEntity*> MeshesToFreeze;
+
+	EPhase Phase = EPhase::Spawn;
+	/** The next unit of the current phase (an index into Place->Entities, or into a list). */
+	int32 Cursor = 0;
+	/** Set by a unit that is not finished (a terrain, a chunk at a time): the cursor stays, and the unit is called again. */
+	bool bUnitIncomplete = false;
+	/** The terrain being spawned, one chunk a step; its entity is the one at Cursor. */
+	TSharedPtr<FPendingTerrain> PendingTerrain;
+
+	double FirstStepSeconds = 0.0;
+	/** Game-thread time spent in steps, and the longest single step: what a frame paid for this build. */
+	double ActiveSeconds = 0.0;
+	double LongestStepSeconds = 0.0;
+	int32 Steps = 0;
+};
+
+FMantlePlaceBuildSession::FMantlePlaceBuildSession() = default;
+FMantlePlaceBuildSession::~FMantlePlaceBuildSession() = default;
+
+bool FMantlePlaceBuildSession::IsFinished() const
+{
+	return State->Phase == FState::EPhase::Done;
+}
+
+FMantleBuildResult& FMantlePlaceBuildSession::GetResult()
+{
+	return State->Result;
+}
+
+int32 FMantlePlaceBuildSession::EntitiesLeftToSpawn() const
+{
+	return State->Phase == FState::EPhase::Spawn ? State->Place->Entities.Num() - State->Cursor : 0;
+}
+
+TSharedRef<FMantlePlaceBuildSession> FMantlePlaceBuilder::Begin(
+	UWorld* World,
+	const FMantlePlace& Place,
+	const FMantleBuildOptions& Options)
+{
+	TSharedRef<FMantlePlaceBuildSession> Session = MakeShareable(new FMantlePlaceBuildSession());
+	Session->State = MakeUnique<FMantlePlaceBuildSession::FState>();
+	Session->State->World = World;
+	Session->State->Place = &Place;
+	Session->State->Options = Options;
+	if (!World)
 	{
-		const FMantleEntity& Entity = Place.Entities[i];
-		const FString Path = EntityPath(i);
-		AActor* Actor = nullptr;
+		Session->State->Result.Errors.Add(FMantleParseError{ TEXT(""), TEXT("no world to build into") });
+		Session->State->Phase = FMantlePlaceBuildSession::FState::EPhase::Done;
+	}
+	return Session;
+}
 
-		switch (Entity.Type)
+TSharedRef<FMantlePlaceBuildSession> FMantlePlaceBuilder::Begin(
+	UWorld* World,
+	TSharedRef<const FMantlePlace> Place,
+	const FMantleBuildOptions& Options)
+{
+	TSharedRef<FMantlePlaceBuildSession> Session = Begin(World, *Place, Options);
+	Session->State->Owner = Place;
+	return Session;
+}
+
+bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
+{
+	using EPhase = FState::EPhase;
+	FState& S = *State;
+	if (S.Phase == EPhase::Done)
+	{
+		return true;
+	}
+
+	TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_Step);
+	const double StepStartSeconds = FPlatformTime::Seconds();
+	if (S.Steps == 0)
+	{
+		S.FirstStepSeconds = StepStartSeconds;
+	}
+	++S.Steps;
+	// A budget this large is the one-frame Build: no deadline.
+	const double Deadline = MaxSeconds >= 1.0e9 ? TNumericLimits<double>::Max() : StepStartSeconds + MaxSeconds;
+
+	UWorld* const World = S.World;
+	const FMantlePlace& Place = *S.Place;
+	const FMantleBuildOptions& Options = S.Options;
+	FMantleBuildResult& Result = S.Result;
+	FMantleBuilderLoadStats& LoadStats = S.LoadStats;
+
+	// Does units of the current phase from the cursor on until the deadline, at least one. True when the phase has no unit left.
+	auto RunUnits = [&S, Deadline](const int32 Count, auto&& DoUnit) -> bool
+	{
+		while (S.Cursor < Count)
 		{
-		case EMantleEntityType::StaticMesh:
-			if (const FMantleStaticMeshProps* Props = Entity.Props.TryGet<FMantleStaticMeshProps>())
+			const double UnitStartSeconds = FPlatformTime::Seconds();
+			S.bUnitIncomplete = false;
+			DoUnit(S.Cursor);
+			const double UnitEndSeconds = FPlatformTime::Seconds();
+			// A unit is never split, so one that takes long is a frame that takes long: say which (an entity of the
+			// place for the passes over entities, a list position for the freeze and scatter passes).
+			if (UnitEndSeconds - UnitStartSeconds >= FState::SlowUnitSeconds)
 			{
-				Actor = BuildStaticMesh(World, Entity, *Props, Options, Path, Result.Errors, LoadStats);
+				const bool bEntityUnit = S.Phase != FState::EPhase::TerrainScatters && S.Phase != FState::EPhase::FreezeGroups
+					&& S.Phase != FState::EPhase::FreezeMeshes;
+				const FMantleEntity* SlowEntity = bEntityUnit && S.Place->Entities.IsValidIndex(S.Cursor) ? &S.Place->Entities[S.Cursor] : nullptr;
+				UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_BUILD_SLOW place=%s phase=%s unit=%d entity=%s type=%s ms=%.1f"),
+					*S.Place->PlaceId, FState::PhaseName(S.Phase), S.Cursor,
+					SlowEntity ? *SlowEntity->Id : TEXT("-"), SlowEntity ? MantleEntityTypeToString(SlowEntity->Type) : TEXT("-"),
+					(UnitEndSeconds - UnitStartSeconds) * 1000.0);
 			}
-			break;
-
-		case EMantleEntityType::Group:
-			Actor = BuildGroup(World, Entity);
-			break;
-
-		case EMantleEntityType::PlayerStart:
-			Actor = SpawnBare<APlayerStart>(World, Entity.Name);
-			MakeMovable(Actor);
-			break;
-
-		case EMantleEntityType::PointLight:
-			if (const FMantlePointLightProps* Props = Entity.Props.TryGet<FMantlePointLightProps>())
+			if (!S.bUnitIncomplete)
 			{
-				Actor = BuildPointLight(World, Entity, *Props);
+				++S.Cursor;
 			}
-			break;
-
-		case EMantleEntityType::SpotLight:
-			if (const FMantleSpotLightProps* Props = Entity.Props.TryGet<FMantleSpotLightProps>())
+			if (UnitEndSeconds >= Deadline)
 			{
-				Actor = BuildSpotLight(World, Entity, *Props);
+				break;
 			}
-			break;
+		}
+		if (S.Cursor >= Count)
+		{
+			S.Cursor = 0;
+			return true;
+		}
+		return false;
+	};
 
-		case EMantleEntityType::DirectionalLight:
-			if (const FMantleDirectionalLightProps* Props = Entity.Props.TryGet<FMantleDirectionalLightProps>())
+	while (S.Phase != EPhase::Done)
+	{
+		bool bPhaseDone = false;
+		const EPhase PhaseAtStart = S.Phase;
+		const double PhaseStartSeconds = FPlatformTime::Seconds();
+		switch (S.Phase)
+		{
+		case EPhase::Spawn:
+			// Pass 1: spawn everything. Children may appear before their parents in the array,
+			// so nothing is attached until all actors exist.
+			bPhaseDone = RunUnits(Place.Entities.Num(), [&](const int32 i)
 			{
-				Actor = BuildDirectionalLight(World, Entity, *Props);
-			}
-			break;
+				const FMantleEntity& Entity = Place.Entities[i];
+				const FString Path = EntityPath(i);
+				AActor* Actor = nullptr;
 
-		case EMantleEntityType::TriggerVolume:
-			if (const FMantleTriggerVolumeProps* Props = Entity.Props.TryGet<FMantleTriggerVolumeProps>())
-			{
-				Actor = BuildTriggerVolume(World, Entity, *Props);
-			}
-			break;
+				switch (Entity.Type)
+				{
+				case EMantleEntityType::StaticMesh:
+					if (const FMantleStaticMeshProps* Props = Entity.Props.TryGet<FMantleStaticMeshProps>())
+					{
+						Actor = BuildStaticMesh(World, Entity, *Props, Options, Path, Result.Errors, LoadStats);
+					}
+					break;
 
-		case EMantleEntityType::SoundEmitter:
-			if (const FMantleSoundEmitterProps* Props = Entity.Props.TryGet<FMantleSoundEmitterProps>())
-			{
-				Actor = BuildSoundEmitter(World, Entity, *Props, Path, Result.Errors, LoadStats);
-			}
-			break;
+				case EMantleEntityType::Group:
+					Actor = BuildGroup(World, Entity);
+					break;
 
-		case EMantleEntityType::InstancedMesh:
-			if (const FMantleInstancedMeshProps* Props = Entity.Props.TryGet<FMantleInstancedMeshProps>())
-			{
-				Actor = BuildInstancedMesh(World, Entity, *Props, Path, Result.Errors, LoadStats);
-			}
-			break;
+				case EMantleEntityType::PlayerStart:
+					Actor = SpawnBare<APlayerStart>(World, Entity.Name);
+					MakeMovable(Actor);
+					break;
 
-		case EMantleEntityType::CrowdSpawner:
-			if (const FMantleCrowdSpawnerProps* Props = Entity.Props.TryGet<FMantleCrowdSpawnerProps>())
-			{
-				Actor = BuildCrowdSpawner(World, Entity, *Props);
-			}
-			break;
+				case EMantleEntityType::PointLight:
+					if (const FMantlePointLightProps* Props = Entity.Props.TryGet<FMantlePointLightProps>())
+					{
+						Actor = BuildPointLight(World, Entity, *Props);
+					}
+					break;
 
-		case EMantleEntityType::SkeletalMesh:
-			if (const FMantleSkeletalMeshProps* Props = Entity.Props.TryGet<FMantleSkeletalMeshProps>())
-			{
-				Actor = BuildSkeletalMesh(World, Entity, *Props, Path, Result.Errors, LoadStats);
-			}
-			break;
+				case EMantleEntityType::SpotLight:
+					if (const FMantleSpotLightProps* Props = Entity.Props.TryGet<FMantleSpotLightProps>())
+					{
+						Actor = BuildSpotLight(World, Entity, *Props);
+					}
+					break;
 
-		case EMantleEntityType::RectLight:
-			if (const FMantleRectLightProps* Props = Entity.Props.TryGet<FMantleRectLightProps>())
-			{
-				Actor = BuildRectLight(World, Entity, *Props);
-			}
-			break;
+				case EMantleEntityType::DirectionalLight:
+					if (const FMantleDirectionalLightProps* Props = Entity.Props.TryGet<FMantleDirectionalLightProps>())
+					{
+						Actor = BuildDirectionalLight(World, Entity, *Props);
+					}
+					break;
 
-		case EMantleEntityType::Decal:
-			if (const FMantleDecalProps* Props = Entity.Props.TryGet<FMantleDecalProps>())
-			{
-				Actor = BuildDecal(World, Entity, *Props, Path, Result.Errors, LoadStats);
-			}
-			break;
+				case EMantleEntityType::TriggerVolume:
+					if (const FMantleTriggerVolumeProps* Props = Entity.Props.TryGet<FMantleTriggerVolumeProps>())
+					{
+						Actor = BuildTriggerVolume(World, Entity, *Props);
+					}
+					break;
 
-		case EMantleEntityType::Terrain:
-			if (const FMantleTerrainProps* Props = Entity.Props.TryGet<FMantleTerrainProps>())
-			{
-				Actor = BuildTerrainEntity(World, Entity, *Props, Path, Result.Errors, LoadStats, &TerrainSurfaces.Add(Entity.Id));
-			}
-			break;
+				case EMantleEntityType::SoundEmitter:
+					if (const FMantleSoundEmitterProps* Props = Entity.Props.TryGet<FMantleSoundEmitterProps>())
+					{
+						Actor = BuildSoundEmitter(World, Entity, *Props, Path, Result.Errors, LoadStats);
+					}
+					break;
 
-		case EMantleEntityType::VehicleSpawn:
-			if (const FMantleVehicleSpawnProps* Props = Entity.Props.TryGet<FMantleVehicleSpawnProps>())
-			{
-				Actor = BuildVehicleSpawn(World, Entity, *Props);
-			}
-			break;
+				case EMantleEntityType::InstancedMesh:
+					if (const FMantleInstancedMeshProps* Props = Entity.Props.TryGet<FMantleInstancedMeshProps>())
+					{
+						Actor = BuildInstancedMesh(World, Entity, *Props, Path, Result.Errors, LoadStats);
+					}
+					break;
 
-		case EMantleEntityType::Effect:
-			if (const FMantleEffectProps* Props = Entity.Props.TryGet<FMantleEffectProps>())
-			{
-				Actor = BuildEffect(World, Entity, *Props, Path, Result.Errors, LoadStats);
-			}
-			break;
+				case EMantleEntityType::CrowdSpawner:
+					if (const FMantleCrowdSpawnerProps* Props = Entity.Props.TryGet<FMantleCrowdSpawnerProps>())
+					{
+						Actor = BuildCrowdSpawner(World, Entity, *Props);
+					}
+					break;
 
-		case EMantleEntityType::Constraint:
-			if (const FMantleConstraintProps* Props = Entity.Props.TryGet<FMantleConstraintProps>())
-			{
-				Actor = BuildConstraint(World, Entity, *Props, Options);
-			}
-			break;
+				case EMantleEntityType::SkeletalMesh:
+					if (const FMantleSkeletalMeshProps* Props = Entity.Props.TryGet<FMantleSkeletalMeshProps>())
+					{
+						Actor = BuildSkeletalMesh(World, Entity, *Props, Path, Result.Errors, LoadStats);
+					}
+					break;
 
-		case EMantleEntityType::Scatter:
-			if (const FMantleScatterParams* Props = Entity.Props.TryGet<FMantleScatterParams>())
-			{
-				Actor = BuildScatter(World, Entity, *Props, Path, Result.Errors);
+				case EMantleEntityType::RectLight:
+					if (const FMantleRectLightProps* Props = Entity.Props.TryGet<FMantleRectLightProps>())
+					{
+						Actor = BuildRectLight(World, Entity, *Props);
+					}
+					break;
+
+				case EMantleEntityType::Decal:
+					if (const FMantleDecalProps* Props = Entity.Props.TryGet<FMantleDecalProps>())
+					{
+						Actor = BuildDecal(World, Entity, *Props, Path, Result.Errors, LoadStats);
+					}
+					break;
+
+				case EMantleEntityType::Terrain:
+					if (const FMantleTerrainProps* Props = Entity.Props.TryGet<FMantleTerrainProps>())
+					{
+						// A terrain is the one entity that costs seconds (a chunk is tens of milliseconds, a big terrain hundreds of
+						// them), so it is built a chunk a step: this unit stays at the cursor until its last chunk is on the actor.
+						if (!S.PendingTerrain.IsValid())
+						{
+							S.PendingTerrain = MakeShared<FPendingTerrain>();
+							if (!BeginTerrainEntity(World, Entity, *Props, Path, Result.Errors, LoadStats, *S.PendingTerrain, &S.TerrainSurfaces.Add(Entity.Id)))
+							{
+								S.PendingTerrain.Reset();
+								break;
+							}
+						}
+						if (!S.PendingTerrain->Spawn->Step())
+						{
+							S.bUnitIncomplete = true;
+							return;
+						}
+						Actor = FinishTerrainEntity(World, *Props, Path, Result.Errors, LoadStats, *S.PendingTerrain);
+						S.PendingTerrain.Reset();
+					}
+					break;
+
+				case EMantleEntityType::VehicleSpawn:
+					if (const FMantleVehicleSpawnProps* Props = Entity.Props.TryGet<FMantleVehicleSpawnProps>())
+					{
+						Actor = BuildVehicleSpawn(World, Entity, *Props);
+					}
+					break;
+
+				case EMantleEntityType::Effect:
+					if (const FMantleEffectProps* Props = Entity.Props.TryGet<FMantleEffectProps>())
+					{
+						Actor = BuildEffect(World, Entity, *Props, Path, Result.Errors, LoadStats);
+					}
+					break;
+
+				case EMantleEntityType::Constraint:
+					if (const FMantleConstraintProps* Props = Entity.Props.TryGet<FMantleConstraintProps>())
+					{
+						Actor = BuildConstraint(World, Entity, *Props, Options);
+					}
+					break;
+
+				case EMantleEntityType::Scatter:
+					if (const FMantleScatterParams* Props = Entity.Props.TryGet<FMantleScatterParams>())
+					{
+						Actor = BuildScatter(World, Entity, *Props, Path, Result.Errors);
+						if (Actor)
+						{
+							S.TerrainScatters.Add(Entity.Id);
+						}
+					}
+					break;
+
+				case EMantleEntityType::ReflectionProbe:
+					if (const FMantleReflectionProbeProps* Props = Entity.Props.TryGet<FMantleReflectionProbeProps>())
+					{
+						Actor = BuildReflectionProbe(World, Entity, *Props);
+					}
+					break;
+
+				case EMantleEntityType::WeaponSpawn:
+					if (const FMantleWeaponSpawnProps* Props = Entity.Props.TryGet<FMantleWeaponSpawnProps>())
+					{
+						Actor = BuildWeaponSpawn(World, Entity, *Props);
+					}
+					break;
+
+				case EMantleEntityType::ItemSpawn:
+					if (const FMantleItemSpawnProps* Props = Entity.Props.TryGet<FMantleItemSpawnProps>())
+					{
+						Actor = BuildItemSpawn(World, Entity, *Props);
+					}
+					break;
+
+				case EMantleEntityType::ScriptPoint:
+					if (const FMantleScriptPointProps* Props = Entity.Props.TryGet<FMantleScriptPointProps>())
+					{
+						Actor = BuildScriptPoint(World, Entity, *Props);
+					}
+					break;
+
+				case EMantleEntityType::Text:
+					if (const FMantleTextProps* Props = Entity.Props.TryGet<FMantleTextProps>())
+					{
+						Actor = BuildText(World, Entity, *Props);
+					}
+					break;
+
+				case EMantleEntityType::WaterBody:
+					// The parser reads and checks it; the water is built by the runtime stage after this one,
+					// so nothing stands for the entity yet and it is not an error.
+					return;
+
+				case EMantleEntityType::VoxelWorld:
+					// MantleGameplay's UMantleVoxelPlaceSubsystem builds it once the place is retained, as the water.
+					return;
+				}
+
 				if (Actor)
 				{
-					TerrainScatters.Add(Entity.Id);
-				}
-			}
-			break;
-
-		case EMantleEntityType::ReflectionProbe:
-			if (const FMantleReflectionProbeProps* Props = Entity.Props.TryGet<FMantleReflectionProbeProps>())
-			{
-				Actor = BuildReflectionProbe(World, Entity, *Props);
-			}
-			break;
-
-		case EMantleEntityType::WeaponSpawn:
-			if (const FMantleWeaponSpawnProps* Props = Entity.Props.TryGet<FMantleWeaponSpawnProps>())
-			{
-				Actor = BuildWeaponSpawn(World, Entity, *Props);
-			}
-			break;
-
-		case EMantleEntityType::ItemSpawn:
-			if (const FMantleItemSpawnProps* Props = Entity.Props.TryGet<FMantleItemSpawnProps>())
-			{
-				Actor = BuildItemSpawn(World, Entity, *Props);
-			}
-			break;
-
-		case EMantleEntityType::ScriptPoint:
-			if (const FMantleScriptPointProps* Props = Entity.Props.TryGet<FMantleScriptPointProps>())
-			{
-				Actor = BuildScriptPoint(World, Entity, *Props);
-			}
-			break;
-
-		case EMantleEntityType::Text:
-			if (const FMantleTextProps* Props = Entity.Props.TryGet<FMantleTextProps>())
-			{
-				Actor = BuildText(World, Entity, *Props);
-			}
-			break;
-
-		case EMantleEntityType::WaterBody:
-			// The parser reads and checks it; the water is built by the runtime stage after this one,
-			// so nothing stands for the entity yet and it is not an error.
-			continue;
-
-		case EMantleEntityType::VoxelWorld:
-			// MantleGameplay's UMantleVoxelPlaceSubsystem builds it once the place is retained, as the water.
-			continue;
-		}
-
-		if (Actor)
-		{
-			if (Options.bTransient)
-			{
-				Actor->SetFlags(RF_Transient);
-			}
-			Result.Actors.Add(Entity.Id, Actor);
-		}
-		else
-		{
-			Result.Errors.Add(FMantleParseError{
-				Path,
-				FString::Printf(TEXT("could not build %s entity '%s'"),
-					MantleEntityTypeToString(Entity.Type),
-					*Entity.Id) });
-		}
-	}
-
-	// Pass 2 — attach. Every actor exists by now, so order does not matter.
-	for (int32 i = 0; i < Place.Entities.Num(); ++i)
-	{
-		const FMantleEntity& Entity = Place.Entities[i];
-		if (Entity.Parent.IsEmpty())
-		{
-			continue;
-		}
-
-		AActor* const* Child = Result.Actors.Find(Entity.Id);
-		AActor* const* Parent = Result.Actors.Find(Entity.Parent);
-		if (!Child || !Parent)
-		{
-			// The parser already rejects dangling parents; reaching here means the parent
-			// itself failed to build.
-			continue;
-		}
-
-		(*Child)->AttachToActor(*Parent, FAttachmentTransformRules::KeepRelativeTransform);
-	}
-
-	// Pass 3 — apply transforms, which the schema defines as relative to parent.
-	for (const FMantleEntity& Entity : Place.Entities)
-	{
-		AActor* const* Actor = Result.Actors.Find(Entity.Id);
-		if (!Actor)
-		{
-			continue;
-		}
-
-		if (Entity.Parent.IsEmpty())
-		{
-			(*Actor)->SetActorTransform(Entity.Transform);
-		}
-		else
-		{
-			(*Actor)->SetActorRelativeTransform(Entity.Transform);
-		}
-	}
-
-	// Scatters placed on terrain (#169) generate now: every terrain stands where the place puts it, and so does the Scatter.
-	// Every terrain of the place is a surface, each at its own transform; the highest under a point wins.
-	if (TerrainScatters.Num() > 0)
-	{
-		TArray<FMantleScatterTerrainSurface> Surfaces;
-		for (TPair<FString, FMantleScatterTerrainSurface>& Pair : TerrainSurfaces)
-		{
-			AActor* const* TerrainActor = Result.Actors.Find(Pair.Key);
-			if (TerrainActor && Pair.Value.Field.IsValid())
-			{
-				Pair.Value.TerrainToWorld = (*TerrainActor)->GetActorTransform();
-				Surfaces.Add(Pair.Value);
-			}
-		}
-		for (const FString& ScatterId : TerrainScatters)
-		{
-			AActor* const* ScatterActor = Result.Actors.Find(ScatterId);
-			AMantleScatterVolume* Volume = ScatterActor ? Cast<AMantleScatterVolume>(*ScatterActor) : nullptr;
-			const FMantleEntity* ScatterEntity = Place.Entities.FindByPredicate([&ScatterId](const FMantleEntity& E) { return E.Id == ScatterId; });
-			const FMantleScatterParams* ScatterProps = ScatterEntity ? ScatterEntity->Props.TryGet<FMantleScatterParams>() : nullptr;
-			if (!Volume || !ScatterProps)
-			{
-				continue;
-			}
-			// A dedicated server draws nothing but still answers Scatter reads from scripts, so it knows the ground too; and a
-			// Scatter that is not on terrain yet may be switched to it by a script, so every one is given the ground.
-			Volume->SetTerrainSurfaces(Surfaces);
-			if (ScatterProps->Placement != EMantleScatterPlacement::Terrain)
-			{
-				continue;
-			}
-			if (!FMantleScatter::DrawsScatter(World) && !ScatterProps->bCollision)
-			{
-				continue;
-			}
-			RefreshBuiltScatter(Volume, *ScatterEntity, *ScatterProps,
-				EntityPath(static_cast<int32>(ScatterEntity - Place.Entities.GetData())) + TEXT("/properties"), Result.Errors);
-		}
-	}
-
-	// Physics props start once they stand where the place puts them: each detaches from its
-	// parent (keeping the world transform its Group composed for it) and, unless it starts anchored,
-	// begins simulating. It no longer follows that Group afterwards.
-	for (const FMantleEntity& Entity : Place.Entities)
-	{
-		AActor* const* Actor = MantlePhysicsOf(Entity) ? Result.Actors.Find(Entity.Id) : nullptr;
-		if (AMantlePhysicsProp* Prop = Actor ? Cast<AMantlePhysicsProp>(*Actor) : nullptr)
-		{
-			Prop->BeginSimulation();
-		}
-	}
-
-	// Constraints join their props once those stand where the place puts them and simulate:
-	// only where the props are the simulating AMantlePhysicsProps (the server, standalone play, the
-	// preview). A connected client's are placeholders the server's props take over, so its
-	// constraints stay unjoined: the server's joint moves the props every player sees. An authoring
-	// build's engine constraint is pointed at its entities' actors.
-	for (const FMantleEntity& Entity : Place.Entities)
-	{
-		const FMantleConstraintProps* Joint = Entity.Props.TryGet<FMantleConstraintProps>();
-		AActor* const* Actor = Joint ? Result.Actors.Find(Entity.Id) : nullptr;
-		if (!Actor)
-		{
-			continue;
-		}
-		AActor* const* ActorA = Result.Actors.Find(Joint->EntityA);
-		AActor* const* ActorB = Joint->EntityB.IsEmpty() ? nullptr : Result.Actors.Find(Joint->EntityB);
-		if (AMantleConstraint* Constraint = Cast<AMantleConstraint>(*Actor))
-		{
-			AMantlePhysicsProp* PropA = ActorA ? Cast<AMantlePhysicsProp>(*ActorA) : nullptr;
-			AMantlePhysicsProp* PropB = ActorB ? Cast<AMantlePhysicsProp>(*ActorB) : nullptr;
-			if (!PropA || (!Joint->EntityB.IsEmpty() && !PropB))
-			{
-				continue;
-			}
-			FString JoinError;
-			if (!Constraint->Join(PropA->GetStaticMeshComponent(), PropB ? PropB->GetStaticMeshComponent() : nullptr, JoinError))
-			{
-				// The parser has checked what it names; this is a prop without a body (its mesh failed,
-				// which is reported at the mesh). The place still plays, without this joint.
-				UE_LOG(LogMantle, Warning, TEXT("MANTLE_CONSTRAINT entity=%s is not joined: %s"), *Entity.Id, *JoinError);
-			}
-		}
-		else if (APhysicsConstraintActor* Editor = Cast<APhysicsConstraintActor>(*Actor))
-		{
-			FMantleConstraints::ConfigureEditorConstraint(Editor->GetConstraintComp(), *Joint, ActorA ? *ActorA : nullptr,
-				ActorB ? *ActorB : nullptr);
-		}
-	}
-
-	// ACharacter sends corrections relative to a Movable floor. Place geometry deliberately
-	// does not replicate, so that movement base has no network identity on a client and the
-	// correction is rejected. The first real two-client run exposed the result: both pawns
-	// fell through their still-empty local worlds while every server correction named an
-	// unresolvable base. Unparented blocking meshes are immutable place geometry in schema v1,
-	// so freeze them only after their transform has been applied. Character movement then
-	// treats them as static bases and sends absolute corrections.
-	//
-	// A blocking mesh under a Group is the same place geometry (a Blueprint prefab's floor or
-	// walls) when nothing above it can move: every ancestor a Group that is not dynamic.
-	// Those Groups are frozen too, before anything under them, since a Static child cannot
-	// follow a Movable parent. A mesh under anything else (a dynamic Group, a light, another
-	// mesh) stays Movable, as every parented mesh did before.
-	//
-	// An entity marked "dynamic" opts out of this freeze even when it would otherwise
-	// qualify: a script needs a real Movable actor to move, and a Static one
-	// would silently refuse the transform exactly as the comment above describes. A dynamic
-	// entity under a frozen Group stays Movable, which UE allows.
-	//
-	// An InstancedMesh is the same place geometry many times over, so it follows the same
-	// rule: blocking, not dynamic and under nothing that can move means Static. So does a Terrain,
-	// which always blocks: its root and every chunk under it, the floor players stand on.
-	// A Scatter blocks nothing, but it is immovable scenery all the same: frozen by the same
-	// rule, its root and every instanced mesh under it, so its instances draw as static geometry.
-	{
-		TMap<FString, const FMantleEntity*> EntityById;
-		for (const FMantleEntity& Entity : Place.Entities)
-		{
-			EntityById.Add(Entity.Id, &Entity);
-		}
-
-		TArray<const FMantleEntity*> GroupsToFreeze;
-		TArray<const FMantleEntity*> MeshesToFreeze;
-		for (const FMantleEntity& Entity : Place.Entities)
-		{
-			const bool bMesh = Entity.Type == EMantleEntityType::StaticMesh || Entity.Type == EMantleEntityType::InstancedMesh;
-			const bool bTerrain = Entity.Type == EMantleEntityType::Terrain;
-			const bool bScatter = Entity.Type == EMantleEntityType::Scatter;
-			const FMantleStaticMeshProps* Props = bMesh ? MantleMeshPropsOf(Entity) : nullptr;
-			const bool bBlocking = bTerrain || bScatter || (Props && Props->Collision == EMantleCollision::Blocking);
-			if (!bBlocking || Entity.bDynamic)
-			{
-				continue;
-			}
-
-			// Every ancestor, innermost first, as long as each is a Group that isn't dynamic. The
-			// parser refuses parent loops; the Contains check only keeps a bad place from hanging.
-			TArray<const FMantleEntity*> Ancestors;
-			bool bStaticChain = true;
-			for (FString ParentId = Entity.Parent; !ParentId.IsEmpty(); )
-			{
-				const FMantleEntity* const* Parent = EntityById.Find(ParentId);
-				if (!Parent || (*Parent)->Type != EMantleEntityType::Group || (*Parent)->bDynamic
-					|| *Parent == &Entity || Ancestors.Contains(*Parent))
-				{
-					bStaticChain = false;
-					break;
-				}
-				Ancestors.Add(*Parent);
-				ParentId = (*Parent)->Parent;
-			}
-			if (!bStaticChain)
-			{
-				continue;
-			}
-			MeshesToFreeze.Add(&Entity);
-			// Outermost first. A Group already listed keeps its place, so every Group comes after
-			// all of its own ancestors.
-			for (int32 Index = Ancestors.Num() - 1; Index >= 0; --Index)
-			{
-				GroupsToFreeze.AddUnique(Ancestors[Index]);
-			}
-		}
-
-		auto FreezeEntity = [&Result](const FMantleEntity* Entity)
-		{
-			AActor* const* Actor = Result.Actors.Find(Entity->Id);
-			if (Actor && (*Actor)->GetRootComponent())
-			{
-				(*Actor)->GetRootComponent()->SetMobility(EComponentMobility::Static);
-				// A Terrain's chunks are components under its root, each one place geometry; so
-				// are a Scatter's instanced meshes.
-				if (Entity->Type == EMantleEntityType::Terrain || Entity->Type == EMantleEntityType::Scatter)
-				{
-					TInlineComponentArray<USceneComponent*> Parts(*Actor);
-					for (USceneComponent* Part : Parts)
+					if (Options.bTransient)
 					{
-						Part->SetMobility(EComponentMobility::Static);
+						Actor->SetFlags(RF_Transient);
+					}
+					Result.Actors.Add(Entity.Id, Actor);
+				}
+				else
+				{
+					Result.Errors.Add(FMantleParseError{
+						Path,
+						FString::Printf(TEXT("could not build %s entity '%s'"),
+							MantleEntityTypeToString(Entity.Type),
+							*Entity.Id) });
+				}
+			});
+			if (bPhaseDone)
+			{
+				S.Phase = EPhase::Attach;
+			}
+			break;
+
+		case EPhase::Attach:
+			// Pass 2 - attach. Every actor exists by now, so order does not matter.
+			bPhaseDone = RunUnits(Place.Entities.Num(), [&](const int32 i)
+			{
+				const FMantleEntity& Entity = Place.Entities[i];
+				if (Entity.Parent.IsEmpty())
+				{
+					return;
+				}
+
+				AActor* const* Child = Result.Actors.Find(Entity.Id);
+				AActor* const* Parent = Result.Actors.Find(Entity.Parent);
+				if (!Child || !Parent)
+				{
+					// The parser already rejects dangling parents; reaching here means the parent
+					// itself failed to build.
+					return;
+				}
+
+				(*Child)->AttachToActor(*Parent, FAttachmentTransformRules::KeepRelativeTransform);
+			});
+			if (bPhaseDone)
+			{
+				S.Phase = EPhase::Transforms;
+			}
+			break;
+
+		case EPhase::Transforms:
+			// Pass 3 - apply transforms, which the schema defines as relative to parent.
+			bPhaseDone = RunUnits(Place.Entities.Num(), [&](const int32 i)
+			{
+				const FMantleEntity& Entity = Place.Entities[i];
+				AActor* const* Actor = Result.Actors.Find(Entity.Id);
+				if (!Actor)
+				{
+					return;
+				}
+
+				if (Entity.Parent.IsEmpty())
+				{
+					(*Actor)->SetActorTransform(Entity.Transform);
+				}
+				else
+				{
+					(*Actor)->SetActorRelativeTransform(Entity.Transform);
+				}
+			});
+			if (bPhaseDone)
+			{
+				S.Phase = EPhase::TerrainScatters;
+			}
+			break;
+
+		case EPhase::TerrainScatters:
+			// Scatters placed on terrain (#169) generate now: every terrain stands where the place puts it, and so does the Scatter.
+			// Every terrain of the place is a surface, each at its own transform; the highest under a point wins.
+			if (S.Cursor == 0 && S.TerrainScatters.Num() > 0)
+			{
+				S.Surfaces.Reset();
+				for (TPair<FString, FMantleScatterTerrainSurface>& Pair : S.TerrainSurfaces)
+				{
+					AActor* const* TerrainActor = Result.Actors.Find(Pair.Key);
+					if (TerrainActor && Pair.Value.Field.IsValid())
+					{
+						Pair.Value.TerrainToWorld = (*TerrainActor)->GetActorTransform();
+						S.Surfaces.Add(Pair.Value);
 					}
 				}
 			}
-		};
-		for (const FMantleEntity* Group : GroupsToFreeze)
+			bPhaseDone = RunUnits(S.TerrainScatters.Num(), [&](const int32 i)
+			{
+				const FString& ScatterId = S.TerrainScatters[i];
+				AActor* const* ScatterActor = Result.Actors.Find(ScatterId);
+				AMantleScatterVolume* Volume = ScatterActor ? Cast<AMantleScatterVolume>(*ScatterActor) : nullptr;
+				const FMantleEntity* ScatterEntity = Place.Entities.FindByPredicate([&ScatterId](const FMantleEntity& E) { return E.Id == ScatterId; });
+				const FMantleScatterParams* ScatterProps = ScatterEntity ? ScatterEntity->Props.TryGet<FMantleScatterParams>() : nullptr;
+				if (!Volume || !ScatterProps)
+				{
+					return;
+				}
+				// A dedicated server draws nothing but still answers Scatter reads from scripts, so it knows the ground too; and a
+				// Scatter that is not on terrain yet may be switched to it by a script, so every one is given the ground.
+				Volume->SetTerrainSurfaces(S.Surfaces);
+				if (ScatterProps->Placement != EMantleScatterPlacement::Terrain)
+				{
+					return;
+				}
+				if (!FMantleScatter::DrawsScatter(World) && !ScatterProps->bCollision)
+				{
+					return;
+				}
+				RefreshBuiltScatter(Volume, *ScatterEntity, *ScatterProps,
+					EntityPath(static_cast<int32>(ScatterEntity - Place.Entities.GetData())) + TEXT("/properties"), Result.Errors);
+			});
+			if (bPhaseDone)
+			{
+				S.Surfaces.Empty();
+				S.TerrainSurfaces.Empty();
+				S.Phase = EPhase::Physics;
+			}
+			break;
+
+		case EPhase::Physics:
+			// Physics props start once they stand where the place puts them: each detaches from its
+			// parent (keeping the world transform its Group composed for it) and, unless it starts anchored,
+			// begins simulating. It no longer follows that Group afterwards.
+			bPhaseDone = RunUnits(Place.Entities.Num(), [&](const int32 i)
+			{
+				const FMantleEntity& Entity = Place.Entities[i];
+				AActor* const* Actor = MantlePhysicsOf(Entity) ? Result.Actors.Find(Entity.Id) : nullptr;
+				if (AMantlePhysicsProp* Prop = Actor ? Cast<AMantlePhysicsProp>(*Actor) : nullptr)
+				{
+					Prop->BeginSimulation();
+				}
+			});
+			if (bPhaseDone)
+			{
+				S.Phase = EPhase::Constraints;
+			}
+			break;
+
+		case EPhase::Constraints:
+			// Constraints join their props once those stand where the place puts them and simulate:
+			// only where the props are the simulating AMantlePhysicsProps (the server, standalone play, the
+			// preview). A connected client's are placeholders the server's props take over, so its
+			// constraints stay unjoined: the server's joint moves the props every player sees. An authoring
+			// build's engine constraint is pointed at its entities' actors.
+			bPhaseDone = RunUnits(Place.Entities.Num(), [&](const int32 i)
+			{
+				const FMantleEntity& Entity = Place.Entities[i];
+				const FMantleConstraintProps* Joint = Entity.Props.TryGet<FMantleConstraintProps>();
+				AActor* const* Actor = Joint ? Result.Actors.Find(Entity.Id) : nullptr;
+				if (!Actor)
+				{
+					return;
+				}
+				AActor* const* ActorA = Result.Actors.Find(Joint->EntityA);
+				AActor* const* ActorB = Joint->EntityB.IsEmpty() ? nullptr : Result.Actors.Find(Joint->EntityB);
+				if (AMantleConstraint* Constraint = Cast<AMantleConstraint>(*Actor))
+				{
+					AMantlePhysicsProp* PropA = ActorA ? Cast<AMantlePhysicsProp>(*ActorA) : nullptr;
+					AMantlePhysicsProp* PropB = ActorB ? Cast<AMantlePhysicsProp>(*ActorB) : nullptr;
+					if (!PropA || (!Joint->EntityB.IsEmpty() && !PropB))
+					{
+						return;
+					}
+					FString JoinError;
+					if (!Constraint->Join(PropA->GetStaticMeshComponent(), PropB ? PropB->GetStaticMeshComponent() : nullptr, JoinError))
+					{
+						// The parser has checked what it names; this is a prop without a body (its mesh failed,
+						// which is reported at the mesh). The place still plays, without this joint.
+						UE_LOG(LogMantle, Warning, TEXT("MANTLE_CONSTRAINT entity=%s is not joined: %s"), *Entity.Id, *JoinError);
+					}
+				}
+				else if (APhysicsConstraintActor* Editor = Cast<APhysicsConstraintActor>(*Actor))
+				{
+					FMantleConstraints::ConfigureEditorConstraint(Editor->GetConstraintComp(), *Joint, ActorA ? *ActorA : nullptr,
+						ActorB ? *ActorB : nullptr);
+				}
+			});
+			if (bPhaseDone)
+			{
+				S.Phase = EPhase::FreezePlan;
+			}
+			break;
+
+		case EPhase::FreezePlan:
 		{
-			FreezeEntity(Group);
+			// ACharacter sends corrections relative to a Movable floor. Place geometry deliberately
+			// does not replicate, so that movement base has no network identity on a client and the
+			// correction is rejected. The first real two-client run exposed the result: both pawns
+			// fell through their still-empty local worlds while every server correction named an
+			// unresolvable base. Unparented blocking meshes are immutable place geometry in schema v1,
+			// so freeze them only after their transform has been applied. Character movement then
+			// treats them as static bases and sends absolute corrections.
+			//
+			// A blocking mesh under a Group is the same place geometry (a Blueprint prefab's floor or
+			// walls) when nothing above it can move: every ancestor a Group that is not dynamic.
+			// Those Groups are frozen too, before anything under them, since a Static child cannot
+			// follow a Movable parent. A mesh under anything else (a dynamic Group, a light, another
+			// mesh) stays Movable, as every parented mesh did before.
+			//
+			// An entity marked "dynamic" opts out of this freeze even when it would otherwise
+			// qualify: a script needs a real Movable actor to move, and a Static one
+			// would silently refuse the transform exactly as the comment above describes. A dynamic
+			// entity under a frozen Group stays Movable, which UE allows.
+			//
+			// An InstancedMesh is the same place geometry many times over, so it follows the same
+			// rule: blocking, not dynamic and under nothing that can move means Static. So does a Terrain,
+			// which always blocks: its root and every chunk under it, the floor players stand on.
+			// A Scatter blocks nothing, but it is immovable scenery all the same: frozen by the same
+			// rule, its root and every instanced mesh under it, so its instances draw as static geometry.
+			//
+			// Working out which actors freeze is one pass over the entities (no engine calls), done in one step;
+			// the freezing itself, which is engine work, goes a unit at a time in the next two phases.
+			TMap<FString, const FMantleEntity*> EntityById;
+			EntityById.Reserve(Place.Entities.Num());
+			for (const FMantleEntity& Entity : Place.Entities)
+			{
+				EntityById.Add(Entity.Id, &Entity);
+			}
+
+			TSet<const FMantleEntity*> GroupSet;
+			for (const FMantleEntity& Entity : Place.Entities)
+			{
+				const bool bMesh = Entity.Type == EMantleEntityType::StaticMesh || Entity.Type == EMantleEntityType::InstancedMesh;
+				const bool bTerrain = Entity.Type == EMantleEntityType::Terrain;
+				const bool bScatter = Entity.Type == EMantleEntityType::Scatter;
+				const FMantleStaticMeshProps* Props = bMesh ? MantleMeshPropsOf(Entity) : nullptr;
+				const bool bBlocking = bTerrain || bScatter || (Props && Props->Collision == EMantleCollision::Blocking);
+				if (!bBlocking || Entity.bDynamic)
+				{
+					continue;
+				}
+
+				// Every ancestor, innermost first, as long as each is a Group that isn't dynamic. The
+				// parser refuses parent loops; the Contains check only keeps a bad place from hanging.
+				TArray<const FMantleEntity*> Ancestors;
+				bool bStaticChain = true;
+				for (FString ParentId = Entity.Parent; !ParentId.IsEmpty(); )
+				{
+					const FMantleEntity* const* Parent = EntityById.Find(ParentId);
+					if (!Parent || (*Parent)->Type != EMantleEntityType::Group || (*Parent)->bDynamic
+						|| *Parent == &Entity || Ancestors.Contains(*Parent))
+					{
+						bStaticChain = false;
+						break;
+					}
+					Ancestors.Add(*Parent);
+					ParentId = (*Parent)->Parent;
+				}
+				if (!bStaticChain)
+				{
+					continue;
+				}
+				S.MeshesToFreeze.Add(&Entity);
+				// Outermost first. A Group already listed keeps its place, so every Group comes after
+				// all of its own ancestors.
+				for (int32 Index = Ancestors.Num() - 1; Index >= 0; --Index)
+				{
+					if (!GroupSet.Contains(Ancestors[Index]))
+					{
+						GroupSet.Add(Ancestors[Index]);
+						S.GroupsToFreeze.Add(Ancestors[Index]);
+					}
+				}
+			}
+			S.Cursor = 0;
+			S.Phase = EPhase::FreezeGroups;
+			break;
 		}
-		for (const FMantleEntity* Mesh : MeshesToFreeze)
+
+		case EPhase::FreezeGroups:
+		case EPhase::FreezeMeshes:
 		{
-			FreezeEntity(Mesh);
+			auto FreezeEntity = [&Result](const FMantleEntity* Entity)
+			{
+				AActor* const* Actor = Result.Actors.Find(Entity->Id);
+				if (Actor && (*Actor)->GetRootComponent())
+				{
+					(*Actor)->GetRootComponent()->SetMobility(EComponentMobility::Static);
+					// A Terrain's chunks are components under its root, each one place geometry; so
+					// are a Scatter's instanced meshes.
+					if (Entity->Type == EMantleEntityType::Terrain || Entity->Type == EMantleEntityType::Scatter)
+					{
+						TInlineComponentArray<USceneComponent*> Parts(*Actor);
+						for (USceneComponent* Part : Parts)
+						{
+							Part->SetMobility(EComponentMobility::Static);
+						}
+					}
+				}
+			};
+			const bool bGroups = S.Phase == EPhase::FreezeGroups;
+			const TArray<const FMantleEntity*>& List = bGroups ? S.GroupsToFreeze : S.MeshesToFreeze;
+			bPhaseDone = RunUnits(List.Num(), [&](const int32 i) { FreezeEntity(List[i]); });
+			if (bPhaseDone)
+			{
+				S.Phase = bGroups ? EPhase::FreezeMeshes : EPhase::Finish;
+				if (!bGroups)
+				{
+					S.GroupsToFreeze.Empty();
+					S.MeshesToFreeze.Empty();
+				}
+			}
+			break;
+		}
+
+		case EPhase::Finish:
+		{
+			// World gravity. settings.gravity is a downward magnitude in cm/s^2 (980 is Earth), so
+			// the engine's gravity Z is its negative. Every net mode sets it: the server and each client
+			// both build the place, and character movement and physics read it on whichever side
+			// simulates. A creator's editor level (the importer) is left alone: its gravity lives on the
+			// settings actor, and the level's own world settings are not the place's to rewrite.
+			if (World->IsGameWorld())
+			{
+				if (AWorldSettings* WorldSettings = World->GetWorldSettings())
+				{
+					const float GravityZ = static_cast<float>(-Place.Settings.Gravity);
+					WorldSettings->bGlobalGravitySet = true;
+					WorldSettings->GlobalGravityZ = GravityZ;
+					// Also the cached value GetGravityZ returns, which is what the server replicates.
+					WorldSettings->WorldGravityZ = GravityZ;
+					WorldSettings->bWorldGravitySet = true;
+				}
+			}
+
+			// Environment last: it needs the transforms resolved (to find the sun among built
+			// DirectionalLight actors) and never itself becomes place geometry. An authoring build (the
+			// importer) gets none of it, so the place's sun keeps its authored rotation.
+			if (Options.bRuntimeEnvironment)
+			{
+				TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_Environment);
+				FMantleEnvironment::Apply(World, Place, Result);
+			}
+
+			// Reflection probes are captured once the place stands and the sky light has had a few frames:
+			// the builder only hands them over (UMantleReflectionProbeSubsystem), and says so when this world draws none.
+			UMantleReflectionProbeSubsystem::NotifyPlaceBuilt(World, Place);
+
+			// What the place holds against what stands: instances in the file and in the components, entities in the file and actors.
+			// (A dedicated server leaves out the instances nothing can collide with, so it stands fewer.)
+			{
+				int64 InstancesInPlace = 0;
+				int64 InstancesBuilt = 0;
+				for (const FMantleEntity& Entity : Place.Entities)
+				{
+					const FMantleInstancedMeshProps* Props = Entity.Type == EMantleEntityType::InstancedMesh ? Entity.Props.TryGet<FMantleInstancedMeshProps>() : nullptr;
+					if (!Props)
+					{
+						continue;
+					}
+					InstancesInPlace += Props->Instances.Num();
+					AActor* const* Actor = Result.Actors.Find(Entity.Id);
+					const UInstancedStaticMeshComponent* Instances = Actor ? Cast<UInstancedStaticMeshComponent>((*Actor)->GetRootComponent()) : nullptr;
+					InstancesBuilt += Instances ? Instances->GetInstanceCount() : 0;
+				}
+				UE_LOG(LogMantle, Log,
+					TEXT("MANTLE_PLACE_BUILD_COUNTS place=%s entities_in_place=%d actors_built=%d instances_in_place=%lld instances_built=%lld errors=%d"),
+					*Place.PlaceId, Place.Entities.Num(), Result.Actors.Num(), InstancesInPlace, InstancesBuilt, Result.Errors.Num());
+			}
+
+			Result.bSuccess = Result.Errors.Num() == 0;
+			S.Phase = EPhase::Done;
+			break;
+		}
+
+		case EPhase::Done:
+			break;
+		}
+
+		// The two phases that are one step each (not a unit at a time).
+		if ((PhaseAtStart == EPhase::FreezePlan || PhaseAtStart == EPhase::Finish) && FPlatformTime::Seconds() - PhaseStartSeconds >= FState::SlowUnitSeconds)
+		{
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_BUILD_SLOW place=%s phase=%s unit=0 entity=- type=- ms=%.1f"),
+				*Place.PlaceId, FState::PhaseName(PhaseAtStart), (FPlatformTime::Seconds() - PhaseStartSeconds) * 1000.0);
+		}
+		if (S.Phase != EPhase::Done && FPlatformTime::Seconds() >= Deadline)
+		{
+			break;
 		}
 	}
 
-	// World gravity. settings.gravity is a downward magnitude in cm/s^2 (980 is Earth), so
-	// the engine's gravity Z is its negative. Every net mode sets it: the server and each client
-	// both build the place, and character movement and physics read it on whichever side
-	// simulates. A creator's editor level (the importer) is left alone: its gravity lives on the
-	// settings actor, and the level's own world settings are not the place's to rewrite.
-	if (World->IsGameWorld())
+	const double StepSeconds = FPlatformTime::Seconds() - StepStartSeconds;
+	S.ActiveSeconds += StepSeconds;
+	S.LongestStepSeconds = FMath::Max(S.LongestStepSeconds, StepSeconds);
+
+	if (S.Phase != EPhase::Done)
 	{
-		if (AWorldSettings* WorldSettings = World->GetWorldSettings())
-		{
-			const float GravityZ = static_cast<float>(-Place.Settings.Gravity);
-			WorldSettings->bGlobalGravitySet = true;
-			WorldSettings->GlobalGravityZ = GravityZ;
-			// Also the cached value GetGravityZ returns, which is what the server replicates.
-			WorldSettings->WorldGravityZ = GravityZ;
-			WorldSettings->bWorldGravitySet = true;
-		}
+		return false;
 	}
-
-	// Environment last: it needs pass 3's transforms resolved (to find the sun among built
-	// DirectionalLight actors) and never itself becomes place geometry. An authoring build (the
-	// importer) gets none of it, so the place's sun keeps its authored rotation.
-	if (Options.bRuntimeEnvironment)
-	{
-		TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_Environment);
-		FMantleEnvironment::Apply(World, Place, Result);
-	}
-
-	// Reflection probes are captured once the place stands and the sky light has had a few frames:
-	// the builder only hands them over (UMantleReflectionProbeSubsystem), and says so when this world draws none.
-	UMantleReflectionProbeSubsystem::NotifyPlaceBuilt(World, Place);
-
-	Result.bSuccess = Result.Errors.Num() == 0;
 
 	UE_LOG(LogMantle, Log,
 		TEXT("Built place '%s' revision %d: %d of %d entities, %d error(s)"),
@@ -2026,18 +2369,23 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 		Place.Entities.Num(),
 		Result.Errors.Num());
 
-	// One line per build, so a run without Insights still yields the numbers: the whole
-	// Build on the game thread, the part of it spent in asset-library loads, and the longest single load.
+	// One line per build, so a run without Insights still yields the numbers: the game-thread time the whole
+	// build took (total_ms; wall_ms is first step to last, and is the same for a one-frame build), the part of it
+	// spent in asset-library loads, and the longest single load. A staged build also says how many steps it took
+	// and the longest of them: the longest step is the worst frame the build cost.
 	UE_LOG(LogMantle, Log,
-		TEXT("MANTLE_PLACE_BUILD_TIMING place=%s revision=%d entities=%d total_ms=%.2f load_ms=%.2f loads=%d longest_load_ms=%.2f longest_load=%s"),
+		TEXT("MANTLE_PLACE_BUILD_TIMING place=%s revision=%d entities=%d total_ms=%.2f load_ms=%.2f loads=%d longest_load_ms=%.2f longest_load=%s wall_ms=%.2f steps=%d longest_step_ms=%.2f"),
 		*Place.PlaceId,
 		Place.Revision.Number,
 		Place.Entities.Num(),
-		(FPlatformTime::Seconds() - BuildStartSeconds) * 1000.0,
+		S.ActiveSeconds * 1000.0,
 		LoadStats.Seconds * 1000.0,
 		LoadStats.Count,
 		LoadStats.LongestSeconds * 1000.0,
-		LoadStats.LongestId.IsEmpty() ? TEXT("-") : *LoadStats.LongestId);
+		LoadStats.LongestId.IsEmpty() ? TEXT("-") : *LoadStats.LongestId,
+		(FPlatformTime::Seconds() - S.FirstStepSeconds) * 1000.0,
+		S.Steps,
+		S.LongestStepSeconds * 1000.0);
 
 	// The process's memory once the place stands, for the large-place benchmark (tools/bench) on a
 	// client and a dedicated server alike: what is in use now, and the most the process has held so far.
@@ -2050,7 +2398,20 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 		static_cast<double>(MemoryStats.UsedVirtual) / (1024.0 * 1024.0),
 		static_cast<double>(MemoryStats.PeakUsedVirtual) / (1024.0 * 1024.0));
 
-	return Result;
+	return true;
+}
+
+FMantleBuildResult FMantlePlaceBuilder::Build(
+	UWorld* World,
+	const FMantlePlace& Place,
+	const FMantleBuildOptions& Options)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_Build);
+	MANTLE_TRACE_SCOPE_DETAIL("MantlePlaceBuild", Place.PlaceId);
+	// The one-frame build: the same session, with no budget.
+	TSharedRef<FMantlePlaceBuildSession> Session = Begin(World, Place, Options);
+	Session->Step(FMantlePlaceBuildSession::NoBudget);
+	return MoveTemp(Session->GetResult());
 }
 
 void FMantlePlaceBuilder::Teardown(FMantleBuildResult& Result)
