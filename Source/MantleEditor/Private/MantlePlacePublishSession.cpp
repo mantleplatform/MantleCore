@@ -1774,6 +1774,13 @@ void FMantlePlacePublishSession::TickUploading()
 			Blocked.Add(&Status);
 			continue;
 		}
+		if (FMantleConvertedMesh::IsNaniteKey(Status.Key))
+		{
+			// A mesh's Nanite file is an extra: the place file leaves it out (FMantlePlaceExporter lists a Nanite file only once it is
+			// on Mantle) and the mesh draws as its plain model. A place is never held back for it.
+			AddAttention(EMantleIssueSeverity::Warning, Status.Message, TEXT("The model still publishes, drawn as its plain model."));
+			continue;
+		}
 		// A prepared file that was kept on disk and is gone or changed (#804): preparing it again is the fix.
 		AddAttention(EMantleIssueSeverity::Error, Status.Message,
 			Status.Code.Equals(TEXT("unreadable"), ESearchCase::CaseSensitive) ? FString(TEXT("Publish again; it prepares the file again.")) : FString());

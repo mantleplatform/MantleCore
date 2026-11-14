@@ -309,6 +309,22 @@ struct MANTLEEDITOR_API FMantleConvertedMesh
 	/** The upload key of the Lumen side file: the mesh's own key, marked. */
 	FString LumenKey() const { return Key + TEXT("#lumen"); }
 
+	/**
+	 * Stage N: the mesh's Nanite side file as it is uploaded: the MNZ1 container (zlib) of the MND1 that FMantleMeshNaniteBake baked
+	 * from the mesh the converter was given (the creator's full-detail model, whatever the GLB had to drop), at most
+	 * FMantleMeshNaniteFile::MaxUploadBytes (a bigger model is baked coarser, never refused). Empty when it has none, with the reason
+	 * in NaniteNone (a phrase finishing "so players see its plain model: ..."; a Check warning says it too). NaniteHash is the hash of
+	 * these bytes, which the local cache checks and the place file lists until the upload gives the file its own.
+	 */
+	TArray<uint8> Nanite;
+	FString NaniteHash;
+	FString NaniteNone;
+
+	/** The upload key of the Nanite side file: the mesh's own key, marked. */
+	FString NaniteKey() const { return Key + NaniteKeySuffix(); }
+	static const TCHAR* NaniteKeySuffix() { return TEXT("#nanite"); }
+	static bool IsNaniteKey(const FString& UploadKey) { return UploadKey.EndsWith(NaniteKeySuffix(), ESearchCase::CaseSensitive); }
+
 	bool bFromCache = false;
 };
 
@@ -828,6 +844,9 @@ struct MANTLEEDITOR_API FMantlePlaceConversionStats
 
 	/** #149: time spent baking meshes' Lumen data (FMantleMeshLumenBake), which a mesh from the cache does not repeat. */
 	double LumenSeconds = 0.0;
+
+	/** Stage N: time spent baking meshes' Nanite data (FMantleMeshNaniteBake), which a mesh from the cache does not repeat. */
+	double NaniteSeconds = 0.0;
 };
 
 /**
@@ -1043,6 +1062,13 @@ public:
 	FMantleFlattenSettings Settings;
 	FMantlePlaceAssetLimits Limits;
 
+	/**
+	 * Whether ConvertMesh bakes each mesh's Nanite file (FMantleMeshNaniteBake). True for a place; the weapon and wheel publishes
+	 * upload no Nanite files, so they turn it off rather than bake what nobody uploads. Not a player-facing switch. Its cache entries are
+	 * keyed apart from a place's (the salt says nanite=off), because an entry made with it off says "no file".
+	 */
+	bool bBakeNanite = true;
+
 	const FMantlePlaceConversionStats& GetStats() const { return Stats; }
 	const FString& GetCacheDirectory() const { return CacheDirectory; }
 
@@ -1061,9 +1087,10 @@ public:
 	 * The salt a mesh's cache key is made with: the LOD and collision caps, the upload limit and the mesh's path. #804: a
 	 * mesh published from a lower LOD (FromLOD above 0) adds " fromlod=N", and one published from a reduced copy
 	 * (ReducedTag not empty, FMantleMeshReduce::CacheTag) adds " reduced=<ReducedTag>". A mesh that fits adds neither, so
-	 * its key, and the hash of what it converts to, are as they were.
+	 * its key, and the hash of what it converts to, are as they were. bNanite is the converter's bBakeNanite: one that bakes no Nanite
+	 * file adds " nanite=off" instead of the Nanite bake's own salt, so its entries (which say "no file") are kept apart from a place's.
 	 */
-	static FString MeshCacheSalt(const FMantlePlaceAssetLimits& Limits, const UStaticMesh& Mesh, int32 FromLOD, const FString& ReducedTag);
+	static FString MeshCacheSalt(const FMantlePlaceAssetLimits& Limits, const UStaticMesh& Mesh, int32 FromLOD, const FString& ReducedTag, bool bNanite = true);
 
 	/**
 	 * #149: the part of MeshCacheSalt the mesh's Lumen side file adds: the engine that bakes it and each slot material's blend
@@ -1128,13 +1155,15 @@ public:
 	 */
 	static void NormalizeTintMask(TArray<FColor>& Pixels);
 
+	/** The per-mesh cache's two ends, under <CacheDirectory>/meshes/<CacheKey>.*. Exposed for tests. */
+	bool LoadCachedMesh(const FString& CacheKey, FMantleConvertedMesh& Out, TArray<FMantleValidationIssue>& OutIssues) const;
+	void StoreCachedMesh(const FString& CacheKey, const FMantleConvertedMesh& Mesh, const TArray<FMantleValidationIssue>& Issues) const;
+
 private:
 	TSharedRef<IMantleMaterialFlattener> Flattener;
 	FString CacheDirectory;
 	FMantlePlaceConversionStats Stats;
 
-	bool LoadCachedMesh(const FString& CacheKey, FMantleConvertedMesh& Out, TArray<FMantleValidationIssue>& OutIssues) const;
-	void StoreCachedMesh(const FString& CacheKey, const FMantleConvertedMesh& Mesh, const TArray<FMantleValidationIssue>& Issues) const;
 	bool LoadCachedMaterial(const FString& CacheKey, FMantleConvertedMaterial& Out, TArray<FMantleConvertedTexture>& OutTextures,
 		TArray<FMantleValidationIssue>& OutIssues) const;
 	void StoreCachedMaterial(const FString& CacheKey, const FMantleConvertedMaterial& Material, const FMantlePlaceAssetSet& Set,

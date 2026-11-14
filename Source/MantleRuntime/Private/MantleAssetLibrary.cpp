@@ -28,6 +28,7 @@ namespace
 		case EMantleAssetKind::Weapon:     return TEXT("Weapon");
 		case EMantleAssetKind::Lumen:      return TEXT("Lumen");
 		case EMantleAssetKind::VoxelWorldData: return TEXT("VoxelWorldData");
+		case EMantleAssetKind::Nanite:     return TEXT("Nanite");
 		default:                           return TEXT("Unknown");
 		}
 	}

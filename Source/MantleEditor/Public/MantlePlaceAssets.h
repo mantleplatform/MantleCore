@@ -43,6 +43,12 @@ struct MANTLEEDITOR_API FMantlePlaceAssetLimits
 	int64 MaxUploadBytes = 64 << 20;
 
 	/**
+	 * One uploaded Nanite file (stage N), measured on the compressed container: the backend's assets.MaxNaniteBytes, 64 MiB, which is
+	 * not in limits.json. A mesh whose file is over it is baked coarser (FMantleMeshNaniteBake::BakeToFit), never refused.
+	 */
+	int64 MaxNaniteBytes = 64ll << 20;
+
+	/**
 	 * limits.json placeAssets.sound (#324): one uploaded sound, a canonical PCM16 WAV the cook
 	 * worker turns into MAU1. The per-place budget is the decoded samples of every distinct sound.
 	 */

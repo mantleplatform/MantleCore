@@ -103,6 +103,14 @@ struct MANTLERUNTIME_API FMantlePlaceAssetSettings
 	/** Pump from the core ticker every frame. Tests turn it off and pump by hand. */
 	bool bAutoPump = true;
 
+	/**
+	 * Download, unpack and attach the Nanite files the manifest names for its meshes. Decided before anything is downloaded:
+	 * ForThisProcess turns it on only where bRenderAssets is on and this machine's graphics run Nanite
+	 * (FMantleNaniteSideFile::CanRunNanite), so a server or a machine without Nanite never fetches one. Off in a default-built settings
+	 * (tests build settings by hand and turn it on).
+	 */
+	bool bLoadNanite = false;
+
 	/** Where bytes come from; the process's store when null. */
 	TSharedPtr<FMantleAssetStore> Store;
 
@@ -441,6 +449,10 @@ public:
 	 */
 	bool WaitUntilComplete(float TimeoutSeconds);
 
+	/** Inflated Nanite files held now, and the most held at once, in bytes (tests and the load log). */
+	int64 GetNaniteHeldBytes() const { return NaniteHeldBytes; }
+	int64 GetNaniteHeldPeakBytes() const { return NaniteHeldPeakBytes; }
+
 	/** Everything but the sounds has settled and OnDone has fired. */
 	bool IsComplete() const { return bCompleted; }
 
@@ -479,7 +491,7 @@ private:
 	 * TerrainWeights is an uploaded Texture (the API's kind) read on the CPU into a Terrain's
 	 * heaviest layer per texel, beside (not instead of) the GPU texture a client builds from the same id.
 	 */
-	enum class EAssetKind : uint8 { Mesh, Material, Texture, Sound, SkeletalMesh, AnimClip, Heightfield, Vehicle, TerrainWeights, Weapon, Lumen, VoxelWorld, VoxelTile, Wheel };
+	enum class EAssetKind : uint8 { Mesh, Material, Texture, Sound, SkeletalMesh, AnimClip, Heightfield, Vehicle, TerrainWeights, Weapon, Lumen, VoxelWorld, VoxelTile, Wheel, Nanite };
 
 	using FSoundSettled = TFunction<void(TSharedPtr<const FMantleSoundData>, const FString&)>;
 
@@ -534,6 +546,15 @@ private:
 		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> LumenFile;
 
 		/**
+		 * Nanite files: the inflated MND1 (the download is an MNZ1, unpacked on the decode task so the game thread never inflates it).
+		 * Each mesh that names it reads its own copy of the data from it when it builds; dropped once the last such mesh has.
+		 */
+		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> NaniteFile;
+
+		/** The size of NaniteFile as counted in NaniteHeldBytes (0 once released). */
+		int64 NaniteHeld = 0;
+
+		/**
 		 * A VoxelWorldData (MBW1) or a block tile texture, as downloaded: the voxel world reads both itself, the tiles
 		 * into one texture array (kept while the set lives).
 		 */
@@ -546,6 +567,14 @@ private:
 		 */
 		FString LumenRecord;
 		FString LumenMeshTag;
+
+		/**
+		 * Meshes: likewise the record of the mesh's Nanite file (empty when the place gives it none, or this process does not take one) and
+		 * the mesh's upload hash the file must name. The mesh waits for the record to settle (the second texture slot of the wait), and a
+		 * file that fails is "not present": the mesh draws as it is built.
+		 */
+		FString NaniteRecord;
+		FString NaniteMeshTag;
 
 		TSharedPtr<FMantleStaticMeshData> MeshV2;
 		TSharedPtr<FMantleRuntimeMesh> MeshV1;
@@ -655,6 +684,29 @@ private:
 
 	/** #149: a mesh id to its Lumen side file's record key and the mesh's upload hash the file must name. */
 	TMap<FString, TPair<FString, FString>> MeshLumen;
+
+	/**
+	 * A record for the Nanite file of every mesh record so far whose manifest entry names one baked for exactly this engine build, and
+	 * MeshNanite for ApplyResolved; only where Settings.bLoadNanite. A file for another build is never downloaded (the mesh draws plain).
+	 */
+	void AddNaniteRecords(const FMantlePlace& Place, const TSet<FString>* OnlyMeshes = nullptr);
+
+	/** The inflated Nanite files held now, and the most held at once (the inflated MND1s a mesh has yet to read). */
+	int64 NaniteHeldBytes = 0;
+	int64 NaniteHeldPeakBytes = 0;
+
+	/** Frees a Nanite build's inflated bytes (counted in NaniteHeldBytes). */
+	void ReleaseNaniteFile(FBuild& NaniteBuild);
+
+	/** A mesh id to its Nanite file's record key and the mesh's upload hash the file must name. */
+	TMap<FString, TPair<FString, FString>> MeshNanite;
+
+	/**
+	 * Frees a Ready Nanite file's inflated bytes once no mesh that names it still has to read them (one not resolved yet, or not past
+	 * Building, does). Current is the mesh build that just finished, built or not; called whenever a mesh settles (built, reused, failed)
+	 * and when the file itself becomes Ready, so a file whose mesh never builds is not held.
+	 */
+	void DropNaniteFileIfUnused(const FString& NaniteRecordKey, const FBuildKey& Current);
 	static TSharedRef<FMantlePlaceAssets> PrepareWith(const FMantlePlace& Place, const FMantlePlaceAssetSettings& Settings,
 		FMantlePlaceAssetsDone OnDone, bool bManifestOnly);
 	/** GetLiveMeshState / GetLiveMaterialState across the live sets, newest first. */

@@ -74,6 +74,8 @@ bool FMantleWeaponPublishSource::Prepare(FMantleValidationResult& OutValidation,
 	{
 		Converter = MakeShared<FMantlePlaceAssetConverter>();
 	}
+	// Only a place carries Nanite files; this upload would bake them for nothing.
+	Converter->bBakeNanite = false;
 	return true;
 }
 

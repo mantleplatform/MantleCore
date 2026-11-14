@@ -1,6 +1,8 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "MantleMeshNaniteBake.h"
 #include "MantleMeshReduce.h"
 #include "MantleMirrorBake.h"
+#include "MantleNaniteTestSupport.h"
 #include "MantlePlaceAssetConverter.h"
 #include "MantlePlaceAssets.h"
 
@@ -11,6 +13,7 @@
 #include "MeshReductionSettings.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/Paths.h"
+#include "Rendering/NaniteResources.h"
 #include "StaticMeshAttributes.h"
 #include "StaticMeshResources.h"
 #include "UObject/Package.h"
@@ -242,6 +245,59 @@ namespace MantleMeshReduceTestPrivate
 		return Count;
 	}
 
+	/**
+	 * The notices that are not about Nanite data. Conversion bakes each mesh's Nanite file too, and an editor without a graphics
+	 * device (-nullrhi, as CI runs) builds none and says so; these tests are about the reduction, not that.
+	 */
+	int32 CountWithoutNanite(const TArray<FMantleValidationIssue>& Issues)
+	{
+		int32 Count = 0;
+		for (const FMantleValidationIssue& Issue : Issues)
+		{
+			Count += Issue.Problem.Contains(TEXT("Nanite data")) ? 0 : 1;
+		}
+		return Count;
+	}
+
+	/**
+	 * The converted mesh's Nanite file is made from the full source, not from the smaller version the GLB carries: it reads back for the
+	 * GLB's hash with all of the source's triangles and one table entry for each glTF material. An editor that cannot build Nanite data
+	 * makes none, which says so in the notices (CountWithoutNanite) and is not this test's business.
+	 */
+	void CheckNaniteFromSource(FAutomationTestBase& Test, const FMantleConvertedMesh& Converted, const int32 SourceTriangles)
+	{
+		if (Converted.Nanite.Num() == 0)
+		{
+			// An editor that cannot build Nanite data (no graphics device) makes none, which the notices say; one that can must have made it.
+			if (MantleNaniteTestEditorBuildsNanite())
+			{
+				Test.AddError(TEXT("this editor builds Nanite data, but the conversion made no Nanite file: ") + Converted.NaniteNone);
+			}
+			else
+			{
+				Test.AddInfo(TEXT("no Nanite file (this editor builds no Nanite data): ") + Converted.NaniteNone);
+			}
+			return;
+		}
+		Nanite::FResources Back;
+		TArray<int32> Slots;
+		FString Why;
+		if (Test.TestTrue(TEXT("its Nanite file reads back for its GLB"), FMantleMeshNaniteFile::ReadUploaded(Converted.Nanite, Converted.Hash, Back, Slots, &Why)))
+		{
+			Test.TestEqual(TEXT("with all of the source's triangles"), static_cast<int32>(Back.NumInputTriangles), SourceTriangles);
+			TArray<int32> Identity;
+			for (int32 Slot = 0; Slot < Converted.Slots.Num(); ++Slot)
+			{
+				Identity.Add(Slot);
+			}
+			Test.TestEqual(TEXT("and the table 0, 1, 2, ... for each glTF material"), Slots, Identity);
+		}
+		else
+		{
+			Test.AddError(Why);
+		}
+	}
+
 	const FMantleValidationIssue* FindIssue(const TArray<FMantleValidationIssue>& Issues, EMantleIssueSeverity Severity, const TCHAR* Text)
 	{
 		return Issues.FindByPredicate([Severity, Text](const FMantleValidationIssue& Issue)
@@ -314,7 +370,8 @@ bool FMantleMeshReducePromotesLODTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("its LOD 0 is the source's LOD 1"), Converted.Triangles, SmallTriangles);
 	TestEqual(TEXT("with no LOD after it"), Converted.LODs, 1);
 	TestTrue(TEXT("and the slots LOD 0 draws with, in LOD 0's order"), Converted.Slots == FMantlePlaceAssets::UploadSlots(Mesh));
-	TestEqual(TEXT("conversion adds no notice of its own"), Set.Issues.Num(), 0);
+	TestEqual(TEXT("conversion adds no notice of its own"), CountWithoutNanite(Set.Issues), 0);
+	CheckNaniteFromSource(*this, Converted, BigTriangles);
 
 	TestTrue(TEXT("the creator's mesh is neither changed nor made dirty"), FMeshSnapshot(*Mesh) == Before);
 	return true;
@@ -368,7 +425,7 @@ bool FMantleMeshReduceFittingMeshTest::RunTest(const FString& Parameters)
 	FMantlePlaceAssets::CheckMesh(Mesh, FString(), Limits, Issues);
 	TestEqual(TEXT("Check says nothing"), Issues.Num(), 0);
 
-	// The cache salt of a mesh that fits adds nothing to the salt the limits and its Lumen data (#149) give.
+	// The cache salt of a mesh that fits adds nothing to the salt the limits, its Lumen data (#149) and its Nanite data give.
 	TArray<FString> Caps;
 	for (const int32 Cap : Limits.LODMaxTriangles)
 	{
@@ -376,7 +433,7 @@ bool FMantleMeshReduceFittingMeshTest::RunTest(const FString& Parameters)
 	}
 	const FString Original = FString::Printf(TEXT("mesh lods=%d/%s collision=%d/%d/%d/%d bytes=%lld %s"), Limits.MaxLODs, *FString::Join(Caps, TEXT(",")),
 		Limits.MaxCollisionPrimitives, Limits.MaxConvexHulls, Limits.MaxHullVertices, Limits.MaxTotalHullVertices, Limits.MaxUploadBytes, *Mesh->GetPathName())
-		+ FMantlePlaceAssetConverter::MeshLumenSalt(*Mesh);
+		+ FMantlePlaceAssetConverter::MeshLumenSalt(*Mesh) + FMantleMeshNaniteBake::CacheSalt() + FString::Printf(TEXT(" nanitebytes=%lld"), Limits.MaxNaniteBytes);
 	TestEqual(TEXT("the salt of a mesh that fits is unchanged"), FMantlePlaceAssetConverter::MeshCacheSalt(Limits, *Mesh, 0, FString()), Original);
 	TestEqual(TEXT("a mesh published from LOD 2 says so"), FMantlePlaceAssetConverter::MeshCacheSalt(Limits, *Mesh, 2, FString()), Original + TEXT(" fromlod=2"));
 	TestEqual(TEXT("a reduced mesh says so"), FMantlePlaceAssetConverter::MeshCacheSalt(Limits, *Mesh, 0, TEXT("1350/x")), Original + TEXT(" reduced=1350/x"));
@@ -473,7 +530,8 @@ bool FMantleMeshReduceReducesACopyTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("as many triangles as the copy has"), Converted.Triangles, Count.Triangles);
 	TestTrue(TEXT("in the slot order Export lists the materials in"), Converted.Slots == FMantlePlaceAssets::UploadSlots(Mesh));
 	TestEqual(TEXT("one section a slot"), Converted.SectionNames.Num(), 2);
-	TestEqual(TEXT("and no notice of its own"), Set.Issues.Num(), 0);
+	TestEqual(TEXT("and no notice of its own"), CountWithoutNanite(Set.Issues), 0);
+	CheckNaniteFromSource(*this, Converted, BigTriangles);
 
 	// Reducing the same mesh again, from nothing, gives the same bytes: a republish finds what it uploaded before.
 	FMantleMeshReduce::ClearCache();
