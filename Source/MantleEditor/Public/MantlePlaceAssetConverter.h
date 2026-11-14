@@ -1145,13 +1145,15 @@ public:
 	 */
 	static void NormalizeTintMask(TArray<FColor>& Pixels);
 
+	/** The per-mesh cache's two ends, under <CacheDirectory>/meshes/<CacheKey>.*. Exposed for tests. */
+	bool LoadCachedMesh(const FString& CacheKey, FMantleConvertedMesh& Out, TArray<FMantleValidationIssue>& OutIssues) const;
+	void StoreCachedMesh(const FString& CacheKey, const FMantleConvertedMesh& Mesh, const TArray<FMantleValidationIssue>& Issues) const;
+
 private:
 	TSharedRef<IMantleMaterialFlattener> Flattener;
 	FString CacheDirectory;
 	FMantlePlaceConversionStats Stats;
 
-	bool LoadCachedMesh(const FString& CacheKey, FMantleConvertedMesh& Out, TArray<FMantleValidationIssue>& OutIssues) const;
-	void StoreCachedMesh(const FString& CacheKey, const FMantleConvertedMesh& Mesh, const TArray<FMantleValidationIssue>& Issues) const;
 	bool LoadCachedMaterial(const FString& CacheKey, FMantleConvertedMaterial& Out, TArray<FMantleConvertedTexture>& OutTextures,
 		TArray<FMantleValidationIssue>& OutIssues) const;
 	void StoreCachedMaterial(const FString& CacheKey, const FMantleConvertedMaterial& Material, const FMantlePlaceAssetSet& Set,
