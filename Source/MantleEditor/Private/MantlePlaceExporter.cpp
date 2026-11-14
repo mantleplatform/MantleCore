@@ -224,8 +224,8 @@ namespace
 	 * rejected by the parser (#267), so the later actor gets a numeric suffix rather than
 	 * failing the whole publish: the creator cannot edit an ActorGuid, so an error here
 	 * would leave them with nothing to fix. The suffixed id is still schema-valid
-	 * (ent_ + 32 hex + _N stays within 40 characters); it is only as stable as the level's
-	 * actor order, which is why it is logged.
+	 * (ent_ + 32 hex + _N stays within 40 characters). Export visits the actors in guid order
+	 * (then full path name), so the suffix an actor gets does not depend on load order.
 	 */
 	FString MakeEntityId(const AActor* Actor, TSet<FString>& Used)
 	{
@@ -239,9 +239,7 @@ namespace
 		}
 		if (Candidate != Base)
 		{
-			UE_LOG(LogMantle, Warning,
-				TEXT("'%s' shares entity id '%s' with another actor; exported as '%s', which may change between publishes"),
-				*Actor->GetName(), *Base, *Candidate);
+			UE_LOG(LogMantle, Warning, TEXT("'%s' shares entity id '%s' with another actor; exported as '%s'"), *Actor->GetName(), *Base, *Candidate);
 		}
 		Used.Add(Candidate);
 		return Candidate;
@@ -3312,6 +3310,26 @@ namespace
 		for (int32 Index = 0; Index < Length; ++Index)
 		{
 			const TCHAR Quote = Text[Index];
+			if (Quote == TEXT('['))
+			{
+				// A Luau long string, [[...]] or [==[...]==]: its text is a literal too (anything quoted inside it is read as usual).
+				int32 Level = 0;
+				int32 Open = Index + 1;
+				for (; Open < Length && Text[Open] == TEXT('='); ++Open)
+				{
+					++Level;
+				}
+				if (Open < Length && Text[Open] == TEXT('['))
+				{
+					const FString Close = TEXT("]") + FString::ChrN(Level, TEXT('=')) + TEXT("]");
+					const int32 CloseAt = Text.Find(Close, ESearchCase::CaseSensitive, ESearchDir::FromStart, Open + 1);
+					if (CloseAt != INDEX_NONE)
+					{
+						Out.Add(Text.Mid(Open + 1, CloseAt - Open - 1));
+					}
+				}
+				continue;
+			}
 			if (Quote != TEXT('\"') && Quote != TEXT('\'') && Quote != TEXT('`'))
 			{
 				continue;
@@ -4241,6 +4259,10 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		}
 	}
 
+	// Cells-format 5.2 rule 6: Is Spatially Loaded means something only in a World Partition level; in any other every actor counts
+	// as spatially loaded (lights, Info and PCG actors report false there, which would keep their scenery in the root).
+	const bool bPartitionedWorld = UWorld::IsPartitionedWorld(World);
+
 	// Pass 1 — classify and assign ids. Parents cannot be resolved until every actor has one.
 	TSet<FString> UsedIds;
 	TMap<const AActor*, FString> IdByActor;
@@ -4258,14 +4280,30 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	int32 WaterBodies = 0;
 	int32 WaterSplinePoints = 0;
 
+	// Cells-format 5.5: ids come from the actors' guids, and two actors sharing a guid (a level instance loaded twice) get their
+	// suffixes in a fixed order, not the order the engine happens to iterate in: guid, then full path name.
+	TArray<const AActor*> Ordered;
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
-		const AActor* Actor = *It;
-		if (!IsValid(Actor))
+		if (IsValid(*It))
 		{
-			continue;
+			Ordered.Add(*It);
 		}
+	}
+	Ordered.Sort([](const AActor& A, const AActor& B)
+	{
+		// The id is "ent_" and the guid's 32 lowercase hex digits (or the label-derived fallback), so comparing ids is comparing guids.
+		const FString IdA = FMantlePlaceExporter::EntityIdFor(&A);
+		const FString IdB = FMantlePlaceExporter::EntityIdFor(&B);
+		if (IdA != IdB)
+		{
+			return IdA < IdB;
+		}
+		return A.GetPathName() < B.GetPathName();
+	});
 
+	for (const AActor* Actor : Ordered)
+	{
 		// What of it can't publish (#486), infrastructure included: a PCG volume is a brush and a
 		// partition actor NotPlaceable, so the skip below would otherwise drop them without a word.
 		TArray<FMantleUnpublishedPart> Parts;
@@ -4494,7 +4532,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		FMantleEntity Entity;
 		Entity.Id = IdByActor[Actor];
 		ClassifyActor(Actor, Entity.Type);
-		if (!Actor->GetIsSpatiallyLoaded())
+		if (bPartitionedWorld && !Actor->GetIsSpatiallyLoaded())
 		{
 			NotSpatiallyLoaded.Add(Entity.Id);
 		}
@@ -4650,7 +4688,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				const FString PartPath = FString::Printf(TEXT("/entities/%d"), Place.Entities.Num());
 				FMantleEntity Child;
 				Child.Id = Exported.Id;
-				if (!Actor->GetIsSpatiallyLoaded())
+				if (bPartitionedWorld && !Actor->GetIsSpatiallyLoaded())
 				{
 					NotSpatiallyLoaded.Add(Child.Id);
 				}
@@ -4701,7 +4739,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 
 			// The group for this component's mesh, or for a mirrored copy of it (MeshOverride); same key, same group, level-wide.
 			// Cells-format 5.2 rule 6: an actor whose Is Spatially Loaded is off is always loaded, so its instances stay in the root.
-			const bool bSpatiallyLoaded = Owner->GetIsSpatiallyLoaded();
+			const bool bSpatiallyLoaded = !bPartitionedWorld || Owner->GetIsSpatiallyLoaded();
 			auto GroupFor = [&](const UStaticMesh* MeshOverride)
 			{
 				FMantleStaticMeshProps Mesh;
@@ -5758,7 +5796,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			{
 				Result.Coverage.Add(MantleCoverageCategory::StaticMeshes, EMantleCoverageOutcome::Approximated, TEXT("identical mesh actors"),
 					FString::Printf(TEXT("%d actors that share a mesh and materials were published as %d instance sets: each keeps its place, rotation and scale, but they are no longer separate named objects."),
-						Result.Grouping.Actors + Result.CellReport.FoldedActors, Result.Grouping.Sets),
+						Result.Grouping.Actors + Result.CellReport.FoldedActors, Result.Grouping.Sets + Result.CellReport.FoldedSets),
 					Result.Grouping.Actors + Result.CellReport.FoldedActors);
 				UE_LOG(LogMantle, Log, TEXT("Grouped %d identical static mesh actors into %d instance sets"), Result.Grouping.Actors, Result.Grouping.Sets);
 			}

@@ -277,6 +277,14 @@ FMantlePreviewResult FMantlePlacePreview::Build(UWorld* SourceWorld, const FMant
 	}
 	Result.SourceEntityCount = Exported.Place.Entities.Num();
 
+	// The scenery in cells is not part of this check: the check parses the root alone (a whole large map would pass the parser's
+	// per-place instance limit once its cells were put back), so say how much of the level it leaves to the cell files.
+	if (Exported.CellReport.NumCells() > 0)
+	{
+		Result.LeftOut.Add(FString::Printf(TEXT("%lld objects and %lld instances of scenery are in %d cells, which this check does not load (players load them from the cell files)"),
+			Exported.CellReport.CellEntities, Exported.CellReport.CellInstances, Exported.CellReport.NumCells()));
+	}
+
 	// The long way round on purpose: serialize, then parse back. Anything that does not
 	// survive the data path is absent from the preview, exactly as it would be for players.
 	Result.PlaceJson = FMantlePlaceExporter::ToJson(Exported.Place);

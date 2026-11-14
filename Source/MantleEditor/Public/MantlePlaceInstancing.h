@@ -32,9 +32,6 @@ public:
 	/** A mesh needs this many identical actors before they are folded into a set; fewer stay separate, named objects. */
 	static constexpr int32 MinGroupSize = 4;
 
-	/** The place file's size in bytes: the UTF-8 length of FMantlePlaceExporter::ToJson. */
-	static int64 PlaceBytes(const FMantlePlace& Place);
-
 	/** The instances across all InstancedMesh entities of Place. */
 	static int64 CountInstances(const FMantlePlace& Place);
 

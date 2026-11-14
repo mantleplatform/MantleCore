@@ -124,8 +124,9 @@ struct FMantleCellReport
 	int64 CellEntities = 0;
 	int64 CellInstances = 0;
 
-	/** Static mesh actors folded into instance sets inside cells (5.4), and the sets that came of them. */
+	/** Static mesh actors folded into instance sets inside cells (5.4), and the sets (one per cell and mesh) that came of them. */
 	int32 FoldedActors = 0;
+	int32 FoldedSets = 0;
 
 	/** Plain Groups dropped because every child moved to a cell (5.3). */
 	int32 DroppedGroups = 0;
@@ -262,7 +263,10 @@ public:
 	/** magic + uint32 LE raw length + one zlib stream of Json (UTF-8, no BOM). */
 	static bool MakeContainer(const TCHAR* Magic, const FString& Json, TArray<uint8>& OutBytes, FString& OutError);
 
-	/** Reads one back, refusing a wrong magic, a length over MaxRaw, a mismatch or trailing bytes (the game's reader does the same). */
+	/**
+	 * Reads one back, refusing a wrong magic, a length over MaxRaw and a stream that does not inflate to exactly the length it says.
+	 * Bytes after the zlib stream are not detected here (FCompression does not say how much input it used); the game's reader checks them.
+	 */
 	static bool ReadContainer(TConstArrayView<uint8> Bytes, const TCHAR* Magic, int64 MaxRaw, FString& OutJson, FString& OutError);
 
 	/** The cell's entities as the cell file's document (6.2): {"version":1,"entities":[...]}. */
