@@ -67,6 +67,18 @@ struct FMantleStaticMeshBuildParams
 	 */
 	FMantleMeshLumenData* Lumen = nullptr;
 
+	/**
+	 * The inflated bytes of the mesh's MND1 Nanite file (FMantleNaniteSideFile), or null. The build reads
+	 * them into the mesh's Nanite data before the render resources are initialized, next to the Lumen data, so the scene proxy draws the
+	 * full-detail model where the built LOD0 is only Nanite's reduced stand-in. The built LODs, collision, Lumen data and ray tracing stay
+	 * as they are. A file for another engine, another mesh (NaniteMeshTag), another slot order, or a damaged one is logged
+	 * ("MANTLE_NANITE") and the mesh builds as today.
+	 */
+	const TArray<uint8>* NaniteFile = nullptr;
+
+	/** The mesh upload's hash ("sha256:<hex>") the NaniteFile must belong to. */
+	FString NaniteMeshTag;
+
 	/** Outer of the new mesh; the transient package when null. */
 	UObject* Outer = nullptr;
 

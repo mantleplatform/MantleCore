@@ -4777,7 +4777,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 				continue;
 			}
 
-			RequireNoUnknownKeys(Ctx, *Obj, { TEXT("id"), TEXT("kind"), TEXT("hash"), TEXT("bytes"), TEXT("lumen"), TEXT("engine"), TEXT("sockets") }, Path);
+			RequireNoUnknownKeys(Ctx, *Obj, { TEXT("id"), TEXT("kind"), TEXT("hash"), TEXT("bytes"), TEXT("lumen"), TEXT("nanite"), TEXT("engine"), TEXT("sockets") }, Path);
 
 			FMantleAssetRef Asset;
 			RequireString(Ctx, *Obj, TEXT("id"), Path, Asset.Id);
@@ -4811,20 +4811,35 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 					Ctx.Fail(Join(Path, TEXT("lumen")), TEXT("must be an uploaded asset id"));
 				}
 			}
+			// A StaticMesh may likewise name its Nanite file; a Nanite entry says its engine like a Lumen one. The id is held to the same rule as
+			// lumen's: an uploaded asset id (the backend's naniteLinks, validate.py check_nanite_links).
+			if ((*Obj)->HasField(TEXT("nanite")))
+			{
+				if (Asset.Kind != EMantleAssetKind::StaticMesh)
+				{
+					Ctx.Fail(Join(Path, TEXT("nanite")), TEXT("only a StaticMesh may name a Nanite file"));
+				}
+				else if (RequireString(Ctx, *Obj, TEXT("nanite"), Path, Asset.Nanite) && !FMantlePlaceAssets::IsUploadedId(Asset.Nanite))
+				{
+					Ctx.Fail(Join(Path, TEXT("nanite")), TEXT("must be an uploaded asset id"));
+				}
+			}
+			const bool bSaysEngine = Asset.Kind == EMantleAssetKind::Lumen || Asset.Kind == EMantleAssetKind::Nanite;
 			if ((*Obj)->HasField(TEXT("engine")))
 			{
-				if (Asset.Kind != EMantleAssetKind::Lumen)
+				if (!bSaysEngine)
 				{
-					Ctx.Fail(Join(Path, TEXT("engine")), TEXT("only a Lumen entry says its engine"));
+					Ctx.Fail(Join(Path, TEXT("engine")), TEXT("only a Lumen or Nanite entry says its engine"));
 				}
 				else if (RequireString(Ctx, *Obj, TEXT("engine"), Path, Asset.Engine) && (Asset.Engine.IsEmpty() || Asset.Engine.Len() > 128))
 				{
 					Ctx.Fail(Join(Path, TEXT("engine")), TEXT("must be 1 to 128 characters"));
 				}
 			}
-			else if (Asset.Kind == EMantleAssetKind::Lumen)
+			else if (bSaysEngine)
 			{
-				Ctx.Fail(Join(Path, TEXT("engine")), TEXT("a Lumen entry must say the engine it was baked by"));
+				Ctx.Fail(Join(Path, TEXT("engine")),
+					FString::Printf(TEXT("a %s entry must say the engine it was baked by"), Asset.Kind == EMantleAssetKind::Lumen ? TEXT("Lumen") : TEXT("Nanite")));
 			}
 
 			// A StaticMesh may carry snap sockets for placing mode.
@@ -4859,6 +4874,20 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 		if (!Lumen || Lumen->Kind != EMantleAssetKind::Lumen)
 		{
 			Ctx.Fail(Join(Index(TEXT("/assets"), i), TEXT("lumen")), FString::Printf(TEXT("'%s' is not a Lumen entry of this place's assets"), *LumenId));
+		}
+	}
+	// A mesh's nanite names a Nanite entry of this manifest.
+	for (int32 i = 0; i < Place.Assets.Num(); ++i)
+	{
+		const FString& NaniteId = Place.Assets[i].Nanite;
+		if (NaniteId.IsEmpty())
+		{
+			continue;
+		}
+		const FMantleAssetRef* Nanite = Place.Assets.FindByPredicate([&NaniteId](const FMantleAssetRef& Other) { return Other.Id == NaniteId; });
+		if (!Nanite || Nanite->Kind != EMantleAssetKind::Nanite)
+		{
+			Ctx.Fail(Join(Index(TEXT("/assets"), i), TEXT("nanite")), FString::Printf(TEXT("'%s' is not a Nanite entry of this place's assets"), *NaniteId));
 		}
 	}
 

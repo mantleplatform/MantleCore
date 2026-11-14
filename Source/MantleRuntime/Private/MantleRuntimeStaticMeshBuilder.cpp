@@ -4,12 +4,14 @@
 #include "DistanceFieldAtlas.h"
 #include "Engine/StaticMesh.h"
 #include "MantleMeshLumenData.h"
+#include "MantleNaniteSideFile.h"
 #include "MantleRuntime.h"
 #include "MantleRuntimeMesh.h"
 #include "MantleStaticMeshReader.h"
 #include "MeshDescription.h"
 #include "Misc/App.h"
 #include "PhysicsEngine/BodySetup.h"
+#include "Rendering/NaniteResources.h"
 #include "RenderUtils.h"
 #include "StaticMeshAttributes.h"
 #include "StaticMeshOperations.h"
@@ -72,6 +74,46 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 				Buffer.SetVertexUV(Vertex, Channel, UVs[static_cast<int32>(Vertex * Keep + Channel)]);
 			}
 		}
+	}
+
+	/**
+	 * Reads Params.NaniteFile (the inflated MND1) into the mesh's Nanite data (the engine's own FStaticMeshRenderData::NaniteResourcesPtr,
+	 * which the scene proxy and Nanite's streaming manager read) and marks the mesh as a Nanite mesh with a fallback (the LODs built
+	 * from the description are the fallback). False, with the reason logged, when the file is not this mesh's, this engine's, or in the published
+	 * slot order; the mesh then stays as it is built (it draws plain).
+	 */
+	bool AttachNaniteSideFile(UStaticMesh& Mesh, FStaticMeshRenderData& RenderData, const int32 SlotCount, const FMantleStaticMeshBuildParams& Params)
+	{
+		const double Start = FPlatformTime::Seconds();
+		Nanite::FResources Resources;
+		TArray<int32> SlotToPublished;
+		FString Reason;
+		if (!FMantleNaniteSideFile::Read(*Params.NaniteFile, Params.NaniteMeshTag, Resources, SlotToPublished, &Reason)
+			|| !FMantleNaniteSideFile::SlotsMatchPublished(SlotToPublished, SlotCount, &Reason))
+		{
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_NANITE skipped %s: the file %s"), *Params.NaniteMeshTag, *Reason);
+			return false;
+		}
+		const uint32 SourceTriangles = Resources.NumInputTriangles;
+		const int32 RootBytes = Resources.RootData.Num();
+		const int32 Pages = Resources.PageStreamingStates.Num();
+		*RenderData.NaniteResourcesPtr = MoveTemp(Resources);
+		RenderData.bHasNaniteFallbackMesh = true;
+		// With ray tracing on, Nanite's scene proxy asks FStaticMeshRenderData::GetFirstValidLODIdx for a usable fallback LOD. That skips every LOD
+		// whose BuffersSize is 0, and only a serialized (cooked) mesh has it set; a mesh built from a description keeps 0, so the answer is -1 and
+		// Nanite::FSceneProxy::GetFirstValidRaytracingGeometryLODIndex indexes its LOD array with it (the 7:45 pm crash, "-1 into an array of size 1").
+		// Give the built LODs a size. Only the byte count is read, for streaming bookkeeping this mesh does not take part in.
+		for (FStaticMeshLODResources& LOD : RenderData.LODResources)
+		{
+			if (LOD.BuffersSize == 0)
+			{
+				LOD.BuffersSize = FMath::Max<uint32>(1u, static_cast<uint32>(LOD.GetNumVertices()) * 32u + static_cast<uint32>(LOD.IndexBuffer.GetNumIndices()) * 4u);
+			}
+		}
+		Mesh.GetNaniteSettings().bEnabled = true;
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_NANITE attached %s: %u triangles, %d pages, %d bytes (%.1f ms)"),
+			*Params.NaniteMeshTag, SourceTriangles, Pages, RootBytes, (FPlatformTime::Seconds() - Start) * 1000.0);
+		return true;
 	}
 
 	/** One slot per entry of SlotNames, in slot order. */
@@ -147,6 +189,12 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 			}
 			Built->BuildFromMeshDescription(*Descriptions[LODIndex], LODResources);
 			TrimTexCoordChannels(LODResources.VertexBuffers.StaticMeshVertexBuffer, AuthoredChannels);
+		}
+		// The full-detail Nanite data goes on before the render resources are initialized
+		// (UStaticMesh::InitResources hands it to Nanite's streaming manager).
+		if (Params.NaniteFile && Params.NaniteFile->Num() > 0)
+		{
+			AttachNaniteSideFile(*Built, *RenderData, Slots.SlotNames.Num(), Params);
 		}
 		// A mesh built for collision alone (a dedicated server's) keeps its CPU buffers and gets no render
 		// resources: UStaticMesh::InitResources asserts in a cooked run that can never render.

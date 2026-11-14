@@ -206,7 +206,12 @@ enum class EMantleAssetKind : uint8
 	 */
 	Lumen,
 	/** A block world's starting blocks: MBW1 (FMantleVoxelWorldFile), checked by the cook and stored as uploaded. */
-	VoxelWorldData
+	VoxelWorldData,
+	/**
+	 * A static mesh's Nanite file: an MNZ1 container (zlib) of MND1, its full-detail Nanite data, baked by the plugin at publish and named
+	 * by its mesh's entry (FMantleAssetRef::Nanite). Stored as uploaded; FMantleNaniteSideFile unpacks and reads it.
+	 */
+	Nanite
 };
 
 enum class EMantleCollision : uint8
@@ -660,7 +665,13 @@ struct FMantleAssetRef
 	/** StaticMesh, optional (#149): the id of this manifest's Lumen entry for the mesh. */
 	FString Lumen;
 
-	/** Lumen (#149): the engine the file was baked by (FMantleMeshLumenFile::EngineTag). A client of another engine skips it. */
+	/** StaticMesh, optional: the id of this manifest's Nanite entry for the mesh (a mesh without one draws as it is built). */
+	FString Nanite;
+
+	/**
+	 * Lumen (#149) and Nanite: the engine the file was baked by (FMantleMeshLumenFile::EngineTag, FMantleNaniteSideFile::EngineTag).
+	 * A client of another engine never downloads it.
+	 */
 	FString Engine;
 
 	/** StaticMesh, optional: the snap sockets placing mode joins this mesh with, at most FMantlePlaceLimits::MaxMeshSockets. */

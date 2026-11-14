@@ -102,9 +102,10 @@ namespace
 		TEXT("Vehicle"),
 		TEXT("Weapon"),
 		TEXT("Lumen"),
-		TEXT("VoxelWorldData")
+		TEXT("VoxelWorldData"),
+		TEXT("Nanite")
 	};
-	static_assert(UE_ARRAY_COUNT(GAssetKindNames) == static_cast<SIZE_T>(EMantleAssetKind::VoxelWorldData) + 1, "one name per EMantleAssetKind");
+	static_assert(UE_ARRAY_COUNT(GAssetKindNames) == static_cast<SIZE_T>(EMantleAssetKind::Nanite) + 1, "one name per EMantleAssetKind");
 
 	const TCHAR* const GCollisionNames[] = {
 		TEXT("none"),

@@ -13,6 +13,7 @@
 #include "HAL/PlatformTime.h"
 #include "MantleConnection.h"
 #include "MantleMeshLumenData.h"
+#include "MantleNaniteSideFile.h"
 #include "MantlePlaceStorage.h"
 #include "MantleRuntime.h"
 #include "MantleRuntimeStaticMeshBuilder.h"
@@ -708,6 +709,8 @@ FMantlePlaceAssetSettings FMantlePlaceAssetSettings::ForThisProcess()
 {
 	FMantlePlaceAssetSettings Settings;
 	Settings.bRenderAssets = !IsRunningDedicatedServer();
+	// Nanite files are for a process that draws and whose graphics run Nanite; any other never downloads one.
+	Settings.bLoadNanite = Settings.bRenderAssets && FMantleNaniteSideFile::CanRunNanite();
 	if (GConfig)
 	{
 		const TCHAR* Section = TEXT("Mantle.PlaceAssets");
@@ -1157,6 +1160,8 @@ const TCHAR* FMantlePlaceAssets::KindName(const EAssetKind Kind)
 	case EAssetKind::Wheel: return TEXT("wheel");
 	// #149: a static mesh's Lumen side file (MLD1), stored as the plugin baked it.
 	case EAssetKind::Lumen: return TEXT("lumen");
+	// A static mesh's Nanite file (MNZ1 holding MND1), stored as the plugin baked it.
+	case EAssetKind::Nanite: return TEXT("nanite");
 	// A VoxelWorld's blocks (MBW1); its tiles are uploaded textures, held to the API's "texture" like a weightmap.
 	case EAssetKind::VoxelWorld: return TEXT("voxelworld");
 	case EAssetKind::VoxelTile: return TEXT("voxeltile");
@@ -1632,6 +1637,10 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 	{
 		AddLumenRecords(Place);
 	}
+	if (Settings.bLoadNanite)
+	{
+		AddNaniteRecords(Place);
+	}
 
 	int32 MeshCount = 0;
 	int32 MaterialCount = 0;
@@ -1643,10 +1652,11 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 	int32 WeaponCount = 0;
 	int32 WheelCount = 0;
 	int32 LumenCount = 0;
+	int32 NaniteCount = 0;
 	for (const TPair<FString, FRecord>& Pair : Records)
 	{
 		const EAssetKind Kind = Pair.Value.Kind;
-		(Kind == EAssetKind::Lumen ? LumenCount : Kind == EAssetKind::Mesh ? MeshCount : Kind == EAssetKind::Material ? MaterialCount : Kind == EAssetKind::Sound ? SoundCount
+		(Kind == EAssetKind::Nanite ? NaniteCount : Kind == EAssetKind::Lumen ? LumenCount : Kind == EAssetKind::Mesh ? MeshCount : Kind == EAssetKind::Material ? MaterialCount : Kind == EAssetKind::Sound ? SoundCount
 			: (Kind == EAssetKind::SkeletalMesh || Kind == EAssetKind::AnimClip) ? SkeletalCount : Kind == EAssetKind::Heightfield ? HeightfieldCount
 			: Kind == EAssetKind::Vehicle ? VehicleCount : Kind == EAssetKind::Weapon ? WeaponCount
 			: Kind == EAssetKind::Wheel ? WheelCount : TextureCount) += 1;
@@ -1673,6 +1683,8 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 	if (Settings.bRenderAssets)
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS preflight place %s: Lumen data for %d of %d uploaded meshes (#149)"), *Place.PlaceId, LumenCount, MeshCount);
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS preflight place %s: Nanite data for %d of %d uploaded meshes%s"), *Place.PlaceId, NaniteCount, MeshCount,
+			Settings.bLoadNanite ? TEXT("") : TEXT(" (this machine does not run Nanite: none downloaded)"));
 	}
 	if (!Settings.bRenderAssets)
 	{
@@ -1704,6 +1716,17 @@ void FMantlePlaceAssets::StartManifestOnly(const FMantlePlace& Place)
 	int64 TakenBytes = 0;
 	int32 OverCap = 0;
 	int32 SkippedMaterials = 0;
+	// A mesh's Nanite file is a download of its own, so it counts against the byte cap: a mesh whose pair does not fit is taken without it.
+	TMap<FString, const FMantleAssetRef*> ById;
+	TSet<FString> NaniteMeshes;
+	const FString NaniteEngine = FMantleNaniteSideFile::EngineTag();
+	if (Settings.bLoadNanite)
+	{
+		for (const FMantleAssetRef& Entry : Place.Assets)
+		{
+			ById.Add(Entry.Id, &Entry);
+		}
+	}
 	for (const FMantleAssetRef& Asset : Place.Assets)
 	{
 		const bool bMesh = Asset.Kind == EMantleAssetKind::StaticMesh;
@@ -1734,8 +1757,27 @@ void FMantlePlaceAssets::StartManifestOnly(const FMantlePlace& Place)
 				Megabytes(Settings.MaxManifestOnlyBytes));
 			continue;
 		}
+		int64 NaniteBytes = -1;
+		if (bMesh && Settings.bLoadNanite && !Asset.Nanite.IsEmpty())
+		{
+			const FMantleAssetRef* const* Entry = ById.Find(Asset.Nanite);
+			if (Entry && IsUploadedId((*Entry)->Id) && FMantleNaniteSideFile::ShouldFetch(true, (*Entry)->Engine, NaniteEngine))
+			{
+				NaniteBytes = FMath::Max<int64>((*Entry)->Bytes, 0);
+			}
+		}
+		const bool bWithNanite = NaniteBytes >= 0 && TakenBytes + Bytes + NaniteBytes <= Settings.MaxManifestOnlyBytes;
+		if (NaniteBytes >= 0 && !bWithNanite)
+		{
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS manifest-only mesh %s taken without its Nanite file (%.1f MB): over the cap of %.1f MB"),
+				*Asset.Id, Megabytes(NaniteBytes), Megabytes(Settings.MaxManifestOnlyBytes));
+		}
+		if (bWithNanite)
+		{
+			NaniteMeshes.Add(Asset.Id);
+		}
 		++Taken;
-		TakenBytes += Bytes;
+		TakenBytes += Bytes + (bWithNanite ? NaniteBytes : 0);
 		FRecord& Record = EnsureRecord(Asset.Id, bMesh ? EAssetKind::Mesh : bClip ? EAssetKind::AnimClip : EAssetKind::Material);
 		// A script may spawn the mesh with collision on (the default), so it is built with it.
 		Record.bCollision = Record.bCollision || bMesh;
@@ -1743,6 +1785,10 @@ void FMantlePlaceAssets::StartManifestOnly(const FMantlePlace& Place)
 	if (Settings.bRenderAssets)
 	{
 		AddLumenRecords(Place);
+	}
+	if (Settings.bLoadNanite)
+	{
+		AddNaniteRecords(Place, &NaniteMeshes);
 	}
 
 	UE_LOG(LogMantle, Log,
@@ -1792,6 +1838,52 @@ void FMantlePlaceAssets::AddLumenRecords(const FMantlePlace& Place)
 	}
 }
 
+void FMantlePlaceAssets::AddNaniteRecords(const FMantlePlace& Place, const TSet<FString>* OnlyMeshes)
+{
+	TMap<FString, const FMantleAssetRef*> ById;
+	for (const FMantleAssetRef& Asset : Place.Assets)
+	{
+		ById.Add(Asset.Id, &Asset);
+	}
+	TArray<FString> MeshIds;
+	for (const TPair<FString, FRecord>& Pair : Records)
+	{
+		if (Pair.Value.Kind == EAssetKind::Mesh)
+		{
+			MeshIds.AddUnique(Pair.Value.Id);
+		}
+	}
+	const FString Engine = FMantleNaniteSideFile::EngineTag();
+	int32 OtherEngine = 0;
+	for (const FString& MeshId : MeshIds)
+	{
+		// A manifest-only set names the meshes whose Nanite file fits its download cap (the others are taken without it).
+		if (OnlyMeshes && !OnlyMeshes->Contains(MeshId))
+		{
+			continue;
+		}
+		const FMantleAssetRef* const* Mesh = ById.Find(MeshId);
+		const FMantleAssetRef* const* Nanite = Mesh && !(*Mesh)->Nanite.IsEmpty() ? ById.Find((*Mesh)->Nanite) : nullptr;
+		if (!Nanite || !IsUploadedId((*Nanite)->Id))
+		{
+			continue;
+		}
+		// Decided from the manifest, before any download: a file for another engine build is never fetched.
+		if (!FMantleNaniteSideFile::ShouldFetch(Settings.bLoadNanite, (*Nanite)->Engine, Engine))
+		{
+			++OtherEngine;
+			UE_LOG(LogMantle, Verbose, TEXT("MANTLE_PLACE_ASSETS mesh %s Nanite data not present: baked for engine %s, this client is %s"), *MeshId, *(*Nanite)->Engine, *Engine);
+			continue;
+		}
+		EnsureRecord((*Nanite)->Id, EAssetKind::Nanite);
+		MeshNanite.Add(MeshId, TPair<FString, FString>(RecordKey((*Nanite)->Id, EAssetKind::Nanite, EMantleTextureRole::Color), (*Mesh)->Hash));
+	}
+	if (OtherEngine > 0)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS %d mesh(es)' Nanite data was baked for another engine build than this client's (%s): not downloaded, drawn without it"), OtherEngine, *Engine);
+	}
+}
+
 FMantlePlaceAssets::FRecord& FMantlePlaceAssets::EnsureRecord(const FString& Id, const EAssetKind Kind, const EMantleTextureRole Role)
 {
 	const FString Key = RecordKey(Id, Kind, Role);
@@ -1811,9 +1903,22 @@ void FMantlePlaceAssets::FailRecord(FRecord& Record, const FString& Error)
 	Record.bFailed = true;
 	Record.bResolving = false;
 	Record.Error = Error;
+	if (Record.Kind == EAssetKind::Mesh)
+	{
+		// A mesh that cannot be built reads no Nanite file.
+		if (const TPair<FString, FString>* Nanite = MeshNanite.Find(Record.Id))
+		{
+			DropNaniteFileIfUnused(Nanite->Key, FBuildKey());
+		}
+	}
 	if (Record.Kind == EAssetKind::Lumen)
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS Lumen data %s not present: it %s"), *Record.Id, *Error);
+		return;
+	}
+	if (Record.Kind == EAssetKind::Nanite)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS Nanite data %s not present: it %s"), *Record.Id, *Error);
 		return;
 	}
 	UE_LOG(LogMantle, Error, TEXT("MANTLE_PLACE_ASSETS FAIL %s %s: %s"), KindName(Record.Kind), *Record.Id, *Error);
@@ -2005,6 +2110,11 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 		Build.LumenRecord = Lumen->Key;
 		Build.LumenMeshTag = Lumen->Value;
 	}
+	if (const TPair<FString, FString>* Nanite = RecordKind == EAssetKind::Mesh ? MeshNanite.Find(RecordId) : nullptr)
+	{
+		Build.NaniteRecord = Nanite->Key;
+		Build.NaniteMeshTag = Nanite->Value;
+	}
 	Store->Pin(Hash);
 	Build.bPinned = true;
 
@@ -2013,7 +2123,7 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 	// are the build) or a heightfield (its decoded grid is the build), or terrain weights
 	// (likewise), so none has anything to reuse.
 	if (RecordKind != EAssetKind::Material && RecordKind != EAssetKind::Sound && RecordKind != EAssetKind::AnimClip
-		&& RecordKind != EAssetKind::Heightfield && RecordKind != EAssetKind::TerrainWeights && RecordKind != EAssetKind::Lumen
+		&& RecordKind != EAssetKind::Heightfield && RecordKind != EAssetKind::TerrainWeights && RecordKind != EAssetKind::Lumen && RecordKind != EAssetKind::Nanite
 		&& RecordKind != EAssetKind::VoxelWorld && RecordKind != EAssetKind::VoxelTile
 		// A weapon is read again, not reused: queuing what its document names happens when it is decoded.
 		&& RecordKind != EAssetKind::Weapon
@@ -2411,6 +2521,14 @@ void FMantlePlaceAssets::StartDecodes()
 			// #149: nothing to decode off the game thread; OnDecoded looks at the header.
 			Build->LumenFile = Bytes;
 		}
+		// A Nanite file is inflated by the decode task (up to 100 MB of zlib is too long for the game thread) into this array, which only the
+		// task writes, before it hands the build back; the game thread reads it after (OnDecoded), and the download is freed once the task ends.
+		TSharedPtr<TArray<uint8>, ESPMode::ThreadSafe> NaniteRaw;
+		if (Key.Kind == EAssetKind::Nanite)
+		{
+			NaniteRaw = MakeShared<TArray<uint8>, ESPMode::ThreadSafe>();
+			Build->NaniteFile = NaniteRaw;
+		}
 		if (Key.Kind == EAssetKind::VoxelWorld || Key.Kind == EAssetKind::VoxelTile)
 		{
 			// Likewise; the voxel world reads its blocks and tiles on its own workers.
@@ -2418,7 +2536,7 @@ void FMantlePlaceAssets::StartDecodes()
 		}
 		const int64 MaxTextureGpuBytes = Settings.MaxTextureGpuBytes;
 		const TSharedRef<FCompletionQueue, ESPMode::ThreadSafe> Queue = Completions;
-		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes]()
+		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes, NaniteRaw]()
 		{
 			TSharedPtr<FMantleStaticMeshData> MeshV2;
 			TSharedPtr<FMantleRuntimeMesh> MeshV1;
@@ -2440,6 +2558,18 @@ void FMantlePlaceAssets::StartDecodes()
 			case EAssetKind::Lumen:
 			case EAssetKind::VoxelWorld:
 			case EAssetKind::VoxelTile:
+				break;
+
+			case EAssetKind::Nanite:
+				// MNZ1: the size word is checked before the inflate allocates (FMantleNaniteSideFile::Unpack); the MND1 itself is read by each mesh.
+				if (!NaniteRaw.IsValid())
+				{
+					Error = TEXT("has nowhere to be unpacked");
+				}
+				else
+				{
+					FMantleNaniteSideFile::Unpack(View, *NaniteRaw, &Error);
+				}
 				break;
 
 			case EAssetKind::Mesh:
@@ -2643,6 +2773,23 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 		QueueBuild(Key);
 		return;
 	}
+	// A Nanite file is its inflated MND1 (unpacked by the decode task); each mesh reads it as it builds (FMantleNaniteSideFile::Read).
+	if (Key.Kind == EAssetKind::Nanite)
+	{
+		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> File = Build->NaniteFile;
+		if (!Error.IsEmpty() || !File.IsValid() || File->Num() == 0)
+		{
+			FailBuild(*Build, Error.IsEmpty() ? FString(TEXT("is not a Nanite file this client reads (MNZ1)")) : Error);
+			return;
+		}
+		Build->Detail = FString::Printf(TEXT("MNZ1 holding MND1, %.1f MB inflated from %.1f MB"), File->Num() / 1048576.0, Build->Ref.Bytes / 1048576.0);
+		Build->NaniteHeld = File->Num();
+		NaniteHeldBytes += Build->NaniteHeld;
+		NaniteHeldPeakBytes = FMath::Max(NaniteHeldPeakBytes, NaniteHeldBytes);
+		ReleasePending(*Build);
+		QueueBuild(Key);
+		return;
+	}
 	// A VoxelWorldData is its MBW1 bytes (only the magic is looked at here); a block tile is the texture's file.
 	if (Key.Kind == EAssetKind::VoxelWorld || Key.Kind == EAssetKind::VoxelTile)
 	{
@@ -2742,9 +2889,11 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 	}
 	// #149: a mesh with a Lumen side file waits for it to settle, as a material waits for its textures (the record is
 	// in the first texture slot the wait reads); then BuildOne reads it.
-	if (Key.Kind == EAssetKind::Mesh && !Build->LumenRecord.IsEmpty())
+	if (Key.Kind == EAssetKind::Mesh && (!Build->LumenRecord.IsEmpty() || !Build->NaniteRecord.IsEmpty()))
 	{
+		// The Nanite file's record is in the second slot, so the mesh waits for both.
 		Build->TextureRecords[0] = Build->LumenRecord;
+		Build->TextureRecords[1] = Build->NaniteRecord;
 		Build->State = EBuildState::WaitingForTextures;
 		WaitingMaterials.Add(Key);
 		return;
@@ -2907,6 +3056,26 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 				UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS mesh %s Lumen data not present: it %s; built without"), *Build.Id, *Reason);
 			}
 		}
+		// The mesh's Nanite data, when its file arrived (unpacked off the game thread) and is this engine's and this mesh's; else none and
+		// the mesh draws as it is built. FMantleRuntimeStaticMeshBuilder reads it into the mesh and logs the time; the checks (tag,
+		// engine, slot order, layout) are in it, so a bad file is "not present", never a failed mesh.
+		const FBuild* NaniteBuild = nullptr;
+		if (!Build.NaniteRecord.IsEmpty())
+		{
+			const FRecord* NaniteRecord = Records.Find(Build.NaniteRecord);
+			NaniteBuild = NaniteRecord && NaniteRecord->Build.IsSet() ? Builds.Find(NaniteRecord->Build.GetValue()) : nullptr;
+			if (NaniteBuild && NaniteBuild->State == EBuildState::Ready && NaniteBuild->NaniteFile.IsValid() && Build.MeshV2
+				&& FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources(Params.bInitRenderResources))
+			{
+				Params.NaniteFile = NaniteBuild->NaniteFile.Get();
+				Params.NaniteMeshTag = Build.NaniteMeshTag;
+			}
+			else
+			{
+				UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS mesh %s Nanite data not present: it %s; built without"), *Build.Id,
+					!Build.MeshV2 ? TEXT("is not an MRM2 mesh") : NaniteBuild && NaniteBuild->State == EBuildState::Failed ? *NaniteBuild->Error : TEXT("did not arrive"));
+			}
+		}
 		UStaticMesh* Mesh = nullptr;
 		if (Build.MeshV2)
 		{
@@ -2936,6 +3105,10 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		Build.MeshV2.Reset();
 		Build.MeshV1.Reset();
 		ReleasePending(Build);
+		if (!Build.NaniteRecord.IsEmpty())
+		{
+			DropNaniteFileIfUnused(Build.NaniteRecord, Build.Key);
+		}
 		if (!Mesh)
 		{
 			FailBuild(Build, FString::Printf(TEXT("could not be built: %s"), *Error));
@@ -2971,6 +3144,19 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		// #149: the downloaded MLD1 is the build; each mesh that names it reads it as it builds.
 		MarkReady(Build, nullptr);
 		return;
+
+	case EAssetKind::Nanite:
+	{
+		// The unpacked MND1 is the build; each mesh that names it reads it as it builds. Its meshes may all be settled already
+		// (reused from an earlier set, failed): then nothing will read it and it goes at once.
+		MarkReady(Build, nullptr);
+		const TArray<FString> Ids = Build.RecordIds;
+		for (const FString& Id : Ids)
+		{
+			DropNaniteFileIfUnused(RecordKey(Id, EAssetKind::Nanite, EMantleTextureRole::Color), FBuildKey());
+		}
+		return;
+	}
 
 	case EAssetKind::VoxelWorld:
 	case EAssetKind::VoxelTile:
@@ -3260,6 +3446,11 @@ void FMantlePlaceAssets::MarkReady(FBuild& Build, UObject* Object)
 	const TCHAR* Source = Build.bReused ? TEXT("reused") : Build.bFromCache ? TEXT("from cache") : TEXT("downloaded");
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS built %s %s: %s (%s, %lld bytes, %s)"),
 		KindName(Build.Key.Kind), *FString::Join(Build.RecordIds, TEXT(",")), *Build.Detail, *Build.Key.Hash.ToString(), Build.Ref.Bytes, Source);
+	// A mesh that is ready (built, or reused from an earlier set) reads no Nanite file any more.
+	if (Build.Key.Kind == EAssetKind::Mesh && !Build.NaniteRecord.IsEmpty())
+	{
+		DropNaniteFileIfUnused(Build.NaniteRecord, Build.Key);
+	}
 }
 
 void FMantlePlaceAssets::FailBuild(FBuild& Build, const FString& Error)
@@ -3280,11 +3471,22 @@ void FMantlePlaceAssets::FailBuild(FBuild& Build, const FString& Error)
 	Build.Weapon.Reset();
 	Build.Wheel.Reset();
 	Build.LumenFile.Reset();
+	ReleaseNaniteFile(Build);
 	Build.VoxelFile.Reset();
 	ReleasePending(Build);
+	// A mesh that failed reads no Nanite file either.
+	if (Build.Key.Kind == EAssetKind::Mesh && !Build.NaniteRecord.IsEmpty())
+	{
+		DropNaniteFileIfUnused(Build.NaniteRecord, Build.Key);
+	}
 	if (Build.Key.Kind == EAssetKind::Lumen)
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS Lumen data %s not present: it %s"), *FString::Join(Build.RecordIds, TEXT(",")), *Error);
+		return;
+	}
+	if (Build.Key.Kind == EAssetKind::Nanite)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS Nanite data %s not present: it %s"), *FString::Join(Build.RecordIds, TEXT(",")), *Error);
 		return;
 	}
 	UE_LOG(LogMantle, Error, TEXT("MANTLE_PLACE_ASSETS FAIL %s %s: %s"), KindName(Build.Key.Kind), *FString::Join(Build.RecordIds, TEXT(",")), *Error);
@@ -3294,6 +3496,51 @@ void FMantlePlaceAssets::ReleasePending(FBuild& Build)
 {
 	PendingBuildBytes -= Build.PendingBytes;
 	Build.PendingBytes = 0;
+}
+
+void FMantlePlaceAssets::DropNaniteFileIfUnused(const FString& NaniteRecordKey, const FBuildKey& Current)
+{
+	// A Nanite file is the whole mesh's Nanite data, up to 100 MB inflated: kept only while a mesh that names it still has to read it.
+	// A mesh record needs it until its build has run (a record not resolved yet, or its build not past Building, still does).
+	for (const TPair<FString, TPair<FString, FString>>& Mesh : MeshNanite)
+	{
+		if (Mesh.Value.Key != NaniteRecordKey)
+		{
+			continue;
+		}
+		const FRecord* MeshRecord = Records.Find(RecordKey(Mesh.Key, EAssetKind::Mesh, EMantleTextureRole::Color));
+		if (!MeshRecord || MeshRecord->bFailed)
+		{
+			continue;
+		}
+		if (!MeshRecord->Build.IsSet())
+		{
+			return;
+		}
+		const FBuild* MeshBuild = Builds.Find(MeshRecord->Build.GetValue());
+		if (MeshBuild && MeshBuild->Key == Current)
+		{
+			continue;
+		}
+		if (MeshBuild && MeshBuild->State <= EBuildState::Building)
+		{
+			return;
+		}
+	}
+	const FRecord* NaniteRecord = Records.Find(NaniteRecordKey);
+	FBuild* NaniteBuild = NaniteRecord && NaniteRecord->Build.IsSet() ? Builds.Find(NaniteRecord->Build.GetValue()) : nullptr;
+	// Only a file that has been handed over; one still being unpacked is dropped when it becomes Ready (BuildOne).
+	if (NaniteBuild && NaniteBuild->State == EBuildState::Ready)
+	{
+		ReleaseNaniteFile(*NaniteBuild);
+	}
+}
+
+void FMantlePlaceAssets::ReleaseNaniteFile(FBuild& NaniteBuild)
+{
+	NaniteHeldBytes -= NaniteBuild.NaniteHeld;
+	NaniteBuild.NaniteHeld = 0;
+	NaniteBuild.NaniteFile.Reset();
 }
 
 // ---- Pump ---------------------------------------------------------------------------------------------
@@ -3404,7 +3651,7 @@ void FMantlePlaceAssets::CheckComplete()
 	{
 		const FRecord& Record = Pair.Value;
 		// A Lumen side file that did not arrive is "not present" (#149): its mesh is built without it.
-		if (Record.Kind == EAssetKind::Sound || Record.Kind == EAssetKind::Lumen)
+		if (Record.Kind == EAssetKind::Sound || Record.Kind == EAssetKind::Lumen || Record.Kind == EAssetKind::Nanite)
 		{
 			continue;
 		}
@@ -3439,6 +3686,7 @@ void FMantlePlaceAssets::CheckComplete()
 		case EAssetKind::Heightfield: ++Result.Heightfields; break;
 		case EAssetKind::TerrainWeights: break; // the weightmap's second use, not an asset of its own
 		case EAssetKind::Lumen: break;
+		case EAssetKind::Nanite: break;
 		case EAssetKind::VoxelWorld: break;
 		case EAssetKind::VoxelTile: break;
 		}
@@ -3454,6 +3702,18 @@ void FMantlePlaceAssets::CheckComplete()
 	Result.DownloadedBytes = DownloadedBytes;
 	Result.Seconds = FPlatformTime::Seconds() - StartSeconds;
 	Result.bSuccess = Result.Errors.Num() == 0;
+	// Nothing reads a Nanite file once the set is complete (later meshes get none): whatever is still held goes now.
+	for (TPair<FBuildKey, FBuild>& Pair : Builds)
+	{
+		if (Pair.Key.Kind == EAssetKind::Nanite && Pair.Value.State == EBuildState::Ready)
+		{
+			ReleaseNaniteFile(Pair.Value);
+		}
+	}
+	if (NaniteHeldPeakBytes > 0)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS Nanite files: at most %.1f MB inflated were held at once"), MantlePlaceAssetsPrivate::Megabytes(NaniteHeldPeakBytes));
+	}
 	bCompleted = true;
 	// Sounds that are already in (cached, or none at all) are reported with everything else.
 	SettleSounds();
