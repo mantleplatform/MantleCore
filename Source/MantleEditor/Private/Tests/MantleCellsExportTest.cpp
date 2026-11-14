@@ -1,3 +1,4 @@
+// Copyright Joshua Eger. All Rights Reserved.
 // Cells in the exporter, from a level: what only a level can show (the actors' own flags and guids). The planner's rules are in
 // MantleCellsTest.cpp.
 
