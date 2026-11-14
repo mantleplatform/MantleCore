@@ -275,11 +275,6 @@ bool MantleNaniteTestEditorBuildsNanite()
 	return MantleMeshNaniteBakeTestPrivate::NaniteBuilds();
 }
 
-bool MantleNaniteTestEditorBuildsNanite()
-{
-	return MantleMeshNaniteBakeTestPrivate::NaniteBuilds();
-}
-
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleMeshNaniteFileRoundTripTest,
 	"Mantle.Editor.Nanite.FileRoundTrip",
