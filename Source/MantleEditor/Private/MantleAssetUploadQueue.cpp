@@ -764,7 +764,7 @@ void FMantleAssetUploadQueue::ApplyAsset(int32 Index, const FMantleUploadedAsset
 		Status.State = EMantleQueuedUploadState::Approved;
 		Status.bInReview = false;
 		Status.Message = Status.bAlreadyOnMantle ? TEXT("Already on Mantle") : TEXT("Ready");
-		// Mantle has it, cooked and screened: the status keeps the hash, the size and the id. A file still being
+		// Mantle has it, cooked and live (its check runs afterwards): the status keeps the hash, the size and the id. A file still being
 		// processed keeps its bytes, because a look that finds Mantle has forgotten it sends it again.
 		DropBytes(Index);
 		return;
@@ -779,8 +779,10 @@ void FMantleAssetUploadQueue::ApplyAsset(int32 Index, const FMantleUploadedAsset
 	Status.State = EMantleQueuedUploadState::Processing;
 	Status.bInReview = Asset.ModerationState == TEXT("review");
 	Status.Message = Status.bInReview
-		? FString(TEXT("Waiting for a Mantle moderator to look at it"))
-		: Asset.CookState == TEXT("passed") ? FString(TEXT("Being screened")) : FString(TEXT("Being processed"));
+		// Files go live once cooked and are checked afterwards (mantle#353): a file that is not approved yet is either still
+		// being cooked, or it was flagged and is held for a moderator.
+		? FString(TEXT("Flagged, waiting for a Mantle moderator"))
+		: Asset.CookState == TEXT("passed") ? FString(TEXT("Finishing up")) : FString(TEXT("Being processed"));
 	if (!bWasProcessing && NextPollAt <= 0.0)
 	{
 		// The first file to wait on Mantle since nothing was: start looking at the quick pace again.
@@ -997,5 +999,5 @@ FString FMantleAssetUploadQueue::GetStatusText() const
 			Progress.CurrentName.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" '%s'"), *Progress.CurrentName),
 			Progress.AssetsSent, Progress.AssetsTotal, *Size(Progress.BytesDone), *Size(Progress.BytesTotal));
 	}
-	return FString::Printf(TEXT("Mantle is processing and screening the files: %d of %d ready."), Progress.AssetsFinished, Progress.AssetsTotal);
+	return FString::Printf(TEXT("Mantle is processing the files: %d of %d ready."), Progress.AssetsFinished, Progress.AssetsTotal);
 }

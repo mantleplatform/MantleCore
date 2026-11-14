@@ -1840,12 +1840,12 @@ void FMantlePlacePublishSession::TickUploading()
 				{
 					Names.Add(Status.Name);
 					AddAttention(EMantleIssueSeverity::Warning,
-						FString::Printf(TEXT("'%s' is waiting for a Mantle moderator to look at it."), *Status.Name),
-						TEXT("Nothing to do but wait: choose Publish again once it is approved."));
+						FString::Printf(TEXT("'%s' was flagged and is waiting for a Mantle moderator."), *Status.Name),
+						TEXT("Nothing to do but wait: choose Publish again once the moderator has approved it."));
 				}
 			}
 			Result.bWaitingForReview = true;
-			Fail(FString::Printf(TEXT("Everything is uploaded, but Mantle's moderators have to look at %d file(s) first, such as '%s'. ")
+			Fail(FString::Printf(TEXT("Everything is uploaded, but %d file(s) were flagged and a Mantle moderator has to look at them first, such as '%s'. ")
 				TEXT("Nothing went live yet. Choose Publish again once they are approved; nothing is uploaded twice."),
 				Names.Num(), Names.Num() > 0 ? *Names[0] : TEXT("?")));
 		}

@@ -287,7 +287,7 @@ bool FMantleCosmeticUploadHeldFileTest::RunTest(const FString& Parameters)
 
 	const TSharedRef<FMantleCosmeticUploadSession> Session = RunUpload(Package, Mantle, FString());
 	TestTrue(*FString::Printf(TEXT("the run succeeds once the file is released (%s)"), *Session->GetFailure()), Session->Succeeded());
-	TestTrue(TEXT("the log says the file waits for a moderator"), LogHas(*Session, TEXT("mesh: Waiting for a moderator")));
+	TestTrue(TEXT("the log says the file waits for a moderator"), LogHas(*Session, TEXT("mesh: Flagged, waiting for a moderator")));
 	TestTrue(TEXT("and, while it waits, which file the run is waiting on"), LogHas(*Session, TEXT("Still waiting on 1 of 23 files: mesh")));
 	TestEqual(TEXT("one item is made"), Mantle->CreateCalls, 1);
 	return true;
