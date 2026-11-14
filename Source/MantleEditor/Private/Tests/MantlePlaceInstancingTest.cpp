@@ -11,8 +11,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// GhzGarage/mantle#818, size and density: repeated static meshes become instance sets with their transforms kept, a place over
-// the instance or file limit is thinned evenly (exact count, same result every time, only when asked), the place file is
+// GhzGarage/mantle#818, size and density: repeated static meshes become instance sets with their transforms kept, the place file is
 // condensed and still parses, a too-big place is refused before anything is uploaded, and Mantle.Check ends in one greppable line.
 // All on built places, with no level and no network.
 
@@ -78,38 +77,6 @@ namespace MantlePlaceInstancingTestPrivate
 		}
 		return Count;
 	}
-
-	/** The X of each instance of the InstancedMesh entity with Id, in order. */
-	TArray<double> InstanceXs(const FMantlePlace& Place, const FString& Id)
-	{
-		TArray<double> Xs;
-		for (const FMantleEntity& Entity : Place.Entities)
-		{
-			if (const FMantleInstancedMeshProps* Props = Entity.Props.TryGet<FMantleInstancedMeshProps>(); Props && Entity.Id == Id)
-			{
-				for (const FTransform& Instance : Props->Instances)
-				{
-					Xs.Add(Instance.GetLocation().X);
-				}
-			}
-		}
-		return Xs;
-	}
-
-	int64 InstancesOf(const FMantlePlace& Place, const FString& Id)
-	{
-		return InstanceXs(Place, Id).Num();
-	}
-
-	/** A place with Foliage painted instances and Props prop instances, as the exporter leaves them before thinning. */
-	FMantlePlace MakeBigPlace(const int32 Foliage, const int32 Props, TSet<FString>& OutFoliageIds)
-	{
-		FMantlePlace Place = MakePlace();
-		Place.Entities.Add(MakeInstanced(TEXT("ent_ism_foliage_0"), MeshA, Foliage, 0.0));
-		Place.Entities.Add(MakeInstanced(TEXT("ent_ism_props_0"), MeshB, Props, 0.0));
-		OutFoliageIds.Add(TEXT("ent_ism_foliage_0"));
-		return Place;
-	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -140,7 +107,6 @@ bool FMantlePlaceInstancingGroupTest::RunTest(const FString& Parameters)
 
 	if (Groups.Num() == 1)
 	{
-		TestFalse(TEXT("props are not what thinning takes first"), Groups[0].bThinFirst);
 		// Every transform is the actor's, in entity order.
 		for (int32 Index = 0; Index < 5; ++Index)
 		{
@@ -233,19 +199,17 @@ bool FMantlePlaceInstancingGroupMergesTest::RunTest(const FString& Parameters)
 	{
 		Place.Entities.Add(MakeMesh(FString::Printf(TEXT("ent_m%d"), Index), MeshA, FVector(Index * 100.0, 0.0, 0.0)));
 	}
-	// Painted foliage of the same mesh already made a group, which thinning would take from first.
+	// Painted foliage of the same mesh already made a group.
 	TArray<FMantleInstancedMeshGroup> Groups;
 	FMantleInstancedMeshGroup& Existing = Groups.AddDefaulted_GetRef();
 	Existing.Mesh.Mesh = MeshA;
 	Existing.MeshName = TEXT("Tree");
-	Existing.bThinFirst = true;
 	Existing.WorldInstances.Add(FTransform(FVector(9000.0, 0.0, 0.0)));
 
 	const FMantleGroupReport Report = FMantlePlaceInstancing::GroupStaticMeshes(Place, Groups);
 	TestEqual(TEXT("four actors fold in"), Report.Actors, 4);
 	TestEqual(TEXT("into the existing group, not a second one"), Groups.Num(), 1);
 	TestEqual(TEXT("which now holds all five"), Groups[0].WorldInstances.Num(), 5);
-	TestFalse(TEXT("and is no longer foliage alone"), Groups[0].bThinFirst);
 	return true;
 }
 
@@ -290,132 +254,20 @@ bool FMantlePlaceInstancingEvenKeepTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantlePlaceInstancingThinCountTest,
-	"Mantle.Editor.PlaceInstancing.ThinningRemovesFoliageFirstToTheExactCount",
-	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-
-bool FMantlePlaceInstancingThinCountTest::RunTest(const FString& Parameters)
-{
-	using namespace MantlePlaceInstancingTestPrivate;
-	TSet<FString> Foliage;
-	FMantlePlace Place = MakeBigPlace(1000, 200, Foliage);
-	const int64 NoByteLimit = 1ll << 40;
-
-	// 1,200 instances against a limit of 700: 500 go, all from the foliage.
-	const FMantleThinReport Preview = FMantlePlaceInstancing::ThinToFit(Place, Foliage, 700, NoByteLimit, /*bApply*/ false);
-	TestFalse(TEXT("a preview applies nothing"), Preview.bApplied);
-	TestEqual(TEXT("and the place is as it was"), FMantlePlaceInstancing::CountInstances(Place), static_cast<int64>(1200));
-	TestEqual(TEXT("it says 500 would go"), Preview.Removed(), static_cast<int64>(500));
-	TestTrue(TEXT("and that it fits"), Preview.bFits);
-
-	FMantlePlace Copy = Place;
-	const FMantleThinReport Report = FMantlePlaceInstancing::ThinToFit(Place, Foliage, 700, NoByteLimit, /*bApply*/ true);
-	TestTrue(TEXT("applied"), Report.bApplied);
-	TestEqual(TEXT("exactly 700 are left"), FMantlePlaceInstancing::CountInstances(Place), static_cast<int64>(700));
-	TestEqual(TEXT("the report counts them"), Report.InstancesAfter, static_cast<int64>(700));
-	TestEqual(TEXT("all from the foliage"), Report.FoliageRemoved(), static_cast<int64>(500));
-	TestEqual(TEXT("the props are untouched"), InstancesOf(Place, TEXT("ent_ism_props_0")), static_cast<int64>(200));
-	TestEqual(TEXT("the foliage keeps 500"), InstancesOf(Place, TEXT("ent_ism_foliage_0")), static_cast<int64>(500));
-	TestTrue(TEXT("the description says how many"), Report.Describe().Contains(TEXT("500")));
-
-	// Even across the level: the kept foliage reaches both ends and has no big hole.
-	const TArray<double> Xs = InstanceXs(Place, TEXT("ent_ism_foliage_0"));
-	if (Xs.Num() == 500)
-	{
-		TestTrue(TEXT("the first stretch is still planted"), Xs[0] < 300.0);
-		TestTrue(TEXT("and so is the last"), Xs.Last() > 999.0 * 100.0 - 300.0);
-		double Widest = 0.0;
-		for (int32 Index = 1; Index < Xs.Num(); ++Index)
-		{
-			Widest = FMath::Max(Widest, Xs[Index] - Xs[Index - 1]);
-		}
-		TestTrue(TEXT("with no gap wider than every second one"), Widest <= 300.0);
-	}
-
-	// The same input gives the same output.
-	const FMantleThinReport Again = FMantlePlaceInstancing::ThinToFit(Copy, Foliage, 700, NoByteLimit, /*bApply*/ true);
-	TestEqual(TEXT("thinning twice removes the same number"), Again.Removed(), Report.Removed());
-	TestTrue(TEXT("and keeps the same instances"), InstanceXs(Copy, TEXT("ent_ism_foliage_0")) == Xs);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantlePlaceInstancingThinOthersTest,
-	"Mantle.Editor.PlaceInstancing.ThinningTakesPropsOnlyWhenFoliageIsNotEnough",
-	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-
-bool FMantlePlaceInstancingThinOthersTest::RunTest(const FString& Parameters)
-{
-	using namespace MantlePlaceInstancingTestPrivate;
-	TSet<FString> Foliage;
-	FMantlePlace Place = MakeBigPlace(100, 1000, Foliage);
-	const int64 NoByteLimit = 1ll << 40;
-
-	// 1,100 against 500: 600 must go. Foliage gives up at most 90 of its 100; the props give the other 510.
-	const FMantleThinReport Report = FMantlePlaceInstancing::ThinToFit(Place, Foliage, 500, NoByteLimit, /*bApply*/ true);
-	TestEqual(TEXT("exactly 500 are left"), FMantlePlaceInstancing::CountInstances(Place), static_cast<int64>(500));
-	TestEqual(TEXT("the foliage lost nine tenths"), Report.FoliageRemoved(), static_cast<int64>(90));
-	TestEqual(TEXT("the props lost the rest"), Report.OthersRemoved(), static_cast<int64>(510));
-	TestTrue(TEXT("the description names both"), Report.Describe().Contains(TEXT("foliage")) && Report.Describe().Contains(TEXT("other")));
-
-	// More than thinning is allowed to take: it reports that it cannot fit.
-	FMantlePlace Tiny = MakeBigPlace(10, 10, Foliage);
-	const FMantleThinReport Cannot = FMantlePlaceInstancing::ThinToFit(Tiny, Foliage, 1, NoByteLimit, /*bApply*/ false);
-	TestFalse(TEXT("one instance cannot be reached"), Cannot.bFits);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantlePlaceInstancingThinBytesTest,
-	"Mantle.Editor.PlaceInstancing.ThinningCanBeDrivenByTheFileSize",
-	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-
-bool FMantlePlaceInstancingThinBytesTest::RunTest(const FString& Parameters)
-{
-	using namespace MantlePlaceInstancingTestPrivate;
-	TSet<FString> Foliage;
-	FMantlePlace Place = MakeBigPlace(3000, 100, Foliage);
-	const int64 Before = FMantlePlaceInstancing::PlaceBytes(Place);
-	const int64 Limit = Before / 2;
-
-	const FMantleThinReport Report = FMantlePlaceInstancing::ThinToFit(Place, Foliage, 100000, Limit, /*bApply*/ true);
-	TestTrue(TEXT("it fits the file limit"), Report.bFits);
-	TestTrue(TEXT("the file is within it"), FMantlePlaceInstancing::PlaceBytes(Place) <= Limit);
-	TestEqual(TEXT("the report holds the size it measured"), Report.BytesAfter, FMantlePlaceInstancing::PlaceBytes(Place));
-	TestTrue(TEXT("instances went, though the count was far under its limit"), Report.RemovesAnything());
-
-	// Nothing over, nothing done.
-	FMantlePlace Small = MakeBigPlace(10, 10, Foliage);
-	const FMantleThinReport Untouched = FMantlePlaceInstancing::ThinToFit(Small, Foliage, 100000, 1ll << 40, /*bApply*/ true);
-	TestFalse(TEXT("a place inside both limits is left alone"), Untouched.RemovesAnything());
-	TestEqual(TEXT("with all its instances"), FMantlePlaceInstancing::CountInstances(Small), static_cast<int64>(20));
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantlePlaceInstancingOverBudgetTextTest,
-	"Mantle.Editor.PlaceInstancing.TheRefusalSaysWhatThinningWouldDo",
+	"Mantle.Editor.PlaceInstancing.TheRefusalNamesTheLimitsAndTheDrawDistanceFix",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantlePlaceInstancingOverBudgetTextTest::RunTest(const FString& Parameters)
 {
-	TestTrue(TEXT("inside both limits there is nothing to say"), FMantlePlaceInstancing::DescribeOverBudget(10, 100, 10, 100, FMantleThinReport()).IsEmpty());
+	TestTrue(TEXT("inside both limits there is nothing to say"), FMantlePlaceInstancing::DescribeOverBudget(10, 100, 10, 100).IsEmpty());
 
-	FMantleThinReport Thin;
-	Thin.InstancesBefore = 106964;
-	Thin.InstancesAfter = 50000;
-	Thin.FoliageBefore = 106964;
-	Thin.FoliageAfter = 50000;
-	Thin.BytesBefore = 11 * 1024 * 1024;
-	Thin.BytesAfter = 6 * 1024 * 1024;
-	Thin.bFits = true;
-	const FString OverFile = FMantlePlaceInstancing::DescribeOverBudget(106964, 100000, 11 * 1024 * 1024, 8 * 1024 * 1024, Thin);
+	const FString OverFile = FMantlePlaceInstancing::DescribeOverBudget(1000, 100000, 11 * 1024 * 1024, 8 * 1024 * 1024);
 	TestTrue(TEXT("it names the file size and the limit"), OverFile.Contains(TEXT("11.0 MiB")) && OverFile.Contains(TEXT("8.0 MiB")));
-	TestTrue(TEXT("it offers even thinning with the count that goes"), OverFile.Contains(TEXT("thinning")) && OverFile.Contains(TEXT("56,964")));
-	TestTrue(TEXT("and says nothing is removed unless chosen"), OverFile.Contains(TEXT("Nothing is removed unless you choose it")));
+	TestTrue(TEXT("and points at a draw distance"), OverFile.Contains(TEXT("draw distance")));
 
-	const FString NoInstances = FMantlePlaceInstancing::DescribeOverBudget(0, 100000, 9 * 1024 * 1024, 8 * 1024 * 1024, FMantleThinReport());
-	TestTrue(TEXT("with no instances to thin, it points at merging objects or splitting the world"), NoInstances.Contains(TEXT("no instances to thin")) && NoInstances.Contains(TEXT("split")));
+	const FString OverCount = FMantlePlaceInstancing::DescribeOverBudget(106964, 100000, 1024 * 1024, 8 * 1024 * 1024);
+	TestTrue(TEXT("over the instance count it says so"), OverCount.Contains(TEXT("instanced meshes")) && OverCount.Contains(TEXT("draw distance")));
 	return true;
 }
 
@@ -503,7 +355,6 @@ namespace MantlePlaceInstancingTestPrivate
 			}
 			OutCheck.bOver = true;
 			OutCheck.Issues.Add({ EMantleIssueSeverity::Error, FString(), TEXT("The place file would be 11.0 MiB; Mantle accepts at most 8.0 MiB."), FString() });
-			OutCheck.ThinOffer = TEXT("Thinning would remove 56,964 foliage instances.");
 			return false;
 		}
 
@@ -553,7 +404,6 @@ bool FMantlePlaceInstancingRefusedBeforeUploadTest::RunTest(const FString& Param
 	TestTrue(TEXT("the message says it is too big and that nothing was uploaded"), Result.Message.Contains(TEXT("too big")) && Result.Message.Contains(TEXT("Nothing was prepared or uploaded")));
 	TestTrue(TEXT("with the sizes"), Result.Message.Contains(TEXT("11.0 MiB")));
 	TestTrue(TEXT("the check lists the reason as an error"), Result.Validation.HasErrors());
-	TestEqual(TEXT("thinning is on offer, with its numbers"), Result.ThinOffer, FString(TEXT("Thinning would remove 56,964 foliage instances.")));
 
 	// A place that fits goes on past the check.
 	const TSharedRef<FSizedSource> Fitting = MakeShared<FSizedSource>();
@@ -563,42 +413,6 @@ bool FMantlePlaceInstancingRefusedBeforeUploadTest::RunTest(const FString& Param
 	Next->Start();
 	TestEqual(TEXT("it is checked as well"), Fitting->SizeChecks, 1);
 	TestFalse(TEXT("and is not refused for its size"), Next->GetResult().Message.Contains(TEXT("too big")));
-	TestTrue(TEXT("with no thinning offered"), Next->GetResult().ThinOffer.IsEmpty());
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantlePlaceInstancingOfferWithBudgetErrorTest,
-	"Mantle.Editor.PlaceInstancing.ThinOfferIsMadeWhenInstancesAreTheOnlyError",
-	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-
-bool FMantlePlaceInstancingOfferWithBudgetErrorTest::RunTest(const FString& Parameters)
-{
-	using namespace MantlePlaceInstancingTestPrivate;
-	double Now = 1000.0;
-	FMantleValidationIssue Budget{ EMantleIssueSeverity::Error, FString(), TEXT("This level has 106,964 instanced meshes."), FString(), true };
-
-	// The check's own instance-count error is the only one: the size check runs and the offer is made.
-	const TSharedRef<FSizedSource> Only = MakeShared<FSizedSource>();
-	Only->PrepareIssues.Add(Budget);
-	const TSharedRef<FMantlePlacePublishSession> OnlySession = MakeShared<FMantlePlacePublishSession>(
-		Only, MakeShared<FCountingTransport>(), /*bGoLive*/ true, FString(), [&Now] { return Now; });
-	OnlySession->Start();
-	TestEqual(TEXT("the size was checked"), Only->SizeChecks, 1);
-	TestEqual(TEXT("the publish stopped"), static_cast<int32>(OnlySession->GetPhase()), static_cast<int32>(EMantlePublishPhase::Failed));
-	TestFalse(TEXT("thinning is on offer"), OnlySession->GetResult().ThinOffer.IsEmpty());
-	TestEqual(TEXT("and the instance error is listed once, not twice"), OnlySession->GetResult().Validation.NumErrors(), 1);
-
-	// Another error beside it: no offer, since thinning would not make the place publishable.
-	const TSharedRef<FSizedSource> Both = MakeShared<FSizedSource>();
-	Both->PrepareIssues.Add(Budget);
-	Both->PrepareIssues.Add({ EMantleIssueSeverity::Error, TEXT("Lamp"), TEXT("has a scale of 0."), FString() });
-	const TSharedRef<FMantlePlacePublishSession> BothSession = MakeShared<FMantlePlacePublishSession>(
-		Both, MakeShared<FCountingTransport>(), /*bGoLive*/ true, FString(), [&Now] { return Now; });
-	BothSession->Start();
-	TestEqual(TEXT("the size was not checked"), Both->SizeChecks, 0);
-	TestEqual(TEXT("the publish stopped"), static_cast<int32>(BothSession->GetPhase()), static_cast<int32>(EMantlePublishPhase::Failed));
-	TestTrue(TEXT("with no thinning offered"), BothSession->GetResult().ThinOffer.IsEmpty());
 	return true;
 }
 
@@ -611,12 +425,9 @@ bool FMantleCheckCommandTest::RunTest(const FString& Parameters)
 {
 	// The arguments.
 	const FMantleCheck::FArgs None = FMantleCheck::ParseArgs({});
-	TestTrue(TEXT("no arguments: nothing exported, nothing thinned, no error"), None.ExportDir.IsEmpty() && !None.bThin && None.Error.IsEmpty());
-	const FMantleCheck::FArgs Both = FMantleCheck::ParseArgs({ TEXT("-Export=D:/Checks/Level"), TEXT("-Thin=auto") });
+	TestTrue(TEXT("no arguments: nothing exported, no error"), None.ExportDir.IsEmpty() && None.Error.IsEmpty());
+	const FMantleCheck::FArgs Both = FMantleCheck::ParseArgs({ TEXT("-Export=D:/Checks/Level") });
 	TestEqual(TEXT("-Export names the folder"), Both.ExportDir, FString(TEXT("D:/Checks/Level")));
-	TestTrue(TEXT("-Thin=auto asks for thinning"), Both.bThin);
-	TestFalse(TEXT("-Thin=off does not"), FMantleCheck::ParseArgs({ TEXT("-Thin=off") }).bThin);
-	TestFalse(TEXT("-Thin=lots is refused"), FMantleCheck::ParseArgs({ TEXT("-Thin=lots") }).Error.IsEmpty());
 	TestFalse(TEXT("an empty -Export is refused"), FMantleCheck::ParseArgs({ TEXT("-Export=") }).Error.IsEmpty());
 	TestFalse(TEXT("so is a word it does not know"), FMantleCheck::ParseArgs({ TEXT("publish") }).Error.IsEmpty());
 
@@ -628,12 +439,11 @@ bool FMantleCheckCommandTest::RunTest(const FString& Parameters)
 	Report.PlaceBytes = 7340032;
 	Report.Instances = 61000;
 	Report.GroupedActors = 5;
-	Report.ThinnedInstances = 0;
 	Report.DrawDistances = 12;
 
 	TestFalse(TEXT("an error means not ready"), Report.IsReady());
 	TestEqual(TEXT("the line"), FMantleCheck::DoneLine(Report),
-		FString(TEXT("MANTLE_CHECK_DONE ready=0 errors=1 warnings=2 placeBytes=7340032 instances=61000 grouped=5 thinned=0 drawDistances=12")));
+		FString(TEXT("MANTLE_CHECK_DONE ready=0 errors=1 warnings=2 placeBytes=7340032 instances=61000 grouped=5 drawDistances=12 cells=0")));
 	const TArray<FString> Lines = FMantleCheck::IssueLines(Report);
 	if (TestEqual(TEXT("one line for each finding"), Lines.Num(), 3))
 	{
@@ -646,30 +456,26 @@ bool FMantleCheckCommandTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("and says so"), FMantleCheck::DoneLine(Report).StartsWith(TEXT("MANTLE_CHECK_DONE ready=1 errors=0 warnings=2 ")));
 
 	// Without a level there is nothing to check, and it says so on that line too.
-	const FMantleCheckReport NoLevel = FMantleCheck::Evaluate(nullptr, false);
+	const FMantleCheckReport NoLevel = FMantleCheck::Evaluate(nullptr);
 	TestFalse(TEXT("no level is not ready"), NoLevel.IsReady());
 	TestTrue(TEXT("with its line"), FMantleCheck::DoneLine(NoLevel).StartsWith(TEXT("MANTLE_CHECK_DONE ready=0 errors=1 ")));
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleHeadlessThinArgsTest,
-	"Mantle.Editor.PlaceInstancing.HeadlessPublishTakesThinAuto",
+	FMantleHeadlessArgsTest,
+	"Mantle.Editor.PlaceInstancing.HeadlessPublishTakesTimeoutAndNotes",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleHeadlessThinArgsTest::RunTest(const FString& Parameters)
+bool FMantleHeadlessArgsTest::RunTest(const FString& Parameters)
 {
 	const FMantleHeadlessPublish::FArgs Plain = FMantleHeadlessPublish::ParseArgs({ TEXT("A"), TEXT("note") });
-	TestFalse(TEXT("thinning is off unless asked for"), Plain.bThin);
 	TestEqual(TEXT("the notes are as before"), Plain.Notes, FString(TEXT("A note")));
 
-	const FMantleHeadlessPublish::FArgs Thin = FMantleHeadlessPublish::ParseArgs({ TEXT("-Thin=auto"), TEXT("-TimeoutMinutes=5"), TEXT("Second"), TEXT("pass") });
-	TestTrue(TEXT("-Thin=auto asks for it"), Thin.bThin);
-	TestEqual(TEXT("the options come in either order"), Thin.TimeoutSeconds, 300.0);
-	TestEqual(TEXT("and the notes follow them"), Thin.Notes, FString(TEXT("Second pass")));
-	TestTrue(TEXT("the other order too"), FMantleHeadlessPublish::ParseArgs({ TEXT("-TimeoutMinutes=5"), TEXT("-Thin=auto") }).bThin);
+	const FMantleHeadlessPublish::FArgs Timed = FMantleHeadlessPublish::ParseArgs({ TEXT("-TimeoutMinutes=5"), TEXT("Second"), TEXT("pass") });
+	TestEqual(TEXT("the timeout is in minutes"), Timed.TimeoutSeconds, 300.0);
+	TestEqual(TEXT("and the notes follow it"), Timed.Notes, FString(TEXT("Second pass")));
 
-	TestFalse(TEXT("an unknown thin mode is refused"), FMantleHeadlessPublish::ParseArgs({ TEXT("-Thin=some") }).Error.IsEmpty());
 	TestFalse(TEXT("a bad timeout still is"), FMantleHeadlessPublish::ParseArgs({ TEXT("-TimeoutMinutes=0") }).Error.IsEmpty());
 	return true;
 }

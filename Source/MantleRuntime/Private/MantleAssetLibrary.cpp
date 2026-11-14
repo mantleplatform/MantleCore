@@ -29,6 +29,7 @@ namespace
 		case EMantleAssetKind::Lumen:      return TEXT("Lumen");
 		case EMantleAssetKind::VoxelWorldData: return TEXT("VoxelWorldData");
 		case EMantleAssetKind::Nanite:     return TEXT("Nanite");
+		case EMantleAssetKind::PlaceCellIndex: return TEXT("PlaceCellIndex");
 		default:                           return TEXT("Unknown");
 		}
 	}

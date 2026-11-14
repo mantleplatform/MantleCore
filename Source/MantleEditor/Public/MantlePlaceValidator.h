@@ -32,9 +32,6 @@ struct FMantleValidationIssue
 	/** What to do about it. */
 	FString Remedy;
 
-	/** The place-wide "too many instanced meshes" error: the one thinning can fix (Publish makes the offer). */
-	bool bInstanceBudget = false;
-
 	FString ToString() const
 	{
 		const TCHAR* Prefix = Severity == EMantleIssueSeverity::Error ? TEXT("Error") : TEXT("Warning");
@@ -54,24 +51,6 @@ struct FMantleValidationResult
 	{
 		return Issues.ContainsByPredicate(
 			[](const FMantleValidationIssue& Issue) { return Issue.Severity == EMantleIssueSeverity::Error; });
-	}
-
-	/** True when there are errors and every one is the instanced-mesh budget, which thinning can fix. */
-	bool OnlyInstanceBudgetErrors() const
-	{
-		bool bAny = false;
-		for (const FMantleValidationIssue& Issue : Issues)
-		{
-			if (Issue.Severity == EMantleIssueSeverity::Error)
-			{
-				if (!Issue.bInstanceBudget)
-				{
-					return false;
-				}
-				bAny = true;
-			}
-		}
-		return bAny;
 	}
 
 	int32 NumErrors() const
@@ -105,11 +84,7 @@ struct FMantleValidationResult
 class MANTLEEDITOR_API FMantlePlaceValidator
 {
 public:
-	/**
-	 * bThinInstances: the creator chose even thinning (GhzGarage/mantle#818), so a level over the instance limit is a note, not an error;
-	 * Export removes the instances.
-	 */
-	static FMantleValidationResult Validate(UWorld* World, bool bThinInstances = false);
+	static FMantleValidationResult Validate(UWorld* World);
 
 	/**
 	 * The revision notes a Publish sends, held to the schema's limit (#393). Not part of Validate,

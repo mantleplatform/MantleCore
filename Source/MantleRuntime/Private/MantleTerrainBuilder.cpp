@@ -365,6 +365,15 @@ void FMantleTerrainBuilder::BuildChunkDescription(const FMantleHeightfield& Fiel
 	}
 }
 
+bool FMantleTerrainBuilder::IsUsableHeightfield(const FMantleHeightfield& Field)
+{
+	return !(Field.Width < FMantleHeightfieldReader::MinSize || Field.Height < FMantleHeightfieldReader::MinSize
+		|| Field.Width > FMantleHeightfieldReader::MaxSize || Field.Height > FMantleHeightfieldReader::MaxSize
+		|| static_cast<int64>(Field.Width) * Field.Height != Field.Heights.Num()
+		|| !(Field.SpacingX > 0.0f) || !(Field.SpacingY > 0.0f) || !FMath::IsFinite(Field.SpacingX) || !FMath::IsFinite(Field.SpacingY)
+		|| !FMath::IsFinite(Field.HeightScale) || !FMath::IsFinite(Field.HeightOffset));
+}
+
 bool FMantleTerrainBuilder::BuildChunks(const FMantleHeightfield& Field, const FMantleTerrainBuildParams& Params,
 	TArray<FMantleTerrainChunk>& Out, FString* OutError)
 {
@@ -375,11 +384,7 @@ bool FMantleTerrainBuilder::BuildChunks(const FMantleHeightfield& Field, const F
 	{
 		return FailTerrain(OutError, TEXT("terrain meshes are built on the game thread"));
 	}
-	if (Field.Width < FMantleHeightfieldReader::MinSize || Field.Height < FMantleHeightfieldReader::MinSize
-		|| Field.Width > FMantleHeightfieldReader::MaxSize || Field.Height > FMantleHeightfieldReader::MaxSize
-		|| static_cast<int64>(Field.Width) * Field.Height != Field.Heights.Num()
-		|| !(Field.SpacingX > 0.0f) || !(Field.SpacingY > 0.0f) || !FMath::IsFinite(Field.SpacingX) || !FMath::IsFinite(Field.SpacingY)
-		|| !FMath::IsFinite(Field.HeightScale) || !FMath::IsFinite(Field.HeightOffset))
+	if (!IsUsableHeightfield(Field))
 	{
 		return FailTerrain(OutError, FString::Printf(TEXT("the heightfield is not usable (%d x %d, %d samples, spacing %g x %g)"),
 			Field.Width, Field.Height, Field.Heights.Num(), Field.SpacingX, Field.SpacingY));
@@ -390,7 +395,6 @@ bool FMantleTerrainBuilder::BuildChunks(const FMantleHeightfield& Field, const F
 	const int32 LODs = Params.bRenderLODs ? LODCount(ChunkQuads, FMath::Max(Params.MaxLODs, 1)) : 1;
 	const int32 ChunksX = ChunkCount(Field.Width, ChunkQuads);
 	const int32 ChunksY = ChunkCount(Field.Height, ChunkQuads);
-	UObject* MeshOuter = Params.Outer ? Params.Outer : GetTransientPackage();
 
 	TArray<FMantleTerrainChunk> Built;
 	Built.Reserve(ChunksX * ChunksY);
@@ -400,113 +404,139 @@ bool FMantleTerrainBuilder::BuildChunks(const FMantleHeightfield& Field, const F
 		for (int32 ChunkX = 0; ChunkX < ChunksX; ++ChunkX)
 		{
 			FMantleTerrainChunk Chunk;
-			ChunkSpan(Field.Width, ChunkQuads, ChunkX, Chunk.FirstSample.X, Chunk.LastSample.X);
-			ChunkSpan(Field.Height, ChunkQuads, ChunkY, Chunk.FirstSample.Y, Chunk.LastSample.Y);
-			Chunk.Origin = FVector3f(static_cast<float>(Chunk.FirstSample.X) * Field.SpacingX, static_cast<float>(Chunk.FirstSample.Y) * Field.SpacingY, 0.0f);
-
-			// Skirts only where another chunk meets this one: left, right, bottom, top.
-			const bool bSkirts[4] = {
-				Chunk.FirstSample.X > 0, Chunk.LastSample.X < Field.Width - 1,
-				Chunk.FirstSample.Y > 0, Chunk.LastSample.Y < Field.Height - 1 };
-			float SkirtDepth = 0.0f;
-			if (bSkirts[0]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, false, Chunk.FirstSample.X, Chunk.FirstSample.Y, Chunk.LastSample.Y, LODs)); }
-			if (bSkirts[1]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, false, Chunk.LastSample.X, Chunk.FirstSample.Y, Chunk.LastSample.Y, LODs)); }
-			if (bSkirts[2]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, true, Chunk.FirstSample.Y, Chunk.FirstSample.X, Chunk.LastSample.X, LODs)); }
-			if (bSkirts[3]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, true, Chunk.LastSample.Y, Chunk.FirstSample.X, Chunk.LastSample.X, LODs)); }
-
-			TArray<FMeshDescription> Descriptions;
-			Descriptions.SetNum(LODs);
-			TArray<const FMeshDescription*> DescriptionPointers;
-			for (int32 Lod = 0; Lod < LODs; ++Lod)
+			bool bEmpty = false;
+			if (!BuildOneChunk(Field, Params, ChunkX, ChunkY, Vertices, Chunk, bEmpty, OutError))
 			{
-				BuildChunkDescription(Field, Chunk.FirstSample, Chunk.LastSample, 1 << Lod, SkirtDepth, bSkirts, Descriptions[Lod], Params.Holes.Get());
-				// A coarser LOD that has lost all its quads to a hole ends the chunk's LODs there; a chunk with none at LOD 0 is all hole.
-				if (Descriptions[Lod].Triangles().Num() == 0)
-				{
-					break;
-				}
-				DescriptionPointers.Add(&Descriptions[Lod]);
+				return false;
 			}
-			if (DescriptionPointers.Num() == 0)
+			if (!bEmpty)
 			{
-				continue;
+				Built.Add(Chunk);
 			}
-			const int32 ChunkLODs = DescriptionPointers.Num();
-			Vertices += Descriptions[0].Vertices().Num();
-
-			const FName MeshName = MakeUniqueObjectName(MeshOuter, UStaticMesh::StaticClass(),
-				FName(*FString::Printf(TEXT("MantleTerrainChunk_%d_%d"), ChunkX, ChunkY)));
-			UStaticMesh* Mesh = NewObject<UStaticMesh>(MeshOuter, MeshName, RF_Transient);
-			// UVChannelData must be initialized (UStaticMesh::GetUVChannelData ensures it); see the static mesh builder.
-			FStaticMaterial& Slot = Mesh->GetStaticMaterials().Add_GetRef(FStaticMaterial(nullptr, FName(MaterialSlotName)));
-			Slot.UVChannelData = FMeshUVChannelInfo(1.0f);
-			// A non-editor build reads collision triangles back from the render data, and only from a mesh
-			// flagged for CPU access (UStaticMesh::GetPhysicsTriMeshData).
-			Mesh->bAllowCPUAccess = Params.bCollision;
-
-			UStaticMesh::FBuildMeshDescriptionsParams BuildParams;
-			BuildParams.bMarkPackageDirty = false;
-			BuildParams.bBuildSimpleCollision = false;
-			BuildParams.bCommitMeshDescription = false;
-			BuildParams.bFastBuild = true;
-			BuildParams.bAllowCpuAccess = Params.bCollision;
-			// UV0 spans the whole terrain and each layer repeats hundreds of times over it: half floats
-			// would step visibly, so every LOD keeps full-precision UVs.
-			BuildParams.PerLODOverrides.SetNum(ChunkLODs);
-			for (UStaticMesh::FBuildMeshDescriptionsLODParams& LODParams : BuildParams.PerLODOverrides)
-			{
-				LODParams.bUseFullPrecisionUVs = true;
-			}
-			// The engine's build always ends in InitResources, which asserts on a dedicated server: there
-			// the same mesh is built without render resources.
-			const bool bBuilt = FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources(Params.bInitRenderResources)
-				? Mesh->BuildFromMeshDescriptions(DescriptionPointers, BuildParams)
-				: BuildTerrainMeshCpuOnly(*Mesh, DescriptionPointers, BuildParams);
-			if (!bBuilt)
-			{
-				return FailTerrain(OutError, FString::Printf(TEXT("the engine could not build terrain chunk (%d, %d)"), ChunkX, ChunkY));
-			}
-			FStaticMeshRenderData* RenderData = Mesh->GetRenderData();
-			if (!RenderData || RenderData->LODResources.Num() != ChunkLODs)
-			{
-				return FailTerrain(OutError, FString::Printf(TEXT("the engine built %d LODs of terrain chunk (%d, %d), not %d"),
-					RenderData ? RenderData->LODResources.Num() : 0, ChunkX, ChunkY, ChunkLODs));
-			}
-			for (int32 Lod = 0; Lod < ChunkLODs; ++Lod)
-			{
-				// Chosen by screen size, which for chunks of one size is by distance (LODScreenSize).
-				RenderData->ScreenSize[Lod].Default = LODScreenSize(Lod);
-				// One slot: bound explicitly, as FMantleRuntimeStaticMeshBuilder does, rather than trusting
-				// the fast build's lookup of the slot name.
-				for (FStaticMeshSection& Section : RenderData->LODResources[Lod].Sections)
-				{
-					Section.MaterialIndex = 0;
-				}
-			}
-
-			if (Params.bCollision)
-			{
-				UBodySetup* Body = Mesh->GetBodySetup();
-				if (!Body)
-				{
-					return FailTerrain(OutError, FString::Printf(TEXT("the engine made no body setup for terrain chunk (%d, %d)"), ChunkX, ChunkY));
-				}
-				// LOD 0's triangles are the collision, from either side, cooked now: a player must be able
-				// to stand on the terrain the moment the place is built.
-				Body->CollisionTraceFlag = CTF_UseComplexAsSimple;
-				Body->bDoubleSidedGeometry = true;
-				Body->InvalidatePhysicsData();
-				Body->CreatePhysicsMeshes();
-			}
-			Chunk.Mesh = Mesh;
-			Built.Add(Chunk);
 		}
 	}
+
 
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_TERRAIN built %d x %d samples as %d x %d chunks of %d quads, %d LODs, %lld LOD 0 vertices, collision %s, in %.1f ms"),
 		Field.Width, Field.Height, ChunksX, ChunksY, ChunkQuads, LODs, Vertices, Params.bCollision ? TEXT("complex") : TEXT("none"),
 		(FPlatformTime::Seconds() - StartSeconds) * 1000.0);
 	Out = MoveTemp(Built);
+	return true;
+}
+
+bool FMantleTerrainBuilder::BuildOneChunk(const FMantleHeightfield& Field, const FMantleTerrainBuildParams& Params, const int32 ChunkX, const int32 ChunkY,
+	int64& InOutVertices, FMantleTerrainChunk& OutChunk, bool& bOutEmpty, FString* OutError)
+{
+	using namespace MantleTerrainBuilderPrivate;
+
+	bOutEmpty = false;
+	const int32 ChunkQuads = FMath::Max(Params.ChunkQuads, 1);
+	const int32 LODs = Params.bRenderLODs ? LODCount(ChunkQuads, FMath::Max(Params.MaxLODs, 1)) : 1;
+	UObject* MeshOuter = Params.Outer ? Params.Outer : GetTransientPackage();
+
+	FMantleTerrainChunk Chunk;
+	ChunkSpan(Field.Width, ChunkQuads, ChunkX, Chunk.FirstSample.X, Chunk.LastSample.X);
+	ChunkSpan(Field.Height, ChunkQuads, ChunkY, Chunk.FirstSample.Y, Chunk.LastSample.Y);
+	Chunk.Origin = FVector3f(static_cast<float>(Chunk.FirstSample.X) * Field.SpacingX, static_cast<float>(Chunk.FirstSample.Y) * Field.SpacingY, 0.0f);
+
+	// Skirts only where another chunk meets this one: left, right, bottom, top.
+	const bool bSkirts[4] = {
+		Chunk.FirstSample.X > 0, Chunk.LastSample.X < Field.Width - 1,
+		Chunk.FirstSample.Y > 0, Chunk.LastSample.Y < Field.Height - 1 };
+	float SkirtDepth = 0.0f;
+	if (bSkirts[0]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, false, Chunk.FirstSample.X, Chunk.FirstSample.Y, Chunk.LastSample.Y, LODs)); }
+	if (bSkirts[1]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, false, Chunk.LastSample.X, Chunk.FirstSample.Y, Chunk.LastSample.Y, LODs)); }
+	if (bSkirts[2]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, true, Chunk.FirstSample.Y, Chunk.FirstSample.X, Chunk.LastSample.X, LODs)); }
+	if (bSkirts[3]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, true, Chunk.LastSample.Y, Chunk.FirstSample.X, Chunk.LastSample.X, LODs)); }
+
+	TArray<FMeshDescription> Descriptions;
+	Descriptions.SetNum(LODs);
+	TArray<const FMeshDescription*> DescriptionPointers;
+	for (int32 Lod = 0; Lod < LODs; ++Lod)
+	{
+		BuildChunkDescription(Field, Chunk.FirstSample, Chunk.LastSample, 1 << Lod, SkirtDepth, bSkirts, Descriptions[Lod], Params.Holes.Get());
+		// A coarser LOD that has lost all its quads to a hole ends the chunk's LODs there; a chunk with none at LOD 0 is all hole.
+		if (Descriptions[Lod].Triangles().Num() == 0)
+		{
+			break;
+		}
+		DescriptionPointers.Add(&Descriptions[Lod]);
+	}
+	if (DescriptionPointers.Num() == 0)
+	{
+		bOutEmpty = true;
+		return true;
+	}
+	const int32 ChunkLODs = DescriptionPointers.Num();
+	InOutVertices += Descriptions[0].Vertices().Num();
+
+	const FName MeshName = MakeUniqueObjectName(MeshOuter, UStaticMesh::StaticClass(),
+		FName(*FString::Printf(TEXT("MantleTerrainChunk_%d_%d"), ChunkX, ChunkY)));
+	UStaticMesh* Mesh = NewObject<UStaticMesh>(MeshOuter, MeshName, RF_Transient);
+	// UVChannelData must be initialized (UStaticMesh::GetUVChannelData ensures it); see the static mesh builder.
+	FStaticMaterial& Slot = Mesh->GetStaticMaterials().Add_GetRef(FStaticMaterial(nullptr, FName(MaterialSlotName)));
+	Slot.UVChannelData = FMeshUVChannelInfo(1.0f);
+	// A non-editor build reads collision triangles back from the render data, and only from a mesh
+	// flagged for CPU access (UStaticMesh::GetPhysicsTriMeshData).
+	Mesh->bAllowCPUAccess = Params.bCollision;
+
+	UStaticMesh::FBuildMeshDescriptionsParams BuildParams;
+	BuildParams.bMarkPackageDirty = false;
+	BuildParams.bBuildSimpleCollision = false;
+	BuildParams.bCommitMeshDescription = false;
+	BuildParams.bFastBuild = true;
+	BuildParams.bAllowCpuAccess = Params.bCollision;
+	// UV0 spans the whole terrain and each layer repeats hundreds of times over it: half floats
+	// would step visibly, so every LOD keeps full-precision UVs.
+	BuildParams.PerLODOverrides.SetNum(ChunkLODs);
+	for (UStaticMesh::FBuildMeshDescriptionsLODParams& LODParams : BuildParams.PerLODOverrides)
+	{
+		LODParams.bUseFullPrecisionUVs = true;
+	}
+	// The engine's build always ends in InitResources, which asserts on a dedicated server: there
+	// the same mesh is built without render resources.
+	const bool bBuilt = FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources(Params.bInitRenderResources)
+		? Mesh->BuildFromMeshDescriptions(DescriptionPointers, BuildParams)
+		: BuildTerrainMeshCpuOnly(*Mesh, DescriptionPointers, BuildParams);
+	if (!bBuilt)
+	{
+		return FailTerrain(OutError, FString::Printf(TEXT("the engine could not build terrain chunk (%d, %d)"), ChunkX, ChunkY));
+	}
+	FStaticMeshRenderData* RenderData = Mesh->GetRenderData();
+	if (!RenderData || RenderData->LODResources.Num() != ChunkLODs)
+	{
+		return FailTerrain(OutError, FString::Printf(TEXT("the engine built %d LODs of terrain chunk (%d, %d), not %d"),
+			RenderData ? RenderData->LODResources.Num() : 0, ChunkX, ChunkY, ChunkLODs));
+	}
+	for (int32 Lod = 0; Lod < ChunkLODs; ++Lod)
+	{
+		// Chosen by screen size, which for chunks of one size is by distance (LODScreenSize).
+		RenderData->ScreenSize[Lod].Default = LODScreenSize(Lod);
+		// One slot: bound explicitly, as FMantleRuntimeStaticMeshBuilder does, rather than trusting
+		// the fast build's lookup of the slot name.
+		for (FStaticMeshSection& Section : RenderData->LODResources[Lod].Sections)
+		{
+			Section.MaterialIndex = 0;
+		}
+	}
+
+	if (Params.bCollision)
+	{
+		UBodySetup* Body = Mesh->GetBodySetup();
+		if (!Body)
+		{
+			return FailTerrain(OutError, FString::Printf(TEXT("the engine made no body setup for terrain chunk (%d, %d)"), ChunkX, ChunkY));
+		}
+		// LOD 0's triangles are the collision, from either side, cooked now: a player must be able
+		// to stand on the terrain the moment the place is built.
+		Body->CollisionTraceFlag = CTF_UseComplexAsSimple;
+		Body->bDoubleSidedGeometry = true;
+		Body->InvalidatePhysicsData();
+		Body->CreatePhysicsMeshes();
+	}
+
+	Chunk.Mesh = Mesh;
+	OutChunk = Chunk;
 	return true;
 }
 
@@ -625,14 +655,25 @@ UMaterialInterface* FMantleTerrainBuilder::BuildMaterial(const FMantleHeightfiel
 	return Instance;
 }
 
-AActor* FMantleTerrainBuilder::Spawn(UWorld* World, const FString& Name, const FMantleHeightfield& Field, UMaterialInterface* Material,
-	const bool bCastShadow, const FMantleTerrainBuildParams& Params, FString* OutError)
+TSharedPtr<FMantleTerrainSpawn> FMantleTerrainSpawn::Begin(UWorld* World, const FString& Name, const FMantleHeightfield& Field,
+	UMaterialInterface* Material, const bool bCastShadow, const FMantleTerrainBuildParams& Params, FString* OutError)
 {
 	using namespace MantleTerrainBuilderPrivate;
 
 	if (!World)
 	{
 		FailTerrain(OutError, TEXT("no world to build the terrain into"));
+		return nullptr;
+	}
+	if (!IsInGameThread())
+	{
+		FailTerrain(OutError, TEXT("terrain meshes are built on the game thread"));
+		return nullptr;
+	}
+	if (!FMantleTerrainBuilder::IsUsableHeightfield(Field))
+	{
+		FailTerrain(OutError, FString::Printf(TEXT("the heightfield is not usable (%d x %d, %d samples, spacing %g x %g)"),
+			Field.Width, Field.Height, Field.Heights.Num(), Field.SpacingX, Field.SpacingY));
 		return nullptr;
 	}
 	FActorSpawnParameters SpawnParams;
@@ -649,16 +690,7 @@ AActor* FMantleTerrainBuilder::Spawn(UWorld* World, const FString& Name, const F
 		Actor->SetActorLabel(Name);
 	}
 #endif
-	Actor->Tags.Add(FName(TerrainActorTag));
-
-	FMantleTerrainBuildParams ChunkParams = Params;
-	ChunkParams.Outer = Params.Outer ? Params.Outer : Actor;
-	TArray<FMantleTerrainChunk> Chunks;
-	if (!BuildChunks(Field, ChunkParams, Chunks, OutError))
-	{
-		Actor->Destroy();
-		return nullptr;
-	}
+	Actor->Tags.Add(FName(FMantleTerrainBuilder::TerrainActorTag));
 
 	// Movable while the place builder places it, like every other entity; it freezes the terrain to
 	// Static afterwards.
@@ -667,17 +699,67 @@ AActor* FMantleTerrainBuilder::Spawn(UWorld* World, const FString& Name, const F
 	Actor->AddInstanceComponent(Root);
 	Root->SetMobility(EComponentMobility::Movable);
 	Root->RegisterComponent();
-	for (const FMantleTerrainChunk& Chunk : Chunks)
+
+	TSharedPtr<FMantleTerrainSpawn> Spawn = MakeShareable(new FMantleTerrainSpawn());
+	Spawn->Actor = Actor;
+	Spawn->Root = Root;
+	Spawn->Material.Reset(Material);
+	Spawn->Field = &Field;
+	Spawn->Params = Params;
+	Spawn->Params.Outer = Params.Outer ? Params.Outer : Actor;
+	Spawn->bCastShadow = bCastShadow;
+	const int32 ChunkQuads = FMath::Max(Params.ChunkQuads, 1);
+	Spawn->ChunksX = FMantleTerrainBuilder::ChunkCount(Field.Width, ChunkQuads);
+	Spawn->ChunksY = FMantleTerrainBuilder::ChunkCount(Field.Height, ChunkQuads);
+	return Spawn;
+}
+
+FMantleTerrainSpawn::~FMantleTerrainSpawn()
+{
+	// Dropped before it was finished (or after a chunk failed): the half-built terrain goes with it.
+	if (AActor* Held = Actor.Get())
 	{
-		UStaticMeshComponent* Component = NewObject<UStaticMeshComponent>(Actor,
+		Held->Destroy();
+	}
+}
+
+bool FMantleTerrainSpawn::Step()
+{
+	AActor* Built = Actor.Get();
+	USceneComponent* RootComponent = Root.Get();
+	if (HasFailed() || !Built || !RootComponent)
+	{
+		return true;
+	}
+	const int32 Total = ChunksX * ChunksY;
+	if (Next >= Total)
+	{
+		return true;
+	}
+
+	const double StartSeconds = FPlatformTime::Seconds();
+	FMantleTerrainChunk Chunk;
+	bool bEmpty = false;
+	FString ChunkError;
+	if (!FMantleTerrainBuilder::BuildOneChunk(*Field, Params, Next % ChunksX, Next / ChunksX, Vertices, Chunk, bEmpty, &ChunkError))
+	{
+		Error = ChunkError.IsEmpty() ? FString(TEXT("a terrain chunk failed")) : ChunkError;
+		Built->Destroy();
+		Actor.Reset();
+		return true;
+	}
+	++Next;
+	if (!bEmpty)
+	{
+		UStaticMeshComponent* Component = NewObject<UStaticMeshComponent>(Built,
 			FName(*FString::Printf(TEXT("Chunk_%d_%d"), Chunk.FirstSample.X, Chunk.FirstSample.Y)));
 		Component->SetMobility(EComponentMobility::Movable);
-		Component->SetupAttachment(Root);
+		Component->SetupAttachment(RootComponent);
 		Component->SetRelativeLocation(FVector(Chunk.Origin));
 		Component->SetStaticMesh(Chunk.Mesh);
-		if (Material)
+		if (UMaterialInterface* Look = Material.Get())
 		{
-			Component->SetMaterial(0, Material);
+			Component->SetMaterial(0, Look);
 		}
 		Component->SetCastShadow(bCastShadow);
 		Component->SetCollisionProfileName(UCollisionProfile::CustomCollisionProfileName);
@@ -690,8 +772,46 @@ AActor* FMantleTerrainBuilder::Spawn(UWorld* World, const FString& Name, const F
 		{
 			Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		}
-		Actor->AddInstanceComponent(Component);
+		Built->AddInstanceComponent(Component);
 		Component->RegisterComponent();
 	}
-	return Actor;
+	BuildSeconds += FPlatformTime::Seconds() - StartSeconds;
+	if (Next < Total)
+	{
+		return false;
+	}
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_TERRAIN spawned %d x %d samples as %d x %d chunks of %d quads, %lld LOD 0 vertices, collision %s, in %.1f ms"),
+		Field->Width, Field->Height, ChunksX, ChunksY, FMath::Max(Params.ChunkQuads, 1), Vertices,
+		Params.bCollision ? TEXT("complex") : TEXT("none"), BuildSeconds * 1000.0);
+	return true;
+}
+
+AActor* FMantleTerrainSpawn::TakeActor()
+{
+	AActor* Built = Actor.Get();
+	Actor.Reset();
+	return Built;
+}
+
+AActor* FMantleTerrainBuilder::Spawn(UWorld* World, const FString& Name, const FMantleHeightfield& Field, UMaterialInterface* Material,
+	const bool bCastShadow, const FMantleTerrainBuildParams& Params, FString* OutError)
+{
+	// The whole terrain in this call: the staged spawn, stepped to its end.
+	const TSharedPtr<FMantleTerrainSpawn> Staged = FMantleTerrainSpawn::Begin(World, Name, Field, Material, bCastShadow, Params, OutError);
+	if (!Staged)
+	{
+		return nullptr;
+	}
+	while (!Staged->Step())
+	{
+	}
+	if (Staged->HasFailed())
+	{
+		if (OutError)
+		{
+			*OutError = Staged->GetError();
+		}
+		return nullptr;
+	}
+	return Staged->TakeActor();
 }

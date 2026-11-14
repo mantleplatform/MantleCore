@@ -211,7 +211,12 @@ enum class EMantleAssetKind : uint8
 	 * A static mesh's Nanite file: an MNZ1 container (zlib) of MND1, its full-detail Nanite data, baked by the plugin at publish and named
 	 * by its mesh's entry (FMantleAssetRef::Nanite). Stored as uploaded; FMantleNaniteSideFile unpacks and reads it.
 	 */
-	Nanite
+	Nanite,
+	/**
+	 * A place's cell index (large places, stage 1): an MCI1 container (zlib) listing the place's cell files, each an MCF1 container of the
+	 * scenery of one cell. Named by the place file's cells key (FMantlePlace::CellIndexId); FMantleCellLoader reads it and the cell files.
+	 */
+	PlaceCellIndex
 };
 
 enum class EMantleCollision : uint8
@@ -1783,6 +1788,15 @@ struct FMantlePlace
 	TArray<FString> StorageSpawnProblems;
 	FMantleLocalization Localization;
 	FMantleAudience Audience;
+
+	/**
+	 * cells.index, optional (large places): the id of the PlaceCellIndex entry whose cell files hold the place's scenery. Empty for a place
+	 * whose entities are all in the file, which loads exactly as before.
+	 */
+	FString CellIndexId;
+
+	/** Not in the place file: set once FMantlePlaceCells::Merge has added the cells' entities, so the place is never completed twice. */
+	bool bCellsMerged = false;
 };
 
 /** A single validation failure, located by a JSON-pointer-style path. */

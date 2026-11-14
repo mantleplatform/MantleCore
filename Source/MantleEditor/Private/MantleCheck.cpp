@@ -49,7 +49,6 @@ FMantleCheck::FArgs FMantleCheck::ParseArgs(const TArray<FString>& Args)
 {
 	FArgs Parsed;
 	static const FString ExportPrefix = TEXT("-Export=");
-	static const FString ThinPrefix = TEXT("-Thin=");
 	for (const FString& Arg : Args)
 	{
 		if (Arg.IsEmpty())
@@ -65,29 +64,16 @@ FMantleCheck::FArgs FMantleCheck::ParseArgs(const TArray<FString>& Args)
 				return Parsed;
 			}
 		}
-		else if (Arg.StartsWith(ThinPrefix, ESearchCase::IgnoreCase))
-		{
-			const FString Value = Arg.RightChop(ThinPrefix.Len());
-			if (Value.Equals(TEXT("auto"), ESearchCase::IgnoreCase))
-			{
-				Parsed.bThin = true;
-			}
-			else if (!Value.Equals(TEXT("off"), ESearchCase::IgnoreCase))
-			{
-				Parsed.Error = FString::Printf(TEXT("-Thin wants auto (thin foliage and instances evenly if the place is too big) or off, not '%s'."), *Value);
-				return Parsed;
-			}
-		}
 		else
 		{
-			Parsed.Error = FString::Printf(TEXT("Mantle.Check does not know '%s'. It takes -Export=<folder> and -Thin=auto."), *Arg);
+			Parsed.Error = FString::Printf(TEXT("Mantle.Check does not know '%s'. It takes -Export=<folder>."), *Arg);
 			return Parsed;
 		}
 	}
 	return Parsed;
 }
 
-FMantleCheckReport FMantleCheck::Evaluate(UWorld* World, const bool bThin)
+FMantleCheckReport FMantleCheck::Evaluate(UWorld* World)
 {
 	FMantleCheckReport Report;
 	if (!World)
@@ -104,7 +90,7 @@ FMantleCheckReport FMantleCheck::Evaluate(UWorld* World, const bool bThin)
 		Report.Issues.Add({ EMantleIssueSeverity::Warning, FString(), Report.WorldPartitionNote, TEXT("They are unloaded again when the check ends.") });
 	}
 
-	const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(World, bThin);
+	const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(World);
 	Report.Issues.Append(Validation.Issues);
 	// #149: meshes a Lumen level would publish without Lumen data, and why.
 	FMantleMeshLumenBake::CheckLevel(World, Report.Issues);
@@ -112,7 +98,6 @@ FMantleCheckReport FMantleCheck::Evaluate(UWorld* World, const bool bThin)
 	{
 		FMantleExportOptions Options;
 		Options.Name = World->GetName();
-		Options.bThinInstances = bThin;
 		const FMantleExportResult Exported = FMantlePlaceExporter::Export(World, Options);
 		for (const FMantleParseError& Error : Exported.Errors)
 		{
@@ -122,16 +107,25 @@ FMantleCheckReport FMantleCheck::Evaluate(UWorld* World, const bool bThin)
 		Report.Instances = Exported.InstanceTotal;
 		Report.DrawDistances = Exported.DrawDistanceEntities;
 		Report.GroupedActors = Exported.Grouping.Actors;
-		Report.ThinnedInstances = Exported.Thinning.bApplied ? Exported.Thinning.Removed() : 0;
-		if (Exported.ThinPreview.RemovesAnything() && Exported.ThinPreview.bFits)
-		{
-			Report.ThinOffer = Exported.ThinPreview.Describe();
-		}
+		Report.Cells = Exported.CellReport.NumCells();
+		Report.CellEntities = Exported.CellReport.CellEntities;
+		Report.CellInstances = Exported.CellReport.CellInstances;
+		Report.CellLines = CellLines(Exported);
 		Report.Coverage = Exported.Coverage;
 		Report.Water = FMantleWaterBodyExport::Read(World);
 		if (Exported.bSuccess)
 		{
-			Report.PlaceJson = FMantlePlaceExporter::ToJson(Exported.Place);
+			FMantleCellRoot Root;
+			TArray<FMantleCellOfflineFile> CellFiles;
+			FString CellError;
+			if (Exported.Cells.Num() > 0 && !FMantleCellFiles::BuildOffline(Exported.CellGrid, Exported.Cells, CellFiles, Root, CellError))
+			{
+				Report.Issues.Add({ EMantleIssueSeverity::Error, FString(), CellError, FString() });
+			}
+			else
+			{
+				Report.PlaceJson = FMantlePlaceExporter::ToJson(Exported.Place, Exported.Cells.Num() > 0 ? &Root : nullptr);
+			}
 		}
 	}
 
@@ -141,9 +135,59 @@ FMantleCheckReport FMantleCheck::Evaluate(UWorld* World, const bool bThin)
 
 FString FMantleCheck::DoneLine(const FMantleCheckReport& Report)
 {
-	return FString::Printf(TEXT("MANTLE_CHECK_DONE ready=%d errors=%d warnings=%d placeBytes=%lld instances=%lld grouped=%d thinned=%lld drawDistances=%d"),
+	return FString::Printf(TEXT("MANTLE_CHECK_DONE ready=%d errors=%d warnings=%d placeBytes=%lld instances=%lld grouped=%d drawDistances=%d cells=%d"),
 		Report.IsReady() ? 1 : 0, Report.NumErrors(), Report.NumWarnings(), Report.PlaceBytes, Report.Instances, Report.GroupedActors,
-		Report.ThinnedInstances, Report.DrawDistances);
+		Report.DrawDistances, Report.Cells);
+}
+
+TArray<FString> FMantleCheck::CellLines(const FMantleExportResult& Exported)
+{
+	TArray<FString> Lines;
+	const FMantleCellReport& Report = Exported.CellReport;
+	if (Report.NumCells() == 0 && Report.NumStayed() == 0)
+	{
+		return Lines;
+	}
+	int64 Solid = 0;
+	for (const FMantlePlannedCell& Cell : Exported.Cells)
+	{
+		Solid += Cell.NumSolid();
+	}
+	FString PerLevel;
+	for (int32 Level = 0; Level < Exported.CellGrid.Levels.Num() && Level < FMantleCellGrid::MaxLevels; ++Level)
+	{
+		PerLevel += FString::Printf(TEXT(" level%d=%d"), Level, Report.CellsPerLevel[Level]);
+	}
+	Lines.Add(FString::Printf(TEXT("MANTLE_CHECK_CELLS cells=%d entities=%lld instances=%lld solid=%lld folded=%d groupsDropped=%d%s"),
+		Report.NumCells(), Report.CellEntities, Report.CellInstances, Solid, Report.FoldedActors, Report.DroppedGroups, *PerLevel));
+	for (const FMantleCellKey& Key : Report.BiggestCells)
+	{
+		const FMantlePlannedCell* Cell = Exported.Cells.FindByPredicate([&Key](const FMantlePlannedCell& Candidate) { return Candidate.Key == Key; });
+		if (!Cell)
+		{
+			continue;
+		}
+		TArray<FMantleCellFileBlob> Files;
+		FString Why;
+		int64 Bytes = 0;
+		if (FMantleCellFiles::WriteCell(*Cell, Files, Why))
+		{
+			for (const FMantleCellFileBlob& File : Files)
+			{
+				Bytes += File.Bytes.Num();
+			}
+		}
+		Lines.Add(FString::Printf(TEXT("MANTLE_CHECK_CELL %s entities=%d instances=%lld solid=%lld files=%d bytes=%lld drawDistance=%.0f"),
+			*Key.ToString(), Cell->NumEntities(), Cell->NumInstances(), Cell->NumSolid(), Files.Num(), Bytes, Cell->DrawDistance));
+	}
+	for (int32 Reason = 0; Reason < static_cast<int32>(EMantleCellStay::Count); ++Reason)
+	{
+		if (Report.StayCounts[Reason] > 0)
+		{
+			Lines.Add(FString::Printf(TEXT("MANTLE_CHECK_ROOT %lld %s"), Report.StayCounts[Reason], MantleCellStayText(static_cast<EMantleCellStay>(Reason))));
+		}
+	}
+	return Lines;
 }
 
 TArray<FString> FMantleCheck::IssueLines(const FMantleCheckReport& Report)
@@ -175,10 +219,9 @@ FMantleCheckReport FMantleCheck::Run(UWorld* World, const FArgs& Args)
 	{
 		World = GEditor->GetEditorWorldContext().World();
 	}
-	UE_LOG(LogMantle, Display, TEXT("MANTLE_CHECK_START level=%s thin=%s"), World ? *World->GetOutermost()->GetName() : TEXT("(none)"),
-		Args.bThin ? TEXT("auto") : TEXT("off"));
+	UE_LOG(LogMantle, Display, TEXT("MANTLE_CHECK_START level=%s"), World ? *World->GetOutermost()->GetName() : TEXT("(none)"));
 
-	Report = Evaluate(World, Args.bThin);
+	Report = Evaluate(World);
 
 	for (const FString& Line : IssueLines(Report))
 	{
@@ -191,12 +234,11 @@ FMantleCheckReport FMantleCheck::Run(UWorld* World, const FArgs& Args)
 			UE_LOG(LogMantle, Display, TEXT("%s"), *Line);
 		}
 	}
-	if (!Report.ThinOffer.IsEmpty())
-	{
-		UE_LOG(LogMantle, Display, TEXT("MANTLE_CHECK_THIN_OFFER %s Run Mantle.Check -Thin=auto, or Mantle.Publish -Thin=auto, to use it."),
-			*MantleCheckPrivate::OneLine(Report.ThinOffer));
-	}
 	Report.Coverage.Log();
+	for (const FString& Line : Report.CellLines)
+	{
+		UE_LOG(LogMantle, Display, TEXT("%s"), *Line);
+	}
 	if (Report.Water.bWaterPluginLoaded)
 	{
 		UE_LOG(LogMantle, Display, TEXT("%s"), *Report.Water.SummaryLine());
@@ -214,6 +256,7 @@ FMantleCheckReport FMantleCheck::Run(UWorld* World, const FArgs& Args)
 		{
 			TArray<FString> Notes = IssueLines(Report);
 			Notes.Add(DoneLine(Report));
+			Notes.Append(Report.CellLines);
 			Notes.Append(Report.Coverage.ToDisplayLines());
 			if (Report.Water.bWaterPluginLoaded)
 			{
@@ -253,9 +296,9 @@ namespace MantleCheckPrivate
 {
 	FAutoConsoleCommandWithWorldAndArgs GMantleCheckCommand(
 		TEXT("Mantle.Check"),
-		TEXT("Mantle.Check [-Export=<folder>] [-Thin=auto] -- runs Publish's check and export on the open level without publishing or ")
+		TEXT("Mantle.Check [-Export=<folder>] -- runs Publish's check and export on the open level without publishing or ")
 		TEXT("contacting the server. Loads every World Partition cell as Publish does. -Export writes place.json and check.txt to the folder; ")
-		TEXT("-Thin=auto thins foliage and instances evenly when the place is over a limit (never otherwise). Logs one line per finding ")
+		TEXT("Logs one line per finding ")
 		TEXT("(MANTLE_CHECK_ERROR / MANTLE_CHECK_WARNING) and ends with MANTLE_CHECK_DONE ready= errors= warnings= placeBytes= instances= ... drawDistances= (the meshes and instance sets given a draw distance)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{

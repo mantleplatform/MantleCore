@@ -3,6 +3,8 @@
 
 #include "CoreMinimal.h"
 #include "MantleHeightfieldReader.h"
+#include "Materials/MaterialInterface.h"
+#include "UObject/StrongObjectPtr.h"
 
 class AActor;
 class UMaterialInterface;
@@ -170,6 +172,17 @@ public:
 	static bool BuildChunks(const FMantleHeightfield& Field, const FMantleTerrainBuildParams& Params,
 		TArray<FMantleTerrainChunk>& Out, FString* OutError = nullptr);
 
+	/** Whether the heightfield can be built into a terrain at all: its size, its sample count, its spacing and its scale. */
+	static bool IsUsableHeightfield(const FMantleHeightfield& Field);
+
+	/**
+	 * One chunk's mesh, collision cooked: the unit BuildChunks and a staged Spawn (FMantleTerrainSpawn) are made of.
+	 * Chunk (ChunkX, ChunkY) of the heightfield's grid goes to OutChunk, and its LOD 0 vertices are added to InOutVertices.
+	 * A chunk that is all hole has no mesh: true with bOutEmpty set. False, with the reason, when the mesh fails. Game thread.
+	 */
+	static bool BuildOneChunk(const FMantleHeightfield& Field, const FMantleTerrainBuildParams& Params, int32 ChunkX, int32 ChunkY,
+		int64& InOutVertices, FMantleTerrainChunk& OutChunk, bool& bOutEmpty, FString* OutError = nullptr);
+
 	/** "Layer<Layer><Suffix>", one of M_MantleTerrain's per-layer parameters. */
 	static FName LayerParameter(int32 Layer, const TCHAR* Suffix);
 
@@ -192,4 +205,49 @@ public:
 	 */
 	static AActor* Spawn(UWorld* World, const FString& Name, const FMantleHeightfield& Field, UMaterialInterface* Material,
 		bool bCastShadow, const FMantleTerrainBuildParams& Params, FString* OutError = nullptr);
+};
+
+/**
+ * FMantleTerrainBuilder::Spawn in steps: Begin makes the actor and its root, each Step builds one chunk (the unit that
+ * costs, tens of milliseconds for 128 quads with five LODs and cooked collision) and puts it on the actor, so a big
+ * terrain is many short frames instead of one of seconds. Spawn is Begin and Steps until done.
+ *
+ * Until it is finished the actor holds only the chunks so far. Dropping the object before then destroys the actor.
+ * The heightfield and the material must outlive it. Game thread.
+ */
+class MANTLERUNTIME_API FMantleTerrainSpawn
+{
+public:
+	/** Null, with the reason in OutError, when the world or the heightfield cannot take a terrain. */
+	static TSharedPtr<FMantleTerrainSpawn> Begin(UWorld* World, const FString& Name, const FMantleHeightfield& Field, UMaterialInterface* Material,
+		bool bCastShadow, const FMantleTerrainBuildParams& Params, FString* OutError = nullptr);
+
+	~FMantleTerrainSpawn();
+
+	/** Builds the next chunk. True once there is nothing more to do: every chunk is on the actor, or a chunk failed (HasFailed). */
+	bool Step();
+
+	bool HasFailed() const { return !Error.IsEmpty(); }
+	const FString& GetError() const { return Error; }
+
+	/** The finished terrain actor, given up for good (it is then no longer destroyed with this object). Null when a chunk failed. */
+	AActor* TakeActor();
+
+private:
+	FMantleTerrainSpawn() = default;
+
+	TWeakObjectPtr<AActor> Actor;
+	TWeakObjectPtr<USceneComponent> Root;
+	/** Held strongly: a dynamic instance in the transient package, which nothing else roots until a chunk takes it. */
+	TStrongObjectPtr<UMaterialInterface> Material;
+	const FMantleHeightfield* Field = nullptr;
+	FMantleTerrainBuildParams Params;
+	bool bCastShadow = true;
+	int32 ChunksX = 0;
+	int32 ChunksY = 0;
+	/** The next chunk, in the order BuildChunks takes them: X fastest. */
+	int32 Next = 0;
+	int64 Vertices = 0;
+	double BuildSeconds = 0.0;
+	FString Error;
 };

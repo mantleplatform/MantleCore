@@ -1836,7 +1836,7 @@ void FMantlePlaceValidator::CheckPlaceName(const FString& Name, FMantleValidatio
 	}
 }
 
-FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const bool bThinInstances)
+FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 {
 	FMantleValidationResult Result;
 
@@ -2094,13 +2094,12 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 	CheckLevelBlueprintForCheck(World, Result);
 
 	// Instanced meshes (#467): every instance source Export writes, wherever it sits (foliage, PCG
-	// output, instanced components on any actor), through the exporter's own checks.
+	// output, instanced components on any actor), through the exporter's own checks. The per-place instance cap is not checked
+	// here: it applies to the root place file after cell planning, which the exporter checks.
 	{
-		int64 InstanceTotal = 0;
 		for (const UInstancedStaticMeshComponent* Component : FMantlePlaceExporter::CollectInstanceSources(World))
 		{
 			++Publishable;
-			InstanceTotal += Component->GetInstanceCount();
 			TArray<FMantleUnpublishedPart> Parts;
 			FMantlePlaceExporter::CheckInstanceSource(Component, Parts);
 			for (const FMantleUnpublishedPart& Part : Parts)
@@ -2111,19 +2110,6 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World, const boo
 					Part.What,
 					Part.Remedy });
 			}
-		}
-		if (InstanceTotal > FMantlePlaceLimits::MaxInstancesPerPlace)
-		{
-			// GhzGarage/mantle#818: Publish offers even thinning, with its numbers; when it was chosen this is only a note, and Export
-			// removes the instances and reports how many.
-			Result.Issues.Add(FMantleValidationIssue{
-				bThinInstances ? EMantleIssueSeverity::Warning : EMantleIssueSeverity::Error,
-				FString(),
-				FString::Printf(TEXT("This level has %lld instanced meshes (foliage, PCG output, instanced components); a place holds at most %d."),
-					InstanceTotal, FMantlePlaceLimits::MaxInstancesPerPlace),
-				bThinInstances ? TEXT("They are thinned evenly when the place is exported, foliage first; the coverage report says how many.")
-					: TEXT("Publish can thin them evenly and shows how many go before you choose it (Mantle.Publish -Thin=auto does it without the window), or split the world into more than one place."),
-				true });
 		}
 	}
 

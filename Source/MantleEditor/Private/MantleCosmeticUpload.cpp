@@ -659,8 +659,10 @@ void FMantleCosmeticUploadSession::ApplyAssetStatus(FMantleUploadAssetProgress& 
 		Progress.Polls = 0;
 	}
 	const FString Waiting = Asset.ModerationState == TEXT("review")
-		? FString(TEXT("Waiting for a moderator"))
-		: Asset.CookState == TEXT("passed") ? FString(TEXT("Being screened")) : FString(TEXT("Being processed"));
+		// Files go live once cooked and are checked afterwards (mantle#353): a file that is not approved yet is either still
+		// being cooked, or it was flagged and is held for a moderator.
+		? FString(TEXT("Flagged, waiting for a moderator"))
+		: Asset.CookState == TEXT("passed") ? FString(TEXT("Finishing up")) : FString(TEXT("Being processed"));
 	if (Progress.Message != Waiting)
 	{
 		AddLog(FString::Printf(TEXT("%s: %s"), *Progress.Label, *Waiting));

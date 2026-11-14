@@ -937,19 +937,31 @@ bool FMantleMeshNaniteCoarserStepTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a step from a coarser bake scales it"), FMath::IsNearlyEqual(FBake::NextKeepPercent(0.45f, 96 * MiB, 100 * MiB), 0.45f * 0.6f, 1e-5f));
 
 	// The loop never skips the floor: 0.04 kept and far over steps to 0.04 * 0.2 = 0.008, below 0.02, so one bake at 0.02 comes first.
-	TestEqual(TEXT("a step below the floor bakes at the floor"), FBake::NextAttemptKeep(0.04f, 6400 * MiB, 100 * MiB, 0), FBake::MinKeepPercentTriangles);
+	TestEqual(TEXT("a step below the floor bakes at the floor"), FBake::NextAttemptKeep(0.04f, 6400 * MiB, 100 * MiB, 0, 0), FBake::MinKeepPercentTriangles);
 	// From the floor itself there is nothing coarser to try.
-	TestEqual(TEXT("at the floor, stop"), FBake::NextAttemptKeep(FBake::MinKeepPercentTriangles, 6400 * MiB, 100 * MiB, 0), 0.0f);
+	TestEqual(TEXT("at the floor, stop"), FBake::NextAttemptKeep(FBake::MinKeepPercentTriangles, 6400 * MiB, 100 * MiB, 0, 0), 0.0f);
 	// A step that lands above the floor is the plain step: 1.0 and 128 MiB against 64 is 0.45.
-	TestEqual(TEXT("a step above the floor is NextKeepPercent's"), FBake::NextAttemptKeep(1.0f, 128 * MiB, 200 * MiB, 0), 0.45f);
+	TestEqual(TEXT("a step above the floor is NextKeepPercent's"), FBake::NextAttemptKeep(1.0f, 128 * MiB, 200 * MiB, 0, 0), 0.45f);
 	// A bake no smaller than the one before stops the loop, whatever the step would be: 100 MiB after 100 MiB, and after 90 MiB.
-	TestEqual(TEXT("a bake the same size as the last stops"), FBake::NextAttemptKeep(0.45f, 100 * MiB, 200 * MiB, 100 * MiB), 0.0f);
-	TestEqual(TEXT("a bake larger than the last stops"), FBake::NextAttemptKeep(0.45f, 100 * MiB, 200 * MiB, 90 * MiB), 0.0f);
-	TestEqual(TEXT("a bake smaller than the last goes on: 0.45 * 0.9 / (100 / 64)"), FBake::NextAttemptKeep(0.45f, 100 * MiB, 200 * MiB, 110 * MiB),
+	TestEqual(TEXT("a bake the same size as the last stops"), FBake::NextAttemptKeep(0.45f, 100 * MiB, 200 * MiB, 100 * MiB, 200 * MiB), 0.0f);
+	TestEqual(TEXT("a bake larger than the last stops"), FBake::NextAttemptKeep(0.45f, 100 * MiB, 200 * MiB, 90 * MiB, 150 * MiB), 0.0f);
+	TestEqual(TEXT("a bake smaller than the last goes on: 0.45 * 0.9 / (100 / 64)"), FBake::NextAttemptKeep(0.45f, 100 * MiB, 200 * MiB, 110 * MiB, 250 * MiB),
 		static_cast<float>(0.45 * 0.9 / (100.0 / 64.0)));
-	TestFalse(TEXT("the first bake has nothing to be smaller than"), FBake::DidNotShrink(100 * MiB, 0));
-	TestTrue(TEXT("equal does not shrink"), FBake::DidNotShrink(100 * MiB, 100 * MiB));
-	TestFalse(TEXT("smaller shrinks"), FBake::DidNotShrink(99 * MiB, 100 * MiB));
+	// Either size dropping is a shrink. A file over the raw limit (512 MiB) is not compressed, so its packed size is raw * 0.6, an
+	// estimate: the next bake's real packed size can be above the estimate while its raw size is well below the one before.
+	TestFalse(TEXT("the first bake has nothing to be smaller than"), FBake::DidNotShrink(100 * MiB, 200 * MiB, 0, 0));
+	TestTrue(TEXT("both sizes equal does not shrink"), FBake::DidNotShrink(100 * MiB, 200 * MiB, 100 * MiB, 200 * MiB));
+	TestTrue(TEXT("both sizes larger does not shrink"), FBake::DidNotShrink(110 * MiB, 210 * MiB, 100 * MiB, 200 * MiB));
+	TestFalse(TEXT("both sizes smaller shrinks"), FBake::DidNotShrink(99 * MiB, 199 * MiB, 100 * MiB, 200 * MiB));
+	TestFalse(TEXT("only the packed size smaller shrinks"), FBake::DidNotShrink(90 * MiB, 210 * MiB, 100 * MiB, 200 * MiB));
+	TestFalse(TEXT("only the raw size smaller shrinks"), FBake::DidNotShrink(450 * MiB, 500 * MiB, 420 * MiB, 700 * MiB));
+	// By hand: 0.45 kept, packed 450 MiB (really compressed) against an estimate of 420 before it (700 MiB raw * 0.6), raw 500 MiB.
+	// Packed is 450 / 64 = 7.03 times over, raw 500 / 512 is under, so the step is 0.9 / 7.03 = 0.128, limited to a fifth: 0.45 * 0.2 = 0.09.
+	// Before the raw size counted, 450 >= 420 stopped the loop here; now it goes on.
+	TestTrue(TEXT("a raw size that fell goes on though the packed size is above the estimate before it"),
+		FMath::IsNearlyEqual(FBake::NextAttemptKeep(0.45f, 450 * MiB, 500 * MiB, 420 * MiB, 700 * MiB), 0.09f, 1e-5f));
+	// And neither size down stops, whatever the step would be.
+	TestEqual(TEXT("neither size smaller stops"), FBake::NextAttemptKeep(0.45f, 450 * MiB, 700 * MiB, 420 * MiB, 700 * MiB), 0.0f);
 	return true;
 }
 
