@@ -734,4 +734,36 @@ bool FMantleEntityJsonTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellPlannerStayReasonsTest,
+	"Mantle.Editor.Cells.InteractableAndOutOfGridStayInTheRoot",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellPlannerStayReasonsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellsTestPrivate;
+	FMantlePlace Place;
+	TArray<FMantleInstancedMeshGroup> Groups;
+	FMantleCellPlanInput Input;
+	Input.bFoldStaticMeshes = false;
+
+	Place.Entities.Add(MakeMesh(TEXT("ent_cell"), MeshA, FVector(100.0, 100.0, 0.0)));
+	FMantleEntity Button = MakeMesh(TEXT("ent_button"), MeshA, FVector(200.0, 200.0, 0.0));
+	Button.Interactable.Emplace();
+	Place.Entities.Add(Button);
+	// Past the largest map a grid covers: 7e9 cm is over a million level 0 cells away.
+	Place.Entities.Add(MakeMesh(TEXT("ent_faraway"), MeshA, FVector(7.0e9, 0.0, 0.0)));
+	Groups.Add(MakeGroupOf(MeshB, 9000.0, { FVector(7.0e9, 100.0, 0.0), FVector(300.0, 300.0, 0.0) }));
+
+	const FMantleCellPlan Plan = FMantleCellPlanner::Plan(Place, Groups, Input);
+	TestTrue(TEXT("the interactable stays"), HasEntity(Place, TEXT("ent_button")));
+	TestTrue(TEXT("the one outside the grid stays"), HasEntity(Place, TEXT("ent_faraway")));
+	TestFalse(TEXT("the plain one left"), HasEntity(Place, TEXT("ent_cell")));
+	TestEqual(TEXT("one is interactable"), Plan.Report.StayCounts[static_cast<int32>(EMantleCellStay::Interactable)], static_cast<int64>(1));
+	// The far mesh and the far instance: one each.
+	TestEqual(TEXT("two are outside the grid"), Plan.Report.StayCounts[static_cast<int32>(EMantleCellStay::OutOfGrid)], static_cast<int64>(2));
+	TestEqual(TEXT("the far instance stays with its group"), Groups[0].WorldInstances.Num(), 1);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

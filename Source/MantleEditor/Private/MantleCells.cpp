@@ -527,6 +527,7 @@ FMantleCellPlan FMantleCellPlanner::Plan(FMantlePlace& Place, TArray<FMantleInst
 				Set.Mesh.Physics.Reset();
 			}
 			Set.FoldedNames.Add(Entity.Name);
+			Report.FoldedSets += Set.Folded == 0 ? 1 : 0;
 			++Set.Folded;
 			Set.Instances.Add(Entity.Transform);
 			++Report.FoldedActors;

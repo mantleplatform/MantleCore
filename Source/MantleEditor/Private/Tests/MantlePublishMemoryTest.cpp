@@ -1960,4 +1960,204 @@ bool FMantlePublishMemoryPreviewScopeTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Large places, stage 1: the publish session's Cells phase. Cell files go up first, then the index naming them by the ids they got,
+// then the root place file naming the index.
+namespace MantlePublishCellsTestPrivate
+{
+	using namespace MantlePublishMemoryTestPrivate;
+
+	/** A Mantle that also writes down the kind of every file sent, in the order it was sent. */
+	class FRecordingMantle : public FFakeMantle
+	{
+	public:
+		TArray<FString> UploadKinds;
+
+		virtual void Send(const FMantleUploadCallRequest& Request, FMantleApiCallback OnDone) override
+		{
+			if (Request.Call == EMantleUploadCall::UploadAsset)
+			{
+				UploadKinds.Add(Request.Options.Kind);
+			}
+			FFakeMantle::Send(Request, OnDone);
+		}
+	};
+
+	/** A source whose place has scenery in two cell files. */
+	class FCellSource : public FFakeSource
+	{
+	public:
+		TArray<FString> CellHashes;
+		FString IndexHash;
+		int32 IndexCalls = 0;
+		int32 RootCalls = 0;
+		TMap<FString, FMantleCellFileRef> SeenRefs;
+		FString RootIndexId;
+
+		virtual EMantlePlaceExportOutcome Export(const FMantlePlaceAssetSet& Set, const TMap<FString, FString>& ScriptSourceIds,
+			const TMap<FString, FString>& ScriptAuthorSourceIds, FString& OutPlaceJson, TArray<FMantleValidationIssue>& OutIssues) override
+		{
+			const EMantlePlaceExportOutcome Outcome = FFakeSource::Export(Set, ScriptSourceIds, ScriptAuthorSourceIds, OutPlaceJson, OutIssues);
+			OutPlaceJson.Reset();
+			return Outcome;
+		}
+
+		virtual bool GetCellUploads(TArray<FMantlePlaceUpload>& OutFiles, FString& OutMessage) override
+		{
+			OutFiles.Reset();
+			CellHashes.Reset();
+			for (int32 Index = 0; Index < 2; ++Index)
+			{
+				FMantlePlaceUpload& File = OutFiles.AddDefaulted_GetRef();
+				File.Bytes = Payload(100 + Index, 1200 + Index);
+				File.Hash = FMantleSha256::AssetHash(File.Bytes);
+				File.Key = TEXT("cell:") + File.Hash;
+				File.Stage = EMantlePlaceUploadStage::Cell;
+				File.Options.Kind = TEXT("cell");
+				File.SourceName = FString::Printf(TEXT("scenery cell %d"), Index);
+				CellHashes.Add(File.Hash);
+			}
+			return true;
+		}
+
+		virtual bool MakeCellIndex(const TMap<FString, FMantleCellFileRef>& FilesByKey, FMantlePlaceUpload& OutIndex, FString& OutMessage) override
+		{
+			++IndexCalls;
+			SeenRefs = FilesByKey;
+			OutIndex.Bytes = Payload(200, 900);
+			OutIndex.Hash = FMantleSha256::AssetHash(OutIndex.Bytes);
+			OutIndex.Key = TEXT("cellindex:") + OutIndex.Hash;
+			OutIndex.Stage = EMantlePlaceUploadStage::CellIndex;
+			OutIndex.Options.Kind = TEXT("cellindex");
+			OutIndex.SourceName = TEXT("scenery cell index");
+			IndexHash = OutIndex.Hash;
+			return true;
+		}
+
+		virtual bool WriteRoot(const FMantleCellRoot& Index, FString& OutPlaceJson, FString& OutMessage) override
+		{
+			++RootCalls;
+			RootIndexId = Index.IndexId;
+			OutPlaceJson = TEXT("{}");
+			return true;
+		}
+	};
+
+	struct FCellRig
+	{
+		FSessionRig Rig;
+		TSharedRef<FRecordingMantle> Mantle = MakeShared<FRecordingMantle>();
+		TSharedRef<FCellSource> Source = MakeShared<FCellSource>();
+
+		FCellRig()
+		{
+			Rig.Mantle = Mantle;
+			Rig.Source = Source;
+			Rig.Make(/*bGoLive*/ false);
+		}
+
+		void Start()
+		{
+			Rig.Session->Start();
+		}
+	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePublishCellsOrderTest,
+	"Mantle.Editor.PublishMemory.CellsGoUpBeforeTheIndexAndTheIndexBeforeTheRoot",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePublishCellsOrderTest::RunTest(const FString& Parameters)
+{
+	using namespace MantlePublishCellsTestPrivate;
+	FCellRig Cells;
+	Cells.Start();
+	TestTrue(TEXT("the publish ends"), Cells.Rig.RunToEnd());
+	TestTrue(TEXT("and succeeds"), Cells.Rig.Session->Succeeded());
+	TestEqual(TEXT("the index was made once"), Cells.Source->IndexCalls, 1);
+	TestEqual(TEXT("the root was written once"), Cells.Source->RootCalls, 1);
+
+	// The index is made when both cell files have their ids, named by the keys GetCellUploads gave.
+	TestEqual(TEXT("both cell files had ids when the index was made"), Cells.Source->SeenRefs.Num(), 2);
+	for (const FString& Hash : Cells.Source->CellHashes)
+	{
+		const FMantleCellFileRef* Ref = Cells.Source->SeenRefs.Find(TEXT("cell:") + Hash);
+		if (TestNotNull(TEXT("a cell file's ref"), Ref))
+		{
+			TestEqual(TEXT("with the id Mantle gave it"), Ref->Id, Cells.Mantle->IdByHash.FindRef(Hash));
+			TestEqual(TEXT("and its hash"), Ref->Hash, Hash);
+		}
+	}
+	// The root names the index by the id the index got.
+	TestEqual(TEXT("the root names the index Mantle holds"), Cells.Source->RootIndexId, Cells.Mantle->IdByHash.FindRef(Cells.Source->IndexHash));
+	TestTrue(TEXT("with a real id"), Cells.Source->RootIndexId.StartsWith(TEXT("ast_u")));
+
+	// The files went in the order: cells, index.
+	int32 LastCell = INDEX_NONE;
+	int32 FirstIndex = INDEX_NONE;
+	for (int32 Position = 0; Position < Cells.Mantle->UploadKinds.Num(); ++Position)
+	{
+		if (Cells.Mantle->UploadKinds[Position] == TEXT("cell"))
+		{
+			LastCell = Position;
+		}
+		else if (Cells.Mantle->UploadKinds[Position] == TEXT("cellindex") && FirstIndex == INDEX_NONE)
+		{
+			FirstIndex = Position;
+		}
+	}
+	TestTrue(TEXT("the cell files and the index were sent"), LastCell != INDEX_NONE && FirstIndex != INDEX_NONE);
+	TestTrue(TEXT("the index after every cell file"), FirstIndex > LastCell);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePublishCellsRefusedTest,
+	"Mantle.Editor.PublishMemory.ARefusedCellFileStopsThePublishBeforeTheIndex",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePublishCellsRefusedTest::RunTest(const FString& Parameters)
+{
+	using namespace MantlePublishCellsTestPrivate;
+	FCellRig Cells;
+	// Mantle refuses the second cell file.
+	Cells.Mantle->RefuseHashes.Add(FMantleSha256::AssetHash(Payload(101, 1201)));
+	Cells.Start();
+	TestTrue(TEXT("the publish ends"), Cells.Rig.RunToEnd());
+	TestFalse(TEXT("it does not succeed"), Cells.Rig.Session->Succeeded());
+	TestEqual(TEXT("it fails"), static_cast<int32>(Cells.Rig.Session->GetPhase()), static_cast<int32>(EMantlePublishPhase::Failed));
+	TestEqual(TEXT("no index was made"), Cells.Source->IndexCalls, 0);
+	TestEqual(TEXT("no root was written"), Cells.Source->RootCalls, 0);
+	TestFalse(TEXT("no index went to Mantle"), Cells.Mantle->UploadKinds.Contains(TEXT("cellindex")));
+	TestTrue(TEXT("the refusal is shown"), Cells.Rig.Session->GetAttention().Num() > 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePublishCellsCancelTest,
+	"Mantle.Editor.PublishMemory.CancelingWhileTheIndexUploadsWritesNoRoot",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePublishCellsCancelTest::RunTest(const FString& Parameters)
+{
+	using namespace MantlePublishCellsTestPrivate;
+	FCellRig Cells;
+	Cells.Start();
+	// Until the index is made: the cell files are on Mantle and the index is the next thing going up.
+	TestTrue(TEXT("the run reaches the index"), Cells.Rig.Run([&Cells] { return Cells.Source->IndexCalls > 0; }));
+	if (Cells.Rig.Session->IsFinished())
+	{
+		AddError(TEXT("the publish ended before the index was made"));
+		return false;
+	}
+	TestEqual(TEXT("in the Cells phase"), static_cast<int32>(Cells.Rig.Session->GetPhase()), static_cast<int32>(EMantlePublishPhase::Cells));
+	TestTrue(TEXT("it can be canceled"), Cells.Rig.Session->Cancel());
+	TestEqual(TEXT("and is"), static_cast<int32>(Cells.Rig.Session->GetPhase()), static_cast<int32>(EMantlePublishPhase::Canceled));
+	TestTrue(TEXT("saying so"), Cells.Rig.Session->GetResult().bCanceled);
+	Cells.Rig.RunToEnd();
+	TestEqual(TEXT("still canceled after Mantle answers"), static_cast<int32>(Cells.Rig.Session->GetPhase()), static_cast<int32>(EMantlePublishPhase::Canceled));
+	TestEqual(TEXT("no root was written"), Cells.Source->RootCalls, 0);
+	return true;
+}
+
 #endif

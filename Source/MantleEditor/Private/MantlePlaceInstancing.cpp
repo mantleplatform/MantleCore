@@ -26,13 +26,6 @@ namespace MantlePlaceInstancingPrivate
 		return ((Index + 1) * Keep) / Total > (Index * Keep) / Total;
 	}
 
-	/** An InstancedMesh entity's instances, or null. */
-	TArray<FTransform>* InstancesOf(FMantleEntity& Entity)
-	{
-		FMantleInstancedMeshProps* Props = Entity.Props.TryGet<FMantleInstancedMeshProps>();
-		return Props ? &Props->Instances : nullptr;
-	}
-
 	/** The ids other entities name; an entity named here has to stay an entity. */
 	TSet<FString> NamedIds(const FMantlePlace& Place)
 	{
@@ -86,12 +79,6 @@ namespace MantlePlaceInstancingPrivate
 		const FVector Scale = Entity.Transform.GetScale3D();
 		return Entity.Transform.IsValid() && Scale.GetMin() >= MinInstanceScale;
 	}
-}
-
-int64 FMantlePlaceInstancing::PlaceBytes(const FMantlePlace& Place)
-{
-	const FTCHARToUTF8 Utf8(*FMantlePlaceExporter::ToJson(Place));
-	return Utf8.Length();
 }
 
 int64 FMantlePlaceInstancing::CountInstances(const FMantlePlace& Place)
