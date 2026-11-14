@@ -140,13 +140,17 @@ public:
 	/**
 	 * The share of its triangles to bake at next, or 0 to stop: NextKeepPercent, except that a step that would fall below
 	 * MinKeepPercentTriangles bakes once at MinKeepPercentTriangles instead while Keep is above it; 0 only when Keep is already there.
-	 * Also 0 when the last bake did not make the file smaller (DidNotShrink with PreviousPackedBytes, 0 for the first bake).
+	 * Also 0 when the last bake did not make the file smaller (DidNotShrink with PreviousPackedBytes and PreviousRawBytes, 0 for the first bake).
 	 */
-	static float NextAttemptKeep(float Keep, int64 PackedBytes, int64 RawBytes, int64 PreviousPackedBytes, int64 MaxPackedBytes = FMantleMeshNaniteFile::MaxUploadBytes,
+	static float NextAttemptKeep(float Keep, int64 PackedBytes, int64 RawBytes, int64 PreviousPackedBytes, int64 PreviousRawBytes, int64 MaxPackedBytes = FMantleMeshNaniteFile::MaxUploadBytes,
 		int64 MaxRawBytes = FMantleMeshNaniteFile::MaxRawBytes());
 
-	/** Whether a bake that came out PackedBytes did not make the file smaller than the one before it (PreviousPackedBytes, 0 when there was none). */
-	static bool DidNotShrink(int64 PackedBytes, int64 PreviousPackedBytes);
+	/**
+	 * Whether a bake (PackedBytes, RawBytes) did not make the file smaller than the one before it (PreviousPackedBytes, PreviousRawBytes;
+	 * PreviousPackedBytes is 0 when there was none). It shrank when either size dropped: a file over the raw limit is not compressed, so
+	 * its packed size is only an estimate, and the raw size is the fact that can fall while the estimate does not.
+	 */
+	static bool DidNotShrink(int64 PackedBytes, int64 RawBytes, int64 PreviousPackedBytes, int64 PreviousRawBytes);
 
 	/**
 	 * What the converter's cache key has to cover for Mesh: the mesh and, for a Nanite assembly, each part's mesh. An assembly names

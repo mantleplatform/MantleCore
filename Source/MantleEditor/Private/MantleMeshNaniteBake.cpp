@@ -369,9 +369,9 @@ float FMantleMeshNaniteBake::NextKeepPercent(const float Keep, const int64 Packe
 }
 
 float FMantleMeshNaniteBake::NextAttemptKeep(const float Keep, const int64 PackedBytes, const int64 RawBytes, const int64 PreviousPackedBytes,
-	const int64 MaxPackedBytes, const int64 MaxRawBytes)
+	const int64 PreviousRawBytes, const int64 MaxPackedBytes, const int64 MaxRawBytes)
 {
-	if (DidNotShrink(PackedBytes, PreviousPackedBytes))
+	if (DidNotShrink(PackedBytes, RawBytes, PreviousPackedBytes, PreviousRawBytes))
 	{
 		return 0.0f;
 	}
@@ -384,9 +384,9 @@ float FMantleMeshNaniteBake::NextAttemptKeep(const float Keep, const int64 Packe
 	return Keep > MinKeepPercentTriangles ? MinKeepPercentTriangles : 0.0f;
 }
 
-bool FMantleMeshNaniteBake::DidNotShrink(const int64 PackedBytes, const int64 PreviousPackedBytes)
+bool FMantleMeshNaniteBake::DidNotShrink(const int64 PackedBytes, const int64 RawBytes, const int64 PreviousPackedBytes, const int64 PreviousRawBytes)
 {
-	return PreviousPackedBytes > 0 && PackedBytes >= PreviousPackedBytes;
+	return PreviousPackedBytes > 0 && PackedBytes >= PreviousPackedBytes && RawBytes >= PreviousRawBytes;
 }
 
 bool FMantleMeshNaniteBake::BakeToFit(const UStaticMesh* Mesh, const TConstArrayView<int32> PublishedSlots, const FString& MeshTag,
@@ -400,6 +400,7 @@ bool FMantleMeshNaniteBake::BakeToFit(const UStaticMesh* Mesh, const TConstArray
 	}
 	float Keep = 1.0f;
 	int64 PreviousPackedBytes = 0;
+	int64 PreviousRawBytes = 0;
 	for (int32 Attempt = 0; Attempt < MaxBakes; ++Attempt)
 	{
 		TArray<uint8> Mnd1;
@@ -443,7 +444,7 @@ bool FMantleMeshNaniteBake::BakeToFit(const UStaticMesh* Mesh, const TConstArray
 		{
 			return true;
 		}
-		const float Next = NextAttemptKeep(Keep, PackedBytes, RawBytes, PreviousPackedBytes, MaxPackedBytes, MaxRawBytes);
+		const float Next = NextAttemptKeep(Keep, PackedBytes, RawBytes, PreviousPackedBytes, PreviousRawBytes, MaxPackedBytes, MaxRawBytes);
 		if (Next <= 0.0f || Attempt + 1 == MaxBakes)
 		{
 			OutContainer.Reset();
@@ -452,12 +453,13 @@ bool FMantleMeshNaniteBake::BakeToFit(const UStaticMesh* Mesh, const TConstArray
 			const FString Size = RawBytes > MaxRawBytes
 				? FString::Printf(TEXT("its Nanite data is %.0f MiB uncompressed, over the %.0f MiB a file may inflate to"), RawBytes / (1024.0 * 1024.0), MaxRawBytes / (1024.0 * 1024.0))
 				: FString::Printf(TEXT("its Nanite data is %.0f MiB compressed, over the %.0f MiB a file may be"), PackedBytes / (1024.0 * 1024.0), MaxPackedBytes / (1024.0 * 1024.0));
-			OutReason = DidNotShrink(PackedBytes, PreviousPackedBytes)
+			OutReason = DidNotShrink(PackedBytes, RawBytes, PreviousPackedBytes, PreviousRawBytes)
 				? FString::Printf(TEXT("%s, and baking it at %.0f%% of its triangles did not make it smaller"), *Size, Keep * 100.0f)
 				: FString::Printf(TEXT("%s, even baked at %.0f%% of its triangles"), *Size, Keep * 100.0f);
 			return false;
 		}
 		PreviousPackedBytes = PackedBytes;
+		PreviousRawBytes = RawBytes;
 		Keep = Next;
 	}
 	return false;
