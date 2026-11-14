@@ -1060,6 +1060,13 @@ public:
 	FMantleFlattenSettings Settings;
 	FMantlePlaceAssetLimits Limits;
 
+	/**
+	 * Whether ConvertMesh bakes each mesh's Nanite file (FMantleMeshNaniteBake). True for a place; the weapon and wheel publishes
+	 * upload no Nanite files, so they turn it off rather than bake what nobody uploads. Not a player-facing switch. A mesh converted
+	 * with it off is not written to the local cache (its entry would say "no file" to a place conversion).
+	 */
+	bool bBakeNanite = true;
+
 	const FMantlePlaceConversionStats& GetStats() const { return Stats; }
 	const FString& GetCacheDirectory() const { return CacheDirectory; }
 

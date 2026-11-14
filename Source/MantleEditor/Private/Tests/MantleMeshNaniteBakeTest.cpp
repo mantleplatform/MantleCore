@@ -6,12 +6,15 @@
 #include "MantleSha256.h"
 #include "NaniteAssemblyDataBuilder.h"
 
+#include "AssetRegistry/AssetRegistryModule.h"
+
 #include "Algo/Reverse.h"
 #include "Engine/StaticMesh.h"
 #include "HAL/IConsoleManager.h"
 #include "Materials/Material.h"
 #include "MeshDescription.h"
 #include "Misc/AutomationTest.h"
+#include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Rendering/NaniteResources.h"
@@ -20,6 +23,7 @@
 #include "StaticMeshCompiler.h"
 #include "StaticMeshResources.h"
 #include "UObject/Package.h"
+#include "UObject/SavePackage.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -192,6 +196,57 @@ namespace MantleMeshNaniteBakeTestPrivate
 		Glass->BlendMode = BLEND_Translucent;
 		Mesh->GetStaticMaterials()[0].MaterialInterface = Glass;
 		return Mesh;
+	}
+
+	/** A package under the project's /Game that holds one saved mesh; its file goes away with the object. The converter caches only saved meshes. */
+	struct FSavedMesh
+	{
+		FString PackageName;
+		FString File;
+		UPackage* Package = nullptr;
+		UStaticMesh* Mesh = nullptr;
+
+		explicit FSavedMesh(const TCHAR* Name)
+			: PackageName(FString(TEXT("/Game/MantleAutomation/_NaniteBakeTest/")) + Name)
+			, File(FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension()))
+		{
+		}
+
+		~FSavedMesh()
+		{
+			IFileManager::Get().Delete(*File, false, true, true);
+			IFileManager::Get().DeleteDirectory(*FPaths::GetPath(File), false, true);
+		}
+
+		/** Moves Transient (a mesh made in the transient package) into this package and saves it. */
+		bool Adopt(UStaticMesh* Transient)
+		{
+			Package = CreatePackage(*PackageName);
+			Mesh = Transient;
+			Mesh->Rename(*FPackageName::GetShortName(PackageName), Package, REN_DontCreateRedirectors | REN_NonTransactional);
+			Mesh->ClearFlags(RF_Transient);
+			Mesh->SetFlags(RF_Public | RF_Standalone);
+			FAssetRegistryModule::AssetCreated(Mesh);
+			return Save();
+		}
+
+		/** Saves the package again after Mesh was edited. */
+		bool Save()
+		{
+			Package->MarkPackageDirty();
+			FSavePackageArgs Args;
+			Args.TopLevelFlags = RF_Public | RF_Standalone;
+			Args.SaveFlags = SAVE_NoError;
+			return UPackage::SavePackage(Package, Mesh, *File, Args);
+		}
+	};
+
+	/** Where this test's converters cache, emptied first so a run does not see the last one's files. */
+	FString FreshCacheDir(const TCHAR* Name)
+	{
+		const FString Dir = FPaths::Combine(FPaths::AutomationTransientDir(), TEXT("MantleNaniteBake"), Name);
+		IFileManager::Get().DeleteDirectory(*Dir, false, true);
+		return Dir;
 	}
 }
 
@@ -627,7 +682,9 @@ bool FMantleMeshNaniteSeeThroughTest::RunTest(const FString& Parameters)
 	UStaticMesh* Glass = MakeGlassGrid();
 	TArray<uint8> File;
 	FString Why;
-	TestFalse(TEXT("a see-through mesh does not bake"), FMantleMeshNaniteBake::Bake(Glass, { 0 }, MeshTag, File, Why));
+	bool bRetryable = true;
+	TestFalse(TEXT("a see-through mesh does not bake"), FMantleMeshNaniteBake::Bake(Glass, { 0 }, MeshTag, File, Why, nullptr, &bRetryable));
+	TestFalse(TEXT("and that is the mesh's own, so it may be cached"), bRetryable);
 	TestTrue(TEXT("and says why"), Why.Contains(TEXT("see-through")));
 	TestEqual(TEXT("with no file"), File.Num(), 0);
 
@@ -730,11 +787,186 @@ bool FMantleMeshNaniteConverterTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("a damaged cached file is refused, so the mesh converts again"), Cache.LoadCachedMesh(Key, Refused, LoadedIssues));
 	}
 
+	// A converter-made mesh (the mirrored copy; spline and cable bakes are built the same way, from mesh descriptions) bakes too, and a
+	// converter that makes no Nanite files (a weapon or wheel publish) makes none and says nothing.
+	FVector Positive;
+	UStaticMesh* Mirrored = FMantleMirrorBake::MirroredCopy(Grid, FVector(-1.0, 1.0, 1.0), Positive, Why);
+	if (TestNotNull(TEXT("the grid mirrors"), Mirrored))
+	{
+		FMantlePlaceAssetSet MirrorSet;
+		if (TestTrue(TEXT("the mirrored copy converts"), Converter.ConvertMesh(Mirrored, MirrorSet)) && TestEqual(TEXT("to one mesh"), MirrorSet.Meshes.Num(), 1))
+		{
+			const FMantleConvertedMesh& Copy = MirrorSet.Meshes[0];
+			Nanite::FResources MirrorBack;
+			TArray<int32> MirrorSlots;
+			if (TestTrue(TEXT("it has a Nanite file that reads back for its GLB"), Copy.Nanite.Num() > 0 && FMantleMeshNaniteFile::Read(Copy.Nanite, Copy.Hash, MirrorBack, MirrorSlots, &Why)))
+			{
+				TestEqual(TEXT("with all the triangles"), MirrorBack.NumInputTriangles, 24u * 24u * 2u);
+				TestEqual(TEXT("and one table entry for each glTF material"), MirrorSlots.Num(), Copy.Slots.Num());
+			}
+		}
+	}
+	FMantlePlaceAssetConverter NoNanite(MakeShared<FMantleGltfMaterialFlattener>(), FPaths::Combine(FPaths::AutomationTransientDir(), TEXT("MantleNaniteBake")));
+	NoNanite.bBakeNanite = false;
+	FMantlePlaceAssetSet NoNaniteSet;
+	if (TestTrue(TEXT("a converter that makes no Nanite files converts"), NoNanite.ConvertMesh(Grid, NoNaniteSet)) && TestEqual(TEXT("to one mesh"), NoNaniteSet.Meshes.Num(), 1))
+	{
+		TestEqual(TEXT("with no file"), NoNaniteSet.Meshes[0].Nanite.Num(), 0);
+		TestEqual(TEXT("and no notice"), NoNaniteSet.Issues.Num(), 0);
+	}
+
 	// The cache key carries the Nanite inputs: the format, the engine build, the voxel and assembly switches.
 	const FString Salt = FMantleMeshNaniteBake::CacheSalt();
 	TestTrue(TEXT("the salt names the engine build"), Salt.Contains(FMantleMeshNaniteFile::EngineTag()));
 	TestTrue(TEXT("and the voxel and assembly switches"), Salt.Contains(TEXT("voxels=1")) && Salt.Contains(TEXT("assemblies=1")));
 	Grid->MarkAsGarbage();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteCacheTest,
+	"Mantle.Editor.Nanite.CacheKeepsTheFileWithTheMesh",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteCacheTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshNaniteBakeTestPrivate;
+
+	if (!NaniteBuilds())
+	{
+		AddInfo(TEXT("skipped: this editor builds no Nanite data (started without a graphics device)"));
+		return true;
+	}
+
+	// A saved mesh converts twice: the second time from the cache, with the same Nanite file.
+	const FString CacheDir = FreshCacheDir(TEXT("Mesh"));
+	FSavedMesh Saved(TEXT("SM_Cached"));
+	if (!TestTrue(TEXT("the mesh saves"), Saved.Adopt(MakeGrid(16, /*bNanite*/ false, 0, 2))))
+	{
+		return false;
+	}
+	FMantlePlaceAssetConverter First(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+	FMantlePlaceAssetSet SetA;
+	if (!TestTrue(TEXT("it converts"), First.ConvertMesh(Saved.Mesh, SetA)) || !TestEqual(TEXT("to one mesh"), SetA.Meshes.Num(), 1))
+	{
+		return false;
+	}
+	TestFalse(TEXT("the first time is a conversion"), SetA.Meshes[0].bFromCache);
+	TestTrue(TEXT("with a Nanite file"), SetA.Meshes[0].Nanite.Num() > 0);
+
+	FMantlePlaceAssetConverter Second(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+	FMantlePlaceAssetSet SetB;
+	if (!TestTrue(TEXT("it converts again"), Second.ConvertMesh(Saved.Mesh, SetB)) || !TestEqual(TEXT("to one mesh"), SetB.Meshes.Num(), 1))
+	{
+		return false;
+	}
+	TestTrue(TEXT("the second time is from the cache"), SetB.Meshes[0].bFromCache);
+	TestTrue(TEXT("with the same Nanite file"), SetB.Meshes[0].Nanite == SetA.Meshes[0].Nanite);
+	TestEqual(TEXT("and hash"), SetB.Meshes[0].NaniteHash, SetA.Meshes[0].NaniteHash);
+
+	// A converter that makes no Nanite files (a weapon or wheel publish) reads the entry a place wrote.
+	FMantlePlaceAssetConverter Plain(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+	Plain.bBakeNanite = false;
+	FMantlePlaceAssetSet SetD;
+	if (TestTrue(TEXT("it converts without Nanite"), Plain.ConvertMesh(Saved.Mesh, SetD)) && TestEqual(TEXT("to one mesh"), SetD.Meshes.Num(), 1))
+	{
+		TestTrue(TEXT("from the entry the place conversion wrote"), SetD.Meshes[0].bFromCache);
+	}
+
+	// A change to the mesh is a miss.
+	FMeshNaniteSettings Settings = Saved.Mesh->GetNaniteSettings();
+	Settings.bEnabled = true;
+	Saved.Mesh->SetNaniteSettings(Settings);
+	if (TestTrue(TEXT("the changed mesh saves"), Saved.Save()))
+	{
+		FMantlePlaceAssetConverter Third(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+		FMantlePlaceAssetSet SetC;
+		if (TestTrue(TEXT("it converts a third time"), Third.ConvertMesh(Saved.Mesh, SetC)) && TestEqual(TEXT("to one mesh"), SetC.Meshes.Num(), 1))
+		{
+			TestFalse(TEXT("a changed mesh is not served from the cache"), SetC.Meshes[0].bFromCache);
+		}
+	}
+	Saved.Mesh->MarkAsGarbage();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteAssemblyCacheTest,
+	"Mantle.Editor.Nanite.AssemblyPartsAreInTheCacheKey",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteAssemblyCacheTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshNaniteBakeTestPrivate;
+
+	if (!NaniteBuilds() || !NaniteAssembliesSupported())
+	{
+		AddInfo(TEXT("skipped: this editor builds no Nanite data or assemblies"));
+		return true;
+	}
+
+	// An assembly names its parts by soft path, which the cache key does not follow: an edited part must still miss.
+	FSavedMesh Part(TEXT("SM_CachePart"));
+	if (!TestTrue(TEXT("the part saves"), Part.Adopt(MakeGrid(16, /*bNanite*/ true, 0, 2))))
+	{
+		return false;
+	}
+	UMaterialInterface* Surface = UMaterial::GetDefaultMaterial(MD_Surface);
+	FNaniteAssemblyDataBuilder Builder;
+	Builder.AddMaterialSlot(FNaniteAssemblyDataBuilder::FMaterialSlot(Surface, TEXT("Bark")));
+	Builder.AddMaterialSlot(FNaniteAssemblyDataBuilder::FMaterialSlot(Surface, TEXT("Leaf")));
+	const int32 PartIndex = Builder.AddPart(FSoftObjectPath(Part.Mesh));
+	Builder.RemapPartMaterial(PartIndex, 0, 1);
+	Builder.RemapPartMaterial(PartIndex, 1, 0);
+	Builder.AddNode(PartIndex, FTransform3f::Identity);
+	Builder.AddNode(PartIndex, FTransform3f(FVector3f(500.f, 0.f, 0.f)));
+
+	FSavedMesh Assembly(TEXT("SM_CacheAssembly"));
+	Assembly.Package = CreatePackage(*Assembly.PackageName);
+	Assembly.Mesh = NewObject<UStaticMesh>(Assembly.Package, TEXT("SM_CacheAssembly"), RF_Public | RF_Standalone);
+	if (!TestTrue(TEXT("the assembly applies"), Builder.ApplyToStaticMesh(*Assembly.Mesh)))
+	{
+		return false;
+	}
+	Assembly.Mesh->GetNaniteSettings().bEnabled = true;
+	Assembly.Mesh->Build(/*bInSilent*/ true);
+	FStaticMeshCompilingManager::Get().FinishCompilation({ Assembly.Mesh });
+	FAssetRegistryModule::AssetCreated(Assembly.Mesh);
+	if (!TestTrue(TEXT("the assembly saves"), Assembly.Save()))
+	{
+		return false;
+	}
+	TestEqual(TEXT("its cache objects are the assembly and its part"), FMantleMeshNaniteBake::CacheObjects(*Assembly.Mesh).Num(), 2);
+
+	const FString CacheDir = FreshCacheDir(TEXT("Assembly"));
+	FMantlePlaceAssetConverter First(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+	FMantlePlaceAssetSet SetA;
+	if (!TestTrue(TEXT("the assembly converts"), First.ConvertMesh(Assembly.Mesh, SetA)) || !TestEqual(TEXT("to one mesh"), SetA.Meshes.Num(), 1))
+	{
+		return false;
+	}
+	TestTrue(TEXT("with a Nanite file"), SetA.Meshes[0].Nanite.Num() > 0);
+	FMantlePlaceAssetConverter Second(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+	FMantlePlaceAssetSet SetB;
+	if (TestTrue(TEXT("it converts again"), Second.ConvertMesh(Assembly.Mesh, SetB)) && TestEqual(TEXT("to one mesh"), SetB.Meshes.Num(), 1))
+	{
+		TestTrue(TEXT("from the cache while nothing changed"), SetB.Meshes[0].bFromCache);
+	}
+
+	FMeshNaniteSettings Settings = Part.Mesh->GetNaniteSettings();
+	Settings.TrimRelativeError = 0.25f;
+	Part.Mesh->SetNaniteSettings(Settings);
+	if (TestTrue(TEXT("the changed part saves"), Part.Save()))
+	{
+		FMantlePlaceAssetConverter Third(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+		FMantlePlaceAssetSet SetC;
+		if (TestTrue(TEXT("it converts a third time"), Third.ConvertMesh(Assembly.Mesh, SetC)) && TestEqual(TEXT("to one mesh"), SetC.Meshes.Num(), 1))
+		{
+			TestFalse(TEXT("an edited part is not served from the cache"), SetC.Meshes[0].bFromCache);
+		}
+	}
+	Assembly.Mesh->MarkAsGarbage();
+	Part.Mesh->MarkAsGarbage();
 	return true;
 }
 

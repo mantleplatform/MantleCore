@@ -3570,7 +3570,7 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 	const FString ReducedTag = PublishedLOD == INDEX_NONE ? FMantleMeshReduce::CacheTag(Limits) : FString();
 	const FString Salt = MeshCacheSalt(Limits, *Mesh, FromLOD, ReducedTag);
 	FString CacheKey, WhyNot;
-	bool bCacheable = ComputeCacheKey(Salt, { Mesh }, CacheKey, WhyNot);
+	bool bCacheable = ComputeCacheKey(Salt, FMantleMeshNaniteBake::CacheObjects(*Mesh), CacheKey, WhyNot);
 	FMantleConvertedMesh Converted;
 	{
 		TArray<FMantleValidationIssue> CachedIssues;
@@ -3797,10 +3797,17 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 	// Stage N: its Nanite data, from the mesh the converter was given (the creator's own at full detail even where the GLB is a smaller
 	// version of it, or the mirrored, spline-baked or cable-baked mesh the converter made), each section as its slot's material
 	// draws it. None is no failure: the game draws the plain model, and Check this place says why.
+	if (!bBakeNanite)
+	{
+		Converted.NaniteNone = TEXT("this upload does not carry Nanite data");
+		bCacheable = false;
+	}
+	else
 	{
 		const double BakeStart = FPlatformTime::Seconds();
 		FString NaniteWhy;
-		if (FMantleMeshNaniteBake::Bake(Mesh, Converted.Slots, Converted.Hash, Converted.Nanite, NaniteWhy))
+		bool bRetryable = false;
+		if (FMantleMeshNaniteBake::Bake(Mesh, Converted.Slots, Converted.Hash, Converted.Nanite, NaniteWhy, nullptr, &bRetryable))
 		{
 			Converted.NaniteHash = FMantleSha256::AssetHash(Converted.Nanite);
 		}
@@ -3810,6 +3817,9 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 			Converted.NaniteNone = NaniteWhy.IsEmpty() ? FString(TEXT("it could not be built")) : NaniteWhy;
 			MeshIssues.Add(WarningIssue(FString::Printf(TEXT("Mesh '%s' has no Nanite data, so players see its plain model: %s."), *Mesh->GetName(), *Converted.NaniteNone),
 				TEXT("It still publishes, drawn as its plain model. Fix what the message says to give it Nanite.")));
+			// A reason that belongs to the mesh (see-through, a slot an assembly cannot drop) is cached with it; one that belongs to this
+			// run or this editor (a build that kept no data, a part that did not load) must not outlive it.
+			bCacheable = bCacheable && !bRetryable;
 		}
 		Stats.NaniteSeconds += FPlatformTime::Seconds() - BakeStart;
 		UE_LOG(LogMantle, Verbose, TEXT("MANTLE_NANITE %s: %s (%.0f ms)"), *Mesh->GetName(),

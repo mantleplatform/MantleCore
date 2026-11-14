@@ -207,9 +207,14 @@ bool FMantleMeshNaniteFile::Read(const TConstArrayView<uint8> Bytes, const FStri
 }
 
 bool FMantleMeshNaniteBake::Bake(const UStaticMesh* Mesh, const TConstArrayView<int32> PublishedSlots, const FString& MeshTag, TArray<uint8>& OutFile,
-	FString& OutReason, uint64* OutVoxelMask)
+	FString& OutReason, uint64* OutVoxelMask, bool* OutRetryable)
 {
 	OutFile.Reset();
+	bool bRetryable = false;
+	if (OutRetryable)
+	{
+		*OutRetryable = false;
+	}
 	if (!Mesh)
 	{
 		OutReason = TEXT("there is no mesh");
@@ -232,13 +237,17 @@ bool FMantleMeshNaniteBake::Bake(const UStaticMesh* Mesh, const TConstArrayView<
 	if (!Copy)
 	{
 		OutReason = TEXT("it could not be copied");
+		if (OutRetryable)
+		{
+			*OutRetryable = true;
+		}
 		return false;
 	}
 	Copy->SetFlags(RF_Transient);
 	FStaticMeshCompilingManager::Get().FinishCompilation({ Copy });
 
 	bool bWritten = false;
-	if (ConformToPublished(Copy, PublishedSlots, OutReason))
+	if (ConformToPublished(Copy, PublishedSlots, OutReason, &bRetryable))
 	{
 		FMeshNaniteSettings Settings = Copy->GetNaniteSettings();
 		// A mesh made without Nanite gets it in the copy, with the engine's defaults; its foliage keeps its shape far away the way
@@ -267,6 +276,7 @@ bool FMantleMeshNaniteBake::Bake(const UStaticMesh* Mesh, const TConstArrayView<
 		if (!RenderData || !RenderData->HasValidNaniteData())
 		{
 			OutReason = TEXT("its copy built with no Nanite data");
+			bRetryable = true;
 		}
 		else
 		{
@@ -281,14 +291,19 @@ bool FMantleMeshNaniteBake::Bake(const UStaticMesh* Mesh, const TConstArrayView<
 				Identity.Add(Slot);
 			}
 			bWritten = FMantleMeshNaniteFile::Write(MeshTag, Identity, *RenderData->NaniteResourcesPtr, OutFile, OutReason);
+			bRetryable = !bWritten;
 		}
 	}
 	Copy->ClearFlags(RF_Standalone | RF_Public);
 	Copy->MarkAsGarbage();
+	if (OutRetryable)
+	{
+		*OutRetryable = !bWritten && bRetryable;
+	}
 	return bWritten;
 }
 
-bool FMantleMeshNaniteBake::ConformAssembly(UStaticMesh* Copy, const TConstArrayView<int32> PublishedSlots, FString& OutReason)
+bool FMantleMeshNaniteBake::ConformAssembly(UStaticMesh* Copy, const TConstArrayView<int32> PublishedSlots, FString& OutReason, bool* OutRetryable)
 {
 	// An assembly's clusters name its final material list: its own sections through the SectionInfoMap, and each part's through the
 	// part's MaterialRemap (NaniteAssemblyBuild.cpp, AddAssemblyPart). The parts are other meshes, so their sections cannot be cut:
@@ -326,6 +341,10 @@ bool FMantleMeshNaniteBake::ConformAssembly(UStaticMesh* Copy, const TConstArray
 			if (!PartMesh)
 			{
 				OutReason = FString::Printf(TEXT("its assembly part %s could not be loaded"), *Part.MeshObjectPath.ToString());
+				if (OutRetryable)
+				{
+					*OutRetryable = true;
+				}
 				return false;
 			}
 			for (int32 Slot = 0; Slot < PartMesh->GetStaticMaterials().Num(); ++Slot)
@@ -382,7 +401,7 @@ bool FMantleMeshNaniteBake::WantsVoxels(const UStaticMesh* Mesh, const TConstArr
 	return false;
 }
 
-bool FMantleMeshNaniteBake::ConformToPublished(UStaticMesh* Copy, const TConstArrayView<int32> PublishedSlots, FString& OutReason)
+bool FMantleMeshNaniteBake::ConformToPublished(UStaticMesh* Copy, const TConstArrayView<int32> PublishedSlots, FString& OutReason, bool* OutRetryable)
 {
 	if (!Copy || PublishedSlots.Num() == 0)
 	{
@@ -397,7 +416,7 @@ bool FMantleMeshNaniteBake::ConformToPublished(UStaticMesh* Copy, const TConstAr
 	}
 	if (Copy->IsNaniteAssembly())
 	{
-		return ConformAssembly(Copy, PublishedSlots, OutReason);
+		return ConformAssembly(Copy, PublishedSlots, OutReason, OutRetryable);
 	}
 	// Nanite builds from LOD 0 only; the other LODs' sections would name slots that no longer exist.
 	Copy->SetNumSourceModels(1);
@@ -470,6 +489,20 @@ bool FMantleMeshNaniteBake::ConformToPublished(UStaticMesh* Copy, const TConstAr
 	Params.bUseHashAsGuid = true;
 	Copy->CommitMeshDescription(0, Params);
 	return true;
+}
+
+TArray<const UObject*> FMantleMeshNaniteBake::CacheObjects(const UStaticMesh& Mesh)
+{
+	TArray<const UObject*> Objects;
+	Objects.Add(&Mesh);
+	for (const FNaniteAssemblyPart& Part : Mesh.GetNaniteSettings().NaniteAssemblyData.Parts)
+	{
+		if (const UObject* PartMesh = Part.MeshObjectPath.TryLoad())
+		{
+			Objects.AddUnique(PartMesh);
+		}
+	}
+	return Objects;
 }
 
 FString FMantleMeshNaniteBake::CacheSalt()

@@ -12,6 +12,7 @@
 #include "MeshReductionSettings.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/Paths.h"
+#include "Rendering/NaniteResources.h"
 #include "StaticMeshAttributes.h"
 #include "StaticMeshResources.h"
 #include "UObject/Package.h"
@@ -257,6 +258,32 @@ namespace MantleMeshReduceTestPrivate
 		return Count;
 	}
 
+	/**
+	 * The converted mesh's Nanite file is made from the full source, not from the smaller version the GLB carries: it reads back for the
+	 * GLB's hash with all of the source's triangles and one table entry for each glTF material. An editor that cannot build Nanite data
+	 * makes none, which says so in the notices (CountWithoutNanite) and is not this test's business.
+	 */
+	void CheckNaniteFromSource(FAutomationTestBase& Test, const FMantleConvertedMesh& Converted, const int32 SourceTriangles)
+	{
+		if (Converted.Nanite.Num() == 0)
+		{
+			Test.AddInfo(TEXT("no Nanite file: ") + Converted.NaniteNone);
+			return;
+		}
+		Nanite::FResources Back;
+		TArray<int32> Slots;
+		FString Why;
+		if (Test.TestTrue(TEXT("its Nanite file reads back for its GLB"), FMantleMeshNaniteFile::Read(Converted.Nanite, Converted.Hash, Back, Slots, &Why)))
+		{
+			Test.TestEqual(TEXT("with all of the source's triangles"), static_cast<int32>(Back.NumInputTriangles), SourceTriangles);
+			Test.TestEqual(TEXT("and one table entry for each glTF material"), Slots.Num(), Converted.Slots.Num());
+		}
+		else
+		{
+			Test.AddError(Why);
+		}
+	}
+
 	const FMantleValidationIssue* FindIssue(const TArray<FMantleValidationIssue>& Issues, EMantleIssueSeverity Severity, const TCHAR* Text)
 	{
 		return Issues.FindByPredicate([Severity, Text](const FMantleValidationIssue& Issue)
@@ -330,6 +357,7 @@ bool FMantleMeshReducePromotesLODTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("with no LOD after it"), Converted.LODs, 1);
 	TestTrue(TEXT("and the slots LOD 0 draws with, in LOD 0's order"), Converted.Slots == FMantlePlaceAssets::UploadSlots(Mesh));
 	TestEqual(TEXT("conversion adds no notice of its own"), CountWithoutNanite(Set.Issues), 0);
+	CheckNaniteFromSource(*this, Converted, BigTriangles);
 
 	TestTrue(TEXT("the creator's mesh is neither changed nor made dirty"), FMeshSnapshot(*Mesh) == Before);
 	return true;
@@ -489,6 +517,7 @@ bool FMantleMeshReduceReducesACopyTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("in the slot order Export lists the materials in"), Converted.Slots == FMantlePlaceAssets::UploadSlots(Mesh));
 	TestEqual(TEXT("one section a slot"), Converted.SectionNames.Num(), 2);
 	TestEqual(TEXT("and no notice of its own"), CountWithoutNanite(Set.Issues), 0);
+	CheckNaniteFromSource(*this, Converted, BigTriangles);
 
 	// Reducing the same mesh again, from nothing, gives the same bytes: a republish finds what it uploaded before.
 	FMantleMeshReduce::ClearCache();

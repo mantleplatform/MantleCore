@@ -62,24 +62,34 @@ public:
 	 * a Nanite assembly whose upload leaves out a slot, or a build that kept no Nanite data. Game thread.
 	 * OutVoxelMask, when given, gets the built data's VoxelMaterialsMask: nonzero only when voxels were really made, which needs voxels
 	 * on at startup (the plugin's Config/Engine.ini sets r.Nanite.AllowVoxels=1).
+	 * OutRetryable, when given, is set on a false return: true when the failure belongs to this run or this editor (a copy that could
+	 * not be made, a build that kept no data, a part that did not load) and so may not repeat, false when it belongs to the mesh and
+	 * its upload (see-through, a slot an assembly cannot drop, a hi-res source, no slot drawn). Only the latter may be cached.
 	 */
 	static bool Bake(const UStaticMesh* Mesh, TConstArrayView<int32> PublishedSlots, const FString& MeshTag, TArray<uint8>& OutFile, FString& OutReason,
-		uint64* OutVoxelMask = nullptr);
+		uint64* OutVoxelMask = nullptr, bool* OutRetryable = nullptr);
+
+	/**
+	 * What the converter's cache key has to cover for Mesh: the mesh and, for a Nanite assembly, each part's mesh. An assembly names
+	 * its parts by soft path, which the key does not follow (it follows hard references), so without them an edited part would
+	 * leave the old Nanite file standing. A part that cannot be loaded is left out (the bake then fails and is not cached).
+	 */
+	static TArray<const UObject*> CacheObjects(const UStaticMesh& Mesh);
 
 	/**
 	 * Edits Copy (a transient copy, never the creator's mesh) so its material slot s is glTF material s of the upload: slot s gets
 	 * the material of asset slot PublishedSlots[s], each LOD 0 section is pointed at its new slot, the sections the upload does not
 	 * draw lose their triangles, and the other LODs go. False, with the reason, for a hi-res source model or
-	 * no section the upload draws. A Nanite assembly goes to ConformAssembly. Not built: the caller builds.
+	 * no section the upload draws. A Nanite assembly goes to ConformAssembly. Not built: the caller builds. OutRetryable as in Bake.
 	 */
-	static bool ConformToPublished(UStaticMesh* Copy, TConstArrayView<int32> PublishedSlots, FString& OutReason);
+	static bool ConformToPublished(UStaticMesh* Copy, TConstArrayView<int32> PublishedSlots, FString& OutReason, bool* OutRetryable = nullptr);
 
 	/**
 	 * ConformToPublished for a Nanite assembly: renumbers the copy's material list to the upload's glTF order, and with it the base
 	 * mesh's sections and every part's MaterialRemap. False, with the reason, when the upload leaves out a slot (a part's sections
 	 * cannot be cut, as a plain mesh's are) or a part cannot be loaded.
 	 */
-	static bool ConformAssembly(UStaticMesh* Copy, TConstArrayView<int32> PublishedSlots, FString& OutReason);
+	static bool ConformAssembly(UStaticMesh* Copy, TConstArrayView<int32> PublishedSlots, FString& OutReason, bool* OutRetryable = nullptr);
 
 	/**
 	 * Whether a mesh made without Nanite is baked with Voxelize shape preservation (foliage): a slot the upload draws has a masked
