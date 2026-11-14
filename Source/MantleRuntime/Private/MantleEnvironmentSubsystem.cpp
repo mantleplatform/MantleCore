@@ -182,6 +182,14 @@ void UMantleEnvironmentSubsystem::Tick(float DeltaTime)
 	{
 		UpdateSky();
 	}
+	// A graphics setting changed in play moves the sky light's table and the local exposure with it. The volume is compared
+	// with the state it last used, not with what this call saw change: UpdateWeatherSky and UpdatePostProcess read the state
+	// too, and whichever runs first after a change (a forced refresh from outside the tick, say) would otherwise use it up.
+	RefreshSkyLightState();
+	if (!bPostProcessSkyLightStateKnown || PostProcessSkyLightState != SkyLightState)
+	{
+		UpdatePostProcess();
+	}
 	UpdateWeatherSky();
 	UpdateNightSky();
 }
@@ -301,6 +309,7 @@ void UMantleEnvironmentSubsystem::BindSky(const FMantleSkyBinding& Binding)
 	// The place's own scale is part of the base, so the weather scales from it.
 	const float SkyLightScale = FMath::Clamp(Binding.SkyLightIntensityScale, 0.0f, 1.0f);
 	BaseSkyLightIntensity = BoundSkyLight ? BoundSkyLight->Intensity * SkyLightScale : 0.0f;
+	BaseSkyLightScale = SkyLightScale;
 	bWeatherSkyApplied = false;
 	UpdateWeatherSky(/*bForce*/ true);
 	if (HasWeatherSky())
@@ -442,6 +451,7 @@ void UMantleEnvironmentSubsystem::UpdateWeatherSky(bool bForce)
 
 	bool bSettled = true;
 	const FMantleWeatherLook Look = GetWeatherLook(&bSettled);
+	RefreshSkyLightState();
 	const bool bFirst = bForce || !bWeatherSkyApplied;
 	const double Epsilon = MantleEnvironmentDefaults::WeatherLookEpsilon;
 
@@ -511,11 +521,23 @@ void UMantleEnvironmentSubsystem::UpdateWeatherSky(bool bForce)
 
 	if (SkyLight)
 	{
-		const float Intensity = BaseSkyLightIntensity * Look.SkyLightIntensityScale;
+		// The fill by the sun's height, from the table for what this machine's renderer does with the sky light. The place's own
+		// sky light scale is already in BaseSkyLightIntensity, so it scales the fill too.
+		const double SunElevation = FMantleSkyClock::SunElevationDegrees(GetTimeOfDay());
+		const float Fill = static_cast<float>(FMantleWeatherLook::SkyLightFill(SkyLightState, SunElevation));
+		const float Intensity = BaseSkyLightIntensity * Look.SkyLightIntensityScale * Fill;
 		if (WeatherSkyValueDue(Intensity, AppliedSkyLightIntensity, Epsilon * BaseSkyLightIntensity, bFirst, bSettled))
 		{
 			SkyLight->SetIntensity(Intensity);
 			AppliedSkyLightIntensity = Intensity;
+		}
+
+		// The ground bounce: the lower half of the sky light, scaled by the place's own sky light scale like the sky light is.
+		const FLinearColor Bounce = GroundBounce * BaseSkyLightScale;
+		if (bFirst || !Bounce.Equals(AppliedGroundBounce, 1.0e-6f))
+		{
+			SkyLight->SetLowerHemisphereColor(Bounce);
+			AppliedGroundBounce = Bounce;
 		}
 	}
 
@@ -1125,9 +1147,14 @@ void UMantleEnvironmentSubsystem::UpdatePostProcess()
 
 	// This player's own look over the replicated one, field by field, in one volume.
 	const FMantleEnvironmentOverride Look = GetPostProcessLook();
+	RefreshSkyLightState();
+	// Where nothing shades the sky light (Low), local exposure stays off outdoors: it deepens shade that is not really there.
+	const bool bLocalExposureOff = FMantleWeatherLook::WantsLocalExposureOff(SkyLightState, bInterior);
+	PostProcessSkyLightState = SkyLightState;
+	bPostProcessSkyLightStateKnown = true;
 	// The place's exposure needs the volume too, unless it is the game's own (fixed, no bias).
 	const bool bNeutral = Look.IsPostProcessNeutral() && IsPlaceExposureNeutral(PlaceExposure) && ExposureLift == 0.0f
-		&& !PlaceBloomThreshold.IsSet();
+		&& !PlaceBloomThreshold.IsSet() && !bLocalExposureOff;
 	APostProcessVolume* Volume = PostProcessVolume.Get();
 	if (!Volume)
 	{
@@ -1155,6 +1182,7 @@ void UMantleEnvironmentSubsystem::UpdatePostProcess()
 	// Only what a script moved off neutral is overridden; the rest stays the project's own look.
 	FPostProcessSettings& Settings = Volume->Settings;
 	ApplyExposureSettings(Settings, Look.ExposureBias, PlaceExposure, GetEngineExposureBias(), ExposureLift);
+	ApplyLocalExposureSettings(Settings, bLocalExposureOff);
 	Settings.bOverride_ColorSaturation = Look.Saturation != 1.0f;
 	Settings.ColorSaturation = FVector4(Look.Saturation, Look.Saturation, Look.Saturation, 1.0f);
 	Settings.bOverride_ColorContrast = Look.Contrast != 1.0f;
@@ -1226,6 +1254,59 @@ void UMantleEnvironmentSubsystem::SetPlaceExposure(const TOptional<FMantleExposu
 	UpdatePostProcess();
 }
 
+void UMantleEnvironmentSubsystem::ApplyLocalExposureSettings(FPostProcessSettings& Settings, const bool bLocalExposureOff)
+{
+	// Both contrast scales at 1 is no local exposure; unset keeps the project's own (r.DefaultFeature.LocalExposure.*).
+	Settings.bOverride_LocalExposureHighlightContrastScale = bLocalExposureOff;
+	Settings.bOverride_LocalExposureShadowContrastScale = bLocalExposureOff;
+	if (bLocalExposureOff)
+	{
+		Settings.LocalExposureHighlightContrastScale = 1.0f;
+		Settings.LocalExposureShadowContrastScale = 1.0f;
+	}
+}
+
+EMantleSkyLightState UMantleEnvironmentSubsystem::GetSkyLightState()
+{
+	// Looked up once (the engine's own variables live for the whole process); read every tick.
+	static const IConsoleVariable* const GiMethod = IConsoleManager::Get().FindConsoleVariable(TEXT("r.DynamicGlobalIlluminationMethod"));
+	static const IConsoleVariable* const LumenDiffuse = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Lumen.DiffuseIndirect.Allow"));
+	static const IConsoleVariable* const FinalGather = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Lumen.FinalGatherMethod"));
+	static const IConsoleVariable* const RayTracingEnable = IConsoleManager::Get().FindConsoleVariable(TEXT("r.RayTracing.Enable"));
+	static const IConsoleVariable* const LumenHardwareRayTracing = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Lumen.HardwareRayTracing"));
+	static const IConsoleVariable* const DistanceFieldAo = IConsoleManager::Get().FindConsoleVariable(TEXT("r.DistanceFieldAO"));
+	static const IConsoleVariable* const AoQuality = IConsoleManager::Get().FindConsoleVariable(TEXT("r.AOQuality"));
+	auto Read = [](const IConsoleVariable* Variable, const int32 WhenMissing) { return Variable ? Variable->GetInt() : WhenMissing; };
+	const bool bLumenOn = Read(GiMethod, 1) == 1 && Read(LumenDiffuse, 1) != 0;
+	const bool bDistanceFieldShadingOn = Read(DistanceFieldAo, 1) != 0 && Read(AoQuality, 1) > 0;
+	// r.Lumen.FinalGatherMethod 0 is the lighter irradiance field gather (Balanced); 1 is the screen probe gather. Missing counts as 1.
+	const bool bLumenLightGather = Read(FinalGather, 1) == 0;
+	// Ray tracing in force: r.RayTracing.Enable (the Ray tracing row in Settings sets it live) and Lumen's hardware ray tracing. The
+	// engine defines r.RayTracing.Enable with default 1 (RayTracingGeometryManager.cpp:33-36), so it is never missing: a dedicated server,
+	// or any process where the graphics settings never ran, reads it as 1 and gets LumenRT (x4), what every place had before the states.
+	// The fallback of 0 below is never taken. A missing hardware switch counts as on (its default).
+	const bool bRayTraced = Read(RayTracingEnable, 0) != 0 && Read(LumenHardwareRayTracing, 1) != 0;
+	return FMantleWeatherLook::SkyLightStateFor(bLumenOn, bDistanceFieldShadingOn, bLumenLightGather, bRayTraced);
+}
+
+void UMantleEnvironmentSubsystem::RefreshSkyLightState()
+{
+	const EMantleSkyLightState State = GetSkyLightState();
+	if (bSkyLightStateKnown && State == SkyLightState)
+	{
+		return;
+	}
+	SkyLightState = State;
+	bSkyLightStateKnown = true;
+	const TCHAR* Name = State == EMantleSkyLightState::LumenRT ? TEXT("lumen_rt")
+		: (State == EMantleSkyLightState::Lumen ? TEXT("lumen")
+		: (State == EMantleSkyLightState::LumenLight ? TEXT("lumen_light")
+		: (State == EMantleSkyLightState::DistanceField ? TEXT("distance_field") : TEXT("unshaded"))));
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_SKY_LIGHT_STATE state=%s fill_at_dusk=%.3f fill_by_day=%.3f local_exposure=%s interior=%d"), Name,
+		FMantleWeatherLook::SkyLightFill(State, 2.0), FMantleWeatherLook::SkyLightFill(State, 90.0),
+		FMantleWeatherLook::WantsLocalExposureOff(State, bInterior) ? TEXT("off") : TEXT("on"), bInterior ? 1 : 0);
+}
+
 void UMantleEnvironmentSubsystem::ApplyBloomThresholdSettings(FPostProcessSettings& Settings, const TOptional<double>& Threshold)
 {
 	// Unset keeps the engine's own threshold (-1: everything glows), as before.
@@ -1267,6 +1348,11 @@ void UMantleEnvironmentSubsystem::SetWeatherFogTint(const FLinearColor& Tint, fl
 	}
 	WeatherFogTint = Tint;
 	WeatherFogTintAmount = Share;
+}
+
+void UMantleEnvironmentSubsystem::SetGroundBounce(const FLinearColor& Color)
+{
+	GroundBounce = FLinearColor(FMath::Max(Color.R, 0.0f), FMath::Max(Color.G, 0.0f), FMath::Max(Color.B, 0.0f), 1.0f);
 }
 
 float UMantleEnvironmentSubsystem::GetEngineExposureBias()

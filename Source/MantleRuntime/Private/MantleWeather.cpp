@@ -163,6 +163,32 @@ FMantleWeatherLook FMantleWeatherLook::FromValues(const FMantleWeatherValues& Va
 	return Look;
 }
 
+double FMantleWeatherLook::SkyLightFill(EMantleSkyLightState State, double SunElevationDegrees)
+{
+	using namespace MantleEnvironmentDefaults;
+	// Not a number takes the day's value, the last point of the table.
+	const double Elevation = FMath::IsNaN(SunElevationDegrees) ? 90.0 : SunElevationDegrees;
+	switch (State)
+	{
+	case EMantleSkyLightState::LumenRT: return WeatherLookTable(SkyLightFillElevation, SkyLightFillScaleLumenRayTraced, Elevation);
+	case EMantleSkyLightState::LumenLight: return WeatherLookTable(SkyLightFillElevation, SkyLightFillScaleLumenLight, Elevation);
+	case EMantleSkyLightState::DistanceField: return WeatherLookTable(SkyLightFillElevation, SkyLightFillScaleDistanceField, Elevation);
+	case EMantleSkyLightState::Unshaded: return WeatherLookTable(SkyLightFillElevation, SkyLightFillScaleUnshaded, Elevation);
+	default: return WeatherLookTable(SkyLightFillElevation, SkyLightFillScaleLumen, Elevation);
+	}
+}
+
+EMantleSkyLightState FMantleWeatherLook::SkyLightStateFor(bool bLumenOn, bool bDistanceFieldShadingOn, bool bLumenLightGather, bool bRayTraced)
+{
+	return bLumenOn ? (bRayTraced ? EMantleSkyLightState::LumenRT : (bLumenLightGather ? EMantleSkyLightState::LumenLight : EMantleSkyLightState::Lumen))
+		: (bDistanceFieldShadingOn ? EMantleSkyLightState::DistanceField : EMantleSkyLightState::Unshaded);
+}
+
+bool FMantleWeatherLook::WantsLocalExposureOff(EMantleSkyLightState State, bool bInterior)
+{
+	return State == EMantleSkyLightState::Unshaded && !bInterior;
+}
+
 float FMantleWeatherLook::CloudLightningScale(double Flash)
 {
 	return static_cast<float>((Flash > 0.0) ? FMath::Min(Flash, 1.0) : 0.0);

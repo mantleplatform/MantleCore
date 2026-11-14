@@ -80,6 +80,25 @@ struct MANTLERUNTIME_API FMantleWeatherValues
 };
 
 /**
+ * What this machine's renderer does with the sky light, which picks the table for the fill by the sun's height
+ * (FMantleWeatherLook::SkyLightFill, MantleEnvironmentDefaults::SkyLightFillScale*). Read from the console variables, never from
+ * the preset's name: a Low player who turns Global illumination up gets Medium's.
+ */
+enum class EMantleSkyLightState : uint8
+{
+	/** Lumen's bounce light is on with the screen probe gather (r.Lumen.FinalGatherMethod 1), without ray tracing: High as the game sets it. Lumen's software tracing leaks some of the sky's light, so it needs less fill than the ray-traced state. */
+	Lumen,
+	/** Lumen's bounce light is on and ray tracing is on (r.RayTracing.Enable and r.Lumen.HardwareRayTracing): Epic, or High with ray tracing switched on in Settings. Lumen then sees what blocks the sky. */
+	LumenRT,
+	/** Lumen's bounce light is on with the lighter irradiance field gather (r.Lumen.FinalGatherMethod 0: Balanced). It blocks the sky's light about as much as distance-field shading does. */
+	LumenLight,
+	/** No Lumen, but distance-field sky shadowing is on (the renderer shades the sky light). */
+	DistanceField,
+	/** Neither: nothing shades the sky light. */
+	Unshaded,
+};
+
+/**
  * What the weather does to the default sky: the values the environment subsystem
  * writes to the cloud material, the height fog, the sky light, the sun and the night sky, from
  * the blended FMantleWeatherValues alone. Pure maths, so every client derives the same look from
@@ -123,9 +142,26 @@ struct MANTLERUNTIME_API FMantleWeatherLook
 
 	/**
 	 * SunElevationDegrees: the sun's height (below the horizon by night), for heavy fog's dimming, which Ultra Dynamic
-	 * Sky makes stronger with the sun low (its Directional Inscattering Multiplier).
+	 * Sky makes stronger with the sun low (its Directional Inscattering Multiplier). The sky light's fill is not here: it
+	 * depends on this machine's renderer, so the client applies SkyLightFill itself. The default, 90, is full day.
 	 */
 	static FMantleWeatherLook FromValues(const FMantleWeatherValues& Values, double SunElevationDegrees = 90.0);
+
+	/**
+	 * The sky light's multiple by the sun's height (degrees, below the horizon by night) in this renderer state: the
+	 * table in MantleEnvironmentDefaults for the state, linear between its points and held past either end. Day is
+	 * the last point (1 with Lumen or distance fields, 0.5 where nothing shades the sky light). Not a number takes the day's.
+	 */
+	static double SkyLightFill(EMantleSkyLightState State, double SunElevationDegrees);
+
+	/**
+	 * The state for these answers: with Lumen on, ray tracing first (bRayTraced: LumenRT, whatever the gather), then the lighter gather
+	 * (LumenLight), else Lumen; with it off, distance-field shading, else none.
+	 */
+	static EMantleSkyLightState SkyLightStateFor(bool bLumenOn, bool bDistanceFieldShadingOn, bool bLumenLightGather = false, bool bRayTraced = false);
+
+	/** True where the game turns local exposure off (both contrast scales read 1): the sky light is unshaded and the place is outdoors. */
+	static bool WantsLocalExposureOff(EMantleSkyLightState State, bool bInterior);
 
 	/**
 	 * 0-1: what heavy fog leaves of the sun's (and the moon's) light: all of it up to the package's Fog 5, then down to

@@ -171,6 +171,59 @@ namespace MantleEnvironmentDefaults
 	 */
 	constexpr double SkyLightIntensityAtFullCover = 1.0;
 
+	/**
+	 * The sky light by the sun's height (degrees), as a multiple of its own intensity, linear between the points and held
+	 * at the first and last. Day is untouched (1 from 12 degrees up). Dusk through night is lit by the sky light alone on
+	 * the side away from the sun or the moon, and the night sky is very dim, so shaded sides measured 2 to 5 of 255.
+	 * Raising the sky light there fills them; the exposure brightening cannot, since it lifts the lit side equally.
+	 * Ultra Dynamic Sky ships its own multiplier at 1, so there is no stock value to copy: 4 is the tested one, and the
+	 * ramp starts where the light begins to fade.
+	 */
+	inline constexpr double SkyLightFillElevation[] = { 2.0, 6.0, 12.0 };
+
+	/**
+	 * The sky light's table is picked by what this machine's renderer does with the sky light (FMantleWeatherLook::SkyLightFill),
+	 * not by the graphics preset's name. Each table's three values sit at SkyLightFillElevation. Every number in the
+	 * Lumen, LumenLight, DistanceField and Unshaded rows is provisional (the owner judges them in play); LumenRT's is the one every place
+	 * had before the states. Changing one is a one-line change here.
+	 *   LumenRT      Lumen's bounce light is on and ray tracing is on (r.RayTracing.Enable and r.Lumen.HardwareRayTracing):
+	 *                Epic, or High with ray tracing switched on in Settings. The table above, x4 at dusk through night, the
+	 *                one every place had before the states (tested on Epic; High with ray tracing on landed on it, 2026-11-13:
+	 *                ground within 2.9 of Epic's at every hour). It also applies to the lighter gather with ray tracing on.
+	 *   Lumen        Lumen's bounce light is on with the screen probe gather (r.Lumen.FinalGatherMethod 1) and no ray tracing:
+	 *                High as the game sets it. Without ray tracing Lumen cannot see what blocks the sky around a character, so
+	 *                the sky leaks and it needs less fill: 2.5 at 2 degrees, 1.75 halfway (between that and 1.0 at 6 degrees),
+	 *                1.0 from 12 degrees. Joshua's pick (2026-11-13) from Fable's A3s16 numbers (High held at x3: ground within
+	 *                4.4 of Epic's, the character's shaded side about twice Epic's at dusk; at x2: the ground 6.9 under at twilight):
+	 *                x2.5 keeps the ground within 4.5 at every hour (worked out 0.0, -3.5, -2.0) and pulls the character back.
+	 *   LumenLight   Lumen's bounce light is on with the lighter irradiance field gather (FinalGatherMethod 0: the row at
+	 *                Medium, which is Balanced). Measured on the village at x4: it lands on the no-Lumen line, not Epic's
+	 *                (dusk 52.4 against Epic's 38.5), so it starts at the distance field table's values. Its own row so it can
+	 *                be tuned by one line.
+	 *   DistanceField  No Lumen, but distance-field sky shadowing is on (Medium): walls, roofs and tree crowns block the sky's
+	 *                  light, so it needs less fill. 2.0 at 2 degrees, 1.5 halfway, 1.0 by day: the Medium fill run's pick (x2
+	 *                  put Medium's dusk and twilight ground within 4.5 of Epic's; x3 left it 4 to 10 over).
+	 *   Unshaded     Nothing shades the sky light (Low): it lights every surface alike, so by day it is turned down to
+	 *                  bring the shade back (0.5), x1 at 6 degrees and a little over (1.5) from dusk on.
+	 */
+	inline constexpr double SkyLightFillScaleLumenRayTraced[] = { 4.0, 2.0, 1.0 };
+	inline constexpr double SkyLightFillScaleLumen[] = { 2.5, 1.75, 1.0 };
+	inline constexpr double SkyLightFillScaleLumenLight[] = { 2.0, 1.5, 1.0 };
+	inline constexpr double SkyLightFillScaleDistanceField[] = { 2.0, 1.5, 1.0 };
+	inline constexpr double SkyLightFillScaleUnshaded[] = { 1.5, 1.0, 0.5 };
+
+	/** The default sun's intensity (lux) when a place has none of its own. */
+	constexpr float DefaultSunIntensity = 3.5f;
+
+	/**
+	 * Ground bounce: the sky light's lower half is this times the sky sphere's Ambient Color (Ultra Dynamic Sky's own
+	 * numbers), so what looks down at the ground gets a little of the sky's color back. Without it the lower half of the
+	 * sky light is black.
+	 */
+	constexpr double GroundBounceRed = 0.26;
+	constexpr double GroundBounceGreen = 0.23;
+	constexpr double GroundBounceBlue = 0.20;
+
 	/** The stars and the moon show fully at this cover (Clear's) and below, and are gone at full cover. */
 	constexpr double StarsFullyShownBelowCover = 0.15;
 
