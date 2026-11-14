@@ -368,6 +368,27 @@ float FMantleMeshNaniteBake::NextKeepPercent(const float Keep, const int64 Packe
 	return static_cast<float>(Keep * FMath::Clamp(0.9 / Over, 0.2, 0.9));
 }
 
+float FMantleMeshNaniteBake::NextAttemptKeep(const float Keep, const int64 PackedBytes, const int64 RawBytes, const int64 PreviousPackedBytes,
+	const int64 MaxPackedBytes, const int64 MaxRawBytes)
+{
+	if (DidNotShrink(PackedBytes, PreviousPackedBytes))
+	{
+		return 0.0f;
+	}
+	const float Next = NextKeepPercent(Keep, PackedBytes, RawBytes, MaxPackedBytes, MaxRawBytes);
+	if (Next >= MinKeepPercentTriangles)
+	{
+		return Next;
+	}
+	// The step would skip the floor (0.04 steps to 0.008): bake there once, and give up only when Keep already is there.
+	return Keep > MinKeepPercentTriangles ? MinKeepPercentTriangles : 0.0f;
+}
+
+bool FMantleMeshNaniteBake::DidNotShrink(const int64 PackedBytes, const int64 PreviousPackedBytes)
+{
+	return PreviousPackedBytes > 0 && PackedBytes >= PreviousPackedBytes;
+}
+
 bool FMantleMeshNaniteBake::BakeToFit(const UStaticMesh* Mesh, const TConstArrayView<int32> PublishedSlots, const FString& MeshTag,
 	TArray<uint8>& OutContainer, FString& OutReason, FMantleNaniteFit& OutFit, bool* OutRetryable, const int64 MaxPackedBytes, const int64 MaxRawBytes)
 {
@@ -378,6 +399,7 @@ bool FMantleMeshNaniteBake::BakeToFit(const UStaticMesh* Mesh, const TConstArray
 		*OutRetryable = false;
 	}
 	float Keep = 1.0f;
+	int64 PreviousPackedBytes = 0;
 	for (int32 Attempt = 0; Attempt < MaxBakes; ++Attempt)
 	{
 		TArray<uint8> Mnd1;
@@ -421,14 +443,21 @@ bool FMantleMeshNaniteBake::BakeToFit(const UStaticMesh* Mesh, const TConstArray
 		{
 			return true;
 		}
-		const float Next = NextKeepPercent(Keep, PackedBytes, RawBytes, MaxPackedBytes, MaxRawBytes);
-		if (Next < MinKeepPercentTriangles || Attempt + 1 == MaxBakes)
+		const float Next = NextAttemptKeep(Keep, PackedBytes, RawBytes, PreviousPackedBytes, MaxPackedBytes, MaxRawBytes);
+		if (Next <= 0.0f || Attempt + 1 == MaxBakes)
 		{
 			OutContainer.Reset();
-			OutReason = FString::Printf(TEXT("its Nanite data is %.0f MiB compressed, over the %.0f MiB a file may be, even baked at %.0f%% of its triangles"),
-				PackedBytes / (1024.0 * 1024.0), MaxPackedBytes / (1024.0 * 1024.0), Keep * 100.0f);
+			OutFit.bTooBig = true;
+			// A file over the raw limit was never compressed: its packed size is an estimate, so say the raw size, which is a fact.
+			const FString Size = RawBytes > MaxRawBytes
+				? FString::Printf(TEXT("its Nanite data is %.0f MiB uncompressed, over the %.0f MiB a file may inflate to"), RawBytes / (1024.0 * 1024.0), MaxRawBytes / (1024.0 * 1024.0))
+				: FString::Printf(TEXT("its Nanite data is %.0f MiB compressed, over the %.0f MiB a file may be"), PackedBytes / (1024.0 * 1024.0), MaxPackedBytes / (1024.0 * 1024.0));
+			OutReason = DidNotShrink(PackedBytes, PreviousPackedBytes)
+				? FString::Printf(TEXT("%s, and baking it at %.0f%% of its triangles did not make it smaller"), *Size, Keep * 100.0f)
+				: FString::Printf(TEXT("%s, even baked at %.0f%% of its triangles"), *Size, Keep * 100.0f);
 			return false;
 		}
+		PreviousPackedBytes = PackedBytes;
 		Keep = Next;
 	}
 	return false;

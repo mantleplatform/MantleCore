@@ -81,6 +81,9 @@ struct FMantleNaniteFit
 	int64 FirstRawBytes = 0;
 
 	bool IsCoarser() const { return KeepPercentTriangles < 1.0f; }
+
+	/** True when BakeToFit gave up because the file stayed over a limit (not because a bake failed): the mesh needs splitting into smaller meshes. */
+	bool bTooBig = false;
 };
 
 /**
@@ -133,6 +136,17 @@ public:
 	 */
 	static float NextKeepPercent(float Keep, int64 PackedBytes, int64 RawBytes, int64 MaxPackedBytes = FMantleMeshNaniteFile::MaxUploadBytes,
 		int64 MaxRawBytes = FMantleMeshNaniteFile::MaxRawBytes());
+
+	/**
+	 * The share of its triangles to bake at next, or 0 to stop: NextKeepPercent, except that a step that would fall below
+	 * MinKeepPercentTriangles bakes once at MinKeepPercentTriangles instead while Keep is above it; 0 only when Keep is already there.
+	 * Also 0 when the last bake did not make the file smaller (DidNotShrink with PreviousPackedBytes, 0 for the first bake).
+	 */
+	static float NextAttemptKeep(float Keep, int64 PackedBytes, int64 RawBytes, int64 PreviousPackedBytes, int64 MaxPackedBytes = FMantleMeshNaniteFile::MaxUploadBytes,
+		int64 MaxRawBytes = FMantleMeshNaniteFile::MaxRawBytes());
+
+	/** Whether a bake that came out PackedBytes did not make the file smaller than the one before it (PreviousPackedBytes, 0 when there was none). */
+	static bool DidNotShrink(int64 PackedBytes, int64 PreviousPackedBytes);
 
 	/**
 	 * What the converter's cache key has to cover for Mesh: the mesh and, for a Nanite assembly, each part's mesh. An assembly names

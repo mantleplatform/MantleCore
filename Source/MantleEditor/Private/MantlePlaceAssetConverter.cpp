@@ -3828,7 +3828,8 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 			Converted.Nanite.Reset();
 			Converted.NaniteNone = NaniteWhy.IsEmpty() ? FString(TEXT("it could not be built")) : NaniteWhy;
 			MeshIssues.Add(WarningIssue(FString::Printf(TEXT("Mesh '%s' has no Nanite data, so players see its plain model: %s."), *Mesh->GetName(), *Converted.NaniteNone),
-				TEXT("It still publishes, drawn as its plain model. Fix what the message says to give it Nanite.")));
+				Fit.bTooBig ? TEXT("It still publishes, drawn as its plain model. To give it Nanite data, split the model into smaller meshes.")
+					: TEXT("It still publishes, drawn as its plain model. Fix what the message says to give it Nanite.")));
 			// A reason that belongs to the mesh (see-through, a slot an assembly cannot drop) is cached with it; one that belongs to this
 			// run or this editor (a build that kept no data, a part that did not load) must not outlive it.
 			bCacheable = bCacheable && !bRetryable;

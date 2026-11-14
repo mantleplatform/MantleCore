@@ -935,6 +935,21 @@ bool FMantleMeshNaniteCoarserStepTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("the inflated size over its limit steps too"), FBake::NextKeepPercent(1.0f, 10 * MiB, 1024 * MiB), 0.45f);
 	// A later step scales what is kept already: 0.45 kept, 96 MiB against 64 is 1.5 times over, so 0.45 * 0.9 / 1.5 = 0.45 * 0.6.
 	TestTrue(TEXT("a step from a coarser bake scales it"), FMath::IsNearlyEqual(FBake::NextKeepPercent(0.45f, 96 * MiB, 100 * MiB), 0.45f * 0.6f, 1e-5f));
+
+	// The loop never skips the floor: 0.04 kept and far over steps to 0.04 * 0.2 = 0.008, below 0.02, so one bake at 0.02 comes first.
+	TestEqual(TEXT("a step below the floor bakes at the floor"), FBake::NextAttemptKeep(0.04f, 6400 * MiB, 100 * MiB, 0), FBake::MinKeepPercentTriangles);
+	// From the floor itself there is nothing coarser to try.
+	TestEqual(TEXT("at the floor, stop"), FBake::NextAttemptKeep(FBake::MinKeepPercentTriangles, 6400 * MiB, 100 * MiB, 0), 0.0f);
+	// A step that lands above the floor is the plain step: 1.0 and 128 MiB against 64 is 0.45.
+	TestEqual(TEXT("a step above the floor is NextKeepPercent's"), FBake::NextAttemptKeep(1.0f, 128 * MiB, 200 * MiB, 0), 0.45f);
+	// A bake no smaller than the one before stops the loop, whatever the step would be: 100 MiB after 100 MiB, and after 90 MiB.
+	TestEqual(TEXT("a bake the same size as the last stops"), FBake::NextAttemptKeep(0.45f, 100 * MiB, 200 * MiB, 100 * MiB), 0.0f);
+	TestEqual(TEXT("a bake larger than the last stops"), FBake::NextAttemptKeep(0.45f, 100 * MiB, 200 * MiB, 90 * MiB), 0.0f);
+	TestEqual(TEXT("a bake smaller than the last goes on: 0.45 * 0.9 / (100 / 64)"), FBake::NextAttemptKeep(0.45f, 100 * MiB, 200 * MiB, 110 * MiB),
+		static_cast<float>(0.45 * 0.9 / (100.0 / 64.0)));
+	TestFalse(TEXT("the first bake has nothing to be smaller than"), FBake::DidNotShrink(100 * MiB, 0));
+	TestTrue(TEXT("equal does not shrink"), FBake::DidNotShrink(100 * MiB, 100 * MiB));
+	TestFalse(TEXT("smaller shrinks"), FBake::DidNotShrink(99 * MiB, 100 * MiB));
 	return true;
 }
 
@@ -1023,6 +1038,14 @@ bool FMantleMeshNaniteFitTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("that belongs to the mesh"), bRetryable);
 	TestTrue(TEXT("and says why in the creator's words"), Why.Contains(TEXT("compressed")) && Why.Contains(TEXT("even baked at")));
 	TestTrue(TEXT("having tried more than once, and no more than the loop's bakes"), NoneFit.Bakes > 1 && NoneFit.Bakes <= FMantleMeshNaniteBake::MaxBakes);
+	TestTrue(TEXT("and is marked as too big, so Check says to split the model"), NoneFit.bTooBig);
+	// An inflated limit nothing can meet is said as a size that is known: the MND1's own, not an estimate of the compressed file.
+	TArray<uint8> NoneByRaw;
+	FMantleNaniteFit NoneByRawFit;
+	Why.Reset();
+	TestFalse(TEXT("an inflated limit no bake can meet gives no file"),
+		FMantleMeshNaniteBake::BakeToFit(Grid, { 0 }, MeshTag, NoneByRaw, Why, NoneByRawFit, nullptr, FMantleMeshNaniteFile::MaxUploadBytes, 16));
+	TestTrue(TEXT("and names the uncompressed size"), Why.Contains(TEXT("uncompressed")) && Why.Contains(TEXT("inflate to")));
 	Grid->MarkAsGarbage();
 	return true;
 }
