@@ -620,6 +620,7 @@ namespace
 		case EMantleAssetKind::Lumen:    return TEXT("Lumen");
 		case EMantleAssetKind::VoxelWorldData: return TEXT("VoxelWorldData");
 		case EMantleAssetKind::Nanite:   return TEXT("Nanite");
+		case EMantleAssetKind::PlaceCellIndex: return TEXT("PlaceCellIndex");
 		case EMantleAssetKind::StaticMesh: return TEXT("StaticMesh");
 		default:
 			// A kind added to the enum must be named above: a silent "StaticMesh" would publish its file as the wrong kind.
