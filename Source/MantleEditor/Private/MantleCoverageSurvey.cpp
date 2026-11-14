@@ -379,11 +379,25 @@ namespace MantleCoverageSurveyPrivate
 	}
 
 	/** What the place wrote, by entity (what the actors survey leaves to it: meshes, lights, sounds, groups and the Mantle actors). */
-	void CoverageSurveyEntities(const FMantlePlace& Place, FMantleCoverage& Coverage)
+	void CoverageSurveyEntities(const FMantlePlace& Place, const TArray<FMantlePlannedCell>& Cells, FMantleCoverage& Coverage)
 	{
 		bool bSun = false;
+		// The root's entities, then the cells' (large places: scenery in cells is as published as scenery in the root).
+		TArray<const FMantleEntity*> All;
 		for (const FMantleEntity& Entity : Place.Entities)
 		{
+			All.Add(&Entity);
+		}
+		for (const FMantlePlannedCell& Cell : Cells)
+		{
+			for (const FMantleEntity& Entity : Cell.Entities)
+			{
+				All.Add(&Entity);
+			}
+		}
+		for (const FMantleEntity* EntityPtr : All)
+		{
+			const FMantleEntity& Entity = *EntityPtr;
 			switch (Entity.Type)
 			{
 			case EMantleEntityType::StaticMesh:
@@ -560,7 +574,7 @@ namespace MantleCoverageSurveyPrivate
 	}
 
 	/** Materials from Mantle's library are exact: the ones the place's meshes and terrain layers name. */
-	void CoverageSurveyLibraryMaterials(const FMantlePlace& Place, FMantleCoverage& Coverage)
+	void CoverageSurveyLibraryMaterials(const FMantlePlace& Place, const TArray<FMantlePlannedCell>& Cells, FMantleCoverage& Coverage)
 	{
 		const FMantleAssetLibrary& Library = FMantleAssetLibrary::Get();
 		TSet<FString> SeenIds;
@@ -573,6 +587,19 @@ namespace MantleCoverageSurveyPrivate
 				Coverage.Add(Cat::Materials, EOutcome::Kept, Entry->Path.GetAssetName(), TEXT("Mantle library material."));
 			}
 		};
+		for (const FMantlePlannedCell& Cell : Cells)
+		{
+			for (const FMantleEntity& Entity : Cell.Entities)
+			{
+				if (const FMantleStaticMeshProps* Mesh = MantleMeshPropsOf(Entity))
+				{
+					for (const FString& Id : Mesh->Materials)
+					{
+						ReportLibrary(Id);
+					}
+				}
+			}
+		}
 		for (const FMantleEntity& Entity : Place.Entities)
 		{
 			if (const FMantleStaticMeshProps* Mesh = MantleMeshPropsOf(Entity))
@@ -950,9 +977,9 @@ void FMantleCoverageSurvey::Run(UWorld* World, FMantleExportResult& Result)
 		return;
 	}
 	CoverageSurveyActors(World, Result);
-	CoverageSurveyEntities(Result.Place, Result.Coverage);
+	CoverageSurveyEntities(Result.Place, Result.Cells, Result.Coverage);
 	CoverageSurveyInstances(World, Result);
-	CoverageSurveyLibraryMaterials(Result.Place, Result.Coverage);
+	CoverageSurveyLibraryMaterials(Result.Place, Result.Cells, Result.Coverage);
 	CoverageSurveyTerrain(World, Result);
 	CoverageSurveyLevels(World, Result.Coverage);
 	CoverageSurveyLevelBlueprint(World, Result.Coverage);

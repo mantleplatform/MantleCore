@@ -103,9 +103,22 @@ bool FMantleInstanceMirrorTest::RunTest(const FString& Parameters)
 	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
 	int32 Instances = 0;
 	int32 Sets = 0;
+	// The scenery of a level without draw distances stays in the root; with them it is in cells. Either way it is published.
+	TArray<const FMantleEntity*> Published;
 	for (const FMantleEntity& Entity : Result.Place.Entities)
 	{
-		if (const FMantleInstancedMeshProps* Props = Entity.Props.TryGet<FMantleInstancedMeshProps>())
+		Published.Add(&Entity);
+	}
+	for (const FMantlePlannedCell& Cell : Result.Cells)
+	{
+		for (const FMantleEntity& Entity : Cell.Entities)
+		{
+			Published.Add(&Entity);
+		}
+	}
+	for (const FMantleEntity* Entity : Published)
+	{
+		if (const FMantleInstancedMeshProps* Props = Entity->Props.TryGet<FMantleInstancedMeshProps>())
 		{
 			++Sets;
 			for (const FTransform& Instance : Props->Instances)
