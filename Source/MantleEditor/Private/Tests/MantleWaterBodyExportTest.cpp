@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCoverage.h"
 #include "MantlePlaceAssets.h"
+#include "MantleExportedEntities.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceParser.h"
 #include "MantleTargetFeatures.h"
@@ -617,9 +618,9 @@ namespace MantleFlatWaterTestPrivate
 	int32 CountEntities(const FMantleExportResult& Result, const EMantleEntityType Type)
 	{
 		int32 Count = 0;
-		for (const FMantleEntity& Entity : Result.Place.Entities)
+		for (const FMantleEntity* Entity : MantleExportedEntities::All(Result))
 		{
-			Count += Entity.Type == Type ? 1 : 0;
+			Count += Entity->Type == Type ? 1 : 0;
 		}
 		return Count;
 	}
