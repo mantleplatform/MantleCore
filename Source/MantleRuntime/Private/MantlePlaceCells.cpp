@@ -703,14 +703,8 @@ bool FMantlePlaceCells::ReadCellFile(const FString& Json, const TMap<FString, EM
 	return true;
 }
 
-bool FMantlePlaceCells::Merge(FMantlePlace& Place, const FMantleCellIndex& Index, TArray<FMantleCellContent>& Contents, TArray<FMantleParseError>& OutErrors)
+bool FMantlePlaceCells::Validate(const FMantlePlace& Place, const FMantleCellIndex& Index, const TArray<FMantleCellContent>& Contents, TArray<FMantleParseError>& OutErrors)
 {
-	if (Place.bCellsMerged)
-	{
-		OutErrors.Add(FMantleParseError{ TEXT("/cells"), TEXT("the cells were already added to this place") });
-		return false;
-	}
-
 	// The index's counts are what the exporter and the backend held the files to; a cell that reads differently is a place that was altered.
 	int32 Added = 0;
 	for (const FMantleCellContent& Content : Contents)
@@ -757,11 +751,26 @@ bool FMantlePlaceCells::Merge(FMantlePlace& Place, const FMantleCellIndex& Index
 			}
 		}
 	}
-	if (!OutErrors.IsEmpty())
+	return OutErrors.IsEmpty();
+}
+
+bool FMantlePlaceCells::Merge(FMantlePlace& Place, const FMantleCellIndex& Index, TArray<FMantleCellContent>& Contents, TArray<FMantleParseError>& OutErrors)
+{
+	if (Place.bCellsMerged || Place.bCellsStreamed)
+	{
+		OutErrors.Add(FMantleParseError{ TEXT("/cells"), TEXT("the cells were already added to this place") });
+		return false;
+	}
+	if (!Validate(Place, Index, Contents, OutErrors))
 	{
 		return false;
 	}
 
+	int32 Added = 0;
+	for (const FMantleCellContent& Content : Contents)
+	{
+		Added += Content.Entities.Num();
+	}
 	Place.Entities.Reserve(Place.Entities.Num() + Added);
 	for (FMantleCellContent& Content : Contents)
 	{
@@ -770,4 +779,54 @@ bool FMantlePlaceCells::Merge(FMantlePlace& Place, const FMantleCellIndex& Index
 	}
 	Place.bCellsMerged = true;
 	return true;
+}
+
+bool FMantlePlaceCells::AssembleForAssets(const FMantlePlace& Root, const FMantleCellIndex& Index, const TArray<FMantleCellContent>& Contents, FMantlePlace& OutPlace, TArray<FMantleParseError>& OutErrors)
+{
+	if (Root.bCellsMerged || Root.bCellsStreamed)
+	{
+		OutErrors.Add(FMantleParseError{ TEXT("/cells"), TEXT("the cells were already added to this place") });
+		return false;
+	}
+	if (!Validate(Root, Index, Contents, OutErrors))
+	{
+		return false;
+	}
+	int32 Added = 0;
+	for (const FMantleCellContent& Content : Contents)
+	{
+		Added += Content.Entities.Num();
+	}
+	OutPlace = Root;
+	OutPlace.Entities.Reserve(Root.Entities.Num() + Added);
+	for (const FMantleCellContent& Content : Contents)
+	{
+		OutPlace.Entities.Append(Content.Entities);
+	}
+	OutPlace.bCellsMerged = true;
+	return true;
+}
+
+void FMantlePlaceCells::SceneryRecords(const TArray<FMantleCellContent>& Contents, TArray<FMantleEntity>& OutEntities)
+{
+	OutEntities.Reset();
+	int32 Count = 0;
+	for (const FMantleCellContent& Content : Contents)
+	{
+		Count += Content.Entities.Num();
+	}
+	OutEntities.Reserve(Count);
+	for (const FMantleCellContent& Content : Contents)
+	{
+		for (const FMantleEntity& Entity : Content.Entities)
+		{
+			FMantleEntity& Slim = OutEntities.AddDefaulted_GetRef();
+			Slim = Entity;
+			// The list of instances is the one big thing in an entity.
+			if (FMantleInstancedMeshProps* Instanced = Slim.Props.TryGet<FMantleInstancedMeshProps>())
+			{
+				Instanced->Instances.Empty();
+			}
+		}
+	}
 }

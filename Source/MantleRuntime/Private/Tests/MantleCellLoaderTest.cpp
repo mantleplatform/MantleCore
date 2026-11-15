@@ -377,4 +377,198 @@ bool FMantleCellLoaderFailuresTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellLoaderStreamTest,
+	"Mantle.Runtime.Place.Cells.LoaderStream",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellLoaderStreamTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellLoaderTestPrivate;
+	FLoaderFixture Fixture;
+
+	FMantleAssetStoreSettings StoreSettings;
+	StoreSettings.RootDir = FPaths::AutomationTransientDir() / FString::Printf(TEXT("CellLoaderStream_%s"), *FGuid::NewGuid().ToString());
+	StoreSettings.bAutoPump = false;
+	FMantleCellLoaderSettings Settings;
+	Settings.bAutoPump = false;
+	Settings.Resolver = Fixture.Resolver;
+	Settings.Store = FMantleAssetStore::Create(StoreSettings, Fixture.Fetcher);
+	Settings.MaxResolveAttempts = 2;
+
+	int32 IndexCalls = 0;
+	const TSharedRef<FMantleCellLoader> Loader = FMantleCellLoader::Open(Fixture.Root, Settings, FMantleCellIndexReady::CreateLambda([&IndexCalls]() { ++IndexCalls; }));
+	const auto PumpUntil = [&](const TFunction<bool()>& Done)
+	{
+		const double Deadline = FPlatformTime::Seconds() + 30.0;
+		while (!Done())
+		{
+			if (FPlatformTime::Seconds() > Deadline)
+			{
+				return false;
+			}
+			Settings.Store->Pump();
+			Loader->Pump();
+			FPlatformProcess::Sleep(0.001f);
+		}
+		return true;
+	};
+
+	// Only the index is read until a cell is asked for.
+	if (!TestTrue(TEXT("the index is read"), PumpUntil([&]() { return Loader->IsIndexReady() && IndexCalls > 0; })))
+	{
+		return false;
+	}
+	TestEqual(TEXT("the index callback fired once"), IndexCalls, 1);
+	TestEqual(TEXT("three cells"), Loader->GetIndex().Cells.Num(), 3);
+	TestEqual(TEXT("only the index was resolved"), Fixture.Resolver->Batches.Num(), 1);
+	TestFalse(TEXT("no cell is ready"), Loader->IsCellReady(1));
+
+	// Cell 1 (one file) is asked for: only its file is resolved and fetched, nothing of the others.
+	Loader->SetWanted(TArray<int32>{ 1 });
+	if (!TestTrue(TEXT("cell 1 is read"), PumpUntil([&]() { return Loader->IsCellReady(1); })))
+	{
+		return false;
+	}
+	TestEqual(TEXT("one more resolve"), Fixture.Resolver->Batches.Num(), 2);
+	TestTrue(TEXT("for cell 1's file alone"), Fixture.Resolver->Batches[1].Num() == 1 && Fixture.Resolver->Batches[1][0] == LoaderFileB);
+	TestEqual(TEXT("cell 0's files never asked for"), Fixture.Resolver->Asks(LoaderFileA1) + Fixture.Resolver->Asks(LoaderFileA2), 0);
+	FMantleCellContent Taken;
+	TestTrue(TEXT("cell 1 is taken"), Loader->TakeCell(1, Taken));
+	TestEqual(TEXT("its one entity"), Taken.Entities.Num(), 1);
+	TestEqual(TEXT("its id"), Taken.Entities[0].Id, FString(TEXT("ent_b1")));
+	TestEqual(TEXT("it says which cell"), Taken.CellIndex, 1);
+	TestFalse(TEXT("taken, it is not ready again"), Loader->IsCellReady(1));
+	FMantleCellContent Again;
+	TestFalse(TEXT("and cannot be taken twice"), Loader->TakeCell(1, Again));
+
+	// Two cells, the one with two files first: its files are one unit, in file order.
+	Loader->SetWanted(TArray<int32>{ 0, 2 });
+	if (!TestTrue(TEXT("cells 0 and 2 are read"), PumpUntil([&]() { return Loader->IsCellReady(0) && Loader->IsCellReady(2); })))
+	{
+		return false;
+	}
+	FMantleCellContent Zero;
+	TestTrue(TEXT("cell 0 is taken"), Loader->TakeCell(0, Zero));
+	TestEqual(TEXT("three entities from two files"), Zero.Entities.Num(), 3);
+	TestEqual(TEXT("in file order"), Zero.Entities[2].Id, FString(TEXT("ent_ism_a3")));
+	TestEqual(TEXT("counted as the index counts"), Zero.Solid, static_cast<int64>(5));
+
+	// Not wanted any more: dropped, not taken. Wanted again, it is fetched from the store without being resolved a second time (its URL is still good).
+	Loader->SetWanted(TArray<int32>());
+	TestFalse(TEXT("a cell nobody wants is not handed over"), Loader->IsCellReady(2) && Loader->TakeCell(2, Again));
+	const int32 ResolvesBefore = Fixture.Resolver->Batches.Num();
+	Loader->SetWanted(TArray<int32>{ 1 });
+	TestTrue(TEXT("cell 1 comes back"), PumpUntil([&]() { return Loader->IsCellReady(1); }));
+	TestEqual(TEXT("without resolving it again"), Fixture.Resolver->Batches.Num(), ResolvesBefore);
+	TestTrue(TEXT("and can be taken"), Loader->TakeCell(1, Again));
+
+	// A cell that cannot be had loses that cell only: its file is unknown to the API, the cell next to it reads as before.
+	{
+		FLoaderFixture Broken;
+		Broken.Resolver->Unknown.Add(LoaderFileC);
+		FMantleCellLoaderSettings BrokenSettings = Settings;
+		BrokenSettings.Resolver = Broken.Resolver;
+		BrokenSettings.Store = FMantleAssetStore::Create(StoreSettings, Broken.Fetcher);
+		const TSharedRef<FMantleCellLoader> Other = FMantleCellLoader::Open(Broken.Root, BrokenSettings, FMantleCellIndexReady());
+		const auto PumpOther = [&](const TFunction<bool()>& Done)
+		{
+			const double Deadline = FPlatformTime::Seconds() + 30.0;
+			while (!Done() && FPlatformTime::Seconds() < Deadline)
+			{
+				BrokenSettings.Store->Pump();
+				Other->Pump();
+				FPlatformProcess::Sleep(0.001f);
+			}
+			return Done();
+		};
+		TestTrue(TEXT("the index is read"), PumpOther([&]() { return Other->IsIndexReady(); }));
+		Other->SetWanted(TArray<int32>{ 0, 2 });
+		AddExpectedError(TEXT("MANTLE_PLACE_CELLS FAIL"), EAutomationExpectedErrorFlags::Contains, 1);
+		TestTrue(TEXT("cell 2 fails and cell 0 is read"), PumpOther([&]() { return Other->IsCellFailed(2) && Other->IsCellReady(0); }));
+		TestFalse(TEXT("the loader does not fail"), Other->HasFailed());
+		TestFalse(TEXT("a failed cell is never ready"), Other->IsCellReady(2));
+		FMantleCellContent InBroken;
+		TestFalse(TEXT("and cannot be taken"), Other->TakeCell(2, InBroken));
+		TestTrue(TEXT("while the other is"), Other->TakeCell(0, InBroken));
+	}
+
+	// A caller that has the index already does not fetch it again.
+	{
+		FLoaderFixture Second;
+		FMantleCellLoaderSettings SecondSettings = Settings;
+		SecondSettings.Resolver = Second.Resolver;
+		SecondSettings.Store = FMantleAssetStore::Create(StoreSettings, Second.Fetcher);
+		int32 Calls = 0;
+		const FMantleCellIndex Known = Loader->GetIndex();
+		const TSharedRef<FMantleCellLoader> Quick = FMantleCellLoader::Open(Second.Root, SecondSettings, FMantleCellIndexReady::CreateLambda([&Calls]() { ++Calls; }), &Known);
+		TestEqual(TEXT("not from inside Open"), Calls, 0);
+		Quick->Pump();
+		TestEqual(TEXT("from its first Pump"), Calls, 1);
+		TestEqual(TEXT("the index is known"), Quick->GetIndex().Cells.Num(), 3);
+		TestEqual(TEXT("and was not asked for"), Second.Resolver->Batches.Num(), 0);
+		Quick->SetWanted(TArray<int32>{ 1 });
+		const double Deadline = FPlatformTime::Seconds() + 30.0;
+		while (!Quick->IsCellReady(1) && FPlatformTime::Seconds() < Deadline)
+		{
+			SecondSettings.Store->Pump();
+			Quick->Pump();
+			FPlatformProcess::Sleep(0.001f);
+		}
+		TestTrue(TEXT("a cell reads from a known index"), Quick->IsCellReady(1));
+	}
+
+	// A cell dropped while its file is being fetched comes off the count once, even when the store's answer was already on its way: the answer that
+	// arrives for it afterwards is not taken for a fetch of the file again, and the count never goes below what is really in flight.
+	{
+		FLoaderFixture Third;
+		FMantleCellLoaderSettings ThirdSettings = Settings;
+		ThirdSettings.Resolver = Third.Resolver;
+		ThirdSettings.Store = FMantleAssetStore::Create(StoreSettings, Third.Fetcher);
+		const TSharedRef<FMantleCellLoader> Dropping = FMantleCellLoader::Open(Third.Root, ThirdSettings, FMantleCellIndexReady());
+		const double Deadline = FPlatformTime::Seconds() + 30.0;
+		while (!Dropping->IsIndexReady() && FPlatformTime::Seconds() < Deadline)
+		{
+			ThirdSettings.Store->Pump();
+			Dropping->Pump();
+			FPlatformProcess::Sleep(0.001f);
+		}
+		Dropping->SetWanted(TArray<int32>{ 1 });
+		// Until the request is out (its one file resolved, then fetched), and no further: the answer is not taken up by the loader.
+		while (Dropping->GetFetchesInFlight() == 0 && !Dropping->IsCellReady(1) && FPlatformTime::Seconds() < Deadline)
+		{
+			Dropping->Pump();
+			FPlatformProcess::Sleep(0.001f);
+		}
+		TestEqual(TEXT("one fetch in flight"), Dropping->GetFetchesInFlight(), 1);
+		// The store answers (its pump runs the fake transport); the loader has not looked at the answer yet.
+		for (int32 Pass = 0; Pass < 50; ++Pass)
+		{
+			ThirdSettings.Store->Pump();
+			FPlatformProcess::Sleep(0.002f);
+		}
+		Dropping->SetWanted(TArray<int32>());
+		TestEqual(TEXT("dropped: off the count"), Dropping->GetFetchesInFlight(), 0);
+		for (int32 Pass = 0; Pass < 20; ++Pass)
+		{
+			ThirdSettings.Store->Pump();
+			Dropping->Pump();
+			FPlatformProcess::Sleep(0.002f);
+		}
+		TestEqual(TEXT("the late answer did not take it off again"), Dropping->GetFetchesInFlight(), 0);
+		TestFalse(TEXT("and the dropped cell was not delivered"), Dropping->IsCellReady(1));
+		// Wanted again, it is fetched and read as if nothing had happened.
+		Dropping->SetWanted(TArray<int32>{ 1 });
+		while (!Dropping->IsCellReady(1) && FPlatformTime::Seconds() < Deadline)
+		{
+			ThirdSettings.Store->Pump();
+			Dropping->Pump();
+			FPlatformProcess::Sleep(0.001f);
+		}
+		TestTrue(TEXT("wanted again, it is read"), Dropping->IsCellReady(1));
+		TestEqual(TEXT("and nothing is in flight"), Dropping->GetFetchesInFlight(), 0);
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

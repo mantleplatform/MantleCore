@@ -34,6 +34,9 @@ namespace MantlePlaceAssetsPrivate
 	/** Every set alive, oldest first: the library asks the newest one that knows an id. Game thread. */
 	TArray<FMantlePlaceAssets*> GLiveSets;
 
+	/** The set of the place that streams its cells (PrepareStreaming), when there is one: where a script's demand for an asset no live set has goes. Game thread. */
+	TWeakPtr<FMantlePlaceAssets> GStreamingSet;
+
 	/**
 	 * Objects built by any set, by "<hash hex>:<kind>:<variant>", while something still holds them: a
 	 * place rebuilt (a republish, a reconnect) reuses its meshes and textures without downloading,
@@ -774,6 +777,37 @@ TSharedRef<FMantlePlaceAssets> FMantlePlaceAssets::PrepareManifestOnly(const FMa
 	return PrepareWith(Place, Settings, MoveTemp(OnDone), /*bManifestOnly*/ true);
 }
 
+TSharedRef<FMantlePlaceAssets> FMantlePlaceAssets::PrepareStreaming(const FMantlePlace& Root, const FMantlePlaceAssetSettings& Settings,
+	FMantlePlaceAssetsDone OnDone)
+{
+	check(IsInGameThread());
+	TSharedRef<FMantlePlaceAssets> Set = MakeShareable(new FMantlePlaceAssets(Settings, MoveTemp(OnDone)));
+	Set->bStreaming = true;
+	// The root's asset list is every cell's asset list too (contract 2): kept by id, so a cell's meshes find their Lumen and Nanite entries.
+	Set->StreamManifest = Root.Assets;
+	for (const FMantleAssetRef& Asset : Set->StreamManifest)
+	{
+		Set->StreamManifestById.Add(Asset.Id, &Asset);
+	}
+	Set->Start(Root);
+	MantlePlaceAssetsPrivate::GStreamingSet = Set;
+	if (Set->Settings.bAutoPump)
+	{
+		const TWeakPtr<FMantlePlaceAssets> Weak = Set;
+		// A streaming set keeps pumping for as long as it lives: cells ask it for assets and give them back all the time.
+		Set->TickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Weak](float)
+		{
+			if (const TSharedPtr<FMantlePlaceAssets> Pinned = Weak.Pin())
+			{
+				Pinned->Pump();
+				return true;
+			}
+			return false;
+		}));
+	}
+	return Set;
+}
+
 TSharedPtr<FMantlePlaceAssets> FMantlePlaceAssets::PrepareManifestOnlyForThisProcess(const FMantlePlace& Place)
 {
 	const FMantlePlaceAssetSettings Settings = FMantlePlaceAssetSettings::ForManifestOnly();
@@ -1045,6 +1079,17 @@ EMantleLiveAssetState FMantlePlaceAssets::LiveStateOf(const FString& Id, const E
 			return GLiveSets[Index]->StateOf(*Record, OutError);
 		}
 	}
+	// A place that streams its cells has the assets of the cells around the players only: one a script asks for that is in the place's manifest is fetched now.
+	if (Kind == EAssetKind::Mesh || Kind == EAssetKind::Material)
+	{
+		if (const TSharedPtr<FMantlePlaceAssets> Streaming = GStreamingSet.Pin())
+		{
+			if (Streaming->OnDemandStateOf(Id, Kind) == EMantleLiveAssetState::Loading)
+			{
+				return EMantleLiveAssetState::Loading;
+			}
+		}
+	}
 	if (OutError)
 	{
 		*OutError = FString::Printf(TEXT("uploaded %s '%s' was not downloaded for this place"), KindName(Kind), *Id);
@@ -1069,8 +1114,8 @@ EMantleLiveAssetState FMantlePlaceAssets::StateOf(const FRecord& Record, FString
 	const FBuild* Build = Record.Build.IsSet() ? Builds.Find(Record.Build.GetValue()) : nullptr;
 	if (!Build)
 	{
-		// Still resolving (or resolving again after an expired URL); a completed set has nothing left to try.
-		return bCompleted ? Failed(TEXT("was never built")) : EMantleLiveAssetState::Loading;
+		// Still resolving (or resolving again after an expired URL); a completed set has nothing left to try, except a streaming one, which takes records after it completes.
+		return (bCompleted && !bStreaming) ? Failed(TEXT("was never built")) : EMantleLiveAssetState::Loading;
 	}
 	if (Build->State == EBuildState::Failed)
 	{
@@ -1813,6 +1858,11 @@ void FMantlePlaceAssets::AddLumenRecords(const FMantlePlace& Place)
 			MeshIds.AddUnique(Pair.Value.Id);
 		}
 	}
+	AddLumenRecordsFor(ById, MeshIds);
+}
+
+void FMantlePlaceAssets::AddLumenRecordsFor(const TMap<FString, const FMantleAssetRef*>& ById, const TArray<FString>& MeshIds)
+{
 	const FString Engine = FMantleMeshLumenFile::EngineTag();
 	int32 OtherEngine = 0;
 	for (const FString& MeshId : MeshIds)
@@ -1832,7 +1882,7 @@ void FMantlePlaceAssets::AddLumenRecords(const FMantlePlace& Place)
 		EnsureRecord((*Lumen)->Id, EAssetKind::Lumen);
 		MeshLumen.Add(MeshId, TPair<FString, FString>(RecordKey((*Lumen)->Id, EAssetKind::Lumen, EMantleTextureRole::Color), (*Mesh)->Hash));
 	}
-	if (OtherEngine > 0)
+	if (OtherEngine > 0 && !(bStreaming && bCompleted))
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS %d mesh(es)' Lumen data was baked by another engine than this client's (%s): built without it"), OtherEngine, *Engine);
 	}
@@ -1850,18 +1900,23 @@ void FMantlePlaceAssets::AddNaniteRecords(const FMantlePlace& Place, const TSet<
 	{
 		if (Pair.Value.Kind == EAssetKind::Mesh)
 		{
+			// A manifest-only set names the meshes whose Nanite file fits its download cap (the others are taken without it).
+			if (OnlyMeshes && !OnlyMeshes->Contains(Pair.Value.Id))
+			{
+				continue;
+			}
 			MeshIds.AddUnique(Pair.Value.Id);
 		}
 	}
+	AddNaniteRecordsFor(ById, MeshIds);
+}
+
+void FMantlePlaceAssets::AddNaniteRecordsFor(const TMap<FString, const FMantleAssetRef*>& ById, const TArray<FString>& MeshIds)
+{
 	const FString Engine = FMantleNaniteSideFile::EngineTag();
 	int32 OtherEngine = 0;
 	for (const FString& MeshId : MeshIds)
 	{
-		// A manifest-only set names the meshes whose Nanite file fits its download cap (the others are taken without it).
-		if (OnlyMeshes && !OnlyMeshes->Contains(MeshId))
-		{
-			continue;
-		}
 		const FMantleAssetRef* const* Mesh = ById.Find(MeshId);
 		const FMantleAssetRef* const* Nanite = Mesh && !(*Mesh)->Nanite.IsEmpty() ? ById.Find((*Mesh)->Nanite) : nullptr;
 		if (!Nanite || !IsUploadedId((*Nanite)->Id))
@@ -1878,7 +1933,7 @@ void FMantlePlaceAssets::AddNaniteRecords(const FMantlePlace& Place, const TSet<
 		EnsureRecord((*Nanite)->Id, EAssetKind::Nanite);
 		MeshNanite.Add(MeshId, TPair<FString, FString>(RecordKey((*Nanite)->Id, EAssetKind::Nanite, EMantleTextureRole::Color), (*Mesh)->Hash));
 	}
-	if (OtherEngine > 0)
+	if (OtherEngine > 0 && !(bStreaming && bCompleted))
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS %d mesh(es)' Nanite data was baked for another engine build than this client's (%s): not downloaded, drawn without it"), OtherEngine, *Engine);
 	}
@@ -1895,6 +1950,8 @@ FMantlePlaceAssets::FRecord& FMantlePlaceAssets::EnsureRecord(const FString& Id,
 	Record.Id = Id;
 	Record.Kind = Kind;
 	Record.Role = Role;
+	// Made after the root's own assets settled: for a cell, or for what a cell's asset names (a material's texture, a mesh's side files).
+	Record.bStreamed = bStreaming && bCompleted;
 	return Record;
 }
 
@@ -2165,6 +2222,10 @@ void FMantlePlaceAssets::QueueTexturesOf(const FString& MaterialId, const TMap<F
 			continue;
 		}
 		FRecord& Record = EnsureRecord(Pair.Value, EAssetKind::Texture, FMantlePlaceMaterials::RoleForSlot(Slot));
+		if (bStreaming && bCompleted)
+		{
+			MaterialTextureKeys.FindOrAdd(MaterialId).AddUnique(RecordKey(Pair.Value, EAssetKind::Texture, FMantlePlaceMaterials::RoleForSlot(Slot)));
+		}
 		if (!Record.bResolved && !Record.bResolving && !Record.bFailed)
 		{
 			if (const FMantleUploadedAsset* Cached = ResolvedCache.Find(Record.Id))
@@ -2990,7 +3051,8 @@ void FMantlePlaceAssets::PromoteMaterials()
 void FMantlePlaceAssets::RunBuilds()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceAssets_RunBuilds);
-	const double Deadline = FPlatformTime::Seconds() + Settings.BuildSliceMs / 1000.0;
+	const double Slice = (bStreaming && bCompleted && StreamSliceSeconds >= 0.0) ? StreamSliceSeconds : Settings.BuildSliceMs / 1000.0;
+	const double Deadline = FPlatformTime::Seconds() + Slice;
 	int32 Next = 0;
 	bool bFirst = true;
 	while (Next < BuildQueue.Num() && (bFirst || FPlatformTime::Seconds() < Deadline))
@@ -3064,7 +3126,9 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		{
 			const FRecord* NaniteRecord = Records.Find(Build.NaniteRecord);
 			NaniteBuild = NaniteRecord && NaniteRecord->Build.IsSet() ? Builds.Find(NaniteRecord->Build.GetValue()) : nullptr;
-			if (NaniteBuild && NaniteBuild->State == EBuildState::Ready && NaniteBuild->NaniteFile.IsValid() && Build.MeshV2
+			const bool bFileThere = NaniteBuild && NaniteBuild->State == EBuildState::Ready && NaniteBuild->NaniteFile.IsValid();
+			NaniteFileMisses += (!bFileThere && !(NaniteBuild && NaniteBuild->State == EBuildState::Failed)) ? 1 : 0;
+			if (bFileThere && Build.MeshV2
 				&& FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources(Params.bInitRenderResources))
 			{
 				Params.NaniteFile = NaniteBuild->NaniteFile.Get();
@@ -3425,6 +3489,10 @@ void FMantlePlaceAssets::MarkReady(FBuild& Build, UObject* Object)
 {
 	Build.Object = Object;
 	Build.State = EBuildState::Ready;
+	if (Build.Key.Kind == EAssetKind::Nanite && !Build.bReused)
+	{
+		++NaniteFilesBuiltCount;
+	}
 	if (Build.Key.Kind != EAssetKind::Material && Object)
 	{
 		const FString ObjectKey = FString::Printf(TEXT("%s:%d:%d"), *Build.Key.Hash.ToHex(),
@@ -3517,6 +3585,12 @@ void FMantlePlaceAssets::DropNaniteFileIfUnused(const FString& NaniteRecordKey, 
 		{
 			return;
 		}
+		// A mesh built again with collision keeps answering with its first build while the second reads this file: the second needs it.
+		const FBuild* SecondBuild = MeshRecord->UpgradeBuild.IsSet() ? Builds.Find(MeshRecord->UpgradeBuild.GetValue()) : nullptr;
+		if (SecondBuild && !(SecondBuild->Key == Current) && SecondBuild->State <= EBuildState::Building)
+		{
+			return;
+		}
 		const FBuild* MeshBuild = Builds.Find(MeshRecord->Build.GetValue());
 		if (MeshBuild && MeshBuild->Key == Current)
 		{
@@ -3563,10 +3637,11 @@ void FMantlePlaceAssets::Pump()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceAssets_Pump);
 	check(IsInGameThread());
-	if (!bStarted || (bCompleted && bSoundsSettled && SoundWaiters.IsEmpty()))
+	if (!bStarted || (bCompleted && bSoundsSettled && SoundWaiters.IsEmpty() && !bStreaming))
 	{
 		return;
 	}
+	const double PumpStart = bStreaming && bCompleted ? FPlatformTime::Seconds() : 0.0;
 	DrainCompletions();
 	if (PendingVehicleLooks.Num() > 0)
 	{
@@ -3589,6 +3664,7 @@ void FMantlePlaceAssets::Pump()
 			QueueTexturesOf(Material.Key, Material.Value);
 		}
 	}
+	ProcessStreamedRecords();
 	FlushResolves();
 	StartFetches();
 	StartDecodes();
@@ -3598,6 +3674,13 @@ void FMantlePlaceAssets::Pump()
 	SettleSounds();
 	NotifySoundWaiters();
 	LogProgress();
+	if (PumpStart > 0.0 && bStreaming && bCompleted)
+	{
+		const double Took = FPlatformTime::Seconds() - PumpStart;
+		++StreamPumps;
+		StreamPumpSeconds += Took;
+		StreamWorstPumpSeconds = FMath::Max(StreamWorstPumpSeconds, Took);
+	}
 }
 
 bool FMantlePlaceAssets::WaitUntilComplete(const float TimeoutSeconds)
@@ -4128,4 +4211,621 @@ TSharedPtr<const FMantleSoundData> FMantlePlaceAssets::FindSound(const FString& 
 		return Fail(FString::Printf(TEXT("uploaded sound '%s' has no samples"), *Id));
 	}
 	return Build->Sound;
+}
+
+// ---- Streaming ----------------------------------------------------------------------------------------
+// A set made by PrepareStreaming takes the meshes and materials of cells as they are wanted and gives them back when no cell wants them. Who wants what is FMantleCellAssetUse's;
+// this is what that means for the records and builds. Everything runs on the game thread, from the caller or from Pump.
+
+void FMantlePlaceAssets::AcquireEntityAssets(const int64 Holder, const TArray<FMantleEntity>& Entities)
+{
+	check(IsInGameThread());
+	if (!bStreaming)
+	{
+		return;
+	}
+	if (CellUse.NeedsOf(Holder))
+	{
+		// A holder holds once: what it held before goes first.
+		ReleaseEntityAssets(Holder);
+	}
+	TArray<FMantleCellAssetNeed> Needs;
+	FMantleCellAssetUse::NeedsOf(Entities, Needs);
+	if (!Settings.bRenderAssets)
+	{
+		Needs.RemoveAll([](const FMantleCellAssetNeed& Need) { return Need.bMaterial; });
+	}
+	TArray<FMantleCellAssetNeed> Started;
+	CellUse.Acquire(Holder, Needs, Started);
+	StartRecordsFor(Started);
+}
+
+void FMantlePlaceAssets::StartRecordsFor(const TArray<FMantleCellAssetNeed>& Needs)
+{
+	TArray<FString> NewMeshes;
+	for (const FMantleCellAssetNeed& Need : Needs)
+	{
+		const EAssetKind Kind = Need.bMaterial ? EAssetKind::Material : EAssetKind::Mesh;
+		const FString Key = RecordKey(Need.Id, Kind, EMantleTextureRole::Color);
+		if (!Need.bMaterial && Need.bCollision)
+		{
+			MeshesNeedingCollision.Add(Need.Id);
+		}
+		// Wanted again before it was dropped.
+		PendingDrops.Remove(Key);
+		FRecord* Existing = Records.Find(Key);
+		if (!Existing)
+		{
+			FRecord& Record = EnsureRecord(Need.Id, Kind);
+			// A mesh some cell has needed with collision is made with it from the start when it is made again: it is built twice at most.
+			Record.bCollision = !Need.bMaterial && (Need.bCollision || MeshesNeedingCollision.Contains(Need.Id));
+			if (!Need.bMaterial)
+			{
+				NewMeshes.Add(Need.Id);
+			}
+			++StreamAcquired;
+			continue;
+		}
+		if (!Need.bMaterial && Need.bCollision)
+		{
+			const bool bBuiltWithCollision = Existing->Build.IsSet() && (Existing->Build->Variant & 1) != 0;
+			if (!Existing->bResolved)
+			{
+				// Not answered yet: the answer decides the build's key from this.
+				Existing->bCollision = true;
+			}
+			else if (!bBuiltWithCollision && !Existing->bUpgradeToCollision && !Existing->UpgradeBuild.IsSet() && !Existing->bFailed)
+			{
+				Existing->bUpgradeToCollision = true;
+				Existing->bUpgradeFailed = false;
+				PendingUpgrades.Add(Key);
+			}
+		}
+	}
+	if (!NewMeshes.IsEmpty())
+	{
+		if (Settings.bRenderAssets)
+		{
+			AddLumenRecordsFor(StreamManifestById, NewMeshes);
+		}
+		if (Settings.bLoadNanite)
+		{
+			AddNaniteRecordsFor(StreamManifestById, NewMeshes);
+		}
+	}
+}
+
+void FMantlePlaceAssets::ReleaseEntityAssets(const int64 Holder)
+{
+	check(IsInGameThread());
+	if (!bStreaming)
+	{
+		return;
+	}
+	TArray<FMantleCellAssetNeed> Ended;
+	CellUse.Release(Holder, Ended);
+	for (const FMantleCellAssetNeed& Need : Ended)
+	{
+		const FString Key = RecordKey(Need.Id, Need.bMaterial ? EAssetKind::Material : EAssetKind::Mesh, EMantleTextureRole::Color);
+		const FRecord* Record = Records.Find(Key);
+		// The root's own records stay for as long as the place does.
+		if (Record && Record->bStreamed && !DropRecord(Key))
+		{
+			PendingDrops.Add(Key);
+		}
+	}
+}
+
+FMantlePlaceAssets::FHolderAssets FMantlePlaceAssets::GetHolderAssets(const int64 Holder) const
+{
+	FHolderAssets Out;
+	const TArray<FMantleCellAssetNeed>* Needs = CellUse.NeedsOf(Holder);
+	if (!Needs)
+	{
+		return Out;
+	}
+	for (const FMantleCellAssetNeed& Need : *Needs)
+	{
+		const EAssetKind Kind = Need.bMaterial ? EAssetKind::Material : EAssetKind::Mesh;
+		const FRecord* Record = Records.Find(RecordKey(Need.Id, Kind, EMantleTextureRole::Color));
+		if (!Record)
+		{
+			Out.PendingIds.Add(Need.Id);
+			continue;
+		}
+		if (Record->bFailed)
+		{
+			Out.FailedIds.Add(Need.Id);
+			continue;
+		}
+		const FBuild* Build = Record->Build.IsSet() ? Builds.Find(Record->Build.GetValue()) : nullptr;
+		const bool bWantsCollision = !Need.bMaterial && Need.bCollision;
+		if (bWantsCollision && Record->bUpgradeFailed)
+		{
+			Out.FailedIds.Add(Need.Id);
+		}
+		else if (!Build || (bWantsCollision && (Record->bUpgradeToCollision || Record->UpgradeBuild.IsSet())))
+		{
+			Out.PendingIds.Add(Need.Id);
+		}
+		else if (Build->State == EBuildState::Failed)
+		{
+			Out.FailedIds.Add(Need.Id);
+		}
+		else if (Build->State != EBuildState::Ready || !Build->Object)
+		{
+			Out.PendingIds.Add(Need.Id);
+		}
+	}
+	return Out;
+}
+
+FMantlePlaceAssets::FStreamedCounts FMantlePlaceAssets::GetStreamedCounts() const
+{
+	FStreamedCounts Counts;
+	for (const TPair<FString, FRecord>& Pair : Records)
+	{
+		switch (Pair.Value.Kind)
+		{
+		case EAssetKind::Mesh: ++Counts.Meshes; break;
+		case EAssetKind::Material: ++Counts.Materials; break;
+		case EAssetKind::Texture: ++Counts.Textures; break;
+		case EAssetKind::Nanite: ++Counts.NaniteFiles; break;
+		default: break;
+		}
+	}
+	Counts.WantedMeshes = CellUse.DistinctMeshes();
+	Counts.WantedMaterials = CellUse.DistinctMaterials();
+	Counts.Holders = CellUse.HolderCount();
+	Counts.DropsWaiting = PendingDrops.Num() + PendingUpgrades.Num();
+	Counts.Acquired = StreamAcquired;
+	Counts.Dropped = StreamDropped;
+	Counts.Pumps = StreamPumps;
+	Counts.PumpSeconds = StreamPumpSeconds;
+	Counts.WorstPumpSeconds = StreamWorstPumpSeconds;
+	Counts.NaniteFilesBuilt = NaniteFilesBuiltCount;
+	Counts.NaniteFileMisses = NaniteFileMisses;
+	for (const TPair<FString, FRecord>& Pair : Records)
+	{
+		const FBuild* Build = Pair.Value.Build.IsSet() ? Builds.Find(Pair.Value.Build.GetValue()) : nullptr;
+		Counts.NaniteInFlight += (Pair.Value.Kind == EAssetKind::Nanite && !Pair.Value.bFailed && (!Build || !Build->IsTerminal())) ? 1 : 0;
+		Counts.UpgradesInFlight += Pair.Value.UpgradeBuild.IsSet() ? 1 : 0;
+	}
+	return Counts;
+}
+
+FString FMantlePlaceAssets::DescribeStreamedRecords() const
+{
+	FString Out;
+	for (const TPair<FString, FRecord>& Pair : Records)
+	{
+		const FRecord& Record = Pair.Value;
+		const FBuild* Build = Record.Build.IsSet() ? Builds.Find(Record.Build.GetValue()) : nullptr;
+		Out += FString::Printf(TEXT("[%s %s streamed=%d state=%d named=%d] "), KindName(Record.Kind), *Record.Id.Right(4), Record.bStreamed ? 1 : 0, Build ? static_cast<int32>(Build->State) : -1,
+			IsRecordNamed(Pair.Key) ? 1 : 0);
+	}
+	return Out;
+}
+
+EMantleLiveAssetState FMantlePlaceAssets::OnDemandStateOf(const FString& Id, const EAssetKind Kind)
+{
+	if (!bStreaming || !bCompleted)
+	{
+		return EMantleLiveAssetState::NotPrepared;
+	}
+	const FMantleAssetRef* const* Entry = StreamManifestById.Find(Id);
+	if (!Entry || !IsUploadedId(Id))
+	{
+		return EMantleLiveAssetState::NotPrepared;
+	}
+	const bool bMesh = Kind == EAssetKind::Mesh && (*Entry)->Kind == EMantleAssetKind::StaticMesh;
+	const bool bMaterial = Kind == EAssetKind::Material && (*Entry)->Kind == EMantleAssetKind::Material && Settings.bRenderAssets;
+	if (!bMesh && !bMaterial)
+	{
+		return EMantleLiveAssetState::NotPrepared;
+	}
+	// A script may spawn a mesh with collision on (the default), so it is built with it; the demand is never given back while the place stands.
+	FMantleCellAssetNeed Need;
+	Need.Id = Id;
+	Need.bMaterial = bMaterial;
+	Need.bCollision = bMesh;
+	TArray<FMantleCellAssetNeed> Needs;
+	Needs.Add(Need);
+	TArray<FMantleCellAssetNeed> Started;
+	CellUse.Acquire(NextScriptHolder--, Needs, Started);
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS on demand: a script asked for %s %s, which no cell has loaded: fetching it"), KindName(Kind), *Id);
+	StartRecordsFor(Started);
+	return EMantleLiveAssetState::Loading;
+}
+
+bool FMantlePlaceAssets::IsRecordNamed(const FString& Key) const
+{
+	for (const TPair<FBuildKey, FBuild>& Pair : Builds)
+	{
+		for (const FString& Name : Pair.Value.TextureRecords)
+		{
+			if (Name == Key)
+			{
+				return true;
+			}
+		}
+		if (Pair.Value.PartRecords.Contains(Key))
+		{
+			return true;
+		}
+	}
+	for (const TPair<FString, TPair<FString, FString>>& Pair : MeshNanite)
+	{
+		if (Pair.Value.Key == Key)
+		{
+			return true;
+		}
+	}
+	for (const TPair<FString, TPair<FString, FString>>& Pair : MeshLumen)
+	{
+		if (Pair.Value.Key == Key)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void FMantlePlaceAssets::EraseBuild(const FBuildKey& Key)
+{
+	FBuild* Build = Builds.Find(Key);
+	if (!Build)
+	{
+		return;
+	}
+	if (Build->RequestId != 0)
+	{
+		Store->Cancel(Build->RequestId);
+		Build->RequestId = 0;
+	}
+	if (Build->bPinned)
+	{
+		Store->Unpin(Build->Key.Hash);
+		Build->bPinned = false;
+	}
+	ReleaseNaniteFile(*Build);
+	ReleasePending(*Build);
+	FetchQueue.RemoveSingle(Key);
+	SoundFetchQueue.RemoveSingle(Key);
+	DecodeQueue.RemoveSingle(Key);
+	BuildQueue.RemoveSingle(Key);
+	WaitingMaterials.RemoveSingle(Key);
+	Builds.Remove(Key);
+}
+
+void FMantlePlaceAssets::DropDependentRecord(const FString& Key, const bool bForce)
+{
+	const FRecord* Dependent = Records.Find(Key);
+	if (!Dependent || (!Dependent->bStreamed && !bForce) || (IsRecordNamed(Key) && !bForce))
+	{
+		return;
+	}
+	if (bForce)
+	{
+		// The first build of a mesh made again still names its Nanite file; the file is gone and the second build must read it afresh.
+		ForcedDrops.Add(Key);
+	}
+	if (!DropRecord(Key))
+	{
+		if (bForce)
+		{
+			// The record is still being fetched: that fetch is the one the second build waits for, so it is neither dropped now nor later when it is done.
+			ForcedDrops.Remove(Key);
+		}
+		else
+		{
+			PendingDrops.Add(Key);
+		}
+	}
+}
+
+bool FMantlePlaceAssets::DropRecord(const FString& Key)
+{
+	FRecord* Record = Records.Find(Key);
+	if (!Record)
+	{
+		return true;
+	}
+	const EAssetKind Kind = Record->Kind;
+	const bool bMeshOrMaterial = Kind == EAssetKind::Mesh || Kind == EAssetKind::Material;
+	// Wanted again, or named again by a build that came after: nothing to drop.
+	if (bMeshOrMaterial ? CellUse.Users(Record->Id, Kind == EAssetKind::Material) > 0 : (!ForcedDrops.Contains(Key) && IsRecordNamed(Key)))
+	{
+		ForcedDrops.Remove(Key);
+		return true;
+	}
+	if (Record->bResolving)
+	{
+		return false;
+	}
+	const TOptional<FBuildKey> BuildKey = Record->Build;
+	FBuild* Build = BuildKey.IsSet() ? Builds.Find(BuildKey.GetValue()) : nullptr;
+	if (Build && !Build->IsTerminal())
+	{
+		return false;
+	}
+	const FBuild* UpgradeBuild = Record->UpgradeBuild.IsSet() ? Builds.Find(Record->UpgradeBuild.GetValue()) : nullptr;
+	if (UpgradeBuild && !UpgradeBuild->IsTerminal())
+	{
+		return false;
+	}
+	const FString Id = Record->Id;
+	// What hangs on the record: a mesh's side files, a material's textures.
+	TArray<FString> Dependents;
+	if (Record->UpgradeBuild.IsSet())
+	{
+		const FBuildKey UpgradeKey = Record->UpgradeBuild.GetValue();
+		if (FBuild* Second = Builds.Find(UpgradeKey))
+		{
+			Second->RecordIds.Remove(Id);
+			if (Second->RecordIds.IsEmpty())
+			{
+				// The build with collision names the side files of the id that made it; they go with it unless something else names them.
+				if (!Second->NaniteRecord.IsEmpty())
+				{
+					Dependents.AddUnique(Second->NaniteRecord);
+				}
+				if (!Second->LumenRecord.IsEmpty())
+				{
+					Dependents.AddUnique(Second->LumenRecord);
+				}
+				EraseBuild(UpgradeKey);
+			}
+		}
+	}
+	if (Kind == EAssetKind::Mesh)
+	{
+		if (const TPair<FString, FString>* Lumen = MeshLumen.Find(Id))
+		{
+			Dependents.Add(Lumen->Key);
+		}
+		if (const TPair<FString, FString>* Nanite = MeshNanite.Find(Id))
+		{
+			Dependents.Add(Nanite->Key);
+		}
+		MeshLumen.Remove(Id);
+		MeshNanite.Remove(Id);
+		// Two ids with the same bytes share one build, which names the side files of the id that made it: they go when the build does (not before another still names them).
+		if (Build)
+		{
+			if (!Build->NaniteRecord.IsEmpty())
+			{
+				Dependents.AddUnique(Build->NaniteRecord);
+			}
+			if (!Build->LumenRecord.IsEmpty())
+			{
+				Dependents.AddUnique(Build->LumenRecord);
+			}
+		}
+	}
+	else if (Kind == EAssetKind::Material)
+	{
+		if (Build)
+		{
+			for (const FString& Texture : Build->TextureRecords)
+			{
+				if (!Texture.IsEmpty())
+				{
+					Dependents.Add(Texture);
+				}
+			}
+		}
+		// The textures its answer from the API started, which a material that failed before its document was read never named in its build.
+		TArray<FString> Started;
+		if (MaterialTextureKeys.RemoveAndCopyValue(Id, Started))
+		{
+			for (const FString& Texture : Started)
+			{
+				Dependents.AddUnique(Texture);
+			}
+		}
+	}
+	ForcedDrops.Remove(Key);
+	Records.Remove(Key);
+	if (Build)
+	{
+		Build->RecordIds.Remove(Id);
+		if (Build->RecordIds.IsEmpty())
+		{
+			EraseBuild(BuildKey.GetValue());
+		}
+	}
+	ResolvedCache.Remove(Id);
+	PendingUpgrades.Remove(Key);
+	StreamDropped += bMeshOrMaterial ? 1 : 0;
+	for (const FString& Dependent : Dependents)
+	{
+		DropDependentRecord(Dependent, /*bForce*/ false);
+	}
+	return true;
+}
+
+bool FMantlePlaceAssets::UpgradeToCollision(FRecord& Record)
+{
+	if (Record.bResolving)
+	{
+		return false;
+	}
+	const TOptional<FBuildKey> OldKey = Record.Build;
+	FBuild* Build = OldKey.IsSet() ? Builds.Find(OldKey.GetValue()) : nullptr;
+	if (Build && !Build->IsTerminal())
+	{
+		return false;
+	}
+	const FString Id = Record.Id;
+	const FString Key = RecordKey(Id, EAssetKind::Mesh, EMantleTextureRole::Color);
+	Record.bCollision = true;
+	Record.bUpgradeToCollision = false;
+	const FMantleUploadedAsset* Cached = ResolvedCache.Find(Id);
+	if (!Build || !Cached)
+	{
+		// Nothing built to keep, or nothing known to build from: the next resolve and build take it with collision.
+		if (Build)
+		{
+			Record.bUpgradeFailed = true;
+			UE_LOG(LogMantle, Error, TEXT("MANTLE_PLACE_ASSETS FAIL mesh %s: needed with collision, but its answer from the API is no longer known"), *Id);
+		}
+		return true;
+	}
+	// The mesh is built again, with its side files read again: the files of the first build are gone. The record keeps answering with the first build until the second is ready.
+	TArray<FString> Dependents;
+	if (const TPair<FString, FString>* Lumen = MeshLumen.Find(Id))
+	{
+		Dependents.Add(Lumen->Key);
+	}
+	if (const TPair<FString, FString>* Nanite = MeshNanite.Find(Id))
+	{
+		Dependents.Add(Nanite->Key);
+	}
+	MeshLumen.Remove(Id);
+	MeshNanite.Remove(Id);
+	for (const FString& Dependent : Dependents)
+	{
+		DropDependentRecord(Dependent, /*bForce*/ true);
+	}
+	TArray<FString> One;
+	One.Add(Id);
+	if (Settings.bRenderAssets)
+	{
+		AddLumenRecordsFor(StreamManifestById, One);
+	}
+	if (Settings.bLoadNanite)
+	{
+		AddNaniteRecordsFor(StreamManifestById, One);
+	}
+	FRecord* Again = Records.Find(Key);
+	if (!Again)
+	{
+		return true;
+	}
+	const FMantleUploadedAsset Asset = *Cached;
+	Again->Build.Reset();
+	Again->bResolved = false;
+	ApplyResolved(*Again, Asset);
+	Again = Records.Find(Key);
+	if (Again)
+	{
+		const TOptional<FBuildKey> NewKey = Again->Build;
+		Again->Build = OldKey;
+		Again->bResolved = true;
+		Again->UpgradeBuild = NewKey;
+	}
+	return true;
+}
+
+bool FMantlePlaceAssets::FinishUpgrade(FRecord& Record)
+{
+	if (!Record.UpgradeBuild.IsSet())
+	{
+		return true;
+	}
+	const FBuildKey NewKey = Record.UpgradeBuild.GetValue();
+	const FBuild* NewBuild = Builds.Find(NewKey);
+	if (NewBuild && !NewBuild->IsTerminal())
+	{
+		return false;
+	}
+	const FString Id = Record.Id;
+	const TOptional<FBuildKey> OldKey = Record.Build;
+	if (NewBuild && NewBuild->State == EBuildState::Ready)
+	{
+		Record.Build = NewKey;
+		if (OldKey.IsSet() && !(OldKey.GetValue() == NewKey))
+		{
+			if (FBuild* Old = Builds.Find(OldKey.GetValue()))
+			{
+				Old->RecordIds.Remove(Id);
+				if (Old->RecordIds.IsEmpty())
+				{
+					const FString OldNanite = Old->NaniteRecord;
+					const FString OldLumen = Old->LumenRecord;
+					EraseBuild(OldKey.GetValue());
+					// The first build's side-file records go with it unless the second names them.
+					for (const FString& Side : { OldNanite, OldLumen })
+					{
+						if (!Side.IsEmpty())
+						{
+							DropDependentRecord(Side, /*bForce*/ false);
+						}
+					}
+				}
+			}
+		}
+	}
+	else
+	{
+		// The first build stays; a user that needs collision is told the mesh failed (the reason is in the FAIL line the build logged).
+		Record.bUpgradeFailed = true;
+		if (FBuild* Second = Builds.Find(NewKey))
+		{
+			Second->RecordIds.Remove(Id);
+			if (Second->RecordIds.IsEmpty())
+			{
+				const FString SecondNanite = Second->NaniteRecord;
+				const FString SecondLumen = Second->LumenRecord;
+				EraseBuild(NewKey);
+				for (const FString& Side : { SecondNanite, SecondLumen })
+				{
+					if (!Side.IsEmpty())
+					{
+						DropDependentRecord(Side, /*bForce*/ false);
+					}
+				}
+			}
+		}
+	}
+	Record.UpgradeBuild.Reset();
+	return true;
+}
+
+void FMantlePlaceAssets::ProcessStreamedRecords()
+{
+	if (!bStreaming || !bCompleted)
+	{
+		return;
+	}
+	if (!PendingDrops.IsEmpty())
+	{
+		for (const FString& Key : PendingDrops.Array())
+		{
+			if (DropRecord(Key))
+			{
+				PendingDrops.Remove(Key);
+			}
+		}
+	}
+	if (!PendingUpgrades.IsEmpty())
+	{
+		for (const FString& Key : PendingUpgrades.Array())
+		{
+			FRecord* Record = Records.Find(Key);
+			if (!Record)
+			{
+				PendingUpgrades.Remove(Key);
+				continue;
+			}
+			if (!Record->UpgradeBuild.IsSet())
+			{
+				if (!Record->bUpgradeToCollision)
+				{
+					PendingUpgrades.Remove(Key);
+					continue;
+				}
+				if (!UpgradeToCollision(*Record))
+				{
+					continue;
+				}
+				Record = Records.Find(Key);
+			}
+			if (!Record || !Record->UpgradeBuild.IsSet() || FinishUpgrade(*Record))
+			{
+				PendingUpgrades.Remove(Key);
+			}
+		}
+	}
 }

@@ -73,6 +73,9 @@ struct MANTLERUNTIME_API FMantleCellLoadResult
 /** The result is not const: the receiver may move the cells out of it (FMantlePlaceCells::Merge does), as the loader keeps nothing of them. */
 DECLARE_DELEGATE_OneParam(FMantleCellsDone, FMantleCellLoadResult&);
 
+/** The cell index has been read (stream mode); the loader keeps it, GetIndex() has it. */
+DECLARE_DELEGATE(FMantleCellIndexReady);
+
 /**
  * Loads a place's cells: the cell index its "cells.index" names, then every cell file the index lists. Stage 1 of large places has one
  * rule, "every cell wanted", so the loader reads them all; the result (FMantleCellContent per cell) is what FMantlePlaceCells::Merge puts into the
@@ -94,11 +97,45 @@ public:
 	/** True when Place names cells that have not been added to it yet. */
 	static bool NeedsCells(const FMantlePlace& Place)
 	{
-		return !Place.CellIndexId.IsEmpty() && !Place.bCellsMerged;
+		return !Place.CellIndexId.IsEmpty() && !Place.bCellsMerged && !Place.bCellsStreamed;
 	}
 
 	/** Starts loading the cells of Root. OnDone fires once on the game thread, from a later Pump, never from inside Load. Keep the result until then. */
 	static TSharedRef<FMantleCellLoader> Load(const FMantlePlace& Root, const FMantleCellLoaderSettings& Settings, FMantleCellsDone OnDone);
+
+	/**
+	 * Stream mode (stage 2): reads the cell index only, then cell files only for the cells SetWanted names, one cell at a time, and hands each cell's
+	 * entities over with TakeCell. Nothing is read twice while a cell stays wanted, and nothing is kept for a cell nobody wants. The loader never
+	 * finishes by itself: dropping it stops everything in flight. KnownIndex (when the caller has already read it, as the join's asset pass did) saves
+	 * fetching and reading it again. OnIndex fires once from a Pump (or from this call's first Pump when KnownIndex is given), never from inside Open.
+	 * A problem with one cell file fails that cell only (MANTLE_PLACE_CELLS FAIL, IsCellFailed); a problem with the index fails the loader (HasFailed).
+	 */
+	static TSharedRef<FMantleCellLoader> Open(const FMantlePlace& Root, const FMantleCellLoaderSettings& Settings, FMantleCellIndexReady OnIndex, const FMantleCellIndex* KnownIndex = nullptr);
+
+	/** Stream mode: the cells to read, most urgent first. Cells not named are dropped (a download in flight is cancelled, a cell read but not taken is freed). */
+	void SetWanted(TConstArrayView<int32> CellsMostUrgentFirst);
+
+	/** Stream mode: moves a finished cell's entities out (in file order). False while any of its files is still on its way, or when it failed. The cell stops being wanted. */
+	bool TakeCell(int32 CellIndex, FMantleCellContent& OutContent);
+
+	/** Stream mode: this cell's files are all read and waiting to be taken. */
+	bool IsCellReady(int32 CellIndex) const;
+
+	/** Stream mode: this cell can never be read (a file was rejected, missing, or unreadable); why is in Describe lines of the log and FailureOf. */
+	bool IsCellFailed(int32 CellIndex) const { return CellStreams.IsValidIndex(CellIndex) && CellStreams[CellIndex].bFailed; }
+
+	/** Stream mode: the cell index, once OnIndex has fired. */
+	const FMantleCellIndex& GetIndex() const { return Index; }
+	bool IsIndexReady() const { return bIndexRead; }
+
+	/** Stream mode: the index failed to load or be read. */
+	bool HasFailed() const { return bFailed; }
+	const FMantleCellLoadResult& GetStreamResult() const { return Result; }
+
+	/** Stream mode: cell files fetched and read so far, and how many of their bytes came over the network. */
+	int32 GetFilesReadTotal() const { return FilesReadTotal; }
+	/** Requests to the store not answered yet (a cancelled one is off the count at once). */
+	int32 GetFetchesInFlight() const { return FetchesInFlight; }
 
 	~FMantleCellLoader();
 
@@ -135,7 +172,16 @@ private:
 		}
 	};
 
-	enum class EFileState : uint8 { Waiting, Resolving, Resolved, Fetching, Fetched, Decoding, Ready };
+	enum class EFileState : uint8 { Waiting, Resolving, Resolved, Fetching, Fetched, Decoding, Ready, Failed };
+
+	/** Stream mode, per cell: whether it is wanted, where its files are in Files, and whether it can never be read. */
+	struct FCellStream
+	{
+		int32 FirstFile = 0;
+		int32 FileCount = 0;
+		bool bWanted = false;
+		bool bFailed = false;
+	};
 
 	/** One asset the load needs: the index (CellIndex INDEX_NONE) or a cell file. */
 	struct FFile
@@ -146,9 +192,13 @@ private:
 		EFileState State = EFileState::Waiting;
 		int32 ResolveAttempts = 0;
 		double NextResolveAt = 0.0;
+		/** When the URL was resolved: a signed URL does not last, so a file waiting a long time is resolved again. */
+		double ResolvedAt = 0.0;
 		bool bReresolved = false;
 		FMantleStoredAssetRef Ref;
 		uint64 RequestId = 0;
+		/** Counts this file's fetches: an answer that carries an older number is for a request that was cancelled (the file was dropped, maybe asked for again) and is ignored. */
+		uint32 FetchSerial = 0;
 		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> Bytes;
 		int64 HeldBytes = 0;
 		FMantleCellContent Content;
@@ -164,12 +214,18 @@ private:
 	void OnResolved(const TArray<FString>& Ids, const FMantleAssetResolveResult& Resolved);
 	void ApplyResolved(FFile& File, const FMantleUploadedAsset& Asset);
 	void StartFetches();
-	void OnFetched(int32 FileIndex, const FMantleAssetResult& Fetched);
+	void OnFetched(int32 FileIndex, uint32 FetchSerial, const FMantleAssetResult& Fetched);
 	void StartDecodes();
 	void OnDecoded(int32 FileIndex, FDecoded& Decoded);
 	void OnIndexRead(FMantleCellIndex&& Index);
 	void CheckComplete();
 	void Finish();
+
+	/** Stream mode. */
+	void BuildCellStreams();
+	void RebuildFileOrder();
+	void DropFile(FFile& File);
+	void FailCell(int32 CellIndex, const FFile& File, const FString& Message);
 
 	/** Fails the whole load with what went wrong (once; the first problem is the one reported). */
 	void Fail(const FString& Path, const FString& Message);
@@ -189,6 +245,19 @@ private:
 	TArray<FFile> Files;
 	TMap<FString, int32> FileByIdMap;
 	TArray<int32> DecodeQueue;
+
+	/** The order files are resolved, fetched and read in: all of them in index order (every cell wanted), or in stream mode the index first, then the wanted cells' files. */
+	TArray<int32> FileOrder;
+	TArray<FCellStream> CellStreams;
+	/** Stream mode: the cells SetWanted last named that are still wanted, most urgent first. */
+	TArray<int32> WantedCells;
+	FMantleCellIndexReady OnIndexReady;
+	bool bStream = false;
+	bool bIndexReadyPending = false;
+	int32 FilesReadTotal = 0;
+
+	/** A resolved URL older than this is resolved again before it is used (signed URLs do not last). */
+	static constexpr double UrlLifetimeSeconds = 600.0;
 
 	FMantleCellIndex Index;
 	FMantleCellLoadResult Result;

@@ -1,5 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePhysicsProp.h"
+
+#include "MantleCellArea.h"
 #include "MantleRuntime.h"
 
 #include "Engine/CollisionProfile.h"
@@ -149,6 +151,9 @@ AMantlePhysicsProp::AMantlePhysicsProp(const FObjectInitializer& ObjectInitializ
 	// Always relevant: a client's copy is the only one it has once the placeholder is adopted, and a
 	// relevancy drop would destroy it; the per-place cap bounds how many there are.
 	bReplicates = true;
+	// Ticks only on a client's adopted copy, to ask the collision gate (BeginPlay turns it on there).
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	SetReplicatingMovement(true);
 	bStaticMeshReplicateMovement = true;
 	bAlwaysRelevant = true;
@@ -220,19 +225,62 @@ void AMantlePhysicsProp::InitFromPlace(const FString& InEntityId, const FMantleP
 	ApplyBodySettings(Component, Physics);
 }
 
-void AMantlePhysicsProp::BeginSimulation()
+void AMantlePhysicsProp::BeginSimulation(const bool bWaitForGround)
 {
 	if (GetAttachParentActor())
 	{
 		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	}
 	UStaticMeshComponent* Component = GetStaticMeshComponent();
-	if (Component && Physics.bSimulate)
+	if (Component && Physics.bSimulate && bWaitForGround)
+	{
+		// Held where it stands; the tick starts it once its ground does.
+		bWaitingForGround = true;
+		SetActorTickEnabled(true);
+	}
+	else if (Component && Physics.bSimulate)
 	{
 		Component->SetSimulatePhysics(true);
 	}
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_PHYSICS_PROP entity=%s simulate=%d body=%s mass_kg=%.2f"),
-		*EntityId, IsSimulating() ? 1 : 0, MantlePhysicsBodySourceToString(BodySource), GetMassKg());
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_PHYSICS_PROP entity=%s simulate=%d body=%s mass_kg=%.2f%s"),
+		*EntityId, IsSimulating() ? 1 : 0, MantlePhysicsBodySourceToString(BodySource), GetMassKg(), bWaitingForGround ? TEXT(" waiting_for_ground=1") : TEXT(""));
+}
+
+void AMantlePhysicsProp::UpdateGroundWait()
+{
+	UStaticMeshComponent* Component = GetStaticMeshComponent();
+	if (!bWaitingForGround || !Component)
+	{
+		return;
+	}
+	FMantleCellAreaQuery Query;
+	Query.Point = GetActorLocation();
+	Query.RadiusCm = FMantleCollisionGate::RadiusCm(Component->Bounds.SphereRadius, 0.0);
+	Query.bSolidOnly = true;
+	FMantleCellAreaState State;
+	uint64 Serial = 0;
+	bool bReady = false;
+	if (FMantleCellArea::Ask(GetWorld(), Query, State, Serial))
+	{
+		bReady = State.AllStand();
+	}
+	else
+	{
+		// Nothing streams here (yet): ready once the place is complete (then nothing ever will), not before (the streamer starts when the root is built).
+		const IMantlePhysicsPropPlace* Loaded = PlaceForWorld ? PlaceForWorld(GetWorld()) : nullptr;
+		bReady = Loaded && Loaded->HasPlace();
+	}
+	if (!bReady)
+	{
+		return;
+	}
+	bWaitingForGround = false;
+	if (GetNetMode() != NM_Client)
+	{
+		SetActorTickEnabled(false);
+	}
+	Component->SetSimulatePhysics(true);
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_PHYSICS_PROP entity=%s simulate=1 its solid cells stand: started at (%.0f, %.0f, %.0f)"), *EntityId, GetActorLocation().X, GetActorLocation().Y, GetActorLocation().Z);
 }
 
 bool AMantlePhysicsProp::AdoptPlaceholder(AActor* Placeholder)
@@ -435,7 +483,72 @@ FMantlePhysicsPropPlaceResolver AMantlePhysicsProp::PlaceForWorld = nullptr;
 void AMantlePhysicsProp::BeginPlay()
 {
 	Super::BeginPlay();
+	if (GetNetMode() == NM_Client)
+	{
+		SetActorTickEnabled(true);
+	}
 	TryAdopt();
+}
+
+void AMantlePhysicsProp::Tick(const float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	UpdateGroundWait();
+	UpdateCollisionGate();
+}
+
+void AMantlePhysicsProp::FollowServerPose()
+{
+	const FRepMovement& Replicated = GetReplicatedMovement();
+	SetActorLocationAndRotation(Replicated.Location, Replicated.Rotation, false, nullptr, ETeleportType::TeleportPhysics);
+}
+
+void AMantlePhysicsProp::UpdateCollisionGate()
+{
+	UStaticMeshComponent* Component = GetStaticMeshComponent();
+	if (!bAdopted || HasAuthority() || !Component)
+	{
+		return;
+	}
+	if (!CollisionGate.Update(GetWorld(), GetActorLocation(), Component->Bounds.SphereRadius, GetReplicatedMovement().LinearVelocity.Size(), TEXT("prop"), EntityId))
+	{
+		return;
+	}
+	if (CollisionGate.IsClosed())
+	{
+		// No ground here: not simulated, and where the server says it is (an asleep prop sends nothing more, so the last pose is the truth).
+		Component->SetSimulatePhysics(false);
+		FollowServerPose();
+		return;
+	}
+	// Ground again: from the server's pose, in the server's simulate and sleep state (as adopting the placeholder did).
+	FollowServerPose();
+	Component->SetSimulatePhysics(GetReplicatedMovement().bRepPhysics);
+	if (GetReplicatedMovement().bRepPhysics)
+	{
+		OnRep_ReplicatedMovement();
+		if (GetReplicatedMovement().bSimulatedPhysicSleep)
+		{
+			Component->PutRigidBodyToSleep();
+		}
+	}
+}
+
+void AMantlePhysicsProp::OnRep_ReplicatedMovement()
+{
+	Super::OnRep_ReplicatedMovement();
+	if (CollisionGate.IsClosed())
+	{
+		// The engine has just put the body back to the server's simulate state: it stays off while its ground is not built here.
+		if (UStaticMeshComponent* Component = GetStaticMeshComponent())
+		{
+			if (Component->IsSimulatingPhysics())
+			{
+				Component->SetSimulatePhysics(false);
+			}
+		}
+		FollowServerPose();
+	}
 }
 
 void AMantlePhysicsProp::EndPlay(const EEndPlayReason::Type EndPlayReason)

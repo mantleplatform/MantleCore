@@ -1,6 +1,8 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "Engine/StaticMesh.h"
+#include "HAL/PlatformProcess.h"
 #include "Misc/Compression.h"
+#include "Misc/Guid.h"
 #include "Misc/Paths.h"
 #include "MantleAssetStore.h"
 #include "MantleNaniteSideFile.h"
@@ -10,10 +12,12 @@
 #include "MantleStaticMeshReader.h"
 #include "Matrix3x4.h"
 #include "RHI.h"
+#include "PhysicsEngine/BodySetup.h"
 #include "Rendering/NaniteResources.h"
 #include "Serialization/MemoryWriter.h"
 #include "StaticMeshResources.h"
 #include "UObject/StrongObjectPtr.h"
+#include "UObject/UObjectGlobals.h"
 
 #include "Misc/AutomationTest.h"
 
@@ -762,6 +766,552 @@ bool FMantleNaniteManifestOnlyCapTest::RunTest(const FString& Parameters)
 	// 1000 MiB: everything fits.
 	const TArray<FString> Large = AskedWithCap(1000);
 	TestTrue(TEXT("1000 MiB: both files are taken"), Large.Contains(FlowNaniteA) && Large.Contains(FlowNaniteB));
+	return true;
+}
+
+// ---- Streamed assets (stage 2 of large places): a streaming set takes a cell's meshes when the cell asks and lets them go when the last cell that wants them does ----
+
+// Named, not anonymous: MantleRuntime builds as a unity build.
+namespace MantleStreamedAssetsTestPrivate
+{
+	using namespace MantleNaniteSideFileTestPrivate;
+
+	const TCHAR* const MeshF = TEXT("ast_u000000000000000000000000000000f1"); // its download is refused
+	const TCHAR* const MaterialM = TEXT("ast_u000000000000000000000000000000c1"); // its download is refused, its answer from the API names a texture
+	const TCHAR* const TextureT = TEXT("ast_u000000000000000000000000000000d1");
+	const TCHAR* const MeshA2 = TEXT("ast_u000000000000000000000000000000a2"); // the same bytes as A (so the same build), with a Nanite file of its own
+	const TCHAR* const NaniteA2 = TEXT("ast_u000000000000000000000000000000a3");
+
+	/** The fake API, which also says (as the real one does for a material) which texture a material names. */
+	class FMaterialAnswerResolver : public FServingResolver
+	{
+	public:
+		virtual void Resolve(const TArray<FString>& Ids, TFunction<void(const FMantleAssetResolveResult&)> OnDone) override
+		{
+			FServingResolver::Resolve(Ids, [OnDone](const FMantleAssetResolveResult& Answer)
+			{
+				FMantleAssetResolveResult Changed = Answer;
+				for (FMantleUploadedAsset& Asset : Changed.Assets)
+				{
+					if (Asset.Id == MaterialM)
+					{
+						Asset.MaterialTextures.Add(TEXT("baseColor"), TextureT);
+					}
+				}
+				OnDone(Changed);
+			});
+		}
+	};
+
+	/** A box as an MRM1 mesh, Half cm to a side's middle: a different size is a different file, so a different cooked hash. */
+	TArray<uint8> MakeSizedBox(const float Half)
+	{
+		TArray<uint8> Bytes;
+		FMemoryWriter Ar(Bytes, true);
+		uint8 Magic[4] = { 'M', 'R', 'M', '1' };
+		Ar.Serialize(Magic, 4);
+		uint32 Version = 1, Flags = 0, Vertices = 8, Indices = 36;
+		Ar << Version << Flags << Vertices << Indices;
+		float Bounds[6] = { -Half, -Half, -Half, Half, Half, Half };
+		for (float& Value : Bounds)
+		{
+			Ar << Value;
+		}
+		for (int32 Corner = 0; Corner < 8; ++Corner)
+		{
+			float X = (Corner & 1) ? Half : -Half, Y = (Corner & 2) ? Half : -Half, Z = (Corner & 4) ? Half : -Half;
+			Ar << X << Y << Z;
+		}
+		const uint32 Triangles[12][3] = {
+			{ 0, 2, 1 }, { 1, 2, 3 }, { 4, 5, 6 }, { 5, 7, 6 }, { 0, 1, 4 }, { 1, 5, 4 },
+			{ 2, 6, 3 }, { 3, 6, 7 }, { 0, 4, 2 }, { 2, 4, 6 }, { 1, 3, 5 }, { 3, 7, 5 } };
+		for (const uint32 (&Triangle)[3] : Triangles)
+		{
+			for (uint32 Index : Triangle)
+			{
+				Ar << Index;
+			}
+		}
+		return Bytes;
+	}
+
+	/** A place whose manifest lists meshes A (with a Nanite file), B and F, and whose root has no entity: everything it uses is in cells. */
+	FMantlePlace MakeCellsOnlyPlace()
+	{
+		const FString Json = FString::Printf(
+			TEXT("{\"schemaVersion\":1,\"placeId\":\"plc_streamed001\",\"revision\":{\"number\":1,\"state\":\"draft\"},"
+				 "\"metadata\":{\"name\":\"Streamed\",\"authorId\":\"usr_4b1d\"},\"settings\":{},\"assets\":["
+				 "{\"id\":\"%s\",\"kind\":\"StaticMesh\",\"hash\":\"%s\",\"bytes\":100,\"nanite\":\"%s\"},"
+				 "{\"id\":\"%s\",\"kind\":\"Nanite\",\"hash\":\"%s\",\"bytes\":50,\"engine\":\"%s\"},"
+				 "{\"id\":\"%s\",\"kind\":\"StaticMesh\",\"hash\":\"%s\",\"bytes\":100},"
+				 "{\"id\":\"%s\",\"kind\":\"StaticMesh\",\"hash\":\"%s\",\"bytes\":100},"
+				 "{\"id\":\"%s\",\"kind\":\"Material\",\"hash\":\"%s\",\"bytes\":100},"
+				 "{\"id\":\"%s\",\"kind\":\"Texture\",\"hash\":\"%s\",\"bytes\":100},"
+				 "{\"id\":\"%s\",\"kind\":\"StaticMesh\",\"hash\":\"%s\",\"bytes\":100,\"nanite\":\"%s\"},"
+				 "{\"id\":\"%s\",\"kind\":\"Nanite\",\"hash\":\"%s\",\"bytes\":50,\"engine\":\"%s\"}],\"entities\":[]}"),
+			FlowMeshA, *MeshTag, FlowNaniteA, FlowNaniteA, *MeshTag, *FMantleNaniteSideFile::EngineTag(), FlowMeshB, *MeshTag, MeshF, *MeshTag, MaterialM, *MeshTag, TextureT, *MeshTag,
+			MeshA2, *MeshTag, NaniteA2, NaniteA2, *MeshTag, *FMantleNaniteSideFile::EngineTag());
+		const FMantleParseResult Parsed = FMantlePlaceParser::ParseFromString(Json);
+		check(Parsed.bSuccess);
+		return Parsed.Place;
+	}
+
+	/** One StaticMesh entity of the given mesh, with or without collision, for a cell's list. */
+	FMantleEntity MeshEntity(const FString& Id, const FString& Mesh, const bool bCollision)
+	{
+		FMantleEntity Entity;
+		Entity.Id = Id;
+		Entity.Type = EMantleEntityType::StaticMesh;
+		FMantleStaticMeshProps Props;
+		Props.Mesh = Mesh;
+		Props.Collision = bCollision ? EMantleCollision::Blocking : EMantleCollision::None;
+		Entity.Props.Set<FMantleStaticMeshProps>(Props);
+		return Entity;
+	}
+
+	struct FStreamingFixture
+	{
+		TSharedRef<FServingResolver> Server = MakeShared<FMaterialAnswerResolver>();
+		TSharedPtr<FMantleAssetStore> Store;
+		TSharedPtr<FMantlePlaceAssets> Assets;
+
+		explicit FStreamingFixture(const FString& StoreName, const bool bNanite = true)
+		{
+			FServedAsset A;
+			A.Kind = TEXT("mesh");
+			A.Bytes = MakeSizedBox(50.0f);
+			Server->Assets.Add(FlowMeshA, A);
+			FServedAsset B;
+			B.Kind = TEXT("mesh");
+			B.Bytes = MakeSizedBox(60.0f);
+			Server->Assets.Add(FlowMeshB, B);
+			FServedAsset F;
+			F.Kind = TEXT("mesh");
+			F.Bytes = MakeSizedBox(70.0f);
+			F.bServe = false;
+			Server->Assets.Add(MeshF, F);
+			FServedAsset Nanite;
+			Nanite.Kind = TEXT("nanite");
+			Nanite.Bytes = MakeContainer(WriteFile(MeshTag, { 0, 1 }), WriteFile(MeshTag, { 0, 1 }).Num());
+			Server->Assets.Add(FlowNaniteA, Nanite);
+			// A second mesh with the very same bytes as A (one build between them) whose Nanite file is another file.
+			FServedAsset SameAsA;
+			SameAsA.Kind = TEXT("mesh");
+			SameAsA.Bytes = MakeSizedBox(50.0f);
+			Server->Assets.Add(MeshA2, SameAsA);
+			FServedAsset NaniteTwo;
+			NaniteTwo.Kind = TEXT("nanite");
+			NaniteTwo.Bytes = MakeContainer(WriteFile(MeshTag, { 0 }), WriteFile(MeshTag, { 0 }).Num());
+			Server->Assets.Add(NaniteA2, NaniteTwo);
+			// A material whose download is refused (so it fails before its document is read), and the texture its answer names (not a readable texture either).
+			FServedAsset Material;
+			Material.Kind = TEXT("material");
+			Material.Bytes = MakeSizedBox(80.0f);
+			Material.bServe = false;
+			Server->Assets.Add(MaterialM, Material);
+			FServedAsset Texture;
+			Texture.Kind = TEXT("texture");
+			Texture.Bytes = MakeSizedBox(90.0f);
+			Server->Assets.Add(TextureT, Texture);
+
+			FMantleAssetStoreSettings StoreSettings;
+			StoreSettings.RootDir = FPaths::AutomationTransientDir() / StoreName;
+			StoreSettings.MaxAttempts = 1;
+			const TSharedRef<FServingFetcher> Fetcher = MakeShared<FServingFetcher>();
+			Fetcher->Source = Server;
+			FMantlePlaceAssetSettings Settings;
+			Settings.bAutoPump = false;
+			Settings.bRenderAssets = true;
+			Settings.bLoadNanite = bNanite;
+			Settings.bAsyncCollisionCook = false;
+			Settings.Resolver = Server;
+			Store = FMantleAssetStore::Create(StoreSettings, Fetcher);
+			Settings.Store = Store;
+			Assets = FMantlePlaceAssets::PrepareStreaming(MakeCellsOnlyPlace(), Settings, FMantlePlaceAssetsDone());
+		}
+
+		/** Pumps the store and the set until the predicate holds or the time is up. */
+		template <typename TPredicate>
+		bool PumpUntil(TPredicate Done, const double Seconds = 30.0)
+		{
+			const double Deadline = FPlatformTime::Seconds() + Seconds;
+			while (!Done())
+			{
+				if (FPlatformTime::Seconds() > Deadline)
+				{
+					return false;
+				}
+				Store->Pump();
+				Assets->Pump();
+				FPlatformProcess::Sleep(0.001f);
+			}
+			return true;
+		}
+
+		bool Settle(const int64 Holder) { return PumpUntil([this, Holder]() { return Assets->GetHolderAssets(Holder).IsSettled(); }); }
+	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamedAssetsFollowTheHoldersTest,
+	"Mantle.Runtime.Place.StreamedAssets.FollowTheHolders",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamedAssetsFollowTheHoldersTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamedAssetsTestPrivate;
+	FStreamingFixture Fixture(TEXT("StreamedAssets") / FGuid::NewGuid().ToString());
+	if (!TestTrue(TEXT("the root (no assets of its own) completes"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->IsComplete(); })))
+	{
+		return false;
+	}
+	TestTrue(TEXT("it is a streaming set"), Fixture.Assets->IsStreaming());
+	FMantlePlaceAssets::FStreamedCounts Counts = Fixture.Assets->GetStreamedCounts();
+	TestEqual(TEXT("it holds no mesh before a cell asks"), Counts.Meshes, 0);
+
+	// Cell 10 uses A (solid) and cell 11 uses A and B (pictures): A is fetched once for both, with its Nanite file.
+	TArray<FMantleEntity> Cell10;
+	Cell10.Add(MeshEntity(TEXT("ent_10"), FlowMeshA, true));
+	TArray<FMantleEntity> Cell11;
+	Cell11.Add(MeshEntity(TEXT("ent_11a"), FlowMeshA, false));
+	Cell11.Add(MeshEntity(TEXT("ent_11b"), FlowMeshB, false));
+	Fixture.Assets->AcquireEntityAssets(10, Cell10);
+	Fixture.Assets->AcquireEntityAssets(11, Cell11);
+	TestFalse(TEXT("nothing is ready the moment a cell asks"), Fixture.Assets->GetHolderAssets(10).IsSettled());
+	if (!TestTrue(TEXT("both cells' assets arrive"), Fixture.Settle(10) && Fixture.Settle(11)))
+	{
+		return false;
+	}
+	TestEqual(TEXT("nothing failed"), Fixture.Assets->GetHolderAssets(10).FailedIds.Num() + Fixture.Assets->GetHolderAssets(11).FailedIds.Num(), 0);
+	FString Error;
+	UStaticMesh* MeshA = FMantlePlaceAssets::FindLiveMesh(FlowMeshA, Error);
+	UStaticMesh* MeshB = FMantlePlaceAssets::FindLiveMesh(FlowMeshB, Error);
+	TestNotNull(TEXT("A is built"), MeshA);
+	TestNotNull(TEXT("B is built"), MeshB);
+	TestTrue(TEXT("A was built with collision for the solid cell"), MeshA && MeshA->GetBodySetup() && MeshA->GetBodySetup()->CollisionTraceFlag == CTF_UseComplexAsSimple);
+	TestEqual(TEXT("A's Nanite file is not held once it has been read"), Fixture.Assets->GetNaniteHeldBytes(), static_cast<int64>(0));
+	Counts = Fixture.Assets->GetStreamedCounts();
+	TestEqual(TEXT("two meshes, A once for its two cells"), Counts.Meshes, 2);
+	TestEqual(TEXT("two meshes are wanted"), Counts.WantedMeshes, 2);
+	TestEqual(TEXT("two cells hold"), Counts.Holders, 2);
+	TestEqual(TEXT("A's Nanite record is held"), Counts.NaniteFiles, 1);
+
+	// Cell 10 comes down: A is still wanted by cell 11, so it stays (the same object).
+	Fixture.Assets->ReleaseEntityAssets(10);
+	Fixture.PumpUntil([]() { return false; }, 0.05);
+	TestTrue(TEXT("A stays while cell 11 wants it"), FMantlePlaceAssets::FindLiveMesh(FlowMeshA, Error) == MeshA && MeshA != nullptr);
+	Counts = Fixture.Assets->GetStreamedCounts();
+	TestEqual(TEXT("both meshes are still held"), Counts.Meshes, 2);
+	TestEqual(TEXT("one cell holds"), Counts.Holders, 1);
+	TestEqual(TEXT("nothing dropped yet"), Counts.Dropped, static_cast<int64>(0));
+
+	// Cell 11 comes down: nobody wants either, so both go, and A's Nanite record with it.
+	Fixture.Assets->ReleaseEntityAssets(11);
+	TestTrue(TEXT("the last cell's release drops them"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().Meshes == 0; }));
+	Counts = Fixture.Assets->GetStreamedCounts();
+	TestEqual(TEXT("no mesh is held"), Counts.Meshes, 0);
+	TestEqual(TEXT("A's Nanite record went with it"), Counts.NaniteFiles, 0);
+	TestEqual(TEXT("no mesh is wanted"), Counts.WantedMeshes, 0);
+	TestEqual(TEXT("two were dropped"), Counts.Dropped, static_cast<int64>(2));
+	TestEqual(TEXT("none was waiting"), Counts.DropsWaiting, 0);
+	TestTrue(TEXT("the set answers 'not prepared' for A again"), FMantlePlaceAssets::GetLiveMeshState(FlowMeshA, &Error) != EMantleLiveAssetState::Ready);
+
+	// A cell that wants B again after that fetches it again.
+	Fixture.Assets->AcquireEntityAssets(12, Cell11);
+	TestTrue(TEXT("a later cell gets its meshes again"), Fixture.Settle(12));
+	TestNotNull(TEXT("and A is there"), FMantlePlaceAssets::FindLiveMesh(FlowMeshA, Error));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamedAssetsCollisionAndFailureTest,
+	"Mantle.Runtime.Place.StreamedAssets.CollisionAndFailure",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamedAssetsCollisionAndFailureTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamedAssetsTestPrivate;
+	AddExpectedError(TEXT("MANTLE_PLACE_ASSETS FAIL"), EAutomationExpectedErrorFlags::Contains, 0);
+	FStreamingFixture Fixture(TEXT("StreamedAssets") / FGuid::NewGuid().ToString(), /*bNanite*/ true);
+	if (!TestTrue(TEXT("the root completes"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->IsComplete(); })))
+	{
+		return false;
+	}
+	FString Error;
+
+	// A picture cell asks for A (a mesh with a Nanite file) first: it is built without collision. Then a solid cell asks for it: it is built again with it, and the picture cell's own
+	// object is still the one its components hold.
+	TArray<FMantleEntity> Picture;
+	Picture.Add(MeshEntity(TEXT("ent_p"), FlowMeshA, false));
+	TArray<FMantleEntity> Solid;
+	Solid.Add(MeshEntity(TEXT("ent_s"), FlowMeshA, true));
+	Fixture.Assets->AcquireEntityAssets(20, Picture);
+	if (!TestTrue(TEXT("the picture cell's mesh arrives"), Fixture.Settle(20)))
+	{
+		return false;
+	}
+	UStaticMesh* Before = FMantlePlaceAssets::FindLiveMesh(FlowMeshA, Error);
+	if (!TestNotNull(TEXT("A is built"), Before))
+	{
+		return false;
+	}
+	TestFalse(TEXT("without collision for the picture"), Before->GetBodySetup() && Before->GetBodySetup()->CollisionTraceFlag == CTF_UseComplexAsSimple);
+	TestEqual(TEXT("its Nanite file was read once"), Fixture.Assets->GetStreamedCounts().NaniteFilesBuilt, 1);
+	Fixture.Assets->AcquireEntityAssets(21, Solid);
+	TestFalse(TEXT("the solid cell waits: the mesh is built again with collision"), Fixture.Assets->GetHolderAssets(21).IsSettled());
+	// Nothing that has the mesh already loses it while it is built again: a cell that has its assets and waits to be built from them still finds the mesh at every step.
+	bool bThereAtEveryStep = true;
+	if (!TestTrue(TEXT("the solid cell's mesh arrives"), Fixture.PumpUntil([&Fixture, &bThereAtEveryStep]()
+		{
+			FString StepError;
+			bThereAtEveryStep = bThereAtEveryStep && FMantlePlaceAssets::FindLiveMesh(FlowMeshA, StepError) != nullptr
+				&& FMantlePlaceAssets::GetLiveMeshState(FlowMeshA) != EMantleLiveAssetState::Loading;
+			return Fixture.Assets->GetHolderAssets(21).IsSettled();
+		})))
+	{
+		return false;
+	}
+	TestTrue(TEXT("the mesh was there at every step"), bThereAtEveryStep);
+	UStaticMesh* After = FMantlePlaceAssets::FindLiveMesh(FlowMeshA, Error);
+	if (TestNotNull(TEXT("A is built again"), After))
+	{
+		TestTrue(TEXT("with collision"), After->GetBodySetup() && After->GetBodySetup()->CollisionTraceFlag == CTF_UseComplexAsSimple);
+		TestTrue(TEXT("as another object; the picture cell keeps the first"), After != Before);
+	}
+	// The second build read the Nanite file again (the first build's was freed when it finished), and nothing is held once it has.
+	TestEqual(TEXT("its Nanite file was read again for the second build"), Fixture.Assets->GetStreamedCounts().NaniteFilesBuilt, 2);
+	TestEqual(TEXT("and nothing of it is held"), Fixture.Assets->GetNaniteHeldBytes(), static_cast<int64>(0));
+	TestEqual(TEXT("neither build was made without its Nanite file when the file was there to read"), Fixture.Assets->GetStreamedCounts().NaniteFileMisses, 0);
+	TestEqual(TEXT("the picture cell is still settled"), Fixture.Assets->GetHolderAssets(20).IsSettled(), true);
+	Fixture.Assets->ReleaseEntityAssets(20);
+	Fixture.Assets->ReleaseEntityAssets(21);
+	TestTrue(TEXT("both released: the mesh goes"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().Meshes == 0; }));
+	TestEqual(TEXT("and so does its Nanite record"), Fixture.Assets->GetStreamedCounts().NaniteFiles, 0);
+
+	// A cell that wants it again with no collision at all gets it with collision from the start: a mesh some cell has needed with collision is not built without it twice.
+	Fixture.Assets->AcquireEntityAssets(22, Picture);
+	TestTrue(TEXT("the picture cell gets it again"), Fixture.Settle(22));
+	UStaticMesh* Again = FMantlePlaceAssets::FindLiveMesh(FlowMeshA, Error);
+	TestTrue(TEXT("built with collision at once"), Again && Again->GetBodySetup() && Again->GetBodySetup()->CollisionTraceFlag == CTF_UseComplexAsSimple);
+	// (The object of the second build is still alive, so this one reuses it and builds nothing.)
+	TestTrue(TEXT("it is the object of the second build, with collision: not built a third time"), Again == After);
+	TestTrue(TEXT("and no mesh is waiting for an upgrade"), Fixture.Assets->GetStreamedCounts().DropsWaiting == 0);
+	Fixture.Assets->ReleaseEntityAssets(22);
+	Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().Meshes == 0; });
+
+	// A mesh that cannot be had: the holder is told which, once its build is over; nothing waits for ever.
+	TArray<FMantleEntity> Broken;
+	Broken.Add(MeshEntity(TEXT("ent_f"), MeshF, true));
+	Broken.Add(MeshEntity(TEXT("ent_b"), FlowMeshB, false));
+	Fixture.Assets->AcquireEntityAssets(30, Broken);
+	if (!TestTrue(TEXT("the holder settles"), Fixture.Settle(30)))
+	{
+		return false;
+	}
+	const FMantlePlaceAssets::FHolderAssets Assets = Fixture.Assets->GetHolderAssets(30);
+	TestEqual(TEXT("one asset failed"), Assets.FailedIds.Num(), 1);
+	TestTrue(TEXT("it is the mesh that was refused"), Assets.FailedIds.Contains(MeshF));
+	TestNotNull(TEXT("the other mesh is built"), FMantlePlaceAssets::FindLiveMesh(FlowMeshB, Error));
+	// Its release drops the failed record too: the next cell that wants it tries again.
+	Fixture.Assets->ReleaseEntityAssets(30);
+	TestTrue(TEXT("the failed record is dropped"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().Meshes == 0; }));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamedAssetsSharedBuildTest,
+	"Mantle.Runtime.Place.StreamedAssets.SharedBuildLeavesNoSideFiles",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamedAssetsSharedBuildTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamedAssetsTestPrivate;
+	FStreamingFixture Fixture(TEXT("StreamedAssets") / FGuid::NewGuid().ToString(), /*bNanite*/ true);
+	if (!TestTrue(TEXT("the root completes"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->IsComplete(); })))
+	{
+		return false;
+	}
+	// A and A2 are two ids of one file: one mesh build between them, which names the Nanite file of the id that made it, while A2 has a Nanite file of its own.
+	TArray<FMantleEntity> CellA;
+	CellA.Add(MeshEntity(TEXT("ent_a"), FlowMeshA, true));
+	TArray<FMantleEntity> CellA2;
+	CellA2.Add(MeshEntity(TEXT("ent_a2"), MeshA2, true));
+	Fixture.Assets->AcquireEntityAssets(70, CellA);
+	Fixture.Assets->AcquireEntityAssets(71, CellA2);
+	if (!TestTrue(TEXT("both cells' meshes arrive"), Fixture.Settle(70) && Fixture.Settle(71)))
+	{
+		return false;
+	}
+	TestEqual(TEXT("two Nanite files are held as records"), Fixture.Assets->GetStreamedCounts().NaniteFiles, 2);
+	// The cell of A goes first, then the cell of A2: the build goes with the second, and so must both files.
+	Fixture.Assets->ReleaseEntityAssets(70);
+	Fixture.Assets->ReleaseEntityAssets(71);
+	TestTrue(TEXT("both meshes go"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().Meshes == 0; }));
+	// (A Nanite file still being fetched when its mesh goes is dropped as soon as the fetch ends.)
+	TestTrue(TEXT("and no Nanite record is left behind (its file is long freed: a mesh made again would find it empty)"),
+		Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().NaniteFiles == 0; }));
+	AddInfo(TEXT("records left: ") + Fixture.Assets->DescribeStreamedRecords());
+	// Wanted again: the file is read again and the mesh is not built without it.
+	Fixture.Assets->AcquireEntityAssets(72, CellA);
+	TestTrue(TEXT("a later cell gets A again"), Fixture.Settle(72));
+	TestEqual(TEXT("no mesh was built without its Nanite file"), Fixture.Assets->GetStreamedCounts().NaniteFileMisses, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamedAssetsUpgradeWhileNaniteInFlightTest,
+	"Mantle.Runtime.Place.StreamedAssets.UpgradeWhileNaniteInFlight",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamedAssetsUpgradeWhileNaniteInFlightTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamedAssetsTestPrivate;
+	FStreamingFixture Fixture(TEXT("StreamedAssets") / FGuid::NewGuid().ToString(), /*bNanite*/ true);
+	if (!TestTrue(TEXT("the root completes"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->IsComplete(); })))
+	{
+		return false;
+	}
+	TArray<FMantleEntity> Picture;
+	Picture.Add(MeshEntity(TEXT("ent_p"), FlowMeshA, false));
+	TArray<FMantleEntity> Solid;
+	Solid.Add(MeshEntity(TEXT("ent_s"), FlowMeshA, true));
+	// A is built without collision and let go; its object is still alive (nothing collected it), so the next cell that wants it takes it as it is while its Nanite file is still on its way.
+	Fixture.Assets->AcquireEntityAssets(80, Picture);
+	if (!TestTrue(TEXT("the first cell's mesh arrives"), Fixture.Settle(80)))
+	{
+		return false;
+	}
+	Fixture.Assets->ReleaseEntityAssets(80);
+	TestTrue(TEXT("and goes with its Nanite record"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().Meshes == 0 && Fixture.Assets->GetStreamedCounts().NaniteFiles == 0; }));
+	Fixture.Assets->AcquireEntityAssets(81, Picture);
+	if (!TestTrue(TEXT("a cell that wants it again has it as soon as it is resolved (the object is alive)"), Fixture.Settle(81)))
+	{
+		return false;
+	}
+	// A solid cell asks for it while the Nanite file of the mesh is still being fetched: the mesh is built again with collision, and that build needs the file that is on its way.
+	TestTrue(TEXT("(the Nanite file is still in flight)"), Fixture.Assets->GetStreamedCounts().NaniteInFlight > 0);
+	Fixture.Assets->AcquireEntityAssets(82, Solid);
+	TestTrue(TEXT("the solid cell's mesh arrives"), Fixture.Settle(82));
+	TestEqual(TEXT("the second build had the file it waited for"), Fixture.Assets->GetStreamedCounts().NaniteFileMisses, 0);
+	TestEqual(TEXT("and nothing waits to be dropped"), Fixture.Assets->GetStreamedCounts().DropsWaiting, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamedAssetsUpgradeEndsWithTheMeshTest,
+	"Mantle.Runtime.Place.StreamedAssets.UpgradeEndsWithTheMesh",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamedAssetsUpgradeEndsWithTheMeshTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamedAssetsTestPrivate;
+	// Meshes the tests before this one built are collected: a mesh with collision that is still alive would be taken as it is, and the rebuild would be over before it could be seen.
+	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+	FStreamingFixture Fixture(TEXT("StreamedAssets") / FGuid::NewGuid().ToString(), /*bNanite*/ true);
+	if (!TestTrue(TEXT("the root completes"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->IsComplete(); })))
+	{
+		return false;
+	}
+	// A and A2 (one build between them, two Nanite files) are pictures first; then a solid cell wants both, so both are built again with collision (one build for both), and every cell lets go while that build is still being made.
+	TArray<FMantleEntity> Pictures;
+	Pictures.Add(MeshEntity(TEXT("ent_a"), FlowMeshA, false));
+	Pictures.Add(MeshEntity(TEXT("ent_a2"), MeshA2, false));
+	TArray<FMantleEntity> Solids;
+	Solids.Add(MeshEntity(TEXT("ent_sa"), FlowMeshA, true));
+	Solids.Add(MeshEntity(TEXT("ent_sa2"), MeshA2, true));
+	Fixture.Assets->AcquireEntityAssets(90, Pictures);
+	if (!TestTrue(TEXT("the picture cell's meshes arrive"), Fixture.Settle(90)))
+	{
+		return false;
+	}
+	Fixture.Assets->AcquireEntityAssets(91, Solids);
+	if (!TestTrue(TEXT("the rebuild with collision begins"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().UpgradesInFlight > 0; })))
+	{
+		return false;
+	}
+	Fixture.Assets->ReleaseEntityAssets(90);
+	Fixture.Assets->ReleaseEntityAssets(91);
+	TestTrue(TEXT("every mesh goes"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().Meshes == 0; }));
+	TestTrue(TEXT("and every Nanite record goes with them"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().NaniteFiles == 0; }));
+	AddInfo(TEXT("records left: ") + Fixture.Assets->DescribeStreamedRecords());
+	TestEqual(TEXT("nothing waits to be dropped"), Fixture.Assets->GetStreamedCounts().DropsWaiting, 0);
+	// Wanted again, the mesh is built with its Nanite file.
+	Fixture.Assets->AcquireEntityAssets(92, Pictures);
+	TestTrue(TEXT("a later cell gets them again"), Fixture.Settle(92));
+	TestEqual(TEXT("with no build made without its Nanite file"), Fixture.Assets->GetStreamedCounts().NaniteFileMisses, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamedAssetsOnDemandTest,
+	"Mantle.Runtime.Place.StreamedAssets.OnDemand",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamedAssetsOnDemandTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamedAssetsTestPrivate;
+	FStreamingFixture Fixture(TEXT("StreamedAssets") / FGuid::NewGuid().ToString(), /*bNanite*/ false);
+	if (!TestTrue(TEXT("the root completes"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->IsComplete(); })))
+	{
+		return false;
+	}
+	// A script asks about a mesh the manifest lists and no cell has loaded: the set starts it, and the answer is "loading", then "ready".
+	FString Error;
+	TestEqual(TEXT("nothing holds B yet"), Fixture.Assets->GetStreamedCounts().Meshes, 0);
+	TestTrue(TEXT("the first answer is loading"), FMantlePlaceAssets::GetLiveMeshState(FlowMeshB, &Error) == EMantleLiveAssetState::Loading);
+	TestEqual(TEXT("and the set holds a record for it now"), Fixture.Assets->GetStreamedCounts().Meshes, 1);
+	if (!TestTrue(TEXT("it becomes ready"), Fixture.PumpUntil([]() { return FMantlePlaceAssets::GetLiveMeshState(FlowMeshB) == EMantleLiveAssetState::Ready; })))
+	{
+		return false;
+	}
+	TestNotNull(TEXT("and can be had by id"), FMantlePlaceAssets::FindLiveMesh(FlowMeshB, Error));
+	// A mesh the manifest does not list is not fetched: it is not prepared.
+	TestTrue(TEXT("an id that is not in the manifest is not prepared"), FMantlePlaceAssets::GetLiveMeshState(TEXT("ast_u00000000000000000000000000000999"), &Error) == EMantleLiveAssetState::NotPrepared);
+	TestEqual(TEXT("and nothing was started for it"), Fixture.Assets->GetStreamedCounts().Meshes, 1);
+
+	// A cell that wants B and lets go of it does not take it away: the script's demand stays for as long as the place does.
+	TArray<FMantleEntity> Cell;
+	Cell.Add(MeshEntity(TEXT("ent_c"), FlowMeshB, false));
+	Fixture.Assets->AcquireEntityAssets(50, Cell);
+	TestTrue(TEXT("the cell has it at once"), Fixture.Settle(50));
+	Fixture.Assets->ReleaseEntityAssets(50);
+	Fixture.PumpUntil([]() { return false; }, 0.1);
+	TestEqual(TEXT("B is still held after every cell let go"), Fixture.Assets->GetStreamedCounts().Meshes, 1);
+	TestTrue(TEXT("and still ready"), FMantlePlaceAssets::GetLiveMeshState(FlowMeshB) == EMantleLiveAssetState::Ready);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamedAssetsFailedMaterialTest,
+	"Mantle.Runtime.Place.StreamedAssets.FailedMaterialLetsGoOfItsTextures",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamedAssetsFailedMaterialTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamedAssetsTestPrivate;
+	AddExpectedError(TEXT("MANTLE_PLACE_ASSETS FAIL"), EAutomationExpectedErrorFlags::Contains, 0);
+	FStreamingFixture Fixture(TEXT("StreamedAssets") / FGuid::NewGuid().ToString(), /*bNanite*/ false);
+	if (!TestTrue(TEXT("the root completes"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->IsComplete(); })))
+	{
+		return false;
+	}
+	// A cell uses a material whose download is refused: it fails before its document is read, so its build never names a texture. Its answer from the API named one, and that record was started.
+	TArray<FMantleEntity> Cell;
+	FMantleEntity Entity = MeshEntity(TEXT("ent_m"), FlowMeshB, false);
+	Entity.Props.Get<FMantleStaticMeshProps>().Materials.Add(MaterialM);
+	Cell.Add(Entity);
+	Fixture.Assets->AcquireEntityAssets(60, Cell);
+	if (!TestTrue(TEXT("the cell settles"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetHolderAssets(60).IsSettled() && Fixture.Assets->GetStreamedCounts().Textures >= 1; })))
+	{
+		return false;
+	}
+	const FMantlePlaceAssets::FHolderAssets Assets = Fixture.Assets->GetHolderAssets(60);
+	TestTrue(TEXT("the material failed"), Assets.FailedIds.Contains(MaterialM));
+	TestEqual(TEXT("and its texture's record was started"), Fixture.Assets->GetStreamedCounts().Textures, 1);
+	Fixture.Assets->ReleaseEntityAssets(60);
+	TestTrue(TEXT("the last release drops the failed material and the texture it started"),
+		Fixture.PumpUntil([&Fixture]() { const FMantlePlaceAssets::FStreamedCounts Counts = Fixture.Assets->GetStreamedCounts(); return Counts.Materials == 0 && Counts.Textures == 0 && Counts.Meshes == 0; }));
+	TestEqual(TEXT("nothing waits to be dropped"), Fixture.Assets->GetStreamedCounts().DropsWaiting, 0);
 	return true;
 }
 

@@ -21,8 +21,6 @@ TSharedRef<FMantlePlaceBuildRunner> FMantlePlaceBuildRunner::Start(
 	Runner->FrameBudget = InFrameBudgetSeconds;
 	Runner->PlaceId = Place->PlaceId;
 	Runner->TotalEntities = Place->Entities.Num();
-	// The solver's fixed steps must not run while the place stands half-built: see PausePhysics.
-	Runner->PausePhysics(InWorld);
 	Runner->StartSeconds = FPlatformTime::Seconds();
 	Runner->TickerHandle = FTSTicker::GetCoreTicker().AddTicker(
 		FTickerDelegate::CreateSP(Runner, &FMantlePlaceBuildRunner::Tick), 0.0f);
@@ -34,36 +32,8 @@ FMantlePlaceBuildRunner::~FMantlePlaceBuildRunner()
 	Cancel();
 }
 
-void FMantlePlaceBuildRunner::PausePhysics(UWorld* InWorld)
-{
-	// Async physics (bTickPhysicsAsync) advances the solver in fixed steps and, on a long frame, catches up with a
-	// whole run of them before the frame can end. Every body the build has made so far is Movable (the freeze to Static
-	// comes last), and a step over them costs more than the step is long, so the catch-up never gets ahead: frames
-	// measured at 440 ms each while Medieval built, the game thread waiting out about two dozen solver steps. Nothing
-	// needs the solver while a place is being built (the players are held, no prop simulates yet), so its ticks are
-	// off until the build is done: UWorld::SetupPhysicsTickFunctions reads this flag every frame.
-	if (InWorld && InWorld->bShouldSimulatePhysics)
-	{
-		InWorld->bShouldSimulatePhysics = false;
-		bPhysicsPaused = true;
-	}
-}
-
-void FMantlePlaceBuildRunner::ResumePhysics()
-{
-	if (bPhysicsPaused)
-	{
-		bPhysicsPaused = false;
-		if (UWorld* Held = World.Get())
-		{
-			Held->bShouldSimulatePhysics = true;
-		}
-	}
-}
-
 void FMantlePlaceBuildRunner::Cancel()
 {
-	ResumePhysics();
 	if (TickerHandle.IsValid())
 	{
 		FTSTicker::RemoveTicker(TickerHandle);
@@ -130,7 +100,6 @@ bool FMantlePlaceBuildRunner::Tick(const float DeltaSeconds)
 	// Finished: the callback may drop the runner, so keep it alive until it returns and touch nothing of ours afterwards.
 	TSharedRef<FMantlePlaceBuildRunner> KeepAlive = AsShared();
 	TickerHandle.Reset();
-	ResumePhysics();
 	FMantleBuildResult Result = MoveTemp(Session->GetResult());
 	Session.Reset();
 	FOnBuilt Done = MoveTemp(OnBuilt);

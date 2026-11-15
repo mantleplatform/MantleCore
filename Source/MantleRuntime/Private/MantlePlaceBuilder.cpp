@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceBuilder.h"
+#include "MantlePlaceFreezePlan.h"
 #include "MantleAnimClip.h"
 #include "MantleAssetLibrary.h"
 #include "MantleClipAnimInstance.h"
@@ -82,6 +83,9 @@ namespace
 		double Seconds = 0.0;
 		double LongestSeconds = 0.0;
 		FString LongestId;
+		/** The time spawning mesh actors and applying their props took (FMantleBuildResult says what these are for). */
+		double SpawnSeconds = 0.0;
+		double PropsSeconds = 0.0;
 
 		void Add(const FString& AssetId, const double StartSeconds)
 		{
@@ -96,13 +100,48 @@ namespace
 		}
 	};
 
+	/**
+	 * Spawns a bare actor. StaticWorld, when given, is where it stands and ends (Static): the actor is created there, and PreRegister runs on it before any
+	 * of its components registers, so what it needs set first (a mesh, its settings) is, and its physics body is made once, static, in place. Without it
+	 * the actor is made Movable, where GMovableSpawnAt says it ends (the origin when nothing does: a unit test, a caller outside the Spawn pass). An actor class with no
+	 * root of its own (a bare AActor) drops the spawn transform: its builder gives the root it adds the transform itself (PlaceMovableRoot).
+	 */
+	/**
+	 * Where the entity being built stands in the world when it ends Movable (the Spawn pass sets it around each entity's build): SpawnBare then creates the actor there
+	 * and not at the origin. The actor stays Movable and attaches keeping its world transform; the Transforms pass sets its own relative transform, which is the
+	 * same place, so nothing moves.
+	 */
+	const FTransform* GMovableSpawnAt = nullptr;
+
+	struct FMovableSpawnScope
+	{
+		explicit FMovableSpawnScope(const FTransform* At) { GMovableSpawnAt = At; }
+		~FMovableSpawnScope() { GMovableSpawnAt = nullptr; }
+	};
+
+	/** A bare actor has no root until its builder adds one, and the engine then drops the spawn transform: the root of a Movable entity stands where the entity ends. */
+	void PlaceMovableRoot(USceneComponent* Root)
+	{
+		if (Root && GMovableSpawnAt)
+		{
+			Root->SetRelativeTransform(*GMovableSpawnAt);
+		}
+	}
+
 	template <typename TActor>
-	TActor* SpawnBare(UWorld* World, const FString& Name)
+	TActor* SpawnBare(UWorld* World, const FString& Name, const FTransform* StaticWorld = nullptr, TFunction<void(AActor*)> PreRegister = nullptr)
 	{
 		FActorSpawnParameters Params;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if (PreRegister)
+		{
+			Params.CustomPreSpawnInitialization = MoveTemp(PreRegister);
+		}
 
-		TActor* Actor = World->SpawnActor<TActor>(FVector::ZeroVector, FRotator::ZeroRotator, Params);
+		const FTransform* SpawnAt = StaticWorld ? StaticWorld : GMovableSpawnAt;
+		TActor* Actor = SpawnAt
+			? World->SpawnActor<TActor>(TActor::StaticClass(), *SpawnAt, Params)
+			: World->SpawnActor<TActor>(FVector::ZeroVector, FRotator::ZeroRotator, Params);
 		if (Actor && !Name.IsEmpty())
 		{
 #if WITH_EDITOR
@@ -291,7 +330,8 @@ namespace
 		const FMantleBuildOptions& Options,
 		const FString& Path,
 		TArray<FMantleParseError>& Errors,
-		FMantleBuilderLoadStats& LoadStats)
+		FMantleBuilderLoadStats& LoadStats,
+		const FTransform* StaticWorld = nullptr)
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_StaticMesh);
 
@@ -309,17 +349,46 @@ namespace
 			? AMantlePhysicsProp::ChooseBuild(Options.bTransient && World->IsGameWorld(), World->GetNetMode())
 			: EMantlePhysicsBuild::Authoring;
 
-		AStaticMeshActor* Actor = (Physics && PhysicsBuild == EMantlePhysicsBuild::Prop)
-			? SpawnBare<AMantlePhysicsProp>(World, Entity.Name)
-			: SpawnBare<AStaticMeshActor>(World, Entity.Name);
+		// An entity that ends Static (StaticWorld, from the freeze plan: never a physics entity) is created where it stands, Static, with its mesh and settings
+		// set before its component registers: its physics body is made once, static, in place. Everything else is made Movable where it ends too (GMovableSpawnAt,
+		// from the plan's world transform), so no body is parked at the origin; the Transforms pass sets the same place again.
+		double PropsSeconds = 0.0;
+		const double SpawnStart = FPlatformTime::Seconds();
+		AStaticMeshActor* Actor = nullptr;
+		if (Physics && PhysicsBuild == EMantlePhysicsBuild::Prop)
+		{
+			Actor = SpawnBare<AMantlePhysicsProp>(World, Entity.Name);
+		}
+		else if (StaticWorld && !Physics)
+		{
+			Actor = SpawnBare<AStaticMeshActor>(World, Entity.Name, StaticWorld, [&](AActor* Spawned)
+			{
+				const double PropsStart = FPlatformTime::Seconds();
+				UStaticMeshComponent* Component = CastChecked<AStaticMeshActor>(Spawned)->GetStaticMeshComponent();
+				Component->SetMobility(EComponentMobility::Static);
+				ApplyMeshProps(World, Component, Mesh, Props, Path, Errors, LoadStats);
+				PropsSeconds = FPlatformTime::Seconds() - PropsStart;
+			});
+		}
+		else
+		{
+			Actor = SpawnBare<AStaticMeshActor>(World, Entity.Name);
+		}
+		LoadStats.SpawnSeconds += FPlatformTime::Seconds() - SpawnStart - PropsSeconds;
 		if (!Actor)
 		{
 			Errors.Add(FMantleParseError{ Path, TEXT("failed to spawn static mesh actor") });
 			return nullptr;
 		}
 
-		MakeMovable(Actor);
-		ApplyMeshProps(World, Actor->GetStaticMeshComponent(), Mesh, Props, Path, Errors, LoadStats);
+		if (!(StaticWorld && !Physics))
+		{
+			const double PropsStart = FPlatformTime::Seconds();
+			MakeMovable(Actor);
+			ApplyMeshProps(World, Actor->GetStaticMeshComponent(), Mesh, Props, Path, Errors, LoadStats);
+			PropsSeconds = FPlatformTime::Seconds() - PropsStart;
+		}
+		LoadStats.PropsSeconds += PropsSeconds;
 
 		// Drawn, and so shadowed, no farther than its drawDistance. Absent, never culled (0). The editor's Max Draw
 		// Distance too, so an imported place exports it again. A physics entity keeps its shadow: its prop, which copies
@@ -367,7 +436,8 @@ namespace
 		const FMantleInstancedMeshProps& Props,
 		const FString& Path,
 		TArray<FMantleParseError>& Errors,
-		FMantleBuilderLoadStats& LoadStats)
+		FMantleBuilderLoadStats& LoadStats,
+		const FTransform* StaticWorld = nullptr)
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_InstancedMesh);
 
@@ -388,7 +458,17 @@ namespace
 		Actor->SetRootComponent(Instances);
 		// Listed as the actor's own, so a level a place is imported into shows it in Details.
 		Actor->AddInstanceComponent(Instances);
-		Instances->SetMobility(EComponentMobility::Movable);
+		if (StaticWorld)
+		{
+			// Where it stands, Static, before it registers: the instances' bodies are made once, in a batch, static, in place.
+			Instances->SetMobility(EComponentMobility::Static);
+			Instances->SetRelativeTransform(*StaticWorld);
+		}
+		else
+		{
+			Instances->SetMobility(EComponentMobility::Movable);
+			PlaceMovableRoot(Instances); // its per-instance bodies are made where it ends, not at the origin
+		}
 		ApplyMeshProps(World, Instances, Mesh, Props.Mesh, Path, Errors, LoadStats);
 
 		// Each instance fades out over the last fifth of the drawDistance and is gone past it, as terrain grass
@@ -417,7 +497,7 @@ namespace
 		return Actor;
 	}
 
-	AActor* BuildGroup(UWorld* World, const FMantleEntity& Entity)
+	AActor* BuildGroup(UWorld* World, const FMantleEntity& Entity, const FTransform* StaticWorld = nullptr)
 	{
 		AActor* Actor = SpawnBare<AActor>(World, Entity.Name);
 		if (!Actor)
@@ -425,10 +505,20 @@ namespace
 			return nullptr;
 		}
 
-		// A group is a pure transform node — it needs a root to attach children to.
+		// A group is a pure transform node — it needs a root to attach children to. One above place geometry (StaticWorld) stands where it ends and is
+		// Static from the start, as what is attached to it is.
 		USceneComponent* Root = NewObject<USceneComponent>(Actor, TEXT("Root"));
 		Actor->SetRootComponent(Root);
-		Root->SetMobility(EComponentMobility::Movable);
+		if (StaticWorld)
+		{
+			Root->SetMobility(EComponentMobility::Static);
+			Root->SetRelativeTransform(*StaticWorld);
+		}
+		else
+		{
+			Root->SetMobility(EComponentMobility::Movable);
+			PlaceMovableRoot(Root); // it ends where it stands too: what is attached to it stands in place and no body is parked at the origin
+		}
 		Root->RegisterComponent();
 		return Actor;
 	}
@@ -629,6 +719,7 @@ namespace
 			USphereComponent* Sphere = NewObject<USphereComponent>(Actor, TEXT("Trigger"));
 			Actor->SetRootComponent(Sphere);
 			Sphere->SetMobility(EComponentMobility::Movable);
+			PlaceMovableRoot(Sphere);
 			// A sphere has one radius; validation requires its three extents to match.
 			Sphere->SetSphereRadius(static_cast<float>(Props.Extent.X));
 			Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
@@ -640,6 +731,7 @@ namespace
 			UBoxComponent* Box = NewObject<UBoxComponent>(Actor, TEXT("Trigger"));
 			Actor->SetRootComponent(Box);
 			Box->SetMobility(EComponentMobility::Movable);
+			PlaceMovableRoot(Box);
 			Box->SetBoxExtent(Props.Extent);
 			Box->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 			Box->SetCollisionResponseToAllChannels(ECR_Overlap);
@@ -891,6 +983,7 @@ namespace
 				USceneComponent* Root = NewObject<USceneComponent>(Actor, TEXT("Root"));
 				Actor->SetRootComponent(Root);
 				Root->SetMobility(EComponentMobility::Movable);
+				PlaceMovableRoot(Root);
 				Root->RegisterComponent();
 			}
 			return Actor;
@@ -1009,7 +1102,8 @@ namespace
 		TArray<FMantleParseError>& Errors,
 		FMantleBuilderLoadStats& LoadStats,
 		FPendingTerrain& Pending,
-		FMantleScatterTerrainSurface* OutSurface)
+		FMantleScatterTerrainSurface* OutSurface,
+		const FTransform* StaticWorld = nullptr)
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_Terrain);
 
@@ -1092,7 +1186,7 @@ namespace
 			}
 		}
 		FString BuildError;
-		Pending.Spawn = FMantleTerrainSpawn::Begin(World, Entity.Name, *Field, Material, Props.bCastShadow, Params, &BuildError);
+		Pending.Spawn = FMantleTerrainSpawn::Begin(World, Entity.Name, *Field, Material, Props.bCastShadow, Params, &BuildError, StaticWorld, StaticWorld ? nullptr : GMovableSpawnAt);
 		if (!Pending.Spawn.IsValid())
 		{
 			Errors.Add(FMantleParseError{ Path + TEXT("/properties/heightfield"), BuildError });
@@ -1407,16 +1501,21 @@ namespace
 	 * an error at its path, and that mesh's instances are left out; the rest still draw.
 	 */
 	AActor* BuildScatter(UWorld* World, const FMantleEntity& Entity, const FMantleScatterParams& Props, const FString& Path,
-		TArray<FMantleParseError>& Errors)
+		TArray<FMantleParseError>& Errors, const FTransform* StaticWorld = nullptr)
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_Scatter);
 
-		AMantleScatterVolume* Actor = SpawnBare<AMantleScatterVolume>(World, Entity.Name);
+		// A Scatter that ends Static (StaticWorld) is made where it stands: its root is Static from the start (the volume's own default) and the instanced
+		// meshes it makes take that mobility, so their bodies are made once, static, in place.
+		AMantleScatterVolume* Actor = SpawnBare<AMantleScatterVolume>(World, Entity.Name, StaticWorld);
 		if (!Actor)
 		{
 			return nullptr;
 		}
-		MakeMovable(Actor);
+		if (!StaticWorld)
+		{
+			MakeMovable(Actor);
+		}
 		Actor->ApplyProps(Props);
 		// A dedicated server keeps the actor as the entity's transform node and builds nothing, unless the Scatter collides. One built in
 		// cells (#189) still has its position index made in the background, so a script's first query on it does not wait.
@@ -1588,9 +1687,6 @@ struct FMantlePlaceBuildSession::FState
 		TerrainScatters,
 		Physics,
 		Constraints,
-		FreezePlan,
-		FreezeGroups,
-		FreezeMeshes,
 		Finish,
 		Done
 	};
@@ -1605,9 +1701,6 @@ struct FMantlePlaceBuildSession::FState
 		case EPhase::TerrainScatters: return TEXT("terrain_scatters");
 		case EPhase::Physics: return TEXT("physics");
 		case EPhase::Constraints: return TEXT("constraints");
-		case EPhase::FreezePlan: return TEXT("freeze_plan");
-		case EPhase::FreezeGroups: return TEXT("freeze_groups");
-		case EPhase::FreezeMeshes: return TEXT("freeze_meshes");
 		case EPhase::Finish: return TEXT("finish");
 		case EPhase::Done: return TEXT("done");
 		}
@@ -1633,8 +1726,9 @@ struct FMantlePlaceBuildSession::FState
 	TArray<FString> TerrainScatters;
 	TArray<FMantleScatterTerrainSurface> Surfaces;
 
-	TArray<const FMantleEntity*> GroupsToFreeze;
-	TArray<const FMantleEntity*> MeshesToFreeze;
+	/** Which entities end Static and where each stands in the world: worked out from the place data before the first spawn, so each of them is created final. */
+	FMantlePlaceFreezePlan Freeze;
+	bool bPlanned = false;
 
 	EPhase Phase = EPhase::Spawn;
 	/** The next unit of the current phase (an index into Place->Entities, or into a list). */
@@ -1722,6 +1816,21 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 	FMantleBuildResult& Result = S.Result;
 	FMantleBuilderLoadStats& LoadStats = S.LoadStats;
 
+	// Which entities end Static, and where each stands, is worked out first, from the place data alone: each of them is then created where it stands and Static
+	// (before its component registers, so its physics body is made once, static, in place), attached without moving, and never made Movable.
+	// Done in the first step, before its first unit, and not counted against the budget (it makes no engine call).
+	if (!S.bPlanned)
+	{
+		S.bPlanned = true;
+		const double PlanStartSeconds = FPlatformTime::Seconds();
+		S.Freeze = FMantlePlaceFreezePlan::Make(Place);
+		const double PlanSeconds = FPlatformTime::Seconds() - PlanStartSeconds;
+		if (PlanSeconds >= FState::SlowUnitSeconds)
+		{
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_BUILD_SLOW place=%s phase=freeze_plan unit=0 entity=- type=- ms=%.1f"), *Place.PlaceId, PlanSeconds * 1000.0);
+		}
+	}
+
 	// Does units of the current phase from the cursor on until the deadline, at least one. True when the phase has no unit left.
 	auto RunUnits = [&S, Deadline](const int32 Count, auto&& DoUnit) -> bool
 	{
@@ -1732,11 +1841,10 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 			DoUnit(S.Cursor);
 			const double UnitEndSeconds = FPlatformTime::Seconds();
 			// A unit is never split, so one that takes long is a frame that takes long: say which (an entity of the
-			// place for the passes over entities, a list position for the freeze and scatter passes).
+			// place for the passes over entities, a list position for the scatter pass).
 			if (UnitEndSeconds - UnitStartSeconds >= FState::SlowUnitSeconds)
 			{
-				const bool bEntityUnit = S.Phase != FState::EPhase::TerrainScatters && S.Phase != FState::EPhase::FreezeGroups
-					&& S.Phase != FState::EPhase::FreezeMeshes;
+				const bool bEntityUnit = S.Phase != FState::EPhase::TerrainScatters;
 				const FMantleEntity* SlowEntity = bEntityUnit && S.Place->Entities.IsValidIndex(S.Cursor) ? &S.Place->Entities[S.Cursor] : nullptr;
 				UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_BUILD_SLOW place=%s phase=%s unit=%d entity=%s type=%s ms=%.1f"),
 					*S.Place->PlaceId, FState::PhaseName(S.Phase), S.Cursor,
@@ -1775,18 +1883,19 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 				const FMantleEntity& Entity = Place.Entities[i];
 				const FString Path = EntityPath(i);
 				AActor* Actor = nullptr;
+				const FMovableSpawnScope SpawnAt(S.Freeze.IsStatic(Entity.Id) ? nullptr : S.Freeze.AnyWorldOf(Entity.Id));
 
 				switch (Entity.Type)
 				{
 				case EMantleEntityType::StaticMesh:
 					if (const FMantleStaticMeshProps* Props = Entity.Props.TryGet<FMantleStaticMeshProps>())
 					{
-						Actor = BuildStaticMesh(World, Entity, *Props, Options, Path, Result.Errors, LoadStats);
+						Actor = BuildStaticMesh(World, Entity, *Props, Options, Path, Result.Errors, LoadStats, S.Freeze.WorldOf(Entity.Id));
 					}
 					break;
 
 				case EMantleEntityType::Group:
-					Actor = BuildGroup(World, Entity);
+					Actor = BuildGroup(World, Entity, S.Freeze.WorldOf(Entity.Id));
 					break;
 
 				case EMantleEntityType::PlayerStart:
@@ -1832,7 +1941,7 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 				case EMantleEntityType::InstancedMesh:
 					if (const FMantleInstancedMeshProps* Props = Entity.Props.TryGet<FMantleInstancedMeshProps>())
 					{
-						Actor = BuildInstancedMesh(World, Entity, *Props, Path, Result.Errors, LoadStats);
+						Actor = BuildInstancedMesh(World, Entity, *Props, Path, Result.Errors, LoadStats, S.Freeze.WorldOf(Entity.Id));
 					}
 					break;
 
@@ -1872,7 +1981,7 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 						if (!S.PendingTerrain.IsValid())
 						{
 							S.PendingTerrain = MakeShared<FPendingTerrain>();
-							if (!BeginTerrainEntity(World, Entity, *Props, Path, Result.Errors, LoadStats, *S.PendingTerrain, &S.TerrainSurfaces.Add(Entity.Id)))
+							if (!BeginTerrainEntity(World, Entity, *Props, Path, Result.Errors, LoadStats, *S.PendingTerrain, &S.TerrainSurfaces.Add(Entity.Id), S.Freeze.WorldOf(Entity.Id)))
 							{
 								S.PendingTerrain.Reset();
 								break;
@@ -1912,7 +2021,7 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 				case EMantleEntityType::Scatter:
 					if (const FMantleScatterParams* Props = Entity.Props.TryGet<FMantleScatterParams>())
 					{
-						Actor = BuildScatter(World, Entity, *Props, Path, Result.Errors);
+						Actor = BuildScatter(World, Entity, *Props, Path, Result.Errors, S.Freeze.WorldOf(Entity.Id));
 						if (Actor)
 						{
 							S.TerrainScatters.Add(Entity.Id);
@@ -2007,7 +2116,9 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 					return;
 				}
 
-				(*Child)->AttachToActor(*Parent, FAttachmentTransformRules::KeepRelativeTransform);
+				// Every entity stands where it ends already (Static or Movable): attaching keeps its world transform, and the Transforms pass sets the
+				// place's own relative transform, which is the same place.
+				(*Child)->AttachToActor(*Parent, FAttachmentTransformRules::KeepWorldTransform);
 			});
 			if (bPhaseDone)
 			{
@@ -2021,8 +2132,9 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 			{
 				const FMantleEntity& Entity = Place.Entities[i];
 				AActor* const* Actor = Result.Actors.Find(Entity.Id);
-				if (!Actor)
+				if (!Actor || S.Freeze.IsStatic(Entity.Id))
 				{
+					// An entity that ends Static was made at its world transform: a registered Static component refuses to move, and has no need to.
 					return;
 				}
 
@@ -2100,7 +2212,8 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 				AActor* const* Actor = MantlePhysicsOf(Entity) ? Result.Actors.Find(Entity.Id) : nullptr;
 				if (AMantlePhysicsProp* Prop = Actor ? Cast<AMantlePhysicsProp>(*Actor) : nullptr)
 				{
-					Prop->BeginSimulation();
+					// A place that streams its cells holds its props until the solid cells around them stand (a dedicated server merges every cell and has none to wait for).
+					Prop->BeginSimulation(Place.bCellsStreamed && World->GetNetMode() != NM_DedicatedServer);
 				}
 			});
 			if (bPhaseDone)
@@ -2150,134 +2263,20 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 			});
 			if (bPhaseDone)
 			{
-				S.Phase = EPhase::FreezePlan;
+				S.Phase = EPhase::Finish;
 			}
 			break;
-
-		case EPhase::FreezePlan:
-		{
-			// ACharacter sends corrections relative to a Movable floor. Place geometry deliberately
-			// does not replicate, so that movement base has no network identity on a client and the
-			// correction is rejected. The first real two-client run exposed the result: both pawns
-			// fell through their still-empty local worlds while every server correction named an
-			// unresolvable base. Unparented blocking meshes are immutable place geometry in schema v1,
-			// so freeze them only after their transform has been applied. Character movement then
-			// treats them as static bases and sends absolute corrections.
-			//
-			// A blocking mesh under a Group is the same place geometry (a Blueprint prefab's floor or
-			// walls) when nothing above it can move: every ancestor a Group that is not dynamic.
-			// Those Groups are frozen too, before anything under them, since a Static child cannot
-			// follow a Movable parent. A mesh under anything else (a dynamic Group, a light, another
-			// mesh) stays Movable, as every parented mesh did before.
-			//
-			// An entity marked "dynamic" opts out of this freeze even when it would otherwise
-			// qualify: a script needs a real Movable actor to move, and a Static one
-			// would silently refuse the transform exactly as the comment above describes. A dynamic
-			// entity under a frozen Group stays Movable, which UE allows.
-			//
-			// An InstancedMesh is the same place geometry many times over, so it follows the same
-			// rule: blocking, not dynamic and under nothing that can move means Static. So does a Terrain,
-			// which always blocks: its root and every chunk under it, the floor players stand on.
-			// A Scatter blocks nothing, but it is immovable scenery all the same: frozen by the same
-			// rule, its root and every instanced mesh under it, so its instances draw as static geometry.
-			//
-			// Working out which actors freeze is one pass over the entities (no engine calls), done in one step;
-			// the freezing itself, which is engine work, goes a unit at a time in the next two phases.
-			TMap<FString, const FMantleEntity*> EntityById;
-			EntityById.Reserve(Place.Entities.Num());
-			for (const FMantleEntity& Entity : Place.Entities)
-			{
-				EntityById.Add(Entity.Id, &Entity);
-			}
-
-			TSet<const FMantleEntity*> GroupSet;
-			for (const FMantleEntity& Entity : Place.Entities)
-			{
-				const bool bMesh = Entity.Type == EMantleEntityType::StaticMesh || Entity.Type == EMantleEntityType::InstancedMesh;
-				const bool bTerrain = Entity.Type == EMantleEntityType::Terrain;
-				const bool bScatter = Entity.Type == EMantleEntityType::Scatter;
-				const FMantleStaticMeshProps* Props = bMesh ? MantleMeshPropsOf(Entity) : nullptr;
-				const bool bBlocking = bTerrain || bScatter || (Props && Props->Collision == EMantleCollision::Blocking);
-				if (!bBlocking || Entity.bDynamic)
-				{
-					continue;
-				}
-
-				// Every ancestor, innermost first, as long as each is a Group that isn't dynamic. The
-				// parser refuses parent loops; the Contains check only keeps a bad place from hanging.
-				TArray<const FMantleEntity*> Ancestors;
-				bool bStaticChain = true;
-				for (FString ParentId = Entity.Parent; !ParentId.IsEmpty(); )
-				{
-					const FMantleEntity* const* Parent = EntityById.Find(ParentId);
-					if (!Parent || (*Parent)->Type != EMantleEntityType::Group || (*Parent)->bDynamic
-						|| *Parent == &Entity || Ancestors.Contains(*Parent))
-					{
-						bStaticChain = false;
-						break;
-					}
-					Ancestors.Add(*Parent);
-					ParentId = (*Parent)->Parent;
-				}
-				if (!bStaticChain)
-				{
-					continue;
-				}
-				S.MeshesToFreeze.Add(&Entity);
-				// Outermost first. A Group already listed keeps its place, so every Group comes after
-				// all of its own ancestors.
-				for (int32 Index = Ancestors.Num() - 1; Index >= 0; --Index)
-				{
-					if (!GroupSet.Contains(Ancestors[Index]))
-					{
-						GroupSet.Add(Ancestors[Index]);
-						S.GroupsToFreeze.Add(Ancestors[Index]);
-					}
-				}
-			}
-			S.Cursor = 0;
-			S.Phase = EPhase::FreezeGroups;
-			break;
-		}
-
-		case EPhase::FreezeGroups:
-		case EPhase::FreezeMeshes:
-		{
-			auto FreezeEntity = [&Result](const FMantleEntity* Entity)
-			{
-				AActor* const* Actor = Result.Actors.Find(Entity->Id);
-				if (Actor && (*Actor)->GetRootComponent())
-				{
-					(*Actor)->GetRootComponent()->SetMobility(EComponentMobility::Static);
-					// A Terrain's chunks are components under its root, each one place geometry; so
-					// are a Scatter's instanced meshes.
-					if (Entity->Type == EMantleEntityType::Terrain || Entity->Type == EMantleEntityType::Scatter)
-					{
-						TInlineComponentArray<USceneComponent*> Parts(*Actor);
-						for (USceneComponent* Part : Parts)
-						{
-							Part->SetMobility(EComponentMobility::Static);
-						}
-					}
-				}
-			};
-			const bool bGroups = S.Phase == EPhase::FreezeGroups;
-			const TArray<const FMantleEntity*>& List = bGroups ? S.GroupsToFreeze : S.MeshesToFreeze;
-			bPhaseDone = RunUnits(List.Num(), [&](const int32 i) { FreezeEntity(List[i]); });
-			if (bPhaseDone)
-			{
-				S.Phase = bGroups ? EPhase::FreezeMeshes : EPhase::Finish;
-				if (!bGroups)
-				{
-					S.GroupsToFreeze.Empty();
-					S.MeshesToFreeze.Empty();
-				}
-			}
-			break;
-		}
 
 		case EPhase::Finish:
 		{
+			// A slice of cell scenery added to a place that already stands: nothing place-wide to set up, no counts to log.
+			if (Options.bCellSlice)
+			{
+				Result.bSuccess = Result.Errors.Num() == 0;
+				S.Phase = EPhase::Done;
+				break;
+			}
+
 			// World gravity. settings.gravity is a downward magnitude in cm/s^2 (980 is Earth), so
 			// the engine's gravity Z is its negative. Every net mode sets it: the server and each client
 			// both build the place, and character movement and physics read it on whichever side
@@ -2340,8 +2339,8 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 			break;
 		}
 
-		// The two phases that are one step each (not a unit at a time).
-		if ((PhaseAtStart == EPhase::FreezePlan || PhaseAtStart == EPhase::Finish) && FPlatformTime::Seconds() - PhaseStartSeconds >= FState::SlowUnitSeconds)
+		// The phase that is one step (not a unit at a time).
+		if (PhaseAtStart == EPhase::Finish && FPlatformTime::Seconds() - PhaseStartSeconds >= FState::SlowUnitSeconds)
 		{
 			UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_BUILD_SLOW place=%s phase=%s unit=0 entity=- type=- ms=%.1f"),
 				*Place.PlaceId, FState::PhaseName(PhaseAtStart), (FPlatformTime::Seconds() - PhaseStartSeconds) * 1000.0);
@@ -2359,6 +2358,15 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 	if (S.Phase != EPhase::Done)
 	{
 		return false;
+	}
+
+	// A cell slice is one of many: the cell streamer counts and logs what it built itself.
+	if (Options.bCellSlice)
+	{
+		Result.LoadSeconds = LoadStats.Seconds;
+		Result.SpawnSeconds = LoadStats.SpawnSeconds;
+		Result.PropsSeconds = LoadStats.PropsSeconds;
+		return true;
 	}
 
 	UE_LOG(LogMantle, Log,

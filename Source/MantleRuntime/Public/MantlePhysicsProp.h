@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMeshActor.h"
+#include "MantleCollisionGate.h"
 #include "MantlePlaceTypes.h"
 #include "MantlePhysicsProp.generated.h"
 
@@ -189,8 +190,15 @@ public:
 	 * simulating when the place says so. It keeps the world transform its parents gave it (a Group's
 	 * location, rotation and scale, composed), but from then on it no longer follows them: a script
 	 * moving the Group leaves the prop where it is, anchored or not.
+	 *
+	 * bWaitForGround: the place streams its cells (a standalone game builds the root first and its solid cells after, to the join): the prop stays where it stands, not
+	 * simulating, until the solid cells around it stand (or until the place is complete and nothing streams for it), and then starts. Without that it simulates over
+	 * ground that is not there yet and falls out of the world before the join.
 	 */
-	void BeginSimulation();
+	void BeginSimulation(bool bWaitForGround = false);
+	bool IsWaitingForGround() const { return bWaitingForGround; }
+	/** Asks the ground wait once (the tick does, every frame, while the prop waits). Public for tests. */
+	void UpdateGroundWait();
 
 	/**
 	 * Client: takes Placeholder's mesh, materials, shadow, collision, visibility, scale and attached
@@ -238,6 +246,10 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	/** A client's copy asks the collision gate each tick (it ticks on a client only, once adopted). */
+	virtual void Tick(float DeltaSeconds) override;
+	/** A client's copy whose gate is closed stays off and at the server's pose after each movement update. */
+	virtual void OnRep_ReplicatedMovement() override;
 	virtual void NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved,
 		FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit) override;
 	//~ End AActor
@@ -273,6 +285,23 @@ private:
 	FMantlePhysicsProps Physics;
 	EMantlePhysicsBodySource BodySource = EMantlePhysicsBodySource::Mesh;
 	bool bAdopted = false;
+	/** BeginSimulation(true): holding still until the solid cells around the prop stand (UpdateGroundWait). */
+	bool bWaitingForGround = false;
+
+	/**
+	 * The collision gate (FMantleCollisionGate): a client's copy simulates only while the solid cells under it are built here. A prop is relevant across the whole
+	 * map, so its ground is the one most often not there. While closed the copy is not simulated and stands where the server's replicated movement puts it; when the
+	 * ground stands again it takes the server's simulate and sleep state, as adopting its placeholder did.
+	 */
+	FMantleCollisionGate CollisionGate;
+public:
+	/** Asks the gate once and applies what it says (the tick does, every frame). Public for tests. */
+	void UpdateCollisionGate();
+	bool IsCollisionGateClosed() const { return CollisionGate.IsClosed(); }
+	/** For tests: the prop is a client's adopted copy (what AdoptPlaceholder sets). */
+	void MarkAdoptedForTest() { bAdopted = true; }
+private:
+	void FollowServerPose();
 	bool bHitEventsEnabled = false;
 	bool bGrabbable = true;
 	FDelegateHandle PlaceRetainedHandle;

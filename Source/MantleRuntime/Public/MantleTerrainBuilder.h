@@ -218,9 +218,14 @@ public:
 class MANTLERUNTIME_API FMantleTerrainSpawn
 {
 public:
-	/** Null, with the reason in OutError, when the world or the heightfield cannot take a terrain. */
+	/**
+	 * Null, with the reason in OutError, when the world or the heightfield cannot take a terrain. StaticWorld, when given, is where the terrain stands and ends
+	 * (Static): its root is made there, Static, before it registers, and so is every chunk, so each chunk's collision is made once, static, in place. Without
+	 * it the terrain is Movable: at MovableWorld when given (where it ends: the place builder gives it so no body is parked at the origin), or at the origin for a
+	 * caller that places it itself.
+	 */
 	static TSharedPtr<FMantleTerrainSpawn> Begin(UWorld* World, const FString& Name, const FMantleHeightfield& Field, UMaterialInterface* Material,
-		bool bCastShadow, const FMantleTerrainBuildParams& Params, FString* OutError = nullptr);
+		bool bCastShadow, const FMantleTerrainBuildParams& Params, FString* OutError = nullptr, const FTransform* StaticWorld = nullptr, const FTransform* MovableWorld = nullptr);
 
 	~FMantleTerrainSpawn();
 
@@ -243,6 +248,8 @@ private:
 	const FMantleHeightfield* Field = nullptr;
 	FMantleTerrainBuildParams Params;
 	bool bCastShadow = true;
+	/** The terrain was made Static, in place: its chunks are too. */
+	bool bStatic = false;
 	int32 ChunksX = 0;
 	int32 ChunksY = 0;
 	/** The next chunk, in the order BuildChunks takes them: X fastest. */
