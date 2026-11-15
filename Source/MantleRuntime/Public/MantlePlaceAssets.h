@@ -5,6 +5,7 @@
 #include "Containers/Ticker.h"
 #include "MantleApiClient.h"
 #include "MantleAssetStore.h"
+#include "MantleCellAssetUse.h"
 #include "MantleHeightfieldReader.h"
 #include "MantlePlaceMaterial.h"
 #include "MantlePlaceTypes.h"
@@ -338,6 +339,72 @@ public:
 	 */
 	static TSharedPtr<FMantlePlaceAssets> PrepareManifestOnlyForThisProcess(const FMantlePlace& Place);
 
+	/**
+	 * Prepare for a place that streams its cells (stage 2 of large places): the root's own assets as Prepare does, and the set then stays alive and pumping
+	 * so that the cells' meshes and materials are added when a cell is wanted (AcquireEntityAssets) and taken away when no cell wants them (ReleaseEntityAssets).
+	 * Root is the place as built (its manifest is the asset list of every cell too). Nothing else about the set changes: OnDone fires when the root's assets have.
+	 */
+	static TSharedRef<FMantlePlaceAssets> PrepareStreaming(const FMantlePlace& Root, const FMantlePlaceAssetSettings& Settings, FMantlePlaceAssetsDone OnDone);
+
+	/** This set was made by PrepareStreaming. */
+	bool IsStreaming() const { return bStreaming; }
+
+	/**
+	 * Holder (a cell of one streamer) wants the uploaded meshes and materials Entities use (FMantleCellAssetUse::NeedsOf). Each id is resolved, fetched, decoded and built
+	 * once however many holders want it, with the mesh's Nanite and Lumen data and a material's textures, exactly as the root's are. A holder that holds something already
+	 * is given it back first. Streaming sets only.
+	 */
+	void AcquireEntityAssets(int64 Holder, const TArray<FMantleEntity>& Entities);
+
+	/** What a holder's assets have come to: ids that are not built yet (and not failed), and ids that failed (the reasons are logged by the set once). Settled when nothing is pending. */
+	struct FHolderAssets
+	{
+		TArray<FString> PendingIds;
+		TArray<FString> FailedIds;
+		bool IsSettled() const { return PendingIds.IsEmpty(); }
+	};
+	FHolderAssets GetHolderAssets(int64 Holder) const;
+
+	/** Holder gives its assets back: an id nobody else wants is dropped from the set (its object, its Nanite and Lumen data, its textures), as soon as its build is not in flight. */
+	void ReleaseEntityAssets(int64 Holder);
+
+	/** What a streaming set holds now: records and built objects by kind (ids no cell wants any more but whose release is waiting on a build in flight count until it is done), and the ids wanted. */
+	struct FStreamedCounts
+	{
+		int32 Meshes = 0;
+		int32 Materials = 0;
+		int32 Textures = 0;
+		int32 NaniteFiles = 0;
+		int32 WantedMeshes = 0;
+		int32 WantedMaterials = 0;
+		int32 Holders = 0;
+		int32 DropsWaiting = 0;
+		/** Distinct uploaded ids this set has taken for cells since it started, and how many it has let go. */
+		int64 Acquired = 0;
+		int64 Dropped = 0;
+		/** Pump calls since the set began streaming, the time they took (seconds) and the longest one. */
+		int64 Pumps = 0;
+		double PumpSeconds = 0.0;
+		double WorstPumpSeconds = 0.0;
+		/** Nanite files read since the start (a mesh built again reads its file again). */
+		int32 NaniteFilesBuilt = 0;
+		/** Mesh builds that had a Nanite record whose file was not there when the mesh was built (and had not failed): meshes drawn without their Nanite data. */
+		int32 NaniteFileMisses = 0;
+		/** Nanite records whose file is still being fetched or read, and mesh records whose build with collision is still being made. */
+		int32 NaniteInFlight = 0;
+		int32 UpgradesInFlight = 0;
+	};
+
+	/**
+	 * Streaming sets: how long a Pump may spend building (seconds, at least one build is always made). The cell streamer sets it every tick so that asset builds and cell
+	 * pieces share one budget; until it does, and for any set that is not streaming, Settings.BuildSliceMs.
+	 */
+	void SetStreamBuildSlice(double Seconds) { StreamSliceSeconds = Seconds; }
+	FStreamedCounts GetStreamedCounts() const;
+
+	/** One line a record of a mesh, side file or texture: what the set holds and why (for the tests and for finding a leak). */
+	FString DescribeStreamedRecords() const;
+
 	/** The API resolver: the server route on a dedicated server (bServer), else the batch route with a per-id fallback. */
 	static TSharedRef<IMantleAssetResolver> CreateApiResolver(bool bServer);
 
@@ -645,6 +712,21 @@ private:
 		/** Re-resolved after a 403/404 download (an expired URL). */
 		bool bReresolved = false;
 
+		/** Streaming sets: made after the set completed, for a cell (or for what a cell's asset names), so it may be dropped when nothing wants it. The root's records never are. */
+		bool bStreamed = false;
+
+		/** Streaming sets, meshes: a user that collides arrived after the mesh was resolved without collision; the mesh is built again with it once its build is not in flight. */
+		bool bUpgradeToCollision = false;
+
+		/**
+		 * Streaming sets, meshes: the build with collision that is being made while the record still answers with the first one (cells already built from it, and cells that have their
+		 * assets and are waiting to be built, find their mesh all the while). The record points to it once it is built.
+		 */
+		TOptional<FBuildKey> UpgradeBuild;
+
+		/** The build with collision failed: the first build stays, and a user that needs collision is told the mesh failed. */
+		bool bUpgradeFailed = false;
+
 		/** Set when the record itself failed (unknown id, wrong kind, not approved); else the build decides. */
 		FString Error;
 		bool bFailed = false;
@@ -681,6 +763,75 @@ private:
 	 * engine (FMantleMeshLumenFile::EngineTag), and MeshLumen for ApplyResolved. One baked by another engine is "not present".
 	 */
 	void AddLumenRecords(const FMantlePlace& Place);
+
+	/** AddLumenRecords and AddNaniteRecords for the named meshes, from a manifest by id (a streaming set adds a cell's meshes one cell at a time). */
+	void AddLumenRecordsFor(const TMap<FString, const FMantleAssetRef*>& ById, const TArray<FString>& MeshIds);
+	void AddNaniteRecordsFor(const TMap<FString, const FMantleAssetRef*>& ById, const TArray<FString>& MeshIds);
+
+	// ---- Streaming (PrepareStreaming) ----
+
+	/** The wanted meshes and materials: who uses what. Streaming sets only. */
+	FMantleCellAssetUse CellUse;
+
+	/** The root's asset list, kept so that a cell's meshes can find their Lumen and Nanite entries; by id. */
+	TArray<FMantleAssetRef> StreamManifest;
+	TMap<FString, const FMantleAssetRef*> StreamManifestById;
+
+	bool bStreaming = false;
+
+	/** Records (by key) that nobody wants any more and that are waiting for a build in flight to settle before they are dropped. */
+	TSet<FString> PendingDrops;
+
+	int64 StreamAcquired = 0;
+	int64 StreamDropped = 0;
+	int64 StreamPumps = 0;
+	double StreamPumpSeconds = 0.0;
+	double StreamWorstPumpSeconds = 0.0;
+	int32 NaniteFilesBuiltCount = 0;
+	int32 NaniteFileMisses = 0;
+	double StreamSliceSeconds = -1.0;
+
+	/** Meshes (by id) that some cell has needed with collision: a mesh made again is made with it, so it is built again at most once. */
+	TSet<FString> MeshesNeedingCollision;
+
+	/** Records (by key) a drop of which is forced past "another build names it": a mesh's own Nanite and Lumen records when the mesh is built again. */
+	TSet<FString> ForcedDrops;
+
+	/** The texture records (keys) started for each material id from its answer from the API, so that a material whose build failed before its document was read still lets them go. */
+	TMap<FString, TArray<FString>> MaterialTextureKeys;
+
+	/** Mesh records whose collision upgrade waits on a build in flight (by record key). */
+	TSet<FString> PendingUpgrades;
+
+	/** The holders a script's demand for an asset no cell has loaded (a spawn of a mesh the manifest lists) uses, one each, counting down from -2: never released while the place stands. */
+	int64 NextScriptHolder = -2;
+
+	/** Takes the needs (already counted by CellUse) as records: a mesh or material not here is made; a mesh without collision here that now needs it is upgraded. */
+	void StartRecordsFor(const TArray<FMantleCellAssetNeed>& Needs);
+
+	/** Drops the record of a mesh or material nobody wants, with what hangs on it. False when a build is in flight: it is tried again at the next Pump. */
+	bool DropRecord(const FString& Key);
+
+	/** Frees a build that no record uses any more (its pin, its request, its queue entries and its object). */
+	void EraseBuild(const FBuildKey& Key);
+
+	/** A texture or side-file record that only a dropped record named: dropped with it unless another build names it (a root's record only when bForce). */
+	void DropDependentRecord(const FString& Key, bool bForce);
+
+	/** Another build, or a mesh's side-file entry, names this record. */
+	bool IsRecordNamed(const FString& Key) const;
+
+	/** The records waiting on a build in flight (drops and collision upgrades), tried again. */
+	void ProcessStreamedRecords();
+
+	/** A mesh record built without collision now needs it: the build with collision is started beside the first (its side-file records are made again). False when a build is in flight. */
+	bool UpgradeToCollision(FRecord& Record);
+
+	/** The record's build with collision has settled: the record points to it and the first build goes, or, if it failed, the first stays and the upgrade is marked failed. False while it is in flight. */
+	bool FinishUpgrade(FRecord& Record);
+
+	/** The answer of a streaming set for an id no live set has, when the root's manifest lists it: starts it for a script (and says Loading), or NotPrepared. */
+	EMantleLiveAssetState OnDemandStateOf(const FString& Id, EAssetKind Kind);
 
 	/** #149: a mesh id to its Lumen side file's record key and the mesh's upload hash the file must name. */
 	TMap<FString, TPair<FString, FString>> MeshLumen;

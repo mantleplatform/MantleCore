@@ -1797,6 +1797,12 @@ struct FMantlePlace
 
 	/** Not in the place file: set once FMantlePlaceCells::Merge has added the cells' entities, so the place is never completed twice. */
 	bool bCellsMerged = false;
+
+	/**
+	 * Not in the place file: set when the place's cells are built by the cell streamer around the player instead of being merged into Entities (a player's machine,
+	 * stage 2). Entities then holds the root alone. The place is complete as far as FMantleCellLoader is concerned.
+	 */
+	bool bCellsStreamed = false;
 };
 
 /** A single validation failure, located by a JSON-pointer-style path. */

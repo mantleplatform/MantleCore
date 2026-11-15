@@ -77,6 +77,35 @@ TSharedRef<FMantleCellLoader> FMantleCellLoader::Load(const FMantlePlace& Root, 
 	return Loader;
 }
 
+TSharedRef<FMantleCellLoader> FMantleCellLoader::Open(const FMantlePlace& Root, const FMantleCellLoaderSettings& Settings, FMantleCellIndexReady OnIndex, const FMantleCellIndex* KnownIndex)
+{
+	check(IsInGameThread());
+	TSharedRef<FMantleCellLoader> Loader = MakeShareable(new FMantleCellLoader(Settings, FMantleCellsDone()));
+	Loader->bStream = true;
+	Loader->OnIndexReady = MoveTemp(OnIndex);
+	Loader->Start(Root);
+	if (KnownIndex && !Loader->bFailed)
+	{
+		// As good as read: the index file is not fetched, and its cells' files are known at once.
+		Loader->Files[0].State = EFileState::Ready;
+		Loader->OnIndexRead(FMantleCellIndex(*KnownIndex));
+	}
+	if (Loader->Settings.bAutoPump)
+	{
+		const TWeakPtr<FMantleCellLoader> Weak = Loader;
+		Loader->TickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Weak](float)
+		{
+			if (const TSharedPtr<FMantleCellLoader> Pinned = Weak.Pin())
+			{
+				Pinned->Pump();
+				return !Pinned->bFinished;
+			}
+			return false;
+		}));
+	}
+	return Loader;
+}
+
 void FMantleCellLoader::Start(const FMantlePlace& Root)
 {
 	StartSeconds = FPlatformTime::Seconds();
@@ -97,6 +126,7 @@ void FMantleCellLoader::Start(const FMantlePlace& Root)
 	IndexFile.Id = Root.CellIndexId;
 	IndexFile.ExpectedBytes = Entry->Bytes;
 	FileByIdMap.Add(IndexFile.Id, 0);
+	FileOrder.Add(0);
 }
 
 // ---- Pump ---------------------------------------------------------------------------------------------
@@ -129,9 +159,18 @@ void FMantleCellLoader::Pump()
 		FlushResolves();
 		StartFetches();
 		StartDecodes();
-		CheckComplete();
+		if (!bStream)
+		{
+			CheckComplete();
+		}
 	}
-	if (bFailed || bComplete)
+	if (bStream && bIndexReadyPending && !bFailed)
+	{
+		bIndexReadyPending = false;
+		OnIndexReady.ExecuteIfBound();
+	}
+	// A stream never completes: it ends when it is dropped or its index cannot be read.
+	if (bFailed || (!bStream && bComplete))
 	{
 		Finish();
 	}
@@ -214,6 +253,12 @@ FString FMantleCellLoader::Describe(const FFile& File) const
 
 void FMantleCellLoader::FailFile(const FFile& File, const FString& Message)
 {
+	if (bStream && !File.IsIndex())
+	{
+		// One cell file that cannot be had loses its cell, not the place: the streamer builds the rest and the hold does not wait for it.
+		FailCell(File.CellIndex, File, Message);
+		return;
+	}
 	Fail(File.IsIndex() ? FString(TEXT("/cells/index")) : FString::Printf(TEXT("cell %s"), *Index.Cells[File.CellIndex].KeyString()),
 		FString::Printf(TEXT("%s %s"), *Describe(File), *Message));
 }
@@ -226,8 +271,9 @@ void FMantleCellLoader::FlushResolves()
 	while (ResolvesInFlight < Settings.MaxConcurrentResolves)
 	{
 		TArray<FString> Ids;
-		for (const FFile& File : Files)
+		for (const int32 FileIndex : FileOrder)
 		{
+			const FFile& File = Files[FileIndex];
 			if (File.State != EFileState::Waiting || File.NextResolveAt > Now)
 			{
 				continue;
@@ -339,6 +385,7 @@ void FMantleCellLoader::ApplyResolved(FFile& File, const FMantleUploadedAsset& A
 	File.Ref.Hash = Hash;
 	File.Ref.Url = Asset.Url;
 	File.Ref.Bytes = FMath::Max<int64>(Asset.CookedBytes, 0);
+	File.ResolvedAt = FPlatformTime::Seconds();
 	File.State = EFileState::Resolved;
 }
 
@@ -346,33 +393,46 @@ void FMantleCellLoader::ApplyResolved(FFile& File, const FMantleUploadedAsset& A
 
 void FMantleCellLoader::StartFetches()
 {
-	for (int32 FileIndex = 0; FileIndex < Files.Num() && FetchesInFlight < Settings.MaxOutstandingFetches && PendingBytes < Settings.MaxPendingBytes; ++FileIndex)
+	const double Now = FPlatformTime::Seconds();
+	for (int32 OrderIndex = 0; OrderIndex < FileOrder.Num() && FetchesInFlight < Settings.MaxOutstandingFetches && PendingBytes < Settings.MaxPendingBytes; ++OrderIndex)
 	{
+		const int32 FileIndex = FileOrder[OrderIndex];
 		FFile& File = Files[FileIndex];
 		if (File.State != EFileState::Resolved)
 		{
 			continue;
 		}
+		// A signed URL does not last: a file that waited a long while for its turn is resolved again first.
+		if (bStream && Now - File.ResolvedAt > UrlLifetimeSeconds)
+		{
+			File.State = EFileState::Waiting;
+			File.NextResolveAt = 0.0;
+			continue;
+		}
 		File.State = EFileState::Fetching;
 		++FetchesInFlight;
+		const uint32 Serial = ++File.FetchSerial;
 		const TSharedRef<FCompletionQueue, ESPMode::ThreadSafe> Queue = Completions;
 		File.RequestId = Store->Request(File.Ref, EMantleAssetLoad::Bytes, FMantleAssetDone::CreateLambda(
-			[Queue, FileIndex](const FMantleAssetResult& Fetched)
+			[Queue, FileIndex, Serial](const FMantleAssetResult& Fetched)
 			{
-				Queue->Push([FileIndex, Fetched](FMantleCellLoader& Self) { Self.OnFetched(FileIndex, Fetched); });
+				Queue->Push([FileIndex, Serial, Fetched](FMantleCellLoader& Self) { Self.OnFetched(FileIndex, Serial, Fetched); });
 			}));
 	}
 }
 
-void FMantleCellLoader::OnFetched(const int32 FileIndex, const FMantleAssetResult& Fetched)
+void FMantleCellLoader::OnFetched(const int32 FileIndex, const uint32 FetchSerial, const FMantleAssetResult& Fetched)
 {
-	--FetchesInFlight;
 	FFile& File = Files[FileIndex];
-	if (File.State != EFileState::Fetching)
+	if (File.State != EFileState::Fetching || File.FetchSerial != FetchSerial)
 	{
+		// The request was cancelled by DropFile, which took it off the count already (and the file may be fetching again, under a newer serial): this answer is not for it.
 		return;
 	}
+	--FetchesInFlight;
 	File.RequestId = 0;
+	// Off the count and no longer fetching: a failure below drops the cell's files (DropFile), and must not take this one off the count again.
+	File.State = EFileState::Resolved;
 	if (!Fetched.bSuccess)
 	{
 		// A 403 or 404 from the CDN usually means the signed URL expired: resolve once more for a fresh one.
@@ -485,6 +545,12 @@ void FMantleCellLoader::OnDecoded(const int32 FileIndex, FDecoded& Decoded)
 		FailFile(File, FString::Printf(TEXT("could not be read: %s"), *Decoded.Error));
 		return;
 	}
+	if (bStream && !File.IsIndex() && !CellStreams[File.CellIndex].bWanted)
+	{
+		// Nobody wants this cell any more (it was dropped while its file was being read): the read is thrown away, the URL is still good.
+		File.State = EFileState::Resolved;
+		return;
+	}
 	File.State = EFileState::Ready;
 	if (File.IsIndex())
 	{
@@ -493,12 +559,14 @@ void FMantleCellLoader::OnDecoded(const int32 FileIndex, FDecoded& Decoded)
 	}
 	File.Content = MoveTemp(Decoded.Content);
 	++FilesReady;
+	++FilesReadTotal;
 }
 
 void FMantleCellLoader::OnIndexRead(FMantleCellIndex&& InIndex)
 {
 	Index = MoveTemp(InIndex);
 	bIndexRead = true;
+	bIndexReadyPending = bStream;
 	int32 FileCount = 0;
 	for (const FMantleCellInfo& Cell : Index.Cells)
 	{
@@ -521,6 +589,19 @@ void FMantleCellLoader::OnIndexRead(FMantleCellIndex&& InIndex)
 			File.CellIndex = CellIndex;
 			File.ExpectedBytes = Ref.Bytes;
 		}
+	}
+	if (bStream)
+	{
+		// Files are read only for the cells SetWanted names.
+		BuildCellStreams();
+		FileOrder.Reset();
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_CELLS index (streamed): %d cells in %d level(s), %d files, read when their cell is wanted"), Index.Cells.Num(), Index.Levels.Num(), FileCount);
+		return;
+	}
+	FileOrder.Reset();
+	for (int32 FileIndex = 0; FileIndex < Files.Num(); ++FileIndex)
+	{
+		FileOrder.Add(FileIndex);
 	}
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_CELLS index: %d cells in %d level(s), %d files to fetch"), Index.Cells.Num(), Index.Levels.Num(), FileCount);
 }
@@ -550,4 +631,184 @@ void FMantleCellLoader::CheckComplete()
 		File.Content = FMantleCellContent();
 	}
 	bComplete = true;
+}
+
+// ---- Stream mode --------------------------------------------------------------------------------------
+
+void FMantleCellLoader::BuildCellStreams()
+{
+	CellStreams.Reset();
+	CellStreams.SetNum(Index.Cells.Num());
+	// The files follow the index file in the index's order, so a cell's files are consecutive.
+	for (int32 FileIndex = 1; FileIndex < Files.Num(); ++FileIndex)
+	{
+		FCellStream& Stream = CellStreams[Files[FileIndex].CellIndex];
+		if (Stream.FileCount == 0)
+		{
+			Stream.FirstFile = FileIndex;
+		}
+		++Stream.FileCount;
+	}
+}
+
+void FMantleCellLoader::RebuildFileOrder()
+{
+	FileOrder.Reset();
+	if (Files.IsEmpty())
+	{
+		return;
+	}
+	if (Files[0].State != EFileState::Ready)
+	{
+		FileOrder.Add(0);
+	}
+	for (const int32 CellIndex : WantedCells)
+	{
+		const FCellStream& Stream = CellStreams[CellIndex];
+		for (int32 FileIndex = Stream.FirstFile; FileIndex < Stream.FirstFile + Stream.FileCount; ++FileIndex)
+		{
+			FileOrder.Add(FileIndex);
+		}
+	}
+}
+
+void FMantleCellLoader::DropFile(FFile& File)
+{
+	switch (File.State)
+	{
+	case EFileState::Fetching:
+		// Cancelled before it can report: nothing answers for it, so the count is taken off here.
+		if (File.RequestId != 0)
+		{
+			Store->Cancel(File.RequestId);
+			File.RequestId = 0;
+		}
+		--FetchesInFlight;
+		File.State = EFileState::Resolved;
+		break;
+	case EFileState::Fetched:
+		DecodeQueue.RemoveSingle(static_cast<int32>(&File - Files.GetData()));
+		PendingBytes -= File.HeldBytes;
+		File.HeldBytes = 0;
+		File.Bytes.Reset();
+		File.State = EFileState::Resolved;
+		break;
+	case EFileState::Ready:
+		File.Content = FMantleCellContent();
+		--FilesReady;
+		File.State = EFileState::Resolved;
+		break;
+	default:
+		// Waiting and resolved files cost nothing; one being resolved or read finishes and is dealt with when it arrives (a read for a cell nobody
+		// wants is thrown away by OnDecoded).
+		break;
+	}
+}
+
+void FMantleCellLoader::SetWanted(const TConstArrayView<int32> CellsMostUrgentFirst)
+{
+	check(bStream);
+	if (!bIndexRead)
+	{
+		return;
+	}
+	TSet<int32> Now;
+	Now.Reserve(CellsMostUrgentFirst.Num());
+	for (const int32 CellIndex : CellsMostUrgentFirst)
+	{
+		if (CellStreams.IsValidIndex(CellIndex) && !CellStreams[CellIndex].bFailed)
+		{
+			Now.Add(CellIndex);
+		}
+	}
+	for (const int32 CellIndex : WantedCells)
+	{
+		if (Now.Contains(CellIndex))
+		{
+			continue;
+		}
+		FCellStream& Stream = CellStreams[CellIndex];
+		Stream.bWanted = false;
+		for (int32 FileIndex = Stream.FirstFile; FileIndex < Stream.FirstFile + Stream.FileCount; ++FileIndex)
+		{
+			DropFile(Files[FileIndex]);
+		}
+	}
+	WantedCells.Reset();
+	for (const int32 CellIndex : CellsMostUrgentFirst)
+	{
+		if (Now.Contains(CellIndex))
+		{
+			CellStreams[CellIndex].bWanted = true;
+			WantedCells.Add(CellIndex);
+			Now.Remove(CellIndex);
+		}
+	}
+	RebuildFileOrder();
+}
+
+bool FMantleCellLoader::IsCellReady(const int32 CellIndex) const
+{
+	if (!CellStreams.IsValidIndex(CellIndex) || CellStreams[CellIndex].bFailed)
+	{
+		return false;
+	}
+	const FCellStream& Stream = CellStreams[CellIndex];
+	for (int32 FileIndex = Stream.FirstFile; FileIndex < Stream.FirstFile + Stream.FileCount; ++FileIndex)
+	{
+		if (Files[FileIndex].State != EFileState::Ready)
+		{
+			return false;
+		}
+	}
+	return Stream.FileCount > 0;
+}
+
+bool FMantleCellLoader::TakeCell(const int32 CellIndex, FMantleCellContent& OutContent)
+{
+	check(bStream);
+	if (!IsCellReady(CellIndex))
+	{
+		return false;
+	}
+	FCellStream& Stream = CellStreams[CellIndex];
+	OutContent = FMantleCellContent();
+	OutContent.CellIndex = CellIndex;
+	for (int32 FileIndex = Stream.FirstFile; FileIndex < Stream.FirstFile + Stream.FileCount; ++FileIndex)
+	{
+		FFile& File = Files[FileIndex];
+		OutContent.Entities.Append(MoveTemp(File.Content.Entities));
+		OutContent.Instances += File.Content.Instances;
+		OutContent.Solid += File.Content.Solid;
+		File.Content = FMantleCellContent();
+		File.State = EFileState::Resolved;
+		--FilesReady;
+	}
+	Stream.bWanted = false;
+	WantedCells.RemoveSingle(CellIndex);
+	RebuildFileOrder();
+	return true;
+}
+
+void FMantleCellLoader::FailCell(const int32 CellIndex, const FFile& Failing, const FString& Message)
+{
+	FCellStream& Stream = CellStreams[CellIndex];
+	if (Stream.bFailed)
+	{
+		return;
+	}
+	const FString Line = FString::Printf(TEXT("%s %s"), *Describe(Failing), *Message);
+	UE_LOG(LogMantle, Error, TEXT("MANTLE_PLACE_CELLS FAIL cell %s: %s"), *Index.Cells[CellIndex].KeyString(), *Line);
+	Result.Errors.Add(FMantleParseError{ FString::Printf(TEXT("cell %s"), *Index.Cells[CellIndex].KeyString()), Line });
+	Stream.bFailed = true;
+	Stream.bWanted = false;
+	WantedCells.RemoveSingle(CellIndex);
+	for (int32 FileIndex = Stream.FirstFile; FileIndex < Stream.FirstFile + Stream.FileCount; ++FileIndex)
+	{
+		FFile& File = Files[FileIndex];
+		DropFile(File);
+		// A file still being resolved or read has an answer coming that will find it failed and do nothing.
+		File.State = EFileState::Failed;
+	}
+	RebuildFileOrder();
 }

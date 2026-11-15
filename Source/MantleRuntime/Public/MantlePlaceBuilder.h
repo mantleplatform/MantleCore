@@ -51,6 +51,14 @@ struct FMantleBuildResult
 	/** Non-fatal problems — an entity that could not be built is reported, not skipped silently. */
 	TArray<FMantleParseError> Errors;
 
+	/**
+	 * Where the game-thread time of a StaticMesh or InstancedMesh went, seconds, summed over the build (the cell streamer names them when one piece is slow):
+	 * in asset-library loads, in spawning the actor, and in applying the mesh props (collision, materials: the physics body is made there).
+	 */
+	double LoadSeconds = 0.0;
+	double SpawnSeconds = 0.0;
+	double PropsSeconds = 0.0;
+
 	FString ErrorSummary() const
 	{
 		TArray<FString> Lines;
@@ -85,6 +93,14 @@ struct FMantleBuildOptions
 	 * preview and the importer's tests both build into Game worlds), so the caller says so.
 	 */
 	bool bRuntimeEnvironment = true;
+
+	/**
+	 * The build adds a few entities to a place that already stands (the cell streamer builds a cell's scenery this way, one
+	 * slice at a time): it does none of the place-wide setup (world gravity, environment, reflection probe notice) and logs
+	 * none of the per-build lines, which would otherwise be written and repeated for every slice. The entities must have no
+	 * parent and nothing that names them (the cell format guarantees both).
+	 */
+	bool bCellSlice = false;
 };
 
 /**

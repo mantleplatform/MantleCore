@@ -656,7 +656,7 @@ UMaterialInterface* FMantleTerrainBuilder::BuildMaterial(const FMantleHeightfiel
 }
 
 TSharedPtr<FMantleTerrainSpawn> FMantleTerrainSpawn::Begin(UWorld* World, const FString& Name, const FMantleHeightfield& Field,
-	UMaterialInterface* Material, const bool bCastShadow, const FMantleTerrainBuildParams& Params, FString* OutError)
+	UMaterialInterface* Material, const bool bCastShadow, const FMantleTerrainBuildParams& Params, FString* OutError, const FTransform* StaticWorld, const FTransform* MovableWorld)
 {
 	using namespace MantleTerrainBuilderPrivate;
 
@@ -692,12 +692,25 @@ TSharedPtr<FMantleTerrainSpawn> FMantleTerrainSpawn::Begin(UWorld* World, const 
 #endif
 	Actor->Tags.Add(FName(FMantleTerrainBuilder::TerrainActorTag));
 
-	// Movable while the place builder places it, like every other entity; it freezes the terrain to
-	// Static afterwards.
+	// Where it ends, Static, when the caller knows (the place builder's freeze plan): the root stands in place before it registers, and each chunk is made
+	// Static under it, so no collision is ever made for a Movable terrain and moved. Otherwise Movable, at MovableWorld when the caller knows where it ends (so its chunks'
+	// collision is not made at the origin and moved), else at the origin for the caller to place.
 	USceneComponent* Root = NewObject<USceneComponent>(Actor, TEXT("Terrain"));
 	Actor->SetRootComponent(Root);
 	Actor->AddInstanceComponent(Root);
-	Root->SetMobility(EComponentMobility::Movable);
+	if (StaticWorld)
+	{
+		Root->SetMobility(EComponentMobility::Static);
+		Root->SetRelativeTransform(*StaticWorld);
+	}
+	else
+	{
+		Root->SetMobility(EComponentMobility::Movable);
+		if (MovableWorld)
+		{
+			Root->SetRelativeTransform(*MovableWorld);
+		}
+	}
 	Root->RegisterComponent();
 
 	TSharedPtr<FMantleTerrainSpawn> Spawn = MakeShareable(new FMantleTerrainSpawn());
@@ -708,6 +721,7 @@ TSharedPtr<FMantleTerrainSpawn> FMantleTerrainSpawn::Begin(UWorld* World, const 
 	Spawn->Params = Params;
 	Spawn->Params.Outer = Params.Outer ? Params.Outer : Actor;
 	Spawn->bCastShadow = bCastShadow;
+	Spawn->bStatic = StaticWorld != nullptr;
 	const int32 ChunkQuads = FMath::Max(Params.ChunkQuads, 1);
 	Spawn->ChunksX = FMantleTerrainBuilder::ChunkCount(Field.Width, ChunkQuads);
 	Spawn->ChunksY = FMantleTerrainBuilder::ChunkCount(Field.Height, ChunkQuads);
@@ -753,7 +767,7 @@ bool FMantleTerrainSpawn::Step()
 	{
 		UStaticMeshComponent* Component = NewObject<UStaticMeshComponent>(Built,
 			FName(*FString::Printf(TEXT("Chunk_%d_%d"), Chunk.FirstSample.X, Chunk.FirstSample.Y)));
-		Component->SetMobility(EComponentMobility::Movable);
+		Component->SetMobility(bStatic ? EComponentMobility::Static : EComponentMobility::Movable);
 		Component->SetupAttachment(RootComponent);
 		Component->SetRelativeLocation(FVector(Chunk.Origin));
 		Component->SetStaticMesh(Chunk.Mesh);

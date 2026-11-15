@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "MantleCellArea.h"
 #include "MantlePlaceTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 
@@ -48,6 +49,26 @@ struct MANTLERUNTIME_API FMantleReflectionProbes
 
 	/** A cubemap face count, which every capture renders. */
 	static constexpr int32 CubeFaces = 6;
+
+	/**
+	 * A place whose scenery streams in cells (stage 2 of large places) does not stand when its build ends: a probe waits for the cells around it. Every this many
+	 * frames the subsystem asks the streamer about each probe still waiting (and about each captured one, whether a neighbour has been built since); a probe is
+	 * captured when its answer has been "ready" on two asks in a row, so the last piece that stood has been in the scene for frames.
+	 */
+	static constexpr int32 ReadyCheckFrames = 15;
+
+	/**
+	 * How far from a probe the cells that make its picture lie, cm: a Box reaches as far as its largest half extent, a Sphere as far as its radius. The cells of
+	 * the index within it are the probe's surroundings (FMantleCellAreaQuery).
+	 */
+	static double ReachCm(const FMantleReflectionProbeProps& Props);
+
+	/**
+	 * A probe whose captures have seen the cells in Seen is captured again once its surroundings are ready (FMantleCellAreaState::ReadyToCapture) and a cell stands that
+	 * none of them saw (Now.BuiltCellIds, asked for): a neighbour that changes what it sees was built. A cell it saw that was taken down and has come back is no reason
+	 * (it is what the picture already holds), and neither is fewer standing.
+	 */
+	static bool WantsRecapture(const TSet<int32>& Seen, const FMantleCellAreaState& Now);
 
 	/** "Mantle.ReflectionProbes" is not 0 (an A/B switch for looking at a place with and without its probes). */
 	static bool IsEnabled();
@@ -160,10 +181,32 @@ public:
 	/** A built probe, to be captured after the next NotifyPlaceBuilt. */
 	void Register(AMantleReflectionProbe* Probe);
 
-	/** Probes registered and not yet captured. */
+	/** Probes registered and not yet captured (waiting for the build to end, or for the cells around them). */
 	int32 NumPending() const { return Pending.Num(); }
 
+	/** Probes that have a capture. */
+	int32 NumCaptured() const { return Live.Num(); }
+
 private:
+	/** A probe waiting for its first capture. */
+	struct FWaitingProbe
+	{
+		TWeakObjectPtr<AMantleReflectionProbe> Probe;
+		/** The last ask found its surroundings ready. */
+		bool bReadyBefore = false;
+		/** Said once in the log that it is waiting, and for what. */
+		bool bWaitingLogged = false;
+	};
+
+	/** A probe that has a capture, and the cells (by index) that stood around it in any of its captures. */
+	struct FLiveProbe
+	{
+		TWeakObjectPtr<AMantleReflectionProbe> Probe;
+		TSet<int32> SeenCells;
+		/** The last ask found it wanting a recapture (it is made on the second in a row). */
+		bool bWantedBefore = false;
+	};
+
 	enum class EPhase : uint8
 	{
 		Idle,
@@ -173,10 +216,22 @@ private:
 
 	void BeginWarmup();
 	void StartCapture();
-	void PumpOnce();
+	/** Every ReadyCheckFrames while nothing is being captured: waiting probes whose surroundings stand are captured, captured ones whose surroundings grew are captured again. */
+	void CheckAreas();
+	/** Queues every capture of Captures once and starts the pump. */
+	void BeginPumping();
+	void PumpOnce(float DeltaTime);
+	/** What the streamer says stands around Probe (or that this world builds no cells, which is ready). True when the probe's surroundings are ready to capture. */
+	bool AskArea(const AMantleReflectionProbe* Probe, FMantleCellAreaState& OutState) const;
 
-	TArray<TWeakObjectPtr<AMantleReflectionProbe>> Pending;
+	TArray<FWaitingProbe> Pending;
+	TArray<FLiveProbe> Live;
 	TArray<TWeakObjectPtr<UReflectionCaptureComponent>> Captures;
+	int32 FramesSinceCheck = 0;
+	/** The pump's cost on the frames it ran: the longest frame, and the sum of the frame times, for the log line that ends it. */
+	double PumpWorstFrameSeconds = 0.0;
+	double PumpSumFrameSeconds = 0.0;
+	double PumpGameSeconds = 0.0;
 	EPhase Phase = EPhase::Idle;
 	int32 WarmupLeft = 0;
 	int32 FramesLeft = 0;

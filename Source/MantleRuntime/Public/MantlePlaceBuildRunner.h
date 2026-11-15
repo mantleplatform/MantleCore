@@ -54,11 +54,6 @@ private:
 
 	bool Tick(float DeltaSeconds);
 
-	/** The world's physics steps are off while it builds (a build that found them off leaves them so). */
-	void PausePhysics(UWorld* InWorld);
-	void ResumePhysics();
-	bool bPhysicsPaused = false;
-
 	/** What the frames the build ran in cost, for the one MANTLE_PLACE_BUILD_FRAMES line a finished build logs. */
 	FString PlaceId;
 	double StartSeconds = 0.0;

@@ -668,6 +668,20 @@ FString MantlePreviewLaunch::ManifestPathFromCommandLine(const TCHAR* CommandLin
 	return Value.TrimStartAndEnd();
 }
 
+bool MantlePreviewLaunch::AllowsNetMode(const ENetMode NetMode)
+{
+	return NetMode == NM_Standalone || NetMode == NM_DedicatedServer || NetMode == NM_Client;
+}
+
+MantlePreviewLaunch::EClientPlaceSource MantlePreviewLaunch::ClientPlaceSource(const bool bPreview, const bool bJoinNamesPlaceAndRevision)
+{
+	if (bPreview)
+	{
+		return EClientPlaceSource::PreviewManifest;
+	}
+	return bJoinNamesPlaceAndRevision ? EClientPlaceSource::Backend : EClientPlaceSource::None;
+}
+
 bool MantlePreviewLaunch::IsBundleRelativePath(const FString& Path)
 {
 	if (Path.IsEmpty() || Path.Len() > 260 || Path.StartsWith(TEXT("/")))

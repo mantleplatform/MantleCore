@@ -450,6 +450,36 @@ bool FMantlePlaceCellsMergeTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("and changes nothing"), Place.Entities.Num(), 3);
 	}
 
+	// A place that streams its cells is built from its root alone, but its assets are prepared for the root and a copy of every cell's entities; nothing is changed in either.
+	{
+		const TArray<FMantleCellContent> Cells = Contents();
+		FMantlePlace ForAssets;
+		TArray<FMantleParseError> AssembleErrors;
+		TestTrue(TEXT("the cells assemble for their assets"), FMantlePlaceCells::AssembleForAssets(Root, Index, Cells, ForAssets, AssembleErrors));
+		TestEqual(TEXT("the root's entity and both cells'"), ForAssets.Entities.Num(), 3);
+		TestEqual(TEXT("in the same order as a merge"), ForAssets.Entities[2].Id, FString(TEXT("ent_ism_b")));
+		TestEqual(TEXT("the root is unchanged"), Root.Entities.Num(), 1);
+		TestEqual(TEXT("and so are the cells"), Cells[0].Entities.Num() + Cells[1].Entities.Num(), 2);
+		FMantlePlace Streamed = Root;
+		Streamed.bCellsStreamed = true;
+		TestFalse(TEXT("a place that streams its cells does not ask for them again"), FMantleCellLoader::NeedsCells(Streamed));
+		TArray<FMantleParseError> Refused;
+		TestFalse(TEXT("and is not assembled twice"), FMantlePlaceCells::AssembleForAssets(Streamed, Index, Cells, ForAssets, Refused));
+		TArray<FMantleParseError> NothingChanged;
+		TestTrue(TEXT("Validate says the same as Merge's checks"), FMantlePlaceCells::Validate(Root, Index, Cells, NothingChanged));
+
+		// A standalone game keeps a record of every cell entity without its list of instances.
+		TArray<FMantleEntity> Scenery;
+		FMantlePlaceCells::SceneryRecords(Cells, Scenery);
+		TestEqual(TEXT("both cells' entities"), Scenery.Num(), 2);
+		TestEqual(TEXT("in cell order"), Scenery[1].Id, FString(TEXT("ent_ism_b")));
+		const FMantleInstancedMeshProps* Emptied = Scenery[1].Props.TryGet<FMantleInstancedMeshProps>();
+		const FMantleInstancedMeshProps* Original = Cells[1].Entities[0].Props.TryGet<FMantleInstancedMeshProps>();
+		TestTrue(TEXT("the list is an InstancedMesh's"), Emptied && Original);
+		TestTrue(TEXT("its instances are emptied"), Emptied && Emptied->Instances.IsEmpty());
+		TestTrue(TEXT("and the cell's own are not touched"), Original && !Original->Instances.IsEmpty());
+	}
+
 	// An entity count that is not the index's.
 	{
 		FMantlePlace Place = Root;

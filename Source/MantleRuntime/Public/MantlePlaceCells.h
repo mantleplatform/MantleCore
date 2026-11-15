@@ -147,4 +147,19 @@ public:
 	 * the errors say which cell and which id. Contents are moved from.
 	 */
 	static bool Merge(FMantlePlace& Place, const FMantleCellIndex& Index, TArray<FMantleCellContent>& Contents, TArray<FMantleParseError>& OutErrors);
+
+	/** The checks Merge makes before it changes anything: each cell's counts against the index's, and one id space across the place and its cells. False with the errors. */
+	static bool Validate(const FMantlePlace& Place, const FMantleCellIndex& Index, const TArray<FMantleCellContent>& Contents, TArray<FMantleParseError>& OutErrors);
+
+	/**
+	 * A place that streams its cells (stage 2) is built from its root alone, but its assets are still prepared for every entity the cells hold (until assets
+	 * follow the cells too). OutPlace is Root followed by copies of every cell's entities, after the same checks as Merge; Root and Contents are unchanged.
+	 */
+	static bool AssembleForAssets(const FMantlePlace& Root, const FMantleCellIndex& Index, const TArray<FMantleCellContent>& Contents, FMantlePlace& OutPlace, TArray<FMantleParseError>& OutErrors);
+
+	/**
+	 * Copies of every cell entity with its list of instances emptied, in cell order: what a standalone game retains beside its root so that the script world makes a record for each
+	 * (a ray that hits any of them names it, and a server script finds it), without holding the million instances of the cells' lists.
+	 */
+	static void SceneryRecords(const TArray<FMantleCellContent>& Contents, TArray<FMantleEntity>& OutEntities);
 };

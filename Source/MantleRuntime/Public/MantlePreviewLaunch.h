@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "MantlePlaceTypes.h" // FMantleScriptPackageManifest
+#include "Engine/EngineBaseTypes.h" // ENetMode
 
 /**
  * One script a preview bundle lists. Path is relative to Scripts/ ("Server/Health.luau"),
@@ -176,6 +177,24 @@ namespace MantlePreviewLaunch
 
 	/** The value of -MantlePreview=<path> in CommandLine, or empty when the token is absent or has no value. */
 	MANTLERUNTIME_API FString ManifestPathFromCommandLine(const TCHAR* CommandLine);
+
+	/**
+	 * Where a preview may run: a standalone world (the creator's own test), a dedicated server (the same place on the server players connect to) and a client connected to
+	 * one, which reads the place from the manifest, not from the backend. A listen server is not one: a preview is never a host for other people's machines.
+	 */
+	MANTLERUNTIME_API bool AllowsNetMode(ENetMode NetMode);
+
+	/** Where a connected client's place comes from: the backend (a place id and revision in the join URL), or the preview manifest's place file. */
+	enum class EClientPlaceSource : uint8
+	{
+		/** Nothing to read: a client that arrived with neither a preview nor a place in its join. */
+		None,
+		Backend,
+		PreviewManifest
+	};
+
+	/** A preview client reads the manifest, whatever its join says (a preview never reaches the backend); any other client reads the backend when its join names a place and revision. */
+	MANTLERUNTIME_API EClientPlaceSource ClientPlaceSource(bool bPreview, bool bJoinNamesPlaceAndRevision);
 
 	/**
 	 * Reads and validates a manifest: { "schemaVersion": 1, "placeFile": "place.json", "scripts":

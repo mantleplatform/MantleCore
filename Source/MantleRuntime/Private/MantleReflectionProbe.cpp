@@ -49,6 +49,27 @@ bool FMantleReflectionProbes::IsLightmapMixingOn()
 	return MantleReflectionProbePrivate::ProbeEngineInt(TEXT("r.ReflectionEnvironmentLightmapMixing"), 0) != 0;
 }
 
+double FMantleReflectionProbes::ReachCm(const FMantleReflectionProbeProps& Props)
+{
+	return Props.Shape == EMantleReflectionProbeShape::Sphere ? Props.InfluenceRadius : FMath::Max3(Props.HalfExtent.X, Props.HalfExtent.Y, Props.HalfExtent.Z);
+}
+
+bool FMantleReflectionProbes::WantsRecapture(const TSet<int32>& Seen, const FMantleCellAreaState& Now)
+{
+	if (!Now.ReadyToCapture())
+	{
+		return false;
+	}
+	for (const int32 CellIndex : Now.BuiltCellIds)
+	{
+		if (!Seen.Contains(CellIndex))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 FString FMantleReflectionProbes::WhyNotDrawn(const UWorld* World)
 {
 	if (!World || !World->IsGameWorld())
@@ -180,6 +201,7 @@ bool UMantleReflectionProbeSubsystem::DoesSupportWorldType(const EWorldType::Typ
 void UMantleReflectionProbeSubsystem::Deinitialize()
 {
 	Pending.Reset();
+	Live.Reset();
 	Captures.Reset();
 	Phase = EPhase::Idle;
 	Super::Deinitialize();
@@ -220,9 +242,11 @@ void UMantleReflectionProbeSubsystem::NotifyPlaceBuilt(UWorld* World, const FMan
 
 void UMantleReflectionProbeSubsystem::Register(AMantleReflectionProbe* Probe)
 {
-	if (Probe)
+	if (Probe && !Pending.ContainsByPredicate([Probe](const FWaitingProbe& Waiting) { return Waiting.Probe.Get() == Probe; }))
 	{
-		Pending.AddUnique(Probe);
+		FWaitingProbe Waiting;
+		Waiting.Probe = Probe;
+		Pending.Add(Waiting);
 	}
 }
 
@@ -237,10 +261,31 @@ void UMantleReflectionProbeSubsystem::BeginWarmup()
 	WarmupLeft = FMantleReflectionProbes::WarmupFrames;
 }
 
+bool UMantleReflectionProbeSubsystem::AskArea(const AMantleReflectionProbe* Probe, FMantleCellAreaState& OutState) const
+{
+	FMantleCellAreaQuery Query;
+	Query.Point = Probe->GetActorLocation();
+	Query.RadiusCm = FMantleReflectionProbes::ReachCm(Probe->GetProbeProps());
+	Query.bWantCellIds = true;
+	uint64 Serial = 0;
+	if (!FMantleCellArea::Ask(GetWorld(), Query, OutState, Serial))
+	{
+		// This world builds no cells (the place stands whole): nothing to wait for, and no cell that could come later.
+		OutState = FMantleCellAreaState();
+		return true;
+	}
+	return OutState.ReadyToCapture();
+}
+
 void UMantleReflectionProbeSubsystem::Tick(float DeltaTime)
 {
 	if (Phase == EPhase::Idle)
 	{
+		if ((Pending.Num() > 0 || Live.Num() > 0) && ++FramesSinceCheck >= FMantleReflectionProbes::ReadyCheckFrames)
+		{
+			FramesSinceCheck = 0;
+			CheckAreas();
+		}
 		return;
 	}
 	if (Phase == EPhase::Warmup)
@@ -251,31 +296,126 @@ void UMantleReflectionProbeSubsystem::Tick(float DeltaTime)
 		}
 		return;
 	}
-	PumpOnce();
+	PumpOnce(DeltaTime);
 }
 
 void UMantleReflectionProbeSubsystem::StartCapture()
 {
+	// The place's build is over and the sky has had its frames. A probe whose surroundings stand is captured; one whose cells are still coming waits for them.
+	Phase = EPhase::Idle;
+	FramesSinceCheck = 0;
+	CheckAreas();
+}
+
+void UMantleReflectionProbeSubsystem::CheckAreas()
+{
+	const double CheckStart = FPlatformTime::Seconds();
+	const UWorld* World = GetWorld();
+	const double WorldSeconds = World ? World->GetTimeSeconds() : 0.0;
 	Captures.Reset();
-	for (const TWeakObjectPtr<AMantleReflectionProbe>& Pointer : Pending)
+	int32 First = 0;
+	int32 Again = 0;
+	double SpawnSeconds = 0.0;
+
+	// Probes waiting for a first capture: made once their surroundings have been ready on two asks in a row.
+	for (int32 Index = Pending.Num() - 1; Index >= 0; --Index)
 	{
-		AMantleReflectionProbe* Probe = Pointer.Get();
-		if (IsValid(Probe) && Probe->SpawnCapture())
+		FWaitingProbe& Waiting = Pending[Index];
+		AMantleReflectionProbe* Probe = Waiting.Probe.Get();
+		if (!IsValid(Probe))
 		{
-			Captures.Add(Probe->GetCapture());
+			Pending.RemoveAtSwap(Index);
+			continue;
 		}
+		FMantleCellAreaState State;
+		const bool bReady = AskArea(Probe, State);
+		if (!bReady)
+		{
+			Waiting.bReadyBefore = false;
+			if (!Waiting.bWaitingLogged)
+			{
+				Waiting.bWaitingLogged = true;
+				UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_REFLECTION waiting probe=%s at=(%.0f, %.0f, %.0f) t=%.2f cells=%d built=%d pending=%d failed=%d plan_stale=%d"),
+					*Probe->GetName(), Probe->GetActorLocation().X, Probe->GetActorLocation().Y, Probe->GetActorLocation().Z, WorldSeconds, State.Cells, State.Built, State.Pending, State.Failed, State.bPlanStale ? 1 : 0);
+			}
+			continue;
+		}
+		if (!Waiting.bReadyBefore)
+		{
+			Waiting.bReadyBefore = true;
+			continue;
+		}
+		const double SpawnStart = FPlatformTime::Seconds();
+		if (Probe->SpawnCapture())
+		{
+			const double SpawnTook = FPlatformTime::Seconds() - SpawnStart;
+			SpawnSeconds += SpawnTook;
+			Captures.Add(Probe->GetCapture());
+			FLiveProbe Entry;
+			Entry.Probe = Probe;
+			Entry.SeenCells.Append(State.BuiltCellIds);
+			Live.Add(Entry);
+			++First;
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_REFLECTION capture probe=%s at=(%.0f, %.0f, %.0f) reason=first t=%.2f cells=%d built=%d pending=%d spawn_ms=%.3f"),
+				*Probe->GetName(), Probe->GetActorLocation().X, Probe->GetActorLocation().Y, Probe->GetActorLocation().Z, WorldSeconds, State.Cells, State.Built, State.Pending, SpawnTook * 1000.0);
+		}
+		Pending.RemoveAtSwap(Index);
 	}
-	Pending.Reset();
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_REFLECTION spawned=%d"), Captures.Num());
-	if (!Captures.IsEmpty() && FMantleReflectionProbes::IsLightmapMixingOn())
+
+	// Probes that have a capture: again when a neighbour that changes what they see has been built.
+	for (FLiveProbe& Entry : Live)
+	{
+		AMantleReflectionProbe* Probe = Entry.Probe.Get();
+		UReflectionCaptureComponent* Capture = IsValid(Probe) ? Probe->GetCapture() : nullptr;
+		if (!Capture || Captures.ContainsByPredicate([Capture](const TWeakObjectPtr<UReflectionCaptureComponent>& Held) { return Held.Get() == Capture; }))
+		{
+			continue;
+		}
+		FMantleCellAreaState State;
+		AskArea(Probe, State);
+		// Cells taken down change nothing: the picture keeps what it had, and the same cells coming back are what it already holds.
+		if (!FMantleReflectionProbes::WantsRecapture(Entry.SeenCells, State))
+		{
+			Entry.bWantedBefore = false;
+			continue;
+		}
+		if (!Entry.bWantedBefore)
+		{
+			Entry.bWantedBefore = true;
+			continue;
+		}
+		int32 NewCells = 0;
+		for (const int32 CellIndex : State.BuiltCellIds)
+		{
+			NewCells += Entry.SeenCells.Contains(CellIndex) ? 0 : 1;
+		}
+		const double RefreshStart = FPlatformTime::Seconds();
+		Capture->RefreshCapture();
+		const double RefreshTook = FPlatformTime::Seconds() - RefreshStart;
+		SpawnSeconds += RefreshTook;
+		Captures.Add(Capture);
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_REFLECTION capture probe=%s at=(%.0f, %.0f, %.0f) reason=neighbour t=%.2f cells=%d built=%d new_cells=%d pending=%d refresh_ms=%.3f"),
+			*Probe->GetName(), Probe->GetActorLocation().X, Probe->GetActorLocation().Y, Probe->GetActorLocation().Z, WorldSeconds, State.Cells, State.Built, NewCells, State.Pending, RefreshTook * 1000.0);
+		Entry.SeenCells.Append(State.BuiltCellIds);
+		Entry.bWantedBefore = false;
+		++Again;
+	}
+
+	if (Captures.IsEmpty())
+	{
+		return;
+	}
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_REFLECTION spawned=%d recaptured=%d game_ms=%.3f"), First, Again, (FPlatformTime::Seconds() - CheckStart) * 1000.0);
+	PumpGameSeconds = SpawnSeconds;
+	if (First > 0 && FMantleReflectionProbes::IsLightmapMixingOn())
 	{
 		UE_LOG(LogMantle, Warning, TEXT("MANTLE_PLACE_REFLECTION r.ReflectionEnvironmentLightmapMixing is on: runtime captures have no average brightness, so rough surfaces will read far too bright"));
 	}
-	if (Captures.IsEmpty())
-	{
-		Phase = EPhase::Idle;
-		return;
-	}
+	BeginPumping();
+}
+
+void UMantleReflectionProbeSubsystem::BeginPumping()
+{
 	// Every capture queued once, so the first update allocates all of them; then one a frame (PumpOnce).
 	for (const TWeakObjectPtr<UReflectionCaptureComponent>& Pointer : Captures)
 	{
@@ -287,11 +427,13 @@ void UMantleReflectionProbeSubsystem::StartCapture()
 	FramesLeft = FMantleReflectionProbes::PumpFramesNow(Captures.Num());
 	FramesPumped = 0;
 	NextCapture = 0;
+	PumpWorstFrameSeconds = 0.0;
+	PumpSumFrameSeconds = 0.0;
 	PumpStartSeconds = FPlatformTime::Seconds();
 	Phase = EPhase::Pumping;
 }
 
-void UMantleReflectionProbeSubsystem::PumpOnce()
+void UMantleReflectionProbeSubsystem::PumpOnce(const float DeltaTime)
 {
 	// One queued capture is enough to make the engine run its capture update this frame, and each update
 	// renders the next face of the nearest capture that is not finished (Once mode skips the finished ones).
@@ -314,14 +456,19 @@ void UMantleReflectionProbeSubsystem::PumpOnce()
 	}
 	++FramesPumped;
 	--FramesLeft;
+	PumpWorstFrameSeconds = FMath::Max(PumpWorstFrameSeconds, static_cast<double>(DeltaTime));
+	PumpSumFrameSeconds += DeltaTime;
 	const bool bLongEnough = FPlatformTime::Seconds() - PumpStartSeconds >= FMantleReflectionProbes::MinPumpSeconds;
 	if (Valid == 0 || (FramesLeft <= 0 && bLongEnough))
 	{
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_REFLECTION captured=%d frames=%d"), Valid, FramesPumped);
+		// What the captures cost: the frames they ran in (the renderer takes a face a frame, off the game thread) and what the game thread paid to start them.
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_REFLECTION captured=%d frames=%d mean_frame_ms=%.2f worst_frame_ms=%.2f start_game_ms=%.3f"),
+			Valid, FramesPumped, FramesPumped > 0 ? PumpSumFrameSeconds / FramesPumped * 1000.0 : 0.0, PumpWorstFrameSeconds * 1000.0, PumpGameSeconds * 1000.0);
 		Captures.Reset();
 		Phase = EPhase::Idle;
+		FramesSinceCheck = 0;
 		// Probes of a build that ended meanwhile.
-		if (Pending.Num() > 0)
+		if (Pending.Num() > 0 && Live.IsEmpty())
 		{
 			BeginWarmup();
 		}

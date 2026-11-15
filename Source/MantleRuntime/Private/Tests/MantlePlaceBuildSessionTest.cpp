@@ -265,7 +265,7 @@ bool FMantlePlaceBuildRunnerTest::RunTest(const FString& Parameters)
 		/*FrameBudgetSeconds*/ 0.0);
 	TestEqual(TEXT("nothing is built before the first tick"), CountActors(Fixture.World), ActorsBefore);
 	TestTrue(TEXT("it is running"), Runner->IsRunning());
-	TestFalse(TEXT("the world's physics steps are off while it builds"), Fixture.World->bShouldSimulatePhysics);
+	TestTrue(TEXT("the world's physics steps stay on while it builds (bodies are made final, nothing needs them off)"), Fixture.World->bShouldSimulatePhysics);
 	for (int32 Tick = 0; Tick < 1000 && Calls == 0; ++Tick)
 	{
 		FTSTicker::GetCoreTicker().Tick(0.016f);
@@ -273,7 +273,7 @@ bool FMantlePlaceBuildRunnerTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("the callback ran once"), Calls, 1);
 	TestEqual(TEXT("with every actor"), BuiltActors, Place->Entities.Num());
 	TestFalse(TEXT("and the runner is done"), Runner->IsRunning());
-	TestTrue(TEXT("the physics steps are back on"), Fixture.World->bShouldSimulatePhysics);
+	TestTrue(TEXT("the physics steps are still on"), Fixture.World->bShouldSimulatePhysics);
 	FMantlePlaceBuilder::Teardown(Delivered);
 	TestEqual(TEXT("tearing the delivered result down leaves the world as it was"), CountActors(Fixture.World), ActorsBefore);
 	Runner.Reset();
@@ -291,9 +291,9 @@ bool FMantlePlaceBuildRunnerTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("still building after a few ticks"), Runner->IsRunning());
 	TestTrue(TEXT("with some of the place standing"), CountActors(Fixture.World) > ActorsBefore);
-	TestFalse(TEXT("physics steps off again"), Fixture.World->bShouldSimulatePhysics);
+	TestTrue(TEXT("physics steps still on"), Fixture.World->bShouldSimulatePhysics);
 	Runner.Reset();
-	TestTrue(TEXT("dropping the runner puts them back"), Fixture.World->bShouldSimulatePhysics);
+	TestTrue(TEXT("and dropping the runner leaves them on"), Fixture.World->bShouldSimulatePhysics);
 	TestEqual(TEXT("dropping it takes away what it had built"), CountActors(Fixture.World), ActorsBefore);
 	for (int32 Tick = 0; Tick < 10; ++Tick)
 	{
@@ -431,6 +431,159 @@ bool FMantlePlaceBuildRunnerWorldEndsTest::RunTest(const FString& Parameters)
 		FTSTicker::GetCoreTicker().Tick(0.016f);
 	}
 	TestEqual(TEXT("the callback never ran"), Calls, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTerrainSpawnStaticTest,
+	"Mantle.Runtime.PlaceBuild.Terrain.SpawnsStaticInPlace",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTerrainSpawnStaticTest::RunTest(const FString& Parameters)
+{
+	using namespace MantlePlaceBuildSessionTestPrivate;
+	FSessionWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	const FMantleHeightfield Field = MakeTerrainField();
+	FMantleTerrainBuildParams Params;
+	Params.bRenderLODs = false;
+	Params.bCollision = true;
+	Params.bInitRenderResources = false;
+
+	// Given where it ends, the terrain is made there and Static, root and every chunk, before anything registers: after every step it is Static and in place.
+	const FTransform Where(FRotator(0.0, 90.0, 0.0), FVector(10000.0, -2000.0, 300.0), FVector(1.0));
+	FString Error;
+	TSet<const AActor*> Before; // the world's own actors (settings, brush, volumes) are not the terrain
+	for (TActorIterator<AActor> It(Fixture.World); It; ++It)
+	{
+		Before.Add(*It);
+	}
+	TSharedPtr<FMantleTerrainSpawn> Staged = FMantleTerrainSpawn::Begin(Fixture.World, TEXT("Static"), Field, nullptr, true, Params, &Error, &Where);
+	if (!TestTrue(TEXT("the staged terrain begins"), Staged.IsValid()))
+	{
+		AddError(Error);
+		return false;
+	}
+	int32 Steps = 0;
+	int32 Looked = 0;
+	bool bDone = false;
+	while (!bDone && Steps < 100)
+	{
+		bDone = Staged->Step();
+		++Steps;
+		// After every step, not only at the end: every registered component of the terrain being built is Static and stands where it ends.
+		for (TActorIterator<AActor> It(Fixture.World); It; ++It)
+		{
+			if (Before.Contains(*It))
+			{
+				continue;
+			}
+			if (!It->GetActorLocation().Equals(Where.GetLocation(), 0.01))
+			{
+				AddError(FString::Printf(TEXT("step %d: %s is at %s, not where it ends"), Steps, *It->GetName(), *It->GetActorLocation().ToString()));
+			}
+			TInlineComponentArray<USceneComponent*> Registered(*It);
+			for (const USceneComponent* Part : Registered)
+			{
+				if (Part->IsRegistered())
+				{
+					++Looked;
+					if (Part->Mobility != EComponentMobility::Static)
+					{
+						AddError(FString::Printf(TEXT("step %d: %s of %s is registered and not Static"), Steps, *Part->GetName(), *It->GetName()));
+					}
+				}
+			}
+		}
+	}
+	TestTrue(TEXT("registered components were looked at on several steps"), Looked >= 4 && Steps >= 2);
+	AActor* Actor = Staged->TakeActor();
+	if (TestNotNull(TEXT("the terrain actor"), Actor))
+	{
+		TestEqual(TEXT("four chunks"), CountChunkComponents(Actor), 4);
+		TestEqual(TEXT("the root is Static"), static_cast<int32>(Actor->GetRootComponent()->Mobility), static_cast<int32>(EComponentMobility::Static));
+		TestTrue(TEXT("and stands where it ends"), Actor->GetActorLocation().Equals(Where.GetLocation(), 0.01));
+		TestTrue(TEXT("turned as it ends"), FMath::IsNearlyEqual(Actor->GetActorRotation().Yaw, 90.0, 0.01));
+		TInlineComponentArray<USceneComponent*> Parts(Actor);
+		for (const USceneComponent* Part : Parts)
+		{
+			TestEqual(*FString::Printf(TEXT("%s is Static"), *Part->GetName()), static_cast<int32>(Part->Mobility), static_cast<int32>(EComponentMobility::Static));
+		}
+		Actor->Destroy();
+	}
+
+	// A terrain that ends Movable (a dynamic one) is made where it ends too, Movable: after every step it stands there, root and every chunk, none at the origin.
+	{
+		TSet<const AActor*> BeforeMovable;
+		for (TActorIterator<AActor> It(Fixture.World); It; ++It)
+		{
+			BeforeMovable.Add(*It);
+		}
+		const FTransform MovableWhere(FRotator(0.0, 45.0, 0.0), FVector(-7000.0, 3000.0, 150.0), FVector(1.0));
+		TSharedPtr<FMantleTerrainSpawn> Moving = FMantleTerrainSpawn::Begin(Fixture.World, TEXT("Movable"), Field, nullptr, true, Params, &Error, nullptr, &MovableWhere);
+		if (TestTrue(TEXT("a movable terrain begins"), Moving.IsValid()))
+		{
+			int32 MovableSteps = 0;
+			int32 MovableLooked = 0;
+			bool bMovableDone = false;
+			while (!bMovableDone && MovableSteps < 100)
+			{
+				bMovableDone = Moving->Step();
+				++MovableSteps;
+				for (TActorIterator<AActor> It(Fixture.World); It; ++It)
+				{
+					if (BeforeMovable.Contains(*It) || !It->GetActorLocation().Equals(MovableWhere.GetLocation(), 0.01))
+					{
+						if (!BeforeMovable.Contains(*It))
+						{
+							AddError(FString::Printf(TEXT("movable terrain step %d: %s is at %s, not where it ends"), MovableSteps, *It->GetName(), *It->GetActorLocation().ToString()));
+						}
+						continue;
+					}
+					TInlineComponentArray<USceneComponent*> Registered(*It);
+					for (const USceneComponent* Part : Registered)
+					{
+						if (Part->IsRegistered())
+						{
+							++MovableLooked;
+							if (Part->Mobility != EComponentMobility::Movable)
+							{
+								AddError(FString::Printf(TEXT("movable terrain step %d: %s is registered and not Movable"), MovableSteps, *Part->GetName()));
+							}
+							if (!Part->GetComponentLocation().Equals(MovableWhere.GetLocation(), 0.01) && Part->GetAttachParent() == nullptr)
+							{
+								AddError(FString::Printf(TEXT("movable terrain step %d: the root %s is at %s"), MovableSteps, *Part->GetName(), *Part->GetComponentLocation().ToString()));
+							}
+						}
+					}
+				}
+			}
+			TestTrue(TEXT("registered components of the movable terrain were looked at on several steps"), MovableLooked >= 4 && MovableSteps >= 2);
+			if (AActor* MovableActor = Moving->TakeActor())
+			{
+				TestTrue(TEXT("and it is where it ends when it is finished"), MovableActor->GetActorLocation().Equals(MovableWhere.GetLocation(), 0.01));
+				MovableActor->Destroy();
+			}
+		}
+	}
+
+	// Without a place to end, it is the Movable terrain at the origin it always was.
+	TSharedPtr<FMantleTerrainSpawn> Plain = FMantleTerrainSpawn::Begin(Fixture.World, TEXT("Plain"), Field, nullptr, true, Params, &Error);
+	if (TestTrue(TEXT("a plain terrain begins"), Plain.IsValid()))
+	{
+		while (!Plain->Step())
+		{
+		}
+		AActor* PlainActor = Plain->TakeActor();
+		if (TestNotNull(TEXT("its actor"), PlainActor))
+		{
+			TestEqual(TEXT("the root is Movable"), static_cast<int32>(PlainActor->GetRootComponent()->Mobility), static_cast<int32>(EComponentMobility::Movable));
+			PlainActor->Destroy();
+		}
+	}
 	return true;
 }
 
