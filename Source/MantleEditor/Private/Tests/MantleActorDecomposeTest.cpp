@@ -3,6 +3,7 @@
 #include "MantleCoverage.h"
 #include "MantleMirrorBake.h"
 #include "MantlePlaceAssets.h"
+#include "MantleExportedEntities.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceValidator.h"
 
@@ -538,7 +539,7 @@ bool FMantleDecomposeMirrorTest::RunTest(const FString& Parameters)
 	}));
 
 	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
-	const FMantleEntity* Entity = Result.Place.Entities.FindByPredicate([](const FMantleEntity& Candidate) { return Candidate.Name == TEXT("Mirrored"); });
+	const FMantleEntity* Entity = MantleExportedEntities::Named(Result, TEXT("Mirrored"));
 	if (TestNotNull(TEXT("it is exported"), Entity))
 	{
 		TestTrue(TEXT("at the positive scale"), Entity->Transform.GetScale3D().Equals(FVector::OneVector, 0.0001));

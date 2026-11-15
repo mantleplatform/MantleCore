@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCoverage.h"
+#include "MantleExportedEntities.h"
 #include "MantlePlaceExporter.h"
 #include "MantleSkyMesh.h"
 
@@ -204,13 +205,13 @@ bool FMantleSkyMeshBlueprintDomesTest::RunTest(const FString& Parameters)
 
 	// Exported: the Group and its lantern are written; the domes are not.
 	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
-	const FMantleEntity* Group = Result.Place.Entities.FindByPredicate([](const FMantleEntity& Entity) { return Entity.Name == TEXT("BP_Embersky"); });
+	const FMantleEntity* Group = MantleExportedEntities::Named(Result, TEXT("BP_Embersky"));
 	if (TestNotNull(TEXT("the Blueprint's Group is written"), Group))
 	{
 		int32 Children = 0;
-		for (const FMantleEntity& Entity : Result.Place.Entities)
+		for (const FMantleEntity* Entity : MantleExportedEntities::All(Result))
 		{
-			Children += Entity.Parent == Group->Id ? 1 : 0;
+			Children += Entity->Parent == Group->Id ? 1 : 0;
 		}
 		TestEqual(TEXT("with the lantern as its only child"), Children, 1);
 	}
