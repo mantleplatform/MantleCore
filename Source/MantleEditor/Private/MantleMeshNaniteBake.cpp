@@ -86,6 +86,79 @@ namespace MantleMeshNaniteBakePrivate
 		Ar << Page.Flags;
 	}
 
+	/**
+	 * Whether Resources' page table describes its RootData and StreamedBytes of streamed pages. The engine's encoder (NaniteEncode.cpp:1004-1050)
+	 * appends each page's fixup chunk and page to RootData (pages below NumRootPages) or to the streamed bytes (the rest), in page order, and
+	 * records BulkOffset (where it started) and BulkSize (what it appended), so each page starts where the one before it in its block ends and
+	 * the last one ends at the block's end. PageSize is the page without its fixup chunk. Sums are 64-bit: the fields are uint32.
+	 */
+	bool PageTableFits(const Nanite::FResources& Resources, const int64 StreamedBytes, FString& OutReason)
+	{
+		const int32 NumPages = Resources.PageStreamingStates.Num();
+		if (NumPages < 0 || Resources.NumRootPages == 0 || static_cast<int64>(Resources.NumRootPages) > NumPages)
+		{
+			OutReason = TEXT("its page table has fewer pages than root pages");
+			return false;
+		}
+		int64 RootEnd = 0;
+		int64 StreamedEnd = 0;
+		for (int32 Index = 0; Index < NumPages; ++Index)
+		{
+			const Nanite::FPageStreamingState& Page = Resources.PageStreamingStates[Index];
+			const bool bRoot = static_cast<uint32>(Index) < Resources.NumRootPages;
+			int64& End = bRoot ? RootEnd : StreamedEnd;
+			if (static_cast<int64>(Page.BulkOffset) != End || Page.BulkSize == 0 || Page.PageSize > Page.BulkSize)
+			{
+				OutReason = FString::Printf(TEXT("its page %d does not start where the page before it ends (%s pages)"), Index, bRoot ? TEXT("root") : TEXT("streamed"));
+				return false;
+			}
+			End += Page.BulkSize;
+		}
+		if (RootEnd != Resources.RootData.Num() || StreamedEnd != StreamedBytes)
+		{
+			OutReason = FString::Printf(TEXT("its pages end at %lld (root) and %lld (streamed), but it holds %d and %lld bytes"), RootEnd, StreamedEnd, Resources.RootData.Num(), StreamedBytes);
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * The mesh's streamed pages as bytes. The editor puts them in its derived-data cache once a mesh is built and drops its own copy
+	 * (StaticMesh.cpp:4375-4394, :4492); the engine's own call brings them back (NaniteResources.cpp:571), after which the bulk data is in memory.
+	 * A mesh without streamed pages gives none.
+	 */
+	bool FetchStreamedPages(const UObject* Owner, Nanite::FResources& Resources, TArray<uint8>& OutPages, FString& OutReason)
+	{
+		OutPages.Reset();
+		if (!Resources.HasStreamingData())
+		{
+			return true;
+		}
+		// The cache answers on a worker thread. This waits for that answer, not for a size: it gives up only if the cache never answers.
+		constexpr double WaitSeconds = 120.0;
+		const double Deadline = FPlatformTime::Seconds() + WaitSeconds;
+		bool bFailed = false;
+		while (!Resources.RebuildBulkDataFromCacheAsync(Owner, bFailed))
+		{
+			if (FPlatformTime::Seconds() > Deadline)
+			{
+				OutReason = TEXT("the editor's cache did not give back its streamed Nanite pages");
+				return false;
+			}
+			FPlatformProcess::Sleep(0.005f);
+		}
+		if (bFailed || !Resources.StreamablePages.IsBulkDataLoaded() || Resources.StreamablePages.GetBulkDataSize() <= 0)
+		{
+			OutReason = TEXT("the editor's cache could not give back its streamed Nanite pages");
+			return false;
+		}
+		const int64 Bytes = Resources.StreamablePages.GetBulkDataSize();
+		const uint8* Data = static_cast<const uint8*>(Resources.StreamablePages.LockReadOnly());
+		OutPages.Append(Data, static_cast<int32>(Bytes));
+		Resources.StreamablePages.Unlock();
+		return true;
+	}
+
 	/** Nanite::FResources::SerializeInternal from RootData on (the flags are the caller's, the streamed pages are left out), then TangentPrecision. */
 	void SerializeBody(FArchive& Ar, Nanite::FResources& Resources)
 	{
@@ -173,14 +246,20 @@ bool FMantleMeshNaniteFile::Unpack(const TConstArrayView<uint8> Container, TArra
 }
 
 bool FMantleMeshNaniteFile::ReadUploaded(const TConstArrayView<uint8> Container, const FString& MeshTag, Nanite::FResources& OutResources,
-	TArray<int32>& OutSlotToPublished, FString* OutReason)
+	TArray<int32>& OutSlotToPublished, FString* OutReason, TArray<uint8>* OutStreamedPages)
 {
 	TArray<uint8> Mnd1;
-	return Unpack(Container, Mnd1, OutReason) && Read(Mnd1, MeshTag, OutResources, OutSlotToPublished, OutReason);
+	return Unpack(Container, Mnd1, OutReason) && Read(Mnd1, MeshTag, OutResources, OutSlotToPublished, OutReason, OutStreamedPages);
 }
 
 bool FMantleMeshNaniteFile::Write(const FString& MeshTag, const TConstArrayView<int32> SlotToPublished, const Nanite::FResources& Resources,
 	TArray<uint8>& OutBytes, FString& OutReason)
+{
+	return Write(MeshTag, SlotToPublished, Resources, TConstArrayView<uint8>(), OutBytes, OutReason);
+}
+
+bool FMantleMeshNaniteFile::Write(const FString& MeshTag, const TConstArrayView<int32> SlotToPublished, const Nanite::FResources& Resources,
+	const TConstArrayView<uint8> StreamedPages, TArray<uint8>& OutBytes, FString& OutReason)
 {
 	using namespace MantleMeshNaniteBakePrivate;
 
@@ -190,10 +269,16 @@ bool FMantleMeshNaniteFile::Write(const FString& MeshTag, const TConstArrayView<
 		OutReason = TEXT("it has no Nanite data");
 		return false;
 	}
-	if (static_cast<uint32>(Resources.PageStreamingStates.Num()) != Resources.NumRootPages)
+	// Pages past the root pages are in the file exactly when the table has them (and the reader tells the two apart the same way).
+	const bool bStreams = static_cast<uint32>(Resources.PageStreamingStates.Num()) > Resources.NumRootPages;
+	if (bStreams != (StreamedPages.Num() > 0))
 	{
-		OutReason = FString::Printf(TEXT("only %u of its %d Nanite pages are kept in memory; the rest would stream from a file the game has not got"),
-			Resources.NumRootPages, Resources.PageStreamingStates.Num());
+		OutReason = bStreams ? FString::Printf(TEXT("%d of its Nanite pages stream, but their bytes were not given"), Resources.PageStreamingStates.Num() - static_cast<int32>(Resources.NumRootPages))
+			: FString(TEXT("streamed Nanite bytes were given for a mesh whose pages are all root pages"));
+		return false;
+	}
+	if (!PageTableFits(Resources, StreamedPages.Num(), OutReason))
+	{
 		return false;
 	}
 	FMemoryWriter Writer(OutBytes, /*bIsPersistent*/ true);
@@ -209,15 +294,26 @@ bool FMantleMeshNaniteFile::Write(const FString& MeshTag, const TConstArrayView<
 	uint32 Flags = Resources.ResourceFlags & ~NANITE_RESOURCE_FLAG_STREAMING_DATA_IN_DDC;
 	Writer << Flags;
 	SerializeBody(Writer, const_cast<Nanite::FResources&>(Resources));
+	if (bStreams)
+	{
+		// The streamed pages as the engine holds them, after the rest: their length, then the bytes (nanite-v2.md fields 26 and 27).
+		uint32 StreamedBytes = static_cast<uint32>(StreamedPages.Num());
+		Writer << StreamedBytes;
+		Writer.Serialize(const_cast<uint8*>(StreamedPages.GetData()), StreamedPages.Num());
+	}
 	return true;
 }
 
 bool FMantleMeshNaniteFile::Read(const TConstArrayView<uint8> Bytes, const FString& MeshTag, Nanite::FResources& OutResources, TArray<int32>& OutSlotToPublished,
-	FString* OutReason)
+	FString* OutReason, TArray<uint8>* OutStreamedPages)
 {
 	using namespace MantleMeshNaniteBakePrivate;
 
 	OutSlotToPublished.Reset();
+	if (OutStreamedPages)
+	{
+		OutStreamedPages->Reset();
+	}
 	if (Bytes.Num() < 8 || FMemory::Memcmp(Bytes.GetData(), "MND1", 4) != 0)
 	{
 		SetReason(OutReason, TEXT("is not an MND1"));
@@ -228,9 +324,9 @@ bool FMantleMeshNaniteFile::Read(const TConstArrayView<uint8> Bytes, const FStri
 	Reader.Seek(4);
 	uint32 Version = 0;
 	Reader << Version;
-	if (Version != FormatVersion)
+	if (Version != 1 && Version != FormatVersion)
 	{
-		SetReason(OutReason, FString::Printf(TEXT("is MND1 version %u (this reads %u)"), Version, FormatVersion));
+		SetReason(OutReason, FString::Printf(TEXT("is MND1 version %u (this reads 1 and %u)"), Version, FormatVersion));
 		return false;
 	}
 	FString Engine;
@@ -249,17 +345,48 @@ bool FMantleMeshNaniteFile::Read(const TConstArrayView<uint8> Bytes, const FStri
 	SerializePlainArray(Reader, OutSlotToPublished);
 	Reader << OutResources.ResourceFlags;
 	SerializeBody(Reader, OutResources);
-	if (Reader.IsError() || Reader.Tell() != Reader.TotalSize() || OutResources.RootData.Num() == 0
-		|| static_cast<uint32>(OutResources.PageStreamingStates.Num()) != OutResources.NumRootPages)
+	if (Reader.IsError() || OutResources.RootData.Num() == 0 || OutResources.NumRootPages == 0
+		|| static_cast<uint32>(OutResources.PageStreamingStates.Num()) < OutResources.NumRootPages)
 	{
 		SetReason(OutReason, TEXT("is damaged"));
 		return false;
+	}
+	// Version 1 keeps the whole mesh in memory. Version 2 has a streamed block exactly when the table has pages past its root pages:
+	// its length (not 0, and the rest of the file), then the bytes.
+	const bool bStreams = static_cast<uint32>(OutResources.PageStreamingStates.Num()) > OutResources.NumRootPages;
+	TArray<uint8> Streamed;
+	if (bStreams)
+	{
+		uint32 StreamedBytes = 0;
+		if (Version == 1 || Reader.TotalSize() - Reader.Tell() < static_cast<int64>(sizeof(StreamedBytes)))
+		{
+			SetReason(OutReason, TEXT("is damaged"));
+			return false;
+		}
+		Reader << StreamedBytes;
+		if (StreamedBytes == 0 || static_cast<int64>(StreamedBytes) != Reader.TotalSize() - Reader.Tell())
+		{
+			SetReason(OutReason, TEXT("is damaged (its streamed pages are not the rest of the file)"));
+			return false;
+		}
+		Streamed.SetNumUninitialized(static_cast<int32>(StreamedBytes));
+		Reader.Serialize(Streamed.GetData(), Streamed.Num());
+	}
+	FString TableWhy;
+	if (Reader.IsError() || Reader.Tell() != Reader.TotalSize() || (Version == FormatVersion && !PageTableFits(OutResources, Streamed.Num(), TableWhy)))
+	{
+		SetReason(OutReason, TableWhy.IsEmpty() ? FString(TEXT("is damaged")) : FString::Printf(TEXT("is damaged (%s)"), *TableWhy));
+		return false;
+	}
+	if (OutStreamedPages)
+	{
+		*OutStreamedPages = MoveTemp(Streamed);
 	}
 	return true;
 }
 
 bool FMantleMeshNaniteBake::Bake(const UStaticMesh* Mesh, const TConstArrayView<int32> PublishedSlots, const FString& MeshTag, TArray<uint8>& OutFile,
-	FString& OutReason, uint64* OutVoxelMask, bool* OutRetryable, const float KeepPercentTriangles)
+	FString& OutReason, uint64* OutVoxelMask, bool* OutRetryable, const float KeepPercentTriangles, const uint32 TargetResidencyKB)
 {
 	OutFile.Reset();
 	bool bRetryable = false;
@@ -319,14 +446,16 @@ bool FMantleMeshNaniteBake::Bake(const UStaticMesh* Mesh, const TConstArrayView<
 			UE_LOG(LogMantle, Warning, TEXT("MANTLE_NANITE %s asks for voxels, but voxels are off in this editor (r.Nanite.AllowVoxels 0): it bakes as plain Nanite"),
 				*Mesh->GetName());
 		}
-		Settings.TargetMinimumResidencyInKB = MAX_uint32;
+		// At most this much of the mesh is always in memory (32 root pages by the engine's rule, NaniteEncode.cpp:1121-1125); a mesh
+		// that fits is built as if all of it were kept, and a bigger one streams the rest from the file's streamed block.
+		Settings.TargetMinimumResidencyInKB = TargetResidencyKB;
 		// A coarser bake (BakeToFit): the copy keeps that share of what its own settings keep.
 		Settings.KeepPercentTriangles *= FMath::Clamp(KeepPercentTriangles, 0.0f, 1.0f);
 		Copy->SetNaniteSettings(Settings);
 		Copy->Build(/*bInSilent*/ true);
 		FStaticMeshCompilingManager::Get().FinishCompilation({ Copy });
 
-		const FStaticMeshRenderData* RenderData = Copy->GetRenderData();
+		FStaticMeshRenderData* RenderData = Copy->GetRenderData();
 		if (!RenderData || !RenderData->HasValidNaniteData())
 		{
 			OutReason = TEXT("its copy built with no Nanite data");
@@ -344,7 +473,10 @@ bool FMantleMeshNaniteBake::Bake(const UStaticMesh* Mesh, const TConstArrayView<
 			{
 				Identity.Add(Slot);
 			}
-			bWritten = FMantleMeshNaniteFile::Write(MeshTag, Identity, *RenderData->NaniteResourcesPtr, OutFile, OutReason);
+			// A mesh bigger than its root pages has streamed pages, which the editor keeps in its cache: bring them back for the file.
+			TArray<uint8> StreamedPages;
+			bWritten = FetchStreamedPages(Copy, *RenderData->NaniteResourcesPtr, StreamedPages, OutReason)
+				&& FMantleMeshNaniteFile::Write(MeshTag, Identity, *RenderData->NaniteResourcesPtr, StreamedPages, OutFile, OutReason);
 			bRetryable = !bWritten;
 		}
 	}
@@ -669,8 +801,9 @@ TArray<const UObject*> FMantleMeshNaniteBake::CacheObjects(const UStaticMesh& Me
 
 FString FMantleMeshNaniteBake::CacheSalt()
 {
-	// MNZ1: the cache holds the uploaded file, so a change to the container, its limits or how a too-large file is made coarser is a new key.
-	return FString::Printf(TEXT(" nanite=%u engine=%s voxels=%d assemblies=%d container=MNZ1 rawlimit=%lld bakes=%d min=%.2f"), FMantleMeshNaniteFile::FormatVersion,
+	// MNZ1: the cache holds the uploaded file, so a change to the container, its limits, how a too-large file is made coarser or how much
+	// of a mesh stays in memory (residency; the format version too) is a new key: files cached whole-resident are made again.
+	return FString::Printf(TEXT(" nanite=%u engine=%s voxels=%d assemblies=%d container=MNZ1 rawlimit=%lld bakes=%d min=%.2f residencykb=%u"), FMantleMeshNaniteFile::FormatVersion,
 		*FMantleMeshNaniteFile::EngineTag(), NaniteVoxelsSupported() ? 1 : 0, NaniteAssembliesSupported() ? 1 : 0,
-		FMantleMeshNaniteFile::MaxRawBytes(), MaxBakes, MinKeepPercentTriangles);
+		FMantleMeshNaniteFile::MaxRawBytes(), MaxBakes, MinKeepPercentTriangles, FMantleMeshNaniteFile::ResidencyKB);
 }

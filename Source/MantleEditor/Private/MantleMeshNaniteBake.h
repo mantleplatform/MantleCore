@@ -16,33 +16,54 @@ namespace Nanite
  * is in D:\Mantle\Untracked\local\nanite\reports\step1-format.md.
  *
  * MND1, little-endian, FArchive conventions (an FString is int32 length then characters; an array is int32 count then items):
- *   "MND1", uint32 format version (1),
+ *   "MND1", uint32 format version (2; 1 is read too: version 1 never has streamed pages),
  *   FString engine tag (the editor's FEngineVersion with its changelist: the engine's Nanite layout is the format),
  *   FString the mesh tag: the hash of the mesh upload it was baked from ("sha256:<hex>", the place file's assets[].hash),
  *   int32 slot count, then per material slot of the baked mesh an int32: the glTF material it publishes as. Nanite's clusters name
  *     that slot (FMeshDataSection::MaterialIndex). The bake reorders its copy's slots to the upload's glTF materials and removes the
  *     sections the upload does not draw, so the table is always 0, 1, 2, ... (one entry per glTF material),
- *   the Nanite data, as Nanite::FResources::SerializeInternal writes it but with no streamed pages (every page is a root page,
- *     so the StreamablePages bulk data is left out, not written empty), then TangentPrecision, which the engine does not store.
+ *   the Nanite data, as Nanite::FResources::SerializeInternal writes it but without the StreamablePages bulk data (RootData holds
+ *     the root pages only; PageStreamingStates has every page), then TangentPrecision, which the engine does not store,
+ *   and, only when the mesh has pages past its root pages (PageStreamingStates.Num() > NumRootPages): uint32 StreamedBytes, then
+ *     that many bytes, the engine's StreamablePages payload. A mesh that fits its root pages (at most 32, 1 MiB) has no such block,
+ *     so its file is its version 1 file with only the version word changed.
+ * The exact contract, which the game's reader is written against: D:\Mantle\Untracked\local\build-plan\contracts\nanite-v2.md.
  */
 class FMantleMeshNaniteFile
 {
 public:
-	static constexpr uint32 FormatVersion = 1;
+	/** The version the writer writes. Version 1 (no streamed pages, every page a root page) is still read. */
+	static constexpr uint32 FormatVersion = 2;
+
+	/**
+	 * The most of a mesh the game keeps in memory whatever its size, in KB: 32 root pages of 32 KB (the engine's CalculateMaxRootPages).
+	 * A mesh over it keeps its first 32 pages as root pages and the rest as streamed pages, which a mesh registers in one frame at
+	 * 1 MiB instead of all its bytes. A mesh that fits is built as it was when the whole mesh was kept (its pages are all root pages).
+	 */
+	static constexpr uint32 ResidencyKB = 1024;
 
 	/** The engine version the file's layout belongs to (FEngineVersion::Current, changelist included). */
 	static FString EngineTag();
 
 	/**
-	 * The file for MeshTag's mesh. False, with the reason, when Resources is empty or still streams (fewer root pages than pages:
-	 * a shipped game streams those from a file installed with it, which a place mesh has not got).
+	 * The file for MeshTag's mesh. StreamedPages is Resources' StreamablePages payload (FMantleMeshNaniteBake::Bake brings it from the
+	 * editor's cache); it is written after the rest when the mesh has pages past its root pages, and must be empty when it has none.
+	 * False, with the reason, when Resources is empty or its page table does not describe RootData and StreamedPages (the engine
+	 * lays both out in page order, so each page starts where the one before it ends).
 	 */
+	static bool Write(const FString& MeshTag, TConstArrayView<int32> SlotToPublished, const Nanite::FResources& Resources, TConstArrayView<uint8> StreamedPages,
+		TArray<uint8>& OutBytes, FString& OutReason);
+
+	/** Write for a mesh whose pages are all root pages. */
 	static bool Write(const FString& MeshTag, TConstArrayView<int32> SlotToPublished, const Nanite::FResources& Resources, TArray<uint8>& OutBytes,
 		FString& OutReason);
 
-	/** False, with the reason, when Bytes is not an MND1 for MeshTag's mesh from this engine, or is damaged. */
+	/**
+	 * False, with the reason, when Bytes is not an MND1 (version 1 or 2) for MeshTag's mesh from this engine, or is damaged. OutStreamedPages,
+	 * when given, gets the streamed block (empty when the mesh has none); OutResources.StreamablePages is left empty either way.
+	 */
 	static bool Read(TConstArrayView<uint8> Bytes, const FString& MeshTag, Nanite::FResources& OutResources, TArray<int32>& OutSlotToPublished,
-		FString* OutReason = nullptr);
+		FString* OutReason = nullptr, TArray<uint8>* OutStreamedPages = nullptr);
 
 	/**
 	 * The most one uploaded Nanite file may be, measured on the container (the compressed bytes): the backend's assets.MaxNaniteBytes,
@@ -64,7 +85,7 @@ public:
 
 	/** Unpack, then Read: what the game does with an uploaded file. */
 	static bool ReadUploaded(TConstArrayView<uint8> Container, const FString& MeshTag, Nanite::FResources& OutResources,
-		TArray<int32>& OutSlotToPublished, FString* OutReason = nullptr);
+		TArray<int32>& OutSlotToPublished, FString* OutReason = nullptr, TArray<uint8>* OutStreamedPages = nullptr);
 };
 
 /** How a mesh's Nanite file came to fit the upload limits: what FMantleMeshNaniteBake::BakeToFit did. */
@@ -89,7 +110,8 @@ struct FMantleNaniteFit
 /**
  * Builds the file from the mesh the converter was given (the creator's own, or one the converter made: mirrored, spline-baked or
  * cable-baked), which is only read: a transient copy of it is given the upload's material order (ConformToPublished), set to keep
- * its whole Nanite mesh in memory (TargetMinimumResidencyInKB = MAX_uint32, "Entire mesh"), built, and its Nanite data written.
+ * at most FMantleMeshNaniteFile::ResidencyKB of its Nanite mesh in memory (the rest becomes streamed pages), built, and its Nanite
+ * data written, with the streamed pages the editor holds in its cache brought back by the engine's own call.
  * A mesh the upload had to shrink (reduced to fit, or published from a lower LOD) bakes from its full source, so Nanite restores
  * the detail the upload lost.
  */
@@ -103,12 +125,15 @@ public:
 	 * a Nanite assembly whose upload leaves out a slot, or a build that kept no Nanite data. Game thread.
 	 * OutVoxelMask, when given, gets the built data's VoxelMaterialsMask: nonzero only when voxels were really made, which needs voxels
 	 * on at startup (the plugin's Config/Engine.ini sets r.Nanite.AllowVoxels=1).
+	 * TargetResidencyKB: how much of the mesh stays in memory; the shipped bake always uses FMantleMeshNaniteFile::ResidencyKB (tests
+	 * pass a smaller number to make a small mesh stream, or MAX_uint32 to keep a whole one).
 	 * OutRetryable, when given, is set on a false return: true when the failure belongs to this run or this editor (a copy that could
 	 * not be made, a build that kept no data, a part that did not load) and so may not repeat, false when it belongs to the mesh and
 	 * its upload (see-through, a slot an assembly cannot drop, a hi-res source, no slot drawn). Only the latter may be cached.
 	 */
 	static bool Bake(const UStaticMesh* Mesh, TConstArrayView<int32> PublishedSlots, const FString& MeshTag, TArray<uint8>& OutFile, FString& OutReason,
-		uint64* OutVoxelMask = nullptr, bool* OutRetryable = nullptr, float KeepPercentTriangles = 1.0f);
+		uint64* OutVoxelMask = nullptr, bool* OutRetryable = nullptr, float KeepPercentTriangles = 1.0f,
+		uint32 TargetResidencyKB = FMantleMeshNaniteFile::ResidencyKB);
 
 	/**
 	 * Bake (at 1, then coarser as needed), pack into the uploaded container (FMantleMeshNaniteFile::Pack) and keep it inside the upload

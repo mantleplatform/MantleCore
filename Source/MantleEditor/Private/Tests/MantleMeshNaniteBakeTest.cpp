@@ -387,7 +387,8 @@ bool FMantleMeshNaniteBakeTest::RunTest(const FString& Parameters)
 		AddError(Why);
 		return false;
 	}
-	TestEqual(TEXT("all of it is kept in memory"), static_cast<uint32>(Back.PageStreamingStates.Num()), Back.NumRootPages);
+	// At most 1 MiB of it is kept in memory (32 root pages); the rest, if any, is the file's streamed block (the tests below look at both).
+	TestTrue(TEXT("at most 32 root pages, with a page table that has at least those"), Back.NumRootPages <= 32 && static_cast<uint32>(Back.PageStreamingStates.Num()) >= Back.NumRootPages);
 	TestEqual(TEXT("its triangles"), Back.NumInputTriangles, 96u * 96u * 2u);
 	TestEqual(TEXT("slot 0 publishes as glTF material 0"), Slots, TArray<int32>({ 0 }));
 	AddInfo(FString::Printf(TEXT("%d bytes, %u clusters, %u pages"), File.Num(), Back.NumClusters, Back.NumRootPages));
@@ -408,6 +409,285 @@ bool FMantleMeshNaniteBakeTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("the creator's mesh still has no Nanite"), Plain->IsNaniteEnabled());
 	Grid->MarkAsGarbage();
 	Plain->MarkAsGarbage();
+	return true;
+}
+
+namespace MantleMeshNaniteBakeTestPrivate
+{
+	TArray<uint8> Pattern(const int32 Num, const uint8 Seed)
+	{
+		TArray<uint8> Bytes;
+		for (int32 Index = 0; Index < Num; ++Index)
+		{
+			Bytes.Add(static_cast<uint8>(Seed + Index * 7));
+		}
+		return Bytes;
+	}
+
+	void AddPage(Nanite::FResources& Resources, const uint32 Offset, const uint32 Size, const uint32 PageSize)
+	{
+		Nanite::FPageStreamingState Page;
+		Page.BulkOffset = Offset;
+		Page.BulkSize = Size;
+		Page.PageSize = PageSize;
+		Page.DependenciesStart = 0;
+		Page.DependenciesNum = 0;
+		Page.MaxHierarchyDepth = 1;
+		Page.Flags = 0;
+		Resources.PageStreamingStates.Add(Page);
+	}
+
+	/** By hand: two root pages in 100 bytes of RootData ([0, 60) and [60, 100)), two streamed pages in 100 bytes ([0, 70) and [70, 100)). */
+	void FillStreaming(Nanite::FResources& Resources)
+	{
+		Resources.RootData = Pattern(100, 1);
+		Resources.NumRootPages = 2;
+		AddPage(Resources, 0, 60, 50);
+		AddPage(Resources, 60, 40, 30);
+		AddPage(Resources, 0, 70, 60);
+		AddPage(Resources, 70, 30, 25);
+		Resources.NumClusters = 9;
+		Resources.NumInputTriangles = 1234;
+		Resources.TangentPrecision = 3;
+	}
+
+	/** By hand: four root pages of 25 bytes in 100 bytes of RootData, nothing streamed. */
+	void FillWhole(Nanite::FResources& Resources)
+	{
+		Resources.RootData = Pattern(100, 3);
+		Resources.NumRootPages = 4;
+		for (uint32 Page = 0; Page < 4; ++Page)
+		{
+			AddPage(Resources, Page * 25, 25, 20);
+		}
+		Resources.NumClusters = 4;
+		Resources.NumInputTriangles = 500;
+		Resources.TangentPrecision = 3;
+	}
+
+	bool SamePages(const Nanite::FResources& A, const Nanite::FResources& B)
+	{
+		if (A.PageStreamingStates.Num() != B.PageStreamingStates.Num())
+		{
+			return false;
+		}
+		for (int32 Index = 0; Index < A.PageStreamingStates.Num(); ++Index)
+		{
+			const Nanite::FPageStreamingState& X = A.PageStreamingStates[Index];
+			const Nanite::FPageStreamingState& Y = B.PageStreamingStates[Index];
+			if (X.BulkOffset != Y.BulkOffset || X.BulkSize != Y.BulkSize || X.PageSize != Y.PageSize)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteV2FileTest,
+	"Mantle.Editor.Nanite.FileV2StreamedBlock",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteV2FileTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshNaniteBakeTestPrivate;
+
+	// Version 2 with streamed pages, from hand-made resources (no Nanite build needed): D:\Mantle\Untracked\local\build-plan\contracts\nanite-v2.md.
+	Nanite::FResources Streams;
+	FillStreaming(Streams);
+	const TArray<uint8> Streamed = Pattern(100, 50);
+	TArray<uint8> File;
+	FString Why;
+	if (!TestTrue(TEXT("a mesh with streamed pages writes"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Streams, Streamed, File, Why)))
+	{
+		AddError(Why);
+		return false;
+	}
+	TestTrue(TEXT("it says version 2"), File.Num() > 104 && File[4] == 2 && File[5] == 0 && File[6] == 0 && File[7] == 0);
+	if (File.Num() > 104)
+	{
+		// The file ends with the streamed block: its length (field 26), then its bytes (field 27).
+		uint32 Length = 0;
+		FMemory::Memcpy(&Length, File.GetData() + File.Num() - 104, sizeof(Length));
+		TestEqual(TEXT("the block is led by its length"), Length, 100u);
+		TestTrue(TEXT("and ends the file with its bytes"), FMemory::Memcmp(File.GetData() + File.Num() - 100, Streamed.GetData(), 100) == 0);
+	}
+
+	Nanite::FResources Back;
+	TArray<int32> Slots;
+	TArray<uint8> BackStreamed;
+	if (!TestTrue(TEXT("it reads back"), FMantleMeshNaniteFile::Read(File, MeshTag, Back, Slots, &Why, &BackStreamed)))
+	{
+		AddError(Why);
+		return false;
+	}
+	TestTrue(TEXT("root pages in RootData"), SameBytes(Back.RootData, Streams.RootData));
+	TestTrue(TEXT("streamed pages in their block"), SameBytes(BackStreamed, Streamed));
+	TestTrue(TEXT("all four pages in the table"), SamePages(Back, Streams));
+	TestEqual(TEXT("two root pages"), Back.NumRootPages, 2u);
+	TestEqual(TEXT("clusters"), Back.NumClusters, 9u);
+	TestEqual(TEXT("triangles"), Back.NumInputTriangles, 1234u);
+	TestEqual(TEXT("tangent precision (field 25, before the block)"), Back.TangentPrecision, 3);
+	TestEqual(TEXT("the file's resources have no StreamablePages of their own"), Back.StreamablePages.GetBulkDataSize(), static_cast<int64>(0));
+	// Without asking for the block the file still reads and is checked.
+	Nanite::FResources Alone;
+	TestTrue(TEXT("it reads without the block asked for"), FMantleMeshNaniteFile::Read(File, MeshTag, Alone, Slots, &Why));
+
+	// What the reader refuses.
+	Nanite::FResources Refused;
+	TArray<uint8> Cut(File.GetData(), File.Num() - 1);
+	TestFalse(TEXT("one byte of the block missing"), FMantleMeshNaniteFile::Read(Cut, MeshTag, Refused, Slots, &Why));
+	TArray<uint8> Longer = File;
+	Longer.Add(0);
+	TestFalse(TEXT("one byte past the block"), FMantleMeshNaniteFile::Read(Longer, MeshTag, Refused, Slots, &Why));
+	TArray<uint8> ShortLength = File;
+	ShortLength[File.Num() - 104] = 99;
+	TestFalse(TEXT("a block length that is not the rest of the file"), FMantleMeshNaniteFile::Read(ShortLength, MeshTag, Refused, Slots, &Why));
+	TArray<uint8> ZeroLength = File;
+	ZeroLength[File.Num() - 104] = 0;
+	TestFalse(TEXT("a block length of 0"), FMantleMeshNaniteFile::Read(ZeroLength, MeshTag, Refused, Slots, &Why));
+	TArray<uint8> Version3 = File;
+	Version3[4] = 3;
+	TestFalse(TEXT("version 3"), FMantleMeshNaniteFile::Read(Version3, MeshTag, Refused, Slots, &Why));
+	TestTrue(TEXT("says which version"), Why.Contains(TEXT("version 3")));
+	TArray<uint8> Version1 = File;
+	Version1[4] = 1;
+	TestFalse(TEXT("a version 1 file never has streamed pages"), FMantleMeshNaniteFile::Read(Version1, MeshTag, Refused, Slots, &Why));
+	TestFalse(TEXT("another mesh's file"), FMantleMeshNaniteFile::Read(File, TEXT("sha256:") + FString::ChrN(64, TEXT('e')), Refused, Slots, &Why));
+
+	// What the writer refuses: a table that does not describe the bytes, and bytes without a table (or a table without bytes).
+	TestFalse(TEXT("streamed pages in the table but no bytes"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Streams, File, Why));
+	TestTrue(TEXT("says so"), Why.Contains(TEXT("stream")));
+	Nanite::FResources Gap;
+	FillStreaming(Gap);
+	Gap.PageStreamingStates[3].BulkOffset = 71;
+	TestFalse(TEXT("a page that does not start where the one before it ends"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Gap, Streamed, File, Why));
+	Nanite::FResources Short;
+	FillStreaming(Short);
+	TestFalse(TEXT("streamed bytes the table does not cover"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Short, Pattern(101, 50), File, Why));
+	TestEqual(TEXT("no file for any of them"), File.Num(), 0);
+
+	// A mesh whose pages are all root pages: the version 1 file with its version word changed, nothing more.
+	Nanite::FResources Whole;
+	FillWhole(Whole);
+	TArray<uint8> WholeFile;
+	if (!TestTrue(TEXT("a mesh with no streamed pages writes"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Whole, WholeFile, Why)))
+	{
+		AddError(Why);
+		return false;
+	}
+	TestTrue(TEXT("it says version 2"), WholeFile.Num() > 8 && WholeFile[4] == 2);
+	TestFalse(TEXT("streamed bytes for it are refused"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Whole, Streamed, File, Why));
+	TArray<uint8> WholeV1 = WholeFile;
+	WholeV1[4] = 1;
+	Nanite::FResources AsV2;
+	Nanite::FResources AsV1;
+	TArray<uint8> V2Streamed(Streamed);
+	TestTrue(TEXT("read as version 2"), FMantleMeshNaniteFile::Read(WholeFile, MeshTag, AsV2, Slots, &Why, &V2Streamed));
+	TestTrue(TEXT("read as version 1 (nothing but the version word differs, and a version 1 file ends after field 25)"), FMantleMeshNaniteFile::Read(WholeV1, MeshTag, AsV1, Slots, &Why));
+	TestEqual(TEXT("no streamed block"), V2Streamed.Num(), 0);
+	TestTrue(TEXT("the same root data either way"), SameBytes(AsV1.RootData, AsV2.RootData) && SameBytes(AsV2.RootData, Whole.RootData));
+	TestTrue(TEXT("the same pages either way"), SamePages(AsV1, AsV2) && SamePages(AsV2, Whole));
+	TestEqual(TEXT("every page a root page"), static_cast<uint32>(AsV2.PageStreamingStates.Num()), AsV2.NumRootPages);
+	TArray<uint8> Extra = WholeFile;
+	Extra.Add(0);
+	TestFalse(TEXT("a byte past field 25 with no streamed pages"), FMantleMeshNaniteFile::Read(Extra, MeshTag, Refused, Slots, &Why));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteResidencyTest,
+	"Mantle.Editor.Nanite.BakeKeepsAtMostOneMiBInMemory",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteResidencyTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshNaniteBakeTestPrivate;
+
+	TestEqual(TEXT("the residency is 1024 KB, which the engine turns into 32 root pages"), FMantleMeshNaniteFile::ResidencyKB, 1024u);
+	if (!NaniteBuilds())
+	{
+		AddInfo(TEXT("skipped: this editor builds no Nanite data (started without a graphics device)"));
+		return true;
+	}
+
+	// A mesh that fits its 32 root pages: every page a root page, and the same file as when the whole mesh was kept.
+	UStaticMesh* Small = MakeGrid(64, /*bNanite*/ false, 0);
+	TArray<uint8> Fits;
+	TArray<uint8> Kept;
+	FString Why;
+	if (!TestTrue(TEXT("a small mesh bakes"), FMantleMeshNaniteBake::Bake(Small, { 0 }, MeshTag, Fits, Why)) ||
+		!TestTrue(TEXT("and bakes with the whole mesh kept"), FMantleMeshNaniteBake::Bake(Small, { 0 }, MeshTag, Kept, Why, nullptr, nullptr, 1.0f, MAX_uint32)))
+	{
+		AddError(Why);
+		return false;
+	}
+	TestTrue(TEXT("a mesh under 1 MiB is the file it was when the whole mesh was kept"), Fits == Kept);
+	Nanite::FResources FitsBack;
+	TArray<int32> Slots;
+	TArray<uint8> FitsStreamed;
+	if (TestTrue(TEXT("it reads back"), FMantleMeshNaniteFile::Read(Fits, MeshTag, FitsBack, Slots, &Why, &FitsStreamed)))
+	{
+		TestEqual(TEXT("every page a root page"), static_cast<uint32>(FitsBack.PageStreamingStates.Num()), FitsBack.NumRootPages);
+		TestEqual(TEXT("no streamed block"), FitsStreamed.Num(), 0);
+		TestEqual(TEXT("its triangles"), FitsBack.NumInputTriangles, 64u * 64u * 2u);
+	}
+
+	// The same mesh asked to keep one root page (32 KB): the rest is the file's streamed block. Quick, and the same code as the real size.
+	TArray<uint8> Streams;
+	if (TestTrue(TEXT("it bakes keeping one root page"), FMantleMeshNaniteBake::Bake(Small, { 0 }, MeshTag, Streams, Why, nullptr, nullptr, 1.0f, 32)))
+	{
+		Nanite::FResources Back;
+		TArray<uint8> Block;
+		if (TestTrue(TEXT("its file reads back"), FMantleMeshNaniteFile::Read(Streams, MeshTag, Back, Slots, &Why, &Block)))
+		{
+			TestEqual(TEXT("one root page"), Back.NumRootPages, 1u);
+			TestTrue(TEXT("more pages than that in the table"), Back.PageStreamingStates.Num() > 1);
+			TestTrue(TEXT("with their bytes in the block"), Block.Num() > 0);
+			TestTrue(TEXT("and no more than a root page's size in RootData"), Back.RootData.Num() > 0 && Back.RootData.Num() <= 32 * 1024);
+			TestEqual(TEXT("its triangles, all of them"), Back.NumInputTriangles, 64u * 64u * 2u);
+			AddInfo(FString::Printf(TEXT("64 x 64 grid at 32 KB: %d pages, %u root, %d bytes of root data, %d streamed, %d bytes in the file"),
+				Back.PageStreamingStates.Num(), Back.NumRootPages, Back.RootData.Num(), Block.Num(), Streams.Num()));
+		}
+		else
+		{
+			AddError(Why);
+		}
+	}
+	else
+	{
+		AddError(Why);
+	}
+	Small->MarkAsGarbage();
+
+	// A mesh well over 1 MiB, at the real residency: at most 32 root pages and 1 MiB of root data, the rest streamed.
+	UStaticMesh* Big = MakeGrid(300, /*bNanite*/ false, 0);
+	TArray<uint8> BigFile;
+	if (TestTrue(TEXT("a big mesh bakes"), FMantleMeshNaniteBake::Bake(Big, { 0 }, MeshTag, BigFile, Why)))
+	{
+		Nanite::FResources Back;
+		TArray<uint8> Block;
+		if (TestTrue(TEXT("its file reads back"), FMantleMeshNaniteFile::Read(BigFile, MeshTag, Back, Slots, &Why, &Block)))
+		{
+			TestTrue(TEXT("at most 32 root pages"), Back.NumRootPages >= 1 && Back.NumRootPages <= 32);
+			TestTrue(TEXT("and 1 MiB or less of root data"), Back.RootData.Num() > 0 && Back.RootData.Num() <= 1024 * 1024);
+			TestTrue(TEXT("the mesh was big enough to stream (more pages than root pages)"), static_cast<uint32>(Back.PageStreamingStates.Num()) > Back.NumRootPages);
+			TestTrue(TEXT("with its other pages in the block"), Block.Num() > 0);
+			TestEqual(TEXT("its triangles, all of them"), Back.NumInputTriangles, 300u * 300u * 2u);
+			AddInfo(FString::Printf(TEXT("300 x 300 grid: %d pages, %u root, %d bytes of root data, %d streamed, %d bytes in the file"),
+				Back.PageStreamingStates.Num(), Back.NumRootPages, Back.RootData.Num(), Block.Num(), BigFile.Num()));
+		}
+		else
+		{
+			AddError(Why);
+		}
+	}
+	else
+	{
+		AddError(Why);
+	}
+	Big->MarkAsGarbage();
 	return true;
 }
 
