@@ -203,17 +203,24 @@ bool FMantleSkyMeshBlueprintDomesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("each dome is named in the Sky category, not as an error"), CountSkyNotes(Unsupported), 2);
 	TestEqual(TEXT("and nothing else is reported"), Unsupported.Num(), 2);
 
-	// Exported: the Group and its lantern are written; the domes are not.
+	// Exported: the lantern is written and the domes are not. The lantern is plain scenery, so it goes to a cell with its world
+	// transform, and the Blueprint's plain Group, left with no child in the root, is dropped (cells contract 5.3). A Group that is
+	// still written keeps the lantern as its only child.
 	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
-	const FMantleEntity* Group = MantleExportedEntities::Named(Result, TEXT("BP_Embersky"));
-	if (TestNotNull(TEXT("the Blueprint's Group is written"), Group))
+	int32 Meshes = 0;
+	for (const FMantleEntity* Entity : MantleExportedEntities::All(Result))
+	{
+		Meshes += Entity->Type == EMantleEntityType::StaticMesh ? 1 : 0;
+	}
+	TestEqual(TEXT("two meshes are written, the ground and the lantern; the two domes are not"), Meshes, 2);
+	if (const FMantleEntity* Group = MantleExportedEntities::Named(Result, TEXT("BP_Embersky")))
 	{
 		int32 Children = 0;
 		for (const FMantleEntity* Entity : MantleExportedEntities::All(Result))
 		{
 			Children += Entity->Parent == Group->Id ? 1 : 0;
 		}
-		TestEqual(TEXT("with the lantern as its only child"), Children, 1);
+		TestEqual(TEXT("a written Group has the lantern as its only child"), Children, 1);
 	}
 	return true;
 }
