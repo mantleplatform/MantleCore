@@ -241,6 +241,13 @@ struct MANTLEEDITOR_API FMantleMaterialExtras
 	 */
 	TArray<uint8> SourceImages[8];
 	FString SourceNames[8];
+
+	/**
+	 * The graph's own cut-out threshold for a masked material: its scalar parameter "Alpha Threshold" when it is set between 0 and 1
+	 * (a master such as a foliage branch material applies the threshold in its graph and leaves the material's Opacity Mask Clip
+	 * Value at 0), else 0. Used only when GLTFExporter's alphaCutoff is 0 (FMantlePlaceAssetConverter::ResolveMaskCutoff).
+	 */
+	double SourceAlphaThreshold = 0.0;
 };
 
 /** One texture file ready to upload: PNG or JPEG, at most the texture size and byte caps. */
@@ -1143,6 +1150,18 @@ public:
 	 */
 	static FMantlePlaceMaterialDocument MaterialFromGltf(const FMantleGlbDocument& Document, int32 Index, const FString& MaterialName,
 		const FMantlePlaceAssetLimits& Limits, bool bSourceTexturesReported, FMantlePlaceAssetSet& OutSet, const FMantleMaterialExtras& Extras);
+
+	/** The cut-off a masked material with no usable one publishes with: the value foliage materials are authored at. */
+	static constexpr double DefaultMaskCutoff = 0.3333;
+
+	/**
+	 * The alphaCutoff a masked material publishes. A cut-off of 0 keeps every pixel (the game keeps alpha >= cutoff, so even a fully
+	 * transparent one passes), which draws a leaf card as a solid rectangle: it is never published. GLTFExporter writes the material's
+	 * Opacity Mask Clip Value, which is 0 for a master that applies its threshold in the graph, so a real one is taken from there
+	 * first (Cutoff above 0, kept as it is), then from SourceThreshold (the graph's "Alpha Threshold", when it is between 0 and 1),
+	 * else DefaultMaskCutoff. bOutGuessed is true only for that last case: nothing real was found.
+	 */
+	static double ResolveMaskCutoff(double Cutoff, double SourceThreshold, bool& bOutGuessed);
 
 	/**
 	 * One image as an upload for Slot: decoded, downscaled to Limits.MaxTextureSize, encoded (JPEG

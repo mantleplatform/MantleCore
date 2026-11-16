@@ -745,6 +745,18 @@ namespace MantlePlaceAssetConverterPrivate
 		return FMantleValidationIssue{ EMantleIssueSeverity::Error, FString(), Problem, Remedy };
 	}
 
+	/** The material's scalar parameter "Alpha Threshold" when it is set between 0 and 1 (a masked material only), else 0: FMantleMaterialExtras::SourceAlphaThreshold. */
+	double ReadAlphaThreshold(const UMaterialInterface* Material)
+	{
+		float Value = 0.0f;
+		if (Material && Material->GetBlendMode() == BLEND_Masked
+			&& Material->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Alpha Threshold")), Value) && Value > 0.0f && Value < 1.0f)
+		{
+			return Value;
+		}
+		return 0.0;
+	}
+
 	/**
 	 * #533: what the analysis recognized, with each source texture read (FMantleMaterialExtras). A world-aligned
 	 * mapping or layer blend any of whose textures cannot be read is dropped whole, a pan with its slot, each
@@ -3878,7 +3890,8 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	// A bake on anything but the plain surface (a vertex color, a landscape's UV range) adds its tag, so a different color is not served
 	// another's bake, and every plain bake keeps the key it always had.
 	// A translucent material whose opacity is always 1 publishes opaque: an earlier conversion of it (as see-through) must not stand in.
-	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
+	// A masked material never publishes a cut-off of 0 (ResolveMaskCutoff): an earlier conversion that did must not stand in.
+	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s maskcutoff=2"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
 		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""));
 }
@@ -4166,6 +4179,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 		}
 		FMantleMaterialExtras Extras = MaterialExtras(Analysis, Converted.Name, Out.Issues);
 		Extras.bTintMask = Surface.bTintMask;
+		Extras.SourceAlphaThreshold = MantlePlaceAssetConverterPrivate::ReadAlphaThreshold(Material);
 		Converted.Document = MaterialFromGltf(Flattened, 0, Converted.Name, Limits, bOversizeReported, Out, Extras);
 		{
 			const UMaterial* BaseMaterial = Material->GetMaterial();
@@ -4270,6 +4284,21 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 	return MaterialFromGltf(Document, Index, MaterialName, Limits, bSourceTexturesReported, OutSet, Extras);
 }
 
+double FMantlePlaceAssetConverter::ResolveMaskCutoff(const double Cutoff, const double SourceThreshold, bool& bOutGuessed)
+{
+	bOutGuessed = false;
+	if (Cutoff > KINDA_SMALL_NUMBER)
+	{
+		return FMath::Min(Cutoff, 1.0);
+	}
+	if (SourceThreshold > KINDA_SMALL_NUMBER && SourceThreshold < 1.0)
+	{
+		return SourceThreshold;
+	}
+	bOutGuessed = true;
+	return DefaultMaskCutoff;
+}
+
 FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const FMantleGlbDocument& Document, int32 Index, const FString& MaterialName,
 	const FMantlePlaceAssetLimits& Limits, bool bSourceTexturesReported, FMantlePlaceAssetSet& OutSet, const FMantleMaterialExtras& Extras)
 {
@@ -4305,6 +4334,17 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		Doc.AlphaMode = TEXT("opaque");
 	}
 	Doc.AlphaCutoff = FMath::Clamp(NumberField(Material, TEXT("alphaCutoff"), 0.5), 0.0, 1.0);
+	if (Doc.AlphaMode == TEXT("mask"))
+	{
+		// A cut-off of 0 keeps every pixel, so a leaf card publishes as a solid rectangle (Medieval's pines and shrubs).
+		bool bGuessed = false;
+		Doc.AlphaCutoff = ResolveMaskCutoff(Doc.AlphaCutoff, Extras.SourceAlphaThreshold, bGuessed);
+		if (bGuessed)
+		{
+			Warn(FString::Printf(TEXT("its cut-out threshold could not be read (Opacity Mask Clip Value 0 and no Alpha Threshold), so it publishes with the usual foliage cut-off %s."),
+				*Number(DefaultMaskCutoff)));
+		}
+	}
 	Material->TryGetBoolField(TEXT("doubleSided"), Doc.bDoubleSided);
 
 	const TSharedPtr<FJsonObject> Extensions = ObjectField(Material, TEXT("extensions"));
