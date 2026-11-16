@@ -24,6 +24,10 @@
 #include "StaticMeshResources.h"
 #include "UObject/Package.h"
 
+THIRD_PARTY_INCLUDES_START
+#include "zlib.h"
+THIRD_PARTY_INCLUDES_END
+
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleMeshNaniteBakePrivate
 {
@@ -234,8 +238,6 @@ int64 FMantleMeshNaniteFile::MaxRawBytes()
 
 bool FMantleMeshNaniteFile::Pack(const TConstArrayView<uint8> Mnd1, TArray<uint8>& OutContainer, FString& OutReason)
 {
-	using namespace MantleMeshNaniteBakePrivate;
-
 	OutContainer.Reset();
 	if (Mnd1.Num() == 0 || Mnd1.Num() > MaxRawBytes())
 	{
@@ -245,21 +247,27 @@ bool FMantleMeshNaniteFile::Pack(const TConstArrayView<uint8> Mnd1, TArray<uint8
 		return false;
 	}
 	// Where the head ends and how long each streamed page is: the file's own page table (Read checks it against both blocks). The mesh tag is
-	// the file's own: this packs what Write made, it does not compare it with a mesh.
+	// the file's own: this packs what Write made, it does not compare it with a mesh. Read exactly as the archive wrote them (an int32 length
+	// that counts the terminating 0, then that many 8-bit characters; 0 is an empty string). A tag written in UTF-16 (a negative length) is
+	// refused: Mantle's are always ASCII ("sha256:<hex>").
 	FString Tag;
 	{
 		int32 Offset = 8;
 		for (int32 Part = 0; Part < 2; ++Part)
 		{
-			int32 Length = 0;
-			if (Offset + 4 > Mnd1.Num() || (FMemory::Memcpy(&Length, Mnd1.GetData() + Offset, 4), Length <= 0 || Length > 1024 || Offset + 4 + Length > Mnd1.Num()))
+			int32 Length = -1;
+			if (Offset + 4 <= Mnd1.Num())
+			{
+				FMemory::Memcpy(&Length, Mnd1.GetData() + Offset, 4);
+			}
+			if (Mnd1.Num() < 12 || FMemory::Memcmp(Mnd1.GetData(), "MND1", 4) != 0 || Length < 0 || Length > 1024 || Offset + 4 + Length > Mnd1.Num())
 			{
 				OutReason = TEXT("it is not an MND1 file");
 				return false;
 			}
-			if (Part == 1)
+			if (Part == 1 && Length > 0)
 			{
-				Tag = FString(ANSI_TO_TCHAR(reinterpret_cast<const ANSICHAR*>(Mnd1.GetData() + Offset + 4)));
+				Tag = FString(Length - 1, reinterpret_cast<const ANSICHAR*>(Mnd1.GetData() + Offset + 4));
 			}
 			Offset += 4 + Length;
 		}
@@ -413,10 +421,26 @@ bool FMantleMeshNaniteFile::InflatePiece(const TConstArrayView<uint8> Container,
 		return false;
 	}
 	OutBytes.SetNumUninitialized(static_cast<int32>(Piece.Raw));
-	if (!FCompression::UncompressMemory(NAME_Zlib, OutBytes.GetData(), OutBytes.Num(), Container.GetData() + Piece.Offset, static_cast<int32>(Piece.Packed)))
+	// zlib itself, not FCompression::UncompressMemory: that one never looks at what is left of the input after the Adler-32 (Compression.cpp
+	// inflates once with Z_FINISH), so a stream followed by stray bytes would pass. Contract check 5: the stream inflates to exactly Raw bytes and
+	// ends exactly at Packed.
+	z_stream Stream;
+	FMemory::Memzero(Stream);
+	Stream.next_in = const_cast<Bytef*>(reinterpret_cast<const Bytef*>(Container.GetData() + Piece.Offset));
+	Stream.avail_in = Piece.Packed;
+	Stream.next_out = reinterpret_cast<Bytef*>(OutBytes.GetData());
+	Stream.avail_out = Piece.Raw;
+	bool bExact = inflateInit2(&Stream, 15) == Z_OK;
+	if (bExact)
+	{
+		const int Result = inflate(&Stream, Z_FINISH);
+		bExact = Result == Z_STREAM_END && Stream.total_out == Piece.Raw && Stream.avail_in == 0;
+		inflateEnd(&Stream);
+	}
+	if (!bExact)
 	{
 		OutBytes.Reset();
-		SetReason(OutReason, TEXT("is damaged (a piece's zlib stream does not inflate to the size the table names)"));
+		SetReason(OutReason, TEXT("is damaged (a piece's zlib stream does not inflate to the size the table names and end where the table says)"));
 		return false;
 	}
 	return true;
@@ -443,6 +467,7 @@ bool FMantleMeshNaniteFile::Unpack(const TConstArrayView<uint8> Container, TArra
 		{
 			PagesRaw += Pieces[Piece].Raw;
 		}
+		Whole.Reserve(static_cast<int32>(Whole.Num() + 4 + PagesRaw));
 		const uint32 Sum = static_cast<uint32>(PagesRaw);
 		Whole.Add(static_cast<uint8>(Sum));
 		Whole.Add(static_cast<uint8>(Sum >> 8));
@@ -466,7 +491,38 @@ bool FMantleMeshNaniteFile::ReadUploaded(const TConstArrayView<uint8> Container,
 	TArray<int32>& OutSlotToPublished, FString* OutReason, TArray<uint8>* OutStreamedPages)
 {
 	TArray<uint8> Mnd1;
-	return Unpack(Container, Mnd1, OutReason) && Read(Mnd1, MeshTag, OutResources, OutSlotToPublished, OutReason, OutStreamedPages);
+	if (!Unpack(Container, Mnd1, OutReason) || !Read(Mnd1, MeshTag, OutResources, OutSlotToPublished, OutReason, OutStreamedPages))
+	{
+		return false;
+	}
+	// Contract check 6, what the game does after inflating the head: the table must agree with the page table. Unpack and Read alone accept any
+	// split of the pages whose sizes add up; this refuses one whose pieces are not the pages (a piece-to-page mapping bug in Pack).
+	TArray<FContainerPiece> Pieces;
+	const int32 NumStreamed = OutResources.PageStreamingStates.Num() - static_cast<int32>(OutResources.NumRootPages);
+	FString TableWhy;
+	bool bAgrees = ReadContainerTable(Container, Pieces, &TableWhy) && Pieces.Num() == NumStreamed + 1;
+	uint64 RawBefore = 0;
+	for (int32 Index = 0; bAgrees && Index < NumStreamed; ++Index)
+	{
+		const Nanite::FPageStreamingState& Page = OutResources.PageStreamingStates[OutResources.NumRootPages + Index];
+		bAgrees = Pieces[Index + 1].Raw == Page.BulkSize && Page.BulkOffset == RawBefore;
+		RawBefore += Pieces[Index + 1].Raw;
+	}
+	if (!bAgrees)
+	{
+		if (OutReason)
+		{
+			*OutReason = TableWhy.IsEmpty() ? FString(TEXT("is damaged (its table does not agree with its page table)")) : TableWhy;
+		}
+		OutResources = Nanite::FResources();
+		OutSlotToPublished.Reset();
+		if (OutStreamedPages)
+		{
+			OutStreamedPages->Reset();
+		}
+		return false;
+	}
+	return true;
 }
 
 bool FMantleMeshNaniteFile::Write(const FString& MeshTag, const TConstArrayView<int32> SlotToPublished, const Nanite::FResources& Resources,

@@ -93,13 +93,13 @@ public:
 	static bool Pack(TConstArrayView<uint8> Mnd1, TArray<uint8>& OutContainer, FString& OutReason);
 
 	/**
-	 * The table of a container, checked before anything is inflated or allocated: magic, count, the table fits the file, the pieces fill the file
+	 * The table of a container, checked from the table and the file size alone (nothing is inflated; what is allocated is bounded by the file's size): magic, count, the table fits the file, the pieces fill the file
 	 * exactly, no piece is smaller than a zlib stream or inflates to nothing, and the MND1 size (head plus 4 plus the pages) is within MaxRawBytes.
 	 * OutPieces[k].Offset is found from the table alone. False, with the reason, if any of it fails.
 	 */
 	static bool ReadContainerTable(TConstArrayView<uint8> Container, TArray<FContainerPiece>& OutPieces, FString* OutReason = nullptr);
 
-	/** One piece inflated to exactly its Raw bytes. False, with the reason, when it does not; no other piece is read. */
+	/** One piece inflated to exactly its Raw bytes, its zlib stream ending exactly at Packed (no bytes after its Adler-32). False, with the reason, when it does not; no other piece is read. */
 	static bool InflatePiece(TConstArrayView<uint8> Container, const FContainerPiece& Piece, TArray<uint8>& OutBytes, FString* OutReason = nullptr);
 
 	/**
@@ -108,7 +108,7 @@ public:
 	 */
 	static bool Unpack(TConstArrayView<uint8> Container, TArray<uint8>& OutMnd1, FString* OutReason = nullptr);
 
-	/** Unpack, then Read: what the game does with an uploaded file. */
+	/** Unpack, then Read, then the game's check that the table agrees with the page table (each piece is a page, in order): what the game does with an uploaded file. */
 	static bool ReadUploaded(TConstArrayView<uint8> Container, const FString& MeshTag, Nanite::FResources& OutResources,
 		TArray<int32>& OutSlotToPublished, FString* OutReason = nullptr, TArray<uint8>* OutStreamedPages = nullptr);
 };
