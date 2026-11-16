@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePhysicsProp.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "MantleCellArea.h"
 #include "MantleRuntime.h"
@@ -581,6 +582,7 @@ void AMantlePhysicsProp::OnRep_EntityId()
 
 void AMantlePhysicsProp::OnPlaceRetained()
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR("Retained_PhysicsProp");
 	if (IMantlePhysicsPropPlace* Loaded = PlaceForWorld ? PlaceForWorld(GetWorld()) : nullptr)
 	{
 		Loaded->OnPlaceReady().Remove(PlaceRetainedHandle);

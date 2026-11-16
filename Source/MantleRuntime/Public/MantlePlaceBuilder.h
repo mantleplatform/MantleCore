@@ -42,6 +42,12 @@ struct FMantleBuildResult
 	TMap<FString, AActor*> Actors;
 
 	/**
+	 * The entity ids whose actor FMantleBuildOptions::OnActorBuilt has been called for (as each stood, spread over the build's frames): what a caller does once for every actor does not
+	 * need doing again, in one frame, when the build ends (UMantleLoadedPlaceSubsystem::Retain skips these).
+	 */
+	TSet<FString> ActorsHandledWhileBuilding;
+
+	/**
 	 * Environment actors spawned by FMantleEnvironment (the default sky cluster, and a
 	 * synthesized sun when the place has none). Not keyed by entity id — they are not place
 	 * entities — but torn down alongside Actors by every FMantlePlaceBuilder::Teardown caller.
@@ -101,6 +107,13 @@ struct FMantleBuildOptions
 	 * parent and nothing that names them (the cell format guarantees both).
 	 */
 	bool bCellSlice = false;
+
+	/**
+	 * Called for each entity's actor as soon as it stands (right after it is added to the result), with its entity id. A caller's own per-actor work goes here, so a big place pays it a few
+	 * entities a frame with the build instead of all at once in the frame the build ends (7,000 actors named for the network took 77 ms in one tick). The actor is not parented or placed yet:
+	 * only work that does not depend on that (a name) belongs here. Not called for a cell slice's actors.
+	 */
+	TFunction<void(AActor* Actor, const FString& EntityId)> OnActorBuilt;
 };
 
 /**
@@ -177,4 +190,14 @@ public:
 
 	/** Destroys actors previously produced by Build. */
 	static void Teardown(FMantleBuildResult& Result);
+
+	/**
+	 * Whether a machine of this net mode draws a Terrain as the far ground plus full chunks near the view (the terrain stream, stage 3 and 4 of large places): every machine that draws, for
+	 * every place, with cells or without: a client, a standalone game and a listen server. A dedicated server draws nothing and builds no chunk. The ground's collision is a height field on
+	 * every machine, whatever is drawn.
+	 */
+	static bool DrawsTerrainAsFarGround(ENetMode NetMode);
+
+	/** The same for a world: false for a world that is not a game world (the editor's importer and preview build every chunk in full: they have no stream to build them near a view), else by its net mode. */
+	static bool DrawsTerrainAsFarGround(const UWorld* World);
 };

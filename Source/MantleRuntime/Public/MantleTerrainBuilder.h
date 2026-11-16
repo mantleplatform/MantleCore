@@ -12,6 +12,7 @@ class UMaterialInterface;
 class UObject;
 class UStaticMesh;
 class UStaticMeshComponent;
+class UMantleTerrainCollisionComponent;
 class USceneComponent;
 class UTexture;
 class UWorld;
@@ -52,6 +53,20 @@ namespace MantleTerrainMaterialParameters
 	constexpr const TCHAR* RoughnessFactor = TEXT("RoughnessFactor");
 }
 
+/**
+ * The terrains that touch one terrain along an edge: the other tiles of a landscape that was cut into tiles, or Terrains placed edge to edge by hand.
+ * A neighbor shares its border samples with this terrain (its last column is this one's first, and so on), so a tile's heights can see one sample past each of its own borders.
+ * Sides: 0 left (-X, this terrain's sample column 0), 1 right (+X), 2 bottom (-Y), 3 top (+Y). A null entry is no neighbor.
+ */
+struct FMantleTerrainEdgeNeighbors
+{
+	TSharedPtr<const FMantleHeightfield> Field[4];
+
+	bool Has(const int32 Side) const { return Field[Side].IsValid(); }
+
+	bool HasAny() const { return Has(0) || Has(1) || Has(2) || Has(3); }
+};
+
 /** How the terrain's chunks are built. */
 struct FMantleTerrainBuildParams
 {
@@ -61,23 +76,35 @@ struct FMantleTerrainBuildParams
 	/** Most LODs per chunk; each halves the one before it, while it still has a quad. */
 	int32 MaxLODs = 5;
 
-	/** False on a dedicated server: LOD 0 only, which is all collision needs and nothing is drawn. */
+	/** False on a dedicated server: LOD 0 only (nothing is drawn; a server builds no chunk at all, see bChunkMeshes). */
 	bool bRenderLODs = true;
 
-	/** Complex-as-simple collision from LOD 0, cooked in the build (the place is not playable without it). */
+	/**
+	 * The ground's collision: one height field per block of ChunkQuads squares (UMantleTerrainCollisionComponent), on every machine, from the heights the machine already holds. The chunk
+	 * meshes carry no collision at all, whether they are built or not.
+	 */
 	bool bCollision = true;
 
+	/** False on a dedicated server: no chunk mesh is built, only the collision blocks (a server draws nothing). */
+	bool bChunkMeshes = true;
+
 	/**
-	 * False builds CPU-only chunk meshes for collision: no render resources, everything else as usual. A build
+	 * The terrain's heights, shared: the collision blocks keep them (the navigation system reads them from other threads) and read each block's samples from them. When null the
+	 * spawn makes a copy of the heightfield it is given.
+	 */
+	TSharedPtr<const FMantleHeightfield> FieldOwner;
+
+	/**
+	 * False builds CPU-only chunk meshes: no render resources, everything else as usual (a test run that draws nothing). A build
 	 * also skips them in a cooked process that can never render (!FApp::CanEverRenderOrProduceRenderData), which
-	 * is the dedicated server (FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources).
+	 * is the dedicated server (FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources), though a server builds no chunk at all (bChunkMeshes).
 	 */
 	bool bInitRenderResources = true;
 
 	/**
 	 * FMantleTerrainSpawn builds only the far ground: each chunk is its lowest detail level alone (the one a chunk is drawn at furthest away, the same vertices and the same skirts),
-	 * with no collision and no shadow, as a component of its own. A player's machine that streams the place (FMantleTerrainStream) draws this everywhere and swaps a chunk for its
-	 * full version (every LOD, cooked collision, shadows) while the player is near. Ignored by BuildChunks, BuildOneChunk and the dedicated server's builds.
+	 * with no shadow, as a component of its own. A player's machine that streams the place (FMantleTerrainStream) draws this everywhere and swaps a chunk for its
+	 * full version (every LOD, shadows) while the player is near. The ground's collision is the height-field blocks, whatever a chunk draws. Ignored by BuildChunks and BuildOneChunk.
 	 */
 	bool bFarOnly = false;
 
@@ -86,6 +113,12 @@ struct FMantleTerrainBuildParams
 	 * along them; a chunk that is all hole gets no mesh. A coarser LOD's quad is a hole when any quad it covers is.
 	 */
 	TSharedPtr<const FMantleTerrainHoleGrid> Holes;
+
+	/**
+	 * The terrains that touch this one (FMantleTerrainAdjacency::Find), or null for none: a border shared with a neighbor gets a skirt like a border between two chunks of one terrain
+	 * (so a coarse and a fine chunk across the seam leave no crack), and its normals read the neighbor's heights (so there is no shading line along the seam).
+	 */
+	TSharedPtr<const FMantleTerrainEdgeNeighbors> Neighbors;
 
 	/** Outer of the chunk meshes; the transient package when null. */
 	UObject* Outer = nullptr;
@@ -155,7 +188,7 @@ struct FMantleTerrainLayerLook
  *     grid), so lighting is continuous across chunks and LODs.
  *   - UV0 spans the whole terrain, 0 to 1 on each axis: the weightmap's space, and each layer's
  *     tiling is a multiple of it.
- *   - Collision is LOD 0's triangles, complex as simple and double-sided, cooked in the build.
+ *   - A chunk is a picture only. The collision is a Chaos height field per block of 128 squares (FMantleTerrainCollision), made from the same samples, split the same way.
  *
  * Game thread (creates UObjects). Under -NullRHI the meshes build with their CPU data only.
  */
@@ -186,8 +219,11 @@ public:
 	/** The screen size below which LOD Lod gives way to the next: 1 for LOD 0, then 0.5 / 2^Lod. */
 	static float LODScreenSize(int32 Lod);
 
-	/** The surface normal at sample (X, Y), from central differences (one-sided at the border). */
-	static FVector3f SampleNormal(const FMantleHeightfield& Field, int32 X, int32 Y);
+	/**
+	 * The surface normal at sample (X, Y), from central differences (one-sided at a border with no neighbor). Edges, when given, supplies the sample just past a border that has a
+	 * neighbor: the neighbor's sample one in from its own matching border, so the two tiles of a seam compute the same normal for the shared sample.
+	 */
+	static FVector3f SampleNormal(const FMantleHeightfield& Field, int32 X, int32 Y, const FMantleTerrainEdgeNeighbors* Edges = nullptr);
 
 	/**
 	 * How far a skirt must hang below the edge from First to Last (a row when bAlongX, a column
@@ -199,11 +235,11 @@ public:
 	/**
 	 * One chunk at one LOD as a mesh description, vertices relative to the chunk's origin. Skirts
 	 * (SkirtDepth above 0) on each edge whose bSkirts entry is set: left (X = First.X), right, bottom
-	 * (Y = First.Y), top. Front faces point up: a quad's triangles are (x, y), (x, y + 1), (x + 1, y)
-	 * and (x + 1, y), (x, y + 1), (x + 1, y + 1), whose cross(c - a, b - a) is +Z.
+	 * (Y = First.Y), top. Front faces point up: a quad is split from (x, y) to (x + 1, y + 1), as the height field is, into the triangles (x, y), (x + 1, y + 1), (x + 1, y)
+	 * and (x, y), (x, y + 1), (x + 1, y + 1), whose cross(c - a, b - a) is +Z.
 	 */
 	static void BuildChunkDescription(const FMantleHeightfield& Field, const FIntPoint& First, const FIntPoint& Last,
-		int32 Step, float SkirtDepth, const bool (&bSkirts)[4], FMeshDescription& Out, const FMantleTerrainHoleGrid* Holes = nullptr);
+		int32 Step, float SkirtDepth, const bool (&bSkirts)[4], FMeshDescription& Out, const FMantleTerrainHoleGrid* Holes = nullptr, const FMantleTerrainEdgeNeighbors* Edges = nullptr);
 
 	/** Every chunk's mesh. False, with the reason (and nothing in Out), when the heightfield is unusable or a mesh fails. */
 	static bool BuildChunks(const FMantleHeightfield& Field, const FMantleTerrainBuildParams& Params,
@@ -229,18 +265,25 @@ public:
 		FMantleTerrainPreparedChunk& Out);
 
 	/**
-	 * The second half: the mesh of a prepared chunk, on the game thread. Collision is cooked here (Params.bCollision and bCookCollision, a full chunk only); a caller that cooks it itself
-	 * (the stream does, off the game thread) passes false. A chunk that is all hole has no mesh: true with bOutEmpty set. False, with the reason, when the mesh fails.
+	 * The second half: the mesh of a prepared chunk, on the game thread. The mesh is a picture only (no body, no CPU copy of its triangles). A chunk that is all hole has no mesh: true
+	 * with bOutEmpty set. False, with the reason, when the mesh fails.
 	 */
-	static bool FinishChunk(const FMantleTerrainBuildParams& Params, FMantleTerrainPreparedChunk&& Prepared, bool bCookCollision, int64& InOutVertices,
+	static bool FinishChunk(const FMantleTerrainBuildParams& Params, FMantleTerrainPreparedChunk&& Prepared, int64& InOutVertices,
 		FMantleTerrainChunk& OutChunk, bool& bOutEmpty, FString* OutError = nullptr);
 
 	/**
-	 * One chunk's mesh as a component of Owner under Root: Static or Movable as the terrain is, blocking everything when bCollision, casting a shadow when bCastShadow (a far
-	 * chunk never does: it has no collision, no overlaps and no part in distance-field lighting either). Registered unless bRegister is false. Game thread.
+	 * One chunk's mesh as a component of Owner under Root: Static or Movable as the terrain is, with no collision (the ground's collision is AddCollisionBlock's), casting a shadow when
+	 * bCastShadow (a far chunk never does: it has no overlaps and no part in distance-field lighting either). Registered unless bRegister is false. Game thread.
 	 */
 	static UStaticMeshComponent* AddChunkComponent(AActor* Owner, USceneComponent* Root, const FMantleTerrainChunk& Chunk, UMaterialInterface* Material, bool bStatic,
-		bool bCastShadow, bool bCollision, bool bFar, bool bRegister = true);
+		bool bCastShadow, bool bFar, bool bRegister = true);
+
+	/**
+	 * The collision of chunk (ChunkX, ChunkY)'s squares: a height-field component under Root, Static or Movable as the terrain is, made from Field's samples and the hole grid. Null for a
+	 * chunk with nothing to stand on (all hole) or a heightfield the shape cannot be made from. Game thread.
+	 */
+	static UMantleTerrainCollisionComponent* AddCollisionBlock(AActor* Owner, USceneComponent* Root, const TSharedPtr<const FMantleHeightfield>& Field,
+		const TSharedPtr<const FMantleTerrainHoleGrid>& Holes, int32 ChunkQuads, int32 ChunkX, int32 ChunkY, bool bStatic);
 
 	/** "Layer<Layer><Suffix>", one of M_MantleTerrain's per-layer parameters. */
 	static FName LayerParameter(int32 Layer, const TCHAR* Suffix);
@@ -266,6 +309,35 @@ public:
 		bool bCastShadow, const FMantleTerrainBuildParams& Params, FString* OutError = nullptr);
 };
 
+/** One Terrain as the adjacency search sees it: where it stands in the world and its heights. */
+struct FMantleTerrainPlacement
+{
+	FTransform World = FTransform::Identity;
+	TSharedPtr<const FMantleHeightfield> Field;
+};
+
+/**
+ * Which Terrains touch which (stage 4, terrain tiles). Two Terrains touch when one's right (+X) border row of samples lies on the other's left border in world space, sample for
+ * sample, to within ToleranceCm in all three axes (or the same with the top and bottom borders): the same number of samples along the shared border, the same turn and scale, no step in
+ * height between the two origins, the same spacing across the border (so a height of one is a height of the other and the two slopes mean the same). That is exactly how an exporter cuts a landscape into tiles that share their border samples, and it needs no key in the place file; Terrains placed edge to
+ * edge by hand are found the same way. A diagonal neighbor does not count (a normal reads only along an axis). Pure data, any thread.
+ */
+class MANTLERUNTIME_API FMantleTerrainAdjacency
+{
+public:
+	/** How far, in cm, two border samples may lie apart and still be the same point (the place file's own precision is 0.01 cm). */
+	static constexpr double ToleranceCm = 1.0;
+
+	/**
+	 * Out gets one entry per Terrain, in order: its neighbors (null Field for none). A Terrain with no Field, or one the builder cannot use
+	 * (FMantleTerrainBuilder::IsUsableHeightfield), touches nothing.
+	 */
+	static void Find(TConstArrayView<FMantleTerrainPlacement> Terrains, TArray<FMantleTerrainEdgeNeighbors>& Out);
+
+	/** Whether B's left border lies on A's right border (bAlongX true) or B's bottom border on A's top border (false). */
+	static bool BorderMeets(const FMantleTerrainPlacement& A, const FMantleTerrainPlacement& B, bool bAlongX);
+};
+
 /**
  * FMantleTerrainBuilder::Spawn in steps: Begin makes the actor and its root, each Step builds one chunk (the unit that
  * costs, tens of milliseconds for 128 quads with five LODs and cooked collision) and puts it on the actor, so a big
@@ -288,12 +360,12 @@ public:
 
 	~FMantleTerrainSpawn();
 
-	/** What one Step of a far-only spawn may spend, seconds. */
+	/** What one Step of a far-only spawn, or of a server's (collision blocks only), may spend, seconds. */
 	static constexpr double FarBudgetSeconds = 0.003;
 
 	/**
-	 * Builds the next chunk. True once there is nothing more to do: every chunk is on the actor, or a chunk failed (HasFailed). A far-only spawn builds as many chunks as fit in
-	 * FarBudgetSeconds (at least one): a far chunk costs a fraction of a full one.
+	 * Builds the next chunk and its collision block. True once there is nothing more to do: every chunk is on the actor, or a chunk failed (HasFailed). A far-only spawn builds as many
+	 * chunks as fit in FarBudgetSeconds (at least one): a far chunk costs a fraction of a full one. So does a spawn with no chunk meshes (a server's): a block costs a fraction of a mesh.
 	 */
 	bool Step();
 
@@ -324,6 +396,8 @@ private:
 	/** Held strongly: a dynamic instance in the transient package, which nothing else roots until a chunk takes it. */
 	TStrongObjectPtr<UMaterialInterface> Material;
 	const FMantleHeightfield* Field = nullptr;
+	/** The heights the collision blocks share (Params.FieldOwner, or a copy). */
+	TSharedPtr<const FMantleHeightfield> FieldShared;
 	FMantleTerrainBuildParams Params;
 	bool bCastShadow = true;
 	/** The terrain was made Static, in place: its chunks are too. */
@@ -332,6 +406,13 @@ private:
 	int32 ChunksY = 0;
 	/** The next chunk, in the order BuildChunks takes them: X fastest. */
 	int32 Next = 0;
+	/** Collision blocks made so far, and the bytes their shapes hold. */
+	int32 Blocks = 0;
+	int64 ShapeBytes = 0;
+	/** -MantleTestTerrainRounding (not in a shipped build): the largest the blocks' shapes lie below the file, the largest bound of a block, and the blocks that broke a bound or lay above the file. */
+	double RoundingLargestCm = 0.0;
+	double RoundingBoundCm = 0.0;
+	int32 RoundingBroken = 0;
 	int64 Vertices = 0;
 	double BuildSeconds = 0.0;
 	FString Error;

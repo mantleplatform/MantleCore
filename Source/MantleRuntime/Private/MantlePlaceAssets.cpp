@@ -4052,9 +4052,12 @@ void FMantlePlaceAssets::LogProgress()
 	}
 	NextProgressLogAt = Now + Settings.ProgressLogSeconds;
 	const FMantlePlaceAssetProgress Progress = GetProgress();
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS progress %d of %d assets ready (%d failed), %.1f of %.1f MB"),
+	int32 ActiveDownloads = 0;
+	int32 QueuedDownloads = 0;
+	Store->GetDownloadCounts(ActiveDownloads, QueuedDownloads);
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS progress %d of %d assets ready (%d failed), %.1f of %.1f MB; downloads active %d, queued %d"),
 		Progress.ReadyCount, Progress.TotalCount, Progress.FailedCount,
-		MantlePlaceAssetsPrivate::Megabytes(Progress.DoneBytes), MantlePlaceAssetsPrivate::Megabytes(Progress.TotalBytes));
+		MantlePlaceAssetsPrivate::Megabytes(Progress.DoneBytes), MantlePlaceAssetsPrivate::Megabytes(Progress.TotalBytes), ActiveDownloads, QueuedDownloads);
 }
 
 // ---- Sounds -------------------------------------------------------------------------------------------

@@ -133,6 +133,17 @@ public:
 	virtual void Fetch(
 		const FString& Url, const TSharedRef<FArchive>& Sink,
 		TFunction<void(const FMantleAssetFetchResult&)> OnDone) = 0;
+
+	/**
+	 * Fetch, told how big the file is (0: not known). The store calls this one. The HTTP fetcher gives a small file shorter timeouts (a stalled connection to a CDN is given up in seconds, not
+	 * minutes); another fetcher need not care and gets Fetch.
+	 */
+	virtual void FetchSized(
+		const FString& Url, const TSharedRef<FArchive>& Sink, int64 ExpectedBytes,
+		TFunction<void(const FMantleAssetFetchResult&)> OnDone)
+	{
+		Fetch(Url, Sink, MoveTemp(OnDone));
+	}
 };
 
 /** The store's knobs. FromConfig reads [Mantle.AssetStore] in the game ini over these defaults. */
@@ -241,6 +252,9 @@ public:
 	/** Bytes received so far for a hash being downloaded, else 0. */
 	int64 GetInFlightBytes(const FMantleContentHash& Hash) const;
 
+	/** Downloads running now, and downloads waiting for a free slot (the progress line of a place's assets says both). */
+	void GetDownloadCounts(int32& OutActive, int32& OutQueued) const;
+
 	/** Where a hash's file lives, whether or not it is stored. */
 	FString PathFor(const FMantleContentHash& Hash) const;
 
@@ -276,6 +290,10 @@ private:
 		int32 LastStatus = 0;
 		FString LastError;
 		TSharedPtr<FMantleAssetSink> Sink;
+		/** This attempt's clock (FPlatformTime::Seconds), for the timing line of "stored": queued, the fetch started, the transfer done (set on the HTTP thread before Finalize is launched). */
+		double QueuedSeconds = 0.0;
+		double StartedSeconds = 0.0;
+		double DoneSeconds = 0.0;
 	};
 
 	struct FEntry

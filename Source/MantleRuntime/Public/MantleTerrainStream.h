@@ -1,10 +1,11 @@
 // Copyright Joshua Eger. All Rights Reserved.
-// A streaming player's machine and a Terrain (stage 3 of large places, the far ground).
+// A streaming player's machine and a Terrain (stage 3 of large places, the far ground; stage 4, the collision apart from the pictures).
 //
-// Such a machine builds the terrain's lowest level of detail for every chunk at the join (FMantleTerrainBuildParams::bFarOnly): cheap, no collision, no shadow, drawn
-// everywhere. This component then builds a chunk in full (every LOD, cooked collision, shadows: what a terrain is everywhere today) while a view is near it and swaps the
-// two chunk by chunk: the full one is registered and the far one unregistered in the same game-thread step, and the other way round when the view leaves, so a chunk is
-// never drawn twice and never missing. A server keeps every chunk in full (it never has this component), and so does a standalone game.
+// Such a machine builds the terrain's lowest level of detail for every chunk at the join (FMantleTerrainBuildParams::bFarOnly): cheap, no shadow, drawn everywhere. This component
+// then builds a chunk in full (every LOD, shadows) while a view is near it and swaps the two chunk by chunk: the full one is registered and the far one unregistered in the
+// same game-thread step, and the other way round when the view leaves, so a chunk is never drawn twice and never missing. The chunks are pictures only: the ground's collision is
+// the height-field blocks (FMantleTerrainCollision) that stand from the join on, on every machine, so nothing here waits for a cook and nothing falls where a chunk is far.
+// A dedicated server builds no chunk and never has this component; a client, a standalone game and a listen server do, for a place with cells or without.
 
 #pragma once
 
@@ -54,8 +55,6 @@ enum class EMantleTerrainChunkState : uint8
 	Far,
 	Building,
 	Near,
-	/** The full version stands and is on its way out: it still draws and still collides, but it does not count as standing (a body above it stops simulating first). */
-	Releasing,
 	/** Nothing to show (a chunk lost to holes). */
 	Empty,
 	/** The full version could not be made; the far one stays. */
@@ -68,6 +67,8 @@ struct MANTLERUNTIME_API FMantleTerrainStreamPlan
 	/** Full chunks stand this far from a view: the largest draw distance of the place's cell levels, kept within these. */
 	static constexpr double MinNearRadiusCm = 25600.0;
 	static constexpr double MaxNearRadiusCm = 60000.0;
+	/** A place without cells has no draw distance to follow: its full chunks reach the top of the range a streamed place can have (one rule for every place). */
+	static constexpr double NearRadiusWithoutCellsCm = MaxNearRadiusCm;
 	static double NearRadiusFor(double TopLevelDrawDistanceCm);
 
 	/** The ground that must stand under a join or a teleport before the player is let go: this far from the view (or the near radius, when smaller). */
@@ -80,8 +81,15 @@ struct MANTLERUNTIME_API FMantleTerrainStreamPlan
 	static double NearestDistance(const FMantleTerrainChunkGrid& Grid, int32 Index, TConstArrayView<FVector2D> Points);
 
 	/**
+	 * Whether a terrain whose nearest chunk with ready mesh descriptions is MyDistanceCm from a view may make that chunk's mesh in this frame: the frame has a few slots for all the terrains of a place
+	 * (bSlotFree: one is left), and the terrain whose ready chunk is nearest takes the next. Others holds, for each other terrain, the distance of its nearest ready chunk (a very large number for none) and a tie-break
+	 * number: equal distances go to the lower number. MyTie is this terrain's number.
+	 */
+	static bool MayMakeMesh(bool bSlotFree, double MyDistanceCm, int64 MyTie, TConstArrayView<TPair<double, int64>> Others);
+
+	/**
 	 * The plan. OutBuild: the chunks that are Far and wanted, nearest first (ties by index). OutRelease: the chunks that are Near and no longer wanted (with the margin).
-	 * Chunks that are Building, Releasing, Empty or Failed are left alone.
+	 * Chunks that are Building, Empty or Failed are left alone.
 	 */
 	static void Make(const FMantleTerrainChunkGrid& Grid, TConstArrayView<FVector2D> Points, double RadiusCm, double MarginCm,
 		TConstArrayView<EMantleTerrainChunkState> States, TArray<int32>& OutBuild, TArray<int32>& OutRelease);
@@ -123,7 +131,7 @@ struct FMantleTerrainStreamStats
 	int64 BuildsStarted = 0;
 	int64 AuditsRun = 0;
 	int64 AuditFailures = 0;
-	/** Game-thread seconds: making a mesh (FinishChunk), swapping a chunk in, and the longest of each. Worker seconds: preparing and cooking, measured from start to ready. */
+	/** Game-thread seconds: making a mesh (FinishChunk), swapping a chunk in, and the longest of each. Worker seconds: preparing, measured from start to swap. */
 	double FinishSeconds = 0.0;
 	double WorstFinishSeconds = 0.0;
 	double SwapInSeconds = 0.0;
@@ -163,11 +171,15 @@ public:
 	static constexpr int32 MaxSwapsPerStep = 2;
 	static constexpr int32 MaxReleasesPerStep = 4;
 
+	/** Chunk meshes the terrains of a world may make in one frame while the join's overlay hides the frames (the join hold: the ground under the player is built before the player is let go). */
+	static constexpr int32 JoinMeshesPerFrame = 4;
+
 	/**
-	 * Where the views are (world space) and how far full chunks stand from them, for the world this component is in; false when that world streams nothing yet. Set by the module
-	 * that owns the cell streamer (UMantleCellStreamSubsystem), like FMantleCellArea::Resolver.
+	 * Where the views are (world space), how far full chunks stand from them and how many chunk meshes all the terrains of the world may make in a frame (1 in play, JoinMeshesPerFrame
+	 * while the join is held), for the world this component is in; false when that world streams nothing yet. Set by the module that owns the cell streamer (UMantleCellStreamSubsystem),
+	 * like FMantleCellArea::Resolver.
 	 */
-	using FViewsResolver = TFunction<bool(UWorld* World, TArray<FVector>& OutViews, double& OutNearRadiusCm)>;
+	using FViewsResolver = TFunction<bool(UWorld* World, TArray<FVector>& OutViews, double& OutNearRadiusCm, int32& OutMeshesPerFrame)>;
 	static FViewsResolver ViewsResolver;
 
 	/** Every terrain stream of a world, in the order they started. */
@@ -182,24 +194,12 @@ public:
 
 	/**
 	 * One step of work for these views (world space): plan, start chunks, take what has finished (one mesh made, a few swapped in), release what is out of range. The tick calls it with
-	 * what ViewsResolver says; a test calls it by hand. NearRadiusCm of 0 builds nothing in full.
+	 * what ViewsResolver says; a test calls it by hand. NearRadiusCm of 0 builds nothing in full. MeshesPerFrame is how many meshes the terrains of this world may make in one frame together.
 	 */
-	void StepStream(const TArray<FVector>& WorldViews, double NearRadiusCm);
+	void StepStream(const TArray<FVector>& WorldViews, double NearRadiusCm, int32 MeshesPerFrame = 1);
 
 	/** Every chunk within RadiusCm of every one of Points (world space) is Near, Empty or Failed. False until the first step has run. */
 	bool AreaStands(const TArray<FVector>& WorldPoints, double RadiusCm) const;
-
-	/**
-	 * What the chunks within RadiusCm of a world point are doing, for the collision gate (see FMantleCellAreaState): how many chunks with something to stand on, how many stand
-	 * (Near), how many can never (Failed), how many are wanted and not there yet. Chunks that are Releasing do not stand.
-	 */
-	void CountArea(const FVector& WorldPoint, double RadiusCm, int32& OutCells, int32& OutBuilt, int32& OutFailed, int32& OutPending) const;
-
-	/** Changes whenever the answer of CountArea can: a chunk stands, is released, fails. */
-	uint64 GetAreaSerial() const { return AreaSerial; }
-
-	/** Changes only when ground can go: a chunk was handed to its release, or failed. */
-	uint64 GetTakeDownSerial() const { return TakeDownSerial + static_cast<uint64>(Stats.FailedNow); }
 
 	/** Counts every chunk by what draws it (registered components). Logs and counts a failure. */
 	FMantleTerrainAudit Audit();
@@ -209,8 +209,12 @@ public:
 	EMantleTerrainChunkState GetState(const int32 Index) const { return Chunks.IsValidIndex(Index) ? Chunks[Index].State : EMantleTerrainChunkState::Empty; }
 	bool IsConfigured() const { return bConfigured; }
 
-	/** Chunks whose collision is being cooked off the game thread now. */
-	int32 GetCookingCount() const { return CookingMeshes.Num(); }
+	/** What this stream published at its last step for the arbitration of the frame's one mesh (see ReadyDistanceCm). */
+	double GetReadyDistanceCm() const { return ReadyDistanceCm; }
+	uint64 GetReadyDistanceFrame() const { return ReadyDistanceFrame; }
+
+	/** Chunks whose mesh is made and that wait for their swap (the next step's). */
+	int32 GetMadeCount() const;
 
 	/** One MANTLE_TERRAIN_STREAM_SUMMARY line. */
 	void LogSummary(const TCHAR* Why) const;
@@ -223,16 +227,14 @@ public:
 	//~ End UActorComponent
 
 private:
-	/** One full chunk being made: prepared on a worker, made into a mesh here, cooked on a worker, then swapped in. */
+	/** One full chunk being made: prepared on a worker, made into a mesh here, then swapped in. */
 	struct FJob
 	{
-		enum class EPhase : uint8 { Preparing, Cooking };
+		enum class EPhase : uint8 { Preparing, Made };
 		EPhase Phase = EPhase::Preparing;
 		TFuture<TUniquePtr<FMantleTerrainPreparedChunk>> Prepared;
-		/** The mesh made for it: held by CookingMeshes (not rooted) while its collision is cooked. */
+		/** The mesh made for it, held by the chunk's job until it is swapped in (or let go of when the chunk is no longer wanted). */
 		FMantleTerrainChunk Built;
-		bool bCookDone = false;
-		bool bCookOk = false;
 		double StartedSeconds = 0.0;
 	};
 
@@ -245,21 +247,17 @@ private:
 		TWeakObjectPtr<UStaticMeshComponent> FarComponent;
 		TWeakObjectPtr<UStaticMeshComponent> NearComponent;
 		TSharedPtr<FJob> Job;
-		/** Releasing: the frame it may be taken down at (one whole frame after it stopped counting as standing). */
-		uint64 ReleaseAtFrame = 0;
 	};
 
 	void WorldToTerrain(const TArray<FVector>& WorldPoints, TArray<FVector2D>& OutLocal) const;
 	void StartBuild(int32 Index);
-	/** Takes the prepared description and makes its mesh (game thread), then starts the cook. Returns false when the chunk is gone from the plan. */
+	/** Takes the prepared description and makes its mesh (game thread). Returns false when the chunk is gone from the plan. */
 	void FinishPrepared(int32 Index);
 	void SwapIn(int32 Index);
-	void BeginRelease(int32 Index);
-	void EndRelease(int32 Index);
+	/** The full chunk goes and the far one is drawn again. */
+	void Release(int32 Index);
 	void Discard(int32 Index, const TCHAR* Why);
 	void Fail(int32 Index, const FString& Why);
-	/** Asks the cook of the chunk's mesh to stop, and lets the mesh go. */
-	void AbortCook(int32 Index);
 	void CancelAllJobs();
 
 	TSharedPtr<const FMantleHeightfield> Field;
@@ -272,18 +270,20 @@ private:
 
 	TArray<FChunk> Chunks;
 
-	/**
-	 * The meshes whose collision is being cooked, by chunk index. A property, so the garbage collector sees them and nothing roots them: a world that ends while a cook runs is
-	 * collected with its actor, and the engine's cook for a mesh that is gone is dropped (UBodySetup aborts it).
-	 */
+	/** The meshes made and waiting for their swap, by chunk index. A property, so the garbage collector sees them and nothing roots them. */
 	UPROPERTY()
-	TMap<int32, TObjectPtr<UStaticMesh>> CookingMeshes;
+	TMap<int32, TObjectPtr<UStaticMesh>> MadeMeshes;
 
 	FMantleTerrainStreamStats Stats;
-	uint64 AreaSerial = 1;
-	uint64 TakeDownSerial = 0;
 	bool bConfigured = false;
 	double LastRadiusCm = 0.0;
+
+	/**
+	 * The distance (world cm) from a view to the nearest chunk of this terrain whose mesh descriptions are ready and wanted, as of this stream's last step, and the frame of that step: what the
+	 * other streams read to decide whose chunk takes the frame's one mesh slot (the nearest does). Infinite when none is ready.
+	 */
+	double ReadyDistanceCm = TNumericLimits<double>::Max();
+	uint64 ReadyDistanceFrame = 0;
 
 	/** The views of the last plan (terrain space) and when it ran, so a still view does not plan again. */
 	TArray<FVector2D> PlannedViews;

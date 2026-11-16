@@ -342,7 +342,16 @@ namespace
 	class FMantleHttpAssetFetcher final : public IMantleAssetFetcher
 	{
 	public:
+		/** A file under this many bytes gets the short timeouts (see FetchSized). */
+		static constexpr int64 SmallFileBytes = 1024 * 1024;
+
 		virtual void Fetch(const FString& Url, const TSharedRef<FArchive>& Sink,
+			TFunction<void(const FMantleAssetFetchResult&)> OnDone) override
+		{
+			FetchSized(Url, Sink, 0, MoveTemp(OnDone));
+		}
+
+		virtual void FetchSized(const FString& Url, const TSharedRef<FArchive>& Sink, const int64 ExpectedBytes,
 			TFunction<void(const FMantleAssetFetchResult&)> OnDone) override
 		{
 			if (MantlePreviewLaunch::IsRequested())
@@ -368,8 +377,18 @@ namespace
 			Request->SetHeader(TEXT("Accept"), TEXT("application/octet-stream"));
 			// Large meshes on slow connections take a while; a stalled one is caught by the
 			// activity timeout long before the overall one.
-			Request->SetTimeout(600.0f);
-			Request->SetActivityTimeout(30.0f);
+			if (ExpectedBytes > 0 && ExpectedBytes < SmallFileBytes)
+			{
+				// A small file (most of a place's files are a few KB): a connection that has said nothing for 8 s is given up and tried again (a fresh connection is quick; the join log's two failures
+				// waited 4 s and 22 s). The engine has no per-request connect timeout, so the whole request gets 5 s for the connection plus the time its bytes take at 100 KB/s.
+				Request->SetTimeout(5.0f + static_cast<float>(ExpectedBytes) / (100.0f * 1024.0f));
+				Request->SetActivityTimeout(8.0f);
+			}
+			else
+			{
+				Request->SetTimeout(600.0f);
+				Request->SetActivityTimeout(30.0f);
+			}
 
 			// Stream to disk, so N concurrent downloads never hold N assets in memory. An HTTP
 			// implementation without streaming falls back to copying the body once at the end.
@@ -855,6 +874,7 @@ void FMantleAssetStore::EnqueueDownload(const TSharedRef<FJob>& Job)
 {
 	FScopeLock Guard(&Lock);
 	Job->State = EJobState::Queued;
+	Job->QueuedSeconds = FPlatformTime::Seconds();
 	DownloadQueue.Add(Job->Hash);
 }
 
@@ -907,8 +927,10 @@ void FMantleAssetStore::Pump()
 		UE_LOG(LogMantle, Verbose, TEXT("Asset store: downloading %s"), *Start.Job->Hash.ToString());
 		const TSharedRef<FJob> Job = Start.Job;
 		const TSharedRef<FMantleAssetSink> Sink = Start.Sink;
-		Fetcher->Fetch(Start.Url, Sink, [Weak, Job, Sink](const FMantleAssetFetchResult& Result)
+		Job->StartedSeconds = FPlatformTime::Seconds();
+		Fetcher->FetchSized(Start.Url, Sink, Job->ExpectedBytes, [Weak, Job, Sink](const FMantleAssetFetchResult& Result)
 		{
+			Job->DoneSeconds = FPlatformTime::Seconds();
 			const TSharedPtr<FMantleAssetStore> Self = Weak.Pin();
 			if (!Self)
 			{
@@ -1090,7 +1112,11 @@ void FMantleAssetStore::Finalize(
 		Entry.bVerified = true;
 	}
 
-	UE_LOG(LogMantle, Log, TEXT("Asset store: stored %s (%lld bytes)"), *Hash.ToString(), Size);
+	// Where this file's time went: waiting for a slot, the transfer, and the work after it (hash, move, index), in ms.
+	const double FinalizedSeconds = FPlatformTime::Seconds();
+	UE_LOG(LogMantle, Log, TEXT("Asset store: stored %s (%lld bytes) queued_ms=%.0f transfer_ms=%.0f finalize_ms=%.0f"), *Hash.ToString(), Size,
+		FMath::Max(Job->StartedSeconds - Job->QueuedSeconds, 0.0) * 1000.0, FMath::Max(Job->DoneSeconds - Job->StartedSeconds, 0.0) * 1000.0,
+		FMath::Max(FinalizedSeconds - Job->DoneSeconds, 0.0) * 1000.0);
 
 	// This hash cannot be a victim: its job is still registered until Deliver.
 	EvictToBudget();
@@ -1496,6 +1522,18 @@ bool FMantleAssetStore::Contains(const FMantleContentHash& Hash) const
 {
 	FScopeLock Guard(&Lock);
 	return Index.Contains(Hash);
+}
+
+void FMantleAssetStore::GetDownloadCounts(int32& OutActive, int32& OutQueued) const
+{
+	FScopeLock Guard(&Lock);
+	OutActive = ActiveDownloads;
+	OutQueued = 0;
+	for (const FMantleContentHash& Hash : DownloadQueue)
+	{
+		const TSharedRef<FJob>* Found = Jobs.Find(Hash);
+		OutQueued += (Found && (*Found)->State == EJobState::Queued) ? 1 : 0;
+	}
 }
 
 int64 FMantleAssetStore::GetInFlightBytes(const FMantleContentHash& Hash) const
