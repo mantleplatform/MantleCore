@@ -1750,7 +1750,7 @@ bool FMantlePlaceAssetSet::TakeUploads(EMantlePlaceUploadStage Stage, TArray<FMa
 			{
 				Take(Mesh.LumenKey(), TEXT("lumen"), Mesh.LumenHash, Mesh.Name + TEXT(" (Lumen data)"), Mesh.Lumen);
 			}
-			// Stage N: its Nanite side file, the MNZ1 container the backend takes, the same way.
+			// Stage N: its Nanite side file, the MNZ2 container the backend takes, the same way.
 			if (Mesh.Nanite.Num() > 0)
 			{
 				Take(Mesh.NaniteKey(), TEXT("nanite"), Mesh.NaniteHash, Mesh.Name + TEXT(" (Nanite data)"), Mesh.Nanite);

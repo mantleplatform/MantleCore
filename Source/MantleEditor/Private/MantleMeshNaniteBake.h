@@ -12,7 +12,7 @@ namespace Nanite
 /**
  * A place mesh's Nanite data as a side file, so the game can draw the creator's full-detail model where it would otherwise build
  * Nanite's reduced fallback from the uploaded GLB. The converter bakes one for every mesh it uploads (FMantlePlaceAssetConverter::
- * ConvertMesh, FMantleConvertedMesh::Nanite); the upload stage compresses it into the MNZ1 container the backend takes. The layout
+ * ConvertMesh, FMantleConvertedMesh::Nanite); the upload stage packs it into the MNZ2 container the backend takes. The layout
  * is in D:\Mantle\Untracked\local\nanite\reports\step1-format.md.
  *
  * MND1, little-endian, FArchive conventions (an FString is int32 length then characters; an array is int32 count then items):
@@ -27,7 +27,8 @@ namespace Nanite
  *   and, only when the mesh has pages past its root pages (PageStreamingStates.Num() > NumRootPages): uint32 StreamedBytes, then
  *     that many bytes, the engine's StreamablePages payload. A mesh that fits its root pages (at most 32, 1 MiB) has no such block,
  *     so its file is its version 1 file with only the version word changed.
- * The exact contract, which the game's reader is written against: D:\Mantle\Untracked\local\build-plan\contracts\nanite-v2.md.
+ * The exact contract, which the game's reader is written against: D:\Mantle\Untracked\local\build-plan\contracts\nanite-v2.md
+ * (also the MNZ2 container this file is uploaded in).
  */
 class FMantleMeshNaniteFile
 {
@@ -61,9 +62,10 @@ public:
 	/**
 	 * False, with the reason, when Bytes is not an MND1 (version 1 or 2) for MeshTag's mesh from this engine, or is damaged. OutStreamedPages,
 	 * when given, gets the streamed block (empty when the mesh has none); OutResources.StreamablePages is left empty either way.
+	 * OutHeadEnd, when given, gets the offset where field 25 ends in Bytes: the head of the MNZ2 container is Bytes up to there.
 	 */
 	static bool Read(TConstArrayView<uint8> Bytes, const FString& MeshTag, Nanite::FResources& OutResources, TArray<int32>& OutSlotToPublished,
-		FString* OutReason = nullptr, TArray<uint8>* OutStreamedPages = nullptr);
+		FString* OutReason = nullptr, TArray<uint8>* OutStreamedPages = nullptr, int64* OutHeadEnd = nullptr);
 
 	/**
 	 * The most one uploaded Nanite file may be, measured on the container (the compressed bytes): the backend's assets.MaxNaniteBytes,
@@ -74,13 +76,36 @@ public:
 	/** The most an uploaded file may inflate to: the backend's cook.NaniteMaxRawBytes, the game's FMantleNaniteSideFile::MaxInflatedBytes. */
 	static int64 MaxRawBytes();
 
+	/** One piece of an MNZ2 container: where its zlib stream starts in the file (from the table alone), its packed length and what it inflates to. */
+	struct FContainerPiece
+	{
+		int64 Offset = 0;
+		uint32 Packed = 0;
+		uint32 Raw = 0;
+	};
+
 	/**
-	 * The container the backend takes: "MNZ1", a little-endian uint32 with Mnd1's length, then one zlib stream (RFC 1950, Unreal's
-	 * NAME_Zlib at its default window) of Mnd1. False, with the reason, when Mnd1 is empty or over MaxRawBytes, or the stream cannot be made.
+	 * The container the backend takes, MNZ2 (nanite-v2.md, "The container"): "MNZ2", a uint32 piece count N, a table of N {uint32 packed, uint32 raw},
+	 * then N zlib streams (RFC 1950, Unreal's NAME_Zlib at its default window and level): piece 0 is the head (Mnd1 up to the end of field 25), pieces
+	 * 1 to N-1 are the streamed pages, one each, so any page is read without inflating the rest. Mnd1 is the MND1 version 2 file as Write makes it.
+	 * False, with the reason, when Mnd1 is empty, over MaxRawBytes, not an MND1 version 2 of this engine, or a piece cannot be compressed.
 	 */
 	static bool Pack(TConstArrayView<uint8> Mnd1, TArray<uint8>& OutContainer, FString& OutReason);
 
-	/** The MND1 inside an uploaded file, through the game's own unpacker (FMantleNaniteSideFile::Unpack). False, with the reason, if it does not unpack. */
+	/**
+	 * The table of a container, checked before anything is inflated or allocated: magic, count, the table fits the file, the pieces fill the file
+	 * exactly, no piece is smaller than a zlib stream or inflates to nothing, and the MND1 size (head plus 4 plus the pages) is within MaxRawBytes.
+	 * OutPieces[k].Offset is found from the table alone. False, with the reason, if any of it fails.
+	 */
+	static bool ReadContainerTable(TConstArrayView<uint8> Container, TArray<FContainerPiece>& OutPieces, FString* OutReason = nullptr);
+
+	/** One piece inflated to exactly its Raw bytes. False, with the reason, when it does not; no other piece is read. */
+	static bool InflatePiece(TConstArrayView<uint8> Container, const FContainerPiece& Piece, TArray<uint8>& OutBytes, FString* OutReason = nullptr);
+
+	/**
+	 * The whole MND1 inside an uploaded file: every piece inflated and put back together as head, the 4-byte sum of the pages, then the pages (the
+	 * MND1 version 2 file). False, with the reason, if the table or any piece fails. Tests and the preview export; the game reads pieces alone.
+	 */
 	static bool Unpack(TConstArrayView<uint8> Container, TArray<uint8>& OutMnd1, FString* OutReason = nullptr);
 
 	/** Unpack, then Read: what the game does with an uploaded file. */

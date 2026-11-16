@@ -12,6 +12,7 @@
 #include "MeshDescription.h"
 #include "Matrix3x4.h"
 #include "Misc/Compression.h"
+#include "Async/ParallelFor.h"
 #include "HAL/PlatformProcess.h"
 #include "HAL/PlatformTime.h"
 #include "Misc/EngineVersion.h"
@@ -233,6 +234,8 @@ int64 FMantleMeshNaniteFile::MaxRawBytes()
 
 bool FMantleMeshNaniteFile::Pack(const TConstArrayView<uint8> Mnd1, TArray<uint8>& OutContainer, FString& OutReason)
 {
+	using namespace MantleMeshNaniteBakePrivate;
+
 	OutContainer.Reset();
 	if (Mnd1.Num() == 0 || Mnd1.Num() > MaxRawBytes())
 	{
@@ -241,32 +244,222 @@ bool FMantleMeshNaniteFile::Pack(const TConstArrayView<uint8> Mnd1, TArray<uint8
 				Mnd1.Num() / (1024.0 * 1024.0), MaxRawBytes() / (1024.0 * 1024.0));
 		return false;
 	}
-	// One standard zlib stream at the default window, which is what the game and the backend read (FCompression's NAME_Zlib).
-	const int32 Bound = FCompression::CompressMemoryBound(NAME_Zlib, Mnd1.Num());
-	TArray<uint8> Packed;
-	Packed.SetNumUninitialized(Bound);
-	int32 PackedBytes = Bound;
-	if (!FCompression::CompressMemory(NAME_Zlib, Packed.GetData(), PackedBytes, Mnd1.GetData(), Mnd1.Num()))
+	// Where the head ends and how long each streamed page is: the file's own page table (Read checks it against both blocks). The mesh tag is
+	// the file's own: this packs what Write made, it does not compare it with a mesh.
+	FString Tag;
+	{
+		int32 Offset = 8;
+		for (int32 Part = 0; Part < 2; ++Part)
+		{
+			int32 Length = 0;
+			if (Offset + 4 > Mnd1.Num() || (FMemory::Memcpy(&Length, Mnd1.GetData() + Offset, 4), Length <= 0 || Length > 1024 || Offset + 4 + Length > Mnd1.Num()))
+			{
+				OutReason = TEXT("it is not an MND1 file");
+				return false;
+			}
+			if (Part == 1)
+			{
+				Tag = FString(ANSI_TO_TCHAR(reinterpret_cast<const ANSICHAR*>(Mnd1.GetData() + Offset + 4)));
+			}
+			Offset += 4 + Length;
+		}
+	}
+	Nanite::FResources Resources;
+	TArray<int32> Slots;
+	int64 HeadEnd = 0;
+	FString Why;
+	if (!Read(Mnd1, Tag, Resources, Slots, &Why, nullptr, &HeadEnd) || Mnd1.Num() < 8 || Mnd1[4] != FormatVersion)
+	{
+		OutReason = Why.IsEmpty() ? FString(TEXT("it is not an MND1 version 2 file")) : FString::Printf(TEXT("it %s"), *Why);
+		return false;
+	}
+	const int32 NumStreamed = Resources.PageStreamingStates.Num() - static_cast<int32>(Resources.NumRootPages);
+	// Piece 0: the head. Pieces 1 to NumStreamed: one streamed page each, in page order (the block starts after its 4-byte length word).
+	struct FSpan
+	{
+		int64 Start;
+		int64 Length;
+	};
+	TArray<FSpan> Spans;
+	Spans.Add({ 0, HeadEnd });
+	int64 BlockStart = HeadEnd + 4;
+	for (int32 Index = 0; Index < NumStreamed; ++Index)
+	{
+		const Nanite::FPageStreamingState& Page = Resources.PageStreamingStates[Resources.NumRootPages + Index];
+		Spans.Add({ BlockStart + Page.BulkOffset, static_cast<int64>(Page.BulkSize) });
+	}
+	// Each piece is a zlib stream of its own at the default level (FCompression's NAME_Zlib), compressed in parallel: they share nothing.
+	TArray<TArray<uint8>> Packed;
+	Packed.SetNum(Spans.Num());
+	TArray<uint8> Failed;
+	Failed.SetNumZeroed(Spans.Num());
+	ParallelFor(Spans.Num(), [&](const int32 Piece)
+	{
+		const FSpan& Span = Spans[Piece];
+		const int32 Bound = FCompression::CompressMemoryBound(NAME_Zlib, static_cast<int32>(Span.Length));
+		Packed[Piece].SetNumUninitialized(Bound);
+		int32 PackedBytes = Bound;
+		if (!FCompression::CompressMemory(NAME_Zlib, Packed[Piece].GetData(), PackedBytes, Mnd1.GetData() + Span.Start, static_cast<int32>(Span.Length)))
+		{
+			Failed[Piece] = 1;
+			return;
+		}
+		Packed[Piece].SetNum(PackedBytes, EAllowShrinking::No);
+	});
+	if (Failed.Contains(1))
 	{
 		OutReason = TEXT("it could not be compressed");
 		return false;
 	}
-	const uint32 RawBytes = static_cast<uint32>(Mnd1.Num());
-	OutContainer.SetNumUninitialized(FMantleNaniteSideFile::ContainerHeaderBytes + PackedBytes);
-	FMemory::Memcpy(OutContainer.GetData(), "MNZ1", 4);
-#if PLATFORM_LITTLE_ENDIAN
-	FMemory::Memcpy(OutContainer.GetData() + 4, &RawBytes, sizeof(RawBytes));
-#else
-	const uint32 Swapped = BYTESWAP_ORDER32(RawBytes);
-	FMemory::Memcpy(OutContainer.GetData() + 4, &Swapped, sizeof(Swapped));
-#endif
-	FMemory::Memcpy(OutContainer.GetData() + FMantleNaniteSideFile::ContainerHeaderBytes, Packed.GetData(), PackedBytes);
+	int64 Total = 8 + 8 * static_cast<int64>(Spans.Num());
+	for (const TArray<uint8>& Piece : Packed)
+	{
+		Total += Piece.Num();
+	}
+	if (Total > MAX_int32)
+	{
+		OutReason = TEXT("its container does not fit in memory");
+		return false;
+	}
+	OutContainer.Reserve(static_cast<int32>(Total));
+	const auto PutU32 = [&OutContainer](const uint32 Value)
+	{
+		OutContainer.Add(static_cast<uint8>(Value));
+		OutContainer.Add(static_cast<uint8>(Value >> 8));
+		OutContainer.Add(static_cast<uint8>(Value >> 16));
+		OutContainer.Add(static_cast<uint8>(Value >> 24));
+	};
+	OutContainer.Append(reinterpret_cast<const uint8*>("MNZ2"), 4);
+	PutU32(static_cast<uint32>(Spans.Num()));
+	for (int32 Piece = 0; Piece < Spans.Num(); ++Piece)
+	{
+		PutU32(static_cast<uint32>(Packed[Piece].Num()));
+		PutU32(static_cast<uint32>(Spans[Piece].Length));
+	}
+	for (const TArray<uint8>& Piece : Packed)
+	{
+		OutContainer.Append(Piece);
+	}
+	return true;
+}
+
+bool FMantleMeshNaniteFile::ReadContainerTable(const TConstArrayView<uint8> Container, TArray<FContainerPiece>& OutPieces, FString* OutReason)
+{
+	using namespace MantleMeshNaniteBakePrivate;
+
+	OutPieces.Reset();
+	const auto GetU32 = [&Container](const int64 Offset)
+	{
+		const uint8* Bytes = Container.GetData() + Offset;
+		return static_cast<uint32>(Bytes[0]) | (static_cast<uint32>(Bytes[1]) << 8) | (static_cast<uint32>(Bytes[2]) << 16) | (static_cast<uint32>(Bytes[3]) << 24);
+	};
+	if (Container.Num() < 12 || FMemory::Memcmp(Container.GetData(), "MNZ2", 4) != 0)
+	{
+		SetReason(OutReason, TEXT("is not an MNZ2 container"));
+		return false;
+	}
+	const uint32 Count = GetU32(4);
+	// The table must fit the file before it is read, so a damaged count never allocates.
+	if (Count == 0 || 8 + 8 * static_cast<int64>(Count) > Container.Num())
+	{
+		SetReason(OutReason, FString::Printf(TEXT("says it has %u pieces, which its table cannot hold"), Count));
+		return false;
+	}
+	TArray<FContainerPiece> Pieces;
+	Pieces.SetNum(static_cast<int32>(Count));
+	int64 Offset = 8 + 8 * static_cast<int64>(Count);
+	uint64 PagesRaw = 0;
+	for (uint32 Piece = 0; Piece < Count; ++Piece)
+	{
+		FContainerPiece& Entry = Pieces[Piece];
+		Entry.Packed = GetU32(8 + 8 * static_cast<int64>(Piece));
+		Entry.Raw = GetU32(12 + 8 * static_cast<int64>(Piece));
+		Entry.Offset = Offset;
+		// 8 is the least a zlib stream can be (header, an empty block, Adler-32); a piece inflates to something.
+		if (Entry.Packed < 8 || Entry.Raw == 0 || Entry.Raw > MaxRawBytes() || (Piece == 0 && Entry.Raw < 8))
+		{
+			SetReason(OutReason, FString::Printf(TEXT("is damaged (piece %u has %u packed and %u raw bytes)"), Piece, Entry.Packed, Entry.Raw));
+			return false;
+		}
+		Offset += Entry.Packed;
+		if (Piece > 0)
+		{
+			PagesRaw += Entry.Raw;
+		}
+	}
+	if (Offset != Container.Num())
+	{
+		SetReason(OutReason, FString::Printf(TEXT("is damaged (its table adds up to %lld bytes, the file has %d)"), Offset, Container.Num()));
+		return false;
+	}
+	const uint64 Mnd1Bytes = Pieces[0].Raw + (Count > 1 ? 4 + PagesRaw : 0);
+	if (Mnd1Bytes > static_cast<uint64>(MaxRawBytes()))
+	{
+		SetReason(OutReason, FString::Printf(TEXT("says it inflates to %llu bytes (over the %lld allowed)"), Mnd1Bytes, MaxRawBytes()));
+		return false;
+	}
+	OutPieces = MoveTemp(Pieces);
+	return true;
+}
+
+bool FMantleMeshNaniteFile::InflatePiece(const TConstArrayView<uint8> Container, const FContainerPiece& Piece, TArray<uint8>& OutBytes, FString* OutReason)
+{
+	using namespace MantleMeshNaniteBakePrivate;
+
+	OutBytes.Reset();
+	if (Piece.Offset < 0 || Piece.Offset + Piece.Packed > Container.Num() || Piece.Raw == 0 || Piece.Raw > MaxRawBytes())
+	{
+		SetReason(OutReason, TEXT("is damaged (a piece lies outside the file)"));
+		return false;
+	}
+	OutBytes.SetNumUninitialized(static_cast<int32>(Piece.Raw));
+	if (!FCompression::UncompressMemory(NAME_Zlib, OutBytes.GetData(), OutBytes.Num(), Container.GetData() + Piece.Offset, static_cast<int32>(Piece.Packed)))
+	{
+		OutBytes.Reset();
+		SetReason(OutReason, TEXT("is damaged (a piece's zlib stream does not inflate to the size the table names)"));
+		return false;
+	}
 	return true;
 }
 
 bool FMantleMeshNaniteFile::Unpack(const TConstArrayView<uint8> Container, TArray<uint8>& OutMnd1, FString* OutReason)
 {
-	return FMantleNaniteSideFile::Unpack(Container, OutMnd1, OutReason);
+	OutMnd1.Reset();
+	TArray<FContainerPiece> Pieces;
+	if (!ReadContainerTable(Container, Pieces, OutReason))
+	{
+		return false;
+	}
+	TArray<uint8> Head;
+	if (!InflatePiece(Container, Pieces[0], Head, OutReason))
+	{
+		return false;
+	}
+	TArray<uint8> Whole = MoveTemp(Head);
+	if (Pieces.Num() > 1)
+	{
+		uint64 PagesRaw = 0;
+		for (int32 Piece = 1; Piece < Pieces.Num(); ++Piece)
+		{
+			PagesRaw += Pieces[Piece].Raw;
+		}
+		const uint32 Sum = static_cast<uint32>(PagesRaw);
+		Whole.Add(static_cast<uint8>(Sum));
+		Whole.Add(static_cast<uint8>(Sum >> 8));
+		Whole.Add(static_cast<uint8>(Sum >> 16));
+		Whole.Add(static_cast<uint8>(Sum >> 24));
+		for (int32 Piece = 1; Piece < Pieces.Num(); ++Piece)
+		{
+			TArray<uint8> Page;
+			if (!InflatePiece(Container, Pieces[Piece], Page, OutReason))
+			{
+				return false;
+			}
+			Whole.Append(Page);
+		}
+	}
+	OutMnd1 = MoveTemp(Whole);
+	return true;
 }
 
 bool FMantleMeshNaniteFile::ReadUploaded(const TConstArrayView<uint8> Container, const FString& MeshTag, Nanite::FResources& OutResources,
@@ -329,11 +522,15 @@ bool FMantleMeshNaniteFile::Write(const FString& MeshTag, const TConstArrayView<
 }
 
 bool FMantleMeshNaniteFile::Read(const TConstArrayView<uint8> Bytes, const FString& MeshTag, Nanite::FResources& OutResources, TArray<int32>& OutSlotToPublished,
-	FString* OutReason, TArray<uint8>* OutStreamedPages)
+	FString* OutReason, TArray<uint8>* OutStreamedPages, int64* OutHeadEnd)
 {
 	using namespace MantleMeshNaniteBakePrivate;
 
 	OutSlotToPublished.Reset();
+	if (OutHeadEnd)
+	{
+		*OutHeadEnd = 0;
+	}
 	if (OutStreamedPages)
 	{
 		OutStreamedPages->Reset();
@@ -369,6 +566,10 @@ bool FMantleMeshNaniteFile::Read(const TConstArrayView<uint8> Bytes, const FStri
 	SerializePlainArray(Reader, OutSlotToPublished);
 	Reader << OutResources.ResourceFlags;
 	SerializeBody(Reader, OutResources);
+	if (OutHeadEnd)
+	{
+		*OutHeadEnd = Reader.Tell();
+	}
 	if (Reader.IsError() || OutResources.RootData.Num() == 0 || OutResources.NumRootPages == 0
 		|| static_cast<uint32>(OutResources.PageStreamingStates.Num()) < OutResources.NumRootPages)
 	{
@@ -825,9 +1026,9 @@ TArray<const UObject*> FMantleMeshNaniteBake::CacheObjects(const UStaticMesh& Me
 
 FString FMantleMeshNaniteBake::CacheSalt()
 {
-	// MNZ1: the cache holds the uploaded file, so a change to the container, its limits, how a too-large file is made coarser or how much
+	// MNZ2: the cache holds the uploaded file, so a change to the container, its limits, how a too-large file is made coarser or how much
 	// of a mesh stays in memory (residency; the format version too) is a new key: files cached whole-resident are made again.
-	return FString::Printf(TEXT(" nanite=%u engine=%s voxels=%d assemblies=%d container=MNZ1 rawlimit=%lld bakes=%d min=%.2f residencykb=%u"), FMantleMeshNaniteFile::FormatVersion,
+	return FString::Printf(TEXT(" nanite=%u engine=%s voxels=%d assemblies=%d container=MNZ2 rawlimit=%lld bakes=%d min=%.2f residencykb=%u"), FMantleMeshNaniteFile::FormatVersion,
 		*FMantleMeshNaniteFile::EngineTag(), NaniteVoxelsSupported() ? 1 : 0, NaniteAssembliesSupported() ? 1 : 0,
 		FMantleMeshNaniteFile::MaxRawBytes(), MaxBakes, MinKeepPercentTriangles, FMantleMeshNaniteFile::ResidencyKB);
 }
