@@ -794,6 +794,15 @@ bool FMantleMeshNaniteResidencyTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("its triangles, all of them"), Back.NumInputTriangles, 300u * 300u * 2u);
 			AddInfo(FString::Printf(TEXT("300 x 300 grid: %d pages, %u root, %d bytes of root data, %d streamed, %d bytes in the file"),
 				Back.PageStreamingStates.Num(), Back.NumRootPages, Back.RootData.Num(), Block.Num(), BigFile.Num()));
+			// Not a check: the engine stages a streamed page in a ring sized from NANITE_ESTIMATED_MAX_PAGE_DISK_SIZE (192 KiB) per pending page, and the
+			// encoder packs pages by GPU size (128 KiB) and does not cap their disk size. This only shows how close a bake comes to the estimate
+			// (Medieval's worst page is 165,441 bytes, 84%). See the report, "The largest streamed page".
+			uint32 LargestStreamed = 0;
+			for (int32 Index = static_cast<int32>(Back.NumRootPages); Index < Back.PageStreamingStates.Num(); ++Index)
+			{
+				LargestStreamed = FMath::Max(LargestStreamed, Back.PageStreamingStates[Index].BulkSize);
+			}
+			AddInfo(FString::Printf(TEXT("largest streamed page: %u bytes of the engine's %u (%.0f%%)"), LargestStreamed, 196608u, 100.0 * LargestStreamed / 196608.0));
 		}
 		else
 		{
