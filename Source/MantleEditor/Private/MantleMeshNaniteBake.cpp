@@ -488,7 +488,7 @@ bool FMantleMeshNaniteBake::Bake(const UStaticMesh* Mesh, const TConstArrayView<
 			}
 			// A mesh bigger than its root pages has streamed pages, which the editor keeps in its cache: bring them back for the file.
 			TArray<uint8> StreamedPages;
-			bWritten = FetchStreamedPages(Copy, *RenderData->NaniteResourcesPtr, StreamedPages, OutReason)
+			bWritten = MantleMeshNaniteBakePrivate::FetchStreamedPages(Copy, *RenderData->NaniteResourcesPtr, StreamedPages, OutReason)
 				&& FMantleMeshNaniteFile::Write(MeshTag, Identity, *RenderData->NaniteResourcesPtr, StreamedPages, OutFile, OutReason);
 			bRetryable = !bWritten;
 		}
