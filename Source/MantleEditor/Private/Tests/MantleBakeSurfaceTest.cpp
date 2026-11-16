@@ -309,6 +309,13 @@ bool FMantleBakeSurfaceCacheKeyTest::RunTest(const FString& Parameters)
 	TestNotEqual(TEXT("a different color is a different key"), Salt(Puddles), Salt(Dry));
 	TestNotEqual(TEXT("a UV range changes the key"), Salt(Tiled), Salt(Plain));
 	TestEqual(TEXT("the same color is the same key"), Salt(Puddles), Salt(Puddles));
+
+	// #168 changed only how a masked material converts (no cut-off of 0), so only a masked material's key moves.
+	UMaterial* Leaf = NewPuddleMaterial();
+	Leaf->BlendMode = BLEND_Masked;
+	const FString LeafSalt = FMantlePlaceAssetConverter::MaterialCacheSalt(TEXT("flattener"), Settings, Limits, Leaf, false, Plain);
+	TestTrue(TEXT("a masked material's key says its cut-off is never 0"), LeafSalt.EndsWith(TEXT(" maskcutoff=2")));
+	TestFalse(TEXT("an opaque material's key has no cut-off part"), Salt(Plain).Contains(TEXT("maskcutoff")));
 	return true;
 }
 
