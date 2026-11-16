@@ -1205,7 +1205,7 @@ const TCHAR* FMantlePlaceAssets::KindName(const EAssetKind Kind)
 	case EAssetKind::Wheel: return TEXT("wheel");
 	// #149: a static mesh's Lumen side file (MLD1), stored as the plugin baked it.
 	case EAssetKind::Lumen: return TEXT("lumen");
-	// A static mesh's Nanite file (MNZ1 holding MND1), stored as the plugin baked it.
+	// A static mesh's Nanite file (MNZ2 holding MND1), stored as the plugin baked it.
 	case EAssetKind::Nanite: return TEXT("nanite");
 	// A VoxelWorld's blocks (MBW1); its tiles are uploaded textures, held to the API's "texture" like a weightmap.
 	case EAssetKind::VoxelWorld: return TEXT("voxelworld");
@@ -2478,7 +2478,9 @@ void FMantlePlaceAssets::StartFetches()
 			Build->State = EBuildState::Fetching;
 			++FetchesInFlight;
 			const TWeakPtr<FMantlePlaceAssets> Weak = AsShared();
-			Build->RequestId = Store->Request(Build->Ref, EMantleAssetLoad::Bytes, FMantleAssetDone::CreateLambda(
+			// A Nanite file is read from its place in the store (its head at load, a streamed page when the engine asks), never held in memory: the store verifies it (hashes the whole file once per process) and says where it is.
+			Build->FetchStartedAt = FPlatformTime::Seconds();
+			Build->RequestId = Store->Request(Build->Ref, Key.Kind == EAssetKind::Nanite ? EMantleAssetLoad::PathOnly : EMantleAssetLoad::Bytes, FMantleAssetDone::CreateLambda(
 				[Weak, Key](const FMantleAssetResult& Fetched)
 				{
 					if (const TSharedPtr<FMantlePlaceAssets> Pinned = Weak.Pin())
@@ -2551,6 +2553,19 @@ void FMantlePlaceAssets::OnFetched(const FBuildKey& Key, const FMantleAssetResul
 		DownloadedBytes += Fetched.SizeBytes;
 	}
 	Build->Bytes = Fetched.Bytes;
+	if (Key.Kind == EAssetKind::Nanite)
+	{
+		// From the request to the answer: the download, when there was one, and the store's one hash of the whole file (once per process, in 1 MB pieces, nothing kept).
+		Build->NanitePath = Fetched.Path;
+		const double Ms = (FPlatformTime::Seconds() - Build->FetchStartedAt) * 1000.0;
+		if (Fetched.bFromCache)
+		{
+			++NaniteCachedFetches;
+			NaniteCachedFetchMs += Ms;
+			NaniteCachedFetchWorstMs = FMath::Max(NaniteCachedFetchWorstMs, Ms);
+			NaniteCachedFetchBytes += Fetched.SizeBytes;
+		}
+	}
 	Build->PendingBytes = Fetched.SizeBytes;
 	PendingBuildBytes += Build->PendingBytes;
 	Build->State = EBuildState::Fetched;
@@ -2582,13 +2597,17 @@ void FMantlePlaceAssets::StartDecodes()
 			// #149: nothing to decode off the game thread; OnDecoded looks at the header.
 			Build->LumenFile = Bytes;
 		}
-		// A Nanite file is inflated by the decode task (up to 100 MB of zlib is too long for the game thread) into this array, which only the
-		// task writes, before it hands the build back; the game thread reads it after (OnDecoded), and the download is freed once the task ends.
+		// A Nanite file's head (its first piece, the fields and the root pages: about a MiB) is read and inflated by the decode task (a file read and an inflate are too long for the game thread) into this
+		// array, and its table into this one, which only the task writes, before it hands the build back; the game thread reads them after (OnDecoded). The streamed pages stay in the file.
 		TSharedPtr<TArray<uint8>, ESPMode::ThreadSafe> NaniteRaw;
+		TSharedPtr<FMantleNaniteTable, ESPMode::ThreadSafe> NaniteTableOut;
+		const FString NanitePath = Build->NanitePath;
 		if (Key.Kind == EAssetKind::Nanite)
 		{
 			NaniteRaw = MakeShared<TArray<uint8>, ESPMode::ThreadSafe>();
+			NaniteTableOut = MakeShared<FMantleNaniteTable, ESPMode::ThreadSafe>();
 			Build->NaniteFile = NaniteRaw;
+			Build->NaniteTable = NaniteTableOut;
 		}
 		if (Key.Kind == EAssetKind::VoxelWorld || Key.Kind == EAssetKind::VoxelTile)
 		{
@@ -2597,9 +2616,12 @@ void FMantlePlaceAssets::StartDecodes()
 		}
 		const int64 MaxTextureGpuBytes = Settings.MaxTextureGpuBytes;
 		const TSharedRef<FCompletionQueue, ESPMode::ThreadSafe> Queue = Completions;
-		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes, NaniteRaw]()
+		// Background priority: the engine's foreground workers (two on this machine's default setup) run the renderer's visibility tasks, and a decode that holds them for 70 ms (a
+		// 4 MB inflate, a 60,000-vertex mesh described) holds the render thread's frame with it.
+		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes, NaniteRaw, NaniteTableOut, NanitePath]()
 		{
 			TSharedPtr<FMantleStaticMeshData> MeshV2;
+			TSharedPtr<FMantlePreparedStaticMesh> Prepared;
 			TSharedPtr<FMantleRuntimeMesh> MeshV1;
 			TSharedPtr<FMantleDecodedTexture> Texture;
 			TSharedPtr<FMantlePlaceMaterialDesc> Material;
@@ -2622,14 +2644,14 @@ void FMantlePlaceAssets::StartDecodes()
 				break;
 
 			case EAssetKind::Nanite:
-				// MNZ1: the size word is checked before the inflate allocates (FMantleNaniteSideFile::Unpack); the MND1 itself is read by each mesh.
-				if (!NaniteRaw.IsValid())
+				// MNZ2: the table is checked from the file's size before anything is allocated or inflated (FMantleNaniteSideFile::ReadHead); only the head is read here, the MND1 in it is read by each mesh.
+				if (!NaniteRaw.IsValid() || !NaniteTableOut.IsValid() || NanitePath.IsEmpty())
 				{
-					Error = TEXT("has nowhere to be unpacked");
+					Error = TEXT("has nowhere to be read");
 				}
 				else
 				{
-					FMantleNaniteSideFile::Unpack(View, *NaniteRaw, &Error);
+					FMantleNaniteSideFile::ReadHead(NanitePath, *NaniteTableOut, *NaniteRaw, &Error);
 				}
 				break;
 
@@ -2640,6 +2662,16 @@ void FMantlePlaceAssets::StartDecodes()
 					if (!FMantleStaticMeshReader::Read(View, *MeshV2, &Error))
 					{
 						MeshV2.Reset();
+					}
+					else
+					{
+						// The mesh descriptions and their UV channels are made here, off the game thread (a 60,000-vertex mesh is 50 to 70 ms of it); the build there finishes from them.
+						Prepared = MakeShared<FMantlePreparedStaticMesh>();
+						if (!FMantleRuntimeStaticMeshBuilder::Prepare(*MeshV2, !IsRunningDedicatedServer(), *Prepared, &Error))
+						{
+							MeshV2.Reset();
+							Prepared.Reset();
+						}
 					}
 
 				}
@@ -2798,16 +2830,16 @@ void FMantlePlaceAssets::StartDecodes()
 			}
 			}
 
-			Queue->Push([Key, MeshV2, MeshV1, Texture, Material, Sound, Skinned, Clip, Heightfield, TerrainWeights, Vehicle, Weapon, Wheel, Error](FMantlePlaceAssets& Self)
+			Queue->Push([Key, MeshV2, Prepared, MeshV1, Texture, Material, Sound, Skinned, Clip, Heightfield, TerrainWeights, Vehicle, Weapon, Wheel, Error](FMantlePlaceAssets& Self)
 			{
-				Self.OnDecoded(Key, MeshV2, MeshV1, Texture, Material, Sound, Skinned, Clip, Heightfield, TerrainWeights, Vehicle, Weapon, Wheel, Error);
+				Self.OnDecoded(Key, MeshV2, Prepared, MeshV1, Texture, Material, Sound, Skinned, Clip, Heightfield, TerrainWeights, Vehicle, Weapon, Wheel, Error);
 			});
-		});
+		}, UE::Tasks::ETaskPriority::BackgroundNormal);
 	}
 	DecodeQueue.RemoveAt(0, Next, EAllowShrinking::No);
 }
 
-void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStaticMeshData> MeshV2, TSharedPtr<FMantleRuntimeMesh> MeshV1,
+void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStaticMeshData> MeshV2, TSharedPtr<FMantlePreparedStaticMesh> Prepared, TSharedPtr<FMantleRuntimeMesh> MeshV1,
 	TSharedPtr<FMantleDecodedTexture> Texture, TSharedPtr<FMantlePlaceMaterialDesc> Material, TSharedPtr<const FMantleSoundData> Sound,
 	TSharedPtr<FMantleSkinnedMesh> Skinned, TSharedPtr<const FMantleAnimClip> Clip, TSharedPtr<const FMantleHeightfield> Heightfield,
 	TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, TSharedPtr<FMantleWheelAsset> Wheel, const FString& Error)
@@ -2834,17 +2866,19 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 		QueueBuild(Key);
 		return;
 	}
-	// A Nanite file is its inflated MND1 (unpacked by the decode task); each mesh reads it as it builds (FMantleNaniteSideFile::Read).
+	// A Nanite file is its head (read and inflated by the decode task) and its table, with the file's place in the store; each mesh reads the head as it builds (FMantleNaniteSideFile::Read)
+	// and its page store reads the streamed pages from the file.
 	if (Key.Kind == EAssetKind::Nanite)
 	{
 		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> File = Build->NaniteFile;
-		if (!Error.IsEmpty() || !File.IsValid() || File->Num() == 0)
+		if (!Error.IsEmpty() || !File.IsValid() || File->Num() == 0 || !Build->NaniteTable.IsValid())
 		{
-			FailBuild(*Build, Error.IsEmpty() ? FString(TEXT("is not a Nanite file this client reads (MNZ1)")) : Error);
+			FailBuild(*Build, Error.IsEmpty() ? FString(TEXT("is not a Nanite file this client reads (MNZ2)")) : Error);
 			return;
 		}
-		Build->Detail = FString::Printf(TEXT("MNZ1 holding MND1, %.1f MB inflated from %.1f MB"), File->Num() / 1048576.0, Build->Ref.Bytes / 1048576.0);
-		Build->NaniteHeld = File->Num();
+		Build->Detail = FString::Printf(TEXT("MNZ2, %d streamed pages, head %.2f MB inflated, %.1f MB on disk"), Build->NaniteTable->PageCount(), File->Num() / 1048576.0, Build->Ref.Bytes / 1048576.0);
+		// What the set holds of it: the head and the table (the streamed pages are not held).
+		Build->NaniteHeld = File->Num() + Build->NaniteTable->GetAllocatedBytes();
 		NaniteHeldBytes += Build->NaniteHeld;
 		NaniteHeldPeakBytes = FMath::Max(NaniteHeldPeakBytes, NaniteHeldBytes);
 		ReleasePending(*Build);
@@ -2874,12 +2908,13 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 
 	// What the game thread now holds is the decoded form, not the download.
 	ReleasePending(*Build);
-	Build->PendingBytes = MeshV2 ? MeshV2->GetAllocatedBytes() : Texture ? Texture->GetGpuBytes() : Sound ? Sound->GetAllocatedBytes()
+	Build->PendingBytes = MeshV2 ? MeshV2->GetAllocatedBytes() + (Prepared ? Prepared->GetAllocatedBytes() : 0) : Texture ? Texture->GetGpuBytes() : Sound ? Sound->GetAllocatedBytes()
 		: Skinned ? MantlePlaceAssetsPrivate::SkinnedMeshBytes(*Skinned) : Heightfield ? Heightfield->GetAllocatedBytes()
 		: TerrainWeights ? static_cast<int64>(TerrainWeights->GetAllocatedBytes())
 		: Vehicle && Vehicle->Body.LODs.Num() > 0 ? static_cast<int64>(Vehicle->Body.LODs[0].NumVertices()) * 64 : 0;
 	PendingBuildBytes += Build->PendingBytes;
 	Build->MeshV2 = MeshV2;
+	Build->Prepared = Prepared;
 	Build->MeshV1 = MeshV1;
 	Build->Texture = Texture;
 	Build->Material = Material;
@@ -3055,6 +3090,13 @@ void FMantlePlaceAssets::RunBuilds()
 	const double Deadline = FPlatformTime::Seconds() + Slice;
 	int32 Next = 0;
 	bool bFirst = true;
+	// Meshes that wait for the next frame (their Nanite file is still being read on a worker, or the frame has taken its Nanite bytes): they go back to the front of the queue, in order.
+	TArray<FBuildKey> Waiting;
+	int64 NaniteTaken = 0;
+	int64 NaniteLargest = 0;
+	int32 NaniteMeshes = 0;
+	int32 NaniteLimited = 0;
+	bool bNaniteWaiting = false;
 	while (Next < BuildQueue.Num() && (bFirst || FPlatformTime::Seconds() < Deadline))
 	{
 		const FBuildKey Key = BuildQueue[Next++];
@@ -3063,6 +3105,24 @@ void FMantlePlaceAssets::RunBuilds()
 		{
 			continue;
 		}
+		int64 NaniteBytes = 0;
+		if (Build->Key.Kind == EAssetKind::Mesh)
+		{
+			NaniteBytes = NaniteRootBytesOf(*Build);
+			if (!FMantleNaniteFrameLimit::MayBuild(NaniteTaken, NaniteBytes, bNaniteWaiting))
+			{
+				// The frame has taken its Nanite data (the engine registers a frame's meshes in one go): this one and every later one with Nanite data wait.
+				bNaniteWaiting = true;
+				++NaniteLimited;
+				Waiting.Add(Key);
+				continue;
+			}
+			if (!NaniteReadReady(*Build))
+			{
+				Waiting.Add(Key);
+				continue;
+			}
+		}
 		bFirst = false;
 		// The game-thread half of an uploaded asset: the downloads and decodes ran off it.
 		const double BuildStart = FPlatformTime::Seconds();
@@ -3070,6 +3130,12 @@ void FMantlePlaceAssets::RunBuilds()
 			TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceAssets_BuildOne);
 			MANTLE_TRACE_SCOPE_DETAIL("MantlePlaceAssetBuild", FString::Printf(TEXT("%s %s"), KindName(Key.Kind), *Build->Id));
 			BuildOne(*Build);
+		}
+		if (NaniteBytes > 0)
+		{
+			NaniteTaken += NaniteBytes;
+			NaniteLargest = FMath::Max(NaniteLargest, NaniteBytes);
+			++NaniteMeshes;
 		}
 		const double Elapsed = FPlatformTime::Seconds() - BuildStart;
 		++GameThreadBuilds;
@@ -3083,6 +3149,88 @@ void FMantlePlaceAssets::RunBuilds()
 		}
 	}
 	BuildQueue.RemoveAt(0, Next, EAllowShrinking::No);
+	BuildQueue.Insert(Waiting, 0);
+	if (NaniteMeshes > 0)
+	{
+		// What this frame registers with the engine's Nanite streaming manager, to put a stall beside its bytes.
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_NANITE frame %llu: %d mesh(es), %lld root bytes (%.2f MiB), largest %.2f MiB, %d waiting for the next frame, %lld root pages attached"),
+			static_cast<uint64>(GFrameCounter), NaniteMeshes, NaniteTaken, NaniteTaken / 1048576.0, NaniteLargest / 1048576.0, NaniteLimited, NaniteRootPagesAttached);
+	}
+}
+
+bool FMantleNaniteFrameLimit::MayBuild(const int64 TakenBytes, const int64 MeshBytes, const bool bEarlierWaiting)
+{
+	if (MeshBytes <= 0)
+	{
+		return true;
+	}
+	if (bEarlierWaiting)
+	{
+		return false;
+	}
+	return TakenBytes <= 0 || TakenBytes + MeshBytes <= BytesPerFrame;
+}
+
+bool FMantleNaniteRootPages::Allows(const int64 Attached, const int64 MeshPages)
+{
+	return Attached + MeshPages <= BudgetPages;
+}
+
+int64 FMantlePlaceAssets::NaniteRootBytesOf(FBuild& Build)
+{
+	if (Build.NaniteRootBytes >= 0)
+	{
+		return Build.NaniteRootBytes;
+	}
+	Build.NaniteRootBytes = 0;
+	if (Build.NaniteRecord.IsEmpty() || !Build.MeshV2 || !FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources(true))
+	{
+		return 0;
+	}
+	const FRecord* NaniteRecord = Records.Find(Build.NaniteRecord);
+	const FBuild* NaniteBuild = NaniteRecord && NaniteRecord->Build.IsSet() ? Builds.Find(NaniteRecord->Build.GetValue()) : nullptr;
+	int64 RootBytes = 0;
+	if (NaniteBuild && NaniteBuild->State == EBuildState::Ready && NaniteBuild->NaniteFile.IsValid()
+		&& FMantleNaniteSideFile::PeekRootBytes(*NaniteBuild->NaniteFile, RootBytes))
+	{
+		Build.NaniteRootBytes = RootBytes;
+	}
+	return Build.NaniteRootBytes;
+}
+
+bool FMantlePlaceAssets::NaniteReadReady(FBuild& Build)
+{
+	if (Build.NaniteRead)
+	{
+		return Build.NaniteRead->bDone;
+	}
+	if (Build.NaniteRecord.IsEmpty() || !Build.MeshV2)
+	{
+		return true;
+	}
+	const FRecord* NaniteRecord = Records.Find(Build.NaniteRecord);
+	const FBuild* NaniteBuild = NaniteRecord && NaniteRecord->Build.IsSet() ? Builds.Find(NaniteRecord->Build.GetValue()) : nullptr;
+	if (!NaniteBuild || NaniteBuild->State != EBuildState::Ready || !NaniteBuild->NaniteFile.IsValid()
+		|| !FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources(true)
+		|| !FMantleRuntimeStaticMeshBuilder::ShouldReadNaniteOffThread(NaniteRootBytesOf(Build)))
+	{
+		return true;
+	}
+	// The read's result (the root data, about the size of the file's root block) is in memory beside the file until the build takes it: counted with the bytes in flight, and
+	// taken out again with the build's others (ReleasePending).
+	const int64 ReadBytes = NaniteRootBytesOf(Build);
+	Build.PendingBytes += ReadBytes;
+	PendingBuildBytes += ReadBytes;
+	// The task holds the file's bytes and the result, nothing of this set: the set may be gone before it ends.
+	TSharedPtr<FMantlePreparedNanite, ESPMode::ThreadSafe> Read = MakeShared<FMantlePreparedNanite, ESPMode::ThreadSafe>();
+	Build.NaniteRead = Read;
+	const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> File = NaniteBuild->NaniteFile;
+	const TSharedPtr<const FMantleNaniteTable, ESPMode::ThreadSafe> Table = NaniteBuild->NaniteTable;
+	UE::Tasks::Launch(TEXT("MantleNaniteRead"), [Read, File, Table, Tag = Build.NaniteMeshTag]()
+	{
+		FMantleRuntimeStaticMeshBuilder::ReadNanite(*File, Tag, *Table, *Read);
+	}, UE::Tasks::ETaskPriority::BackgroundNormal);
+	return false;
 }
 
 void FMantlePlaceAssets::BuildOne(FBuild& Build)
@@ -3126,13 +3274,20 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		{
 			const FRecord* NaniteRecord = Records.Find(Build.NaniteRecord);
 			NaniteBuild = NaniteRecord && NaniteRecord->Build.IsSet() ? Builds.Find(NaniteRecord->Build.GetValue()) : nullptr;
-			const bool bFileThere = NaniteBuild && NaniteBuild->State == EBuildState::Ready && NaniteBuild->NaniteFile.IsValid();
+			const bool bFileThere = NaniteBuild && NaniteBuild->State == EBuildState::Ready && NaniteBuild->NaniteFile.IsValid() && NaniteBuild->NaniteTable.IsValid();
 			NaniteFileMisses += (!bFileThere && !(NaniteBuild && NaniteBuild->State == EBuildState::Failed)) ? 1 : 0;
 			if (bFileThere && Build.MeshV2
 				&& FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources(Params.bInitRenderResources))
 			{
 				Params.NaniteFile = NaniteBuild->NaniteFile.Get();
 				Params.NaniteMeshTag = Build.NaniteMeshTag;
+				Params.NaniteRead = Build.NaniteRead.Get();
+				// The mesh's page store reads the streamed pages from this file for as long as the mesh lives, and pins it in the asset store (the build's own pin goes with the set).
+				Params.NaniteTable = NaniteBuild->NaniteTable;
+				Params.NanitePath = NaniteBuild->NanitePath;
+				Params.NaniteAssetStore = Store;
+				Params.NaniteHash = &NaniteBuild->Key.Hash;
+				Params.NaniteRootPagesLeft = FMath::Max<int64>(0, FMantleNaniteRootPages::BudgetPages - NaniteRootPagesAttached);
 			}
 			else
 			{
@@ -3158,7 +3313,8 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 				*FString::Join(LODTriangles, TEXT("/")), Params.bBuildLowerLODs || Build.MeshV2->LODCount() == 1 ? TEXT("") : TEXT(", LOD0 built on a server"),
 				Build.MeshV2->UV1s.Num() > 0 ? TEXT(", UV1") : TEXT(""), *CollisionDetail);
 			Build.Detail += LumenDetail;
-			Mesh = FMantleRuntimeStaticMeshBuilder::Build(*Build.MeshV2, Params, &Error);
+			Mesh = Build.Prepared ? FMantleRuntimeStaticMeshBuilder::BuildPrepared(*Build.MeshV2, MoveTemp(*Build.Prepared), Params, &Error)
+				: FMantleRuntimeStaticMeshBuilder::Build(*Build.MeshV2, Params, &Error);
 		}
 		else if (Build.MeshV1)
 		{
@@ -3167,6 +3323,8 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 			Mesh = FMantleRuntimeStaticMeshBuilder::Build(*Build.MeshV1, Params, &Error);
 		}
 		Build.MeshV2.Reset();
+		Build.Prepared.Reset();
+		Build.NaniteRead.Reset();
 		Build.MeshV1.Reset();
 		ReleasePending(Build);
 		if (!Build.NaniteRecord.IsEmpty())
@@ -3179,6 +3337,13 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 			return;
 		}
 		Build.Object = Mesh;
+		{
+			int32 RootPages = 0;
+			int64 RootBytes = 0;
+			FMantleRuntimeStaticMeshBuilder::GetNaniteAttached(*Mesh, RootPages, RootBytes);
+			Build.NaniteRootPages = RootPages;
+			NaniteRootPagesAttached += RootPages;
+		}
 		UBodySetup* Body = Mesh->GetBodySetup();
 		if (bCollision && Settings.bAsyncCollisionCook && Body)
 		{
@@ -3527,6 +3692,8 @@ void FMantlePlaceAssets::FailBuild(FBuild& Build, const FString& Error)
 	Build.Error = Error;
 	Build.Bytes.Reset();
 	Build.MeshV2.Reset();
+	Build.Prepared.Reset();
+	Build.NaniteRead.Reset();
 	Build.MeshV1.Reset();
 	Build.Texture.Reset();
 	Build.Material.Reset();
@@ -3615,6 +3782,7 @@ void FMantlePlaceAssets::ReleaseNaniteFile(FBuild& NaniteBuild)
 	NaniteHeldBytes -= NaniteBuild.NaniteHeld;
 	NaniteBuild.NaniteHeld = 0;
 	NaniteBuild.NaniteFile.Reset();
+	NaniteBuild.NaniteTable.Reset();
 }
 
 // ---- Pump ---------------------------------------------------------------------------------------------
@@ -3795,7 +3963,12 @@ void FMantlePlaceAssets::CheckComplete()
 	}
 	if (NaniteHeldPeakBytes > 0)
 	{
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS Nanite files: at most %.1f MB inflated were held at once"), MantlePlaceAssetsPrivate::Megabytes(NaniteHeldPeakBytes));
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS Nanite files: at most %.1f MB (heads and tables, no streamed page) were held at once"), MantlePlaceAssetsPrivate::Megabytes(NaniteHeldPeakBytes));
+	}
+	if (NaniteCachedFetches > 0)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS Nanite files: %d already stored, %.1f MB, asked for by path: %.0f ms in all, %.0f ms the slowest (the store hashes each whole file the first time in a run)"),
+			NaniteCachedFetches, MantlePlaceAssetsPrivate::Megabytes(NaniteCachedFetchBytes), NaniteCachedFetchMs, NaniteCachedFetchWorstMs);
 	}
 	bCompleted = true;
 	// Sounds that are already in (cached, or none at all) are reported with everything else.
@@ -4490,6 +4663,8 @@ void FMantlePlaceAssets::EraseBuild(const FBuildKey& Key)
 	}
 	ReleaseNaniteFile(*Build);
 	ReleasePending(*Build);
+	NaniteRootPagesAttached -= Build->NaniteRootPages;
+	Build->NaniteRootPages = 0;
 	FetchQueue.RemoveSingle(Key);
 	SoundFetchQueue.RemoveSingle(Key);
 	DecodeQueue.RemoveSingle(Key);

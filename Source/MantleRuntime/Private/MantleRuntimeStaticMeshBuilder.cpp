@@ -3,8 +3,14 @@
 
 #include "DistanceFieldAtlas.h"
 #include "Engine/StaticMesh.h"
+#include "MantleAssetStore.h"
 #include "MantleMeshLumenData.h"
 #include "MantleNaniteSideFile.h"
+#include "MantleNanitePageSource.h"
+#include "MeshDescription.h"
+#include "Misc/DefinePrivateMemberPtr.h"
+#include "Serialization/BulkData.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "MantleRuntime.h"
 #include "MantleRuntimeMesh.h"
 #include "MantleStaticMeshReader.h"
@@ -18,6 +24,14 @@
 #include "MeshCardBuild.h"
 #include "StaticMeshResources.h"
 #include "UObject/Package.h"
+
+// The one place the game reaches into the engine's bulk data. A mesh the game builds at runtime has no package, and the streaming manager reads a streamed Nanite page with
+// FBulkDataBatchRequest::FBatchBuilder::Read(StreamablePages, ...), which names the page by StreamablePages' chunk id (BulkChunkId) and its range in the data (BulkMeta's
+// offset and size). Those two members are private and nothing public sets them, so FMantleNanitePageSource's chunk is named through Epic's own macro for reaching a private
+// member (Misc/DefinePrivateMemberPtr.h, "at the user's own risk"). If the engine renames them this fails to compile, not in play; the files are tied to one engine build anyway
+// (FMantleNaniteSideFile::EngineTag).
+UE_DEFINE_PRIVATE_MEMBER_PTR(FIoChunkId, GMantleBulkDataChunkIdPtr, FBulkData, BulkChunkId);
+UE_DEFINE_PRIVATE_MEMBER_PTR(UE::BulkData::Private::FBulkMetaData, GMantleBulkDataMetaPtr, FBulkData, BulkMeta);
 
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleRuntimeStaticMeshBuilderPrivate
@@ -87,17 +101,70 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 		const double Start = FPlatformTime::Seconds();
 		Nanite::FResources Resources;
 		TArray<int32> SlotToPublished;
+		FMantleNaniteStreamedBlock Streamed;
 		FString Reason;
-		if (!FMantleNaniteSideFile::Read(*Params.NaniteFile, Params.NaniteMeshTag, Resources, SlotToPublished, &Reason)
+		bool bTaken = false;
+		if (Params.NaniteRead)
+		{
+			// Read on a worker: take its data (a move) instead of copying the file's bytes again here.
+			bTaken = Params.NaniteRead->bDone && Params.NaniteRead->bRead && Params.NaniteRead->Resources.IsValid();
+			if (bTaken)
+			{
+				Resources = MoveTemp(*Params.NaniteRead->Resources);
+				SlotToPublished = MoveTemp(Params.NaniteRead->SlotToPublished);
+				Streamed = Params.NaniteRead->Streamed;
+			}
+			else
+			{
+				Reason = Params.NaniteRead->bDone ? Params.NaniteRead->Reason : FString(TEXT("was not read yet"));
+			}
+		}
+		if (!Params.NaniteRead && !Params.NaniteTable.IsValid())
+		{
+			Reason = TEXT("has no container table");
+		}
+		if (!(Params.NaniteRead ? bTaken
+				: Params.NaniteTable.IsValid() && FMantleNaniteSideFile::Read(*Params.NaniteFile, Params.NaniteMeshTag, *Params.NaniteTable, FMantleNanitePageSource::MaxStreamedPageBytes(), Resources, SlotToPublished, &Reason, &Streamed))
 			|| !FMantleNaniteSideFile::SlotsMatchPublished(SlotToPublished, SlotCount, &Reason))
 		{
 			UE_LOG(LogMantle, Log, TEXT("MANTLE_NANITE skipped %s: the file %s"), *Params.NaniteMeshTag, *Reason);
 			return false;
 		}
+		const uint32 RootPages = Resources.NumRootPages;
+		if (static_cast<int64>(RootPages) > Params.NaniteRootPagesLeft)
+		{
+			// Not "skipped": the file is fine, the process has as much Nanite data attached as it will take (the engine's root pool has a hard ceiling).
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_NANITE over the root page budget: %s needs %u root pages and %lld are left; it is drawn as its plain model"),
+				*Params.NaniteMeshTag, RootPages, Params.NaniteRootPagesLeft);
+			return false;
+		}
 		const uint32 SourceTriangles = Resources.NumInputTriangles;
 		const int32 RootBytes = Resources.RootData.Num();
 		const int32 Pages = Resources.PageStreamingStates.Num();
+		FIoChunkId StreamedChunk = FIoChunkId::InvalidChunkId;
+		if (Streamed.IsPresent())
+		{
+			// The pages past the root ones are read from the downloaded file when the engine asks (FMantleNanitePageSource, which pins the file while the mesh lives): the mesh's StreamablePages names that store.
+			StreamedChunk = Params.NaniteAssetStore.IsValid() && Params.NaniteHash
+				? FMantleNanitePageSource::Get().Register(Params.NanitePath, Params.NaniteTable.ToSharedRef(), &Mesh, Params.NaniteAssetStore, *Params.NaniteHash)
+				: FMantleNanitePageSource::Get().Register(Params.NanitePath, Params.NaniteTable.ToSharedRef(), &Mesh);
+			if (StreamedChunk == FIoChunkId::InvalidChunkId)
+			{
+				UE_LOG(LogMantle, Log, TEXT("MANTLE_NANITE skipped %s: its streamed pages could not be held"), *Params.NaniteMeshTag);
+				return false;
+			}
+		}
 		*RenderData.NaniteResourcesPtr = MoveTemp(Resources);
+		if (Streamed.IsPresent())
+		{
+			FByteBulkData& Pages_ = RenderData.NaniteResourcesPtr->StreamablePages;
+			Pages_.*GMantleBulkDataChunkIdPtr = StreamedChunk;
+			UE::BulkData::Private::FBulkMetaData& Meta = Pages_.*GMantleBulkDataMetaPtr;
+			Meta.SetSize(Streamed.Size);
+			Meta.SetOffset(0);
+			// The engine's request for a page goes through the I/O dispatcher by chunk id, not by a file name.
+			Pages_.SetBulkDataFlags(BULKDATA_UsesIoDispatcher);
+		}
 		RenderData.bHasNaniteFallbackMesh = true;
 		// With ray tracing on, Nanite's scene proxy asks FStaticMeshRenderData::GetFirstValidLODIdx for a usable fallback LOD. That skips every LOD
 		// whose BuffersSize is 0, and only a serialized (cooked) mesh has it set; a mesh built from a description keeps 0, so the answer is -1 and
@@ -115,32 +182,41 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 		// field; there the Nanite proxy is chosen from the render data alone (FNaniteResourcesHelper::HasValidNaniteData: PageStreamingStates.Num() > 0).
 		Mesh.GetNaniteSettings().bEnabled = true;
 #endif
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_NANITE attached %s: %u triangles, %d pages, %d bytes (%.1f ms)"),
-			*Params.NaniteMeshTag, SourceTriangles, Pages, RootBytes, (FPlatformTime::Seconds() - Start) * 1000.0);
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_NANITE attached %s: %u triangles, %d pages (%u root), %d root bytes, %lld streamed bytes (%.1f ms)"),
+			*Params.NaniteMeshTag, SourceTriangles, Pages, RootPages, RootBytes, Streamed.Size, (FPlatformTime::Seconds() - Start) * 1000.0);
 		return true;
 	}
 
-	/** One slot per entry of SlotNames, in slot order. */
-	struct FSlotSpec
+	/**
+	 * Fills every texture coordinate channel the engine's fast build may read (it fills MAX_STATIC_TEXCOORDS even for a one-channel description) from channel 0, and returns the channels the
+	 * description authored. This mutates only our temporary description, never a source asset or the decoded mesh. Any thread.
+	 */
+	int32 FillUVChannels(FMeshDescription& Description)
 	{
-		TArray<FName> SlotNames;
-
-		/**
-		 * Per LOD, the material slot of each render section, keyed by the section's first index in the
-		 * built index buffer: one per polygon group that kept a triangle (the fast build writes each
-		 * group's triangles contiguously, in creation order, and makes no section for an empty one).
-		 */
-		TArray<TMap<uint32, int32>> SlotByFirstIndex;
-	};
+		TRACE_CPUPROFILER_EVENT_SCOPE_STR("MantleStaticMesh_UVFill");
+		FStaticMeshAttributes Attributes(Description);
+		auto UVs = Attributes.GetVertexInstanceUVs();
+		const int32 AuthoredChannels = FMath::Max(1, UVs.GetNumChannels());
+		UVs.SetNumChannels(MAX_STATIC_TEXCOORDS);
+		for (const FVertexInstanceID Instance : Description.VertexInstances().GetElementIDs())
+		{
+			for (int32 Channel = AuthoredChannels; Channel < MAX_STATIC_TEXCOORDS; ++Channel)
+			{
+				UVs.Set(Instance, Channel, UVs.Get(Instance, 0));
+			}
+		}
+		return AuthoredChannels;
+	}
 
 	/**
 	 * The shared tail of both builds: the UStaticMesh, its slots, the fast build of every LOD, the
 	 * authored screen sizes and the collision. Each description must already hold its LOD's triangles.
 	 * Simple is the simple collision, or null.
 	 */
-	UStaticMesh* FinishStaticMeshBuild(const TArray<FMeshDescription*>& Descriptions, const FSlotSpec& Slots, const TConstArrayView<float> ScreenSizes,
-		const FMantleStaticMeshCollision* Simple, const FMantleStaticMeshBuildParams& Params, FString* OutError)
+	UStaticMesh* FinishStaticMeshBuild(const TArray<FMeshDescription*>& Descriptions, const TConstArrayView<int32> AuthoredChannelsPerLOD, const FMantleStaticMeshSlots& Slots,
+		const TConstArrayView<float> ScreenSizes, const FMantleStaticMeshCollision* Simple, const FMantleStaticMeshBuildParams& Params, FString* OutError)
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE_STR("MantleStaticMesh_Finish");
 		UObject* MeshOuter = Params.Outer ? Params.Outer : GetTransientPackage();
 		const FName MeshName = Params.Name.IsNone() ? NAME_None : MakeUniqueObjectName(MeshOuter, UStaticMesh::StaticClass(), Params.Name);
 		UStaticMesh* Built = NewObject<UStaticMesh>(MeshOuter, MeshName, RF_Transient);
@@ -177,27 +253,22 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 		{
 			FStaticMeshLODResources& LODResources = RenderData->LODResources[LODIndex];
 			LODResources.IndexBuffer.TrySetAllowCPUAccess(bCPUAccess);
-			FStaticMeshAttributes Attributes(*Descriptions[LODIndex]);
-			auto UVs = Attributes.GetVertexInstanceUVs();
-			const int32 AuthoredChannels = FMath::Max(1, UVs.GetNumChannels());
-			// The fast engine builder fills MAX_STATIC_TEXCOORDS, even for a one-channel description.
-			// Initialize every channel it may read, then retain only the format's actual authored channels.
-			// This mutates only our temporary description, never a source asset or the decoded mesh.
-			UVs.SetNumChannels(MAX_STATIC_TEXCOORDS);
-			for (const FVertexInstanceID Instance : Descriptions[LODIndex]->VertexInstances().GetElementIDs())
+			// The descriptions arrive with every channel the fast engine builder reads filled (FillUVChannels); only the format's authored channels are kept.
+			const int32 AuthoredChannels = AuthoredChannelsPerLOD.IsValidIndex(LODIndex) ? AuthoredChannelsPerLOD[LODIndex] : 1;
 			{
-				for (int32 Channel = AuthoredChannels; Channel < MAX_STATIC_TEXCOORDS; ++Channel)
-				{
-					UVs.Set(Instance, Channel, UVs.Get(Instance, 0));
-				}
+				TRACE_CPUPROFILER_EVENT_SCOPE_STR("MantleStaticMesh_EngineBuildLOD");
+				Built->BuildFromMeshDescription(*Descriptions[LODIndex], LODResources);
 			}
-			Built->BuildFromMeshDescription(*Descriptions[LODIndex], LODResources);
-			TrimTexCoordChannels(LODResources.VertexBuffers.StaticMeshVertexBuffer, AuthoredChannels);
+			{
+				TRACE_CPUPROFILER_EVENT_SCOPE_STR("MantleStaticMesh_TrimUVs");
+				TrimTexCoordChannels(LODResources.VertexBuffers.StaticMeshVertexBuffer, AuthoredChannels);
+			}
 		}
 		// The full-detail Nanite data goes on before the render resources are initialized
 		// (UStaticMesh::InitResources hands it to Nanite's streaming manager).
 		if (Params.NaniteFile && Params.NaniteFile->Num() > 0)
 		{
+			TRACE_CPUPROFILER_EVENT_SCOPE_STR("MantleStaticMesh_NaniteAttach");
 			AttachNaniteSideFile(*Built, *RenderData, Slots.SlotNames.Num(), Params);
 		}
 		// A mesh built for collision alone (a dedicated server's) keeps its CPU buffers and gets no render
@@ -210,6 +281,7 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 #endif
 			if (bRayTracing)
 			{
+				TRACE_CPUPROFILER_EVENT_SCOPE_STR("MantleStaticMesh_RayTracingRepresentation");
 				RenderData->InitializeRayTracingRepresentationFromRenderingLODs();
 			}
 			// #149: what the editor's derived data would have put on LOD0. The proxy copies both pointers when it is made.
@@ -219,8 +291,12 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 				RenderData->LODResources[0].DistanceFieldData = Params.Lumen->DistanceField.Release();
 				RenderData->LODResources[0].CardRepresentationData = Params.Lumen->Cards.Release();
 			}
-			Built->InitResources();
+			{
+				TRACE_CPUPROFILER_EVENT_SCOPE_STR("MantleStaticMesh_InitResources");
+				Built->InitResources();
+			}
 		}
+		TRACE_CPUPROFILER_EVENT_SCOPE_STR("MantleStaticMesh_BoundsAndBody");
 		RenderData->Bounds = Descriptions[0]->GetBounds();
 		Built->CalculateExtendedBounds();
 		for (int32 LODIndex = 0; LODIndex < Descriptions.Num(); ++LODIndex)
@@ -585,11 +661,12 @@ UStaticMesh* FMantleRuntimeStaticMeshBuilder::Build(const FMantleRuntimeMesh& Me
 	}
 	FStaticMeshOperations::ComputeTangentsAndNormals(Description, Flags);
 
-	FSlotSpec Slots;
+	FMantleStaticMeshSlots Slots;
 	Slots.SlotNames.Add(Params.MaterialSlotName);
 	Slots.SlotByFirstIndex.AddDefaulted_GetRef().Add(0, 0);
 	const TArray<FMeshDescription*> Descriptions = { &Description };
-	UStaticMesh* Built = FinishStaticMeshBuild(Descriptions, Slots, TConstArrayView<float>(), nullptr, Params, OutError);
+	const TArray<int32> AuthoredChannels = { FillUVChannels(Description) };
+	UStaticMesh* Built = FinishStaticMeshBuild(Descriptions, AuthoredChannels, Slots, TConstArrayView<float>(), nullptr, Params, OutError);
 	if (Built)
 	{
 		UE_LOG(LogMantle, Verbose, TEXT("MANTLE_STATICMESH built %s: %d vertices, %d triangles (%d degenerate dropped)"),
@@ -598,7 +675,109 @@ UStaticMesh* FMantleRuntimeStaticMeshBuilder::Build(const FMantleRuntimeMesh& Me
 	return Built;
 }
 
+FMantlePreparedStaticMesh::FMantlePreparedStaticMesh() = default;
+FMantlePreparedStaticMesh::~FMantlePreparedStaticMesh() = default;
+FMantlePreparedStaticMesh::FMantlePreparedStaticMesh(FMantlePreparedStaticMesh&&) = default;
+FMantlePreparedStaticMesh& FMantlePreparedStaticMesh::operator=(FMantlePreparedStaticMesh&&) = default;
+
+FMantlePreparedNanite::FMantlePreparedNanite() = default;
+FMantlePreparedNanite::~FMantlePreparedNanite() = default;
+
+void FMantleRuntimeStaticMeshBuilder::GetNaniteAttached(const UStaticMesh& Mesh, int32& OutRootPages, int64& OutRootBytes)
+{
+	OutRootPages = 0;
+	OutRootBytes = 0;
+	const FStaticMeshRenderData* RenderData = Mesh.GetRenderData();
+	if (RenderData && RenderData->NaniteResourcesPtr.IsValid() && RenderData->NaniteResourcesPtr->PageStreamingStates.Num() > 0)
+	{
+		OutRootPages = static_cast<int32>(RenderData->NaniteResourcesPtr->NumRootPages);
+		OutRootBytes = RenderData->NaniteResourcesPtr->RootData.Num();
+	}
+}
+
+bool FMantleRuntimeStaticMeshBuilder::ShouldReadNaniteOffThread(const int64 FileBytes)
+{
+	return FileBytes >= NaniteReadOffThreadBytes;
+}
+
+void FMantleRuntimeStaticMeshBuilder::ReadNanite(const TArray<uint8>& Head, const FString& MeshTag, const FMantleNaniteTable& Table, FMantlePreparedNanite& Out)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR("MantleStaticMesh_NaniteRead");
+	Out.Resources = MakeUnique<Nanite::FResources>();
+	Out.bRead = FMantleNaniteSideFile::Read(Head, MeshTag, Table, FMantleNanitePageSource::MaxStreamedPageBytes(), *Out.Resources, Out.SlotToPublished, &Out.Reason, &Out.Streamed);
+	if (!Out.bRead)
+	{
+		Out.Resources.Reset();
+	}
+	// Last: the game thread reads the rest only after it sees this.
+	Out.bDone = true;
+}
+
+int64 FMantlePreparedStaticMesh::GetAllocatedBytes() const
+{
+	int64 Bytes = 0;
+	for (const FMeshDescription& Description : Descriptions)
+	{
+		// A description keeps about 12 vertex bytes, 8 per UV channel and tangent space for each vertex instance, and its triangles and polygons: about 150 bytes a vertex and a triangle together.
+		Bytes += static_cast<int64>(Description.VertexInstances().GetArraySize()) * 150 + static_cast<int64>(Description.Triangles().GetArraySize()) * 100;
+	}
+	return Bytes;
+}
+
+bool FMantleRuntimeStaticMeshBuilder::Prepare(const FMantleStaticMeshData& Mesh, const bool bBuildLowerLODs, FMantlePreparedStaticMesh& Out, FString* OutError)
+{
+	using namespace MantleRuntimeStaticMeshBuilderPrivate;
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR("MantleStaticMesh_Prepare");
+
+	Out = FMantlePreparedStaticMesh();
+	// LOD0's sections name the slots: each of 0..count-1 exactly once, named for its material.
+	const int32 SectionCount = Mesh.Sections.Num();
+	FMantleStaticMeshSlots& Slots = Out.Slots;
+	Slots.SlotNames.Init(NAME_None, SectionCount);
+	for (const FMantleSkinnedMeshSection& Section : Mesh.Sections)
+	{
+		if (Section.MaterialIndex < 0 || Section.MaterialIndex >= SectionCount || !Slots.SlotNames[Section.MaterialIndex].IsNone() || Section.MaterialName.IsNone())
+		{
+			FailStaticMeshBuild(OutError, FString::Printf(TEXT("section '%s' (slot %d, indices [%d, +%d)) is inconsistent"),
+				*Section.MaterialName.ToString(), Section.MaterialIndex, Section.FirstIndex, Section.IndexCount));
+			return false;
+		}
+		Slots.SlotNames[Section.MaterialIndex] = Section.MaterialName;
+	}
+
+	// The lower LODs when asked for and when their screen sizes are there to switch at.
+	const int32 LODCount = bBuildLowerLODs && Mesh.ScreenSizes.Num() == Mesh.LODCount() ? Mesh.LODCount() : 1;
+	Out.Descriptions.SetNum(LODCount);
+	for (int32 LODIndex = 0; LODIndex < LODCount; ++LODIndex)
+	{
+		FString Error;
+		const FString What = LODIndex == 0 ? FString(TEXT("the mesh")) : FString::Printf(TEXT("LOD%d"), LODIndex);
+		if (!DescribeStaticLOD(Mesh.GetLOD(LODIndex), Slots.SlotNames, What, Out.Descriptions[LODIndex], Slots.SlotByFirstIndex.AddDefaulted_GetRef(), Out.Dropped, Error))
+		{
+			FailStaticMeshBuild(OutError, Error);
+			return false;
+		}
+		Out.Triangles += Out.Descriptions[LODIndex].Triangles().Num();
+		Out.AuthoredChannels.Add(FillUVChannels(Out.Descriptions[LODIndex]));
+	}
+	return true;
+}
+
 UStaticMesh* FMantleRuntimeStaticMeshBuilder::Build(const FMantleStaticMeshData& Mesh, const FMantleStaticMeshBuildParams& Params, FString* OutError)
+{
+	if (!IsInGameThread())
+	{
+		return MantleRuntimeStaticMeshBuilderPrivate::FailStaticMeshBuild(OutError, TEXT("static meshes are built on the game thread"));
+	}
+	FMantlePreparedStaticMesh Prepared;
+	if (!Prepare(Mesh, Params.bBuildLowerLODs, Prepared, OutError))
+	{
+		return nullptr;
+	}
+	return BuildPrepared(Mesh, MoveTemp(Prepared), Params, OutError);
+}
+
+UStaticMesh* FMantleRuntimeStaticMeshBuilder::BuildPrepared(const FMantleStaticMeshData& Mesh, FMantlePreparedStaticMesh&& Prepared, const FMantleStaticMeshBuildParams& Params, FString* OutError)
 {
 	using namespace MantleRuntimeStaticMeshBuilderPrivate;
 
@@ -606,48 +785,16 @@ UStaticMesh* FMantleRuntimeStaticMeshBuilder::Build(const FMantleStaticMeshData&
 	{
 		return FailStaticMeshBuild(OutError, TEXT("static meshes are built on the game thread"));
 	}
-
-	// LOD0's sections name the slots: each of 0..count-1 exactly once, named for its material.
-	const int32 SectionCount = Mesh.Sections.Num();
-	FSlotSpec Slots;
-	Slots.SlotNames.Init(NAME_None, SectionCount);
-	for (const FMantleSkinnedMeshSection& Section : Mesh.Sections)
-	{
-		if (Section.MaterialIndex < 0 || Section.MaterialIndex >= SectionCount || !Slots.SlotNames[Section.MaterialIndex].IsNone() || Section.MaterialName.IsNone())
-		{
-			return FailStaticMeshBuild(OutError, FString::Printf(TEXT("section '%s' (slot %d, indices [%d, +%d)) is inconsistent"),
-				*Section.MaterialName.ToString(), Section.MaterialIndex, Section.FirstIndex, Section.IndexCount));
-		}
-		Slots.SlotNames[Section.MaterialIndex] = Section.MaterialName;
-	}
-
-	// The lower LODs when asked for and when their screen sizes are there to switch at.
-	const int32 LODCount = Params.bBuildLowerLODs && Mesh.ScreenSizes.Num() == Mesh.LODCount() ? Mesh.LODCount() : 1;
-	TArray<FMeshDescription> Descriptions;
-	Descriptions.SetNum(LODCount);
-	int32 Dropped = 0;
-	int32 Triangles = 0;
-	for (int32 LODIndex = 0; LODIndex < LODCount; ++LODIndex)
-	{
-		FString Error;
-		const FString What = LODIndex == 0 ? FString(TEXT("the mesh")) : FString::Printf(TEXT("LOD%d"), LODIndex);
-		if (!DescribeStaticLOD(Mesh.GetLOD(LODIndex), Slots.SlotNames, What, Descriptions[LODIndex], Slots.SlotByFirstIndex.AddDefaulted_GetRef(), Dropped, Error))
-		{
-			return FailStaticMeshBuild(OutError, Error);
-		}
-		Triangles += Descriptions[LODIndex].Triangles().Num();
-	}
-
 	TArray<FMeshDescription*> DescriptionPointers;
-	for (FMeshDescription& Description : Descriptions)
+	for (FMeshDescription& Description : Prepared.Descriptions)
 	{
 		DescriptionPointers.Add(&Description);
 	}
-	UStaticMesh* Built = FinishStaticMeshBuild(DescriptionPointers, Slots, Mesh.ScreenSizes, &Mesh.Collision, Params, OutError);
+	UStaticMesh* Built = FinishStaticMeshBuild(DescriptionPointers, Prepared.AuthoredChannels, Prepared.Slots, Mesh.ScreenSizes, &Mesh.Collision, Params, OutError);
 	if (Built)
 	{
 		UE_LOG(LogMantle, Verbose, TEXT("MANTLE_STATICMESH built %s: %d vertices, %d triangles over %d LOD(s), %d sections, %d simple collision shape(s) (%d degenerate dropped)"),
-			*Built->GetName(), Mesh.VertexCount(), Triangles, LODCount, SectionCount, Mesh.Collision.ShapeCount(), Dropped);
+			*Built->GetName(), Mesh.VertexCount(), Prepared.Triangles, Prepared.Descriptions.Num(), Mesh.Sections.Num(), Mesh.Collision.ShapeCount(), Prepared.Dropped);
 	}
 	return Built;
 }

@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "MantleFarSetSettings.h"
 #include "MantlePlaceCells.h"
 
 /** Which of a cell's entities a streamer builds: all of them, the ones with collision, or the ones without (the pictures). */
@@ -102,6 +103,9 @@ struct MANTLERUNTIME_API FMantleCellStreamSettings
 
 	/** The streamer ticks itself from the engine's core ticker. Tests turn it off and tick by hand. */
 	bool bAutoTick = true;
+
+	/** Far sets: the twins of a cell's big entities, drawn past the cell's drawDistance (stage 3a). Off unless the owner turns them on. */
+	FMantleFarSetSettings FarSets;
 };
 
 /** Where the player looks from and how fast that is moving, in world cm and cm a second. */

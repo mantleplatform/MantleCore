@@ -122,6 +122,11 @@ void FMantleCellStreamer::OnIndexReady()
 	{
 		LevelRadii.Add(Level.MaxDrawDistance);
 	}
+	FarLevelRadii.Reset();
+	for (const FMantleCellGridLevel& Level : Index.Levels)
+	{
+		FarLevelRadii.Add(FMath::Min(Level.MaxDrawDistance * Settings.FarSets.ReachFactor, Settings.FarSets.MaxReachCm));
+	}
 	bIndexReady = true;
 	bRefreshNeeded = true;
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_CELLS_STREAM started: %d cells in %d level(s), view at (%.0f, %.0f, %.0f)"),
@@ -168,6 +173,8 @@ void FMantleCellStreamer::Tick(const double DeltaSeconds)
 		}
 		TakeFinishedCells();
 		TakeAssetCells();
+		TakeFinishedFarCells();
+		TakeFarAssetCells();
 		double Budget = FMantleCellStreamPlan::BudgetSeconds(Settings, FastestViewSpeed(), bHolding);
 		Stats.LastBudgetSeconds = Budget;
 		if (CellAssets.IsValid())
@@ -179,6 +186,13 @@ void FMantleCellStreamer::Tick(const double DeltaSeconds)
 		}
 		RunWork(Budget);
 		UpdateStats();
+		// The twins, looked at once a second: each is drawn exactly when it should be.
+		FarAuditSeconds += DeltaSeconds;
+		if (FarAuditSeconds >= 1.0 && !FarSets.IsEmpty())
+		{
+			FarAuditSeconds = 0.0;
+			AuditFarSets(TEXT("tick"));
+		}
 	}
 	// The player's own ground (the collision rule, made general): a character that stands where a solid cell is not built here (a late download, a view that
 	// outran the loader without being a teleport) is held until it stands, as a join or a teleport holds it. A cell that can never be read does not hold it.
@@ -460,7 +474,12 @@ void FMantleCellStreamer::Refresh()
 	}
 	// Loading cells in the order the loader works them.
 	LoadingCells = WantList;
-	Loader->SetWanted(WantList);
+	// The far-only cells follow the real flow's in the loader's order.
+	TArray<int32> FarWants;
+	CollectFarWants(Path, WantList, FarWants);
+	TArray<int32> AllWants = WantList;
+	AllWants.Append(FarWants);
+	Loader->SetWanted(AllWants);
 
 	// Distances for the cells waiting to be built (the builder takes the nearest first), and the backlog for the stats.
 	PendingCells.Reset();
@@ -482,6 +501,8 @@ void FMantleCellStreamer::Refresh()
 	}
 	// A keep-every-cell streamer with nothing left to read or wait for has planned for the last time.
 	bKeepAllSettled = Settings.bKeepEveryCell && Pool.IsEmpty() && LoadingCells.IsEmpty() && AssetCells.IsEmpty() && ReadyCells.IsEmpty();
+	// Which far sets are wanted, which go, which are built next.
+	RefreshFar(Path);
 }
 
 void FMantleCellStreamer::TakeFinishedCells()
@@ -643,6 +664,9 @@ void FMantleCellStreamer::ReleaseAssets(const int32 CellIndex)
 void FMantleCellStreamer::PrepareCell(const int32 CellIndex, FCell& Cell)
 {
 	// Long lists of solid instances are cut so that one piece is about one step of the budget; solid things are built before pictures. (A list with no collision is at most 4,096 instances, about 0.5 ms: one piece.)
+	// The cell's far set is made from everything it holds, before the entities are cut and filtered for this streamer's own flow.
+	MakeFarSet(CellIndex, Cell.Content.Entities);
+	Cell.PiecesLeft.Reset();
 	TArray<FMantleEntity> Solid;
 	TArray<FMantleEntity> Visual;
 	Solid.Reserve(Cell.Content.Entities.Num());
@@ -655,6 +679,7 @@ void FMantleCellStreamer::PrepareCell(const int32 CellIndex, FCell& Cell)
 		}
 		FMantleInstancedMeshProps* Instanced = Entity.Props.TryGet<FMantleInstancedMeshProps>();
 		const int32 Pieces = Instanced ? FMantleCellStreamPlan::PieceCount(Instanced->Instances.Num(), bSolid, Settings) : 1;
+		Cell.PiecesLeft.Add(Entity.Id, Pieces);
 		if (Pieces <= 1)
 		{
 			(bSolid ? Solid : Visual).Add(MoveTemp(Entity));
@@ -691,9 +716,11 @@ void FMantleCellStreamer::RunWork(const double BudgetSeconds)
 	// it gets a quarter of the budget, and builds get the rest.
 	const bool bBuildsWaiting = !ReadyCells.IsEmpty();
 	RemoveSome(bBuildsWaiting ? Start + BudgetSeconds * 0.25 : Deadline);
+	// The far sets keep a share of the budget while any waits to be built, so a flight keeps the far ring filled; what the real flow does not use is theirs too.
+	const double RealDeadline = (FarReadyCells.IsEmpty() || bHolding) ? Deadline : Start + BudgetSeconds * (1.0 - Settings.FarSets.MinShareOfBudget);
 	// At least one piece a tick, so a long frame never stops the loader; then pieces until the budget is spent.
 	bool bDidOne = false;
-	while (!ReadyCells.IsEmpty() && (!bDidOne || FPlatformTime::Seconds() < Deadline))
+	while (!ReadyCells.IsEmpty() && (!bDidOne || FPlatformTime::Seconds() < RealDeadline))
 	{
 		bDidOne = true;
 		if (!BuildOne())
@@ -701,7 +728,16 @@ void FMantleCellStreamer::RunWork(const double BudgetSeconds)
 			break;
 		}
 	}
+	// Not during a hold: the join and a teleport wait for the real cells, which get all of the budget; the twins come after.
+	while (!bHolding && !FarReadyCells.IsEmpty() && FPlatformTime::Seconds() < Deadline)
+	{
+		if (!BuildOneFar())
+		{
+			break;
+		}
+	}
 	RemoveSome(Deadline);
+	RemoveFarSome(Deadline);
 }
 
 bool FMantleCellStreamer::RemoveSome(const double Deadline)
@@ -862,6 +898,19 @@ bool FMantleCellStreamer::BuildOne()
 			++Stats.BuildErrors;
 		}
 	}
+	// An entity stands when its last piece is built; its far twin, if it is drawn, is handed off in this step. An entity whose first piece did not build never stands.
+	if (PieceIndex == 0 && Built.Actors.IsEmpty())
+	{
+		Cell.PiecesLeft.Remove(BaseId);
+	}
+	else if (int32* PiecesLeft = Cell.PiecesLeft.Find(BaseId))
+	{
+		if (--(*PiecesLeft) <= 0)
+		{
+			Cell.PiecesLeft.Remove(BaseId);
+			OnRealEntityStanding(Best, BaseId);
+		}
+	}
 	++Cell.Cursor;
 	++Stats.UnitsBuilt;
 	Stats.InstancesBuilt += bInstanced ? InstanceCount : 0;
@@ -916,6 +965,8 @@ void FMantleCellStreamer::QueueRemoval(const int32 CellIndex)
 	FCell& Cell = Cells.FindChecked(CellIndex);
 	// The script world forgets the entities before their actors go (the actors are destroyed a few a frame).
 	ReleaseEntities(Cell);
+	// What stood here goes: the cell's twins are drawn from now on (the real entities draw nothing past their own distance anyway).
+	OnRealCellLeaving(CellIndex);
 	BuiltCells.RemoveSingle(CellIndex);
 	Cell.State = ECellState::Removing;
 	++TakeDownSerial;
@@ -954,6 +1005,8 @@ void FMantleCellStreamer::SetHolding(const bool bNow, const TCHAR* Reason)
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_CELLS_HOLD ended: %s after %.2f s (%s), cells standing %d, backlog %d"),
 			Reason, Now - HoldStartSeconds, *HoldReason, BuiltCells.Num(), PendingCells.Num());
 	}
+	// A hold that ends lets the far sets start the work they held back.
+	bRefreshNeeded = true;
 	if (HoldChanged)
 	{
 		HoldChanged(bNow);
@@ -1083,6 +1136,11 @@ void FMantleCellStreamer::UpdateStats()
 	Stats.CellsReady = ReadyCells.Num();
 	Stats.CellsBuilt = BuiltCells.Num();
 	Stats.CellsRemoving = RemovingCells.Num();
+	Stats.FarSetsStanding = 0;
+	for (const TPair<int32, FFarSet>& FarPair : FarSets)
+	{
+		Stats.FarSetsStanding += FarPair.Value.State == EFarState::Built ? 1 : 0;
+	}
 	Stats.CellsPending = 0;
 	Stats.NearestPendingCm = -1.0;
 	Stats.NearestPendingSolidCm = -1.0;
@@ -1124,6 +1182,7 @@ void FMantleCellStreamer::LogSummary(const TCHAR* Why) const
 		Stats.InstancesBuilt, Stats.ActorsRemoved, Stats.BuildSeconds, Stats.RemoveSeconds,
 		Stats.LongestUnitSeconds * 1000.0, Stats.LongestUnitEntity.IsEmpty() ? TEXT("-") : *Stats.LongestUnitEntity, Stats.WorstWorkSeconds * 1000.0, Stats.BuildErrors,
 		Stats.CellAssetsAsked, Stats.LongestAssetWaitSeconds, Stats.AssetWaitTimeouts, Stats.AssetsMissing, Stats.EntitiesWithoutMesh);
+	LogFarSummary(Why);
 }
 
 #if !UE_BUILD_SHIPPING
@@ -1152,6 +1211,10 @@ bool FMantleCellStreamer::SetTestSetting(const FString& Name, const double Value
 	else if (Name == TEXT("skipbuild"))
 	{
 		bTestSkipBuild = Value != 0.0;
+	}
+	else if (Name == TEXT("farsets"))
+	{
+		Settings.FarSets.bEnabled = Value != 0.0;
 	}
 	else if (Name == TEXT("keepall"))
 	{
@@ -1192,6 +1255,23 @@ void FMantleCellStreamer::Stop()
 			}
 		}
 	}
+	for (TPair<int32, FFarSet>& Pair : FarSets)
+	{
+		ReleaseFarAssets(Pair.Key, Pair.Value);
+		for (FFarEntity& Far : Pair.Value.Entities)
+		{
+			if (AActor* Actor = Far.Actor.Get())
+			{
+				Actor->Destroy();
+				++Destroyed;
+			}
+		}
+	}
+	FarSets.Reset();
+	FarLoadingCells.Reset();
+	FarAssetCells.Reset();
+	FarReadyCells.Reset();
+	FarRemovingCells.Reset();
 	Cells.Reset();
 	ReadyCells.Reset();
 	AssetCells.Reset();

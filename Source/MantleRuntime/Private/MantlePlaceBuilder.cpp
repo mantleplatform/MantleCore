@@ -17,12 +17,16 @@
 #include "MantleRuntime.h"
 #include "MantleScatterVolume.h"
 #include "MantleScriptPoint.h"
+#include "MantleSoundEmitterMarker.h"
 #include "MantleShadowDistance.h"
 #include "MantleSkeletonHash.h"
 #include "MantleSoundWave.h"
 #include "MantleSurface.h"
 #include "MantleTerrainBuilder.h"
 #include "MantleTerrainGrass.h"
+#include "MantleTerrainStream.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "MantleTerrainSurface.h"
 #include "MantleTrace.h"
 #include "MantleVehicleSpawnPoint.h"
@@ -128,8 +132,8 @@ namespace
 		}
 	}
 
-	template <typename TActor>
-	TActor* SpawnBare(UWorld* World, const FString& Name, const FTransform* StaticWorld = nullptr, TFunction<void(AActor*)> PreRegister = nullptr)
+	/** The spawn behind SpawnBare, for a class chosen at run time (a SoundEmitter is a different actor class on a dedicated server). */
+	AActor* SpawnBareOfClass(UWorld* World, UClass* Class, const FString& Name, const FTransform* StaticWorld = nullptr, TFunction<void(AActor*)> PreRegister = nullptr)
 	{
 		FActorSpawnParameters Params;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -139,9 +143,9 @@ namespace
 		}
 
 		const FTransform* SpawnAt = StaticWorld ? StaticWorld : GMovableSpawnAt;
-		TActor* Actor = SpawnAt
-			? World->SpawnActor<TActor>(TActor::StaticClass(), *SpawnAt, Params)
-			: World->SpawnActor<TActor>(FVector::ZeroVector, FRotator::ZeroRotator, Params);
+		AActor* Actor = SpawnAt
+			? World->SpawnActor(Class, SpawnAt, Params)
+			: World->SpawnActor(Class, &FVector::ZeroVector, &FRotator::ZeroRotator, Params);
 		if (Actor && !Name.IsEmpty())
 		{
 #if WITH_EDITOR
@@ -149,6 +153,12 @@ namespace
 #endif
 		}
 		return Actor;
+	}
+
+	template <typename TActor>
+	TActor* SpawnBare(UWorld* World, const FString& Name, const FTransform* StaticWorld = nullptr, TFunction<void(AActor*)> PreRegister = nullptr)
+	{
+		return static_cast<TActor*>(SpawnBareOfClass(World, TActor::StaticClass(), Name, StaticWorld, MoveTemp(PreRegister)));
 	}
 
 	/**
@@ -837,9 +847,10 @@ namespace
 
 		// Nothing is heard on a dedicated server, so it neither loads the sound nor plays it.
 		// A library id is still checked, so a place that fails on clients fails the same way
-		// there, and the actor is still spawned so the entity exists for scripts. An uploaded
-		// sound's kind was checked when the place was published (the backend refuses an id of
-		// another kind), and the server resolves nothing it cannot hear.
+		// there. The engine will not spawn an AmbientSound on a server (ClassesExcludedOnDedicatedServer),
+		// so the server gets a plain marker actor (AMantleSoundEmitterMarker) in its place and the entity
+		// exists for scripts. An uploaded sound's kind was checked when the place was published (the
+		// backend refuses an id of another kind), and the server resolves nothing it cannot hear.
 		const bool bDedicatedServer = World->GetNetMode() == NM_DedicatedServer;
 		// A library entry wins over the uploaded-id shape, so every sound id that built before uploaded sounds still does.
 		const bool bUploaded = FMantlePlaceAssets::IsUploadedSoundId(Props.Sound);
@@ -883,15 +894,22 @@ namespace
 			}
 		}
 
-		AAmbientSound* Actor = SpawnBare<AAmbientSound>(World, Entity.Name);
-		if (!Actor)
+		// The class is the marker's own choice (ClassFor), the one the server test checks: the marker on a dedicated server, the engine's AmbientSound everywhere else.
+		AActor* Spawned = SpawnBareOfClass(World, AMantleSoundEmitterMarker::ClassFor(bDedicatedServer), Entity.Name);
+		if (!Spawned)
 		{
 			return nullptr;
 		}
-		MakeMovable(Actor);
+		MakeMovable(Spawned);
+		AAmbientSound* Actor = Cast<AAmbientSound>(Spawned);
+		if (!Actor)
+		{
+			// The marker: nothing is heard on a server, so it has no audio to set up.
+			return Spawned;
+		}
 
 		UAudioComponent* Audio = Actor->GetAudioComponent();
-		if (!Audio || bDedicatedServer)
+		if (!Audio)
 		{
 			return Actor;
 		}
@@ -1092,7 +1110,26 @@ namespace
 		FMantleTerrainBuildParams Params;
 		TSharedPtr<FMantleTerrainSpawn> Spawn;
 		FMantleScatterTerrainSurface* OutSurface = nullptr;
+		/** A client of a streaming place: the spawn is the far ground (every chunk's lowest detail), and the stream component builds full chunks near the view. */
+		bool bFarGround = false;
 	};
+
+	/** Whether this machine draws a terrain as the far ground and builds full chunks near its view: a client of a streaming place. */
+	bool UsesFarGround(const UWorld* World, const FMantlePlace& Place)
+	{
+		if (!Place.bCellsStreamed || World->GetNetMode() != NM_Client)
+		{
+			return false;
+		}
+#if !UE_BUILD_SHIPPING
+		// A measurement tool, not in a shipped build: the whole terrain in full, as it was before the far ground, so one launch can be compared with another.
+		if (FParse::Param(FCommandLine::Get(), TEXT("MantleTestFullTerrain")))
+		{
+			return false;
+		}
+#endif
+		return true;
+	}
 
 	bool BeginTerrainEntity(
 		UWorld* World,
@@ -1103,6 +1140,7 @@ namespace
 		FMantleBuilderLoadStats& LoadStats,
 		FPendingTerrain& Pending,
 		FMantleScatterTerrainSurface* OutSurface,
+		const bool bFarGround,
 		const FTransform* StaticWorld = nullptr)
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_Terrain);
@@ -1186,7 +1224,12 @@ namespace
 			}
 		}
 		FString BuildError;
-		Pending.Spawn = FMantleTerrainSpawn::Begin(World, Entity.Name, *Field, Material, Props.bCastShadow, Params, &BuildError, StaticWorld, StaticWorld ? nullptr : GMovableSpawnAt);
+		// On a player's machine that streams the place, the terrain is built as the far ground: every chunk at its lowest detail, no collision and no shadow. What a view is near is
+		// built in full by the stream component (FinishTerrainEntity), chunk by chunk, and swapped in place of the far one. The same Params (without bFarOnly) build the full chunks.
+		Pending.bFarGround = bFarGround && !bDedicatedServer;
+		FMantleTerrainBuildParams SpawnParams = Params;
+		SpawnParams.bFarOnly = Pending.bFarGround;
+		Pending.Spawn = FMantleTerrainSpawn::Begin(World, Entity.Name, *Field, Material, Props.bCastShadow, SpawnParams, &BuildError, StaticWorld, StaticWorld ? nullptr : GMovableSpawnAt);
 		if (!Pending.Spawn.IsValid())
 		{
 			Errors.Add(FMantleParseError{ Path + TEXT("/properties/heightfield"), BuildError });
@@ -1220,6 +1263,17 @@ namespace
 		}
 		const TSharedPtr<const FMantleHeightfield>& Field = Pending.Field;
 		const FMantleTerrainBuildParams& Params = Pending.Params;
+
+		// The far ground stands; the stream component builds each chunk in full while a view is near it (and the stage's join waits for the ground under the player).
+		if (Pending.bFarGround)
+		{
+			UMantleTerrainStreamComponent* Stream = NewObject<UMantleTerrainStreamComponent>(Actor, TEXT("TerrainStream"));
+			FMantleTerrainBuildParams FullParams = Params;
+			FullParams.Outer = Actor;
+			Stream->Init(Field, FullParams, Pending.Spawn->GetMaterial(), Pending.Spawn->IsStatic(), Pending.Spawn->CastsShadow(), Pending.Spawn->TakeFarComponents());
+			Actor->AddInstanceComponent(Stream);
+			Stream->RegisterComponent();
+		}
 		FMantleScatterTerrainSurface* OutSurface = Pending.OutSurface;
 
 		// The surface a Scatter placed on terrain drops onto (#169); its transform is read once the place has put the terrain down.
@@ -1981,7 +2035,9 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 						if (!S.PendingTerrain.IsValid())
 						{
 							S.PendingTerrain = MakeShared<FPendingTerrain>();
-							if (!BeginTerrainEntity(World, Entity, *Props, Path, Result.Errors, LoadStats, *S.PendingTerrain, &S.TerrainSurfaces.Add(Entity.Id), S.Freeze.WorldOf(Entity.Id)))
+							if (!BeginTerrainEntity(World, Entity, *Props, Path, Result.Errors, LoadStats, *S.PendingTerrain, &S.TerrainSurfaces.Add(Entity.Id),
+							// A client of a streaming place draws the far ground everywhere and builds full chunks near its view; a server and a standalone game build the whole terrain.
+							UsesFarGround(World, Place), S.Freeze.WorldOf(Entity.Id)))
 							{
 								S.PendingTerrain.Reset();
 								break;

@@ -62,5 +62,9 @@ public class MantleRuntime : ModuleRules
 			// vendored in MantleRBFInterpolation.cpp.
 			"Eigen"
 		});
+
+		// The Nanite file's pieces are inflated with zlib itself (FMantleNaniteSideFile::InflatePiece), because the engine's FCompression does not refuse bytes after a stream's end.
+		// The engine's own copy, as Core links it; the game's MantleGameRuntime.Build.cs says the same.
+		AddEngineThirdPartyPrivateStaticDependencies(Target, "zlib");
 	}
 }

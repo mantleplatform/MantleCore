@@ -1482,4 +1482,290 @@ bool FMantleCellStreamerGateBodyTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// ---- Far sets (stage 3a) ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// The same row of twelve cells (64 m squares, drawDistance 150 m, so each reaches 450 m with a twin) with far sets on. Each cell file holds three cubes and a list of 250 instances, all with drawDistance 150 m:
+// each has a twin (the list keeps every second instance: 125). The meshes are the engine's own (no Nanite needed: bRequireNanite is off here; the real-mesh rule is for uploaded ones).
+
+namespace MantleCellStreamerTestPrivate
+{
+	constexpr int32 FarHolderBaseForTest = 1 << 30;
+
+	FMantleCellStreamSettings FarSettings()
+	{
+		FMantleCellStreamSettings Settings = SteadySettings();
+		Settings.FarSets.bEnabled = true;
+		Settings.FarSets.bRequireNanite = false;
+		Settings.FarSets.ThinnedStride = 2;
+		return Settings;
+	}
+
+	/** Ticks (auditing the twins after every tick) until Done says so or MaxTicks pass; the audit's double draws and gaps are added to the two counters. */
+	bool TickAuditing(FFixture& Fixture, const TFunction<bool()>& Done, const int32 MaxTicks, int32& InOutDoubleDraws, int32& InOutGaps)
+	{
+		for (int32 Tick = 0; Tick < MaxTicks; ++Tick)
+		{
+			Fixture.Tick();
+			const FMantleFarAudit Audit = Fixture.Streamer->AuditFarSets(TEXT("test"));
+			InOutDoubleDraws += Audit.DoubleDraws;
+			InOutGaps += Audit.Gaps;
+			if (Done())
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool FarStands(const FFixture& Fixture, const int32 Cell, const int32 Shown)
+	{
+		const FMantleCellStreamer::FFarSetView View = Fixture.Streamer->GetFarSetView(Cell);
+		return View.bExists && View.State == 3 && View.Built == View.Entities && View.Shown == Shown;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleFarSetStandsPastTheDrawDistanceTest,
+	"Mantle.Runtime.FarSet.Streamer.StandsPastTheDrawDistance",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleFarSetStandsPastTheDrawDistanceTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	Fixture.CellAssets = MakeShared<FFakeCellAssets>();
+	Fixture.StartStreamer(FarSettings());
+	int32 DoubleDraws = 0;
+	int32 Gaps = 0;
+
+	// From x = 1 m: cells 0, 1 and 2 are within 150 m and are the real flow's. A twin reaches 450 m from its cell's box: cells 3 to 7 (cell 7 starts at 448 m, 447 m off) are far-only; cell 8 (512 m) is not.
+	// A twin is built for a cell more than half its drawDistance (75 m) away: cell 2 (127 m) has one, cells 0 and 1 (0 and 63 m) do not yet.
+	const bool bFarBuilt = TickAuditing(Fixture, [&Fixture]()
+	{
+		return FarStands(Fixture, 2, 0) && FarStands(Fixture, 3, 4) && FarStands(Fixture, 4, 4) && FarStands(Fixture, 5, 4) && FarStands(Fixture, 6, 4) && FarStands(Fixture, 7, 4)
+			&& Fixture.Streamer->IsCellBuilt(0) && Fixture.Streamer->IsCellBuilt(1) && Fixture.Streamer->IsCellBuilt(2);
+	}, 3000, DoubleDraws, Gaps);
+	if (!TestTrue(TEXT("the real cells stand and the twins of cells 2 to 7 are built"), bFarBuilt))
+	{
+		for (int32 Cell = 0; Cell < CellCount; ++Cell)
+		{
+			const FMantleCellStreamer::FFarSetView View = Fixture.Streamer->GetFarSetView(Cell);
+			AddInfo(FString::Printf(TEXT("cell %d: exists %d state %d entities %d built %d shown %d wanted %d"), Cell, View.bExists, View.State, View.Entities, View.Built, View.Shown, View.bWanted));
+		}
+		return false;
+	}
+	// Cell 2 is wanted and stands: its twin is built and not drawn (the real entities draw). Cells 3 to 7 are not wanted: their twins are drawn. Cell 8 and up have none.
+	TestTrue(TEXT("cell 2's twin is hidden: the real cell is there"), Fixture.Streamer->GetFarSetView(2).bWanted);
+	TestFalse(TEXT("cell 3 is not wanted"), Fixture.Streamer->GetFarSetView(3).bWanted);
+	TestFalse(TEXT("cells 0 and 1 have a twin made but not built (they are inside half the drawDistance)"), Fixture.Streamer->GetFarSetView(0).Built > 0 || Fixture.Streamer->GetFarSetView(1).Built > 0);
+	TestTrue(TEXT("cell 0 and 1 have one made"), Fixture.Streamer->GetFarSetView(0).bExists && Fixture.Streamer->GetFarSetView(1).bExists);
+	for (int32 Cell = 8; Cell < CellCount; ++Cell)
+	{
+		TestFalse(FString::Printf(TEXT("cell %d is past the reach"), Cell), Fixture.Streamer->GetFarSetView(Cell).bExists);
+	}
+	// Four actors a real cell and four a twin: three real cells, six twins (cells 2 to 7). Instances: 750 real, and every second instance of the list in each twin: 125 x 6.
+	TestEqual(TEXT("actors"), Fixture.StreamedActors(), 3 * ActorsPerCell + 6 * 4);
+	TestEqual(TEXT("instances"), Fixture.CountInstances(), 750 + 6 * 125);
+	TestEqual(TEXT("six twins built"), Fixture.Streamer->GetStats().FarSetsBuiltEver, static_cast<int64>(6));
+	TestEqual(TEXT("twin entities built"), Fixture.Streamer->GetStats().FarEntitiesBuilt, static_cast<int64>(24));
+	TestEqual(TEXT("twin instances built"), Fixture.Streamer->GetStats().FarInstancesBuilt, static_cast<int64>(6 * 125));
+	// The far cells' assets are held under the far holder, one holder a twin that is being built or stands (cells 2 to 7); the real cells' under theirs.
+	for (int32 Cell = 2; Cell <= 7; ++Cell)
+	{
+		TestTrue(FString::Printf(TEXT("cell %d's twin holds its assets"), Cell), Fixture.CellAssets->Held.Contains(FarHolderBaseForTest + Cell));
+	}
+	TestFalse(TEXT("cell 0's twin asked for none"), Fixture.CellAssets->Held.Contains(FarHolderBaseForTest + 0));
+
+	// Far away (1 km past the last cell): every real cell goes, the twins of cells 8 to 11 (from 230 to 424 m: inside 450 m) are the whole picture, and the twins of cells that are now past 450 x 1.2 = 540 m are let go.
+	Fixture.View = FVector(100000.0, 100.0, 100.0);
+	const bool bMoved = TickAuditing(Fixture, [&Fixture]()
+	{
+		return FarStands(Fixture, 8, 4) && FarStands(Fixture, 9, 4) && FarStands(Fixture, 10, 4) && FarStands(Fixture, 11, 4)
+			&& !Fixture.Streamer->GetFarSetView(0).bExists && !Fixture.Streamer->GetFarSetView(6).bExists
+			&& Fixture.Streamer->GetStats().CellsBuilt == 0 && Fixture.Streamer->GetStats().CellsRemoving == 0;
+	}, 4000, DoubleDraws, Gaps);
+	if (!TestTrue(TEXT("the view's new place has the far ring of cells 8 to 11"), bMoved))
+	{
+		for (int32 Cell = 0; Cell < CellCount; ++Cell)
+		{
+			const FMantleCellStreamer::FFarSetView View = Fixture.Streamer->GetFarSetView(Cell);
+			AddInfo(FString::Printf(TEXT("cell %d: exists %d state %d entities %d built %d shown %d wanted %d"), Cell, View.bExists, View.State, View.Entities, View.Built, View.Shown, View.bWanted));
+		}
+		return false;
+	}
+	TestFalse(TEXT("a twin past its release distance is gone with its assets: cell 6"), Fixture.CellAssets->Held.Contains(FarHolderBaseForTest + 6));
+	TestTrue(TEXT("a standing one holds them: cell 9"), Fixture.CellAssets->Held.Contains(FarHolderBaseForTest + 9));
+	TestEqual(TEXT("no double draw at any tick"), DoubleDraws, 0);
+	TestEqual(TEXT("no gap at any tick"), Gaps, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleFarSetHandOffTest,
+	"Mantle.Runtime.FarSet.Streamer.HandOffLeavesNoGap",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleFarSetHandOffTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	Fixture.CellAssets = MakeShared<FFakeCellAssets>();
+	Fixture.View = FVector(100000.0, 100.0, 100.0);
+	Fixture.StartStreamer(FarSettings());
+	int32 DoubleDraws = 0;
+	int32 Gaps = 0;
+
+	// From 100 m past the last cell (x = 1,000 m): nothing is the real flow's; cells 8 to 11 are far-only, drawn.
+	if (!TestTrue(TEXT("the far ring stands"), TickAuditing(Fixture, [&Fixture]()
+	{
+		return FarStands(Fixture, 8, 4) && FarStands(Fixture, 9, 4) && FarStands(Fixture, 10, 4) && FarStands(Fixture, 11, 4);
+	}, 4000, DoubleDraws, Gaps)))
+	{
+		return false;
+	}
+	TestEqual(TEXT("no real cell stands"), Fixture.Streamer->GetStats().CellsBuilt, 0);
+	TestEqual(TEXT("nothing was handed off yet"), Fixture.Streamer->GetStats().FarHandOffs, static_cast<int64>(0));
+
+	// Into cell 11 (x = 760 m): cells 9, 10 and 11 are now within 150 m (cell 9 ends at 640 m, 120 m off) and come as real cells; their twins are drawn until each real entity stands,
+	// and each is hidden in the step its real entity stands: audited after every tick, never twice and never none.
+	Fixture.View = FVector(76000.0, 100.0, 100.0);
+	const bool bBuilt = TickAuditing(Fixture, [&Fixture]()
+	{
+		return Fixture.Streamer->IsCellBuilt(9) && Fixture.Streamer->IsCellBuilt(10) && Fixture.Streamer->IsCellBuilt(11) && !Fixture.Streamer->IsHolding();
+	}, 4000, DoubleDraws, Gaps);
+	TestTrue(TEXT("the real cells 9, 10 and 11 stand"), bBuilt);
+	TestEqual(TEXT("each of the twelve real entities handed its twin off"), Fixture.Streamer->GetStats().FarHandOffs, static_cast<int64>(12));
+	for (int32 Cell = 9; Cell <= 11; ++Cell)
+	{
+		const FMantleCellStreamer::FFarSetView View = Fixture.Streamer->GetFarSetView(Cell);
+		TestTrue(FString::Printf(TEXT("cell %d is wanted"), Cell), View.bWanted);
+		TestEqual(FString::Printf(TEXT("cell %d's twins are all hidden"), Cell), View.Shown, 0);
+	}
+	TestEqual(TEXT("cell 8 (more than 150 m off, so not wanted) keeps drawing its twin"), Fixture.Streamer->GetFarSetView(8).bWanted ? -1 : Fixture.Streamer->GetFarSetView(8).Shown, 4);
+
+	// Back out to 1 km: the real cells are released after their twins have been drawn (a cell that stands but is not wanted draws its twin), and the audit stays clean all the way.
+	Fixture.View = FVector(100000.0, 100.0, 100.0);
+	const bool bBack = TickAuditing(Fixture, [&Fixture]()
+	{
+		return Fixture.Streamer->GetStats().CellsBuilt == 0 && Fixture.Streamer->GetStats().CellsRemoving == 0
+			&& FarStands(Fixture, 9, 4) && FarStands(Fixture, 10, 4) && FarStands(Fixture, 11, 4);
+	}, 4000, DoubleDraws, Gaps);
+	TestTrue(TEXT("the real cells are gone and the twins are all that is drawn"), bBack);
+	TestEqual(TEXT("no double draw at any tick"), DoubleDraws, 0);
+	TestEqual(TEXT("no gap at any tick"), Gaps, 0);
+	const FMantleFarAudit Last = Fixture.Streamer->AuditFarSets(TEXT("end"));
+	TestTrue(TEXT("the last audit looked at the twins"), Last.Entities >= 16);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleFarSetSolidStreamerTest,
+	"Mantle.Runtime.FarSet.Streamer.NotForTheSolidStreamer",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleFarSetSolidStreamerTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	// A standalone game's solid streamer keeps every solid cell and draws nothing by distance: it makes no twins even with the switch on (it is the picture streamer's).
+	FMantleCellStreamSettings Settings = FarSettings();
+	Settings.Entities = EMantleCellEntities::SolidOnly;
+	Settings.bKeepEveryCell = true;
+	Settings.HoldTimeoutSeconds = 600.0;
+	Fixture.StartStreamer(Settings);
+	int32 DoubleDraws = 0;
+	int32 Gaps = 0;
+	TestTrue(TEXT("every cell stands"), TickAuditing(Fixture, [&Fixture]() { return Fixture.Streamer->IsEverythingBuilt(); }, 4000, DoubleDraws, Gaps));
+	for (int32 Cell = 0; Cell < CellCount; ++Cell)
+	{
+		TestFalse(FString::Printf(TEXT("cell %d has no far set"), Cell), Fixture.Streamer->GetFarSetView(Cell).bExists);
+	}
+	TestEqual(TEXT("none made"), Fixture.Streamer->GetStats().FarSetsMade, static_cast<int64>(0));
+	return true;
+}
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleFarSetChangedEntityTest,
+	"Mantle.Runtime.FarSet.Streamer.ChangedEntitiesHaveNoTwin",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleFarSetChangedEntityTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	Fixture.CellAssets = MakeShared<FFakeCellAssets>();
+	Fixture.StartStreamer(FarSettings());
+	// What the script world says: an entity a script or the server changed here (destroyed, hidden, moved, given another look) has no far copy. Two are changed from the start: a cube of cell 4
+	// and the list of cell 6.
+	TSet<FString> Changed;
+	Changed.Add(TEXT("ent_c4_0"));
+	Changed.Add(TEXT("ent_ism_c6"));
+	Fixture.Streamer->SetEntityChangedQuery([&Changed](const FString& EntityId) { return Changed.Contains(EntityId); });
+	// The serial the script world keeps: it moves when something is changed, and the twins are asked about only then.
+	uint64 Serial = 1;
+	Fixture.Streamer->SetEntityChangeSerialQuery([&Serial]() { return Serial; });
+	int32 DoubleDraws = 0;
+	int32 Gaps = 0;
+
+	// From x = 1 m: the real cells are 0 to 2; cells 3 to 7 are far-only. Cells 4 and 6 have three twins each, the others four; none of the changed entities has one.
+	const bool bFar = TickAuditing(Fixture, [&Fixture]()
+	{
+		return FarStands(Fixture, 2, 0) && FarStands(Fixture, 3, 4) && FarStands(Fixture, 4, 3) && FarStands(Fixture, 5, 4) && FarStands(Fixture, 6, 3) && FarStands(Fixture, 7, 4)
+			&& Fixture.Streamer->IsCellBuilt(0) && Fixture.Streamer->IsCellBuilt(1) && Fixture.Streamer->IsCellBuilt(2);
+	}, 3000, DoubleDraws, Gaps);
+	if (!TestTrue(TEXT("the twins of cells 2 to 7 stand, without the changed entities"), bFar))
+	{
+		return false;
+	}
+	TestEqual(TEXT("cell 4 has three twins"), Fixture.Streamer->GetFarSetView(4).Entities, 3);
+	TestEqual(TEXT("cell 6 has three twins"), Fixture.Streamer->GetFarSetView(6).Entities, 3);
+	// Twelve real actors, and twins: cells 2, 3, 5 and 7 four each, cells 4 and 6 three each.
+	TestEqual(TEXT("actors"), Fixture.StreamedActors(), 3 * ActorsPerCell + 4 * 4 + 2 * 3);
+	// Real 750, and the lists' twins of cells 2, 3, 4, 5 and 7 (cell 6's list is changed): 5 x 125.
+	TestEqual(TEXT("instances"), Fixture.CountInstances(), 750 + 5 * 125);
+	TestEqual(TEXT("two were left out when the sets were made"), Fixture.Streamer->GetStats().FarEntitiesChanged, static_cast<int64>(2));
+
+	// Nothing changed since the sets were made: thirty more ticks (a plan every quarter second of them) look at no twin.
+	const int64 ScansBefore = Fixture.Streamer->GetStats().FarChangeScans;
+	for (int32 Tick = 0; Tick < 30; ++Tick)
+	{
+		Fixture.Tick(0.1);
+	}
+	TestEqual(TEXT("no change, no look at the twins"), Fixture.Streamer->GetStats().FarChangeScans, ScansBefore);
+
+	// The list of cell 5 is changed while its twin stands drawn: the twin is taken down at the next look (a plan is made every quarter second), and the audit stays clean.
+	Changed.Add(TEXT("ent_ism_c5"));
+	++Serial;
+	const bool bTaken = TickAuditing(Fixture, [&Fixture]()
+	{
+		const FMantleCellStreamer::FFarSetView View = Fixture.Streamer->GetFarSetView(5);
+		return View.bExists && View.Built == 3 && View.Shown == 3;
+	}, 600, DoubleDraws, Gaps);
+	TestTrue(TEXT("cell 5's list lost its twin"), bTaken);
+	TestEqual(TEXT("one actor fewer"), Fixture.StreamedActors(), 3 * ActorsPerCell + 4 * 4 + 2 * 3 - 1);
+	TestEqual(TEXT("125 instances fewer"), Fixture.CountInstances(), 750 + 4 * 125);
+	TestEqual(TEXT("three counted"), Fixture.Streamer->GetStats().FarEntitiesChanged, static_cast<int64>(3));
+	TestEqual(TEXT("one look more for the change"), Fixture.Streamer->GetStats().FarChangeScans, ScansBefore + 1);
+	TestEqual(TEXT("no double draw at any tick"), DoubleDraws, 0);
+	TestEqual(TEXT("no gap at any tick"), Gaps, 0);
+	return true;
+}
+
+
 #endif // WITH_DEV_AUTOMATION_TESTS

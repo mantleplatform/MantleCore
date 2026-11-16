@@ -208,8 +208,8 @@ enum class EMantleAssetKind : uint8
 	/** A block world's starting blocks: MBW1 (FMantleVoxelWorldFile), checked by the cook and stored as uploaded. */
 	VoxelWorldData,
 	/**
-	 * A static mesh's Nanite file: an MNZ1 container (zlib) of MND1, its full-detail Nanite data, baked by the plugin at publish and named
-	 * by its mesh's entry (FMantleAssetRef::Nanite). Stored as uploaded; FMantleNaniteSideFile unpacks and reads it.
+	 * A static mesh's Nanite file: an MNZ2 container (one zlib stream per piece) of MND1, its full-detail Nanite data, baked by the plugin at publish and named
+	 * by its mesh's entry (FMantleAssetRef::Nanite). Stored as uploaded; FMantleNaniteSideFile reads its head and the page store reads its streamed pages from the file.
 	 */
 	Nanite,
 	/**
