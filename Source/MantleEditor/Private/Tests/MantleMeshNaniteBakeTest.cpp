@@ -1308,9 +1308,7 @@ bool FMantleMeshNaniteContainerTest::RunTest(const FString& Parameters)
 	TArray<uint8> Same;
 	TestTrue(TEXT("packing the same bytes again makes the same file"), FMantleMeshNaniteFile::Pack(Mnd1, Same, Why) && Same == Container);
 
-	// Damage and nonsense do not unpack. Unreal logs a damaged zlib stream as a warning and an error of its own, which are the point here.
-	AddExpectedMessagePlain(TEXT("appUncompressMemoryZLIB failed"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 0);
-	AddExpectedErrorPlain(TEXT("Failed to uncompress memory"), EAutomationExpectedErrorFlags::Contains, 0);
+	// Damage and nonsense do not unpack (the reader inflates with zlib itself, so nothing is logged for a damaged stream).
 	TArray<uint8> Damaged = Container;
 	Damaged[Damaged.Num() - 6] ^= 0xFF;
 	TestFalse(TEXT("a damaged stream is refused"), FMantleMeshNaniteFile::Unpack(Damaged, Back, &Why));
@@ -1421,9 +1419,7 @@ bool FMantleMeshNaniteContainerPiecesTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("and unpacks to it"), FMantleMeshNaniteFile::Unpack(WholeContainer, WholeBack, &Why) && WholeBack == WholeMnd1);
 	}
 
-	// A damaged piece fails its own read and no other. Unreal logs the damaged stream, which is the point here.
-	AddExpectedMessagePlain(TEXT("appUncompressMemoryZLIB failed"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 0);
-	AddExpectedErrorPlain(TEXT("Failed to uncompress memory"), EAutomationExpectedErrorFlags::Contains, 0);
+	// A damaged piece fails its own read and no other.
 	TArray<uint8> OnePage = Container;
 	OnePage[static_cast<int32>(Pieces[1].Offset) + static_cast<int32>(Pieces[1].Packed) - 5] ^= 0xFF;
 	TArray<FPiece> OnePageTable;
