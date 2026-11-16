@@ -505,4 +505,103 @@ bool FMantleTerrainTilesCutTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTerrainTilesFallbackTest,
+	"Mantle.Editor.Terrain.Tiles.TooManyForThePlaceFallsBackToResampled",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTerrainTilesFallbackTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTerrainTilesTestPrivate;
+
+	const int64 Cap = FMantlePlaceLimits::MaxTerrainSamplesPerPlace;
+	const int64 OneField = static_cast<int64>(FMantleHeightfieldReader::MaxSize) * FMantleHeightfieldReader::MaxSize;
+	const TArray<FString> Labels = { TEXT("Small"), TEXT("Huge") };
+	auto Fit = [](TArray<int64> S, TArray<FString> L, TArray<TPair<int32, FMantleValidationIssue>>& Left, TArray<int32> T, TArray<int64> R, TArray<int32>* Res)
+	{
+		return FMantleTerrainExport::FitTerrains(S, L, Left, T, R, Res);
+	};
+
+	// The tiles of the second landscape would take the place past the samples cap: it publishes resampled to one Terrain instead, not left out.
+	{
+		TArray<TPair<int32, FMantleValidationIssue>> LeftOut;
+		TArray<int32> Resampled;
+		const TArray<int32> Kept = Fit({ 100, Cap }, Labels, LeftOut, { 1, 4 }, { 100, OneField }, &Resampled);
+		TestTrue(TEXT("both publish"), Kept == TArray<int32>{ 0, 1 });
+		TestEqual(TEXT("none is left out"), LeftOut.Num(), 0);
+		TestTrue(TEXT("the second as one resampled Terrain"), Resampled == TArray<int32>{ 1 });
+	}
+	// Too many Terrains rather than samples: the same.
+	{
+		TArray<TPair<int32, FMantleValidationIssue>> LeftOut;
+		TArray<int32> Resampled;
+		const TArray<int32> Kept = Fit({ 100, 1000 }, Labels, LeftOut, { 1, FMantlePlaceLimits::MaxTerrainsPerPlace }, { 100, 1000 }, &Resampled);
+		TestTrue(TEXT("both publish"), Kept == TArray<int32>{ 0, 1 } && LeftOut.Num() == 0);
+		TestTrue(TEXT("the second resampled"), Resampled == TArray<int32>{ 1 });
+	}
+	// One whose tiles fit still tiles.
+	{
+		TArray<TPair<int32, FMantleValidationIssue>> LeftOut;
+		TArray<int32> Resampled;
+		const TArray<int32> Kept = Fit({ 100, 3 * OneField }, Labels, LeftOut, { 1, 4 }, { 100, OneField }, &Resampled);
+		TestTrue(TEXT("both publish"), Kept == TArray<int32>{ 0, 1 } && LeftOut.Num() == 0);
+		TestEqual(TEXT("as tiles: none resampled"), Resampled.Num(), 0);
+	}
+	// Several compete, in order: the first takes the room as tiles, the second no longer fits as tiles and falls back; a third small one still fits.
+	{
+		TArray<TPair<int32, FMantleValidationIssue>> LeftOut;
+		TArray<int32> Resampled;
+		const TArray<int32> Kept = Fit({ 2 * OneField, 4 * OneField, 50 }, { TEXT("A"), TEXT("B"), TEXT("C") }, LeftOut, { 2, 4, 1 },
+			{ OneField, OneField, 50 }, &Resampled);
+		TestTrue(TEXT("all publish"), Kept == TArray<int32>{ 0, 1, 2 } && LeftOut.Num() == 0);
+		TestTrue(TEXT("only the second is resampled"), Resampled == TArray<int32>{ 1 });
+	}
+	// Not even resampled does it fit: left out, as before tiles, with the errors for one Terrain.
+	{
+		TArray<TPair<int32, FMantleValidationIssue>> LeftOut;
+		TArray<int32> Resampled;
+		const TArray<int32> Kept = Fit({ Cap - 10, 4 * OneField }, Labels, LeftOut, { 1, 4 }, { Cap - 10, OneField }, &Resampled);
+		TestTrue(TEXT("the first publishes"), Kept == TArray<int32>{ 0 });
+		TestEqual(TEXT("the second is left out"), LeftOut.Num(), 1);
+		TestEqual(TEXT("not as a resampled one"), Resampled.Num(), 0);
+		if (LeftOut.Num() == 1)
+		{
+			TestTrue(TEXT("with the samples error"), LeftOut[0].Value.Problem.Contains(TEXT("left out")));
+		}
+	}
+
+	// Check's words for it.
+	FMantleHeightfield Field;
+	Field.Width = 2049;
+	Field.Height = 1500;
+	Field.SpacingX = 120.0f;
+	Field.SpacingY = 100.0f;
+	const FMantleValidationIssue Issue = FMantleTerrainExport::ResampledIssue(TEXT("Huge"), 4097, 3000, Field);
+	TestEqual(TEXT("a warning"), Issue.Severity, EMantleIssueSeverity::Warning);
+	TestTrue(TEXT("says why"), Issue.Problem.Contains(TEXT("too many samples for one place as tiles")) && Issue.Problem.Contains(TEXT("resampled to 2049 x 1500")));
+	TestTrue(TEXT("and what to do"), Issue.Remedy.Contains(TEXT("split the level into more than one place")) && Issue.Remedy.Contains(TEXT("coarser landscape")));
+
+	// The conversion: one resampled heightfield under the plain keys, as before tiles, and the warning.
+	FMantleTerrainSource Source = MakeSource(2050, 3);
+	const TArray<FMantleTerrainTile> One = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height, true);
+	TestTrue(TEXT("one tile that is all of it"), One.Num() == 1 && One[0].Width == 2050 && One[0].Height == 3 && !One[0].bNeighborX);
+	TestEqual(TEXT("it is two tiles when they fit"), FMantleTerrainExport::PlanTiles(Source.Width, Source.Height, false).Num(), 2);
+	FMantlePlaceAssetConverter Converter;
+	FMantlePlaceAssetSet Out;
+	const FString Path = TEXT("/Game/Maps/Big.Big:PersistentLevel.Landscape1");
+	TestTrue(TEXT("converts"), Converter.ConvertTerrainSource(nullptr, Source, TEXT("heightfield:") + Path, TEXT("weightmap:") + Path, TEXT("Huge"), Path, Out, /*bResampled*/ true));
+	if (TestEqual(TEXT("one heightfield"), Out.Heightfields.Num(), 1))
+	{
+		TestEqual(TEXT("under the plain key"), Out.Heightfields[0].Key, TEXT("heightfield:") + Path);
+		TestTrue(TEXT("resampled to 2,049 wide"), Out.Heightfields[0].Width == 2049 && Out.Heightfields[0].Height == 3);
+	}
+	bool bWarned = false;
+	for (const FMantleValidationIssue& Warning : Out.Issues)
+	{
+		bWarned = bWarned || Warning.Problem.Contains(TEXT("too many samples for one place as tiles"));
+	}
+	TestTrue(TEXT("with the warning"), bWarned);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

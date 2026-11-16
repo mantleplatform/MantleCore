@@ -1058,7 +1058,7 @@ public:
 	 * need no landscape. Label names it in messages; World finds its Mantle Place Settings.
 	 */
 	bool ConvertTerrainSource(UWorld* World, const FMantleTerrainSource& Source, const FString& Key, const FString& WeightmapKey,
-		const FString& Label, const FString& Path, FMantlePlaceAssetSet& Out);
+		const FString& Label, const FString& Path, FMantlePlaceAssetSet& Out, bool bResampled = false);
 
 	/**
 	 * One Terrain's files (a whole landscape of at most one heightfield, or one tile of a larger one: FMantleTerrainExport::CutTile): its

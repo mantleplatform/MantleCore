@@ -230,8 +230,9 @@ public:
 	 * How a landscape of Width x Height samples is cut into terrain tiles: from its sample (0, 0), TileQuads quads each, the last tile on an
 	 * axis taking what is left (at least 2 samples), neighbours sharing their border samples. ceil((samples - 1) / TileQuads) tiles
 	 * on an axis, at least 1, so a landscape of at most MaxSize samples a side is one tile that is all of it. Row by row (ty, then tx). Pure data.
+	 * bResampled (the landscape's tiles did not fit the place's limits, see FitTerrains): one tile that is all of it, which MakeHeightfield resamples down to one heightfield, as before tiles.
 	 */
-	static TArray<FMantleTerrainTile> PlanTiles(int32 Width, int32 Height);
+	static TArray<FMantleTerrainTile> PlanTiles(int32 Width, int32 Height, bool bResampled = false);
 
 	/** The number of tiles PlanTiles gives. */
 	static int32 TileCount(int32 Width, int32 Height);
@@ -441,17 +442,26 @@ public:
 	/** PublishedSamples of the extent ReadLandscape would read for Landscape, without reading it; 0 when it has none loaded. */
 	static int64 PublishedSamples(const AActor* Landscape);
 
+	/** The samples a Width x Height landscape publishes resampled down to one heightfield (the way before tiles): what a landscape whose tiles do not fit the place's limits takes instead. */
+	static int64 ResampledSamples(int32 Width, int32 Height);
+	static int64 ResampledSamples(const AActor* Landscape);
+
+	/** Whether Landscape, one of its world's Terrain landscapes, publishes resampled to one Terrain because its tiles did not fit what the place's limits had left (TerrainLandscapes' OutResampled). */
+	static bool PublishesResampled(const AActor* Landscape);
+
 	/**
 	 * Which landscapes of these PublishedSamples (in CollectLandscapes' order) publish as Terrains: the indices kept, in order. Past
 	 * FMantlePlaceLimits::MaxTerrainsPerPlace Terrains kept (a landscape is as many Terrains as it has tiles: Tiles, one each when empty),
 	 * a landscape is left out (TooManyLandscapes); one that would take the place past MaxTerrainSamplesPerPlace is left out
 	 * (OverSampleBudget) and the next may still fit. Each one left out is in OutLeftOut, by index, with its error under Labels' entry. Pure data.
+	 * A landscape of several tiles that does not fit as tiles is not left out when it fits resampled to one Terrain (ResampledSamples, per landscape):
+	 * it is kept, and its index is in OutResampled. Only one that does not fit even so is left out, with the errors for that one Terrain.
 	 */
 	static TArray<int32> FitTerrains(TConstArrayView<int64> Samples, TConstArrayView<FString> Labels, TArray<TPair<int32, FMantleValidationIssue>>& OutLeftOut,
-		TConstArrayView<int32> Tiles = TConstArrayView<int32>());
+		TConstArrayView<int32> Tiles = TConstArrayView<int32>(), TConstArrayView<int64> ResampledSamples = TConstArrayView<int64>(), TArray<int32>* OutResampled = nullptr);
 
 	/** World's landscapes that publish as Terrains (FitTerrains over CollectLandscapes): what Gather, Check and Export all take. */
-	static TArray<AActor*> TerrainLandscapes(UWorld* World, TArray<TPair<const AActor*, FMantleValidationIssue>>* OutLeftOut = nullptr);
+	static TArray<AActor*> TerrainLandscapes(UWorld* World, TArray<TPair<const AActor*, FMantleValidationIssue>>* OutLeftOut = nullptr, TArray<const AActor*>* OutResampled = nullptr);
 
 	/** The error for landscape Number (counted from 1, in CollectLandscapes' order) past FMantlePlaceLimits::MaxTerrainsPerPlace: it is left out. */
 	static FMantleValidationIssue TooManyLandscapes(const FString& Label, int32 Number, int32 Tiles = 1);
@@ -461,6 +471,9 @@ public:
 	 * "This landscape publishes as N terrain tiles", with the grid and what each tile is. Pure data.
 	 */
 	static FMantleValidationIssue TilesIssue(const FString& Label, int32 Width, int32 Height);
+
+	/** What Check this place says of a landscape whose tiles did not fit the place's limits and that publishes resampled to Field's size as one Terrain. Pure data. */
+	static FMantleValidationIssue ResampledIssue(const FString& Label, int32 Width, int32 Height, const FMantleHeightfield& Field);
 
 	/**
 	 * The error for a landscape of Samples (PublishedSamples) that the landscapes before it, with Before samples, leave no room for under

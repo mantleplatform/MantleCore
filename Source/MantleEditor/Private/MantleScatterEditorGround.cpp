@@ -223,7 +223,8 @@ FMantleScatterTerrainSurface FMantleScatterEditorGround::SurfaceFor(const FMantl
 TArray<FMantleScatterTerrainSurface> FMantleScatterEditorGround::SurfacesFor(UWorld* World)
 {
 	TArray<FMantleScatterTerrainSurface> Out;
-	for (const AActor* Landscape : FMantleTerrainExport::TerrainLandscapes(World))
+	TArray<const AActor*> Resampled;
+	for (const AActor* Landscape : FMantleTerrainExport::TerrainLandscapes(World, nullptr, &Resampled))
 	{
 		FMantleTerrainSource Source;
 		FString Problem;
@@ -233,7 +234,7 @@ TArray<FMantleScatterTerrainSurface> FMantleScatterEditorGround::SurfacesFor(UWo
 			continue;
 		}
 		// A landscape larger than one heightfield is its terrain tiles, as the game builds them: a surface for each, with the landscape's layers.
-		const TArray<FMantleTerrainTile> Tiles = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height);
+		const TArray<FMantleTerrainTile> Tiles = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height, Resampled.Contains(Landscape));
 		if (Tiles.Num() <= 1)
 		{
 			FMantleScatterTerrainSurface Surface = SurfaceFor(Source, World, Landscape->GetActorLabel());

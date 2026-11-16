@@ -714,7 +714,8 @@ namespace MantleCoverageSurveyPrivate
 		{
 			const FString Label = CoverageLabelOf(Landscape);
 			// A landscape larger than one heightfield publishes as terrain tiles, named by tile (its first one is the one to look for).
-			const int32 Tiles = FMantleTerrainExport::TileCount(Landscape);
+			const bool bResampled = FMantleTerrainExport::PublishesResampled(Landscape);
+			const int32 Tiles = bResampled ? 1 : FMantleTerrainExport::TileCount(Landscape);
 			const FString Name = FMantleTerrainExport::TileName(Label, FIntPoint::ZeroValue, Tiles);
 			const FMantleEntity* Published = Result.Place.Entities.FindByPredicate([&Name](const FMantleEntity& Entity)
 			{
@@ -724,7 +725,11 @@ namespace MantleCoverageSurveyPrivate
 			if (Published)
 			{
 				// Every sample is published, at the landscape's own spacing: a larger landscape is cut into terrain tiles, not resampled.
-				if (Tiles > 1)
+				if (bResampled)
+				{
+					Coverage.Add(Cat::Terrain, EOutcome::Approximated, Label, TEXT("too many samples for one place as tiles, so resampled to the most samples a terrain holds."));
+				}
+				else if (Tiles > 1)
 				{
 					Coverage.Add(Cat::Terrain, EOutcome::Kept, Label, FString::Printf(TEXT("published as %d terrain tiles."), Tiles));
 				}

@@ -631,7 +631,7 @@ bool FMantleTerrainGrassExport::ConvertMaps(const AActor* Landscape, const FMant
 			TEXT("It still publishes. Nothing to do unless the grass matters to how your place looks; if it does, change the grass type or the landscape material.") });
 	}
 	// One set of maps per terrain tile, each over the tile's own samples (one tile: the landscape's).
-	const TArray<FMantleTerrainTile> Tiles = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height);
+	const TArray<FMantleTerrainTile> Tiles = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height, FMantleTerrainExport::PublishesResampled(Landscape));
 	for (const FMantleTerrainTile& Tile : Tiles)
 	{
 		const FString Suffix = FMantleTerrainExport::TileSuffix(Tile.Index, Tiles.Num());

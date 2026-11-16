@@ -5014,7 +5014,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 
 			// One Terrain entity per terrain tile (a landscape of at most one heightfield's samples a side is one tile: its whole), each with
 			// the same layers, its own paint, holes and grass maps, and the layers' tiling made a whole number of repeats where a tile has a neighbour.
-			const TArray<FMantleTerrainTile> Tiles = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height);
+			const TArray<FMantleTerrainTile> Tiles = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height, FMantleTerrainExport::PublishesResampled(Landscape));
 			for (const FMantleTerrainTile& Tile : Tiles)
 			{
 				const FString Suffix = FMantleTerrainExport::TileSuffix(Tile.Index, Tiles.Num());

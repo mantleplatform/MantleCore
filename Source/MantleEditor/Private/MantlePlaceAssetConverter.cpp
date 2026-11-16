@@ -2413,7 +2413,8 @@ bool FMantlePlaceAssetConverter::ConvertTerrain(AActor* Landscape, FMantlePlaceA
 		Out.Issues.Add(ErrorIssue(FString::Printf(TEXT("Landscape '%s' %s"), *Label, *Problem), TEXT("Fix it in the landscape's Details panel, then publish again.")));
 		return false;
 	}
-	const bool bTerrain = ConvertTerrainSource(Landscape->GetWorld(), Source, Key, FMantleTerrainExport::WeightmapKey(Landscape), Label, Landscape->GetPathName(), Out);
+	const bool bTerrain = ConvertTerrainSource(Landscape->GetWorld(), Source, Key, FMantleTerrainExport::WeightmapKey(Landscape), Label, Landscape->GetPathName(), Out,
+		FMantleTerrainExport::PublishesResampled(Landscape));
 	// (A landscape of more than one heightfield is converted as its tiles, each under the key's "#tx,ty": ConvertTerrainSource.)
 	// Its grass maps (#628): one RGBA texture per four grass types, uploaded with the textures.
 	return bTerrain && FMantleTerrainGrassExport::ConvertMaps(Landscape, Source, Limits, Out);
@@ -2454,7 +2455,7 @@ bool FMantlePlaceAssetConverter::ConvertVoxelWorld(const FMantleGatheredVoxelWor
 }
 
 bool FMantlePlaceAssetConverter::ConvertTerrainSource(UWorld* World, const FMantleTerrainSource& Source, const FString& Key,
-	const FString& WeightmapKey, const FString& Label, const FString& Path, FMantlePlaceAssetSet& Out)
+	const FString& WeightmapKey, const FString& Label, const FString& Path, FMantlePlaceAssetSet& Out, const bool bResampled)
 {
 	using namespace MantlePlaceAssetConverterPrivate;
 	// The layers are the landscape's, chosen once: every tile of it lists the same ones in the same order.
@@ -2469,7 +2470,7 @@ bool FMantlePlaceAssetConverter::ConvertTerrainSource(UWorld* World, const FMant
 	Out.Issues.Append(LayerIssues);
 
 	// A landscape of at most one heightfield's samples a side is one Terrain, converted whole (as it always was).
-	const TArray<FMantleTerrainTile> Tiles = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height);
+	const TArray<FMantleTerrainTile> Tiles = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height, bResampled);
 	if (Tiles.Num() <= 1)
 	{
 		return ConvertTerrainTile(Source, Layers, Key, WeightmapKey, Label, Path, Out);
@@ -2501,6 +2502,13 @@ bool FMantlePlaceAssetConverter::ConvertTerrainTile(const FMantleTerrainSource& 
 		Out.Issues.Add(ErrorIssue(FString::Printf(TEXT("Landscape '%s' could not be turned into a heightfield."), *Label),
 			TEXT("This is a Mantle bug rather than a problem with your level. Please report it.")));
 		return false;
+	}
+	// Its tiles did not fit the place's limits (or it is not a tile): resampled down to one heightfield, as before tiles; Check says why.
+	if (Field.Width != Source.Width || Field.Height != Source.Height)
+	{
+		Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Landscape '%s' is %d x %d samples: too many samples for one place as tiles, so players get it resampled to %d x %d, %.0f x %.0f cm apart."),
+			*Label, Source.Width, Source.Height, Field.Width, Field.Height, Field.SpacingX, Field.SpacingY),
+			TEXT("To keep every sample, split the level into more than one place, or use a coarser landscape for full detail.")));
 	}
 
 	FMantleConvertedHeightfield Converted;
