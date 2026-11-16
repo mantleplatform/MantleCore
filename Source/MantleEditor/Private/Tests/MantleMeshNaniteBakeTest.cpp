@@ -336,7 +336,7 @@ bool FMantleMeshNaniteFileRoundTripTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("root pages"), Back.NumRootPages, Built.NumRootPages);
 	TestEqual(TEXT("position precision"), Back.PositionPrecision, Built.PositionPrecision);
 	TestEqual(TEXT("normal precision"), Back.NormalPrecision, Built.NormalPrecision);
-	TestEqual(TEXT("tangent precision"), Back.TangentPrecision, Built.TangentPrecision);
+	TestEqual(TEXT("tangent precision is written as 0, whatever the build reports"), Back.TangentPrecision, 0);
 	TestEqual(TEXT("input triangles"), Back.NumInputTriangles, Built.NumInputTriangles);
 	TestEqual(TEXT("input vertices"), Back.NumInputVertices, Built.NumInputVertices);
 	TestEqual(TEXT("clusters"), Back.NumClusters, Built.NumClusters);
@@ -387,7 +387,8 @@ bool FMantleMeshNaniteBakeTest::RunTest(const FString& Parameters)
 		AddError(Why);
 		return false;
 	}
-	TestEqual(TEXT("all of it is kept in memory"), static_cast<uint32>(Back.PageStreamingStates.Num()), Back.NumRootPages);
+	// At most 1 MiB of it is kept in memory (32 root pages); the rest, if any, is the file's streamed block (the tests below look at both).
+	TestTrue(TEXT("at most 32 root pages, with a page table that has at least those"), Back.NumRootPages <= 32 && static_cast<uint32>(Back.PageStreamingStates.Num()) >= Back.NumRootPages);
 	TestEqual(TEXT("its triangles"), Back.NumInputTriangles, 96u * 96u * 2u);
 	TestEqual(TEXT("slot 0 publishes as glTF material 0"), Slots, TArray<int32>({ 0 }));
 	AddInfo(FString::Printf(TEXT("%d bytes, %u clusters, %u pages"), File.Num(), Back.NumClusters, Back.NumRootPages));
@@ -408,6 +409,411 @@ bool FMantleMeshNaniteBakeTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("the creator's mesh still has no Nanite"), Plain->IsNaniteEnabled());
 	Grid->MarkAsGarbage();
 	Plain->MarkAsGarbage();
+	return true;
+}
+
+namespace MantleMeshNaniteBakeTestPrivate
+{
+	TArray<uint8> Pattern(const int32 Num, const uint8 Seed)
+	{
+		TArray<uint8> Bytes;
+		for (int32 Index = 0; Index < Num; ++Index)
+		{
+			Bytes.Add(static_cast<uint8>(Seed + Index * 7));
+		}
+		return Bytes;
+	}
+
+	void AddPage(Nanite::FResources& Resources, const uint32 Offset, const uint32 Size, const uint32 PageSize)
+	{
+		Nanite::FPageStreamingState Page;
+		Page.BulkOffset = Offset;
+		Page.BulkSize = Size;
+		Page.PageSize = PageSize;
+		Page.DependenciesStart = 0;
+		Page.DependenciesNum = 0;
+		Page.MaxHierarchyDepth = 1;
+		Page.Flags = 0;
+		Resources.PageStreamingStates.Add(Page);
+	}
+
+	/** By hand: two root pages in 100 bytes of RootData ([0, 60) and [60, 100)), two streamed pages in 100 bytes ([0, 70) and [70, 100)). */
+	void FillStreaming(Nanite::FResources& Resources)
+	{
+		Resources.RootData = Pattern(100, 1);
+		Resources.NumRootPages = 2;
+		AddPage(Resources, 0, 60, 50);
+		AddPage(Resources, 60, 40, 30);
+		AddPage(Resources, 0, 70, 60);
+		AddPage(Resources, 70, 30, 25);
+		Resources.NumClusters = 9;
+		Resources.NumInputTriangles = 1234;
+		Resources.TangentPrecision = 3;
+	}
+
+	/** By hand: four root pages of 25 bytes in 100 bytes of RootData, nothing streamed. */
+	void FillWhole(Nanite::FResources& Resources)
+	{
+		Resources.RootData = Pattern(100, 3);
+		Resources.NumRootPages = 4;
+		for (uint32 Page = 0; Page < 4; ++Page)
+		{
+			AddPage(Resources, Page * 25, 25, 20);
+		}
+		Resources.NumClusters = 4;
+		Resources.NumInputTriangles = 500;
+		Resources.TangentPrecision = 3;
+	}
+
+	/**
+	 * A container made the way Pack makes one (a table, then a zlib stream per piece), but with the pieces chosen: the head is Mnd1's first HeadBytes,
+	 * then pages of the given lengths one after another from the block (which starts 4 bytes after the head: its length word). StrayAfter: the index of
+	 * a piece to add one stray byte after (counted in the table's packed size), or -1.
+	 */
+	TArray<uint8> MakeContainerBy(const TArray<uint8>& Mnd1, const int32 HeadBytes, const TArray<int32>& PageLengths, const int32 StrayAfter = -1)
+	{
+		TArray<TArray<uint8>> Pieces;
+		TArray<uint32> Raws;
+		int32 Start = 0;
+		int32 Length = HeadBytes;
+		for (int32 Piece = 0; Piece <= PageLengths.Num(); ++Piece)
+		{
+			TArray<uint8> Packed;
+			Packed.SetNumUninitialized(FCompression::CompressMemoryBound(NAME_Zlib, Length));
+			int32 PackedBytes = Packed.Num();
+			FCompression::CompressMemory(NAME_Zlib, Packed.GetData(), PackedBytes, Mnd1.GetData() + Start, Length);
+			Packed.SetNum(PackedBytes);
+			if (Piece == StrayAfter)
+			{
+				Packed.Add(0);
+			}
+			Raws.Add(static_cast<uint32>(Length));
+			Pieces.Add(MoveTemp(Packed));
+			Start = (Piece == 0 ? HeadBytes + 4 : Start + Length);
+			Length = Piece < PageLengths.Num() ? PageLengths[Piece] : 0;
+		}
+		TArray<uint8> Container;
+		const auto PutU32 = [&Container](const uint32 Value)
+		{
+			for (int32 Byte = 0; Byte < 4; ++Byte)
+			{
+				Container.Add(static_cast<uint8>(Value >> (8 * Byte)));
+			}
+		};
+		Container.Append(reinterpret_cast<const uint8*>("MNZ2"), 4);
+		PutU32(static_cast<uint32>(Pieces.Num()));
+		for (int32 Piece = 0; Piece < Pieces.Num(); ++Piece)
+		{
+			PutU32(static_cast<uint32>(Pieces[Piece].Num()));
+			PutU32(Raws[Piece]);
+		}
+		for (const TArray<uint8>& Piece : Pieces)
+		{
+			Container.Append(Piece);
+		}
+		return Container;
+	}
+
+	bool SamePages(const Nanite::FResources& A, const Nanite::FResources& B)
+	{
+		if (A.PageStreamingStates.Num() != B.PageStreamingStates.Num())
+		{
+			return false;
+		}
+		for (int32 Index = 0; Index < A.PageStreamingStates.Num(); ++Index)
+		{
+			const Nanite::FPageStreamingState& X = A.PageStreamingStates[Index];
+			const Nanite::FPageStreamingState& Y = B.PageStreamingStates[Index];
+			if (X.BulkOffset != Y.BulkOffset || X.BulkSize != Y.BulkSize || X.PageSize != Y.PageSize)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteV2FileTest,
+	"Mantle.Editor.Nanite.FileV2StreamedBlock",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteV2FileTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshNaniteBakeTestPrivate;
+
+	// Version 2 with streamed pages, from hand-made resources (no Nanite build needed): D:\Mantle\Untracked\local\build-plan\contracts\nanite-v2.md.
+	Nanite::FResources Streams;
+	FillStreaming(Streams);
+	const TArray<uint8> Streamed = Pattern(100, 50);
+	TArray<uint8> File;
+	FString Why;
+	if (!TestTrue(TEXT("a mesh with streamed pages writes"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Streams, Streamed, File, Why)))
+	{
+		AddError(Why);
+		return false;
+	}
+	TestTrue(TEXT("it says version 2"), File.Num() > 104 && File[4] == 2 && File[5] == 0 && File[6] == 0 && File[7] == 0);
+	if (File.Num() > 104)
+	{
+		// The file ends with the streamed block: its length (field 26), then its bytes (field 27).
+		uint32 Length = 0;
+		FMemory::Memcpy(&Length, File.GetData() + File.Num() - 104, sizeof(Length));
+		TestEqual(TEXT("the block is led by its length"), Length, 100u);
+		TestTrue(TEXT("and ends the file with its bytes"), FMemory::Memcmp(File.GetData() + File.Num() - 100, Streamed.GetData(), 100) == 0);
+	}
+
+	Nanite::FResources Back;
+	TArray<int32> Slots;
+	TArray<uint8> BackStreamed;
+	if (!TestTrue(TEXT("it reads back"), FMantleMeshNaniteFile::Read(File, MeshTag, Back, Slots, &Why, &BackStreamed)))
+	{
+		AddError(Why);
+		return false;
+	}
+	TestTrue(TEXT("root pages in RootData"), SameBytes(Back.RootData, Streams.RootData));
+	TestTrue(TEXT("streamed pages in their block"), SameBytes(BackStreamed, Streamed));
+	TestTrue(TEXT("all four pages in the table"), SamePages(Back, Streams));
+	TestEqual(TEXT("two root pages"), Back.NumRootPages, 2u);
+	TestEqual(TEXT("clusters"), Back.NumClusters, 9u);
+	TestEqual(TEXT("triangles"), Back.NumInputTriangles, 1234u);
+	TestEqual(TEXT("tangent precision (field 25, before the block) is written as 0 though the resources said 3"), Back.TangentPrecision, 0);
+	TestEqual(TEXT("the file's resources have no StreamablePages of their own"), Back.StreamablePages.GetBulkDataSize(), static_cast<int64>(0));
+	// Without asking for the block the file still reads and is checked.
+	Nanite::FResources Alone;
+	TestTrue(TEXT("it reads without the block asked for"), FMantleMeshNaniteFile::Read(File, MeshTag, Alone, Slots, &Why));
+
+	// What the reader refuses.
+	Nanite::FResources Refused;
+	TArray<uint8> Cut(File.GetData(), File.Num() - 1);
+	TestFalse(TEXT("one byte of the block missing"), FMantleMeshNaniteFile::Read(Cut, MeshTag, Refused, Slots, &Why));
+	TArray<uint8> Longer = File;
+	Longer.Add(0);
+	TestFalse(TEXT("one byte past the block"), FMantleMeshNaniteFile::Read(Longer, MeshTag, Refused, Slots, &Why));
+	TArray<uint8> ShortLength = File;
+	ShortLength[File.Num() - 104] = 99;
+	TestFalse(TEXT("a block length that is not the rest of the file"), FMantleMeshNaniteFile::Read(ShortLength, MeshTag, Refused, Slots, &Why));
+	TArray<uint8> ZeroLength = File;
+	ZeroLength[File.Num() - 104] = 0;
+	TestFalse(TEXT("a block length of 0"), FMantleMeshNaniteFile::Read(ZeroLength, MeshTag, Refused, Slots, &Why));
+	TArray<uint8> Version3 = File;
+	Version3[4] = 3;
+	TestFalse(TEXT("version 3"), FMantleMeshNaniteFile::Read(Version3, MeshTag, Refused, Slots, &Why));
+	TestTrue(TEXT("says which version"), Why.Contains(TEXT("version 3")));
+	TArray<uint8> Version1 = File;
+	Version1[4] = 1;
+	TestFalse(TEXT("a version 1 file never has streamed pages"), FMantleMeshNaniteFile::Read(Version1, MeshTag, Refused, Slots, &Why));
+	TestFalse(TEXT("another mesh's file"), FMantleMeshNaniteFile::Read(File, TEXT("sha256:") + FString::ChrN(64, TEXT('e')), Refused, Slots, &Why));
+
+	// What the writer refuses: a table that does not describe the bytes, and bytes without a table (or a table without bytes).
+	TestFalse(TEXT("streamed pages in the table but no bytes"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Streams, File, Why));
+	TestTrue(TEXT("says so"), Why.Contains(TEXT("stream")));
+	Nanite::FResources Gap;
+	FillStreaming(Gap);
+	Gap.PageStreamingStates[3].BulkOffset = 71;
+	TestFalse(TEXT("a page that does not start where the one before it ends"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Gap, Streamed, File, Why));
+	Nanite::FResources Short;
+	FillStreaming(Short);
+	TestFalse(TEXT("streamed bytes the table does not cover"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Short, Pattern(101, 50), File, Why));
+	TestEqual(TEXT("no file for any of them"), File.Num(), 0);
+
+	// A mesh whose pages are all root pages: the version 1 file with its version word changed, nothing more.
+	Nanite::FResources Whole;
+	FillWhole(Whole);
+	TArray<uint8> WholeFile;
+	if (!TestTrue(TEXT("a mesh with no streamed pages writes"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Whole, WholeFile, Why)))
+	{
+		AddError(Why);
+		return false;
+	}
+	TestTrue(TEXT("it says version 2"), WholeFile.Num() > 8 && WholeFile[4] == 2);
+	TestFalse(TEXT("streamed bytes for it are refused"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Whole, Streamed, File, Why));
+	TArray<uint8> WholeV1 = WholeFile;
+	WholeV1[4] = 1;
+	Nanite::FResources AsV2;
+	Nanite::FResources AsV1;
+	TArray<uint8> V2Streamed(Streamed);
+	TestTrue(TEXT("read as version 2"), FMantleMeshNaniteFile::Read(WholeFile, MeshTag, AsV2, Slots, &Why, &V2Streamed));
+	TestTrue(TEXT("read as version 1 (nothing but the version word differs, and a version 1 file ends after field 25)"), FMantleMeshNaniteFile::Read(WholeV1, MeshTag, AsV1, Slots, &Why));
+	TestEqual(TEXT("no streamed block"), V2Streamed.Num(), 0);
+	TestTrue(TEXT("the same root data either way"), SameBytes(AsV1.RootData, AsV2.RootData) && SameBytes(AsV2.RootData, Whole.RootData));
+	TestTrue(TEXT("the same pages either way"), SamePages(AsV1, AsV2) && SamePages(AsV2, Whole));
+	TestEqual(TEXT("every page a root page"), static_cast<uint32>(AsV2.PageStreamingStates.Num()), AsV2.NumRootPages);
+	TArray<uint8> Extra = WholeFile;
+	Extra.Add(0);
+	TestFalse(TEXT("a byte past field 25 with no streamed pages"), FMantleMeshNaniteFile::Read(Extra, MeshTag, Refused, Slots, &Why));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteTangentZeroTest,
+	"Mantle.Editor.Nanite.TangentPrecisionIsAlwaysWrittenAsZero",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteTangentZeroTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshNaniteBakeTestPrivate;
+
+	// By hand, no Nanite build: resources that say 7 (what a fresh build of a mesh with explicit tangents reports) are written as 0.
+	Nanite::FResources Seven;
+	FillWhole(Seven);
+	Seven.TangentPrecision = 7;
+	TArray<uint8> SevenFile;
+	FString Why;
+	if (!TestTrue(TEXT("resources saying 7 write"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Seven, SevenFile, Why)))
+	{
+		AddError(Why);
+		return false;
+	}
+	Nanite::FResources Zero;
+	FillWhole(Zero);
+	Zero.TangentPrecision = 0;
+	TArray<uint8> ZeroFile;
+	TestTrue(TEXT("resources saying 0 write"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Zero, ZeroFile, Why));
+	TestTrue(TEXT("the same bytes either way (a warm cache and a fresh build give one file)"), SevenFile == ZeroFile);
+	Nanite::FResources Back;
+	TArray<int32> Slots;
+	if (TestTrue(TEXT("it reads back"), FMantleMeshNaniteFile::Read(SevenFile, MeshTag, Back, Slots, &Why)))
+	{
+		TestEqual(TEXT("field 25 is 0"), Back.TangentPrecision, 0);
+	}
+
+	if (!NaniteBuilds())
+	{
+		AddInfo(TEXT("skipped the bake: this editor builds no Nanite data (started without a graphics device)"));
+		return true;
+	}
+
+	// A real mesh with explicit tangents, baked twice. A fresh build reports 7 in its resources and one read back from the derived-data cache
+	// reports 0, and which one each bake gets depends on how warm the cache is, so this half is not a proof of the 7 path (the hand-made half above
+	// is). It shows the two files are the same and say 0 whatever the cache did.
+	UStaticMesh* Tangents = MakeGrid(32, /*bNanite*/ true, 0);
+	FMeshNaniteSettings Settings = Tangents->GetNaniteSettings();
+	Settings.bExplicitTangents = true;
+	Tangents->SetNaniteSettings(Settings);
+	Tangents->Build(/*bInSilent*/ true);
+	FStaticMeshCompilingManager::Get().FinishCompilation({ Tangents });
+	TArray<uint8> First;
+	TArray<uint8> Second;
+	if (TestTrue(TEXT("a mesh with explicit tangents bakes"), FMantleMeshNaniteBake::Bake(Tangents, { 0 }, MeshTag, First, Why)) &&
+		TestTrue(TEXT("and bakes again"), FMantleMeshNaniteBake::Bake(Tangents, { 0 }, MeshTag, Second, Why)))
+	{
+		TestTrue(TEXT("the two files are the same bytes"), First == Second);
+		Nanite::FResources FirstBack;
+		if (TestTrue(TEXT("the file reads back"), FMantleMeshNaniteFile::Read(First, MeshTag, FirstBack, Slots, &Why)))
+		{
+			TestEqual(TEXT("its tangent precision is 0"), FirstBack.TangentPrecision, 0);
+		}
+	}
+	else
+	{
+		AddError(Why);
+	}
+	Tangents->MarkAsGarbage();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteResidencyTest,
+	"Mantle.Editor.Nanite.BakeKeepsAtMostOneMiBInMemory",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteResidencyTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshNaniteBakeTestPrivate;
+
+	TestEqual(TEXT("the residency is 1024 KB, which the engine turns into 32 root pages"), FMantleMeshNaniteFile::ResidencyKB, 1024u);
+	if (!NaniteBuilds())
+	{
+		AddInfo(TEXT("skipped: this editor builds no Nanite data (started without a graphics device)"));
+		return true;
+	}
+
+	// A mesh that fits its 32 root pages: every page a root page, and the same file as when the whole mesh was kept.
+	UStaticMesh* Small = MakeGrid(64, /*bNanite*/ false, 0);
+	TArray<uint8> Fits;
+	TArray<uint8> Kept;
+	FString Why;
+	if (!TestTrue(TEXT("a small mesh bakes"), FMantleMeshNaniteBake::Bake(Small, { 0 }, MeshTag, Fits, Why)) ||
+		!TestTrue(TEXT("and bakes with the whole mesh kept"), FMantleMeshNaniteBake::Bake(Small, { 0 }, MeshTag, Kept, Why, nullptr, nullptr, 1.0f, MAX_uint32)))
+	{
+		AddError(Why);
+		return false;
+	}
+	TestTrue(TEXT("a mesh under 1 MiB is the file it was when the whole mesh was kept"), Fits == Kept);
+	Nanite::FResources FitsBack;
+	TArray<int32> Slots;
+	TArray<uint8> FitsStreamed;
+	if (TestTrue(TEXT("it reads back"), FMantleMeshNaniteFile::Read(Fits, MeshTag, FitsBack, Slots, &Why, &FitsStreamed)))
+	{
+		TestEqual(TEXT("every page a root page"), static_cast<uint32>(FitsBack.PageStreamingStates.Num()), FitsBack.NumRootPages);
+		TestEqual(TEXT("no streamed block"), FitsStreamed.Num(), 0);
+		TestEqual(TEXT("its triangles"), FitsBack.NumInputTriangles, 64u * 64u * 2u);
+	}
+
+	// The same mesh asked to keep one root page (32 KB): the rest is the file's streamed block. Quick, and the same code as the real size.
+	TArray<uint8> Streams;
+	if (TestTrue(TEXT("it bakes keeping one root page"), FMantleMeshNaniteBake::Bake(Small, { 0 }, MeshTag, Streams, Why, nullptr, nullptr, 1.0f, 32)))
+	{
+		Nanite::FResources Back;
+		TArray<uint8> Block;
+		if (TestTrue(TEXT("its file reads back"), FMantleMeshNaniteFile::Read(Streams, MeshTag, Back, Slots, &Why, &Block)))
+		{
+			TestEqual(TEXT("one root page"), Back.NumRootPages, 1u);
+			TestTrue(TEXT("more pages than that in the table"), Back.PageStreamingStates.Num() > 1);
+			TestTrue(TEXT("with their bytes in the block"), Block.Num() > 0);
+			TestTrue(TEXT("with root data (its bytes are logged below: they are disk bytes, which the engine does not bound by the 32 KB of GPU size)"), Back.RootData.Num() > 0);
+			TestEqual(TEXT("its triangles, all of them"), Back.NumInputTriangles, 64u * 64u * 2u);
+			AddInfo(FString::Printf(TEXT("64 x 64 grid at 32 KB: %d pages, %u root, %d bytes of root data, %d streamed, %d bytes in the file"),
+				Back.PageStreamingStates.Num(), Back.NumRootPages, Back.RootData.Num(), Block.Num(), Streams.Num()));
+		}
+		else
+		{
+			AddError(Why);
+		}
+	}
+	else
+	{
+		AddError(Why);
+	}
+	Small->MarkAsGarbage();
+
+	// A mesh well over 1 MiB, at the real residency: at most 32 root pages and 1 MiB of root data, the rest streamed.
+	UStaticMesh* Big = MakeGrid(300, /*bNanite*/ false, 0);
+	TArray<uint8> BigFile;
+	if (TestTrue(TEXT("a big mesh bakes"), FMantleMeshNaniteBake::Bake(Big, { 0 }, MeshTag, BigFile, Why)))
+	{
+		Nanite::FResources Back;
+		TArray<uint8> Block;
+		if (TestTrue(TEXT("its file reads back"), FMantleMeshNaniteFile::Read(BigFile, MeshTag, Back, Slots, &Why, &Block)))
+		{
+			TestTrue(TEXT("at most 32 root pages"), Back.NumRootPages >= 1 && Back.NumRootPages <= 32);
+			TestTrue(TEXT("with root data (its bytes are logged below: disk bytes, which the engine does not bound by the 1 MiB of GPU size)"), Back.RootData.Num() > 0);
+			TestTrue(TEXT("the mesh was big enough to stream (more pages than root pages)"), static_cast<uint32>(Back.PageStreamingStates.Num()) > Back.NumRootPages);
+			TestTrue(TEXT("with its other pages in the block"), Block.Num() > 0);
+			TestEqual(TEXT("its triangles, all of them"), Back.NumInputTriangles, 300u * 300u * 2u);
+			AddInfo(FString::Printf(TEXT("300 x 300 grid: %d pages, %u root, %d bytes of root data, %d streamed, %d bytes in the file"),
+				Back.PageStreamingStates.Num(), Back.NumRootPages, Back.RootData.Num(), Block.Num(), BigFile.Num()));
+			// Not a check: the engine stages a streamed page in a ring sized from NANITE_ESTIMATED_MAX_PAGE_DISK_SIZE (192 KiB) per pending page, and the
+			// encoder packs pages by GPU size (128 KiB) and does not cap their disk size. This only shows how close a bake comes to the estimate
+			// (Medieval's worst page is 165,441 bytes, 84%). See the report, "The largest streamed page".
+			uint32 LargestStreamed = 0;
+			for (int32 Index = static_cast<int32>(Back.NumRootPages); Index < Back.PageStreamingStates.Num(); ++Index)
+			{
+				LargestStreamed = FMath::Max(LargestStreamed, Back.PageStreamingStates[Index].BulkSize);
+			}
+			AddInfo(FString::Printf(TEXT("largest streamed page: %u bytes of the engine's %u (%.0f%%)"), LargestStreamed, 196608u, 100.0 * LargestStreamed / 196608.0));
+		}
+		else
+		{
+			AddError(Why);
+		}
+	}
+	else
+	{
+		AddError(Why);
+	}
+	Big->MarkAsGarbage();
 	return true;
 }
 
@@ -788,8 +1194,8 @@ bool FMantleMeshNaniteConverterTest::RunTest(const FString& Parameters)
 	{
 		AddError(Why);
 	}
-	// What is uploaded is the container the backend takes: MNZ1, the inflated size, one zlib stream, inside the limit.
-	TestTrue(TEXT("it is an MNZ1 container"), Converted.Nanite.Num() > 8 && FMemory::Memcmp(Converted.Nanite.GetData(), "MNZ1", 4) == 0);
+	// What is uploaded is the container the backend takes: MNZ2, a table and one zlib stream per piece, inside the limit.
+	TestTrue(TEXT("it is an MNZ2 container"), Converted.Nanite.Num() > 8 && FMemory::Memcmp(Converted.Nanite.GetData(), "MNZ2", 4) == 0);
 	TestTrue(TEXT("inside the upload limit"), Converted.Nanite.Num() <= FMantleMeshNaniteFile::MaxUploadBytes);
 	TArray<uint8> Inflated;
 	if (TestTrue(TEXT("and unpacks"), FMantleMeshNaniteFile::Unpack(Converted.Nanite, Inflated, &Why)))
@@ -853,6 +1259,7 @@ bool FMantleMeshNaniteConverterTest::RunTest(const FString& Parameters)
 	const FString Salt = FMantleMeshNaniteBake::CacheSalt();
 	TestTrue(TEXT("the salt names the engine build"), Salt.Contains(FMantleMeshNaniteFile::EngineTag()));
 	TestTrue(TEXT("and the voxel and assembly switches"), Salt.Contains(TEXT("voxels=1")) && Salt.Contains(TEXT("assemblies=1")));
+	TestTrue(TEXT("and the container (a file cached as MNZ1 is made again)"), Salt.Contains(TEXT("container=MNZ2")));
 	Grid->MarkAsGarbage();
 	return true;
 }
@@ -864,53 +1271,223 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FMantleMeshNaniteContainerTest::RunTest(const FString& Parameters)
 {
-	// The container of the build plan's contracts\nanite-entry.md: "MNZ1", a little-endian uint32 with the inflated length, one zlib stream.
+	using namespace MantleMeshNaniteBakeTestPrivate;
+
+	// The container of contracts\nanite-v2.md: MNZ2, a piece count, a table of {packed, raw}, then one zlib stream per piece. A mesh with no streamed
+	// pages is one piece: the head, which is the whole MND1.
+	Nanite::FResources Whole;
+	FillWhole(Whole);
 	TArray<uint8> Mnd1;
-	Mnd1.Append(reinterpret_cast<const uint8*>("MND1"), 4);
-	for (int32 Index = 0; Index < 50000; ++Index)
+	FString Why;
+	if (!TestTrue(TEXT("a file writes"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Whole, Mnd1, Why)))
 	{
-		Mnd1.Add(static_cast<uint8>((Index * 7) % 13));
+		AddError(Why);
+		return false;
 	}
 	TArray<uint8> Container;
-	FString Why;
 	if (!TestTrue(TEXT("a file packs"), FMantleMeshNaniteFile::Pack(Mnd1, Container, Why)))
 	{
 		AddError(Why);
 		return false;
 	}
-	TestTrue(TEXT("it starts with MNZ1"), FMemory::Memcmp(Container.GetData(), "MNZ1", 4) == 0);
-	const uint32 SizeWord = Container[4] | (Container[5] << 8) | (Container[6] << 16) | (static_cast<uint32>(Container[7]) << 24);
-	TestEqual(TEXT("then the inflated length, little-endian"), static_cast<int32>(SizeWord), Mnd1.Num());
+	TestTrue(TEXT("it starts with MNZ2"), FMemory::Memcmp(Container.GetData(), "MNZ2", 4) == 0);
+	const auto U32 = [&Container](const int32 Offset) { return static_cast<uint32>(Container[Offset]) | (static_cast<uint32>(Container[Offset + 1]) << 8) | (static_cast<uint32>(Container[Offset + 2]) << 16) | (static_cast<uint32>(Container[Offset + 3]) << 24); };
+	TestEqual(TEXT("one piece (no streamed pages), little-endian"), U32(4), 1u);
+	TestEqual(TEXT("whose raw length is the whole MND1"), static_cast<int32>(U32(12)), Mnd1.Num());
+	TestEqual(TEXT("and whose stream fills the rest of the file"), static_cast<int32>(U32(8)) + 8 + 8, Container.Num());
 	// A zlib stream (RFC 1950): deflate (method 8) in the low nibble of the first byte, and a header that is a multiple of 31.
-	TestEqual(TEXT("then a zlib stream (deflate)"), static_cast<int32>(Container[8] & 0x0F), 8);
-	TestEqual(TEXT("with a valid header check"), ((Container[8] << 8) | Container[9]) % 31, 0);
-	TestTrue(TEXT("smaller than what it holds"), Container.Num() < Mnd1.Num());
+	TestEqual(TEXT("then a zlib stream (deflate)"), static_cast<int32>(Container[16] & 0x0F), 8);
+	TestEqual(TEXT("with a valid header check"), ((Container[16] << 8) | Container[17]) % 31, 0);
 
-	// The game's own unpacker takes it back to the same bytes.
+	// Unpacking is the inverse, and packing the same bytes again makes the same file (a re-upload is the same asset).
 	TArray<uint8> Back;
-	if (TestTrue(TEXT("the game's unpacker reads it"), FMantleNaniteSideFile::Unpack(Container, Back, &Why)))
+	if (TestTrue(TEXT("it unpacks"), FMantleMeshNaniteFile::Unpack(Container, Back, &Why)))
 	{
 		TestTrue(TEXT("to the same bytes"), Back == Mnd1);
 	}
 	TArray<uint8> Same;
-	TestTrue(TEXT("packing the same bytes again makes the same file (a re-upload is the same asset)"), FMantleMeshNaniteFile::Pack(Mnd1, Same, Why) && Same == Container);
+	TestTrue(TEXT("packing the same bytes again makes the same file"), FMantleMeshNaniteFile::Pack(Mnd1, Same, Why) && Same == Container);
 
-	// Damage and nonsense do not unpack. Unreal logs a damaged zlib stream as a warning and an error of its own, which are the point here.
-	AddExpectedMessagePlain(TEXT("appUncompressMemoryZLIB failed"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 0);
-	AddExpectedErrorPlain(TEXT("Failed to uncompress memory"), EAutomationExpectedErrorFlags::Contains, 0);
+	// Damage and nonsense do not unpack (the reader inflates with zlib itself, so nothing is logged for a damaged stream).
 	TArray<uint8> Damaged = Container;
-	Damaged[Damaged.Num() / 2] ^= 0xFF;
+	Damaged[Damaged.Num() - 6] ^= 0xFF;
 	TestFalse(TEXT("a damaged stream is refused"), FMantleMeshNaniteFile::Unpack(Damaged, Back, &Why));
 	TArray<uint8> Wrong = Container;
-	Wrong[0] = 'X';
-	TestFalse(TEXT("another magic is refused"), FMantleMeshNaniteFile::Unpack(Wrong, Back, &Why));
+	Wrong[3] = '1';
+	TestFalse(TEXT("the old MNZ1 magic is refused (one container, one reader)"), FMantleMeshNaniteFile::Unpack(Wrong, Back, &Why));
 	TestFalse(TEXT("a raw MND1 is refused (it is not a container)"), FMantleMeshNaniteFile::Unpack(Mnd1, Back, &Why));
 	TestFalse(TEXT("nothing packs to nothing"), FMantleMeshNaniteFile::Pack(TArray<uint8>(), Same, Why));
+	TestFalse(TEXT("bytes that are not an MND1 do not pack"), FMantleMeshNaniteFile::Pack(Pattern(500, 9), Same, Why));
 
 	TestEqual(TEXT("the size limit is 64 MiB"), FMantleMeshNaniteFile::MaxUploadBytes, int64(67108864));
 	TestEqual(TEXT("and the converter's limit starts there"), FMantlePlaceAssetLimits().MaxNaniteBytes, FMantleMeshNaniteFile::MaxUploadBytes);
 	TestEqual(TEXT("the inflated limit is 512 MiB"), FMantleMeshNaniteFile::MaxRawBytes(), int64(536870912));
 	TestEqual(TEXT("the file is tied to the exact engine build, as the game compares it"), FMantleMeshNaniteFile::EngineTag(), FMantleNaniteSideFile::EngineTag());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteContainerPiecesTest,
+	"Mantle.Editor.Nanite.ContainerPiecesReadAlone",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteContainerPiecesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshNaniteBakeTestPrivate;
+	using FPiece = FMantleMeshNaniteFile::FContainerPiece;
+
+	// By hand (FillStreaming): a head, then two streamed pages of 70 and 30 bytes of 100 streamed bytes. The MND1 ends with the block: its 4-byte
+	// length (field 26), then the 100 bytes (field 27), so the head is everything before those 104 bytes.
+	Nanite::FResources Streams;
+	FillStreaming(Streams);
+	const TArray<uint8> Streamed = Pattern(100, 50);
+	TArray<uint8> Mnd1;
+	FString Why;
+	if (!TestTrue(TEXT("a mesh with streamed pages writes"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Streams, Streamed, Mnd1, Why)))
+	{
+		AddError(Why);
+		return false;
+	}
+	const int32 HeadBytes = Mnd1.Num() - 104;
+	TArray<uint8> Container;
+	if (!TestTrue(TEXT("it packs"), FMantleMeshNaniteFile::Pack(Mnd1, Container, Why)))
+	{
+		AddError(Why);
+		return false;
+	}
+	TArray<FPiece> Pieces;
+	if (!TestTrue(TEXT("its table reads"), FMantleMeshNaniteFile::ReadContainerTable(Container, Pieces, &Why)))
+	{
+		AddError(Why);
+		return false;
+	}
+	if (!TestEqual(TEXT("three pieces: the head and two pages"), Pieces.Num(), 3))
+	{
+		return false;
+	}
+	// Offsets from the table alone: the pieces follow the 8 + 8 x 3 byte table, one after another, and fill the file.
+	TestEqual(TEXT("the head starts after the table"), Pieces[0].Offset, int64(8 + 8 * 3));
+	TestEqual(TEXT("page 1 follows the head"), Pieces[1].Offset, Pieces[0].Offset + Pieces[0].Packed);
+	TestEqual(TEXT("page 2 follows page 1"), Pieces[2].Offset, Pieces[1].Offset + Pieces[1].Packed);
+	TestEqual(TEXT("the last piece ends the file"), Pieces[2].Offset + Pieces[2].Packed, static_cast<int64>(Container.Num()));
+	TestEqual(TEXT("the head's raw length is up to the end of field 25"), static_cast<int32>(Pieces[0].Raw), HeadBytes);
+	TestEqual(TEXT("page 1's raw length is its BulkSize"), Pieces[1].Raw, 70u);
+	TestEqual(TEXT("page 2's raw length is its BulkSize"), Pieces[2].Raw, 30u);
+
+	// The head alone, one page alone, the last page: each inflates by itself to its own bytes.
+	TArray<uint8> Piece;
+	if (TestTrue(TEXT("the head inflates alone"), FMantleMeshNaniteFile::InflatePiece(Container, Pieces[0], Piece, &Why)))
+	{
+		TestTrue(TEXT("to the MND1 up to field 25"), Piece.Num() == HeadBytes && FMemory::Memcmp(Piece.GetData(), Mnd1.GetData(), HeadBytes) == 0);
+	}
+	if (TestTrue(TEXT("page 1 inflates alone"), FMantleMeshNaniteFile::InflatePiece(Container, Pieces[1], Piece, &Why)))
+	{
+		TestTrue(TEXT("to bytes 0 to 70 of the streamed block"), Piece.Num() == 70 && FMemory::Memcmp(Piece.GetData(), Streamed.GetData(), 70) == 0);
+	}
+	if (TestTrue(TEXT("the last page inflates alone"), FMantleMeshNaniteFile::InflatePiece(Container, Pieces[2], Piece, &Why)))
+	{
+		TestTrue(TEXT("to bytes 70 to 100 of the streamed block (its BulkOffset)"), Piece.Num() == 30 && FMemory::Memcmp(Piece.GetData(), Streamed.GetData() + 70, 30) == 0);
+	}
+
+	// Put back together it is the MND1 as Write made it, and the plugin's reader reads that.
+	TArray<uint8> Back;
+	if (TestTrue(TEXT("the whole container unpacks"), FMantleMeshNaniteFile::Unpack(Container, Back, &Why)))
+	{
+		TestTrue(TEXT("to the MND1 version 2 file"), Back == Mnd1);
+	}
+	Nanite::FResources ReadBack;
+	TArray<int32> Slots;
+	TArray<uint8> ReadStreamed;
+	if (TestTrue(TEXT("an uploaded file reads"), FMantleMeshNaniteFile::ReadUploaded(Container, MeshTag, ReadBack, Slots, &Why, &ReadStreamed)))
+	{
+		TestTrue(TEXT("with the streamed block"), SameBytes(ReadStreamed, Streamed));
+		TestTrue(TEXT("and the page table"), SamePages(ReadBack, Streams));
+	}
+
+	// A mesh with no streamed pages is one piece, the head, which is the whole MND1.
+	Nanite::FResources Whole;
+	FillWhole(Whole);
+	TArray<uint8> WholeMnd1;
+	TArray<uint8> WholeContainer;
+	TArray<FPiece> WholePieces;
+	if (TestTrue(TEXT("a mesh with no streamed pages writes and packs"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Whole, WholeMnd1, Why) && FMantleMeshNaniteFile::Pack(WholeMnd1, WholeContainer, Why))
+		&& TestTrue(TEXT("its table reads"), FMantleMeshNaniteFile::ReadContainerTable(WholeContainer, WholePieces, &Why)))
+	{
+		TestEqual(TEXT("one piece"), WholePieces.Num(), 1);
+		TestEqual(TEXT("which is the whole MND1"), static_cast<int32>(WholePieces[0].Raw), WholeMnd1.Num());
+		TArray<uint8> WholeBack;
+		TestTrue(TEXT("and unpacks to it"), FMantleMeshNaniteFile::Unpack(WholeContainer, WholeBack, &Why) && WholeBack == WholeMnd1);
+	}
+
+	// A damaged piece fails its own read and no other.
+	TArray<uint8> OnePage = Container;
+	OnePage[static_cast<int32>(Pieces[1].Offset) + static_cast<int32>(Pieces[1].Packed) - 5] ^= 0xFF;
+	TArray<FPiece> OnePageTable;
+	if (TestTrue(TEXT("the table of a file with one damaged page still reads (it checks sizes, not streams)"), FMantleMeshNaniteFile::ReadContainerTable(OnePage, OnePageTable, &Why)))
+	{
+		TestFalse(TEXT("the damaged page fails"), FMantleMeshNaniteFile::InflatePiece(OnePage, OnePageTable[1], Piece, &Why));
+		TestTrue(TEXT("the head still inflates"), FMantleMeshNaniteFile::InflatePiece(OnePage, OnePageTable[0], Piece, &Why));
+		TestTrue(TEXT("and so does the other page"), FMantleMeshNaniteFile::InflatePiece(OnePage, OnePageTable[2], Piece, &Why) && Piece.Num() == 30);
+		TestFalse(TEXT("but the whole file does not unpack"), FMantleMeshNaniteFile::Unpack(OnePage, Back, &Why));
+	}
+
+	// A damaged table is refused before anything is read.
+	TArray<FPiece> Refused;
+	const auto Table = [&Container, &Refused, &Why](const TFunction<void(TArray<uint8>&)>& Damage)
+	{
+		TArray<uint8> Bytes = Container;
+		Damage(Bytes);
+		return FMantleMeshNaniteFile::ReadContainerTable(Bytes, Refused, &Why);
+	};
+	TestFalse(TEXT("a table whose packed sizes do not add up to the file (one more byte)"), Table([](TArray<uint8>& B) { B[16] += 1; }));
+	TestTrue(TEXT("says why"), Why.Contains(TEXT("adds up")));
+	TestFalse(TEXT("a table whose packed sizes are one short"), Table([](TArray<uint8>& B) { B[16] -= 1; }));
+	TestFalse(TEXT("a count of 0"), Table([](TArray<uint8>& B) { B[4] = 0; }));
+	TestFalse(TEXT("a count the table cannot hold (4 billion)"), Table([](TArray<uint8>& B) { B[4] = B[5] = B[6] = B[7] = 0xFF; }));
+	TestFalse(TEXT("a count of 4 where the file has 3"), Table([](TArray<uint8>& B) { B[4] = 4; }));
+	TestFalse(TEXT("a piece that inflates to nothing"), Table([](TArray<uint8>& B) { B[12 + 8] = B[13 + 8] = B[14 + 8] = B[15 + 8] = 0; }));
+	TestFalse(TEXT("a piece too small to be a zlib stream"), Table([](TArray<uint8>& B) { B[16] = 3; B[17] = B[18] = B[19] = 0; }));
+	TestFalse(TEXT("a piece that inflates to more than 512 MiB"), Table([](TArray<uint8>& B) { B[12 + 16] = 0; B[13 + 16] = 0; B[14 + 16] = 0; B[15 + 16] = 0x30; }));
+	TestFalse(TEXT("the file cut short"), FMantleMeshNaniteFile::ReadContainerTable(TConstArrayView<uint8>(Container.GetData(), Container.Num() - 1), Refused, &Why));
+	TArray<uint8> Longer = Container;
+	Longer.Add(0);
+	TestFalse(TEXT("a byte past the last piece"), FMantleMeshNaniteFile::ReadContainerTable(Longer, Refused, &Why));
+	TestFalse(TEXT("a file too short for a table"), FMantleMeshNaniteFile::ReadContainerTable(TConstArrayView<uint8>(Container.GetData(), 10), Refused, &Why));
+	TestEqual(TEXT("no pieces for any of them"), Refused.Num(), 0);
+
+	// The helper makes the container Pack makes, so the cases below differ from a real one only in what they say.
+	const TArray<uint8> Plain = MakeContainerBy(Mnd1, HeadBytes, { 70, 30 });
+	TestTrue(TEXT("a container made by hand with the right pieces is the packer's"), Plain == Container);
+
+	// Contract check 5: a piece's stream ends exactly where the table says. FCompression::UncompressMemory alone takes a stream followed by a stray byte;
+	// the plugin's reader does not. The table is consistent (the stray byte is counted in the piece's packed size), so only the piece itself says no.
+	const TArray<uint8> Stray = MakeContainerBy(Mnd1, HeadBytes, { 70, 30 }, /*StrayAfter*/ 1);
+	TArray<FPiece> StrayTable;
+	if (TestTrue(TEXT("a container with a stray byte after page 1's stream has a table that reads"), FMantleMeshNaniteFile::ReadContainerTable(Stray, StrayTable, &Why)))
+	{
+		TestEqual(TEXT("whose page 1 is one byte longer than the packer's"), StrayTable[1].Packed, Pieces[1].Packed + 1);
+		TestFalse(TEXT("page 1 is refused"), FMantleMeshNaniteFile::InflatePiece(Stray, StrayTable[1], Piece, &Why));
+		TestTrue(TEXT("says where the stream must end"), Why.Contains(TEXT("end where the table says")));
+		TestTrue(TEXT("the head still inflates"), FMantleMeshNaniteFile::InflatePiece(Stray, StrayTable[0], Piece, &Why));
+		TestTrue(TEXT("and so does page 2"), FMantleMeshNaniteFile::InflatePiece(Stray, StrayTable[2], Piece, &Why));
+		TestFalse(TEXT("the whole file does not unpack"), FMantleMeshNaniteFile::Unpack(Stray, Back, &Why));
+	}
+	const TArray<uint8> StrayHead = MakeContainerBy(Mnd1, HeadBytes, { 70, 30 }, /*StrayAfter*/ 0);
+	TestFalse(TEXT("a stray byte after the head's stream is refused too"), FMantleMeshNaniteFile::ReadUploaded(StrayHead, MeshTag, ReadBack, Slots, &Why));
+
+	// Contract check 6: the pieces are the pages. The same 100 streamed bytes cut 50 and 50 inflate and read as a valid MND1 (the sizes add up), but
+	// they are not the pages the page table names (70 and 30), so the uploaded file is refused; a single piece for two pages is refused too.
+	const TArray<uint8> Cut5050 = MakeContainerBy(Mnd1, HeadBytes, { 50, 50 });
+	TArray<uint8> Cut5050Back;
+	TestTrue(TEXT("pieces cut 50 and 50 unpack to the same MND1"), FMantleMeshNaniteFile::Unpack(Cut5050, Cut5050Back, &Why) && Cut5050Back == Mnd1);
+	TestFalse(TEXT("but are not the page table's pages: refused"), FMantleMeshNaniteFile::ReadUploaded(Cut5050, MeshTag, ReadBack, Slots, &Why, &ReadStreamed));
+	TestTrue(TEXT("says the table does not agree"), Why.Contains(TEXT("does not agree")));
+	TestEqual(TEXT("and hands back nothing"), ReadStreamed.Num(), 0);
+	const TArray<uint8> OnePiece = MakeContainerBy(Mnd1, HeadBytes, { 100 });
+	TestFalse(TEXT("one piece for the two pages is refused"), FMantleMeshNaniteFile::ReadUploaded(OnePiece, MeshTag, ReadBack, Slots, &Why));
+	const TArray<uint8> Offset3070 = MakeContainerBy(Mnd1, HeadBytes, { 30, 70 });
+	TestFalse(TEXT("pieces of 30 and 70 (the pages' sizes swapped) are refused"), FMantleMeshNaniteFile::ReadUploaded(Offset3070, MeshTag, ReadBack, Slots, &Why));
+	TestTrue(TEXT("the right pieces read"), FMantleMeshNaniteFile::ReadUploaded(Plain, MeshTag, ReadBack, Slots, &Why, &ReadStreamed) && ReadStreamed.Num() == 100);
 	return true;
 }
 
@@ -1228,7 +1805,7 @@ bool FMantleMeshNaniteUploadTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("with its hash"), NaniteUpload->Hash, NaniteHash);
 			TestEqual(TEXT("the container's bytes"), NaniteUpload->Bytes.Num(), static_cast<int32>(NaniteBytes));
 			TestEqual(TEXT("hashed as Mantle hashes an upload"), FMantleSha256::AssetHash(NaniteUpload->Bytes), NaniteHash);
-			TestTrue(TEXT("a container"), NaniteUpload->Bytes.Num() > 8 && FMemory::Memcmp(NaniteUpload->Bytes.GetData(), "MNZ1", 4) == 0);
+			TestTrue(TEXT("a container"), NaniteUpload->Bytes.Num() > 8 && FMemory::Memcmp(NaniteUpload->Bytes.GetData(), "MNZ2", 4) == 0);
 			TestTrue(TEXT("inside the limit"), NaniteUpload->Bytes.Num() <= FMantleMeshNaniteFile::MaxUploadBytes);
 			TestTrue(TEXT("named so the creator can tell what it is"), NaniteUpload->SourceName.Contains(TEXT("Nanite")));
 			TestEqual(TEXT("in the same stage as its mesh"), static_cast<int32>(NaniteUpload->Stage), static_cast<int32>(EMantlePlaceUploadStage::Mesh));

@@ -4,15 +4,17 @@
 #include "CoreMinimal.h"
 #include "MantleHeightfieldReader.h"
 #include "Materials/MaterialInterface.h"
+#include "MeshDescription.h"
 #include "UObject/StrongObjectPtr.h"
 
 class AActor;
 class UMaterialInterface;
 class UObject;
 class UStaticMesh;
+class UStaticMeshComponent;
+class USceneComponent;
 class UTexture;
 class UWorld;
-struct FMeshDescription;
 struct FMantleTerrainHoleGrid;
 
 /**
@@ -73,6 +75,13 @@ struct FMantleTerrainBuildParams
 	bool bInitRenderResources = true;
 
 	/**
+	 * FMantleTerrainSpawn builds only the far ground: each chunk is its lowest detail level alone (the one a chunk is drawn at furthest away, the same vertices and the same skirts),
+	 * with no collision and no shadow, as a component of its own. A player's machine that streams the place (FMantleTerrainStream) draws this everywhere and swaps a chunk for its
+	 * full version (every LOD, cooked collision, shadows) while the player is near. Ignored by BuildChunks, BuildOneChunk and the dedicated server's builds.
+	 */
+	bool bFarOnly = false;
+
+	/**
 	 * The quads that are holes (the terrain's hole mask): no triangles in any LOD, so no collision and no skirt
 	 * along them; a chunk that is all hole gets no mesh. A coarser LOD's quad is a hole when any quad it covers is.
 	 */
@@ -92,6 +101,34 @@ struct FMantleTerrainChunk
 	FVector3f Origin = FVector3f::ZeroVector;
 
 	UStaticMesh* Mesh = nullptr;
+};
+
+/** How much of a chunk is built: all of it (every LOD, collision as asked), or only the lowest level of detail (the far ground). */
+enum class EMantleTerrainChunkDetail : uint8
+{
+	Full,
+	Far,
+};
+
+/**
+ * One chunk's mesh descriptions, made by FMantleTerrainBuilder::PrepareChunk (any thread, nothing of the engine's object world touched) and turned into a mesh by
+ * FMantleTerrainBuilder::FinishChunk (game thread). Descriptions holds the LODs the chunk has, finest first (one for the far ground).
+ */
+struct FMantleTerrainPreparedChunk
+{
+	EMantleTerrainChunkDetail Detail = EMantleTerrainChunkDetail::Full;
+	int32 ChunkX = 0;
+	int32 ChunkY = 0;
+	FIntPoint FirstSample = FIntPoint::ZeroValue;
+	FIntPoint LastSample = FIntPoint::ZeroValue;
+	FVector3f Origin = FVector3f::ZeroVector;
+	TArray<FMeshDescription> Descriptions;
+
+	/** The vertices of the finest description (LOD 0 for a full chunk), for the logs. */
+	int64 Vertices = 0;
+
+	/** No triangles at all in the level asked for (a chunk lost to holes): nothing to build. */
+	bool bEmpty = false;
 };
 
 /** One paint layer as the builder draws it: the place material it takes its look from, and its tiling. */
@@ -183,6 +220,28 @@ public:
 	static bool BuildOneChunk(const FMantleHeightfield& Field, const FMantleTerrainBuildParams& Params, int32 ChunkX, int32 ChunkY,
 		int64& InOutVertices, FMantleTerrainChunk& OutChunk, bool& bOutEmpty, FString* OutError = nullptr);
 
+	/**
+	 * The first half of BuildOneChunk, on any thread: the chunk's skirt depth and the descriptions of its LODs (Detail Full), or of its lowest level of detail alone (Far:
+	 * the coarsest LOD that still has a quad, with the skirt depth a full chunk's edges have, so a far chunk meets a full one, or a far one, with no gap). Touches no
+	 * engine object. Field and the hole grid must outlive the call; Out is replaced.
+	 */
+	static void PrepareChunk(const FMantleHeightfield& Field, const FMantleTerrainBuildParams& Params, int32 ChunkX, int32 ChunkY, EMantleTerrainChunkDetail Detail,
+		FMantleTerrainPreparedChunk& Out);
+
+	/**
+	 * The second half: the mesh of a prepared chunk, on the game thread. Collision is cooked here (Params.bCollision and bCookCollision, a full chunk only); a caller that cooks it itself
+	 * (the stream does, off the game thread) passes false. A chunk that is all hole has no mesh: true with bOutEmpty set. False, with the reason, when the mesh fails.
+	 */
+	static bool FinishChunk(const FMantleTerrainBuildParams& Params, FMantleTerrainPreparedChunk&& Prepared, bool bCookCollision, int64& InOutVertices,
+		FMantleTerrainChunk& OutChunk, bool& bOutEmpty, FString* OutError = nullptr);
+
+	/**
+	 * One chunk's mesh as a component of Owner under Root: Static or Movable as the terrain is, blocking everything when bCollision, casting a shadow when bCastShadow (a far
+	 * chunk never does: it has no collision, no overlaps and no part in distance-field lighting either). Registered unless bRegister is false. Game thread.
+	 */
+	static UStaticMeshComponent* AddChunkComponent(AActor* Owner, USceneComponent* Root, const FMantleTerrainChunk& Chunk, UMaterialInterface* Material, bool bStatic,
+		bool bCastShadow, bool bCollision, bool bFar, bool bRegister = true);
+
 	/** "Layer<Layer><Suffix>", one of M_MantleTerrain's per-layer parameters. */
 	static FName LayerParameter(int32 Layer, const TCHAR* Suffix);
 
@@ -229,7 +288,13 @@ public:
 
 	~FMantleTerrainSpawn();
 
-	/** Builds the next chunk. True once there is nothing more to do: every chunk is on the actor, or a chunk failed (HasFailed). */
+	/** What one Step of a far-only spawn may spend, seconds. */
+	static constexpr double FarBudgetSeconds = 0.003;
+
+	/**
+	 * Builds the next chunk. True once there is nothing more to do: every chunk is on the actor, or a chunk failed (HasFailed). A far-only spawn builds as many chunks as fit in
+	 * FarBudgetSeconds (at least one): a far chunk costs a fraction of a full one.
+	 */
 	bool Step();
 
 	bool HasFailed() const { return !Error.IsEmpty(); }
@@ -237,6 +302,19 @@ public:
 
 	/** The finished terrain actor, given up for good (it is then no longer destroyed with this object). Null when a chunk failed. */
 	AActor* TakeActor();
+
+	/** Chunks along each axis. */
+	int32 GetChunksX() const { return ChunksX; }
+	int32 GetChunksY() const { return ChunksY; }
+	bool IsStatic() const { return bStatic; }
+	bool CastsShadow() const { return bCastShadow; }
+	UMaterialInterface* GetMaterial() const { return Material.Get(); }
+
+	/**
+	 * A far-only spawn (FMantleTerrainBuildParams::bFarOnly): each chunk's far component, by chunk index (Y * ChunksX + X); null for a chunk with nothing to show at that level
+	 * of detail. Given up for good, like the actor.
+	 */
+	TArray<TWeakObjectPtr<UStaticMeshComponent>> TakeFarComponents() { return MoveTemp(FarComponents); }
 
 private:
 	FMantleTerrainSpawn() = default;
@@ -257,4 +335,6 @@ private:
 	int64 Vertices = 0;
 	double BuildSeconds = 0.0;
 	FString Error;
+	/** A far-only spawn: the components made, by chunk index. */
+	TArray<TWeakObjectPtr<UStaticMeshComponent>> FarComponents;
 };

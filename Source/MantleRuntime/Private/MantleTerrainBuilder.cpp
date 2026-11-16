@@ -21,6 +21,7 @@
 #include "StaticMeshAttributes.h"
 #include "StaticMeshResources.h"
 #include "UObject/Package.h"
+#include "UObject/UObjectHash.h"
 
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleTerrainBuilderPrivate
@@ -424,68 +425,118 @@ bool FMantleTerrainBuilder::BuildChunks(const FMantleHeightfield& Field, const F
 	return true;
 }
 
-bool FMantleTerrainBuilder::BuildOneChunk(const FMantleHeightfield& Field, const FMantleTerrainBuildParams& Params, const int32 ChunkX, const int32 ChunkY,
+void FMantleTerrainBuilder::PrepareChunk(const FMantleHeightfield& Field, const FMantleTerrainBuildParams& Params, const int32 ChunkX, const int32 ChunkY,
+	const EMantleTerrainChunkDetail Detail, FMantleTerrainPreparedChunk& Out)
+{
+	Out = FMantleTerrainPreparedChunk();
+	Out.Detail = Detail;
+	Out.ChunkX = ChunkX;
+	Out.ChunkY = ChunkY;
+	const int32 ChunkQuads = FMath::Max(Params.ChunkQuads, 1);
+	// A far chunk and the full chunk it stands in for share the LOD count of a full render build, whatever this build's own LODs are: the far chunk's step and its skirt depth
+	// are the full chunk's, so the two meet.
+	const int32 LODs = (Params.bRenderLODs || Detail == EMantleTerrainChunkDetail::Far) ? LODCount(ChunkQuads, FMath::Max(Params.MaxLODs, 1)) : 1;
+
+	ChunkSpan(Field.Width, ChunkQuads, ChunkX, Out.FirstSample.X, Out.LastSample.X);
+	ChunkSpan(Field.Height, ChunkQuads, ChunkY, Out.FirstSample.Y, Out.LastSample.Y);
+	Out.Origin = FVector3f(static_cast<float>(Out.FirstSample.X) * Field.SpacingX, static_cast<float>(Out.FirstSample.Y) * Field.SpacingY, 0.0f);
+
+	// Skirts only where another chunk meets this one: left, right, bottom, top.
+	const bool bSkirts[4] = {
+		Out.FirstSample.X > 0, Out.LastSample.X < Field.Width - 1,
+		Out.FirstSample.Y > 0, Out.LastSample.Y < Field.Height - 1 };
+	float SkirtDepth = 0.0f;
+	if (bSkirts[0]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, false, Out.FirstSample.X, Out.FirstSample.Y, Out.LastSample.Y, LODs)); }
+	if (bSkirts[1]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, false, Out.LastSample.X, Out.FirstSample.Y, Out.LastSample.Y, LODs)); }
+	if (bSkirts[2]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, true, Out.FirstSample.Y, Out.FirstSample.X, Out.LastSample.X, LODs)); }
+	if (bSkirts[3]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, true, Out.LastSample.Y, Out.FirstSample.X, Out.LastSample.X, LODs)); }
+
+	if (Detail == EMantleTerrainChunkDetail::Far)
+	{
+		// The coarsest LOD that still has a quad (a hole takes a coarse quad whenever it takes any of the fine ones it covers): where the chunk's own LOD list ends.
+		for (int32 Lod = LODs - 1; Lod >= 0; --Lod)
+		{
+			FMeshDescription Description;
+			BuildChunkDescription(Field, Out.FirstSample, Out.LastSample, 1 << Lod, SkirtDepth, bSkirts, Description, Params.Holes.Get());
+			if (Description.Triangles().Num() > 0)
+			{
+				Out.Vertices = Description.Vertices().Num();
+				Out.Descriptions.Add(MoveTemp(Description));
+				return;
+			}
+		}
+		Out.bEmpty = true;
+		return;
+	}
+
+	Out.Descriptions.Reserve(LODs);
+	for (int32 Lod = 0; Lod < LODs; ++Lod)
+	{
+		FMeshDescription Description;
+		BuildChunkDescription(Field, Out.FirstSample, Out.LastSample, 1 << Lod, SkirtDepth, bSkirts, Description, Params.Holes.Get());
+		// A coarser LOD that has lost all its quads to a hole ends the chunk's LODs there; a chunk with none at LOD 0 is all hole.
+		if (Description.Triangles().Num() == 0)
+		{
+			break;
+		}
+		Out.Descriptions.Add(MoveTemp(Description));
+	}
+	if (Out.Descriptions.Num() == 0)
+	{
+		Out.bEmpty = true;
+		return;
+	}
+	Out.Vertices = Out.Descriptions[0].Vertices().Num();
+}
+
+bool FMantleTerrainBuilder::FinishChunk(const FMantleTerrainBuildParams& Params, FMantleTerrainPreparedChunk&& Prepared, const bool bCookCollision,
 	int64& InOutVertices, FMantleTerrainChunk& OutChunk, bool& bOutEmpty, FString* OutError)
 {
 	using namespace MantleTerrainBuilderPrivate;
 
 	bOutEmpty = false;
-	const int32 ChunkQuads = FMath::Max(Params.ChunkQuads, 1);
-	const int32 LODs = Params.bRenderLODs ? LODCount(ChunkQuads, FMath::Max(Params.MaxLODs, 1)) : 1;
-	UObject* MeshOuter = Params.Outer ? Params.Outer : GetTransientPackage();
-
-	FMantleTerrainChunk Chunk;
-	ChunkSpan(Field.Width, ChunkQuads, ChunkX, Chunk.FirstSample.X, Chunk.LastSample.X);
-	ChunkSpan(Field.Height, ChunkQuads, ChunkY, Chunk.FirstSample.Y, Chunk.LastSample.Y);
-	Chunk.Origin = FVector3f(static_cast<float>(Chunk.FirstSample.X) * Field.SpacingX, static_cast<float>(Chunk.FirstSample.Y) * Field.SpacingY, 0.0f);
-
-	// Skirts only where another chunk meets this one: left, right, bottom, top.
-	const bool bSkirts[4] = {
-		Chunk.FirstSample.X > 0, Chunk.LastSample.X < Field.Width - 1,
-		Chunk.FirstSample.Y > 0, Chunk.LastSample.Y < Field.Height - 1 };
-	float SkirtDepth = 0.0f;
-	if (bSkirts[0]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, false, Chunk.FirstSample.X, Chunk.FirstSample.Y, Chunk.LastSample.Y, LODs)); }
-	if (bSkirts[1]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, false, Chunk.LastSample.X, Chunk.FirstSample.Y, Chunk.LastSample.Y, LODs)); }
-	if (bSkirts[2]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, true, Chunk.FirstSample.Y, Chunk.FirstSample.X, Chunk.LastSample.X, LODs)); }
-	if (bSkirts[3]) { SkirtDepth = FMath::Max(SkirtDepth, EdgeSkirtDepth(Field, true, Chunk.LastSample.Y, Chunk.FirstSample.X, Chunk.LastSample.X, LODs)); }
-
-	TArray<FMeshDescription> Descriptions;
-	Descriptions.SetNum(LODs);
-	TArray<const FMeshDescription*> DescriptionPointers;
-	for (int32 Lod = 0; Lod < LODs; ++Lod)
-	{
-		BuildChunkDescription(Field, Chunk.FirstSample, Chunk.LastSample, 1 << Lod, SkirtDepth, bSkirts, Descriptions[Lod], Params.Holes.Get());
-		// A coarser LOD that has lost all its quads to a hole ends the chunk's LODs there; a chunk with none at LOD 0 is all hole.
-		if (Descriptions[Lod].Triangles().Num() == 0)
-		{
-			break;
-		}
-		DescriptionPointers.Add(&Descriptions[Lod]);
-	}
-	if (DescriptionPointers.Num() == 0)
+	if (Prepared.bEmpty || Prepared.Descriptions.Num() == 0)
 	{
 		bOutEmpty = true;
 		return true;
 	}
-	const int32 ChunkLODs = DescriptionPointers.Num();
-	InOutVertices += Descriptions[0].Vertices().Num();
+	const bool bFar = Prepared.Detail == EMantleTerrainChunkDetail::Far;
+	const bool bCollision = Params.bCollision && !bFar;
+	const int32 ChunkX = Prepared.ChunkX;
+	const int32 ChunkY = Prepared.ChunkY;
+	const int32 ChunkLODs = Prepared.Descriptions.Num();
+	// A far chunk is its one LOD at every distance: the screen size of the last LOD a full chunk has.
+	const int32 FarLod = FMath::Max(LODCount(FMath::Max(Params.ChunkQuads, 1), FMath::Max(Params.MaxLODs, 1)) - 1, 0);
+	TArray<const FMeshDescription*> DescriptionPointers;
+	DescriptionPointers.Reserve(ChunkLODs);
+	for (const FMeshDescription& Description : Prepared.Descriptions)
+	{
+		DescriptionPointers.Add(&Description);
+	}
+	InOutVertices += Prepared.Vertices;
+	UObject* MeshOuter = Params.Outer ? Params.Outer : GetTransientPackage();
+
+	FMantleTerrainChunk Chunk;
+	Chunk.FirstSample = Prepared.FirstSample;
+	Chunk.LastSample = Prepared.LastSample;
+	Chunk.Origin = Prepared.Origin;
 
 	const FName MeshName = MakeUniqueObjectName(MeshOuter, UStaticMesh::StaticClass(),
-		FName(*FString::Printf(TEXT("MantleTerrainChunk_%d_%d"), ChunkX, ChunkY)));
+		FName(*FString::Printf(TEXT("%s_%d_%d"), bFar ? TEXT("MantleTerrainFar") : TEXT("MantleTerrainChunk"), ChunkX, ChunkY)));
 	UStaticMesh* Mesh = NewObject<UStaticMesh>(MeshOuter, MeshName, RF_Transient);
 	// UVChannelData must be initialized (UStaticMesh::GetUVChannelData ensures it); see the static mesh builder.
 	FStaticMaterial& Slot = Mesh->GetStaticMaterials().Add_GetRef(FStaticMaterial(nullptr, FName(MaterialSlotName)));
 	Slot.UVChannelData = FMeshUVChannelInfo(1.0f);
 	// A non-editor build reads collision triangles back from the render data, and only from a mesh
 	// flagged for CPU access (UStaticMesh::GetPhysicsTriMeshData).
-	Mesh->bAllowCPUAccess = Params.bCollision;
+	Mesh->bAllowCPUAccess = bCollision;
 
 	UStaticMesh::FBuildMeshDescriptionsParams BuildParams;
 	BuildParams.bMarkPackageDirty = false;
 	BuildParams.bBuildSimpleCollision = false;
 	BuildParams.bCommitMeshDescription = false;
 	BuildParams.bFastBuild = true;
-	BuildParams.bAllowCpuAccess = Params.bCollision;
+	BuildParams.bAllowCpuAccess = bCollision;
 	// UV0 spans the whole terrain and each layer repeats hundreds of times over it: half floats
 	// would step visibly, so every LOD keeps full-precision UVs.
 	BuildParams.PerLODOverrides.SetNum(ChunkLODs);
@@ -511,7 +562,7 @@ bool FMantleTerrainBuilder::BuildOneChunk(const FMantleHeightfield& Field, const
 	for (int32 Lod = 0; Lod < ChunkLODs; ++Lod)
 	{
 		// Chosen by screen size, which for chunks of one size is by distance (LODScreenSize).
-		RenderData->ScreenSize[Lod].Default = LODScreenSize(Lod);
+		RenderData->ScreenSize[Lod].Default = LODScreenSize(bFar ? FarLod : Lod);
 		// One slot: bound explicitly, as FMantleRuntimeStaticMeshBuilder does, rather than trusting
 		// the fast build's lookup of the slot name.
 		for (FStaticMeshSection& Section : RenderData->LODResources[Lod].Sections)
@@ -520,24 +571,35 @@ bool FMantleTerrainBuilder::BuildOneChunk(const FMantleHeightfield& Field, const
 		}
 	}
 
-	if (Params.bCollision)
+	if (bCollision)
 	{
 		UBodySetup* Body = Mesh->GetBodySetup();
 		if (!Body)
 		{
 			return FailTerrain(OutError, FString::Printf(TEXT("the engine made no body setup for terrain chunk (%d, %d)"), ChunkX, ChunkY));
 		}
-		// LOD 0's triangles are the collision, from either side, cooked now: a player must be able
-		// to stand on the terrain the moment the place is built.
+		// LOD 0's triangles are the collision, from either side. Cooked now (a player must be able to stand on the terrain the moment the place is built)
+		// unless the caller cooks it off the game thread.
 		Body->CollisionTraceFlag = CTF_UseComplexAsSimple;
 		Body->bDoubleSidedGeometry = true;
 		Body->InvalidatePhysicsData();
-		Body->CreatePhysicsMeshes();
+		if (bCookCollision)
+		{
+			Body->CreatePhysicsMeshes();
+		}
 	}
 
 	Chunk.Mesh = Mesh;
 	OutChunk = Chunk;
 	return true;
+}
+
+bool FMantleTerrainBuilder::BuildOneChunk(const FMantleHeightfield& Field, const FMantleTerrainBuildParams& Params, const int32 ChunkX, const int32 ChunkY,
+	int64& InOutVertices, FMantleTerrainChunk& OutChunk, bool& bOutEmpty, FString* OutError)
+{
+	FMantleTerrainPreparedChunk Prepared;
+	PrepareChunk(Field, Params, ChunkX, ChunkY, EMantleTerrainChunkDetail::Full, Prepared);
+	return FinishChunk(Params, MoveTemp(Prepared), /*bCookCollision*/ true, InOutVertices, OutChunk, bOutEmpty, OutError);
 }
 
 FName FMantleTerrainBuilder::LayerParameter(const int32 Layer, const TCHAR* Suffix)
@@ -725,6 +787,10 @@ TSharedPtr<FMantleTerrainSpawn> FMantleTerrainSpawn::Begin(UWorld* World, const 
 	const int32 ChunkQuads = FMath::Max(Params.ChunkQuads, 1);
 	Spawn->ChunksX = FMantleTerrainBuilder::ChunkCount(Field.Width, ChunkQuads);
 	Spawn->ChunksY = FMantleTerrainBuilder::ChunkCount(Field.Height, ChunkQuads);
+	if (Params.bFarOnly)
+	{
+		Spawn->FarComponents.SetNum(Spawn->ChunksX * Spawn->ChunksY);
+	}
 	return Spawn;
 }
 
@@ -752,6 +818,43 @@ bool FMantleTerrainSpawn::Step()
 	}
 
 	const double StartSeconds = FPlatformTime::Seconds();
+	if (Params.bFarOnly)
+	{
+		// The far ground: as many chunks as fit in the budget (at least one), each its lowest level of detail alone.
+		while (Next < Total)
+		{
+			FMantleTerrainPreparedChunk Prepared;
+			FMantleTerrainBuilder::PrepareChunk(*Field, Params, Next % ChunksX, Next / ChunksX, EMantleTerrainChunkDetail::Far, Prepared);
+			FMantleTerrainChunk Chunk;
+			bool bEmpty = false;
+			FString ChunkError;
+			if (!FMantleTerrainBuilder::FinishChunk(Params, MoveTemp(Prepared), /*bCookCollision*/ false, Vertices, Chunk, bEmpty, &ChunkError))
+			{
+				Error = ChunkError.IsEmpty() ? FString(TEXT("a far terrain chunk failed")) : ChunkError;
+				Built->Destroy();
+				Actor.Reset();
+				return true;
+			}
+			if (!bEmpty)
+			{
+				FarComponents[Next] = FMantleTerrainBuilder::AddChunkComponent(Built, RootComponent, Chunk, Material.Get(), bStatic, bCastShadow, /*bCollision*/ false, /*bFar*/ true);
+			}
+			++Next;
+			if (FPlatformTime::Seconds() - StartSeconds >= FarBudgetSeconds)
+			{
+				break;
+			}
+		}
+		BuildSeconds += FPlatformTime::Seconds() - StartSeconds;
+		if (Next < Total)
+		{
+			return false;
+		}
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_TERRAIN spawned %d x %d samples as %d x %d far chunks of %d quads, %lld vertices, no collision, in %.1f ms"),
+			Field->Width, Field->Height, ChunksX, ChunksY, FMath::Max(Params.ChunkQuads, 1), Vertices, BuildSeconds * 1000.0);
+		return true;
+	}
+
 	FMantleTerrainChunk Chunk;
 	bool bEmpty = false;
 	FString ChunkError;
@@ -765,29 +868,7 @@ bool FMantleTerrainSpawn::Step()
 	++Next;
 	if (!bEmpty)
 	{
-		UStaticMeshComponent* Component = NewObject<UStaticMeshComponent>(Built,
-			FName(*FString::Printf(TEXT("Chunk_%d_%d"), Chunk.FirstSample.X, Chunk.FirstSample.Y)));
-		Component->SetMobility(bStatic ? EComponentMobility::Static : EComponentMobility::Movable);
-		Component->SetupAttachment(RootComponent);
-		Component->SetRelativeLocation(FVector(Chunk.Origin));
-		Component->SetStaticMesh(Chunk.Mesh);
-		if (UMaterialInterface* Look = Material.Get())
-		{
-			Component->SetMaterial(0, Look);
-		}
-		Component->SetCastShadow(bCastShadow);
-		Component->SetCollisionProfileName(UCollisionProfile::CustomCollisionProfileName);
-		if (Params.bCollision)
-		{
-			Component->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			Component->SetCollisionResponseToAllChannels(ECR_Block);
-		}
-		else
-		{
-			Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		}
-		Built->AddInstanceComponent(Component);
-		Component->RegisterComponent();
+		FMantleTerrainBuilder::AddChunkComponent(Built, RootComponent, Chunk, Material.Get(), bStatic, bCastShadow, Params.bCollision, /*bFar*/ false);
 	}
 	BuildSeconds += FPlatformTime::Seconds() - StartSeconds;
 	if (Next < Total)
@@ -798,6 +879,49 @@ bool FMantleTerrainSpawn::Step()
 		Field->Width, Field->Height, ChunksX, ChunksY, FMath::Max(Params.ChunkQuads, 1), Vertices,
 		Params.bCollision ? TEXT("complex") : TEXT("none"), BuildSeconds * 1000.0);
 	return true;
+}
+
+UStaticMeshComponent* FMantleTerrainBuilder::AddChunkComponent(AActor* Owner, USceneComponent* Root, const FMantleTerrainChunk& Chunk, UMaterialInterface* Material,
+	const bool bStatic, const bool bCastShadow, const bool bCollision, const bool bFar, const bool bRegister)
+{
+	// A chunk that stood before and was taken down leaves its component's name in use until the garbage collector has it.
+	FName ComponentName(*FString::Printf(TEXT("%s_%d_%d"), bFar ? TEXT("Far") : TEXT("Chunk"), Chunk.FirstSample.X, Chunk.FirstSample.Y));
+	if (StaticFindObjectFast(UStaticMeshComponent::StaticClass(), Owner, ComponentName))
+	{
+		ComponentName = MakeUniqueObjectName(Owner, UStaticMeshComponent::StaticClass(), ComponentName);
+	}
+	UStaticMeshComponent* Component = NewObject<UStaticMeshComponent>(Owner, ComponentName);
+	Component->SetMobility(bStatic ? EComponentMobility::Static : EComponentMobility::Movable);
+	Component->SetupAttachment(Root);
+	Component->SetRelativeLocation(FVector(Chunk.Origin));
+	Component->SetStaticMesh(Chunk.Mesh);
+	if (Material)
+	{
+		Component->SetMaterial(0, Material);
+	}
+	Component->SetCastShadow(bCastShadow && !bFar);
+	Component->SetCollisionProfileName(UCollisionProfile::CustomCollisionProfileName);
+	if (bCollision)
+	{
+		Component->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		Component->SetCollisionResponseToAllChannels(ECR_Block);
+	}
+	else
+	{
+		Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+	if (bFar)
+	{
+		// The far ground is a picture only: no overlap events, no part in distance-field lighting.
+		Component->SetGenerateOverlapEvents(false);
+		Component->bAffectDistanceFieldLighting = false;
+	}
+	Owner->AddInstanceComponent(Component);
+	if (bRegister)
+	{
+		Component->RegisterComponent();
+	}
+	return Component;
 }
 
 AActor* FMantleTerrainSpawn::TakeActor()

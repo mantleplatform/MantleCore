@@ -113,7 +113,7 @@ public:
 
 	/**
 	 * Unpacks a container: Magic, a uint32 little-endian inflated size, then one zlib stream. The size is held to 1..MaxInflated before
-	 * anything is allocated, and the stream must inflate to exactly that many bytes (the rules of FMantleNaniteSideFile::Unpack). False,
+	 * anything is allocated, and the stream must inflate to exactly that many bytes. False,
 	 * with the reason, otherwise; Out is empty then. Any thread.
 	 */
 	static bool Unpack(TConstArrayView<uint8> Container, const ANSICHAR* Magic, uint32 MaxInflated, TArray<uint8>& Out, FString* OutReason = nullptr);

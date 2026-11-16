@@ -7,6 +7,7 @@
 #include "MantleAssetStore.h"
 #include "MantleCellAssetUse.h"
 #include "MantleHeightfieldReader.h"
+#include "MantleNaniteSideFile.h"
 #include "MantlePlaceMaterial.h"
 #include "MantlePlaceTypes.h"
 #include "MantleRuntimeMesh.h"
@@ -28,8 +29,49 @@ class USkeletalMesh;
 class UStaticMesh;
 class UTexture;
 struct FMantleAnimClip;
+struct FMantlePreparedNanite;
+struct FMantlePreparedStaticMesh;
 struct FMantleSkinnedMesh;
 struct FMantleTerrainWeights;
+
+/**
+ * How much Nanite data a frame may register. The engine's streaming manager copies every root page of every mesh added since the last frame in one go, with no limit
+ * (NaniteStreamingManager.cpp ProcessNewResources), at about 0.08 to 0.20 ms a MiB on the render thread (measured, S3-A3 scaling table); so the asset set lets a frame build meshes whose root data adds up to
+ * BytesPerFrame, and one bigger mesh gets a frame to itself.
+ */
+struct MANTLERUNTIME_API FMantleNaniteFrameLimit
+{
+	static constexpr int64 BytesPerFrame = 8 * 1024 * 1024;
+
+	/**
+	 * Whether a mesh with MeshBytes of Nanite root data may be built in a frame that has already taken TakenBytes. A mesh with none (0) always may. Once an earlier mesh of
+	 * this frame had to wait (bEarlierWaiting) no later one with Nanite data goes ahead of it: the order is kept. Else a frame that took nothing builds any mesh, however big
+	 * (it gets the frame to itself), and one that took something builds it only if the two fit in BytesPerFrame (exactly BytesPerFrame fits).
+	 */
+	static bool MayBuild(int64 TakenBytes, int64 MeshBytes, bool bEarlierWaiting);
+};
+
+/**
+ * The Nanite root pages the asset set will have attached at once. The engine's root pool has a hard ceiling (NaniteStreamingManager.cpp:299-304 and 646-648: (2048 MB less the
+ * streaming pool) / 32 KB = 49,152 pages with a 512 MB pool (the ceiling this budget is taken from; DefaultEngine.ini now has 256 MB, which allows more), on Nvidia and Intel cards; about twice that on AMD) guarded only by a check that a shipping
+ * build does not run, and nothing else counts against it. Past the budget a mesh is drawn as its plain model. Pages, not bytes: a root page is 32 KB of GPU memory whatever it holds.
+ */
+struct MANTLERUNTIME_API FMantleNaniteRootPages
+{
+	/** The engine's ceiling for the root pool with our streaming pool (512 MB at most): (2048 MB - 512 MB) / 32 KB. A smaller pool raises it. */
+	static constexpr int64 EngineCeilingPages = (2048 - 512) * 1024 * 1024 / 32768;
+
+	/**
+	 * What the asset set may attach: 36,864 pages = 1.125 GB, 75% of the ceiling. The rest (12,288 pages, 384 MB) is left for what the count cannot see: a mesh needs one
+	 * run of free pages as long as itself (a 2,863-page whole-resident mesh needs 2,863 in a row after others were freed), the pool grows in 16 MB steps, meshes released
+	 * here live until the next garbage collection, and anything else registered in the process. Medieval's version 1 files attach 26,958 pages over a whole run (73% of this)
+	 * and its version 2 files about 2,500 (at most 32 root pages a mesh), so today's places stay under it.
+	 */
+	static constexpr int64 BudgetPages = 36864;
+
+	/** Whether Attached pages and a mesh of MeshPages fit in the budget. */
+	static bool Allows(int64 Attached, int64 MeshPages);
+};
 
 /** What one resolve call got back. */
 struct MANTLERUNTIME_API FMantleAssetResolveResult
@@ -519,6 +561,7 @@ public:
 	/** Inflated Nanite files held now, and the most held at once, in bytes (tests and the load log). */
 	int64 GetNaniteHeldBytes() const { return NaniteHeldBytes; }
 	int64 GetNaniteHeldPeakBytes() const { return NaniteHeldPeakBytes; }
+	int64 GetNaniteRootPagesAttached() const { return NaniteRootPagesAttached; }
 
 	/** Everything but the sounds has settled and OnDone has fired. */
 	bool IsComplete() const { return bCompleted; }
@@ -613,12 +656,19 @@ private:
 		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> LumenFile;
 
 		/**
-		 * Nanite files: the inflated MND1 (the download is an MNZ1, unpacked on the decode task so the game thread never inflates it).
-		 * Each mesh that names it reads its own copy of the data from it when it builds; dropped once the last such mesh has.
+		 * Nanite files: the inflated head of the MNZ2 (read and inflated by the decode task from the file in the store, so the game thread never does), and the container's table.
+		 * Each mesh that names it reads its own copy of the data from the head when it builds; dropped once the last such mesh has. The streamed pages are never held: the mesh's page store reads them from the file.
 		 */
 		TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> NaniteFile;
+		TSharedPtr<const FMantleNaniteTable, ESPMode::ThreadSafe> NaniteTable;
 
-		/** The size of NaniteFile as counted in NaniteHeldBytes (0 once released). */
+		/** Where the file is in the store (valid while the build, which pins it, lives). */
+		FString NanitePath;
+
+		/** When its fetch began (the time the store takes to verify a cached file the first time is logged). */
+		double FetchStartedAt = 0.0;
+
+		/** The size of the head and table as counted in NaniteHeldBytes (0 once released). */
 		int64 NaniteHeld = 0;
 
 		/**
@@ -644,6 +694,14 @@ private:
 		FString NaniteMeshTag;
 
 		TSharedPtr<FMantleStaticMeshData> MeshV2;
+		/** The MRM2 as mesh descriptions, made with the decode on a worker (FMantleRuntimeStaticMeshBuilder::Prepare); the build on the game thread finishes from it. */
+		TSharedPtr<FMantlePreparedStaticMesh> Prepared;
+		/** A big Nanite side file read on a worker (started when the mesh is first ready to build; the build waits for it, a frame at a time). */
+		TSharedPtr<FMantlePreparedNanite, ESPMode::ThreadSafe> NaniteRead;
+		/** The root bytes of the Nanite data this mesh will register (from its file's header): -1 not asked yet, 0 none. */
+		int64 NaniteRootBytes = -1;
+		/** The root pages this mesh attached (counted in NaniteRootPagesAttached, taken out when the build is erased). */
+		int32 NaniteRootPages = 0;
 		TSharedPtr<FMantleRuntimeMesh> MeshV1;
 		TSharedPtr<FMantleDecodedTexture> Texture;
 		TSharedPtr<FMantlePlaceMaterialDesc> Material;
@@ -842,11 +900,18 @@ private:
 	 */
 	void AddNaniteRecords(const FMantlePlace& Place, const TSet<FString>* OnlyMeshes = nullptr);
 
-	/** The inflated Nanite files held now, and the most held at once (the inflated MND1s a mesh has yet to read). */
+	/** The Nanite heads and tables held now, and the most held at once (what a mesh has yet to read: no page of any file is held). */
 	int64 NaniteHeldBytes = 0;
 	int64 NaniteHeldPeakBytes = 0;
+	/** Nanite files fetched from the store (path only) that were already stored: how many, the sum and worst of the time each took (the first use of a file in a process hashes all of it), and their bytes. */
+	int32 NaniteCachedFetches = 0;
+	double NaniteCachedFetchMs = 0.0;
+	double NaniteCachedFetchWorstMs = 0.0;
+	int64 NaniteCachedFetchBytes = 0;
+	/** The Nanite root pages the set's meshes have attached now, against FMantleNaniteRootPages::BudgetPages. */
+	int64 NaniteRootPagesAttached = 0;
 
-	/** Frees a Nanite build's inflated bytes (counted in NaniteHeldBytes). */
+	/** Frees a Nanite build's head and table (counted in NaniteHeldBytes). */
 	void ReleaseNaniteFile(FBuild& NaniteBuild);
 
 	/** A mesh id to its Nanite file's record key and the mesh's upload hash the file must name. */
@@ -875,7 +940,7 @@ private:
 	void StartFetches();
 	void OnFetched(const FBuildKey& Key, const FMantleAssetResult& Fetched);
 	void StartDecodes();
-	void OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStaticMeshData> MeshV2, TSharedPtr<FMantleRuntimeMesh> MeshV1,
+	void OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStaticMeshData> MeshV2, TSharedPtr<FMantlePreparedStaticMesh> Prepared, TSharedPtr<FMantleRuntimeMesh> MeshV1,
 		TSharedPtr<FMantleDecodedTexture> Texture, TSharedPtr<FMantlePlaceMaterialDesc> Material, TSharedPtr<const FMantleSoundData> Sound,
 		TSharedPtr<FMantleSkinnedMesh> Skinned, TSharedPtr<const FMantleAnimClip> Clip, TSharedPtr<const FMantleHeightfield> Heightfield,
 		TSharedPtr<const FMantleTerrainWeights> TerrainWeights, TSharedPtr<FMantleVehicleAsset> Vehicle, TSharedPtr<FMantleWeaponAsset> Weapon, TSharedPtr<FMantleWheelAsset> Wheel, const FString& Error);
@@ -903,6 +968,13 @@ private:
 	void QueueBuild(const FBuildKey& Key);
 	void PromoteMaterials();
 	void RunBuilds();
+	/**
+	 * A mesh whose Nanite file is big has it read on a worker before the build (the read is a copy of all of it). True when the build can go ahead now: nothing to read off the
+	 * game thread, or the read is done; false while it is still running (the build is tried again next frame).
+	 */
+	bool NaniteReadReady(FBuild& Build);
+	/** The root bytes of the Nanite data a mesh build will register (its file's header), 0 when it will register none. Cached on the build. */
+	int64 NaniteRootBytesOf(FBuild& Build);
 	void BuildOne(FBuild& Build);
 	void OnCollisionCooked(const FBuildKey& Key, bool bSucceeded);
 	void MarkReady(FBuild& Build, UObject* Object);

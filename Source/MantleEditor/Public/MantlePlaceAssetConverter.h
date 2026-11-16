@@ -314,7 +314,7 @@ struct MANTLEEDITOR_API FMantleConvertedMesh
 	FString LumenKey() const { return Key + TEXT("#lumen"); }
 
 	/**
-	 * Stage N: the mesh's Nanite side file as it is uploaded: the MNZ1 container (zlib) of the MND1 that FMantleMeshNaniteBake baked
+	 * Stage N: the mesh's Nanite side file as it is uploaded: the MNZ2 container (a zlib stream per piece) of the MND1 that FMantleMeshNaniteBake baked
 	 * from the mesh the converter was given (the creator's full-detail model, whatever the GLB had to drop), at most
 	 * FMantleMeshNaniteFile::MaxUploadBytes (a bigger model is baked coarser, never refused). Empty when it has none, with the reason
 	 * in NaniteNone (a phrase finishing "so players see its plain model: ..."; a Check warning says it too). NaniteHash is the hash of

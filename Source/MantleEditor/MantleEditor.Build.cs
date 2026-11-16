@@ -19,6 +19,9 @@ public class MantleEditor : ModuleRules
 			"MantleScriptTools"
 		});
 
+		// MantleMeshNaniteFile::InflatePiece reads a piece with zlib itself, to check its stream ends exactly where the container table says.
+		AddEngineThirdPartyPrivateStaticDependencies(Target, "zlib");
+
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"InputCore",

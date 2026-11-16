@@ -708,7 +708,7 @@ namespace MantlePreviewExportPrivate
 		else if (Kind == TEXT("nanite"))
 		{
 			// Stage N: a mesh's Nanite file is stored as uploaded (the backend's cook only checks its header and size), so the local
-			// tool is not asked; the MNZ1 container is unpacked to be sure the client reads it.
+			// tool is not asked; the MNZ2 container is unpacked (by the plugin; the game reads its pieces alone).
 			TArray<uint8> Mnd1;
 			FString Why;
 			if (Upload.Bytes.Num() > FMantleMeshNaniteFile::MaxUploadBytes || !FMantleMeshNaniteFile::Unpack(Upload.Bytes, Mnd1, &Why))
