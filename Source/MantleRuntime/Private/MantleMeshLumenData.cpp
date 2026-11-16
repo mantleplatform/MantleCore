@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleMeshLumenData.h"
+#include "MantleEngineTag.h"
 
 #include "DistanceFieldAtlas.h"
 #include "MeshCardBuild.h"
@@ -45,7 +46,7 @@ int64 FMantleMeshLumenData::GetAllocatedBytes() const
 
 FString FMantleMeshLumenFile::EngineTag()
 {
-	return FEngineVersion::Current().ToString(EVersionComponent::Changelist);
+	return MantleEngineTag::Current();
 }
 
 TArray<uint8> FMantleMeshLumenFile::Write(const FString& MeshTag, const FDistanceFieldVolumeData& DistanceField, const FCardRepresentationData& Cards)
@@ -130,7 +131,7 @@ bool FMantleMeshLumenFile::Read(const TConstArrayView<uint8> Bytes, const FStrin
 	FString Engine;
 	FString Mesh;
 	Reader << Engine << Mesh;
-	if (Reader.IsError() || Engine != EngineTag())
+	if (Reader.IsError() || !MantleEngineTag::Matches(Engine, EngineTag()))
 	{
 		SetReason(OutReason, FString::Printf(TEXT("was baked by engine %s (this client is %s)"), *Engine, *EngineTag()));
 		return false;

@@ -12,6 +12,7 @@
 #include "Engine/Texture2D.h"
 #include "HAL/PlatformTime.h"
 #include "MantleConnection.h"
+#include "MantleEngineTag.h"
 #include "MantleMeshLumenData.h"
 #include "MantleNaniteSideFile.h"
 #include "MantlePlaceStorage.h"
@@ -1873,7 +1874,7 @@ void FMantlePlaceAssets::AddLumenRecordsFor(const TMap<FString, const FMantleAss
 		{
 			continue;
 		}
-		if ((*Lumen)->Engine != Engine)
+		if (!MantleEngineTag::Matches((*Lumen)->Engine, Engine))
 		{
 			++OtherEngine;
 			UE_LOG(LogMantle, Verbose, TEXT("MANTLE_PLACE_ASSETS mesh %s Lumen data not present: baked by engine %s, this client is %s"), *MeshId, *(*Lumen)->Engine, *Engine);

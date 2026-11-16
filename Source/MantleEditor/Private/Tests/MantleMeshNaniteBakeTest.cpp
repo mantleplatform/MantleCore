@@ -7,7 +7,7 @@
 #include "MantlePlaceAssets.h"
 #include "MantlePlaceExporter.h"
 #include "MantleNaniteSideFile.h"
-#include "MantleNaniteSideFile.h"
+#include "MantleEngineTag.h"
 #include "MantleSha256.h"
 #include "NaniteAssemblyDataBuilder.h"
 
@@ -1322,7 +1322,7 @@ bool FMantleMeshNaniteContainerTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("the size limit is 64 MiB"), FMantleMeshNaniteFile::MaxUploadBytes, int64(67108864));
 	TestEqual(TEXT("and the converter's limit starts there"), FMantlePlaceAssetLimits().MaxNaniteBytes, FMantleMeshNaniteFile::MaxUploadBytes);
 	TestEqual(TEXT("the inflated limit is 512 MiB"), FMantleMeshNaniteFile::MaxRawBytes(), int64(536870912));
-	TestEqual(TEXT("the file is tied to the exact engine build, as the game compares it"), FMantleMeshNaniteFile::EngineTag(), FMantleNaniteSideFile::EngineTag());
+	TestTrue(TEXT("the file is tied to the engine release the game compares (MantleEngineTag: the changelist is not part of it)"), MantleEngineTag::Matches(FMantleMeshNaniteFile::EngineTag(), FMantleNaniteSideFile::EngineTag()));
 	return true;
 }
 
