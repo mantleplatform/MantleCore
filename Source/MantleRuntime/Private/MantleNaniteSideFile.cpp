@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleNaniteSideFile.h"
+#include "MantleEngineTag.h"
 
 #include "GenericPlatform/GenericPlatformFile.h"
 #include "HAL/PlatformFileManager.h"
@@ -166,7 +167,7 @@ int32 FMantleNaniteTable::FindPage(const uint64 Offset, const uint64 Size) const
 
 FString FMantleNaniteSideFile::EngineTag()
 {
-	return FEngineVersion::Current().ToString(EVersionComponent::Changelist);
+	return MantleEngineTag::Current();
 }
 
 bool FMantleNaniteSideFile::CanRunNanite()
@@ -182,7 +183,7 @@ bool FMantleNaniteSideFile::CanRunNanite()
 
 bool FMantleNaniteSideFile::ShouldFetch(const bool bCanRunNanite, const FString& EntryEngine, const FString& ThisEngine)
 {
-	return bCanRunNanite && !EntryEngine.IsEmpty() && EntryEngine == ThisEngine;
+	return bCanRunNanite && MantleEngineTag::Matches(EntryEngine, ThisEngine);
 }
 
 bool FMantleNaniteSideFile::ReadTableSize(const TConstArrayView<uint8> FirstBytes, const int64 FileSize, int64& OutTableBytes, FString* OutReason)
@@ -437,7 +438,7 @@ bool FMantleNaniteSideFile::Read(const TConstArrayView<uint8> Head, const FStrin
 	FString Engine;
 	FString Mesh;
 	Reader << Engine << Mesh;
-	if (Reader.IsError() || Engine != EngineTag())
+	if (Reader.IsError() || !MantleEngineTag::Matches(Engine, EngineTag()))
 	{
 		SetReason(OutReason, FString::Printf(TEXT("was baked by engine %s (this is %s)"), *Engine, *EngineTag()));
 		return false;

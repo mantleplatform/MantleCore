@@ -31,7 +31,7 @@ struct MANTLERUNTIME_API FMantleMeshLumenData
  * MLD1, the optional side file of one cooked mesh:
  *   "MLD1", uint32 format version (1),
  *   FString engine tag (FMantleMeshLumenFile::EngineTag: the engine's serialized layout is the format, so the
- *     tag of the editor that baked it must be the client's own),
+ *     release of the editor that baked it must be the client's own, the changelist aside),
  *   FString the mesh tag: the hash of the mesh upload it was baked from ("sha256:<hex>", the place file's assets[].hash),
  *   the distance field: local bounds, bMostlyTwoSided, its finest mip (FSparseDistanceFieldMip) and that mip's
  *     bytes, which the client makes the resident mip (the renderer streams the others only from a file on disk,
@@ -42,7 +42,7 @@ struct MANTLERUNTIME_API FMantleMeshLumenData
 class MANTLERUNTIME_API FMantleMeshLumenFile
 {
 public:
-	/** The engine version the file's layout belongs to (FEngineVersion::Current, changelist included). */
+	/** The engine release the file's layout belongs to ("5.8.3", see MantleEngineTag: the changelist is not part of it). */
 	static FString EngineTag();
 
 	/** The file for the mesh MeshTag names. Empty when the distance field is not valid (a mesh too thin or empty to have one). */

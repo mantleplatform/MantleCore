@@ -73,7 +73,7 @@ public:
 	/** The largest Nanite file (the backend's upload limit, assets.MaxNaniteBytes): the table keeps 32-bit offsets. */
 	static constexpr int64 MaxFileBytes = 64ll * 1024 * 1024;
 
-	/** The engine version the file's layout belongs to (FEngineVersion::Current, changelist included). */
+	/** The engine release the file's layout belongs to ("5.8.3", see MantleEngineTag: the changelist is not part of it). */
 	static FString EngineTag();
 
 	/**
@@ -85,7 +85,7 @@ public:
 
 	/**
 	 * Whether a mesh's Nanite entry (its baked-for engine tag) is worth downloading, decided from the manifest alone: this process
-	 * can run Nanite (bCanRunNanite) and the file was baked by exactly this engine build (EngineTag). A file for another build is never
+	 * can run Nanite (bCanRunNanite) and the file was baked by this engine release (MantleEngineTag::Matches, whatever the changelist). A file for another release is never
 	 * fetched: the mesh draws plain until the place is republished.
 	 */
 	static bool ShouldFetch(bool bCanRunNanite, const FString& EntryEngine, const FString& ThisEngine);
