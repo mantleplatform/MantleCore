@@ -86,10 +86,9 @@ bool FMantleTerrainFitTerrainsTest::RunTest(const FString& Parameters)
 {
 	TestTrue(TEXT("a place holds several terrains"), FMantlePlaceLimits::MaxTerrainsPerPlace > 1);
 
-	// The samples counted are the published heightfield's: a side past the heightfield's limit is resampled to it.
-	const int32 Max = FMantleHeightfieldReader::MaxSize;
+	// The samples counted are the published heightfields': a side past one heightfield's limit is cut into tiles that share their border samples.
 	TestEqual(TEXT("a landscape that fits is counted as it is"), FMantleTerrainExport::PublishedSamples(1017, 1144), static_cast<int64>(1017 * 1144));
-	TestEqual(TEXT("a wider one as it is published"), FMantleTerrainExport::PublishedSamples(2521, 1891), static_cast<int64>(Max) * 1891);
+	TestEqual(TEXT("a wider one as its tiles together: 2,049 and 473 columns"), FMantleTerrainExport::PublishedSamples(2521, 1891), static_cast<int64>(2049 + 473) * 1891);
 	TestEqual(TEXT("no ground counts nothing"), FMantleTerrainExport::PublishedSamples(1, 50), static_cast<int64>(0));
 	TestEqual(TEXT("nor does a landscape with nothing loaded"), FMantleTerrainExport::PublishedSamples(static_cast<const AActor*>(nullptr)), static_cast<int64>(0));
 

@@ -713,7 +713,9 @@ namespace MantleCoverageSurveyPrivate
 		for (const AActor* Landscape : Landscapes)
 		{
 			const FString Label = CoverageLabelOf(Landscape);
-			const FString Name = Label.Left(FMantlePlaceLimits::MaxEntityNameLength);
+			// A landscape larger than one heightfield publishes as terrain tiles, named by tile (its first one is the one to look for).
+			const int32 Tiles = FMantleTerrainExport::TileCount(Landscape);
+			const FString Name = FMantleTerrainExport::TileName(Label, FIntPoint::ZeroValue, Tiles);
 			const FMantleEntity* Published = Result.Place.Entities.FindByPredicate([&Name](const FMantleEntity& Entity)
 			{
 				return Entity.Type == EMantleEntityType::Terrain && Entity.Name == Name;
@@ -721,21 +723,10 @@ namespace MantleCoverageSurveyPrivate
 
 			if (Published)
 			{
-				// A landscape wider than the heightfield format allows is resampled.
-				bool bResampled = false;
-				if (const ALandscapeProxy* Proxy = Cast<ALandscapeProxy>(Landscape))
+				// Every sample is published, at the landscape's own spacing: a larger landscape is cut into terrain tiles, not resampled.
+				if (Tiles > 1)
 				{
-					int32 MinX = 0;
-					int32 MinY = 0;
-					int32 MaxX = 0;
-					int32 MaxY = 0;
-					const ULandscapeInfo* Info = Proxy->GetLandscapeInfo();
-					bResampled = Info && Info->GetLandscapeExtent(MinX, MinY, MaxX, MaxY)
-						&& (MaxX - MinX + 1 > FMantleHeightfieldReader::MaxSize || MaxY - MinY + 1 > FMantleHeightfieldReader::MaxSize);
-				}
-				if (bResampled)
-				{
-					Coverage.Add(Cat::Terrain, EOutcome::Approximated, Label, TEXT("resampled to the most samples a terrain holds."));
+					Coverage.Add(Cat::Terrain, EOutcome::Kept, Label, FString::Printf(TEXT("published as %d terrain tiles."), Tiles));
 				}
 				else
 				{

@@ -1040,8 +1040,8 @@ public:
 	bool ConvertThumbnail(TConstArrayView<FColor> Pixels, int32 Width, int32 Height, FMantlePlaceAssetSet& Out);
 
 	/**
-	 * A landscape (#466, FMantleTerrainExport): its heights as MHF1, resampled to the heightfield cap
-	 * when larger, and with more than one painted layer its weightmap as an RGBA PNG uploaded without
+	 * A landscape (#466, FMantleTerrainExport): its heights as MHF1 (a landscape larger than one heightfield is cut into
+	 * terrain tiles, one MHF1 each, at its own spacing), and with more than one painted layer its weightmap as an RGBA PNG uploaded without
 	 * a role (kept lossless), halved until it fits MaxTextureBytes. Its layer materials convert as
 	 * materials (FMantlePlaceDependencies::AddTerrain). Not cached: it is read, not baked.
 	 */
@@ -1059,6 +1059,14 @@ public:
 	 */
 	bool ConvertTerrainSource(UWorld* World, const FMantleTerrainSource& Source, const FString& Key, const FString& WeightmapKey,
 		const FString& Label, const FString& Path, FMantlePlaceAssetSet& Out);
+
+	/**
+	 * One Terrain's files (a whole landscape of at most one heightfield, or one tile of a larger one: FMantleTerrainExport::CutTile): its
+	 * heightfield, and with more than one of Layers its weightmaps, and its hole mask when it has holes. Layers are the landscape's, chosen once.
+	 * ConvertTerrainSource calls this for each tile with its key, WeightmapKey and Path ending in the tile's "#tx,ty".
+	 */
+	bool ConvertTerrainTile(const FMantleTerrainSource& Source, const TArray<FMantleTerrainLayerChoice>& Layers, const FString& Key,
+		const FString& WeightmapKey, const FString& Label, const FString& Path, FMantlePlaceAssetSet& Out);
 
 	/** Called before each asset (done, total, the Unreal asset's name). Return false to cancel. For F6's progress panel. */
 	TFunction<bool(int32, int32, const FString&)> OnProgress;

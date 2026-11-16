@@ -321,9 +321,9 @@ double FMantleTerrainGrassExport::DensityPerSquareMeter(const float EngineDensit
 	return static_cast<double>(EngineDensity) / 100.0;
 }
 
-FString FMantleTerrainGrassExport::GrassMapKey(const AActor* Landscape, const int32 MapIndex)
+FString FMantleTerrainGrassExport::GrassMapKey(const AActor* Landscape, const int32 MapIndex, const FString& TileSuffix)
 {
-	return FString::Printf(TEXT("grassmap:%s:%d"), Landscape ? *Landscape->GetPathName() : TEXT(""), MapIndex);
+	return FString::Printf(TEXT("grassmap:%s:%d%s"), Landscape ? *Landscape->GetPathName() : TEXT(""), MapIndex, *TileSuffix);
 }
 
 void FMantleTerrainGrassExport::SlotToMapChannel(const int32 Slot, int32& OutMap, int32& OutChannel)
@@ -630,37 +630,53 @@ bool FMantleTerrainGrassExport::ConvertMaps(const AActor* Landscape, const FMant
 		Out.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, Label, Warning.Text,
 			TEXT("It still publishes. Nothing to do unless the grass matters to how your place looks; if it does, change the grass type or the landscape material.") });
 	}
-	for (int32 MapIndex = 0; MapIndex < Result.NumMaps(); ++MapIndex)
+	// One set of maps per terrain tile, each over the tile's own samples (one tile: the landscape's).
+	const TArray<FMantleTerrainTile> Tiles = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height);
+	for (const FMantleTerrainTile& Tile : Tiles)
 	{
-		TArray<int32> Indices;
-		for (int32 Channel = 0; Channel < 4; ++Channel)
+		const FString Suffix = FMantleTerrainExport::TileSuffix(Tile.Index, Tiles.Num());
+		TArray<TArray<uint8>> SlicedWeights;
+		if (Tiles.Num() > 1)
 		{
-			Indices.Add(MapIndex * 4 + Channel < Result.TypeNames.Num() ? MapIndex * 4 + Channel : INDEX_NONE);
+			for (const TArray<uint8>& Grid : Result.TypeWeights)
+			{
+				SlicedWeights.Add(FMantleTerrainExport::SliceGrid(Grid, Source.Width, Source.Height, Tile));
+			}
 		}
-		// Lossless (no role, so the cook keeps the PNG), halved until the moderation classifier takes it, as the weightmap is.
-		FIntPoint Size = FMantleTerrainExport::WeightmapSize(Source.Width, Source.Height, Limits.MaxTextureSize);
-		TArray<uint8> Png = FMantlePng::EncodeRGBA8(Size.X, Size.Y, MakeMap(Result.TypeWeights, Indices, Source.Width, Source.Height, Size));
-		while (Png.Num() > Limits.MaxTextureBytes && (Size.X > 64 || Size.Y > 64))
+		const TArray<TArray<uint8>>& Weights = Tiles.Num() > 1 ? SlicedWeights : Result.TypeWeights;
+		const FString TileLabel = Tiles.Num() > 1 ? FMantleTerrainExport::TileName(Label, Tile.Index, Tiles.Num()) : Label;
+		for (int32 MapIndex = 0; MapIndex < Result.NumMaps(); ++MapIndex)
 		{
-			Size = FIntPoint(FMath::Max(Size.X / 2, 1), FMath::Max(Size.Y / 2, 1));
-			Png = FMantlePng::EncodeRGBA8(Size.X, Size.Y, MakeMap(Result.TypeWeights, Indices, Source.Width, Source.Height, Size));
+			TArray<int32> Indices;
+			for (int32 Channel = 0; Channel < 4; ++Channel)
+			{
+				Indices.Add(MapIndex * 4 + Channel < Result.TypeNames.Num() ? MapIndex * 4 + Channel : INDEX_NONE);
+			}
+			// Lossless (no role, so the cook keeps the PNG), halved until the moderation classifier takes it, as the weightmap is.
+			FIntPoint Size = FMantleTerrainExport::WeightmapSize(Tile.Width, Tile.Height, Limits.MaxTextureSize);
+			TArray<uint8> Png = FMantlePng::EncodeRGBA8(Size.X, Size.Y, MakeMap(Weights, Indices, Tile.Width, Tile.Height, Size));
+			while (Png.Num() > Limits.MaxTextureBytes && (Size.X > 64 || Size.Y > 64))
+			{
+				Size = FIntPoint(FMath::Max(Size.X / 2, 1), FMath::Max(Size.Y / 2, 1));
+				Png = FMantlePng::EncodeRGBA8(Size.X, Size.Y, MakeMap(Weights, Indices, Tile.Width, Tile.Height, Size));
+			}
+			if (Png.IsEmpty() || Png.Num() > Limits.MaxTextureBytes)
+			{
+				Out.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, FString(),
+					FString::Printf(TEXT("Landscape '%s''s grass could not be made into an image Mantle takes."), *TileLabel),
+					TEXT("Use fewer grass types on the landscape material, then publish again.") });
+				return false;
+			}
+			FMantleConvertedTexture Texture;
+			Texture.Key = GrassMapKey(Landscape, MapIndex, Suffix);
+			Texture.Name = FString::Printf(TEXT("%s (grass %d)"), *TileLabel, MapIndex + 1);
+			Texture.Format = TEXT("png");
+			Texture.Width = Size.X;
+			Texture.Height = Size.Y;
+			Texture.Hash = FMantleSha256::AssetHash(Png);
+			Texture.Bytes = MoveTemp(Png);
+			Out.AddTexture(MoveTemp(Texture));
 		}
-		if (Png.IsEmpty() || Png.Num() > Limits.MaxTextureBytes)
-		{
-			Out.Issues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, FString(),
-				FString::Printf(TEXT("Landscape '%s''s grass could not be made into an image Mantle takes."), *Label),
-				TEXT("Use fewer grass types on the landscape material, then publish again.") });
-			return false;
-		}
-		FMantleConvertedTexture Texture;
-		Texture.Key = GrassMapKey(Landscape, MapIndex);
-		Texture.Name = FString::Printf(TEXT("%s (grass %d)"), *Label, MapIndex + 1);
-		Texture.Format = TEXT("png");
-		Texture.Width = Size.X;
-		Texture.Height = Size.Y;
-		Texture.Hash = FMantleSha256::AssetHash(Png);
-		Texture.Bytes = MoveTemp(Png);
-		Out.AddTexture(MoveTemp(Texture));
 	}
 	return true;
 }

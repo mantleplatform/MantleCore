@@ -98,6 +98,13 @@ struct MANTLEEDITOR_API FMantleTerrainSource
 	bool bCarveRefreshed = false;
 	bool bCarveStale = false;
 
+	/**
+	 * The slope overlay's weight at every sample (BakeSlopeMask over the whole landscape), Width x Height, when it was baked before the landscape
+	 * was cut into terrain tiles (CutTile): a tile's slopes at its border then come from the neighbouring tile's heights too. Empty for none,
+	 * and then MakeWeightmaps bakes it from Heights.
+	 */
+	TArray<uint8> SlopeMask;
+
 	/** The landscape sample (in its own grid) that sample (0, 0) is: what a mask's landscape UV is counted from. */
 	FIntPoint FirstSample = FIntPoint::ZeroValue;
 
@@ -106,6 +113,28 @@ struct MANTLEEDITOR_API FMantleTerrainSource
 
 	/** The landscape actor read, which Mantle Place Settings entries for one landscape name (FMantleTerrainLayerSetting::Landscape); empty for none. */
 	FSoftObjectPath LandscapePath;
+};
+
+/**
+ * One terrain tile of a landscape (stage 4, terrain-tiles-format.md): a block of the landscape's own samples, at most
+ * FMantleTerrainExport::TileQuads quads a side, published as a Terrain entity of its own. Neighbouring tiles share
+ * their border samples (the last column of one is the first column of the next).
+ */
+struct FMantleTerrainTile
+{
+	/** Which tile: (tx, ty), counted from the landscape's sample (0, 0). */
+	FIntPoint Index = FIntPoint::ZeroValue;
+
+	/** The landscape's sample (relative to the source's sample (0, 0)) that this tile's sample (0, 0) is. */
+	FIntPoint First = FIntPoint::ZeroValue;
+
+	/** Samples along X and Y. */
+	int32 Width = 0;
+	int32 Height = 0;
+
+	/** Another tile follows this one along X (Y): this is a full tile on that axis and not the last one. */
+	bool bNeighborX = false;
+	bool bNeighborY = false;
 };
 
 /** One Terrain layer as Export writes it: the landscape's layer, the material Mantle Place Settings gives it, and its tiling. */
@@ -164,8 +193,10 @@ struct FMantleTerrainFold
  * A level's landscapes as Mantle Terrains (#466), one Terrain entity each: what Export, Check this place and the asset
  * converter share, so the three never disagree.
  *
- * A landscape becomes one heightfield (MHF1, at most 2049 samples a side: a larger one is resampled)
- * and, with more than one painted layer, one RGBA weightmap texture (at most the texture size cap; a
+ * A landscape becomes one heightfield (MHF1, at most 2049 samples a side) or, when it is larger, one heightfield per terrain tile
+ * (PlanTiles: 2,048 quads each, cut at the landscape's own spacing, neighbours sharing a border row or column of samples), each a Terrain
+ * entity of its own with its own paint, holes and grass maps, and
+ * with more than one painted layer, one RGBA weightmap texture (at most the texture size cap; a
  * second one, weightmap2, for layers 4 to 7), plus up to FMantlePlaceLimits::MaxTerrainLayers layer
  * materials: a layer's entry in Mantle Place Settings, else the look read from the landscape's own
  * material (#628; a landscape material's layer blend is not something a player's client can rebuild, so
@@ -191,7 +222,70 @@ public:
 	/** Every landscape in World, in actor order. */
 	static TArray<AActor*> CollectLandscapes(UWorld* World);
 
-	/** "heightfield:" + the landscape's path: the local key the converter, the upload queue and the exporter share. */
+	/** Quads in one terrain tile: 2048, 16 chunks of 128 quads, and one less than the most samples a heightfield holds. */
+	static constexpr int32 TileQuads = 2048;
+	static_assert(TileQuads + 1 == FMantleHeightfieldReader::MaxSize, "a terrain tile is one whole heightfield");
+
+	/**
+	 * How a landscape of Width x Height samples is cut into terrain tiles: from its sample (0, 0), TileQuads quads each, the last tile on an
+	 * axis taking what is left (at least 2 samples), neighbours sharing their border samples. ceil((samples - 1) / TileQuads) tiles
+	 * on an axis, at least 1, so a landscape of at most MaxSize samples a side is one tile that is all of it. Row by row (ty, then tx). Pure data.
+	 */
+	static TArray<FMantleTerrainTile> PlanTiles(int32 Width, int32 Height);
+
+	/** The number of tiles PlanTiles gives. */
+	static int32 TileCount(int32 Width, int32 Height);
+
+	/** The tiles an actor's landscape extent (as ReadLandscape would read it, without reading it) is cut into; 1 when it has none loaded. */
+	static int32 TileCount(const AActor* Landscape);
+
+	/**
+	 * What a tile's local keys and entity name end with: "#tx,ty" for a landscape of more than one tile, and nothing for a one-tile
+	 * landscape (its keys, name and id are what they were before tiles). TileCount is the landscape's tile count.
+	 */
+	static FString TileSuffix(FIntPoint Index, int32 TileCount);
+
+	/** The Terrain entity's name for a tile: Label itself for a one-tile landscape, else "<Label>_<tx>_<ty>", the label cut so that the whole name fits MaxEntityNameLength. */
+	static FString TileName(const FString& Label, FIntPoint Index, int32 TileCount);
+
+	/**
+	 * The Terrain entity's id for a tile, from the id the landscape has (BaseId, "ent_" + its guid): tile (0, 0) keeps it, any other tile has
+	 * "ent_" + the first 24 lowercase hex digits of the MD5 of "<guid>|T|<tx>|<ty>" (guid being BaseId without "ent_"). A pure function of
+	 * the landscape's id and (tx, ty), so a republish keeps every tile's id.
+	 */
+	static FString TileEntityId(const FString& BaseId, FIntPoint Index);
+
+	/**
+	 * A layer's tiling for a tile (terrain-tiles-format.md section 4). The game maps a terrain's UV 0 to 1 over its own extent, so two tiles
+	 * are in phase at a shared border only when the tile that ends there repeats a layer's texture a whole number of times. A tile with
+	 * a neighbour after it takes repeats = max(1, round(extent / TilingCm)) and tiling extent / repeats along the axis the neighbour
+	 * is on (X when both, and the extent there is TileQuads x spacing); a tile with none keeps TilingCm.
+	 */
+	static double TileTiling(double TilingCm, const FMantleTerrainTile& Tile, double SpacingX, double SpacingY);
+
+	/** The Terrain entity's transform for a tile: Source's, moved to the tile's sample (0, 0). */
+	static FTransform TileTransform(const FMantleTerrainSource& Source, const FMantleTerrainTile& Tile);
+
+	/** Whether the tile's samples hold any hole (Source.Holes), so its Terrain publishes a hole mask. */
+	static bool TileHasHoles(const FMantleTerrainSource& Source, const FMantleTerrainTile& Tile);
+
+	/** The Width x Height grid's samples in Tile, row-major (what a tile gets of a grid over the landscape: a layer's weights, a grass type's). Empty when Grid is not Width x Height. */
+	static TArray<uint8> SliceGrid(const TArray<uint8>& Grid, int32 Width, int32 Height, const FMantleTerrainTile& Tile);
+
+	/**
+	 * The slope overlay layer's weights over the whole Source, to hand to every CutTile, when Layers has a slope overlay layer; empty otherwise.
+	 */
+	static TArray<uint8> BakeSlopeFor(const FMantleTerrainSource& Source, const TArray<FMantleTerrainLayerChoice>& Layers);
+
+	/**
+	 * The tile as a landscape of its own: its heights (the landscape's own values, bit for bit), the weights of every one of Source's layers
+	 * (so a layer's index is the same in every tile), its holes (none when the tile has no hole) and its transform, the same spacing,
+	 * height scale and offset, layers and materials. SlopeMask is BakeSlopeFor's (null for none). Everything that makes a Terrain from a
+	 * source (MakeHeightfield, MakeWeightmaps, EncodeHoleMask) then works on a tile unchanged.
+	 */
+	static FMantleTerrainSource CutTile(const FMantleTerrainSource& Source, const FMantleTerrainTile& Tile, const TArray<uint8>* SlopeMask = nullptr);
+
+	/** "heightfield:" + the landscape's path: the local key the converter, the upload queue and the exporter share. A tile adds TileSuffix. */
 	static FString HeightfieldKey(const AActor* Landscape);
 
 	/** "weightmap:" + the landscape's path, the key of its weightmap texture. */
@@ -276,7 +370,7 @@ public:
 	/**
 	 * The heightfield published for Source: its samples as they are when both sides fit MaxSamples,
 	 * else resampled (bilinear) to at most MaxSamples a side with the spacing grown so the terrain
-	 * keeps its size.
+	 * keeps its size. Export never resamples: a landscape larger than one heightfield is cut into tiles (PlanTiles, CutTile) first.
 	 */
 	static FMantleHeightfield MakeHeightfield(const FMantleTerrainSource& Source, int32 MaxSamples = FMantleHeightfieldReader::MaxSize);
 
@@ -341,7 +435,7 @@ public:
 	 */
 	static TArray<FColor> MakeWeightmap(const FMantleTerrainSource& Source, TConstArrayView<int32> SourceLayers, FIntPoint Size, TConstArrayView<int32> ChannelOfSource = TConstArrayView<int32>());
 
-	/** The heightfield samples a Width x Height landscape publishes (MakeHeightfield's width x height): what FMantlePlaceLimits::MaxTerrainSamplesPerPlace counts. */
+	/** The heightfield samples a Width x Height landscape publishes, its tiles' together (a border sample is in both tiles): what FMantlePlaceLimits::MaxTerrainSamplesPerPlace counts. */
 	static int64 PublishedSamples(int32 Width, int32 Height);
 
 	/** PublishedSamples of the extent ReadLandscape would read for Landscape, without reading it; 0 when it has none loaded. */
@@ -349,17 +443,24 @@ public:
 
 	/**
 	 * Which landscapes of these PublishedSamples (in CollectLandscapes' order) publish as Terrains: the indices kept, in order. Past
-	 * FMantlePlaceLimits::MaxTerrainsPerPlace kept, a landscape is left out (TooManyLandscapes); one that would take the place past
-	 * MaxTerrainSamplesPerPlace is left out (OverSampleBudget) and the next may still fit. Each one left out is in OutLeftOut, by index,
-	 * with its error under Labels' entry. Pure data.
+	 * FMantlePlaceLimits::MaxTerrainsPerPlace Terrains kept (a landscape is as many Terrains as it has tiles: Tiles, one each when empty),
+	 * a landscape is left out (TooManyLandscapes); one that would take the place past MaxTerrainSamplesPerPlace is left out
+	 * (OverSampleBudget) and the next may still fit. Each one left out is in OutLeftOut, by index, with its error under Labels' entry. Pure data.
 	 */
-	static TArray<int32> FitTerrains(TConstArrayView<int64> Samples, TConstArrayView<FString> Labels, TArray<TPair<int32, FMantleValidationIssue>>& OutLeftOut);
+	static TArray<int32> FitTerrains(TConstArrayView<int64> Samples, TConstArrayView<FString> Labels, TArray<TPair<int32, FMantleValidationIssue>>& OutLeftOut,
+		TConstArrayView<int32> Tiles = TConstArrayView<int32>());
 
 	/** World's landscapes that publish as Terrains (FitTerrains over CollectLandscapes): what Gather, Check and Export all take. */
 	static TArray<AActor*> TerrainLandscapes(UWorld* World, TArray<TPair<const AActor*, FMantleValidationIssue>>* OutLeftOut = nullptr);
 
 	/** The error for landscape Number (counted from 1, in CollectLandscapes' order) past FMantlePlaceLimits::MaxTerrainsPerPlace: it is left out. */
-	static FMantleValidationIssue TooManyLandscapes(const FString& Label, int32 Number);
+	static FMantleValidationIssue TooManyLandscapes(const FString& Label, int32 Number, int32 Tiles = 1);
+
+	/**
+	 * What Check this place says of a landscape of Width x Height samples that publishes as more than one terrain tile: a warning
+	 * "This landscape publishes as N terrain tiles", with the grid and what each tile is. Pure data.
+	 */
+	static FMantleValidationIssue TilesIssue(const FString& Label, int32 Width, int32 Height);
 
 	/**
 	 * The error for a landscape of Samples (PublishedSamples) that the landscapes before it, with Before samples, leave no room for under

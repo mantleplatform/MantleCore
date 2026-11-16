@@ -5005,70 +5005,111 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				FMantleCoverageSurvey::ReportTerrainLayers(Result.Coverage, Label, Source, Layers);
 			}
 
-			FMantleEntity Entity;
-			Entity.Id = MakeEntityId(Landscape, UsedIds);
-			Entity.Type = EMantleEntityType::Terrain;
-			Entity.Name = Label.Left(FMantlePlaceLimits::MaxEntityNameLength);
-			Entity.Transform = Source.Transform;
-			FMantleTerrainProps Props;
-			Props.Heightfield = Uploads.IdFor(FMantleTerrainExport::HeightfieldKey(Landscape), EMantleAssetKind::Heightfield, Landscape);
-			if (Layers.Num() > 1)
-			{
-				Props.Weightmap = Uploads.IdFor(FMantleTerrainExport::WeightmapKey(Landscape), EMantleAssetKind::Texture, Landscape);
-			}
-			// Layers 4 to 7 (#628) are in a second weightmap, uploaded by the converter under its own key.
-			if (FMantleTerrainExport::WeightmapCount(Layers.Num()) > 1)
-			{
-				Props.Weightmap2 = Uploads.IdFor(FMantleTerrainExport::Weightmap2Key(Landscape), EMantleAssetKind::Texture, Landscape);
-			}
-			// Where it has no ground, the hole mask the converter makes under its own key.
-			if (FMantleTerrainExport::HasHoles(Source))
-			{
-				Props.Holes = Uploads.IdFor(FMantleTerrainExport::HolesKey(Landscape), EMantleAssetKind::Texture, Landscape);
-			}
-			for (const FMantleTerrainLayerChoice& Choice : Layers)
-			{
-				FMantleTerrainLayer& Layer = Props.Layers.AddDefaulted_GetRef();
-				Layer.Tiling = Choice.TilingCm;
-				// #596: the layer info's Phys Material, when it is one of Mantle's surface physical materials.
-				Layer.Surface = MatchSurface(Choice.PhysMaterial);
-				// A library material by its id, anything else through the upload path, as a mesh slot's is.
-				const FString LibraryId = Library.FindIdByPath(FSoftObjectPath(Choice.Material));
-				if (!LibraryId.IsEmpty())
-				{
-					ReferencedAssets.Add(LibraryId);
-					Layer.Material = LibraryId;
-				}
-				else
-				{
-					Layer.Material = Uploads.IdFor(FMantlePlaceAssets::MaterialKey(Choice.Material), EMantleAssetKind::Material, Choice.Material);
-				}
-			}
 			// Landscape grass (#628, FMantleTerrainGrassExport): an entry per grass type variety, its mesh and
 			// material overrides named as a Scatter mesh's, its map by the upload key the converter makes.
 			const FMantleTerrainGrassResult Grass = FMantleTerrainGrassExport::Gather(Landscape, Source, /*bLog*/ false);
-			for (int32 GrassIndex = 0; GrassIndex < Grass.Entries.Num(); ++GrassIndex)
+			// What the first tile names (the layers' materials, the grass meshes), the same in every tile.
+			TArray<FMantleTerrainLayer> LayerDrafts;
+			TArray<FMantleScatterMesh> GrassNames;
+
+			// One Terrain entity per terrain tile (a landscape of at most one heightfield's samples a side is one tile: its whole), each with
+			// the same layers, its own paint, holes and grass maps, and the layers' tiling made a whole number of repeats where a tile has a neighbour.
+			const TArray<FMantleTerrainTile> Tiles = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height);
+			for (const FMantleTerrainTile& Tile : Tiles)
 			{
-				const FMantleGrassEntryDraft& Draft = Grass.Entries[GrassIndex];
-				FMantleScatterMeshSettings GrassMesh;
-				GrassMesh.Mesh = const_cast<UStaticMesh*>(Draft.Mesh);
-				for (UMaterialInterface* GrassMaterial : Draft.Materials)
+				const FString Suffix = FMantleTerrainExport::TileSuffix(Tile.Index, Tiles.Num());
+				FMantleEntity Entity;
+				if (Tile.Index == FIntPoint::ZeroValue)
 				{
-					GrassMesh.Materials.Add(GrassMaterial);
+					Entity.Id = MakeEntityId(Landscape, UsedIds);
 				}
-				FMantleScatterMesh GrassNamed;
-				ExporterReadScatterMesh(GrassMesh, FString::Printf(TEXT("%s/properties/grass/%d"), *SourcePath, GrassIndex),
-					ReferencedAssets, Uploads, Result.Errors, GrassNamed);
-				const FString GrassMap = Uploads.IdFor(FMantleTerrainGrassExport::GrassMapKey(Landscape, Draft.Map), EMantleAssetKind::Texture, Landscape);
-				Props.Grass.Add(FMantleTerrainGrassExport::MakeGrass(Draft, GrassMap, GrassNamed.MeshId, GrassNamed.Materials));
+				else
+				{
+					// Its id is a pure function of the landscape's id and (tx, ty); a collision (never in practice) is suffixed as MakeEntityId does.
+					const FString TileBase = FMantleTerrainExport::TileEntityId(FMantlePlaceExporter::EntityIdFor(Landscape), Tile.Index);
+					Entity.Id = TileBase;
+					int32 IdSuffix = 2;
+					while (UsedIds.Contains(Entity.Id))
+					{
+						Entity.Id = FString::Printf(TEXT("%s_%d"), *TileBase.Left(36), IdSuffix++);
+					}
+					UsedIds.Add(Entity.Id);
+				}
+				Entity.Type = EMantleEntityType::Terrain;
+				Entity.Name = FMantleTerrainExport::TileName(Label, Tile.Index, Tiles.Num());
+				Entity.Transform = Tiles.Num() > 1 ? FMantleTerrainExport::TileTransform(Source, Tile) : Source.Transform;
+				FMantleTerrainProps Props;
+				Props.Heightfield = Uploads.IdFor(FMantleTerrainExport::HeightfieldKey(Landscape) + Suffix, EMantleAssetKind::Heightfield, Landscape);
+				if (Layers.Num() > 1)
+				{
+					Props.Weightmap = Uploads.IdFor(FMantleTerrainExport::WeightmapKey(Landscape) + Suffix, EMantleAssetKind::Texture, Landscape);
+				}
+				// Layers 4 to 7 (#628) are in a second weightmap, uploaded by the converter under its own key.
+				if (FMantleTerrainExport::WeightmapCount(Layers.Num()) > 1)
+				{
+					Props.Weightmap2 = Uploads.IdFor(FMantleTerrainExport::Weightmap2Key(Landscape) + Suffix, EMantleAssetKind::Texture, Landscape);
+				}
+				// Where it has no ground, the hole mask the converter makes under its own key (a tile with no hole has none).
+				if (Tiles.Num() > 1 ? FMantleTerrainExport::TileHasHoles(Source, Tile) : FMantleTerrainExport::HasHoles(Source))
+				{
+					Props.Holes = Uploads.IdFor(FMantleTerrainExport::HolesKey(Landscape) + Suffix, EMantleAssetKind::Texture, Landscape);
+				}
+				if (Tile.Index == FIntPoint::ZeroValue)
+				{
+					for (const FMantleTerrainLayerChoice& Choice : Layers)
+					{
+						FMantleTerrainLayer& Layer = LayerDrafts.AddDefaulted_GetRef();
+						Layer.Tiling = Choice.TilingCm;
+						// #596: the layer info's Phys Material, when it is one of Mantle's surface physical materials.
+						Layer.Surface = MatchSurface(Choice.PhysMaterial);
+						// A library material by its id, anything else through the upload path, as a mesh slot's is.
+						const FString LibraryId = Library.FindIdByPath(FSoftObjectPath(Choice.Material));
+						if (!LibraryId.IsEmpty())
+						{
+							ReferencedAssets.Add(LibraryId);
+							Layer.Material = LibraryId;
+						}
+						else
+						{
+							Layer.Material = Uploads.IdFor(FMantlePlaceAssets::MaterialKey(Choice.Material), EMantleAssetKind::Material, Choice.Material);
+						}
+					}
+				}
+				// The same layers in every tile; the tiling is the tile's own (a whole number of repeats where a neighbour follows).
+				Props.Layers = LayerDrafts;
+				for (FMantleTerrainLayer& Layer : Props.Layers)
+				{
+					Layer.Tiling = FMantleTerrainExport::TileTiling(Layer.Tiling, Tile, Source.SpacingX, Source.SpacingY);
+				}
+				for (int32 GrassIndex = 0; GrassIndex < Grass.Entries.Num(); ++GrassIndex)
+				{
+					const FMantleGrassEntryDraft& Draft = Grass.Entries[GrassIndex];
+					if (!GrassNames.IsValidIndex(GrassIndex))
+					{
+						FMantleScatterMeshSettings GrassMesh;
+						GrassMesh.Mesh = const_cast<UStaticMesh*>(Draft.Mesh);
+						for (UMaterialInterface* GrassMaterial : Draft.Materials)
+						{
+							GrassMesh.Materials.Add(GrassMaterial);
+						}
+						FMantleScatterMesh& GrassNamed = GrassNames.AddDefaulted_GetRef();
+						ExporterReadScatterMesh(GrassMesh, FString::Printf(TEXT("%s/properties/grass/%d"), *SourcePath, GrassIndex),
+							ReferencedAssets, Uploads, Result.Errors, GrassNamed);
+					}
+					const FString GrassMap = Uploads.IdFor(FMantleTerrainGrassExport::GrassMapKey(Landscape, Draft.Map, Suffix), EMantleAssetKind::Texture, Landscape);
+					Props.Grass.Add(FMantleTerrainGrassExport::MakeGrass(Draft, GrassMap, GrassNames[GrassIndex].MeshId, GrassNames[GrassIndex].Materials));
+				}
+				if (Tile.Index == FIntPoint::ZeroValue)
+				{
+					FMantleTerrainGrassExport::ReportCoverage(Result.Coverage, Grass);
+				}
+				Entity.Props.Set<FMantleTerrainProps>(MoveTemp(Props));
+				for (const FName& Tag : Landscape->Tags)
+				{
+					Entity.Tags.Add(Tag.ToString());
+				}
+				Place.Entities.Add(MoveTemp(Entity));
 			}
-			FMantleTerrainGrassExport::ReportCoverage(Result.Coverage, Grass);
-			Entity.Props.Set<FMantleTerrainProps>(MoveTemp(Props));
-			for (const FName& Tag : Landscape->Tags)
-			{
-				Entity.Tags.Add(Tag.ToString());
-			}
-			Place.Entities.Add(MoveTemp(Entity));
 		}
 	}
 

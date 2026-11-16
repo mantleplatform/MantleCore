@@ -9,6 +9,7 @@
 #include "CoreMinimal.h"
 #include "MantleScatterVolume.h"
 
+struct FMantleTerrainLayerChoice;
 struct FMantleTerrainSource;
 class UWorld;
 
@@ -31,10 +32,16 @@ public:
 	 * the Terrain entity's transform. Field is empty when the source cannot make a heightfield.
 	 * With World, also the paint-layer weightmaps (#187): the layers the publish picks (ChooseLayers) at the
 	 * size the converter uploads them (EncodeWeightmaps), so a paint-layer filter lands where it lands for players.
+	 * Source is a landscape of at most one heightfield's samples a side, or one terrain tile of a larger one
+	 * (FMantleTerrainExport::CutTile): then Layers are the landscape's layers, chosen once for all its tiles (null: chosen from Source).
 	 */
-	static FMantleScatterTerrainSurface SurfaceFor(const FMantleTerrainSource& Source, UWorld* World = nullptr, const FString& Label = FString());
+	static FMantleScatterTerrainSurface SurfaceFor(const FMantleTerrainSource& Source, UWorld* World = nullptr, const FString& Label = FString(),
+		const TArray<FMantleTerrainLayerChoice>* Layers = nullptr);
 
-	/** Every landscape of World that publishes as a Terrain (FMantleTerrainExport::TerrainLandscapes), as SurfaceFor makes it. */
+	/**
+	 * Every landscape of World that publishes as a Terrain (FMantleTerrainExport::TerrainLandscapes), as SurfaceFor makes it: a surface
+	 * for each terrain tile of a landscape larger than one heightfield, the tiles the game drops instances onto.
+	 */
 	static TArray<FMantleScatterTerrainSurface> SurfacesFor(UWorld* World);
 
 	/** Gives every terrain-placed scatter volume in World the ground (SurfacesFor), which rebuilds each one's preview. */

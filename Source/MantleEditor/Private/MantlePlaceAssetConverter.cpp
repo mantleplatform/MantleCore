@@ -2400,7 +2400,8 @@ bool FMantlePlaceAssetConverter::ConvertTerrain(AActor* Landscape, FMantlePlaceA
 		return false;
 	}
 	const FString Key = FMantleTerrainExport::HeightfieldKey(Landscape);
-	if (Out.FindHeightfield(Key))
+	// Converted already: as one heightfield, or as the tiles of a landscape too large for one (their keys end with the tile).
+	if (Out.FindHeightfield(Key) || Out.FindHeightfield(Key + FMantleTerrainExport::TileSuffix(FIntPoint::ZeroValue, 2)))
 	{
 		return true;
 	}
@@ -2413,6 +2414,7 @@ bool FMantlePlaceAssetConverter::ConvertTerrain(AActor* Landscape, FMantlePlaceA
 		return false;
 	}
 	const bool bTerrain = ConvertTerrainSource(Landscape->GetWorld(), Source, Key, FMantleTerrainExport::WeightmapKey(Landscape), Label, Landscape->GetPathName(), Out);
+	// (A landscape of more than one heightfield is converted as its tiles, each under the key's "#tx,ty": ConvertTerrainSource.)
 	// Its grass maps (#628): one RGBA texture per four grass types, uploaded with the textures.
 	return bTerrain && FMantleTerrainGrassExport::ConvertMaps(Landscape, Source, Limits, Out);
 }
@@ -2455,6 +2457,7 @@ bool FMantlePlaceAssetConverter::ConvertTerrainSource(UWorld* World, const FMant
 	const FString& WeightmapKey, const FString& Label, const FString& Path, FMantlePlaceAssetSet& Out)
 {
 	using namespace MantlePlaceAssetConverterPrivate;
+	// The layers are the landscape's, chosen once: every tile of it lists the same ones in the same order.
 	TArray<FMantleTerrainLayerChoice> Layers;
 	TArray<FMantleValidationIssue> LayerIssues;
 	if (!FMantleTerrainExport::ChooseLayers(World, Source, Label, Layers, LayerIssues))
@@ -2464,6 +2467,33 @@ bool FMantlePlaceAssetConverter::ConvertTerrainSource(UWorld* World, const FMant
 	}
 	// The warnings too (#628): layers folded together, what the landscape's material does that is not kept.
 	Out.Issues.Append(LayerIssues);
+
+	// A landscape of at most one heightfield's samples a side is one Terrain, converted whole (as it always was).
+	const TArray<FMantleTerrainTile> Tiles = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height);
+	if (Tiles.Num() <= 1)
+	{
+		return ConvertTerrainTile(Source, Layers, Key, WeightmapKey, Label, Path, Out);
+	}
+	// A larger one is cut into tiles at its own spacing (nothing is resampled), each converted as a landscape of its own: heights,
+	// paint, holes. The slope overlay is baked once over the whole landscape, so a tile's border is shaded by its neighbour's heights.
+	const TArray<uint8> SlopeMask = FMantleTerrainExport::BakeSlopeFor(Source, Layers);
+	for (const FMantleTerrainTile& Tile : Tiles)
+	{
+		const FString Suffix = FMantleTerrainExport::TileSuffix(Tile.Index, Tiles.Num());
+		const FMantleTerrainSource TileSource = FMantleTerrainExport::CutTile(Source, Tile, &SlopeMask);
+		if (!ConvertTerrainTile(TileSource, Layers, Key + Suffix, WeightmapKey + Suffix, FMantleTerrainExport::TileName(Label, Tile.Index, Tiles.Num()), Path + Suffix, Out))
+		{
+			return false;
+		}
+	}
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_TERRAIN landscape %s (%d x %d samples) converted as %d terrain tile(s)"), *Label, Source.Width, Source.Height, Tiles.Num());
+	return true;
+}
+
+bool FMantlePlaceAssetConverter::ConvertTerrainTile(const FMantleTerrainSource& Source, const TArray<FMantleTerrainLayerChoice>& Layers, const FString& Key,
+	const FString& WeightmapKey, const FString& Label, const FString& Path, FMantlePlaceAssetSet& Out)
+{
+	using namespace MantlePlaceAssetConverterPrivate;
 	const FMantleHeightfield Field = FMantleTerrainExport::MakeHeightfield(Source);
 	TArray<uint8> Bytes = FMantleHeightfieldReader::Write(Field);
 	if (Bytes.IsEmpty())
@@ -2471,12 +2501,6 @@ bool FMantlePlaceAssetConverter::ConvertTerrainSource(UWorld* World, const FMant
 		Out.Issues.Add(ErrorIssue(FString::Printf(TEXT("Landscape '%s' could not be turned into a heightfield."), *Label),
 			TEXT("This is a Mantle bug rather than a problem with your level. Please report it.")));
 		return false;
-	}
-	if (Field.Width != Source.Width || Field.Height != Source.Height)
-	{
-		Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Landscape '%s' is %d x %d samples; players get it resampled to %d x %d, %.0f x %.0f cm apart."),
-			*Label, Source.Width, Source.Height, Field.Width, Field.Height, Field.SpacingX, Field.SpacingY),
-			TEXT("Nothing to do. For every sample, make the landscape smaller or split the world into more than one place.")));
 	}
 
 	FMantleConvertedHeightfield Converted;
@@ -2488,7 +2512,7 @@ bool FMantlePlaceAssetConverter::ConvertTerrainSource(UWorld* World, const FMant
 	Converted.Width = Field.Width;
 	Converted.Height = Field.Height;
 
-	// More than one layer: where each is painted, one RGBA texture over the whole terrain (a second for layers 4 to 7, #628),
+	// More than one layer: where each is painted, one RGBA texture over the whole terrain (a tile's own part of the landscape; a second for layers 4 to 7, #628),
 	// lossless (no role, so the cook keeps the PNG), halved until the moderation classifier takes them. Layers folded into a kept
 	// one paint into its channel, and a baked slope overlay has a channel of its own (FMantleTerrainExport::MakeWeightmaps).
 	if (Layers.Num() > 1)
