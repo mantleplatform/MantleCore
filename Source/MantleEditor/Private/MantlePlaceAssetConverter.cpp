@@ -3920,10 +3920,12 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	// A bake on anything but the plain surface (a vertex color, a landscape's UV range) adds its tag, so a different color is not served
 	// another's bake, and every plain bake keeps the key it always had.
 	// A translucent material whose opacity is always 1 publishes opaque: an earlier conversion of it (as see-through) must not stand in.
-	// A masked material never publishes a cut-off of 0 (ResolveMaskCutoff): an earlier conversion that did must not stand in.
-	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s maskcutoff=2"), *Describe, InSettings.DefaultBakeSize,
+	// A masked material never publishes a cut-off of 0 (ResolveMaskCutoff): an earlier conversion that did must not stand in. Only a
+	// masked material's conversion changed, so only its key does; every other material keeps its bake.
+	const bool bMasked = Material && Material->GetBlendMode() == BLEND_Masked;
+	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
-		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""));
+		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""), bMasked ? TEXT(" maskcutoff=2") : TEXT(""));
 }
 
 double FMantlePlaceAssetConverter::MeanPixelDifference(const TArray<FColor>& A, const TArray<FColor>& B)
