@@ -172,7 +172,7 @@ namespace MantleMeshNaniteBakePrivate
 		return true;
 	}
 
-	/** Nanite::FResources::SerializeInternal from RootData on (the flags are the caller's, the streamed pages are left out), then TangentPrecision. */
+	/** Nanite::FResources::SerializeInternal from RootData on (the flags are the caller's, the streamed pages are left out), then TangentPrecision (always written as 0). */
 	void SerializeBody(FArchive& Ar, Nanite::FResources& Resources)
 	{
 		// Bytes in one go: the same layout as one at a time.
@@ -206,7 +206,18 @@ namespace MantleMeshNaniteBakePrivate
 		Ar << Resources.NumClusters;
 		Ar << Resources.VoxelMaterialsMask;
 		Ar << Resources.NumInputCurves;
-		Ar << Resources.TangentPrecision;
+		// Field 25 is always written as 0 (nanite-v2.md): the engine does not store TangentPrecision (FResources::SerializeInternal,
+		// NaniteResources.cpp, writes everything up to NumInputCurves and not this), so a Nanite build read back from the derived-data
+		// cache reports 0 while a fresh build of a mesh with explicit tangents reports 7 (NaniteEncode.cpp:1478-1484). The pages carry
+		// their own precision per cluster and nothing reads this member at runtime, so writing the build's value would only make the same
+		// mesh give different bytes (and a different upload hash) depending on how warm the cache was. A file that holds another number
+		// (an older one) is read as it is; readers ignore it.
+		int32 TangentPrecision = 0;
+		Ar << TangentPrecision;
+		if (Ar.IsLoading())
+		{
+			Resources.TangentPrecision = TangentPrecision;
+		}
 	}
 }
 

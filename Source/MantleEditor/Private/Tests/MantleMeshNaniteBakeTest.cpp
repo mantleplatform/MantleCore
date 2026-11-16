@@ -336,7 +336,7 @@ bool FMantleMeshNaniteFileRoundTripTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("root pages"), Back.NumRootPages, Built.NumRootPages);
 	TestEqual(TEXT("position precision"), Back.PositionPrecision, Built.PositionPrecision);
 	TestEqual(TEXT("normal precision"), Back.NormalPrecision, Built.NormalPrecision);
-	TestEqual(TEXT("tangent precision"), Back.TangentPrecision, Built.TangentPrecision);
+	TestEqual(TEXT("tangent precision is written as 0, whatever the build reports"), Back.TangentPrecision, 0);
 	TestEqual(TEXT("input triangles"), Back.NumInputTriangles, Built.NumInputTriangles);
 	TestEqual(TEXT("input vertices"), Back.NumInputVertices, Built.NumInputVertices);
 	TestEqual(TEXT("clusters"), Back.NumClusters, Built.NumClusters);
@@ -528,7 +528,7 @@ bool FMantleMeshNaniteV2FileTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("two root pages"), Back.NumRootPages, 2u);
 	TestEqual(TEXT("clusters"), Back.NumClusters, 9u);
 	TestEqual(TEXT("triangles"), Back.NumInputTriangles, 1234u);
-	TestEqual(TEXT("tangent precision (field 25, before the block)"), Back.TangentPrecision, 3);
+	TestEqual(TEXT("tangent precision (field 25, before the block) is written as 0 though the resources said 3"), Back.TangentPrecision, 0);
 	TestEqual(TEXT("the file's resources have no StreamablePages of their own"), Back.StreamablePages.GetBulkDataSize(), static_cast<int64>(0));
 	// Without asking for the block the file still reads and is checked.
 	Nanite::FResources Alone;
@@ -593,6 +593,73 @@ bool FMantleMeshNaniteV2FileTest::RunTest(const FString& Parameters)
 	TArray<uint8> Extra = WholeFile;
 	Extra.Add(0);
 	TestFalse(TEXT("a byte past field 25 with no streamed pages"), FMantleMeshNaniteFile::Read(Extra, MeshTag, Refused, Slots, &Why));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshNaniteTangentZeroTest,
+	"Mantle.Editor.Nanite.TangentPrecisionIsAlwaysWrittenAsZero",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshNaniteTangentZeroTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshNaniteBakeTestPrivate;
+
+	// By hand, no Nanite build: resources that say 7 (what a fresh build of a mesh with explicit tangents reports) are written as 0.
+	Nanite::FResources Seven;
+	FillWhole(Seven);
+	Seven.TangentPrecision = 7;
+	TArray<uint8> SevenFile;
+	FString Why;
+	if (!TestTrue(TEXT("resources saying 7 write"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Seven, SevenFile, Why)))
+	{
+		AddError(Why);
+		return false;
+	}
+	Nanite::FResources Zero;
+	FillWhole(Zero);
+	Zero.TangentPrecision = 0;
+	TArray<uint8> ZeroFile;
+	TestTrue(TEXT("resources saying 0 write"), FMantleMeshNaniteFile::Write(MeshTag, { 0 }, Zero, ZeroFile, Why));
+	TestTrue(TEXT("the same bytes either way (a warm cache and a fresh build give one file)"), SevenFile == ZeroFile);
+	Nanite::FResources Back;
+	TArray<int32> Slots;
+	if (TestTrue(TEXT("it reads back"), FMantleMeshNaniteFile::Read(SevenFile, MeshTag, Back, Slots, &Why)))
+	{
+		TestEqual(TEXT("field 25 is 0"), Back.TangentPrecision, 0);
+	}
+
+	if (!NaniteBuilds())
+	{
+		AddInfo(TEXT("skipped the bake: this editor builds no Nanite data (started without a graphics device)"));
+		return true;
+	}
+
+	// A real mesh with explicit tangents, baked twice: the first bake is a fresh build (7 in the resources), the second can come from
+	// the derived-data cache (0 in the resources). Both files are the same, and say 0.
+	UStaticMesh* Tangents = MakeGrid(32, /*bNanite*/ true, 0);
+	FMeshNaniteSettings Settings = Tangents->GetNaniteSettings();
+	Settings.bExplicitTangents = true;
+	Tangents->SetNaniteSettings(Settings);
+	Tangents->Build(/*bInSilent*/ true);
+	FStaticMeshCompilingManager::Get().FinishCompilation({ Tangents });
+	TArray<uint8> First;
+	TArray<uint8> Second;
+	if (TestTrue(TEXT("a mesh with explicit tangents bakes"), FMantleMeshNaniteBake::Bake(Tangents, { 0 }, MeshTag, First, Why)) &&
+		TestTrue(TEXT("and bakes again"), FMantleMeshNaniteBake::Bake(Tangents, { 0 }, MeshTag, Second, Why)))
+	{
+		TestTrue(TEXT("the two files are the same bytes"), First == Second);
+		Nanite::FResources FirstBack;
+		if (TestTrue(TEXT("the file reads back"), FMantleMeshNaniteFile::Read(First, MeshTag, FirstBack, Slots, &Why)))
+		{
+			TestEqual(TEXT("its tangent precision is 0"), FirstBack.TangentPrecision, 0);
+		}
+	}
+	else
+	{
+		AddError(Why);
+	}
+	Tangents->MarkAsGarbage();
 	return true;
 }
 
