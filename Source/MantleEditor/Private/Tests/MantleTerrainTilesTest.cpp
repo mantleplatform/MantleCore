@@ -120,7 +120,6 @@ bool FMantleTerrainTilesPlanTest::RunTest(const FString& Parameters)
 	// Published samples are the tiles' together (a border sample in both), and a small landscape's are its own.
 	TestEqual(TEXT("2049 x 300 publishes its own samples"), FMantleTerrainExport::PublishedSamples(2049, 300), static_cast<int64>(2049) * 300);
 	TestEqual(TEXT("4097 x 4097: four full tiles"), FMantleTerrainExport::PublishedSamples(4097, 4097), static_cast<int64>(4) * 2049 * 2049);
-	TestEqual(TEXT("4097 x 4097 is the samples cap exactly"), FMantleTerrainExport::PublishedSamples(4097, 4097), FMantlePlaceLimits::MaxTerrainSamplesPerPlace);
 	TestEqual(TEXT("2050 x 2050: 2,049 + 2 columns and rows"), FMantleTerrainExport::PublishedSamples(2050, 2050), static_cast<int64>(2051) * 2051);
 	TestEqual(TEXT("no ground counts nothing"), FMantleTerrainExport::PublishedSamples(1, 4097), static_cast<int64>(0));
 	TestEqual(TEXT("a landscape with nothing loaded is one tile"), FMantleTerrainExport::TileCount(static_cast<const AActor*>(nullptr)), 1);
@@ -230,7 +229,7 @@ bool FMantleTerrainTilesSmallUnchangedTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("its entity name is the label"), FMantleTerrainExport::TileName(TEXT("Hills"), Plan[0].Index, 1), FString(TEXT("Hills")));
 		TestEqual(TEXT("its entity id is the landscape's"), FMantleTerrainExport::TileEntityId(TEXT("ent_0123456789abcdef0123456789abcdef"), Plan[0].Index), FString(TEXT("ent_0123456789abcdef0123456789abcdef")));
 		TestTrue(TEXT("its keys have no tile in them"), FMantleTerrainExport::TileSuffix(Plan[0].Index, 1).IsEmpty());
-		TestEqual(TEXT("its layers keep the landscape's tiling"), FMantleTerrainExport::TileTiling(300.0, Plan[0], Source.SpacingX, Source.SpacingY), 300.0);
+		TestEqual(TEXT("its layers keep the landscape's tiling"), FMantleTerrainExport::TileTiling(300.0, Plan.Num(), Source.SpacingX), 300.0);
 		TestEqual(TEXT("it publishes its own samples"), FMantleTerrainExport::PublishedSamples(Size.X, Size.Y), static_cast<int64>(Size.X) * Size.Y);
 		TestTrue(TEXT("its transform is the landscape's"), FMantleTerrainExport::TileTransform(Source, Plan[0]).Equals(Source.Transform, 0.0));
 
@@ -305,38 +304,32 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FMantleTerrainTilesTilingTest::RunTest(const FString& Parameters)
 {
-	// 4,098 x 4,098 samples at 100 cm: tile (0, 0) is full with a neighbour on both axes, (2, 0) is the 2-sample column, (2, 2) the corner.
-	const TArray<FMantleTerrainTile> Plan = FMantleTerrainExport::PlanTiles(4098, 4098);
-	if (!TestEqual(TEXT("3 x 3 tiles"), Plan.Num(), 9))
-	{
-		return false;
-	}
-	const FMantleTerrainTile& Inner = Plan[0];
-	const FMantleTerrainTile& LastColumn = Plan[2];
-	const FMantleTerrainTile& LastRow = Plan[6];
-	const FMantleTerrainTile& Corner = Plan[8];
-
+	// One tiling for every tile of a landscape of several tiles, from a full tile's X extent (2,048 quads x spacing).
+	const double Cap = FMantlePlaceLimits::MaxTerrainTilingCm;
 	// 400 cm repeats 512 times over 204,800 cm: no change.
-	TestEqual(TEXT("400 cm over a full tile is 512 repeats, unchanged"), FMantleTerrainExport::TileTiling(400.0, Inner, 100.0, 100.0), 400.0);
+	TestEqual(TEXT("400 cm over a full tile is 512 repeats, unchanged"), FMantleTerrainExport::TileTiling(400.0, 9, 100.0), 400.0);
 	// 300 cm would be 682.67 repeats: 683, a tiling of 299.85 cm.
-	const double Stretched = FMantleTerrainExport::TileTiling(300.0, Inner, 100.0, 100.0);
+	const double Stretched = FMantleTerrainExport::TileTiling(300.0, 9, 100.0);
 	TestEqual(TEXT("300 cm becomes 683 repeats"), 204800.0 / Stretched, 683.0, 1e-9);
 	TestTrue(TEXT("a tiling of 299.85 cm"), FMath::Abs(Stretched - 299.853) < 0.001);
 	TestTrue(TEXT("a change of 0.05 percent"), FMath::Abs(Stretched / 300.0 - 1.0) < 0.0006);
-	// A tile with a neighbour only on one axis takes that axis's number.
-	TestEqual(TEXT("the last column has a neighbour along Y only: Y's extent"), FMantleTerrainExport::TileTiling(300.0, LastColumn, 100.0, 100.0), Stretched);
-	TestEqual(TEXT("so does the last row (along X)"), FMantleTerrainExport::TileTiling(300.0, LastRow, 100.0, 100.0), Stretched);
-	// With different spacing the axis with the neighbour decides: the last column's neighbour is along Y.
-	TestEqual(TEXT("at 50 cm along Y: 102,400 cm, 400 cm is 256 repeats"), FMantleTerrainExport::TileTiling(400.0, LastColumn, 100.0, 50.0), 400.0);
-	TestEqual(TEXT("and both axes use X's extent"), FMantleTerrainExport::TileTiling(300.0, Inner, 50.0, 100.0), 102400.0 / 341.0);
-	// A tile with no neighbour after it keeps the landscape's tiling, whatever it is.
-	TestEqual(TEXT("the corner keeps 300"), FMantleTerrainExport::TileTiling(300.0, Corner, 100.0, 100.0), 300.0);
-	// A tiling larger than the tile is one repeat (never zero), and a tiling of nothing stays so.
-	TestEqual(TEXT("a tiling beyond the tile is one repeat"), FMantleTerrainExport::TileTiling(900000.0, Inner, 100.0, 100.0), 204800.0);
-	TestEqual(TEXT("a layer with no tiling stays so"), FMantleTerrainExport::TileTiling(0.0, Inner, 100.0, 100.0), 0.0);
-	// The tile an ordinary landscape is: none of this applies.
-	const TArray<FMantleTerrainTile> One = FMantleTerrainExport::PlanTiles(2049, 2049);
-	TestEqual(TEXT("a one-tile landscape keeps 300"), FMantleTerrainExport::TileTiling(300.0, One[0], 100.0, 100.0), 300.0);
+	TestEqual(TEXT("the same for two tiles: the number depends on the spacing, not on which tile"), FMantleTerrainExport::TileTiling(300.0, 2, 100.0), Stretched);
+	// Other spacing: the extent is 2,048 x spacing along X.
+	TestEqual(TEXT("at 50 cm: 102,400 cm, 300 cm is 341 repeats"), FMantleTerrainExport::TileTiling(300.0, 4, 50.0), 102400.0 / 341.0);
+	TestEqual(TEXT("at 60 cm (Medieval): 122,880 cm, 2,940 cm is 42 repeats"), FMantleTerrainExport::TileTiling(2940.0, 2, 60.0), 122880.0 / 42.0);
+	// Never past the cap a layer's tiling is held to (the backend and the game parser refuse it): at least ceil(extent / cap) repeats.
+	for (const double Tiling : { 81920.0, 90000.0, Cap })
+	{
+		const double Out = FMantleTerrainExport::TileTiling(Tiling, 4, 100.0);
+		TestTrue(*FString::Printf(TEXT("%g cm stays within the cap (got %g)"), Tiling, Out), Out > 0.0 && Out <= Cap);
+		TestEqual(*FString::Printf(TEXT("%g cm is a whole number of repeats"), Tiling), 204800.0 / Out, FMath::RoundToDouble(204800.0 / Out), 1e-9);
+	}
+	TestTrue(TEXT("at 60 cm, 100,000 cm is within the cap too"), FMantleTerrainExport::TileTiling(Cap, 4, 60.0) <= Cap);
+	TestEqual(TEXT("a tiling beyond the tile is the fewest repeats the cap allows"), FMantleTerrainExport::TileTiling(900000.0, 4, 100.0), 204800.0 / FMath::CeilToDouble(204800.0 / Cap));
+	// A one-tile landscape keeps the landscape's tiling, and a layer with none stays so.
+	TestEqual(TEXT("a one-tile landscape keeps 300"), FMantleTerrainExport::TileTiling(300.0, 1, 100.0), 300.0);
+	TestEqual(TEXT("and keeps one over the tile's extent, even past the cap's repeats"), FMantleTerrainExport::TileTiling(Cap, 1, 100.0), Cap);
+	TestEqual(TEXT("a layer with no tiling stays so"), FMantleTerrainExport::TileTiling(0.0, 4, 100.0), 0.0);
 	return true;
 }
 
@@ -514,13 +507,16 @@ bool FMantleTerrainTilesFallbackTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleTerrainTilesTestPrivate;
 
+	// Every case is built from the place's limits as the synced MantlePlaceLimits.h has them, so it holds for any cap.
 	const int64 Cap = FMantlePlaceLimits::MaxTerrainSamplesPerPlace;
+	const int32 MaxTerrains = FMantlePlaceLimits::MaxTerrainsPerPlace;
 	const int64 OneField = static_cast<int64>(FMantleHeightfieldReader::MaxSize) * FMantleHeightfieldReader::MaxSize;
 	const TArray<FString> Labels = { TEXT("Small"), TEXT("Huge") };
 	auto Fit = [](TArray<int64> S, TArray<FString> L, TArray<TPair<int32, FMantleValidationIssue>>& Left, TArray<int32> T, TArray<int64> R, TArray<int32>* Res)
 	{
 		return FMantleTerrainExport::FitTerrains(S, L, Left, T, R, Res);
 	};
+	TestTrue(TEXT("the limits leave room for these cases"), Cap > 3 * OneField && MaxTerrains > 6);
 
 	// The tiles of the second landscape would take the place past the samples cap: it publishes resampled to one Terrain instead, not left out.
 	{
@@ -535,7 +531,7 @@ bool FMantleTerrainTilesFallbackTest::RunTest(const FString& Parameters)
 	{
 		TArray<TPair<int32, FMantleValidationIssue>> LeftOut;
 		TArray<int32> Resampled;
-		const TArray<int32> Kept = Fit({ 100, 1000 }, Labels, LeftOut, { 1, FMantlePlaceLimits::MaxTerrainsPerPlace }, { 100, 1000 }, &Resampled);
+		const TArray<int32> Kept = Fit({ 100, 1000 }, Labels, LeftOut, { 1, MaxTerrains }, { 100, 1000 }, &Resampled);
 		TestTrue(TEXT("both publish"), Kept == TArray<int32>{ 0, 1 } && LeftOut.Num() == 0);
 		TestTrue(TEXT("the second resampled"), Resampled == TArray<int32>{ 1 });
 	}
@@ -543,7 +539,7 @@ bool FMantleTerrainTilesFallbackTest::RunTest(const FString& Parameters)
 	{
 		TArray<TPair<int32, FMantleValidationIssue>> LeftOut;
 		TArray<int32> Resampled;
-		const TArray<int32> Kept = Fit({ 100, 3 * OneField }, Labels, LeftOut, { 1, 4 }, { 100, OneField }, &Resampled);
+		const TArray<int32> Kept = Fit({ 100, Cap - 100 }, Labels, LeftOut, { 1, 4 }, { 100, OneField }, &Resampled);
 		TestTrue(TEXT("both publish"), Kept == TArray<int32>{ 0, 1 } && LeftOut.Num() == 0);
 		TestEqual(TEXT("as tiles: none resampled"), Resampled.Num(), 0);
 	}
@@ -551,7 +547,8 @@ bool FMantleTerrainTilesFallbackTest::RunTest(const FString& Parameters)
 	{
 		TArray<TPair<int32, FMantleValidationIssue>> LeftOut;
 		TArray<int32> Resampled;
-		const TArray<int32> Kept = Fit({ 2 * OneField, 4 * OneField, 50 }, { TEXT("A"), TEXT("B"), TEXT("C") }, LeftOut, { 2, 4, 1 },
+		const int64 FirstSamples = Cap - OneField - 100;
+		const TArray<int32> Kept = Fit({ FirstSamples, 4 * OneField, 50 }, { TEXT("A"), TEXT("B"), TEXT("C") }, LeftOut, { 2, 4, 1 },
 			{ OneField, OneField, 50 }, &Resampled);
 		TestTrue(TEXT("all publish"), Kept == TArray<int32>{ 0, 1, 2 } && LeftOut.Num() == 0);
 		TestTrue(TEXT("only the second is resampled"), Resampled == TArray<int32>{ 1 });
@@ -569,6 +566,23 @@ bool FMantleTerrainTilesFallbackTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("with the samples error"), LeftOut[0].Value.Problem.Contains(TEXT("left out")));
 		}
 	}
+	// Without a list to report in, a landscape is never kept resampled silently: it is left out as before.
+	{
+		TArray<TPair<int32, FMantleValidationIssue>> LeftOut;
+		const TArray<int32> Kept = Fit({ 100, Cap }, Labels, LeftOut, { 1, 4 }, { 100, OneField }, nullptr);
+		TestTrue(TEXT("the first publishes, the second is left out"), Kept == TArray<int32>{ 0 } && LeftOut.Num() == 1);
+	}
+	// A one-tile landscape left out because the tiles before it used up the Terrains says so, not "number N of at most M landscapes".
+	{
+		TArray<TPair<int32, FMantleValidationIssue>> LeftOut;
+		TArray<int32> Resampled;
+		const TArray<int32> Kept = Fit({ 100, 100 }, Labels, LeftOut, { MaxTerrains, 1 }, { 100, 100 }, &Resampled);
+		TestTrue(TEXT("the first publishes, the second is left out"), Kept == TArray<int32>{ 0 } && LeftOut.Num() == 1);
+		if (LeftOut.Num() == 1)
+		{
+			TestTrue(TEXT("naming the terrains the earlier tiles took"), LeftOut[0].Value.Problem.Contains(FString::Printf(TEXT("already publish as %d terrains"), MaxTerrains)));
+		}
+	}
 
 	// Check's words for it.
 	FMantleHeightfield Field;
@@ -578,8 +592,10 @@ bool FMantleTerrainTilesFallbackTest::RunTest(const FString& Parameters)
 	Field.SpacingY = 100.0f;
 	const FMantleValidationIssue Issue = FMantleTerrainExport::ResampledIssue(TEXT("Huge"), 4097, 3000, Field);
 	TestEqual(TEXT("a warning"), Issue.Severity, EMantleIssueSeverity::Warning);
-	TestTrue(TEXT("says why"), Issue.Problem.Contains(TEXT("too many samples for one place as tiles")) && Issue.Problem.Contains(TEXT("resampled to 2049 x 1500")));
-	TestTrue(TEXT("and what to do"), Issue.Remedy.Contains(TEXT("split the level into more than one place")) && Issue.Remedy.Contains(TEXT("coarser landscape")));
+	TestTrue(TEXT("says why: the place's limits, both of them, from the synced file"),
+		Issue.Problem.Contains(TEXT("would take the place past its limits")) && Issue.Problem.Contains(FString::Printf(TEXT("at most %d terrains"), FMantlePlaceLimits::MaxTerrainsPerPlace))
+		&& Issue.Problem.Contains(FText::AsNumber(FMantlePlaceLimits::MaxTerrainSamplesPerPlace).ToString()) && Issue.Problem.Contains(TEXT("resampled to 2049 x 1500")));
+	TestTrue(TEXT("and one remedy"), Issue.Remedy.Contains(TEXT("fewer samples")) && Issue.Remedy.Contains(TEXT("split the level into more than one place")) && !Issue.Remedy.Contains(TEXT("coarser landscape")));
 
 	// The conversion: one resampled heightfield under the plain keys, as before tiles, and the warning.
 	FMantleTerrainSource Source = MakeSource(2050, 3);
@@ -598,9 +614,108 @@ bool FMantleTerrainTilesFallbackTest::RunTest(const FString& Parameters)
 	bool bWarned = false;
 	for (const FMantleValidationIssue& Warning : Out.Issues)
 	{
-		bWarned = bWarned || Warning.Problem.Contains(TEXT("too many samples for one place as tiles"));
+		bWarned = bWarned || Warning.Problem.Contains(TEXT("would take the place past its limits"));
 	}
 	TestTrue(TEXT("with the warning"), bWarned);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTerrainTilesMoreCasesTest,
+	"Mantle.Editor.Terrain.Tiles.RotationSlopeGrassAndMissingSamples",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTerrainTilesMoreCasesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTerrainTilesTestPrivate;
+
+	// A landscape turned 90 degrees about Z: tile (1, 1)'s first sample is 2,048 x spacing along the turned axes.
+	{
+		FMantleTerrainSource Source = MakeSource(2050, 2050);
+		Source.SpacingX = 50.0;
+		Source.SpacingY = 80.0;
+		Source.Transform = FTransform(FQuat(FVector::UpVector, UE_PI * 0.5), FVector(1000.0, 2000.0, 300.0), FVector::OneVector);
+		const TArray<FMantleTerrainTile> Plan = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height);
+		const FMantleTerrainSource Cut = FMantleTerrainExport::CutTile(Source, Plan[3]);
+		// Local offset (2048 x 50, 2048 x 80, 0) turned by 90 degrees is (-2048 x 80, 2048 x 50, 0).
+		TestTrue(TEXT("tile (1, 1) is moved along the turned axes"),
+			Cut.Transform.GetLocation().Equals(FVector(1000.0 - 2048.0 * 80.0, 2000.0 + 2048.0 * 50.0, 300.0), 0.01));
+		TestTrue(TEXT("and keeps the rotation"), Cut.Transform.GetRotation().Equals(Source.Transform.GetRotation(), 1e-6));
+		TestTrue(TEXT("and scale 1"), Cut.Transform.GetScale3D().Equals(FVector::OneVector));
+		TestTrue(TEXT("TileTransform says the same"), FMantleTerrainExport::TileTransform(Source, Plan[3]).Equals(Cut.Transform, 0.01));
+	}
+
+	// A slope overlay baked over the whole landscape is what each tile has: its border texels are the whole landscape's there.
+	{
+		FMantleTerrainSource Source = MakeSource(2050, 4);
+		TArray<uint8> Whole;
+		Whole.SetNum(2050 * 4);
+		for (int32 Index = 0; Index < Whole.Num(); ++Index)
+		{
+			Whole[Index] = static_cast<uint8>((Index * 37) & 0xFF);
+		}
+		const TArray<FMantleTerrainTile> Plan = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height);
+		const FMantleTerrainSource First = FMantleTerrainExport::CutTile(Source, Plan[0], &Whole);
+		const FMantleTerrainSource Second = FMantleTerrainExport::CutTile(Source, Plan[1], &Whole);
+		bool bFirst = First.SlopeMask.Num() == 2049 * 4;
+		bool bSecond = Second.SlopeMask.Num() == 2 * 4;
+		for (int32 Y = 0; bFirst && bSecond && Y < 4; ++Y)
+		{
+			bFirst = bFirst && First.SlopeMask[Y * 2049 + 2048] == Whole[Y * 2050 + 2048];
+			bSecond = bSecond && Second.SlopeMask[Y * 2] == Whole[Y * 2050 + 2048] && Second.SlopeMask[Y * 2 + 1] == Whole[Y * 2050 + 2049];
+		}
+		TestTrue(TEXT("the first tile's border column is the landscape's bake there"), bFirst);
+		TestTrue(TEXT("the second tile's columns are the landscape's bake there, and its first equals the first tile's last"), bSecond);
+		Source.SlopeMask = Whole;
+		TestTrue(TEXT("a source that already has the whole bake hands it on"), FMantleTerrainExport::BakeSlopeFor(Source, TArray<FMantleTerrainLayerChoice>()) == Whole);
+		TestEqual(TEXT("a tile cut without a bake has none"), FMantleTerrainExport::CutTile(Source, Plan[1]).SlopeMask.Num(), 0);
+	}
+
+	// Grass maps per tile: a tile's map is made from its own slice of each grass type's weights.
+	{
+		const int32 Width = 2050;
+		const int32 Height = 4;
+		TArray<uint8> Weights;
+		Weights.Init(10, Width * Height);
+		for (int32 Y = 0; Y < Height; ++Y)
+		{
+			for (int32 X = 2048; X < Width; ++X)
+			{
+				Weights[Y * Width + X] = 200;
+			}
+		}
+		const TArray<FMantleTerrainTile> Plan = FMantleTerrainExport::PlanTiles(Width, Height);
+		const TArray<TArray<uint8>> Second = { FMantleTerrainExport::SliceGrid(Weights, Width, Height, Plan[1]) };
+		const TArray<TArray<uint8>> First = { FMantleTerrainExport::SliceGrid(Weights, Width, Height, Plan[0]) };
+		TestTrue(TEXT("a tile's slice is its size"), Second[0].Num() == 2 * 4 && First[0].Num() == 2049 * 4);
+		const TArray<int32> Indices = { 0, INDEX_NONE, INDEX_NONE, INDEX_NONE };
+		const TArray<FColor> MapSecond = FMantleTerrainGrassExport::MakeMap(Second, Indices, 2, 4, FIntPoint(2, 4));
+		const TArray<FColor> MapFirst = FMantleTerrainGrassExport::MakeMap(First, Indices, 2049, 4, FIntPoint(2048, 4));
+		TestTrue(TEXT("the second tile's map is its own weights (200)"), MapSecond.Num() == 8 && MapSecond[0].R == 200 && MapSecond[7].R == 200);
+		TestTrue(TEXT("the first tile's map starts with its own weights (10)"), MapFirst.Num() == 2048 * 4 && MapFirst[0].R == 10 && MapFirst[1000].R == 10);
+		TestEqual(TEXT("a slice of a grid of the wrong size is empty"), FMantleTerrainExport::SliceGrid(Weights, Width, 3, Plan[1]).Num(), 0);
+	}
+
+	// Samples no component covers: a tile counts its own, and its painted holes are the rest.
+	{
+		FMantleTerrainSource Source = MakeSource(2050, 4);
+		TArray<uint8> Covered;
+		Covered.Init(1, 2050 * 4);
+		Covered[0 * 2050 + 2049] = 0;
+		Covered[1 * 2050 + 2049] = 0;
+		Covered[2 * 2050 + 10] = 0;
+		FMantleTerrainExport::ApplyCoverage(Source, Covered);
+		Source.Holes[3 * 2050 + 2048] = 1;
+		Source.HoleSamples = 1;
+		TestEqual(TEXT("the landscape has three uncovered samples"), Source.MissingSamples, 3);
+		const TArray<FMantleTerrainTile> Plan = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height);
+		const FMantleTerrainSource First = FMantleTerrainExport::CutTile(Source, Plan[0]);
+		const FMantleTerrainSource Second = FMantleTerrainExport::CutTile(Source, Plan[1]);
+		TestEqual(TEXT("the first tile has one of them"), First.MissingSamples, 1);
+		TestEqual(TEXT("and the painted hole at the shared column (sample 2048, row 3)"), First.HoleSamples, 1);
+		TestEqual(TEXT("the second has two"), Second.MissingSamples, 2);
+		TestEqual(TEXT("and the same painted hole"), Second.HoleSamples, 1);
+	}
 	return true;
 }
 

@@ -5079,7 +5079,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				Props.Layers = LayerDrafts;
 				for (FMantleTerrainLayer& Layer : Props.Layers)
 				{
-					Layer.Tiling = FMantleTerrainExport::TileTiling(Layer.Tiling, Tile, Source.SpacingX, Source.SpacingY);
+					Layer.Tiling = FMantleTerrainExport::TileTiling(Layer.Tiling, Tiles.Num(), Source.SpacingX);
 				}
 				for (int32 GrassIndex = 0; GrassIndex < Grass.Entries.Num(); ++GrassIndex)
 				{

@@ -727,7 +727,7 @@ namespace MantleCoverageSurveyPrivate
 				// Every sample is published, at the landscape's own spacing: a larger landscape is cut into terrain tiles, not resampled.
 				if (bResampled)
 				{
-					Coverage.Add(Cat::Terrain, EOutcome::Approximated, Label, TEXT("too many samples for one place as tiles, so resampled to the most samples a terrain holds."));
+					Coverage.Add(Cat::Terrain, EOutcome::Approximated, Label, TEXT("as terrain tiles it would take the place past its limits, so resampled to the most samples a terrain holds."));
 				}
 				else if (Tiles > 1)
 				{

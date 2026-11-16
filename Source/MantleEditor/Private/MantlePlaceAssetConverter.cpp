@@ -2506,9 +2506,7 @@ bool FMantlePlaceAssetConverter::ConvertTerrainTile(const FMantleTerrainSource& 
 	// Its tiles did not fit the place's limits (or it is not a tile): resampled down to one heightfield, as before tiles; Check says why.
 	if (Field.Width != Source.Width || Field.Height != Source.Height)
 	{
-		Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Landscape '%s' is %d x %d samples: too many samples for one place as tiles, so players get it resampled to %d x %d, %.0f x %.0f cm apart."),
-			*Label, Source.Width, Source.Height, Field.Width, Field.Height, Field.SpacingX, Field.SpacingY),
-			TEXT("To keep every sample, split the level into more than one place, or use a coarser landscape for full detail.")));
+		Out.Issues.Add(FMantleTerrainExport::ResampledIssue(Label, Source.Width, Source.Height, Field));
 	}
 
 	FMantleConvertedHeightfield Converted;

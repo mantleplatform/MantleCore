@@ -331,15 +331,15 @@ FString FMantleTerrainExport::TileEntityId(const FString& BaseId, const FIntPoin
 	return TEXT("ent_") + MantleTerrainExportPrivate::TerrainMd5Hex(FString::Printf(TEXT("%s|T|%d|%d"), *Guid, Index.X, Index.Y)).Left(24);
 }
 
-double FMantleTerrainExport::TileTiling(const double TilingCm, const FMantleTerrainTile& Tile, const double SpacingX, const double SpacingY)
+double FMantleTerrainExport::TileTiling(const double TilingCm, const int32 TileCount, const double SpacingX)
 {
-	if (TilingCm <= 0.0 || (!Tile.bNeighborX && !Tile.bNeighborY))
+	if (TilingCm <= 0.0 || TileCount <= 1)
 	{
 		return TilingCm;
 	}
-	// A tile with a neighbour after it is a full tile on that axis. X's extent when both (a square tile at equal spacing).
-	const double Extent = TileQuads * (Tile.bNeighborX ? SpacingX : SpacingY);
-	const double Repeats = FMath::Max(1.0, FMath::RoundToDouble(Extent / TilingCm));
+	// One tiling for every tile, from a full tile's X extent: whole repeats, and not past the cap a layer's tiling is held to.
+	const double Extent = TileQuads * SpacingX;
+	const double Repeats = FMath::Max3(1.0, FMath::RoundToDouble(Extent / TilingCm), FMath::CeilToDouble(Extent / FMantlePlaceLimits::MaxTerrainTilingCm));
 	return Extent / Repeats;
 }
 
@@ -444,10 +444,18 @@ FMantleTerrainSource FMantleTerrainExport::CutTile(const FMantleTerrainSource& S
 	{
 		Out.Holes = SliceGrid(Source.Holes, Source.Width, Source.Height, Tile);
 		Out.bHasHoles = true;
+		int32 AllHoles = 0;
 		for (const uint8 Hole : Out.Holes)
 		{
-			Out.HoleSamples += Hole == 1 ? 1 : 0;
+			AllHoles += Hole == 1 ? 1 : 0;
 		}
+		// Painted holes and samples no component covers, counted as the landscape counts them.
+		Out.Uncovered = SliceGrid(Source.Uncovered, Source.Width, Source.Height, Tile);
+		for (const uint8 Missing : Out.Uncovered)
+		{
+			Out.MissingSamples += Missing == 1 ? 1 : 0;
+		}
+		Out.HoleSamples = AllHoles - Out.MissingSamples;
 	}
 	if (SlopeMask && SlopeMask->Num() == Source.Width * Source.Height)
 	{
@@ -468,6 +476,7 @@ void FMantleTerrainExport::ApplyCoverage(FMantleTerrainSource& Source, const TAr
 	{
 		Source.Holes.SetNumZeroed(Width * Height);
 	}
+	Source.Uncovered.SetNumZeroed(Width * Height);
 	// Along each row, a missing sample takes the height of the nearest covered sample in that row.
 	TArray<bool> RowFilled;
 	RowFilled.Init(false, Height);
@@ -493,6 +502,7 @@ void FMantleTerrainExport::ApplyCoverage(FMantleTerrainSource& Source, const TAr
 			}
 			++Source.MissingSamples;
 			Source.Holes[Row + X] = 1;
+			Source.Uncovered[Row + X] = 1;
 			const int32 Left = NearestLeft[X];
 			const int32 From = Left == INDEX_NONE ? Next : Next == INDEX_NONE ? Left : (X - Left <= Next - X ? Left : Next);
 			if (From != INDEX_NONE)
@@ -1498,19 +1508,19 @@ TArray<int32> FMantleTerrainExport::FitTerrains(TConstArrayView<int64> Samples, 
 		int32 Terrains = Tiles.IsValidIndex(Index) ? FMath::Max(Tiles[Index], 1) : 1;
 		int64 Taken = Samples[Index];
 		// Its tiles do not fit what is left of the place's limits: it publishes resampled to one Terrain instead, as before tiles, if that fits.
-		if (Terrains > 1 && ResampledSamples.IsValidIndex(Index)
+		if (OutResampled && Terrains > 1 && ResampledSamples.IsValidIndex(Index)
 			&& (PlaceTerrains + Terrains > FMantlePlaceLimits::MaxTerrainsPerPlace || PlaceSamples + Taken > FMantlePlaceLimits::MaxTerrainSamplesPerPlace))
 		{
 			Terrains = 1;
 			Taken = ResampledSamples[Index];
-			if (OutResampled && PlaceTerrains + 1 <= FMantlePlaceLimits::MaxTerrainsPerPlace && PlaceSamples + Taken <= FMantlePlaceLimits::MaxTerrainSamplesPerPlace)
+			if (PlaceTerrains + 1 <= FMantlePlaceLimits::MaxTerrainsPerPlace && PlaceSamples + Taken <= FMantlePlaceLimits::MaxTerrainSamplesPerPlace)
 			{
 				OutResampled->Add(Index);
 			}
 		}
 		if (PlaceTerrains + Terrains > FMantlePlaceLimits::MaxTerrainsPerPlace)
 		{
-			OutLeftOut.Emplace(Index, TooManyLandscapes(Label, Index + 1, Terrains));
+			OutLeftOut.Emplace(Index, TooManyLandscapes(Label, Index + 1, Terrains, PlaceTerrains));
 			continue;
 		}
 		// A landscape that does not fit is left out, and the next one may still fit.
@@ -1569,9 +1579,10 @@ TArray<AActor*> FMantleTerrainExport::TerrainLandscapes(UWorld* World, TArray<TP
 FMantleValidationIssue FMantleTerrainExport::ResampledIssue(const FString& Label, const int32 Width, const int32 Height, const FMantleHeightfield& Field)
 {
 	return FMantleValidationIssue{ EMantleIssueSeverity::Warning, Label,
-		FString::Printf(TEXT("is %d x %d samples: too many samples for one place as tiles, so players get it resampled to %d x %d, %.0f x %.0f cm apart."),
-			Width, Height, Field.Width, Field.Height, Field.SpacingX, Field.SpacingY),
-		TEXT("To keep every sample, split the level into more than one place, or use a coarser landscape for full detail.") };
+		FString::Printf(TEXT("is %d x %d samples. As terrain tiles it would take the place past its limits (at most %d terrains and %s samples, counting the landscapes before it), so players get it resampled to %d x %d, %.0f x %.0f cm apart."),
+			Width, Height, FMantlePlaceLimits::MaxTerrainsPerPlace, *FText::AsNumber(FMantlePlaceLimits::MaxTerrainSamplesPerPlace).ToString(),
+			Field.Width, Field.Height, Field.SpacingX, Field.SpacingY),
+		TEXT("To keep every sample, give this landscape fewer samples (a larger section size or scale), or split the level into more than one place.") };
 }
 
 FMantleValidationIssue FMantleTerrainExport::TilesIssue(const FString& Label, const int32 Width, const int32 Height)
@@ -1584,8 +1595,16 @@ FMantleValidationIssue FMantleTerrainExport::TilesIssue(const FString& Label, co
 		TEXT("Nothing to do. Each tile counts as a Terrain against the place's limits.") };
 }
 
-FMantleValidationIssue FMantleTerrainExport::TooManyLandscapes(const FString& Label, const int32 Number, const int32 Tiles)
+FMantleValidationIssue FMantleTerrainExport::TooManyLandscapes(const FString& Label, const int32 Number, const int32 Tiles, const int32 TerrainsBefore)
 {
+	if (Tiles <= 1 && TerrainsBefore >= Number)
+	{
+		// The landscapes before it have more tiles than landscapes: the Terrains ran out, not the landscapes.
+		return FMantleValidationIssue{ EMantleIssueSeverity::Error, Label,
+			FString::Printf(TEXT("is landscape number %d, and the landscapes before it already publish as %d terrains; a place publishes at most %d terrains (a landscape of several terrain tiles takes one for each), so it is left out."),
+				Number, TerrainsBefore, FMantlePlaceLimits::MaxTerrainsPerPlace),
+			TEXT("Remove a landscape the place does not need, or split the world into more than one place.") };
+	}
 	if (Tiles > 1)
 	{
 		return FMantleValidationIssue{ EMantleIssueSeverity::Error, Label,

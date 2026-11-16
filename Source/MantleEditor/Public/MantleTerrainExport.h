@@ -105,6 +105,9 @@ struct MANTLEEDITOR_API FMantleTerrainSource
 	 */
 	TArray<uint8> SlopeMask;
 
+	/** Per sample (Width x Height, row-major), 1 where no landscape component covers it (ApplyCoverage), so a terrain tile can count its own MissingSamples. Empty when all are covered. */
+	TArray<uint8> Uncovered;
+
 	/** The landscape sample (in its own grid) that sample (0, 0) is: what a mask's landscape UV is counted from. */
 	FIntPoint FirstSample = FIntPoint::ZeroValue;
 
@@ -257,12 +260,13 @@ public:
 	static FString TileEntityId(const FString& BaseId, FIntPoint Index);
 
 	/**
-	 * A layer's tiling for a tile (terrain-tiles-format.md section 4). The game maps a terrain's UV 0 to 1 over its own extent, so two tiles
-	 * are in phase at a shared border only when the tile that ends there repeats a layer's texture a whole number of times. A tile with
-	 * a neighbour after it takes repeats = max(1, round(extent / TilingCm)) and tiling extent / repeats along the axis the neighbour
-	 * is on (X when both, and the extent there is TileQuads x spacing); a tile with none keeps TilingCm.
+	 * A layer's tiling for the tiles of a landscape of TileCount tiles (terrain-tiles-format.md section 4). The game maps a terrain's UV 0 to 1
+	 * over its own extent, so the texture period is that terrain's own tiling on both axes: tiles meet in phase only when they all use the
+	 * same tiling and a full tile repeats a texture a whole number of times. Every tile of a landscape of more than one tile gets
+	 * E / repeats, E = TileQuads x SpacingX (a full tile's X extent) and repeats = max(round(E / TilingCm), ceil(E / MaxTerrainTilingCm), 1),
+	 * so it never goes past the cap the backend and the game parser hold a layer to. A one-tile landscape (or a layer with no tiling) keeps TilingCm.
 	 */
-	static double TileTiling(double TilingCm, const FMantleTerrainTile& Tile, double SpacingX, double SpacingY);
+	static double TileTiling(double TilingCm, int32 TileCount, double SpacingX);
 
 	/** The Terrain entity's transform for a tile: Source's, moved to the tile's sample (0, 0). */
 	static FTransform TileTransform(const FMantleTerrainSource& Source, const FMantleTerrainTile& Tile);
@@ -464,7 +468,7 @@ public:
 	static TArray<AActor*> TerrainLandscapes(UWorld* World, TArray<TPair<const AActor*, FMantleValidationIssue>>* OutLeftOut = nullptr, TArray<const AActor*>* OutResampled = nullptr);
 
 	/** The error for landscape Number (counted from 1, in CollectLandscapes' order) past FMantlePlaceLimits::MaxTerrainsPerPlace: it is left out. */
-	static FMantleValidationIssue TooManyLandscapes(const FString& Label, int32 Number, int32 Tiles = 1);
+	static FMantleValidationIssue TooManyLandscapes(const FString& Label, int32 Number, int32 Tiles = 1, int32 TerrainsBefore = 0);
 
 	/**
 	 * What Check this place says of a landscape of Width x Height samples that publishes as more than one terrain tile: a warning
