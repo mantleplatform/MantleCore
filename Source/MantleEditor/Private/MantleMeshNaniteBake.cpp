@@ -12,6 +12,8 @@
 #include "MeshDescription.h"
 #include "Matrix3x4.h"
 #include "Misc/Compression.h"
+#include "HAL/PlatformProcess.h"
+#include "HAL/PlatformTime.h"
 #include "Misc/EngineVersion.h"
 #include "Rendering/NaniteResources.h"
 #include "RenderUtils.h"
@@ -95,7 +97,12 @@ namespace MantleMeshNaniteBakePrivate
 	bool PageTableFits(const Nanite::FResources& Resources, const int64 StreamedBytes, FString& OutReason)
 	{
 		const int32 NumPages = Resources.PageStreamingStates.Num();
-		if (NumPages < 0 || Resources.NumRootPages == 0 || static_cast<int64>(Resources.NumRootPages) > NumPages)
+		if (Resources.NumRootPages == 0)
+		{
+			OutReason = TEXT("it has no root pages");
+			return false;
+		}
+		if (static_cast<int64>(Resources.NumRootPages) > NumPages)
 		{
 			OutReason = TEXT("its page table has fewer pages than root pages");
 			return false;
@@ -153,6 +160,12 @@ namespace MantleMeshNaniteBakePrivate
 			return false;
 		}
 		const int64 Bytes = Resources.StreamablePages.GetBulkDataSize();
+		if (Bytes > MAX_int32)
+		{
+			// A type bound (a TArray holds at most 2 GiB), not an upload limit.
+			OutReason = TEXT("its streamed Nanite pages are too large to hold");
+			return false;
+		}
 		const uint8* Data = static_cast<const uint8*>(Resources.StreamablePages.LockReadOnly());
 		OutPages.Append(Data, static_cast<int32>(Bytes));
 		Resources.StreamablePages.Unlock();
