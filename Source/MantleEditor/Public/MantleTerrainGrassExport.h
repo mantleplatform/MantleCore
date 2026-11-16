@@ -115,8 +115,8 @@ public:
 	 */
 	static double DensityPerSquareMeter(float EngineDensity);
 
-	/** "grassmap:" + the landscape's path + ":" + the map's index: the key of that grass map's texture. */
-	static FString GrassMapKey(const AActor* Landscape, int32 MapIndex);
+	/** "grassmap:" + the landscape's path + ":" + the map's index: the key of that grass map's texture. A terrain tile's map adds its FMantleTerrainExport::TileSuffix. */
+	static FString GrassMapKey(const AActor* Landscape, int32 MapIndex, const FString& TileSuffix = FString());
 
 	/** The map and channel of the Slot-th exported grass type: Slot / 4 and Slot % 4. */
 	static void SlotToMapChannel(int32 Slot, int32& OutMap, int32& OutChannel);
@@ -165,7 +165,8 @@ public:
 
 	/**
 	 * Converts the grass maps (one RGBA PNG per four grass types, at most the texture size cap, halved
-	 * until it is within the upload size) into Out.Textures under GrassMapKey, with a warning issue for
+	 * until it is within the upload size; one set per terrain tile of a landscape larger than one heightfield, each over
+	 * the tile's own samples) into Out.Textures under GrassMapKey, with a warning issue for
 	 * everything Gather left out. True when nothing went wrong; an error issue and false otherwise.
 	 */
 	static bool ConvertMaps(const AActor* Landscape, const FMantleTerrainSource& Source, const FMantlePlaceAssetLimits& Limits, FMantlePlaceAssetSet& Out);

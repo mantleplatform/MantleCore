@@ -587,4 +587,58 @@ bool FMantleTerrainSpawnStaticTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePlaceBuildSessionActorBuiltTest,
+	"Mantle.Runtime.PlaceBuild.Session.ActorBuiltIsCalledAsEachActorStands",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePlaceBuildSessionActorBuiltTest::RunTest(const FString& Parameters)
+{
+	using namespace MantlePlaceBuildSessionTestPrivate;
+	FSessionWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	const FMantleParseResult Parsed = ParsePlace();
+	if (!TestTrue(TEXT("the place parses"), Parsed.bSuccess))
+	{
+		AddError(Parsed.ErrorSummary());
+		return false;
+	}
+	const int32 Entities = Parsed.Place.Entities.Num();
+
+	// A caller's per-actor work (the net name, which cost 77 ms in the one frame a 7,000 entity place ended in) is done as each actor stands, a few a step with the build.
+	TArray<FString> Called;
+	FMantleBuildOptions Options = TestOptions();
+	Options.OnActorBuilt = [&Called](AActor* Actor, const FString& EntityId)
+	{
+		if (IsValid(Actor))
+		{
+			Called.Add(EntityId);
+		}
+	};
+	TSharedRef<FMantlePlaceBuildSession> Session = FMantlePlaceBuilder::Begin(Fixture.World, Parsed.Place, Options);
+	TestFalse(TEXT("one step does not finish the place"), Session->Step(0.0));
+	TestEqual(TEXT("the first step's actor has been handed over already"), Called.Num(), 1);
+	TestFalse(TEXT("another step"), Session->Step(0.0));
+	TestEqual(TEXT("and one more, one a step with the build"), Called.Num(), 2);
+	TestEqual(TEXT("the result names the ones handled"), Session->GetResult().ActorsHandledWhileBuilding.Num(), 2);
+	while (!Session->Step(0.0))
+	{
+	}
+	const FMantleBuildResult& Done = Session->GetResult();
+	TestEqual(TEXT("every actor was handed over exactly once"), Called.Num(), Entities);
+	TestEqual(TEXT("every id is in the result's handled set"), Done.ActorsHandledWhileBuilding.Num(), Entities);
+	for (const TPair<FString, AActor*>& Pair : Done.Actors)
+	{
+		TestTrue(*FString::Printf(TEXT("%s was handled"), *Pair.Key), Done.ActorsHandledWhileBuilding.Contains(Pair.Key));
+	}
+
+	// Without the callback nothing is claimed handled (Retain then names every actor, as before).
+	FMantleBuildResult Plain = FMantlePlaceBuilder::Build(Fixture.World, Parsed.Place, TestOptions());
+	TestEqual(TEXT("no callback: no ids handled"), Plain.ActorsHandledWhileBuilding.Num(), 0);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -161,14 +161,14 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	static constexpr double MaxTerrainTilingCm = 100000.0;
 
 	/** Terrain entities in one place. Cross-entity: validate.py's MAX_TERRAINS_PER_PLACE states it. */
-	static constexpr int32 MaxTerrainsPerPlace = 16;
+	static constexpr int32 MaxTerrainsPerPlace = 64;
 
 	/**
-	 * Heightfield samples (width x height) summed over every Terrain in one place: 4 x 2049 x 2049. The place file
+	 * Heightfield samples (width x height) summed over every Terrain in one place: 16 x 2049 x 2049 (the largest place the stage 4 proof ran: 67.2 km2). The place file
 	 * carries no grid size, so the sum reads each Terrain's heightfield bytes in the manifest (an MHF1 is a
 	 * 36-byte header and 16-bit samples). Cross-entity: validate.py's MAX_TERRAIN_SAMPLES_PER_PLACE and the backend state it too.
 	 */
-	static constexpr int64 MaxTerrainSamplesPerPlace = 16793604;
+	static constexpr int64 MaxTerrainSamplesPerPlace = 67174416;
 
 	/** Terrain grass[], 0 to this many entries. */
 	static constexpr int32 MaxTerrainGrass = 32;

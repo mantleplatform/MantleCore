@@ -116,6 +116,29 @@ namespace MantleHeadlessMeshBuildTestPrivate
 		Test.TestEqual(TEXT("collision vertices"), Collision.Vertices.Num(), ExpectedVertices);
 		Test.TestEqual(TEXT("collision triangles"), Collision.Indices.Num(), ExpectedTriangles);
 	}
+
+	/** A terrain chunk built without render resources: a picture only, so no body and no CPU copy of its triangles (the ground's collision is the height field). */
+	void ExpectPictureOnlyMesh(FAutomationTestBase& Test, UStaticMesh* Mesh, const int32 ExpectedVertices, const int32 ExpectedTriangles)
+	{
+		if (!Test.TestNotNull(TEXT("the mesh"), Mesh))
+		{
+			return;
+		}
+		Test.TestFalse(TEXT("no render resources"), Mesh->AreRenderingResourcesInitialized());
+		const FStaticMeshRenderData* RenderData = Mesh->GetRenderData();
+		if (!Test.TestNotNull(TEXT("render data"), RenderData) || !Test.TestEqual(TEXT("one LOD"), RenderData->LODResources.Num(), 1))
+		{
+			return;
+		}
+		const FStaticMeshLODResources& LOD = RenderData->LODResources[0];
+		Test.TestEqual(TEXT("LOD0 position vertices"), static_cast<int32>(LOD.VertexBuffers.PositionVertexBuffer.GetNumVertices()), ExpectedVertices);
+		Test.TestEqual(TEXT("LOD0 triangles"), LOD.GetNumTriangles(), ExpectedTriangles);
+		const UBodySetup* Body = Mesh->GetBodySetup();
+		Test.TestFalse(TEXT("no collision was cooked for a picture"), Body && Body->TriMeshGeometries.Num() > 0);
+		Test.TestFalse(TEXT("the mesh keeps no CPU copy for collision"), Mesh->bAllowCPUAccess);
+		ExpectUVChannelData(Test, Mesh);
+		Test.TestFalse(TEXT("the mesh bounds are not empty"), Mesh->GetBounds().BoxExtent.IsNearlyZero());
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -170,7 +193,7 @@ bool FMantleTerrainHeadlessBuildTest::RunTest(const FString& Parameters)
 	// 3 x 3 samples, one chunk: 9 vertices and 8 triangles, no skirts.
 	const FMantleHeightfield Field = MakeHeadlessField(3, 100.0f, 50);
 
-	// What a dedicated server asks for: LOD 0 only, collision, no render resources.
+	// What a test process asks for: LOD 0 only, no render resources. (A dedicated server builds no chunk at all.)
 	FMantleTerrainBuildParams Params;
 	Params.bRenderLODs = false;
 	Params.bCollision = true;
@@ -191,11 +214,7 @@ bool FMantleTerrainHeadlessBuildTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	ExpectCollisionOnlyMesh(*this, Chunks[0].Mesh, 9, 8);
-	if (Chunks[0].Mesh && Chunks[0].Mesh->GetBodySetup())
-	{
-		TestTrue(TEXT("the terrain collision is complex-as-simple"), Chunks[0].Mesh->GetBodySetup()->CollisionTraceFlag == CTF_UseComplexAsSimple);
-	}
+	ExpectPictureOnlyMesh(*this, Chunks[0].Mesh, 9, 8);
 
 	// Asked for render resources: the engine's build, so they exist exactly when this process can render.
 	Params.bInitRenderResources = true;

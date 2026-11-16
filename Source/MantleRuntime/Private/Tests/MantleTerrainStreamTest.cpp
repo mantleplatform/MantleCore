@@ -1,6 +1,8 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleHeightfieldReader.h"
+#include "MantlePlaceBuilder.h"
 #include "MantleTerrainBuilder.h"
+#include "MantleTerrainCollision.h"
 #include "MantleTerrainStream.h"
 
 #include "Async/TaskGraphInterfaces.h"
@@ -146,6 +148,7 @@ namespace MantleTerrainStreamTestPrivate
 		{
 			FMantleTerrainBuildParams FarParams = MakeParams();
 			FarParams.bFarOnly = true;
+			FarParams.FieldOwner = Field;
 			TSharedPtr<FMantleTerrainSpawn> Spawn = FMantleTerrainSpawn::Begin(World, TEXT("Far"), *Field, nullptr, true, FarParams, &Error);
 			if (!Spawn.IsValid())
 			{
@@ -200,6 +203,45 @@ namespace MantleTerrainStreamTestPrivate
 			return false;
 		}
 	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTerrainDrawsFarGroundTest,
+	"Mantle.Runtime.TerrainStream.DrawsFarGroundOnEveryMachineThatDraws",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTerrainDrawsFarGroundTest::RunTest(const FString& Parameters)
+{
+	// Far ground plus near chunks on every machine that draws, for every place (with cells or without); a dedicated server draws nothing and builds no chunk. The test-only
+	// -MantleTestFullTerrain switch is not on the automation command line.
+	TestTrue(TEXT("a standalone game"), FMantlePlaceBuilder::DrawsTerrainAsFarGround(NM_Standalone));
+	TestTrue(TEXT("a client"), FMantlePlaceBuilder::DrawsTerrainAsFarGround(NM_Client));
+	TestTrue(TEXT("a listen server"), FMantlePlaceBuilder::DrawsTerrainAsFarGround(NM_ListenServer));
+	TestFalse(TEXT("a dedicated server"), FMantlePlaceBuilder::DrawsTerrainAsFarGround(NM_DedicatedServer));
+
+	// A world that is not a game world (the editor's importer and preview) draws every chunk in full: no stream there would build them.
+	TestFalse(TEXT("no world"), FMantlePlaceBuilder::DrawsTerrainAsFarGround(static_cast<const UWorld*>(nullptr)));
+	UWorld* EditorWorld = UWorld::CreateWorld(EWorldType::Editor, /*bInformEngineOfWorld*/ false, TEXT("MantleFarGroundEditorTestWorld"));
+	UWorld* GameWorld = UWorld::CreateWorld(EWorldType::Game, /*bInformEngineOfWorld*/ false, TEXT("MantleFarGroundGameTestWorld"));
+	if (TestNotNull(TEXT("an editor world"), EditorWorld))
+	{
+		TestFalse(TEXT("an editor world draws every chunk in full"), FMantlePlaceBuilder::DrawsTerrainAsFarGround(EditorWorld));
+		EditorWorld->DestroyWorld(/*bInformEngineOfWorld*/ false);
+		if (EditorWorld->IsRooted())
+		{
+			EditorWorld->RemoveFromRoot();
+		}
+	}
+	if (TestNotNull(TEXT("a game world"), GameWorld))
+	{
+		TestTrue(TEXT("a standalone game world draws the far ground"), FMantlePlaceBuilder::DrawsTerrainAsFarGround(GameWorld));
+		GameWorld->DestroyWorld(/*bInformEngineOfWorld*/ false);
+		if (GameWorld->IsRooted())
+		{
+			GameWorld->RemoveFromRoot();
+		}
+	}
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -479,17 +521,6 @@ bool FMantleTerrainStreamSwapTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("the ground under the view stands"), Stream.AreaStands(Middle, 13000.0));
 	TestFalse(TEXT("the ground 30,000 cm out does not"), Stream.AreaStands(Middle, 30000.0));
-	int32 Cells = 0;
-	int32 Built = 0;
-	int32 Failed = 0;
-	int32 Pending = 0;
-	Stream.CountArea(Middle[0], 13000.0, Cells, Built, Failed, Pending);
-	TestEqual(TEXT("nine chunks in reach"), Cells, 9);
-	TestEqual(TEXT("all of them stand"), Built, 9);
-	TestEqual(TEXT("none failed"), Failed, 0);
-	TestEqual(TEXT("none is on its way"), Pending, 0);
-	Stream.CountArea(FVector(19200.0, 19200.0, 0.0), 25000.0, Cells, Built, Failed, Pending);
-	TestTrue(TEXT("a wider reach counts chunks that are not there"), Cells > Built);
 
 	FMantleTerrainAudit Audit = Stream.Audit();
 	TestEqual(TEXT("sixteen chunks have a mesh"), Audit.WithMesh, 16);
@@ -499,20 +530,22 @@ bool FMantleTerrainStreamSwapTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("none not at all"), Audit.DrawnNeither, 0);
 	TestEqual(TEXT("nine swapped in"), Stream.GetStats().SwapsToNear, static_cast<int64>(9));
 
-	// A swapped chunk: the full component collides and has its collision cooked, and the far one is off.
+	// A swapped chunk is a picture: the full component casts a shadow and collides with nothing (the ground's collision is the height-field blocks, made with the far ground and never
+	// touched by a swap); the far one is off.
 	TInlineComponentArray<UStaticMeshComponent*> Registered(Terrain.Actor);
-	int32 WithCollision = 0;
+	int32 WithShadow = 0;
 	for (UStaticMeshComponent* Component : Registered)
 	{
-		if (Component->IsRegistered() && Component->GetCollisionEnabled() == ECollisionEnabled::QueryAndPhysics)
+		TestEqual(TEXT("no chunk collides"), Component->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+		if (Component->IsRegistered() && Component->CastShadow)
 		{
-			++WithCollision;
-			UBodySetup* Body = Component->GetStaticMesh() ? Component->GetStaticMesh()->GetBodySetup() : nullptr;
-			TestTrue(TEXT("its collision is cooked"), Body && Body->bCreatedPhysicsMeshes);
-			TestTrue(TEXT("and it casts a shadow"), Component->CastShadow);
+			++WithShadow;
 		}
 	}
-	TestEqual(TEXT("nine components collide"), WithCollision, 9);
+	TestEqual(TEXT("nine components cast a shadow"), WithShadow, 9);
+	TArray<UMantleTerrainCollisionComponent*> Blocks;
+	Terrain.Actor->GetComponents<UMantleTerrainCollisionComponent>(Blocks);
+	TestEqual(TEXT("the sixteen blocks of ground stand all the time"), Blocks.Num(), 16);
 
 	// The audit sees a double draw: the far component of a full chunk switched back on is found, once.
 	AddExpectedError(TEXT("MANTLE_TERRAIN_AUDIT_FAIL"), EAutomationExpectedErrorFlags::Contains, 1);
@@ -540,16 +573,13 @@ bool FMantleTerrainStreamSwapTest::RunTest(const FString& Parameters)
 
 	// The view walks to the opposite corner. On every step, whatever the stream is doing, every chunk is drawn exactly once.
 	const TArray<FVector> Corner{ FVector(48000.0, 48000.0, 0.0) };
-	const uint64 TakeDownBefore = Stream.GetTakeDownSerial();
 	int32 CleanAudits = 0;
 	int32 DirtyAudits = 0;
 	const bool bMoved = Terrain.Run(Corner, 13000.0, [&]()
 	{
 		const FMantleTerrainAudit Now = Stream.Audit();
 		(Now.IsClean() ? CleanAudits : DirtyAudits) += 1;
-		int32 Releasing = 0;
-		for (int32 I = 0; I < 16; ++I) { Releasing += Stream.GetState(I) == EMantleTerrainChunkState::Releasing ? 1 : 0; }
-		return NearCount() == 6 && Releasing == 0 && Stream.GetStats().BuildingNow == 0;
+		return NearCount() == 6 && Stream.GetStats().BuildingNow == 0;
 	});
 	TestTrue(TEXT("the full chunks follow the view"), bMoved);
 	TestEqual(TEXT("not one audit found a double draw or a gap"), DirtyAudits, 0);
@@ -562,7 +592,6 @@ bool FMantleTerrainStreamSwapTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("twelve swapped in over the run"), Stream.GetStats().SwapsToNear, static_cast<int64>(12));
 	TestEqual(TEXT("six swapped out"), Stream.GetStats().SwapsToFar, static_cast<int64>(6));
-	TestTrue(TEXT("a release moved the take-down serial (a body above it would stop first)"), Stream.GetTakeDownSerial() >= TakeDownBefore + 6);
 	TestEqual(TEXT("the ground under the old view no longer stands"), Stream.AreaStands(Middle, 13000.0), false);
 	TestTrue(TEXT("the ground under the new one does"), Stream.AreaStands(Corner, 13000.0));
 	Audit = Stream.Audit();
@@ -646,66 +675,115 @@ bool FMantleTerrainStreamHoleChunkTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the other eight chunks of the nine stand"), Terrain.Run(Middle, 13000.0, [&]() { return NearCount() == 8; }));
 	TestEqual(TEXT("only eight were ever built: no build was spent on the hole"), Stream.GetStats().BuildsStarted, static_cast<int64>(8));
 	TestTrue(TEXT("the hole does not hold the ground back"), Stream.AreaStands(Middle, 13000.0));
-	int32 Cells = 0;
-	int32 Built = 0;
-	int32 Failed = 0;
-	int32 Pending = 0;
-	Stream.CountArea(Middle[0], 13000.0, Cells, Built, Failed, Pending);
-	TestEqual(TEXT("eight chunks in reach: the hole is not one"), Cells, 8);
-	TestEqual(TEXT("all stand"), Built, 8);
-	TestEqual(TEXT("none pending"), Pending, 0);
 	Terrain.Actor->Destroy();
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleTerrainStreamEndWhileCookingTest,
-	"Mantle.Runtime.TerrainStream.Stream.EndingWhileCookingLetsTheActorGo",
+	FMantleTerrainStreamOneMeshTest,
+	"Mantle.Runtime.TerrainStream.Stream.OneMeshAFrameAcrossTerrains",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleTerrainStreamEndWhileCookingTest::RunTest(const FString& Parameters)
+bool FMantleTerrainStreamOneMeshTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleTerrainStreamTestPrivate;
-	// A world that has begun play: the terrain's actor and its component begin play, so the way out is EndPlay.
-	FStreamWorld Fixture(/*bBeginPlay*/ true);
+	// Two terrains side by side in tile terms (here at the same place, both wanting the nine chunks around the same view): between them they make at most one chunk mesh in a frame,
+	// whichever ticks first, and both still get all nine.
+	FStreamWorld Fixture;
 	if (!TestNotNull(TEXT("a world"), Fixture.World))
 	{
 		return false;
 	}
-	TWeakObjectPtr<AActor> WeakActor;
-	TWeakObjectPtr<UMantleTerrainStreamComponent> WeakStream;
+	FStreamedTerrain First;
+	FStreamedTerrain Second;
+	if (!TestTrue(TEXT("the first terrain stands"), First.Make(Fixture.World)) || !TestTrue(TEXT("and the second"), Second.Make(Fixture.World)))
 	{
-		FStreamedTerrain Terrain;
-		if (!TestTrue(TEXT("the terrain stands"), Terrain.Make(Fixture.World)))
-		{
-			AddError(Terrain.Error);
-			return false;
-		}
-		WeakActor = Terrain.Actor;
-		WeakStream = Terrain.Stream;
-		const TArray<FVector> Middle{ FVector(19200.0, 19200.0, 0.0) };
-		// Step until a chunk's mesh is made and its collision is being cooked.
-		const bool bCooking = Terrain.Run(Middle, 13000.0, [&]() { return Terrain.Stream->GetCookingCount() > 0; });
-		if (!TestTrue(TEXT("a collision cook is under way"), bCooking))
-		{
-			return false;
-		}
-		if (!TestTrue(TEXT("the actor began play with the world"), Terrain.Actor->HasActorBegunPlay()))
-		{
-			return false;
-		}
-		// The place ends with the cook still running: the world goes, and every actor ends play. The actor is not destroyed first, so it is EndPlay, not the
-		// component's destruction, that lets the cook go.
-		Terrain.Actor->RouteEndPlay(EEndPlayReason::LevelTransition);
-		TestFalse(TEXT("the actor ended play"), Terrain.Actor->HasActorBegunPlay());
-		TestTrue(TEXT("its component is still there"), WeakStream.IsValid());
-		TestEqual(TEXT("the cook was let go of by EndPlay"), WeakStream.IsValid() ? WeakStream->GetCookingCount() : 0, 0);
-		Terrain.Actor->Destroy();
+		return false;
 	}
-	// Let the engine's own finish task for the aborted cook run, then collect.
-	FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
-	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
-	TestNull(TEXT("the actor is gone: nothing the cook held kept it alive"), WeakActor.Get(true));
+	const TArray<FVector> Middle{ FVector(19200.0, 19200.0, 0.0) };
+	// A mesh made counts once in MadeMeshes (until it is swapped in) and once in SwapsToNear (after): their sum only goes up, by one for each mesh made.
+	const auto MeshesMade = [](const FStreamedTerrain& Terrain) { return Terrain.Stream->GetStats().SwapsToNear + Terrain.Stream->GetMadeCount() + Terrain.Stream->GetStats().Discarded; };
+	int64 MostInAFrame = 0;
+	bool bBoth = false;
+	for (int32 Step = 0; Step < 4000 && !bBoth; ++Step)
+	{
+		++GFrameCounter;
+		FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
+		const int64 Before = MeshesMade(First) + MeshesMade(Second);
+		First.Stream->StepStream(Middle, 13000.0);
+		Second.Stream->StepStream(Middle, 13000.0);
+		MostInAFrame = FMath::Max(MostInAFrame, MeshesMade(First) + MeshesMade(Second) - Before);
+		bBoth = First.Stream->GetStats().SwapsToNear == 9 && Second.Stream->GetStats().SwapsToNear == 9;
+		FPlatformProcess::Sleep(0.002f);
+	}
+	TestTrue(TEXT("both terrains got their nine chunks (neither starved)"), bBoth);
+	TestEqual(TEXT("and no frame made more than one mesh between them"), MostInAFrame, static_cast<int64>(1));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTerrainStreamJoinMeshesTest,
+	"Mantle.Runtime.TerrainStream.Stream.JoinMakesSeveralMeshesAFrame",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTerrainStreamJoinMeshesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTerrainStreamTestPrivate;
+	// The join's hold (the overlay hides the frames) lets the terrains of a world make JoinMeshesPerFrame (4) meshes a frame between them: some frame makes more than one (the chunks are
+	// prepared on workers, so how many are ready in a frame is up to them; four are, with eighteen chunks to make), and never more than four.
+	FStreamWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	FStreamedTerrain First;
+	FStreamedTerrain Second;
+	if (!TestTrue(TEXT("the first terrain stands"), First.Make(Fixture.World)) || !TestTrue(TEXT("and the second"), Second.Make(Fixture.World)))
+	{
+		return false;
+	}
+	const TArray<FVector> Middle{ FVector(19200.0, 19200.0, 0.0) };
+	const auto MeshesMade = [](const FStreamedTerrain& Terrain) { return Terrain.Stream->GetStats().SwapsToNear + Terrain.Stream->GetMadeCount() + Terrain.Stream->GetStats().Discarded; };
+	int64 MostInAFrame = 0;
+	bool bBoth = false;
+	for (int32 Step = 0; Step < 4000 && !bBoth; ++Step)
+	{
+		++GFrameCounter;
+		FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
+		const int64 Before = MeshesMade(First) + MeshesMade(Second);
+		First.Stream->StepStream(Middle, 13000.0, UMantleTerrainStreamComponent::JoinMeshesPerFrame);
+		Second.Stream->StepStream(Middle, 13000.0, UMantleTerrainStreamComponent::JoinMeshesPerFrame);
+		MostInAFrame = FMath::Max(MostInAFrame, MeshesMade(First) + MeshesMade(Second) - Before);
+		bBoth = First.Stream->GetStats().SwapsToNear == 9 && Second.Stream->GetStats().SwapsToNear == 9;
+		FPlatformProcess::Sleep(0.002f);
+	}
+	TestTrue(TEXT("both terrains got their nine chunks"), bBoth);
+	TestTrue(TEXT("no frame made more than four meshes between them"), MostInAFrame <= UMantleTerrainStreamComponent::JoinMeshesPerFrame);
+	TestTrue(*FString::Printf(TEXT("and some frame made more than one (most in a frame %lld)"), MostInAFrame), MostInAFrame > 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTerrainStreamMeshSlotTest,
+	"Mantle.Runtime.TerrainStream.Plan.MeshSlot",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTerrainStreamMeshSlotTest::RunTest(const FString& Parameters)
+{
+	using Plan = FMantleTerrainStreamPlan;
+	using FOther = TPair<double, int64>;
+	const double None = TNumericLimits<double>::Max();
+	// This terrain's nearest ready chunk is 5,000 cm from a view, its tie-break number is 10.
+	TestTrue(TEXT("alone, the slot free: yes"), Plan::MayMakeMesh(true, 5000.0, 10, TArray<FOther>()));
+	TestFalse(TEXT("the slot already used this frame: no"), Plan::MayMakeMesh(false, 5000.0, 10, TArray<FOther>()));
+	TestFalse(TEXT("nothing ready here: no"), Plan::MayMakeMesh(true, None, 10, TArray<FOther>()));
+	TestTrue(TEXT("another terrain's chunk is farther (9,000): yes"), Plan::MayMakeMesh(true, 5000.0, 10, TArray<FOther>{ FOther(9000.0, 3) }));
+	TestTrue(TEXT("another has nothing ready: yes"), Plan::MayMakeMesh(true, 5000.0, 10, TArray<FOther>{ FOther(None, 3) }));
+	TestFalse(TEXT("another terrain's chunk is nearer (4,999): no"), Plan::MayMakeMesh(true, 5000.0, 10, TArray<FOther>{ FOther(4999.0, 99) }));
+	TestFalse(TEXT("equally near, the other's number is lower (3): no"), Plan::MayMakeMesh(true, 5000.0, 10, TArray<FOther>{ FOther(5000.0, 3) }));
+	TestTrue(TEXT("equally near, the other's number is higher (11): yes"), Plan::MayMakeMesh(true, 5000.0, 10, TArray<FOther>{ FOther(5000.0, 11) }));
+	TestFalse(TEXT("the nearest of three decides: one at 800 beats this one at 5,000"),
+		Plan::MayMakeMesh(true, 5000.0, 10, TArray<FOther>{ FOther(9000.0, 1), FOther(800.0, 50), FOther(6000.0, 2) }));
 	return true;
 }
 

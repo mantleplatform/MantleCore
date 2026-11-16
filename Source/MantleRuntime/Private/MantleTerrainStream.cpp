@@ -23,11 +23,52 @@ namespace MantleTerrainStreamPrivate
 	/** The whole grid is audited this often (and after every swap). */
 	constexpr double AuditSeconds = 1.0;
 
-	/** A released chunk comes down this many frames after it stopped counting as standing, so every body that asks the gate has had a whole frame to stop. */
-	constexpr uint64 ReleaseDelayFrames = 2;
-
 	/** Weak, so a stream the world took away is simply gone. */
 	TArray<TWeakObjectPtr<UMantleTerrainStreamComponent>> GStreams;
+
+	/**
+	 * How many chunk meshes the streams of one world have made on the game thread in one frame (GFrameCounter), so all the terrains of a place together make at most MeshesPerFrame a
+	 * frame: a mesh is 5 to 16 ms, and where two terrains meet (a seam between tiles) both have chunks wanted at once, which two meshes a frame, with the cells' builds beside them, took the
+	 * game thread past 33 ms. Per world (a process with several, the editor's play in editor with clients, keeps one slot each). Game thread only.
+	 */
+	struct FMeshesMade
+	{
+		uint64 Frame = 0;
+		int32 Count = 0;
+	};
+	TMap<const UWorld*, FMeshesMade> GMeshesMade;
+
+	/** Whether the streams of this world may make another mesh in the current frame. */
+	bool MeshSlotFree(const UWorld* World, const int32 MeshesPerFrame)
+	{
+		const FMeshesMade* Made = GMeshesMade.Find(World);
+		return !Made || Made->Frame != GFrameCounter || Made->Count < MeshesPerFrame;
+	}
+
+	void TakeMeshSlot(const UWorld* World)
+	{
+		FMeshesMade& Made = GMeshesMade.FindOrAdd(World);
+		if (Made.Frame != GFrameCounter)
+		{
+			Made.Frame = GFrameCounter;
+			Made.Count = 0;
+		}
+		++Made.Count;
+	}
+
+	/** What the other live streams of Self's world published at their last step: the distance of each one's nearest ready chunk and its address as the tie-break. A stream that has not stepped for a few frames holds no claim. */
+	void OthersReady(const UMantleTerrainStreamComponent* Self, TArray<TPair<double, int64>>& Out)
+	{
+		Out.Reset();
+		for (const TWeakObjectPtr<UMantleTerrainStreamComponent>& Other : GStreams)
+		{
+			const UMantleTerrainStreamComponent* Stream = Other.Get();
+			if (Stream && Stream != Self && Stream->GetWorld() == Self->GetWorld() && GFrameCounter <= Stream->GetReadyDistanceFrame() + 2)
+			{
+				Out.Emplace(Stream->GetReadyDistanceCm(), static_cast<int64>(reinterpret_cast<uintptr_t>(Stream)));
+			}
+		}
+	}
 
 	double ScaleOf(const AActor* Owner)
 	{
@@ -91,6 +132,22 @@ double FMantleTerrainStreamPlan::NearestDistance(const FMantleTerrainChunkGrid& 
 		Nearest = FMath::Min(Nearest, Grid.DistanceTo(Index, Point));
 	}
 	return Nearest;
+}
+
+bool FMantleTerrainStreamPlan::MayMakeMesh(const bool bSlotFree, const double MyDistanceCm, const int64 MyTie, TConstArrayView<TPair<double, int64>> Others)
+{
+	if (!bSlotFree || MyDistanceCm >= TNumericLimits<double>::Max())
+	{
+		return false;
+	}
+	for (const TPair<double, int64>& Other : Others)
+	{
+		if (Other.Key < MyDistanceCm || (Other.Key == MyDistanceCm && Other.Value < MyTie))
+		{
+			return false;
+		}
+	}
+	return true;
 }
 
 void FMantleTerrainStreamPlan::Make(const FMantleTerrainChunkGrid& Grid, TConstArrayView<FVector2D> Points, const double RadiusCm, const double MarginCm,
@@ -190,7 +247,9 @@ void UMantleTerrainStreamComponent::Init(TSharedPtr<const FMantleHeightfield> In
 	Field = MoveTemp(InField);
 	Params = NearParams;
 	Params.bFarOnly = false;
-	Params.bCollision = true;
+	// The chunks are pictures: the collision blocks stand already (the far spawn made them), and a swap never touches them.
+	Params.bCollision = false;
+	Params.bChunkMeshes = true;
 	Params.bRenderLODs = true;
 	Material = InMaterial;
 	bStatic = bInStatic;
@@ -251,14 +310,15 @@ void UMantleTerrainStreamComponent::TickComponent(const float DeltaTime, const E
 	}
 	TArray<FVector> Views;
 	double Radius = 0.0;
-	if (!ViewsResolver(GetWorld(), Views, Radius))
+	int32 MeshesPerFrame = 1;
+	if (!ViewsResolver(GetWorld(), Views, Radius, MeshesPerFrame))
 	{
 		return;
 	}
-	StepStream(Views, Radius);
+	StepStream(Views, Radius, MeshesPerFrame);
 }
 
-void UMantleTerrainStreamComponent::StepStream(const TArray<FVector>& WorldViews, const double NearRadiusCm)
+void UMantleTerrainStreamComponent::StepStream(const TArray<FVector>& WorldViews, const double NearRadiusCm, const int32 MeshesPerFrame)
 {
 	using namespace MantleTerrainStreamPrivate;
 	TRACE_CPUPROFILER_EVENT_SCOPE(MantleTerrainStream_Step);
@@ -290,27 +350,12 @@ void UMantleTerrainStreamComponent::StepStream(const TArray<FVector>& WorldViews
 		Chunk.bWanted = FMantleTerrainStreamPlan::Wants(FMantleTerrainStreamPlan::NearestDistance(Grid, Index, Local), bNearNow, Radius, Margin);
 	}
 
-	// Jobs: at most one mesh made and a few chunks swapped in a step.
-	int32 Finished = 0;
+	// Jobs: at most MeshesPerFrame meshes made (by all the streams together, in a frame, the nearest ready chunk first) and a few chunks swapped in a step.
 	int32 Swaps = 0;
+	TArray<TPair<double, int32>> Ready;
 	for (int32 Index = 0; Index < Chunks.Num(); ++Index)
 	{
 		FChunk& Chunk = Chunks[Index];
-		if (Chunk.State == EMantleTerrainChunkState::Releasing)
-		{
-			if (Chunk.bWanted)
-			{
-				// The view came back before the chunk came down: it stands again.
-				Chunk.State = EMantleTerrainChunkState::Near;
-				++AreaSerial;
-			}
-			else if (GFrameCounter >= Chunk.ReleaseAtFrame)
-			{
-				EndRelease(Index);
-				bSwapped = true;
-			}
-			continue;
-		}
 		if (Chunk.State != EMantleTerrainChunkState::Building || !Chunk.Job.IsValid())
 		{
 			continue;
@@ -322,19 +367,15 @@ void UMantleTerrainStreamComponent::StepStream(const TArray<FVector>& WorldViews
 			{
 				Discard(Index, TEXT("no longer wanted before its mesh was made"));
 			}
-			else if (Finished < 1)
+			else
 			{
-				FinishPrepared(Index);
-				++Finished;
+				// Ready to be made into a mesh: the nearest of these are made once the loop is through, while the frame has slots and no other terrain's chunk is nearer.
+				Ready.Emplace(FMantleTerrainStreamPlan::NearestDistance(Grid, Index, Local), Index);
 			}
 		}
-		else if (Job.Phase == FJob::EPhase::Cooking && Job.bCookDone)
+		else if (Job.Phase == FJob::EPhase::Made)
 		{
-			if (!Job.bCookOk)
-			{
-				Fail(Index, TEXT("the collision cook failed"));
-			}
-			else if (!Chunk.bWanted)
+			if (!Chunk.bWanted)
 			{
 				Discard(Index, TEXT("no longer wanted before it was swapped in"));
 			}
@@ -346,6 +387,25 @@ void UMantleTerrainStreamComponent::StepStream(const TArray<FVector>& WorldViews
 			}
 		}
 	}
+
+	// The meshes of the frame: this terrain's nearest ready chunks, each unless the frame's meshes are made already or another terrain has a nearer one ready.
+	Ready.Sort([](const TPair<double, int32>& A, const TPair<double, int32>& B) { return A.Key < B.Key || (A.Key == B.Key && A.Value < B.Value); });
+	TArray<TPair<double, int64>> Others;
+	if (Ready.Num() > 0)
+	{
+		OthersReady(this, Others);
+	}
+	int32 NextReady = 0;
+	while (NextReady < Ready.Num()
+		&& FMantleTerrainStreamPlan::MayMakeMesh(MeshSlotFree(GetWorld(), FMath::Max(MeshesPerFrame, 1)), Ready[NextReady].Key * ScaleOf(Owner), static_cast<int64>(reinterpret_cast<uintptr_t>(this)), Others))
+	{
+		FinishPrepared(Ready[NextReady].Value);
+		TakeMeshSlot(GetWorld());
+		++NextReady;
+	}
+	// What stays ready is the next nearest one: that is this stream's claim for the next frame.
+	ReadyDistanceCm = NextReady < Ready.Num() ? Ready[NextReady].Key * ScaleOf(Owner) : TNumericLimits<double>::Max();
+	ReadyDistanceFrame = GFrameCounter;
 
 	// The plan: when the views have moved, the radius changed or a while has passed.
 	bool bReplan = bPlanDirty || NearRadiusCm != PlannedRadiusCm || Now - LastPlanSeconds >= ReplanSeconds || PlannedViews.Num() != Local.Num();
@@ -383,7 +443,8 @@ void UMantleTerrainStreamComponent::StepStream(const TArray<FVector>& WorldViews
 				bPlanDirty = true;
 				break;
 			}
-			BeginRelease(Index);
+			Release(Index);
+			bSwapped = true;
 		}
 		for (const int32 Index : ToBuild)
 		{
@@ -452,36 +513,19 @@ void UMantleTerrainStreamComponent::FinishPrepared(const int32 Index)
 		Chunk.State = EMantleTerrainChunkState::Empty;
 		--BuildingCount;
 		--Stats.BuildingNow;
-		++AreaSerial;
 		return;
 	}
 	int64 Vertices = 0;
 	bool bEmpty = false;
 	FString Error;
-	if (!FMantleTerrainBuilder::FinishChunk(Params, MoveTemp(*Prepared), /*bCookCollision*/ false, Vertices, Job.Built, bEmpty, &Error) || !Job.Built.Mesh)
+	if (!FMantleTerrainBuilder::FinishChunk(Params, MoveTemp(*Prepared), Vertices, Job.Built, bEmpty, &Error) || !Job.Built.Mesh)
 	{
 		Fail(Index, Error.IsEmpty() ? FString(TEXT("the mesh could not be made")) : Error);
 		return;
 	}
-	UBodySetup* Body = Job.Built.Mesh->GetBodySetup();
-	if (!Body)
-	{
-		Fail(Index, TEXT("the mesh has no body setup"));
-		return;
-	}
-	CookingMeshes.Add(Index, Job.Built.Mesh);
-	Job.Phase = FJob::EPhase::Cooking;
-	// The collision is cooked off the game thread; the chunk swaps in when it is done. The callback holds the job weakly: a job that was dropped (a chunk no longer wanted, the
-	// world ending) is not kept alive by an engine task that has not run yet.
-	const TWeakPtr<FJob> WeakJob = Chunk.Job;
-	Body->CreatePhysicsMeshesAsync(FOnAsyncPhysicsCookFinished::CreateLambda([WeakJob](const bool bOk)
-	{
-		if (const TSharedPtr<FJob> Live = WeakJob.Pin())
-		{
-			Live->bCookOk = bOk;
-			Live->bCookDone = true;
-		}
-	}));
+	// The mesh waits for its swap (the next step's): held by the stream, so the garbage collector sees it.
+	MadeMeshes.Add(Index, Job.Built.Mesh);
+	Job.Phase = FJob::EPhase::Made;
 	const double Seconds = FPlatformTime::Seconds() - Start;
 	Stats.FinishSeconds += Seconds;
 	Stats.WorstFinishSeconds = FMath::Max(Stats.WorstFinishSeconds, Seconds);
@@ -495,7 +539,7 @@ void UMantleTerrainStreamComponent::SwapIn(const int32 Index)
 	const double Start = FPlatformTime::Seconds();
 	FJob& Job = *Chunk.Job;
 	UStaticMeshComponent* NearComponent = FMantleTerrainBuilder::AddChunkComponent(Owner, Owner->GetRootComponent(), Job.Built, Material, bStatic, bCastShadow,
-		/*bCollision*/ true, /*bFar*/ false, /*bRegister*/ false);
+		/*bFar*/ false, /*bRegister*/ false);
 	// One step: the full chunk is registered and the far one is not, with no frame between, so a frame never draws both or neither.
 	NearComponent->RegisterComponent();
 	if (UStaticMeshComponent* Far = Chunk.FarComponent.Get())
@@ -503,7 +547,7 @@ void UMantleTerrainStreamComponent::SwapIn(const int32 Index)
 		Far->UnregisterComponent();
 	}
 	Chunk.NearComponent = NearComponent;
-	CookingMeshes.Remove(Index);
+	MadeMeshes.Remove(Index);
 	const double BuildSeconds = FPlatformTime::Seconds() - Job.StartedSeconds;
 	Chunk.Job.Reset();
 	Chunk.State = EMantleTerrainChunkState::Near;
@@ -511,7 +555,6 @@ void UMantleTerrainStreamComponent::SwapIn(const int32 Index)
 	--Stats.BuildingNow;
 	++Stats.NearNow;
 	++Stats.SwapsToNear;
-	++AreaSerial;
 	const double Seconds = FPlatformTime::Seconds() - Start;
 	Stats.SwapInSeconds += Seconds;
 	Stats.WorstSwapInSeconds = FMath::Max(Stats.WorstSwapInSeconds, Seconds);
@@ -522,17 +565,7 @@ void UMantleTerrainStreamComponent::SwapIn(const int32 Index)
 		NearComponent->IsRegistered() ? 1 : 0, Seconds * 1000.0, BuildSeconds * 1000.0, Stats.NearNow);
 }
 
-void UMantleTerrainStreamComponent::BeginRelease(const int32 Index)
-{
-	FChunk& Chunk = Chunks[Index];
-	Chunk.State = EMantleTerrainChunkState::Releasing;
-	Chunk.ReleaseAtFrame = GFrameCounter + MantleTerrainStreamPrivate::ReleaseDelayFrames;
-	// It stops counting as standing now: a body that asks the collision gate sees this at once and stops simulating before the collision goes.
-	++TakeDownSerial;
-	++AreaSerial;
-}
-
-void UMantleTerrainStreamComponent::EndRelease(const int32 Index)
+void UMantleTerrainStreamComponent::Release(const int32 Index)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(MantleTerrainStream_SwapOut);
 	FChunk& Chunk = Chunks[Index];
@@ -550,7 +583,6 @@ void UMantleTerrainStreamComponent::EndRelease(const int32 Index)
 	Chunk.State = EMantleTerrainChunkState::Far;
 	--Stats.NearNow;
 	++Stats.SwapsToFar;
-	++AreaSerial;
 	const double Seconds = FPlatformTime::Seconds() - Start;
 	Stats.SwapOutSeconds += Seconds;
 	Stats.WorstSwapOutSeconds = FMath::Max(Stats.WorstSwapOutSeconds, Seconds);
@@ -563,7 +595,7 @@ void UMantleTerrainStreamComponent::EndRelease(const int32 Index)
 void UMantleTerrainStreamComponent::Discard(const int32 Index, const TCHAR* Why)
 {
 	FChunk& Chunk = Chunks[Index];
-	AbortCook(Index);
+	MadeMeshes.Remove(Index);
 	Chunk.Job.Reset();
 	Chunk.State = EMantleTerrainChunkState::Far;
 	--BuildingCount;
@@ -577,7 +609,7 @@ void UMantleTerrainStreamComponent::Discard(const int32 Index, const TCHAR* Why)
 void UMantleTerrainStreamComponent::Fail(const int32 Index, const FString& Why)
 {
 	FChunk& Chunk = Chunks[Index];
-	AbortCook(Index);
+	MadeMeshes.Remove(Index);
 	const bool bWasBuilding = Chunk.State == EMantleTerrainChunkState::Building;
 	Chunk.Job.Reset();
 	Chunk.State = EMantleTerrainChunkState::Failed;
@@ -587,35 +619,22 @@ void UMantleTerrainStreamComponent::Fail(const int32 Index, const FString& Why)
 		--Stats.BuildingNow;
 	}
 	++Stats.FailedNow;
-	++AreaSerial;
 	const FIntPoint Coord = Grid.CoordOf(Index);
 	UE_LOG(LogMantle, Warning, TEXT("MANTLE_TERRAIN_STREAM FAIL terrain=%s chunk=%d,%d: %s (the far chunk stays; nothing stands there)"), *TerrainName, Coord.X, Coord.Y, *Why);
 }
 
-void UMantleTerrainStreamComponent::AbortCook(const int32 Index)
+int32 UMantleTerrainStreamComponent::GetMadeCount() const
 {
-	// The cook of this chunk's mesh, if one runs: asked to stop (the engine drops its result), and the mesh let go of.
-	if (const TObjectPtr<UStaticMesh>* Mesh = CookingMeshes.Find(Index))
-	{
-		if (*Mesh)
-		{
-			if (UBodySetup* Body = (*Mesh)->GetBodySetup())
-			{
-				Body->AbortPhysicsMeshAsyncCreation();
-			}
-		}
-		CookingMeshes.Remove(Index);
-	}
+	return MadeMeshes.Num();
 }
 
 void UMantleTerrainStreamComponent::CancelAllJobs()
 {
-	for (int32 Index = 0; Index < Chunks.Num(); ++Index)
+	for (FChunk& Chunk : Chunks)
 	{
-		AbortCook(Index);
-		Chunks[Index].Job.Reset();
+		Chunk.Job.Reset();
 	}
-	CookingMeshes.Reset();
+	MadeMeshes.Reset();
 	BuildingCount = 0;
 	Stats.BuildingNow = 0;
 }
@@ -644,46 +663,6 @@ bool UMantleTerrainStreamComponent::AreaStands(const TArray<FVector>& WorldPoint
 	return true;
 }
 
-void UMantleTerrainStreamComponent::CountArea(const FVector& WorldPoint, const double RadiusCm, int32& OutCells, int32& OutBuilt, int32& OutFailed, int32& OutPending) const
-{
-	OutCells = 0;
-	OutBuilt = 0;
-	OutFailed = 0;
-	OutPending = 0;
-	TArray<FVector2D> Local;
-	WorldToTerrain(TArray<FVector>{ WorldPoint }, Local);
-	if (Local.Num() == 0)
-	{
-		return;
-	}
-	const double Radius = RadiusCm / MantleTerrainStreamPrivate::ScaleOf(GetOwner());
-	for (int32 Index = 0; Index < Chunks.Num(); ++Index)
-	{
-		const FChunk& Chunk = Chunks[Index];
-		if (Chunk.State == EMantleTerrainChunkState::Empty || Grid.DistanceTo(Index, Local[0]) > Radius)
-		{
-			continue;
-		}
-		++OutCells;
-		switch (Chunk.State)
-		{
-		case EMantleTerrainChunkState::Near:
-			++OutBuilt;
-			break;
-		case EMantleTerrainChunkState::Failed:
-			++OutFailed;
-			break;
-		default:
-			// Far, Building or on its way out: it does not stand; a chunk the plan wants is on its way.
-			if (Chunk.bWanted || Chunk.State == EMantleTerrainChunkState::Building)
-			{
-				++OutPending;
-			}
-			break;
-		}
-	}
-}
-
 FMantleTerrainAudit UMantleTerrainStreamComponent::Audit()
 {
 	FMantleTerrainAudit Out;
@@ -693,7 +672,7 @@ FMantleTerrainAudit UMantleTerrainStreamComponent::Audit()
 		const FChunk& Chunk = Chunks[Index];
 		const bool bFarDrawn = Chunk.FarComponent.IsValid() && Chunk.FarComponent->IsRegistered();
 		const bool bFullDrawn = Chunk.NearComponent.IsValid() && Chunk.NearComponent->IsRegistered();
-		const bool bShouldDraw = Chunk.bHasFarMesh || Chunk.NearComponent.IsValid() || Chunk.State == EMantleTerrainChunkState::Near || Chunk.State == EMantleTerrainChunkState::Releasing;
+		const bool bShouldDraw = Chunk.bHasFarMesh || Chunk.NearComponent.IsValid() || Chunk.State == EMantleTerrainChunkState::Near;
 		if (!bShouldDraw)
 		{
 			continue;
@@ -744,7 +723,7 @@ void UMantleTerrainStreamComponent::LogSummary(const TCHAR* Why) const
 
 void UMantleTerrainStreamComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	// A world that ends (the player leaves the place) lets go of every cook before it is collected.
+	// A world that ends (the player leaves the place) lets go of every job before it is collected.
 	CancelAllJobs();
 	Super::EndPlay(EndPlayReason);
 }

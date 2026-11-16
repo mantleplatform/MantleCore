@@ -153,7 +153,8 @@ FTransform FMantleScatterEditorGround::AsPublished(const FTransform& Transform)
 	return FTransform(FRotator(Transform.GetRotation().Rotator()), Transform.GetLocation(), Transform.GetScale3D());
 }
 
-FMantleScatterTerrainSurface FMantleScatterEditorGround::SurfaceFor(const FMantleTerrainSource& Source, UWorld* World, const FString& Label)
+FMantleScatterTerrainSurface FMantleScatterEditorGround::SurfaceFor(const FMantleTerrainSource& Source, UWorld* World, const FString& Label,
+	const TArray<FMantleTerrainLayerChoice>* LayersOfLandscape)
 {
 	FMantleScatterTerrainSurface Out;
 	Out.TerrainToWorld = AsPublished(Source.Transform);
@@ -181,7 +182,17 @@ FMantleScatterTerrainSurface FMantleScatterEditorGround::SurfaceFor(const FMantl
 	// converter uploads them. The PNG is lossless, so the pixels MakeWeightmaps gives at that size are the ones a client decodes.
 	TArray<FMantleTerrainLayerChoice> Layers;
 	TArray<FMantleValidationIssue> LayerIssues;
-	if (World && FMantleTerrainExport::ChooseLayers(World, Source, Label, Layers, LayerIssues))
+	bool bHaveLayers = false;
+	if (World && LayersOfLandscape)
+	{
+		Layers = *LayersOfLandscape;
+		bHaveLayers = true;
+	}
+	else if (World)
+	{
+		bHaveLayers = FMantleTerrainExport::ChooseLayers(World, Source, Label, Layers, LayerIssues);
+	}
+	if (bHaveLayers)
 	{
 		Out.LayerCount = Layers.Num();
 		Out.bWeightmap = Layers.Num() > 1;
@@ -212,7 +223,8 @@ FMantleScatterTerrainSurface FMantleScatterEditorGround::SurfaceFor(const FMantl
 TArray<FMantleScatterTerrainSurface> FMantleScatterEditorGround::SurfacesFor(UWorld* World)
 {
 	TArray<FMantleScatterTerrainSurface> Out;
-	for (const AActor* Landscape : FMantleTerrainExport::TerrainLandscapes(World))
+	TArray<const AActor*> Resampled;
+	for (const AActor* Landscape : FMantleTerrainExport::TerrainLandscapes(World, nullptr, &Resampled))
 	{
 		FMantleTerrainSource Source;
 		FString Problem;
@@ -221,10 +233,29 @@ TArray<FMantleScatterTerrainSurface> FMantleScatterEditorGround::SurfacesFor(UWo
 			UE_LOG(LogMantle, Verbose, TEXT("MANTLE_SCATTER editor ground: %s is left out: %s"), *Landscape->GetName(), *Problem);
 			continue;
 		}
-		FMantleScatterTerrainSurface Surface = SurfaceFor(Source, World, Landscape->GetActorLabel());
-		if (Surface.Field.IsValid())
+		// A landscape larger than one heightfield is its terrain tiles, as the game builds them: a surface for each, with the landscape's layers.
+		const TArray<FMantleTerrainTile> Tiles = FMantleTerrainExport::PlanTiles(Source.Width, Source.Height, Resampled.Contains(Landscape));
+		if (Tiles.Num() <= 1)
 		{
-			Out.Add(MoveTemp(Surface));
+			FMantleScatterTerrainSurface Surface = SurfaceFor(Source, World, Landscape->GetActorLabel());
+			if (Surface.Field.IsValid())
+			{
+				Out.Add(MoveTemp(Surface));
+			}
+			continue;
+		}
+		TArray<FMantleTerrainLayerChoice> Layers;
+		TArray<FMantleValidationIssue> LayerIssues;
+		const bool bLayers = World && FMantleTerrainExport::ChooseLayers(World, Source, Landscape->GetActorLabel(), Layers, LayerIssues);
+		const TArray<uint8> SlopeMask = bLayers ? FMantleTerrainExport::BakeSlopeFor(Source, Layers) : TArray<uint8>();
+		for (const FMantleTerrainTile& Tile : Tiles)
+		{
+			const FMantleTerrainSource TileSource = FMantleTerrainExport::CutTile(Source, Tile, &SlopeMask);
+			FMantleScatterTerrainSurface Surface = SurfaceFor(TileSource, bLayers ? World : nullptr, Landscape->GetActorLabel(), bLayers ? &Layers : nullptr);
+			if (Surface.Field.IsValid())
+			{
+				Out.Add(MoveTemp(Surface));
+			}
 		}
 	}
 	return Out;

@@ -234,6 +234,236 @@ FString FMantleTerrainExport::HolesKeyForPath(const FString& LandscapePath)
 	return TEXT("terrainholes:") + LandscapePath;
 }
 
+namespace MantleTerrainExportPrivate
+{
+	/** Tiles along one axis of N samples: ceil((N - 1) / TileQuads), at least 1. */
+	int32 TilesAlong(const int32 Samples)
+	{
+		return Samples < 2 ? 1 : (Samples - 1 + FMantleTerrainExport::TileQuads - 1) / FMantleTerrainExport::TileQuads;
+	}
+
+	/** The lowercase hex MD5 of Text's UTF-8 bytes. */
+	FString TerrainMd5Hex(const FString& Text)
+	{
+		FMD5 Md5;
+		const FTCHARToUTF8 Utf8(*Text);
+		Md5.Update(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length());
+		uint8 Digest[16];
+		Md5.Final(Digest);
+		FString Hex;
+		Hex.Reserve(32);
+		for (const uint8 Byte : Digest)
+		{
+			Hex += FString::Printf(TEXT("%02x"), Byte);
+		}
+		return Hex;
+	}
+}
+
+TArray<FMantleTerrainTile> FMantleTerrainExport::PlanTiles(const int32 Width, const int32 Height, const bool bResampled)
+{
+	using namespace MantleTerrainExportPrivate;
+
+	const int32 CountX = bResampled ? 1 : TilesAlong(Width);
+	const int32 CountY = bResampled ? 1 : TilesAlong(Height);
+	TArray<FMantleTerrainTile> Tiles;
+	Tiles.Reserve(CountX * CountY);
+	for (int32 Y = 0; Y < CountY; ++Y)
+	{
+		for (int32 X = 0; X < CountX; ++X)
+		{
+			FMantleTerrainTile& Tile = Tiles.AddDefaulted_GetRef();
+			Tile.Index = FIntPoint(X, Y);
+			Tile.First = FIntPoint(X * TileQuads, Y * TileQuads);
+			// What is left of the landscape past the tile's first sample, up to a full tile: quads + 1 samples. A landscape too small to be one is kept whole.
+			Tile.Width = bResampled || Width < 2 ? Width : FMath::Min(TileQuads, Width - 1 - Tile.First.X) + 1;
+			Tile.Height = bResampled || Height < 2 ? Height : FMath::Min(TileQuads, Height - 1 - Tile.First.Y) + 1;
+			Tile.bNeighborX = X < CountX - 1;
+			Tile.bNeighborY = Y < CountY - 1;
+		}
+	}
+	return Tiles;
+}
+
+int32 FMantleTerrainExport::TileCount(const int32 Width, const int32 Height)
+{
+	return MantleTerrainExportPrivate::TilesAlong(Width) * MantleTerrainExportPrivate::TilesAlong(Height);
+}
+
+int32 FMantleTerrainExport::TileCount(const AActor* Actor)
+{
+	const ALandscape* Landscape = Cast<ALandscape>(Actor);
+	const ULandscapeInfo* Info = Landscape ? Landscape->GetLandscapeInfo() : nullptr;
+	int32 MinX = 0;
+	int32 MinY = 0;
+	int32 MaxX = 0;
+	int32 MaxY = 0;
+	if (!Info || !Info->GetLandscapeExtent(MinX, MinY, MaxX, MaxY))
+	{
+		return 1;
+	}
+	return TileCount(MaxX - MinX + 1, MaxY - MinY + 1);
+}
+
+FString FMantleTerrainExport::TileSuffix(const FIntPoint Index, const int32 TileCount)
+{
+	return TileCount > 1 ? FString::Printf(TEXT("#%d,%d"), Index.X, Index.Y) : FString();
+}
+
+FString FMantleTerrainExport::TileName(const FString& Label, const FIntPoint Index, const int32 TileCount)
+{
+	if (TileCount <= 1)
+	{
+		return Label.Left(FMantlePlaceLimits::MaxEntityNameLength);
+	}
+	const FString Tail = FString::Printf(TEXT("_%d_%d"), Index.X, Index.Y);
+	return Label.Left(FMath::Max(FMantlePlaceLimits::MaxEntityNameLength - Tail.Len(), 0)) + Tail;
+}
+
+FString FMantleTerrainExport::TileEntityId(const FString& BaseId, const FIntPoint Index)
+{
+	if (Index == FIntPoint::ZeroValue)
+	{
+		return BaseId;
+	}
+	FString Guid = BaseId;
+	Guid.RemoveFromStart(TEXT("ent_"));
+	return TEXT("ent_") + MantleTerrainExportPrivate::TerrainMd5Hex(FString::Printf(TEXT("%s|T|%d|%d"), *Guid, Index.X, Index.Y)).Left(24);
+}
+
+double FMantleTerrainExport::TileTiling(const double TilingCm, const int32 TileCount, const double SpacingX)
+{
+	if (TilingCm <= 0.0 || TileCount <= 1)
+	{
+		return TilingCm;
+	}
+	// One tiling for every tile, from a full tile's X extent: whole repeats, and not past the cap a layer's tiling is held to.
+	const double Extent = TileQuads * SpacingX;
+	const double Repeats = FMath::Max3(1.0, FMath::RoundToDouble(Extent / TilingCm), FMath::CeilToDouble(Extent / FMantlePlaceLimits::MaxTerrainTilingCm));
+	return Extent / Repeats;
+}
+
+FTransform FMantleTerrainExport::TileTransform(const FMantleTerrainSource& Source, const FMantleTerrainTile& Tile)
+{
+	// The landscape's rotation and spacing applied to the tile's first sample, added to where its first sample is.
+	const FVector Offset(Tile.First.X * Source.SpacingX, Tile.First.Y * Source.SpacingY, 0.0);
+	return FTransform(Source.Transform.GetRotation(), Source.Transform.GetLocation() + Source.Transform.GetRotation().RotateVector(Offset), Source.Transform.GetScale3D());
+}
+
+bool FMantleTerrainExport::TileHasHoles(const FMantleTerrainSource& Source, const FMantleTerrainTile& Tile)
+{
+	if (Source.Holes.Num() != Source.Width * Source.Height)
+	{
+		return false;
+	}
+	for (int32 Y = 0; Y < Tile.Height; ++Y)
+	{
+		const uint8* Row = Source.Holes.GetData() + (Tile.First.Y + Y) * Source.Width + Tile.First.X;
+		for (int32 X = 0; X < Tile.Width; ++X)
+		{
+			if (Row[X] == 1)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+TArray<uint8> FMantleTerrainExport::SliceGrid(const TArray<uint8>& Grid, const int32 Width, const int32 Height, const FMantleTerrainTile& Tile)
+{
+	TArray<uint8> Out;
+	if (Grid.Num() != Width * Height || Tile.First.X < 0 || Tile.First.Y < 0 || Tile.First.X + Tile.Width > Width || Tile.First.Y + Tile.Height > Height)
+	{
+		return Out;
+	}
+	Out.SetNumUninitialized(Tile.Width * Tile.Height);
+	for (int32 Y = 0; Y < Tile.Height; ++Y)
+	{
+		FMemory::Memcpy(Out.GetData() + Y * Tile.Width, Grid.GetData() + (Tile.First.Y + Y) * Width + Tile.First.X, Tile.Width);
+	}
+	return Out;
+}
+
+TArray<uint8> FMantleTerrainExport::BakeSlopeFor(const FMantleTerrainSource& Source, const TArray<FMantleTerrainLayerChoice>& Layers)
+{
+	if (Source.SlopeMask.Num() > 0 && Source.SlopeMask.Num() == Source.Width * Source.Height)
+	{
+		return Source.SlopeMask;
+	}
+	for (const FMantleTerrainLayerChoice& Layer : Layers)
+	{
+		if (Layer.bSlopeOverlay)
+		{
+			return BakeSlopeMask(Source, Source.MaterialRead.SlopeOverlay);
+		}
+	}
+	return TArray<uint8>();
+}
+
+FMantleTerrainSource FMantleTerrainExport::CutTile(const FMantleTerrainSource& Source, const FMantleTerrainTile& Tile, const TArray<uint8>* SlopeMask)
+{
+	FMantleTerrainSource Out;
+	Out.Width = Tile.Width;
+	Out.Height = Tile.Height;
+	Out.SpacingX = Source.SpacingX;
+	Out.SpacingY = Source.SpacingY;
+	Out.HeightScale = Source.HeightScale;
+	Out.HeightOffset = Source.HeightOffset;
+	Out.LayerNames = Source.LayerNames;
+	Out.LayerPhysMaterials = Source.LayerPhysMaterials;
+	Out.MaterialRead = Source.MaterialRead;
+	Out.bMaterialRead = Source.bMaterialRead;
+	Out.MaterialProblem = Source.MaterialProblem;
+	Out.LandscapeMaterial = Source.LandscapeMaterial;
+	Out.LandscapeMaterialUvRepeat = Source.LandscapeMaterialUvRepeat;
+	Out.LayerColors = Source.LayerColors;
+	Out.WaterBodiesCarving = Source.WaterBodiesCarving;
+	Out.bCarveRefreshed = Source.bCarveRefreshed;
+	Out.bCarveStale = Source.bCarveStale;
+	Out.LandscapePath = Source.LandscapePath;
+	Out.FirstSample = Source.FirstSample + Tile.First;
+	Out.Transform = TileTransform(Source, Tile);
+
+	// The landscape's own height values, copied row by row (bit for bit).
+	if (Source.Heights.Num() == Source.Width * Source.Height)
+	{
+		Out.Heights.SetNumUninitialized(Tile.Width * Tile.Height);
+		for (int32 Y = 0; Y < Tile.Height; ++Y)
+		{
+			FMemory::Memcpy(Out.Heights.GetData() + Y * Tile.Width, Source.Heights.GetData() + (Tile.First.Y + Y) * Source.Width + Tile.First.X, Tile.Width * sizeof(uint16));
+		}
+	}
+	// Every layer, painted in the tile or not: a layer keeps its index in every tile.
+	Out.LayerWeights.Reserve(Source.LayerWeights.Num());
+	for (const TArray<uint8>& Weights : Source.LayerWeights)
+	{
+		Out.LayerWeights.Add(SliceGrid(Weights, Source.Width, Source.Height, Tile));
+	}
+	if (TileHasHoles(Source, Tile))
+	{
+		Out.Holes = SliceGrid(Source.Holes, Source.Width, Source.Height, Tile);
+		Out.bHasHoles = true;
+		int32 AllHoles = 0;
+		for (const uint8 Hole : Out.Holes)
+		{
+			AllHoles += Hole == 1 ? 1 : 0;
+		}
+		// Painted holes and samples no component covers, counted as the landscape counts them.
+		Out.Uncovered = SliceGrid(Source.Uncovered, Source.Width, Source.Height, Tile);
+		for (const uint8 Missing : Out.Uncovered)
+		{
+			Out.MissingSamples += Missing == 1 ? 1 : 0;
+		}
+		Out.HoleSamples = AllHoles - Out.MissingSamples;
+	}
+	if (SlopeMask && SlopeMask->Num() == Source.Width * Source.Height)
+	{
+		Out.SlopeMask = SliceGrid(*SlopeMask, Source.Width, Source.Height, Tile);
+	}
+	return Out;
+}
+
 void FMantleTerrainExport::ApplyCoverage(FMantleTerrainSource& Source, const TArray<uint8>& Covered)
 {
 	const int32 Width = Source.Width;
@@ -246,6 +476,7 @@ void FMantleTerrainExport::ApplyCoverage(FMantleTerrainSource& Source, const TAr
 	{
 		Source.Holes.SetNumZeroed(Width * Height);
 	}
+	Source.Uncovered.SetNumZeroed(Width * Height);
 	// Along each row, a missing sample takes the height of the nearest covered sample in that row.
 	TArray<bool> RowFilled;
 	RowFilled.Init(false, Height);
@@ -271,6 +502,7 @@ void FMantleTerrainExport::ApplyCoverage(FMantleTerrainSource& Source, const TAr
 			}
 			++Source.MissingSamples;
 			Source.Holes[Row + X] = 1;
+			Source.Uncovered[Row + X] = 1;
 			const int32 Left = NearestLeft[X];
 			const int32 From = Left == INDEX_NONE ? Next : Next == INDEX_NONE ? Left : (X - Left <= Next - X ? Left : Next);
 			if (From != INDEX_NONE)
@@ -1150,7 +1382,9 @@ void FMantleTerrainExport::MakeWeightmaps(const FMantleTerrainSource& Source, co
 			}
 		}
 	}
-	const TArray<uint8> SlopeMask = Plan.SlopeChannel != INDEX_NONE ? BakeSlopeMask(Source, Source.MaterialRead.SlopeOverlay) : TArray<uint8>();
+	// A tile's slope weights were baked over the whole landscape before it was cut (so its border sees the neighbour's heights).
+	const TArray<uint8> SlopeMask = Plan.SlopeChannel == INDEX_NONE ? TArray<uint8>()
+		: Source.SlopeMask.Num() == Source.Width * Source.Height ? Source.SlopeMask : BakeSlopeMask(Source, Source.MaterialRead.SlopeOverlay);
 	BuildTerrainWeightTexels(Source, Plan, SlopeMask, Size, OutFirst, OutSecond);
 }
 
@@ -1206,7 +1440,8 @@ int64 FMantleTerrainExport::PublishedSamples(const int32 Width, const int32 Heig
 	{
 		return 0;
 	}
-	return static_cast<int64>(FMath::Min(Width, FMantleHeightfieldReader::MaxSize)) * FMath::Min(Height, FMantleHeightfieldReader::MaxSize);
+	// Every tile's samples, a shared border row or column counted in both: Width + (tiles - 1) along X, and the same along Y.
+	return (static_cast<int64>(Width) + TileCount(Width, 1) - 1) * (static_cast<int64>(Height) + TileCount(1, Height) - 1);
 }
 
 int64 FMantleTerrainExport::PublishedSamples(const AActor* Actor)
@@ -1225,47 +1460,111 @@ int64 FMantleTerrainExport::PublishedSamples(const AActor* Actor)
 	return PublishedSamples(MaxX - MinX + 1, MaxY - MinY + 1);
 }
 
-TArray<int32> FMantleTerrainExport::FitTerrains(TConstArrayView<int64> Samples, TConstArrayView<FString> Labels, TArray<TPair<int32, FMantleValidationIssue>>& OutLeftOut)
+int64 FMantleTerrainExport::ResampledSamples(const int32 Width, const int32 Height)
+{
+	if (Width < 2 || Height < 2)
+	{
+		return 0;
+	}
+	return static_cast<int64>(FMath::Min(Width, FMantleHeightfieldReader::MaxSize)) * FMath::Min(Height, FMantleHeightfieldReader::MaxSize);
+}
+
+int64 FMantleTerrainExport::ResampledSamples(const AActor* Actor)
+{
+	const ALandscape* Landscape = Cast<ALandscape>(Actor);
+	const ULandscapeInfo* Info = Landscape ? Landscape->GetLandscapeInfo() : nullptr;
+	int32 MinX = 0;
+	int32 MinY = 0;
+	int32 MaxX = 0;
+	int32 MaxY = 0;
+	if (!Info || !Info->GetLandscapeExtent(MinX, MinY, MaxX, MaxY))
+	{
+		return 0;
+	}
+	return ResampledSamples(MaxX - MinX + 1, MaxY - MinY + 1);
+}
+
+bool FMantleTerrainExport::PublishesResampled(const AActor* Landscape)
+{
+	if (!Landscape || !Landscape->GetWorld() || TileCount(Landscape) <= 1)
+	{
+		return false;
+	}
+	TArray<const AActor*> Resampled;
+	TerrainLandscapes(Landscape->GetWorld(), nullptr, &Resampled);
+	return Resampled.Contains(Landscape);
+}
+
+TArray<int32> FMantleTerrainExport::FitTerrains(TConstArrayView<int64> Samples, TConstArrayView<FString> Labels, TArray<TPair<int32, FMantleValidationIssue>>& OutLeftOut,
+	TConstArrayView<int32> Tiles, TConstArrayView<int64> ResampledSamples, TArray<int32>* OutResampled)
 {
 	TArray<int32> Kept;
 	int64 PlaceSamples = 0;
+	int32 PlaceTerrains = 0;
 	for (int32 Index = 0; Index < Samples.Num(); ++Index)
 	{
 		const FString Label = Labels.IsValidIndex(Index) ? Labels[Index] : FString();
-		if (Kept.Num() >= FMantlePlaceLimits::MaxTerrainsPerPlace)
+		// A landscape is as many Terrains as it has tiles.
+		int32 Terrains = Tiles.IsValidIndex(Index) ? FMath::Max(Tiles[Index], 1) : 1;
+		int64 Taken = Samples[Index];
+		// Its tiles do not fit what is left of the place's limits: it publishes resampled to one Terrain instead, as before tiles, if that fits.
+		if (OutResampled && Terrains > 1 && ResampledSamples.IsValidIndex(Index)
+			&& (PlaceTerrains + Terrains > FMantlePlaceLimits::MaxTerrainsPerPlace || PlaceSamples + Taken > FMantlePlaceLimits::MaxTerrainSamplesPerPlace))
 		{
-			OutLeftOut.Emplace(Index, TooManyLandscapes(Label, Index + 1));
+			Terrains = 1;
+			Taken = ResampledSamples[Index];
+			if (PlaceTerrains + 1 <= FMantlePlaceLimits::MaxTerrainsPerPlace && PlaceSamples + Taken <= FMantlePlaceLimits::MaxTerrainSamplesPerPlace)
+			{
+				OutResampled->Add(Index);
+			}
+		}
+		if (PlaceTerrains + Terrains > FMantlePlaceLimits::MaxTerrainsPerPlace)
+		{
+			OutLeftOut.Emplace(Index, TooManyLandscapes(Label, Index + 1, Terrains, PlaceTerrains));
 			continue;
 		}
 		// A landscape that does not fit is left out, and the next one may still fit.
-		if (PlaceSamples + Samples[Index] > FMantlePlaceLimits::MaxTerrainSamplesPerPlace)
+		if (PlaceSamples + Taken > FMantlePlaceLimits::MaxTerrainSamplesPerPlace)
 		{
-			OutLeftOut.Emplace(Index, OverSampleBudget(Label, Samples[Index], PlaceSamples));
+			OutLeftOut.Emplace(Index, OverSampleBudget(Label, Taken, PlaceSamples));
 			continue;
 		}
-		PlaceSamples += Samples[Index];
+		PlaceSamples += Taken;
+		PlaceTerrains += Terrains;
 		Kept.Add(Index);
 	}
 	return Kept;
 }
 
-TArray<AActor*> FMantleTerrainExport::TerrainLandscapes(UWorld* World, TArray<TPair<const AActor*, FMantleValidationIssue>>* OutLeftOut)
+TArray<AActor*> FMantleTerrainExport::TerrainLandscapes(UWorld* World, TArray<TPair<const AActor*, FMantleValidationIssue>>* OutLeftOut, TArray<const AActor*>* OutResampled)
 {
 	using namespace MantleTerrainExportPrivate;
 
 	const TArray<AActor*> Landscapes = CollectLandscapes(World);
 	TArray<int64> Samples;
+	TArray<int64> Resampled;
+	TArray<int32> Tiles;
 	TArray<FString> Labels;
 	for (const AActor* Landscape : Landscapes)
 	{
 		Samples.Add(PublishedSamples(Landscape));
+		Resampled.Add(ResampledSamples(Landscape));
+		Tiles.Add(TileCount(Landscape));
 		Labels.Add(TerrainLabelOf(Landscape));
 	}
 	TArray<TPair<int32, FMantleValidationIssue>> LeftOut;
 	TArray<AActor*> Out;
-	for (const int32 Index : FitTerrains(Samples, Labels, LeftOut))
+	TArray<int32> ResampledIndices;
+	for (const int32 Index : FitTerrains(Samples, Labels, LeftOut, Tiles, Resampled, &ResampledIndices))
 	{
 		Out.Add(Landscapes[Index]);
+	}
+	if (OutResampled)
+	{
+		for (const int32 Index : ResampledIndices)
+		{
+			OutResampled->Add(Landscapes[Index]);
+		}
 	}
 	if (OutLeftOut)
 	{
@@ -1277,8 +1576,41 @@ TArray<AActor*> FMantleTerrainExport::TerrainLandscapes(UWorld* World, TArray<TP
 	return Out;
 }
 
-FMantleValidationIssue FMantleTerrainExport::TooManyLandscapes(const FString& Label, const int32 Number)
+FMantleValidationIssue FMantleTerrainExport::ResampledIssue(const FString& Label, const int32 Width, const int32 Height, const FMantleHeightfield& Field)
 {
+	return FMantleValidationIssue{ EMantleIssueSeverity::Warning, Label,
+		FString::Printf(TEXT("is %d x %d samples. As terrain tiles it would take the place past its limits (at most %d terrains and %s samples, counting the landscapes before it), so players get it resampled to %d x %d, %.0f x %.0f cm apart."),
+			Width, Height, FMantlePlaceLimits::MaxTerrainsPerPlace, *FText::AsNumber(FMantlePlaceLimits::MaxTerrainSamplesPerPlace).ToString(),
+			Field.Width, Field.Height, Field.SpacingX, Field.SpacingY),
+		TEXT("To keep every sample, give this landscape fewer samples (a larger section size or scale), or split the level into more than one place.") };
+}
+
+FMantleValidationIssue FMantleTerrainExport::TilesIssue(const FString& Label, const int32 Width, const int32 Height)
+{
+	const int32 Tiles = TileCount(Width, Height);
+	return FMantleValidationIssue{ EMantleIssueSeverity::Warning, Label,
+		FString::Printf(TEXT("is %d x %d samples. This landscape publishes as %d terrain tiles (%d x %d), each up to %d x %d samples, at the landscape's own spacing."),
+			Width, Height, Tiles, MantleTerrainExportPrivate::TilesAlong(Width), MantleTerrainExportPrivate::TilesAlong(Height),
+			FMantleHeightfieldReader::MaxSize, FMantleHeightfieldReader::MaxSize),
+		TEXT("Nothing to do. Each tile counts as a Terrain against the place's limits.") };
+}
+
+FMantleValidationIssue FMantleTerrainExport::TooManyLandscapes(const FString& Label, const int32 Number, const int32 Tiles, const int32 TerrainsBefore)
+{
+	if (Tiles <= 1 && TerrainsBefore >= Number)
+	{
+		// The landscapes before it have more tiles than landscapes: the Terrains ran out, not the landscapes.
+		return FMantleValidationIssue{ EMantleIssueSeverity::Error, Label,
+			FString::Printf(TEXT("is landscape number %d, and the landscapes before it already publish as %d terrains; a place publishes at most %d terrains (a landscape of several terrain tiles takes one for each), so it is left out."),
+				Number, TerrainsBefore, FMantlePlaceLimits::MaxTerrainsPerPlace),
+			TEXT("Remove a landscape the place does not need, or split the world into more than one place.") };
+	}
+	if (Tiles > 1)
+	{
+		return FMantleValidationIssue{ EMantleIssueSeverity::Error, Label,
+			FString::Printf(TEXT("is landscape number %d and publishes as %d terrain tiles; a place publishes at most %d terrains, so it is left out."), Number, Tiles, FMantlePlaceLimits::MaxTerrainsPerPlace),
+			TEXT("Remove a landscape the place does not need, or split the world into more than one place.") };
+	}
 	return FMantleValidationIssue{ EMantleIssueSeverity::Error, Label,
 		FString::Printf(TEXT("is landscape number %d; a place publishes at most %d landscapes, so it is left out."), Number, FMantlePlaceLimits::MaxTerrainsPerPlace),
 		TEXT("Remove a landscape the place does not need, or split the world into more than one place.") };
@@ -1298,7 +1630,8 @@ void FMantleTerrainExport::CheckLevel(UWorld* World, TArray<FMantleValidationIss
 
 	// The landscapes Export publishes as Terrains (TerrainLandscapes, which Gather and Export take too), and an error for each one left out.
 	TArray<TPair<const AActor*, FMantleValidationIssue>> LeftOut;
-	const TArray<AActor*> Landscapes = TerrainLandscapes(World, &LeftOut);
+	TArray<const AActor*> ResampledLandscapes;
+	const TArray<AActor*> Landscapes = TerrainLandscapes(World, &LeftOut, &ResampledLandscapes);
 	for (TPair<const AActor*, FMantleValidationIssue>& Entry : LeftOut)
 	{
 		OutIssues.Add(MoveTemp(Entry.Value));
@@ -1316,14 +1649,23 @@ void FMantleTerrainExport::CheckLevel(UWorld* World, TArray<FMantleValidationIss
 		}
 		TArray<FMantleTerrainLayerChoice> Layers;
 		ChooseLayers(World, Source, Label, Layers, OutIssues);
-		if (Source.Width > FMantleHeightfieldReader::MaxSize || Source.Height > FMantleHeightfieldReader::MaxSize)
+		// A landscape larger than one heightfield publishes as terrain tiles at its own sample spacing, each a Terrain.
+		const bool bResampled = ResampledLandscapes.Contains(Landscape);
+		const int32 Tiles = bResampled ? 1 : TileCount(Source.Width, Source.Height);
+		if (bResampled)
 		{
-			const FMantleHeightfield Resampled = MakeHeightfield(Source);
-			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, Label,
-				FString::Printf(TEXT("is %d x %d samples; Mantle publishes at most %d on a side, so players get %d x %d, %.0f x %.0f cm apart."),
-					Source.Width, Source.Height, FMantleHeightfieldReader::MaxSize, Resampled.Width, Resampled.Height,
-					Resampled.SpacingX, Resampled.SpacingY),
-				TEXT("Nothing to do. For every sample, make the landscape smaller or split the world into more than one place.") });
+			OutIssues.Add(ResampledIssue(Label, Source.Width, Source.Height, MakeHeightfield(Source)));
+		}
+		if (Tiles > 1)
+		{
+			OutIssues.Add(TilesIssue(Label, Source.Width, Source.Height));
+			// A layer's tiling is made a whole number of repeats per tile from the X spacing; Y differing means a seam where tiles meet along Y.
+			if (FMath::Abs(Source.SpacingX - Source.SpacingY) > 0.01)
+			{
+				OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, Label,
+					FString::Printf(TEXT("has %.2f cm between samples along X and %.2f along Y, so a layer's texture may not line up where its terrain tiles meet along Y."), Source.SpacingX, Source.SpacingY),
+					TEXT("Give the landscape the same X and Y scale, or accept a visible seam in the paint layers' textures at tile borders.") });
+			}
 		}
 	}
 }

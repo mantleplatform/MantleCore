@@ -1110,25 +1110,18 @@ namespace
 		FMantleTerrainBuildParams Params;
 		TSharedPtr<FMantleTerrainSpawn> Spawn;
 		FMantleScatterTerrainSurface* OutSurface = nullptr;
-		/** A client of a streaming place: the spawn is the far ground (every chunk's lowest detail), and the stream component builds full chunks near the view. */
+		/** A machine that draws a streaming place (a client, a standalone game): the spawn is the far ground (every chunk's lowest detail), and the stream component builds full chunks near the view. */
 		bool bFarGround = false;
 	};
 
-	/** Whether this machine draws a terrain as the far ground and builds full chunks near its view: a client of a streaming place. */
-	bool UsesFarGround(const UWorld* World, const FMantlePlace& Place)
+	/**
+	 * Whether this machine draws a terrain as the far ground and builds full chunks near its view: every machine that draws (a client, a standalone game, a listen server), for every place,
+	 * with cells or without (the terrain stream has its own views and its own hold: UMantleCellStreamSubsystem). The ground's collision is the height field on every machine, so what a body
+	 * stands on never depends on what is drawn. A dedicated server draws none.
+	 */
+	bool UsesFarGround(const UWorld* World, const FMantlePlace&)
 	{
-		if (!Place.bCellsStreamed || World->GetNetMode() != NM_Client)
-		{
-			return false;
-		}
-#if !UE_BUILD_SHIPPING
-		// A measurement tool, not in a shipped build: the whole terrain in full, as it was before the far ground, so one launch can be compared with another.
-		if (FParse::Param(FCommandLine::Get(), TEXT("MantleTestFullTerrain")))
-		{
-			return false;
-		}
-#endif
-		return true;
+		return FMantlePlaceBuilder::DrawsTerrainAsFarGround(World);
 	}
 
 	bool BeginTerrainEntity(
@@ -1141,7 +1134,8 @@ namespace
 		FPendingTerrain& Pending,
 		FMantleScatterTerrainSurface* OutSurface,
 		const bool bFarGround,
-		const FTransform* StaticWorld = nullptr)
+		const FTransform* StaticWorld = nullptr,
+		TSharedPtr<const FMantleTerrainEdgeNeighbors> Neighbors = nullptr)
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_Terrain);
 
@@ -1206,6 +1200,11 @@ namespace
 
 		FMantleTerrainBuildParams Params;
 		Params.bRenderLODs = !bDedicatedServer;
+		// A dedicated server draws nothing: its terrain is the heights and the collision blocks made from them, no chunk mesh at all.
+		Params.bChunkMeshes = !bDedicatedServer;
+		Params.FieldOwner = Field;
+		// The terrains that touch this one (the other tiles of a landscape): the seam gets a skirt and the normals read across it.
+		Params.Neighbors = MoveTemp(Neighbors);
 		// The hole mask: quads with a hole corner get no triangles, so no collision, and no grass. A mask that
 		// cannot be read is an error at its path and the terrain is built whole.
 		if (!Props.Holes.IsEmpty())
@@ -1775,6 +1774,50 @@ struct FMantlePlaceBuildSession::FState
 
 	// Terrains' surfaces by entity id, for the Scatters that drop onto terrain (#169); their transforms are read after the transform phase.
 	TMap<FString, FMantleScatterTerrainSurface> TerrainSurfaces;
+	// Which Terrains touch which, by entity id, found once before the first terrain is built (FMantleTerrainAdjacency): terrain tiles share their border samples.
+	TMap<FString, TSharedPtr<const FMantleTerrainEdgeNeighbors>> TerrainNeighbors;
+	bool bTerrainNeighborsFound = false;
+
+	/** Finds which Terrains touch which (FMantleTerrainAdjacency), over the Terrains that end Static (one that moves keeps no seam), once, before the first terrain is built. */
+	void FindTerrainNeighbors()
+	{
+		TArray<FMantleTerrainPlacement> Placements;
+		TArray<const FMantleEntity*> Owners;
+		for (const FMantleEntity& Entity : Place->Entities)
+		{
+			const FMantleTerrainProps* TerrainProps = Entity.Type == EMantleEntityType::Terrain ? Entity.Props.TryGet<FMantleTerrainProps>() : nullptr;
+			const FTransform* WorldAt = TerrainProps ? Freeze.WorldOf(Entity.Id) : nullptr;
+			if (!WorldAt)
+			{
+				continue;
+			}
+			FString Unused;
+			FMantleTerrainPlacement& Placement = Placements.AddDefaulted_GetRef();
+			Placement.World = *WorldAt;
+			Placement.Field = FMantlePlaceAssets::FindLiveHeightfield(TerrainProps->Heightfield, Unused);
+			Owners.Add(&Entity);
+		}
+		if (Placements.Num() < 2)
+		{
+			return;
+		}
+		TArray<FMantleTerrainEdgeNeighbors> Found;
+		FMantleTerrainAdjacency::Find(Placements, Found);
+		int32 Touching = 0;
+		for (int32 Index = 0; Index < Found.Num(); ++Index)
+		{
+			if (Found[Index].HasAny())
+			{
+				TerrainNeighbors.Add(Owners[Index]->Id, MakeShared<FMantleTerrainEdgeNeighbors>(Found[Index]));
+				++Touching;
+			}
+		}
+		if (Touching > 0)
+		{
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_TERRAIN_TILES terrains=%d touching_another=%d"), Placements.Num(), Touching);
+		}
+	}
+
 	// Every Scatter's entity id in place order: each is handed the terrains once every transform is applied (a script may switch
 	// one to terrain placement later), and the ones placed on terrain generate then.
 	TArray<FString> TerrainScatters;
@@ -2034,10 +2077,15 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 						// them), so it is built a chunk a step: this unit stays at the cursor until its last chunk is on the actor.
 						if (!S.PendingTerrain.IsValid())
 						{
+							if (!S.bTerrainNeighborsFound)
+							{
+								S.bTerrainNeighborsFound = true;
+								S.FindTerrainNeighbors();
+							}
 							S.PendingTerrain = MakeShared<FPendingTerrain>();
 							if (!BeginTerrainEntity(World, Entity, *Props, Path, Result.Errors, LoadStats, *S.PendingTerrain, &S.TerrainSurfaces.Add(Entity.Id),
-							// A client of a streaming place draws the far ground everywhere and builds full chunks near its view; a server and a standalone game build the whole terrain.
-							UsesFarGround(World, Place), S.Freeze.WorldOf(Entity.Id)))
+							// A machine that draws a game world has the far ground everywhere and full chunks near its view; a dedicated server builds no chunk, and an editor world (the importer, the preview) builds every chunk in full.
+							UsesFarGround(World, Place), S.Freeze.WorldOf(Entity.Id), S.TerrainNeighbors.FindRef(Entity.Id)))
 							{
 								S.PendingTerrain.Reset();
 								break;
@@ -2137,6 +2185,11 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 						Actor->SetFlags(RF_Transient);
 					}
 					Result.Actors.Add(Entity.Id, Actor);
+					if (Options.OnActorBuilt && !Options.bCellSlice)
+					{
+						Options.OnActorBuilt(Actor, Entity.Id);
+						Result.ActorsHandledWhileBuilding.Add(Entity.Id);
+					}
 				}
 				else
 				{
@@ -2249,6 +2302,11 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 				}
 				RefreshBuiltScatter(Volume, *ScatterEntity, *ScatterProps,
 					EntityPath(static_cast<int32>(ScatterEntity - Place.Entities.GetData())) + TEXT("/properties"), Result.Errors);
+				if (Options.OnActorBuilt && !Options.bCellSlice)
+				{
+					// The refresh made the Scatter's instance components after the actor was named: the caller's per-actor work (the net name's addressable components) is done again for them.
+					Options.OnActorBuilt(Volume, ScatterId);
+				}
 			});
 			if (bPhaseDone)
 			{
@@ -2476,6 +2534,28 @@ FMantleBuildResult FMantlePlaceBuilder::Build(
 	TSharedRef<FMantlePlaceBuildSession> Session = Begin(World, Place, Options);
 	Session->Step(FMantlePlaceBuildSession::NoBudget);
 	return MoveTemp(Session->GetResult());
+}
+
+bool FMantlePlaceBuilder::DrawsTerrainAsFarGround(const UWorld* World)
+{
+	// Only a game world has a terrain stream (views and a hold begin only when a game builds its place): the editor's import and preview worlds draw every chunk in full.
+	return World && World->IsGameWorld() && DrawsTerrainAsFarGround(World->GetNetMode());
+}
+
+bool FMantlePlaceBuilder::DrawsTerrainAsFarGround(const ENetMode NetMode)
+{
+	if (NetMode == NM_DedicatedServer)
+	{
+		return false;
+	}
+#if !UE_BUILD_SHIPPING
+	// A measurement tool, not in a shipped build: the whole terrain in full, as it was before the far ground, so one launch can be compared with another.
+	if (FParse::Param(FCommandLine::Get(), TEXT("MantleTestFullTerrain")))
+	{
+		return false;
+	}
+#endif
+	return true;
 }
 
 void FMantlePlaceBuilder::Teardown(FMantleBuildResult& Result)

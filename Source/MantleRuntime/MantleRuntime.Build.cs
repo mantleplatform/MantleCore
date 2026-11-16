@@ -32,6 +32,11 @@ public class MantleRuntime : ModuleRules
 			// engine runtime module.
 			"PhysicsCore",
 
+			// The terrain's collision is a Chaos height field (UMantleTerrainCollisionComponent), made the
+			// way the engine's landscape makes its own: Chaos::FHeightField, and TAABB from ChaosCore.
+			"Chaos",
+			"ChaosCore",
+
 			// UMantleSoundWave derives from USoundWaveProcedural, whose audio proxy factory
 			// (IAudioProxyDataFactory) is defined in this engine runtime module.
 			"AudioExtensions",

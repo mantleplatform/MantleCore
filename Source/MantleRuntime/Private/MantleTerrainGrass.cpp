@@ -197,15 +197,15 @@ bool FMantleTerrainGrassGenerator::SurfaceAt(const FMantleHeightfield& Field, co
 	const float FX = static_cast<float>(GridX - X0);
 	const float FY = static_cast<float>(GridY - Y0);
 
-	// The chunk meshes split each quad from (x + 1, y) to (x, y + 1): triangles (x, y), (x, y + 1), (x + 1, y)
-	// and (x + 1, y), (x, y + 1), (x + 1, y + 1). The height is on whichever one holds the point.
+	// The chunk meshes (and the collision's height field) split each quad from (x, y) to (x + 1, y + 1): triangles (x, y), (x + 1, y), (x + 1, y + 1)
+	// and (x, y), (x + 1, y + 1), (x, y + 1). The height is on whichever one holds the point.
 	const float H00 = Field.HeightAt(X0, Y0);
 	const float H10 = Field.HeightAt(X0 + 1, Y0);
 	const float H01 = Field.HeightAt(X0, Y0 + 1);
 	const float H11 = Field.HeightAt(X0 + 1, Y0 + 1);
-	OutZ = FX + FY <= 1.0f
-		? H00 + FX * (H10 - H00) + FY * (H01 - H00)
-		: H11 + (1.0f - FX) * (H01 - H11) + (1.0f - FY) * (H10 - H11);
+	OutZ = FX >= FY
+		? H00 + FX * (H10 - H00) + FY * (H11 - H10)
+		: H00 + FY * (H01 - H00) + FX * (H11 - H01);
 
 	const FVector3f N00 = FMantleTerrainBuilder::SampleNormal(Field, X0, Y0);
 	const FVector3f N10 = FMantleTerrainBuilder::SampleNormal(Field, X0 + 1, Y0);
