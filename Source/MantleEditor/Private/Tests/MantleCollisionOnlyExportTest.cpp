@@ -13,6 +13,8 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInstanceConstant.h"
 #include "Misc/AutomationTest.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -382,6 +384,15 @@ bool FMantleCollisionOnlyGatherTest::RunTest(const FString& Parameters)
 	Slab->SetActorScale3D(Mirror);
 	Slab->GetStaticMeshComponent()->SetHiddenInGame(true);
 	Slab->GetStaticMeshComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	// A material of the creator's own (not in the library, so it uploads when drawn), on the hidden slab and later on the drawn wall.
+	UMaterialInstanceConstant* Paint = NewObject<UMaterialInstanceConstant>(GetTransientPackage(), TEXT("MI_CollisionOnlyTestPaint"));
+	Paint->SetParentEditorOnly(UMaterial::GetDefaultMaterial(MD_Surface));
+	Paint->PostEditChange();
+	Slab->GetStaticMeshComponent()->SetMaterial(0, Paint);
+	const auto HasPaint = [Paint](const FMantlePlaceDependencies& Dependencies)
+	{
+		return Dependencies.Materials.ContainsByPredicate([Paint](const FMantleGatheredMaterial& Material) { return Material.Material.Get() == Paint; });
+	};
 
 	const auto GatheredCopy = [Copy](const FMantlePlaceDependencies& Dependencies)
 	{
@@ -393,7 +404,7 @@ bool FMantleCollisionOnlyGatherTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("marked collision only: no Lumen or Nanite bake"), Hidden->bCollisionOnly);
 	}
-	const int32 MaterialsWhenHidden = Only.Materials.Num();
+	TestFalse(TEXT("a mesh only hidden gathers none of its materials"), HasPaint(Only));
 
 	// The hidden use came first; a drawn use through AddMesh (a Script Asset, an item or weapon mesh, a water body) comes later and
 	// still gives the mesh its render data, and its materials.
@@ -403,7 +414,6 @@ bool FMantleCollisionOnlyGatherTest::RunTest(const FString& Parameters)
 	{
 		TestFalse(TEXT("a later drawn AddMesh use clears collision only"), Spawned->bCollisionOnly);
 	}
-	TestTrue(TEXT("and gathers the mesh's materials"), Only.Materials.Num() >= MaterialsWhenHidden);
 	// And a collision-only AddMesh (a hidden spline bake) never makes a drawn mesh collision only.
 	Only.AddMesh(Copy, TEXT("Hidden road collision"), /*bCollisionOnly*/ true);
 	const FMantleGatheredMesh* Again = GatheredCopy(Only);
@@ -416,7 +426,9 @@ bool FMantleCollisionOnlyGatherTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	Shown->SetActorScale3D(Mirror);
+	Shown->GetStaticMeshComponent()->SetMaterial(0, Paint);
 	const FMantlePlaceDependencies Both = FMantlePlaceDependencies::Gather(Fixture.World);
+	TestTrue(TEXT("drawn, its material is gathered"), HasPaint(Both));
 	const FMantleGatheredMesh* Drawn = GatheredCopy(Both);
 	if (TestNotNull(TEXT("the mesh is gathered once"), Drawn))
 	{

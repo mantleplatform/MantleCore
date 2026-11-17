@@ -224,7 +224,15 @@ namespace MantleCollisionOnlyMeshTestPrivate
 		Test.TestTrue(Where + TEXT(": the slab keeps the mesh's own material"), Slab->GetMaterial(0) == Slab->GetStaticMesh()->GetMaterial(0));
 		Test.TestTrue(Where + TEXT(": the shown cube's material is not the mesh's own"), Shown->GetMaterial(0) != Shown->GetStaticMesh()->GetMaterial(0));
 
-		// The drawn ones are drawn as before.
+		// The drawn ones are drawn as before. The shown cube has a scene proxy, so "no scene proxy" above is not a world that makes none.
+		if (World->Scene)
+		{
+			Test.TestNotNull(*(Where + TEXT(": the shown cube has a scene proxy")), Shown->SceneProxy);
+		}
+		else
+		{
+			Test.AddError(Where + TEXT(": the world has no scene, so no scene proxy proves nothing"));
+		}
 		Test.TestFalse(Where + TEXT(": the shown cube is not hidden"), Shown->bHiddenInGame);
 		Test.TestTrue(Where + TEXT(": the shown cube casts a shadow"), Shown->CastShadow);
 		Test.TestFalse(Where + TEXT(": the deck is not hidden"), Deck->bHiddenInGame);
