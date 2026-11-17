@@ -342,7 +342,10 @@ bool FMantleSplineMeshBakeSourcesTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("one doesn't"), Walkthrough, 1);
 	}
 
-	// A hidden piece that collides (road collision under a drawn road) bakes collision only, never merged into the drawn road beside it.
+	// A hidden piece that collides (road collision under a drawn road) bakes collision only, never merged into the drawn road beside it. It blocks
+	// everything, as road collision does.
+	HiddenButSolid->SetCollisionProfileName(TEXT("BlockAll"));
+	Visible->SetCollisionProfileName(TEXT("BlockAll"));
 	const FMantleSplineBakeResult WithHidden = BakeAll({ Visible, HiddenButSolid }, FMantlePlaceAssetLimits());
 	if (TestEqual(TEXT("drawn and hidden pieces bake apart"), WithHidden.Meshes.Num(), 2))
 	{
