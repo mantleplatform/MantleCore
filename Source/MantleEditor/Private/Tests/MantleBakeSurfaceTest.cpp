@@ -492,12 +492,39 @@ bool FMantleBakeSurfaceUvRangeReadsCardTest::RunTest(const FString& Parameters)
 	// HellCage's ground: its landscape material reads only texture coordinates, so GLTFExporter (FGLTFMaterialUtilities::NeedsMeshData)
 	// baked it over UVs 0 to 1, not the card's 0 to 12: one landscape quad, big blurry stones, stretched over each 12 m tile. The bake now
 	// runs on a copy whose base color is multiplied by max(Vertex Color, 1), which reads mesh data and changes nothing else.
-	auto ReadsVertexData = [](UMaterialInterface* Material)
+	// Whether a Vertex Color node feeds the base color (or the attributes). The engine's own analysis (AnalyzeMaterialProperty) needs a
+	// material resource a bare transient material does not have in a -nullrhi run, so the graph is walked instead.
+	TFunction<bool(const UMaterialExpression*, TSet<const UMaterialExpression*>&)> Reaches;
+	Reaches = [&Reaches](const UMaterialExpression* Node, TSet<const UMaterialExpression*>& Seen)
 	{
-		int32 TexCoords = 0;
-		bool bVertexData = false;
-		Material->AnalyzeMaterialProperty(MP_BaseColor, TexCoords, bVertexData);
-		return bVertexData;
+		if (!Node || Seen.Contains(Node))
+		{
+			return false;
+		}
+		Seen.Add(Node);
+		if (Node->IsA<UMaterialExpressionVertexColor>())
+		{
+			return true;
+		}
+		for (int32 Index = 0; const FExpressionInput* Input = const_cast<UMaterialExpression*>(Node)->GetInput(Index); ++Index)
+		{
+			if (Reaches(Input->Expression, Seen))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	auto ReadsVertexData = [&Reaches](UMaterialInterface* Material)
+	{
+		const UMaterial* Base = Material->GetMaterial();
+		const UMaterialEditorOnlyData* Data = Base ? Base->GetEditorOnlyData() : nullptr;
+		if (!Data)
+		{
+			return false;
+		}
+		TSet<const UMaterialExpression*> Seen;
+		return Reaches(Base->bUseMaterialAttributes ? Data->MaterialAttributes.Expression : Data->BaseColor.Expression, Seen);
 	};
 
 	// Base color: the red of the texture coordinates, scaled (a texture read at a landscape's tiling, without the texture).
