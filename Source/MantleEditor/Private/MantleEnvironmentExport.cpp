@@ -1148,7 +1148,11 @@ FMantleExposureProject FMantleExposureProject::Current()
 	{
 		Project.bExtendedRange = Extended->GetInt() != 0;
 	}
-	Project.EngineBias = UMantleEnvironmentSubsystem::GetEngineExposureBias();
+	// The project setting every FPostProcessSettings starts from (Scene.cpp); 1 is the engine's own default.
+	if (const TConsoleVariableData<float>* Bias = IConsoleManager::Get().FindTConsoleVariableDataFloat(TEXT("r.DefaultFeature.AutoExposure.Bias")))
+	{
+		Project.EngineBias = Bias->GetValueOnGameThread();
+	}
 	return Project;
 }
 
