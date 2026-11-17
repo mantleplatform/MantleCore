@@ -165,6 +165,14 @@ public:
 	static bool IsShadedFromSun(UWorld* World, const FVector& TowardSun, const TArray<FVector>& Points);
 
 	/**
+	 * Direct Sun's Automatic probe, for the level's sun (SunActor, a directional light) and the points players spawn at: true when
+	 * the sun is on, is at least a degree above the horizon (the clock's night has no sun to keep out) and IsShadedFromSun
+	 * says it reaches none of them. The export turns the sun off for the place on true (MapDirectSun), and the check reads
+	 * it to know whether the level's own sun brightness is kept.
+	 */
+	static bool IsSunShadedAtSpawns(UWorld* World, const AActor* SunActor, const TArray<FVector>& Points);
+
+	/**
 	 * Whether a mesh component casts a shadow in a place. Mantle lights everything dynamically, so a mesh the editor shades
 	 * with a light's baked (static) shadow alone still casts one there: the flag is Cast Shadow with either of the dynamic or
 	 * static shadows on. Without this a sealed room's ceiling could let the sun in.
