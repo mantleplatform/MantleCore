@@ -146,13 +146,16 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	static constexpr double MaxPhysicsDamping = 100.0;
 
 	/**
-	 * StaticMesh entities with a physics block in one place. Each is a server-simulated,
-	 * always-relevant replicated actor, so this bounds server physics and replication cost.
+	 * StaticMesh entities with a physics block in one place. Each is a server-simulated
+	 * replicated actor, so this bounds server physics (the server simulates every one, wherever the players are)
+	 * and the worst case a player's connection carries (every prop near one player, all awake): a place with cells
+	 * sends a player only the props near their views (stage 6, AMantleScriptReplicator), so a place's total does not
+	 * cost every player.
 	 * Cross-entity: not in the schema itself; validate.py's MAX_PHYSICS_OBJECTS_PER_PLACE and the
 	 * backend state it too. "Check this place" warns past WarnPhysicsObjectsPerPlace.
 	 */
-	static constexpr int32 MaxPhysicsObjectsPerPlace = 500;
-	static constexpr int32 WarnPhysicsObjectsPerPlace = 200;
+	static constexpr int32 MaxPhysicsObjectsPerPlace = 750;
+	static constexpr int32 WarnPhysicsObjectsPerPlace = 300;
 
 	/** Terrain layers[], 1 to this many: two weightmap textures' four channels each. */
 	static constexpr int32 MaxTerrainLayers = 8;

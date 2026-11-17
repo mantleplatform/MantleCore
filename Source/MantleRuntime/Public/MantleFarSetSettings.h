@@ -40,6 +40,12 @@ struct MANTLERUNTIME_API FMantleFarSetSettings
 	/** Twins get at least this share of a tick's budget while any is waiting to be built, so a flight keeps the far ring filled. */
 	double MinShareOfBudget = 0.25;
 
+	/**
+	 * Live budgets (stage 8), set by the streamer, not by the owner. ReachScale shrinks the far reach (1 = the reach above; 0 = no twin is wanted or built: the first thing a budget gives up, before the real cells'
+	 * reach shrinks at all). A twin made while it is 0 still exists as data (it is built only when wanted), so a cell that stands through it has its twin when the budget lets far sets back.
+	 */
+	double ReachScale = 1.0;
+
 	/** An uploaded mesh without Nanite data is left out of a far set (it would draw plain, far away). Tests with plain meshes turn this off. */
 	bool bRequireNanite = true;
 };

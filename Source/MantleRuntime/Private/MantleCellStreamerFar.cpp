@@ -115,7 +115,7 @@ void FMantleCellStreamer::MakeFarSet(const int32 CellIndex, const TArray<FMantle
 		return;
 	}
 	Set.Rank = RankFor(CellIndex);
-	Set.bWanted = FMantleCellStreamPlan::IsWanted(Info, LastPath);
+	Set.bWanted = FMantleCellStreamPlan::IsWanted(Info, LastPath, Settings);
 	FarSets.Add(CellIndex, MoveTemp(Set));
 	++Stats.FarSetsMade;
 	bRefreshNeeded = true;
@@ -151,7 +151,7 @@ void FMantleCellStreamer::CollectFarWants(const FMantleCellStreamPlan::FPath& Pa
 		}
 		const FMantleCellInfo& Info = Index.Cells[CellIndex];
 		// Only cells past their own drawDistance are the far set's; inside it the cell is the real flow's (and if it has no room yet, it waits there).
-		if (!FMantleFarSetPlan::IsWanted(Info, Path, Settings.FarSets) || FMantleCellStreamPlan::IsWanted(Info, Path))
+		if (!FMantleFarSetPlan::IsWanted(Info, Path, Settings.FarSets) || FMantleCellStreamPlan::IsWanted(Info, Path, Settings))
 		{
 			continue;
 		}
@@ -206,7 +206,7 @@ void FMantleCellStreamer::RefreshFar(const FMantleCellStreamPlan::FPath& Path)
 		{
 			continue;
 		}
-		const bool bWanted = FMantleCellStreamPlan::IsWanted(Info, Path);
+		const bool bWanted = FMantleCellStreamPlan::IsWanted(Info, Path, Settings);
 		if (Set.bWanted != bWanted)
 		{
 			Set.bWanted = bWanted;

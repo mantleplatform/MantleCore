@@ -41,6 +41,12 @@ namespace MantleClientFeatures
 	inline const TCHAR* const VehicleSeatKind = TEXT("vehicleSeatKind");
 	/** An authored per-seat yaw and pitch arc for held weapons. */
 	inline const TCHAR* const VehicleWeaponArc = TEXT("vehicleWeaponArc");
+	/** A vehicle's lights (the vehicle-lights cook fixtures). */
+	inline const TCHAR* const VehicleLights = TEXT("vehicleLights");
+	/** A vehicle's paint layers (the vehicle-paint-layers cook fixtures). */
+	inline const TCHAR* const VehiclePaintLayers = TEXT("vehiclePaintLayers");
+	/** A vehicle's livery names (the vehicle-livery-names cook fixtures). */
+	inline const TCHAR* const VehicleLiveryNames = TEXT("vehicleLiveryNames");
 	inline const TCHAR* const Effect = TEXT("effect");
 	/** The sprites archetype of an Effect: NS_MantleSprites and its materials, and the keys that tune it. */
 	inline const TCHAR* const EffectSprites = TEXT("effectSprites");
@@ -98,7 +104,7 @@ namespace MantleClientFeatures
 	{
 		return {
 			InstancedMesh, CrowdSpawner, CrowdPointsOfInterest, SkeletalMesh, RectLight, Decal, LightShape, Terrain, TerrainGrass,
-			Vehicle, VehicleLinkage, VehicleParts, VehicleCarInteraction, VehicleContactPoints, VehicleHiddenSeat, VehicleFliers, VehicleHover, VehicleSeatKind, VehicleWeaponArc, Effect, EffectSprites, Constraint, Scatter, ReflectionProbes, Storage,
+			Vehicle, VehicleLinkage, VehicleParts, VehicleCarInteraction, VehicleContactPoints, VehicleHiddenSeat, VehicleFliers, VehicleHover, VehicleSeatKind, VehicleWeaponArc, VehicleLights, VehiclePaintLayers, VehicleLiveryNames, Effect, EffectSprites, Constraint, Scatter, ReflectionProbes, Storage,
 			UIDocuments, EnvironmentDefaults, EnvironmentLighting, AvatarHeight, SoundEmitterAutoplay, StaticMeshPhysics, PhysicsMaterial, Surface, DrawDistance, CarPaint,
 			MaterialFidelity, MaterialAdditive, WeaponDocument, WorldText, VoxelWorld, ScatterDrawDistance, ScatterTerrain, ScatterShapes, ScatterCollision, ScatterPaintLayer, ScatterGroundAlign, ScatterMinSpacing, ScatterPathStep, ScatterPathExclusions, ScatterLarge
 		};

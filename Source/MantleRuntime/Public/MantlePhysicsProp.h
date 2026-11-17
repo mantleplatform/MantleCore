@@ -128,6 +128,24 @@ private:
 class AMantlePhysicsProp;
 
 /**
+ * What a client's script reads of a physics entity whose prop is not here (stage 6 of large places: the server sends a player only the props near their views, and a prop that goes
+ * out of range is replaced by a plain placeholder). On the placeholder a prop left behind: the facts of the prop as it was last seen here. A script that asks about a far prop
+ * (Mass, Anchored, Grabbable, PhysicsMaterial) is answered from it; a placeholder that never had a prop (not in range yet) has none, and the place's own values answer.
+ */
+UCLASS(NotBlueprintable, Transient)
+class MANTLERUNTIME_API UMantleFarPropFacts : public UActorComponent
+{
+	GENERATED_BODY()
+
+public:
+	double MassKg = 0.0;
+	/** The server's body was held still (not simulating) when the prop was last here. */
+	bool bAnchored = true;
+	bool bGrabbable = true;
+	EMantlePhysicsMaterial Material = EMantlePhysicsMaterial::Default;
+};
+
+/**
  * What a connected client's prop needs from the place its world was built from, to take its placeholder
  * over: the place, the actor built for each entity, and a signal once the place is there. The game's
  * loaded-place subsystem provides it through AMantlePhysicsProp::PlaceForWorld.
@@ -148,6 +166,9 @@ public:
 
 /** Finds the place a world was built from; see AMantlePhysicsProp::PlaceForWorld. */
 using FMantlePhysicsPropPlaceResolver = IMantlePhysicsPropPlace* (*)(UWorld* World);
+
+/** Server: a physics prop fell out of the world (the kill floor): the script world destroys its entity so every client's stand-in goes too. */
+DECLARE_MULTICAST_DELEGATE_OneParam(FMantlePhysicsPropFellDelegate, AMantlePhysicsProp* /*Prop*/);
 
 /** Server: a physics prop hit something while its hit events are on (the script host's Entity.Collided). */
 DECLARE_MULTICAST_DELEGATE_TwoParams(FMantlePhysicsPropHitDelegate, AMantlePhysicsProp* /*Prop*/, AActor* /*Other*/);
@@ -206,6 +227,22 @@ public:
 	 */
 	bool AdoptPlaceholder(AActor* Placeholder);
 
+	/**
+	 * Client: the mirror of AdoptPlaceholder, for a prop the server stopped sending (the player's views are far from it now: the engine destroys the client's copy). A plain
+	 * placeholder with this prop's mesh, materials, shadow, collision, scale, hidden state, pose and attached children takes its place as the entity's actor (ReplaceEntityActor),
+	 * carrying a UMantleFarPropFacts with what this prop was last seen as. The placeholder, or null (nothing made) when this prop is not an adopted client copy.
+	 */
+	AStaticMeshActor* RestorePlaceholder();
+
+	/** Client: this copy has taken its placeholder over (a copy that has not is not a stand-in for anything, and leaves nothing behind when it goes). */
+	bool IsAdopted() const { return bAdopted; }
+
+	/** Server and standalone: every prop of the world that is out of BeginPlay and not yet ended, for the script replicator's area bookkeeping. */
+	static void ForEachServerProp(const UWorld* World, TFunctionRef<void(AMantlePhysicsProp&)> Visit);
+
+	/** Whether the simulated body is awake (not asleep, not anchored). Server. */
+	bool IsBodyAwake() const;
+
 	const FString& GetEntityId() const { return EntityId; }
 	UMantlePhysicsMeshComponent* GetPhysicsMeshComponent() const;
 
@@ -242,10 +279,16 @@ public:
 	/** Server, while hit events are on. */
 	FMantlePhysicsPropHitDelegate OnPhysicsHit;
 
+	/** Server: any prop falling out of the world, before the engine destroys it (the script world of its world listens). */
+	static FMantlePhysicsPropFellDelegate OnAnyFellOutOfWorld;
+	virtual void FellOutOfWorld(const class UDamageType& DamageType) override;
+
 	//~ Begin AActor
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	/** Client: the engine is destroying this copy because the server stopped sending it (or destroyed it): leaves a placeholder in its place, see RestorePlaceholder. */
+	virtual void PreDestroyFromReplication() override;
 	/** A client's copy asks the collision gate each tick (it ticks on a client only, once adopted). */
 	virtual void Tick(float DeltaSeconds) override;
 	/** A client's copy whose gate is closed stays off and at the server's pose after each movement update. */
@@ -263,6 +306,9 @@ protected:
 	void OnRep_PhysicsMaterial();
 
 private:
+	/** Every prop with authority that has begun play and not ended, for ForEachServerProp. */
+	static TArray<AMantlePhysicsProp*>& ServerProps();
+
 	/** The preset MaterialByte names, Default for a byte past the last preset. */
 	static EMantlePhysicsMaterial PhysicsMaterialFromByte(uint8 MaterialByte);
 

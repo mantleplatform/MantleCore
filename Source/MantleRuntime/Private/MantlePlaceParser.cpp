@@ -4972,7 +4972,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			{
 				Ctx.Fail(
 					Join(Join(Index(TEXT("/entities"), i), TEXT("properties")), TEXT("instances")),
-					FString::Printf(TEXT("brings the place to %d instances; a place holds at most %d"),
+					FString::Printf(TEXT("brings the place file to %d instances; the place file holds at most %d (scenery in cell files does not count toward it)"),
 						InstanceTotal, FMantlePlaceLimits::MaxInstancesPerPlace));
 				break;
 			}
@@ -5055,7 +5055,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 			{
 				Ctx.Fail(
 					Join(Join(Index(TEXT("/entities"), i), TEXT("properties")), TEXT("heightfield")),
-					FString::Printf(TEXT("brings the place to %lld heightfield samples; a place holds at most %lld"),
+					FString::Printf(TEXT("brings the place to %lld heightfield samples; a place holds at most %lld (16 full 2049 x 2049 terrain tiles)"),
 						Samples, FMantlePlaceLimits::MaxTerrainSamplesPerPlace));
 			}
 		}

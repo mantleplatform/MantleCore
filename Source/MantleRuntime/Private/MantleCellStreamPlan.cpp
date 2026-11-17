@@ -38,9 +38,20 @@ bool FMantleCellStreamPlan::IsWanted(const FMantleCellInfo& Cell, const FPath& P
 	return DistanceToCell(Cell, Path) <= Cell.DrawDistance;
 }
 
+double FMantleCellStreamPlan::ReachOf(const FMantleCellInfo& Cell, const FMantleCellStreamSettings& Settings)
+{
+	return FMantleStreamBudget::ScaledReach(Cell.DrawDistance, Settings.ReachScale, Settings.BudgetTuning.MinReachCm);
+}
+
+bool FMantleCellStreamPlan::IsWanted(const FMantleCellInfo& Cell, const FPath& Path, const FMantleCellStreamSettings& Settings)
+{
+	return DistanceToCell(Cell, Path) <= ReachOf(Cell, Settings);
+}
+
 double FMantleCellStreamPlan::ReleaseDistance(const FMantleCellInfo& Cell, const FMantleCellStreamSettings& Settings)
 {
-	return FMath::Max(Cell.DrawDistance * Settings.ReleaseMargin, Cell.DrawDistance + Settings.MinReleaseMarginCm);
+	const double Reach = ReachOf(Cell, Settings);
+	return FMath::Max(Reach * Settings.ReleaseMargin, Reach + Settings.MinReleaseMarginCm);
 }
 
 bool FMantleCellStreamPlan::IsReleased(const FMantleCellInfo& Cell, const FPath& Path, const FMantleCellStreamSettings& Settings)

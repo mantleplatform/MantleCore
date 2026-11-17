@@ -19,13 +19,16 @@ public:
 	/** How far from the cell's bounds its twin is drawn, cm: drawDistance x ReachFactor, at most MaxReachCm. */
 	static double ReachOf(const FMantleCellInfo& Cell, const FMantleFarSetSettings& Settings);
 
-	/** A twin is wanted: the cell has one and the path is within its reach of the cell's bounds. */
+	/** The reach under the live budget (Settings.ReachScale): ReachOf x the scale. The twin itself is made with the whole reach, so it draws out to it again when the budget allows. */
+	static double LiveReachOf(const FMantleCellInfo& Cell, const FMantleFarSetSettings& Settings);
+
+	/** A twin is wanted: the cell has one and the path is within its (live) reach of the cell's bounds. A scale of 0 wants none. */
 	static bool IsWanted(const FMantleCellInfo& Cell, const FMantleCellStreamPlan::FPath& Path, const FMantleFarSetSettings& Settings);
 
 	/** A built twin goes: the path is beyond reach x ReleaseMargin and beyond reach + MinReleaseMarginCm. */
 	static bool IsReleased(const FMantleCellInfo& Cell, const FMantleCellStreamPlan::FPath& Path, const FMantleFarSetSettings& Settings);
 
-	/** A twin is worth building now: the path is farther from the cell than BuildFromShare x its drawDistance. */
+	/** A twin is worth building now: the path is farther from the cell than BuildFromShare x its drawDistance, and a budget has not given the far sets up (scale 0). */
 	static bool NeedsBuilding(const FMantleCellInfo& Cell, const FMantleCellStreamPlan::FPath& Path, const FMantleFarSetSettings& Settings);
 
 	/** Every how-manyth instance an entity of this drawDistance keeps: 1 at FullDensityFromCm and above, ThinnedStride below. */

@@ -37,7 +37,9 @@ declare Vector3: {
 
 --- A thing in the world: any actor in the level.
 declare extern type Entity with
-	--- Whether a physics entity is held where it is (true) or simulating (false); the place's physics.simulate says how it starts. Set it on the server to drop or pin it. Every other entity is always anchored, and setting it on one errors.
+	--- Whether every player's machine follows this entity at any distance, however far the player is (a quest target, a boss). Off by default: a large place sends a player only the entities near them. Set on the server; read on the server and on a client.
+	AlwaysRelevant: boolean
+	--- Whether a physics entity is held where it is (true) or simulating (false); the place's physics.simulate says how it starts. Set it on the server to drop or pin it. Every other entity is always anchored, and setting it on one errors. On a client, a physics entity far from the player's views (its prop is not sent there) reads the value it was last seen with here, the place's when it never was.
 	Anchored: boolean
 	--- How fast the entity spins, in degrees per second about the world axes (X, Y, Z). Setting it (server only) replaces a physics entity's spin; setting it on an Anchored entity, or one with no physics block, errors. Anything that isn't simulating reads (0, 0, 0).
 	AngularVelocity: Vector3
@@ -51,8 +53,10 @@ declare extern type Entity with
 	Color: string
 	--- False once the entity has been destroyed.
 	Exists: boolean
-	--- Whether a staff's telekinesis or a gravity gun may grab a physics entity (true unless a script sets it false). Set it to false for a prop that must stay where it is; a grab already holding it drops it. An entity with no physics block is never grabbable (false), and setting it on one errors. Set it on the server.
+	--- Whether a staff's telekinesis or a gravity gun may grab a physics entity (true unless a script sets it false). Set it to false for a prop that must stay where it is; a grab already holding it drops it. An entity with no physics block is never grabbable (false), and setting it on one errors. Set it on the server. On a client, a physics entity far from the player's views (its prop is not sent there) reads the value it was last seen with here, the place's when it never was.
 	Grabbable: boolean
+	--- Whether this machine holds the entity now: on a client of a large place, true while the entity stands here (scenery built, a clone made, a physics entity's body sent) or is always relevant; on the server and in a standalone game every entity is in range. A physics entity far from the player's views is not in range: a plain stand-in shows where it was last seen, and its Position, Mass, Anchored, Grabbable and PhysicsMaterial read what it was last seen with (1.93).
+	InRange: boolean
 	--- The light's color as "#RRGGBB", the same format as Vehicles:SetPaintColor. Replicates like LightEnabled.
 	LightColor: string
 	--- Whether the light shines. Setting it on the server changes it for everyone, players who join later included; on a client it only changes that client's view. Errors if the entity is not a light.
@@ -67,11 +71,11 @@ declare extern type Entity with
 	LightOuterCone: number
 	--- How far a point or spot light reaches, in centimeters, clamped to 1..100000. Errors on a directional light. Replicates like LightEnabled.
 	LightRange: number
-	--- A physics entity's mass in kg: the place's physics.mass, else computed from its collision. 0 for an entity with no physics block. Read-only.
+	--- A physics entity's mass in kg: the place's physics.mass, else computed from its collision. 0 for an entity with no physics block. Read-only. On a client, a physics entity far from the player's views (its prop is not sent there) reads the value it was last seen with here, the place's when it never was.
 	Mass: number
 	--- The actor's label.
 	Name: string
-	--- A physics entity's surface: "default", "rubber" (bouncy), "ice" (slippery), "metal", "wood" or "stone"; the place's physics.material says how it starts. Set it on the server, anchored or not, and every player sees the change. nil for an entity with no physics block, and setting it on one errors, as does any other name.
+	--- A physics entity's surface: "default", "rubber" (bouncy), "ice" (slippery), "metal", "wood" or "stone"; the place's physics.material says how it starts. Set it on the server, anchored or not, and every player sees the change. nil for an entity with no physics block, and setting it on one errors, as does any other name. On a client, a physics entity far from the player's views (its prop is not sent there) reads the value it was last seen with here, the place's when it never was.
 	PhysicsMaterial: string?
 	--- For a piece made by placing mode (a player placing it, or Placing:PlaceAsPlayer), the placer's UserId; nil for any other entity and on a client. Read only, and it survives saves.
 	PlacedBy: string?
@@ -1733,6 +1737,10 @@ declare Voice: VoiceService
 
 --- Find and watch the things in the level.
 declare extern type WorldService with
+	--- Client only. An entity came into range of this player's machine: a piece of a large place's scenery was built near the player, or something a server script made in an area near the player was sent. Fires once each time, for an entity that has a tag or that a script made (a plain piece of scenery has neither, so a place with a million of them does not drown a handler; tag the ones you care about on the server). A physics entity fires it when its body is sent to this player (the player came near it), and EntityLeftRange when it stops being sent. An entity marked AlwaysRelevant is always in range: a piece of a place's scenery fires nothing when it is built or taken down; one a script made fires once, when it is first made on this machine.
+	EntityEnteredRange: Signal<(Entity)>
+	--- Client only. An entity (one that has a tag or that a script made) went out of range of this player's machine: the player moved away from it. Its handle is still valid in the handler, but the entity may be gone from this machine for good (a clone is taken down; a piece of scenery is taken down and built again when the player returns).
+	EntityLeftRange: Signal<(Entity)>
 	--- Sweep a box of this size (its full width, depth and height, at most 100 m on any side, kept square to the world's axes) from origin along direction and return the first thing it touches, in the same table as World:Raycast, or nil. Takes the same params as World:Raycast.
 	function Blockcast(self, origin: Vector3, size: Vector3, direction: Vector3, params: {MaxDistance: number?, Include: {Entity | Player}?, Exclude: {Entity | Player}?, Tag: string?, IgnorePlayers: boolean?, Layers: {string}?, ExcludeLayers: {string}?}?): {Entity: Entity, Player: Player?, Position: Vector3, Normal: Vector3, Distance: number}?
 	--- Every entity with this actor tag.

@@ -186,6 +186,7 @@ void FMantleCellStreamer::Tick(const double DeltaSeconds)
 		}
 		RunWork(Budget);
 		UpdateStats();
+		UpdateBudget(DeltaSeconds);
 		// The twins, looked at once a second: each is drawn exactly when it should be.
 		FarAuditSeconds += DeltaSeconds;
 		if (FarAuditSeconds >= 1.0 && !FarSets.IsEmpty())
@@ -430,7 +431,7 @@ void FMantleCellStreamer::Refresh()
 			continue;
 		}
 		const FMantleCellInfo& Info = Index.Cells[CellIndex];
-		if (Settings.bKeepEveryCell || FMantleCellStreamPlan::IsWanted(Info, Path))
+		if (Settings.bKeepEveryCell || FMantleCellStreamPlan::IsWanted(Info, Path, Settings))
 		{
 			Pool.Add(FWanted{ CellIndex, RankFor(CellIndex) });
 		}
@@ -1049,7 +1050,8 @@ bool FMantleCellStreamer::IsAreaBuilt(const FVector& Point, const double RadiusC
 	{
 		const FMantleCellInfo& Info = Index.Cells[CellIndex];
 		const double Distance = FMantleCellStreamPlan::DistanceToCell(Info, Point);
-		if (Distance > RadiusCm || Distance > Info.DrawDistance || Loader->IsCellFailed(CellIndex))
+		// A cell the streamer wants at all from here: within its reach, which a live budget (stage 8) may have shortened, so a hold never waits for a cell that is not wanted.
+		if (Distance > RadiusCm || Distance > FMantleCellStreamPlan::ReachOf(Info, Settings) || Loader->IsCellFailed(CellIndex))
 		{
 			continue;
 		}
@@ -1183,6 +1185,13 @@ void FMantleCellStreamer::LogSummary(const TCHAR* Why) const
 		Stats.LongestUnitSeconds * 1000.0, Stats.LongestUnitEntity.IsEmpty() ? TEXT("-") : *Stats.LongestUnitEntity, Stats.WorstWorkSeconds * 1000.0, Stats.BuildErrors,
 		Stats.CellAssetsAsked, Stats.LongestAssetWaitSeconds, Stats.AssetWaitTimeouts, Stats.AssetsMissing, Stats.EntitiesWithoutMesh);
 	LogFarSummary(Why);
+	if (Stats.BudgetLooks > 0)
+	{
+		UE_LOG(LogMantle, Log,
+			TEXT("MANTLE_CELLS_BUDGET_SUMMARY %s: %d looks, ladder now %.2f lowest %.2f, pressure now %.2f worst %.2f; at the last look instances %lld, solid %lld, far instances %lld, Nanite root pages %lld, process memory %.3f of the machine"),
+			Why, Stats.BudgetLooks, Stats.BudgetLadder, Stats.BudgetLowestLadder, Stats.BudgetPressure, Stats.BudgetWorstPressure, Stats.BudgetInstances, Stats.BudgetSolidThings,
+			Stats.BudgetFarInstances, Stats.BudgetNaniteRootPages, Stats.BudgetMemoryShare);
+	}
 }
 
 #if !UE_BUILD_SHIPPING
