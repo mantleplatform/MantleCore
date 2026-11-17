@@ -221,13 +221,7 @@ namespace MantleCollisionOnlyMeshTestPrivate
 
 		// Real traces through the built world. The wall stands at y = 1000 (a 100 cm cube): a sight trace along +Y passes it, a pawn-channel
 		// trace stops at it, and a sight trace down hits the slab (at the origin; the deck above it has no collision).
-		// A few frames first, so the physics scene's query structure holds the new bodies.
-		World->bShouldSimulatePhysics = true;
-		for (int32 Frame = 0; Frame < 5; ++Frame)
-		{
-			++GFrameCounter;
-			World->Tick(LEVELTICK_All, 1.0f / 60.0f);
-		}
+		// No frame is needed first: a body made at registration goes into the scene's query structure at once (FChaosScene::AddActorsToScene_AssumesLocked).
 		FHitResult Hit;
 		const FCollisionQueryParams Query(SCENE_QUERY_STAT(MantleCollisionOnlyTest), /*bTraceComplex*/ false);
 		const FVector WallFrom(0.0, 800.0, 0.0);
