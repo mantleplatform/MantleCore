@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "MantleFarSetSettings.h"
 #include "MantlePlaceCells.h"
+#include "MantleStreamBudget.h"
 
 /** Which of a cell's entities a streamer builds: all of them, the ones with collision, or the ones without (the pictures). */
 enum class EMantleCellEntities : uint8
@@ -106,6 +107,16 @@ struct MANTLERUNTIME_API FMantleCellStreamSettings
 
 	/** Far sets: the twins of a cell's big entities, drawn past the cell's drawDistance (stage 3a). Off unless the owner turns them on. */
 	FMantleFarSetSettings FarSets;
+
+	/**
+	 * Live budgets (stage 8): every half second the streamer reads what stands against BudgetLimits() and moves a ladder (FMantleStreamBudget): over budget the far sets' reach falls first, then the
+	 * real cells'. ReachScale is the real cells' scale now (1 = every cell is wanted from its own drawDistance); the streamer sets it. No BudgetLimits (the default, and every test) means
+	 * no limits: the scale stays 1. BudgetMemoryShare gives the process's memory over the machine's RAM (without it that is not checked).
+	 */
+	double ReachScale = 1.0;
+	FMantleBudgetTuning BudgetTuning;
+	TFunction<FMantleBudgetLimits()> BudgetLimits;
+	TFunction<double()> BudgetMemoryShare;
 };
 
 /** Where the player looks from and how fast that is moving, in world cm and cm a second. */
@@ -141,7 +152,13 @@ public:
 	/** The cell's drawDistance is reached from some point of the path. */
 	static bool IsWanted(const FMantleCellInfo& Cell, const FPath& Path);
 
-	/** How far from the whole path a built cell must be before it is released: drawDistance x ReleaseMargin, at least MinReleaseMarginCm more than drawDistance. */
+	/** The same with the live budget's scale: wanted within FMantleStreamBudget::ScaledReach(drawDistance, Settings.ReachScale, Settings.BudgetTuning.MinReachCm); with scale 1 it is the one above. */
+	static bool IsWanted(const FMantleCellInfo& Cell, const FPath& Path, const FMantleCellStreamSettings& Settings);
+
+	/** How far from the cell's bounds it is wanted, cm, under the live budget's scale. */
+	static double ReachOf(const FMantleCellInfo& Cell, const FMantleCellStreamSettings& Settings);
+
+	/** How far from the whole path a built cell must be before it is released: its reach (ReachOf: the drawDistance, less under the live budget) x ReleaseMargin, at least MinReleaseMarginCm more than the reach. */
 	static double ReleaseDistance(const FMantleCellInfo& Cell, const FMantleCellStreamSettings& Settings);
 	static bool IsReleased(const FMantleCellInfo& Cell, const FPath& Path, const FMantleCellStreamSettings& Settings);
 

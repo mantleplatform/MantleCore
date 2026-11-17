@@ -70,7 +70,7 @@ FString MantlePhysicsMaterialAssetPath(EMantlePhysicsMaterial Material)
 UPhysicalMaterial* MantleLoadPhysicsMaterial(EMantlePhysicsMaterial Material)
 {
 	// A missing preset stays missing for the process (a cooked build can't gain one), so it is
-	// looked for, and logged, once rather than for each of up to 500 props.
+	// looked for, and logged, once rather than for each prop of a place.
 	static bool bMissing[MantlePhysicsMaterialCount] = {};
 	const int32 Index = MantlePhysicsMaterialPrivate::PresetIndex(Material);
 	if (bMissing[Index])
@@ -149,8 +149,9 @@ AMantlePhysicsProp::AMantlePhysicsProp(const FObjectInitializer& ObjectInitializ
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UMantlePhysicsMeshComponent>(AStaticMeshActor::StaticMeshComponentName))
 {
 	// Server-authoritative, replicated through the engine's movement replication (see the header).
-	// Always relevant: a client's copy is the only one it has once the placeholder is adopted, and a
-	// relevancy drop would destroy it; the per-place cap bounds how many there are.
+	// Always relevant to the engine's own filters (its distance grid knows no scripted camera): on a place with cells the script replicator puts each prop in an Iris
+	// exclusion group of its area and opens the group for the players whose views are near (MantleScriptReplicatorProps.cpp), and a client whose copy the server stops
+	// sending is left a placeholder (PreDestroyFromReplication). On any other place every player is sent every prop, as before; the per-place cap bounds how many there are.
 	bReplicates = true;
 	// Ticks only on a client's adopted copy, to ask the collision gate (BeginPlay turns it on there).
 	PrimaryActorTick.bCanEverTick = true;
@@ -351,6 +352,106 @@ bool AMantlePhysicsProp::AdoptPlaceholder(AActor* Placeholder)
 	return true;
 }
 
+AStaticMeshActor* AMantlePhysicsProp::RestorePlaceholder()
+{
+	UWorld* World = GetWorld();
+	UStaticMeshComponent* From = GetStaticMeshComponent();
+	IMantlePhysicsPropPlace* Loaded = PlaceForWorld ? PlaceForWorld(World) : nullptr;
+	if (!bAdopted || HasAuthority() || EntityId.IsEmpty() || !World || World->bIsTearingDown || !From || !Loaded || !Loaded->HasPlace())
+	{
+		return nullptr;
+	}
+	if (Loaded->FindActor(EntityId) != this)
+	{
+		return nullptr; // the entity's actor is already something else (a clone's, or a placeholder made already): nothing to stand in for
+	}
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AStaticMeshActor* Placeholder = World->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), GetActorTransform(), Params);
+	UStaticMeshComponent* To = Placeholder ? Placeholder->GetStaticMeshComponent() : nullptr;
+	if (!To)
+	{
+		return nullptr;
+	}
+#if WITH_EDITOR
+	Placeholder->SetActorLabel(GetActorLabel());
+#endif
+	To->SetMobility(EComponentMobility::Movable);
+	To->SetStaticMesh(From->GetStaticMesh());
+	for (int32 Slot = 0; Slot < From->GetNumOverrideMaterials(); ++Slot)
+	{
+		if (UMaterialInterface* Material = From->OverrideMaterials[Slot])
+		{
+			To->SetMaterial(Slot, Material);
+		}
+	}
+	To->SetCastShadow(From->CastShadow);
+	To->SetCullDistance(From->LDMaxDrawDistance);
+	To->SetCollisionProfileName(UCollisionProfile::CustomCollisionProfileName);
+	To->SetCollisionEnabled(From->GetCollisionEnabled());
+	To->SetCollisionResponseToChannels(From->GetCollisionResponseToChannels());
+	Placeholder->SetActorScale3D(GetActorScale3D());
+	Placeholder->SetActorHiddenInGame(IsHidden());
+
+	// What was last seen of this prop, for a script that asks about it while it is far.
+	UMantleFarPropFacts* Facts = NewObject<UMantleFarPropFacts>(Placeholder);
+	Facts->MassKg = GetMassKg();
+	Facts->bAnchored = !GetReplicatedMovement().bRepPhysics;
+	Facts->bGrabbable = bGrabbable;
+	Facts->Material = Physics.Material;
+	Placeholder->AddInstanceComponent(Facts);
+	Facts->RegisterComponent();
+
+	TArray<AActor*> AttachedChildren;
+	GetAttachedActors(AttachedChildren, /*bResetArray*/ true, /*bRecursivelyIncludeAttachedActors*/ false);
+	for (AActor* Child : AttachedChildren)
+	{
+		if (IsValid(Child))
+		{
+			Child->AttachToActor(Placeholder, FAttachmentTransformRules::KeepRelativeTransform);
+		}
+	}
+	Loaded->ReplaceEntityActor(EntityId, Placeholder);
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_PHYSICS_PROP_RELEVANCE leave entity=%s at (%.0f, %.0f, %.0f)"), *EntityId, GetActorLocation().X, GetActorLocation().Y, GetActorLocation().Z);
+	return Placeholder;
+}
+
+void AMantlePhysicsProp::PreDestroyFromReplication()
+{
+	// The engine runs this for every replicated destroy of this copy: the server stopped sending it (its players' views are far from it), it destroyed the prop, or the connection
+	// went. Whichever it is, the entity keeps an actor here until the script world says otherwise: a destroyed entity's placeholder is destroyed with it (OnEntityActorReplaced,
+	// DestroyEntity), and a world coming down is left alone.
+	Super::PreDestroyFromReplication();
+	RestorePlaceholder();
+}
+
+void AMantlePhysicsProp::ForEachServerProp(const UWorld* World, TFunctionRef<void(AMantlePhysicsProp&)> Visit)
+{
+	// By index, no copy (this runs every frame over up to thousands of props); a visitor must not end a prop.
+	const TArray<AMantlePhysicsProp*>& Props = ServerProps();
+	for (int32 Index = 0; Index < Props.Num(); ++Index)
+	{
+		AMantlePhysicsProp* Prop = Props[Index];
+		if (IsValid(Prop) && Prop->GetWorld() == World)
+		{
+			Visit(*Prop);
+		}
+	}
+}
+
+bool AMantlePhysicsProp::IsBodyAwake() const
+{
+	const UStaticMeshComponent* Component = GetStaticMeshComponent();
+	return Component && Component->IsSimulatingPhysics() && Component->RigidBodyIsAwake();
+}
+
+TArray<AMantlePhysicsProp*>& AMantlePhysicsProp::ServerProps()
+{
+	static TArray<AMantlePhysicsProp*> Props;
+	return Props;
+}
+
 bool AMantlePhysicsProp::IsSimulating() const
 {
 	const UStaticMeshComponent* Component = GetStaticMeshComponent();
@@ -480,6 +581,17 @@ void AMantlePhysicsProp::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 }
 
 FMantlePhysicsPropPlaceResolver AMantlePhysicsProp::PlaceForWorld = nullptr;
+FMantlePhysicsPropFellDelegate AMantlePhysicsProp::OnAnyFellOutOfWorld;
+
+void AMantlePhysicsProp::FellOutOfWorld(const UDamageType& DamageType)
+{
+	// The kill floor destroys the actor on the server (and only there). The entity goes with it: told first, so clients are sent the destroy and take their stand-in down.
+	if (HasAuthority())
+	{
+		OnAnyFellOutOfWorld.Broadcast(this);
+	}
+	Super::FellOutOfWorld(DamageType);
+}
 
 void AMantlePhysicsProp::BeginPlay()
 {
@@ -487,6 +599,10 @@ void AMantlePhysicsProp::BeginPlay()
 	if (GetNetMode() == NM_Client)
 	{
 		SetActorTickEnabled(true);
+	}
+	else if (HasAuthority())
+	{
+		ServerProps().AddUnique(this);
 	}
 	TryAdopt();
 }
@@ -554,6 +670,7 @@ void AMantlePhysicsProp::OnRep_ReplicatedMovement()
 
 void AMantlePhysicsProp::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ServerProps().RemoveSingleSwap(this);
 	if (PlaceRetainedHandle.IsValid())
 	{
 		if (IMantlePhysicsPropPlace* Loaded = PlaceForWorld ? PlaceForWorld(GetWorld()) : nullptr)

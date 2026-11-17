@@ -105,6 +105,21 @@ struct MANTLERUNTIME_API FMantleCellStreamStats
 	int64 FarAuditRuns = 0;
 	int64 FarAuditDoubleDraws = 0;
 	int64 FarAuditGaps = 0;
+
+	/**
+	 * The live budget (stage 8): the ladder now (1 = everything loads) and the lowest it has been, the pressure at the last look and the highest it has been (used / limit: over 1 is over budget), how many times
+	 * it has been looked at, and what was counted at the last look: instances, solid things, far instances, Nanite root pages, and the process's memory share.
+	 */
+	double BudgetLadder = 1.0;
+	double BudgetLowestLadder = 1.0;
+	double BudgetPressure = 0.0;
+	double BudgetWorstPressure = 0.0;
+	int32 BudgetLooks = 0;
+	int64 BudgetInstances = 0;
+	int64 BudgetSolidThings = 0;
+	int64 BudgetFarInstances = 0;
+	int64 BudgetNaniteRootPages = 0;
+	double BudgetMemoryShare = 0.0;
 };
 
 /** What a whole-grid look at the twins found: each built twin entity is drawn exactly when it should be (FMantleFarSetPlan::ShouldShow). */
@@ -395,6 +410,16 @@ private:
 	void ReleaseEntities(FCell& Cell);
 	void UpdateStats();
 
+	// ---- Live budgets (MantleCellStreamerBudget.cpp) ----
+	/** What the cells that stand or are being built hold now, against FMantleBudgetLimits' units. */
+	FMantleBudgetUse MeasureBudgetUse() const;
+	/** One cell's counts added to Use (what the budget counts a cell as). */
+	void AddCellToUse(const FMantleCellInfo& Info, FMantleBudgetUse& Use) const;
+	/** The count pressure Use would come to if the ladder were NextLadder: Use plus the cells and twins that reach would newly want. Memory is not projected. */
+	double ProjectedCountPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use, double NextLadder) const;
+	/** Every Settings.BudgetTuning.StepSeconds (not while holding): looks at the pressure and moves the ladder; a move re-plans at once. */
+	void UpdateBudget(double DeltaSeconds);
+
 	// ---- Far sets (MantleCellStreamerFar.cpp) ----
 	bool FarEnabled() const;
 	/** Makes the cell's far set from the entities it holds (all of them, before the real flow cuts and filters them). A cell that has one already keeps it. */
@@ -447,6 +472,11 @@ private:
 	FMantleBuildOptions SliceOptions;
 
 	bool bIndexReady = false;
+	/** The live budget's ladder (1 = everything loads, 0 = the least), and the time since it was last looked at. */
+	double Ladder = 1.0;
+	double SecondsSinceBudgetLook = 0.0;
+	/** Time since memory last lowered the ladder (a large number at the start, so the first look may). */
+	double SecondsSinceMemoryLower = 1.0e9;
 	TArray<double> LevelOverhangs;
 	TArray<double> LevelRadii;
 

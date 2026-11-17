@@ -27,6 +27,9 @@ public:
 
 	/** How long the assets may spend building this tick (seconds): the streamer shares its budget with them. */
 	virtual void SetBuildSlice(double Seconds) { (void)Seconds; }
+
+	/** The Nanite root pages the place's meshes have attached now: the live budget (stage 8) counts them. Zero where nothing counts them (tests). */
+	virtual int64 GetNaniteRootPagesAttached() const { return 0; }
 };
 
 /**
@@ -54,6 +57,8 @@ public:
 	virtual void Release(int32 CellIndex) override { Set->ReleaseEntityAssets(HolderOf(CellIndex)); }
 
 	virtual void SetBuildSlice(double Seconds) override { Set->SetStreamBuildSlice(Seconds); }
+
+	virtual int64 GetNaniteRootPagesAttached() const override { return Set->GetNaniteRootPagesAttached(); }
 
 private:
 	int64 HolderOf(int32 CellIndex) const { return (static_cast<int64>(Slot) << 32) | static_cast<int64>(static_cast<uint32>(CellIndex)); }

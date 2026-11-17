@@ -11,21 +11,27 @@ double FMantleFarSetPlan::ReachOf(const FMantleCellInfo& Cell, const FMantleFarS
 	return FMath::Min(Cell.DrawDistance * Settings.ReachFactor, Settings.MaxReachCm);
 }
 
+double FMantleFarSetPlan::LiveReachOf(const FMantleCellInfo& Cell, const FMantleFarSetSettings& Settings)
+{
+	return ReachOf(Cell, Settings) * FMath::Clamp(Settings.ReachScale, 0.0, 1.0);
+}
+
 bool FMantleFarSetPlan::IsWanted(const FMantleCellInfo& Cell, const FMantleCellStreamPlan::FPath& Path, const FMantleFarSetSettings& Settings)
 {
-	return CellHasFarSet(Cell, Settings) && FMantleCellStreamPlan::DistanceToCell(Cell, Path) <= ReachOf(Cell, Settings);
+	return CellHasFarSet(Cell, Settings) && Settings.ReachScale > 0.0 && FMantleCellStreamPlan::DistanceToCell(Cell, Path) <= LiveReachOf(Cell, Settings);
 }
 
 bool FMantleFarSetPlan::IsReleased(const FMantleCellInfo& Cell, const FMantleCellStreamPlan::FPath& Path, const FMantleFarSetSettings& Settings)
 {
-	const double Reach = ReachOf(Cell, Settings);
+	const double Reach = LiveReachOf(Cell, Settings);
 	const double Release = FMath::Max(Reach * Settings.ReleaseMargin, Reach + Settings.MinReleaseMarginCm);
 	return FMantleCellStreamPlan::DistanceToCell(Cell, Path) > Release;
 }
 
 bool FMantleFarSetPlan::NeedsBuilding(const FMantleCellInfo& Cell, const FMantleCellStreamPlan::FPath& Path, const FMantleFarSetSettings& Settings)
 {
-	return FMantleCellStreamPlan::DistanceToCell(Cell, Path) > Cell.DrawDistance * Settings.BuildFromShare;
+	// Not while a budget has given the far sets up (the real cells' reach shrinks only after that, so a cell is never left with neither).
+	return Settings.ReachScale > 0.0 && FMantleCellStreamPlan::DistanceToCell(Cell, Path) > Cell.DrawDistance * Settings.BuildFromShare;
 }
 
 int32 FMantleFarSetPlan::StrideFor(const double EntityDrawDistanceCm, const FMantleFarSetSettings& Settings)

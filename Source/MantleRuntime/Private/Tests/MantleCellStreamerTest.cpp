@@ -2,6 +2,7 @@
 #include "MantleAssetStore.h"
 #include "MantleCellArea.h"
 #include "MantleCellStreamer.h"
+#include "MantleStreamBudget.h"
 #include "MantlePhysicsProp.h"
 #include "MantlePlaceCells.h"
 #include "MantlePlaceParser.h"
@@ -1764,6 +1765,174 @@ bool FMantleFarSetChangedEntityTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("one look more for the change"), Fixture.Streamer->GetStats().FarChangeScans, ScansBefore + 1);
 	TestEqual(TEXT("no double draw at any tick"), DoubleDraws, 0);
 	TestEqual(TEXT("no gap at any tick"), Gaps, 0);
+	return true;
+}
+
+// ---- Live budgets (stage 8): a place over the limits loads less far, and never refuses ----
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerBudgetLoadsLessFarTest,
+	"Mantle.Runtime.CellStream.Streamer.BudgetLoadsLessFar",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerBudgetLoadsLessFarTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// The view stands at 220 m: cells 1 to 5 are within 150 m of it (cell 0 is 156 m away), 250 instances each, 1,250 in all.
+	TSharedRef<int64> InstanceLimit = MakeShared<int64>(800);
+	FFixture Fixture;
+	Fixture.View = FVector(22000.0, 100.0, 100.0);
+	FMantleCellStreamSettings Settings = SteadySettings();
+	// The fixture's cells draw 150 m: the default 200 m floor would keep them whole.
+	Settings.BudgetTuning.MinReachCm = 3000.0;
+	Settings.BudgetLimits = [InstanceLimit]()
+	{
+		FMantleBudgetLimits Limits;
+		Limits.Instances = *InstanceLimit;
+		return Limits;
+	};
+	Fixture.StartStreamer(Settings);
+	if (!TestTrue(TEXT("the join settles"), Fixture.Settle()))
+	{
+		return false;
+	}
+	TestTrue(TEXT("the join built the five cells round the view"), Fixture.Built(1) && Fixture.Built(2) && Fixture.Built(3) && Fixture.Built(4) && Fixture.Built(5));
+
+	// Ten seconds: 1,250 against 800 is a pressure of 1.5625, so the ladder falls 0.1 every half second until the cells that stand fit.
+	for (int32 Tick = 0; Tick < 600; ++Tick)
+	{
+		Fixture.Tick();
+	}
+	Fixture.Settle();
+	const FMantleCellStreamStats& Stats = Fixture.Streamer->GetStats();
+	TestTrue(TEXT("the pressure was seen: 1,250 of 800"), FMath::IsNearlyEqual(Stats.BudgetWorstPressure, 1.5625, 1.0e-6));
+	TestTrue(TEXT("the ladder came down"), Stats.BudgetLowestLadder < 0.5);
+	TestTrue(TEXT("the cells at the edge were let go: cells 1 and 5 are 92 m and 100 m from the view"), !Fixture.Built(1) && !Fixture.Built(5));
+	TestTrue(TEXT("the cells nearest the view stand: 2, 3 and 4"), Fixture.Built(2) && Fixture.Built(3) && Fixture.Built(4));
+	TestTrue(TEXT("what stands fits: 750 of 800"), Stats.BudgetInstances == 750 && Stats.BudgetPressure < 1.0);
+	// The reach never goes below the floor (here 30 m, in play 200 m, which is wider than the join's 100 m): the ground round the view stands.
+	TestTrue(TEXT("the ground within 30 m of the view stands"), Fixture.Streamer->IsAreaBuilt(Fixture.View, 3000.0));
+	TestEqual(TEXT("nothing failed or was refused"), Stats.CellsFailed, 0);
+
+	// The limit is lifted (a player raises the graphics setting): the ladder climbs 0.02 every half second and the cells come back.
+	*InstanceLimit = 1000000;
+	for (int32 Tick = 0; Tick < 1800; ++Tick)
+	{
+		Fixture.Tick();
+	}
+	Fixture.Settle();
+	TestTrue(TEXT("the ladder is back at the top"), FMath::IsNearlyEqual(Fixture.Streamer->GetStats().BudgetLadder, 1.0, 1.0e-6));
+	TestTrue(TEXT("and the five cells stand again"), Fixture.Built(1) && Fixture.Built(2) && Fixture.Built(3) && Fixture.Built(4) && Fixture.Built(5));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerBudgetDoesNotCycleTest,
+	"Mantle.Runtime.CellStream.Streamer.BudgetDoesNotRebuildACellThatDoesNotFit",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerBudgetDoesNotCycleTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// A limit of 950: five cells (1,250) are over it, three (750, a pressure of 0.79) are under 0.8 where the ladder wants to rise. A fourth cell (1,000) would be over again, so a rise
+	// that brought it back would build it, find the limit passed, let it go and want it again. The ladder must see that coming and hold.
+	FFixture Fixture;
+	Fixture.View = FVector(22000.0, 100.0, 100.0);
+	FMantleCellStreamSettings Settings = SteadySettings();
+	Settings.BudgetTuning.MinReachCm = 3000.0;
+	Settings.BudgetLimits = []()
+	{
+		FMantleBudgetLimits Limits;
+		Limits.Instances = 950;
+		return Limits;
+	};
+	Fixture.StartStreamer(Settings);
+	if (!TestTrue(TEXT("the join settles"), Fixture.Settle()))
+	{
+		return false;
+	}
+	const int64 BuiltAtStart = Fixture.Streamer->GetStats().CellsBuiltEver;
+	TestEqual(TEXT("five cells were built for the join"), BuiltAtStart, static_cast<int64>(5));
+	for (int32 Tick = 0; Tick < 1800; ++Tick)
+	{
+		Fixture.Tick();
+	}
+	Fixture.Settle();
+	const FMantleCellStreamStats& Stats = Fixture.Streamer->GetStats();
+	TestTrue(TEXT("cells 2, 3 and 4 stand"), Fixture.Built(2) && Fixture.Built(3) && Fixture.Built(4));
+	TestTrue(TEXT("cells 1 and 5 were let go and not wanted back"), !Fixture.Built(1) && !Fixture.Built(5));
+	TestEqual(TEXT("no cell was built again in 30 s"), Stats.CellsBuiltEver, BuiltAtStart);
+	TestTrue(TEXT("the ladder stays low: a fourth cell would need a reach of 92 m (a scale of 0.61)"), Stats.BudgetLadder < 0.3);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerBudgetWithinLimitsTest,
+	"Mantle.Runtime.CellStream.Streamer.BudgetWithinLimitsChangesNothing",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerBudgetWithinLimitsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// 1,250 instances against a limit of 1,500 (0.83: between 0.8 and 1, so the ladder neither falls nor rises): the five cells stand and the ladder stays at the top.
+	FFixture Fixture;
+	Fixture.View = FVector(22000.0, 100.0, 100.0);
+	FMantleCellStreamSettings Settings = SteadySettings();
+	Settings.BudgetTuning.MinReachCm = 3000.0;
+	Settings.BudgetLimits = []()
+	{
+		FMantleBudgetLimits Limits;
+		Limits.Instances = 1500;
+		Limits.SolidThings = 100000;
+		return Limits;
+	};
+	Fixture.StartStreamer(Settings);
+	Fixture.Settle();
+	for (int32 Tick = 0; Tick < 600; ++Tick)
+	{
+		Fixture.Tick();
+	}
+	const FMantleCellStreamStats& Stats = Fixture.Streamer->GetStats();
+	TestTrue(TEXT("the budget was looked at"), Stats.BudgetLooks >= 10);
+	TestEqual(TEXT("the ladder never moved"), Stats.BudgetLowestLadder, 1.0);
+	TestTrue(TEXT("five cells stand"), Fixture.Built(1) && Fixture.Built(2) && Fixture.Built(3) && Fixture.Built(4) && Fixture.Built(5));
+	TestEqual(TEXT("1,250 instances counted"), Stats.BudgetInstances, static_cast<int64>(1250));
+	TestEqual(TEXT("and 1,265 solid things (253 a cell)"), Stats.BudgetSolidThings, static_cast<int64>(1265));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerBudgetNeverLimitsKeepEveryCellTest,
+	"Mantle.Runtime.CellStream.Streamer.BudgetNeverLimitsTheSolidStreamer",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerBudgetNeverLimitsKeepEveryCellTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// A streamer that keeps every cell (a standalone game's solid things, as on a server) is not limited, whatever the limits say: collision stands.
+	FFixture Fixture;
+	FMantleCellStreamSettings Settings = SteadySettings();
+	Settings.bKeepEveryCell = true;
+	Settings.HoldTimeoutSeconds = 600.0;
+	Settings.BudgetLimits = []()
+	{
+		FMantleBudgetLimits Limits;
+		Limits.Instances = 1;
+		Limits.SolidThings = 1;
+		return Limits;
+	};
+	Fixture.StartStreamer(Settings);
+	if (!TestTrue(TEXT("every cell is built"), Fixture.Settle(6000)))
+	{
+		return false;
+	}
+	for (int32 Tick = 0; Tick < 120; ++Tick)
+	{
+		Fixture.Tick();
+	}
+	TestEqual(TEXT("all twelve cells stand"), Fixture.Streamer->GetStats().CellsBuilt, CellCount);
+	TestEqual(TEXT("the budget was never looked at"), Fixture.Streamer->GetStats().BudgetLooks, 0);
+	TestEqual(TEXT("the ladder is at the top"), Fixture.Streamer->GetStats().BudgetLadder, 1.0);
 	return true;
 }
 

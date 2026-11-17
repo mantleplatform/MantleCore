@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleRuntimeStaticMeshBuilder.h"
 
+#include "AI/Navigation/NavCollisionBase.h"
 #include "DistanceFieldAtlas.h"
 #include "Engine/StaticMesh.h"
 #include "MantleAssetStore.h"
@@ -421,6 +422,18 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 			if (Params.bCookCollisionNow)
 			{
 				Body->CreatePhysicsMeshes();
+			}
+			// The engine makes a mesh's navigation collision when the mesh loads or is built in the editor, never for one built here. A static mesh component
+			// exports its body to navigation without it, but an instanced one exports nothing without it (InstancedStaticMeshComponentHelper.h,
+			// DoCustomNavigableGeometryExport): ground, walls and trees made of instances were no ground and no obstacle to a walking NPC. One that
+			// gathers nothing (no Setup, which would copy the triangles) is enough: the export then reads the body setup itself.
+			if (Built->bHasNavigationData && !Built->GetNavCollision())
+			{
+				// The engine binds a construct function that returns null until the NavigationSystem module replaces it; null leaves the mesh as it was.
+				if (UNavCollisionBase* const NavCollision = UNavCollisionBase::ConstructNew(*Built))
+				{
+					Built->SetNavCollision(NavCollision);
+				}
 			}
 		}
 		return Built;

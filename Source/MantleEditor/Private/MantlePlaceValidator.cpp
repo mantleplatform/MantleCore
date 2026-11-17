@@ -2057,7 +2057,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 	// GhzGarage/MantleCore#142: Mantle Seats, on any prop (an unpublished prop included, which the loop above may have skipped).
 	FMantleSeatExport::Check(World, Result);
 
-	// #456: every physics entity is simulated on the server and replicated to every player. Past
+	// #456: every physics entity is simulated on the server and replicated to the players near it. Past
 	// the hard cap the place is refused (the parser and backend refuse it too); past the soft one,
 	// the creator hears about the cost before players feel it.
 	if (PhysicsObjects > FMantlePlaceLimits::MaxPhysicsObjectsPerPlace)
@@ -2074,7 +2074,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 		Result.Issues.Add(FMantleValidationIssue{
 			EMantleIssueSeverity::Warning,
 			FString(),
-			FString::Printf(TEXT("This level has %d actors that simulate physics. Past %d, the server's physics and every player's network traffic grow noticeably."),
+			FString::Printf(TEXT("This level has %d actors that simulate physics. Past %d, the server's physics and the network traffic of players near them grow noticeably."),
 				PhysicsObjects, FMantlePlaceLimits::WarnPhysicsObjectsPerPlace),
 			TEXT("Keep Simulate Physics for the objects players actually push around.") });
 	}

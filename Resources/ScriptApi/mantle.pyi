@@ -35,6 +35,7 @@ class Signal:
 
 class Entity:
     """A thing in the world: any actor in the level."""
+    always_relevant: bool
     anchored: bool
     angular_velocity: Vector3
     can_collide: bool
@@ -43,6 +44,7 @@ class Entity:
     color: str
     exists: bool
     grabbable: bool
+    in_range: bool
     light_color: str
     light_enabled: bool
     light_inner_cone: float
@@ -1920,6 +1922,8 @@ Voice: _VoiceService
 
 class _WorldService:
     """Find and watch the things in the level."""
+    entity_entered_range: Signal
+    entity_left_range: Signal
     def blockcast(self, origin: Vector3, size: Vector3, direction: Vector3, params: dict[str, Any] = ..., /) -> Optional[dict[str, Any]]:
         """Sweep a box of this size (its full width, depth and height, at most 100 m on any side, kept square to the world's axes) from origin along direction and return the first thing it touches, in the same table as World:Raycast, or nil. Takes the same params as World:Raycast."""
         ...

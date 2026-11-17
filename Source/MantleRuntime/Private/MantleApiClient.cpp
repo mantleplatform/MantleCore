@@ -119,7 +119,7 @@ namespace
 		case 409:
 			return TEXT("Save your changes before publishing.");
 		case 413:
-			return TEXT("That place is too large to publish.");
+			return TEXT("A place file can be at most 8 MiB. A big place's scenery goes in separate cell files, which do not count toward it: publish from the Mantle plugin, which makes them, or remove entities you do not need.");
 		case 0:
 			return TEXT("Could not reach Mantle. Check your internet connection and try again.");
 		default:
