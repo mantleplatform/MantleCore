@@ -1580,15 +1580,31 @@ void FMantleVehicleBuilder::ApplyOwnHinges(FMantleVehicleBuildResult& Built, con
 	{
 		return;
 	}
-	const FMantleVehicleHingeMap Wanted = Options.Hinges.IsSet() ? Options.Hinges.GetValue() : FMantleVehicleChassisSkin::SuggestHinges(Read);
-	if (Wanted.IsEmpty())
+	// The conversion that made this vehicle already found its doors, hood and trunk from the bones' names (FMantleVehicleConverter::AddHinges). The Doors step is the
+	// creator's own word on what opens, an empty one included (nothing does), so what it sets replaces that guess.
+	FMantleVehicleSourceTuning& T = Source->Tuning;
+	const bool bCleared = Options.Hinges.IsSet() && (T.bHasDriverDoor || T.bHasPassengerDoor || T.bRearLeftDoor || T.bRearRightDoor || T.bHood || T.bTrunk);
+	if (bCleared)
 	{
-		return;
+		Source->Modify();
+		T.bHasDriverDoor = T.bHasPassengerDoor = T.bRearLeftDoor = T.bRearRightDoor = T.bHood = T.bTrunk = false;
 	}
-	// The model keeps its own bones and is in its own space, so there is no turn, scale or move.
-	const TArray<FMantleVehicleSkinnedHinge> Found = FMantleVehicleChassisSkin::FindHingesOnModel(Read, FMantleVehicleModelPlacement(), Wanted, &Built.Notes);
-	ApplyHinges(*Source, Found, Built.Notes);
-	if (Found.Num() > 0 && Built.bSaved)
+	const FMantleVehicleHingeMap Wanted = Options.Hinges.IsSet() ? Options.Hinges.GetValue() : FMantleVehicleChassisSkin::SuggestHinges(Read);
+	TArray<FMantleVehicleSkinnedHinge> Found;
+	if (!Wanted.IsEmpty())
+	{
+		// The model keeps its own bones and is in its own space, so there is no turn, scale or move.
+		Found = FMantleVehicleChassisSkin::FindHingesOnModel(Read, FMantleVehicleModelPlacement(), Wanted, &Built.Notes);
+		ApplyHinges(*Source, Found, Built.Notes);
+		// The conversion said the same in its own notes: each sentence once.
+		TArray<FString> Once;
+		for (const FString& Note : Built.Notes)
+		{
+			Once.AddUnique(Note);
+		}
+		Built.Notes = MoveTemp(Once);
+	}
+	if ((Found.Num() > 0 || bCleared) && Built.bSaved)
 	{
 		Built.bSaved = SaveVehicle(*Source, Built.SaveProblem);
 	}

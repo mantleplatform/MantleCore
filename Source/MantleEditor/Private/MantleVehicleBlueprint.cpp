@@ -138,7 +138,7 @@ FMantleVehicleBlueprintModel FMantleVehicleBlueprint::Resolve(UBlueprint* Bluepr
 				Around.Attached = MoveTemp(Rest);
 				Out.Notes.Add(FString::Printf(TEXT("%s is a skeleton of bones and wheels with the car attached to it as %d separate pieces (%s). Mantle joined them into one model (%s), each piece on the bone it rides and keeping its material, so the whole car is in the picture, the paint and the lights."),
 					*Blueprint->GetName(), BodyPieces.Num(), *Names, *Joined->GetPathName()));
-				Out.Notes.Add(TEXT("Pieces that open on their own, like a door or a tailgate, become solid parts of the body."));
+				Out.Notes.Add(TEXT("Pieces that open on their own, like a door or a tailgate, stay on the bone they ride: when that bone is named like a door, the hood or the trunk, it opens in the game."));
 				if (Triangles > FMantleVehicleLimits::MaxTriangles)
 				{
 					Out.Notes.Add(FString::Printf(TEXT("The joined model has %d triangles; a vehicle body may have at most %d."), Triangles, FMantleVehicleLimits::MaxTriangles));

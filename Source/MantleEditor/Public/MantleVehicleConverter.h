@@ -16,6 +16,8 @@ class USkeletalMesh;
 class USkeletalMeshComponent;
 class UStaticMesh;
 struct FMantleVehicleCollision;
+struct FMantleVehicleHingeEvidence;
+struct FMantleVehicleModel;
 struct FMantleVehicleSourceBox;
 struct FMantleVehicleSourceLinkage;
 struct FMantleVehicleSourcePart;
@@ -243,6 +245,16 @@ public:
 	 */
 	static void AddParts(const USkeletalMesh& Mesh, TConstArrayView<FMantleVehicleAttachedMesh> Attached, UMantleVehicleSource& Source,
 		TArray<FString>& OutNotes, const TMap<FName, double>& MeasuredRadii = TMap<FName, double>());
+
+	/**
+	 * Doors, hood and trunk: the hinges a converted car opens them with (#546). Found from Model's bones by their names (FMantleVehicleChassisSkin::SuggestHinges: B_SUV04_FLDoor,
+	 * B_Door_FL, door_dside_f, RearDoor, Hood, Boot...), each hinge from the box around what the bone carries (the model's vertices weighted to it and its children, and
+	 * Evidence's boxes of attached meshes riding it) with FMantleVehicleChassisSkin::HingeFor, and written to Source's tuning by FMantleVehicleBuilder::ApplyHinges (a front door
+	 * needs its seat: without one it is left shut and the notes say so). WheelBones are the wheels' bones: a bone a wheel hangs from cannot turn, so it is left out. Hinges are
+	 * written only when Source has none: any it already has are the creator's, and all are kept. OutNotes says what opens and what was left out and why.
+	 */
+	static void AddHinges(const FMantleVehicleModel& Model, const FMantleVehicleHingeEvidence& Evidence, TConstArrayView<FName> WheelBones, UMantleVehicleSource& Source,
+		TArray<FString>& OutNotes);
 
 	/**
 	 * Splits the meshes found riding Mesh (Around.Attached) into the pieces of the car's own body and the ones AddParts keeps as parts and tires. A car modeled as a bare

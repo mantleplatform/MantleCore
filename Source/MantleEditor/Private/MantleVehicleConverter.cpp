@@ -1,5 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleVehicleConverter.h"
+#include "MantleVehicleBuilder.h"
+#include "MantleVehicleChassisSkin.h"
 #include "MantleVehicleRimFinder.h"
 #include "MantleVehicleBodyLODs.h"
 #include "MantleVehicleBuiltInMaterials.h"
@@ -1519,8 +1521,87 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 			Source.Linkage.Num()));
 	}
 
+	// Doors, hood and trunk (#546): their hinges, found from the bones' names, unless the creator has set any.
+	{
+		FMantleVehicleModel Model;
+		FString ModelError;
+		if (FMantleVehicleModel::Read(Mesh, Model, ModelError))
+		{
+			// The attached meshes riding a bone (the doors of a bare skeleton), in the body's space.
+			FMantleVehicleHingeEvidence Evidence;
+			for (const FMantleVehicleSourcePart& Part : Source.Parts)
+			{
+				const UStaticMesh* PartMesh = Part.Mesh.LoadSynchronous();
+				const int32 Bone = Skeleton.FindRawBoneIndex(Part.Bone);
+				if (PartMesh && Pose.IsValidIndex(Bone))
+				{
+					Evidence.Riding.Add(TPair<FName, FBox>(Part.Bone, PartMesh->GetBoundingBox().TransformBy(Part.Transform * Pose[Bone])));
+				}
+			}
+			AddHinges(Model, Evidence, WheelNames, Source, Result.Notes);
+		}
+		else
+		{
+			Result.Notes.Add(FString::Printf(TEXT("Doors, hood and trunk were not looked for, because the model's shape could not be read (%s)."), *ModelError));
+		}
+	}
+
 	Result.bSuccess = true;
 	return Result;
+}
+
+void FMantleVehicleConverter::AddHinges(const FMantleVehicleModel& Model, const FMantleVehicleHingeEvidence& Evidence, const TConstArrayView<FName> WheelBones,
+	UMantleVehicleSource& Source, TArray<FString>& OutNotes)
+{
+	FMantleVehicleSourceTuning& T = Source.Tuning;
+	const int32 Kept = (T.bHasDriverDoor ? 1 : 0) + (T.bHasPassengerDoor ? 1 : 0) + (T.bRearLeftDoor ? 1 : 0) + (T.bRearRightDoor ? 1 : 0) + (T.bHood ? 1 : 0) + (T.bTrunk ? 1 : 0);
+	if (Kept > 0)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Doors, hood and trunk: your %d are kept. Untick them all in the vehicle asset and convert again to have Mantle find them."), Kept));
+		return;
+	}
+
+	TArray<FString> Notes;
+	FMantleVehicleHingeMap Wanted = FMantleVehicleChassisSkin::SuggestHinges(Model, &Notes);
+
+	// The cook refuses the root, a wheel's bone and a bone a wheel hangs from (the wheel would turn with the door): left out, and said.
+	TArray<EMantleVehicleHingePart> Refused;
+	for (const TPair<EMantleVehicleHingePart, FName>& Candidate : Wanted.Bones)
+	{
+		const int32 Bone = Model.FindBone(Candidate.Value);
+		for (const FName WheelBone : WheelBones)
+		{
+			bool bCarries = false;
+			for (int32 Up = Model.FindBone(WheelBone), Guard = 0; Up != INDEX_NONE && Guard < 1024 && !bCarries; Up = Model.Bones[Up].ParentIndex, ++Guard)
+			{
+				bCarries = Up == Bone;
+			}
+			if (bCarries)
+			{
+				Refused.Add(Candidate.Key);
+				Notes.Add(FString::Printf(TEXT("%s is named like the %s, but a wheel is on it or hangs from it, so it cannot open."), *Candidate.Value.ToString(),
+					*FMantleVehicleChassisSkin::HingeLabel(Candidate.Key).ToString().ToLower()));
+				break;
+			}
+		}
+	}
+	for (const EMantleVehicleHingePart Part : Refused)
+	{
+		Wanted.Bones.Remove(Part);
+	}
+
+	if (Wanted.IsEmpty())
+	{
+		OutNotes.Append(Notes);
+		OutNotes.Add(TEXT("No bone is named like a door, the hood or the trunk, so nothing opens. Name a door's bone like Door_FL (front left; _FR, _RL and _RR are the others), the hood's Hood and the trunk's Trunk, or set Driver Door, Hood and the others under Tuning in the vehicle asset."));
+		return;
+	}
+
+	FMantleVehicleHingeEvidence Held = Evidence;
+	Held.bCheckPlaces = true;
+	const TArray<FMantleVehicleSkinnedHinge> Found = FMantleVehicleChassisSkin::FindHingesOnModel(Model, FMantleVehicleModelPlacement(), Wanted, &Notes, &Held);
+	FMantleVehicleBuilder::ApplyHinges(Source, Found, Notes);
+	OutNotes.Append(Notes);
 }
 
 UMantleVehicleSource* FMantleVehicleConverter::ConvertAsset(USkeletalMesh* Mesh, FMantleVehicleConversion& OutResult, const FMantleVehicleSurroundings* Around)

@@ -127,6 +127,18 @@ struct FMantleVehicleHingeMap
 	bool IsFlipped(const EMantleVehicleHingePart Part) const { return Flipped.Contains(Part); }
 };
 
+/**
+ * What FindHingesOnModel may use besides the model's own vertices: a car that is a bare skeleton with its doors as separate meshes riding the door bones (the converter's
+ * Parts), and a check a converter wants because nobody picked the bones by eye.
+ */
+struct FMantleVehicleHingeEvidence
+{
+	/** Boxes, in the model's space, of meshes that ride a bone of the model without being in it: the bone's name and the box. They count for that bone's part and for the body. */
+	TArray<TPair<FName, FBox>> Riding;
+	/** A part whose box sits on the other side of the car from what its bone's name says (a "left" door on the right, a hood at the rear) is left out and said, not guessed at. */
+	bool bCheckPlaces = false;
+};
+
 /** The parts of a model the creator has assigned to the chassis's moving bones: the chassis bone's name to where it comes from. Optional, and partial. */
 struct FMantleVehicleModelMap
 {
@@ -342,10 +354,13 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	/**
 	 * The parts of Model that obviously open, by the names of its bones (any case): GTA's door_dside_f (driver), door_pside_f (passenger), door_dside_r (rear left),
 	 * door_pside_r (rear right), bonnet (hood) and boot (trunk), and the usual door_fl / door_fr / door_rl / door_rr (also door_lf and the like), hood, trunk and
-	 * tailgate. A bone matches by its whole name once a "_dummy", a "_l" or "_r" side mark and a number at the end are set aside, so doorhandle or door_handle_fl is
-	 * not a door. A static model, or one with none of these, gives an empty map. Nothing is flipped.
+	 * tailgate. A name is read in words (split at "_", "-", spaces, dots and where a capital starts one: B_SUV04_FLDoor is b, suv, 04, fl, door): a door is a "door" word with a
+	 * side and a row (fl, lf, front_left, dside_f, door_l and so on; a door with a side and no row is a front door), a hood is "hood" or "bonnet", a trunk is "boot", "trunk",
+	 * "tailgate", "liftgate" or "hatch", or a "door" that is "rear" or "back" with no side (the SUV's B_SUV04_RearDoor). A bone with a handle, window, hinge or the like in its
+	 * name is part of one, not the part, and doorhandle (one word) is not a door. A static model, or one with none of these, gives an empty map. Nothing is flipped.
+	 * OutNotes, when given, says in plain words which door-looking bones were not taken and why.
 	 */
-	static FMantleVehicleHingeMap SuggestHinges(const FMantleVehicleModel& Model);
+	static FMantleVehicleHingeMap SuggestHinges(const FMantleVehicleModel& Model, TArray<FString>* OutNotes = nullptr);
 
 	/**
 	 * Where Part's hinge goes, from the box around its vertices and where its bone is (the pure part of Skin, also used for a model that keeps its own skeleton), all in the
@@ -360,10 +375,10 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	/**
 	 * The hinges of a model that keeps its own skeleton, or the whole model placed (Placement): for each part in Hinges whose bone Model has (not its root), the vertices
 	 * that bone and its children carry (the heaviest weight decides, a nearer mapped bone takes its own) give the box, and HingeFor the numbers. A part with no bone in
-	 * the model, or no vertices on it, is left out and OutNotes says so in plain words.
+	 * the model, or no vertices on it, is left out and OutNotes says so in plain words. Evidence adds the boxes of meshes riding the bones, and can hold each part to its side of the car.
 	 */
 	static TArray<FMantleVehicleSkinnedHinge> FindHingesOnModel(const FMantleVehicleModel& Model, const FMantleVehicleModelPlacement& Placement, const FMantleVehicleHingeMap& Hinges,
-		TArray<FString>* OutNotes = nullptr);
+		TArray<FString>* OutNotes = nullptr, const FMantleVehicleHingeEvidence* Evidence = nullptr);
 
 	/** Plain words for a piece of the model, as the window's pickers list it: "bone FR" or "section 2: Glass". */
 	static FString DescribePiece(const FMantleVehicleModel& Model, const FMantleVehicleModelPiece& Piece);

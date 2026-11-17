@@ -1373,58 +1373,197 @@ namespace MantleVehicleChassisSkinPrivate
 		return Suffixed;
 	}
 
-	/** A bone's name set down to the word that says what it is: lowercase, "-" and spaces as "_", a "bone_" or "jnt_" at the front and a number, "_dummy" or "_jnt" at the end dropped. */
-	FString PlainBoneName(const FName Bone)
+	/** A bone's name in words, lowercase: split at anything but a letter or digit and where a capital starts a word or a run of digits starts or ends (B_SUV04_FLDoor: b, suv, 04, fl, door). */
+	TArray<FString> BoneNameWords(const FName Bone)
 	{
-		FString Name = Bone.ToString().ToLower();
-		Name.ReplaceInline(TEXT("-"), TEXT("_"));
-		Name.ReplaceInline(TEXT(" "), TEXT("_"));
-		for (const TCHAR* Prefix : { TEXT("bone_"), TEXT("jnt_"), TEXT("joint_") })
+		const FString Name = Bone.ToString();
+		TArray<FString> Out;
+		FString Word;
+		const auto Flush = [&Out, &Word]()
 		{
-			if (Name.StartsWith(Prefix))
+			if (!Word.IsEmpty())
 			{
-				Name.RightChopInline(FCString::Strlen(Prefix));
+				Out.Add(Word.ToLower());
+				Word.Reset();
+			}
+		};
+		for (int32 Index = 0; Index < Name.Len(); ++Index)
+		{
+			const TCHAR Letter = Name[Index];
+			if (!FChar::IsAlnum(Letter))
+			{
+				Flush();
+				continue;
+			}
+			if (!Word.IsEmpty())
+			{
+				const TCHAR Last = Word[Word.Len() - 1];
+				const TCHAR Next = Index + 1 < Name.Len() ? Name[Index + 1] : TEXT('\0');
+				const bool bDigitChange = FChar::IsDigit(Letter) != FChar::IsDigit(Last);
+				const bool bCapitalStarts = FChar::IsLower(Last) && FChar::IsUpper(Letter);
+				const bool bAcronymEnds = FChar::IsUpper(Last) && FChar::IsUpper(Letter) && FChar::IsLower(Next);
+				if (bDigitChange || bCapitalStarts || bAcronymEnds)
+				{
+					Flush();
+				}
+			}
+			Word.AppendChar(Letter);
+		}
+		Flush();
+		return Out;
+	}
+
+	bool IsOneOf(const FString& Word, std::initializer_list<const TCHAR*> Choices)
+	{
+		for (const TCHAR* Choice : Choices)
+		{
+			if (Word == Choice)
+			{
+				return true;
 			}
 		}
-		bool bChanged = true;
-		while (bChanged)
+		return false;
+	}
+
+	/**
+	 * Whether a bone's name says it is one of the six parts that open (see FMantleVehicleChassisSkin::SuggestHinges for the words). True with OutPart when it does. False with
+	 * OutWhy set, in plain words, when the name looks like part of a door, hood or trunk but is not taken; false with OutWhy empty when it has nothing to do with them.
+	 */
+	bool ReadHingeName(const FName Bone, EMantleVehicleHingePart& OutPart, FString& OutWhy)
+	{
+		OutWhy.Reset();
+		TArray<FString> Words = BoneNameWords(Bone);
+		// A "b_" or "bone_" in front and a "dummy" or a number anywhere say nothing about the part.
+		if (Words.Num() > 1 && IsOneOf(Words[0], { TEXT("b"), TEXT("bone"), TEXT("jnt"), TEXT("joint") }))
 		{
-			bChanged = false;
-			while (Name.Len() > 0 && (FChar::IsDigit(Name[Name.Len() - 1]) || Name[Name.Len() - 1] == TEXT('_') || Name[Name.Len() - 1] == TEXT('.')))
+			Words.RemoveAt(0);
+		}
+		Words.RemoveAll([](const FString& Word) { return IsOneOf(Word, { TEXT("dummy"), TEXT("geo"), TEXT("jnt"), TEXT("joint"), TEXT("bone") }) || FChar::IsDigit(Word[0]); });
+		const auto Has = [&Words](std::initializer_list<const TCHAR*> Choices)
+		{
+			return Words.ContainsByPredicate([&Choices](const FString& Word) { return IsOneOf(Word, Choices); });
+		};
+		const bool bDoor = Has({ TEXT("door") });
+		const bool bHood = Has({ TEXT("hood"), TEXT("bonnet") });
+		const bool bTrunk = Has({ TEXT("boot"), TEXT("trunk"), TEXT("tailgate"), TEXT("liftgate"), TEXT("hatch"), TEXT("hatchback") });
+		if (!bDoor && !bHood && !bTrunk)
+		{
+			return false;
+		}
+		// A handle, a window, a hinge's own bone: a piece of the part, which the part's bone carries, not the part.
+		for (const FString& Word : Words)
+		{
+			if (IsOneOf(Word, { TEXT("handle"), TEXT("handles"), TEXT("window"), TEXT("glass"), TEXT("mirror"), TEXT("lock"), TEXT("latch"), TEXT("hinge"), TEXT("trim"), TEXT("light"),
+				TEXT("lamp"), TEXT("panel"), TEXT("frame"), TEXT("seal"), TEXT("speaker"), TEXT("inner"), TEXT("interior"), TEXT("strut"), TEXT("stay"), TEXT("damper"),
+				TEXT("hydraulic"), TEXT("arm"), TEXT("pillar"), TEXT("switch"), TEXT("knob"), TEXT("cable"), TEXT("sill"), TEXT("rubber"), TEXT("ornament") }))
 			{
-				Name.LeftChopInline(1);
-				bChanged = true;
+				OutWhy = FString::Printf(TEXT("a bone with \"%s\" in its name is a piece of a door, hood or trunk and not the one that opens"), *Word);
+				return false;
 			}
-			for (const TCHAR* Suffix : { TEXT("_dummy"), TEXT("_jnt"), TEXT("_joint"), TEXT("_bone"), TEXT("_geo") })
+		}
+		if (static_cast<int32>(bDoor) + static_cast<int32>(bHood) + static_cast<int32>(bTrunk) > 1)
+		{
+			OutWhy = TEXT("its name says more than one of door, hood and trunk");
+			return false;
+		}
+		if (bHood)
+		{
+			OutPart = EMantleVehicleHingePart::Hood;
+			return true;
+		}
+		if (bTrunk)
+		{
+			OutPart = EMantleVehicleHingePart::Trunk;
+			return true;
+		}
+
+		// A door: its side (the car's left is the driver's, -Y) and its row (front unless it says rear).
+		int32 Side = 0;
+		int32 Row = 0;
+		bool bConflict = false;
+		const auto SetSide = [&Side, &bConflict](const int32 Value)
+		{
+			bConflict |= Side != 0 && Side != Value;
+			Side = Value;
+		};
+		const auto SetRow = [&Row, &bConflict](const int32 Value)
+		{
+			bConflict |= Row != 0 && Row != Value;
+			Row = Value;
+		};
+		for (const FString& Word : Words)
+		{
+			if (IsOneOf(Word, { TEXT("fl"), TEXT("lf") }))
 			{
-				if (Name.EndsWith(Suffix))
+				SetSide(-1);
+				SetRow(1);
+			}
+			else if (IsOneOf(Word, { TEXT("fr"), TEXT("rf") }))
+			{
+				SetSide(1);
+				SetRow(1);
+			}
+			else if (IsOneOf(Word, { TEXT("rl"), TEXT("lr"), TEXT("bl"), TEXT("lb") }))
+			{
+				SetSide(-1);
+				SetRow(-1);
+			}
+			else if (IsOneOf(Word, { TEXT("rr"), TEXT("br"), TEXT("rb") }))
+			{
+				SetSide(1);
+				SetRow(-1);
+			}
+			else if (IsOneOf(Word, { TEXT("left"), TEXT("dside"), TEXT("driver"), TEXT("lh") }))
+			{
+				SetSide(-1);
+			}
+			else if (IsOneOf(Word, { TEXT("right"), TEXT("pside"), TEXT("passenger"), TEXT("rh") }))
+			{
+				SetSide(1);
+			}
+			else if (IsOneOf(Word, { TEXT("front"), TEXT("f") }))
+			{
+				SetRow(1);
+			}
+			else if (IsOneOf(Word, { TEXT("rear"), TEXT("back") }))
+			{
+				SetRow(-1);
+			}
+		}
+		// A lone "l" or "r" is the side; once the side is known a lone "r" is the rear (door_dside_r).
+		for (const FString& Word : Words)
+		{
+			if (Word == TEXT("l") || Word == TEXT("r"))
+			{
+				if (Side == 0)
 				{
-					Name.LeftChopInline(FCString::Strlen(Suffix));
-					bChanged = true;
+					SetSide(Word == TEXT("l") ? -1 : 1);
+				}
+				else if (Word == TEXT("r") && Row == 0)
+				{
+					SetRow(-1);
 				}
 			}
 		}
-		return Name;
-	}
-
-	/** The words (after PlainBoneName) that name each part, whole. A name with anything more on it is not the part (door_handle_fl is a handle). */
-	TConstArrayView<const TCHAR*> HingeNames(const EMantleVehicleHingePart Part)
-	{
-		static const TCHAR* const Driver[] = { TEXT("door_dside_f"), TEXT("door_fl"), TEXT("door_lf"), TEXT("door_front_left"), TEXT("door_driver"), TEXT("driver_door") };
-		static const TCHAR* const Passenger[] = { TEXT("door_pside_f"), TEXT("door_fr"), TEXT("door_rf"), TEXT("door_front_right"), TEXT("door_passenger"), TEXT("passenger_door") };
-		static const TCHAR* const RearLeft[] = { TEXT("door_dside_r"), TEXT("door_rl"), TEXT("door_lr"), TEXT("door_rear_left") };
-		static const TCHAR* const RearRight[] = { TEXT("door_pside_r"), TEXT("door_rr"), TEXT("door_rear_right") };
-		static const TCHAR* const Hood[] = { TEXT("bonnet"), TEXT("hood") };
-		static const TCHAR* const Trunk[] = { TEXT("boot"), TEXT("trunk"), TEXT("tailgate"), TEXT("trunk_lid"), TEXT("boot_lid") };
-		switch (Part)
+		if (bConflict)
 		{
-		case EMantleVehicleHingePart::DriverDoor: return Driver;
-		case EMantleVehicleHingePart::PassengerDoor: return Passenger;
-		case EMantleVehicleHingePart::RearLeftDoor: return RearLeft;
-		case EMantleVehicleHingePart::RearRightDoor: return RearRight;
-		case EMantleVehicleHingePart::Hood: return Hood;
-		default: return Trunk;
+			OutWhy = TEXT("its name gives the door two sides or two rows");
+			return false;
 		}
+		if (Side == 0)
+		{
+			// The SUV packs' RearDoor: a door at the back with no side is the tailgate.
+			if (Row < 0)
+			{
+				OutPart = EMantleVehicleHingePart::Trunk;
+				return true;
+			}
+			OutWhy = TEXT("its side (left or right) is not in its name");
+			return false;
+		}
+		OutPart = Side < 0 ? (Row < 0 ? EMantleVehicleHingePart::RearLeftDoor : EMantleVehicleHingePart::DriverDoor)
+			: (Row < 0 ? EMantleVehicleHingePart::RearRightDoor : EMantleVehicleHingePart::PassengerDoor);
+		return true;
 	}
 
 	/** Which side of the car a part is on: -1 the left (the driver's, -Y), +1 the right; 0 for the hood and trunk, which are on the middle line. */
@@ -1464,7 +1603,7 @@ FText FMantleVehicleChassisSkin::HingeLabel(const EMantleVehicleHingePart Part)
 	}
 }
 
-FMantleVehicleHingeMap FMantleVehicleChassisSkin::SuggestHinges(const FMantleVehicleModel& Model)
+FMantleVehicleHingeMap FMantleVehicleChassisSkin::SuggestHinges(const FMantleVehicleModel& Model, TArray<FString>* OutNotes)
 {
 	using namespace MantleVehicleChassisSkinPrivate;
 	FMantleVehicleHingeMap Out;
@@ -1472,25 +1611,29 @@ FMantleVehicleHingeMap FMantleVehicleChassisSkin::SuggestHinges(const FMantleVeh
 	{
 		return Out;
 	}
-	for (const EMantleVehicleHingePart Part : HingeParts())
+	for (int32 Bone = 1; Bone < Model.Bones.Num(); ++Bone)
 	{
-		for (int32 Bone = 1; Bone < Model.Bones.Num() && !Out.Bones.Contains(Part); ++Bone)
+		const FName Name = Model.Bones[Bone].Name;
+		EMantleVehicleHingePart Part = EMantleVehicleHingePart::DriverDoor;
+		FString Why;
+		if (!ReadHingeName(Name, Part, Why))
 		{
-			const FName Name = Model.Bones[Bone].Name;
-			if (Out.Bones.FindKey(Name))
+			if (OutNotes && !Why.IsEmpty())
 			{
-				continue;
+				OutNotes->Add(FString::Printf(TEXT("%s looks like part of a door, hood or trunk, but it is not made to open: %s."), *Name.ToString(), *Why));
 			}
-			const FString Plain = PlainBoneName(Name);
-			for (const TCHAR* Word : HingeNames(Part))
-			{
-				if (Plain == Word)
-				{
-					Out.Bones.Add(Part, Name);
-					break;
-				}
-			}
+			continue;
 		}
+		if (const FName* Taken = Out.Bones.Find(Part))
+		{
+			if (OutNotes)
+			{
+				OutNotes->Add(FString::Printf(TEXT("%s is also named like the %s, but %s is already it, so %s is left alone."), *Name.ToString(),
+					*HingeLabel(Part).ToString().ToLower(), *Taken->ToString(), *Name.ToString()));
+			}
+			continue;
+		}
+		Out.Bones.Add(Part, Name);
 	}
 	return Out;
 }
@@ -1556,7 +1699,7 @@ FMantleVehicleSkinnedHinge FMantleVehicleChassisSkin::HingeFor(const EMantleVehi
 }
 
 TArray<FMantleVehicleSkinnedHinge> FMantleVehicleChassisSkin::FindHingesOnModel(const FMantleVehicleModel& Model, const FMantleVehicleModelPlacement& Placement,
-	const FMantleVehicleHingeMap& Hinges, TArray<FString>* OutNotes)
+	const FMantleVehicleHingeMap& Hinges, TArray<FString>* OutNotes, const FMantleVehicleHingeEvidence* Evidence)
 {
 	using namespace MantleVehicleChassisSkinPrivate;
 	TArray<FMantleVehicleSkinnedHinge> Out;
@@ -1580,15 +1723,70 @@ TArray<FMantleVehicleSkinnedHinge> FMantleVehicleChassisSkin::FindHingesOnModel(
 			Boxes[Owner[Bone]] += Point;
 		}
 	}
+	// Meshes that ride a bone without being in the model (a car's attached doors): their corners count for the body, and for the part their bone belongs to.
+	if (Evidence)
+	{
+		for (const TPair<FName, FBox>& Riding : Evidence->Riding)
+		{
+			const int32 Bone = Model.FindBone(Riding.Key);
+			const int32 Part = Owner.IsValidIndex(Bone) ? Owner[Bone] : INDEX_NONE;
+			if (!Riding.Value.IsValid)
+			{
+				continue;
+			}
+			for (int32 Corner = 0; Corner < 8; ++Corner)
+			{
+				const FVector Point = Placement.Point(FVector((Corner & 1) ? Riding.Value.Max.X : Riding.Value.Min.X, (Corner & 2) ? Riding.Value.Max.Y : Riding.Value.Min.Y,
+					(Corner & 4) ? Riding.Value.Max.Z : Riding.Value.Min.Z));
+				BodyBox += Point;
+				if (Part != INDEX_NONE)
+				{
+					Boxes[Part] += Point;
+				}
+			}
+		}
+	}
 	for (int32 Index = 0; Index < Resolved.Num(); ++Index)
 	{
+		const FString Label = HingeLabel(Resolved[Index].Part).ToString().ToLower();
 		if (!Boxes[Index].IsValid)
 		{
 			if (OutNotes)
 			{
-				OutNotes->Add(FString::Printf(TEXT("Nothing in your model is weighted to the bone you picked for the %s, so it will not open."), *HingeLabel(Resolved[Index].Part).ToString().ToLower()));
+				OutNotes->Add(Evidence
+					? FString::Printf(TEXT("Nothing is weighted to %s and no part rides it, so the %s will not open."), *Model.Bones[Resolved[Index].ModelBone].Name.ToString(), *Label)
+					: FString::Printf(TEXT("Nothing in your model is weighted to the bone you picked for the %s, so it will not open."), *Label));
 			}
 			continue;
+		}
+		if (Evidence && Evidence->bCheckPlaces && BodyBox.IsValid)
+		{
+			// Where the part sits against the middle of the car: a door off to its side, the hood ahead, the trunk behind (more than 5 cm either way is a mistake).
+			constexpr double Slack = 5.0;
+			const FVector Offset = Boxes[Index].GetCenter() - BodyBox.GetCenter();
+			const int32 Side = HingeSide(Resolved[Index].Part);
+			const TCHAR* Where = nullptr;
+			if (Side != 0 && Offset.Y * Side < -Slack)
+			{
+				Where = Side < 0 ? TEXT("right") : TEXT("left");
+			}
+			else if (Resolved[Index].Part == EMantleVehicleHingePart::Hood && Offset.X < -Slack)
+			{
+				Where = TEXT("back");
+			}
+			else if (Resolved[Index].Part == EMantleVehicleHingePart::Trunk && Offset.X > Slack)
+			{
+				Where = TEXT("front");
+			}
+			if (Where)
+			{
+				if (OutNotes)
+				{
+					OutNotes->Add(FString::Printf(TEXT("%s is named like the %s, but it sits at the %s of the car, so the %s will not open (the model may face another way, or the name may be swapped)."),
+						*Model.Bones[Resolved[Index].ModelBone].Name.ToString(), *Label, Where, *Label));
+				}
+				continue;
+			}
 		}
 		const int32 ModelBone = Resolved[Index].ModelBone;
 		const bool bKnown = Model.BonePositions.IsValidIndex(ModelBone);
