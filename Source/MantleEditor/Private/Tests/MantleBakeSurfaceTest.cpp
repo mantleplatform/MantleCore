@@ -12,6 +12,7 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionConstant4Vector.h"
 #include "Materials/MaterialExpressionMakeMaterialAttributes.h"
 #include "Materials/MaterialExpressionMax.h"
 #include "Materials/MaterialExpressionMultiply.h"
@@ -556,6 +557,35 @@ bool FMantleBakeSurfaceUvRangeReadsCardTest::RunTest(const FString& Parameters)
 		const UMaterialExpressionMax* One = Cast<UMaterialExpressionMax>(Times->B.Expression);
 		TestTrue(TEXT("by max(Vertex Color, 1)"), One && One->A.Expression && One->A.Expression->IsA<UMaterialExpressionVertexColor>() && One->ConstB == 1.0f
 			&& !One->B.Expression);
+		// The red output (1) is a scalar, so the multiply compiles against a base color of any width; the RGB output (0) is a float3 and
+		// fails against a float2 or float4.
+		TestTrue(TEXT("whose Vertex Color side is the scalar red output"), One && One->A.OutputIndex == 1);
+	}
+
+	// A base color that is not three wide: a texture coordinate (float2) and a constant (float4) wired straight in, no mask.
+	{
+		UMaterial* Wide = NewMaterial();
+		UMaterialExpressionConstant4Vector* Four = AddNode<UMaterialExpressionConstant4Vector>(Wide);
+		Wide->GetEditorOnlyData()->BaseColor.Connect(0, Four);
+		Wide->PostEditChange();
+		UMaterial* Narrow = NewMaterial();
+		UMaterialExpressionTextureCoordinate* Straight = AddNode<UMaterialExpressionTextureCoordinate>(Narrow);
+		Narrow->GetEditorOnlyData()->BaseColor.Connect(0, Straight);
+		Narrow->PostEditChange();
+		for (UMaterial* Source : {Wide, Narrow})
+		{
+			const TStrongObjectPtr<UMaterialInterface> Made = FMantlePlaceAssets::ReadsVertexColorCopy(Source);
+			if (!TestTrue(TEXT("a copy is made of a base color that is not a float3"), Made.IsValid()))
+			{
+				continue;
+			}
+			TestTrue(TEXT("it reads mesh data"), ReadsVertexData(Made.Get()));
+			const UMaterial* MadeBase = Made->GetMaterial();
+			const UMaterialExpressionMultiply* Product = MadeBase ? Cast<UMaterialExpressionMultiply>(MadeBase->GetEditorOnlyData()->BaseColor.Expression) : nullptr;
+			const UMaterialExpressionMax* Floor = Product ? Cast<UMaterialExpressionMax>(Product->B.Expression) : nullptr;
+			TestTrue(TEXT("and multiplies by a scalar, so it compiles at any width"), Floor && Floor->A.OutputIndex == 1
+				&& Floor->A.Expression && Floor->A.Expression->IsA<UMaterialExpressionVertexColor>());
+		}
 	}
 
 	// Material attributes: the base color inside them is multiplied.

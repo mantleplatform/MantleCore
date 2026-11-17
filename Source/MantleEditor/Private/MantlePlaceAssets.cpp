@@ -4653,10 +4653,12 @@ TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::ReadsVertexColorCopy(co
 			return Node;
 		};
 		UMaterialEditorOnlyData* CopyData = BaseCopy.GetEditorOnlyData();
-		// max(Vertex Color, 1) is 1 whatever the color: multiplying the base color by it changes nothing but what the material reads.
+		// max(Vertex Color's red, 1) is 1 whatever the color: multiplying the base color by it changes nothing but what the material reads.
+		// The red (output 1) is a scalar: the HLSL translator mixes widths only when one side is a scalar, so it multiplies a base color of
+		// any width (a float2 texture coordinate or a float4 constant wired straight in), where the RGB output (0) would not compile.
 		UMaterialExpressionVertexColor* Color = Add(NewObject<UMaterialExpressionVertexColor>(&BaseCopy));
 		UMaterialExpressionMax* One = Add(NewObject<UMaterialExpressionMax>(&BaseCopy));
-		One->A.Connect(0, Color);
+		One->A.Connect(1, Color);
 		One->ConstB = 1.0f;
 		UMaterialExpressionMultiply* Times = Add(NewObject<UMaterialExpressionMultiply>(&BaseCopy));
 		Times->B.Connect(0, One);
