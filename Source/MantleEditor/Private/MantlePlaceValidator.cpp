@@ -1125,7 +1125,8 @@ namespace
 	 * The schema's ranges on the light and trigger values Export writes (#393), read by the exporter's
 	 * own readers into Values. Subject as for ValidatorCheckMaterialSlots.
 	 */
-	void ValidatorCheckValueRanges(const FString& Label, const FString& Subject, const FMantleEntity& Values, FMantleValidationResult& Result)
+	void ValidatorCheckValueRanges(const FString& Label, const FString& Subject, const FMantleEntity& Values, FMantleValidationResult& Result,
+		const bool bCheckDirectionalIntensity = true)
 	{
 		auto IntensityIssue = [&Result, &Label, &Subject](double Intensity, double Max, const TCHAR* What)
 		{
@@ -1222,7 +1223,10 @@ namespace
 		}
 		else if (const FMantleDirectionalLightProps* Directional = Values.Props.TryGet<FMantleDirectionalLightProps>())
 		{
-			IntensityIssue(Directional->Intensity, FMantlePlaceLimits::MaxDirectionalLightIntensity, TEXT("directional light"));
+			if (bCheckDirectionalIntensity)
+			{
+				IntensityIssue(Directional->Intensity, FMantlePlaceLimits::MaxDirectionalLightIntensity, TEXT("directional light"));
+			}
 		}
 		else if (const FMantleTriggerVolumeProps* Trigger = Values.Props.TryGet<FMantleTriggerVolumeProps>())
 		{
@@ -1297,7 +1301,64 @@ namespace
 		FMantleEntity Values;
 		if (FMantlePlaceExporter::ReadValueProperties(Actor, Type, Values))
 		{
-			ValidatorCheckValueRanges(Label, FString(), Values, Result);
+			// A directional light's brightness is held to its cap only where it is published: CheckDirectionalLightRanges, after the loop.
+			ValidatorCheckValueRanges(Label, FString(), Values, Result, /*bCheckDirectionalIntensity*/ false);
+		}
+	}
+
+	/**
+	 * The cap on a directional light's intensity, for the lights that publish at the level's own brightness. Of the level's directional
+	 * lights Mantle publishes the first as the sun, at the game's own brightness (or Place Settings' Sun Brightness), so the level's is
+	 * kept only for a sealed level (no direct sun: Place Settings' Direct Sun Never, or Automatic with the sun reaching no spawn point,
+	 * as the export's own probe finds) with no Sun Brightness set. The others are left out. In an interior, which has no sun, every
+	 * directional light is a lamp of the creator's and keeps its brightness. Lights are the level's directional lights in the
+	 * exporter's order and SpawnPoints where its players start.
+	 */
+	void CheckDirectionalLightRanges(UWorld* World, const TArray<const AActor*>& Lights, const TArray<FVector>& SpawnPoints, FMantleValidationResult& Result)
+	{
+		if (Lights.Num() == 0)
+		{
+			return;
+		}
+		const AMantlePlaceSettingsActor* Settings = World ? AMantlePlaceSettingsActor::Find(World) : nullptr;
+		const bool bReadsLighting = FMantleTargetFeatures::Current().Reads(MantleClientFeatures::EnvironmentLighting);
+		const bool bInterior = bReadsLighting && Settings && Settings->Outdoors == EMantlePlaceOutdoors::Interior;
+		const bool bSunBrightnessSet = Settings && Settings->bSetSunBrightness;
+		const EMantlePlaceDirectSun DirectSun = Settings ? Settings->DirectSun : EMantlePlaceDirectSun::Automatic;
+
+		// The sun probe traces the level, so it runs only for a first light whose brightness is over the cap.
+		bool bSunSealed = false;
+		bool bSealedKnown = false;
+		auto IsSealed = [&]()
+		{
+			if (!bSealedKnown)
+			{
+				bSealedKnown = true;
+				bSunSealed = bReadsLighting && (DirectSun == EMantlePlaceDirectSun::Never
+					|| (DirectSun == EMantlePlaceDirectSun::Automatic && FMantleEnvironmentExport::IsSunShadedAtSpawns(World, Lights[0], SpawnPoints)));
+			}
+			return bSunSealed;
+		};
+
+		for (int32 Index = 0; Index < Lights.Num(); ++Index)
+		{
+			if (!bInterior && Index > 0)
+			{
+				break;
+			}
+			const AActor* Actor = Lights[Index];
+			FMantleEntity Values;
+			const FMantleDirectionalLightProps* Props = FMantlePlaceExporter::ReadValueProperties(Actor, EMantleEntityType::DirectionalLight, Values)
+				? Values.Props.TryGet<FMantleDirectionalLightProps>() : nullptr;
+			if (!Props)
+			{
+				continue;
+			}
+			const bool bOverCap = Props->Intensity < 0.0 || Props->Intensity > FMantlePlaceLimits::MaxDirectionalLightIntensity;
+			if (bOverCap && (bInterior || (!bSunBrightnessSet && IsSealed())))
+			{
+				ValidatorCheckValueRanges(LabelOf(Actor), FString(), Values, Result);
+			}
 		}
 	}
 
@@ -1869,6 +1930,8 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 	int32 VoxelWorlds = 0;
 	int32 VoxelWorldsOfLook[2] = { 0, 0 };
 	bool bWarnedSun = false;
+	TArray<const AActor*> DirectionalLights;
+	TArray<FVector> SpawnPoints;
 	// #838: checked after the loop, once the level's packages and storage are known.
 	TArray<const AMantleScriptPoint*> ScriptPoints;
 
@@ -1951,6 +2014,14 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 
 		++Publishable;
 		PlayerStarts += (Type == EMantleEntityType::PlayerStart) ? 1 : 0;
+		if (Type == EMantleEntityType::PlayerStart)
+		{
+			SpawnPoints.Add(Actor->GetActorLocation());
+		}
+		else if (Type == EMantleEntityType::DirectionalLight)
+		{
+			DirectionalLights.Add(Actor);
+		}
 
 		// #445: the place's first directional light (in the exporter's actor order) becomes the
 		// sun of the day/night cycle, which sets its angle, and is published at the game's own brightness and color. Other directional lights are left out.
@@ -2053,6 +2124,8 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 		CheckDroppedBehaviorForCheck(Actor, Result);
 		PhysicsObjects += CheckPhysicsForCheck(Actor, Type, Result) ? 1 : 0;
 	}
+
+	CheckDirectionalLightRanges(World, DirectionalLights, SpawnPoints, Result);
 
 	// GhzGarage/MantleCore#142: Mantle Seats, on any prop (an unpublished prop included, which the loop above may have skipped).
 	FMantleSeatExport::Check(World, Result);

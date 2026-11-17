@@ -686,18 +686,6 @@ namespace MantleEnvironmentExportPrivate
 			return;
 		}
 
-		const ADirectionalLight* SunActor = Cast<ADirectionalLight>(ActorForEntity(IdByActor, Sun->Id));
-		const UDirectionalLightComponent* Light = SunActor ? Cast<UDirectionalLightComponent>(SunActor->GetLightComponent()) : nullptr;
-		if (!Light || Light->Intensity <= 0.0f)
-		{
-			return;
-		}
-		const FVector TowardSun = -SunActor->GetActorForwardVector();
-		// A sun at or below the horizon is the clock's night, which has no sun to keep out.
-		if (TowardSun.Z <= FMath::Sin(FMath::DegreesToRadians(MinSunElevationDegrees)))
-		{
-			return;
-		}
 		TArray<FVector> Points;
 		for (const FMantleEntity& Entity : Place.Entities)
 		{
@@ -709,7 +697,7 @@ namespace MantleEnvironmentExportPrivate
 				}
 			}
 		}
-		if (!FMantleEnvironmentExport::IsShadedFromSun(World, TowardSun, Points))
+		if (!FMantleEnvironmentExport::IsSunShadedAtSpawns(World, ActorForEntity(IdByActor, Sun->Id), Points))
 		{
 			return;
 		}
@@ -1397,6 +1385,24 @@ double FMantleEnvironmentExport::SkyLightMeanLuminance(USkyLightComponent* Compo
 bool FMantleEnvironmentExport::CastsShadowInPlace(const UPrimitiveComponent* Component)
 {
 	return Component && Component->CastShadow && (Component->bCastDynamicShadow || Component->bCastStaticShadow);
+}
+
+bool FMantleEnvironmentExport::IsSunShadedAtSpawns(UWorld* World, const AActor* SunActor, const TArray<FVector>& Points)
+{
+	using namespace MantleEnvironmentExportPrivate;
+	const ADirectionalLight* Sun = Cast<ADirectionalLight>(SunActor);
+	const UDirectionalLightComponent* Light = Sun ? Cast<UDirectionalLightComponent>(Sun->GetLightComponent()) : nullptr;
+	if (!Light || Light->Intensity <= 0.0f)
+	{
+		return false;
+	}
+	const FVector TowardSun = -Sun->GetActorForwardVector();
+	// A sun at or below the horizon is the clock's night, which has no sun to keep out.
+	if (TowardSun.Z <= FMath::Sin(FMath::DegreesToRadians(MinSunElevationDegrees)))
+	{
+		return false;
+	}
+	return IsShadedFromSun(World, TowardSun, Points);
 }
 
 bool FMantleEnvironmentExport::IsShadedFromSun(UWorld* World, const FVector& TowardSun, const TArray<FVector>& Points)

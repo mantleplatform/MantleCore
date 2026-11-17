@@ -5,8 +5,10 @@
 #include "MantleEnvironmentDefaults.h"
 #include "MantleEnvironmentExport.h"
 #include "MantlePlaceExporter.h"
+#include "MantlePlaceLimits.h"
 #include "MantlePlaceParser.h"
 #include "MantlePlaceSettingsActor.h"
+#include "MantlePlaceValidator.h"
 #include "MantleSkyClock.h"
 #include "MantleTargetFeatures.h"
 
@@ -25,6 +27,7 @@
 #include "Engine/TextureCube.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/PlayerStart.h"
 #include "Dom/JsonObject.h"
 #include "Misc/AutomationTest.h"
 #include "Serialization/JsonReader.h"
@@ -1804,6 +1807,128 @@ bool FMantleEnvironmentSunBrightnessTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("no sun entity is made up"), NoSun.Entities.Num(), 0);
 	const FString Dropped = DetailsOf(NoSunCoverage, MantleCoverageCategory::Lights, EOutcome::Dropped);
 	TestTrue(TEXT("and the report says Sun Brightness had no sun to apply to"), Dropped.Contains(TEXT("Sun Brightness")) && Dropped.Contains(TEXT("no Directional Light")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleEnvironmentSunCapOnlyWherePublishedTest,
+	"Mantle.Editor.EnvironmentExport.SunCapOnlyWherePublished",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleEnvironmentSunCapOnlyWherePublishedTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleEnvironmentExportTestPrivate;
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!TestNotNull(TEXT("the engine's cube"), Cube))
+	{
+		return false;
+	}
+
+	// How many directional-light intensity errors Check finds for a level with a sun ten times over the cap, a spawn point, and
+	// optionally a roof over it, a second light as bright, and what Place Settings says.
+	struct FCase
+	{
+		bool bRoof = false;
+		bool bFill = false;
+		bool bSettings = false;
+		EMantlePlaceDirectSun DirectSun = EMantlePlaceDirectSun::Automatic;
+		EMantlePlaceOutdoors Outdoors = EMantlePlaceOutdoors::Automatic;
+		bool bSunBrightness = false;
+	};
+	// Taken from the limit, so the test holds whatever the cap is in the light units in use.
+	const float OverCap = static_cast<float>(FMantlePlaceLimits::MaxDirectionalLightIntensity * 10.0);
+	const auto Errors = [this, Cube, OverCap](const FCase& Case, int32& OutErrors)
+	{
+		FTestWorld Test;
+		if (!TestNotNull(TEXT("a test world"), Test.World))
+		{
+			return false;
+		}
+		ADirectionalLight* Sun = Test.Spawn<ADirectionalLight>(TEXT("Sun"), FRotator(-46.0, 30.0, 0.0));
+		APlayerStart* Start = Test.Spawn<APlayerStart>(TEXT("Start"));
+		if (!TestNotNull(TEXT("a sun"), Sun) || !TestNotNull(TEXT("a spawn point"), Start))
+		{
+			return false;
+		}
+		Cast<UDirectionalLightComponent>(Sun->GetLightComponent())->SetIntensity(OverCap);
+		if (Case.bFill)
+		{
+			ADirectionalLight* Fill = Test.Spawn<ADirectionalLight>(TEXT("Fill"), FRotator(-30.0, 200.0, 0.0));
+			if (!TestNotNull(TEXT("a second light"), Fill))
+			{
+				return false;
+			}
+			Cast<UDirectionalLightComponent>(Fill->GetLightComponent())->SetIntensity(OverCap);
+		}
+		if (Case.bRoof)
+		{
+			AStaticMeshActor* Roof = Test.World->SpawnActor<AStaticMeshActor>(FVector(0.0, 0.0, 600.0), FRotator::ZeroRotator);
+			if (!TestNotNull(TEXT("a roof"), Roof))
+			{
+				return false;
+			}
+			Roof->SetMobility(EComponentMobility::Movable);
+			UStaticMeshComponent* RoofMesh = Roof->GetStaticMeshComponent();
+			RoofMesh->SetStaticMesh(Cube);
+			Roof->SetActorScale3D(FVector(400.0, 400.0, 1.0));
+			RoofMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			RoofMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+		}
+		if (Case.bSettings)
+		{
+			AMantlePlaceSettingsActor* Settings = Test.Spawn<AMantlePlaceSettingsActor>(TEXT("Settings"));
+			if (!TestNotNull(TEXT("place settings"), Settings))
+			{
+				return false;
+			}
+			Settings->DirectSun = Case.DirectSun;
+			Settings->Outdoors = Case.Outdoors;
+			Settings->bSetSunBrightness = Case.bSunBrightness;
+		}
+		OutErrors = 0;
+		for (const FMantleValidationIssue& Issue : FMantlePlaceValidator::Validate(Test.World).Issues)
+		{
+			if (Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("directional light intensities")))
+			{
+				++OutErrors;
+			}
+		}
+		return true;
+	};
+
+	int32 Count = 0;
+	if (Errors(FCase{}, Count))
+	{
+		TestEqual(TEXT("an open-sky level's over-cap sun is not published, so it is not refused"), Count, 0);
+	}
+	if (Errors(FCase{ .bFill = true }, Count))
+	{
+		TestEqual(TEXT("nor are its other directional lights, which are left out"), Count, 0);
+	}
+	if (Errors(FCase{ .bRoof = true, .bSettings = true, .DirectSun = EMantlePlaceDirectSun::Always }, Count))
+	{
+		TestEqual(TEXT("Direct Sun Always keeps the sun on: the level's brightness is not published under a roof either"), Count, 0);
+	}
+	if (Errors(FCase{ .bSettings = true, .DirectSun = EMantlePlaceDirectSun::Never }, Count))
+	{
+		TestEqual(TEXT("a level whose Direct Sun is Never is sealed: its sun keeps the level's brightness, so an over-cap one is refused"), Count, 1);
+	}
+	if (Errors(FCase{ .bRoof = true }, Count))
+	{
+		TestEqual(TEXT("a level whose spawn point is under a roof is sealed (the sun probe), so an over-cap one is refused"), Count, 1);
+	}
+	if (Errors(FCase{ .bRoof = true, .bFill = true }, Count))
+	{
+		TestEqual(TEXT("and only the first light is the sun: the second, left out, is not refused too"), Count, 1);
+	}
+	if (Errors(FCase{ .bRoof = true, .bSettings = true, .bSunBrightness = true }, Count))
+	{
+		TestEqual(TEXT("a Sun Brightness in Place Settings replaces a sealed level's brightness, so nothing to refuse"), Count, 0);
+	}
+	if (Errors(FCase{ .bSettings = true, .Outdoors = EMantlePlaceOutdoors::Interior }, Count))
+	{
+		TestEqual(TEXT("an interior has no sun: its directional light is a lamp that keeps its brightness, so an over-cap one is refused"), Count, 1);
+	}
 	return true;
 }
 
