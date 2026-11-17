@@ -30,7 +30,9 @@ void FMantleCellAssetUse::NeedsOf(const TArray<FMantleEntity>& Entities, TArray<
 				Need.bCollision = bCollision;
 			}
 		}
-		for (const FString& Material : Props->Materials)
+		// A collision-only mesh draws nothing, so it needs none of its materials.
+		static const TArray<FString> NoMaterials;
+		for (const FString& Material : Props->bVisible ? Props->Materials : NoMaterials)
 		{
 			if (FMantlePlaceAssets::IsUploadedId(Material) && !MaterialAt.Contains(Material))
 			{

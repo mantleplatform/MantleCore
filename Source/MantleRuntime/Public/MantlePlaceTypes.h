@@ -984,6 +984,21 @@ struct FMantleStaticMeshProps
 	 * (UMantleShadowDistanceSubsystem). 0, the key absent: never culled by distance, as before the key.
 	 */
 	double DrawDistance = 0.0;
+
+	/**
+	 * visible: false is a collision-only mesh, a creator's mesh hidden in game that still collides (a slab under a road, a
+	 * building's simple shell). The builder makes its collision on the server and every client and never draws it: hidden in
+	 * game, no shadow, no Lumen, no far-set twin, no materials loaded. The parser refuses it beside collision none or a
+	 * physics block. True, the key absent: drawn.
+	 */
+	bool bVisible = true;
+
+	/**
+	 * blocksVisibility: false for a collision-only mesh that lets the Visibility channel through, as Unreal's InvisibleWall
+	 * presets do: it stops players and objects but not line-of-sight, pointer or interaction traces. Only beside visible
+	 * false (the parser refuses it on a drawn mesh). True, the key absent: it blocks them like any blocking mesh.
+	 */
+	bool bBlocksVisibility = true;
 };
 
 struct FMantleEmptyProps

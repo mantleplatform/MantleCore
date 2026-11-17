@@ -11,6 +11,7 @@
 #include "MantleGlbWriter.h"
 #include "MantlePlaceValidator.h"
 #include "MantleMeshLumenData.h"
+#include "MantlePlaceExporter.h"
 #include "MantleRuntime.h"
 #include "MantleWaterBodyExport.h"
 #include "Materials/MaterialInterface.h"
@@ -150,7 +151,9 @@ void FMantleMeshLumenBake::CheckLevel(UWorld* World, TArray<FMantleValidationIss
 		TInlineComponentArray<UStaticMeshComponent*> Components(*It);
 		for (const UStaticMeshComponent* Component : Components)
 		{
-			if (const UStaticMesh* Mesh = Component ? Component->GetStaticMesh() : nullptr; Mesh && !Meshes.Contains(Mesh))
+			// A mesh not shown in game (collision only, or left out) is never drawn, so it needs no Lumen data.
+			if (const UStaticMesh* Mesh = Component && FMantlePlaceExporter::IsShownInGame(Component) ? Component->GetStaticMesh() : nullptr;
+				Mesh && !Meshes.Contains(Mesh))
 			{
 				Meshes.Add(Mesh, It->GetActorNameOrLabel());
 			}

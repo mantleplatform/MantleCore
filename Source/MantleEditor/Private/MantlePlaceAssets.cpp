@@ -2220,6 +2220,7 @@ void FMantlePlaceDependencies::AddScatter(const AActor* Actor)
 			Existing->Name = Mesh->GetName();
 		}
 		Existing->UsedBy.AddUnique(Label);
+		Existing->bCollisionOnly = false; // drawn here
 		for (const int32 Slot : FMantlePlaceAssets::UploadSlots(Mesh))
 		{
 			UMaterialInterface* Material = Override(Slot);
@@ -2340,13 +2341,17 @@ void FMantlePlaceDependencies::AddComponent(const UStaticMeshComponent* Componen
 	{
 		// A library mesh brings its own materials; only overrides are published (and uploaded when not library). An override is still
 		// drawn with the colors painted on the component (DowntownWestModularPack's roads: the engine's plane, painted for its puddles).
-		for (int32 Slot = 0; Slot < Component->OverrideMaterials.Num(); ++Slot)
+		// A collision-only use publishes none.
+		for (int32 Slot = 0; !FMantlePlaceExporter::IsCollisionOnly(Component) && Slot < Component->OverrideMaterials.Num(); ++Slot)
 		{
 			AddSlotVertexColors(AddMaterial(Component->OverrideMaterials[Slot], Label), Mesh, Component, Slot);
 		}
 		return;
 	}
 
+	// A collision-only use (hidden in game, colliding) is never drawn: no material of it uploads, and the mesh needs no Lumen or
+	// Nanite data unless another use draws it.
+	const bool bCollisionOnly = Component && FMantlePlaceExporter::IsCollisionOnly(Component);
 	const FString Key = FMantlePlaceAssets::MeshKey(Mesh);
 	FMantleGatheredMesh* Existing = Meshes.FindByPredicate([&Key](const FMantleGatheredMesh& Entry) { return Entry.Key == Key; });
 	if (!Existing)
@@ -2355,9 +2360,18 @@ void FMantlePlaceDependencies::AddComponent(const UStaticMeshComponent* Componen
 		Existing->Mesh = const_cast<UStaticMesh*>(Mesh);
 		Existing->Key = Key;
 		Existing->Name = Mesh->GetName();
+		Existing->bCollisionOnly = bCollisionOnly;
+	}
+	else
+	{
+		Existing->bCollisionOnly = Existing->bCollisionOnly && bCollisionOnly;
 	}
 	Existing->UsedBy.AddUnique(Label);
 
+	if (bCollisionOnly)
+	{
+		return;
+	}
 	for (const int32 Slot : FMantlePlaceAssets::UploadSlots(Mesh))
 	{
 		AddSlotVertexColors(AddMaterial(FMantlePlaceAssets::EffectiveMaterial(Component, Slot), Label), Mesh, Component, Slot);
@@ -2465,7 +2479,7 @@ void FMantlePlaceDependencies::AddTerrainLayerMaterials(const TArray<FMantleTerr
 	}
 }
 
-void FMantlePlaceDependencies::AddMesh(const UStaticMesh* Mesh, const FString& Label)
+void FMantlePlaceDependencies::AddMesh(const UStaticMesh* Mesh, const FString& Label, const bool bCollisionOnly)
 {
 	if (!Mesh || FMantlePlaceAssets::IsLibraryAsset(Mesh))
 	{
@@ -2479,8 +2493,18 @@ void FMantlePlaceDependencies::AddMesh(const UStaticMesh* Mesh, const FString& L
 		Existing->Mesh = const_cast<UStaticMesh*>(Mesh);
 		Existing->Key = Key;
 		Existing->Name = Mesh->GetName();
+		Existing->bCollisionOnly = bCollisionOnly;
+	}
+	else
+	{
+		// A drawn use, wherever it comes from, keeps the mesh's render data.
+		Existing->bCollisionOnly = Existing->bCollisionOnly && bCollisionOnly;
 	}
 	Existing->UsedBy.AddUnique(Label);
+	if (bCollisionOnly)
+	{
+		return; // never drawn: no material of it uploads
+	}
 
 	// No component overrides anything, so each slot uploads the mesh's own material, which a script
 	// can then put back on what it spawns. With no component, it is drawn with the mesh's own vertex colors.
@@ -2660,7 +2684,7 @@ void FMantlePlaceDependencies::AddSplineMeshes(UWorld* World)
 	const FMantleSplineBakeResult Bake = FMantleSplineMeshBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
 	for (const FMantleBakedSplineMesh& Baked : Bake.Meshes)
 	{
-		AddMesh(Baked.Mesh, Baked.OwnerLabel);
+		AddMesh(Baked.Mesh, Baked.OwnerLabel, /*bCollisionOnly*/ !Baked.bVisible);
 	}
 }
 
@@ -2892,6 +2916,7 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 			GatheredMesh->Name = PartMesh->GetName();
 		}
 		GatheredMesh->UsedBy.AddUnique(Label);
+		GatheredMesh->bCollisionOnly = false; // drawn here
 		for (const int32 Slot : FMantlePlaceAssets::UploadSlots(PartMesh))
 		{
 			// Glass, tires, chrome, carbon fiber and lamps are Mantle's own materials: nothing to convert or upload for them.

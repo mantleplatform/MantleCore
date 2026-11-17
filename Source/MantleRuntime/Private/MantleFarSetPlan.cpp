@@ -42,7 +42,8 @@ int32 FMantleFarSetPlan::StrideFor(const double EntityDrawDistanceCm, const FMan
 bool FMantleFarSetPlan::MakeTwin(const FMantleEntity& Source, const double ReachCm, const FMantleFarSetSettings& Settings, FMantleEntity& OutTwin)
 {
 	const FMantleStaticMeshProps* SourceProps = MantleMeshPropsOf(Source);
-	if (!SourceProps || SourceProps->DrawDistance < Settings.MinDrawDistanceCm || SourceProps->DrawDistance <= 0.0)
+	// A collision-only mesh is never drawn, near or far.
+	if (!SourceProps || !SourceProps->bVisible || SourceProps->DrawDistance < Settings.MinDrawDistanceCm || SourceProps->DrawDistance <= 0.0)
 	{
 		return false;
 	}

@@ -38,6 +38,12 @@ struct MANTLEEDITOR_API FMantleBakedSplineMesh
 	EMantleSurface Surface = EMantleSurface::Default;
 	bool bCastShadow = true;
 
+	/** False: baked from spline meshes hidden in game that collide, published collision only (never drawn, no materials). */
+	bool bVisible = true;
+
+	/** For a collision-only bake: whether it stops the Visibility trace channel (FMantlePlaceExporter::BlocksVisibility). */
+	bool bBlocksVisibility = true;
+
 	int32 SourceComponents = 0;
 	int32 Triangles = 0;
 	int32 Vertices = 0;

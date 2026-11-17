@@ -764,6 +764,10 @@ namespace
 			return ExporterMaterialId(Library, ReferencedAssets, Uploads, Material);
 		};
 
+		// A mesh hidden in game that still collides publishes as collision only (visible false): never drawn, so none of its
+		// materials is written or uploaded.
+		const bool bVisible = FMantlePlaceExporter::IsShownInGame(Component);
+
 		// #628: a negative scale publishes as the mirrored copy of the mesh (slot indices kept, so the overrides still line up).
 		const UStaticMesh* Mesh = MeshOverride ? MeshOverride : Component->GetStaticMesh();
 		if (!Mesh)
@@ -782,7 +786,7 @@ namespace
 			// as null) rather than dropped: dropping it moved an override on slot 2 onto slot 0
 			// (#262). Trailing unset slots are trimmed. An override that is not a library
 			// material is uploaded (F5 #339).
-			for (int32 i = 0; i < Component->OverrideMaterials.Num(); ++i)
+			for (int32 i = 0; bVisible && i < Component->OverrideMaterials.Num(); ++i)
 			{
 				const UMaterialInterface* Material = Component->OverrideMaterials[i];
 				Props.Materials.Add(Material ? MaterialIdFor(Material) : FString());
@@ -808,7 +812,7 @@ namespace
 				}
 			}
 			Props.Mesh = Uploads.IdFor(FMantlePlaceAssets::MeshKey(Mesh), EMantleAssetKind::StaticMesh, Mesh);
-			for (const int32 Slot : FMantlePlaceAssets::UploadSlots(Mesh))
+			for (const int32 Slot : bVisible ? FMantlePlaceAssets::UploadSlots(Mesh) : TArray<int32>())
 			{
 				Props.Materials.Add(MaterialIdFor(FMantlePlaceAssets::EffectiveMaterial(Component, Slot)));
 			}
@@ -820,7 +824,10 @@ namespace
 		case ECollisionEnabled::QueryOnly:   Props.Collision = EMantleCollision::Overlap; break;
 		default:                             Props.Collision = EMantleCollision::Blocking; break;
 		}
-		Props.bCastShadow = FMantleEnvironmentExport::CastsShadowInPlace(Component);
+		Props.bCastShadow = bVisible && FMantleEnvironmentExport::CastsShadowInPlace(Component);
+		Props.bVisible = bVisible;
+		// An invisible wall (Unreal's InvisibleWall presets) lets sight and pointer traces through; only a blocking one is told apart.
+		Props.bBlocksVisibility = bVisible || Props.Collision != EMantleCollision::Blocking || FMantlePlaceExporter::BlocksVisibility(Component);
 		// #596: the surface a creator picked with one of Mantle's surface physical materials. A physics
 		// entity's caller clears it again: its physics.material carries the body's surface.
 		Props.Surface = FMantlePlaceExporter::ReadSurface(Component);
@@ -2077,7 +2084,8 @@ namespace MantlePlaceExporterPrefab
 		}
 		if (const UStaticMeshComponent* Mesh = Cast<UStaticMeshComponent>(Component))
 		{
-			if (Mesh->GetStaticMesh() && IsShownInGame(Mesh))
+			// Shown, or hidden in game and still colliding: a collision-only part (a City Sample freeway deck's slab).
+			if (Mesh->GetStaticMesh() && (IsShownInGame(Mesh) || FMantlePlaceExporter::IsCollisionOnly(Mesh)))
 			{
 				OutType = EMantleEntityType::StaticMesh;
 				return true;
@@ -2448,6 +2456,28 @@ bool FMantlePlaceExporter::DescribeSkippedActor(const AActor* Actor, FSkippedAct
 			Out.What = TEXT("has no mesh assigned, so there is nothing to show and it is left out of the place.");
 			Out.Remedy = TEXT("Pick a mesh for it to keep it.");
 			Out.Category = MantleCoverageCategory::StaticMeshes;
+			return true;
+		}
+		// Hidden in game: kept as collision only when it collides (Export writes visible false, and its materials don't matter);
+		// otherwise there is nothing a player could see or touch, or it is a physics prop no one could see.
+		if (Component && Component->GetStaticMesh() && !MantlePlaceExporterPrefab::NeedsGroup(Actor) && !IsShownInGame(Component))
+		{
+			if (IsCollisionOnly(Component))
+			{
+				return false;
+			}
+			Out.Category = MantleCoverageCategory::StaticMeshes;
+			if (Component->GetCollisionEnabled() == ECollisionEnabled::NoCollision)
+			{
+				Out.What = TEXT("is hidden in game and does not collide: nothing a player could see or touch, so it is left out of the place.");
+				Out.Remedy = TEXT("Nothing to change: the rest of the place publishes without it.");
+				Out.bLoss = false;
+			}
+			else
+			{
+				Out.What = TEXT("is hidden in game and simulates physics. Mantle publishes a physics prop only as one players can see, so it is left out of the place.");
+				Out.Remedy = TEXT("Show it in game, or turn Simulate Physics off to keep it as invisible collision.");
+			}
 			return true;
 		}
 		// A mesh drawn only with materials that publish as flat white cards (volume fog, cloud cards): skipped, and said. One with a
@@ -3554,10 +3584,26 @@ bool FMantlePlaceExporter::IsShownInGame(const USceneComponent* Component)
 	{
 		return false;
 	}
+	// The actor's own Hidden In Game hides every component of it in game.
+	if (const AActor* Owner = Component->GetOwner(); Owner && Owner->IsHidden())
+	{
+		return false;
+	}
 	// As FPrimitiveSceneProxy decides bVirtualTextureMainPassDrawNever.
 	const UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Component);
 	return !Primitive || Primitive->GetRuntimeVirtualTextures().Num() == 0
 		|| Primitive->GetVirtualTextureRenderPassType() != ERuntimeVirtualTextureMainPassType::Never;
+}
+
+bool FMantlePlaceExporter::IsCollisionOnly(const UPrimitiveComponent* Component)
+{
+	return Component && !IsShownInGame(Component) && Component->GetCollisionEnabled() != ECollisionEnabled::NoCollision
+		&& !Component->BodyInstance.bSimulatePhysics;
+}
+
+bool FMantlePlaceExporter::BlocksVisibility(const UPrimitiveComponent* Component)
+{
+	return !Component || Component->GetCollisionResponseToChannel(ECC_Visibility) == ECR_Block;
 }
 
 TArray<UInstancedStaticMeshComponent*> FMantlePlaceExporter::CollectInstanceSources(UWorld* World)
@@ -3854,9 +3900,9 @@ void FMantlePlaceExporter::CollectPrefabParts(
 		if (Mesh)
 		{
 			OutUnsupported->Add(FMantleUnpublishedPart{
-				FString::Printf(TEXT("has a static mesh component ('%s') that is hidden in game but still collides. Mantle publishes a mesh only as one players can see, so it is left out."),
+				FString::Printf(TEXT("has a static mesh component ('%s') that is hidden in game and simulates physics. Mantle publishes a physics prop only as one players can see, so it is left out."),
 					*Component->GetName()),
-				TEXT("Show it in game, or turn its collision off. For an invisible area that reacts to players, use a Box Collision component instead."),
+				TEXT("Show it in game, or turn Simulate Physics off to keep it as invisible collision."),
 				/*bBlocksPublish*/ false, MantleCoverageCategory::StaticMeshes });
 		}
 		else if (Component->IsA(UDirectionalLightComponent::StaticClass()))
@@ -4122,6 +4168,11 @@ FString FMantlePlaceExporter::InstancedGroupKey(const FMantleStaticMeshProps& Me
 		Key += TEXT("|") + (Material.IsEmpty() ? FString(TEXT("-")) : Material);
 	}
 	Key += FString::Printf(TEXT("|%d|%d"), static_cast<int32>(Mesh.Collision), Mesh.bCastShadow ? 1 : 0);
+	// A collision-only set never joins a drawn one; only a hidden one marks its key, so every drawn key stays as it was.
+	if (!Mesh.bVisible)
+	{
+		Key += Mesh.bBlocksVisibility ? TEXT("|hidden") : TEXT("|hidden|novis");
+	}
 	// GhzGarage/mantle#630: only a distance that is set joins the key, so every key (and the entity ids hashed from it) of a
 	// mesh without one stays as it was, and meshes with different distances stay in different sets.
 	if (Mesh.DrawDistance > 0.0)
@@ -4915,8 +4966,11 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 
 			FMantleStaticMeshProps Props;
 			Props.Mesh = Uploads.IdFor(FMantlePlaceAssets::MeshKey(Baked.Mesh), EMantleAssetKind::StaticMesh, Baked.Mesh);
-			// A baked mesh carries only its slots' names: each slot gets the material its spline meshes drew with.
-			for (const int32 Slot : FMantlePlaceAssets::UploadSlots(Baked.Mesh))
+			// A baked mesh carries only its slots' names: each slot gets the material its spline meshes drew with. Hidden spline meshes
+			// that collide bake into a collision-only mesh, which names none.
+			Props.bVisible = Baked.bVisible;
+			Props.bBlocksVisibility = Baked.bBlocksVisibility;
+			for (const int32 Slot : Baked.bVisible ? FMantlePlaceAssets::UploadSlots(Baked.Mesh) : TArray<int32>())
 			{
 				const UMaterialInterface* Material = FMantlePlaceAssets::MeshSlotMaterial(Baked.Mesh, Slot);
 				const FString LibraryId = Library.FindIdByPath(FSoftObjectPath(Material));
@@ -5921,13 +5975,26 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	{
 		Result.InstanceTotal = FMantlePlaceInstancing::CountInstances(Place);
 		Result.DrawDistanceEntities = FMantleDrawDistance::CountEntities(Place);
+		Result.CollisionOnlyEntities = 0;
+		for (const FMantleEntity& Entity : Place.Entities)
+		{
+			const FMantleStaticMeshProps* Mesh = MantleMeshPropsOf(Entity);
+			Result.CollisionOnlyEntities += Mesh && !Mesh->bVisible ? 1 : 0;
+		}
 		for (const FMantlePlannedCell& Cell : Result.Cells)
 		{
 			for (const FMantleEntity& Entity : Cell.Entities)
 			{
 				const FMantleStaticMeshProps* Mesh = MantleMeshPropsOf(Entity);
 				Result.DrawDistanceEntities += Mesh && Mesh->DrawDistance > 0.0 ? 1 : 0;
+				Result.CollisionOnlyEntities += Mesh && !Mesh->bVisible ? 1 : 0;
 			}
+		}
+		// Meshes hidden in game that still collide: kept, solid and never drawn, and said so a creator sees they were.
+		if (Result.CollisionOnlyEntities > 0)
+		{
+			Result.Coverage.Add(MantleCoverageCategory::StaticMeshes, EMantleCoverageOutcome::Kept, TEXT("collision-only meshes"),
+				TEXT("hidden in game but colliding: kept as invisible collision, solid in game and never drawn."), Result.CollisionOnlyEntities);
 		}
 		if (!FMantleTargetFeatures::Current().Reads(MantleClientFeatures::DrawDistance) && FMantleDrawDistance::HasMeshEntities(Place))
 		{
@@ -6008,6 +6075,16 @@ namespace
 		Writer->WriteArrayEnd();
 		Writer->WriteValue(TEXT("collision"), CollisionName(P->Collision));
 		Writer->WriteValue(TEXT("castShadow"), P->bCastShadow);
+		// Collision only: written only when false (absent is drawn).
+		if (!P->bVisible)
+		{
+			Writer->WriteValue(TEXT("visible"), false);
+			// An invisible wall that lets sight and pointer traces through: written only when false.
+			if (!P->bBlocksVisibility)
+			{
+				Writer->WriteValue(TEXT("blocksVisibility"), false);
+			}
+		}
 		// GhzGarage/mantle#630: only above 0 (0 is never written: absent means no limit), and never without the drawDistance feature.
 		if (P->DrawDistance > 0.0)
 		{

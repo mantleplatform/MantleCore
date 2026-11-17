@@ -140,6 +140,9 @@ struct FMantleExportResult
 	/** Mesh entities and instance sets that got a drawDistance (GhzGarage/mantle#630); 0 when the target client does not read them. */
 	int32 DrawDistanceEntities = 0;
 
+	/** StaticMesh and InstancedMesh entities kept as collision only (visible false), in the root and the cells. */
+	int32 CollisionOnlyEntities = 0;
+
 	/** Static mesh actors Export folded into instance sets. */
 	FMantleGroupReport Grouping;
 
@@ -620,11 +623,25 @@ public:
 	static bool IsGameContent(const UActorComponent* Component);
 
 	/**
-	 * Whether a player sees Component: visible, not hidden in game, and drawn in the main pass. A primitive that only
+	 * Whether a player sees Component: visible, not hidden in game (neither the component nor its actor), and drawn in the main pass. A primitive that only
 	 * writes into a runtime virtual texture (its "Draw in Main Pass" is Never, as MedievalVillage's cart tracks are) is
 	 * never drawn itself; the place has no runtime virtual texture to write into, so it shows nothing.
 	 */
 	static bool IsShownInGame(const USceneComponent* Component);
+
+	/**
+	 * Whether Component publishes as a collision-only mesh (visible false): not shown in game (IsShownInGame), but colliding, with its
+	 * own collision settings, and not simulating physics (a physics prop is always drawn). A City Sample freeway's deck is solid only
+	 * through one. Hidden with no collision is nothing a player sees or touches, and is left out.
+	 */
+	static bool IsCollisionOnly(const UPrimitiveComponent* Component);
+
+	/**
+	 * Whether a collision-only Component stops the Visibility trace channel (line-of-sight, pointer and interaction traces), as a
+	 * blocking mesh does. False for Unreal's InvisibleWall and InvisibleWallDynamic presets, which ignore it: Export writes
+	 * blocksVisibility false, and the game lets those traces through.
+	 */
+	static bool BlocksVisibility(const UPrimitiveComponent* Component);
 
 	/** Every component IsExportedInstanceSource accepts in World, in actor then component order. */
 	static TArray<UInstancedStaticMeshComponent*> CollectInstanceSources(UWorld* World);

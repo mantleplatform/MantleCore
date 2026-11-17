@@ -1044,6 +1044,11 @@ namespace
 	 */
 	void ValidatorCheckMaterialSlots(const FString& Label, const FString& Subject, const UStaticMeshComponent* Component, FMantleValidationResult& Result)
 	{
+		// A mesh not shown in game (collision only) publishes no materials, so no override of it is written.
+		if (!FMantlePlaceExporter::IsShownInGame(Component))
+		{
+			return;
+		}
 		int32 WrittenSlots = 0;
 		for (int32 i = Component->OverrideMaterials.Num() - 1; i >= 0; --i)
 		{
