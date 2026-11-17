@@ -810,6 +810,23 @@ namespace
 				}
 			}
 		}
+		// An invisible wall that lets sight and pointer traces through: only a collision-only mesh says so.
+		if (const TSharedPtr<FJsonValue> Blocks = Props->TryGetField(TEXT("blocksVisibility")))
+		{
+			const FString BlocksPath = Join(Path, TEXT("blocksVisibility"));
+			if (Blocks->Type != EJson::Boolean)
+			{
+				Ctx.Fail(BlocksPath, TEXT("must be true or false"));
+			}
+			else if (P.bVisible)
+			{
+				Ctx.Fail(BlocksPath, TEXT("is only for a collision-only mesh (visible false)"));
+			}
+			else
+			{
+				P.bBlocksVisibility = Blocks->AsBool();
+			}
+		}
 
 		// A typed number in (0, MaxDrawDistance]; absent leaves 0, never culled.
 		if (const TSharedPtr<FJsonValue> Distance = Props->TryGetField(TEXT("drawDistance")))
@@ -3727,7 +3744,7 @@ namespace
 		{
 			RequireNoUnknownKeys(
 				Ctx, Props,
-				{ TEXT("mesh"), TEXT("materials"), TEXT("collision"), TEXT("castShadow"), TEXT("physics"), TEXT("surface"), TEXT("drawDistance"), TEXT("visible") },
+				{ TEXT("mesh"), TEXT("materials"), TEXT("collision"), TEXT("castShadow"), TEXT("physics"), TEXT("surface"), TEXT("drawDistance"), TEXT("visible"), TEXT("blocksVisibility") },
 				Path);
 			FMantleStaticMeshProps P;
 			ReadMeshProps(Ctx, Props, Path, P);
@@ -3756,7 +3773,7 @@ namespace
 		{
 			RequireNoUnknownKeys(
 				Ctx, Props,
-				{ TEXT("mesh"), TEXT("materials"), TEXT("collision"), TEXT("castShadow"), TEXT("surface"), TEXT("drawDistance"), TEXT("visible"), TEXT("instances") },
+				{ TEXT("mesh"), TEXT("materials"), TEXT("collision"), TEXT("castShadow"), TEXT("surface"), TEXT("drawDistance"), TEXT("visible"), TEXT("blocksVisibility"), TEXT("instances") },
 				Path);
 			FMantleInstancedMeshProps P;
 			ReadMeshProps(Ctx, Props, Path, P.Mesh);

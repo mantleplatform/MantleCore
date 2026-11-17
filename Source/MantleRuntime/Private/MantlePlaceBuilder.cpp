@@ -246,6 +246,7 @@ namespace
 			Component->bAffectDistanceFieldLighting = false;
 			Component->bAffectDynamicIndirectLighting = false;
 			Component->bAffectIndirectLightingWhileHidden = false;
+			Component->bRayTracingFarField = false;
 			Component->SetVisibleInRayTracing(false);
 		}
         // AStaticMeshActor defaults to inheriting collision from its mesh asset.
@@ -275,6 +276,11 @@ namespace
 			Component->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			Component->SetCollisionResponseToAllChannels(ECR_Block);
 			break;
+		}
+		// An invisible wall (Unreal's InvisibleWall presets): it stops players and objects, never sight, pointer or interaction traces.
+		if (!Props.bVisible && !Props.bBlocksVisibility && Props.Collision != EMantleCollision::None)
+		{
+			Component->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
 		}
 
 		// What the mesh is made of, as its Phys Material Override, on every net mode: a server

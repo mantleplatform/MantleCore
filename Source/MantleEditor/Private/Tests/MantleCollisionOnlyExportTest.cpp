@@ -177,6 +177,22 @@ bool FMantleCollisionOnlyExportTest::RunTest(const FString& Parameters)
 	Ghost->GetStaticMeshComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Ghost->GetStaticMeshComponent()->BodyInstance.bSimulatePhysics = true;
 
+	// The actor's own Hidden In Game, its component left as it is.
+	AStaticMeshActor* ActorHidden = SpawnMeshActor(World, TEXT("Ground collision"), Cube, FVector(3000.0, 0.0, 0.0));
+	// An invisible wall: Unreal's InvisibleWall preset blocks everything but the Visibility channel.
+	AStaticMeshActor* Wall = SpawnMeshActor(World, TEXT("Invisible wall"), Cube, FVector(3500.0, 0.0, 0.0));
+	if (!TestNotNull(TEXT("the ground"), ActorHidden) || !TestNotNull(TEXT("the wall"), Wall))
+	{
+		return false;
+	}
+	ActorHidden->SetActorHiddenInGame(true);
+	ActorHidden->GetStaticMeshComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	Wall->GetStaticMeshComponent()->SetHiddenInGame(true);
+	Wall->GetStaticMeshComponent()->SetCollisionProfileName(TEXT("InvisibleWall"));
+
+	TestFalse(TEXT("an actor hidden in game is not shown"), FMantlePlaceExporter::IsShownInGame(ActorHidden->GetStaticMeshComponent()));
+	TestTrue(TEXT("and its colliding mesh is collision only"), FMantlePlaceExporter::IsCollisionOnly(ActorHidden->GetStaticMeshComponent()));
+	TestFalse(TEXT("an invisible wall lets sight traces through"), FMantlePlaceExporter::BlocksVisibility(Wall->GetStaticMeshComponent()));
 	TestTrue(TEXT("the slab is collision only"), FMantlePlaceExporter::IsCollisionOnly(SlabMesh));
 	TestTrue(TEXT("so is the blocker (not visible)"), FMantlePlaceExporter::IsCollisionOnly(Blocker));
 	TestTrue(TEXT("and the shells"), FMantlePlaceExporter::IsCollisionOnly(Shells));
@@ -236,12 +252,30 @@ bool FMantleCollisionOnlyExportTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("the three hidden instances publish as collision only"), HiddenInstances, 3);
 
+	// The actor hidden in game: collision only, drawn nowhere.
+	const FMantleEntity* GroundEntity = MantleExportedEntities::Named(Result, TEXT("Ground collision"));
+	if (TestNotNull(TEXT("the actor hidden in game is published"), GroundEntity) && MantleMeshPropsOf(*GroundEntity))
+	{
+		TestFalse(TEXT("collision only"), MantleMeshPropsOf(*GroundEntity)->bVisible);
+		TestEqual(TEXT("with no materials"), MantleMeshPropsOf(*GroundEntity)->Materials.Num(), 0);
+		TestTrue(TEXT("blocking sight traces"), MantleMeshPropsOf(*GroundEntity)->bBlocksVisibility);
+	}
+	// The invisible wall: collision only, and it lets sight traces through.
+	const FMantleEntity* WallEntity = MantleExportedEntities::Named(Result, TEXT("Invisible wall"));
+	if (TestNotNull(TEXT("the invisible wall is published"), WallEntity) && MantleMeshPropsOf(*WallEntity))
+	{
+		TestFalse(TEXT("collision only"), MantleMeshPropsOf(*WallEntity)->bVisible);
+		TestTrue(TEXT("blocking"), MantleMeshPropsOf(*WallEntity)->Collision == EMantleCollision::Blocking);
+		TestFalse(TEXT("but not sight traces"), MantleMeshPropsOf(*WallEntity)->bBlocksVisibility);
+	}
+
 	// Left out: the marker and the crate.
 	TestNull(TEXT("a hidden mesh with no collision is left out"), MantleExportedEntities::Named(Result, TEXT("Hidden marker")));
 	TestNull(TEXT("a hidden physics prop is left out"), MantleExportedEntities::Named(Result, TEXT("Ghost crate")));
 
 	// Counted, and said in the coverage.
-	TestTrue(TEXT("the slab, the blocker and the shells are counted"), Result.CollisionOnlyEntities >= 3);
+	// The slab, the blocker's part, the shells' one instance set, the actor hidden in game and the wall.
+	TestEqual(TEXT("every collision-only entity is counted"), Result.CollisionOnlyEntities, 5);
 	const FMantleCoverageCategory* Meshes = Result.Coverage.Find(MantleCoverageCategory::StaticMeshes);
 	TestTrue(TEXT("the coverage keeps them"), Meshes && Meshes->Get(EMantleCoverageOutcome::Kept).Examples.ContainsByPredicate([](const FMantleCoverageExample& Example)
 	{
@@ -281,11 +315,27 @@ bool FMantleCollisionOnlyWrittenTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("visible is written"), HiddenJson->TryGetBoolField(TEXT("visible"), bVisible));
 		TestFalse(TEXT("as false"), bVisible);
 	}
+	if (HiddenJson.IsValid())
+	{
+		TestFalse(TEXT("a wall that blocks sight writes no blocksVisibility"), HiddenJson->HasField(TEXT("blocksVisibility")));
+	}
+	FMantleStaticMeshProps Wall = Hidden;
+	Wall.bBlocksVisibility = false;
+	Entity.Props.Set<FMantleStaticMeshProps>(Wall);
+	const TSharedPtr<FJsonObject> WallJson = PropertiesJson(Entity);
+	if (TestNotNull(TEXT("the invisible wall's properties"), WallJson.Get()))
+	{
+		bool bBlocks = true;
+		TestTrue(TEXT("blocksVisibility is written"), WallJson->TryGetBoolField(TEXT("blocksVisibility"), bBlocks));
+		TestFalse(TEXT("as false"), bBlocks);
+	}
+	TestNotEqual(TEXT("a wall and a slab are different sets"), FMantlePlaceExporter::InstancedGroupKey(Wall), FMantlePlaceExporter::InstancedGroupKey(Hidden));
 	Entity.Props.Set<FMantleStaticMeshProps>(Drawn);
 	const TSharedPtr<FJsonObject> DrawnJson = PropertiesJson(Entity);
 	if (TestNotNull(TEXT("the drawn mesh's properties"), DrawnJson.Get()))
 	{
 		TestFalse(TEXT("a drawn mesh writes no visible key"), DrawnJson->HasField(TEXT("visible")));
+		TestFalse(TEXT("nor blocksVisibility"), DrawnJson->HasField(TEXT("blocksVisibility")));
 	}
 
 	// A collision-only set never joins a drawn one, and a drawn key stays as it was.
@@ -337,12 +387,27 @@ bool FMantleCollisionOnlyGatherTest::RunTest(const FString& Parameters)
 	{
 		return Dependencies.Meshes.FindByPredicate([Copy](const FMantleGatheredMesh& Mesh) { return Mesh.Mesh.Get() == Copy; });
 	};
-	const FMantlePlaceDependencies Only = FMantlePlaceDependencies::Gather(Fixture.World);
+	FMantlePlaceDependencies Only = FMantlePlaceDependencies::Gather(Fixture.World);
 	const FMantleGatheredMesh* Hidden = GatheredCopy(Only);
 	if (TestNotNull(TEXT("a collision-only mesh still uploads"), Hidden))
 	{
 		TestTrue(TEXT("marked collision only: no Lumen or Nanite bake"), Hidden->bCollisionOnly);
 	}
+	const int32 MaterialsWhenHidden = Only.Materials.Num();
+
+	// The hidden use came first; a drawn use through AddMesh (a Script Asset, an item or weapon mesh, a water body) comes later and
+	// still gives the mesh its render data, and its materials.
+	Only.AddMesh(Copy, TEXT("Crate script asset"));
+	const FMantleGatheredMesh* Spawned = GatheredCopy(Only);
+	if (TestNotNull(TEXT("still one entry for the mesh"), Spawned))
+	{
+		TestFalse(TEXT("a later drawn AddMesh use clears collision only"), Spawned->bCollisionOnly);
+	}
+	TestTrue(TEXT("and gathers the mesh's materials"), Only.Materials.Num() >= MaterialsWhenHidden);
+	// And a collision-only AddMesh (a hidden spline bake) never makes a drawn mesh collision only.
+	Only.AddMesh(Copy, TEXT("Hidden road collision"), /*bCollisionOnly*/ true);
+	const FMantleGatheredMesh* Again = GatheredCopy(Only);
+	TestTrue(TEXT("a later collision-only use leaves it drawn"), Again && !Again->bCollisionOnly);
 
 	// The same mesh drawn somewhere else needs its render data after all.
 	AStaticMeshActor* Shown = SpawnMeshActor(Fixture.World, TEXT("Mirrored wall"), Cube, FVector(500.0, 0.0, 0.0));

@@ -992,6 +992,13 @@ struct FMantleStaticMeshProps
 	 * physics block. True, the key absent: drawn.
 	 */
 	bool bVisible = true;
+
+	/**
+	 * blocksVisibility: false for a collision-only mesh that lets the Visibility channel through, as Unreal's InvisibleWall
+	 * presets do: it stops players and objects but not line-of-sight, pointer or interaction traces. Only beside visible
+	 * false (the parser refuses it on a drawn mesh). True, the key absent: it blocks them like any blocking mesh.
+	 */
+	bool bBlocksVisibility = true;
 };
 
 struct FMantleEmptyProps

@@ -2479,7 +2479,7 @@ void FMantlePlaceDependencies::AddTerrainLayerMaterials(const TArray<FMantleTerr
 	}
 }
 
-void FMantlePlaceDependencies::AddMesh(const UStaticMesh* Mesh, const FString& Label)
+void FMantlePlaceDependencies::AddMesh(const UStaticMesh* Mesh, const FString& Label, const bool bCollisionOnly)
 {
 	if (!Mesh || FMantlePlaceAssets::IsLibraryAsset(Mesh))
 	{
@@ -2493,8 +2493,18 @@ void FMantlePlaceDependencies::AddMesh(const UStaticMesh* Mesh, const FString& L
 		Existing->Mesh = const_cast<UStaticMesh*>(Mesh);
 		Existing->Key = Key;
 		Existing->Name = Mesh->GetName();
+		Existing->bCollisionOnly = bCollisionOnly;
+	}
+	else
+	{
+		// A drawn use, wherever it comes from, keeps the mesh's render data.
+		Existing->bCollisionOnly = Existing->bCollisionOnly && bCollisionOnly;
 	}
 	Existing->UsedBy.AddUnique(Label);
+	if (bCollisionOnly)
+	{
+		return; // never drawn: no material of it uploads
+	}
 
 	// No component overrides anything, so each slot uploads the mesh's own material, which a script
 	// can then put back on what it spawns. With no component, it is drawn with the mesh's own vertex colors.
@@ -2674,7 +2684,7 @@ void FMantlePlaceDependencies::AddSplineMeshes(UWorld* World)
 	const FMantleSplineBakeResult Bake = FMantleSplineMeshBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
 	for (const FMantleBakedSplineMesh& Baked : Bake.Meshes)
 	{
-		AddMesh(Baked.Mesh, Baked.OwnerLabel);
+		AddMesh(Baked.Mesh, Baked.OwnerLabel, /*bCollisionOnly*/ !Baked.bVisible);
 	}
 }
 

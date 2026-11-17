@@ -826,6 +826,8 @@ namespace
 		}
 		Props.bCastShadow = bVisible && FMantleEnvironmentExport::CastsShadowInPlace(Component);
 		Props.bVisible = bVisible;
+		// An invisible wall (Unreal's InvisibleWall presets) lets sight and pointer traces through; only a blocking one is told apart.
+		Props.bBlocksVisibility = bVisible || Props.Collision != EMantleCollision::Blocking || FMantlePlaceExporter::BlocksVisibility(Component);
 		// #596: the surface a creator picked with one of Mantle's surface physical materials. A physics
 		// entity's caller clears it again: its physics.material carries the body's surface.
 		Props.Surface = FMantlePlaceExporter::ReadSurface(Component);
@@ -3582,6 +3584,11 @@ bool FMantlePlaceExporter::IsShownInGame(const USceneComponent* Component)
 	{
 		return false;
 	}
+	// The actor's own Hidden In Game hides every component of it in game.
+	if (const AActor* Owner = Component->GetOwner(); Owner && Owner->IsHidden())
+	{
+		return false;
+	}
 	// As FPrimitiveSceneProxy decides bVirtualTextureMainPassDrawNever.
 	const UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Component);
 	return !Primitive || Primitive->GetRuntimeVirtualTextures().Num() == 0
@@ -3592,6 +3599,11 @@ bool FMantlePlaceExporter::IsCollisionOnly(const UPrimitiveComponent* Component)
 {
 	return Component && !IsShownInGame(Component) && Component->GetCollisionEnabled() != ECollisionEnabled::NoCollision
 		&& !Component->BodyInstance.bSimulatePhysics;
+}
+
+bool FMantlePlaceExporter::BlocksVisibility(const UPrimitiveComponent* Component)
+{
+	return !Component || Component->GetCollisionResponseToChannel(ECC_Visibility) == ECR_Block;
 }
 
 TArray<UInstancedStaticMeshComponent*> FMantlePlaceExporter::CollectInstanceSources(UWorld* World)
@@ -4159,7 +4171,7 @@ FString FMantlePlaceExporter::InstancedGroupKey(const FMantleStaticMeshProps& Me
 	// A collision-only set never joins a drawn one; only a hidden one marks its key, so every drawn key stays as it was.
 	if (!Mesh.bVisible)
 	{
-		Key += TEXT("|hidden");
+		Key += Mesh.bBlocksVisibility ? TEXT("|hidden") : TEXT("|hidden|novis");
 	}
 	// GhzGarage/mantle#630: only a distance that is set joins the key, so every key (and the entity ids hashed from it) of a
 	// mesh without one stays as it was, and meshes with different distances stay in different sets.
@@ -4954,8 +4966,11 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 
 			FMantleStaticMeshProps Props;
 			Props.Mesh = Uploads.IdFor(FMantlePlaceAssets::MeshKey(Baked.Mesh), EMantleAssetKind::StaticMesh, Baked.Mesh);
-			// A baked mesh carries only its slots' names: each slot gets the material its spline meshes drew with.
-			for (const int32 Slot : FMantlePlaceAssets::UploadSlots(Baked.Mesh))
+			// A baked mesh carries only its slots' names: each slot gets the material its spline meshes drew with. Hidden spline meshes
+			// that collide bake into a collision-only mesh, which names none.
+			Props.bVisible = Baked.bVisible;
+			Props.bBlocksVisibility = Baked.bBlocksVisibility;
+			for (const int32 Slot : Baked.bVisible ? FMantlePlaceAssets::UploadSlots(Baked.Mesh) : TArray<int32>())
 			{
 				const UMaterialInterface* Material = FMantlePlaceAssets::MeshSlotMaterial(Baked.Mesh, Slot);
 				const FString LibraryId = Library.FindIdByPath(FSoftObjectPath(Material));
@@ -6064,6 +6079,11 @@ namespace
 		if (!P->bVisible)
 		{
 			Writer->WriteValue(TEXT("visible"), false);
+			// An invisible wall that lets sight and pointer traces through: written only when false.
+			if (!P->bBlocksVisibility)
+			{
+				Writer->WriteValue(TEXT("blocksVisibility"), false);
+			}
 		}
 		// GhzGarage/mantle#630: only above 0 (0 is never written: absent means no limit), and never without the drawDistance feature.
 		if (P->DrawDistance > 0.0)

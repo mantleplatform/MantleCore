@@ -341,6 +341,21 @@ bool FMantleSplineMeshBakeSourcesTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("one blocks"), Colliding, 1);
 		TestEqual(TEXT("one doesn't"), Walkthrough, 1);
 	}
+
+	// A hidden piece that collides (road collision under a drawn road) bakes collision only, never merged into the drawn road beside it.
+	const FMantleSplineBakeResult WithHidden = BakeAll({ Visible, HiddenButSolid }, FMantlePlaceAssetLimits());
+	if (TestEqual(TEXT("drawn and hidden pieces bake apart"), WithHidden.Meshes.Num(), 2))
+	{
+		const FMantleBakedSplineMesh* Drawn = WithHidden.Meshes.FindByPredicate([](const FMantleBakedSplineMesh& Mesh) { return Mesh.bVisible; });
+		const FMantleBakedSplineMesh* CollisionOnly = WithHidden.Meshes.FindByPredicate([](const FMantleBakedSplineMesh& Mesh) { return !Mesh.bVisible; });
+		TestTrue(TEXT("one is drawn"), Drawn != nullptr);
+		if (TestNotNull(TEXT("one is collision only"), CollisionOnly))
+		{
+			TestTrue(TEXT("and blocks"), CollisionOnly->Collision == EMantleCollision::Blocking);
+			TestFalse(TEXT("and casts no shadow"), CollisionOnly->bCastShadow);
+			TestTrue(TEXT("and blocks sight traces, as its collision does"), CollisionOnly->bBlocksVisibility);
+		}
+	}
 	return true;
 }
 

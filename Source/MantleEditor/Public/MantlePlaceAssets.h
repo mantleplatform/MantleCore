@@ -679,7 +679,12 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	void AddCableMeshes(UWorld* World);
 
 	/** Adds a mesh no component uses, with each slot's own material (FMantlePlaceAssets::MeshSlotMaterial). Library meshes are skipped. */
-	void AddMesh(const UStaticMesh* Mesh, const FString& Label);
+	/**
+	 * bCollisionOnly: this use is never drawn (a hidden spline mesh baked as collision only), so none of the mesh's materials is
+	 * gathered. Any drawn use (a Script Asset, an item or weapon mesh, a water body's surface, a drawn bake) clears the mesh's
+	 * bCollisionOnly, so it keeps its Lumen and Nanite data, whichever use came first.
+	 */
+	void AddMesh(const UStaticMesh* Mesh, const FString& Label, bool bCollisionOnly = false);
 
 	/**
 	 * Adds one material under Label unless it is a library material. A transient instance past MaxVariantsPerMaterial looks of its

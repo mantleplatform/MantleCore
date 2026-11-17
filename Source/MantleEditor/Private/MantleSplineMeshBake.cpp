@@ -50,6 +50,8 @@ namespace MantleSplineMeshBakePrivate
 		EMantleCollision Collision = EMantleCollision::Blocking;
 		EMantleSurface Surface = EMantleSurface::Default;
 		bool bCastShadow = true;
+		bool bVisible = true;
+		bool bBlocksVisibility = true;
 	};
 
 	/** Sources that share an owner, a material set, collision, shadow and surface: baked together. */
@@ -64,6 +66,8 @@ namespace MantleSplineMeshBakePrivate
 		EMantleCollision Collision = EMantleCollision::Blocking;
 		EMantleSurface Surface = EMantleSurface::Default;
 		bool bCastShadow = true;
+		bool bVisible = true;
+		bool bBlocksVisibility = true;
 		TArray<const FSource*> Sources;
 	};
 
@@ -401,8 +405,8 @@ bool FMantleSplineMeshBake::IsBakeSource(const USplineMeshComponent* Component)
 	{
 		return false;
 	}
-	// Something a player would see or touch, as an instanced mesh is held to.
-	return FMantlePlaceExporter::IsShownInGame(Component) || Component->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
+	// Something a player would see or touch, as an instanced mesh is held to: a hidden one that collides bakes collision only.
+	return FMantlePlaceExporter::IsShownInGame(Component) || FMantlePlaceExporter::IsCollisionOnly(Component);
 }
 
 TArray<USplineMeshComponent*> FMantleSplineMeshBake::CollectSources(UWorld* World, TMap<FString, int32>* OutNotPublished)
@@ -552,10 +556,17 @@ FMantleSplineBakeResult FMantleSplineMeshBake::BakeComponents(TConstArrayView<US
 		Source.WorldBounds = Component->CalcBounds(Component->GetComponentTransform()).GetBox();
 		Source.Collision = CollisionOf(Component);
 		Source.Surface = FMantlePlaceExporter::ReadSurface(Component);
-		Source.bCastShadow = FMantleEnvironmentExport::CastsShadowInPlace(Component);
+		Source.bVisible = FMantlePlaceExporter::IsShownInGame(Component);
+		Source.bCastShadow = Source.bVisible && FMantleEnvironmentExport::CastsShadowInPlace(Component);
+		Source.bBlocksVisibility = Source.bVisible || Source.Collision != EMantleCollision::Blocking || FMantlePlaceExporter::BlocksVisibility(Component);
 		Source.Materials.Sort([](const UMaterialInterface& A, const UMaterialInterface& B) { return A.GetPathName() < B.GetPathName(); });
 
 		FString Key = FString::Printf(TEXT("%s|%d|%d|%d"), *Owner->GetPathName(), static_cast<int32>(Source.Collision), static_cast<int32>(Source.Surface), Source.bCastShadow ? 1 : 0);
+		// Hidden pieces never merge with drawn ones; only a hidden group marks its key, so every drawn bake keeps its key and ids.
+		if (!Source.bVisible)
+		{
+			Key += Source.bBlocksVisibility ? TEXT("|hidden") : TEXT("|hidden|novis");
+		}
 		for (const UMaterialInterface* Material : Source.Materials)
 		{
 			Key += TEXT("|") + Material->GetPathName();
@@ -576,6 +587,8 @@ FMantleSplineBakeResult FMantleSplineMeshBake::BakeComponents(TConstArrayView<US
 			Added.Collision = Source.Collision;
 			Added.Surface = Source.Surface;
 			Added.bCastShadow = Source.bCastShadow;
+			Added.bVisible = Source.bVisible;
+			Added.bBlocksVisibility = Source.bBlocksVisibility;
 		}
 		const int32 SourceIndex = Sources.Add(MoveTemp(Source));
 		Groups[GroupIndex].Sources.Add(&Sources[SourceIndex]);
@@ -692,6 +705,8 @@ FMantleSplineBakeResult FMantleSplineMeshBake::BakeComponents(TConstArrayView<US
 			Baked.Collision = Group.Collision;
 			Baked.Surface = Group.Surface;
 			Baked.bCastShadow = Group.bCastShadow;
+			Baked.bVisible = Group.bVisible;
+			Baked.bBlocksVisibility = Group.bBlocksVisibility;
 			Baked.SourceComponents = Chunk.Components;
 			Baked.Triangles = Chunk.Triangles;
 			Baked.Vertices = Chunk.Vertices;

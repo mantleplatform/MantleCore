@@ -6,10 +6,13 @@
 
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/DemoNetDriver.h"
+#include "Engine/Engine.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/Package.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -120,7 +123,115 @@ bool FMantleCollisionOnlyParseTest::RunTest(const FString& Parameters)
 	const FMantleParseResult Prop = ParseStatic(TEXT(",\"visible\":false,\"physics\":{\"mass\":20}"));
 	TestFalse(TEXT("a collision-only physics prop is refused"), Prop.bSuccess);
 	TestTrue(TEXT("at visible"), HasErrorAt(Prop, VisiblePath));
+
+	// blocksVisibility: an invisible wall that lets sight traces through. Absent, it blocks them; only a collision-only mesh may say so.
+	const FMantleParseResult Wall = ParseStatic(TEXT(",\"visible\":false,\"blocksVisibility\":false"));
+	TestTrue(TEXT("an invisible wall parses"), Wall.bSuccess);
+	if (const FMantleStaticMeshProps* Mesh = MeshOf(Wall))
+	{
+		TestFalse(TEXT("and lets sight traces through"), Mesh->bBlocksVisibility);
+	}
+	const FMantleParseResult InstancedWall = ParseInstanced(TEXT(",\"visible\":false,\"blocksVisibility\":false"));
+	TestTrue(TEXT("so do invisible instanced walls"), InstancedWall.bSuccess && MeshOf(InstancedWall) && !MeshOf(InstancedWall)->bBlocksVisibility);
+	if (const FMantleStaticMeshProps* Mesh = MeshOf(ParseStatic(TEXT(",\"visible\":false"))))
+	{
+		TestTrue(TEXT("absent, a collision-only mesh blocks sight traces"), Mesh->bBlocksVisibility);
+	}
+	const TCHAR* const BlocksPath = TEXT("/entities/0/properties/blocksVisibility");
+	for (const TCHAR* Bad : { TEXT(",\"blocksVisibility\":false"), TEXT(",\"visible\":true,\"blocksVisibility\":false"), TEXT(",\"visible\":false,\"blocksVisibility\":\"no\"") })
+	{
+		const FMantleParseResult Refused = ParseStatic(Bad);
+		TestFalse(FString::Printf(TEXT("%s is refused"), Bad), Refused.bSuccess);
+		TestTrue(FString::Printf(TEXT("%s is reported at blocksVisibility"), Bad), HasErrorAt(Refused, BlocksPath));
+	}
 	return true;
+}
+
+namespace MantleCollisionOnlyMeshTestPrivate
+{
+	/**
+	 * Builds a drawn deck with no collision over a collision-only slab (the City Sample freeway), a collision-only set of blockers, an
+	 * invisible wall that lets sight traces through, and a drawn cube with a material for contrast, in World; checks each is solid and
+	 * never drawn, or drawn as before.
+	 */
+	void BuildAndCheck(FAutomationTestBase& Test, UWorld* World, const FString& Where)
+	{
+		const FMantleParseResult Parsed = ParseEntities({
+			EntityJson(TEXT("ent_deck"), TEXT("StaticMesh"), TEXT("0,0,100"), TEXT("\"mesh\":\"ast_cube\",\"collision\":\"none\"")),
+			EntityJson(TEXT("ent_slab"), TEXT("StaticMesh"), TEXT("0,0,0"), TEXT("\"mesh\":\"ast_cube\",\"materials\":[\"ast_mat_basic\"],\"castShadow\":true,\"visible\":false")),
+			EntityJson(TEXT("ent_blockers"), TEXT("InstancedMesh"), TEXT("1000,0,0"),
+				TEXT("\"mesh\":\"ast_cube\",\"collision\":\"blocking\",\"visible\":false,\"drawDistance\":20000,\"instances\":[[0,0,0,0,0,0,1,1,1],[200,0,0,0,0,0,1,1,1]]")),
+			EntityJson(TEXT("ent_wall"), TEXT("StaticMesh"), TEXT("0,1000,0"), TEXT("\"mesh\":\"ast_cube\",\"visible\":false,\"blocksVisibility\":false")),
+			EntityJson(TEXT("ent_shown"), TEXT("StaticMesh"), TEXT("2000,0,0"), TEXT("\"mesh\":\"ast_cube\",\"materials\":[\"ast_mat_basic\"]")),
+		});
+		if (!Test.TestTrue(Where + TEXT(": the place parses"), Parsed.bSuccess))
+		{
+			Test.AddError(Parsed.ErrorSummary());
+			return;
+		}
+		FMantleBuildOptions Options;
+		Options.bRuntimeEnvironment = false;
+		FMantleBuildResult Built = FMantlePlaceBuilder::Build(World, Parsed.Place, Options);
+		Test.TestTrue(Where + TEXT(": the build succeeds"), Built.bSuccess);
+
+		const auto MeshComponentOf = [&Built](const TCHAR* Id) -> UStaticMeshComponent*
+		{
+			const AActor* Actor = Built.Actors.FindRef(Id);
+			return Actor ? Actor->FindComponentByClass<UStaticMeshComponent>() : nullptr;
+		};
+		UStaticMeshComponent* Slab = MeshComponentOf(TEXT("ent_slab"));
+		UStaticMeshComponent* Blockers = MeshComponentOf(TEXT("ent_blockers"));
+		UStaticMeshComponent* Wall = MeshComponentOf(TEXT("ent_wall"));
+		UStaticMeshComponent* Shown = MeshComponentOf(TEXT("ent_shown"));
+		UStaticMeshComponent* Deck = MeshComponentOf(TEXT("ent_deck"));
+		if (!Slab || !Blockers || !Wall || !Shown || !Deck)
+		{
+			Test.AddError(Where + TEXT(": an entity was not built"));
+			FMantlePlaceBuilder::Teardown(Built);
+			return;
+		}
+
+		for (const TPair<const TCHAR*, UStaticMeshComponent*>& Pair : {
+			TPair<const TCHAR*, UStaticMeshComponent*>(TEXT("slab"), Slab), TPair<const TCHAR*, UStaticMeshComponent*>(TEXT("blockers"), Blockers),
+			TPair<const TCHAR*, UStaticMeshComponent*>(TEXT("wall"), Wall) })
+		{
+			const FString What = Where + TEXT(": the ") + Pair.Key;
+			UStaticMeshComponent* Component = Pair.Value;
+			// Solid like any blocking mesh.
+			Test.TestEqual(What + TEXT(" collides with queries and physics"), static_cast<int32>(Component->GetCollisionEnabled()), static_cast<int32>(ECollisionEnabled::QueryAndPhysics));
+			Test.TestEqual(What + TEXT(" blocks pawns"), static_cast<int32>(Component->GetCollisionResponseToChannel(ECC_Pawn)), static_cast<int32>(ECR_Block));
+			Test.TestNotNull(*(What + TEXT(" has its mesh")), Component->GetStaticMesh().Get());
+			// Never drawn: hidden in game (still shown in an editor the place is imported into), nothing that would add it to the scene while hidden,
+			// and so no scene proxy at all.
+			Test.TestTrue(What + TEXT(" is hidden in game"), Component->bHiddenInGame);
+			Test.TestFalse(What + TEXT(" casts no shadow"), Component->CastShadow);
+			Test.TestFalse(What + TEXT(" casts no hidden shadow"), static_cast<bool>(Component->bCastHiddenShadow));
+			Test.TestFalse(What + TEXT(" lights nothing while hidden"), static_cast<bool>(Component->bAffectIndirectLightingWhileHidden));
+			Test.TestFalse(What + TEXT(" has no distance field lighting"), static_cast<bool>(Component->bAffectDistanceFieldLighting));
+			Test.TestFalse(What + TEXT(" is not a far ray tracing primitive"), static_cast<bool>(Component->bRayTracingFarField));
+			Test.TestTrue(What + TEXT(" is registered"), Component->IsRegistered());
+			Test.TestNull(*(What + TEXT(" has no scene proxy")), Component->SceneProxy);
+		}
+		// The slab and blockers block every trace; the invisible wall lets the Visibility channel (sight, pointer, interaction) through.
+		Test.TestEqual(Where + TEXT(": the slab blocks sight traces"), static_cast<int32>(Slab->GetCollisionResponseToChannel(ECC_Visibility)), static_cast<int32>(ECR_Block));
+		Test.TestEqual(Where + TEXT(": the wall lets sight traces through"), static_cast<int32>(Wall->GetCollisionResponseToChannel(ECC_Visibility)), static_cast<int32>(ECR_Ignore));
+		Test.TestEqual(Where + TEXT(": and still blocks the camera"), static_cast<int32>(Wall->GetCollisionResponseToChannel(ECC_Camera)), static_cast<int32>(ECR_Block));
+		const UInstancedStaticMeshComponent* Instances = Cast<UInstancedStaticMeshComponent>(Blockers);
+		Test.TestEqual(Where + TEXT(": the blockers keep both instances"), Instances ? Instances->GetInstanceCount() : 0, 2);
+
+		// The slab's listed material is not loaded (nothing draws it); the shown cube's is.
+		Test.TestNotNull(*(Where + TEXT(": the shown cube has a material")), Shown->GetMaterial(0));
+		Test.TestTrue(Where + TEXT(": the slab keeps the mesh's own material"), Slab->GetMaterial(0) == Slab->GetStaticMesh()->GetMaterial(0));
+		Test.TestTrue(Where + TEXT(": the shown cube's material is not the mesh's own"), Shown->GetMaterial(0) != Shown->GetStaticMesh()->GetMaterial(0));
+
+		// The drawn ones are drawn as before.
+		Test.TestFalse(Where + TEXT(": the shown cube is not hidden"), Shown->bHiddenInGame);
+		Test.TestTrue(Where + TEXT(": the shown cube casts a shadow"), Shown->CastShadow);
+		Test.TestFalse(Where + TEXT(": the deck is not hidden"), Deck->bHiddenInGame);
+		Test.TestEqual(Where + TEXT(": the deck has no collision"), static_cast<int32>(Deck->GetCollisionEnabled()), static_cast<int32>(ECollisionEnabled::NoCollision));
+
+		FMantlePlaceBuilder::Teardown(Built);
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -136,73 +247,49 @@ bool FMantleCollisionOnlyBuildTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-
-	// A drawn deck with no collision over a collision-only slab (the City Sample freeway), a collision-only set of blockers, and a drawn cube with a material for contrast.
-	const FMantleParseResult Parsed = ParseEntities({
-		EntityJson(TEXT("ent_deck"), TEXT("StaticMesh"), TEXT("0,0,100"), TEXT("\"mesh\":\"ast_cube\",\"collision\":\"none\"")),
-		EntityJson(TEXT("ent_slab"), TEXT("StaticMesh"), TEXT("0,0,0"), TEXT("\"mesh\":\"ast_cube\",\"materials\":[\"ast_mat_basic\"],\"castShadow\":true,\"visible\":false")),
-		EntityJson(TEXT("ent_blockers"), TEXT("InstancedMesh"), TEXT("1000,0,0"),
-			TEXT("\"mesh\":\"ast_cube\",\"collision\":\"blocking\",\"visible\":false,\"drawDistance\":20000,\"instances\":[[0,0,0,0,0,0,1,1,1],[200,0,0,0,0,0,1,1,1]]")),
-		EntityJson(TEXT("ent_shown"), TEXT("StaticMesh"), TEXT("2000,0,0"), TEXT("\"mesh\":\"ast_cube\",\"materials\":[\"ast_mat_basic\"]")),
-	});
-	if (!TestTrue(TEXT("the place parses"), Parsed.bSuccess))
-	{
-		AddError(Parsed.ErrorSummary());
-		return false;
-	}
-	FMantleBuildOptions Options;
-	Options.bRuntimeEnvironment = false;
-	FMantleBuildResult Built = FMantlePlaceBuilder::Build(Fixture.World, Parsed.Place, Options);
-	TestTrue(TEXT("the build succeeds"), Built.bSuccess);
-
-	const auto MeshComponentOf = [&Built](const TCHAR* Id) -> UStaticMeshComponent*
-	{
-		const AActor* Actor = Built.Actors.FindRef(Id);
-		return Actor ? Actor->FindComponentByClass<UStaticMeshComponent>() : nullptr;
-	};
-
-	UStaticMeshComponent* Slab = MeshComponentOf(TEXT("ent_slab"));
-	UStaticMeshComponent* Blockers = MeshComponentOf(TEXT("ent_blockers"));
-	UStaticMeshComponent* Shown = MeshComponentOf(TEXT("ent_shown"));
-	UStaticMeshComponent* Deck = MeshComponentOf(TEXT("ent_deck"));
-	if (!TestNotNull(TEXT("the slab"), Slab) || !TestNotNull(TEXT("the blockers"), Blockers) || !TestNotNull(TEXT("the shown cube"), Shown) || !TestNotNull(TEXT("the deck"), Deck))
-	{
-		FMantlePlaceBuilder::Teardown(Built);
-		return false;
-	}
-
-	for (const TPair<const TCHAR*, UStaticMeshComponent*>& Pair : { TPair<const TCHAR*, UStaticMeshComponent*>(TEXT("slab"), Slab), TPair<const TCHAR*, UStaticMeshComponent*>(TEXT("blockers"), Blockers) })
-	{
-		const FString What = Pair.Key;
-		UStaticMeshComponent* Component = Pair.Value;
-		// Solid like any blocking mesh.
-		TestEqual(What + TEXT(" collides with queries and physics"), static_cast<int32>(Component->GetCollisionEnabled()), static_cast<int32>(ECollisionEnabled::QueryAndPhysics));
-		TestEqual(What + TEXT(" blocks pawns"), static_cast<int32>(Component->GetCollisionResponseToChannel(ECC_Pawn)), static_cast<int32>(ECR_Block));
-		TestNotNull(*(What + TEXT(" has its mesh")), Component->GetStaticMesh().Get());
-		// Never drawn: hidden in game (still shown in an editor the place is imported into), and nothing that would add it to the scene while hidden.
-		TestTrue(What + TEXT(" is hidden in game"), Component->bHiddenInGame);
-		TestFalse(What + TEXT(" casts no shadow"), Component->CastShadow);
-		TestFalse(What + TEXT(" casts no hidden shadow"), static_cast<bool>(Component->bCastHiddenShadow));
-		TestFalse(What + TEXT(" lights nothing while hidden"), static_cast<bool>(Component->bAffectIndirectLightingWhileHidden));
-		TestFalse(What + TEXT(" has no distance field lighting"), static_cast<bool>(Component->bAffectDistanceFieldLighting));
-	}
-	const UInstancedStaticMeshComponent* Instances = Cast<UInstancedStaticMeshComponent>(Blockers);
-	TestEqual(TEXT("the blockers keep both instances"), Instances ? Instances->GetInstanceCount() : 0, 2);
-
-	// The slab's listed material is not loaded (nothing draws it); the shown cube's is.
-	TestNotNull(TEXT("the shown cube has a material"), Shown->GetMaterial(0));
-	TestTrue(TEXT("the slab keeps the mesh's own material"), Slab->GetMaterial(0) == Slab->GetStaticMesh()->GetMaterial(0));
-	TestTrue(TEXT("the shown cube's material is not the mesh's own"), Shown->GetMaterial(0) != Shown->GetStaticMesh()->GetMaterial(0));
-
-	// The drawn ones are drawn as before.
-	TestFalse(TEXT("the shown cube is not hidden"), Shown->bHiddenInGame);
-	TestTrue(TEXT("the shown cube casts a shadow"), Shown->CastShadow);
-	TestFalse(TEXT("the deck is not hidden"), Deck->bHiddenInGame);
-	TestEqual(TEXT("the deck has no collision"), static_cast<int32>(Deck->GetCollisionEnabled()), static_cast<int32>(ECollisionEnabled::NoCollision));
-
-	FMantlePlaceBuilder::Teardown(Built);
+	BuildAndCheck(*this, Fixture.World, TEXT("a game"));
 	return true;
 }
+
+#if WITH_EDITOR
+
+// The same place built on a dedicated server: it keeps every collision-only body (players stand on them there), and still draws nothing.
+// The world is made a server the way MantleSoundEmitterMarkerTest's is (a game world with a server net driver, run as dedicated).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCollisionOnlyServerTest,
+	"Mantle.Runtime.CollisionOnly.Builder.ServerKeepsTheCollision",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCollisionOnlyServerTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCollisionOnlyMeshTestPrivate;
+	if (!TestNotNull(TEXT("an engine"), GEngine))
+	{
+		return false;
+	}
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, /*bInformEngineOfWorld*/ false, TEXT("MantleCollisionOnlyServerTestWorld"));
+	if (!TestNotNull(TEXT("a world"), World))
+	{
+		return false;
+	}
+	FWorldContext& Context = GEngine->CreateNewWorldContext(EWorldType::Game);
+	Context.SetCurrentWorld(World);
+	Context.RunAsDedicated = true;
+	UDemoNetDriver* Driver = NewObject<UDemoNetDriver>(GetTransientPackage());
+	Driver->SetWorld(World);
+	World->SetNetDriver(Driver);
+	if (TestEqual(TEXT("the test world is a dedicated server"), static_cast<int32>(World->GetNetMode()), static_cast<int32>(NM_DedicatedServer)))
+	{
+		BuildAndCheck(*this, World, TEXT("a dedicated server"));
+	}
+	World->SetNetDriver(nullptr);
+	Driver->SetWorld(nullptr);
+	GEngine->DestroyWorldContext(World);
+	World->DestroyWorld(/*bInformEngineOfWorld*/ false);
+	return true;
+}
+
+#endif // WITH_EDITOR
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleCollisionOnlyStreamTest,
