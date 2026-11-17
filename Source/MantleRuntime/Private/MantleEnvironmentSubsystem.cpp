@@ -1,5 +1,8 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleEnvironmentSubsystem.h"
+#include "MantleSkyClock.h"
+#include "UObject/StrongObjectPtr.h"
+#include "Curves/CurveFloat.h"
 #include "MantleEnvironment.h"
 #include "MantlePlaceTypes.h"
 #include "MantleRuntime.h"
@@ -186,7 +189,8 @@ void UMantleEnvironmentSubsystem::Tick(float DeltaTime)
 	// with the state it last used, not with what this call saw change: UpdateWeatherSky and UpdatePostProcess read the state
 	// too, and whichever runs first after a change (a forced refresh from outside the tick, say) would otherwise use it up.
 	RefreshSkyLightState();
-	if (!bPostProcessSkyLightStateKnown || PostProcessSkyLightState != SkyLightState)
+	if (!bPostProcessSkyLightStateKnown || PostProcessSkyLightState != SkyLightState
+		|| FMath::Abs(MantleEnvironmentDefaults::ExposureFloorFor(FMantleSkyClock::SunElevationDegrees(GetTimeOfDay())) - AppliedExposureFloor) > 0.1f)
 	{
 		UpdatePostProcess();
 	}
@@ -328,6 +332,7 @@ void UMantleEnvironmentSubsystem::BindSky(const FMantleSkyBinding& Binding)
 	bNoDirectSun = Binding.bNoDirectSun;
 	if (Light)
 	{
+		// In lux: the place builder (or MantleEnvironment, for the default sun) put Mantle units in lux already.
 		DayIntensity = Light->Intensity;
 		DayColor = Light->LightColor;
 		if (bNoDirectSun)
@@ -525,7 +530,12 @@ void UMantleEnvironmentSubsystem::UpdateWeatherSky(bool bForce)
 		// sky light scale is already in BaseSkyLightIntensity, so it scales the fill too.
 		const double SunElevation = FMantleSkyClock::SunElevationDegrees(GetTimeOfDay());
 		const float Fill = static_cast<float>(FMantleWeatherLook::SkyLightFill(SkyLightState, SunElevation));
-		const float Intensity = BaseSkyLightIntensity * Look.SkyLightIntensityScale * Fill;
+		// By night the sky light is NightSkyLightBoost times stronger, so what the moon does not reach is dim but readable.
+		// Clouds do not dim it (they dim only the moon).
+		const float NightShare = static_cast<float>(FMath::SmoothStep(MantleEnvironmentDefaults::NightLightStartDegrees,
+			MantleEnvironmentDefaults::NightLightFullDegrees, -SunElevation));
+		const float Intensity = BaseSkyLightIntensity * Look.SkyLightIntensityScale * Fill
+			* FMath::Lerp(1.0f, MantleEnvironmentDefaults::NightSkyLightBoost, NightShare);
 		if (WeatherSkyValueDue(Intensity, AppliedSkyLightIntensity, Epsilon * BaseSkyLightIntensity, bFirst, bSettled))
 		{
 			SkyLight->SetIntensity(Intensity);
@@ -533,7 +543,11 @@ void UMantleEnvironmentSubsystem::UpdateWeatherSky(bool bForce)
 		}
 
 		// The ground bounce: the lower half of the sky light, scaled by the place's own sky light scale like the sky light is.
-		const FLinearColor Bounce = GroundBounce * BaseSkyLightScale;
+		// By night it is at least NightBounceFloor (moonlit-ground blue), whatever the weather: a wall turned from the moon faces
+		// half this lower half, and the night's own sky is too dark to light it.
+		const FLinearColor NightFloor = MantleEnvironmentDefaults::NightBounceFloor * NightShare;
+		const FLinearColor Bounce = FLinearColor(FMath::Max(GroundBounce.R, NightFloor.R), FMath::Max(GroundBounce.G, NightFloor.G),
+			FMath::Max(GroundBounce.B, NightFloor.B), 1.0f) * BaseSkyLightScale;
 		if (bFirst || !Bounce.Equals(AppliedGroundBounce, 1.0e-6f))
 		{
 			SkyLight->SetLowerHemisphereColor(Bounce);
@@ -641,7 +655,22 @@ void UMantleEnvironmentSubsystem::UpdateNightSky(bool bForce)
 
 FMantleSkyLightState UMantleEnvironmentSubsystem::GetTargetLightState() const
 {
-	return FMantleSkyClock::EvaluateLight(GetTimeOfDay(), HeadingYawDegrees);
+	FMantleSkyLightState State = FMantleSkyClock::EvaluateLight(GetTimeOfDay(), HeadingYawDegrees);
+	// Moonlight comes from at least MinMoonLightElevationDegrees up, on the moon's own bearing (see there).
+	if (State.bMoon)
+	{
+		constexpr double MinMoonLightElevationDegrees = MantleEnvironmentDefaults::MinMoonLightElevationDegrees;
+		const double MinSin = FMath::Sin(FMath::DegreesToRadians(MinMoonLightElevationDegrees));
+		if (-State.Direction.Z < MinSin)
+		{
+			const FVector Flat = FVector(State.Direction.X, State.Direction.Y, 0.0).GetSafeNormal();
+			if (!Flat.IsNearlyZero())
+			{
+				State.Direction = Flat * FMath::Cos(FMath::DegreesToRadians(MinMoonLightElevationDegrees)) - FVector::UpVector * MinSin;
+			}
+		}
+	}
+	return State;
 }
 
 float UMantleEnvironmentSubsystem::GetSunIntensity() const
@@ -688,11 +717,15 @@ void UMantleEnvironmentSubsystem::UpdateSky(bool bForce)
 	const float CloudDim = GetWeatherLook(&bWeatherSettled).SunIntensityScale;
 	// A script's Environment.SunIntensityScale scales the sun and the moon alike.
 	// GetSunIntensity is the sun's part of this, for the game client's twilight sky.
-	const float BodyIntensity = (Target.bMoon ? DayIntensity * MantleEnvironmentDefaults::MoonIntensityScale : DayIntensity)
+	// The moon is a share of the sun in Mantle units, not lux (Ultra Dynamic Sky keeps its moon at 0.15 lux in physical mode);
+	// the lightning flash follows the sky's own physical scale, full by day and none at night.
+	const float OldDay = DayIntensity / MantleEnvironmentDefaults::LightUnitScale;
+	const float BodyIntensity = (Target.bMoon ? OldDay * MantleEnvironmentDefaults::MoonIntensityScale : DayIntensity)
 		* CloudDim * Override.SunIntensityScale;
 	// A lightning flash only brightens the light; it never re-aims it.
 	const float Flash = bLightningLightsSun
-		? DayIntensity * MantleEnvironmentDefaults::LightningFlashIntensityScale * static_cast<float>(LightningFlash)
+		? OldDay * MantleEnvironmentDefaults::PhysicalSkyScale(FMantleSkyClock::SunElevationDegrees(GetTimeOfDay()))
+			* MantleEnvironmentDefaults::LightningFlashIntensityScale * static_cast<float>(LightningFlash)
 		: 0.0f;
 	const float Intensity = BodyIntensity * static_cast<float>(Target.Fade) + Flash;
 	const float Epsilon = DayIntensity * MantleEnvironmentDefaults::IntensityEpsilonScale;
@@ -1152,16 +1185,10 @@ void UMantleEnvironmentSubsystem::UpdatePostProcess()
 	const bool bLocalExposureOff = FMantleWeatherLook::WantsLocalExposureOff(SkyLightState, bInterior);
 	PostProcessSkyLightState = SkyLightState;
 	bPostProcessSkyLightStateKnown = true;
-	// The place's exposure needs the volume too, unless it is the game's own (fixed, no bias).
-	const bool bNeutral = Look.IsPostProcessNeutral() && IsPlaceExposureNeutral(PlaceExposure) && ExposureLift == 0.0f
-		&& !PlaceBloomThreshold.IsSet() && !bLocalExposureOff;
+	// Every client has the volume: it carries the game's auto exposure (ApplyExposureSettings) as well as the look.
 	APostProcessVolume* Volume = PostProcessVolume.Get();
 	if (!Volume)
 	{
-		if (bNeutral)
-		{
-			return;
-		}
 		FActorSpawnParameters Params;
 		Params.Name = MakeUniqueObjectName(World->PersistentLevel, APostProcessVolume::StaticClass(), TEXT("MantleScriptPostProcess"));
 		Params.ObjectFlags |= RF_Transient;
@@ -1179,9 +1206,10 @@ void UMantleEnvironmentSubsystem::UpdatePostProcess()
 		PostProcessVolume = Volume;
 	}
 
-	// Only what a script moved off neutral is overridden; the rest stays the project's own look.
+	// The exposure always; of the look, only what a script moved off neutral is overridden.
 	FPostProcessSettings& Settings = Volume->Settings;
-	ApplyExposureSettings(Settings, Look.ExposureBias, PlaceExposure, GetEngineExposureBias(), ExposureLift);
+	AppliedExposureFloor = MantleEnvironmentDefaults::ExposureFloorFor(FMantleSkyClock::SunElevationDegrees(GetTimeOfDay()));
+	ApplyExposureSettings(Settings, Look.ExposureBias, PlaceExposure, AppliedExposureFloor);
 	ApplyLocalExposureSettings(Settings, bLocalExposureOff);
 	Settings.bOverride_ColorSaturation = Look.Saturation != 1.0f;
 	Settings.ColorSaturation = FVector4(Look.Saturation, Look.Saturation, Look.Saturation, 1.0f);
@@ -1203,42 +1231,46 @@ void UMantleEnvironmentSubsystem::UpdatePostProcess()
 	Settings.ColorGradingLUT = Lut;
 	Settings.bOverride_ColorGradingIntensity = Lut != nullptr;
 	Settings.ColorGradingIntensity = Lut ? Look.ColorGradingIntensity : 0.0f;
-	Volume->bEnabled = !bNeutral;
+	Volume->bEnabled = true;
 }
 
-bool UMantleEnvironmentSubsystem::IsPlaceExposureNeutral(const TOptional<FMantleExposureSettings>& Exposure)
+UCurveFloat* UMantleEnvironmentSubsystem::GetPhysicalExposureCurve()
 {
-	return !Exposure.IsSet() || (Exposure->Mode == EMantleExposureMode::Fixed && Exposure->Bias == 0.0);
+	// Built once from the pack's 41 points (no asset), linear between them; kept for the whole process.
+	static TStrongObjectPtr<UCurveFloat> PhysicalCurve;
+	if (!PhysicalCurve.IsValid())
+	{
+		PhysicalCurve.Reset(NewObject<UCurveFloat>(GetTransientPackage(), TEXT("MantlePhysicalExposureCurve")));
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(MantleEnvironmentDefaults::PhysicalCurveEV); ++Index)
+		{
+			const FKeyHandle Key = PhysicalCurve->FloatCurve.AddKey(MantleEnvironmentDefaults::PhysicalCurveEV[Index], MantleEnvironmentDefaults::PhysicalCurveBias[Index]);
+			PhysicalCurve->FloatCurve.SetKeyInterpMode(Key, RCIM_Linear);
+		}
+	}
+	return PhysicalCurve.Get();
 }
 
 void UMantleEnvironmentSubsystem::ApplyExposureSettings(FPostProcessSettings& Settings, const float ScriptBias,
-	const TOptional<FMantleExposureSettings>& Exposure, const float EngineBias, const float Lift)
+	const TOptional<FMantleExposureSettings>& Exposure, const float MinEv100)
 {
-	const bool bAuto = Exposure.IsSet() && Exposure->Mode == EMantleExposureMode::Auto;
-	const bool bBias = Exposure.IsSet() && Exposure->Bias != 0.0;
-	// A fixed exposure's lift (SetExposureLift); an auto one adapts by itself.
-	const float FixedLift = bAuto ? 0.0f : Lift;
-
-	// The exposure compensation: the game's own plus a script's non-zero value (which replaces the place's bias while set,
-	// else the place's bias); then the lift. A script's 0 is the game's own, so +1 doubles the brightness.
+	// Ultra Dynamic Sky's own exposure in physical mode: histogram metering, compensation 0 (not the engine's +1) plus a
+	// script's (else the place's) bias, its physical compensation curve by the scene's EV100, up to MaxExposure; with Mantle's
+	// floor (ExposureFloorFor) and twice its speed. A place's old mode and range keys are not used.
 	const float PlaceBias = Exposure.IsSet() ? static_cast<float>(Exposure->Bias) : 0.0f;
-	Settings.bOverride_AutoExposureBias = ScriptBias != 0.0f || bBias || bAuto || FixedLift != 0.0f;
-	Settings.AutoExposureBias = EngineBias + (ScriptBias != 0.0f ? ScriptBias : PlaceBias) + FixedLift;
-
-	// An auto exposure names its metering and range: r.DefaultFeature.AutoExposure=False only sets the base range to
-	// 1 to 1 (SceneView.cpp), which an override here replaces. Fixed leaves all three to that base, as every place did.
-	Settings.bOverride_AutoExposureMethod = bAuto;
+	Settings.bOverride_AutoExposureBias = true;
+	Settings.AutoExposureBias = ScriptBias != 0.0f ? ScriptBias : PlaceBias;
+	Settings.bOverride_AutoExposureMethod = true;
 	Settings.AutoExposureMethod = EAutoExposureMethod::AEM_Histogram;
-	Settings.bOverride_AutoExposureMinBrightness = bAuto;
-	Settings.bOverride_AutoExposureMaxBrightness = bAuto;
-	if (bAuto)
-	{
-		const float Min = static_cast<float>(Exposure->MinBrightness.Get(MantleEnvironmentDefaults::DefaultAutoExposureMin));
-		const float Max = static_cast<float>(Exposure->MaxBrightness.Get(MantleEnvironmentDefaults::DefaultAutoExposureMax));
-		Settings.AutoExposureMinBrightness = Min;
-		// A range with its ends the wrong way round would be a fixed exposure, which is not what auto asked for.
-		Settings.AutoExposureMaxBrightness = FMath::Max(Max, Min);
-	}
+	Settings.bOverride_AutoExposureMinBrightness = true;
+	Settings.AutoExposureMinBrightness = FMath::Min(MinEv100, MantleEnvironmentDefaults::MaxExposure);
+	Settings.bOverride_AutoExposureMaxBrightness = true;
+	Settings.AutoExposureMaxBrightness = MantleEnvironmentDefaults::MaxExposure;
+	Settings.bOverride_AutoExposureBiasCurve = true;
+	Settings.AutoExposureBiasCurve = GetPhysicalExposureCurve();
+	Settings.bOverride_AutoExposureSpeedUp = true;
+	Settings.AutoExposureSpeedUp = MantleEnvironmentDefaults::ExposureSpeedUp;
+	Settings.bOverride_AutoExposureSpeedDown = true;
+	Settings.AutoExposureSpeedDown = MantleEnvironmentDefaults::ExposureSpeedDown;
 }
 
 void UMantleEnvironmentSubsystem::SetPlaceExposure(const TOptional<FMantleExposureSettings>& Exposure)
@@ -1246,10 +1278,7 @@ void UMantleEnvironmentSubsystem::SetPlaceExposure(const TOptional<FMantleExposu
 	PlaceExposure = Exposure;
 	if (Exposure.IsSet())
 	{
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_ENV_EXPOSURE mode=%s bias=%.3f engine_bias=%.3f min=%.3f max=%.3f"),
-			Exposure->Mode == EMantleExposureMode::Auto ? TEXT("auto") : TEXT("fixed"), Exposure->Bias, GetEngineExposureBias(),
-			Exposure->MinBrightness.Get(MantleEnvironmentDefaults::DefaultAutoExposureMin),
-			Exposure->MaxBrightness.Get(MantleEnvironmentDefaults::DefaultAutoExposureMax));
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_ENV_EXPOSURE bias=%.3f"), Exposure->Bias);
 	}
 	UpdatePostProcess();
 }
@@ -1327,18 +1356,6 @@ void UMantleEnvironmentSubsystem::SetPlaceBloomThreshold(const TOptional<double>
 	UpdatePostProcess();
 }
 
-void UMantleEnvironmentSubsystem::SetExposureLift(float Stops)
-{
-	const float Lift = FMath::IsFinite(Stops) ? FMath::Clamp(Stops, -MantleEnvironmentDefaults::MaxExposureBias, MantleEnvironmentDefaults::MaxExposureBias) : 0.0f;
-	// Within a thousandth of a stop is the same: the weather's lift moves a little every frame while fog blends in.
-	if (FMath::IsNearlyEqual(Lift, ExposureLift, 1.0e-3f))
-	{
-		return;
-	}
-	ExposureLift = Lift;
-	UpdatePostProcess();
-}
-
 void UMantleEnvironmentSubsystem::SetWeatherFogTint(const FLinearColor& Tint, float Amount)
 {
 	const float Share = FMath::IsFinite(Amount) ? FMath::Clamp(Amount, 0.0f, 1.0f) : 0.0f;
@@ -1353,14 +1370,6 @@ void UMantleEnvironmentSubsystem::SetWeatherFogTint(const FLinearColor& Tint, fl
 void UMantleEnvironmentSubsystem::SetGroundBounce(const FLinearColor& Color)
 {
 	GroundBounce = FLinearColor(FMath::Max(Color.R, 0.0f), FMath::Max(Color.G, 0.0f), FMath::Max(Color.B, 0.0f), 1.0f);
-}
-
-float UMantleEnvironmentSubsystem::GetEngineExposureBias()
-{
-	// The project setting every FPostProcessSettings starts from (Scene.cpp); 1 is the engine's own default.
-	static const TConsoleVariableData<float>* Variable =
-		IConsoleManager::Get().FindTConsoleVariableDataFloat(TEXT("r.DefaultFeature.AutoExposure.Bias"));
-	return Variable ? Variable->GetValueOnGameThread() : 1.0f;
 }
 
 UTexture* UMantleEnvironmentSubsystem::ResolveColorGradingLut(uint8 Preset)

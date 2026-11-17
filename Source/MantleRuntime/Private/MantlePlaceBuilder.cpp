@@ -8,6 +8,7 @@
 #include "MantleCrowdSpawner.h"
 #include "MantleEffect.h"
 #include "MantleEnvironment.h"
+#include "MantleEnvironmentDefaults.h"
 #include "MantleHoverChannel.h"
 #include "MantleItemSpawnPoint.h"
 #include "MantlePhysicsProp.h"
@@ -728,7 +729,8 @@ namespace
 
 		if (UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(Actor->GetLightComponent()))
 		{
-			Light->SetIntensity(static_cast<float>(Props.Intensity));
+			// A directional light is a sun: authored in Mantle units, lit in lux (MantleEnvironmentDefaults::LightUnitScale).
+			Light->SetIntensity(static_cast<float>(Props.Intensity * MantleEnvironmentDefaults::LightUnitScale));
 			Light->SetLightColor(Props.Color);
 			Light->SetCastShadows(Props.bCastShadow);
 		}

@@ -44,10 +44,31 @@ namespace MantleEnvironmentDefaults
 	constexpr double HorizonFadeDegrees = 6.0;
 
 	/**
-	 * Moonlight, as a fraction of the place sun's own intensity. Tuned against fixed exposure
-	 * (DefaultEngine.ini turns AutoExposure off).
+	 * Moonlight, as a fraction of the place sun's intensity in Mantle units (so about 0.84 lux under the default sun, before
+	 * cloud). Real moonlight is about 0.1 to 0.3 lux; this is brighter so a night is dark but readable, as judged in play.
 	 */
-	constexpr float MoonIntensityScale = 0.12f;
+	constexpr float MoonIntensityScale = 0.24f;
+
+	/**
+	 * Moonlight comes from at least this high, on the moon's own bearing. Mantle's moon rises as the sun sets, so for the
+	 * first hours of a night its light would skim the ground and light almost nothing (sin 6 degrees is a tenth); the moon
+	 * drawn in the sky keeps its real place.
+	 */
+	constexpr double MinMoonLightElevationDegrees = 30.0;
+
+	/** The sky light at full night, as a multiple of its day value (it fades in as the sun goes 6 to 12 degrees down). */
+	constexpr float NightSkyLightBoost = 4.0f;
+
+	/** The night's share of NightSkyLightBoost and NightBounceFloor fades in between these sun depressions (degrees). */
+	constexpr double NightLightStartDegrees = 6.0;
+	constexpr double NightLightFullDegrees = 12.0;
+
+	/**
+	 * The least the sky light's lower half is at full night, before the sky light's own intensity (about 10 then: the fill
+	 * times NightSkyLightBoost). It lights what faces away from the moon, in clear and cloudy weather alike: the night's own
+	 * sky is too dark to.
+	 */
+	inline const FLinearColor NightBounceFloor(0.0018f, 0.0021f, 0.0030f, 1.0f);
 
 	/** Moonlight's cool color, in linear space. */
 	inline const FLinearColor MoonColor(0.55f, 0.66f, 1.0f);
@@ -212,8 +233,97 @@ namespace MantleEnvironmentDefaults
 	inline constexpr double SkyLightFillScaleDistanceField[] = { 2.0, 1.5, 1.0 };
 	inline constexpr double SkyLightFillScaleUnshaded[] = { 1.5, 1.0, 0.5 };
 
-	/** The default sun's intensity (lux) when a place has none of its own. */
+	/** The default sun's intensity when a place has none of its own, in Mantle units (x LightUnitScale = 114,688 lux). */
 	constexpr float DefaultSunIntensity = 3.5f;
+
+	// ---- Real-world light -----------------------------------------------------------------------------------------
+	// Light is in real-world units and the camera is Unreal's own auto exposure, as Ultra Dynamic Sky's physical mode does
+	// it (read from the pack itself: its Blueprint run in the editor with its sun at its default 5 and at 100,000 lux). In
+	// that mode the pack multiplies only the sun and the daytime sky glows by the sun's ratio; the moon, stars, night glow
+	// and the height fog's colors stay as they were. Mantle does the same with LightUnitScale as the ratio.
+	//
+	// What is authored in Mantle units (x LightUnitScale): directional lights (a place's sun and any other, a script's),
+	// which are suns. Local lights (point, spot, rect), emissive materials and effects are authored in real units already:
+	// Mantle's night camera (the old fixed exposure plus its 1.5-stop night lift) is the auto exposure's night camera to
+	// within a tenth of a stop, and they were tuned at night, where they matter; by day they are as weak against the sun
+	// as real lamps are.
+
+	/** A directional light's Mantle units to lux: the old default sun 3.5 x 2^15 = 114,688 lux, a clear noon sun. */
+	constexpr float LightUnitScale = 32768.0f;
+
+	/**
+	 * How much of the ratio (as a power: ratio ^ share) the pack keeps as the sun sets, by the sun's elevation (the pack's
+	 * clock turns the sun 15 degrees an hour, as Mantle's dome tables already use). Sky: the sky sphere's Ambient, Sun
+	 * Disk and Wisps colors, its Contrast Midpoint, the clouds' Top/Bottom Emissive and the Ambient Fog Color (all
+	 * measured on the cloud glow). Sun: the sun light itself below the horizon, which still lights the atmosphere (the
+	 * pack's "Fade Down High Sun Light Intensity Below Horizon"); Mantle's twilight light takes it.
+	 */
+	inline constexpr double PhysicalElevation[] = { -10.0, -7.92, -5.83, -3.75, -1.67, 0.5 };
+	inline constexpr double PhysicalSkyShare[] = { 0.0, 0.002, 0.119, 0.46, 0.791, 0.984 };
+	inline constexpr double PhysicalSunShare[] = { 0.002, 0.169, 0.472, 0.701, 0.881, 1.0 };
+
+	inline double PhysicalShare(const double (&Shares)[6], double ElevationDegrees)
+	{
+		if (ElevationDegrees <= PhysicalElevation[0]) { return Shares[0]; }
+		if (ElevationDegrees >= PhysicalElevation[5])
+		{
+			return ElevationDegrees >= 2.0 ? 1.0 : Shares[5] + (1.0 - Shares[5]) * (ElevationDegrees - PhysicalElevation[5]) / (2.0 - PhysicalElevation[5]);
+		}
+		for (int32 Index = 1; Index < 6; ++Index)
+		{
+			if (ElevationDegrees <= PhysicalElevation[Index])
+			{
+				const double A = PhysicalElevation[Index - 1];
+				return Shares[Index - 1] + (Shares[Index] - Shares[Index - 1]) * (ElevationDegrees - A) / (PhysicalElevation[Index] - A);
+			}
+		}
+		return 1.0;
+	}
+
+	/** The multiplier on the daytime sky glows at this sun elevation: the ratio by day, 1 (unscaled) by night. */
+	inline float PhysicalSkyScale(double SunElevationDegrees)
+	{
+		return static_cast<float>(FMath::Pow(static_cast<double>(LightUnitScale), PhysicalShare(PhysicalSkyShare, SunElevationDegrees)));
+	}
+
+	/** The multiplier on the sun's light at this elevation (the twilight light below the horizon). */
+	inline float PhysicalSunScale(double SunElevationDegrees)
+	{
+		return static_cast<float>(FMath::Pow(static_cast<double>(LightUnitScale), PhysicalShare(PhysicalSunShare, SunElevationDegrees)));
+	}
+
+	/**
+	 * The pack's exposure in physical mode: histogram, compensation 0, -10..20 EV100, and its "Exposure Compensation Curve
+	 * For Physical Light Intensity" by the scene's EV100 (41 points read off the asset; -1.73 in the dark, +1 in daylight).
+	 * Mantle raises the low end at night (NightExposureFloor) and adapts twice as fast.
+	 */
+	constexpr float DayExposureFloor = -10.0f;
+	constexpr float MaxExposure = 20.0f;
+
+	/**
+	 * At night the camera opens up no further than this (EV100), not the pack's -10: Lumen's cached lighting holds about 20
+	 * stops round r.EyeAdaptation.CachedLightingPreExposure (9: the engine's exposure -3 to 17), and a night or a dark room
+	 * at this floor reads about -1.4 there. Below that dim cached light runs out of half-float precision. A night is
+	 * brightened by light (the moon and the night sky light), not by the camera.
+	 */
+	constexpr float NightExposureFloor = -2.5f;
+
+	/** The floor moves from the night's to the day's as the sun rises between these elevations (degrees). */
+	constexpr double ExposureFloorNightBelowDegrees = -6.0;
+	constexpr double ExposureFloorDayAboveDegrees = 10.0;
+
+	/** How fast the camera adapts, in stops a second: twice the engine's and the pack's 3 (into the dark) and 1 (into the light). */
+	constexpr float ExposureSpeedUp = 6.0f;
+	constexpr float ExposureSpeedDown = 2.0f;
+
+	/** The exposure floor (EV100) at a sun elevation: the night's in the dark, none (the pack's) by day. */
+	inline float ExposureFloorFor(double SunElevationDegrees)
+	{
+		const double Day = FMath::SmoothStep(ExposureFloorNightBelowDegrees, ExposureFloorDayAboveDegrees, SunElevationDegrees);
+		return FMath::Lerp(NightExposureFloor, DayExposureFloor, static_cast<float>(Day));
+	}
+	inline constexpr float PhysicalCurveEV[] = { -9.163f, -8.594f, -8.025f, -7.456f, -6.887f, -6.317f, -5.748f, -5.179f, -4.61f, -4.041f, -3.472f, -2.903f, -2.334f, -1.765f, -1.196f, -0.627f, -0.058f, 0.511f, 1.08f, 1.65f, 2.219f, 2.788f, 3.357f, 3.926f, 4.495f, 5.064f, 5.633f, 6.202f, 6.771f, 7.34f, 7.909f, 8.478f, 9.047f, 9.617f, 10.186f, 10.755f, 11.324f, 11.893f, 12.462f, 13.031f, 13.6f };
+	inline constexpr float PhysicalCurveBias[] = { -1.7288f, -1.7285f, -1.7275f, -1.7255f, -1.7226f, -1.7185f, -1.713f, -1.706f, -1.6974f, -1.687f, -1.6746f, -1.6601f, -1.6433f, -1.6241f, -1.6023f, -1.5777f, -1.5502f, -1.5197f, -1.4859f, -1.4488f, -1.4081f, -1.3638f, -1.3156f, -1.2634f, -1.207f, -1.1463f, -1.0811f, -1.0114f, -0.9368f, -0.8572f, -0.7726f, -0.6827f, -0.5874f, -0.4866f, -0.38f, -0.2675f, -0.1489f, -0.0242f, 0.1507f, 0.4806f, 1.0f };
 
 	/**
 	 * Ground bounce: the sky light's lower half is this times the sky sphere's Ambient Color (Ultra Dynamic Sky's own
@@ -284,13 +394,12 @@ namespace MantleEnvironmentDefaults
 	/** settings.environment.exposure.bias: stops brighter or darker than the game's own exposure compensation. */
 	constexpr double MaxExposureBias = 4.0;
 
-	/** exposure.minBrightness and maxBrightness: the auto exposure's range, in the engine's luminance units. */
+	/**
+	 * exposure.minBrightness and maxBrightness: the old range keys, still read and validated (the schema's, validate.py's and
+	 * the backend's), but the camera's range is the game's now (ExposureFloorFor, MaxExposure); only the bias applies.
+	 */
 	constexpr double MinExposureBrightness = 0.03;
 	constexpr double MaxExposureBrightness = 20.0;
-
-	/** What an auto exposure's range is when the place names no end of it: the engine's own default range. */
-	constexpr double DefaultAutoExposureMin = 0.03;
-	constexpr double DefaultAutoExposureMax = 8.0;
 
 	/** settings.environment.fog: the height fog's density, falloff, colors (a channel's luminance) and start distance (cm). */
 	constexpr double MaxFogDensity = 0.05;
