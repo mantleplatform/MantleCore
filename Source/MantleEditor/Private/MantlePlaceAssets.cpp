@@ -44,9 +44,11 @@
 #include "MaterialDomain.h"
 #include "MaterialShared.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialAttributeDefinitionMap.h"
 #include "Materials/MaterialExpression.h"
 #include "Materials/MaterialExpressionBumpOffset.h"
 #include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionBreakMaterialAttributes.h"
 #include "Materials/MaterialExpressionAppendVector.h"
 #include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionConstant.h"
@@ -57,6 +59,7 @@
 #include "Materials/MaterialExpressionFunctionOutput.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
+#include "Materials/MaterialExpressionMax.h"
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionNormalize.h"
 #include "Materials/MaterialExpressionOneMinus.h"
@@ -67,6 +70,7 @@
 #include "Materials/MaterialExpressionReroute.h"
 #include "Materials/MaterialExpressionRotator.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionSetMaterialAttributes.h"
 #include "Materials/MaterialExpressionStaticBool.h"
 #include "Materials/MaterialExpressionStaticBoolParameter.h"
 #include "Materials/MaterialExpressionStaticSwitch.h"
@@ -3701,7 +3705,9 @@ FString FMantleBakeSurface::CacheTag() const
 	{
 		return FString();
 	}
-	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%d%s%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1),
+	// "meshdata": a bake over a UV range is made on a copy that reads the card (FMantlePlaceAssets::ReadsVertexColorCopy); one made before
+	// that baked UVs 0 to 1 for a material reading only texture coordinates, one landscape quad stretched over the tile, and must not stand in.
+	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%d%s%s%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1), UvRange > 1 ? TEXT(" meshdata") : TEXT(""),
 		WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""), bTintMask ? TEXT(" tintmask=1") : TEXT(""));
 	// The shift is not in the tag: the shifted bake is only compared with, never stored.
 }
@@ -4552,6 +4558,38 @@ namespace MantlePlaceAssetsPrivate
 	};
 }
 
+namespace MantlePlaceAssetsPrivate
+{
+	/**
+	 * A transient copy, for a bake, of a material whose instance chain is Chain (the material first) and whose base is Base: the base is
+	 * copied, EditBase rewrites the copy's graph, then each instance is copied onto it, so the parameters it sets still apply.
+	 */
+	TStrongObjectPtr<UMaterialInterface> CopyForBake(TConstArrayView<const UMaterialInstanceConstant*> Chain, const UMaterial& Base,
+		TFunctionRef<void(UMaterial&)> EditBase)
+	{
+		UMaterial* BaseCopy = DuplicateObject<UMaterial>(&Base, GetTransientPackage(),
+			MakeUniqueObjectName(GetTransientPackage(), UMaterial::StaticClass(), *FString::Printf(TEXT("%s_MantleBake"), *Base.GetName())));
+		BaseCopy->ClearFlags(RF_Public | RF_Standalone);
+		BaseCopy->SetFlags(RF_Transient);
+		EditBase(*BaseCopy);
+		// The editor's own finishing step: it builds what GLTFExporter reads the graph through.
+		BaseCopy->PostEditChange();
+
+		UMaterialInterface* Result = BaseCopy;
+		for (int32 Index = Chain.Num() - 1; Index >= 0; --Index)
+		{
+			UMaterialInstanceConstant* Copy = DuplicateObject<UMaterialInstanceConstant>(Chain[Index], GetTransientPackage(),
+				MakeUniqueObjectName(GetTransientPackage(), UMaterialInstanceConstant::StaticClass(), *FString::Printf(TEXT("%s_MantleBake"), *Chain[Index]->GetName())));
+			Copy->ClearFlags(RF_Public | RF_Standalone);
+			Copy->SetFlags(RF_Transient);
+			Copy->SetParentEditorOnly(Result, /*RecacheShader*/ false);
+			Copy->PostEditChange();
+			Result = Copy;
+		}
+		return TStrongObjectPtr<UMaterialInterface>(Result);
+	}
+}
+
 TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::NeutralizePerInstanceValues(const UMaterialInterface* Material)
 {
 	using namespace MantlePlaceAssetsPrivate;
@@ -4578,26 +4616,69 @@ TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::NeutralizePerInstanceVa
 		return nullptr;
 	}
 
-	UMaterial* BaseCopy = DuplicateObject<UMaterial>(Base, GetTransientPackage(),
-		MakeUniqueObjectName(GetTransientPackage(), UMaterial::StaticClass(), *FString::Printf(TEXT("%s_MantleBake"), *Base->GetName())));
-	BaseCopy->ClearFlags(RF_Public | RF_Standalone);
-	BaseCopy->SetFlags(RF_Transient);
-	Neutralizer.Rewrite(BaseCopy, nullptr);
-	// The editor's own finishing step: it builds what GLTFExporter reads the graph through.
-	BaseCopy->PostEditChange();
+	return MantlePlaceAssetsPrivate::CopyForBake(Chain, *Base, [&Neutralizer](UMaterial& BaseCopy) { Neutralizer.Rewrite(&BaseCopy, nullptr); });
+}
 
-	UMaterialInterface* Result = BaseCopy;
-	for (int32 Index = Chain.Num() - 1; Index >= 0; --Index)
+TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::ReadsVertexColorCopy(const UMaterialInterface* Material)
+{
+	using namespace MantlePlaceAssetsPrivate;
+	if (!Material)
 	{
-		UMaterialInstanceConstant* Copy = DuplicateObject<UMaterialInstanceConstant>(Chain[Index], GetTransientPackage(),
-			MakeUniqueObjectName(GetTransientPackage(), UMaterialInstanceConstant::StaticClass(), *FString::Printf(TEXT("%s_MantleBake"), *Chain[Index]->GetName())));
-		Copy->ClearFlags(RF_Public | RF_Standalone);
-		Copy->SetFlags(RF_Transient);
-		Copy->SetParentEditorOnly(Result, /*RecacheShader*/ false);
-		Copy->PostEditChange();
-		Result = Copy;
+		return nullptr;
 	}
-	return TStrongObjectPtr<UMaterialInterface>(Result);
+	TArray<const UMaterialInstanceConstant*> Chain;
+	const UMaterialInterface* Link = Material;
+	while (const UMaterialInstanceConstant* Instance = Cast<UMaterialInstanceConstant>(Link))
+	{
+		Chain.Add(Instance);
+		Link = Instance->Parent;
+	}
+	const UMaterial* Base = Cast<UMaterial>(Link);
+	if (!Base || !Base->GetEditorOnlyData())
+	{
+		return nullptr;
+	}
+	// The base color (or, for a material using material attributes, the attributes) must be connected: that is where the read goes.
+	const UMaterialEditorOnlyData* Data = Base->GetEditorOnlyData();
+	if (!(Base->bUseMaterialAttributes ? Data->MaterialAttributes.Expression : Data->BaseColor.Expression))
+	{
+		return nullptr;
+	}
+	return CopyForBake(Chain, *Base, [](UMaterial& BaseCopy)
+	{
+		auto Add = [&BaseCopy](auto* Node)
+		{
+			Node->Material = &BaseCopy;
+			BaseCopy.GetExpressionCollection().AddExpression(Node);
+			return Node;
+		};
+		UMaterialEditorOnlyData* CopyData = BaseCopy.GetEditorOnlyData();
+		// max(Vertex Color's red, 1) is 1 whatever the color: multiplying the base color by it changes nothing but what the material reads.
+		// The red (output 1) is a scalar: the HLSL translator mixes widths only when one side is a scalar, so it multiplies a base color of
+		// any width (a float2 texture coordinate or a float4 constant wired straight in), where the RGB output (0) would not compile.
+		UMaterialExpressionVertexColor* Color = Add(NewObject<UMaterialExpressionVertexColor>(&BaseCopy));
+		UMaterialExpressionMax* One = Add(NewObject<UMaterialExpressionMax>(&BaseCopy));
+		One->A.Connect(1, Color);
+		One->ConstB = 1.0f;
+		UMaterialExpressionMultiply* Times = Add(NewObject<UMaterialExpressionMultiply>(&BaseCopy));
+		Times->B.Connect(0, One);
+		if (!BaseCopy.bUseMaterialAttributes)
+		{
+			static_cast<FExpressionInput&>(Times->A) = static_cast<const FExpressionInput&>(CopyData->BaseColor);
+			CopyData->BaseColor.Connect(0, Times);
+			return;
+		}
+		// Material attributes: the same attributes with their base color (Break's first output) multiplied, set back in.
+		const FExpressionInput Attributes = CopyData->MaterialAttributes;
+		UMaterialExpressionBreakMaterialAttributes* Break = Add(NewObject<UMaterialExpressionBreakMaterialAttributes>(&BaseCopy));
+		static_cast<FExpressionInput&>(Break->MaterialAttributes) = Attributes;
+		Times->A.Connect(0, Break);
+		UMaterialExpressionSetMaterialAttributes* Set = Add(NewObject<UMaterialExpressionSetMaterialAttributes>(&BaseCopy));
+		Set->Inputs[0] = Attributes;
+		Set->AttributeSetTypes.Add(FMaterialAttributeDefinitionMap::GetID(MP_BaseColor));
+		Set->Inputs.AddDefaulted_GetRef().Connect(0, Times);
+		CopyData->MaterialAttributes.Connect(0, Set);
+	});
 }
 
 FString FMantlePlaceAssets::DescribePerInstanceVariation()

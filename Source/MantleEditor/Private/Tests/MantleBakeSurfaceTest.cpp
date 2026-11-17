@@ -10,7 +10,11 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionConstant4Vector.h"
+#include "Materials/MaterialExpressionMakeMaterialAttributes.h"
+#include "Materials/MaterialExpressionMax.h"
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureSample.h"
@@ -474,6 +478,139 @@ bool FMantleWorldMappedDifferenceTest::RunTest(const FString& Parameters)
 	TArray<FColor> Smaller = Brick;
 	Smaller.Pop();
 	TestEqual(TEXT("images of different sizes count as different"), FMantlePlaceAssetConverter::MeanPixelDifference(Brick, Smaller), 1.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleBakeSurfaceUvRangeReadsCardTest,
+	"Mantle.Editor.BakeSurface.UvRangeBakeReadsTheCard",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleBakeSurfaceUvRangeReadsCardTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleBakeSurfaceTestPrivate;
+
+	// HellCage's ground: its landscape material reads only texture coordinates, so GLTFExporter (FGLTFMaterialUtilities::NeedsMeshData)
+	// baked it over UVs 0 to 1, not the card's 0 to 12: one landscape quad, big blurry stones, stretched over each 12 m tile. The bake now
+	// runs on a copy whose base color is multiplied by max(Vertex Color, 1), which reads mesh data and changes nothing else.
+	// Whether a Vertex Color node feeds the base color (or the attributes). The engine's own analysis (AnalyzeMaterialProperty) needs a
+	// material resource a bare transient material does not have in a -nullrhi run, so the graph is walked instead.
+	TFunction<bool(const UMaterialExpression*, TSet<const UMaterialExpression*>&)> Reaches;
+	Reaches = [&Reaches](const UMaterialExpression* Node, TSet<const UMaterialExpression*>& Seen)
+	{
+		if (!Node || Seen.Contains(Node))
+		{
+			return false;
+		}
+		Seen.Add(Node);
+		if (Node->IsA<UMaterialExpressionVertexColor>())
+		{
+			return true;
+		}
+		for (int32 Index = 0; const FExpressionInput* Input = const_cast<UMaterialExpression*>(Node)->GetInput(Index); ++Index)
+		{
+			if (Reaches(Input->Expression, Seen))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	auto ReadsVertexData = [&Reaches](UMaterialInterface* Material)
+	{
+		const UMaterial* Base = Material->GetMaterial();
+		const UMaterialEditorOnlyData* Data = Base ? Base->GetEditorOnlyData() : nullptr;
+		if (!Data)
+		{
+			return false;
+		}
+		TSet<const UMaterialExpression*> Seen;
+		return Reaches(Base->bUseMaterialAttributes ? Data->MaterialAttributes.Expression : Data->BaseColor.Expression, Seen);
+	};
+
+	// Base color: the red of the texture coordinates, scaled (a texture read at a landscape's tiling, without the texture).
+	UMaterial* Ground = NewMaterial();
+	UMaterialExpressionTextureCoordinate* Coordinates = AddNode<UMaterialExpressionTextureCoordinate>(Ground);
+	UMaterialExpressionComponentMask* Red = AddNode<UMaterialExpressionComponentMask>(Ground);
+	Red->Input.Connect(0, Coordinates);
+	Red->R = true;
+	UMaterialExpressionMultiply* Scaled = AddNode<UMaterialExpressionMultiply>(Ground);
+	Scaled->A.Connect(0, Red);
+	Scaled->ConstB = 0.2f;
+	Ground->GetEditorOnlyData()->BaseColor.Connect(0, Scaled);
+	Ground->PostEditChange();
+	TestFalse(TEXT("the ground reads no mesh data, so GLTFExporter would bake it over UVs 0 to 1"), ReadsVertexData(Ground));
+
+	const TStrongObjectPtr<UMaterialInterface> Copy = FMantlePlaceAssets::ReadsVertexColorCopy(Ground);
+	if (!TestTrue(TEXT("a copy is made"), Copy.IsValid()))
+	{
+		return false;
+	}
+	TestTrue(TEXT("the copy reads mesh data, so it bakes on the card's UVs"), ReadsVertexData(Copy.Get()));
+	TestNotEqual(TEXT("it is a copy"), static_cast<UMaterialInterface*>(Ground), Copy.Get());
+	TestFalse(TEXT("the source still reads none"), ReadsVertexData(Ground));
+	const UMaterial* CopyBase = Copy->GetMaterial();
+	const UMaterialExpressionMultiply* Times = CopyBase ? Cast<UMaterialExpressionMultiply>(CopyBase->GetEditorOnlyData()->BaseColor.Expression) : nullptr;
+	if (TestNotNull(TEXT("the copy's base color is a multiply"), Times))
+	{
+		TestTrue(TEXT("of the source's base color"), Times->A.Expression && Times->A.Expression->IsA<UMaterialExpressionMultiply>() && Times->A.OutputIndex == 0);
+		const UMaterialExpressionMax* One = Cast<UMaterialExpressionMax>(Times->B.Expression);
+		TestTrue(TEXT("by max(Vertex Color, 1)"), One && One->A.Expression && One->A.Expression->IsA<UMaterialExpressionVertexColor>() && One->ConstB == 1.0f
+			&& !One->B.Expression);
+		// The red output (1) is a scalar, so the multiply compiles against a base color of any width; the RGB output (0) is a float3 and
+		// fails against a float2 or float4.
+		TestTrue(TEXT("whose Vertex Color side is the scalar red output"), One && One->A.OutputIndex == 1);
+	}
+
+	// A base color that is not three wide: a texture coordinate (float2) and a constant (float4) wired straight in, no mask.
+	{
+		UMaterial* Wide = NewMaterial();
+		UMaterialExpressionConstant4Vector* Four = AddNode<UMaterialExpressionConstant4Vector>(Wide);
+		Wide->GetEditorOnlyData()->BaseColor.Connect(0, Four);
+		Wide->PostEditChange();
+		UMaterial* Narrow = NewMaterial();
+		UMaterialExpressionTextureCoordinate* Straight = AddNode<UMaterialExpressionTextureCoordinate>(Narrow);
+		Narrow->GetEditorOnlyData()->BaseColor.Connect(0, Straight);
+		Narrow->PostEditChange();
+		for (UMaterial* Source : {Wide, Narrow})
+		{
+			const TStrongObjectPtr<UMaterialInterface> Made = FMantlePlaceAssets::ReadsVertexColorCopy(Source);
+			if (!TestTrue(TEXT("a copy is made of a base color that is not a float3"), Made.IsValid()))
+			{
+				continue;
+			}
+			TestTrue(TEXT("it reads mesh data"), ReadsVertexData(Made.Get()));
+			const UMaterial* MadeBase = Made->GetMaterial();
+			const UMaterialExpressionMultiply* Product = MadeBase ? Cast<UMaterialExpressionMultiply>(MadeBase->GetEditorOnlyData()->BaseColor.Expression) : nullptr;
+			const UMaterialExpressionMax* Floor = Product ? Cast<UMaterialExpressionMax>(Product->B.Expression) : nullptr;
+			TestTrue(TEXT("and multiplies by a scalar, so it compiles at any width"), Floor && Floor->A.OutputIndex == 1
+				&& Floor->A.Expression && Floor->A.Expression->IsA<UMaterialExpressionVertexColor>());
+		}
+	}
+
+	// Material attributes: the base color inside them is multiplied.
+	UMaterial* Attributes = NewMaterial();
+	Attributes->bUseMaterialAttributes = true;
+	UMaterialExpressionTextureCoordinate* AttributeCoordinates = AddNode<UMaterialExpressionTextureCoordinate>(Attributes);
+	UMaterialExpressionComponentMask* AttributeRed = AddNode<UMaterialExpressionComponentMask>(Attributes);
+	AttributeRed->Input.Connect(0, AttributeCoordinates);
+	AttributeRed->R = true;
+	UMaterialExpressionMakeMaterialAttributes* Make = AddNode<UMaterialExpressionMakeMaterialAttributes>(Attributes);
+	Make->BaseColor.Connect(0, AttributeRed);
+	Attributes->GetEditorOnlyData()->MaterialAttributes.Connect(0, Make);
+	Attributes->PostEditChange();
+	TestFalse(TEXT("attributes reading only texture coordinates read no mesh data"), ReadsVertexData(Attributes));
+	const TStrongObjectPtr<UMaterialInterface> AttributesCopy = FMantlePlaceAssets::ReadsVertexColorCopy(Attributes);
+	if (TestTrue(TEXT("an attributes copy is made"), AttributesCopy.IsValid()))
+	{
+		TestTrue(TEXT("its base color reads mesh data"), ReadsVertexData(AttributesCopy.Get()));
+	}
+
+	TestFalse(TEXT("nothing connected: no copy"), FMantlePlaceAssets::ReadsVertexColorCopy(NewMaterial()).IsValid());
+
+	FMantleBakeSurface Tiled;
+	Tiled.UvRange = 12;
+	TestTrue(TEXT("a UV range bake keys apart from the earlier ones, which stretched one quad"), Tiled.CacheTag().Contains(TEXT(" meshdata")));
 	return true;
 }
 
