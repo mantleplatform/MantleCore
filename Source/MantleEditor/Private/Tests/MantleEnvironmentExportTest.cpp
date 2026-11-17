@@ -5,6 +5,7 @@
 #include "MantleEnvironmentDefaults.h"
 #include "MantleEnvironmentExport.h"
 #include "MantlePlaceExporter.h"
+#include "MantlePlaceLimits.h"
 #include "MantlePlaceParser.h"
 #include "MantlePlaceSettingsActor.h"
 #include "MantlePlaceValidator.h"
@@ -1823,8 +1824,8 @@ bool FMantleEnvironmentSunCapOnlyWherePublishedTest::RunTest(const FString& Para
 		return false;
 	}
 
-	// How many directional-light intensity errors Check finds for a level with a 2000 sun (the cap is 200), a spawn point, and
-	// optionally a roof over it, a second 2000 light, and what Place Settings says.
+	// How many directional-light intensity errors Check finds for a level with a sun ten times over the cap, a spawn point, and
+	// optionally a roof over it, a second light as bright, and what Place Settings says.
 	struct FCase
 	{
 		bool bRoof = false;
@@ -1834,7 +1835,9 @@ bool FMantleEnvironmentSunCapOnlyWherePublishedTest::RunTest(const FString& Para
 		EMantlePlaceOutdoors Outdoors = EMantlePlaceOutdoors::Automatic;
 		bool bSunBrightness = false;
 	};
-	const auto Errors = [this, Cube](const FCase& Case, int32& OutErrors)
+	// Taken from the limit, so the test holds whatever the cap is in the light units in use.
+	const float OverCap = static_cast<float>(FMantlePlaceLimits::MaxDirectionalLightIntensity * 10.0);
+	const auto Errors = [this, Cube, OverCap](const FCase& Case, int32& OutErrors)
 	{
 		FTestWorld Test;
 		if (!TestNotNull(TEXT("a test world"), Test.World))
@@ -1847,7 +1850,7 @@ bool FMantleEnvironmentSunCapOnlyWherePublishedTest::RunTest(const FString& Para
 		{
 			return false;
 		}
-		Cast<UDirectionalLightComponent>(Sun->GetLightComponent())->SetIntensity(2000.0f);
+		Cast<UDirectionalLightComponent>(Sun->GetLightComponent())->SetIntensity(OverCap);
 		if (Case.bFill)
 		{
 			ADirectionalLight* Fill = Test.Spawn<ADirectionalLight>(TEXT("Fill"), FRotator(-30.0, 200.0, 0.0));
@@ -1855,7 +1858,7 @@ bool FMantleEnvironmentSunCapOnlyWherePublishedTest::RunTest(const FString& Para
 			{
 				return false;
 			}
-			Cast<UDirectionalLightComponent>(Fill->GetLightComponent())->SetIntensity(2000.0f);
+			Cast<UDirectionalLightComponent>(Fill->GetLightComponent())->SetIntensity(OverCap);
 		}
 		if (Case.bRoof)
 		{
@@ -1896,7 +1899,7 @@ bool FMantleEnvironmentSunCapOnlyWherePublishedTest::RunTest(const FString& Para
 	int32 Count = 0;
 	if (Errors(FCase{}, Count))
 	{
-		TestEqual(TEXT("an open-sky level's 2000 sun is not published, so it is not refused"), Count, 0);
+		TestEqual(TEXT("an open-sky level's over-cap sun is not published, so it is not refused"), Count, 0);
 	}
 	if (Errors(FCase{ .bFill = true }, Count))
 	{
@@ -1908,11 +1911,11 @@ bool FMantleEnvironmentSunCapOnlyWherePublishedTest::RunTest(const FString& Para
 	}
 	if (Errors(FCase{ .bSettings = true, .DirectSun = EMantlePlaceDirectSun::Never }, Count))
 	{
-		TestEqual(TEXT("a level whose Direct Sun is Never is sealed: its sun keeps the level's brightness, so 2000 is refused"), Count, 1);
+		TestEqual(TEXT("a level whose Direct Sun is Never is sealed: its sun keeps the level's brightness, so an over-cap one is refused"), Count, 1);
 	}
 	if (Errors(FCase{ .bRoof = true }, Count))
 	{
-		TestEqual(TEXT("a level whose spawn point is under a roof is sealed (the sun probe), so 2000 is refused"), Count, 1);
+		TestEqual(TEXT("a level whose spawn point is under a roof is sealed (the sun probe), so an over-cap one is refused"), Count, 1);
 	}
 	if (Errors(FCase{ .bRoof = true, .bFill = true }, Count))
 	{
@@ -1924,7 +1927,7 @@ bool FMantleEnvironmentSunCapOnlyWherePublishedTest::RunTest(const FString& Para
 	}
 	if (Errors(FCase{ .bSettings = true, .Outdoors = EMantlePlaceOutdoors::Interior }, Count))
 	{
-		TestEqual(TEXT("an interior has no sun: its directional light is a lamp that keeps its brightness, so 2000 is refused"), Count, 1);
+		TestEqual(TEXT("an interior has no sun: its directional light is a lamp that keeps its brightness, so an over-cap one is refused"), Count, 1);
 	}
 	return true;
 }
