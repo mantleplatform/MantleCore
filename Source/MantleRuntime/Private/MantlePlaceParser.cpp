@@ -776,7 +776,7 @@ namespace
 		OptionalBool(Props, TEXT("enabled"), P.bEnabled);
 	}
 
-	/** The mesh, materials, collision, shadow and draw distance a StaticMesh and an InstancedMesh share. */
+	/** The mesh, materials, collision, shadow, draw distance and visibility a StaticMesh and an InstancedMesh share. */
 	void ReadMeshProps(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Props, const FString& Path, FMantleStaticMeshProps& P)
 	{
 		RequireString(Ctx, Props, TEXT("mesh"), Path, P.Mesh);
@@ -792,6 +792,24 @@ namespace
 			Ctx.Fail(Join(Path, TEXT("collision")), FString::Printf(TEXT("'%s' is not a valid collision mode"), *Collision));
 		}
 		OptionalBool(Props, TEXT("castShadow"), P.bCastShadow);
+
+		// Collision only: never drawn, so it must collide, or it would be nothing at all.
+		if (const TSharedPtr<FJsonValue> Visible = Props->TryGetField(TEXT("visible")))
+		{
+			const FString VisiblePath = Join(Path, TEXT("visible"));
+			if (Visible->Type != EJson::Boolean)
+			{
+				Ctx.Fail(VisiblePath, TEXT("must be true or false"));
+			}
+			else
+			{
+				P.bVisible = Visible->AsBool();
+				if (!P.bVisible && P.Collision == EMantleCollision::None)
+				{
+					Ctx.Fail(VisiblePath, TEXT("false needs a collision other than none; an invisible mesh that does not collide is nothing"));
+				}
+			}
+		}
 
 		// A typed number in (0, MaxDrawDistance]; absent leaves 0, never culled.
 		if (const TSharedPtr<FJsonValue> Distance = Props->TryGetField(TEXT("drawDistance")))
@@ -3709,11 +3727,16 @@ namespace
 		{
 			RequireNoUnknownKeys(
 				Ctx, Props,
-				{ TEXT("mesh"), TEXT("materials"), TEXT("collision"), TEXT("castShadow"), TEXT("physics"), TEXT("surface"), TEXT("drawDistance") },
+				{ TEXT("mesh"), TEXT("materials"), TEXT("collision"), TEXT("castShadow"), TEXT("physics"), TEXT("surface"), TEXT("drawDistance"), TEXT("visible") },
 				Path);
 			FMantleStaticMeshProps P;
 			ReadMeshProps(Ctx, Props, Path, P);
 			ReadPhysicsProps(Ctx, Props, Path, P.Physics);
+			// A physics prop is always drawn (validate.py and the backend report it at the same path).
+			if (!P.bVisible && Props->HasField(TEXT("physics")) && P.Collision != EMantleCollision::None)
+			{
+				Ctx.Fail(Join(Path, TEXT("visible")), TEXT("false is not allowed beside a physics block; a physics prop is always drawn"));
+			}
 			// A physics body's surface is its physics.material, so the two together are refused
 			// (validate.py and the backend report it at the same path).
 			if (Props->HasField(TEXT("physics")) && Props->HasField(TEXT("surface")))
@@ -3733,7 +3756,7 @@ namespace
 		{
 			RequireNoUnknownKeys(
 				Ctx, Props,
-				{ TEXT("mesh"), TEXT("materials"), TEXT("collision"), TEXT("castShadow"), TEXT("surface"), TEXT("drawDistance"), TEXT("instances") },
+				{ TEXT("mesh"), TEXT("materials"), TEXT("collision"), TEXT("castShadow"), TEXT("surface"), TEXT("drawDistance"), TEXT("visible"), TEXT("instances") },
 				Path);
 			FMantleInstancedMeshProps P;
 			ReadMeshProps(Ctx, Props, Path, P.Mesh);

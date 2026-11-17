@@ -235,7 +235,19 @@ namespace
 		const FMantleAssetLibrary& Library = FMantleAssetLibrary::Get();
 
 		Component->SetStaticMesh(Mesh);
-		Component->SetCastShadow(Props.bCastShadow);
+		Component->SetCastShadow(Props.bCastShadow && Props.bVisible);
+		if (!Props.bVisible)
+		{
+			// Collision only: never added to the scene (no draw, shadow, Lumen card, distance field or ray tracing), and its
+			// collision made like any other below. Hidden in game, not invisible, so a place imported into the editor shows it
+			// there and exports it as collision only again.
+			Component->SetHiddenInGame(true);
+			Component->bCastHiddenShadow = false;
+			Component->bAffectDistanceFieldLighting = false;
+			Component->bAffectDynamicIndirectLighting = false;
+			Component->bAffectIndirectLightingWhileHidden = false;
+			Component->SetVisibleInRayTracing(false);
+		}
         // AStaticMeshActor defaults to inheriting collision from its mesh asset.
         // Select an explicit per-component profile before applying the place schema;
         // otherwise OnRegister restores mesh defaults after a mobility change/save
@@ -278,8 +290,9 @@ namespace
 
 		// A dedicated server never builds uploaded materials (nothing renders there; FMantlePlaceAssets
 		// resolved and downloaded only the meshes, for collision), so their slots are left as they are.
+		// A collision-only mesh is never drawn, so it loads none (FMantlePlaceAssets fetched none for it either).
 		const bool bDedicatedServer = World->GetNetMode() == NM_DedicatedServer;
-		for (int32 i = 0; i < Props.Materials.Num(); ++i)
+		for (int32 i = 0; Props.bVisible && i < Props.Materials.Num(); ++i)
 		{
 			if (Props.Materials[i].IsEmpty())
 			{
@@ -323,7 +336,7 @@ namespace
 	 */
 	void TrackShadowDistance(UWorld* World, UPrimitiveComponent* Component, const FMantleStaticMeshProps& Props)
 	{
-		if (Props.DrawDistance <= 0.0 || !Props.bCastShadow)
+		if (Props.DrawDistance <= 0.0 || !Props.bCastShadow || !Props.bVisible)
 		{
 			return;
 		}

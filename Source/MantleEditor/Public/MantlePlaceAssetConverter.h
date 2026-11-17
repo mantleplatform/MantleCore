@@ -903,7 +903,8 @@ public:
 	/** Converts every gathered asset into Out (appended, deduplicated). False when a conversion error stops the publish (Out.Issues says which). */
 	bool Convert(const FMantlePlaceDependencies& Dependencies, FMantlePlaceAssetSet& Out);
 
-	bool ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAssetSet& Out);
+	/** bCollisionOnly: every use of the mesh is collision only (never drawn), so no Lumen or Nanite data is baked for it. */
+	bool ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAssetSet& Out, bool bCollisionOnly = false);
 	bool ConvertMaterial(UMaterialInterface* Material, FMantlePlaceAssetSet& Out);
 
 	/**

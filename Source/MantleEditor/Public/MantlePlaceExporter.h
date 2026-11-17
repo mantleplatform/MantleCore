@@ -140,6 +140,9 @@ struct FMantleExportResult
 	/** Mesh entities and instance sets that got a drawDistance (GhzGarage/mantle#630); 0 when the target client does not read them. */
 	int32 DrawDistanceEntities = 0;
 
+	/** StaticMesh and InstancedMesh entities kept as collision only (visible false), in the root and the cells. */
+	int32 CollisionOnlyEntities = 0;
+
 	/** Static mesh actors Export folded into instance sets. */
 	FMantleGroupReport Grouping;
 
@@ -625,6 +628,13 @@ public:
 	 * never drawn itself; the place has no runtime virtual texture to write into, so it shows nothing.
 	 */
 	static bool IsShownInGame(const USceneComponent* Component);
+
+	/**
+	 * Whether Component publishes as a collision-only mesh (visible false): not shown in game (IsShownInGame), but colliding, with its
+	 * own collision settings, and not simulating physics (a physics prop is always drawn). A City Sample freeway's deck is solid only
+	 * through one. Hidden with no collision is nothing a player sees or touches, and is left out.
+	 */
+	static bool IsCollisionOnly(const UPrimitiveComponent* Component);
 
 	/** Every component IsExportedInstanceSource accepts in World, in actor then component order. */
 	static TArray<UInstancedStaticMeshComponent*> CollectInstanceSources(UWorld* World);

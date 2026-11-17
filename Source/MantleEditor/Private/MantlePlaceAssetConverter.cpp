@@ -2282,7 +2282,7 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 		{
 			return false;
 		}
-		ConvertMesh(Mesh.Mesh.Get(), Out);
+		ConvertMesh(Mesh.Mesh.Get(), Out, Mesh.bCollisionOnly);
 	}
 	if (Dependencies.MergedInstances.Num() > 0)
 	{
@@ -3425,7 +3425,7 @@ void FMantlePlaceAssetConverter::ConvertDependencyStep(const FMantlePlaceDepende
 {
 	if (Dependencies.Meshes.IsValidIndex(Step))
 	{
-		ConvertMesh(Dependencies.Meshes[Step].Mesh.Get(), Out);
+		ConvertMesh(Dependencies.Meshes[Step].Mesh.Get(), Out, Dependencies.Meshes[Step].bCollisionOnly);
 		return;
 	}
 	const int32 Material = Step - Dependencies.Meshes.Num();
@@ -3602,7 +3602,7 @@ namespace MantlePlaceAssetConverterPrivate
 	}
 }
 
-bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAssetSet& Out)
+bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAssetSet& Out, const bool bCollisionOnly)
 {
 	using namespace MantlePlaceAssetConverterPrivate;
 	if (!Mesh)
@@ -3622,7 +3622,8 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 	const int32 PublishedLOD = FMantlePlaceAssets::PublishedLODIndex(Mesh, Limits);
 	const int32 FromLOD = FMath::Max(PublishedLOD, 0);
 	const FString ReducedTag = PublishedLOD == INDEX_NONE ? FMantleMeshReduce::CacheTag(Limits) : FString();
-	const FString Salt = MeshCacheSalt(Limits, *Mesh, FromLOD, ReducedTag, bBakeNanite);
+	// A mesh only ever used as collision is never drawn: no Lumen or Nanite data is baked, and its cache entry says so.
+	const FString Salt = MeshCacheSalt(Limits, *Mesh, FromLOD, ReducedTag, bBakeNanite && !bCollisionOnly) + (bCollisionOnly ? TEXT(" collisiononly") : TEXT(""));
 	FString CacheKey, WhyNot;
 	bool bCacheable = ComputeCacheKey(Salt, FMantleMeshNaniteBake::CacheObjects(*Mesh), CacheKey, WhyNot);
 	FMantleConvertedMesh Converted;
@@ -3832,6 +3833,11 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 
 	// #149: its Lumen data, from the LOD0 just written (the geometry the client builds), each section as its slot's material
 	// draws it. None is no failure: the client builds the mesh without, and Check this place says why.
+	if (bCollisionOnly)
+	{
+		Converted.LumenNone = TEXT("it is collision only, never drawn");
+	}
+	else
 	{
 		TArray<FMantleMeshLumenSection> Sections;
 		for (const int32 Slot : Converted.Slots)
@@ -3851,7 +3857,11 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 	// Stage N: its Nanite data, from the mesh the converter was given (the creator's own at full detail even where the GLB is a smaller
 	// version of it, or the mirrored, spline-baked or cable-baked mesh the converter made), each section as its slot's material
 	// draws it. None is no failure: the game draws the plain model, and Check this place says why.
-	if (!bBakeNanite)
+	if (bCollisionOnly)
+	{
+		Converted.NaniteNone = TEXT("it is collision only, never drawn");
+	}
+	else if (!bBakeNanite)
 	{
 		Converted.NaniteNone = TEXT("this upload does not carry Nanite data");
 	}

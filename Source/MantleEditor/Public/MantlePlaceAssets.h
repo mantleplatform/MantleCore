@@ -308,6 +308,9 @@ struct MANTLEEDITOR_API FMantleGatheredMesh
 
 	/** Labels of the actors using it, in level order. */
 	TArray<FString> UsedBy;
+
+	/** Every use of it is collision only (FMantlePlaceExporter::IsCollisionOnly): never drawn, so it needs no Lumen or Nanite data. */
+	bool bCollisionOnly = false;
 };
 
 /**

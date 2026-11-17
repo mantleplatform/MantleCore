@@ -24,6 +24,9 @@ struct MANTLEEDITOR_API FMantleCheckReport
 	/** Mesh entities and instance sets that got a drawDistance (GhzGarage/mantle#630). */
 	int32 DrawDistances = 0;
 
+	/** Mesh entities and instance sets kept as collision only (hidden in game, colliding: visible false). */
+	int32 CollisionOnly = 0;
+
 	/** Static mesh actors folded into instance sets. */
 	int32 GroupedActors = 0;
 
@@ -58,7 +61,7 @@ struct MANTLEEDITOR_API FMantleCheckReport
  * way Publish writes it first (the same grouping and size measurement; assets carry the provisional ids an offline
  * export gives them). -Export=<dir> writes place.json and check.txt there. It ends with one line a harness can grep:
  *
- *   MANTLE_CHECK_DONE ready=<1|0> errors=<n> warnings=<n> placeBytes=<n> instances=<n> grouped=<n> drawDistances=<n> cells=<n>
+ *   MANTLE_CHECK_DONE ready=<1|0> errors=<n> warnings=<n> placeBytes=<n> instances=<n> grouped=<n> drawDistances=<n> cells=<n> collisionOnly=<n>
  *
  * and before it, one line per finding: MANTLE_CHECK_ERROR <text> and MANTLE_CHECK_WARNING <text>, plus the usual MANTLE_COVERAGE
  * lines. Mesh and material conversion is not run (it is Publish's Prepare step), so its findings are not in the report.

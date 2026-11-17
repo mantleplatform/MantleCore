@@ -106,6 +106,7 @@ FMantleCheckReport FMantleCheck::Evaluate(UWorld* World)
 		Report.PlaceBytes = Exported.PlaceBytes;
 		Report.Instances = Exported.InstanceTotal;
 		Report.DrawDistances = Exported.DrawDistanceEntities;
+		Report.CollisionOnly = Exported.CollisionOnlyEntities;
 		Report.GroupedActors = Exported.Grouping.Actors;
 		Report.Cells = Exported.CellReport.NumCells();
 		Report.CellEntities = Exported.CellReport.CellEntities;
@@ -135,9 +136,9 @@ FMantleCheckReport FMantleCheck::Evaluate(UWorld* World)
 
 FString FMantleCheck::DoneLine(const FMantleCheckReport& Report)
 {
-	return FString::Printf(TEXT("MANTLE_CHECK_DONE ready=%d errors=%d warnings=%d placeBytes=%lld instances=%lld grouped=%d drawDistances=%d cells=%d"),
+	return FString::Printf(TEXT("MANTLE_CHECK_DONE ready=%d errors=%d warnings=%d placeBytes=%lld instances=%lld grouped=%d drawDistances=%d cells=%d collisionOnly=%d"),
 		Report.IsReady() ? 1 : 0, Report.NumErrors(), Report.NumWarnings(), Report.PlaceBytes, Report.Instances, Report.GroupedActors,
-		Report.DrawDistances, Report.Cells);
+		Report.DrawDistances, Report.Cells, Report.CollisionOnly);
 }
 
 TArray<FString> FMantleCheck::CellLines(const FMantleExportResult& Exported)
@@ -299,7 +300,7 @@ namespace MantleCheckPrivate
 		TEXT("Mantle.Check [-Export=<folder>] -- runs Publish's check and export on the open level without publishing or ")
 		TEXT("contacting the server. Loads every World Partition cell as Publish does. -Export writes place.json and check.txt to the folder; ")
 		TEXT("Logs one line per finding ")
-		TEXT("(MANTLE_CHECK_ERROR / MANTLE_CHECK_WARNING) and ends with MANTLE_CHECK_DONE ready= errors= warnings= placeBytes= instances= ... drawDistances= (the meshes and instance sets given a draw distance)."),
+		TEXT("(MANTLE_CHECK_ERROR / MANTLE_CHECK_WARNING) and ends with MANTLE_CHECK_DONE ready= errors= warnings= placeBytes= instances= ... drawDistances= (the meshes and instance sets given a draw distance) ... collisionOnly= (those kept as invisible collision)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			FMantleCheck::Run(World, FMantleCheck::ParseArgs(Args));

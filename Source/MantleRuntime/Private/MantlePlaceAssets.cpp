@@ -1583,7 +1583,9 @@ void FMantlePlaceAssets::Start(const FMantlePlace& Place)
 			FRecord& Record = EnsureRecord(Props->Mesh, EAssetKind::Mesh);
 			Record.bCollision = Record.bCollision || Props->Collision != EMantleCollision::None;
 		}
-		for (const FString& Material : Props->Materials)
+		// A collision-only mesh draws nothing, so none of its materials is fetched.
+		static const TArray<FString> NoMaterials;
+		for (const FString& Material : Props->bVisible ? Props->Materials : NoMaterials)
 		{
 			if (!IsUploadedId(Material))
 			{

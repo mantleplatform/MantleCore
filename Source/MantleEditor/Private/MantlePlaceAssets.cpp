@@ -2220,6 +2220,7 @@ void FMantlePlaceDependencies::AddScatter(const AActor* Actor)
 			Existing->Name = Mesh->GetName();
 		}
 		Existing->UsedBy.AddUnique(Label);
+		Existing->bCollisionOnly = false; // drawn here
 		for (const int32 Slot : FMantlePlaceAssets::UploadSlots(Mesh))
 		{
 			UMaterialInterface* Material = Override(Slot);
@@ -2340,13 +2341,17 @@ void FMantlePlaceDependencies::AddComponent(const UStaticMeshComponent* Componen
 	{
 		// A library mesh brings its own materials; only overrides are published (and uploaded when not library). An override is still
 		// drawn with the colors painted on the component (DowntownWestModularPack's roads: the engine's plane, painted for its puddles).
-		for (int32 Slot = 0; Slot < Component->OverrideMaterials.Num(); ++Slot)
+		// A collision-only use publishes none.
+		for (int32 Slot = 0; !FMantlePlaceExporter::IsCollisionOnly(Component) && Slot < Component->OverrideMaterials.Num(); ++Slot)
 		{
 			AddSlotVertexColors(AddMaterial(Component->OverrideMaterials[Slot], Label), Mesh, Component, Slot);
 		}
 		return;
 	}
 
+	// A collision-only use (hidden in game, colliding) is never drawn: no material of it uploads, and the mesh needs no Lumen or
+	// Nanite data unless another use draws it.
+	const bool bCollisionOnly = Component && FMantlePlaceExporter::IsCollisionOnly(Component);
 	const FString Key = FMantlePlaceAssets::MeshKey(Mesh);
 	FMantleGatheredMesh* Existing = Meshes.FindByPredicate([&Key](const FMantleGatheredMesh& Entry) { return Entry.Key == Key; });
 	if (!Existing)
@@ -2355,9 +2360,18 @@ void FMantlePlaceDependencies::AddComponent(const UStaticMeshComponent* Componen
 		Existing->Mesh = const_cast<UStaticMesh*>(Mesh);
 		Existing->Key = Key;
 		Existing->Name = Mesh->GetName();
+		Existing->bCollisionOnly = bCollisionOnly;
+	}
+	else
+	{
+		Existing->bCollisionOnly = Existing->bCollisionOnly && bCollisionOnly;
 	}
 	Existing->UsedBy.AddUnique(Label);
 
+	if (bCollisionOnly)
+	{
+		return;
+	}
 	for (const int32 Slot : FMantlePlaceAssets::UploadSlots(Mesh))
 	{
 		AddSlotVertexColors(AddMaterial(FMantlePlaceAssets::EffectiveMaterial(Component, Slot), Label), Mesh, Component, Slot);
@@ -2892,6 +2906,7 @@ void FMantlePlaceDependencies::AddVehicleSpawn(const AActor* Actor)
 			GatheredMesh->Name = PartMesh->GetName();
 		}
 		GatheredMesh->UsedBy.AddUnique(Label);
+		GatheredMesh->bCollisionOnly = false; // drawn here
 		for (const int32 Slot : FMantlePlaceAssets::UploadSlots(PartMesh))
 		{
 			// Glass, tires, chrome, carbon fiber and lamps are Mantle's own materials: nothing to convert or upload for them.
