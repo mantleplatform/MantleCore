@@ -219,6 +219,26 @@ namespace MantleCollisionOnlyMeshTestPrivate
 		const UInstancedStaticMeshComponent* Instances = Cast<UInstancedStaticMeshComponent>(Blockers);
 		Test.TestEqual(Where + TEXT(": the blockers keep both instances"), Instances ? Instances->GetInstanceCount() : 0, 2);
 
+		// Real traces through the built world. The wall stands at y = 1000 (a 100 cm cube): a sight trace along +Y passes it, a pawn-channel
+		// trace stops at it, and a sight trace down hits the slab (at the origin; the deck above it has no collision).
+		// A few frames first, so the physics scene's query structure holds the new bodies.
+		World->bShouldSimulatePhysics = true;
+		for (int32 Frame = 0; Frame < 5; ++Frame)
+		{
+			++GFrameCounter;
+			World->Tick(LEVELTICK_All, 1.0f / 60.0f);
+		}
+		FHitResult Hit;
+		const FCollisionQueryParams Query(SCENE_QUERY_STAT(MantleCollisionOnlyTest), /*bTraceComplex*/ false);
+		const FVector WallFrom(0.0, 800.0, 0.0);
+		const FVector WallTo(0.0, 1200.0, 0.0);
+		const bool bSightHit = World->LineTraceSingleByChannel(Hit, WallFrom, WallTo, ECC_Visibility, Query);
+		Test.TestFalse(Where + TEXT(": a sight trace passes the invisible wall"), bSightHit && Hit.GetComponent() == Wall);
+		const bool bPawnHit = World->LineTraceSingleByChannel(Hit, WallFrom, WallTo, ECC_Pawn, Query);
+		Test.TestTrue(Where + TEXT(": a pawn-channel trace stops at it"), bPawnHit && Hit.GetComponent() == Wall);
+		const bool bDownHit = World->LineTraceSingleByChannel(Hit, FVector(0.0, 0.0, 400.0), FVector(0.0, 0.0, -400.0), ECC_Visibility, Query);
+		Test.TestTrue(Where + TEXT(": a trace down passes the deck and stops on the slab"), bDownHit && Hit.GetComponent() == Slab);
+
 		// The slab's listed material is not loaded (nothing draws it); the shown cube's is.
 		Test.TestNotNull(*(Where + TEXT(": the shown cube has a material")), Shown->GetMaterial(0));
 		Test.TestTrue(Where + TEXT(": the slab keeps the mesh's own material"), Slab->GetMaterial(0) == Slab->GetStaticMesh()->GetMaterial(0));
