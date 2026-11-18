@@ -626,7 +626,7 @@ bool FMantleEnvironmentExposureForTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("as fixed"), Out.Mode == EMantleExposureMode::Fixed);
 	TestFalse(TEXT("with no range"), Out.MinBrightness.IsSet());
 
-	// An explicit method: histogram is auto even in a fixed project, manual is fixed even in an auto one.
+	// An explicit method: histogram is auto even in a fixed project; manual is auto too, the game's camera metering for it.
 	FPostProcessSettings Metered;
 	Metered.bOverride_AutoExposureMethod = true;
 	Metered.AutoExposureMethod = EAutoExposureMethod::AEM_Histogram;
@@ -637,9 +637,11 @@ bool FMantleEnvironmentExposureForTest::RunTest(const FString& Parameters)
 	Carried.Reset();
 	Notes.Reset();
 	// Manual metering: the game's auto exposure meters, so the camera (the default f/4, 1/60 s, ISO 100, physical camera on)
-	// adds nothing. With no compensation of its own it is the game's own exposure: nothing to write.
-	TestFalse(TEXT("manual metering with no compensation is the game's own"), FMantleEnvironmentExport::ExposureFor(&Metered, Auto, Out, Carried, Notes));
+	// adds nothing. With no compensation of its own it is the game's own exposure, carried as auto so the creator is told.
+	TestTrue(TEXT("manual metering with no compensation is reported"), FMantleEnvironmentExport::ExposureFor(&Metered, Auto, Out, Carried, Notes));
+	TestTrue(TEXT("as auto"), Out.Mode == EMantleExposureMode::Auto);
 	TestEqual(TEXT("with no bias"), Out.Bias, 0.0);
+	TestTrue(TEXT("saying the game meters"), Carried.Num() == 1 && Carried[0].Contains(TEXT("auto exposure")));
 	TestEqual(TEXT("and nothing clamped"), Notes.Num(), 0);
 	// With one, only the compensation is carried (relative to the project's 1), whether the physical camera is on or off.
 	Metered.bOverride_AutoExposureBias = true;
@@ -651,6 +653,7 @@ bool FMantleEnvironmentExposureForTest::RunTest(const FString& Parameters)
 		Carried.Reset();
 		Notes.Reset();
 		TestTrue(TEXT("manual metering with a compensation is carried"), FMantleEnvironmentExport::ExposureFor(&Metered, Auto, Out, Carried, Notes));
+		TestTrue(TEXT("as auto"), Out.Mode == EMantleExposureMode::Auto);
 		TestEqual(TEXT("as its compensation less the project's, the camera left out"), Out.Bias, 1.0);
 		TestTrue(TEXT("saying the game meters"), Carried.Num() == 1 && Carried[0].Contains(TEXT("auto exposure")) && Carried[0].Contains(TEXT("bias +1")));
 		TestEqual(TEXT("with no clamp"), Notes.Num(), 0);

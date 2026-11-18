@@ -1176,11 +1176,12 @@ bool FMantleEnvironmentExport::ExposureFor(const FPostProcessSettings* Settings,
 	FString Metering;
 	// The game's camera is Unreal's auto exposure, which meters every scene itself; the place's bias is its compensation. A
 	// manual camera's f-stop, shutter speed and ISO set a fixed exposure for the level's own light, which the game's metering
-	// already does, so only the volume's compensation is carried, as with any other metering.
+	// already does, so a manual volume is carried as auto with only its compensation, and always reported, so the creator
+	// knows their camera was replaced.
 	if (Settings && Settings->bOverride_AutoExposureMethod)
 	{
-		bAuto = Settings->AutoExposureMethod != EAutoExposureMethod::AEM_Manual;
-		if (!bAuto)
+		bAuto = true;
+		if (Settings->AutoExposureMethod == EAutoExposureMethod::AEM_Manual)
 		{
 			Metering = TEXT("manual metering becomes the game's auto exposure, so only its compensation is carried");
 		}

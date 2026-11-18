@@ -117,9 +117,9 @@ public:
 	 * project's default stands). False when there is nothing to write: a fixed exposure with no bias, which is the game's
 	 * own. Carried says what Out holds, in plain words, and Notes what of the exposure was not carried and why.
 	 *
-	 * Auto when the volume overrides the metering method to anything but manual, or leaves it and the project's default is
-	 * auto; fixed otherwise. The bias is the volume's compensation less the project's own (a volume that overrides none has
-	 * the project's, so 0), clamped to the place's range. The brightness range is carried with auto, for each end the volume
+	 * Auto when the volume overrides the metering method (manual too: the game's auto exposure meters for a manual camera,
+	 * so only its compensation is carried), or leaves it and the project's default is auto; fixed otherwise. The bias is
+	 * the volume's compensation less the project's own (a volume that overrides none has the project's, so 0), clamped to the place's range. The brightness range is carried with auto, for each end the volume
 	 * overrides, unless the project's units are EV100.
 	 */
 	static bool ExposureFor(const FPostProcessSettings* Settings, const FMantleExposureProject& Project, FMantleExposureSettings& Out,
