@@ -64,7 +64,7 @@ interface Entity {
 	lightEnabled: boolean;
 	/** A spot light's fully lit cone, in degrees, clamped to 0..90. Errors on other lights. Replicates like LightEnabled. */
 	lightInnerCone: number;
-	/** How bright the light is, in its own units: a place light keeps the units it was made with, a Lights:Spawn light uses candelas, and a directional light is a sun in sun units (1 is 32,768 lux; 3.5, a clear noon sun, is the default sun). Clamped to 0..100000 (0..200 for a directional light). Replicates like LightEnabled. */
+	/** How bright the light is, in its own units: a place light keeps the units it was made with, a Lights:Spawn light uses candelas, and a directional light is a sun in sun units (1 is 32,768 lux; 3.5, a clear noon sun, is the default sun), except in an interior place, which has no sun, where it is a lamp in lux. Clamped to 0..100000 (0..200 for a directional light). Replicates like LightEnabled. */
 	lightIntensity: number;
 	/** "Point", "Spot" or "Directional" when the entity is a light, nil for anything else. Read-only. */
 	readonly lightKind: string | undefined;
@@ -1205,7 +1205,7 @@ const Leaderboard: LeaderboardService;
 
 /** Spawn lights at runtime (server only). Change any light through its Entity's Light members. */
 interface LightsService {
-	/** Spawn a light every player sees and return it as an Entity. kind is "Point", "Spot" or "Directional". props sets how it starts: Color ("#RRGGBB", white by default), Intensity (candelas, 8 by default; sun units for a directional light, where 3.5 is a clear noon sun, 10 by default), Range (cm, 1000 by default), InnerCone and OuterCone (degrees, 0 and 44 by default), Enabled, CastShadow (off by default: shadows are costly) and Rotation (a spot light points straight down and a directional light down at 45 degrees unless you give one). Numbers out of range are clamped. At most 64 spawned lights exist at once in a place; Destroy one to make room. (server only) */
+	/** Spawn a light every player sees and return it as an Entity. kind is "Point", "Spot" or "Directional". props sets how it starts: Color ("#RRGGBB", white by default), Intensity (candelas, 8 by default; sun units for a directional light, where 3.5 is a clear noon sun, 10 by default; lux in an interior place), Range (cm, 1000 by default), InnerCone and OuterCone (degrees, 0 and 44 by default), Enabled, CastShadow (off by default: shadows are costly) and Rotation (a spot light points straight down and a directional light down at 45 degrees unless you give one). Numbers out of range are clamped. At most 64 spawned lights exist at once in a place; Destroy one to make room. (server only) */
 	spawn(kind: string, position: Vector3, props?: { color?: string | undefined; intensity?: number | undefined; range?: number | undefined; innerCone?: number | undefined; outerCone?: number | undefined; enabled?: boolean | undefined; castShadow?: boolean | undefined; rotation?: Vector3 | undefined } | undefined): Entity;
 }
 const Lights: LightsService;

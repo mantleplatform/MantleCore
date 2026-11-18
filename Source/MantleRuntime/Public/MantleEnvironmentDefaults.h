@@ -243,13 +243,26 @@ namespace MantleEnvironmentDefaults
 	// and the height fog's colors stay as they were. Mantle does the same with LightUnitScale as the ratio.
 	//
 	// What is authored in Mantle units (x LightUnitScale): directional lights (a place's sun and any other, a script's),
-	// which are suns. Local lights (point, spot, rect), emissive materials and effects are authored in real units already:
+	// which are suns, except in an interior (settings.environment.outdoors false), which has no sun: there a directional
+	// light is the creator's lamp, in lux as the level had it (DirectionalLightLux). Local lights (point, spot, rect), emissive materials and effects are authored in real units already:
 	// Mantle's night camera (the old fixed exposure plus its 1.5-stop night lift) is the auto exposure's night camera to
 	// within a tenth of a stop, and they were tuned at night, where they matter; by day they are as weak against the sun
 	// as real lamps are.
 
 	/** A directional light's Mantle units to lux: the old default sun 3.5 x 2^15 = 114,688 lux, a clear noon sun. */
 	constexpr float LightUnitScale = 32768.0f;
+
+	/** A directional light's authored intensity in lux: a sun's Mantle units x LightUnitScale, or an interior lamp's lux as it is. */
+	inline double DirectionalLightLux(const double Authored, const bool bInterior)
+	{
+		return bInterior ? Authored : Authored * LightUnitScale;
+	}
+
+	/** DirectionalLightLux backwards: what a place or a script authors for a directional light lit at Lux. */
+	inline double DirectionalLightAuthored(const double Lux, const bool bInterior)
+	{
+		return bInterior ? Lux : Lux / LightUnitScale;
+	}
 
 	/**
 	 * How much of the ratio (as a power: ratio ^ share) the pack keeps as the sun sets, by the sun's elevation (the pack's
