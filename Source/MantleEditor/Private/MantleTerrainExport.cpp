@@ -416,7 +416,7 @@ FMantleTerrainSource FMantleTerrainExport::CutTile(const FMantleTerrainSource& S
 	Out.bMaterialRead = Source.bMaterialRead;
 	Out.MaterialProblem = Source.MaterialProblem;
 	Out.LandscapeMaterial = Source.LandscapeMaterial;
-	Out.LandscapeMaterialUvRepeat = Source.LandscapeMaterialUvRepeat;
+	Out.LandscapeMaterialFinestRepeat = Source.LandscapeMaterialFinestRepeat;
 	Out.LayerColors = Source.LayerColors;
 	Out.WaterBodiesCarving = Source.WaterBodiesCarving;
 	Out.bCarveRefreshed = Source.bCarveRefreshed;
@@ -724,7 +724,7 @@ bool FMantleTerrainExport::ReadLandscape(const AActor* Actor, FMantleTerrainSour
 			// Its layers could not be read, so ChooseLayers bakes the material whole: over how many quads its textures take to repeat.
 			if (Out.LandscapeMaterial && (!Out.bMaterialRead || Out.MaterialRead.Layers.Num() == 0))
 			{
-				FMantleLandscapeMaterialReader::LargestUvRepeat(Out.LandscapeMaterial, Out.SpacingX, Out.LandscapeMaterialUvRepeat);
+				FMantleLandscapeMaterialReader::FinestUvRepeat(Out.LandscapeMaterial, Out.SpacingX, Out.LandscapeMaterialFinestRepeat);
 			}
 			for (const FMantleLandscapeLayerLook& Look : Out.MaterialRead.Layers)
 			{
@@ -840,14 +840,28 @@ TArray<int32> FMantleTerrainExport::FoldChannels(const TArray<FMantleTerrainLaye
 	return Channels;
 }
 
-int32 FMantleTerrainExport::LandscapeBakeUvRange(const FMantleTerrainSource& Source)
+double FMantleTerrainExport::LandscapeBakeUvRange(const FMantleTerrainSource& Source)
 {
-	if (Source.LandscapeMaterialUvRepeat <= 0.0)
+	if (Source.LandscapeMaterialFinestRepeat <= 0.0)
 	{
 		return MaxLandscapeBakeUvRange;
 	}
-	// A hair over a whole number is that number: 0.1 as a float is 10.0000001 quads.
-	return FMath::Clamp(FMath::CeilToInt(Source.LandscapeMaterialUvRepeat - 0.001), 1, MaxLandscapeBakeUvRange);
+	double Quads = Source.LandscapeMaterialFinestRepeat;
+	// A texture finer than a quad: as many whole repeats as fill a quad (a bake covers at least one).
+	if (Quads < 1.0)
+	{
+		Quads *= FMath::CeilToDouble(1.0 / Quads - 0.001);
+	}
+	// A hair off a whole number is that number: 0.1 as a float is 10.0000001 quads.
+	const double Whole = FMath::RoundToDouble(Quads);
+	if (FMath::Abs(Quads - Whole) < 0.001)
+	{
+		Quads = Whole;
+	}
+	// A texture that repeats over more than the cap is coarse: it has few pixels a metre whatever the bake, so the bake covers it whole (one
+	// repeat, no seam) up to the longest tiling a layer has.
+	const double Longest = Source.SpacingX > 0.0 ? FMath::Max(MaxLandscapeBakeUvRange, 100000.0 / Source.SpacingX) : MaxLandscapeBakeUvRange;
+	return FMath::Clamp(Quads, 1.0, Longest);
 }
 
 bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSource& Source, const FString& Label,
@@ -873,9 +887,10 @@ bool FMantleTerrainExport::ChooseLayers(UWorld* World, const FMantleTerrainSourc
 	};
 	const TCHAR* const Where = TEXT("Mantle Place Settings (Tools > Mantle > Place settings) > Terrain Layers");
 
-	// A landscape material Mantle cannot read layer by layer is baked whole as the layer's look, over enough landscape quads that its
-	// textures repeat inside the bake (a 0 to 1 bake would hold one quad's worth of a texture tiled by 0.1, seamed at every quad).
-	const int32 BakeUvRange = LandscapeBakeUvRange(Source);
+	// A landscape material Mantle cannot read layer by layer is baked whole as the layer's look, over the landscape quads its finest texture
+	// takes to repeat, so that texture repeats whole inside the bake and the bake's pixels go to the ground's detail (a 0 to 1 bake would hold
+	// one quad's worth of a texture tiled by 0.1, seamed at every quad).
+	const double BakeUvRange = LandscapeBakeUvRange(Source);
 	const double BakeTilingCm = FMath::Clamp(BakeUvRange * Source.SpacingX, 1.0, 100000.0);
 	auto BakeLandscapeMaterial = [&Source, BakeUvRange, BakeTilingCm](FMantleTerrainLayerChoice& Choice)
 	{

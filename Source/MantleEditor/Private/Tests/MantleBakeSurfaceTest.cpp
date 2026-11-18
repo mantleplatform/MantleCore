@@ -13,12 +13,14 @@
 #include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionConstant4Vector.h"
+#include "Materials/MaterialExpressionDivide.h"
 #include "Materials/MaterialExpressionMakeMaterialAttributes.h"
 #include "Materials/MaterialExpressionMax.h"
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureSample.h"
 #include "Materials/MaterialExpressionVertexColor.h"
+#include "Materials/MaterialExpressionWorldPosition.h"
 #include "Misc/AutomationTest.h"
 #include "Rendering/ColorVertexBuffer.h"
 #include "StaticMeshAttributes.h"
@@ -277,7 +279,7 @@ bool FMantleBakeSurfaceConverterKeepsColorForVertexColorMaterialsTest::RunTest(c
 	Tiled.UvRange = 10;
 	Tiled.VertexColor = FColor(10, 20, 40, 255);
 	const FMantleBakeSurface Kept = FMantlePlaceAssetConverter::EffectiveBakeSurface(FMantlePlaceAssets::AnalyzeMaterial(NewMaterial()), Tiled);
-	TestEqual(TEXT("the range is kept"), Kept.UvRange, 10);
+	TestEqual(TEXT("the range is kept"), Kept.UvRange, 10.0);
 	TestTrue(TEXT("the color is not"), Kept.VertexColor == FColor::White);
 	return true;
 }
@@ -375,11 +377,11 @@ bool FMantleBakeSurfaceScaleTransformsTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleBakeSurfaceLargestUvRepeatTest,
-	"Mantle.Editor.BakeSurface.LandscapeMaterialLargestUvRepeat",
+	FMantleBakeSurfaceFinestUvRepeatTest,
+	"Mantle.Editor.BakeSurface.LandscapeMaterialFinestUvRepeat",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleBakeSurfaceLargestUvRepeatTest::RunTest(const FString& Parameters)
+bool FMantleBakeSurfaceFinestUvRepeatTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleBakeSurfaceTestPrivate;
 
@@ -401,11 +403,57 @@ bool FMantleBakeSurfaceLargestUvRepeatTest::RunTest(const FString& Parameters)
 	Material->GetEditorOnlyData()->Normal.Connect(0, Plain);
 
 	double Units = 0.0;
-	TestTrue(TEXT("its repeat is read"), FMantleLandscapeMaterialReader::LargestUvRepeat(Material, 100.0, Units));
-	TestEqual(TEXT("the coarsest texture repeats every 10 quads"), Units, 10.0, 1.0e-4);
+	TestTrue(TEXT("its repeat is read"), FMantleLandscapeMaterialReader::FinestUvRepeat(Material, 100.0, Units));
+	TestEqual(TEXT("the base color decides: it repeats every 10 quads, though the normal's texture repeats every quad"), Units, 10.0, 1.0e-4);
+
+	// Only a normal map is read when the base color has no texture.
+	UMaterial* NormalOnly = NewMaterial();
+	UMaterialExpressionTextureSample* OnlyNormal = AddNode<UMaterialExpressionTextureSample>(NormalOnly);
+	OnlyNormal->Texture = Texture;
+	NormalOnly->GetEditorOnlyData()->Normal.Connect(0, OnlyNormal);
+	double NormalUnits = 0.0;
+	TestTrue(TEXT("a lone normal map's repeat is read"), FMantleLandscapeMaterialReader::FinestUvRepeat(NormalOnly, 100.0, NormalUnits));
+	TestEqual(TEXT("it repeats every quad"), NormalUnits, 1.0, 1.0e-4);
+
+	// Only the texture tiled by 0.1: it repeats every 10 quads, and is the finest there is.
+	UMaterial* Tiled = NewMaterial();
+	UMaterialExpressionTextureCoordinate* TiledCoordinates = AddNode<UMaterialExpressionTextureCoordinate>(Tiled);
+	UMaterialExpressionConstant* TiledScale = AddNode<UMaterialExpressionConstant>(Tiled);
+	TiledScale->R = 0.1f;
+	UMaterialExpressionMultiply* TiledMultiply = AddNode<UMaterialExpressionMultiply>(Tiled);
+	TiledMultiply->A.Connect(0, TiledCoordinates);
+	TiledMultiply->B.Connect(0, TiledScale);
+	UMaterialExpressionTextureSample* TiledColor = AddNode<UMaterialExpressionTextureSample>(Tiled);
+	TiledColor->Texture = Texture;
+	TiledColor->Coordinates.Connect(0, TiledMultiply);
+	Tiled->GetEditorOnlyData()->BaseColor.Connect(0, TiledColor);
+	double TenUnits = 0.0;
+	TestTrue(TEXT("a lone tiled texture's repeat is read"), FMantleLandscapeMaterialReader::FinestUvRepeat(Tiled, 100.0, TenUnits));
+	TestEqual(TEXT("it repeats every 10 quads"), TenUnits, 10.0, 1.0e-4);
+
+	// The same texture mapped by world position, divided by 1135 cm: its repeat is 1135 cm, on 60 cm quads 18.9 of them. An unscaled
+	// world position (1 cm) is no information and does not make the finest 1 cm.
+	UMaterial* World = NewMaterial();
+	UMaterialExpressionWorldPosition* Position = AddNode<UMaterialExpressionWorldPosition>(World);
+	UMaterialExpressionConstant* WorldScale = AddNode<UMaterialExpressionConstant>(World);
+	WorldScale->R = 1135.0f;
+	UMaterialExpressionDivide* WorldDivide = AddNode<UMaterialExpressionDivide>(World);
+	WorldDivide->A.Connect(0, Position);
+	WorldDivide->B.Connect(0, WorldScale);
+	UMaterialExpressionTextureSample* WorldColor = AddNode<UMaterialExpressionTextureSample>(World);
+	WorldColor->Texture = Texture;
+	WorldColor->Coordinates.Connect(0, WorldDivide);
+	World->GetEditorOnlyData()->BaseColor.Connect(0, WorldColor);
+	UMaterialExpressionTextureSample* Unscaled = AddNode<UMaterialExpressionTextureSample>(World);
+	Unscaled->Texture = Texture;
+	Unscaled->Coordinates.Connect(0, Position);
+	World->GetEditorOnlyData()->Normal.Connect(0, Unscaled);
+	double WorldUnits = 0.0;
+	TestTrue(TEXT("a world-mapped texture's repeat is read"), FMantleLandscapeMaterialReader::FinestUvRepeat(World, 60.0, WorldUnits));
+	TestEqual(TEXT("1135 cm on 60 cm quads"), WorldUnits, 1135.0 / 60.0, 1.0e-4);
 
 	double None = -1.0;
-	TestFalse(TEXT("a material with no texture says nothing"), FMantleLandscapeMaterialReader::LargestUvRepeat(NewMaterial(), 100.0, None));
+	TestFalse(TEXT("a material with no texture says nothing"), FMantleLandscapeMaterialReader::FinestUvRepeat(NewMaterial(), 100.0, None));
 	TestEqual(TEXT("and gives 0"), None, 0.0);
 	return true;
 }
@@ -611,6 +659,23 @@ bool FMantleBakeSurfaceUvRangeReadsCardTest::RunTest(const FString& Parameters)
 	FMantleBakeSurface Tiled;
 	Tiled.UvRange = 12;
 	TestTrue(TEXT("a UV range bake keys apart from the earlier ones, which stretched one quad"), Tiled.CacheTag().Contains(TEXT(" meshdata")));
+
+	// A landscape layer's bake: a card as many cm a side as the layer tiles, over a range that is not a whole number of quads.
+	FMantleBakeSurface Layer;
+	Layer.UvRange = 18.9167;
+	Layer.WorldTileCm = 1135.0;
+	Layer.bTerrainLayer = true;
+	TestFalse(TEXT("a landscape layer's bake is not the plain surface"), Layer.IsPlain());
+	TestTrue(TEXT("it covers terrain"), Layer.CoversTerrain());
+	TestTrue(TEXT("its key says the card has its own size"), Layer.CacheTag().Contains(TEXT("terrain=")) && Layer.CacheTag().Contains(TEXT("worldtile=1135")));
+	FMantleBakeSurface Unit = Layer;
+	Unit.UvRange = 1.0;
+	TestTrue(TEXT("a layer over a single quad still covers terrain, so its material still reads the card"), Unit.CoversTerrain() && Unit.CacheTag().Contains(TEXT(" meshdata")));
+	Tiled.UvRange = Layer.UvRange;
+	TestNotEqual(TEXT("the same range as a plain UV range bake keys apart"), Layer.CacheTag(), Tiled.CacheTag());
+	FMantlePlaceMaterialDocument LayerDocument;
+	FMantlePlaceAssetConverter::ApplyWorldTile(LayerDocument, Layer);
+	TestFalse(TEXT("a landscape layer is tiled by the Terrain, not published worldAligned"), LayerDocument.bWorldAligned);
 	return true;
 }
 

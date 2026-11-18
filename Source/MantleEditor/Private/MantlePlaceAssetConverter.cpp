@@ -1920,7 +1920,7 @@ namespace MantlePlaceAssetConverterPrivate
 		// The bake writes the color back out as sRGB bytes (FMeshMaterialRenderItem::PopulateWithMeshData), so the corners hold the bytes
 		// as linear: the Vertex Color node then reads exactly the bytes over 255, as it does on the meshes the color was averaged from.
 		const FVector4f Color(FLinearColor(Surface.VertexColor));
-		const float Range = static_cast<float>(FMath::Max(Surface.UvRange, 1));
+		const float Range = static_cast<float>(FMath::Max(Surface.UvRange, 1.0));
 		const float Side = Surface.WorldTileCm > 0.0 ? static_cast<float>(Surface.WorldTileCm) : 100.0f;
 		const float Shift = static_cast<float>(Surface.WorldShiftCm);
 		TArray<FVertexInstanceID> Corners;
@@ -2041,7 +2041,7 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 		int32 Fallback = 0;
 		bool bOverride = ChooseFixedBakeSize(TextureSizes, Settings, Fallback);
 		// A bake over many landscape quads holds that many repeats of its textures: give it the most pixels a bake may have.
-		if (Settings.Surface.UvRange > 1)
+		if (Settings.Surface.CoversTerrain())
 		{
 			bOverride = true;
 			Fallback = static_cast<int32>(FMath::RoundUpToPowerOfTwo(static_cast<uint32>(MaxBake) + 1) / 2);
@@ -2085,7 +2085,7 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 	{
 		// A bake over a UV range must read the card's UVs, so a material that reads no mesh data (a landscape material reads only texture
 		// coordinates) is baked as a copy that does: without it GLTFExporter bakes UVs 0 to 1, one landscape quad stretched over the tile.
-		if (Settings.Surface.UvRange > 1)
+		if (Settings.Surface.CoversTerrain())
 		{
 			ReadsCard = FMantlePlaceAssets::ReadsVertexColorCopy(Material);
 		}
@@ -3916,14 +3916,14 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, F
 FMantleBakeSurface FMantlePlaceAssetConverter::EffectiveBakeSurface(const FMantleMaterialAnalysis& Analysis, const FMantleBakeSurface& Surface)
 {
 	FMantleBakeSurface Effective = Surface;
-	Effective.UvRange = FMath::Max(Surface.UvRange, 1);
+	Effective.UvRange = FMath::Max(Surface.UvRange, 1.0);
 	if (!Analysis.Has(EMantleMaterialLoss::VertexColor) || Analysis.bVertexColorTintsBaseColor)
 	{
 		Effective.VertexColor = FColor::White;
 	}
 	// Mapped by world position, and not the plain pattern kept from its source textures (Fidelity2's worldAligned): bake one world tile.
 	// A landscape layer (a UV range) keeps its own tiling.
-	if (Analysis.Has(EMantleMaterialLoss::WorldAligned) && !Analysis.Fidelity2.bWorldAligned && Effective.UvRange <= 1)
+	if (Analysis.Has(EMantleMaterialLoss::WorldAligned) && !Analysis.Fidelity2.bWorldAligned && !Effective.CoversTerrain())
 	{
 		Effective.WorldTileCm = FMantleBakeSurface::DefaultWorldTileCm;
 	}
@@ -3994,7 +3994,8 @@ void FMantlePlaceAssetConverter::ApplyWorldTile(FMantlePlaceMaterialDocument& Do
 {
 	// The bake is one world tile (Surface.WorldTileCm a side): drawn by world position it repeats as the source did, where over each mesh's
 	// UVs it was stretched once across the mesh (DowntownWestModularPack's roads). The format carries one such mapping, opaque only.
-	if (Surface.WorldTileCm <= 0.0 || Doc.bWorldAligned || Doc.bWind || Doc.bLayerBlend || Doc.bWater || Doc.AlphaMode != TEXT("opaque"))
+	// A landscape layer's bake is tiled by the Terrain (its layer's tiling), not by the material's own mapping.
+	if (Surface.WorldTileCm <= 0.0 || Surface.bTerrainLayer || Doc.bWorldAligned || Doc.bWind || Doc.bLayerBlend || Doc.bWater || Doc.AlphaMode != TEXT("opaque"))
 	{
 		return;
 	}
@@ -4216,7 +4217,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	FlattenSettings.Surface = Surface;
 	if (!Surface.IsPlain())
 	{
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: baked on a card with vertex color %s and UVs 0 to %d%s"), *Material->GetName(), *Surface.VertexColor.ToHex(), Surface.UvRange,
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: baked on a card with vertex color %s and UVs 0 to %g%s"), *Material->GetName(), *Surface.VertexColor.ToHex(), Surface.UvRange,
 			Surface.WorldTileCm > 0.0 ? *FString::Printf(TEXT(", %g cm a side for its world mapping"), Surface.WorldTileCm) : TEXT(""));
 	}
 	if (Flattener->Flatten(Neutral.IsValid() ? Neutral.Get() : Material, FlattenSettings, Flattened, Messages, FlattenError))
@@ -4248,7 +4249,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 			Out.Issues.Add(WarningIssue(FString::Printf(TEXT("Material '%s' is set to Translucent, but nothing in it is see-through (its opacity is always 1), so it publishes as a solid surface."), *Converted.Name),
 				TEXT("Nothing needs fixing. Set its Blend Mode to Opaque to keep Unreal's view of it the same.")));
 		}
-		if (Surface.WorldTileCm > 0.0)
+		if (Surface.WorldTileCm > 0.0 && !Surface.bTerrainLayer)
 		{
 			// The analysis flags any world position in the graph; many such materials (Downtown's trim sheets, signs, brick walls) map their
 			// textures by UV and use it only for a noise mask. Bake once more with the card moved: only a bake that really changes is world-mapped.
