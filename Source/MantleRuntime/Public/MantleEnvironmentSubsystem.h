@@ -575,6 +575,13 @@ private:
 	/** The exposure floor the volume last got (EV100); the tick rewrites the volume when the sun moves it by a tenth. */
 	float AppliedExposureFloor = TNumericLimits<float>::Lowest();
 
+	/** Clients: the clock's hour last tick (below 0 before the first), and until when (platform seconds) Lumen relights fully. */
+	double LastTickHour = -1.0;
+	double LumenRelightUntilSeconds = 0.0;
+
+	/** Clients: after a clock jump, Lumen relights its whole scene for MantleEnvironmentDefaults::ClockJumpRelightSeconds. */
+	void UpdateClockJumpRelight();
+
 	/** SetWeatherFogTint's color and share. */
 	FLinearColor WeatherFogTint = FLinearColor::Black;
 	float WeatherFogTintAmount = 0.0f;

@@ -21,6 +21,7 @@
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/CommandLine.h"
@@ -189,6 +190,7 @@ void UMantleEnvironmentSubsystem::Tick(float DeltaTime)
 	// with the state it last used, not with what this call saw change: UpdateWeatherSky and UpdatePostProcess read the state
 	// too, and whichever runs first after a change (a forced refresh from outside the tick, say) would otherwise use it up.
 	RefreshSkyLightState();
+	UpdateClockJumpRelight();
 	if (!bPostProcessSkyLightStateKnown || PostProcessSkyLightState != SkyLightState
 		|| FMath::Abs(MantleEnvironmentDefaults::ExposureFloorFor(FMantleSkyClock::SunElevationDegrees(GetTimeOfDay())) - AppliedExposureFloor) > 0.1f)
 	{
@@ -1281,6 +1283,45 @@ void UMantleEnvironmentSubsystem::SetPlaceExposure(const TOptional<FMantleExposu
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_ENV_EXPOSURE bias=%.3f"), Exposure->Bias);
 	}
 	UpdatePostProcess();
+}
+
+void UMantleEnvironmentSubsystem::UpdateClockJumpRelight()
+{
+	const UWorld* World = GetWorld();
+	if (!World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	// Lumen's own check (r.LumenScene.PropagateGlobalLightingChange) speeds up one frame when the sun or the sky light changes
+	// 4 times over; its surface cache and radiance cache still relight distant surfaces a slice a frame, nearest first. These
+	// two make it relight everything every frame while they are on (a second of extra GPU work, after a jump only).
+	static IConsoleVariable* const SceneLighting = IConsoleManager::Get().FindConsoleVariable(TEXT("r.LumenScene.Lighting.ForceLightingUpdate"));
+	static IConsoleVariable* const RadianceCache = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Lumen.RadianceCache.ForceFullUpdate"));
+	const double Hour = GetTimeOfDay();
+	const double Now = FPlatformTime::Seconds();
+	if (LastTickHour >= 0.0)
+	{
+		// The shorter way round the clock, so 23:59 to 00:01 is two minutes.
+		const double Moved = FMath::Abs(FMantleSkyClock::Wrap24(Hour - LastTickHour + 12.0) - 12.0);
+		if (Moved > MantleEnvironmentDefaults::ClockJumpHours)
+		{
+			if (LumenRelightUntilSeconds <= Now)
+			{
+				UE_LOG(LogMantle, Log, TEXT("MANTLE_ENV_CLOCK_JUMP from=%.2f to=%.2f: Lumen relights fully for %.1f s"),
+					LastTickHour, Hour, MantleEnvironmentDefaults::ClockJumpRelightSeconds);
+			}
+			LumenRelightUntilSeconds = Now + MantleEnvironmentDefaults::ClockJumpRelightSeconds;
+			if (SceneLighting) { SceneLighting->Set(1, ECVF_SetByCode); }
+			if (RadianceCache) { RadianceCache->Set(1, ECVF_SetByCode); }
+		}
+	}
+	LastTickHour = Hour;
+	if (LumenRelightUntilSeconds > 0.0 && Now >= LumenRelightUntilSeconds)
+	{
+		LumenRelightUntilSeconds = 0.0;
+		if (SceneLighting) { SceneLighting->Set(0, ECVF_SetByCode); }
+		if (RadianceCache) { RadianceCache->Set(0, ECVF_SetByCode); }
+	}
 }
 
 void UMantleEnvironmentSubsystem::ApplyLocalExposureSettings(FPostProcessSettings& Settings, const bool bLocalExposureOff)

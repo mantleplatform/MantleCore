@@ -312,6 +312,14 @@ namespace MantleEnvironmentDefaults
 	constexpr double ExposureFloorNightBelowDegrees = -6.0;
 	constexpr double ExposureFloorDayAboveDegrees = 10.0;
 
+	/**
+	 * A clock that moves more than this (hours) in one tick jumped (a script's ClockTime, a place loading, a late replicated
+	 * clock): no time scale moves it that far in a frame. Lumen relights its whole scene for ClockJumpRelightSeconds after, or
+	 * its distant surfaces keep the old hour's light for seconds (noon's sun blazing at night under the night camera).
+	 */
+	constexpr double ClockJumpHours = 0.25;
+	constexpr double ClockJumpRelightSeconds = 1.0;
+
 	/** How fast the camera adapts, in stops a second: twice the engine's and the pack's 3 (into the dark) and 1 (into the light). */
 	constexpr float ExposureSpeedUp = 6.0f;
 	constexpr float ExposureSpeedDown = 2.0f;
