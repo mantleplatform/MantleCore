@@ -6,6 +6,7 @@
 #include "MantlePlaceBuilder.h"
 #include "MantlePlaceParser.h"
 
+#include "Components/LightComponent.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/PostProcessVolume.h"
