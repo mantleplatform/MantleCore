@@ -1174,28 +1174,15 @@ bool FMantleEnvironmentExport::ExposureFor(const FPostProcessSettings* Settings,
 
 	bool bAuto = Project.bAuto;
 	FString Metering;
-	// Manual metering exposes by the camera: compensation / (0.18 x 2^EV100), the EV100 from the volume's f-stop, shutter
-	// speed and ISO when Apply Physical Camera Exposure is on, and its compensation calibrated to a white point of 1, not
-	// middle gray (PostProcessEyeAdaptation.cpp). A place's fixed exposure is the compensation alone (white point 1, middle
-	// gray), so the same picture is the compensation plus log2(1 / 0.18) less the camera's EV100.
-	TOptional<double> ManualStops;
+	// The game's camera is Unreal's auto exposure, which meters every scene itself; the place's bias is its compensation. A
+	// manual camera's f-stop, shutter speed and ISO set a fixed exposure for the level's own light, which the game's metering
+	// already does, so only the volume's compensation is carried, as with any other metering.
 	if (Settings && Settings->bOverride_AutoExposureMethod)
 	{
 		bAuto = Settings->AutoExposureMethod != EAutoExposureMethod::AEM_Manual;
 		if (!bAuto)
 		{
-			static const FPostProcessSettings Defaults;
-			const bool bPhysical = Settings->bOverride_AutoExposureApplyPhysicalCameraExposure
-				? Settings->AutoExposureApplyPhysicalCameraExposure != 0
-				: Defaults.AutoExposureApplyPhysicalCameraExposure != 0;
-			const double Fstop = Settings->bOverride_DepthOfFieldFstop ? Settings->DepthOfFieldFstop : Defaults.DepthOfFieldFstop;
-			const double Shutter = Settings->bOverride_CameraShutterSpeed ? Settings->CameraShutterSpeed : Defaults.CameraShutterSpeed;
-			const double Iso = Settings->bOverride_CameraISO ? Settings->CameraISO : Defaults.CameraISO;
-			const double CameraEV100 = bPhysical ? FMath::Log2(FMath::Square(Fstop) * Shutter * 100.0 / FMath::Max(1.0, Iso)) : 0.0;
-			ManualStops = FMath::Log2(1.0 / 0.18) - CameraEV100;
-			Metering = bPhysical
-				? FString::Printf(TEXT("manual metering at the camera's EV100 %.1f (f/%g, 1/%g s, ISO %g) folded into the bias"), CameraEV100, Fstop, Shutter, Iso)
-				: FString(TEXT("manual metering folded into the bias"));
+			Metering = TEXT("manual metering becomes the game's auto exposure, so only its compensation is carried");
 		}
 		else if (Settings->AutoExposureMethod == EAutoExposureMethod::AEM_Basic)
 		{
@@ -1210,11 +1197,10 @@ bool FMantleEnvironmentExport::ExposureFor(const FPostProcessSettings* Settings,
 	{
 		Parts.Add(Metering);
 	}
-	if (Settings && (Settings->bOverride_AutoExposureBias || ManualStops.IsSet()))
+	if (Settings && Settings->bOverride_AutoExposureBias)
 	{
 		// A volume's compensation replaces the project's, and the place's bias is relative to the project's own.
-		const double Compensation = Settings->bOverride_AutoExposureBias ? static_cast<double>(Settings->AutoExposureBias) : Project.EngineBias;
-		const double Relative = Compensation + ManualStops.Get(0.0) - Project.EngineBias;
+		const double Relative = static_cast<double>(Settings->AutoExposureBias) - Project.EngineBias;
 		Out.Bias = Rounded(FMath::Clamp(Relative, -MaxExposureBias, MaxExposureBias));
 		if (Out.Bias != Rounded(Relative))
 		{
