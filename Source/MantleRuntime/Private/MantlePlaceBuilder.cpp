@@ -718,7 +718,8 @@ namespace
 	AActor* BuildDirectionalLight(
 		UWorld* World,
 		const FMantleEntity& Entity,
-		const FMantleDirectionalLightProps& Props)
+		const FMantleDirectionalLightProps& Props,
+		const bool bInterior)
 	{
 		ADirectionalLight* Actor = SpawnBare<ADirectionalLight>(World, Entity.Name);
 		if (!Actor)
@@ -729,8 +730,9 @@ namespace
 
 		if (UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(Actor->GetLightComponent()))
 		{
-			// A directional light is a sun: authored in Mantle units, lit in lux (MantleEnvironmentDefaults::LightUnitScale).
-			Light->SetIntensity(static_cast<float>(Props.Intensity * MantleEnvironmentDefaults::LightUnitScale));
+			// Outdoors a directional light is a sun: authored in Mantle units, lit in lux (MantleEnvironmentDefaults::LightUnitScale).
+			// An interior has no sun: its directional lights are the creator's lamps, authored in lux like point and spot lights.
+			Light->SetIntensity(static_cast<float>(MantleEnvironmentDefaults::DirectionalLightLux(Props.Intensity, bInterior)));
 			Light->SetLightColor(Props.Color);
 			Light->SetCastShadows(Props.bCastShadow);
 		}
@@ -2038,7 +2040,7 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 				case EMantleEntityType::DirectionalLight:
 					if (const FMantleDirectionalLightProps* Props = Entity.Props.TryGet<FMantleDirectionalLightProps>())
 					{
-						Actor = BuildDirectionalLight(World, Entity, *Props);
+						Actor = BuildDirectionalLight(World, Entity, *Props, Place.Settings.Environment.bNoOutdoors);
 					}
 					break;
 

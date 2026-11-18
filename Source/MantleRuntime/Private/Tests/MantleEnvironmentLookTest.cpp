@@ -334,6 +334,55 @@ bool FMantleEnvironmentInteriorTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleEnvironmentInteriorLampTest,
+	"Mantle.Runtime.Environment.InteriorLamp",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleEnvironmentInteriorLampTest::RunTest(const FString& Parameters)
+{
+	// A directional light outdoors is a sun, in Mantle units (x LightUnitScale lux). An interior has no sun: its directional
+	// light is the creator's lamp, published in lux as the level had it (Unreal's default 10), and built at that.
+	auto BuiltLux = [this](const bool bOutdoors) -> float
+	{
+		const FString Json = FString::Printf(
+			TEXT("{\"schemaVersion\":1,\"placeId\":\"plc_lamp_test\",\"revision\":{\"number\":1,\"state\":\"draft\"},")
+				TEXT("\"metadata\":{\"name\":\"Lamp test\",\"authorId\":\"usr_test\"},\"settings\":{\"environment\":{\"outdoors\":%s}},\"assets\":[],")
+				TEXT("\"entities\":[{\"id\":\"ent_lamp\",\"type\":\"DirectionalLight\",\"parent\":null,")
+				TEXT("\"transform\":{\"location\":[0,0,0],\"rotation\":[0,-45,0],\"scale\":[1,1,1]},\"properties\":{\"intensity\":10,\"color\":[1,1,1]}}]}"),
+			bOutdoors ? TEXT("true") : TEXT("false"));
+		const FMantleParseResult Parsed = FMantlePlaceParser::ParseFromString(Json);
+		if (!TestTrue(TEXT("the place parses"), Parsed.bSuccess))
+		{
+			AddError(Parsed.ErrorSummary());
+			return -1.0f;
+		}
+		UWorld* World = UWorld::CreateWorld(EWorldType::Game, /*bInformEngineOfWorld*/ false, TEXT("MantleInteriorLampTestWorld"));
+		if (!TestNotNull(TEXT("a world"), World))
+		{
+			return -1.0f;
+		}
+		FMantleBuildOptions Options;
+		Options.bRuntimeEnvironment = false;
+		const FMantleBuildResult Built = FMantlePlaceBuilder::Build(World, Parsed.Place, Options);
+		float Lux = -1.0f;
+		AActor* const* Actor = Built.Actors.Find(TEXT("ent_lamp"));
+		if (const ADirectionalLight* Light = Actor ? Cast<ADirectionalLight>(*Actor) : nullptr)
+		{
+			Lux = Light->GetLightComponent()->Intensity;
+		}
+		World->DestroyWorld(/*bInformEngineOfWorld*/ false);
+		return Lux;
+	};
+
+	TestEqual(TEXT("an interior's directional light at 10 builds at 10 lux"), BuiltLux(false), 10.0f);
+	TestEqual(TEXT("an outdoor one at 10 is a sun: 10 x LightUnitScale lux"), BuiltLux(true), 10.0f * MantleEnvironmentDefaults::LightUnitScale);
+	TestEqual(TEXT("an interior lamp's lux reads back as authored"), MantleEnvironmentDefaults::DirectionalLightAuthored(10.0, true), 10.0);
+	TestEqual(TEXT("a sun's lux reads back in Mantle units"),
+		MantleEnvironmentDefaults::DirectionalLightAuthored(MantleEnvironmentDefaults::DirectionalLightLux(3.5, false), false), 3.5);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleSkyLightStateOrderTest,
 	"Mantle.Runtime.Environment.SkyLightStateOrder",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
