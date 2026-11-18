@@ -2466,7 +2466,12 @@ void FMantlePlaceDependencies::AddTerrainLayerMaterials(const TArray<FMantleTerr
 		{
 			if (FMantleGatheredMaterial* Entry = AddMaterial(Choice.Material, Label))
 			{
-				Entry->BakeUvRange = FMath::Max(Entry->BakeUvRange, Choice.BakeUvRange);
+				// One bake a material: the coarsest layer's, its range and its tiling together (a card of one size and a range of another match neither).
+				if (Choice.TilingCm > Entry->BakeTilingCm)
+				{
+					Entry->BakeUvRange = Choice.BakeUvRange;
+					Entry->BakeTilingCm = Choice.TilingCm;
+				}
 			}
 			continue;
 		}
@@ -3732,8 +3737,10 @@ FString FMantleBakeSurface::CacheTag() const
 	}
 	// "meshdata": a bake over a UV range is made on a copy that reads the card (FMantlePlaceAssets::ReadsVertexColorCopy); one made before
 	// that baked UVs 0 to 1 for a material reading only texture coordinates, one landscape quad stretched over the tile, and must not stand in.
-	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%d%s%s%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1), UvRange > 1 ? TEXT(" meshdata") : TEXT(""),
-		WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""), bTintMask ? TEXT(" tintmask=1") : TEXT(""));
+	// "terrain": a landscape layer's bake has a card as many cm a side as the layer tiles (a bake made before saw 1 m of the world), over the
+	// finest texture's repeat; an older one must not stand in either.
+	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%g%s%s%s%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1.0), CoversTerrain() ? TEXT(" meshdata") : TEXT(""),
+		bTerrainLayer ? TEXT(" terrain=2") : TEXT(""), WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""), bTintMask ? TEXT(" tintmask=1") : TEXT(""));
 	// The shift is not in the tag: the shifted bake is only compared with, never stored.
 }
 
@@ -3752,7 +3759,10 @@ FMantleBakeSurface FMantleGatheredMaterial::BakeSurface() const
 {
 	FMantleBakeSurface Surface;
 	Surface.VertexColor = AverageVertexColor();
-	Surface.UvRange = FMath::Max(BakeUvRange, 1);
+	Surface.UvRange = FMath::Max(BakeUvRange, 1.0);
+	// A landscape layer's bake: its card is as many cm a side as the layer is tiled, so a texture mapped by world position repeats as the source's did.
+	Surface.bTerrainLayer = BakeTilingCm > 0.0;
+	Surface.WorldTileCm = BakeTilingCm;
 	Surface.bTintMask = bTintMask;
 	return Surface;
 }

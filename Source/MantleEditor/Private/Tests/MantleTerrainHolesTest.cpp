@@ -191,7 +191,7 @@ bool FMantleTerrainUnpaintedGetsDefaultLayerTest::RunTest(const FString& Paramet
 	// whole, over the 10 quads its texture tiled by 0.1 takes to repeat, tiled every 10 quads of 100 cm.
 	FMantleTerrainSource Unread = MakeFlatSource({});
 	Unread.LandscapeMaterial = NewLandscapeMaterial();
-	Unread.LandscapeMaterialUvRepeat = 10.0000001;
+	Unread.LandscapeMaterialFinestRepeat = 10.0000001;
 	Unread.SpacingX = 100.0;
 	Layers.Reset();
 	Issues.Reset();
@@ -201,7 +201,7 @@ bool FMantleTerrainUnpaintedGetsDefaultLayerTest::RunTest(const FString& Paramet
 	{
 		TestTrue(TEXT("drawn with the landscape's own material"), Layers[0].Material == Unread.LandscapeMaterial);
 		TestTrue(TEXT("baked whole"), Layers[0].bLandscapeMaterialBake);
-		TestEqual(TEXT("over 10 quads"), Layers[0].BakeUvRange, 10);
+		TestEqual(TEXT("over 10 quads"), Layers[0].BakeUvRange, 10.0, 1.0e-6);
 		TestEqual(TEXT("tiled every 10 quads"), Layers[0].TilingCm, 1000.0, 1.0e-6);
 	}
 	TestEqual(TEXT("no error"), CountIssues(Issues, EMantleIssueSeverity::Error, TEXT("")), 0);
@@ -275,7 +275,7 @@ bool FMantleTerrainUnreadableLayersBakeLandscapeMaterialTest::RunTest(const FStr
 	Source.LandscapeMaterial = NewLandscapeMaterial();
 	Source.SpacingX = 50.0;
 	// The material says nothing of its tiling: the most quads a bake may cover.
-	Source.LandscapeMaterialUvRepeat = 0.0;
+	Source.LandscapeMaterialFinestRepeat = 0.0;
 	TArray<FMantleTerrainLayerChoice> Layers;
 	TArray<FMantleValidationIssue> Issues;
 	FMantleCoverage Coverage;
@@ -288,12 +288,12 @@ bool FMantleTerrainUnreadableLayersBakeLandscapeMaterialTest::RunTest(const FStr
 	{
 		return false;
 	}
-	const int32 Range = FMantleTerrainExport::MaxLandscapeBakeUvRange;
+	const double Range = FMantleTerrainExport::MaxLandscapeBakeUvRange;
 	for (const FMantleTerrainLayerChoice& Layer : Layers)
 	{
 		TestTrue(TEXT("each drawn with the landscape's material"), Layer.Material == Source.LandscapeMaterial);
 		TestTrue(TEXT("baked whole"), Layer.bLandscapeMaterialBake);
-		TestEqual(TEXT("over the most quads a bake covers"), Layer.BakeUvRange, Range);
+		TestEqual(TEXT("over the most quads a bake covers"), Layer.BakeUvRange, Range, 1.0e-6);
 		TestEqual(TEXT("tiled every that many quads"), Layer.TilingCm, Range * 50.0, 1.0e-6);
 	}
 
@@ -305,7 +305,9 @@ bool FMantleTerrainUnreadableLayersBakeLandscapeMaterialTest::RunTest(const FStr
 	if (TestNotNull(TEXT("the landscape's material is gathered"), Gathered))
 	{
 		TestEqual(TEXT("once"), Dependencies.Materials.Num(), 1);
-		TestEqual(TEXT("baked over the layers' range"), Gathered->BakeSurface().UvRange, Range);
+		TestEqual(TEXT("baked over the layers' range"), Gathered->BakeSurface().UvRange, Range, 1.0e-6);
+		TestTrue(TEXT("as a landscape layer's bake"), Gathered->BakeSurface().bTerrainLayer);
+		TestEqual(TEXT("on a card as many cm a side as the layer tiles"), Gathered->BakeSurface().WorldTileCm, Range * 50.0, 1.0e-6);
 		TestTrue(TEXT("with white vertex colors: a landscape has none"), Gathered->BakeSurface().VertexColor == FColor::White);
 	}
 
@@ -333,7 +335,7 @@ bool FMantleTerrainUnreadableLayersBakeLandscapeMaterialTest::RunTest(const FStr
 	return true;
 }
 
-// How many quads a bake of the landscape's own material covers: its coarsest texture's repeat, rounded up, at most the cap.
+// How many quads a bake of the landscape's own material covers: its finest texture's repeat, whole repeats of it, at most the cap.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleTerrainLandscapeBakeUvRangeTest,
 	"Mantle.Editor.Terrain.LandscapeBakeUvRange",
@@ -342,16 +344,23 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleTerrainLandscapeBakeUvRangeTest::RunTest(const FString& Parameters)
 {
 	FMantleTerrainSource Source;
-	Source.LandscapeMaterialUvRepeat = 10.0000001;
-	TestEqual(TEXT("a texture tiled by 0.1 (as a float) repeats in 10 quads"), FMantleTerrainExport::LandscapeBakeUvRange(Source), 10);
-	Source.LandscapeMaterialUvRepeat = 6.46;
-	TestEqual(TEXT("a repeat of 6.46 quads is covered by 7"), FMantleTerrainExport::LandscapeBakeUvRange(Source), 7);
-	Source.LandscapeMaterialUvRepeat = 0.5;
-	TestEqual(TEXT("a texture repeating within a quad bakes one quad"), FMantleTerrainExport::LandscapeBakeUvRange(Source), 1);
-	Source.LandscapeMaterialUvRepeat = 1000.0;
-	TestEqual(TEXT("a very coarse texture is capped"), FMantleTerrainExport::LandscapeBakeUvRange(Source), FMantleTerrainExport::MaxLandscapeBakeUvRange);
-	Source.LandscapeMaterialUvRepeat = 0.0;
-	TestEqual(TEXT("a material that does not say gets the cap"), FMantleTerrainExport::LandscapeBakeUvRange(Source), FMantleTerrainExport::MaxLandscapeBakeUvRange);
+	Source.LandscapeMaterialFinestRepeat = 10.0000001;
+	TestEqual(TEXT("a texture tiled by 0.1 (as a float) repeats in 10 quads"), FMantleTerrainExport::LandscapeBakeUvRange(Source), 10.0, 1.0e-9);
+	Source.LandscapeMaterialFinestRepeat = 6.46;
+	TestEqual(TEXT("a repeat of 6.46 quads is covered by exactly that: no seam"), FMantleTerrainExport::LandscapeBakeUvRange(Source), 6.46, 1.0e-9);
+	Source.LandscapeMaterialFinestRepeat = 1135.0 / 60.0;
+	TestEqual(TEXT("1135 cm on 60 cm quads is 18.9 quads, not 19"), FMantleTerrainExport::LandscapeBakeUvRange(Source), 1135.0 / 60.0, 1.0e-9);
+	Source.LandscapeMaterialFinestRepeat = 0.5;
+	TestEqual(TEXT("a texture repeating twice in a quad bakes the quad"), FMantleTerrainExport::LandscapeBakeUvRange(Source), 1.0, 1.0e-9);
+	Source.LandscapeMaterialFinestRepeat = 0.4;
+	TestEqual(TEXT("three repeats of 0.4 make 1.2 quads: a whole number of repeats, at least a quad"), FMantleTerrainExport::LandscapeBakeUvRange(Source), 1.2, 1.0e-9);
+	Source.SpacingX = 100.0;
+	Source.LandscapeMaterialFinestRepeat = 100.0;
+	TestEqual(TEXT("a coarse texture is covered whole, past the cap a material that does not say gets"), FMantleTerrainExport::LandscapeBakeUvRange(Source), 100.0, 1.0e-9);
+	Source.LandscapeMaterialFinestRepeat = 5000.0;
+	TestEqual(TEXT("one as long as a layer tiles at most is covered to that"), FMantleTerrainExport::LandscapeBakeUvRange(Source), 1000.0, 1.0e-9);
+	Source.LandscapeMaterialFinestRepeat = 0.0;
+	TestEqual(TEXT("a material that does not say gets the cap"), FMantleTerrainExport::LandscapeBakeUvRange(Source), FMantleTerrainExport::MaxLandscapeBakeUvRange, 1.0e-9);
 	return true;
 }
 

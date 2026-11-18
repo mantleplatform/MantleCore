@@ -198,11 +198,13 @@ public:
 	static UMaterialInterface* MakeLayerMaterial(const FMantleLandscapeLayerLook& Look);
 
 	/**
-	 * The most landscape UV units (landscape quads, SpacingCm each) any 2D texture under Material's Base Color or Normal takes to repeat, as
-	 * the graph's coordinates say (a Texture Coordinate times 0.1 is 10). What a bake of the whole material must cover for its textures to
-	 * repeat inside it. False, with OutUvUnits 0, when no texture's repeat can be read.
+	 * The fewest landscape UV units (landscape quads, SpacingCm each) any 2D texture under Material's Base Color (else its Normal) takes to repeat, as
+	 * the graph's coordinates say (a Texture Coordinate times 0.1 is 10; a world position divided by 1135 is 1135 cm). What a bake of the whole
+	 * material must cover to hold that texture a whole number of times: its finest texture is the ground's detail, and a coarser one (a noise
+	 * that repeats in 30 m) is the part a tile can lose. A finer detail normal does not decide it: only the Normal's textures are read when the
+	 * Base Color has none. A repeat of exactly 1 cm is an unscaled world position, which says nothing, and is skipped. False, with OutUvUnits 0, when no texture's repeat can be read.
 	 */
-	static bool LargestUvRepeat(const UMaterialInterface* Material, double SpacingCm, double& OutUvUnits);
+	static bool FinestUvRepeat(const UMaterialInterface* Material, double SpacingCm, double& OutUvUnits);
 
 	/** The name (without a path) MakeLayerMaterial gives Look's material: stable for the same layer, textures and color. */
 	static FString LayerMaterialName(const FMantleLandscapeLayerLook& Look);

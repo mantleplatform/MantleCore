@@ -324,11 +324,19 @@ struct MANTLEEDITOR_API FMantleBakeSurface
 	/** The vertex color every corner of the card has, as the material's Vertex Color node reads it (the bytes over 255). */
 	FColor VertexColor = FColor::White;
 
-	/** The card's UVs run 0 to this on both axes. */
-	int32 UvRange = 1;
+	/** The card's UVs run 0 to this on both axes (landscape quads for a landscape layer: a whole number of its textures' repeats, so not always a whole number). */
+	double UvRange = 1.0;
 
 	/**
-	 * When above 0, the card is this many cm a side, for a material mapped by world position (EMantleMaterialLoss::WorldAligned): the bake
+	 * The bake is a landscape layer's: its own material, baked whole over UvRange quads and WorldTileCm cm, so a texture mapped by UV and a texture
+	 * mapped by world position both see the same stretch of ground, and the layer is published tiled every WorldTileCm (the Terrain's own tiling,
+	 * not the material's worldAligned mapping).
+	 */
+	bool bTerrainLayer = false;
+
+	/**
+	 * When above 0, the card is this many cm a side (a landscape layer's bake: the layer's tiling, so a world-mapped texture sees the ground the
+	 * layer repeats over), for a material mapped by world position (EMantleMaterialLoss::WorldAligned): the bake
 	 * is then one tile of its world pattern, published to repeat every this many cm in the world (worldAligned) instead of stretched once
 	 * over each mesh's UVs. 0: the card is 1 m a side and the bake maps by UV.
 	 */
@@ -350,7 +358,10 @@ struct MANTLEEDITOR_API FMantleBakeSurface
 	 */
 	bool bTintMask = false;
 
-	bool IsPlain() const { return VertexColor == FColor::White && UvRange <= 1 && WorldTileCm <= 0.0; }
+	bool IsPlain() const { return VertexColor == FColor::White && UvRange <= 1.0 && WorldTileCm <= 0.0 && !bTerrainLayer; }
+
+	/** Whether the bake covers several landscape quads or is a landscape layer's: its material must then read the card (FMantlePlaceAssets::ReadsVertexColorCopy). */
+	bool CoversTerrain() const { return bTerrainLayer || UvRange > 1.0; }
 
 	/** What the conversion cache keys on: empty for the plain surface, so those bakes keep their keys. */
 	FString CacheTag() const;
@@ -371,8 +382,11 @@ struct MANTLEEDITOR_API FMantleGatheredMaterial
 	FVector4d VertexColorSum = FVector4d(0.0, 0.0, 0.0, 0.0);
 	double VertexColorWeight = 0.0;
 
-	/** The UV range a landscape layer bakes it over (FMantleTerrainLayerChoice::BakeUvRange); 1 for everything else. */
-	int32 BakeUvRange = 1;
+	/** The UV range a landscape layer bakes it over (FMantleTerrainLayerChoice::BakeUvRange), in landscape quads; 1 for everything else. */
+	double BakeUvRange = 1.0;
+
+	/** The cm that range is, for a landscape layer's bake (FMantleTerrainLayerChoice::TilingCm); 0 for everything else. */
+	double BakeTilingCm = 0.0;
 
 	/** Set by a vehicle's gather for the tint-mask variant of a material (AddMaterial with bTintMask, key TintMaskKey): FMantleBakeSurface::bTintMask. */
 	bool bTintMask = false;

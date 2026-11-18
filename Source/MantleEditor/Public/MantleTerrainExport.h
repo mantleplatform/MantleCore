@@ -81,10 +81,10 @@ struct MANTLEEDITOR_API FMantleTerrainSource
 	UMaterialInterface* LandscapeMaterial = nullptr;
 
 	/**
-	 * The most landscape UV units (landscape quads) any texture of LandscapeMaterial takes to repeat (FMantleLandscapeMaterialReader::LargestUvRepeat:
-	 * 10 for a texture tiled by 0.1). 0 when the material does not say, or when it was not needed (its layers were read).
+	 * The fewest landscape UV units (landscape quads) any texture of LandscapeMaterial takes to repeat (FMantleLandscapeMaterialReader::FinestUvRepeat:
+	 * 10 for a texture tiled by 0.1): its finest texture, the ground's detail. 0 when the material does not say, or when it was not needed (its layers were read).
 	 */
-	double LandscapeMaterialUvRepeat = 0.0;
+	double LandscapeMaterialFinestRepeat = 0.0;
 
 	/** The average base color of each layer's look, by layer name, where known (#628): which kept layer a folded one goes into. */
 	TMap<FName, FLinearColor> LayerColors;
@@ -167,10 +167,11 @@ struct FMantleTerrainLayerChoice
 
 	/**
 	 * Material is the landscape's own material, baked whole as this layer's look because its layers could not be read from it. It is baked
-	 * over UVs 0 to BakeUvRange (landscape quads), so a texture it tiles finely repeats inside the bake, and TilingCm is that many quads.
+	 * over UVs 0 to BakeUvRange (landscape quads: its finest texture's repeat, so that texture repeats whole inside the bake), on a card TilingCm a
+	 * side (so a texture mapped by world position sees the same ground), and TilingCm is that many quads.
 	 */
 	bool bLandscapeMaterialBake = false;
-	int32 BakeUvRange = 1;
+	double BakeUvRange = 1.0;
 };
 
 /**
@@ -364,13 +365,16 @@ public:
 	static TArray<int32> FoldChannels(const TArray<FMantleTerrainLayerChoice>& Layers, int32 SourceCount);
 
 	/** The most landscape quads a bake of the landscape's own material may cover: more and each repeat of its textures gets too few pixels. */
-	static constexpr int32 MaxLandscapeBakeUvRange = 64;
+	static constexpr double MaxLandscapeBakeUvRange = 64.0;
 
 	/**
-	 * How many landscape quads a bake of Source's landscape material covers: its largest texture repeat (Source.LandscapeMaterialUvRepeat)
-	 * rounded up, so its coarsest texture repeats whole inside it (finer ones that do not divide it still show a seam), or MaxLandscapeBakeUvRange when the material does not say; at most that.
+	 * How many landscape quads a bake of Source's landscape material covers: its finest texture's repeat (Source.LandscapeMaterialFinestRepeat), so
+	 * that texture, the ground's detail, repeats a whole number of times inside the bake and gets all the pixels the bake has (a coarser one, a
+	 * noise that repeats in 30 m, is cut to this tile). A texture finer than one quad is covered by as many of its repeats as make a quad. Not a
+	 * whole number of quads when the repeat is not (1135 cm on 60 cm quads is 18.9). At least 1 and at most MaxLandscapeBakeUvRange, which is
+	 * also what a material that does not say gets.
 	 */
-	static int32 LandscapeBakeUvRange(const FMantleTerrainSource& Source);
+	static double LandscapeBakeUvRange(const FMantleTerrainSource& Source);
 
 	/**
 	 * The heightfield published for Source: its samples as they are when both sides fit MaxSamples,

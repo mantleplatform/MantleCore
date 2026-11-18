@@ -3374,7 +3374,7 @@ FString FMantleLandscapeMaterialReader::LayerMaterialName(const FMantleLandscape
 	return FString::Printf(TEXT("MantleTerrainLayer_%s_%s"), *SafeName(Look.Layer.ToString()), *ShortHash(Seed));
 }
 
-bool FMantleLandscapeMaterialReader::LargestUvRepeat(const UMaterialInterface* Material, const double SpacingCm, double& OutUvUnits)
+bool FMantleLandscapeMaterialReader::FinestUvRepeat(const UMaterialInterface* Material, const double SpacingCm, double& OutUvUnits)
 {
 	using namespace MantleLandscapeMaterialReaderPrivate;
 
@@ -3389,6 +3389,12 @@ bool FMantleLandscapeMaterialReader::LargestUvRepeat(const UMaterialInterface* M
 	FLmGraphReader Reader(Material, Spacing);
 	for (const ELmProp Prop : { ELmProp::BaseColor, ELmProp::Normal })
 	{
+		// The base color is the ground's look, so its finest texture decides; a finer detail normal must not cut the color into quads. The normal
+		// decides only when the base color has no texture whose repeat is read.
+		if (OutUvUnits > 0.0)
+		{
+			break;
+		}
 		const FExpressionInput* Root = MutableBase->GetExpressionInputForProperty(Base->bUseMaterialAttributes ? MP_MaterialAttributes
 			: Prop == ELmProp::BaseColor ? MP_BaseColor : MP_Normal);
 		if (!Root || !Root->Expression)
@@ -3409,8 +3415,12 @@ bool FMantleLandscapeMaterialReader::LargestUvRepeat(const UMaterialInterface* M
 			const UMaterialExpressionTextureSample* Sample = nullptr;
 			if (Reader.SampledTexture(Node, Sample))
 			{
+				// The finest repeat: the ground's detail. (A world position with no scale reads exactly 1 cm: no information, not a texture 1 cm wide.)
 				const double Cm = Reader.SampleTileCm(Node, Sample);
-				OutUvUnits = FMath::Max(OutUvUnits, Cm / Spacing);
+				if (Cm > 0.0 && FMath::Abs(Cm - 1.0) > 1.0e-6)
+				{
+					OutUvUnits = OutUvUnits > 0.0 ? FMath::Min(OutUvUnits, Cm / Spacing) : Cm / Spacing;
+				}
 				continue;
 			}
 			if (Cast<UMaterialExpressionTextureSample>(Node.Expression))
