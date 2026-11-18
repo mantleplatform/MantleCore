@@ -406,30 +406,17 @@ public:
 	void SetInterior(bool bInInterior) { bInterior = bInInterior; }
 	bool IsInterior() const { return bInterior; }
 
-	/**
-	 * The game's own exposure compensation in stops: the project's r.DefaultFeature.AutoExposure.Bias (1 unless the
-	 * project changes it), which every post-process setting starts from. A place's exposure bias is added to it.
-	 */
-	static float GetEngineExposureBias();
-
-	/** True when the place's exposure changes nothing: none, or fixed with no bias (the game's own). */
-	static bool IsPlaceExposureNeutral(const TOptional<FMantleExposureSettings>& Exposure);
+	/** The physical exposure compensation curve (MantleEnvironmentDefaults::PhysicalCurveEV/Bias), built once, no asset. */
+	static class UCurveFloat* GetPhysicalExposureCurve();
 
 	/**
 	 * Writes the exposure part of a post-process volume's Settings (UpdatePostProcess's, split out so it can be tested without
-	 * a world): the compensation (EngineBias plus ScriptBias when a script set one, else the place's bias) and, for an
-	 * auto place exposure, the histogram metering and the brightness range. Overrides nothing a fixed, unbiased exposure
-	 * does not change.
+	 * a world): Unreal's auto exposure as Ultra Dynamic Sky's physical mode sets it (histogram, its physical curve, compensation
+	 * ScriptBias when a script set one, else the place's bias), from MinEv100 (ExposureFloorFor the sun) to MaxExposure, at
+	 * ExposureSpeedUp and ExposureSpeedDown.
 	 */
 	static void ApplyExposureSettings(FPostProcessSettings& Settings, float ScriptBias, const TOptional<FMantleExposureSettings>& Exposure,
-		float EngineBias, float Lift = 0.0f);
-
-	/**
-	 * Clients: stops added to a fixed exposure's compensation, whatever set it (the game, the place or a script), through the
-	 * same one volume; an auto place exposure adapts on its own and takes none. The game client lifts the night with it (an
-	 * auto exposure's brightening, without its pumping); nothing else sets it, so it is 0 in the editor and on servers.
-	 */
-	void SetExposureLift(float Stops);
+		float MinEv100);
 
 	/**
 	 * Clients: the weather's tint for the fog: its own color moves Amount (0-1) of the way to Tint, as Ultra
@@ -585,8 +572,15 @@ private:
 	TOptional<double> PlaceBloomThreshold;
 	/** SetInterior's flag. */
 	bool bInterior = false;
-	/** SetExposureLift's stops. */
-	float ExposureLift = 0.0f;
+	/** The exposure floor the volume last got (EV100); the tick rewrites the volume when the sun moves it by a tenth. */
+	float AppliedExposureFloor = TNumericLimits<float>::Lowest();
+
+	/** Clients: the clock's hour last tick (below 0 before the first), and until when (platform seconds) Lumen relights fully. */
+	double LastTickHour = -1.0;
+	double LumenRelightUntilSeconds = 0.0;
+
+	/** Clients: after a clock jump, Lumen relights its whole scene for MantleEnvironmentDefaults::ClockJumpRelightSeconds. */
+	void UpdateClockJumpRelight();
 
 	/** SetWeatherFogTint's color and share. */
 	FLinearColor WeatherFogTint = FLinearColor::Black;

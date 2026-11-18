@@ -126,6 +126,15 @@ public:
 		TArray<FString>& Carried, TArray<FString>& Notes);
 
 	/**
+	 * A kept level sun's brightness in the place's units, Mantle sun units (the game multiplies them by
+	 * MantleEnvironmentDefaults::LightUnitScale into lux; 3.5 is a clear noon). A source project in real-world units (its
+	 * luminance range in EV100, r.DefaultFeature.AutoExposure.ExtendDefaultLuminanceRange) whose sun is brighter than any
+	 * place may hold (FMantlePlaceLimits::MaxDirectionalLightIntensity) is a physical sun in lux, so it is divided by
+	 * LightUnitScale; any other sun (a classic small one, 3 to 10, in either kind of project) is on Mantle's scale already.
+	 */
+	static double SunIntensityToPlace(double LevelIntensity, const FMantleExposureProject& Project);
+
+	/**
 	 * The scale (0 to 1) on Mantle's sky light that makes it as bright as a level's own, from the level's sky light's average
 	 * brightness (LevelMeanLuminance: the captured sky's mean radiance, times the light's intensity and color) and Mantle's sky
 	 * at the clock's Hour: Mantle's mean is MantleSkyMeanLuminanceAtNoon at noon, falling with the sun's elevation to a

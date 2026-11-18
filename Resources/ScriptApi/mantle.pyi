@@ -1280,7 +1280,7 @@ Leaderboard: _LeaderboardService
 class _LightsService:
     """Spawn lights at runtime (server only). Change any light through its Entity's Light members."""
     def spawn(self, kind: str, position: Vector3, props: Optional[dict[str, Any]] = ..., /) -> Entity:
-        """Spawn a light every player sees and return it as an Entity. kind is 'Point', 'Spot' or 'Directional'. props sets how it starts: Color ('#RRGGBB', white by default), Intensity (candelas, 8 by default; lux for a directional light, 10 by default), Range (cm, 1000 by default), InnerCone and OuterCone (degrees, 0 and 44 by default), Enabled, CastShadow (off by default: shadows are costly) and Rotation (a spot light points straight down and a directional light down at 45 degrees unless you give one). Numbers out of range are clamped. At most 64 spawned lights exist at once in a place; Destroy one to make room."""
+        """Spawn a light every player sees and return it as an Entity. kind is 'Point', 'Spot' or 'Directional'. props sets how it starts: Color ('#RRGGBB', white by default), Intensity (candelas, 8 by default; sun units for a directional light, where 3.5 is a clear noon sun, 10 by default), Range (cm, 1000 by default), InnerCone and OuterCone (degrees, 0 and 44 by default), Enabled, CastShadow (off by default: shadows are costly) and Rotation (a spot light points straight down and a directional light down at 45 degrees unless you give one). Numbers out of range are clamped. At most 64 spawned lights exist at once in a place; Destroy one to make room."""
         ...
 
 Lights: _LightsService

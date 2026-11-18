@@ -1,4 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "Curves/CurveFloat.h"
 #include "MantleEnvironment.h"
 #include "MantleEnvironmentDefaults.h"
 #include "MantleEnvironmentSubsystem.h"
@@ -175,100 +176,65 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleEnvironmentExposureSettingsTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleEnvironmentDefaults;
-	constexpr float EngineBias = 1.0f;
 
-	TestTrue(TEXT("no exposure changes nothing"), UMantleEnvironmentSubsystem::IsPlaceExposureNeutral(TOptional<FMantleExposureSettings>()));
-	FMantleExposureSettings FixedPlain;
-	TestTrue(TEXT("nor does fixed with no bias"), UMantleEnvironmentSubsystem::IsPlaceExposureNeutral(FixedPlain));
-	FMantleExposureSettings FixedBiased;
-	FixedBiased.Bias = 0.5;
-	TestFalse(TEXT("fixed with a bias does"), UMantleEnvironmentSubsystem::IsPlaceExposureNeutral(FixedBiased));
-	FMantleExposureSettings Auto;
-	Auto.Mode = EMantleExposureMode::Auto;
-	TestFalse(TEXT("and auto does"), UMantleEnvironmentSubsystem::IsPlaceExposureNeutral(Auto));
+	// Always Unreal's auto exposure as Ultra Dynamic Sky's physical mode sets it, whatever the place says.
+	{
+		FPostProcessSettings Settings;
+		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.0f, TOptional<FMantleExposureSettings>(), NightExposureFloor);
+		TestTrue(TEXT("histogram metering"), Settings.bOverride_AutoExposureMethod && Settings.AutoExposureMethod == EAutoExposureMethod::AEM_Histogram);
+		TestTrue(TEXT("compensation 0, not the engine's +1"), Settings.bOverride_AutoExposureBias && Settings.AutoExposureBias == 0.0f);
+		TestTrue(TEXT("the floor given"), Settings.bOverride_AutoExposureMinBrightness && Settings.AutoExposureMinBrightness == NightExposureFloor);
+		TestTrue(TEXT("up to the pack's 20"), Settings.bOverride_AutoExposureMaxBrightness && Settings.AutoExposureMaxBrightness == MaxExposure);
+		TestTrue(TEXT("the physical curve"), Settings.bOverride_AutoExposureBiasCurve
+			&& Settings.AutoExposureBiasCurve == UMantleEnvironmentSubsystem::GetPhysicalExposureCurve());
+		TestTrue(TEXT("twice the engine's speed into the dark"), Settings.bOverride_AutoExposureSpeedUp && Settings.AutoExposureSpeedUp == ExposureSpeedUp);
+		TestTrue(TEXT("and into the light"), Settings.bOverride_AutoExposureSpeedDown && Settings.AutoExposureSpeedDown == ExposureSpeedDown);
+	}
+	// The place's bias applies, a script's replaces it; the place's old mode and range keys do not.
+	{
+		FMantleExposureSettings Place;
+		Place.Mode = EMantleExposureMode::Auto;
+		Place.Bias = -1.0;
+		Place.MinBrightness = 0.5;
+		Place.MaxBrightness = 4.0;
+		FPostProcessSettings Settings;
+		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.0f, Place, DayExposureFloor);
+		TestEqual(TEXT("the place's bias"), Settings.AutoExposureBias, -1.0f);
+		TestEqual(TEXT("not the place's minimum"), Settings.AutoExposureMinBrightness, DayExposureFloor);
+		TestEqual(TEXT("nor its maximum"), Settings.AutoExposureMaxBrightness, MaxExposure);
+		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 3.0f, Place, DayExposureFloor);
+		TestEqual(TEXT("a script's bias replaces the place's"), Settings.AutoExposureBias, 3.0f);
+	}
+	// A floor above the top cannot empty the range.
+	{
+		FPostProcessSettings Settings;
+		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.0f, TOptional<FMantleExposureSettings>(), 40.0f);
+		TestTrue(TEXT("the floor is at most the top"), Settings.AutoExposureMinBrightness <= Settings.AutoExposureMaxBrightness);
+	}
+	// The floor by the sun: the night's in the dark, none (the pack's) by day, moving between.
+	TestEqual(TEXT("the night's floor"), ExposureFloorFor(-30.0), NightExposureFloor);
+	TestEqual(TEXT("from 6 degrees down"), ExposureFloorFor(ExposureFloorNightBelowDegrees), NightExposureFloor);
+	TestEqual(TEXT("the day's from 10 up"), ExposureFloorFor(ExposureFloorDayAboveDegrees), DayExposureFloor);
+	TestEqual(TEXT("and at noon"), ExposureFloorFor(60.0), DayExposureFloor);
+	const float Dusk = ExposureFloorFor(2.0);
+	TestTrue(TEXT("between at dusk"), Dusk < NightExposureFloor && Dusk > DayExposureFloor);
+	TestTrue(TEXT("inside Lumen's cached range at night (exposure about floor + 1.1 >= -3 with CachedLightingPreExposure 9)"),
+		NightExposureFloor + 1.1f >= -3.0f);
 
-	// Fixed, no bias: nothing overridden, which is the game's own exposure as before.
+	// The physical curve is the pack's 41 points: -1.73 in the dark, +1 in daylight.
+	const UCurveFloat* Curve = UMantleEnvironmentSubsystem::GetPhysicalExposureCurve();
+	if (TestNotNull(TEXT("the curve"), Curve))
 	{
-		FPostProcessSettings Settings;
-		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.0f, TOptional<FMantleExposureSettings>(), EngineBias);
-		TestFalse(TEXT("no place exposure overrides no compensation"), Settings.bOverride_AutoExposureBias);
-		TestFalse(TEXT("nor the method"), Settings.bOverride_AutoExposureMethod);
-		TestFalse(TEXT("nor the minimum"), Settings.bOverride_AutoExposureMinBrightness);
-		TestFalse(TEXT("nor the maximum"), Settings.bOverride_AutoExposureMaxBrightness);
+		TestTrue(TEXT("dark end"), FMath::IsNearlyEqual(Curve->GetFloatValue(-9.163f), -1.7288f, 1.0e-4f));
+		TestTrue(TEXT("daylight end"), FMath::IsNearlyEqual(Curve->GetFloatValue(13.6f), 1.0f, 1.0e-4f));
+		TestTrue(TEXT("linear between points"), FMath::IsNearlyEqual(Curve->GetFloatValue((12.462f + 13.031f) * 0.5f), (0.1507f + 0.4806f) * 0.5f, 1.0e-4f));
 	}
-	// A script's bias adds to the game's own exposure.
-	{
-		FPostProcessSettings Settings;
-		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.5f, TOptional<FMantleExposureSettings>(), EngineBias);
-		TestTrue(TEXT("a script's bias is overridden"), Settings.bOverride_AutoExposureBias);
-		TestEqual(TEXT("the game's own plus the script's"), Settings.AutoExposureBias, EngineBias + 0.5f);
-		TestFalse(TEXT("with the metering left alone"), Settings.bOverride_AutoExposureMethod);
-	}
-	// Fixed with a bias: the compensation only, the game's own plus the bias.
-	{
-		FPostProcessSettings Settings;
-		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.0f, FixedBiased, EngineBias);
-		TestTrue(TEXT("a fixed bias overrides the compensation"), Settings.bOverride_AutoExposureBias);
-		TestEqual(TEXT("the game's own plus the bias"), Settings.AutoExposureBias, EngineBias + 0.5f);
-		TestFalse(TEXT("and leaves the metering and range to the fixed base"),
-			Settings.bOverride_AutoExposureMethod || Settings.bOverride_AutoExposureMinBrightness || Settings.bOverride_AutoExposureMaxBrightness);
-	}
-	// Auto with no range: the engine's default one, with histogram metering.
-	{
-		FPostProcessSettings Settings;
-		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.0f, Auto, EngineBias);
-		TestTrue(TEXT("auto overrides the metering"), Settings.bOverride_AutoExposureMethod);
-		TestTrue(TEXT("as the histogram"), Settings.AutoExposureMethod == EAutoExposureMethod::AEM_Histogram);
-		TestTrue(TEXT("and the range"), Settings.bOverride_AutoExposureMinBrightness && Settings.bOverride_AutoExposureMaxBrightness);
-		TestEqual(TEXT("the default minimum"), static_cast<double>(Settings.AutoExposureMinBrightness), DefaultAutoExposureMin);
-		TestEqual(TEXT("the default maximum"), static_cast<double>(Settings.AutoExposureMaxBrightness), DefaultAutoExposureMax);
-		TestTrue(TEXT("and the compensation, the game's own with no bias"), Settings.bOverride_AutoExposureBias && Settings.AutoExposureBias == EngineBias);
-	}
-	// Auto with the place's range and bias; a script's bias replaces the place's.
-	{
-		FMantleExposureSettings Ranged = Auto;
-		Ranged.Bias = -1.0;
-		Ranged.MinBrightness = 0.5;
-		FPostProcessSettings Settings;
-		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.0f, Ranged, EngineBias);
-		TestEqual(TEXT("the place's minimum"), Settings.AutoExposureMinBrightness, 0.5f);
-		TestEqual(TEXT("an unset end is the default"), static_cast<double>(Settings.AutoExposureMaxBrightness), DefaultAutoExposureMax);
-		TestEqual(TEXT("the bias is relative to the game's own"), Settings.AutoExposureBias, EngineBias - 1.0f);
-		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 3.0f, Ranged, EngineBias);
-		TestEqual(TEXT("a script's bias replaces the place's, on the game's own"), Settings.AutoExposureBias, EngineBias + 3.0f);
-		TestTrue(TEXT("the range stays"), Settings.bOverride_AutoExposureMinBrightness && Settings.AutoExposureMinBrightness == 0.5f);
-	}
-	// The client's lift adds to a fixed exposure, whoever set it, and leaves an auto one alone.
-	{
-		FPostProcessSettings Settings;
-		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.0f, TOptional<FMantleExposureSettings>(), EngineBias, 1.5f);
-		TestTrue(TEXT("a lift overrides the game's own compensation"), Settings.bOverride_AutoExposureBias);
-		TestEqual(TEXT("by the lift"), Settings.AutoExposureBias, EngineBias + 1.5f);
-		TestFalse(TEXT("leaving the metering fixed"), Settings.bOverride_AutoExposureMethod);
-		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.0f, FixedBiased, EngineBias, 1.5f);
-		TestEqual(TEXT("on top of the place's bias"), Settings.AutoExposureBias, EngineBias + 2.0f);
-		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 2.0f, TOptional<FMantleExposureSettings>(), EngineBias, 1.5f);
-		TestEqual(TEXT("and of a script's"), Settings.AutoExposureBias, EngineBias + 3.5f);
-		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.0f, Auto, EngineBias, 1.5f);
-		TestEqual(TEXT("an auto exposure takes none"), Settings.AutoExposureBias, EngineBias);
-	}
-	// A minimum above the default maximum cannot make the range empty: that would be a fixed exposure.
-	{
-		FMantleExposureSettings High = Auto;
-		High.MinBrightness = 12.0;
-		FPostProcessSettings Settings;
-		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.0f, High, EngineBias);
-		TestTrue(TEXT("the maximum is at least the minimum"), Settings.AutoExposureMaxBrightness >= Settings.AutoExposureMinBrightness);
-	}
-	// A fixed exposure after an auto one hands the volume's overrides back.
-	{
-		FPostProcessSettings Settings;
-		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.0f, Auto, EngineBias);
-		UMantleEnvironmentSubsystem::ApplyExposureSettings(Settings, 0.0f, TOptional<FMantleExposureSettings>(), EngineBias);
-		TestFalse(TEXT("the metering is no longer overridden"), Settings.bOverride_AutoExposureMethod);
-		TestFalse(TEXT("nor the range"), Settings.bOverride_AutoExposureMinBrightness || Settings.bOverride_AutoExposureMaxBrightness);
-		TestFalse(TEXT("nor the compensation"), Settings.bOverride_AutoExposureBias);
-	}
+
+	// The sky glows: the sun's ratio by day, unscaled at night, as the pack's physical mode measured.
+	TestEqual(TEXT("sky glow by day"), PhysicalSkyScale(30.0), LightUnitScale);
+	TestEqual(TEXT("sky glow at night"), PhysicalSkyScale(-30.0), 1.0f);
+	TestTrue(TEXT("the sun's own light lasts longer than the sky's after sunset"), PhysicalSunScale(-6.0) > PhysicalSkyScale(-6.0));
+	TestTrue(TEXT("the default sun is a clear noon's lux"), FMath::IsNearlyEqual(DefaultSunIntensity * LightUnitScale, 114688.0f, 1.0f));
 	return true;
 }
 

@@ -6,6 +6,7 @@
 #include "MantleEnvironment.h"
 #include "MantleEnvironmentDefaults.h"
 #include "MantleEnvironmentSubsystem.h"
+#include "MantlePlaceLimits.h"
 #include "MantlePlaceSettingsActor.h"
 #include "MantleSkyClock.h"
 #include "MantleTargetFeatures.h"
@@ -267,6 +268,7 @@ namespace MantleEnvironmentExportPrivate
 		}
 		if (Props && bKeepsLevelSun)
 		{
+			Props->Intensity = Rounded(FMantleEnvironmentExport::SunIntensityToPlace(Props->Intensity, FMantleExposureProject::Current()));
 			if (Component && Component->bUseTemperature)
 			{
 				const FLinearColor Tint = FLinearColor::MakeFromColorTemperature(Component->Temperature);
@@ -285,9 +287,10 @@ namespace MantleEnvironmentExportPrivate
 		FString Brightness;
 		if (bKeepsLevelSun)
 		{
-			Brightness = FString::Printf(TEXT("its brightness (%g) and color are the level's, kept because this is a sealed level (no direct sun) that keeps its exposure, "
+			const double Kept = Props ? Props->Intensity : LevelIntensity;
+			Brightness = FString::Printf(TEXT("its brightness (%g%s) and color are the level's, kept because this is a sealed level (no direct sun) that keeps its exposure, "
 				"which was set together with the sun; set Sun Brightness in Mantle Place Settings, or use a script's Environment.SunIntensityScale, to choose one on purpose"),
-				LevelIntensity);
+				Kept, Kept != LevelIntensity ? *FString::Printf(TEXT(", the level's %g lux in Mantle's sun units"), LevelIntensity) : TEXT(""));
 		}
 		else if (bSunBrightnessSet)
 		{
@@ -1137,6 +1140,12 @@ bool FMantleEnvironmentExport::SolveSunClock(const FVector& TowardSun, const dou
 	return true;
 }
 
+double FMantleEnvironmentExport::SunIntensityToPlace(const double LevelIntensity, const FMantleExposureProject& Project)
+{
+	const bool bPhysical = Project.bExtendedRange && LevelIntensity > FMantlePlaceLimits::MaxDirectionalLightIntensity;
+	return bPhysical ? LevelIntensity / MantleEnvironmentDefaults::LightUnitScale : LevelIntensity;
+}
+
 FMantleExposureProject FMantleExposureProject::Current()
 {
 	FMantleExposureProject Project;
@@ -1148,7 +1157,11 @@ FMantleExposureProject FMantleExposureProject::Current()
 	{
 		Project.bExtendedRange = Extended->GetInt() != 0;
 	}
-	Project.EngineBias = UMantleEnvironmentSubsystem::GetEngineExposureBias();
+	// The project setting every FPostProcessSettings starts from (Scene.cpp); 1 is the engine's own default.
+	if (const TConsoleVariableData<float>* Bias = IConsoleManager::Get().FindTConsoleVariableDataFloat(TEXT("r.DefaultFeature.AutoExposure.Bias")))
+	{
+		Project.EngineBias = Bias->GetValueOnGameThread();
+	}
 	return Project;
 }
 

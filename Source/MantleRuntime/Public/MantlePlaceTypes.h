@@ -390,8 +390,8 @@ enum class EMantleExposureMode : uint8
 
 /**
  * settings.environment.exposure. Bias is in stops over the game's own exposure compensation (0 is the game's own).
- * The brightness range is read only with Auto; an end the file leaves out is the engine's default one
- * (MantleEnvironmentDefaults::DefaultAutoExposureMin and Max).
+ * The game's camera is always Unreal's auto exposure on real-world light (UMantleEnvironmentSubsystem::ApplyExposureSettings),
+ * so only the bias applies: the mode and the brightness range are still read and validated but no longer used.
  */
 struct FMantleExposureSettings
 {

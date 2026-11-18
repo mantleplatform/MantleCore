@@ -208,6 +208,29 @@ bool FMantleEnvironmentSunClockTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleEnvironmentPhysicalSunTest,
+	"Mantle.Editor.EnvironmentExport.PhysicalSun",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleEnvironmentPhysicalSunTest::RunTest(const FString& Parameters)
+{
+	// A kept sun goes into the place in Mantle's sun units (x LightUnitScale = lux in the game).
+	FMantleExposureProject Physical;
+	Physical.bExtendedRange = true;
+	FMantleExposureProject Legacy;
+	Legacy.bExtendedRange = false;
+	const double Scale = MantleEnvironmentDefaults::LightUnitScale;
+	const double Cap = FMantlePlaceLimits::MaxDirectionalLightIntensity;
+	TestEqual(TEXT("a physical noon sun becomes Mantle's clear noon"), FMantleEnvironmentExport::SunIntensityToPlace(114688.0, Physical), 3.5);
+	TestTrue(TEXT("and lands inside the cap"), FMantleEnvironmentExport::SunIntensityToPlace(100000.0, Physical) <= Cap);
+	TestEqual(TEXT("a classic sun in an EV100 project is on Mantle's scale already"), FMantleEnvironmentExport::SunIntensityToPlace(10.0, Physical), 10.0);
+	TestEqual(TEXT("at the cap it stays"), FMantleEnvironmentExport::SunIntensityToPlace(Cap, Physical), Cap);
+	TestEqual(TEXT("just over it is lux"), FMantleEnvironmentExport::SunIntensityToPlace(Cap + 1.0, Physical), (Cap + 1.0) / Scale);
+	TestEqual(TEXT("a legacy-range project is never converted"), FMantleEnvironmentExport::SunIntensityToPlace(100000.0, Legacy), 100000.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleEnvironmentHelpersTest,
 	"Mantle.Editor.EnvironmentExport.Helpers",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
