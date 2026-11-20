@@ -108,6 +108,7 @@
 #include "Engine/TextRenderActor.h"
 #include "Engine/Texture.h"
 #include "Engine/Texture2D.h"
+#include "TextureCompiler.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
@@ -3201,10 +3202,12 @@ bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& Out
 	const bool bMantleMaster = IsMantleDecalMaterial(Material);
 	UTexture* BaseColor = nullptr;
 	Material->GetTextureParameterValue(FHashedMaterialParameterInfo(FName(FMantleDecalMaterials::BaseColorParameter)), BaseColor);
+	bool bFollowedGraph = false;
 	if (!BaseColor && !bMantleMaster)
 	{
 		// A pack's own decal material: the texture feeding Base Color, whatever it is called.
 		BaseColor = TextureFeedingDecalInput(Material, false);
+		bFollowedGraph = BaseColor != nullptr;
 	}
 	UTexture* MasterDefault = nullptr;
 	if (bMantleMaster)
@@ -3219,6 +3222,25 @@ bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& Out
 			TEXT("uses decal material '%s', which Mantle can't publish: a published decal is a texture, and no texture feeds this material's Base Color. %s"),
 			*Material->GetName(), Remedy);
 		return false;
+	}
+	if (bFollowedGraph)
+	{
+		// The decal's shape is the colour texture's alpha. A pack that keeps its shape in a separate
+		// mask (into Opacity) has a colour texture without alpha, which would publish as a solid
+		// rectangle, so refuse it. HasAlphaChannel is the built format's (BC3 vs BC1): finish
+		// building the texture first, or an editor still compiling it would read no alpha.
+		if (UTexture2D* Texture2D = Cast<UTexture2D>(BaseColor))
+		{
+			UTexture* const Building = Texture2D;
+			FTextureCompilingManager::Get().FinishCompilation(MakeArrayView(&Building, 1));
+			if (!Texture2D->HasAlphaChannel())
+			{
+				OutProblem = FString::Printf(
+					TEXT("uses decal material '%s', which Mantle can't publish: its Base Color texture '%s' has no alpha channel, and a published decal's shape is the colour texture's alpha. Put the decal's shape in that texture's alpha, or give the material a texture parameter named BaseColor whose texture has it."),
+					*Material->GetName(), *BaseColor->GetName());
+				return false;
+			}
+		}
 	}
 	OutBaseColor = BaseColor;
 

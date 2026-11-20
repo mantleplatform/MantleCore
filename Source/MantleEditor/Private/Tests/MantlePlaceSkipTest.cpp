@@ -327,7 +327,21 @@ bool FMantlePlaceSkipDecalTextureFromGraphTest::RunTest(const FString& Parameter
 	TestFalse(TEXT("a decal material with no texture is refused"), FMantlePlaceExporter::ReadDecal(Untextured, Props, BaseColor, Normal, Problem));
 	TestTrue(TEXT("saying no texture feeds its Base Color"), Problem.Contains(TEXT("Base Color")));
 
-	// Export publishes the two and leaves the untextured one out.
+	// 4. Refused when the texture feeding Base Color has no alpha (a pack that keeps its shape in a
+	// separate mask): it would publish as a solid rectangle.
+	UMaterial* Masked = NewObject<UMaterial>(GetTransientPackage());
+	Masked->MaterialDomain = MD_DeferredDecal;
+	UMaterialExpressionTextureSample* OpaqueSample = NewObject<UMaterialExpressionTextureSample>(Masked);
+	OpaqueSample->Material = Masked;
+	OpaqueSample->Texture = UTexture2D::CreateTransient(4, 4, PF_DXT1);
+	Masked->GetExpressionCollection().AddExpression(OpaqueSample);
+	Masked->GetEditorOnlyData()->BaseColor.Expression = OpaqueSample;
+	Masked->UpdateCachedExpressionData();
+	ADecalActor* NoAlpha = SpawnDecal(TEXT("Oil decal"), Masked);
+	TestFalse(TEXT("a decal whose colour texture has no alpha is refused"), FMantlePlaceExporter::ReadDecal(NoAlpha, Props, BaseColor, Normal, Problem));
+	TestTrue(TEXT("saying the shape must be in its alpha"), Problem.Contains(TEXT("no alpha channel")));
+
+	// Export publishes the two and leaves the others out.
 	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
 	TestEqual(TEXT("two Decal entities are written"), CountType(Result.Place, EMantleEntityType::Decal), 2);
 	return true;
