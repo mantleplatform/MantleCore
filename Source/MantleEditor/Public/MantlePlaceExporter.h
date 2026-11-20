@@ -532,7 +532,8 @@ public:
 	 * Mantle's decal material, so the decal's material must be a deferred-decal material with its
 	 * BaseColor texture parameter set (a Normal texture parameter and an Opacity scalar parameter
 	 * are optional). Without a BaseColor parameter, the texture feeding the material's Base Color
-	 * (and Normal) is used instead, see TextureFeedingDecalInput; anything else is refused, with OutProblem phrased to follow the actor's
+	 * (and Normal) is used instead, see TextureFeedingDecalInput, with its Opacity baked into the
+	 * alpha when that is where the shape is (DecalTextureWithOpacity); anything else is refused, with OutProblem phrased to follow the actor's
 	 * name and saying what to do. Export and the validator both call this.
 	 */
 	static bool ReadDecal(const AActor* Actor, FMantleDecalProps& OutProps, UTexture*& OutBaseColor, UTexture*& OutNormal, FString& OutProblem);
@@ -543,6 +544,17 @@ public:
 	 * Texture Sample. Null when none does. For decal packs whose colour texture isn't named BaseColor.
 	 */
 	static UTexture* TextureFeedingDecalInput(const UMaterialInterface* Material, bool bNormal);
+
+	/**
+	 * The texture a decal publishes as its base color, for a decal material whose shape is in its
+	 * Opacity input rather than the colour texture's alpha (a damage mask times the colour, say):
+	 * BaseColor's pixels with that Opacity run per pixel into the alpha, as a transient texture kept
+	 * for the editor session (the same one each call, so gathering and export agree). BaseColor
+	 * itself when Opacity is unwired, only reads BaseColor's alpha, or uses a node Mantle can't run
+	 * (textures, constants, scalar parameters, Multiply, Add, Subtract, Lerp, One Minus, Saturate,
+	 * Component Mask, and UV tiling from a Texture Coordinate times a constant).
+	 */
+	static UTexture* DecalTextureWithOpacity(const UMaterialInterface* Material, UTexture* BaseColor);
 
 	/**
 	 * True when Material is Mantle's decal master or an instance of it (#472), which publishes
