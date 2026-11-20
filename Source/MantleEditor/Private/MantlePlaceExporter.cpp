@@ -125,7 +125,12 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialInstance.h"
 #include "Materials/MaterialInterface.h"
+#include "Materials/MaterialExpressionFunctionInput.h"
+#include "Materials/MaterialExpressionFunctionOutput.h"
 #include "Materials/MaterialExpressionMakeMaterialAttributes.h"
+#include "Materials/MaterialExpressionMaterialFunctionCall.h"
+#include "Materials/MaterialExpressionReroute.h"
+#include "Materials/MaterialFunctionInterface.h"
 #include "Materials/MaterialExpressionNamedReroute.h"
 #include "Materials/MaterialExpressionTextureBase.h"
 #include "Materials/MaterialExpressionTextureSample.h"
@@ -3088,8 +3093,123 @@ bool FMantlePlaceExporter::IsMantleDecalMaterial(const UMaterialInterface* Mater
 	return false;
 }
 
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantleDecalGraphPrivate
+{
+	/** One place in a decal material's graph: an expression's output, inside the function calls that lead to it. */
+	struct FGraphNode
+	{
+		const UMaterialExpression* Expression = nullptr;
+		int32 OutputIndex = 0;
+		TArray<const UMaterialExpressionMaterialFunctionCall*, TInlineAllocator<4>> Calls;
+	};
+
+	/** The Function Output node a call's OutputIndex comes from, inside the called function. */
+	const UMaterialExpressionFunctionOutput* FunctionOutputOf(const UMaterialExpressionMaterialFunctionCall* Call, const int32 OutputIndex)
+	{
+		if (!Call || !Call->FunctionOutputs.IsValidIndex(OutputIndex))
+		{
+			return nullptr;
+		}
+		const FFunctionExpressionOutput& Output = Call->FunctionOutputs[OutputIndex];
+		if (Output.ExpressionOutput)
+		{
+			return Output.ExpressionOutput;
+		}
+		if (const UMaterialFunctionInterface* Function = Call->MaterialFunction)
+		{
+			for (const UMaterialExpression* Expression : Function->GetExpressions())
+			{
+				const UMaterialExpressionFunctionOutput* Candidate = Cast<UMaterialExpressionFunctionOutput>(Expression);
+				if (Candidate && Candidate->Id == Output.ExpressionOutputId)
+				{
+					return Candidate;
+				}
+			}
+		}
+		return nullptr;
+	}
+
+	/** What a call wires into one of its function's Function Input nodes; null when the call leaves it unconnected. */
+	const FExpressionInput* CallInputFor(const UMaterialExpressionMaterialFunctionCall* Call, const UMaterialExpressionFunctionInput* Input)
+	{
+		for (const FFunctionExpressionInput& CallInput : Call->FunctionInputs)
+		{
+			if ((CallInput.ExpressionInput == Input || CallInput.ExpressionInputId == Input->Id) && CallInput.Input.Expression)
+			{
+				return &CallInput.Input;
+			}
+		}
+		return nullptr;
+	}
+
+	/**
+	 * Steps Node over the bookkeeping nodes to the node it really reads: reroutes, named reroutes, a
+	 * function call (into the Function Output it reads) and a Function Input (out to what the call
+	 * wires in, or its preview value). False when it leads nowhere.
+	 */
+	bool Resolve(FGraphNode& Node)
+	{
+		for (int32 Guard = 0; Node.Expression && Guard < 256; ++Guard)
+		{
+			if (const UMaterialExpressionNamedRerouteUsage* Usage = Cast<UMaterialExpressionNamedRerouteUsage>(Node.Expression))
+			{
+				Node.Expression = Usage->Declaration;
+				Node.OutputIndex = 0;
+				continue;
+			}
+			if (const UMaterialExpressionNamedRerouteDeclaration* Declaration = Cast<UMaterialExpressionNamedRerouteDeclaration>(Node.Expression))
+			{
+				Node.Expression = Declaration->Input.Expression;
+				Node.OutputIndex = Declaration->Input.OutputIndex;
+				continue;
+			}
+			if (const UMaterialExpressionReroute* Reroute = Cast<UMaterialExpressionReroute>(Node.Expression))
+			{
+				Node.Expression = Reroute->Input.Expression;
+				Node.OutputIndex = Reroute->Input.OutputIndex;
+				continue;
+			}
+			if (const UMaterialExpressionMaterialFunctionCall* Call = Cast<UMaterialExpressionMaterialFunctionCall>(Node.Expression))
+			{
+				const UMaterialExpressionFunctionOutput* Output = FunctionOutputOf(Call, Node.OutputIndex);
+				Node.Expression = Output ? Output->A.Expression : nullptr;
+				Node.OutputIndex = Output ? Output->A.OutputIndex : 0;
+				Node.Calls.Add(Call);
+				continue;
+			}
+			if (const UMaterialExpressionFunctionInput* Input = Cast<UMaterialExpressionFunctionInput>(Node.Expression))
+			{
+				const FExpressionInput* Wired = Node.Calls.Num() > 0 ? CallInputFor(Node.Calls.Last(), Input) : nullptr;
+				if (Wired)
+				{
+					Node.Calls.Pop();
+				}
+				const FExpressionInput& Next = Wired ? *Wired : Input->Preview;
+				Node.Expression = Next.Expression;
+				Node.OutputIndex = Next.OutputIndex;
+				continue;
+			}
+			return true;
+		}
+		return false;
+	}
+
+	/** The texture a texture node samples, with a parameter read through Material (an instance's override wins). */
+	UTexture* TextureOf(const UMaterialInterface* Material, const UMaterialExpressionTextureBase* TextureNode)
+	{
+		UTexture* Texture = nullptr;
+		if (TextureNode->HasAParameterName())
+		{
+			Material->GetTextureParameterValue(FHashedMaterialParameterInfo(TextureNode->GetParameterName()), Texture);
+		}
+		return Texture ? Texture : TextureNode->Texture.Get();
+	}
+}
+
 UTexture* FMantlePlaceExporter::TextureFeedingDecalInput(const UMaterialInterface* Material, bool bNormal)
 {
+	using namespace MantleDecalGraphPrivate;
 	const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
 	const UMaterialEditorOnlyData* Graph = Base ? Base->GetEditorOnlyData() : nullptr;
 	if (!Graph)
@@ -3097,69 +3217,57 @@ UTexture* FMantlePlaceExporter::TextureFeedingDecalInput(const UMaterialInterfac
 		return nullptr;
 	}
 	// Breadth first from the material's Base Color (or Normal) input, through whatever math sits
-	// between, to the nearest texture: a decal pack's colour texture under any parameter name, or a
-	// plain Texture Sample. A parameter is read through Material, so an instance's override wins.
-	TArray<const UMaterialExpression*> Queue;
-	TSet<const UMaterialExpression*> Seen;
-	auto Push = [&Queue, &Seen](const UMaterialExpression* Expression)
+	// between and into the material functions it calls, to the nearest texture: a decal pack's
+	// colour texture under any parameter name, or a plain Texture Sample.
+	TArray<FGraphNode> Queue;
+	TSet<TPair<const UMaterialExpression*, int32>> Seen;
+	auto Push = [&Queue, &Seen](const FExpressionInput& Input, const FGraphNode* From)
 	{
-		if (Expression && !Seen.Contains(Expression))
+		FGraphNode Node;
+		Node.Expression = Input.Expression;
+		Node.OutputIndex = Input.OutputIndex;
+		if (From)
 		{
-			Seen.Add(Expression);
-			Queue.Add(Expression);
+			Node.Calls = From->Calls;
+		}
+		if (Resolve(Node) && Node.Expression && !Seen.Contains({ Node.Expression, Node.OutputIndex }))
+		{
+			Seen.Add({ Node.Expression, Node.OutputIndex });
+			Queue.Add(MoveTemp(Node));
 		}
 	};
-	if (Base->bUseMaterialAttributes)
-	{
-		Push(Graph->MaterialAttributes.Expression);
-	}
-	else
-	{
-		Push(bNormal ? Graph->Normal.Expression : Graph->BaseColor.Expression);
-	}
-	constexpr int32 MaxNodes = 1024; // a guard; a decal graph is a handful of nodes
+	const FExpressionInput& Start = Base->bUseMaterialAttributes ? static_cast<const FExpressionInput&>(Graph->MaterialAttributes)
+		: bNormal ? static_cast<const FExpressionInput&>(Graph->Normal) : static_cast<const FExpressionInput&>(Graph->BaseColor);
+	Push(Start, nullptr);
+	constexpr int32 MaxNodes = 4096; // a guard; a decal graph is a few dozen nodes, functions included
 	for (int32 Index = 0; Index < Queue.Num() && Index < MaxNodes; ++Index)
 	{
-		const UMaterialExpression* Expression = Queue[Index];
-		if (const UMaterialExpressionTextureBase* TextureNode = Cast<UMaterialExpressionTextureBase>(Expression))
+		const FGraphNode Node = Queue[Index];
+		if (const UMaterialExpressionTextureBase* TextureNode = Cast<UMaterialExpressionTextureBase>(Node.Expression))
 		{
 			// A sample fed a texture object samples that object, not its own Texture.
 			const UMaterialExpressionTextureSample* Sample = Cast<UMaterialExpressionTextureSample>(TextureNode);
 			if (Sample && Sample->TextureObject.Expression)
 			{
-				Push(Sample->TextureObject.Expression);
+				Push(Sample->TextureObject, &Node);
 				continue;
 			}
-			UTexture* Texture = nullptr;
-			if (TextureNode->HasAParameterName())
-			{
-				Material->GetTextureParameterValue(FHashedMaterialParameterInfo(TextureNode->GetParameterName()), Texture);
-			}
-			if (!Texture)
-			{
-				Texture = TextureNode->Texture;
-			}
-			if (Texture)
+			if (UTexture* Texture = TextureOf(Material, TextureNode))
 			{
 				return Texture;
 			}
 			continue; // its UVs lead nowhere useful
 		}
-		if (const UMaterialExpressionMakeMaterialAttributes* Attributes = Cast<UMaterialExpressionMakeMaterialAttributes>(Expression))
+		if (const UMaterialExpressionMakeMaterialAttributes* Attributes = Cast<UMaterialExpressionMakeMaterialAttributes>(Node.Expression))
 		{
-			Push(bNormal ? Attributes->Normal.Expression : Attributes->BaseColor.Expression);
+			Push(bNormal ? Attributes->Normal : Attributes->BaseColor, &Node);
 			continue;
 		}
-		if (const UMaterialExpressionNamedRerouteUsage* Usage = Cast<UMaterialExpressionNamedRerouteUsage>(Expression))
-		{
-			Push(Usage->Declaration);
-			continue;
-		}
-		for (const FExpressionInput* Input : const_cast<UMaterialExpression*>(Expression)->GetInputsView())
+		for (const FExpressionInput* Input : const_cast<UMaterialExpression*>(Node.Expression)->GetInputsView())
 		{
 			if (Input)
 			{
-				Push(Input->Expression);
+				Push(*Input, &Node);
 			}
 		}
 	}
