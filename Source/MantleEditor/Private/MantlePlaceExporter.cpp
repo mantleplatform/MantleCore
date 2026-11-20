@@ -3425,7 +3425,7 @@ namespace MantleDecalOpacityPrivate
 			return INDEX_NONE;
 		}
 		const UMaterialExpression* Expression = Node.Expression;
-		auto Binary = [&](FOpacityStep::EKind Kind, const FExpressionInput& A, float ConstA, const FExpressionInput& B, float ConstB)
+		auto Binary = [&](FOpacityStep::EKind Kind, const FExpressionInput& A, float ConstA, const FExpressionInput& B, float ConstB) -> int32
 		{
 			const int32 Left = CompileInput(Material, A, ConstA, Node, Program, Depth);
 			const int32 Right = Left == INDEX_NONE ? INDEX_NONE : CompileInput(Material, B, ConstB, Node, Program, Depth);
@@ -3440,7 +3440,7 @@ namespace MantleDecalOpacityPrivate
 			Step.Num = FMath::Max(Program.Steps[Left].Num, Program.Steps[Right].Num);
 			return AddStep(Program, Step);
 		};
-		auto Unary = [&](FOpacityStep::EKind Kind, const FExpressionInput& Input)
+		auto Unary = [&](FOpacityStep::EKind Kind, const FExpressionInput& Input) -> int32
 		{
 			const int32 Arg = Input.Expression ? CompileInput(Material, Input, 0.0f, Node, Program, Depth) : INDEX_NONE;
 			if (Arg == INDEX_NONE)
