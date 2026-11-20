@@ -5668,13 +5668,22 @@ void FMantlePlaceAssets::CheckMaterialsCompile(const TArray<FMantleGatheredMater
 	constexpr EShaderPlatform Platform = SP_PCD3D_SM5;
 	for (FCompileJob& Job : Jobs)
 	{
+		// The same resource the engine makes when it caches a material's shaders (UMaterial::GetNewResources, UMaterialInstance::CacheResourceShadersForCooking).
+		FMaterialResource* Resource = nullptr;
 		if (UMaterial* Base = Cast<UMaterial>(Job.Owner.Get()))
 		{
-			Base->CacheResourceShadersForCooking(Platform, Job.Resources, nullptr, false);
+			Resource = Base->AllocateResource();
+			Resource->SetMaterial(Base, nullptr, Platform);
 		}
 		else if (UMaterialInstance* Instance = Cast<UMaterialInstance>(Job.Owner.Get()))
 		{
-			Instance->CacheResourceShadersForCooking(Platform, Job.Resources, EMaterialShaderPrecompileMode::Default, nullptr, false);
+			Resource = Instance->AllocatePermutationResource();
+			Resource->SetMaterial(Instance->GetMaterial(), Instance, Platform);
+		}
+		if (Resource)
+		{
+			Job.Resources.Add(FMaterialResourceForCooking{ Resource, Platform });
+			Resource->BeginCacheShaders(EMaterialShaderPrecompileMode::Default, nullptr);
 		}
 	}
 	for (FCompileJob& Job : Jobs)
