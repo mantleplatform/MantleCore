@@ -14,6 +14,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
+#include "ImageCore.h"
 #include "MaterialDomain.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionConstant.h"
@@ -421,6 +422,98 @@ bool FMantlePlaceSkipDecalTextureInFunctionTest::RunTest(const FString& Paramete
 	{
 		AddInfo(Problem);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePlaceSkipDecalOpacityBakeTest,
+	"Mantle.Editor.PlaceSkip.DecalOpacityIsBakedIntoTheAlpha",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePlaceSkipDecalOpacityBakeTest::RunTest(const FString& Parameters)
+{
+	using namespace MantlePlaceSkipTestPrivate;
+	FSkipWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	// A 4x4 texture with source pixels, as an imported one has.
+	auto MakeSourceTexture = [](const TCHAR* Name, bool bSRGB, TFunctionRef<FColor(int32 X, int32 Y)> Pixel)
+	{
+		TArray<FColor> Pixels;
+		for (int32 Y = 0; Y < 4; ++Y)
+		{
+			for (int32 X = 0; X < 4; ++X)
+			{
+				Pixels.Add(Pixel(X, Y));
+			}
+		}
+		UTexture2D* Texture = NewObject<UTexture2D>(GetTransientPackage(), MakeUniqueObjectName(GetTransientPackage(), UTexture2D::StaticClass(), FName(Name)));
+		Texture->SRGB = bSRGB;
+		Texture->Source.Init(4, 4, 1, 1, TSF_BGRA8, reinterpret_cast<const uint8*>(Pixels.GetData()));
+		return Texture;
+	};
+	// The Prison pack's shape: an opaque colour texture, and Opacity = its alpha times a damage mask's red.
+	UTexture2D* Colour = MakeSourceTexture(TEXT("T_Decal_Test"), true, [](int32, int32) { return FColor(200, 100, 50, 255); });
+	UTexture2D* DamageMask = MakeSourceTexture(TEXT("T_DamageMask_Test"), false, [](int32 X, int32) { return X < 2 ? FColor(255, 0, 0, 255) : FColor(0, 0, 0, 255); });
+
+	UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
+	Material->MaterialDomain = MD_DeferredDecal;
+	UMaterialExpressionTextureSample* ColourSample = NewObject<UMaterialExpressionTextureSample>(Material);
+	ColourSample->Material = Material;
+	ColourSample->Texture = Colour;
+	UMaterialExpressionTextureSample* MaskSample = NewObject<UMaterialExpressionTextureSample>(Material);
+	MaskSample->Material = Material;
+	MaskSample->Texture = DamageMask;
+	UMaterialExpressionMultiply* Multiply = NewObject<UMaterialExpressionMultiply>(Material);
+	Multiply->Material = Material;
+	Multiply->A.Connect(4, ColourSample); // A
+	Multiply->B.Connect(0, MaskSample); // RGB
+	for (UMaterialExpression* Expression : { static_cast<UMaterialExpression*>(ColourSample), static_cast<UMaterialExpression*>(MaskSample), static_cast<UMaterialExpression*>(Multiply) })
+	{
+		Material->GetExpressionCollection().AddExpression(Expression);
+	}
+	Material->GetEditorOnlyData()->BaseColor.Connect(0, ColourSample);
+	Material->GetEditorOnlyData()->Opacity.Connect(0, Multiply);
+	Material->UpdateCachedExpressionData();
+
+	ADecalActor* Decal = Fixture.World->SpawnActor<ADecalActor>(FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("the decal"), Decal))
+	{
+		return false;
+	}
+	Decal->SetActorLabel(TEXT("Road marking"));
+	Decal->SetDecalMaterial(Material);
+	FMantleDecalProps Props;
+	UTexture* BaseColor = nullptr;
+	UTexture* Normal = nullptr;
+	FString Problem;
+	if (!TestTrue(TEXT("a decal whose shape is in its Opacity is read"), FMantlePlaceExporter::ReadDecal(Decal, Props, BaseColor, Normal, Problem)))
+	{
+		AddInfo(Problem);
+		return true;
+	}
+	if (!TestNotNull(TEXT("with a texture"), BaseColor) || !TestTrue(TEXT("baked, not the colour texture as it is"), BaseColor != Colour))
+	{
+		return true;
+	}
+	FImage Baked;
+	if (TestTrue(TEXT("the baked texture has source pixels"), BaseColor->Source.GetMipImage(Baked, 0)))
+	{
+		TestEqual(TEXT("at the colour texture's size"), Baked.SizeX, 4);
+		const TArrayView64<FColor> Pixels = Baked.AsBGRA8();
+		TestEqual(TEXT("the colour is kept"), Pixels[0].R, static_cast<uint8>(200));
+		TestEqual(TEXT("its green too"), Pixels[0].G, static_cast<uint8>(100));
+		TestEqual(TEXT("where the mask is on, the decal shows"), Pixels[1].A, static_cast<uint8>(255));
+		TestEqual(TEXT("where it is off, the decal is clear"), Pixels[3].A, static_cast<uint8>(0));
+	}
+	UTexture* Again = nullptr;
+	FMantlePlaceExporter::ReadDecal(Decal, Props, Again, Normal, Problem);
+	TestTrue(TEXT("a second read gives the same baked texture, so gathering and export agree"), Again == BaseColor);
+
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	TestEqual(TEXT("the decal is written"), CountType(Result.Place, EMantleEntityType::Decal), 1);
 	return true;
 }
 

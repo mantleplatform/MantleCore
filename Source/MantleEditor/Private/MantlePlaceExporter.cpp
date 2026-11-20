@@ -125,7 +125,17 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialInstance.h"
 #include "Materials/MaterialInterface.h"
+#include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionComponentMask.h"
+#include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionFunctionInput.h"
+#include "Materials/MaterialExpressionLinearInterpolate.h"
+#include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionOneMinus.h"
+#include "Materials/MaterialExpressionSaturate.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionSubtract.h"
+#include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionFunctionOutput.h"
 #include "Materials/MaterialExpressionMakeMaterialAttributes.h"
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
@@ -137,7 +147,9 @@
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
+#include "ImageCore.h"
 #include "Misc/SecureHash.h"
+#include "UObject/StrongObjectPtr.h"
 #include "Modules/ModuleManager.h"
 #include "Particles/ParticleSystemComponent.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
@@ -3274,6 +3286,461 @@ UTexture* FMantlePlaceExporter::TextureFeedingDecalInput(const UMaterialInterfac
 	return nullptr;
 }
 
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantleDecalOpacityPrivate
+{
+	using MantleDecalGraphPrivate::FGraphNode;
+
+	/**
+	 * A decal material's Opacity input, compiled into a few steps Mantle can run per pixel: textures
+	 * (sampled at the decal's UV, with a tiling), constants, scalar parameters, and the math packs
+	 * put between them. Steps come children first, so running them in order fills in each step's
+	 * inputs before it.
+	 */
+	struct FOpacityStep
+	{
+		enum class EKind : uint8 { Constant, Texture, Multiply, Add, Subtract, Lerp, OneMinus, Mask, Saturate };
+		EKind Kind = EKind::Constant;
+		FVector4f Value = FVector4f(0.0f, 0.0f, 0.0f, 0.0f);
+		int32 Num = 1; // how many components the step outputs (a scalar broadcasts)
+		int32 Texture = INDEX_NONE; // into FOpacityProgram::Textures
+		int32 Output = 0; // a texture sample's output: 0 RGB, 1 R, 2 G, 3 B, 4 A, 5 RGBA
+		FVector2f Tiling = FVector2f(1.0f, 1.0f);
+		uint8 MaskBits = 0; // R, G, B, A in bits 0..3
+		int32 Args[3] = { INDEX_NONE, INDEX_NONE, INDEX_NONE };
+	};
+
+	struct FOpacityProgram
+	{
+		TArray<FOpacityStep> Steps;
+		TArray<UTexture*> Textures;
+		FString Recipe; // what the steps do, for naming the baked texture by its content
+	};
+
+	int32 AddStep(FOpacityProgram& Program, FOpacityStep Step)
+	{
+		Program.Recipe += FString::Printf(TEXT("%d:%d:%d:%d:%g,%g,%g,%g:%g,%g:%d:%d,%d,%d;"),
+			static_cast<int32>(Step.Kind), Step.Num, Step.Texture, Step.Output, Step.Value.X, Step.Value.Y, Step.Value.Z, Step.Value.W,
+			Step.Tiling.X, Step.Tiling.Y, Step.MaskBits, Step.Args[0], Step.Args[1], Step.Args[2]);
+		return Program.Steps.Add(Step);
+	}
+
+	int32 AddConstant(FOpacityProgram& Program, const float Value)
+	{
+		FOpacityStep Step;
+		Step.Value = FVector4f(Value, Value, Value, Value);
+		return AddStep(Program, Step);
+	}
+
+	int32 Compile(const UMaterialInterface* Material, FGraphNode Node, FOpacityProgram& Program, int32 Depth);
+
+	/** An input of a math node: what it is wired to, or its constant when it is not. */
+	int32 CompileInput(const UMaterialInterface* Material, const FExpressionInput& Input, const float Constant, const FGraphNode& From, FOpacityProgram& Program, const int32 Depth)
+	{
+		if (!Input.Expression)
+		{
+			return AddConstant(Program, Constant);
+		}
+		FGraphNode Node;
+		Node.Expression = Input.Expression;
+		Node.OutputIndex = Input.OutputIndex;
+		Node.Calls = From.Calls;
+		return MantleDecalGraphPrivate::Resolve(Node) ? Compile(Material, MoveTemp(Node), Program, Depth + 1) : INDEX_NONE;
+	}
+
+	/** A texture sample's UV tiling: unwired, a Texture Coordinate, or one times a constant or scalar parameter. False for anything else. */
+	bool ReadTiling(const UMaterialInterface* Material, const UMaterialExpressionTextureSample* Sample, const FGraphNode& From, FVector2f& OutTiling)
+	{
+		OutTiling = FVector2f(1.0f, 1.0f);
+		if (!Sample->Coordinates.Expression)
+		{
+			return true;
+		}
+		FGraphNode Node;
+		Node.Expression = Sample->Coordinates.Expression;
+		Node.OutputIndex = Sample->Coordinates.OutputIndex;
+		Node.Calls = From.Calls;
+		if (!MantleDecalGraphPrivate::Resolve(Node))
+		{
+			return false;
+		}
+		auto AsCoordinate = [&OutTiling](const UMaterialExpression* Expression)
+		{
+			const UMaterialExpressionTextureCoordinate* Coordinate = Cast<UMaterialExpressionTextureCoordinate>(Expression);
+			if (!Coordinate || Coordinate->CoordinateIndex != 0 || Coordinate->UnMirrorU || Coordinate->UnMirrorV)
+			{
+				return false;
+			}
+			OutTiling = FVector2f(Coordinate->UTiling, Coordinate->VTiling);
+			return true;
+		};
+		if (AsCoordinate(Node.Expression))
+		{
+			return true;
+		}
+		const UMaterialExpressionMultiply* Multiply = Cast<UMaterialExpressionMultiply>(Node.Expression);
+		if (!Multiply)
+		{
+			return false;
+		}
+		auto ScalarOf = [Material](const FExpressionInput& Input, const float Constant, float& OutValue)
+		{
+			if (!Input.Expression)
+			{
+				OutValue = Constant;
+				return true;
+			}
+			if (const UMaterialExpressionConstant* Value = Cast<UMaterialExpressionConstant>(Input.Expression))
+			{
+				OutValue = Value->R;
+				return true;
+			}
+			if (const UMaterialExpressionScalarParameter* Parameter = Cast<UMaterialExpressionScalarParameter>(Input.Expression))
+			{
+				OutValue = Parameter->DefaultValue;
+				Material->GetScalarParameterValue(FHashedMaterialParameterInfo(Parameter->ParameterName), OutValue);
+				return true;
+			}
+			return false;
+		};
+		float Scale = 1.0f;
+		if (AsCoordinate(Multiply->A.Expression) && ScalarOf(Multiply->B, Multiply->ConstB, Scale))
+		{
+			OutTiling *= Scale;
+			return true;
+		}
+		if (AsCoordinate(Multiply->B.Expression) && ScalarOf(Multiply->A, Multiply->ConstA, Scale))
+		{
+			OutTiling *= Scale;
+			return true;
+		}
+		return false;
+	}
+
+	/** Compiles one node; INDEX_NONE for a node Mantle can't run, which leaves the decal's colour alpha as its shape. */
+	int32 Compile(const UMaterialInterface* Material, FGraphNode Node, FOpacityProgram& Program, const int32 Depth)
+	{
+		if (!Node.Expression || Depth > 32 || Program.Steps.Num() > 256)
+		{
+			return INDEX_NONE;
+		}
+		const UMaterialExpression* Expression = Node.Expression;
+		auto Binary = [&](FOpacityStep::EKind Kind, const FExpressionInput& A, float ConstA, const FExpressionInput& B, float ConstB)
+		{
+			const int32 Left = CompileInput(Material, A, ConstA, Node, Program, Depth);
+			const int32 Right = Left == INDEX_NONE ? INDEX_NONE : CompileInput(Material, B, ConstB, Node, Program, Depth);
+			if (Right == INDEX_NONE)
+			{
+				return INDEX_NONE;
+			}
+			FOpacityStep Step;
+			Step.Kind = Kind;
+			Step.Args[0] = Left;
+			Step.Args[1] = Right;
+			Step.Num = FMath::Max(Program.Steps[Left].Num, Program.Steps[Right].Num);
+			return AddStep(Program, Step);
+		};
+		auto Unary = [&](FOpacityStep::EKind Kind, const FExpressionInput& Input)
+		{
+			const int32 Arg = Input.Expression ? CompileInput(Material, Input, 0.0f, Node, Program, Depth) : INDEX_NONE;
+			if (Arg == INDEX_NONE)
+			{
+				return INDEX_NONE;
+			}
+			FOpacityStep Step;
+			Step.Kind = Kind;
+			Step.Args[0] = Arg;
+			Step.Num = Program.Steps[Arg].Num;
+			return AddStep(Program, Step);
+		};
+
+		if (const UMaterialExpressionTextureSample* Sample = Cast<UMaterialExpressionTextureSample>(Expression))
+		{
+			UTexture* Texture = nullptr;
+			if (Sample->TextureObject.Expression)
+			{
+				FGraphNode Object;
+				Object.Expression = Sample->TextureObject.Expression;
+				Object.Calls = Node.Calls;
+				const UMaterialExpressionTextureBase* ObjectNode = MantleDecalGraphPrivate::Resolve(Object) ? Cast<UMaterialExpressionTextureBase>(Object.Expression) : nullptr;
+				Texture = ObjectNode ? MantleDecalGraphPrivate::TextureOf(Material, ObjectNode) : nullptr;
+			}
+			else
+			{
+				Texture = MantleDecalGraphPrivate::TextureOf(Material, Sample);
+			}
+			FOpacityStep Step;
+			Step.Kind = FOpacityStep::EKind::Texture;
+			if (!Texture || !Texture->Source.IsValid() || Node.OutputIndex < 0 || Node.OutputIndex > 5 || !ReadTiling(Material, Sample, Node, Step.Tiling))
+			{
+				return INDEX_NONE;
+			}
+			Step.Texture = Program.Textures.AddUnique(Texture);
+			Step.Output = Node.OutputIndex;
+			Step.Num = Node.OutputIndex == 0 ? 3 : Node.OutputIndex == 5 ? 4 : 1;
+			Program.Recipe += FString::Printf(TEXT("tex%d=%s@%s;"), Step.Texture, *Texture->GetPathName(), *Texture->Source.GetId().ToString());
+			return AddStep(Program, Step);
+		}
+		if (const UMaterialExpressionConstant* Constant = Cast<UMaterialExpressionConstant>(Expression))
+		{
+			return AddConstant(Program, Constant->R);
+		}
+		if (const UMaterialExpressionScalarParameter* Parameter = Cast<UMaterialExpressionScalarParameter>(Expression))
+		{
+			float Value = Parameter->DefaultValue;
+			Material->GetScalarParameterValue(FHashedMaterialParameterInfo(Parameter->ParameterName), Value);
+			return AddConstant(Program, Value);
+		}
+		if (const UMaterialExpressionMultiply* Multiply = Cast<UMaterialExpressionMultiply>(Expression))
+		{
+			return Binary(FOpacityStep::EKind::Multiply, Multiply->A, Multiply->ConstA, Multiply->B, Multiply->ConstB);
+		}
+		if (const UMaterialExpressionAdd* Add = Cast<UMaterialExpressionAdd>(Expression))
+		{
+			return Binary(FOpacityStep::EKind::Add, Add->A, Add->ConstA, Add->B, Add->ConstB);
+		}
+		if (const UMaterialExpressionSubtract* Subtract = Cast<UMaterialExpressionSubtract>(Expression))
+		{
+			return Binary(FOpacityStep::EKind::Subtract, Subtract->A, Subtract->ConstA, Subtract->B, Subtract->ConstB);
+		}
+		if (const UMaterialExpressionLinearInterpolate* Lerp = Cast<UMaterialExpressionLinearInterpolate>(Expression))
+		{
+			const int32 A = CompileInput(Material, Lerp->A, Lerp->ConstA, Node, Program, Depth);
+			const int32 B = A == INDEX_NONE ? INDEX_NONE : CompileInput(Material, Lerp->B, Lerp->ConstB, Node, Program, Depth);
+			const int32 Alpha = B == INDEX_NONE ? INDEX_NONE : CompileInput(Material, Lerp->Alpha, Lerp->ConstAlpha, Node, Program, Depth);
+			if (Alpha == INDEX_NONE)
+			{
+				return INDEX_NONE;
+			}
+			FOpacityStep Step;
+			Step.Kind = FOpacityStep::EKind::Lerp;
+			Step.Args[0] = A;
+			Step.Args[1] = B;
+			Step.Args[2] = Alpha;
+			Step.Num = FMath::Max3(Program.Steps[A].Num, Program.Steps[B].Num, Program.Steps[Alpha].Num);
+			return AddStep(Program, Step);
+		}
+		if (const UMaterialExpressionOneMinus* OneMinus = Cast<UMaterialExpressionOneMinus>(Expression))
+		{
+			return Unary(FOpacityStep::EKind::OneMinus, OneMinus->Input);
+		}
+		if (const UMaterialExpressionSaturate* Saturate = Cast<UMaterialExpressionSaturate>(Expression))
+		{
+			return Unary(FOpacityStep::EKind::Saturate, Saturate->Input);
+		}
+		if (const UMaterialExpressionComponentMask* Mask = Cast<UMaterialExpressionComponentMask>(Expression))
+		{
+			const int32 Step = Unary(FOpacityStep::EKind::Mask, Mask->Input);
+			if (Step != INDEX_NONE)
+			{
+				FOpacityStep& Masked = Program.Steps[Step];
+				Masked.MaskBits = (Mask->R ? 1 : 0) | (Mask->G ? 2 : 0) | (Mask->B ? 4 : 0) | (Mask->A ? 8 : 0);
+				Masked.Num = FMath::Max(1, FMath::CountBits(Masked.MaskBits));
+				Program.Recipe += FString::Printf(TEXT("mask%d;"), Masked.MaskBits);
+			}
+			return Step;
+		}
+		return INDEX_NONE;
+	}
+
+	/** One texture's pixels as linear floats, for sampling. */
+	struct FSampler
+	{
+		FImage Image;
+		bool Load(UTexture* Texture)
+		{
+			FImage Source;
+			if (!Texture->Source.IsValid() || Texture->Source.GetNumBlocks() > 1 || Texture->Source.GetNumSlices() > 1 || !Texture->Source.GetMipImage(Source, 0))
+			{
+				return false;
+			}
+			if (!ERawImageFormat::IsHDR(Source.Format))
+			{
+				Source.GammaSpace = Texture->SRGB ? EGammaSpace::sRGB : EGammaSpace::Linear;
+			}
+			Source.CopyTo(Image, ERawImageFormat::RGBA32F, EGammaSpace::Linear);
+			return Image.SizeX > 0 && Image.SizeY > 0;
+		}
+
+		/** Bilinear, wrapping, at UV (0..1 spans the texture once). */
+		FLinearColor Sample(const float U, const float V) const
+		{
+			const TArrayView64<FLinearColor> Pixels = const_cast<FImage&>(Image).AsRGBA32F();
+			const float X = U * Image.SizeX - 0.5f;
+			const float Y = V * Image.SizeY - 0.5f;
+			const int32 X0 = FMath::FloorToInt32(X);
+			const int32 Y0 = FMath::FloorToInt32(Y);
+			const float Fx = X - X0;
+			const float Fy = Y - Y0;
+			auto At = [this, &Pixels](int32 Px, int32 Py)
+			{
+				Px = ((Px % Image.SizeX) + Image.SizeX) % Image.SizeX;
+				Py = ((Py % Image.SizeY) + Image.SizeY) % Image.SizeY;
+				return Pixels[static_cast<int64>(Py) * Image.SizeX + Px];
+			};
+			const FLinearColor Top = FMath::Lerp(At(X0, Y0), At(X0 + 1, Y0), Fx);
+			const FLinearColor Bottom = FMath::Lerp(At(X0, Y0 + 1), At(X0 + 1, Y0 + 1), Fx);
+			return FMath::Lerp(Top, Bottom, Fy);
+		}
+	};
+
+	/** Baked decal textures, by the content they were baked from, kept for the editor session so gathering and export agree. */
+	TMap<FString, TStrongObjectPtr<UTexture2D>>& BakedShapes()
+	{
+		static TMap<FString, TStrongObjectPtr<UTexture2D>> Baked;
+		return Baked;
+	}
+}
+
+UTexture* FMantlePlaceExporter::DecalTextureWithOpacity(const UMaterialInterface* Material, UTexture* BaseColor)
+{
+	using namespace MantleDecalOpacityPrivate;
+	const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
+	const UMaterialEditorOnlyData* Graph = Base ? Base->GetEditorOnlyData() : nullptr;
+	if (!Graph || !BaseColor || Base->bUseMaterialAttributes || !Graph->Opacity.Expression)
+	{
+		return BaseColor;
+	}
+	FGraphNode Root;
+	Root.Expression = Graph->Opacity.Expression;
+	Root.OutputIndex = Graph->Opacity.OutputIndex;
+	FOpacityProgram Program;
+	const int32 Result = MantleDecalGraphPrivate::Resolve(Root) ? Compile(Material, MoveTemp(Root), Program, 0) : INDEX_NONE;
+	if (Result == INDEX_NONE)
+	{
+		return BaseColor; // a graph Mantle can't run: the colour texture's own alpha stays the shape
+	}
+	// Only the colour texture's own alpha (times constants): that alpha already is the shape.
+	const bool bNeedsBake = Program.Steps.ContainsByPredicate([&Program, BaseColor](const FOpacityStep& Step)
+	{
+		return Step.Kind == FOpacityStep::EKind::Texture && (Program.Textures[Step.Texture] != BaseColor || Step.Output != 4);
+	});
+	if (!bNeedsBake)
+	{
+		return BaseColor;
+	}
+
+	FMD5 Md5;
+	const FString Content = FString::Printf(TEXT("%s@%s|%d|%s"), *BaseColor->GetPathName(), *BaseColor->Source.GetId().ToString(), Result, *Program.Recipe);
+	const FTCHARToUTF8 Utf8(*Content);
+	Md5.Update(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length());
+	uint8 Digest[16];
+	Md5.Final(Digest);
+	FString Hash;
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		Hash += FString::Printf(TEXT("%02x"), Digest[Index]);
+	}
+	const FString Key = Content;
+	if (const TStrongObjectPtr<UTexture2D>* Existing = BakedShapes().Find(Key))
+	{
+		return Existing->Get();
+	}
+
+	// The colour texture's pixels as they are, with the Opacity graph run per pixel into the alpha.
+	FImage Colour;
+	if (!BaseColor->Source.IsValid() || BaseColor->Source.GetNumBlocks() > 1 || BaseColor->Source.GetNumSlices() > 1 || !BaseColor->Source.GetMipImage(Colour, 0))
+	{
+		return BaseColor;
+	}
+	if (!ERawImageFormat::IsHDR(Colour.Format))
+	{
+		Colour.GammaSpace = BaseColor->SRGB ? EGammaSpace::sRGB : EGammaSpace::Linear;
+	}
+	FImage Bgra;
+	Colour.CopyTo(Bgra, ERawImageFormat::BGRA8, BaseColor->SRGB ? EGammaSpace::sRGB : EGammaSpace::Linear);
+	TArray<FSampler> Samplers;
+	Samplers.SetNum(Program.Textures.Num());
+	for (int32 Index = 0; Index < Program.Textures.Num(); ++Index)
+	{
+		if (!Samplers[Index].Load(Program.Textures[Index]))
+		{
+			return BaseColor;
+		}
+	}
+	const int32 Width = Bgra.SizeX;
+	const int32 Height = Bgra.SizeY;
+	const TArrayView64<FColor> Pixels = Bgra.AsBGRA8();
+	TArray<FVector4f> Values;
+	Values.SetNumUninitialized(Program.Steps.Num());
+	for (int32 Y = 0; Y < Height; ++Y)
+	{
+		for (int32 X = 0; X < Width; ++X)
+		{
+			const float U = (X + 0.5f) / Width;
+			const float V = (Y + 0.5f) / Height;
+			for (int32 Index = 0; Index < Program.Steps.Num(); ++Index)
+			{
+				const FOpacityStep& Step = Program.Steps[Index];
+				auto Arg = [&Values, &Program, &Step](int32 Which)
+				{
+					// A scalar broadcasts to every component, as in the material.
+					const FVector4f Value = Values[Step.Args[Which]];
+					return Program.Steps[Step.Args[Which]].Num == 1 ? FVector4f(Value.X, Value.X, Value.X, Value.X) : Value;
+				};
+				FVector4f Out = Step.Value;
+				switch (Step.Kind)
+				{
+				case FOpacityStep::EKind::Constant:
+					break;
+				case FOpacityStep::EKind::Texture:
+				{
+					const FLinearColor C = Samplers[Step.Texture].Sample(U * Step.Tiling.X, V * Step.Tiling.Y);
+					switch (Step.Output)
+					{
+					case 1: Out = FVector4f(C.R, C.R, C.R, C.R); break;
+					case 2: Out = FVector4f(C.G, C.G, C.G, C.G); break;
+					case 3: Out = FVector4f(C.B, C.B, C.B, C.B); break;
+					case 4: Out = FVector4f(C.A, C.A, C.A, C.A); break;
+					default: Out = FVector4f(C.R, C.G, C.B, C.A); break;
+					}
+					break;
+				}
+				case FOpacityStep::EKind::Multiply: Out = Arg(0) * Arg(1); break;
+				case FOpacityStep::EKind::Add: Out = Arg(0) + Arg(1); break;
+				case FOpacityStep::EKind::Subtract: Out = Arg(0) - Arg(1); break;
+				case FOpacityStep::EKind::Lerp: Out = Arg(0) + (Arg(1) - Arg(0)) * Arg(2); break;
+				case FOpacityStep::EKind::OneMinus: Out = FVector4f(1.0f, 1.0f, 1.0f, 1.0f) - Arg(0); break;
+				case FOpacityStep::EKind::Saturate:
+				{
+					const FVector4f In = Arg(0);
+					Out = FVector4f(FMath::Clamp(In.X, 0.0f, 1.0f), FMath::Clamp(In.Y, 0.0f, 1.0f), FMath::Clamp(In.Z, 0.0f, 1.0f), FMath::Clamp(In.W, 0.0f, 1.0f));
+					break;
+				}
+				case FOpacityStep::EKind::Mask:
+				{
+					// The kept components, packed in order.
+					const FVector4f In = Values[Step.Args[0]];
+					const float Components[4] = { In.X, In.Y, In.Z, In.W };
+					float Packed[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+					int32 Count = 0;
+					for (int32 Channel = 0; Channel < 4; ++Channel)
+					{
+						if (Step.MaskBits & (1 << Channel))
+						{
+							Packed[Count++] = Components[Channel];
+						}
+					}
+					Out = FVector4f(Packed[0], Packed[1], Packed[2], Packed[3]);
+					break;
+				}
+				}
+				Values[Index] = Out;
+			}
+			// The material's Opacity is the first component of what it is fed.
+			const float Opacity = FMath::Clamp(Values[Result].X, 0.0f, 1.0f);
+			Pixels[static_cast<int64>(Y) * Width + X].A = static_cast<uint8>(FMath::RoundToInt32(Opacity * 255.0f));
+		}
+	}
+
+	UTexture2D* Baked = NewObject<UTexture2D>(GetTransientPackage(), MakeUniqueObjectName(GetTransientPackage(), UTexture2D::StaticClass(),
+		FName(*FString::Printf(TEXT("%s_Shape_%s"), *BaseColor->GetName(), *Hash))));
+	Baked->SRGB = BaseColor->SRGB;
+	Baked->Source.Init(Width, Height, 1, 1, TSF_BGRA8, reinterpret_cast<const uint8*>(Pixels.GetData()));
+	BakedShapes().Add(Key, TStrongObjectPtr<UTexture2D>(Baked));
+	return Baked;
+}
+
 bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& OutProps, UTexture*& OutBaseColor, UTexture*& OutNormal, FString& OutProblem)
 {
 	OutProps = FMantleDecalProps();
@@ -3331,7 +3798,11 @@ bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& Out
 			*Material->GetName(), Remedy);
 		return false;
 	}
-	if (bFollowedGraph)
+	// A pack whose shape is in its Opacity input, not the colour texture's alpha (a damage mask times
+	// the colour): the colour texture is published with that Opacity baked into its alpha.
+	UTexture* const Shaped = bMantleMaster ? BaseColor : DecalTextureWithOpacity(Material, BaseColor);
+	const bool bBaked = Shaped != BaseColor;
+	if (bFollowedGraph && !bBaked)
 	{
 		// The decal's shape is the colour texture's alpha. A pack that keeps its shape in a separate
 		// mask (into Opacity) has a colour texture without alpha, which would publish as a solid
@@ -3350,7 +3821,7 @@ bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& Out
 			}
 		}
 	}
-	OutBaseColor = BaseColor;
+	OutBaseColor = Shaped;
 
 	// The normal map, when the material has one set that is not the master's flat placeholder.
 	UTexture* Normal = nullptr;
