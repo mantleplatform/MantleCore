@@ -108,7 +108,6 @@
 #include "Engine/TextRenderActor.h"
 #include "Engine/Texture.h"
 #include "Engine/Texture2D.h"
-#include "TextureCompiler.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
@@ -134,6 +133,7 @@
 #include "Materials/MaterialExpressionOneMinus.h"
 #include "Materials/MaterialExpressionSaturate.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionStaticSwitchParameter.h"
 #include "Materials/MaterialExpressionSubtract.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionFunctionOutput.h"
@@ -3485,6 +3485,20 @@ namespace MantleDecalOpacityPrivate
 		{
 			return AddConstant(Program, Constant->R);
 		}
+		if (const UMaterialExpressionMakeMaterialAttributes* Attributes = Cast<UMaterialExpressionMakeMaterialAttributes>(Expression))
+		{
+			return CompileInput(Material, Attributes->Opacity, 1.0f, Node, Program, Depth);
+		}
+		if (const UMaterialExpressionStaticSwitchParameter* Switch = Cast<UMaterialExpressionStaticSwitchParameter>(Expression))
+		{
+			// The branch the instance sets (EnableOpacity, say), else the parameter's default.
+			bool bValue = Switch->DefaultValue != 0;
+			FGuid Unused;
+			Material->GetStaticSwitchParameterValue(FHashedMaterialParameterInfo(Switch->ParameterName), bValue, Unused);
+			const FExpressionInput& Branch = bValue ? Switch->A : Switch->B;
+			Program.Recipe += FString::Printf(TEXT("switch%d;"), bValue ? 1 : 0);
+			return Branch.Expression ? CompileInput(Material, Branch, 0.0f, Node, Program, Depth) : INDEX_NONE;
+		}
 		if (const UMaterialExpressionScalarParameter* Parameter = Cast<UMaterialExpressionScalarParameter>(Expression))
 		{
 			float Value = Parameter->DefaultValue;
@@ -3597,13 +3611,20 @@ UTexture* FMantlePlaceExporter::DecalTextureWithOpacity(const UMaterialInterface
 	using namespace MantleDecalOpacityPrivate;
 	const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
 	const UMaterialEditorOnlyData* Graph = Base ? Base->GetEditorOnlyData() : nullptr;
-	if (!Graph || !BaseColor || Base->bUseMaterialAttributes || !Graph->Opacity.Expression)
+	// A material on material attributes reads its Opacity from the Make Material Attributes it ends
+	// in, however deep in its functions; Compile takes that node's Opacity pin.
+	if (!Graph || !BaseColor)
+	{
+		return BaseColor;
+	}
+	const FExpressionInput& Start = Base->bUseMaterialAttributes ? static_cast<const FExpressionInput&>(Graph->MaterialAttributes) : static_cast<const FExpressionInput&>(Graph->Opacity);
+	if (!Start.Expression)
 	{
 		return BaseColor;
 	}
 	FGraphNode Root;
-	Root.Expression = Graph->Opacity.Expression;
-	Root.OutputIndex = Graph->Opacity.OutputIndex;
+	Root.Expression = Start.Expression;
+	Root.OutputIndex = Start.OutputIndex;
 	FOpacityProgram Program;
 	const int32 Result = MantleDecalGraphPrivate::Resolve(Root) ? Compile(Material, MoveTemp(Root), Program, 0) : INDEX_NONE;
 	if (Result == INDEX_NONE)
@@ -3741,6 +3762,60 @@ UTexture* FMantlePlaceExporter::DecalTextureWithOpacity(const UMaterialInterface
 	return Baked;
 }
 
+bool FMantlePlaceExporter::HasShapeAlpha(UTexture* Texture)
+{
+	// From the source pixels: a texture's built format says nothing for a virtual texture (the
+	// Overgrown Factory pack's decals), and BC1 vs BC3 is only a guess at what the pixels hold.
+	// Remembered by source id, since Check, gathering and export each ask for every decal.
+	static TMap<FString, bool> Known;
+	if (!Texture)
+	{
+		return false;
+	}
+	if (!Texture->Source.IsValid())
+	{
+		const UTexture2D* Texture2D = Cast<UTexture2D>(Texture);
+		return Texture2D && Texture2D->HasAlphaChannel(); // no source (cooked): the built format is all there is
+	}
+	const FString Key = FString::Printf(TEXT("%s@%s"), *Texture->GetPathName(), *Texture->Source.GetId().ToString());
+	if (const bool* Found = Known.Find(Key))
+	{
+		return *Found;
+	}
+	bool bShape = false;
+	FImage Image;
+	if (Texture->Source.GetNumBlocks() == 1 && Texture->Source.GetNumSlices() == 1 && Texture->Source.GetMipImage(Image, 0)
+		&& ERawImageFormat::HasAlphaChannel(Image.Format))
+	{
+		if (Image.Format == ERawImageFormat::BGRA8)
+		{
+			for (const FColor& Pixel : Image.AsBGRA8())
+			{
+				if (Pixel.A < 255)
+				{
+					bShape = true;
+					break;
+				}
+			}
+		}
+		else
+		{
+			FImage Linear;
+			Image.CopyTo(Linear, ERawImageFormat::RGBA32F, EGammaSpace::Linear);
+			for (const FLinearColor& Pixel : Linear.AsRGBA32F())
+			{
+				if (Pixel.A < 254.5f / 255.0f)
+				{
+					bShape = true;
+					break;
+				}
+			}
+		}
+	}
+	Known.Add(Key, bShape);
+	return bShape;
+}
+
 bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& OutProps, UTexture*& OutBaseColor, UTexture*& OutNormal, FString& OutProblem)
 {
 	OutProps = FMantleDecalProps();
@@ -3805,17 +3880,13 @@ bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& Out
 	if (bFollowedGraph && !bBaked)
 	{
 		// The decal's shape is the colour texture's alpha. A pack that keeps its shape in a separate
-		// mask (into Opacity) has a colour texture without alpha, which would publish as a solid
-		// rectangle, so refuse it. HasAlphaChannel is the built format's (BC3 vs BC1): finish
-		// building the texture first, or an editor still compiling it would read no alpha.
-		if (UTexture2D* Texture2D = Cast<UTexture2D>(BaseColor))
+		// mask has a colour texture whose alpha is all opaque, which would publish as a solid
+		// rectangle, so refuse it.
 		{
-			UTexture* const Building = Texture2D;
-			FTextureCompilingManager::Get().FinishCompilation(MakeArrayView(&Building, 1));
-			if (!Texture2D->HasAlphaChannel())
+			if (!HasShapeAlpha(BaseColor))
 			{
 				OutProblem = FString::Printf(
-					TEXT("uses decal material '%s', which Mantle can't publish: its Base Color texture '%s' has no alpha channel, and a published decal's shape is the colour texture's alpha. Put the decal's shape in that texture's alpha, or give the material a texture parameter named BaseColor whose texture has it."),
+					TEXT("uses decal material '%s', which Mantle can't publish: its Base Color texture '%s' has no alpha channel holding a shape (no alpha, or all opaque), and a published decal's shape is the colour texture's alpha. Put the decal's shape in that texture's alpha, or give the material a texture parameter named BaseColor whose texture has it."),
 					*Material->GetName(), *BaseColor->GetName());
 				return false;
 			}

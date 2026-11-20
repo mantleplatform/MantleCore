@@ -23,6 +23,8 @@
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "Materials/MaterialFunction.h"
 #include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionStaticSwitchParameter.h"
 #include "Materials/MaterialExpressionTextureSample.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialInstanceConstant.h"
@@ -514,6 +516,143 @@ bool FMantlePlaceSkipDecalOpacityBakeTest::RunTest(const FString& Parameters)
 
 	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
 	TestEqual(TEXT("the decal is written"), CountType(Result.Place, EMantleEntityType::Decal), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePlaceSkipDecalAttributesOpacityTest,
+	"Mantle.Editor.PlaceSkip.DecalOnMaterialAttributesGetsItsShape",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePlaceSkipDecalAttributesOpacityTest::RunTest(const FString& Parameters)
+{
+	using namespace MantlePlaceSkipTestPrivate;
+	FSkipWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	auto MakeSourceTexture = [](const TCHAR* Name, bool bSRGB, TFunctionRef<FColor(int32 X, int32 Y)> Pixel)
+	{
+		TArray<FColor> Pixels;
+		for (int32 Y = 0; Y < 4; ++Y)
+		{
+			for (int32 X = 0; X < 4; ++X)
+			{
+				Pixels.Add(Pixel(X, Y));
+			}
+		}
+		UTexture2D* Texture = NewObject<UTexture2D>(GetTransientPackage(), MakeUniqueObjectName(GetTransientPackage(), UTexture2D::StaticClass(), FName(Name)));
+		Texture->SRGB = bSRGB;
+		Texture->Source.Init(4, 4, 1, 1, TSF_BGRA8, reinterpret_cast<const uint8*>(Pixels.GetData()));
+		return Texture;
+	};
+	// The Overgrown Factory shape: a master on material attributes calls a layer function, whose
+	// Make Material Attributes takes Opacity = EnableOpacity (a static switch, on) times an Opacity
+	// scalar. Built with the switch's True branch fed by OpacitySource.
+	auto MakeLayerMaster = [](UTexture* ColourTexture, TFunctionRef<FExpressionInput(UMaterialFunction*, UMaterialExpression* Colour)> OpacitySource)
+	{
+		UMaterialFunction* Layer = NewObject<UMaterialFunction>(GetTransientPackage());
+		UMaterialExpressionTextureSampleParameter2D* Colour = NewObject<UMaterialExpressionTextureSampleParameter2D>(Layer);
+		Colour->Function = Layer;
+		Colour->ParameterName = TEXT("BaseLayer_B Texture");
+		Colour->Texture = ColourTexture;
+		UMaterialExpressionStaticSwitchParameter* Enable = NewObject<UMaterialExpressionStaticSwitchParameter>(Layer);
+		Enable->Function = Layer;
+		Enable->ParameterName = TEXT("EnableOpacity");
+		Enable->DefaultValue = true;
+		Enable->A = OpacitySource(Layer, Colour);
+		UMaterialExpressionScalarParameter* Opacity = NewObject<UMaterialExpressionScalarParameter>(Layer);
+		Opacity->Function = Layer;
+		Opacity->ParameterName = TEXT("Opacity");
+		Opacity->DefaultValue = 1.0f;
+		UMaterialExpressionMultiply* Multiply = NewObject<UMaterialExpressionMultiply>(Layer);
+		Multiply->Function = Layer;
+		Multiply->A.Connect(0, Enable);
+		Multiply->B.Connect(0, Opacity);
+		UMaterialExpressionMakeMaterialAttributes* Attributes = NewObject<UMaterialExpressionMakeMaterialAttributes>(Layer);
+		Attributes->Function = Layer;
+		Attributes->BaseColor.Connect(0, Colour);
+		Attributes->Opacity.Connect(0, Multiply);
+		UMaterialExpressionFunctionOutput* Output = NewObject<UMaterialExpressionFunctionOutput>(Layer);
+		Output->Function = Layer;
+		Output->OutputName = TEXT("Result");
+		Output->A.Connect(0, Attributes);
+		Output->Id = FGuid::NewGuid();
+		for (UMaterialExpression* Expression : { static_cast<UMaterialExpression*>(Colour), static_cast<UMaterialExpression*>(Enable),
+			static_cast<UMaterialExpression*>(Opacity), static_cast<UMaterialExpression*>(Multiply), static_cast<UMaterialExpression*>(Attributes), static_cast<UMaterialExpression*>(Output) })
+		{
+			Layer->GetExpressionCollection().AddExpression(Expression);
+		}
+		UMaterial* Master = NewObject<UMaterial>(GetTransientPackage());
+		Master->MaterialDomain = MD_DeferredDecal;
+		Master->bUseMaterialAttributes = true;
+		UMaterialExpressionMaterialFunctionCall* Call = NewObject<UMaterialExpressionMaterialFunctionCall>(Master);
+		Call->Material = Master;
+		Call->SetMaterialFunction(Layer);
+		Master->GetExpressionCollection().AddExpression(Call);
+		Master->GetEditorOnlyData()->MaterialAttributes.Connect(0, Call);
+		Master->UpdateCachedExpressionData();
+		return Master;
+	};
+	auto Read = [&Fixture](const TCHAR* Label, UMaterialInterface* Material, UTexture*& OutBaseColor, FString& OutProblem)
+	{
+		ADecalActor* Decal = Fixture.World->SpawnActor<ADecalActor>(FVector::ZeroVector, FRotator::ZeroRotator);
+		Decal->SetActorLabel(Label);
+		Decal->SetDecalMaterial(Material);
+		FMantleDecalProps Props;
+		UTexture* Normal = nullptr;
+		return FMantlePlaceExporter::ReadDecal(Decal, Props, OutBaseColor, Normal, OutProblem);
+	};
+	UTexture* BaseColor = nullptr;
+	FString Problem;
+
+	// 1. The shape in the colour texture's own alpha (EnableOpacity takes its A), as the Factory pack's
+	// _BC textures have it: published as it is, the alpha read from the source pixels.
+	UTexture2D* Moss = MakeSourceTexture(TEXT("T_MossDecal_Test"), true, [](int32 X, int32) { return FColor(60, 90, 40, X < 2 ? 255 : 0); });
+	UMaterial* OwnAlpha = MakeLayerMaster(Moss, [](UMaterialFunction*, UMaterialExpression* Colour) { FExpressionInput In; In.Connect(4, Colour); return In; });
+	if (TestTrue(TEXT("a material-attributes decal whose shape is its colour alpha is read"), Read(TEXT("Moss decal"), OwnAlpha, BaseColor, Problem)))
+	{
+		TestTrue(TEXT("with the colour texture as it is"), BaseColor == Moss);
+	}
+	else
+	{
+		AddInfo(Problem);
+	}
+
+	// 2. The shape in a separate mask through the switch: baked into the colour texture's alpha.
+	UTexture2D* Leak = MakeSourceTexture(TEXT("T_LeakDecal_Test"), true, [](int32, int32) { return FColor(30, 30, 30, 255); });
+	UTexture2D* LeakMask = MakeSourceTexture(TEXT("T_LeakMask_Test"), false, [](int32 X, int32) { return FColor(X < 2 ? 255 : 0, 0, 0, 255); });
+	UMaterial* Masked = MakeLayerMaster(Leak, [LeakMask](UMaterialFunction* Layer, UMaterialExpression*)
+	{
+		UMaterialExpressionTextureSample* Mask = NewObject<UMaterialExpressionTextureSample>(Layer);
+		Mask->Function = Layer;
+		Mask->Texture = LeakMask;
+		Layer->GetExpressionCollection().AddExpression(Mask);
+		FExpressionInput In;
+		In.Connect(1, Mask); // R
+		return In;
+	});
+	if (TestTrue(TEXT("a material-attributes decal whose shape is a mask is read"), Read(TEXT("Leak decal"), Masked, BaseColor, Problem)))
+	{
+		FImage Baked;
+		if (TestTrue(TEXT("baked from the mask"), BaseColor != Leak && BaseColor && BaseColor->Source.GetMipImage(Baked, 0)))
+		{
+			const TArrayView64<FColor> Pixels = Baked.AsBGRA8();
+			TestEqual(TEXT("where the mask is on, the decal shows"), Pixels[0].A, static_cast<uint8>(255));
+			TestEqual(TEXT("where it is off, the decal is clear"), Pixels[2].A, static_cast<uint8>(0));
+		}
+	}
+	else
+	{
+		AddInfo(Problem);
+	}
+
+	// 3. An all-opaque colour alpha with no mask: still refused, as a solid rectangle would be wrong.
+	UTexture2D* Solid = MakeSourceTexture(TEXT("T_Solid_Test"), true, [](int32, int32) { return FColor(30, 30, 30, 255); });
+	UMaterial* NoShape = MakeLayerMaster(Solid, [](UMaterialFunction*, UMaterialExpression* Colour) { FExpressionInput In; In.Connect(4, Colour); return In; });
+	TestFalse(TEXT("a decal with no shape anywhere is refused"), Read(TEXT("Solid decal"), NoShape, BaseColor, Problem));
+	TestTrue(TEXT("saying its alpha holds no shape"), Problem.Contains(TEXT("no alpha channel")));
 	return true;
 }
 

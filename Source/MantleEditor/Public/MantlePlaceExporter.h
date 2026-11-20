@@ -551,10 +551,18 @@ public:
 	 * BaseColor's pixels with that Opacity run per pixel into the alpha, as a transient texture kept
 	 * for the editor session (the same one each call, so gathering and export agree). BaseColor
 	 * itself when Opacity is unwired, only reads BaseColor's alpha, or uses a node Mantle can't run
-	 * (textures, constants, scalar parameters, Multiply, Add, Subtract, Lerp, One Minus, Saturate,
-	 * Component Mask, and UV tiling from a Texture Coordinate times a constant).
+	 * (textures, constants, scalar parameters, static switch parameters at the instance's value,
+	 * Multiply, Add, Subtract, Lerp, One Minus, Saturate, Component Mask, and UV tiling from a
+	 * Texture Coordinate times a constant). A material on material attributes is followed through
+	 * its functions to the Make Material Attributes it ends in, and that node's Opacity.
 	 */
 	static UTexture* DecalTextureWithOpacity(const UMaterialInterface* Material, UTexture* BaseColor);
+
+	/**
+	 * True when Texture's source pixels have any alpha below opaque: a decal shape. Read from the
+	 * source, not the built format, which a virtual texture leaves unset; remembered per source id.
+	 */
+	static bool HasShapeAlpha(UTexture* Texture);
 
 	/**
 	 * True when Material is Mantle's decal master or an instance of it (#472), which publishes
