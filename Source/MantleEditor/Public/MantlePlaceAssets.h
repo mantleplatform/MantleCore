@@ -1144,6 +1144,14 @@ public:
 	static void CheckMaterial(const UMaterialInterface* Material, const FString& UsedBy, const FMantlePlaceAssetLimits& Limits,
 		TArray<FMantleValidationIssue>& OutIssues, TSet<const UTexture*>* ReportedTextures = nullptr);
 
+	/**
+	 * Every material that does not compile for the PC shaders is an error, with Unreal's own messages: Unreal draws its grey
+	 * checkerboard in place of such a material, so publish would bake the checkerboard. Works headless (-nullrhi), where the engine
+	 * never compiles on its own: the materials are translated and their shaders compiled here, once per base material however many
+	 * instances use it. A failing base material is one issue, naming the instances and actors that reach it.
+	 */
+	static void CheckMaterialsCompile(const TArray<FMantleGatheredMaterial>& Materials, TArray<FMantleValidationIssue>& OutIssues);
+
 	/** Check this place's part for uploaded assets: every gathered mesh and material checked once, however many actors use it. */
 	static void CheckLevel(UWorld* World, TArray<FMantleValidationIssue>& OutIssues);
 

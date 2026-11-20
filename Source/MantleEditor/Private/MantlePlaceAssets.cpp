@@ -100,6 +100,7 @@
 #include "Materials/MaterialInstanceConstant.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "ShaderCompiler.h"
 #include "Misc/FileHelper.h"
 #include "Misc/SecureHash.h"
 #include "Dom/JsonObject.h"
@@ -5621,6 +5622,159 @@ void FMantlePlaceAssets::CheckMaterial(const UMaterialInterface* Material, const
 	}
 }
 
+void FMantlePlaceAssets::CheckMaterialsCompile(const TArray<FMantleGatheredMaterial>& Materials, TArray<FMantleValidationIssue>& OutIssues)
+{
+	using namespace MantlePlaceAssetsPrivate;
+
+	// What compiles for one material: itself when it is a base material or an instance with its own static switches,
+	// else its base material (an instance without its own switches shares the base material's shaders).
+	struct FCompileJob
+	{
+		TWeakObjectPtr<UMaterialInterface> Owner;
+		TArray<FMaterialResourceForCooking> Resources;
+		TArray<int32> Users;
+	};
+	TArray<FCompileJob> Jobs;
+	TMap<const UMaterialInterface*, int32> JobOf;
+	for (int32 Index = 0; Index < Materials.Num(); ++Index)
+	{
+		UMaterialInterface* Material = Materials[Index].Material.Get();
+		if (!Material)
+		{
+			continue;
+		}
+		const UMaterialInstance* Instance = Cast<UMaterialInstance>(Material);
+		UMaterialInterface* Owner = (Instance && !Instance->bHasStaticPermutationResource) ? Material->GetMaterial() : Material;
+		if (!Owner)
+		{
+			continue;
+		}
+		int32* Existing = JobOf.Find(Owner);
+		if (!Existing)
+		{
+			Existing = &JobOf.Add(Owner, Jobs.Num());
+			Jobs.AddDefaulted_GetRef().Owner = Owner;
+		}
+		Jobs[*Existing].Users.Add(Index);
+	}
+	if (Jobs.IsEmpty() || !GShaderCompilingManager)
+	{
+		return;
+	}
+
+	// This is the compile the editor itself would run to draw the material, which a headless (-nullrhi) editor never starts. Every
+	// material is translated for the PC target here and its shaders queued together; the shader worker then compiles them side by side,
+	// and a shader map already in memory or in the shared derived data cache is found instead of compiled again.
+	constexpr EShaderPlatform Platform = SP_PCD3D_SM5;
+	for (FCompileJob& Job : Jobs)
+	{
+		if (UMaterial* Base = Cast<UMaterial>(Job.Owner.Get()))
+		{
+			Base->CacheResourceShadersForCooking(Platform, Job.Resources, nullptr, false);
+		}
+		else if (UMaterialInstance* Instance = Cast<UMaterialInstance>(Job.Owner.Get()))
+		{
+			Instance->CacheResourceShadersForCooking(Platform, Job.Resources, EMaterialShaderPrecompileMode::Default, nullptr, false);
+		}
+	}
+	for (FCompileJob& Job : Jobs)
+	{
+		for (const FMaterialResourceForCooking& Cooking : Job.Resources)
+		{
+			Cooking.Resource->FinishCacheShaders();
+		}
+	}
+	GShaderCompilingManager->FinishAllCompilation();
+
+	for (const FCompileJob& Job : Jobs)
+	{
+		const UMaterialInterface* Owner = Job.Owner.Get();
+		TArray<FString> Errors;
+		bool bFailed = false;
+		for (const FMaterialResourceForCooking& Cooking : Job.Resources)
+		{
+			const FMaterialResource* Resource = Cooking.Resource.GetReference();
+			if (!Resource)
+			{
+				continue;
+			}
+			for (const FString& Error : Resource->GetCompileErrors())
+			{
+				bFailed = true;
+				// One line each, without the engine's repeated blank lines.
+				FString Line = Error.TrimStartAndEnd().Replace(TEXT("\r"), TEXT("")).Replace(TEXT("\n"), TEXT(" "));
+				if (Line.Len() > 300)
+				{
+					Line = Line.Left(300) + TEXT("...");
+				}
+				Errors.AddUnique(Line);
+			}
+			bFailed = bFailed || !Resource->GetGameThreadShaderMap();
+		}
+		if (!Owner || !bFailed)
+		{
+			continue;
+		}
+
+		TArray<FString> UsedBy;
+		TArray<FString> Through;
+		for (const int32 User : Job.Users)
+		{
+			for (const FString& Label : Materials[User].UsedBy)
+			{
+				UsedBy.AddUnique(Label);
+			}
+			if (Materials[User].Material.Get() != Owner)
+			{
+				Through.AddUnique(Quoted(Materials[User].Material.Get()));
+			}
+		}
+		FString Instances;
+		if (Through.Num() > 0)
+		{
+			Instances = FString::Printf(TEXT("%s%s%s"), Through.Num() == 1 ? TEXT("its material instance ") : TEXT("its material instances "),
+				*FString::Join(TArray<FString>(Through.GetData(), FMath::Min(Through.Num(), 4)), TEXT(", ")),
+				Through.Num() > 4 ? *FString::Printf(TEXT(" and %d more"), Through.Num() - 4) : TEXT(""));
+		}
+
+		FString What = FString::Printf(TEXT("Material %s does not compile, so Unreal draws its grey checkerboard in its place and Mantle would publish that checkerboard"), *Quoted(Owner));
+		if (!Instances.IsEmpty() || UsedBy.Num() > 0)
+		{
+			What += TEXT(" (");
+			What += Instances;
+			if (!Instances.IsEmpty() && UsedBy.Num() > 0)
+			{
+				What += TEXT("; ");
+			}
+			What += DescribeUsers(UsedBy);
+			What += TEXT(")");
+		}
+		What += TEXT(".");
+		if (Errors.Num() > 0)
+		{
+			What += TEXT(" Unreal says: ");
+			What += FString::Join(TArray<FString>(Errors.GetData(), FMath::Min(Errors.Num(), 3)), TEXT(" | "));
+			if (Errors.Num() > 3)
+			{
+				What += FString::Printf(TEXT(" | and %d more messages"), Errors.Num() - 3);
+			}
+		}
+		else
+		{
+			What += TEXT(" Unreal gave no reason; its Output Log has the details.");
+		}
+
+		FString Remedy = FString::Printf(TEXT("Open %s in Unreal's Material Editor, fix the node the message names (for a missing input, connect it, or remove the node), and save it."), *Quoted(Owner));
+		const bool bSamplers = Errors.ContainsByPredicate([](const FString& Error) { return Error.Contains(TEXT("sampler")); });
+		if (bSamplers)
+		{
+			Remedy += TEXT(" A material can read at most 16 textures this way: use fewer Texture Sample nodes, or set Sampler Source to \"Shared: Wrap\" or \"Shared: Clamp\" on some of them so they share.");
+		}
+		Remedy += Through.Num() > 0 ? TEXT(" Its material instances are fixed with it.") : TEXT("");
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, FString(), What, Remedy });
+	}
+}
+
 void FMantlePlaceAssets::CheckLevel(UWorld* World, TArray<FMantleValidationIssue>& OutIssues)
 {
 	const FMantlePlaceDependencies Dependencies = FMantlePlaceDependencies::Gather(World);
@@ -5645,6 +5799,8 @@ void FMantlePlaceAssets::CheckLevel(UWorld* World, TArray<FMantleValidationIssue
 	{
 		CheckMaterial(Material.Material.Get(), DescribeUsers(Material.UsedBy), Limits, OutIssues, &ReportedTextures);
 	}
+	// Every material above is baked at publish; one that does not compile bakes as Unreal's grey grid.
+	CheckMaterialsCompile(Dependencies.Materials, OutIssues);
 	// A decal's textures (#472) upload as they are, held to the same size rule, each once.
 	for (const FMantleGatheredTexture& Gathered : Dependencies.Textures)
 	{
