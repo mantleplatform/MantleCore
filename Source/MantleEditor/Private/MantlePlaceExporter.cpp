@@ -108,6 +108,7 @@
 #include "Engine/TextRenderActor.h"
 #include "Engine/Texture.h"
 #include "Engine/Texture2D.h"
+#include "TextureCompiler.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
@@ -124,6 +125,10 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialInstance.h"
 #include "Materials/MaterialInterface.h"
+#include "Materials/MaterialExpressionMakeMaterialAttributes.h"
+#include "Materials/MaterialExpressionNamedReroute.h"
+#include "Materials/MaterialExpressionTextureBase.h"
+#include "Materials/MaterialExpressionTextureSample.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
@@ -3083,6 +3088,84 @@ bool FMantlePlaceExporter::IsMantleDecalMaterial(const UMaterialInterface* Mater
 	return false;
 }
 
+UTexture* FMantlePlaceExporter::TextureFeedingDecalInput(const UMaterialInterface* Material, bool bNormal)
+{
+	const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
+	const UMaterialEditorOnlyData* Graph = Base ? Base->GetEditorOnlyData() : nullptr;
+	if (!Graph)
+	{
+		return nullptr;
+	}
+	// Breadth first from the material's Base Color (or Normal) input, through whatever math sits
+	// between, to the nearest texture: a decal pack's colour texture under any parameter name, or a
+	// plain Texture Sample. A parameter is read through Material, so an instance's override wins.
+	TArray<const UMaterialExpression*> Queue;
+	TSet<const UMaterialExpression*> Seen;
+	auto Push = [&Queue, &Seen](const UMaterialExpression* Expression)
+	{
+		if (Expression && !Seen.Contains(Expression))
+		{
+			Seen.Add(Expression);
+			Queue.Add(Expression);
+		}
+	};
+	if (Base->bUseMaterialAttributes)
+	{
+		Push(Graph->MaterialAttributes.Expression);
+	}
+	else
+	{
+		Push(bNormal ? Graph->Normal.Expression : Graph->BaseColor.Expression);
+	}
+	constexpr int32 MaxNodes = 1024; // a guard; a decal graph is a handful of nodes
+	for (int32 Index = 0; Index < Queue.Num() && Index < MaxNodes; ++Index)
+	{
+		const UMaterialExpression* Expression = Queue[Index];
+		if (const UMaterialExpressionTextureBase* TextureNode = Cast<UMaterialExpressionTextureBase>(Expression))
+		{
+			// A sample fed a texture object samples that object, not its own Texture.
+			const UMaterialExpressionTextureSample* Sample = Cast<UMaterialExpressionTextureSample>(TextureNode);
+			if (Sample && Sample->TextureObject.Expression)
+			{
+				Push(Sample->TextureObject.Expression);
+				continue;
+			}
+			UTexture* Texture = nullptr;
+			if (TextureNode->HasAParameterName())
+			{
+				Material->GetTextureParameterValue(FHashedMaterialParameterInfo(TextureNode->GetParameterName()), Texture);
+			}
+			if (!Texture)
+			{
+				Texture = TextureNode->Texture;
+			}
+			if (Texture)
+			{
+				return Texture;
+			}
+			continue; // its UVs lead nowhere useful
+		}
+		if (const UMaterialExpressionMakeMaterialAttributes* Attributes = Cast<UMaterialExpressionMakeMaterialAttributes>(Expression))
+		{
+			Push(bNormal ? Attributes->Normal.Expression : Attributes->BaseColor.Expression);
+			continue;
+		}
+		if (const UMaterialExpressionNamedRerouteUsage* Usage = Cast<UMaterialExpressionNamedRerouteUsage>(Expression))
+		{
+			Push(Usage->Declaration);
+			continue;
+		}
+		for (const FExpressionInput* Input : const_cast<UMaterialExpression*>(Expression)->GetInputsView())
+		{
+			if (Input)
+			{
+				Push(Input->Expression);
+			}
+		}
+	}
+	return nullptr;
+}
+
 bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& OutProps, UTexture*& OutBaseColor, UTexture*& OutNormal, FString& OutProblem)
 {
 	OutProps = FMantleDecalProps();
@@ -3102,7 +3185,7 @@ bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& Out
 	OutProps.FadeScreenSize = Decal->FadeScreenSize;
 
 	// What to do, whatever is wrong with the material: a published decal is a texture Mantle draws.
-	const TCHAR* const Remedy = TEXT("Give the decal a decal material (Material Domain: Deferred Decal) with a texture parameter named BaseColor: its alpha is the decal's shape. Add a texture parameter named Normal for a normal map and a scalar parameter named Opacity to fade it.");
+	const TCHAR* const Remedy = TEXT("Give the decal a decal material (Material Domain: Deferred Decal) with a texture feeding its Base Color (a texture parameter named BaseColor, or any texture sample): its alpha is the decal's shape. Add a texture parameter named Normal for a normal map and a scalar parameter named Opacity to fade it.");
 	const UMaterialInterface* Material = Decal->GetDecalMaterial();
 	if (!Material)
 	{
@@ -3116,10 +3199,18 @@ bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& Out
 		return false;
 	}
 
+	const bool bMantleMaster = IsMantleDecalMaterial(Material);
 	UTexture* BaseColor = nullptr;
 	Material->GetTextureParameterValue(FHashedMaterialParameterInfo(FName(FMantleDecalMaterials::BaseColorParameter)), BaseColor);
+	bool bFollowedGraph = false;
+	if (!BaseColor && !bMantleMaster)
+	{
+		// A pack's own decal material: the texture feeding Base Color, whatever it is called.
+		BaseColor = TextureFeedingDecalInput(Material, false);
+		bFollowedGraph = BaseColor != nullptr;
+	}
 	UTexture* MasterDefault = nullptr;
-	if (IsMantleDecalMaterial(Material))
+	if (bMantleMaster)
 	{
 		Base->GetTextureParameterDefaultValue(FHashedMaterialParameterInfo(FName(FMantleDecalMaterials::BaseColorParameter)), MasterDefault);
 	}
@@ -3128,18 +3219,45 @@ bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& Out
 		// Mantle publishes a decal as its texture, so a material without one (or still on the
 		// master's placeholder) has nothing to publish.
 		OutProblem = FString::Printf(
-			TEXT("uses decal material '%s', which Mantle can't publish: a published decal is a texture, and this material sets no BaseColor texture. %s"),
+			TEXT("uses decal material '%s', which Mantle can't publish: a published decal is a texture, and no texture feeds this material's Base Color. %s"),
 			*Material->GetName(), Remedy);
 		return false;
+	}
+	if (bFollowedGraph)
+	{
+		// The decal's shape is the colour texture's alpha. A pack that keeps its shape in a separate
+		// mask (into Opacity) has a colour texture without alpha, which would publish as a solid
+		// rectangle, so refuse it. HasAlphaChannel is the built format's (BC3 vs BC1): finish
+		// building the texture first, or an editor still compiling it would read no alpha.
+		if (UTexture2D* Texture2D = Cast<UTexture2D>(BaseColor))
+		{
+			UTexture* const Building = Texture2D;
+			FTextureCompilingManager::Get().FinishCompilation(MakeArrayView(&Building, 1));
+			if (!Texture2D->HasAlphaChannel())
+			{
+				OutProblem = FString::Printf(
+					TEXT("uses decal material '%s', which Mantle can't publish: its Base Color texture '%s' has no alpha channel, and a published decal's shape is the colour texture's alpha. Put the decal's shape in that texture's alpha, or give the material a texture parameter named BaseColor whose texture has it."),
+					*Material->GetName(), *BaseColor->GetName());
+				return false;
+			}
+		}
 	}
 	OutBaseColor = BaseColor;
 
 	// The normal map, when the material has one set that is not the master's flat placeholder.
 	UTexture* Normal = nullptr;
-	if (Material->GetTextureParameterValue(FHashedMaterialParameterInfo(FName(FMantleDecalMaterials::NormalParameter)), Normal) && Normal)
+	if (!Material->GetTextureParameterValue(FHashedMaterialParameterInfo(FName(FMantleDecalMaterials::NormalParameter)), Normal) && !bMantleMaster)
+	{
+		Normal = TextureFeedingDecalInput(Material, true);
+		if (Normal == BaseColor)
+		{
+			Normal = nullptr; // one texture can't be both
+		}
+	}
+	if (Normal)
 	{
 		UTexture* FlatDefault = nullptr;
-		if (IsMantleDecalMaterial(Material))
+		if (bMantleMaster)
 		{
 			Base->GetTextureParameterDefaultValue(FHashedMaterialParameterInfo(FName(FMantleDecalMaterials::NormalParameter)), FlatDefault);
 		}

@@ -16,7 +16,11 @@
 #include "Engine/World.h"
 #include "MaterialDomain.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionTextureSample.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
+#include "Materials/MaterialInstanceConstant.h"
 #include "Misc/AutomationTest.h"
 #include "Particles/Emitter.h"
 #include "Particles/ParticleLODLevel.h"
@@ -230,6 +234,116 @@ bool FMantlePlaceSkipDecalNegativeScaleTest::RunTest(const FString& Parameters)
 	const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(Fixture.World);
 	TestTrue(TEXT("Check warns that the mirroring is lost"), HasIssue(Validation, TEXT("Mirrored decal"), EMantleIssueSeverity::Warning));
 	TestFalse(TEXT("and raises no error for the scale"), HasIssue(Validation, TEXT("Mirrored decal"), EMantleIssueSeverity::Error));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePlaceSkipDecalTextureFromGraphTest,
+	"Mantle.Editor.PlaceSkip.DecalTextureIsFollowedThroughTheGraph",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePlaceSkipDecalTextureFromGraphTest::RunTest(const FString& Parameters)
+{
+	using namespace MantlePlaceSkipTestPrivate;
+	FSkipWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	auto SpawnDecal = [&Fixture](const TCHAR* Label, UMaterialInterface* Material)
+	{
+		ADecalActor* Decal = Fixture.World->SpawnActor<ADecalActor>(FVector::ZeroVector, FRotator::ZeroRotator);
+		Decal->SetActorLabel(Label);
+		Decal->SetDecalMaterial(Material);
+		return Decal;
+	};
+	FMantleDecalProps Props;
+	UTexture* BaseColor = nullptr;
+	UTexture* Normal = nullptr;
+	FString Problem;
+
+	// 1. A Fab master whose colour texture parameter has another name ("BaseLayer_B Texture"),
+	// through a Multiply into Base Color, and an instance that overrides it: the override is read.
+	UMaterial* Master = NewObject<UMaterial>(GetTransientPackage());
+	Master->MaterialDomain = MD_DeferredDecal;
+	const FName PackParameter(TEXT("BaseLayer_B Texture"));
+	UMaterialExpressionTextureSampleParameter2D* Parameter = NewObject<UMaterialExpressionTextureSampleParameter2D>(Master);
+	Parameter->Material = Master;
+	Parameter->ParameterName = PackParameter;
+	Parameter->Texture = UTexture2D::CreateTransient(4, 4);
+	UMaterialExpressionConstant* Tint = NewObject<UMaterialExpressionConstant>(Master);
+	Tint->Material = Master;
+	Tint->R = 0.8f;
+	UMaterialExpressionMultiply* Multiply = NewObject<UMaterialExpressionMultiply>(Master);
+	Multiply->Material = Master;
+	Multiply->A.Expression = Parameter;
+	Multiply->B.Expression = Tint;
+	for (UMaterialExpression* Expression : { static_cast<UMaterialExpression*>(Parameter), static_cast<UMaterialExpression*>(Tint), static_cast<UMaterialExpression*>(Multiply) })
+	{
+		Master->GetExpressionCollection().AddExpression(Expression);
+	}
+	Master->GetEditorOnlyData()->BaseColor.Expression = Multiply;
+	Master->UpdateCachedExpressionData();
+	UTexture2D* Moss = UTexture2D::CreateTransient(4, 4);
+	UMaterialInstanceConstant* Instance = NewObject<UMaterialInstanceConstant>(GetTransientPackage());
+	Instance->SetParentEditorOnly(Master, false);
+	Instance->SetTextureParameterValueEditorOnly(FMaterialParameterInfo(PackParameter), Moss);
+
+	ADecalActor* Named = SpawnDecal(TEXT("Moss decal"), Instance);
+	if (TestTrue(TEXT("a decal whose colour parameter has another name is read"), FMantlePlaceExporter::ReadDecal(Named, Props, BaseColor, Normal, Problem)))
+	{
+		TestTrue(TEXT("with the instance's texture, not the master's default"), BaseColor == Moss);
+		TestNull(TEXT("and no normal map"), Normal);
+	}
+
+	// 2. A decal material with plain Texture Samples and no parameters at all.
+	UMaterial* Plain = NewObject<UMaterial>(GetTransientPackage());
+	Plain->MaterialDomain = MD_DeferredDecal;
+	UTexture2D* Crack = UTexture2D::CreateTransient(4, 4);
+	UTexture2D* CrackNormal = UTexture2D::CreateTransient(4, 4);
+	UMaterialExpressionTextureSample* ColorSample = NewObject<UMaterialExpressionTextureSample>(Plain);
+	ColorSample->Material = Plain;
+	ColorSample->Texture = Crack;
+	UMaterialExpressionTextureSample* NormalSample = NewObject<UMaterialExpressionTextureSample>(Plain);
+	NormalSample->Material = Plain;
+	NormalSample->Texture = CrackNormal;
+	Plain->GetExpressionCollection().AddExpression(ColorSample);
+	Plain->GetExpressionCollection().AddExpression(NormalSample);
+	Plain->GetEditorOnlyData()->BaseColor.Expression = ColorSample;
+	Plain->GetEditorOnlyData()->Normal.Expression = NormalSample;
+	Plain->UpdateCachedExpressionData();
+
+	ADecalActor* Sampled = SpawnDecal(TEXT("Crack decal"), Plain);
+	if (TestTrue(TEXT("a decal with a plain Texture Sample is read"), FMantlePlaceExporter::ReadDecal(Sampled, Props, BaseColor, Normal, Problem)))
+	{
+		TestTrue(TEXT("with the texture feeding Base Color"), BaseColor == Crack);
+		TestTrue(TEXT("and the one feeding Normal"), Normal == CrackNormal);
+	}
+
+	// 3. Still refused, in words, when no texture feeds Base Color.
+	UMaterial* Empty = NewObject<UMaterial>(GetTransientPackage());
+	Empty->MaterialDomain = MD_DeferredDecal;
+	ADecalActor* Untextured = SpawnDecal(TEXT("Flat decal"), Empty);
+	TestFalse(TEXT("a decal material with no texture is refused"), FMantlePlaceExporter::ReadDecal(Untextured, Props, BaseColor, Normal, Problem));
+	TestTrue(TEXT("saying no texture feeds its Base Color"), Problem.Contains(TEXT("Base Color")));
+
+	// 4. Refused when the texture feeding Base Color has no alpha (a pack that keeps its shape in a
+	// separate mask): it would publish as a solid rectangle.
+	UMaterial* Masked = NewObject<UMaterial>(GetTransientPackage());
+	Masked->MaterialDomain = MD_DeferredDecal;
+	UMaterialExpressionTextureSample* OpaqueSample = NewObject<UMaterialExpressionTextureSample>(Masked);
+	OpaqueSample->Material = Masked;
+	OpaqueSample->Texture = UTexture2D::CreateTransient(4, 4, PF_DXT1);
+	Masked->GetExpressionCollection().AddExpression(OpaqueSample);
+	Masked->GetEditorOnlyData()->BaseColor.Expression = OpaqueSample;
+	Masked->UpdateCachedExpressionData();
+	ADecalActor* NoAlpha = SpawnDecal(TEXT("Oil decal"), Masked);
+	TestFalse(TEXT("a decal whose colour texture has no alpha is refused"), FMantlePlaceExporter::ReadDecal(NoAlpha, Props, BaseColor, Normal, Problem));
+	TestTrue(TEXT("saying the shape must be in its alpha"), Problem.Contains(TEXT("no alpha channel")));
+
+	// Export publishes the two and leaves the others out.
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	TestEqual(TEXT("two Decal entities are written"), CountType(Result.Place, EMantleEntityType::Decal), 2);
 	return true;
 }
 
