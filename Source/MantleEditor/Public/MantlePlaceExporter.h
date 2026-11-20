@@ -531,10 +531,18 @@ public:
 	 * texture: Export turns the two into upload ids. A published decal is a texture drawn by
 	 * Mantle's decal material, so the decal's material must be a deferred-decal material with its
 	 * BaseColor texture parameter set (a Normal texture parameter and an Opacity scalar parameter
-	 * are optional); anything else is refused, with OutProblem phrased to follow the actor's
+	 * are optional). Without a BaseColor parameter, the texture feeding the material's Base Color
+	 * (and Normal) is used instead, see TextureFeedingDecalInput; anything else is refused, with OutProblem phrased to follow the actor's
 	 * name and saying what to do. Export and the validator both call this.
 	 */
 	static bool ReadDecal(const AActor* Actor, FMantleDecalProps& OutProps, UTexture*& OutBaseColor, UTexture*& OutNormal, FString& OutProblem);
+
+	/**
+	 * The texture feeding a decal material's Base Color (or Normal) input, followed back through the
+	 * graph: a texture parameter of any name (read through the instance's overrides) or a plain
+	 * Texture Sample. Null when none does. For decal packs whose colour texture isn't named BaseColor.
+	 */
+	static UTexture* TextureFeedingDecalInput(const UMaterialInterface* Material, bool bNormal);
 
 	/**
 	 * True when Material is Mantle's decal master or an instance of it (#472), which publishes
