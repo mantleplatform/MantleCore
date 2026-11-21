@@ -12,6 +12,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
+#include "HAL/PlatformTime.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInterface.h"
 #include "MeshDescription.h"
@@ -159,6 +160,82 @@ namespace MantleSlotSplitTestPrivate
 			}
 			Body->InvalidatePhysicsData();
 		}
+		return Mesh;
+	}
+
+	/**
+	 * A transient mesh of Side x Side quads (two triangles each) on a grid, in Slots bands of rows, one slot a band: Side 700 is 980,000
+	 * triangles, the size of City Sample's traffic lights. Corners are shared across the grid, as an imported mesh's are.
+	 */
+	UStaticMesh* MakeBigGrid(int32 Side, int32 Slots, bool bNanite)
+	{
+		FMeshDescription Description;
+		FStaticMeshAttributes Attributes(Description);
+		Attributes.Register();
+		TVertexAttributesRef<FVector3f> Positions = Attributes.GetVertexPositions();
+		TVertexInstanceAttributesRef<FVector3f> Normals = Attributes.GetVertexInstanceNormals();
+		TVertexInstanceAttributesRef<FVector2f> UVs = Attributes.GetVertexInstanceUVs();
+		TPolygonGroupAttributesRef<FName> SlotNames = Attributes.GetPolygonGroupMaterialSlotNames();
+		UVs.SetNumChannels(1);
+
+		UObject* Outer = GetTransientPackage();
+		UStaticMesh* Mesh = NewObject<UStaticMesh>(Outer, MakeUniqueObjectName(Outer, UStaticMesh::StaticClass(), FName(TEXT("SlotSplitBigGrid"))), RF_Transient);
+		TArray<FPolygonGroupID> Groups;
+		for (int32 Slot = 0; Slot < Slots; ++Slot)
+		{
+			const FName Name(*FString::Printf(TEXT("BigSlot_%d"), Slot));
+			Mesh->GetStaticMaterials().Add(FStaticMaterial(MaterialFor(Slot), Name, Name));
+			Groups.Add(Description.CreatePolygonGroup());
+			SlotNames[Groups.Last()] = Name;
+		}
+
+		const int32 Points = Side + 1;
+		Description.ReserveNewVertices(Points * Points);
+		Description.ReserveNewVertexInstances(Points * Points);
+		Description.ReserveNewPolygons(Side * Side * 2);
+		TArray<FVertexInstanceID> Corners;
+		Corners.Reserve(Points * Points);
+		for (int32 Row = 0; Row < Points; ++Row)
+		{
+			for (int32 Column = 0; Column < Points; ++Column)
+			{
+				const FVertexID Vertex = Description.CreateVertex();
+				Positions[Vertex] = FVector3f(Column * 10.0f, Row * 10.0f, 0.0f);
+				const FVertexInstanceID Instance = Description.CreateVertexInstance(Vertex);
+				Normals[Instance] = FVector3f(0.0f, 0.0f, 1.0f);
+				UVs.Set(Instance, 0, FVector2f(static_cast<float>(Column) / Side, static_cast<float>(Row) / Side));
+				Corners.Add(Instance);
+			}
+		}
+		for (int32 Row = 0; Row < Side; ++Row)
+		{
+			const FPolygonGroupID Group = Groups[Row * Slots / Side];
+			for (int32 Column = 0; Column < Side; ++Column)
+			{
+				const FVertexInstanceID V00 = Corners[Row * Points + Column];
+				const FVertexInstanceID V10 = Corners[Row * Points + Column + 1];
+				const FVertexInstanceID V01 = Corners[(Row + 1) * Points + Column];
+				const FVertexInstanceID V11 = Corners[(Row + 1) * Points + Column + 1];
+				Description.CreatePolygon(Group, TArray<FVertexInstanceID>({ V00, V10, V11 }));
+				Description.CreatePolygon(Group, TArray<FVertexInstanceID>({ V00, V11, V01 }));
+			}
+		}
+
+		Mesh->bAllowCPUAccess = true;
+		Mesh->GetNaniteSettings().bEnabled = bNanite;
+		Mesh->SetNumSourceModels(1);
+		FMeshBuildSettings& Settings = Mesh->GetSourceModel(0).BuildSettings;
+		Settings.bRecomputeTangents = true;
+		Settings.bGenerateLightmapUVs = false;
+		Settings.bBuildReversedIndexBuffer = false;
+		Settings.DistanceFieldResolutionScale = 0.0f;
+		Settings.MaxLumenMeshCards = 0;
+		UStaticMesh::FBuildMeshDescriptionsParams Params;
+		Params.bMarkPackageDirty = false;
+		Params.bAllowCpuAccess = true;
+		TArray<const FMeshDescription*> Descriptions;
+		Descriptions.Add(&Description);
+		Mesh->BuildFromMeshDescriptions(Descriptions, Params);
 		return Mesh;
 	}
 
@@ -402,6 +479,67 @@ bool FMantleSlotSplitNaniteTest::RunTest(const FString& Parameters)
 		}
 	}
 	TestEqual(TEXT("slots per part"), Counts, TArray<int32>({ 8, 8, 1 }));
+	return true;
+}
+
+// A mesh of about a million triangles (City Sample's traffic lights are 730,000 to 950,000, with 2.7 million vertices) splits in seconds:
+// each part is built from its own triangles in one pass, not deleted from a copy of the whole. Every triangle is in exactly one part.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleSlotSplitLargeMeshTest,
+	"Mantle.Editor.SlotSplit.AMillionTrianglesSplitInSeconds",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleSlotSplitLargeMeshTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleSlotSplitTestPrivate;
+	FSplitFixture Fixture;
+
+	for (const bool bNanite : { true, false })
+	{
+		TStrongObjectPtr<UStaticMesh> Source(MakeBigGrid(700, 13, bNanite));
+		FMeshDescription SourceDescription;
+		if (!TestTrue(TEXT("the big mesh keeps its mesh description"), Source->IsMeshDescriptionValid(0) && Source->CloneMeshDescription(0, SourceDescription)))
+		{
+			return false;
+		}
+		const int32 SourceTriangles = SourceDescription.Triangles().Num();
+		TestEqual(TEXT("it has 980,000 triangles"), SourceTriangles, 980000);
+
+		TArray<UStaticMesh*> Parts;
+		FString Why;
+		const double Start = FPlatformTime::Seconds();
+		const bool bSplit = FMantleSlotSplit::Split(Source.Get(), 8, Parts, Why);
+		const double Seconds = FPlatformTime::Seconds() - Start;
+		AddInfo(FString::Printf(TEXT("%s: 980,000 triangles in 13 slots split in %.1f s"), bNanite ? TEXT("Nanite") : TEXT("plain"), Seconds));
+		if (!TestTrue(TEXT("it splits"), bSplit) || !TestEqual(TEXT("into two parts"), Parts.Num(), 2))
+		{
+			AddError(Why);
+			return false;
+		}
+		TestTrue(TEXT("in a few seconds, not minutes"), Seconds < 30.0);
+
+		int32 PartTriangles = 0;
+		int32 RenderTriangles = 0;
+		for (const UStaticMesh* Part : Parts)
+		{
+			if (bNanite)
+			{
+				FMeshDescription PartDescription;
+				if (Part->IsMeshDescriptionValid(0) && Part->CloneMeshDescription(0, PartDescription))
+				{
+					PartTriangles += PartDescription.Triangles().Num();
+				}
+			}
+			else
+			{
+				PartTriangles += TrianglesOf(*Part);
+			}
+			RenderTriangles += TrianglesOf(*Part);
+		}
+		TestEqual(TEXT("the parts' triangles add up to the source's"), PartTriangles, SourceTriangles);
+		TestEqual(TEXT("and so do the ones they draw"), RenderTriangles, SourceTriangles);
+		FMantleSlotSplit::ClearCache();
+	}
 	return true;
 }
 

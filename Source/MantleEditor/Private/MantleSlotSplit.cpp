@@ -10,6 +10,7 @@
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
 #include "MeshDescription.h"
+#include "HAL/PlatformTime.h"
 #include "Misc/SecureHash.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "StaticMeshAttributes.h"
@@ -114,94 +115,110 @@ namespace MantleSlotSplitPrivate
 	}
 
 	/**
-	 * Description cut down to the triangles of the slots in PartSlots, its polygon groups renamed to each slot's place in
-	 * PartSlots (so the part's slots are numbered from 0). Returns how many triangles are left.
+	 * Out, built in one pass from the triangles of Source that draw with the slots in PartSlots, with its polygon groups renamed to each
+	 * slot's place in PartSlots (so the part's slots are numbered from 0). Only the vertices the kept triangles use are copied, each once
+	 * (a remap table), with every attribute of their corners: normals, tangents, binormal signs, colors and every UV channel; hard edges
+	 * are kept. Linear in the part's size, so a part of a million triangles costs about a second (deleting from a copy of the whole mesh,
+	 * one polygon at a time, did not finish in minutes on a mesh of 900,000). Returns how many triangles Out has.
 	 */
-	int32 KeepSlots(FMeshDescription& Description, const TArray<int32>& PartSlots)
+	int32 CutDescription(const FMeshDescription& Source, const TArray<int32>& PartSlots, FMeshDescription& Out)
 	{
-		FStaticMeshAttributes Attributes(Description);
-		TPolygonGroupAttributesRef<FName> SlotNames = Attributes.GetPolygonGroupMaterialSlotNames();
+		const FStaticMeshConstAttributes From(Source);
+		const TVertexAttributesConstRef<FVector3f> FromPositions = From.GetVertexPositions();
+		const TVertexInstanceAttributesConstRef<FVector3f> FromNormals = From.GetVertexInstanceNormals();
+		const TVertexInstanceAttributesConstRef<FVector3f> FromTangents = From.GetVertexInstanceTangents();
+		const TVertexInstanceAttributesConstRef<float> FromSigns = From.GetVertexInstanceBinormalSigns();
+		const TVertexInstanceAttributesConstRef<FVector4f> FromColors = From.GetVertexInstanceColors();
+		const TVertexInstanceAttributesConstRef<FVector2f> FromUVs = From.GetVertexInstanceUVs();
+		const TPolygonGroupAttributesConstRef<FName> FromNames = From.GetPolygonGroupMaterialSlotNames();
+		const TEdgeAttributesConstRef<bool> FromHard = From.GetEdgeHardnesses();
 
-		TMap<FPolygonGroupID, int32> LocalSlot;
-		for (const FPolygonGroupID Group : Description.PolygonGroups().GetElementIDs())
+		FStaticMeshAttributes To(Out);
+		To.Register();
+		TVertexAttributesRef<FVector3f> ToPositions = To.GetVertexPositions();
+		TVertexInstanceAttributesRef<FVector3f> ToNormals = To.GetVertexInstanceNormals();
+		TVertexInstanceAttributesRef<FVector3f> ToTangents = To.GetVertexInstanceTangents();
+		TVertexInstanceAttributesRef<float> ToSigns = To.GetVertexInstanceBinormalSigns();
+		TVertexInstanceAttributesRef<FVector4f> ToColors = To.GetVertexInstanceColors();
+		TVertexInstanceAttributesRef<FVector2f> ToUVs = To.GetVertexInstanceUVs();
+		TPolygonGroupAttributesRef<FName> ToNames = To.GetPolygonGroupMaterialSlotNames();
+		const int32 Channels = FromUVs.IsValid() ? FromUVs.GetNumChannels() : 1;
+		ToUVs.SetNumChannels(Channels);
+
+		// The groups that draw with the part's slots, and how many polygons they hold.
+		TArray<TPair<FPolygonGroupID, int32>> Kept;
+		int32 Polygons = 0;
+		for (const FPolygonGroupID Group : Source.PolygonGroups().GetElementIDs())
 		{
-			const int32 Source = SlotOfGroup(SlotNames[Group]);
-			const int32 Local = PartSlots.IndexOfByKey(Source);
+			const int32 Local = PartSlots.IndexOfByKey(SlotOfGroup(FromNames[Group]));
 			if (Local != INDEX_NONE)
 			{
-				LocalSlot.Add(Group, Local);
+				Kept.Emplace(Group, Local);
+				Polygons += Source.GetPolygonGroupPolygonIDs(Group).Num();
+			}
+		}
+		Out.ReserveNewPolygonGroups(Kept.Num());
+		Out.ReserveNewPolygons(Polygons);
+		Out.ReserveNewTriangles(Polygons);
+		Out.ReserveNewVertexInstances(Polygons * 3);
+		Out.ReserveNewEdges(Polygons * 2);
+		Out.ReserveNewVertices(FMath::Min(Source.Vertices().Num(), Polygons * 3));
+
+		TArray<int32> VertexMap;
+		VertexMap.Init(INDEX_NONE, Source.Vertices().GetArraySize());
+		TArray<FVertexInstanceID, TInlineAllocator<4>> Corners;
+		for (const TPair<FPolygonGroupID, int32>& Entry : Kept)
+		{
+			const FPolygonGroupID Group = Out.CreatePolygonGroup();
+			ToNames[Group] = SlotName(Entry.Value);
+			for (const FPolygonID Polygon : Source.GetPolygonGroupPolygonIDs(Entry.Key))
+			{
+				Corners.Reset();
+				for (const FVertexInstanceID Old : Source.GetPolygonVertexInstances(Polygon))
+				{
+					const FVertexID OldVertex = Source.GetVertexInstanceVertex(Old);
+					int32& Mapped = VertexMap[OldVertex.GetValue()];
+					if (Mapped == INDEX_NONE)
+					{
+						const FVertexID NewVertex = Out.CreateVertex();
+						ToPositions[NewVertex] = FromPositions[OldVertex];
+						Mapped = NewVertex.GetValue();
+					}
+					const FVertexInstanceID New = Out.CreateVertexInstance(FVertexID(Mapped));
+					ToNormals[New] = FromNormals[Old];
+					ToTangents[New] = FromTangents[Old];
+					ToSigns[New] = FromSigns[Old];
+					ToColors[New] = FromColors[Old];
+					for (int32 Channel = 0; Channel < Channels; ++Channel)
+					{
+						ToUVs.Set(New, Channel, FromUVs.Get(Old, Channel));
+					}
+					Corners.Add(New);
+				}
+				Out.CreatePolygon(Group, Corners);
 			}
 		}
 
-		// The polygons of every other slot, then what only they used (edges, corners, points), then their emptied groups.
-		TArray<FEdgeID> Edges;
-		TArray<FVertexInstanceID> Corners;
-		TArray<FPolygonGroupID> Unused;
-		TArray<FPolygonID> Doomed;
-		for (const FPolygonID Polygon : Description.Polygons().GetElementIDs())
+		// Hard edges between kept vertices.
+		TEdgeAttributesRef<bool> ToHard = To.GetEdgeHardnesses();
+		for (const FEdgeID Edge : Source.Edges().GetElementIDs())
 		{
-			if (!LocalSlot.Contains(Description.GetPolygonPolygonGroup(Polygon)))
+			if (!FromHard.IsValid() || !ToHard.IsValid() || !FromHard[Edge])
 			{
-				Doomed.Add(Polygon);
+				continue;
 			}
-		}
-		for (const FPolygonID Polygon : Doomed)
-		{
-			Description.DeletePolygon(Polygon, &Edges, &Corners, &Unused);
-		}
-		// Corners before edges: an edge's points may only go once no corner uses them.
-		TSet<FVertexID> Points;
-		for (const FVertexInstanceID Corner : Corners)
-		{
-			Points.Add(Description.GetVertexInstanceVertex(Corner));
-			Description.DeleteVertexInstance(Corner);
-		}
-		for (const FEdgeID Edge : Edges)
-		{
-			Points.Add(Description.GetEdgeVertex(Edge, 0));
-			Points.Add(Description.GetEdgeVertex(Edge, 1));
-			Description.DeleteEdge(Edge);
-		}
-		for (const FVertexID Point : Points)
-		{
-			if (Description.IsVertexValid(Point) && Description.GetVertexVertexInstanceIDs(Point).Num() == 0 && Description.GetVertexConnectedEdgeIDs(Point).Num() == 0)
+			const int32 A = VertexMap[Source.GetEdgeVertex(Edge, 0).GetValue()];
+			const int32 B = VertexMap[Source.GetEdgeVertex(Edge, 1).GetValue()];
+			if (A != INDEX_NONE && B != INDEX_NONE)
 			{
-				Description.DeleteVertex(Point);
-			}
-		}
-		TArray<FPolygonGroupID> Groups;
-		for (const FPolygonGroupID Group : Description.PolygonGroups().GetElementIDs())
-		{
-			Groups.Add(Group);
-		}
-		for (const FPolygonGroupID Group : Groups)
-		{
-			if (!LocalSlot.Contains(Group))
-			{
-				// Empty by now: every polygon of it went.
-				if (Description.GetPolygonGroupPolygonIDs(Group).Num() == 0)
+				const FEdgeID OutEdge = Out.GetVertexPairEdge(FVertexID(A), FVertexID(B));
+				if (OutEdge != FEdgeID::Invalid)
 				{
-					Description.DeletePolygonGroup(Group);
+					ToHard[OutEdge] = true;
 				}
 			}
 		}
-		FElementIDRemappings Remappings;
-		Description.Compact(Remappings);
-
-		// The renumbering, after Compact, which renumbers the groups.
-		FStaticMeshAttributes Compacted(Description);
-		TPolygonGroupAttributesRef<FName> CompactedNames = Compacted.GetPolygonGroupMaterialSlotNames();
-		TMap<int32, int32> SourceToLocal;
-		for (int32 Local = 0; Local < PartSlots.Num(); ++Local)
-		{
-			SourceToLocal.Add(PartSlots[Local], Local);
-		}
-		for (const FPolygonGroupID Group : Description.PolygonGroups().GetElementIDs())
-		{
-			const int32* Local = SourceToLocal.Find(SlotOfGroup(CompactedNames[Group]));
-			CompactedNames[Group] = SlotName(Local ? *Local : 0);
-		}
-		return Description.Triangles().Num();
+		return Out.Triangles().Num();
 	}
 
 	/**
@@ -261,9 +278,9 @@ namespace MantleSlotSplitPrivate
 		TArray<FMeshDescription> Cut;
 		for (int32 LODIndex = 0; LODIndex < Descriptions.Num(); ++LODIndex)
 		{
-			FMeshDescription Part = Descriptions[LODIndex];
+			FMeshDescription Part;
 			// A lower LOD that has dropped all of the part's slots ends the part's LODs there.
-			if (KeepSlots(Part, PartSlots) == 0)
+			if (CutDescription(Descriptions[LODIndex], PartSlots, Part) == 0)
 			{
 				break;
 			}
@@ -386,6 +403,7 @@ bool FMantleSlotSplit::Split(const UStaticMesh* Source, int32 MaxSections, TArra
 	using namespace MantleSlotSplitPrivate;
 	OutParts.Reset();
 	OutWhy.Reset();
+	const double StartSeconds = FPlatformTime::Seconds();
 	MaxSections = FMath::Max(MaxSections, 1);
 	if (!IsValid(Source) || FMantlePlaceAssets::IsLibraryAsset(Source) || IsPart(Source))
 	{
@@ -526,8 +544,8 @@ bool FMantleSlotSplit::Split(const UStaticMesh* Source, int32 MaxSections, TArra
 		Store.Infos.Add(Entry.Key, MoveTemp(Entry.Value));
 		OutParts.Add(Entry.Key);
 	}
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_SLOT_SPLIT '%s' %d slots into %d meshes%s"), *Source->GetName(), DrawnSlots.Num(), PartCount,
-		bFullDetailNanite ? TEXT(" (Nanite, cut from its full-detail source)") : TEXT(""));
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_SLOT_SPLIT '%s' %d slots into %d meshes%s in %.1f s"), *Source->GetName(), DrawnSlots.Num(), PartCount,
+		bFullDetailNanite ? TEXT(" (Nanite, cut from its full-detail source)") : TEXT(""), FPlatformTime::Seconds() - StartSeconds);
 	Store.Splits.Add(Key, MoveTemp(Made));
 	return true;
 }
