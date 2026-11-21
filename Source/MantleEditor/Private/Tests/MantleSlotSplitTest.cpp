@@ -537,7 +537,15 @@ bool FMantleSlotSplitLargeMeshTest::RunTest(const FString& Parameters)
 			RenderTriangles += TrianglesOf(*Part);
 		}
 		TestEqual(TEXT("the parts' triangles add up to the source's"), PartTriangles, SourceTriangles);
-		TestEqual(TEXT("and so do the ones they draw"), RenderTriangles, SourceTriangles);
+		if (!bNanite)
+		{
+			// A Nanite part draws the engine's own (much smaller) fallback of its full-detail triangles; a plain one draws them all.
+			TestEqual(TEXT("and so do the ones they draw"), RenderTriangles, SourceTriangles);
+		}
+		else
+		{
+			TestTrue(TEXT("a Nanite part still draws a fallback"), RenderTriangles > 0);
+		}
 		FMantleSlotSplit::ClearCache();
 	}
 	return true;
