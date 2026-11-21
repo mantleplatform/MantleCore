@@ -1,4 +1,5 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "MantleCells.h"
 #include "MantleCheck.h"
 #include "MantleClientFeatures.h"
 #include "MantleDrawDistance.h"
@@ -84,7 +85,7 @@ bool FMantleDrawDistanceSourceTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("the current distance"), Apply(Desired).DrawDistance, 4000.0);
 
 	// A large mesh with a cull distance is culled there, though its size alone would never cull it.
-	FMantleDrawDistanceSource Big = Source(5000.0);
+	FMantleDrawDistanceSource Big = Source(FMantleDrawDistance::NeverCullRadius() * 2.0);
 	Big.LDMaxDrawDistance = 150000.0;
 	TestEqual(TEXT("a big mesh's own distance"), Apply(Big).DrawDistance, 150000.0);
 
@@ -126,6 +127,16 @@ bool FMantleDrawDistanceDefaultTest::RunTest(const FString& Parameters)
 
 	// An unmeasured mesh (no radius) is the smallest band, never an unculled one by accident of 0.
 	TestEqual(TEXT("a mesh with no bounds is treated as small"), Apply(Source(0.0)).DrawDistance, FMantleDrawDistance::Bands()[0].Draw);
+
+	// Every band's distance fits a level of the default cell grid, so banded scenery streams in cells and never stays in the root
+	// for being drawn too far (City Sample's 10 to 100 m ground, collision and roofs go to the farthest level).
+	const FMantleCellGrid Grid = FMantleCellGrid::Default();
+	for (const FMantleDrawDistance::FBand& Band : FMantleDrawDistance::Bands())
+	{
+		TestTrue(*FString::Printf(TEXT("band to %g cm fits a cell level"), Band.Draw), Grid.LevelFor(Band.Draw) != INDEX_NONE);
+	}
+	TestEqual(TEXT("a 50 m radius mesh draws to 2.5 km"), Apply(Source(5000.0)).DrawDistance, 250000.0);
+	TestEqual(TEXT("which is the grid's farthest level"), Grid.LevelFor(250000.0), Grid.Levels.Num() - 1);
 	return true;
 }
 
@@ -147,7 +158,7 @@ bool FMantleDrawDistanceHugeTest::RunTest(const FString& Parameters)
 	// And the place file has no key for it, not a 0.
 	FMantlePlace Place;
 	Place.SchemaVersion = MANTLE_PLACE_SCHEMA_VERSION;
-	Place.Entities.Add(MeshEntity(TEXT("ent_big"), Apply(Source(5000.0))));
+	Place.Entities.Add(MeshEntity(TEXT("ent_big"), Apply(Source(FMantleDrawDistance::NeverCullRadius() * 2.0))));
 	const TSharedPtr<FJsonObject> Properties = PropertiesOf(Place, 0);
 	if (TestNotNull(TEXT("the properties"), Properties.Get()))
 	{
@@ -255,7 +266,7 @@ bool FMantleDrawDistanceJsonTest::RunTest(const FString& Parameters)
 	SetEntity.Type = EMantleEntityType::InstancedMesh;
 	SetEntity.Props.Set<FMantleInstancedMeshProps>(Set);
 	Place.Entities.Add(MoveTemp(SetEntity));
-	Place.Entities.Add(MeshEntity(TEXT("ent_big"), Apply(Source(5000.0))));
+	Place.Entities.Add(MeshEntity(TEXT("ent_big"), Apply(Source(FMantleDrawDistance::NeverCullRadius() * 2.0))));
 
 	const TSharedPtr<FJsonObject> SmallJson = PropertiesOf(Place, 0);
 	if (TestNotNull(TEXT("the mesh's properties"), SmallJson.Get()))
