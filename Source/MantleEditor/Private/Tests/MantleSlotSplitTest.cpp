@@ -76,7 +76,7 @@ namespace MantleSlotSplitTestPrivate
 	 * A transient mesh of Slots slots: one triangle in each, a hundred centimeters apart on X, so a slot's triangle says which slot it
 	 * is. With bBox it has one box as simple collision.
 	 */
-	UStaticMesh* MakeSlotted(int32 Slots, bool bBox, bool bBody = true)
+	UStaticMesh* MakeSlotted(int32 Slots, bool bBox, bool bBody = true, bool bNanite = false)
 	{
 		FMeshDescription Description;
 		FStaticMeshAttributes Attributes(Description);
@@ -112,6 +112,11 @@ namespace MantleSlotSplitTestPrivate
 		}
 
 		Mesh->bAllowCPUAccess = true;
+		if (bNanite)
+		{
+			Mesh->GetNaniteSettings().bEnabled = true;
+			Mesh->GetNaniteSettings().bPreserveArea = true;
+		}
 		Mesh->SetNumSourceModels(1);
 		FMeshBuildSettings& Settings = Mesh->GetSourceModel(0).BuildSettings;
 		Settings.bRecomputeTangents = true;
@@ -341,6 +346,62 @@ bool FMantleSlotSplitCollisionTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("as its own triangles"), Part->GetBodySetup() ? static_cast<int32>(Part->GetBodySetup()->GetCollisionTraceFlag()) : -1,
 			static_cast<int32>(CTF_UseComplexAsSimple));
 	}
+	return true;
+}
+
+// A Nanite mesh is cut from its own full-detail triangles, not from its small fallback, and its parts are Nanite meshes with the source's
+// Nanite settings, so the converter bakes Nanite data for each and what players see is the source's detail, not a crude shape.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleSlotSplitNaniteTest,
+	"Mantle.Editor.SlotSplit.NaniteSourcesSplitAtFullDetail",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleSlotSplitNaniteTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleSlotSplitTestPrivate;
+	FSplitFixture Fixture;
+
+	TStrongObjectPtr<UStaticMesh> Source(MakeSlotted(17, /*bBox*/ false, /*bBody*/ true, /*bNanite*/ true));
+	FMeshDescription SourceDescription;
+	if (!TestTrue(TEXT("the Nanite source keeps its mesh description"), Source->IsMeshDescriptionValid(0) && Source->CloneMeshDescription(0, SourceDescription)))
+	{
+		return false;
+	}
+	TestTrue(TEXT("and is a Nanite mesh"), Source->GetNaniteSettings().bEnabled);
+
+	TArray<UStaticMesh*> Parts;
+	FString Why;
+	if (!TestTrue(TEXT("it splits"), FMantleSlotSplit::Split(Source.Get(), 8, Parts, Why)) || !TestEqual(TEXT("into three"), Parts.Num(), 3))
+	{
+		AddError(Why);
+		return false;
+	}
+
+	int32 SourceTriangles = 0;
+	for (const UStaticMesh* Part : Parts)
+	{
+		TestTrue(TEXT("each part is a Nanite mesh with the source's settings"), Part->GetNaniteSettings().bEnabled && Part->GetNaniteSettings().bPreserveArea);
+		FMeshDescription PartDescription;
+		if (TestTrue(TEXT("and has a source model of its own"), Part->IsMeshDescriptionValid(0) && Part->CloneMeshDescription(0, PartDescription)))
+		{
+			SourceTriangles += PartDescription.Triangles().Num();
+		}
+		TestEqual(TEXT("with one source model (Nanite draws LOD 0)"), Part->GetNumSourceModels(), 1);
+	}
+	TestEqual(TEXT("the parts' source-model triangles add up to the source's"), SourceTriangles, SourceDescription.Triangles().Num());
+
+	// The slots are the same cut as a plain mesh's: 8, 8 and 1, each keeping the source slot's material.
+	TArray<int32> Counts;
+	for (const UStaticMesh* Part : Parts)
+	{
+		Counts.Add(Part->GetStaticMaterials().Num());
+		for (int32 Slot = 0; Slot < Part->GetStaticMaterials().Num(); ++Slot)
+		{
+			TestTrue(TEXT("a part's slot has its source slot's material"),
+				Part->GetStaticMaterials()[Slot].MaterialInterface == Source->GetStaticMaterials()[FMantleSlotSplit::SourceSlot(Part, Slot)].MaterialInterface);
+		}
+	}
+	TestEqual(TEXT("slots per part"), Counts, TArray<int32>({ 8, 8, 1 }));
 	return true;
 }
 

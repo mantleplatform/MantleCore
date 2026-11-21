@@ -21,7 +21,7 @@
 namespace MantleSlotSplitPrivate
 {
 	/** Bumped when what a part holds changes, so a cached part from before is not reused. */
-	const TCHAR* const SplitVersion = TEXT("slotsplit-1");
+	const TCHAR* const SplitVersion = TEXT("slotsplit-2");
 
 	/**
 	 * The name every polygon group of the source's read (and so every slot of a part) is given, by slot index. The source's
@@ -204,6 +204,46 @@ namespace MantleSlotSplitPrivate
 		return Description.Triangles().Num();
 	}
 
+	/**
+	 * Description, a clone of a source mesh's own LOD 0 (full detail), with its polygon groups named by the slot they draw with, as the
+	 * read of a render LOD names them (ReadRenderLOD): the slot the mesh's section info map gives each group (the build's own rule), else
+	 * the slot whose imported name the group carries. False when a group's slot cannot be told.
+	 */
+	bool NameGroupsBySlot(const UStaticMesh& Source, FMeshDescription& Description)
+	{
+		FStaticMeshAttributes Attributes(Description);
+		TPolygonGroupAttributesRef<FName> SlotNames = Attributes.GetPolygonGroupMaterialSlotNames();
+		const FMeshSectionInfoMap& Map = Source.GetSectionInfoMap();
+		int32 Index = 0;
+		for (const FPolygonGroupID Group : Description.PolygonGroups().GetElementIDs())
+		{
+			int32 Slot = INDEX_NONE;
+			if (Map.IsValidSection(0, Index))
+			{
+				Slot = Map.Get(0, Index).MaterialIndex;
+			}
+			else
+			{
+				const TArray<FStaticMaterial>& Materials = Source.GetStaticMaterials();
+				for (int32 Candidate = 0; Candidate < Materials.Num(); ++Candidate)
+				{
+					if (Materials[Candidate].ImportedMaterialSlotName == SlotNames[Group])
+					{
+						Slot = Candidate;
+						break;
+					}
+				}
+			}
+			if (Slot == INDEX_NONE)
+			{
+				return false;
+			}
+			SlotNames[Group] = SlotName(Slot);
+			++Index;
+		}
+		return true;
+	}
+
 	/** Whether the source's collision is simple shapes (carried by part 0 alone), as the converter reads them (ReadSimpleCollision). */
 	bool HasSimpleShapes(const UStaticMesh& Source)
 	{
@@ -216,7 +256,7 @@ namespace MantleSlotSplitPrivate
 	 * the engine cannot build it.
 	 */
 	UStaticMesh* BuildPart(const UStaticMesh& Source, const FString& Signature, const TArray<FMeshDescription>& Descriptions, const int32 PartIndex,
-		const TArray<int32>& PartSlots, FString& OutWhy)
+		const TArray<int32>& PartSlots, const bool bFullDetailNanite, FString& OutWhy)
 	{
 		TArray<FMeshDescription> Cut;
 		for (int32 LODIndex = 0; LODIndex < Descriptions.Num(); ++LODIndex)
@@ -255,6 +295,12 @@ namespace MantleSlotSplitPrivate
 		Baked->SetLightMapCoordinateIndex(Source.GetLightMapCoordinateIndex());
 		Baked->SetLightMapResolution(Source.GetLightMapResolution());
 		Baked->SetNumSourceModels(Cut.Num());
+		if (bFullDetailNanite)
+		{
+			// A Nanite source: the part is a Nanite mesh made from the source's own full-detail triangles, with the source's Nanite settings, so the
+			// converter bakes its Nanite data as it does the source's, and the plain model it publishes is the engine's own fallback for the part.
+			Baked->GetNaniteSettings() = Source.GetNaniteSettings();
+		}
 		for (int32 LODIndex = 0; LODIndex < Cut.Num(); ++LODIndex)
 		{
 			// SetNumSourceModels gives a new LOD that has no mesh description yet a 50% reduction of the LOD before it, and the build
@@ -270,6 +316,13 @@ namespace MantleSlotSplitPrivate
 			// The geometry is final: nothing recomputed, and no distance field or Lumen cards, which only an editor view would use.
 			Settings.bRecomputeNormals = false;
 			Settings.bRecomputeTangents = false;
+			if (bFullDetailNanite && Source.GetNumSourceModels() > 0)
+			{
+				// The source's own description: built as the source builds it.
+				Settings.bRecomputeNormals = Source.GetSourceModel(0).BuildSettings.bRecomputeNormals;
+				Settings.bRecomputeTangents = Source.GetSourceModel(0).BuildSettings.bRecomputeTangents;
+				Settings.bRemoveDegenerates = Source.GetSourceModel(0).BuildSettings.bRemoveDegenerates;
+			}
 			Settings.bGenerateLightmapUVs = false;
 			Settings.bBuildReversedIndexBuffer = false;
 			Settings.DistanceFieldResolutionScale = 0.0f;
@@ -403,9 +456,28 @@ bool FMantleSlotSplit::Split(const UStaticMesh* Source, int32 MaxSections, TArra
 		return Fail(FString::Printf(TEXT("the mesh '%s' has no render data"), *Source->GetName()));
 	}
 
-	// Every LOD with vertices an export can read, as the converter reads them (the first that can't is where the parts stop).
 	TArray<FMeshDescription> Descriptions;
-	const int32 MaxLODs = FMath::Min(RenderData->LODResources.Num(), static_cast<int32>(MAX_STATIC_MESH_LODS));
+
+	// A Nanite source's render data is only its small fallback: its parts are cut from its own LOD 0 at full detail instead (the one LOD Nanite
+	// draws), as Nanite meshes of the source's settings. Without that description (it was not kept) they are cut from the fallback.
+	const bool bNaniteSource = Source->IsNaniteEnabled() || Source->GetNaniteSettings().bEnabled;
+	bool bFullDetailNanite = false;
+	if (bNaniteSource)
+	{
+		FMeshDescription Full;
+		if (Source->IsMeshDescriptionValid(0) && Source->CloneMeshDescription(0, Full) && Full.Triangles().Num() > 0 && NameGroupsBySlot(*Source, Full))
+		{
+			Descriptions.Add(MoveTemp(Full));
+			bFullDetailNanite = true;
+		}
+		else
+		{
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_SLOT_SPLIT '%s' cut from its Nanite fallback: its full-detail source is not kept, so its parts publish without Nanite detail"), *Source->GetName());
+		}
+	}
+
+	// Every LOD with vertices an export can read, as the converter reads them (the first that can't is where the parts stop).
+	const int32 MaxLODs = bFullDetailNanite ? 0 : FMath::Min(RenderData->LODResources.Num(), static_cast<int32>(MAX_STATIC_MESH_LODS));
 	for (int32 LODIndex = 0; LODIndex < MaxLODs; ++LODIndex)
 	{
 		FMeshDescription Description;
@@ -425,11 +497,6 @@ bool FMantleSlotSplit::Split(const UStaticMesh* Source, int32 MaxSections, TArra
 
 	const bool bSimple = HasSimpleShapes(*Source);
 	const bool bHasBody = Source->GetBodySetup() != nullptr;
-	if (Source->IsNaniteEnabled())
-	{
-		// The parts are cut from the render data, which for a Nanite mesh is its fallback, and are not Nanite meshes themselves.
-		UE_LOG(LogMantle, Warning, TEXT("MANTLE_SLOT_SPLIT '%s' cut from its Nanite fallback: its parts publish without Nanite detail"), *Source->GetName());
-	}
 	const int32 PartCount = FMath::DivideAndRoundUp(DrawnSlots.Num(), MaxSections);
 	TArray<TPair<UStaticMesh*, FPartInfo>> Built;
 	for (int32 PartIndex = 0; PartIndex < PartCount; ++PartIndex)
@@ -441,7 +508,7 @@ bool FMantleSlotSplit::Split(const UStaticMesh* Source, int32 MaxSections, TArra
 			PartSlots.Add(DrawnSlots[At]);
 		}
 		FString Why;
-		UStaticMesh* Part = BuildPart(*Source, Signature, Descriptions, PartIndex, PartSlots, Why);
+		UStaticMesh* Part = BuildPart(*Source, Signature, Descriptions, PartIndex, PartSlots, bFullDetailNanite, Why);
 		if (!Part)
 		{
 			return Fail(Why);
@@ -459,7 +526,8 @@ bool FMantleSlotSplit::Split(const UStaticMesh* Source, int32 MaxSections, TArra
 		Store.Infos.Add(Entry.Key, MoveTemp(Entry.Value));
 		OutParts.Add(Entry.Key);
 	}
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_SLOT_SPLIT '%s' %d slots into %d meshes"), *Source->GetName(), DrawnSlots.Num(), PartCount);
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_SLOT_SPLIT '%s' %d slots into %d meshes%s"), *Source->GetName(), DrawnSlots.Num(), PartCount,
+		bFullDetailNanite ? TEXT(" (Nanite, cut from its full-detail source)") : TEXT(""));
 	Store.Splits.Add(Key, MoveTemp(Made));
 	return true;
 }
