@@ -115,7 +115,7 @@ namespace MantleSlotSplitTestPrivate
 		if (bNanite)
 		{
 			Mesh->GetNaniteSettings().bEnabled = true;
-			Mesh->GetNaniteSettings().bPreserveArea = true;
+			Mesh->GetNaniteSettings().bSeparable = true;
 		}
 		Mesh->SetNumSourceModels(1);
 		FMeshBuildSettings& Settings = Mesh->GetSourceModel(0).BuildSettings;
@@ -380,7 +380,7 @@ bool FMantleSlotSplitNaniteTest::RunTest(const FString& Parameters)
 	int32 SourceTriangles = 0;
 	for (const UStaticMesh* Part : Parts)
 	{
-		TestTrue(TEXT("each part is a Nanite mesh with the source's settings"), Part->GetNaniteSettings().bEnabled && Part->GetNaniteSettings().bPreserveArea);
+		TestTrue(TEXT("each part is a Nanite mesh with the source's settings"), Part->GetNaniteSettings().bEnabled && Part->GetNaniteSettings().bSeparable);
 		FMeshDescription PartDescription;
 		if (TestTrue(TEXT("and has a source model of its own"), Part->IsMeshDescriptionValid(0) && Part->CloneMeshDescription(0, PartDescription)))
 		{
