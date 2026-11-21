@@ -7,6 +7,9 @@
 
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Containers/Ticker.h"
+#include "EngineUtils.h"
+#include "GameFramework/Actor.h"
+#include "RenderingThread.h"
 #include "Misc/CoreDelegates.h"
 #include "Editor.h"
 #include "Engine/World.h"
@@ -163,6 +166,9 @@ namespace MantleHeadlessPublishPrivate
 	TSharedPtr<FMantlePlacePublishSession> GAsyncSession;
 	double GAsyncStarted = 0.0;
 	double GAsyncGiveUpAt = 0.0;
+	/** The level's actors whose components are still registered; taken out a batch per frame before conversion starts. */
+	TArray<TWeakObjectPtr<AActor>> GAsyncToUnregister;
+	int32 GAsyncUnregistered = 0;
 
 	void LogOutcome(const FMantlePublishResult& Result, const double Seconds)
 	{
@@ -233,11 +239,42 @@ namespace MantleHeadlessPublishPrivate
 		GAsyncStarted = FPlatformTime::Seconds();
 		GAsyncGiveUpAt = GAsyncStarted + Parsed.TimeoutSeconds;
 
+		// Start() has checked and exported the level; conversion only reads assets. With a big level's every actor still registered,
+		// each material bake copy's PostEditChange refreshes the render state of components across the world, which on City Sample's
+		// Big City (89,586 actors, 8.8M instances) flooded the engine's queues in one step. The editor closes after this command, so
+		// the level's components are unregistered first, a batch per frame so that this does not flood them either.
+		GAsyncToUnregister.Reset();
+		GAsyncUnregistered = 0;
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			GAsyncToUnregister.Add(*It);
+		}
+		UE_LOG(LogMantle, Display, TEXT("MANTLE_PUBLISH_ASYNC unregistering %d actors' components before conversion"), GAsyncToUnregister.Num());
+
 		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([](float)
 		{
 			if (!GAsyncSession.IsValid())
 			{
 				return false;
+			}
+			if (GAsyncToUnregister.Num() > 0)
+			{
+				const int32 Batch = FMath::Min(GAsyncToUnregister.Num(), 2000);
+				for (int32 Index = GAsyncToUnregister.Num() - Batch; Index < GAsyncToUnregister.Num(); ++Index)
+				{
+					if (AActor* Actor = GAsyncToUnregister[Index].Get())
+					{
+						Actor->UnregisterAllComponents();
+					}
+				}
+				GAsyncToUnregister.RemoveAt(GAsyncToUnregister.Num() - Batch, Batch);
+				GAsyncUnregistered += Batch;
+				FlushRenderingCommands();
+				if (GAsyncToUnregister.Num() == 0)
+				{
+					UE_LOG(LogMantle, Display, TEXT("MANTLE_PUBLISH_ASYNC unregistered %d actors; converting"), GAsyncUnregistered);
+				}
+				return true;
 			}
 			if (!GAsyncSession->IsFinished())
 			{
