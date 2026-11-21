@@ -130,6 +130,11 @@ namespace MantleSlotSplitTestPrivate
 		{
 			Mesh->CreateBodySetup();
 		}
+		else
+		{
+			// The build makes a body setup of its own; this is a mesh that has none.
+			Mesh->SetBodySetup(nullptr);
+		}
 		if (UBodySetup* Body = Mesh->GetBodySetup())
 		{
 			Body->AggGeom.EmptyElements();
@@ -515,22 +520,33 @@ bool FMantleSlotSplitInstancedExportTest::RunTest(const FString& Parameters)
 	}
 	if (TestEqual(TEXT("the seventeen-slot mesh has three parts"), SeventeenParts.Num(), 3))
 	{
+		TArray<FVector> FirstPlaces;
 		for (const UStaticMesh* Part : SeventeenParts)
 		{
 			const FString Id = FMantlePlaceAssets::ProvisionalId(FMantlePlaceAssets::MeshKey(Part));
 			const TArray<FTransform>* Found = InstancesByMesh.Find(Id);
 			if (TestNotNull(TEXT("each part has a set"), Found) && TestEqual(TEXT("with all three instances"), Found->Num(), NineWhere.Num()))
 			{
-				// The same places in every part.
-				for (int32 Index = 0; Index < NineWhere.Num(); ++Index)
+				// The same transforms in every part (the sets are placed as the export places them, so compare the parts with each other).
+				TArray<FVector> Places;
+				for (const FTransform& Instance : *Found)
 				{
-					bool bAt = false;
-					for (const FTransform& Instance : *Found)
-					{
-						bAt = bAt || Instance.GetLocation().Equals(NineWhere[Index], 0.01);
-					}
-					TestTrue(TEXT("an instance is where it was placed"), bAt);
+					Places.Add(Instance.GetLocation());
 				}
+				Places.Sort([](const FVector& A, const FVector& B) { return A.X < B.X; });
+				if (FirstPlaces.Num() == 0)
+				{
+					FirstPlaces = Places;
+				}
+				else if (TestEqual(TEXT("each part has the same number of places"), Places.Num(), FirstPlaces.Num()))
+				{
+					for (int32 Index = 0; Index < Places.Num(); ++Index)
+					{
+						TestTrue(TEXT("an instance is where the first part has it"), Places[Index].Equals(FirstPlaces[Index], 0.01));
+					}
+				}
+				TestTrue(TEXT("and they are spread 500 cm apart as placed"), Places.Num() == 3 && FMath::IsNearlyEqual(Places[1].X - Places[0].X, 500.0, 0.01)
+					&& FMath::IsNearlyEqual(Places[2].X - Places[1].X, 500.0, 0.01));
 			}
 		}
 	}
