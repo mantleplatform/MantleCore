@@ -259,21 +259,23 @@ namespace MantleHeadlessPublishPrivate
 			}
 			if (GAsyncToUnregister.Num() > 0)
 			{
-				const int32 Batch = FMath::Min(GAsyncToUnregister.Num(), 2000);
-				for (int32 Index = GAsyncToUnregister.Num() - Batch; Index < GAsyncToUnregister.Num(); ++Index)
+				// All of them before the editor renders another frame of the whole level (rendering it is what ran out), the render
+				// thread flushed every 2,000 so the removals themselves do not pile up.
+				for (int32 Index = 0; Index < GAsyncToUnregister.Num(); ++Index)
 				{
 					if (AActor* Actor = GAsyncToUnregister[Index].Get())
 					{
 						Actor->UnregisterAllComponents();
 					}
+					if (Index % 2000 == 1999)
+					{
+						FlushRenderingCommands();
+					}
 				}
-				GAsyncToUnregister.RemoveAt(GAsyncToUnregister.Num() - Batch, Batch);
-				GAsyncUnregistered += Batch;
+				GAsyncUnregistered = GAsyncToUnregister.Num();
+				GAsyncToUnregister.Reset();
 				FlushRenderingCommands();
-				if (GAsyncToUnregister.Num() == 0)
-				{
-					UE_LOG(LogMantle, Display, TEXT("MANTLE_PUBLISH_ASYNC unregistered %d actors; converting"), GAsyncUnregistered);
-				}
+				UE_LOG(LogMantle, Display, TEXT("MANTLE_PUBLISH_ASYNC unregistered %d actors; converting"), GAsyncUnregistered);
 				return true;
 			}
 			if (!GAsyncSession->IsFinished())
