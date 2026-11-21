@@ -3690,6 +3690,19 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 	// Meshes whose Lumen bake has finished since the last one are completed here (and cached), so they do not pile up.
 	Out.ApplyFinishedLumen();
 
+	// #804: reading a mesh (its LODs, the Nanite bake's copy of it) loads its source mesh descriptions, and the engine keeps them on
+	// the asset, which the level holds, so a big level's publish kept every mesh's full-detail source in memory (City Sample's Big City
+	// grew past 85 GB). When this conversion is done they are let go; the engine reads them back from the package if anything asks.
+	// Never a transient mesh (the mirror, split and reduction copies have no package to read them back from) and never one with unsaved edits.
+	ON_SCOPE_EXIT
+	{
+		UPackage* Package = Mesh->GetPackage();
+		if (!Mesh->HasAnyFlags(RF_Transient) && Package && Package != GetTransientPackage() && !Package->IsDirty())
+		{
+			Mesh->ClearMeshDescriptions();
+		}
+	};
+
 	// #804: an over-limit mesh converts from its first lower LOD that fits (that LOD becomes its LOD 0), else from a transient copy
 	// reduced to fit, under the creator's mesh's key; the notice is Check this place's (FMantlePlaceAssets::CheckMesh). The cache
 	// key says which, and a mesh that fits keeps the key it had.
