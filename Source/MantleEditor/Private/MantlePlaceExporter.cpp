@@ -1609,6 +1609,73 @@ namespace
 	}
 }
 
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantlePlaceExporterRootSize
+{
+	int64 Utf8Bytes(const TSharedPtr<FJsonValue>& Value)
+	{
+		FString Text;
+		const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer = TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text);
+		FJsonSerializer::Serialize(Value, FString(), Writer);
+		return FTCHARToUTF8(*Text).Length();
+	}
+
+	/**
+	 * What takes the room in a root place file that is over its size limit: its biggest top-level parts (and the entities by type),
+	 * largest first, as "assets 6.1 MiB (15,439)". Each is also logged as MANTLE_ROOT_PART. Empty when RootJson does not parse.
+	 */
+	FString Breakdown(const FString& RootJson)
+	{
+		TSharedPtr<FJsonObject> Root;
+		if (!FJsonSerializer::Deserialize(TJsonReaderFactory<TCHAR>::Create(RootJson), Root) || !Root.IsValid())
+		{
+			return FString();
+		}
+		struct FPart { FString Name; int64 Bytes = 0; int32 Count = 0; };
+		TArray<FPart> Parts;
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Root->Values)
+		{
+			const TArray<TSharedPtr<FJsonValue>>* Array = nullptr;
+			const bool bArray = Field.Value.IsValid() && Field.Value->TryGetArray(Array);
+			if (Field.Key == TEXT("entities") && bArray)
+			{
+				// The entities by type, so a creator sees which kind fills the root.
+				TMap<FString, FPart> ByType;
+				for (const TSharedPtr<FJsonValue>& Entity : *Array)
+				{
+					const TSharedPtr<FJsonObject>* Object = nullptr;
+					FString Type = TEXT("?");
+					if (Entity.IsValid() && Entity->TryGetObject(Object))
+					{
+						(*Object)->TryGetStringField(TEXT("type"), Type);
+					}
+					FPart& Part = ByType.FindOrAdd(Type);
+					Part.Name = TEXT("entities ") + Type;
+					Part.Bytes += Utf8Bytes(Entity);
+					++Part.Count;
+				}
+				for (TPair<FString, FPart>& Entry : ByType)
+				{
+					Parts.Add(MoveTemp(Entry.Value));
+				}
+				continue;
+			}
+			Parts.Add({ Field.Key, Utf8Bytes(Field.Value), bArray ? Array->Num() : 1 });
+		}
+		Parts.Sort([](const FPart& A, const FPart& B) { return A.Bytes > B.Bytes; });
+		TArray<FString> Lines;
+		for (const FPart& Part : Parts)
+		{
+			UE_LOG(LogMantle, Display, TEXT("MANTLE_ROOT_PART %s bytes=%lld count=%d"), *Part.Name, Part.Bytes, Part.Count);
+			if (Lines.Num() < 5)
+			{
+				Lines.Add(FString::Printf(TEXT("%s %s (%s)"), *Part.Name, *FMantlePlaceInstancing::DescribeBytes(Part.Bytes), *FText::AsNumber(Part.Count).ToString()));
+			}
+		}
+		return FString::Join(Lines, TEXT(", "));
+	}
+}
+
 // Named, not anonymous: MantleEditor builds as a unity build. Defined with ClassifyActor, which needs the prefab readers.
 namespace MantlePlaceExporterSkips
 {
@@ -6898,13 +6965,23 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		Measure.IndexId = FMantlePlaceAssets::ProvisionalId(TEXT("cellindex"));
 		Measure.Hash = TEXT("sha256:") + FString::ChrN(64, TEXT('f'));
 		Measure.Bytes = FMantleCellFiles::MaxIndexBytes;
-		const FTCHARToUTF8 RootJson(*ToJson(Place, Result.Cells.Num() > 0 ? &Measure : nullptr));
+		const FString RootText = ToJson(Place, Result.Cells.Num() > 0 ? &Measure : nullptr);
+		const FTCHARToUTF8 RootJson(*RootText);
 		Result.PlaceBytes = RootJson.Length();
 		if (Result.InstanceTotal > FMantlePlaceLimits::MaxInstancesPerPlace || Result.PlaceBytes > FMantlePlaceLimits::MaxPlaceFileBytes)
 		{
 			Result.bOverBudget = true;
 			Result.BudgetProblem = FMantlePlaceInstancing::DescribeOverBudget(Result.InstanceTotal, FMantlePlaceLimits::MaxInstancesPerPlace,
 				Result.PlaceBytes, FMantlePlaceLimits::MaxPlaceFileBytes);
+			// What fills it, so the creator (and we) know what to move or trim.
+			if (Result.PlaceBytes > FMantlePlaceLimits::MaxPlaceFileBytes)
+			{
+				const FString Biggest = MantlePlaceExporterRootSize::Breakdown(RootText);
+				if (!Biggest.IsEmpty())
+				{
+					Result.BudgetProblem += FString::Printf(TEXT(" Its biggest parts: %s."), *Biggest);
+				}
+			}
 			Result.Errors.Add(FMantleParseError{ TEXT("/entities"), Result.BudgetProblem });
 		}
 		Result.bSuccess = Result.Errors.Num() == 0;
