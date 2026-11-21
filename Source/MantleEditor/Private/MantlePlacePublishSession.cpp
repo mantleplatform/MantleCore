@@ -38,6 +38,8 @@
 #include "Misc/Guid.h"
 #include "Misc/Paths.h"
 #include "Policies/CondensedJsonPrintPolicy.h"
+#include "RenderDeferredCleanup.h"
+#include "RenderingThread.h"
 #include "ScopedTransaction.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -1229,6 +1231,23 @@ void FMantlePlacePublishSession::ReleaseHeldMemory()
 	}
 }
 
+namespace MantlePlacePublishSessionCleanup
+{
+	/**
+	 * #804: the blocking publish runs as one long call, so the engine never ends a frame, and what it frees at a frame's end piles up:
+	 * the render resources released by every collected transient mesh, Nanite bake copy and bake render target, which hold memory and,
+	 * past 1,048,576 of them, crash the editor ("Consumed 1048576 lock free links", City Sample's Big City). Done after each
+	 * collection as FEngineLoop::Tick does it: the pending list taken, the render thread flushed, the list deleted.
+	 */
+	void FreeDeferredRenderCleanup()
+	{
+		FlushRenderingCommands();
+		FPendingCleanupObjects* Pending = GetPendingCleanupObjects();
+		FlushRenderingCommands();
+		delete Pending;
+	}
+}
+
 void FMantlePlacePublishSession::SpillConverted()
 {
 	if (!Timing.bSpillConvertedBytes)
@@ -1506,6 +1525,7 @@ void FMantlePlacePublishSession::TickConverting()
 			if (bDueByCount || bDueByGrowth)
 			{
 				CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+				MantlePlacePublishSessionCleanup::FreeDeferredRenderCleanup();
 				CommitAtLastCollection = static_cast<int64>(FPlatformMemory::GetStats().UsedVirtual);
 			}
 		}
@@ -1542,6 +1562,7 @@ void FMantlePlacePublishSession::TickConverting()
 	{
 		// The blocking publish: what the conversion left behind is freed before the uploads hold their share of memory.
 		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+		MantlePlacePublishSessionCleanup::FreeDeferredRenderCleanup();
 		CommitAtLastCollection = static_cast<int64>(FPlatformMemory::GetStats().UsedVirtual);
 	}
 	StartUploads();

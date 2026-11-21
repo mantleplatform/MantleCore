@@ -6,6 +6,9 @@
 #include "MantlePlacePublishSession.h"
 #include "MantleRuntime.h"
 
+#include "AssetCompilingManager.h"
+#include "Async/TaskGraphInterfaces.h"
+#include "Containers/Ticker.h"
 #include "Engine/World.h"
 #include "HAL/PlatformMemory.h"
 #include "HAL/PlatformProcess.h"
@@ -13,6 +16,8 @@
 #include "HttpManager.h"
 #include "HttpModule.h"
 #include "Policies/CondensedJsonPrintPolicy.h"
+#include "RenderDeferredCleanup.h"
+#include "RenderingThread.h"
 #include "Serialization/JsonWriter.h"
 
 FMantlePublishMemory FMantlePublishMemory::Sample()
@@ -204,8 +209,9 @@ FMantlePublishResult FMantlePublisher::Run(UWorld* World, bool bGoLive, const FS
 	Session->Timing.CollectGarbageEverySteps = CollectGarbageEverySteps;
 	Session->Start();
 	bool bFirstPump = true;
+	double NextCleanupAt = FPlatformTime::Seconds() + 2.0;
 	return RunToEnd(Session, MaxBlockingSeconds,
-		[&bFirstPump]
+		[&bFirstPump, &NextCleanupAt]
 		{
 			// The same rhythm as before: HTTP, tick, a short sleep, HTTP again.
 			if (!bFirstPump)
@@ -214,6 +220,22 @@ FMantlePublishResult FMantlePublisher::Run(UWorld* World, bool bGoLive, const FS
 			}
 			bFirstPump = false;
 			FHttpModule::Get().GetHttpManager().Tick(0.016f);
+			// #804: this run never lets the engine end a frame, so what a frame drains piled up: the game thread's queued tasks (async
+			// build completions and the like) and the render resources released for deferred cleanup. City Sample's Big City ran out
+			// of the engine's 1,048,576 lock-free links that way ("Consumed 1048576 lock free links") and grew past 85 GB. Between
+			// the session's steps they are drained as FEngineLoop::Tick does: game-thread tasks, the core ticker, finished asset builds,
+			// and every two seconds the deferred render cleanup.
+			FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
+			FTSTicker::GetCoreTicker().Tick(0.016f);
+			FAssetCompilingManager::Get().ProcessAsyncTasks(/*bLimitExecutionTime*/ true);
+			if (FPlatformTime::Seconds() >= NextCleanupAt)
+			{
+				FlushRenderingCommands();
+				FPendingCleanupObjects* Pending = GetPendingCleanupObjects();
+				FlushRenderingCommands();
+				delete Pending;
+				NextCleanupAt = FPlatformTime::Seconds() + 2.0;
+			}
 		},
 		[] { return FPlatformTime::Seconds(); });
 }
