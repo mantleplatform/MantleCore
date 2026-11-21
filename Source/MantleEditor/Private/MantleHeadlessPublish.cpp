@@ -1,9 +1,13 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleHeadlessPublish.h"
 #include "MantleApiClient.h"
+#include "MantleCosmeticUpload.h"
+#include "MantlePlacePublishSession.h"
 #include "MantleRuntime.h"
 
 #include "AssetRegistry/IAssetRegistry.h"
+#include "Containers/Ticker.h"
+#include "Misc/CoreDelegates.h"
 #include "Editor.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
@@ -155,6 +159,114 @@ FMantlePublishResult FMantleHeadlessPublish::Run(UWorld* World, const TArray<FSt
 
 namespace MantleHeadlessPublishPrivate
 {
+	/** The running Mantle.PublishAsync, advanced once per editor frame. */
+	TSharedPtr<FMantlePlacePublishSession> GAsyncSession;
+	double GAsyncStarted = 0.0;
+	double GAsyncGiveUpAt = 0.0;
+
+	void LogOutcome(const FMantlePublishResult& Result, const double Seconds)
+	{
+		for (const FMantleValidationIssue& Issue : Result.Validation.Issues)
+		{
+			UE_LOG(LogMantle, Display, TEXT("MANTLE_PUBLISH_CHECK %s"), *OneLine(Issue.ToString()));
+		}
+		for (const FMantleValidationIssue& Issue : Result.Attention)
+		{
+			UE_LOG(LogMantle, Display, TEXT("MANTLE_PUBLISH_ATTENTION %s"), *OneLine(Issue.ToString()));
+		}
+		const FString Line = FMantleHeadlessPublish::OutcomeLine(Result, Seconds, FMantlePublishMemory::Sample());
+		if (Line.StartsWith(TEXT("MANTLE_PUBLISH_DONE")))
+		{
+			UE_LOG(LogMantle, Display, TEXT("%s"), *Line);
+		}
+		else
+		{
+			UE_LOG(LogMantle, Error, TEXT("%s"), *Line);
+		}
+	}
+
+	/**
+	 * Mantle.PublishAsync: the same publish as Mantle.Publish, but advanced a step per editor frame (as Tools > Mantle > Publish runs)
+	 * instead of in one call that never lets the engine end a frame. A big level needs those frames: City Sample's Big City, published
+	 * blocking, piled up the engine's frame work (shader compiles of the material bake copies, render cleanups, game-thread tasks)
+	 * until it crashed ("Consumed 1048576 lock free links"). Logs the same lines as Mantle.Publish and asks the editor to exit when done.
+	 */
+	void RunAsync(UWorld* World, const TArray<FString>& Args)
+	{
+		if (GAsyncSession.IsValid())
+		{
+			UE_LOG(LogMantle, Error, TEXT("%s"), *FMantleHeadlessPublish::FailureLine(TEXT("A Mantle.PublishAsync is already running.")));
+			return;
+		}
+		const FMantleHeadlessPublish::FArgs Parsed = FMantleHeadlessPublish::ParseArgs(Args);
+		if (!Parsed.Error.IsEmpty())
+		{
+			UE_LOG(LogMantle, Error, TEXT("%s"), *FMantleHeadlessPublish::FailureLine(Parsed.Error));
+			return;
+		}
+		if ((!World || World->WorldType != EWorldType::Editor) && GEditor)
+		{
+			World = GEditor->GetEditorWorldContext().World();
+		}
+		FString WhyNot;
+		if (!World || !FMantleApiClient::IsConfigured(WhyNot))
+		{
+			UE_LOG(LogMantle, Error, TEXT("%s"), *FMantleHeadlessPublish::FailureLine(World ? WhyNot : FString(TEXT("There is no level open to publish."))));
+			return;
+		}
+		IAssetRegistry& Registry = IAssetRegistry::GetChecked();
+		if (Registry.IsLoadingAssets())
+		{
+			Registry.WaitForCompletion();
+		}
+		UE_LOG(LogMantle, Display, TEXT("MANTLE_PUBLISH_START level=%s api=%s timeout=%.0fs async=1"),
+			*World->GetOutermost()->GetName(), FMantleApiClient::BaseUrlResolver ? *FMantleApiClient::BaseUrlResolver() : TEXT("(default)"),
+			Parsed.TimeoutSeconds);
+
+		// As FMantlePublisher::Run sets it up: no one can make a rights declaration, so new vehicles stay private.
+		const TSharedRef<FMantleLevelPublishSource> Source = MakeShared<FMantleLevelPublishSource>(World, Parsed.Notes);
+		GAsyncSession = MakeShared<FMantlePlacePublishSession>(Source, MakeShared<FMantleApiUploadTransport>(), /*bGoLive*/ true, Parsed.Notes);
+		GAsyncSession->VehicleChoice.bPublic = false;
+		GAsyncSession->VehicleChoice.bKeepExistingVisibility = true;
+		GAsyncSession->Timing.CollectGarbageEverySteps = FMantlePublisher::CollectGarbageEverySteps;
+		GAsyncSession->Start();
+		GAsyncStarted = FPlatformTime::Seconds();
+		GAsyncGiveUpAt = GAsyncStarted + Parsed.TimeoutSeconds;
+
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([](float)
+		{
+			if (!GAsyncSession.IsValid())
+			{
+				return false;
+			}
+			if (!GAsyncSession->IsFinished())
+			{
+				GAsyncSession->Tick();
+				if (!GAsyncSession->IsFinished() && FPlatformTime::Seconds() > GAsyncGiveUpAt)
+				{
+					GAsyncSession->Cancel();
+				}
+				if (!GAsyncSession->IsFinished())
+				{
+					return true;
+				}
+			}
+			LogOutcome(GAsyncSession->GetResult(), FPlatformTime::Seconds() - GAsyncStarted);
+			GAsyncSession.Reset();
+			RequestEngineExit(TEXT("Mantle.PublishAsync finished"));
+			return false;
+		}));
+	}
+
+	FAutoConsoleCommandWithWorldAndArgs GMantlePublishAsyncCommand(
+		TEXT("Mantle.PublishAsync"),
+		TEXT("Mantle.PublishAsync [-TimeoutMinutes=N] [notes...] -- Mantle.Publish advanced one step per editor frame instead of blocking, ")
+		TEXT("for big levels; logs the same MANTLE_PUBLISH_DONE / MANTLE_PUBLISH_FAILED line and asks the editor to exit when it ends."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			RunAsync(World, Args);
+		}));
+
 	FAutoConsoleCommandWithWorldAndArgs GMantlePublishCommand(
 		TEXT("Mantle.Publish"),
 		TEXT("Mantle.Publish [-TimeoutMinutes=N] [notes...] -- publishes the open level exactly like Tools > Mantle > Publish ")
