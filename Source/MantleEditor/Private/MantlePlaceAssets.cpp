@@ -13,6 +13,7 @@
 #include "MantlePlaceSettingsActor.h"
 #include "MantlePlaceLimits.h"
 #include "MantleScatterVolume.h"
+#include "MantleSlotSplit.h"
 #include "MantleSplineMeshBake.h"
 #include "MantleTerrainExport.h"
 #include "MantleTerrainGrassExport.h"
@@ -2337,6 +2338,17 @@ void FMantlePlaceDependencies::AddComponent(const UStaticMeshComponent* Componen
 		return;
 	}
 
+	// A mesh with more material slots than a place mesh may have publishes as its parts (FMantleSlotSplit), which upload in its place.
+	TArray<UStaticMesh*> SplitParts;
+	if (FMantleSlotSplit::PartsFor(Component, Mesh, SplitParts))
+	{
+		for (const UStaticMesh* Part : SplitParts)
+		{
+			AddComponent(Component, Label, Part);
+		}
+		return;
+	}
+
 	if (FMantlePlaceAssets::IsLibraryAsset(Mesh))
 	{
 		// A library mesh brings its own materials; only overrides are published (and uploaded when not library). An override is still
@@ -2374,7 +2386,7 @@ void FMantlePlaceDependencies::AddComponent(const UStaticMeshComponent* Componen
 	}
 	for (const int32 Slot : FMantlePlaceAssets::UploadSlots(Mesh))
 	{
-		AddSlotVertexColors(AddMaterial(FMantlePlaceAssets::EffectiveMaterial(Component, Slot), Label), Mesh, Component, Slot);
+		AddSlotVertexColors(AddMaterial(FMantlePlaceAssets::EffectiveMaterial(Component, Mesh, Slot), Label), Mesh, Component, Slot);
 	}
 }
 
@@ -3674,6 +3686,11 @@ UMaterialInterface* FMantlePlaceAssets::EffectiveMaterial(const UStaticMeshCompo
 {
 	UMaterialInterface* Material = Component ? Component->GetMaterial(Slot) : nullptr;
 	return Material ? Material : UMaterial::GetDefaultMaterial(MD_Surface);
+}
+
+UMaterialInterface* FMantlePlaceAssets::EffectiveMaterial(const UStaticMeshComponent* Component, const UStaticMesh* Mesh, int32 Slot)
+{
+	return EffectiveMaterial(Component, FMantleSlotSplit::SourceSlot(Mesh, Slot));
 }
 
 UMaterialInterface* FMantlePlaceAssets::MeshSlotMaterial(const UStaticMesh* Mesh, int32 Slot)

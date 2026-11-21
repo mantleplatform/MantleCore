@@ -930,6 +930,12 @@ public:
 	/** The material a slot renders with: the component's override, else the mesh's slot material, else Unreal's default surface material. */
 	static UMaterialInterface* EffectiveMaterial(const UStaticMeshComponent* Component, int32 Slot);
 
+	/**
+	 * EffectiveMaterial for slot Slot of Mesh, the mesh the component publishes as: a part of a split mesh (FMantleSlotSplit) numbers its
+	 * slots from 0, and the component's overrides are the whole mesh's, so the slot is looked up in the whole first. Any other mesh: as the overload above.
+	 */
+	static UMaterialInterface* EffectiveMaterial(const UStaticMeshComponent* Component, const UStaticMesh* Mesh, int32 Slot);
+
 	/** The material a slot of Mesh renders with where no component overrides it: the mesh's slot material, else Unreal's default surface material. */
 	static UMaterialInterface* MeshSlotMaterial(const UStaticMesh* Mesh, int32 Slot);
 

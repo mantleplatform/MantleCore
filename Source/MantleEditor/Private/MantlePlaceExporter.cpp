@@ -2,6 +2,7 @@
 #include "MantlePlaceExporter.h"
 #include "MantleActorDecompose.h"
 #include "MantleMirrorBake.h"
+#include "MantleSlotSplit.h"
 #include "MantleMeshLumenData.h"
 #include "MantleNaniteSideFile.h"
 #include "MantleSnapSockets.h"
@@ -836,7 +837,7 @@ namespace
 			Props.Mesh = Uploads.IdFor(FMantlePlaceAssets::MeshKey(Mesh), EMantleAssetKind::StaticMesh, Mesh);
 			for (const int32 Slot : bVisible ? FMantlePlaceAssets::UploadSlots(Mesh) : TArray<int32>())
 			{
-				Props.Materials.Add(MaterialIdFor(FMantlePlaceAssets::EffectiveMaterial(Component, Slot)));
+				Props.Materials.Add(MaterialIdFor(FMantlePlaceAssets::EffectiveMaterial(Component, Mesh, Slot)));
 			}
 		}
 
@@ -846,6 +847,11 @@ namespace
 		case ECollisionEnabled::QueryOnly:   Props.Collision = EMantleCollision::Overlap; break;
 		default:                             Props.Collision = EMantleCollision::Blocking; break;
 		}
+		// A part of a split mesh whose source has simple collision shapes: part 0 carries them, so this one does not collide.
+		if (Mesh && !FMantleSlotSplit::CarriesCollision(Mesh))
+		{
+			Props.Collision = EMantleCollision::None;
+		}
 		Props.bCastShadow = bVisible && FMantleEnvironmentExport::CastsShadowInPlace(Component);
 		Props.bVisible = bVisible;
 		// An invisible wall (Unreal's InvisibleWall presets) lets sight and pointer traces through; only a blocking one is told apart.
@@ -854,10 +860,72 @@ namespace
 		// entity's caller clears it again: its physics.material carries the body's surface.
 		Props.Surface = FMantlePlaceExporter::ReadSurface(Component);
 		// GhzGarage/mantle#630: the component's cull distance, else a size-based default; nothing for a client that doesn't read them.
-		FMantleDrawDistance::Apply(FMantleDrawDistance::ReadComponent(Component, Mesh), FMantleTargetFeatures::Current(), Props);
+		// A part of a split mesh (FMantleSlotSplit) is as far away as the whole mesh it was cut from.
+		FMantleDrawDistance::Apply(FMantleDrawDistance::ReadComponent(Component, FMantleSlotSplit::WholeOf(Mesh)), FMantleTargetFeatures::Current(), Props);
 		if (Mesh && !Props.Mesh.IsEmpty() && !Uploads.MeshBounds.Contains(Props.Mesh))
 		{
 			Uploads.MeshBounds.Add(Props.Mesh, Mesh->GetBounds().GetBox());
+		}
+	}
+
+	/**
+	 * ExporterReadMeshComponent for a mesh that may draw with more materials than a place mesh may have (FMantleSlotSplit): one
+	 * FMantleStaticMeshProps for each mesh it publishes as, in slot order, or just the one when it publishes as it is. Every part
+	 * has the component's collision (but a part without its source's simple shapes, which publishes with none), shadow and draw distance.
+	 */
+	void ExporterReadMeshComponentParts(
+		const UStaticMeshComponent* Component,
+		const FString& Path,
+		TSet<FString>& ReferencedAssets,
+		MantlePlaceExporterUploads::FContext& Uploads,
+		TArray<FMantleParseError>& Errors,
+		TArray<FMantleStaticMeshProps>& OutProps,
+		const UStaticMesh* MeshOverride = nullptr)
+	{
+		const UStaticMesh* Whole = MeshOverride ? MeshOverride : Component->GetStaticMesh();
+		TArray<UStaticMesh*> Parts;
+		if (FMantleSlotSplit::PartsFor(Component, Whole, Parts))
+		{
+			for (const UStaticMesh* Part : Parts)
+			{
+				ExporterReadMeshComponent(Component, Path, ReferencedAssets, Uploads, Errors, OutProps.AddDefaulted_GetRef(), Part);
+			}
+			return;
+		}
+		ExporterReadMeshComponent(Component, Path, ReferencedAssets, Uploads, Errors, OutProps.AddDefaulted_GetRef(), MeshOverride);
+	}
+
+	/**
+	 * Entities for the parts of a split mesh after the first, beside Entity (which carries the first): the same name, parent, place,
+	 * tags and movability, an id of its own (Entity's with "_s2", "_s3"... after it, cut to the length an id may have).
+	 */
+	void ExporterAddSplitSiblings(
+		const FMantleEntity& Entity,
+		const TArray<FMantleStaticMeshProps>& Parts,
+		TSet<FString>& UsedIds,
+		TArray<FMantleEntity>& OutEntities)
+	{
+		for (int32 Part = 1; Part < Parts.Num(); ++Part)
+		{
+			const FString Suffix = FString::Printf(TEXT("_s%d"), Part + 1);
+			// An id is "ent_" and at most 40 more characters.
+			FString Id = Entity.Id.Left(44 - Suffix.Len()) + Suffix;
+			for (int32 Collision = 2; UsedIds.Contains(Id); ++Collision)
+			{
+				const FString Extra = FString::Printf(TEXT("%s%d"), *Suffix, Collision);
+				Id = Entity.Id.Left(44 - Extra.Len()) + Extra;
+			}
+			UsedIds.Add(Id);
+
+			FMantleEntity& Sibling = OutEntities.AddDefaulted_GetRef();
+			Sibling.Id = Id;
+			Sibling.Type = EMantleEntityType::StaticMesh;
+			Sibling.Name = Entity.Name;
+			Sibling.Parent = Entity.Parent;
+			Sibling.Transform = Entity.Transform;
+			Sibling.Tags = Entity.Tags;
+			Sibling.bDynamic = Entity.bDynamic;
+			Sibling.Props.Set<FMantleStaticMeshProps>(Parts[Part]);
 		}
 	}
 
@@ -1228,7 +1296,8 @@ namespace
 		TSet<FString>& ReferencedAssets,
 		MantlePlaceExporterUploads::FContext& Uploads,
 		TArray<FMantleParseError>& Errors,
-		const UStaticMesh* MeshOverride = nullptr)
+		const UStaticMesh* MeshOverride = nullptr,
+		TArray<FMantleStaticMeshProps>* OutSplitParts = nullptr)
 	{
 		switch (Type)
 		{
@@ -1243,9 +1312,15 @@ namespace
 
 		case EMantleEntityType::StaticMesh:
 		{
-			FMantleStaticMeshProps Props;
 			const UStaticMeshComponent* Component = CastChecked<AStaticMeshActor>(Actor)->GetStaticMeshComponent();
-			ExporterReadMeshComponent(Component, Path, ReferencedAssets, Uploads, Errors, Props, MeshOverride);
+			// A mesh with more materials than a place mesh may have is several (FMantleSlotSplit): the first is this entity's, the rest the caller's siblings.
+			TArray<FMantleStaticMeshProps> AllParts;
+			ExporterReadMeshComponentParts(Component, Path, ReferencedAssets, Uploads, Errors, AllParts, MeshOverride);
+			FMantleStaticMeshProps Props = AllParts[0];
+			if (OutSplitParts)
+			{
+				*OutSplitParts = MoveTemp(AllParts);
+			}
 			// Simulate Physics makes it a physics entity (#456), which the runtime treats as dynamic.
 			FMantlePhysicsProps Physics;
 			if (FMantlePlaceExporter::ReadPhysics(Component, Physics))
@@ -2250,18 +2325,27 @@ namespace MantlePlaceExporterPrefab
 		FMantleEntity& Entity,
 		TSet<FString>& ReferencedAssets,
 		MantlePlaceExporterUploads::FContext& Uploads,
-		TArray<FMantleParseError>& Errors)
+		TArray<FMantleParseError>& Errors,
+		TArray<FMantleStaticMeshProps>* OutSplitParts = nullptr)
 	{
 		switch (Part.Type)
 		{
 		case EMantleEntityType::StaticMesh:
 		{
-			FMantleStaticMeshProps Props;
+			TArray<FMantleStaticMeshProps> AllParts;
 			if (const UStaticMeshComponent* Mesh = Cast<UStaticMeshComponent>(Part.Component))
 			{
-				ExporterReadMeshComponent(Mesh, Path, ReferencedAssets, Uploads, Errors, Props, Part.MirroredMesh);
+				ExporterReadMeshComponentParts(Mesh, Path, ReferencedAssets, Uploads, Errors, AllParts, Part.MirroredMesh);
 			}
-			Entity.Props.Set<FMantleStaticMeshProps>(Props);
+			if (AllParts.Num() == 0)
+			{
+				AllParts.AddDefaulted();
+			}
+			Entity.Props.Set<FMantleStaticMeshProps>(AllParts[0]);
+			if (OutSplitParts)
+			{
+				*OutSplitParts = MoveTemp(AllParts);
+			}
 			break;
 		}
 
@@ -5409,7 +5493,8 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		{
 			Entity.Transform.SetScale3D(Entity.Transform.GetScale3D().GetAbs());
 		}
-		ExtractProperties(Actor, Entity.Type, Path, Entity, ReferencedAssets, Uploads, Result.Errors, ActorMirror ? ActorMirror->Mesh : nullptr);
+		TArray<FMantleStaticMeshProps> SplitParts;
+		ExtractProperties(Actor, Entity.Type, Path, Entity, ReferencedAssets, Uploads, Result.Errors, ActorMirror ? ActorMirror->Mesh : nullptr, &SplitParts);
 
 		// The crowd budgets span the level (#477), so they are counted here, at the paths the
 		// parser reports them. So do points of interest (#513): the actors they name have ids now.
@@ -5501,9 +5586,20 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			}
 		}
 
+		// A mesh with more materials than a place mesh may have (FMantleSlotSplit) is its first part here and the rest as entities beside it, in its place.
+		TArray<FMantleEntity> SplitSiblings;
+		ExporterAddSplitSiblings(Entity, SplitParts, UsedIds, SplitSiblings);
 		const FString GroupId = Entity.Id;
 		const bool bGroupDynamic = Entity.bDynamic;
 		Place.Entities.Add(MoveTemp(Entity));
+		for (FMantleEntity& Sibling : SplitSiblings)
+		{
+			if (bPartitionedWorld && !Actor->GetIsSpatiallyLoaded())
+			{
+				NotSpatiallyLoaded.Add(Sibling.Id);
+			}
+			Place.Entities.Add(MoveTemp(Sibling));
+		}
 
 		// Its parts (#468), right after it: named after their components, placed relative to the
 		// group, and dynamic exactly when the group is (IsPrefabDynamic decides for the whole prefab).
@@ -5525,8 +5621,20 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				Child.Parent = GroupId;
 				Child.Transform = Exported.Part.Transform;
 				Child.bDynamic = bGroupDynamic;
-				MantlePlaceExporterPrefab::ExtractPartProperties(Exported.Part, PartPath, Child, ReferencedAssets, Uploads, Result.Errors);
+				TArray<FMantleStaticMeshProps> PartSplit;
+				MantlePlaceExporterPrefab::ExtractPartProperties(Exported.Part, PartPath, Child, ReferencedAssets, Uploads, Result.Errors, &PartSplit);
+				// A mesh part with more materials than a place mesh may have is several entities in a row (FMantleSlotSplit).
+				TArray<FMantleEntity> PartSiblings;
+				ExporterAddSplitSiblings(Child, PartSplit, UsedIds, PartSiblings);
 				Place.Entities.Add(MoveTemp(Child));
+				for (FMantleEntity& Sibling : PartSiblings)
+				{
+					if (bPartitionedWorld && !Actor->GetIsSpatiallyLoaded())
+					{
+						NotSpatiallyLoaded.Add(Sibling.Id);
+					}
+					Place.Entities.Add(MoveTemp(Sibling));
+				}
 			}
 		}
 	}
@@ -5563,30 +5671,37 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				continue;
 			}
 
-			// The group for this component's mesh, or for a mirrored copy of it (MeshOverride); same key, same group, level-wide.
+			// The groups for this component's mesh, or for a mirrored copy of it (MeshOverride); same key, same group, level-wide. A mesh with
+			// more materials than a place mesh may have (FMantleSlotSplit) is a group for each of its parts, every one with all the instances.
 			// Cells-format 5.2 rule 6: an actor whose Is Spatially Loaded is off is always loaded, so its instances stay in the root.
 			const bool bSpatiallyLoaded = !bPartitionedWorld || Owner->GetIsSpatiallyLoaded();
-			auto GroupFor = [&](const UStaticMesh* MeshOverride)
+			auto GroupsFor = [&](const UStaticMesh* MeshOverride)
 			{
-				FMantleStaticMeshProps Mesh;
-				ExporterReadMeshComponent(Component, SourcePath, ReferencedAssets, Uploads, Result.Errors, Mesh, MeshOverride);
-				const FString Key = InstancedGroupKey(Mesh);
-				if (const int32* Found = GroupByKey.Find(Key))
+				TArray<FMantleStaticMeshProps> Meshes;
+				ExporterReadMeshComponentParts(Component, SourcePath, ReferencedAssets, Uploads, Result.Errors, Meshes, MeshOverride);
+				TArray<int32> Indexes;
+				for (const FMantleStaticMeshProps& Mesh : Meshes)
 				{
-					return *Found;
+					const FString Key = InstancedGroupKey(Mesh);
+					if (const int32* Found = GroupByKey.Find(Key))
+					{
+						Indexes.AddUnique(*Found);
+						continue;
+					}
+					const int32 Index = Groups.Num();
+					GroupByKey.Add(Key, Index);
+					FMantleInstancedMeshGroup& Added = Groups.AddDefaulted_GetRef();
+					Added.Mesh = Mesh;
+					Added.MeshName = Component->GetStaticMesh()->GetName();
+					Indexes.Add(Index);
 				}
-				const int32 Index = Groups.Num();
-				GroupByKey.Add(Key, Index);
-				FMantleInstancedMeshGroup& Added = Groups.AddDefaulted_GetRef();
-				Added.Mesh = Mesh;
-				Added.MeshName = Component->GetStaticMesh()->GetName();
-				return Index;
+				return Indexes;
 			};
-			const int32 GroupIndex = GroupFor(nullptr);
+			const TArray<int32> GroupIndexes = GroupsFor(nullptr);
 
 			// GhzGarage/mantle#818: a mirrored instance is placed as an instance of the mesh's mirrored copy (one per set of negative
 			// axes, cached by FMantleMirrorBake) at the positive scale; one scaled to zero is left out.
-			struct FMirroredGroup { int32 Group = INDEX_NONE; UStaticMesh* Mesh = nullptr; };
+			struct FMirroredGroup { TArray<int32> Groups; UStaticMesh* Mesh = nullptr; };
 			TMap<int32, FMirroredGroup> MirrorGroups;
 			TMap<int32, FString> MirrorFailures;
 			int32 MirroredCount = 0;
@@ -5599,7 +5714,10 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			{
 				return bSpatiallyLoaded ? Groups[Group].WorldInstances : Groups[Group].RootOnlyInstances;
 			};
-			InstancesFor(GroupIndex).Reserve(InstancesFor(GroupIndex).Num() + Count);
+			for (const int32 GroupIndex : GroupIndexes)
+			{
+				InstancesFor(GroupIndex).Reserve(InstancesFor(GroupIndex).Num() + Count);
+			}
 			for (int32 InstanceIndex = 0; InstanceIndex < Count; ++InstanceIndex)
 			{
 				FTransform Instance;
@@ -5619,7 +5737,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 						const FMantleMirrorResult Mirror = FMantleActorDecompose::ResolveMirror(Component->GetStaticMesh(), Scale);
 						if (Mirror.bOk)
 						{
-							Mirrored = &MirrorGroups.Add(Mask, FMirroredGroup{ GroupFor(Mirror.Mesh), Mirror.Mesh });
+							Mirrored = &MirrorGroups.Add(Mask, FMirroredGroup{ GroupsFor(Mirror.Mesh), Mirror.Mesh });
 						}
 						else
 						{
@@ -5634,7 +5752,10 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 					}
 					FTransform Placed = Normalized;
 					Placed.SetScale3D(Scale.GetAbs());
-					InstancesFor(Mirrored->Group).Add(Placed);
+					for (const int32 Group : Mirrored->Groups)
+					{
+						InstancesFor(Group).Add(Placed);
+					}
 					++MirroredCount;
 				}
 				else if (Kind == EExporterInstanceKind::Flat)
@@ -5643,7 +5764,10 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				}
 				else
 				{
-					InstancesFor(GroupIndex).Add(Normalized);
+					for (const int32 GroupIndex : GroupIndexes)
+					{
+						InstancesFor(GroupIndex).Add(Normalized);
+					}
 				}
 			}
 
