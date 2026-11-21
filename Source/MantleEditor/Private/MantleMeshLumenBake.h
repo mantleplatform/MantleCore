@@ -3,7 +3,10 @@
 
 #include "CoreMinimal.h"
 #include "Engine/EngineTypes.h"
+#include "MantleGlbWriter.h"
+#include "Tasks/Task.h"
 
+class IMeshUtilities;
 struct FMantleGlbMesh;
 struct FMantleValidationIssue;
 class UWorld;
@@ -13,6 +16,37 @@ struct FMantleMeshLumenSection
 {
 	EBlendMode BlendMode = BLEND_Opaque;
 	bool bTwoSided = false;
+};
+
+/** What one background Lumen bake made: the file, or the reason there is none (FMantleMeshLumenBake::Bake). */
+struct FMantleMeshLumenResult
+{
+	bool bBaked = false;
+	TArray<uint8> File;
+	FString Reason;
+
+	/** Time the bake itself took on its worker thread. */
+	double Seconds = 0.0;
+};
+
+/**
+ * One Lumen bake running on a worker thread (FMantleMeshLumenBake::Launch). It owns its own copy of the mesh, so nothing it
+ * reads belongs to the game thread. Read the result only after Wait (or once IsDone).
+ */
+class FMantleMeshLumenJob
+{
+public:
+	bool IsDone() const { return Task.IsCompleted(); }
+	void Wait() const { Task.Wait(); }
+	FMantleMeshLumenResult& GetResult() { return Result; }
+
+private:
+	friend class FMantleMeshLumenBake;
+	UE::Tasks::FTask Task;
+	FMantleMeshLumenResult Result;
+	FMantleGlbMesh Mesh;
+	TArray<FMantleMeshLumenSection> Sections;
+	FString MeshTag;
 };
 
 /**
@@ -34,6 +68,20 @@ public:
 	 * field (every section translucent, or too thin or empty) or no cards. Game thread.
 	 */
 	static bool Bake(const FMantleGlbMesh& Mesh, TConstArrayView<FMantleMeshLumenSection> Sections, const FString& MeshTag, TArray<uint8>& OutFile, FString& OutReason);
+
+	/** Bake with MeshUtilities already in hand: callable from any thread (the engine runs the same builds on its own worker threads). */
+	static bool BakeUsing(IMeshUtilities& MeshUtilities, const FMantleGlbMesh& Mesh, TConstArrayView<FMantleMeshLumenSection> Sections, const FString& MeshTag,
+		TArray<uint8>& OutFile, FString& OutReason);
+
+	/**
+	 * Starts Bake on a worker thread, from the mesh and sections it takes over (the sections are read from materials on the game
+	 * thread, as Bake's callers do). Game thread. At most MaxInFlight bakes run at once: past that this waits for one to finish, so
+	 * the copies held in memory stay bounded. The file is what Bake would make, byte for byte.
+	 */
+	static TSharedRef<FMantleMeshLumenJob> Launch(FMantleGlbMesh&& Mesh, TArray<FMantleMeshLumenSection>&& Sections, const FString& MeshTag);
+
+	/** How many Launch bakes run at once: the engine's worker threads, at least 1. */
+	static int32 MaxInFlight();
 
 	/** A material's part in the bake: its blend mode and IsTwoSided, opaque one-sided for none. */
 	static FMantleMeshLumenSection SectionFor(const class UMaterialInterface* Material);
