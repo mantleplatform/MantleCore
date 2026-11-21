@@ -286,7 +286,6 @@ bool FMantleCellPlannerChildlessGroupTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleCellsTestPrivate;
 	FMantlePlace Place;
-	Place.SchemaVersion = MANTLE_PLACE_SCHEMA_VERSION;
 	TArray<FMantleInstancedMeshGroup> Groups;
 	FMantleCellPlanInput Input;
 	Input.bFoldStaticMeshes = false;
