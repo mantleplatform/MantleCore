@@ -280,7 +280,14 @@ namespace MantleHeadlessPublishPrivate
 			}
 			if (!GAsyncSession->IsFinished())
 			{
-				GAsyncSession->Tick();
+				// Up to half a second of steps per frame: a step is one mesh or material, and one per frame left the editor idle
+				// between frames (City Sample's materials went at about one every two seconds with the CPU at 8%).
+				const double FrameUntil = FPlatformTime::Seconds() + 0.5;
+				do
+				{
+					GAsyncSession->Tick();
+				}
+				while (!GAsyncSession->IsFinished() && FPlatformTime::Seconds() < FrameUntil);
 				if (!GAsyncSession->IsFinished() && FPlatformTime::Seconds() > GAsyncGiveUpAt)
 				{
 					GAsyncSession->Cancel();
