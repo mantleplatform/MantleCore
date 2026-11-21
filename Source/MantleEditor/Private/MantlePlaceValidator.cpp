@@ -27,6 +27,7 @@
 #include "MantleItemSpawnModel.h"
 #include "MantleItemSpawnPoint.h"
 #include "MantleScriptPoint.h"
+#include "MantleSlotSplit.h"
 #include "MantleSplineMeshBake.h"
 #include "MantleTargetFeatures.h"
 #include "MantleTextExport.h"
@@ -1046,6 +1047,13 @@ namespace
 	{
 		// A mesh not shown in game (collision only) publishes no materials, so no override of it is written.
 		if (!FMantlePlaceExporter::IsShownInGame(Component))
+		{
+			return;
+		}
+		// A mesh with more material slots than a place mesh may have publishes as parts of at most 8 (FMantleSlotSplit), and a slot's override
+		// goes to the part that slot is in, so no slot number is too high for it.
+		TArray<UStaticMesh*> SplitParts;
+		if (FMantleSlotSplit::PartsFor(Component, Component->GetStaticMesh(), SplitParts))
 		{
 			return;
 		}

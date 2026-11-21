@@ -5004,13 +5004,8 @@ void FMantlePlaceAssets::CheckMesh(const UStaticMesh* Mesh, const FString& UsedB
 			TEXT("Nothing to do: your mesh is unchanged. Textures near those vertices may look stretched; fix the UVs in a modeling tool to correct that.") });
 	}
 
-	if (Mesh->IsNaniteEnabled())
-	{
-		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
-			FString::Printf(TEXT("%s uses Nanite, so it exports as its fallback mesh (%s triangles), which is what players will see."),
-				*Subject, *Thousands(Triangles)),
-			TEXT("If it looks too coarse up close, raise Fallback Triangle Percent in the mesh's Nanite settings.") });
-	}
+	// A Nanite mesh publishes its Nanite data beside the plain model (the converter bakes it, FMantleMeshNaniteBake::BakeToFit), so players
+	// see the Nanite mesh and need no notice here. The converter says so when it cannot: no Nanite data, or data baked coarser to fit.
 	if (Triangles > Limits.MaxTriangles)
 	{
 		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Error, FString(),

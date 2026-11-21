@@ -23,7 +23,7 @@ class UStaticMeshComponent;
  *
  * Collision stays what the source had. A source with simple shapes (boxes, spheres, capsules, hulls) gives them to part 0 only,
  * and the other parts publish with no collision (CarriesCollision). A source that collides with its triangles gives every
- * part its own triangles, which together are all of them.
+ * part its own triangles, which together are all of them. A source with no collision body has none, so no part has any.
  */
 class MANTLEEDITOR_API FMantleSlotSplit
 {
@@ -57,7 +57,7 @@ public:
 	/** The slot of the source that slot Slot of Mesh is; Slot itself when Mesh is not a part. */
 	static int32 SourceSlot(const UStaticMesh* Mesh, int32 Slot);
 
-	/** Whether Mesh publishes with its source's collision: every mesh but a part that is not part 0 of a source with simple collision shapes. */
+	/** Whether Mesh publishes with its source's collision: every mesh but a part of a source with no collision body, and a part that is not part 0 of a source with simple collision shapes. */
 	static bool CarriesCollision(const UStaticMesh* Mesh);
 
 	/** Forgets every cached part (tests; a publish's end, FMantlePublishCaches::Prune). */

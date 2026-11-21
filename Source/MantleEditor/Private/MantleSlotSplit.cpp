@@ -304,7 +304,8 @@ namespace MantleSlotSplitPrivate
 		}
 
 		// Its collision: the source's own for part 0, and for the rest what the source gave every part (its triangles), or nothing at all
-		// when part 0 carries simple shapes (the exporter then publishes those parts with no collision).
+		// when part 0 carries simple shapes (the exporter then publishes those parts with no collision). A source with no body setup has
+		// no collision, so a part gets none: its body is left empty and CarriesCollision says false.
 		Baked->CreateBodySetup();
 		if (UBodySetup* Body = Baked->GetBodySetup())
 		{
@@ -315,10 +316,6 @@ namespace MantleSlotSplitPrivate
 				{
 					Body->AggGeom = SourceBody->AggGeom;
 				}
-			}
-			else
-			{
-				Body->CollisionTraceFlag = CTF_UseComplexAsSimple;
 			}
 			Body->InvalidatePhysicsData();
 		}
@@ -427,6 +424,12 @@ bool FMantleSlotSplit::Split(const UStaticMesh* Source, int32 MaxSections, TArra
 	}
 
 	const bool bSimple = HasSimpleShapes(*Source);
+	const bool bHasBody = Source->GetBodySetup() != nullptr;
+	if (Source->IsNaniteEnabled())
+	{
+		// The parts are cut from the render data, which for a Nanite mesh is its fallback, and are not Nanite meshes themselves.
+		UE_LOG(LogMantle, Warning, TEXT("MANTLE_SLOT_SPLIT '%s' cut from its Nanite fallback: its parts publish without Nanite detail"), *Source->GetName());
+	}
 	const int32 PartCount = FMath::DivideAndRoundUp(DrawnSlots.Num(), MaxSections);
 	TArray<TPair<UStaticMesh*, FPartInfo>> Built;
 	for (int32 PartIndex = 0; PartIndex < PartCount; ++PartIndex)
@@ -446,7 +449,7 @@ bool FMantleSlotSplit::Split(const UStaticMesh* Source, int32 MaxSections, TArra
 		FPartInfo Info;
 		Info.Whole = Source;
 		Info.SourceSlots = PartSlots;
-		Info.bCarriesCollision = PartIndex == 0 || !bSimple;
+		Info.bCarriesCollision = bHasBody && (PartIndex == 0 || !bSimple);
 		Built.Emplace(Part, MoveTemp(Info));
 		Made.Parts.Add(Part);
 	}

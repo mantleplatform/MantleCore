@@ -76,7 +76,7 @@ namespace MantleSlotSplitTestPrivate
 	 * A transient mesh of Slots slots: one triangle in each, a hundred centimeters apart on X, so a slot's triangle says which slot it
 	 * is. With bBox it has one box as simple collision.
 	 */
-	UStaticMesh* MakeSlotted(int32 Slots, bool bBox)
+	UStaticMesh* MakeSlotted(int32 Slots, bool bBox, bool bBody = true)
 	{
 		FMeshDescription Description;
 		FStaticMeshAttributes Attributes(Description);
@@ -126,7 +126,10 @@ namespace MantleSlotSplitTestPrivate
 		Descriptions.Add(&Description);
 		Mesh->BuildFromMeshDescriptions(Descriptions, Params);
 
-		Mesh->CreateBodySetup();
+		if (bBody)
+		{
+			Mesh->CreateBodySetup();
+		}
 		if (UBodySetup* Body = Mesh->GetBodySetup())
 		{
 			Body->AggGeom.EmptyElements();
@@ -305,6 +308,22 @@ bool FMantleSlotSplitCollisionTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("and has no shape of its own"), Parts[PartIndex]->GetBodySetup() ? Parts[PartIndex]->GetBodySetup()->AggGeom.GetElementCount() : -1, 0);
 	}
 
+	// A source with no collision body has no collision: no part gets any (it must not gain triangle collision it never had).
+	TStrongObjectPtr<UStaticMesh> Bodyless(MakeSlotted(17, /*bBox*/ false, /*bBody*/ false));
+	if (TestNull(TEXT("the bodyless mesh has no body setup"), Bodyless->GetBodySetup()))
+	{
+		TArray<UStaticMesh*> BodylessParts;
+		if (TestTrue(TEXT("the bodyless mesh split"), FMantleSlotSplit::Split(Bodyless.Get(), 8, BodylessParts, Why)))
+		{
+			for (const UStaticMesh* Part : BodylessParts)
+			{
+				TestFalse(TEXT("no part of it carries collision"), FMantleSlotSplit::CarriesCollision(Part));
+				TestTrue(TEXT("and none has a shape or complex collision"), !Part->GetBodySetup()
+					|| (Part->GetBodySetup()->AggGeom.GetElementCount() == 0 && Part->GetBodySetup()->GetCollisionTraceFlag() != CTF_UseComplexAsSimple));
+			}
+		}
+	}
+
 	TStrongObjectPtr<UStaticMesh> Triangles(MakeSlotted(9, /*bBox*/ false));
 	TArray<UStaticMesh*> TrianglePartsOut;
 	if (!TestTrue(TEXT("the triangle-collision mesh split"), FMantleSlotSplit::Split(Triangles.Get(), 8, TrianglePartsOut, Why)))
@@ -352,8 +371,16 @@ bool FMantleSlotSplitActorExportTest::RunTest(const FString& Parameters)
 	}
 	SeventeenActor->GetStaticMeshComponent()->SetMaterial(10, Override);
 
+	// An override on the last slot (16, past the 16 an entity's materials may name) is fine on a mesh that publishes as parts.
+	UMaterialInterface* LastOverride = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial"));
+	SeventeenActor->GetStaticMeshComponent()->SetMaterial(16, LastOverride);
+
 	const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(World.World);
 	TestFalse(TEXT("Check does not refuse the slot count"), HasSlotCountError(Validation));
+	TestFalse(TEXT("nor an override on slot 16 of a mesh that publishes as parts"), Validation.Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+	{
+		return Issue.Severity == EMantleIssueSeverity::Error && Issue.Problem.Contains(TEXT("overrides material slot"));
+	}));
 
 	const FMantlePlaceDependencies Dependencies = FMantlePlaceDependencies::Gather(World.World);
 	TestFalse(TEXT("Gather does not list the whole mesh"), Dependencies.Meshes.ContainsByPredicate([&Nine](const FMantleGatheredMesh& Entry)
@@ -413,6 +440,9 @@ bool FMantleSlotSplitActorExportTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("the override of slot 10 is on the second part's third slot"), SeventeenProps[1]->Materials.IsValidIndex(2) ? SeventeenProps[1]->Materials[2] : FString(), OverrideId);
 	TestFalse(TEXT("and not on the first part"), SeventeenProps[0]->Materials.Contains(OverrideId));
 	TestFalse(TEXT("nor the third"), SeventeenProps[2]->Materials.Contains(OverrideId));
+	// Slot 16 is the only slot of the third part.
+	TestEqual(TEXT("the override of slot 16 is on the third part's only slot"), SeventeenProps[2]->Materials.Num() == 1 ? SeventeenProps[2]->Materials[0] : FString(),
+		FMantlePlaceAssets::ProvisionalId(FMantlePlaceAssets::MaterialKey(LastOverride)));
 
 	// Every mesh an entity names is one Gather listed, so the upload has it.
 	for (const FMantleStaticMeshProps* Props : NineProps)
