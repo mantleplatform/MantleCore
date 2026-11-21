@@ -15,12 +15,18 @@ namespace MantleDrawDistancePrivate
 	/**
 	 * Radius below (cm), draw distance. A prop at the top of a band (30 cm radius) is still about 12 pixels across at
 	 * its 60 m on a 1080p screen, and one at 3 m radius at 250 m, so nothing pops where a player looks.
+	 *
+	 * The last band is the big scenery of a large place: ground tiles, whole-building collision, roofs and freeway decks of 10 to
+	 * 100 m radius. They draw to 2.5 km, the default cell grid's farthest level (FMantleCellGrid::Default), so they stream in its
+	 * 1 km cells instead of all loading with the root. Without it City Sample's Big City kept ~183,000 of them in the root, which
+	 * holds at most 100,000 instanced meshes and 8 MiB. A mesh of 100 m radius or more is still never culled.
 	 */
 	const FMantleDrawDistance::FBand GBands[] = {
 		{ 30.0, 6000.0 },
 		{ 100.0, 12000.0 },
 		{ 300.0, 25000.0 },
 		{ 1000.0, 60000.0 },
+		{ 10000.0, 250000.0 },
 	};
 
 	/** The distance in cm; 0 past MaxDrawDistance (then the mesh is never culled). */
