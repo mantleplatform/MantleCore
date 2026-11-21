@@ -3,6 +3,7 @@
 #include "MantleCableBake.h"
 #include "MantleMeshReduce.h"
 #include "MantleMirrorBake.h"
+#include "MantleSlotSplit.h"
 #include "MantleSplineMeshBake.h"
 
 // Named, not anonymous: MantleEditor builds as a unity build.
@@ -41,6 +42,7 @@ void FMantlePublishCaches::ResetCountForTests()
 void FMantlePublishCaches::Prune()
 {
 	FMantleMirrorBake::ClearCache();
+	FMantleSlotSplit::ClearCache();
 	FMantleSplineMeshBake::ClearCache();
 	FMantleCableBake::ClearCache();
 	FMantleMeshReduce::ClearCache();
