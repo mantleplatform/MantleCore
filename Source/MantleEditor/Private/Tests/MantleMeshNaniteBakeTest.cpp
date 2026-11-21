@@ -2016,4 +2016,58 @@ bool FMantleMeshNaniteAssemblyCacheTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// #149: a converter that bakes its meshes' Lumen data on worker threads leaves each mesh as the converter that bakes in line does, once
+// the set has joined them: the same Lumen file (or none, with the same reason), hash and GLB.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshLumenDeferredConverterTest,
+	"Mantle.Editor.Lumen.Converter.DeferredMatchesInline",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshLumenDeferredConverterTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshNaniteBakeTestPrivate;
+
+	TArray<UStaticMesh*> Meshes;
+	for (const int32 Cells : { 6, 10, 14, 18, 22, 26 })
+	{
+		Meshes.Add(MakeGrid(Cells, /*bNanite*/ false, 0, 2));
+	}
+	const FString CacheDir = FPaths::Combine(FPaths::AutomationTransientDir(), TEXT("MantleLumenDeferred"));
+	FMantlePlaceAssetConverter InLine(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+	InLine.bBakeNanite = false;
+	FMantlePlaceAssetConverter Deferred(MakeShared<FMantleGltfMaterialFlattener>(), CacheDir);
+	Deferred.bBakeNanite = false;
+	Deferred.bDeferLumenBakes = true;
+	FMantlePlaceAssetSet InLineSet;
+	FMantlePlaceAssetSet DeferredSet;
+	for (UStaticMesh* Mesh : Meshes)
+	{
+		TestTrue(TEXT("a mesh converts in line"), InLine.ConvertMesh(Mesh, InLineSet));
+		TestTrue(TEXT("and with its bake deferred"), Deferred.ConvertMesh(Mesh, DeferredSet));
+	}
+	DeferredSet.FinishLumen();
+	TestEqual(TEXT("no bake is left waiting"), DeferredSet.PendingLumen.Num(), 0);
+	if (!TestEqual(TEXT("every mesh converted both ways"), DeferredSet.Meshes.Num(), InLineSet.Meshes.Num()) || !TestEqual(TEXT("all of them"), InLineSet.Meshes.Num(), Meshes.Num()))
+	{
+		return false;
+	}
+	int32 WithLumen = 0;
+	for (int32 Index = 0; Index < Meshes.Num(); ++Index)
+	{
+		const FMantleConvertedMesh& A = InLineSet.Meshes[Index];
+		const FMantleConvertedMesh& B = DeferredSet.Meshes[Index];
+		TestEqual(*FString::Printf(TEXT("mesh %d: the same GLB"), Index), B.Hash, A.Hash);
+		TestTrue(*FString::Printf(TEXT("mesh %d: the same Lumen file"), Index), B.Lumen == A.Lumen);
+		TestEqual(*FString::Printf(TEXT("mesh %d: the same Lumen hash"), Index), B.LumenHash, A.LumenHash);
+		TestEqual(*FString::Printf(TEXT("mesh %d: the same reason for none"), Index), B.LumenNone, A.LumenNone);
+		WithLumen += A.Lumen.Num() > 0 ? 1 : 0;
+	}
+	AddInfo(FString::Printf(TEXT("%d of %d meshes have Lumen data"), WithLumen, Meshes.Num()));
+	for (UStaticMesh* Mesh : Meshes)
+	{
+		Mesh->MarkAsGarbage();
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

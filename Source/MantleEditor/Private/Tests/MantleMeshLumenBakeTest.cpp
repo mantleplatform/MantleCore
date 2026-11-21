@@ -123,4 +123,85 @@ bool FMantleMeshLumenBakeSolidTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// The bake on worker threads makes what the bake in line makes, byte for byte, with the same reason where there is no file: several
+// different meshes (more than there are workers, so the launches have to wait for a free one) baked both ways.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshLumenBakeWorkersTest,
+	"Mantle.Editor.Lumen.Bake.WorkersMatchInline",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshLumenBakeWorkersTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleMeshLumenBakeTestPrivate;
+
+	struct FCase
+	{
+		FString Name;
+		FMantleGlbMesh Mesh;
+		FMantleMeshLumenSection Section;
+	};
+	TArray<FCase> Cases;
+	const int32 Count = FMantleMeshLumenBake::MaxInFlight() * 2 + 3;
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		FCase& Case = Cases.AddDefaulted_GetRef();
+		Case.Name = FString::Printf(TEXT("case %d"), Index);
+		switch (Index % 4)
+		{
+		case 0: // a box of a size of its own
+			Case.Mesh = MakeBox();
+			for (FVector3f& Position : Case.Mesh.Positions)
+			{
+				Position *= 1.0f + 0.37f * Index;
+			}
+			break;
+		case 1: // a two-sided card
+			Case.Mesh = MakeCard();
+			Case.Section.BlendMode = BLEND_Masked;
+			Case.Section.bTwoSided = true;
+			for (FVector3f& Position : Case.Mesh.Positions)
+			{
+				Position *= 1.0f + 0.21f * Index;
+			}
+			break;
+		case 2: // translucent: no file, and a reason
+			Case.Mesh = MakeBox();
+			Case.Section.BlendMode = BLEND_Translucent;
+			break;
+		default: // no triangles: no file, and another reason
+			Case.Mesh.Name = TEXT("Empty");
+			break;
+		}
+	}
+
+	// In line first, then every case started before any is waited for.
+	TArray<TArray<uint8>> InlineFiles;
+	TArray<FString> InlineReasons;
+	TArray<bool> InlineBaked;
+	for (const FCase& Case : Cases)
+	{
+		TArray<uint8>& File = InlineFiles.AddDefaulted_GetRef();
+		FString& Reason = InlineReasons.AddDefaulted_GetRef();
+		InlineBaked.Add(FMantleMeshLumenBake::Bake(Case.Mesh, { Case.Section }, MeshTag, File, Reason));
+	}
+	TArray<TSharedRef<FMantleMeshLumenJob>> Jobs;
+	for (const FCase& Case : Cases)
+	{
+		Jobs.Add(FMantleMeshLumenBake::Launch(FMantleGlbMesh(Case.Mesh), { Case.Section }, MeshTag));
+	}
+	int32 Baked = 0;
+	for (int32 Index = 0; Index < Cases.Num(); ++Index)
+	{
+		Jobs[Index]->Wait();
+		const FMantleMeshLumenResult& Result = Jobs[Index]->GetResult();
+		TestEqual(*FString::Printf(TEXT("%s: baked on a worker or not as in line"), *Cases[Index].Name), Result.bBaked, InlineBaked[Index]);
+		TestEqual(*FString::Printf(TEXT("%s: the same reason"), *Cases[Index].Name), Result.Reason, InlineReasons[Index]);
+		TestTrue(*FString::Printf(TEXT("%s: the same bytes"), *Cases[Index].Name), Result.File == InlineFiles[Index]);
+		Baked += Result.bBaked ? 1 : 0;
+	}
+	TestTrue(TEXT("some of the cases make a file, so the bytes were compared"), Baked > 0);
+	TestTrue(TEXT("some of the cases make none, so the reasons were compared"), Baked < Cases.Num());
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

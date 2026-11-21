@@ -33,6 +33,13 @@ FMantleMeshLumenSection FMantleMeshLumenBake::SectionFor(const UMaterialInterfac
 bool FMantleMeshLumenBake::Bake(const FMantleGlbMesh& Mesh, const TConstArrayView<FMantleMeshLumenSection> Sections, const FString& MeshTag,
 	TArray<uint8>& OutFile, FString& OutReason)
 {
+	IMeshUtilities& MeshUtilities = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>(TEXT("MeshUtilities"));
+	return BakeUsing(MeshUtilities, Mesh, Sections, MeshTag, OutFile, OutReason);
+}
+
+bool FMantleMeshLumenBake::BakeUsing(IMeshUtilities& MeshUtilities, const FMantleGlbMesh& Mesh, const TConstArrayView<FMantleMeshLumenSection> Sections, const FString& MeshTag,
+	TArray<uint8>& OutFile, FString& OutReason)
+{
 	OutFile.Reset();
 	if (Mesh.Positions.Num() == 0 || Mesh.Primitives.Num() == 0)
 	{
@@ -85,7 +92,6 @@ bool FMantleMeshLumenBake::Bake(const FMantleGlbMesh& Mesh, const TConstArrayVie
 	MeshData.SectionData = SectionData;
 	MeshData.Bounds = FBoxSphereBounds3f(Bounds);
 
-	IMeshUtilities& MeshUtilities = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>(TEXT("MeshUtilities"));
 	FDistanceFieldVolumeData DistanceField;
 	MeshUtilities.GenerateSignedDistanceFieldVolumeData(Mesh.Name, MeshData, /*DistanceFieldResolutionScale*/ 1.0f, /*bGenerateAsIfTwoSided*/ false, DistanceField);
 	if (!DistanceField.IsValid())
@@ -108,6 +114,53 @@ bool FMantleMeshLumenBake::Bake(const FMantleGlbMesh& Mesh, const TConstArrayVie
 		return false;
 	}
 	return true;
+}
+
+int32 FMantleMeshLumenBake::MaxInFlight()
+{
+	return FMath::Clamp(FPlatformMisc::NumberOfWorkerThreadsToSpawn(), 1, 64);
+}
+
+TSharedRef<FMantleMeshLumenJob> FMantleMeshLumenBake::Launch(FMantleGlbMesh&& Mesh, TArray<FMantleMeshLumenSection>&& Sections, const FString& MeshTag)
+{
+	check(IsInGameThread());
+	// The jobs still running, oldest first (only the game thread touches this).
+	static TArray<TSharedRef<FMantleMeshLumenJob>> InFlight;
+	// MeshUtilities is loaded here, not on a worker, where loading a module is not allowed.
+	IMeshUtilities& MeshUtilities = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>(TEXT("MeshUtilities"));
+
+	const auto DropFinished = []()
+	{
+		InFlight.RemoveAll([](const TSharedRef<FMantleMeshLumenJob>& Each) { return Each->IsDone(); });
+	};
+	DropFinished();
+	while (InFlight.Num() >= MaxInFlight())
+	{
+		TArray<UE::Tasks::FTask> Running;
+		for (const TSharedRef<FMantleMeshLumenJob>& Each : InFlight)
+		{
+			Running.Add(Each->Task);
+		}
+		UE::Tasks::WaitAny(Running);
+		DropFinished();
+	}
+
+	TSharedRef<FMantleMeshLumenJob> Job = MakeShared<FMantleMeshLumenJob>();
+	Job->Mesh = MoveTemp(Mesh);
+	Job->Sections = MoveTemp(Sections);
+	Job->MeshTag = MeshTag;
+	Job->Task = UE::Tasks::Launch(UE_SOURCE_LOCATION, [Job, &MeshUtilities]()
+	{
+		const double Start = FPlatformTime::Seconds();
+		FMantleMeshLumenResult& Result = Job->Result;
+		Result.bBaked = BakeUsing(MeshUtilities, Job->Mesh, Job->Sections, Job->MeshTag, Result.File, Result.Reason);
+		Result.Seconds = FPlatformTime::Seconds() - Start;
+		// The copy of the mesh is not needed again; let it go before the job is joined.
+		Job->Mesh = FMantleGlbMesh();
+		Job->Sections.Empty();
+	});
+	InFlight.Add(Job);
+	return Job;
 }
 
 bool FMantleMeshLumenBake::LevelAsksForLumen(UWorld* World)
@@ -159,7 +212,15 @@ void FMantleMeshLumenBake::CheckLevel(UWorld* World, TArray<FMantleValidationIss
 			}
 		}
 	}
-	int32 Without = 0;
+	// Each mesh's bake runs on a worker thread as soon as the mesh is read; the findings are made after, in the meshes' order.
+	struct FStarted
+	{
+		const UStaticMesh* Mesh = nullptr;
+		FString Actor;
+		TSharedPtr<FMantleMeshLumenJob> Job;
+	};
+	TArray<FStarted> Started;
+	const double Start = FPlatformTime::Seconds();
 	for (const TPair<const UStaticMesh*, FString>& Pair : Meshes)
 	{
 		FMantleGlbMesh Glb;
@@ -176,18 +237,25 @@ void FMantleMeshLumenBake::CheckLevel(UWorld* World, TArray<FMantleValidationIss
 			const TArray<FStaticMaterial>& Materials = Pair.Key->GetStaticMaterials();
 			Sections.Add(SectionFor(Materials.IsValidIndex(Slot) ? Materials[Slot].MaterialInterface.Get() : nullptr));
 		}
-		TArray<uint8> File;
-		if (Bake(Glb, Sections, FString(TEXT("sha256:check")), File, Why))
+		Started.Add({ Pair.Key, Pair.Value, Launch(MoveTemp(Glb), MoveTemp(Sections), FString(TEXT("sha256:check"))) });
+	}
+	int32 Without = 0;
+	for (FStarted& Each : Started)
+	{
+		Each.Job->Wait();
+		const FMantleMeshLumenResult& Result = Each.Job->GetResult();
+		if (Result.bBaked)
 		{
 			continue;
 		}
 		++Without;
 		FMantleValidationIssue& Issue = OutIssues.AddDefaulted_GetRef();
 		Issue.Severity = EMantleIssueSeverity::Warning;
-		Issue.Actor = Pair.Value;
+		Issue.Actor = Each.Actor;
 		Issue.Problem = FString::Printf(TEXT("This level lights with Lumen, but mesh '%s' gets no distance field for it: it %s. In Mantle, Lumen does not see it, so it neither bounces light nor shades what is behind it."),
-			*Pair.Key->GetName(), *Why);
+			*Each.Mesh->GetName(), *Result.Reason);
 		Issue.Remedy = TEXT("If it should take part in the lighting, give it an opaque material or more thickness. A glass pane, decal card or effect mesh can stay as it is.");
 	}
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_CHECK_LUMEN level asks for Lumen: %d distinct mesh(es), %d without Lumen data"), Meshes.Num(), Without);
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_CHECK_LUMEN level asks for Lumen: %d distinct mesh(es), %d without Lumen data, %.1f s on up to %d worker(s)"),
+		Meshes.Num(), Without, FPlatformTime::Seconds() - Start, MaxInFlight());
 }

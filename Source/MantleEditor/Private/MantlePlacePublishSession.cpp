@@ -363,6 +363,8 @@ bool FMantleLevelPublishSource::Prepare(FMantleValidationResult& OutValidation, 
 	{
 		Converter = MakeShared<FMantlePlaceAssetConverter>();
 	}
+	// #149: the meshes' Lumen bakes run on worker threads while the later steps convert; the session joins them when the last step is done.
+	Converter->bDeferLumenBakes = true;
 	return true;
 }
 
@@ -1513,6 +1515,8 @@ void FMantlePlacePublishSession::TickConverting()
 			return;
 		}
 	}
+	// #149: the meshes' Lumen bakes still running are joined before anything reads their files or spills the meshes.
+	Set.FinishLumen();
 	SpillConverted();
 	ConversionName.Reset();
 	// #804: every step has run. The gathered objects are let go now (a regather's Prepare gathers and holds afresh).

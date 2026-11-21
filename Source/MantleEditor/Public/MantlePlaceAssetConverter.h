@@ -12,6 +12,7 @@
 
 class AActor;
 class FJsonObject;
+class FMantleMeshLumenJob;
 class UAnimSequence;
 class UMantleVehicleSource;
 class UMaterialInterface;
@@ -738,6 +739,39 @@ struct MANTLEEDITOR_API FMantlePlaceAssetSet
 	int64 HeldBytes() const;
 
 	/**
+	 * #149: a mesh whose Lumen bake is running on a worker thread (FMantlePlaceAssetConverter::ConvertMesh with DeferLumenBakes on). The
+	 * mesh is in Meshes already, its Lumen fields empty until the bake is joined: ApplyFinishedLumen takes the bakes that are done,
+	 * FinishLumen waits for the rest. SpillBytes leaves a mesh still waiting in memory (its cache entry is written when its bake is
+	 * joined, and needs the bytes).
+	 */
+	struct FPendingLumen
+	{
+		FString Key;
+		int32 Index = INDEX_NONE;
+		TSharedPtr<FMantleMeshLumenJob> Job;
+
+		/** Called with the mesh once its Lumen fields are filled: the cache write, the stats. */
+		TFunction<void(const FMantleConvertedMesh&, double BakeSeconds)> OnApplied;
+	};
+	TArray<FPendingLumen> PendingLumen;
+
+	/** Time the game thread spent in the Lumen phase of conversion: waiting for a free worker, and joining at the end. */
+	double LumenWaitSeconds = 0.0;
+
+	/** How many deferred Lumen bakes were joined, and their time added up (each ran on its own worker thread). */
+	int32 LumenBakesJoined = 0;
+	double LumenBakeSeconds = 0.0;
+
+	/** Fills in the meshes whose Lumen bake has finished, without waiting. Game thread. */
+	void ApplyFinishedLumen();
+
+	/** Waits for every running Lumen bake and fills in its mesh; logs the Lumen totals if any ran. Game thread. */
+	void FinishLumen();
+
+	/** Whether the mesh under Key still waits for its Lumen bake. */
+	bool IsLumenPending(const FString& Key) const;
+
+	/**
 	 * #804: frees every byte array (converted files, a vehicle's body) once the publish is over. Hashes, sizes, documents
 	 * and recorded ids stay, so a finished session can still be read.
 	 */
@@ -853,7 +887,10 @@ struct MANTLEEDITOR_API FMantlePlaceConversionStats
 	/** Calls into the flattener (GLTFExporter). A republish of unchanged content makes none. */
 	int32 FlattenerCalls = 0;
 
-	/** #149: time spent baking meshes' Lumen data (FMantleMeshLumenBake), which a mesh from the cache does not repeat. */
+	/**
+	 * #149: time spent baking meshes' Lumen data (FMantleMeshLumenBake), which a mesh from the cache does not repeat. Added up over the
+	 * bakes, so with bakes running side by side it is more than the time the publish waited (FMantlePlaceAssetSet::LumenWaitSeconds).
+	 */
 	double LumenSeconds = 0.0;
 
 	/** Stage N: time spent baking meshes' Nanite data (FMantleMeshNaniteBake), which a mesh from the cache does not repeat. */
@@ -1088,6 +1125,13 @@ public:
 	 * keyed apart from a place's (the salt says nanite=off), because an entry made with it off says "no file".
 	 */
 	bool bBakeNanite = true;
+
+	/**
+	 * #149: bake each mesh's Lumen data on a worker thread instead of inline, so a level with thousands of meshes bakes them side by
+	 * side. The caller then owes FMantlePlaceAssetSet::FinishLumen before it reads the meshes' Lumen files (Convert does it; the publish
+	 * session does it when its last step is done). Off by default: ConvertMesh on its own returns with the mesh complete.
+	 */
+	bool bDeferLumenBakes = false;
 
 	const FMantlePlaceConversionStats& GetStats() const { return Stats; }
 	const FString& GetCacheDirectory() const { return CacheDirectory; }

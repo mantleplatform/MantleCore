@@ -51,6 +51,7 @@
 #include "Misc/EngineVersion.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Guid.h"
+#include "Misc/ScopeExit.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "Misc/SecureHash.h"
@@ -1617,6 +1618,8 @@ bool FMantlePlaceAssetSet::VehicleLiveryIds(const FMantleConvertedVehicle& Vehic
 bool FMantlePlaceAssetSet::TakeUploads(EMantlePlaceUploadStage Stage, TArray<FMantlePlaceUpload>& OutUploads, FString& OutError)
 {
 	OutUploads.Reset();
+	// #149: a mesh's Lumen file is part of its upload.
+	FinishLumen();
 	// #804: one file's upload. Its bytes move out of the set (or, spilled, its path goes), and its key is remembered so the
 	// next call leaves it out. Null for a file an earlier call took.
 	auto Take = [this, Stage, &OutUploads](const FString& Key, const TCHAR* Kind, const FString& Hash, const FString& Name, TArray<uint8>& Bytes) -> FMantlePlaceUpload*
@@ -1785,9 +1788,70 @@ int64 FMantlePlaceAssetSet::UploadSize(const FString& Key, const int64 InMemory)
 	return InMemory;
 }
 
+bool FMantlePlaceAssetSet::IsLumenPending(const FString& Key) const
+{
+	return PendingLumen.ContainsByPredicate([&Key](const FPendingLumen& Each) { return Each.Key == Key; });
+}
+
+void FMantlePlaceAssetSet::ApplyFinishedLumen()
+{
+	for (int32 Index = 0; Index < PendingLumen.Num();)
+	{
+		FPendingLumen& Pending = PendingLumen[Index];
+		if (!Pending.Job->IsDone())
+		{
+			++Index;
+			continue;
+		}
+		FMantleConvertedMesh* Mesh = Meshes.IsValidIndex(Pending.Index) && Meshes[Pending.Index].Key == Pending.Key
+			? &Meshes[Pending.Index]
+			: Meshes.FindByPredicate([&Pending](const FMantleConvertedMesh& Each) { return Each.Key == Pending.Key; });
+		FMantleMeshLumenResult& Result = Pending.Job->GetResult();
+		++LumenBakesJoined;
+		LumenBakeSeconds += Result.Seconds;
+		if (Mesh)
+		{
+			// What the inline bake left on the mesh: the file and its hash, or the reason there is none.
+			if (Result.bBaked)
+			{
+				Mesh->Lumen = MoveTemp(Result.File);
+				Mesh->LumenHash = FMantleSha256::AssetHash(Mesh->Lumen);
+			}
+			else
+			{
+				Mesh->Lumen.Reset();
+				Mesh->LumenNone = Result.Reason;
+			}
+			if (Pending.OnApplied)
+			{
+				Pending.OnApplied(*Mesh, Result.Seconds);
+			}
+		}
+		PendingLumen.RemoveAt(Index);
+	}
+}
+
+void FMantlePlaceAssetSet::FinishLumen()
+{
+	if (PendingLumen.Num() == 0)
+	{
+		return;
+	}
+	const double Start = FPlatformTime::Seconds();
+	for (const FPendingLumen& Pending : PendingLumen)
+	{
+		Pending.Job->Wait();
+	}
+	ApplyFinishedLumen();
+	LumenWaitSeconds += FPlatformTime::Seconds() - Start;
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 Lumen bakes (#149) joined: %d mesh(es) on up to %d worker(s), %.1f s the publish waited, %.1f s of baking added up over the workers"),
+		LumenBakesJoined, FMantleMeshLumenBake::MaxInFlight(), LumenWaitSeconds, LumenBakeSeconds);
+}
+
 int32 FMantlePlaceAssetSet::SpillBytes(const FString& Directory, const int64 MinBytes, FString& OutError)
 {
 	OutError.Reset();
+	ApplyFinishedLumen();
 	int32 Written = 0;
 	IFileManager& Files = IFileManager::Get();
 	Files.MakeDirectory(*Directory, /*Tree*/ true);
@@ -1826,7 +1890,11 @@ int32 FMantlePlaceAssetSet::SpillBytes(const FString& Directory, const int64 Min
 	}
 	for (FMantleConvertedMesh& Mesh : Meshes)
 	{
-		Spill(Mesh.Key, Mesh.Hash, Mesh.Bytes);
+		// Its cache entry is written when its Lumen bake is joined, and holds the bytes.
+		if (!IsLumenPending(Mesh.Key))
+		{
+			Spill(Mesh.Key, Mesh.Hash, Mesh.Bytes);
+		}
 	}
 	for (FMantleConvertedSound& Sound : Sounds)
 	{
@@ -2266,6 +2334,9 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 	using namespace MantlePlaceAssetConverterPrivate;
 	const int32 Total = NumDependencySteps(Dependencies);
 	int32 Done = 0;
+	// #149: the meshes' Lumen bakes run side by side with the rest of the conversion, and are joined before this returns (also when canceled).
+	const TGuardValue<bool> DeferLumen(bDeferLumenBakes, true);
+	ON_SCOPE_EXIT { Out.FinishLumen(); };
 	auto Continue = [this, &Done, Total, &Out](const FString& Name)
 	{
 		if (OnProgress && !OnProgress(Done, Total, Name))
@@ -2374,6 +2445,7 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 	{
 		OnProgress(Done, Total, FString());
 	}
+	Out.FinishLumen();
 	int32 LumenFiles = 0;
 	int64 LumenBytes = 0;
 	for (const FMantleConvertedMesh& Mesh : Out.Meshes)
@@ -2384,8 +2456,8 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 converted %d mesh(es) (%d from cache) and %d material(s) (%d from cache), %d texture(s), %d sound(s), %d flattener call(s), %d issue(s)"),
 		Stats.MeshesConverted + Stats.MeshesFromCache, Stats.MeshesFromCache, Stats.MaterialsConverted + Stats.MaterialsFromCache, Stats.MaterialsFromCache,
 		Out.Textures.Num(), Out.Sounds.Num(), Stats.FlattenerCalls, Out.Issues.Num());
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 Lumen data (#149): %d of %d mesh(es), %.2f MB, %.1f s baking"),
-		LumenFiles, Out.Meshes.Num(), LumenBytes / (1024.0 * 1024.0), Stats.LumenSeconds);
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_F5 Lumen data (#149): %d of %d mesh(es), %.2f MB, %.1f s baking added up over the workers, %.1f s the conversion waited for it"),
+		LumenFiles, Out.Meshes.Num(), LumenBytes / (1024.0 * 1024.0), Stats.LumenSeconds, Out.LumenWaitSeconds);
 	int32 NaniteFiles = 0;
 	int64 NaniteBytes = 0;
 	for (const FMantleConvertedMesh& Mesh : Out.Meshes)
@@ -3615,6 +3687,8 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 	{
 		return true;
 	}
+	// Meshes whose Lumen bake has finished since the last one are completed here (and cached), so they do not pile up.
+	Out.ApplyFinishedLumen();
 
 	// #804: an over-limit mesh converts from its first lower LOD that fits (that LOD becomes its LOD 0), else from a transient copy
 	// reduced to fit, under the creator's mesh's key; the notice is Check this place's (FMantlePlaceAssets::CheckMesh). The cache
@@ -3833,6 +3907,7 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 
 	// #149: its Lumen data, from the LOD0 just written (the geometry the client builds), each section as its slot's material
 	// draws it. None is no failure: the client builds the mesh without, and Check this place says why.
+	TSharedPtr<FMantleMeshLumenJob> LumenJob;
 	if (bCollisionOnly)
 	{
 		Converted.LumenNone = TEXT("it is collision only, never drawn");
@@ -3846,13 +3921,23 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 			Sections.Add(FMantleMeshLumenBake::SectionFor(Materials.IsValidIndex(Slot) ? Materials[Slot].MaterialInterface.Get() : nullptr));
 		}
 		const double BakeStart = FPlatformTime::Seconds();
-		if (FMantleMeshLumenBake::Bake(LODs[0], Sections, Converted.Hash, Converted.Lumen, Converted.LumenNone))
+		if (bDeferLumenBakes)
 		{
-			Converted.LumenHash = FMantleSha256::AssetHash(Converted.Lumen);
+			// On a worker thread, from this copy of LOD0 (it is not read again here); the game thread goes on with the next mesh and
+			// only waits when every worker is busy. The set joins it (FMantlePlaceAssetSet::FinishLumen).
+			LumenJob = FMantleMeshLumenBake::Launch(MoveTemp(LODs[0]), MoveTemp(Sections), Converted.Hash);
+			Out.LumenWaitSeconds += FPlatformTime::Seconds() - BakeStart;
 		}
-		Stats.LumenSeconds += FPlatformTime::Seconds() - BakeStart;
-		UE_LOG(LogMantle, Verbose, TEXT("MANTLE_LUMEN %s: %s (%.0f ms)"), *Mesh->GetName(),
-			Converted.Lumen.Num() > 0 ? *FString::Printf(TEXT("%d bytes"), Converted.Lumen.Num()) : *Converted.LumenNone, (FPlatformTime::Seconds() - BakeStart) * 1000.0);
+		else
+		{
+			if (FMantleMeshLumenBake::Bake(LODs[0], Sections, Converted.Hash, Converted.Lumen, Converted.LumenNone))
+			{
+				Converted.LumenHash = FMantleSha256::AssetHash(Converted.Lumen);
+			}
+			Stats.LumenSeconds += FPlatformTime::Seconds() - BakeStart;
+			UE_LOG(LogMantle, Verbose, TEXT("MANTLE_LUMEN %s: %s (%.0f ms)"), *Mesh->GetName(),
+				Converted.Lumen.Num() > 0 ? *FString::Printf(TEXT("%d bytes"), Converted.Lumen.Num()) : *Converted.LumenNone, (FPlatformTime::Seconds() - BakeStart) * 1000.0);
+		}
 	}
 	// Stage N: its Nanite data, from the mesh the converter was given (the creator's own at full detail even where the GLB is a smaller
 	// version of it, or the mirrored, spline-baked or cable-baked mesh the converter made), each section as its slot's material
@@ -3900,11 +3985,29 @@ bool FMantlePlaceAssetConverter::ConvertMesh(UStaticMesh* Mesh, FMantlePlaceAsse
 	}
 	++Stats.MeshesConverted;
 	Out.Issues.Append(MeshIssues);
-	if (bCacheable)
+	if (bCacheable && !LumenJob.IsValid())
 	{
 		StoreCachedMesh(CacheKey, Converted, MeshIssues);
 	}
-	Out.Meshes.Add(MoveTemp(Converted));
+	const int32 MeshIndex = Out.Meshes.Add(MoveTemp(Converted));
+	if (LumenJob.IsValid())
+	{
+		// Its Lumen fields, and its cache entry (which holds them), wait for the bake. The bytes stay in memory until then (SpillBytes).
+		FMantlePlaceAssetSet::FPendingLumen& Pending = Out.PendingLumen.AddDefaulted_GetRef();
+		Pending.Key = Key;
+		Pending.Index = MeshIndex;
+		Pending.Job = LumenJob;
+		Pending.OnApplied = [this, MeshName = Mesh->GetName(), CacheKey, MeshIssues, bCacheable](const FMantleConvertedMesh& Done, const double BakeSeconds)
+		{
+			Stats.LumenSeconds += BakeSeconds;
+			UE_LOG(LogMantle, Verbose, TEXT("MANTLE_LUMEN %s: %s (%.0f ms)"), *MeshName,
+				Done.Lumen.Num() > 0 ? *FString::Printf(TEXT("%d bytes"), Done.Lumen.Num()) : *Done.LumenNone, BakeSeconds * 1000.0);
+			if (bCacheable && Done.Bytes.Num() > 0)
+			{
+				StoreCachedMesh(CacheKey, Done, MeshIssues);
+			}
+		};
+	}
 	return true;
 }
 
