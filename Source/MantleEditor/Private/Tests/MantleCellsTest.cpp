@@ -278,6 +278,45 @@ bool FMantleCellPlannerGroupsTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellPlannerChildlessGroupTest,
+	"Mantle.Editor.Cells.ChildlessPlainGroupsAreDropped",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellPlannerChildlessGroupTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellsTestPrivate;
+	FMantlePlace Place;
+	Place.SchemaVersion = MANTLE_PLACE_SCHEMA_VERSION;
+	TArray<FMantleInstancedMeshGroup> Groups;
+	FMantleCellPlanInput Input;
+	Input.bFoldStaticMeshes = false;
+
+	// A packed level actor's Group: its meshes are level-wide instance sets, so the Group never had a child entity.
+	Place.Entities.Add(MakeGroup(TEXT("grp_packed"), FVector(100.0, 0.0, 0.0)));
+	// The same nested: the outer one is left empty once the inner one goes.
+	Place.Entities.Add(MakeGroup(TEXT("grp_outer"), FVector::ZeroVector));
+	Place.Entities.Add(MakeGroup(TEXT("grp_inner"), FVector::ZeroVector, TEXT("grp_outer")));
+	// Empty but not plain: tagged, or named by something else. These stay.
+	FMantleEntity Tagged = MakeGroup(TEXT("grp_tagged"), FVector::ZeroVector);
+	Tagged.Tags.Add(TEXT("marker"));
+	Place.Entities.Add(Tagged);
+	Place.Entities.Add(MakeGroup(TEXT("grp_seat"), FVector::ZeroVector));
+	FMantleSeat Seat;
+	Seat.Entity = TEXT("grp_seat");
+	Place.Seats.Add(Seat);
+
+	const FMantleCellPlan Plan = FMantleCellPlanner::Plan(Place, Groups, Input);
+
+	TestFalse(TEXT("the packed actor's empty group is dropped"), HasEntity(Place, TEXT("grp_packed")));
+	TestFalse(TEXT("the inner one"), HasEntity(Place, TEXT("grp_inner")));
+	TestFalse(TEXT("then the outer one"), HasEntity(Place, TEXT("grp_outer")));
+	TestTrue(TEXT("a tagged group stays"), HasEntity(Place, TEXT("grp_tagged")));
+	TestTrue(TEXT("a group a seat names stays"), HasEntity(Place, TEXT("grp_seat")));
+	TestEqual(TEXT("three dropped"), Plan.Report.DroppedGroups, 3);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleCellPlannerFlatTransformTest,
 	"Mantle.Editor.Cells.ShearedGroupsStayInTheRoot",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

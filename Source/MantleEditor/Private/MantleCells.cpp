@@ -334,7 +334,6 @@ FMantleCellPlan FMantleCellPlanner::Plan(FMantlePlace& Place, TArray<FMantleInst
 
 	// StaticMesh entities (5.2 and 5.3).
 	TSet<int32> Moved;
-	TMap<int32, FString> MovedParents;
 	for (int32 Index = 0; Index < Entities.Num(); ++Index)
 	{
 		FMantleEntity& Entity = Entities[Index];
@@ -438,7 +437,6 @@ FMantleCellPlan FMantleCellPlanner::Plan(FMantlePlace& Place, TArray<FMantleInst
 			continue;
 		}
 
-		MovedParents.Add(Index, Entity.Parent);
 		FMantleEntity Moving = MoveTemp(Entity);
 		Moving.Parent.Reset();
 		Moving.Transform = World;
@@ -672,20 +670,16 @@ FMantleCellPlan FMantleCellPlanner::Plan(FMantlePlace& Place, TArray<FMantleInst
 	}
 	TArray<FMantleEntity> Remaining;
 	Remaining.Reserve(Entities.Num());
-	TSet<FString> Emptied;
 	for (int32 Index = 0; Index < Entities.Num(); ++Index)
 	{
-		if (Moved.Contains(Index))
+		if (!Moved.Contains(Index))
 		{
-			const FString* Parent = MovedParents.Find(Index);
-			if (Parent && !Parent->IsEmpty())
-			{
-				Emptied.Add(*Parent);
-			}
-			continue;
+			Remaining.Add(MoveTemp(Entities[Index]));
 		}
-		Remaining.Add(MoveTemp(Entities[Index]));
 	}
+	// A plain Group with no children left draws nothing and nothing names it, so it goes: one emptied by the moves above, and also one
+	// that never had child entities (a packed level actor's meshes are all instance sets, so its Group holds none; City Sample's Big City
+	// kept 48,489 of them, 10 MB of an always-loaded root). A pass removes every such group at once, and the next sees their parents.
 	for (bool bChanged = true; bChanged;)
 	{
 		bChanged = false;
@@ -697,21 +691,13 @@ FMantleCellPlan FMantleCellPlanner::Plan(FMantlePlace& Place, TArray<FMantleInst
 				HasChild.Add(Entity.Parent);
 			}
 		}
-		for (int32 Index = 0; Index < Remaining.Num(); ++Index)
+		const int32 Before = Remaining.Num();
+		Remaining.RemoveAll([&](const FMantleEntity& Entity)
 		{
-			const FMantleEntity& Entity = Remaining[Index];
-			if (Entity.Type == EMantleEntityType::Group && Emptied.Contains(Entity.Id) && PlainGroupIds.Contains(Entity.Id) && !HasChild.Contains(Entity.Id))
-			{
-				if (!Entity.Parent.IsEmpty())
-				{
-					Emptied.Add(Entity.Parent);
-				}
-				Remaining.RemoveAt(Index);
-				++Report.DroppedGroups;
-				bChanged = true;
-				break;
-			}
-		}
+			return Entity.Type == EMantleEntityType::Group && PlainGroupIds.Contains(Entity.Id) && !HasChild.Contains(Entity.Id);
+		});
+		Report.DroppedGroups += Before - Remaining.Num();
+		bChanged = Remaining.Num() != Before;
 	}
 	Entities = MoveTemp(Remaining);
 
