@@ -20,7 +20,7 @@
 #include "MantleStaticMeshReader.h"
 #include "MantleStreamBudget.h"
 #include "MantleStreamedTexture.h"
-#include "Misc/Compression.h"
+#include "MantleCookedPacking.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Misc/ScopeExit.h"
@@ -31,8 +31,8 @@
 
 namespace MantleStreamedTextureTestPrivate
 {
-	/** A BC1 sRGB MTX2 of Size x Size with its full chain, every block random (so the zlib streams are about as big as the blocks, as real BC1 is). */
-	TArray<uint8> MakeMtx2(const int32 Size)
+	/** A BC1 sRGB MTX3 of Size x Size with its full chain, every block random (so the Kraken streams are about as big as the blocks, as real BC1 is). */
+	TArray<uint8> MakeMtx3(const int32 Size)
 	{
 		FRandomStream Random(Size);
 		const int32 Mips = FMath::FloorLog2(Size) + 1;
@@ -49,15 +49,13 @@ namespace MantleStreamedTextureTestPrivate
 				Byte = static_cast<uint8>(Random.RandHelper(256));
 			}
 			TArray<uint8>& Stream = Streams.AddDefaulted_GetRef();
-			int32 StreamBytes = FCompression::CompressMemoryBound(NAME_Zlib, Blocks.Num());
-			Stream.SetNumUninitialized(StreamBytes);
-			verify(FCompression::CompressMemory(NAME_Zlib, Stream.GetData(), StreamBytes, Blocks.GetData(), Blocks.Num()));
-			Stream.SetNum(StreamBytes);
+			Stream = MantleCookedPacking::PackStream(Blocks);
+			check(!Stream.IsEmpty());
 			Sizes.Add(MipBytes);
 		}
 		TArray<uint8> Bytes;
 		FMemoryWriter Ar(Bytes, true);
-		uint8 Magic[4] = { 'M', 'T', 'X', '2' };
+		uint8 Magic[4] = { 'M', 'T', 'X', '3' };
 		Ar.Serialize(Magic, 4);
 		uint32 Header[8] = { 1, 1, 1, static_cast<uint32>(Size), static_cast<uint32>(Size), static_cast<uint32>(Size), static_cast<uint32>(Size), static_cast<uint32>(Mips) };
 		for (uint32& Value : Header)
@@ -154,7 +152,7 @@ bool FMantleStreamedTextureTest::RunTest(const FString& Parameters)
 	const FString Dir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("MantleTests/StreamedTexture"));
 	const FString Path = Dir / TEXT("t2048.mtx2");
 	IFileManager::Get().MakeDirectory(*Dir, true);
-	const TArray<uint8> File = MakeMtx2(2048);
+	const TArray<uint8> File = MakeMtx3(2048);
 	if (!TestTrue(TEXT("the test file is written"), FFileHelper::SaveArrayToFile(File, *Path)))
 	{
 		return false;

@@ -39,8 +39,9 @@ struct MANTLERUNTIME_API FMantleMeshLumenData
  *   the card representation (FCardRepresentationData's own operator<<).
  * Anything else, a different engine or another mesh's file, reads as "not present": the mesh builds without.
  *
- * The plugin uploads the MLD1; the backend stores it as MLD2 (#189 step 5), the MLD1 in a zlib envelope
- * (MantleCookedPacking.h), which a place inflates in its decode task (Unpack). Read and ReadHeader read the MLD1.
+ * The plugin uploads the MLD1; the backend stores it as MLD3 (#189 step 5a), the MLD1 in an Oodle Kraken
+ * envelope (MantleCookedPacking.h), which a place unpacks in its decode task (Unpack). Read and ReadHeader read
+ * the MLD1.
  */
 class MANTLERUNTIME_API FMantleMeshLumenFile
 {
@@ -51,16 +52,16 @@ public:
 	/** The file for the mesh MeshTag names. Empty when the distance field is not valid (a mesh too thin or empty to have one). */
 	static TArray<uint8> Write(const FString& MeshTag, const FDistanceFieldVolumeData& DistanceField, const FCardRepresentationData& Cards);
 
-	/** False, with the reason, when Bytes is not an MLD1 for MeshTag's mesh from this engine (an MLD2 is Unpacked first). Any thread. */
+	/** False, with the reason, when Bytes is not an MLD1 for MeshTag's mesh from this engine (an MLD3 is Unpacked first). Any thread. */
 	static bool Read(TConstArrayView<uint8> Bytes, const FString& MeshTag, FMantleMeshLumenData& OutData, FString* OutReason = nullptr);
 
 	/**
-	 * #189: an MLD2's MLD1, inflated into Out (any thread: a place inflates it in its decode task, so the mesh build on the game thread reads
-	 * the MLD1 as it is). False, with the reason and Out empty, when Bytes is not an MLD2 that inflates whole to at most MaxBytes.
+	 * #189: an MLD3's MLD1, unpacked into Out (any thread: a place unpacks it in its decode task, so the mesh build on the game thread reads
+	 * the MLD1 as it is). False, with the reason and Out empty, when Bytes is not an MLD3 that unpacks to at most MaxBytes.
 	 */
 	static bool Unpack(TConstArrayView<uint8> Bytes, TArray<uint8>& Out, FString* OutReason = nullptr);
 
-	/** True when Bytes start as an MLD2. */
+	/** True when Bytes start as an MLD3. */
 	static bool IsPacked(TConstArrayView<uint8> Bytes);
 
 	/** For tests: how many Reads succeeded in this process. */

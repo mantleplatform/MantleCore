@@ -184,12 +184,12 @@ bool FMantleMeshLumenFile::Read(const TConstArrayView<uint8> Bytes, const FStrin
 
 bool FMantleMeshLumenFile::Unpack(const TConstArrayView<uint8> Bytes, TArray<uint8>& Out, FString* OutReason)
 {
-	return MantleCookedPacking::UnpackEnvelope(Bytes, "MLD2", MaxBytes, Out, OutReason);
+	return MantleCookedPacking::UnpackEnvelope(Bytes, "MLD3", MaxBytes, Out, OutReason);
 }
 
 bool FMantleMeshLumenFile::IsPacked(const TConstArrayView<uint8> Bytes)
 {
-	return MantleCookedPacking::HasMagic(Bytes, "MLD2");
+	return MantleCookedPacking::HasMagic(Bytes, "MLD3");
 }
 
 int64 FMantleMeshLumenFile::GetReadCount()

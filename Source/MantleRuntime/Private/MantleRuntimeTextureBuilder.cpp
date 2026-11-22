@@ -189,14 +189,15 @@ namespace MantleRuntimeTextureBuilderPrivate
 		return static_cast<uint32>(Bytes[0]) | (static_cast<uint32>(Bytes[1]) << 8) | (static_cast<uint32>(Bytes[2]) << 16) | (static_cast<uint32>(Bytes[3]) << 24);
 	}
 
-	// MTX2, the cook worker's block-compressed texture (backend/internal/cook/texturecook.go, #189 step 5).
+	// MTX3, the cook worker's block-compressed texture (backend/internal/cook/texturecook.go, #189 step 5a).
 	// Little-endian: magic, version, format, flags, width, height, sourceWidth, sourceHeight, mipCount,
 	// then mipCount x {width, height, offset, size, packedSize}, then each mip, mip 0 first and
-	// contiguous, as one zlib stream of its blocks, packedSize bytes; size is the blocks inflated. MTX1
-	// (the blocks stored raw) is not read: a place cooked before is republished.
+	// contiguous, as one Oodle Kraken stream of its blocks (Oodle Texture encoded them), packedSize bytes;
+	// size is the blocks unpacked. MTX1 and MTX2 (raw and zlib blocks) are not read: a place cooked before is
+	// republished.
 	constexpr uint32 Mtx1Version = 1;
 	constexpr int64 Mtx1HeaderBytes = 36;
-	constexpr int64 Mtx2MipEntryBytes = 20;
+	constexpr int64 Mtx3MipEntryBytes = 20;
 	constexpr uint32 Mtx1FlagSRGB = 1;
 	/** The worker's MaxTextureDimension: no MTX mip 0 is larger on a side. */
 	constexpr uint32 Mtx1MaxDimension = 2048;
@@ -215,17 +216,17 @@ namespace MantleRuntimeTextureBuilderPrivate
 	}
 
 	/**
-	 * Reads an MTX2 container into Out without decoding a texel. Every field is checked against the format's
+	 * Reads an MTX3 container into Out without decoding a texel. Every field is checked against the format's
 	 * rules and every mip's size and offset against the buffer before anything is allocated: the version, a
 	 * known format, no unknown flags, sRGB only on BC1 and BC3, mip 0 a multiple of 4 and at most 2048 (and
 	 * Params.MaxDimension), the source size padding to it by less than a block, the full chain to 1 x 1, each
 	 * mip halving with exactly ceil(w/4) x ceil(h/4) blocks and a stream that is not empty at the next offset,
-	 * and nothing after the last mip. Then the kept mips are inflated, each stream refused unless it is whole
-	 * and inflates to exactly its blocks (MantleCookedPacking::InflateExact). The same rules as the worker's
-	 * own reader (cook.DecodeTexture).
+	 * and nothing after the last mip. Then the kept mips are unpacked, each stream refused unless it unpacks
+	 * to exactly its blocks (MantleCookedPacking::UnpackStream). The same rules as the worker's own reader
+	 * (cook.DecodeTexture).
 	 */
-	/** An MTX2's header and mip table, checked (ReadMtx2Table). */
-	struct FMtx2Table
+	/** An MTX3's header and mip table, checked (ReadMtx3Table). */
+	struct FMtx3Table
 	{
 		EPixelFormat Format = PF_Unknown;
 		bool bSRGB = false;
@@ -238,13 +239,13 @@ namespace MantleRuntimeTextureBuilderPrivate
 	};
 
 	/**
-	 * Reads and checks an MTX2's header and mip table: Head holds at least the header and the table, FileSize is the whole file's size (the mips are
-	 * checked against it, not against Head). Nothing is inflated. The rules are DecodeMtx2's.
+	 * Reads and checks an MTX3's header and mip table: Head holds at least the header and the table, FileSize is the whole file's size (the mips are
+	 * checked against it, not against Head). Nothing is unpacked. The rules are DecodeMtx3's.
 	 */
-	bool ReadMtx2Table(const TConstArrayView<uint8> Head, const int64 Size, const FMantleTextureBuildParams& Params, FMtx2Table& OutTable, FString* OutError)
+	bool ReadMtx3Table(const TConstArrayView<uint8> Head, const int64 Size, const FMantleTextureBuildParams& Params, FMtx3Table& OutTable, FString* OutError)
 	{
-		const TCHAR* Name = TEXT("MTX2");
-		const int64 EntryBytes = Mtx2MipEntryBytes;
+		const TCHAR* Name = TEXT("MTX3");
+		const int64 EntryBytes = Mtx3MipEntryBytes;
 		if (Head.Num() < Mtx1HeaderBytes || Size < Mtx1HeaderBytes)
 		{
 			return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture is truncated (its header is incomplete)."), Name));
@@ -395,16 +396,16 @@ namespace MantleRuntimeTextureBuilderPrivate
 		return true;
 	}
 
-	EMantleTextureRole Mtx2Role(const FMtx2Table& Table)
+	EMantleTextureRole Mtx3Role(const FMtx3Table& Table)
 	{
 		return Table.Format == PF_BC5 ? EMantleTextureRole::Normal : (Table.bSRGB ? EMantleTextureRole::Color : EMantleTextureRole::Data);
 	}
 
-	/** See ReadMtx2Table for the rules; then the kept mips are inflated, each stream refused unless it is whole and inflates to exactly its blocks. */
-	bool DecodeMtx2(const TConstArrayView<uint8> Bytes, const FMantleTextureBuildParams& Params, FMantleDecodedTexture& Out, FString* OutError)
+	/** See ReadMtx3Table for the rules; then the kept mips are unpacked, each stream refused unless it unpacks to exactly its blocks. */
+	bool DecodeMtx3(const TConstArrayView<uint8> Bytes, const FMantleTextureBuildParams& Params, FMantleDecodedTexture& Out, FString* OutError)
 	{
-		FMtx2Table Table;
-		if (!ReadMtx2Table(Bytes, Bytes.Num(), Params, Table, OutError))
+		FMtx3Table Table;
+		if (!ReadMtx3Table(Bytes, Bytes.Num(), Params, Table, OutError))
 		{
 			return false;
 		}
@@ -416,7 +417,7 @@ namespace MantleRuntimeTextureBuilderPrivate
 		const int32 Height = Table.Mips[0].Height;
 		Out.Format = Table.Format;
 		Out.bSRGB = Table.bSRGB;
-		Out.Role = Mtx2Role(Table);
+		Out.Role = Mtx3Role(Table);
 		// A cut copy's source size is the top mip's share of it (UVs span the padded size, which halves with the mips).
 		Out.SourceWidth = FMath::Min(FMath::Max(1, Width >> FirstMip), FMath::DivideAndRoundUp(static_cast<int32>(Table.SourceWidth), 1 << FirstMip));
 		Out.SourceHeight = FMath::Min(FMath::Max(1, Height >> FirstMip), FMath::DivideAndRoundUp(static_cast<int32>(Table.SourceHeight), 1 << FirstMip));
@@ -430,9 +431,9 @@ namespace MantleRuntimeTextureBuilderPrivate
 			Level.Height = Entry.Height;
 			Level.Bytes.SetNumUninitialized(Entry.Size);
 			FString Reason;
-			if (!MantleCookedPacking::InflateExact(Bytes.Slice(static_cast<int32>(Entry.Offset), static_cast<int32>(Entry.Packed)), Level.Bytes.GetData(), Entry.Size, &Reason))
+			if (!MantleCookedPacking::UnpackStream(Bytes.Slice(static_cast<int32>(Entry.Offset), static_cast<int32>(Entry.Packed)), Level.Bytes.GetData(), Entry.Size, &Reason))
 			{
-				return RefuseTexture(OutError, FString::Printf(TEXT("That MTX2 texture's mip %d is %s."), Mip, *Reason));
+				return RefuseTexture(OutError, FString::Printf(TEXT("That MTX3 texture's mip %d is %s."), Mip, *Reason));
 			}
 		}
 		return true;
@@ -526,14 +527,15 @@ bool FMantleRuntimeTextureBuilder::Decode(const TConstArrayView<uint8> Bytes, co
 	{
 		return RefuseTexture(OutError, TEXT("That texture is empty."));
 	}
-	if (FMemory::Memcmp(Bytes.GetData(), "MTX1", 4) == 0)
+	if (FMemory::Memcmp(Bytes.GetData(), "MTX1", 4) == 0 || FMemory::Memcmp(Bytes.GetData(), "MTX2", 4) == 0)
 	{
-		return RefuseTexture(OutError, TEXT("That texture is MTX1, cooked before this build of Mantle; its place must be published again."));
+		return RefuseTexture(OutError, FString::Printf(TEXT("That texture is %hs, cooked before this build of Mantle; its place must be published again."),
+			FMemory::Memcmp(Bytes.GetData(), "MTX1", 4) == 0 ? "MTX1" : "MTX2"));
 	}
-	if (FMemory::Memcmp(Bytes.GetData(), "MTX2", 4) == 0)
+	if (FMemory::Memcmp(Bytes.GetData(), "MTX3", 4) == 0)
 	{
-		// Fab F9: the worker's BC container (per-mip zlib since #189 step 5). The blocks and mips go to the GPU as they are.
-		if (!DecodeMtx2(Bytes, Params, Out, OutError))
+		// Fab F9: the worker's BC container (Oodle Texture blocks, per-mip Kraken since #189 step 5a). The blocks and mips go to the GPU as they are.
+		if (!DecodeMtx3(Bytes, Params, Out, OutError))
 		{
 			Out = FMantleDecodedTexture();
 			return false;
@@ -840,24 +842,24 @@ bool FMantleRuntimeTextureBuilder::PrepareStreamed(const FString& Path, const FM
 	{
 		return RefuseTexture(OutError, TEXT("the texture's file is truncated (its header is incomplete)"));
 	}
-	if (FMemory::Memcmp(Head.GetData(), "MTX2", 4) != 0)
+	if (FMemory::Memcmp(Head.GetData(), "MTX3", 4) != 0)
 	{
-		return RefuseTexture(OutError, TEXT("only an MTX2 texture streams"));
+		return RefuseTexture(OutError, TEXT("only an MTX3 texture streams"));
 	}
 	const uint32 MipCount = ReadLittleEndian32(Head.GetData() + 32);
 	if (MipCount < 1 || MipCount > static_cast<uint32>(MaxMips))
 	{
 		return RefuseTexture(OutError, FString::Printf(TEXT("the texture has %u mips (1 to %d)"), MipCount, MaxMips));
 	}
-	Head.SetNumUninitialized(static_cast<int32>(Mtx1HeaderBytes + static_cast<int64>(MipCount) * Mtx2MipEntryBytes));
+	Head.SetNumUninitialized(static_cast<int32>(Mtx1HeaderBytes + static_cast<int64>(MipCount) * Mtx3MipEntryBytes));
 	if (!File->Read(Head.GetData() + Mtx1HeaderBytes, Head.Num() - Mtx1HeaderBytes))
 	{
 		return RefuseTexture(OutError, TEXT("the texture's file is truncated (its mip table is incomplete)"));
 	}
 	FMantleTextureBuildParams WholeChain = Params;
 	WholeChain.LowTopDimension = 0;
-	FMtx2Table Table;
-	if (!ReadMtx2Table(Head, FileSize, WholeChain, Table, OutError))
+	FMtx3Table Table;
+	if (!ReadMtx3Table(Head, FileSize, WholeChain, Table, OutError))
 	{
 		return false;
 	}
@@ -892,17 +894,17 @@ bool FMantleRuntimeTextureBuilder::PrepareStreamed(const FString& Path, const FM
 		TArray64<uint8>& Mip = Out.Tail[FileMip - FirstTail];
 		Mip.SetNumUninitialized(Entry.Size);
 		FString Reason;
-		if (!MantleCookedPacking::InflateExact(TConstArrayView<uint8>(Packed.GetData() + (Entry.Offset - TailStart), static_cast<int32>(Entry.Packed)), Mip.GetData(), Entry.Size, &Reason))
+		if (!MantleCookedPacking::UnpackStream(TConstArrayView<uint8>(Packed.GetData() + (Entry.Offset - TailStart), static_cast<int32>(Entry.Packed)), Mip.GetData(), Entry.Size, &Reason))
 		{
 			Out = FMantleStreamedTexturePrep();
-			return RefuseTexture(OutError, FString::Printf(TEXT("That MTX2 texture's mip %d is %s."), FileMip, *Reason));
+			return RefuseTexture(OutError, FString::Printf(TEXT("That MTX3 texture's mip %d is %s."), FileMip, *Reason));
 		}
 	}
 	Out.Path = Path;
 	Out.FileSize = FileSize;
 	Out.Format = Table.Format;
 	Out.bSRGB = Table.bSRGB;
-	Out.Role = Mtx2Role(Table);
+	Out.Role = Mtx3Role(Table);
 	Out.Mips = MoveTemp(Table.Mips);
 	Out.FirstTailMip = FirstTail;
 	return true;

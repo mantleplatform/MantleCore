@@ -77,9 +77,9 @@ struct FMantleTextureBuildParams
 	bool bKeepCpuCopy = GIsEditor;
 
 	/**
-	 * #189: above 0, an MTX2 is decoded from its first mip no larger than this on a side, down to 1 x 1: the low copy far content draws when the server has
+	 * #189: above 0, an MTX3 is decoded from its first mip no larger than this on a side, down to 1 x 1: the low copy far content draws when the server has
 	 * none (the tail the worker's cook.LowTexture slices, by the same rule: only when that mip is whole 4 x 4 blocks and is not mip 0). Only those mips are
-	 * inflated. FMantleDecodedTexture::MipsCut says how many top mips were left out (0: the texture is whole, nothing could be cut). PNG and JPEG ignore it.
+	 * unpacked. FMantleDecodedTexture::MipsCut says how many top mips were left out (0: the texture is whole, nothing could be cut). PNG and JPEG ignore it.
 	 */
 	int32 LowTopDimension = 0;
 
@@ -89,7 +89,7 @@ struct FMantleTextureBuildParams
 
 /**
  * #189: a streamed texture read on any thread (FMantleRuntimeTextureBuilder::PrepareStreamed): its file, its mip table and the engine's non-streaming tail
- * inflated, for BuildStreamed on the game thread. The top mips stay in the file.
+ * unpacked, for BuildStreamed on the game thread. The top mips stay in the file.
  */
 struct MANTLERUNTIME_API FMantleStreamedTexturePrep
 {
@@ -102,7 +102,7 @@ struct MANTLERUNTIME_API FMantleStreamedTexturePrep
 	/** The file's whole chain, mip 0 first. */
 	TArray<FMantleTextureFileMip> Mips;
 
-	/** Mips FirstTailMip to the last, inflated. */
+	/** Mips FirstTailMip to the last, unpacked. */
 	int32 FirstTailMip = 0;
 	TArray<TArray64<uint8>> Tail;
 
@@ -122,7 +122,7 @@ struct FMantleTextureMip
 /**
  * A texture decoded on the CPU and ready for upload: the half of the build that needs no UObject, so
  * it can run on a worker thread. PF_B8G8R8A8 decoded from PNG/JPEG, or the BC1/BC3/BC4/BC5 blocks and
- * mips of an MTX2 container (Fab F9) inflated as they are, without a CPU decode. Build uploads
+ * mips of an MTX3 container (Fab F9) unpacked as they are, without a CPU decode. Build uploads
  * either the same way.
  */
 struct MANTLERUNTIME_API FMantleDecodedTexture
@@ -159,10 +159,10 @@ struct MANTLERUNTIME_API FMantleDecodedTexture
  * and extended with BC blocks).
  *
  *   Decode(bytes, params)   Any thread. The format is sniffed from the bytes, never trusted from a name.
- *                           MTX2 (the cooked BC container, each mip a zlib stream; an MTX1 cooked
- *                           before #189 is refused): every header field, mip size and offset checked
- *                           against the format's rules and the buffer before anything is allocated,
- *                           then each kept mip inflated, its stream checked whole and exact; the
+ *                           MTX3 (the cooked BC container, each mip an Oodle Kraken stream; an MTX1
+ *                           or MTX2 cooked before #189 step 5a is refused): every header field, mip size
+ *                           and offset checked against the format's rules and the buffer before anything
+ *                           is allocated, then each kept mip unpacked to exactly its size; the
  *                           pixel format and role come from the file (BC1/BC3 sRGB: Color; BC1/BC3
  *                           linear and BC4: Data; BC5: Normal), and Params.Role is not consulted. PNG or
  *                           JPEG (older ids, UI images): dimensions checked from the header against
@@ -170,7 +170,7 @@ struct MANTLERUNTIME_API FMantleDecodedTexture
  *                           per Params.Role. Either way the footprint is checked against MaxGpuBytes.
  *   Build(decoded, params)  Game thread. The mips become a never-streamed transient UTexture2D, sRGB or
  *                           linear per role, with its render resource created. Accepts BGRA8 and the
- *                           block formats MTX2 carries, checking every mip's size for its format.
+ *                           block formats MTX3 carries, checking every mip's size for its format.
  *
  * A dedicated server never builds textures (nothing renders there; F8 skips them): Build refuses on one.
  * Failures return false/null with the reason; nothing asserts on bad bytes.
@@ -215,8 +215,8 @@ public:
 	static UTexture2D* BuildFromBytes(TConstArrayView<uint8> Bytes, const FMantleTextureBuildParams& Params, FString* OutError = nullptr);
 
 	/**
-	 * #189: the first half of a texture the engine's streamer manages, on ANY thread: reads the MTX2 file at Path (in the download cache) as far as its header, its mip
-	 * table and its tail (ComputeResidentMips), and inflates the tail. False, with the reason, when the texture cannot stream: not an MTX2, not a power of two (the
+	 * #189: the first half of a texture the engine's streamer manages, on ANY thread: reads the MTX3 file at Path (in the download cache) as far as its header, its mip
+	 * table and its tail (ComputeResidentMips), and unpacks the tail. False, with the reason, when the texture cannot stream: not an MTX3, not a power of two (the
 	 * engine streams no other size), small enough to be all resident, or a broken file. The caller then builds it whole (Decode, Build), which says what is wrong.
 	 */
 	static bool PrepareStreamed(const FString& Path, const FMantleTextureBuildParams& Params, FMantleStreamedTexturePrep& Out, FString* OutError = nullptr);

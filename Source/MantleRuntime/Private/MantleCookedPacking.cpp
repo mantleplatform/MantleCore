@@ -1,9 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCookedPacking.h"
 
-THIRD_PARTY_INCLUDES_START
-#include "zlib.h"
-THIRD_PARTY_INCLUDES_END
+#include "Compression/OodleDataCompression.h"
 
 namespace MantleCookedPacking
 {
@@ -19,39 +17,16 @@ namespace MantleCookedPacking
 		}
 	}
 
-	bool InflateExact(const TConstArrayView<uint8> Stream, uint8* Out, const int64 Raw, FString* OutReason)
+	bool UnpackStream(const TConstArrayView<uint8> Stream, uint8* Out, const int64 Raw, FString* OutReason)
 	{
-		// zlib counts in uInt: a stream or a result past 4 GiB is not one the cook writes.
-		if (Stream.Num() <= 0 || Raw <= 0 || static_cast<uint64>(Stream.Num()) > MAX_uint32 || static_cast<uint64>(Raw) > MAX_uint32)
+		if (Stream.Num() <= 0 || Raw <= 0)
 		{
-			return Detail::Refuse(OutReason, FString::Printf(TEXT("damaged (a %lld-byte zlib stream for %lld bytes)"), static_cast<int64>(Stream.Num()), Raw));
+			return Detail::Refuse(OutReason, FString::Printf(TEXT("damaged (a %lld-byte Kraken stream for %lld bytes)"), static_cast<int64>(Stream.Num()), Raw));
 		}
-		z_stream Inflater;
-		FMemory::Memzero(Inflater);
-		Inflater.next_in = const_cast<Bytef*>(Stream.GetData());
-		Inflater.avail_in = static_cast<uInt>(Stream.Num());
-		Inflater.next_out = reinterpret_cast<Bytef*>(Out);
-		Inflater.avail_out = static_cast<uInt>(Raw);
-		if (inflateInit(&Inflater) != Z_OK)
+		// The engine's decoder: it refuses a stream it cannot read or that holds fewer than Raw bytes.
+		if (!FOodleDataCompression::Decompress(Out, Raw, Stream.GetData(), Stream.Num()))
 		{
-			return Detail::Refuse(OutReason, TEXT("not inflated (zlib did not start)"));
-		}
-		// One call with Z_FINISH: Z_STREAM_END only when the whole stream was read and its Adler-32 matched; output past Raw or input that stops early is Z_BUF_ERROR.
-		const int Result = inflate(&Inflater, Z_FINISH);
-		const uint64 TotalIn = Inflater.total_in;
-		const uint64 TotalOut = Inflater.total_out;
-		inflateEnd(&Inflater);
-		if (Result != Z_STREAM_END)
-		{
-			return Detail::Refuse(OutReason, TEXT("damaged (its zlib stream is cut short, damaged, or inflates to more than it says)"));
-		}
-		if (TotalIn != static_cast<uint64>(Stream.Num()))
-		{
-			return Detail::Refuse(OutReason, FString::Printf(TEXT("damaged (%llu bytes follow the end of its zlib stream)"), static_cast<uint64>(Stream.Num()) - TotalIn));
-		}
-		if (TotalOut != static_cast<uint64>(Raw))
-		{
-			return Detail::Refuse(OutReason, FString::Printf(TEXT("damaged (its zlib stream inflates to %llu bytes, it says %lld)"), TotalOut, Raw));
+			return Detail::Refuse(OutReason, FString::Printf(TEXT("damaged (its Kraken stream does not unpack to %lld bytes)"), Raw));
 		}
 		return true;
 	}
@@ -87,10 +62,10 @@ namespace MantleCookedPacking
 		const uint32 Raw = Detail::EnvelopeRaw(Bytes, Magic, MaxRaw);
 		if (Raw == 0)
 		{
-			return Detail::Refuse(OutReason, FString::Printf(TEXT("an %hs that says it inflates to nothing or past %lld bytes"), Magic, FMath::Min<int64>(MaxRaw, MAX_int32)));
+			return Detail::Refuse(OutReason, FString::Printf(TEXT("an %hs that says it unpacks to nothing or past %lld bytes"), Magic, FMath::Min<int64>(MaxRaw, MAX_int32)));
 		}
 		Out.SetNumUninitialized(static_cast<int32>(Raw));
-		if (!InflateExact(Bytes.RightChop(EnvelopeHeaderBytes), Out.GetData(), Raw, OutReason))
+		if (!UnpackStream(Bytes.RightChop(EnvelopeHeaderBytes), Out.GetData(), Raw, OutReason))
 		{
 			Out.Reset();
 			return false;
@@ -98,4 +73,17 @@ namespace MantleCookedPacking
 		return true;
 	}
 
+	TArray<uint8> PackStream(const TConstArrayView<uint8> Raw)
+	{
+		TArray<uint8> Packed;
+		if (Raw.Num() <= 0)
+		{
+			return Packed;
+		}
+		Packed.SetNumUninitialized(static_cast<int32>(FOodleDataCompression::CompressedBufferSizeNeeded(Raw.Num())));
+		const int64 Size = FOodleDataCompression::Compress(Packed.GetData(), Packed.Num(), Raw.GetData(), Raw.Num(),
+			FOodleDataCompression::ECompressor::Kraken, FOodleDataCompression::ECompressionLevel::Optimal1);
+		Packed.SetNum(Size > 0 ? static_cast<int32>(Size) : 0);
+		return Packed;
+	}
 }

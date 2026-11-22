@@ -486,7 +486,7 @@ namespace MantleStaticMeshReaderPrivate
 
 bool FMantleStaticMeshReader::HasMagic(const TConstArrayView<uint8> Data)
 {
-	return MantleCookedPacking::HasMagic(Data, "MRM3");
+	return MantleCookedPacking::HasMagic(Data, "MRM4");
 }
 
 bool FMantleStaticMeshReader::Read(const TConstArrayView<uint8> Data, FMantleStaticMeshData& Out, FString* OutError)
@@ -494,14 +494,15 @@ bool FMantleStaticMeshReader::Read(const TConstArrayView<uint8> Data, FMantleSta
 	using namespace MantleStaticMeshReaderPrivate;
 
 	Out = FMantleStaticMeshData();
-	if (MantleCookedPacking::HasMagic(Data, "MRM2"))
+	if (MantleCookedPacking::HasMagic(Data, "MRM2") || MantleCookedPacking::HasMagic(Data, "MRM3"))
 	{
-		return FailStatic(Out, OutError, TEXT("that mesh is MRM2, cooked before this build of Mantle; its place must be published again"));
+		return FailStatic(Out, OutError, FString::Printf(TEXT("that mesh is %hs, cooked before this build of Mantle; its place must be published again"),
+			MantleCookedPacking::HasMagic(Data, "MRM2") ? "MRM2" : "MRM3"));
 	}
-	// #189 step 5: the MRM2 inside, read by ReadInner with every check.
+	// #189 step 5a: the MRM2 inside an MRM4, read by ReadInner with every check.
 	TArray<uint8> Inner;
 	FString Reason;
-	if (!MantleCookedPacking::UnpackEnvelope(Data, "MRM3", MaxPackedRawBytes, Inner, &Reason))
+	if (!MantleCookedPacking::UnpackEnvelope(Data, "MRM4", MaxPackedRawBytes, Inner, &Reason))
 	{
 		return FailStatic(Out, OutError, FString::Printf(TEXT("that mesh is %s"), *Reason));
 	}

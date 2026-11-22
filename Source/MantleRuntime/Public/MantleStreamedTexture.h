@@ -25,7 +25,7 @@ private:
 	FMantleContentHash Hash;
 };
 
-/** One mip of an MTX2 file: its size, where its zlib stream starts, how many bytes it inflates to, and how many it takes in the file. */
+/** One mip of an MTX3 file: its size, where its Kraken stream starts, how many bytes it unpacks to, and how many it takes in the file. */
 struct FMantleTextureFileMip
 {
 	int32 Width = 0;
@@ -36,7 +36,7 @@ struct FMantleTextureFileMip
 };
 
 /**
- * #189 step 6 (trial): where a streamed texture's mips are. The MTX2 file in the download cache and its mip table, no texel bytes. The texture's mip 0
+ * #189 step 6 (trial): where a streamed texture's mips are. The MTX3 file in the download cache and its mip table, no texel bytes. The texture's mip 0
  * is the file's FirstMip (the Textures setting drops the top ones).
  */
 struct FMantleTextureFileTable
@@ -54,12 +54,12 @@ struct FMantleTextureFileTable
 /** What the cached-mip provider has done since the process began (or ResetStats). */
 struct FMantleStreamedMipStats
 {
-	/** Mips the engine's streamer asked for and got, the bytes they inflated to, and the zlib bytes read from the files for them. */
+	/** Mips the engine's streamer asked for and got, the bytes they unpacked to, and the Kraken bytes read from the files for them. */
 	int64 MipsServed = 0;
 	int64 BytesServed = 0;
 	int64 PackedBytesRead = 0;
 
-	/** Stream-in requests that failed (a file gone, short, or a stream that did not inflate to its size): the engine cancels the update and keeps what it had. */
+	/** Stream-in requests that failed (a file gone, short, or a stream that did not unpack to its size): the engine cancels the update and keeps what it had. */
 	int64 Failed = 0;
 
 	/** Stream-in requests answered, and the time they took on the worker, in milliseconds. */
@@ -69,9 +69,9 @@ struct FMantleStreamedMipStats
 };
 
 /**
- * #189 step 6 (trial): the engine's texture streamer reads a runtime texture's top mips from its MTX2 file in the download cache. Attached to the texture
+ * #189 step 6 (trial): the engine's texture streamer reads a runtime texture's top mips from its MTX3 file in the download cache. Attached to the texture
  * as asset user data (the engine's own hook, UTextureMipDataProviderFactory): when the streamer wants more mips, the update asks this for them, and the
- * provider reads each mip's zlib stream from the file and inflates it into the engine's buffer, on the update's worker thread. Only the tail (the engine's
+ * provider reads each mip's Kraken stream from the file and unpacks it into the engine's buffer, on the update's worker thread. Only the tail (the engine's
  * non-streaming mips) is in memory when the texture is built; the streamer drops and re-reads the top mips as the camera moves.
  */
 UCLASS(MinimalAPI, Transient)

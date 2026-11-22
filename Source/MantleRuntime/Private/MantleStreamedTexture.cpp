@@ -21,7 +21,7 @@ namespace MantleStreamedTexturePrivate
 	TAtomic<int64> GWorstRequestUs{ 0 };
 
 	/**
-	 * One stream-in of one texture: reads the wanted mips from the file and inflates them into the engine's buffers. GetMips runs on the update's
+	 * One stream-in of one texture: reads the wanted mips from the file and unpacks them into the engine's buffers. GetMips runs on the update's
 	 * worker thread (ETickThread::Async), so the read is done there, synchronously; nothing is left running when it returns, so a cancel has nothing to stop.
 	 */
 	class FCachedMipProvider final : public FTextureMipDataProvider
@@ -149,7 +149,7 @@ namespace MantleStreamedTexturePrivate
 				FString Reason;
 				if (Target.RowPitch == 0 || Target.RowPitch == TightPitch)
 				{
-					if (!MantleCookedPacking::InflateExact(Packed, static_cast<uint8*>(Target.DestData), Entry.Size, &Reason))
+					if (!MantleCookedPacking::UnpackStream(Packed, static_cast<uint8*>(Target.DestData), Entry.Size, &Reason))
 					{
 						return Fail(FString::Printf(TEXT("mip %d is %s"), FileMip, *Reason));
 					}
@@ -157,7 +157,7 @@ namespace MantleStreamedTexturePrivate
 				else
 				{
 					Rows.SetNumUninitialized(static_cast<int32>(Entry.Size), EAllowShrinking::No);
-					if (!MantleCookedPacking::InflateExact(Packed, Rows.GetData(), Entry.Size, &Reason))
+					if (!MantleCookedPacking::UnpackStream(Packed, Rows.GetData(), Entry.Size, &Reason))
 					{
 						return Fail(FString::Printf(TEXT("mip %d is %s"), FileMip, *Reason));
 					}

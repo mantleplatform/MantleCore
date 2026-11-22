@@ -2714,7 +2714,7 @@ void FMantlePlaceAssets::StartDecodes()
 
 		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> Bytes = MoveTemp(Build->Bytes);
 		Build->Bytes.Reset();
-		// #189: a Lumen file is an MLD2 (what the backend stores), inflated by the decode task into this array, which only the task writes before it
+		// #189: a Lumen file is an MLD3 (what the backend stores), unpacked by the decode task into this array, which only the task writes before it
 		// hands the build back, so OnDecoded's header check and the mesh builds on the game thread read the MLD1 inside.
 		TSharedPtr<TArray<uint8>, ESPMode::ThreadSafe> LumenRaw;
 		if (Key.Kind == EAssetKind::Lumen)
@@ -2774,7 +2774,7 @@ void FMantlePlaceAssets::StartDecodes()
 			case EAssetKind::Lumen:
 				if (LumenRaw.IsValid() && !FMantleMeshLumenFile::Unpack(View, *LumenRaw, &Error) && Error.IsEmpty())
 				{
-					Error = TEXT("not an MLD2");
+					Error = TEXT("not an MLD3");
 				}
 				break;
 
@@ -3018,7 +3018,7 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 		FString MeshTag;
 		if (!Error.IsEmpty() || !File.IsValid() || !FMantleMeshLumenFile::ReadHeader(*File, Engine, MeshTag))
 		{
-			FailBuild(*Build, Error.IsEmpty() ? FString(TEXT("is not a Lumen file this client reads (MLD2)")) : FString::Printf(TEXT("is %s"), *Error));
+			FailBuild(*Build, Error.IsEmpty() ? FString(TEXT("is not a Lumen file this client reads (MLD3)")) : FString::Printf(TEXT("is %s"), *Error));
 			return;
 		}
 		Build->Detail = FString::Printf(TEXT("MLD1, engine %s, %.1f KB"), *Engine, File->Num() / 1024.0);
