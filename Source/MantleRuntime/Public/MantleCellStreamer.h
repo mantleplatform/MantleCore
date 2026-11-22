@@ -240,7 +240,7 @@ public:
 
 	/**
 	 * The join has gone on (the owner's Done ran). Until then every hold, the join's own and a teleport's (the server's character arriving somewhere other than the
-	 * spot the join started at), waits for JoinHoldRadiusCm, the whole first view; from then on a hold waits for HoldRadiusCm.
+	 * spot the join started at), waits for JoinHoldRadiusCm (600 m round the spot); from then on a hold waits for HoldRadiusCm.
 	 */
 	void NoteJoinDone() { bJoinPending = false; }
 	bool IsJoinPending() const { return bJoinPending; }
@@ -546,7 +546,7 @@ private:
 	bool bKeepAllSettled = false;
 
 	bool bHolding = false;
-	/** The join has not gone on yet (see NoteJoinDone): holds wait for the whole first view. */
+	/** The join has not gone on yet (see NoteJoinDone): holds wait for JoinHoldRadiusCm. */
 	bool bJoinPending = true;
 	/** A hold gave up (nothing arriving) while the join was pending: NeedsJoinHold does not ask for another. */
 	bool bJoinHoldGaveUp = false;

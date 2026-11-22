@@ -114,7 +114,7 @@ double FMantleCellStreamer::ProjectedCountPressure(const FMantleBudgetLimits& Li
 void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 {
 	// A keep-every-cell streamer (a server's, a standalone game's solid things) is never limited: collision stands whatever the picture costs. A teleport's hold builds the spot the
-	// player is put in, and the budget is looked at once it is over. The join's is different: it waits for the whole first view (JoinHoldRadiusCm), which on a big place is minutes of
+	// player is put in, and the budget is looked at once it is over. The join's is different: it waits for everything near the spot (JoinHoldRadiusCm, 600 m), which on a big place is minutes of
 	// building, so the budget keeps looking meanwhile; a lower ladder only shortens the reach the join waits for (IsAreaBuilt counts a cell wanted within ReachOf).
 	if (!Settings.BudgetLimits || Settings.bKeepEveryCell || !bIndexReady || (bHolding && !bJoinPending))
 	{

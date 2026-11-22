@@ -1093,15 +1093,16 @@ bool FMantleCellStreamerMissingAssetsTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleCellStreamerJoinWaitsForWholeViewTest,
-	"Mantle.Runtime.CellStream.Streamer.JoinWaitsForWholeView",
+	FMantleCellStreamerJoinWaitsForNearbyAreaTest,
+	"Mantle.Runtime.CellStream.Streamer.JoinWaitsForNearbyArea",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleCellStreamerJoinWaitsForWholeViewTest::RunTest(const FString& Parameters)
+bool FMantleCellStreamerJoinWaitsForNearbyAreaTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleCellStreamerTestPrivate;
 	// City Sample (#189): the join let the player in once the cells within 100 m stood, and the buildings that draw from farther popped in over a black view. The join is behind the
-	// loading screen, so it waits for every cell the spot wants; a teleport afterwards (no screen) waits for the 100 m round the player, as before.
+	// loading screen, so it waits for every cell the spot wants within JoinHoldRadiusCm (600 m; this row's cells all draw from 150 m, so all of them); a teleport afterwards
+	// (no screen) waits for the 100 m round the player, as before. Last, a join radius shorter than a wanted cell's distance leaves that cell to stream in after the screen.
 	FFixture Fixture;
 	if (!TestNotNull(TEXT("a world"), Fixture.World))
 	{
@@ -1123,7 +1124,7 @@ bool FMantleCellStreamerJoinWaitsForWholeViewTest::RunTest(const FString& Parame
 	TestTrue(TEXT("cells 0 and 1 stand"), Fixture.Built(0) && Fixture.Built(1));
 	TestTrue(TEXT("the 100 m round the spot stands"), Fixture.Streamer->IsAreaBuilt(Fixture.View, 10000.0));
 	TestFalse(TEXT("cell 2 waits for its download"), Fixture.Built(2));
-	TestTrue(TEXT("so the join still holds: it waits for the whole first view"), Fixture.Streamer->IsHolding());
+	TestTrue(TEXT("so the join still holds: it waits for the cells near the spot, not just 100 m"), Fixture.Streamer->IsHolding());
 	const FMantleCellStreamer::FAreaCount Waiting = Fixture.Streamer->CountHoldArea();
 	TestEqual(TEXT("the join's area is the three wanted cells"), Waiting.Cells, 3);
 	TestEqual(TEXT("two of which stand"), Waiting.Done, 2);
@@ -1167,6 +1168,25 @@ bool FMantleCellStreamerJoinWaitsForWholeViewTest::RunTest(const FString& Parame
 	TestFalse(TEXT("and lets go"), Fixture.Streamer->IsHolding());
 	TestTrue(TEXT("once cells 9 to 11 stand"), Fixture.Built(9) && Fixture.Built(10) && Fixture.Built(11));
 	TestFalse(TEXT("without waiting for cell 8"), Fixture.Built(8));
+
+	// The join's radius is a limit too (City Sample: its 1 km cells farther than 600 m stream in after the screen). Scaled to this row: a join radius of 120 m does not wait for
+	// cell 2, 127 m off, however slow its download.
+	{
+		FFixture Near;
+		Near.bJoinDoneOnFirstRelease = false;
+		Near.CellAssets = MakeShared<FFakeCellAssets>();
+		Near.CellAssets->SlowCells.Add(2);
+		FMantleCellStreamSettings Settings = SteadySettings();
+		Settings.JoinHoldRadiusCm = 12000.0;
+		Near.StartStreamer(Settings);
+		for (int32 Tick = 0; Tick < 2000 && Near.Streamer->IsHolding(); ++Tick)
+		{
+			Near.Tick();
+		}
+		TestFalse(TEXT("a 120 m join is let go"), Near.Streamer->IsHolding());
+		TestTrue(TEXT("once cells 0 and 1 stand"), Near.Built(0) && Near.Built(1));
+		TestFalse(TEXT("with cell 2 still on its way"), Near.Built(2));
+	}
 	return true;
 }
 

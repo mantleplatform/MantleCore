@@ -212,7 +212,7 @@ bool FMantleCellStreamPlanOrderTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("begun 10 minutes ago, progress 30 s ago: still waiting"), FMantleCellStreamPlan::HasStalled(700.0, 100.0, 670.0, 60.0));
 	TestTrue(TEXT("progress 60 s ago: stalled"), FMantleCellStreamPlan::HasStalled(730.0, 100.0, 670.0, 60.0));
 	TestFalse(TEXT("progress before the wait began does not shorten it"), FMantleCellStreamPlan::HasStalled(159.0, 100.0, 50.0, 60.0));
-	TestTrue(TEXT("the join's radius reaches every cell the spot wants"), Settings.JoinHoldRadiusCm >= UE_DOUBLE_BIG_NUMBER);
+	TestEqual(TEXT("the join waits for 600 m round the spot"), Settings.JoinHoldRadiusCm, 60000.0);
 	TestEqual(TEXT("a teleport's is 100 m"), Settings.HoldRadiusCm, 10000.0);
 
 	// Velocity smoothing: an eighth of a second of a quarter-second window moves half way.

@@ -64,11 +64,12 @@ struct MANTLERUNTIME_API FMantleCellStreamSettings
 	double HoldRadiusCm = 10000.0;
 
 	/**
-	 * What the join waits for (any hold until the owner calls NoteJoinDone): every cell within this distance of the spot that the cell wants at all. The join is
-	 * behind the loading screen, so it waits for the whole first view: by default every cell the spot wants (each cell's own drawDistance, under the live budget,
-	 * is the limit), so nothing the player looks at first pops in after the screen comes down.
+	 * What the join waits for (any hold until the owner calls NoteJoinDone): every cell within this distance of the spot that the cell wants at all (its own drawDistance,
+	 * under the live budget, is the other limit). The join is behind the loading screen, so it waits for the ground and everything near the player, not just the 100 m a
+	 * teleport waits for: 600 m (Joshua, 2026-11-22, City Sample #189). The far skyline (City Sample's 1 km cells farther off than that) streams in after the screen comes down;
+	 * waiting for the whole first view there is about 27 GB of downloads today. To be looked at again once the client's download and texture plan lands.
 	 */
-	double JoinHoldRadiusCm = UE_DOUBLE_BIG_NUMBER;
+	double JoinHoldRadiusCm = 60000.0;
 
 	/**
 	 * A hold lets go on its own once nothing has moved for this long: no cell file read, no piece or cell built, no byte of the place's assets arrived (a cell that
