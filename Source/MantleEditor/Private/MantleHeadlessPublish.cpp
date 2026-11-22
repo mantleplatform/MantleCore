@@ -3,12 +3,15 @@
 #include "MantleApiClient.h"
 #include "MantleCosmeticUpload.h"
 #include "MantlePlacePublishSession.h"
+#include "MantleWaterBodyExport.h"
 #include "MantleRuntime.h"
 
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Containers/Ticker.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
+#include "LandscapeBlueprintBrushBase.h"
+#include "LandscapeProxy.h"
 #include "RenderingThread.h"
 #include "Misc/CoreDelegates.h"
 #include "Editor.h"
@@ -160,6 +163,29 @@ FMantlePublishResult FMantleHeadlessPublish::Run(UWorld* World, const TArray<FSt
 	return Result;
 }
 
+bool FMantleHeadlessPublish::KeepsComponentsRegistered(const AActor* Actor)
+{
+	// ALandscapeProxy covers the landscape and its streaming proxies; a Water Brush Manager is a landscape brush.
+	return Actor && (Actor->IsA<ALandscapeProxy>() || Actor->IsA<ALandscapeBlueprintBrushBase>() || FMantleWaterBodyExport::IsWaterBodyActor(Actor));
+}
+
+TArray<TWeakObjectPtr<AActor>> FMantleHeadlessPublish::ActorsToUnregister(UWorld* World)
+{
+	TArray<TWeakObjectPtr<AActor>> Actors;
+	if (!World)
+	{
+		return Actors;
+	}
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		if (!KeepsComponentsRegistered(*It))
+		{
+			Actors.Add(*It);
+		}
+	}
+	return Actors;
+}
+
 namespace MantleHeadlessPublishPrivate
 {
 	/** The running Mantle.PublishAsync, advanced once per editor frame. */
@@ -239,16 +265,13 @@ namespace MantleHeadlessPublishPrivate
 		GAsyncStarted = FPlatformTime::Seconds();
 		GAsyncGiveUpAt = GAsyncStarted + Parsed.TimeoutSeconds;
 
-		// Start() has checked and exported the level; conversion only reads assets. With a big level's every actor still registered,
-		// each material bake copy's PostEditChange refreshes the render state of components across the world, which on City Sample's
-		// Big City (89,586 actors, 8.8M instances) flooded the engine's queues in one step. The editor closes after this command, so
-		// the level's components are unregistered first, a batch per frame so that this does not flood them either.
-		GAsyncToUnregister.Reset();
+		// Start() has checked the level; conversion and the export read assets and actors' own properties. With a big level's every
+		// actor still registered, each material bake copy's PostEditChange refreshes the render state of components across the world,
+		// which on City Sample's Big City (89,586 actors, 8.8M instances) flooded the engine's queues in one step. The editor closes
+		// after this command, so the level's components are unregistered first. Landscapes, their brushes and Water Bodies keep
+		// theirs (KeepsComponentsRegistered): the terrain is read through them (OrbitalBase: "has no landscape components loaded").
+		GAsyncToUnregister = FMantleHeadlessPublish::ActorsToUnregister(World);
 		GAsyncUnregistered = 0;
-		for (TActorIterator<AActor> It(World); It; ++It)
-		{
-			GAsyncToUnregister.Add(*It);
-		}
 		UE_LOG(LogMantle, Display, TEXT("MANTLE_PUBLISH_ASYNC unregistering %d actors' components before conversion"), GAsyncToUnregister.Num());
 
 		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([](float)
