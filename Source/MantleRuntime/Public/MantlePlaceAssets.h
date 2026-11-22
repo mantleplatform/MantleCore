@@ -571,6 +571,9 @@ public:
 	/** Inflated Nanite files held now, and the most held at once, in bytes (tests and the load log). */
 	int64 GetNaniteHeldBytes() const { return NaniteHeldBytes; }
 	int64 GetNaniteHeldPeakBytes() const { return NaniteHeldPeakBytes; }
+
+	/** The store this set loads from (tests read its pins). */
+	FMantleAssetStore& GetStore() const { return *Store; }
 	int64 GetNaniteRootPagesAttached() const { return NaniteRootPagesAttached; }
 
 	/** Downloads started above MaxPendingBuildBytes because a waiting build named them (tests and the progress log). */
@@ -1028,6 +1031,16 @@ private:
 
 	TMap<FString, FRecord> Records;
 	TMap<FBuildKey, FBuild> Builds;
+
+	/**
+	 * #189: every distinct file this set has asked the store for, and their cooked bytes: the place's need on disk, which the
+	 * store's budget rises to hold (FMantleAssetStore::SetPlaceDemand). Only grows: a file let go is still the place's.
+	 */
+	TSet<FMantleContentHash> DemandHashes;
+	int64 DemandBytes = 0;
+
+	/** #189: a built file is not read again (its bytes are in memory), so it stops being pinned; Nanite files stay (pages are read from them). */
+	void UnpinBuilt(FBuild& Build);
 
 	/** Every answer seen, by id, including ones not asked for (a material's textures). */
 	TMap<FString, FMantleUploadedAsset> ResolvedCache;

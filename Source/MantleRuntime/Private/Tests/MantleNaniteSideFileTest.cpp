@@ -1134,10 +1134,17 @@ bool FMantleNaniteReleaseTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("and nothing is held for the mesh that failed"), Failed->GetNaniteHeldBytes(), static_cast<int64>(0));
 
 	// A mesh that builds: its Nanite file was held while it waited, and is gone once it has built.
-	const TSharedRef<FMantlePlaceAssets> Built = LoadOneMesh(MakeServer(true), TEXT("NaniteRelease") / Run / TEXT("Built"));
+	const TSharedRef<FServingResolver> BuiltServer = MakeServer(true);
+	const TSharedRef<FMantlePlaceAssets> Built = LoadOneMesh(BuiltServer, TEXT("NaniteRelease") / Run / TEXT("Built"));
 	TestTrue(TEXT("the place loaded"), Built->IsComplete() && Built->GetResult().bSuccess);
 	TestTrue(TEXT("the Nanite file was downloaded and unpacked (held at some point)"), Built->GetNaniteHeldPeakBytes() > 0);
 	TestEqual(TEXT("and nothing is held once the mesh has built"), Built->GetNaniteHeldBytes(), static_cast<int64>(0));
+	// #189: a built file is not pinned any more (its bytes are in memory), so the store's LRU can work; the Nanite file stays pinned
+	// while the set lives, because the mesh's pages are read from it.
+	TestFalse(TEXT("the built mesh's file is no longer pinned"),
+		Built->GetStore().IsPinned(FMantleContentHash::OfBytes(BuiltServer->Assets.FindChecked(FlowMeshA).Bytes)));
+	TestTrue(TEXT("its Nanite file stays pinned"),
+		Built->GetStore().IsPinned(FMantleContentHash::OfBytes(BuiltServer->Assets.FindChecked(FlowNaniteA).Bytes)));
 
 	// A mesh reused from an earlier set (still up while the same place is applied again) reads no file either.
 	const TSharedRef<FMantlePlaceAssets> Reused = LoadOneMesh(MakeServer(true), TEXT("NaniteRelease") / Run / TEXT("Reused"));

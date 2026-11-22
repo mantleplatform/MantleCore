@@ -1232,6 +1232,8 @@ FMantlePlaceAssets::FMantlePlaceAssets(const FMantlePlaceAssetSettings& InSettin
 	, OnDone(MoveTemp(InOnDone))
 {
 	MantlePlaceAssetsPrivate::GLiveSets.Add(this);
+	// A join: size the disk budget from the drive as it is now (#189).
+	Store->RefreshBudget();
 }
 
 FMantlePlaceAssets::~FMantlePlaceAssets()
@@ -1260,8 +1262,9 @@ FMantlePlaceAssets::~FMantlePlaceAssets()
 	// meshes the set built go at the next garbage collection (MANTLE_GC counts the objects, MANTLE_NANITE_PAGES the Nanite stores).
 	const FMantleAssetStore::FUsage Usage = Store->GetUsage();
 	const FPlatformMemoryStats Memory = FPlatformMemory::GetStats();
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS set released: %d set(s) left; store %d files %.0f MB, pinned %d files %.0f MB; process private %.0f MB, working set %.0f MB"),
-		MantlePlaceAssetsPrivate::GLiveSets.Num(), Usage.StoredFiles, MantlePlaceAssetsPrivate::Megabytes(Usage.StoredBytes), Usage.PinnedFiles,
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS set released: %d set(s) left; the place asked for %d files %.0f MB; store %d files %.0f MB of a %.0f MB budget, pinned %d files %.0f MB; process private %.0f MB, working set %.0f MB"),
+		MantlePlaceAssetsPrivate::GLiveSets.Num(), DemandHashes.Num(), MantlePlaceAssetsPrivate::Megabytes(DemandBytes),
+		Usage.StoredFiles, MantlePlaceAssetsPrivate::Megabytes(Usage.StoredBytes), MantlePlaceAssetsPrivate::Megabytes(Usage.BudgetBytes), Usage.PinnedFiles,
 		MantlePlaceAssetsPrivate::Megabytes(Usage.PinnedBytes), MantlePlaceAssetsPrivate::Megabytes(static_cast<int64>(Memory.UsedVirtual)),
 		MantlePlaceAssetsPrivate::Megabytes(static_cast<int64>(Memory.UsedPhysical)));
 }
@@ -2192,6 +2195,12 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 	}
 	Store->Pin(Hash);
 	Build.bPinned = true;
+	if (!DemandHashes.Contains(Hash))
+	{
+		DemandHashes.Add(Hash);
+		DemandBytes += Build.Ref.Bytes;
+		Store->SetPlaceDemand(DemandBytes);
+	}
 
 	// An object an earlier set built from the same bytes, still alive: nothing to download or build.
 	// A sound builds no object (its emitters make their own waves), nor does a clip (its decoded keys
@@ -3733,10 +3742,20 @@ void FMantlePlaceAssets::OnCollisionCooked(const FBuildKey& Key, const bool bSuc
 	MarkReady(*Build, Build->Object.Get());
 }
 
+void FMantlePlaceAssets::UnpinBuilt(FBuild& Build)
+{
+	if (Build.bPinned && Build.Key.Kind != EAssetKind::Nanite)
+	{
+		Store->Unpin(Build.Key.Hash);
+		Build.bPinned = false;
+	}
+}
+
 void FMantlePlaceAssets::MarkReady(FBuild& Build, UObject* Object)
 {
 	Build.Object = Object;
 	Build.State = EBuildState::Ready;
+	UnpinBuilt(Build);
 	if (Build.Key.Kind == EAssetKind::Nanite && !Build.bReused)
 	{
 		++NaniteFilesBuiltCount;
@@ -3773,6 +3792,12 @@ void FMantlePlaceAssets::FailBuild(FBuild& Build, const FString& Error)
 {
 	Build.State = EBuildState::Failed;
 	Build.Error = Error;
+	// Nothing will read a failed build's file, Nanite included.
+	if (Build.bPinned)
+	{
+		Store->Unpin(Build.Key.Hash);
+		Build.bPinned = false;
+	}
 	Build.Bytes.Reset();
 	Build.MeshV2.Reset();
 	Build.Prepared.Reset();
