@@ -3,6 +3,7 @@
 #include "MantleMeshLumenBake.h"
 #include "MantlePlaceInstancing.h"
 #include "MantlePlaceWorldPartition.h"
+#include "MantleTerrainExport.h"
 #include "MantleRuntime.h"
 
 #include "Editor.h"
@@ -117,6 +118,10 @@ FMantleCheckReport FMantleCheck::Evaluate(UWorld* World)
 		Report.CellEntities = Exported.CellReport.CellEntities;
 		Report.CellInstances = Exported.CellReport.CellInstances;
 		Report.CellLines = CellLines(Exported);
+		// MantleCore#189: a warning at most; the place still publishes.
+		Report.ServerEstimate = ServerEstimate(Exported, World);
+		Report.bHasServerEstimate = true;
+		AddServerWarning(Report.ServerEstimate, Report.Issues);
 		Report.Coverage = Exported.Coverage;
 		Report.Water = FMantleWaterBodyExport::Read(World);
 		if (Exported.bSuccess)
@@ -137,6 +142,48 @@ FMantleCheckReport FMantleCheck::Evaluate(UWorld* World)
 
 	FMantlePlaceWorldPartition::ReleaseLoaded(World, Loaded);
 	return Report;
+}
+
+FMantleServerMemoryEstimate FMantleCheck::ServerEstimate(const FMantleExportResult& Exported, UWorld* World)
+{
+	FMantleServerMemoryCounts Counts;
+	for (const FMantleEntity& Entity : Exported.Place.Entities)
+	{
+		FMantleServerMemoryEstimate::AddEntity(Entity, Counts);
+	}
+	for (const FMantlePlannedCell& Cell : Exported.Cells)
+	{
+		for (const FMantleEntity& Entity : Cell.Entities)
+		{
+			FMantleServerMemoryEstimate::AddEntity(Entity, Counts);
+		}
+	}
+	FMantleServerMemoryEstimate::AddManifest(Exported.Place.Assets, Counts);
+	// Before its files are prepared the manifest does not know a heightfield's size: the level's landscapes, as they publish.
+	if (Counts.TerrainSamples == 0 && World)
+	{
+		TArray<const AActor*> Resampled;
+		for (const AActor* Landscape : FMantleTerrainExport::TerrainLandscapes(World, nullptr, &Resampled))
+		{
+			Counts.TerrainSamples += Resampled.Contains(Landscape) ? FMantleTerrainExport::ResampledSamples(Landscape) : FMantleTerrainExport::PublishedSamples(Landscape);
+		}
+	}
+	return FMantleServerMemoryEstimate::Of(Counts);
+}
+
+FString FMantleCheck::ServerLine(const FMantleServerMemoryEstimate& Estimate)
+{
+	return TEXT("MANTLE_CHECK_SERVER ") + Estimate.Fields();
+}
+
+void FMantleCheck::AddServerWarning(const FMantleServerMemoryEstimate& Estimate, TArray<FMantleValidationIssue>& Issues)
+{
+	if (Estimate.bFitsHosted)
+	{
+		return;
+	}
+	Issues.Add({ EMantleIssueSeverity::Warning, FString(), Estimate.Describe(),
+		TEXT("The place still publishes. Fewer meshes with collision and fewer instances bring the estimate down.") });
 }
 
 FString FMantleCheck::DoneLine(const FMantleCheckReport& Report)
@@ -245,6 +292,10 @@ FMantleCheckReport FMantleCheck::Run(UWorld* World, const FArgs& Args)
 	{
 		UE_LOG(LogMantle, Display, TEXT("%s"), *Line);
 	}
+	if (Report.bHasServerEstimate)
+	{
+		UE_LOG(LogMantle, Display, TEXT("%s"), *ServerLine(Report.ServerEstimate));
+	}
 	if (Report.Water.bWaterPluginLoaded)
 	{
 		UE_LOG(LogMantle, Display, TEXT("%s"), *Report.Water.SummaryLine());
@@ -263,6 +314,10 @@ FMantleCheckReport FMantleCheck::Run(UWorld* World, const FArgs& Args)
 			TArray<FString> Notes = IssueLines(Report);
 			Notes.Add(DoneLine(Report));
 			Notes.Append(Report.CellLines);
+			if (Report.bHasServerEstimate)
+			{
+				Notes.Add(ServerLine(Report.ServerEstimate));
+			}
 			Notes.Append(Report.Coverage.ToDisplayLines());
 			if (Report.Water.bWaterPluginLoaded)
 			{
@@ -295,6 +350,10 @@ void FMantleCheck::AppendPlaceBudget(UWorld* World, FMantleValidationResult& Val
 	{
 		Validation.Issues.Add({ EMantleIssueSeverity::Error, FString(), Exported.BudgetProblem, FString() });
 	}
+	// MantleCore#189: the same export says whether the place fits a hosted server; a warning at most.
+	const FMantleServerMemoryEstimate Estimate = ServerEstimate(Exported, World);
+	UE_LOG(LogMantle, Log, TEXT("%s"), *ServerLine(Estimate));
+	AddServerWarning(Estimate, Validation.Issues);
 }
 
 // Named, not anonymous: MantleEditor builds as a unity build.

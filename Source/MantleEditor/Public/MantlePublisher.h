@@ -25,6 +25,12 @@ struct FMantlePublishResult
 	FString Message;
 
 	/**
+	 * The place's estimated server memory, for the creator (MantleCore#189): "Estimated server memory: 3.6 GB (5.1 GB while
+	 * loading). Fits a hosted server." or that it will only run on community servers. Empty until the Check step measured it.
+	 */
+	FString ServerMemory;
+
+	/**
 	 * Uploaded assets that need the creator, one row each, naming the Unreal asset and
 	 * the fix: errors stopped the publish (rejected in screening, removed by a moderator, too
 	 * large, refused by the place gate); warnings went live with a loss (a material published

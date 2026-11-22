@@ -11,6 +11,7 @@
 #include "MantlePlaceValidator.h"
 #include "MantlePublisher.h"
 #include "MantleScriptPackages.h"
+#include "MantleServerMemoryEstimate.h"
 #include "UObject/GCObject.h"
 #include "UObject/ObjectPtr.h"
 #include "UObject/WeakObjectPtrTemplates.h"
@@ -121,6 +122,10 @@ struct MANTLEEDITOR_API FMantlePlaceSizeCheck
 	int32 Cells = 0;
 	int64 CellEntities = 0;
 	int64 CellInstances = 0;
+
+	/** The place's estimated server memory (MantleCore#189), root and cells; bHasServerEstimate is false when nothing was measured. */
+	bool bHasServerEstimate = false;
+	FMantleServerMemoryEstimate ServerEstimate;
 };
 
 enum class EMantlePlaceExportOutcome : uint8

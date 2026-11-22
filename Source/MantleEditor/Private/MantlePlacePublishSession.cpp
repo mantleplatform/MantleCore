@@ -3,6 +3,7 @@
 #include "MantlePlaceThumbnail.h"
 #include "MantleApiClient.h"
 #include "MantleAttribution.h"
+#include "MantleCheck.h"
 #include "MantleCoverageSurvey.h"
 #include "MantleCreatorSignIn.h"
 #include "MantlePlaceExporter.h"
@@ -675,6 +676,9 @@ bool FMantleLevelPublishSource::MeasurePlaceSize(const FMantlePlaceAssetSet* Con
 	OutCheck.Cells = Exported.CellReport.NumCells();
 	OutCheck.CellEntities = Exported.CellReport.CellEntities;
 	OutCheck.CellInstances = Exported.CellReport.CellInstances;
+	OutCheck.ServerEstimate = FMantleCheck::ServerEstimate(Exported, Level);
+	OutCheck.bHasServerEstimate = true;
+	UE_LOG(LogMantle, Log, TEXT("%s"), *FMantleCheck::ServerLine(OutCheck.ServerEstimate));
 	UE_LOG(LogMantle, Log, TEXT("Place file once uploaded (%s): at least %s, at most %s (%s as written now; %d assets listed, at most %d once uploaded), %lld instanced meshes; %d cell(s) hold %lld entities and %lld instances"),
 		Converted ? TEXT("files prepared") : TEXT("before preparing"), *FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytes),
 		*FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytesWorst), *FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytesAsWritten),
@@ -1495,6 +1499,13 @@ void FMantlePlacePublishSession::TickChecking()
 		if (Size.Cells > 0)
 		{
 			AddLog(FString::Printf(TEXT("The scenery goes to %d cell(s): %lld entities, %lld instances"), Size.Cells, Size.CellEntities, Size.CellInstances));
+		}
+		// MantleCore#189: shown in the window, and a warning when only community servers can hold it. Never a reason to stop.
+		if (Size.bHasServerEstimate)
+		{
+			Result.ServerMemory = Size.ServerEstimate.Describe();
+			AddLog(Result.ServerMemory);
+			FMantleCheck::AddServerWarning(Size.ServerEstimate, Result.Validation.Issues);
 		}
 	}
 	if (Result.Validation.HasErrors())

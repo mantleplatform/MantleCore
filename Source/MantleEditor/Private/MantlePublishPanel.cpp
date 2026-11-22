@@ -235,6 +235,22 @@ void SMantlePublishPanel::Construct(const FArguments& InArgs)
 					.AutoWrapText(true)
 					.Text(this, &SMantlePublishPanel::GetStatusText)
 				]
+				// MantleCore#189: the place's estimated server memory, once the Check step measured it.
+				+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 10)
+				[
+					SNew(STextBlock)
+					.AutoWrapText(true)
+					.Visibility_Lambda([]
+					{
+						const TSharedPtr<FMantlePlacePublishSession> Session = SMantlePublishPanel::GetSession();
+						return Session.IsValid() && !Session->GetResult().ServerMemory.IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed;
+					})
+					.Text_Lambda([]
+					{
+						const TSharedPtr<FMantlePlacePublishSession> Session = SMantlePublishPanel::GetSession();
+						return Session.IsValid() ? FText::FromString(Session->GetResult().ServerMemory) : FText::GetEmpty();
+					})
+				]
 				// Only a go-live with vehicles: who can use them once they are library items. Going live
 				// waits here until Public has its declaration or Private is chosen.
 				+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 10)

@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceValidator.h"
+#include "MantleServerMemoryEstimate.h"
 #include "MantleWaterBodyExport.h"
 
 class UWorld;
@@ -36,6 +37,13 @@ struct MANTLEEDITOR_API FMantleCheckReport
 	int64 CellInstances = 0;
 	TArray<FString> CellLines;
 
+	/**
+	 * The place's estimated server memory (MantleCore#189, the server plan's section 6), when the level was exported: its
+	 * MANTLE_CHECK_SERVER line, and a warning when it is too big for Mantle's hosted servers. Never an error.
+	 */
+	bool bHasServerEstimate = false;
+	FMantleServerMemoryEstimate ServerEstimate;
+
 	/** The Water plugin's bodies and zone in the level (GhzGarage/mantle#997), published as WaterBody entities and settings.water. Empty when the plugin is off. */
 	FMantleWaterBodies Water;
 
@@ -64,7 +72,11 @@ struct MANTLEEDITOR_API FMantleCheckReport
  *   MANTLE_CHECK_DONE ready=<1|0> errors=<n> warnings=<n> placeBytes=<n> instances=<n> grouped=<n> drawDistances=<n> cells=<n> collisionOnly=<n>
  *
  * and before it, one line per finding: MANTLE_CHECK_ERROR <text> and MANTLE_CHECK_WARNING <text>, plus the usual MANTLE_COVERAGE
- * lines. Mesh and material conversion is not run (it is Publish's Prepare step), so its findings are not in the report.
+ * lines, and once the level is exported the server memory estimate:
+ *
+ *   MANTLE_CHECK_SERVER world_gb=<n> peak_gb=<n> fits=<hosted|community> entities=<n> instances=<n> solid=<n> meshes=<n> terrainSamples=<n>
+ *
+ * A place too big for Mantle's hosted servers gets a warning, never an error: it still publishes and runs on community servers. Mesh and material conversion is not run (it is Publish's Prepare step), so its findings are not in the report.
  */
 struct MANTLEEDITOR_API FMantleCheck
 {
@@ -91,12 +103,27 @@ struct MANTLEEDITOR_API FMantleCheck
 	 */
 	static TArray<FString> CellLines(const FMantleExportResult& Exported);
 
+	/**
+	 * The server memory estimate of an exported level: the root's entities and manifest, every planned cell's entities, and the
+	 * heightfield samples (the manifest's when it knows their sizes, else the level's landscapes as they publish, when World is given).
+	 */
+	static FMantleServerMemoryEstimate ServerEstimate(const FMantleExportResult& Exported, UWorld* World);
+
+	/** "MANTLE_CHECK_SERVER ...", as described above. */
+	static FString ServerLine(const FMantleServerMemoryEstimate& Estimate);
+
+	/** Adds the "community servers only" warning to Issues when the estimate does not fit a hosted server; nothing when it does. */
+	static void AddServerWarning(const FMantleServerMemoryEstimate& Estimate, TArray<FMantleValidationIssue>& Issues);
+
 	/** The finishing line, as described above. */
 	static FString DoneLine(const FMantleCheckReport& Report);
 
 	/** "MANTLE_CHECK_ERROR ..." / "MANTLE_CHECK_WARNING ...", one line for each finding. */
 	static TArray<FString> IssueLines(const FMantleCheckReport& Report);
 
-	/** Adds the place-size finding to Validation when the level, exported, is over a limit (the Check this place menu uses it). */
+	/**
+	 * Adds the place-size finding to Validation when the level, exported, is over a limit, and the server memory warning when it is
+	 * too big for Mantle's hosted servers (the Check this place menu uses it).
+	 */
 	static void AppendPlaceBudget(UWorld* World, FMantleValidationResult& Validation);
 };
