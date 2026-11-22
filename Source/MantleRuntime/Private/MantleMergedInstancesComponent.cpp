@@ -9,6 +9,9 @@
 #include "AI/NavigationSystemBase.h"
 #include "AI/NavigationSystemHelpers.h"
 #include "Chaos/ParticleHandle.h"
+#include "Chaos/ShapeInstance.h"
+#include "Chaos/ImplicitObjectTransformed.h"
+#include "Physics/Experimental/ChaosInterfaceUtils.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/StaticMesh.h"
@@ -187,15 +190,13 @@ void UMantleMergedInstancesComponent::AddInstanceShapes(FBodyInstance* Body, UBo
 		return;
 	}
 
-	// Each instance becomes shapes of this body the way a welded body's do (FBodyInstance::Weld, BodyInstance.cpp): UBodySetup::AddShapesToRigidActor_AssumesLocked with a transform relative to
-	// the body, from the same cooked collision, materials and filter data the body's own first shapes were made from. What differs from Weld: no body of its own stands behind a shape, so
-	// nothing is released and no weld map is kept (a shape of this body belongs to the body, which is what the engine assumes for a shape it does not find in the map).
-	//
-	// The body's frame has no scale, and the scale given to the call is 1: the engine then puts an instance's own scale on its shapes (CreateGeometry's NetScale is the relative transform's
-	// scale) and places each shape at the instance's exact transform, rotation and mirroring included. Scaled like the body, a rotated instance on a body with a non-uniform scale would put
-	// its boxes, spheres and capsules (GetFinalScaled) slightly wrong.
-	FTransform BodyFrame = Body->GetUnrealWorldTransform(/*bWithProjection*/ false);
-	BodyFrame.SetScale3D(FVector::OneVector);
+	// Each further instance's shapes are made exactly as the engine makes the shapes of a body of its own at that instance (FInstancedMeshComponentBodies: InitBody at the
+	// instance's world transform): ChaosInterface::CreateGeometry with the instance's scale and no local transform, so every sphere, box, capsule, hull and triangle mesh is the
+	// same geometry, built about the instance's own origin. Each is then placed in this body by a rigid transform wrapper (rotation and translation only, the instance's frame
+	// relative to the body's), which is what a separate body's own transform does for it. Not UBodySetup::AddShapesToRigidActor, as a welded body's shapes are made: that bakes
+	// the offset into a sphere's, box's or capsule's own coordinates, kilometres from the body's origin, and a sweep against such a primitive does not answer as against the
+	// engine's body (a mirrored box also came out a centimetre off).
+	const FTransform BodyFrame(Body->GetUnrealWorldTransform(/*bWithProjection*/ false).GetRotation(), Body->GetUnrealWorldTransform(/*bWithProjection*/ false).GetTranslation());
 
 	UPhysicalMaterial* SimpleMaterial = Body->GetSimplePhysicalMaterial();
 	TArray<FPhysicalMaterialMaskParams> ComplexMaterialMasks;
@@ -206,25 +207,76 @@ void UMantleMergedInstancesComponent::AddInstanceShapes(FBodyInstance* Body, UBo
 
 	FPhysicsCommand::ExecuteWrite(Body->GetPhysicsActor(), [&](const FPhysicsActorHandle& Actor)
 	{
-		// What the first instance's shapes were given after the body went into the scene (TInitBodiesHelperBase::InitBodies): the raw collision trace flag. The shapes made now take it from
-		// the first, so a CTF_UseDefault mesh is treated alike by all of them.
+		// What the first instance's shapes were given after the body went into the scene (TInitBodiesHelperBase::InitBodies): the raw collision trace flag. The shapes made now take it
+		// from the first, so a CTF_UseDefault mesh is treated alike by all of them.
 		const auto TraceType = Actor->GetGameThreadAPI().ShapesArray()[0]->GetCollisionTraceType();
+		const TArrayView<UPhysicalMaterial*> MaterialsView(ComplexMaterials);
+		const TArrayView<FPhysicalMaterialMaskParams> MasksView(ComplexMaterialMasks);
 
-		TArray<FPhysicsShapeHandle> NewShapes;
+		TArray<Chaos::FImplicitObjectPtr> Placed;
+		Chaos::FShapesArray PlacedShapes;
 		for (const FTransform& InstanceTransform : InstanceWorldTransforms)
 		{
-			FVector UnitScale = FVector::OneVector;
-			NewShapes.Reset();
-			BodySetup->AddShapesToRigidActor_AssumesLocked(Body, UnitScale, SimpleMaterial, ComplexMaterials, ComplexMaterialMasks, CollisionData, InstanceTransform.GetRelativeTransform(BodyFrame), &NewShapes);
-			for (FPhysicsShapeHandle& NewShape : NewShapes)
+			FVector Scale = InstanceTransform.GetScale3D();
+			if (Scale.IsNearlyZero())
 			{
-				NewShape.Shape->SetProxy(Actor);
-				NewShape.Shape->SetCollisionTraceType(TraceType);
+				Scale = FVector(0.1f); // as UBodySetup::AddShapesToRigidActor_AssumesLocked does for a body's own scale
+			}
+			const FTransform InstanceFrame(InstanceTransform.GetRotation(), InstanceTransform.GetTranslation());
+			const FTransform Relative = InstanceFrame.GetRelativeTransform(BodyFrame);
+
+			FGeometryAddParams AddParams;
+			AddParams.bDoubleSided = BodySetup->bDoubleSidedGeometry;
+			AddParams.CollisionData = CollisionData;
+			AddParams.CollisionTraceType = BodySetup->GetCollisionTraceFlag();
+			AddParams.Scale = Scale;
+			AddParams.SimpleMaterial = SimpleMaterial;
+			AddParams.ComplexMaterials = TArrayView<UPhysicalMaterial*>(ComplexMaterials);
+			AddParams.ComplexMaterialMasks = TArrayView<FPhysicalMaterialMaskParams>(ComplexMaterialMasks);
+			AddParams.LocalTransform = FTransform::Identity;
+			AddParams.WorldTransform = InstanceFrame;
+			AddParams.Geometry = &BodySetup->AggGeom;
+			AddParams.TriMeshGeometries = MakeArrayView(BodySetup->TriMeshGeometries);
+
+			TArray<Chaos::FImplicitObjectPtr> Geoms;
+			Chaos::FShapesArray Shapes;
+			ChaosInterface::CreateGeometry(AddParams, Geoms, Shapes);
+			check(Geoms.Num() == Shapes.Num());
+			const bool bPlaced = !Relative.GetTranslation().IsNearlyZero() || !Relative.GetRotation().IsIdentity();
+			for (int32 Index = 0; Index < Geoms.Num(); ++Index)
+			{
+				Chaos::FImplicitObjectPtr Geometry = bPlaced
+					? MakeImplicitObjectPtr<Chaos::TImplicitObjectTransformed<Chaos::FReal, 3>>(Geoms[Index], Chaos::FRigidTransform3(Relative))
+					: Geoms[Index];
+				// A new shape around the placed geometry, with everything CreateGeometry gave the instance's own shape: its filters, its collision switches and its user data.
+				const TUniquePtr<Chaos::FPerShapeData>& Made = Shapes[Index];
+				TUniquePtr<Chaos::FPerShapeData> Shape = Chaos::FShapeInstanceProxy::Make(PlacedShapes.Num(), Geometry);
+				Shape->SetShapeFilterData(Made->GetShapeFilterData());
+				Shape->SetFilterInstanceData(Made->GetFilterInstanceData());
+				Shape->SetQueryEnabled(Made->GetQueryEnabled());
+				Shape->SetSimEnabled(Made->GetSimEnabled());
+				Shape->SetIsProbe(Made->GetIsProbe());
+				Shape->SetUserData(Made->GetUserData());
+				Shape->SetCollisionTraceType(TraceType);
+				Shape->UpdateShapeBounds(Chaos::FRigidTransform3(BodyFrame));
+				FBodyInstance::ApplyMaterialToShape_AssumesLocked(FPhysicsShapeHandle(Shape.Get(), Actor), SimpleMaterial, MaterialsView, &MasksView);
+				Placed.Add(MoveTemp(Geometry));
+				PlacedShapes.Add(MoveTemp(Shape));
 			}
 		}
 
-		// Weld ends with FBodyInstance::PostShapeChange, whose UpdatePhysicsFilterData is what puts the grown body into the scene's query structure again (and sets filter data, which the shapes
-		// already carry here, and mass, which a static body has none of). Called alone: UpdatePhysicsFilterData would read a shape's place in the body's list as a place in the mesh's.
+		// As FPhysInterface_Chaos::AddGeometry adds a body setup's shapes: the geometry into the body's union (once for the whole run), then the shapes, which fill in its new entries.
+		const int32 NewShapes = PlacedShapes.Num();
+		Actor->GetGameThreadAPI().MergeGeometry(MoveTemp(Placed));
+		Actor->GetGameThreadAPI().MergeShapesArray(MoveTemp(PlacedShapes));
+		const Chaos::FShapesArray& All = Actor->GetGameThreadAPI().ShapesArray();
+		for (int32 Index = All.Num() - NewShapes; Index < All.Num(); ++Index)
+		{
+			All[Index]->SetProxy(Actor);
+		}
+
+		// Weld ends with FBodyInstance::PostShapeChange, whose UpdatePhysicsFilterData is what puts the grown body into the scene's query structure again (and sets filter data, which the
+		// shapes already carry here, and mass, which a static body has none of). Called alone: UpdatePhysicsFilterData would read a shape's place in the body's list as a place in the mesh's.
 		PhysScene->UpdateActorInAccelerationStructure(Actor);
 	});
 }

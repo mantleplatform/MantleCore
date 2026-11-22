@@ -17,6 +17,7 @@
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
 #include "Chaos/ImplicitObject.h"
+#include "Chaos/ImplicitObjectTransformed.h"
 #include "Chaos/ImplicitObjectType.h"
 #include "Chaos/ShapeInstance.h"
 #include "Physics/PhysicsInterfaceCore.h"
@@ -43,6 +44,11 @@ namespace MantleMergedInstancesTestPrivate
 	constexpr int32 InstanceCount = 300;
 
 	constexpr double DistanceToleranceCm = 0.01;
+	/**
+	 * A sweep's distance may differ by a fraction of a millimetre: a hull's collision margin sits on its scale wrapper, and the merged copy's hull is that wrapper under a transform
+	 * wrapper (measured: 0.02 cm on sphere sweeps against the mixed mesh's hull). Line traces keep DistanceToleranceCm.
+	 */
+	constexpr double SweepDistanceToleranceCm = 0.1;
 	constexpr double NormalTolerance = 0.001;
 	constexpr double PointToleranceCm = 0.05;
 
@@ -450,15 +456,15 @@ namespace MantleMergedInstancesTestPrivate
 		{
 			return FString::Printf(TEXT("blocking %d/%d penetrating %d/%d"), A.bBlockingHit, B.bBlockingHit, A.bStartPenetrating, B.bStartPenetrating);
 		}
-		if (FMath::Abs(A.Distance - B.Distance) > DistanceToleranceCm)
+		const bool bSweep = Engine.Kind == ProbeSphereDownSimple || Engine.Kind == ProbeSphereDownComplex || Engine.Kind == ProbeBoxDown
+			|| Engine.Kind == ProbeCapsuleAlongY || Engine.Kind == ProbeComponentSweep;
+		if (FMath::Abs(A.Distance - B.Distance) > (bSweep ? SweepDistanceToleranceCm : DistanceToleranceCm))
 		{
 			return FString::Printf(TEXT("distance %.4f against %.4f"), A.Distance, B.Distance);
 		}
 		// A swept shape that meets a face or an edge along a line or a patch touches it at many points at once, all at the same distance: which one (and so which normal, at a
 		// box's edge) the query reports is a tie the engine breaks by how the shapes are wrapped, not by where they are. Where the shapes stand is checked shape by shape
 		// instead (CompareMergedShapes); a sweep agrees when it hits the same thing at the same distance.
-		const bool bSweep = Engine.Kind == ProbeSphereDownSimple || Engine.Kind == ProbeSphereDownComplex || Engine.Kind == ProbeBoxDown
-			|| Engine.Kind == ProbeCapsuleAlongY || Engine.Kind == ProbeComponentSweep;
 		if (bSweep)
 		{
 			return A.PhysMaterial.Get() != B.PhysMaterial.Get() ? FString(TEXT("another physical material")) : FString();
@@ -530,7 +536,13 @@ namespace MantleMergedInstancesTestPrivate
 			for (const auto& Shape : Actor->GetGameThreadAPI().ShapesArray())
 			{
 				FMergedShapeInfo& Info = Out.AddDefaulted_GetRef();
-				Info.Kind = Shape->GetGeometry() ? static_cast<int32>(Chaos::GetInnerType(Shape->GetGeometry()->GetType())) : -1;
+				// The kind under any transform wrapper: the merged copy places each instance's shapes in its body with one, as a body of its own is placed by its transform.
+				const Chaos::FImplicitObject* Geometry = Shape->GetGeometry();
+				while (Geometry && Chaos::GetInnerType(Geometry->GetType()) == Chaos::ImplicitObjectType::Transformed)
+				{
+					Geometry = Geometry->template GetObject<Chaos::TImplicitObjectTransformed<Chaos::FReal, 3>>()->GetTransformedObject();
+				}
+				Info.Kind = Geometry ? static_cast<int32>(Chaos::GetInnerType(Geometry->GetType())) : -1;
 				const Chaos::FAABB3& Box = Shape->GetWorldSpaceShapeBounds();
 				Info.Bounds = FBox(FVector(Box.Min()), FVector(Box.Max()));
 			}
