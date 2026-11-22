@@ -125,6 +125,10 @@ struct MANTLERUNTIME_API FMantleCellStreamStats
 	/** #189: how near full texture detail reaches now, cm, and the shortest it has been (FMantleBudgetTuning::TextureDetailMaxCm until textures are over at ladder 0). */
 	double BudgetTextureDetailCm = 15000.0;
 	double BudgetLowestTextureDetailCm = 15000.0;
+	/** #189: the card at the last look, as the driver says (0 when unknown), and its pressure (FMantleStreamBudget::VideoPressure). */
+	int64 BudgetVideoUsedBytes = 0;
+	int64 BudgetVideoBudgetBytes = 0;
+	double BudgetVideoPressure = 0.0;
 };
 
 /** What a whole-grid look at the twins found: each built twin entity is drawn exactly when it should be (FMantleFarSetPlan::ShouldShow). */

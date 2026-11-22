@@ -150,9 +150,15 @@ double FMantleStreamBudget::MemoryPressure(const FMantleBudgetLimits& Limits, co
 	return Worst;
 }
 
+double FMantleStreamBudget::VideoPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use)
+{
+	const double Cushioned = static_cast<double>(Use.VideoBudgetBytes) * Limits.VideoUseShare;
+	return Use.VideoUsedBytes > 0 && Cushioned > 0.0 ? static_cast<double>(Use.VideoUsedBytes) / Cushioned : 0.0;
+}
+
 double FMantleStreamBudget::Pressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use)
 {
-	return FMath::Max(CountPressure(Limits, Use), MemoryPressure(Limits, Use));
+	return FMath::Max3(CountPressure(Limits, Use), MemoryPressure(Limits, Use), VideoPressure(Limits, Use));
 }
 
 double FMantleStreamBudget::NextLadder(const double Ladder, const double Pressure, const FMantleBudgetTuning& Tuning)
@@ -182,17 +188,20 @@ double FMantleStreamBudget::NearScale(const double Ladder, const FMantleBudgetTu
 	return FMath::Lerp(Tuning.MinNearScale, 1.0, FMath::Clamp(Ladder * 2.0, 0.0, 1.0));
 }
 
-double FMantleStreamBudget::NextTextureDetailReach(const double ReachCm, const double Ladder, const double TexturePressure, const double Pressure, const FMantleBudgetTuning& Tuning)
+double FMantleStreamBudget::NextTextureDetailReach(const double ReachCm, const double Ladder, const double TexturePressure, const double VideoPressure, const double TexturesOfVideo,
+	const double Pressure, const FMantleBudgetTuning& Tuning)
 {
 	const double MinCm = FMath::Min(Tuning.TextureDetailMinCm, Tuning.TextureDetailMaxCm);
 	const double Step = FMath::Clamp(Tuning.TextureDetailStep, 0.1, 0.99);
-	if (Ladder <= 0.0 && TexturePressure > Tuning.LowerAbove)
+	if (Ladder <= 0.0 && (TexturePressure > Tuning.LowerAbove || VideoPressure > Tuning.LowerAbove))
 	{
 		return FMath::Clamp(ReachCm * Step, MinCm, Tuning.TextureDetailMaxCm);
 	}
 	// Rising brings full files back: it rises only if the textures would still fit with the full-detail circle's area grown by the step (1 / Step^2), counting every texture
-	// byte as if it grew so (the low copies do not: the side that does not cycle). Else a reach that just fits would grow, pass the limit, shrink, and round again.
-	if (Pressure < Tuning.RaiseBelow && TexturePressure / (Step * Step) <= Tuning.LowerAbove)
+	// byte as if it grew so (the low copies do not: the side that does not cycle), and the card too with those bytes added. Else a reach that just fits would grow, pass the
+	// limit, shrink, and round again.
+	const double Grown = 1.0 / (Step * Step);
+	if (Pressure < Tuning.RaiseBelow && TexturePressure * Grown <= Tuning.LowerAbove && VideoPressure + TexturesOfVideo * (Grown - 1.0) <= Tuning.LowerAbove)
 	{
 		return FMath::Clamp(ReachCm / Step, MinCm, Tuning.TextureDetailMaxCm);
 	}
@@ -253,6 +262,32 @@ FMantleBudgetLimits FMantleStreamBudget::CurrentLimits()
 		return FMath::Clamp(Scale, 0.001, 1.0);
 	}();
 	return LimitsFor(CurrentLevel(), CurrentMachine(), CommandScale);
+}
+
+void FMantleStreamBudget::CurrentVideoMemory(int64& OutUsedBytes, int64& OutBudgetBytes)
+{
+	OutUsedBytes = 0;
+	OutBudgetBytes = 0;
+	if (!GDynamicRHI || !FApp::CanEverRender())
+	{
+		return;
+	}
+	// A copy the RHI keeps, brought up to date once a frame (D3D12: FD3D12Adapter::CollectMemoryStats): cheap on the game thread.
+	FRHIMemoryStats Stats;
+	RHIGetMemoryStats(Stats);
+	if (Stats.BudgetLocal == 0)
+	{
+		return;
+	}
+	OutUsedBytes = static_cast<int64>(Stats.UsedLocal);
+	OutBudgetBytes = static_cast<int64>(Stats.BudgetLocal);
+	// -MantleBudgetVideoGB (CurrentMachine): a smaller card than this one, so its budget is no more than that.
+	const int64 Pretend = CurrentMachine().VideoBytes;
+	double PretendGB = 0.0;
+	if (Pretend > 0 && FParse::Value(FCommandLine::Get(), TEXT("MantleBudgetVideoGB="), PretendGB) && PretendGB > 0.0)
+	{
+		OutBudgetBytes = FMath::Min(OutBudgetBytes, Pretend);
+	}
 }
 
 double FMantleStreamBudget::CurrentProcessMemoryShare()

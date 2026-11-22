@@ -303,16 +303,36 @@ bool FMantleStreamBudgetTextureDetailTest::RunTest(const FString& Parameters)
 {
 	// #189: below the ladder. Full texture detail reaches 150 m until textures are over their limit with the ladder already at 0; then x0.75 a step, to 25 m at the least.
 	const FMantleBudgetTuning Tuning;
-	TestEqual(TEXT("over, but the ladder can still fall: the cells go first"), FMantleStreamBudget::NextTextureDetailReach(15000.0, 0.3, 1.5, 1.5, Tuning), 15000.0);
-	TestEqual(TEXT("over at ladder 0: 150 m to 112.5 m"), FMantleStreamBudget::NextTextureDetailReach(15000.0, 0.0, 1.2, 1.2, Tuning), 11250.0);
-	TestEqual(TEXT("the textures' own pressure decides, not another count's"), FMantleStreamBudget::NextTextureDetailReach(15000.0, 0.0, 0.5, 1.5, Tuning), 15000.0);
-	TestEqual(TEXT("never under 25 m"), FMantleStreamBudget::NextTextureDetailReach(3000.0, 0.0, 3.0, 3.0, Tuning), 2500.0);
-	TestEqual(TEXT("between 0.8 and 1 it holds"), FMantleStreamBudget::NextTextureDetailReach(8437.5, 0.0, 0.9, 0.9, Tuning), 8437.5);
+	auto Next = [&Tuning](const double Reach, const double Ladder, const double Textures, const double Pressure, const double Video = 0.0, const double TexturesOfVideo = 0.0)
+	{
+		return FMantleStreamBudget::NextTextureDetailReach(Reach, Ladder, Textures, Video, TexturesOfVideo, Pressure, Tuning);
+	};
+	TestEqual(TEXT("over, but the ladder can still fall: the cells go first"), Next(15000.0, 0.3, 1.5, 1.5), 15000.0);
+	TestEqual(TEXT("over at ladder 0: 150 m to 112.5 m"), Next(15000.0, 0.0, 1.2, 1.2), 11250.0);
+	TestEqual(TEXT("the textures' own pressure decides, not another count's"), Next(15000.0, 0.0, 0.5, 1.5), 15000.0);
+	TestEqual(TEXT("never under 25 m"), Next(3000.0, 0.0, 3.0, 3.0), 2500.0);
+	TestEqual(TEXT("between 0.8 and 1 it holds"), Next(8437.5, 0.0, 0.9, 0.9), 8437.5);
 	// Back up only if the textures would fit with the circle's area grown by 1 / 0.75^2 (1.78): 0.77 would be 1.37, so it holds; 0.5 would be 0.89, so it rises.
-	TestEqual(TEXT("just under 0.8 after a step down: it holds rather than cycle"), FMantleStreamBudget::NextTextureDetailReach(8437.5, 0.0, 0.77, 0.77, Tuning), 8437.5);
-	TestEqual(TEXT("room for the step: 84 m to 112.5 m"), FMantleStreamBudget::NextTextureDetailReach(8437.5, 0.0, 0.5, 0.5, Tuning), 11250.0);
-	TestEqual(TEXT("never past 150 m"), FMantleStreamBudget::NextTextureDetailReach(14000.0, 0.0, 0.1, 0.1, Tuning), 15000.0);
-	TestEqual(TEXT("whole already: stays whole"), FMantleStreamBudget::NextTextureDetailReach(15000.0, 1.0, 0.1, 0.1, Tuning), 15000.0);
+	TestEqual(TEXT("just under 0.8 after a step down: it holds rather than cycle"), Next(8437.5, 0.0, 0.77, 0.77), 8437.5);
+	TestEqual(TEXT("room for the step: 84 m to 112.5 m"), Next(8437.5, 0.0, 0.5, 0.5), 11250.0);
+	TestEqual(TEXT("never past 150 m"), Next(14000.0, 0.0, 0.1, 0.1), 15000.0);
+	TestEqual(TEXT("whole already: stays whole"), Next(15000.0, 1.0, 0.1, 0.1), 15000.0);
+	// The card: over at ladder 0 with the textures inside their own share (a crowded server) shortens it too; back up only if the card would fit the textures' growth.
+	TestEqual(TEXT("the card over at ladder 0: 150 m to 112.5 m"), Next(15000.0, 0.0, 0.5, 1.1, 1.1, 0.3), 11250.0);
+	TestEqual(TEXT("the card over, ladder still above 0: the cells go first"), Next(15000.0, 0.2, 0.5, 1.1, 1.1, 0.3), 15000.0);
+	TestEqual(TEXT("card at 0.7 with textures 0.4 of it: 0.7 + 0.4 x 0.78 = 1.01, it holds"), Next(8437.5, 0.0, 0.3, 0.7, 0.7, 0.4), 8437.5);
+	TestEqual(TEXT("card at 0.5 with textures 0.4 of it: 0.81, it rises"), Next(8437.5, 0.0, 0.3, 0.5, 0.5, 0.4), 11250.0);
+
+	// The card's pressure: what the driver says is used over 90% of the budget it gives; nothing when it cannot say.
+	FMantleBudgetLimits Limits;
+	FMantleBudgetUse Card;
+	TestEqual(TEXT("an unknown card does not press"), FMantleStreamBudget::VideoPressure(Limits, Card), 0.0);
+	Card.VideoBudgetBytes = 10000;
+	Card.VideoUsedBytes = 9000;
+	TestEqual(TEXT("9 of a 10 budget is 1 at the 90% cushion"), FMantleStreamBudget::VideoPressure(Limits, Card), 1.0);
+	Card.VideoUsedBytes = 4500;
+	TestEqual(TEXT("4.5 of 10 is 0.5"), FMantleStreamBudget::VideoPressure(Limits, Card), 0.5);
+	TestEqual(TEXT("and it is part of the pressure"), FMantleStreamBudget::Pressure(Limits, Card), 0.5);
 	return true;
 }
 

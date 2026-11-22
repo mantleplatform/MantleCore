@@ -154,9 +154,18 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	Use.ProcessMemoryShare = Settings.BudgetMemoryShare ? Settings.BudgetMemoryShare() : 0.0;
 	Use.ProcessMemoryBytes = Settings.BudgetMemoryBytes ? Settings.BudgetMemoryBytes() : 0;
 	Use.TextureBytes = Settings.BudgetTextureBytes ? Settings.BudgetTextureBytes() : 0;
+	if (Settings.BudgetVideoMemory)
+	{
+		Settings.BudgetVideoMemory(Use.VideoUsedBytes, Use.VideoBudgetBytes);
+	}
 	const double CountPressure = FMantleStreamBudget::CountPressure(Limits, Use);
 	const double MemoryPressure = FMantleStreamBudget::MemoryPressure(Limits, Use);
-	const double Pressure = FMath::Max(CountPressure, MemoryPressure);
+	// #189: the card as the driver sees it comes back as slowly as the process's memory (a texture let go is freed at the next garbage collection), so it presses the same way.
+	const double VideoPressure = FMantleStreamBudget::VideoPressure(Limits, Use);
+	const double SlowPressure = FMath::Max(MemoryPressure, VideoPressure);
+	const double Pressure = FMath::Max(CountPressure, SlowPressure);
+	const double VideoCushionBytes = static_cast<double>(Use.VideoBudgetBytes) * Limits.VideoUseShare;
+	const double TexturesOfVideo = VideoCushionBytes > 0.0 ? static_cast<double>(Use.TextureBytes) / VideoCushionBytes : 0.0;
 	const double TexturePressure = Limits.TextureBytes > 0 && Limits.TextureBytes < MAX_int64 ? static_cast<double>(Use.TextureBytes) / static_cast<double>(Limits.TextureBytes) : 0.0;
 	// #189: while full texture detail reaches less than its whole way (textures were over at ladder 0), the ladder waits for it to come back before it rises.
 	const bool bTextureDetailShort = TextureDetailCm < Tuning.TextureDetailMaxCm;
@@ -166,13 +175,13 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	{
 		Ladder = FMantleStreamBudget::NextLadder(Ladder, CountPressure, Tuning);
 	}
-	else if (MemoryPressure > Tuning.LowerAbove)
+	else if (SlowPressure > Tuning.LowerAbove)
 	{
-		// Memory comes back slowly: it lowers the ladder only now and then (see FMantleBudgetTuning::MemoryLowerEverySeconds).
+		// Memory, the process's or the card's, comes back slowly: it lowers the ladder only now and then (see FMantleBudgetTuning::MemoryLowerEverySeconds).
 		if (SecondsSinceMemoryLower >= Tuning.MemoryLowerEverySeconds)
 		{
 			SecondsSinceMemoryLower = 0.0;
-			Ladder = FMantleStreamBudget::NextLadder(Ladder, MemoryPressure, Tuning);
+			Ladder = FMantleStreamBudget::NextLadder(Ladder, SlowPressure, Tuning);
 		}
 	}
 	else if (Pressure < Tuning.RaiseBelow && !bTextureDetailShort)
@@ -198,10 +207,15 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	Stats.BudgetMemoryShare = Use.ProcessMemoryShare;
 	Stats.BudgetTextureBytes = Use.TextureBytes;
 	Stats.BudgetMemoryBytes = Use.ProcessMemoryBytes;
+	Stats.BudgetVideoUsedBytes = Use.VideoUsedBytes;
+	Stats.BudgetVideoBudgetBytes = Use.VideoBudgetBytes;
+	Stats.BudgetVideoPressure = VideoPressure;
 
-	// #189: below the ladder, how near full texture detail reaches (FMantleBudgetTuning::TextureDetailMaxCm). Down a step a second at most, up one every five.
-	const double NextDetail = FMantleStreamBudget::NextTextureDetailReach(TextureDetailCm, Ladder, TexturePressure, Pressure, Tuning);
-	const double DetailWait = NextDetail < TextureDetailCm ? Tuning.TextureDetailLowerEverySeconds : Tuning.TextureDetailRaiseEverySeconds;
+	// #189: below the ladder, how near full texture detail reaches (FMantleBudgetTuning::TextureDetailMaxCm). Down a step a second at most on the textures' own count, only as often
+	// as memory lowers the ladder on the card's (its bytes come back at the next garbage collection), and up one every five seconds.
+	const double NextDetail = FMantleStreamBudget::NextTextureDetailReach(TextureDetailCm, Ladder, TexturePressure, VideoPressure, TexturesOfVideo, Pressure, Tuning);
+	const double DetailWait = NextDetail >= TextureDetailCm ? Tuning.TextureDetailRaiseEverySeconds
+		: TexturePressure > Tuning.LowerAbove ? Tuning.TextureDetailLowerEverySeconds : FMath::Max(Tuning.TextureDetailLowerEverySeconds, Tuning.MemoryLowerEverySeconds);
 	if (NextDetail != TextureDetailCm && SecondsSinceTextureDetailMove >= DetailWait)
 	{
 		const double DetailBefore = TextureDetailCm;
@@ -211,9 +225,9 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 		{
 			CellAssets->SetTextureDetailReach(TextureDetailCm);
 		}
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_CELLS_BUDGET texture detail %.0f m -> %.0f m (ladder %.2f), textures %.0f of %s MB (pressure %.2f), pressure %.2f"),
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_CELLS_BUDGET texture detail %.0f m -> %.0f m (ladder %.2f), textures %.0f of %s MB (pressure %.2f), card %.0f of %.0f MB the driver gives (pressure %.2f at %.0f%%), pressure %.2f"),
 			DetailBefore / 100.0, TextureDetailCm / 100.0, Ladder, Use.TextureBytes / (1024.0 * 1024.0), *MantleCellStreamerBudgetPrivate::MegabytesOrNone(Limits.TextureBytes),
-			TexturePressure, Pressure);
+			TexturePressure, Use.VideoUsedBytes / (1024.0 * 1024.0), Use.VideoBudgetBytes / (1024.0 * 1024.0), VideoPressure, Limits.VideoUseShare * 100.0, Pressure);
 	}
 	Stats.BudgetTextureDetailCm = TextureDetailCm;
 	Stats.BudgetLowestTextureDetailCm = FMath::Min(Stats.BudgetLowestTextureDetailCm, TextureDetailCm);
@@ -229,8 +243,9 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	if (FMath::FloorToInt(Ladder * 10.0) != FMath::FloorToInt(Before * 10.0))
 	{
 		UE_LOG(LogMantle, Log,
-			TEXT("MANTLE_CELLS_BUDGET ladder %.2f -> %.2f (far reach x%.2f, cell reach x%.2f), pressure %.2f (memory %.2f): instances %lld of %lld, solid %lld of %lld, far instances %lld of %lld, Nanite root pages %lld of %lld, textures %.0f of %s MB, process memory %.3f of %.2f of the machine, %.0f of %s MB (working set %.0f MB, private %.0f MB)"),
-			Before, Ladder, Settings.FarSets.ReachScale, Settings.ReachScale, Pressure, MemoryPressure, Use.Instances, Limits.Instances, Use.SolidThings, Limits.SolidThings, Use.FarInstances, Limits.FarInstances,
+			TEXT("MANTLE_CELLS_BUDGET ladder %.2f -> %.2f (far reach x%.2f, cell reach x%.2f), pressure %.2f (memory %.2f, card %.2f: %.0f of %.0f MB the driver gives): instances %lld of %lld, solid %lld of %lld, far instances %lld of %lld, Nanite root pages %lld of %lld, textures %.0f of %s MB, process memory %.3f of %.2f of the machine, %.0f of %s MB (working set %.0f MB, private %.0f MB)"),
+			Before, Ladder, Settings.FarSets.ReachScale, Settings.ReachScale, Pressure, MemoryPressure, VideoPressure, Use.VideoUsedBytes / (1024.0 * 1024.0),
+			Use.VideoBudgetBytes / (1024.0 * 1024.0), Use.Instances, Limits.Instances, Use.SolidThings, Limits.SolidThings, Use.FarInstances, Limits.FarInstances,
 			Use.NaniteRootPages, Limits.NaniteRootPages, Use.TextureBytes / (1024.0 * 1024.0), *MantleCellStreamerBudgetPrivate::MegabytesOrNone(Limits.TextureBytes), Use.ProcessMemoryShare, Limits.ProcessMemoryShare,
 			Use.ProcessMemoryBytes / (1024.0 * 1024.0), *MantleCellStreamerBudgetPrivate::MegabytesOrNone(Limits.ProcessMemoryBytes),
 			FPlatformMemory::GetStats().UsedPhysical / (1024.0 * 1024.0), FPlatformMemory::GetStats().UsedVirtual / (1024.0 * 1024.0));

@@ -1264,10 +1264,12 @@ void FMantleCellStreamer::LogSummary(const TCHAR* Why) const
 	if (Stats.BudgetLooks > 0)
 	{
 		UE_LOG(LogMantle, Log,
-			TEXT("MANTLE_CELLS_BUDGET_SUMMARY %s: %d looks, ladder now %.2f lowest %.2f, pressure now %.2f worst %.2f; at the last look instances %lld, solid %lld, far instances %lld, Nanite root pages %lld, textures %.0f MB, process memory %.3f of the machine (%.0f MB; now working set %.0f MB, private %.0f MB)"),
+			TEXT("MANTLE_CELLS_BUDGET_SUMMARY %s: %d looks, ladder now %.2f lowest %.2f, pressure now %.2f worst %.2f; at the last look instances %lld, solid %lld, far instances %lld, Nanite root pages %lld, textures %.0f MB, process memory %.3f of the machine (%.0f MB; now working set %.0f MB, private %.0f MB), card %.0f of %.0f MB the driver gives (pressure %.2f), full texture detail %.0f m (shortest %.0f m)"),
 			Why, Stats.BudgetLooks, Stats.BudgetLadder, Stats.BudgetLowestLadder, Stats.BudgetPressure, Stats.BudgetWorstPressure, Stats.BudgetInstances, Stats.BudgetSolidThings,
 			Stats.BudgetFarInstances, Stats.BudgetNaniteRootPages, Stats.BudgetTextureBytes / (1024.0 * 1024.0), Stats.BudgetMemoryShare, Stats.BudgetMemoryBytes / (1024.0 * 1024.0),
-			FPlatformMemory::GetStats().UsedPhysical / (1024.0 * 1024.0), FPlatformMemory::GetStats().UsedVirtual / (1024.0 * 1024.0));
+			FPlatformMemory::GetStats().UsedPhysical / (1024.0 * 1024.0), FPlatformMemory::GetStats().UsedVirtual / (1024.0 * 1024.0),
+			Stats.BudgetVideoUsedBytes / (1024.0 * 1024.0), Stats.BudgetVideoBudgetBytes / (1024.0 * 1024.0), Stats.BudgetVideoPressure, Stats.BudgetTextureDetailCm / 100.0,
+			Stats.BudgetLowestTextureDetailCm / 100.0);
 	}
 }
 

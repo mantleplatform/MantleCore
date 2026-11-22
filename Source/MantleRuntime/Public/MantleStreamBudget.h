@@ -38,6 +38,13 @@ struct MANTLERUNTIME_API FMantleBudgetLimits
 	 * (ProcessMemoryCapBytes). The share alone let City Sample take 44 GB of a 63 GB machine, and would leave a 16 GB one too little for the system and other programs.
 	 */
 	int64 ProcessMemoryBytes = MAX_int64;
+
+	/**
+	 * #189: the card as the driver sees it. The textures' limit is a fixed share of the card, and avatars, vehicles, weapons, Lumen, shadows and other programs use the rest with nothing
+	 * watching. So what the driver says is in use (FMantleBudgetUse::VideoUsedBytes) counts against this share of the budget it gives the game (VideoBudgetBytes): at 90% the pressure
+	 * is 1, a cushion before the driver starts moving memory out to RAM (City Sample's freeze: 13.5 GB on a 16 GB card, 1.9 GB more spilled).
+	 */
+	double VideoUseShare = 0.9;
 };
 
 /** What the cells of a place hold now, in the units of FMantleBudgetLimits. */
@@ -53,6 +60,9 @@ struct MANTLERUNTIME_API FMantleBudgetUse
 	int64 TextureBytes = 0;
 	/** The game's process memory, bytes (FMantleStreamBudget::CurrentProcessMemoryBytes: the larger of working set and private bytes); 0 when unknown. */
 	int64 ProcessMemoryBytes = 0;
+	/** #189: the video memory the driver says the game uses now, and the budget it gives the game (FMantleStreamBudget::CurrentVideoMemory); 0 when unknown. */
+	int64 VideoUsedBytes = 0;
+	int64 VideoBudgetBytes = 0;
 };
 
 /** The machine's size, for scaling the counts: bytes of video memory and of RAM; zero or less is unknown (and counts as big enough). */
@@ -134,7 +144,10 @@ public:
 	/** The process's memory over the limits for it: the higher of share / share limit and bytes / byte cap (each 0 when either side is unknown). */
 	static double MemoryPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use);
 
-	/** The higher of the two. */
+	/** #189: the card's use over its cushioned budget: VideoUsedBytes / (VideoBudgetBytes x VideoUseShare); 0 when either is unknown. Comes back slowly, like the process's memory. */
+	static double VideoPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use);
+
+	/** The highest of the three. */
 	static double Pressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use);
 
 	/** The ladder after one step: lowered when Pressure is over Tuning.LowerAbove, raised when under RaiseBelow, else the same. Stays in 0 to 1. */
@@ -148,10 +161,12 @@ public:
 
 	/**
 	 * #189: the full-texture-detail reach after one step (see FMantleBudgetTuning::TextureDetailMaxCm): shorter by TextureDetailStep when the ladder is at 0 and the textures'
-	 * pressure (texture bytes / their limit) is over LowerAbove, longer by the same step (to the max) when Pressure (everything) is under RaiseBelow and the textures would
-	 * still fit after it (their pressure / Step^2, the circle's area grown), else the same.
+	 * pressure (texture bytes / their limit) or the card's (VideoPressure) is over LowerAbove; longer by the same step (to the max) when Pressure (everything) is under RaiseBelow
+	 * and both would still fit after it (the circle's area grown by 1 / Step^2: the textures' pressure that much higher, and the card's higher by what the textures would add,
+	 * TexturesOfVideo being their bytes over the card's cushioned budget); else the same.
 	 */
-	static double NextTextureDetailReach(double ReachCm, double Ladder, double TexturePressure, double Pressure, const FMantleBudgetTuning& Tuning);
+	static double NextTextureDetailReach(double ReachCm, double Ladder, double TexturePressure, double VideoPressure, double TexturesOfVideo, double Pressure,
+		const FMantleBudgetTuning& Tuning);
 
 	/** How far a cell is wanted from, cm: DrawDistance x Scale, but never less than FloorCm and never more than DrawDistance. With scale 1 it is the DrawDistance. */
 	static double ScaledReach(double DrawDistanceCm, double Scale, double FloorCm);
@@ -175,4 +190,10 @@ public:
 
 	/** The game's process memory, bytes: the larger of its working set and its private (committed) bytes (Windows trims the first while the second grows). */
 	static int64 CurrentProcessMemoryBytes();
+
+	/**
+	 * #189: the video memory the driver says the game uses, and the budget it gives the game (RHIGetMemoryStats: DXGI's QueryVideoMemoryInfo on D3D12 and D3D11, Vulkan's memory
+	 * budget), both 0 when the RHI cannot say. -MantleBudgetVideoGB caps the budget, so a run on a big card behaves as a small one would.
+	 */
+	static void CurrentVideoMemory(int64& OutUsedBytes, int64& OutBudgetBytes);
 };
