@@ -224,7 +224,6 @@ bool FMantleSimpleShapesCollisionTest::RunTest(const FString& Parameters)
 		TestTrue(What + TEXT(" hits the mesh"), bHit && Hit.GetComponent() == Component);
 		TestTrue(*FString::Printf(TEXT("%s stops at the box's face, x = -50 (%.2f)"), *What, Hit.ImpactPoint.X), bHit && FMath::Abs(Hit.ImpactPoint.X + 50.0) < 0.5);
 	}
-	Actor->Destroy();
 	return true;
 }
 
