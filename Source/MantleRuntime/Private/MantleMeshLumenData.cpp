@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleMeshLumenData.h"
+#include "MantleCookedPacking.h"
 #include "MantleEngineTag.h"
 
 #include "DistanceFieldAtlas.h"
@@ -95,11 +96,23 @@ bool FMantleMeshLumenFile::ReadHeader(const TConstArrayView<uint8> Bytes, FStrin
 
 	OutEngine.Reset();
 	OutMeshTag.Reset();
-	if (Bytes.Num() < 8 || FMemory::Memcmp(Bytes.GetData(), "MLD1", 4) != 0)
+	TArray<uint8> Copy;
+	if (MantleCookedPacking::HasMagic(Bytes, "MLD2"))
+	{
+		// #189 step 5: the header is the start of the MLD1 inside; only that much is inflated (this runs on the game thread).
+		if (!MantleCookedPacking::UnpackEnvelopePrefix(Bytes, "MLD2", MaxBytes, 4096, Copy))
+		{
+			return false;
+		}
+	}
+	else
+	{
+		Copy.Append(Bytes.GetData(), FMath::Min<int32>(Bytes.Num(), 4096));
+	}
+	if (Copy.Num() < 8 || FMemory::Memcmp(Copy.GetData(), "MLD1", 4) != 0)
 	{
 		return false;
 	}
-	const TArray<uint8> Copy(Bytes.GetData(), FMath::Min<int32>(Bytes.Num(), 4096));
 	FMemoryReader Reader(Copy, /*bIsPersistent*/ true);
 	Reader.Seek(4);
 	uint32 Version = 0;
@@ -112,13 +125,26 @@ bool FMantleMeshLumenFile::Read(const TConstArrayView<uint8> Bytes, const FStrin
 	using namespace MantleMeshLumenDataPrivate;
 
 	OutData = FMantleMeshLumenData();
-	if (Bytes.Num() < 8 || FMemory::Memcmp(Bytes.GetData(), "MLD1", 4) != 0)
+	// FMemoryReader takes a TArray: the MLD1 inflated from an MLD2 (#189 step 5), or a copy of the view's bytes.
+	TArray<uint8> Copy;
+	if (MantleCookedPacking::HasMagic(Bytes, "MLD2"))
 	{
-		SetReason(OutReason, TEXT("is not an MLD1"));
+		FString Reason;
+		if (!MantleCookedPacking::UnpackEnvelope(Bytes, "MLD2", MaxBytes, Copy, &Reason))
+		{
+			SetReason(OutReason, FString::Printf(TEXT("is %s"), *Reason));
+			return false;
+		}
+	}
+	else
+	{
+		Copy.Append(Bytes.GetData(), Bytes.Num());
+	}
+	if (Copy.Num() < 8 || FMemory::Memcmp(Copy.GetData(), "MLD1", 4) != 0)
+	{
+		SetReason(OutReason, TEXT("is not an MLD1 or MLD2"));
 		return false;
 	}
-	// FMemoryReader takes a TArray; the view's bytes are only read.
-	const TArray<uint8> Copy(Bytes.GetData(), Bytes.Num());
 	FMemoryReader Reader(Copy, /*bIsPersistent*/ true);
 	Reader.Seek(4);
 	uint32 Version = 0;

@@ -89,7 +89,7 @@ struct FMantleTextureMip
 /**
  * A texture decoded on the CPU and ready for upload: the half of the build that needs no UObject, so
  * it can run on a worker thread. PF_B8G8R8A8 decoded from PNG/JPEG, or the BC1/BC3/BC4/BC5 blocks and
- * mips of an MTX1 container (Fab F9) copied as they are, without a CPU decode. Build uploads
+ * mips of an MTX2 or MTX1 container (Fab F9) copied as they are, without a CPU decode. Build uploads
  * either the same way.
  */
 struct MANTLERUNTIME_API FMantleDecodedTexture
@@ -123,9 +123,10 @@ struct MANTLERUNTIME_API FMantleDecodedTexture
  * and extended with BC blocks).
  *
  *   Decode(bytes, params)   Any thread. The format is sniffed from the bytes, never trusted from a name.
- *                           MTX1 (the cooked BC container): every header
- *                           field, mip size and offset checked against the format's rules and the
- *                           buffer before anything is allocated, then the blocks copied per mip; the
+ *                           MTX2 or MTX1 (the cooked BC container, MTX2 with each mip a zlib
+ *                           stream): every header field, mip size and offset checked against the
+ *                           format's rules and the buffer before anything is allocated, then the blocks
+ *                           copied (MTX2: inflated, each stream checked whole and exact) per mip; the
  *                           pixel format and role come from the file (BC1/BC3 sRGB: Color; BC1/BC3
  *                           linear and BC4: Data; BC5: Normal), and Params.Role is not consulted. PNG or
  *                           JPEG (older ids, UI images): dimensions checked from the header against
@@ -133,7 +134,7 @@ struct MANTLERUNTIME_API FMantleDecodedTexture
  *                           per Params.Role. Either way the footprint is checked against MaxGpuBytes.
  *   Build(decoded, params)  Game thread. The mips become a never-streamed transient UTexture2D, sRGB or
  *                           linear per role, with its render resource created. Accepts BGRA8 and the
- *                           block formats MTX1 carries, checking every mip's size for its format.
+ *                           block formats MTX2 and MTX1 carry, checking every mip's size for its format.
  *
  * A dedicated server never builds textures (nothing renders there; F8 skips them): Build refuses on one.
  * Failures return false/null with the reason; nothing asserts on bad bytes.

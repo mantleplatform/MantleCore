@@ -830,9 +830,11 @@ private:
 		/**
 		 * #189, streaming sets, a cell material's texture with a low companion (bLowTexture): Build is the low file's. FullBuild is the full file's while something near
 		 * wants it (bWantFull); bFullShown once the materials that use it draw it. bFullFailed: the full file could not be had, so it stays low. bFullPass is set only
-		 * while ApplyResolved makes the full build.
+		 * while ApplyResolved makes the full build. bLowFailed: the low file could not be had (downloaded, verified or decoded), so the record is resolved again and built
+		 * from the full file, like a texture with no low companion (FailBuild).
 		 */
 		bool bLowTexture = false;
+		bool bLowFailed = false;
 		bool bWantFull = false;
 		bool bFullShown = false;
 		bool bFullFailed = false;

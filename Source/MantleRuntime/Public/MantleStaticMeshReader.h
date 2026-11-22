@@ -146,7 +146,9 @@ struct FMantleStaticMeshData : public FMantleStaticMeshLOD
 };
 
 /**
- * Reads MRM2 strictly. The bytes were uploaded by a stranger and arrive over the network, so every
+ * Reads MRM2 strictly, and MRM3, the cook's MRM2 in a zlib envelope (#189 step 5, MantleCookedPacking.h:
+ * the size word checked against MaxPackedRawBytes before anything is allocated, the stream whole and
+ * exact), by inflating it first. The bytes were uploaded by a stranger and arrive over the network, so every
  * count is checked against the format's caps and the bytes left before anything is allocated, every
  * float must be finite, a binormal sign must be exactly +1 or -1, the bounds must be exactly the
  * positions' extent, the sections must tile the index buffer in table order with non-empty unique
@@ -176,7 +178,10 @@ public:
 	static constexpr int32 MaxCollisionHullVertices = 65536;
 	static constexpr float MaxCollisionExtent = 1.0e7f;
 
-	/** True when the bytes start with MRM2's magic (the loader's MRM1/MRM2 dispatch). */
+	/** What an MRM3 may inflate to: cook.StaticMeshMaxRawBytes. */
+	static constexpr int64 MaxPackedRawBytes = 512ll * 1024 * 1024;
+
+	/** True when the bytes start with MRM3's or MRM2's magic (the loader's MRM1/MRM2 dispatch). */
 	static bool HasMagic(TConstArrayView<uint8> Data);
 
 	/** False, with the reason in OutError and Out left empty, on anything it refuses. */

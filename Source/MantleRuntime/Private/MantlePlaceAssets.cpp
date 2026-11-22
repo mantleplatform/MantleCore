@@ -2121,7 +2121,7 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 	}
 	// #189: a cell material's texture is built from its low companion first (its cooked file's mips from 512 down); the full file is built only while something
 	// near wants it (UpdateTextureDetail, which calls this again with bFullPass for the full build).
-	const bool bUseLow = Record.Kind == EAssetKind::Texture && Record.bStreamed && !Record.bFullPass && InAsset.HasLowTexture();
+	const bool bUseLow = Record.Kind == EAssetKind::Texture && Record.bStreamed && !Record.bFullPass && !Record.bLowFailed && InAsset.HasLowTexture();
 	FMantleUploadedAsset LowAnswer;
 	if (bUseLow)
 	{
@@ -3828,6 +3828,31 @@ void FMantlePlaceAssets::MarkReady(FBuild& Build, UObject* Object)
 
 void FMantlePlaceAssets::FailBuild(FBuild& Build, const FString& Error)
 {
+	// #189: a cell texture's low file that could not be had (a download that failed again after a fresh URL, a hash or a decode that failed) is not the texture
+	// failing. Its records leave this build and are resolved again, and ApplyResolved builds them from the full file (bLowFailed). Only the records change here:
+	// FailBuild runs inside the build loop, which no build may be added to.
+	if (Build.Key.Kind == EAssetKind::Texture)
+	{
+		for (TPair<FString, FRecord>& Pair : Records)
+		{
+			FRecord& Record = Pair.Value;
+			if (!Record.bLowTexture || Record.bFailed || !Record.Build.IsSet() || Record.Build.GetValue() != Build.Key)
+			{
+				continue;
+			}
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_PLACE_ASSETS texture %s: its low file %s; building it from the full file"), *Record.Id, *Error);
+			Build.RecordIds.Remove(Record.Id);
+			Record.bLowFailed = true;
+			Record.bLowTexture = false;
+			Record.bWantFull = false;
+			Record.bFullShown = false;
+			Record.FullBuild.Reset();
+			Record.Build.Reset();
+			Record.bResolved = false;
+			Record.bResolving = false;
+			Record.NextResolveAt = 0.0;
+		}
+	}
 	Build.State = EBuildState::Failed;
 	Build.Error = Error;
 	// Nothing will read a failed build's file, Nanite included.
@@ -3870,7 +3895,10 @@ void FMantlePlaceAssets::FailBuild(FBuild& Build, const FString& Error)
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS Nanite data %s not present: it %s"), *FString::Join(Build.RecordIds, TEXT(",")), *Error);
 		return;
 	}
-	UE_LOG(LogMantle, Error, TEXT("MANTLE_PLACE_ASSETS FAIL %s %s: %s"), KindName(Build.Key.Kind), *FString::Join(Build.RecordIds, TEXT(",")), *Error);
+	if (!Build.RecordIds.IsEmpty())
+	{
+		UE_LOG(LogMantle, Error, TEXT("MANTLE_PLACE_ASSETS FAIL %s %s: %s"), KindName(Build.Key.Kind), *FString::Join(Build.RecordIds, TEXT(",")), *Error);
+	}
 }
 
 void FMantlePlaceAssets::ReleasePending(FBuild& Build)

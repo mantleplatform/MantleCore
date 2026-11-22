@@ -372,6 +372,8 @@ namespace MantleNaniteSideFileTestPrivate
 		bool bServe = true;
 		/** #189: a texture's low companion, answered as lowUrl and cookInfo.low when set. */
 		TArray<uint8> LowBytes;
+		/** #189: false to answer the low companion's url with 404 (a low file whose public copy is missing). */
+		bool bServeLow = true;
 	};
 
 	/** Resolves the served assets as approved, with the cooked hash of their bytes; any other id is unknown. */
@@ -431,7 +433,7 @@ namespace MantleNaniteSideFileTestPrivate
 			const bool bLow = Url.EndsWith(TEXT("#low"));
 			const FServedAsset* Served = Source->Assets.Find(bLow ? Url.RightChop(7).LeftChop(4) : Url.RightChop(7));
 			const TArray<uint8>* Bytes = Served ? (bLow ? &Served->LowBytes : &Served->Bytes) : nullptr;
-			if (Served && Served->bServe && Bytes && !Bytes->IsEmpty())
+			if (Served && (bLow ? Served->bServeLow : Served->bServe) && Bytes && !Bytes->IsEmpty())
 			{
 				Sink->Serialize(const_cast<uint8*>(Bytes->GetData()), Bytes->Num());
 				Result.StatusCode = 200;
@@ -2720,6 +2722,86 @@ bool FMantleTextureDetailByDistanceTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("the material draws the low texture again"), BaseColorWidth(), 512);
 
 	Assets->ReleaseEntityAssets(80);
+	TestTrue(TEXT("the release drops the texture"), PumpUntil([&Assets]() { return Assets->GetStreamedCounts().Textures == 0; }, 30.0));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTextureLowFallsBackToFullTest,
+	"Mantle.Runtime.Place.StreamedAssets.LowTextureFallsBackToFull",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTextureLowFallsBackToFullTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTextureDetailTestPrivate;
+	// #189: a cell texture whose low companion cannot be had (its url answers 404, again after a fresh resolve) is not a failed texture: it is built from the full
+	// file, and the material draws that, with no view anywhere near.
+	const TSharedRef<FServingResolver> Server = MakeShared<FServingResolver>();
+	FServedAsset Mesh;
+	Mesh.Kind = TEXT("mesh");
+	Mesh.Bytes = MakeMrm1Box();
+	Server->Assets.Add(DetailMesh, Mesh);
+	FServedAsset Material;
+	Material.Kind = TEXT("material");
+	const FTCHARToUTF8 Document(*FString::Printf(TEXT("{\"schemaVersion\":1,\"alphaMode\":\"opaque\",\"doubleSided\":false,\"textures\":{\"baseColor\":\"%s\"}}"), DetailTexture));
+	Material.Bytes.Append(reinterpret_cast<const uint8*>(Document.Get()), Document.Length());
+	Server->Assets.Add(DetailMaterial, Material);
+	FServedAsset Texture;
+	Texture.Kind = TEXT("texture");
+	Texture.Bytes = MakeMtx1(1024);
+	Texture.LowBytes = MakeMtx1(512);
+	Texture.bServeLow = false;
+	Server->Assets.Add(DetailTexture, Texture);
+
+	FMantleAssetStoreSettings StoreSettings;
+	StoreSettings.RootDir = FPaths::AutomationTransientDir() / TEXT("TextureLowFallback") / FGuid::NewGuid().ToString();
+	StoreSettings.MaxAttempts = 1;
+	const TSharedRef<FServingFetcher> Fetcher = MakeShared<FServingFetcher>();
+	Fetcher->Source = Server;
+	FMantlePlaceAssetSettings Settings;
+	Settings.bAutoPump = false;
+	Settings.bRenderAssets = true;
+	Settings.bLoadNanite = false;
+	Settings.bAsyncCollisionCook = false;
+	Settings.Resolver = Server;
+	const TSharedRef<FMantleAssetStore> Store = FMantleAssetStore::Create(StoreSettings, Fetcher);
+	Settings.Store = Store;
+	const TSharedRef<FMantlePlaceAssets> Assets = FMantlePlaceAssets::PrepareStreaming(MakeDetailPlace(), Settings, FMantlePlaceAssetsDone());
+	auto PumpUntil = [&Store, &Assets](TFunctionRef<bool()> Done, const double Seconds)
+	{
+		const double Deadline = FPlatformTime::Seconds() + Seconds;
+		while (!Done())
+		{
+			if (FPlatformTime::Seconds() > Deadline)
+			{
+				return false;
+			}
+			Store->Pump();
+			Assets->Pump();
+			FPlatformProcess::Sleep(0.001f);
+		}
+		return true;
+	};
+	if (!TestTrue(TEXT("the root completes"), PumpUntil([&Assets]() { return Assets->IsComplete(); }, 30.0)))
+	{
+		return false;
+	}
+
+	TArray<FMantleEntity> Cell;
+	Cell.Add(DetailEntity());
+	Assets->AcquireEntityAssets(81, Cell);
+	if (!TestTrue(TEXT("the cell's assets settle"), PumpUntil([&Assets]() { return Assets->GetHolderAssets(81).IsSettled(); }, 30.0)))
+	{
+		return false;
+	}
+	const FString FullUrl = FString(TEXT("test://")) + DetailTexture;
+	const FString LowUrl = FullUrl + TEXT("#low");
+	TestTrue(TEXT("the low file was asked for, and again after a fresh resolve"), Fetcher->Fetched.FindRef(LowUrl) >= 2);
+	TestEqual(TEXT("the full file was fetched once"), Fetcher->Fetched.FindRef(FullUrl), 1);
+	TestEqual(TEXT("the texture is not counted as low"), Assets->GetStreamedCounts().LowTextures, 0);
+	TestEqual(TEXT("the material draws the 1024 full texture"), BaseColorWidth(), 1024);
+
+	Assets->ReleaseEntityAssets(81);
 	TestTrue(TEXT("the release drops the texture"), PumpUntil([&Assets]() { return Assets->GetStreamedCounts().Textures == 0; }, 30.0));
 	return true;
 }

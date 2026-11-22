@@ -38,6 +38,9 @@ struct MANTLERUNTIME_API FMantleMeshLumenData
  *     which a runtime mesh has not got),
  *   the card representation (FCardRepresentationData's own operator<<).
  * Anything else, a different engine or another mesh's file, reads as "not present": the mesh builds without.
+ *
+ * The backend stores it as MLD2 (#189 step 5): the MLD1 in a zlib envelope (MantleCookedPacking.h). Read and
+ * ReadHeader take either; ReadHeader inflates only the header's bytes. An MLD1 is what the plugin uploads.
  */
 class MANTLERUNTIME_API FMantleMeshLumenFile
 {
@@ -48,11 +51,11 @@ public:
 	/** The file for the mesh MeshTag names. Empty when the distance field is not valid (a mesh too thin or empty to have one). */
 	static TArray<uint8> Write(const FString& MeshTag, const FDistanceFieldVolumeData& DistanceField, const FCardRepresentationData& Cards);
 
-	/** False, with the reason, when Bytes is not an MLD1 for MeshTag's mesh from this engine. Any thread. */
+	/** False, with the reason, when Bytes is not an MLD1 (or MLD2) for MeshTag's mesh from this engine. Any thread. */
 	static bool Read(TConstArrayView<uint8> Bytes, const FString& MeshTag, FMantleMeshLumenData& OutData, FString* OutReason = nullptr);
 
 	/**
-	 * The header alone: the engine tag and the mesh tag. False when Bytes does not start as an MLD1 of this format
+	 * The header alone: the engine tag and the mesh tag. False when Bytes does not start as an MLD1 (or MLD2) of this format
 	 * version. What a publish checks before it uploads, and what the place file's lumen entry repeats.
 	 */
 	static bool ReadHeader(TConstArrayView<uint8> Bytes, FString& OutEngine, FString& OutMeshTag);
