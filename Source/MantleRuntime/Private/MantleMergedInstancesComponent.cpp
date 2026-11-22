@@ -22,6 +22,7 @@
 #include "PhysicsEngine/PhysicsSettings.h"
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 #include "PhysicsPublic.h"
+#include "PrimitiveComponentHelper.h"
 
 namespace MantleMergedInstancesPrivate
 {
@@ -506,7 +507,8 @@ FBox UMantleMergedInstancesComponent::GetNavigationBounds() const
 void UMantleMergedInstancesComponent::GetNavigationData(FNavigationRelevantData& Data) const
 {
 	// FInstancedStaticMeshComponentHelper::GetNavigationData, for this component's instances.
-	AddNavigationModifier(Data);
+	// The engine's own helper (UPrimitiveComponent::AddNavigationModifier, which it calls, is not exported to modules).
+	FPrimitiveComponentHelper::AddNavigationModifier(*this, Data);
 
 	UStaticMesh* MeshAsset = GetStaticMesh();
 	if (MeshAsset && !MeshAsset->IsCompiling() && MeshAsset->GetNavCollision())
