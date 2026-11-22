@@ -24,6 +24,8 @@
 #include "MantlePhysicsProp.h"
 #include "MantlePlaceAssetConverter.h"
 #include "MantlePlaceAssets.h"
+#include "MantlePlaceMaterial.h"
+#include "MantlePlaceUploadShape.h"
 #include "MantlePlaceBuilder.h"
 #include "MantlePlaceLimits.h"
 #include "MantlePlaceSettingsActor.h"
@@ -650,6 +652,78 @@ namespace
 			checkf(false, TEXT("EMantleAssetKind %d has no manifest name"), static_cast<int32>(Kind));
 			return TEXT("StaticMesh");
 		}
+	}
+
+	/** One assets[] entry as the place file writes it. */
+	void WriteAssetJson(const TSharedRef<FWriter>& Writer, const FMantleAssetRef& Asset)
+	{
+		Writer->WriteObjectStart();
+		Writer->WriteValue(TEXT("id"), Asset.Id);
+		Writer->WriteValue(TEXT("kind"), AssetKindName(Asset.Kind));
+		Writer->WriteValue(TEXT("hash"), Asset.Hash);
+		Writer->WriteValue(TEXT("bytes"), static_cast<double>(Asset.Bytes));
+		// #149: a mesh's Lumen side file, and the engine that file was baked by.
+		if (!Asset.Lumen.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("lumen"), Asset.Lumen);
+		}
+		// Stage N: a mesh's Nanite side file (a mesh without one has no key), and the engine a Lumen or Nanite entry was baked by.
+		if (!Asset.Nanite.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("nanite"), Asset.Nanite);
+		}
+		if (!Asset.Engine.IsEmpty())
+		{
+			Writer->WriteValue(TEXT("engine"), Asset.Engine);
+		}
+		// Placing mode (mantleplatform/mantle#184): a mesh's snap sockets.
+		if (!Asset.Sockets.IsEmpty())
+		{
+			Writer->WriteArrayStart(TEXT("sockets"));
+			for (const FMantlePlaceSocket& Socket : Asset.Sockets)
+			{
+				Writer->WriteObjectStart();
+				Writer->WriteValue(TEXT("name"), Socket.Name);
+				Writer->WriteValue(TEXT("kind"), Socket.Kind);
+				Writer->WriteArrayStart(TEXT("position"));
+				Writer->WriteValue(Socket.Position.X);
+				Writer->WriteValue(Socket.Position.Y);
+				Writer->WriteValue(Socket.Position.Z);
+				Writer->WriteArrayEnd();
+				Writer->WriteArrayStart(TEXT("rotation"));
+				Writer->WriteValue(Socket.Rotation.Pitch);
+				Writer->WriteValue(Socket.Rotation.Yaw);
+				Writer->WriteValue(Socket.Rotation.Roll);
+				Writer->WriteArrayEnd();
+				if (!Socket.Accepts.IsEmpty())
+				{
+					Writer->WriteArrayStart(TEXT("accepts"));
+					for (const FString& Accepted : Socket.Accepts)
+					{
+						Writer->WriteValue(Accepted);
+					}
+					Writer->WriteArrayEnd();
+				}
+				Writer->WriteObjectEnd();
+			}
+			Writer->WriteArrayEnd();
+		}
+		Writer->WriteObjectEnd();
+	}
+
+	/** MantleCore#189: how many UTF-8 bytes Assets take as the place file's assets[] array writes them (the cell index entry aside). */
+	int64 AssetListBytes(const TArray<FMantleAssetRef>& Assets)
+	{
+		FString Text;
+		const TSharedRef<FWriter> Writer = FWriterFactory::Create(&Text);
+		Writer->WriteArrayStart();
+		for (const FMantleAssetRef& Asset : Assets)
+		{
+			WriteAssetJson(Writer, Asset);
+		}
+		Writer->WriteArrayEnd();
+		Writer->Close();
+		return FTCHARToUTF8(*Text).Length();
 	}
 
 	/** The lowercase hex MD5 of Text's UTF-8 bytes. */
@@ -6935,10 +7009,21 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		Result.InstanceTotal = FMantlePlaceInstancing::CountInstances(Place);
 		Result.DrawDistanceEntities = FMantleDrawDistance::CountEntities(Place);
 		Result.CollisionOnlyEntities = 0;
+		// MantleCore#189: the meshes drawn somewhere and the ones only ever collision; a mesh only collision gets no Lumen or Nanite file.
+		TSet<FString> DrawnMeshIds;
+		TSet<FString> CollisionMeshIds;
+		auto NoteMesh = [&DrawnMeshIds, &CollisionMeshIds](const FMantleStaticMeshProps& Mesh)
+		{
+			(Mesh.bVisible ? DrawnMeshIds : CollisionMeshIds).Add(Mesh.Mesh);
+		};
 		for (const FMantleEntity& Entity : Place.Entities)
 		{
 			const FMantleStaticMeshProps* Mesh = MantleMeshPropsOf(Entity);
 			Result.CollisionOnlyEntities += Mesh && !Mesh->bVisible ? 1 : 0;
+			if (Mesh)
+			{
+				NoteMesh(*Mesh);
+			}
 		}
 		for (const FMantlePlannedCell& Cell : Result.Cells)
 		{
@@ -6947,6 +7032,10 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				const FMantleStaticMeshProps* Mesh = MantleMeshPropsOf(Entity);
 				Result.DrawDistanceEntities += Mesh && Mesh->DrawDistance > 0.0 ? 1 : 0;
 				Result.CollisionOnlyEntities += Mesh && !Mesh->bVisible ? 1 : 0;
+				if (Mesh)
+				{
+					NoteMesh(*Mesh);
+				}
 			}
 		}
 		// Meshes hidden in game that still collide: kept, solid and never drawn, and said so a creator sees they were.
@@ -6967,19 +7056,57 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		Measure.Bytes = FMantleCellFiles::MaxIndexBytes;
 		const FString RootText = ToJson(Place, Result.Cells.Num() > 0 ? &Measure : nullptr);
 		const FTCHARToUTF8 RootJson(*RootText);
-		Result.PlaceBytes = RootJson.Length();
-		if (Result.InstanceTotal > FMantlePlaceLimits::MaxInstancesPerPlace || Result.PlaceBytes > FMantlePlaceLimits::MaxPlaceFileBytes)
+		Result.PlaceBytesAsWritten = RootJson.Length();
+		// MantleCore#189: and measured as the backend gets it, after every upload. Before conversion each mesh and material is one entry
+		// with a provisional md5 hash; uploaded, each has a sha256 hash, and its textures and Lumen and Nanite files are entries too
+		// (City Sample: 15,439 entries, 5.4 MiB, became 32,135 and 9.1 MiB, refused after three hours of uploads).
+		// The place is refused only when the least it can be is over the limit (the lower bound); the most it can be (the worst case)
+		// over it is a warning. Before conversion the two differ by the materials' textures; after it, by next to nothing.
+		auto SideFiles = [&Uploads, &DrawnMeshIds, &CollisionMeshIds](const FMantleAssetRef& Mesh, const FString& Key)
+		{
+			const FSoftObjectPath* Source = Uploads.SourceOf.Find(Key);
+			return FMantlePlaceUploadShape::ExpectedSideFiles(Source ? Cast<UStaticMesh>(Source->ResolveObject()) : nullptr,
+				CollisionMeshIds.Contains(Mesh.Id) && !DrawnMeshIds.Contains(Mesh.Id));
+		};
+		const FMantlePlaceUploadShape Lowest = FMantlePlaceUploadShape::Project(Place.Assets, Result.ProvisionalKeys, Options.Assets, Uploads.Limits,
+			EMantleUploadShapeBound::Lowest, SideFiles);
+		const FMantlePlaceUploadShape Shape = FMantlePlaceUploadShape::Project(Place.Assets, Result.ProvisionalKeys, Options.Assets, Uploads.Limits,
+			EMantleUploadShapeBound::Worst, SideFiles);
+		const int64 WrittenAssets = AssetListBytes(Place.Assets);
+		Result.UploadedAssets = Shape.Assets.Num();
+		Result.PlaceBytes = Result.PlaceBytesAsWritten + (AssetListBytes(Lowest.Assets) - WrittenAssets);
+		Result.PlaceBytesWorst = Result.PlaceBytesAsWritten + (AssetListBytes(Shape.Assets) - WrittenAssets);
+		if (Result.PlaceBytesWorst != Result.PlaceBytesAsWritten)
+		{
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_ROOT_SIZE %lld bytes as written; once uploaded at least %lld, at most %lld: %d assets become %d to %d (%d textures, %d Lumen and %d Nanite files to come)"),
+				Result.PlaceBytesAsWritten, Result.PlaceBytes, Result.PlaceBytesWorst, Place.Assets.Num(), Lowest.Assets.Num(), Shape.Assets.Num(),
+				Shape.AddedTextures, Shape.AddedLumen, Shape.AddedNanite);
+		}
+		const int64 MaxBytes = Options.MaxPlaceFileBytes > 0 ? Options.MaxPlaceFileBytes : FMantlePlaceLimits::MaxPlaceFileBytes;
+		if (Result.PlaceBytes <= MaxBytes && Result.PlaceBytesWorst > MaxBytes)
+		{
+			Result.BudgetWarning = FString::Printf(TEXT("The place file may be too big for Mantle once its files are prepared: at least %s and at most %s, against the %s Mantle accepts, depending on how many textures its %s material(s) make. Publish measures it again after preparing them, before anything is uploaded."),
+				*FMantlePlaceInstancing::DescribeBytes(Result.PlaceBytes), *FMantlePlaceInstancing::DescribeBytes(Result.PlaceBytesWorst),
+				*FMantlePlaceInstancing::DescribeBytes(MaxBytes), *FText::AsNumber(Shape.AddedTextures / FMath::Max(1, MantlePlaceTextureSlotCount)).ToString());
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_ROOT_SIZE %s"), *Result.BudgetWarning);
+		}
+		if (Result.InstanceTotal > FMantlePlaceLimits::MaxInstancesPerPlace || Result.PlaceBytes > MaxBytes)
 		{
 			Result.bOverBudget = true;
 			Result.BudgetProblem = FMantlePlaceInstancing::DescribeOverBudget(Result.InstanceTotal, FMantlePlaceLimits::MaxInstancesPerPlace,
-				Result.PlaceBytes, FMantlePlaceLimits::MaxPlaceFileBytes);
+				Result.PlaceBytes, MaxBytes);
 			// What fills it, so the creator (and we) know what to move or trim.
-			if (Result.PlaceBytes > FMantlePlaceLimits::MaxPlaceFileBytes)
+			if (Result.PlaceBytes > MaxBytes)
 			{
 				const FString Biggest = MantlePlaceExporterRootSize::Breakdown(RootText);
 				if (!Biggest.IsEmpty())
 				{
 					Result.BudgetProblem += FString::Printf(TEXT(" Its biggest parts: %s."), *Biggest);
+				}
+				if (Lowest.Assets.Num() > Place.Assets.Num())
+				{
+					Result.BudgetProblem += FString::Printf(TEXT(" Once uploaded its asset list holds at least %s entries, not %s: each mesh's Lumen and Nanite files are listed too, and each material's textures."),
+						*FText::AsNumber(Lowest.Assets.Num()).ToString(), *FText::AsNumber(Place.Assets.Num()).ToString());
 				}
 			}
 			Result.Errors.Add(FMantleParseError{ TEXT("/entities"), Result.BudgetProblem });
@@ -7972,58 +8099,7 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place, const FMantleCel
 		{
 			WriteCellIndexEntry();
 		}
-		Writer->WriteObjectStart();
-		Writer->WriteValue(TEXT("id"), Asset.Id);
-		Writer->WriteValue(TEXT("kind"), AssetKindName(Asset.Kind));
-		Writer->WriteValue(TEXT("hash"), Asset.Hash);
-		Writer->WriteValue(TEXT("bytes"), static_cast<double>(Asset.Bytes));
-		// #149: a mesh's Lumen side file, and the engine that file was baked by.
-		if (!Asset.Lumen.IsEmpty())
-		{
-			Writer->WriteValue(TEXT("lumen"), Asset.Lumen);
-		}
-		// Stage N: a mesh's Nanite side file (a mesh without one has no key), and the engine a Lumen or Nanite entry was baked by.
-		if (!Asset.Nanite.IsEmpty())
-		{
-			Writer->WriteValue(TEXT("nanite"), Asset.Nanite);
-		}
-		if (!Asset.Engine.IsEmpty())
-		{
-			Writer->WriteValue(TEXT("engine"), Asset.Engine);
-		}
-		// Placing mode (mantleplatform/mantle#184): a mesh's snap sockets.
-		if (!Asset.Sockets.IsEmpty())
-		{
-			Writer->WriteArrayStart(TEXT("sockets"));
-			for (const FMantlePlaceSocket& Socket : Asset.Sockets)
-			{
-				Writer->WriteObjectStart();
-				Writer->WriteValue(TEXT("name"), Socket.Name);
-				Writer->WriteValue(TEXT("kind"), Socket.Kind);
-				Writer->WriteArrayStart(TEXT("position"));
-				Writer->WriteValue(Socket.Position.X);
-				Writer->WriteValue(Socket.Position.Y);
-				Writer->WriteValue(Socket.Position.Z);
-				Writer->WriteArrayEnd();
-				Writer->WriteArrayStart(TEXT("rotation"));
-				Writer->WriteValue(Socket.Rotation.Pitch);
-				Writer->WriteValue(Socket.Rotation.Yaw);
-				Writer->WriteValue(Socket.Rotation.Roll);
-				Writer->WriteArrayEnd();
-				if (!Socket.Accepts.IsEmpty())
-				{
-					Writer->WriteArrayStart(TEXT("accepts"));
-					for (const FString& Accepted : Socket.Accepts)
-					{
-						Writer->WriteValue(Accepted);
-					}
-					Writer->WriteArrayEnd();
-				}
-				Writer->WriteObjectEnd();
-			}
-			Writer->WriteArrayEnd();
-		}
-		Writer->WriteObjectEnd();
+		WriteAssetJson(Writer, Asset);
 	}
 	if (!bCellIndexWritten)
 	{

@@ -103,8 +103,12 @@ struct MANTLEEDITOR_API FMantlePackagePublish
  */
 struct MANTLEEDITOR_API FMantlePlaceSizeCheck
 {
-	/** The root place file's size in bytes and its instanced mesh count, as measured (the scenery in cells does not count). */
+	/**
+	 * The root place file's size in bytes and its instanced mesh count, as measured (the scenery in cells does not count). Bytes is the
+	 * least the file can be once uploaded (FMantleExportResult::PlaceBytes), WorstBytes the most (PlaceBytesWorst).
+	 */
 	int64 Bytes = 0;
+	int64 WorstBytes = 0;
 	int64 Instances = 0;
 
 	/** The root is over the instance limit or the file-size limit: the publish stops here. */
@@ -152,6 +156,12 @@ public:
 	 * to fix it, when the place cannot fit; the session stops there. A source that cannot tell passes.
 	 */
 	virtual bool CheckPlaceSize(FMantlePlaceSizeCheck& OutCheck) { return true; }
+
+	/**
+	 * MantleCore#189: CheckPlaceSize again once every file is converted and before any upload, now that each material's textures are
+	 * known (the first check counts none, so a place it lets through can still be too big). Same contract; a source that cannot tell passes.
+	 */
+	virtual bool CheckConvertedPlaceSize(const FMantlePlaceAssetSet& Set, FMantlePlaceSizeCheck& OutCheck) { return true; }
 
 	/** Converting is split into steps so the editor keeps running between them. */
 	virtual int32 NumConversionSteps() const = 0;
@@ -281,6 +291,7 @@ public:
 	virtual FString GetLevelName() const override;
 	virtual bool Prepare(FMantleValidationResult& OutValidation, FString& OutMessage) override;
 	virtual bool CheckPlaceSize(FMantlePlaceSizeCheck& OutCheck) override;
+	virtual bool CheckConvertedPlaceSize(const FMantlePlaceAssetSet& Set, FMantlePlaceSizeCheck& OutCheck) override;
 	virtual bool GetCellUploads(TArray<FMantlePlaceUpload>& OutFiles, FString& OutMessage) override;
 	virtual bool MakeCellIndex(const TMap<FString, FMantleCellFileRef>& FilesByKey, FMantlePlaceUpload& OutIndex, FString& OutMessage) override;
 	virtual bool WriteRoot(const FMantleCellRoot& Index, FString& OutPlaceJson, FString& OutMessage) override;
@@ -311,6 +322,9 @@ public:
 	virtual void EndPublish() override;
 
 private:
+	/** CheckPlaceSize (Converted null) and CheckConvertedPlaceSize: the level exported and measured, with Converted's files if given. */
+	bool MeasurePlaceSize(const FMantlePlaceAssetSet* Converted, FMantlePlaceSizeCheck& OutCheck);
+
 	TWeakObjectPtr<UWorld> World;
 	FString LevelName;
 	FString LevelKey;
