@@ -11,6 +11,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "HAL/IConsoleManager.h"
 #include "EngineUtils.h"
 #include "LevelInstance/LevelInstanceInterface.h"
 #include "LevelInstance/LevelInstanceSubsystem.h"
@@ -201,7 +202,7 @@ FMantleDrawDistanceSource FMantleDrawDistance::ReadComponent(const UStaticMeshCo
 }
 
 void FMantleDrawDistance::PlanStructures(TConstArrayView<double> OwnerMinBand, TConstArrayView<double> OwnerMaxBand, TConstArrayView<FMantleStructurePiece> Links,
-	TArray<double>& OutOwnerDistance)
+	TArray<double>& OutOwnerDistance, TArray<int32>* OutOwnerStructure)
 {
 	using namespace MantleDrawDistancePrivate;
 	const int32 Owners = FMath::Min(OwnerMinBand.Num(), OwnerMaxBand.Num());
@@ -286,99 +287,184 @@ void FMantleDrawDistance::PlanStructures(TConstArrayView<double> OwnerMinBand, T
 		const bool bMixed = StructureMin[Root] < StructureMax[Root];
 		OutOwnerDistance[Index] = bMixed ? FMath::Min(StructureMax[Root], StructureCapCm) : StructureMax[Root];
 	}
+	if (OutOwnerStructure)
+	{
+		OutOwnerStructure->SetNumUninitialized(Owners);
+		for (int32 Index = 0; Index < Owners; ++Index)
+		{
+			(*OutOwnerStructure)[Index] = FindRoot(Parent, Index);
+		}
+	}
+}
+
+namespace MantleDrawDistancePrivate
+{
+	/** Every banded mesh component of World with its owner, pieces (an instance each) and own band; the owners' distances and structures. */
+	struct FStructurePlan
+	{
+		struct FMember
+		{
+			const UStaticMeshComponent* Component = nullptr;
+			int32 Owner = INDEX_NONE;
+			int32 Pieces = 1;
+			double Band = 0.0;
+		};
+		TArray<FMember> Members;
+		TArray<double> MinBand;
+		TArray<double> MaxBand;
+		TArray<double> Distances;
+		TArray<int32> Structures;
+		int32 LinkPieces = 0;
+	};
+
+	FStructurePlan PlanWorld(const UWorld* World)
+	{
+		FStructurePlan Plan;
+		if (!World)
+		{
+			return Plan;
+		}
+		const ULevelInstanceSubsystem* LevelInstances = World->GetSubsystem<ULevelInstanceSubsystem>();
+		TMap<const AActor*, int32> OwnerIndex;
+		TArray<FMantleStructurePiece> Links;
+		for (TActorIterator<AActor> It(const_cast<UWorld*>(World)); It; ++It)
+		{
+			const AActor* Actor = *It;
+			// The outermost actor: a Level Instance's actors publish on their own, but they are one structure with the instance.
+			const AActor* Outer = Actor;
+			for (int32 Depth = 0; LevelInstances && Depth < 16; ++Depth)
+			{
+				const ILevelInstanceInterface* Parent = LevelInstances->GetOwningLevelInstance(Outer->GetLevel());
+				const AActor* ParentActor = Parent ? Cast<AActor>(Parent) : nullptr;
+				if (!ParentActor || ParentActor == Outer)
+				{
+					break;
+				}
+				Outer = ParentActor;
+			}
+			TInlineComponentArray<UStaticMeshComponent*> Components(Actor);
+			for (const UStaticMeshComponent* Component : Components)
+			{
+				const UStaticMesh* Mesh = Component ? Component->GetStaticMesh() : nullptr;
+				if (!Mesh || !FMantlePlaceExporter::IsShownInGame(Component))
+				{
+					continue;
+				}
+				const FMantleDrawDistanceSource Source = FMantleDrawDistance::ReadComponent(Component, Mesh);
+				const double Band = BandFor(Source.SphereRadius);
+				if (Source.bNeverDistanceCull || HasOwnDistance(Source) || Band <= 0.0)
+				{
+					continue;
+				}
+				int32& Index = OwnerIndex.FindOrAdd(Outer, INDEX_NONE);
+				if (Index == INDEX_NONE)
+				{
+					Index = Plan.MinBand.Add(Band);
+					Plan.MaxBand.Add(Band);
+				}
+				else
+				{
+					Plan.MinBand[Index] = FMath::Min(Plan.MinBand[Index], Band);
+					Plan.MaxBand[Index] = FMath::Max(Plan.MaxBand[Index], Band);
+				}
+				const UInstancedStaticMeshComponent* Instanced = Cast<UInstancedStaticMeshComponent>(Component);
+				Plan.Members.Add(FStructurePlan::FMember{ Component, Index, Instanced ? Instanced->GetInstanceCount() : 1, Band });
+				if (Source.SphereRadius < FMantleDrawDistance::LinkMinRadius)
+				{
+					continue;
+				}
+				// Instances one by one (one set may be spread over a whole district); a plain mesh as itself.
+				if (Instanced)
+				{
+					const FBox MeshBox = Mesh->GetBounds().GetBox();
+					for (int32 At = 0; At < Instanced->GetInstanceCount(); ++At)
+					{
+						FTransform Instance;
+						if (Instanced->GetInstanceTransform(At, Instance, /*bWorldSpace*/ true))
+						{
+							Links.Add(FMantleStructurePiece{ Index, MeshBox.TransformBy(Instance) });
+						}
+					}
+				}
+				else
+				{
+					Links.Add(FMantleStructurePiece{ Index, Component->CalcBounds(Component->GetComponentTransform()).GetBox() });
+				}
+			}
+		}
+		Plan.LinkPieces = Links.Num();
+		FMantleDrawDistance::PlanStructures(Plan.MinBand, Plan.MaxBand, Links, Plan.Distances, &Plan.Structures);
+		return Plan;
+	}
+
+	/** "120m=N 250m=N ..." for the pieces at each distance. */
+	FString BandLine(const TMap<int32, int64>& Pieces)
+	{
+		TArray<int32> Keys;
+		Pieces.GetKeys(Keys);
+		Keys.Sort();
+		FString Line;
+		for (const int32 Key : Keys)
+		{
+			Line += FString::Printf(TEXT("%s%dm=%lld"), Line.IsEmpty() ? TEXT("") : TEXT(" "), Key / 100, Pieces[Key]);
+		}
+		return Line;
+	}
 }
 
 void FMantleDrawDistance::BuildStructureDistances(const UWorld* World, TMap<const UStaticMeshComponent*, double>& Out)
 {
 	using namespace MantleDrawDistancePrivate;
 	Out.Reset();
-	if (!World)
-	{
-		return;
-	}
-	const ULevelInstanceSubsystem* LevelInstances = World->GetSubsystem<ULevelInstanceSubsystem>();
-	TMap<const AActor*, int32> OwnerIndex;
-	TArray<double> MinBand;
-	TArray<double> MaxBand;
-	TArray<FMantleStructurePiece> Links;
-	TArray<TPair<const UStaticMeshComponent*, int32>> Members;
-	for (TActorIterator<AActor> It(const_cast<UWorld*>(World)); It; ++It)
-	{
-		const AActor* Actor = *It;
-		// The outermost actor: a Level Instance's actors publish on their own, but they are one structure with the instance.
-		const AActor* Outer = Actor;
-		for (int32 Depth = 0; LevelInstances && Depth < 16; ++Depth)
-		{
-			const ILevelInstanceInterface* Parent = LevelInstances->GetOwningLevelInstance(Outer->GetLevel());
-			const AActor* ParentActor = Parent ? Cast<AActor>(Parent) : nullptr;
-			if (!ParentActor || ParentActor == Outer)
-			{
-				break;
-			}
-			Outer = ParentActor;
-		}
-		TInlineComponentArray<UStaticMeshComponent*> Components(Actor);
-		for (const UStaticMeshComponent* Component : Components)
-		{
-			const UStaticMesh* Mesh = Component ? Component->GetStaticMesh() : nullptr;
-			if (!Mesh || !FMantlePlaceExporter::IsShownInGame(Component))
-			{
-				continue;
-			}
-			const FMantleDrawDistanceSource Source = ReadComponent(Component, Mesh);
-			const double Band = BandFor(Source.SphereRadius);
-			if (Source.bNeverDistanceCull || HasOwnDistance(Source) || Band <= 0.0)
-			{
-				continue;
-			}
-			int32& Index = OwnerIndex.FindOrAdd(Outer, INDEX_NONE);
-			if (Index == INDEX_NONE)
-			{
-				Index = MinBand.Add(Band);
-				MaxBand.Add(Band);
-			}
-			else
-			{
-				MinBand[Index] = FMath::Min(MinBand[Index], Band);
-				MaxBand[Index] = FMath::Max(MaxBand[Index], Band);
-			}
-			Members.Emplace(Component, Index);
-			if (Source.SphereRadius < LinkMinRadius)
-			{
-				continue;
-			}
-			// Instances one by one (one set may be spread over a whole district); a plain mesh as itself.
-			if (const UInstancedStaticMeshComponent* Instanced = Cast<UInstancedStaticMeshComponent>(Component))
-			{
-				const FBox MeshBox = Mesh->GetBounds().GetBox();
-				for (int32 At = 0; At < Instanced->GetInstanceCount(); ++At)
-				{
-					FTransform Instance;
-					if (Instanced->GetInstanceTransform(At, Instance, /*bWorldSpace*/ true))
-					{
-						Links.Add(FMantleStructurePiece{ Index, MeshBox.TransformBy(Instance) });
-					}
-				}
-			}
-			else
-			{
-				Links.Add(FMantleStructurePiece{ Index, Component->CalcBounds(Component->GetComponentTransform()).GetBox() });
-			}
-		}
-	}
-	TArray<double> Distances;
-	PlanStructures(MinBand, MaxBand, Links, Distances);
+	const FStructurePlan Plan = PlanWorld(World);
 	int32 Changed = 0;
-	for (int32 Index = 0; Index < Distances.Num(); ++Index)
+	for (int32 Index = 0; Index < Plan.Distances.Num(); ++Index)
 	{
-		Changed += Distances[Index] != MaxBand[Index] || Distances[Index] != MinBand[Index] ? 1 : 0;
+		Changed += Plan.Distances[Index] != Plan.MaxBand[Index] || Plan.Distances[Index] != Plan.MinBand[Index] ? 1 : 0;
 	}
-	for (const TPair<const UStaticMeshComponent*, int32>& Member : Members)
+	for (const FStructurePlan::FMember& Member : Plan.Members)
 	{
-		Out.Add(Member.Key, Distances[Member.Value]);
+		Out.Add(Member.Component, Plan.Distances[Member.Owner]);
 	}
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_STRUCTURE_DISTANCES owners %d, components %d, link pieces %d, owners whose pieces now draw to another distance %d"),
-		MinBand.Num(), Members.Num(), Links.Num(), Changed);
+		Plan.MinBand.Num(), Plan.Members.Num(), Plan.LinkPieces, Changed);
+}
+
+void FMantleDrawDistance::LogStructureBands(const UWorld* World)
+{
+	using namespace MantleDrawDistancePrivate;
+	const FStructurePlan Plan = PlanWorld(World);
+	TMap<int32, int64> Before;
+	TMap<int32, int64> After;
+	TMap<int32, int64> StructurePieces;
+	TMap<int32, TSet<int32>> StructureOwners;
+	for (const FStructurePlan::FMember& Member : Plan.Members)
+	{
+		Before.FindOrAdd(FMath::RoundToInt32(Member.Band)) += Member.Pieces;
+		After.FindOrAdd(FMath::RoundToInt32(Plan.Distances[Member.Owner])) += Member.Pieces;
+		const int32 Structure = Plan.Structures[Member.Owner];
+		StructurePieces.FindOrAdd(Structure) += Member.Pieces;
+		StructureOwners.FindOrAdd(Structure).Add(Member.Owner);
+	}
+	int32 Largest = INDEX_NONE;
+	for (const TPair<int32, int64>& Pair : StructurePieces)
+	{
+		if (Largest == INDEX_NONE || Pair.Value > StructurePieces[Largest])
+		{
+			Largest = Pair.Key;
+		}
+	}
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_STRUCTURE_BANDS before %s | after %s | structures %d, largest %d owners %lld pieces (distance %.0f m)"),
+		*BandLine(Before), *BandLine(After), StructurePieces.Num(), Largest != INDEX_NONE ? StructureOwners[Largest].Num() : 0,
+		Largest != INDEX_NONE ? StructurePieces[Largest] : 0ll, Largest != INDEX_NONE ? Plan.Distances[Largest] / 100.0 : 0.0);
+}
+
+namespace MantleDrawDistancePrivate
+{
+	FAutoConsoleCommandWithWorld GStructureDistancesCommand(
+		TEXT("Mantle.StructureDistances"),
+		TEXT("Logs what the one-distance-per-structure rule does to the level (MANTLE_STRUCTURE_BANDS), without exporting."),
+		FConsoleCommandWithWorldDelegate::CreateStatic([](UWorld* World) { FMantleDrawDistance::LogStructureBands(World); }));
 }
 
 FMantleDrawDistance::FStructureScope::FStructureScope(const UWorld* World)

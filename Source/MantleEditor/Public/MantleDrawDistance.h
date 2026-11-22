@@ -95,7 +95,7 @@ struct MANTLEEDITOR_API FMantleDrawDistance
 	 * which the client's far sets draw its twin whole.
 	 */
 	static void PlanStructures(TConstArrayView<double> OwnerMinBand, TConstArrayView<double> OwnerMaxBand, TConstArrayView<FMantleStructurePiece> Links,
-		TArray<double>& OutOwnerDistance);
+		TArray<double>& OutOwnerDistance, TArray<int32>* OutOwnerStructure = nullptr);
 
 	/** A mixed structure's distance cap, cm: 600 m (Joshua, 2026-11-22: "B: 600 m + far"). */
 	static constexpr double StructureCapCm = 60000.0;
@@ -111,6 +111,12 @@ struct MANTLEEDITOR_API FMantleDrawDistance
 	 * is alive. Components that set their own distance, are never culled, or are not shown in game are left out.
 	 */
 	static void BuildStructureDistances(const UWorld* World, TMap<const UStaticMeshComponent*, double>& Out);
+
+	/**
+	 * Logs what the structure rule does to World (MANTLE_STRUCTURE_BANDS: pieces, an instance each, in each distance before and after, and the
+	 * largest structure's owners and pieces), without exporting. The console command Mantle.StructureDistances runs it on the editor world.
+	 */
+	static void LogStructureBands(const UWorld* World);
 
 	/** While alive, ReadComponent gives each component of World its structure distance (FMantlePlaceExporter::Export holds one). */
 	class MANTLEEDITOR_API FStructureScope
