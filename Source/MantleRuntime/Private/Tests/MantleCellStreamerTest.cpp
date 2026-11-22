@@ -2262,6 +2262,90 @@ bool FMantleCellStreamerBudgetWatchesTheCardTest::RunTest(const FString& Paramet
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerPoolGivesWayFirstTest,
+	"Mantle.Runtime.CellStream.Streamer.PoolGivesWayFirst",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerPoolGivesWayFirstTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// #189: streamed textures sit in the engine's pool, which the budget sizes. The card, faked: the driver gives the game 10 GB (a cushion of VideoUseShare of it), the textures'
+	// share is 8 GB, 0.5 GB of them are built whole, and the streamed ones would fill 6 GB of pool. The engine keeps no more in the pool than the pool's size.
+	//   3.9 GB of others: 10.4 GB on the card, over the cushion: the pool gives way (to about 4.6 GB, where it fits) and the ladder and full-detail radius stay where they are.
+	//   9.5 GB of others: the pool gives way to its floor, and only then does the card lower the ladder and the radius.
+	constexpr int64 GB = 1024ll * 1024 * 1024;
+	TSharedRef<double> Others = MakeShared<double>(3.9);
+	TSharedRef<int64> Pool = MakeShared<int64>(0);
+	FFixture Fixture;
+	Fixture.View = FVector(22000.0, 100.0, 100.0);
+	Fixture.CellAssets = MakeShared<FFakeCellAssets>();
+	FMantleCellStreamSettings Settings = SteadySettings();
+	Settings.BudgetTuning.MinReachCm = 3000.0;
+	Settings.BudgetTuning.MemoryLowerEverySeconds = 0.5;
+	Settings.BudgetLimits = []()
+	{
+		FMantleBudgetLimits Limits;
+		Limits.Instances = 100000;
+		Limits.SolidThings = 100000;
+		Limits.TextureBytes = 8 * GB;
+		return Limits;
+	};
+	Settings.BudgetTextureBytes = []() { return GB / 2; };
+	Settings.ApplyTexturePool = [Pool](const int64 Bytes) { *Pool = Bytes; };
+	Settings.BudgetVideoMemory = [Others, Pool](int64& OutUsedBytes, int64& OutBudgetBytes)
+	{
+		const int64 Streamed = *Pool > 0 ? FMath::Min(*Pool, 6 * GB) : 0;
+		OutUsedBytes = static_cast<int64>(*Others * static_cast<double>(GB)) + GB / 2 + Streamed;
+		OutBudgetBytes = 10 * GB;
+	};
+	Fixture.StartStreamer(Settings);
+	if (!TestTrue(TEXT("the join settles"), Fixture.Settle()))
+	{
+		return false;
+	}
+	const double LadderAtStart = Fixture.Streamer->GetStats().BudgetLadder;
+	int64 SmallestPool = MAX_int64;
+	for (int32 Tick = 0; Tick < 600; ++Tick)
+	{
+		Fixture.Tick();
+		// The join can settle before the budget's first look (every StepSeconds), so the pool may still be unset (0) here.
+		if (*Pool > 0)
+		{
+			SmallestPool = FMath::Min(SmallestPool, *Pool);
+		}
+	}
+	{
+		const FMantleCellStreamStats& Stats = Fixture.Streamer->GetStats();
+		AddInfo(FString::Printf(TEXT("pool %.2f GB, smallest %.2f GB"), *Pool / static_cast<double>(GB), SmallestPool / static_cast<double>(GB)));
+		TestTrue(TEXT("the pool was set"), *Pool > 0);
+		TestEqual(TEXT("the stats say the pool"), Stats.BudgetTexturePoolBytes, *Pool);
+		TestTrue(TEXT("the pool gave way below what the share leaves (7.5 GB)"), *Pool < 7 * GB + GB / 2);
+		TestTrue(TEXT("and stayed above its floor"), SmallestPool > FMantleStreamBudget::MinTexturePoolBytes);
+		TestEqual(TEXT("the ladder did not move"), Stats.BudgetLadder, LadderAtStart);
+		TestEqual(TEXT("full detail still reaches 150 m"), Fixture.CellAssets->TextureReach, 15000.0);
+	}
+
+	// The rest of the game takes 5.5 GB more: no pool fits, so it goes to its floor first, then the ladder and the radius come in.
+	*Others = 9.5;
+	int64 PoolWhenTheLadderMoved = -1;
+	double ReachWhenTheLadderMoved = -1.0;
+	for (int32 Tick = 0; Tick < 1200; ++Tick)
+	{
+		Fixture.Tick();
+		if (PoolWhenTheLadderMoved < 0 && Fixture.Streamer->GetStats().BudgetLadder < LadderAtStart)
+		{
+			PoolWhenTheLadderMoved = *Pool;
+			ReachWhenTheLadderMoved = Fixture.CellAssets->TextureReach;
+		}
+	}
+	TestEqual(TEXT("the pool was at its floor when the ladder first moved"), PoolWhenTheLadderMoved, FMantleStreamBudget::MinTexturePoolBytes);
+	TestEqual(TEXT("and full detail still reached 150 m then"), ReachWhenTheLadderMoved, 15000.0);
+	TestEqual(TEXT("then the card took the ladder to the bottom"), Fixture.Streamer->GetStats().BudgetLadder, 0.0);
+	TestTrue(TEXT("and full detail came in"), Fixture.CellAssets->TextureReach < 15000.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleCellStreamerJoinHoldFollowsTheLadderTest,
 	"Mantle.Runtime.CellStream.Streamer.JoinHoldFollowsTheLadder",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

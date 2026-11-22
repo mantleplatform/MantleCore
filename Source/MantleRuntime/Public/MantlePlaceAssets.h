@@ -756,6 +756,14 @@ private:
 		int64 TextureBytes = 0;
 		TSharedPtr<FMantleRuntimeMesh> MeshV1;
 		TSharedPtr<FMantleDecodedTexture> Texture;
+
+		/**
+		 * #189: a full-detail texture is fetched as its place in the store (no bytes in memory), and the decode task reads its header, mip table and tail into Streamed
+		 * (only the task writes it, before it hands the build back): the build then makes a texture the engine's streamer reads the top mips of from the file
+		 * (FMantleRuntimeTextureBuilder::BuildStreamed). A texture that cannot stream is read whole from TexturePath and decoded as before (Texture).
+		 */
+		FString TexturePath;
+		TSharedPtr<FMantleStreamedTexturePrep, ESPMode::ThreadSafe> Streamed;
 		TSharedPtr<FMantlePlaceMaterialDesc> Material;
 
 		/** Sounds: the decoded samples, which are what a sound build is (kept while the set lives). */
@@ -912,6 +920,8 @@ private:
 	double StreamPumpSeconds = 0.0;
 	double StreamWorstPumpSeconds = 0.0;
 	int32 NaniteFilesBuiltCount = 0;
+	/** #189: textures built for the engine's streamer (their top mips read from the file when wanted). */
+	int32 StreamedTexturesBuilt = 0;
 	int32 NaniteFileMisses = 0;
 	double StreamSliceSeconds = -1.0;
 

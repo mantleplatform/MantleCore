@@ -2,6 +2,7 @@
 #include "MantleStreamBudget.h"
 
 #include "DynamicRHI.h"
+#include "HAL/IConsoleManager.h"
 #include "HAL/PlatformMemory.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -262,6 +263,55 @@ FMantleBudgetLimits FMantleStreamBudget::CurrentLimits()
 		return FMath::Clamp(Scale, 0.001, 1.0);
 	}();
 	return LimitsFor(CurrentLevel(), CurrentMachine(), CommandScale);
+}
+
+int64 FMantleStreamBudget::TexturePoolBytes(const FMantleBudgetLimits& Limits, const int64 TextureBytesHeld)
+{
+	constexpr int64 Step = 64ll * 1024 * 1024;
+	if (Limits.TextureBytes <= 0 || Limits.TextureBytes == MAX_int64)
+	{
+		return 0;
+	}
+	const int64 Left = Limits.TextureBytes - FMath::Max<int64>(TextureBytesHeld, 0);
+	return FMath::Max(MinTexturePoolBytes, Left / Step * Step);
+}
+
+int64 FMantleStreamBudget::NextTexturePool(const int64 Current, const int64 Wanted, const int64 OverBytes)
+{
+	constexpr int64 Step = 64ll * 1024 * 1024;
+	if (Wanted <= 0)
+	{
+		return 0;
+	}
+	int64 Next = Current > 0 ? Current : Wanted;
+	if (OverBytes > 0)
+	{
+		Next = Next - OverBytes;
+	}
+	else if (OverBytes <= -TexturePoolGrowBytes)
+	{
+		Next = Next + TexturePoolGrowBytes;
+	}
+	Next = FMath::Min(Next, Wanted);
+	return FMath::Max(MinTexturePoolBytes, Next / Step * Step);
+}
+
+void FMantleStreamBudget::ApplyTexturePool(const int64 Bytes)
+{
+	check(IsInGameThread());
+	static int32 LastSetMB = -1;
+	const int32 MB = static_cast<int32>(FMath::Clamp<int64>(Bytes / (1024 * 1024), 0, MAX_int32));
+	if (MB <= 0 || MB == LastSetMB)
+	{
+		return;
+	}
+	// The streaming manager reads it at every update (FRenderAssetStreamingManager::CheckUserSettings) and logs "Texture pool size now". Set by code, it stays over the graphics
+	// setting's own value (ECVF_SetByScalability) when the player changes the setting.
+	if (IConsoleVariable* PoolSize = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Streaming.PoolSize")))
+	{
+		PoolSize->Set(MB, ECVF_SetByCode);
+		LastSetMB = MB;
+	}
 }
 
 void FMantleStreamBudget::CurrentVideoMemory(int64& OutUsedBytes, int64& OutBudgetBytes)

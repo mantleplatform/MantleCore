@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceAssets.h"
+#include "Misc/FileHelper.h"
 
 #include "Async/TaskGraphInterfaces.h"
 #include "MantleAnimClip.h"
@@ -2594,7 +2595,9 @@ void FMantlePlaceAssets::StartFetches()
 			const TWeakPtr<FMantlePlaceAssets> Weak = AsShared();
 			// A Nanite file is read from its place in the store (its head at load, a streamed page when the engine asks), never held in memory: the store verifies it (hashes the whole file once per process) and says where it is.
 			Build->FetchStartedAt = FPlatformTime::Seconds();
-			Build->RequestId = Store->Request(Build->Ref, Key.Kind == EAssetKind::Nanite ? EMantleAssetLoad::PathOnly : EMantleAssetLoad::Bytes, FMantleAssetDone::CreateLambda(
+			// #189: so is a full-detail texture: the engine's streamer reads its top mips from the file when it wants them (a client-cut copy is decoded from the bytes).
+			const bool bPathOnly = Key.Kind == EAssetKind::Nanite || (Key.Kind == EAssetKind::Texture && !MantlePlaceAssetsPrivate::IsTextureCut(Key.Variant));
+			Build->RequestId = Store->Request(Build->Ref, bPathOnly ? EMantleAssetLoad::PathOnly : EMantleAssetLoad::Bytes, FMantleAssetDone::CreateLambda(
 				[Weak, Key](const FMantleAssetResult& Fetched)
 				{
 					if (const TSharedPtr<FMantlePlaceAssets> Pinned = Weak.Pin())
@@ -2668,6 +2671,10 @@ void FMantlePlaceAssets::OnFetched(const FBuildKey& Key, const FMantleAssetResul
 		DownloadedBytes += Fetched.SizeBytes;
 	}
 	Build->Bytes = Fetched.Bytes;
+	if (Key.Kind == EAssetKind::Texture && !Fetched.Bytes.IsValid())
+	{
+		Build->TexturePath = Fetched.Path;
+	}
 	if (Key.Kind == EAssetKind::Nanite)
 	{
 		// From the request to the answer: the download, when there was one, and the store's one hash of the whole file (once per process, in 1 MB pieces, nothing kept).
@@ -2732,11 +2739,19 @@ void FMantlePlaceAssets::StartDecodes()
 			// Likewise; the voxel world reads its blocks and tiles on its own workers.
 			Build->VoxelFile = Bytes;
 		}
+		// #189: a full-detail texture fetched as its place in the store: the task reads it for the engine's streamer (or whole, when it cannot stream).
+		const FString TexturePath = Build->TexturePath;
+		TSharedPtr<FMantleStreamedTexturePrep, ESPMode::ThreadSafe> StreamedOut;
+		if (Key.Kind == EAssetKind::Texture && !TexturePath.IsEmpty())
+		{
+			StreamedOut = MakeShared<FMantleStreamedTexturePrep, ESPMode::ThreadSafe>();
+			Build->Streamed = StreamedOut;
+		}
 		const int64 MaxTextureGpuBytes = Settings.MaxTextureGpuBytes;
 		const TSharedRef<FCompletionQueue, ESPMode::ThreadSafe> Queue = Completions;
 		// Background priority: the engine's foreground workers (two on this machine's default setup) run the renderer's visibility tasks, and a decode that holds them for 70 ms (a
 		// 4 MB inflate, a 60,000-vertex mesh described) holds the render thread's frame with it.
-		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes, NaniteRaw, NaniteTableOut, NanitePath, LumenRaw]()
+		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes, NaniteRaw, NaniteTableOut, NanitePath, LumenRaw, TexturePath, StreamedOut]()
 		{
 			TSharedPtr<FMantleStaticMeshData> MeshV2;
 			TSharedPtr<FMantlePreparedStaticMesh> Prepared;
@@ -2832,8 +2847,28 @@ void FMantlePlaceAssets::StartDecodes()
 				Params.Role = MantlePlaceAssetsPrivate::TextureRoleOf(Key.Variant);
 				Params.MaxGpuBytes = MaxTextureGpuBytes;
 				Params.LowTopDimension = MantlePlaceAssetsPrivate::IsTextureCut(Key.Variant) ? FMantlePlaceAssets::LowTextureMaxDimension : 0;
+				TArray<uint8> FileBytes;
+				TConstArrayView<uint8> Source = View;
+				if (StreamedOut.IsValid())
+				{
+					// #189: streamed when the engine can stream it and the slot takes it as cooked: the role the slot wants (else the whole decode below says
+					// which), and not a BC4 ORM, which PrepareForSlot expands to gray 8-bit color.
+					FMantleStreamedTexturePrep Prep;
+					if (FMantleRuntimeTextureBuilder::PrepareStreamed(TexturePath, Params, Prep) && Prep.Role == Params.Role
+						&& !(Prep.Format == PF_BC4 && SlotForRole(Params.Role) == EMantlePlaceTextureSlot::Orm))
+					{
+						*StreamedOut = MoveTemp(Prep);
+						break;
+					}
+					if (!FFileHelper::LoadFileToArray(FileBytes, *TexturePath))
+					{
+						Error = TEXT("could not be read from the store");
+						break;
+					}
+					Source = FileBytes;
+				}
 				Texture = MakeShared<FMantleDecodedTexture>();
-				if (!FMantleRuntimeTextureBuilder::Decode(View, Params, *Texture, &Error)
+				if (!FMantleRuntimeTextureBuilder::Decode(Source, Params, *Texture, &Error)
 					|| !FMantlePlaceMaterials::PrepareForSlot(SlotForRole(Params.Role), *Texture, &Error))
 				{
 					Texture.Reset();
@@ -3024,6 +3059,16 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 		QueueBuild(Key);
 		return;
 	}
+	// #189: a streamed texture is its mip table and tail (read by the decode task); the build makes the texture the engine's streamer reads the rest of from the file.
+	if (Key.Kind == EAssetKind::Texture && Error.IsEmpty() && !Texture && Build->Streamed.IsValid() && Build->Streamed->Mips.Num() > 0)
+	{
+		ReleasePending(*Build);
+		Build->PendingBytes = Build->Streamed->GetAllocatedBytes();
+		PendingBuildBytes += Build->PendingBytes;
+		QueueBuild(Key);
+		return;
+	}
+	Build->Streamed.Reset();
 	if (!Error.IsEmpty()
 		|| (!MeshV2 && !MeshV1 && !Texture && !Material && !Sound && !Skinned && !Clip && !Heightfield && !TerrainWeights && !Vehicle && !Weapon && !Wheel))
 	{
@@ -3520,14 +3565,34 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 
 	case EAssetKind::Texture:
 	{
+		FMantleTextureBuildParams Params;
+		Params.Role = MantlePlaceAssetsPrivate::TextureRoleOf(Build.Key.Variant);
+		Params.MaxGpuBytes = Settings.MaxTextureGpuBytes;
+		if (Build.Streamed.IsValid() && Build.Streamed->Mips.Num() > 0)
+		{
+			// #189: the tail now, the rest read from the file by the engine's streamer as the camera needs it. The texture holds the file's pin (the build's own
+			// goes in MarkReady) for as long as it or a read of it lives.
+			const FMantleTextureFileMip& Top = Build.Streamed->Mips[0];
+			Build.Detail = FString::Printf(TEXT("%s, %dx%d %s, %d mips, streamed"), MantlePlaceAssetsPrivate::RoleName(Params.Role),
+				Top.Width, Top.Height, GetPixelFormatString(Build.Streamed->Format), Build.Streamed->Mips.Num());
+			Params.FilePin = MakeShared<FMantleFilePin>(Store, Build.Key.Hash);
+			UTexture2D* Texture = FMantleRuntimeTextureBuilder::BuildStreamed(MoveTemp(*Build.Streamed), Params, &Error);
+			Build.Streamed.Reset();
+			ReleasePending(Build);
+			if (!Texture)
+			{
+				FailBuild(Build, FString::Printf(TEXT("could not be built: %s"), *Error));
+				return;
+			}
+			++StreamedTexturesBuilt;
+			MarkReady(Build, Texture);
+			return;
+		}
 		if (!Build.Texture)
 		{
 			FailBuild(Build, TEXT("has nothing decoded to build"));
 			return;
 		}
-		FMantleTextureBuildParams Params;
-		Params.Role = MantlePlaceAssetsPrivate::TextureRoleOf(Build.Key.Variant);
-		Params.MaxGpuBytes = Settings.MaxTextureGpuBytes;
 		if (MantlePlaceAssetsPrivate::IsTextureCut(Build.Key.Variant) && Build.Texture->MipsCut == 0)
 		{
 			// Asked to be cut on the client, and already no larger than a low copy (or not whole blocks at 512): it is the full texture, so the records it serves
@@ -3898,6 +3963,7 @@ void FMantlePlaceAssets::FailBuild(FBuild& Build, const FString& Error)
 	Build.NaniteRead.Reset();
 	Build.MeshV1.Reset();
 	Build.Texture.Reset();
+	Build.Streamed.Reset();
 	Build.Material.Reset();
 	Build.Sound.Reset();
 	Build.Skinned.Reset();

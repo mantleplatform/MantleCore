@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/TextureDefines.h"
+#include "MantleStreamedTexture.h"
 #include "PixelFormat.h"
 
 class UObject;
@@ -81,6 +82,31 @@ struct FMantleTextureBuildParams
 	 * inflated. FMantleDecodedTexture::MipsCut says how many top mips were left out (0: the texture is whole, nothing could be cut). PNG and JPEG ignore it.
 	 */
 	int32 LowTopDimension = 0;
+
+	/** #189: a streamed texture (BuildStreamed) shares this pin of its file for as long as it can read from it. */
+	TSharedPtr<FMantleFilePin> FilePin;
+};
+
+/**
+ * #189: a streamed texture read on any thread (FMantleRuntimeTextureBuilder::PrepareStreamed): its file, its mip table and the engine's non-streaming tail
+ * inflated, for BuildStreamed on the game thread. The top mips stay in the file.
+ */
+struct MANTLERUNTIME_API FMantleStreamedTexturePrep
+{
+	FString Path;
+	int64 FileSize = 0;
+	EPixelFormat Format = PF_Unknown;
+	bool bSRGB = false;
+	EMantleTextureRole Role = EMantleTextureRole::Color;
+
+	/** The file's whole chain, mip 0 first. */
+	TArray<FMantleTextureFileMip> Mips;
+
+	/** Mips FirstTailMip to the last, inflated. */
+	int32 FirstTailMip = 0;
+	TArray<TArray64<uint8>> Tail;
+
+	int64 GetAllocatedBytes() const;
 };
 
 /** One mip level as the GPU takes it. */
@@ -187,4 +213,23 @@ public:
 
 	/** Both halves on the calling (game) thread. */
 	static UTexture2D* BuildFromBytes(TConstArrayView<uint8> Bytes, const FMantleTextureBuildParams& Params, FString* OutError = nullptr);
+
+	/**
+	 * #189: the first half of a texture the engine's streamer manages, on ANY thread: reads the MTX2 file at Path (in the download cache) as far as its header, its mip
+	 * table and its tail (ComputeResidentMips), and inflates the tail. False, with the reason, when the texture cannot stream: not an MTX2, not a power of two (the
+	 * engine streams no other size), small enough to be all resident, or a broken file. The caller then builds it whole (Decode, Build), which says what is wrong.
+	 */
+	static bool PrepareStreamed(const FString& Path, const FMantleTextureBuildParams& Params, FMantleStreamedTexturePrep& Out, FString* OutError = nullptr);
+
+	/**
+	 * The second half, on the game thread: the texture, with the tail resident and the top mips read from the file when the streamer wants them
+	 * (UMantleCachedMipsFactory) and dropped when it doesn't. Params.FilePin keeps the file in the store while the texture or a read of it lives.
+	 */
+	static UTexture2D* BuildStreamed(FMantleStreamedTexturePrep&& Prep, const FMantleTextureBuildParams& Params, FString* OutError = nullptr);
+
+	/** Both halves on the calling (game) thread. */
+	static UTexture2D* BuildStreamed(const FString& Path, const FMantleTextureBuildParams& Params, FString* OutError = nullptr);
+
+	/** The mips the engine keeps resident for a streamable texture of this size (its non-streaming tail; GetNumNonStreamingMipsDirect's rule). */
+	static int32 ComputeResidentMips(EPixelFormat Format, int32 Width, int32 Height, int32 NumMips);
 };

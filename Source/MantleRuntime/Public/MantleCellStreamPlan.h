@@ -140,6 +140,9 @@ struct MANTLERUNTIME_API FMantleCellStreamSettings
 	TFunction<int64()> BudgetMemoryBytes;
 	TFunction<int64()> BudgetTextureBytes;
 	TFunction<void(int64& OutUsedBytes, int64& OutBudgetBytes)> BudgetVideoMemory;
+
+	/** #189: at each budget look, the engine's texture pool for the streamed textures' top mips (FMantleStreamBudget::TexturePoolBytes, given to this); without it the pool is left alone. */
+	TFunction<void(int64 PoolBytes)> ApplyTexturePool;
 };
 
 /** Where the player looks from and how fast that is moving, in world cm and cm a second. */

@@ -161,7 +161,26 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	const double CountPressure = FMantleStreamBudget::CountPressure(Limits, Use);
 	const double MemoryPressure = FMantleStreamBudget::MemoryPressure(Limits, Use);
 	// #189: the card as the driver sees it comes back as slowly as the process's memory (a texture let go is freed at the next garbage collection), so it presses the same way.
-	const double VideoPressure = FMantleStreamBudget::VideoPressure(Limits, Use);
+	double VideoPressure = FMantleStreamBudget::VideoPressure(Limits, Use);
+	// #189: the textures built whole (and the streamed ones' resident tails) take their part of the share; the engine's pool holds the streamed ones' top mips in the rest.
+	// When the card is over its cushion the pool gives way first (its least needed mips go, the engine's choice), down to its floor; only then does the card's pressure
+	// lower the ladder and the full-detail radius.
+	if (Settings.ApplyTexturePool && Settings.BudgetTextureBytes)
+	{
+		const int64 Wanted = FMantleStreamBudget::TexturePoolBytes(Limits, Use.TextureBytes);
+		if (Wanted > 0)
+		{
+			const int64 Cushion = static_cast<int64>(static_cast<double>(Use.VideoBudgetBytes) * Limits.VideoUseShare);
+			const int64 OverBytes = Cushion > 0 && Use.VideoUsedBytes > 0 ? Use.VideoUsedBytes - Cushion : 0;
+			TexturePoolBytes = FMantleStreamBudget::NextTexturePool(TexturePoolBytes, Wanted, OverBytes);
+			Settings.ApplyTexturePool(TexturePoolBytes);
+			if (OverBytes > 0 && TexturePoolBytes > FMantleStreamBudget::MinTexturePoolBytes)
+			{
+				VideoPressure = FMath::Min(VideoPressure, Tuning.LowerAbove);
+			}
+		}
+	}
+	Stats.BudgetTexturePoolBytes = TexturePoolBytes;
 	const double SlowPressure = FMath::Max(MemoryPressure, VideoPressure);
 	const double Pressure = FMath::Max(CountPressure, SlowPressure);
 	const double VideoCushionBytes = static_cast<double>(Use.VideoBudgetBytes) * Limits.VideoUseShare;

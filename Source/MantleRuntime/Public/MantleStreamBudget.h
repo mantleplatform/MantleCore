@@ -196,4 +196,29 @@ public:
 	 * budget), both 0 when the RHI cannot say. -MantleBudgetVideoGB caps the budget, so a run on a big card behaves as a small one would.
 	 */
 	static void CurrentVideoMemory(int64& OutUsedBytes, int64& OutBudgetBytes);
+
+	/** #189: the smallest pool the streamed textures are given, whatever the whole textures take of the share. */
+	static constexpr int64 MinTexturePoolBytes = 256ll * 1024 * 1024;
+
+	/**
+	 * #189: the engine's texture pool, which holds the top mips of the textures it streams (FMantleRuntimeTextureBuilder::BuildStreamed) and drops the least needed ones
+	 * when full: what the textures' share of the card (FMantleBudgetLimits::TextureBytes) leaves after the textures counted in TextureBytesHeld (built whole, and the
+	 * streamed ones' resident tails), in whole 64 MB, at least MinTexturePoolBytes. Without it each graphics setting fixes the pool at 400 to 1000 MB (BaseScalability.ini,
+	 * r.Streaming.PoolSize), whatever the card. Pure.
+	 */
+	static int64 TexturePoolBytes(const FMantleBudgetLimits& Limits, int64 TextureBytesHeld);
+
+	/** #189: how much the pool may grow back in one budget look once the card is under its cushion by at least as much. */
+	static constexpr int64 TexturePoolGrowBytes = 256ll * 1024 * 1024;
+
+	/**
+	 * #189: the pool at the next budget look. Current is the pool now (0: not set yet), Wanted what the share leaves (TexturePoolBytes), OverBytes how far the
+	 * driver's use is over the card's cushion (negative: under it). Over the cushion the pool shrinks by what is over, to MinTexturePoolBytes at least: it gives
+	 * way before the ladder and the full-detail radius do. Under it by TexturePoolGrowBytes or more it grows back by that much, never past Wanted; in between it
+	 * holds. Never more than Wanted. Whole 64 MB. Pure.
+	 */
+	static int64 NextTexturePool(int64 Current, int64 Wanted, int64 OverBytes);
+
+	/** Sets r.Streaming.PoolSize to Bytes (in MB, as code, over the graphics setting's value) when it differs from what this last set. Game thread. */
+	static void ApplyTexturePool(int64 Bytes);
 };
