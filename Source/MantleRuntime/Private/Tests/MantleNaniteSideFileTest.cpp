@@ -1159,8 +1159,6 @@ bool FMantleNaniteBudgetWaitTest::RunTest(const FString& Parameters)
 	// OrbitalBase (2026-11-22): decoded meshes waiting for their Nanite files filled MaxPendingBuildBytes, and no download started above it,
 	// so the files they waited for never started and the join stalled at 170 of 458 MB with nothing downloading. Here one fetch at a time
 	// and a 1-byte budget: the mesh downloads first, decodes and waits holding its bytes, and its Nanite file must still start.
-	AddExpectedError(TEXT("MANTLE_PLACE_ASSETS FAIL"), EAutomationExpectedErrorFlags::Contains, 0);
-	AddExpectedError(TEXT("MANTLE_PLACE_ASSETS READY with"), EAutomationExpectedErrorFlags::Contains, 0);
 	const FString Run = FGuid::NewGuid().ToString();
 	const float Half = 50.0f + static_cast<float>(FMath::RandRange(1, 1 << 20)) / 64.0f;
 
