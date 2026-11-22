@@ -2142,7 +2142,8 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 	{
 		Record.bLowTexture = bUseLow;
 	}
-	const FMantleUploadedAsset& Asset = bUseLow ? LowAnswer : InAsset;
+	// The client's cut reads the full file: only a companion on the server has its own answer.
+	const FMantleUploadedAsset& Asset = bUseLow && !bClientCut ? LowAnswer : InAsset;
 	const TCHAR* Expected = (Record.Kind == EAssetKind::TerrainWeights || Record.Kind == EAssetKind::VoxelTile) ? KindName(EAssetKind::Texture) : KindName(Record.Kind);
 	if (!Asset.Kind.Equals(Expected, ESearchCase::CaseSensitive))
 	{
