@@ -162,6 +162,9 @@ struct FMantleTerrainPreparedChunk
 
 	/** No triangles at all in the level asked for (a chunk lost to holes): nothing to build. */
 	bool bEmpty = false;
+
+	/** #189: the chunk slot's UV density on channels 0 to 3 (FMantleRuntimeStaticMeshBuilder::ComputeSlotUVDensities over Descriptions). */
+	FVector4f UVDensity = FVector4f(1.0f, 1.0f, 1.0f, 1.0f);
 };
 
 /** One paint layer as the builder draws it: the place material it takes its look from, and its tiling. */

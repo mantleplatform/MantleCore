@@ -25,6 +25,13 @@ struct FMantleStaticMeshSlots
 	 * build writes each group's triangles contiguously, in creation order, and makes no section for an empty one).
 	 */
 	TArray<TMap<uint32, int32>> SlotByFirstIndex;
+
+	/**
+	 * #189: per slot (SlotNames order), the world centimeters one UV unit spans on UV channels 0 to 3 (0 where a channel has no triangle with area), by the
+	 * engine's own rule (FMantleRuntimeStaticMeshBuilder::ComputeSlotUVDensities). The texture streamer sizes a texture by it: a runtime material has no
+	 * streaming data of its own, so the engine falls back to the mesh slot's density (TextureStreamingBuild.cpp, ProcessMaterial). Empty: every slot says 1.
+	 */
+	TArray<FVector4f> UVDensities;
 };
 
 /**
@@ -209,6 +216,17 @@ public:
 	 * UStaticMesh::InitResources asserts there. The static mesh and terrain builders share this one answer.
 	 */
 	static bool ShouldInitRenderResources(bool bRequested);
+
+	/**
+	 * #189: each slot's UV density (FMantleStaticMeshSlots::UVDensities) from every LOD's triangles, as the engine computes it in the editor (UVChannelDensity.h
+	 * FUVDensityAccumulator, StaticMesh.cpp FStaticMeshRenderData::ComputeUVDensities and UStaticMesh::UpdateUVChannelData, all editor-only):
+	 * - per polygon group and UV channel, each triangle with area weighs sqrt(area) and has density sqrt(area / UV area);
+	 * - the lowest and highest 10% by density are dropped and the rest averaged by weight;
+	 * - a slot is the weight-averaged mean of every LOD's groups that draw it.
+	 * Only each LOD's AuthoredChannels are read (the rest are copies of channel 0). Any thread.
+	 */
+	static void ComputeSlotUVDensities(TConstArrayView<const FMeshDescription*> Descriptions, TConstArrayView<int32> AuthoredChannels, const TArray<FName>& SlotNames,
+		TArray<FVector4f>& OutDensities);
 
 	/**
 	 * Null, with the reason logged as "MANTLE_STATICMESH FAIL ..." and returned in OutError, when the

@@ -2,6 +2,7 @@
 #include "MantleStreamBudget.h"
 
 #include "DynamicRHI.h"
+#include "HAL/IConsoleManager.h"
 #include "HAL/PlatformMemory.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -30,6 +31,11 @@ namespace MantleStreamBudgetPrivate
 		{ 825000, 90000, 200000, 24576, 0.65 },
 		{ 1100000, 120000, 400000, 36864, 0.70 },
 	};
+
+	/** TextureShareOfVideo per preset level (#189; the client big-map plan, 4.3). */
+	constexpr double TextureShares[FMantleStreamBudget::LevelCount] = { 0.25, 0.33, 0.42, 0.5 };
+
+	constexpr double GiB = 1024.0 * 1024.0 * 1024.0;
 
 	/** The machine the Epic row was measured on. */
 	constexpr double MeasuredVideoBytes = 16.0 * 1024.0 * 1024.0 * 1024.0;
@@ -80,6 +86,47 @@ FMantleBudgetLimits FMantleStreamBudget::LimitsFor(const int32 Level, const doub
 	return Limits;
 }
 
+FMantleBudgetLimits FMantleStreamBudget::LimitsFor(const int32 Level, const FMantleBudgetMachine& Machine, const double Scale)
+{
+	FMantleBudgetLimits Limits = LimitsFor(Level, MachineFactor(Machine) * Scale);
+	if (Machine.VideoBytes > 0)
+	{
+		Limits.TextureBytes = FMath::Max<int64>(1, static_cast<int64>(static_cast<double>(Machine.VideoBytes) * TextureShareOfVideo(Level) * Scale));
+	}
+	Limits.ProcessMemoryBytes = ProcessMemoryCapBytes(Machine.PhysicalBytes);
+	return Limits;
+}
+
+double FMantleStreamBudget::TextureShareOfVideo(const int32 Level)
+{
+	return MantleStreamBudgetPrivate::TextureShares[ClampLevel(Level)];
+}
+
+int64 FMantleStreamBudget::ProcessMemoryCapBytes(const int64 PhysicalBytes)
+{
+	using namespace MantleStreamBudgetPrivate;
+	if (PhysicalBytes <= 0)
+	{
+		return MAX_int64;
+	}
+	// The table in the client plan's 4.3 (Joshua's minimum PC is the first point), in GB of RAM -> GB the game may use.
+	const double Ram = static_cast<double>(PhysicalBytes) / GiB;
+	double Cap = 0.0;
+	if (Ram <= 16.0)
+	{
+		Cap = Ram * 9.0 / 16.0;
+	}
+	else if (Ram <= 32.0)
+	{
+		Cap = 9.0 + (Ram - 16.0) * (17.0 - 9.0) / 16.0;
+	}
+	else
+	{
+		Cap = 17.0 + (Ram - 32.0) * (24.0 - 17.0) / 32.0;
+	}
+	return static_cast<int64>(Cap * GiB);
+}
+
 double FMantleStreamBudget::CountPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use)
 {
 	using namespace MantleStreamBudgetPrivate;
@@ -88,17 +135,31 @@ double FMantleStreamBudget::CountPressure(const FMantleBudgetLimits& Limits, con
 	TakeWorst(Worst, Limits.SolidThings, Use.SolidThings);
 	TakeWorst(Worst, Limits.FarInstances, Use.FarInstances);
 	TakeWorst(Worst, Limits.NaniteRootPages, Use.NaniteRootPages);
+	// The textures' bytes act like a count: a build erased takes its share out at once, so it can lower the ladder at every look.
+	TakeWorst(Worst, Limits.TextureBytes, Use.TextureBytes);
 	return Worst;
 }
 
 double FMantleStreamBudget::MemoryPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use)
 {
-	return Limits.ProcessMemoryShare > 0.0 && Use.ProcessMemoryShare > 0.0 ? Use.ProcessMemoryShare / Limits.ProcessMemoryShare : 0.0;
+	using namespace MantleStreamBudgetPrivate;
+	double Worst = Limits.ProcessMemoryShare > 0.0 && Use.ProcessMemoryShare > 0.0 ? Use.ProcessMemoryShare / Limits.ProcessMemoryShare : 0.0;
+	if (Use.ProcessMemoryBytes > 0)
+	{
+		TakeWorst(Worst, Limits.ProcessMemoryBytes, Use.ProcessMemoryBytes);
+	}
+	return Worst;
+}
+
+double FMantleStreamBudget::VideoPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use)
+{
+	const double Cushioned = static_cast<double>(Use.VideoBudgetBytes) * Limits.VideoUseShare;
+	return Use.VideoUsedBytes > 0 && Cushioned > 0.0 ? static_cast<double>(Use.VideoUsedBytes) / Cushioned : 0.0;
 }
 
 double FMantleStreamBudget::Pressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use)
 {
-	return FMath::Max(CountPressure(Limits, Use), MemoryPressure(Limits, Use));
+	return FMath::Max3(CountPressure(Limits, Use), MemoryPressure(Limits, Use), VideoPressure(Limits, Use));
 }
 
 double FMantleStreamBudget::NextLadder(const double Ladder, const double Pressure, const FMantleBudgetTuning& Tuning)
@@ -126,6 +187,26 @@ double FMantleStreamBudget::NearScale(const double Ladder, const FMantleBudgetTu
 		return 1.0;
 	}
 	return FMath::Lerp(Tuning.MinNearScale, 1.0, FMath::Clamp(Ladder * 2.0, 0.0, 1.0));
+}
+
+double FMantleStreamBudget::NextTextureDetailReach(const double ReachCm, const double Ladder, const double TexturePressure, const double VideoPressure, const double TexturesOfVideo,
+	const double Pressure, const FMantleBudgetTuning& Tuning)
+{
+	const double MinCm = FMath::Min(Tuning.TextureDetailMinCm, Tuning.TextureDetailMaxCm);
+	const double Step = FMath::Clamp(Tuning.TextureDetailStep, 0.1, 0.99);
+	if (Ladder <= 0.0 && (TexturePressure > Tuning.LowerAbove || VideoPressure > Tuning.LowerAbove))
+	{
+		return FMath::Clamp(ReachCm * Step, MinCm, Tuning.TextureDetailMaxCm);
+	}
+	// Rising brings full files back: it rises only if the textures would still fit with the full-detail circle's area grown by the step (1 / Step^2), counting every texture
+	// byte as if it grew so (the low copies do not: the side that does not cycle), and the card too with those bytes added. Else a reach that just fits would grow, pass the
+	// limit, shrink, and round again.
+	const double Grown = 1.0 / (Step * Step);
+	if (Pressure < Tuning.RaiseBelow && TexturePressure * Grown <= Tuning.LowerAbove && VideoPressure + TexturesOfVideo * (Grown - 1.0) <= Tuning.LowerAbove)
+	{
+		return FMath::Clamp(ReachCm / Step, MinCm, Tuning.TextureDetailMaxCm);
+	}
+	return FMath::Clamp(ReachCm, MinCm, Tuning.TextureDetailMaxCm);
 }
 
 double FMantleStreamBudget::ScaledReach(const double DrawDistanceCm, const double Scale, const double FloorCm)
@@ -157,6 +238,17 @@ FMantleBudgetMachine FMantleStreamBudget::CurrentMachine()
 		RHIGetTextureMemoryStats(Stats);
 		Machine.VideoBytes = Stats.DedicatedVideoMemory > 0 ? Stats.DedicatedVideoMemory : Stats.TotalGraphicsMemory;
 	}
+	// A measuring aid, like -MantleBudgetScale: -MantleBudgetRamGB=16 -MantleBudgetVideoGB=8 runs the budget as Joshua's minimum PC would, on a bigger one.
+	double PretendGB = 0.0;
+	if (FParse::Value(FCommandLine::Get(), TEXT("MantleBudgetRamGB="), PretendGB) && PretendGB > 0.0)
+	{
+		Machine.PhysicalBytes = static_cast<int64>(PretendGB * MantleStreamBudgetPrivate::GiB);
+	}
+	PretendGB = 0.0;
+	if (FParse::Value(FCommandLine::Get(), TEXT("MantleBudgetVideoGB="), PretendGB) && PretendGB > 0.0)
+	{
+		Machine.VideoBytes = static_cast<int64>(PretendGB * MantleStreamBudgetPrivate::GiB);
+	}
 	Cached = Machine;
 	return Cached;
 }
@@ -170,11 +262,94 @@ FMantleBudgetLimits FMantleStreamBudget::CurrentLimits()
 		FParse::Value(FCommandLine::Get(), TEXT("MantleBudgetScale="), Scale);
 		return FMath::Clamp(Scale, 0.001, 1.0);
 	}();
-	return LimitsFor(CurrentLevel(), MachineFactor(CurrentMachine()) * CommandScale);
+	return LimitsFor(CurrentLevel(), CurrentMachine(), CommandScale);
+}
+
+int64 FMantleStreamBudget::TexturePoolBytes(const FMantleBudgetLimits& Limits, const int64 TextureBytesHeld)
+{
+	constexpr int64 Step = 64ll * 1024 * 1024;
+	if (Limits.TextureBytes <= 0 || Limits.TextureBytes == MAX_int64)
+	{
+		return 0;
+	}
+	const int64 Left = Limits.TextureBytes - FMath::Max<int64>(TextureBytesHeld, 0);
+	return FMath::Max(MinTexturePoolBytes, Left / Step * Step);
+}
+
+int64 FMantleStreamBudget::NextTexturePool(const int64 Current, const int64 Wanted, const int64 OverBytes)
+{
+	constexpr int64 Step = 64ll * 1024 * 1024;
+	if (Wanted <= 0)
+	{
+		return 0;
+	}
+	int64 Next = Current > 0 ? Current : Wanted;
+	if (OverBytes > 0)
+	{
+		Next = Next - OverBytes;
+	}
+	else if (OverBytes <= -TexturePoolGrowBytes)
+	{
+		Next = Next + TexturePoolGrowBytes;
+	}
+	Next = FMath::Min(Next, Wanted);
+	return FMath::Max(MinTexturePoolBytes, Next / Step * Step);
+}
+
+void FMantleStreamBudget::ApplyTexturePool(const int64 Bytes)
+{
+	check(IsInGameThread());
+	static int32 LastSetMB = -1;
+	const int32 MB = static_cast<int32>(FMath::Clamp<int64>(Bytes / (1024 * 1024), 0, MAX_int32));
+	if (MB <= 0 || MB == LastSetMB)
+	{
+		return;
+	}
+	// The streaming manager reads it at every update (FRenderAssetStreamingManager::CheckUserSettings) and logs "Texture pool size now". Set by code, it stays over the graphics
+	// setting's own value (ECVF_SetByScalability) when the player changes the setting.
+	if (IConsoleVariable* PoolSize = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Streaming.PoolSize")))
+	{
+		PoolSize->Set(MB, ECVF_SetByCode);
+		LastSetMB = MB;
+	}
+}
+
+void FMantleStreamBudget::CurrentVideoMemory(int64& OutUsedBytes, int64& OutBudgetBytes)
+{
+	OutUsedBytes = 0;
+	OutBudgetBytes = 0;
+	if (!GDynamicRHI || !FApp::CanEverRender())
+	{
+		return;
+	}
+	// A copy the RHI keeps, brought up to date once a frame (D3D12: FD3D12Adapter::CollectMemoryStats): cheap on the game thread.
+	FRHIMemoryStats Stats;
+	RHIGetMemoryStats(Stats);
+	if (Stats.BudgetLocal == 0)
+	{
+		return;
+	}
+	OutUsedBytes = static_cast<int64>(Stats.UsedLocal);
+	OutBudgetBytes = static_cast<int64>(Stats.BudgetLocal);
+	// -MantleBudgetVideoGB (CurrentMachine): a smaller card than this one, so its budget is no more than that.
+	const int64 Pretend = CurrentMachine().VideoBytes;
+	double PretendGB = 0.0;
+	if (Pretend > 0 && FParse::Value(FCommandLine::Get(), TEXT("MantleBudgetVideoGB="), PretendGB) && PretendGB > 0.0)
+	{
+		OutBudgetBytes = FMath::Min(OutBudgetBytes, Pretend);
+	}
 }
 
 double FMantleStreamBudget::CurrentProcessMemoryShare()
 {
+	const int64 Physical = CurrentMachine().PhysicalBytes;
+	return Physical > 0 ? static_cast<double>(CurrentProcessMemoryBytes()) / static_cast<double>(Physical) : 0.0;
+}
+
+int64 FMantleStreamBudget::CurrentProcessMemoryBytes()
+{
+	// #189: the larger of the working set and the private (committed) bytes. Windows trims the working set while what the process has committed keeps growing: City
+	// Sample's join crashed at a 36.4 GB working set with 46.7 GB private, so the working set alone can miss real pressure.
 	const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
-	return Stats.TotalPhysical > 0 ? static_cast<double>(Stats.UsedPhysical) / static_cast<double>(Stats.TotalPhysical) : 0.0;
+	return static_cast<int64>(FMath::Max(Stats.UsedPhysical, Stats.UsedVirtual));
 }

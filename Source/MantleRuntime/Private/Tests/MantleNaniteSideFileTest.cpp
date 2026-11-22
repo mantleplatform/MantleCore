@@ -1,11 +1,17 @@
 // Copyright Joshua Eger. All Rights Reserved.
+#include "MantleCookedPacking.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/Texture2D.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Async/Async.h"
 #include "HAL/PlatformProcess.h"
 #include "IO/IoDispatcher.h"
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/Compression.h"
+#include "DistanceFieldAtlas.h"
+#include "MantleMeshLumenData.h"
+#include "MeshCardBuild.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Guid.h"
 #include "Misc/Paths.h"
@@ -15,6 +21,7 @@
 #include "MantlePlaceAssets.h"
 #include "MantlePlaceParser.h"
 #include "MantleRuntimeStaticMeshBuilder.h"
+#include "MantleRuntimeTextureBuilder.h"
 #include "MantleStaticMeshReader.h"
 #include "Matrix3x4.h"
 #include "RHI.h"
@@ -368,6 +375,10 @@ namespace MantleNaniteSideFileTestPrivate
 		FString Kind;
 		TArray<uint8> Bytes;
 		bool bServe = true;
+		/** #189: a texture's low companion, answered as lowUrl and cookInfo.low when set. */
+		TArray<uint8> LowBytes;
+		/** #189: false to answer the low companion's url with 404 (a low file whose public copy is missing). */
+		bool bServeLow = true;
 	};
 
 	/** Resolves the served assets as approved, with the cooked hash of their bytes; any other id is unknown. */
@@ -398,6 +409,12 @@ namespace MantleNaniteSideFileTestPrivate
 				Asset.Url = TEXT("test://") + Id;
 				Asset.CookedHash = FMantleContentHash::OfBytes(Served->Bytes).ToString();
 				Asset.CookedBytes = Served->Bytes.Num();
+				if (!Served->LowBytes.IsEmpty())
+				{
+					Asset.LowUrl = TEXT("test://") + Id + TEXT("#low");
+					Asset.LowCookedHash = FMantleContentHash::OfBytes(Served->LowBytes).ToString();
+					Asset.LowCookedBytes = Served->LowBytes.Num();
+				}
 				Result.Assets.Add(Asset);
 			}
 			OnDone(Result);
@@ -409,16 +426,21 @@ namespace MantleNaniteSideFileTestPrivate
 	{
 	public:
 		TSharedPtr<FServingResolver> Source;
+		/** How often each url was fetched. */
+		TMap<FString, int32> Fetched;
 
 		virtual void Fetch(const FString& Url, const TSharedRef<FArchive>& Sink, TFunction<void(const FMantleAssetFetchResult&)> OnDone) override
 		{
 			FMantleAssetFetchResult Result;
 			Result.bConnected = true;
 			Result.StatusCode = 404;
-			const FServedAsset* Served = Source->Assets.Find(Url.RightChop(7));
-			if (Served && Served->bServe)
+			++Fetched.FindOrAdd(Url);
+			const bool bLow = Url.EndsWith(TEXT("#low"));
+			const FServedAsset* Served = Source->Assets.Find(bLow ? Url.RightChop(7).LeftChop(4) : Url.RightChop(7));
+			const TArray<uint8>* Bytes = Served ? (bLow ? &Served->LowBytes : &Served->Bytes) : nullptr;
+			if (Served && (bLow ? Served->bServeLow : Served->bServe) && Bytes && !Bytes->IsEmpty())
 			{
-				Sink->Serialize(const_cast<uint8*>(Served->Bytes.GetData()), Served->Bytes.Num());
+				Sink->Serialize(const_cast<uint8*>(Bytes->GetData()), Bytes->Num());
 				Result.StatusCode = 200;
 			}
 			OnDone(Result);
@@ -507,11 +529,28 @@ namespace MantleNaniteSideFileTestPrivate
 		return Assets;
 	}
 
+	/** Inner as the cook stores it (#189 step 5a): Magic, its size, and one Oodle Kraken stream of it (MRM4, MLD3). */
+	TArray<uint8> MakeEnvelope(const ANSICHAR* Magic, const TArray<uint8>& Inner)
+	{
+		const TArray<uint8> Packed = MantleCookedPacking::PackStream(Inner);
+		check(!Packed.IsEmpty());
+		TArray<uint8> Bytes;
+		Bytes.Append(reinterpret_cast<const uint8*>(Magic), 4);
+		const uint32 Raw = static_cast<uint32>(Inner.Num());
+		for (int32 Byte = 0; Byte < 4; ++Byte)
+		{
+			Bytes.Add(static_cast<uint8>(Raw >> (8 * Byte)));
+		}
+		Bytes.Append(Packed);
+		return Bytes;
+	}
+
 	/**
-	 * The two-slot box as MRM2 bytes (one LOD, no extension blocks), its corners at +-Half cm. Another Half is other bytes, so no
-	 * earlier set's mesh is reused and the mesh is downloaded and decoded (MRM1 decodes to nothing held, MRM2 to its description).
+	 * The two-slot box as the cook stores it, MRM4: an MRM2 (one LOD, no extension blocks) in its envelope, its corners at +-Half cm.
+	 * Another Half is other bytes, so no earlier set's mesh is reused and the mesh is downloaded and decoded (MRM1 decodes to nothing
+	 * held, MRM4 to its description).
 	 */
-	TArray<uint8> MakeMrm2Box(const float Half)
+	TArray<uint8> MakeMrm3Box(const float Half)
 	{
 		FMantleStaticMeshData Mesh = MakeTwoSlotBox();
 		for (FVector3f& Position : Mesh.Positions)
@@ -548,7 +587,7 @@ namespace MantleNaniteSideFileTestPrivate
 		Ar.Serialize(Mesh.Indices.GetData(), Mesh.Indices.Num() * sizeof(uint32));
 		uint32 Extensions = 0;
 		Ar << Extensions;
-		return Bytes;
+		return MakeEnvelope("MRM4", Bytes);
 	}
 
 	UStaticMesh* BuildBox(const TArray<uint8>* File, const FString& Tag)
@@ -1134,10 +1173,17 @@ bool FMantleNaniteReleaseTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("and nothing is held for the mesh that failed"), Failed->GetNaniteHeldBytes(), static_cast<int64>(0));
 
 	// A mesh that builds: its Nanite file was held while it waited, and is gone once it has built.
-	const TSharedRef<FMantlePlaceAssets> Built = LoadOneMesh(MakeServer(true), TEXT("NaniteRelease") / Run / TEXT("Built"));
+	const TSharedRef<FServingResolver> BuiltServer = MakeServer(true);
+	const TSharedRef<FMantlePlaceAssets> Built = LoadOneMesh(BuiltServer, TEXT("NaniteRelease") / Run / TEXT("Built"));
 	TestTrue(TEXT("the place loaded"), Built->IsComplete() && Built->GetResult().bSuccess);
 	TestTrue(TEXT("the Nanite file was downloaded and unpacked (held at some point)"), Built->GetNaniteHeldPeakBytes() > 0);
 	TestEqual(TEXT("and nothing is held once the mesh has built"), Built->GetNaniteHeldBytes(), static_cast<int64>(0));
+	// #189: a built file is not pinned any more (its bytes are in memory), so the store's LRU can work; the Nanite file stays pinned
+	// while the set lives, because the mesh's pages are read from it.
+	TestFalse(TEXT("the built mesh's file is no longer pinned"),
+		Built->GetStore().IsPinned(FMantleContentHash::OfBytes(BuiltServer->Assets.FindChecked(FlowMeshA).Bytes)));
+	TestTrue(TEXT("its Nanite file stays pinned"),
+		Built->GetStore().IsPinned(FMantleContentHash::OfBytes(BuiltServer->Assets.FindChecked(FlowNaniteA).Bytes)));
 
 	// A mesh reused from an earlier set (still up while the same place is applied again) reads no file either.
 	const TSharedRef<FMantlePlaceAssets> Reused = LoadOneMesh(MakeServer(true), TEXT("NaniteRelease") / Run / TEXT("Reused"));
@@ -1165,10 +1211,10 @@ bool FMantleNaniteBudgetWaitTest::RunTest(const FString& Parameters)
 	const TSharedRef<FServingResolver> Server = MakeShared<FServingResolver>();
 	FServedAsset Mesh;
 	Mesh.Kind = TEXT("mesh");
-	Mesh.Bytes = MakeMrm2Box(Half);
+	Mesh.Bytes = MakeMrm3Box(Half);
 	FMantleStaticMeshData Check;
 	FString Error;
-	if (!TestTrue(TEXT("the test mesh is a good MRM2 file"), FMantleStaticMeshReader::Read(Mesh.Bytes, Check, &Error)))
+	if (!TestTrue(TEXT("the test mesh is a good MRM4 file"), FMantleStaticMeshReader::Read(Mesh.Bytes, Check, &Error)))
 	{
 		AddInfo(Error);
 		return false;
@@ -2511,6 +2557,563 @@ bool FMantleNaniteStreamedAttachTest::RunTest(const FString& Parameters)
 	{
 		TestFalse(TEXT("without Nanite data"), NoTable->HasValidNaniteData());
 	}
+	return true;
+}
+
+// ---- #189: cell textures from their low companion, full detail near ------------------------------------------------------------------------------
+
+namespace MantleTextureDetailTestPrivate
+{
+	using namespace MantleNaniteSideFileTestPrivate;
+
+	const TCHAR* const DetailMesh = TEXT("ast_u000000000000000000000000000000e1");
+	const TCHAR* const DetailMaterial = TEXT("ast_u000000000000000000000000000000e2");
+	const TCHAR* const DetailTexture = TEXT("ast_u000000000000000000000000000000e3");
+
+	/**
+	 * A BC1 sRGB MTX3 of Size x Size with its full chain, every block zero (a valid, black texture) but the last mip's first byte, which is
+	 * Mark: textures with another Mark are other bytes, so no build another test made is reused.
+	 */
+	TArray<uint8> MakeMtx3(const int32 Size, const uint8 Mark = 0)
+	{
+		const int32 Mips = FMath::FloorLog2(Size) + 1;
+		TArray<TArray<uint8>> Streams;
+		TArray<uint32> Sizes;
+		for (int32 Mip = 0; Mip < Mips; ++Mip)
+		{
+			const uint32 Edge = static_cast<uint32>(FMath::Max(1, Size >> Mip));
+			const uint32 MipBytes = FMath::Max(1u, (Edge + 3) / 4) * FMath::Max(1u, (Edge + 3) / 4) * 8;
+			TArray<uint8> Blocks;
+			Blocks.SetNumZeroed(MipBytes);
+			if (Mip == Mips - 1)
+			{
+				Blocks[0] = Mark;
+			}
+			TArray<uint8>& Stream = Streams.AddDefaulted_GetRef();
+			Stream = MantleCookedPacking::PackStream(Blocks);
+			check(!Stream.IsEmpty());
+			Sizes.Add(MipBytes);
+		}
+		TArray<uint8> Bytes;
+		FMemoryWriter Ar(Bytes, true);
+		uint8 Magic[4] = { 'M', 'T', 'X', '3' };
+		Ar.Serialize(Magic, 4);
+		uint32 Header[8] = { 1, 1, 1, static_cast<uint32>(Size), static_cast<uint32>(Size), static_cast<uint32>(Size), static_cast<uint32>(Size), static_cast<uint32>(Mips) };
+		for (uint32& Value : Header)
+		{
+			Ar << Value;
+		}
+		uint32 Offset = 36 + 20 * Mips;
+		for (int32 Mip = 0; Mip < Mips; ++Mip)
+		{
+			const uint32 Edge = static_cast<uint32>(FMath::Max(1, Size >> Mip));
+			uint32 Width = Edge;
+			uint32 Height = Edge;
+			uint32 MipBytes = Sizes[Mip];
+			uint32 Stored = static_cast<uint32>(Streams[Mip].Num());
+			Ar << Width << Height << Offset << MipBytes << Stored;
+			Offset += Stored;
+		}
+		for (TArray<uint8>& Stream : Streams)
+		{
+			Ar.Serialize(Stream.GetData(), Stream.Num());
+		}
+		return Bytes;
+	}
+
+	FMantlePlace MakeDetailPlace()
+	{
+		const FString Json = FString::Printf(
+			TEXT("{\"schemaVersion\":1,\"placeId\":\"plc_detail001\",\"revision\":{\"number\":1,\"state\":\"draft\"},")
+			TEXT("\"metadata\":{\"name\":\"Detail\",\"authorId\":\"usr_4b1d\"},\"settings\":{},\"assets\":[")
+			TEXT("{\"id\":\"%s\",\"kind\":\"StaticMesh\",\"hash\":\"%s\",\"bytes\":100},")
+			TEXT("{\"id\":\"%s\",\"kind\":\"Material\",\"hash\":\"%s\",\"bytes\":100},")
+			TEXT("{\"id\":\"%s\",\"kind\":\"Texture\",\"hash\":\"%s\",\"bytes\":100}],\"entities\":[]}"),
+			DetailMesh, *MeshTag, DetailMaterial, *MeshTag, DetailTexture, *MeshTag);
+		const FMantleParseResult Parsed = FMantlePlaceParser::ParseFromString(Json);
+		check(Parsed.bSuccess);
+		return Parsed.Place;
+	}
+
+	/** One StaticMesh entity of the mesh with the material, for the cell's list. */
+	FMantleEntity DetailEntity()
+	{
+		FMantleEntity Entity;
+		Entity.Id = TEXT("ent_detail");
+		Entity.Type = EMantleEntityType::StaticMesh;
+		FMantleStaticMeshProps Props;
+		Props.Mesh = DetailMesh;
+		Props.Collision = EMantleCollision::None;
+		Props.Materials.Add(DetailMaterial);
+		Entity.Props.Set<FMantleStaticMeshProps>(Props);
+		return Entity;
+	}
+
+	/** The width of the texture the live material draws in its base color slot (0 when none). */
+	int32 BaseColorWidth()
+	{
+		FString Error;
+		UMaterialInstanceDynamic* Instance = Cast<UMaterialInstanceDynamic>(FMantlePlaceAssets::FindLiveMaterial(DetailMaterial, Error));
+		UTexture* Texture = nullptr;
+		if (!Instance || !Instance->GetTextureParameterValue(FHashedMaterialParameterInfo(FName(TEXT("BaseColor"))), Texture, true) || !Texture)
+		{
+			return 0;
+		}
+		const UTexture2D* Texture2D = Cast<UTexture2D>(Texture);
+		return Texture2D ? Texture2D->GetSizeX() : 0;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTextureDetailByDistanceTest,
+	"Mantle.Runtime.Place.StreamedAssets.TextureDetailByDistance",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTextureDetailByDistanceTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTextureDetailTestPrivate;
+	// A cell's material draws its texture from the low companion (512) until the view comes within 150 m of the entity using it; then the full file (1024) is built and
+	// swapped into the material. It stays full out to 200 m, and past that goes back to low and the full build is let go.
+	const TSharedRef<FServingResolver> Server = MakeShared<FServingResolver>();
+	FServedAsset Mesh;
+	Mesh.Kind = TEXT("mesh");
+	Mesh.Bytes = MakeMrm1Box();
+	Server->Assets.Add(DetailMesh, Mesh);
+	FServedAsset Material;
+	Material.Kind = TEXT("material");
+	const FTCHARToUTF8 Document(*FString::Printf(TEXT("{\"schemaVersion\":1,\"alphaMode\":\"opaque\",\"doubleSided\":false,\"textures\":{\"baseColor\":\"%s\"}}"), DetailTexture));
+	Material.Bytes.Append(reinterpret_cast<const uint8*>(Document.Get()), Document.Length());
+	Server->Assets.Add(DetailMaterial, Material);
+	FServedAsset Texture;
+	Texture.Kind = TEXT("texture");
+	Texture.Bytes = MakeMtx3(1024);
+	Texture.LowBytes = MakeMtx3(512);
+	Server->Assets.Add(DetailTexture, Texture);
+
+	FMantleAssetStoreSettings StoreSettings;
+	StoreSettings.RootDir = FPaths::AutomationTransientDir() / TEXT("TextureDetail") / FGuid::NewGuid().ToString();
+	StoreSettings.MaxAttempts = 1;
+	const TSharedRef<FServingFetcher> Fetcher = MakeShared<FServingFetcher>();
+	Fetcher->Source = Server;
+	FMantlePlaceAssetSettings Settings;
+	Settings.bAutoPump = false;
+	Settings.bRenderAssets = true;
+	Settings.bLoadNanite = false;
+	Settings.bAsyncCollisionCook = false;
+	Settings.Resolver = Server;
+	const TSharedRef<FMantleAssetStore> Store = FMantleAssetStore::Create(StoreSettings, Fetcher);
+	Settings.Store = Store;
+	const TSharedRef<FMantlePlaceAssets> Assets = FMantlePlaceAssets::PrepareStreaming(MakeDetailPlace(), Settings, FMantlePlaceAssetsDone());
+	auto PumpUntil = [&Store, &Assets](TFunctionRef<bool()> Done, const double Seconds)
+	{
+		const double Deadline = FPlatformTime::Seconds() + Seconds;
+		while (!Done())
+		{
+			if (FPlatformTime::Seconds() > Deadline)
+			{
+				return false;
+			}
+			Store->Pump();
+			Assets->Pump();
+			FPlatformProcess::Sleep(0.001f);
+		}
+		return true;
+	};
+	auto PumpFor = [&PumpUntil](const double Seconds) { PumpUntil([]() { return false; }, Seconds); };
+	if (!TestTrue(TEXT("the root completes"), PumpUntil([&Assets]() { return Assets->IsComplete(); }, 30.0)))
+	{
+		return false;
+	}
+
+	TArray<FMantleEntity> Cell;
+	Cell.Add(DetailEntity());
+	Assets->AcquireEntityAssets(80, Cell);
+	if (!TestTrue(TEXT("the cell's assets settle"), PumpUntil([&Assets]() { return Assets->GetHolderAssets(80).IsSettled(); }, 30.0)))
+	{
+		return false;
+	}
+	PumpFor(0.6);
+	const FString FullUrl = FString(TEXT("test://")) + DetailTexture;
+	const FString LowUrl = FullUrl + TEXT("#low");
+	TestEqual(TEXT("the texture was built from its low companion"), Assets->GetStreamedCounts().LowTextures, 1);
+	TestEqual(TEXT("its low file was fetched once"), Fetcher->Fetched.FindRef(LowUrl), 1);
+	TestEqual(TEXT("and with no view the full file is not fetched"), Fetcher->Fetched.FindRef(FullUrl), 0);
+	TestEqual(TEXT("the material draws the 512 low texture"), BaseColorWidth(), 512);
+
+	// Near: 1 m from the entity.
+	Assets->SetTextureView(FVector(100.0, 0.0, 0.0));
+	TestTrue(TEXT("near, the full texture is built and shown"), PumpUntil([&Assets]() { return Assets->GetStreamedCounts().FullTexturesShown == 1; }, 30.0));
+	TestEqual(TEXT("the full file was fetched once"), Fetcher->Fetched.FindRef(FullUrl), 1);
+	TestEqual(TEXT("the material draws the 1024 full texture"), BaseColorWidth(), 1024);
+
+	// 175 m: past the 150 m that asks for full, short of the 200 m that lets it go.
+	Assets->SetTextureView(FVector(17500.0, 0.0, 0.0));
+	PumpFor(1.2);
+	TestEqual(TEXT("between 150 and 200 m it stays full"), BaseColorWidth(), 1024);
+
+	// Far: 300 m.
+	Assets->SetTextureView(FVector(30000.0, 0.0, 0.0));
+	TestTrue(TEXT("far, it goes back to low"), PumpUntil([&Assets]()
+	{
+		const FMantlePlaceAssets::FStreamedCounts Counts = Assets->GetStreamedCounts();
+		return Counts.FullTexturesShown == 0 && Counts.FullTexturesWanted == 0;
+	}, 30.0));
+	TestEqual(TEXT("the material draws the low texture again"), BaseColorWidth(), 512);
+
+	Assets->ReleaseEntityAssets(80);
+	TestTrue(TEXT("the release drops the texture"), PumpUntil([&Assets]() { return Assets->GetStreamedCounts().Textures == 0; }, 30.0));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTextureLowFallsBackToFullTest,
+	"Mantle.Runtime.Place.StreamedAssets.LowTextureFallsBackToFull",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTextureLowFallsBackToFullTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTextureDetailTestPrivate;
+	// #189: a cell texture whose low companion cannot be had (its url answers 404, again after a fresh resolve) is not a failed texture: it is built from the full
+	// file, and the material draws that, with no view anywhere near.
+	const TSharedRef<FServingResolver> Server = MakeShared<FServingResolver>();
+	FServedAsset Mesh;
+	Mesh.Kind = TEXT("mesh");
+	Mesh.Bytes = MakeMrm1Box();
+	Server->Assets.Add(DetailMesh, Mesh);
+	FServedAsset Material;
+	Material.Kind = TEXT("material");
+	const FTCHARToUTF8 Document(*FString::Printf(TEXT("{\"schemaVersion\":1,\"alphaMode\":\"opaque\",\"doubleSided\":false,\"textures\":{\"baseColor\":\"%s\"}}"), DetailTexture));
+	Material.Bytes.Append(reinterpret_cast<const uint8*>(Document.Get()), Document.Length());
+	Server->Assets.Add(DetailMaterial, Material);
+	FServedAsset Texture;
+	Texture.Kind = TEXT("texture");
+	// Bytes of their own, so no build another test made from MakeMtx3's files is reused here.
+	Texture.Bytes = MakeMtx3(1024, 1);
+	Texture.LowBytes = MakeMtx3(512, 1);
+	Texture.bServeLow = false;
+	Server->Assets.Add(DetailTexture, Texture);
+
+	FMantleAssetStoreSettings StoreSettings;
+	StoreSettings.RootDir = FPaths::AutomationTransientDir() / TEXT("TextureLowFallback") / FGuid::NewGuid().ToString();
+	StoreSettings.MaxAttempts = 1;
+	const TSharedRef<FServingFetcher> Fetcher = MakeShared<FServingFetcher>();
+	Fetcher->Source = Server;
+	FMantlePlaceAssetSettings Settings;
+	Settings.bAutoPump = false;
+	Settings.bRenderAssets = true;
+	Settings.bLoadNanite = false;
+	Settings.bAsyncCollisionCook = false;
+	Settings.Resolver = Server;
+	const TSharedRef<FMantleAssetStore> Store = FMantleAssetStore::Create(StoreSettings, Fetcher);
+	Settings.Store = Store;
+	const TSharedRef<FMantlePlaceAssets> Assets = FMantlePlaceAssets::PrepareStreaming(MakeDetailPlace(), Settings, FMantlePlaceAssetsDone());
+	auto PumpUntil = [&Store, &Assets](TFunctionRef<bool()> Done, const double Seconds)
+	{
+		const double Deadline = FPlatformTime::Seconds() + Seconds;
+		while (!Done())
+		{
+			if (FPlatformTime::Seconds() > Deadline)
+			{
+				return false;
+			}
+			Store->Pump();
+			Assets->Pump();
+			FPlatformProcess::Sleep(0.001f);
+		}
+		return true;
+	};
+	if (!TestTrue(TEXT("the root completes"), PumpUntil([&Assets]() { return Assets->IsComplete(); }, 30.0)))
+	{
+		return false;
+	}
+
+	TArray<FMantleEntity> Cell;
+	Cell.Add(DetailEntity());
+	Assets->AcquireEntityAssets(81, Cell);
+	if (!TestTrue(TEXT("the cell's assets settle"), PumpUntil([&Assets]() { return Assets->GetHolderAssets(81).IsSettled(); }, 30.0)))
+	{
+		return false;
+	}
+	const FString FullUrl = FString(TEXT("test://")) + DetailTexture;
+	const FString LowUrl = FullUrl + TEXT("#low");
+	TestTrue(TEXT("the low file was asked for, and again after a fresh resolve"), Fetcher->Fetched.FindRef(LowUrl) >= 2);
+	TestEqual(TEXT("the full file was fetched once"), Fetcher->Fetched.FindRef(FullUrl), 1);
+	TestEqual(TEXT("the texture is not counted as low"), Assets->GetStreamedCounts().LowTextures, 0);
+	TestEqual(TEXT("the material draws the 1024 full texture"), BaseColorWidth(), 1024);
+
+	Assets->ReleaseEntityAssets(81);
+	TestTrue(TEXT("the release drops the texture"), PumpUntil([&Assets]() { return Assets->GetStreamedCounts().Textures == 0; }, 30.0));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTextureCutOnTheClientTest,
+	"Mantle.Runtime.Place.StreamedAssets.TextureCutOnTheClient",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTextureCutOnTheClientTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTextureDetailTestPrivate;
+	// #189: a cell texture with no low companion on the server (a place not republished since low files) is cut on the client from its full MTX3: only the mips from
+	// 512 down are inflated, the same tail the worker slices. Far content draws that; near, the full build is made from the same download. The live budget's shorter
+	// full-detail reach (textures over at ladder 0) sends it back to low, and the whole reach brings it back. A texture already 512 or smaller is never cut, nor built twice.
+
+	// The decode: a 2048 chain from its 512 mip (two mips left out, the tail intact), a 256 one whole, and no cut unless asked for.
+	{
+		FMantleTextureBuildParams Params;
+		Params.LowTopDimension = FMantlePlaceAssets::LowTextureMaxDimension;
+		FString Error;
+		FMantleDecodedTexture Cut;
+		if (!TestTrue(TEXT("a 2048 MTX3 decodes cut"), FMantleRuntimeTextureBuilder::Decode(MakeMtx3(2048, 7), Params, Cut, &Error)))
+		{
+			AddError(Error);
+			return false;
+		}
+		TestEqual(TEXT("from its 512 mip"), Cut.GetWidth(), 512);
+		TestEqual(TEXT("two mips left out"), Cut.MipsCut, 2);
+		TestEqual(TEXT("512 down to 1 x 1: ten mips"), Cut.Mips.Num(), 10);
+		TestEqual(TEXT("the source size is the top mip's"), Cut.SourceWidth, 512);
+		TestEqual(TEXT("the tail is the file's own (its last mip's mark)"), Cut.Mips.Last().Bytes[0], static_cast<uint8>(7));
+		FMantleDecodedTexture Small;
+		TestTrue(TEXT("a 256 MTX3 decodes"), FMantleRuntimeTextureBuilder::Decode(MakeMtx3(256, 7), Params, Small, &Error));
+		TestEqual(TEXT("whole: nothing to cut"), Small.MipsCut, 0);
+		TestEqual(TEXT("256 wide"), Small.GetWidth(), 256);
+		FMantleDecodedTexture Whole;
+		TestTrue(TEXT("a 1024 MTX3 decodes"), FMantleRuntimeTextureBuilder::Decode(MakeMtx3(1024, 7), FMantleTextureBuildParams(), Whole, &Error));
+		TestEqual(TEXT("not asked to cut: whole"), Whole.GetWidth(), 1024);
+		TestEqual(TEXT("and nothing left out"), Whole.MipsCut, 0);
+	}
+
+	// A streaming set over a server that has no low file for the texture.
+	struct FRig
+	{
+		TSharedRef<FServingResolver> Server = MakeShared<FServingResolver>();
+		TSharedRef<FServingFetcher> Fetcher = MakeShared<FServingFetcher>();
+		TSharedPtr<FMantleAssetStore> Store;
+		TSharedPtr<FMantlePlaceAssets> Assets;
+
+		explicit FRig(TArray<uint8> TextureBytes)
+		{
+			FServedAsset Mesh;
+			Mesh.Kind = TEXT("mesh");
+			Mesh.Bytes = MakeMrm1Box();
+			Server->Assets.Add(DetailMesh, Mesh);
+			FServedAsset Material;
+			Material.Kind = TEXT("material");
+			const FTCHARToUTF8 Document(*FString::Printf(TEXT("{\"schemaVersion\":1,\"alphaMode\":\"opaque\",\"doubleSided\":false,\"textures\":{\"baseColor\":\"%s\"}}"), DetailTexture));
+			Material.Bytes.Append(reinterpret_cast<const uint8*>(Document.Get()), Document.Length());
+			Server->Assets.Add(DetailMaterial, Material);
+			FServedAsset Texture;
+			Texture.Kind = TEXT("texture");
+			Texture.Bytes = MoveTemp(TextureBytes);
+			Server->Assets.Add(DetailTexture, Texture);
+
+			FMantleAssetStoreSettings StoreSettings;
+			StoreSettings.RootDir = FPaths::AutomationTransientDir() / TEXT("TextureCut") / FGuid::NewGuid().ToString();
+			StoreSettings.MaxAttempts = 1;
+			Fetcher->Source = Server;
+			FMantlePlaceAssetSettings Settings;
+			Settings.bAutoPump = false;
+			Settings.bRenderAssets = true;
+			Settings.bLoadNanite = false;
+			Settings.bAsyncCollisionCook = false;
+			Settings.Resolver = Server;
+			const TSharedRef<FMantleAssetStore> Created = FMantleAssetStore::Create(StoreSettings, Fetcher);
+			Store = Created;
+			Settings.Store = Created;
+			Assets = FMantlePlaceAssets::PrepareStreaming(MakeDetailPlace(), Settings, FMantlePlaceAssetsDone());
+		}
+
+		bool PumpUntil(TFunctionRef<bool()> Done, const double Seconds)
+		{
+			const double Deadline = FPlatformTime::Seconds() + Seconds;
+			while (!Done())
+			{
+				if (FPlatformTime::Seconds() > Deadline)
+				{
+					return false;
+				}
+				Store->Pump();
+				Assets->Pump();
+				FPlatformProcess::Sleep(0.001f);
+			}
+			return true;
+		}
+
+		void PumpFor(const double Seconds)
+		{
+			PumpUntil([]() { return false; }, Seconds);
+		}
+
+		bool AcquireCell(const int64 Holder)
+		{
+			if (!PumpUntil([this]() { return Assets->IsComplete(); }, 30.0))
+			{
+				return false;
+			}
+			TArray<FMantleEntity> Cell;
+			Cell.Add(DetailEntity());
+			Assets->AcquireEntityAssets(Holder, Cell);
+			const bool bSettled = PumpUntil([this, Holder]() { return Assets->GetHolderAssets(Holder).IsSettled(); }, 30.0);
+			PumpFor(0.6);
+			return bSettled;
+		}
+
+		/** Waits until Shown full textures are wanted and drawn (0: none, back on the low one). */
+		bool FullShown(const int32 Shown)
+		{
+			return PumpUntil([this, Shown]()
+			{
+				const FMantlePlaceAssets::FStreamedCounts Counts = Assets->GetStreamedCounts();
+				return Counts.FullTexturesShown == Shown && Counts.FullTexturesWanted == Shown;
+			}, 30.0);
+		}
+	};
+	const FString FullUrl = FString(TEXT("test://")) + DetailTexture;
+	const FString LowUrl = FullUrl + TEXT("#low");
+
+	{
+		FRig Rig(MakeMtx3(1024, 2));
+		if (!TestTrue(TEXT("the cell's assets settle"), Rig.AcquireCell(82)))
+		{
+			return false;
+		}
+		TestEqual(TEXT("the texture was built low"), Rig.Assets->GetStreamedCounts().LowTextures, 1);
+		TestEqual(TEXT("from the full file, fetched once"), Rig.Fetcher->Fetched.FindRef(FullUrl), 1);
+		TestEqual(TEXT("no low file was asked for"), Rig.Fetcher->Fetched.FindRef(LowUrl), 0);
+		TestEqual(TEXT("the material draws the 512 cut"), BaseColorWidth(), 512);
+
+		Rig.Assets->SetTextureView(FVector(100.0, 0.0, 0.0));
+		TestTrue(TEXT("near, the full texture is built and shown"), Rig.FullShown(1));
+		TestEqual(TEXT("from the same download: no second fetch"), Rig.Fetcher->Fetched.FindRef(FullUrl), 1);
+		TestEqual(TEXT("the material draws the 1024 full texture"), BaseColorWidth(), 1024);
+
+		// 100 m: within the whole 150 m, past a 25 m reach (and its 33 m edge).
+		Rig.Assets->SetTextureView(FVector(10000.0, 0.0, 0.0));
+		Rig.PumpFor(1.2);
+		TestEqual(TEXT("at 100 m it is full"), BaseColorWidth(), 1024);
+		Rig.Assets->SetTextureDetailReach(2500.0);
+		TestTrue(TEXT("with full detail down to 25 m it goes back to low"), Rig.FullShown(0));
+		TestEqual(TEXT("the material draws the cut again"), BaseColorWidth(), 512);
+		Rig.Assets->SetTextureDetailReach(FMantlePlaceAssets::FullTextureNearCm);
+		TestTrue(TEXT("with the whole 150 m back it is full again"), Rig.FullShown(1));
+		TestEqual(TEXT("the material draws the full texture"), BaseColorWidth(), 1024);
+
+		Rig.Assets->ReleaseEntityAssets(82);
+		TestTrue(TEXT("the release drops the texture"), Rig.PumpUntil([&Rig]() { return Rig.Assets->GetStreamedCounts().Textures == 0; }, 30.0));
+	}
+
+	{
+		FRig Rig(MakeMtx3(256, 3));
+		if (!TestTrue(TEXT("the small texture's cell settles"), Rig.AcquireCell(83)))
+		{
+			return false;
+		}
+		TestEqual(TEXT("a 256 texture is not counted as low"), Rig.Assets->GetStreamedCounts().LowTextures, 0);
+		TestEqual(TEXT("the material draws it whole"), BaseColorWidth(), 256);
+		Rig.Assets->SetTextureView(FVector(100.0, 0.0, 0.0));
+		Rig.PumpFor(1.2);
+		TestEqual(TEXT("near, no second build of it is wanted"), Rig.Assets->GetStreamedCounts().FullTexturesWanted, 0);
+		TestEqual(TEXT("and it was fetched once"), Rig.Fetcher->Fetched.FindRef(FullUrl), 1);
+		Rig.Assets->ReleaseEntityAssets(83);
+		TestTrue(TEXT("the release drops it"), Rig.PumpUntil([&Rig]() { return Rig.Assets->GetStreamedCounts().Textures == 0; }, 30.0));
+	}
+	return true;
+}
+
+namespace MantleLumenDecodeTestPrivate
+{
+	using namespace MantleNaniteSideFileTestPrivate;
+
+	const TCHAR* const LumenMesh = TEXT("ast_u000000000000000000000000000000f1");
+	const TCHAR* const LumenFile = TEXT("ast_u000000000000000000000000000000f2");
+
+	/** A small valid MLD1 for the mesh MeshTag names (the field MantleMeshLumenDataTest builds by hand). */
+	TArray<uint8> MakeMld1()
+	{
+		FDistanceFieldVolumeData Field;
+		Field.LocalSpaceMeshBounds = FBox3f(FVector3f(-50.0f), FVector3f(50.0f));
+		Field.Mips[0].IndirectionDimensions = FIntVector(2, 2, 2);
+		Field.Mips[0].NumDistanceFieldBricks = 3;
+		Field.Mips[0].BulkOffset = 16;
+		Field.Mips[0].BulkSize = 48;
+		Field.Mips[DistanceField::NumMips - 1].IndirectionDimensions = FIntVector(1, 1, 1);
+		Field.Mips[DistanceField::NumMips - 1].BulkSize = 3;
+		Field.AlwaysLoadedMip = { 9, 8, 7 };
+		Field.StreamableMips.Lock(LOCK_READ_WRITE);
+		uint8* Streamed = Field.StreamableMips.Realloc(64);
+		FMemory::Memset(Streamed, 0x11, 16);
+		FMemory::Memset(Streamed + 16, 0x5A, 48);
+		Field.StreamableMips.Unlock();
+		FCardRepresentationData Cards;
+		Cards.MeshCardsBuildData.Bounds = FBox(FVector(-50.0), FVector(50.0));
+		Cards.MeshCardsBuildData.CardBuildData.AddDefaulted(2);
+		return FMantleMeshLumenFile::Write(MeshTag, Field, Cards);
+	}
+
+
+	FMantlePlace MakeLumenPlace()
+	{
+		const FString Json = FString::Printf(
+			TEXT("{\"schemaVersion\":1,\"placeId\":\"plc_lumendec01\",\"revision\":{\"number\":1,\"state\":\"draft\"},"
+				 "\"metadata\":{\"name\":\"Lumen\",\"authorId\":\"usr_4b1d\"},\"settings\":{},\"assets\":["
+				 "{\"id\":\"%s\",\"kind\":\"StaticMesh\",\"hash\":\"%s\",\"bytes\":100,\"lumen\":\"%s\"},"
+				 "{\"id\":\"%s\",\"kind\":\"Lumen\",\"hash\":\"%s\",\"bytes\":50,\"engine\":\"%s\"}],"
+				 "\"entities\":[{\"id\":\"ent_l\",\"type\":\"StaticMesh\",\"parent\":null,\"transform\":{\"location\":[0,0,0],\"rotation\":[0,0,0],\"scale\":[1,1,1]},\"properties\":{\"mesh\":\"%s\"}}]}"),
+			LumenMesh, *MeshTag, LumenFile, LumenFile, *MeshTag, *FMantleMeshLumenFile::EngineTag(), LumenMesh);
+		const FMantleParseResult Parsed = FMantlePlaceParser::ParseFromString(Json);
+		check(Parsed.bSuccess);
+		return Parsed.Place;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleLumenInflatedOffTheGameThreadTest,
+	"Mantle.Runtime.StaticMesh.LumenInflatedBeforeTheBuild",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleLumenInflatedOffTheGameThreadTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleLumenDecodeTestPrivate;
+	// #189 step 5: the backend stores a mesh's Lumen file as MLD3. The place's decode task inflates it, so the mesh build on the game thread reads
+	// the MLD1 as it is (City Sample's Lumen is 1.41 GB inflated: seconds of hitches if the build inflated it).
+	const TArray<uint8> Mld1 = MakeMld1();
+	if (!TestTrue(TEXT("the Lumen file is written"), Mld1.Num() > 0))
+	{
+		return false;
+	}
+	const TSharedRef<FServingResolver> Server = MakeShared<FServingResolver>();
+	FServedAsset Mesh;
+	Mesh.Kind = TEXT("mesh");
+	// Bytes of its own, so no build another test made is reused and this mesh is built here, reading its Lumen file.
+	Mesh.Bytes = MakeMrm3Box(41.0f);
+	Server->Assets.Add(LumenMesh, Mesh);
+	FServedAsset Lumen;
+	Lumen.Kind = TEXT("lumen");
+	Lumen.Bytes = MakeEnvelope("MLD3", Mld1);
+	Server->Assets.Add(LumenFile, Lumen);
+
+	FMantleAssetStoreSettings StoreSettings;
+	StoreSettings.RootDir = FPaths::AutomationTransientDir() / TEXT("LumenDecode") / FGuid::NewGuid().ToString();
+	StoreSettings.MaxAttempts = 1;
+	const TSharedRef<FServingFetcher> Fetcher = MakeShared<FServingFetcher>();
+	Fetcher->Source = Server;
+	FMantlePlaceAssetSettings Settings;
+	Settings.bAutoPump = false;
+	Settings.bRenderAssets = true;
+	Settings.bLoadNanite = false;
+	Settings.bAsyncCollisionCook = false;
+	Settings.Resolver = Server;
+	Settings.Store = FMantleAssetStore::Create(StoreSettings, Fetcher);
+
+	const int64 ReadsBefore = FMantleMeshLumenFile::GetReadCount();
+	const TSharedRef<FMantlePlaceAssets> Assets = FMantlePlaceAssets::Prepare(MakeLumenPlace(), Settings, FMantlePlaceAssetsDone());
+	Assets->WaitUntilComplete(60.0f);
+	TestTrue(TEXT("the place's assets complete"), Assets->IsComplete());
+	// Read takes only an MLD1, so a build that read the file was handed it inflated.
+	FMantleMeshLumenData Unused;
+	TestFalse(TEXT("Read does not take the MLD3 that was served"), FMantleMeshLumenFile::Read(Lumen.Bytes, MeshTag, Unused));
+	TestEqual(TEXT("the mesh build read its Lumen file, inflated before it"), FMantleMeshLumenFile::GetReadCount() - ReadsBefore, 1ll);
 	return true;
 }
 

@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceAssets.h"
 #include "MantleMemoryTags.h"
+#include "Misc/FileHelper.h"
 
 #include "Async/TaskGraphInterfaces.h"
 #include "MantleAnimClip.h"
@@ -11,6 +12,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
+#include "HAL/PlatformMemory.h"
 #include "HAL/PlatformTime.h"
 #include "MantleConnection.h"
 #include "MantleEngineTag.h"
@@ -87,6 +89,11 @@ namespace MantlePlaceAssetsPrivate
 			Body->AggGeom.ConvexElems.Num(), Body->CollisionTraceFlag == CTF_UseSimpleAsComplex ? TEXT("the simple shapes") : TEXT("the triangles"),
 			Body->TriMeshGeometries.Num());
 	}
+
+	/** #189: a texture build's key variant is its role, with this bit when the build is the client's cut of a full file (no low companion on the server). */
+	constexpr int32 TextureCutVariant = 0x10;
+	EMantleTextureRole TextureRoleOf(const uint8 Variant) { return static_cast<EMantleTextureRole>(Variant & 0x0F); }
+	bool IsTextureCut(const uint8 Variant) { return (Variant & TextureCutVariant) != 0; }
 
 	const TCHAR* RoleName(const EMantleTextureRole Role)
 	{
@@ -1243,6 +1250,8 @@ FMantlePlaceAssets::FMantlePlaceAssets(const FMantlePlaceAssetSettings& InSettin
 	, OnDone(MoveTemp(InOnDone))
 {
 	MantlePlaceAssetsPrivate::GLiveSets.Add(this);
+	// A join: size the disk budget from the drive as it is now (#189).
+	Store->RefreshBudget();
 }
 
 FMantlePlaceAssets::~FMantlePlaceAssets()
@@ -1266,6 +1275,16 @@ FMantlePlaceAssets::~FMantlePlaceAssets()
 			Build.bPinned = false;
 		}
 	}
+
+	// #189: what is left once a place's set is gone, in every log, so a leak shows without anyone sampling by hand. The textures and
+	// meshes the set built go at the next garbage collection (MANTLE_GC counts the objects, MANTLE_NANITE_PAGES the Nanite stores).
+	const FMantleAssetStore::FUsage Usage = Store->GetUsage();
+	const FPlatformMemoryStats Memory = FPlatformMemory::GetStats();
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS set released: %d set(s) left; the place asked for %d files %.0f MB; store %d files %.0f MB of a %.0f MB budget, pinned %d files %.0f MB; process private %.0f MB, working set %.0f MB"),
+		MantlePlaceAssetsPrivate::GLiveSets.Num(), DemandHashes.Num(), MantlePlaceAssetsPrivate::Megabytes(DemandBytes),
+		Usage.StoredFiles, MantlePlaceAssetsPrivate::Megabytes(Usage.StoredBytes), MantlePlaceAssetsPrivate::Megabytes(Usage.BudgetBytes), Usage.PinnedFiles,
+		MantlePlaceAssetsPrivate::Megabytes(Usage.PinnedBytes), MantlePlaceAssetsPrivate::Megabytes(static_cast<int64>(Memory.UsedVirtual)),
+		MantlePlaceAssetsPrivate::Megabytes(static_cast<int64>(Memory.UsedPhysical)));
 }
 
 void FMantlePlaceAssets::AddReferencedObjects(FReferenceCollector& Collector)
@@ -2137,18 +2156,38 @@ void FMantlePlaceAssets::OnResolved(const TArray<FString>& Ids, const FMantleAss
 	}
 }
 
-void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAsset& Asset)
+void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAsset& InAsset)
 {
 	// A weapon's attachment may be a mesh or a skeletal mesh; the API says which. This record was made as a mesh: swap
 	// it for a skeletal mesh one and let that one take the answer. Nothing touches Record after, which the swap removes.
-	if (Record.Kind == EAssetKind::Mesh && Record.bMeshOrSkeletal && Asset.Kind.Equals(KindName(EAssetKind::SkeletalMesh), ESearchCase::CaseSensitive))
+	if (Record.Kind == EAssetKind::Mesh && Record.bMeshOrSkeletal && InAsset.Kind.Equals(KindName(EAssetKind::SkeletalMesh), ESearchCase::CaseSensitive))
 	{
 		const FString SwappedId = Record.Id;
-		const FMantleUploadedAsset Answer = Asset;
+		const FMantleUploadedAsset Answer = InAsset;
 		Records.Remove(RecordKey(SwappedId, EAssetKind::Mesh, EMantleTextureRole::Color));
 		ApplyResolved(EnsureRecord(SwappedId, EAssetKind::SkeletalMesh), Answer);
 		return;
 	}
+	// #189: a cell material's texture is built from its low companion first (its cooked file's mips from 512 down); the full file is built only while something
+	// near wants it (UpdateTextureDetail, which calls this again with bFullPass for the full build).
+	// A texture with no companion on the server (cooked before low files, or a place not republished since) is cut on the client from its full file: the same download,
+	// a build of its own (the cut variant), and the full build shares the bytes when something comes near.
+	const bool bUseLow = Record.Kind == EAssetKind::Texture && Record.bStreamed && !Record.bFullPass && !Record.bLowFailed;
+	const bool bClientCut = bUseLow && !InAsset.HasLowTexture();
+	FMantleUploadedAsset LowAnswer;
+	if (bUseLow && !bClientCut)
+	{
+		LowAnswer = InAsset;
+		LowAnswer.Url = InAsset.LowUrl;
+		LowAnswer.CookedHash = InAsset.LowCookedHash;
+		LowAnswer.CookedBytes = InAsset.LowCookedBytes;
+	}
+	if (!Record.bFullPass)
+	{
+		Record.bLowTexture = bUseLow;
+	}
+	// The client's cut reads the full file: only a companion on the server has its own answer.
+	const FMantleUploadedAsset& Asset = bUseLow && !bClientCut ? LowAnswer : InAsset;
 	const TCHAR* Expected = (Record.Kind == EAssetKind::TerrainWeights || Record.Kind == EAssetKind::VoxelTile) ? KindName(EAssetKind::Texture) : KindName(Record.Kind);
 	if (!Asset.Kind.Equals(Expected, ESearchCase::CaseSensitive))
 	{
@@ -2182,7 +2221,7 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 	Key.Hash = Hash;
 	Key.Kind = Record.Kind;
 	Key.Variant = static_cast<uint8>(Record.Kind == EAssetKind::Mesh ? (Record.bCollision ? 1 : 0)
-		: Record.Kind == EAssetKind::Texture ? static_cast<int32>(Record.Role)
+		: Record.Kind == EAssetKind::Texture ? static_cast<int32>(Record.Role) | (bClientCut ? MantlePlaceAssetsPrivate::TextureCutVariant : 0)
 		: Record.Kind == EAssetKind::TerrainWeights ? (Record.bKeepPixels ? 1 : 0) : 0);
 	Record.bResolved = true;
 	Record.Build = Key;
@@ -2225,6 +2264,12 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 	}
 	Store->Pin(Hash);
 	Build.bPinned = true;
+	if (!DemandHashes.Contains(Hash))
+	{
+		DemandHashes.Add(Hash);
+		DemandBytes += Build.Ref.Bytes;
+		Store->SetPlaceDemand(DemandBytes);
+	}
 
 	// An object an earlier set built from the same bytes, still alive: nothing to download or build.
 	// A sound builds no object (its emitters make their own waves), nor does a clip (its decoded keys
@@ -2593,7 +2638,9 @@ void FMantlePlaceAssets::StartFetches()
 			const TWeakPtr<FMantlePlaceAssets> Weak = AsShared();
 			// A Nanite file is read from its place in the store (its head at load, a streamed page when the engine asks), never held in memory: the store verifies it (hashes the whole file once per process) and says where it is.
 			Build->FetchStartedAt = FPlatformTime::Seconds();
-			Build->RequestId = Store->Request(Build->Ref, Key.Kind == EAssetKind::Nanite ? EMantleAssetLoad::PathOnly : EMantleAssetLoad::Bytes, FMantleAssetDone::CreateLambda(
+			// #189: so is a full-detail texture: the engine's streamer reads its top mips from the file when it wants them (a client-cut copy is decoded from the bytes).
+			const bool bPathOnly = Key.Kind == EAssetKind::Nanite || (Key.Kind == EAssetKind::Texture && !MantlePlaceAssetsPrivate::IsTextureCut(Key.Variant));
+			Build->RequestId = Store->Request(Build->Ref, bPathOnly ? EMantleAssetLoad::PathOnly : EMantleAssetLoad::Bytes, FMantleAssetDone::CreateLambda(
 				[Weak, Key](const FMantleAssetResult& Fetched)
 				{
 					if (const TSharedPtr<FMantlePlaceAssets> Pinned = Weak.Pin())
@@ -2667,6 +2714,10 @@ void FMantlePlaceAssets::OnFetched(const FBuildKey& Key, const FMantleAssetResul
 		DownloadedBytes += Fetched.SizeBytes;
 	}
 	Build->Bytes = Fetched.Bytes;
+	if (Key.Kind == EAssetKind::Texture && !Fetched.Bytes.IsValid())
+	{
+		Build->TexturePath = Fetched.Path;
+	}
 	if (Key.Kind == EAssetKind::Nanite)
 	{
 		// From the request to the answer: the download, when there was one, and the store's one hash of the whole file (once per process, in 1 MB pieces, nothing kept).
@@ -2706,10 +2757,13 @@ void FMantlePlaceAssets::StartDecodes()
 
 		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> Bytes = MoveTemp(Build->Bytes);
 		Build->Bytes.Reset();
+		// #189: a Lumen file is an MLD3 (what the backend stores), unpacked by the decode task into this array, which only the task writes before it
+		// hands the build back, so OnDecoded's header check and the mesh builds on the game thread read the MLD1 inside.
+		TSharedPtr<TArray<uint8>, ESPMode::ThreadSafe> LumenRaw;
 		if (Key.Kind == EAssetKind::Lumen)
 		{
-			// #149: nothing to decode off the game thread; OnDecoded looks at the header.
-			Build->LumenFile = Bytes;
+			LumenRaw = MakeShared<TArray<uint8>, ESPMode::ThreadSafe>();
+			Build->LumenFile = LumenRaw;
 		}
 		// A Nanite file's head (its first piece, the fields and the root pages: about a MiB) is read and inflated by the decode task (a file read and an inflate are too long for the game thread) into this
 		// array, and its table into this one, which only the task writes, before it hands the build back; the game thread reads them after (OnDecoded). The streamed pages stay in the file.
@@ -2728,11 +2782,19 @@ void FMantlePlaceAssets::StartDecodes()
 			// Likewise; the voxel world reads its blocks and tiles on its own workers.
 			Build->VoxelFile = Bytes;
 		}
+		// #189: a full-detail texture fetched as its place in the store: the task reads it for the engine's streamer (or whole, when it cannot stream).
+		const FString TexturePath = Build->TexturePath;
+		TSharedPtr<FMantleStreamedTexturePrep, ESPMode::ThreadSafe> StreamedOut;
+		if (Key.Kind == EAssetKind::Texture && !TexturePath.IsEmpty())
+		{
+			StreamedOut = MakeShared<FMantleStreamedTexturePrep, ESPMode::ThreadSafe>();
+			Build->Streamed = StreamedOut;
+		}
 		const int64 MaxTextureGpuBytes = Settings.MaxTextureGpuBytes;
 		const TSharedRef<FCompletionQueue, ESPMode::ThreadSafe> Queue = Completions;
 		// Background priority: the engine's foreground workers (two on this machine's default setup) run the renderer's visibility tasks, and a decode that holds them for 70 ms (a
 		// 4 MB inflate, a 60,000-vertex mesh described) holds the render thread's frame with it.
-		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes, NaniteRaw, NaniteTableOut, NanitePath]()
+		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes, NaniteRaw, NaniteTableOut, NanitePath, LumenRaw, TexturePath, StreamedOut]()
 		{
 			LLM_SCOPE_BYTAG(Mantle_PlaceAssets);
 			TSharedPtr<FMantleStaticMeshData> MeshV2;
@@ -2754,6 +2816,12 @@ void FMantlePlaceAssets::StartDecodes()
 			switch (Key.Kind)
 			{
 			case EAssetKind::Lumen:
+				if (LumenRaw.IsValid() && !FMantleMeshLumenFile::Unpack(View, *LumenRaw, &Error) && Error.IsEmpty())
+				{
+					Error = TEXT("not an MLD3");
+				}
+				break;
+
 			case EAssetKind::VoxelWorld:
 			case EAssetKind::VoxelTile:
 				break;
@@ -2820,10 +2888,31 @@ void FMantlePlaceAssets::StartDecodes()
 			case EAssetKind::Texture:
 			{
 				FMantleTextureBuildParams Params;
-				Params.Role = static_cast<EMantleTextureRole>(Key.Variant);
+				Params.Role = MantlePlaceAssetsPrivate::TextureRoleOf(Key.Variant);
 				Params.MaxGpuBytes = MaxTextureGpuBytes;
+				Params.LowTopDimension = MantlePlaceAssetsPrivate::IsTextureCut(Key.Variant) ? FMantlePlaceAssets::LowTextureMaxDimension : 0;
+				TArray<uint8> FileBytes;
+				TConstArrayView<uint8> Source = View;
+				if (StreamedOut.IsValid())
+				{
+					// #189: streamed when the engine can stream it and the slot takes it as cooked: the role the slot wants (else the whole decode below says
+					// which), and not a BC4 ORM, which PrepareForSlot expands to gray 8-bit color.
+					FMantleStreamedTexturePrep Prep;
+					if (FMantleRuntimeTextureBuilder::PrepareStreamed(TexturePath, Params, Prep) && Prep.Role == Params.Role
+						&& !(Prep.Format == PF_BC4 && SlotForRole(Params.Role) == EMantlePlaceTextureSlot::Orm))
+					{
+						*StreamedOut = MoveTemp(Prep);
+						break;
+					}
+					if (!FFileHelper::LoadFileToArray(FileBytes, *TexturePath))
+					{
+						Error = TEXT("could not be read from the store");
+						break;
+					}
+					Source = FileBytes;
+				}
 				Texture = MakeShared<FMantleDecodedTexture>();
-				if (!FMantleRuntimeTextureBuilder::Decode(View, Params, *Texture, &Error)
+				if (!FMantleRuntimeTextureBuilder::Decode(Source, Params, *Texture, &Error)
 					|| !FMantlePlaceMaterials::PrepareForSlot(SlotForRole(Params.Role), *Texture, &Error))
 				{
 					Texture.Reset();
@@ -2971,9 +3060,9 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> File = Build->LumenFile;
 		FString Engine;
 		FString MeshTag;
-		if (!File.IsValid() || !FMantleMeshLumenFile::ReadHeader(*File, Engine, MeshTag))
+		if (!Error.IsEmpty() || !File.IsValid() || !FMantleMeshLumenFile::ReadHeader(*File, Engine, MeshTag))
 		{
-			FailBuild(*Build, TEXT("is not a Lumen file this client reads (MLD1)"));
+			FailBuild(*Build, Error.IsEmpty() ? FString(TEXT("is not a Lumen file this client reads (MLD3)")) : FString::Printf(TEXT("is %s"), *Error));
 			return;
 		}
 		Build->Detail = FString::Printf(TEXT("MLD1, engine %s, %.1f KB"), *Engine, File->Num() / 1024.0);
@@ -3014,6 +3103,16 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 		QueueBuild(Key);
 		return;
 	}
+	// #189: a streamed texture is its mip table and tail (read by the decode task); the build makes the texture the engine's streamer reads the rest of from the file.
+	if (Key.Kind == EAssetKind::Texture && Error.IsEmpty() && !Texture && Build->Streamed.IsValid() && Build->Streamed->Mips.Num() > 0)
+	{
+		ReleasePending(*Build);
+		Build->PendingBytes = Build->Streamed->GetAllocatedBytes();
+		PendingBuildBytes += Build->PendingBytes;
+		QueueBuild(Key);
+		return;
+	}
+	Build->Streamed.Reset();
 	if (!Error.IsEmpty()
 		|| (!MeshV2 && !MeshV1 && !Texture && !Material && !Sound && !Skinned && !Clip && !Heightfield && !TerrainWeights && !Vehicle && !Weapon && !Wheel))
 	{
@@ -3510,14 +3609,46 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 
 	case EAssetKind::Texture:
 	{
+		FMantleTextureBuildParams Params;
+		Params.Role = MantlePlaceAssetsPrivate::TextureRoleOf(Build.Key.Variant);
+		Params.MaxGpuBytes = Settings.MaxTextureGpuBytes;
+		if (Build.Streamed.IsValid() && Build.Streamed->Mips.Num() > 0)
+		{
+			// #189: the tail now, the rest read from the file by the engine's streamer as the camera needs it. The texture holds the file's pin (the build's own
+			// goes in MarkReady) for as long as it or a read of it lives.
+			const FMantleTextureFileMip& Top = Build.Streamed->Mips[0];
+			Build.Detail = FString::Printf(TEXT("%s, %dx%d %s, %d mips, streamed"), MantlePlaceAssetsPrivate::RoleName(Params.Role),
+				Top.Width, Top.Height, GetPixelFormatString(Build.Streamed->Format), Build.Streamed->Mips.Num());
+			Params.FilePin = MakeShared<FMantleFilePin>(Store, Build.Key.Hash);
+			UTexture2D* Texture = FMantleRuntimeTextureBuilder::BuildStreamed(MoveTemp(*Build.Streamed), Params, &Error);
+			Build.Streamed.Reset();
+			ReleasePending(Build);
+			if (!Texture)
+			{
+				FailBuild(Build, FString::Printf(TEXT("could not be built: %s"), *Error));
+				return;
+			}
+			++StreamedTexturesBuilt;
+			MarkReady(Build, Texture);
+			return;
+		}
 		if (!Build.Texture)
 		{
 			FailBuild(Build, TEXT("has nothing decoded to build"));
 			return;
 		}
-		FMantleTextureBuildParams Params;
-		Params.Role = static_cast<EMantleTextureRole>(Build.Key.Variant);
-		Params.MaxGpuBytes = Settings.MaxTextureGpuBytes;
+		if (MantlePlaceAssetsPrivate::IsTextureCut(Build.Key.Variant) && Build.Texture->MipsCut == 0)
+		{
+			// Asked to be cut on the client, and already no larger than a low copy (or not whole blocks at 512): it is the full texture, so the records it serves
+			// need no full build when something comes near (the server makes no companion for these either).
+			for (const FString& Id : Build.RecordIds)
+			{
+				if (FRecord* Record = Records.Find(RecordKey(Id, EAssetKind::Texture, Params.Role)))
+				{
+					Record->bLowTexture = false;
+				}
+			}
+		}
 		Build.Detail = FString::Printf(TEXT("%s, %dx%d %s, %d mips"), MantlePlaceAssetsPrivate::RoleName(Params.Role),
 			Build.Texture->GetWidth(), Build.Texture->GetHeight(), GetPixelFormatString(Build.Texture->Format), Build.Texture->Mips.Num());
 		UTexture2D* Texture = FMantleRuntimeTextureBuilder::Build(MoveTemp(*Build.Texture), Params, &Error);
@@ -3545,6 +3676,12 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		{
 			const FRecord* Record = Build.TextureRecords[Slot].IsEmpty() ? nullptr : Records.Find(Build.TextureRecords[Slot]);
 			const FBuild* TextureBuild = Record && Record->Build.IsSet() ? Builds.Find(Record->Build.GetValue()) : nullptr;
+			// #189: the full texture when something near wants it and it is built already; else the low one, swapped later (ShowTextureDetail).
+			if (const FBuild* Full = Record && Record->bWantFull && Record->FullBuild.IsSet() ? Builds.Find(Record->FullBuild.GetValue()) : nullptr;
+				Full && Full->State == EBuildState::Ready && Full->Object)
+			{
+				TextureBuild = Full;
+			}
 			if (TextureBuild && TextureBuild->State == EBuildState::Ready)
 			{
 				Textures[Slot] = Cast<UTexture>(TextureBuild->Object.Get());
@@ -3767,10 +3904,36 @@ void FMantlePlaceAssets::OnCollisionCooked(const FBuildKey& Key, const bool bSuc
 	MarkReady(*Build, Build->Object.Get());
 }
 
+int64 FMantlePlaceAssets::GetLiveTextureBytes()
+{
+	int64 Bytes = 0;
+	for (const FMantlePlaceAssets* Set : MantlePlaceAssetsPrivate::GLiveSets)
+	{
+		Bytes += Set->HeldTextureBytes;
+	}
+	return Bytes;
+}
+
+void FMantlePlaceAssets::UnpinBuilt(FBuild& Build)
+{
+	if (Build.bPinned && Build.Key.Kind != EAssetKind::Nanite)
+	{
+		Store->Unpin(Build.Key.Hash);
+		Build.bPinned = false;
+	}
+}
+
 void FMantlePlaceAssets::MarkReady(FBuild& Build, UObject* Object)
 {
 	Build.Object = Object;
 	Build.State = EBuildState::Ready;
+	UnpinBuilt(Build);
+	if (const UTexture2D* Texture = Cast<UTexture2D>(Object); Texture && Build.TextureBytes == 0)
+	{
+		// What it holds on the card: the mips it uploaded (the Textures setting may have left the top ones out).
+		Build.TextureBytes = Texture->CalcTextureMemorySizeEnum(TMC_ResidentMips);
+		HeldTextureBytes += Build.TextureBytes;
+	}
 	if (Build.Key.Kind == EAssetKind::Nanite && !Build.bReused)
 	{
 		++NaniteFilesBuiltCount;
@@ -3805,14 +3968,46 @@ void FMantlePlaceAssets::MarkReady(FBuild& Build, UObject* Object)
 
 void FMantlePlaceAssets::FailBuild(FBuild& Build, const FString& Error)
 {
+	// #189: a cell texture's low file that could not be had (a download that failed again after a fresh URL, a hash or a decode that failed) is not the texture
+	// failing. Its records leave this build and are resolved again, and ApplyResolved builds them from the full file (bLowFailed). Only the records change here:
+	// FailBuild runs inside the build loop, which no build may be added to.
+	if (Build.Key.Kind == EAssetKind::Texture)
+	{
+		for (TPair<FString, FRecord>& Pair : Records)
+		{
+			FRecord& Record = Pair.Value;
+			if (!Record.bLowTexture || Record.bFailed || !Record.Build.IsSet() || Record.Build.GetValue() != Build.Key)
+			{
+				continue;
+			}
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_PLACE_ASSETS texture %s: its low file %s; building it from the full file"), *Record.Id, *Error);
+			Build.RecordIds.Remove(Record.Id);
+			Record.bLowFailed = true;
+			Record.bLowTexture = false;
+			Record.bWantFull = false;
+			Record.bFullShown = false;
+			Record.FullBuild.Reset();
+			Record.Build.Reset();
+			Record.bResolved = false;
+			Record.bResolving = false;
+			Record.NextResolveAt = 0.0;
+		}
+	}
 	Build.State = EBuildState::Failed;
 	Build.Error = Error;
+	// Nothing will read a failed build's file, Nanite included.
+	if (Build.bPinned)
+	{
+		Store->Unpin(Build.Key.Hash);
+		Build.bPinned = false;
+	}
 	Build.Bytes.Reset();
 	Build.MeshV2.Reset();
 	Build.Prepared.Reset();
 	Build.NaniteRead.Reset();
 	Build.MeshV1.Reset();
 	Build.Texture.Reset();
+	Build.Streamed.Reset();
 	Build.Material.Reset();
 	Build.Sound.Reset();
 	Build.Skinned.Reset();
@@ -3841,7 +4036,10 @@ void FMantlePlaceAssets::FailBuild(FBuild& Build, const FString& Error)
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS Nanite data %s not present: it %s"), *FString::Join(Build.RecordIds, TEXT(",")), *Error);
 		return;
 	}
-	UE_LOG(LogMantle, Error, TEXT("MANTLE_PLACE_ASSETS FAIL %s %s: %s"), KindName(Build.Key.Kind), *FString::Join(Build.RecordIds, TEXT(",")), *Error);
+	if (!Build.RecordIds.IsEmpty())
+	{
+		UE_LOG(LogMantle, Error, TEXT("MANTLE_PLACE_ASSETS FAIL %s %s: %s"), KindName(Build.Key.Kind), *FString::Join(Build.RecordIds, TEXT(",")), *Error);
+	}
 }
 
 void FMantlePlaceAssets::ReleasePending(FBuild& Build)
@@ -3951,6 +4149,7 @@ void FMantlePlaceAssets::Pump()
 		}
 	}
 	ProcessStreamedRecords();
+	UpdateTextureDetail();
 	FlushResolves();
 	StartFetches();
 	StartDecodes();
@@ -4651,6 +4850,20 @@ FMantlePlaceAssets::FHolderAssets FMantlePlaceAssets::GetHolderAssets(const int6
 		{
 			Out.PendingIds.Add(Need.Id);
 		}
+		else if (Need.bMaterial)
+		{
+			// #189: a material something near wants at full detail waits for its full textures (the join's near cells come up sharp); a far one is ready on its low ones.
+			for (const FString& TextureKey : Build->TextureRecords)
+			{
+				const FRecord* Texture = TextureKey.IsEmpty() ? nullptr : Records.Find(TextureKey);
+				const FBuild* Full = Texture && Texture->bWantFull && Texture->FullBuild.IsSet() ? Builds.Find(Texture->FullBuild.GetValue()) : nullptr;
+				if (Full && !Full->IsTerminal())
+				{
+					Out.PendingIds.Add(Need.Id);
+					break;
+				}
+			}
+		}
 	}
 	return Out;
 }
@@ -4685,6 +4898,9 @@ FMantlePlaceAssets::FStreamedCounts FMantlePlaceAssets::GetStreamedCounts() cons
 		const FBuild* Build = Pair.Value.Build.IsSet() ? Builds.Find(Pair.Value.Build.GetValue()) : nullptr;
 		Counts.NaniteInFlight += (Pair.Value.Kind == EAssetKind::Nanite && !Pair.Value.bFailed && (!Build || !Build->IsTerminal())) ? 1 : 0;
 		Counts.UpgradesInFlight += Pair.Value.UpgradeBuild.IsSet() ? 1 : 0;
+		Counts.LowTextures += Pair.Value.bLowTexture ? 1 : 0;
+		Counts.FullTexturesWanted += Pair.Value.bWantFull ? 1 : 0;
+		Counts.FullTexturesShown += Pair.Value.bFullShown ? 1 : 0;
 	}
 	return Counts;
 }
@@ -4787,6 +5003,8 @@ void FMantlePlaceAssets::EraseBuild(const FBuildKey& Key)
 	ReleasePending(*Build);
 	NaniteRootPagesAttached -= Build->NaniteRootPages;
 	Build->NaniteRootPages = 0;
+	HeldTextureBytes -= Build->TextureBytes;
+	Build->TextureBytes = 0;
 	FetchQueue.RemoveSingle(Key);
 	SoundFetchQueue.RemoveSingle(Key);
 	DecodeQueue.RemoveSingle(Key);
@@ -4851,7 +5069,31 @@ bool FMantlePlaceAssets::DropRecord(const FString& Key)
 	{
 		return false;
 	}
+	const FBuild* FullTextureBuild = Record->FullBuild.IsSet() ? Builds.Find(Record->FullBuild.GetValue()) : nullptr;
+	if (FullTextureBuild && !FullTextureBuild->IsTerminal())
+	{
+		return false;
+	}
 	const FString Id = Record->Id;
+	// #189: a texture's full build goes with it (nothing names the record any more, so no material draws it).
+	if (Record->FullBuild.IsSet())
+	{
+		const FBuildKey FullKey = Record->FullBuild.GetValue();
+		Record->FullBuild.Reset();
+		if (FBuild* Full = Builds.Find(FullKey))
+		{
+			Full->RecordIds.Remove(Id);
+			if (Full->RecordIds.IsEmpty())
+			{
+				EraseBuild(FullKey);
+			}
+		}
+		Record = Records.Find(Key);
+		if (!Record)
+		{
+			return true;
+		}
+	}
 	// What hangs on the record: a mesh's side files, a material's textures.
 	TArray<FString> Dependents;
 	if (Record->UpgradeBuild.IsSet())
@@ -5078,6 +5320,238 @@ bool FMantlePlaceAssets::FinishUpgrade(FRecord& Record)
 	}
 	Record.UpgradeBuild.Reset();
 	return true;
+}
+
+void FMantlePlaceAssets::SetTextureDetailReach(const double NearCm)
+{
+	const double Reach = FMath::Clamp(NearCm, 0.0, FullTextureNearCm);
+	if (Reach != TextureNearCm)
+	{
+		TextureNearCm = Reach;
+		// Looked at again on the next tick, not half a second later: a shorter reach is memory to give back.
+		NextTextureDetailSeconds = 0.0;
+	}
+}
+
+void FMantlePlaceAssets::UpdateTextureDetail()
+{
+	if (!bStreaming || !bCompleted || !TextureView.IsSet())
+	{
+		return;
+	}
+	const double Now = FPlatformTime::Seconds();
+	if (Now < NextTextureDetailSeconds)
+	{
+		return;
+	}
+	NextTextureDetailSeconds = Now + 0.5;
+	const FVector View = TextureView.GetValue();
+
+	// How near each material's users stand: the nearest of its needs' bounds over every holder (a far set's needs carry none, so it never asks for full detail).
+	TMap<FString, double> MaterialDistanceSq;
+	for (const TPair<int64, TArray<FMantleCellAssetNeed>>& Held : CellUse.GetHeld())
+	{
+		for (const FMantleCellAssetNeed& Need : Held.Value)
+		{
+			if (Need.bMaterial && Need.Bounds.IsValid)
+			{
+				const double DistanceSq = Need.Bounds.ComputeSquaredDistanceToPoint(View);
+				double& Nearest = MaterialDistanceSq.FindOrAdd(Need.Id, TNumericLimits<double>::Max());
+				Nearest = FMath::Min(Nearest, DistanceSq);
+			}
+		}
+	}
+
+	// Which material builds use each texture record, and how near the nearest of them is.
+	TextureUsers.Reset();
+	TMap<FString, double> TextureDistanceSq;
+	for (const TPair<FBuildKey, FBuild>& Pair : Builds)
+	{
+		const FBuild& Material = Pair.Value;
+		if (Material.Key.Kind != EAssetKind::Material)
+		{
+			continue;
+		}
+		// Ids with the same bytes share one build: the nearest user of any of them counts.
+		double Nearest = TNumericLimits<double>::Max();
+		for (const FString& MaterialId : Material.RecordIds)
+		{
+			if (const double* Found = MaterialDistanceSq.Find(MaterialId))
+			{
+				Nearest = FMath::Min(Nearest, *Found);
+			}
+		}
+		const double* DistanceSq = Nearest < TNumericLimits<double>::Max() ? &Nearest : nullptr;
+		for (int32 Slot = 0; Slot < MantlePlaceMaterialTextureCount; ++Slot)
+		{
+			const FString& TextureKey = Material.TextureRecords[Slot];
+			if (TextureKey.IsEmpty())
+			{
+				continue;
+			}
+			TextureUsers.FindOrAdd(TextureKey).Emplace(Material.Key, Slot);
+			if (DistanceSq)
+			{
+				double& TextureNearest = TextureDistanceSq.FindOrAdd(TextureKey, TNumericLimits<double>::Max());
+				TextureNearest = FMath::Min(TextureNearest, *DistanceSq);
+			}
+		}
+	}
+
+	// Each low texture: wanted at full size within FullTextureNearCm, kept until past FullTextureFarCm (walking along the edge does not swap back and forth).
+	TArray<FString> LowKeys;
+	for (const TPair<FString, FRecord>& Pair : Records)
+	{
+		// A record that turned out whole (cut on the client, and already 512 or smaller) lets go of a full build it was given before that was known.
+		if ((Pair.Value.bLowTexture || Pair.Value.FullBuild.IsSet()) && !Pair.Value.bFailed)
+		{
+			LowKeys.Add(Pair.Key);
+		}
+	}
+	for (const FString& Key : LowKeys)
+	{
+		FRecord* Record = Records.Find(Key);
+		if (!Record)
+		{
+			continue;
+		}
+		const double* FoundDistanceSq = TextureDistanceSq.Find(Key);
+		const double DistanceSq = FoundDistanceSq ? *FoundDistanceSq : TNumericLimits<double>::Max();
+		const double Edge = Record->bWantFull ? TextureNearCm * (FullTextureFarCm / FullTextureNearCm) : TextureNearCm;
+		Record->bWantFull = Record->bLowTexture && !Record->bFullFailed && DistanceSq <= Edge * Edge;
+
+		const FBuild* Full = Record->FullBuild.IsSet() ? Builds.Find(Record->FullBuild.GetValue()) : nullptr;
+		if (Record->FullBuild.IsSet() && !Full)
+		{
+			// The full build was taken away under it (a download that answered 403 or 404 is let go): stay low.
+			Record->FullBuild.Reset();
+			Record->bFullShown = false;
+			Record->bFullFailed = true;
+			Record->bWantFull = false;
+			continue;
+		}
+		if (Full && Full->State == EBuildState::Failed)
+		{
+			Record->bFullFailed = true;
+			Record->bWantFull = false;
+		}
+		if (Record->bWantFull)
+		{
+			if (!Record->FullBuild.IsSet())
+			{
+				if (!StartFullTexture(*Record))
+				{
+					if (FRecord* Again = Records.Find(Key))
+					{
+						Again->bFullFailed = true;
+						Again->bWantFull = false;
+					}
+				}
+				continue;
+			}
+			if (!Record->bFullShown && Full && Full->State == EBuildState::Ready && Full->Object)
+			{
+				ShowTextureDetail(Key, *Record, /*bFull*/ true);
+				Record->bFullShown = true;
+			}
+		}
+		else if (Record->FullBuild.IsSet())
+		{
+			StopFullTexture(*Record);
+		}
+	}
+}
+
+bool FMantlePlaceAssets::StartFullTexture(FRecord& Record)
+{
+	const FMantleUploadedAsset* Cached = ResolvedCache.Find(Record.Id);
+	FMantleContentHash Hash;
+	if (!Cached || Cached->Url.IsEmpty() || !FMantleContentHash::Parse(Cached->CookedHash, Hash))
+	{
+		return false;
+	}
+	const FString Key = RecordKey(Record.Id, EAssetKind::Texture, Record.Role);
+	const FMantleUploadedAsset Answer = *Cached;
+	const TOptional<FBuildKey> LowKey = Record.Build;
+	// ApplyResolved makes the build (shared with another record of the same bytes and role, or reused from an earlier set) and points Build at it; Build goes back to the low one.
+	Record.bFullPass = true;
+	Record.Build.Reset();
+	Record.bResolved = false;
+	ApplyResolved(Record, Answer);
+	FRecord* Again = Records.Find(Key);
+	if (!Again)
+	{
+		return false;
+	}
+	Again->bFullPass = false;
+	const TOptional<FBuildKey> FullKey = Again->Build;
+	Again->Build = LowKey;
+	Again->bResolved = true;
+	if (!FullKey.IsSet() || Again->bFailed)
+	{
+		return false;
+	}
+	Again->FullBuild = FullKey;
+	Again->bFullShown = false;
+	UE_LOG(LogMantle, Verbose, TEXT("MANTLE_PLACE_ASSETS texture %s: full detail wanted (something within %.0f m)"), *Again->Id, TextureNearCm / 100.0);
+	return true;
+}
+
+bool FMantlePlaceAssets::StopFullTexture(FRecord& Record)
+{
+	if (!Record.FullBuild.IsSet())
+	{
+		return true;
+	}
+	const FBuildKey FullKey = Record.FullBuild.GetValue();
+	FBuild* Full = Builds.Find(FullKey);
+	if (Full && !Full->IsTerminal())
+	{
+		return false;
+	}
+	const FString Key = RecordKey(Record.Id, EAssetKind::Texture, Record.Role);
+	if (Record.bFullShown || Full)
+	{
+		// Every material that draws the full texture goes back to the low one, so the full one can be collected.
+		ShowTextureDetail(Key, Record, /*bFull*/ false);
+	}
+	Record.bFullShown = false;
+	Record.FullBuild.Reset();
+	if (Full)
+	{
+		Full->RecordIds.Remove(Record.Id);
+		if (Full->RecordIds.IsEmpty())
+		{
+			EraseBuild(FullKey);
+		}
+	}
+	return true;
+}
+
+void FMantlePlaceAssets::ShowTextureDetail(const FString& Key, const FRecord& Record, const bool bFull)
+{
+	const FBuild* Low = Record.Build.IsSet() ? Builds.Find(Record.Build.GetValue()) : nullptr;
+	const FBuild* Full = Record.FullBuild.IsSet() ? Builds.Find(Record.FullBuild.GetValue()) : nullptr;
+	UTexture* LowTexture = Low && Low->State == EBuildState::Ready ? Cast<UTexture>(Low->Object.Get()) : nullptr;
+	UTexture* FullTexture = Full && Full->State == EBuildState::Ready ? Cast<UTexture>(Full->Object.Get()) : nullptr;
+	if (!LowTexture || !FullTexture)
+	{
+		return;
+	}
+	const TArray<TPair<FBuildKey, int32>>* Users = TextureUsers.Find(Key);
+	if (!Users)
+	{
+		return;
+	}
+	for (const TPair<FBuildKey, int32>& User : *Users)
+	{
+		const FBuild* Material = Builds.Find(User.Key);
+		UMaterialInstanceDynamic* Instance = Material && Material->State == EBuildState::Ready ? Cast<UMaterialInstanceDynamic>(Material->Object.Get()) : nullptr;
+		if (Instance)
+		{
+			FMantlePlaceMaterials::SwapSlotTexture(Instance, User.Value, bFull ? LowTexture : FullTexture, bFull ? FullTexture : LowTexture);
+		}
+	}
 }
 
 void FMantlePlaceAssets::ProcessStreamedRecords()

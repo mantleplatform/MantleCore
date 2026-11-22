@@ -121,6 +121,16 @@ struct FMantleUploadedAsset
 	/** Materials: cookInfo.textures, slot ("baseColor", "normal", "orm", "emissive") to texture id. */
 	TMap<FString, FString> MaterialTextures;
 
+	/**
+	 * Textures (#189): the low companion, the cooked file's mips from 512 down, which far content draws with (lowUrl, cookInfo.low's cookedHash and cookedBytes).
+	 * Empty when the texture has none (512 or smaller already, cooked before low files, or not whole blocks at 512).
+	 */
+	FString LowUrl;
+	FString LowCookedHash;
+	int64 LowCookedBytes = 0;
+
+	bool HasLowTexture() const { return !LowUrl.IsEmpty() && !LowCookedHash.IsEmpty() && LowCookedBytes > 0; }
+
 	bool IsApproved() const { return Status == TEXT("approved"); }
 	bool IsRejected() const { return Status == TEXT("rejected"); }
 };

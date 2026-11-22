@@ -250,4 +250,90 @@ bool FMantleStreamBudgetReachTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamBudgetTexturesAndMemoryCapTest,
+	"Mantle.Runtime.StreamBudget.TexturesAndMemoryCap",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamBudgetTexturesAndMemoryCapTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamBudgetTestPrivate;
+	// #189 (the client big-map plan, 4.3): the place's textures are a count, a share of the card by setting, and the process has a cap in bytes beside its share of RAM.
+	TestEqual(TEXT("Low: a quarter of the card"), FMantleStreamBudget::TextureShareOfVideo(0), 0.25);
+	TestEqual(TEXT("Epic: half of it"), FMantleStreamBudget::TextureShareOfVideo(3), 0.5);
+	const FMantleBudgetLimits Big = FMantleStreamBudget::LimitsFor(3, FMantleBudgetMachine{ 16 * GiB, 64 * GiB }, 1.0);
+	TestEqual(TEXT("Epic on a 16 GB card: 8 GB of textures"), Big.TextureBytes, 8 * GiB);
+	TestEqual(TEXT("and 24 GB for the process on 64 GB of RAM"), Big.ProcessMemoryBytes, 24 * GiB);
+	TestEqual(TEXT("the counts are the ones LimitsFor gives"), Big.Instances, FMantleStreamBudget::LimitsFor(3, 1.0).Instances);
+	const FMantleBudgetLimits Minimum = FMantleStreamBudget::LimitsFor(1, FMantleBudgetMachine{ 8 * GiB, 16 * GiB }, 1.0);
+	TestEqual(TEXT("Joshua's minimum PC on Balanced: a third of an 8 GB card"), Minimum.TextureBytes, static_cast<int64>(8.0 * GiB * 0.33));
+	TestEqual(TEXT("and 9 GB for the process"), Minimum.ProcessMemoryBytes, 9 * GiB);
+	TestEqual(TEXT("32 GB of RAM: 17 GB"), FMantleStreamBudget::ProcessMemoryCapBytes(32 * GiB), 17 * GiB);
+	TestEqual(TEXT("24 GB: half way between 9 and 17"), FMantleStreamBudget::ProcessMemoryCapBytes(24 * GiB), 13 * GiB);
+	TestEqual(TEXT("8 GB: in proportion below 16"), FMantleStreamBudget::ProcessMemoryCapBytes(8 * GiB), static_cast<int64>(4.5 * GiB));
+	TestEqual(TEXT("128 GB: on at 64 GB's slope"), FMantleStreamBudget::ProcessMemoryCapBytes(128 * GiB), 38 * GiB);
+	TestEqual(TEXT("unknown RAM: no cap"), FMantleStreamBudget::ProcessMemoryCapBytes(0), MAX_int64);
+	const FMantleBudgetLimits NoCard = FMantleStreamBudget::LimitsFor(3, FMantleBudgetMachine{ 0, 32 * GiB }, 1.0);
+	TestEqual(TEXT("no card known (a server): textures are not limited"), NoCard.TextureBytes, MAX_int64);
+	TestEqual(TEXT("-MantleBudgetScale scales the textures' limit with the counts"),
+		FMantleStreamBudget::LimitsFor(3, FMantleBudgetMachine{ 16 * GiB, 64 * GiB }, 0.5).TextureBytes, 4 * GiB);
+
+	// Pressure: textures are a count; the byte cap and the share are memory, and the higher of them counts.
+	FMantleBudgetLimits Limits;
+	Limits.TextureBytes = 8 * GiB;
+	Limits.ProcessMemoryShare = 0.7;
+	Limits.ProcessMemoryBytes = 24 * GiB;
+	FMantleBudgetUse Use;
+	Use.TextureBytes = 12 * GiB;
+	TestEqual(TEXT("12 GB of textures against 8: a count pressure of 1.5"), FMantleStreamBudget::CountPressure(Limits, Use), 1.5);
+	Use.ProcessMemoryShare = 0.35;
+	Use.ProcessMemoryBytes = 30 * GiB;
+	TestEqual(TEXT("30 GB against the 24 GB cap beats half the share"), FMantleStreamBudget::MemoryPressure(Limits, Use), 1.25);
+	Use.ProcessMemoryBytes = 0;
+	TestEqual(TEXT("bytes unknown: the share alone"), FMantleStreamBudget::MemoryPressure(Limits, Use), 0.5);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamBudgetTextureDetailTest,
+	"Mantle.Runtime.StreamBudget.TextureDetailReach",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamBudgetTextureDetailTest::RunTest(const FString& Parameters)
+{
+	// #189: below the ladder. Full texture detail reaches 150 m until textures are over their limit with the ladder already at 0; then x0.75 a step, to 25 m at the least.
+	const FMantleBudgetTuning Tuning;
+	auto Next = [&Tuning](const double Reach, const double Ladder, const double Textures, const double Pressure, const double Video = 0.0, const double TexturesOfVideo = 0.0)
+	{
+		return FMantleStreamBudget::NextTextureDetailReach(Reach, Ladder, Textures, Video, TexturesOfVideo, Pressure, Tuning);
+	};
+	TestEqual(TEXT("over, but the ladder can still fall: the cells go first"), Next(15000.0, 0.3, 1.5, 1.5), 15000.0);
+	TestEqual(TEXT("over at ladder 0: 150 m to 112.5 m"), Next(15000.0, 0.0, 1.2, 1.2), 11250.0);
+	TestEqual(TEXT("the textures' own pressure decides, not another count's"), Next(15000.0, 0.0, 0.5, 1.5), 15000.0);
+	TestEqual(TEXT("never under 25 m"), Next(3000.0, 0.0, 3.0, 3.0), 2500.0);
+	TestEqual(TEXT("between 0.8 and 1 it holds"), Next(8437.5, 0.0, 0.9, 0.9), 8437.5);
+	// Back up only if the textures would fit with the circle's area grown by 1 / 0.75^2 (1.78): 0.77 would be 1.37, so it holds; 0.5 would be 0.89, so it rises.
+	TestEqual(TEXT("just under 0.8 after a step down: it holds rather than cycle"), Next(8437.5, 0.0, 0.77, 0.77), 8437.5);
+	TestEqual(TEXT("room for the step: 84 m to 112.5 m"), Next(8437.5, 0.0, 0.5, 0.5), 11250.0);
+	TestEqual(TEXT("never past 150 m"), Next(14000.0, 0.0, 0.1, 0.1), 15000.0);
+	TestEqual(TEXT("whole already: stays whole"), Next(15000.0, 1.0, 0.1, 0.1), 15000.0);
+	// The card: over at ladder 0 with the textures inside their own share (a crowded server) shortens it too; back up only if the card would fit the textures' growth.
+	TestEqual(TEXT("the card over at ladder 0: 150 m to 112.5 m"), Next(15000.0, 0.0, 0.5, 1.1, 1.1, 0.3), 11250.0);
+	TestEqual(TEXT("the card over, ladder still above 0: the cells go first"), Next(15000.0, 0.2, 0.5, 1.1, 1.1, 0.3), 15000.0);
+	TestEqual(TEXT("card at 0.7 with textures 0.4 of it: 0.7 + 0.4 x 0.78 = 1.01, it holds"), Next(8437.5, 0.0, 0.3, 0.7, 0.7, 0.4), 8437.5);
+	TestEqual(TEXT("card at 0.5 with textures 0.4 of it: 0.81, it rises"), Next(8437.5, 0.0, 0.3, 0.5, 0.5, 0.4), 11250.0);
+
+	// The card's pressure: what the driver says is used over 90% of the budget it gives; nothing when it cannot say.
+	FMantleBudgetLimits Limits;
+	FMantleBudgetUse Card;
+	TestEqual(TEXT("an unknown card does not press"), FMantleStreamBudget::VideoPressure(Limits, Card), 0.0);
+	Card.VideoBudgetBytes = 10000;
+	Card.VideoUsedBytes = 9000;
+	TestEqual(TEXT("9 of a 10 budget is 1 at the 90% cushion"), FMantleStreamBudget::VideoPressure(Limits, Card), 1.0);
+	Card.VideoUsedBytes = 4500;
+	TestEqual(TEXT("4.5 of 10 is 0.5"), FMantleStreamBudget::VideoPressure(Limits, Card), 0.5);
+	TestEqual(TEXT("and it is part of the pressure"), FMantleStreamBudget::Pressure(Limits, Card), 0.5);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

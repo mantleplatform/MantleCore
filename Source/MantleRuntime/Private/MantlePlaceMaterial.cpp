@@ -1730,19 +1730,41 @@ UMaterialInstanceDynamic* FMantlePlaceMaterials::BuildOnParent(UMaterialInterfac
 		ApplyExtended(Instance, Desc);
 	}
 
-	// A layer blend's textures bind to M_MantlePlace_Extended's Layer parameters, water's second normal to
-	// M_MantlePlace_Water's Normal2; another parent ignores them.
-	const TCHAR* const TextureParameters[MantlePlaceMaterialTextureCount] = { P::BaseColor, P::Normal, P::ORM, P::Emissive,
-		P::LayerBaseColor, P::LayerNormal, P::LayerORM, P::Normal2 };
 	for (int32 Slot = 0; Slot < MantlePlaceMaterialTextureCount && Slot < Textures.Num(); ++Slot)
 	{
 		// An additive material ignores its base color texture (its alpha would be the opacity).
 		if (Textures[Slot] && !(Desc.AlphaMode == EMantlePlaceAlphaMode::Additive && Slot == static_cast<int32>(EMantlePlaceTextureSlot::BaseColor)))
 		{
-			Instance->SetTextureParameterValue(TextureParameters[Slot], Textures[Slot]);
+			Instance->SetTextureParameterValue(SlotParameter(Slot), Textures[Slot]);
 		}
 	}
 	return Instance;
+}
+
+const TCHAR* FMantlePlaceMaterials::SlotParameter(const int32 Slot)
+{
+	namespace P = MantlePlaceMaterialParameters;
+	// A layer blend's textures bind to M_MantlePlace_Extended's Layer parameters, water's second normal to
+	// M_MantlePlace_Water's Normal2; another parent ignores them.
+	static const TCHAR* const TextureParameters[MantlePlaceMaterialTextureCount] = { P::BaseColor, P::Normal, P::ORM, P::Emissive,
+		P::LayerBaseColor, P::LayerNormal, P::LayerORM, P::Normal2 };
+	return Slot >= 0 && Slot < MantlePlaceMaterialTextureCount ? TextureParameters[Slot] : nullptr;
+}
+
+bool FMantlePlaceMaterials::SwapSlotTexture(UMaterialInstanceDynamic* Instance, const int32 Slot, UTexture* From, UTexture* To)
+{
+	const TCHAR* Parameter = SlotParameter(Slot);
+	if (!Instance || !Parameter || !From || !To || From == To)
+	{
+		return false;
+	}
+	UTexture* Current = nullptr;
+	if (!Instance->GetTextureParameterValue(FHashedMaterialParameterInfo(FName(Parameter)), Current, /*bOveriddenOnly*/ true) || Current != From)
+	{
+		return false;
+	}
+	Instance->SetTextureParameterValue(Parameter, To);
+	return true;
 }
 
 void FMantlePlaceMaterials::DecodeBC4Block(const uint8* Block, uint8 (&OutValues)[16])

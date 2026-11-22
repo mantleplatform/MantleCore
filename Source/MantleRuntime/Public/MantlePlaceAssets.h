@@ -446,6 +446,10 @@ public:
 		/** Nanite records whose file is still being fetched or read, and mesh records whose build with collision is still being made. */
 		int32 NaniteInFlight = 0;
 		int32 UpgradesInFlight = 0;
+		/** #189: cell textures drawn from their low companion, how many of them something near wants at full size, and how many the materials draw at full size now. */
+		int32 LowTextures = 0;
+		int32 FullTexturesWanted = 0;
+		int32 FullTexturesShown = 0;
 	};
 
 	/**
@@ -454,6 +458,26 @@ public:
 	 */
 	void SetStreamBuildSlice(double Seconds) { StreamSliceSeconds = Seconds; }
 	FStreamedCounts GetStreamedCounts() const;
+
+	/**
+	 * #189, streaming sets: where the view is, for how much texture detail a cell's materials get. Every cell texture that has a low companion (its cooked file's mips
+	 * from 512 down, FMantleUploadedAsset::LowUrl) is built from it first, so far content and a join's far cells cost about 6% of the full files. A material whose
+	 * users (their bounds, FMantleCellAssetNeed::Bounds) stand within FullTextureNearCm of the view gets its textures' full files built and swapped in; past
+	 * FullTextureFarCm they are swapped back and let go. The cell streamer calls it as the view moves (IMantleCellAssets::SetView); until it does, everything stays low.
+	 */
+	void SetTextureView(const FVector& Location) { TextureView = Location; }
+	static constexpr double FullTextureNearCm = 15000.0;
+	static constexpr double FullTextureFarCm = 20000.0;
+
+	/**
+	 * #189: how near full detail reaches now. FullTextureNearCm unless the live budget has shortened it (textures still over their limit at the bottom of the ladder,
+	 * FMantleStreamBudget::NextTextureDetailReach); a texture is let go back to low past the same share farther (FullTextureFarCm / FullTextureNearCm, 4/3). A texture
+	 * with no low companion on the server is cut on the client from its full file (FMantleTextureBuildParams::LowTopDimension), so this works on every place.
+	 */
+	void SetTextureDetailReach(double NearCm);
+	double GetTextureDetailReach() const { return TextureNearCm; }
+	/** The low copy's largest side: the server's companion (cook.LowTextureMaxDimension) and the client's cut alike. */
+	static constexpr int32 LowTextureMaxDimension = 512;
 
 	/** One line a record of a mesh, side file or texture: what the set holds and why (for the tests and for finding a leak). */
 	FString DescribeStreamedRecords() const;
@@ -582,6 +606,18 @@ public:
 	int64 GetNaniteHeldBytes() const { return NaniteHeldBytes; }
 	int64 GetNaniteHeldPeakBytes() const { return NaniteHeldPeakBytes; }
 	int64 GetNaniteRootPagesAttached() const { return NaniteRootPagesAttached; }
+
+	/**
+	 * #189: the video memory of the textures this set has built and still holds (their resident mips; a build erased takes its share
+	 * out). The cell streamer's budget counts it against FMantleBudgetLimits::TextureBytes.
+	 */
+	int64 GetHeldTextureBytes() const { return HeldTextureBytes; }
+
+	/** The same over every live set (a place's cells, its root and its terrain each have one). Game thread. */
+	static int64 GetLiveTextureBytes();
+
+	/** The store this set loads from (tests read its pins). */
+	FMantleAssetStore& GetStore() const { return *Store; }
 
 	/** Downloads started above MaxPendingBuildBytes because a waiting build named them (tests and the progress log). */
 	int32 GetFetchesOverBudget() const { return FetchesOverBudget; }
@@ -725,8 +761,19 @@ private:
 		int64 NaniteRootBytes = -1;
 		/** The root pages this mesh attached (counted in NaniteRootPagesAttached, taken out when the build is erased). */
 		int32 NaniteRootPages = 0;
+
+		/** A built texture's video memory (counted in HeldTextureBytes, taken out when the build is erased). */
+		int64 TextureBytes = 0;
 		TSharedPtr<FMantleRuntimeMesh> MeshV1;
 		TSharedPtr<FMantleDecodedTexture> Texture;
+
+		/**
+		 * #189: a full-detail texture is fetched as its place in the store (no bytes in memory), and the decode task reads its header, mip table and tail into Streamed
+		 * (only the task writes it, before it hands the build back): the build then makes a texture the engine's streamer reads the top mips of from the file
+		 * (FMantleRuntimeTextureBuilder::BuildStreamed). A texture that cannot stream is read whole from TexturePath and decoded as before (Texture).
+		 */
+		FString TexturePath;
+		TSharedPtr<FMantleStreamedTexturePrep, ESPMode::ThreadSafe> Streamed;
 		TSharedPtr<FMantlePlaceMaterialDesc> Material;
 
 		/** Sounds: the decoded samples, which are what a sound build is (kept while the set lives). */
@@ -808,6 +855,20 @@ private:
 		/** The build with collision failed: the first build stays, and a user that needs collision is told the mesh failed. */
 		bool bUpgradeFailed = false;
 
+		/**
+		 * #189, streaming sets, a cell material's texture with a low companion (bLowTexture): Build is the low file's. FullBuild is the full file's while something near
+		 * wants it (bWantFull); bFullShown once the materials that use it draw it. bFullFailed: the full file could not be had, so it stays low. bFullPass is set only
+		 * while ApplyResolved makes the full build. bLowFailed: the low file could not be had (downloaded, verified or decoded), so the record is resolved again and built
+		 * from the full file, like a texture with no low companion (FailBuild).
+		 */
+		bool bLowTexture = false;
+		bool bLowFailed = false;
+		bool bWantFull = false;
+		bool bFullShown = false;
+		bool bFullFailed = false;
+		bool bFullPass = false;
+		TOptional<FBuildKey> FullBuild;
+
 		/** Set when the record itself failed (unknown id, wrong kind, not approved); else the build decides. */
 		FString Error;
 		bool bFailed = false;
@@ -871,6 +932,8 @@ private:
 	double StreamPumpSeconds = 0.0;
 	double StreamWorstPumpSeconds = 0.0;
 	int32 NaniteFilesBuiltCount = 0;
+	/** #189: textures built for the engine's streamer (their top mips read from the file when wanted). */
+	int32 StreamedTexturesBuilt = 0;
 	int32 NaniteFileMisses = 0;
 	double StreamSliceSeconds = -1.0;
 
@@ -910,6 +973,18 @@ private:
 	/** A mesh record built without collision now needs it: the build with collision is started beside the first (its side-file records are made again). False when a build is in flight. */
 	bool UpgradeToCollision(FRecord& Record);
 
+	/**
+	 * #189: which cell textures something near wants at full size (from the view and the cells' material needs), starting and stopping their full builds and swapping
+	 * the materials that use them over. Runs from Pump twice a second.
+	 */
+	void UpdateTextureDetail();
+	/** Makes the record's full build from the API's answer (ApplyResolved with bFullPass), keeping Build on the low file. False when it cannot (the answer is gone, or has no full file). */
+	bool StartFullTexture(FRecord& Record);
+	/** Swaps the record's materials back to the low texture and lets the full build go. False while the full build is in flight (try again later). */
+	bool StopFullTexture(FRecord& Record);
+	/** Sets every material that uses the texture record to its full or its low texture, where it draws the other one now. */
+	void ShowTextureDetail(const FString& Key, const FRecord& Record, bool bFull);
+
 	/** The record's build with collision has settled: the record points to it and the first build goes, or, if it failed, the first stays and the upgrade is marked failed. False while it is in flight. */
 	bool FinishUpgrade(FRecord& Record);
 
@@ -935,6 +1010,14 @@ private:
 	int64 NaniteCachedFetchBytes = 0;
 	/** The Nanite root pages the set's meshes have attached now, against FMantleNaniteRootPages::BudgetPages. */
 	int64 NaniteRootPagesAttached = 0;
+	int64 HeldTextureBytes = 0;
+
+	/** #189: the view SetTextureView last gave, when UpdateTextureDetail last ran, and which material builds use each texture record (and in which slot). */
+	TOptional<FVector> TextureView;
+	double NextTextureDetailSeconds = 0.0;
+	/** SetTextureDetailReach's: full detail within this, low again past it x FullTextureFarCm / FullTextureNearCm. */
+	double TextureNearCm = FullTextureNearCm;
+	TMap<FString, TArray<TPair<FBuildKey, int32>>> TextureUsers;
 
 	/** Frees a Nanite build's head and table (counted in NaniteHeldBytes). */
 	void ReleaseNaniteFile(FBuild& NaniteBuild);
@@ -1047,6 +1130,16 @@ private:
 
 	TMap<FString, FRecord> Records;
 	TMap<FBuildKey, FBuild> Builds;
+
+	/**
+	 * #189: every distinct file this set has asked the store for, and their cooked bytes: the place's need on disk, which the
+	 * store's budget rises to hold (FMantleAssetStore::SetPlaceDemand). Only grows: a file let go is still the place's.
+	 */
+	TSet<FMantleContentHash> DemandHashes;
+	int64 DemandBytes = 0;
+
+	/** #189: a built file is not read again (its bytes are in memory), so it stops being pinned; Nanite files stay (pages are read from them). */
+	void UnpinBuilt(FBuild& Build);
 
 	/** Every answer seen, by id, including ones not asked for (a material's textures). */
 	TMap<FString, FMantleUploadedAsset> ResolvedCache;

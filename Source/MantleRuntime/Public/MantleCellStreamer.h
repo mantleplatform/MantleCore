@@ -120,6 +120,17 @@ struct MANTLERUNTIME_API FMantleCellStreamStats
 	int64 BudgetFarInstances = 0;
 	int64 BudgetNaniteRootPages = 0;
 	double BudgetMemoryShare = 0.0;
+	int64 BudgetTextureBytes = 0;
+	int64 BudgetMemoryBytes = 0;
+	/** #189: how near full texture detail reaches now, cm, and the shortest it has been (FMantleBudgetTuning::TextureDetailMaxCm until textures are over at ladder 0). */
+	double BudgetTextureDetailCm = 15000.0;
+	double BudgetLowestTextureDetailCm = 15000.0;
+	/** #189: the engine's pool for the streamed textures' top mips at the last look (FMantleStreamBudget::NextTexturePool); 0 when the streamer does not set it. */
+	int64 BudgetTexturePoolBytes = 0;
+	/** #189: the card at the last look, as the driver says (0 when unknown), and its pressure (FMantleStreamBudget::VideoPressure). */
+	int64 BudgetVideoUsedBytes = 0;
+	int64 BudgetVideoBudgetBytes = 0;
+	double BudgetVideoPressure = 0.0;
 };
 
 /** What a whole-grid look at the twins found: each built twin entity is drawn exactly when it should be (FMantleFarSetPlan::ShouldShow). */
@@ -509,6 +520,11 @@ private:
 	double SecondsSinceBudgetLook = 0.0;
 	/** Time since memory last lowered the ladder (a large number at the start, so the first look may). */
 	double SecondsSinceMemoryLower = 1.0e9;
+	/** #189: how near full texture detail reaches (below the ladder; FMantleBudgetTuning::TextureDetailMaxCm), and the time since it last moved. */
+	double TextureDetailCm = 15000.0;
+	double SecondsSinceTextureDetailMove = 1.0e9;
+	/** #189: the engine's texture pool this streamer last set (FMantleCellStreamSettings::ApplyTexturePool); 0 before the first look. */
+	int64 TexturePoolBytes = 0;
 	TArray<double> LevelOverhangs;
 	TArray<double> LevelRadii;
 

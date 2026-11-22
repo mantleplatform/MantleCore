@@ -175,4 +175,49 @@ bool FMantleCellAssetCollisionTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellAssetNeedBoundsTest,
+	"Mantle.Runtime.CellStream.AssetUse.NeedBounds",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellAssetNeedBoundsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellAssetUseTestPrivate;
+	// #189: each need carries where the entities that use it stand, in the place's space, for how near the view is to a material: an entity's origin through its
+	// parents, and each instance of an instanced mesh.
+	const FString M = Id(1);
+	const FString Glass = Id(2);
+	const FString Leaf = Id(3);
+
+	FMantleEntity Group;
+	Group.Id = TEXT("ent_group");
+	Group.Type = EMantleEntityType::Group;
+	Group.Transform = FTransform(FVector(1000.0, 0.0, 0.0));
+	FMantleEntity Child = Mesh(TEXT("ent_child"), M, EMantleCollision::None, { Glass });
+	Child.Parent = Group.Id;
+	Child.Transform = FTransform(FVector(0.0, 500.0, 0.0));
+	FMantleEntity Trees = Mesh(TEXT("ent_trees"), M, EMantleCollision::None, { Leaf }, /*bInstanced*/ true);
+	Trees.Transform = FTransform(FVector(0.0, 0.0, 100.0));
+	TArray<FTransform>& Instances = Trees.Props.Get<FMantleInstancedMeshProps>().Instances;
+	Instances.Add(FTransform(FVector(-2000.0, 0.0, 0.0)));
+	Instances.Add(FTransform(FVector(3000.0, 4000.0, 0.0)));
+
+	TArray<FMantleCellAssetNeed> Needs;
+	FMantleCellAssetUse::NeedsOf({ Group, Child, Trees }, Needs);
+	const FMantleCellAssetNeed* GlassNeed = Needs.FindByPredicate([&Glass](const FMantleCellAssetNeed& N) { return N.Id == Glass; });
+	const FMantleCellAssetNeed* LeafNeed = Needs.FindByPredicate([&Leaf](const FMantleCellAssetNeed& N) { return N.Id == Leaf; });
+	const FMantleCellAssetNeed* MeshNeed = Needs.FindByPredicate([&M](const FMantleCellAssetNeed& N) { return N.Id == M && !N.bMaterial; });
+	if (!TestNotNull(TEXT("the glass"), GlassNeed) || !TestNotNull(TEXT("the leaves"), LeafNeed) || !TestNotNull(TEXT("the mesh"), MeshNeed))
+	{
+		return false;
+	}
+	TestTrue(TEXT("the child's material stands at its parent's place plus its own"), GlassNeed->Bounds.IsValid && GlassNeed->Bounds.GetCenter().Equals(FVector(1000.0, 500.0, 0.0)));
+	TestTrue(TEXT("the instanced material spans its instances"),
+		LeafNeed->Bounds.IsValid && LeafNeed->Bounds.Min.Equals(FVector(-2000.0, 0.0, 100.0)) && LeafNeed->Bounds.Max.Equals(FVector(3000.0, 4000.0, 100.0)));
+	TestTrue(TEXT("a mesh both use spans both"), MeshNeed->Bounds.IsInsideOrOn(FVector(1000.0, 500.0, 0.0)));
+	TestTrue(TEXT("and the trees"), MeshNeed->Bounds.IsInsideOrOn(FVector(-2000.0, 0.0, 100.0)));
+	TestTrue(TEXT("bounds are not part of what a need is"), Need(Glass, true) == *GlassNeed);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

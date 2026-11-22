@@ -2,6 +2,7 @@
 #include "MantleStaticMeshReader.h"
 
 #include "MantleCookedCursor.h"
+#include "MantleCookedPacking.h"
 
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleStaticMeshReaderPrivate
@@ -485,10 +486,30 @@ namespace MantleStaticMeshReaderPrivate
 
 bool FMantleStaticMeshReader::HasMagic(const TConstArrayView<uint8> Data)
 {
-	return Data.Num() >= 4 && FMemory::Memcmp(Data.GetData(), "MRM2", 4) == 0;
+	return MantleCookedPacking::HasMagic(Data, "MRM4");
 }
 
 bool FMantleStaticMeshReader::Read(const TConstArrayView<uint8> Data, FMantleStaticMeshData& Out, FString* OutError)
+{
+	using namespace MantleStaticMeshReaderPrivate;
+
+	Out = FMantleStaticMeshData();
+	if (MantleCookedPacking::HasMagic(Data, "MRM2") || MantleCookedPacking::HasMagic(Data, "MRM3"))
+	{
+		return FailStatic(Out, OutError, FString::Printf(TEXT("that mesh is %hs, cooked before this build of Mantle; its place must be published again"),
+			MantleCookedPacking::HasMagic(Data, "MRM2") ? "MRM2" : "MRM3"));
+	}
+	// #189 step 5a: the MRM2 inside an MRM4, read by ReadInner with every check.
+	TArray<uint8> Inner;
+	FString Reason;
+	if (!MantleCookedPacking::UnpackEnvelope(Data, "MRM4", MaxPackedRawBytes, Inner, &Reason))
+	{
+		return FailStatic(Out, OutError, FString::Printf(TEXT("that mesh is %s"), *Reason));
+	}
+	return ReadInner(Inner, Out, OutError);
+}
+
+bool FMantleStaticMeshReader::ReadInner(const TConstArrayView<uint8> Data, FMantleStaticMeshData& Out, FString* OutError)
 {
 	using namespace MantleStaticMeshReaderPrivate;
 	using MantleCookedFormat::FCursor;

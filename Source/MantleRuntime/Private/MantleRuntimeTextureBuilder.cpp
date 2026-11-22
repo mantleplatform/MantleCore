@@ -1,11 +1,15 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleRuntimeTextureBuilder.h"
+#include "MantleCookedPacking.h"
 
 #include "Engine/Texture2D.h"
+#include "GenericPlatform/GenericPlatformFile.h"
+#include "HAL/PlatformFileManager.h"
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
 #include "ImageCore.h"
 #include "MantleRuntime.h"
+#include "MantleStreamedTexture.h"
 #include "Misc/CoreMisc.h"
 #include "Modules/ModuleManager.h"
 #include "RHIGlobals.h"
@@ -185,18 +189,20 @@ namespace MantleRuntimeTextureBuilderPrivate
 		return static_cast<uint32>(Bytes[0]) | (static_cast<uint32>(Bytes[1]) << 8) | (static_cast<uint32>(Bytes[2]) << 16) | (static_cast<uint32>(Bytes[3]) << 24);
 	}
 
-	// MTX1, the cook worker's block-compressed texture (backend/internal/cook/texturecook.go,
-	// the MTX1 format). Little-endian: magic, version, format, flags, width, height,
-	// sourceWidth, sourceHeight, mipCount, then mipCount x {width, height, offset, size}, then the
-	// block data, mip 0 first and contiguous.
+	// MTX3, the cook worker's block-compressed texture (backend/internal/cook/texturecook.go, #189 step 5a).
+	// Little-endian: magic, version, format, flags, width, height, sourceWidth, sourceHeight, mipCount,
+	// then mipCount x {width, height, offset, size, packedSize}, then each mip, mip 0 first and
+	// contiguous, as one Oodle Kraken stream of its blocks (Oodle Texture encoded them), packedSize bytes;
+	// size is the blocks unpacked. MTX1 and MTX2 (raw and zlib blocks) are not read: a place cooked before is
+	// republished.
 	constexpr uint32 Mtx1Version = 1;
 	constexpr int64 Mtx1HeaderBytes = 36;
-	constexpr int64 Mtx1MipEntryBytes = 16;
+	constexpr int64 Mtx3MipEntryBytes = 20;
 	constexpr uint32 Mtx1FlagSRGB = 1;
-	/** The worker's MaxTextureDimension: no MTX1 mip 0 is larger on a side. */
+	/** The worker's MaxTextureDimension: no MTX mip 0 is larger on a side. */
 	constexpr uint32 Mtx1MaxDimension = 2048;
 
-	/** The pixel format of an MTX1 format code (1 BC1, 3 BC3, 4 BC4, 5 BC5, all UNORM); PF_Unknown for any other. */
+	/** The pixel format of an MTX format code (1 BC1, 3 BC3, 4 BC4, 5 BC5, all UNORM); PF_Unknown for any other. */
 	EPixelFormat Mtx1PixelFormat(const uint32 Code)
 	{
 		switch (Code)
@@ -210,43 +216,63 @@ namespace MantleRuntimeTextureBuilderPrivate
 	}
 
 	/**
-	 * Reads an MTX1 container into Out without decoding a texel. Every field is checked against the
-	 * format's rules and every mip's size and offset against the buffer before anything is allocated:
-	 * the version, a known format, no unknown flags, sRGB only on BC1 and BC3, mip 0 a multiple of 4 and
-	 * at most 2048 (and Params.MaxDimension), the source size padding to it by less than a block, the
-	 * full chain to 1 x 1, each mip halving with exactly ceil(w/4) x ceil(h/4) blocks at the next offset,
-	 * and nothing after the last mip. The same rules as the worker's own reader (cook.DecodeTexture).
+	 * Reads an MTX3 container into Out without decoding a texel. Every field is checked against the format's
+	 * rules and every mip's size and offset against the buffer before anything is allocated: the version, a
+	 * known format, no unknown flags, sRGB only on BC1 and BC3, mip 0 a multiple of 4 and at most 2048 (and
+	 * Params.MaxDimension), the source size padding to it by less than a block, the full chain to 1 x 1, each
+	 * mip halving with exactly ceil(w/4) x ceil(h/4) blocks and a stream that is not empty at the next offset,
+	 * and nothing after the last mip. Then the kept mips are unpacked, each stream refused unless it unpacks
+	 * to exactly its blocks (MantleCookedPacking::UnpackStream). The same rules as the worker's own reader
+	 * (cook.DecodeTexture).
 	 */
-	bool DecodeMtx1(const TConstArrayView<uint8> Bytes, const FMantleTextureBuildParams& Params, FMantleDecodedTexture& Out, FString* OutError)
+	/** An MTX3's header and mip table, checked (ReadMtx3Table). */
+	struct FMtx3Table
 	{
-		const int64 Size = Bytes.Num();
-		if (Size < Mtx1HeaderBytes)
+		EPixelFormat Format = PF_Unknown;
+		bool bSRGB = false;
+		uint32 SourceWidth = 0;
+		uint32 SourceHeight = 0;
+		TArray<FMantleTextureFileMip> Mips;
+
+		/** The first mip a low copy keeps (Params.LowTopDimension), 0 for the whole chain. */
+		int32 FirstMip = 0;
+	};
+
+	/**
+	 * Reads and checks an MTX3's header and mip table: Head holds at least the header and the table, FileSize is the whole file's size (the mips are
+	 * checked against it, not against Head). Nothing is unpacked. The rules are DecodeMtx3's.
+	 */
+	bool ReadMtx3Table(const TConstArrayView<uint8> Head, const int64 Size, const FMantleTextureBuildParams& Params, FMtx3Table& OutTable, FString* OutError)
+	{
+		const TCHAR* Name = TEXT("MTX3");
+		const int64 EntryBytes = Mtx3MipEntryBytes;
+		if (Head.Num() < Mtx1HeaderBytes || Size < Mtx1HeaderBytes)
 		{
-			return RefuseTexture(OutError, TEXT("That MTX1 texture is truncated (its header is incomplete)."));
+			return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture is truncated (its header is incomplete)."), Name));
 		}
-		const uint8* Data = Bytes.GetData();
+		const uint8* Data = Head.GetData();
 		auto Field = [Data](const int64 Offset) { return ReadLittleEndian32(Data + Offset); };
 
 		const uint32 Version = Field(4);
 		if (Version != Mtx1Version)
 		{
-			return RefuseTexture(OutError, FString::Printf(TEXT("That MTX1 texture is version %u; this build of Mantle reads version %u."), Version, Mtx1Version));
+			return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture is version %u; this build of Mantle reads version %u."), Name, Version, Mtx1Version));
 		}
 		const uint32 FormatCode = Field(8);
 		const EPixelFormat Format = Mtx1PixelFormat(FormatCode);
 		if (Format == PF_Unknown)
 		{
-			return RefuseTexture(OutError, FString::Printf(TEXT("That MTX1 texture has an unknown block format (%u)."), FormatCode));
+			return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture has an unknown block format (%u)."), Name, FormatCode));
 		}
 		const uint32 Flags = Field(12);
 		if ((Flags & ~Mtx1FlagSRGB) != 0)
 		{
-			return RefuseTexture(OutError, FString::Printf(TEXT("That MTX1 texture has unknown flags (0x%x)."), Flags));
+			return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture has unknown flags (0x%x)."), Name, Flags));
 		}
 		const bool bSRGB = (Flags & Mtx1FlagSRGB) != 0;
 		if (bSRGB && Format != PF_DXT1 && Format != PF_DXT5)
 		{
-			return RefuseTexture(OutError, TEXT("That MTX1 texture is marked sRGB, which only BC1 and BC3 can be."));
+			return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture is marked sRGB, which only BC1 and BC3 can be."), Name));
 		}
 
 		const uint32 Width = Field(16);
@@ -256,91 +282,159 @@ namespace MantleRuntimeTextureBuilderPrivate
 		const uint32 MipCount = Field(32);
 		if (Width < 4 || Height < 4 || Width > Mtx1MaxDimension || Height > Mtx1MaxDimension || Width % 4 != 0 || Height % 4 != 0)
 		{
-			return RefuseTexture(OutError, FString::Printf(TEXT("That MTX1 texture's top mip is %u x %u; it must be a multiple of 4 and at most %u."),
-				Width, Height, Mtx1MaxDimension));
+			return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture's top mip is %u x %u; it must be a multiple of 4 and at most %u."),
+				Name, Width, Height, Mtx1MaxDimension));
 		}
 		const uint32 MaxDimension = static_cast<uint32>(FMath::Clamp(Params.MaxDimension, 1, HardMaxDimension));
 		if (Width > MaxDimension || Height > MaxDimension)
 		{
-			return RefuseTexture(OutError, FString::Printf(TEXT("That MTX1 texture is %u x %u; the limit is %u on a side."), Width, Height, MaxDimension));
+			return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture is %u x %u; the limit is %u on a side."), Name, Width, Height, MaxDimension));
 		}
 		// Width and Height are at least 4 here; the additions cannot wrap (both fields were read as uint32 below 2^31 + 4).
 		if (SourceWidth > Width || static_cast<uint64>(SourceWidth) + 4 <= Width || SourceHeight > Height || static_cast<uint64>(SourceHeight) + 4 <= Height)
 		{
-			return RefuseTexture(OutError, FString::Printf(TEXT("That MTX1 texture's source size %u x %u does not pad to %u x %u."),
-				SourceWidth, SourceHeight, Width, Height));
+			return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture's source size %u x %u does not pad to %u x %u."),
+				Name, SourceWidth, SourceHeight, Width, Height));
 		}
 		const int32 ExpectedMips = FMantleRuntimeTextureBuilder::ComputeFullMipCount(static_cast<int32>(Width), static_cast<int32>(Height));
 		if (MipCount != static_cast<uint32>(ExpectedMips))
 		{
-			return RefuseTexture(OutError, FString::Printf(TEXT("That MTX1 texture has %u mips; a %u x %u chain has %d."), MipCount, Width, Height, ExpectedMips));
+			return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture has %u mips; a %u x %u chain has %d."), Name, MipCount, Width, Height, ExpectedMips));
 		}
-		const int64 TableEnd = Mtx1HeaderBytes + static_cast<int64>(MipCount) * Mtx1MipEntryBytes;
-		if (Size < TableEnd)
+		const int64 TableEnd = Mtx1HeaderBytes + static_cast<int64>(MipCount) * EntryBytes;
+		if (Size < TableEnd || Head.Num() < TableEnd)
 		{
-			return RefuseTexture(OutError, TEXT("That MTX1 texture is truncated (its mip table is incomplete)."));
+			return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture is truncated (its mip table is incomplete)."), Name));
 		}
 
-		const int32 KeptMips = Params.Mips == EMantleTextureMips::None ? 1 : ExpectedMips;
-		const int64 Footprint = FMantleRuntimeTextureBuilder::ComputeGpuBytes(Format, static_cast<int32>(Width), static_cast<int32>(Height), KeptMips);
+		// #189: the low copy starts at the first mip no larger than LowTopDimension, as the worker's cook.LowTexture slices it (whole blocks, never mip 0).
+		int32 FirstMip = 0;
+		if (Params.LowTopDimension > 0 && Params.Mips != EMantleTextureMips::None)
+		{
+			for (int32 Mip = 0; Mip < ExpectedMips; ++Mip)
+			{
+				const uint32 MipWidth = FMath::Max(1u, Width >> Mip);
+				const uint32 MipHeight = FMath::Max(1u, Height >> Mip);
+				if (FMath::Max(MipWidth, MipHeight) <= static_cast<uint32>(Params.LowTopDimension))
+				{
+					if (Mip > 0 && MipWidth >= 4 && MipHeight >= 4 && MipWidth % 4 == 0 && MipHeight % 4 == 0)
+					{
+						FirstMip = Mip;
+					}
+					break;
+				}
+			}
+		}
+		const int32 KeptMips = Params.Mips == EMantleTextureMips::None ? 1 : ExpectedMips - FirstMip;
+		const int64 Footprint = FMantleRuntimeTextureBuilder::ComputeGpuBytes(Format, static_cast<int32>(FMath::Max(1u, Width >> FirstMip)),
+			static_cast<int32>(FMath::Max(1u, Height >> FirstMip)), KeptMips);
 		if (Footprint < 0 || Footprint > Params.MaxGpuBytes)
 		{
-			return RefuseTexture(OutError, FString::Printf(TEXT("That %u x %u MTX1 texture needs %lld bytes of texture memory; the budget is %lld."),
-				Width, Height, Footprint, Params.MaxGpuBytes));
+			return RefuseTexture(OutError, FString::Printf(TEXT("That %u x %u %s texture needs %lld bytes of texture memory; the budget is %lld."),
+				Width, Height, Name, Footprint, Params.MaxGpuBytes));
 		}
 
 		// Every mip entry against the chain the header promises and against the buffer, before any copy.
 		int64 Offset = TableEnd;
 		for (uint32 Mip = 0; Mip < MipCount; ++Mip)
 		{
-			const int64 Entry = Mtx1HeaderBytes + static_cast<int64>(Mip) * Mtx1MipEntryBytes;
+			const int64 Entry = Mtx1HeaderBytes + static_cast<int64>(Mip) * EntryBytes;
 			const uint32 MipWidth = Field(Entry);
 			const uint32 MipHeight = Field(Entry + 4);
 			const uint32 MipOffset = Field(Entry + 8);
 			const uint32 MipSize = Field(Entry + 12);
+			const uint32 MipStored = Field(Entry + 16);
 			const uint32 WantWidth = FMath::Max(1u, Width >> Mip);
 			const uint32 WantHeight = FMath::Max(1u, Height >> Mip);
 			if (MipWidth != WantWidth || MipHeight != WantHeight)
 			{
-				return RefuseTexture(OutError, FString::Printf(TEXT("That MTX1 texture's mip %u is %u x %u; the chain needs %u x %u."),
-					Mip, MipWidth, MipHeight, WantWidth, WantHeight));
+				return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture's mip %u is %u x %u; the chain needs %u x %u."),
+					Name, Mip, MipWidth, MipHeight, WantWidth, WantHeight));
 			}
 			const int64 WantSize = FMantleRuntimeTextureBuilder::ComputeMipBytes(Format, static_cast<int32>(WantWidth), static_cast<int32>(WantHeight));
 			if (WantSize < 0 || static_cast<int64>(MipSize) != WantSize)
 			{
-				return RefuseTexture(OutError, FString::Printf(TEXT("That MTX1 texture's mip %u holds %u bytes; %u x %u in its format is %lld."),
-					Mip, MipSize, WantWidth, WantHeight, WantSize));
+				return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture's mip %u holds %u bytes; %u x %u in its format is %lld."),
+					Name, Mip, MipSize, WantWidth, WantHeight, WantSize));
+			}
+			if (MipStored == 0)
+			{
+				return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture's mip %u is stored in no bytes."), Name, Mip));
 			}
 			if (static_cast<int64>(MipOffset) != Offset)
 			{
-				return RefuseTexture(OutError, FString::Printf(TEXT("That MTX1 texture's mip %u starts at byte %u; it must follow the one before, at %lld."),
-					Mip, MipOffset, Offset));
+				return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture's mip %u starts at byte %u; it must follow the one before, at %lld."),
+					Name, Mip, MipOffset, Offset));
 			}
-			if (Offset + WantSize > Size)
+			if (Offset + static_cast<int64>(MipStored) > Size)
 			{
-				return RefuseTexture(OutError, FString::Printf(TEXT("That MTX1 texture is truncated (mip %u runs past the end)."), Mip));
+				return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture is truncated (mip %u runs past the end)."), Name, Mip));
 			}
-			Offset += WantSize;
+			Offset += MipStored;
 		}
 		if (Offset != Size)
 		{
-			return RefuseTexture(OutError, FString::Printf(TEXT("That MTX1 texture has %lld bytes after its last mip."), Size - Offset));
+			return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture has %lld bytes after its last mip."), Name, Size - Offset));
+		}
+
+		OutTable.Format = Format;
+		OutTable.bSRGB = bSRGB;
+		OutTable.SourceWidth = SourceWidth;
+		OutTable.SourceHeight = SourceHeight;
+		OutTable.Mips.Reset(MipCount);
+		for (uint32 Mip = 0; Mip < MipCount; ++Mip)
+		{
+			const int64 Entry = Mtx1HeaderBytes + static_cast<int64>(Mip) * EntryBytes;
+			FMantleTextureFileMip& Level = OutTable.Mips.AddDefaulted_GetRef();
+			Level.Width = static_cast<int32>(Field(Entry));
+			Level.Height = static_cast<int32>(Field(Entry + 4));
+			Level.Offset = static_cast<int64>(Field(Entry + 8));
+			Level.Size = static_cast<int64>(Field(Entry + 12));
+			Level.Packed = static_cast<int64>(Field(Entry + 16));
+		}
+		OutTable.FirstMip = FirstMip;
+		return true;
+	}
+
+	EMantleTextureRole Mtx3Role(const FMtx3Table& Table)
+	{
+		return Table.Format == PF_BC5 ? EMantleTextureRole::Normal : (Table.bSRGB ? EMantleTextureRole::Color : EMantleTextureRole::Data);
+	}
+
+	/** See ReadMtx3Table for the rules; then the kept mips are unpacked, each stream refused unless it unpacks to exactly its blocks. */
+	bool DecodeMtx3(const TConstArrayView<uint8> Bytes, const FMantleTextureBuildParams& Params, FMantleDecodedTexture& Out, FString* OutError)
+	{
+		FMtx3Table Table;
+		if (!ReadMtx3Table(Bytes, Bytes.Num(), Params, Table, OutError))
+		{
+			return false;
 		}
 
 		// Everything checked: only now is anything allocated.
-		Out.Format = Format;
-		Out.bSRGB = bSRGB;
-		Out.Role = Format == PF_BC5 ? EMantleTextureRole::Normal : (bSRGB ? EMantleTextureRole::Color : EMantleTextureRole::Data);
-		Out.SourceWidth = static_cast<int32>(SourceWidth);
-		Out.SourceHeight = static_cast<int32>(SourceHeight);
+		const int32 FirstMip = Table.FirstMip;
+		const int32 KeptMips = Params.Mips == EMantleTextureMips::None ? 1 : Table.Mips.Num() - FirstMip;
+		const int32 Width = Table.Mips[0].Width;
+		const int32 Height = Table.Mips[0].Height;
+		Out.Format = Table.Format;
+		Out.bSRGB = Table.bSRGB;
+		Out.Role = Mtx3Role(Table);
+		// A cut copy's source size is the top mip's share of it (UVs span the padded size, which halves with the mips).
+		Out.SourceWidth = FMath::Min(FMath::Max(1, Width >> FirstMip), FMath::DivideAndRoundUp(static_cast<int32>(Table.SourceWidth), 1 << FirstMip));
+		Out.SourceHeight = FMath::Min(FMath::Max(1, Height >> FirstMip), FMath::DivideAndRoundUp(static_cast<int32>(Table.SourceHeight), 1 << FirstMip));
+		Out.MipsCut = FirstMip;
 		Out.Mips.Reserve(KeptMips);
-		for (int32 Mip = 0; Mip < KeptMips; ++Mip)
+		for (int32 Mip = FirstMip; Mip < FirstMip + KeptMips; ++Mip)
 		{
-			const int64 Entry = Mtx1HeaderBytes + static_cast<int64>(Mip) * Mtx1MipEntryBytes;
+			const FMantleTextureFileMip& Entry = Table.Mips[Mip];
 			FMantleTextureMip& Level = Out.Mips.AddDefaulted_GetRef();
-			Level.Width = static_cast<int32>(Field(Entry));
-			Level.Height = static_cast<int32>(Field(Entry + 4));
-			Level.Bytes.Append(Data + Field(Entry + 8), static_cast<int64>(Field(Entry + 12)));
+			Level.Width = Entry.Width;
+			Level.Height = Entry.Height;
+			Level.Bytes.SetNumUninitialized(Entry.Size);
+			FString Reason;
+			if (!MantleCookedPacking::UnpackStream(Bytes.Slice(static_cast<int32>(Entry.Offset), static_cast<int32>(Entry.Packed)), Level.Bytes.GetData(), Entry.Size, &Reason))
+			{
+				return RefuseTexture(OutError, FString::Printf(TEXT("That MTX3 texture's mip %d is %s."), Mip, *Reason));
+			}
 		}
 		return true;
 	}
@@ -433,10 +527,15 @@ bool FMantleRuntimeTextureBuilder::Decode(const TConstArrayView<uint8> Bytes, co
 	{
 		return RefuseTexture(OutError, TEXT("That texture is empty."));
 	}
-	if (FMemory::Memcmp(Bytes.GetData(), "MTX1", 4) == 0)
+	if (FMemory::Memcmp(Bytes.GetData(), "MTX1", 4) == 0 || FMemory::Memcmp(Bytes.GetData(), "MTX2", 4) == 0)
 	{
-		// Fab F9: the worker's BC container. The blocks and mips go to the GPU as they are.
-		if (!DecodeMtx1(Bytes, Params, Out, OutError))
+		return RefuseTexture(OutError, FString::Printf(TEXT("That texture is %hs, cooked before this build of Mantle; its place must be published again."),
+			FMemory::Memcmp(Bytes.GetData(), "MTX1", 4) == 0 ? "MTX1" : "MTX2"));
+	}
+	if (FMemory::Memcmp(Bytes.GetData(), "MTX3", 4) == 0)
+	{
+		// Fab F9: the worker's BC container (Oodle Texture blocks, per-mip Kraken since #189 step 5a). The blocks and mips go to the GPU as they are.
+		if (!DecodeMtx3(Bytes, Params, Out, OutError))
 		{
 			Out = FMantleDecodedTexture();
 			return false;
@@ -648,6 +747,12 @@ UTexture2D* FMantleRuntimeTextureBuilder::Build(FMantleDecodedTexture&& Decoded,
 		void* Destination = Mip->BulkData.Realloc(Source.Bytes.Num());
 		FMemory::Memcpy(Destination, Source.Bytes.GetData(), Source.Bytes.Num());
 		Mip->BulkData.Unlock();
+		if (!Params.bKeepCpuCopy)
+		{
+			// Single use: the render resource takes these bytes instead of copying them (FBulkData::GetCopy with the internal copy
+			// discarded; CanDiscardInternalData), and frees them once they are on the GPU. Without it every mip stays in RAM too.
+			Mip->BulkData.SetBulkDataFlags(BULKDATA_SingleUse);
+		}
 		Source.Bytes.Empty();
 	}
 	Texture->SetPlatformData(PlatformData);
@@ -661,6 +766,7 @@ UTexture2D* FMantleRuntimeTextureBuilder::Build(FMantleDecodedTexture&& Decoded,
 	Texture->LODGroup = Params.LODGroup;
 	// All mips are inline and resident: there is nothing to stream them from.
 	Texture->NeverStream = true;
+	// Creates the resource here, on the game thread (UTexture2D::CreateResource), which is when single-use mips hand over their bytes.
 	Texture->UpdateResource();
 
 	UE_LOG(LogMantle, Verbose, TEXT("MANTLE_TEXTURE built %s: %d x %d, %d mips, format %s, %s, %lld bytes"),
@@ -683,4 +789,252 @@ UTexture2D* FMantleRuntimeTextureBuilder::BuildFromBytes(const TConstArrayView<u
 		return nullptr;
 	}
 	return Build(MoveTemp(Decoded), Params, OutError);
+}
+
+int32 FMantleRuntimeTextureBuilder::ComputeResidentMips(const EPixelFormat Format, const int32 Width, const int32 Height, const int32 NumMips)
+{
+	if (NumMips <= 1)
+	{
+		return NumMips;
+	}
+	// GetNumNonStreamingMipsDirect (ITextureFormat.h), which the engine uses for a texture it did not cook: at least the minimum resident count (7, so
+	// 64 x 64 and down), and no streamed mip smaller than a 4 x 4 block.
+	int32 Resident = FMath::Max(1, UTexture::GetStaticMinTextureResidentMipCount());
+	const FPixelFormatInfo& Info = GPixelFormats[Format];
+	if (Info.BlockSizeX > 1 || Info.BlockSizeY > 1)
+	{
+		Resident = FMath::Max(Resident, NumMips - static_cast<int32>(FMath::FloorLog2(static_cast<uint32>(FMath::Max(1, Width / 4)))));
+		Resident = FMath::Max(Resident, NumMips - static_cast<int32>(FMath::FloorLog2(static_cast<uint32>(FMath::Max(1, Height / 4)))));
+	}
+	return FMath::Min(Resident, NumMips);
+}
+
+int64 FMantleStreamedTexturePrep::GetAllocatedBytes() const
+{
+	int64 Bytes = Mips.GetAllocatedSize() + Tail.GetAllocatedSize();
+	for (const TArray64<uint8>& Mip : Tail)
+	{
+		Bytes += Mip.GetAllocatedSize();
+	}
+	return Bytes;
+}
+
+bool FMantleRuntimeTextureBuilder::PrepareStreamed(const FString& Path, const FMantleTextureBuildParams& Params, FMantleStreamedTexturePrep& Out, FString* OutError)
+{
+	using namespace MantleRuntimeTextureBuilderPrivate;
+
+	Out = FMantleStreamedTexturePrep();
+	if (Params.Mips == EMantleTextureMips::None)
+	{
+		return RefuseTexture(OutError, TEXT("a texture without mips does not stream"));
+	}
+	TUniquePtr<IFileHandle> File(FPlatformFileManager::Get().GetPlatformFile().OpenRead(*Path));
+	if (!File.IsValid())
+	{
+		return RefuseTexture(OutError, TEXT("the texture's file could not be opened"));
+	}
+	const int64 FileSize = File->Size();
+
+	// The header, then the table it says is there: nothing else of the file is read until the tail.
+	TArray<uint8> Head;
+	Head.SetNumUninitialized(Mtx1HeaderBytes);
+	if (FileSize < Mtx1HeaderBytes || !File->Read(Head.GetData(), Mtx1HeaderBytes))
+	{
+		return RefuseTexture(OutError, TEXT("the texture's file is truncated (its header is incomplete)"));
+	}
+	if (FMemory::Memcmp(Head.GetData(), "MTX3", 4) != 0)
+	{
+		return RefuseTexture(OutError, TEXT("only an MTX3 texture streams"));
+	}
+	const uint32 MipCount = ReadLittleEndian32(Head.GetData() + 32);
+	if (MipCount < 1 || MipCount > static_cast<uint32>(MaxMips))
+	{
+		return RefuseTexture(OutError, FString::Printf(TEXT("the texture has %u mips (1 to %d)"), MipCount, MaxMips));
+	}
+	Head.SetNumUninitialized(static_cast<int32>(Mtx1HeaderBytes + static_cast<int64>(MipCount) * Mtx3MipEntryBytes));
+	if (!File->Read(Head.GetData() + Mtx1HeaderBytes, Head.Num() - Mtx1HeaderBytes))
+	{
+		return RefuseTexture(OutError, TEXT("the texture's file is truncated (its mip table is incomplete)"));
+	}
+	FMantleTextureBuildParams WholeChain = Params;
+	WholeChain.LowTopDimension = 0;
+	FMtx3Table Table;
+	if (!ReadMtx3Table(Head, FileSize, WholeChain, Table, OutError))
+	{
+		return false;
+	}
+	const int32 Width = Table.Mips[0].Width;
+	const int32 Height = Table.Mips[0].Height;
+	const int32 NumMips = Table.Mips.Num();
+	if (!FMath::IsPowerOfTwo(Width) || !FMath::IsPowerOfTwo(Height))
+	{
+		return RefuseTexture(OutError, FString::Printf(TEXT("the texture is %d x %d; the engine streams only power-of-two textures"), Width, Height));
+	}
+	const int32 Resident = ComputeResidentMips(Table.Format, Width, Height, NumMips);
+	if (NumMips <= Resident)
+	{
+		return RefuseTexture(OutError, TEXT("the texture is small enough to be all resident"));
+	}
+
+	// The tail the engine keeps resident (its non-streaming mips) is the end of the file (mips are stored mip 0 first, contiguous). The Textures setting never changes
+	// it: it drops top mips only from textures of 512 and more (ComputeMipsToDrop), whose tail is 64 x 64 and down whatever is dropped.
+	const int32 FirstTail = NumMips - Resident;
+	const int64 TailStart = Table.Mips[FirstTail].Offset;
+	TArray<uint8> Packed;
+	Packed.SetNumUninitialized(static_cast<int32>(FileSize - TailStart));
+	if (!File->Seek(TailStart) || !File->Read(Packed.GetData(), Packed.Num()))
+	{
+		return RefuseTexture(OutError, TEXT("the texture's last mips could not be read"));
+	}
+	File.Reset();
+	Out.Tail.SetNum(Resident);
+	for (int32 FileMip = FirstTail; FileMip < NumMips; ++FileMip)
+	{
+		const FMantleTextureFileMip& Entry = Table.Mips[FileMip];
+		TArray64<uint8>& Mip = Out.Tail[FileMip - FirstTail];
+		Mip.SetNumUninitialized(Entry.Size);
+		FString Reason;
+		if (!MantleCookedPacking::UnpackStream(TConstArrayView<uint8>(Packed.GetData() + (Entry.Offset - TailStart), static_cast<int32>(Entry.Packed)), Mip.GetData(), Entry.Size, &Reason))
+		{
+			Out = FMantleStreamedTexturePrep();
+			return RefuseTexture(OutError, FString::Printf(TEXT("That MTX3 texture's mip %d is %s."), FileMip, *Reason));
+		}
+	}
+	Out.Path = Path;
+	Out.FileSize = FileSize;
+	Out.Format = Table.Format;
+	Out.bSRGB = Table.bSRGB;
+	Out.Role = Mtx3Role(Table);
+	Out.Mips = MoveTemp(Table.Mips);
+	Out.FirstTailMip = FirstTail;
+	return true;
+}
+
+UTexture2D* FMantleRuntimeTextureBuilder::BuildStreamed(FMantleStreamedTexturePrep&& Prep, const FMantleTextureBuildParams& Params, FString* OutError)
+{
+	using namespace MantleRuntimeTextureBuilderPrivate;
+
+	const FString Path = Prep.Path;
+	auto Fail = [OutError, &Path](const FString& Error) -> UTexture2D*
+	{
+		UE_LOG(LogMantle, Warning, TEXT("MANTLE_TEXTURE FAIL %s (%s)"), *Error, *Path);
+		RefuseTexture(OutError, Error);
+		return nullptr;
+	};
+
+	if (IsRunningDedicatedServer())
+	{
+		return Fail(TEXT("a dedicated server does not build textures"));
+	}
+	if (!IsInGameThread())
+	{
+		return Fail(TEXT("textures are built on the game thread"));
+	}
+	const int32 NumMips = Prep.Mips.Num();
+	if (NumMips < 1 || Prep.FirstTailMip < 0 || Prep.Tail.Num() != NumMips - Prep.FirstTailMip)
+	{
+		return Fail(TEXT("the streamed texture was not prepared"));
+	}
+	const int32 Width = Prep.Mips[0].Width;
+	const int32 Height = Prep.Mips[0].Height;
+	if (!GPixelFormats[Prep.Format].Supported)
+	{
+		return Fail(FString::Printf(TEXT("this GPU does not support %s textures"), GetPixelFormatString(Prep.Format)));
+	}
+	if (static_cast<uint32>(FMath::Max(Width, Height)) > GetMax2DTextureDimension())
+	{
+		return Fail(FString::Printf(TEXT("the texture is %d x %d, larger than this GPU's %u"), Width, Height, GetMax2DTextureDimension()));
+	}
+
+	// The Textures setting drops top mips as Build does; the rest is the texture, the engine's tail of it resident.
+	const int32 Drop = ComputeMipsToDrop(Scalability::GetQualityLevels().TextureQuality, Prep.Role, Width, Height, NumMips);
+	const int32 Kept = NumMips - Drop;
+	const int32 Resident = ComputeResidentMips(Prep.Format, Prep.Mips[Drop].Width, Prep.Mips[Drop].Height, Kept);
+	const int32 FirstResident = NumMips - Resident;
+	if (FirstResident < Prep.FirstTailMip)
+	{
+		return Fail(FString::Printf(TEXT("the engine keeps %d mips resident and %d were read"), Resident, Prep.Tail.Num()));
+	}
+
+	UObject* Outer = Params.Outer ? Params.Outer : GetTransientPackage();
+	const FName Name = Params.Name.IsNone() ? NAME_None : MakeUniqueObjectName(Outer, UTexture2D::StaticClass(), Params.Name);
+	UTexture2D* Texture = NewObject<UTexture2D>(Outer, Name, RF_Transient);
+	Texture->bNotOfflineProcessed = true;
+
+	FTexturePlatformData* PlatformData = new FTexturePlatformData();
+	PlatformData->SizeX = Prep.Mips[Drop].Width;
+	PlatformData->SizeY = Prep.Mips[Drop].Height;
+	PlatformData->SetNumSlices(1);
+	PlatformData->PixelFormat = Prep.Format;
+	int64 ResidentBytes = 0;
+	int64 StreamedBytes = 0;
+	for (int32 FileMip = Drop; FileMip < NumMips; ++FileMip)
+	{
+		const FMantleTextureFileMip& Entry = Prep.Mips[FileMip];
+		FTexture2DMipMap* Mip = new FTexture2DMipMap(Entry.Width, Entry.Height, 1);
+		PlatformData->Mips.Add(Mip);
+		if (FileMip < FirstResident)
+		{
+			// Not in memory and not in a package: a cooked game counts a mip in a separate file as streamed (FTexturePlatformData::GetNumNonStreamingMips),
+			// and the factory below is where the streamer gets it.
+			Mip->BulkData.SetBulkDataFlags(BULKDATA_PayloadInSeparateFile);
+			StreamedBytes += Entry.Size;
+			continue;
+		}
+		const TArray64<uint8>& Source = Prep.Tail[FileMip - Prep.FirstTailMip];
+		Mip->BulkData.Lock(LOCK_READ_WRITE);
+		FMemory::Memcpy(Mip->BulkData.Realloc(Source.Num()), Source.GetData(), Source.Num());
+		Mip->BulkData.Unlock();
+		if (!Params.bKeepCpuCopy)
+		{
+			Mip->BulkData.SetBulkDataFlags(BULKDATA_SingleUse);
+		}
+		ResidentBytes += Entry.Size;
+	}
+	Prep.Tail.Empty();
+	Texture->SetPlatformData(PlatformData);
+
+	Texture->SRGB = Prep.bSRGB;
+	Texture->CompressionSettings = Prep.Role == EMantleTextureRole::Normal ? TC_Normalmap : (Prep.Role == EMantleTextureRole::Data ? TC_Masks : TC_Default);
+	Texture->AddressX = Params.AddressX;
+	Texture->AddressY = Params.AddressY;
+	Texture->Filter = Params.Filter;
+	Texture->LODGroup = Params.LODGroup;
+	Texture->NeverStream = false;
+
+	UMantleCachedMipsFactory* Factory = NewObject<UMantleCachedMipsFactory>(Texture, NAME_None, RF_Transient);
+	TSharedRef<FMantleTextureFileTable> FileTable = MakeShared<FMantleTextureFileTable>();
+	FileTable->Path = Prep.Path;
+	FileTable->FileSize = Prep.FileSize;
+	FileTable->Format = Prep.Format;
+	FileTable->Mips = MoveTemp(Prep.Mips);
+	FileTable->FirstMip = Drop;
+	FileTable->Pin = Params.FilePin;
+	Factory->Table = FileTable;
+	Texture->AddAssetUserData(Factory);
+
+	// The resource starts with the tail only (UTexture::GetResourcePostInitState: a streamable texture whose mips a provider gives asks for its
+	// non-streaming mips), and the texture joins the streamer.
+	Texture->UpdateResource();
+
+	UE_LOG(LogMantle, Verbose, TEXT("MANTLE_TEXTURE_STREAM built %s: %d x %d, %d mips (%d resident, %lld bytes; %d streamed, %lld bytes), %s, streamable %d"),
+		*Texture->GetName(), PlatformData->SizeX, PlatformData->SizeY, Kept, Resident, ResidentBytes, Kept - Resident, StreamedBytes,
+		GetPixelFormatString(Prep.Format), Texture->IsStreamable() ? 1 : 0);
+	return Texture;
+}
+
+UTexture2D* FMantleRuntimeTextureBuilder::BuildStreamed(const FString& Path, const FMantleTextureBuildParams& Params, FString* OutError)
+{
+	FMantleStreamedTexturePrep Prep;
+	FString Error;
+	if (!PrepareStreamed(Path, Params, Prep, &Error))
+	{
+		UE_LOG(LogMantle, Warning, TEXT("MANTLE_TEXTURE FAIL %s (%s)"), *Error, *Path);
+		if (OutError)
+		{
+			*OutError = Error;
+		}
+		return nullptr;
+	}
+	return BuildStreamed(MoveTemp(Prep), Params, OutError);
 }
