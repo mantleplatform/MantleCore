@@ -101,9 +101,11 @@ bool FMantleServerEstimateKnownCountsTest::RunTest(const FString& Parameters)
 	const FMantleServerMemoryEstimate City = CitySample();
 	TestEqual(TEXT("City Sample's counts, ready"), City.ReadyMB, 6326.447, 0.001);
 	TestEqual(TEXT("City Sample's counts, at the load's peak"), City.PeakMB, 7046.406, 0.001);
-	TestFalse(TEXT("over the biggest hosted server's world share, as measured (5.2 GB beside the engine, the share is 5 GB)"), City.bFitsHosted);
+	TestTrue(TEXT("inside the biggest hosted server's world share (6 GB once ready, 7 GB at the peak)"), City.bFitsHosted);
 	TestEqual(TEXT("Check's line"), FMantleCheck::ServerLine(City),
-		FString(TEXT("MANTLE_CHECK_SERVER world_gb=6.18 peak_gb=6.88 fits=community entities=368619 instances=8800044 solid=1047579 meshes=11741 meshBytes=873560000 terrainSamples=0")));
+		FString(TEXT("MANTLE_CHECK_SERVER world_gb=6.18 peak_gb=6.88 fits=hosted entities=368619 instances=8800044 solid=1047579 meshes=11741 meshBytes=873560000 terrainSamples=0")));
+	TestEqual(TEXT("the creator's sentence"), City.Describe(),
+		FString(TEXT("Estimated server memory: 6.2 GB (6.9 GB while loading). Fits a hosted server.")));
 
 	const FMantleServerMemoryEstimate Orbital = OrbitalBase();
 	TestEqual(TEXT("OrbitalBase's counts with its terrain, ready"), Orbital.ReadyMB, 942.237, 0.001);

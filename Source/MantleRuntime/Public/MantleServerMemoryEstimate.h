@@ -84,11 +84,12 @@ struct MANTLERUNTIME_API FMantleServerMemoryEstimate
 	static constexpr double LargestHostedServerMB = 8192.0;
 
 	/**
-	 * What that server has for the world beside the engine, 100 players and room for spikes (plan section 2): about 5 GB once ready
-	 * and 6 GB at the load's peak. BaseMB is part of the engine's share, so the estimate is compared without it.
+	 * What that server has for the world beside the engine, 100 players and room for spikes: 6 GB once ready and 7 GB at the load's peak
+	 * (Joshua, 2026-11-22, from step 9's calibration: City Sample measured 5.6 GB ready with no players, and 50 players add about 0.35 GB).
+	 * BaseMB is part of the engine's share, so the estimate is compared without it.
 	 */
-	static constexpr double HostedWorldReadyMB = 5120.0;
-	static constexpr double HostedWorldPeakMB = 6144.0;
+	static constexpr double HostedWorldReadyMB = 6144.0;
+	static constexpr double HostedWorldPeakMB = 7168.0;
 
 	/**
 	 * The same share on the two smaller hosted servers (plan section 2.1's table), which the backend's session start sizes a
@@ -124,7 +125,7 @@ struct MANTLERUNTIME_API FMantleServerMemoryEstimate
 	 */
 	static void AddCellIndex(const FMantleCellIndex& Index, FMantleServerMemoryCounts& OutCounts);
 
-	/** "world_gb=6.18 peak_gb=6.88 fits=community entities=... instances=... solid=... meshes=... meshBytes=... terrainSamples=...", for log lines: world_gb is ReadyMB. */
+	/** "world_gb=6.18 peak_gb=6.88 fits=hosted entities=... instances=... solid=... meshes=... meshBytes=... terrainSamples=...", for log lines: world_gb is ReadyMB. */
 	FString Fields() const;
 
 	/**
