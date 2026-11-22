@@ -22,6 +22,18 @@ public:
 	/** Ids of the cell's assets that are not built yet (and have not failed), and ids that failed. Nothing pending: the cell can be built. */
 	virtual void GetState(int32 CellIndex, TArray<FString>& OutPending, TArray<FString>& OutFailed) = 0;
 
+	/**
+	 * Whether nothing the cell needs is pending (GetState would give no pending ids). The streamer asks it every tick for each cell that waits, and asks GetState only once
+	 * this says yes or the wait has stalled, so an implementation should make it cheap (FMantlePlaceAssets::IsHolderSettled).
+	 */
+	virtual bool IsSettled(int32 CellIndex)
+	{
+		TArray<FString> Pending;
+		TArray<FString> Failed;
+		GetState(CellIndex, Pending, Failed);
+		return Pending.IsEmpty();
+	}
+
 	/** The cell no longer needs them: an asset no other cell wants is let go. */
 	virtual void Release(int32 CellIndex) = 0;
 
@@ -66,6 +78,8 @@ public:
 		OutPending = Assets.PendingIds;
 		OutFailed = Assets.FailedIds;
 	}
+
+	virtual bool IsSettled(int32 CellIndex) override { return Set->IsHolderSettled(HolderOf(CellIndex)); }
 
 	virtual void Release(int32 CellIndex) override { Set->ReleaseEntityAssets(HolderOf(CellIndex)); }
 

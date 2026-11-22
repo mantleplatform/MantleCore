@@ -3117,4 +3117,83 @@ bool FMantleLumenInflatedOffTheGameThreadTest::RunTest(const FString& Parameters
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamedAssetsWaitingHolderCostsOneLookTest,
+	"Mantle.Runtime.Place.StreamedAssets.WaitingHolderCostsOneLook",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamedAssetsWaitingHolderCostsOneLookTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamedAssetsTestPrivate;
+	// City Sample (2026-11-22): the streamer asked every waiting far set's every need each tick (GetHolderAssets), 125 ms a frame. IsHolderSettled picks up where it stopped:
+	// a waiting holder costs one look however many needs it has, and its answer is GetHolderAssets' as assets arrive and fail.
+	AddExpectedError(TEXT("MANTLE_PLACE_ASSETS FAIL"), EAutomationExpectedErrorFlags::Contains, 0);
+	FStreamingFixture Fixture(TEXT("StreamedAssets") / FGuid::NewGuid().ToString(), /*bNanite*/ false);
+	if (!TestTrue(TEXT("the root completes"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->IsComplete(); })))
+	{
+		return false;
+	}
+	// 40 far cells of 1,000 meshes each, nothing of them here yet (the set is not pumped meanwhile).
+	constexpr int32 Holders = 40;
+	constexpr int32 NeedsEach = 1000;
+	for (int32 Holder = 0; Holder < Holders; ++Holder)
+	{
+		TArray<FMantleEntity> Cell;
+		for (int32 Need = 0; Need < NeedsEach; ++Need)
+		{
+			Cell.Add(MeshEntity(FString::Printf(TEXT("ent_%d_%d"), Holder, Need), FString::Printf(TEXT("ast_u%08x%08x0000000000000000"), 0xfa + Holder, Need), false));
+		}
+		Fixture.Assets->AcquireEntityAssets(1000 + Holder, Cell);
+	}
+	TestEqual(TEXT("a waiting holder's lists hold every one of its needs"), Fixture.Assets->GetHolderAssets(1000).PendingIds.Num(), NeedsEach);
+	bool bAnySettled = false;
+	bool bFlat = true;
+	for (int32 Round = 0; Round < 10; ++Round)
+	{
+		const int64 Before = Fixture.Assets->GetSettleLookups();
+		for (int32 Holder = 0; Holder < Holders; ++Holder)
+		{
+			bAnySettled |= Fixture.Assets->IsHolderSettled(1000 + Holder);
+		}
+		bFlat &= Fixture.Assets->GetSettleLookups() - Before == Holders;
+	}
+	TestFalse(TEXT("none of them has settled"), bAnySettled);
+	TestTrue(TEXT("each waiting holder costs one look a round, not one a need"), bFlat);
+	for (int32 Holder = 0; Holder < Holders; ++Holder)
+	{
+		Fixture.Assets->ReleaseEntityAssets(1000 + Holder);
+	}
+
+	// As assets arrive and fail, it says what GetHolderAssets says: a cell of a solid mesh, and a cell of a mesh with a material whose download is refused.
+	TArray<FMantleEntity> Solid;
+	Solid.Add(MeshEntity(TEXT("ent_10"), FlowMeshA, true));
+	TArray<FMantleEntity> Painted;
+	FMantleEntity Entity = MeshEntity(TEXT("ent_60"), FlowMeshB, false);
+	Entity.Props.Get<FMantleStaticMeshProps>().Materials.Add(MaterialM);
+	Painted.Add(Entity);
+	Fixture.Assets->AcquireEntityAssets(10, Solid);
+	Fixture.Assets->AcquireEntityAssets(60, Painted);
+	bool bAgree = true;
+	const bool bSettled = Fixture.PumpUntil([&Fixture, &bAgree]()
+	{
+		for (const int64 Holder : { 10, 60 })
+		{
+			bAgree &= Fixture.Assets->IsHolderSettled(Holder) == Fixture.Assets->GetHolderAssets(Holder).IsSettled();
+		}
+		return Fixture.Assets->GetHolderAssets(10).IsSettled() && Fixture.Assets->GetHolderAssets(60).IsSettled();
+	});
+	if (!TestTrue(TEXT("both cells settle"), bSettled))
+	{
+		return false;
+	}
+	TestTrue(TEXT("at every step it said what GetHolderAssets says"), bAgree);
+	TestTrue(TEXT("both say settled now"), Fixture.Assets->IsHolderSettled(10) && Fixture.Assets->IsHolderSettled(60));
+	TestEqual(TEXT("the solid cell's mesh is built"), Fixture.Assets->GetHolderAssets(10).FailedIds.Num(), 0);
+	TestTrue(TEXT("the refused material failed, as before"), Fixture.Assets->GetHolderAssets(60).FailedIds.Contains(MaterialM));
+	Fixture.Assets->ReleaseEntityAssets(10);
+	Fixture.Assets->ReleaseEntityAssets(60);
+	TestTrue(TEXT("everything is let go"), Fixture.PumpUntil([&Fixture]() { const FMantlePlaceAssets::FStreamedCounts Counts = Fixture.Assets->GetStreamedCounts(); return Counts.Materials == 0 && Counts.Meshes == 0; }));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

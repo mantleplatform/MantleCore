@@ -4731,6 +4731,7 @@ void FMantlePlaceAssets::AcquireEntityAssets(const int64 Holder, const TArray<FM
 	}
 	TArray<FMantleCellAssetNeed> Started;
 	CellUse.Acquire(Holder, Needs, Started);
+	SettleCursors.Remove(Holder);
 	StartRecordsFor(Started);
 }
 
@@ -4798,6 +4799,7 @@ void FMantlePlaceAssets::ReleaseEntityAssets(const int64 Holder)
 	}
 	TArray<FMantleCellAssetNeed> Ended;
 	CellUse.Release(Holder, Ended);
+	SettleCursors.Remove(Holder);
 	for (const FMantleCellAssetNeed& Need : Ended)
 	{
 		const FString Key = RecordKey(Need.Id, Need.bMaterial ? EAssetKind::Material : EAssetKind::Mesh, EMantleTextureRole::Color);
@@ -4810,6 +4812,52 @@ void FMantlePlaceAssets::ReleaseEntityAssets(const int64 Holder)
 	}
 }
 
+FMantlePlaceAssets::ENeedState FMantlePlaceAssets::NeedStateOf(const FMantleCellAssetNeed& Need) const
+{
+	const EAssetKind Kind = Need.bMaterial ? EAssetKind::Material : EAssetKind::Mesh;
+	const FRecord* Record = Records.Find(RecordKey(Need.Id, Kind, EMantleTextureRole::Color));
+	if (!Record)
+	{
+		return ENeedState::Pending;
+	}
+	if (Record->bFailed)
+	{
+		return ENeedState::Failed;
+	}
+	const FBuild* Build = Record->Build.IsSet() ? Builds.Find(Record->Build.GetValue()) : nullptr;
+	const bool bWantsCollision = !Need.bMaterial && Need.bCollision;
+	if (bWantsCollision && Record->bUpgradeFailed)
+	{
+		return ENeedState::Failed;
+	}
+	if (!Build || (bWantsCollision && (Record->bUpgradeToCollision || Record->UpgradeBuild.IsSet())))
+	{
+		return ENeedState::Pending;
+	}
+	if (Build->State == EBuildState::Failed)
+	{
+		return ENeedState::Failed;
+	}
+	if (Build->State != EBuildState::Ready || !Build->Object)
+	{
+		return ENeedState::Pending;
+	}
+	if (Need.bMaterial)
+	{
+		// #189: a material something near wants at full detail waits for its full textures (the join's near cells come up sharp); a far one is ready on its low ones.
+		for (const FString& TextureKey : Build->TextureRecords)
+		{
+			const FRecord* Texture = TextureKey.IsEmpty() ? nullptr : Records.Find(TextureKey);
+			const FBuild* Full = Texture && Texture->bWantFull && Texture->FullBuild.IsSet() ? Builds.Find(Texture->FullBuild.GetValue()) : nullptr;
+			if (Full && !Full->IsTerminal())
+			{
+				return ENeedState::Pending;
+			}
+		}
+	}
+	return ENeedState::Ready;
+}
+
 FMantlePlaceAssets::FHolderAssets FMantlePlaceAssets::GetHolderAssets(const int64 Holder) const
 {
 	FHolderAssets Out;
@@ -4820,52 +4868,53 @@ FMantlePlaceAssets::FHolderAssets FMantlePlaceAssets::GetHolderAssets(const int6
 	}
 	for (const FMantleCellAssetNeed& Need : *Needs)
 	{
-		const EAssetKind Kind = Need.bMaterial ? EAssetKind::Material : EAssetKind::Mesh;
-		const FRecord* Record = Records.Find(RecordKey(Need.Id, Kind, EMantleTextureRole::Color));
-		if (!Record)
+		switch (NeedStateOf(Need))
 		{
+		case ENeedState::Pending:
 			Out.PendingIds.Add(Need.Id);
-			continue;
-		}
-		if (Record->bFailed)
-		{
+			break;
+		case ENeedState::Failed:
 			Out.FailedIds.Add(Need.Id);
-			continue;
-		}
-		const FBuild* Build = Record->Build.IsSet() ? Builds.Find(Record->Build.GetValue()) : nullptr;
-		const bool bWantsCollision = !Need.bMaterial && Need.bCollision;
-		if (bWantsCollision && Record->bUpgradeFailed)
-		{
-			Out.FailedIds.Add(Need.Id);
-		}
-		else if (!Build || (bWantsCollision && (Record->bUpgradeToCollision || Record->UpgradeBuild.IsSet())))
-		{
-			Out.PendingIds.Add(Need.Id);
-		}
-		else if (Build->State == EBuildState::Failed)
-		{
-			Out.FailedIds.Add(Need.Id);
-		}
-		else if (Build->State != EBuildState::Ready || !Build->Object)
-		{
-			Out.PendingIds.Add(Need.Id);
-		}
-		else if (Need.bMaterial)
-		{
-			// #189: a material something near wants at full detail waits for its full textures (the join's near cells come up sharp); a far one is ready on its low ones.
-			for (const FString& TextureKey : Build->TextureRecords)
-			{
-				const FRecord* Texture = TextureKey.IsEmpty() ? nullptr : Records.Find(TextureKey);
-				const FBuild* Full = Texture && Texture->bWantFull && Texture->FullBuild.IsSet() ? Builds.Find(Texture->FullBuild.GetValue()) : nullptr;
-				if (Full && !Full->IsTerminal())
-				{
-					Out.PendingIds.Add(Need.Id);
-					break;
-				}
-			}
+			break;
+		default:
+			break;
 		}
 	}
 	return Out;
+}
+
+bool FMantlePlaceAssets::IsHolderSettled(const int64 Holder) const
+{
+	const TArray<FMantleCellAssetNeed>* Needs = CellUse.NeedsOf(Holder);
+	if (!Needs)
+	{
+		return true;
+	}
+	// From where it stopped last time: the needs before it were ready or failed then.
+	int32& Cursor = SettleCursors.FindOrAdd(Holder, 0);
+	if (Cursor > Needs->Num())
+	{
+		Cursor = 0;
+	}
+	for (; Cursor < Needs->Num(); ++Cursor)
+	{
+		++SettleLookups;
+		if (NeedStateOf((*Needs)[Cursor]) == ENeedState::Pending)
+		{
+			return false;
+		}
+	}
+	// At the end: one look at all of them, as GetHolderAssets does (a need passed earlier may be pending again).
+	for (int32 At = 0; At < Needs->Num(); ++At)
+	{
+		++SettleLookups;
+		if (NeedStateOf((*Needs)[At]) == ENeedState::Pending)
+		{
+			Cursor = At;
+			return false;
+		}
+	}
+	return true;
 }
 
 FMantlePlaceAssets::FStreamedCounts FMantlePlaceAssets::GetStreamedCounts() const
