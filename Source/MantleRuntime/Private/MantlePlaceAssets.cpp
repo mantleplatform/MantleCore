@@ -2470,18 +2470,80 @@ TArray<FString> FMantlePlaceAssets::QueueWheelPartsOf(const FString& WheelId, co
 
 // ---- Fetch --------------------------------------------------------------------------------------------
 
+TSet<FMantlePlaceAssets::FBuildKey> FMantlePlaceAssets::QueuedFilesWaitedFor() const
+{
+	TSet<FBuildKey> Needed;
+	for (const FBuildKey& WaitingKey : WaitingMaterials)
+	{
+		const FBuild* Waiting = Builds.Find(WaitingKey);
+		// Only a build that holds bytes while it waits can hold the budget shut.
+		if (!Waiting || Waiting->State != EBuildState::WaitingForTextures || Waiting->PendingBytes <= 0)
+		{
+			continue;
+		}
+		const auto AddIfQueued = [this, &Needed](const FString& RecordKeyToCheck)
+		{
+			const FRecord* Record = RecordKeyToCheck.IsEmpty() ? nullptr : Records.Find(RecordKeyToCheck);
+			const FBuild* Build = Record && Record->Build.IsSet() ? Builds.Find(Record->Build.GetValue()) : nullptr;
+			if (Build && Build->State == EBuildState::Queued)
+			{
+				Needed.Add(Build->Key);
+			}
+		};
+		for (const FString& TextureRecord : Waiting->TextureRecords)
+		{
+			AddIfQueued(TextureRecord);
+		}
+		for (const FString& PartRecord : Waiting->PartRecords)
+		{
+			AddIfQueued(PartRecord);
+		}
+	}
+	return Needed;
+}
+
 void FMantlePlaceAssets::StartFetches()
 {
-	auto StartFrom = [this](TArray<FBuildKey>& Queue)
+	// Above MaxPendingBuildBytes only what a waiting build names starts (a mesh's Lumen and Nanite files): a decoded mesh holds its
+	// bytes until those files settle, so enough waiting meshes would fill the budget and the files they wait for would never start
+	// (OrbitalBase, 2026-11-22: every join stopped at 170 of 458 MB, nothing downloading, its meshes waiting for Nanite files still queued).
+	TSet<FBuildKey> Needed;
+	bool bNeededKnown = false;
+	auto StartFrom = [this, &Needed, &bNeededKnown](TArray<FBuildKey>& Queue)
 	{
+		// Skipped for the budget: they keep their place at the front of the queue.
+		TArray<FBuildKey> Held;
 		int32 Next = 0;
-		while (Next < Queue.Num() && FetchesInFlight < Settings.MaxOutstandingFetches && PendingBuildBytes < Settings.MaxPendingBuildBytes)
+		while (Next < Queue.Num() && FetchesInFlight < Settings.MaxOutstandingFetches)
 		{
+			if (PendingBuildBytes >= Settings.MaxPendingBuildBytes)
+			{
+				if (!bNeededKnown)
+				{
+					Needed = QueuedFilesWaitedFor();
+					bNeededKnown = true;
+				}
+				if (Needed.IsEmpty())
+				{
+					break;
+				}
+			}
 			const FBuildKey Key = Queue[Next++];
+			const bool bOverBudget = PendingBuildBytes >= Settings.MaxPendingBuildBytes;
+			if (bOverBudget && !Needed.Contains(Key))
+			{
+				Held.Add(Key);
+				continue;
+			}
 			FBuild* Build = Builds.Find(Key);
 			if (!Build || Build->State != EBuildState::Queued)
 			{
 				continue;
+			}
+			if (bOverBudget)
+			{
+				Needed.Remove(Key);
+				++FetchesOverBudget;
 			}
 			Build->State = EBuildState::Fetching;
 			++FetchesInFlight;
@@ -2498,6 +2560,7 @@ void FMantlePlaceAssets::StartFetches()
 				}));
 		}
 		Queue.RemoveAt(0, Next, EAllowShrinking::No);
+		Queue.Insert(Held, 0);
 	};
 	StartFrom(FetchQueue);
 	// Sounds only once everything the place waits for has started: audio never delays a join.
@@ -4064,9 +4127,10 @@ void FMantlePlaceAssets::LogProgress()
 	int32 ActiveDownloads = 0;
 	int32 QueuedDownloads = 0;
 	Store->GetDownloadCounts(ActiveDownloads, QueuedDownloads);
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS progress %d of %d assets ready (%d failed), %.1f of %.1f MB; downloads active %d, queued %d"),
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS progress %d of %d assets ready (%d failed), %.1f of %.1f MB; downloads active %d, queued %d; waiting for the game thread %.1f of %.1f MB, %d not started, %d started over it"),
 		Progress.ReadyCount, Progress.TotalCount, Progress.FailedCount,
-		MantlePlaceAssetsPrivate::Megabytes(Progress.DoneBytes), MantlePlaceAssetsPrivate::Megabytes(Progress.TotalBytes), ActiveDownloads, QueuedDownloads);
+		MantlePlaceAssetsPrivate::Megabytes(Progress.DoneBytes), MantlePlaceAssetsPrivate::Megabytes(Progress.TotalBytes), ActiveDownloads, QueuedDownloads,
+		MantlePlaceAssetsPrivate::Megabytes(PendingBuildBytes), MantlePlaceAssetsPrivate::Megabytes(Settings.MaxPendingBuildBytes), FetchQueue.Num(), FetchesOverBudget);
 }
 
 // ---- Sounds -------------------------------------------------------------------------------------------

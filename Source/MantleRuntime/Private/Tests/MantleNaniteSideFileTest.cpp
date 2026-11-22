@@ -507,6 +507,50 @@ namespace MantleNaniteSideFileTestPrivate
 		return Assets;
 	}
 
+	/**
+	 * The two-slot box as MRM2 bytes (one LOD, no extension blocks), its corners at +-Half cm. Another Half is other bytes, so no
+	 * earlier set's mesh is reused and the mesh is downloaded and decoded (MRM1 decodes to nothing held, MRM2 to its description).
+	 */
+	TArray<uint8> MakeMrm2Box(const float Half)
+	{
+		FMantleStaticMeshData Mesh = MakeTwoSlotBox();
+		for (FVector3f& Position : Mesh.Positions)
+		{
+			Position = FVector3f(Position.X > 0.0f ? Half : -Half, Position.Y > 0.0f ? Half : -Half, Position.Z > 0.0f ? Half : -Half);
+		}
+		TArray<uint8> Bytes;
+		FMemoryWriter Ar(Bytes, true);
+		uint8 Magic[4] = { 'M', 'R', 'M', '2' };
+		Ar.Serialize(Magic, 4);
+		uint32 Version = FMantleStaticMeshReader::SupportedVersion, Flags = 0;
+		uint32 Vertices = static_cast<uint32>(Mesh.Positions.Num()), Indices = static_cast<uint32>(Mesh.Indices.Num());
+		Ar << Version << Flags << Vertices << Indices;
+		float Bounds[6] = { -Half, -Half, -Half, Half, Half, Half };
+		for (float& Value : Bounds)
+		{
+			Ar << Value;
+		}
+		uint32 SectionCount = static_cast<uint32>(Mesh.Sections.Num());
+		Ar << SectionCount;
+		for (const FMantleSkinnedMeshSection& Section : Mesh.Sections)
+		{
+			uint32 Slot = static_cast<uint32>(Section.MaterialIndex), First = static_cast<uint32>(Section.FirstIndex), Count = static_cast<uint32>(Section.IndexCount);
+			Ar << Slot << First << Count;
+			const FTCHARToUTF8 Name(*Section.MaterialName.ToString());
+			uint16 Length = static_cast<uint16>(Name.Length());
+			Ar << Length;
+			Ar.Serialize(const_cast<ANSICHAR*>(Name.Get()), Length);
+		}
+		Ar.Serialize(Mesh.Positions.GetData(), Mesh.Positions.Num() * sizeof(FVector3f));
+		Ar.Serialize(Mesh.Normals.GetData(), Mesh.Normals.Num() * sizeof(FVector3f));
+		Ar.Serialize(Mesh.Tangents.GetData(), Mesh.Tangents.Num() * sizeof(FVector4f));
+		Ar.Serialize(Mesh.UVs.GetData(), Mesh.UVs.Num() * sizeof(FVector2f));
+		Ar.Serialize(Mesh.Indices.GetData(), Mesh.Indices.Num() * sizeof(uint32));
+		uint32 Extensions = 0;
+		Ar << Extensions;
+		return Bytes;
+	}
+
 	UStaticMesh* BuildBox(const TArray<uint8>* File, const FString& Tag)
 	{
 		FMantleStaticMeshBuildParams Params;
@@ -1100,6 +1144,68 @@ bool FMantleNaniteReleaseTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the second set loaded"), Reused->IsComplete() && Reused->GetResult().bSuccess);
 	TestTrue(TEXT("its Nanite file was downloaded and unpacked"), Reused->GetNaniteHeldPeakBytes() > 0);
 	TestEqual(TEXT("and nothing is held for the mesh it reused from the first set"), Reused->GetNaniteHeldBytes(), static_cast<int64>(0));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleNaniteBudgetWaitTest,
+	"Mantle.Runtime.StaticMesh.NaniteFetchOverBudget",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleNaniteBudgetWaitTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleNaniteSideFileTestPrivate;
+
+	// OrbitalBase (2026-11-22): decoded meshes waiting for their Nanite files filled MaxPendingBuildBytes, and no download started above it,
+	// so the files they waited for never started and the join stalled at 170 of 458 MB with nothing downloading. Here one fetch at a time
+	// and a 1-byte budget: the mesh downloads first, decodes and waits holding its bytes, and its Nanite file must still start.
+	AddExpectedError(TEXT("MANTLE_PLACE_ASSETS FAIL"), EAutomationExpectedErrorFlags::Contains, 0);
+	AddExpectedError(TEXT("MANTLE_PLACE_ASSETS READY with"), EAutomationExpectedErrorFlags::Contains, 0);
+	const FString Run = FGuid::NewGuid().ToString();
+	const float Half = 50.0f + static_cast<float>(FMath::RandRange(1, 1 << 20)) / 64.0f;
+
+	const TSharedRef<FServingResolver> Server = MakeShared<FServingResolver>();
+	FServedAsset Mesh;
+	Mesh.Kind = TEXT("mesh");
+	Mesh.Bytes = MakeMrm2Box(Half);
+	FMantleStaticMeshData Check;
+	FString Error;
+	if (!TestTrue(TEXT("the test mesh is a good MRM2 file"), FMantleStaticMeshReader::Read(Mesh.Bytes, Check, &Error)))
+	{
+		AddInfo(Error);
+		return false;
+	}
+	Server->Assets.Add(FlowMeshA, Mesh);
+	FServedAsset Nanite;
+	Nanite.Kind = TEXT("nanite");
+	Nanite.Bytes = MakeContainer(WriteFile(MeshTag, { 0, 1 }));
+	Server->Assets.Add(FlowNaniteA, Nanite);
+
+	FMantleAssetStoreSettings StoreSettings;
+	StoreSettings.RootDir = FPaths::AutomationTransientDir() / TEXT("NaniteBudget") / Run;
+	StoreSettings.MaxAttempts = 1;
+	const TSharedRef<FServingFetcher> Fetcher = MakeShared<FServingFetcher>();
+	Fetcher->Source = Server;
+	FMantlePlaceAssetSettings Settings;
+	Settings.bAutoPump = false;
+	Settings.bRenderAssets = true;
+	Settings.bLoadNanite = true;
+	Settings.bAsyncCollisionCook = false;
+	Settings.MaxOutstandingFetches = 1;
+	Settings.MaxPendingBuildBytes = 1;
+	Settings.Resolver = Server;
+	Settings.Store = FMantleAssetStore::Create(StoreSettings, Fetcher);
+	const TSharedRef<FMantlePlaceAssets> Assets = FMantlePlaceAssets::Prepare(MakeOneMeshPlace(), Settings, FMantlePlaceAssetsDone());
+	const bool bFinished = Assets->WaitUntilComplete(30.0f);
+
+	const FMantlePlaceAssetProgress Progress = Assets->GetProgress();
+	AddInfo(FString::Printf(TEXT("%d of %d ready, %lld of %lld bytes started, %d started over the budget"),
+		Progress.ReadyCount, Progress.TotalCount, Progress.DoneBytes, Progress.TotalBytes, Assets->GetFetchesOverBudget()));
+	TestTrue(TEXT("the place finished loading (it stalled before: the Nanite file never started)"), bFinished && Assets->IsComplete());
+	TestTrue(TEXT("and loaded"), Assets->IsComplete() && Assets->GetResult().bSuccess);
+	TestNotNull(TEXT("the mesh built"), Assets->FindMesh(FlowMeshA));
+	TestEqual(TEXT("only the Nanite file started above the budget"), Assets->GetFetchesOverBudget(), 1);
+	TestEqual(TEXT("nothing is held for the mesh once it has built"), Assets->GetNaniteHeldBytes(), static_cast<int64>(0));
 	return true;
 }
 
