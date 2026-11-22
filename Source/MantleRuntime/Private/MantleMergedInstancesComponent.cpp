@@ -10,6 +10,7 @@
 #include "AI/NavigationSystemHelpers.h"
 #include "Chaos/ParticleHandle.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Engine/OverlapResult.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Physics/PhysicsInterfaceCore.h"
