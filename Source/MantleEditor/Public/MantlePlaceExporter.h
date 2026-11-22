@@ -131,8 +131,19 @@ struct FMantleExportResult
 	/** The upload key (for a material, "material:" and its path name) behind each provisional asset id Place.Assets lists, so a log can name an asset Gather never saw. */
 	TMap<FString, FString> ProvisionalKeys;
 
-	/** The root place file's size in bytes, as ToJson writes it (GhzGarage/mantle#818), measured after the scenery went to cells. */
+	/**
+	 * The root place file's size in bytes once every asset it names is uploaded (GhzGarage/mantle#818, MantleCore#189), measured after
+	 * the scenery went to cells: what the 8 MiB limit is checked against. Before conversion and upload it is the worst case
+	 * (FMantlePlaceUploadShape): each upload's sha256 hash and largest size, each material's textures and each mesh's Lumen and Nanite
+	 * files. Once everything is uploaded it is PlaceBytesAsWritten.
+	 */
 	int64 PlaceBytes = 0;
+
+	/** The root place file's size in bytes as ToJson writes it now, provisional ids and hashes included. */
+	int64 PlaceBytesAsWritten = 0;
+
+	/** The entries the root's asset list will hold once uploaded (FMantlePlaceUploadShape); Place.Assets has those it holds now. */
+	int32 UploadedAssets = 0;
 
 	/** Instanced mesh entries in the root place file; the cells' instances are counted in CellReport. */
 	int64 InstanceTotal = 0;

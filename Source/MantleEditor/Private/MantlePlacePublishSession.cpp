@@ -650,7 +650,8 @@ bool FMantleLevelPublishSource::CheckPlaceSize(FMantlePlaceSizeCheck& OutCheck)
 	}
 	// GhzGarage/mantle#818: the root place file as it would be written, with the ids an upload will give replaced by provisional ones of
 	// the same length (nothing is converted or uploaded yet). The backend refuses a file over 8 MiB only at the draft save, after
-	// every upload; this finds out first. The scenery in cells does not count: it has cell files of its own.
+	// every upload; this finds out first. The scenery in cells does not count: it has cell files of its own. MantleCore#189: measured
+	// as it will be after the uploads (Exported.PlaceBytes), with each material's textures and each mesh's Lumen and Nanite files.
 	FMantleExportOptions Options;
 	Options.Name = LevelName;
 	Options.RevisionNotes = Notes;
@@ -660,8 +661,9 @@ bool FMantleLevelPublishSource::CheckPlaceSize(FMantlePlaceSizeCheck& OutCheck)
 	OutCheck.Cells = Exported.CellReport.NumCells();
 	OutCheck.CellEntities = Exported.CellReport.CellEntities;
 	OutCheck.CellInstances = Exported.CellReport.CellInstances;
-	UE_LOG(LogMantle, Log, TEXT("Place file before upload: %s, %lld instanced meshes; %d cell(s) hold %lld entities and %lld instances"), *FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytes),
-		Exported.InstanceTotal, OutCheck.Cells, OutCheck.CellEntities, OutCheck.CellInstances);
+	UE_LOG(LogMantle, Log, TEXT("Place file once uploaded: %s at most (%s as written before upload, %d assets to list, %d now), %lld instanced meshes; %d cell(s) hold %lld entities and %lld instances"),
+		*FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytes), *FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytesAsWritten), Exported.UploadedAssets,
+		Exported.Place.Assets.Num(), Exported.InstanceTotal, OutCheck.Cells, OutCheck.CellEntities, OutCheck.CellInstances);
 	if (!Exported.bOverBudget)
 	{
 		return true;
