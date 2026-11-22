@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCellLoader.h"
+#include "MantleMemoryTags.h"
 
 #include "MantleApiClient.h"
 #include "MantleRuntime.h"
@@ -506,6 +507,7 @@ void FMantleCellLoader::StartDecodes()
 		const TSharedRef<FCompletionQueue, ESPMode::ThreadSafe> Queue = Completions;
 		UE::Tasks::Launch(TEXT("MantleCellRead"), [Queue, Bytes, FileIndex, bIsIndex, Assets]()
 		{
+			LLM_SCOPE_BYTAG(Mantle_PlaceCells);
 			const TSharedRef<FDecoded, ESPMode::ThreadSafe> Decoded = MakeShared<FDecoded, ESPMode::ThreadSafe>();
 			TArray<uint8> Raw;
 			FString Text;

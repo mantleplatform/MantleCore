@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceParser.h"
+#include "MantleMemoryTags.h"
 #include "MantleEnvironmentOverride.h"
 #include "MantlePlaceAssets.h"
 #include "MantlePlaceLimits.h"
@@ -4428,6 +4429,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, cons
 
 FMantleParseResult FMantlePlaceParser::ParseFromString(const FString& Json, const TArray<FString>& DiskScriptPackages, const bool bAcceptDraftVehicleIds)
 {
+	LLM_SCOPE_BYTAG(Mantle_PlaceParse);
 	FMantleParseResult Result;
 	FParseContext Ctx;
 	Ctx.bAcceptDraftVehicleIds = bAcceptDraftVehicleIds;
@@ -6140,6 +6142,7 @@ FMantleParseResult FMantlePlaceParser::ParseFromFile(const FString& FilePath)
 
 FMantleParseResult FMantlePlaceParser::ParseFromFile(const FString& FilePath, const TArray<FString>& DiskScriptPackages, const bool bAcceptDraftVehicleIds)
 {
+	LLM_SCOPE_BYTAG(Mantle_PlaceParse);
 	FString Json;
 	if (!FFileHelper::LoadFileToString(Json, *FilePath))
 	{

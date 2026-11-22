@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceBuilder.h"
+#include "MantleMemoryTags.h"
 #include "MantlePlaceFreezePlan.h"
 #include "MantleAnimClip.h"
 #include "MantleAssetLibrary.h"
@@ -473,6 +474,15 @@ namespace
 		const FTransform* StaticWorld = nullptr)
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_InstancedMesh);
+
+		// A record whose instances a dedicated server dropped (FMantleInstancedMeshProps::DroppedInstances) has none to build from. Only a server's scenery with no
+		// collision is ever built from one, and it takes no instances (below): anything else would stand with none, so it is refused out loud.
+		if (Props.DroppedInstances > 0 && !(World->GetNetMode() == NM_DedicatedServer && Props.Mesh.Collision == EMantleCollision::None))
+		{
+			UE_LOG(LogMantle, Error, TEXT("MANTLE_PLACE_INSTANCES_DROPPED %s: built from a record whose %d instances were dropped; its cell file holds them"), *Entity.Id, Props.DroppedInstances);
+			Errors.Add(FMantleParseError{ Path, FString::Printf(TEXT("its %d instances were dropped from the retained place; read them from its cell file"), Props.DroppedInstances) });
+			return nullptr;
+		}
 
 		UStaticMesh* Mesh = LoadEntityMesh(Props.Mesh, Path, Errors, LoadStats);
 		if (!Mesh)
@@ -1934,6 +1944,7 @@ TSharedRef<FMantlePlaceBuildSession> FMantlePlaceBuilder::Begin(
 
 bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 {
+	LLM_SCOPE_BYTAG(Mantle_PlaceBuild);
 	using EPhase = FState::EPhase;
 	FState& S = *State;
 	if (S.Phase == EPhase::Done)

@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceAssets.h"
+#include "MantleMemoryTags.h"
 
 #include "Async/TaskGraphInterfaces.h"
 #include "MantleAnimClip.h"
@@ -2733,6 +2734,7 @@ void FMantlePlaceAssets::StartDecodes()
 		// 4 MB inflate, a 60,000-vertex mesh described) holds the render thread's frame with it.
 		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes, NaniteRaw, NaniteTableOut, NanitePath]()
 		{
+			LLM_SCOPE_BYTAG(Mantle_PlaceAssets);
 			TSharedPtr<FMantleStaticMeshData> MeshV2;
 			TSharedPtr<FMantlePreparedStaticMesh> Prepared;
 			TSharedPtr<FMantleRuntimeMesh> MeshV1;
@@ -3919,6 +3921,7 @@ void FMantlePlaceAssets::DrainCompletions()
 void FMantlePlaceAssets::Pump()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceAssets_Pump);
+	LLM_SCOPE_BYTAG(Mantle_PlaceAssets);
 	check(IsInGameThread());
 	if (!bStarted || (bCompleted && bSoundsSettled && SoundWaiters.IsEmpty() && !bStreaming))
 	{
