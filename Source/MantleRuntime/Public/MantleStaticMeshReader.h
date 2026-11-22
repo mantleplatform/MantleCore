@@ -146,9 +146,9 @@ struct FMantleStaticMeshData : public FMantleStaticMeshLOD
 };
 
 /**
- * Reads MRM2 strictly, and MRM3, the cook's MRM2 in a zlib envelope (#189 step 5, MantleCookedPacking.h:
- * the size word checked against MaxPackedRawBytes before anything is allocated, the stream whole and
- * exact), by inflating it first. The bytes were uploaded by a stranger and arrive over the network, so every
+ * Reads MRM3, the cook's MRM2 in a zlib envelope (#189 step 5, MantleCookedPacking.h: the size word checked
+ * against MaxPackedRawBytes before anything is allocated, the stream whole and exact), and the MRM2 inside it
+ * strictly. A bare MRM2, cooked before, is refused: its place is republished. The bytes were uploaded by a stranger and arrive over the network, so every
  * count is checked against the format's caps and the bytes left before anything is allocated, every
  * float must be finite, a binormal sign must be exactly +1 or -1, the bounds must be exactly the
  * positions' extent, the sections must tile the index buffer in table order with non-empty unique
@@ -181,11 +181,14 @@ public:
 	/** What an MRM3 may inflate to: cook.StaticMeshMaxRawBytes. */
 	static constexpr int64 MaxPackedRawBytes = 512ll * 1024 * 1024;
 
-	/** True when the bytes start with MRM3's or MRM2's magic (the loader's MRM1/MRM2 dispatch). */
+	/** True when the bytes start with MRM3's magic (the loader's MRM1/MRM3 dispatch). */
 	static bool HasMagic(TConstArrayView<uint8> Data);
 
 	/** False, with the reason in OutError and Out left empty, on anything it refuses. */
 	static bool Read(TConstArrayView<uint8> Data, FMantleStaticMeshData& Out, FString* OutError = nullptr);
+
+	/** Read for the MRM2 inside an MRM3, already inflated: what Read does after the envelope. Tests and Read only. */
+	static bool ReadInner(TConstArrayView<uint8> Data, FMantleStaticMeshData& Out, FString* OutError = nullptr);
 
 	/**
 	 * Whether a convex hull's points span a volume (cook.hullSpansVolume): the farthest point from the

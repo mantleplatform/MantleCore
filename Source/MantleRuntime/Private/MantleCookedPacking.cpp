@@ -98,37 +98,4 @@ namespace MantleCookedPacking
 		return true;
 	}
 
-	bool UnpackEnvelopePrefix(const TConstArrayView<uint8> Bytes, const ANSICHAR* Magic, const int64 MaxRaw, const int32 PrefixBytes, TArray<uint8>& Out)
-	{
-		Out.Reset();
-		const uint32 Raw = Detail::EnvelopeRaw(Bytes, Magic, MaxRaw);
-		if (Raw == 0 || PrefixBytes <= 0)
-		{
-			return false;
-		}
-		const TConstArrayView<uint8> Stream = Bytes.RightChop(EnvelopeHeaderBytes);
-		const int32 Want = FMath::Min<int32>(PrefixBytes, static_cast<int32>(Raw));
-		Out.SetNumUninitialized(Want);
-		z_stream Inflater;
-		FMemory::Memzero(Inflater);
-		Inflater.next_in = const_cast<Bytef*>(Stream.GetData());
-		Inflater.avail_in = static_cast<uInt>(Stream.Num());
-		Inflater.next_out = Out.GetData();
-		Inflater.avail_out = static_cast<uInt>(Want);
-		if (inflateInit(&Inflater) != Z_OK)
-		{
-			Out.Reset();
-			return false;
-		}
-		// Stops when Want bytes are out; Z_BUF_ERROR then only means the output is full.
-		const int Result = inflate(&Inflater, Z_SYNC_FLUSH);
-		const uint64 TotalOut = Inflater.total_out;
-		inflateEnd(&Inflater);
-		if ((Result != Z_OK && Result != Z_STREAM_END && Result != Z_BUF_ERROR) || TotalOut != static_cast<uint64>(Want))
-		{
-			Out.Reset();
-			return false;
-		}
-		return true;
-	}
 }

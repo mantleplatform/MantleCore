@@ -13,8 +13,9 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 // #189 step 5: the cook compresses textures (MTX2, a zlib stream per mip), meshes (MRM3) and Lumen files (MLD2: the
-// MRM2 or MLD1 in an envelope). The readers take them and the older formats alike, and refuse a damaged stream the way
-// the Nanite side file does (backend/internal/cook/packed_test.go is the writer's side).
+// MRM2 or MLD1 in an envelope). The client reads only these: a file cooked before (MTX1, a bare MRM2) is refused, and its
+// place is republished. A damaged stream is refused the way the Nanite side file's is (backend/internal/cook/packed_test.go
+// is the writer's side).
 
 namespace MantleCookedPackingTest
 {
@@ -51,8 +52,8 @@ namespace MantleCookedPackingTest
 		return Bytes;
 	}
 
-	/** An 8 x 8 BC1 sRGB texture's chain (8, 4, 2, 1), every block patterned, as MTX1 (bPacked false) or MTX2. */
-	TArray<uint8> Texture(const bool bPacked)
+	/** The blocks of an 8 x 8 BC1 texture's chain (8, 4, 2, 1), every block patterned. */
+	TArray<TArray<uint8>> TextureMips()
 	{
 		const int32 Sizes[4] = { 8, 4, 2, 1 };
 		TArray<TArray<uint8>> Mips;
@@ -65,6 +66,14 @@ namespace MantleCookedPackingTest
 				Level.Add(static_cast<uint8>(Mip * 37 + Byte * 11));
 			}
 		}
+		return Mips;
+	}
+
+	/** TextureMips as an sRGB MTX2, or as the MTX1 the cook wrote before (bPacked false). */
+	TArray<uint8> Texture(const bool bPacked)
+	{
+		const int32 Sizes[4] = { 8, 4, 2, 1 };
+		const TArray<TArray<uint8>> Mips = TextureMips();
 		TArray<uint8> Bytes;
 		Bytes.Append(reinterpret_cast<const uint8*>(bPacked ? "MTX2" : "MTX1"), 4);
 		for (const uint32 Field : { 1u, 1u, 1u, 8u, 8u, 8u, 8u, 4u })
@@ -115,9 +124,6 @@ bool FMantleCookedPackingEnvelopeTest::RunTest(const FString&)
 	FString Reason;
 	TestTrue(TEXT("an envelope inflates"), MantleCookedPacking::UnpackEnvelope(Good, "MRM3", 1 << 20, Out, &Reason));
 	TestTrue(TEXT("to exactly its inner file"), Out == Inner);
-	TArray<uint8> Prefix;
-	TestTrue(TEXT("its first bytes inflate alone"), MantleCookedPacking::UnpackEnvelopePrefix(Good, "MRM3", 1 << 20, 100, Prefix));
-	TestTrue(TEXT("as the inner file's first 100"), Prefix == TArray<uint8>(Inner.GetData(), 100));
 
 	const auto Damaged = [&Good](const TFunctionRef<void(TArray<uint8>&)> Change)
 	{
@@ -156,21 +162,24 @@ bool FMantleCookedPackingTextureTest::RunTest(const FString&)
 	using namespace MantleCookedPackingTest;
 
 	FMantleTextureBuildParams Params;
-	FMantleDecodedTexture Raw;
 	FMantleDecodedTexture Packed;
 	FString Error;
-	TestTrue(*FString::Printf(TEXT("an MTX1 decodes (%s)"), *Error), FMantleRuntimeTextureBuilder::Decode(Texture(false), Params, Raw, &Error));
 	TestTrue(*FString::Printf(TEXT("an MTX2 decodes (%s)"), *Error), FMantleRuntimeTextureBuilder::Decode(Texture(true), Params, Packed, &Error));
 	TestEqual(TEXT("BC1"), Packed.Format, PF_DXT1);
-	TestTrue(TEXT("sRGB colour"), Packed.bSRGB && Packed.Role == EMantleTextureRole::Color);
-	if (TestEqual(TEXT("the whole chain"), Packed.Mips.Num(), 4) && Raw.Mips.Num() == 4)
+	TestTrue(TEXT("sRGB color"), Packed.bSRGB && Packed.Role == EMantleTextureRole::Color);
+	const TArray<TArray<uint8>> Blocks = TextureMips();
+	if (TestEqual(TEXT("the whole chain"), Packed.Mips.Num(), 4))
 	{
 		for (int32 Mip = 0; Mip < 4; ++Mip)
 		{
-			TestTrue(*FString::Printf(TEXT("mip %d inflates to the MTX1's blocks"), Mip),
-				Packed.Mips[Mip].Width == Raw.Mips[Mip].Width && Packed.Mips[Mip].Bytes == Raw.Mips[Mip].Bytes);
+			TestTrue(*FString::Printf(TEXT("mip %d inflates to its blocks"), Mip), Packed.Mips[Mip].Width == (8 >> Mip)
+				&& Packed.Mips[Mip].Bytes.Num() == Blocks[Mip].Num() && FMemory::Memcmp(Packed.Mips[Mip].Bytes.GetData(), Blocks[Mip].GetData(), Blocks[Mip].Num()) == 0);
 		}
 	}
+	FMantleDecodedTexture Old;
+	Error.Reset();
+	TestFalse(TEXT("an MTX1, cooked before, is refused"), FMantleRuntimeTextureBuilder::Decode(Texture(false), Params, Old, &Error));
+	TestTrue(*FString::Printf(TEXT("as one to publish again (%s)"), *Error), Old.Mips.IsEmpty() && Error.Contains(TEXT("published again")));
 	FMantleTextureBuildParams TopOnly;
 	TopOnly.Mips = EMantleTextureMips::None;
 	FMantleDecodedTexture One;
@@ -230,12 +239,17 @@ bool FMantleCookedPackingMeshAndLumenTest::RunTest(const FString&)
 	{
 		const TArray<uint8> Mrm3 = Envelope("MRM3", Mrm2);
 		TestTrue(TEXT("MRM3 is a static mesh's magic"), FMantleStaticMeshReader::HasMagic(Mrm3));
+		TestFalse(TEXT("a bare MRM2 is not"), FMantleStaticMeshReader::HasMagic(Mrm2));
 		FMantleStaticMeshData FromRaw;
 		FMantleStaticMeshData FromPacked;
 		FString Error;
-		TestTrue(*FString::Printf(TEXT("the MRM2 reads (%s)"), *Error), FMantleStaticMeshReader::Read(Mrm2, FromRaw, &Error));
+		TestTrue(*FString::Printf(TEXT("the fixture's MRM2 reads as an MRM3's inside (%s)"), *Error), FMantleStaticMeshReader::ReadInner(Mrm2, FromRaw, &Error));
 		TestTrue(*FString::Printf(TEXT("the MRM3 reads (%s)"), *Error), FMantleStaticMeshReader::Read(Mrm3, FromPacked, &Error));
 		TestTrue(TEXT("to the same mesh"), FromPacked.Positions == FromRaw.Positions && FromPacked.Indices == FromRaw.Indices && FromPacked.Sections.Num() == FromRaw.Sections.Num());
+		FMantleStaticMeshData OldMesh;
+		Error.Reset();
+		TestFalse(TEXT("a bare MRM2, cooked before, is refused"), FMantleStaticMeshReader::Read(Mrm2, OldMesh, &Error));
+		TestTrue(*FString::Printf(TEXT("as one to publish again (%s)"), *Error), Error.Contains(TEXT("published again")));
 
 		TArray<uint8> Damaged = Mrm3;
 		Damaged.Last() ^= 1;
@@ -245,7 +259,7 @@ bool FMantleCookedPackingMeshAndLumenTest::RunTest(const FString&)
 		TestFalse(TEXT("an MRM3 inside an MRM3 is refused"), FMantleStaticMeshReader::Read(Envelope("MRM3", Mrm3), Out, &Error));
 	}
 
-	// An MLD1 header with no body: its header reads through an MLD2, and a full read gets past the envelope to the body.
+	// An MLD1 header with no body, in an MLD2: Unpack gives the MLD1 back, whose header reads; Read takes only the MLD1, so nothing inflates in it.
 	const FString Mesh = TEXT("sha256:") + FString::ChrN(64, TEXT('a'));
 	TArray<uint8> Mld1;
 	FMemoryWriter Writer(Mld1);
@@ -256,18 +270,24 @@ bool FMantleCookedPackingMeshAndLumenTest::RunTest(const FString&)
 	FString MeshTag = Mesh;
 	Writer << Version << Engine << MeshTag;
 	const TArray<uint8> Mld2 = Envelope("MLD2", Mld1);
+	TestTrue(TEXT("an MLD2 is packed"), FMantleMeshLumenFile::IsPacked(Mld2) && !FMantleMeshLumenFile::IsPacked(Mld1));
+	TArray<uint8> Unpacked;
+	FString Reason;
+	TestTrue(*FString::Printf(TEXT("an MLD2 unpacks (%s)"), *Reason), FMantleMeshLumenFile::Unpack(Mld2, Unpacked, &Reason));
+	TestTrue(TEXT("to its MLD1"), Unpacked == Mld1);
 	FString ReadEngine;
 	FString ReadMesh;
-	TestTrue(TEXT("an MLD2's header reads"), FMantleMeshLumenFile::ReadHeader(Mld2, ReadEngine, ReadMesh));
-	TestTrue(TEXT("as the MLD1's"), ReadEngine == Engine && ReadMesh == Mesh);
+	TestTrue(TEXT("whose header reads"), FMantleMeshLumenFile::ReadHeader(Unpacked, ReadEngine, ReadMesh));
+	TestTrue(TEXT("as written"), ReadEngine == Engine && ReadMesh == Mesh);
 	FMantleMeshLumenData Lumen;
-	FString Reason;
-	TestFalse(TEXT("a body-less MLD2 does not read"), FMantleMeshLumenFile::Read(Mld2, Mesh, Lumen, &Reason));
-	TestTrue(*FString::Printf(TEXT("for its missing body, not its envelope (%s)"), *Reason), Reason.Contains(TEXT("distance field")));
+	TestFalse(TEXT("Read does not take an MLD2"), FMantleMeshLumenFile::Read(Mld2, Mesh, Lumen, &Reason));
+	TestFalse(TEXT("nor ReadHeader"), FMantleMeshLumenFile::ReadHeader(Mld2, ReadEngine, ReadMesh));
 	TArray<uint8> Damaged = Mld2;
 	Damaged.Last() ^= 1;
-	TestFalse(TEXT("a damaged MLD2 does not read"), FMantleMeshLumenFile::Read(Damaged, Mesh, Lumen, &Reason));
-	TestTrue(*FString::Printf(TEXT("as damaged (%s)"), *Reason), Reason.Contains(TEXT("damaged")));
+	Reason.Reset();
+	TestFalse(TEXT("a damaged MLD2 does not unpack"), FMantleMeshLumenFile::Unpack(Damaged, Unpacked, &Reason));
+	TestTrue(*FString::Printf(TEXT("as damaged (%s)"), *Reason), Unpacked.IsEmpty() && Reason.Contains(TEXT("damaged")));
+	TestFalse(TEXT("an MLD1 is not unpacked"), FMantleMeshLumenFile::Unpack(Mld1, Unpacked, &Reason));
 	return true;
 }
 

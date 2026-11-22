@@ -527,11 +527,31 @@ namespace MantleNaniteSideFileTestPrivate
 		return Assets;
 	}
 
+	/** Inner as the cook stores it (#189 step 5): Magic, its size, and one zlib stream of it (MRM3, MLD2). */
+	TArray<uint8> MakeEnvelope(const ANSICHAR* Magic, const TArray<uint8>& Inner)
+	{
+		TArray<uint8> Packed;
+		int32 PackedBytes = FCompression::CompressMemoryBound(NAME_Zlib, Inner.Num());
+		Packed.SetNumUninitialized(PackedBytes);
+		verify(FCompression::CompressMemory(NAME_Zlib, Packed.GetData(), PackedBytes, Inner.GetData(), Inner.Num()));
+		Packed.SetNum(PackedBytes);
+		TArray<uint8> Bytes;
+		Bytes.Append(reinterpret_cast<const uint8*>(Magic), 4);
+		const uint32 Raw = static_cast<uint32>(Inner.Num());
+		for (int32 Byte = 0; Byte < 4; ++Byte)
+		{
+			Bytes.Add(static_cast<uint8>(Raw >> (8 * Byte)));
+		}
+		Bytes.Append(Packed);
+		return Bytes;
+	}
+
 	/**
-	 * The two-slot box as MRM2 bytes (one LOD, no extension blocks), its corners at +-Half cm. Another Half is other bytes, so no
-	 * earlier set's mesh is reused and the mesh is downloaded and decoded (MRM1 decodes to nothing held, MRM2 to its description).
+	 * The two-slot box as the cook stores it, MRM3: an MRM2 (one LOD, no extension blocks) in its envelope, its corners at +-Half cm.
+	 * Another Half is other bytes, so no earlier set's mesh is reused and the mesh is downloaded and decoded (MRM1 decodes to nothing
+	 * held, MRM3 to its description).
 	 */
-	TArray<uint8> MakeMrm2Box(const float Half)
+	TArray<uint8> MakeMrm3Box(const float Half)
 	{
 		FMantleStaticMeshData Mesh = MakeTwoSlotBox();
 		for (FVector3f& Position : Mesh.Positions)
@@ -568,7 +588,7 @@ namespace MantleNaniteSideFileTestPrivate
 		Ar.Serialize(Mesh.Indices.GetData(), Mesh.Indices.Num() * sizeof(uint32));
 		uint32 Extensions = 0;
 		Ar << Extensions;
-		return Bytes;
+		return MakeEnvelope("MRM3", Bytes);
 	}
 
 	UStaticMesh* BuildBox(const TArray<uint8>* File, const FString& Tag)
@@ -1192,10 +1212,10 @@ bool FMantleNaniteBudgetWaitTest::RunTest(const FString& Parameters)
 	const TSharedRef<FServingResolver> Server = MakeShared<FServingResolver>();
 	FServedAsset Mesh;
 	Mesh.Kind = TEXT("mesh");
-	Mesh.Bytes = MakeMrm2Box(Half);
+	Mesh.Bytes = MakeMrm3Box(Half);
 	FMantleStaticMeshData Check;
 	FString Error;
-	if (!TestTrue(TEXT("the test mesh is a good MRM2 file"), FMantleStaticMeshReader::Read(Mesh.Bytes, Check, &Error)))
+	if (!TestTrue(TEXT("the test mesh is a good MRM3 file"), FMantleStaticMeshReader::Read(Mesh.Bytes, Check, &Error)))
 	{
 		AddInfo(Error);
 		return false;
@@ -2551,36 +2571,55 @@ namespace MantleTextureDetailTestPrivate
 	const TCHAR* const DetailMaterial = TEXT("ast_u000000000000000000000000000000e2");
 	const TCHAR* const DetailTexture = TEXT("ast_u000000000000000000000000000000e3");
 
-	/** A BC1 sRGB MTX1 of Size x Size with its full chain, every block zero (a valid, black texture). */
-	TArray<uint8> MakeMtx1(const int32 Size)
+	/**
+	 * A BC1 sRGB MTX2 of Size x Size with its full chain, every block zero (a valid, black texture) but the last mip's first byte, which is
+	 * Mark: textures with another Mark are other bytes, so no build another test made is reused.
+	 */
+	TArray<uint8> MakeMtx2(const int32 Size, const uint8 Mark = 0)
 	{
 		const int32 Mips = FMath::FloorLog2(Size) + 1;
+		TArray<TArray<uint8>> Streams;
+		TArray<uint32> Sizes;
+		for (int32 Mip = 0; Mip < Mips; ++Mip)
+		{
+			const uint32 Edge = static_cast<uint32>(FMath::Max(1, Size >> Mip));
+			const uint32 MipBytes = FMath::Max(1u, (Edge + 3) / 4) * FMath::Max(1u, (Edge + 3) / 4) * 8;
+			TArray<uint8> Blocks;
+			Blocks.SetNumZeroed(MipBytes);
+			if (Mip == Mips - 1)
+			{
+				Blocks[0] = Mark;
+			}
+			TArray<uint8>& Stream = Streams.AddDefaulted_GetRef();
+			int32 StreamBytes = FCompression::CompressMemoryBound(NAME_Zlib, Blocks.Num());
+			Stream.SetNumUninitialized(StreamBytes);
+			verify(FCompression::CompressMemory(NAME_Zlib, Stream.GetData(), StreamBytes, Blocks.GetData(), Blocks.Num()));
+			Stream.SetNum(StreamBytes);
+			Sizes.Add(MipBytes);
+		}
 		TArray<uint8> Bytes;
 		FMemoryWriter Ar(Bytes, true);
-		uint8 Magic[4] = { 'M', 'T', 'X', '1' };
+		uint8 Magic[4] = { 'M', 'T', 'X', '2' };
 		Ar.Serialize(Magic, 4);
 		uint32 Header[8] = { 1, 1, 1, static_cast<uint32>(Size), static_cast<uint32>(Size), static_cast<uint32>(Size), static_cast<uint32>(Size), static_cast<uint32>(Mips) };
 		for (uint32& Value : Header)
 		{
 			Ar << Value;
 		}
-		uint32 Offset = 36 + 16 * Mips;
-		TArray<uint32> Sizes;
+		uint32 Offset = 36 + 20 * Mips;
 		for (int32 Mip = 0; Mip < Mips; ++Mip)
 		{
 			const uint32 Edge = static_cast<uint32>(FMath::Max(1, Size >> Mip));
-			uint32 MipBytes = FMath::Max(1u, (Edge + 3) / 4) * FMath::Max(1u, (Edge + 3) / 4) * 8;
 			uint32 Width = Edge;
 			uint32 Height = Edge;
-			Ar << Width << Height << Offset << MipBytes;
-			Offset += MipBytes;
-			Sizes.Add(MipBytes);
+			uint32 MipBytes = Sizes[Mip];
+			uint32 Stored = static_cast<uint32>(Streams[Mip].Num());
+			Ar << Width << Height << Offset << MipBytes << Stored;
+			Offset += Stored;
 		}
-		for (const uint32 MipBytes : Sizes)
+		for (TArray<uint8>& Stream : Streams)
 		{
-			TArray<uint8> Zeros;
-			Zeros.SetNumZeroed(MipBytes);
-			Ar.Serialize(Zeros.GetData(), Zeros.Num());
+			Ar.Serialize(Stream.GetData(), Stream.Num());
 		}
 		return Bytes;
 	}
@@ -2650,8 +2689,8 @@ bool FMantleTextureDetailByDistanceTest::RunTest(const FString& Parameters)
 	Server->Assets.Add(DetailMaterial, Material);
 	FServedAsset Texture;
 	Texture.Kind = TEXT("texture");
-	Texture.Bytes = MakeMtx1(1024);
-	Texture.LowBytes = MakeMtx1(512);
+	Texture.Bytes = MakeMtx2(1024);
+	Texture.LowBytes = MakeMtx2(512);
 	Server->Assets.Add(DetailTexture, Texture);
 
 	FMantleAssetStoreSettings StoreSettings;
@@ -2751,11 +2790,9 @@ bool FMantleTextureLowFallsBackToFullTest::RunTest(const FString& Parameters)
 	Server->Assets.Add(DetailMaterial, Material);
 	FServedAsset Texture;
 	Texture.Kind = TEXT("texture");
-	// Bytes of their own (the last block of each file set), so no build another test made from MakeMtx1's files is reused here.
-	Texture.Bytes = MakeMtx1(1024);
-	Texture.Bytes.Last() = 1;
-	Texture.LowBytes = MakeMtx1(512);
-	Texture.LowBytes.Last() = 1;
+	// Bytes of their own, so no build another test made from MakeMtx2's files is reused here.
+	Texture.Bytes = MakeMtx2(1024, 1);
+	Texture.LowBytes = MakeMtx2(512, 1);
 	Texture.bServeLow = false;
 	Server->Assets.Add(DetailTexture, Texture);
 
@@ -2842,24 +2879,6 @@ namespace MantleLumenDecodeTestPrivate
 		return FMantleMeshLumenFile::Write(MeshTag, Field, Cards);
 	}
 
-	/** Inner in an MLD2 envelope, as the backend stores it. */
-	TArray<uint8> MakeMld2(const TArray<uint8>& Inner)
-	{
-		TArray<uint8> Packed;
-		int32 PackedBytes = FCompression::CompressMemoryBound(NAME_Zlib, Inner.Num());
-		Packed.SetNumUninitialized(PackedBytes);
-		verify(FCompression::CompressMemory(NAME_Zlib, Packed.GetData(), PackedBytes, Inner.GetData(), Inner.Num()));
-		Packed.SetNum(PackedBytes);
-		TArray<uint8> Bytes;
-		Bytes.Append(reinterpret_cast<const uint8*>("MLD2"), 4);
-		const uint32 Raw = static_cast<uint32>(Inner.Num());
-		for (int32 Byte = 0; Byte < 4; ++Byte)
-		{
-			Bytes.Add(static_cast<uint8>(Raw >> (8 * Byte)));
-		}
-		Bytes.Append(Packed);
-		return Bytes;
-	}
 
 	FMantlePlace MakeLumenPlace()
 	{
@@ -2895,11 +2914,11 @@ bool FMantleLumenInflatedOffTheGameThreadTest::RunTest(const FString& Parameters
 	FServedAsset Mesh;
 	Mesh.Kind = TEXT("mesh");
 	// Bytes of its own, so no build another test made is reused and this mesh is built here, reading its Lumen file.
-	Mesh.Bytes = MakeMrm2Box(41.0f);
+	Mesh.Bytes = MakeMrm3Box(41.0f);
 	Server->Assets.Add(LumenMesh, Mesh);
 	FServedAsset Lumen;
 	Lumen.Kind = TEXT("lumen");
-	Lumen.Bytes = MakeMld2(Mld1);
+	Lumen.Bytes = MakeEnvelope("MLD2", Mld1);
 	Server->Assets.Add(LumenFile, Lumen);
 
 	FMantleAssetStoreSettings StoreSettings;
@@ -2915,17 +2934,14 @@ bool FMantleLumenInflatedOffTheGameThreadTest::RunTest(const FString& Parameters
 	Settings.Resolver = Server;
 	Settings.Store = FMantleAssetStore::Create(StoreSettings, Fetcher);
 
-	int64 ReadsBefore = 0;
-	int64 InflatedBefore = 0;
-	FMantleMeshLumenFile::GetReadCounts(ReadsBefore, InflatedBefore);
+	const int64 ReadsBefore = FMantleMeshLumenFile::GetReadCount();
 	const TSharedRef<FMantlePlaceAssets> Assets = FMantlePlaceAssets::Prepare(MakeLumenPlace(), Settings, FMantlePlaceAssetsDone());
 	Assets->WaitUntilComplete(60.0f);
 	TestTrue(TEXT("the place's assets complete"), Assets->IsComplete());
-	int64 ReadsAfter = 0;
-	int64 InflatedAfter = 0;
-	FMantleMeshLumenFile::GetReadCounts(ReadsAfter, InflatedAfter);
-	TestEqual(TEXT("the mesh build read its Lumen file"), ReadsAfter - ReadsBefore, 1ll);
-	TestEqual(TEXT("and was handed it inflated: nothing was inflated in the build"), InflatedAfter - InflatedBefore, 0ll);
+	// Read takes only an MLD1, so a build that read the file was handed it inflated.
+	FMantleMeshLumenData Unused;
+	TestFalse(TEXT("Read does not take the MLD2 that was served"), FMantleMeshLumenFile::Read(Lumen.Bytes, MeshTag, Unused));
+	TestEqual(TEXT("the mesh build read its Lumen file, inflated before it"), FMantleMeshLumenFile::GetReadCount() - ReadsBefore, 1ll);
 	return true;
 }
 

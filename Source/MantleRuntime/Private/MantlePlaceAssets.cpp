@@ -2698,20 +2698,13 @@ void FMantlePlaceAssets::StartDecodes()
 
 		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> Bytes = MoveTemp(Build->Bytes);
 		Build->Bytes.Reset();
-		// #149: an MLD1 has nothing to decode off the game thread; OnDecoded looks at the header. #189: an MLD2 (what the backend stores) is inflated by
-		// the decode task into this array, which only the task writes before it hands the build back, so the mesh builds on the game thread read the MLD1.
+		// #189: a Lumen file is an MLD2 (what the backend stores), inflated by the decode task into this array, which only the task writes before it
+		// hands the build back, so OnDecoded's header check and the mesh builds on the game thread read the MLD1 inside.
 		TSharedPtr<TArray<uint8>, ESPMode::ThreadSafe> LumenRaw;
 		if (Key.Kind == EAssetKind::Lumen)
 		{
-			if (Bytes.IsValid() && FMantleMeshLumenFile::IsPacked(*Bytes))
-			{
-				LumenRaw = MakeShared<TArray<uint8>, ESPMode::ThreadSafe>();
-				Build->LumenFile = LumenRaw;
-			}
-			else
-			{
-				Build->LumenFile = Bytes;
-			}
+			LumenRaw = MakeShared<TArray<uint8>, ESPMode::ThreadSafe>();
+			Build->LumenFile = LumenRaw;
 		}
 		// A Nanite file's head (its first piece, the fields and the root pages: about a MiB) is read and inflated by the decode task (a file read and an inflate are too long for the game thread) into this
 		// array, and its table into this one, which only the task writes, before it hands the build back; the game thread reads them after (OnDecoded). The streamed pages stay in the file.
@@ -2755,9 +2748,9 @@ void FMantlePlaceAssets::StartDecodes()
 			switch (Key.Kind)
 			{
 			case EAssetKind::Lumen:
-				if (LumenRaw.IsValid())
+				if (LumenRaw.IsValid() && !FMantleMeshLumenFile::Unpack(View, *LumenRaw, &Error) && Error.IsEmpty())
 				{
-					FMantleMeshLumenFile::Unpack(View, *LumenRaw, &Error);
+					Error = TEXT("not an MLD2");
 				}
 				break;
 
@@ -2980,7 +2973,7 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 		FString MeshTag;
 		if (!Error.IsEmpty() || !File.IsValid() || !FMantleMeshLumenFile::ReadHeader(*File, Engine, MeshTag))
 		{
-			FailBuild(*Build, Error.IsEmpty() ? FString(TEXT("is not a Lumen file this client reads (MLD2 or MLD1)")) : FString::Printf(TEXT("is %s"), *Error));
+			FailBuild(*Build, Error.IsEmpty() ? FString(TEXT("is not a Lumen file this client reads (MLD2)")) : FString::Printf(TEXT("is %s"), *Error));
 			return;
 		}
 		Build->Detail = FString::Printf(TEXT("MLD1, engine %s, %.1f KB"), *Engine, File->Num() / 1024.0);

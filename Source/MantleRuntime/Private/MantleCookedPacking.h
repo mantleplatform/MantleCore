@@ -31,11 +31,4 @@ namespace MantleCookedPacking
 
 	/** Inflates an envelope with Magic into Out (emptied first). False with the reason, Out empty, on anything refused, a size past MaxRaw included. */
 	bool UnpackEnvelope(TConstArrayView<uint8> Bytes, const ANSICHAR* Magic, int64 MaxRaw, TArray<uint8>& Out, FString* OutReason = nullptr);
-
-	/**
-	 * The first bytes of an envelope's inner file, at most PrefixBytes of them, inflating only that much (a header read): false, Out
-	 * empty, when Bytes is not an envelope with Magic, names a size past MaxRaw, or its stream is damaged before that point. The
-	 * rest of the stream is not checked; UnpackEnvelope does that.
-	 */
-	bool UnpackEnvelopePrefix(TConstArrayView<uint8> Bytes, const ANSICHAR* Magic, int64 MaxRaw, int32 PrefixBytes, TArray<uint8>& Out);
 }

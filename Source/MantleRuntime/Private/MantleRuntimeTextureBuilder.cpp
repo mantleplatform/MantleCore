@@ -186,15 +186,13 @@ namespace MantleRuntimeTextureBuilderPrivate
 		return static_cast<uint32>(Bytes[0]) | (static_cast<uint32>(Bytes[1]) << 8) | (static_cast<uint32>(Bytes[2]) << 16) | (static_cast<uint32>(Bytes[3]) << 24);
 	}
 
-	// MTX2 and MTX1, the cook worker's block-compressed texture (backend/internal/cook/texturecook.go).
+	// MTX2, the cook worker's block-compressed texture (backend/internal/cook/texturecook.go, #189 step 5).
 	// Little-endian: magic, version, format, flags, width, height, sourceWidth, sourceHeight, mipCount,
-	// then mipCount x {width, height, offset, size, packedSize} (MTX1: {width, height, offset, size}),
-	// then each mip, mip 0 first and contiguous: for MTX2 one zlib stream of its blocks, packedSize
-	// bytes (#189 step 5); for MTX1 the blocks themselves (textures cooked before, catalog items among
-	// them). size is the mip's blocks either way.
+	// then mipCount x {width, height, offset, size, packedSize}, then each mip, mip 0 first and
+	// contiguous, as one zlib stream of its blocks, packedSize bytes; size is the blocks inflated. MTX1
+	// (the blocks stored raw) is not read: a place cooked before is republished.
 	constexpr uint32 Mtx1Version = 1;
 	constexpr int64 Mtx1HeaderBytes = 36;
-	constexpr int64 Mtx1MipEntryBytes = 16;
 	constexpr int64 Mtx2MipEntryBytes = 20;
 	constexpr uint32 Mtx1FlagSRGB = 1;
 	/** The worker's MaxTextureDimension: no MTX mip 0 is larger on a side. */
@@ -214,19 +212,19 @@ namespace MantleRuntimeTextureBuilderPrivate
 	}
 
 	/**
-	 * Reads an MTX2 (bPacked) or MTX1 container into Out without decoding a texel. Every field is checked
-	 * against the format's rules and every mip's size and offset against the buffer before anything is
-	 * allocated: the version, a known format, no unknown flags, sRGB only on BC1 and BC3, mip 0 a multiple
-	 * of 4 and at most 2048 (and Params.MaxDimension), the source size padding to it by less than a block,
-	 * the full chain to 1 x 1, each mip halving with exactly ceil(w/4) x ceil(h/4) blocks at the next
-	 * offset (an MTX2's stream not empty), and nothing after the last mip. Then the kept mips are copied,
-	 * an MTX2's inflated, each stream refused unless it is whole and inflates to exactly its blocks
-	 * (MantleCookedPacking::InflateExact). The same rules as the worker's own reader (cook.DecodeTexture).
+	 * Reads an MTX2 container into Out without decoding a texel. Every field is checked against the format's
+	 * rules and every mip's size and offset against the buffer before anything is allocated: the version, a
+	 * known format, no unknown flags, sRGB only on BC1 and BC3, mip 0 a multiple of 4 and at most 2048 (and
+	 * Params.MaxDimension), the source size padding to it by less than a block, the full chain to 1 x 1, each
+	 * mip halving with exactly ceil(w/4) x ceil(h/4) blocks and a stream that is not empty at the next offset,
+	 * and nothing after the last mip. Then the kept mips are inflated, each stream refused unless it is whole
+	 * and inflates to exactly its blocks (MantleCookedPacking::InflateExact). The same rules as the worker's
+	 * own reader (cook.DecodeTexture).
 	 */
-	bool DecodeMtx(const TConstArrayView<uint8> Bytes, const bool bPacked, const FMantleTextureBuildParams& Params, FMantleDecodedTexture& Out, FString* OutError)
+	bool DecodeMtx2(const TConstArrayView<uint8> Bytes, const FMantleTextureBuildParams& Params, FMantleDecodedTexture& Out, FString* OutError)
 	{
-		const TCHAR* Name = bPacked ? TEXT("MTX2") : TEXT("MTX1");
-		const int64 EntryBytes = bPacked ? Mtx2MipEntryBytes : Mtx1MipEntryBytes;
+		const TCHAR* Name = TEXT("MTX2");
+		const int64 EntryBytes = Mtx2MipEntryBytes;
 		const int64 Size = Bytes.Num();
 		if (Size < Mtx1HeaderBytes)
 		{
@@ -306,7 +304,7 @@ namespace MantleRuntimeTextureBuilderPrivate
 			const uint32 MipHeight = Field(Entry + 4);
 			const uint32 MipOffset = Field(Entry + 8);
 			const uint32 MipSize = Field(Entry + 12);
-			const uint32 MipStored = bPacked ? Field(Entry + 16) : MipSize;
+			const uint32 MipStored = Field(Entry + 16);
 			const uint32 WantWidth = FMath::Max(1u, Width >> Mip);
 			const uint32 WantHeight = FMath::Max(1u, Height >> Mip);
 			if (MipWidth != WantWidth || MipHeight != WantHeight)
@@ -355,11 +353,6 @@ namespace MantleRuntimeTextureBuilderPrivate
 			Level.Height = static_cast<int32>(Field(Entry + 4));
 			const int64 MipOffset = static_cast<int64>(Field(Entry + 8));
 			const int64 MipSize = static_cast<int64>(Field(Entry + 12));
-			if (!bPacked)
-			{
-				Level.Bytes.Append(Data + MipOffset, MipSize);
-				continue;
-			}
 			Level.Bytes.SetNumUninitialized(MipSize);
 			FString Reason;
 			if (!MantleCookedPacking::InflateExact(Bytes.Slice(static_cast<int32>(MipOffset), static_cast<int32>(Field(Entry + 16))), Level.Bytes.GetData(), MipSize, &Reason))
@@ -458,11 +451,14 @@ bool FMantleRuntimeTextureBuilder::Decode(const TConstArrayView<uint8> Bytes, co
 	{
 		return RefuseTexture(OutError, TEXT("That texture is empty."));
 	}
-	const bool bMtx2 = FMemory::Memcmp(Bytes.GetData(), "MTX2", 4) == 0;
-	if (bMtx2 || FMemory::Memcmp(Bytes.GetData(), "MTX1", 4) == 0)
+	if (FMemory::Memcmp(Bytes.GetData(), "MTX1", 4) == 0)
 	{
-		// Fab F9: the worker's BC container (MTX2 per-mip zlib since #189 step 5). The blocks and mips go to the GPU as they are.
-		if (!DecodeMtx(Bytes, bMtx2, Params, Out, OutError))
+		return RefuseTexture(OutError, TEXT("That texture is MTX1, cooked before this build of Mantle; its place must be published again."));
+	}
+	if (FMemory::Memcmp(Bytes.GetData(), "MTX2", 4) == 0)
+	{
+		// Fab F9: the worker's BC container (per-mip zlib since #189 step 5). The blocks and mips go to the GPU as they are.
+		if (!DecodeMtx2(Bytes, Params, Out, OutError))
 		{
 			Out = FMantleDecodedTexture();
 			return false;

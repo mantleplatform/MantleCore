@@ -19,9 +19,8 @@ namespace MantleMeshLumenDataPrivate
 	/** No mesh's file comes near this; a count past it is a damaged file, not a big mesh. */
 	constexpr int64 MaxMipBytes = 256LL * 1024 * 1024;
 
-	/** FMantleMeshLumenFile::GetReadCounts. */
+	/** FMantleMeshLumenFile::GetReadCount. */
 	std::atomic<int64> ReadsDone{ 0 };
-	std::atomic<int64> ReadsInflated{ 0 };
 
 	void SetReason(FString* OutReason, const FString& Reason)
 	{
@@ -102,23 +101,11 @@ bool FMantleMeshLumenFile::ReadHeader(const TConstArrayView<uint8> Bytes, FStrin
 
 	OutEngine.Reset();
 	OutMeshTag.Reset();
-	TArray<uint8> Copy;
-	if (MantleCookedPacking::HasMagic(Bytes, "MLD2"))
-	{
-		// #189 step 5: the header is the start of the MLD1 inside; only that much is inflated (this runs on the game thread).
-		if (!MantleCookedPacking::UnpackEnvelopePrefix(Bytes, "MLD2", MaxBytes, 4096, Copy))
-		{
-			return false;
-		}
-	}
-	else
-	{
-		Copy.Append(Bytes.GetData(), FMath::Min<int32>(Bytes.Num(), 4096));
-	}
-	if (Copy.Num() < 8 || FMemory::Memcmp(Copy.GetData(), "MLD1", 4) != 0)
+	if (Bytes.Num() < 8 || FMemory::Memcmp(Bytes.GetData(), "MLD1", 4) != 0)
 	{
 		return false;
 	}
+	const TArray<uint8> Copy(Bytes.GetData(), FMath::Min<int32>(Bytes.Num(), 4096));
 	FMemoryReader Reader(Copy, /*bIsPersistent*/ true);
 	Reader.Seek(4);
 	uint32 Version = 0;
@@ -131,27 +118,13 @@ bool FMantleMeshLumenFile::Read(const TConstArrayView<uint8> Bytes, const FStrin
 	using namespace MantleMeshLumenDataPrivate;
 
 	OutData = FMantleMeshLumenData();
-	// FMemoryReader takes a TArray: the MLD1 inflated from an MLD2 (#189 step 5), or a copy of the view's bytes.
-	TArray<uint8> Copy;
-	const bool bInflated = MantleCookedPacking::HasMagic(Bytes, "MLD2");
-	if (bInflated)
+	if (Bytes.Num() < 8 || FMemory::Memcmp(Bytes.GetData(), "MLD1", 4) != 0)
 	{
-		FString Reason;
-		if (!MantleCookedPacking::UnpackEnvelope(Bytes, "MLD2", MaxBytes, Copy, &Reason))
-		{
-			SetReason(OutReason, FString::Printf(TEXT("is %s"), *Reason));
-			return false;
-		}
-	}
-	else
-	{
-		Copy.Append(Bytes.GetData(), Bytes.Num());
-	}
-	if (Copy.Num() < 8 || FMemory::Memcmp(Copy.GetData(), "MLD1", 4) != 0)
-	{
-		SetReason(OutReason, TEXT("is not an MLD1 or MLD2"));
+		SetReason(OutReason, TEXT("is not an MLD1"));
 		return false;
 	}
+	// FMemoryReader takes a TArray; the view's bytes are only read.
+	const TArray<uint8> Copy(Bytes.GetData(), Bytes.Num());
 	FMemoryReader Reader(Copy, /*bIsPersistent*/ true);
 	Reader.Seek(4);
 	uint32 Version = 0;
@@ -206,10 +179,6 @@ bool FMantleMeshLumenFile::Read(const TConstArrayView<uint8> Bytes, const FStrin
 	OutData.DistanceField = MoveTemp(Field);
 	OutData.Cards = MoveTemp(Cards);
 	++ReadsDone;
-	if (bInflated)
-	{
-		++ReadsInflated;
-	}
 	return true;
 }
 
@@ -223,10 +192,9 @@ bool FMantleMeshLumenFile::IsPacked(const TConstArrayView<uint8> Bytes)
 	return MantleCookedPacking::HasMagic(Bytes, "MLD2");
 }
 
-void FMantleMeshLumenFile::GetReadCounts(int64& OutReads, int64& OutInflated)
+int64 FMantleMeshLumenFile::GetReadCount()
 {
 	using namespace MantleMeshLumenDataPrivate;
 
-	OutReads = ReadsDone.load();
-	OutInflated = ReadsInflated.load();
+	return ReadsDone.load();
 }
