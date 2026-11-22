@@ -310,7 +310,7 @@ void FMantleDrawDistance::BuildStructureDistances(const UWorld* World, TMap<cons
 		for (int32 Depth = 0; LevelInstances && Depth < 16; ++Depth)
 		{
 			const ILevelInstanceInterface* Parent = LevelInstances->GetOwningLevelInstance(Outer->GetLevel());
-			const AActor* ParentActor = Parent ? Cast<AActor>(Parent->_getUObject()) : nullptr;
+			const AActor* ParentActor = Parent ? Cast<AActor>(Parent) : nullptr;
 			if (!ParentActor || ParentActor == Outer)
 			{
 				break;
