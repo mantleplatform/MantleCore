@@ -30,6 +30,13 @@ public:
 
 	/** The Nanite root pages the place's meshes have attached now: the live budget (stage 8) counts them. Zero where nothing counts them (tests). */
 	virtual int64 GetNaniteRootPagesAttached() const { return 0; }
+
+	/**
+	 * A number that moves whenever the place's downloads move (a byte received, an asset built or failed): the streamer's holds and asset waits give up only once it
+	 * has stood still (FMantleCellStreamSettings::HoldIdleTimeoutSeconds, AssetIdleTimeoutSeconds). It may walk the whole asset set: the streamer asks a few times a second.
+	 * Zero where nothing counts it (tests): then a wait gives up the idle timeout after it began.
+	 */
+	virtual int64 GetProgressMark() const { return 0; }
 };
 
 /**
@@ -59,6 +66,12 @@ public:
 	virtual void SetBuildSlice(double Seconds) override { Set->SetStreamBuildSlice(Seconds); }
 
 	virtual int64 GetNaniteRootPagesAttached() const override { return Set->GetNaniteRootPagesAttached(); }
+
+	virtual int64 GetProgressMark() const override
+	{
+		const FMantlePlaceAssetProgress Progress = Set->GetProgress();
+		return Progress.DoneBytes + Progress.ReadyCount + Progress.FailedCount;
+	}
 
 private:
 	int64 HolderOf(int32 CellIndex) const { return (static_cast<int64>(Slot) << 32) | static_cast<int64>(static_cast<uint32>(CellIndex)); }

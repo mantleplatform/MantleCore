@@ -57,16 +57,34 @@ struct MANTLERUNTIME_API FMantleCellStreamSettings
 	int32 MaxCellsReadAhead = 8;
 
 	/**
-	 * What the join and a teleport wait for: every cell within this distance of the spot that the cell wants at all (a cell within its own
-	 * drawDistance of it) is built. 100 m: the floor, the walls round the player and what the first look at the place needs.
+	 * What a teleport and the player's own ground wait for: every cell within this distance of the spot that the cell wants at all (a cell within its own
+	 * drawDistance of it) is built. 100 m: the floor and the walls round the player. The player sees the world while these hold (there is no loading
+	 * screen), so they wait for what the player stands in and the rest streams in as in play.
 	 */
 	double HoldRadiusCm = 10000.0;
 
-	/** The hold lets go on its own after this long (a cell that cannot be fetched must not hold a player for good). */
-	double HoldTimeoutSeconds = 60.0;
+	/**
+	 * What the join waits for (any hold until the owner calls NoteJoinDone): every cell within this distance of the spot that the cell wants at all (its own drawDistance,
+	 * under the live budget, is the other limit). The join is behind the loading screen, so it waits for the ground and everything near the player, not just the 100 m a
+	 * teleport waits for: 600 m (Joshua, 2026-11-22, City Sample #189). The far skyline (City Sample's 1 km cells farther off than that) streams in after the screen comes down;
+	 * waiting for the whole first view there is about 27 GB of downloads today. To be looked at again once the client's download and texture plan lands.
+	 */
+	double JoinHoldRadiusCm = 60000.0;
 
-	/** A cell waits this long for its assets; then it is built without the ones that have not arrived (a download that never ends must not keep a cell, and what it holds, waiting for good). */
-	double AssetWaitTimeoutSeconds = 90.0;
+	/**
+	 * A hold lets go on its own once nothing has moved for this long: no cell file read, no piece or cell built, no byte of the place's assets arrived (a cell that
+	 * cannot be fetched must not hold a player for good). While files keep arriving it keeps holding, however long a first visit's download takes.
+	 */
+	double HoldIdleTimeoutSeconds = 60.0;
+
+	/**
+	 * A cell waiting for its assets gives up on the ones not here once the place's downloads have not moved for this long (since it asked, at the earliest); it is then built
+	 * without them. A download that never ends must not keep a cell waiting for good, but a long queue that is still moving is not a reason to build a cell with holes.
+	 */
+	double AssetIdleTimeoutSeconds = 90.0;
+
+	/** How often the place's download progress (IMantleCellAssets::GetProgressMark, a walk over the asset set) is looked at while a hold or an asset wait needs it. */
+	double ProgressSampleSeconds = 0.5;
 
 	/**
 	 * Asset builds (a mesh, a material, a texture: game-thread work in the place's asset set) and cell pieces share the tick's budget: while any cell waits for its assets, this share of the
@@ -190,6 +208,12 @@ public:
 
 	/** The player moved Delta in DeltaSeconds: farther than a teleport can be told from travel (see Settings.TeleportDistanceCm). */
 	static bool IsTeleport(const FVector& Delta, double DeltaSeconds, const FMantleCellStreamSettings& Settings);
+
+	/**
+	 * A wait that began at BeganSeconds has stalled: nothing has moved for IdleTimeoutSeconds, counted from the later of when it began and LastProgressSeconds (a wait never
+	 * gives up on progress made before it began). What a hold (HoldIdleTimeoutSeconds) and a cell's asset wait (AssetIdleTimeoutSeconds) give up on.
+	 */
+	static bool HasStalled(double NowSeconds, double BeganSeconds, double LastProgressSeconds, double IdleTimeoutSeconds);
 
 	/**
 	 * How many pieces an InstancedMesh with this many instances is built in: one when it has no collision (a visual instance costs 0.00013 ms, and a list holds at

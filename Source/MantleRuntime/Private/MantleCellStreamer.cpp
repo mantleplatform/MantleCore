@@ -163,6 +163,7 @@ void FMantleCellStreamer::Tick(const double DeltaSeconds)
 
 	const double TickStart = FPlatformTime::Seconds();
 	SampleView(DeltaSeconds);
+	SampleProgress(DeltaSeconds);
 	if (bIndexReady)
 	{
 		SecondsSinceRefresh += DeltaSeconds;
@@ -578,13 +579,15 @@ void FMantleCellStreamer::TakeAssetCells()
 		const double Waited = Now - Cell.AssetsAskedAt;
 		if (!Pending.IsEmpty())
 		{
-			if (Waited < Settings.AssetWaitTimeoutSeconds)
+			// A queue that is still moving is waited for, however long a first visit's download takes; only one that has stood still gives up.
+			if (!FMantleCellStreamPlan::HasStalled(Now, Cell.AssetsAskedAt, LastAssetProgressSeconds, Settings.AssetIdleTimeoutSeconds))
 			{
 				continue;
 			}
 			// Built without what has not arrived: nothing waits for good on a download.
 			++Stats.AssetWaitTimeouts;
-			UE_LOG(LogMantle, Warning, TEXT("MANTLE_CELLS_ASSET_TIMEOUT cell=%s: %d asset(s) had not arrived after %.0f s; the cell is built without them"), *InfoOf(CellIndex).KeyString(), Pending.Num(), Waited);
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_CELLS_ASSET_TIMEOUT cell=%s: %d asset(s) had not arrived after %.0f s, and the place's downloads had not moved for %.0f s; the cell is built without them"),
+				*InfoOf(CellIndex).KeyString(), Pending.Num(), Waited, Now - FMath::Max(Cell.AssetsAskedAt, LastAssetProgressSeconds));
 			Failed.Append(Pending);
 		}
 		Stats.LongestAssetWaitSeconds = FMath::Max(Stats.LongestAssetWaitSeconds, Waited);
@@ -998,8 +1001,11 @@ void FMantleCellStreamer::SetHolding(const bool bNow, const TCHAR* Reason)
 	{
 		HoldStartSeconds = Now;
 		HoldReason = Reason;
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_CELLS_HOLD begun: %s (until the cells within %.0f m of the view stand, at most %.0f s)"),
-			Reason, Settings.HoldRadiusCm / 100.0, Settings.HoldTimeoutSeconds);
+		const double Radius = HoldRadiusNow();
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_CELLS_HOLD begun: %s (until %s stand; gives up after %.0f s with nothing arriving)"),
+			Reason,
+			Settings.bKeepEveryCell ? TEXT("every cell") : (Radius >= UE_DOUBLE_BIG_NUMBER ? TEXT("the cells the view wants") : *FString::Printf(TEXT("the cells within %.0f m of the view"), Radius / 100.0)),
+			Settings.HoldIdleTimeoutSeconds);
 	}
 	else
 	{
@@ -1020,16 +1026,53 @@ void FMantleCellStreamer::CheckHold()
 	{
 		return;
 	}
-	if (Settings.bKeepEveryCell ? IsEverythingBuilt() : IsAreaBuilt(View.Location, Settings.HoldRadiusCm))
+	const double Now = FPlatformTime::Seconds();
+	if (IsHoldAreaBuilt())
 	{
 		SetHolding(false, TEXT("built"));
 	}
-	else if (FPlatformTime::Seconds() - HoldStartSeconds >= Settings.HoldTimeoutSeconds)
+	else if (FMantleCellStreamPlan::HasStalled(Now, HoldStartSeconds, LastProgressSeconds, Settings.HoldIdleTimeoutSeconds))
 	{
-		UE_LOG(LogMantle, Warning, TEXT("MANTLE_CELLS_HOLD timed out after %.0f s with the area not built (%d cells pending): the player is let go"),
-			Settings.HoldTimeoutSeconds, PendingCells.Num());
+		const FAreaCount Area = CountHoldArea();
+		UE_LOG(LogMantle, Warning, TEXT("MANTLE_CELLS_HOLD gave up after %.0f s: nothing arrived for %.0f s with the area not built (%d of %d cells stand, %d pending): the player is let go"),
+			Now - HoldStartSeconds, Now - FMath::Max(HoldStartSeconds, LastProgressSeconds), Area.Done, Area.Cells, PendingCells.Num());
 		bOwnGroundGaveUp = bOwnGroundGaveUp || HoldReason == TEXT("ground");
+		bJoinHoldGaveUp = bJoinHoldGaveUp || bJoinPending;
 		SetHolding(false, TEXT("timeout"));
+	}
+}
+
+bool FMantleCellStreamer::IsHoldAreaBuilt() const
+{
+	return Settings.bKeepEveryCell ? IsEverythingBuilt() : IsAreaBuilt(View.Location, HoldRadiusNow());
+}
+
+void FMantleCellStreamer::SampleProgress(const double DeltaSeconds)
+{
+	const double Now = FPlatformTime::Seconds();
+	// This streamer's own work, cheap to count: a cell file read, a piece or a cell built, a cell found unreadable (a hold waits for it no longer).
+	const int64 OwnMark = Stats.UnitsBuilt + Stats.CellsBuiltEver + Stats.CellsFailed + GetFilesRead();
+	if (OwnMark != LastOwnProgressMark)
+	{
+		LastOwnProgressMark = OwnMark;
+		LastProgressSeconds = Now;
+	}
+	// The place's downloads: a walk over the asset set, so only while a hold or an asset wait needs it, and a few times a second.
+	SecondsSinceAssetSample += DeltaSeconds;
+	const bool bWaitingOnAssets = bHolding || !AssetCells.IsEmpty() || !FarAssetCells.IsEmpty();
+	if (!CellAssets.IsValid() || !bWaitingOnAssets || (bAssetProgressMarkKnown && SecondsSinceAssetSample < Settings.ProgressSampleSeconds))
+	{
+		return;
+	}
+	SecondsSinceAssetSample = 0.0;
+	const int64 AssetMark = CellAssets->GetProgressMark();
+	if (!bAssetProgressMarkKnown || AssetMark != LastAssetProgressMark)
+	{
+		// The first look counts as progress: the waits begin from when they began, not from a mark never seen.
+		bAssetProgressMarkKnown = true;
+		LastAssetProgressMark = AssetMark;
+		LastAssetProgressSeconds = Now;
+		LastProgressSeconds = Now;
 	}
 }
 
@@ -1039,11 +1082,27 @@ bool FMantleCellStreamer::IsAreaBuilt(const FVector& Point, const double RadiusC
 	{
 		return false;
 	}
+	const FAreaCount Area = CountArea(Point, RadiusCm);
+	return Area.Done >= Area.Cells;
+}
+
+FMantleCellStreamer::FAreaCount FMantleCellStreamer::CountArea(const FVector& Point, const double RadiusCm) const
+{
+	FAreaCount Area;
+	if (!bIndexReady || bStopped)
+	{
+		return Area;
+	}
 	const FMantleCellIndex& Index = Loader->GetIndex();
 	FMantleCellStreamPlan::FPath Path;
 	Path.Add(Point);
+	// No cell is wanted from farther than its level's largest drawDistance, so a radius without a limit (the join's) looks no farther than that.
 	TArray<double> Radii;
-	Radii.Init(RadiusCm, Index.Levels.Num());
+	Radii.SetNumUninitialized(Index.Levels.Num());
+	for (int32 Level = 0; Level < Index.Levels.Num(); ++Level)
+	{
+		Radii[Level] = LevelRadii.IsValidIndex(Level) ? FMath::Min(RadiusCm, LevelRadii[Level]) : RadiusCm;
+	}
 	TArray<int32> Near;
 	FMantleCellStreamPlan::CellsNear(Index, LevelOverhangs, Radii, Path, Near);
 	for (const int32 CellIndex : Near)
@@ -1051,17 +1110,31 @@ bool FMantleCellStreamer::IsAreaBuilt(const FVector& Point, const double RadiusC
 		const FMantleCellInfo& Info = Index.Cells[CellIndex];
 		const double Distance = FMantleCellStreamPlan::DistanceToCell(Info, Point);
 		// A cell the streamer wants at all from here: within its reach, which a live budget (stage 8) may have shortened, so a hold never waits for a cell that is not wanted.
-		if (Distance > RadiusCm || Distance > FMantleCellStreamPlan::ReachOf(Info, Settings) || Loader->IsCellFailed(CellIndex))
+		if (Distance > RadiusCm || Distance > FMantleCellStreamPlan::ReachOf(Info, Settings))
 		{
 			continue;
 		}
+		++Area.Cells;
 		const FCell* Cell = Cells.Find(CellIndex);
-		if (!Cell || Cell->State != ECellState::Built)
+		if (Loader->IsCellFailed(CellIndex) || (Cell && Cell->State == ECellState::Built))
 		{
-			return false;
+			++Area.Done;
 		}
 	}
-	return true;
+	return Area;
+}
+
+FMantleCellStreamer::FAreaCount FMantleCellStreamer::CountHoldArea() const
+{
+	if (!Settings.bKeepEveryCell)
+	{
+		return CountArea(View.Location, HoldRadiusNow());
+	}
+	// Every cell with something for this streamer to build: what stands, against that and what is still wanted.
+	FAreaCount Area;
+	Area.Done = BuiltCells.Num() + Stats.CellsFailed;
+	Area.Cells = Area.Done + PendingCells.Num();
+	return Area;
 }
 
 FMantleCellAreaState FMantleCellStreamer::QueryArea(const FMantleCellAreaQuery& Query) const
