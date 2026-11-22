@@ -859,6 +859,11 @@ TSharedRef<FMantlePlaceAssets> FMantlePlaceAssets::PrepareWith(const FMantlePlac
 	return Set;
 }
 
+bool FMantlePlaceAssets::CollidesAfterCook(const UBodySetup* Body)
+{
+	return MantlePlaceAssetsPrivate::HasCookedCollision(Body);
+}
+
 UStaticMesh* FMantlePlaceAssets::FindLiveMesh(const FString& Id, FString& OutError)
 {
 	using namespace MantlePlaceAssetsPrivate;
@@ -3639,7 +3644,8 @@ void FMantlePlaceAssets::OnCollisionCooked(const FBuildKey& Key, const bool bSuc
 	}
 	const UStaticMesh* Mesh = Cast<UStaticMesh>(Build->Object.Get());
 	const UBodySetup* Body = Mesh ? Mesh->GetBodySetup() : nullptr;
-	if (!bSucceeded || !MantlePlaceAssetsPrivate::HasCookedCollision(Body))
+	// bSucceeded is false when there was nothing to cook (boxes, spheres and capsules only): the body answers (CollidesAfterCook).
+	if (!CollidesAfterCook(Body))
 	{
 		// The mesh still renders; it just does not block. Reported, never silent.
 		const FString Why = TEXT("its collision could not be cooked: players and traces will pass through it");
@@ -3648,7 +3654,8 @@ void FMantlePlaceAssets::OnCollisionCooked(const FBuildKey& Key, const bool bSuc
 	}
 	else
 	{
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS collision ready mesh %s (%s)"), *Build->Id, *MantlePlaceAssetsPrivate::DescribeCookedCollision(Body));
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS collision ready mesh %s (%s%s)"), *Build->Id, *MantlePlaceAssetsPrivate::DescribeCookedCollision(Body),
+			bSucceeded ? TEXT("") : TEXT(", nothing to cook"));
 	}
 	MarkReady(*Build, Build->Object.Get());
 }
