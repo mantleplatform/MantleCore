@@ -15,6 +15,12 @@ struct MANTLERUNTIME_API FMantleCellAssetNeed
 	/** Meshes: an entity that collides (collision other than none) uses it, so the mesh needs its collision cooked. */
 	bool bCollision = false;
 
+	/**
+	 * #189: where the entities that use it stand, in the place's space (their origins and their instances'), for how near the view is to it: a material's
+	 * textures are drawn at full size only near (FMantlePlaceAssets::SetTextureView). Not part of what a need is (operator==).
+	 */
+	FBox Bounds = FBox(ForceInit);
+
 	bool operator==(const FMantleCellAssetNeed& Other) const { return Id == Other.Id && bMaterial == Other.bMaterial && bCollision == Other.bCollision; }
 };
 
@@ -45,6 +51,9 @@ public:
 
 	/** What a holder holds now (empty when none). */
 	const TArray<FMantleCellAssetNeed>* NeedsOf(int64 Holder) const { return Held.Find(Holder); }
+
+	/** Every holder and what it holds. */
+	const TMap<int64, TArray<FMantleCellAssetNeed>>& GetHeld() const { return Held; }
 
 	/** How many holders use the id as a mesh (bMaterial false) or a material, and how many of them need the mesh with collision. */
 	int32 Users(const FString& Id, bool bMaterial) const;

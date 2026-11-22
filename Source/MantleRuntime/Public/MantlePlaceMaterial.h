@@ -728,6 +728,13 @@ public:
 		UObject* Outer = nullptr, FName Name = NAME_None, FString* OutError = nullptr);
 
 	/** As Build, on an explicit parent (tests, tools). */
+	/**
+	 * #189: the texture parameter a slot binds to (BuildOnParent's), and the swap of one slot's texture on a built instance: To replaces From only where the slot draws From now (an
+	 * additive material's ignored base color, or a slot something else set, is left alone). True when it swapped.
+	 */
+	static const TCHAR* SlotParameter(int32 Slot);
+	static bool SwapSlotTexture(UMaterialInstanceDynamic* Instance, int32 Slot, UTexture* From, UTexture* To);
+
 	static UMaterialInstanceDynamic* BuildOnParent(UMaterialInterface* Parent, const FMantlePlaceMaterialDesc& Desc,
 		TConstArrayView<UTexture*> Textures, UObject* Outer = nullptr, FName Name = NAME_None, FString* OutError = nullptr);
 

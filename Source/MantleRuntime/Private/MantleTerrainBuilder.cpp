@@ -186,6 +186,24 @@ namespace MantleTerrainBuilderPrivate
 		Mesh.GetBodySetup()->InvalidatePhysicsData();
 		return true;
 	}
+
+	/** #189: the chunk's one slot's UV density, by the static mesh builder's rule (on the worker that prepared it). */
+	void MeasureUVDensity(FMantleTerrainPreparedChunk& Chunk)
+	{
+		TArray<const FMeshDescription*> Descriptions;
+		TArray<int32> Channels;
+		for (const FMeshDescription& Description : Chunk.Descriptions)
+		{
+			Descriptions.Add(&Description);
+			Channels.Add(1);
+		}
+		TArray<FVector4f> Densities;
+		FMantleRuntimeStaticMeshBuilder::ComputeSlotUVDensities(Descriptions, Channels, { FName(FMantleTerrainBuilder::MaterialSlotName) }, Densities);
+		if (Densities.Num() == 1)
+		{
+			Chunk.UVDensity = Densities[0];
+		}
+	}
 }
 
 int32 FMantleTerrainBuilder::ChunkCount(const int32 Samples, const int32 ChunkQuads)
@@ -544,6 +562,7 @@ void FMantleTerrainBuilder::PrepareChunk(const FMantleHeightfield& Field, const 
 			{
 				Out.Vertices = Description.Vertices().Num();
 				Out.Descriptions.Add(MoveTemp(Description));
+				MantleTerrainBuilderPrivate::MeasureUVDensity(Out);
 				return;
 			}
 		}
@@ -569,6 +588,7 @@ void FMantleTerrainBuilder::PrepareChunk(const FMantleHeightfield& Field, const 
 		return;
 	}
 	Out.Vertices = Out.Descriptions[0].Vertices().Num();
+	MantleTerrainBuilderPrivate::MeasureUVDensity(Out);
 }
 
 bool FMantleTerrainBuilder::FinishChunk(const FMantleTerrainBuildParams& Params, FMantleTerrainPreparedChunk&& Prepared,
@@ -609,6 +629,12 @@ bool FMantleTerrainBuilder::FinishChunk(const FMantleTerrainBuildParams& Params,
 	// UVChannelData must be initialized (UStaticMesh::GetUVChannelData ensures it); see the static mesh builder.
 	FStaticMaterial& Slot = Mesh->GetStaticMaterials().Add_GetRef(FStaticMaterial(nullptr, FName(MaterialSlotName)));
 	Slot.UVChannelData = FMeshUVChannelInfo(1.0f);
+	// #189: the texture streamer sizes the chunk's textures by it (the static mesh builder's rule, measured on a worker in PrepareChunk). The weightmaps span the
+	// field once, as the UVs do; a layer's textures repeat every TilingCm in the material, which the streamer cannot see, so it asks for more of them than they need, never less.
+	for (int32 Channel = 0; Channel < TEXSTREAM_MAX_NUM_UVCHANNELS; ++Channel)
+	{
+		Slot.UVChannelData.LocalUVDensities[Channel] = Prepared.UVDensity[Channel];
+	}
 	// A picture only: the ground's collision is the height field (FMantleTerrainCollision), so no CPU copy of the triangles is kept and no body is made.
 	Mesh->bAllowCPUAccess = false;
 

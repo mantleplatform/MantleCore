@@ -11,6 +11,7 @@
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
 #include "Misc/ConfigCacheIni.h"
+#include "Misc/FileHelper.h"
 #include "Misc/Guid.h"
 #include "Misc/Paths.h"
 #include "Misc/ScopeLock.h"
@@ -103,6 +104,10 @@ namespace
 		FPaths::NormalizeDirectoryName(Settings.RootDir);
 
 		Settings.DiskBudgetBytes = FMath::Max<int64>(Settings.DiskBudgetBytes, 0);
+		Settings.DiskBudgetShare = FMath::Clamp(Settings.DiskBudgetShare, 0.0, 1.0);
+		Settings.DiskBudgetMinBytes = FMath::Max<int64>(Settings.DiskBudgetMinBytes, 0);
+		Settings.DiskBudgetMaxBytes = FMath::Max<int64>(Settings.DiskBudgetMaxBytes, Settings.DiskBudgetMinBytes);
+		Settings.MinFreeDiskBytes = FMath::Max<int64>(Settings.MinFreeDiskBytes, 0);
 		Settings.EvictionLowWater = FMath::Clamp(Settings.EvictionLowWater, 0.0, 1.0);
 		Settings.MaxConcurrentDownloads = FMath::Max(Settings.MaxConcurrentDownloads, 1);
 		Settings.MaxAttempts = FMath::Max(Settings.MaxAttempts, 1);
@@ -412,6 +417,17 @@ namespace
 					FMantleAssetFetchResult Result;
 					Result.bConnected = bConnected && Response.IsValid();
 					Result.StatusCode = Response.IsValid() ? Response->GetResponseCode() : 0;
+					if (Result.bConnected)
+					{
+						// Logged beside the decoded size: libcurl decodes a gzip body before the store sees it, and the engine's own
+						// content length is the decoded count (CurlHttp.cpp sets it from the bytes read), so only the header has the wire size.
+						Result.ContentEncoding = Response->GetHeader(TEXT("Content-Encoding"));
+						const FString Length = Response->GetHeader(TEXT("Content-Length"));
+						if (!Length.IsEmpty())
+						{
+							LexFromString(Result.WireBytes, *Length);
+						}
+					}
 					if (!Result.bConnected)
 					{
 						Result.Error = TEXT("no response");
@@ -520,6 +536,8 @@ FMantleAssetStore::FMantleAssetStore(
 	: Settings(MantleAssetStoreNormalize(InSettings))
 	, Fetcher(InFetcher)
 {
+	// Until the startup scan reads the drive: the fixed budget, or the smallest one sized from the drive.
+	BudgetBytes = ComputeBudgetLocked(-1);
 }
 
 FMantleAssetStore::~FMantleAssetStore()
@@ -653,11 +671,12 @@ void FMantleAssetStore::Scan()
 		Bytes = StoredBytes;
 	}
 
-	UE_LOG(LogMantle, Log, TEXT("Asset store at %s: %d assets, %lld bytes (budget %lld)%s"),
-		*Settings.RootDir, Count, Bytes, Settings.DiskBudgetBytes,
+	UE_LOG(LogMantle, Log, TEXT("Asset store at %s: %d assets, %lld bytes%s"),
+		*Settings.RootDir, Count, Bytes,
 		Stale.Num() > 0 ? *FString::Printf(TEXT(", removed %d stale partial downloads"), Stale.Num()) : TEXT(""));
 
-	// A smaller budget than last run takes effect before anything is requested.
+	// The budget from the drive as it is now (it logs it); a smaller one than last run takes effect before anything is requested.
+	UpdateBudget(/*bReadDisk*/ true);
 	EvictToBudget();
 	bScanComplete.store(true);
 }
@@ -1112,11 +1131,14 @@ void FMantleAssetStore::Finalize(
 		Entry.bVerified = true;
 	}
 
-	// Where this file's time went: waiting for a slot, the transfer, and the work after it (hash, move, index), in ms.
+	// Where this file's time went: waiting for a slot, the transfer, and the work after it (hash, move, index), in ms. Then the wire:
+	// the bytes the response said it sent (? when it sent no length) and how it was encoded (identity when not compressed).
 	const double FinalizedSeconds = FPlatformTime::Seconds();
-	UE_LOG(LogMantle, Log, TEXT("Asset store: stored %s (%lld bytes) queued_ms=%.0f transfer_ms=%.0f finalize_ms=%.0f"), *Hash.ToString(), Size,
+	UE_LOG(LogMantle, Log, TEXT("Asset store: stored %s (%lld bytes) queued_ms=%.0f transfer_ms=%.0f finalize_ms=%.0f wire=%s encoding=%s"), *Hash.ToString(), Size,
 		FMath::Max(Job->StartedSeconds - Job->QueuedSeconds, 0.0) * 1000.0, FMath::Max(Job->DoneSeconds - Job->StartedSeconds, 0.0) * 1000.0,
-		FMath::Max(FinalizedSeconds - Job->DoneSeconds, 0.0) * 1000.0);
+		FMath::Max(FinalizedSeconds - Job->DoneSeconds, 0.0) * 1000.0,
+		Result.WireBytes >= 0 ? *LexToString(Result.WireBytes) : TEXT("?"),
+		Result.ContentEncoding.IsEmpty() ? TEXT("identity") : *Result.ContentEncoding);
 
 	// This hash cannot be a victim: its job is still registered until Deliver.
 	EvictToBudget();
@@ -1427,25 +1449,188 @@ void FMantleAssetStore::Pin(const FMantleContentHash& Hash)
 
 void FMantleAssetStore::Unpin(const FMantleContentHash& Hash)
 {
-	bool bOverBudget = false;
+	// #189: no eviction here. Leaving a place unpinned all of it at once and evicted it down to the budget within a minute, so a
+	// rejoin downloaded it all again; and a cell let go mid-play lost its files, which came back as second downloads. Files go
+	// when a new one needs the room (Finalize, Seed) or at startup.
+	FScopeLock Guard(&Lock);
+	int32* Count = Pins.Find(Hash);
+	if (!Count)
+	{
+		return;
+	}
+	if (--(*Count) <= 0)
+	{
+		Pins.Remove(Hash);
+	}
+}
+
+int64 FMantleAssetStore::GetBudgetBytes() const
+{
+	FScopeLock Guard(&Lock);
+	return BudgetBytes;
+}
+
+int64 FMantleAssetStore::ComputeBudget(const FMantleAssetStoreSettings& InSettings, const int64 FreeBytes, const int64 InStoredBytes,
+	const int64 ChosenBytes, const int64 DemandBytes)
+{
+	if (InSettings.DiskBudgetBytes > 0)
+	{
+		return InSettings.DiskBudgetBytes;
+	}
+	const int64 Demand = FMath::Max<int64>(DemandBytes, 0);
+	if (FreeBytes < 0)
+	{
+		// The drive not read yet (or it could not be): the smallest automatic size, or the player's, or what the place needs.
+		return FMath::Max(ChosenBytes > 0 ? ChosenBytes : InSettings.DiskBudgetMinBytes, Demand);
+	}
+	// What the store could hold: the free space plus its own files (which it may keep), so the budget does not shrink as it fills.
+	const int64 Usable = FreeBytes + FMath::Max<int64>(InStoredBytes, 0);
+	const int64 Share = FMath::Clamp(static_cast<int64>(static_cast<double>(Usable) * InSettings.DiskBudgetShare),
+		InSettings.DiskBudgetMinBytes, InSettings.DiskBudgetMaxBytes);
+	const int64 Wanted = FMath::Max(ChosenBytes > 0 ? ChosenBytes : Share, Demand);
+	// Whatever asked for it, the drive keeps MinFreeDiskBytes free.
+	return FMath::Clamp(Wanted, int64(0), FMath::Max<int64>(Usable - InSettings.MinFreeDiskBytes, 0));
+}
+
+int64 FMantleAssetStore::ComputeBudgetLocked(const int64 FreeBytes) const
+{
+	return ComputeBudget(Settings, FreeBytes, StoredBytes, ChosenBudgetBytes, PlaceDemandBytes);
+}
+
+void FMantleAssetStore::UpdateBudget(const bool bReadDisk)
+{
+	if (Settings.DiskBudgetBytes > 0)
+	{
+		return;
+	}
+	int64 Free = -1;
+	if (bReadDisk)
+	{
+		uint64 TotalBytes = 0;
+		uint64 FreeBytes = 0;
+		if (FPlatformMisc::GetDiskTotalAndFreeSpace(Settings.RootDir, TotalBytes, FreeBytes))
+		{
+			Free = static_cast<int64>(FreeBytes);
+		}
+	}
+	// The largest place's need survives a restart (else the startup scan would evict that place down to the drive share).
+	const FString DemandPath = FPaths::Combine(Settings.RootDir, TEXT(".place-demand"));
+	int64 DemandToSave = -1;
+	bool bOver = false;
 	{
 		FScopeLock Guard(&Lock);
-		int32* Count = Pins.Find(Hash);
-		if (!Count)
+		if (!bDemandLoaded)
+		{
+			bDemandLoaded = true;
+			FString Saved;
+			int64 SavedBytes = 0;
+			if (FFileHelper::LoadFileToString(Saved, *DemandPath) && LexTryParseString(SavedBytes, *Saved.TrimStartAndEnd()) && SavedBytes > PlaceDemandBytes)
+			{
+				PlaceDemandBytes = SavedBytes;
+			}
+			SavedDemandBytes = PlaceDemandBytes;
+		}
+		if (PlaceDemandBytes != SavedDemandBytes)
+		{
+			SavedDemandBytes = PlaceDemandBytes;
+			DemandToSave = PlaceDemandBytes;
+		}
+		if (Free >= 0)
+		{
+			FreeDiskBytes = Free;
+		}
+		const int64 Before = BudgetBytes;
+		BudgetBytes = ComputeBudgetLocked(FreeDiskBytes);
+		DemandSizedFor = PlaceDemandBytes;
+		if (BudgetBytes != Before)
+		{
+			bWarnedOverBudget = false;
+			// GB as Windows counts them (1024^3), like the Settings line.
+			auto Gb = [](const int64 Bytes) { return static_cast<double>(Bytes) / (1024.0 * 1024.0 * 1024.0); };
+			UE_LOG(LogMantle, Log, TEXT("Asset store: budget %.1f GB (was %.1f GB): drive free %.1f GB, stored %.1f GB, place needs %.1f GB, player's size %s, keeps %.0f GB free"),
+				Gb(BudgetBytes), Gb(Before), Gb(FreeDiskBytes), Gb(StoredBytes), Gb(PlaceDemandBytes),
+				ChosenBudgetBytes > 0 ? *FString::Printf(TEXT("%.0f GB"), Gb(ChosenBudgetBytes)) : TEXT("automatic"),
+				Gb(Settings.MinFreeDiskBytes));
+		}
+		bOver = StoredBytes > BudgetBytes;
+	}
+	if (DemandToSave >= 0)
+	{
+		FFileHelper::SaveStringToFile(LexToString(DemandToSave), *DemandPath);
+	}
+	if (bOver)
+	{
+		EvictToBudget();
+	}
+}
+
+void FMantleAssetStore::SetPlaceDemand(const int64 Bytes)
+{
+	if (Settings.DiskBudgetBytes > 0)
+	{
+		return;
+	}
+	bool bResize = false;
+	{
+		FScopeLock Guard(&Lock);
+		// The largest need yet, kept (and saved, see UpdateBudget) until the player clears the store: a new place's set starts
+		// at nothing and grows, and taking its first small number would evict the big place's files a rejoin wants back.
+		if (Bytes <= PlaceDemandBytes)
 		{
 			return;
 		}
-		if (--(*Count) <= 0)
+		PlaceDemandBytes = Bytes;
+		// Sized again when the need passes the budget, by a step rather than every file.
+		constexpr int64 Step = 256ll * 1024 * 1024;
+		bResize = PlaceDemandBytes > BudgetBytes && PlaceDemandBytes >= DemandSizedFor + Step;
+		if (bResize)
 		{
-			Pins.Remove(Hash);
+			DemandSizedFor = PlaceDemandBytes;
 		}
-		bOverBudget = StoredBytes > Settings.DiskBudgetBytes;
 	}
-	if (bOverBudget)
+	if (bResize)
 	{
-		// Deleting files is disk work; never on the game thread.
-		LaunchTask(TEXT("MantleAssetStoreEvict"), [this]() { EvictToBudget(); }, /*bAfterScan*/ true);
+		LaunchTask(TEXT("MantleAssetStoreBudget"), [this]() { UpdateBudget(/*bReadDisk*/ true); }, /*bAfterScan*/ true);
 	}
+}
+
+void FMantleAssetStore::SetChosenBudget(const int64 Bytes)
+{
+	{
+		FScopeLock Guard(&Lock);
+		if (ChosenBudgetBytes == FMath::Max<int64>(Bytes, 0))
+		{
+			return;
+		}
+		ChosenBudgetBytes = FMath::Max<int64>(Bytes, 0);
+	}
+	LaunchTask(TEXT("MantleAssetStoreBudget"), [this]() { UpdateBudget(/*bReadDisk*/ true); }, /*bAfterScan*/ true);
+}
+
+void FMantleAssetStore::RefreshBudget()
+{
+	LaunchTask(TEXT("MantleAssetStoreBudget"), [this]() { UpdateBudget(/*bReadDisk*/ true); }, /*bAfterScan*/ true);
+}
+
+void FMantleAssetStore::ClearUnused(TFunction<void(int64 FreedBytes)> OnDone)
+{
+	LaunchTask(TEXT("MantleAssetStoreClear"), [this, OnDone = MoveTemp(OnDone)]() mutable
+	{
+		// Clearing also forgets the size a big place raised the budget to.
+		{
+			FScopeLock Guard(&Lock);
+			PlaceDemandBytes = 0;
+			DemandSizedFor = 0;
+		}
+		UpdateBudget(/*bReadDisk*/ true);
+		int32 Files = 0;
+		const int64 Freed = EvictDownTo(0, Files);
+		UE_LOG(LogMantle, Log, TEXT("Asset store: cleared %d unused assets (%.1f MB)"), Files, Freed / (1024.0 * 1024.0));
+		if (OnDone)
+		{
+			Post([OnDone = MoveTemp(OnDone), Freed]() { OnDone(Freed); });
+		}
+	}, /*bAfterScan*/ true);
 }
 
 bool FMantleAssetStore::IsEvictableLocked(const FMantleContentHash& Hash, const FEntry& Entry) const
@@ -1455,16 +1640,40 @@ bool FMantleAssetStore::IsEvictableLocked(const FMantleContentHash& Hash, const 
 
 void FMantleAssetStore::EvictToBudget()
 {
-	TArray<FMantleContentHash> Victims;
-	int64 Remaining = 0;
+	int64 Target = 0;
 	{
 		FScopeLock Guard(&Lock);
-		if (StoredBytes <= Settings.DiskBudgetBytes)
+		if (StoredBytes <= BudgetBytes)
 		{
 			bWarnedOverBudget = false;
 			return;
 		}
+		Target = static_cast<int64>(static_cast<double>(BudgetBytes) * Settings.EvictionLowWater);
+	}
 
+	int32 Files = 0;
+	EvictDownTo(Target, Files);
+
+	FScopeLock Guard(&Lock);
+	if (Files > 0)
+	{
+		UE_LOG(LogMantle, Log, TEXT("Asset store: evicted %d assets; %lld bytes stored (budget %lld)"), Files, StoredBytes, BudgetBytes);
+	}
+	if (StoredBytes > BudgetBytes && !bWarnedOverBudget)
+	{
+		bWarnedOverBudget = true;
+		UE_LOG(LogMantle, Warning,
+			TEXT("Asset store: %lld bytes in use or pinned, over the %lld-byte budget; nothing more can be evicted"),
+			StoredBytes, BudgetBytes);
+	}
+}
+
+int64 FMantleAssetStore::EvictDownTo(const int64 TargetBytes, int32& OutFiles)
+{
+	TArray<FMantleContentHash> Victims;
+	int64 Freed = 0;
+	{
+		FScopeLock Guard(&Lock);
 		TArray<TPair<int64, FMantleContentHash>> Candidates;
 		for (const TPair<FMantleContentHash, FEntry>& Pair : Index)
 		{
@@ -1478,25 +1687,17 @@ void FMantleAssetStore::EvictToBudget()
 			return A.Key < B.Key;
 		});
 
-		const int64 Target = static_cast<int64>(static_cast<double>(Settings.DiskBudgetBytes) * Settings.EvictionLowWater);
 		for (const TPair<int64, FMantleContentHash>& Candidate : Candidates)
 		{
-			if (StoredBytes <= Target)
+			if (StoredBytes <= TargetBytes)
 			{
 				break;
 			}
-			StoredBytes -= Index.FindChecked(Candidate.Value).Size;
+			const int64 Size = Index.FindChecked(Candidate.Value).Size;
+			StoredBytes -= Size;
+			Freed += Size;
 			Index.Remove(Candidate.Value);
 			Victims.Add(Candidate.Value);
-		}
-
-		Remaining = StoredBytes;
-		if (StoredBytes > Settings.DiskBudgetBytes && !bWarnedOverBudget)
-		{
-			bWarnedOverBudget = true;
-			UE_LOG(LogMantle, Warning,
-				TEXT("Asset store: %lld bytes in use or pinned, over the %lld-byte budget; nothing more can be evicted"),
-				StoredBytes, Settings.DiskBudgetBytes);
 		}
 	}
 
@@ -1511,17 +1712,20 @@ void FMantleAssetStore::EvictToBudget()
 			Files.DeleteFile(*PathFor(Victim));
 		}
 	}
-
-	if (Victims.Num() > 0)
-	{
-		UE_LOG(LogMantle, Log, TEXT("Asset store: evicted %d assets; %lld bytes stored"), Victims.Num(), Remaining);
-	}
+	OutFiles = Victims.Num();
+	return Freed;
 }
 
 bool FMantleAssetStore::Contains(const FMantleContentHash& Hash) const
 {
 	FScopeLock Guard(&Lock);
 	return Index.Contains(Hash);
+}
+
+bool FMantleAssetStore::IsPinned(const FMantleContentHash& Hash) const
+{
+	FScopeLock Guard(&Lock);
+	return Pins.Contains(Hash);
 }
 
 void FMantleAssetStore::GetDownloadCounts(int32& OutActive, int32& OutQueued) const
@@ -1534,6 +1738,24 @@ void FMantleAssetStore::GetDownloadCounts(int32& OutActive, int32& OutQueued) co
 		const TSharedRef<FJob>* Found = Jobs.Find(Hash);
 		OutQueued += (Found && (*Found)->State == EJobState::Queued) ? 1 : 0;
 	}
+}
+
+FMantleAssetStore::FUsage FMantleAssetStore::GetUsage() const
+{
+	FScopeLock Guard(&Lock);
+	FUsage Usage;
+	Usage.StoredFiles = Index.Num();
+	Usage.StoredBytes = StoredBytes;
+	Usage.BudgetBytes = BudgetBytes;
+	for (const TPair<FMantleContentHash, int32>& Pin : Pins)
+	{
+		if (const FEntry* Entry = Index.Find(Pin.Key))
+		{
+			++Usage.PinnedFiles;
+			Usage.PinnedBytes += Entry->Size;
+		}
+	}
+	return Usage;
 }
 
 int64 FMantleAssetStore::GetInFlightBytes(const FMantleContentHash& Hash) const

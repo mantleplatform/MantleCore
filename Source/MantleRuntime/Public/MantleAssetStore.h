@@ -115,6 +115,15 @@ struct MANTLERUNTIME_API FMantleAssetFetchResult
 	int32 StatusCode = 0;
 
 	FString Error;
+
+	/** The response's Content-Encoding ("gzip" when the CDN compressed it on the way; empty when it did not). Logged only. */
+	FString ContentEncoding;
+
+	/**
+	 * Bytes on the wire as the response's Content-Length gave them (the compressed size for a gzip body), or -1 when it gave none
+	 * (a compressed body is often sent in chunks). The body the store hashes is always the decoded one. Logged only.
+	 */
+	int64 WireBytes = -1;
 };
 
 /**
@@ -152,8 +161,23 @@ struct MANTLERUNTIME_API FMantleAssetStoreSettings
 	/** Saved/Mantle/Assets by default. */
 	FString RootDir;
 
-	/** Total bytes of unpinned assets kept on disk. Pinned assets may take it over; see Pin. */
-	int64 DiskBudgetBytes = 4ll * 1024 * 1024 * 1024;
+	/**
+	 * A fixed budget for what is kept on disk (pinned assets may take it over; see Pin). 0, the default: sized from the drive
+	 * (the fields below and FMantleAssetStore::GetBudgetBytes). A tool's or test's store, or the ini's DiskBudgetMB, fixes it.
+	 */
+	int64 DiskBudgetBytes = 0;
+
+	/**
+	 * Sizing from the drive (#189; Joshua, 2026-11-22): this share of what the store could use (the drive's free space plus what
+	 * it holds already), kept within [DiskBudgetMinBytes, DiskBudgetMaxBytes]. A place being played raises it past the maximum
+	 * when it needs more (SetPlaceDemand), and a player's own size replaces the share (SetChosenBudget).
+	 */
+	double DiskBudgetShare = 0.25;
+	int64 DiskBudgetMinBytes = 8ll * 1024 * 1024 * 1024;
+	int64 DiskBudgetMaxBytes = 64ll * 1024 * 1024 * 1024;
+
+	/** A budget sized from the drive always leaves at least this much of it free, whatever raised it. */
+	int64 MinFreeDiskBytes = 10ll * 1024 * 1024 * 1024;
 
 	/** Eviction frees down to this fraction of the budget, so a full store does not evict on
 	    every single download. */
@@ -242,18 +266,60 @@ public:
 	void Seed(const FMantleStoredAssetRef& Ref, const FString& SourceFile, FMantleAssetDone OnDone);
 
 	/** Reference-counted: eviction never removes a pinned hash. Pinning a hash that is not
-	    stored yet is allowed, and protects it once it arrives. */
+	    stored yet is allowed, and protects it once it arrives. Unpinning evicts nothing: files go
+	    only when a new one needs the room (after a download or seed) or at startup, least
+	    recently used first, so a place left keeps its files until something else needs the space. */
 	void Pin(const FMantleContentHash& Hash);
 	void Unpin(const FMantleContentHash& Hash);
 
+	/** The disk budget now: fixed (Settings.DiskBudgetBytes), or sized from the drive. */
+	int64 GetBudgetBytes() const;
+
+	/**
+	 * The budget rule, on its own: Settings.DiskBudgetBytes when set; else the player's size (ChosenBytes) or DiskBudgetShare of
+	 * FreeBytes + StoredBytes within [DiskBudgetMinBytes, DiskBudgetMaxBytes], raised to DemandBytes, and never more than leaves
+	 * MinFreeDiskBytes of the drive free. FreeBytes -1 (the drive not read): the size without the share or the free-space check.
+	 */
+	static int64 ComputeBudget(const FMantleAssetStoreSettings& Settings, int64 FreeBytes, int64 StoredBytes, int64 ChosenBytes, int64 DemandBytes);
+
+	/**
+	 * The place being played needs about this many bytes on disk (what its asset set has asked for so far). A budget sized
+	 * from the drive rises to hold it, past DiskBudgetMaxBytes if need be, while the drive keeps MinFreeDiskBytes free. It
+	 * stays until the next place says otherwise, so a rejoin finds the files. No effect on a fixed budget.
+	 */
+	void SetPlaceDemand(int64 Bytes);
+
+	/** A player's own size for the store (Settings > Downloaded places), in place of the drive share; 0 for automatic. */
+	void SetChosenBudget(int64 Bytes);
+
+	/** Reads the drive's free space again and sizes the budget from it (a join calls it). Off the game thread. */
+	void RefreshBudget();
+
+	/** Deletes every stored file nothing is using (not pinned, read or downloading). OnDone gets the bytes freed, on the game thread, one Pump later. */
+	void ClearUnused(TFunction<void(int64 FreedBytes)> OnDone);
+
 	/** True when the hash is stored (not re-verified here). */
 	bool Contains(const FMantleContentHash& Hash) const;
+
+	/** True while anyone holds a pin on the hash. */
+	bool IsPinned(const FMantleContentHash& Hash) const;
 
 	/** Bytes received so far for a hash being downloaded, else 0. */
 	int64 GetInFlightBytes(const FMantleContentHash& Hash) const;
 
 	/** Downloads running now, and downloads waiting for a free slot (the progress line of a place's assets says both). */
 	void GetDownloadCounts(int32& OutActive, int32& OutQueued) const;
+
+	/** What the store holds on disk, and how much of it is pinned (in use, so never evicted). For log lines. */
+	struct FUsage
+	{
+		int32 StoredFiles = 0;
+		int64 StoredBytes = 0;
+		int32 PinnedFiles = 0;
+		int64 PinnedBytes = 0;
+		int64 BudgetBytes = 0;
+	};
+	FUsage GetUsage() const;
 
 	/** Where a hash's file lives, whether or not it is stored. */
 	FString PathFor(const FMantleContentHash& Hash) const;
@@ -318,6 +384,12 @@ private:
 	/** Seed's background half. */
 	FMantleAssetResult SeedFromFile(const FMantleStoredAssetRef& Ref, const FString& SourceFile);
 	void EvictToBudget();
+	/** Removes unused files, least recently used first, until StoredBytes is at most TargetBytes. Returns the bytes removed. */
+	int64 EvictDownTo(int64 TargetBytes, int32& OutFiles);
+	/** Sizes the budget again, reading the drive's free space first when asked (disk work: background only). */
+	void UpdateBudget(bool bReadDisk);
+	/** Lock held: the budget for this much free space on the drive (-1: not known). */
+	int64 ComputeBudgetLocked(int64 FreeBytes) const;
 	void Post(TFunction<void()>&& Completion);
 
 	/** Runs Body on a background task (after the startup scan when asked), counted for IsIdle. */
@@ -348,6 +420,15 @@ private:
 	int32 ActiveDownloads = 0;
 	int32 PendingTasks = 0;
 	bool bWarnedOverBudget = false;
+
+	/** The budget in force (see GetBudgetBytes), what sized it, and the demand it was last sized for. */
+	int64 BudgetBytes = 0;
+	int64 FreeDiskBytes = -1;
+	int64 PlaceDemandBytes = 0;
+	int64 ChosenBudgetBytes = 0;
+	int64 DemandSizedFor = 0;
+	int64 SavedDemandBytes = 0;
+	bool bDemandLoaded = false;
 
 	mutable FCriticalSection CompletionLock;
 	TArray<TFunction<void()>> Completions;

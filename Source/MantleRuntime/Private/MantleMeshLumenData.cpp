@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleMeshLumenData.h"
+#include "MantleCookedPacking.h"
 #include "MantleEngineTag.h"
 
 #include "DistanceFieldAtlas.h"
@@ -8,6 +9,8 @@
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
 
+#include <atomic>
+
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleMeshLumenDataPrivate
 {
@@ -15,6 +18,9 @@ namespace MantleMeshLumenDataPrivate
 
 	/** No mesh's file comes near this; a count past it is a damaged file, not a big mesh. */
 	constexpr int64 MaxMipBytes = 256LL * 1024 * 1024;
+
+	/** FMantleMeshLumenFile::GetReadCount. */
+	std::atomic<int64> ReadsDone{ 0 };
 
 	void SetReason(FString* OutReason, const FString& Reason)
 	{
@@ -172,5 +178,23 @@ bool FMantleMeshLumenFile::Read(const TConstArrayView<uint8> Bytes, const FStrin
 	}
 	OutData.DistanceField = MoveTemp(Field);
 	OutData.Cards = MoveTemp(Cards);
+	++ReadsDone;
 	return true;
+}
+
+bool FMantleMeshLumenFile::Unpack(const TConstArrayView<uint8> Bytes, TArray<uint8>& Out, FString* OutReason)
+{
+	return MantleCookedPacking::UnpackEnvelope(Bytes, "MLD3", MaxBytes, Out, OutReason);
+}
+
+bool FMantleMeshLumenFile::IsPacked(const TConstArrayView<uint8> Bytes)
+{
+	return MantleCookedPacking::HasMagic(Bytes, "MLD3");
+}
+
+int64 FMantleMeshLumenFile::GetReadCount()
+{
+	using namespace MantleMeshLumenDataPrivate;
+
+	return ReadsDone.load();
 }

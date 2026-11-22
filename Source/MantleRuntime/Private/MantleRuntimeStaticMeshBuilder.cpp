@@ -221,12 +221,20 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 		UObject* MeshOuter = Params.Outer ? Params.Outer : GetTransientPackage();
 		const FName MeshName = Params.Name.IsNone() ? NAME_None : MakeUniqueObjectName(MeshOuter, UStaticMesh::StaticClass(), Params.Name);
 		UStaticMesh* Built = NewObject<UStaticMesh>(MeshOuter, MeshName, RF_Transient);
-		for (const FName& SlotName : Slots.SlotNames)
+		for (int32 SlotIndex = 0; SlotIndex < Slots.SlotNames.Num(); ++SlotIndex)
 		{
-			// UVChannelData starts uninitialized, and only the editor fills it later; UStaticMesh::GetUVChannelData
-			// ensures it is set. The engine's AddMaterial gives a new slot the same default density.
-			FStaticMaterial& Slot = Built->GetStaticMaterials().Add_GetRef(FStaticMaterial(Params.Material, SlotName));
+			// UVChannelData starts uninitialized, and only the editor fills it (UStaticMesh::UpdateUVChannelData); UStaticMesh::GetUVChannelData ensures it is set.
+			// #189: it is what the texture streamer sizes this slot's textures by, so it is the slot's measured density (ComputeSlotUVDensities).
+			FStaticMaterial& Slot = Built->GetStaticMaterials().Add_GetRef(FStaticMaterial(Params.Material, Slots.SlotNames[SlotIndex]));
 			Slot.UVChannelData = FMeshUVChannelInfo(1.0f);
+			if (Slots.UVDensities.IsValidIndex(SlotIndex))
+			{
+				const FVector4f& Density = Slots.UVDensities[SlotIndex];
+				for (int32 Channel = 0; Channel < TEXSTREAM_MAX_NUM_UVCHANNELS; ++Channel)
+				{
+					Slot.UVChannelData.LocalUVDensities[Channel] = Density[Channel];
+				}
+			}
 		}
 
 		// A non-editor build reads collision triangles back from the render data, and only from a mesh
@@ -679,6 +687,7 @@ UStaticMesh* FMantleRuntimeStaticMeshBuilder::Build(const FMantleRuntimeMesh& Me
 	Slots.SlotByFirstIndex.AddDefaulted_GetRef().Add(0, 0);
 	const TArray<FMeshDescription*> Descriptions = { &Description };
 	const TArray<int32> AuthoredChannels = { FillUVChannels(Description) };
+	ComputeSlotUVDensities(TArray<const FMeshDescription*>{ &Description }, AuthoredChannels, Slots.SlotNames, Slots.UVDensities);
 	UStaticMesh* Built = FinishStaticMeshBuild(Descriptions, AuthoredChannels, Slots, TConstArrayView<float>(), nullptr, Params, OutError);
 	if (Built)
 	{
@@ -773,7 +782,97 @@ bool FMantleRuntimeStaticMeshBuilder::Prepare(const FMantleStaticMeshData& Mesh,
 		Out.Triangles += Out.Descriptions[LODIndex].Triangles().Num();
 		Out.AuthoredChannels.Add(FillUVChannels(Out.Descriptions[LODIndex]));
 	}
+	TArray<const FMeshDescription*> Descriptions;
+	for (const FMeshDescription& Description : Out.Descriptions)
+	{
+		Descriptions.Add(&Description);
+	}
+	ComputeSlotUVDensities(Descriptions, Out.AuthoredChannels, Slots.SlotNames, Slots.UVDensities);
 	return true;
+}
+
+void FMantleRuntimeStaticMeshBuilder::ComputeSlotUVDensities(const TConstArrayView<const FMeshDescription*> Descriptions, const TConstArrayView<int32> AuthoredChannels,
+	const TArray<FName>& SlotNames, TArray<FVector4f>& OutDensities)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR("MantleStaticMesh_UVDensity");
+	constexpr int32 Channels = TEXSTREAM_MAX_NUM_UVCHANNELS;
+	TArray<FVector4f> Weighted;
+	TArray<FVector4f> Weights;
+	Weighted.Init(FVector4f::Zero(), SlotNames.Num());
+	Weights.Init(FVector4f::Zero(), SlotNames.Num());
+
+	// One triangle's say: its weight sqrt(area) and its density sqrt(area / UV area) (UVChannelDensity.h, FUVDensityAccumulator::PushTriangle).
+	struct FElement
+	{
+		float Weight;
+		float Density;
+	};
+	TArray<FElement> Elements[Channels];
+	for (int32 LODIndex = 0; LODIndex < Descriptions.Num(); ++LODIndex)
+	{
+		const FMeshDescription& Description = *Descriptions[LODIndex];
+		FStaticMeshConstAttributes Attributes(Description);
+		const TVertexAttributesConstRef<FVector3f> Positions = Attributes.GetVertexPositions();
+		const TVertexInstanceAttributesConstRef<FVector2f> UVs = Attributes.GetVertexInstanceUVs();
+		const TPolygonGroupAttributesConstRef<FName> GroupSlotNames = Attributes.GetPolygonGroupMaterialSlotNames();
+		const int32 ChannelCount = FMath::Min3(Channels, UVs.GetNumChannels(), AuthoredChannels.IsValidIndex(LODIndex) ? AuthoredChannels[LODIndex] : 1);
+		for (const FPolygonGroupID Group : Description.PolygonGroups().GetElementIDs())
+		{
+			const int32 Slot = SlotNames.IndexOfByKey(GroupSlotNames[Group]);
+			if (Slot == INDEX_NONE)
+			{
+				continue;
+			}
+			for (int32 Channel = 0; Channel < ChannelCount; ++Channel)
+			{
+				Elements[Channel].Reset();
+			}
+			for (const FTriangleID Triangle : Description.GetPolygonGroupTriangles(Group))
+			{
+				const TArrayView<const FVertexInstanceID> Corners = Description.GetTriangleVertexInstances(Triangle);
+				const FVector3f P0 = Positions[Description.GetVertexInstanceVertex(Corners[0])];
+				const FVector3f P1 = Positions[Description.GetVertexInstanceVertex(Corners[1])];
+				const FVector3f P2 = Positions[Description.GetVertexInstanceVertex(Corners[2])];
+				// Twice the areas, both (FUVDensityAccumulator::GetTriangleArea and GetUVChannelArea): the ratio is the same.
+				const float Area = FVector3f::CrossProduct(P1 - P0, P2 - P0).Size();
+				if (Area <= UE_SMALL_NUMBER)
+				{
+					continue;
+				}
+				for (int32 Channel = 0; Channel < ChannelCount; ++Channel)
+				{
+					const FVector2f UV01 = UVs.Get(Corners[1], Channel) - UVs.Get(Corners[0], Channel);
+					const FVector2f UV02 = UVs.Get(Corners[2], Channel) - UVs.Get(Corners[0], Channel);
+					const float UVArea = FMath::Abs(UV01.X * UV02.Y - UV01.Y * UV02.X);
+					if (UVArea > UE_SMALL_NUMBER)
+					{
+						Elements[Channel].Add(FElement{ FMath::Sqrt(Area), FMath::Sqrt(Area / UVArea) });
+					}
+				}
+			}
+			for (int32 Channel = 0; Channel < ChannelCount; ++Channel)
+			{
+				// The lowest and highest 10% by density are left out (FUVDensityAccumulator::AccumulateDensity): a few stretched triangles do not move the answer.
+				TArray<FElement>& Sorted = Elements[Channel];
+				Sorted.Sort([](const FElement& A, const FElement& B) { return A.Density < B.Density; });
+				const int32 Threshold = FMath::FloorToInt(0.1f * static_cast<float>(Sorted.Num()));
+				for (int32 Index = Threshold; Index < Sorted.Num() - Threshold; ++Index)
+				{
+					Weighted[Slot][Channel] += Sorted[Index].Density * Sorted[Index].Weight;
+					Weights[Slot][Channel] += Sorted[Index].Weight;
+				}
+			}
+		}
+	}
+
+	OutDensities.SetNum(SlotNames.Num());
+	for (int32 Slot = 0; Slot < SlotNames.Num(); ++Slot)
+	{
+		for (int32 Channel = 0; Channel < Channels; ++Channel)
+		{
+			OutDensities[Slot][Channel] = Weights[Slot][Channel] > UE_SMALL_NUMBER ? Weighted[Slot][Channel] / Weights[Slot][Channel] : 0.0f;
+		}
+	}
 }
 
 UStaticMesh* FMantleRuntimeStaticMeshBuilder::Build(const FMantleStaticMeshData& Mesh, const FMantleStaticMeshBuildParams& Params, FString* OutError)
