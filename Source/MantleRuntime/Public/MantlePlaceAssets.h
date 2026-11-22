@@ -20,6 +20,7 @@
 #include "UObject/GCObject.h"
 #include "UObject/ObjectPtr.h"
 
+class UBodySetup;
 class UMaterialInterface;
 class UMantleBuiltVehicle;
 class UMantleBuiltWeapon;
@@ -546,6 +547,15 @@ public:
 	 * but only for a Terrain whose layers name a surface (UMantleTerrainSurfaceComponent::NeedsWeights).
 	 */
 	static TSharedPtr<const FMantleTerrainWeights> FindLiveTerrainWeights(const FString& Id, FString& OutError);
+
+	/**
+	 * Whether an uploaded mesh's body blocks once its async collision cook has finished: cooked triangles, or simple shapes
+	 * (boxes, spheres and capsules need no cooking; a convex hull counts once cooked). The body is the answer, never the cook's
+	 * own flag: the engine reports a cook with nothing to cook as not succeeded (UBodySetup::CreatePhysicsMeshesAsync passes a
+	 * null helper to FinishCreatePhysicsMeshesAsync), and that is every simple-as-complex mesh made of boxes, spheres and
+	 * capsules alone (#189: 574 of City Sample's meshes were reported as passing through while they blocked).
+	 */
+	static bool CollidesAfterCook(const UBodySetup* Body);
 
 	virtual ~FMantlePlaceAssets() override;
 
