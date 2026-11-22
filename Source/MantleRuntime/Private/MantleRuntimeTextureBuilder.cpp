@@ -648,6 +648,12 @@ UTexture2D* FMantleRuntimeTextureBuilder::Build(FMantleDecodedTexture&& Decoded,
 		void* Destination = Mip->BulkData.Realloc(Source.Bytes.Num());
 		FMemory::Memcpy(Destination, Source.Bytes.GetData(), Source.Bytes.Num());
 		Mip->BulkData.Unlock();
+		if (!Params.bKeepCpuCopy)
+		{
+			// Single use: the render resource takes these bytes instead of copying them (FBulkData::GetCopy with the internal copy
+			// discarded; CanDiscardInternalData), and frees them once they are on the GPU. Without it every mip stays in RAM too.
+			Mip->BulkData.SetBulkDataFlags(BULKDATA_SingleUse);
+		}
 		Source.Bytes.Empty();
 	}
 	Texture->SetPlatformData(PlatformData);
@@ -661,6 +667,7 @@ UTexture2D* FMantleRuntimeTextureBuilder::Build(FMantleDecodedTexture&& Decoded,
 	Texture->LODGroup = Params.LODGroup;
 	// All mips are inline and resident: there is nothing to stream them from.
 	Texture->NeverStream = true;
+	// Creates the resource here, on the game thread (UTexture2D::CreateResource), which is when single-use mips hand over their bytes.
 	Texture->UpdateResource();
 
 	UE_LOG(LogMantle, Verbose, TEXT("MANTLE_TEXTURE built %s: %d x %d, %d mips, format %s, %s, %lld bytes"),

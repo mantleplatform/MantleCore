@@ -66,6 +66,14 @@ struct FMantleTextureBuildParams
 
 	/** Name of the new texture; a unique generated one when None. */
 	FName Name;
+
+	/**
+	 * Keep the mips in CPU memory after the upload. Off in the game: the GPU copy is the only one, which halves what a texture
+	 * costs (#189: every City Sample texture was held twice). The texture's render resource then can't be created a second time
+	 * (UpdateResource would find no mips), which nothing in the game does. On in the editor, where a property edit or a viewer
+	 * recreates resources.
+	 */
+	bool bKeepCpuCopy = GIsEditor;
 };
 
 /** One mip level as the GPU takes it. */
@@ -160,7 +168,8 @@ public:
 
 	/**
 	 * Game-thread half: the decoded mips to a texture. Decoded's mip bytes are moved into the texture's
-	 * bulk data (Decoded is left empty). Null, with the reason, on a dedicated server, for an unsupported
+	 * bulk data (Decoded is left empty), which the render resource takes over and frees after the upload
+	 * unless Params.bKeepCpuCopy. Null, with the reason, on a dedicated server, for an unsupported
 	 * format, a malformed mip chain, or a footprint above Params.MaxGpuBytes.
 	 */
 	static UTexture2D* Build(FMantleDecodedTexture&& Decoded, const FMantleTextureBuildParams& Params, FString* OutError = nullptr);

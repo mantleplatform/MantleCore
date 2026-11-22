@@ -412,6 +412,17 @@ namespace
 					FMantleAssetFetchResult Result;
 					Result.bConnected = bConnected && Response.IsValid();
 					Result.StatusCode = Response.IsValid() ? Response->GetResponseCode() : 0;
+					if (Result.bConnected)
+					{
+						// Logged beside the decoded size: libcurl decodes a gzip body before the store sees it, and the engine's own
+						// content length is the decoded count (CurlHttp.cpp sets it from the bytes read), so only the header has the wire size.
+						Result.ContentEncoding = Response->GetHeader(TEXT("Content-Encoding"));
+						const FString Length = Response->GetHeader(TEXT("Content-Length"));
+						if (!Length.IsEmpty())
+						{
+							LexFromString(Result.WireBytes, *Length);
+						}
+					}
 					if (!Result.bConnected)
 					{
 						Result.Error = TEXT("no response");
@@ -1112,11 +1123,14 @@ void FMantleAssetStore::Finalize(
 		Entry.bVerified = true;
 	}
 
-	// Where this file's time went: waiting for a slot, the transfer, and the work after it (hash, move, index), in ms.
+	// Where this file's time went: waiting for a slot, the transfer, and the work after it (hash, move, index), in ms. Then the wire:
+	// the bytes the response said it sent (? when it sent no length) and how it was encoded (identity when not compressed).
 	const double FinalizedSeconds = FPlatformTime::Seconds();
-	UE_LOG(LogMantle, Log, TEXT("Asset store: stored %s (%lld bytes) queued_ms=%.0f transfer_ms=%.0f finalize_ms=%.0f"), *Hash.ToString(), Size,
+	UE_LOG(LogMantle, Log, TEXT("Asset store: stored %s (%lld bytes) queued_ms=%.0f transfer_ms=%.0f finalize_ms=%.0f wire=%s encoding=%s"), *Hash.ToString(), Size,
 		FMath::Max(Job->StartedSeconds - Job->QueuedSeconds, 0.0) * 1000.0, FMath::Max(Job->DoneSeconds - Job->StartedSeconds, 0.0) * 1000.0,
-		FMath::Max(FinalizedSeconds - Job->DoneSeconds, 0.0) * 1000.0);
+		FMath::Max(FinalizedSeconds - Job->DoneSeconds, 0.0) * 1000.0,
+		Result.WireBytes >= 0 ? *LexToString(Result.WireBytes) : TEXT("?"),
+		Result.ContentEncoding.IsEmpty() ? TEXT("identity") : *Result.ContentEncoding);
 
 	// This hash cannot be a victim: its job is still registered until Deliver.
 	EvictToBudget();
@@ -1534,6 +1548,23 @@ void FMantleAssetStore::GetDownloadCounts(int32& OutActive, int32& OutQueued) co
 		const TSharedRef<FJob>* Found = Jobs.Find(Hash);
 		OutQueued += (Found && (*Found)->State == EJobState::Queued) ? 1 : 0;
 	}
+}
+
+FMantleAssetStore::FUsage FMantleAssetStore::GetUsage() const
+{
+	FScopeLock Guard(&Lock);
+	FUsage Usage;
+	Usage.StoredFiles = Index.Num();
+	Usage.StoredBytes = StoredBytes;
+	for (const TPair<FMantleContentHash, int32>& Pin : Pins)
+	{
+		if (const FEntry* Entry = Index.Find(Pin.Key))
+		{
+			++Usage.PinnedFiles;
+			Usage.PinnedBytes += Entry->Size;
+		}
+	}
+	return Usage;
 }
 
 int64 FMantleAssetStore::GetInFlightBytes(const FMantleContentHash& Hash) const

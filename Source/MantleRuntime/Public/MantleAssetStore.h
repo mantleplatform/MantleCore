@@ -115,6 +115,15 @@ struct MANTLERUNTIME_API FMantleAssetFetchResult
 	int32 StatusCode = 0;
 
 	FString Error;
+
+	/** The response's Content-Encoding ("gzip" when the CDN compressed it on the way; empty when it did not). Logged only. */
+	FString ContentEncoding;
+
+	/**
+	 * Bytes on the wire as the response's Content-Length gave them (the compressed size for a gzip body), or -1 when it gave none
+	 * (a compressed body is often sent in chunks). The body the store hashes is always the decoded one. Logged only.
+	 */
+	int64 WireBytes = -1;
 };
 
 /**
@@ -254,6 +263,16 @@ public:
 
 	/** Downloads running now, and downloads waiting for a free slot (the progress line of a place's assets says both). */
 	void GetDownloadCounts(int32& OutActive, int32& OutQueued) const;
+
+	/** What the store holds on disk, and how much of it is pinned (in use, so never evicted). For log lines. */
+	struct FUsage
+	{
+		int32 StoredFiles = 0;
+		int64 StoredBytes = 0;
+		int32 PinnedFiles = 0;
+		int64 PinnedBytes = 0;
+	};
+	FUsage GetUsage() const;
 
 	/** Where a hash's file lives, whether or not it is stored. */
 	FString PathFor(const FMantleContentHash& Hash) const;

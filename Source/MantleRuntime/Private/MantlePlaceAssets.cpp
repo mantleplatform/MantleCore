@@ -10,6 +10,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
+#include "HAL/PlatformMemory.h"
 #include "HAL/PlatformTime.h"
 #include "MantleConnection.h"
 #include "MantleEngineTag.h"
@@ -1254,6 +1255,15 @@ FMantlePlaceAssets::~FMantlePlaceAssets()
 			Build.bPinned = false;
 		}
 	}
+
+	// #189: what is left once a place's set is gone, in every log, so a leak shows without anyone sampling by hand. The textures and
+	// meshes the set built go at the next garbage collection (MANTLE_GC counts the objects, MANTLE_NANITE_PAGES the Nanite stores).
+	const FMantleAssetStore::FUsage Usage = Store->GetUsage();
+	const FPlatformMemoryStats Memory = FPlatformMemory::GetStats();
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS set released: %d set(s) left; store %d files %.0f MB, pinned %d files %.0f MB; process private %.0f MB, working set %.0f MB"),
+		MantlePlaceAssetsPrivate::GLiveSets.Num(), Usage.StoredFiles, MantlePlaceAssetsPrivate::Megabytes(Usage.StoredBytes), Usage.PinnedFiles,
+		MantlePlaceAssetsPrivate::Megabytes(Usage.PinnedBytes), MantlePlaceAssetsPrivate::Megabytes(static_cast<int64>(Memory.UsedVirtual)),
+		MantlePlaceAssetsPrivate::Megabytes(static_cast<int64>(Memory.UsedPhysical)));
 }
 
 void FMantlePlaceAssets::AddReferencedObjects(FReferenceCollector& Collector)
