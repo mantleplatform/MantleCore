@@ -5274,6 +5274,14 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	// #450: actors in unloaded World Partition cells are not in the world; refuse rather than export part of it.
 	FMantlePlaceWorldPartition::CheckExport(World, Result.Errors);
 
+	// Every piece of a structure (a building's walls, roof and shells; a freeway's decks and supports) draws to one distance, so no
+	// part of it hangs in the air where another has culled (FMantleDrawDistance::PlanStructures). Only for a client that reads them.
+	TOptional<FMantleDrawDistance::FStructureScope> Structures;
+	if (FMantleTargetFeatures::Current().Reads(MantleClientFeatures::DrawDistance))
+	{
+		Structures.Emplace(World);
+	}
+
 	FMantlePlace& Place = Result.Place;
 	Place.SchemaVersion = MANTLE_PLACE_SCHEMA_VERSION;
 	Place.PlaceId = Options.PlaceId.IsEmpty() ? TEXT("plc_unassigned") : Options.PlaceId;
