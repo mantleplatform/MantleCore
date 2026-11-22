@@ -7,6 +7,7 @@
 #include "MantlePlaceAssets.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceMaterial.h"
+#include "MantlePlacePublishSession.h"
 #include "MantlePlaceUploadShape.h"
 
 #include "Components/StaticMeshComponent.h"
@@ -216,7 +217,7 @@ bool FMantlePlaceUploadShapeProjectTest::RunTest(const FString& Parameters)
 
 	FMantlePlaceAssetLimits Limits;
 	int32 Asked = 0;
-	const FMantlePlaceUploadShape Shape = FMantlePlaceUploadShape::Project(Assets, Keys, nullptr, Limits,
+	const FMantlePlaceUploadShape Shape = FMantlePlaceUploadShape::Project(Assets, Keys, nullptr, Limits, EMantleUploadShapeBound::Worst,
 		[&](const FMantleAssetRef& Mesh, const FString& Key)
 		{
 			++Asked;
@@ -278,13 +279,49 @@ bool FMantlePlaceUploadShapeProjectTest::RunTest(const FString& Parameters)
 	FMantlePlaceAssetSet Converted;
 	Converted.Meshes.AddDefaulted_GetRef().Key = DrawnKey;
 	Converted.Materials.AddDefaulted_GetRef().Key = MaterialKey;
-	const FMantlePlaceUploadShape After = FMantlePlaceUploadShape::Project(Assets, Keys, &Converted, Limits,
+	const FMantlePlaceUploadShape After = FMantlePlaceUploadShape::Project(Assets, Keys, &Converted, Limits, EMantleUploadShapeBound::Worst,
 		[](const FMantleAssetRef&, const FString&) { return FMantleExpectedSideFiles(); });
 	TestEqual(TEXT("with the drawn mesh and the material converted, only the other two meshes get side files"), After.AddedLumen + After.AddedNanite, 4);
 	TestEqual(TEXT("and no textures are made up"), After.AddedTextures, 0);
 
+	// The lower bound: the same hashes and side files, sizes written as "0", and no textures for a material not converted yet.
+	const FMantlePlaceUploadShape Lowest = FMantlePlaceUploadShape::Project(Assets, Keys, nullptr, Limits, EMantleUploadShapeBound::Lowest,
+		[&](const FMantleAssetRef& Mesh, const FString& Key)
+		{
+			FMantleExpectedSideFiles Expected;
+			Expected.bLumen = Key != CollisionKey;
+			Expected.bNanite = Key == DrawnKey;
+			return Expected;
+		});
+	TestEqual(TEXT("the lower bound counts no textures"), Lowest.AddedTextures, 0);
+	TestEqual(TEXT("but the same side files"), Lowest.AddedLumen + Lowest.AddedNanite, Shape.AddedLumen + Shape.AddedNanite);
+	const FMantleAssetRef* LowDrawn = Lowest.Assets.FindByPredicate([&DrawnId](const FMantleAssetRef& Ref) { return Ref.Id == DrawnId; });
+	if (TestNotNull(TEXT("the drawn mesh is in the lower bound"), LowDrawn))
+	{
+		TestEqual(TEXT("with an upload's hash"), LowDrawn->Hash, FMantlePlaceUploadShape::UploadedHashShape());
+		TestEqual(TEXT("and the shortest size there is"), LowDrawn->Bytes, static_cast<int64>(0));
+	}
+	TestTrue(TEXT("every lower-bound size is 0 or as it was"), !Lowest.Assets.ContainsByPredicate([](const FMantleAssetRef& Ref) { return Ref.Bytes != 0 && Ref.Bytes != 1234; }));
+
+	// A converted file keeps the hash and size it has: they are the upload's.
+	TArray<FMantleAssetRef> ConvertedAssets = Assets;
+	FMantleAssetRef* ConvertedMesh = ConvertedAssets.FindByPredicate([&DrawnId](const FMantleAssetRef& Ref) { return Ref.Id == DrawnId; });
+	ConvertedMesh->Hash = TEXT("sha256:") + FString::ChrN(64, TEXT('1'));
+	ConvertedMesh->Bytes = 4321;
+	for (const EMantleUploadShapeBound Bound : { EMantleUploadShapeBound::Lowest, EMantleUploadShapeBound::Worst })
+	{
+		const FMantlePlaceUploadShape Kept = FMantlePlaceUploadShape::Project(ConvertedAssets, Keys, nullptr, Limits, Bound,
+			[](const FMantleAssetRef&, const FString&) { return FMantleExpectedSideFiles(); });
+		const FMantleAssetRef* KeptMesh = Kept.Assets.FindByPredicate([&DrawnId](const FMantleAssetRef& Ref) { return Ref.Id == DrawnId; });
+		if (TestNotNull(TEXT("the converted mesh is listed"), KeptMesh))
+		{
+			TestEqual(TEXT("with its own hash"), KeptMesh->Hash, ConvertedMesh->Hash);
+			TestEqual(TEXT("and its own size"), KeptMesh->Bytes, static_cast<int64>(4321));
+		}
+	}
+
 	// Nothing provisional: the list is as it is.
-	const FMantlePlaceUploadShape Same = FMantlePlaceUploadShape::Project(Assets, TMap<FString, FString>(), nullptr, Limits,
+	const FMantlePlaceUploadShape Same = FMantlePlaceUploadShape::Project(Assets, TMap<FString, FString>(), nullptr, Limits, EMantleUploadShapeBound::Worst,
 		[](const FMantleAssetRef&, const FString&) { return FMantleExpectedSideFiles(); });
 	TestEqual(TEXT("an uploaded place's list stays as it is"), Same.Assets.Num(), Assets.Num());
 	TestEqual(TEXT("nothing added"), Same.NumAdded(), 0);
@@ -397,6 +434,28 @@ bool FMantlePlaceUploadShapeEstimateTest::RunTest(const FString& Parameters)
 	FMantlePlaceAssetConverter Converter(MakeShared<FFourImageFlattener>(), CacheDir);
 	FMantlePlaceAssetSet Set;
 	TestTrue(TEXT("the place converts"), Converter.Convert(FMantlePlaceDependencies::Gather(World), Set));
+	// Converted, nothing uploaded yet: what the publish measures again before its first upload.
+	Options.Assets = &Set;
+	const FMantleExportResult Prepared = FMantlePlaceExporter::Export(World, Options);
+	TestTrue(TEXT("the prepared place exports"), Prepared.bSuccess);
+
+	// MantleCore#189 review: a limit the worst case is over and the lower bound is under. The first check lets it through with a
+	// warning; the check after preparing, with the textures known, refuses it.
+	FMantleExportOptions Limited;
+	Limited.Name = Options.Name;
+	Limited.MaxPlaceFileBytes = (Before.PlaceBytes + Prepared.PlaceBytes) / 2;
+	if (TestTrue(TEXT("the limit falls between the first check's lower bound and the prepared file"), Limited.MaxPlaceFileBytes > Before.PlaceBytes
+		&& Limited.MaxPlaceFileBytes < Prepared.PlaceBytes && Limited.MaxPlaceFileBytes < Before.PlaceBytesWorst))
+	{
+		const FMantleExportResult First = FMantlePlaceExporter::Export(World, Limited);
+		TestFalse(TEXT("the first check does not refuse it"), First.bOverBudget);
+		TestTrue(TEXT("it says it may be too big, with both sizes"), First.BudgetWarning.Contains(TEXT("at least")) && First.BudgetWarning.Contains(TEXT("at most")));
+		Limited.Assets = &Set;
+		const FMantleExportResult Second = FMantlePlaceExporter::Export(World, Limited);
+		TestTrue(TEXT("the check after preparing refuses it"), Second.bOverBudget);
+		TestTrue(TEXT("saying it is too big"), Second.Errors.ContainsByPredicate([](const FMantleParseError& Error) { return Error.Path == TEXT("/entities"); }));
+	}
+
 	int32 Recorded = 0;
 	for (const EMantlePlaceUploadStage Stage : { EMantlePlaceUploadStage::Texture, EMantlePlaceUploadStage::Material, EMantlePlaceUploadStage::Mesh })
 	{
@@ -409,10 +468,10 @@ bool FMantlePlaceUploadShapeEstimateTest::RunTest(const FString& Parameters)
 			Set.RecordUpload(Upload.Key, FString::Printf(TEXT("ast_u%032x"), Recorded), Upload.Hash, Upload.FileSize > 0 ? Upload.FileSize : Upload.Bytes.Num());
 		}
 	}
-	Options.Assets = &Set;
 	const FMantleExportResult After = FMantlePlaceExporter::Export(World, Options);
 	TestTrue(TEXT("the uploaded place exports"), After.bSuccess);
 	TestEqual(TEXT("once uploaded nothing is left to estimate: the file is as written"), After.PlaceBytes, After.PlaceBytesAsWritten);
+	TestEqual(TEXT("its worst case too"), After.PlaceBytesWorst, After.PlaceBytesAsWritten);
 	TestEqual(TEXT("and lists what it will list"), After.UploadedAssets, After.Place.Assets.Num());
 
 	// The real upload: textures for each material, one Lumen and one Nanite file (the opaque box's), and every hash sha256.
@@ -426,13 +485,21 @@ bool FMantlePlaceUploadShapeEstimateTest::RunTest(const FString& Parameters)
 
 	// MantleCore#189: the file as written before conversion was the measure, and it was short of the uploaded file.
 	TestTrue(TEXT("the file as written before upload is smaller than the uploaded one (the old measure)"), Before.PlaceBytesAsWritten < After.PlaceBytes);
-	// The estimate covers it: never short, and close (each entry at most a few digits of size and the textures a material may not make).
-	TestTrue(TEXT("the estimate is never short of the uploaded file"), Before.PlaceBytes >= After.PlaceBytes);
+	// Before conversion the two bounds hold it between them: the lower one never over, the worst case never short.
+	TestTrue(TEXT("the lower bound is never over the uploaded file"), Before.PlaceBytes <= After.PlaceBytes);
+	TestTrue(TEXT("but already more than the file as written"), Before.PlaceBytes > Before.PlaceBytesAsWritten);
+	TestTrue(TEXT("the worst case is never short of it"), Before.PlaceBytesWorst >= After.PlaceBytes);
 	TestTrue(TEXT("it counts at least every entry the upload lists"), Before.UploadedAssets >= After.Place.Assets.Num());
 	const int64 Slack = static_cast<int64>(Before.UploadedAssets - After.Place.Assets.Num()) * 200 + static_cast<int64>(Before.UploadedAssets) * 8;
-	TestTrue(FString::Printf(TEXT("and is close: %lld bytes over, at most %lld"), Before.PlaceBytes - After.PlaceBytes, Slack), Before.PlaceBytes - After.PlaceBytes <= Slack);
-	AddInfo(FString::Printf(TEXT("before upload: %lld bytes as written, %lld estimated (%d assets); uploaded: %lld bytes (%d assets: %d textures, %d Lumen, %d Nanite)"),
-		Before.PlaceBytesAsWritten, Before.PlaceBytes, Before.UploadedAssets, After.PlaceBytes, After.Place.Assets.Num(), RealTextures, RealLumen, RealNanite));
+	TestTrue(FString::Printf(TEXT("and is close: %lld bytes over, at most %lld"), Before.PlaceBytesWorst - After.PlaceBytes, Slack), Before.PlaceBytesWorst - After.PlaceBytes <= Slack);
+	// Converted, before any upload: the textures are known, so the lower bound is the uploaded size but for the materials' sizes.
+	TestTrue(TEXT("once prepared, the lower bound is still never over"), Prepared.PlaceBytes <= After.PlaceBytes);
+	TestTrue(FString::Printf(TEXT("and is within the materials' size fields of it: %lld bytes short"), After.PlaceBytes - Prepared.PlaceBytes),
+		After.PlaceBytes - Prepared.PlaceBytes <= 16 * CountKind(After.Place.Assets, EMantleAssetKind::Material));
+	TestTrue(TEXT("its worst case is never short either"), Prepared.PlaceBytesWorst >= After.PlaceBytes);
+	AddInfo(FString::Printf(TEXT("before preparing: %lld bytes as written, at least %lld, at most %lld (%d assets); prepared: at least %lld, at most %lld; uploaded: %lld bytes (%d assets: %d textures, %d Lumen, %d Nanite)"),
+		Before.PlaceBytesAsWritten, Before.PlaceBytes, Before.PlaceBytesWorst, Before.UploadedAssets, Prepared.PlaceBytes, Prepared.PlaceBytesWorst,
+		After.PlaceBytes, After.Place.Assets.Num(), RealTextures, RealLumen, RealNanite));
 
 	GEngine->DestroyWorldContext(World);
 	World->DestroyWorld(false);
@@ -440,6 +507,97 @@ bool FMantlePlaceUploadShapeEstimateTest::RunTest(const FString& Parameters)
 	{
 		Object->MarkAsGarbage();
 	}
+	return true;
+}
+
+namespace MantlePlaceUploadShapeTestPrivate
+{
+	class FNoCallsTransport : public IMantleUploadTransport
+	{
+	public:
+		int32 Calls = 0;
+		virtual void Send(const FMantleUploadCallRequest& Request, FMantleApiCallback OnDone) override { ++Calls; }
+	};
+
+	/** A level that fits at the first check and is found too big once its one step is converted. */
+	class FGrowsWhenPreparedSource : public IMantlePlacePublishSource
+	{
+	public:
+		int32 FirstChecks = 0;
+		int32 PreparedChecks = 0;
+		int32 ConvertCalls = 0;
+		int32 ExportCalls = 0;
+
+		virtual FString GetLevelName() const override { return TEXT("GrowingLevel"); }
+		virtual bool Prepare(FMantleValidationResult& OutValidation, FString& OutMessage) override { return true; }
+		virtual bool CheckPlaceSize(FMantlePlaceSizeCheck& OutCheck) override
+		{
+			++FirstChecks;
+			OutCheck.Bytes = 6 * 1024 * 1024;
+			OutCheck.WorstBytes = 9 * 1024 * 1024;
+			OutCheck.Issues.Add({ EMantleIssueSeverity::Warning, FString(), TEXT("The place file may be too big for Mantle once its files are prepared: at least 6.0 MiB and at most 9.0 MiB."), FString() });
+			return true;
+		}
+		virtual bool CheckConvertedPlaceSize(const FMantlePlaceAssetSet& Set, FMantlePlaceSizeCheck& OutCheck) override
+		{
+			++PreparedChecks;
+			OutCheck.Bytes = 8 * 1024 * 1024 + 512 * 1024;
+			OutCheck.bOver = true;
+			OutCheck.Issues.Add({ EMantleIssueSeverity::Error, FString(), TEXT("The place file would be 8.5 MiB; Mantle accepts at most 8.0 MiB."), FString() });
+			return false;
+		}
+		virtual int32 NumConversionSteps() const override { return 1; }
+		virtual FString ConversionStepName(int32 Step) const override { return TEXT("Step"); }
+		virtual void Convert(int32 Step, FMantlePlaceAssetSet& Set) override { ++ConvertCalls; }
+		virtual bool CollectScripts(TArray<FMantlePlaceScriptUpload>& OutScripts, FString& OutMessage) override { return true; }
+		virtual EMantlePlaceExportOutcome Export(const FMantlePlaceAssetSet& Set, const TMap<FString, FString>& ScriptSourceIds,
+			const TMap<FString, FString>& ScriptAuthorSourceIds, FString& OutPlaceJson, TArray<FMantleValidationIssue>& OutIssues) override
+		{
+			++ExportCalls;
+			OutPlaceJson = TEXT("{}");
+			return EMantlePlaceExportOutcome::Exported;
+		}
+		virtual FString FindPlaceId() override { return TEXT("plc_00000000000000000000000000000001"); }
+		virtual void RememberPlaceId(const FString& PlaceId) override {}
+		virtual void ForgetPlaceId() override {}
+	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePlaceUploadShapePublishTest,
+	"Mantle.Editor.PlaceSize.PublishStopsAfterPreparingWhenTheFilesMakeItTooBig",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePlaceUploadShapePublishTest::RunTest(const FString& Parameters)
+{
+	using namespace MantlePlaceUploadShapeTestPrivate;
+
+	double Now = 1000.0;
+	const TSharedRef<FGrowsWhenPreparedSource> Source = MakeShared<FGrowsWhenPreparedSource>();
+	const TSharedRef<FNoCallsTransport> Transport = MakeShared<FNoCallsTransport>();
+	const TSharedRef<FMantlePlacePublishSession> Session = MakeShared<FMantlePlacePublishSession>(
+		Source, Transport, /*bGoLive*/ true, FString(), [&Now] { return Now; });
+	Session->Start();
+	for (int32 Tick = 0; Tick < 20 && Session->GetPhase() != EMantlePublishPhase::Failed && Session->GetPhase() != EMantlePublishPhase::Done; ++Tick)
+	{
+		Now += 1.0;
+		Session->Tick();
+	}
+
+	TestEqual(TEXT("the first check let it through"), Source->FirstChecks, 1);
+	TestEqual(TEXT("its files were prepared"), Source->ConvertCalls, 1);
+	TestEqual(TEXT("then it was measured again"), Source->PreparedChecks, 1);
+	TestEqual(TEXT("and the publish stopped there"), static_cast<int32>(Session->GetPhase()), static_cast<int32>(EMantlePublishPhase::Failed));
+	TestEqual(TEXT("nothing was exported"), Source->ExportCalls, 0);
+	TestEqual(TEXT("and not one call went to Mantle"), Transport->Calls, 0);
+	const FMantlePublishResult& Result = Session->GetResult();
+	TestTrue(TEXT("the message says it is too big and that nothing was uploaded"), Result.Message.Contains(TEXT("too big")) && Result.Message.Contains(TEXT("Nothing was uploaded")));
+	TestTrue(TEXT("with the size"), Result.Message.Contains(TEXT("8.5 MiB")));
+	TestTrue(TEXT("the reason is listed as an error"), Result.Validation.HasErrors());
+	TestTrue(TEXT("and the first check's warning is listed"), Result.Validation.Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Warning && Issue.Problem.Contains(TEXT("may be too big"));
+		}));
 	return true;
 }
 

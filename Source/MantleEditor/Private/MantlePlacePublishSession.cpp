@@ -643,6 +643,16 @@ bool FMantleLevelPublishSource::WriteRoot(const FMantleCellRoot& Index, FString&
 
 bool FMantleLevelPublishSource::CheckPlaceSize(FMantlePlaceSizeCheck& OutCheck)
 {
+	return MeasurePlaceSize(nullptr, OutCheck);
+}
+
+bool FMantleLevelPublishSource::CheckConvertedPlaceSize(const FMantlePlaceAssetSet& Set, FMantlePlaceSizeCheck& OutCheck)
+{
+	return MeasurePlaceSize(&Set, OutCheck);
+}
+
+bool FMantleLevelPublishSource::MeasurePlaceSize(const FMantlePlaceAssetSet* Converted, FMantlePlaceSizeCheck& OutCheck)
+{
 	UWorld* Level = World.Get();
 	if (!Level)
 	{
@@ -651,19 +661,28 @@ bool FMantleLevelPublishSource::CheckPlaceSize(FMantlePlaceSizeCheck& OutCheck)
 	// GhzGarage/mantle#818: the root place file as it would be written, with the ids an upload will give replaced by provisional ones of
 	// the same length (nothing is converted or uploaded yet). The backend refuses a file over 8 MiB only at the draft save, after
 	// every upload; this finds out first. The scenery in cells does not count: it has cell files of its own. MantleCore#189: measured
-	// as it will be after the uploads (Exported.PlaceBytes), with each material's textures and each mesh's Lumen and Nanite files.
+	// as it will be after the uploads, at the least it can be (Exported.PlaceBytes): sha256 hashes, each mesh's Lumen and Nanite
+	// files, and, once Converted is given, each material's textures; refused only when that is over. Before conversion the most it
+	// can be (four textures a material) is a warning.
 	FMantleExportOptions Options;
 	Options.Name = LevelName;
 	Options.RevisionNotes = Notes;
+	Options.Assets = Converted;
 	const FMantleExportResult Exported = FMantlePlaceExporter::Export(Level, Options);
 	OutCheck.Bytes = Exported.PlaceBytes;
+	OutCheck.WorstBytes = Exported.PlaceBytesWorst;
 	OutCheck.Instances = Exported.InstanceTotal;
 	OutCheck.Cells = Exported.CellReport.NumCells();
 	OutCheck.CellEntities = Exported.CellReport.CellEntities;
 	OutCheck.CellInstances = Exported.CellReport.CellInstances;
-	UE_LOG(LogMantle, Log, TEXT("Place file once uploaded: %s at most (%s as written before upload, %d assets to list, %d now), %lld instanced meshes; %d cell(s) hold %lld entities and %lld instances"),
-		*FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytes), *FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytesAsWritten), Exported.UploadedAssets,
-		Exported.Place.Assets.Num(), Exported.InstanceTotal, OutCheck.Cells, OutCheck.CellEntities, OutCheck.CellInstances);
+	UE_LOG(LogMantle, Log, TEXT("Place file once uploaded (%s): at least %s, at most %s (%s as written now; %d assets listed, at most %d once uploaded), %lld instanced meshes; %d cell(s) hold %lld entities and %lld instances"),
+		Converted ? TEXT("files prepared") : TEXT("before preparing"), *FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytes),
+		*FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytesWorst), *FMantlePlaceInstancing::DescribeBytes(Exported.PlaceBytesAsWritten),
+		Exported.Place.Assets.Num(), Exported.UploadedAssets, Exported.InstanceTotal, OutCheck.Cells, OutCheck.CellEntities, OutCheck.CellInstances);
+	if (!Exported.BudgetWarning.IsEmpty())
+	{
+		OutCheck.Issues.Add({ EMantleIssueSeverity::Warning, FString(), Exported.BudgetWarning, FString() });
+	}
 	if (!Exported.bOverBudget)
 	{
 		return true;
@@ -1464,6 +1483,15 @@ void FMantlePlacePublishSession::TickChecking()
 			return;
 		}
 		AddLog(FString::Printf(TEXT("Place file size checked: %s, %lld instanced meshes"), *FMantlePlaceInstancing::DescribeBytes(Size.Bytes), Size.Instances));
+		// MantleCore#189: it fits at the least it can be, but not at the most: said, and measured again once its files are prepared.
+		for (const FMantleValidationIssue& Issue : Size.Issues)
+		{
+			if (Issue.Severity == EMantleIssueSeverity::Warning)
+			{
+				Result.Validation.Issues.Add(Issue);
+				AddLog(Issue.Problem);
+			}
+		}
 		if (Size.Cells > 0)
 		{
 			AddLog(FString::Printf(TEXT("The scenery goes to %d cell(s): %lld entities, %lld instances"), Size.Cells, Size.CellEntities, Size.CellInstances));
@@ -1539,6 +1567,23 @@ void FMantlePlacePublishSession::TickConverting()
 		Fail(FString::Printf(TEXT("%d mesh(es), material(s) or sound(s) could not be prepared for Mantle. The list below says why."),
 			Set.Issues.FilterByPredicate([](const FMantleValidationIssue& Issue) { return Issue.Severity == EMantleIssueSeverity::Error; }).Num()));
 		return;
+	}
+	// MantleCore#189: measured again now that every material's textures are known, before anything is uploaded. The first check
+	// counted none of them (it refuses only on what the file cannot be smaller than); City Sample's grew past 8 MiB here.
+	{
+		FMantlePlaceSizeCheck Size;
+		if (!Source->CheckConvertedPlaceSize(Set, Size))
+		{
+			Result.Validation.Issues.Append(Size.Issues);
+			AddLog(FString::Printf(TEXT("The place file would be %s with %lld instanced meshes"), *FMantlePlaceInstancing::DescribeBytes(Size.Bytes), Size.Instances));
+			Fail(FString::Printf(TEXT("The part of this place that always loads is too big for Mantle (%s, %lld instanced meshes), measured with its prepared files. Nothing was uploaded."),
+				*FMantlePlaceInstancing::DescribeBytes(Size.Bytes), Size.Instances));
+			return;
+		}
+		if (Size.Bytes > 0)
+		{
+			AddLog(FString::Printf(TEXT("Place file size checked with the prepared files: %s"), *FMantlePlaceInstancing::DescribeBytes(Size.Bytes)));
+		}
 	}
 	if (Timing.CollectGarbageEverySteps > 0)
 	{

@@ -25,13 +25,19 @@ namespace MantlePlaceUploadShapePrivate
 		}
 	}
 
-	FMantleAssetRef Uploaded(const FString& Id, const EMantleAssetKind Kind, const FMantlePlaceAssetLimits& Limits)
+	/** A size not known yet, at its longest (the worst case) or its shortest, "0" (the lower bound). */
+	int64 UnknownBytes(const EMantleAssetKind Kind, const FMantlePlaceAssetLimits& Limits, const EMantleUploadShapeBound Bound)
+	{
+		return Bound == EMantleUploadShapeBound::Worst ? LargestBytes(Kind, Limits) : 0;
+	}
+
+	FMantleAssetRef Uploaded(const FString& Id, const EMantleAssetKind Kind, const FMantlePlaceAssetLimits& Limits, const EMantleUploadShapeBound Bound)
 	{
 		FMantleAssetRef Ref;
 		Ref.Id = Id;
 		Ref.Kind = Kind;
 		Ref.Hash = FMantlePlaceUploadShape::UploadedHashShape();
-		Ref.Bytes = LargestBytes(Kind, Limits);
+		Ref.Bytes = UnknownBytes(Kind, Limits, Bound);
 		return Ref;
 	}
 }
@@ -84,7 +90,7 @@ FString FMantlePlaceUploadShape::UploadedHashShape()
 }
 
 FMantlePlaceUploadShape FMantlePlaceUploadShape::Project(const TArray<FMantleAssetRef>& Assets, const TMap<FString, FString>& ProvisionalKeys,
-	const FMantlePlaceAssetSet* Converted, const FMantlePlaceAssetLimits& Limits,
+	const FMantlePlaceAssetSet* Converted, const FMantlePlaceAssetLimits& Limits, const EMantleUploadShapeBound Bound,
 	const TFunctionRef<FMantleExpectedSideFiles(const FMantleAssetRef& Mesh, const FString& Key)> ExpectedSideFiles)
 {
 	using namespace MantlePlaceUploadShapePrivate;
@@ -116,8 +122,12 @@ FMantlePlaceUploadShape FMantlePlaceUploadShape::Project(const TArray<FMantleAss
 			continue;
 		}
 		const int32 Index = Shape.Assets.Add(Asset);
-		Shape.Assets[Index].Hash = UploadedHashShape();
-		Shape.Assets[Index].Bytes = LargestBytes(Asset.Kind, Limits);
+		// A converted file already has its own sha256 hash and upload size, which Mantle keeps: exact. Otherwise both are to come.
+		if (!Asset.Hash.StartsWith(TEXT("sha256:"), ESearchCase::CaseSensitive))
+		{
+			Shape.Assets[Index].Hash = UploadedHashShape();
+			Shape.Assets[Index].Bytes = UnknownBytes(Asset.Kind, Limits, Bound);
+		}
 
 		if (Asset.Kind == EMantleAssetKind::StaticMesh && !ConvertedMeshes.Contains(*Key))
 		{
@@ -128,7 +138,7 @@ FMantlePlaceUploadShape FMantlePlaceUploadShape::Project(const TArray<FMantleAss
 			Keys.Key = *Key;
 			if (Expected.bLumen && Asset.Lumen.IsEmpty())
 			{
-				FMantleAssetRef Lumen = Uploaded(FMantlePlaceAssets::ProvisionalId(Keys.LumenKey()), EMantleAssetKind::Lumen, Limits);
+				FMantleAssetRef Lumen = Uploaded(FMantlePlaceAssets::ProvisionalId(Keys.LumenKey()), EMantleAssetKind::Lumen, Limits, Bound);
 				Lumen.Engine = FMantleMeshLumenFile::EngineTag();
 				Shape.Assets[Index].Lumen = Lumen.Id;
 				Shape.Assets.Add(MoveTemp(Lumen));
@@ -136,19 +146,20 @@ FMantlePlaceUploadShape FMantlePlaceUploadShape::Project(const TArray<FMantleAss
 			}
 			if (Expected.bNanite && Asset.Nanite.IsEmpty())
 			{
-				FMantleAssetRef Nanite = Uploaded(FMantlePlaceAssets::ProvisionalId(Keys.NaniteKey()), EMantleAssetKind::Nanite, Limits);
+				FMantleAssetRef Nanite = Uploaded(FMantlePlaceAssets::ProvisionalId(Keys.NaniteKey()), EMantleAssetKind::Nanite, Limits, Bound);
 				Nanite.Engine = FMantleNaniteSideFile::EngineTag();
 				Shape.Assets[Index].Nanite = Nanite.Id;
 				Shape.Assets.Add(MoveTemp(Nanite));
 				++Shape.AddedNanite;
 			}
 		}
-		else if (Asset.Kind == EMantleAssetKind::Material && !ConvertedMaterials.Contains(*Key))
+		else if (Bound == EMantleUploadShapeBound::Worst && Asset.Kind == EMantleAssetKind::Material && !ConvertedMaterials.Contains(*Key))
 		{
 			// Its textures: at most one for each of the document's slots (base color, normal, occlusion-roughness-metallic, emissive).
+			// The lower bound counts none: a material of flat values has none, and one texture can serve many materials.
 			for (int32 Slot = 0; Slot < MantlePlaceTextureSlotCount; ++Slot)
 			{
-				Shape.Assets.Add(Uploaded(FMantlePlaceAssets::ProvisionalId(FString::Printf(TEXT("%s#texture%d"), **Key, Slot)), EMantleAssetKind::Texture, Limits));
+				Shape.Assets.Add(Uploaded(FMantlePlaceAssets::ProvisionalId(FString::Printf(TEXT("%s#texture%d"), **Key, Slot)), EMantleAssetKind::Texture, Limits, Bound));
 				++Shape.AddedTextures;
 			}
 		}

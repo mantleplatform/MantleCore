@@ -103,6 +103,11 @@ FMantleCheckReport FMantleCheck::Evaluate(UWorld* World)
 		{
 			Report.Issues.Add({ EMantleIssueSeverity::Error, Error.Path, Error.Message, FString() });
 		}
+		// MantleCore#189: fits at the least it can be once uploaded, but not at the most (its materials' textures decide).
+		if (!Exported.BudgetWarning.IsEmpty())
+		{
+			Report.Issues.Add({ EMantleIssueSeverity::Warning, FString(), Exported.BudgetWarning, FString() });
+		}
 		Report.PlaceBytes = Exported.PlaceBytes;
 		Report.Instances = Exported.InstanceTotal;
 		Report.DrawDistances = Exported.DrawDistanceEntities;

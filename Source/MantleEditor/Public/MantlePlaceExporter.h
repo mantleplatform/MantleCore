@@ -132,17 +132,20 @@ struct FMantleExportResult
 	TMap<FString, FString> ProvisionalKeys;
 
 	/**
-	 * The root place file's size in bytes once every asset it names is uploaded (GhzGarage/mantle#818, MantleCore#189), measured after
-	 * the scenery went to cells: what the 8 MiB limit is checked against. Before conversion and upload it is the worst case
-	 * (FMantlePlaceUploadShape): each upload's sha256 hash and largest size, each material's textures and each mesh's Lumen and Nanite
-	 * files. Once everything is uploaded it is PlaceBytesAsWritten.
+	 * The least the root place file can be once every asset it names is uploaded (GhzGarage/mantle#818, MantleCore#189), measured after
+	 * the scenery went to cells: what the 8 MiB limit is checked against (FMantlePlaceUploadShape, EMantleUploadShapeBound::Lowest:
+	 * each upload's sha256 hash and each mesh's Lumen and Nanite files; a material's textures only once it is converted). After
+	 * conversion it is the size to within the materials' size fields; once everything is uploaded it is PlaceBytesAsWritten.
 	 */
 	int64 PlaceBytes = 0;
+
+	/** The most it can be (EMantleUploadShapeBound::Worst): every size at its longest and four textures for each material not converted yet. */
+	int64 PlaceBytesWorst = 0;
 
 	/** The root place file's size in bytes as ToJson writes it now, provisional ids and hashes included. */
 	int64 PlaceBytesAsWritten = 0;
 
-	/** The entries the root's asset list will hold once uploaded (FMantlePlaceUploadShape); Place.Assets has those it holds now. */
+	/** The most entries the root's asset list can hold once uploaded (the worst case); Place.Assets has those it holds now. */
 	int32 UploadedAssets = 0;
 
 	/** Instanced mesh entries in the root place file; the cells' instances are counted in CellReport. */
@@ -167,6 +170,12 @@ struct FMantleExportResult
 
 	/** The creator-facing sentence for bOverBudget, with the fix (also in Errors). */
 	FString BudgetProblem;
+
+	/**
+	 * MantleCore#189: not over the limit, but its worst case is (PlaceBytes fits, PlaceBytesWorst does not): a sentence saying both,
+	 * for a warning. Empty otherwise. Publish measures again once the files are prepared (IMantlePlacePublishSource::CheckConvertedPlaceSize).
+	 */
+	FString BudgetWarning;
 
 	FString ErrorSummary() const
 	{
@@ -212,6 +221,9 @@ struct FMantleExportOptions
 	 * stands in, and the manifest carries the source package's provisional digest.
 	 */
 	const FMantlePlaceAssetSet* Assets = nullptr;
+
+	/** The root place file's size limit; 0 is the backend's, FMantlePlaceLimits::MaxPlaceFileBytes. Tests set a smaller one. */
+	int64 MaxPlaceFileBytes = 0;
 
 	/**
 	 * Fold repeated identical static mesh actors into instance sets (FMantlePlaceInstancing::GroupStaticMeshes). On unless a test

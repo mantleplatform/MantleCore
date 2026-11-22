@@ -24,6 +24,7 @@
 #include "MantlePhysicsProp.h"
 #include "MantlePlaceAssetConverter.h"
 #include "MantlePlaceAssets.h"
+#include "MantlePlaceMaterial.h"
 #include "MantlePlaceUploadShape.h"
 #include "MantlePlaceBuilder.h"
 #include "MantlePlaceLimits.h"
@@ -7059,37 +7060,53 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		// MantleCore#189: and measured as the backend gets it, after every upload. Before conversion each mesh and material is one entry
 		// with a provisional md5 hash; uploaded, each has a sha256 hash, and its textures and Lumen and Nanite files are entries too
 		// (City Sample: 15,439 entries, 5.4 MiB, became 32,135 and 9.1 MiB, refused after three hours of uploads).
-		const FMantlePlaceUploadShape Shape = FMantlePlaceUploadShape::Project(Place.Assets, Result.ProvisionalKeys, Options.Assets, Uploads.Limits,
-			[&Uploads, &DrawnMeshIds, &CollisionMeshIds](const FMantleAssetRef& Mesh, const FString& Key)
-			{
-				const FSoftObjectPath* Source = Uploads.SourceOf.Find(Key);
-				return FMantlePlaceUploadShape::ExpectedSideFiles(Source ? Cast<UStaticMesh>(Source->ResolveObject()) : nullptr,
-					CollisionMeshIds.Contains(Mesh.Id) && !DrawnMeshIds.Contains(Mesh.Id));
-			});
-		Result.UploadedAssets = Shape.Assets.Num();
-		Result.PlaceBytes = Result.PlaceBytesAsWritten + (AssetListBytes(Shape.Assets) - AssetListBytes(Place.Assets));
-		if (Result.PlaceBytes != Result.PlaceBytesAsWritten)
+		// The place is refused only when the least it can be is over the limit (the lower bound); the most it can be (the worst case)
+		// over it is a warning. Before conversion the two differ by the materials' textures; after it, by next to nothing.
+		auto SideFiles = [&Uploads, &DrawnMeshIds, &CollisionMeshIds](const FMantleAssetRef& Mesh, const FString& Key)
 		{
-			UE_LOG(LogMantle, Log, TEXT("MANTLE_ROOT_SIZE %lld bytes as written, %lld once uploaded: %d assets become %d (%d textures, %d Lumen and %d Nanite files to come)"),
-				Result.PlaceBytesAsWritten, Result.PlaceBytes, Place.Assets.Num(), Shape.Assets.Num(), Shape.AddedTextures, Shape.AddedLumen, Shape.AddedNanite);
+			const FSoftObjectPath* Source = Uploads.SourceOf.Find(Key);
+			return FMantlePlaceUploadShape::ExpectedSideFiles(Source ? Cast<UStaticMesh>(Source->ResolveObject()) : nullptr,
+				CollisionMeshIds.Contains(Mesh.Id) && !DrawnMeshIds.Contains(Mesh.Id));
+		};
+		const FMantlePlaceUploadShape Lowest = FMantlePlaceUploadShape::Project(Place.Assets, Result.ProvisionalKeys, Options.Assets, Uploads.Limits,
+			EMantleUploadShapeBound::Lowest, SideFiles);
+		const FMantlePlaceUploadShape Shape = FMantlePlaceUploadShape::Project(Place.Assets, Result.ProvisionalKeys, Options.Assets, Uploads.Limits,
+			EMantleUploadShapeBound::Worst, SideFiles);
+		const int64 WrittenAssets = AssetListBytes(Place.Assets);
+		Result.UploadedAssets = Shape.Assets.Num();
+		Result.PlaceBytes = Result.PlaceBytesAsWritten + (AssetListBytes(Lowest.Assets) - WrittenAssets);
+		Result.PlaceBytesWorst = Result.PlaceBytesAsWritten + (AssetListBytes(Shape.Assets) - WrittenAssets);
+		if (Result.PlaceBytesWorst != Result.PlaceBytesAsWritten)
+		{
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_ROOT_SIZE %lld bytes as written; once uploaded at least %lld, at most %lld: %d assets become %d to %d (%d textures, %d Lumen and %d Nanite files to come)"),
+				Result.PlaceBytesAsWritten, Result.PlaceBytes, Result.PlaceBytesWorst, Place.Assets.Num(), Lowest.Assets.Num(), Shape.Assets.Num(),
+				Shape.AddedTextures, Shape.AddedLumen, Shape.AddedNanite);
 		}
-		if (Result.InstanceTotal > FMantlePlaceLimits::MaxInstancesPerPlace || Result.PlaceBytes > FMantlePlaceLimits::MaxPlaceFileBytes)
+		const int64 MaxBytes = Options.MaxPlaceFileBytes > 0 ? Options.MaxPlaceFileBytes : FMantlePlaceLimits::MaxPlaceFileBytes;
+		if (Result.PlaceBytes <= MaxBytes && Result.PlaceBytesWorst > MaxBytes)
+		{
+			Result.BudgetWarning = FString::Printf(TEXT("The place file may be too big for Mantle once its files are prepared: at least %s and at most %s, against the %s Mantle accepts, depending on how many textures its %s material(s) make. Publish measures it again after preparing them, before anything is uploaded."),
+				*FMantlePlaceInstancing::DescribeBytes(Result.PlaceBytes), *FMantlePlaceInstancing::DescribeBytes(Result.PlaceBytesWorst),
+				*FMantlePlaceInstancing::DescribeBytes(MaxBytes), *FText::AsNumber(Shape.AddedTextures / FMath::Max(1, MantlePlaceTextureSlotCount)).ToString());
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_ROOT_SIZE %s"), *Result.BudgetWarning);
+		}
+		if (Result.InstanceTotal > FMantlePlaceLimits::MaxInstancesPerPlace || Result.PlaceBytes > MaxBytes)
 		{
 			Result.bOverBudget = true;
 			Result.BudgetProblem = FMantlePlaceInstancing::DescribeOverBudget(Result.InstanceTotal, FMantlePlaceLimits::MaxInstancesPerPlace,
-				Result.PlaceBytes, FMantlePlaceLimits::MaxPlaceFileBytes);
+				Result.PlaceBytes, MaxBytes);
 			// What fills it, so the creator (and we) know what to move or trim.
-			if (Result.PlaceBytes > FMantlePlaceLimits::MaxPlaceFileBytes)
+			if (Result.PlaceBytes > MaxBytes)
 			{
 				const FString Biggest = MantlePlaceExporterRootSize::Breakdown(RootText);
 				if (!Biggest.IsEmpty())
 				{
 					Result.BudgetProblem += FString::Printf(TEXT(" Its biggest parts: %s."), *Biggest);
 				}
-				if (Shape.Assets.Num() > Place.Assets.Num())
+				if (Lowest.Assets.Num() > Place.Assets.Num())
 				{
-					Result.BudgetProblem += FString::Printf(TEXT(" Once uploaded its asset list holds %s entries, not %s: each material's textures and each mesh's Lumen and Nanite files are listed too."),
-						*FText::AsNumber(Shape.Assets.Num()).ToString(), *FText::AsNumber(Place.Assets.Num()).ToString());
+					Result.BudgetProblem += FString::Printf(TEXT(" Once uploaded its asset list holds at least %s entries, not %s: each mesh's Lumen and Nanite files are listed too, and each material's textures."),
+						*FText::AsNumber(Lowest.Assets.Num()).ToString(), *FText::AsNumber(Place.Assets.Num()).ToString());
 				}
 			}
 			Result.Errors.Add(FMantleParseError{ TEXT("/entities"), Result.BudgetProblem });
