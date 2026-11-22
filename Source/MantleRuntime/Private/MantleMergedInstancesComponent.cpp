@@ -131,6 +131,7 @@ void UMantleMergedInstancesComponent::CreateChunkBodies(const int32 FirstInstanc
 
 	const int32 PerBody = InstancesPerBody(BodySetup);
 	const FTransform ComponentTransform = GetComponentTransform();
+	BodiesTransform = ComponentTransform;
 	TArray<FTransform> Run;
 	Run.Reserve(PerBody);
 	for (int32 Index = FirstInstance; Index < Instances.Num(); ++Index)
@@ -383,6 +384,18 @@ void UMantleMergedInstancesComponent::OnActorEnableCollisionChanged()
 	for (FBodyInstance* Body : ChunkBodies)
 	{
 		Body->UpdatePhysicsFilterData();
+	}
+}
+
+void UMantleMergedInstancesComponent::OnUpdateTransform(EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport)
+{
+	Super::OnUpdateTransform(UpdateTransformFlags, Teleport);
+	// A set a server holds stands Static and never moves. A copy of one a script made (Entity:Clone, Movable) can be moved: its bodies are made again where it now stands,
+	// as the engine's component moves its instances' bodies. One entity's few bodies; a copy moved every frame pays that every frame.
+	if (IsPhysicsStateCreated() && !ChunkBodies.IsEmpty() && !GetComponentTransform().Equals(BodiesTransform, UE_KINDA_SMALL_NUMBER))
+	{
+		ClearChunkBodies();
+		CreateChunkBodies(0);
 	}
 }
 

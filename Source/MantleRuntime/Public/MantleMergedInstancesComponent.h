@@ -69,6 +69,7 @@ public:
 	virtual FBodyInstance* GetBodyInstance(FName BoneName = NAME_None, bool bGetWelded = true, int32 Index = INDEX_NONE) const override;
 	virtual void OnActorEnableCollisionChanged() override;
 	virtual void OnComponentCollisionSettingsChanged(bool bUpdateOverlaps = true) override;
+	virtual void OnUpdateTransform(EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport = ETeleportType::None) override;
 	virtual bool LineTraceComponent(FHitResult& OutHit, const FVector Start, const FVector End, const FCollisionQueryParams& Params) override;
 	virtual bool SweepComponent(FHitResult& OutHit, const FVector Start, const FVector End, const FQuat& ShapeWorldRotation, const FCollisionShape& CollisionShape, bool bTraceComplex = false) override;
 	virtual bool OverlapComponent(const FVector& Pos, const FQuat& Rot, const FCollisionShape& CollisionShape) const override;
@@ -131,8 +132,15 @@ private:
 	/** Appends the instances, each as the engine's instanced component keeps one (through a matrix). The bounds are the caller's to bring up to date. */
 	void AppendInstances(TConstArrayView<FTransform> ComponentSpaceTransforms);
 
-	/** Every instance's transform in the component's space. A zero-scale one stays in the list (it counts) but has no shape, as it has no body in the engine's component. */
+	/**
+	 * Every instance's transform in the component's space. A zero-scale one stays in the list (it counts) but has no shape, as it has no body in the engine's component.
+	 * A property, as the engine's component's instances are, so an actor spawned from this one as its template (a script's Entity:Clone) has them too.
+	 */
+	UPROPERTY()
 	TArray<FTransform> Instances;
+
+	/** The component's transform the bodies were made at: a move to another one makes them again (OnUpdateTransform). */
+	FTransform BodiesTransform = FTransform::Identity;
 
 	/** The bodies, one for each run of InstancesPerBody consecutive instances that have a shape. Owned here, made and ended with the physics state. */
 	TArray<FBodyInstance*> ChunkBodies;

@@ -773,6 +773,63 @@ bool FMantleMergedInstancesWholeEntityTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	// A script's Entity:Clone spawns a new actor with the entity's as its template and makes its root Movable: the copy keeps every instance and its collision, and moving it
+	// moves its collision (as the engine's component's copy does).
+	{
+		FMergedPair Pair = MakePair(World, Assets.Cube, Assets.Surface.Get(), Instances, /*bInvisibleWall*/ false);
+		const auto CloneOf = [World](const FMergedCopy& Source)
+		{
+			FActorSpawnParameters Params;
+			Params.Template = Source.Actor;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			FMergedCopy Copy = Source;
+			Copy.Actor = World->SpawnActor<AActor>(Source.Actor->GetClass(), Source.Actor->GetActorTransform(), Params);
+			Copy.Component = Copy.Actor ? Cast<UStaticMeshComponent>(Copy.Actor->GetRootComponent()) : nullptr;
+			Copy.Engine = Cast<UInstancedStaticMeshComponent>(Copy.Component);
+			Copy.Merged = Cast<UMantleMergedInstancesComponent>(Copy.Component);
+			if (Copy.Component)
+			{
+				Copy.Component->SetMobility(EComponentMobility::Movable);
+				Copy.Actor->SetActorTransform(Source.Actor->GetActorTransform(), false, nullptr, ETeleportType::TeleportPhysics);
+			}
+			return Copy;
+		};
+		// The originals go first, so the clones are all a probe can hit.
+		FMergedPair Clones;
+		Clones.Engine = CloneOf(Pair.Engine);
+		Clones.Merged = CloneOf(Pair.Merged);
+		Pair.Engine.Actor->Destroy();
+		Pair.Merged.Actor->Destroy();
+		if (TestTrue(TEXT("clone: both copies were cloned"), Clones.Engine.Engine && Clones.Merged.Merged))
+		{
+			TestEqual(TEXT("clone: the merged clone keeps every instance"), Clones.Merged.Merged->GetInstanceCount(), Instances.Num());
+			TestTrue(TEXT("clone: and has bodies"), Clones.Merged.Merged->GetChunkBodies().Num() > 0);
+			const TArray<FMergedProbe> EngineClone = RunAllMergedProbes(World, Clones.Engine, Points);
+			const TArray<FMergedProbe> MergedClone = RunAllMergedProbes(World, Clones.Merged, Points);
+			TestEqual(TEXT("clone: no probe disagrees"), CompareMergedProbes(*this, TEXT("clone"), EngineClone, MergedClone, Clones), 0);
+			TestTrue(TEXT("clone: the copies are hit"), Lines(MergedClone, ECC_Pawn) > 20);
+
+			// Moved 50 m up: nothing is left where they stood, and the probes moved with them agree again.
+			const FVector Lift(0.0, 0.0, 5000.0);
+			for (FMergedCopy* Copy : { &Clones.Engine, &Clones.Merged })
+			{
+				Copy->Actor->SetActorLocation(Copy->Actor->GetActorLocation() + Lift, false, nullptr, ETeleportType::TeleportPhysics);
+			}
+			const TArray<FMergedProbe> MergedLeft = RunAllMergedProbes(World, Clones.Merged, Points);
+			TestEqual(TEXT("moved: nothing of the merged clone is left where it stood"), Lines(MergedLeft, ECC_Pawn), 0);
+			for (FMergedCopy* Copy : { &Clones.Engine, &Clones.Merged })
+			{
+				Copy->Transform.AddToTranslation(Lift);
+			}
+			const TArray<FMergedProbe> EngineMoved = RunAllMergedProbes(World, Clones.Engine, Points);
+			const TArray<FMergedProbe> MergedMoved = RunAllMergedProbes(World, Clones.Merged, Points);
+			TestEqual(TEXT("moved: no probe disagrees"), CompareMergedProbes(*this, TEXT("moved"), EngineMoved, MergedMoved, Clones), 0);
+			TestEqual(TEXT("moved: the merged clone is hit where it now stands, as often as the engine's"), Lines(MergedMoved, ECC_Pawn), Lines(EngineMoved, ECC_Pawn));
+			Clones.Engine.Actor->Destroy();
+			Clones.Merged.Actor->Destroy();
+		}
+	}
+
 	// An invisible wall (the collision-only mesh that lets sight through): sight traces pass both copies, the pawn's still stops at both.
 	{
 		FMergedPair Pair = MakePair(World, Assets.Cube, Assets.Surface.Get(), Instances, /*bInvisibleWall*/ true);
