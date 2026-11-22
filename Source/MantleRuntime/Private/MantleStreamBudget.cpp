@@ -31,6 +31,11 @@ namespace MantleStreamBudgetPrivate
 		{ 1100000, 120000, 400000, 36864, 0.70 },
 	};
 
+	/** TextureShareOfVideo per preset level (#189; the client big-map plan, 4.3). */
+	constexpr double TextureShares[FMantleStreamBudget::LevelCount] = { 0.25, 0.33, 0.42, 0.5 };
+
+	constexpr double GiB = 1024.0 * 1024.0 * 1024.0;
+
 	/** The machine the Epic row was measured on. */
 	constexpr double MeasuredVideoBytes = 16.0 * 1024.0 * 1024.0 * 1024.0;
 	constexpr double MeasuredPhysicalBytes = 32.0 * 1024.0 * 1024.0 * 1024.0;
@@ -80,6 +85,47 @@ FMantleBudgetLimits FMantleStreamBudget::LimitsFor(const int32 Level, const doub
 	return Limits;
 }
 
+FMantleBudgetLimits FMantleStreamBudget::LimitsFor(const int32 Level, const FMantleBudgetMachine& Machine, const double Scale)
+{
+	FMantleBudgetLimits Limits = LimitsFor(Level, MachineFactor(Machine) * Scale);
+	if (Machine.VideoBytes > 0)
+	{
+		Limits.TextureBytes = FMath::Max<int64>(1, static_cast<int64>(static_cast<double>(Machine.VideoBytes) * TextureShareOfVideo(Level) * Scale));
+	}
+	Limits.ProcessMemoryBytes = ProcessMemoryCapBytes(Machine.PhysicalBytes);
+	return Limits;
+}
+
+double FMantleStreamBudget::TextureShareOfVideo(const int32 Level)
+{
+	return MantleStreamBudgetPrivate::TextureShares[ClampLevel(Level)];
+}
+
+int64 FMantleStreamBudget::ProcessMemoryCapBytes(const int64 PhysicalBytes)
+{
+	using namespace MantleStreamBudgetPrivate;
+	if (PhysicalBytes <= 0)
+	{
+		return MAX_int64;
+	}
+	// The table in the client plan's 4.3 (Joshua's minimum PC is the first point), in GB of RAM -> GB the game may use.
+	const double Ram = static_cast<double>(PhysicalBytes) / GiB;
+	double Cap = 0.0;
+	if (Ram <= 16.0)
+	{
+		Cap = Ram * 9.0 / 16.0;
+	}
+	else if (Ram <= 32.0)
+	{
+		Cap = 9.0 + (Ram - 16.0) * (17.0 - 9.0) / 16.0;
+	}
+	else
+	{
+		Cap = 17.0 + (Ram - 32.0) * (24.0 - 17.0) / 32.0;
+	}
+	return static_cast<int64>(Cap * GiB);
+}
+
 double FMantleStreamBudget::CountPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use)
 {
 	using namespace MantleStreamBudgetPrivate;
@@ -88,12 +134,20 @@ double FMantleStreamBudget::CountPressure(const FMantleBudgetLimits& Limits, con
 	TakeWorst(Worst, Limits.SolidThings, Use.SolidThings);
 	TakeWorst(Worst, Limits.FarInstances, Use.FarInstances);
 	TakeWorst(Worst, Limits.NaniteRootPages, Use.NaniteRootPages);
+	// The textures' bytes act like a count: a build erased takes its share out at once, so it can lower the ladder at every look.
+	TakeWorst(Worst, Limits.TextureBytes, Use.TextureBytes);
 	return Worst;
 }
 
 double FMantleStreamBudget::MemoryPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use)
 {
-	return Limits.ProcessMemoryShare > 0.0 && Use.ProcessMemoryShare > 0.0 ? Use.ProcessMemoryShare / Limits.ProcessMemoryShare : 0.0;
+	using namespace MantleStreamBudgetPrivate;
+	double Worst = Limits.ProcessMemoryShare > 0.0 && Use.ProcessMemoryShare > 0.0 ? Use.ProcessMemoryShare / Limits.ProcessMemoryShare : 0.0;
+	if (Use.ProcessMemoryBytes > 0)
+	{
+		TakeWorst(Worst, Limits.ProcessMemoryBytes, Use.ProcessMemoryBytes);
+	}
+	return Worst;
 }
 
 double FMantleStreamBudget::Pressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use)
@@ -157,6 +211,17 @@ FMantleBudgetMachine FMantleStreamBudget::CurrentMachine()
 		RHIGetTextureMemoryStats(Stats);
 		Machine.VideoBytes = Stats.DedicatedVideoMemory > 0 ? Stats.DedicatedVideoMemory : Stats.TotalGraphicsMemory;
 	}
+	// A measuring aid, like -MantleBudgetScale: -MantleBudgetRamGB=16 -MantleBudgetVideoGB=8 runs the budget as Joshua's minimum PC would, on a bigger one.
+	double PretendGB = 0.0;
+	if (FParse::Value(FCommandLine::Get(), TEXT("MantleBudgetRamGB="), PretendGB) && PretendGB > 0.0)
+	{
+		Machine.PhysicalBytes = static_cast<int64>(PretendGB * MantleStreamBudgetPrivate::GiB);
+	}
+	PretendGB = 0.0;
+	if (FParse::Value(FCommandLine::Get(), TEXT("MantleBudgetVideoGB="), PretendGB) && PretendGB > 0.0)
+	{
+		Machine.VideoBytes = static_cast<int64>(PretendGB * MantleStreamBudgetPrivate::GiB);
+	}
 	Cached = Machine;
 	return Cached;
 }
@@ -170,11 +235,17 @@ FMantleBudgetLimits FMantleStreamBudget::CurrentLimits()
 		FParse::Value(FCommandLine::Get(), TEXT("MantleBudgetScale="), Scale);
 		return FMath::Clamp(Scale, 0.001, 1.0);
 	}();
-	return LimitsFor(CurrentLevel(), MachineFactor(CurrentMachine()) * CommandScale);
+	return LimitsFor(CurrentLevel(), CurrentMachine(), CommandScale);
 }
 
 double FMantleStreamBudget::CurrentProcessMemoryShare()
 {
 	const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
-	return Stats.TotalPhysical > 0 ? static_cast<double>(Stats.UsedPhysical) / static_cast<double>(Stats.TotalPhysical) : 0.0;
+	const int64 Physical = CurrentMachine().PhysicalBytes;
+	return Physical > 0 ? static_cast<double>(Stats.UsedPhysical) / static_cast<double>(Physical) : 0.0;
+}
+
+int64 FMantleStreamBudget::CurrentProcessMemoryBytes()
+{
+	return static_cast<int64>(FPlatformMemory::GetStats().UsedPhysical);
 }

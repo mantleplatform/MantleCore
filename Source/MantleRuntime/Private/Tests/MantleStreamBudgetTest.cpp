@@ -250,4 +250,48 @@ bool FMantleStreamBudgetReachTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamBudgetTexturesAndMemoryCapTest,
+	"Mantle.Runtime.StreamBudget.TexturesAndMemoryCap",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamBudgetTexturesAndMemoryCapTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamBudgetTestPrivate;
+	// #189 (the client big-map plan, 4.3): the place's textures are a count, a share of the card by setting, and the process has a cap in bytes beside its share of RAM.
+	TestEqual(TEXT("Low: a quarter of the card"), FMantleStreamBudget::TextureShareOfVideo(0), 0.25);
+	TestEqual(TEXT("Epic: half of it"), FMantleStreamBudget::TextureShareOfVideo(3), 0.5);
+	const FMantleBudgetLimits Big = FMantleStreamBudget::LimitsFor(3, FMantleBudgetMachine{ 16 * GiB, 64 * GiB }, 1.0);
+	TestEqual(TEXT("Epic on a 16 GB card: 8 GB of textures"), Big.TextureBytes, 8 * GiB);
+	TestEqual(TEXT("and 24 GB for the process on 64 GB of RAM"), Big.ProcessMemoryBytes, 24 * GiB);
+	TestEqual(TEXT("the counts are the ones LimitsFor gives"), Big.Instances, FMantleStreamBudget::LimitsFor(3, 1.0).Instances);
+	const FMantleBudgetLimits Minimum = FMantleStreamBudget::LimitsFor(1, FMantleBudgetMachine{ 8 * GiB, 16 * GiB }, 1.0);
+	TestEqual(TEXT("Joshua's minimum PC on Balanced: a third of an 8 GB card"), Minimum.TextureBytes, static_cast<int64>(8.0 * GiB * 0.33));
+	TestEqual(TEXT("and 9 GB for the process"), Minimum.ProcessMemoryBytes, 9 * GiB);
+	TestEqual(TEXT("32 GB of RAM: 17 GB"), FMantleStreamBudget::ProcessMemoryCapBytes(32 * GiB), 17 * GiB);
+	TestEqual(TEXT("24 GB: half way between 9 and 17"), FMantleStreamBudget::ProcessMemoryCapBytes(24 * GiB), 13 * GiB);
+	TestEqual(TEXT("8 GB: in proportion below 16"), FMantleStreamBudget::ProcessMemoryCapBytes(8 * GiB), static_cast<int64>(4.5 * GiB));
+	TestEqual(TEXT("128 GB: on at 64 GB's slope"), FMantleStreamBudget::ProcessMemoryCapBytes(128 * GiB), 38 * GiB);
+	TestEqual(TEXT("unknown RAM: no cap"), FMantleStreamBudget::ProcessMemoryCapBytes(0), MAX_int64);
+	const FMantleBudgetLimits NoCard = FMantleStreamBudget::LimitsFor(3, FMantleBudgetMachine{ 0, 32 * GiB }, 1.0);
+	TestEqual(TEXT("no card known (a server): textures are not limited"), NoCard.TextureBytes, MAX_int64);
+	TestEqual(TEXT("-MantleBudgetScale scales the textures' limit with the counts"),
+		FMantleStreamBudget::LimitsFor(3, FMantleBudgetMachine{ 16 * GiB, 64 * GiB }, 0.5).TextureBytes, 4 * GiB);
+
+	// Pressure: textures are a count; the byte cap and the share are memory, and the higher of them counts.
+	FMantleBudgetLimits Limits;
+	Limits.TextureBytes = 8 * GiB;
+	Limits.ProcessMemoryShare = 0.7;
+	Limits.ProcessMemoryBytes = 24 * GiB;
+	FMantleBudgetUse Use;
+	Use.TextureBytes = 12 * GiB;
+	TestEqual(TEXT("12 GB of textures against 8: a count pressure of 1.5"), FMantleStreamBudget::CountPressure(Limits, Use), 1.5);
+	Use.ProcessMemoryShare = 0.35;
+	Use.ProcessMemoryBytes = 30 * GiB;
+	TestEqual(TEXT("30 GB against the 24 GB cap beats half the share"), FMantleStreamBudget::MemoryPressure(Limits, Use), 1.25);
+	Use.ProcessMemoryBytes = 0;
+	TestEqual(TEXT("bytes unknown: the share alone"), FMantleStreamBudget::MemoryPressure(Limits, Use), 0.5);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

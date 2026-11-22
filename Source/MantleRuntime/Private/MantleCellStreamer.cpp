@@ -1261,9 +1261,9 @@ void FMantleCellStreamer::LogSummary(const TCHAR* Why) const
 	if (Stats.BudgetLooks > 0)
 	{
 		UE_LOG(LogMantle, Log,
-			TEXT("MANTLE_CELLS_BUDGET_SUMMARY %s: %d looks, ladder now %.2f lowest %.2f, pressure now %.2f worst %.2f; at the last look instances %lld, solid %lld, far instances %lld, Nanite root pages %lld, process memory %.3f of the machine"),
+			TEXT("MANTLE_CELLS_BUDGET_SUMMARY %s: %d looks, ladder now %.2f lowest %.2f, pressure now %.2f worst %.2f; at the last look instances %lld, solid %lld, far instances %lld, Nanite root pages %lld, textures %.0f MB, process memory %.3f of the machine (%.0f MB)"),
 			Why, Stats.BudgetLooks, Stats.BudgetLadder, Stats.BudgetLowestLadder, Stats.BudgetPressure, Stats.BudgetWorstPressure, Stats.BudgetInstances, Stats.BudgetSolidThings,
-			Stats.BudgetFarInstances, Stats.BudgetNaniteRootPages, Stats.BudgetMemoryShare);
+			Stats.BudgetFarInstances, Stats.BudgetNaniteRootPages, Stats.BudgetTextureBytes / (1024.0 * 1024.0), Stats.BudgetMemoryShare, Stats.BudgetMemoryBytes / (1024.0 * 1024.0));
 	}
 }
 

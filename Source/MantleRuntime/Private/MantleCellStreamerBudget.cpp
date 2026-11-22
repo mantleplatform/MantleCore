@@ -8,6 +8,15 @@
 
 #include "GameFramework/Actor.h"
 
+namespace MantleCellStreamerBudgetPrivate
+{
+	/** A byte limit for the budget line, in MB, or "no limit". */
+	FString MegabytesOrNone(const int64 Bytes)
+	{
+		return Bytes > 0 && Bytes < MAX_int64 ? FString::Printf(TEXT("%.0f"), Bytes / (1024.0 * 1024.0)) : FString(TEXT("no limit"));
+	}
+}
+
 void FMantleCellStreamer::AddCellToUse(const FMantleCellInfo& Info, FMantleBudgetUse& Use) const
 {
 	if (Settings.Entities == EMantleCellEntities::PicturesOnly)
@@ -79,12 +88,21 @@ double FMantleCellStreamer::ProjectedCountPressure(const FMantleBudgetLimits& Li
 		// The cells the longer reach would newly want (the ones already standing or on their way are in Use).
 		TArray<int32> Candidates;
 		FMantleCellStreamPlan::CellsNear(Index, LevelOverhangs, LevelRadii, LastPath, Candidates);
+		int32 NewCells = 0;
 		for (const int32 CellIndex : Candidates)
 		{
 			if (!Cells.Contains(CellIndex) && !Loader->IsCellFailed(CellIndex) && FMantleCellStreamPlan::IsWanted(Index.Cells[CellIndex], LastPath, Next))
 			{
 				AddCellToUse(Index.Cells[CellIndex], Projected);
+				++NewCells;
 			}
+		}
+		// #189: what a cell's textures cost is not in the index, so each new cell is taken to cost what a standing one does on average (textures shared between cells make that high,
+		// so the ladder rises less readily: the side that does not cycle).
+		const int32 Standing = BuiltCells.Num() + ReadyCells.Num() + AssetCells.Num() + LoadingCells.Num();
+		if (Use.TextureBytes > 0 && Standing > 0 && NewCells > 0)
+		{
+			Projected.TextureBytes += Use.TextureBytes / Standing * NewCells;
 		}
 		// The twins it would newly want and build.
 		if (FarEnabled())
@@ -132,6 +150,8 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	const FMantleBudgetLimits Limits = Settings.BudgetLimits();
 	FMantleBudgetUse Use = MeasureBudgetUse();
 	Use.ProcessMemoryShare = Settings.BudgetMemoryShare ? Settings.BudgetMemoryShare() : 0.0;
+	Use.ProcessMemoryBytes = Settings.BudgetMemoryBytes ? Settings.BudgetMemoryBytes() : 0;
+	Use.TextureBytes = Settings.BudgetTextureBytes ? Settings.BudgetTextureBytes() : 0;
 	const double CountPressure = FMantleStreamBudget::CountPressure(Limits, Use);
 	const double MemoryPressure = FMantleStreamBudget::MemoryPressure(Limits, Use);
 	const double Pressure = FMath::Max(CountPressure, MemoryPressure);
@@ -171,6 +191,8 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	Stats.BudgetFarInstances = Use.FarInstances;
 	Stats.BudgetNaniteRootPages = Use.NaniteRootPages;
 	Stats.BudgetMemoryShare = Use.ProcessMemoryShare;
+	Stats.BudgetTextureBytes = Use.TextureBytes;
+	Stats.BudgetMemoryBytes = Use.ProcessMemoryBytes;
 
 	if (Ladder == Before)
 	{
@@ -183,8 +205,9 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	if (FMath::FloorToInt(Ladder * 10.0) != FMath::FloorToInt(Before * 10.0))
 	{
 		UE_LOG(LogMantle, Log,
-			TEXT("MANTLE_CELLS_BUDGET ladder %.2f -> %.2f (far reach x%.2f, cell reach x%.2f), pressure %.2f (memory %.2f): instances %lld of %lld, solid %lld of %lld, far instances %lld of %lld, Nanite root pages %lld of %lld, process memory %.3f of %.2f of the machine"),
+			TEXT("MANTLE_CELLS_BUDGET ladder %.2f -> %.2f (far reach x%.2f, cell reach x%.2f), pressure %.2f (memory %.2f): instances %lld of %lld, solid %lld of %lld, far instances %lld of %lld, Nanite root pages %lld of %lld, textures %.0f of %s MB, process memory %.3f of %.2f of the machine, %.0f of %s MB"),
 			Before, Ladder, Settings.FarSets.ReachScale, Settings.ReachScale, Pressure, MemoryPressure, Use.Instances, Limits.Instances, Use.SolidThings, Limits.SolidThings, Use.FarInstances, Limits.FarInstances,
-			Use.NaniteRootPages, Limits.NaniteRootPages, Use.ProcessMemoryShare, Limits.ProcessMemoryShare);
+			Use.NaniteRootPages, Limits.NaniteRootPages, Use.TextureBytes / (1024.0 * 1024.0), *MantleCellStreamerBudgetPrivate::MegabytesOrNone(Limits.TextureBytes), Use.ProcessMemoryShare, Limits.ProcessMemoryShare,
+			Use.ProcessMemoryBytes / (1024.0 * 1024.0), *MantleCellStreamerBudgetPrivate::MegabytesOrNone(Limits.ProcessMemoryBytes));
 	}
 }

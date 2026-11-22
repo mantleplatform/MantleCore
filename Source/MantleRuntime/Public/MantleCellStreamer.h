@@ -120,6 +120,8 @@ struct MANTLERUNTIME_API FMantleCellStreamStats
 	int64 BudgetFarInstances = 0;
 	int64 BudgetNaniteRootPages = 0;
 	double BudgetMemoryShare = 0.0;
+	int64 BudgetTextureBytes = 0;
+	int64 BudgetMemoryBytes = 0;
 };
 
 /** What a whole-grid look at the twins found: each built twin entity is drawn exactly when it should be (FMantleFarSetPlan::ShouldShow). */

@@ -3742,6 +3742,16 @@ void FMantlePlaceAssets::OnCollisionCooked(const FBuildKey& Key, const bool bSuc
 	MarkReady(*Build, Build->Object.Get());
 }
 
+int64 FMantlePlaceAssets::GetLiveTextureBytes()
+{
+	int64 Bytes = 0;
+	for (const FMantlePlaceAssets* Set : MantlePlaceAssetsPrivate::GLiveSets)
+	{
+		Bytes += Set->HeldTextureBytes;
+	}
+	return Bytes;
+}
+
 void FMantlePlaceAssets::UnpinBuilt(FBuild& Build)
 {
 	if (Build.bPinned && Build.Key.Kind != EAssetKind::Nanite)
@@ -3756,6 +3766,12 @@ void FMantlePlaceAssets::MarkReady(FBuild& Build, UObject* Object)
 	Build.Object = Object;
 	Build.State = EBuildState::Ready;
 	UnpinBuilt(Build);
+	if (const UTexture2D* Texture = Cast<UTexture2D>(Object); Texture && Build.TextureBytes == 0)
+	{
+		// What it holds on the card: the mips it uploaded (the Textures setting may have left the top ones out).
+		Build.TextureBytes = Texture->CalcTextureMemorySizeEnum(TMC_ResidentMips);
+		HeldTextureBytes += Build.TextureBytes;
+	}
 	if (Build.Key.Kind == EAssetKind::Nanite && !Build.bReused)
 	{
 		++NaniteFilesBuiltCount;
@@ -4777,6 +4793,8 @@ void FMantlePlaceAssets::EraseBuild(const FBuildKey& Key)
 	ReleasePending(*Build);
 	NaniteRootPagesAttached -= Build->NaniteRootPages;
 	Build->NaniteRootPages = 0;
+	HeldTextureBytes -= Build->TextureBytes;
+	Build->TextureBytes = 0;
 	FetchQueue.RemoveSingle(Key);
 	SoundFetchQueue.RemoveSingle(Key);
 	DecodeQueue.RemoveSingle(Key);

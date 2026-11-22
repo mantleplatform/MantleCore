@@ -129,12 +129,15 @@ struct MANTLERUNTIME_API FMantleCellStreamSettings
 	/**
 	 * Live budgets (stage 8): every half second the streamer reads what stands against BudgetLimits() and moves a ladder (FMantleStreamBudget): over budget the far sets' reach falls first, then the
 	 * real cells'. ReachScale is the real cells' scale now (1 = every cell is wanted from its own drawDistance); the streamer sets it. No BudgetLimits (the default, and every test) means
-	 * no limits: the scale stays 1. BudgetMemoryShare gives the process's memory over the machine's RAM (without it that is not checked).
+	 * no limits: the scale stays 1. BudgetMemoryShare gives the process's memory over the machine's RAM and BudgetMemoryBytes the same in bytes (without them memory is not checked);
+	 * BudgetTextureBytes gives the video memory the place's textures hold (#189; without it textures are not counted).
 	 */
 	double ReachScale = 1.0;
 	FMantleBudgetTuning BudgetTuning;
 	TFunction<FMantleBudgetLimits()> BudgetLimits;
 	TFunction<double()> BudgetMemoryShare;
+	TFunction<int64()> BudgetMemoryBytes;
+	TFunction<int64()> BudgetTextureBytes;
 };
 
 /** Where the player looks from and how fast that is moving, in world cm and cm a second. */

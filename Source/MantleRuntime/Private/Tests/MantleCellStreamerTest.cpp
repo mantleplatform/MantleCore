@@ -2037,6 +2037,56 @@ bool FMantleCellStreamerBudgetDoesNotCycleTest::RunTest(const FString& Parameter
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerBudgetTexturesTest,
+	"Mantle.Runtime.CellStream.Streamer.BudgetCountsTextures",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerBudgetTexturesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// #189: a texture-heavy place. Each standing cell holds 1 GB of textures (what FMantlePlaceAssets::GetLiveTextureBytes would say) against a limit of 3.8 GB, with every count far
+	// under its limit. Five cells (5 GB) are over it, so the ladder falls until three stand (3 GB, 0.79). That is under 0.8, where the ladder wants to rise, but a fourth cell is
+	// projected at the standing cells' average (1 GB: 4 GB, 1.05), so it holds rather than build the cell, find the limit passed and let it go again, round and round.
+	constexpr int64 GB = 1024ll * 1024 * 1024;
+	FFixture Fixture;
+	Fixture.View = FVector(22000.0, 100.0, 100.0);
+	FMantleCellStreamSettings Settings = SteadySettings();
+	Settings.BudgetTuning.MinReachCm = 3000.0;
+	Settings.BudgetLimits = []()
+	{
+		FMantleBudgetLimits Limits;
+		Limits.Instances = 100000;
+		Limits.SolidThings = 100000;
+		Limits.TextureBytes = 3 * GB + GB * 4 / 5;
+		return Limits;
+	};
+	FFixture* const FixturePtr = &Fixture;
+	Settings.BudgetTextureBytes = [FixturePtr]()
+	{
+		return FixturePtr->Streamer.IsValid() ? static_cast<int64>(FixturePtr->Streamer->GetStats().CellsBuilt) * GB : int64(0);
+	};
+	Fixture.StartStreamer(Settings);
+	if (!TestTrue(TEXT("the join settles"), Fixture.Settle()))
+	{
+		return false;
+	}
+	const int64 BuiltAtStart = Fixture.Streamer->GetStats().CellsBuiltEver;
+	TestEqual(TEXT("five cells were built for the join"), BuiltAtStart, static_cast<int64>(5));
+	for (int32 Tick = 0; Tick < 1800; ++Tick)
+	{
+		Fixture.Tick();
+	}
+	Fixture.Settle();
+	const FMantleCellStreamStats& Stats = Fixture.Streamer->GetStats();
+	TestTrue(TEXT("the ladder fell on the textures alone"), Stats.BudgetLowestLadder < 1.0);
+	TestTrue(TEXT("cells 2, 3 and 4 stand"), Fixture.Built(2) && Fixture.Built(3) && Fixture.Built(4));
+	TestTrue(TEXT("cells 1 and 5 were let go and not wanted back"), !Fixture.Built(1) && !Fixture.Built(5));
+	TestEqual(TEXT("3 GB of textures counted at the last look"), Stats.BudgetTextureBytes, 3 * GB);
+	TestEqual(TEXT("no cell was built again in 30 s"), Stats.CellsBuiltEver, BuiltAtStart);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleCellStreamerBudgetWithinLimitsTest,
 	"Mantle.Runtime.CellStream.Streamer.BudgetWithinLimitsChangesNothing",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

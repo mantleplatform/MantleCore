@@ -26,6 +26,18 @@ struct MANTLERUNTIME_API FMantleBudgetLimits
 
 	/** The share of the machine's RAM the game's process may use before it loads less far (0 or less: not checked). */
 	double ProcessMemoryShare = 0.0;
+
+	/**
+	 * #189: the video memory the place's textures may hold (FMantlePlaceAssets::GetLiveTextureBytes) before the cells load less far: a share of the card by graphics
+	 * setting (TextureShareOfVideo). City Sample's spawn wanted 23 GB of them on a 16 GB card.
+	 */
+	int64 TextureBytes = MAX_int64;
+
+	/**
+	 * #189: the game's process memory, in bytes, beside the share: the smaller of the two decides. 9 GB on Joshua's minimum PC (16 GB of RAM), 17 GB on 32 GB, 24 GB on 64 GB
+	 * (ProcessMemoryCapBytes). The share alone let City Sample take 44 GB of a 63 GB machine, and would leave a 16 GB one too little for the system and other programs.
+	 */
+	int64 ProcessMemoryBytes = MAX_int64;
 };
 
 /** What the cells of a place hold now, in the units of FMantleBudgetLimits. */
@@ -37,6 +49,10 @@ struct MANTLERUNTIME_API FMantleBudgetUse
 	int64 NaniteRootPages = 0;
 	/** The game's process memory over the machine's RAM, 0 to 1 (0 when unknown). */
 	double ProcessMemoryShare = 0.0;
+	/** The place's textures' video memory, bytes. */
+	int64 TextureBytes = 0;
+	/** The game's process memory (its working set, as the share), bytes; 0 when unknown. */
+	int64 ProcessMemoryBytes = 0;
 };
 
 /** The machine's size, for scaling the counts: bytes of video memory and of RAM; zero or less is unknown (and counts as big enough). */
@@ -87,10 +103,22 @@ public:
 	/** The limits for a preset level, counts and Nanite pages times Factor. */
 	static FMantleBudgetLimits LimitsFor(int32 Level, double Factor);
 
-	/** The highest of used / limit over the counts only (a limit of 0 or less, or none, is not checked); 0 when nothing is limited. */
+	/** LimitsFor, plus the limits that come from the machine's own size: the textures' share of its card (times Scale) and the process memory cap. */
+	static FMantleBudgetLimits LimitsFor(int32 Level, const FMantleBudgetMachine& Machine, double Scale);
+
+	/** The share of the card the place's textures may hold at a preset level: Low 0.25, Balanced 0.33, High 0.42, Epic 0.5 (8 GB of a 16 GB card on Epic, about 2 GB of a 6 to 8 GB one on Low or Balanced). */
+	static double TextureShareOfVideo(int32 Level);
+
+	/**
+	 * The process memory cap for a machine with PhysicalBytes of RAM: 9 GB at 16 GB, 17 GB at 32 GB, 24 GB at 64 GB, in a straight line between those, in proportion below 16 GB,
+	 * and on at 64 GB's slope above it. MAX_int64 when the RAM is unknown.
+	 */
+	static int64 ProcessMemoryCapBytes(int64 PhysicalBytes);
+
+	/** The highest of used / limit over the counts only, the textures' bytes included (a limit of 0 or less, or none, is not checked); 0 when nothing is limited. */
 	static double CountPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use);
 
-	/** The process's memory share over the limit for it (0 when either is unknown). */
+	/** The process's memory over the limits for it: the higher of share / share limit and bytes / byte cap (each 0 when either side is unknown). */
 	static double MemoryPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use);
 
 	/** The higher of the two. */
@@ -113,12 +141,18 @@ public:
 	/** The graphics setting now: the lowest of the engine's ten quality levels, as a preset level. Epic when the engine cannot say. */
 	static int32 CurrentLevel();
 
-	/** The card's and the machine's size now (zero where the engine has no answer: a process with no RHI, a server). */
+	/**
+	 * The card's and the machine's size now (zero where the engine has no answer: a process with no RHI, a server). A test switch pretends to be another machine:
+	 * -MantleBudgetRamGB=16 -MantleBudgetVideoGB=8 is Joshua's minimum PC (either alone replaces only its own half).
+	 */
 	static FMantleBudgetMachine CurrentMachine();
 
 	/** The limits for the graphics setting and the machine now. The Nanite page limit can be asked for often: the machine is read once a second at most. */
 	static FMantleBudgetLimits CurrentLimits();
 
-	/** The game's process memory over the machine's RAM, 0 when unknown. */
+	/** The game's process memory over the machine's RAM (CurrentMachine's, so the test switch counts), 0 when unknown. */
 	static double CurrentProcessMemoryShare();
+
+	/** The game's process memory (working set), bytes. */
+	static int64 CurrentProcessMemoryBytes();
 };

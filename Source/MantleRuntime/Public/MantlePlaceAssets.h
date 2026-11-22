@@ -571,10 +571,19 @@ public:
 	/** Inflated Nanite files held now, and the most held at once, in bytes (tests and the load log). */
 	int64 GetNaniteHeldBytes() const { return NaniteHeldBytes; }
 	int64 GetNaniteHeldPeakBytes() const { return NaniteHeldPeakBytes; }
+	int64 GetNaniteRootPagesAttached() const { return NaniteRootPagesAttached; }
+
+	/**
+	 * #189: the video memory of the textures this set has built and still holds (their resident mips; a build erased takes its share
+	 * out). The cell streamer's budget counts it against FMantleBudgetLimits::TextureBytes.
+	 */
+	int64 GetHeldTextureBytes() const { return HeldTextureBytes; }
+
+	/** The same over every live set (a place's cells, its root and its terrain each have one). Game thread. */
+	static int64 GetLiveTextureBytes();
 
 	/** The store this set loads from (tests read its pins). */
 	FMantleAssetStore& GetStore() const { return *Store; }
-	int64 GetNaniteRootPagesAttached() const { return NaniteRootPagesAttached; }
 
 	/** Downloads started above MaxPendingBuildBytes because a waiting build named them (tests and the progress log). */
 	int32 GetFetchesOverBudget() const { return FetchesOverBudget; }
@@ -718,6 +727,9 @@ private:
 		int64 NaniteRootBytes = -1;
 		/** The root pages this mesh attached (counted in NaniteRootPagesAttached, taken out when the build is erased). */
 		int32 NaniteRootPages = 0;
+
+		/** A built texture's video memory (counted in HeldTextureBytes, taken out when the build is erased). */
+		int64 TextureBytes = 0;
 		TSharedPtr<FMantleRuntimeMesh> MeshV1;
 		TSharedPtr<FMantleDecodedTexture> Texture;
 		TSharedPtr<FMantlePlaceMaterialDesc> Material;
@@ -926,6 +938,7 @@ private:
 	int64 NaniteCachedFetchBytes = 0;
 	/** The Nanite root pages the set's meshes have attached now, against FMantleNaniteRootPages::BudgetPages. */
 	int64 NaniteRootPagesAttached = 0;
+	int64 HeldTextureBytes = 0;
 
 	/** Frees a Nanite build's head and table (counted in NaniteHeldBytes). */
 	void ReleaseNaniteFile(FBuild& NaniteBuild);
