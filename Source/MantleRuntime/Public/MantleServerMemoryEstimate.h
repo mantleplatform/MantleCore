@@ -25,6 +25,9 @@ struct MANTLERUNTIME_API FMantleServerMemoryCounts
 	/** StaticMesh entries in the manifest. Every mesh the cells use is listed there too. */
 	int64 Meshes = 0;
 
+	/** Those meshes' bytes as uploaded (the manifest's byte counts; one whose size is not known yet counts nothing). */
+	int64 MeshBytes = 0;
+
 	/** Heightfield samples over every Terrain. */
 	int64 TerrainSamples = 0;
 
@@ -39,32 +42,43 @@ struct MANTLERUNTIME_API FMantleServerMemoryCounts
  * (backend/internal/places) reads them out of this file, so keep each on one line in the form
  * static constexpr double <Name> = <number>;
  *
- * Provisional: fitted from step 0's four measured places (plan 3.3) and what steps 1-4 are expected to save (plan 4.5).
- * Refit them from the next memory run on the Linux builder, and keep them honest with the calibration in plan 6.4.
+ * Fitted (plan 6.4, 2026-11-22) to four places measured on the Linux builder with steps 1-8 in: City Sample, OrbitalBase, Pointer
+ * Showcase and Sunny Steps, each within 15% at ready and at its peak, and to Unreal's memory tracker on City Sample and OrbitalBase.
+ * The Server memory calibration workflow (tools/bench/calibrate-server-memory.sh) checks them against real servers; refit them
+ * when it fails (calibrate_server_memory.py check --header tries new ones on runs already made).
  */
 struct MANTLERUNTIME_API FMantleServerMemoryEstimate
 {
-	/** An empty server: Sunny Steps measured 292 MB at ready. */
-	static constexpr double BaseMB = 300.0;
+	/** An empty server: Sunny Steps measured 387 MB at ready. */
+	static constexpr double BaseMB = 395.0;
 
-	/** Each entity's record, script record, actor and indexes. */
-	static constexpr double BytesPerEntity = 3072.0;
+	/** Each entity's record, script record, actor and indexes. Most of a big place's entities are cell scenery that is only a record on a server. */
+	static constexpr double BytesPerEntity = 2750.0;
 
-	/** Each instance the server still holds once ready: a root InstancedMesh's list, a solid set's own list. */
-	static constexpr double BytesPerInstance = 128.0;
+	/** Each instance once ready: a server keeps only the root's lists and the solid sets' own (step 4), so this is small. */
+	static constexpr double BytesPerInstance = 16.0;
 
-	/** Each solid thing's collision: its shape in its actor's body and the body's share of the physics scene. */
-	static constexpr double BytesPerSolid = 700.0;
+	/** Each solid thing's collision: its shape in its actor's body and the body's share of the physics scene (City Sample: 2.3 GB of physics for 1.05 M). */
+	static constexpr double BytesPerSolid = 2800.0;
 
-	/** Each mesh the server builds (collision and LOD0 only): step 0 measured at most 0.42 GB for 11,700 meshes. */
-	static constexpr double BytesPerMesh = 36864.0;
+	/** Each mesh the server builds, beside its size: its objects and its entry in the asset set. */
+	static constexpr double BytesPerMesh = 32768.0;
 
-	/** Each heightfield sample: the place's copy of the heights and the physics height field. */
-	static constexpr double BytesPerTerrainSample = 100.0;
+	/**
+	 * Each byte of those meshes as uploaded: the built mesh (collision and LOD0) and its cooked collision. Mesh sizes differ tenfold between places
+	 * (City Sample 71 KB a mesh, OrbitalBase 500 KB), so a count of meshes alone cannot say it. Measured 1.6 (City Sample) to 2.0 (OrbitalBase).
+	 */
+	static constexpr double BytesPerMeshByte = 2.0;
 
-	/** While loading only: each instance and entity of the cell files being read and merged. */
-	static constexpr double LoadBytesPerInstance = 150.0;
-	static constexpr double LoadBytesPerEntity = 1024.0;
+	/** Each heightfield sample: the heights and the physics height field (MANTLE_TERRAIN_BYTES: about 4.4 bytes a sample). */
+	static constexpr double BytesPerTerrainSample = 8.0;
+
+	/**
+	 * While loading only: each entity of the cell files being read and merged (City Sample peaks about 0.5 GB over ready). Since steps 1 and 4 a
+	 * server holds no extra copy of the instance lists, so they add nothing.
+	 */
+	static constexpr double LoadBytesPerInstance = 0.0;
+	static constexpr double LoadBytesPerEntity = 2048.0;
 
 	/** Mantle's biggest hosted server, 4 vCPU and 8 GB. */
 	static constexpr double LargestHostedServerMB = 8192.0;
@@ -101,7 +115,7 @@ struct MANTLERUNTIME_API FMantleServerMemoryEstimate
 	/** Adds one entity of the root or a cell to OutCounts. */
 	static void AddEntity(const FMantleEntity& Entity, FMantleServerMemoryCounts& OutCounts);
 
-	/** Adds a manifest's StaticMesh entries (each id once) and its heightfields' samples (from their byte counts; one not uploaded yet counts nothing). */
+	/** Adds a manifest's StaticMesh entries (each id once, with its bytes) and its heightfields' samples (from their byte counts; one not uploaded yet counts nothing). */
 	static void AddManifest(TConstArrayView<FMantleAssetRef> Assets, FMantleServerMemoryCounts& OutCounts);
 
 	/**
@@ -110,7 +124,7 @@ struct MANTLERUNTIME_API FMantleServerMemoryEstimate
 	 */
 	static void AddCellIndex(const FMantleCellIndex& Index, FMantleServerMemoryCounts& OutCounts);
 
-	/** "world_gb=3.55 peak_gb=5.13 fits=hosted entities=... instances=... solid=... meshes=... terrainSamples=...", for log lines: world_gb is ReadyMB. */
+	/** "world_gb=6.18 peak_gb=6.88 fits=community entities=... instances=... solid=... meshes=... meshBytes=... terrainSamples=...", for log lines: world_gb is ReadyMB. */
 	FString Fields() const;
 
 	/**

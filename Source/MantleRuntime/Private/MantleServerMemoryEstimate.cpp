@@ -17,6 +17,7 @@ FMantleServerMemoryCounts& FMantleServerMemoryCounts::operator+=(const FMantleSe
 	Instances += Other.Instances;
 	Solid += Other.Solid;
 	Meshes += Other.Meshes;
+	MeshBytes += Other.MeshBytes;
 	TerrainSamples += Other.TerrainSamples;
 	return *this;
 }
@@ -30,6 +31,7 @@ FMantleServerMemoryEstimate FMantleServerMemoryEstimate::Of(const FMantleServerM
 		+ BytesPerInstance * static_cast<double>(InCounts.Instances)
 		+ BytesPerSolid * static_cast<double>(InCounts.Solid)
 		+ BytesPerMesh * static_cast<double>(InCounts.Meshes)
+		+ BytesPerMeshByte * static_cast<double>(InCounts.MeshBytes)
 		+ BytesPerTerrainSample * static_cast<double>(InCounts.TerrainSamples);
 	const double LoadBytes = LoadBytesPerInstance * static_cast<double>(InCounts.Instances)
 		+ LoadBytesPerEntity * static_cast<double>(InCounts.Entities);
@@ -70,6 +72,7 @@ void FMantleServerMemoryEstimate::AddManifest(TConstArrayView<FMantleAssetRef> A
 			bool bSeen = false;
 			Meshes.Add(Asset.Id, &bSeen);
 			OutCounts.Meshes += bSeen ? 0 : 1;
+			OutCounts.MeshBytes += bSeen ? 0 : FMath::Max<int64>(Asset.Bytes, 0);
 		}
 		else if (Asset.Kind == EMantleAssetKind::Heightfield && Asset.Bytes > HeightfieldHeaderBytes)
 		{
@@ -97,9 +100,9 @@ FString FMantleServerMemoryEstimate::Gigabytes(const double MB)
 
 FString FMantleServerMemoryEstimate::Fields() const
 {
-	return FString::Printf(TEXT("world_gb=%.2f peak_gb=%.2f fits=%s entities=%lld instances=%lld solid=%lld meshes=%lld terrainSamples=%lld"),
+	return FString::Printf(TEXT("world_gb=%.2f peak_gb=%.2f fits=%s entities=%lld instances=%lld solid=%lld meshes=%lld meshBytes=%lld terrainSamples=%lld"),
 		ReadyMB / 1024.0, PeakMB / 1024.0, bFitsHosted ? TEXT("hosted") : TEXT("community"),
-		Counts.Entities, Counts.Instances, Counts.Solid, Counts.Meshes, Counts.TerrainSamples);
+		Counts.Entities, Counts.Instances, Counts.Solid, Counts.Meshes, Counts.MeshBytes, Counts.TerrainSamples);
 }
 
 FString FMantleServerMemoryEstimate::Describe() const

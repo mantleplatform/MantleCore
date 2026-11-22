@@ -48,13 +48,28 @@ namespace MantleServerEstimateCheckTestPrivate
 		return Ref;
 	}
 
+	// The calibration places' counts, as their servers logged them on the Linux builder (the server plan's 6.4, 2026-11-22). Measured: City Sample
+	// 5,616 MB once ready and 6,132 MB at its peak, OrbitalBase 1,092 and 1,123.
 	FMantleServerMemoryEstimate CitySample()
 	{
 		FMantleServerMemoryCounts Counts;
 		Counts.Entities = 368619;
-		Counts.Instances = 8800000;
-		Counts.Solid = 1160000;
-		Counts.Meshes = 11700;
+		Counts.Instances = 8800044;
+		Counts.Solid = 1047579;
+		Counts.Meshes = 11741;
+		Counts.MeshBytes = 873560000;
+		return FMantleServerMemoryEstimate::Of(Counts);
+	}
+
+	FMantleServerMemoryEstimate OrbitalBase()
+	{
+		FMantleServerMemoryCounts Counts;
+		Counts.Entities = 5443;
+		Counts.Instances = 76505;
+		Counts.Solid = 27137;
+		Counts.Meshes = 418;
+		Counts.MeshBytes = 217700000;
+		Counts.TerrainSamples = 4068289;
 		return FMantleServerMemoryEstimate::Of(Counts);
 	}
 
@@ -65,6 +80,7 @@ namespace MantleServerEstimateCheckTestPrivate
 		Counts.Instances = 20000000;
 		Counts.Solid = 5000000;
 		Counts.Meshes = 20000;
+		Counts.MeshBytes = 2000000000;
 		return FMantleServerMemoryEstimate::Of(Counts);
 	}
 }
@@ -83,27 +99,22 @@ bool FMantleServerEstimateKnownCountsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("and loads nothing more"), Empty.PeakMB, FMantleServerMemoryEstimate::BaseMB);
 
 	const FMantleServerMemoryEstimate City = CitySample();
-	TestEqual(TEXT("City Sample's counts, ready"), City.ReadyMB, 3639.869, 0.001);
-	TestEqual(TEXT("City Sample's counts, at the load's peak"), City.PeakMB, 5258.698, 0.001);
-	TestTrue(TEXT("fit the biggest hosted server"), City.bFitsHosted);
+	TestEqual(TEXT("City Sample's counts, ready"), City.ReadyMB, 6326.447, 0.001);
+	TestEqual(TEXT("City Sample's counts, at the load's peak"), City.PeakMB, 7046.406, 0.001);
+	TestFalse(TEXT("over the biggest hosted server's world share, as measured (5.2 GB beside the engine, the share is 5 GB)"), City.bFitsHosted);
 	TestEqual(TEXT("Check's line"), FMantleCheck::ServerLine(City),
-		FString(TEXT("MANTLE_CHECK_SERVER world_gb=3.55 peak_gb=5.14 fits=hosted entities=368619 instances=8800000 solid=1160000 meshes=11700 terrainSamples=0")));
-	TestEqual(TEXT("the creator's sentence"), City.Describe(),
-		FString(TEXT("Estimated server memory: 3.6 GB (5.1 GB while loading). Fits a hosted server.")));
+		FString(TEXT("MANTLE_CHECK_SERVER world_gb=6.18 peak_gb=6.88 fits=community entities=368619 instances=8800044 solid=1047579 meshes=11741 meshBytes=873560000 terrainSamples=0")));
 
-	FMantleServerMemoryCounts Orbital;
-	Orbital.Entities = 5443;
-	Orbital.Instances = 80000;
-	Orbital.Solid = 28000;
-	Orbital.Meshes = 500;
-	Orbital.TerrainSamples = 4068289;
-	const FMantleServerMemoryEstimate WithTerrain = FMantleServerMemoryEstimate::Of(Orbital);
-	TestEqual(TEXT("OrbitalBase's counts with its terrain, ready"), WithTerrain.ReadyMB, 749.964, 0.001);
-	TestEqual(TEXT("and at the peak"), WithTerrain.PeakMB, 766.724, 0.001);
+	const FMantleServerMemoryEstimate Orbital = OrbitalBase();
+	TestEqual(TEXT("OrbitalBase's counts with its terrain, ready"), Orbital.ReadyMB, 942.237, 0.001);
+	TestEqual(TEXT("and at the peak"), Orbital.PeakMB, 952.868, 0.001);
+	TestTrue(TEXT("fits a hosted server"), Orbital.bFitsHosted);
+	TestEqual(TEXT("the creator's sentence"), Orbital.Describe(),
+		FString(TEXT("Estimated server memory: 0.9 GB (0.9 GB while loading). Fits a hosted server.")));
 
 	const FMantleServerMemoryEstimate Big = TooBig();
-	TestEqual(TEXT("a place too big for hosting, ready"), Big.ReadyMB, 9712.079, 0.001);
-	TestEqual(TEXT("and at the peak"), Big.PeakMB, 13549.664, 0.001);
+	TestEqual(TEXT("a place too big for hosting, ready"), Big.ReadyMB, 21113.918, 0.001);
+	TestEqual(TEXT("and at the peak"), Big.PeakMB, 23067.043, 0.001);
 	TestFalse(TEXT("is community only"), Big.bFitsHosted);
 	TestTrue(TEXT("Check's line says so"), FMantleCheck::ServerLine(Big).Contains(TEXT(" fits=community ")));
 	TestTrue(TEXT("and the sentence names community servers"), Big.Describe().Contains(TEXT("will only run on community servers")));
@@ -111,7 +122,7 @@ bool FMantleServerEstimateKnownCountsTest::RunTest(const FString& Parameters)
 
 	// The peak alone over the hosted share is enough.
 	FMantleServerMemoryCounts PeakOnly;
-	PeakOnly.Instances = 25000000;
+	PeakOnly.Entities = 1800000;
 	const FMantleServerMemoryEstimate Peak = FMantleServerMemoryEstimate::Of(PeakOnly);
 	TestTrue(TEXT("ready inside the hosted share"), Peak.ReadyMB - FMantleServerMemoryEstimate::BaseMB <= FMantleServerMemoryEstimate::HostedWorldReadyMB);
 	TestFalse(TEXT("but the peak over it"), Peak.bFitsHosted);
@@ -152,6 +163,7 @@ bool FMantleServerEstimateCountsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("instances, with collision or without"), Estimate.Counts.Instances, static_cast<int64>(10));
 	TestEqual(TEXT("solid: the wall, the rocks and the overlap posts, as a cell index counts it"), Estimate.Counts.Solid, static_cast<int64>(6));
 	TestEqual(TEXT("each mesh once"), Estimate.Counts.Meshes, static_cast<int64>(2));
+	TestEqual(TEXT("and its bytes once"), Estimate.Counts.MeshBytes, static_cast<int64>(20));
 	TestEqual(TEXT("the heightfield's samples; one of unknown size counts nothing"), Estimate.Counts.TerrainSamples, static_cast<int64>(100));
 	TestEqual(TEXT("the estimate is the formula's on those counts"), Estimate.ReadyMB, FMantleServerMemoryEstimate::Of(Estimate.Counts).ReadyMB);
 	return true;
@@ -167,7 +179,7 @@ bool FMantleServerEstimateWarnsOnlyTest::RunTest(const FString& Parameters)
 	using namespace MantleServerEstimateCheckTestPrivate;
 
 	FMantleCheckReport Fits;
-	FMantleCheck::AddServerWarning(CitySample(), Fits.Issues);
+	FMantleCheck::AddServerWarning(OrbitalBase(), Fits.Issues);
 	TestEqual(TEXT("a place that fits gets no finding"), Fits.Issues.Num(), 0);
 
 	FMantleCheckReport Big;
@@ -254,7 +266,7 @@ bool FMantleServerEstimatePublishGoesOnTest::RunTest(const FString& Parameters)
 	TestNotEqual(TEXT("the publish did not stop"), static_cast<int32>(Session->GetPhase()), static_cast<int32>(EMantlePublishPhase::Failed));
 	TestEqual(TEXT("its files were prepared"), Source->ConvertCalls, 1);
 	const FMantlePublishResult& Result = Session->GetResult();
-	TestTrue(TEXT("the window shows the estimate"), Result.ServerMemory.StartsWith(TEXT("Estimated server memory: 9.5 GB (13.2 GB while loading).")));
+	TestTrue(TEXT("the window shows the estimate"), Result.ServerMemory.StartsWith(TEXT("Estimated server memory: 20.6 GB (22.5 GB while loading).")));
 	TestTrue(TEXT("and that only community servers hold it"), Result.ServerMemory.Contains(TEXT("community servers")));
 	TestFalse(TEXT("no error"), Result.Validation.HasErrors());
 	TestTrue(TEXT("one warning says so"), Result.Validation.Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
