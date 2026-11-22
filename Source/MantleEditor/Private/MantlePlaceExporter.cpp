@@ -1707,7 +1707,7 @@ namespace MantlePlaceExporterRootSize
 		}
 		struct FPart { FString Name; int64 Bytes = 0; int32 Count = 0; };
 		TArray<FPart> Parts;
-		for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Root->Values)
+		for (const auto& Field : Root->Values)
 		{
 			const TArray<TSharedPtr<FJsonValue>>* Array = nullptr;
 			const bool bArray = Field.Value.IsValid() && Field.Value->TryGetArray(Array);
