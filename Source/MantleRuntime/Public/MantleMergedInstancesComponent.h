@@ -68,6 +68,7 @@ public:
 	virtual FBoxSphereBounds CalcBounds(const FTransform& BoundTransform) const override;
 	virtual FBodyInstance* GetBodyInstance(FName BoneName = NAME_None, bool bGetWelded = true, int32 Index = INDEX_NONE) const override;
 	virtual void OnActorEnableCollisionChanged() override;
+	virtual void OnComponentCollisionSettingsChanged(bool bUpdateOverlaps = true) override;
 	virtual bool LineTraceComponent(FHitResult& OutHit, const FVector Start, const FVector End, const FCollisionQueryParams& Params) override;
 	virtual bool SweepComponent(FHitResult& OutHit, const FVector Start, const FVector End, const FQuat& ShapeWorldRotation, const FCollisionShape& CollisionShape, bool bTraceComplex = false) override;
 	virtual bool OverlapComponent(const FVector& Pos, const FQuat& Rot, const FCollisionShape& CollisionShape) const override;

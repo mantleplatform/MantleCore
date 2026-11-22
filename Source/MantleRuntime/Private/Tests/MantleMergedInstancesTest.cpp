@@ -16,7 +16,11 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
+#include "Chaos/ImplicitObject.h"
+#include "Chaos/ImplicitObjectType.h"
+#include "Chaos/ShapeInstance.h"
 #include "Physics/PhysicsInterfaceCore.h"
+#include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "PhysicsEngine/BodyInstance.h"
 #include "PhysicsEngine/BodySetup.h"
@@ -450,6 +454,15 @@ namespace MantleMergedInstancesTestPrivate
 		{
 			return FString::Printf(TEXT("distance %.4f against %.4f"), A.Distance, B.Distance);
 		}
+		// A swept shape that meets a face or an edge along a line or a patch touches it at many points at once, all at the same distance: which one (and so which normal, at a
+		// box's edge) the query reports is a tie the engine breaks by how the shapes are wrapped, not by where they are. Where the shapes stand is checked shape by shape
+		// instead (CompareMergedShapes); a sweep agrees when it hits the same thing at the same distance.
+		const bool bSweep = Engine.Kind == ProbeSphereDownSimple || Engine.Kind == ProbeSphereDownComplex || Engine.Kind == ProbeBoxDown
+			|| Engine.Kind == ProbeCapsuleAlongY || Engine.Kind == ProbeComponentSweep;
+		if (bSweep)
+		{
+			return A.PhysMaterial.Get() != B.PhysMaterial.Get() ? FString(TEXT("another physical material")) : FString();
+		}
 		if ((A.ImpactNormal - B.ImpactNormal).GetAbsMax() > NormalTolerance || (A.Normal - B.Normal).GetAbsMax() > NormalTolerance)
 		{
 			return FString::Printf(TEXT("normal %s against %s"), *A.ImpactNormal.ToString(), *B.ImpactNormal.ToString());
@@ -496,6 +509,84 @@ namespace MantleMergedInstancesTestPrivate
 			Hits += Probe.Kind == Kind && Probe.Channel == Channel && Probe.bHit ? 1 : 0;
 		}
 		return Hits;
+	}
+
+	/** One shape of a body: its inner geometry's kind and where it stands in the world. */
+	struct FMergedShapeInfo
+	{
+		int32 Kind = 0;
+		FBox Bounds = FBox(ForceInit);
+	};
+
+	TArray<FMergedShapeInfo> MergedShapesOf(const FBodyInstance* Body)
+	{
+		TArray<FMergedShapeInfo> Out;
+		if (!Body)
+		{
+			return Out;
+		}
+		FPhysicsCommand::ExecuteRead(Body->GetPhysicsActor(), [&Out](const FPhysicsActorHandle& Actor)
+		{
+			for (const auto& Shape : Actor->GetGameThreadAPI().ShapesArray())
+			{
+				FMergedShapeInfo& Info = Out.AddDefaulted_GetRef();
+				Info.Kind = Shape->GetGeometry() ? static_cast<int32>(Chaos::GetInnerType(Shape->GetGeometry()->GetType())) : -1;
+				const Chaos::FAABB3& Box = Shape->GetWorldSpaceShapeBounds();
+				Info.Bounds = FBox(FVector(Box.Min()), FVector(Box.Max()));
+			}
+		});
+		return Out;
+	}
+
+	/**
+	 * Every instance's shapes, the engine's (its own body) against the merged copy's (its run in a body): the same kinds, in the same order, standing in the same place (their world
+	 * bounds, the merged copy shifted back by the offset). What a probe could miss between its grid points, this does not. Reports the first few and returns how many differ.
+	 */
+	int32 CompareMergedShapes(FAutomationTestBase& Test, const FString& Where, const FMergedPair& Pair, const int32 ShapesEach, const int32 PerBody)
+	{
+		const TArray<FBodyInstance*>& EngineBodies = Pair.Engine.Engine->GetInstanceBodies();
+		const TArray<FBodyInstance*>& MergedBodies = Pair.Merged.Merged->GetChunkBodies();
+		TArray<TArray<FMergedShapeInfo>> MergedShapes;
+		for (const FBodyInstance* Body : MergedBodies)
+		{
+			MergedShapes.Add(MergedShapesOf(Body));
+		}
+		int32 Differences = 0;
+		const auto Report = [&Test, &Where, &Differences](const FString& Why)
+		{
+			if (++Differences <= 8)
+			{
+				Test.AddError(Where + TEXT(": ") + Why);
+			}
+		};
+		for (int32 Instance = 0; Instance < EngineBodies.Num(); ++Instance)
+		{
+			const TArray<FMergedShapeInfo> Engine = MergedShapesOf(EngineBodies[Instance]);
+			const int32 Body = Instance / PerBody;
+			const int32 First = (Instance % PerBody) * ShapesEach;
+			if (!MergedShapes.IsValidIndex(Body) || Engine.Num() != ShapesEach || MergedShapes[Body].Num() < First + ShapesEach)
+			{
+				Report(FString::Printf(TEXT("instance %d: %d engine shapes, merged body %d has %d"), Instance, Engine.Num(), Body, MergedShapes.IsValidIndex(Body) ? MergedShapes[Body].Num() : -1));
+				continue;
+			}
+			for (int32 Shape = 0; Shape < ShapesEach; ++Shape)
+			{
+				const FMergedShapeInfo& A = Engine[Shape];
+				const FMergedShapeInfo& B = MergedShapes[Body][First + Shape];
+				const FBox Shifted = B.Bounds.ShiftBy(-CopyOffset);
+				const double Off = FMath::Max((A.Bounds.Min - Shifted.Min).GetAbsMax(), (A.Bounds.Max - Shifted.Max).GetAbsMax());
+				if (A.Kind != B.Kind || Off > PointToleranceCm)
+				{
+					Report(FString::Printf(TEXT("instance %d shape %d: kind %d at %s against kind %d at %s (%.3f cm off)"),
+						Instance, Shape, A.Kind, *A.Bounds.ToString(), B.Kind, *Shifted.ToString(), Off));
+				}
+			}
+		}
+		if (Differences > 0)
+		{
+			Test.AddError(FString::Printf(TEXT("%s: %d shapes differ from the engine's"), *Where, Differences));
+		}
+		return Differences;
 	}
 
 	/** The number of bodies the merged copy should have: its instances (none has zero scale) in runs of InstancesPerBody. */
@@ -579,6 +670,8 @@ bool FMantleMergedInstancesParityTest::RunTest(const FString& Parameters)
 			TestTrue(Where + TEXT(": a hit's body index finds its body"), Merged->GetBodyInstance(NAME_None, true, 1) == Merged->GetChunkBodies()[1]);
 		}
 
+		TestEqual(Where + TEXT(": every shape stands where the engine's does"), CompareMergedShapes(*this, Where, Pair, ShapesEach, PerBody), 0);
+
 		const TArray<FMergedProbe> EngineProbes = RunAllMergedProbes(Fixture.World, Pair.Engine, Points);
 		const TArray<FMergedProbe> MergedProbes = RunAllMergedProbes(Fixture.World, Pair.Merged, Points);
 		const int32 Disagreements = CompareMergedProbes(*this, Where, EngineProbes, MergedProbes, Pair);
@@ -634,6 +727,11 @@ bool FMantleMergedInstancesWholeEntityTest::RunTest(const FString& Parameters)
 	// What a script does to a whole entity: turn its collision off and on again.
 	{
 		FMergedPair Pair = MakePair(World, Assets.Mixed.Get(), Assets.Surface.Get(), Instances, /*bInvisibleWall*/ false);
+		{
+			UBodySetup* BodySetup = Pair.Merged.Merged->GetBodySetup();
+			TestEqual(TEXT("before: every shape stands where the engine's does"), CompareMergedShapes(*this, TEXT("before"), Pair,
+				UMantleMergedInstancesComponent::ShapesPerInstance(BodySetup), UMantleMergedInstancesComponent::InstancesPerBody(BodySetup)), 0);
+		}
 		const TArray<FMergedProbe> EngineBefore = RunAllMergedProbes(World, Pair.Engine, Points);
 		const TArray<FMergedProbe> MergedBefore = RunAllMergedProbes(World, Pair.Merged, Points);
 		TestEqual(TEXT("before: no probe disagrees"), CompareMergedProbes(*this, TEXT("before"), EngineBefore, MergedBefore, Pair), 0);

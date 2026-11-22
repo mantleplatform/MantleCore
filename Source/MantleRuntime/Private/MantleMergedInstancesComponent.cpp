@@ -386,6 +386,23 @@ void UMantleMergedInstancesComponent::OnActorEnableCollisionChanged()
 	}
 }
 
+void UMantleMergedInstancesComponent::OnComponentCollisionSettingsChanged(bool bUpdateOverlaps)
+{
+	// The bodies were made from the component's collision settings (CopyBodyInstancePropertiesFrom), and their shapes carry the filter data, so a change made after they stand (a
+	// script turning the entity's collision off or on, a response to a channel) is applied by making them again. Not left to the physics state: an editor world that keeps trace
+	// collision keeps the physics state of a component with no collision (UPrimitiveComponent::ShouldCreatePhysicsState), and query-only against query-and-physics changes no
+	// physics state at all. Rare (a script's change to a whole entity), and one entity's bodies are a few.
+	if (IsRegistered() && IsPhysicsStateCreated())
+	{
+		ClearChunkBodies();
+		if (BodyInstance.GetCollisionEnabled() != ECollisionEnabled::NoCollision)
+		{
+			CreateChunkBodies(0);
+		}
+	}
+	Super::OnComponentCollisionSettingsChanged(bUpdateOverlaps);
+}
+
 bool UMantleMergedInstancesComponent::LineTraceComponent(FHitResult& OutHit, const FVector Start, const FVector End, const FCollisionQueryParams& Params)
 {
 	// The nearest hit of any body, as FInstancedMeshComponentBodies::LineTrace takes it.
