@@ -55,6 +55,18 @@ public:
 	static bool Read(TConstArrayView<uint8> Bytes, const FString& MeshTag, FMantleMeshLumenData& OutData, FString* OutReason = nullptr);
 
 	/**
+	 * #189: an MLD2's MLD1, inflated into Out (any thread: a place inflates it in its decode task, so the mesh build on the game thread reads
+	 * the MLD1 as it is). False, with the reason and Out empty, when Bytes is not an MLD2 that inflates whole to at most MaxBytes.
+	 */
+	static bool Unpack(TConstArrayView<uint8> Bytes, TArray<uint8>& Out, FString* OutReason = nullptr);
+
+	/** True when Bytes start as an MLD2. */
+	static bool IsPacked(TConstArrayView<uint8> Bytes);
+
+	/** For tests: how many Reads succeeded in this process, and how many of those were handed an MLD2 and had to inflate it first. */
+	static void GetReadCounts(int64& OutReads, int64& OutInflated);
+
+	/**
 	 * The header alone: the engine tag and the mesh tag. False when Bytes does not start as an MLD1 (or MLD2) of this format
 	 * version. What a publish checks before it uploads, and what the place file's lumen entry repeats.
 	 */

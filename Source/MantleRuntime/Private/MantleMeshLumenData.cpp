@@ -9,6 +9,8 @@
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
 
+#include <atomic>
+
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleMeshLumenDataPrivate
 {
@@ -16,6 +18,10 @@ namespace MantleMeshLumenDataPrivate
 
 	/** No mesh's file comes near this; a count past it is a damaged file, not a big mesh. */
 	constexpr int64 MaxMipBytes = 256LL * 1024 * 1024;
+
+	/** FMantleMeshLumenFile::GetReadCounts. */
+	std::atomic<int64> ReadsDone{ 0 };
+	std::atomic<int64> ReadsInflated{ 0 };
 
 	void SetReason(FString* OutReason, const FString& Reason)
 	{
@@ -127,7 +133,8 @@ bool FMantleMeshLumenFile::Read(const TConstArrayView<uint8> Bytes, const FStrin
 	OutData = FMantleMeshLumenData();
 	// FMemoryReader takes a TArray: the MLD1 inflated from an MLD2 (#189 step 5), or a copy of the view's bytes.
 	TArray<uint8> Copy;
-	if (MantleCookedPacking::HasMagic(Bytes, "MLD2"))
+	const bool bInflated = MantleCookedPacking::HasMagic(Bytes, "MLD2");
+	if (bInflated)
 	{
 		FString Reason;
 		if (!MantleCookedPacking::UnpackEnvelope(Bytes, "MLD2", MaxBytes, Copy, &Reason))
@@ -198,5 +205,28 @@ bool FMantleMeshLumenFile::Read(const TConstArrayView<uint8> Bytes, const FStrin
 	}
 	OutData.DistanceField = MoveTemp(Field);
 	OutData.Cards = MoveTemp(Cards);
+	++ReadsDone;
+	if (bInflated)
+	{
+		++ReadsInflated;
+	}
 	return true;
+}
+
+bool FMantleMeshLumenFile::Unpack(const TConstArrayView<uint8> Bytes, TArray<uint8>& Out, FString* OutReason)
+{
+	return MantleCookedPacking::UnpackEnvelope(Bytes, "MLD2", MaxBytes, Out, OutReason);
+}
+
+bool FMantleMeshLumenFile::IsPacked(const TConstArrayView<uint8> Bytes)
+{
+	return MantleCookedPacking::HasMagic(Bytes, "MLD2");
+}
+
+void FMantleMeshLumenFile::GetReadCounts(int64& OutReads, int64& OutInflated)
+{
+	using namespace MantleMeshLumenDataPrivate;
+
+	OutReads = ReadsDone.load();
+	OutInflated = ReadsInflated.load();
 }

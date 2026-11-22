@@ -8,6 +8,9 @@
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/Compression.h"
+#include "DistanceFieldAtlas.h"
+#include "MantleMeshLumenData.h"
+#include "MeshCardBuild.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Guid.h"
 #include "Misc/Paths.h"
@@ -2806,6 +2809,123 @@ bool FMantleTextureLowFallsBackToFullTest::RunTest(const FString& Parameters)
 
 	Assets->ReleaseEntityAssets(81);
 	TestTrue(TEXT("the release drops the texture"), PumpUntil([&Assets]() { return Assets->GetStreamedCounts().Textures == 0; }, 30.0));
+	return true;
+}
+
+namespace MantleLumenDecodeTestPrivate
+{
+	using namespace MantleNaniteSideFileTestPrivate;
+
+	const TCHAR* const LumenMesh = TEXT("ast_u000000000000000000000000000000f1");
+	const TCHAR* const LumenFile = TEXT("ast_u000000000000000000000000000000f2");
+
+	/** A small valid MLD1 for the mesh MeshTag names (the field MantleMeshLumenDataTest builds by hand). */
+	TArray<uint8> MakeMld1()
+	{
+		FDistanceFieldVolumeData Field;
+		Field.LocalSpaceMeshBounds = FBox3f(FVector3f(-50.0f), FVector3f(50.0f));
+		Field.Mips[0].IndirectionDimensions = FIntVector(2, 2, 2);
+		Field.Mips[0].NumDistanceFieldBricks = 3;
+		Field.Mips[0].BulkOffset = 16;
+		Field.Mips[0].BulkSize = 48;
+		Field.Mips[DistanceField::NumMips - 1].IndirectionDimensions = FIntVector(1, 1, 1);
+		Field.Mips[DistanceField::NumMips - 1].BulkSize = 3;
+		Field.AlwaysLoadedMip = { 9, 8, 7 };
+		Field.StreamableMips.Lock(LOCK_READ_WRITE);
+		uint8* Streamed = Field.StreamableMips.Realloc(64);
+		FMemory::Memset(Streamed, 0x11, 16);
+		FMemory::Memset(Streamed + 16, 0x5A, 48);
+		Field.StreamableMips.Unlock();
+		FCardRepresentationData Cards;
+		Cards.MeshCardsBuildData.Bounds = FBox(FVector(-50.0), FVector(50.0));
+		Cards.MeshCardsBuildData.CardBuildData.AddDefaulted(2);
+		return FMantleMeshLumenFile::Write(MeshTag, Field, Cards);
+	}
+
+	/** Inner in an MLD2 envelope, as the backend stores it. */
+	TArray<uint8> MakeMld2(const TArray<uint8>& Inner)
+	{
+		TArray<uint8> Packed;
+		int32 PackedBytes = FCompression::CompressMemoryBound(NAME_Zlib, Inner.Num());
+		Packed.SetNumUninitialized(PackedBytes);
+		verify(FCompression::CompressMemory(NAME_Zlib, Packed.GetData(), PackedBytes, Inner.GetData(), Inner.Num()));
+		Packed.SetNum(PackedBytes);
+		TArray<uint8> Bytes;
+		Bytes.Append(reinterpret_cast<const uint8*>("MLD2"), 4);
+		const uint32 Raw = static_cast<uint32>(Inner.Num());
+		for (int32 Byte = 0; Byte < 4; ++Byte)
+		{
+			Bytes.Add(static_cast<uint8>(Raw >> (8 * Byte)));
+		}
+		Bytes.Append(Packed);
+		return Bytes;
+	}
+
+	FMantlePlace MakeLumenPlace()
+	{
+		const FString Json = FString::Printf(
+			TEXT("{\"schemaVersion\":1,\"placeId\":\"plc_lumendec01\",\"revision\":{\"number\":1,\"state\":\"draft\"},"
+				 "\"metadata\":{\"name\":\"Lumen\",\"authorId\":\"usr_4b1d\"},\"settings\":{},\"assets\":["
+				 "{\"id\":\"%s\",\"kind\":\"StaticMesh\",\"hash\":\"%s\",\"bytes\":100,\"lumen\":\"%s\"},"
+				 "{\"id\":\"%s\",\"kind\":\"Lumen\",\"hash\":\"%s\",\"bytes\":50,\"engine\":\"%s\"}],"
+				 "\"entities\":[{\"id\":\"ent_l\",\"type\":\"StaticMesh\",\"parent\":null,\"transform\":{\"location\":[0,0,0],\"rotation\":[0,0,0],\"scale\":[1,1,1]},\"properties\":{\"mesh\":\"%s\"}}]}"),
+			LumenMesh, *MeshTag, LumenFile, LumenFile, *MeshTag, *FMantleMeshLumenFile::EngineTag(), LumenMesh);
+		const FMantleParseResult Parsed = FMantlePlaceParser::ParseFromString(Json);
+		check(Parsed.bSuccess);
+		return Parsed.Place;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleLumenInflatedOffTheGameThreadTest,
+	"Mantle.Runtime.StaticMesh.LumenInflatedBeforeTheBuild",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleLumenInflatedOffTheGameThreadTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleLumenDecodeTestPrivate;
+	// #189 step 5: the backend stores a mesh's Lumen file as MLD2. The place's decode task inflates it, so the mesh build on the game thread reads
+	// the MLD1 as it is (City Sample's Lumen is 1.41 GB inflated: seconds of hitches if the build inflated it).
+	const TArray<uint8> Mld1 = MakeMld1();
+	if (!TestTrue(TEXT("the Lumen file is written"), Mld1.Num() > 0))
+	{
+		return false;
+	}
+	const TSharedRef<FServingResolver> Server = MakeShared<FServingResolver>();
+	FServedAsset Mesh;
+	Mesh.Kind = TEXT("mesh");
+	// Bytes of its own, so no build another test made is reused and this mesh is built here, reading its Lumen file.
+	Mesh.Bytes = MakeMrm2Box(41.0f);
+	Server->Assets.Add(LumenMesh, Mesh);
+	FServedAsset Lumen;
+	Lumen.Kind = TEXT("lumen");
+	Lumen.Bytes = MakeMld2(Mld1);
+	Server->Assets.Add(LumenFile, Lumen);
+
+	FMantleAssetStoreSettings StoreSettings;
+	StoreSettings.RootDir = FPaths::AutomationTransientDir() / TEXT("LumenDecode") / FGuid::NewGuid().ToString();
+	StoreSettings.MaxAttempts = 1;
+	const TSharedRef<FServingFetcher> Fetcher = MakeShared<FServingFetcher>();
+	Fetcher->Source = Server;
+	FMantlePlaceAssetSettings Settings;
+	Settings.bAutoPump = false;
+	Settings.bRenderAssets = true;
+	Settings.bLoadNanite = false;
+	Settings.bAsyncCollisionCook = false;
+	Settings.Resolver = Server;
+	Settings.Store = FMantleAssetStore::Create(StoreSettings, Fetcher);
+
+	int64 ReadsBefore = 0;
+	int64 InflatedBefore = 0;
+	FMantleMeshLumenFile::GetReadCounts(ReadsBefore, InflatedBefore);
+	const TSharedRef<FMantlePlaceAssets> Assets = FMantlePlaceAssets::Prepare(MakeLumenPlace(), Settings, FMantlePlaceAssetsDone());
+	Assets->WaitUntilComplete(60.0f);
+	TestTrue(TEXT("the place's assets complete"), Assets->IsComplete());
+	int64 ReadsAfter = 0;
+	int64 InflatedAfter = 0;
+	FMantleMeshLumenFile::GetReadCounts(ReadsAfter, InflatedAfter);
+	TestEqual(TEXT("the mesh build read its Lumen file"), ReadsAfter - ReadsBefore, 1ll);
+	TestEqual(TEXT("and was handed it inflated: nothing was inflated in the build"), InflatedAfter - InflatedBefore, 0ll);
 	return true;
 }
 

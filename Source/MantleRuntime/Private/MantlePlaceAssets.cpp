@@ -2698,10 +2698,20 @@ void FMantlePlaceAssets::StartDecodes()
 
 		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> Bytes = MoveTemp(Build->Bytes);
 		Build->Bytes.Reset();
+		// #149: an MLD1 has nothing to decode off the game thread; OnDecoded looks at the header. #189: an MLD2 (what the backend stores) is inflated by
+		// the decode task into this array, which only the task writes before it hands the build back, so the mesh builds on the game thread read the MLD1.
+		TSharedPtr<TArray<uint8>, ESPMode::ThreadSafe> LumenRaw;
 		if (Key.Kind == EAssetKind::Lumen)
 		{
-			// #149: nothing to decode off the game thread; OnDecoded looks at the header.
-			Build->LumenFile = Bytes;
+			if (Bytes.IsValid() && FMantleMeshLumenFile::IsPacked(*Bytes))
+			{
+				LumenRaw = MakeShared<TArray<uint8>, ESPMode::ThreadSafe>();
+				Build->LumenFile = LumenRaw;
+			}
+			else
+			{
+				Build->LumenFile = Bytes;
+			}
 		}
 		// A Nanite file's head (its first piece, the fields and the root pages: about a MiB) is read and inflated by the decode task (a file read and an inflate are too long for the game thread) into this
 		// array, and its table into this one, which only the task writes, before it hands the build back; the game thread reads them after (OnDecoded). The streamed pages stay in the file.
@@ -2724,7 +2734,7 @@ void FMantlePlaceAssets::StartDecodes()
 		const TSharedRef<FCompletionQueue, ESPMode::ThreadSafe> Queue = Completions;
 		// Background priority: the engine's foreground workers (two on this machine's default setup) run the renderer's visibility tasks, and a decode that holds them for 70 ms (a
 		// 4 MB inflate, a 60,000-vertex mesh described) holds the render thread's frame with it.
-		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes, NaniteRaw, NaniteTableOut, NanitePath]()
+		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes, NaniteRaw, NaniteTableOut, NanitePath, LumenRaw]()
 		{
 			TSharedPtr<FMantleStaticMeshData> MeshV2;
 			TSharedPtr<FMantlePreparedStaticMesh> Prepared;
@@ -2745,6 +2755,12 @@ void FMantlePlaceAssets::StartDecodes()
 			switch (Key.Kind)
 			{
 			case EAssetKind::Lumen:
+				if (LumenRaw.IsValid())
+				{
+					FMantleMeshLumenFile::Unpack(View, *LumenRaw, &Error);
+				}
+				break;
+
 			case EAssetKind::VoxelWorld:
 			case EAssetKind::VoxelTile:
 				break;
@@ -2962,9 +2978,9 @@ void FMantlePlaceAssets::OnDecoded(const FBuildKey& Key, TSharedPtr<FMantleStati
 		const TSharedPtr<const TArray<uint8>, ESPMode::ThreadSafe> File = Build->LumenFile;
 		FString Engine;
 		FString MeshTag;
-		if (!File.IsValid() || !FMantleMeshLumenFile::ReadHeader(*File, Engine, MeshTag))
+		if (!Error.IsEmpty() || !File.IsValid() || !FMantleMeshLumenFile::ReadHeader(*File, Engine, MeshTag))
 		{
-			FailBuild(*Build, TEXT("is not a Lumen file this client reads (MLD1)"));
+			FailBuild(*Build, Error.IsEmpty() ? FString(TEXT("is not a Lumen file this client reads (MLD2 or MLD1)")) : FString::Printf(TEXT("is %s"), *Error));
 			return;
 		}
 		Build->Detail = FString::Printf(TEXT("MLD1, engine %s, %.1f KB"), *Engine, File->Num() / 1024.0);
