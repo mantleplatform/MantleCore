@@ -3,6 +3,7 @@
 #include "MantleLandscapeMaterialReader.h"
 #include "MantlePlaceAssetConverter.h"
 #include "MantlePlaceAssets.h"
+#include "MantlePng.h"
 
 #include "Components/StaticMeshComponent.h"
 #include "Dom/JsonObject.h"
@@ -676,6 +677,176 @@ bool FMantleBakeSurfaceUvRangeReadsCardTest::RunTest(const FString& Parameters)
 	FMantlePlaceMaterialDocument LayerDocument;
 	FMantlePlaceAssetConverter::ApplyWorldTile(LayerDocument, Layer);
 	TestFalse(TEXT("a landscape layer is tiled by the Terrain, not published worldAligned"), LayerDocument.bWorldAligned);
+	return true;
+}
+
+// City Sample (#189): the world-mapping check baked the whole material a second time (every input, its images written and read back) to
+// compare one input: 81 of 238 minutes of material conversion. It now bakes the base color alone, on both cards in one bake, at the size
+// of the first bake's base color image, and the whole second bake is only for a flattener that cannot.
+namespace MantleBakeSurfaceTestPrivate
+{
+	/** Base color is World Position: a world-mapped material by the analysis. */
+	UMaterial* NewWorldPositionMaterial()
+	{
+		UMaterial* Material = NewMaterial();
+		Material->GetEditorOnlyData()->BaseColor.Connect(0, AddNode<UMaterialExpressionWorldPosition>(Material));
+		return Material;
+	}
+
+	/** A first bake whose base color is an 8x4 image, and scripted base-color-only bakes. */
+	class FMovedCardFlattener : public IMantleMaterialFlattener
+	{
+	public:
+		bool bCanBakeBaseColors = true;
+		bool bPatternMoves = false;
+		int32 FlattenCalls = 0;
+		int32 BaseColorCalls = 0;
+		TArray<double> Shifts;
+		FIntPoint Size = FIntPoint::ZeroValue;
+
+		static TArray<FColor> Pattern(int32 Offset)
+		{
+			TArray<FColor> Pixels;
+			for (int32 Index = 0; Index < 32; ++Index)
+			{
+				Pixels.Add(FColor(uint8(((Index + Offset) % 32) * 8), 90, 30, 255));
+			}
+			return Pixels;
+		}
+
+		virtual bool Flatten(UMaterialInterface* Material, const FMantleFlattenSettings& Settings, FMantleGlbDocument& OutDocument,
+			TArray<FString>& OutMessages, FString& OutError) override
+		{
+			++FlattenCalls;
+			// The whole second bake (the fallback) sees the card moved, so a moving pattern moves there too.
+			const TArray<uint8> Png = FMantlePng::EncodeRGBA8(8, 4, Pattern(bPatternMoves && Settings.Surface.WorldShiftCm > 0.0 ? 11 : 0));
+			const TSharedRef<FJsonObject> Info = MakeShared<FJsonObject>();
+			Info->SetNumberField(TEXT("index"), 0);
+			const TSharedRef<FJsonObject> Pbr = MakeShared<FJsonObject>();
+			Pbr->SetObjectField(TEXT("baseColorTexture"), Info);
+			Pbr->SetNumberField(TEXT("metallicFactor"), 0.0);
+			Pbr->SetNumberField(TEXT("roughnessFactor"), 0.5);
+			const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+			Entry->SetStringField(TEXT("alphaMode"), TEXT("OPAQUE"));
+			Entry->SetObjectField(TEXT("pbrMetallicRoughness"), Pbr);
+			const TSharedRef<FJsonObject> Texture = MakeShared<FJsonObject>();
+			Texture->SetNumberField(TEXT("source"), 0);
+			const TSharedRef<FJsonObject> Image = MakeShared<FJsonObject>();
+			Image->SetNumberField(TEXT("bufferView"), 0);
+			Image->SetStringField(TEXT("mimeType"), TEXT("image/png"));
+			const TSharedRef<FJsonObject> View = MakeShared<FJsonObject>();
+			View->SetNumberField(TEXT("buffer"), 0);
+			View->SetNumberField(TEXT("byteOffset"), 0);
+			View->SetNumberField(TEXT("byteLength"), Png.Num());
+			const TSharedRef<FJsonObject> Buffer = MakeShared<FJsonObject>();
+			Buffer->SetNumberField(TEXT("byteLength"), Png.Num());
+			OutDocument = FMantleGlbDocument();
+			OutDocument.Json = MakeShared<FJsonObject>();
+			OutDocument.Json->SetArrayField(TEXT("materials"), { MakeShared<FJsonValueObject>(Entry) });
+			OutDocument.Json->SetArrayField(TEXT("textures"), { MakeShared<FJsonValueObject>(Texture) });
+			OutDocument.Json->SetArrayField(TEXT("images"), { MakeShared<FJsonValueObject>(Image) });
+			OutDocument.Json->SetArrayField(TEXT("bufferViews"), { MakeShared<FJsonValueObject>(View) });
+			OutDocument.Json->SetArrayField(TEXT("buffers"), { MakeShared<FJsonValueObject>(Buffer) });
+			OutDocument.Bin = Png;
+			return true;
+		}
+
+		virtual bool BakeBaseColors(UMaterialInterface* Material, const FMantleFlattenSettings& Settings, TConstArrayView<double> InShiftsCm, FIntPoint InSize,
+			TArray<TArray<FColor>>& OutImages) override
+		{
+			++BaseColorCalls;
+			Shifts = TArray<double>(InShiftsCm.GetData(), InShiftsCm.Num());
+			Size = InSize;
+			if (!bCanBakeBaseColors)
+			{
+				return false;
+			}
+			for (const double Shift : InShiftsCm)
+			{
+				OutImages.Add(Pattern(bPatternMoves && Shift > 0.0 ? 11 : 0));
+			}
+			return true;
+		}
+
+		virtual FString Describe() const override { return TEXT("scripted moved card"); }
+	};
+
+	/** Converts NewWorldPositionMaterial with Flattener; whether the published document is worldAligned. */
+	bool ConvertWorldPosition(FAutomationTestBase& Test, const TSharedRef<FMovedCardFlattener>& Flattener)
+	{
+		FMantlePlaceAssetConverter Converter(Flattener, FPaths::Combine(FPaths::AutomationTransientDir(), TEXT("MantleMovedCard"), FGuid::NewGuid().ToString()));
+		FMantlePlaceAssetSet Set;
+		Test.TestTrue(TEXT("the world-position material converts"), Converter.ConvertMaterial(NewWorldPositionMaterial(), FMantleBakeSurface(), Set));
+		return Test.TestEqual(TEXT("one material"), Set.Materials.Num(), 1) && Set.Materials[0].Document.bWorldAligned;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMovedCardBakesBaseColorAloneTest,
+	"Mantle.Editor.BakeSurface.MovedCardBakesBaseColorAlone",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMovedCardBakesBaseColorAloneTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleBakeSurfaceTestPrivate;
+	TestTrue(TEXT("World Position into the base color is world-mapped by the analysis"),
+		FMantlePlaceAssets::AnalyzeMaterial(NewWorldPositionMaterial()).Has(EMantleMaterialLoss::WorldAligned));
+
+	{
+		// A pattern that moves with the card: world-mapped, from the base color alone.
+		TSharedRef<FMovedCardFlattener> Flattener = MakeShared<FMovedCardFlattener>();
+		Flattener->bPatternMoves = true;
+		TestTrue(TEXT("a moving base color publishes worldAligned"), ConvertWorldPosition(*this, Flattener));
+		TestEqual(TEXT("the whole material is baked once"), Flattener->FlattenCalls, 1);
+		TestEqual(TEXT("the base color is baked alone once, for both cards"), Flattener->BaseColorCalls, 1);
+		if (TestEqual(TEXT("two cards"), Flattener->Shifts.Num(), 2))
+		{
+			TestEqual(TEXT("the first where the whole bake's card was"), Flattener->Shifts[0], 0.0);
+			TestEqual(TEXT("the second moved a share of the tile"), Flattener->Shifts[1],
+				FMantleBakeSurface::DefaultWorldTileCm * FMantlePlaceAssetConverter::WorldShiftFraction, 1.0e-9);
+		}
+		TestEqual(TEXT("at the first bake's base color size"), Flattener->Size, FIntPoint(8, 4));
+	}
+	{
+		// One that stays put: mapped by UV, still one whole bake.
+		TSharedRef<FMovedCardFlattener> Flattener = MakeShared<FMovedCardFlattener>();
+		TestFalse(TEXT("a still base color stays on the mesh's UVs"), ConvertWorldPosition(*this, Flattener));
+		TestEqual(TEXT("the whole material is baked once"), Flattener->FlattenCalls, 1);
+	}
+	{
+		// A flattener that cannot bake the base color alone gets the whole second bake, with the same answer.
+		TSharedRef<FMovedCardFlattener> Flattener = MakeShared<FMovedCardFlattener>();
+		Flattener->bCanBakeBaseColors = false;
+		Flattener->bPatternMoves = true;
+		TestTrue(TEXT("the whole second bake finds it world-mapped too"), ConvertWorldPosition(*this, Flattener));
+		TestEqual(TEXT("the whole material is baked twice"), Flattener->FlattenCalls, 2);
+	}
+
+	// The first bake's base color image size is read from its header; a constant base color has none to compare.
+	FMantleGlbDocument Document;
+	TArray<FString> Messages;
+	FString Error;
+	FMovedCardFlattener().Flatten(nullptr, FMantleFlattenSettings(), Document, Messages, Error);
+	FIntPoint Size;
+	bool bConstant = true;
+	TestTrue(TEXT("the base color image's size is read"), FMantlePlaceAssetConverter::BakedBaseColorSize(Document, Size, bConstant));
+	TestEqual(TEXT("8 by 4"), Size, FIntPoint(8, 4));
+	TestFalse(TEXT("which is not a constant"), bConstant);
+	FMantleGlbDocument Flat;
+	Flat.Json = MakeShared<FJsonObject>();
+	const TSharedRef<FJsonObject> FlatMaterial = MakeShared<FJsonObject>();
+	FlatMaterial->SetObjectField(TEXT("pbrMetallicRoughness"), MakeShared<FJsonObject>());
+	Flat.Json->SetArrayField(TEXT("materials"), { MakeShared<FJsonValueObject>(FlatMaterial) });
+	TestFalse(TEXT("a constant base color has no image"), FMantlePlaceAssetConverter::BakedBaseColorSize(Flat, Size, bConstant));
+	TestTrue(TEXT("and says it is constant"), bConstant);
+	TestFalse(TEXT("an empty bake has none"), FMantlePlaceAssetConverter::BakedBaseColorSize(FMantleGlbDocument(), Size, bConstant));
+	TestFalse(TEXT("and is not called constant"), bConstant);
+
+	// The bake shrinks a one-color image to one pixel: that does not move.
+	const TArray<FColor> Still = FMovedCardFlattener::Pattern(0);
+	TestEqual(TEXT("a shrunk one-color bake did not move"), FMantlePlaceAssetConverter::MovedCardDifference({ FColor::Red }, Still), 0.0);
+	TestTrue(TEXT("a moved pattern did"), FMantlePlaceAssetConverter::MovedCardDifference(Still, FMovedCardFlattener::Pattern(11))
+		>= FMantlePlaceAssetConverter::WorldMappedDifference);
 	return true;
 }
 

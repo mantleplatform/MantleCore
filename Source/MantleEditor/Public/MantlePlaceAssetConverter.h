@@ -841,6 +841,17 @@ public:
 
 	/** False when it can only write factors (no renderer to bake or read textures): the converter says so once per material. */
 	virtual bool CanBakeTextures() const { return true; }
+
+	/**
+	 * The world-mapping check's bakes: Material's base color alone, Size pixels, on Settings' card moved by each of ShiftsCm
+	 * (FMantleBakeSurface::WorldShiftCm), as the sRGB bytes a glTF base color image holds; one image per shift, in order. Far cheaper than
+	 * a whole Flatten (one input, no image files). False when it cannot: the converter then compares two whole Flattens.
+	 */
+	virtual bool BakeBaseColors(UMaterialInterface* Material, const FMantleFlattenSettings& Settings, TConstArrayView<double> ShiftsCm, FIntPoint Size,
+		TArray<TArray<FColor>>& OutImages)
+	{
+		return false;
+	}
 };
 
 /**
@@ -858,6 +869,10 @@ public:
 		TArray<FString>& OutMessages, FString& OutError) override;
 	virtual FString Describe() const override;
 	virtual bool CanBakeTextures() const override;
+
+	/** IMaterialBakingModule, as GLTFExporter's own bake of the base color calls it (FGLTFMaterialUtilities::BakeMaterialProperty), on each moved card at once. */
+	virtual bool BakeBaseColors(UMaterialInterface* Material, const FMantleFlattenSettings& Settings, TConstArrayView<double> ShiftsCm, FIntPoint Size,
+		TArray<TArray<FColor>>& OutImages) override;
 
 	/**
 	 * True when auto-detect must be switched off for a material whose textures are TextureSizes: one is bigger than Settings.MaxBakeSize
@@ -991,6 +1006,15 @@ public:
 
 	/** MeanPixelDifference of two bakes' first material's base color images: 0 for a constant color, 1 when either cannot be read. */
 	static double BakedBaseColorDifference(const FMantleGlbDocument& First, const FMantleGlbDocument& Second);
+
+	/**
+	 * The size of a bake's first material's base color image, read from its header: what the world-mapping check bakes at. False when it has
+	 * none: bOutConstant then says whether that is a constant color (nothing to compare) or an unreadable bake.
+	 */
+	static bool BakedBaseColorSize(const FMantleGlbDocument& Document, FIntPoint& OutSize, bool& bOutConstant);
+
+	/** MeanPixelDifference of the check's two base color bakes (BakeBaseColors), with one of one color (shrunk to one pixel) counted as not moving: 0. */
+	static double MovedCardDifference(const TArray<FColor>& Here, const TArray<FColor>& Moved);
 
 	/** A collision box's full size with one side of zero (a flat sheet) made 2 x FlatHullHalfThicknessCm; a box flat on two or three sides is returned as it is. */
 	static FVector ThickenFlatBox(const FVector& Size);

@@ -43,6 +43,12 @@
 #include "Engine/Texture.h"
 #include "Exporters/GLTFExporter.h"
 #include "HAL/FileManager.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
+#include "IMaterialBakingModule.h"
+#include "IMeshMergeUtilities.h"
+#include "MaterialBakingStructures.h"
+#include "MeshMergeModule.h"
 #include "ImageCore.h"
 #include "ImageUtils.h"
 #include "IO/IoHash.h"
@@ -2192,6 +2198,93 @@ bool FMantleGltfMaterialFlattener::Flatten(UMaterialInterface* Material, const F
 	return true;
 }
 
+bool FMantleGltfMaterialFlattener::BakeBaseColors(UMaterialInterface* Material, const FMantleFlattenSettings& Settings, TConstArrayView<double> ShiftsCm,
+	const FIntPoint Size, TArray<TArray<FColor>>& OutImages)
+{
+	OutImages.Reset();
+	// A landscape bake reads its card through a copy of its material (Flatten); this check is for world-tile cards only.
+	if (!Material || ShiftsCm.Num() == 0 || Size.X <= 0 || Size.Y <= 0 || !CanBakeTextures() || Settings.Surface.CoversTerrain())
+	{
+		return false;
+	}
+	const int32 Count = ShiftsCm.Num();
+	TArray<TStrongObjectPtr<UStaticMesh>> Cards;
+	TArray<FMeshDescription> Descriptions;
+	TArray<FMeshData> Meshes;
+	TArray<FMaterialDataEx> Materials;
+	Descriptions.SetNum(Count);
+	Meshes.SetNum(Count);
+	Materials.SetNum(Count);
+	ON_SCOPE_EXIT
+	{
+		for (TStrongObjectPtr<UStaticMesh>& Card : Cards)
+		{
+			Card->MarkAsGarbage();
+		}
+	};
+	const IMeshMergeUtilities& Merge = FModuleManager::LoadModuleChecked<IMeshMergeModule>(TEXT("MeshMergeUtilities")).GetUtilities();
+	const float Range = static_cast<float>(FMath::Max(Settings.Surface.UvRange, 1.0));
+	TArray<FMeshData*> MeshPointers;
+	TArray<FMaterialDataEx*> MaterialPointers;
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		FMantleBakeSurface Surface = Settings.Surface;
+		Surface.WorldShiftCm = ShiftsCm[Index];
+		UStaticMesh* Card = MantlePlaceAssetConverterPrivate::MakeBakeCard(Material, Surface);
+		if (!Card)
+		{
+			return false;
+		}
+		Cards.Emplace(Card);
+		// The card as GLTFExporter's bake reads it (FGLTFMeshData for a mesh with no component): the built mesh's description and bounds,
+		// its UVs' bounds (0 to Range), its one section, UV channel 0.
+		FStaticMeshAttributes(Descriptions[Index]).Register();
+		Merge.RetrieveMeshDescription(Card, 0, Descriptions[Index]);
+		FMeshData& Mesh = Meshes[Index];
+		Mesh.MeshDescription = &Descriptions[Index];
+		Mesh.TextureCoordinateIndex = 0;
+		Mesh.TextureCoordinateBox = FBox2D(FVector2D(0.0, 0.0), FVector2D(Range, Range));
+		Mesh.MaterialIndices = { 0 };
+		Mesh.PrimitiveData = FPrimitiveData(Card);
+		FMaterialDataEx& Data = Materials[Index];
+		Data.Material = Material;
+		Data.PropertySizes.Add(FMaterialPropertyEx(MP_BaseColor), Size);
+		Data.bTangentSpaceNormal = true;
+		MeshPointers.Add(&Mesh);
+		MaterialPointers.Add(&Data);
+	}
+
+	// Baked linear and written out as sRGB bytes, as GLTFExporter's base color image is (FGLTFTextureUtilities::TransformColorSpace).
+	IMaterialBakingModule& Baking = FModuleManager::LoadModuleChecked<IMaterialBakingModule>(TEXT("MaterialBaking"));
+	TArray<FBakeOutputEx> Outputs;
+	Baking.SetLinearBake(true);
+	Baking.BakeMaterials(MaterialPointers, MeshPointers, Outputs);
+	const bool bLinear = Baking.IsLinearBake(FMaterialPropertyEx(MP_BaseColor));
+	Baking.SetLinearBake(false);
+	if (Outputs.Num() != Count)
+	{
+		return false;
+	}
+	for (FBakeOutputEx& Output : Outputs)
+	{
+		TArray<FColor>* Pixels = Output.PropertyData.Find(FMaterialPropertyEx(MP_BaseColor));
+		if (!Pixels || Pixels->Num() == 0)
+		{
+			OutImages.Reset();
+			return false;
+		}
+		if (bLinear)
+		{
+			for (FColor& Pixel : *Pixels)
+			{
+				Pixel = Pixel.ReinterpretAsLinear().ToFColor(true);
+			}
+		}
+		OutImages.Add(MoveTemp(*Pixels));
+	}
+	return true;
+}
+
 bool FMantleGltfMaterialFlattener::ChooseFixedBakeSize(const TArray<FIntPoint>& TextureSizes, const FMantleFlattenSettings& Settings, int32& OutSize)
 {
 	const int32 MaxBake = FMath::Max(1, Settings.MaxBakeSize);
@@ -4093,6 +4186,50 @@ double FMantlePlaceAssetConverter::BakedBaseColorDifference(const FMantleGlbDocu
 	return MeanPixelDifference(Pixels[0], Pixels[1]);
 }
 
+bool FMantlePlaceAssetConverter::BakedBaseColorSize(const FMantleGlbDocument& Document, FIntPoint& OutSize, bool& bOutConstant)
+{
+	using namespace MantlePlaceAssetConverterPrivate;
+	OutSize = FIntPoint::ZeroValue;
+	bOutConstant = false;
+	const TArray<TSharedPtr<FJsonValue>>* Materials = nullptr;
+	if (!Document.Json.IsValid() || !Document.Json->TryGetArrayField(TEXT("materials"), Materials) || Materials->Num() == 0 || !(*Materials)[0].IsValid())
+	{
+		return false;
+	}
+	const FTextureRef Ref = ReadTextureRef(ObjectField(ObjectField((*Materials)[0]->AsObject(), TEXT("pbrMetallicRoughness")), TEXT("baseColorTexture")));
+	if (!Ref.IsSet())
+	{
+		bOutConstant = true;
+		return false;
+	}
+	TArray<uint8> Bytes;
+	int32 Source = INDEX_NONE;
+	FString Name;
+	if (!ReadTextureImage(Document, Ref.Texture, Bytes, Source, Name) || Bytes.Num() == 0)
+	{
+		return false;
+	}
+	IImageWrapperModule& Wrappers = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
+	const EImageFormat Format = Wrappers.DetectImageFormat(Bytes.GetData(), Bytes.Num());
+	const TSharedPtr<IImageWrapper> Wrapper = Format == EImageFormat::Invalid ? nullptr : Wrappers.CreateImageWrapper(Format);
+	if (!Wrapper.IsValid() || !Wrapper->SetCompressed(Bytes.GetData(), Bytes.Num()))
+	{
+		return false;
+	}
+	OutSize = FIntPoint(static_cast<int32>(Wrapper->GetWidth()), static_cast<int32>(Wrapper->GetHeight()));
+	return OutSize.X > 0 && OutSize.Y > 0;
+}
+
+double FMantlePlaceAssetConverter::MovedCardDifference(const TArray<FColor>& Here, const TArray<FColor>& Moved)
+{
+	// The bake shrinks an image of one color to one pixel: a constant color does not move with the card (BakedBaseColorDifference).
+	if (Here.Num() != Moved.Num() && (Here.Num() == 1 || Moved.Num() == 1))
+	{
+		return 0.0;
+	}
+	return MeanPixelDifference(Here, Moved);
+}
+
 void FMantlePlaceAssetConverter::ApplyWorldTile(FMantlePlaceMaterialDocument& Doc, const FMantleBakeSurface& Surface)
 {
 	// The bake is one world tile (Surface.WorldTileCm a side): drawn by world position it repeats as the source did, where over each mesh's
@@ -4357,16 +4494,50 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 			// The analysis flags any world position in the graph; many such materials (Downtown's trim sheets, signs, brick walls) map their
 			// textures by UV and use it only for a noise mask. Bake once more with the card moved: only a bake that really changes is world-mapped.
 			// A UV-mapped one keeps the first bake, which over UVs 0 to 1 is the plain bake, and its UV mapping.
-			FMantleFlattenSettings Shifted = FlattenSettings;
-			Shifted.Surface.WorldShiftCm = Surface.WorldTileCm * WorldShiftFraction;
-			FMantleGlbDocument Moved;
-			TArray<FString> MovedMessages;
-			FString MovedError;
-			const double Difference = Flattener->Flatten(Neutral.IsValid() ? Neutral.Get() : Material, Shifted, Moved, MovedMessages, MovedError)
-				? BakedBaseColorDifference(Flattened, Moved) : 1.0;
+			// Only the base color is compared, so only it is baked, on both cards at once, at the first bake's base color size (#189: a whole
+			// second Flatten was a third of City Sample's 4 hours of material conversion).
+			const double CheckStarted = FPlatformTime::Seconds();
+			const double ShiftCm = Surface.WorldTileCm * WorldShiftFraction;
+			UMaterialInterface* Baked = Neutral.IsValid() ? Neutral.Get() : Material;
+			FIntPoint BaseColorSize;
+			bool bConstant = false;
+			double Difference = 1.0;
+			const TCHAR* How = TEXT("its base color is one color");
+			if (BakedBaseColorSize(Flattened, BaseColorSize, bConstant))
+			{
+				BaseColorSize.X = FMath::Min(BaseColorSize.X, FlattenSettings.MaxBakeSize);
+				BaseColorSize.Y = FMath::Min(BaseColorSize.Y, FlattenSettings.MaxBakeSize);
+				TArray<TArray<FColor>> Images;
+				const double Shifts[] = { 0.0, ShiftCm };
+				if (Flattener->BakeBaseColors(Baked, FlattenSettings, Shifts, BaseColorSize, Images) && Images.Num() == 2)
+				{
+					Difference = MovedCardDifference(Images[0], Images[1]);
+					How = TEXT("base color baked alone");
+				}
+				else
+				{
+					FMantleFlattenSettings Shifted = FlattenSettings;
+					Shifted.Surface.WorldShiftCm = ShiftCm;
+					FMantleGlbDocument Moved;
+					TArray<FString> MovedMessages;
+					FString MovedError;
+					Difference = Flattener->Flatten(Baked, Shifted, Moved, MovedMessages, MovedError) ? BakedBaseColorDifference(Flattened, Moved) : 1.0;
+					How = TEXT("whole second bake");
+				}
+			}
+			else if (bConstant)
+			{
+				// A constant color does not move with the card.
+				Difference = 0.0;
+			}
+			else
+			{
+				How = TEXT("its first bake's base color could not be read");
+			}
 			const bool bWorldMapped = Difference >= WorldMappedDifference;
-			UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: moving its card changed its base color by %.1f%%, so it is %s"), *Material->GetName(), 100.0 * Difference,
-				bWorldMapped ? TEXT("world-mapped: published to repeat by world position") : TEXT("mapped by UV: published on the mesh's UVs"));
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: moving its card changed its base color by %.1f%%, so it is %s (%s, %.2f s)"), *Material->GetName(), 100.0 * Difference,
+				bWorldMapped ? TEXT("world-mapped: published to repeat by world position") : TEXT("mapped by UV: published on the mesh's UVs"), How,
+				FPlatformTime::Seconds() - CheckStarted);
 			if (bWorldMapped)
 			{
 				ApplyWorldTile(Converted.Document, Surface);
