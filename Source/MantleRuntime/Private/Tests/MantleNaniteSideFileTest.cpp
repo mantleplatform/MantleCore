@@ -2748,8 +2748,11 @@ bool FMantleTextureLowFallsBackToFullTest::RunTest(const FString& Parameters)
 	Server->Assets.Add(DetailMaterial, Material);
 	FServedAsset Texture;
 	Texture.Kind = TEXT("texture");
+	// Bytes of their own (the last block of each file set), so no build another test made from MakeMtx1's files is reused here.
 	Texture.Bytes = MakeMtx1(1024);
+	Texture.Bytes.Last() = 1;
 	Texture.LowBytes = MakeMtx1(512);
+	Texture.LowBytes.Last() = 1;
 	Texture.bServeLow = false;
 	Server->Assets.Add(DetailTexture, Texture);
 
