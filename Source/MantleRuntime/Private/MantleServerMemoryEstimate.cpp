@@ -40,14 +40,19 @@ FMantleServerMemoryEstimate FMantleServerMemoryEstimate::Of(const FMantleServerM
 void FMantleServerMemoryEstimate::AddEntity(const FMantleEntity& Entity, FMantleServerMemoryCounts& OutCounts)
 {
 	++OutCounts.Entities;
-	if (const FMantleStaticMeshProps* Mesh = Entity.Props.TryGet<FMantleStaticMeshProps>())
+	// By type, not by props alone: a default entity's props are a StaticMesh's.
+	if (Entity.Type == EMantleEntityType::StaticMesh)
 	{
-		OutCounts.Solid += Mesh->Collision != EMantleCollision::None ? 1 : 0;
+		const FMantleStaticMeshProps* Mesh = Entity.Props.TryGet<FMantleStaticMeshProps>();
+		OutCounts.Solid += Mesh && Mesh->Collision != EMantleCollision::None ? 1 : 0;
 	}
-	else if (const FMantleInstancedMeshProps* Instanced = Entity.Props.TryGet<FMantleInstancedMeshProps>())
+	else if (Entity.Type == EMantleEntityType::InstancedMesh)
 	{
-		OutCounts.Instances += Instanced->Instances.Num();
-		OutCounts.Solid += Instanced->Mesh.Collision != EMantleCollision::None ? Instanced->Instances.Num() : 0;
+		if (const FMantleInstancedMeshProps* Instanced = Entity.Props.TryGet<FMantleInstancedMeshProps>())
+		{
+			OutCounts.Instances += Instanced->Instances.Num();
+			OutCounts.Solid += Instanced->Mesh.Collision != EMantleCollision::None ? Instanced->Instances.Num() : 0;
+		}
 	}
 }
 
