@@ -1734,7 +1734,7 @@ namespace MantlePlaceExporterRootSize
 				}
 				continue;
 			}
-			Parts.Add({ Field.Key, Utf8Bytes(Field.Value), bArray ? Array->Num() : 1 });
+			Parts.Add({ FString(Field.Key.ToView()), Utf8Bytes(Field.Value), bArray ? Array->Num() : 1 });
 		}
 		Parts.Sort([](const FPart& A, const FPart& B) { return A.Bytes > B.Bytes; });
 		TArray<FString> Lines;
