@@ -389,6 +389,16 @@ public:
 	 */
 	static TSharedRef<FMantlePlaceAssets> PrepareStreaming(const FMantlePlace& Root, const FMantlePlaceAssetSettings& Settings, FMantlePlaceAssetsDone OnDone);
 
+	/**
+	 * Server plan step 2: every uploaded mesh Root's manifest lists, built with collision, and nothing else (no material, sound, clip or side
+	 * file). For a dedicated server whose place is still reading its cells: the manifest lists every asset the cells use (a publish refuses a
+	 * cell that names one it does not), so the meshes are fetched and cooked while the cells load. Keep the set until the place's own set
+	 * (Prepare, once the cells are in) has completed: that set then finds each mesh built ("reused from an earlier load") instead of fetching,
+	 * reading and cooking it again. Start the place's own set only once this one has completed, or a mesh still building here is built twice.
+	 * OnDone fires once on the game thread, from a later Pump. Log marker: MANTLE_PLACE_ASSETS manifest meshes.
+	 */
+	static TSharedRef<FMantlePlaceAssets> PrepareManifestMeshes(const FMantlePlace& Root, const FMantlePlaceAssetSettings& Settings, FMantlePlaceAssetsDone OnDone);
+
 	/** This set was made by PrepareStreaming. */
 	bool IsStreaming() const { return bStreaming; }
 
@@ -828,6 +838,8 @@ private:
 	void Start(const FMantlePlace& Place);
 	/** PrepareManifestOnly's Start: the manifest's uploaded meshes and materials no entity or built vehicle uses, within the caps. */
 	void StartManifestOnly(const FMantlePlace& Place);
+	/** PrepareManifestMeshes's Start: every uploaded mesh in the manifest, with collision. */
+	void StartManifestMeshes(const FMantlePlace& Place);
 
 	/**
 	 * #149: a record for the Lumen side file of every mesh record so far whose manifest entry names one baked by this
@@ -936,8 +948,15 @@ private:
 	 * and when the file itself becomes Ready, so a file whose mesh never builds is not held.
 	 */
 	void DropNaniteFileIfUnused(const FString& NaniteRecordKey, const FBuildKey& Current);
+	/** What a set is started with: a place's entities (Prepare), its manifest-only assets (PrepareManifestOnly), or every mesh its manifest lists (PrepareManifestMeshes). */
+	enum class EStartKind : uint8
+	{
+		Place,
+		ManifestOnly,
+		ManifestMeshes,
+	};
 	static TSharedRef<FMantlePlaceAssets> PrepareWith(const FMantlePlace& Place, const FMantlePlaceAssetSettings& Settings,
-		FMantlePlaceAssetsDone OnDone, bool bManifestOnly);
+		FMantlePlaceAssetsDone OnDone, EStartKind StartKind);
 	/** GetLiveMeshState / GetLiveMaterialState across the live sets, newest first. */
 	static EMantleLiveAssetState LiveStateOf(const FString& Id, EAssetKind Kind, FString* OutError);
 	/** One record's state in this set. */

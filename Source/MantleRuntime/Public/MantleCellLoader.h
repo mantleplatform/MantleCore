@@ -37,6 +37,12 @@ struct MANTLERUNTIME_API FMantleCellLoaderSettings
 
 	/** The store, resolver and resolve attempts of Assets, which a place's own asset set also uses. */
 	static FMantleCellLoaderSettings FromAssetSettings(const FMantlePlaceAssetSettings& Assets);
+
+	/**
+	 * FromAssetSettings, then [Mantle.CellLoader] in the game ini over the in-flight limits: MaxConcurrentResolves, MaxOutstandingFetches,
+	 * MaxConcurrentDecodes and MaxPendingMB (each only when set and above 0). What a game or a server loads a place's cells with.
+	 */
+	static FMantleCellLoaderSettings ForThisProcess(const FMantlePlaceAssetSettings& Assets);
 };
 
 /** What loading a place's cells came to. */

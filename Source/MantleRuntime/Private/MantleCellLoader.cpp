@@ -6,6 +6,7 @@
 
 #include "Async/TaskGraphInterfaces.h"
 #include "HAL/PlatformProcess.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Tasks/Task.h"
 
 /** What a read task hands back: the index or one file's content, or why it could not be read. */
@@ -26,6 +27,21 @@ FMantleCellLoaderSettings FMantleCellLoaderSettings::FromAssetSettings(const FMa
 	Settings.MaxResolveAttempts = Assets.MaxResolveAttempts;
 	Settings.MaxConcurrentResolves = Assets.MaxConcurrentResolves;
 	Settings.bAutoPump = Assets.bAutoPump;
+	return Settings;
+}
+
+FMantleCellLoaderSettings FMantleCellLoaderSettings::ForThisProcess(const FMantlePlaceAssetSettings& Assets)
+{
+	FMantleCellLoaderSettings Settings = FromAssetSettings(Assets);
+	if (GConfig)
+	{
+		const TCHAR* Section = TEXT("Mantle.CellLoader");
+		int32 Int = 0;
+		if (GConfig->GetInt(Section, TEXT("MaxConcurrentResolves"), Int, GGameIni) && Int > 0) { Settings.MaxConcurrentResolves = Int; }
+		if (GConfig->GetInt(Section, TEXT("MaxOutstandingFetches"), Int, GGameIni) && Int > 0) { Settings.MaxOutstandingFetches = Int; }
+		if (GConfig->GetInt(Section, TEXT("MaxConcurrentDecodes"), Int, GGameIni) && Int > 0) { Settings.MaxConcurrentDecodes = Int; }
+		if (GConfig->GetInt(Section, TEXT("MaxPendingMB"), Int, GGameIni) && Int > 0) { Settings.MaxPendingBytes = static_cast<int64>(Int) * 1024 * 1024; }
+	}
 	return Settings;
 }
 
