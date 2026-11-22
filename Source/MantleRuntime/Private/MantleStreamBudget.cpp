@@ -1,6 +1,9 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleStreamBudget.h"
 
+#include "MantlePlaceAssets.h"
+#include "MantleRuntime.h"
+
 #include "DynamicRHI.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformMemory.h"
@@ -13,8 +16,79 @@
 #include "RHIStats.h"
 #include "Scalability.h"
 
+#if PLATFORM_WINDOWS
+#include "Windows/AllowWindowsPlatformTypes.h"
+#include <dxgi1_4.h>
+#include "Windows/HideWindowsPlatformTypes.h"
+#endif
+
 namespace MantleStreamBudgetPrivate
 {
+#if PLATFORM_WINDOWS
+	/** The card the game draws on, found once: the DXGI adapter with the RHI's vendor and device id (the largest, if there are two alike), or null when there is none. */
+	IDXGIAdapter3* FindDxgiAdapter()
+	{
+		// dxgi.dll is loaded in every D3D process; looked up by name, so this module links no DXGI library of its own.
+		HMODULE Dxgi = ::GetModuleHandleW(L"dxgi.dll");
+		using FCreateFactory = HRESULT(WINAPI*)(REFIID, void**);
+		const FCreateFactory CreateFactory = Dxgi ? reinterpret_cast<FCreateFactory>(reinterpret_cast<void*>(::GetProcAddress(Dxgi, "CreateDXGIFactory1"))) : nullptr;
+		IDXGIFactory1* Factory = nullptr;
+		if (!CreateFactory || FAILED(CreateFactory(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&Factory))) || !Factory)
+		{
+			return nullptr;
+		}
+		IDXGIAdapter3* Best = nullptr;
+		SIZE_T BestDedicated = 0;
+		IDXGIAdapter1* Adapter = nullptr;
+		for (UINT Index = 0; Factory->EnumAdapters1(Index, &Adapter) != DXGI_ERROR_NOT_FOUND; ++Index)
+		{
+			DXGI_ADAPTER_DESC1 Desc;
+			IDXGIAdapter3* Adapter3 = nullptr;
+			if (SUCCEEDED(Adapter->GetDesc1(&Desc)) && Desc.VendorId == GRHIVendorId && Desc.DeviceId == GRHIDeviceId && (!Best || Desc.DedicatedVideoMemory > BestDedicated)
+				&& SUCCEEDED(Adapter->QueryInterface(__uuidof(IDXGIAdapter3), reinterpret_cast<void**>(&Adapter3))))
+			{
+				if (Best)
+				{
+					Best->Release();
+				}
+				Best = Adapter3;
+				BestDedicated = Desc.DedicatedVideoMemory;
+			}
+			Adapter->Release();
+			Adapter = nullptr;
+		}
+		Factory->Release();
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_CELLS_BUDGET card watch: %s (%.0f MB dedicated) read through DXGI"), Best ? *GRHIAdapterName : TEXT("no matching adapter"),
+			BestDedicated / (1024.0 * 1024.0));
+		return Best;
+	}
+
+	/** What this process uses of the card and the budget Windows gives it (QueryVideoMemoryInfo, local segment, node 0); false off D3D or when DXGI cannot say. */
+	bool QueryDxgiVideoMemory(int64& OutUsedBytes, int64& OutBudgetBytes)
+	{
+		const ERHIInterfaceType Type = RHIGetInterfaceType();
+		if (Type != ERHIInterfaceType::D3D12 && Type != ERHIInterfaceType::D3D11)
+		{
+			return false;
+		}
+		// Kept for the process's life (one reference, never released: the RHI outlives every caller here).
+		static IDXGIAdapter3* const Adapter = FindDxgiAdapter();
+		DXGI_QUERY_VIDEO_MEMORY_INFO Info;
+		if (!Adapter || FAILED(Adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &Info)) || Info.Budget == 0)
+		{
+			return false;
+		}
+		OutUsedBytes = static_cast<int64>(Info.CurrentUsage);
+		OutBudgetBytes = static_cast<int64>(Info.Budget);
+		return true;
+	}
+#else
+	bool QueryDxgiVideoMemory(int64& OutUsedBytes, int64& OutBudgetBytes)
+	{
+		return false;
+	}
+#endif
+
 	/** One row of the table in BP\gates\S8-A.budgets.md: Epic is what S0-M2 and S0-M34 measured, the rest are quarter steps. */
 	struct FLevelRow
 	{
@@ -131,13 +205,57 @@ double FMantleStreamBudget::CountPressure(const FMantleBudgetLimits& Limits, con
 {
 	using namespace MantleStreamBudgetPrivate;
 	double Worst = 0.0;
-	TakeWorst(Worst, Limits.Instances, Use.Instances);
-	TakeWorst(Worst, Limits.SolidThings, Use.SolidThings);
-	TakeWorst(Worst, Limits.FarInstances, Use.FarInstances);
-	TakeWorst(Worst, Limits.NaniteRootPages, Use.NaniteRootPages);
+	// The instance and solid counts stand in for memory (their basis is RAM and video bytes each, FMantleBudgetLimits): once the memory they stand for is read, it decides.
+	// City Sample on Joshua's PC: 122,554 solid things against 117,554 took the ladder to 0.20 and cut buildings while the process used 0.60 of its memory limit.
+	if (!IsMemoryRead(Limits, Use) || !IsCardRead(Use))
+	{
+		TakeWorst(Worst, Limits.Instances, Use.Instances);
+	}
+	if (!IsMemoryRead(Limits, Use))
+	{
+		TakeWorst(Worst, Limits.SolidThings, Use.SolidThings);
+		TakeWorst(Worst, Limits.FarInstances, Use.FarInstances);
+	}
+	// The Nanite pages' per-setting limit stands in for the card too (32 KB each); once the card is read they press only against the asset set's own ceiling, past which a mesh
+	// would draw plain. The test join on High (2026-11-22): 24,134 pages against 24,075 took the ladder to 0 with the card at 0.53.
+	const int64 NaniteLimit = IsCardRead(Use) && IsLimited(Limits.NaniteRootPages) ? FMath::Max(Limits.NaniteRootPages, FMantleNaniteRootPages::BudgetPages) : Limits.NaniteRootPages;
+	TakeWorst(Worst, NaniteLimit, Use.NaniteRootPages);
 	// The textures' bytes act like a count: a build erased takes its share out at once, so it can lower the ladder at every look.
 	TakeWorst(Worst, Limits.TextureBytes, Use.TextureBytes);
 	return Worst;
+}
+
+bool FMantleStreamBudget::IsMemoryRead(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use)
+{
+	using namespace MantleStreamBudgetPrivate;
+	return (Use.ProcessMemoryBytes > 0 && IsLimited(Limits.ProcessMemoryBytes)) || (Use.ProcessMemoryShare > 0.0 && Limits.ProcessMemoryShare > 0.0);
+}
+
+bool FMantleStreamBudget::IsCardRead(const FMantleBudgetUse& Use)
+{
+	return Use.VideoUsedBytes > 0 && Use.VideoBudgetBytes > 0;
+}
+
+double FMantleStreamBudget::ProjectedMemoryPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use, const FMantleBudgetUse& Projected)
+{
+	if (!IsMemoryRead(Limits, Use))
+	{
+		return 0.0;
+	}
+	// The place's share of the memory is not known apart from the rest (the engine, avatars, the allocator's pages), so the whole is grown by the counts' largest growth:
+	// high, so the ladder rises less readily (the side that does not cycle).
+	double Growth = 1.0;
+	const auto Grow = [&Growth](const int64 Now, const int64 Then)
+	{
+		if (Now > 0 && Then > Now)
+		{
+			Growth = FMath::Max(Growth, static_cast<double>(Then) / static_cast<double>(Now));
+		}
+	};
+	Grow(Use.Instances, Projected.Instances);
+	Grow(Use.SolidThings, Projected.SolidThings);
+	Grow(Use.FarInstances, Projected.FarInstances);
+	return MemoryPressure(Limits, Use) * Growth;
 }
 
 double FMantleStreamBudget::MemoryPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use)
@@ -322,15 +440,21 @@ void FMantleStreamBudget::CurrentVideoMemory(int64& OutUsedBytes, int64& OutBudg
 	{
 		return;
 	}
-	// A copy the RHI keeps, brought up to date once a frame (D3D12: FD3D12Adapter::CollectMemoryStats): cheap on the game thread.
-	FRHIMemoryStats Stats;
-	RHIGetMemoryStats(Stats);
-	if (Stats.BudgetLocal == 0)
+	// D3D12 and D3D11 fill the copy RHIGetMemoryStats hands out only when stats are compiled in (FD3D12DynamicRHI::UpdateMemoryStats and FD3D11DynamicRHI's, under
+	// STATS || CSV_PROFILER_STATS), and neither is in a Shipping build: Joshua's Steam client read "0 of 0 MB" all session, so the pool never gave way. DXGI is asked
+	// directly instead, the same query the engine makes (UE::DXGIUtilities::GetD3DMemoryStats): what this process uses of the card and the budget Windows gives it.
+	if (!MantleStreamBudgetPrivate::QueryDxgiVideoMemory(OutUsedBytes, OutBudgetBytes))
 	{
-		return;
+		// Vulkan keeps its numbers in every build (FVulkanDynamicRHI::RHIGetMemoryStats).
+		FRHIMemoryStats Stats;
+		RHIGetMemoryStats(Stats);
+		if (Stats.BudgetLocal == 0)
+		{
+			return;
+		}
+		OutUsedBytes = static_cast<int64>(Stats.UsedLocal);
+		OutBudgetBytes = static_cast<int64>(Stats.BudgetLocal);
 	}
-	OutUsedBytes = static_cast<int64>(Stats.UsedLocal);
-	OutBudgetBytes = static_cast<int64>(Stats.BudgetLocal);
 	// -MantleBudgetVideoGB (CurrentMachine): a smaller card than this one, so its budget is no more than that.
 	const int64 Pretend = CurrentMachine().VideoBytes;
 	double PretendGB = 0.0;

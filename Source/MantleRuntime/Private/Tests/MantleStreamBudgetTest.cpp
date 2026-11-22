@@ -131,6 +131,72 @@ bool FMantleStreamBudgetPressureTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamBudgetReadMemoryDecidesTest,
+	"Mantle.Runtime.StreamBudget.ReadMemoryDecides",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamBudgetReadMemoryDecidesTest::RunTest(const FString& Parameters)
+{
+	constexpr int64 MB = 1024ll * 1024;
+	// Joshua's City Sample join (2026-11-22, Epic, 16,050 MB card, 64 GB of RAM): the limits his machine got, and what stood when the ladder fell.
+	FMantleBudgetLimits Limits = FMantleStreamBudget::LimitsFor(3, 16050.0 / 16384.0);
+	Limits.ProcessMemoryBytes = 24384 * MB;
+	TestEqual(TEXT("his solid limit is the Epic row times his card: 117,554"), Limits.SolidThings, static_cast<int64>(117554));
+	FMantleBudgetUse Use;
+	Use.Instances = 952844;
+	Use.SolidThings = 122554;
+	Use.NaniteRootPages = 23856;
+	Use.TextureBytes = 85 * MB;
+
+	// Without the memory read (as the stand-ins were meant for), the solid count presses: 1.04.
+	TestTrue(TEXT("unread memory: the solid count presses (1.04)"), FMath::IsNearlyEqual(FMantleStreamBudget::CountPressure(Limits, Use), 122554.0 / 117554.0, 1.0e-9));
+	TestFalse(TEXT("and the memory is not read"), FMantleStreamBudget::IsMemoryRead(Limits, Use));
+
+	// His process: 14,900 of 24,384 MB (0.61). The solid count no longer presses; the instances still do while the card is unread (0.88), and the Nanite pages count (0.66).
+	Use.ProcessMemoryBytes = 14900 * MB;
+	TestTrue(TEXT("memory read"), FMantleStreamBudget::IsMemoryRead(Limits, Use));
+	TestTrue(TEXT("read memory: the solid count is out, the instances (0.88) are the highest"),
+		FMath::IsNearlyEqual(FMantleStreamBudget::CountPressure(Limits, Use), 952844.0 / static_cast<double>(Limits.Instances), 1.0e-9));
+	TestTrue(TEXT("the whole pressure is under 1: nothing is let go"), FMantleStreamBudget::Pressure(Limits, Use) < 1.0);
+
+	// The card read too (as the DXGI read gives it in Shipping): the instances are out as well, and the Nanite pages are the highest count.
+	Use.VideoUsedBytes = 11000 * MB;
+	Use.VideoBudgetBytes = 15000 * MB;
+	TestTrue(TEXT("card read"), FMantleStreamBudget::IsCardRead(Use));
+	TestTrue(TEXT("read memory and card: the Nanite pages are the highest count, against the asset set's own ceiling (0.65)"),
+		FMath::IsNearlyEqual(FMantleStreamBudget::CountPressure(Limits, Use), 23856.0 / static_cast<double>(FMantleNaniteRootPages::BudgetPages), 1.0e-9));
+
+	// The test join on High (2026-11-22): 24,134 pages against High's 24,075 took the ladder to 0 while the card was at 0.53. With the card read they press only against
+	// the ceiling where a mesh would draw plain; unread, the per-setting limit still stands.
+	FMantleBudgetLimits High = FMantleStreamBudget::LimitsFor(2, 16050.0 / 16384.0);
+	High.ProcessMemoryBytes = 24384 * MB;
+	FMantleBudgetUse HighUse = Use;
+	HighUse.NaniteRootPages = 24134;
+	TestEqual(TEXT("High's Nanite limit on his card: 24,075"), High.NaniteRootPages, static_cast<int64>(24075));
+	TestTrue(TEXT("card read: 24,134 pages are 0.65 of the ceiling"), FMath::IsNearlyEqual(FMantleStreamBudget::CountPressure(High, HighUse), 24134.0 / static_cast<double>(FMantleNaniteRootPages::BudgetPages), 1.0e-9));
+	HighUse.VideoUsedBytes = 0;
+	HighUse.Instances = 0;
+	TestTrue(TEXT("card unread: High's own limit presses (1.0025)"), FMantleStreamBudget::CountPressure(High, HighUse) > 1.0);
+
+	// Memory over its limit still lowers the ladder, through MemoryPressure.
+	Use.ProcessMemoryBytes = 26000 * MB;
+	TestTrue(TEXT("memory over its cap presses"), FMantleStreamBudget::Pressure(Limits, Use) > 1.0);
+
+	// Rising: the memory is grown by the counts' largest growth. 0.61 with 10% more solid things is 0.67; with twice as many instances, 1.22 (too much to rise).
+	Use.ProcessMemoryBytes = 14900 * MB;
+	FMantleBudgetUse Projected = Use;
+	Projected.SolidThings = Use.SolidThings + Use.SolidThings / 10;
+	const double Memory = FMantleStreamBudget::MemoryPressure(Limits, Use);
+	TestTrue(TEXT("10% more solid things: memory grown by 1.1"), FMath::IsNearlyEqual(FMantleStreamBudget::ProjectedMemoryPressure(Limits, Use, Projected), Memory * (static_cast<double>(Projected.SolidThings) / Use.SolidThings), 1.0e-9));
+	Projected.Instances = Use.Instances * 2;
+	TestTrue(TEXT("twice the instances: memory doubled, over 1"), FMantleStreamBudget::ProjectedMemoryPressure(Limits, Use, Projected) > 1.0);
+	FMantleBudgetUse Unread = Use;
+	Unread.ProcessMemoryBytes = 0;
+	TestEqual(TEXT("unread memory projects nothing (the counts decide)"), FMantleStreamBudget::ProjectedMemoryPressure(Limits, Unread, Projected), 0.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleStreamBudgetLadderTest,
 	"Mantle.Runtime.StreamBudget.Ladder",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

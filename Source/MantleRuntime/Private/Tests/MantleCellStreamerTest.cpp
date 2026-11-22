@@ -2001,6 +2001,64 @@ bool FMantleCellStreamerBudgetLoadsLessFarTest::RunTest(const FString& Parameter
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerBudgetFollowsReadMemoryTest,
+	"Mantle.Runtime.CellStream.Streamer.BudgetFollowsReadMemory",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerBudgetFollowsReadMemoryTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// BudgetLoadsLessFar's place (1,250 instances against 800), but the memory and the card the instances stand in for are read, and they are fine: nothing is let go.
+	// City Sample's buildings went missing this way (122,554 solid things against 117,554, memory at 0.61). Then the memory itself goes over, and the ladder falls.
+	constexpr int64 GB = 1024ll * 1024 * 1024;
+	TSharedRef<int64> MemoryBytes = MakeShared<int64>(5 * GB);
+	FFixture Fixture;
+	Fixture.View = FVector(22000.0, 100.0, 100.0);
+	FMantleCellStreamSettings Settings = SteadySettings();
+	Settings.BudgetTuning.MinReachCm = 3000.0;
+	Settings.BudgetTuning.MemoryLowerEverySeconds = 0.5;
+	Settings.BudgetLimits = []()
+	{
+		FMantleBudgetLimits Limits;
+		Limits.Instances = 800;
+		Limits.SolidThings = 1;
+		Limits.ProcessMemoryBytes = 10 * GB;
+		return Limits;
+	};
+	Settings.BudgetMemoryBytes = [MemoryBytes]() { return *MemoryBytes; };
+	Settings.BudgetVideoMemory = [](int64& OutUsedBytes, int64& OutBudgetBytes)
+	{
+		OutUsedBytes = 4 * GB;
+		OutBudgetBytes = 16 * GB;
+	};
+	Fixture.StartStreamer(Settings);
+	if (!TestTrue(TEXT("the join settles"), Fixture.Settle()))
+	{
+		return false;
+	}
+	for (int32 Tick = 0; Tick < 600; ++Tick)
+	{
+		Fixture.Tick();
+	}
+	Fixture.Settle();
+	{
+		const FMantleCellStreamStats& Stats = Fixture.Streamer->GetStats();
+		TestTrue(TEXT("the counts were over (1,250 of 800) but read memory (0.5) decides: the ladder stays at the top"), FMath::IsNearlyEqual(Stats.BudgetLowestLadder, 1.0, 1.0e-6));
+		TestTrue(TEXT("the pressure seen is the memory's and the card's (0.5 at most)"), Stats.BudgetWorstPressure <= 0.5 + 1.0e-6);
+		TestTrue(TEXT("all five cells stand"), Fixture.Built(1) && Fixture.Built(2) && Fixture.Built(3) && Fixture.Built(4) && Fixture.Built(5));
+	}
+
+	// The process's memory goes over its cap: the memory itself lowers the ladder.
+	*MemoryBytes = 12 * GB;
+	for (int32 Tick = 0; Tick < 600; ++Tick)
+	{
+		Fixture.Tick();
+	}
+	TestTrue(TEXT("memory over its cap brings the ladder down"), Fixture.Streamer->GetStats().BudgetLowestLadder < 1.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleCellStreamerBudgetDoesNotCycleTest,
 	"Mantle.Runtime.CellStream.Streamer.BudgetDoesNotRebuildACellThatDoesNotFit",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
