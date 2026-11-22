@@ -1136,6 +1136,21 @@ bool FMantleCellStreamerJoinWaitsForWholeViewTest::RunTest(const FString& Parame
 	}
 	TestTrue(TEXT("cell 2 stands"), Fixture.Built(2));
 	TestTrue(TEXT("the join's hold began and ended once"), Fixture.HoldCalls.Num() == 2 && Fixture.HoldCalls[0] && !Fixture.HoldCalls[1]);
+	TestFalse(TEXT("nothing more to hold for here"), Fixture.Streamer->NeedsJoinHold());
+
+	// The server's character arrives 49 m from the spot the join was built for: less than a teleport, so nothing holds by itself, but cell 3 (192 m, 142 m from there) is in its
+	// first view. The owner (UMantleCellStreamSubsystem::TickTerrainHold) asks, and begins the join's hold again.
+	Fixture.View = FVector(5000.0, 100.0, 100.0);
+	Fixture.Tick();
+	TestFalse(TEXT("49 m is no teleport: nothing holds"), Fixture.Streamer->IsHolding());
+	TestTrue(TEXT("but the join's view there does not stand"), Fixture.Streamer->NeedsJoinHold());
+	Fixture.Streamer->BeginHold(TEXT("join"));
+	if (!TestTrue(TEXT("the join settles at the character"), Fixture.Settle()))
+	{
+		return false;
+	}
+	TestTrue(TEXT("cell 3 stands"), Fixture.Built(3));
+	TestFalse(TEXT("and nothing more is needed"), Fixture.Streamer->NeedsJoinHold());
 
 	// The owner's join goes on. A teleport to x = 700 m wants cells 8 (512 to 576 m, 124 m off) to 11, and waits only for 9 to 11, the ones within 100 m: cell 8's slow download
 	// does not hold the player, who can see the world.

@@ -248,6 +248,15 @@ public:
 	/** How far from the view the hold waits for cells now: JoinHoldRadiusCm while the join is pending, else HoldRadiusCm. */
 	double HoldRadiusNow() const { return bJoinPending ? Settings.JoinHoldRadiusCm : Settings.HoldRadiusCm; }
 
+	/** What a hold waits for stands now: every cell for a streamer that keeps every cell, else the area HoldRadiusNow round the view. */
+	bool IsHoldAreaBuilt() const;
+
+	/**
+	 * The join is pending, nothing holds, and the area round the view does not stand: the view moved after the join's hold ended (the server's character arrived less than a
+	 * teleport from the spot the join was built for). The owner begins the join's hold again. False once a join hold has given up (nothing arriving), so it is not begun over and over.
+	 */
+	bool NeedsJoinHold() const { return bJoinPending && !bJoinHoldGaveUp && !bHolding && bIndexReady && !bStopped && !IsHoldAreaBuilt(); }
+
 	/**
 	 * Every cell that has a point within RadiusCm of Point and wants to be built from there (Point is within its drawDistance of it) stands, or can
 	 * never be read. False until the index has been read.
@@ -539,6 +548,8 @@ private:
 	bool bHolding = false;
 	/** The join has not gone on yet (see NoteJoinDone): holds wait for the whole first view. */
 	bool bJoinPending = true;
+	/** A hold gave up (nothing arriving) while the join was pending: NeedsJoinHold does not ask for another. */
+	bool bJoinHoldGaveUp = false;
 	/** The own-ground hold timed out with its cells still not standing: no new one starts until they do (a cell stuck on its assets must not freeze the player again every minute). */
 	bool bOwnGroundGaveUp = false;
 	/** Progress (SampleProgress), on the platform clock: the last time anything moved, and the last time the place's downloads did; the marks they were last seen at. */

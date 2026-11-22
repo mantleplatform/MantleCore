@@ -1027,7 +1027,7 @@ void FMantleCellStreamer::CheckHold()
 		return;
 	}
 	const double Now = FPlatformTime::Seconds();
-	if (Settings.bKeepEveryCell ? IsEverythingBuilt() : IsAreaBuilt(View.Location, HoldRadiusNow()))
+	if (IsHoldAreaBuilt())
 	{
 		SetHolding(false, TEXT("built"));
 	}
@@ -1037,8 +1037,14 @@ void FMantleCellStreamer::CheckHold()
 		UE_LOG(LogMantle, Warning, TEXT("MANTLE_CELLS_HOLD gave up after %.0f s: nothing arrived for %.0f s with the area not built (%d of %d cells stand, %d pending): the player is let go"),
 			Now - HoldStartSeconds, Now - FMath::Max(HoldStartSeconds, LastProgressSeconds), Area.Done, Area.Cells, PendingCells.Num());
 		bOwnGroundGaveUp = bOwnGroundGaveUp || HoldReason == TEXT("ground");
+		bJoinHoldGaveUp = bJoinHoldGaveUp || bJoinPending;
 		SetHolding(false, TEXT("timeout"));
 	}
+}
+
+bool FMantleCellStreamer::IsHoldAreaBuilt() const
+{
+	return Settings.bKeepEveryCell ? IsEverythingBuilt() : IsAreaBuilt(View.Location, HoldRadiusNow());
 }
 
 void FMantleCellStreamer::SampleProgress(const double DeltaSeconds)
