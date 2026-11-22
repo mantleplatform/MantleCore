@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "MantlePublisher.h"
 
+class AActor;
 class UWorld;
 
 /**
@@ -51,4 +52,17 @@ struct MANTLEEDITOR_API FMantleHeadlessPublish
 
 	/** Parses the arguments, publishes World (the editor world when null) and logs every line; returns the result. */
 	static FMantlePublishResult Run(UWorld* World, const TArray<FString>& Args);
+
+	/**
+	 * The actors whose components Mantle.PublishAsync unregisters before conversion: every actor of World except those the
+	 * publish still reads through their registered components (KeepsComponentsRegistered).
+	 */
+	static TArray<TWeakObjectPtr<AActor>> ActorsToUnregister(UWorld* World);
+
+	/**
+	 * An actor whose components stay registered through Mantle.PublishAsync: a landscape (its heightfield is read through its
+	 * ULandscapeInfo, which forgets an unregistered component), a landscape edit-layer brush and a Water Body (both drawn into the
+	 * landscape when its carved layers are brought up to date).
+	 */
+	static bool KeepsComponentsRegistered(const AActor* Actor);
 };
