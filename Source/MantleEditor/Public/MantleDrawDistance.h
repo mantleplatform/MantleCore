@@ -43,9 +43,23 @@ struct MANTLEEDITOR_API FMantleDrawDistanceSource
  */
 struct MANTLEEDITOR_API FMantleStructurePiece
 {
-	/** The owner: an index into the owners' bands. */
+	/** The owner (the outermost actor), as a number. */
 	int32 Owner = INDEX_NONE;
 	FBox Bounds = FBox(ForceInit);
+};
+
+/** One mesh component the structure rule may give a distance (FMantleDrawDistance::PlanStructures). */
+struct MANTLEEDITOR_API FMantleStructureMember
+{
+	/** The owner (the outermost actor), as a number. */
+	int32 Owner = INDEX_NONE;
+	/** Its own size band's distance, cm. */
+	double Band = 0.0;
+	/** Its mesh's bounding sphere radius and height at the scale it is placed (the largest instance's, for instances), cm. */
+	double Radius = 0.0;
+	double Height = 0.0;
+	/** The world height of its lowest point, cm. */
+	double Bottom = 0.0;
 };
 
 /**
@@ -86,16 +100,21 @@ struct MANTLEEDITOR_API FMantleDrawDistance
 	 * under 600 m walls and 2.5 km roofs, freeway decks at 2.5 km on 250 m supports). A structure is an owner (the outermost actor of
 	 * its pieces) and every owner that holds it up: a piece of one reaching up to the underside of a raised piece of the other
 	 * (StructureLiftCm or more above the lower piece's bottom, within StructureReachCm of its top) where their footprints overlap.
-	 * Ground holds nothing up (it never reaches a raised piece's underside), so roads keep their own distance.
 	 *
-	 * OwnerMinBand and OwnerMaxBand are the smallest and largest size-band distances among an owner's pieces that take one (0: the
-	 * owner takes no part: every piece sets its own cull distance or is never culled). Links are the pieces that may hold another up
-	 * or be held: the ones of at least LinkMinRadius (cm), so small props never join two structures. Out gets each owner's distance:
-	 * a structure whose pieces all share one band keeps it; one that mixes bands draws to its largest, at most StructureCapCm, past
-	 * which the client's far sets draw its twin whole.
+	 * Members are the components that take a size band. Links are the pieces that may hold another up or be held: the ones of at least
+	 * LinkMinRadius (cm), so small props never join two structures.
+	 *
+	 * Only a structure with something raised (a big piece StructureLiftCm or more above the structure's bottom) is drawn as one, and in it
+	 * only the pieces that could hang in the air: big ones (LinkMinRadius) that are tall (StructureTallCm) or raised. Small props and flat
+	 * ground (sidewalks, curbs, road tiles) keep their own band: nothing rests on them, so nothing floats when they cull. Those pieces draw to
+	 * the largest of their bands; when the bands differ, at most StructureCapCm, past which the client's far sets draw the structure's twin.
+	 * OutMemberDistance gets each member's distance; OutMemberStructure, if given, a number per structure.
 	 */
-	static void PlanStructures(TConstArrayView<double> OwnerMinBand, TConstArrayView<double> OwnerMaxBand, TConstArrayView<FMantleStructurePiece> Links,
-		TArray<double>& OutOwnerDistance, TArray<int32>* OutOwnerStructure = nullptr);
+	static void PlanStructures(TConstArrayView<FMantleStructureMember> Members, TConstArrayView<FMantleStructurePiece> Links,
+		TArray<double>& OutMemberDistance, TArray<int32>* OutMemberStructure = nullptr);
+
+	/** A big piece at least this high is tall: it can hold another up. */
+	static constexpr double StructureTallCm = 200.0;
 
 	/** A mixed structure's distance cap, cm: 600 m (Joshua, 2026-11-22: "B: 600 m + far"). */
 	static constexpr double StructureCapCm = 60000.0;

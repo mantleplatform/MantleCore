@@ -201,11 +201,24 @@ FMantleDrawDistanceSource FMantleDrawDistance::ReadComponent(const UStaticMeshCo
 	return Source;
 }
 
-void FMantleDrawDistance::PlanStructures(TConstArrayView<double> OwnerMinBand, TConstArrayView<double> OwnerMaxBand, TConstArrayView<FMantleStructurePiece> Links,
-	TArray<double>& OutOwnerDistance, TArray<int32>* OutOwnerStructure)
+void FMantleDrawDistance::PlanStructures(TConstArrayView<FMantleStructureMember> Members, TConstArrayView<FMantleStructurePiece> Links,
+	TArray<double>& OutMemberDistance, TArray<int32>* OutMemberStructure)
 {
 	using namespace MantleDrawDistancePrivate;
-	const int32 Owners = FMath::Min(OwnerMinBand.Num(), OwnerMaxBand.Num());
+	int32 Owners = 0;
+	for (const FMantleStructureMember& Member : Members)
+	{
+		Owners = FMath::Max(Owners, Member.Owner + 1);
+	}
+	TArray<bool> HasMember;
+	HasMember.Init(false, Owners);
+	for (const FMantleStructureMember& Member : Members)
+	{
+		if (Member.Owner >= 0 && Member.Band > 0.0)
+		{
+			HasMember[Member.Owner] = true;
+		}
+	}
 	TArray<int32> Parent;
 	Parent.SetNumUninitialized(Owners);
 	for (int32 Index = 0; Index < Owners; ++Index)
@@ -218,7 +231,7 @@ void FMantleDrawDistance::PlanStructures(TConstArrayView<double> OwnerMinBand, T
 	TMap<FIntVector, FBox> PerCellOwner;
 	for (const FMantleStructurePiece& Piece : Links)
 	{
-		if (!Piece.Bounds.IsValid || Piece.Owner < 0 || Piece.Owner >= Owners || OwnerMaxBand[Piece.Owner] <= 0.0)
+		if (!Piece.Bounds.IsValid || Piece.Owner < 0 || Piece.Owner >= Owners || !HasMember[Piece.Owner])
 		{
 			continue;
 		}
@@ -261,38 +274,66 @@ void FMantleDrawDistance::PlanStructures(TConstArrayView<double> OwnerMinBand, T
 		}
 	}
 
-	// Each structure's bands, then each owner's distance.
+	// Each structure's bottom; whether a big piece of it is raised over that; which pieces take its distance (big, and tall or raised);
+	// their bands; then each member's distance.
+	auto RootOf = [&Parent, Owners](const FMantleStructureMember& Member)
+	{
+		return Member.Owner >= 0 && Member.Owner < Owners ? FindRoot(Parent, Member.Owner) : INDEX_NONE;
+	};
+	TArray<double> Bottom;
+	Bottom.Init(TNumericLimits<double>::Max(), Owners);
+	for (const FMantleStructureMember& Member : Members)
+	{
+		const int32 Root = RootOf(Member);
+		if (Root != INDEX_NONE && Member.Band > 0.0)
+		{
+			Bottom[Root] = FMath::Min(Bottom[Root], Member.Bottom);
+		}
+	}
+	auto IsBig = [](const FMantleStructureMember& Member) { return Member.Band > 0.0 && Member.Radius >= LinkMinRadius; };
+	TArray<bool> HasRaised;
+	HasRaised.Init(false, Owners);
+	for (const FMantleStructureMember& Member : Members)
+	{
+		const int32 Root = RootOf(Member);
+		if (Root != INDEX_NONE && IsBig(Member) && Member.Bottom >= Bottom[Root] + StructureLiftCm)
+		{
+			HasRaised[Root] = true;
+		}
+	}
+	TArray<bool> Takes;
+	Takes.Init(false, Members.Num());
 	TArray<double> StructureMin;
 	TArray<double> StructureMax;
 	StructureMin.Init(0.0, Owners);
 	StructureMax.Init(0.0, Owners);
-	for (int32 Index = 0; Index < Owners; ++Index)
+	for (int32 Index = 0; Index < Members.Num(); ++Index)
 	{
-		if (OwnerMaxBand[Index] <= 0.0)
+		const FMantleStructureMember& Member = Members[Index];
+		const int32 Root = RootOf(Member);
+		if (Root == INDEX_NONE || !HasRaised[Root] || !IsBig(Member)
+			|| (Member.Height < StructureTallCm && Member.Bottom < Bottom[Root] + StructureLiftCm))
 		{
 			continue;
 		}
-		const int32 Root = FindRoot(Parent, Index);
-		StructureMin[Root] = StructureMin[Root] > 0.0 ? FMath::Min(StructureMin[Root], OwnerMinBand[Index]) : OwnerMinBand[Index];
-		StructureMax[Root] = FMath::Max(StructureMax[Root], OwnerMaxBand[Index]);
+		Takes[Index] = true;
+		StructureMin[Root] = StructureMin[Root] > 0.0 ? FMath::Min(StructureMin[Root], Member.Band) : Member.Band;
+		StructureMax[Root] = FMath::Max(StructureMax[Root], Member.Band);
 	}
-	OutOwnerDistance.Init(0.0, Owners);
-	for (int32 Index = 0; Index < Owners; ++Index)
+	OutMemberDistance.SetNumUninitialized(Members.Num());
+	for (int32 Index = 0; Index < Members.Num(); ++Index)
 	{
-		if (OwnerMaxBand[Index] <= 0.0)
-		{
-			continue;
-		}
-		const int32 Root = FindRoot(Parent, Index);
-		const bool bMixed = StructureMin[Root] < StructureMax[Root];
-		OutOwnerDistance[Index] = bMixed ? FMath::Min(StructureMax[Root], StructureCapCm) : StructureMax[Root];
+		const FMantleStructureMember& Member = Members[Index];
+		const int32 Root = RootOf(Member);
+		const bool bMixed = Takes[Index] && StructureMin[Root] < StructureMax[Root];
+		OutMemberDistance[Index] = !Takes[Index] ? Member.Band : bMixed ? FMath::Min(StructureMax[Root], StructureCapCm) : StructureMax[Root];
 	}
-	if (OutOwnerStructure)
+	if (OutMemberStructure)
 	{
-		OutOwnerStructure->SetNumUninitialized(Owners);
-		for (int32 Index = 0; Index < Owners; ++Index)
+		OutMemberStructure->SetNumUninitialized(Members.Num());
+		for (int32 Index = 0; Index < Members.Num(); ++Index)
 		{
-			(*OutOwnerStructure)[Index] = FindRoot(Parent, Index);
+			(*OutMemberStructure)[Index] = RootOf(Members[Index]);
 		}
 	}
 }
@@ -310,8 +351,8 @@ namespace MantleDrawDistancePrivate
 			double Band = 0.0;
 		};
 		TArray<FMember> Members;
-		TArray<double> MinBand;
-		TArray<double> MaxBand;
+		TArray<FMantleStructureMember> StructureMembers;
+		int32 Owners = 0;
 		TArray<double> Distances;
 		TArray<int32> Structures;
 		int32 LinkPieces = 0;
@@ -359,16 +400,19 @@ namespace MantleDrawDistancePrivate
 				int32& Index = OwnerIndex.FindOrAdd(Outer, INDEX_NONE);
 				if (Index == INDEX_NONE)
 				{
-					Index = Plan.MinBand.Add(Band);
-					Plan.MaxBand.Add(Band);
-				}
-				else
-				{
-					Plan.MinBand[Index] = FMath::Min(Plan.MinBand[Index], Band);
-					Plan.MaxBand[Index] = FMath::Max(Plan.MaxBand[Index], Band);
+					Index = Plan.Owners++;
 				}
 				const UInstancedStaticMeshComponent* Instanced = Cast<UInstancedStaticMeshComponent>(Component);
 				Plan.Members.Add(FStructurePlan::FMember{ Component, Index, Instanced ? Instanced->GetInstanceCount() : 1, Band });
+				// Its height at the scale its radius was measured at (the largest instance's), and its lowest point in the world.
+				const FBoxSphereBounds MeshBounds = Mesh->GetBounds();
+				const double Scale = MeshBounds.SphereRadius > 0.0 ? Source.SphereRadius / MeshBounds.SphereRadius : 1.0;
+				FMantleStructureMember& Member = Plan.StructureMembers.AddDefaulted_GetRef();
+				Member.Owner = Index;
+				Member.Band = Band;
+				Member.Radius = Source.SphereRadius;
+				Member.Height = MeshBounds.BoxExtent.Z * 2.0 * Scale;
+				Member.Bottom = Component->CalcBounds(Component->GetComponentTransform()).GetBox().Min.Z;
 				if (Source.SphereRadius < FMantleDrawDistance::LinkMinRadius)
 				{
 					continue;
@@ -393,7 +437,7 @@ namespace MantleDrawDistancePrivate
 			}
 		}
 		Plan.LinkPieces = Links.Num();
-		FMantleDrawDistance::PlanStructures(Plan.MinBand, Plan.MaxBand, Links, Plan.Distances, &Plan.Structures);
+		FMantleDrawDistance::PlanStructures(Plan.StructureMembers, Links, Plan.Distances, &Plan.Structures);
 		return Plan;
 	}
 
@@ -418,16 +462,13 @@ void FMantleDrawDistance::BuildStructureDistances(const UWorld* World, TMap<cons
 	Out.Reset();
 	const FStructurePlan Plan = PlanWorld(World);
 	int32 Changed = 0;
-	for (int32 Index = 0; Index < Plan.Distances.Num(); ++Index)
+	for (int32 Index = 0; Index < Plan.Members.Num(); ++Index)
 	{
-		Changed += Plan.Distances[Index] != Plan.MaxBand[Index] || Plan.Distances[Index] != Plan.MinBand[Index] ? 1 : 0;
+		Out.Add(Plan.Members[Index].Component, Plan.Distances[Index]);
+		Changed += Plan.Distances[Index] != Plan.Members[Index].Band ? 1 : 0;
 	}
-	for (const FStructurePlan::FMember& Member : Plan.Members)
-	{
-		Out.Add(Member.Component, Plan.Distances[Member.Owner]);
-	}
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_STRUCTURE_DISTANCES owners %d, components %d, link pieces %d, owners whose pieces now draw to another distance %d"),
-		Plan.MinBand.Num(), Plan.Members.Num(), Plan.LinkPieces, Changed);
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_STRUCTURE_DISTANCES owners %d, components %d, link pieces %d, components that now draw to another distance %d"),
+		Plan.Owners, Plan.Members.Num(), Plan.LinkPieces, Changed);
 }
 
 void FMantleDrawDistance::LogStructureBands(const UWorld* World)
@@ -438,11 +479,19 @@ void FMantleDrawDistance::LogStructureBands(const UWorld* World)
 	TMap<int32, int64> After;
 	TMap<int32, int64> StructurePieces;
 	TMap<int32, TSet<int32>> StructureOwners;
-	for (const FStructurePlan::FMember& Member : Plan.Members)
+	TMap<int32, double> StructureDistance;
+	for (int32 Index = 0; Index < Plan.Members.Num(); ++Index)
 	{
+		const FStructurePlan::FMember& Member = Plan.Members[Index];
 		Before.FindOrAdd(FMath::RoundToInt32(Member.Band)) += Member.Pieces;
-		After.FindOrAdd(FMath::RoundToInt32(Plan.Distances[Member.Owner])) += Member.Pieces;
-		const int32 Structure = Plan.Structures[Member.Owner];
+		After.FindOrAdd(FMath::RoundToInt32(Plan.Distances[Index])) += Member.Pieces;
+		// A structure is measured by the pieces it moved to another distance.
+		if (Plan.Distances[Index] == Member.Band)
+		{
+			continue;
+		}
+		const int32 Structure = Plan.Structures[Index];
+		StructureDistance.FindOrAdd(Structure) = Plan.Distances[Index];
 		StructurePieces.FindOrAdd(Structure) += Member.Pieces;
 		StructureOwners.FindOrAdd(Structure).Add(Member.Owner);
 	}
@@ -454,9 +503,9 @@ void FMantleDrawDistance::LogStructureBands(const UWorld* World)
 			Largest = Pair.Key;
 		}
 	}
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_STRUCTURE_BANDS before %s | after %s | structures %d, largest %d owners %lld pieces (distance %.0f m)"),
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_STRUCTURE_BANDS before %s | after %s | structures that moved pieces %d, largest %d owners %lld pieces moved (to %.0f m)"),
 		*BandLine(Before), *BandLine(After), StructurePieces.Num(), Largest != INDEX_NONE ? StructureOwners[Largest].Num() : 0,
-		Largest != INDEX_NONE ? StructurePieces[Largest] : 0ll, Largest != INDEX_NONE ? Plan.Distances[Largest] / 100.0 : 0.0);
+		Largest != INDEX_NONE ? StructurePieces[Largest] : 0ll, Largest != INDEX_NONE ? StructureDistance[Largest] / 100.0 : 0.0);
 }
 
 namespace MantleDrawDistancePrivate

@@ -309,26 +309,34 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleDrawDistanceStructuresTest::RunTest(const FString& Parameters)
 {
 	// City Sample's floating pieces (2026-11-22): a building's walls at 250 and 600 m under a roof at 2.5 km, a freeway deck at 2.5 km on
-	// supports at 250 m. Each structure draws to its largest band, at most 600 m; the ground under them keeps its own 2.5 km.
-	enum EOwner : int32 { Walls, Roof, Deck, Supports, Ground, Lamps, OtherBuilding, Tower, Clutter, Count };
-	TArray<double> MinBand;
-	TArray<double> MaxBand;
-	MinBand.Init(0.0, Count);
-	MaxBand.Init(0.0, Count);
-	auto Bands = [&MinBand, &MaxBand](const int32 Owner, const double Min, const double Max)
+	// supports at 250 m. The pieces that could hang in the air draw to their structure's largest band, at most 600 m; small props and flat
+	// ground keep their own (the ground's road tiles their 2.5 km).
+	enum EOwner : int32 { Walls, Roof, Deck, Supports, Ground, Park, OtherBuilding, Tower };
+	TArray<FMantleStructureMember> Members;
+	auto Member = [&Members](const int32 Owner, const double Band, const double Radius, const double Height, const double Bottom)
 	{
-		MinBand[Owner] = Min;
-		MaxBand[Owner] = Max;
+		FMantleStructureMember& Added = Members.AddDefaulted_GetRef();
+		Added.Owner = Owner;
+		Added.Band = Band;
+		Added.Radius = Radius;
+		Added.Height = Height;
+		Added.Bottom = Bottom;
+		return Members.Num() - 1;
 	};
-	Bands(Walls, 25000.0, 60000.0);
-	Bands(Roof, 250000.0, 250000.0);
-	Bands(Deck, 250000.0, 250000.0);
-	Bands(Supports, 25000.0, 25000.0);
-	Bands(Ground, 250000.0, 250000.0);
-	Bands(Lamps, 12000.0, 12000.0);
-	Bands(OtherBuilding, 25000.0, 25000.0);
-	Bands(Tower, 60000.0, 60000.0);
-	Bands(Clutter, 0.0, 0.0);
+	const int32 GroundFloor = Member(Walls, 25000.0, 150.0, 300.0, 0.0);
+	const int32 UpperFloors = Member(Walls, 60000.0, 400.0, 300.0, 300.0);
+	const int32 Decal = Member(Walls, 6000.0, 20.0, 50.0, 100.0);
+	const int32 RoofSlab = Member(Roof, 250000.0, 1500.0, 100.0, 3000.0);
+	const int32 DeckSlab = Member(Deck, 250000.0, 3000.0, 100.0, 800.0);
+	const int32 Support = Member(Supports, 25000.0, 400.0, 800.0, 0.0);
+	const int32 RoadTile = Member(Ground, 250000.0, 2000.0, 70.0, -50.0);
+	const int32 Sidewalk = Member(Ground, 25000.0, 200.0, 30.0, 0.0);
+	const int32 Lamp = Member(Ground, 12000.0, 80.0, 600.0, 0.0);
+	const int32 SmallTree = Member(Park, 25000.0, 300.0, 900.0, 0.0);
+	const int32 BigTree = Member(Park, 60000.0, 600.0, 1500.0, 0.0);
+	const int32 Shop = Member(OtherBuilding, 25000.0, 900.0, 2500.0, 0.0);
+	const int32 TowerBase = Member(Tower, 60000.0, 800.0, 3000.0, 0.0);
+	const int32 TowerTop = Member(Tower, 60000.0, 800.0, 3000.0, 3000.0);
 
 	auto Box = [](const double X0, const double Y0, const double Z0, const double X1, const double Y1, const double Z1)
 	{
@@ -344,33 +352,33 @@ bool FMantleDrawDistanceStructuresTest::RunTest(const FString& Parameters)
 	Links.Add({ Supports, Box(15000, 900, 0, 15200, 1100, 800) });
 	// The ground under all of it: it reaches no raised piece's underside.
 	Links.Add({ Ground, Box(-2000, -2000, -50, 20000, 4000, 20) });
-	// Lamps are small: they never come in as links, so they join nothing (here: none listed, though they stand under the deck).
+	// A park of trees, 10 to 15 m tall, with nothing on them.
+	Links.Add({ Park, Box(40000, 0, 0, 44000, 4000, 1500) });
 	// Another building beside the first, touching it, with nothing raised over it.
 	Links.Add({ OtherBuilding, Box(2000, 0, 0, 4000, 2000, 2500) });
 	// A tower whose pieces all share one band.
-	Links.Add({ Tower, Box(30000, 0, 0, 32000, 2000, 10000) });
-	// An owner whose every piece sets its own distance takes no part, even listed.
-	Links.Add({ Clutter, Box(0, 0, 3000, 2000, 2000, 3200) });
+	Links.Add({ Tower, Box(30000, 0, 0, 32000, 2000, 6000) });
 
 	TArray<double> Distances;
-	FMantleDrawDistance::PlanStructures(MinBand, MaxBand, Links, Distances);
-	TestEqual(TEXT("one distance per owner"), Distances.Num(), static_cast<int32>(Count));
-	TestEqual(TEXT("the walls draw to 600 m, the structure's largest band capped"), Distances[Walls], 60000.0);
-	TestEqual(TEXT("and the roof on them comes down to 600 m with them"), Distances[Roof], 60000.0);
-	TestEqual(TEXT("the deck comes down to 600 m"), Distances[Deck], 60000.0);
-	TestEqual(TEXT("and its supports go up to 600 m with it"), Distances[Supports], 60000.0);
-	TestEqual(TEXT("the ground keeps its 2.5 km"), Distances[Ground], 250000.0);
-	TestEqual(TEXT("the lamps keep theirs"), Distances[Lamps], 12000.0);
-	TestEqual(TEXT("the building beside, holding nothing up, keeps its 250 m"), Distances[OtherBuilding], 25000.0);
-	TestEqual(TEXT("a structure of one band keeps it"), Distances[Tower], 60000.0);
-	TestEqual(TEXT("an owner with no band gets none"), Distances[Clutter], 0.0);
-
-	// A structure of small bands only is raised to its largest, under the cap.
-	TArray<double> SmallMin = { 6000.0 };
-	TArray<double> SmallMax = { 12000.0 };
-	FMantleDrawDistance::PlanStructures(SmallMin, SmallMax, {}, Distances);
-	TestEqual(TEXT("a stall's 60 m and 120 m pieces both draw to 120 m"), Distances[0], 12000.0);
-
+	TArray<int32> Structures;
+	FMantleDrawDistance::PlanStructures(Members, Links, Distances, &Structures);
+	TestEqual(TEXT("one distance per member"), Distances.Num(), Members.Num());
+	TestEqual(TEXT("the ground floor's 250 m walls draw to 600 m"), Distances[GroundFloor], 60000.0);
+	TestEqual(TEXT("the upper floors' 600 m walls too"), Distances[UpperFloors], 60000.0);
+	TestEqual(TEXT("and the roof on them comes down to 600 m with them"), Distances[RoofSlab], 60000.0);
+	TestEqual(TEXT("a small decal on the walls keeps its 60 m"), Distances[Decal], 6000.0);
+	TestEqual(TEXT("the roof and walls are one structure"), Structures[RoofSlab], Structures[GroundFloor]);
+	TestEqual(TEXT("the deck comes down to 600 m"), Distances[DeckSlab], 60000.0);
+	TestEqual(TEXT("and its supports go up to 600 m with it"), Distances[Support], 60000.0);
+	TestEqual(TEXT("the road tiles keep their 2.5 km"), Distances[RoadTile], 250000.0);
+	TestEqual(TEXT("the sidewalk keeps its 250 m"), Distances[Sidewalk], 25000.0);
+	TestEqual(TEXT("the lamp keeps its 120 m"), Distances[Lamp], 12000.0);
+	TestTrue(TEXT("the ground is not part of the building"), Structures[RoadTile] != Structures[GroundFloor]);
+	TestEqual(TEXT("trees with nothing raised keep their 250 m"), Distances[SmallTree], 25000.0);
+	TestEqual(TEXT("and their 600 m"), Distances[BigTree], 60000.0);
+	TestEqual(TEXT("the building beside, holding nothing up, keeps its 250 m"), Distances[Shop], 25000.0);
+	TestEqual(TEXT("a structure of one band keeps it"), Distances[TowerBase], 60000.0);
+	TestEqual(TEXT("at the top too"), Distances[TowerTop], 60000.0);
 	// Apply: the structure's distance replaces the size band, never a distance the component sets itself.
 	FMantleDrawDistanceSource Banded;
 	Banded.SphereRadius = 150.0;
