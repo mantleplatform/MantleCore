@@ -88,6 +88,11 @@ namespace MantlePlaceAssetsPrivate
 			Body->TriMeshGeometries.Num());
 	}
 
+	/** #189: a texture build's key variant is its role, with this bit when the build is the client's cut of a full file (no low companion on the server). */
+	constexpr int32 TextureCutVariant = 0x10;
+	EMantleTextureRole TextureRoleOf(const uint8 Variant) { return static_cast<EMantleTextureRole>(Variant & 0x0F); }
+	bool IsTextureCut(const uint8 Variant) { return (Variant & TextureCutVariant) != 0; }
+
 	const TCHAR* RoleName(const EMantleTextureRole Role)
 	{
 		switch (Role)
@@ -2121,9 +2126,12 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 	}
 	// #189: a cell material's texture is built from its low companion first (its cooked file's mips from 512 down); the full file is built only while something
 	// near wants it (UpdateTextureDetail, which calls this again with bFullPass for the full build).
-	const bool bUseLow = Record.Kind == EAssetKind::Texture && Record.bStreamed && !Record.bFullPass && !Record.bLowFailed && InAsset.HasLowTexture();
+	// A texture with no companion on the server (cooked before low files, or a place not republished since) is cut on the client from its full file: the same download,
+	// a build of its own (the cut variant), and the full build shares the bytes when something comes near.
+	const bool bUseLow = Record.Kind == EAssetKind::Texture && Record.bStreamed && !Record.bFullPass && !Record.bLowFailed;
+	const bool bClientCut = bUseLow && !InAsset.HasLowTexture();
 	FMantleUploadedAsset LowAnswer;
-	if (bUseLow)
+	if (bUseLow && !bClientCut)
 	{
 		LowAnswer = InAsset;
 		LowAnswer.Url = InAsset.LowUrl;
@@ -2168,7 +2176,7 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 	Key.Hash = Hash;
 	Key.Kind = Record.Kind;
 	Key.Variant = static_cast<uint8>(Record.Kind == EAssetKind::Mesh ? (Record.bCollision ? 1 : 0)
-		: Record.Kind == EAssetKind::Texture ? static_cast<int32>(Record.Role)
+		: Record.Kind == EAssetKind::Texture ? static_cast<int32>(Record.Role) | (bClientCut ? MantlePlaceAssetsPrivate::TextureCutVariant : 0)
 		: Record.Kind == EAssetKind::TerrainWeights ? (Record.bKeepPixels ? 1 : 0) : 0);
 	Record.bResolved = true;
 	Record.Build = Key;
@@ -2820,8 +2828,9 @@ void FMantlePlaceAssets::StartDecodes()
 			case EAssetKind::Texture:
 			{
 				FMantleTextureBuildParams Params;
-				Params.Role = static_cast<EMantleTextureRole>(Key.Variant);
+				Params.Role = MantlePlaceAssetsPrivate::TextureRoleOf(Key.Variant);
 				Params.MaxGpuBytes = MaxTextureGpuBytes;
+				Params.LowTopDimension = MantlePlaceAssetsPrivate::IsTextureCut(Key.Variant) ? FMantlePlaceAssets::LowTextureMaxDimension : 0;
 				Texture = MakeShared<FMantleDecodedTexture>();
 				if (!FMantleRuntimeTextureBuilder::Decode(View, Params, *Texture, &Error)
 					|| !FMantlePlaceMaterials::PrepareForSlot(SlotForRole(Params.Role), *Texture, &Error))
@@ -3516,8 +3525,20 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 			return;
 		}
 		FMantleTextureBuildParams Params;
-		Params.Role = static_cast<EMantleTextureRole>(Build.Key.Variant);
+		Params.Role = MantlePlaceAssetsPrivate::TextureRoleOf(Build.Key.Variant);
 		Params.MaxGpuBytes = Settings.MaxTextureGpuBytes;
+		if (MantlePlaceAssetsPrivate::IsTextureCut(Build.Key.Variant) && Build.Texture->MipsCut == 0)
+		{
+			// Asked to be cut on the client, and already no larger than a low copy (or not whole blocks at 512): it is the full texture, so the records it serves
+			// need no full build when something comes near (the server makes no companion for these either).
+			for (const FString& Id : Build.RecordIds)
+			{
+				if (FRecord* Record = Records.Find(RecordKey(Id, EAssetKind::Texture, Params.Role)))
+				{
+					Record->bLowTexture = false;
+				}
+			}
+		}
 		Build.Detail = FString::Printf(TEXT("%s, %dx%d %s, %d mips"), MantlePlaceAssetsPrivate::RoleName(Params.Role),
 			Build.Texture->GetWidth(), Build.Texture->GetHeight(), GetPixelFormatString(Build.Texture->Format), Build.Texture->Mips.Num());
 		UTexture2D* Texture = FMantleRuntimeTextureBuilder::Build(MoveTemp(*Build.Texture), Params, &Error);
@@ -5189,6 +5210,17 @@ bool FMantlePlaceAssets::FinishUpgrade(FRecord& Record)
 	return true;
 }
 
+void FMantlePlaceAssets::SetTextureDetailReach(const double NearCm)
+{
+	const double Reach = FMath::Clamp(NearCm, 0.0, FullTextureNearCm);
+	if (Reach != TextureNearCm)
+	{
+		TextureNearCm = Reach;
+		// Looked at again on the next tick, not half a second later: a shorter reach is memory to give back.
+		NextTextureDetailSeconds = 0.0;
+	}
+}
+
 void FMantlePlaceAssets::UpdateTextureDetail()
 {
 	if (!bStreaming || !bCompleted || !TextureView.IsSet())
@@ -5258,7 +5290,8 @@ void FMantlePlaceAssets::UpdateTextureDetail()
 	TArray<FString> LowKeys;
 	for (const TPair<FString, FRecord>& Pair : Records)
 	{
-		if (Pair.Value.bLowTexture && !Pair.Value.bFailed)
+		// A record that turned out whole (cut on the client, and already 512 or smaller) lets go of a full build it was given before that was known.
+		if ((Pair.Value.bLowTexture || Pair.Value.FullBuild.IsSet()) && !Pair.Value.bFailed)
 		{
 			LowKeys.Add(Pair.Key);
 		}
@@ -5272,8 +5305,8 @@ void FMantlePlaceAssets::UpdateTextureDetail()
 		}
 		const double* FoundDistanceSq = TextureDistanceSq.Find(Key);
 		const double DistanceSq = FoundDistanceSq ? *FoundDistanceSq : TNumericLimits<double>::Max();
-		const double Edge = Record->bWantFull ? FullTextureFarCm : FullTextureNearCm;
-		Record->bWantFull = !Record->bFullFailed && DistanceSq <= Edge * Edge;
+		const double Edge = Record->bWantFull ? TextureNearCm * (FullTextureFarCm / FullTextureNearCm) : TextureNearCm;
+		Record->bWantFull = Record->bLowTexture && !Record->bFullFailed && DistanceSq <= Edge * Edge;
 
 		const FBuild* Full = Record->FullBuild.IsSet() ? Builds.Find(Record->FullBuild.GetValue()) : nullptr;
 		if (Record->FullBuild.IsSet() && !Full)
@@ -5348,7 +5381,7 @@ bool FMantlePlaceAssets::StartFullTexture(FRecord& Record)
 	}
 	Again->FullBuild = FullKey;
 	Again->bFullShown = false;
-	UE_LOG(LogMantle, Verbose, TEXT("MANTLE_PLACE_ASSETS texture %s: full detail wanted (something within %.0f m)"), *Again->Id, FullTextureNearCm / 100.0);
+	UE_LOG(LogMantle, Verbose, TEXT("MANTLE_PLACE_ASSETS texture %s: full detail wanted (something within %.0f m)"), *Again->Id, TextureNearCm / 100.0);
 	return true;
 }
 

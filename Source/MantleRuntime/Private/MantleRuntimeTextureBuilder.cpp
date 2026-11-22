@@ -287,8 +287,27 @@ namespace MantleRuntimeTextureBuilderPrivate
 			return RefuseTexture(OutError, FString::Printf(TEXT("That %s texture is truncated (its mip table is incomplete)."), Name));
 		}
 
-		const int32 KeptMips = Params.Mips == EMantleTextureMips::None ? 1 : ExpectedMips;
-		const int64 Footprint = FMantleRuntimeTextureBuilder::ComputeGpuBytes(Format, static_cast<int32>(Width), static_cast<int32>(Height), KeptMips);
+		// #189: the low copy starts at the first mip no larger than LowTopDimension, as the worker's cook.LowTexture slices it (whole blocks, never mip 0).
+		int32 FirstMip = 0;
+		if (Params.LowTopDimension > 0 && Params.Mips != EMantleTextureMips::None)
+		{
+			for (int32 Mip = 0; Mip < ExpectedMips; ++Mip)
+			{
+				const uint32 MipWidth = FMath::Max(1u, Width >> Mip);
+				const uint32 MipHeight = FMath::Max(1u, Height >> Mip);
+				if (FMath::Max(MipWidth, MipHeight) <= static_cast<uint32>(Params.LowTopDimension))
+				{
+					if (Mip > 0 && MipWidth >= 4 && MipHeight >= 4 && MipWidth % 4 == 0 && MipHeight % 4 == 0)
+					{
+						FirstMip = Mip;
+					}
+					break;
+				}
+			}
+		}
+		const int32 KeptMips = Params.Mips == EMantleTextureMips::None ? 1 : ExpectedMips - FirstMip;
+		const int64 Footprint = FMantleRuntimeTextureBuilder::ComputeGpuBytes(Format, static_cast<int32>(FMath::Max(1u, Width >> FirstMip)),
+			static_cast<int32>(FMath::Max(1u, Height >> FirstMip)), KeptMips);
 		if (Footprint < 0 || Footprint > Params.MaxGpuBytes)
 		{
 			return RefuseTexture(OutError, FString::Printf(TEXT("That %u x %u %s texture needs %lld bytes of texture memory; the budget is %lld."),
@@ -342,10 +361,12 @@ namespace MantleRuntimeTextureBuilderPrivate
 		Out.Format = Format;
 		Out.bSRGB = bSRGB;
 		Out.Role = Format == PF_BC5 ? EMantleTextureRole::Normal : (bSRGB ? EMantleTextureRole::Color : EMantleTextureRole::Data);
-		Out.SourceWidth = static_cast<int32>(SourceWidth);
-		Out.SourceHeight = static_cast<int32>(SourceHeight);
+		// A cut copy's source size is the top mip's share of it (UVs span the padded size, which halves with the mips).
+		Out.SourceWidth = FMath::Min(static_cast<int32>(FMath::Max(1u, Width >> FirstMip)), FMath::DivideAndRoundUp(static_cast<int32>(SourceWidth), 1 << FirstMip));
+		Out.SourceHeight = FMath::Min(static_cast<int32>(FMath::Max(1u, Height >> FirstMip)), FMath::DivideAndRoundUp(static_cast<int32>(SourceHeight), 1 << FirstMip));
+		Out.MipsCut = FirstMip;
 		Out.Mips.Reserve(KeptMips);
-		for (int32 Mip = 0; Mip < KeptMips; ++Mip)
+		for (int32 Mip = FirstMip; Mip < FirstMip + KeptMips; ++Mip)
 		{
 			const int64 Entry = Mtx1HeaderBytes + static_cast<int64>(Mip) * EntryBytes;
 			FMantleTextureMip& Level = Out.Mips.AddDefaulted_GetRef();

@@ -459,6 +459,16 @@ public:
 	static constexpr double FullTextureNearCm = 15000.0;
 	static constexpr double FullTextureFarCm = 20000.0;
 
+	/**
+	 * #189: how near full detail reaches now. FullTextureNearCm unless the live budget has shortened it (textures still over their limit at the bottom of the ladder,
+	 * FMantleStreamBudget::NextTextureDetailReach); a texture is let go back to low past the same share farther (FullTextureFarCm / FullTextureNearCm, 4/3). A texture
+	 * with no low companion on the server is cut on the client from its full file (FMantleTextureBuildParams::LowTopDimension), so this works on every place.
+	 */
+	void SetTextureDetailReach(double NearCm);
+	double GetTextureDetailReach() const { return TextureNearCm; }
+	/** The low copy's largest side: the server's companion (cook.LowTextureMaxDimension) and the client's cut alike. */
+	static constexpr int32 LowTextureMaxDimension = 512;
+
 	/** One line a record of a mesh, side file or texture: what the set holds and why (for the tests and for finding a leak). */
 	FString DescribeStreamedRecords() const;
 
@@ -983,6 +993,8 @@ private:
 	/** #189: the view SetTextureView last gave, when UpdateTextureDetail last ran, and which material builds use each texture record (and in which slot). */
 	TOptional<FVector> TextureView;
 	double NextTextureDetailSeconds = 0.0;
+	/** SetTextureDetailReach's: full detail within this, low again past it x FullTextureFarCm / FullTextureNearCm. */
+	double TextureNearCm = FullTextureNearCm;
 	TMap<FString, TArray<TPair<FBuildKey, int32>>> TextureUsers;
 
 	/** Frees a Nanite build's head and table (counted in NaniteHeldBytes). */

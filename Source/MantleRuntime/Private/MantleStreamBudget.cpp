@@ -182,6 +182,23 @@ double FMantleStreamBudget::NearScale(const double Ladder, const FMantleBudgetTu
 	return FMath::Lerp(Tuning.MinNearScale, 1.0, FMath::Clamp(Ladder * 2.0, 0.0, 1.0));
 }
 
+double FMantleStreamBudget::NextTextureDetailReach(const double ReachCm, const double Ladder, const double TexturePressure, const double Pressure, const FMantleBudgetTuning& Tuning)
+{
+	const double MinCm = FMath::Min(Tuning.TextureDetailMinCm, Tuning.TextureDetailMaxCm);
+	const double Step = FMath::Clamp(Tuning.TextureDetailStep, 0.1, 0.99);
+	if (Ladder <= 0.0 && TexturePressure > Tuning.LowerAbove)
+	{
+		return FMath::Clamp(ReachCm * Step, MinCm, Tuning.TextureDetailMaxCm);
+	}
+	// Rising brings full files back: it rises only if the textures would still fit with the full-detail circle's area grown by the step (1 / Step^2), counting every texture
+	// byte as if it grew so (the low copies do not: the side that does not cycle). Else a reach that just fits would grow, pass the limit, shrink, and round again.
+	if (Pressure < Tuning.RaiseBelow && TexturePressure / (Step * Step) <= Tuning.LowerAbove)
+	{
+		return FMath::Clamp(ReachCm / Step, MinCm, Tuning.TextureDetailMaxCm);
+	}
+	return FMath::Clamp(ReachCm, MinCm, Tuning.TextureDetailMaxCm);
+}
+
 double FMantleStreamBudget::ScaledReach(const double DrawDistanceCm, const double Scale, const double FloorCm)
 {
 	return FMath::Min(DrawDistanceCm, FMath::Max(DrawDistanceCm * Scale, FloorCm));

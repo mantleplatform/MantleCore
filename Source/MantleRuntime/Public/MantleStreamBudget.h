@@ -81,6 +81,19 @@ struct MANTLERUNTIME_API FMantleBudgetTuning
 	 * alone it may lower the ladder only this often: pressing at every look would take the ladder to 0 before anything had been freed.
 	 */
 	double MemoryLowerEverySeconds = 10.0;
+	/**
+	 * #189: below the ladder. Textures still over their limit at ladder 0 (the real cells already at their shortest reach) shorten how near full texture detail
+	 * reaches (FMantlePlaceAssets::SetTextureDetailReach): x TextureDetailStep at most every TextureDetailLowerEverySeconds, from TextureDetailMaxCm (150 m) down to
+	 * TextureDetailMinCm. Past it the 512 copy draws. At 25 m on a 1080p screen with a 90 degree view a metre is about 38 pixels, and a 512 copy spanning even 4 m gives it
+	 * 128 texels: nothing past the floor can show more than the 512 copy does, and the full files left are the few things a player is next to. It comes back the same way,
+	 * a step at most every TextureDetailRaiseEverySeconds (textures take a while to build, so their bytes lag), once the pressure is under RaiseBelow; the ladder rises only
+	 * after the reach is whole again (sharpness first, then reach: the order it went down in, reversed).
+	 */
+	double TextureDetailMaxCm = 15000.0;
+	double TextureDetailMinCm = 2500.0;
+	double TextureDetailStep = 0.75;
+	double TextureDetailLowerEverySeconds = 1.0;
+	double TextureDetailRaiseEverySeconds = 5.0;
 };
 
 /**
@@ -132,6 +145,13 @@ public:
 
 	/** The scale of the real cells' reach for a ladder: 1 while it is 0.5 or more, then down to Tuning.MinNearScale at 0. */
 	static double NearScale(double Ladder, const FMantleBudgetTuning& Tuning);
+
+	/**
+	 * #189: the full-texture-detail reach after one step (see FMantleBudgetTuning::TextureDetailMaxCm): shorter by TextureDetailStep when the ladder is at 0 and the textures'
+	 * pressure (texture bytes / their limit) is over LowerAbove, longer by the same step (to the max) when Pressure (everything) is under RaiseBelow and the textures would
+	 * still fit after it (their pressure / Step^2, the circle's area grown), else the same.
+	 */
+	static double NextTextureDetailReach(double ReachCm, double Ladder, double TexturePressure, double Pressure, const FMantleBudgetTuning& Tuning);
 
 	/** How far a cell is wanted from, cm: DrawDistance x Scale, but never less than FloorCm and never more than DrawDistance. With scale 1 it is the DrawDistance. */
 	static double ScaledReach(double DrawDistanceCm, double Scale, double FloorCm);

@@ -294,4 +294,26 @@ bool FMantleStreamBudgetTexturesAndMemoryCapTest::RunTest(const FString& Paramet
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamBudgetTextureDetailTest,
+	"Mantle.Runtime.StreamBudget.TextureDetailReach",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamBudgetTextureDetailTest::RunTest(const FString& Parameters)
+{
+	// #189: below the ladder. Full texture detail reaches 150 m until textures are over their limit with the ladder already at 0; then x0.75 a step, to 25 m at the least.
+	const FMantleBudgetTuning Tuning;
+	TestEqual(TEXT("over, but the ladder can still fall: the cells go first"), FMantleStreamBudget::NextTextureDetailReach(15000.0, 0.3, 1.5, 1.5, Tuning), 15000.0);
+	TestEqual(TEXT("over at ladder 0: 150 m to 112.5 m"), FMantleStreamBudget::NextTextureDetailReach(15000.0, 0.0, 1.2, 1.2, Tuning), 11250.0);
+	TestEqual(TEXT("the textures' own pressure decides, not another count's"), FMantleStreamBudget::NextTextureDetailReach(15000.0, 0.0, 0.5, 1.5, Tuning), 15000.0);
+	TestEqual(TEXT("never under 25 m"), FMantleStreamBudget::NextTextureDetailReach(3000.0, 0.0, 3.0, 3.0, Tuning), 2500.0);
+	TestEqual(TEXT("between 0.8 and 1 it holds"), FMantleStreamBudget::NextTextureDetailReach(8437.5, 0.0, 0.9, 0.9, Tuning), 8437.5);
+	// Back up only if the textures would fit with the circle's area grown by 1 / 0.75^2 (1.78): 0.77 would be 1.37, so it holds; 0.5 would be 0.89, so it rises.
+	TestEqual(TEXT("just under 0.8 after a step down: it holds rather than cycle"), FMantleStreamBudget::NextTextureDetailReach(8437.5, 0.0, 0.77, 0.77, Tuning), 8437.5);
+	TestEqual(TEXT("room for the step: 84 m to 112.5 m"), FMantleStreamBudget::NextTextureDetailReach(8437.5, 0.0, 0.5, 0.5, Tuning), 11250.0);
+	TestEqual(TEXT("never past 150 m"), FMantleStreamBudget::NextTextureDetailReach(14000.0, 0.0, 0.1, 0.1, Tuning), 15000.0);
+	TestEqual(TEXT("whole already: stays whole"), FMantleStreamBudget::NextTextureDetailReach(15000.0, 1.0, 0.1, 0.1, Tuning), 15000.0);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

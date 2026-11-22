@@ -31,6 +31,9 @@ public:
 	/** #189: where the view is, for how much texture detail the cells' materials get (FMantlePlaceAssets::SetTextureView). Every tick. */
 	virtual void SetView(const FVector& Location) { (void)Location; }
 
+	/** #189: how near full texture detail reaches, cm (FMantlePlaceAssets::SetTextureDetailReach): the live budget shortens it when textures are over at ladder 0. */
+	virtual void SetTextureDetailReach(double NearCm) { (void)NearCm; }
+
 	/** The Nanite root pages the place's meshes have attached now: the live budget (stage 8) counts them. Zero where nothing counts them (tests). */
 	virtual int64 GetNaniteRootPagesAttached() const { return 0; }
 
@@ -69,6 +72,8 @@ public:
 	virtual void SetBuildSlice(double Seconds) override { Set->SetStreamBuildSlice(Seconds); }
 
 	virtual void SetView(const FVector& Location) override { Set->SetTextureView(Location); }
+
+	virtual void SetTextureDetailReach(double NearCm) override { Set->SetTextureDetailReach(NearCm); }
 
 	virtual int64 GetNaniteRootPagesAttached() const override { return Set->GetNaniteRootPagesAttached(); }
 

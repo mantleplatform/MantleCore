@@ -74,6 +74,13 @@ struct FMantleTextureBuildParams
 	 * recreates resources.
 	 */
 	bool bKeepCpuCopy = GIsEditor;
+
+	/**
+	 * #189: above 0, an MTX2 is decoded from its first mip no larger than this on a side, down to 1 x 1: the low copy far content draws when the server has
+	 * none (the tail the worker's cook.LowTexture slices, by the same rule: only when that mip is whole 4 x 4 blocks and is not mip 0). Only those mips are
+	 * inflated. FMantleDecodedTexture::MipsCut says how many top mips were left out (0: the texture is whole, nothing could be cut). PNG and JPEG ignore it.
+	 */
+	int32 LowTopDimension = 0;
 };
 
 /** One mip level as the GPU takes it. */
@@ -110,6 +117,9 @@ struct MANTLERUNTIME_API FMantleDecodedTexture
 	 */
 	int32 SourceWidth = 0;
 	int32 SourceHeight = 0;
+
+	/** Top mips of the file left out for FMantleTextureBuildParams::LowTopDimension (0 when it was not asked for, or the texture was already that small). */
+	int32 MipsCut = 0;
 
 	int32 GetWidth() const { return Mips.Num() > 0 ? Mips[0].Width : 0; }
 	int32 GetHeight() const { return Mips.Num() > 0 ? Mips[0].Height : 0; }

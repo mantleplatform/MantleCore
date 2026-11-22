@@ -235,6 +235,10 @@ namespace MantleCellStreamerTestPrivate
 		double LargestSlice = 0.0;
 
 		int32 EntitiesAsked = 0;
+
+		/** #189: how near full texture detail reaches, as the live budget last said (FMantlePlaceAssets::SetTextureDetailReach). */
+		virtual void SetTextureDetailReach(double NearCm) override { TextureReach = NearCm; }
+		double TextureReach = 15000.0;
 	};
 
 	/** A world, the fake service, and a streamer over them, ticked by hand. */
@@ -2083,6 +2087,134 @@ bool FMantleCellStreamerBudgetTexturesTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("cells 1 and 5 were let go and not wanted back"), !Fixture.Built(1) && !Fixture.Built(5));
 	TestEqual(TEXT("3 GB of textures counted at the last look"), Stats.BudgetTextureBytes, 3 * GB);
 	TestEqual(TEXT("no cell was built again in 30 s"), Stats.CellsBuiltEver, BuiltAtStart);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerBudgetTextureDetailTest,
+	"Mantle.Runtime.CellStream.Streamer.BudgetShortensTextureDetail",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerBudgetTextureDetailTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// #189, City Sample's join: textures over their limit even with the ladder at 0. Each standing cell holds 0.2 GB of low copies and 1 GB of full files when full detail reaches
+	// its whole 150 m, less with the circle's area (reach / 150 m, squared). The limit is 2 GB. Five cells (6 GB) take the ladder to 0, and the three cells round the view
+	// (3.6 GB) are still over: below the ladder, the full-detail reach comes down, 150 m to 112.5 m (2.29 GB) to 84.4 m (1.55 GB), and there it holds (0.77: a step back up
+	// would be 1.37 by its projection). The join's hold waits only for what the ladder still wants. With the limit lifted the reach comes back to 150 m before the ladder rises.
+	constexpr int64 GB = 1024ll * 1024 * 1024;
+	TSharedRef<int64> TextureLimit = MakeShared<int64>(2 * GB);
+	FFixture Fixture;
+	Fixture.View = FVector(22000.0, 100.0, 100.0);
+	Fixture.CellAssets = MakeShared<FFakeCellAssets>();
+	FMantleCellStreamSettings Settings = SteadySettings();
+	Settings.BudgetTuning.MinReachCm = 3000.0;
+	Settings.BudgetLimits = [TextureLimit]()
+	{
+		FMantleBudgetLimits Limits;
+		Limits.Instances = 100000;
+		Limits.SolidThings = 100000;
+		Limits.TextureBytes = *TextureLimit;
+		return Limits;
+	};
+	FFixture* const FixturePtr = &Fixture;
+	Settings.BudgetTextureBytes = [FixturePtr]()
+	{
+		if (!FixturePtr->Streamer.IsValid())
+		{
+			return int64(0);
+		}
+		const double Share = FMath::Square(FixturePtr->CellAssets->TextureReach / 15000.0);
+		return static_cast<int64>(FixturePtr->Streamer->GetStats().CellsBuilt * (0.2 + Share) * static_cast<double>(GB));
+	};
+	Fixture.StartStreamer(Settings);
+	if (!TestTrue(TEXT("the join settles"), Fixture.Settle()))
+	{
+		return false;
+	}
+	TestTrue(TEXT("the join waited for no more than the ladder wants: the ground round the view stands"), Fixture.Streamer->IsAreaBuilt(Fixture.View, 3000.0));
+	for (int32 Tick = 0; Tick < 1200; ++Tick)
+	{
+		Fixture.Tick();
+	}
+	Fixture.Settle();
+	{
+		const FMantleCellStreamStats& Stats = Fixture.Streamer->GetStats();
+		TestEqual(TEXT("the ladder is at the bottom"), Stats.BudgetLadder, 0.0);
+		TestTrue(TEXT("cells 2, 3 and 4 stand"), Fixture.Built(2) && Fixture.Built(3) && Fixture.Built(4));
+		TestEqual(TEXT("full detail came down two steps, to 84.4 m"), Fixture.CellAssets->TextureReach, 8437.5);
+		TestEqual(TEXT("the stats say the same"), Stats.BudgetTextureDetailCm, 8437.5);
+		TestTrue(TEXT("the textures fit at the last look"), Stats.BudgetTextureBytes <= *TextureLimit && Stats.BudgetPressure < 1.0);
+	}
+
+	// Ten more seconds at the same use: it holds (no cycle between 84 m and 112 m).
+	for (int32 Tick = 0; Tick < 600; ++Tick)
+	{
+		Fixture.Tick();
+		if (Fixture.CellAssets->TextureReach != 8437.5)
+		{
+			break;
+		}
+	}
+	TestEqual(TEXT("it holds at 84.4 m"), Fixture.CellAssets->TextureReach, 8437.5);
+
+	// The limit is lifted: full detail comes back a step every 5 s, and the ladder waits for it.
+	*TextureLimit = 100 * GB;
+	double ReachWhenTheLadderRose = -1.0;
+	for (int32 Tick = 0; Tick < 1800; ++Tick)
+	{
+		Fixture.Tick();
+		if (ReachWhenTheLadderRose < 0.0 && Fixture.Streamer->GetStats().BudgetLadder > 0.0)
+		{
+			ReachWhenTheLadderRose = Fixture.CellAssets->TextureReach;
+		}
+	}
+	TestEqual(TEXT("full detail reaches its whole 150 m again"), Fixture.CellAssets->TextureReach, 15000.0);
+	TestEqual(TEXT("the ladder rose only once it had"), ReachWhenTheLadderRose, 15000.0);
+	TestEqual(TEXT("nothing failed or was refused"), Fixture.Streamer->GetStats().CellsFailed, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerJoinHoldFollowsTheLadderTest,
+	"Mantle.Runtime.CellStream.Streamer.JoinHoldFollowsTheLadder",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerJoinHoldFollowsTheLadderTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// #189: the join's hold waits only for what the ladder still wants. Cells 1 and 5 (92 m and 100 m from the view) never get their assets, while the downloads keep moving, so
+	// no wait gives up on them. 1,250 instances against 800 take the ladder down during the hold; once their reach no longer takes in cells 1 and 5 they are let go, and the
+	// hold ends because what is left of its area stands, not because anything timed out.
+	FFixture Fixture;
+	Fixture.View = FVector(22000.0, 100.0, 100.0);
+	Fixture.CellAssets = MakeShared<FFakeCellAssets>();
+	Fixture.CellAssets->bDownloadsMoving = true;
+	Fixture.CellAssets->SlowCells.Add(1);
+	Fixture.CellAssets->SlowCells.Add(5);
+	FMantleCellStreamSettings Settings = SteadySettings();
+	Settings.BudgetTuning.MinReachCm = 3000.0;
+	Settings.BudgetLimits = []()
+	{
+		FMantleBudgetLimits Limits;
+		Limits.Instances = 800;
+		Limits.SolidThings = 100000;
+		return Limits;
+	};
+	Fixture.StartStreamer(Settings);
+	TestTrue(TEXT("the join holds"), Fixture.Streamer->IsHolding());
+	bool bEnded = false;
+	for (int32 Tick = 0; Tick < 1200 && !bEnded; ++Tick)
+	{
+		Fixture.Tick();
+		bEnded = !Fixture.Streamer->IsHolding();
+	}
+	TestTrue(TEXT("the hold ended within 20 s"), bEnded);
+	const FMantleCellStreamStats& Stats = Fixture.Streamer->GetStats();
+	TestTrue(TEXT("the ladder came down during the hold"), Stats.BudgetLowestLadder < 0.5);
+	TestTrue(TEXT("cells 2, 3 and 4 stand"), Fixture.Built(2) && Fixture.Built(3) && Fixture.Built(4));
+	TestTrue(TEXT("cells 1 and 5 were not waited for"), !Fixture.Built(1) && !Fixture.Built(5));
+	TestEqual(TEXT("no asset wait gave up"), Stats.AssetWaitTimeouts, 0);
 	return true;
 }
 

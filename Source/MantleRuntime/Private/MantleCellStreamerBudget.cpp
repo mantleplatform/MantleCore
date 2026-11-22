@@ -141,6 +141,7 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	}
 	SecondsSinceBudgetLook += DeltaSeconds;
 	SecondsSinceMemoryLower += DeltaSeconds;
+	SecondsSinceTextureDetailMove += DeltaSeconds;
 	const FMantleBudgetTuning& Tuning = Settings.BudgetTuning;
 	if (SecondsSinceBudgetLook < Tuning.StepSeconds)
 	{
@@ -156,6 +157,9 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	const double CountPressure = FMantleStreamBudget::CountPressure(Limits, Use);
 	const double MemoryPressure = FMantleStreamBudget::MemoryPressure(Limits, Use);
 	const double Pressure = FMath::Max(CountPressure, MemoryPressure);
+	const double TexturePressure = Limits.TextureBytes > 0 && Limits.TextureBytes < MAX_int64 ? static_cast<double>(Use.TextureBytes) / static_cast<double>(Limits.TextureBytes) : 0.0;
+	// #189: while full texture detail reaches less than its whole way (textures were over at ladder 0), the ladder waits for it to come back before it rises.
+	const bool bTextureDetailShort = TextureDetailCm < Tuning.TextureDetailMaxCm;
 
 	const double Before = Ladder;
 	if (CountPressure > Tuning.LowerAbove)
@@ -171,7 +175,7 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 			Ladder = FMantleStreamBudget::NextLadder(Ladder, MemoryPressure, Tuning);
 		}
 	}
-	else if (Pressure < Tuning.RaiseBelow)
+	else if (Pressure < Tuning.RaiseBelow && !bTextureDetailShort)
 	{
 		// Rising loads more, so it first looks at what the longer reach would bring in: it rises only if that still fits. Else a cell at the edge that does not fit would be built, found
 		// over the limit, let go and wanted again, round and round.
@@ -194,6 +198,25 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	Stats.BudgetMemoryShare = Use.ProcessMemoryShare;
 	Stats.BudgetTextureBytes = Use.TextureBytes;
 	Stats.BudgetMemoryBytes = Use.ProcessMemoryBytes;
+
+	// #189: below the ladder, how near full texture detail reaches (FMantleBudgetTuning::TextureDetailMaxCm). Down a step a second at most, up one every five.
+	const double NextDetail = FMantleStreamBudget::NextTextureDetailReach(TextureDetailCm, Ladder, TexturePressure, Pressure, Tuning);
+	const double DetailWait = NextDetail < TextureDetailCm ? Tuning.TextureDetailLowerEverySeconds : Tuning.TextureDetailRaiseEverySeconds;
+	if (NextDetail != TextureDetailCm && SecondsSinceTextureDetailMove >= DetailWait)
+	{
+		const double DetailBefore = TextureDetailCm;
+		TextureDetailCm = NextDetail;
+		SecondsSinceTextureDetailMove = 0.0;
+		if (CellAssets.IsValid())
+		{
+			CellAssets->SetTextureDetailReach(TextureDetailCm);
+		}
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_CELLS_BUDGET texture detail %.0f m -> %.0f m (ladder %.2f), textures %.0f of %s MB (pressure %.2f), pressure %.2f"),
+			DetailBefore / 100.0, TextureDetailCm / 100.0, Ladder, Use.TextureBytes / (1024.0 * 1024.0), *MantleCellStreamerBudgetPrivate::MegabytesOrNone(Limits.TextureBytes),
+			TexturePressure, Pressure);
+	}
+	Stats.BudgetTextureDetailCm = TextureDetailCm;
+	Stats.BudgetLowestTextureDetailCm = FMath::Min(Stats.BudgetLowestTextureDetailCm, TextureDetailCm);
 
 	if (Ladder == Before)
 	{

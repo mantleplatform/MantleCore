@@ -20,6 +20,7 @@
 #include "MantlePlaceAssets.h"
 #include "MantlePlaceParser.h"
 #include "MantleRuntimeStaticMeshBuilder.h"
+#include "MantleRuntimeTextureBuilder.h"
 #include "MantleStaticMeshReader.h"
 #include "Matrix3x4.h"
 #include "RHI.h"
@@ -2846,6 +2847,181 @@ bool FMantleTextureLowFallsBackToFullTest::RunTest(const FString& Parameters)
 
 	Assets->ReleaseEntityAssets(81);
 	TestTrue(TEXT("the release drops the texture"), PumpUntil([&Assets]() { return Assets->GetStreamedCounts().Textures == 0; }, 30.0));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTextureCutOnTheClientTest,
+	"Mantle.Runtime.Place.StreamedAssets.TextureCutOnTheClient",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTextureCutOnTheClientTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTextureDetailTestPrivate;
+	// #189: a cell texture with no low companion on the server (a place not republished since low files) is cut on the client from its full MTX2: only the mips from
+	// 512 down are inflated, the same tail the worker slices. Far content draws that; near, the full build is made from the same download. The live budget's shorter
+	// full-detail reach (textures over at ladder 0) sends it back to low, and the whole reach brings it back. A texture already 512 or smaller is never cut, nor built twice.
+
+	// The decode: a 2048 chain from its 512 mip (two mips left out, the tail intact), a 256 one whole, and no cut unless asked for.
+	{
+		FMantleTextureBuildParams Params;
+		Params.LowTopDimension = FMantlePlaceAssets::LowTextureMaxDimension;
+		FString Error;
+		FMantleDecodedTexture Cut;
+		if (!TestTrue(TEXT("a 2048 MTX2 decodes cut"), FMantleRuntimeTextureBuilder::Decode(MakeMtx2(2048, 7), Params, Cut, &Error)))
+		{
+			AddError(Error);
+			return false;
+		}
+		TestEqual(TEXT("from its 512 mip"), Cut.GetWidth(), 512);
+		TestEqual(TEXT("two mips left out"), Cut.MipsCut, 2);
+		TestEqual(TEXT("512 down to 1 x 1: ten mips"), Cut.Mips.Num(), 10);
+		TestEqual(TEXT("the source size is the top mip's"), Cut.SourceWidth, 512);
+		TestEqual(TEXT("the tail is the file's own (its last mip's mark)"), Cut.Mips.Last().Bytes[0], static_cast<uint8>(7));
+		FMantleDecodedTexture Small;
+		TestTrue(TEXT("a 256 MTX2 decodes"), FMantleRuntimeTextureBuilder::Decode(MakeMtx2(256, 7), Params, Small, &Error));
+		TestEqual(TEXT("whole: nothing to cut"), Small.MipsCut, 0);
+		TestEqual(TEXT("256 wide"), Small.GetWidth(), 256);
+		FMantleDecodedTexture Whole;
+		TestTrue(TEXT("a 1024 MTX2 decodes"), FMantleRuntimeTextureBuilder::Decode(MakeMtx2(1024, 7), FMantleTextureBuildParams(), Whole, &Error));
+		TestEqual(TEXT("not asked to cut: whole"), Whole.GetWidth(), 1024);
+		TestEqual(TEXT("and nothing left out"), Whole.MipsCut, 0);
+	}
+
+	// A streaming set over a server that has no low file for the texture.
+	struct FRig
+	{
+		TSharedRef<FServingResolver> Server = MakeShared<FServingResolver>();
+		TSharedRef<FServingFetcher> Fetcher = MakeShared<FServingFetcher>();
+		TSharedPtr<FMantleAssetStore> Store;
+		TSharedPtr<FMantlePlaceAssets> Assets;
+
+		explicit FRig(TArray<uint8> TextureBytes)
+		{
+			FServedAsset Mesh;
+			Mesh.Kind = TEXT("mesh");
+			Mesh.Bytes = MakeMrm1Box();
+			Server->Assets.Add(DetailMesh, Mesh);
+			FServedAsset Material;
+			Material.Kind = TEXT("material");
+			const FTCHARToUTF8 Document(*FString::Printf(TEXT("{\"schemaVersion\":1,\"alphaMode\":\"opaque\",\"doubleSided\":false,\"textures\":{\"baseColor\":\"%s\"}}"), DetailTexture));
+			Material.Bytes.Append(reinterpret_cast<const uint8*>(Document.Get()), Document.Length());
+			Server->Assets.Add(DetailMaterial, Material);
+			FServedAsset Texture;
+			Texture.Kind = TEXT("texture");
+			Texture.Bytes = MoveTemp(TextureBytes);
+			Server->Assets.Add(DetailTexture, Texture);
+
+			FMantleAssetStoreSettings StoreSettings;
+			StoreSettings.RootDir = FPaths::AutomationTransientDir() / TEXT("TextureCut") / FGuid::NewGuid().ToString();
+			StoreSettings.MaxAttempts = 1;
+			Fetcher->Source = Server;
+			FMantlePlaceAssetSettings Settings;
+			Settings.bAutoPump = false;
+			Settings.bRenderAssets = true;
+			Settings.bLoadNanite = false;
+			Settings.bAsyncCollisionCook = false;
+			Settings.Resolver = Server;
+			const TSharedRef<FMantleAssetStore> Created = FMantleAssetStore::Create(StoreSettings, Fetcher);
+			Store = Created;
+			Settings.Store = Created;
+			Assets = FMantlePlaceAssets::PrepareStreaming(MakeDetailPlace(), Settings, FMantlePlaceAssetsDone());
+		}
+
+		bool PumpUntil(TFunctionRef<bool()> Done, const double Seconds)
+		{
+			const double Deadline = FPlatformTime::Seconds() + Seconds;
+			while (!Done())
+			{
+				if (FPlatformTime::Seconds() > Deadline)
+				{
+					return false;
+				}
+				Store->Pump();
+				Assets->Pump();
+				FPlatformProcess::Sleep(0.001f);
+			}
+			return true;
+		}
+
+		void PumpFor(const double Seconds)
+		{
+			PumpUntil([]() { return false; }, Seconds);
+		}
+
+		bool AcquireCell(const int64 Holder)
+		{
+			if (!PumpUntil([this]() { return Assets->IsComplete(); }, 30.0))
+			{
+				return false;
+			}
+			TArray<FMantleEntity> Cell;
+			Cell.Add(DetailEntity());
+			Assets->AcquireEntityAssets(Holder, Cell);
+			const bool bSettled = PumpUntil([this, Holder]() { return Assets->GetHolderAssets(Holder).IsSettled(); }, 30.0);
+			PumpFor(0.6);
+			return bSettled;
+		}
+
+		/** Waits until Shown full textures are wanted and drawn (0: none, back on the low one). */
+		bool FullShown(const int32 Shown)
+		{
+			return PumpUntil([this, Shown]()
+			{
+				const FMantlePlaceAssets::FStreamedCounts Counts = Assets->GetStreamedCounts();
+				return Counts.FullTexturesShown == Shown && Counts.FullTexturesWanted == Shown;
+			}, 30.0);
+		}
+	};
+	const FString FullUrl = FString(TEXT("test://")) + DetailTexture;
+	const FString LowUrl = FullUrl + TEXT("#low");
+
+	{
+		FRig Rig(MakeMtx2(1024, 2));
+		if (!TestTrue(TEXT("the cell's assets settle"), Rig.AcquireCell(82)))
+		{
+			return false;
+		}
+		TestEqual(TEXT("the texture was built low"), Rig.Assets->GetStreamedCounts().LowTextures, 1);
+		TestEqual(TEXT("from the full file, fetched once"), Rig.Fetcher->Fetched.FindRef(FullUrl), 1);
+		TestEqual(TEXT("no low file was asked for"), Rig.Fetcher->Fetched.FindRef(LowUrl), 0);
+		TestEqual(TEXT("the material draws the 512 cut"), BaseColorWidth(), 512);
+
+		Rig.Assets->SetTextureView(FVector(100.0, 0.0, 0.0));
+		TestTrue(TEXT("near, the full texture is built and shown"), Rig.FullShown(1));
+		TestEqual(TEXT("from the same download: no second fetch"), Rig.Fetcher->Fetched.FindRef(FullUrl), 1);
+		TestEqual(TEXT("the material draws the 1024 full texture"), BaseColorWidth(), 1024);
+
+		// 100 m: within the whole 150 m, past a 25 m reach (and its 33 m edge).
+		Rig.Assets->SetTextureView(FVector(10000.0, 0.0, 0.0));
+		Rig.PumpFor(1.2);
+		TestEqual(TEXT("at 100 m it is full"), BaseColorWidth(), 1024);
+		Rig.Assets->SetTextureDetailReach(2500.0);
+		TestTrue(TEXT("with full detail down to 25 m it goes back to low"), Rig.FullShown(0));
+		TestEqual(TEXT("the material draws the cut again"), BaseColorWidth(), 512);
+		Rig.Assets->SetTextureDetailReach(FMantlePlaceAssets::FullTextureNearCm);
+		TestTrue(TEXT("with the whole 150 m back it is full again"), Rig.FullShown(1));
+		TestEqual(TEXT("the material draws the full texture"), BaseColorWidth(), 1024);
+
+		Rig.Assets->ReleaseEntityAssets(82);
+		TestTrue(TEXT("the release drops the texture"), Rig.PumpUntil([&Rig]() { return Rig.Assets->GetStreamedCounts().Textures == 0; }, 30.0));
+	}
+
+	{
+		FRig Rig(MakeMtx2(256, 3));
+		if (!TestTrue(TEXT("the small texture's cell settles"), Rig.AcquireCell(83)))
+		{
+			return false;
+		}
+		TestEqual(TEXT("a 256 texture is not counted as low"), Rig.Assets->GetStreamedCounts().LowTextures, 0);
+		TestEqual(TEXT("the material draws it whole"), BaseColorWidth(), 256);
+		Rig.Assets->SetTextureView(FVector(100.0, 0.0, 0.0));
+		Rig.PumpFor(1.2);
+		TestEqual(TEXT("near, no second build of it is wanted"), Rig.Assets->GetStreamedCounts().FullTexturesWanted, 0);
+		TestEqual(TEXT("and it was fetched once"), Rig.Fetcher->Fetched.FindRef(FullUrl), 1);
+		Rig.Assets->ReleaseEntityAssets(83);
+		TestTrue(TEXT("the release drops it"), Rig.PumpUntil([&Rig]() { return Rig.Assets->GetStreamedCounts().Textures == 0; }, 30.0));
+	}
 	return true;
 }
 
