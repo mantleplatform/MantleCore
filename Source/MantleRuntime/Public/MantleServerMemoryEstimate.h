@@ -74,6 +74,15 @@ struct MANTLERUNTIME_API FMantleServerMemoryEstimate
 	static constexpr double HostedWorldReadyMB = 5120.0;
 	static constexpr double HostedWorldPeakMB = 6144.0;
 
+	/**
+	 * The same share on the two smaller hosted servers (plan section 2.1's table), which the backend's session start sizes a
+	 * server by: 1.5 vCPU and 3 GB (up to 16 players), and 2 vCPU and 4 GB (up to 50).
+	 */
+	static constexpr double SmallHostedWorldReadyMB = 1638.0;
+	static constexpr double SmallHostedWorldPeakMB = 2048.0;
+	static constexpr double MediumHostedWorldReadyMB = 2253.0;
+	static constexpr double MediumHostedWorldPeakMB = 2765.0;
+
 	FMantleServerMemoryCounts Counts;
 
 	/** The process's memory once the place is ready, no players. */
