@@ -1,8 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleServerMemoryEstimate.h"
 
-#include "MantlePlaceTypes.h"
-
 namespace MantleServerMemoryEstimatePrivate
 {
 	/** An MHF1 heightfield's header (MantleHeightfieldReader.h); 16-bit samples follow it. */
@@ -39,21 +37,21 @@ FMantleServerMemoryEstimate FMantleServerMemoryEstimate::Of(const FMantleServerM
 	return Estimate;
 }
 
-void FMantleServerMemoryEstimate::AddEntity(const FMantleEntity& Entity, FMantleServerMemoryCounts& Counts)
+void FMantleServerMemoryEstimate::AddEntity(const FMantleEntity& Entity, FMantleServerMemoryCounts& OutCounts)
 {
-	++Counts.Entities;
+	++OutCounts.Entities;
 	if (const FMantleStaticMeshProps* Mesh = Entity.Props.TryGet<FMantleStaticMeshProps>())
 	{
-		Counts.Solid += Mesh->Collision != EMantleCollision::None ? 1 : 0;
+		OutCounts.Solid += Mesh->Collision != EMantleCollision::None ? 1 : 0;
 	}
 	else if (const FMantleInstancedMeshProps* Instanced = Entity.Props.TryGet<FMantleInstancedMeshProps>())
 	{
-		Counts.Instances += Instanced->Instances.Num();
-		Counts.Solid += Instanced->Mesh.Collision != EMantleCollision::None ? Instanced->Instances.Num() : 0;
+		OutCounts.Instances += Instanced->Instances.Num();
+		OutCounts.Solid += Instanced->Mesh.Collision != EMantleCollision::None ? Instanced->Instances.Num() : 0;
 	}
 }
 
-void FMantleServerMemoryEstimate::AddManifest(TConstArrayView<FMantleAssetRef> Assets, FMantleServerMemoryCounts& Counts)
+void FMantleServerMemoryEstimate::AddManifest(TConstArrayView<FMantleAssetRef> Assets, FMantleServerMemoryCounts& OutCounts)
 {
 	using namespace MantleServerMemoryEstimatePrivate;
 	TSet<FString> Meshes;
@@ -64,13 +62,13 @@ void FMantleServerMemoryEstimate::AddManifest(TConstArrayView<FMantleAssetRef> A
 		{
 			bool bSeen = false;
 			Meshes.Add(Asset.Id, &bSeen);
-			Counts.Meshes += bSeen ? 0 : 1;
+			OutCounts.Meshes += bSeen ? 0 : 1;
 		}
 		else if (Asset.Kind == EMantleAssetKind::Heightfield && Asset.Bytes > HeightfieldHeaderBytes)
 		{
 			bool bSeen = false;
 			Heightfields.Add(Asset.Id, &bSeen);
-			Counts.TerrainSamples += bSeen ? 0 : (Asset.Bytes - HeightfieldHeaderBytes) / 2;
+			OutCounts.TerrainSamples += bSeen ? 0 : (Asset.Bytes - HeightfieldHeaderBytes) / 2;
 		}
 	}
 }

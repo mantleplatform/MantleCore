@@ -2,16 +2,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-
-struct FMantleEntity;
-struct FMantleAssetRef;
+#include "MantlePlaceTypes.h"
 
 /**
  * What the server memory estimate counts, over the root place and every cell (MantleCore#189, the server plan's section 6).
  * Every number is one the place file, its manifest and its cell index already state, so the editor's Check, the publish
  * window, the backend and the server all count the same place the same way.
  */
-struct FMantleServerMemoryCounts
+struct MANTLERUNTIME_API FMantleServerMemoryCounts
 {
 	/** Entities of every type, root and cells; an InstancedMesh counts once. */
 	int64 Entities = 0;
@@ -87,13 +85,13 @@ struct MANTLERUNTIME_API FMantleServerMemoryEstimate
 	/** Both fit the biggest hosted server's world share; false means community servers only. */
 	bool bFitsHosted = true;
 
-	static FMantleServerMemoryEstimate Of(const FMantleServerMemoryCounts& Counts);
+	static FMantleServerMemoryEstimate Of(const FMantleServerMemoryCounts& InCounts);
 
-	/** Adds one entity of the root or a cell to Counts. */
-	static void AddEntity(const FMantleEntity& Entity, FMantleServerMemoryCounts& Counts);
+	/** Adds one entity of the root or a cell to OutCounts. */
+	static void AddEntity(const FMantleEntity& Entity, FMantleServerMemoryCounts& OutCounts);
 
 	/** Adds a manifest's StaticMesh entries (each id once) and its heightfields' samples (from their byte counts; one not uploaded yet counts nothing). */
-	static void AddManifest(TConstArrayView<FMantleAssetRef> Assets, FMantleServerMemoryCounts& Counts);
+	static void AddManifest(TConstArrayView<FMantleAssetRef> Assets, FMantleServerMemoryCounts& OutCounts);
 
 	/** "world_gb=3.55 peak_gb=5.13 fits=hosted entities=... instances=... solid=... meshes=... terrainSamples=...", for log lines: world_gb is ReadyMB. */
 	FString Fields() const;
