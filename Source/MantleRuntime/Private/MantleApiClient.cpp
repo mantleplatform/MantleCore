@@ -552,10 +552,21 @@ namespace MantleApiClientUploadPrivate
 		{
 			OutAsset.CookedBytes = static_cast<int64>(CookedBytes);
 		}
+		Object->TryGetStringField(TEXT("lowUrl"), OutAsset.LowUrl);
 		const TSharedPtr<FJsonObject>* Info = nullptr;
 		const TSharedPtr<FJsonObject>* Textures = nullptr;
-		if (Object->TryGetObjectField(TEXT("cookInfo"), Info) && Info && Info->IsValid()
-			&& (*Info)->TryGetObjectField(TEXT("textures"), Textures) && Textures && Textures->IsValid())
+		const TSharedPtr<FJsonObject>* Low = nullptr;
+		const bool bInfo = Object->TryGetObjectField(TEXT("cookInfo"), Info) && Info && Info->IsValid();
+		if (bInfo && (*Info)->TryGetObjectField(TEXT("low"), Low) && Low && Low->IsValid())
+		{
+			(*Low)->TryGetStringField(TEXT("cookedHash"), OutAsset.LowCookedHash);
+			double LowBytes = 0.0;
+			if ((*Low)->TryGetNumberField(TEXT("cookedBytes"), LowBytes) && LowBytes > 0.0 && LowBytes < 9.0e15)
+			{
+				OutAsset.LowCookedBytes = static_cast<int64>(LowBytes);
+			}
+		}
+		if (bInfo && (*Info)->TryGetObjectField(TEXT("textures"), Textures) && Textures && Textures->IsValid())
 		{
 			for (const auto& Pair : (*Textures)->Values)
 			{

@@ -51,7 +51,7 @@ struct MANTLERUNTIME_API FMantleBudgetUse
 	double ProcessMemoryShare = 0.0;
 	/** The place's textures' video memory, bytes. */
 	int64 TextureBytes = 0;
-	/** The game's process memory (its working set, as the share), bytes; 0 when unknown. */
+	/** The game's process memory, bytes (FMantleStreamBudget::CurrentProcessMemoryBytes: the larger of working set and private bytes); 0 when unknown. */
 	int64 ProcessMemoryBytes = 0;
 };
 
@@ -150,9 +150,9 @@ public:
 	/** The limits for the graphics setting and the machine now. The Nanite page limit can be asked for often: the machine is read once a second at most. */
 	static FMantleBudgetLimits CurrentLimits();
 
-	/** The game's process memory over the machine's RAM (CurrentMachine's, so the test switch counts), 0 when unknown. */
+	/** The game's process memory (CurrentProcessMemoryBytes) over the machine's RAM (CurrentMachine's, so the test switch counts), 0 when unknown. */
 	static double CurrentProcessMemoryShare();
 
-	/** The game's process memory (working set), bytes. */
+	/** The game's process memory, bytes: the larger of its working set and its private (committed) bytes (Windows trims the first while the second grows). */
 	static int64 CurrentProcessMemoryBytes();
 };

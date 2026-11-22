@@ -28,6 +28,9 @@ public:
 	/** How long the assets may spend building this tick (seconds): the streamer shares its budget with them. */
 	virtual void SetBuildSlice(double Seconds) { (void)Seconds; }
 
+	/** #189: where the view is, for how much texture detail the cells' materials get (FMantlePlaceAssets::SetTextureView). Every tick. */
+	virtual void SetView(const FVector& Location) { (void)Location; }
+
 	/** The Nanite root pages the place's meshes have attached now: the live budget (stage 8) counts them. Zero where nothing counts them (tests). */
 	virtual int64 GetNaniteRootPagesAttached() const { return 0; }
 
@@ -64,6 +67,8 @@ public:
 	virtual void Release(int32 CellIndex) override { Set->ReleaseEntityAssets(HolderOf(CellIndex)); }
 
 	virtual void SetBuildSlice(double Seconds) override { Set->SetStreamBuildSlice(Seconds); }
+
+	virtual void SetView(const FVector& Location) override { Set->SetTextureView(Location); }
 
 	virtual int64 GetNaniteRootPagesAttached() const override { return Set->GetNaniteRootPagesAttached(); }
 

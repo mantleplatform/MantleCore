@@ -2107,18 +2107,34 @@ void FMantlePlaceAssets::OnResolved(const TArray<FString>& Ids, const FMantleAss
 	}
 }
 
-void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAsset& Asset)
+void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAsset& InAsset)
 {
 	// A weapon's attachment may be a mesh or a skeletal mesh; the API says which. This record was made as a mesh: swap
 	// it for a skeletal mesh one and let that one take the answer. Nothing touches Record after, which the swap removes.
-	if (Record.Kind == EAssetKind::Mesh && Record.bMeshOrSkeletal && Asset.Kind.Equals(KindName(EAssetKind::SkeletalMesh), ESearchCase::CaseSensitive))
+	if (Record.Kind == EAssetKind::Mesh && Record.bMeshOrSkeletal && InAsset.Kind.Equals(KindName(EAssetKind::SkeletalMesh), ESearchCase::CaseSensitive))
 	{
 		const FString SwappedId = Record.Id;
-		const FMantleUploadedAsset Answer = Asset;
+		const FMantleUploadedAsset Answer = InAsset;
 		Records.Remove(RecordKey(SwappedId, EAssetKind::Mesh, EMantleTextureRole::Color));
 		ApplyResolved(EnsureRecord(SwappedId, EAssetKind::SkeletalMesh), Answer);
 		return;
 	}
+	// #189: a cell material's texture is built from its low companion first (its cooked file's mips from 512 down); the full file is built only while something
+	// near wants it (UpdateTextureDetail, which calls this again with bFullPass for the full build).
+	const bool bUseLow = Record.Kind == EAssetKind::Texture && Record.bStreamed && !Record.bFullPass && InAsset.HasLowTexture();
+	FMantleUploadedAsset LowAnswer;
+	if (bUseLow)
+	{
+		LowAnswer = InAsset;
+		LowAnswer.Url = InAsset.LowUrl;
+		LowAnswer.CookedHash = InAsset.LowCookedHash;
+		LowAnswer.CookedBytes = InAsset.LowCookedBytes;
+	}
+	if (!Record.bFullPass)
+	{
+		Record.bLowTexture = bUseLow;
+	}
+	const FMantleUploadedAsset& Asset = bUseLow ? LowAnswer : InAsset;
 	const TCHAR* Expected = (Record.Kind == EAssetKind::TerrainWeights || Record.Kind == EAssetKind::VoxelTile) ? KindName(EAssetKind::Texture) : KindName(Record.Kind);
 	if (!Asset.Kind.Equals(Expected, ESearchCase::CaseSensitive))
 	{
@@ -3520,6 +3536,12 @@ void FMantlePlaceAssets::BuildOne(FBuild& Build)
 		{
 			const FRecord* Record = Build.TextureRecords[Slot].IsEmpty() ? nullptr : Records.Find(Build.TextureRecords[Slot]);
 			const FBuild* TextureBuild = Record && Record->Build.IsSet() ? Builds.Find(Record->Build.GetValue()) : nullptr;
+			// #189: the full texture when something near wants it and it is built already; else the low one, swapped later (ShowTextureDetail).
+			if (const FBuild* Full = Record && Record->bWantFull && Record->FullBuild.IsSet() ? Builds.Find(Record->FullBuild.GetValue()) : nullptr;
+				Full && Full->State == EBuildState::Ready && Full->Object)
+			{
+				TextureBuild = Full;
+			}
 			if (TextureBuild && TextureBuild->State == EBuildState::Ready)
 			{
 				Textures[Slot] = Cast<UTexture>(TextureBuild->Object.Get());
@@ -3957,6 +3979,7 @@ void FMantlePlaceAssets::Pump()
 		}
 	}
 	ProcessStreamedRecords();
+	UpdateTextureDetail();
 	FlushResolves();
 	StartFetches();
 	StartDecodes();
@@ -4657,6 +4680,20 @@ FMantlePlaceAssets::FHolderAssets FMantlePlaceAssets::GetHolderAssets(const int6
 		{
 			Out.PendingIds.Add(Need.Id);
 		}
+		else if (Need.bMaterial)
+		{
+			// #189: a material something near wants at full detail waits for its full textures (the join's near cells come up sharp); a far one is ready on its low ones.
+			for (const FString& TextureKey : Build->TextureRecords)
+			{
+				const FRecord* Texture = TextureKey.IsEmpty() ? nullptr : Records.Find(TextureKey);
+				const FBuild* Full = Texture && Texture->bWantFull && Texture->FullBuild.IsSet() ? Builds.Find(Texture->FullBuild.GetValue()) : nullptr;
+				if (Full && !Full->IsTerminal())
+				{
+					Out.PendingIds.Add(Need.Id);
+					break;
+				}
+			}
+		}
 	}
 	return Out;
 }
@@ -4691,6 +4728,9 @@ FMantlePlaceAssets::FStreamedCounts FMantlePlaceAssets::GetStreamedCounts() cons
 		const FBuild* Build = Pair.Value.Build.IsSet() ? Builds.Find(Pair.Value.Build.GetValue()) : nullptr;
 		Counts.NaniteInFlight += (Pair.Value.Kind == EAssetKind::Nanite && !Pair.Value.bFailed && (!Build || !Build->IsTerminal())) ? 1 : 0;
 		Counts.UpgradesInFlight += Pair.Value.UpgradeBuild.IsSet() ? 1 : 0;
+		Counts.LowTextures += Pair.Value.bLowTexture ? 1 : 0;
+		Counts.FullTexturesWanted += Pair.Value.bWantFull ? 1 : 0;
+		Counts.FullTexturesShown += Pair.Value.bFullShown ? 1 : 0;
 	}
 	return Counts;
 }
@@ -4859,7 +4899,31 @@ bool FMantlePlaceAssets::DropRecord(const FString& Key)
 	{
 		return false;
 	}
+	const FBuild* FullTextureBuild = Record->FullBuild.IsSet() ? Builds.Find(Record->FullBuild.GetValue()) : nullptr;
+	if (FullTextureBuild && !FullTextureBuild->IsTerminal())
+	{
+		return false;
+	}
 	const FString Id = Record->Id;
+	// #189: a texture's full build goes with it (nothing names the record any more, so no material draws it).
+	if (Record->FullBuild.IsSet())
+	{
+		const FBuildKey FullKey = Record->FullBuild.GetValue();
+		Record->FullBuild.Reset();
+		if (FBuild* Full = Builds.Find(FullKey))
+		{
+			Full->RecordIds.Remove(Id);
+			if (Full->RecordIds.IsEmpty())
+			{
+				EraseBuild(FullKey);
+			}
+		}
+		Record = Records.Find(Key);
+		if (!Record)
+		{
+			return true;
+		}
+	}
 	// What hangs on the record: a mesh's side files, a material's textures.
 	TArray<FString> Dependents;
 	if (Record->UpgradeBuild.IsSet())
@@ -5086,6 +5150,226 @@ bool FMantlePlaceAssets::FinishUpgrade(FRecord& Record)
 	}
 	Record.UpgradeBuild.Reset();
 	return true;
+}
+
+void FMantlePlaceAssets::UpdateTextureDetail()
+{
+	if (!bStreaming || !bCompleted || !TextureView.IsSet())
+	{
+		return;
+	}
+	const double Now = FPlatformTime::Seconds();
+	if (Now < NextTextureDetailSeconds)
+	{
+		return;
+	}
+	NextTextureDetailSeconds = Now + 0.5;
+	const FVector View = TextureView.GetValue();
+
+	// How near each material's users stand: the nearest of its needs' bounds over every holder (a far set's needs carry none, so it never asks for full detail).
+	TMap<FString, double> MaterialDistanceSq;
+	for (const TPair<int64, TArray<FMantleCellAssetNeed>>& Held : CellUse.GetHeld())
+	{
+		for (const FMantleCellAssetNeed& Need : Held.Value)
+		{
+			if (Need.bMaterial && Need.Bounds.IsValid)
+			{
+				const double DistanceSq = Need.Bounds.ComputeSquaredDistanceToPoint(View);
+				double& Nearest = MaterialDistanceSq.FindOrAdd(Need.Id, TNumericLimits<double>::Max());
+				Nearest = FMath::Min(Nearest, DistanceSq);
+			}
+		}
+	}
+
+	// Which material builds use each texture record, and how near the nearest of them is.
+	TextureUsers.Reset();
+	TMap<FString, double> TextureDistanceSq;
+	for (const TPair<FBuildKey, FBuild>& Pair : Builds)
+	{
+		const FBuild& Material = Pair.Value;
+		if (Material.Key.Kind != EAssetKind::Material)
+		{
+			continue;
+		}
+		// Ids with the same bytes share one build: the nearest user of any of them counts.
+		double Nearest = TNumericLimits<double>::Max();
+		for (const FString& MaterialId : Material.RecordIds)
+		{
+			if (const double* Found = MaterialDistanceSq.Find(MaterialId))
+			{
+				Nearest = FMath::Min(Nearest, *Found);
+			}
+		}
+		const double* DistanceSq = Nearest < TNumericLimits<double>::Max() ? &Nearest : nullptr;
+		for (int32 Slot = 0; Slot < MantlePlaceMaterialTextureCount; ++Slot)
+		{
+			const FString& TextureKey = Material.TextureRecords[Slot];
+			if (TextureKey.IsEmpty())
+			{
+				continue;
+			}
+			TextureUsers.FindOrAdd(TextureKey).Emplace(Material.Key, Slot);
+			if (DistanceSq)
+			{
+				double& TextureNearest = TextureDistanceSq.FindOrAdd(TextureKey, TNumericLimits<double>::Max());
+				TextureNearest = FMath::Min(TextureNearest, *DistanceSq);
+			}
+		}
+	}
+
+	// Each low texture: wanted at full size within FullTextureNearCm, kept until past FullTextureFarCm (walking along the edge does not swap back and forth).
+	TArray<FString> LowKeys;
+	for (const TPair<FString, FRecord>& Pair : Records)
+	{
+		if (Pair.Value.bLowTexture && !Pair.Value.bFailed)
+		{
+			LowKeys.Add(Pair.Key);
+		}
+	}
+	for (const FString& Key : LowKeys)
+	{
+		FRecord* Record = Records.Find(Key);
+		if (!Record)
+		{
+			continue;
+		}
+		const double* FoundDistanceSq = TextureDistanceSq.Find(Key);
+		const double DistanceSq = FoundDistanceSq ? *FoundDistanceSq : TNumericLimits<double>::Max();
+		const double Edge = Record->bWantFull ? FullTextureFarCm : FullTextureNearCm;
+		Record->bWantFull = !Record->bFullFailed && DistanceSq <= Edge * Edge;
+
+		const FBuild* Full = Record->FullBuild.IsSet() ? Builds.Find(Record->FullBuild.GetValue()) : nullptr;
+		if (Record->FullBuild.IsSet() && !Full)
+		{
+			// The full build was taken away under it (a download that answered 403 or 404 is let go): stay low.
+			Record->FullBuild.Reset();
+			Record->bFullShown = false;
+			Record->bFullFailed = true;
+			Record->bWantFull = false;
+			continue;
+		}
+		if (Full && Full->State == EBuildState::Failed)
+		{
+			Record->bFullFailed = true;
+			Record->bWantFull = false;
+		}
+		if (Record->bWantFull)
+		{
+			if (!Record->FullBuild.IsSet())
+			{
+				if (!StartFullTexture(*Record))
+				{
+					if (FRecord* Again = Records.Find(Key))
+					{
+						Again->bFullFailed = true;
+						Again->bWantFull = false;
+					}
+				}
+				continue;
+			}
+			if (!Record->bFullShown && Full && Full->State == EBuildState::Ready && Full->Object)
+			{
+				ShowTextureDetail(Key, *Record, /*bFull*/ true);
+				Record->bFullShown = true;
+			}
+		}
+		else if (Record->FullBuild.IsSet())
+		{
+			StopFullTexture(*Record);
+		}
+	}
+}
+
+bool FMantlePlaceAssets::StartFullTexture(FRecord& Record)
+{
+	const FMantleUploadedAsset* Cached = ResolvedCache.Find(Record.Id);
+	FMantleContentHash Hash;
+	if (!Cached || Cached->Url.IsEmpty() || !FMantleContentHash::Parse(Cached->CookedHash, Hash))
+	{
+		return false;
+	}
+	const FString Key = RecordKey(Record.Id, EAssetKind::Texture, Record.Role);
+	const FMantleUploadedAsset Answer = *Cached;
+	const TOptional<FBuildKey> LowKey = Record.Build;
+	// ApplyResolved makes the build (shared with another record of the same bytes and role, or reused from an earlier set) and points Build at it; Build goes back to the low one.
+	Record.bFullPass = true;
+	Record.Build.Reset();
+	Record.bResolved = false;
+	ApplyResolved(Record, Answer);
+	FRecord* Again = Records.Find(Key);
+	if (!Again)
+	{
+		return false;
+	}
+	Again->bFullPass = false;
+	const TOptional<FBuildKey> FullKey = Again->Build;
+	Again->Build = LowKey;
+	Again->bResolved = true;
+	if (!FullKey.IsSet() || Again->bFailed)
+	{
+		return false;
+	}
+	Again->FullBuild = FullKey;
+	Again->bFullShown = false;
+	UE_LOG(LogMantle, Verbose, TEXT("MANTLE_PLACE_ASSETS texture %s: full detail wanted (something within %.0f m)"), *Again->Id, FullTextureNearCm / 100.0);
+	return true;
+}
+
+bool FMantlePlaceAssets::StopFullTexture(FRecord& Record)
+{
+	if (!Record.FullBuild.IsSet())
+	{
+		return true;
+	}
+	const FBuildKey FullKey = Record.FullBuild.GetValue();
+	FBuild* Full = Builds.Find(FullKey);
+	if (Full && !Full->IsTerminal())
+	{
+		return false;
+	}
+	const FString Key = RecordKey(Record.Id, EAssetKind::Texture, Record.Role);
+	if (Record.bFullShown || Full)
+	{
+		// Every material that draws the full texture goes back to the low one, so the full one can be collected.
+		ShowTextureDetail(Key, Record, /*bFull*/ false);
+	}
+	Record.bFullShown = false;
+	Record.FullBuild.Reset();
+	if (Full)
+	{
+		Full->RecordIds.Remove(Record.Id);
+		if (Full->RecordIds.IsEmpty())
+		{
+			EraseBuild(FullKey);
+		}
+	}
+	return true;
+}
+
+void FMantlePlaceAssets::ShowTextureDetail(const FString& Key, const FRecord& Record, const bool bFull)
+{
+	const FBuild* Low = Record.Build.IsSet() ? Builds.Find(Record.Build.GetValue()) : nullptr;
+	const FBuild* Full = Record.FullBuild.IsSet() ? Builds.Find(Record.FullBuild.GetValue()) : nullptr;
+	UTexture* LowTexture = Low && Low->State == EBuildState::Ready ? Cast<UTexture>(Low->Object.Get()) : nullptr;
+	UTexture* FullTexture = Full && Full->State == EBuildState::Ready ? Cast<UTexture>(Full->Object.Get()) : nullptr;
+	if (!LowTexture || !FullTexture)
+	{
+		return;
+	}
+	const TArray<TPair<FBuildKey, int32>>* Users = TextureUsers.Find(Key);
+	if (!Users)
+	{
+		return;
+	}
+	for (const TPair<FBuildKey, int32>& User : *Users)
+	{
+		const FBuild* Material = Builds.Find(User.Key);
+		UMaterialInstanceDynamic* Instance = Material && Material->State == EBuildState::Ready ? Cast<UMaterialInstanceDynamic>(Material->Object.Get()) : nullptr;
+		if (Instance)
+		{
+			FMantlePlaceMaterials::SwapSlotTexture(Instance, User.Value, bFull ? LowTexture : FullTexture, bFull ? FullTexture : LowTexture);
+		}
+	}
 }
 
 void FMantlePlaceAssets::ProcessStreamedRecords()

@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCellStreamer.h"
+#include "HAL/PlatformMemory.h"
 
 #include "MantleRuntime.h"
 
@@ -183,6 +184,8 @@ void FMantleCellStreamer::Tick(const double DeltaSeconds)
 			// The assets' builds and the pieces share the tick's budget: while a cell waits for its assets they get their share of it.
 			const double AssetSlice = AssetCells.IsEmpty() ? Settings.AssetIdleSliceSeconds : Budget * Settings.AssetBudgetShare;
 			CellAssets->SetBuildSlice(AssetSlice);
+			// #189: near materials get their textures' full files; the rest stay on their low companions.
+			CellAssets->SetView(View.Location);
 			Budget = FMath::Max(Budget - (AssetCells.IsEmpty() ? 0.0 : AssetSlice), 0.0);
 		}
 		RunWork(Budget);
@@ -1261,9 +1264,10 @@ void FMantleCellStreamer::LogSummary(const TCHAR* Why) const
 	if (Stats.BudgetLooks > 0)
 	{
 		UE_LOG(LogMantle, Log,
-			TEXT("MANTLE_CELLS_BUDGET_SUMMARY %s: %d looks, ladder now %.2f lowest %.2f, pressure now %.2f worst %.2f; at the last look instances %lld, solid %lld, far instances %lld, Nanite root pages %lld, textures %.0f MB, process memory %.3f of the machine (%.0f MB)"),
+			TEXT("MANTLE_CELLS_BUDGET_SUMMARY %s: %d looks, ladder now %.2f lowest %.2f, pressure now %.2f worst %.2f; at the last look instances %lld, solid %lld, far instances %lld, Nanite root pages %lld, textures %.0f MB, process memory %.3f of the machine (%.0f MB; now working set %.0f MB, private %.0f MB)"),
 			Why, Stats.BudgetLooks, Stats.BudgetLadder, Stats.BudgetLowestLadder, Stats.BudgetPressure, Stats.BudgetWorstPressure, Stats.BudgetInstances, Stats.BudgetSolidThings,
-			Stats.BudgetFarInstances, Stats.BudgetNaniteRootPages, Stats.BudgetTextureBytes / (1024.0 * 1024.0), Stats.BudgetMemoryShare, Stats.BudgetMemoryBytes / (1024.0 * 1024.0));
+			Stats.BudgetFarInstances, Stats.BudgetNaniteRootPages, Stats.BudgetTextureBytes / (1024.0 * 1024.0), Stats.BudgetMemoryShare, Stats.BudgetMemoryBytes / (1024.0 * 1024.0),
+			FPlatformMemory::GetStats().UsedPhysical / (1024.0 * 1024.0), FPlatformMemory::GetStats().UsedVirtual / (1024.0 * 1024.0));
 	}
 }
 

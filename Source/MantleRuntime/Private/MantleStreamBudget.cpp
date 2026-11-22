@@ -240,12 +240,14 @@ FMantleBudgetLimits FMantleStreamBudget::CurrentLimits()
 
 double FMantleStreamBudget::CurrentProcessMemoryShare()
 {
-	const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
 	const int64 Physical = CurrentMachine().PhysicalBytes;
-	return Physical > 0 ? static_cast<double>(Stats.UsedPhysical) / static_cast<double>(Physical) : 0.0;
+	return Physical > 0 ? static_cast<double>(CurrentProcessMemoryBytes()) / static_cast<double>(Physical) : 0.0;
 }
 
 int64 FMantleStreamBudget::CurrentProcessMemoryBytes()
 {
-	return static_cast<int64>(FPlatformMemory::GetStats().UsedPhysical);
+	// #189: the larger of the working set and the private (committed) bytes. Windows trims the working set while what the process has committed keeps growing: City
+	// Sample's join crashed at a 36.4 GB working set with 46.7 GB private, so the working set alone can miss real pressure.
+	const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
+	return static_cast<int64>(FMath::Max(Stats.UsedPhysical, Stats.UsedVirtual));
 }
