@@ -573,6 +573,9 @@ public:
 	int64 GetNaniteHeldPeakBytes() const { return NaniteHeldPeakBytes; }
 	int64 GetNaniteRootPagesAttached() const { return NaniteRootPagesAttached; }
 
+	/** Downloads started above MaxPendingBuildBytes because a waiting build named them (tests and the progress log). */
+	int32 GetFetchesOverBudget() const { return FetchesOverBudget; }
+
 	/** Everything but the sounds has settled and OnDone has fired. */
 	bool IsComplete() const { return bCompleted; }
 
@@ -947,6 +950,12 @@ private:
 	void ApplyResolved(FRecord& Record, const FMantleUploadedAsset& Asset);
 	void QueueTexturesOf(const FString& MaterialId, const TMap<FString, FString>& SlotTextures);
 
+	/**
+	 * The queued downloads that a waiting build holding decoded bytes names (a mesh's Lumen and Nanite files, a material's
+	 * textures, a wheel's parts). StartFetches starts these even above MaxPendingBuildBytes, else the waiting builds hold the budget
+	 * shut and what they wait for never starts.
+	 */
+	TSet<FBuildKey> QueuedFilesWaitedFor() const;
 	void StartFetches();
 	void OnFetched(const FBuildKey& Key, const FMantleAssetResult& Fetched);
 	void StartDecodes();
@@ -1060,6 +1069,8 @@ private:
 	int32 FetchesInFlight = 0;
 	int32 DecodesInFlight = 0;
 	int64 PendingBuildBytes = 0;
+	/** Downloads started above MaxPendingBuildBytes for a waiting build (QueuedFilesWaitedFor). */
+	int32 FetchesOverBudget = 0;
 
 	double StartSeconds = 0.0;
 	double NextProgressLogAt = 0.0;
