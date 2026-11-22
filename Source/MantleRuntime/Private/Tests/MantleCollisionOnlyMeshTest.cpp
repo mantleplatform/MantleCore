@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCellAssetUse.h"
 #include "MantleFarSetPlan.h"
+#include "MantleMergedInstancesComponent.h"
 #include "MantlePlaceBuilder.h"
 #include "MantlePlaceParser.h"
 
@@ -217,8 +218,10 @@ namespace MantleCollisionOnlyMeshTestPrivate
 		Test.TestEqual(Where + TEXT(": the slab blocks sight traces"), static_cast<int32>(Slab->GetCollisionResponseToChannel(ECC_Visibility)), static_cast<int32>(ECR_Block));
 		Test.TestEqual(Where + TEXT(": the wall lets sight traces through"), static_cast<int32>(Wall->GetCollisionResponseToChannel(ECC_Visibility)), static_cast<int32>(ECR_Ignore));
 		Test.TestEqual(Where + TEXT(": and still blocks the camera"), static_cast<int32>(Wall->GetCollisionResponseToChannel(ECC_Camera)), static_cast<int32>(ECR_Block));
+		// A dedicated server holds a static, solid set as one merged component (a few bodies, many shapes each); everywhere else it is the engine's instanced component.
 		const UInstancedStaticMeshComponent* Instances = Cast<UInstancedStaticMeshComponent>(Blockers);
-		Test.TestEqual(Where + TEXT(": the blockers keep both instances"), Instances ? Instances->GetInstanceCount() : 0, 2);
+		const UMantleMergedInstancesComponent* MergedInstances = Cast<UMantleMergedInstancesComponent>(Blockers);
+		Test.TestEqual(Where + TEXT(": the blockers keep both instances"), Instances ? Instances->GetInstanceCount() : (MergedInstances ? MergedInstances->GetInstanceCount() : 0), 2);
 
 		// Real traces through the built world. The wall stands at y = 1000 (a 100 cm cube): a sight trace along +Y passes it, a pawn-channel
 		// trace stops at it, and a sight trace down hits the slab (at the origin; the deck above it has no collision).
