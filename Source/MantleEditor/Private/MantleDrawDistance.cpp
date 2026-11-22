@@ -7,11 +7,13 @@
 #include "MantleRuntime.h"
 #include "MantleTargetFeatures.h"
 
+#include "Algo/BinarySearch.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
 #include "EngineUtils.h"
 #include "LevelInstance/LevelInstanceInterface.h"
 #include "LevelInstance/LevelInstanceSubsystem.h"
@@ -67,6 +69,35 @@ namespace MantleDrawDistancePrivate
 	/** The grid PlanStructures links pieces in: a piece is looked at, clipped, in each cell its footprint covers. */
 	constexpr double StructureCellCm = 3200.0;
 
+	/**
+	 * Whether Holder holds Piece up in the pull-down: Holder's bottom is under Piece's, its top within StructureReachCm under to
+	 * PullDownAboveCm over Piece's underside, and their footprints overlap by a quarter of the smaller one. (Unlike HoldsUp, a thin roof
+	 * slab holds up what stands on it.)
+	 */
+	bool RestsOn(const FBox3f& Holder, const FBox3f& Piece)
+	{
+		if (Holder.Min.Z >= Piece.Min.Z || Holder.Max.Z < Piece.Min.Z - FMantleDrawDistance::StructureReachCm
+			|| Holder.Max.Z > Piece.Min.Z + FMantleDrawDistance::PullDownAboveCm)
+		{
+			return false;
+		}
+		const double OverlapX = FMath::Min(Holder.Max.X, Piece.Max.X) - FMath::Max(Holder.Min.X, Piece.Min.X);
+		const double OverlapY = FMath::Min(Holder.Max.Y, Piece.Max.Y) - FMath::Max(Holder.Min.Y, Piece.Min.Y);
+		if (OverlapX <= 0.0 || OverlapY <= 0.0)
+		{
+			return false;
+		}
+		const double HolderArea = FMath::Max(static_cast<double>(Holder.Max.X - Holder.Min.X), 1.0) * FMath::Max(static_cast<double>(Holder.Max.Y - Holder.Min.Y), 1.0);
+		const double PieceArea = FMath::Max(static_cast<double>(Piece.Max.X - Piece.Min.X), 1.0) * FMath::Max(static_cast<double>(Piece.Max.Y - Piece.Min.Y), 1.0);
+		return OverlapX * OverlapY >= 0.25 * FMath::Min(HolderArea, PieceArea);
+	}
+
+	/** The pull-down's grid cells are numbered from -PullCellBias to PullCellBias - 1 each way (32 m cells: about 1,000 km). */
+	constexpr int64 PullCellBias = 1 << 15;
+
+	/** The pull-down gives up after this many passes (each carries a lowered distance at least one piece further up). */
+	constexpr int32 PullMaxPasses = 1000;
+
 	int32 FindRoot(TArray<int32>& Parent, int32 Index)
 	{
 		while (Parent[Index] != Index)
@@ -87,14 +118,14 @@ namespace MantleDrawDistancePrivate
 		{
 			return false;
 		}
-		const double OverlapX = FMath::Min(Lower.Max.X, Upper.Max.X) - FMath::Max(Lower.Min.X, Upper.Min.X);
-		const double OverlapY = FMath::Min(Lower.Max.Y, Upper.Max.Y) - FMath::Max(Lower.Min.Y, Upper.Min.Y);
+		const double OverlapX = static_cast<double>(FMath::Min(Lower.Max.X, Upper.Max.X) - FMath::Max(Lower.Min.X, Upper.Min.X));
+		const double OverlapY = static_cast<double>(FMath::Min(Lower.Max.Y, Upper.Max.Y) - FMath::Max(Lower.Min.Y, Upper.Min.Y));
 		if (OverlapX <= 0.0 || OverlapY <= 0.0)
 		{
 			return false;
 		}
-		const double LowerArea = FMath::Max(Lower.Max.X - Lower.Min.X, 1.0) * FMath::Max(Lower.Max.Y - Lower.Min.Y, 1.0);
-		const double UpperArea = FMath::Max(Upper.Max.X - Upper.Min.X, 1.0) * FMath::Max(Upper.Max.Y - Upper.Min.Y, 1.0);
+		const double LowerArea = FMath::Max(static_cast<double>(Lower.Max.X - Lower.Min.X), 1.0) * FMath::Max(static_cast<double>(Lower.Max.Y - Lower.Min.Y), 1.0);
+		const double UpperArea = FMath::Max(static_cast<double>(Upper.Max.X - Upper.Min.X), 1.0) * FMath::Max(static_cast<double>(Upper.Max.Y - Upper.Min.Y), 1.0);
 		return OverlapX * OverlapY >= 0.25 * FMath::Min(LowerArea, UpperArea);
 	}
 }
@@ -338,6 +369,174 @@ void FMantleDrawDistance::PlanStructures(TConstArrayView<FMantleStructureMember>
 	}
 }
 
+int32 FMantleDrawDistance::PullDownToSupports(TConstArrayView<FMantleHeldPiece> Pieces, TArrayView<double> Distances, TConstArrayView<bool> Movable,
+	TArray<double>* OutPieceLimit)
+{
+	using namespace MantleDrawDistancePrivate;
+	const int32 Components = Distances.Num();
+	auto Reach = [](const double Distance) { return Distance > 0.0 ? Distance : TNumericLimits<double>::Max(); };
+	auto IsMovable = [&Movable](const int32 Component) { return Movable.IsValidIndex(Component) && Movable[Component]; };
+	auto CellOf = [](const float Value)
+	{
+		return static_cast<uint64>(FMath::Clamp<int64>(FMath::FloorToInt64(Value / StructureCellCm), -PullCellBias, PullCellBias - 1) + PullCellBias);
+	};
+
+	// Every piece in each grid cell its footprint covers, as (cell, piece) keys: sorted, a cell's pieces are together.
+	TArray<uint64> Entries;
+	Entries.Reserve(Pieces.Num() + Pieces.Num() / 2);
+	for (int32 Index = 0; Index < Pieces.Num(); ++Index)
+	{
+		const FMantleHeldPiece& Piece = Pieces[Index];
+		if (!Piece.Bounds.IsValid || Piece.Component < 0 || Piece.Component >= Components)
+		{
+			continue;
+		}
+		const uint64 X1 = CellOf(Piece.Bounds.Max.X);
+		const uint64 Y1 = CellOf(Piece.Bounds.Max.Y);
+		for (uint64 X = CellOf(Piece.Bounds.Min.X); X <= X1; ++X)
+		{
+			for (uint64 Y = CellOf(Piece.Bounds.Min.Y); Y <= Y1; ++Y)
+			{
+				Entries.Add((X << 48) | (Y << 32) | static_cast<uint32>(Index));
+			}
+		}
+	}
+	Entries.Sort();
+
+	// What holds each movable piece up: the pieces whose top is near its underside, looked at in the cell where the two footprints'
+	// overlap starts (so each pair once). (held piece, holding component) keys.
+	TArray<uint64> Held;
+	TArray<TPair<float, int32>> ByTop;
+	for (int32 Start = 0; Start < Entries.Num();)
+	{
+		const uint64 Cell = Entries[Start] >> 32;
+		ByTop.Reset();
+		int32 End = Start;
+		for (; End < Entries.Num() && (Entries[End] >> 32) == Cell; ++End)
+		{
+			const int32 Index = static_cast<int32>(Entries[End] & 0xffffffffull);
+			ByTop.Emplace(Pieces[Index].Bounds.Max.Z, Index);
+		}
+		Start = End;
+		if (ByTop.Num() < 2)
+		{
+			continue;
+		}
+		ByTop.Sort([](const TPair<float, int32>& A, const TPair<float, int32>& B) { return A.Key < B.Key; });
+		const uint64 CellX = Cell >> 16;
+		const uint64 CellY = Cell & 0xffffull;
+		// Only a piece raised over the cell's ground (its lowest piece) is held up: a lamp on the street is not held by the curb.
+		float Ground = TNumericLimits<float>::Max();
+		for (const TPair<float, int32>& Entry : ByTop)
+		{
+			Ground = FMath::Min(Ground, Pieces[Entry.Value].Bounds.Min.Z);
+		}
+		for (const TPair<float, int32>& Upper : ByTop)
+		{
+			const FMantleHeldPiece& Piece = Pieces[Upper.Value];
+			if (!IsMovable(Piece.Component) || Piece.Bounds.Min.Z < Ground + StructureLiftCm)
+			{
+				continue;
+			}
+			const float From = Piece.Bounds.Min.Z - static_cast<float>(StructureReachCm);
+			const float To = Piece.Bounds.Min.Z + static_cast<float>(PullDownAboveCm);
+			for (int32 At = Algo::LowerBoundBy(ByTop, From, [](const TPair<float, int32>& Entry) { return Entry.Key; });
+				At < ByTop.Num() && ByTop[At].Key <= To; ++At)
+			{
+				const int32 Under = ByTop[At].Value;
+				const FMantleHeldPiece& Holder = Pieces[Under];
+				if (Under == Upper.Value || CellOf(FMath::Max(Piece.Bounds.Min.X, Holder.Bounds.Min.X)) != CellX
+					|| CellOf(FMath::Max(Piece.Bounds.Min.Y, Holder.Bounds.Min.Y)) != CellY || !RestsOn(Holder.Bounds, Piece.Bounds))
+				{
+					continue;
+				}
+				Held.Add((static_cast<uint64>(Upper.Value) << 32) | static_cast<uint32>(Holder.Component));
+			}
+		}
+	}
+	Entries.Empty();
+	Held.Sort();
+	int32 Kept = 0;
+	for (int32 Index = 0; Index < Held.Num(); ++Index)
+	{
+		if (Kept == 0 || Held[Index] != Held[Kept - 1])
+		{
+			Held[Kept++] = Held[Index];
+		}
+	}
+	Held.SetNum(Kept);
+
+	// Each held piece's holders, lowest pieces first, so a change carries up a tower in few passes.
+	struct FHeldRange
+	{
+		int32 Piece;
+		int32 Begin;
+		int32 End;
+	};
+	TArray<FHeldRange> Ranges;
+	for (int32 Index = 0; Index < Held.Num();)
+	{
+		const int32 Piece = static_cast<int32>(Held[Index] >> 32);
+		int32 End = Index;
+		while (End < Held.Num() && static_cast<int32>(Held[End] >> 32) == Piece)
+		{
+			++End;
+		}
+		Ranges.Add({ Piece, Index, End });
+		Index = End;
+	}
+	Ranges.Sort([&Pieces](const FHeldRange& A, const FHeldRange& B) { return Pieces[A.Piece].Bounds.Min.Z < Pieces[B.Piece].Bounds.Min.Z; });
+	auto LimitOf = [&Held, &Distances, &Reach](const FHeldRange& Range)
+	{
+		double Limit = 0.0;
+		for (int32 At = Range.Begin; At < Range.End; ++At)
+		{
+			Limit = FMath::Max(Limit, Reach(Distances[static_cast<int32>(Held[At] & 0xffffffffull)]));
+		}
+		return Limit;
+	};
+
+	// Distances only come down, to a holder's distance, so this ends.
+	const TArray<double> Before(Distances.GetData(), Distances.Num());
+	int32 Passes = 0;
+	bool bChanged = true;
+	while (bChanged && Passes < PullMaxPasses)
+	{
+		bChanged = false;
+		++Passes;
+		for (const FHeldRange& Range : Ranges)
+		{
+			double& Own = Distances[Pieces[Range.Piece].Component];
+			const double Limit = LimitOf(Range);
+			if (Limit < Reach(Own))
+			{
+				Own = Limit;
+				bChanged = true;
+			}
+		}
+	}
+	if (bChanged)
+	{
+		UE_LOG(LogMantle, Warning, TEXT("MANTLE_STRUCTURE_PULLDOWN stopped after %d passes with distances still coming down"), Passes);
+	}
+	if (OutPieceLimit)
+	{
+		OutPieceLimit->Init(0.0, Pieces.Num());
+		for (const FHeldRange& Range : Ranges)
+		{
+			(*OutPieceLimit)[Range.Piece] = LimitOf(Range);
+		}
+	}
+	int32 Lowered = 0;
+	for (int32 Index = 0; Index < Components; ++Index)
+	{
+		Lowered += Distances[Index] != Before[Index] ? 1 : 0;
+	}
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_STRUCTURE_PULLDOWN pieces %d, held up %d (%d holder pairs), components lowered %d, passes %d"),
+		Pieces.Num(), Ranges.Num(), Held.Num(), Lowered, Passes);
+	return Lowered;
+}
+
 namespace MantleDrawDistancePrivate
 {
 	/** Every banded mesh component of World with its owner, pieces (an instance each) and own band; the owners' distances and structures. */
@@ -353,21 +552,47 @@ namespace MantleDrawDistancePrivate
 		TArray<FMember> Members;
 		TArray<FMantleStructureMember> StructureMembers;
 		int32 Owners = 0;
+		/** Each member's distance by the structure rule alone (PlanStructures), and after the pull-down (PullDownToSupports). */
+		TArray<double> StructureDistances;
 		TArray<double> Distances;
 		TArray<int32> Structures;
 		int32 LinkPieces = 0;
+		int32 Lowered = 0;
+		/** The components that only hold others up (their own distance or never culled), numbered after the members, and their distances. */
+		TArray<const UStaticMeshComponent*> Others;
+		TArray<double> OtherDistances;
+		/** When kept: every piece (Component: a member's number, or Members.Num() + an other's) and its limit (PullDownToSupports). */
+		TArray<FMantleHeldPiece> Pieces;
+		TArray<double> PieceLimits;
+		double Seconds = 0.0;
 	};
 
-	FStructurePlan PlanWorld(const UWorld* World)
+	/** A component's fixed distance when the rules leave it alone: its own, else none (never culled, or past the bands). */
+	double FixedDistance(const FMantleDrawDistanceSource& Source)
+	{
+		if (Source.bNeverDistanceCull)
+		{
+			return 0.0;
+		}
+		const double Own = Source.bInstanced && Source.InstanceEndCullDistance > 0 ? static_cast<double>(Source.InstanceEndCullDistance)
+			: Source.LDMaxDrawDistance > 0.0 ? Source.LDMaxDrawDistance : Source.CachedMaxDrawDistance;
+		return Own > 0.0 ? InRange(Own) : 0.0;
+	}
+
+	FStructurePlan PlanWorld(const UWorld* World, const bool bKeepPieces)
 	{
 		FStructurePlan Plan;
 		if (!World)
 		{
 			return Plan;
 		}
+		const double StartSeconds = FPlatformTime::Seconds();
 		const ULevelInstanceSubsystem* LevelInstances = World->GetSubsystem<ULevelInstanceSubsystem>();
 		TMap<const AActor*, int32> OwnerIndex;
 		TArray<FMantleStructurePiece> Links;
+		// Component numbers: a member's, or OtherFlag and an other's until the members are counted.
+		constexpr int32 OtherFlag = 1 << 30;
+		TArray<FMantleHeldPiece> Pieces;
 		for (TActorIterator<AActor> It(const_cast<UWorld*>(World)); It; ++It)
 		{
 			const AActor* Actor = *It;
@@ -393,31 +618,51 @@ namespace MantleDrawDistancePrivate
 				}
 				const FMantleDrawDistanceSource Source = FMantleDrawDistance::ReadComponent(Component, Mesh);
 				const double Band = BandFor(Source.SphereRadius);
-				if (Source.bNeverDistanceCull || HasOwnDistance(Source) || Band <= 0.0)
-				{
-					continue;
-				}
-				int32& Index = OwnerIndex.FindOrAdd(Outer, INDEX_NONE);
-				if (Index == INDEX_NONE)
-				{
-					Index = Plan.Owners++;
-				}
+				const bool bMember = !Source.bNeverDistanceCull && !HasOwnDistance(Source) && Band > 0.0;
 				const UInstancedStaticMeshComponent* Instanced = Cast<UInstancedStaticMeshComponent>(Component);
-				Plan.Members.Add(FStructurePlan::FMember{ Component, Index, Instanced ? Instanced->GetInstanceCount() : 1, Band });
-				// Its height at the scale its radius was measured at (the largest instance's), and its lowest point in the world.
-				const FBoxSphereBounds MeshBounds = Mesh->GetBounds();
-				const double Scale = MeshBounds.SphereRadius > 0.0 ? Source.SphereRadius / MeshBounds.SphereRadius : 1.0;
-				FMantleStructureMember& Member = Plan.StructureMembers.AddDefaulted_GetRef();
-				Member.Owner = Index;
-				Member.Band = Band;
-				Member.Radius = Source.SphereRadius;
-				Member.Height = MeshBounds.BoxExtent.Z * 2.0 * Scale;
-				Member.Bottom = Component->CalcBounds(Component->GetComponentTransform()).GetBox().Min.Z;
-				if (Source.SphereRadius < FMantleDrawDistance::LinkMinRadius)
+				int32 Number = INDEX_NONE;
+				int32 Owner = INDEX_NONE;
+				if (bMember)
 				{
-					continue;
+					int32& Index = OwnerIndex.FindOrAdd(Outer, INDEX_NONE);
+					if (Index == INDEX_NONE)
+					{
+						Index = Plan.Owners++;
+					}
+					Owner = Index;
+					Number = Plan.Members.Num();
+					Plan.Members.Add(FStructurePlan::FMember{ Component, Index, Instanced ? Instanced->GetInstanceCount() : 1, Band });
+					// Its height at the scale its radius was measured at (the largest instance's), and its lowest point in the world.
+					const FBoxSphereBounds MeshBounds = Mesh->GetBounds();
+					const double Scale = MeshBounds.SphereRadius > 0.0 ? Source.SphereRadius / MeshBounds.SphereRadius : 1.0;
+					FMantleStructureMember& Member = Plan.StructureMembers.AddDefaulted_GetRef();
+					Member.Owner = Index;
+					Member.Band = Band;
+					Member.Radius = Source.SphereRadius;
+					Member.Height = MeshBounds.BoxExtent.Z * 2.0 * Scale;
+					Member.Bottom = Component->CalcBounds(Component->GetComponentTransform()).GetBox().Min.Z;
 				}
-				// Instances one by one (one set may be spread over a whole district); a plain mesh as itself.
+				else
+				{
+					Number = OtherFlag | Plan.Others.Num();
+					Plan.Others.Add(Component);
+					Plan.OtherDistances.Add(FixedDistance(Source));
+				}
+				// Every piece holds up or is held (the pull-down); the members' big ones also link structures. Instances one by one (one
+				// set may be spread over a whole district); a plain mesh as itself.
+				const bool bLink = bMember && Source.SphereRadius >= FMantleDrawDistance::LinkMinRadius;
+				auto AddPiece = [&](const FBox& Box)
+				{
+					if (!Box.IsValid)
+					{
+						return;
+					}
+					Pieces.Add(FMantleHeldPiece{ Number, FBox3f(Box) });
+					if (bLink)
+					{
+						Links.Add(FMantleStructurePiece{ Owner, Box });
+					}
+				};
 				if (Instanced)
 				{
 					const FBox MeshBox = Mesh->GetBounds().GetBox();
@@ -426,18 +671,44 @@ namespace MantleDrawDistancePrivate
 						FTransform Instance;
 						if (Instanced->GetInstanceTransform(At, Instance, /*bWorldSpace*/ true))
 						{
-							Links.Add(FMantleStructurePiece{ Index, MeshBox.TransformBy(Instance) });
+							AddPiece(MeshBox.TransformBy(Instance));
 						}
 					}
 				}
 				else
 				{
-					Links.Add(FMantleStructurePiece{ Index, Component->CalcBounds(Component->GetComponentTransform()).GetBox() });
+					AddPiece(Component->CalcBounds(Component->GetComponentTransform()).GetBox());
 				}
 			}
 		}
 		Plan.LinkPieces = Links.Num();
-		FMantleDrawDistance::PlanStructures(Plan.StructureMembers, Links, Plan.Distances, &Plan.Structures);
+		FMantleDrawDistance::PlanStructures(Plan.StructureMembers, Links, Plan.StructureDistances, &Plan.Structures);
+		Links.Empty();
+
+		// Then every raised piece comes down to what holds it up.
+		const int32 MemberCount = Plan.Members.Num();
+		for (FMantleHeldPiece& Piece : Pieces)
+		{
+			if (Piece.Component & OtherFlag)
+			{
+				Piece.Component = MemberCount + (Piece.Component & ~OtherFlag);
+			}
+		}
+		TArray<double> All = Plan.StructureDistances;
+		All.Append(Plan.OtherDistances);
+		TArray<bool> Movable;
+		Movable.Init(false, All.Num());
+		for (int32 Index = 0; Index < MemberCount; ++Index)
+		{
+			Movable[Index] = true;
+		}
+		Plan.Lowered = FMantleDrawDistance::PullDownToSupports(Pieces, All, Movable, bKeepPieces ? &Plan.PieceLimits : nullptr);
+		Plan.Distances = TArray<double>(All.GetData(), MemberCount);
+		if (bKeepPieces)
+		{
+			Plan.Pieces = MoveTemp(Pieces);
+		}
+		Plan.Seconds = FPlatformTime::Seconds() - StartSeconds;
 		return Plan;
 	}
 
@@ -460,38 +731,43 @@ void FMantleDrawDistance::BuildStructureDistances(const UWorld* World, TMap<cons
 {
 	using namespace MantleDrawDistancePrivate;
 	Out.Reset();
-	const FStructurePlan Plan = PlanWorld(World);
+	const FStructurePlan Plan = PlanWorld(World, /*bKeepPieces*/ false);
 	int32 Changed = 0;
 	for (int32 Index = 0; Index < Plan.Members.Num(); ++Index)
 	{
 		Out.Add(Plan.Members[Index].Component, Plan.Distances[Index]);
 		Changed += Plan.Distances[Index] != Plan.Members[Index].Band ? 1 : 0;
 	}
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_STRUCTURE_DISTANCES owners %d, components %d, link pieces %d, components that now draw to another distance %d"),
-		Plan.Owners, Plan.Members.Num(), Plan.LinkPieces, Changed);
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_STRUCTURE_DISTANCES owners %d, components %d, link pieces %d, components that now draw to another distance %d (pulled down to what holds them up %d), %.1f s"),
+		Plan.Owners, Plan.Members.Num(), Plan.LinkPieces, Changed, Plan.Lowered, Plan.Seconds);
 }
 
-void FMantleDrawDistance::LogStructureBands(const UWorld* World)
+void FMantleDrawDistance::LogStructureBands(const UWorld* World, TConstArrayView<FString> Meshes)
 {
 	using namespace MantleDrawDistancePrivate;
-	const FStructurePlan Plan = PlanWorld(World);
+	const FStructurePlan Plan = PlanWorld(World, /*bKeepPieces*/ true);
+	const int32 MemberCount = Plan.Members.Num();
 	TMap<int32, int64> Before;
+	TMap<int32, int64> Structured;
 	TMap<int32, int64> After;
 	TMap<int32, int64> StructurePieces;
 	TMap<int32, TSet<int32>> StructureOwners;
 	TMap<int32, double> StructureDistance;
-	for (int32 Index = 0; Index < Plan.Members.Num(); ++Index)
+	int64 LoweredPieces = 0;
+	for (int32 Index = 0; Index < MemberCount; ++Index)
 	{
 		const FStructurePlan::FMember& Member = Plan.Members[Index];
 		Before.FindOrAdd(FMath::RoundToInt32(Member.Band)) += Member.Pieces;
+		Structured.FindOrAdd(FMath::RoundToInt32(Plan.StructureDistances[Index])) += Member.Pieces;
 		After.FindOrAdd(FMath::RoundToInt32(Plan.Distances[Index])) += Member.Pieces;
-		// A structure is measured by the pieces it moved to another distance.
-		if (Plan.Distances[Index] == Member.Band)
+		LoweredPieces += Plan.Distances[Index] < Plan.StructureDistances[Index] ? Member.Pieces : 0;
+		// A structure is measured by the pieces the structure rule moved to another distance.
+		if (Plan.StructureDistances[Index] == Member.Band)
 		{
 			continue;
 		}
 		const int32 Structure = Plan.Structures[Index];
-		StructureDistance.FindOrAdd(Structure) = Plan.Distances[Index];
+		StructureDistance.FindOrAdd(Structure) = Plan.StructureDistances[Index];
 		StructurePieces.FindOrAdd(Structure) += Member.Pieces;
 		StructureOwners.FindOrAdd(Structure).Add(Member.Owner);
 	}
@@ -503,17 +779,75 @@ void FMantleDrawDistance::LogStructureBands(const UWorld* World)
 			Largest = Pair.Key;
 		}
 	}
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_STRUCTURE_BANDS before %s | after %s | structures that moved pieces %d, largest %d owners %lld pieces moved (to %.0f m)"),
-		*BandLine(Before), *BandLine(After), StructurePieces.Num(), Largest != INDEX_NONE ? StructureOwners[Largest].Num() : 0,
-		Largest != INDEX_NONE ? StructurePieces[Largest] : 0ll, Largest != INDEX_NONE ? StructureDistance[Largest] / 100.0 : 0.0);
+	// A held piece whose component still draws past everything holding it up would hang in the air: the pull-down leaves none.
+	int64 HeldPieces = 0;
+	int64 PastHolders = 0;
+	for (int32 Index = 0; Index < Plan.Pieces.Num(); ++Index)
+	{
+		const int32 Component = Plan.Pieces[Index].Component;
+		const double Limit = Plan.PieceLimits[Index];
+		if (Component < MemberCount && Limit > 0.0)
+		{
+			++HeldPieces;
+			PastHolders += Plan.Distances[Component] > Limit ? 1 : 0;
+		}
+	}
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_STRUCTURE_BANDS before %s | structures %s | after %s | structures that moved pieces %d, largest %d owners %lld pieces moved (to %.0f m) | pulled down %d components, %lld pieces; held up %lld, still past what holds them %lld | %.1f s"),
+		*BandLine(Before), *BandLine(Structured), *BandLine(After), StructurePieces.Num(), Largest != INDEX_NONE ? StructureOwners[Largest].Num() : 0,
+		Largest != INDEX_NONE ? StructurePieces[Largest] : 0ll, Largest != INDEX_NONE ? StructureDistance[Largest] / 100.0 : 0.0,
+		Plan.Lowered, LoweredPieces, HeldPieces, PastHolders, Plan.Seconds);
+
+	for (const FString& Prefix : Meshes)
+	{
+		auto Matches = [&Prefix](const UStaticMeshComponent* Component)
+		{
+			const UStaticMesh* Mesh = Component ? Component->GetStaticMesh() : nullptr;
+			return Mesh && Mesh->GetName().StartsWith(Prefix);
+		};
+		TArray<bool> Match;
+		Match.SetNumZeroed(MemberCount + Plan.Others.Num());
+		for (int32 Index = 0; Index < MemberCount; ++Index)
+		{
+			Match[Index] = Matches(Plan.Members[Index].Component);
+		}
+		for (int32 Index = 0; Index < Plan.Others.Num(); ++Index)
+		{
+			Match[MemberCount + Index] = Matches(Plan.Others[Index]);
+		}
+		int64 Total = 0, Own = 0, Held = 0, Lowered = 0, Past = 0;
+		TMap<int32, int64> Was;
+		TMap<int32, int64> Now;
+		for (int32 Index = 0; Index < Plan.Pieces.Num(); ++Index)
+		{
+			const int32 Component = Plan.Pieces[Index].Component;
+			if (!Match.IsValidIndex(Component) || !Match[Component])
+			{
+				continue;
+			}
+			++Total;
+			if (Component >= MemberCount)
+			{
+				++Own;
+				continue;
+			}
+			const double Limit = Plan.PieceLimits[Index];
+			Held += Limit > 0.0 ? 1 : 0;
+			Past += Limit > 0.0 && Plan.Distances[Component] > Limit ? 1 : 0;
+			Lowered += Plan.Distances[Component] < Plan.StructureDistances[Component] ? 1 : 0;
+			Was.FindOrAdd(FMath::RoundToInt32(Plan.StructureDistances[Component])) += 1;
+			Now.FindOrAdd(FMath::RoundToInt32(Plan.Distances[Component])) += 1;
+		}
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_STRUCTURE_MESHES %s*: pieces %lld (own distance or never culled %lld), held up %lld, came down %lld, still past what holds them %lld | before the pull-down %s | after %s"),
+			*Prefix, Total, Own, Held, Lowered, Past, *BandLine(Was), *BandLine(Now));
+	}
 }
 
 namespace MantleDrawDistancePrivate
 {
-	FAutoConsoleCommandWithWorld GStructureDistancesCommand(
+	FAutoConsoleCommandWithWorldAndArgs GStructureDistancesCommand(
 		TEXT("Mantle.StructureDistances"),
-		TEXT("Logs what the one-distance-per-structure rule does to the level (MANTLE_STRUCTURE_BANDS), without exporting."),
-		FConsoleCommandWithWorldDelegate::CreateStatic([](UWorld* World) { FMantleDrawDistance::LogStructureBands(World); }));
+		TEXT("Logs what the structure rules do to the level (MANTLE_STRUCTURE_BANDS), without exporting. Mesh name prefixes after it get a MANTLE_STRUCTURE_MESHES line each."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic([](const TArray<FString>& Args, UWorld* World) { FMantleDrawDistance::LogStructureBands(World, Args); }));
 }
 
 FMantleDrawDistance::FStructureScope::FStructureScope(const UWorld* World)

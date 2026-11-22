@@ -397,4 +397,106 @@ bool FMantleDrawDistanceStructuresTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleDrawDistancePullDownTest,
+	"Mantle.Editor.DrawDistance.RaisedPieceEndsWithItsSupports",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleDrawDistancePullDownTest::RunTest(const FString& Parameters)
+{
+	// City Sample's tower roofs (2026-11-22, Joshua: "A: pull down"): a 600 m roof slab on walls of 120 m modules hung in the sky past
+	// 120 m. A raised piece draws no farther than what holds it up, and what stands on it comes down with it.
+	enum EComponent : int32
+	{
+		Modules, Roof, Rooftop, BigWalls, SecondRoof, Ground, Lamp, Curb, Pedestal, Statue, Sign, Pipe, Walls, Floors, ThirdRoof, Planes, Post,
+		Count
+	};
+	TArray<double> Distances;
+	Distances.SetNumZeroed(Count);
+	Distances[Modules] = 12000.0;
+	Distances[Roof] = 60000.0;
+	Distances[Rooftop] = 60000.0;
+	Distances[BigWalls] = 25000.0;
+	Distances[SecondRoof] = 60000.0;
+	Distances[Ground] = 250000.0;
+	Distances[Lamp] = 12000.0;
+	Distances[Curb] = 6000.0;
+	Distances[Pedestal] = 0.0;
+	Distances[Statue] = 60000.0;
+	Distances[Sign] = 90000.0;
+	Distances[Pipe] = 6000.0;
+	Distances[Walls] = 60000.0;
+	Distances[Floors] = 60000.0;
+	Distances[ThirdRoof] = 60000.0;
+	Distances[Planes] = 25000.0;
+	Distances[Post] = 6000.0;
+	TArray<bool> Movable;
+	Movable.Init(true, Count);
+	// The pedestal is never culled and the sign sets its own distance: they hold others up but keep theirs.
+	Movable[Pedestal] = false;
+	Movable[Sign] = false;
+
+	TArray<FMantleHeldPiece> Pieces;
+	auto Piece = [&Pieces](const int32 Component, const float X0, const float Y0, const float Z0, const float X1, const float Y1, const float Z1)
+	{
+		Pieces.Add(FMantleHeldPiece{ Component, FBox3f(FVector3f(X0, Y0, Z0), FVector3f(X1, Y1, Z1)) });
+		return Pieces.Num() - 1;
+	};
+	// The ground under everything, 50 cm deep.
+	const int32 GroundTile = Piece(Ground, -2000, -2000, -50, 20000, 4000, 0);
+	// A tower: a wall of 120 m modules, 3 m a floor, the top one with a parapet 1 m over the 600 m roof slab; a 600 m rooftop unit on the slab.
+	for (int32 Floor = 0; Floor < 9; ++Floor)
+	{
+		Piece(Modules, 0, 0, Floor * 300.0f, 2000, 100, (Floor + 1) * 300.0f);
+	}
+	Piece(Modules, 0, 0, 2700, 2000, 100, 3100);
+	const int32 RoofSlab = Piece(Roof, 0, 0, 3000, 2000, 2000, 3020);
+	Piece(Rooftop, 500, 500, 3020, 1500, 1500, 3400);
+	// A second tower: one side 250 m walls, the other 120 m modules; its roof keeps the larger of the two.
+	Piece(BigWalls, 5000, 0, 0, 7000, 100, 3000);
+	Piece(Modules, 5000, 1900, 0, 7000, 2000, 3000);
+	Piece(SecondRoof, 5000, 0, 3000, 7000, 2000, 3020);
+	// A lamp on the street beside a curb: on the ground, so nothing holds it up.
+	Piece(Curb, 100, 3000, -30, 300, 3100, 15);
+	Piece(Lamp, 150, 3000, 0, 250, 3100, 600);
+	// A statue on a never-culled pedestal, and a sign with its own distance on a 60 m pipe.
+	Piece(Pedestal, 10000, 0, 0, 12000, 2000, 3000);
+	Piece(Statue, 10500, 500, 3000, 11500, 1500, 3500);
+	Piece(Pipe, 14000, 0, 0, 14100, 100, 400);
+	Piece(Sign, 14000, 0, 400, 14100, 100, 800);
+	// A tower of 600 m walls and floors on each other in turn, its roof on the top walls.
+	for (int32 Floor = 0; Floor < 3; ++Floor)
+	{
+		Piece(Walls, 16000, 0, Floor * 320.0f, 18000, 2000, Floor * 320.0f + 300.0f);
+		Piece(Floors, 16000, 0, Floor * 320.0f + 300.0f, 18000, 2000, Floor * 320.0f + 320.0f);
+	}
+	Piece(ThirdRoof, 16000, 0, 960, 18000, 2000, 980);
+	// One set of planes: one on the ground, one up on a 60 m post. The whole set comes down to the post's.
+	Piece(Planes, 18000, 0, 0, 19000, 1000, 10);
+	Piece(Post, 18400, 2400, 0, 18600, 2600, 500);
+	Piece(Planes, 18000, 2000, 500, 19000, 3000, 510);
+
+	TArray<double> Limits;
+	const int32 Lowered = FMantleDrawDistance::PullDownToSupports(Pieces, Distances, Movable, &Limits);
+	TestEqual(TEXT("the roof slab on 120 m modules ends at the modules' 120 m"), Distances[Roof], 12000.0);
+	TestEqual(TEXT("and the rooftop unit on the slab comes down with it"), Distances[Rooftop], 12000.0);
+	TestEqual(TEXT("the modules keep their 120 m"), Distances[Modules], 12000.0);
+	TestEqual(TEXT("a roof on 250 m walls and 120 m modules ends at 250 m"), Distances[SecondRoof], 25000.0);
+	TestEqual(TEXT("the walls on the ground keep their 250 m"), Distances[BigWalls], 25000.0);
+	TestEqual(TEXT("the ground keeps its 2.5 km"), Distances[Ground], 250000.0);
+	TestEqual(TEXT("a lamp on the street keeps its 120 m (the curb does not hold it up)"), Distances[Lamp], 12000.0);
+	TestEqual(TEXT("a statue on a never-culled pedestal keeps its 600 m"), Distances[Statue], 60000.0);
+	TestEqual(TEXT("the pedestal stays never culled"), Distances[Pedestal], 0.0);
+	TestEqual(TEXT("a sign's own distance stays"), Distances[Sign], 90000.0);
+	TestEqual(TEXT("walls and floors holding each other up keep their 600 m"), Distances[Walls], 60000.0);
+	TestEqual(TEXT("both of them"), Distances[Floors], 60000.0);
+	TestEqual(TEXT("and so does their roof"), Distances[ThirdRoof], 60000.0);
+	TestEqual(TEXT("a set with one piece up on a 60 m post comes down to 60 m"), Distances[Planes], 6000.0);
+	TestEqual(TEXT("four components come down"), Lowered, 4);
+	TestEqual(TEXT("one limit per piece"), Limits.Num(), Pieces.Num());
+	TestEqual(TEXT("the roof slab's limit is its modules'"), Limits[RoofSlab], 12000.0);
+	TestEqual(TEXT("nothing holds the ground up"), Limits[GroundTile], 0.0);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

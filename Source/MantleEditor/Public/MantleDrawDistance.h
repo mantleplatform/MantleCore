@@ -63,6 +63,16 @@ struct MANTLEEDITOR_API FMantleStructureMember
 };
 
 /**
+ * One piece the pull-down looks at (FMantleDrawDistance::PullDownToSupports): the world box of a mesh component, or of one of an
+ * instanced component's instances, and the component's number.
+ */
+struct MANTLEEDITOR_API FMantleHeldPiece
+{
+	int32 Component = INDEX_NONE;
+	FBox3f Bounds = FBox3f(ForceInit);
+};
+
+/**
  * The draw distance a mesh entity or instance set publishes (drawDistance, cm; the drawDistance client feature). The client fades
  * an instance set over the last fifth of it and ends shadows by its own rule, so the editor writes nothing else.
  *
@@ -113,6 +123,22 @@ struct MANTLEEDITOR_API FMantleDrawDistance
 	static void PlanStructures(TConstArrayView<FMantleStructureMember> Members, TConstArrayView<FMantleStructurePiece> Links,
 		TArray<double>& OutMemberDistance, TArray<int32>* OutMemberStructure = nullptr);
 
+	/**
+	 * A raised piece draws no farther than what holds it up, so it culls with it (Joshua, 2026-11-22: "A: pull down"; City Sample's tower
+	 * roofs hung in the sky over walls of 120 and 250 m modules). Only a piece raised StructureLiftCm or more over the ground (the lowest
+	 * piece in its 32 m grid cell) is held up. Piece S holds piece P up when S's bottom is under P's, S's top is within StructureReachCm
+	 * under to PullDownAboveCm over P's underside, and their footprints overlap by a quarter of the smaller one. A held
+	 * piece's limit is the largest distance of what holds it up; a component draws no farther than the smallest limit of its pieces, so
+	 * none of them is left in the air. Pieces with nothing under them limit nothing. It carries on up: what rests on a lowered piece comes
+	 * down with it.
+	 *
+	 * Distances: each component's distance in cm (0: never culled). Movable: whether the rule may lower a component (the banded ones);
+	 * the others (a distance the component sets itself, never culled) keep theirs and only hold others up. OutPieceLimit, if given, gets
+	 * each piece's limit (0: nothing holds it up). Returns how many components came down.
+	 */
+	static int32 PullDownToSupports(TConstArrayView<FMantleHeldPiece> Pieces, TArrayView<double> Distances, TConstArrayView<bool> Movable,
+		TArray<double>* OutPieceLimit = nullptr);
+
 	/** A big piece at least this high is tall: it can hold another up. */
 	static constexpr double StructureTallCm = 200.0;
 
@@ -122,20 +148,27 @@ struct MANTLEEDITOR_API FMantleDrawDistance
 	static constexpr double StructureLiftCm = 300.0;
 	/** A piece holds another up when its top is at most this far under the other's bottom. */
 	static constexpr double StructureReachCm = 50.0;
+	/**
+	 * In the pull-down, a piece holds another up only when its top is at most this far over the other's underside: a wall with its
+	 * parapet holds its roof up, but a tall facade beside a lower roof, a hilly ground mesh or a sky sphere does not.
+	 */
+	static constexpr double PullDownAboveCm = 300.0;
 	/** Pieces smaller than this radius never link structures (the 250 m band and up). */
 	static constexpr double LinkMinRadius = 100.0;
 
 	/**
-	 * The structure distance of every mesh component in World (PlanStructures on its actors), for ReadComponent while an FStructureScope
-	 * is alive. Components that set their own distance, are never culled, or are not shown in game are left out.
+	 * The structure distance of every mesh component in World (PlanStructures on its actors, then PullDownToSupports), for ReadComponent
+	 * while an FStructureScope is alive. Components that set their own distance, are never culled, or are not shown in game are left out.
 	 */
 	static void BuildStructureDistances(const UWorld* World, TMap<const UStaticMeshComponent*, double>& Out);
 
 	/**
-	 * Logs what the structure rule does to World (MANTLE_STRUCTURE_BANDS: pieces, an instance each, in each distance before and after, and the
-	 * largest structure's owners and pieces), without exporting. The console command Mantle.StructureDistances runs it on the editor world.
+	 * Logs what the structure rules do to World (MANTLE_STRUCTURE_BANDS: pieces, an instance each, in each distance before and after, the
+	 * largest structure's owners and pieces, and what the pull-down lowered), without exporting. For each mesh name prefix in Meshes, a
+	 * MANTLE_STRUCTURE_MESHES line: its pieces, how many are held up, how many came down, and their distances after. The console command
+	 * Mantle.StructureDistances [prefix ...] runs it on the editor world.
 	 */
-	static void LogStructureBands(const UWorld* World);
+	static void LogStructureBands(const UWorld* World, TConstArrayView<FString> Meshes = {});
 
 	/** While alive, ReadComponent gives each component of World its structure distance (FMantlePlaceExporter::Export holds one). */
 	class MANTLEEDITOR_API FStructureScope
