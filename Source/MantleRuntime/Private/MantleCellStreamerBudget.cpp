@@ -127,7 +127,8 @@ double FMantleCellStreamer::ProjectedCountPressure(const FMantleBudgetLimits& Li
 			}
 		}
 	}
-	return FMantleStreamBudget::CountPressure(Limits, Projected);
+	// Once the memory is read the counts no longer press, so the memory it would grow to decides instead.
+	return FMath::Max(FMantleStreamBudget::CountPressure(Limits, Projected), FMantleStreamBudget::ProjectedMemoryPressure(Limits, Use, Projected));
 }
 
 void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)

@@ -456,7 +456,7 @@ private:
 	FMantleBudgetUse MeasureBudgetUse() const;
 	/** One cell's counts added to Use (what the budget counts a cell as). */
 	void AddCellToUse(const FMantleCellInfo& Info, FMantleBudgetUse& Use) const;
-	/** The count pressure Use would come to if the ladder were NextLadder: Use plus the cells and twins that reach would newly want. Memory is not projected. */
+	/** The count pressure Use would come to if the ladder were NextLadder: Use plus the cells and twins that reach would newly want. Once the process's memory is read (the counts that stand in for it no longer press), the memory is projected too: grown by the counts' largest growth (FMantleStreamBudget::ProjectedMemoryPressure); the higher of the two. */
 	double ProjectedCountPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use, double NextLadder) const;
 	/** Every Settings.BudgetTuning.StepSeconds (not while holding): looks at the pressure and moves the ladder; a move re-plans at once. */
 	void UpdateBudget(double DeltaSeconds);

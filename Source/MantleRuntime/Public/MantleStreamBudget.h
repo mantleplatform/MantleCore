@@ -138,8 +138,25 @@ public:
 	 */
 	static int64 ProcessMemoryCapBytes(int64 PhysicalBytes);
 
-	/** The highest of used / limit over the counts only, the textures' bytes included (a limit of 0 or less, or none, is not checked); 0 when nothing is limited. */
+	/**
+	 * The highest of used / limit over the counts only, the textures' bytes included (a limit of 0 or less, or none, is not checked); 0 when nothing is limited. The counts that
+	 * stand in for memory press only while that memory is not read: solid things and far instances (RAM) while IsMemoryRead is false, instances (RAM and video) while either
+	 * reading is missing. Nanite root pages always count, but once the card is read only against the asset set's own ceiling (FMantleNaniteRootPages::BudgetPages,
+	 * past which a mesh draws plain) rather than the per-setting limit. The textures' bytes always count.
+	 */
 	static double CountPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use);
+
+	/** Whether the process's memory is read and limited (MemoryPressure means something). */
+	static bool IsMemoryRead(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use);
+
+	/** Whether the card's use and budget are read (VideoPressure means something). */
+	static bool IsCardRead(const FMantleBudgetUse& Use);
+
+	/**
+	 * The process's memory pressure if the cells grew from Use to Projected: MemoryPressure times the largest growth of the instances, solid things and far instances
+	 * (never less than 1). 0 when the memory is not read. For rising: the counts no longer stop it once the memory is read, so this does.
+	 */
+	static double ProjectedMemoryPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use, const FMantleBudgetUse& Projected);
 
 	/** The process's memory over the limits for it: the higher of share / share limit and bytes / byte cap (each 0 when either side is unknown). */
 	static double MemoryPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use);
