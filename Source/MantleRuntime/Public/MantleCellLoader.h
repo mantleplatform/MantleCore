@@ -37,6 +37,12 @@ struct MANTLERUNTIME_API FMantleCellLoaderSettings
 
 	/** The store, resolver and resolve attempts of Assets, which a place's own asset set also uses. */
 	static FMantleCellLoaderSettings FromAssetSettings(const FMantlePlaceAssetSettings& Assets);
+
+	/**
+	 * FromAssetSettings, then [Mantle.CellLoader] in the game ini over the in-flight limits: MaxConcurrentResolves, MaxOutstandingFetches,
+	 * MaxConcurrentDecodes and MaxPendingMB (each only when set and above 0). What a game or a server loads a place's cells with.
+	 */
+	static FMantleCellLoaderSettings ForThisProcess(const FMantlePlaceAssetSettings& Assets);
 };
 
 /** What loading a place's cells came to. */
@@ -76,6 +82,9 @@ DECLARE_DELEGATE_OneParam(FMantleCellsDone, FMantleCellLoadResult&);
 /** The cell index has been read (stream mode); the loader keeps it, GetIndex() has it. */
 DECLARE_DELEGATE(FMantleCellIndexReady);
 
+/** Load mode: the cell index has been read and no cell file has been asked for yet. Return false to stop the load there. */
+DECLARE_DELEGATE_RetVal_OneParam(bool, FMantleCellIndexCheck, const FMantleCellIndex&);
+
 /**
  * Loads a place's cells: the cell index its "cells.index" names, then every cell file the index lists. Stage 1 of large places has one
  * rule, "every cell wanted", so the loader reads them all; the result (FMantleCellContent per cell) is what FMantlePlaceCells::Merge puts into the
@@ -100,8 +109,17 @@ public:
 		return !Place.CellIndexId.IsEmpty() && !Place.bCellsMerged && !Place.bCellsStreamed;
 	}
 
-	/** Starts loading the cells of Root. OnDone fires once on the game thread, from a later Pump, never from inside Load. Keep the result until then. */
-	static TSharedRef<FMantleCellLoader> Load(const FMantlePlace& Root, const FMantleCellLoaderSettings& Settings, FMantleCellsDone OnDone);
+	/**
+	 * Starts loading the cells of Root. OnDone fires once on the game thread, from a later Pump, never from inside Load. Keep the result until then.
+	 * OnIndex, when bound, is asked once from a Pump as soon as the index is read, before any cell file is resolved or fetched (a dedicated
+	 * server's memory check, the server plan's 6.3). If it returns false the load stops there: nothing more is fetched, WasStopped() is true,
+	 * and OnDone never fires, as the caller has already decided what happens instead.
+	 */
+	static TSharedRef<FMantleCellLoader> Load(const FMantlePlace& Root, const FMantleCellLoaderSettings& Settings, FMantleCellsDone OnDone,
+		FMantleCellIndexCheck OnIndex = FMantleCellIndexCheck());
+
+	/** Load mode: OnIndex said no, so the load ended after the index and OnDone will not fire. */
+	bool WasStopped() const { return bStopped; }
 
 	/**
 	 * Stream mode (stage 2): reads the cell index only, then cell files only for the cells SetWanted names, one cell at a time, and hands each cell's
@@ -145,7 +163,7 @@ public:
 	/** Pumps the store and this loader until OnDone has fired or the time runs out. For tools and tests, never a running game. */
 	bool WaitUntilComplete(float TimeoutSeconds);
 
-	/** OnDone has fired. */
+	/** OnDone has fired, or the load was stopped after its index (WasStopped). */
 	bool IsComplete() const { return bFinished; }
 
 	/** Valid once complete. */
@@ -209,6 +227,8 @@ private:
 	FMantleCellLoader(const FMantleCellLoaderSettings& InSettings, FMantleCellsDone InOnDone);
 
 	void Start(const FMantlePlace& Root);
+	/** Load mode: ends the load after its index, as OnIndexCheck asked; OnDone never fires. */
+	void Stop();
 	void DrainCompletions();
 	void FlushResolves();
 	void OnResolved(const TArray<FString>& Ids, const FMantleAssetResolveResult& Resolved);
@@ -252,6 +272,9 @@ private:
 	/** Stream mode: the cells SetWanted last named that are still wanted, most urgent first. */
 	TArray<int32> WantedCells;
 	FMantleCellIndexReady OnIndexReady;
+	/** Load mode: asked once the index is read; false stops the load (bStopped). */
+	FMantleCellIndexCheck OnIndexCheck;
+	bool bStopped = false;
 	bool bStream = false;
 	bool bIndexReadyPending = false;
 	int32 FilesReadTotal = 0;

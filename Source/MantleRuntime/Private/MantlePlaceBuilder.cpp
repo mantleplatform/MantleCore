@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceBuilder.h"
+#include "MantleMemoryTags.h"
 #include "MantlePlaceFreezePlan.h"
 #include "MantleAnimClip.h"
 #include "MantleAssetLibrary.h"
@@ -11,6 +12,7 @@
 #include "MantleEnvironmentDefaults.h"
 #include "MantleHoverChannel.h"
 #include "MantleItemSpawnPoint.h"
+#include "MantleMergedInstancesComponent.h"
 #include "MantlePhysicsProp.h"
 #include "MantlePlaceAssets.h"
 #include "MantlePlaceMaterial.h"
@@ -458,7 +460,9 @@ namespace
 	/**
 	 * One actor whose root is one UInstancedStaticMeshComponent holding every instance, in
 	 * the entity's space: the actor takes the entity's transform in pass 3 like any other. Movable
-	 * until then, and frozen to Static afterwards under the same rule as a StaticMesh.
+	 * until then, and frozen to Static afterwards under the same rule as a StaticMesh. (On a dedicated
+	 * server a static, solid set's root is a UMantleMergedInstancesComponent instead, with the same
+	 * instances and a few bodies for them.)
 	 */
 	AActor* BuildInstancedMesh(
 		UWorld* World,
@@ -471,6 +475,15 @@ namespace
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceBuilder_InstancedMesh);
 
+		// A record whose instances a dedicated server dropped (FMantleInstancedMeshProps::DroppedInstances) has none to build from. Only a server's scenery with no
+		// collision is ever built from one, and it takes no instances (below): anything else would stand with none, so it is refused out loud.
+		if (Props.DroppedInstances > 0 && !(World->GetNetMode() == NM_DedicatedServer && Props.Mesh.Collision == EMantleCollision::None))
+		{
+			UE_LOG(LogMantle, Error, TEXT("MANTLE_PLACE_INSTANCES_DROPPED %s: built from a record whose %d instances were dropped; its cell file holds them"), *Entity.Id, Props.DroppedInstances);
+			Errors.Add(FMantleParseError{ Path, FString::Printf(TEXT("its %d instances were dropped from the retained place; read them from its cell file"), Props.DroppedInstances) });
+			return nullptr;
+		}
+
 		UStaticMesh* Mesh = LoadEntityMesh(Props.Mesh, Path, Errors, LoadStats);
 		if (!Mesh)
 		{
@@ -482,6 +495,24 @@ namespace
 		{
 			Errors.Add(FMantleParseError{ Path, TEXT("failed to spawn instanced mesh actor") });
 			return nullptr;
+		}
+
+		// A dedicated server draws nothing, and the engine's instanced component would give each instance of a static, solid set a physics body of its own (City Sample: about 1.16
+		// million of them, gigabytes of search tree). Its replacement holds a few bodies, each with the shapes of up to 128 instances made from the same cooked collision, so every
+		// trace, sweep and overlap answers as it did. Everything else (a client, a Movable set, a set with no collision) keeps the engine's component.
+		if (World->GetNetMode() == NM_DedicatedServer && StaticWorld != nullptr && Props.Mesh.Collision != EMantleCollision::None)
+		{
+			UMantleMergedInstancesComponent* Merged = NewObject<UMantleMergedInstancesComponent>(Actor, TEXT("Instances"));
+			Actor->SetRootComponent(Merged);
+			// Listed as the actor's own, as the engine's component is below.
+			Actor->AddInstanceComponent(Merged);
+			// Where it stands, Static, before it registers: its bodies are made once, static, in place. No draw distance, shadow or fade to set: nothing is drawn here.
+			Merged->SetMobility(EComponentMobility::Static);
+			Merged->SetRelativeTransform(*StaticWorld);
+			ApplyMeshProps(World, Merged, Mesh, Props.Mesh, Path, Errors, LoadStats);
+			Merged->SetInstances(Props.Instances);
+			Merged->RegisterComponent();
+			return Actor;
 		}
 
 		UInstancedStaticMeshComponent* Instances = NewObject<UInstancedStaticMeshComponent>(Actor, TEXT("Instances"));
@@ -1913,6 +1944,7 @@ TSharedRef<FMantlePlaceBuildSession> FMantlePlaceBuilder::Begin(
 
 bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 {
+	LLM_SCOPE_BYTAG(Mantle_PlaceBuild);
 	using EPhase = FState::EPhase;
 	FState& S = *State;
 	if (S.Phase == EPhase::Done)
@@ -2450,6 +2482,10 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 			{
 				int64 InstancesInPlace = 0;
 				int64 InstancesBuilt = 0;
+				// The sets a dedicated server holds as a few bodies of many shapes (UMantleMergedInstancesComponent): how many, their instances, and the bodies they stand on.
+				int32 MergedEntities = 0;
+				int32 MergedInstances = 0;
+				int32 MergedBodies = 0;
 				for (const FMantleEntity& Entity : Place.Entities)
 				{
 					const FMantleInstancedMeshProps* Props = Entity.Type == EMantleEntityType::InstancedMesh ? Entity.Props.TryGet<FMantleInstancedMeshProps>() : nullptr;
@@ -2461,10 +2497,21 @@ bool FMantlePlaceBuildSession::Step(const double MaxSeconds)
 					AActor* const* Actor = Result.Actors.Find(Entity.Id);
 					const UInstancedStaticMeshComponent* Instances = Actor ? Cast<UInstancedStaticMeshComponent>((*Actor)->GetRootComponent()) : nullptr;
 					InstancesBuilt += Instances ? Instances->GetInstanceCount() : 0;
+					if (const UMantleMergedInstancesComponent* Merged = Actor ? Cast<UMantleMergedInstancesComponent>((*Actor)->GetRootComponent()) : nullptr)
+					{
+						InstancesBuilt += Merged->GetInstanceCount();
+						++MergedEntities;
+						MergedInstances += Merged->GetInstanceCount();
+						MergedBodies += Merged->GetChunkBodies().Num();
+					}
 				}
 				UE_LOG(LogMantle, Log,
 					TEXT("MANTLE_PLACE_BUILD_COUNTS place=%s entities_in_place=%d actors_built=%d instances_in_place=%lld instances_built=%lld errors=%d"),
 					*Place.PlaceId, Place.Entities.Num(), Result.Actors.Num(), InstancesInPlace, InstancesBuilt, Result.Errors.Num());
+				if (MergedEntities > 0)
+				{
+					UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_MERGED_BODIES entities=%d instances=%d bodies=%d"), MergedEntities, MergedInstances, MergedBodies);
+				}
 			}
 
 			Result.bSuccess = Result.Errors.Num() == 0;

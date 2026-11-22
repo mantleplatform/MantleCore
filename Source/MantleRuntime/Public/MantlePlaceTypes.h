@@ -1309,6 +1309,12 @@ struct FMantleInstancedMeshProps
 {
 	FMantleStaticMeshProps Mesh;
 	TArray<FTransform> Instances;
+	/**
+	 * How many instances this record had when a dedicated server dropped its list (server plan step 4): a cell entity's record in the retained place keeps everything but
+	 * its instances, which nothing on a server reads once the place is built (the solid sets' merged components keep their own). Non-zero means Instances is empty because
+	 * of that, not because the entity has none: whatever needs them reads its cell file, and the builder refuses to build from such a record.
+	 */
+	int32 DroppedInstances = 0;
 };
 
 /**

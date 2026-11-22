@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceAssets.h"
+#include "MantleMemoryTags.h"
 #include "Misc/FileHelper.h"
 
 #include "Async/TaskGraphInterfaces.h"
@@ -776,13 +777,19 @@ TSharedRef<IMantleAssetResolver> FMantlePlaceAssets::CreateApiResolver(const boo
 TSharedRef<FMantlePlaceAssets> FMantlePlaceAssets::Prepare(const FMantlePlace& Place, const FMantlePlaceAssetSettings& Settings,
 	FMantlePlaceAssetsDone OnDone)
 {
-	return PrepareWith(Place, Settings, MoveTemp(OnDone), /*bManifestOnly*/ false);
+	return PrepareWith(Place, Settings, MoveTemp(OnDone), EStartKind::Place);
 }
 
 TSharedRef<FMantlePlaceAssets> FMantlePlaceAssets::PrepareManifestOnly(const FMantlePlace& Place, const FMantlePlaceAssetSettings& Settings,
 	FMantlePlaceAssetsDone OnDone)
 {
-	return PrepareWith(Place, Settings, MoveTemp(OnDone), /*bManifestOnly*/ true);
+	return PrepareWith(Place, Settings, MoveTemp(OnDone), EStartKind::ManifestOnly);
+}
+
+TSharedRef<FMantlePlaceAssets> FMantlePlaceAssets::PrepareManifestMeshes(const FMantlePlace& Root, const FMantlePlaceAssetSettings& Settings,
+	FMantlePlaceAssetsDone OnDone)
+{
+	return PrepareWith(Root, Settings, MoveTemp(OnDone), EStartKind::ManifestMeshes);
 }
 
 TSharedRef<FMantlePlaceAssets> FMantlePlaceAssets::PrepareStreaming(const FMantlePlace& Root, const FMantlePlaceAssetSettings& Settings,
@@ -837,17 +844,22 @@ TSharedPtr<FMantlePlaceAssets> FMantlePlaceAssets::PrepareManifestOnlyForThisPro
 }
 
 TSharedRef<FMantlePlaceAssets> FMantlePlaceAssets::PrepareWith(const FMantlePlace& Place, const FMantlePlaceAssetSettings& Settings,
-	FMantlePlaceAssetsDone OnDone, const bool bManifestOnly)
+	FMantlePlaceAssetsDone OnDone, const EStartKind StartKind)
 {
 	check(IsInGameThread());
 	TSharedRef<FMantlePlaceAssets> Set = MakeShareable(new FMantlePlaceAssets(Settings, MoveTemp(OnDone)));
-	if (bManifestOnly)
+	switch (StartKind)
 	{
+	case EStartKind::ManifestOnly:
 		Set->StartManifestOnly(Place);
-	}
-	else
-	{
+		break;
+	case EStartKind::ManifestMeshes:
+		Set->StartManifestMeshes(Place);
+		break;
+	case EStartKind::Place:
+	default:
 		Set->Start(Place);
+		break;
 	}
 	if (Set->Settings.bAutoPump)
 	{
@@ -1870,6 +1882,37 @@ void FMantlePlaceAssets::StartManifestOnly(const FMantlePlace& Place)
 	bStarted = true;
 }
 
+void FMantlePlaceAssets::StartManifestMeshes(const FMantlePlace& Place)
+{
+	using namespace MantlePlaceAssetsPrivate;
+
+	StartSeconds = FPlatformTime::Seconds();
+	NextProgressLogAt = StartSeconds + Settings.ProgressLogSeconds;
+
+	// Every mesh, with collision: which entities use a mesh, and whether any of them collides, is not known until the cells are read. A mesh
+	// the place's own set then wants without collision is built again there (from the store, with nothing to cook); one it wants with
+	// collision is reused. Nothing else: a dedicated server builds no material, and no side file is read without one.
+	TSet<FString> Seen;
+	int32 Taken = 0;
+	int64 TakenBytes = 0;
+	for (const FMantleAssetRef& Asset : Place.Assets)
+	{
+		if (Asset.Kind != EMantleAssetKind::StaticMesh || !IsUploadedId(Asset.Id) || Seen.Contains(Asset.Id))
+		{
+			continue;
+		}
+		Seen.Add(Asset.Id);
+		FRecord& Record = EnsureRecord(Asset.Id, EAssetKind::Mesh);
+		Record.bCollision = true;
+		++Taken;
+		TakenBytes += FMath::Max<int64>(Asset.Bytes, 0);
+	}
+	UE_LOG(LogMantle, Log,
+		TEXT("MANTLE_PLACE_ASSETS manifest meshes of place %s: %d uploaded meshes (about %.1f MB as uploaded), built with collision while the cells are read"),
+		*Place.PlaceId, Taken, Megabytes(TakenBytes));
+	bStarted = true;
+}
+
 void FMantlePlaceAssets::AddLumenRecords(const FMantlePlace& Place)
 {
 	TMap<FString, const FMantleAssetRef*> ById;
@@ -2753,6 +2796,7 @@ void FMantlePlaceAssets::StartDecodes()
 		// 4 MB inflate, a 60,000-vertex mesh described) holds the render thread's frame with it.
 		UE::Tasks::Launch(TEXT("MantlePlaceAssetDecode"), [Queue, Bytes, Key, MaxTextureGpuBytes, NaniteRaw, NaniteTableOut, NanitePath, LumenRaw, TexturePath, StreamedOut]()
 		{
+			LLM_SCOPE_BYTAG(Mantle_PlaceAssets);
 			TSharedPtr<FMantleStaticMeshData> MeshV2;
 			TSharedPtr<FMantlePreparedStaticMesh> Prepared;
 			TSharedPtr<FMantleRuntimeMesh> MeshV1;
@@ -4075,6 +4119,7 @@ void FMantlePlaceAssets::DrainCompletions()
 void FMantlePlaceAssets::Pump()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(MantlePlaceAssets_Pump);
+	LLM_SCOPE_BYTAG(Mantle_PlaceAssets);
 	check(IsInGameThread());
 	if (!bStarted || (bCompleted && bSoundsSettled && SoundWaiters.IsEmpty() && !bStreaming))
 	{

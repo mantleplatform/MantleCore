@@ -378,6 +378,80 @@ bool FMantleCellLoaderFailuresTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellLoaderIndexCheckTest,
+	"Mantle.Runtime.Place.Cells.LoaderIndexCheck",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellLoaderIndexCheckTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellLoaderTestPrivate;
+	// Runs a load whose index check answers Answer; reports how often the check and OnDone were called.
+	const auto LoadWithCheck = [](FLoaderFixture& Fixture, const bool bAnswer, int32& OutChecks, int64& OutCheckedEntities, int32& OutDoneCalls)
+	{
+		FMantleAssetStoreSettings StoreSettings;
+		StoreSettings.RootDir = FPaths::AutomationTransientDir() / FString::Printf(TEXT("CellLoaderCheck_%s"), *FGuid::NewGuid().ToString());
+		StoreSettings.bAutoPump = false;
+		FMantleCellLoaderSettings Settings;
+		Settings.bAutoPump = false;
+		Settings.Resolver = Fixture.Resolver;
+		Settings.Store = FMantleAssetStore::Create(StoreSettings, Fixture.Fetcher);
+		Settings.MaxResolveAttempts = 2;
+		const TSharedRef<FMantleCellLoader> Loader = FMantleCellLoader::Load(Fixture.Root, Settings,
+			FMantleCellsDone::CreateLambda([&OutDoneCalls](const FMantleCellLoadResult&) { ++OutDoneCalls; }),
+			FMantleCellIndexCheck::CreateLambda([bAnswer, &OutChecks, &OutCheckedEntities](const FMantleCellIndex& Index)
+			{
+				++OutChecks;
+				for (const FMantleCellInfo& Cell : Index.Cells)
+				{
+					OutCheckedEntities += Cell.Entities;
+				}
+				return bAnswer;
+			}));
+		const bool bDone = Loader->WaitUntilComplete(30.0f);
+		// A few more pumps: a stopped loader must stay stopped.
+		for (int32 Pass = 0; Pass < 10; ++Pass)
+		{
+			Settings.Store->Pump();
+			Loader->Pump();
+		}
+		return TPair<bool, TSharedRef<FMantleCellLoader>>(bDone, Loader);
+	};
+
+	// No: the load ends right after the index. No cell file is resolved, OnDone never fires.
+	{
+		FLoaderFixture Fixture;
+		int32 Checks = 0;
+		int64 CheckedEntities = 0;
+		int32 DoneCalls = 0;
+		const TPair<bool, TSharedRef<FMantleCellLoader>> Run = LoadWithCheck(Fixture, false, Checks, CheckedEntities, DoneCalls);
+		TestTrue(TEXT("stopped: the loader is finished"), Run.Key);
+		TestTrue(TEXT("stopped: it says so"), Run.Value->WasStopped());
+		TestEqual(TEXT("stopped: the check was asked once"), Checks, 1);
+		TestEqual(TEXT("stopped: with the whole index (five entities in three cells)"), CheckedEntities, static_cast<int64>(5));
+		TestEqual(TEXT("stopped: OnDone never fired"), DoneCalls, 0);
+		TestEqual(TEXT("stopped: only the index was resolved"), Fixture.Resolver->Batches.Num(), 1);
+		TestEqual(TEXT("stopped: no cell file was asked for"),
+			Fixture.Resolver->Asks(LoaderFileA1) + Fixture.Resolver->Asks(LoaderFileA2) + Fixture.Resolver->Asks(LoaderFileB) + Fixture.Resolver->Asks(LoaderFileC), 0);
+		TestEqual(TEXT("stopped: no cell file was read"), Run.Value->GetFilesRead(), 0);
+	}
+	// Yes: the load goes on exactly as without a check.
+	{
+		FLoaderFixture Fixture;
+		int32 Checks = 0;
+		int64 CheckedEntities = 0;
+		int32 DoneCalls = 0;
+		const TPair<bool, TSharedRef<FMantleCellLoader>> Run = LoadWithCheck(Fixture, true, Checks, CheckedEntities, DoneCalls);
+		TestTrue(TEXT("allowed: the load finishes"), Run.Key);
+		TestFalse(TEXT("allowed: not stopped"), Run.Value->WasStopped());
+		TestTrue(TEXT("allowed: and succeeds"), Run.Value->GetResult().bSuccess);
+		TestEqual(TEXT("allowed: the check was asked once"), Checks, 1);
+		TestEqual(TEXT("allowed: OnDone fired once"), DoneCalls, 1);
+		TestEqual(TEXT("allowed: every cell came back"), Run.Value->GetResult().Cells.Num(), 3);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleCellLoaderStreamTest,
 	"Mantle.Runtime.Place.Cells.LoaderStream",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

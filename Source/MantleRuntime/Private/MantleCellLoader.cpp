@@ -1,11 +1,13 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCellLoader.h"
+#include "MantleMemoryTags.h"
 
 #include "MantleApiClient.h"
 #include "MantleRuntime.h"
 
 #include "Async/TaskGraphInterfaces.h"
 #include "HAL/PlatformProcess.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Tasks/Task.h"
 
 /** What a read task hands back: the index or one file's content, or why it could not be read. */
@@ -26,6 +28,21 @@ FMantleCellLoaderSettings FMantleCellLoaderSettings::FromAssetSettings(const FMa
 	Settings.MaxResolveAttempts = Assets.MaxResolveAttempts;
 	Settings.MaxConcurrentResolves = Assets.MaxConcurrentResolves;
 	Settings.bAutoPump = Assets.bAutoPump;
+	return Settings;
+}
+
+FMantleCellLoaderSettings FMantleCellLoaderSettings::ForThisProcess(const FMantlePlaceAssetSettings& Assets)
+{
+	FMantleCellLoaderSettings Settings = FromAssetSettings(Assets);
+	if (GConfig)
+	{
+		const TCHAR* Section = TEXT("Mantle.CellLoader");
+		int32 Int = 0;
+		if (GConfig->GetInt(Section, TEXT("MaxConcurrentResolves"), Int, GGameIni) && Int > 0) { Settings.MaxConcurrentResolves = Int; }
+		if (GConfig->GetInt(Section, TEXT("MaxOutstandingFetches"), Int, GGameIni) && Int > 0) { Settings.MaxOutstandingFetches = Int; }
+		if (GConfig->GetInt(Section, TEXT("MaxConcurrentDecodes"), Int, GGameIni) && Int > 0) { Settings.MaxConcurrentDecodes = Int; }
+		if (GConfig->GetInt(Section, TEXT("MaxPendingMB"), Int, GGameIni) && Int > 0) { Settings.MaxPendingBytes = static_cast<int64>(Int) * 1024 * 1024; }
+	}
 	return Settings;
 }
 
@@ -56,10 +73,12 @@ FMantleCellLoader::~FMantleCellLoader()
 	}
 }
 
-TSharedRef<FMantleCellLoader> FMantleCellLoader::Load(const FMantlePlace& Root, const FMantleCellLoaderSettings& Settings, FMantleCellsDone OnDone)
+TSharedRef<FMantleCellLoader> FMantleCellLoader::Load(const FMantlePlace& Root, const FMantleCellLoaderSettings& Settings, FMantleCellsDone OnDone,
+	FMantleCellIndexCheck OnIndex)
 {
 	check(IsInGameThread());
 	TSharedRef<FMantleCellLoader> Loader = MakeShareable(new FMantleCellLoader(Settings, MoveTemp(OnDone)));
+	Loader->OnIndexCheck = MoveTemp(OnIndex);
 	Loader->Start(Root);
 	if (Loader->Settings.bAutoPump)
 	{
@@ -154,6 +173,11 @@ void FMantleCellLoader::Pump()
 	}
 	const TSharedRef<FMantleCellLoader> KeepAlive = AsShared();
 	DrainCompletions();
+	if (bStopped)
+	{
+		// The index check said no while its read was delivered: nothing after it starts.
+		return;
+	}
 	if (!bFailed && !bComplete)
 	{
 		FlushResolves();
@@ -490,6 +514,7 @@ void FMantleCellLoader::StartDecodes()
 		const TSharedRef<FCompletionQueue, ESPMode::ThreadSafe> Queue = Completions;
 		UE::Tasks::Launch(TEXT("MantleCellRead"), [Queue, Bytes, FileIndex, bIsIndex, Assets]()
 		{
+			LLM_SCOPE_BYTAG(Mantle_PlaceCells);
 			const TSharedRef<FDecoded, ESPMode::ThreadSafe> Decoded = MakeShared<FDecoded, ESPMode::ThreadSafe>();
 			TArray<uint8> Raw;
 			FString Text;
@@ -604,6 +629,32 @@ void FMantleCellLoader::OnIndexRead(FMantleCellIndex&& InIndex)
 		FileOrder.Add(FileIndex);
 	}
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_CELLS index: %d cells in %d level(s), %d files to fetch"), Index.Cells.Num(), Index.Levels.Num(), FileCount);
+	// Asked before any cell file is resolved or fetched: those start later in this Pump, and only if the answer is yes.
+	if (OnIndexCheck.IsBound() && !OnIndexCheck.Execute(Index))
+	{
+		Stop();
+	}
+}
+
+void FMantleCellLoader::Stop()
+{
+	bStopped = true;
+	bFinished = true;
+	Result.Seconds = FPlatformTime::Seconds() - StartSeconds;
+	for (FFile& File : Files)
+	{
+		if (File.RequestId != 0)
+		{
+			Store->Cancel(File.RequestId);
+			File.RequestId = 0;
+		}
+	}
+	if (TickerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
+		TickerHandle.Reset();
+	}
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_CELLS stopped after the index (%d cells), as its check asked; no cell file was read"), Index.Cells.Num());
 }
 
 void FMantleCellLoader::CheckComplete()

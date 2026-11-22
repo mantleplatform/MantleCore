@@ -1432,6 +1432,18 @@ void FMantleApiClient::ServerPlaceReadyAsync(FMantleApiCallback OnDone)
 	SendServerTokenRequest(TEXT("/server/sessions/place-ready"), TEXT("{}"), OnDone);
 }
 
+FString FMantleApiClient::BuildServerPlaceTooLargeBody(const double EstimateMB, const double LowerBoundMB, const double LimitMB)
+{
+	// Whole megabytes: the backend logs them, nothing computes with them.
+	return FString::Printf(TEXT("{\"estimateMB\":%lld,\"lowerBoundMB\":%lld,\"limitMB\":%lld}"),
+		FMath::RoundToInt64(FMath::Max(EstimateMB, 0.0)), FMath::RoundToInt64(FMath::Max(LowerBoundMB, 0.0)), FMath::RoundToInt64(FMath::Max(LimitMB, 0.0)));
+}
+
+void FMantleApiClient::ServerPlaceTooLargeAsync(const double EstimateMB, const double LowerBoundMB, const double LimitMB, FMantleApiCallback OnDone)
+{
+	SendServerTokenRequest(TEXT("/server/sessions/place-too-large"), BuildServerPlaceTooLargeBody(EstimateMB, LowerBoundMB, LimitMB), OnDone);
+}
+
 FString FMantleApiClient::ParseVerifiedUserId(const FMantleApiResult& Response)
 {
 	if (!Response.bSuccess)

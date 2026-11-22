@@ -2,6 +2,7 @@
 #include "MantleCellStreamer.h"
 #include "HAL/PlatformMemory.h"
 
+#include "MantleMergedInstancesComponent.h"
 #include "MantleRuntime.h"
 
 #include "Components/InstancedStaticMeshComponent.h"
@@ -841,6 +842,8 @@ bool FMantleCellStreamer::BuildOne()
 		const TWeakObjectPtr<AActor>* First = Cell.PieceActors.Find(BaseId);
 		AActor* FirstActor = First ? First->Get() : nullptr;
 		UInstancedStaticMeshComponent* Component = (FirstActor && IsValid(FirstActor)) ? FirstActor->FindComponentByClass<UInstancedStaticMeshComponent>() : nullptr;
+		// A dedicated server's first piece of a static, solid set is a merged component (a few bodies, many shapes each): the later pieces go into it the same way.
+		UMantleMergedInstancesComponent* MergedComponent = (FirstActor && IsValid(FirstActor) && !Component) ? FirstActor->FindComponentByClass<UMantleMergedInstancesComponent>() : nullptr;
 #if !UE_BUILD_SHIPPING
 		if (!bTestSkipBuild)
 #endif
@@ -848,6 +851,10 @@ bool FMantleCellStreamer::BuildOne()
 			if (Instanced && Component)
 			{
 				Component->AddInstances(Instanced->Instances, /*bShouldReturnIndices*/ false, /*bWorldSpace*/ false);
+			}
+			else if (Instanced && MergedComponent)
+			{
+				MergedComponent->AddInstances(Instanced->Instances);
 			}
 			else if (First && !(FirstActor && IsValid(FirstActor)))
 			{
