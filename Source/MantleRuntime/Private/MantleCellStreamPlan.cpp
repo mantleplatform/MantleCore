@@ -115,6 +115,11 @@ bool FMantleCellStreamPlan::IsTeleport(const FVector& Delta, const double DeltaS
 	return Delta.SizeSquared() > Limit * Limit;
 }
 
+bool FMantleCellStreamPlan::HasStalled(const double NowSeconds, const double BeganSeconds, const double LastProgressSeconds, const double IdleTimeoutSeconds)
+{
+	return NowSeconds - FMath::Max(BeganSeconds, LastProgressSeconds) >= IdleTimeoutSeconds;
+}
+
 int32 FMantleCellStreamPlan::PieceCount(const int32 InstanceCount, const bool bSolid, const FMantleCellStreamSettings& Settings)
 {
 	if (!bSolid || InstanceCount <= 0 || Settings.MaxSolidInstancesPerPiece <= 0)

@@ -234,15 +234,36 @@ public:
 	 */
 	void SetCellAssets(TSharedPtr<IMantleCellAssets> InAssets) { CellAssets = MoveTemp(InAssets); }
 
-	/** Holds until the cells around the view stand (or HoldTimeoutSeconds). A no-op when already holding. */
+	/** Holds until the cells around the view stand (or nothing has moved for HoldIdleTimeoutSeconds). A no-op when already holding. */
 	void BeginHold(const TCHAR* Reason);
 	bool IsHolding() const { return bHolding; }
+
+	/**
+	 * The join has gone on (the owner's Done ran). Until then every hold, the join's own and a teleport's (the server's character arriving somewhere other than the
+	 * spot the join started at), waits for JoinHoldRadiusCm, the whole first view; from then on a hold waits for HoldRadiusCm.
+	 */
+	void NoteJoinDone() { bJoinPending = false; }
+	bool IsJoinPending() const { return bJoinPending; }
+
+	/** How far from the view the hold waits for cells now: JoinHoldRadiusCm while the join is pending, else HoldRadiusCm. */
+	double HoldRadiusNow() const { return bJoinPending ? Settings.JoinHoldRadiusCm : Settings.HoldRadiusCm; }
 
 	/**
 	 * Every cell that has a point within RadiusCm of Point and wants to be built from there (Point is within its drawDistance of it) stands, or can
 	 * never be read. False until the index has been read.
 	 */
 	bool IsAreaBuilt(const FVector& Point, double RadiusCm) const;
+
+	/** The cells IsAreaBuilt looks at, and how many of them stand or can never be read (the join screen shows it). Zeros until the index has been read. */
+	struct FAreaCount
+	{
+		int32 Cells = 0;
+		int32 Done = 0;
+	};
+	FAreaCount CountArea(const FVector& Point, double RadiusCm) const;
+
+	/** The hold's area as it is now (CountArea round the view, HoldRadiusNow; for a streamer that keeps every cell, every cell it builds). */
+	FAreaCount CountHoldArea() const;
 
 	/** Every cell this streamer builds stands, or can never be read (what the join of a streamer that keeps every cell waits for). False until the index has been read and planned. */
 	bool IsEverythingBuilt() const;
@@ -442,6 +463,8 @@ private:
 	void ApplyFarVisibility(int32 CellIndex, FFarSet& Set, const TCHAR* Why);
 	void ReleaseFarAssets(int32 CellIndex, FFarSet& Set);
 	void LogFarSummary(const TCHAR* Why) const;
+	/** Notes progress for the holds and the asset waits: this streamer's own work every tick, the place's downloads (CellAssets->GetProgressMark) every ProgressSampleSeconds while something waits on them. */
+	void SampleProgress(double DeltaSeconds);
 	void CheckHold();
 	void SetHolding(bool bNow, const TCHAR* Reason);
 
@@ -514,8 +537,17 @@ private:
 	bool bKeepAllSettled = false;
 
 	bool bHolding = false;
+	/** The join has not gone on yet (see NoteJoinDone): holds wait for the whole first view. */
+	bool bJoinPending = true;
 	/** The own-ground hold timed out with its cells still not standing: no new one starts until they do (a cell stuck on its assets must not freeze the player again every minute). */
 	bool bOwnGroundGaveUp = false;
+	/** Progress (SampleProgress), on the platform clock: the last time anything moved, and the last time the place's downloads did; the marks they were last seen at. */
+	double LastProgressSeconds = 0.0;
+	double LastAssetProgressSeconds = 0.0;
+	int64 LastOwnProgressMark = -1;
+	int64 LastAssetProgressMark = 0;
+	bool bAssetProgressMarkKnown = false;
+	double SecondsSinceAssetSample = 0.0;
 	/** Cells handed to QueueRemoval since the start (GetTakeDownSerial). */
 	uint64 TakeDownSerial = 0;
 	double HoldStartSeconds = 0.0;

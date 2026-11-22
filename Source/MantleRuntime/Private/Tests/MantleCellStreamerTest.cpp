@@ -183,6 +183,11 @@ namespace MantleCellStreamerTestPrivate
 		bool bReady = true;
 		/** Ids that fail once the assets are ready. */
 		TArray<FString> Failing;
+		/** Cells whose assets are still on their way even while bReady (a first visit's queue, one cell at a time). */
+		TSet<int32> SlowCells;
+		/** True: every look at the progress mark finds the downloads moved (bytes still arriving). */
+		bool bDownloadsMoving = false;
+		mutable int64 Mark = 0;
 
 		virtual void Acquire(int32 CellIndex, const TArray<FMantleEntity>& Entities) override
 		{
@@ -195,12 +200,21 @@ namespace MantleCellStreamerTestPrivate
 		{
 			OutPending.Reset();
 			OutFailed.Reset();
-			if (!bReady)
+			if (!bReady || SlowCells.Contains(CellIndex))
 			{
 				OutPending.Add(TEXT("ast_cube"));
 				return;
 			}
 			OutFailed = Failing;
+		}
+
+		virtual int64 GetProgressMark() const override
+		{
+			if (bDownloadsMoving)
+			{
+				++Mark;
+			}
+			return Mark;
 		}
 
 		virtual void Release(int32 CellIndex) override
@@ -239,6 +253,8 @@ namespace MantleCellStreamerTestPrivate
 		int32 BaselineActors = 0;
 		TArray<bool> HoldCalls;
 		bool bProviderHasView = true;
+		/** The owner's join goes on when the first hold ends (UMantleCellStreamSubsystem::OnHoldChanged): later holds wait for HoldRadiusCm. False: the test says when. */
+		bool bJoinDoneOnFirstRelease = true;
 		/** The extra views the provider gives (the camera, when it is not at the player). */
 		TArray<FMantleCellStreamer::FExtraView> Extras;
 		/** What the streamer told about entities: ids of the pieces' entities as they stood, and as they were released. */
@@ -345,7 +361,14 @@ namespace MantleCellStreamerTestPrivate
 				[this](const FString& EntityId) { ReleasedIds.Add(EntityId); });
 			Streamer->SetExtraViewsProvider([this](TArray<FMantleCellStreamer::FExtraView>& OutViews) { OutViews = Extras; });
 			// The join's hold began inside Start, before the callback could be set: the owner reads it once, as UMantleCellStreamSubsystem does.
-			Streamer->SetHoldChangedCallback([this](const bool bHolding) { HoldCalls.Add(bHolding); });
+			Streamer->SetHoldChangedCallback([this](const bool bHolding)
+			{
+				HoldCalls.Add(bHolding);
+				if (!bHolding && bJoinDoneOnFirstRelease)
+				{
+					Streamer->NoteJoinDone();
+				}
+			});
 			HoldCalls.Add(Streamer->IsHolding());
 		}
 
@@ -1054,7 +1077,7 @@ bool FMantleCellStreamerMissingAssetsTest::RunTest(const FString& Parameters)
 		Fixture.CellAssets = MakeShared<FFakeCellAssets>();
 		Fixture.CellAssets->bReady = false;
 		FMantleCellStreamSettings Settings = SteadySettings();
-		Settings.AssetWaitTimeoutSeconds = 0.05;
+		Settings.AssetIdleTimeoutSeconds = 0.05;
 		Fixture.StartStreamer(Settings);
 		const double Start = FPlatformTime::Seconds();
 		while (FPlatformTime::Seconds() - Start < 2.0 && Fixture.Streamer->GetStats().AssetWaitTimeouts < 3)
@@ -1066,6 +1089,118 @@ bool FMantleCellStreamerMissingAssetsTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("with nothing built"), Fixture.StreamedActors(), 0);
 		TestEqual(TEXT("the asset is named once"), Fixture.Streamer->GetStats().AssetsMissing, 1);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerJoinWaitsForWholeViewTest,
+	"Mantle.Runtime.CellStream.Streamer.JoinWaitsForWholeView",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerJoinWaitsForWholeViewTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// City Sample (#189): the join let the player in once the cells within 100 m stood, and the buildings that draw from farther popped in over a black view. The join is behind the
+	// loading screen, so it waits for every cell the spot wants; a teleport afterwards (no screen) waits for the 100 m round the player, as before.
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	Fixture.bJoinDoneOnFirstRelease = false;
+	Fixture.CellAssets = MakeShared<FFakeCellAssets>();
+	// From x = 1 m cells 0, 1 and 2 are wanted (each within its 150 m drawDistance); cell 2 (128 to 192 m) is 127 m off, past the 100 m a teleport waits for. Its download is slow.
+	Fixture.CellAssets->SlowCells.Add(2);
+	Fixture.StartStreamer(SteadySettings());
+	for (int32 Tick = 0; Tick < 2000 && !(Fixture.Built(0) && Fixture.Built(1)); ++Tick)
+	{
+		Fixture.Tick();
+	}
+	for (int32 Tick = 0; Tick < 30; ++Tick)
+	{
+		Fixture.Tick();
+	}
+	TestTrue(TEXT("cells 0 and 1 stand"), Fixture.Built(0) && Fixture.Built(1));
+	TestTrue(TEXT("the 100 m round the spot stands"), Fixture.Streamer->IsAreaBuilt(Fixture.View, 10000.0));
+	TestFalse(TEXT("cell 2 waits for its download"), Fixture.Built(2));
+	TestTrue(TEXT("so the join still holds: it waits for the whole first view"), Fixture.Streamer->IsHolding());
+	const FMantleCellStreamer::FAreaCount Waiting = Fixture.Streamer->CountHoldArea();
+	TestEqual(TEXT("the join's area is the three wanted cells"), Waiting.Cells, 3);
+	TestEqual(TEXT("two of which stand"), Waiting.Done, 2);
+
+	// The download arrives: cell 2 is built and the join is let go.
+	Fixture.CellAssets->SlowCells.Reset();
+	if (!TestTrue(TEXT("the join settles"), Fixture.Settle()))
+	{
+		return false;
+	}
+	TestTrue(TEXT("cell 2 stands"), Fixture.Built(2));
+	TestTrue(TEXT("the join's hold began and ended once"), Fixture.HoldCalls.Num() == 2 && Fixture.HoldCalls[0] && !Fixture.HoldCalls[1]);
+
+	// The owner's join goes on. A teleport to x = 700 m wants cells 8 (512 to 576 m, 124 m off) to 11, and waits only for 9 to 11, the ones within 100 m: cell 8's slow download
+	// does not hold the player, who can see the world.
+	Fixture.Streamer->NoteJoinDone();
+	TestEqual(TEXT("a teleport's hold is 100 m"), Fixture.Streamer->HoldRadiusNow(), 10000.0);
+	Fixture.CellAssets->SlowCells.Add(8);
+	Fixture.View = FVector(70000.0, 100.0, 100.0);
+	Fixture.Tick();
+	TestTrue(TEXT("the teleport holds"), Fixture.Streamer->IsHolding());
+	for (int32 Tick = 0; Tick < 3000 && Fixture.Streamer->IsHolding(); ++Tick)
+	{
+		Fixture.Tick();
+	}
+	TestFalse(TEXT("and lets go"), Fixture.Streamer->IsHolding());
+	TestTrue(TEXT("once cells 9 to 11 stand"), Fixture.Built(9) && Fixture.Built(10) && Fixture.Built(11));
+	TestFalse(TEXT("without waiting for cell 8"), Fixture.Built(8));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerHoldWaitsWhileDownloadsMoveTest,
+	"Mantle.Runtime.CellStream.Streamer.HoldWaitsWhileDownloadsMove",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerHoldWaitsWhileDownloadsMoveTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// City Sample (#189): the join gave up at a fixed 60 s with 1 cell of 68 standing while files were still arriving at 2,000 a minute, and cells waiting on that queue were built
+	// without hundreds of their meshes at a fixed 90 s. Now both wait as long as the downloads move, and give up only once they stand still.
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	Fixture.CellAssets = MakeShared<FFakeCellAssets>();
+	Fixture.CellAssets->bReady = false;
+	Fixture.CellAssets->bDownloadsMoving = true;
+	FMantleCellStreamSettings Settings = SteadySettings();
+	Settings.HoldIdleTimeoutSeconds = 0.3;
+	Settings.AssetIdleTimeoutSeconds = 0.3;
+	Settings.ProgressSampleSeconds = 0.02;
+	Fixture.StartStreamer(Settings);
+
+	// Five times the idle timeouts, with bytes arriving all the while: the join holds and no cell gives up on its assets.
+	const double Start = FPlatformTime::Seconds();
+	while (FPlatformTime::Seconds() - Start < 1.5)
+	{
+		Fixture.Tick();
+	}
+	TestTrue(TEXT("the join still holds while the downloads move"), Fixture.Streamer->IsHolding());
+	TestEqual(TEXT("and no cell gave up on its assets"), Fixture.Streamer->GetStats().AssetWaitTimeouts, 0);
+
+	// The downloads stand still: the cells give up on what has not come (and are built without it), and the join is let go.
+	Fixture.CellAssets->bDownloadsMoving = false;
+	const double Stopped = FPlatformTime::Seconds();
+	double LetGoAfter = -1.0;
+	while (FPlatformTime::Seconds() - Stopped < 3.0 && LetGoAfter < 0.0)
+	{
+		Fixture.Tick();
+		LetGoAfter = Fixture.Streamer->IsHolding() ? -1.0 : FPlatformTime::Seconds() - Stopped;
+	}
+	TestTrue(TEXT("the join is let go once nothing moves"), LetGoAfter >= 0.0);
+	// The last movement was seen up to one sample (0.02 s) before the downloads stopped.
+	TestTrue(TEXT("not before the idle timeout"), LetGoAfter >= 0.3 - 0.05);
+	TestEqual(TEXT("each of the three cells gave up on its assets once"), Fixture.Streamer->GetStats().AssetWaitTimeouts, 3);
 	return true;
 }
 
@@ -1188,7 +1323,7 @@ bool FMantleCellStreamerOwnGroundTest::RunTest(const FString& Parameters)
 		FFixture Fixture;
 		Fixture.CellAssets = MakeShared<FFakeCellAssets>();
 		FMantleCellStreamSettings Settings = SteadySettings();
-		Settings.HoldTimeoutSeconds = 0.3;
+		Settings.HoldIdleTimeoutSeconds = 0.3;
 		Fixture.StartStreamer(Settings);
 		if (!TestTrue(TEXT("the join settles"), Fixture.Settle()))
 		{
@@ -1683,7 +1818,7 @@ bool FMantleFarSetSolidStreamerTest::RunTest(const FString& Parameters)
 	FMantleCellStreamSettings Settings = FarSettings();
 	Settings.Entities = EMantleCellEntities::SolidOnly;
 	Settings.bKeepEveryCell = true;
-	Settings.HoldTimeoutSeconds = 600.0;
+	Settings.HoldIdleTimeoutSeconds = 600.0;
 	Fixture.StartStreamer(Settings);
 	int32 DoubleDraws = 0;
 	int32 Gaps = 0;
@@ -1913,7 +2048,7 @@ bool FMantleCellStreamerBudgetNeverLimitsKeepEveryCellTest::RunTest(const FStrin
 	FFixture Fixture;
 	FMantleCellStreamSettings Settings = SteadySettings();
 	Settings.bKeepEveryCell = true;
-	Settings.HoldTimeoutSeconds = 600.0;
+	Settings.HoldIdleTimeoutSeconds = 600.0;
 	Settings.BudgetLimits = []()
 	{
 		FMantleBudgetLimits Limits;

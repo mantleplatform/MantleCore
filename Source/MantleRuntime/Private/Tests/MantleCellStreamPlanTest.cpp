@@ -204,6 +204,17 @@ bool FMantleCellStreamPlanOrderTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("a 1 s frame allows 300 m, in any direction (3-4-5: 18,000 and 24,000 is 30,000)"), FMantleCellStreamPlan::IsTeleport(FVector(18000, 0, 24000), 1.0, Settings));
 	TestTrue(TEXT("and no more"), FMantleCellStreamPlan::IsTeleport(FVector(18001, 0, 24001), 1.0, Settings));
 
+	// A hold and an asset wait give up only when nothing has moved for the idle timeout, counted from the later of when they began and the last progress (City Sample's first visit: minutes of
+	// downloads that never stop moving must not give up at a fixed 60 s).
+	TestEqual(TEXT("the hold's default: a minute with nothing moving"), Settings.HoldIdleTimeoutSeconds, 60.0);
+	TestFalse(TEXT("begun 59 s ago, nothing since: still waiting"), FMantleCellStreamPlan::HasStalled(159.0, 100.0, 0.0, 60.0));
+	TestTrue(TEXT("begun 60 s ago, nothing since: stalled"), FMantleCellStreamPlan::HasStalled(160.0, 100.0, 0.0, 60.0));
+	TestFalse(TEXT("begun 10 minutes ago, progress 30 s ago: still waiting"), FMantleCellStreamPlan::HasStalled(700.0, 100.0, 670.0, 60.0));
+	TestTrue(TEXT("progress 60 s ago: stalled"), FMantleCellStreamPlan::HasStalled(730.0, 100.0, 670.0, 60.0));
+	TestFalse(TEXT("progress before the wait began does not shorten it"), FMantleCellStreamPlan::HasStalled(159.0, 100.0, 50.0, 60.0));
+	TestTrue(TEXT("the join's radius reaches every cell the spot wants"), Settings.JoinHoldRadiusCm >= UE_DOUBLE_BIG_NUMBER);
+	TestEqual(TEXT("a teleport's is 100 m"), Settings.HoldRadiusCm, 10000.0);
+
 	// Velocity smoothing: an eighth of a second of a quarter-second window moves half way.
 	const FVector Half = FMantleCellStreamPlan::SmoothVelocity(FVector::ZeroVector, FVector(100, 0, 0), 0.125, Settings);
 	TestTrue(TEXT("half way"), Half.Equals(FVector(50, 0, 0), 1e-9));

@@ -349,11 +349,13 @@ void FMantleCellStreamer::TakeFarAssetCells()
 		CellAssets->GetState(FarHolderBase + CellIndex, Pending, Failed);
 		if (!Pending.IsEmpty())
 		{
-			if (Now - Set->AssetsAskedAt < Settings.AssetWaitTimeoutSeconds)
+			// As for a real cell (TakeAssetCells): only downloads that have stood still give up.
+			if (!FMantleCellStreamPlan::HasStalled(Now, Set->AssetsAskedAt, LastAssetProgressSeconds, Settings.AssetIdleTimeoutSeconds))
 			{
 				continue;
 			}
-			UE_LOG(LogMantle, Warning, TEXT("MANTLE_FARSET_ASSET_TIMEOUT cell=%s: %d asset(s) had not arrived after %.0f s; the twin is built without them"), *InfoOf(CellIndex).KeyString(), Pending.Num(), Now - Set->AssetsAskedAt);
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_FARSET_ASSET_TIMEOUT cell=%s: %d asset(s) had not arrived after %.0f s, and the place's downloads had not moved for %.0f s; the twin is built without them"),
+				*InfoOf(CellIndex).KeyString(), Pending.Num(), Now - Set->AssetsAskedAt, Now - FMath::Max(Set->AssetsAskedAt, LastAssetProgressSeconds));
 			Failed.Append(Pending);
 		}
 		FarAssetCells.RemoveSingle(CellIndex);
