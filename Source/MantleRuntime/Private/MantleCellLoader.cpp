@@ -73,10 +73,12 @@ FMantleCellLoader::~FMantleCellLoader()
 	}
 }
 
-TSharedRef<FMantleCellLoader> FMantleCellLoader::Load(const FMantlePlace& Root, const FMantleCellLoaderSettings& Settings, FMantleCellsDone OnDone)
+TSharedRef<FMantleCellLoader> FMantleCellLoader::Load(const FMantlePlace& Root, const FMantleCellLoaderSettings& Settings, FMantleCellsDone OnDone,
+	FMantleCellIndexCheck OnIndex)
 {
 	check(IsInGameThread());
 	TSharedRef<FMantleCellLoader> Loader = MakeShareable(new FMantleCellLoader(Settings, MoveTemp(OnDone)));
+	Loader->OnIndexCheck = MoveTemp(OnIndex);
 	Loader->Start(Root);
 	if (Loader->Settings.bAutoPump)
 	{
@@ -171,6 +173,11 @@ void FMantleCellLoader::Pump()
 	}
 	const TSharedRef<FMantleCellLoader> KeepAlive = AsShared();
 	DrainCompletions();
+	if (bStopped)
+	{
+		// The index check said no while its read was delivered: nothing after it starts.
+		return;
+	}
 	if (!bFailed && !bComplete)
 	{
 		FlushResolves();
@@ -622,6 +629,32 @@ void FMantleCellLoader::OnIndexRead(FMantleCellIndex&& InIndex)
 		FileOrder.Add(FileIndex);
 	}
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_CELLS index: %d cells in %d level(s), %d files to fetch"), Index.Cells.Num(), Index.Levels.Num(), FileCount);
+	// Asked before any cell file is resolved or fetched: those start later in this Pump, and only if the answer is yes.
+	if (OnIndexCheck.IsBound() && !OnIndexCheck.Execute(Index))
+	{
+		Stop();
+	}
+}
+
+void FMantleCellLoader::Stop()
+{
+	bStopped = true;
+	bFinished = true;
+	Result.Seconds = FPlatformTime::Seconds() - StartSeconds;
+	for (FFile& File : Files)
+	{
+		if (File.RequestId != 0)
+		{
+			Store->Cancel(File.RequestId);
+			File.RequestId = 0;
+		}
+	}
+	if (TickerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
+		TickerHandle.Reset();
+	}
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_CELLS stopped after the index (%d cells), as its check asked; no cell file was read"), Index.Cells.Num());
 }
 
 void FMantleCellLoader::CheckComplete()

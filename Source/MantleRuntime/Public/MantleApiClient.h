@@ -627,6 +627,14 @@ public:
 	 * the caller retries. Authenticated by the dedicated-server token.
 	 */
 	static void ServerPlaceReadyAsync(FMantleApiCallback OnDone);
+	/**
+	 * Server plan 6.3: POST /server/sessions/place-too-large, once, when a hosted server finds its place cannot fit its memory
+	 * (MANTLE_PLACE_TOO_LARGE). The backend closes the session and stops the server's deployment. Body: the estimate's peak, the lower
+	 * bound the server refused on and its limit, in MB. Answers 204; after that the session's token is inactive (401), so a retry whose
+	 * first answer was lost gets 401. Authenticated by the dedicated-server token.
+	 */
+	static void ServerPlaceTooLargeAsync(double EstimateMB, double LowerBoundMB, double LimitMB, FMantleApiCallback OnDone);
+	static FString BuildServerPlaceTooLargeBody(double EstimateMB, double LowerBoundMB, double LimitMB);
 	static FString BuildServerSeatsHeartbeatBody(const TArray<FString>& UserIds);
 
 	/** Reads {"userId": "..."} out of a successful VerifyJoinCredentialAsync response. Empty

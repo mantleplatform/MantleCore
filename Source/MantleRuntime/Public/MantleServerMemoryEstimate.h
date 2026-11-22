@@ -4,6 +4,8 @@
 #include "CoreMinimal.h"
 #include "MantlePlaceTypes.h"
 
+struct FMantleCellIndex;
+
 /**
  * What the server memory estimate counts, over the root place and every cell (MantleCore#189, the server plan's section 6).
  * Every number is one the place file, its manifest and its cell index already state, so the editor's Check, the publish
@@ -101,6 +103,12 @@ struct MANTLERUNTIME_API FMantleServerMemoryEstimate
 
 	/** Adds a manifest's StaticMesh entries (each id once) and its heightfields' samples (from their byte counts; one not uploaded yet counts nothing). */
 	static void AddManifest(TConstArrayView<FMantleAssetRef> Assets, FMantleServerMemoryCounts& OutCounts);
+
+	/**
+	 * Adds every cell's entities, instances and solid, as its cell index states them (what the backend stores too). A dedicated server
+	 * counts its place this way once the index is read, before it reads any cell file.
+	 */
+	static void AddCellIndex(const FMantleCellIndex& Index, FMantleServerMemoryCounts& OutCounts);
 
 	/** "world_gb=3.55 peak_gb=5.13 fits=hosted entities=... instances=... solid=... meshes=... terrainSamples=...", for log lines: world_gb is ReadyMB. */
 	FString Fields() const;

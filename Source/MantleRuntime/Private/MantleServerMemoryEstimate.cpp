@@ -1,6 +1,8 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleServerMemoryEstimate.h"
 
+#include "MantlePlaceCells.h"
+
 namespace MantleServerMemoryEstimatePrivate
 {
 	/** An MHF1 heightfield's header (MantleHeightfieldReader.h); 16-bit samples follow it. */
@@ -75,6 +77,16 @@ void FMantleServerMemoryEstimate::AddManifest(TConstArrayView<FMantleAssetRef> A
 			Heightfields.Add(Asset.Id, &bSeen);
 			OutCounts.TerrainSamples += bSeen ? 0 : (Asset.Bytes - HeightfieldHeaderBytes) / 2;
 		}
+	}
+}
+
+void FMantleServerMemoryEstimate::AddCellIndex(const FMantleCellIndex& Index, FMantleServerMemoryCounts& OutCounts)
+{
+	for (const FMantleCellInfo& Cell : Index.Cells)
+	{
+		OutCounts.Entities += Cell.Entities;
+		OutCounts.Instances += Cell.Instances;
+		OutCounts.Solid += Cell.Solid;
 	}
 }
 
