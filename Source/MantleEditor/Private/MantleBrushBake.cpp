@@ -5,6 +5,7 @@
 #include "MantleRuntime.h"
 
 #include "ActorEditorUtils.h"
+#include "BSPOps.h"
 #include "Editor.h"
 #include "Editor/EditorEngine.h"
 #include "Engine/Brush.h"
@@ -185,12 +186,10 @@ namespace MantleBrushBakePrivate
 		const FVector3f TextureY = Poly.TextureV / UModel::GetGlobalBSPTexelScale();
 		const FVector3f PivotF(Pivot);
 
-		for (int32 Index = 2; Index < Poly.Vertices.Num(); ++Index)
+		auto AddTriangle = [&](const FVector3f& A, const FVector3f& B, const FVector3f& C)
 		{
-			// The engine's order: the fan's first vertex last.
-			const FVector3f World[3] = { Poly.Vertices[Index], Poly.Vertices[Index - 1], Poly.Vertices[0] };
 			TArray<FVertexInstanceID> Corners;
-			for (const FVector3f& Corner : World)
+			for (const FVector3f& Corner : { A, B, C })
 			{
 				const FVertexID Vertex = Description.CreateVertex();
 				Positions[Vertex] = Corner - PivotF;
@@ -203,6 +202,17 @@ namespace MantleBrushBakePrivate
 			for (const FEdgeID Edge : NewEdges)
 			{
 				EdgeHardnesses[Edge] = true; // BSP is flat shaded
+			}
+		};
+		for (int32 Index = 2; Index < Poly.Vertices.Num(); ++Index)
+		{
+			// The engine's order: the fan's first vertex last.
+			AddTriangle(Poly.Vertices[Index], Poly.Vertices[Index - 1], Poly.Vertices[0]);
+			// A two-sided surface (a sheet: the Plane brush, Geometry mode's sheets) draws both faces in game, and its triangles are its
+			// collision, so the back face is a second, reversed triangle.
+			if (Poly.PolyFlags & PF_TwoSided)
+			{
+				AddTriangle(Poly.Vertices[0], Poly.Vertices[Index - 1], Poly.Vertices[Index]);
 			}
 		}
 	}
@@ -297,15 +307,60 @@ namespace MantleBrushBakePrivate
 			}
 		}
 
-		// The engine tells each brush it is about to change ("Modify"): with no transaction open that records nothing, so none is, and a
-		// publish never lands in the creator's undo history.
-		ITransaction* const SavedUndo = GUndo;
-		GUndo = nullptr;
-		ON_SCOPE_EXIT{ GUndo = SavedUndo; };
+		// bspBrushCSG records on each brush's own model the transform it was built at and its vertex count: what the editor reads to align
+		// surfaces when the BSP is not rebuilt. The creator's values are saved here and put back, whatever happens.
+		struct FBuiltState
+		{
+			UModel* Model = nullptr;
+			FVector3f Location = FVector3f::ZeroVector;
+			FRotator Rotation = FRotator::ZeroRotator;
+			FVector3f Scale = FVector3f::OneVector;
+			bool bValid = false;
+			uint32 NumUniqueVertices = 0;
+		};
+		TArray<FBuiltState> Saved;
+		for (const ABrush* Brush : Ordered)
+		{
+			FBuiltState& State = Saved.AddDefaulted_GetRef();
+			State.Model = Brush->Brush;
+			State.Location = State.Model->OwnerLocationWhenLastBuilt;
+			State.Rotation = State.Model->OwnerRotationWhenLastBuilt;
+			State.Scale = State.Model->OwnerScaleWhenLastBuilt;
+			State.bValid = State.Model->bCachedOwnerTransformValid;
+			State.NumUniqueVertices = State.Model->NumUniqueVertices;
+		}
+		ON_SCOPE_EXIT
+		{
+			for (const FBuiltState& State : Saved)
+			{
+				State.Model->OwnerLocationWhenLastBuilt = State.Location;
+				State.Model->OwnerRotationWhenLastBuilt = State.Rotation;
+				State.Model->OwnerScaleWhenLastBuilt = State.Scale;
+				State.Model->bCachedOwnerTransformValid = State.bValid;
+				State.Model->NumUniqueVertices = State.NumUniqueVertices;
+			}
+		};
 
+		// The cut itself is the engine's (UEditorEngine::RebuildModelFromBrushes, which this follows) without its call to Brush->Modify, which
+		// would tell every listener that the creator's brush changed.
 		UModel* Model = NewObject<UModel>(GetTransientPackage(), NAME_None, RF_Transient);
 		Model->Initialize(nullptr, /*InRootOutside*/ true);
-		GEditor->RebuildModelFromBrushes(Ordered, Model);
+		{
+			TUniquePtr<FBspPointsGrid> BspPoints = MakeUnique<FBspPointsGrid>(50.0f, THRESH_POINTS_ARE_SAME);
+			TUniquePtr<FBspPointsGrid> BspVectors = MakeUnique<FBspPointsGrid>(1.0f / 16.0f, FMath::Max(THRESH_NORMALS_ARE_SAME, THRESH_VECTORS_ARE_NEAR));
+			FBspPointsGrid::GBspPoints = BspPoints.Get();
+			FBspPointsGrid::GBspVectors = BspVectors.Get();
+			ON_SCOPE_EXIT
+			{
+				FBspPointsGrid::GBspPoints = nullptr;
+				FBspPointsGrid::GBspVectors = nullptr;
+			};
+			for (ABrush* Brush : Ordered)
+			{
+				GEditor->bspBrushCSG(Brush, Model, Brush->PolyFlags, static_cast<EBrushType>(Brush->BrushType.GetValue()), CSG_None,
+					/*bBuildBounds*/ false, /*bMergePolys*/ true, /*bReplaceNULLMaterialRefs*/ false, /*bShowProgressBar*/ false);
+			}
+		}
 		if (Model->Nodes.Num() == 0)
 		{
 			return true; // everything cut away: nothing to publish, and nothing wrong
@@ -336,7 +391,7 @@ namespace MantleBrushBakePrivate
 				Surface.Center += FVector(Vertex);
 			}
 			Surface.Center /= Poly.Vertices.Num();
-			Surface.Triangles = Poly.Vertices.Num() - 2;
+			Surface.Triangles = (Poly.Vertices.Num() - 2) * ((Poly.PolyFlags & PF_TwoSided) ? 2 : 1);
 			Groups[GroupIndex].Surfaces.Add(Surface);
 		}
 
@@ -352,9 +407,10 @@ namespace MantleBrushBakePrivate
 			{
 				Order.Add(&Surface);
 			}
-			Order.StableSort([&GroupBounds](const FSurface* A, const FSurface* B)
+			// (Sorting an array of pointers hands the predicate what they point to.)
+			Order.StableSort([&GroupBounds](const FSurface& A, const FSurface& B)
 			{
-				return BrushMorton(A->Center, GroupBounds) < BrushMorton(B->Center, GroupBounds);
+				return BrushMorton(A.Center, GroupBounds) < BrushMorton(B.Center, GroupBounds);
 			});
 
 			// Chunks within the caps (a surface of n corners makes n - 2 triangles and, here, three vertices a triangle).
@@ -426,17 +482,22 @@ TArray<ABrush*> FMantleBrushBake::CollectSources(UWorld* World)
 	{
 		return Sources;
 	}
-	for (TActorIterator<ABrush> It(World); It; ++It)
+	// Each level's brushes in the level's own actor order: the editor combines brushes in that order (a wall, then the doorway cut in it),
+	// and Order > Send to First/Last changes it.
+	for (const ULevel* Level : World->GetLevels())
 	{
-		if (IsBakeSource(*It))
+		if (!Level)
 		{
-			Sources.Add(*It);
+			continue;
+		}
+		for (AActor* Actor : Level->Actors)
+		{
+			if (ABrush* Brush = Cast<ABrush>(Actor); Brush && IsBakeSource(Brush))
+			{
+				Sources.Add(Brush);
+			}
 		}
 	}
-	Sources.Sort([](const ABrush& A, const ABrush& B)
-	{
-		return A.GetPathName().Compare(B.GetPathName(), ESearchCase::CaseSensitive) < 0;
-	});
 	return Sources;
 }
 
@@ -472,9 +533,16 @@ FMantleSplineBakeResult FMantleBrushBake::BakeBrushes(TConstArrayView<ABrush*> B
 	for (const FString& LevelKey : LevelKeys)
 	{
 		TArray<ABrush*>& LevelBrushes = ByLevel[LevelKey];
-		LevelBrushes.Sort([](const ABrush& A, const ABrush& B)
+		// In the level's actor order, whatever order the caller gave them in (and so in the cache key below): the cut depends on it.
+		const ULevel* BrushLevel = LevelBrushes[0]->GetLevel();
+		TMap<const ABrush*, int32> ActorIndex;
+		for (const ABrush* Brush : LevelBrushes)
 		{
-			return A.GetPathName().Compare(B.GetPathName(), ESearchCase::CaseSensitive) < 0;
+			ActorIndex.Add(Brush, BrushLevel->Actors.IndexOfByPredicate([Brush](const AActor* Actor) { return Actor == Brush; }));
+		}
+		LevelBrushes.StableSort([&ActorIndex](const ABrush& A, const ABrush& B)
+		{
+			return ActorIndex[&A] < ActorIndex[&B];
 		});
 
 		// Everything that changes the bake is in the signature, so a cached bake is reused only when it would come out the same.

@@ -53,14 +53,21 @@ namespace MantleBrushBakeTestPrivate
 		}
 	};
 
-	/** A static Add or Subtract brush, a cube of Size at Location. */
-	ABrush* SpawnCubeBrush(UWorld* World, const TCHAR* Label, const FVector& Location, float Size, EBrushType Type)
+	/** A static Add or Subtract brush, a cube of Size at Location. Name, when given, is the actor's object name (the cut must not depend on it). */
+	ABrush* SpawnCubeBrush(UWorld* World, const TCHAR* Label, const FVector& Location, float Size, EBrushType Type, const TCHAR* Name = nullptr, uint32 PolyFlags = 0)
 	{
-		ABrush* Brush = World->SpawnBrush();
+		FActorSpawnParameters Parameters;
+		Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if (Name)
+		{
+			Parameters.Name = FName(Name);
+		}
+		ABrush* Brush = World->SpawnActor<ABrush>(Parameters);
 		if (!Brush)
 		{
 			return nullptr;
 		}
+		Brush->PolyFlags = PolyFlags;
 		Brush->SetActorLabel(Label);
 		if (!Brush->Brush)
 		{
@@ -85,6 +92,8 @@ namespace MantleBrushBakeTestPrivate
 		TArray<TArray<FVector3f>> Vertices;
 		TArray<int32> BrushTypes;
 		TArray<bool> Dirty;
+		/** What the engine records on each brush's own model when it cuts it: the transform it was built at, and its vertex count. */
+		TArray<FString> BuiltState;
 		int32 Nodes = 0;
 		int32 Surfs = 0;
 		int32 Polys = 0;
@@ -98,6 +107,12 @@ namespace MantleBrushBakeTestPrivate
 				Out.Transforms.Add(Brush->GetActorTransform());
 				Out.BrushTypes.Add(Brush->BrushType);
 				Out.Dirty.Add(Brush->GetPackage()->IsDirty());
+				if (const UModel* Model = Brush->Brush)
+				{
+					Out.BuiltState.Add(FString::Printf(TEXT("%s|%s|%s|%d|%u"), *FVector(Model->OwnerLocationWhenLastBuilt).ToString(),
+						*Model->OwnerRotationWhenLastBuilt.ToString(), *FVector(Model->OwnerScaleWhenLastBuilt).ToString(),
+						Model->bCachedOwnerTransformValid ? 1 : 0, Model->NumUniqueVertices));
+				}
 				TArray<FVector3f>& Vertices = Out.Vertices.AddDefaulted_GetRef();
 				if (Brush->Brush && Brush->Brush->Polys)
 				{
@@ -118,7 +133,7 @@ namespace MantleBrushBakeTestPrivate
 
 		bool Matches(const FLevelSnapshot& Other) const
 		{
-			return Transforms.Num() == Other.Transforms.Num() && Vertices == Other.Vertices && BrushTypes == Other.BrushTypes && Dirty == Other.Dirty
+			return Transforms.Num() == Other.Transforms.Num() && Vertices == Other.Vertices && BrushTypes == Other.BrushTypes && Dirty == Other.Dirty && BuiltState == Other.BuiltState
 				&& Nodes == Other.Nodes && Surfs == Other.Surfs && Polys == Other.Polys
 				&& [this, &Other]()
 				{
@@ -180,7 +195,15 @@ bool FMantleBrushBakeTest::RunTest(const FString& Parameters)
 
 	const FLevelSnapshot Before = FLevelSnapshot::Take(World);
 	const FMantlePlaceAssetLimits Limits = FMantlePlaceAssetLimits::FromContract();
+	// Nobody is told a brush or its model changed: listeners (the scatter ground's among them) rebuild when they hear it.
+	int32 ModifiedBrushes = 0;
+	const FDelegateHandle Listener = FCoreUObjectDelegates::OnObjectModified.AddLambda([&ModifiedBrushes](UObject* Object)
+	{
+		ModifiedBrushes += Object && (Object->IsA<ABrush>() || Object->IsA<UModel>()) ? 1 : 0;
+	});
 	const FMantleSplineBakeResult First = FMantleBrushBake::Bake(World, Limits);
+	FCoreUObjectDelegates::OnObjectModified.Remove(Listener);
+	TestEqual(TEXT("baking tells no listener a brush or its model changed"), ModifiedBrushes, 0);
 	TestEqual(TEXT("nothing could not be baked"), First.Problems.Num(), 0);
 	if (!TestTrue(TEXT("the room is baked into a mesh"), First.Meshes.Num() >= 1))
 	{
@@ -232,6 +255,103 @@ bool FMantleBrushBakeTest::RunTest(const FString& Parameters)
 	FString What;
 	FString Remedy;
 	TestTrue(TEXT("and it is named as left out"), FMantlePlaceExporter::DescribeUnpublishedContent(Room, What, Remedy));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleBrushBakeOrderTest,
+	"Mantle.Editor.BrushBake.BrushesCutInTheLevelsActorOrder",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleBrushBakeOrderTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleBrushBakeTestPrivate;
+	if (!GEditor)
+	{
+		AddWarning(TEXT("no editor; skipped"));
+		return true;
+	}
+	FBspWorld Fixture;
+	UWorld* World = Fixture.World;
+	if (!TestNotNull(TEXT("a test world"), World))
+	{
+		return false;
+	}
+
+	// A wall placed first, and the doorway cut in it placed second: the doorway's object name sorts BEFORE the wall's, so a bake that
+	// ordered brushes by name would cut first and add after, and publish a solid wall.
+	ABrush* Wall = SpawnCubeBrush(World, TEXT("Wall"), FVector::ZeroVector, 800.0f, Brush_Add, TEXT("Brush_Z_Wall"));
+	ABrush* Door = SpawnCubeBrush(World, TEXT("Doorway"), FVector::ZeroVector, 400.0f, Brush_Subtract, TEXT("Brush_A_Door"));
+	if (!TestNotNull(TEXT("the wall"), Wall) || !TestNotNull(TEXT("the doorway"), Door))
+	{
+		return false;
+	}
+	TestTrue(TEXT("the doorway's name sorts before the wall's"), Door->GetPathName().Compare(Wall->GetPathName()) < 0);
+	const TArray<ABrush*> Sources = FMantleBrushBake::CollectSources(World);
+	if (!TestEqual(TEXT("two sources"), Sources.Num(), 2))
+	{
+		return false;
+	}
+	TestTrue(TEXT("in the level's actor order: the wall, then the doorway"), Sources[0] == Wall && Sources[1] == Door);
+
+	const FMantlePlaceAssetLimits Limits = FMantlePlaceAssetLimits::FromContract();
+	auto Triangles = [](const FMantleSplineBakeResult& Bake)
+	{
+		int32 Count = 0;
+		for (const FMantleBakedSplineMesh& Mesh : Bake.Meshes)
+		{
+			Count += Mesh.Triangles;
+		}
+		return Count;
+	};
+	// A solid 800 cube is 12 triangles; with the doorway cut out of it, the inside faces add to that.
+	TestTrue(TEXT("the doorway is cut: the wall has an inside"), Triangles(FMantleBrushBake::BakeBrushes(Sources, Limits)) > 12);
+	// Handed over in the wrong order, the bake still takes the level's.
+	const TArray<ABrush*> Swapped = { Door, Wall };
+	TestTrue(TEXT("whatever order the brushes are handed over in"), Triangles(FMantleBrushBake::BakeBrushes(Swapped, Limits)) > 12);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleBrushBakeTwoSidedTest,
+	"Mantle.Editor.BrushBake.TwoSidedSurfacesDrawAndCollideBothWays",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleBrushBakeTwoSidedTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleBrushBakeTestPrivate;
+	if (!GEditor)
+	{
+		AddWarning(TEXT("no editor; skipped"));
+		return true;
+	}
+	FBspWorld Fixture;
+	UWorld* World = Fixture.World;
+	if (!TestNotNull(TEXT("a test world"), World))
+	{
+		return false;
+	}
+	ABrush* OneSided = SpawnCubeBrush(World, TEXT("Solid cube"), FVector::ZeroVector, 400.0f, Brush_Add);
+	ABrush* TwoSided = SpawnCubeBrush(World, TEXT("Two-sided cube"), FVector(5000.0, 0.0, 0.0), 400.0f, Brush_Add, nullptr, PF_TwoSided);
+	if (!TestNotNull(TEXT("the one-sided cube"), OneSided) || !TestNotNull(TEXT("the two-sided cube"), TwoSided))
+	{
+		return false;
+	}
+	const FMantlePlaceAssetLimits Limits = FMantlePlaceAssetLimits::FromContract();
+	auto Triangles = [&Limits](ABrush* Brush)
+	{
+		int32 Count = 0;
+		const TArray<ABrush*> One = { Brush };
+		for (const FMantleBakedSplineMesh& Mesh : FMantleBrushBake::BakeBrushes(One, Limits).Meshes)
+		{
+			Count += Mesh.Triangles;
+		}
+		return Count;
+	};
+	TestEqual(TEXT("a solid cube is 12 triangles"), Triangles(OneSided), 12);
+	// Each face twice: the front, and the same triangle reversed. The reversed ones are in the mesh, so the collision (the mesh's
+	// triangles) stops a player coming from either side as well.
+	TestEqual(TEXT("a two-sided cube has a reversed triangle for each"), Triangles(TwoSided), 24);
 	return true;
 }
 
