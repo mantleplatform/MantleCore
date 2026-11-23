@@ -7,6 +7,7 @@
 class AActor;
 class UActorComponent;
 class UCapsuleComponent;
+struct FMantleStaticMeshProps;
 
 /**
  * Trigger shapes Export carries beyond a Trigger Box and a Trigger Sphere (F18). A place's triggers are boxes and spheres, so:
@@ -32,6 +33,25 @@ public:
 
 	/** Whether Component is a capsule collision shape. */
 	static bool IsCapsule(const UActorComponent* Component);
+
+	/**
+	 * Whether Component is a box, sphere or capsule that acts as a trigger: it generates overlap events, and it only overlaps (collision
+	 * query only, or no channel it blocks). A shape that blocks is collision (a wall, a prop's hit box), not a trigger.
+	 */
+	static bool IsTriggerShape(const UActorComponent* Component);
+
+	/**
+	 * Whether Component is a box or sphere that is collision, not a trigger: it blocks at least one channel. A capsule that blocks is
+	 * left as it was (a character's or a prop's capsule); Mantle has a hidden cube and sphere for box and sphere collision.
+	 */
+	static bool IsCollisionShape(const UActorComponent* Component);
+
+	/**
+	 * Reads a collision shape (IsCollisionShape) as a hidden, blocking library cube or sphere: OutProps names the mesh, and OutSizeScale
+	 * is what the entity's scale is multiplied by to make the 100 cm library mesh the shape's size (the component's own scale is
+	 * already in the entity's transform). False when the library has no such mesh.
+	 */
+	static bool ReadCollisionShape(const UActorComponent* Component, FMantleStaticMeshProps& OutProps, FVector& OutSizeScale);
 
 	/**
 	 * Whether Component is a capsule that acts as a trigger: it generates overlap events, and it only overlaps (collision query only, or

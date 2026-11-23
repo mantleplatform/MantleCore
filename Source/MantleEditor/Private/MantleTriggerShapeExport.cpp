@@ -1,9 +1,13 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleTriggerShapeExport.h"
 
+#include "MantleAssetLibrary.h"
 #include "MantleBlockingVolumeExport.h"
+#include "MantlePlaceExporter.h"
 
+#include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SphereComponent.h"
 #include "Engine/TriggerVolume.h"
 
 bool FMantleTriggerShapeExport::IsTriggerBrush(const AActor* Actor)
@@ -34,30 +38,80 @@ bool FMantleTriggerShapeExport::IsCapsule(const UActorComponent* Component)
 	return Component && Component->IsA(UCapsuleComponent::StaticClass());
 }
 
-bool FMantleTriggerShapeExport::IsTriggerCapsule(const UActorComponent* Component)
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantleTriggerShapePrivate
 {
-	const UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Component);
-	if (!Capsule || !Capsule->GetGenerateOverlapEvents())
+	/** Whether Shape answers any channel with Block. */
+	bool BlocksAnyChannel(const UPrimitiveComponent* Shape)
 	{
+		for (int32 Channel = 0; Channel < ECC_MAX; ++Channel)
+		{
+			if (Shape->GetCollisionResponseToChannel(static_cast<ECollisionChannel>(Channel)) == ECR_Block)
+			{
+				return true;
+			}
+		}
 		return false;
 	}
-	const ECollisionEnabled::Type Enabled = Capsule->GetCollisionEnabled();
-	if (!CollisionEnabledHasQuery(Enabled))
+
+	/** Generates overlap events, and only overlaps: collision query only, or no channel it blocks. */
+	bool ActsAsTrigger(const UPrimitiveComponent* Shape)
 	{
-		return false; // no query: nothing can overlap it
-	}
-	if (Enabled == ECollisionEnabled::QueryOnly)
-	{
-		return true;
-	}
-	// Query and physics: a trigger only when it blocks nothing.
-	for (int32 Channel = 0; Channel < ECC_MAX; ++Channel)
-	{
-		if (Capsule->GetCollisionResponseToChannel(static_cast<ECollisionChannel>(Channel)) == ECR_Block)
+		if (!Shape || !Shape->GetGenerateOverlapEvents())
 		{
 			return false;
 		}
+		const ECollisionEnabled::Type Enabled = Shape->GetCollisionEnabled();
+		if (!CollisionEnabledHasQuery(Enabled))
+		{
+			return false; // no query: nothing can overlap it
+		}
+		return Enabled == ECollisionEnabled::QueryOnly || !BlocksAnyChannel(Shape);
 	}
+}
+
+bool FMantleTriggerShapeExport::IsTriggerCapsule(const UActorComponent* Component)
+{
+	return IsCapsule(Component) && MantleTriggerShapePrivate::ActsAsTrigger(Cast<UPrimitiveComponent>(Component));
+}
+
+bool FMantleTriggerShapeExport::IsTriggerShape(const UActorComponent* Component)
+{
+	return Component && (Component->IsA(UBoxComponent::StaticClass()) || Component->IsA(USphereComponent::StaticClass()) || IsCapsule(Component))
+		&& MantleTriggerShapePrivate::ActsAsTrigger(Cast<UPrimitiveComponent>(Component));
+}
+
+bool FMantleTriggerShapeExport::IsCollisionShape(const UActorComponent* Component)
+{
+	const UPrimitiveComponent* Shape = Cast<UPrimitiveComponent>(Component);
+	return Shape && (Shape->IsA(UBoxComponent::StaticClass()) || Shape->IsA(USphereComponent::StaticClass()))
+		&& Shape->GetCollisionEnabled() != ECollisionEnabled::NoCollision && !MantleTriggerShapePrivate::ActsAsTrigger(Shape)
+		&& MantleTriggerShapePrivate::BlocksAnyChannel(Shape);
+}
+
+bool FMantleTriggerShapeExport::ReadCollisionShape(const UActorComponent* Component, FMantleStaticMeshProps& OutProps, FVector& OutSizeScale)
+{
+	const UPrimitiveComponent* Shape = Cast<UPrimitiveComponent>(Component);
+	if (!Shape || !IsCollisionShape(Shape))
+	{
+		return false;
+	}
+	const UBoxComponent* Box = Cast<UBoxComponent>(Shape);
+	const USphereComponent* Sphere = Cast<USphereComponent>(Shape);
+	const FString MeshId = FMantleAssetLibrary::Get().FindIdByPath(FSoftObjectPath(
+		Box ? TEXT("/Engine/BasicShapes/Cube.Cube") : TEXT("/Engine/BasicShapes/Sphere.Sphere")));
+	if (MeshId.IsEmpty())
+	{
+		return false;
+	}
+	OutProps = FMantleStaticMeshProps();
+	OutProps.Mesh = MeshId;
+	OutProps.Collision = EMantleCollision::Blocking;
+	OutProps.bVisible = false;
+	OutProps.bCastShadow = false;
+	OutProps.bBlocksVisibility = FMantlePlaceExporter::BlocksVisibility(Shape);
+	// The library cube and sphere are 100 cm across, centered.
+	OutSizeScale = Box ? Box->GetUnscaledBoxExtent() * 2.0 / 100.0 : FVector(Sphere->GetUnscaledSphereRadius() * 2.0 / 100.0);
 	return true;
 }
 
