@@ -16,6 +16,7 @@
 #include "MantleVehicleShape.h"
 #include "MantleVehicleSource.h"
 
+#include "Algo/AnyOf.h"
 #include "Animation/PreviewAssetAttachComponent.h"
 #include "Animation/Skeleton.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -1554,11 +1555,39 @@ void FMantleVehicleConverter::AddHinges(const FMantleVehicleModel& Model, const 
 	UMantleVehicleSource& Source, TArray<FString>& OutNotes)
 {
 	FMantleVehicleSourceTuning& T = Source.Tuning;
-	const int32 Kept = (T.bHasDriverDoor ? 1 : 0) + (T.bHasPassengerDoor ? 1 : 0) + (T.bRearLeftDoor ? 1 : 0) + (T.bRearRightDoor ? 1 : 0) + (T.bHood ? 1 : 0) + (T.bTrunk ? 1 : 0);
-	if (Kept > 0)
+
+	// Each hinge on its own: one that is already set (the creator's, or an earlier conversion's) stays as it is; an empty one is filled when its part is found. So a
+	// conversion after the seats are set adds the front doors, which a conversion before them had to leave shut.
+	struct FHingeSlot
 	{
-		OutNotes.Add(FString::Printf(TEXT("Doors, hood and trunk: your %d are kept. Untick them all in the vehicle asset and convert again to have Mantle find them."), Kept));
-		return;
+		EMantleVehicleHingePart Part;
+		bool bSet;
+		FName Bone;
+	};
+	const FHingeSlot Slots[] = {
+		{ EMantleVehicleHingePart::DriverDoor, T.bHasDriverDoor, T.DriverDoor.Bone },
+		{ EMantleVehicleHingePart::PassengerDoor, T.bHasPassengerDoor, T.PassengerDoor.Bone },
+		{ EMantleVehicleHingePart::RearLeftDoor, T.bRearLeftDoor, T.RearLeftDoor.Bone },
+		{ EMantleVehicleHingePart::RearRightDoor, T.bRearRightDoor, T.RearRightDoor.Bone },
+		{ EMantleVehicleHingePart::Hood, T.bHood, T.HoodLid.Bone },
+		{ EMantleVehicleHingePart::Trunk, T.bTrunk, T.TrunkLid.Bone },
+	};
+	TArray<FString> Kept;
+	for (const FHingeSlot& Slot : Slots)
+	{
+		if (Slot.bSet)
+		{
+			Kept.Add(FMantleVehicleChassisSkin::HingeLabel(Slot.Part).ToString().ToLower());
+		}
+	}
+	if (Kept.Num() > 0)
+	{
+		OutNotes.Add(FString::Printf(TEXT("Doors, hood and trunk: your %d (%s) are kept. Untick one in the vehicle asset and convert again to have Mantle find it."), Kept.Num(),
+			*FString::Join(Kept, TEXT(", "))));
+		if (Kept.Num() == UE_ARRAY_COUNT(Slots))
+		{
+			return;
+		}
 	}
 
 	TArray<FString> Notes;
@@ -1585,6 +1614,16 @@ void FMantleVehicleConverter::AddHinges(const FMantleVehicleModel& Model, const 
 			}
 		}
 	}
+	// What is set stays: its part is not found again, and no other part takes its bone (the cook refuses two hinges on one bone).
+	for (const TPair<EMantleVehicleHingePart, FName>& Candidate : Wanted.Bones)
+	{
+		const bool bTaken = Slots[static_cast<int32>(Candidate.Key)].bSet
+			|| Algo::AnyOf(Slots, [&Candidate](const FHingeSlot& Slot) { return Slot.bSet && Slot.Bone == Candidate.Value; });
+		if (bTaken)
+		{
+			Refused.AddUnique(Candidate.Key);
+		}
+	}
 	for (const EMantleVehicleHingePart Part : Refused)
 	{
 		Wanted.Bones.Remove(Part);
@@ -1593,6 +1632,10 @@ void FMantleVehicleConverter::AddHinges(const FMantleVehicleModel& Model, const 
 	if (Wanted.IsEmpty())
 	{
 		OutNotes.Append(Notes);
+		if (Kept.Num() > 0)
+		{
+			return;
+		}
 		OutNotes.Add(TEXT("No bone is named like a door, the hood or the trunk, so nothing opens. Name a door's bone like Door_FL (front left; _FR, _RL and _RR are the others), the hood's Hood and the trunk's Trunk, or set Driver Door, Hood and the others under Tuning in the vehicle asset."));
 		return;
 	}

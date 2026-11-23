@@ -216,7 +216,7 @@ bool FMantleVehicleConverterHingesKeepsOursTest::RunTest(const FString& Paramete
 {
 	using namespace MantleVehicleConverterHingesTestPrivate;
 
-	// The creator set the rear left door by hand: none of the six is touched, and the notes say how many were kept.
+	// The creator set the rear left door by hand: that one is kept as it is, and the others the car has are found.
 	const FMantleVehicleModel Model = Suv04Joined();
 	UMantleVehicleSource* Source = NewSource();
 	Source->Tuning.bSeatLocation = true;
@@ -230,18 +230,64 @@ bool FMantleVehicleConverterHingesKeepsOursTest::RunTest(const FString& Paramete
 	TestEqual(TEXT("the creator's bone is kept"), T.RearLeftDoor.Bone.ToString(), FString(TEXT("MyDoor")));
 	TestTrue(TEXT("and its pivot"), T.RearLeftDoor.Pivot.Equals(FVector(1, 2, 3)));
 	TestEqual(TEXT("and its yaw"), T.RearLeftDoorYaw, 33.f);
-	TestFalse(TEXT("nothing else is written beside it"), T.bHasDriverDoor || T.bHasPassengerDoor || T.bRearRightDoor || T.bHood || T.bTrunk);
-	TestTrue(TEXT("the notes say the creator's one is kept"), AnyNote(Notes, TEXT("your 1 are kept")));
+	TestTrue(TEXT("the driver door, the rear right door and the tailgate are found beside it"), T.bHasDriverDoor && T.bRearRightDoor && T.bTrunk);
+	TestFalse(TEXT("the passenger door has no seat to belong to"), T.bHasPassengerDoor);
+	TestTrue(TEXT("the notes say the creator's one is kept"), AnyNote(Notes, TEXT("your 1 (rear left door) are kept")));
 
-	// Run again over what the converter wrote itself: the same, kept (an untouched conversion is not found again, it is the creator's now).
-	UMantleVehicleSource* Again = NewSource();
-	Again->Tuning.bSeatLocation = true;
+	// All six already set: nothing is looked for.
+	UMantleVehicleSource* Full = NewSource();
+	Full->Tuning.bHasDriverDoor = Full->Tuning.bHasPassengerDoor = Full->Tuning.bRearLeftDoor = Full->Tuning.bRearRightDoor = Full->Tuning.bHood = Full->Tuning.bTrunk = true;
+	Full->Tuning.DriverDoor.Bone = FName(TEXT("Mine"));
+	TArray<FString> FullNotes;
+	FMantleVehicleConverter::AddHinges(Model, FMantleVehicleHingeEvidence(), Suv04Wheels(), *Full, FullNotes);
+	TestEqual(TEXT("a hinge that is set is not touched"), Full->Tuning.DriverDoor.Bone.ToString(), FString(TEXT("Mine")));
+	TestEqual(TEXT("and only the one note is said"), FullNotes.Num(), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleConverterHingesAfterSeatsTest,
+	"Mantle.Vehicle.Convert.HingesFrontDoorsAfterSeats",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleConverterHingesAfterSeatsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleConverterHingesTestPrivate;
+
+	// Convert a car that has no seat yet: the rear doors and the tailgate open, the front doors are left shut. No seat is made up.
+	const FMantleVehicleModel Model = Suv04Joined();
+	UMantleVehicleSource* Source = NewSource();
 	TArray<FString> First;
-	FMantleVehicleConverter::AddHinges(Model, FMantleVehicleHingeEvidence(), Suv04Wheels(), *Again, First);
-	const FVector Pivot = Again->Tuning.DriverDoor.Pivot;
+	FMantleVehicleConverter::AddHinges(Model, FMantleVehicleHingeEvidence(), Suv04Wheels(), *Source, First);
+	FMantleVehicleSourceTuning& T = Source->Tuning;
+	TestTrue(TEXT("the rear doors and the tailgate open"), T.bRearLeftDoor && T.bRearRightDoor && T.bTrunk);
+	TestFalse(TEXT("the front doors do not"), T.bHasDriverDoor || T.bHasPassengerDoor);
+	TestFalse(TEXT("and no seat was made up"), T.bSeatLocation || T.bPassengerSeat);
+	const FMantleVehicleSourceHinge RearLeft = T.RearLeftDoor;
+	const FVector RearLeftStand = T.RearLeftDoorStand;
+	const FMantleVehicleSourceHinge Trunk = T.TrunkLid;
+
+	// The creator then sets the seats (and turns the rear right door's stand a little): converting again adds the front doors and leaves the rest as it was.
+	T.bSeatLocation = true;
+	T.bPassengerSeat = true;
+	T.RearRightDoorYaw = 45.f;
 	TArray<FString> Second;
-	FMantleVehicleConverter::AddHinges(Model, FMantleVehicleHingeEvidence(), Suv04Wheels(), *Again, Second);
-	TestTrue(TEXT("a second conversion leaves the hinges as they are"), Again->Tuning.DriverDoor.Pivot.Equals(Pivot) && AnyNote(Second, TEXT("are kept")));
+	FMantleVehicleConverter::AddHinges(Model, FMantleVehicleHingeEvidence(), Suv04Wheels(), *Source, Second);
+	TestTrue(TEXT("the front doors are there now"), T.bHasDriverDoor && T.bHasPassengerDoor);
+	TestEqual(TEXT("the driver door is FLDoor"), T.DriverDoor.Bone.ToString(), FString(TEXT("B_SUV04_FLDoor")));
+	TestEqual(TEXT("the passenger door is FRDoor"), T.PassengerDoor.Bone.ToString(), FString(TEXT("B_SUV04_FRDoor")));
+	TestTrue(TEXT("the driver door's hinge is its bone"), T.DriverDoor.Pivot.Equals(FVector(105, -95, 100), 0.01));
+	TestTrue(TEXT("the rear left door is as it was"), T.RearLeftDoor.Bone == RearLeft.Bone && T.RearLeftDoor.Pivot.Equals(RearLeft.Pivot) && T.RearLeftDoor.Axis.Equals(RearLeft.Axis)
+		&& T.RearLeftDoorStand.Equals(RearLeftStand));
+	TestTrue(TEXT("so is the tailgate"), T.TrunkLid.Bone == Trunk.Bone && T.TrunkLid.Pivot.Equals(Trunk.Pivot));
+	TestEqual(TEXT("and the creator's change to the rear right door"), T.RearRightDoorYaw, 45.f);
+	TestTrue(TEXT("the notes say what was kept and what opens now"), AnyNote(Second, TEXT("are kept")) && AnyNote(Second, TEXT("driver door and passenger door open in the game.")));
+
+	// Once more: nothing left to find, nothing changes.
+	const FVector Pivot = T.DriverDoor.Pivot;
+	TArray<FString> Third;
+	FMantleVehicleConverter::AddHinges(Model, FMantleVehicleHingeEvidence(), Suv04Wheels(), *Source, Third);
+	TestTrue(TEXT("a third conversion changes nothing"), T.DriverDoor.Pivot.Equals(Pivot) && T.RearRightDoorYaw == 45.f);
 	return true;
 }
 
