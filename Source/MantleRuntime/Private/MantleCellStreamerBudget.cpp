@@ -83,8 +83,8 @@ double FMantleCellStreamer::ProjectedCountPressure(const FMantleBudgetLimits& Li
 	if (bIndexReady && Loader.IsValid() && !LastPath.IsEmpty())
 	{
 		FMantleCellStreamSettings Next = Settings;
-		Next.ReachScale = FMantleStreamBudget::NearScale(NextLadder, Settings.BudgetTuning);
-		Next.FarSets.ReachScale = FMantleStreamBudget::FarScale(NextLadder);
+		Next.ReachScale = FMantleStreamBudget::CellReachScale(NextLadder, ViewScale, Settings.BudgetTuning);
+		Next.FarSets.ReachScale = FMantleStreamBudget::FarReachScale(NextLadder, ViewScale);
 		const FMantleCellIndex& Index = Loader->GetIndex();
 		// The cells the longer reach would newly want (the ones already standing or on their way are in Use).
 		TArray<int32> Candidates;
@@ -151,6 +151,14 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	SecondsSinceBudgetLook = 0.0;
 
 	const FMantleBudgetLimits Limits = Settings.BudgetLimits();
+	if (Limits.TextureShare != TextureShare)
+	{
+		// The Textures setting (FMantleBudgetLevels): one line when the share it gives the place's textures changes, the first look's included.
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_CELLS_SETTINGS textures' share of the card %s -> %.2f (the Textures setting): textures may hold %s MB"),
+			TextureShare < 0.0 ? TEXT("none") : *FString::Printf(TEXT("%.2f"), TextureShare), Limits.TextureShare, *MantleCellStreamerBudgetPrivate::MegabytesOrNone(Limits.TextureBytes));
+		TextureShare = Limits.TextureShare;
+	}
+	Stats.BudgetTextureShare = Limits.TextureShare;
 	FMantleBudgetUse Use = MeasureBudgetUse();
 	Use.ProcessMemoryShare = Settings.BudgetMemoryShare ? Settings.BudgetMemoryShare() : 0.0;
 	Use.ProcessMemoryBytes = Settings.BudgetMemoryBytes ? Settings.BudgetMemoryBytes() : 0;
@@ -256,8 +264,7 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	{
 		return;
 	}
-	Settings.ReachScale = FMantleStreamBudget::NearScale(Ladder, Tuning);
-	Settings.FarSets.ReachScale = FMantleStreamBudget::FarScale(Ladder);
+	ApplyReachScales();
 	// The cells are planned again now: what is beyond the new reach goes the usual way (a far set built, a cell released after its margin).
 	bRefreshNeeded = true;
 	if (FMath::FloorToInt(Ladder * 10.0) != FMath::FloorToInt(Before * 10.0))
@@ -270,4 +277,33 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 			Use.ProcessMemoryBytes / (1024.0 * 1024.0), *MantleCellStreamerBudgetPrivate::MegabytesOrNone(Limits.ProcessMemoryBytes),
 			FPlatformMemory::GetStats().UsedPhysical / (1024.0 * 1024.0), FPlatformMemory::GetStats().UsedVirtual / (1024.0 * 1024.0), *CountActors().ToLogText());
 	}
+}
+
+void FMantleCellStreamer::ApplyReachScales()
+{
+	Settings.ReachScale = FMantleStreamBudget::CellReachScale(Ladder, ViewScale, Settings.BudgetTuning);
+	Settings.FarSets.ReachScale = FMantleStreamBudget::FarReachScale(Ladder, ViewScale);
+}
+
+void FMantleCellStreamer::UpdateViewScale()
+{
+	// A keep-every-cell streamer (a server's, a standalone game's solid things) keeps every cell whatever the setting.
+	if (!Settings.ViewDistanceScale || Settings.bKeepEveryCell)
+	{
+		return;
+	}
+	const double EngineScale = Settings.ViewDistanceScale();
+	const double Next = FMantleStreamBudget::ViewScale(EngineScale);
+	if (Next == ViewScale)
+	{
+		return;
+	}
+	const double Before = ViewScale;
+	ViewScale = Next;
+	Stats.ViewScale = ViewScale;
+	ApplyReachScales();
+	// What is beyond the new ring goes the usual way (a far set built, a cell released after its margin); a longer one is loaded.
+	bRefreshNeeded = true;
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_CELLS_SETTINGS ring x%.2f -> x%.2f (the View Distance setting, the engine's view distance scale %.2f): cell reach x%.2f, far reach x%.2f (ladder %.2f)"),
+		Before, ViewScale, EngineScale, Settings.ReachScale, Settings.FarSets.ReachScale, Ladder);
 }

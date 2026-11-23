@@ -15,6 +15,7 @@
 #include "RHIGlobals.h"
 #include "RHIStats.h"
 #include "Scalability.h"
+#include "UnrealEngine.h"
 
 #if PLATFORM_WINDOWS
 #include "Windows/AllowWindowsPlatformTypes.h"
@@ -160,12 +161,13 @@ FMantleBudgetLimits FMantleStreamBudget::LimitsFor(const int32 Level, const doub
 	return Limits;
 }
 
-FMantleBudgetLimits FMantleStreamBudget::LimitsFor(const int32 Level, const FMantleBudgetMachine& Machine, const double Scale)
+FMantleBudgetLimits FMantleStreamBudget::LimitsFor(const FMantleBudgetLevels& Levels, const FMantleBudgetMachine& Machine, const double Scale)
 {
-	FMantleBudgetLimits Limits = LimitsFor(Level, MachineFactor(Machine) * Scale);
+	FMantleBudgetLimits Limits = LimitsFor(Levels.ViewDistance, MachineFactor(Machine) * Scale);
 	if (Machine.VideoBytes > 0)
 	{
-		Limits.TextureBytes = FMath::Max<int64>(1, static_cast<int64>(static_cast<double>(Machine.VideoBytes) * TextureShareOfVideo(Level) * Scale));
+		Limits.TextureShare = TextureShareOfVideo(Levels.Textures);
+		Limits.TextureBytes = FMath::Max<int64>(1, static_cast<int64>(static_cast<double>(Machine.VideoBytes) * Limits.TextureShare * Scale));
 	}
 	Limits.ProcessMemoryBytes = ProcessMemoryCapBytes(Machine.PhysicalBytes);
 	return Limits;
@@ -332,9 +334,37 @@ double FMantleStreamBudget::ScaledReach(const double DrawDistanceCm, const doubl
 	return FMath::Min(DrawDistanceCm, FMath::Max(DrawDistanceCm * Scale, FloorCm));
 }
 
-int32 FMantleStreamBudget::CurrentLevel()
+double FMantleStreamBudget::ViewScale(const double EngineViewDistanceScale)
 {
-	return ClampLevel(Scalability::GetQualityLevels().GetMinQualityLevel());
+	return EngineViewDistanceScale > 0.0 ? FMath::Min(EngineViewDistanceScale, 1.0) : 1.0;
+}
+
+double FMantleStreamBudget::CellReachScale(const double Ladder, const double InViewScale, const FMantleBudgetTuning& Tuning)
+{
+	return NearScale(Ladder, Tuning) * InViewScale;
+}
+
+double FMantleStreamBudget::FarReachScale(const double Ladder, const double InViewScale)
+{
+	return FarScale(Ladder) * InViewScale;
+}
+
+FMantleBudgetLevels FMantleStreamBudget::CurrentLevels()
+{
+	// The sg.* levels as the settings screen last applied them (MantleClientState: UGameUserSettings::ApplySettings), read fresh at each look, so a change applies at once.
+	const Scalability::FQualityLevels Quality = Scalability::GetQualityLevels();
+	FMantleBudgetLevels Levels;
+	Levels.ViewDistance = ClampLevel(Quality.ViewDistanceQuality);
+	Levels.Textures = ClampLevel(Quality.TextureQuality);
+	return Levels;
+}
+
+double FMantleStreamBudget::CurrentEngineViewDistanceScale()
+{
+	// The engine's cached scalability values (UnrealEngine.cpp, refreshed whenever a scalability variable changes): r.ViewDistanceScale times its secondary scale when that is on,
+	// the very number SceneVisibility.cpp multiplies each primitive's draw distance by. Read rather than the View Distance level, so the ring matches what is drawn whatever set it.
+	const FCachedSystemScalabilityCVars& Cached = GetCachedScalabilityCVars();
+	return Cached.bInitialized ? static_cast<double>(Cached.ViewDistanceScale) : 1.0;
 }
 
 FMantleBudgetMachine FMantleStreamBudget::CurrentMachine()
@@ -380,7 +410,7 @@ FMantleBudgetLimits FMantleStreamBudget::CurrentLimits()
 		FParse::Value(FCommandLine::Get(), TEXT("MantleBudgetScale="), Scale);
 		return FMath::Clamp(Scale, 0.001, 1.0);
 	}();
-	return LimitsFor(CurrentLevel(), CurrentMachine(), CommandScale);
+	return LimitsFor(CurrentLevels(), CurrentMachine(), CommandScale);
 }
 
 int64 FMantleStreamBudget::TexturePoolBytes(const FMantleBudgetLimits& Limits, const int64 TextureBytesHeld)

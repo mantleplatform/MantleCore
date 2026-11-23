@@ -33,6 +33,9 @@ struct MANTLERUNTIME_API FMantleBudgetLimits
 	 */
 	int64 TextureBytes = MAX_int64;
 
+	/** The share of the card TextureBytes was made from (TextureShareOfVideo of the Textures setting); 0 when not made from a card. */
+	double TextureShare = 0.0;
+
 	/**
 	 * #189: the game's process memory, in bytes, beside the share: the smaller of the two decides. 9 GB on Joshua's minimum PC (16 GB of RAM), 17 GB on 32 GB, 24 GB on 64 GB
 	 * (ProcessMemoryCapBytes). The share alone let City Sample take 44 GB of a 63 GB machine, and would leave a 16 GB one too little for the system and other programs.
@@ -70,6 +73,16 @@ struct MANTLERUNTIME_API FMantleBudgetMachine
 {
 	int64 VideoBytes = 0;
 	int64 PhysicalBytes = 0;
+};
+
+/**
+ * The two graphics settings the limits follow, as preset levels (FMantleStreamBudget::ClampLevel). View Distance picks the row of counts and the process memory share; Textures picks the
+ * textures' share of the card. Not the lowest of all the settings: a Low anti-aliasing or foliage setting changes neither (big-map review 8.1).
+ */
+struct MANTLERUNTIME_API FMantleBudgetLevels
+{
+	int32 ViewDistance = 3;
+	int32 Textures = 3;
 };
 
 /** How the ladder moves (see FMantleStreamBudget::NextLadder). */
@@ -117,7 +130,7 @@ class MANTLERUNTIME_API FMantleStreamBudget
 public:
 	static constexpr int32 LevelCount = 4;
 
-	/** A graphics setting as the four preset levels: Low 0, Balanced 1, High 2, Epic 3 (the lowest of the engine's quality categories; Cinematic counts as Epic). */
+	/** A graphics setting as the four preset levels: Low 0, Balanced 1, High 2, Epic 3 (Cinematic counts as Epic). */
 	static int32 ClampLevel(int32 Level);
 
 	/** The smaller of (video memory / 16 GB) and (RAM / 32 GB) (what the numbers were measured on), at least 0.5 and at most 1. An unknown size counts as big enough. */
@@ -126,8 +139,11 @@ public:
 	/** The limits for a preset level, counts and Nanite pages times Factor. */
 	static FMantleBudgetLimits LimitsFor(int32 Level, double Factor);
 
-	/** LimitsFor, plus the limits that come from the machine's own size: the textures' share of its card (times Scale) and the process memory cap. */
-	static FMantleBudgetLimits LimitsFor(int32 Level, const FMantleBudgetMachine& Machine, double Scale);
+	/**
+	 * LimitsFor at the View Distance setting's level, plus the limits that come from the machine's own size: the Textures setting's share of its card (times Scale) and the process
+	 * memory cap.
+	 */
+	static FMantleBudgetLimits LimitsFor(const FMantleBudgetLevels& Levels, const FMantleBudgetMachine& Machine, double Scale);
 
 	/** The share of the card the place's textures may hold at a preset level: Low 0.25, Balanced 0.33, High 0.42, Epic 0.5 (8 GB of a 16 GB card on Epic, about 2 GB of a 6 to 8 GB one on Low or Balanced). */
 	static double TextureShareOfVideo(int32 Level);
@@ -195,10 +211,26 @@ public:
 	/** How far a cell is wanted from, cm: DrawDistance x Scale, but never less than FloorCm and never more than DrawDistance. With scale 1 it is the DrawDistance. */
 	static double ScaledReach(double DrawDistanceCm, double Scale, double FloorCm);
 
+	/**
+	 * The View Distance setting's scale on every reach, from the engine's own (r.ViewDistanceScale, which the engine multiplies every draw distance by: 0.4 Low, 0.6 Balanced,
+	 * 0.8 High, 1 Epic in BaseScalability.ini). At most 1: Cinematic's 10 loads no farther than Epic (the ring is real pieces; past it is the far tier's). 1 when the engine's is 0
+	 * or less (unknown). Pure.
+	 */
+	static double ViewScale(double EngineViewDistanceScale);
+
+	/** The real cells' reach scale: the ladder's (NearScale) times the View Distance setting's (ViewScale). The ladder only ever shrinks the ring under the setting. */
+	static double CellReachScale(double Ladder, double ViewScale, const FMantleBudgetTuning& Tuning);
+
+	/** The far sets' reach scale: the ladder's (FarScale) times the View Distance setting's, so a twin is wanted no farther than the engine will draw it. */
+	static double FarReachScale(double Ladder, double ViewScale);
+
 	// ---- Engine readers (game thread) ----
 
-	/** The graphics setting now: the lowest of the engine's ten quality levels, as a preset level. Epic when the engine cannot say. */
-	static int32 CurrentLevel();
+	/** The View Distance and Textures settings now, as preset levels. Epic when the engine cannot say. */
+	static FMantleBudgetLevels CurrentLevels();
+
+	/** The engine's view-distance scale now (the one its renderer multiplies draw distances by); 1 when the engine has none (no scalability state yet). */
+	static double CurrentEngineViewDistanceScale();
 
 	/**
 	 * The card's and the machine's size now (zero where the engine has no answer: a process with no RHI, a server). A test switch pretends to be another machine:

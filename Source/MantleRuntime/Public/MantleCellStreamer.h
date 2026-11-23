@@ -133,6 +133,9 @@ struct MANTLERUNTIME_API FMantleCellStreamStats
 	int64 BudgetVideoUsedBytes = 0;
 	int64 BudgetVideoBudgetBytes = 0;
 	double BudgetVideoPressure = 0.0;
+	/** The View Distance setting's scale on the reach now (FMantleStreamBudget::ViewScale; 1 without Settings.ViewDistanceScale), and the textures' share of the card at the last look. */
+	double ViewScale = 1.0;
+	double BudgetTextureShare = 0.0;
 };
 
 /** What a whole-grid look at the twins found: each built twin entity is drawn exactly when it should be (FMantleFarSetPlan::ShouldShow). */
@@ -586,6 +589,10 @@ private:
 	double ProjectedCountPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use, double NextLadder) const;
 	/** Every Settings.BudgetTuning.StepSeconds (not while holding): looks at the pressure and moves the ladder; a move re-plans at once. */
 	void UpdateBudget(double DeltaSeconds);
+	/** Every tick: reads the View Distance setting's scale (Settings.ViewDistanceScale); a change sets the reach scales again, re-plans at once and logs one line. */
+	void UpdateViewScale();
+	/** Settings.ReachScale and Settings.FarSets.ReachScale from the ladder and the View Distance setting (FMantleStreamBudget::CellReachScale, FarReachScale): the one place both are set. */
+	void ApplyReachScales();
 
 	// ---- Far sets (MantleCellStreamerFar.cpp) ----
 	bool FarEnabled() const;
@@ -643,6 +650,10 @@ private:
 	bool bIndexReady = false;
 	/** The live budget's ladder (1 = everything loads, 0 = the least), and the time since it was last looked at. */
 	double Ladder = 1.0;
+	/** The View Distance setting's scale on the reach (FMantleStreamBudget::ViewScale), as UpdateViewScale last read it. */
+	double ViewScale = 1.0;
+	/** The textures' share of the card at the last budget look (FMantleBudgetLimits::TextureShare); -1 before the first, so the first is logged. */
+	double TextureShare = -1.0;
 	double SecondsSinceBudgetLook = 0.0;
 	/** Time since memory last lowered the ladder (a large number at the start, so the first look may). */
 	double SecondsSinceMemoryLower = 1.0e9;

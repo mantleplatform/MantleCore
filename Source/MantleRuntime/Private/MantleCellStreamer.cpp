@@ -179,6 +179,8 @@ void FMantleCellStreamer::Tick(const double DeltaSeconds)
 	const double TickStart = FPlatformTime::Seconds();
 	PhaseMark = TickStart;
 	SampleView(DeltaSeconds);
+	// Before the plan, so the first plan already has the View Distance setting's ring and a change in the settings screen re-plans this tick.
+	UpdateViewScale();
 	Lap(FPhase::View);
 	SampleProgress(DeltaSeconds);
 	Lap(FPhase::Progress);

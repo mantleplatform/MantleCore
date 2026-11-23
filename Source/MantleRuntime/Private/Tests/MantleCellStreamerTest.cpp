@@ -2089,6 +2089,53 @@ bool FMantleCellStreamerBudgetLoadsLessFarTest::RunTest(const FString& Parameter
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerRingFollowsViewDistanceTest,
+	"Mantle.Runtime.CellStream.Streamer.RingFollowsViewDistance",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerRingFollowsViewDistanceTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// BudgetLoadsLessFar's place: the view at 220 m, cells 1 to 5 within the 150 m drawDistance (cell 1 92 m away, cell 5 100 m), no budget at all.
+	TSharedRef<double> EngineScale = MakeShared<double>(1.0);
+	FFixture Fixture;
+	Fixture.View = FVector(22000.0, 100.0, 100.0);
+	FMantleCellStreamSettings Settings = SteadySettings();
+	Settings.BudgetTuning.MinReachCm = 3000.0;
+	Settings.ViewDistanceScale = [EngineScale]() { return *EngineScale; };
+	Fixture.StartStreamer(Settings);
+	if (!TestTrue(TEXT("the join settles"), Fixture.Settle()))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Epic: the five cells round the view stand"), Fixture.Built(1) && Fixture.Built(2) && Fixture.Built(3) && Fixture.Built(4) && Fixture.Built(5));
+
+	// The player sets View Distance to Low in the settings screen: the engine's scale is 0.4, so the ring is 60 m, and cells 1 and 5 go once past their margin (85 m).
+	*EngineScale = 0.4;
+	for (int32 Tick = 0; Tick < 120; ++Tick)
+	{
+		Fixture.Tick();
+	}
+	Fixture.Settle();
+	TestEqual(TEXT("the streamer read the setting"), Fixture.Streamer->GetStats().ViewScale, 0.4);
+	TestTrue(TEXT("cells 1 and 5 were let go"), !Fixture.Built(1) && !Fixture.Built(5));
+	TestTrue(TEXT("cells 2, 3 and 4 (within 60 m) stand"), Fixture.Built(2) && Fixture.Built(3) && Fixture.Built(4));
+	TestEqual(TEXT("with no budget the ladder never moved"), Fixture.Streamer->GetStats().BudgetLadder, 1.0);
+
+	// Cinematic (10): no farther than Epic, so the five cells come back and no more (cell 0 is 156 m away, past the 150 m drawDistance).
+	*EngineScale = 10.0;
+	for (int32 Tick = 0; Tick < 120; ++Tick)
+	{
+		Fixture.Tick();
+	}
+	Fixture.Settle();
+	TestEqual(TEXT("Cinematic reads as Epic"), Fixture.Streamer->GetStats().ViewScale, 1.0);
+	TestTrue(TEXT("the five cells stand again"), Fixture.Built(1) && Fixture.Built(2) && Fixture.Built(3) && Fixture.Built(4) && Fixture.Built(5));
+	TestTrue(TEXT("and cell 0 is not wanted"), !Fixture.Built(0));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleCellStreamerBudgetFollowsReadMemoryTest,
 	"Mantle.Runtime.CellStream.Streamer.BudgetFollowsReadMemory",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

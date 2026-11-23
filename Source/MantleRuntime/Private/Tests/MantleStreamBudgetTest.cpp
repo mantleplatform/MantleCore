@@ -327,11 +327,11 @@ bool FMantleStreamBudgetTexturesAndMemoryCapTest::RunTest(const FString& Paramet
 	// #189 (the client big-map plan, 4.3): the place's textures are a count, a share of the card by setting, and the process has a cap in bytes beside its share of RAM.
 	TestEqual(TEXT("Low: a quarter of the card"), FMantleStreamBudget::TextureShareOfVideo(0), 0.25);
 	TestEqual(TEXT("Epic: half of it"), FMantleStreamBudget::TextureShareOfVideo(3), 0.5);
-	const FMantleBudgetLimits Big = FMantleStreamBudget::LimitsFor(3, FMantleBudgetMachine{ 16 * GiB, 64 * GiB }, 1.0);
+	const FMantleBudgetLimits Big = FMantleStreamBudget::LimitsFor(FMantleBudgetLevels{ 3, 3 }, FMantleBudgetMachine{ 16 * GiB, 64 * GiB }, 1.0);
 	TestEqual(TEXT("Epic on a 16 GB card: 8 GB of textures"), Big.TextureBytes, 8 * GiB);
 	TestEqual(TEXT("and 24 GB for the process on 64 GB of RAM"), Big.ProcessMemoryBytes, 24 * GiB);
 	TestEqual(TEXT("the counts are the ones LimitsFor gives"), Big.Instances, FMantleStreamBudget::LimitsFor(3, 1.0).Instances);
-	const FMantleBudgetLimits Minimum = FMantleStreamBudget::LimitsFor(1, FMantleBudgetMachine{ 8 * GiB, 16 * GiB }, 1.0);
+	const FMantleBudgetLimits Minimum = FMantleStreamBudget::LimitsFor(FMantleBudgetLevels{ 1, 1 }, FMantleBudgetMachine{ 8 * GiB, 16 * GiB }, 1.0);
 	TestEqual(TEXT("Joshua's minimum PC on Balanced: a third of an 8 GB card"), Minimum.TextureBytes, static_cast<int64>(8.0 * GiB * 0.33));
 	TestEqual(TEXT("and 9 GB for the process"), Minimum.ProcessMemoryBytes, 9 * GiB);
 	TestEqual(TEXT("32 GB of RAM: 17 GB"), FMantleStreamBudget::ProcessMemoryCapBytes(32 * GiB), 17 * GiB);
@@ -339,10 +339,10 @@ bool FMantleStreamBudgetTexturesAndMemoryCapTest::RunTest(const FString& Paramet
 	TestEqual(TEXT("8 GB: in proportion below 16"), FMantleStreamBudget::ProcessMemoryCapBytes(8 * GiB), static_cast<int64>(4.5 * GiB));
 	TestEqual(TEXT("128 GB: on at 64 GB's slope"), FMantleStreamBudget::ProcessMemoryCapBytes(128 * GiB), 38 * GiB);
 	TestEqual(TEXT("unknown RAM: no cap"), FMantleStreamBudget::ProcessMemoryCapBytes(0), MAX_int64);
-	const FMantleBudgetLimits NoCard = FMantleStreamBudget::LimitsFor(3, FMantleBudgetMachine{ 0, 32 * GiB }, 1.0);
+	const FMantleBudgetLimits NoCard = FMantleStreamBudget::LimitsFor(FMantleBudgetLevels{ 3, 3 }, FMantleBudgetMachine{ 0, 32 * GiB }, 1.0);
 	TestEqual(TEXT("no card known (a server): textures are not limited"), NoCard.TextureBytes, MAX_int64);
 	TestEqual(TEXT("-MantleBudgetScale scales the textures' limit with the counts"),
-		FMantleStreamBudget::LimitsFor(3, FMantleBudgetMachine{ 16 * GiB, 64 * GiB }, 0.5).TextureBytes, 4 * GiB);
+		FMantleStreamBudget::LimitsFor(FMantleBudgetLevels{ 3, 3 }, FMantleBudgetMachine{ 16 * GiB, 64 * GiB }, 0.5).TextureBytes, 4 * GiB);
 
 	// Pressure: textures are a count; the byte cap and the share are memory, and the higher of them counts.
 	FMantleBudgetLimits Limits;
@@ -357,6 +357,73 @@ bool FMantleStreamBudgetTexturesAndMemoryCapTest::RunTest(const FString& Paramet
 	TestEqual(TEXT("30 GB against the 24 GB cap beats half the share"), FMantleStreamBudget::MemoryPressure(Limits, Use), 1.25);
 	Use.ProcessMemoryBytes = 0;
 	TestEqual(TEXT("bytes unknown: the share alone"), FMantleStreamBudget::MemoryPressure(Limits, Use), 0.5);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamBudgetSettingsDriveTheRingTest,
+	"Mantle.Runtime.StreamBudget.SettingsDriveTheRing",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamBudgetSettingsDriveTheRingTest::RunTest(const FString& Parameters)
+{
+	// Big-map review 8.2: the ring follows the View Distance setting through the engine's own scale (BaseScalability.ini, r.ViewDistanceScale), on a 600 m cell with the 200 m floor.
+	const FMantleBudgetTuning Tuning;
+	constexpr double Cell = 60000.0;
+	const auto Ring = [&Tuning](const double Ladder, const double EngineScale)
+	{
+		return FMantleStreamBudget::ScaledReach(Cell, FMantleStreamBudget::CellReachScale(Ladder, FMantleStreamBudget::ViewScale(EngineScale), Tuning), Tuning.MinReachCm);
+	};
+	TestEqual(TEXT("Low (0.4): 240 m"), Ring(1.0, 0.4), 24000.0);
+	TestEqual(TEXT("Balanced (0.6): 360 m"), Ring(1.0, 0.6), 36000.0);
+	TestEqual(TEXT("High (0.8): 480 m"), Ring(1.0, 0.8), 48000.0);
+	TestEqual(TEXT("Epic (1.0): today's 600 m"), Ring(1.0, 1.0), 60000.0);
+	TestEqual(TEXT("Cinematic (10): no farther than Epic"), Ring(1.0, 10.0), 60000.0);
+	TestEqual(TEXT("the engine's scale unknown (0): Epic's"), Ring(1.0, 0.0), 60000.0);
+	TestEqual(TEXT("a negative scale reads as unknown"), FMantleStreamBudget::ViewScale(-1.0), 1.0);
+	// The ladder only ever shrinks the ring under the setting.
+	TestEqual(TEXT("ladder 0.5 on Balanced: still the setting's 360 m"), Ring(0.5, 0.6), 36000.0);
+	TestEqual(TEXT("ladder 0.25 on Balanced: 0.625 of 360 m"), Ring(0.25, 0.6), 22500.0);
+	TestEqual(TEXT("ladder 0 on Epic: a quarter, held at the 200 m floor"), Ring(0.0, 1.0), 20000.0);
+	TestEqual(TEXT("ladder 0 on Low: the floor too"), Ring(0.0, 0.4), 20000.0);
+	for (const double Engine : { 0.4, 0.6, 0.8, 1.0, 10.0 })
+	{
+		for (const double Ladder : { 0.0, 0.1, 0.25, 0.5, 0.75, 1.0 })
+		{
+			TestTrue(*FString::Printf(TEXT("never past the setting: ladder %.2f, scale %.1f"), Ladder, Engine), Ring(Ladder, Engine) <= Ring(1.0, Engine));
+		}
+	}
+	// The twins follow the setting too: wanted no farther than the engine draws them.
+	TestEqual(TEXT("far reach on Low at ladder 1"), FMantleStreamBudget::FarReachScale(1.0, 0.4), 0.4);
+	TestEqual(TEXT("far reach on Balanced at ladder 0.75"), FMantleStreamBudget::FarReachScale(0.75, 0.6), 0.3);
+	TestEqual(TEXT("no far reach at ladder 0.5 whatever the setting"), FMantleStreamBudget::FarReachScale(0.5, 1.0), 0.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamBudgetTexturesFollowTheirSettingTest,
+	"Mantle.Runtime.StreamBudget.TexturesFollowTheirSetting",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamBudgetTexturesFollowTheirSettingTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamBudgetTestPrivate;
+	// Big-map review 8.1: the textures' share of the card follows the Textures setting, the counts and memory share the View Distance setting; neither follows the lowest of all.
+	const FMantleBudgetMachine Machine{ 16 * GiB, 64 * GiB };
+	const double Shares[] = { 0.25, 0.33, 0.42, 0.5 };
+	for (int32 Level = 0; Level < FMantleStreamBudget::LevelCount; ++Level)
+	{
+		const FMantleBudgetLimits Limits = FMantleStreamBudget::LimitsFor(FMantleBudgetLevels{ 3, Level }, Machine, 1.0);
+		TestEqual(*FString::Printf(TEXT("Textures level %d: its share"), Level), Limits.TextureShare, Shares[Level]);
+		TestEqual(*FString::Printf(TEXT("Textures level %d: that share of the 16 GB card"), Level), Limits.TextureBytes, static_cast<int64>(16.0 * GiB * Shares[Level]));
+		TestEqual(*FString::Printf(TEXT("Textures level %d: the counts stay Epic's"), Level), Limits.Instances, static_cast<int64>(1100000));
+	}
+	const FMantleBudgetLimits LowView = FMantleStreamBudget::LimitsFor(FMantleBudgetLevels{ 0, 3 }, Machine, 1.0);
+	TestEqual(TEXT("View Distance Low: Low's counts"), LowView.Instances, static_cast<int64>(275000));
+	TestEqual(TEXT("and Low's memory share"), LowView.ProcessMemoryShare, 0.55);
+	TestEqual(TEXT("but the textures keep Epic's half of the card"), LowView.TextureBytes, 8 * GiB);
+	TestEqual(TEXT("Cinematic textures read as Epic"), FMantleStreamBudget::LimitsFor(FMantleBudgetLevels{ 3, 4 }, Machine, 1.0).TextureShare, 0.5);
+	TestEqual(TEXT("no card known: no share"), FMantleStreamBudget::LimitsFor(FMantleBudgetLevels{ 3, 3 }, FMantleBudgetMachine{ 0, 64 * GiB }, 1.0).TextureShare, 0.0);
 	return true;
 }
 
