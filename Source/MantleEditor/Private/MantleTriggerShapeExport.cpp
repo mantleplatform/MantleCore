@@ -55,10 +55,13 @@ bool FMantleTriggerShapeExport::IsTriggerCapsule(const UActorComponent* Componen
 	{
 		return false; // no query: nothing can overlap it
 	}
-	// A trigger only when it blocks nothing: a query-only capsule that blocks still stops a character's sweep, so it is a wall.
-	for (int32 Channel = 0; Channel < ECC_MAX; ++Channel)
+	// A trigger only when it blocks nothing a player or an object moves on: a query-only capsule that blocks still stops a character's
+	// sweep, so it is a wall. Only these channels count: the engine's trigger profiles leave every other channel at its default response
+	// (often Block), and that is no wall.
+	static const ECollisionChannel Solid[] = { ECC_WorldStatic, ECC_WorldDynamic, ECC_Pawn, ECC_PhysicsBody, ECC_Vehicle, ECC_Destructible };
+	for (const ECollisionChannel Channel : Solid)
 	{
-		if (Capsule->GetCollisionResponseToChannel(static_cast<ECollisionChannel>(Channel)) == ECR_Block)
+		if (Capsule->GetCollisionResponseToChannel(Channel) == ECR_Block)
 		{
 			return false;
 		}
