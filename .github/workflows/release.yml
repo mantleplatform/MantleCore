@@ -10,9 +10,8 @@
 # workflow artifacts instead of a release. Run it by hand with a tag (the "tag" input) to build
 # that tag again and replace its release's zips, for example to add a zip an older release lacks.
 #
-# Fab has no publisher API, so the last step is by hand: paste the release's zip link into the Fab
-# publishing portal. Fab needs a link that works without sign-in, which works because this repo is
-# public.
+# Fab has no publisher API, so the last step is by hand: download the release's source zip and
+# select it in the Fab publishing portal (Fab no longer takes a link).
 
 name: Release
 
@@ -184,7 +183,7 @@ jobs:
 
           **Source:** \`$NAME\` is the plugin's source code, without built files. Fab builds from it, and it suits engines built from source.
 
-          **Fab:** in the Fab publishing portal, add a Project Version for UE 5.8 and paste the link to \`$NAME\` below. Fab downloads it without signing in, so this works only while the repo is public.
+          **Fab:** download \`$NAME\` below, then in the Fab publishing portal add a Project Version for UE 5.8 and select that zip.
           EOF
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$TAG" "dist/$NAME" "dist/$BUILT" --repo "$GITHUB_REPOSITORY" --clobber
