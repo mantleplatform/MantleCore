@@ -829,7 +829,16 @@ bool FMantleShallowDepthFadeSheetStaysMeshTest::RunTest(const FString& Parameter
 	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
 	TestEqual(TEXT("the place has one static mesh (the puddle)"), CountEntities(Result, EMantleEntityType::StaticMesh), 1);
 	TestEqual(TEXT("and one water body (the pond)"), CountEntities(Result, EMantleEntityType::WaterBody), 1);
-	const FMantleEntity* Mesh = Result.Place.Entities.FindByPredicate([](const FMantleEntity& Candidate) { return Candidate.Type == EMantleEntityType::StaticMesh; });
+	// Entities may sit in cells, not only in the place's root list: look through all of them, as CountEntities does.
+	const FMantleEntity* Mesh = nullptr;
+	for (const FMantleEntity* Candidate : MantleExportedEntities::All(Result))
+	{
+		if (Candidate->Type == EMantleEntityType::StaticMesh)
+		{
+			Mesh = Candidate;
+			break;
+		}
+	}
 	if (TestNotNull(TEXT("the puddle is published as an entity"), Mesh))
 	{
 		TestTrue(TEXT("at the puddle's place, not the pond's"), Mesh->Transform.GetLocation().Equals(FVector(0.0, 0.0, 6.0), 1.0));
