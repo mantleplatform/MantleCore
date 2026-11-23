@@ -52,7 +52,15 @@ struct MANTLEEDITOR_API FMantleCellGrid
 
 	TArray<FMantleCellLevel> Levels;
 
-	/** The exporter's numbers until stage 0 reports (4.2): 64 m cells to 150 m, 256 m to 600 m, 1 km to 2.5 km. */
+	/**
+	 * The level for content with no cut-off of its own (FMantleDrawDistance::NoCutOff: every mesh of 30 cm radius or more that sets no
+	 * distance of its own). It goes to this level whatever its size, and its cells load out to this level's MaxDrawDistance: one reach
+	 * for all of it, measured to the cell's box, so a building comes and goes whole with its cell. Not written into the index (the
+	 * game reads each cell's drawDistance). INDEX_NONE: such content is drawn too far for any level and stays in the root.
+	 */
+	int32 NoCutOffLevel = INDEX_NONE;
+
+	/** The exporter's numbers until stage 0 reports (4.2): 64 m cells to 150 m, 256 m to 600 m, 1 km to 2.5 km; no cut-off goes to 256 m. */
 	static FMantleCellGrid Default();
 
 	/** Whether the numbers follow the format's rules (4.2). */
@@ -61,8 +69,20 @@ struct MANTLEEDITOR_API FMantleCellGrid
 	/** The top level's draw distance: content drawn farther than this, or never culled, is always loaded. 0 for no levels. */
 	int64 TopMaxDrawDistance() const;
 
-	/** The smallest level whose MaxDrawDistance is at least DrawDistance (above 0); INDEX_NONE when none is, or DrawDistance is not above 0. */
+	/**
+	 * The smallest level whose MaxDrawDistance is at least DrawDistance (above 0); NoCutOffLevel for FMantleDrawDistance::NoCutOff;
+	 * INDEX_NONE when no level is, or DrawDistance is not above 0.
+	 */
 	int32 LevelFor(double DrawDistance) const;
+
+	/** What content of DrawDistance adds to its cell's drawDistance at Level: its own, held to the level's MaxDrawDistance (NoCutOff is). */
+	double CellDrawDistanceFor(int32 Level, double DrawDistance) const;
+
+	/**
+	 * The draw distance content keeps when it stays in the root: NoCutOff becomes the NoCutOffLevel's MaxDrawDistance, the reach its
+	 * cell would have had, because the root never unloads and nothing else would cut it. Anything else is unchanged.
+	 */
+	double RootDrawDistanceFor(double DrawDistance) const;
 
 	/** The cell of a pivot (X, Y, in cm) at Level. */
 	FMantleCellKey KeyFor(int32 Level, double X, double Y) const;
@@ -105,7 +125,7 @@ struct FMantlePlannedCell
 	/** The union of the content's world bounding boxes (4.1); a point at the pivot where a mesh's bounds are unknown. */
 	FBox Bounds = FBox(ForceInit);
 
-	/** The largest drawDistance of its content (6.1). */
+	/** The largest drawDistance of its content (6.1), each held to the level's MaxDrawDistance (FMantleCellGrid::CellDrawDistanceFor). */
 	double DrawDistance = 0.0;
 
 	/** entities, instances and solid, as 6.1 defines them. */

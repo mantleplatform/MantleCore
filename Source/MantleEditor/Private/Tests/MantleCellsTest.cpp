@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCells.h"
+#include "MantleDrawDistance.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceInstancing.h"
 #include "Dom/JsonObject.h"
@@ -124,6 +125,22 @@ bool FMantleCellGridTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("a draw distance past the cap is refused"), Bad.IsValid());
 	Bad = FMantleCellGrid();
 	TestFalse(TEXT("no levels is refused"), Bad.IsValid());
+
+	// No cut-off of its own (the big-map plan, step 3): level 1 whatever the size, its cell held to the level's 600 m, and 600 m in the root.
+	TestEqual(TEXT("no cut-off goes to the 256 m level"), Grid.NoCutOffLevel, 1);
+	TestEqual(TEXT("LevelFor sends it there"), Grid.LevelFor(FMantleDrawDistance::NoCutOff), 1);
+	TestEqual(TEXT("its cell loads out to 600 m"), Grid.CellDrawDistanceFor(1, FMantleDrawDistance::NoCutOff), 60000.0);
+	TestEqual(TEXT("any other distance is its own"), Grid.CellDrawDistanceFor(1, 40000.0), 40000.0);
+	TestEqual(TEXT("in the root it is cut at 600 m"), Grid.RootDrawDistanceFor(FMantleDrawDistance::NoCutOff), 60000.0);
+	TestEqual(TEXT("and only it"), Grid.RootDrawDistanceFor(250000.0), 250000.0);
+	FMantleCellGrid NoRing = Grid;
+	NoRing.NoCutOffLevel = INDEX_NONE;
+	TestTrue(TEXT("a grid without that level is valid"), NoRing.IsValid());
+	TestEqual(TEXT("and no cut-off is drawn too far for it"), NoRing.LevelFor(FMantleDrawDistance::NoCutOff), static_cast<int32>(INDEX_NONE));
+	TestEqual(TEXT("and kept as it is in the root"), NoRing.RootDrawDistanceFor(FMantleDrawDistance::NoCutOff), FMantleDrawDistance::NoCutOff);
+	Bad = Grid;
+	Bad.NoCutOffLevel = 3;
+	TestFalse(TEXT("a level that is not in the grid is refused"), Bad.IsValid());
 	return true;
 }
 
@@ -207,6 +224,85 @@ bool FMantleCellPlannerRulesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("one is not spatially loaded"), Report.StayCounts[static_cast<int32>(EMantleCellStay::NotSpatiallyLoaded)], static_cast<int64>(1));
 	TestEqual(TEXT("the light and nothing else is another type"), Report.StayCounts[static_cast<int32>(EMantleCellStay::OtherType)], static_cast<int64>(1));
 	TestEqual(TEXT("the child's parent is not plain"), Report.StayCounts[static_cast<int32>(EMantleCellStay::ParentNotPlain)], static_cast<int64>(1));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellNoCutOffTest,
+	"Mantle.Editor.Cells.NoCutOffGoesToOneRingByPivotOnly",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellNoCutOffTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellsTestPrivate;
+	const double Ring = FMantleDrawDistance::NoCutOff;
+	FMantlePlace Place;
+	TArray<FMantleInstancedMeshGroup> Groups;
+	FMantleCellPlanInput Input;
+	Input.bFoldStaticMeshes = false;
+	// The mesh's bounds, so a tall piece stretches its cell's box: a 4 m cube about its pivot.
+	Input.MeshBounds.Add(MeshA, FBox(FVector(-200.0), FVector(200.0)));
+
+	// One tower in 256 m cell (0,0): its ground floor, a wall module 100 m up and a roof slab 300 m up, all with no cut-off of their own.
+	Place.Entities.Add(MakeMesh(TEXT("ent_floor"), MeshA, FVector(1000.0, 1000.0, 0.0), Ring));
+	Place.Entities.Add(MakeMesh(TEXT("ent_wall"), MeshA, FVector(1200.0, 1000.0, 10000.0), Ring));
+	Place.Entities.Add(MakeMesh(TEXT("ent_roof"), MeshA, FVector(1000.0, 1200.0, 30000.0), Ring));
+	// Its small clutter stays as before: 60 m, in a 64 m cell.
+	Place.Entities.Add(MakeMesh(TEXT("ent_cup"), MeshB, FVector(1100.0, 1100.0, 0.0), 6000.0));
+	// The next building over shares nothing with it but the street: its pieces go by their own pivots to cell (1,0), never grouped
+	// with the tower however they touch.
+	Place.Entities.Add(MakeMesh(TEXT("ent_next"), MeshA, FVector(25700.0, 1000.0, 0.0), Ring));
+	// An instance set with no cut-off splits by pivot the same way.
+	Groups.Add(MakeGroupOf(MeshB, Ring, { FVector(500.0, 500.0, 0.0), FVector(26000.0, 500.0, 0.0) }));
+	// One with no cut-off that has to stay in the root (tagged): cut at the ring's reach there, since the root never unloads.
+	FMantleEntity Tagged = MakeMesh(TEXT("ent_sign"), MeshA, FVector(2.0, 2.0, 0.0), Ring);
+	Tagged.Tags.Add(TEXT("sign"));
+	Place.Entities.Add(Tagged);
+	// A group whose instance is outside the grid stays in the root, so its distance is held there too.
+	Groups.Add(MakeGroupOf(MeshA, Ring, { FVector(1.0e12, 0.0, 0.0) }));
+
+	const FMantleCellPlan Plan = FMantleCellPlanner::Plan(Place, Groups, Input);
+	const FMantlePlannedCell* Tower = FindCell(Plan, 1, 0, 0);
+	const FMantlePlannedCell* Next = FindCell(Plan, 1, 1, 0);
+	const FMantlePlannedCell* Clutter = FindCell(Plan, 0, 0, 0);
+	if (!TestNotNull(TEXT("the tower's 256 m cell"), Tower) || !TestNotNull(TEXT("the next building's"), Next) || !TestNotNull(TEXT("the clutter's 64 m cell"), Clutter))
+	{
+		return false;
+	}
+	TestEqual(TEXT("three cells"), Plan.Cells.Num(), 3);
+
+	// The whole tower is in one cell, whatever the height or size of a piece.
+	TArray<FString> TowerIds;
+	for (const FMantleEntity& Entity : Tower->Entities)
+	{
+		TowerIds.Add(Entity.Id);
+		const FMantleStaticMeshProps* Mesh = MantleMeshPropsOf(Entity);
+		TestTrue(*FString::Printf(TEXT("%s keeps no cut-off of its own"), *Entity.Id), Mesh && FMantleDrawDistance::IsNoCutOff(Mesh->DrawDistance));
+	}
+	for (const TCHAR* Id : { TEXT("ent_floor"), TEXT("ent_wall"), TEXT("ent_roof") })
+	{
+		TestTrue(FString::Printf(TEXT("%s is in the tower's cell"), Id), TowerIds.Contains(Id));
+	}
+	TestEqual(TEXT("with the set's instance in it"), Tower->NumInstances(), static_cast<int64>(1));
+	TestEqual(TEXT("the ring's reach, not the pieces' 10 km"), Tower->DrawDistance, 60000.0);
+	TestTrue(TEXT("its box reaches the roof"), Tower->Bounds.Max.Z >= 30000.0);
+	TestEqual(TEXT("the next building is its own cell"), Next->DrawDistance, 60000.0);
+	TestEqual(TEXT("with its piece and an instance"), Next->NumEntities(), 2);
+	TestEqual(TEXT("the clutter keeps 60 m"), Clutter->DrawDistance, 6000.0);
+	if (TestEqual(TEXT("the clutter is alone there"), Clutter->NumEntities(), 1))
+	{
+		TestEqual(TEXT("the cup"), Clutter->Entities[0].Id, FString(TEXT("ent_cup")));
+	}
+
+	// What stayed in the root is cut at the ring's 600 m.
+	const FMantleEntity* Sign = Place.Entities.FindByPredicate([](const FMantleEntity& Entity) { return Entity.Id == TEXT("ent_sign"); });
+	if (TestNotNull(TEXT("the tagged sign stays in the root"), Sign))
+	{
+		TestEqual(TEXT("cut at 600 m there"), Sign->Props.Get<FMantleStaticMeshProps>().DrawDistance, 60000.0);
+	}
+	TestEqual(TEXT("the root's instances too"), Groups[1].Mesh.DrawDistance, 60000.0);
+	TestEqual(TEXT("which kept its instance"), Groups[1].WorldInstances.Num(), 1);
+	TestEqual(TEXT("nothing was drawn too far"), Plan.Report.StayCounts[static_cast<int32>(EMantleCellStay::DrawDistanceTooFar)], static_cast<int64>(0));
 	return true;
 }
 

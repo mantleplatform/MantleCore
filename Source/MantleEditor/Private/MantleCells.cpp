@@ -1,5 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleCells.h"
+#include "MantleDrawDistance.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceAssets.h"
 #include "MantleSha256.h"
@@ -114,6 +115,8 @@ FMantleCellGrid FMantleCellGrid::Default()
 {
 	FMantleCellGrid Grid;
 	Grid.Levels = { { 6400, 15000 }, { 25600, 60000 }, { 102400, 250000 } };
+	// The big-map plan, step 3 (fable-review.md 4.1): every piece of 30 cm radius or more in 256 m cells with one 600 m reach.
+	Grid.NoCutOffLevel = 1;
 	return Grid;
 }
 
@@ -147,6 +150,10 @@ bool FMantleCellGrid::IsValid(FString* OutWhy) const
 			return Fail(FString::Printf(TEXT("level %d does not rise above level %d"), Index, Index - 1));
 		}
 	}
+	if (NoCutOffLevel != INDEX_NONE && !Levels.IsValidIndex(NoCutOffLevel))
+	{
+		return Fail(FString::Printf(TEXT("the level for content with no cut-off, %d, is not one of the %d levels"), NoCutOffLevel, Levels.Num()));
+	}
 	return true;
 }
 
@@ -161,6 +168,10 @@ int32 FMantleCellGrid::LevelFor(const double DrawDistance) const
 	{
 		return INDEX_NONE;
 	}
+	if (FMantleDrawDistance::IsNoCutOff(DrawDistance))
+	{
+		return Levels.IsValidIndex(NoCutOffLevel) ? NoCutOffLevel : INDEX_NONE;
+	}
 	for (int32 Index = 0; Index < Levels.Num(); ++Index)
 	{
 		if (DrawDistance <= static_cast<double>(Levels[Index].MaxDrawDistance))
@@ -169,6 +180,18 @@ int32 FMantleCellGrid::LevelFor(const double DrawDistance) const
 		}
 	}
 	return INDEX_NONE;
+}
+
+double FMantleCellGrid::CellDrawDistanceFor(const int32 Level, const double DrawDistance) const
+{
+	return Levels.IsValidIndex(Level) ? FMath::Min(DrawDistance, static_cast<double>(Levels[Level].MaxDrawDistance)) : DrawDistance;
+}
+
+double FMantleCellGrid::RootDrawDistanceFor(const double DrawDistance) const
+{
+	return FMantleDrawDistance::IsNoCutOff(DrawDistance) && Levels.IsValidIndex(NoCutOffLevel)
+		? static_cast<double>(Levels[NoCutOffLevel].MaxDrawDistance)
+		: DrawDistance;
 }
 
 FMantleCellKey FMantleCellGrid::KeyFor(const int32 Level, const double X, const double Y) const
@@ -559,7 +582,7 @@ FMantleCellPlan FMantleCellPlanner::Plan(FMantlePlace& Place, TArray<FMantleInst
 		{
 			const FMantleStaticMeshProps& Mesh = Entity.Props.Get<FMantleStaticMeshProps>();
 			AddBox(Mesh.Mesh, Input, Entity.Transform);
-			Cell.DrawDistance = FMath::Max(Cell.DrawDistance, Mesh.DrawDistance);
+			Cell.DrawDistance = FMath::Max(Cell.DrawDistance, Grid.CellDrawDistanceFor(Key.Level, Mesh.DrawDistance));
 			Cell.Entities.Add(MoveTemp(Entity));
 		}
 
@@ -573,7 +596,7 @@ FMantleCellPlan FMantleCellPlanner::Plan(FMantlePlace& Place, TArray<FMantleInst
 			{
 				continue;
 			}
-			Cell.DrawDistance = FMath::Max(Cell.DrawDistance, Set.Mesh.DrawDistance);
+			Cell.DrawDistance = FMath::Max(Cell.DrawDistance, Grid.CellDrawDistanceFor(Key.Level, Set.Mesh.DrawDistance));
 
 			FBox Box(ForceInit);
 			for (const FTransform& Instance : Set.Instances)
@@ -700,6 +723,24 @@ FMantleCellPlan FMantleCellPlanner::Plan(FMantlePlace& Place, TArray<FMantleInst
 		bChanged = Remaining.Num() != Before;
 	}
 	Entities = MoveTemp(Remaining);
+
+	// What stays in the root never unloads, so content with no cut-off of its own is cut at the reach its cell would have had. The
+	// groups' instances still here are the root's (GroupStaticMeshes and ChunkInstancedMeshes run after this, on the same numbers).
+	for (FMantleEntity& Entity : Entities)
+	{
+		if (FMantleStaticMeshProps* Mesh = Entity.Props.TryGet<FMantleStaticMeshProps>())
+		{
+			Mesh->DrawDistance = Grid.RootDrawDistanceFor(Mesh->DrawDistance);
+		}
+		else if (FMantleInstancedMeshProps* Instanced = Entity.Props.TryGet<FMantleInstancedMeshProps>())
+		{
+			Instanced->Mesh.DrawDistance = Grid.RootDrawDistanceFor(Instanced->Mesh.DrawDistance);
+		}
+	}
+	for (FMantleInstancedMeshGroup& Group : Groups)
+	{
+		Group.Mesh.DrawDistance = Grid.RootDrawDistanceFor(Group.Mesh.DrawDistance);
+	}
 
 	Plan.Cells.Sort([](const FMantlePlannedCell& A, const FMantlePlannedCell& B) { return A.Key < B.Key; });
 	TArray<int32> BySize;
