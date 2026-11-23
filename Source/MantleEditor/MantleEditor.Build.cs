@@ -32,6 +32,8 @@ public class MantleEditor : ModuleRules
 			// Creator-declared clothing region default and preview color pickers.
 			"AppFramework",
 			"UnrealEd",
+			// FMantleBrushBake cuts BSP brushes with the engine's own code: the point grids bspBrushCSG needs (FBspPointsGrid) live here.
+			"BSPUtils",
 			"ToolMenus",
 			"Json",
 			// The exporter reads a static mesh's simple collision (#470): UBodySetupCore lives here.
