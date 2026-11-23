@@ -190,7 +190,11 @@ bool FMantleDecalMaskCutoffTest::RunTest(const FString& Parameters)
 		return Count;
 	};
 	using FConverter = FMantlePlaceAssetConverter;
-	TestEqual(TEXT("one alpha everywhere: the middle"), FConverter::CoverageCutoff(Alphas({ 128, 128, 128, 128 })), 0.5, 1.0e-9);
+	// One alpha everywhere (a faint stain over its whole card): cut at half that alpha, so all of it shows, at full strength.
+	const TArray<FColor> Even = Alphas({ 77, 77, 77, 77 });
+	TestEqual(TEXT("one alpha everywhere: cut at half of it"), FConverter::CoverageCutoff(Even), 38.5 / 255.0, 1.0e-9);
+	TestEqual(TEXT("so none of it is cut away"), Kept(Even, FConverter::CoverageCutoff(Even)), 4);
+	TestEqual(TEXT("every alpha 0: the middle (nothing shows either way)"), FConverter::CoverageCutoff(Alphas({ 0, 0, 0, 0 })), 0.5, 1.0e-9);
 	TestEqual(TEXT("a hard-edged decal (0 and 255) is cut midway, not under 255"), FConverter::CoverageCutoff(Alphas({ 0, 0, 255, 255 })), 127.5 / 255.0, 1.0e-9);
 
 	// A soft-edged line: a quarter solid, a quarter edge at 0.4, half bare. Mean alpha 0.35: keeping the solid quarter (0.25) is closest,

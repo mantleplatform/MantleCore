@@ -293,8 +293,8 @@ bool FMantleMeshDecalBakesItsSurfaceCopyTest::RunTest(const FString& Parameters)
 	if (TestNotNull(TEXT("the material is in the set"), Converted))
 	{
 		TestEqual(TEXT("it publishes as a cut-out, lit like the decal"), Converted->Document.AlphaMode, FString(TEXT("mask")));
-		// The scripted bake is one alpha (128) everywhere: no level to choose from, so the middle.
-		TestEqual(TEXT("cut at 0.5 (one alpha in the whole bake)"), Converted->Document.AlphaCutoff, 0.5, 1.0e-6);
+		// The scripted bake is one alpha (128) everywhere: cut at half of it (levels 1 to 128 all keep everything; their middle is 64.5).
+		TestEqual(TEXT("cut at half its one alpha, so all of it shows"), Converted->Document.AlphaCutoff, 64.0 / 255.0, 1.0e-6);
 	}
 
 	// A see-through material that is not a decal still publishes see-through.
@@ -412,6 +412,47 @@ bool FMantleDecalActorEngineBakeTest::RunTest(const FString& Parameters)
 		UTexture* Refused = nullptr;
 		TestFalse(TEXT("with no renderer the decal is refused, as before"), FMantlePlaceExporter::ReadDecal(Decal, Props, Refused, Normal, Problem));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleMeshDecalCheckWarningTest,
+	"Mantle.Editor.DecalSurface.CheckSaysAMeshDecalPublishesAsACutOut",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleMeshDecalCheckWarningTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleDecalSurfaceBakeTestPrivate;
+	auto CutOutWarnings = [](const UMaterialInterface* Material)
+	{
+		TArray<FMantleValidationIssue> Issues;
+		FMantlePlaceAssets::CheckMaterial(Material, TEXT("Floor_Stain"), FMantlePlaceAssetLimits(), Issues);
+		return Issues.FilterByPredicate([](const FMantleValidationIssue& Issue)
+		{
+			return Issue.Severity == EMantleIssueSeverity::Warning && Issue.Problem.Contains(TEXT("is a decal on a mesh"));
+		});
+	};
+
+	UMaterial* Decal = NewFadingDecal();
+	const TArray<FMantleValidationIssue> Said = CutOutWarnings(Decal);
+	if (TestEqual(TEXT("a decal material on a mesh gets one cut-out warning"), Said.Num(), 1))
+	{
+		const FString& Problem = Said[0].Problem;
+		TestTrue(TEXT("it says it publishes as a cut-out"), Problem.Contains(TEXT("publishes as a cut-out")));
+		TestTrue(TEXT("that soft edges become hard"), Problem.Contains(TEXT("soft edges become hard")));
+		TestTrue(TEXT("that the faintest parts are cut away"), Problem.Contains(TEXT("faintest parts are cut away")));
+		TestTrue(TEXT("and that a faint decal shows at full strength"), Problem.Contains(TEXT("faint all over shows at full strength")));
+		TestTrue(TEXT("it names who uses it"), Problem.Contains(TEXT("Floor_Stain")));
+		TestTrue(TEXT("and says what to do instead"), Said[0].Remedy.Contains(TEXT("Decal Actor")));
+	}
+
+	UMaterialInstanceConstant* Instance = NewObject<UMaterialInstanceConstant>(GetTransientPackage());
+	Instance->SetParentEditorOnly(Decal);
+	TestEqual(TEXT("an instance of a decal material too"), CutOutWarnings(Instance).Num(), 1);
+
+	UMaterial* Sheet = NewObject<UMaterial>(GetTransientPackage());
+	Sheet->BlendMode = BLEND_Translucent;
+	TestEqual(TEXT("a see-through surface material gets none"), CutOutWarnings(Sheet).Num(), 0);
 	return true;
 }
 

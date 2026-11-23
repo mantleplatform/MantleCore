@@ -4183,10 +4183,6 @@ double FMantlePlaceAssetConverter::CoverageCutoff(const TArray<FColor>& Pixels)
 	}
 	const double Total = static_cast<double>(Pixels.Num());
 	const double Coverage = static_cast<double>(AlphaSum) / (255.0 * Total);
-	if (Histogram[Pixels[0].A] == Pixels.Num())
-	{
-		return 0.5;
-	}
 	// Gap[Level]: how far the share of pixels with alpha >= Level is from the coverage, for Level 1..255 (level 0 keeps everything). A
 	// level above the image's highest alpha would cut the whole decal away, so it is never chosen: a faint decal is kept, at full strength.
 	double Gap[256];

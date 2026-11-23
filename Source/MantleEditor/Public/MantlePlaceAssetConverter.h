@@ -1051,7 +1051,8 @@ public:
 	 * A1: the cut-off at which a mesh decal's cut-out covers as much as the see-through decal did: the alpha level whose share of pixels at
 	 * or above it is closest to the mean alpha (a decal at alpha 0.5 covers half its texel). Never above the image's highest alpha, so a
 	 * faint decal (grime at alpha 0.3) is kept, at full strength, where a fixed 0.5 would drop it whole. Between two alphas the image doesn't
-	 * hold it cuts midway. 0.5 when every pixel has the same alpha (nothing to choose from).
+	 * hold it cuts midway: one alpha everywhere (a stain at 0.3 over its whole card) is cut at half that alpha, so all of it shows. 0.5 when
+	 * every alpha is 0.
 	 */
 	static double CoverageCutoff(const TArray<FColor>& Pixels);
 

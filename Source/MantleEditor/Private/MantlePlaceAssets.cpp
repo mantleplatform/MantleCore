@@ -5438,6 +5438,15 @@ void FMantlePlaceAssets::CheckMaterial(const UMaterialInterface* Material, const
 			FString::Printf(TEXT("%s: it draws the scene behind it (Scene Color), which Mantle cannot, so it publishes as tinted see-through glass."), *Subject),
 			LossRemedy });
 	}
+	// A1 (Joshua): a decal material on a mesh publishes as a cut-out (FMantlePlaceAssetConverter::CoverageCutoff), lit like the decal. Check
+	// runs before any bake, so it can't name the cut-off: that is read from the bake (the MANTLE_DECAL_MASK log line gives it).
+	// CheckLevel gathers each material once, so this is said once per material. A Decal Actor's material is not gathered here.
+	if (const UMaterial* Base = Material->GetMaterial(); Base && Base->MaterialDomain == MD_DeferredDecal)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("%s: it is a decal on a mesh. It publishes as a cut-out, so its soft edges become hard, its faintest parts are cut away, and a decal that is faint all over shows at full strength."), *Subject),
+			TEXT("Nothing to do if the hard edges look right. For soft edges or a faint overlay, place it as a Decal Actor instead: those publish see-through.") });
+	}
 
 	for (const TWeakObjectPtr<UTexture>& Weak : Analysis.Textures)
 	{
