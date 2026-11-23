@@ -268,6 +268,8 @@ namespace MantleCellStreamerTestPrivate
 		int32 BaselineActors = 0;
 		TArray<bool> HoldCalls;
 		bool bProviderHasView = true;
+		/** The view provider takes this long (a hitch, for the slow-tick log). */
+		float ProviderSleepSeconds = 0.0f;
 		/** The owner's join goes on when the first hold ends (UMantleCellStreamSubsystem::OnHoldChanged): later holds wait for HoldRadiusCm. False: the test says when. */
 		bool bJoinDoneOnFirstRelease = true;
 		/** The extra views the provider gives (the camera, when it is not at the player). */
@@ -363,6 +365,10 @@ namespace MantleCellStreamerTestPrivate
 			Streamer = FMantleCellStreamer::Start(World, Root, nullptr, LoaderSettings,
 				[this](FVector& OutLocation)
 				{
+					if (ProviderSleepSeconds > 0.0f)
+					{
+						FPlatformProcess::Sleep(ProviderSleepSeconds);
+					}
 					OutLocation = View;
 					return bProviderHasView;
 				},
@@ -1852,6 +1858,77 @@ bool FMantleFarSetHandOffTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleFarSetReleaseSpreadTest,
+	"Mantle.Runtime.FarSet.Streamer.ReleaseIsSpreadOverTicks",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleFarSetReleaseSpreadTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	Fixture.CellAssets = MakeShared<FFakeCellAssets>();
+	// The twins of cells 2 to 7 ask for their assets and wait for them: each holds assets and draws nothing.
+	for (int32 Cell = 2; Cell <= 7; ++Cell)
+	{
+		Fixture.CellAssets->SlowCells.Add(FarHolderBaseForTest + Cell);
+	}
+	// A budget of nothing: the work is spread over the frames however little time they give it (a ladder step's release has no more than one set a tick).
+	FMantleCellStreamSettings Settings = FarSettings();
+	Settings.BaseBudgetSeconds = 0.0;
+	Settings.HoldBudgetSeconds = 0.0;
+	Fixture.StartStreamer(Settings);
+	int32 DoubleDraws = 0;
+	int32 Gaps = 0;
+	const bool bHeld = TickAuditing(Fixture, [&Fixture]()
+	{
+		bool bAll = !Fixture.Streamer->IsHolding();
+		for (int32 Cell = 2; Cell <= 7; ++Cell)
+		{
+			bAll = bAll && Fixture.CellAssets->Held.Contains(FarHolderBaseForTest + Cell);
+		}
+		return bAll;
+	}, 3000, DoubleDraws, Gaps);
+	if (!TestTrue(TEXT("the twins of cells 2 to 7 hold their assets and none is built"), bHeld))
+	{
+		return false;
+	}
+	TestEqual(TEXT("no twin is drawn"), Fixture.Streamer->GetStats().FarEntitiesBuilt, static_cast<int64>(0));
+
+	// A long way off (1 km): the twins of cells 3 to 6 are past their release distance (450 x 1.2 = 540 m from the cell's box) at once. Cell 7 ends at 512 m, 488 m off, so it stays, and cell 2 is under a standing real cell.
+	Fixture.View = FVector(100000.0, 100.0, 100.0);
+	int64 Last = Fixture.Streamer->GetStats().FarSetsReleased;
+	int64 MostInATick = 0;
+	int32 TicksWithRelease = 0;
+	for (int32 Tick = 0; Tick < 400; ++Tick)
+	{
+		Fixture.Tick();
+		const FMantleFarAudit Audit = Fixture.Streamer->AuditFarSets(TEXT("test"));
+		DoubleDraws += Audit.DoubleDraws;
+		Gaps += Audit.Gaps;
+		const int64 Now = Fixture.Streamer->GetStats().FarSetsReleased;
+		MostInATick = FMath::Max(MostInATick, Now - Last);
+		TicksWithRelease += Now > Last ? 1 : 0;
+		Last = Now;
+	}
+	for (int32 Cell = 3; Cell <= 6; ++Cell)
+	{
+		TestFalse(FString::Printf(TEXT("cell %d's twin gave its assets back"), Cell), Fixture.CellAssets->Held.Contains(FarHolderBaseForTest + Cell));
+		TestFalse(FString::Printf(TEXT("cell %d's twin is gone"), Cell), Fixture.Streamer->GetFarSetView(Cell).bExists);
+	}
+	TestTrue(TEXT("cell 2's twin stays: a real cell stands there"), Fixture.CellAssets->Held.Contains(FarHolderBaseForTest + 2));
+	TestTrue(TEXT("cell 7's twin stays: it is inside its release distance"), Fixture.CellAssets->Held.Contains(FarHolderBaseForTest + 7));
+	TestEqual(TEXT("never more than one twin's release a tick"), MostInATick, static_cast<int64>(1));
+	TestEqual(TEXT("the four went on four different ticks"), TicksWithRelease, 4);
+	TestEqual(TEXT("no double draw at any tick"), DoubleDraws, 0);
+	TestEqual(TEXT("no gap at any tick"), Gaps, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleFarSetSolidStreamerTest,
 	"Mantle.Runtime.FarSet.Streamer.NotForTheSolidStreamer",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -2565,6 +2642,205 @@ bool FMantleCellStreamerWaitingCellsLookCheaplyTest::RunTest(const FString& Para
 	}
 	TestTrue(TEXT("the three cells stand"), Fixture.Built(0) && Fixture.Built(1) && Fixture.Built(2) && !Fixture.Streamer->IsHolding());
 	TestEqual(TEXT("each cell's lists were read once, when it had settled"), Fixture.CellAssets->GetStateCalls, 3);
+	return true;
+}
+
+// ---- Slow ticks and actor counts (step 1 of the big-map streaming plan) --------------------------------------------------------------------------------------------------------------------------
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellTickReportLineTest,
+	"Mantle.Runtime.CellStream.TickReport.LogLine",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellTickReportLineTest::RunTest(const FString& Parameters)
+{
+	// A made-up tick like the 754 ms one of the 22:17 join: one long piece and a plan.
+	FMantleCellTickReport Report;
+	Report.TotalSeconds = 0.754;
+	Report.DeltaSeconds = 0.770;
+	Report.BudgetSeconds = 0.004;
+	Report.Seconds[FMantleCellTickReport::Build] = 0.700;
+	Report.Seconds[FMantleCellTickReport::Refresh] = 0.012;
+	Report.Plans = 1;
+	Report.PlanNearCells = 4120;
+	Report.PlanWantedCells = 30;
+	Report.PlanReleasedCells = 2;
+	Report.PiecesBuilt = 1;
+	Report.InstancesBuilt = 50000;
+	Report.LongestPieceSeconds = 0.700;
+	Report.ActorsRemoved = 81;
+	Report.Ladder = 1.0;
+	Report.CellsStanding = 120;
+	const FString Line = Report.ToLogLine();
+	AddInfo(Line);
+	TestEqual(TEXT("the build is the slowest phase"), Report.SlowestPhase(), static_cast<int32>(FMantleCellTickReport::Build));
+	TestTrue(TEXT("what no phase holds is the rest: 42 ms"), FMath::IsNearlyEqual(Report.OtherSeconds(), 0.042, 1.0e-9));
+	TestTrue(TEXT("the line starts with its marker, the whole time and the slowest phase"), Line.StartsWith(TEXT("MANTLE_CELLS_SLOW_TICK 754.0 ms (slowest: build 700.0 ms; frame 770.0 ms, work budget 4.0 ms):")));
+	TestTrue(TEXT("the pump comes first"), Line.Contains(TEXT("): pump 0.0 |")));
+	TestTrue(TEXT("the plan with its counts"), Line.Contains(TEXT("| refresh 12.0 (plans 1, near 4120, wanted 30, released 2)")));
+	TestTrue(TEXT("the build with its counts"), Line.Contains(TEXT("| build 700.0 (pieces 1, instances 50000, cells 0, longest piece 700.0)")));
+	TestTrue(TEXT("the take-down with its counts"), Line.Contains(TEXT("| remove 0.0 (actors 81, cells 0)")));
+	TestTrue(TEXT("the rest"), Line.Contains(TEXT("| other 42.0")));
+	TestTrue(TEXT("and what stood"), Line.Contains(TEXT("; now holding 0, ladder 1.00, cells standing 120")));
+	for (int32 Phase = FMantleCellTickReport::View; Phase < FMantleCellTickReport::PhaseCount; ++Phase)
+	{
+		TestTrue(FString::Printf(TEXT("the line names the phase %s"), FMantleCellTickReport::PhaseName(Phase)), Line.Contains(FString::Printf(TEXT("| %s "), FMantleCellTickReport::PhaseName(Phase))));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerTickReportCountsTest,
+	"Mantle.Runtime.CellStream.Streamer.TickReportCounts",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerTickReportCountsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	// Every tick is logged, so each one's report can be checked against the running totals.
+	FMantleCellStreamSettings Settings = SteadySettings();
+	Settings.SlowTickLogSeconds = 0.0;
+	Fixture.StartStreamer(Settings);
+	int64 Ticks = 0;
+	int64 Pieces = 0;
+	int64 Instances = 0;
+	int32 CellsTaken = 0;
+	int32 EntitiesTaken = 0;
+	int32 Plans = 0;
+	int32 BadSums = 0;
+	for (int32 Tick = 0; Tick < 2000 && !(Fixture.Streamer->GetStats().CellsBuilt == 3 && !Fixture.Streamer->IsHolding()); ++Tick)
+	{
+		Fixture.Tick();
+		++Ticks;
+		const FMantleCellTickReport& Report = Fixture.Streamer->GetLastTickReport();
+		Pieces += Report.PiecesBuilt;
+		Instances += Report.InstancesBuilt;
+		CellsTaken += Report.CellsTaken;
+		EntitiesTaken += Report.CellEntitiesTaken;
+		Plans += Report.Plans;
+		double Sum = 0.0;
+		for (int32 Phase = 0; Phase < FMantleCellTickReport::PhaseCount; ++Phase)
+		{
+			Sum += Report.Seconds[Phase];
+		}
+		BadSums += Sum <= Report.TotalSeconds + 1.0e-6 ? 0 : 1;
+	}
+	if (!TestEqual(TEXT("cells 0, 1 and 2 stand"), Fixture.Streamer->GetStats().CellsBuilt, 3))
+	{
+		return false;
+	}
+	AddInfo(Fixture.Streamer->GetLastTickReport().ToLogLine());
+	TestEqual(TEXT("every tick was logged"), Fixture.Streamer->GetStats().SlowTicks, Ticks);
+	TestEqual(TEXT("the ticks' pieces add up to the pieces built: eighteen"), Pieces, Fixture.Streamer->GetStats().UnitsBuilt);
+	TestEqual(TEXT("and their instances"), Instances, Fixture.Streamer->GetStats().InstancesBuilt);
+	TestEqual(TEXT("three cells were taken from the loader"), CellsTaken, 3);
+	TestTrue(TEXT("with the entities they held"), EntitiesTaken > 0);
+	TestEqual(TEXT("the plans add up"), Plans, Fixture.Streamer->GetStats().PlansRun);
+	TestEqual(TEXT("no tick's phases add up to more than the tick"), BadSums, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerSlowTickTest,
+	"Mantle.Runtime.CellStream.Streamer.SlowTickIsNamed",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerSlowTickTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	const FMantleCellStreamSettings Settings = SteadySettings();
+	TestEqual(TEXT("a tick of 100 ms or more is logged"), Settings.SlowTickLogSeconds, 0.100);
+	Fixture.StartStreamer(Settings);
+	if (!TestTrue(TEXT("the streamer settles"), Fixture.Settle()))
+	{
+		return false;
+	}
+	// A fast tick logs nothing (a machine that stalls the test itself can make it slow: then it is not looked at).
+	const int64 Before = Fixture.Streamer->GetStats().SlowTicks;
+	Fixture.Tick();
+	if (Fixture.Streamer->GetLastTickReport().TotalSeconds < 0.100)
+	{
+		TestEqual(TEXT("a fast tick is not logged"), Fixture.Streamer->GetStats().SlowTicks, Before);
+	}
+	// A slow one: the view provider takes 150 ms (as a hitch inside any phase would). It is logged once, and the line names the phase.
+	Fixture.ProviderSleepSeconds = 0.150f;
+	const int64 BeforeSlow = Fixture.Streamer->GetStats().SlowTicks;
+	Fixture.Tick();
+	Fixture.ProviderSleepSeconds = 0.0f;
+	const FMantleCellTickReport& Report = Fixture.Streamer->GetLastTickReport();
+	const FString Line = Report.ToLogLine();
+	AddInfo(Line);
+	TestEqual(TEXT("the slow tick was logged once"), Fixture.Streamer->GetStats().SlowTicks, BeforeSlow + 1);
+	TestTrue(TEXT("it took 150 ms or more"), Report.TotalSeconds >= 0.150);
+	TestEqual(TEXT("the view is its slowest phase"), Report.SlowestPhase(), static_cast<int32>(FMantleCellTickReport::View));
+	TestTrue(TEXT("with the 150 ms in it"), Report.Seconds[FMantleCellTickReport::View] >= 0.150);
+	TestEqual(TEXT("what stood is in the report"), Report.CellsStanding, 3);
+	TestTrue(TEXT("the line says so"), Line.StartsWith(TEXT("MANTLE_CELLS_SLOW_TICK ")) && Line.Contains(TEXT("(slowest: view ")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerCountsActorsTest,
+	"Mantle.Runtime.CellStream.Streamer.CountsActors",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerCountsActorsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	Fixture.CellAssets = MakeShared<FFakeCellAssets>();
+	Fixture.StartStreamer(FarSettings());
+	int32 DoubleDraws = 0;
+	int32 Gaps = 0;
+	// As in StandsPastTheDrawDistance: cells 0 to 2 stand, and the twins of cells 2 to 7.
+	const bool bBuilt = TickAuditing(Fixture, [&Fixture]()
+	{
+		return FarStands(Fixture, 2, 0) && FarStands(Fixture, 3, 4) && FarStands(Fixture, 4, 4) && FarStands(Fixture, 5, 4) && FarStands(Fixture, 6, 4) && FarStands(Fixture, 7, 4)
+			&& Fixture.Streamer->IsCellBuilt(0) && Fixture.Streamer->IsCellBuilt(1) && Fixture.Streamer->IsCellBuilt(2);
+	}, 3000, DoubleDraws, Gaps);
+	if (!TestTrue(TEXT("the real cells and the twins stand"), bBuilt))
+	{
+		return false;
+	}
+	const FMantleCellActorCount Count = Fixture.Streamer->CountActors();
+	AddInfo(Count.ToLogText());
+	TestEqual(TEXT("three standing cells"), Count.StandingCells, 3);
+	TestEqual(TEXT("four actors each"), Count.StandingActors, 3 * ActorsPerCell);
+	TestTrue(TEXT("each with a component at least"), Count.StandingComponents >= Count.StandingActors);
+	TestEqual(TEXT("no cell is being built or taken down"), Count.OtherCells + Count.OtherActors, 0);
+	TestEqual(TEXT("six far sets"), Count.FarSets, 6);
+	TestEqual(TEXT("of four twins each"), Count.FarActors, 6 * 4);
+	TestTrue(TEXT("each twin with a component at least"), Count.FarComponents >= Count.FarActors);
+	TestEqual(TEXT("the actors the world holds are these"), Fixture.StreamedActors(), Count.StandingActors + Count.FarActors);
+
+	// Far away: the real cells go, and only twins are left.
+	Fixture.View = FVector(100000.0, 100.0, 100.0);
+	const bool bMoved = TickAuditing(Fixture, [&Fixture]()
+	{
+		return Fixture.Streamer->GetStats().CellsBuilt == 0 && Fixture.Streamer->GetStats().CellsRemoving == 0;
+	}, 4000, DoubleDraws, Gaps);
+	if (!TestTrue(TEXT("the real cells are gone"), bMoved))
+	{
+		return false;
+	}
+	const FMantleCellActorCount After = Fixture.Streamer->CountActors();
+	AddInfo(After.ToLogText());
+	TestEqual(TEXT("no real actor is left"), After.StandingActors + After.OtherActors, 0);
+	TestEqual(TEXT("the world holds only twins"), Fixture.StreamedActors(), After.FarActors);
 	return true;
 }
 

@@ -62,6 +62,8 @@ struct MANTLERUNTIME_API FMantleCellStreamStats
 	double RemoveSeconds = 0.0;
 	double LastWorkSeconds = 0.0;
 	double WorstWorkSeconds = 0.0;
+	/** Ticks that took FMantleCellStreamSettings::SlowTickLogSeconds or more, each logged as one MANTLE_CELLS_SLOW_TICK line (see FMantleCellTickReport). */
+	int64 SlowTicks = 0;
 	/** Pieces that took 2, 5, 10 and 20 ms or more (each counted in every bucket it reaches). */
 	int64 PiecesOver2Ms = 0;
 	int64 PiecesOver5Ms = 0;
@@ -143,6 +145,126 @@ struct FMantleFarAudit
 	int32 DoubleDraws = 0;
 	/** Not drawn while it should be: nothing draws there. */
 	int32 Gaps = 0;
+};
+
+/**
+ * Where one streamer tick's time went, phase by phase, and what each phase handled (step 1 of the big-map streaming plan: name the worst hitch before changing anything).
+ * Filled on every tick with a clock read between phases; logged as one MANTLE_CELLS_SLOW_TICK line only when the tick took FMantleCellStreamSettings::SlowTickLogSeconds or more.
+ */
+struct MANTLERUNTIME_API FMantleCellTickReport
+{
+	/** The tick's phases, in the order the tick runs them. Remove, Build, FarBuild, FarRemove and WorkRest are the parts of the work step (RunWork). */
+	enum EPhase : uint8
+	{
+		Pump,
+		View,
+		Progress,
+		Refresh,
+		TakeFinished,
+		TakeAssets,
+		TakeFarFinished,
+		TakeFarAssets,
+		AssetView,
+		Remove,
+		Build,
+		FarBuild,
+		FarRemove,
+		WorkRest,
+		Stats,
+		Budget,
+		Audit,
+		Ground,
+		Hold,
+		PhaseCount
+	};
+
+	/** Seconds each phase took, and the whole tick (the phases plus what lies between them: Other). */
+	double Seconds[PhaseCount] = {};
+	double TotalSeconds = 0.0;
+	/** The frame's DeltaSeconds as the tick was given it, and its work budget. */
+	double DeltaSeconds = 0.0;
+	double BudgetSeconds = 0.0;
+
+	/** Refresh: plans made (0 or 1), cells near the path, cells wanted, cells handed to their take-down. */
+	int32 Plans = 0;
+	int32 PlanNearCells = 0;
+	int32 PlanWantedCells = 0;
+	int32 PlanReleasedCells = 0;
+	/** TakeFinished: cells taken from the loader, the entities they held, and cells found unreadable. */
+	int32 CellsTaken = 0;
+	int32 CellEntitiesTaken = 0;
+	int32 CellsFailed = 0;
+	/** TakeAssets and TakeFarAssets: cells (far sets) waiting for their assets as the phase began, and the ones that went on. */
+	int32 AssetCellsWaiting = 0;
+	int32 AssetCellsDone = 0;
+	int32 FarAssetCellsWaiting = 0;
+	int32 FarAssetCellsDone = 0;
+	/** TakeFarFinished: far-only cells taken from the loader, and the entities they held. */
+	int32 FarCellsTaken = 0;
+	int32 FarCellEntitiesTaken = 0;
+	/** Remove: actors destroyed and cells finished. Build: pieces, their instances, cells finished, and the longest piece. */
+	int64 ActorsRemoved = 0;
+	int64 CellsReleased = 0;
+	int64 PiecesBuilt = 0;
+	int64 InstancesBuilt = 0;
+	int64 CellsBuilt = 0;
+	double LongestPieceSeconds = 0.0;
+	/** FarBuild: twin entities and their instances built, far sets finished. FarRemove: twin actors destroyed, far sets finished. */
+	int64 TwinsBuilt = 0;
+	int64 TwinInstancesBuilt = 0;
+	int64 FarSetsBuilt = 0;
+	int32 TwinsRemoved = 0;
+	int64 FarSetsReleased = 0;
+	/** Stats: wanted cells walked. Budget: looks taken (0 or 1). Audit: far sets audited (0 when it did not run). */
+	int32 PendingCells = 0;
+	int32 BudgetLooks = 0;
+	int32 FarSetsAudited = 0;
+	/** Ground: the own-ground question was asked (0 or 1). */
+	int32 GroundLooks = 0;
+
+	/** What stood at the end of the tick: whether a hold was on, the ladder, cells by state, far sets. */
+	bool bHolding = false;
+	double Ladder = 1.0;
+	int32 CellsStanding = 0;
+	int32 CellsReady = 0;
+	int32 CellsAssetWait = 0;
+	int32 CellsLoading = 0;
+	int32 CellsRemoving = 0;
+	int32 FarSets = 0;
+
+	void Reset() { *this = FMantleCellTickReport(); }
+	/** The phase's short name in the log line ("refresh", "build", ...). */
+	static const TCHAR* PhaseName(int32 Phase);
+	/** The tick's time not inside any phase: never below zero. */
+	double OtherSeconds() const;
+	/** The phase that took longest. */
+	int32 SlowestPhase() const;
+	/** The MANTLE_CELLS_SLOW_TICK line: the whole time, the slowest phase, every phase with its counts, and what stood. */
+	FString ToLogLine() const;
+};
+
+/**
+ * The actors the streamer holds now and their components (step 1 of the big-map streaming plan): the real cells' (standing ones apart from those being built or taken down) and the
+ * far sets' twins. One walk over every actor: for the summary and the budget's ladder line, not every tick.
+ */
+struct MANTLERUNTIME_API FMantleCellActorCount
+{
+	int32 StandingCells = 0;
+	int32 StandingActors = 0;
+	int64 StandingComponents = 0;
+	/** Cells being built or taken down, with an actor alive in them. */
+	int32 OtherCells = 0;
+	int32 OtherActors = 0;
+	int64 OtherComponents = 0;
+	/** Far sets with a twin actor alive. */
+	int32 FarSets = 0;
+	int32 FarActors = 0;
+	int64 FarComponents = 0;
+	/** How long the walk took. */
+	double Seconds = 0.0;
+
+	/** "actors 120 (components 240) in 30 standing cells, ..." for the log lines. */
+	FString ToLogText() const;
 };
 
 /**
@@ -309,6 +431,10 @@ public:
 	/** Only while IsIndexReady() (it is false again after Stop). */
 	const FMantleCellIndex& GetIndex() const { checkf(bIndexReady && Loader.IsValid(), TEXT("GetIndex before the index is read, or after Stop")); return Loader->GetIndex(); }
 	const FMantleCellStreamStats& GetStats() const { return Stats; }
+	/** Where the last tick's time went (see FMantleCellTickReport): filled every tick, logged only for a slow one. */
+	const FMantleCellTickReport& GetLastTickReport() const { return TickReport; }
+	/** The actors held now and their components, real cells and far sets apart (see FMantleCellActorCount). Walks every actor. */
+	FMantleCellActorCount CountActors() const;
 	/** Cell files read since the start (the join screen counts each as progress). */
 	int32 GetFilesRead() const { return Loader.IsValid() ? Loader->GetFilesReadTotal() : 0; }
 	/** Cell files read plus pieces built: the join screen counts a change in it as progress. */
@@ -590,4 +716,6 @@ private:
 
 	bool bStopped = false;
 	FMantleCellStreamStats Stats;
+	/** This tick's (once it ends, the last tick's) phases and counts; the phases add their counts to it as they run. */
+	FMantleCellTickReport TickReport;
 };

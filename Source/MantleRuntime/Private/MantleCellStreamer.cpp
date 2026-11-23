@@ -150,10 +150,23 @@ void FMantleCellStreamer::Tick(const double DeltaSeconds)
 		bStopped = true;
 		return;
 	}
+	// Step 1 of the big-map plan: a clock read between phases (a few tens of nanoseconds each), so a slow tick can say where its time went.
+	using FPhase = FMantleCellTickReport;
+	TickReport.Reset();
+	TickReport.DeltaSeconds = DeltaSeconds;
+	const double ReportStart = FPlatformTime::Seconds();
+	double PhaseMark = ReportStart;
+	const auto Lap = [this, &PhaseMark](const FMantleCellTickReport::EPhase Phase)
+	{
+		const double Now = FPlatformTime::Seconds();
+		TickReport.Seconds[Phase] += Now - PhaseMark;
+		PhaseMark = Now;
+	};
 	if (bPumpLoader)
 	{
 		Loader->Pump();
 	}
+	Lap(FPhase::Pump);
 	if (Loader->HasFailed())
 	{
 		// The index could not be read: nothing more can be streamed. Say so once and let the hold go (a place whose scenery cannot be had is no reason to freeze a player).
@@ -164,8 +177,11 @@ void FMantleCellStreamer::Tick(const double DeltaSeconds)
 	}
 
 	const double TickStart = FPlatformTime::Seconds();
+	PhaseMark = TickStart;
 	SampleView(DeltaSeconds);
+	Lap(FPhase::View);
 	SampleProgress(DeltaSeconds);
+	Lap(FPhase::Progress);
 	if (bIndexReady)
 	{
 		SecondsSinceRefresh += DeltaSeconds;
@@ -174,10 +190,15 @@ void FMantleCellStreamer::Tick(const double DeltaSeconds)
 		{
 			Refresh();
 		}
+		Lap(FPhase::Refresh);
 		TakeFinishedCells();
+		Lap(FPhase::TakeFinished);
 		TakeAssetCells();
+		Lap(FPhase::TakeAssets);
 		TakeFinishedFarCells();
+		Lap(FPhase::TakeFarFinished);
 		TakeFarAssetCells();
+		Lap(FPhase::TakeFarAssets);
 		double Budget = FMantleCellStreamPlan::BudgetSeconds(Settings, FastestViewSpeed(), bHolding);
 		Stats.LastBudgetSeconds = Budget;
 		if (CellAssets.IsValid())
@@ -189,16 +210,57 @@ void FMantleCellStreamer::Tick(const double DeltaSeconds)
 			CellAssets->SetView(View.Location);
 			Budget = FMath::Max(Budget - (AssetCells.IsEmpty() ? 0.0 : AssetSlice), 0.0);
 		}
-		RunWork(Budget);
+		TickReport.BudgetSeconds = Budget;
+		Lap(FPhase::AssetView);
+		{
+			// The work step's parts come from the clocks its own steps keep (RemoveSome, BuildOne, BuildOneFar, RemoveFarSome); its counts from the running totals.
+			const double RemoveBefore = Stats.RemoveSeconds;
+			const double BuildBefore = Stats.BuildSeconds;
+			const double FarBuildBefore = Stats.FarBuildSeconds;
+			const double FarRemoveBefore = Stats.FarRemoveSeconds;
+			const int64 RemovedBefore = Stats.ActorsRemoved;
+			const int64 ReleasedBefore = Stats.CellsReleasedEver;
+			const int64 PiecesBefore = Stats.UnitsBuilt;
+			const int64 InstancesBefore = Stats.InstancesBuilt;
+			const int64 CellsBuiltBefore = Stats.CellsBuiltEver;
+			const int64 TwinsBefore = Stats.FarEntitiesBuilt;
+			const int64 TwinInstancesBefore = Stats.FarInstancesBuilt;
+			const int64 FarSetsBuiltBefore = Stats.FarSetsBuiltEver;
+			const int64 FarSetsReleasedBefore = Stats.FarSetsReleased;
+			RunWork(Budget);
+			const double WorkEnd = FPlatformTime::Seconds();
+			TickReport.Seconds[FPhase::Remove] = Stats.RemoveSeconds - RemoveBefore;
+			TickReport.Seconds[FPhase::Build] = Stats.BuildSeconds - BuildBefore;
+			TickReport.Seconds[FPhase::FarBuild] = Stats.FarBuildSeconds - FarBuildBefore;
+			TickReport.Seconds[FPhase::FarRemove] = Stats.FarRemoveSeconds - FarRemoveBefore;
+			TickReport.Seconds[FPhase::WorkRest] = FMath::Max((WorkEnd - PhaseMark) - TickReport.Seconds[FPhase::Remove] - TickReport.Seconds[FPhase::Build]
+				- TickReport.Seconds[FPhase::FarBuild] - TickReport.Seconds[FPhase::FarRemove], 0.0);
+			PhaseMark = WorkEnd;
+			TickReport.ActorsRemoved = Stats.ActorsRemoved - RemovedBefore;
+			TickReport.CellsReleased = Stats.CellsReleasedEver - ReleasedBefore;
+			TickReport.PiecesBuilt = Stats.UnitsBuilt - PiecesBefore;
+			TickReport.InstancesBuilt = Stats.InstancesBuilt - InstancesBefore;
+			TickReport.CellsBuilt = Stats.CellsBuiltEver - CellsBuiltBefore;
+			TickReport.TwinsBuilt = Stats.FarEntitiesBuilt - TwinsBefore;
+			TickReport.TwinInstancesBuilt = Stats.FarInstancesBuilt - TwinInstancesBefore;
+			TickReport.FarSetsBuilt = Stats.FarSetsBuiltEver - FarSetsBuiltBefore;
+			TickReport.FarSetsReleased = Stats.FarSetsReleased - FarSetsReleasedBefore;
+		}
+		TickReport.PendingCells = PendingCells.Num();
 		UpdateStats();
+		Lap(FPhase::Stats);
+		const int32 LooksBefore = Stats.BudgetLooks;
 		UpdateBudget(DeltaSeconds);
+		TickReport.BudgetLooks = Stats.BudgetLooks - LooksBefore;
+		Lap(FPhase::Budget);
 		// The twins, looked at once a second: each is drawn exactly when it should be.
 		FarAuditSeconds += DeltaSeconds;
 		if (FarAuditSeconds >= 1.0 && !FarSets.IsEmpty())
 		{
 			FarAuditSeconds = 0.0;
-			AuditFarSets(TEXT("tick"));
+			TickReport.FarSetsAudited = AuditFarSets(TEXT("tick")).Sets;
 		}
+		Lap(FPhase::Audit);
 	}
 	// The player's own ground (the collision rule, made general): a character that stands where a solid cell is not built here (a late download, a view that
 	// outran the loader without being a teleport) is held until it stands, as a join or a teleport holds it. A cell that can never be read does not hold it.
@@ -209,6 +271,7 @@ void FMantleCellStreamer::Tick(const double DeltaSeconds)
 		OwnGround.RadiusCm = MantleCellStreamerPrivate::OwnGroundRadiusCm;
 		OwnGround.bSolidOnly = true;
 		const FMantleCellAreaState Under = QueryArea(OwnGround);
+		TickReport.GroundLooks = 1;
 		const bool bUnderStands = Under.Built + Under.Failed >= Under.Cells;
 		bOwnGroundGaveUp = bOwnGroundGaveUp && !bUnderStands;
 		if (!bUnderStands && !bOwnGroundGaveUp)
@@ -218,10 +281,27 @@ void FMantleCellStreamer::Tick(const double DeltaSeconds)
 			BeginHold(TEXT("ground"));
 		}
 	}
+	Lap(FPhase::Ground);
 	// Outside the index check: a hold must end even when the index never arrives (a store that does not answer).
 	CheckHold();
-	Stats.LastWorkSeconds = FPlatformTime::Seconds() - TickStart;
+	Lap(FPhase::Hold);
+	Stats.LastWorkSeconds = PhaseMark - TickStart;
 	Stats.WorstWorkSeconds = FMath::Max(Stats.WorstWorkSeconds, Stats.LastWorkSeconds);
+	TickReport.TotalSeconds = PhaseMark - ReportStart;
+	if (TickReport.TotalSeconds >= Settings.SlowTickLogSeconds)
+	{
+		// Only now is anything counted or written: a fast tick ends at the comparison above.
+		TickReport.bHolding = bHolding;
+		TickReport.Ladder = Ladder;
+		TickReport.CellsStanding = BuiltCells.Num();
+		TickReport.CellsReady = ReadyCells.Num();
+		TickReport.CellsAssetWait = AssetCells.Num();
+		TickReport.CellsLoading = LoadingCells.Num();
+		TickReport.CellsRemoving = RemovingCells.Num();
+		TickReport.FarSets = FarSets.Num();
+		++Stats.SlowTicks;
+		UE_LOG(LogMantle, Log, TEXT("%s"), *TickReport.ToLogLine());
+	}
 }
 
 void FMantleCellStreamer::SampleView(const double DeltaSeconds)
@@ -352,6 +432,7 @@ void FMantleCellStreamer::Refresh()
 		return;
 	}
 	++Stats.PlansRun;
+	++TickReport.Plans;
 	const FMantleCellIndex& Index = Loader->GetIndex();
 	// What is wanted is what the player's path wants and what each extra view's path does.
 	FMantleCellStreamPlan::FPath Path;
@@ -445,6 +526,8 @@ void FMantleCellStreamer::Refresh()
 	{
 		Pool.Add(FWanted{ CellIndex, RankFor(CellIndex) });
 	}
+	TickReport.PlanNearCells += Candidates.Num();
+	TickReport.PlanWantedCells += Pool.Num();
 	Pool.Sort([](const FWanted& A, const FWanted& B)
 	{
 		return FMantleCellStreamPlan::BuildsBefore(A.Rank, B.Rank);
@@ -528,6 +611,7 @@ void FMantleCellStreamer::TakeFinishedCells()
 				LoadingCells.RemoveSingle(CellIndex);
 				Cells.Remove(CellIndex);
 				++Stats.CellsFailed;
+				++TickReport.CellsFailed;
 				bRefreshNeeded = true;
 			}
 			continue;
@@ -536,6 +620,8 @@ void FMantleCellStreamer::TakeFinishedCells()
 		{
 			continue;
 		}
+		++TickReport.CellsTaken;
+		TickReport.CellEntitiesTaken += Cell.Content.Entities.Num();
 		PrepareCell(CellIndex, Cell);
 		Cell.Rank = RankFor(CellIndex);
 		LoadingCells.RemoveSingle(CellIndex);
@@ -574,6 +660,7 @@ void FMantleCellStreamer::TakeAssetCells()
 		return;
 	}
 	const double Now = FPlatformTime::Seconds();
+	TickReport.AssetCellsWaiting += AssetCells.Num();
 	for (const int32 CellIndex : TArray<int32>(AssetCells))
 	{
 		FCell& Cell = Cells.FindChecked(CellIndex);
@@ -601,6 +688,7 @@ void FMantleCellStreamer::TakeAssetCells()
 		}
 		Stats.LongestAssetWaitSeconds = FMath::Max(Stats.LongestAssetWaitSeconds, Waited);
 		AssetCells.RemoveSingle(CellIndex);
+		++TickReport.AssetCellsDone;
 		if (!Failed.IsEmpty())
 		{
 			LeaveOutMissing(CellIndex, Cell, Failed);
@@ -937,6 +1025,7 @@ bool FMantleCellStreamer::BuildOne()
 
 	const double Seconds = FPlatformTime::Seconds() - Start;
 	Stats.BuildSeconds += Seconds;
+	TickReport.LongestPieceSeconds = FMath::Max(TickReport.LongestPieceSeconds, Seconds);
 	Stats.PiecesOver2Ms += Seconds >= 0.002 ? 1 : 0;
 	Stats.PiecesOver5Ms += Seconds >= 0.005 ? 1 : 0;
 	Stats.PiecesOver10Ms += Seconds >= 0.010 ? 1 : 0;
@@ -989,6 +1078,8 @@ void FMantleCellStreamer::QueueRemoval(const int32 CellIndex)
 	BuiltCells.RemoveSingle(CellIndex);
 	Cell.State = ECellState::Removing;
 	++TakeDownSerial;
+	// Only a plan hands a cell to its take-down.
+	++TickReport.PlanReleasedCells;
 	Cell.RemoveCursor = 0;
 	RemovingCells.Add(CellIndex);
 }
@@ -1219,6 +1310,141 @@ bool FMantleCellStreamer::IsCellBuilt(const int32 CellIndex) const
 
 // ---- Stats --------------------------------------------------------------------------------------------
 
+const TCHAR* FMantleCellTickReport::PhaseName(const int32 Phase)
+{
+	switch (Phase)
+	{
+	case Pump: return TEXT("pump");
+	case View: return TEXT("view");
+	case Progress: return TEXT("progress");
+	case Refresh: return TEXT("refresh");
+	case TakeFinished: return TEXT("take");
+	case TakeAssets: return TEXT("assets");
+	case TakeFarFinished: return TEXT("far take");
+	case TakeFarAssets: return TEXT("far assets");
+	case AssetView: return TEXT("asset view");
+	case Remove: return TEXT("remove");
+	case Build: return TEXT("build");
+	case FarBuild: return TEXT("far build");
+	case FarRemove: return TEXT("far remove");
+	case WorkRest: return TEXT("work rest");
+	case Stats: return TEXT("stats");
+	case Budget: return TEXT("budget");
+	case Audit: return TEXT("audit");
+	case Ground: return TEXT("ground");
+	case Hold: return TEXT("hold");
+	default: return TEXT("other");
+	}
+}
+
+double FMantleCellTickReport::OtherSeconds() const
+{
+	double Sum = 0.0;
+	for (int32 Phase = 0; Phase < PhaseCount; ++Phase)
+	{
+		Sum += Seconds[Phase];
+	}
+	return FMath::Max(TotalSeconds - Sum, 0.0);
+}
+
+int32 FMantleCellTickReport::SlowestPhase() const
+{
+	int32 Slowest = 0;
+	for (int32 Phase = 1; Phase < PhaseCount; ++Phase)
+	{
+		if (Seconds[Phase] > Seconds[Slowest])
+		{
+			Slowest = Phase;
+		}
+	}
+	return Slowest;
+}
+
+FString FMantleCellTickReport::ToLogLine() const
+{
+	const auto Ms = [this](const int32 Phase) { return Seconds[Phase] * 1000.0; };
+	const int32 Slowest = SlowestPhase();
+	FString Line = FString::Printf(TEXT("MANTLE_CELLS_SLOW_TICK %.1f ms (slowest: %s %.1f ms; frame %.1f ms, work budget %.1f ms):"),
+		TotalSeconds * 1000.0, PhaseName(Slowest), Ms(Slowest), DeltaSeconds * 1000.0, BudgetSeconds * 1000.0);
+	Line += FString::Printf(TEXT(" pump %.1f | view %.1f | progress %.1f"), Ms(Pump), Ms(View), Ms(Progress));
+	Line += FString::Printf(TEXT(" | refresh %.1f (plans %d, near %d, wanted %d, released %d)"), Ms(Refresh), Plans, PlanNearCells, PlanWantedCells, PlanReleasedCells);
+	Line += FString::Printf(TEXT(" | take %.1f (cells %d, entities %d, failed %d)"), Ms(TakeFinished), CellsTaken, CellEntitiesTaken, CellsFailed);
+	Line += FString::Printf(TEXT(" | assets %.1f (waiting %d, done %d)"), Ms(TakeAssets), AssetCellsWaiting, AssetCellsDone);
+	Line += FString::Printf(TEXT(" | far take %.1f (cells %d, entities %d)"), Ms(TakeFarFinished), FarCellsTaken, FarCellEntitiesTaken);
+	Line += FString::Printf(TEXT(" | far assets %.1f (waiting %d, done %d)"), Ms(TakeFarAssets), FarAssetCellsWaiting, FarAssetCellsDone);
+	Line += FString::Printf(TEXT(" | asset view %.1f"), Ms(AssetView));
+	Line += FString::Printf(TEXT(" | remove %.1f (actors %lld, cells %lld)"), Ms(Remove), ActorsRemoved, CellsReleased);
+	Line += FString::Printf(TEXT(" | build %.1f (pieces %lld, instances %lld, cells %lld, longest piece %.1f)"), Ms(Build), PiecesBuilt, InstancesBuilt, CellsBuilt, LongestPieceSeconds * 1000.0);
+	Line += FString::Printf(TEXT(" | far build %.1f (twins %lld, instances %lld, sets %lld)"), Ms(FarBuild), TwinsBuilt, TwinInstancesBuilt, FarSetsBuilt);
+	Line += FString::Printf(TEXT(" | far remove %.1f (twins %d, sets %lld)"), Ms(FarRemove), TwinsRemoved, FarSetsReleased);
+	Line += FString::Printf(TEXT(" | work rest %.1f"), Ms(WorkRest));
+	Line += FString::Printf(TEXT(" | stats %.1f (pending %d)"), Ms(Stats), PendingCells);
+	Line += FString::Printf(TEXT(" | budget %.1f (looks %d)"), Ms(Budget), BudgetLooks);
+	Line += FString::Printf(TEXT(" | audit %.1f (sets %d)"), Ms(Audit), FarSetsAudited);
+	Line += FString::Printf(TEXT(" | ground %.1f (looks %d)"), Ms(Ground), GroundLooks);
+	Line += FString::Printf(TEXT(" | hold %.1f"), Ms(Hold));
+	Line += FString::Printf(TEXT(" | other %.1f"), OtherSeconds() * 1000.0);
+	Line += FString::Printf(TEXT("; now holding %d, ladder %.2f, cells standing %d ready %d waiting for assets %d loading %d going %d, far sets %d"),
+		bHolding ? 1 : 0, Ladder, CellsStanding, CellsReady, CellsAssetWait, CellsLoading, CellsRemoving, FarSets);
+	return Line;
+}
+
+FString FMantleCellActorCount::ToLogText() const
+{
+	return FString::Printf(TEXT("actors %d (components %lld) in %d standing cells, %d (components %lld) in %d cells being built or taken down, far actors %d (components %lld) in %d far sets (counted in %.1f ms)"),
+		StandingActors, StandingComponents, StandingCells, OtherActors, OtherComponents, OtherCells, FarActors, FarComponents, FarSets, Seconds * 1000.0);
+}
+
+FMantleCellActorCount FMantleCellStreamer::CountActors() const
+{
+	const double Start = FPlatformTime::Seconds();
+	FMantleCellActorCount Count;
+	for (const TPair<int32, FCell>& Pair : Cells)
+	{
+		int32 Actors = 0;
+		int64 Components = 0;
+		for (const TWeakObjectPtr<AActor>& Weak : Pair.Value.Actors)
+		{
+			// A destroyed actor (one a take-down has passed, or a script's) is gone from the count.
+			const AActor* Actor = Weak.Get();
+			if (Actor && IsValid(Actor))
+			{
+				++Actors;
+				Components += Actor->GetComponents().Num();
+			}
+		}
+		if (Pair.Value.State == ECellState::Built)
+		{
+			++Count.StandingCells;
+			Count.StandingActors += Actors;
+			Count.StandingComponents += Components;
+		}
+		else if (Actors > 0)
+		{
+			++Count.OtherCells;
+			Count.OtherActors += Actors;
+			Count.OtherComponents += Components;
+		}
+	}
+	for (const TPair<int32, FFarSet>& Pair : FarSets)
+	{
+		int32 Actors = 0;
+		for (const FFarEntity& Far : Pair.Value.Entities)
+		{
+			const AActor* Actor = Far.Actor.Get();
+			if (Actor && IsValid(Actor))
+			{
+				++Actors;
+				Count.FarComponents += Actor->GetComponents().Num();
+			}
+		}
+		Count.FarActors += Actors;
+		Count.FarSets += Actors > 0 ? 1 : 0;
+	}
+	Count.Seconds = FPlatformTime::Seconds() - Start;
+	return Count;
+}
+
 void FMantleCellStreamer::UpdateStats()
 {
 	Stats.CellsLoading = LoadingCells.Num();
@@ -1267,21 +1493,21 @@ void FMantleCellStreamer::UpdateStats()
 void FMantleCellStreamer::LogSummary(const TCHAR* Why) const
 {
 	UE_LOG(LogMantle, Log,
-		TEXT("MANTLE_CELLS_SUMMARY %s: cells built %lld released %lld standing %d, pieces %lld (over 2 ms %lld, 5 ms %lld, 10 ms %lld, 20 ms %lld), instances %lld, actors taken down %lld, build %.2f s remove %.2f s, longest piece %.2f ms (%s), worst tick %.2f ms, build errors %d; cell assets asked %lld, longest wait %.2f s, timeouts %d, missing %d, entities left out %lld"),
+		TEXT("MANTLE_CELLS_SUMMARY %s: cells built %lld released %lld standing %d, pieces %lld (over 2 ms %lld, 5 ms %lld, 10 ms %lld, 20 ms %lld), instances %lld, actors taken down %lld, build %.2f s remove %.2f s, longest piece %.2f ms (%s), worst tick %.2f ms, slow ticks %lld, build errors %d; cell assets asked %lld, longest wait %.2f s, timeouts %d, missing %d, entities left out %lld"),
 		Why, Stats.CellsBuiltEver, Stats.CellsReleasedEver, Stats.CellsBuilt, Stats.UnitsBuilt, Stats.PiecesOver2Ms, Stats.PiecesOver5Ms, Stats.PiecesOver10Ms, Stats.PiecesOver20Ms,
 		Stats.InstancesBuilt, Stats.ActorsRemoved, Stats.BuildSeconds, Stats.RemoveSeconds,
-		Stats.LongestUnitSeconds * 1000.0, Stats.LongestUnitEntity.IsEmpty() ? TEXT("-") : *Stats.LongestUnitEntity, Stats.WorstWorkSeconds * 1000.0, Stats.BuildErrors,
+		Stats.LongestUnitSeconds * 1000.0, Stats.LongestUnitEntity.IsEmpty() ? TEXT("-") : *Stats.LongestUnitEntity, Stats.WorstWorkSeconds * 1000.0, Stats.SlowTicks, Stats.BuildErrors,
 		Stats.CellAssetsAsked, Stats.LongestAssetWaitSeconds, Stats.AssetWaitTimeouts, Stats.AssetsMissing, Stats.EntitiesWithoutMesh);
 	LogFarSummary(Why);
 	if (Stats.BudgetLooks > 0)
 	{
 		UE_LOG(LogMantle, Log,
-			TEXT("MANTLE_CELLS_BUDGET_SUMMARY %s: %d looks, ladder now %.2f lowest %.2f, pressure now %.2f worst %.2f; at the last look instances %lld, solid %lld, far instances %lld, Nanite root pages %lld, textures %.0f MB, process memory %.3f of the machine (%.0f MB; now working set %.0f MB, private %.0f MB), card %.0f of %.0f MB the driver gives (pressure %.2f), full texture detail %.0f m (shortest %.0f m)"),
+			TEXT("MANTLE_CELLS_BUDGET_SUMMARY %s: %d looks, ladder now %.2f lowest %.2f, pressure now %.2f worst %.2f; at the last look instances %lld, solid %lld, far instances %lld, Nanite root pages %lld, textures %.0f MB, process memory %.3f of the machine (%.0f MB; now working set %.0f MB, private %.0f MB), card %.0f of %.0f MB the driver gives (pressure %.2f), full texture detail %.0f m (shortest %.0f m); now %s"),
 			Why, Stats.BudgetLooks, Stats.BudgetLadder, Stats.BudgetLowestLadder, Stats.BudgetPressure, Stats.BudgetWorstPressure, Stats.BudgetInstances, Stats.BudgetSolidThings,
 			Stats.BudgetFarInstances, Stats.BudgetNaniteRootPages, Stats.BudgetTextureBytes / (1024.0 * 1024.0), Stats.BudgetMemoryShare, Stats.BudgetMemoryBytes / (1024.0 * 1024.0),
 			FPlatformMemory::GetStats().UsedPhysical / (1024.0 * 1024.0), FPlatformMemory::GetStats().UsedVirtual / (1024.0 * 1024.0),
 			Stats.BudgetVideoUsedBytes / (1024.0 * 1024.0), Stats.BudgetVideoBudgetBytes / (1024.0 * 1024.0), Stats.BudgetVideoPressure, Stats.BudgetTextureDetailCm / 100.0,
-			Stats.BudgetLowestTextureDetailCm / 100.0);
+			Stats.BudgetLowestTextureDetailCm / 100.0, *CountActors().ToLogText());
 	}
 }
 
