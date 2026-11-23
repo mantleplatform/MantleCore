@@ -3346,7 +3346,6 @@ bool FMantleStreamedAssetsWaitingHolderCostsOneLookTest::RunTest(const FString& 
 	return true;
 }
 
-#endif // WITH_DEV_AUTOMATION_TESTS
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleStreamedAssetsReleaseIsQueuedTest,
@@ -3413,3 +3412,5 @@ bool FMantleStreamedAssetsReleaseIsQueuedTest::RunTest(const FString& Parameters
 	TestEqual(TEXT("with nothing left waiting after the near cell"), Fixture.Assets->GetStreamedCounts().DropsWaiting, 0);
 	return true;
 }
+
+#endif // WITH_DEV_AUTOMATION_TESTS
