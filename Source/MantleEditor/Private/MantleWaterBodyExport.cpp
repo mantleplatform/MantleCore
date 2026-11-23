@@ -3,6 +3,7 @@
 
 #include "MantleCoverage.h"
 #include "MantlePlaceAssets.h"
+#include "MantlePlaceValidator.h"
 #include "MantleWaterMaterial.h"
 
 #include "Components/PrimitiveComponent.h"
@@ -989,6 +990,30 @@ bool FMantleWaterBodyExport::ReadFlatWaterMesh(const AActor* Actor, FTransform& 
 	// A mesh with no collision is decoration; one with collision is water to swim in.
 	OutProps.bCollision = Component->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
 	return true;
+}
+
+void FMantleWaterBodyExport::Check(const AActor* Actor, EMantleEntityType Type, FMantleValidationResult& Result)
+{
+	FTransform Transform;
+	FMantleWaterBodyProps Props;
+	FString DepthSource;
+	if (Type != EMantleEntityType::WaterBody || !Actor || !ReadFlatWaterMesh(Actor, Transform, Props, DepthSource))
+	{
+		return;
+	}
+	const FString Label =
+#if WITH_EDITOR
+		Actor->GetActorLabel();
+#else
+		Actor->GetName();
+#endif
+	Result.Issues.Add(FMantleValidationIssue{
+		EMantleIssueSeverity::Warning,
+		Label,
+		FString::Printf(TEXT("is a flat mesh with a water material, so it publishes as a still water body (a pond with the mesh's footprint, its top as the surface, "
+			"a depth of %s, and %s), not as a mesh; the water material's other settings (foam, caustics, flow maps) are not carried."),
+			*DepthSource, Props.bCollision ? TEXT("collision, so players can swim in it") : TEXT("no collision")),
+		TEXT("Nothing to do if it should be a pond. If it should stay a see-through surface, give it a material that is not a Single Layer Water or depth-faded water material.") });
 }
 
 bool FMantleWaterBodyExport::IsWaterBodyActor(const AActor* Actor)

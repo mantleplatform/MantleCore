@@ -10,6 +10,7 @@ class UStaticMesh;
 class UWorld;
 class FJsonObject;
 class FMantleCoverage;
+struct FMantleValidationResult;
 
 /** Which kind of Water Body a level has (the Water plugin's Ocean, Lake, River and Custom body actors). */
 enum class EMantleWaterBodyKind : uint8
@@ -249,6 +250,12 @@ struct MANTLEEDITOR_API FMantleWaterBodyExport
 	 * mesh has it. OutDepthSource says in words where the depth came from, for the coverage line.
 	 */
 	static bool ReadFlatWaterMesh(const AActor* Actor, FTransform& OutTransform, FMantleWaterBodyProps& OutProps, FString& OutDepthSource);
+
+	/**
+	 * Check's warning for a mesh that publishes as a pond (ReadFlatWaterMesh): it is no longer a mesh, and its depth, collision and look
+	 * are the pond's, not the mesh's. The coverage report has a line for it too; this one is for the creator reading Check.
+	 */
+	static void Check(const AActor* Actor, EMantleEntityType Type, FMantleValidationResult& Result);
 
 	/** The data as one JSON object ({ "bodies": [...], "zones": [...] }), for the harness and for the writer to come. */
 	static TSharedRef<FJsonObject> ToJson(const FMantleWaterBodies& Water);
