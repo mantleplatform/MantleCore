@@ -696,6 +696,9 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	 */
 	void AddCableMeshes(UWorld* World);
 
+	/** The level's BSP baked into static meshes (FMantleBrushBake, F23), where Export writes them: they upload like any project mesh. */
+	void AddBrushMeshes(UWorld* World);
+
 	/** Adds a mesh no component uses, with each slot's own material (FMantlePlaceAssets::MeshSlotMaterial). Library meshes are skipped. */
 	/**
 	 * bCollisionOnly: this use is never drawn (a hidden spline mesh baked as collision only), so none of the mesh's materials is

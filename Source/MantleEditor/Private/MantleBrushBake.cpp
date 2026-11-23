@@ -1,0 +1,554 @@
+// Copyright Joshua Eger. All Rights Reserved.
+#include "MantleBrushBake.h"
+
+#include "MantlePlaceAssets.h"
+#include "MantleRuntime.h"
+
+#include "ActorEditorUtils.h"
+#include "Editor.h"
+#include "Editor/EditorEngine.h"
+#include "Engine/Brush.h"
+#include "Engine/Level.h"
+#include "Engine/Polys.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
+#include "MaterialDomain.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInterface.h"
+#include "MeshDescription.h"
+#include "Misc/ScopeExit.h"
+#include "Misc/SecureHash.h"
+#include "Model.h"
+#include "PhysicsEngine/BodySetup.h"
+#include "StaticMeshAttributes.h"
+#include "StaticMeshResources.h"
+#include "UObject/GCObject.h"
+#include "UObject/Package.h"
+
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantleBrushBakePrivate
+{
+	/** The spline bake's soft caps: a baked mesh stays well under the place mesh limits (the limits themselves are applied on top). */
+	constexpr int32 SoftMaxTriangles = 250000;
+	constexpr int32 SoftMaxVertices = 400000;
+
+	/** Bumped when what a bake writes changes, so a cached bake from before is not reused. */
+	const TCHAR* const BakeVersion = TEXT("brushbake-1");
+
+	/** The one name of the single material slot every baked BSP mesh has. */
+	const TCHAR* const SlotName = TEXT("MantleBrushMaterial_0");
+
+	const TCHAR* const OwnerLabelText = TEXT("BSP geometry");
+
+	/** One solid, visible surface of the level's cut BSP, in world space. */
+	struct FSurface
+	{
+		const FPoly* Poly = nullptr;
+		UMaterialInterface* Material = nullptr;
+		FVector Center = FVector::ZeroVector;
+		int32 Triangles = 0;
+	};
+
+	/** The surfaces that share a material: baked together. */
+	struct FGroup
+	{
+		UMaterialInterface* Material = nullptr;
+		TArray<FSurface> Surfaces;
+	};
+
+	struct FCachedChunk
+	{
+		TObjectPtr<UStaticMesh> Mesh;
+		FVector Pivot = FVector::ZeroVector;
+		FString Name;
+		FString IdSeed;
+		int32 Triangles = 0;
+		int32 Vertices = 0;
+	};
+
+	struct FCacheEntry
+	{
+		TWeakObjectPtr<UWorld> World;
+		bool bHadWorld = false;
+		int32 Brushes = 0;
+		TArray<FCachedChunk> Chunks;
+	};
+
+	/** Holds every baked mesh (they are transient, and nothing else references them) until its brushes change. */
+	class FBakeCache : public FGCObject
+	{
+	public:
+		TMap<FString, FCacheEntry> Entries;
+
+		virtual void AddReferencedObjects(FReferenceCollector& Collector) override
+		{
+			for (TPair<FString, FCacheEntry>& Entry : Entries)
+			{
+				for (FCachedChunk& Chunk : Entry.Value.Chunks)
+				{
+					Collector.AddReferencedObject(Chunk.Mesh);
+				}
+			}
+		}
+
+		virtual FString GetReferencerName() const override
+		{
+			return TEXT("FMantleBrushBakeCache");
+		}
+	};
+
+	FBakeCache& BrushCache()
+	{
+		// Never destroyed: a static destructor would run after the object system is gone.
+		static FBakeCache* Instance = new FBakeCache();
+		return *Instance;
+	}
+
+	FString BrushMd5Hex(const FString& Text)
+	{
+		return FMD5::HashAnsiString(*Text);
+	}
+
+	const FStaticMeshLODResources* BrushFirstLOD(const UStaticMesh* Mesh)
+	{
+		const FStaticMeshRenderData* RenderData = Mesh ? Mesh->GetRenderData() : nullptr;
+		return RenderData && RenderData->LODResources.IsValidIndex(0) ? &RenderData->LODResources[0] : nullptr;
+	}
+
+	FString BrushNumber(double Value)
+	{
+		return FString::SanitizeFloat(Value, 3);
+	}
+
+	FString BrushVector(const FVector& Value)
+	{
+		return BrushNumber(Value.X) + TEXT(",") + BrushNumber(Value.Y) + TEXT(",") + BrushNumber(Value.Z);
+	}
+
+	/** Everything about a brush that changes the BSP it cuts: where it is, how it combines, and every surface's shape, material and mapping. */
+	FString BrushSignature(const ABrush* Brush)
+	{
+		const FTransform& Transform = Brush->GetActorTransform();
+		FString Text = FString::Printf(TEXT("%s|%d|%d|%s|%s|%s"), *Brush->GetPathName(), static_cast<int32>(Brush->BrushType), Brush->PolyFlags,
+			*BrushVector(Transform.GetLocation()), *BrushVector(Transform.GetRotation().Rotator().Euler()), *BrushVector(Transform.GetScale3D()));
+		if (const UModel* Model = Brush->Brush; Model && Model->Polys)
+		{
+			for (const FPoly& Poly : Model->Polys->Element)
+			{
+				Text += FString::Printf(TEXT("\n%u|%s|%s|%s|%s"), Poly.PolyFlags, Poly.Material ? *Poly.Material->GetPathName() : TEXT(""),
+					*BrushVector(FVector(Poly.Base)), *BrushVector(FVector(Poly.TextureU)), *BrushVector(FVector(Poly.TextureV)));
+				for (const FVector3f& Vertex : Poly.Vertices)
+				{
+					Text += TEXT("|") + BrushVector(FVector(Vertex));
+				}
+			}
+		}
+		return Text;
+	}
+
+	/** A Morton code of Point inside Box, 10 bits an axis: nearby surfaces land in the same chunk. */
+	uint32 BrushMorton(const FVector& Point, const FBox& Box)
+	{
+		auto Spread = [](uint32 Value)
+		{
+			Value &= 0x3ff;
+			Value = (Value | (Value << 16)) & 0x30000ff;
+			Value = (Value | (Value << 8)) & 0x300f00f;
+			Value = (Value | (Value << 4)) & 0x30c30c3;
+			Value = (Value | (Value << 2)) & 0x9249249;
+			return Value;
+		};
+		const FVector Size = Box.GetSize();
+		auto Quantize = [](double Value, double Min, double Extent) -> uint32
+		{
+			return Extent <= UE_SMALL_NUMBER ? 0u : static_cast<uint32>(FMath::Clamp((Value - Min) / Extent, 0.0, 1.0) * 1023.0);
+		};
+		return Spread(Quantize(Point.X, Box.Min.X, Size.X)) | (Spread(Quantize(Point.Y, Box.Min.Y, Size.Y)) << 1)
+			| (Spread(Quantize(Point.Z, Box.Min.Z, Size.Z)) << 2);
+	}
+
+	/**
+	 * Adds one surface to Description, in world space relative to Pivot, as the engine's own brush-to-mesh conversion (GetBrushMesh)
+	 * does: a fan of triangles in the same order, every edge hard, texture coordinates from the surface's own mapping.
+	 */
+	void AddSurface(FMeshDescription& Description, const FSurface& Surface, const FVector& Pivot, FPolygonGroupID PolygonGroup)
+	{
+		FStaticMeshAttributes Attributes(Description);
+		TVertexAttributesRef<FVector3f> Positions = Attributes.GetVertexPositions();
+		TVertexInstanceAttributesRef<FVector2f> UVs = Attributes.GetVertexInstanceUVs();
+		TEdgeAttributesRef<bool> EdgeHardnesses = Attributes.GetEdgeHardnesses();
+
+		const FPoly& Poly = *Surface.Poly;
+		const FVector3f Base = Poly.Base;
+		const FVector3f TextureX = Poly.TextureU / UModel::GetGlobalBSPTexelScale();
+		const FVector3f TextureY = Poly.TextureV / UModel::GetGlobalBSPTexelScale();
+		const FVector3f PivotF(Pivot);
+
+		for (int32 Index = 2; Index < Poly.Vertices.Num(); ++Index)
+		{
+			// The engine's order: the fan's first vertex last.
+			const FVector3f World[3] = { Poly.Vertices[Index], Poly.Vertices[Index - 1], Poly.Vertices[0] };
+			TArray<FVertexInstanceID> Corners;
+			for (const FVector3f& Corner : World)
+			{
+				const FVertexID Vertex = Description.CreateVertex();
+				Positions[Vertex] = Corner - PivotF;
+				const FVertexInstanceID Instance = Description.CreateVertexInstance(Vertex);
+				UVs.Set(Instance, 0, FVector2f((Corner - Base) | TextureX, (Corner - Base) | TextureY));
+				Corners.Add(Instance);
+			}
+			TArray<FEdgeID> NewEdges;
+			Description.CreatePolygon(PolygonGroup, Corners, &NewEdges);
+			for (const FEdgeID Edge : NewEdges)
+			{
+				EdgeHardnesses[Edge] = true; // BSP is flat shaded
+			}
+		}
+	}
+
+	/** Merges Chunk's surfaces into one static mesh, in world space relative to Pivot, with the group's one material. */
+	bool BakeChunk(const FGroup& Group, TConstArrayView<const FSurface*> Chunk, const FVector& Pivot, const FString& MeshName, FCachedChunk& Out, FString& OutWhy)
+	{
+		FMeshDescription Combined;
+		FStaticMeshAttributes Attributes(Combined);
+		Attributes.Register();
+		Attributes.GetVertexInstanceUVs().SetNumChannels(1);
+		const FPolygonGroupID PolygonGroup = Combined.CreatePolygonGroup();
+		Attributes.GetPolygonGroupMaterialSlotNames()[PolygonGroup] = FName(SlotName);
+		for (const FSurface* Surface : Chunk)
+		{
+			AddSurface(Combined, *Surface, Pivot, PolygonGroup);
+		}
+		if (Combined.Triangles().Num() == 0)
+		{
+			OutWhy = TEXT("there was nothing to merge");
+			return false;
+		}
+
+		UObject* Outer = GetTransientPackage();
+		UStaticMesh* Baked = NewObject<UStaticMesh>(Outer, FMantlePlaceAssets::UniqueBakedMeshName(Outer, MeshName), RF_Transient);
+		Baked->GetStaticMaterials().Add(FStaticMaterial(Group.Material, FName(SlotName), FName(SlotName)));
+		Baked->bAllowCPUAccess = true;
+		Baked->SetNumSourceModels(1);
+		// Flat shaded, so the engine works the normals and tangents out from the hard edges and the mapping; no lightmap UVs.
+		FMeshBuildSettings& Settings = Baked->GetSourceModel(0).BuildSettings;
+		Settings.bRecomputeNormals = true;
+		Settings.bRecomputeTangents = true;
+		Settings.bGenerateLightmapUVs = false;
+		Settings.bBuildReversedIndexBuffer = false;
+
+		UStaticMesh::FBuildMeshDescriptionsParams Params;
+		Params.bMarkPackageDirty = false;
+		Params.bAllowCpuAccess = true;
+		TArray<const FMeshDescription*> Descriptions;
+		Descriptions.Add(&Combined);
+		if (!Baked->BuildFromMeshDescriptions(Descriptions, Params))
+		{
+			OutWhy = TEXT("the engine could not build a static mesh from the merged geometry");
+			return false;
+		}
+		const FStaticMeshLODResources* BuiltLOD = BrushFirstLOD(Baked);
+		if (!BuiltLOD || BuiltLOD->GetNumTriangles() <= 0)
+		{
+			OutWhy = TEXT("the merged static mesh has no triangles");
+			return false;
+		}
+
+		// The collision is the triangles, as a spline mesh's is.
+		Baked->CreateBodySetup();
+		if (UBodySetup* Body = Baked->GetBodySetup())
+		{
+			Body->CollisionTraceFlag = CTF_UseComplexAsSimple;
+			Body->InvalidatePhysicsData();
+		}
+		Out.Mesh = Baked;
+		Out.Triangles = BuiltLOD->GetNumTriangles();
+		Out.Vertices = BuiltLOD->GetNumVertices();
+		return true;
+	}
+
+	/**
+	 * Cuts Brushes (one level's static brushes) into a temporary model, as the editor's Build does, and bakes its visible solid
+	 * surfaces. The model is a transient object of its own: no level's model, brush or package is written.
+	 */
+	bool BakeLevel(const TArray<ABrush*>& Brushes, const FString& LevelKey, int32 TriangleCap, int32 VertexCap, TArray<FCachedChunk>& OutChunks, FString& OutWhy)
+	{
+		if (!GEditor)
+		{
+			OutWhy = TEXT("the editor is not running");
+			return false;
+		}
+
+		// The engine's order: structural brushes first, then the detail (semi-solid) ones.
+		TArray<ABrush*> Ordered;
+		for (ABrush* Brush : Brushes)
+		{
+			if (!(Brush->PolyFlags & PF_Semisolid) || Brush->BrushType != Brush_Add || (Brush->PolyFlags & PF_Portal))
+			{
+				Ordered.Add(Brush);
+			}
+		}
+		for (ABrush* Brush : Brushes)
+		{
+			if ((Brush->PolyFlags & PF_Semisolid) && Brush->BrushType == Brush_Add && !(Brush->PolyFlags & PF_Portal))
+			{
+				Ordered.Add(Brush);
+			}
+		}
+
+		// The engine tells each brush it is about to change ("Modify"): with no transaction open that records nothing, so none is, and a
+		// publish never lands in the creator's undo history.
+		ITransaction* const SavedUndo = GUndo;
+		GUndo = nullptr;
+		ON_SCOPE_EXIT{ GUndo = SavedUndo; };
+
+		UModel* Model = NewObject<UModel>(GetTransientPackage(), NAME_None, RF_Transient);
+		Model->Initialize(nullptr, /*InRootOutside*/ true);
+		GEditor->RebuildModelFromBrushes(Ordered, Model);
+		if (Model->Nodes.Num() == 0)
+		{
+			return true; // everything cut away: nothing to publish, and nothing wrong
+		}
+		GEditor->bspBuildFPolys(Model, /*SurfLinks*/ true, /*iNode*/ 0);
+
+		// The visible, solid surfaces, by material.
+		TArray<FGroup> Groups;
+		TMap<UMaterialInterface*, int32> GroupByMaterial;
+		for (const FPoly& Poly : Model->Polys->Element)
+		{
+			if (Poly.Vertices.Num() < 3 || (Poly.PolyFlags & (PF_Invisible | PF_Portal)))
+			{
+				continue;
+			}
+			UMaterialInterface* Material = Poly.Material ? Poly.Material.Get() : UMaterial::GetDefaultMaterial(MD_Surface);
+			int32& GroupIndex = GroupByMaterial.FindOrAdd(Material, INDEX_NONE);
+			if (GroupIndex == INDEX_NONE)
+			{
+				GroupIndex = Groups.Num();
+				Groups.AddDefaulted_GetRef().Material = Material;
+			}
+			FSurface Surface;
+			Surface.Poly = &Poly;
+			Surface.Material = Material;
+			for (const FVector3f& Vertex : Poly.Vertices)
+			{
+				Surface.Center += FVector(Vertex);
+			}
+			Surface.Center /= Poly.Vertices.Num();
+			Surface.Triangles = Poly.Vertices.Num() - 2;
+			Groups[GroupIndex].Surfaces.Add(Surface);
+		}
+
+		for (const FGroup& Group : Groups)
+		{
+			FBox GroupBounds(ForceInit);
+			for (const FSurface& Surface : Group.Surfaces)
+			{
+				GroupBounds += Surface.Center;
+			}
+			TArray<const FSurface*> Order;
+			for (const FSurface& Surface : Group.Surfaces)
+			{
+				Order.Add(&Surface);
+			}
+			Order.StableSort([&GroupBounds](const FSurface* A, const FSurface* B)
+			{
+				return BrushMorton(A->Center, GroupBounds) < BrushMorton(B->Center, GroupBounds);
+			});
+
+			// Chunks within the caps (a surface of n corners makes n - 2 triangles and, here, three vertices a triangle).
+			TArray<TArray<const FSurface*>> Chunks;
+			int32 Triangles = 0;
+			for (const FSurface* Surface : Order)
+			{
+				if (Chunks.Num() == 0 || Triangles + Surface->Triangles > TriangleCap || (Triangles + Surface->Triangles) * 3 > VertexCap)
+				{
+					Chunks.AddDefaulted();
+					Triangles = 0;
+				}
+				Chunks.Last().Add(Surface);
+				Triangles += Surface->Triangles;
+			}
+
+			for (int32 ChunkIndex = 0; ChunkIndex < Chunks.Num(); ++ChunkIndex)
+			{
+				FBox ChunkBounds(ForceInit);
+				for (const FSurface* Surface : Chunks[ChunkIndex])
+				{
+					for (const FVector3f& Vertex : Surface->Poly->Vertices)
+					{
+						ChunkBounds += FVector(Vertex);
+					}
+				}
+				const FVector Center = ChunkBounds.GetCenter();
+				FCachedChunk Chunk;
+				Chunk.Pivot = FVector(FMath::RoundToDouble(Center.X), FMath::RoundToDouble(Center.Y), FMath::RoundToDouble(Center.Z));
+				Chunk.Name = FString::Printf(TEXT("BSP (%s) %d/%d"), *Group.Material->GetName(), ChunkIndex + 1, Chunks.Num());
+				Chunk.IdSeed = FString::Printf(TEXT("%s|%s|%d"), *LevelKey, *Group.Material->GetPathName(), ChunkIndex);
+				const FString MeshName = FString::Printf(TEXT("MantleBsp_%s_%d"), *BrushMd5Hex(Chunk.IdSeed).Left(8), ChunkIndex);
+				FString Why;
+				if (!BakeChunk(Group, Chunks[ChunkIndex], Chunk.Pivot, MeshName, Chunk, Why))
+				{
+					OutWhy = Why;
+					return false;
+				}
+				OutChunks.Add(MoveTemp(Chunk));
+			}
+		}
+		return true;
+	}
+}
+
+bool FMantleBrushBake::IsBakeSource(const ABrush* Brush)
+{
+	if (!IsValid(Brush) || Brush->HasAnyFlags(RF_Transient) || FActorEditorUtils::IsABuilderBrush(Brush))
+	{
+		return false;
+	}
+	const UWorld* World = Brush->GetWorld();
+	if (!World || World->GetDefaultBrush() == Brush || !Brush->GetLevel())
+	{
+		return false;
+	}
+	// A volume, a brush shape and any movable brush say IsStaticBrush false (or are volumes): none of them is BSP.
+	if (Brush->IsVolumeBrush() || !Brush->IsStaticBrush())
+	{
+		return false;
+	}
+	return Brush->Brush && Brush->Brush->Polys && Brush->Brush->Polys->Element.Num() > 0;
+}
+
+TArray<ABrush*> FMantleBrushBake::CollectSources(UWorld* World)
+{
+	TArray<ABrush*> Sources;
+	if (!World)
+	{
+		return Sources;
+	}
+	for (TActorIterator<ABrush> It(World); It; ++It)
+	{
+		if (IsBakeSource(*It))
+		{
+			Sources.Add(*It);
+		}
+	}
+	Sources.Sort([](const ABrush& A, const ABrush& B)
+	{
+		return A.GetPathName().Compare(B.GetPathName(), ESearchCase::CaseSensitive) < 0;
+	});
+	return Sources;
+}
+
+FMantleSplineBakeResult FMantleBrushBake::Bake(UWorld* World, const FMantlePlaceAssetLimits& Limits)
+{
+	return BakeBrushes(CollectSources(World), Limits, World);
+}
+
+FMantleSplineBakeResult FMantleBrushBake::BakeBrushes(TConstArrayView<ABrush*> Brushes, const FMantlePlaceAssetLimits& Limits, UWorld* PruneWorld)
+{
+	using namespace MantleBrushBakePrivate;
+	FMantleSplineBakeResult Result;
+
+	const int32 TriangleCap = FMath::Min(Limits.MaxTriangles, SoftMaxTriangles);
+	const int32 VertexCap = FMath::Min(Limits.MaxVertices, SoftMaxVertices);
+
+	// One model a level: brushes in different levels do not cut each other.
+	TMap<FString, TArray<ABrush*>> ByLevel;
+	for (ABrush* Brush : Brushes)
+	{
+		if (IsBakeSource(Brush))
+		{
+			ByLevel.FindOrAdd(Brush->GetLevel()->GetPathName()).Add(Brush);
+		}
+	}
+	TArray<FString> LevelKeys;
+	ByLevel.GetKeys(LevelKeys);
+	LevelKeys.Sort();
+
+	FMantleSplineBakeReport Report;
+	Report.OwnerLabel = OwnerLabelText;
+	TSet<FString> Used;
+	for (const FString& LevelKey : LevelKeys)
+	{
+		TArray<ABrush*>& LevelBrushes = ByLevel[LevelKey];
+		LevelBrushes.Sort([](const ABrush& A, const ABrush& B)
+		{
+			return A.GetPathName().Compare(B.GetPathName(), ESearchCase::CaseSensitive) < 0;
+		});
+
+		// Everything that changes the bake is in the signature, so a cached bake is reused only when it would come out the same.
+		FString Signature = FString::Printf(TEXT("%s|%d|%d|%s"), BakeVersion, TriangleCap, VertexCap, *LevelKey);
+		for (const ABrush* Brush : LevelBrushes)
+		{
+			Signature += TEXT("\n") + BrushMd5Hex(BrushSignature(Brush));
+		}
+		const FString CacheKey = LevelKey + TEXT("#") + BrushMd5Hex(Signature);
+		Used.Add(CacheKey);
+
+		FBakeCache& Store = BrushCache();
+		FCacheEntry* Entry = Store.Entries.Find(CacheKey);
+		if (!Entry)
+		{
+			FCacheEntry Fresh;
+			Fresh.bHadWorld = PruneWorld != nullptr;
+			Fresh.World = PruneWorld;
+			Fresh.Brushes = LevelBrushes.Num();
+			FString Why;
+			if (!BakeLevel(LevelBrushes, LevelKey, TriangleCap, VertexCap, Fresh.Chunks, Why))
+			{
+				const ABrush* Owner = LevelBrushes[0];
+				Result.Problems.Add(FMantleSplineBakeProblem{ Owner->GetActorLabel(), Owner->GetName(),
+					FString::Printf(TEXT("is BSP geometry that couldn't be baked into a static mesh: %s."), *Why),
+					TEXT("Convert the level's BSP to a static mesh (Actor > Convert), or rebuild it from library meshes.") });
+				continue; // not cached: a fixed source is tried again
+			}
+			Entry = &Store.Entries.Add(CacheKey, MoveTemp(Fresh));
+		}
+
+		Report.Components += Entry->Brushes;
+		Report.Meshes += Entry->Chunks.Num();
+		for (const FCachedChunk& Chunk : Entry->Chunks)
+		{
+			FMantleBakedSplineMesh& Baked = Result.Meshes.AddDefaulted_GetRef();
+			Baked.Mesh = Chunk.Mesh;
+			Baked.Name = Chunk.Name;
+			Baked.IdSeed = Chunk.IdSeed;
+			Baked.OwnerLabel = Report.OwnerLabel;
+			Baked.OwnerName = TEXT("BSP");
+			Baked.Transform = FTransform(Chunk.Pivot);
+			Baked.Collision = EMantleCollision::Blocking;
+			Baked.Surface = EMantleSurface::Default;
+			Baked.bCastShadow = true;
+			Baked.SourceComponents = Entry->Brushes;
+			Baked.Triangles = Chunk.Triangles;
+			Baked.Vertices = Chunk.Vertices;
+		}
+	}
+
+	// What this world baked before and no longer does (a brush moved, was removed, or changed) goes.
+	FBakeCache& Store = BrushCache();
+	for (auto It = Store.Entries.CreateIterator(); It; ++It)
+	{
+		const FCacheEntry& Entry = It.Value();
+		const bool bGone = Entry.bHadWorld && !Entry.World.IsValid();
+		const bool bReplaced = PruneWorld && Entry.World.Get() == PruneWorld && !Used.Contains(It.Key());
+		if (bGone || bReplaced)
+		{
+			It.RemoveCurrent();
+		}
+	}
+
+	if (Report.Components > 0)
+	{
+		Result.Reports.Add(Report);
+		UE_LOG(LogMantle, Log, TEXT("MantleBrushBake: %d brush%s baked into %d mesh%s"),
+			Report.Components, Report.Components == 1 ? TEXT("") : TEXT("es"), Report.Meshes, Report.Meshes == 1 ? TEXT("") : TEXT("es"));
+	}
+	return Result;
+}
+
+void FMantleBrushBake::ClearCache()
+{
+	MantleBrushBakePrivate::BrushCache().Entries.Empty();
+}

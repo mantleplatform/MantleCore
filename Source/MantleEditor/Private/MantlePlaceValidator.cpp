@@ -2,6 +2,7 @@
 #include "MantlePlaceValidator.h"
 #include "MantleActorDecompose.h"
 #include "MantleAssetLibrary.h"
+#include "MantleBrushBake.h"
 #include "MantleCableBake.h"
 #include "MantleClientFeatures.h"
 #include "Particles/ParticleSystemComponent.h"
@@ -2217,6 +2218,20 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 	// Cables (FMantleCableBake), which Export bakes into static meshes the same way: whatever can't be baked is an error with its fix.
 	{
 		const FMantleSplineBakeResult Bake = FMantleCableBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
+		Publishable += Bake.Meshes.Num();
+		for (const FMantleSplineBakeProblem& Problem : Bake.Problems)
+		{
+			Result.Issues.Add(FMantleValidationIssue{
+				EMantleIssueSeverity::Error,
+				Problem.OwnerLabel,
+				Problem.What,
+				Problem.Remedy });
+		}
+	}
+
+	// BSP geometry (FMantleBrushBake), baked into static meshes the same way: whatever can't be baked is an error with its fix.
+	{
+		const FMantleSplineBakeResult Bake = FMantleBrushBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
 		Publishable += Bake.Meshes.Num();
 		for (const FMantleSplineBakeProblem& Problem : Bake.Problems)
 		{

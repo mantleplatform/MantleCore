@@ -4,6 +4,7 @@
 #include "MantleActorDecompose.h"
 #include "MantleAssetLibrary.h"
 #include "MantleAvatarContract.h"
+#include "MantleBrushBake.h"
 #include "MantleCableBake.h"
 #include "MantleCosmeticExport.h"
 #include "MantleEffect.h"
@@ -2720,6 +2721,8 @@ FMantlePlaceDependencies FMantlePlaceDependencies::Gather(UWorld* World)
 	Out.AddSplineMeshes(World);
 	// Cables baked the same way (FMantleCableBake).
 	Out.AddCableMeshes(World);
+	// BSP baked the same way (FMantleBrushBake).
+	Out.AddBrushMeshes(World);
 	// The landscapes, where Export writes them (#466): each one a Terrain, as many as the place's limits hold (Check names the rest).
 	for (const AActor* Landscape : FMantleTerrainExport::TerrainLandscapes(World))
 	{
@@ -2744,6 +2747,16 @@ void FMantlePlaceDependencies::AddCableMeshes(UWorld* World)
 {
 	// Cached while the cables are unchanged, as the spline bake is, so Export finds these same meshes (and keys).
 	const FMantleSplineBakeResult Bake = FMantleCableBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
+	for (const FMantleBakedSplineMesh& Baked : Bake.Meshes)
+	{
+		AddMesh(Baked.Mesh, Baked.OwnerLabel);
+	}
+}
+
+void FMantlePlaceDependencies::AddBrushMeshes(UWorld* World)
+{
+	// Cached while the brushes are unchanged, so Export finds these same meshes (and keys).
+	const FMantleSplineBakeResult Bake = FMantleBrushBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
 	for (const FMantleBakedSplineMesh& Baked : Bake.Meshes)
 	{
 		AddMesh(Baked.Mesh, Baked.OwnerLabel);
