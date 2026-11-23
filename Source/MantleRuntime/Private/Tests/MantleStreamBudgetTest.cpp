@@ -413,10 +413,10 @@ bool FMantleStreamBudgetWorldLoadDistanceTest::RunTest(const FString& Parameters
 	TestEqual(TEXT("Low's: 240 m"), FMantleStreamBudget::PresetRingCm(0.4), 24000.0);
 
 	// What the settings screen offers above Auto: only steps farther than the setting's own ring.
-	TestTrue(TEXT("on Epic: 800 m and up"), FMantleStreamBudget::WorldLoadDistanceChoicesM(60000.0) == TArray<int32>({ 800, 1000, 1200, 1500, 2000 }));
-	TestTrue(TEXT("on Low: 400 m and up"), FMantleStreamBudget::WorldLoadDistanceChoicesM(24000.0) == TArray<int32>({ 400, 600, 800, 1000, 1200, 1500, 2000 }));
-	TestTrue(TEXT("on High (480 m): 600 m and up"), FMantleStreamBudget::WorldLoadDistanceChoicesM(48000.0) == TArray<int32>({ 600, 800, 1000, 1200, 1500, 2000 }));
-	TestEqual(TEXT("the placeholder top (awaiting approval) is the last step"), FMantleStreamBudget::MaxWorldLoadDistanceCm,
+	TestTrue(TEXT("on Epic: 800 m and up"), FMantleStreamBudget::WorldLoadDistanceChoicesM(60000.0) == TArray<int32>({ 800, 1000 }));
+	TestTrue(TEXT("on Low: 400 m and up"), FMantleStreamBudget::WorldLoadDistanceChoicesM(24000.0) == TArray<int32>({ 400, 600, 800, 1000 }));
+	TestTrue(TEXT("on High (480 m): 600 m and up"), FMantleStreamBudget::WorldLoadDistanceChoicesM(48000.0) == TArray<int32>({ 600, 800, 1000 }));
+	TestEqual(TEXT("the top, 1 km, is the last step"), FMantleStreamBudget::MaxWorldLoadDistanceCm,
 		FMantleStreamBudget::WorldLoadDistanceStepsM[UE_ARRAY_COUNT(FMantleStreamBudget::WorldLoadDistanceStepsM) - 1] * 100.0);
 
 	// The warning: a raise that ends past 600 m, once per change; lowering never asks.
@@ -432,7 +432,7 @@ bool FMantleStreamBudgetWorldLoadDistanceTest::RunTest(const FString& Parameters
 	TestEqual(TEXT("Auto: no raise"), FMantleStreamBudget::RaisedReachCm(0.0, 60000.0), 0.0);
 	TestEqual(TEXT("a choice no farther than the setting's ring: no raise"), FMantleStreamBudget::RaisedReachCm(40000.0, 60000.0), 0.0);
 	TestEqual(TEXT("1 km on Epic"), FMantleStreamBudget::RaisedReachCm(100000.0, 60000.0), 100000.0);
-	TestEqual(TEXT("a hand-edited 5 km is held to the top"), FMantleStreamBudget::RaisedReachCm(500000.0, 60000.0), FMantleStreamBudget::MaxWorldLoadDistanceCm);
+	TestEqual(TEXT("a hand-edited 5 km is held to the 1 km top"), FMantleStreamBudget::RaisedReachCm(500000.0, 60000.0), 100000.0);
 
 	// The ring with a raise to 1 km on Epic, a 600 m ring cell, the 200 m floor.
 	const FMantleBudgetTuning Tuning;

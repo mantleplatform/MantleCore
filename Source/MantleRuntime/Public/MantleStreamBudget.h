@@ -233,13 +233,15 @@ public:
 	static constexpr int32 WarnAboveM = 600;
 
 	/**
-	 * The World load distance steps offered above the View Distance setting's own ring, metres. The top (2,000 m) is a PLACEHOLDER awaiting Joshua's approval:
-	 * the real one is to come from step 3's measured memory and frame rate for the near ring.
+	 * The World load distance steps offered above the View Distance setting's own ring, metres. The top is 1 km (Joshua, 2026-11-23), from step 3's measured
+	 * costs (working set about 5.4 GB and card about 3.3 GB per million near pieces, over an 8 GB / 3.4 GB baseline, on the development client): 1 km is
+	 * about 2.5 M pieces, which the best common gaming PC (64 GB of RAM, a 16 GB card) holds on both, twins included; 1.5 km is past its RAM cap and its whole
+	 * card, so the ladder would trim anything farther back anyway. Revisit once stand-ins replace the twins (big-map step 6): the twins' 4 to 7 GB go then.
 	 */
-	static constexpr int32 WorldLoadDistanceStepsM[] = { 400, 600, 800, 1000, 1200, 1500, 2000 };
+	static constexpr int32 WorldLoadDistanceStepsM[] = { 400, 600, 800, 1000 };
 
 	/** The most the World load distance can be, cm: the last step. Anything larger (a hand-edited file, the console) is held to it. */
-	static constexpr double MaxWorldLoadDistanceCm = 200000.0;
+	static constexpr double MaxWorldLoadDistanceCm = 100000.0;
 
 	/** The View Distance setting's own ring, cm: RingFromCm x ViewScale (Low 240 m, Balanced 360, High 480, Epic 600). */
 	static double PresetRingCm(double ViewScale);
