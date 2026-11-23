@@ -1009,7 +1009,8 @@ bool FMantlePlaceSkipUnsupportedActorWithContentTest::RunTest(const FString& Par
 	{
 		return false;
 	}
-	// An actor rooted on a capsule: a type Mantle does not know, and it collides, so a player could touch what is lost.
+	// An actor rooted on a capsule that blocks (a prop's or a character's collision): a type Mantle does not know, and it collides, so a
+	// player could touch what is lost. (A capsule that only overlaps is a trigger now, F18: it publishes as a box or sphere, with a Check note.)
 	AActor* Holder = Fixture.World->SpawnActor<AActor>(FVector::ZeroVector, FRotator::ZeroRotator);
 	if (!TestNotNull(TEXT("the actor"), Holder))
 	{
@@ -1017,6 +1018,7 @@ bool FMantlePlaceSkipUnsupportedActorWithContentTest::RunTest(const FString& Par
 	}
 	UCapsuleComponent* Capsule = NewObject<UCapsuleComponent>(Holder, TEXT("Body"));
 	Holder->SetRootComponent(Capsule);
+	Capsule->SetCollisionProfileName(TEXT("BlockAll"));
 	Capsule->RegisterComponent();
 	Holder->SetActorLabel(TEXT("Solid logic"));
 

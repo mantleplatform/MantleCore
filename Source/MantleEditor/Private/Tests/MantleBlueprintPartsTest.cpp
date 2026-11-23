@@ -153,6 +153,8 @@ bool FMantleBlueprintPartsCapsuleWarningTest::RunTest(const FString& Parameters)
 	Light->SetActorLabel(TEXT("BP_PCG_Jungle_Floating"));
 	// A capsule a player could touch: a point light has room for one component only, and Mantle has no entity for a capsule.
 	UCapsuleComponent* Capsule = AddScene<UCapsuleComponent>(Light, TEXT("Capsule"));
+	// It blocks (a capsule that only overlaps is a trigger now, F18).
+	Capsule->SetCollisionProfileName(TEXT("BlockAll"));
 	Capsule->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Capsule->SetHiddenInGame(true);
 	TestTrue(TEXT("it is content a player could touch"), FMantlePlaceExporter::IsGameContent(Capsule));
