@@ -4153,9 +4153,20 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	// A masked material never publishes a cut-off of 0 (ResolveMaskCutoff): an earlier conversion that did must not stand in. Only a
 	// masked material's conversion changed, so only its key does; every other material keeps its bake.
 	const bool bMasked = Material && Material->GetBlendMode() == BLEND_Masked;
-	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
+	FString Salt = FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
 		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""), bMasked ? TEXT(" maskcutoff=2") : TEXT(""));
+	// A Modulate material publishes as a darkening sheet and an unlit one keeps a glow over 1 as its emissive strength: only those two
+	// kinds changed, so only their keys do. An earlier conversion (a card with opacity 0, a glow clipped to 1) must not stand in.
+	if (Material && Material->GetBlendMode() == BLEND_Modulate)
+	{
+		Salt += TEXT(" modulatesheet=1");
+	}
+	if (Material && Material->GetShadingModels().HasShadingModel(MSM_Unlit))
+	{
+		Salt += TEXT(" unlitglowstrength=1");
+	}
+	return Salt;
 }
 
 double FMantlePlaceAssetConverter::MeanPixelDifference(const TArray<FColor>& A, const TArray<FColor>& B)
