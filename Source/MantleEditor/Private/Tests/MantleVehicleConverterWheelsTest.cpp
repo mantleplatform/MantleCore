@@ -4,10 +4,13 @@
 #include "MantleVehicleBodySplit.h"
 #include "MantleVehicleChassisMesh.h"
 #include "MantleVehicleConverter.h"
+#include "MantleVehicleLightFinder.h"
 #include "MantleVehicleSource.h"
 #include "MantleVehicleScratchBody.h"
 
 #include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/Material.h"
 #include "Misc/AutomationTest.h"
 #include "ReferenceSkeleton.h"
 
@@ -27,7 +30,8 @@ namespace MantleVehicleConverterWheelsTestPrivate
 	};
 
 	/** A car's skeleton: a root, then each wheel at its place; material m is m + 1 quads, riding bone m modulo the bones. */
-	USkeletalMesh* MakeCar(const TArray<FCarWheel>& Wheels, const int32 NumMaterials, FString& OutError)
+	USkeletalMesh* MakeCar(const TArray<FCarWheel>& Wheels, const int32 NumMaterials, FString& OutError, UMaterialInterface* WithMaterial = nullptr,
+		const TArray<FString>& SlotNames = TArray<FString>())
 	{
 		FMantleSkinnedMesh Body;
 		Body.Bones.Add({ FName(TEXT("B_Car_Main")), INDEX_NONE });
@@ -43,8 +47,9 @@ namespace MantleVehicleConverterWheelsTestPrivate
 		int32 Quad = 0;
 		for (int32 Material = 0; Material < NumMaterials; ++Material)
 		{
-			const FName MaterialName(*FString::Printf(TEXT("mat%d"), Material));
-			Materials.Add(FSkeletalMaterial(nullptr, MaterialName));
+			const FString NameText = SlotNames.IsValidIndex(Material) && !SlotNames[Material].IsEmpty() ? SlotNames[Material] : FString::Printf(TEXT("mat%d"), Material);
+			const FName MaterialName(*NameText);
+			Materials.Add(FSkeletalMaterial(WithMaterial, MaterialName));
 			FMantleSkinnedMeshSection& Section = LOD.Sections.AddDefaulted_GetRef();
 			Section.MaterialIndex = Material;
 			Section.MaterialName = MaterialName;
@@ -289,6 +294,200 @@ bool FMantleVehicleConverterMaterialsSplitTest::RunTest(const FString& Parameter
 		MantleVehicleScratchBody::Discard(Small);
 	}
 	MantleVehicleScratchBody::Discard(Body);
+	MantleVehicleScratchBody::Discard(Car);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleConverterBrakeHubTest,
+	"Mantle.Vehicle.Convert.BrakeBonesSteerWithTheirWheel",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleConverterBrakeHubTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleConverterWheelsTestPrivate;
+
+	// SUV04: each corner has a B_SUV04_*Brake bone at the wheel's place, the caliper skinned to it. Left alone it did not steer with the wheel, and the caliper cut through
+	// the rim. A corner's brake bone is its wheel's hub: it travels and steers with the wheel and does not spin.
+	TArray<FCarWheel> Bones = { { TEXT("B_SUV04_FLWheel"), FVector(130, -80, 35) }, { TEXT("B_SUV04_FRWheel"), FVector(130, 80, 35) },
+		{ TEXT("B_SUV04_RLWheel"), FVector(-130, -80, 35) }, { TEXT("B_SUV04_RRWheel"), FVector(-130, 80, 35) },
+		{ TEXT("B_SUV04_FLBrake"), FVector(130, -80, 35) }, { TEXT("B_SUV04_FRBrake"), FVector(130, 80, 35) },
+		{ TEXT("B_SUV04_RLBrake"), FVector(-130, -80, 35) }, { TEXT("B_SUV04_RRCaliper"), FVector(-130, 80, 35) },
+		// A brake light is named Brake too, and sits far from every wheel: it is not a hub.
+		{ TEXT("B_SUV04_BrakeLight_RL"), FVector(-210, -60, 90) } };
+	FString Error;
+	USkeletalMesh* Car = MakeCar(Bones, 2, Error);
+	if (!TestNotNull(*FString::Printf(TEXT("the car is made (%s)"), *Error), Car))
+	{
+		return false;
+	}
+	const TArray<FName> WheelNames = { FName(TEXT("B_SUV04_FLWheel")), FName(TEXT("B_SUV04_FRWheel")), FName(TEXT("B_SUV04_RLWheel")), FName(TEXT("B_SUV04_RRWheel")) };
+	TArray<FString> Notes;
+	const TArray<FMantleVehicleSourceLinkage> Rules = FMantleVehicleConverter::DetectLinkage(Car->GetRefSkeleton(), WheelNames, Notes);
+	const auto HubOf = [&Rules](const TCHAR* Brake) -> const FMantleVehicleSourceLinkage*
+	{
+		return Rules.FindByPredicate([Brake](const FMantleVehicleSourceLinkage& Rule) { return Rule.Bone == FName(Brake) && Rule.Type == EMantleVehicleLinkageType::Copy; });
+	};
+	const struct { const TCHAR* Brake; const TCHAR* Wheel; } Expected[] = { { TEXT("B_SUV04_FLBrake"), TEXT("B_SUV04_FLWheel") }, { TEXT("B_SUV04_FRBrake"), TEXT("B_SUV04_FRWheel") },
+		{ TEXT("B_SUV04_RLBrake"), TEXT("B_SUV04_RLWheel") }, { TEXT("B_SUV04_RRCaliper"), TEXT("B_SUV04_RRWheel") } };
+	for (const auto& Pair : Expected)
+	{
+		const FMantleVehicleSourceLinkage* Hub = HubOf(Pair.Brake);
+		if (TestNotNull(*FString::Printf(TEXT("%s is a hub"), Pair.Brake), Hub))
+		{
+			TestTrue(*FString::Printf(TEXT("%s follows its own corner's wheel"), Pair.Brake), Hub->Source == FName(Pair.Wheel));
+			TestTrue(*FString::Printf(TEXT("%s takes the wheel's steering and travel, not its spin"), Pair.Brake), Hub->Axis == EMantleVehicleLinkageAxis::Z);
+		}
+	}
+	TestNull(TEXT("a brake light far from the wheels is not a hub"), HubOf(TEXT("B_SUV04_BrakeLight_RL")));
+	MantleVehicleScratchBody::Discard(Car);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleConverterLightsTest,
+	"Mantle.Vehicle.Convert.LightsFoundAndKeptOnTheBody",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleConverterLightsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleConverterWheelsTestPrivate;
+
+	// SUV04: the body has MI_Lights_Inst sections, and the Convert wrote no lights and split them off as parts (the split kept only the sections the vehicle already listed).
+	// Now a Convert finds them as the builder does on a model of its own (here by their names), writes them into Lights, and the split keeps them on the body.
+	// A 12-material car whose two smallest materials, the ones a split sends to parts first, are a headlight and a taillight.
+	TArray<FString> Names;
+	Names.SetNum(12);
+	Names[0] = TEXT("SUV_Headlight");
+	Names[1] = TEXT("SUV_Taillight");
+	FString Error;
+	USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), 12, Error, nullptr, Names);
+	if (!TestNotNull(*FString::Printf(TEXT("the car is made (%s)"), *Error), Car))
+	{
+		return false;
+	}
+	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	const FMantleVehicleConversion Conversion = FMantleVehicleConverter::Convert(Car, *Source);
+	TestTrue(*FString::Printf(TEXT("it converts (%s)"), *FString::Join(Conversion.Problems, TEXT(" "))), Conversion.bSuccess);
+	TestTrue(TEXT("the headlight is listed as the headlights"), Source->Lights.Head.Contains(TEXT("SUV_Headlight")));
+	TestTrue(TEXT("the taillight is listed as the rear lights"), Source->Lights.Rear.Contains(TEXT("SUV_Taillight")));
+	USkeletalMesh* Body = Source->Body.LoadSynchronous();
+	if (TestTrue(TEXT("its body is a copy of the car, not the car"), Body && Body != Car))
+	{
+		const TArray<FString> Sections = FMantleVehicleLights::SectionNames(Body->GetMaterials());
+		TestTrue(TEXT("both light sections are on the body, where the game switches them"), Sections.Contains(TEXT("SUV_Headlight")) && Sections.Contains(TEXT("SUV_Taillight")));
+		TestTrue(TEXT("and the body is within the limit"), Body->GetMaterials().Num() <= FMantleVehicleLimits::MaxSections);
+	}
+	TestTrue(TEXT("none of the parts is a light"), !Source->Parts.ContainsByPredicate([](const FMantleVehicleSourcePart& Part)
+	{
+		const UStaticMesh* Mesh = Part.Mesh.LoadSynchronous();
+		return Mesh && Mesh->GetStaticMaterials().ContainsByPredicate([](const FStaticMaterial& Slot) { return Slot.MaterialSlotName.ToString().Contains(TEXT("light"), ESearchCase::IgnoreCase); });
+	}));
+	TestTrue(TEXT("the notes say which sections became which lights"), Conversion.Notes.ContainsByPredicate([](const FString& Note)
+	{
+		return Note.StartsWith(TEXT("Lights: ")) && Note.Contains(TEXT("SUV_Headlight")) && Note.Contains(TEXT("SUV_Taillight")) && Note.Contains(TEXT("your own model was not changed"));
+	}));
+	TestEqual(TEXT("the car itself was not changed"), Car->GetMaterials().Num(), 12);
+
+	// Converting again finds them again, the same; lights the creator set that the model has are kept.
+	const FMantleVehicleConversion Again = FMantleVehicleConverter::Convert(Car, *Source);
+	TestTrue(TEXT("it converts again"), Again.bSuccess);
+	TestTrue(TEXT("with the same lights"), Source->Lights.Head.Contains(TEXT("SUV_Headlight")) && Source->Lights.Rear.Contains(TEXT("SUV_Taillight")) && Source->Lights.Head.Num() == 1 && Source->Lights.Rear.Num() == 1);
+	Source->Lights.Head = { TEXT("mat5") };
+	Source->Lights.Rear.Reset();
+	const FMantleVehicleConversion Kept = FMantleVehicleConverter::Convert(Car, *Source);
+	TestTrue(TEXT("it converts with the creator's lights"), Kept.bSuccess);
+	TestTrue(TEXT("a light the creator set is kept, and nothing is found beside it"), Source->Lights.Head.Num() == 1 && Source->Lights.Head[0] == TEXT("mat5") && Source->Lights.Rear.IsEmpty());
+	TestTrue(TEXT("and says so"), Kept.Notes.ContainsByPredicate([](const FString& Note) { return Note.StartsWith(TEXT("Lights: your 1 section(s) are kept")); }));
+
+	if (USkeletalMesh* Last = Source->Body.LoadSynchronous(); Last && Last != Car)
+	{
+		MantleVehicleScratchBody::Discard(Last);
+	}
+	MantleVehicleScratchBody::Discard(Car);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleConverterSplitPaintTest,
+	"Mantle.Vehicle.Convert.SplitPartsKeepPaint",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleConverterSplitPaintTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleConverterWheelsTestPrivate;
+
+	// SUV04: its door shells are split-off parts that wear the body's paint. A second Convert (after the seats were set) found the model had a part of its own already
+	// and suggested no paint slot for any part, so the doors came out white. The split's own parts are made afresh each Convert and are suggested their paint every time.
+	UMaterialInterface* Painted = UMaterial::GetDefaultMaterial(MD_Surface);
+	if (!TestNotNull(TEXT("the engine's default material"), Painted))
+	{
+		return false;
+	}
+	FString Error;
+	USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), 12, Error, Painted);
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!TestNotNull(*FString::Printf(TEXT("the car is made (%s)"), *Error), Car) || !TestNotNull(TEXT("a mesh for the model's own part"), Cube))
+	{
+		return false;
+	}
+	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	// The body's paint is its biggest section's (mat11 stays on the body); the model already has a part of its own, which is not painted.
+	Source->Paint.Sections = { TEXT("mat11") };
+	FMantleVehicleSourcePart Own;
+	Own.Mesh = Cube;
+	Own.Bone = FName(TEXT("B_Car_Main"));
+	Source->Parts.Add(Own);
+
+	const auto SplitParts = [&Source]()
+	{
+		return Source->Parts.FilterByPredicate([](const FMantleVehicleSourcePart& Part) { return Part.FoundOn == FMantleVehicleBodySplit::FoundOn(); });
+	};
+	const FMantleVehicleConversion First = FMantleVehicleConverter::Convert(Car, *Source);
+	TestTrue(*FString::Printf(TEXT("it converts (%s)"), *FString::Join(First.Problems, TEXT(" "))), First.bSuccess);
+	TArray<FMantleVehicleSourcePart> Split = SplitParts();
+	TestTrue(TEXT("the extra materials are parts"), Split.Num() >= 1);
+	bool bAllPainted = Split.Num() > 0;
+	for (const FMantleVehicleSourcePart& Part : Split)
+	{
+		const UStaticMesh* Mesh = Part.Mesh.LoadSynchronous();
+		bAllPainted = bAllPainted && Mesh && !Part.PaintSlots.IsEmpty();
+	}
+	TestTrue(TEXT("each split part's slots that draw with the body's paint material wear the paint"), bAllPainted);
+	TestTrue(TEXT("the model's own part is left as it was: no paint slots"), Source->Parts[0].PaintSlots.IsEmpty() && Source->Parts[0].LayerSlots.IsEmpty());
+
+	// Converting again: the split's parts are made afresh, and still painted.
+	const FMantleVehicleConversion Second = FMantleVehicleConverter::Convert(Car, *Source);
+	TestTrue(TEXT("it converts again"), Second.bSuccess);
+	Split = SplitParts();
+	bAllPainted = Split.Num() > 0;
+	for (const FMantleVehicleSourcePart& Part : Split)
+	{
+		const UStaticMesh* Mesh = Part.Mesh.LoadSynchronous();
+		bAllPainted = bAllPainted && Mesh && !Part.PaintSlots.IsEmpty();
+	}
+	TestTrue(TEXT("the second Convert leaves every split part painted"), bAllPainted);
+	TestTrue(TEXT("and the model's own part is still not"), Source->Parts[0].PaintSlots.IsEmpty());
+
+	// What the creator set on a split part is kept by a later Convert: a slot unticked stays unticked.
+	if (Split.Num() > 0)
+	{
+		const FString Name = Split[0].Mesh.GetAssetName();
+		for (FMantleVehicleSourcePart& Part : Source->Parts)
+		{
+			if (Part.FoundOn == FMantleVehicleBodySplit::FoundOn() && Part.Mesh.GetAssetName() == Name)
+			{
+				Part.PaintSlots = { 0 };
+			}
+		}
+		FMantleVehicleConverter::Convert(Car, *Source);
+		const FMantleVehicleSourcePart* Again = Source->Parts.FindByPredicate([&Name](const FMantleVehicleSourcePart& Part) { return Part.Mesh.GetAssetName() == Name; });
+		TestTrue(TEXT("the slots the creator set on a split part are kept"), Again && Again->PaintSlots.Num() == 1 && Again->PaintSlots[0] == 0);
+	}
+	if (USkeletalMesh* Body = Source->Body.LoadSynchronous(); Body && Body != Car)
+	{
+		MantleVehicleScratchBody::Discard(Body);
+	}
 	MantleVehicleScratchBody::Discard(Car);
 	return true;
 }

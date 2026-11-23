@@ -229,6 +229,15 @@ public:
 		TArray<FString>& OutNotes, FString& OutProblem);
 
 	/**
+	 * Lights, found as the builder finds them on a model of its own (FMantleVehicleLights): Source's Lights are filled from where each section of Mesh glows and its color, or
+	 * what its name says, when it has none of the model's own (a section it lists that Mesh does not have is a copy's from an earlier Convert, and found afresh). The copy of
+	 * Mesh that has each light in a section of its own, with its glowing material, is saved beside the model (SplitFolder, as SplitExtraMaterials) and set as Source's Body: the
+	 * model itself is not changed. Returns that copy, or null when the model has no lights or the copy could not be saved; OutNotes says which sections became which lights.
+	 * Run before the split, so the split keeps them on the body.
+	 */
+	static USkeletalMesh* FindLights(USkeletalMesh& Mesh, UMantleVehicleSource& Source, const FString& SplitFolder, TArray<FString>& OutNotes);
+
+	/**
 	 * Convert, into <Mesh>_Vehicle beside the mesh (made, or updated keeping its tuning, parts and the collision and center of
 	 * mass it has), left unsaved for the creator to look at. Around defaults to the mesh's own surroundings. Null, with
 	 * OutResult saying why, when the mesh will not convert.
