@@ -239,6 +239,13 @@ struct MANTLEEDITOR_API FMantleMaterialFidelity2
 	bool bGlowOverOne = false;
 	double GlowColor[3] = { 0.0, 0.0, 0.0 };
 
+	/**
+	 * An unlit glow brighter than 1 that a texture drives (a texture times an intensity of 4): the bake clipped each pixel to 1 and nothing
+	 * recovers them, so it publishes dimmer than in the editor. TexturedGlowGain is the intensity the graph multiplies it by.
+	 */
+	bool bGlowTexturedOverOne = false;
+	double TexturedGlowGain = 1.0;
+
 	/** see-through glass (#628): an unlit translucent material whose emissive is the scene behind it, published as tinted glass. */
 	FMantleSeeThroughGlass Glass;
 

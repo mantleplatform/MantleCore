@@ -672,6 +672,25 @@ namespace MantlePlaceAssetsPrivate
 		return false;
 	}
 
+	/**
+	 * The most Input multiplies what it carries by: the product of the constant colors and intensities on its Multiply chain (a texture
+	 * times 4 is 4), looking through reroutes. 1 for anything it cannot read, so it only ever reports what it sees.
+	 */
+	double MultiplyGain(const FExpressionInput* Input, const UMaterialInterface* Context, const int32 Depth = 0)
+	{
+		int32 Output = 0;
+		const UMaterialExpression* Expression = Depth > 8 ? nullptr : Follow(Input, Output);
+		const UMaterialExpressionMultiply* Multiply = Cast<UMaterialExpressionMultiply>(Expression);
+		if (!Multiply)
+		{
+			double Color[3];
+			return ConstantColor(Input, Context, Color) ? FMath::Max(1.0, FMath::Max3(Color[0], Color[1], Color[2])) : 1.0;
+		}
+		const double A = Multiply->A.Expression ? MultiplyGain(&Multiply->A, Context, Depth + 1) : FMath::Max(1.0, static_cast<double>(Multiply->ConstA));
+		const double B = Multiply->B.Expression ? MultiplyGain(&Multiply->B, Context, Depth + 1) : FMath::Max(1.0, static_cast<double>(Multiply->ConstB));
+		return A * B;
+	}
+
 	/** Nothing connected, or a constant or parameter value: no texture, nothing that varies over the surface. */
 	bool IsFlat(const FExpressionInput* Input)
 	{
@@ -4156,7 +4175,7 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		}
 
 		// An unlit glow of one constant color with a channel over 1: the bake clips it to 1, so the whole color is read here.
-		if (bCarries && Models.HasShadingModel(MSM_Unlit) && Blend != BLEND_Modulate && Connected(MP_EmissiveColor))
+		if (bCarries && Models.HasShadingModel(MSM_Unlit) && Blend != BLEND_Modulate && !Fidelity.Glass.bFound && Connected(MP_EmissiveColor))
 		{
 			double Glow[3];
 			if (ConstantColor(Roots.Emissive, Material, Glow) && FMath::Max3(Glow[0], Glow[1], Glow[2]) > 1.0 && Glow[0] >= 0.0 && Glow[1] >= 0.0 && Glow[2] >= 0.0)
@@ -4166,6 +4185,12 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 				{
 					Fidelity.GlowColor[Channel] = Glow[Channel];
 				}
+			}
+			else if (const double Gain = MultiplyGain(Roots.Emissive, Material); Gain > 1.0 && !IsFlat(Roots.Emissive))
+			{
+				// A texture (or anything that varies) times an intensity over 1: the bake clipped each pixel, which cannot be undone.
+				Fidelity.bGlowTexturedOverOne = true;
+				Fidelity.TexturedGlowGain = Gain;
 			}
 		}
 
@@ -5230,6 +5255,13 @@ void FMantlePlaceAssets::CheckMaterial(const UMaterialInterface* Material, const
 			FString::Printf(TEXT("%s: %s"), *Subject, *DescribePerInstanceVariation()), LossRemedy });
 	}
 	// #628: notes, not losses of a feature: what an additive or see-through surface gives up in becoming Mantle's.
+	if (Analysis.Fidelity2.bGlowTexturedOverOne)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("%s: its unlit glow is a texture times an intensity of about %.1f, brighter than 1; Mantle publishes it at no more than 1, so it looks dimmer than in the editor, and its light spill is weaker."),
+				*Subject, Analysis.Fidelity2.TexturedGlowGain),
+			LossRemedy });
+	}
 	if (Analysis.Fidelity2.bAdditiveLit)
 	{
 		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),

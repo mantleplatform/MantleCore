@@ -10,6 +10,7 @@
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionTextureSample.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/Package.h"
 
@@ -127,6 +128,40 @@ bool FMantleUnlitGlowOverOneTest::RunTest(const FString& Parameters)
 	const FMantlePlaceMaterialDocument Plain = Convert(UnlitBake(TEXT("OPAQUE"), FLinearColor(1.0f, 0.4f, 0.1f)), Dim.Fidelity2);
 	TestEqual(TEXT("its strength stays 1"), Plain.EmissiveStrength, 1.0, 1.0e-9);
 	TestEqual(TEXT("and its factor is the bake's"), Plain.EmissiveFactor[1], 0.4, 1.0e-6);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTexturedGlowOverOneIsWarnedTest,
+	"Mantle.Editor.UnlitModulate.TexturedGlowOverOneSaysItPublishesDimmer",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTexturedGlowOverOneIsWarnedTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleUnlitModulateTestPrivate;
+
+	// A texture times an intensity of 4: the bake clipped each pixel, so Mantle cannot publish it at full strength.
+	UMaterial* Screen = NewObject<UMaterial>(GetTransientPackage());
+	Screen->SetShadingModel(MSM_Unlit);
+	UMaterialExpressionTextureSample* Picture = AddNode<UMaterialExpressionTextureSample>(Screen);
+	UMaterialExpressionConstant* Intensity = AddNode<UMaterialExpressionConstant>(Screen);
+	Intensity->R = 4.0f;
+	UMaterialExpressionMultiply* Times = AddNode<UMaterialExpressionMultiply>(Screen);
+	Times->A.Connect(0, Picture);
+	Times->B.Connect(0, Intensity);
+	Screen->GetEditorOnlyData()->EmissiveColor.Connect(0, Times);
+	const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Screen);
+	TestTrue(TEXT("a textured glow over 1 is flagged"), Analysis.Fidelity2.bGlowTexturedOverOne);
+	TestFalse(TEXT("it is not the one-color case, which is kept in full"), Analysis.Fidelity2.bGlowOverOne);
+	TestEqual(TEXT("with the intensity it is multiplied by"), Analysis.Fidelity2.TexturedGlowGain, 4.0, 1.0e-6);
+	TestTrue(TEXT("and Check says it publishes dimmer than in the editor"), CheckSays(Screen, TEXT("dimmer than in the editor")));
+
+	// A texture on its own (no intensity over 1) and a one-color glow say nothing of the kind.
+	UMaterial* Plain = NewObject<UMaterial>(GetTransientPackage());
+	Plain->SetShadingModel(MSM_Unlit);
+	Plain->GetEditorOnlyData()->EmissiveColor.Connect(0, AddNode<UMaterialExpressionTextureSample>(Plain));
+	TestFalse(TEXT("a plain textured glow is not flagged"), FMantlePlaceAssets::AnalyzeMaterial(Plain).Fidelity2.bGlowTexturedOverOne);
+	TestFalse(TEXT("nor is a one-color glow over 1"), FMantlePlaceAssets::AnalyzeMaterial(NewUnlit(FLinearColor(3.0f, 0.4f, 0.1f))).Fidelity2.bGlowTexturedOverOne);
 	return true;
 }
 
