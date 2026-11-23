@@ -28,7 +28,7 @@ int32 FMantlePlaceWorldPartition::CountUnloaded(const TArray<FActorEntry>& Entri
 	TArray<FString> Labels;
 	for (const FActorEntry& Entry : Entries)
 	{
-		if (Entry.bLoaded || Entry.bRuntimeOnly || Entry.bHLOD)
+		if (Entry.bLoaded || Entry.bRuntimeOnly || Entry.bHLOD || Entry.OffLayers.Num() > 0)
 		{
 			continue;
 		}
@@ -92,64 +92,38 @@ TArray<FMantlePlaceWorldPartition::FActorEntry> FMantlePlaceWorldPartition::Gath
 	return Entries;
 }
 
-FMantlePlaceWorldPartition::FUnloadedSplit FMantlePlaceWorldPartition::SplitUnloaded(const TArray<FActorEntry>& Entries)
+TArray<FMantlePlaceWorldPartition::FOffLayer> FMantlePlaceWorldPartition::OffLayers(const TArray<FActorEntry>& Entries)
 {
-	FUnloadedSplit Split;
-	TArray<FString> CellLabels;
-	TArray<FString> LayerLabels;
+	TArray<FOffLayer> Layers;
 	for (const FActorEntry& Entry : Entries)
 	{
 		if (Entry.bLoaded || Entry.bRuntimeOnly || Entry.bHLOD)
 		{
 			continue;
 		}
-		if (Entry.OffLayers.Num() > 0)
+		for (const FString& Name : Entry.OffLayers)
 		{
-			LayerLabels.Add(Entry.Label);
-			for (const FString& Name : Entry.OffLayers)
+			FOffLayer* Found = Layers.FindByPredicate([&Name](const FOffLayer& Layer) { return Layer.Name == Name; });
+			if (!Found)
 			{
-				Split.LayerNames.AddUnique(Name);
+				Found = &Layers.AddDefaulted_GetRef();
+				Found->Name = Name;
 			}
-		}
-		else
-		{
-			CellLabels.Add(Entry.Label);
+			++Found->ActorCount;
 		}
 	}
-	CellLabels.Sort();
-	LayerLabels.Sort();
-	Split.LayerNames.Sort();
-	Split.CellCount = CellLabels.Num();
-	Split.LayerCount = LayerLabels.Num();
-	for (int32 Index = 0; Index < MaxNamedExamples; ++Index)
-	{
-		if (CellLabels.IsValidIndex(Index))
-		{
-			Split.CellExamples.Add(CellLabels[Index]);
-		}
-		if (LayerLabels.IsValidIndex(Index))
-		{
-			Split.LayerExamples.Add(LayerLabels[Index]);
-		}
-	}
-	return Split;
+	Layers.Sort([](const FOffLayer& A, const FOffLayer& B) { return A.Name < B.Name; });
+	return Layers;
 }
 
-FString FMantlePlaceWorldPartition::DescribeLayerProblem(const FUnloadedSplit& Split)
+bool FMantlePlaceWorldPartition::DescribeOffLayer(const FOffLayer& Layer, FMantleValidationIssue& OutIssue)
 {
-	return FString::Printf(
-		TEXT("%d actor%s (%s%s) %s in %s that %s switched off in the editor (%s), so %s not loaded and would be left out of the place."),
-		Split.LayerCount, Split.LayerCount == 1 ? TEXT("") : TEXT("s"),
-		*FString::Join(Split.LayerExamples, TEXT(", ")), Split.LayerCount > Split.LayerExamples.Num() ? TEXT(", and others") : TEXT(""),
-		Split.LayerCount == 1 ? TEXT("is") : TEXT("are"),
-		Split.LayerNames.Num() == 1 ? TEXT("a Data Layer") : TEXT("Data Layers"), Split.LayerNames.Num() == 1 ? TEXT("is") : TEXT("are"),
-		*FString::Join(Split.LayerNames, TEXT(", ")),
-		Split.LayerCount == 1 ? TEXT("it is") : TEXT("they are"));
-}
-
-FString FMantlePlaceWorldPartition::DescribeLayerRemedy()
-{
-	return TEXT("Mantle publishes what is loaded. To publish them, switch the layer on: in the Data Layers window, turn on Load in Editor for it. To leave them out, take the actors out of the layer or delete them.");
+	OutIssue.Severity = EMantleIssueSeverity::Warning;
+	OutIssue.Actor.Reset();
+	OutIssue.Problem = FString::Printf(TEXT("Data layer '%s' is off in the editor, so its %d actor%s %s left out of the place."),
+		*Layer.Name, Layer.ActorCount, Layer.ActorCount == 1 ? TEXT("") : TEXT("s"), Layer.ActorCount == 1 ? TEXT("is") : TEXT("are"));
+	OutIssue.Remedy = TEXT("Turn the layer on (Load in Editor, in the Data Layers window) to publish them.");
+	return true;
 }
 
 TArray<FMantlePlaceWorldPartition::FLayerEntry> FMantlePlaceWorldPartition::GatherLayers(UWorld* World)
@@ -237,22 +211,24 @@ FString FMantlePlaceWorldPartition::DescribeRemedy()
 
 void FMantlePlaceWorldPartition::CheckLevel(UWorld* World, TArray<FMantleValidationIssue>& OutIssues)
 {
-	const FUnloadedSplit Split = SplitUnloaded(GatherEntries(World));
-	if (Split.CellCount > 0)
+	const TArray<FActorEntry> Entries = GatherEntries(World);
+	TArray<FString> Examples;
+	const int32 Count = CountUnloaded(Entries, Examples);
+	if (Count > 0)
 	{
 		OutIssues.Add(FMantleValidationIssue{
 			EMantleIssueSeverity::Error,
 			FString(),
-			DescribeProblem(Split.CellCount, Split.CellExamples),
+			DescribeProblem(Count, Examples),
 			DescribeRemedy() });
 	}
-	if (Split.LayerCount > 0)
+
+	// Actors in a Data Layer that is off in the editor are not shown there, so they are left out of the place, one warning per layer.
+	for (const FOffLayer& Layer : OffLayers(Entries))
 	{
-		OutIssues.Add(FMantleValidationIssue{
-			EMantleIssueSeverity::Error,
-			FString(),
-			DescribeLayerProblem(Split),
-			DescribeLayerRemedy() });
+		FMantleValidationIssue Issue;
+		DescribeOffLayer(Layer, Issue);
+		OutIssues.Add(MoveTemp(Issue));
 	}
 
 	FMantleValidationIssue RuntimeLayers;
@@ -264,21 +240,17 @@ void FMantlePlaceWorldPartition::CheckLevel(UWorld* World, TArray<FMantleValidat
 
 void FMantlePlaceWorldPartition::CheckExport(UWorld* World, TArray<FMantleParseError>& OutErrors)
 {
-	const FUnloadedSplit Split = SplitUnloaded(GatherEntries(World));
-	if (Split.CellCount > 0)
+	TArray<FString> Examples;
+	const int32 Count = CountUnloaded(GatherEntries(World), Examples);
+	if (Count == 0)
 	{
-		UE_LOG(LogMantle, Warning, TEXT("Export refused: %d World Partition actor(s) are not loaded."), Split.CellCount);
-		OutErrors.Add(FMantleParseError{
-			TEXT("/worldPartition"),
-			DescribeProblem(Split.CellCount, Split.CellExamples) + TEXT(" ") + DescribeRemedy() });
+		return;
 	}
-	if (Split.LayerCount > 0)
-	{
-		UE_LOG(LogMantle, Warning, TEXT("Export refused: %d actor(s) are in Data Layers that are off in the editor."), Split.LayerCount);
-		OutErrors.Add(FMantleParseError{
-			TEXT("/worldPartition/dataLayers"),
-			DescribeLayerProblem(Split) + TEXT(" ") + DescribeLayerRemedy() });
-	}
+
+	UE_LOG(LogMantle, Warning, TEXT("Export refused: %d World Partition actor(s) are not loaded."), Count);
+	OutErrors.Add(FMantleParseError{
+		TEXT("/worldPartition"),
+		DescribeProblem(Count, Examples) + TEXT(" ") + DescribeRemedy() });
 }
 
 FMantlePlaceWorldPartition::FLoadResult FMantlePlaceWorldPartition::LoadAll(UWorld* World)
@@ -430,7 +402,7 @@ FString FMantlePlaceWorldPartition::DescribeLoad(const FLoadResult& Result)
 			Result.Loaded(), Result.CommitAfterMB, Result.CommitBeforeMB);
 		if (Result.UnloadedAfter > 0)
 		{
-			Text += FString::Printf(TEXT(" %d actors are still not loaded (a data layer that is off, or a cell that would not load)."), Result.UnloadedAfter);
+			Text += FString::Printf(TEXT(" %d actors are still not loaded (a cell that would not load)."), Result.UnloadedAfter);
 		}
 	}
 	if (Result.LevelInstances.Num() > 0 || Result.LevelInstancesFailed > 0)

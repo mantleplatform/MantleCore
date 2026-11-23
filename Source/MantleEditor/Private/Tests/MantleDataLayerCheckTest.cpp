@@ -7,9 +7,11 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 // Data Layers (publish support list row 68). The publish test level L4 showed, on main: an actor in a layer that is switched off in
-// the editor is not loaded, so Check refused the place, but named "cells the editor has not loaded" and gave cell advice that
-// didn't apply. And Mantle has no Data Layers at all: an actor in a runtime layer publishes as an ordinary actor whatever the
-// layer's Initial Runtime State, which nothing said.
+// the editor is not loaded, and Check refused the whole place for it with cell advice that didn't apply. A Fab map ships optional
+// content in layers that are off, so that refusal meant such a map could not publish at all. Now an actor in an off layer is left
+// out of the place, as the editor shows it: nothing loads it, the unloaded-cells check doesn't count it, and Check says once per
+// layer how many actors are left out. And Mantle has no Data Layers: an actor in a runtime layer publishes as an ordinary actor
+// whatever the layer's Initial Runtime State, which one warning now says.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleDataLayerCheckTestPrivate
@@ -22,10 +24,18 @@ namespace MantleDataLayerCheckTestPrivate
 		FEntry Entry;
 		Entry.Label = Label;
 		Entry.bLoaded = false;
-		for (const TCHAR* Layer : OffLayers)
+		for (const TCHAR* Name : OffLayers)
 		{
-			Entry.OffLayers.Add(Layer);
+			Entry.OffLayers.Add(Name);
 		}
+		return Entry;
+	}
+
+	FEntry Loaded(const TCHAR* Label)
+	{
+		FEntry Entry;
+		Entry.Label = Label;
+		Entry.bLoaded = true;
 		return Entry;
 	}
 
@@ -40,50 +50,54 @@ namespace MantleDataLayerCheckTestPrivate
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FMantleDataLayerOffIsNamedTest,
-	"Mantle.Editor.Check.AnActorInAnOffDataLayerIsNamedWithItsLayer",
+	FMantleOffDataLayerIsLeftOutTest,
+	"Mantle.Editor.Check.AnActorInAnOffDataLayerIsLeftOutWithAWarning",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
-bool FMantleDataLayerOffIsNamedTest::RunTest(const FString& Parameters)
+bool FMantleOffDataLayerIsLeftOutTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleDataLayerCheckTestPrivate;
 
 	TArray<FEntry> Entries;
-	Entries.Add(Unloaded(TEXT("L4_Cube_EditorUnloaded"), { TEXT("DL_PT_EditorUnloaded") }));
-	Entries.Add(Unloaded(TEXT("L4_FarCell_Rock")));
-	FEntry Loaded;
-	Loaded.Label = TEXT("L4_Cube_EditorLoaded");
-	Loaded.bLoaded = true;
-	Entries.Add(Loaded);
-	FEntry Hlod = Unloaded(TEXT("HLOD_Proxy"), { TEXT("DL_PT_EditorUnloaded") });
+	Entries.Add(Unloaded(TEXT("Cube_Off_1"), { TEXT("Optional Props") }));
+	Entries.Add(Unloaded(TEXT("Cube_Off_2"), { TEXT("Optional Props") }));
+	Entries.Add(Unloaded(TEXT("Lamp_Off"), { TEXT("Night Lamps") }));
+	Entries.Add(Unloaded(TEXT("Far_Rock")));
+	Entries.Add(Loaded(TEXT("Cube_On")));
+	FEntry Hlod = Unloaded(TEXT("HLOD_Proxy"), { TEXT("Optional Props") });
 	Hlod.bHLOD = true;
 	Entries.Add(Hlod);
 
-	const FMantlePlaceWorldPartition::FUnloadedSplit Split = FMantlePlaceWorldPartition::SplitUnloaded(Entries);
-	TestEqual(TEXT("one actor is out because its layer is off"), Split.LayerCount, 1);
-	TestEqual(TEXT("one is out because its cell is not loaded"), Split.CellCount, 1);
-	TestTrue(TEXT("the cell one is the rock"), Split.CellExamples.Num() == 1 && Split.CellExamples[0] == TEXT("L4_FarCell_Rock"));
-	TestTrue(TEXT("the layer one is the cube"), Split.LayerExamples.Num() == 1 && Split.LayerExamples[0] == TEXT("L4_Cube_EditorUnloaded"));
-	TestTrue(TEXT("and the layer is named once"), Split.LayerNames.Num() == 1 && Split.LayerNames[0] == TEXT("DL_PT_EditorUnloaded"));
+	// Not counted as unloaded: nothing refuses the place for them. The actor in an unloaded cell still is.
+	TArray<FString> Examples;
+	TestEqual(TEXT("only the actor in an unloaded cell is counted"), FMantlePlaceWorldPartition::CountUnloaded(Entries, Examples), 1);
+	TestTrue(TEXT("and it is the rock"), Examples.Num() == 1 && Examples[0] == TEXT("Far_Rock"));
 
-	const FString Problem = FMantlePlaceWorldPartition::DescribeLayerProblem(Split);
-	TestTrue(TEXT("the problem names the actor"), Problem.Contains(TEXT("L4_Cube_EditorUnloaded")));
-	TestTrue(TEXT("and the layer"), Problem.Contains(TEXT("DL_PT_EditorUnloaded")));
-	TestTrue(TEXT("and says it is switched off in the editor"), Problem.Contains(TEXT("switched off in the editor")));
-	TestFalse(TEXT("and says nothing about cells"), Problem.Contains(TEXT("cell")));
-	const FString Remedy = FMantlePlaceWorldPartition::DescribeLayerRemedy();
-	TestTrue(TEXT("the remedy is the Data Layers window"), Remedy.Contains(TEXT("Data Layers window")));
-	TestFalse(TEXT("not the cell advice"), Remedy.Contains(TEXT("Load Region")));
+	// One warning per layer, each with its count; the HLOD proxy isn't content.
+	const TArray<FMantlePlaceWorldPartition::FOffLayer> Layers = FMantlePlaceWorldPartition::OffLayers(Entries);
+	if (!TestEqual(TEXT("two layers are off"), Layers.Num(), 2))
+	{
+		return false;
+	}
+	TestTrue(TEXT("sorted by name"), Layers[0].Name == TEXT("Night Lamps") && Layers[1].Name == TEXT("Optional Props"));
+	TestEqual(TEXT("one lamp"), Layers[0].ActorCount, 1);
+	TestEqual(TEXT("two props"), Layers[1].ActorCount, 2);
 
-	// Several layers and actors read in the plural.
-	TArray<FEntry> Many;
-	Many.Add(Unloaded(TEXT("A"), { TEXT("Layer One") }));
-	Many.Add(Unloaded(TEXT("B"), { TEXT("Layer Two") }));
-	const FString Plural = FMantlePlaceWorldPartition::DescribeLayerProblem(FMantlePlaceWorldPartition::SplitUnloaded(Many));
-	TestTrue(TEXT("two actors in two layers"), Plural.StartsWith(TEXT("2 actors")) && Plural.Contains(TEXT("Data Layers that are switched off")) && Plural.Contains(TEXT("Layer One, Layer Two")));
+	FMantleValidationIssue Props;
+	FMantlePlaceWorldPartition::DescribeOffLayer(Layers[1], Props);
+	TestTrue(TEXT("a warning, not an error"), Props.Severity == EMantleIssueSeverity::Warning);
+	TestTrue(TEXT("for the place"), Props.Actor.IsEmpty());
+	TestEqual(TEXT("the words"), Props.Problem, FString(TEXT("Data layer 'Optional Props' is off in the editor, so its 2 actors are left out of the place.")));
+	TestTrue(TEXT("with the way to publish them"), Props.Remedy.Contains(TEXT("Turn the layer on")));
+	FMantleValidationIssue Lamp;
+	FMantlePlaceWorldPartition::DescribeOffLayer(Layers[0], Lamp);
+	TestEqual(TEXT("one actor reads in the singular"), Lamp.Problem, FString(TEXT("Data layer 'Night Lamps' is off in the editor, so its 1 actor is left out of the place.")));
 
-	// Nothing unloaded says nothing.
-	TestEqual(TEXT("a loaded level has no layer problem"), FMantlePlaceWorldPartition::SplitUnloaded({ Loaded }).LayerCount, 0);
+	// A level whose only unloaded actors are in off layers has nothing unloaded to refuse or load.
+	TArray<FEntry> OnlyOff;
+	OnlyOff.Add(Unloaded(TEXT("Cube_Off"), { TEXT("Optional Props") }));
+	TestEqual(TEXT("nothing is unloaded"), FMantlePlaceWorldPartition::CountUnloaded(OnlyOff, Examples), 0);
+	TestEqual(TEXT("an on layer says nothing"), FMantlePlaceWorldPartition::OffLayers({ Loaded(TEXT("Cube_On")) }).Num(), 0);
 	return true;
 }
 

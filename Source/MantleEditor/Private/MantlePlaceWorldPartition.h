@@ -44,32 +44,31 @@ public:
 		FString InitialState;
 	};
 
-	/** The unloaded actors of a level, split by why: a cell the editor has not loaded, or a Data Layer that is off. */
-	struct FUnloadedSplit
+	/** One Data Layer that is switched off in the editor, and how many of the level's actors it keeps out of the place. */
+	struct FOffLayer
 	{
-		int32 CellCount = 0;
-		TArray<FString> CellExamples;
-		int32 LayerCount = 0;
-		TArray<FString> LayerExamples;
-		/** The off layers that hold them, sorted, each once. */
-		TArray<FString> LayerNames;
+		FString Name;
+		int32 ActorCount = 0;
 	};
 
 	/** How many examples a message names before it stops listing. */
 	static constexpr int32 MaxNamedExamples = 5;
 
 	/**
-	 * The actors among Entries whose absence would lose content: the count, and up to
+	 * The actors among Entries whose absence would lose content (not the ones a Data Layer that is off in the editor leaves out, which
+	 * OffLayers reports): the count, and up to
 	 * MaxNamedExamples labels in a stable (sorted) order.
 	 */
 	static int32 CountUnloaded(const TArray<FActorEntry>& Entries, TArray<FString>& OutExamples);
 
-	/** The unloaded actors among Entries (CountUnloaded's rule), split by whether a Data Layer that is off keeps them out or an unloaded cell does. */
-	static FUnloadedSplit SplitUnloaded(const TArray<FActorEntry>& Entries);
+	/**
+	 * The Data Layers that are off in the editor among Entries' unloaded actors, sorted by name, each with its actor count. An actor in
+	 * an off layer is not shown in the editor, so it is left out of the place (CountUnloaded does not count it, and nothing loads it).
+	 */
+	static TArray<FOffLayer> OffLayers(const TArray<FActorEntry>& Entries);
 
-	/** The sentence for the actors a Data Layer that is off keeps out of the place, and its remedy. */
-	static FString DescribeLayerProblem(const FUnloadedSplit& Split);
-	static FString DescribeLayerRemedy();
+	/** The warning for one off layer: its name and how many actors are left out, and how to publish them. Always true. */
+	static bool DescribeOffLayer(const FOffLayer& Layer, FMantleValidationIssue& OutIssue);
 
 	/** World's Data Layers; empty for a level without a World Partition, or a game world. */
 	static TArray<FLayerEntry> GatherLayers(UWorld* World);
@@ -99,7 +98,7 @@ public:
 	/** What LoadAll did. */
 	struct FLoadResult
 	{
-		/** Actors in unloaded cells before, and still unloaded after (a data layer that is off, or a cell that would not load). */
+		/** Actors in unloaded cells before, and still unloaded after (a cell that would not load). */
 		int32 UnloadedBefore = 0;
 		int32 UnloadedAfter = 0;
 
