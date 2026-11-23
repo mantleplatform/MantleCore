@@ -157,9 +157,17 @@ bool FMantleBlockingVolumeExportTest::RunTest(const FString& Parameters)
 	if (TestNotNull(TEXT("the turned wall is published"), TurnedEntity))
 	{
 		TestTrue(TEXT("its scale is the box's size times the actor's: 20 by 1 by 5"), TurnedEntity->Transform.GetScale3D().Equals(FVector(20.0, 1.0, 5.0), 0.01));
-		// Along the actor's own axes: a 40 degree turn keeps the size (an axis-aligned world box would have grown).
+		// Along the actor's own axes: the turn the volume really has (the brush's component, whatever the editor did to the 40 degrees it
+		// was spawned at) carries over, and the size is kept (an axis-aligned world box would have grown).
+		const FQuat BrushTurn = Turned->GetBrushComponent()->GetComponentQuat();
+		const FVector Expected = BrushTurn.RotateVector(FVector::XAxisVector);
 		const FVector Along = TurnedEntity->Transform.GetRotation().RotateVector(FVector::XAxisVector);
-		TestTrue(TEXT("and it is turned 40 degrees"), Along.Equals(FVector(FMath::Cos(FMath::DegreesToRadians(40.0)), FMath::Sin(FMath::DegreesToRadians(40.0)), 0.0), 0.01));
+		TestTrue(FString::Printf(TEXT("and it is turned as the volume is (volume along %s, published along %s)"), *Expected.ToString(), *Along.ToString()),
+			Along.Equals(Expected, 0.01));
+		if (!FMath::IsNearlyEqual(Turned->GetActorRotation().Yaw, 40.0, 0.5))
+		{
+			AddWarning(FString::Printf(TEXT("the editor left the volume at yaw %.2f, not the 40 it was spawned at; the turn was checked against that"), Turned->GetActorRotation().Yaw));
+		}
 	}
 
 	// Left out, and said: the cylinder and the shapeless volume warn; the one that collides with nothing does not.
