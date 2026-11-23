@@ -162,6 +162,15 @@ public:
 	static TArray<FMantleVehicleWheelBone> FindWheelBones(const FReferenceSkeleton& Skeleton);
 
 	/**
+	 * The wheels of a body that a ChaosVehicles movement component set up (Setups, each naming the bone of its wheel): with two or more, and every one of them a bone of
+	 * Skeleton (not the root), those bones are the wheels, whatever they are called. Each one's corner is where its bone sits (front to back by X, in axles: the first is the
+	 * front, the last the back, any between them middle; left is -Y, right +Y; a bone on the center line has no side), so a car whose bones are called FLWheel, Wheel1 or
+	 * B_Wheel_Front_Left, or a scooter's FrontWheel and RearWheel, converts as one named by the recipe does. With no setups, or one that names a bone the skeleton lacks, it is
+	 * FindWheelBones(Skeleton), the names. OutHow, when given, says in plain words where the wheels came from.
+	 */
+	static TArray<FMantleVehicleWheelBone> FindWheelBones(const FReferenceSkeleton& Skeleton, TConstArrayView<FMantleVehicleWheelSetup> Setups, FString* OutHow = nullptr);
+
+	/**
 	 * A bone name's corner as the recipe's naming spells it ("_fl", "_fr", "_ml", "_mr", "_bl", "_br"; "_rl"/"_rr" read as "_bl"/"_br"),
 	 * or as the word naming does (wheel_rear_no_spin_l is "_bl"); empty for none.
 	 */
@@ -206,7 +215,18 @@ public:
 	 * read from its physics (ReadChassisPhysics) when the tuning sets neither. A movement component's wheel setups size the wheels
 	 * that have no size of their own, and its mass and steering angle replace the tuning's while those are the defaults.
 	 */
-	static FMantleVehicleConversion Convert(USkeletalMesh* Mesh, UMantleVehicleSource& Source, const FMantleVehicleSurroundings& Around);
+	static FMantleVehicleConversion Convert(USkeletalMesh* Mesh, UMantleVehicleSource& Source, const FMantleVehicleSurroundings& Around, const FString& SplitFolder = FString());
+
+	/**
+	 * A body that draws more materials than a published vehicle's body may (FMantleVehicleLimits::MaxSections) does not stop Convert: it is split as the builder splits a
+	 * model (FMantleVehicleBodySplit): the body keeps the materials with the most triangles, up to the limit, and the triangles of the others become parts that ride the
+	 * bones they were weighted to, each with its material and place, so the vehicle looks as the model does. Mesh itself is not touched: the body is a copy of it, saved as
+	 * SKM_<Mesh>_Body with the parts beside it in SplitFolder (a game path; empty makes throwaway /Temp assets, nothing on disk). OutBody is that copy, OutParts the parts
+	 * (FoundOn FMantleVehicleBodySplit::FoundOn()), OutNotes what was done. False, with OutProblem a clause for a sentence, when the body cannot be split.
+	 * Source's lights and rims stay on the body, where the game switches them.
+	 */
+	static bool SplitExtraMaterials(USkeletalMesh& Mesh, const UMantleVehicleSource& Source, const FString& SplitFolder, USkeletalMesh*& OutBody, TArray<FMantleVehicleSourcePart>& OutParts,
+		TArray<FString>& OutNotes, FString& OutProblem);
 
 	/**
 	 * Convert, into <Mesh>_Vehicle beside the mesh (made, or updated keeping its tuning, parts and the collision and center of
