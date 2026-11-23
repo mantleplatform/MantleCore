@@ -1848,6 +1848,9 @@ namespace MantleCellStreamerTestPrivate
 		Settings.FarSets.bEnabled = true;
 		Settings.FarSets.bRequireNanite = false;
 		Settings.FarSets.ThinnedStride = 2;
+		// These tests lay out their cells for a reach of 3 x the drawDistance (450 m for 150 m cells): they test how twins come and go, not the product's reach number (FarSet.Plan.Reach does).
+		Settings.FarSets.ReachFactor = 3.0;
+		Settings.FarSets.MaxReachCm = 200000.0;
 		return Settings;
 	}
 

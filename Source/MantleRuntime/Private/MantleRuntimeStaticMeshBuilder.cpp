@@ -53,12 +53,16 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 	 * whatever the mesh description has (UE 5.8), so every fast-built LOD would carry eight UVs a vertex, on the
 	 * CPU and the GPU. Tangents are kept byte for byte and each kept UV as stored (a half-precision UV reads
 	 * back and writes again unchanged). Before InitResources only: the buffer's CPU data is replaced.
+	 *
+	 * bNeedsCPUAccess is the buffer's own flag from here on: the engine's fast build always sets it, and a buffer that has it keeps its CPU copy after the GPU upload
+	 * (FResourceArrayInterface::GetAllowCPUAccess), so a picture-only mesh would hold every vertex twice. A buffer that already has the flag asked for and no channel to cut is left alone.
 	 */
-	void TrimTexCoordChannels(FStaticMeshVertexBuffer& Buffer, const int32 Channels)
+	void TrimTexCoordChannels(FStaticMeshVertexBuffer& Buffer, const int32 Channels, const bool bNeedsCPUAccess)
 	{
 		const uint32 NumVertices = Buffer.GetNumVertices();
-		const uint32 Keep = static_cast<uint32>(FMath::Max(1, Channels));
-		if (NumVertices == 0 || Buffer.GetNumTexCoords() <= Keep || !Buffer.GetTangentData() || !Buffer.GetTexCoordData())
+		const uint32 Keep = FMath::Min(Buffer.GetNumTexCoords(), static_cast<uint32>(FMath::Max(1, Channels)));
+		if (NumVertices == 0 || Buffer.GetNumTexCoords() == 0 || !Buffer.GetTangentData() || !Buffer.GetTexCoordData()
+			|| (Buffer.GetNumTexCoords() <= Keep && Buffer.GetAllowCPUAccess() == bNeedsCPUAccess))
 		{
 			return;
 		}
@@ -79,8 +83,7 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 		Buffer.CleanUp();
 		Buffer.SetUseFullPrecisionUVs(bFullPrecisionUVs);
 		Buffer.SetUseHighPrecisionTangentBasis(bHighPrecisionTangents);
-		// The fast build keeps a CPU copy (FStaticMeshVertexBufferFlags::bNeedsCPUAccess); so does this.
-		Buffer.Init(NumVertices, Keep, /*bNeedsCPUAccess*/ true);
+		Buffer.Init(NumVertices, Keep, bNeedsCPUAccess);
 		FMemory::Memcpy(Buffer.GetTangentData(), Tangents.GetData(), Tangents.Num());
 		for (uint32 Vertex = 0; Vertex < NumVertices; ++Vertex)
 		{
@@ -88,6 +91,37 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 			{
 				Buffer.SetVertexUV(Vertex, Channel, UVs[static_cast<int32>(Vertex * Keep + Channel)]);
 			}
+		}
+	}
+
+	/**
+	 * Gives the LOD's position and colour buffers the same CPU-access flag as TrimTexCoordChannels gives the tangent and UV buffer: the engine's fast build makes them with the
+	 * default (a copy kept after the GPU upload), which a mesh drawn but never collided with does not need. The data is copied out, the buffer made again without the flag, and
+	 * copied back (the engine has no public setter for the flag). A buffer that already has it is left alone. Before InitResources only.
+	 */
+	void SetPositionAndColorCPUAccess(FStaticMeshVertexBuffers& Buffers, const bool bNeedsCPUAccess)
+	{
+		FPositionVertexBuffer& Positions = Buffers.PositionVertexBuffer;
+		if (Positions.GetNumVertices() > 0 && Positions.GetAllowCPUAccess() != bNeedsCPUAccess)
+		{
+			TArray<FVector3f> Copy;
+			Copy.SetNumUninitialized(static_cast<int32>(Positions.GetNumVertices()));
+			for (int32 Vertex = 0; Vertex < Copy.Num(); ++Vertex)
+			{
+				Copy[Vertex] = Positions.VertexPosition(static_cast<uint32>(Vertex));
+			}
+			Positions.Init(Copy, bNeedsCPUAccess);
+		}
+		FColorVertexBuffer& Colors = Buffers.ColorVertexBuffer;
+		if (Colors.GetNumVertices() > 0 && Colors.GetAllowCPUAccess() != bNeedsCPUAccess)
+		{
+			TArray<FColor> Copy;
+			Copy.SetNumUninitialized(static_cast<int32>(Colors.GetNumVertices()));
+			for (int32 Vertex = 0; Vertex < Copy.Num(); ++Vertex)
+			{
+				Copy[Vertex] = Colors.VertexColor(static_cast<uint32>(Vertex));
+			}
+			Colors.InitFromColorArray(Copy.GetData(), static_cast<uint32>(Copy.Num()), sizeof(FColor), bNeedsCPUAccess);
 		}
 	}
 
@@ -244,6 +278,8 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 		const bool bCollisionTriangles = Params.bComplexCollision && !(bSimpleCollision && Simple->bSimpleAsComplex);
 		const bool bCPUAccess = Params.bAllowCPUAccess || bCollisionTriangles;
 		Built->bAllowCPUAccess = bCPUAccess;
+		// The vertex buffers follow the index buffer: a CPU copy only where something reads the triangles back (collision), or where the buffers are never uploaded.
+		const bool bVertexCPUCopies = FMantleRuntimeStaticMeshBuilder::KeepsVertexCPUCopies(bCPUAccess, Params.bInitRenderResources);
 
 		// UStaticMesh::BuildFromMeshDescriptions' fast path (UE 5.8 StaticMesh.cpp, for a mesh with no render
 		// resources yet), step for step, with one step added: each LOD's texture coordinates are cut to the
@@ -270,7 +306,7 @@ namespace MantleRuntimeStaticMeshBuilderPrivate
 			}
 			{
 				TRACE_CPUPROFILER_EVENT_SCOPE_STR("MantleStaticMesh_TrimUVs");
-				TrimTexCoordChannels(LODResources.VertexBuffers.StaticMeshVertexBuffer, AuthoredChannels);
+				FMantleRuntimeStaticMeshBuilder::SetVertexCPUAccess(LODResources.VertexBuffers, AuthoredChannels, bVertexCPUCopies);
 			}
 		}
 		// The full-detail Nanite data goes on before the render resources are initialized
@@ -588,6 +624,19 @@ bool FMantleRuntimeStaticMeshBuilder::ShouldInitRenderResources(const bool bRequ
 	// The engine's own condition (the check in FStaticMeshRenderData::InitResources): a process that can render,
 	// or an uncooked one (the editor, a commandlet), which may initialize render resources as it always has.
 	return bRequested && FApp::CanEverRenderOrProduceRenderData();
+}
+
+bool FMantleRuntimeStaticMeshBuilder::KeepsVertexCPUCopies(const bool bMeshCPUAccess, const bool bInitRenderResources)
+{
+	// Without render resources nothing uploads the buffers, so there is no copy to give back: they are the mesh.
+	return bMeshCPUAccess || !ShouldInitRenderResources(bInitRenderResources);
+}
+
+void FMantleRuntimeStaticMeshBuilder::SetVertexCPUAccess(FStaticMeshVertexBuffers& Buffers, const int32 AuthoredChannels, const bool bNeedsCPUAccess)
+{
+	using namespace MantleRuntimeStaticMeshBuilderPrivate;
+	TrimTexCoordChannels(Buffers.StaticMeshVertexBuffer, AuthoredChannels, bNeedsCPUAccess);
+	SetPositionAndColorCPUAccess(Buffers, bNeedsCPUAccess);
 }
 
 UStaticMesh* FMantleRuntimeStaticMeshBuilder::Build(const FMantleRuntimeMesh& Mesh, const FMantleStaticMeshBuildParams& Params, FString* OutError)

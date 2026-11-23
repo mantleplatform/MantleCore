@@ -284,26 +284,26 @@ bool FMantleStreamBudgetReachTest::RunTest(const FString& Parameters)
 	// The two-argument one is the whole reach whatever the settings say.
 	TestTrue(TEXT("the plain IsWanted is unchanged"), FMantleCellStreamPlan::IsWanted(Cell, Path));
 
-	// The far sets: reach 3 x 600 m = 1,800 m (the cap is 2 km); the cell is 3.5 km from this view.
+	// The far sets: reach 2.5 x 600 m = 1,500 m (the cap is 1.5 km); the cell is 3.5 km from this view.
 	FMantleFarSetSettings Far;
 	Far.bEnabled = true;
 	const FMantleCellInfo FarCell = CellAt(350000.0, 356400.0, 60000.0);
-	TestFalse(TEXT("3,500 m is past the reach of 1,800 m"), FMantleFarSetPlan::IsWanted(FarCell, Path, Far));
+	TestFalse(TEXT("3,500 m is past the reach of 1,500 m"), FMantleFarSetPlan::IsWanted(FarCell, Path, Far));
 	const FMantleCellInfo MidCell = CellAt(120000.0, 126400.0, 60000.0);
 	TestTrue(TEXT("1,200 m is inside it"), FMantleFarSetPlan::IsWanted(MidCell, Path, Far));
-	TestEqual(TEXT("the twin is made with the whole reach"), FMantleFarSetPlan::ReachOf(MidCell, Far), 180000.0);
+	TestEqual(TEXT("the twin is made with the whole reach"), FMantleFarSetPlan::ReachOf(MidCell, Far), 150000.0);
 	Far.ReachScale = 0.5;
-	TestEqual(TEXT("half scale: 900 m live"), FMantleFarSetPlan::LiveReachOf(MidCell, Far), 90000.0);
-	TestEqual(TEXT("the twin is still made with the whole reach"), FMantleFarSetPlan::ReachOf(MidCell, Far), 180000.0);
+	TestEqual(TEXT("half scale: 750 m live"), FMantleFarSetPlan::LiveReachOf(MidCell, Far), 75000.0);
+	TestEqual(TEXT("the twin is still made with the whole reach"), FMantleFarSetPlan::ReachOf(MidCell, Far), 150000.0);
 	TestFalse(TEXT("1,200 m is now past it"), FMantleFarSetPlan::IsWanted(MidCell, Path, Far));
-	const FMantleCellInfo CloserCell = CellAt(80000.0, 86400.0, 60000.0);
-	TestTrue(TEXT("800 m is inside"), FMantleFarSetPlan::IsWanted(CloserCell, Path, Far));
+	const FMantleCellInfo CloserCell = CellAt(60000.0, 66400.0, 60000.0);
+	TestTrue(TEXT("600 m is inside"), FMantleFarSetPlan::IsWanted(CloserCell, Path, Far));
 	Far.ReachScale = 0.0;
 	TestFalse(TEXT("scale 0 wants none, not even the cell the view stands in"), FMantleFarSetPlan::IsWanted(CellAt(-100.0, 6300.0, 60000.0), Path, Far));
-	// Released: with scale 0.5 the live reach is 900 m, release at the larger of 1,080 m and 925 m.
+	// Released: with scale 0.5 the live reach is 750 m, release at the larger of 900 m and 775 m.
 	Far.ReachScale = 0.5;
-	TestFalse(TEXT("a twin 1,000 m away is kept (inside 1,080 m)"), FMantleFarSetPlan::IsReleased(CellAt(100000.0, 106400.0, 60000.0), Path, Far));
-	TestTrue(TEXT("one 1,100 m away is let go"), FMantleFarSetPlan::IsReleased(CellAt(110000.0, 116400.0, 60000.0), Path, Far));
+	TestFalse(TEXT("a twin 850 m away is kept (inside 900 m)"), FMantleFarSetPlan::IsReleased(CellAt(85000.0, 91400.0, 60000.0), Path, Far));
+	TestTrue(TEXT("one 950 m away is let go"), FMantleFarSetPlan::IsReleased(CellAt(95000.0, 101400.0, 60000.0), Path, Far));
 
 	// A twin is built from half the cell's drawDistance (300 m), and not at all once a budget has given the far sets up (the real cells' reach shrinks only after that).
 	Far.ReachScale = 1.0;

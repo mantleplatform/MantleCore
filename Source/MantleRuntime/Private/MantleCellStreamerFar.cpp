@@ -3,6 +3,7 @@
 #include "MantleCellStreamer.h"
 
 #include "MantleAssetLibrary.h"
+#include "MaterialShared.h"
 #include "MantleRuntime.h"
 
 #include "Components/InstancedStaticMeshComponent.h"
@@ -462,9 +463,27 @@ bool FMantleCellStreamer::BuildOneFar()
 		const UStaticMesh* Mesh = FMantleAssetLibrary::Get().LoadMesh(MeshProps->Mesh, Error);
 		if (!Mesh || !Mesh->HasValidNaniteData())
 		{
+			// A see-through material (road paint, decals) is why the converter publishes a mesh without Nanite data: counted apart, so the summary shows what is a hole and what is not.
+			bool bSeeThrough = false;
+			for (const FString& MaterialId : MeshProps->Materials)
+			{
+				FString MaterialError;
+				const UMaterialInterface* Material = FMantlePlaceAssets::IsUploadedId(MaterialId) ? FMantleAssetLibrary::Get().LoadMaterial(MaterialId, MaterialError) : nullptr;
+				if (Material && IsTranslucentBlendMode(*Material))
+				{
+					bSeeThrough = true;
+					break;
+				}
+			}
 			bBuild = false;
 			++Stats.FarEntitiesLeftOut;
 			++Stats.FarLeftOutNoNanite;
+			if (FMantleFarSetPlan::ClassifyNaniteLeftOut(false, bSeeThrough) == FMantleFarSetPlan::ENaniteLeftOut::SeeThrough)
+			{
+				const FMantleInstancedMeshProps* Listed = Far.Twin.Props.TryGet<FMantleInstancedMeshProps>();
+				++Stats.FarLeftOutSeeThrough;
+				Stats.FarLeftOutSeeThroughInstances += Listed ? Listed->Instances.Num() : 1;
+			}
 		}
 	}
 	int64 InstanceCount = 0;
@@ -710,8 +729,8 @@ void FMantleCellStreamer::LogFarSummary(const TCHAR* Why) const
 		return;
 	}
 	UE_LOG(LogMantle, Log,
-		TEXT("MANTLE_FARSET_SUMMARY %s: sets made %lld built %lld released %lld standing %d, entities built %lld (instances %lld), left out %lld (no Nanite %lld, changed here %lld), hand-offs %lld, batches to far %lld to real %lld, build %.2f s remove %.2f s toggle %.3f s (worst %.2f ms), longest twin %.2f ms, change scans %lld (%.3f s, worst %.2f ms), audits %lld double draws %lld gaps %lld"),
-		Why, Stats.FarSetsMade, Stats.FarSetsBuiltEver, Stats.FarSetsReleased, Stats.FarSetsStanding, Stats.FarEntitiesBuilt, Stats.FarInstancesBuilt, Stats.FarEntitiesLeftOut, Stats.FarLeftOutNoNanite, Stats.FarEntitiesChanged,
+		TEXT("MANTLE_FARSET_SUMMARY %s: sets made %lld built %lld released %lld standing %d, entities built %lld (instances %lld), left out %lld (no Nanite %lld, of which see-through %lld with %lld instances, changed here %lld), hand-offs %lld, batches to far %lld to real %lld, build %.2f s remove %.2f s toggle %.3f s (worst %.2f ms), longest twin %.2f ms, change scans %lld (%.3f s, worst %.2f ms), audits %lld double draws %lld gaps %lld"),
+		Why, Stats.FarSetsMade, Stats.FarSetsBuiltEver, Stats.FarSetsReleased, Stats.FarSetsStanding, Stats.FarEntitiesBuilt, Stats.FarInstancesBuilt, Stats.FarEntitiesLeftOut, Stats.FarLeftOutNoNanite, Stats.FarLeftOutSeeThrough, Stats.FarLeftOutSeeThroughInstances, Stats.FarEntitiesChanged,
 		Stats.FarHandOffs, Stats.FarBatchesShown, Stats.FarBatchesHidden, Stats.FarBuildSeconds, Stats.FarRemoveSeconds, Stats.FarToggleSeconds, Stats.WorstFarToggleSeconds * 1000.0,
 		Stats.LongestFarUnitSeconds * 1000.0, Stats.FarChangeScans, Stats.FarChangeScanSeconds, Stats.WorstFarChangeScanSeconds * 1000.0, Stats.FarAuditRuns, Stats.FarAuditDoubleDraws, Stats.FarAuditGaps);
 }

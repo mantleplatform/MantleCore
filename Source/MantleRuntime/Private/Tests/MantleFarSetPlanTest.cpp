@@ -64,10 +64,11 @@ bool FMantleFarSetPlanReachTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("14,999 cm: no twin"), FMantleFarSetPlan::CellHasFarSet(MakeCell(FVector::ZeroVector, FVector(100), 14999.0), Settings));
 	TestTrue(TEXT("15,000 cm: a twin"), FMantleFarSetPlan::CellHasFarSet(MakeCell(FVector::ZeroVector, FVector(100), 15000.0), Settings));
 	TestFalse(TEXT("switched off: none"), FMantleFarSetPlan::CellHasFarSet(MakeCell(FVector::ZeroVector, FVector(100), 60000.0), FMantleFarSetSettings()));
-	// 3 x the drawDistance, at most 2 km: 150 m reaches 450 m, 600 m reaches 1.8 km, a 2.5 km cell is held to 2 km.
-	TestEqual(TEXT("150 m reaches 450 m"), FMantleFarSetPlan::ReachOf(MakeCell(FVector::ZeroVector, FVector(100), 15000.0), Settings), 45000.0);
-	TestEqual(TEXT("600 m reaches 1,800 m"), FMantleFarSetPlan::ReachOf(MakeCell(FVector::ZeroVector, FVector(100), 60000.0), Settings), 180000.0);
-	TestEqual(TEXT("2.5 km is held to 2 km"), FMantleFarSetPlan::ReachOf(MakeCell(FVector::ZeroVector, FVector(100), 250000.0), Settings), 200000.0);
+	// 2.5 x the drawDistance, at most 1.5 km: 150 m reaches 375 m, 600 m reaches 1.5 km, a 2.5 km cell is held to 1.5 km.
+	TestEqual(TEXT("150 m reaches 375 m"), FMantleFarSetPlan::ReachOf(MakeCell(FVector::ZeroVector, FVector(100), 15000.0), Settings), 37500.0);
+	TestEqual(TEXT("600 m reaches 1,500 m"), FMantleFarSetPlan::ReachOf(MakeCell(FVector::ZeroVector, FVector(100), 60000.0), Settings), 150000.0);
+	TestEqual(TEXT("a 1 km cell is held to 1,500 m"), FMantleFarSetPlan::ReachOf(MakeCell(FVector::ZeroVector, FVector(100), 100000.0), Settings), 150000.0);
+	TestEqual(TEXT("2.5 km is held to 1,500 m"), FMantleFarSetPlan::ReachOf(MakeCell(FVector::ZeroVector, FVector(100), 250000.0), Settings), 150000.0);
 	return true;
 }
 
@@ -88,20 +89,20 @@ bool FMantleFarSetPlanWantedTest::RunTest(const FString& Parameters)
 		Path.Add(FVector(25600.0 + DistanceFromEdge, 100, 0));
 		return Path;
 	};
-	// Wanted out to the reach (180,000): exactly there yes, a centimetre more no.
-	TestTrue(TEXT("on the reach"), FMantleFarSetPlan::IsWanted(Cell, PathAt(180000.0), Settings));
-	TestFalse(TEXT("1 cm past the reach"), FMantleFarSetPlan::IsWanted(Cell, PathAt(180001.0), Settings));
+	// Wanted out to the reach (150,000): exactly there yes, a centimetre more no.
+	TestTrue(TEXT("on the reach"), FMantleFarSetPlan::IsWanted(Cell, PathAt(150000.0), Settings));
+	TestFalse(TEXT("1 cm past the reach"), FMantleFarSetPlan::IsWanted(Cell, PathAt(150001.0), Settings));
 	// A cell of no twin is never wanted, however near.
 	TestFalse(TEXT("a 120 m cell has none"), FMantleFarSetPlan::IsWanted(MakeCell(FVector::ZeroVector, FVector(6400, 6400, 500), 12000.0), PathAt(100.0), Settings));
-	// Released past reach x 1.2 = 216,000 (more than reach + 2,500): on it no, past it yes.
-	TestFalse(TEXT("on the release distance"), FMantleFarSetPlan::IsReleased(Cell, PathAt(216000.0), Settings));
-	TestTrue(TEXT("1 cm past it"), FMantleFarSetPlan::IsReleased(Cell, PathAt(216001.0), Settings));
-	// A 150 m cell reaches 45,000: x 1.2 is 54,000 and reach + 2,500 is 47,500, the larger rules, so it is released past 54,000.
+	// Released past reach x 1.2 = 180,000 (more than reach + 2,500): on it no, past it yes.
+	TestFalse(TEXT("on the release distance"), FMantleFarSetPlan::IsReleased(Cell, PathAt(180000.0), Settings));
+	TestTrue(TEXT("1 cm past it"), FMantleFarSetPlan::IsReleased(Cell, PathAt(180001.0), Settings));
+	// A 150 m cell reaches 37,500: x 1.2 is 45,000 and reach + 2,500 is 40,000, the larger rules, so it is released past 45,000.
 	const FMantleCellInfo Small = MakeCell(FVector(0, 0, 0), FVector(100, 100, 100), 15000.0);
 	FMantleCellStreamPlan::FPath SmallPath;
-	SmallPath.Add(FVector(100 + 54000.0, 50, 50));
-	TestFalse(TEXT("on 1.2 x 45,000"), FMantleFarSetPlan::IsReleased(Small, SmallPath, Settings));
-	SmallPath[0].X = 100 + 54001.0;
+	SmallPath.Add(FVector(100 + 45000.0, 50, 50));
+	TestFalse(TEXT("on 1.2 x 37,500"), FMantleFarSetPlan::IsReleased(Small, SmallPath, Settings));
+	SmallPath[0].X = 100 + 45001.0;
 	TestTrue(TEXT("past it"), FMantleFarSetPlan::IsReleased(Small, SmallPath, Settings));
 	// Built only past half the drawDistance (30,000): on it no, past it yes.
 	TestFalse(TEXT("on the half"), FMantleFarSetPlan::NeedsBuilding(Cell, PathAt(30000.0), Settings));
@@ -110,6 +111,23 @@ bool FMantleFarSetPlanWantedTest::RunTest(const FString& Parameters)
 	FMantleCellStreamPlan::FPath Two = PathAt(200000.0);
 	Two.Add(FVector(25600.0 + 100000.0, 100, 0));
 	TestTrue(TEXT("the nearer point is within reach"), FMantleFarSetPlan::IsWanted(Cell, Two, Settings));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleFarSetPlanNaniteLeftOutTest,
+	"Mantle.Runtime.FarSet.Plan.NaniteLeftOut",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleFarSetPlanNaniteLeftOutTest::RunTest(const FString& Parameters)
+{
+	using Left = FMantleFarSetPlan::ENaniteLeftOut;
+	// A mesh with its Nanite data is built, see-through material or not (a mesh is published with both only if the converter let it through).
+	TestTrue(TEXT("Nanite data, opaque: kept"), FMantleFarSetPlan::ClassifyNaniteLeftOut(true, false) == Left::Kept);
+	TestTrue(TEXT("Nanite data, see-through: kept"), FMantleFarSetPlan::ClassifyNaniteLeftOut(true, true) == Left::Kept);
+	// Without it, a see-through material is the converter's own reason (road paint, decals); anything else is a mesh that should have had it.
+	TestTrue(TEXT("no Nanite data, see-through: counted as see-through"), FMantleFarSetPlan::ClassifyNaniteLeftOut(false, true) == Left::SeeThrough);
+	TestTrue(TEXT("no Nanite data, opaque: counted as no Nanite"), FMantleFarSetPlan::ClassifyNaniteLeftOut(false, false) == Left::NoNanite);
 	return true;
 }
 

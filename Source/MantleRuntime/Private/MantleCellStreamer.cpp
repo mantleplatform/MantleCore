@@ -6,9 +6,12 @@
 #include "MantleRuntime.h"
 
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "HAL/PlatformTime.h"
+#include "StaticMeshResources.h"
+#include "UObject/UObjectIterator.h"
 
 namespace MantleCellStreamerPrivate
 {
@@ -1553,6 +1556,27 @@ void FMantleCellStreamer::LogSummary(const TCHAR* Why) const
 		Stats.LongestUnitSeconds * 1000.0, Stats.LongestUnitEntity.IsEmpty() ? TEXT("-") : *Stats.LongestUnitEntity, Stats.WorstWorkSeconds * 1000.0, Stats.SlowTicks, Stats.BuildErrors,
 		Stats.CellAssetsAsked, Stats.LongestAssetWaitSeconds, Stats.AssetWaitTimeouts, Stats.AssetsMissing, Stats.EntitiesWithoutMesh);
 	LogFarSummary(Why);
+	// What the place's meshes still hold in RAM beside their GPU copy (the engine's own count of the buffers that keep CPU access), split by whether the mesh allows CPU access (collision).
+	{
+		int32 Meshes = 0;
+		int32 CollisionMeshes = 0;
+		int64 PictureBytes = 0;
+		int64 CollisionBytes = 0;
+		for (TObjectIterator<UStaticMesh> It; It; ++It)
+		{
+			const UStaticMesh* Mesh = *It;
+			if (!Mesh->GetName().StartsWith(TEXT("MantlePlaceMesh")) || !Mesh->GetRenderData())
+			{
+				continue;
+			}
+			const int64 Bytes = static_cast<int64>(Mesh->GetRenderData()->GetCPUAccessMemoryOverhead());
+			++Meshes;
+			CollisionMeshes += Mesh->bAllowCPUAccess ? 1 : 0;
+			(Mesh->bAllowCPUAccess ? CollisionBytes : PictureBytes) += Bytes;
+		}
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_MESH_CPU_COPIES %s: %d place meshes, %d with CPU access (collision) hold %.0f MB of CPU copies, %d without hold %.0f MB"),
+			Why, Meshes, CollisionMeshes, CollisionBytes / (1024.0 * 1024.0), Meshes - CollisionMeshes, PictureBytes / (1024.0 * 1024.0));
+	}
 	if (Stats.BudgetLooks > 0)
 	{
 		UE_LOG(LogMantle, Log,

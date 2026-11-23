@@ -181,6 +181,136 @@ bool FMantleStaticMeshHeadlessBuildTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+namespace MantleHeadlessMeshBuildTestPrivate
+{
+	/** Whether every LOD's position, colour, tangent and UV buffer keeps its CPU copy (all true, all false, or a mix: -1). */
+	int32 VertexCopyState(const UStaticMesh& Mesh)
+	{
+		const FStaticMeshRenderData* RenderData = Mesh.GetRenderData();
+		if (!RenderData || RenderData->LODResources.IsEmpty())
+		{
+			return -1;
+		}
+		int32 Kept = 0;
+		int32 Total = 0;
+		for (const FStaticMeshLODResources& LOD : RenderData->LODResources)
+		{
+			Kept += LOD.VertexBuffers.PositionVertexBuffer.GetAllowCPUAccess() ? 1 : 0;
+			Kept += LOD.VertexBuffers.ColorVertexBuffer.GetAllowCPUAccess() ? 1 : 0;
+			Kept += LOD.VertexBuffers.StaticMeshVertexBuffer.GetAllowCPUAccess() ? 1 : 0;
+			Total += 3;
+		}
+		return Kept == Total ? 1 : (Kept == 0 ? 0 : -1);
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStaticMeshVertexCPUCopiesTest,
+	"Mantle.Runtime.StaticMesh.VertexCPUCopies",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStaticMeshVertexCPUCopiesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleHeadlessMeshBuildTestPrivate;
+
+	// The rule: a copy where collision reads the triangles back, and where nothing uploads the buffers; none for a mesh that is drawn only.
+	TestTrue(TEXT("collision mesh, render resources: kept"), FMantleRuntimeStaticMeshBuilder::KeepsVertexCPUCopies(true, true));
+	TestTrue(TEXT("collision mesh, none: kept"), FMantleRuntimeStaticMeshBuilder::KeepsVertexCPUCopies(true, false));
+	TestTrue(TEXT("picture mesh without render resources (a server's): kept, there is no upload"), FMantleRuntimeStaticMeshBuilder::KeepsVertexCPUCopies(false, false));
+	TestTrue(TEXT("picture mesh with render resources: given back wherever the process can render"),
+		FMantleRuntimeStaticMeshBuilder::KeepsVertexCPUCopies(false, true) == !FApp::CanEverRenderOrProduceRenderData());
+
+	// The buffers: every value survives both ways, the flag is what was asked for, and the UV channels are cut.
+	{
+		constexpr uint32 Count = 5;
+		constexpr uint32 Channels = 3;
+		FStaticMeshVertexBuffers Buffers;
+		TArray<FVector3f> Positions;
+		TArray<FColor> Colors;
+		for (uint32 Vertex = 0; Vertex < Count; ++Vertex)
+		{
+			Positions.Add(FVector3f(1.0f + Vertex, 2.0f * Vertex, -3.0f * Vertex));
+			Colors.Add(FColor(static_cast<uint8>(10 * Vertex), static_cast<uint8>(20 + Vertex), 30, 255));
+		}
+		Buffers.PositionVertexBuffer.Init(Positions, /*bNeedsCPUAccess*/ true);
+		Buffers.ColorVertexBuffer.InitFromColorArray(Colors.GetData(), Count, sizeof(FColor), /*bNeedsCPUAccess*/ true);
+		Buffers.StaticMeshVertexBuffer.Init(Count, Channels, /*bNeedsCPUAccess*/ true);
+		for (uint32 Vertex = 0; Vertex < Count; ++Vertex)
+		{
+			Buffers.StaticMeshVertexBuffer.SetVertexTangents(Vertex, FVector3f(1, 0, 0), FVector3f(0, 1, 0), FVector3f(0, 0, 1));
+			for (uint32 Channel = 0; Channel < Channels; ++Channel)
+			{
+				Buffers.StaticMeshVertexBuffer.SetVertexUV(Vertex, Channel, FVector2f(0.25f * Vertex, 0.5f * Channel));
+			}
+		}
+		const FVector4f TangentZBefore = Buffers.StaticMeshVertexBuffer.VertexTangentZ(2);
+
+		FMantleRuntimeStaticMeshBuilder::SetVertexCPUAccess(Buffers, /*AuthoredChannels*/ 2, /*bNeedsCPUAccess*/ false);
+		TestFalse(TEXT("positions: no CPU copy asked for"), Buffers.PositionVertexBuffer.GetAllowCPUAccess());
+		TestFalse(TEXT("colours: no CPU copy asked for"), Buffers.ColorVertexBuffer.GetAllowCPUAccess());
+		TestFalse(TEXT("tangents and UVs: no CPU copy asked for"), Buffers.StaticMeshVertexBuffer.GetAllowCPUAccess());
+		TestEqual(TEXT("UV channels cut to the authored ones"), static_cast<int32>(Buffers.StaticMeshVertexBuffer.GetNumTexCoords()), 2);
+		TestEqual(TEXT("vertex count kept"), static_cast<int32>(Buffers.PositionVertexBuffer.GetNumVertices()), static_cast<int32>(Count));
+		TestEqual(TEXT("colour count kept"), static_cast<int32>(Buffers.ColorVertexBuffer.GetNumVertices()), static_cast<int32>(Count));
+		for (uint32 Vertex = 0; Vertex < Count; ++Vertex)
+		{
+			TestTrue(TEXT("position kept"), Buffers.PositionVertexBuffer.VertexPosition(Vertex) == Positions[Vertex]);
+			TestTrue(TEXT("colour kept"), Buffers.ColorVertexBuffer.VertexColor(Vertex) == Colors[Vertex]);
+			for (uint32 Channel = 0; Channel < 2; ++Channel)
+			{
+				TestTrue(TEXT("UV kept"), Buffers.StaticMeshVertexBuffer.GetVertexUV(Vertex, Channel).Equals(FVector2f(0.25f * Vertex, 0.5f * Channel), 0.001f));
+			}
+		}
+		TestTrue(TEXT("tangent kept"), Buffers.StaticMeshVertexBuffer.VertexTangentZ(2).Equals(TangentZBefore, 0.01f));
+
+		// Asked again without a change: nothing is made again.
+		FMantleRuntimeStaticMeshBuilder::SetVertexCPUAccess(Buffers, 2, false);
+		TestFalse(TEXT("still no copy"), Buffers.PositionVertexBuffer.GetAllowCPUAccess());
+		// And back: a mesh upgraded in place would get its copies again with every value.
+		FMantleRuntimeStaticMeshBuilder::SetVertexCPUAccess(Buffers, 2, true);
+		TestTrue(TEXT("positions: copy asked for again"), Buffers.PositionVertexBuffer.GetAllowCPUAccess());
+		TestTrue(TEXT("colours: copy asked for again"), Buffers.ColorVertexBuffer.GetAllowCPUAccess());
+		TestTrue(TEXT("tangents and UVs: copy asked for again"), Buffers.StaticMeshVertexBuffer.GetAllowCPUAccess());
+		for (uint32 Vertex = 0; Vertex < Count; ++Vertex)
+		{
+			TestTrue(TEXT("position kept both ways"), Buffers.PositionVertexBuffer.VertexPosition(Vertex) == Positions[Vertex]);
+			TestTrue(TEXT("colour kept both ways"), Buffers.ColorVertexBuffer.VertexColor(Vertex) == Colors[Vertex]);
+		}
+	}
+
+	// The builds: a mesh with no collision follows the rule, a mesh with complex collision keeps its copies and still cooks and reads its triangles back.
+	const FMantleRuntimeMesh Box = MakeBox();
+	FString Error;
+	FMantleStaticMeshBuildParams Picture;
+	Picture.bComplexCollision = false;
+	TStrongObjectPtr<UStaticMesh> PictureMesh(FMantleRuntimeStaticMeshBuilder::Build(Box, Picture, &Error));
+	if (!TestNotNull(TEXT("the picture mesh builds"), PictureMesh.Get()))
+	{
+		AddError(Error);
+		return false;
+	}
+	TestFalse(TEXT("a picture mesh allows no CPU access"), PictureMesh->bAllowCPUAccess);
+	const bool bPictureKeeps = FMantleRuntimeStaticMeshBuilder::KeepsVertexCPUCopies(false, true);
+	TestEqual(TEXT("a picture mesh's vertex buffers follow the rule"), VertexCopyState(*PictureMesh), bPictureKeeps ? 1 : 0);
+
+	FMantleStaticMeshBuildParams Solid;
+	Solid.bComplexCollision = true;
+	Solid.bCookCollisionNow = true;
+	TStrongObjectPtr<UStaticMesh> SolidMesh(FMantleRuntimeStaticMeshBuilder::Build(Box, Solid, &Error));
+	if (!TestNotNull(TEXT("the solid mesh builds"), SolidMesh.Get()))
+	{
+		AddError(Error);
+		return false;
+	}
+	TestTrue(TEXT("a solid mesh allows CPU access"), SolidMesh->bAllowCPUAccess);
+	TestEqual(TEXT("a solid mesh keeps every vertex copy"), VertexCopyState(*SolidMesh), 1);
+	FTriMeshCollisionData Collision;
+	TestTrue(TEXT("a solid mesh's triangles read back"), SolidMesh->GetPhysicsTriMeshData(&Collision, true));
+	TestEqual(TEXT("with all its vertices"), Collision.Vertices.Num(), 8);
+	TestEqual(TEXT("and all its triangles"), Collision.Indices.Num(), 12);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleTerrainHeadlessBuildTest,
 	"Mantle.Runtime.Terrain.HeadlessBuild",
