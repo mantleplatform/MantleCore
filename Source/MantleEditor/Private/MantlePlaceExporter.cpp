@@ -1798,6 +1798,13 @@ bool FMantlePlaceExporter::IsEngineInfrastructure(const AActor* Actor)
 		return true;
 	}
 
+	// The Water Zone and Water Brush Manager the engine adds when a lake or river is placed: the zone's settings are published as the
+	// place's water zone (FMantleWaterBodyExport::Read), the manager is the editor's own helper. Not content, not an error.
+	if (FMantleWaterBodyExport::IsWaterInfrastructure(Actor))
+	{
+		return true;
+	}
+
 	// A Post Process Volume is a brush, so it ends here as infrastructure and is left out of the place. It is
 	// content a creator placed on purpose, so DescribeUnpublishedContent names it as a warning and the coverage
 	// report lists it as dropped (#628, #45): the place uses Mantle's own post-process.
@@ -1874,6 +1881,11 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 	// Only what a creator placed: the engine spawns some actors of these kinds itself, like
 	// every world's DefaultPhysicsVolume, and those are transient.
 	if (Actor->HasAnyFlags(RF_Transient) || Actor->IsA(ADefaultPhysicsVolume::StaticClass()))
+	{
+		return false;
+	}
+	// The Water Zone and Water Brush Manager the engine adds beside a water body: infrastructure, said nothing about.
+	if (FMantleWaterBodyExport::IsWaterInfrastructure(Actor))
 	{
 		return false;
 	}
@@ -2669,6 +2681,15 @@ bool FMantlePlaceExporter::DescribeSkippedActor(const AActor* Actor, FSkippedAct
 		return false;
 	}
 	const UClass* Class = Actor->GetClass();
+
+	// A Water Body Island (a landscape-carving helper placed beside a water body): the bodies publish without it, and it is said, not refused.
+	if (IsOrDerivesFromClassNamed(Class, TEXT("WaterBodyIsland")))
+	{
+		Out.What = FString::Printf(TEXT("is a Water Body Island (%s), which Mantle does not publish: the water bodies publish without it."), *Class->GetName());
+		Out.Remedy = TEXT("Nothing to change: the rest of the place publishes without it.");
+		Out.Category = MantleCoverageCategory::OtherActors;
+		return true;
+	}
 
 	// Editor-only and cinematic actors: nothing a player sees or touches.
 	if (const FNonVisualClass* NonVisual = FindNonVisual(Actor))

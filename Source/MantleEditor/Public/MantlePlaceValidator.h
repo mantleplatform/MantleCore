@@ -92,6 +92,13 @@ public:
 	 */
 	static void CheckRevisionNotes(const FString& Notes, FMantleValidationResult& Result);
 
+	/**
+	 * Support list row W4: the one warning Check gives, first in its list, when the editor has no renderer (a headless one) and the
+	 * level uploads UploadedMaterials materials. A process without a renderer can't bake their textures, and the converter would
+	 * otherwise say so once per material while publishing. False, adding nothing, when there is no material to say it about.
+	 */
+	static bool DescribeNoRenderer(int32 UploadedMaterials, FMantleValidationIssue& OutIssue);
+
 	/** A place name (the level's, when published from the editor), held to the schema's limit. Validate calls it with the level's name. */
 	static void CheckPlaceName(const FString& Name, FMantleValidationResult& Result);
 };
