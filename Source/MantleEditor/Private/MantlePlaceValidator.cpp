@@ -2414,7 +2414,11 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 
 	// BSP geometry (FMantleBrushBake), baked into static meshes the same way: whatever can't be baked is an error with its fix.
 	{
-		const FMantleSplineBakeResult Bake = FMantleBrushBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
+		FMantleSplineBakeResult Bake = FMantleBrushBake::Bake(World, FMantlePlaceAssetLimits::FromContract());
+		// And the Blocking Volumes that are not boxes (F17b), baked into hidden collision.
+		const FMantleSplineBakeResult Volumes = FMantleBrushBake::BakeVolumes(World, FMantlePlaceAssetLimits::FromContract());
+		Bake.Meshes.Append(Volumes.Meshes);
+		Bake.Problems.Append(Volumes.Problems);
 		Publishable += Bake.Meshes.Num();
 		for (const FMantleSplineBakeProblem& Problem : Bake.Problems)
 		{

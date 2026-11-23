@@ -172,18 +172,40 @@ bool FMantleBlockingVolumeExportTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	// Left out, and said: the cylinder and the shapeless volume warn; the one that collides with nothing does not.
-	TestNull(TEXT("a cylinder is not published"), MantleExportedEntities::Named(Result, TEXT("Round pillar")));
+	// The cylinder (F17b) is not a cube: it is baked into a hidden collision mesh of its own, never drawn and blocking, centered on it.
+	const FMantleEntity* BakedEntity = nullptr;
+	for (const FMantleEntity* Entity : MantleExportedEntities::All(Result))
+	{
+		if (Entity->Name.StartsWith(TEXT("Blocking volumes")))
+		{
+			BakedEntity = Entity;
+		}
+	}
+	if (TestNotNull(TEXT("the cylinder publishes as a collision mesh"), BakedEntity))
+	{
+		const FMantleStaticMeshProps* Props = BakedEntity->Props.TryGet<FMantleStaticMeshProps>();
+		if (TestNotNull(TEXT("with mesh properties"), Props))
+		{
+			TestFalse(TEXT("never drawn"), Props->bVisible);
+			TestTrue(TEXT("blocking"), Props->Collision == EMantleCollision::Blocking);
+			TestEqual(TEXT("no materials"), Props->Materials.Num(), 0);
+			TestFalse(TEXT("an invisible wall lets sight traces through"), Props->bBlocksVisibility);
+		}
+		TestTrue(TEXT("placed at the cylinder"), BakedEntity->Transform.GetLocation().Equals(Round->GetActorLocation(), 2.0));
+		TestTrue(TEXT("named after the volume it is"), BakedEntity->Name.Contains(TEXT("Round pillar")));
+	}
+	// A volume with no shape is left out and said; one that collides with nothing is not.
 	TestNull(TEXT("a shapeless volume is not published"), MantleExportedEntities::Named(Result, TEXT("Loose volume")));
 	TestNull(TEXT("a volume that collides with nothing is not published"), MantleExportedEntities::Named(Result, TEXT("Ghost box")));
-	TestEqual(TEXT("two volumes are named as dropped"), Result.Coverage.Count(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Dropped), static_cast<int64>(2));
-	TestEqual(TEXT("two walls are kept"), Result.Coverage.Count(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept), static_cast<int64>(2));
-	TestEqual(TEXT("both walls count as collision only"), Result.CollisionOnlyEntities, 2);
+	TestEqual(TEXT("one volume is named as dropped"), Result.Coverage.Count(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Dropped), static_cast<int64>(1));
+	TestEqual(TEXT("two walls and the cylinder are kept"), Result.Coverage.Count(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept), static_cast<int64>(3));
+	TestEqual(TEXT("the walls and the cylinder's mesh count as collision only"), Result.CollisionOnlyEntities, 3);
 
 	const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(World);
 	TestFalse(TEXT("Check says nothing about the wall"), HasIssue(Validation, TEXT("Map edge wall"), EMantleIssueSeverity::Warning) || HasIssue(Validation, TEXT("Map edge wall"), EMantleIssueSeverity::Error));
 	TestFalse(TEXT("nor the ghost"), HasIssue(Validation, TEXT("Ghost box"), EMantleIssueSeverity::Warning));
-	TestTrue(TEXT("Check warns about the cylinder"), HasIssue(Validation, TEXT("Round pillar"), EMantleIssueSeverity::Warning));
+	TestFalse(TEXT("Check says nothing about the cylinder: it is published"), HasIssue(Validation, TEXT("Round pillar"), EMantleIssueSeverity::Warning) || HasIssue(Validation, TEXT("Round pillar"), EMantleIssueSeverity::Error));
+	TestTrue(TEXT("Check warns about the shapeless volume"), HasIssue(Validation, TEXT("Loose volume"), EMantleIssueSeverity::Warning));
 	return true;
 }
 

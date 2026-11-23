@@ -4,8 +4,11 @@
 #include "MantlePlaceAssets.h"
 #include "MantleRuntime.h"
 
+#include "MantleBlockingVolumeExport.h"
+
 #include "ActorEditorUtils.h"
 #include "BSPOps.h"
+#include "Components/BrushComponent.h"
 #include "Editor.h"
 #include "Editor/EditorEngine.h"
 #include "Engine/Brush.h"
@@ -51,10 +54,16 @@ namespace MantleBrushBakePrivate
 		int32 Triangles = 0;
 	};
 
-	/** The surfaces that share a material: baked together. */
+	/** The surfaces that share a material (or, for volumes, a collision and a sight rule): baked together. */
 	struct FGroup
 	{
 		UMaterialInterface* Material = nullptr;
+		/** What tells this group from another of the same material: part of its meshes' ids. */
+		FString Tag;
+		bool bVisible = true;
+		bool bBlocksVisibility = true;
+		EMantleCollision Collision = EMantleCollision::Blocking;
+		FString NamePrefix = TEXT("BSP");
 		TArray<FSurface> Surfaces;
 	};
 
@@ -66,12 +75,17 @@ namespace MantleBrushBakePrivate
 		FString IdSeed;
 		int32 Triangles = 0;
 		int32 Vertices = 0;
+		bool bVisible = true;
+		bool bBlocksVisibility = true;
+		EMantleCollision Collision = EMantleCollision::Blocking;
 	};
 
 	struct FCacheEntry
 	{
 		TWeakObjectPtr<UWorld> World;
 		bool bHadWorld = false;
+		/** "bsp" or "vol": a bake of one kind prunes only the entries of its own. */
+		FString Kind;
 		int32 Brushes = 0;
 		TArray<FCachedChunk> Chunks;
 	};
@@ -278,6 +292,8 @@ namespace MantleBrushBakePrivate
 		return true;
 	}
 
+	bool BakeGroups(const TArray<FGroup>& Groups, const FString& Key, int32 TriangleCap, int32 VertexCap, TArray<FCachedChunk>& OutChunks, FString& OutWhy);
+
 	/**
 	 * Cuts Brushes (one level's static brushes) into a temporary model, as the editor's Build does, and bakes its visible solid
 	 * surfaces. The model is a transient object of its own: no level's model, brush or package is written.
@@ -403,6 +419,16 @@ namespace MantleBrushBakePrivate
 			Groups[GroupIndex].Surfaces.Add(Surface);
 		}
 
+		return BakeGroups(Groups, LevelKey, TriangleCap, VertexCap, OutChunks, OutWhy);
+	}
+}
+
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantleBrushBakePrivate
+{
+	/** Cuts Groups' surfaces into chunks within the caps, along a Morton curve, and bakes each into a mesh. Key is part of the mesh ids. */
+	bool BakeGroups(const TArray<FGroup>& Groups, const FString& Key, int32 TriangleCap, int32 VertexCap, TArray<FCachedChunk>& OutChunks, FString& OutWhy)
+	{
 		for (const FGroup& Group : Groups)
 		{
 			FBox GroupBounds(ForceInit);
@@ -448,8 +474,11 @@ namespace MantleBrushBakePrivate
 				const FVector Center = ChunkBounds.GetCenter();
 				FCachedChunk Chunk;
 				Chunk.Pivot = FVector(FMath::RoundToDouble(Center.X), FMath::RoundToDouble(Center.Y), FMath::RoundToDouble(Center.Z));
-				Chunk.Name = FString::Printf(TEXT("BSP (%s) %d/%d"), *Group.Material->GetName(), ChunkIndex + 1, Chunks.Num());
-				Chunk.IdSeed = FString::Printf(TEXT("%s|%s|%d"), *LevelKey, *Group.Material->GetPathName(), ChunkIndex);
+				Chunk.Name = FString::Printf(TEXT("%s (%s) %d/%d"), *Group.NamePrefix, *Group.Material->GetName(), ChunkIndex + 1, Chunks.Num());
+				Chunk.IdSeed = FString::Printf(TEXT("%s|%s|%s|%d"), *Key, *Group.Material->GetPathName(), *Group.Tag, ChunkIndex);
+				Chunk.bVisible = Group.bVisible;
+				Chunk.bBlocksVisibility = Group.bBlocksVisibility;
+				Chunk.Collision = Group.Collision;
 				const FString MeshName = FString::Printf(TEXT("MantleBsp_%s_%d"), *BrushMd5Hex(Chunk.IdSeed).Left(8), ChunkIndex);
 				FString Why;
 				if (!BakeChunk(Group, Chunks[ChunkIndex], Chunk.Pivot, MeshName, Chunk, Why))
@@ -569,6 +598,7 @@ FMantleSplineBakeResult FMantleBrushBake::BakeBrushes(TConstArrayView<ABrush*> B
 			FCacheEntry Fresh;
 			Fresh.bHadWorld = PruneWorld != nullptr;
 			Fresh.World = PruneWorld;
+			Fresh.Kind = TEXT("bsp");
 			Fresh.Brushes = LevelBrushes.Num();
 			FString Why;
 			if (!BakeLevel(LevelBrushes, LevelKey, TriangleCap, VertexCap, Fresh.Chunks, Why))
@@ -608,7 +638,7 @@ FMantleSplineBakeResult FMantleBrushBake::BakeBrushes(TConstArrayView<ABrush*> B
 	{
 		const FCacheEntry& Entry = It.Value();
 		const bool bGone = Entry.bHadWorld && !Entry.World.IsValid();
-		const bool bReplaced = PruneWorld && Entry.World.Get() == PruneWorld && !Used.Contains(It.Key());
+		const bool bReplaced = PruneWorld && Entry.Kind == TEXT("bsp") && Entry.World.Get() == PruneWorld && !Used.Contains(It.Key());
 		if (bGone || bReplaced)
 		{
 			It.RemoveCurrent();
@@ -620,6 +650,248 @@ FMantleSplineBakeResult FMantleBrushBake::BakeBrushes(TConstArrayView<ABrush*> B
 		Result.Reports.Add(Report);
 		UE_LOG(LogMantle, Log, TEXT("MantleBrushBake: %d brush%s baked into %d mesh%s"),
 			Report.Components, Report.Components == 1 ? TEXT("") : TEXT("es"), Report.Meshes, Report.Meshes == 1 ? TEXT("") : TEXT("es"));
+	}
+	return Result;
+}
+
+bool FMantleBrushBake::IsVolumeSource(const ABrush* Brush)
+{
+	if (!IsValid(Brush) || Brush->HasAnyFlags(RF_Transient) || !Brush->GetLevel() || !FMantleBlockingVolumeExport::IsBlockingVolume(Brush)
+		|| !Brush->Brush || !Brush->Brush->Polys)
+	{
+		return false;
+	}
+	EMantleCollision Collision;
+	bool bBlocksVisibility;
+	FVector Center;
+	FVector Size;
+	FMantleBlockingWall Wall;
+	// Collides with something, has a volume, and is not a box (a box is a wall: one hidden cube).
+	return FMantleBlockingVolumeExport::ReadCollision(Brush, Collision, bBlocksVisibility)
+		&& FMantleBlockingVolumeExport::ReadLocalBounds(Brush, Center, Size)
+		&& !FMantleBlockingVolumeExport::ReadWall(Brush, Wall);
+}
+
+TArray<ABrush*> FMantleBrushBake::CollectVolumes(UWorld* World)
+{
+	TArray<ABrush*> Volumes;
+	if (!World)
+	{
+		return Volumes;
+	}
+	for (const ULevel* Level : World->GetLevels())
+	{
+		if (!Level)
+		{
+			continue;
+		}
+		for (AActor* Actor : Level->Actors)
+		{
+			if (ABrush* Brush = Cast<ABrush>(Actor); Brush && IsVolumeSource(Brush))
+			{
+				Volumes.Add(Brush);
+			}
+		}
+	}
+	return Volumes;
+}
+
+FMantleSplineBakeResult FMantleBrushBake::BakeVolumes(UWorld* World, const FMantlePlaceAssetLimits& Limits)
+{
+	return BakeVolumeBrushes(CollectVolumes(World), Limits, World);
+}
+
+// Named, not anonymous: MantleEditor builds as a unity build.
+namespace MantleBrushBakePrivate
+{
+	/** A volume's brush polygons as world-space, two-sided surfaces (a collision mesh stops a player from either side) in groups by collision and sight rule. */
+	bool BakeVolumeLevel(const TArray<ABrush*>& Volumes, const FString& LevelKey, int32 TriangleCap, int32 VertexCap, TArray<FCachedChunk>& OutChunks, FString& OutWhy)
+	{
+		int32 PolyCount = 0;
+		for (const ABrush* Volume : Volumes)
+		{
+			PolyCount += Volume->Brush->Polys->Element.Num();
+		}
+		// The surfaces point into this array: it never grows past what it is given here.
+		TArray<FPoly> WorldPolys;
+		WorldPolys.Reserve(PolyCount);
+
+		UMaterialInterface* Material = UMaterial::GetDefaultMaterial(MD_Surface);
+		TArray<FGroup> Groups;
+		TArray<TArray<FString>> LabelsByGroup;
+		TMap<FString, int32> GroupByTag;
+		for (const ABrush* Volume : Volumes)
+		{
+			EMantleCollision Collision = EMantleCollision::Blocking;
+			bool bBlocksVisibility = true;
+			if (!FMantleBlockingVolumeExport::ReadCollision(Volume, Collision, bBlocksVisibility))
+			{
+				continue;
+			}
+			const FString Tag = FString::Printf(TEXT("%d|%d"), static_cast<int32>(Collision), bBlocksVisibility ? 1 : 0);
+			int32& GroupIndex = GroupByTag.FindOrAdd(Tag, INDEX_NONE);
+			if (GroupIndex == INDEX_NONE)
+			{
+				GroupIndex = Groups.Num();
+				FGroup& Added = Groups.AddDefaulted_GetRef();
+				Added.Material = Material;
+				Added.Tag = Tag;
+				Added.bVisible = false;
+				Added.bBlocksVisibility = bBlocksVisibility;
+				Added.Collision = Collision;
+				Added.NamePrefix = TEXT("Blocking volumes");
+				LabelsByGroup.AddDefaulted();
+			}
+			LabelsByGroup[GroupIndex].Add(Volume->GetActorLabel());
+			const FTransform& World = Volume->GetBrushComponent()->GetComponentTransform();
+			for (const FPoly& Source : Volume->Brush->Polys->Element)
+			{
+				if (Source.Vertices.Num() < 3)
+				{
+					continue;
+				}
+				FPoly& Poly = WorldPolys.AddDefaulted_GetRef();
+				Poly = Source;
+				// Nothing is drawn, so no mapping; two-sided, so the triangles stop a player from either side whatever the winding.
+				Poly.PolyFlags = PF_TwoSided;
+				Poly.Base = FVector3f::ZeroVector;
+				Poly.TextureU = FVector3f::ZeroVector;
+				Poly.TextureV = FVector3f::ZeroVector;
+				FSurface Surface;
+				Surface.Poly = &Poly;
+				Surface.Material = Material;
+				for (FVector3f& Vertex : Poly.Vertices)
+				{
+					Vertex = FVector3f(World.TransformPosition(FVector(Vertex)));
+					Surface.Center += FVector(Vertex);
+				}
+				Surface.Center /= Poly.Vertices.Num();
+				Surface.Triangles = (Poly.Vertices.Num() - 2) * 2;
+				Groups[GroupIndex].Surfaces.Add(Surface);
+			}
+		}
+		// The meshes say which volumes they are: "Blocking volumes: Cylinder pillar, Stairs".
+		for (int32 Index = 0; Index < Groups.Num(); ++Index)
+		{
+			const TArray<FString>& Labels = LabelsByGroup[Index];
+			TArray<FString> Shown;
+			for (int32 Label = 0; Label < Labels.Num() && Label < 3; ++Label)
+			{
+				Shown.Add(Labels[Label]);
+			}
+			Groups[Index].NamePrefix = FString::Printf(TEXT("Blocking volumes: %s%s"), *FString::Join(Shown, TEXT(", ")), Labels.Num() > 3 ? TEXT(", ...") : TEXT(""));
+		}
+		return BakeGroups(Groups, LevelKey, TriangleCap, VertexCap, OutChunks, OutWhy);
+	}
+}
+
+FMantleSplineBakeResult FMantleBrushBake::BakeVolumeBrushes(TConstArrayView<ABrush*> Volumes, const FMantlePlaceAssetLimits& Limits, UWorld* PruneWorld)
+{
+	using namespace MantleBrushBakePrivate;
+	FMantleSplineBakeResult Result;
+
+	const int32 TriangleCap = FMath::Min(Limits.MaxTriangles, SoftMaxTriangles);
+	const int32 VertexCap = FMath::Min(Limits.MaxVertices, SoftMaxVertices);
+
+	TMap<FString, TArray<ABrush*>> ByLevel;
+	for (ABrush* Volume : Volumes)
+	{
+		if (IsVolumeSource(Volume))
+		{
+			ByLevel.FindOrAdd(Volume->GetLevel()->GetPathName()).Add(Volume);
+		}
+	}
+	TArray<FString> LevelKeys;
+	ByLevel.GetKeys(LevelKeys);
+	LevelKeys.Sort();
+
+	FMantleSplineBakeReport Report;
+	Report.OwnerLabel = TEXT("Blocking volumes");
+	TSet<FString> Used;
+	for (const FString& LevelKey : LevelKeys)
+	{
+		TArray<ABrush*>& LevelVolumes = ByLevel[LevelKey];
+		// A fixed order (the actor order), so the same volumes always bake and cache the same.
+		const ULevel* VolumeLevel = LevelVolumes[0]->GetLevel();
+		TMap<const ABrush*, int32> ActorIndex;
+		for (const ABrush* Volume : LevelVolumes)
+		{
+			ActorIndex.Add(Volume, VolumeLevel->Actors.IndexOfByPredicate([Volume](const AActor* Actor) { return Actor == Volume; }));
+		}
+		LevelVolumes.StableSort([&ActorIndex](const ABrush& A, const ABrush& B)
+		{
+			return ActorIndex[&A] < ActorIndex[&B];
+		});
+
+		FString Signature = FString::Printf(TEXT("vol|%s|%d|%d|%s"), BakeVersion, TriangleCap, VertexCap, *LevelKey);
+		for (const ABrush* Volume : LevelVolumes)
+		{
+			EMantleCollision Collision = EMantleCollision::Blocking;
+			bool bBlocksVisibility = true;
+			FMantleBlockingVolumeExport::ReadCollision(Volume, Collision, bBlocksVisibility);
+			Signature += TEXT("\n") + BrushMd5Hex(BrushSignature(Volume) + FString::Printf(TEXT("|%d|%d|%s|%s"), static_cast<int32>(Collision),
+				bBlocksVisibility ? 1 : 0, *BrushVector(Volume->GetBrushComponent()->GetComponentTransform().GetScale3D()), *Volume->GetActorLabel()));
+		}
+		const FString CacheKey = TEXT("vol|") + LevelKey + TEXT("#") + BrushMd5Hex(Signature);
+		Used.Add(CacheKey);
+
+		FBakeCache& Store = BrushCache();
+		FCacheEntry* Entry = Store.Entries.Find(CacheKey);
+		if (!Entry)
+		{
+			FCacheEntry Fresh;
+			Fresh.bHadWorld = PruneWorld != nullptr;
+			Fresh.World = PruneWorld;
+			Fresh.Kind = TEXT("vol");
+			Fresh.Brushes = LevelVolumes.Num();
+			FString Why;
+			if (!BakeVolumeLevel(LevelVolumes, LevelKey, TriangleCap, VertexCap, Fresh.Chunks, Why))
+			{
+				const ABrush* Owner = LevelVolumes[0];
+				Result.Problems.Add(FMantleSplineBakeProblem{ Owner->GetActorLabel(), Owner->GetName(),
+					FString::Printf(TEXT("is a Blocking Volume that couldn't be baked into collision: %s."), *Why),
+					TEXT("Reshape it as a box, or build the wall from a hidden static mesh.") });
+				continue;
+			}
+			Entry = &Store.Entries.Add(CacheKey, MoveTemp(Fresh));
+		}
+
+		Report.Components += Entry->Brushes;
+		Report.Meshes += Entry->Chunks.Num();
+		for (const FCachedChunk& Chunk : Entry->Chunks)
+		{
+			FMantleBakedSplineMesh& Baked = Result.Meshes.AddDefaulted_GetRef();
+			Baked.Mesh = Chunk.Mesh;
+			Baked.Name = Chunk.Name;
+			Baked.IdSeed = Chunk.IdSeed;
+			Baked.OwnerLabel = Report.OwnerLabel;
+			Baked.OwnerName = TEXT("BlockingVolumes");
+			Baked.Transform = FTransform(Chunk.Pivot);
+			Baked.Collision = Chunk.Collision;
+			Baked.Surface = EMantleSurface::Default;
+			Baked.bCastShadow = false;
+			Baked.bVisible = Chunk.bVisible;
+			Baked.bBlocksVisibility = Chunk.bBlocksVisibility;
+			Baked.SourceComponents = Entry->Brushes;
+			Baked.Triangles = Chunk.Triangles;
+			Baked.Vertices = Chunk.Vertices;
+		}
+	}
+
+	FBakeCache& Store = BrushCache();
+	for (auto It = Store.Entries.CreateIterator(); It; ++It)
+	{
+		const FCacheEntry& Entry = It.Value();
+		const bool bGone = Entry.bHadWorld && !Entry.World.IsValid();
+		const bool bReplaced = PruneWorld && Entry.Kind == TEXT("vol") && Entry.World.Get() == PruneWorld && !Used.Contains(It.Key());
+		if (bGone || bReplaced)
+		{
+			It.RemoveCurrent();
+		}
+	}
+	if (Report.Components > 0)
+	{
+		Result.Reports.Add(Report);
 	}
 	return Result;
 }

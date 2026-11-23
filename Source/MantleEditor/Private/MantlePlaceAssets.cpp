@@ -2945,6 +2945,12 @@ void FMantlePlaceDependencies::AddBrushMeshes(UWorld* World)
 	{
 		AddMesh(Baked.Mesh, Baked.OwnerLabel);
 	}
+	// The Blocking Volumes baked into hidden collision (F17b): never drawn, so no render data or materials.
+	const FMantleSplineBakeResult Volumes = FMantleBrushBake::BakeVolumes(World, FMantlePlaceAssetLimits::FromContract());
+	for (const FMantleBakedSplineMesh& Baked : Volumes.Meshes)
+	{
+		AddMesh(Baked.Mesh, Baked.OwnerLabel, /*bCollisionOnly*/ !Baked.bVisible);
+	}
 }
 
 void FMantlePlaceDependencies::AddTerrain(const AActor* Landscape)

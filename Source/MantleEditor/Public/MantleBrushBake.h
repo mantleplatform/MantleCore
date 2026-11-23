@@ -40,6 +40,24 @@ public:
 	/** Bakes just these brushes (each must satisfy IsBakeSource), cut level by level. PruneWorld is the world whose cache entries this call replaces, or null. */
 	static FMantleSplineBakeResult BakeBrushes(TConstArrayView<ABrush*> Brushes, const FMantlePlaceAssetLimits& Limits, UWorld* PruneWorld = nullptr);
 
+	/**
+	 * Whether Brush is a Blocking Volume of a shape a hidden cube cannot stand for (a cylinder, stairs, any convex shape: a box is a wall,
+	 * FMantleBlockingVolumeExport) that collides with something: Export bakes it as hidden collision (F17b).
+	 */
+	static bool IsVolumeSource(const ABrush* Brush);
+
+	/** Every volume IsVolumeSource accepts in World, in each level's actor order. */
+	static TArray<ABrush*> CollectVolumes(UWorld* World);
+
+	/**
+	 * Bakes World's non-box Blocking Volumes into hidden, collision-only static meshes (never drawn, no materials; the triangles, both
+	 * ways, are the collision), merged by level, collision setting and sight rule. Cached while the volumes are unchanged.
+	 */
+	static FMantleSplineBakeResult BakeVolumes(UWorld* World, const FMantlePlaceAssetLimits& Limits);
+
+	/** Bakes just these volumes (each must satisfy IsVolumeSource). PruneWorld is the world whose cache entries this call replaces, or null. */
+	static FMantleSplineBakeResult BakeVolumeBrushes(TConstArrayView<ABrush*> Volumes, const FMantlePlaceAssetLimits& Limits, UWorld* PruneWorld = nullptr);
+
 	/** Forgets every cached bake (tests; the editor's shutdown). */
 	static void ClearCache();
 };
