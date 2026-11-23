@@ -4830,6 +4830,42 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		}
 		Doc.UvTransforms.Add(FMantlePlaceMaterialDocument::SlotName(Slot), Transform);
 	};
+	// A source slot whose sample the graph multiplies by a constant tint or strength (F3): the tint rides beside the source texture, as the
+	// base color's factor, or as the emissive's color and strength (a tint past 1 is strength, so the color stays in 0..1). Scale is
+	// what the caller already scaled the glow by (an additive material's constant opacity).
+	auto KeepSourceTint = [&](EMantlePlaceTextureSlot Slot, double Scale = 1.0)
+	{
+		const int32 Source = static_cast<int32>(Slot);
+		if (Source >= 4 || !Fidelity.bSourceTint[Source] || !Doc.Textures.Contains(FMantlePlaceMaterialDocument::SlotName(Slot)))
+		{
+			return;
+		}
+		const double* Tint = Fidelity.SourceTint[Source];
+		if (Slot == EMantlePlaceTextureSlot::BaseColor)
+		{
+			for (int32 Channel = 0; Channel < 3; ++Channel)
+			{
+				Doc.BaseColorFactor[Channel] = FMath::Clamp(Tint[Channel], 0.0, 1.0);
+			}
+			if (Tint[0] > 1.0 || Tint[1] > 1.0 || Tint[2] > 1.0)
+			{
+				Warn(TEXT("its base color is multiplied by more than 1, which Mantle caps at 1."));
+			}
+		}
+		else if (Slot == EMantlePlaceTextureSlot::Emissive)
+		{
+			const double Strength = FMath::Max3(1.0, FMath::Max3(Tint[0], Tint[1], Tint[2]), 0.0);
+			Doc.EmissiveStrength = FMath::Min(Strength, 100.0);
+			for (int32 Channel = 0; Channel < 3; ++Channel)
+			{
+				Doc.EmissiveFactor[Channel] = FMath::Clamp(Tint[Channel] / Doc.EmissiveStrength, 0.0, 1.0) * Scale;
+			}
+			if (Strength > 100.0)
+			{
+				Warn(FString::Printf(TEXT("its glow strength of %s is capped at 100."), *Number(Strength)));
+			}
+		}
+	};
 	// Every slot that made it in with a pan keeps it; wind rides on any lit or unlit material.
 	auto KeepPanningAndWind = [&]()
 	{
@@ -4917,6 +4953,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		if (HasSource(EMantlePlaceTextureSlot::Emissive) && AddSource(EMantlePlaceTextureSlot::Emissive, false))
 		{
 			KeepSourceTransform(EMantlePlaceTextureSlot::Emissive);
+			KeepSourceTint(EMantlePlaceTextureSlot::Emissive, Opacity > 0.0 && Opacity < 1.0 ? Opacity : 1.0);
 		}
 		else if (Glow.IsSet() && AddImage(Glow, EMantlePlaceTextureSlot::Emissive, false))
 		{
@@ -4944,6 +4981,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		if (HasSource(EMantlePlaceTextureSlot::Emissive) && AddSource(EMantlePlaceTextureSlot::Emissive, false))
 		{
 			KeepSourceTransform(EMantlePlaceTextureSlot::Emissive);
+			KeepSourceTint(EMantlePlaceTextureSlot::Emissive);
 			if (BaseColor.IsSet() && Doc.AlphaMode != TEXT("opaque"))
 			{
 				AddImage(BaseColor, EMantlePlaceTextureSlot::BaseColor, true);
@@ -5113,6 +5151,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		if (AddSource(EMantlePlaceTextureSlot::BaseColor, Doc.AlphaMode != TEXT("opaque") && Fidelity.bSourceAlpha))
 		{
 			KeepSourceTransform(EMantlePlaceTextureSlot::BaseColor);
+			KeepSourceTint(EMantlePlaceTextureSlot::BaseColor);
 		}
 	}
 	else if (BaseColor.IsSet() && !(bWater && Fidelity.Water.bColor))
@@ -5184,6 +5223,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		if (AddSource(EMantlePlaceTextureSlot::Emissive, false))
 		{
 			KeepSourceTransform(EMantlePlaceTextureSlot::Emissive);
+			KeepSourceTint(EMantlePlaceTextureSlot::Emissive);
 		}
 	}
 	else if (Emissive.IsSet())

@@ -160,6 +160,14 @@ struct MANTLEEDITOR_API FMantleMaterialFidelity2
 	double OrmMetallicFactor = 1.0;
 	double OrmOcclusionStrength = 1.0;
 
+	/**
+	 * A source slot whose sample is multiplied by a constant tint or strength (a constant, a parameter, or a product of those): the
+	 * tint per channel. The base color publishes it as its factor, the emissive as its color and strength. Only a slot with a source
+	 * texture (SourceTextures) has one.
+	 */
+	bool bSourceTint[4] = { false, false, false, false };
+	double SourceTint[4][3] = { { 1.0, 1.0, 1.0 }, { 1.0, 1.0, 1.0 }, { 1.0, 1.0, 1.0 }, { 1.0, 1.0, 1.0 } };
+
 	/** uvPanning: per slot, a Panner's SpeedX and SpeedY (UV units a second). */
 	bool bPanning[4] = { false, false, false, false };
 	double Panning[4][2] = { { 0.0, 0.0 }, { 0.0, 0.0 }, { 0.0, 0.0 }, { 0.0, 0.0 } };
