@@ -823,8 +823,10 @@ bool FMantleGlowRimReadTest::RunTest(const FString& Parameters)
 	{
 		UMaterial* Material = NewAdditive(true, FLinearColor::Black);
 		UMaterialExpressionMaterialFunctionCall* Call = AddNode<UMaterialExpressionMaterialFunctionCall>(Material);
-		Call->MaterialFunction = LoadObject<UMaterialFunctionInterface>(nullptr, TEXT("/Engine/Functions/Engine_MaterialFunctions02/Fresnel_Function.Fresnel_Function"));
-		TestNotNull(TEXT("the engine's Fresnel_Function loads"), Call->MaterialFunction.Get());
+		// SetMaterialFunction makes the call's outputs: without them Connect below connects nothing.
+		UMaterialFunctionInterface* Function = LoadObject<UMaterialFunctionInterface>(nullptr, TEXT("/Engine/Functions/Engine_MaterialFunctions02/Fresnel_Function.Fresnel_Function"));
+		TestNotNull(TEXT("the engine's Fresnel_Function loads"), Function);
+		TestTrue(TEXT("and the call takes it"), Function && Call->SetMaterialFunction(Function));
 		Emissive(Material, AddMultiply(Material, Call, AddColor(Material, FLinearColor::White)));
 		Dropped(TEXT("the Fresnel_Function"), Material, TEXT("its Fresnel is inside a material function (Fresnel_Function)"));
 	}
@@ -833,6 +835,7 @@ bool FMantleGlowRimReadTest::RunTest(const FString& Parameters)
 		UMaterialExpressionAdd* Sum = AddNode<UMaterialExpressionAdd>(Material);
 		Sum->A.Connect(0, AddMultiply(Material, AddFresnel(Material, 3.0f), AddColor(Material, FLinearColor::White)));
 		Sum->B.Connect(0, AddMultiply(Material, AddFresnel(Material, 8.0f), AddColor(Material, FLinearColor::Red)));
+		Emissive(Material, Sum);
 		Dropped(TEXT("two Fresnels of different exponents"), Material, TEXT("two Fresnels with different settings"));
 	}
 	{
