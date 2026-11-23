@@ -6,6 +6,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "Misc/App.h"
+#include "Materials/Material.h"
 #include "Misc/AutomationTest.h"
 #include "RHIGlobals.h"
 #include "Sound/AmbientSound.h"
@@ -107,6 +108,8 @@ bool FMantleNoRendererWarningTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	// The engine's cube is a library mesh, which brings its own material; a material of the project's own on it is what uploads.
+	UMaterial* Material = NewObject<UMaterial>(GetTransientPackage(), TEXT("M_TestNoRenderer"));
 	for (int32 Index = 0; Index < 3; ++Index)
 	{
 		AStaticMeshActor* Actor = Fixture.World->SpawnActor<AStaticMeshActor>(FVector(300.0 * Index, 0.0, 100.0), FRotator::ZeroRotator);
@@ -115,6 +118,7 @@ bool FMantleNoRendererWarningTest::RunTest(const FString& Parameters)
 			return false;
 		}
 		Actor->GetStaticMeshComponent()->SetStaticMesh(Cube);
+		Actor->GetStaticMeshComponent()->SetMaterial(0, Material);
 	}
 	const FMantleValidationResult Result = FMantlePlaceValidator::Validate(Fixture.World);
 	TestEqual(TEXT("the no-renderer warning appears once, however many materials"), CountWithText(Result, TEXT("has no renderer")), 1);
