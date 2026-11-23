@@ -4152,10 +4152,11 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	// A1: a decal material is baked as its surface copy; its earlier bake (blank) must not stand in. Only decal materials' keys change.
 	const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
 	const bool bDecal = Base && Base->MaterialDomain == MD_DeferredDecal;
+	// opacityasmask=2: the Masked copy clears "masked can be assumed opaque" (bd10fec); an =1 bake of a material carrying it was opaque.
 	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
 		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""), bMasked ? TEXT(" maskcutoff=2") : TEXT(""),
-		bDecal ? TEXT(" decalsurface=1") : TEXT("")) + (bOpacityAsMask ? TEXT(" opacityasmask=1") : TEXT(""));
+		bDecal ? TEXT(" decalsurface=1") : TEXT("")) + (bOpacityAsMask ? TEXT(" opacityasmask=2") : TEXT(""));
 }
 
 double FMantlePlaceAssetConverter::MeanPixelDifference(const TArray<FColor>& A, const TArray<FColor>& B)

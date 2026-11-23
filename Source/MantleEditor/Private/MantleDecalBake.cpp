@@ -92,7 +92,7 @@ bool FMantleDecalBake::Bake(const UMaterialInterface* Material, UTexture2D*& Out
 	const bool bAdaptiveGBuffer = Substrate::IsSubstrateEnabled() && !Substrate::IsSubstrateBlendableGBufferEnabled(GMaxRHIShaderPlatform);
 	const bool bOpacityAsMask = FMantlePlaceAssets::BakesOpacityAsMask(Material, Analysis, bAdaptiveGBuffer);
 	const FString Salt = FString::Printf(TEXT("decal shape 2 %s max=%d %s%s"), *Engine.Describe(), Limits.MaxTextureSize, *Material->GetPathName(),
-		bOpacityAsMask ? TEXT(" opacityasmask=1") : TEXT(""));
+		bOpacityAsMask ? TEXT(" opacityasmask=2") : TEXT(""));
 	FString Key, WhyNot;
 	if (!FMantlePlaceAssetConverter::ComputeCacheKey(Salt, Objects, Key, WhyNot))
 	{
