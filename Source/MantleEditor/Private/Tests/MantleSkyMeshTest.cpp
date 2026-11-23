@@ -262,7 +262,7 @@ bool FMantleSkyMeshKeepsLargeGeometryTest::RunTest(const FString& Parameters)
 	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
 	auto Has = [&Result](const TCHAR* Name)
 	{
-		return Result.Place.Entities.ContainsByPredicate([Name](const FMantleEntity& Entity) { return Entity.Name == Name; });
+		return MantleExportedEntities::Named(Result, Name) != nullptr;
 	};
 	TestTrue(TEXT("the ground stays"), Has(TEXT("Ground")));
 	TestTrue(TEXT("the mountain stays"), Has(TEXT("Mountain")));
@@ -349,7 +349,7 @@ bool FMantleSkyMeshLitDomeTest::RunTest(const FString& Parameters)
 	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
 	auto Has = [&Result](const TCHAR* Name)
 	{
-		return Result.Place.Entities.ContainsByPredicate([Name](const FMantleEntity& Entity) { return Entity.Name == Name; });
+		return MantleExportedEntities::Named(Result, Name) != nullptr;
 	};
 	TestFalse(TEXT("the lit sky dome is left out"), Has(TEXT("SM_SkyDomeDetail")));
 	TestTrue(TEXT("the ground stays"), Has(TEXT("Ground")));
