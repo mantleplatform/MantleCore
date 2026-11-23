@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceExporter.h"
 #include "MantleActorDecompose.h"
+#include "MantleBlockingVolumeExport.h"
 #include "MantleMirrorBake.h"
 #include "MantleSlotSplit.h"
 #include "MantleMeshLumenData.h"
@@ -1947,6 +1948,19 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 		{ return Component && IsOrDerivesFromClassNamed(Component->GetClass(), TEXT("PCGComponent")); }))
 	{
 		return false;
+	}
+	// A Blocking Volume that is a box publishes as an invisible wall (FMantleBlockingVolumeExport); one that collides with nothing has
+	// nothing to lose. Any other shape is named here, with what fits.
+	if (FMantleBlockingVolumeExport::IsBlockingVolume(Actor))
+	{
+		FMantleBlockingWall Wall;
+		if (FMantleBlockingVolumeExport::ReadWall(Actor, Wall) || FMantleBlockingVolumeExport::HasNoCollision(Actor))
+		{
+			return false;
+		}
+		OutWhat = TEXT("is a Blocking Volume that is not a box, which Mantle does not publish: only a box can be an invisible wall.");
+		OutRemedy = TEXT("Build the wall from box-shaped Blocking Volumes. This volume would be dropped.");
+		return true;
 	}
 	if (Actor->IsA(AVolume::StaticClass()))
 	{
@@ -5336,6 +5350,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	int32 Texts = 0;
 	int32 WaterBodies = 0;
 	int32 WaterSplinePoints = 0;
+	TArray<FMantleBlockingWall> Walls;
 
 	// Cells-format 5.5: ids come from the actors' guids, and two actors sharing a guid (a level instance loaded twice) get their
 	// suffixes in a fixed order, not the order the engine happens to iterate in: guid, then full path name.
@@ -5373,6 +5388,16 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 					FString::Printf(TEXT("/actors/%s"), *Actor->GetName()),
 					FString::Printf(TEXT("'%s' %s %s"), *ExporterLabelOf(Actor), *Part.What, *Part.Remedy) });
 			}
+		}
+
+		// A box-shaped Blocking Volume is an invisible wall (F17): its id is taken here, in guid order like every actor's, and it is
+		// written as a hidden library cube after the meshes (pass 2b). A brush is infrastructure, so it would be skipped below.
+		FMantleBlockingWall Wall;
+		if (FMantleBlockingVolumeExport::ReadWall(Actor, Wall))
+		{
+			Wall.Id = MakeEntityId(Actor, UsedIds);
+			Walls.Add(MoveTemp(Wall));
+			continue;
 		}
 
 		if (IsEngineInfrastructure(Actor) || IsProvidedByMantle(Actor))
@@ -6065,6 +6090,45 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			Entity.Transform = Baked.Transform;
 			Entity.Props.Set<FMantleStaticMeshProps>(MoveTemp(Props));
 			Place.Entities.Add(MoveTemp(Entity));
+		}
+	}
+
+	// Pass 2b-2 — Blocking Volumes as invisible walls (F17): a hidden, blocking library cube stretched over each box volume. Nothing
+	// of them uploads: the cube is the library's own, and a mesh nobody sees names no material.
+	if (Walls.Num() > 0)
+	{
+		const FString CubeId = FMantleAssetLibrary::Get().FindIdByPath(FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")));
+		for (const FMantleBlockingWall& Wall : Walls)
+		{
+			if (CubeId.IsEmpty())
+			{
+				Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Dropped, ExporterLabelOf(Wall.Actor),
+					TEXT("a Blocking Volume left out: the library has no cube to stretch into its wall."));
+				continue;
+			}
+			ReferencedAssets.Add(CubeId);
+			// A big place's cells are sized from their meshes' bounds: the engine cube is 100 cm, centered.
+			if (!Uploads.MeshBounds.Contains(CubeId))
+			{
+				Uploads.MeshBounds.Add(CubeId, FBox(FVector(-50.0), FVector(50.0)));
+			}
+
+			FMantleStaticMeshProps Props;
+			Props.Mesh = CubeId;
+			Props.Collision = Wall.Collision;
+			Props.bVisible = false;
+			Props.bCastShadow = false;
+			Props.bBlocksVisibility = Wall.bBlocksVisibility;
+
+			FMantleEntity Entity;
+			Entity.Id = Wall.Id;
+			Entity.Type = EMantleEntityType::StaticMesh;
+			Entity.Name = ExporterLabelOf(Wall.Actor).Left(FMantlePlaceLimits::MaxEntityNameLength);
+			Entity.Transform = Wall.Transform;
+			Entity.Props.Set<FMantleStaticMeshProps>(MoveTemp(Props));
+			Place.Entities.Add(MoveTemp(Entity));
+			Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept, ExporterLabelOf(Wall.Actor),
+				TEXT("a Blocking Volume published as an invisible wall: a hidden box that stops players and objects."));
 		}
 	}
 
