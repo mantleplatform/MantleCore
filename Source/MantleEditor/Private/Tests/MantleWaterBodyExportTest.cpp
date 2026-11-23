@@ -705,6 +705,61 @@ bool FMantleFlatWaterMeshExportsAsWaterBodyTest::RunTest(const FString& Paramete
 	return true;
 }
 
+// Placing a lake or river makes the engine add a Water Zone (and, in the editor, a Water Brush Manager). Both were refused as "cannot
+// publish", which stopped the export of every place with water.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleWaterZoneDoesNotStopThePublishTest,
+	"Mantle.Editor.Water.WaterZoneAndHelpersDoNotStopThePublish",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleWaterZoneDoesNotStopThePublishTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWaterBodyExportTestPrivate;
+
+	if (!FMantleWaterBodyExport::IsWaterPluginLoaded())
+	{
+		AddInfo(TEXT("The Water plugin is not loaded in this editor, so there is no water zone to spawn; skipped."));
+		return true;
+	}
+	FWaterTestWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	AActor* Lake = SpawnWaterActor(Fixture.World, TEXT("/Script/Water.WaterBodyLake"), FVector(0.0, 0.0, 100.0));
+	AActor* Zone = SpawnWaterActor(Fixture.World, TEXT("/Script/Water.WaterZone"), FVector::ZeroVector);
+	if (!TestTrue(TEXT("the lake and the zone spawn"), Lake && Zone))
+	{
+		return false;
+	}
+	TestTrue(TEXT("the zone is water infrastructure"), FMantleWaterBodyExport::IsWaterInfrastructure(Zone));
+	TestFalse(TEXT("the lake is not"), FMantleWaterBodyExport::IsWaterInfrastructure(Lake));
+	TestTrue(TEXT("the exporter leaves the zone out as infrastructure"), FMantlePlaceExporter::IsEngineInfrastructure(Zone));
+	FString What;
+	FString Remedy;
+	TestFalse(TEXT("and says nothing about it"), FMantlePlaceExporter::DescribeUnpublishedContent(Zone, What, Remedy));
+
+	// Check has no error about the zone (nor any warning naming it), and the lake still publishes.
+	const FMantleValidationResult Check = FMantlePlaceValidator::Validate(Fixture.World);
+	for (const FMantleValidationIssue& Issue : Check.Issues)
+	{
+		TestFalse(*FString::Printf(TEXT("Check does not mention the zone: %s"), *Issue.ToString()), Issue.Problem.Contains(TEXT("WaterZone")));
+	}
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	for (const FMantleParseError& Error : Result.Errors)
+	{
+		TestFalse(*FString::Printf(TEXT("Export does not refuse the zone: %s"), *Error.Message), Error.Message.Contains(TEXT("WaterZone")));
+	}
+	int32 Lakes = 0;
+	for (const FMantleEntity* Entity : MantleExportedEntities::All(Result))
+	{
+		Lakes += Entity->Type == EMantleEntityType::WaterBody ? 1 : 0;
+	}
+	TestEqual(TEXT("the lake is published as a water body"), Lakes, 1);
+	TestTrue(TEXT("and the place has its water zone settings"), Result.Place.Settings.Water.IsSet());
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleFlatWaterMeshIsWarnedAboutTest,
 	"Mantle.Editor.Water.FlatMeshBecomingAPondIsWarnedInCheck",
