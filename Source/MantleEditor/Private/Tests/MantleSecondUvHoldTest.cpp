@@ -7,6 +7,7 @@
 #include "Dom/JsonValue.h"
 #include "Engine/Texture2D.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialExpression.h"
 #include "Materials/MaterialExpressionConstant2Vector.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureSample.h"
@@ -56,19 +57,35 @@ namespace MantleSecondUvHoldTestPrivate
 		return Material;
 	}
 
+	/**
+	 * Whether anything the material's Roughness or Base Color reads (however deep) reads a second UV set: a node replaced in a bake copy
+	 * stays in its graph, read by nothing, so it is what the outputs reach that counts.
+	 */
 	bool ReadsSecondUvNode(const UMaterial* Material)
 	{
-		for (const TObjectPtr<UMaterialExpression>& Expression : Material->GetExpressions())
+		TArray<UMaterialExpression*> Open = { Material->GetEditorOnlyData()->Roughness.Expression, Material->GetEditorOnlyData()->BaseColor.Expression };
+		TSet<UMaterialExpression*> Seen;
+		while (Open.Num() > 0)
 		{
-			const UMaterialExpressionTextureCoordinate* Coordinate = Cast<UMaterialExpressionTextureCoordinate>(Expression.Get());
+			UMaterialExpression* Expression = Open.Pop();
+			if (!Expression || Seen.Contains(Expression))
+			{
+				continue;
+			}
+			Seen.Add(Expression);
+			const UMaterialExpressionTextureCoordinate* Coordinate = Cast<UMaterialExpressionTextureCoordinate>(Expression);
 			if (Coordinate && Coordinate->CoordinateIndex > 0)
 			{
 				return true;
 			}
-			const UMaterialExpressionTextureSample* Sample = Cast<UMaterialExpressionTextureSample>(Expression.Get());
+			const UMaterialExpressionTextureSample* Sample = Cast<UMaterialExpressionTextureSample>(Expression);
 			if (Sample && !Sample->Coordinates.Expression && Sample->ConstCoordinate > 0)
 			{
 				return true;
+			}
+			for (FExpressionInputIterator It{ Expression }; It; ++It)
+			{
+				Open.Add(It.Input->Expression);
 			}
 		}
 		return false;
