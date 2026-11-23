@@ -212,6 +212,15 @@ namespace MantlePlaceAssetsPrivate
 	constexpr int32 WalkBudget = 50000;
 
 	/**
+	 * A function whose World Position only works out a fade by camera distance (CameraDepthFade, which the engine's WorldGridMaterial
+	 * uses to pick its grid scale): that position maps no texture by the world, so it is no world-aligned mapping.
+	 */
+	bool IsDistanceFadeFunction(const UMaterialFunctionInterface* Function)
+	{
+		return Function && Function->GetOutermost()->GetName().EndsWith(TEXT("/CameraDepthFade"), ESearchCase::IgnoreCase);
+	}
+
+	/**
 	 * A texture the bake sees as one image though it holds several: a UDIM (more than one block), a cube, an array or a volume
 	 * texture. The converter refuses these as plain textures for the same reason (SourceTexturePng).
 	 */
@@ -232,6 +241,9 @@ namespace MantlePlaceAssetsPrivate
 		TSet<const UTexture*> Textures;
 		TSet<const UTexture*> NormalTextures;
 		int32 Budget = WalkBudget;
+
+		/** How many distance-fade functions the walk is inside (IsDistanceFadeFunction): a World Position there is not a world mapping. */
+		int32 FadeDepth = 0;
 
 		/** Vertex Color's RGB reached from the base color through Multiply and reroute nodes only (#471). */
 		bool bBaseColorTint = false;
@@ -385,7 +397,10 @@ namespace MantlePlaceAssetsPrivate
 				}
 				else if (Expression->IsA<UMaterialExpressionWorldPosition>())
 				{
-					Flag(EMantleMaterialLoss::WorldAligned);
+					if (FadeDepth == 0)
+					{
+						Flag(EMantleMaterialLoss::WorldAligned);
+					}
 				}
 				else if (Expression->IsA<UMaterialExpressionBumpOffset>())
 				{
@@ -435,7 +450,10 @@ namespace MantlePlaceAssetsPrivate
 						Flag(EMantleMaterialLoss::Parallax);
 					}
 				}
+				const int32 FadeStep = IsDistanceFadeFunction(Call->MaterialFunction) ? 1 : 0;
+				FadeDepth += FadeStep;
 				WalkFunction(Call->MaterialFunction, Root);
+				FadeDepth -= FadeStep;
 			}
 
 			// A static switch keeps only the branch the material (instance) selects.
