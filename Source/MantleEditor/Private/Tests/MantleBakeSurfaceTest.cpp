@@ -164,7 +164,7 @@ namespace MantleBakeSurfaceTestPrivate
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleBakeSurfaceGatherAveragesVertexColorsTest,
-	"Mantle.Editor.BakeSurface.GatherAveragesVertexColors",
+	"Mantle.Editor.BakeSurface.GatherTakesTheTypicalVertexColor",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FMantleBakeSurfaceGatherAveragesVertexColorsTest::RunTest(const FString& Parameters)
@@ -186,21 +186,35 @@ bool FMantleBakeSurfaceGatherAveragesVertexColorsTest::RunTest(const FString& Pa
 		const FMantleGatheredMaterial* Gathered = Find(Dependencies, Asphalt);
 		if (TestNotNull(TEXT("the road material is gathered"), Gathered))
 		{
-			TestEqual(TEXT("its bake color is the painted one, not the mesh's none"), Gathered->AverageVertexColor().ToHex(), Puddles.ToHex());
+			TestEqual(TEXT("its bake color is the painted one, not the mesh's none"), Gathered->TypicalVertexColor().ToHex(), Puddles.ToHex());
 			TestFalse(TEXT("which is not the plain surface"), Gathered->BakeSurface().IsPlain());
 		}
 	}
 
-	// One painted road and one that is not: the unpainted one is drawn white, so the average is halfway, by vertex count.
+	// A4: the color most of the surface has, each channel's median, not the mean. Three unpainted roads (drawn white) and one painted
+	// blue: most of the surface is white, so the bake is white, where the mean (a little blue everywhere) was a color no road has.
+	const FColor Blue(0, 0, 255, 255);
 	{
 		FMantlePlaceDependencies Dependencies;
-		const FColor Blue(0, 0, 255, 255);
+		Dependencies.AddComponent(NewComponent(Plane, &Blue), TEXT("Road"));
+		Dependencies.AddComponent(NewComponent(Plane, nullptr), TEXT("Road2"));
+		Dependencies.AddComponent(NewComponent(Plane, nullptr), TEXT("Road3"));
+		Dependencies.AddComponent(NewComponent(Plane, nullptr), TEXT("Road4"));
+		const FMantleGatheredMaterial* Gathered = Find(Dependencies, Asphalt);
+		if (TestNotNull(TEXT("gathered"), Gathered))
+		{
+			TestEqual(TEXT("three quarters white: white"), Gathered->TypicalVertexColor().ToHex(), FColor::White.ToHex());
+		}
+	}
+	// Half and half: a tie goes to each channel's lower value.
+	{
+		FMantlePlaceDependencies Dependencies;
 		Dependencies.AddComponent(NewComponent(Plane, &Blue), TEXT("Road"));
 		Dependencies.AddComponent(NewComponent(Plane, nullptr), TEXT("Road2"));
 		const FMantleGatheredMaterial* Gathered = Find(Dependencies, Asphalt);
 		if (TestNotNull(TEXT("gathered"), Gathered))
 		{
-			TestEqual(TEXT("half white, half blue"), Gathered->AverageVertexColor().ToHex(), FColor(128, 128, 255, 255).ToHex());
+			TestEqual(TEXT("half white, half blue: the lower of each channel"), Gathered->TypicalVertexColor().ToHex(), Blue.ToHex());
 		}
 	}
 
@@ -211,7 +225,7 @@ bool FMantleBakeSurfaceGatherAveragesVertexColorsTest::RunTest(const FString& Pa
 		const FMantleGatheredMaterial* Gathered = Find(Dependencies, Asphalt);
 		if (TestNotNull(TEXT("gathered"), Gathered))
 		{
-			TestTrue(TEXT("white"), Gathered->AverageVertexColor() == FColor::White);
+			TestTrue(TEXT("white"), Gathered->TypicalVertexColor() == FColor::White);
 			TestTrue(TEXT("the plain surface"), Gathered->BakeSurface().IsPlain());
 		}
 	}
@@ -228,7 +242,7 @@ bool FMantleBakeSurfaceGatherAveragesVertexColorsTest::RunTest(const FString& Pa
 			const FMantleGatheredMaterial* Gathered = Find(Dependencies, Painted);
 			if (TestNotNull(TEXT("gathered"), Gathered))
 			{
-				TestEqual(TEXT("the mesh's own color"), Gathered->AverageVertexColor().ToHex(), Red.ToHex());
+				TestEqual(TEXT("the mesh's own color"), Gathered->TypicalVertexColor().ToHex(), Red.ToHex());
 			}
 		}
 	}

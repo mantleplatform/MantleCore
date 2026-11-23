@@ -504,7 +504,7 @@ namespace MantleCoverageSurveyPrivate
 		case EMantleMaterialLoss::Unlit: return TEXT("unlit");
 		case EMantleMaterialLoss::BlendMode: return FString::Printf(TEXT("%s blending"), *Analysis.BlendModeName);
 		case EMantleMaterialLoss::NotSurface: return TEXT("not a surface material");
-		case EMantleMaterialLoss::SecondUv: return TEXT("second UV set read as the first");
+		case EMantleMaterialLoss::SecondUv: return TEXT("second UV set baked at its typical value");
 		default: return FString();
 		}
 	}

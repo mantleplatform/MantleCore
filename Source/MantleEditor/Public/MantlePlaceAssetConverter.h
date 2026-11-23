@@ -1024,6 +1024,20 @@ public:
 	 * A1: a bake's first material's normal map over UVs 0 to 1, as the image holds it (glTF's green-up convention, bAdjustNormalmaps).
 	 * False when it has none (bOutFlat: the material's normal is flat), or with the reason, a clause, when it can't be used as it is.
 	 */
+	/** A4: how close two bakes' mean roughness must be for ChooseSecondUvBake to call them the same look. */
+	static constexpr double SecondUvRoughnessAgreement = 0.05;
+
+	/** A4: how close two bakes' mean base color must be (mean channel difference, 0 to 1) for ChooseSecondUvBake to call them the same look. */
+	static constexpr double SecondUvColorAgreement = 0.03;
+
+	/**
+	 * A4: which of three bakes of a material with its UV1 held at its meshes' 25th, 50th and 75th percentile point (in that order) shows what
+	 * most of the surface has: the median (1) when it agrees with either quartile; a quartile (0) when the median is the odd one out and the
+	 * quartiles agree (the median fell on something narrow, a lane line or a tire lane); else the median. Bakes agree when their mean
+	 * roughness and mean base color are within SecondUvRoughnessAgreement and SecondUvColorAgreement. OutWhy says what was seen.
+	 */
+	static int32 ChooseSecondUvBake(const FMantleGlbDocument (&Bakes)[3], FString& OutWhy);
+
 	static bool BakedNormalImage(const FMantleGlbDocument& Document, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight, bool& bOutFlat, FString& OutWhy);
 
 	/** MeanPixelDifference of the check's two base color bakes (BakeBaseColors), with one of one color (shrunk to one pixel) counted as not moving: 0. */

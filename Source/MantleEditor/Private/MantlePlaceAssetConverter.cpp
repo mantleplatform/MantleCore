@@ -4117,6 +4117,11 @@ FMantleBakeSurface FMantlePlaceAssetConverter::EffectiveBakeSurface(const FMantl
 	{
 		Effective.VertexColor = FColor::White;
 	}
+	// A4: the UV1 points are only for a material that reads a second UV set; every other keeps its key.
+	if (!Analysis.Has(EMantleMaterialLoss::SecondUv) || Effective.SecondUvPoints.Num() != 3)
+	{
+		Effective.SecondUvPoints.Reset();
+	}
 	// Mapped by world position, and not the plain pattern kept from its source textures (Fidelity2's worldAligned): bake one world tile.
 	// A landscape layer (a UV range) keeps its own tiling.
 	if (Analysis.Has(EMantleMaterialLoss::WorldAligned) && !Analysis.Fidelity2.bWorldAligned && !Effective.CoversTerrain())
@@ -4248,6 +4253,85 @@ namespace MantlePlaceAssetConverterPrivate
 		}
 		return true;
 	}
+}
+
+namespace MantlePlaceAssetConverterPrivate
+{
+	/** A bake's look in two numbers: its base color's mean (0 to 1 per channel, as stored) and its roughness's mean; false when unreadable. */
+	bool BakeSummary(const FMantleGlbDocument& Document, FVector3d& OutColor, double& OutRoughness)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Materials = nullptr;
+		if (!Document.Json.IsValid() || !Document.Json->TryGetArrayField(TEXT("materials"), Materials) || Materials->Num() == 0 || !(*Materials)[0].IsValid())
+		{
+			return false;
+		}
+		const TSharedPtr<FJsonObject> Pbr = ObjectField((*Materials)[0]->AsObject(), TEXT("pbrMetallicRoughness"));
+		auto ImageMean = [&Document](const FTextureRef& Ref, const bool bColor, FVector4d& OutMean)
+		{
+			TArray<uint8> Bytes;
+			int32 Source = INDEX_NONE;
+			FString Name;
+			TArray<FColor> Pixels;
+			int32 Width = 0;
+			int32 Height = 0;
+			if (!Ref.IsSet() || !ReadTextureImage(Document, Ref.Texture, Bytes, Source, Name) || !DecodeBgra(Bytes, bColor, Pixels, Width, Height) || Pixels.Num() == 0)
+			{
+				return false;
+			}
+			FVector4d Sum(0.0, 0.0, 0.0, 0.0);
+			for (const FColor& Pixel : Pixels)
+			{
+				Sum += FVector4d(Pixel.R, Pixel.G, Pixel.B, Pixel.A);
+			}
+			OutMean = Sum / (255.0 * Pixels.Num());
+			return true;
+		};
+		double Factor[4] = { 1.0, 1.0, 1.0, 1.0 };
+		NumberArray(Pbr, TEXT("baseColorFactor"), Factor, 4);
+		FVector4d Color(1.0, 1.0, 1.0, 1.0);
+		ImageMean(ReadTextureRef(ObjectField(Pbr, TEXT("baseColorTexture"))), true, Color);
+		OutColor = FVector3d(Color.X * Factor[0], Color.Y * Factor[1], Color.Z * Factor[2]);
+		// glTF keeps roughness in the green channel of the metallic-roughness texture, times roughnessFactor.
+		FVector4d MetalRough(1.0, 1.0, 1.0, 1.0);
+		ImageMean(ReadTextureRef(ObjectField(Pbr, TEXT("metallicRoughnessTexture"))), false, MetalRough);
+		OutRoughness = MetalRough.Y * NumberField(Pbr, TEXT("roughnessFactor"), 1.0);
+		return true;
+	}
+}
+
+int32 FMantlePlaceAssetConverter::ChooseSecondUvBake(const FMantleGlbDocument (&Bakes)[3], FString& OutWhy)
+{
+	using namespace MantlePlaceAssetConverterPrivate;
+	FVector3d Color[3];
+	double Roughness[3] = { 0.0, 0.0, 0.0 };
+	for (int32 Which = 0; Which < 3; ++Which)
+	{
+		if (!BakeSummary(Bakes[Which], Color[Which], Roughness[Which]))
+		{
+			OutWhy = TEXT("a bake could not be read, so the median");
+			return 1;
+		}
+	}
+	auto Agree = [&Color, &Roughness](const int32 A, const int32 B)
+	{
+		const FVector3d Difference = Color[A] - Color[B];
+		const double ColorDifference = (FMath::Abs(Difference.X) + FMath::Abs(Difference.Y) + FMath::Abs(Difference.Z)) / 3.0;
+		return FMath::Abs(Roughness[A] - Roughness[B]) <= SecondUvRoughnessAgreement && ColorDifference <= SecondUvColorAgreement;
+	};
+	OutWhy = FString::Printf(TEXT("roughness %.3f, %.3f, %.3f"), Roughness[0], Roughness[1], Roughness[2]);
+	if (Agree(1, 0) || Agree(1, 2))
+	{
+		OutWhy += TEXT("; the median agrees with a quartile");
+		return 1;
+	}
+	if (Agree(0, 2))
+	{
+		// The median landed on something narrow (a lane line, a tire lane): the two quartiles, half the surface between them, agree without it.
+		OutWhy += TEXT("; the median is the odd one out, the quartiles agree");
+		return 0;
+	}
+	OutWhy += TEXT("; no two agree, so the median");
+	return 1;
 }
 
 bool FMantlePlaceAssetConverter::BakedNormalImage(const FMantleGlbDocument& Document, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight, bool& bOutFlat, FString& OutWhy)
@@ -4549,7 +4633,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	// Front Material is an active input), so it is baked as its surface copy: the same graph, parameters and blend mode, so it publishes
 	// see-through as the creator marked it, its Base Color with Opacity in alpha, and its Normal, on the mesh's own UVs.
 	const TStrongObjectPtr<UMaterialInterface> DecalSurface = FMantlePlaceAssets::DecalSurfaceCopy(Neutral.IsValid() ? Neutral.Get() : Material);
-	UMaterialInterface* const ToBake = DecalSurface.IsValid() ? DecalSurface.Get() : (Neutral.IsValid() ? Neutral.Get() : Material);
+	UMaterialInterface* ToBake = DecalSurface.IsValid() ? DecalSurface.Get() : (Neutral.IsValid() ? Neutral.Get() : Material);
 	if (DecalSurface.IsValid())
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_DECAL_SURFACE %s: a decal material, baked as its surface copy (blend mode %s)"), *Material->GetName(),
@@ -4568,7 +4652,54 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: baked on a card with vertex color %s and UVs 0 to %g%s"), *Material->GetName(), *Surface.VertexColor.ToHex(), Surface.UvRange,
 			Surface.WorldTileCm > 0.0 ? *FString::Printf(TEXT(", %g cm a side for its world mapping"), Surface.WorldTileCm) : TEXT(""));
 	}
-	if (Flattener->Flatten(ToBake, FlattenSettings, Flattened, Messages, FlattenError))
+	// A4: a material reading a second UV set (a road's wet lanes and edges on UV1) is baked with every UV1 read held at a point of its meshes'
+	// UV1, at their 25th, 50th and 75th percentile; the bake most of the mesh agrees with is kept (ChooseSecondUvBake), so the pattern is
+	// baked at the value most of the surface has instead of repeating with the first set's tiling.
+	TStrongObjectPtr<UMaterialInterface> HeldSecondUv;
+	bool bFlattened = false;
+	if (Surface.SecondUvPoints.Num() == 3)
+	{
+		TStrongObjectPtr<UMaterialInterface> Held[3];
+		FMantleGlbDocument Bakes[3];
+		bool bAll = true;
+		for (int32 Which = 0; Which < 3 && bAll; ++Which)
+		{
+			Held[Which] = FMantlePlaceAssets::SecondUvHeldCopy(ToBake, Surface.SecondUvPoints[Which]);
+			TArray<FString> HeldMessages;
+			FString HeldError;
+			if (Which > 0)
+			{
+				++Stats.FlattenerCalls;
+			}
+			bAll = Held[Which].IsValid() && Flattener->Flatten(Held[Which].Get(), FlattenSettings, Bakes[Which], HeldMessages, HeldError);
+			if (Which == 1)
+			{
+				Messages = HeldMessages;
+				FlattenError = HeldError;
+			}
+		}
+		if (bAll)
+		{
+			FString Why;
+			const int32 Chosen = ChooseSecondUvBake(Bakes, Why);
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_SECOND_UV %s: baked with UV1 held at (%.3f, %.3f), (%.3f, %.3f) and (%.3f, %.3f); kept the %s (%s)"), *Material->GetName(),
+				Surface.SecondUvPoints[0].X, Surface.SecondUvPoints[0].Y, Surface.SecondUvPoints[1].X, Surface.SecondUvPoints[1].Y,
+				Surface.SecondUvPoints[2].X, Surface.SecondUvPoints[2].Y, Chosen == 1 ? TEXT("median") : (Chosen == 0 ? TEXT("25th percentile") : TEXT("75th percentile")), *Why);
+			Flattened = MoveTemp(Bakes[Chosen]);
+			HeldSecondUv = Held[Chosen];
+			ToBake = HeldSecondUv.Get();
+			bFlattened = true;
+		}
+		else
+		{
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_SECOND_UV %s: its UV1 could not be held in a copy, so it is baked as it is"), *Material->GetName());
+		}
+	}
+	if (!bFlattened)
+	{
+		bFlattened = Flattener->Flatten(ToBake, FlattenSettings, Flattened, Messages, FlattenError);
+	}
+	if (bFlattened)
 	{
 		ScaleTextureTransforms(Flattened, 0, Surface.UvRange);
 		for (const FString& Message : Messages)

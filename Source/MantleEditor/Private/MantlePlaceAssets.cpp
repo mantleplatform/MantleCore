@@ -2459,28 +2459,23 @@ void FMantlePlaceDependencies::AddSlotVertexColors(FMantleGatheredMaterial* Entr
 	}
 	// Painted colors are the component's own; unpainted, every component drawing the mesh has the mesh's, so those are read once.
 	const bool bPainted = Component && Component->LODData.Num() > 0 && Component->LODData[0].OverrideVertexColors != nullptr;
-	FVector4d Sum(0.0, 0.0, 0.0, 0.0);
-	double Vertices = 0.0;
 	if (bPainted)
 	{
-		FMantlePlaceAssets::SlotVertexColors(Mesh, Component, Slot, Sum, Vertices);
+		FMantleSurfaceSamples Painted;
+		FMantlePlaceAssets::SlotSurfaceSamples(Mesh, Component, Slot, Painted);
+		Entry->Samples.Append(Painted);
+		return;
 	}
-	else
+	const TPair<const UStaticMesh*, int32> CacheKey(Mesh, Slot);
+	if (const FMantleSurfaceSamples* Cached = MeshSlotColors.Find(CacheKey))
 	{
-		const TPair<const UStaticMesh*, int32> CacheKey(Mesh, Slot);
-		if (const TPair<FVector4d, double>* Cached = MeshSlotColors.Find(CacheKey))
-		{
-			Sum = Cached->Key;
-			Vertices = Cached->Value;
-		}
-		else
-		{
-			FMantlePlaceAssets::SlotVertexColors(Mesh, nullptr, Slot, Sum, Vertices);
-			MeshSlotColors.Add(CacheKey, TPair<FVector4d, double>(Sum, Vertices));
-		}
+		Entry->Samples.Append(*Cached);
+		return;
 	}
-	Entry->VertexColorSum += Sum;
-	Entry->VertexColorWeight += Vertices;
+	FMantleSurfaceSamples Own;
+	FMantlePlaceAssets::SlotSurfaceSamples(Mesh, nullptr, Slot, Own);
+	Entry->Samples.Append(Own);
+	MeshSlotColors.Add(CacheKey, MoveTemp(Own));
 }
 
 FMantleGatheredMaterial* FMantlePlaceDependencies::AddMaterial(UMaterialInterface* Material, const FString& Label, const bool bTintMask)
@@ -3760,7 +3755,7 @@ UMaterialInterface* FMantlePlaceAssets::MeshSlotMaterial(const UStaticMesh* Mesh
 	return Material ? Material : UMaterial::GetDefaultMaterial(MD_Surface);
 }
 
-bool FMantlePlaceAssets::SlotVertexColors(const UStaticMesh* Mesh, const UStaticMeshComponent* Component, const int32 Slot, FVector4d& OutSum, double& OutVertices)
+bool FMantlePlaceAssets::SlotSurfaceSamples(const UStaticMesh* Mesh, const UStaticMeshComponent* Component, const int32 Slot, FMantleSurfaceSamples& Out)
 {
 	const FStaticMeshRenderData* RenderData = Mesh ? Mesh->GetRenderData() : nullptr;
 	if (!RenderData || RenderData->LODResources.Num() == 0)
@@ -3776,6 +3771,11 @@ bool FMantlePlaceAssets::SlotVertexColors(const UStaticMesh* Mesh, const UStatic
 	{
 		Colors = &LOD.VertexBuffers.ColorVertexBuffer;
 	}
+	// UV1 as a Texture Coordinate 1 node reads it: a mesh with one UV set gives that set (the engine reads a set the mesh lacks as its last).
+	const FStaticMeshVertexBuffer& Uvs = LOD.VertexBuffers.StaticMeshVertexBuffer;
+	const uint32 UvSets = Uvs.GetNumTexCoords();
+	const bool bUvs = UvSets > 0 && Uvs.GetNumVertices() == VertexCount && Uvs.GetTexCoordData() != nullptr;
+	const uint32 SecondSet = FMath::Min<uint32>(1, FMath::Max<uint32>(UvSets, 1) - 1);
 	bool bFound = false;
 	for (const FStaticMeshSection& Section : LOD.Sections)
 	{
@@ -3785,58 +3785,159 @@ bool FMantlePlaceAssets::SlotVertexColors(const UStaticMesh* Mesh, const UStatic
 		}
 		bFound = true;
 		const uint32 Count = Section.MaxVertexIndex - Section.MinVertexIndex + 1;
+		if (bUvs)
+		{
+			const uint32 UvStep = FMath::Max<uint32>(1, Count / FMantleSurfaceSamples::MaxSecondUvPerSection);
+			for (uint32 Index = Section.MinVertexIndex; Index <= Section.MaxVertexIndex; Index += UvStep)
+			{
+				Out.SecondUv.Add(Uvs.GetVertexUV(Index, SecondSet));
+			}
+		}
 		if (!Colors)
 		{
 			// No colors at all: Unreal draws the mesh white.
-			OutSum += FVector4d(1.0, 1.0, 1.0, 1.0) * static_cast<double>(Count);
-			OutVertices += Count;
+			Out.AddColor(FColor::White, static_cast<double>(Count));
 			continue;
 		}
 		const uint32 Step = FMath::Max<uint32>(1, Count / 65536);
-		FVector4d SectionSum(0.0, 0.0, 0.0, 0.0);
-		uint32 Sampled = 0;
+		const uint32 Sampled = (Count - 1) / Step + 1;
+		// Each sampled color stands for its share of the section.
+		const double Share = static_cast<double>(Count) / Sampled;
 		for (uint32 Index = Section.MinVertexIndex; Index <= Section.MaxVertexIndex; Index += Step)
 		{
-			const FColor Color = Colors->VertexColor(Index);
-			SectionSum += FVector4d(Color.R, Color.G, Color.B, Color.A) / 255.0;
-			++Sampled;
+			Out.AddColor(Colors->VertexColor(Index), Share);
 		}
-		OutSum += SectionSum * (static_cast<double>(Count) / FMath::Max<uint32>(Sampled, 1));
-		OutVertices += Count;
 	}
 	return bFound;
 }
 
+void FMantleSurfaceSamples::AddColor(const FColor& Color, const double Count)
+{
+	if (ColorHistogram.Num() != 4 * 256)
+	{
+		ColorHistogram.SetNumZeroed(4 * 256);
+	}
+	ColorHistogram[Color.R] += Count;
+	ColorHistogram[256 + Color.G] += Count;
+	ColorHistogram[512 + Color.B] += Count;
+	ColorHistogram[768 + Color.A] += Count;
+	Vertices += Count;
+}
+
+void FMantleSurfaceSamples::Append(const FMantleSurfaceSamples& Other)
+{
+	if (Other.ColorHistogram.Num() == 4 * 256)
+	{
+		if (ColorHistogram.Num() != 4 * 256)
+		{
+			ColorHistogram.SetNumZeroed(4 * 256);
+		}
+		for (int32 Index = 0; Index < ColorHistogram.Num(); ++Index)
+		{
+			ColorHistogram[Index] += Other.ColorHistogram[Index];
+		}
+	}
+	Vertices += Other.Vertices;
+	SecondUv.Append(Other.SecondUv);
+	if (SecondUv.Num() > MaxSecondUv)
+	{
+		// Thinned evenly, so every mesh keeps its share.
+		TArray<FVector2f> Kept;
+		Kept.Reserve(MaxSecondUv);
+		const double Step = static_cast<double>(SecondUv.Num()) / MaxSecondUv;
+		for (int32 Index = 0; Index < MaxSecondUv; ++Index)
+		{
+			Kept.Add(SecondUv[FMath::Min(SecondUv.Num() - 1, static_cast<int32>(Index * Step))]);
+		}
+		SecondUv = MoveTemp(Kept);
+	}
+}
+
+FColor FMantleSurfaceSamples::TypicalColor() const
+{
+	if (Vertices <= 0.0 || ColorHistogram.Num() != 4 * 256)
+	{
+		return FColor::White;
+	}
+	uint8 Channels[4] = { 255, 255, 255, 255 };
+	for (int32 Channel = 0; Channel < 4; ++Channel)
+	{
+		double Counted = 0.0;
+		for (int32 Value = 0; Value < 256; ++Value)
+		{
+			Counted += ColorHistogram[Channel * 256 + Value];
+			// The first value at which half the surface is counted: a tie goes to the lower value.
+			if (Counted >= 0.5 * Vertices - 1e-9)
+			{
+				Channels[Channel] = static_cast<uint8>(Value);
+				break;
+			}
+		}
+	}
+	return FColor(Channels[0], Channels[1], Channels[2], Channels[3]);
+}
+
+bool FMantleSurfaceSamples::SecondUvQuartiles(FVector2D (&OutPoints)[3]) const
+{
+	if (SecondUv.Num() == 0)
+	{
+		return false;
+	}
+	TArray<float> U, V;
+	U.Reserve(SecondUv.Num());
+	V.Reserve(SecondUv.Num());
+	for (const FVector2f& Point : SecondUv)
+	{
+		U.Add(Point.X);
+		V.Add(Point.Y);
+	}
+	U.Sort();
+	V.Sort();
+	const double Fractions[3] = { 0.25, 0.5, 0.75 };
+	for (int32 Which = 0; Which < 3; ++Which)
+	{
+		const int32 At = FMath::Clamp(static_cast<int32>(Fractions[Which] * (U.Num() - 1) + 0.5), 0, U.Num() - 1);
+		OutPoints[Which] = FVector2D(U[At], V[At]);
+	}
+	return true;
+}
+
 FString FMantleBakeSurface::CacheTag() const
 {
+	// A4: the UV1 points a material reading a second UV set is baked at (only such a material keeps any, EffectiveBakeSurface).
+	FString Held;
+	for (const FVector2D& Point : SecondUvPoints)
+	{
+		Held += FString::Printf(TEXT("%s%.4f,%.4f"), Held.IsEmpty() ? TEXT(" uv1held=") : TEXT(";"), Point.X, Point.Y);
+	}
 	if (IsPlain() && !bTintMask)
 	{
-		return FString();
+		return Held;
 	}
 	// "meshdata": a bake over a UV range is made on a copy that reads the card (FMantlePlaceAssets::ReadsVertexColorCopy); one made before
 	// that baked UVs 0 to 1 for a material reading only texture coordinates, one landscape quad stretched over the tile, and must not stand in.
 	// "terrain": a landscape layer's bake has a card as many cm a side as the layer tiles (a bake made before saw 1 m of the world), over the
 	// finest texture's repeat; an older one must not stand in either.
 	return FString::Printf(TEXT(" bakesurface color=%s uvrange=%g%s%s%s%s"), *VertexColor.ToHex(), FMath::Max(UvRange, 1.0), CoversTerrain() ? TEXT(" meshdata") : TEXT(""),
-		bTerrainLayer ? TEXT(" terrain=2") : TEXT(""), WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""), bTintMask ? TEXT(" tintmask=1") : TEXT(""));
+		bTerrainLayer ? TEXT(" terrain=2") : TEXT(""), WorldTileCm > 0.0 ? *FString::Printf(TEXT(" worldtile=%g"), WorldTileCm) : TEXT(""), bTintMask ? TEXT(" tintmask=1") : TEXT(""))
+		+ Held;
 	// The shift is not in the tag: the shifted bake is only compared with, never stored.
 }
 
-FColor FMantleGatheredMaterial::AverageVertexColor() const
+FColor FMantleGatheredMaterial::TypicalVertexColor() const
 {
-	if (VertexColorWeight <= 0.0)
-	{
-		return FColor::White;
-	}
-	const FVector4d Average = VertexColorSum / VertexColorWeight;
-	auto Byte = [](const double Channel) { return static_cast<uint8>(FMath::Clamp(FMath::RoundToInt(Channel * 255.0), 0, 255)); };
-	return FColor(Byte(Average.X), Byte(Average.Y), Byte(Average.Z), Byte(Average.W));
+	return Samples.TypicalColor();
 }
 
 FMantleBakeSurface FMantleGatheredMaterial::BakeSurface() const
 {
 	FMantleBakeSurface Surface;
-	Surface.VertexColor = AverageVertexColor();
+	Surface.VertexColor = TypicalVertexColor();
+	FVector2D Points[3];
+	if (Samples.SecondUvQuartiles(Points))
+	{
+		Surface.SecondUvPoints = { Points[0], Points[1], Points[2] };
+	}
 	Surface.UvRange = FMath::Max(BakeUvRange, 1.0);
 	// A landscape layer's bake: its card is as many cm a side as the layer is tiled, so a texture mapped by world position repeats as the source's did.
 	Surface.bTerrainLayer = BakeTilingCm > 0.0;
@@ -4485,16 +4586,23 @@ namespace MantlePlaceAssetsPrivate
 	 * constant default; Per Instance Fade Amount is 1 (the instance fully faded in).
 	 * With bDecalNodes, the nodes replaced are the decal-only ones instead (DecalOnlyNodeOf, for a decal material baked as a surface,
 	 * A1): Decal Lifetime Opacity is 1 (a decal that never fades), Decal Mipmap Level 0 and Decal Derivative 0 (the full-size mip).
+	 * With HeldSecondUv, they are the reads of a second UV set (ReadsSecondUv, A4): a Texture Coordinate of index 1 or higher is that point
+	 * (times its tiling), and a sample, panner, rotator or bump offset reading one through its own unwired coordinate index is wired to it.
 	 */
 	struct FPerInstanceNeutralizer
 	{
 		TMap<const UMaterialFunction*, bool> Contains;
 		TMap<const UMaterialFunction*, UMaterialFunction*> Copies;
 		bool bDecalNodes = false;
+		TOptional<FVector2D> HeldSecondUv;
 
 		bool IsTarget(const UMaterialExpression* Expression) const
 		{
-			return bDecalNodes ? DecalOnlyNodeOf(Expression) != EDecalOnlyNode::None : IsPerInstanceNode(Expression);
+			if (bDecalNodes)
+			{
+				return DecalOnlyNodeOf(Expression) != EDecalOnlyNode::None;
+			}
+			return HeldSecondUv.IsSet() ? ReadsSecondUv(Expression) : IsPerInstanceNode(Expression);
 		}
 
 		bool GraphHasPerInstance(TConstArrayView<TObjectPtr<UMaterialExpression>> Expressions)
@@ -4597,6 +4705,40 @@ namespace MantlePlaceAssetsPrivate
 					continue;
 				}
 				FReplacement Replacement;
+				if (HeldSecondUv.IsSet())
+				{
+					const FVector2D Point = *HeldSecondUv;
+					UMaterialExpressionConstant2Vector* Held = NewObject<UMaterialExpressionConstant2Vector>(Outer);
+					if (const UMaterialExpressionTextureCoordinate* Coordinate = Cast<UMaterialExpressionTextureCoordinate>(Expression))
+					{
+						Held->R = static_cast<float>(Point.X * Coordinate->UTiling);
+						Held->G = static_cast<float>(Point.Y * Coordinate->VTiling);
+						Replacement.Node = Add(Held);
+						Replacements.Add(Expression, Replacement);
+						continue;
+					}
+					// A node reading UV1 through its own unwired coordinate index: its coordinate input is wired to the point instead.
+					Held->R = static_cast<float>(Point.X);
+					Held->G = static_cast<float>(Point.Y);
+					Add(Held);
+					if (UMaterialExpressionTextureSample* Sample = Cast<UMaterialExpressionTextureSample>(Expression))
+					{
+						Sample->Coordinates.Connect(0, Held);
+					}
+					else if (UMaterialExpressionPanner* Panner = Cast<UMaterialExpressionPanner>(Expression))
+					{
+						Panner->Coordinate.Connect(0, Held);
+					}
+					else if (UMaterialExpressionRotator* Rotator = Cast<UMaterialExpressionRotator>(Expression))
+					{
+						Rotator->Coordinate.Connect(0, Held);
+					}
+					else if (UMaterialExpressionBumpOffset* Bump = Cast<UMaterialExpressionBumpOffset>(Expression))
+					{
+						Bump->Coordinate.Connect(0, Held);
+					}
+					continue;
+				}
 				if (const EDecalOnlyNode Decal = DecalOnlyNodeOf(Expression); bDecalNodes && Decal != EDecalOnlyNode::None)
 				{
 					if (Decal == EDecalOnlyNode::Derivative)
@@ -4793,6 +4935,34 @@ TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::DecalSurfaceCopy(const 
 	});
 }
 
+TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::SecondUvHeldCopy(const UMaterialInterface* Material, const FVector2D& Point)
+{
+	using namespace MantlePlaceAssetsPrivate;
+	if (!Material)
+	{
+		return nullptr;
+	}
+	TArray<const UMaterialInstanceConstant*> Chain;
+	const UMaterialInterface* Link = Material;
+	while (const UMaterialInstanceConstant* Instance = Cast<UMaterialInstanceConstant>(Link))
+	{
+		Chain.Add(Instance);
+		Link = Instance->Parent;
+	}
+	const UMaterial* Base = Cast<UMaterial>(Link);
+	if (!Base || !Base->GetEditorOnlyData())
+	{
+		return nullptr;
+	}
+	FPerInstanceNeutralizer Held;
+	Held.HeldSecondUv = Point;
+	if (!Held.GraphHasPerInstance(Base->GetExpressions()))
+	{
+		return nullptr;
+	}
+	return CopyForBake(Chain, *Base, [&Held](UMaterial& BaseCopy) { Held.Rewrite(&BaseCopy, nullptr); });
+}
+
 TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::ReadsVertexColorCopy(const UMaterialInterface* Material)
 {
 	using namespace MantlePlaceAssetsPrivate;
@@ -4896,7 +5066,7 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 	case EMantleMaterialLoss::NotSurface:
 		return TEXT("it is not a surface material (a light function, post-process or user interface material), so it is flattened as a plain surface.");
 	case EMantleMaterialLoss::SecondUv:
-		return TEXT("it reads a second UV set (UV1 or higher), which the bake does not have, so what that set places is drawn by the first UV set instead: masks such as wet lanes, dirt or stripes can repeat with the first set's tiling or land in the wrong place.");
+		return TEXT("patterns it places with a second UV set (wet lanes, stripes, dirt) are baked using the value most of the mesh has, so they don't appear.");
 	default:
 		return FString();
 	}

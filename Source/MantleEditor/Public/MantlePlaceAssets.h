@@ -362,6 +362,15 @@ struct MANTLEEDITOR_API FMantleBakeSurface
 	 */
 	bool bTintMask = false;
 
+	/**
+	 * A4: for a material that reads a second UV set (EMantleMaterialLoss::SecondUv), the points of the real meshes' UV1 it is baked at, every
+	 * read of UV1 held at one of them (FMantlePlaceAssets::SecondUvHeldCopy): its 25th, 50th and 75th percentile, each axis on its own
+	 * (FMantleSurfaceSamples::SecondUvQuartiles). The converter bakes at all three and keeps the one most of the mesh agrees with
+	 * (FMantlePlaceAssetConverter::ChooseSecondUvBake), so a pattern a second UV set places (wet lanes, stripes) is baked at the value most
+	 * of the surface has instead of repeating with the first set's tiling. Empty for any other material, or when nothing was gathered.
+	 */
+	TArray<FVector2D> SecondUvPoints;
+
 	bool IsPlain() const { return VertexColor == FColor::White && UvRange <= 1.0 && WorldTileCm <= 0.0 && !bTerrainLayer; }
 
 	/** Whether the bake covers several landscape quads or is a landscape layer's: its material must then read the card (FMantlePlaceAssets::ReadsVertexColorCopy). */
@@ -369,6 +378,43 @@ struct MANTLEEDITOR_API FMantleBakeSurface
 
 	/** What the conversion cache keys on: empty for the plain surface, so those bakes keep their keys. */
 	FString CacheTag() const;
+};
+
+/**
+ * What the meshes drawing a material have where a bake can't see it (FMantlePlaceAssets::SlotSurfaceSamples): their vertex colors, counted by
+ * each channel's value, and a spread of their UV1 points.
+ */
+struct MANTLEEDITOR_API FMantleSurfaceSamples
+{
+	/** How many UV1 points one section gives at most, spread evenly through it. */
+	static constexpr int32 MaxSecondUvPerSection = 1024;
+
+	/** How many UV1 points are kept in all, spread evenly through those added. */
+	static constexpr int32 MaxSecondUv = 16384;
+
+	/** Vertices counted by each channel's byte value: R at 0..255, G at 256.., B at 512.., A at 768.. (empty until something is added). */
+	TArray<double> ColorHistogram;
+
+	/** The vertices counted. */
+	double Vertices = 0.0;
+
+	/** UV1 points of the vertices (the mesh's last UV set when it has only one, as the engine reads a set the mesh lacks). */
+	TArray<FVector2f> SecondUv;
+
+	/** Counts Count vertices of Color. */
+	void AddColor(const FColor& Color, double Count);
+
+	/** Adds another's counts and points (its points thinned to keep MaxSecondUv in all). */
+	void Append(const FMantleSurfaceSamples& Other);
+
+	/**
+	 * A4: each channel's median, the value most of the surface has: a mask painted 0 on most of a road and 1 on its lanes reads 0, where the
+	 * mean (0.3, say) is a little of the mask everywhere. A tie goes to the lower value. White when nothing was counted (a mesh with no colors).
+	 */
+	FColor TypicalColor() const;
+
+	/** The 25th, 50th and 75th percentile of the UV1 points, each axis on its own; false when there are none. */
+	bool SecondUvQuartiles(FVector2D (&OutPoints)[3]) const;
 };
 
 /** One material the level uses (a slot of an uploaded mesh, or an override) that is not in the Mantle library. */
@@ -380,11 +426,10 @@ struct MANTLEEDITOR_API FMantleGatheredMaterial
 	TArray<FString> UsedBy;
 
 	/**
-	 * The vertex colors of the meshes drawing it, summed (RGBA, 0 to 1) over their vertices, and how many vertices: a component's painted
-	 * colors where it has them, else its mesh's, else white (a mesh with none is drawn white). Only the vertices of the sections it draws.
+	 * The vertex colors and UV1 points of the meshes drawing it: a component's painted colors where it has them, else its mesh's, else
+	 * white (a mesh with none is drawn white). Only the vertices of the sections it draws.
 	 */
-	FVector4d VertexColorSum = FVector4d(0.0, 0.0, 0.0, 0.0);
-	double VertexColorWeight = 0.0;
+	FMantleSurfaceSamples Samples;
 
 	/** The UV range a landscape layer bakes it over (FMantleTerrainLayerChoice::BakeUvRange), in landscape quads; 1 for everything else. */
 	double BakeUvRange = 1.0;
@@ -395,10 +440,13 @@ struct MANTLEEDITOR_API FMantleGatheredMaterial
 	/** Set by a vehicle's gather for the tint-mask variant of a material (AddMaterial with bTintMask, key TintMaskKey): FMantleBakeSurface::bTintMask. */
 	bool bTintMask = false;
 
-	/** The average of VertexColorSum, white when nothing was counted. */
-	FColor AverageVertexColor() const;
+	/** The vertex color most of its meshes' surface has (FMantleSurfaceSamples::TypicalColor), white when nothing was counted. */
+	FColor TypicalVertexColor() const;
 
-	/** What this material is baked on: its average vertex color and its UV range. The converter keeps the color only for a material that reads it. */
+	/**
+	 * What this material is baked on: its typical vertex color, its UV range and its meshes' UV1 quartile points. The converter keeps the color
+	 * only for a material that reads it, and the points only for one that reads a second UV set.
+	 */
 	FMantleBakeSurface BakeSurface() const;
 };
 
@@ -764,11 +812,11 @@ struct MANTLEEDITOR_API FMantlePlaceDependencies
 	void AddTerrain(const AActor* Landscape);
 
 private:
-	/** Counts the vertex colors slot Slot of Mesh is drawn with on Component (null: the mesh's own) into Entry (FMantlePlaceAssets::SlotVertexColors). */
+	/** Counts the vertex colors slot Slot of Mesh is drawn with on Component (null: the mesh's own) and its UV1 points into Entry (FMantlePlaceAssets::SlotSurfaceSamples). */
 	void AddSlotVertexColors(FMantleGatheredMaterial* Entry, const UStaticMesh* Mesh, const UStaticMeshComponent* Component, int32 Slot);
 
-	/** A mesh slot's own colors, counted once per mesh however many components draw it unpainted. */
-	TMap<TPair<const UStaticMesh*, int32>, TPair<FVector4d, double>> MeshSlotColors;
+	/** A mesh slot's own colors and UV1 points, read once per mesh however many components draw it unpainted. */
+	TMap<TPair<const UStaticMesh*, int32>, FMantleSurfaceSamples> MeshSlotColors;
 };
 
 /**
@@ -944,12 +992,13 @@ public:
 	static UMaterialInterface* MeshSlotMaterial(const UStaticMesh* Mesh, int32 Slot);
 
 	/**
-	 * The vertex colors of the LOD 0 sections of Mesh that draw slot Slot, as the material's Vertex Color node reads them (0 to 1), summed
-	 * into OutSum with their vertex count in OutVertices: Component's painted colors (Override Vertex Colors) where it has them for every
-	 * vertex, else the mesh's own, else white for each vertex. A section's vertices are sampled (at most 65,536) and the average counted for all.
+	 * The vertex colors and UV1 points of the LOD 0 sections of Mesh that draw slot Slot, added to Out: colors as the material's Vertex Color
+	 * node reads them, Component's painted colors (Override Vertex Colors) where it has them for every vertex, else the mesh's own, else white
+	 * for each vertex; UV1 as its Texture Coordinate 1 reads it (the last set when the mesh has one). A section's vertices are sampled (at most
+	 * 65,536 colors, FMantleSurfaceSamples::MaxSecondUvPerSection points), each sampled color counted for its share of the section.
 	 * False, adding nothing, when the mesh has no render data or no such section.
 	 */
-	static bool SlotVertexColors(const UStaticMesh* Mesh, const UStaticMeshComponent* Component, int32 Slot, FVector4d& OutSum, double& OutVertices);
+	static bool SlotSurfaceSamples(const UStaticMesh* Mesh, const UStaticMeshComponent* Component, int32 Slot, FMantleSurfaceSamples& Out);
 
 	/** What a gathered Script Asset's UsedBy names: "Script Assets". */
 	static const TCHAR* ScriptAssetsLabel;
@@ -1051,6 +1100,15 @@ public:
 	 * Null for any other material, or a chain this cannot copy (a dynamic instance); the source is never touched.
 	 */
 	static TStrongObjectPtr<UMaterialInterface> DecalSurfaceCopy(const UMaterialInterface* Material);
+
+	/**
+	 * A4: a transient copy of Material (its instance chain, base graph and the functions it calls) in which every read of a second UV set
+	 * (UV1 or higher: a Texture Coordinate, or a sample, panner, rotator or bump offset on its own unwired coordinate index) is the constant
+	 * Point, a UV1 point of the meshes drawing it (times a Texture Coordinate's tiling). The bake card has no UV1 of its own (the engine reads
+	 * it as UV0), so a pattern the second set places (a road's wet lanes and edges) would repeat with the first set's tiling; held at one point,
+	 * it bakes as that point of the surface has it. Null when the material reads no second UV set (or a chain this cannot copy).
+	 */
+	static TStrongObjectPtr<UMaterialInterface> SecondUvHeldCopy(const UMaterialInterface* Material, const FVector2D& Point);
 
 	/** The sentence Check and the converter give a material whose bake averaged its per-instance variation, following "Material 'M_X': ". */
 	static FString DescribePerInstanceVariation();
