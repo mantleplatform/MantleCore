@@ -15,7 +15,7 @@
 namespace MantleCellStreamerFarPrivate
 {
 	/** The far set's assets are asked for under this holder: the cell's index plus this, so a cell's real entities and its twins are two holders of the same assets. */
-	constexpr int32 FarHolderBase = 1 << 30;
+	constexpr int32 FarHolderBase = MantleAssetTiers::FarHolderBase;
 
 	/** A far-only cell is read while fewer than this many far cells are waiting for their assets or their build. */
 	constexpr int32 MaxFarCellsInFlight = 4;

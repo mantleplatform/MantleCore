@@ -1,5 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceAssets.h"
+
+#include "Algo/StableSort.h"
 #include "MantleMemoryTags.h"
 #include "Misc/FileHelper.h"
 
@@ -2014,12 +2016,17 @@ FMantlePlaceAssets::FRecord& FMantlePlaceAssets::EnsureRecord(const FString& Id,
 	const FString Key = RecordKey(Id, Kind, Role);
 	if (FRecord* Existing = Records.Find(Key))
 	{
+		if (CreatingTier < Existing->Tier)
+		{
+			HastenRecord(*Existing, CreatingTier);
+		}
 		return *Existing;
 	}
 	FRecord& Record = Records.Add(Key);
 	Record.Id = Id;
 	Record.Kind = Kind;
 	Record.Role = Role;
+	Record.Tier = CreatingTier;
 	// Made after the root's own assets settled: for a cell, or for what a cell's asset names (a material's texture, a mesh's side files).
 	Record.bStreamed = bStreaming && bCompleted;
 	return Record;
@@ -2058,21 +2065,36 @@ void FMantlePlaceAssets::FlushResolves()
 	const double Now = FPlatformTime::Seconds();
 	while (ResolvesInFlight < Settings.MaxConcurrentResolves)
 	{
-		TArray<FString> Ids;
-		TSet<FString> Asked;
+		// The soonest tier first (MantleAssetTiers): the ground near the player, then near cells, far sets last; in the records' order within a tier.
+		TArray<FString> ByTier[MantleAssetTiers::Last + 1];
+		TSet<FString> Seen;
 		for (TPair<FString, FRecord>& Pair : Records)
 		{
 			const FRecord& Record = Pair.Value;
-			if (Record.bResolved || Record.bResolving || Record.bFailed || Record.NextResolveAt > Now || Asked.Contains(Record.Id))
+			if (Record.bResolved || Record.bResolving || Record.bFailed || Record.NextResolveAt > Now)
 			{
 				continue;
 			}
-			if (Ids.Num() >= FMantleApiClient::MaxIdsPerResolve)
+			bool bAlreadySeen = false;
+			Seen.Add(Record.Id, &bAlreadySeen);
+			if (!bAlreadySeen)
 			{
-				break;
+				ByTier[FMath::Min<uint8>(Record.Tier, MantleAssetTiers::Last)].Add(Record.Id);
 			}
-			Asked.Add(Record.Id);
-			Ids.Add(Record.Id);
+		}
+		TArray<FString> Ids;
+		TSet<FString> Asked;
+		for (const TArray<FString>& Tier : ByTier)
+		{
+			for (const FString& Id : Tier)
+			{
+				if (Ids.Num() >= FMantleApiClient::MaxIdsPerResolve)
+				{
+					break;
+				}
+				Asked.Add(Id);
+				Ids.Add(Id);
+			}
 		}
 		if (Ids.IsEmpty())
 		{
@@ -2303,11 +2325,23 @@ void FMantlePlaceAssets::ApplyResolved(FRecord& Record, const FMantleUploadedAss
 			return;
 		}
 	}
-	(RecordKind == EAssetKind::Sound ? SoundFetchQueue : FetchQueue).Add(Key);
+	if (RecordKind == EAssetKind::Sound)
+	{
+		SoundFetchQueue.Add(Key);
+		return;
+	}
+	// Kept in tier order: one sooner than the queue's last puts it out of order until StartFetches sorts it (stable: first asked first within a tier).
+	if (!FetchQueue.IsEmpty() && TierOfBuild(Key) < TierOfBuild(FetchQueue.Last()))
+	{
+		bFetchOrderStale = true;
+	}
+	FetchQueue.Add(Key);
 }
 
 void FMantlePlaceAssets::QueueTexturesOf(const FString& MaterialId, const TMap<FString, FString>& SlotTextures)
 {
+	const FRecord* Material = Records.Find(RecordKey(MaterialId, EAssetKind::Material, EMantleTextureRole::Color));
+	TGuardValue<uint8> Creating(CreatingTier, Material ? Material->Tier : MantleAssetTiers::Normal);
 	for (const TPair<FString, FString>& Pair : SlotTextures)
 	{
 		EMantlePlaceTextureSlot Slot = EMantlePlaceTextureSlot::BaseColor;
@@ -2652,6 +2686,12 @@ void FMantlePlaceAssets::StartFetches()
 		Queue.RemoveAt(0, Next, EAllowShrinking::No);
 		Queue.Insert(Held, 0);
 	};
+	if (bFetchOrderStale)
+	{
+		// A queued build's tier became sooner (a nearer holder asked for it): back in tier order, first asked first within a tier.
+		bFetchOrderStale = false;
+		MantleAssetTiers::OrderByTier(FetchQueue, [this](const FBuildKey& Key) { return TierOfBuild(Key); });
+	}
 	StartFrom(FetchQueue);
 	// Sounds only once everything the place waits for has started: audio never delays a join.
 	if (FetchQueue.IsEmpty())
@@ -4711,6 +4751,16 @@ TSharedPtr<const FMantleSoundData> FMantlePlaceAssets::FindSound(const FString& 
 // A set made by PrepareStreaming takes the meshes and materials of cells as they are wanted and gives them back when no cell wants them. Who wants what is FMantleCellAssetUse's;
 // this is what that means for the records and builds. Everything runs on the game thread, from the caller or from Pump.
 
+uint8 MantleAssetTiers::TierOfHolder(const int64 Holder, const TSet<int32>& UrgentSlots)
+{
+	const uint32 Cell = static_cast<uint32>(Holder & 0xffffffffll);
+	if (Cell >= static_cast<uint32>(FarHolderBase))
+	{
+		return Last;
+	}
+	return UrgentSlots.Contains(static_cast<int32>(Holder >> 32)) ? Urgent : Normal;
+}
+
 void FMantlePlaceAssets::AcquireEntityAssets(const int64 Holder, const TArray<FMantleEntity>& Entities)
 {
 	check(IsInGameThread());
@@ -4732,7 +4782,89 @@ void FMantlePlaceAssets::AcquireEntityAssets(const int64 Holder, const TArray<FM
 	TArray<FMantleCellAssetNeed> Started;
 	CellUse.Acquire(Holder, Needs, Started);
 	SettleCursors.Remove(Holder);
+	const uint8 Tier = MantleAssetTiers::TierOfHolder(Holder, UrgentSlots);
+	TGuardValue<uint8> Creating(CreatingTier, Tier);
 	StartRecordsFor(Started);
+	// Needs another holder asked for first keep their records: a sooner holder hastens them (and what they name) in the download.
+	if (Tier < MantleAssetTiers::Last)
+	{
+		for (const FMantleCellAssetNeed& Need : Needs)
+		{
+			if (FRecord* Record = Records.Find(RecordKey(Need.Id, Need.bMaterial ? EAssetKind::Material : EAssetKind::Mesh, EMantleTextureRole::Color)))
+			{
+				HastenRecord(*Record, Tier);
+			}
+		}
+	}
+}
+
+void FMantlePlaceAssets::HastenRecord(FRecord& Record, const uint8 Tier)
+{
+	if (Tier >= Record.Tier)
+	{
+		return;
+	}
+	Record.Tier = Tier;
+	if (Record.Build.IsSet())
+	{
+		// Its build may be queued: StartFetches puts the queue back in order.
+		bFetchOrderStale = true;
+	}
+	// A mesh is built with its Nanite and Lumen data, and a material with its textures: what it waits for comes as soon as it does.
+	if (Record.Kind == EAssetKind::Mesh)
+	{
+		for (const TMap<FString, TPair<FString, FString>>* Side : { &MeshNanite, &MeshLumen })
+		{
+			if (const TPair<FString, FString>* Part = Side->Find(Record.Id))
+			{
+				if (FRecord* PartRecord = Records.Find(Part->Key))
+				{
+					HastenRecord(*PartRecord, Tier);
+				}
+			}
+		}
+	}
+	else if (Record.Kind == EAssetKind::Material)
+	{
+		if (const TArray<FString>* TextureKeys = MaterialTextureKeys.Find(Record.Id))
+		{
+			for (const FString& TextureKey : *TextureKeys)
+			{
+				if (FRecord* Texture = Records.Find(TextureKey))
+				{
+					HastenRecord(*Texture, Tier);
+				}
+			}
+		}
+	}
+}
+
+uint8 FMantlePlaceAssets::TierOfBuild(const FBuildKey& Key) const
+{
+	const FBuild* Build = Builds.Find(Key);
+	if (!Build)
+	{
+		return MantleAssetTiers::Normal;
+	}
+	uint8 Tier = MantleAssetTiers::Last;
+	bool bAny = false;
+	for (const FString& RecordId : Build->RecordIds)
+	{
+		// The records are by id; a texture's may be in more than one role.
+		for (const EMantleTextureRole Role : { EMantleTextureRole::Color, EMantleTextureRole::Normal, EMantleTextureRole::Data })
+		{
+			if (const FRecord* Record = Records.Find(RecordKey(RecordId, Key.Kind, Role)))
+			{
+				Tier = FMath::Min(Tier, Record->Tier);
+				bAny = true;
+			}
+			if (Key.Kind != EAssetKind::Texture)
+			{
+				break;
+			}
+		}
+	}
+	return bAny ? Tier : MantleAssetTiers::Normal;
 }
 
 void FMantlePlaceAssets::StartRecordsFor(const TArray<FMantleCellAssetNeed>& Needs)

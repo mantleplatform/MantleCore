@@ -11,6 +11,8 @@
 #include "MantlePlaceMaterial.h"
 #include "MantlePlaceTypes.h"
 #include "MantleRuntimeMesh.h"
+
+#include "Algo/StableSort.h"
 #include "MantleRuntimeTextureBuilder.h"
 #include "MantleSoundReader.h"
 #include "MantleStaticMeshReader.h"
@@ -324,6 +326,31 @@ DECLARE_DELEGATE_OneParam(FMantlePlaceAssetsDone, const FMantlePlaceAssetsResult
  * Game thread, like the store it drives. Keep the returned reference for as long as the place built
  * from it exists.
  */
+/**
+ * The download tiers of a streaming asset set (FMantlePlaceAssets): what is resolved and fetched first. Urgent: what a holder of an urgent slot needs (a player's collision
+ * streamer: the ground within about 256 m). Normal: every other cell's. Last: a far set's (a twin's), so a join's or a teleport's far ask never queues ahead of near cells.
+ * Within a tier, first asked is first served.
+ */
+namespace MantleAssetTiers
+{
+	constexpr uint8 Urgent = 0;
+	constexpr uint8 Normal = 1;
+	constexpr uint8 Last = 2;
+
+	/** A far set's holder is its cell's index plus this (FMantleCellStreamer's far sets). */
+	constexpr int32 FarHolderBase = 1 << 30;
+
+	/** A holder of a streamer's slot (FMantlePlaceCellAssets: slot << 32 | cell): Last for a far set, Urgent for a slot in UrgentSlots, else Normal. Pure. */
+	MANTLERUNTIME_API uint8 TierOfHolder(int64 Holder, const TSet<int32>& UrgentSlots);
+
+	/** A queue put in tier order, soonest first, first asked first within a tier (a stable sort by TierOf). */
+	template <typename T, typename FTierOf>
+	void OrderByTier(TArray<T>& Queue, FTierOf TierOf)
+	{
+		Algo::StableSortBy(Queue, TierOf);
+	}
+}
+
 class MANTLERUNTIME_API FMantlePlaceAssets : public FGCObject, public TSharedFromThis<FMantlePlaceAssets>
 {
 public:
@@ -428,6 +455,12 @@ public:
 
 	/** Needs IsHolderSettled has looked at, ever (tests: what a waiting holder costs). */
 	int64 GetSettleLookups() const { return SettleLookups; }
+
+	/**
+	 * The holders of this streamer slot (FMantlePlaceCellAssets) come first in the download (MantleAssetTiers::Urgent): a player's collision streamer, whose cells are the
+	 * ground near the player. Far sets always come last.
+	 */
+	void SetUrgentHolderSlot(int32 Slot) { UrgentSlots.Add(Slot); }
 
 	/** Holder gives its assets back: an id nobody else wants is dropped from the set (its object, its Nanite and Lumen data, its textures), as soon as its build is not in flight. */
 	void ReleaseEntityAssets(int64 Holder);
@@ -854,6 +887,9 @@ private:
 		/** Streaming sets: made after the set completed, for a cell (or for what a cell's asset names), so it may be dropped when nothing wants it. The root's records never are. */
 		bool bStreamed = false;
 
+		/** The download tier (MantleAssetTiers): the soonest of every holder that has asked for it, and of the record that named it (a material's textures, a mesh's side files). */
+		uint8 Tier = MantleAssetTiers::Normal;
+
 		/** Streaming sets, meshes: a user that collides arrived after the mesh was resolved without collision; the mesh is built again with it once its build is not in flight. */
 		bool bUpgradeToCollision = false;
 
@@ -1069,6 +1105,10 @@ private:
 	/** One record's state in this set. */
 	EMantleLiveAssetState StateOf(const FRecord& Record, FString* OutError) const;
 	FRecord& EnsureRecord(const FString& Id, EAssetKind Kind, EMantleTextureRole Role = EMantleTextureRole::Color);
+	/** Record's tier becomes Tier if that is sooner, with its Nanite and Lumen records; a queued build of it moves up at the next StartFetches. */
+	void HastenRecord(FRecord& Record, uint8 Tier);
+	/** The soonest tier of the records a build is for. */
+	uint8 TierOfBuild(const FBuildKey& Key) const;
 	void FailRecord(FRecord& Record, const FString& Error);
 
 	void FlushResolves();
@@ -1193,6 +1233,12 @@ private:
 	int64 DownloadedBytes = 0;
 
 	TArray<FBuildKey> FetchQueue;
+	/** FetchQueue's order is out of date (a queued build's tier became sooner): StartFetches puts it back in tier order, first asked first within a tier. */
+	bool bFetchOrderStale = false;
+	/** The tier a record made now is given (EnsureRecord): the asking holder's while AcquireEntityAssets runs, the naming record's for its textures. */
+	uint8 CreatingTier = MantleAssetTiers::Normal;
+	/** SetUrgentHolderSlot's slots. */
+	TSet<int32> UrgentSlots;
 
 	/** Sounds wait here until everything else has started downloading: they never hold the place up. */
 	TArray<FBuildKey> SoundFetchQueue;
