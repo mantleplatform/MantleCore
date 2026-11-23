@@ -9,8 +9,11 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialExpression.h"
 #include "Materials/MaterialExpressionConstant2Vector.h"
+#include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureSample.h"
+#include "Materials/MaterialExpressionWorldPosition.h"
+#include "ImageUtils.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/Package.h"
 
@@ -113,6 +116,64 @@ namespace MantleSecondUvHoldTestPrivate
 		Doc.Json->SetArrayField(TEXT("materials"), Materials);
 		return Doc;
 	}
+
+	/** A one-material opaque document whose base color is a 2x2 image of one gray: what the world-tile check reads. */
+	FMantleGlbDocument GrayImageBake(uint8 Gray)
+	{
+		TArray<FColor> Pixels;
+		Pixels.Init(FColor(Gray, Gray, Gray, 255), 4);
+		TArray64<uint8> Png;
+		FImageUtils::PNGCompressImageArray(2, 2, TArrayView64<const FColor>(Pixels.GetData(), Pixels.Num()), Png);
+		FMantleGlbDocument Doc = FactorBake(0.8, 1.0);
+		Doc.Bin = TArray<uint8>(Png.GetData(), static_cast<int32>(Png.Num()));
+		auto One = [](const TSharedRef<FJsonObject>& Only)
+		{
+			TArray<TSharedPtr<FJsonValue>> Values;
+			Values.Add(MakeShared<FJsonValueObject>(Only));
+			return Values;
+		};
+		const TSharedRef<FJsonObject> View = MakeShared<FJsonObject>();
+		View->SetNumberField(TEXT("buffer"), 0);
+		View->SetNumberField(TEXT("byteOffset"), 0);
+		View->SetNumberField(TEXT("byteLength"), static_cast<double>(Png.Num()));
+		Doc.Json->SetArrayField(TEXT("bufferViews"), One(View));
+		const TSharedRef<FJsonObject> Image = MakeShared<FJsonObject>();
+		Image->SetNumberField(TEXT("bufferView"), 0);
+		Image->SetStringField(TEXT("mimeType"), TEXT("image/png"));
+		Doc.Json->SetArrayField(TEXT("images"), One(Image));
+		const TSharedRef<FJsonObject> Texture = MakeShared<FJsonObject>();
+		Texture->SetNumberField(TEXT("source"), 0);
+		Doc.Json->SetArrayField(TEXT("textures"), One(Texture));
+		const TSharedRef<FJsonObject> BaseColor = MakeShared<FJsonObject>();
+		BaseColor->SetNumberField(TEXT("index"), 0);
+		const TArray<TSharedPtr<FJsonValue>>* Materials = nullptr;
+		Doc.Json->TryGetArrayField(TEXT("materials"), Materials);
+		(*Materials)[0]->AsObject()->GetObjectField(TEXT("pbrMetallicRoughness"))->SetObjectField(TEXT("baseColorTexture"), BaseColor);
+		return Doc;
+	}
+
+	/**
+	 * A road whose look varies by world position as well as UV1: the material as it is changes when its card moves, but its UV1-held copy
+	 * does not (holding UV1 holds the part that varied). Gives a gray image: 100 on the card where it is, 230 on the moved card for the
+	 * material as it is, 100 everywhere for a held copy.
+	 */
+	class FWorldRoadFlattener : public IMantleMaterialFlattener
+	{
+	public:
+		virtual bool Flatten(UMaterialInterface* Material, const FMantleFlattenSettings& Settings, FMantleGlbDocument& OutDocument,
+			TArray<FString>& OutMessages, FString& OutError) override
+		{
+			const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
+			const UMaterialExpressionTextureSample* Lanes = Base ? Cast<UMaterialExpressionTextureSample>(Base->GetEditorOnlyData()->Roughness.Expression) : nullptr;
+			const bool bHeld = Lanes && Cast<UMaterialExpressionConstant2Vector>(Lanes->Coordinates.Expression) != nullptr;
+			const bool bMoved = Settings.Surface.WorldShiftCm > 0.0;
+			OutDocument = GrayImageBake(!bHeld && bMoved ? 230 : 100);
+			return true;
+		}
+
+		virtual FString Describe() const override { return TEXT("scripted world road"); }
+		virtual bool CanBakeTextures() const override { return true; }
+	};
 
 	/**
 	 * Reads where the held copy it is handed holds UV1 (the Constant2Vector feeding the lane mask's coordinates) and bakes the road as a
@@ -312,6 +373,47 @@ bool FMantleSecondUvSamplesEvenTest::RunTest(const FString& Parameters)
 		Again.Append(One);
 	}
 	TestTrue(TEXT("the same every time"), Again.SecondUv == Material.SecondUv);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleSecondUvWorldTileTest,
+	"Mantle.Editor.SecondUv.WorldTileIsJudgedBeforeTheHold",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleSecondUvWorldTileTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleSecondUvHoldTestPrivate;
+	// The lane-mask road, with world position in its base color as well (City Sample's puddles and breakup).
+	UMaterial* Road = NewLaneMaskMaterial();
+	UMaterialExpressionWorldPosition* World = AddNode<UMaterialExpressionWorldPosition>(Road);
+	UMaterialExpressionMultiply* Breakup = AddNode<UMaterialExpressionMultiply>(Road);
+	Breakup->A.Connect(0, Road->GetEditorOnlyData()->BaseColor.Expression);
+	Breakup->B.Connect(0, World);
+	Road->GetEditorOnlyData()->BaseColor.Connect(0, Breakup);
+	Road->UpdateCachedExpressionData();
+	const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Road);
+	if (!TestTrue(TEXT("it reads a second UV set"), Analysis.Has(EMantleMaterialLoss::SecondUv))
+		|| !TestTrue(TEXT("and world position"), Analysis.Has(EMantleMaterialLoss::WorldAligned)))
+	{
+		return false;
+	}
+
+	FMantleBakeSurface Surface;
+	Surface.SecondUvPoints = { FVector2D(0.25, 0.5), FVector2D(0.5, 0.5), FVector2D(0.75, 0.5) };
+	TSharedRef<FWorldRoadFlattener> Flattener = MakeShared<FWorldRoadFlattener>();
+	FMantlePlaceAssetConverter Converter(Flattener, FPaths::Combine(FPaths::AutomationTransientDir(), TEXT("MantleSecondUvWorldTile")));
+	FMantlePlaceAssetSet Set;
+	if (!TestTrue(TEXT("the road converts"), Converter.ConvertMaterial(Road, Surface, Set)))
+	{
+		return false;
+	}
+	const FMantleConvertedMaterial* Converted = Set.FindMaterial(FMantlePlaceAssets::MaterialKey(Road));
+	if (TestNotNull(TEXT("the road is in the set"), Converted))
+	{
+		// Judged on the held copy, it would not move with its card and would leave its world tile for the mesh's UVs (visible squares).
+		TestTrue(TEXT("it keeps its world tile: judged on the material before UV1 is held"), Converted->Document.bWorldAligned);
+	}
 	return true;
 }
 

@@ -4655,6 +4655,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	// A4: a material reading a second UV set (a road's wet lanes and edges on UV1) is baked with every UV1 read held at a point of its meshes'
 	// UV1, at their 25th, 50th and 75th percentile; the bake most of the mesh agrees with is kept (ChooseSecondUvBake), so the pattern is
 	// baked at the value most of the surface has instead of repeating with the first set's tiling.
+	UMaterialInterface* const BeforeHold = ToBake;
 	TStrongObjectPtr<UMaterialInterface> HeldSecondUv;
 	bool bFlattened = false;
 	if (Surface.SecondUvPoints.Num() == 3)
@@ -4747,7 +4748,10 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 			// second Flatten was a third of City Sample's 4 hours of material conversion).
 			const double CheckStarted = FPlatformTime::Seconds();
 			const double ShiftCm = Surface.WorldTileCm * WorldShiftFraction;
-			UMaterialInterface* Baked = ToBake;
+			// A4: a material whose UV1 is held is judged on the material before the hold. Holding UV1 also holds what UV1 varies, which can
+			// hide the variation by world position (City Sample's road: 2.8% held, 3.4% not), and so move it off its world tile onto the
+			// mesh's UVs, where its bake of UVs 0 to 1 repeats as visible squares. The published look is still the held bake's.
+			UMaterialInterface* Baked = HeldSecondUv.IsValid() ? BeforeHold : ToBake;
 			FIntPoint BaseColorSize;
 			bool bConstant = false;
 			double Difference = 1.0;
@@ -4770,7 +4774,14 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 					FMantleGlbDocument Moved;
 					TArray<FString> MovedMessages;
 					FString MovedError;
-					Difference = Flattener->Flatten(Baked, Shifted, Moved, MovedMessages, MovedError) ? BakedBaseColorDifference(Flattened, Moved) : 1.0;
+					// The first bake to compare with is the judged material's own: before the hold, when UV1 is held.
+					FMantleGlbDocument Unmoved;
+					const FMantleGlbDocument* First = &Flattened;
+					if (HeldSecondUv.IsValid())
+					{
+						First = Flattener->Flatten(Baked, FlattenSettings, Unmoved, MovedMessages, MovedError) ? &Unmoved : nullptr;
+					}
+					Difference = First && Flattener->Flatten(Baked, Shifted, Moved, MovedMessages, MovedError) ? BakedBaseColorDifference(*First, Moved) : 1.0;
 					How = TEXT("whole second bake");
 				}
 			}
