@@ -4661,9 +4661,11 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	{
 		TStrongObjectPtr<UMaterialInterface> Held[3];
 		FMantleGlbDocument Bakes[3];
+		double Seconds[3] = { 0.0, 0.0, 0.0 };
 		bool bAll = true;
 		for (int32 Which = 0; Which < 3 && bAll; ++Which)
 		{
+			const double BakeStarted = FPlatformTime::Seconds();
 			Held[Which] = FMantlePlaceAssets::SecondUvHeldCopy(ToBake, Surface.SecondUvPoints[Which]);
 			TArray<FString> HeldMessages;
 			FString HeldError;
@@ -4672,6 +4674,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 				++Stats.FlattenerCalls;
 			}
 			bAll = Held[Which].IsValid() && Flattener->Flatten(Held[Which].Get(), FlattenSettings, Bakes[Which], HeldMessages, HeldError);
+			Seconds[Which] = FPlatformTime::Seconds() - BakeStarted;
 			if (Which == 1)
 			{
 				Messages = HeldMessages;
@@ -4682,9 +4685,16 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 		{
 			FString Why;
 			const int32 Chosen = ChooseSecondUvBake(Bakes, Why);
-			UE_LOG(LogMantle, Log, TEXT("MANTLE_SECOND_UV %s: baked with UV1 held at (%.3f, %.3f), (%.3f, %.3f) and (%.3f, %.3f); kept the %s (%s)"), *Material->GetName(),
-				Surface.SecondUvPoints[0].X, Surface.SecondUvPoints[0].Y, Surface.SecondUvPoints[1].X, Surface.SecondUvPoints[1].Y,
-				Surface.SecondUvPoints[2].X, Surface.SecondUvPoints[2].Y, Chosen == 1 ? TEXT("median") : (Chosen == 0 ? TEXT("25th percentile") : TEXT("75th percentile")), *Why);
+			// The cost: the two quartile bakes are what this adds over one bake; the session's total is kept to judge a whole publish.
+			static int32 SecondUvMaterials = 0;
+			static double SecondUvExtraSeconds = 0.0;
+			const double Extra = Seconds[0] + Seconds[2];
+			++SecondUvMaterials;
+			SecondUvExtraSeconds += Extra;
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_SECOND_UV %s: baked with UV1 held at (%.3f, %.3f), (%.3f, %.3f) and (%.3f, %.3f); kept the %s (%s); 3 bakes in %.2f s, %.2f s more than one (%d such material%s this session, %.1f s more in all)"),
+				*Material->GetName(), Surface.SecondUvPoints[0].X, Surface.SecondUvPoints[0].Y, Surface.SecondUvPoints[1].X, Surface.SecondUvPoints[1].Y,
+				Surface.SecondUvPoints[2].X, Surface.SecondUvPoints[2].Y, Chosen == 1 ? TEXT("median") : (Chosen == 0 ? TEXT("25th percentile") : TEXT("75th percentile")), *Why,
+				Seconds[0] + Seconds[1] + Seconds[2], Extra, SecondUvMaterials, SecondUvMaterials == 1 ? TEXT("") : TEXT("s"), SecondUvExtraSeconds);
 			Flattened = MoveTemp(Bakes[Chosen]);
 			HeldSecondUv = Held[Chosen];
 			ToBake = HeldSecondUv.Get();

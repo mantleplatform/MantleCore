@@ -3790,7 +3790,7 @@ bool FMantlePlaceAssets::SlotSurfaceSamples(const UStaticMesh* Mesh, const UStat
 			const uint32 UvStep = FMath::Max<uint32>(1, Count / FMantleSurfaceSamples::MaxSecondUvPerSection);
 			for (uint32 Index = Section.MinVertexIndex; Index <= Section.MaxVertexIndex; Index += UvStep)
 			{
-				Out.SecondUv.Add(Uvs.GetVertexUV(Index, SecondSet));
+				Out.AddSecondUv(Uvs.GetVertexUV(Index, SecondSet));
 			}
 		}
 		if (!Colors)
@@ -3838,18 +3838,26 @@ void FMantleSurfaceSamples::Append(const FMantleSurfaceSamples& Other)
 		}
 	}
 	Vertices += Other.Vertices;
-	SecondUv.Append(Other.SecondUv);
-	if (SecondUv.Num() > MaxSecondUv)
+	for (const FVector2f& Point : Other.SecondUv)
 	{
-		// Thinned evenly, so every mesh keeps its share.
-		TArray<FVector2f> Kept;
-		Kept.Reserve(MaxSecondUv);
-		const double Step = static_cast<double>(SecondUv.Num()) / MaxSecondUv;
-		for (int32 Index = 0; Index < MaxSecondUv; ++Index)
-		{
-			Kept.Add(SecondUv[FMath::Min(SecondUv.Num() - 1, static_cast<int32>(Index * Step))]);
-		}
-		SecondUv = MoveTemp(Kept);
+		AddSecondUv(Point);
+	}
+}
+
+void FMantleSurfaceSamples::AddSecondUv(const FVector2f& Point)
+{
+	++SecondUvOffered;
+	if (SecondUv.Num() < MaxSecondUv)
+	{
+		SecondUv.Add(Point);
+		return;
+	}
+	// Reservoir sampling: the Nth point offered replaces a kept one with chance MaxSecondUv / N, so every point offered, early or late, is
+	// equally likely to be kept.
+	const int64 Pick = FMath::Min<int64>(static_cast<int64>(SecondUvPicker.GetFraction() * static_cast<double>(SecondUvOffered)), SecondUvOffered - 1);
+	if (Pick < MaxSecondUv)
+	{
+		SecondUv[static_cast<int32>(Pick)] = Point;
 	}
 }
 

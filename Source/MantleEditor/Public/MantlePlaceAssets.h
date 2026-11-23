@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Math/RandomStream.h"
 #include "MantleGlowMaterial.h"
 #include "MantlePlaceValidator.h"
 #include "MantleWaterMaterial.h"
@@ -398,13 +399,25 @@ struct MANTLEEDITOR_API FMantleSurfaceSamples
 	/** The vertices counted. */
 	double Vertices = 0.0;
 
-	/** UV1 points of the vertices (the mesh's last UV set when it has only one, as the engine reads a set the mesh lacks). */
+	/**
+	 * UV1 points of the vertices (the mesh's last UV set when it has only one, as the engine reads a set the mesh lacks): at most MaxSecondUv,
+	 * an even sample of every point offered (reservoir sampling, AddSecondUv), so a mesh gathered first counts as much as one gathered last.
+	 */
 	TArray<FVector2f> SecondUv;
+
+	/** How many UV1 points were offered in all (SecondUv keeps a sample of them). */
+	int64 SecondUvOffered = 0;
+
+	/** Picks which points SecondUv keeps once it is full; seeded the same every time, so the same level gives the same points (and cache key). */
+	FRandomStream SecondUvPicker = FRandomStream(0x4D414E54);
 
 	/** Counts Count vertices of Color. */
 	void AddColor(const FColor& Color, double Count);
 
-	/** Adds another's counts and points (its points thinned to keep MaxSecondUv in all). */
+	/** Offers one UV1 point: kept while SecondUv has room, then in place of a random kept one with the chance an even sample gives it. */
+	void AddSecondUv(const FVector2f& Point);
+
+	/** Adds another's counts, and offers its points. */
 	void Append(const FMantleSurfaceSamples& Other);
 
 	/**

@@ -253,4 +253,49 @@ bool FMantleSecondUvConverterTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleSecondUvSamplesEvenTest,
+	"Mantle.Editor.SecondUv.SamplesCountEarlyAndLateMeshesAlike",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleSecondUvSamplesEvenTest::RunTest(const FString& Parameters)
+{
+	// Many meshes' points, more than are kept: those gathered first must count as much as those gathered last, or the percentiles lean
+	// toward the last ones. Half the points offered are at U 0 (offered first), half at U 1 (offered last), one mesh at a time.
+	FMantleSurfaceSamples Material;
+	const int32 PerMesh = 1000;
+	const int32 Meshes = (4 * FMantleSurfaceSamples::MaxSecondUv) / PerMesh;
+	for (int32 Mesh = 0; Mesh < Meshes; ++Mesh)
+	{
+		FMantleSurfaceSamples One;
+		for (int32 Index = 0; Index < PerMesh; ++Index)
+		{
+			One.AddSecondUv(FVector2f(Mesh < Meshes / 2 ? 0.0f : 1.0f, 0.5f));
+		}
+		Material.Append(One);
+	}
+	TestEqual(TEXT("it keeps the most it may"), Material.SecondUv.Num(), FMantleSurfaceSamples::MaxSecondUv);
+	int32 Early = 0;
+	for (const FVector2f& Point : Material.SecondUv)
+	{
+		Early += Point.X == 0.0f ? 1 : 0;
+	}
+	const double Share = static_cast<double>(Early) / Material.SecondUv.Num();
+	TestTrue(*FString::Printf(TEXT("the early half keeps about half the points (%.3f)"), Share), Share > 0.45 && Share < 0.55);
+
+	// The same points offered again give the same sample: the same level gives the same cache key.
+	FMantleSurfaceSamples Again;
+	for (int32 Mesh = 0; Mesh < Meshes; ++Mesh)
+	{
+		FMantleSurfaceSamples One;
+		for (int32 Index = 0; Index < PerMesh; ++Index)
+		{
+			One.AddSecondUv(FVector2f(Mesh < Meshes / 2 ? 0.0f : 1.0f, 0.5f));
+		}
+		Again.Append(One);
+	}
+	TestTrue(TEXT("the same every time"), Again.SecondUv == Material.SecondUv);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
