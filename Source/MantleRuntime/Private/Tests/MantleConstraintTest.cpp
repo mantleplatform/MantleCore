@@ -27,16 +27,20 @@ namespace MantleConstraintTestPrivate
 	/** A place with two physics crates (ent_crate_a, ent_crate_b) and one Constraint whose properties are Properties (the text between the braces). */
 	FMantleParseResult ParseJoint(const FString& Properties)
 	{
-		const FString Crate = TEXT("{\"id\":\"ent_crate_%s\",\"type\":\"StaticMesh\",\"parent\":null,"
-			"\"transform\":{\"location\":[%d,0,100],\"rotation\":[0,0,0],\"scale\":[1,1,1]},"
-			"\"properties\":{\"mesh\":\"ast_cube\",\"physics\":{}}}");
+		/** One physics crate, ent_crate_<Suffix>, X cm along the world's X. */
+		auto Crate = [](const TCHAR* Suffix, int32 X)
+		{
+			return FString::Printf(TEXT("{\"id\":\"ent_crate_%s\",\"type\":\"StaticMesh\",\"parent\":null,"
+				"\"transform\":{\"location\":[%d,0,100],\"rotation\":[0,0,0],\"scale\":[1,1,1]},"
+				"\"properties\":{\"mesh\":\"ast_cube\",\"physics\":{}}}"), Suffix, X);
+		};
 		const FString Json = FString::Printf(
 			TEXT("{\"schemaVersion\":1,\"placeId\":\"plc_joints01\",\"revision\":{\"number\":1,\"state\":\"draft\"},"
 				 "\"metadata\":{\"name\":\"Joints\",\"authorId\":\"usr_4b1d\"},\"settings\":{},"
 				 "\"assets\":[{\"id\":\"ast_cube\",\"kind\":\"StaticMesh\",\"hash\":\"md5:0123456789abcdef\",\"bytes\":1024}],\"entities\":["
 				 "{\"id\":\"ent_joint\",\"type\":\"Constraint\",\"parent\":null,"
 				 "\"transform\":{\"location\":[0,0,100],\"rotation\":[0,0,0],\"scale\":[1,1,1]},\"properties\":{%s}},%s,%s]}"),
-			*Properties, *FString::Printf(*Crate, TEXT("a"), 0), *FString::Printf(*Crate, TEXT("b"), 300));
+			*Properties, *Crate(TEXT("a"), 0), *Crate(TEXT("b"), 300));
 		return FMantlePlaceParser::ParseFromString(Json);
 	}
 
