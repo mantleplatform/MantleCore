@@ -41,6 +41,11 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/Texture.h"
 #include "Engine/Texture2D.h"
+#include "Engine/Texture2DArray.h"
+#include "Engine/TextureCube.h"
+#include "Engine/TextureCubeArray.h"
+#include "Engine/TextureRenderTarget.h"
+#include "Engine/VolumeTexture.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "MaterialDomain.h"
@@ -52,6 +57,7 @@
 #include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionBreakMaterialAttributes.h"
 #include "Materials/MaterialExpressionAppendVector.h"
+#include "Materials/MaterialExpressionCollectionParameter.h"
 #include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionConstant2Vector.h"
@@ -202,6 +208,20 @@ namespace MantlePlaceAssetsPrivate
 		return false;
 	}
 
+	/** The material walk's step budget: a graph with more nodes than this is not read to the end (LargeGraph). */
+	constexpr int32 WalkBudget = 50000;
+
+	/**
+	 * A texture the bake sees as one image though it holds several: a UDIM (more than one block), a cube, an array or a volume
+	 * texture. The converter refuses these as plain textures for the same reason (SourceTexturePng).
+	 */
+	bool IsMultiTileTexture(const UTexture* Texture)
+	{
+		return Texture
+			&& (Texture->IsA<UTexture2DArray>() || Texture->IsA<UTextureCube>() || Texture->IsA<UTextureCubeArray>() || Texture->IsA<UVolumeTexture>()
+				|| (Texture->Source.IsValid() && (Texture->Source.GetNumBlocks() > 1 || Texture->Source.GetNumSlices() > 1)));
+	}
+
 	struct FWalk
 	{
 		const UMaterialInterface* Context = nullptr;
@@ -211,7 +231,7 @@ namespace MantlePlaceAssetsPrivate
 		TSet<const UObject*> Dependencies;
 		TSet<const UTexture*> Textures;
 		TSet<const UTexture*> NormalTextures;
-		int32 Budget = 50000;
+		int32 Budget = WalkBudget;
 
 		/** Vertex Color's RGB reached from the base color through Multiply and reroute nodes only (#471). */
 		bool bBaseColorTint = false;
@@ -350,6 +370,11 @@ namespace MantlePlaceAssetsPrivate
 				{
 					Flag(EMantleMaterialLoss::SecondUv);
 				}
+				// A Material Parameter Collection value: the bake reads the collection's saved value, not what a Blueprint sets at runtime.
+				if (Expression->IsA<UMaterialExpressionCollectionParameter>())
+				{
+					Flag(EMantleMaterialLoss::ParameterCollection);
+				}
 				if (Expression->IsA<UMaterialExpressionTime>() || Expression->IsA<UMaterialExpressionPanner>() || Expression->IsA<UMaterialExpressionRotator>())
 				{
 					Flag(EMantleMaterialLoss::Animation);
@@ -376,6 +401,14 @@ namespace MantlePlaceAssetsPrivate
 					if (UTexture* Texture = ResolveTexture(Sample))
 					{
 						AddTexture(Texture);
+						if (Texture->IsA<UTextureRenderTarget>())
+						{
+							Flag(EMantleMaterialLoss::RenderTarget);
+						}
+						else if (IsMultiTileTexture(Texture))
+						{
+							Flag(EMantleMaterialLoss::MultiTileTexture);
+						}
 						if (Root == ERoot::Normal && Texture->IsNormalMap())
 						{
 							NormalTextures.Add(Texture);
@@ -3933,7 +3966,11 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 	const UMaterial* Base = Material->GetMaterial();
 	if (!Base || !Base->GetEditorOnlyData())
 	{
-		// No graph to read (a cooked material): nothing can be said about its losses.
+		// No graph to read (a cooked material): nothing can be said about its losses, and Check says so.
+		if (Base)
+		{
+			Out.Losses |= EMantleMaterialLoss::CookedMaterial;
+		}
 		return Out;
 	}
 	Walk.AddDependency(Base);
@@ -4302,6 +4339,11 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 	if (Walk.NormalTextures.Num() >= 2)
 	{
 		Out.Losses |= EMantleMaterialLoss::DetailNormal;
+	}
+	// The walk counts one step per node it reaches and stops at WalkBudget: past it nothing was read, so no loss there is reported.
+	if (Walk.Budget < 0)
+	{
+		Out.Losses |= EMantleMaterialLoss::LargeGraph;
 	}
 	// #471: a pure base-color tint is carried; any other vertex color use is the loss, and then the tint is not carried either.
 	Out.bVertexColorTintsBaseColor = Walk.bBaseColorTint && !Out.Has(EMantleMaterialLoss::VertexColor);
@@ -4829,6 +4871,16 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 		return TEXT("it is not a surface material (a decal, light function or post-process material), so it is flattened as a plain surface.");
 	case EMantleMaterialLoss::SecondUv:
 		return TEXT("it reads a second UV set (UV1 or higher), which the bake does not have, so what that set places is drawn by the first UV set instead: masks such as wet lanes, dirt or stripes can repeat with the first set's tiling or land in the wrong place.");
+	case EMantleMaterialLoss::ParameterCollection:
+		return TEXT("it reads a Material Parameter Collection, which the bake reads at its saved values, so anything a Blueprint or script changes at runtime (time of day, wetness, a tint) is lost and the published material keeps the saved look.");
+	case EMantleMaterialLoss::CookedMaterial:
+		return TEXT("it is a cooked material with no graph in this project, so Check cannot read what the bake loses (animation, wind, vertex colors, special shading, parameter collections); look at it in the published place.");
+	case EMantleMaterialLoss::LargeGraph:
+		return FString::Printf(TEXT("its graph has more than %d nodes, so Check stopped reading it: any animation, wind, vertex color or other loss past that point is not listed here."), MantlePlaceAssetsPrivate::WalkBudget);
+	case EMantleMaterialLoss::MultiTileTexture:
+		return TEXT("it samples a UDIM, cube or array texture, which the bake sees as one flat image, so its tiles, slices or cube faces may not land where they do in the editor (in the publish test a UDIM's two tiles came out as thin stripes at the wrong scale, and a cube map read by direction came out a different color).");
+	case EMantleMaterialLoss::RenderTarget:
+		return TEXT("it samples a render target, which has no saved pixels, so the bake shows it blank or frozen and what the target draws at runtime never appears.");
 	default:
 		return FString();
 	}
