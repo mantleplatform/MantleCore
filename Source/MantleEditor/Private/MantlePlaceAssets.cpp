@@ -4859,7 +4859,7 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 	case EMantleMaterialLoss::LargeGraph:
 		return FString::Printf(TEXT("its graph has more than %d nodes, so Check stopped reading it: any animation, wind, vertex color or other loss past that point is not listed here."), MantlePlaceAssetsPrivate::WalkBudget);
 	case EMantleMaterialLoss::MultiTileTexture:
-		return TEXT("it samples a UDIM, cube or array texture, and the bake sees one image: the first tile or slice shows, and the other tiles, slices or faces do not.");
+		return TEXT("it samples a UDIM, cube or array texture, which the bake sees as one flat image, so its tiles, slices or cube faces may not land where they do in the editor (in the publish test a UDIM's two tiles came out as thin stripes at the wrong scale, and a cube map read by direction came out a different color).");
 	case EMantleMaterialLoss::RenderTarget:
 		return TEXT("it samples a render target, which has no saved pixels, so the bake shows it blank or frozen and what the target draws at runtime never appears.");
 	default:
