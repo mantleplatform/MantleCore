@@ -10,6 +10,7 @@
 #include "MantleMeshLumenData.h"
 #include "MantleMeshNaniteBake.h"
 #include "MantlePlaceValidator.h"
+#include "MantlePlaceWorldPartition.h"
 #include "MantleClientFeatures.h"
 #include "MantlePreparedPlaceAssets.h"
 #include "MantleCosmeticPackage.h"
@@ -1748,7 +1749,17 @@ bool FMantlePreviewExport::Run(UWorld* World, const FMantlePreviewExportOptions&
 	FScopedSlowTask Progress(100.f, FText::FromString(TEXT("Exporting the preview")));
 	Progress.MakeDialog(/*bShowCancelButton*/ true);
 	State.Progress = &Progress;
+	// As Check and Publish do: a World Partition level (and the Level Instances the editor has not loaded) exports whole, then its cells go
+	// again. Without this the export refused with "actors in cells the editor has not loaded" unless the creator had loaded every cell.
+	FMantlePlaceWorldPartition::FLoadResult Loaded = FMantlePlaceWorldPartition::LoadAll(World);
+	if (Loaded.bLoaded())
+	{
+		const FString LoadNote = FMantlePlaceWorldPartition::DescribeLoad(Loaded);
+		UE_LOG(LogMantle, Display, TEXT("MANTLE_PREVIEW_EXPORT %s"), *LoadNote);
+		OutResult.Warnings.Add(LoadNote + TEXT(" They are unloaded again when the export ends."));
+	}
 	const bool bOk = PreviewExportBundle(World, Options, State, OutResult);
+	FMantlePlaceWorldPartition::ReleaseLoaded(World, Loaded);
 	State.Progress = nullptr;
 
 	if (!State.WorkDir.IsEmpty())
