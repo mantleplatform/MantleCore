@@ -3004,7 +3004,8 @@ namespace
 			Ctx.Fail(WaterPath, TEXT("must be an object"));
 			return;
 		}
-		RequireNoUnknownKeys(Ctx, *Water, { TEXT("zoneExtent"), TEXT("zoneLocation"), TEXT("zoneYawDeg"), TEXT("textureResolution") }, WaterPath);
+		RequireNoUnknownKeys(Ctx, *Water, { TEXT("zoneExtent"), TEXT("zoneLocation"), TEXT("zoneYawDeg"), TEXT("textureResolution"), TEXT("farSea") },
+			WaterPath);
 		FMantleWaterZone Zone;
 		TOptional<FVector2D> Extent;
 		ReadWaterExtent2(Ctx, *Water, TEXT("zoneExtent"), WaterPath, Extent);
@@ -3035,6 +3036,7 @@ namespace
 				}
 			}
 		}
+		ReadStrictOptionalBool(Ctx, *Water, TEXT("farSea"), WaterPath, Zone.bFarSea);
 		Out = Zone;
 	}
 

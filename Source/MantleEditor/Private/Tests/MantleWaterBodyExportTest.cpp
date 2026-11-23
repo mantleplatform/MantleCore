@@ -560,6 +560,7 @@ bool FMantleWaterBodyPlaceFileTest::RunTest(const FString& Parameters)
 	Zone.Extent = FVector2D(102400.0, 102400.0);
 	Zone.Transform = FTransform(FRotator(0.0, 45.0, 0.0), FVector(10.0, 20.0, 30.0));
 	Zone.RenderTargetResolution = FIntPoint(1024, 1024);
+	Zone.bFarDistanceMesh = true;
 	Place.Settings.Water = FMantleWaterBodyExport::BuildZone(Zone);
 
 	const FString Json = FMantlePlaceExporter::ToJson(Place);
@@ -576,6 +577,7 @@ bool FMantleWaterBodyPlaceFileTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("with its yaw"), Parsed.Place.Settings.Water->ZoneYawDeg, 45.0);
 		TestEqual(TEXT("and extent"), Parsed.Place.Settings.Water->ZoneExtent.X, 102400.0);
 		TestEqual(TEXT("and its water info texture"), Parsed.Place.Settings.Water->TextureResolution, FIntPoint(1024, 1024));
+		TestTrue(TEXT("and its far sea"), Parsed.Place.Settings.Water->bFarSea);
 	}
 	if (const FMantleWaterBodyProps* Back = Parsed.Place.Entities.Num() == 3 ? Parsed.Place.Entities[2].Props.TryGet<FMantleWaterBodyProps>() : nullptr)
 	{
@@ -583,9 +585,13 @@ bool FMantleWaterBodyPlaceFileTest::RunTest(const FString& Parameters)
 	}
 
 	// The zone's texture: the plugin's default is not written (a client from before the key refuses it); past the format's largest, held to it.
+	// Nor is a far sea the zone does not draw.
 	Zone.RenderTargetResolution = FIntPoint(512, 512);
+	Zone.bFarDistanceMesh = false;
 	Place.Settings.Water = FMantleWaterBodyExport::BuildZone(Zone);
-	TestFalse(TEXT("the default texture is not written"), FMantlePlaceExporter::ToJson(Place).Contains(TEXT("textureResolution")));
+	const FString Plain = FMantlePlaceExporter::ToJson(Place);
+	TestFalse(TEXT("the default texture is not written"), Plain.Contains(TEXT("textureResolution")));
+	TestFalse(TEXT("no far sea is written"), Plain.Contains(TEXT("farSea")));
 	Zone.RenderTargetResolution = FIntPoint(4096, 2048);
 	TestEqual(TEXT("a 4096 texture is held to 2048"), FMantleWaterBodyExport::BuildZone(Zone).TextureResolution, FIntPoint(2048, 2048));
 	Zone.RenderTargetResolution = FIntPoint::ZeroValue;

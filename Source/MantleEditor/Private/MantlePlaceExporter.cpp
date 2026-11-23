@@ -8313,6 +8313,11 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place, const FMantleCel
 			Writer->WriteValue(Zone.TextureResolution.Y);
 			Writer->WriteArrayEnd();
 		}
+		// The sea past the zone, only when asked for, like the texture.
+		if (Zone.bFarSea)
+		{
+			Writer->WriteValue(TEXT("farSea"), true);
+		}
 		Writer->WriteObjectEnd();
 	}
 	Writer->WriteObjectEnd();

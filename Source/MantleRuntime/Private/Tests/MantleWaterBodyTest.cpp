@@ -279,16 +279,18 @@ bool FMantleWaterZoneParseTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("location defaults to the origin"), Empty.Place.Settings.Water->ZoneLocation.IsZero());
 		TestEqual(TEXT("yaw defaults to 0"), Empty.Place.Settings.Water->ZoneYawDeg, 0.0);
 		TestEqual(TEXT("the water info texture defaults to the plugin's 512"), Empty.Place.Settings.Water->TextureResolution, FIntPoint(512, 512));
+		TestFalse(TEXT("the far sea defaults to off"), Empty.Place.Settings.Water->bFarSea);
 	}
 
 	const FMantleParseResult Full = ParsePlace(
-		TEXT("\"water\":{\"zoneExtent\":[614400,1],\"zoneLocation\":[10,-20,30],\"zoneYawDeg\":-180,\"textureResolution\":[2048,1]}"), TEXT(""));
+		TEXT("\"water\":{\"zoneExtent\":[614400,1],\"zoneLocation\":[10,-20,30],\"zoneYawDeg\":-180,\"textureResolution\":[2048,1],\"farSea\":true}"), TEXT(""));
 	if (TestTrue(TEXT("every key at an edge parses"), Full.bSuccess) && Full.Place.Settings.Water.IsSet())
 	{
 		TestEqual(TEXT("extent"), Full.Place.Settings.Water->ZoneExtent.X, 614400.0);
 		TestTrue(TEXT("location"), Full.Place.Settings.Water->ZoneLocation.Equals(FVector(10.0, -20.0, 30.0)));
 		TestEqual(TEXT("yaw"), Full.Place.Settings.Water->ZoneYawDeg, -180.0);
 		TestEqual(TEXT("water info texture"), Full.Place.Settings.Water->TextureResolution, FIntPoint(2048, 1));
+		TestTrue(TEXT("far sea"), Full.Place.Settings.Water->bFarSea);
 	}
 
 	const TCHAR* const Refused[][2] = {
@@ -301,6 +303,7 @@ bool FMantleWaterZoneParseTest::RunTest(const FString& Parameters)
 		{ TEXT("\"water\":{\"textureResolution\":[0,1024]}"), TEXT("/settings/water/textureResolution/0") },
 		{ TEXT("\"water\":{\"textureResolution\":[1024,512.5]}"), TEXT("/settings/water/textureResolution/1") },
 		{ TEXT("\"water\":{\"textureResolution\":[1024]}"), TEXT("/settings/water/textureResolution") },
+		{ TEXT("\"water\":{\"farSea\":1}"), TEXT("/settings/water/farSea") },
 	};
 	for (const TCHAR* const (&Case)[2] : Refused)
 	{

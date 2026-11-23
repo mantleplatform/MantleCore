@@ -503,6 +503,7 @@ namespace MantleWaterBodyExportPrivate
 			Out.TessellationFactor = MeshData.Int(TEXT("TessellationFactor"));
 			Out.LodScale = MeshData.Float(TEXT("LODScale"), 1.f);
 			Out.ForceCollapseDensityLevel = MeshData.Int(TEXT("ForceCollapseDensityLevel"), -1);
+			Out.bFarDistanceMesh = MeshData.Object(TEXT("FarDistanceMaterial")) != nullptr && MeshData.Float(TEXT("FarDistanceMeshExtent")) > 0.f;
 		}
 	}
 
@@ -666,6 +667,7 @@ namespace MantleWaterBodyExportPrivate
 		Json->SetNumberField(TEXT("tessellationFactor"), Zone.TessellationFactor);
 		Json->SetNumberField(TEXT("lodScale"), Zone.LodScale);
 		Json->SetNumberField(TEXT("forceCollapseDensityLevel"), Zone.ForceCollapseDensityLevel);
+		Json->SetBoolField(TEXT("farDistanceMesh"), Zone.bFarDistanceMesh);
 		Json->SetBoolField(TEXT("localTessellation"), Zone.bLocalTessellation);
 		Json->SetArrayField(TEXT("localTessellationExtent"), VectorArray(Zone.LocalTessellationExtent));
 		Json->SetNumberField(TEXT("captureZOffset"), Zone.CaptureZOffset);
@@ -1223,6 +1225,7 @@ FMantleWaterZone FMantleWaterBodyExport::BuildZone(const FMantleWaterZoneData& Z
 			FMath::Clamp(Zone.RenderTargetResolution.X, FMantlePlaceLimits::MinWaterTextureResolution, FMantlePlaceLimits::MaxWaterTextureResolution),
 			FMath::Clamp(Zone.RenderTargetResolution.Y, FMantlePlaceLimits::MinWaterTextureResolution, FMantlePlaceLimits::MaxWaterTextureResolution));
 	}
+	Out.bFarSea = Zone.bFarDistanceMesh;
 	Out.ZoneLocation = Zone.Transform.GetLocation();
 	Out.ZoneYawDeg = FRotator::NormalizeAxis(Zone.Transform.Rotator().Yaw);
 	return Out;
