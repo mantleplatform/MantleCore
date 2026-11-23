@@ -9,6 +9,9 @@
 #include "Builders/CylinderBuilder.h"
 #include "Components/BrushComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/BoxComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/TriggerCapsule.h"
 #include "GameFramework/Character.h"
 #include "Engine/TriggerVolume.h"
@@ -244,6 +247,86 @@ bool FMantleTriggerCapsuleGuardTest::RunTest(const FString& Parameters)
 	TestNull(TEXT("the blocking prop is not published as a trigger"), TriggerPropsOf(Result, TEXT("Blocking prop")));
 	TestNull(TEXT("the silent capsule is not published as a trigger"), TriggerPropsOf(Result, TEXT("Silent capsule")));
 	TestNotNull(TEXT("the real trigger is"), TriggerPropsOf(Result, TEXT("Real trigger")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTriggerRootWithContentTest,
+	"Mantle.Editor.TriggerShapes.ATriggerRootKeepsItsDrawnContent",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTriggerRootWithContentTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTriggerShapeExportTestPrivate;
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	FTriggerWorld Fixture;
+	UWorld* World = Fixture.World;
+	if (!Cube || !TestNotNull(TEXT("a test world"), World))
+	{
+		AddWarning(TEXT("the engine cube or the world is missing; skipped"));
+		return true;
+	}
+
+	// An actor whose root only overlaps (a capsule, then a box) with a drawn mesh beside it: a Blueprint prop of "trigger zone + statue".
+	struct FCase
+	{
+		const TCHAR* Label;
+		const TCHAR* RootName;
+		const TCHAR* MeshName;
+		bool bCapsule;
+	};
+	const FCase Cases[] = { { TEXT("Statue zone"), TEXT("ZoneCapsule"), TEXT("Statue"), true }, { TEXT("Bust zone"), TEXT("ZoneBox"), TEXT("Bust"), false } };
+	double X = 0.0;
+	for (const FCase& Case : Cases)
+	{
+		AActor* Actor = World->SpawnActor<AActor>(FVector(X, 0.0, 0.0), FRotator::ZeroRotator);
+		X += 1000.0;
+		if (!TestNotNull(TEXT("the actor"), Actor))
+		{
+			return false;
+		}
+		Actor->SetActorLabel(Case.Label);
+		USceneComponent* Root = nullptr;
+		if (Case.bCapsule)
+		{
+			UCapsuleComponent* Capsule = NewObject<UCapsuleComponent>(Actor, Case.RootName);
+			Capsule->SetCapsuleSize(50.0f, 150.0f);
+			Root = Capsule;
+		}
+		else
+		{
+			UBoxComponent* Box = NewObject<UBoxComponent>(Actor, Case.RootName);
+			Box->SetBoxExtent(FVector(100.0, 100.0, 50.0));
+			Root = Box;
+		}
+		Actor->SetRootComponent(Root);
+		Root->RegisterComponent();
+		UStaticMeshComponent* Mesh = NewObject<UStaticMeshComponent>(Actor, Case.MeshName);
+		Mesh->SetStaticMesh(Cube);
+		Mesh->SetupAttachment(Root);
+		Mesh->RegisterComponent();
+		TestTrue(TEXT("the root is a trigger shape"), FMantleTriggerShapeExport::IsTriggerShape(Root));
+	}
+
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(World, FMantleExportOptions());
+	for (const FCase& Case : Cases)
+	{
+		// Both come out: the trigger as one part and the mesh as another, in a Group. Nothing is lost silently.
+		const FMantleEntity* Group = MantleExportedEntities::Named(Result, Case.Label);
+		if (TestNotNull(TEXT("the actor is published"), Group))
+		{
+			TestTrue(TEXT("as a Group of parts"), Group->Type == EMantleEntityType::Group);
+		}
+		const FMantleEntity* Zone = MantleExportedEntities::Named(Result, Case.RootName);
+		TestTrue(TEXT("its trigger shape is a trigger part"), Zone && Zone->Props.TryGet<FMantleTriggerVolumeProps>() && Zone->Parent == (Group ? Group->Id : FString()));
+		const FMantleEntity* Statue = MantleExportedEntities::Named(Result, Case.MeshName);
+		const FMantleStaticMeshProps* StatueProps = Statue ? Statue->Props.TryGet<FMantleStaticMeshProps>() : nullptr;
+		if (TestNotNull(TEXT("its drawn mesh is a mesh part"), StatueProps))
+		{
+			TestTrue(TEXT("drawn"), StatueProps->bVisible);
+			TestTrue(TEXT("a child of the same group"), Statue->Parent == (Group ? Group->Id : FString()));
+		}
+	}
 	return true;
 }
 
