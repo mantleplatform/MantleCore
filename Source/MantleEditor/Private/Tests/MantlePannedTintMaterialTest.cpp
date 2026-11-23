@@ -162,6 +162,15 @@ bool FMantlePannedTintRecognizeTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("a sample times Time is not carried"), PulseSeen.Fidelity2.HasSource(3));
 	TestTrue(TEXT("it says the animation is frozen"), PulseSeen.Has(EMantleMaterialLoss::Animation));
 
+	// The cache key: a material that now carries a scrolling tint is not served the conversion an earlier build cached (frozen at time 0),
+	// and every other material keeps the key it always had.
+	const FMantleFlattenSettings Settings;
+	const FMantlePlaceAssetLimits Limits;
+	const FMantleBakeSurface Plain;
+	const FString Old = FMantlePlaceAssetConverter::MaterialCacheSalt(TEXT("flattener"), Settings, Limits, Cloud, false, Plain);
+	TestEqual(TEXT("a material with no tint keeps its key"), FMantlePlaceAssetConverter::MaterialCacheSalt(TEXT("flattener"), Settings, Limits, Cloud, false, Plain, false, false), Old);
+	TestNotEqual(TEXT("a material with a scrolling tint has a new key"), FMantlePlaceAssetConverter::MaterialCacheSalt(TEXT("flattener"), Settings, Limits, Cloud, false, Plain, false, true), Old);
+
 	// A multiplier that is another texture is not a constant tint either.
 	UMaterial* Masked = NewObject<UMaterial>(GetTransientPackage());
 	UMaterialExpressionTextureSample* Mask = AddNode<UMaterialExpressionTextureSample>(Masked);

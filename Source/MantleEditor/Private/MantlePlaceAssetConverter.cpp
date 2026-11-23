@@ -4127,7 +4127,8 @@ FMantleBakeSurface FMantlePlaceAssetConverter::EffectiveBakeSurface(const FMantl
 }
 
 FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& InSettings, const FMantlePlaceAssetLimits& InLimits,
-	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface, const bool bOpaqueInDisguise)
+	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface, const bool bOpaqueInDisguise,
+	const bool bScrollingTint)
 {
 	// #628: a per-instance node is baked at a representative value; the salt keeps an earlier bake (which read it as 0) from standing in.
 	// A bake on anything but the plain surface (a vertex color, a landscape's UV range) adds its tag, so a different color is not served
@@ -4135,10 +4136,13 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	// A translucent material whose opacity is always 1 publishes opaque: an earlier conversion of it (as see-through) must not stand in.
 	// A masked material never publishes a cut-off of 0 (ResolveMaskCutoff): an earlier conversion that did must not stand in. Only a
 	// masked material's conversion changed, so only its key does; every other material keeps its bake.
+	// A scrolling texture times a constant tint (F3 case A) now keeps scrolling, with its tint beside the texture: an earlier conversion
+	// of it (frozen at time 0) must not stand in. Only such a material's key changes.
 	const bool bMasked = Material && Material->GetBlendMode() == BLEND_Masked;
-	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
+	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
-		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""), bMasked ? TEXT(" maskcutoff=2") : TEXT(""));
+		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""), bMasked ? TEXT(" maskcutoff=2") : TEXT(""),
+		bScrollingTint ? TEXT(" scrollingtint=1") : TEXT(""));
 }
 
 double FMantlePlaceAssetConverter::MeanPixelDifference(const TArray<FColor>& A, const TArray<FColor>& B)
@@ -4403,7 +4407,8 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	}
 
 	const FMantleBakeSurface Surface = EffectiveBakeSurface(Analysis, InSurface);
-	const FString Salt = MaterialCacheSalt(Flattener->Describe(), Settings, Limits, Material, Analysis.bPerInstanceVariation, Surface, Analysis.bOpaqueInDisguise);
+	const FString Salt = MaterialCacheSalt(Flattener->Describe(), Settings, Limits, Material, Analysis.bPerInstanceVariation, Surface, Analysis.bOpaqueInDisguise,
+		Analysis.Fidelity2.bSourceTint[0] || Analysis.Fidelity2.bSourceTint[3]);
 	FString CacheKey, WhyNot;
 	const bool bCacheable = ComputeCacheKey(Salt, Objects, CacheKey, WhyNot);
 	{
