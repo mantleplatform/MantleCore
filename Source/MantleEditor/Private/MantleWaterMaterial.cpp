@@ -1664,6 +1664,16 @@ bool FMantleWaterMaterial::RecognizeSingleLayer(const UMaterialInterface* Contex
 	}
 	ReadSurface(Context, BaseColor, Normal, Out);
 
+	// A Single Layer Water material with no output node has no scattering or absorption: the engine compiles both as 0
+	// (MaterialExpressionSubstrate.cpp:361-362, MaterialExpressions.cpp:21336-21340), so its water is clear and the base color is
+	// only the surface's. It is not the water's deep color: reading it as one derived heavy absorption from it and published a dark
+	// slab (the publish test's B4 pond, base color 0.02, 0.08, 0.12). The color falls through to the named parameters below, else a clear lake's.
+	const UMaterial* SurfaceBase = Context->GetMaterial();
+	if (SurfaceBase && !SurfaceBase->HasAnyExpressionsInMaterialAndFunctionsOfType<UMaterialExpressionSingleLayerWaterMaterialOutput>())
+	{
+		Out.bColor = false;
+	}
+
 	// The Water plugin's Water_Material (GhzGarage/mantle#818) builds its outputs with Set Material Attributes (no roots to read) and
 	// feeds its output node through foam and depth graphs this cannot evaluate, so what it holds is read by its parameter names
 	// instead: "Absorption" and "Scattering" (the output node's coefficients, 1/cm) and "Water Albedo" (the surface color), as

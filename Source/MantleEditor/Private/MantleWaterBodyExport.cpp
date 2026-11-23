@@ -844,12 +844,19 @@ namespace MantleWaterBodyExportFlat
 	constexpr double MinDepth = 100.0;
 	constexpr double MaxDepth = 2000.0;
 
-	/** The depth the water material implies, held to the range, and where it came from; the default when the material gives none. */
-	double DepthOf(const FMantleWaterBake& Water, const FMantleWaterCoefficients* Volume, FString& OutSource)
+	/**
+	 * The depth the water material implies, held to the range, and where it came from; the default when the material gives none.
+	 * OutShallow is true when the material's explicit fade distance (a Depth Fade node's) is under MinDepth: a puddle or a thin wet film
+	 * (a fade of a few centimeters), which is not a body to swim in. Raising it to MinDepth would turn a 6 cm sheet into a 1 m pond. The
+	 * absorption estimate never makes a body shallow: a murky pond is still a pond to swim in.
+	 */
+	double DepthOf(const FMantleWaterBake& Water, const FMantleWaterCoefficients* Volume, FString& OutSource, bool& OutShallow)
 	{
+		OutShallow = false;
 		if (Water.bFadeDistance && Water.FadeDistanceCm > 0.0)
 		{
 			OutSource = FString::Printf(TEXT("the material's %.0f cm fade distance"), Water.FadeDistanceCm);
+			OutShallow = Water.FadeDistanceCm < MinDepth;
 			return FMath::Clamp(Water.FadeDistanceCm, MinDepth, MaxDepth);
 		}
 		// Coefficients ties the fade distance to about three extinction lengths (sigma = 3 / D), so the clearest channel gives D back.
@@ -961,7 +968,14 @@ bool FMantleWaterBodyExport::ReadFlatWaterMesh(const AActor* Actor, FTransform& 
 	OutProps.BodyType = EMantleWaterBodyType::Lake;
 	const FMantleWaterCoefficients Derived = FMantleWaterMaterial::Coefficients(Water.Color, Water.bFadeDistance ? Water.FadeDistanceCm : 0.0);
 	const FMantleWaterCoefficients* Volume = Water.bVolume ? &Water.Volume : (Water.bColor ? &Derived : nullptr);
-	const double Depth = Flat::DepthOf(Water, Volume, OutDepthSource);
+	bool bShallow = false;
+	const double Depth = Flat::DepthOf(Water, Volume, OutDepthSource, bShallow);
+	if (bShallow)
+	{
+		// A puddle (a depth fade of a few centimeters over a thin sheet) is a see-through surface, not a pond: it stays a mesh, drawn
+		// with the water material's own look (see-through, tinted), instead of becoming a 1 m deep volume to swim in.
+		return false;
+	}
 	const double HalfWidth = Width * 0.5;
 	const double HalfLength = Length * 0.5;
 	const FVector2D Corners[] = { FVector2D(-HalfWidth, -HalfLength), FVector2D(HalfWidth, -HalfLength), FVector2D(HalfWidth, HalfLength), FVector2D(-HalfWidth, HalfLength) };

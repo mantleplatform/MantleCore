@@ -3,6 +3,7 @@
 #include "MantleDrawDistance.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceInstancing.h"
+#include "MantleTargetFeatures.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -303,6 +304,71 @@ bool FMantleCellNoCutOffTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("the root's instances too"), Groups[1].Mesh.DrawDistance, 60000.0);
 	TestEqual(TEXT("which kept its instance"), Groups[1].WorldInstances.Num(), 1);
 	TestEqual(TEXT("nothing was drawn too far"), Plan.Report.StayCounts[static_cast<int32>(EMantleCellStay::DrawDistanceTooFar)], static_cast<int64>(0));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellTowerRoofTest,
+	"Mantle.Editor.Cells.TowerRoofGoesToItsCellAndWideGroundStays",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellTowerRoofTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellsTestPrivate;
+
+	// City Sample's SM_arbitrary_roof_694: a pivot on the ground, bounds extent (5695, 2941, 20891) cm about (0, 0, 20891): 218 m round, 64 m across, 418 m tall.
+	// With the sphere deciding it was never culled and stayed in the root, standing alone in the sky where its tower was not loaded (rev 11).
+	FMantleDrawDistanceSource RoofSource;
+	RoofSource.SphereRadius = 21852.0;
+	RoofSource.FootprintRadius = FMath::Sqrt(FMath::Square(5695.0) + FMath::Square(2941.0));
+	FMantleStaticMeshProps RoofProps;
+	RoofProps.Mesh = MeshA;
+	FMantleDrawDistance::Apply(RoofSource, FMantleTargetFeatures::All(), RoofProps);
+
+	// A district's ground tile: 500 m across and flat, and a freeway deck 300 m long and flat.
+	FMantleDrawDistanceSource TileSource;
+	TileSource.SphereRadius = 50000.0;
+	TileSource.FootprintRadius = 49990.0;
+	FMantleStaticMeshProps TileProps;
+	TileProps.Mesh = MeshB;
+	FMantleDrawDistance::Apply(TileSource, FMantleTargetFeatures::All(), TileProps);
+
+	FMantlePlace Place;
+	TArray<FMantleInstancedMeshGroup> Groups;
+	FMantleCellPlanInput Input;
+	Input.bFoldStaticMeshes = false;
+	Input.MeshBounds.Add(MeshA, FBox(FVector(-5695.0, -2941.0, 0.0), FVector(5695.0, 2941.0, 41782.0)));
+
+	// The tower: a wall module in the cell, the roof (its pivot on the ground, its geometry 418 m up) beside it, and the ground tile.
+	Place.Entities.Add(MakeMesh(TEXT("ent_wall"), MeshB, FVector(1000.0, 1000.0, 0.0), FMantleDrawDistance::NoCutOff));
+	FMantleEntity Roof = MakeMesh(TEXT("ent_roof"), MeshA, FVector(1500.0, 1200.0, 0.0), RoofProps.DrawDistance);
+	Place.Entities.Add(Roof);
+	Place.Entities.Add(MakeMesh(TEXT("ent_tile"), MeshB, FVector(1200.0, 1200.0, 0.0), TileProps.DrawDistance));
+
+	TestEqual(TEXT("the roof has no cut-off of its own"), RoofProps.DrawDistance, FMantleDrawDistance::NoCutOff);
+	TestEqual(TEXT("the ground tile has no draw distance"), TileProps.DrawDistance, 0.0);
+
+	const FMantleCellPlan Plan = FMantleCellPlanner::Plan(Place, Groups, Input);
+	const FMantlePlannedCell* Tower = FindCell(Plan, 1, 0, 0);
+	if (!TestNotNull(TEXT("the tower's 256 m cell"), Tower))
+	{
+		return false;
+	}
+	TArray<FString> TowerIds;
+	for (const FMantleEntity& Entity : Tower->Entities)
+	{
+		TowerIds.Add(Entity.Id);
+	}
+	TestTrue(TEXT("the wall is in the tower's cell"), TowerIds.Contains(TEXT("ent_wall")));
+	TestTrue(TEXT("and so is the roof: the cell decides, not the piece"), TowerIds.Contains(TEXT("ent_roof")));
+	TestFalse(TEXT("the roof left the root"), HasEntity(Place, TEXT("ent_roof")));
+	TestTrue(TEXT("its cell's box reaches the roof's top"), Tower->Bounds.Max.Z >= 41782.0);
+	TestEqual(TEXT("the cell loads out to the ring's 600 m"), Tower->DrawDistance, 60000.0);
+
+	// Only the wide, flat ground tile stays in the root, and only for having no distance.
+	TestTrue(TEXT("the ground tile stays"), HasEntity(Place, TEXT("ent_tile")));
+	TestEqual(TEXT("it is the one with no draw distance"), Plan.Report.StayCounts[static_cast<int32>(EMantleCellStay::NoDrawDistance)], static_cast<int64>(1));
+	TestEqual(TEXT("two entities in cells"), Plan.Report.CellEntities, static_cast<int64>(2));
 	return true;
 }
 
