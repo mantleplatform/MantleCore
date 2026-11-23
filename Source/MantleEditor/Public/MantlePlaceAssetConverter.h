@@ -1020,6 +1020,12 @@ public:
 	 */
 	static bool BakedBaseColorImage(const FMantleGlbDocument& Document, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight, FString& OutWhy);
 
+	/**
+	 * A1: a bake's first material's normal map over UVs 0 to 1, as the image holds it (glTF's green-up convention, bAdjustNormalmaps).
+	 * False when it has none (bOutFlat: the material's normal is flat), or with the reason, a clause, when it can't be used as it is.
+	 */
+	static bool BakedNormalImage(const FMantleGlbDocument& Document, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight, bool& bOutFlat, FString& OutWhy);
+
 	/** MeanPixelDifference of the check's two base color bakes (BakeBaseColors), with one of one color (shrunk to one pixel) counted as not moving: 0. */
 	static double MovedCardDifference(const TArray<FColor>& Here, const TArray<FColor>& Moved);
 

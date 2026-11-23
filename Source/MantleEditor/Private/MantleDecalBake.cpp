@@ -7,6 +7,7 @@
 #include "MantlePlaceAssets.h"
 
 #include "Engine/Texture2D.h"
+#include "HAL/PlatformTime.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/SecureHash.h"
 #include "UObject/Package.h"
@@ -15,10 +16,11 @@
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleDecalBakePrivate
 {
-	/** One kept result: the texture, or why there is none (an unbakeable material is not tried again until it changes). */
+	/** One kept result: the textures, or why there are none (an unbakeable material is not tried again until it changes). */
 	struct FKept
 	{
-		TStrongObjectPtr<UTexture2D> Texture;
+		TStrongObjectPtr<UTexture2D> BaseColor;
+		TStrongObjectPtr<UTexture2D> Normal;
 		FString Why;
 	};
 
@@ -27,6 +29,10 @@ namespace MantleDecalBakePrivate
 		static TMap<FString, FKept> Results;
 		return Results;
 	}
+
+	/** The session's decal bakes so far, and the time they took. */
+	int32 BakeCount = 0;
+	double BakeSeconds = 0.0;
 
 	TSharedPtr<IMantleMaterialFlattener>& TestFlattener()
 	{
@@ -43,22 +49,32 @@ namespace MantleDecalBakePrivate
 		static FMantleGltfMaterialFlattener Gltf;
 		return Gltf;
 	}
+
+	UTexture2D* NewTexture(const UMaterialInterface& Material, const TCHAR* What, const FString& Hash, const TArray<FColor>& Pixels, int32 Width, int32 Height)
+	{
+		UTexture2D* Texture = NewObject<UTexture2D>(GetTransientPackage(), MakeUniqueObjectName(GetTransientPackage(), UTexture2D::StaticClass(),
+			FName(*FString::Printf(TEXT("%s_Decal%s_%s"), *Material.GetName(), What, *Hash))));
+		Texture->Source.Init(Width, Height, 1, 1, TSF_BGRA8, reinterpret_cast<const uint8*>(Pixels.GetData()));
+		return Texture;
+	}
 }
 
-UTexture2D* FMantleDecalBake::BakeShape(const UMaterialInterface* Material, FString& OutWhy)
+bool FMantleDecalBake::Bake(const UMaterialInterface* Material, UTexture2D*& OutBaseColor, UTexture2D*& OutNormal, FString& OutWhy)
 {
 	using namespace MantleDecalBakePrivate;
+	OutBaseColor = nullptr;
+	OutNormal = nullptr;
 	OutWhy.Reset();
 	if (!Material)
 	{
 		OutWhy = TEXT("there is no material");
-		return nullptr;
+		return false;
 	}
-	IMantleMaterialFlattener& Bake = Flattener();
-	if (!Bake.CanBakeTextures())
+	IMantleMaterialFlattener& Engine = Flattener();
+	if (!Engine.CanBakeTextures())
 	{
 		OutWhy = TEXT("baking it needs a renderer, and this editor has none");
-		return nullptr;
+		return false;
 	}
 
 	// Kept under the material's content: the material, everything its graph reads (instances, functions, textures), and the bake itself.
@@ -70,7 +86,7 @@ UTexture2D* FMantleDecalBake::BakeShape(const UMaterialInterface* Material, FStr
 	{
 		Objects.Add(Dependency.Get());
 	}
-	const FString Salt = FString::Printf(TEXT("decal shape 1 %s max=%d %s"), *Bake.Describe(), Limits.MaxTextureSize, *Material->GetPathName());
+	const FString Salt = FString::Printf(TEXT("decal shape 2 %s max=%d %s"), *Engine.Describe(), Limits.MaxTextureSize, *Material->GetPathName());
 	FString Key, WhyNot;
 	if (!FMantlePlaceAssetConverter::ComputeCacheKey(Salt, Objects, Key, WhyNot))
 	{
@@ -78,58 +94,91 @@ UTexture2D* FMantleDecalBake::BakeShape(const UMaterialInterface* Material, FStr
 	}
 	if (const FKept* Found = Key.IsEmpty() ? nullptr : Kept().Find(Key))
 	{
+		OutBaseColor = Found->BaseColor.Get();
+		OutNormal = Found->Normal.Get();
 		OutWhy = Found->Why;
-		return Found->Texture.Get();
+		return OutBaseColor != nullptr;
 	}
-	auto Keep = [&Key](UTexture2D* Texture, const FString& Why)
+	auto Keep = [&Key, &OutBaseColor, &OutNormal, &OutWhy]()
 	{
 		if (!Key.IsEmpty())
 		{
 			FKept& Entry = Kept().Add(Key);
-			Entry.Texture.Reset(Texture);
-			Entry.Why = Why;
+			Entry.BaseColor.Reset(OutBaseColor);
+			Entry.Normal.Reset(OutNormal);
+			Entry.Why = OutWhy;
 		}
-		return Texture;
+		return OutBaseColor != nullptr;
+	};
+
+	const double Started = FPlatformTime::Seconds();
+	auto Count = [&Material, Started](const TCHAR* Outcome)
+	{
+		const double Took = FPlatformTime::Seconds() - Started;
+		++BakeCount;
+		BakeSeconds += Took;
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_DECAL_BAKE %s: %s in %.2f s (%d decal bake%s this session, %.1f s in all)"), *Material->GetName(), Outcome, Took,
+			BakeCount, BakeCount == 1 ? TEXT("") : TEXT("s"), BakeSeconds);
 	};
 
 	const TStrongObjectPtr<UMaterialInterface> Surface = FMantlePlaceAssets::DecalSurfaceCopy(Material);
 	if (!Surface.IsValid())
 	{
 		OutWhy = TEXT("it is not a decal material Mantle can copy (a dynamic material instance, or not Deferred Decal)");
-		return Keep(nullptr, OutWhy);
+		return Keep();
 	}
 	FMantleFlattenSettings Settings;
 	Settings.MaxBakeSize = Limits.MaxTextureSize;
 	FMantleGlbDocument Document;
 	TArray<FString> Messages;
 	FString Error;
-	if (!Bake.Flatten(Surface.Get(), Settings, Document, Messages, Error))
-	{
-		OutWhy = FString::Printf(TEXT("the engine could not bake it (%s)"), *Error);
-		return Keep(nullptr, OutWhy);
-	}
+	const bool bFlattened = Engine.Flatten(Surface.Get(), Settings, Document, Messages, Error);
 	TArray<FColor> Pixels;
 	int32 Width = 0;
 	int32 Height = 0;
-	FString ImageWhy;
-	if (!FMantlePlaceAssetConverter::BakedBaseColorImage(Document, Pixels, Width, Height, ImageWhy))
+	if (!bFlattened)
 	{
-		OutWhy = ImageWhy;
-		return Keep(nullptr, OutWhy);
+		OutWhy = FString::Printf(TEXT("the engine could not bake it (%s)"), *Error);
+		Count(TEXT("not baked"));
+		return Keep();
+	}
+	if (!FMantlePlaceAssetConverter::BakedBaseColorImage(Document, Pixels, Width, Height, OutWhy))
+	{
+		Count(TEXT("no usable base color"));
+		return Keep();
 	}
 
 	FMD5 Md5;
-	const FTCHARToUTF8 Utf8(*Key);
+	const FString Seed = Key.IsEmpty() ? Material->GetPathName() : Key;
+	const FTCHARToUTF8 Utf8(*Seed);
 	Md5.Update(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length());
 	uint8 Digest[16];
 	Md5.Final(Digest);
 	const FString Hash = FString::Printf(TEXT("%02x%02x%02x%02x"), Digest[0], Digest[1], Digest[2], Digest[3]);
-	UTexture2D* Baked = NewObject<UTexture2D>(GetTransientPackage(), MakeUniqueObjectName(GetTransientPackage(), UTexture2D::StaticClass(),
-		FName(*FString::Printf(TEXT("%s_DecalBake_%s"), *Material->GetName(), *Hash))));
-	Baked->SRGB = true;
-	Baked->Source.Init(Width, Height, 1, 1, TSF_BGRA8, reinterpret_cast<const uint8*>(Pixels.GetData()));
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_DECAL_BAKE %s: baked its surface copy into a %dx%d decal texture"), *Material->GetName(), Width, Height);
-	return Keep(Baked, FString());
+	OutBaseColor = NewTexture(*Material, TEXT("BaseColor"), Hash, Pixels, Width, Height);
+	OutBaseColor->SRGB = true;
+
+	// The normal as the material draws it. The bake's image is green-up (glTF), so the texture says so: the upload keeps it as it is
+	// (SourceTexturePng flips only a texture not marked Flip Green Channel). A flat normal publishes none.
+	bool bFlat = false;
+	FString NormalWhy;
+	TArray<FColor> NormalPixels;
+	int32 NormalWidth = 0;
+	int32 NormalHeight = 0;
+	if (FMantlePlaceAssetConverter::BakedNormalImage(Document, NormalPixels, NormalWidth, NormalHeight, bFlat, NormalWhy))
+	{
+		OutNormal = NewTexture(*Material, TEXT("Normal"), Hash, NormalPixels, NormalWidth, NormalHeight);
+		OutNormal->SRGB = false;
+		OutNormal->CompressionSettings = TC_Normalmap;
+		OutNormal->bFlipGreenChannel = true;
+	}
+	else if (!bFlat)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_DECAL_BAKE %s: its baked normal map is left out (%s)"), *Material->GetName(), *NormalWhy);
+	}
+	Count(*FString::Printf(TEXT("baked into a %dx%d decal texture%s"), Width, Height,
+		OutNormal ? *FString::Printf(TEXT(" and a %dx%d normal map"), NormalWidth, NormalHeight) : TEXT("")));
+	return Keep();
 }
 
 void FMantleDecalBake::SetFlattenerForTests(TSharedPtr<IMantleMaterialFlattener> Flattener)

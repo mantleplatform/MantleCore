@@ -4111,14 +4111,19 @@ bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& Out
 	UTexture* Shaped = bMantleMaster ? BaseColor : DecalTextureWithOpacity(Material, BaseColor, &bUnreadOpacity);
 	bool bBaked = Shaped != BaseColor;
 	// A1: an Opacity graph that reader can't run (City Sample's decal master: a Power, cell bombing) is baked by the engine instead, on the
-	// material's surface copy: its Base Color with that Opacity in alpha, over the UVs 0 to 1 the decal projects across its box.
+	// material's surface copy: its Base Color with that Opacity in alpha, over the UVs 0 to 1 the decal projects across its box, and its
+	// Normal as the material draws it (that master runs its normal through its UV controls and a strength, which its raw texture misses).
+	bool bEngineBaked = false;
+	UTexture2D* EngineNormal = nullptr;
 	if (bUnreadOpacity)
 	{
 		FString BakeWhy;
-		if (UTexture2D* EngineBaked = FMantleDecalBake::BakeShape(Material, BakeWhy))
+		UTexture2D* EngineBaseColor = nullptr;
+		if (FMantleDecalBake::Bake(Material, EngineBaseColor, EngineNormal, BakeWhy))
 		{
-			Shaped = EngineBaked;
+			Shaped = EngineBaseColor;
 			bBaked = true;
+			bEngineBaked = true;
 		}
 		else
 		{
@@ -4141,6 +4146,12 @@ bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& Out
 		}
 	}
 	OutBaseColor = Shaped;
+	if (bEngineBaked)
+	{
+		// The bake's normal (none when the material's is flat); the material's Opacity is in the bake's alpha already, so no fade on top.
+		OutNormal = EngineNormal;
+		return true;
+	}
 
 	// The normal map, when the material has one set that is not the master's flat placeholder.
 	UTexture* Normal = nullptr;

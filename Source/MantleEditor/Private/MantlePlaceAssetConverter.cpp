@@ -4224,6 +4224,61 @@ bool FMantlePlaceAssetConverter::BakedBaseColorSize(const FMantleGlbDocument& Do
 	return OutSize.X > 0 && OutSize.Y > 0;
 }
 
+namespace MantlePlaceAssetConverterPrivate
+{
+	/**
+	 * The image a bake's textureInfo Ref points at, when it covers UVs 0 to 1 as it is: GLTFExporter keeps a plain texture as it is, with a
+	 * transform for its tiling, and that image alone is not what the material draws over 0 to 1. False with the reason, a clause.
+	 */
+	bool BakedWholeImage(const FMantleGlbDocument& Document, const FTextureRef& Ref, const bool bColor, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight,
+		FString& OutWhy)
+	{
+		if (Ref.TexCoord != 0 || !Ref.SameTransform(FTextureRef()))
+		{
+			OutWhy = TEXT("the bake kept a tiled source texture instead of an image of the whole material");
+			return false;
+		}
+		TArray<uint8> Bytes;
+		int32 Source = INDEX_NONE;
+		FString Name;
+		if (!ReadTextureImage(Document, Ref.Texture, Bytes, Source, Name) || !DecodeBgra(Bytes, bColor, OutPixels, OutWidth, OutHeight))
+		{
+			OutWhy = TEXT("the bake's image could not be read");
+			return false;
+		}
+		return true;
+	}
+}
+
+bool FMantlePlaceAssetConverter::BakedNormalImage(const FMantleGlbDocument& Document, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight, bool& bOutFlat, FString& OutWhy)
+{
+	using namespace MantlePlaceAssetConverterPrivate;
+	OutPixels.Reset();
+	OutWidth = OutHeight = 0;
+	bOutFlat = false;
+	const TArray<TSharedPtr<FJsonValue>>* Materials = nullptr;
+	if (!Document.Json.IsValid() || !Document.Json->TryGetArrayField(TEXT("materials"), Materials) || Materials->Num() == 0 || !(*Materials)[0].IsValid())
+	{
+		OutWhy = TEXT("the bake has no material");
+		return false;
+	}
+	const TSharedPtr<FJsonObject> Info = ObjectField((*Materials)[0]->AsObject(), TEXT("normalTexture"));
+	const FTextureRef Ref = ReadTextureRef(Info);
+	if (!Ref.IsSet())
+	{
+		// No normal map in the bake: the material's normal is flat.
+		bOutFlat = true;
+		return false;
+	}
+	// A scale other than 1 would have to be applied to the image's slopes; GLTFExporter bakes a normal's strength into the image.
+	if (!FMath::IsNearlyEqual(NumberField(Info, TEXT("scale"), 1.0), 1.0, 1e-3))
+	{
+		OutWhy = TEXT("the bake's normal map has a strength other than 1");
+		return false;
+	}
+	return BakedWholeImage(Document, Ref, false, OutPixels, OutWidth, OutHeight, OutWhy);
+}
+
 bool FMantlePlaceAssetConverter::BakedBaseColorImage(const FMantleGlbDocument& Document, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight, FString& OutWhy)
 {
 	using namespace MantlePlaceAssetConverterPrivate;
@@ -4242,19 +4297,8 @@ bool FMantlePlaceAssetConverter::BakedBaseColorImage(const FMantleGlbDocument& D
 		OutWhy = TEXT("the bake gave one flat color, no image");
 		return false;
 	}
-	// The image must cover UVs 0 to 1 as it is: GLTFExporter keeps a plain texture as it is, with a transform for its tiling, and that
-	// image alone is not what the material draws over 0 to 1.
-	if (Ref.TexCoord != 0 || !Ref.SameTransform(FTextureRef()))
+	if (!BakedWholeImage(Document, Ref, true, OutPixels, OutWidth, OutHeight, OutWhy))
 	{
-		OutWhy = TEXT("the bake kept a tiled source texture instead of an image of the whole material");
-		return false;
-	}
-	TArray<uint8> Bytes;
-	int32 Source = INDEX_NONE;
-	FString Name;
-	if (!ReadTextureImage(Document, Ref.Texture, Bytes, Source, Name) || !DecodeBgra(Bytes, true, OutPixels, OutWidth, OutHeight))
-	{
-		OutWhy = TEXT("the bake's base color image could not be read");
 		return false;
 	}
 	// glTF multiplies the image by baseColorFactor: color in linear light, alpha as it is.

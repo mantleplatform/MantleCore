@@ -84,34 +84,36 @@ namespace MantleDecalSurfaceBakeTestPrivate
 		return false;
 	}
 
-	/** A one-material GLB whose base color is Pixels (Width x Height, BGRA) as an embedded PNG, translucent. */
-	FMantleGlbDocument DocumentWithImage(const TArray<FColor>& Pixels, int32 Width, int32 Height)
+	/**
+	 * A one-material GLB whose base color is Pixels (Width x Height, BGRA) as an embedded PNG, translucent; with NormalPixels (the same
+	 * size), a normal map too.
+	 */
+	FMantleGlbDocument DocumentWithImage(const TArray<FColor>& Pixels, int32 Width, int32 Height, const TArray<FColor>* NormalPixels = nullptr)
 	{
-		TArray64<uint8> Png;
-		FImageUtils::PNGCompressImageArray(Width, Height, TArrayView64<const FColor>(Pixels.GetData(), Pixels.Num()), Png);
 		FMantleGlbDocument Doc;
-		Doc.Bin = TArray<uint8>(Png.GetData(), static_cast<int32>(Png.Num()));
 		Doc.Json = MakeShared<FJsonObject>();
-		auto Array = [](const TSharedRef<FJsonObject>& Only)
+		TArray<TSharedPtr<FJsonValue>> Views, Images, Textures;
+		auto AddImage = [&](const TArray<FColor>& Image)
 		{
-			TArray<TSharedPtr<FJsonValue>> Values;
-			Values.Add(MakeShared<FJsonValueObject>(Only));
-			return Values;
+			TArray64<uint8> Png;
+			FImageUtils::PNGCompressImageArray(Width, Height, TArrayView64<const FColor>(Image.GetData(), Image.Num()), Png);
+			const TSharedRef<FJsonObject> View = MakeShared<FJsonObject>();
+			View->SetNumberField(TEXT("buffer"), 0);
+			View->SetNumberField(TEXT("byteOffset"), Doc.Bin.Num());
+			View->SetNumberField(TEXT("byteLength"), static_cast<double>(Png.Num()));
+			Doc.Bin.Append(Png.GetData(), static_cast<int32>(Png.Num()));
+			const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+			Entry->SetNumberField(TEXT("bufferView"), Views.Num());
+			Entry->SetStringField(TEXT("mimeType"), TEXT("image/png"));
+			const TSharedRef<FJsonObject> Texture = MakeShared<FJsonObject>();
+			Texture->SetNumberField(TEXT("source"), Images.Num());
+			Views.Add(MakeShared<FJsonValueObject>(View));
+			Images.Add(MakeShared<FJsonValueObject>(Entry));
+			Textures.Add(MakeShared<FJsonValueObject>(Texture));
+			return Textures.Num() - 1;
 		};
-		const TSharedRef<FJsonObject> View = MakeShared<FJsonObject>();
-		View->SetNumberField(TEXT("buffer"), 0);
-		View->SetNumberField(TEXT("byteOffset"), 0);
-		View->SetNumberField(TEXT("byteLength"), static_cast<double>(Png.Num()));
-		Doc.Json->SetArrayField(TEXT("bufferViews"), Array(View));
-		const TSharedRef<FJsonObject> Image = MakeShared<FJsonObject>();
-		Image->SetNumberField(TEXT("bufferView"), 0);
-		Image->SetStringField(TEXT("mimeType"), TEXT("image/png"));
-		Doc.Json->SetArrayField(TEXT("images"), Array(Image));
-		const TSharedRef<FJsonObject> Texture = MakeShared<FJsonObject>();
-		Texture->SetNumberField(TEXT("source"), 0);
-		Doc.Json->SetArrayField(TEXT("textures"), Array(Texture));
 		const TSharedRef<FJsonObject> BaseColor = MakeShared<FJsonObject>();
-		BaseColor->SetNumberField(TEXT("index"), 0);
+		BaseColor->SetNumberField(TEXT("index"), AddImage(Pixels));
 		const TSharedRef<FJsonObject> Pbr = MakeShared<FJsonObject>();
 		Pbr->SetObjectField(TEXT("baseColorTexture"), BaseColor);
 		Pbr->SetNumberField(TEXT("metallicFactor"), 0.0);
@@ -119,11 +121,22 @@ namespace MantleDecalSurfaceBakeTestPrivate
 		const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
 		Entry->SetStringField(TEXT("alphaMode"), TEXT("BLEND"));
 		Entry->SetObjectField(TEXT("pbrMetallicRoughness"), Pbr);
-		Doc.Json->SetArrayField(TEXT("materials"), Array(Entry));
+		if (NormalPixels)
+		{
+			const TSharedRef<FJsonObject> Normal = MakeShared<FJsonObject>();
+			Normal->SetNumberField(TEXT("index"), AddImage(*NormalPixels));
+			Entry->SetObjectField(TEXT("normalTexture"), Normal);
+		}
+		Doc.Json->SetArrayField(TEXT("bufferViews"), Views);
+		Doc.Json->SetArrayField(TEXT("images"), Images);
+		Doc.Json->SetArrayField(TEXT("textures"), Textures);
+		TArray<TSharedPtr<FJsonValue>> Materials;
+		Materials.Add(MakeShared<FJsonValueObject>(Entry));
+		Doc.Json->SetArrayField(TEXT("materials"), Materials);
 		return Doc;
 	}
 
-	/** Records what it is handed and gives back a translucent bake: a 2x2 image, half see-through, cream colored. */
+	/** Records what it is handed and gives back a translucent bake: a 2x2 image, half see-through, cream colored, and a bumpy normal map. */
 	class FScriptedFlattener : public IMantleMaterialFlattener
 	{
 	public:
@@ -147,7 +160,9 @@ namespace MantleDecalSurfaceBakeTestPrivate
 			bSawLifetimeOpacity = LifetimeOpacityClass() && GraphHasClass(Base, LifetimeOpacityClass());
 			TArray<FColor> Pixels;
 			Pixels.Init(FColor(230, 225, 210, 128), 4);
-			OutDocument = DocumentWithImage(Pixels, 2, 2);
+			TArray<FColor> Normal;
+			Normal.Init(FColor(160, 110, 240, 255), 4);
+			OutDocument = DocumentWithImage(Pixels, 2, 2, &Normal);
 			return true;
 		}
 
@@ -336,6 +351,16 @@ bool FMantleDecalActorEngineBakeTest::RunTest(const FString& Parameters)
 		const TArrayView64<FColor> Pixels = Baked.AsBGRA8();
 		TestEqual(TEXT("its color"), Pixels[0].R, static_cast<uint8>(230));
 		TestEqual(TEXT("and its shape in alpha"), Pixels[0].A, static_cast<uint8>(128));
+	}
+	// Its normal is the bake's, as the material draws it, green-up and marked so (the upload keeps it as it is).
+	if (TestNotNull(TEXT("the decal has the bake's normal map"), Normal))
+	{
+		TestTrue(TEXT("marked green-up"), Normal->bFlipGreenChannel);
+		FImage NormalImage;
+		if (TestTrue(TEXT("with source pixels"), Normal->Source.GetMipImage(NormalImage, 0)))
+		{
+			TestEqual(TEXT("the bake's normal, unchanged"), NormalImage.AsBGRA8()[0].G, static_cast<uint8>(110));
+		}
 	}
 	UTexture* Again = nullptr;
 	FMantlePlaceExporter::ReadDecal(Decal, Props, Again, Normal, Problem);
