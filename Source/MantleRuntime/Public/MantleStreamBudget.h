@@ -33,6 +33,9 @@ struct MANTLERUNTIME_API FMantleBudgetLimits
 	 */
 	int64 TextureBytes = MAX_int64;
 
+	/** The share of the card TextureBytes was made from (TextureShareOfVideo of the Textures setting); 0 when not made from a card. */
+	double TextureShare = 0.0;
+
 	/**
 	 * #189: the game's process memory, in bytes, beside the share: the smaller of the two decides. 9 GB on Joshua's minimum PC (16 GB of RAM), 17 GB on 32 GB, 24 GB on 64 GB
 	 * (ProcessMemoryCapBytes). The share alone let City Sample take 44 GB of a 63 GB machine, and would leave a 16 GB one too little for the system and other programs.
@@ -70,6 +73,16 @@ struct MANTLERUNTIME_API FMantleBudgetMachine
 {
 	int64 VideoBytes = 0;
 	int64 PhysicalBytes = 0;
+};
+
+/**
+ * The two graphics settings the limits follow, as preset levels (FMantleStreamBudget::ClampLevel). View Distance picks the row of counts and the process memory share; Textures picks the
+ * textures' share of the card. Not the lowest of all the settings: a Low anti-aliasing or foliage setting changes neither (big-map review 8.1).
+ */
+struct MANTLERUNTIME_API FMantleBudgetLevels
+{
+	int32 ViewDistance = 3;
+	int32 Textures = 3;
 };
 
 /** How the ladder moves (see FMantleStreamBudget::NextLadder). */
@@ -117,7 +130,7 @@ class MANTLERUNTIME_API FMantleStreamBudget
 public:
 	static constexpr int32 LevelCount = 4;
 
-	/** A graphics setting as the four preset levels: Low 0, Balanced 1, High 2, Epic 3 (the lowest of the engine's quality categories; Cinematic counts as Epic). */
+	/** A graphics setting as the four preset levels: Low 0, Balanced 1, High 2, Epic 3 (Cinematic counts as Epic). */
 	static int32 ClampLevel(int32 Level);
 
 	/** The smaller of (video memory / 16 GB) and (RAM / 32 GB) (what the numbers were measured on), at least 0.5 and at most 1. An unknown size counts as big enough. */
@@ -126,8 +139,11 @@ public:
 	/** The limits for a preset level, counts and Nanite pages times Factor. */
 	static FMantleBudgetLimits LimitsFor(int32 Level, double Factor);
 
-	/** LimitsFor, plus the limits that come from the machine's own size: the textures' share of its card (times Scale) and the process memory cap. */
-	static FMantleBudgetLimits LimitsFor(int32 Level, const FMantleBudgetMachine& Machine, double Scale);
+	/**
+	 * LimitsFor at the View Distance setting's level, plus the limits that come from the machine's own size: the Textures setting's share of its card (times Scale) and the process
+	 * memory cap.
+	 */
+	static FMantleBudgetLimits LimitsFor(const FMantleBudgetLevels& Levels, const FMantleBudgetMachine& Machine, double Scale);
 
 	/** The share of the card the place's textures may hold at a preset level: Low 0.25, Balanced 0.33, High 0.42, Epic 0.5 (8 GB of a 16 GB card on Epic, about 2 GB of a 6 to 8 GB one on Low or Balanced). */
 	static double TextureShareOfVideo(int32 Level);
@@ -195,10 +211,70 @@ public:
 	/** How far a cell is wanted from, cm: DrawDistance x Scale, but never less than FloorCm and never more than DrawDistance. With scale 1 it is the DrawDistance. */
 	static double ScaledReach(double DrawDistanceCm, double Scale, double FloorCm);
 
+	/**
+	 * The View Distance setting's scale on every reach, from the engine's own (r.ViewDistanceScale, which the engine multiplies every draw distance by: 0.4 Low, 0.6 Balanced,
+	 * 0.8 High, 1 Epic in BaseScalability.ini). At most 1: Cinematic's 10 loads no farther than Epic (the ring is real pieces; past it is the far tier's). 1 when the engine's is 0
+	 * or less (unknown). Pure.
+	 */
+	static double ViewScale(double EngineViewDistanceScale);
+
+	/** The real cells' reach scale: the ladder's (NearScale) times the View Distance setting's (ViewScale). The ladder only ever shrinks the ring under the setting. */
+	static double CellReachScale(double Ladder, double ViewScale, const FMantleBudgetTuning& Tuning);
+
+	/** The far sets' reach scale: the ladder's (FarScale) times the View Distance setting's, so a twin is wanted no farther than the engine will draw it. */
+	static double FarReachScale(double Ladder, double ViewScale);
+
+	// ---- The player's World load distance (Settings > Graphics > Advanced) ----
+
+	/** Epic's ring, the near ring's drawDistance (600 m): a cell drawn this far or farther is the ring's, and the player's World load distance can take it farther. */
+	static constexpr double RingFromCm = 60000.0;
+
+	/** Past this a raise asks first: the warning in the settings screen. Epic's own ring. */
+	static constexpr int32 WarnAboveM = 600;
+
+	/**
+	 * The World load distance steps offered above the View Distance setting's own ring, metres. The top is 1 km (Joshua, 2026-11-23), from step 3's measured
+	 * costs (working set about 5.4 GB and card about 3.3 GB per million near pieces, over an 8 GB / 3.4 GB baseline, on the development client): 1 km is
+	 * about 2.5 M pieces, which the best common gaming PC (64 GB of RAM, a 16 GB card) holds on both, twins included; 1.5 km is past its RAM cap and its whole
+	 * card, so the ladder would trim anything farther back anyway. Revisit once stand-ins replace the twins (big-map step 6): the twins' 4 to 7 GB go then.
+	 */
+	static constexpr int32 WorldLoadDistanceStepsM[] = { 400, 600, 800, 1000 };
+
+	/** The most the World load distance can be, cm: the last step. Anything larger (a hand-edited file, the console) is held to it. */
+	static constexpr double MaxWorldLoadDistanceCm = 100000.0;
+
+	/** The View Distance setting's own ring, cm: RingFromCm x ViewScale (Low 240 m, Balanced 360, High 480, Epic 600). */
+	static double PresetRingCm(double ViewScale);
+
+	/** The steps the settings screen offers above the preset ring (PresetRingCm), metres, smallest first. Auto (0, the preset ring itself) comes before them. */
+	static TArray<int32> WorldLoadDistanceChoicesM(double PresetRingCm);
+
+	/** A raise to ToM from FromM (both metres; 0 is Auto, read as AutoM) asks first: it ends above WarnAboveM and is farther than before. Lowering never asks. */
+	static bool WorldLoadDistanceNeedsWarning(int32 FromM, int32 ToM, int32 AutoM);
+
+	/** The ring the player raised it to, cm, or 0 when the choice (cm, 0 = Auto) is no farther than the preset ring. At most MaxWorldLoadDistanceCm. */
+	static double RaisedReachCm(double ChosenCm, double PresetRingCm);
+
+	/** How much of a raise stands at a ladder: all of it from 1 down to 0.5 (the far sets give way first), then down to none at 0, where the ring is what it would be with no raise. */
+	static double RaiseShare(double Ladder);
+
+	/**
+	 * How far a cell is wanted from, cm, with the player's raise. A cell of the ring (DrawDistanceCm at RingFromCm or more) is wanted RaiseShare of the way from its reach
+	 * without the raise (ScaledReach(DrawDistance, ReachScale, Floor)) out to RaisedReachCm, the rest as ScaledReach. With no raise (0) it is ScaledReach. The ladder shrinks it
+	 * below the player's choice, at 0 as far as it would without one.
+	 */
+	static double RingReach(double DrawDistanceCm, double ReachScale, double FloorCm, double ViewScale, double RaisedReachCm, double RaiseShare);
+
 	// ---- Engine readers (game thread) ----
 
-	/** The graphics setting now: the lowest of the engine's ten quality levels, as a preset level. Epic when the engine cannot say. */
-	static int32 CurrentLevel();
+	/** The View Distance and Textures settings now, as preset levels. Epic when the engine cannot say. */
+	static FMantleBudgetLevels CurrentLevels();
+
+	/** The engine's view-distance scale now (the one its renderer multiplies draw distances by); 1 when the engine has none (no scalability state yet). */
+	static double CurrentEngineViewDistanceScale();
+
+	/** The player's World load distance now, cm (mantle.Cells.WorldLoadDistance, metres, which the settings screen sets); 0 is Auto. */
+	static double CurrentWorldLoadDistanceCm();
 
 	/**
 	 * The card's and the machine's size now (zero where the engine has no answer: a process with no RHI, a server). A test switch pretends to be another machine:

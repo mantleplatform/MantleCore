@@ -140,6 +140,21 @@ struct MANTLERUNTIME_API FMantleCellStreamSettings
 	 * uses of the card against the budget it gives (#189; without it the card is not watched).
 	 */
 	double ReachScale = 1.0;
+	/**
+	 * The engine's view-distance scale now (FMantleStreamBudget::CurrentEngineViewDistanceScale: the player's View Distance setting), read at every tick. The real cells' reach and the
+	 * far sets' are the ladder's scale times FMantleStreamBudget::ViewScale of it, so the ring is no farther than the engine draws (Epic 600 m, Low 240 m, never under the 200 m floor),
+	 * and a change in the settings screen applies at once. Without it (tests, a keep-every-cell streamer) the setting does not shorten the reach.
+	 */
+	TFunction<double()> ViewDistanceScale;
+	/**
+	 * The player's World load distance now, cm (FMantleStreamBudget::CurrentWorldLoadDistanceCm; 0 = Auto, the View Distance setting's ring), read at every tick with ViewDistanceScale.
+	 * Farther than the setting's ring, it takes the ring's cells (drawDistance FMantleStreamBudget::RingFromCm or more) out to it; the ladder still shrinks it (RingReach).
+	 */
+	TFunction<double()> WorldLoadDistanceCm;
+	/** Set by the streamer with ReachScale (never by the owner): the View Distance setting's scale, the player's raised ring (cm, 0 = none) and how much of it the ladder leaves (RingReach). */
+	double RingViewScale = 1.0;
+	double RaisedReachCm = 0.0;
+	double RaiseShare = 1.0;
 	FMantleBudgetTuning BudgetTuning;
 	TFunction<FMantleBudgetLimits()> BudgetLimits;
 	TFunction<double()> BudgetMemoryShare;
