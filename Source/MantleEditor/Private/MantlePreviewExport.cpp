@@ -1754,9 +1754,8 @@ bool FMantlePreviewExport::Run(UWorld* World, const FMantlePreviewExportOptions&
 	FMantlePlaceWorldPartition::FLoadResult Loaded = FMantlePlaceWorldPartition::LoadAll(World);
 	if (Loaded.bLoaded())
 	{
-		const FString LoadNote = FMantlePlaceWorldPartition::DescribeLoad(Loaded);
-		UE_LOG(LogMantle, Display, TEXT("MANTLE_PREVIEW_EXPORT %s"), *LoadNote);
-		OutResult.Warnings.Add(LoadNote + TEXT(" They are unloaded again when the export ends."));
+		// Nothing the creator did wrong, so it is a log line, not a warning in the result (Test Locally shows those).
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PREVIEW_EXPORT %s They are unloaded again when the export ends."), *FMantlePlaceWorldPartition::DescribeLoad(Loaded));
 	}
 	const bool bOk = PreviewExportBundle(World, Options, State, OutResult);
 	FMantlePlaceWorldPartition::ReleaseLoaded(World, Loaded);
