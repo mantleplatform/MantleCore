@@ -447,13 +447,16 @@ void FMantleCellStreamer::Refresh()
 	const FMantleCellIndex& Index = Loader->GetIndex();
 	// What is wanted is what the player's path wants and what each extra view's path does.
 	FMantleCellStreamPlan::FPath Path;
-	FMantleCellStreamPlan::PathOf(View, Settings, Path);
-	for (TPair<int32, FTrackedView>& Pair : ExtraViews)
 	{
-		FMantleCellStreamPlan::FPath ExtraPath;
-		FMantleCellStreamPlan::PathOf(Pair.Value.View, Settings, ExtraPath);
-		Path.Append(ExtraPath);
-		Pair.Value.LastRefreshLocation = Pair.Value.View.Location;
+		FMantleCellPartClock Clock(TickReport, FMantleCellTickReport::PlanPath);
+		FMantleCellStreamPlan::PathOf(View, Settings, Path);
+		for (TPair<int32, FTrackedView>& Pair : ExtraViews)
+		{
+			FMantleCellStreamPlan::FPath ExtraPath;
+			FMantleCellStreamPlan::PathOf(Pair.Value.View, Settings, ExtraPath);
+			Path.Append(ExtraPath);
+			Pair.Value.LastRefreshLocation = Pair.Value.View.Location;
+		}
 	}
 	LastRefreshLocation = View.Location;
 	SecondsSinceRefresh = 0.0;
@@ -461,41 +464,63 @@ void FMantleCellStreamer::Refresh()
 
 	// Cells waiting on a read or for the builder that the path has left are dropped; standing ones are taken down once well past their distance.
 	{
-		const TArray<int32> Waiting = [this]() { TArray<int32> All = LoadingCells; All.Append(AssetCells); All.Append(ReadyCells); return All; }();
-		for (const int32 CellIndex : Waiting)
 		{
-			FCell& Cell = Cells.FindChecked(CellIndex);
-			if (!Settings.bKeepEveryCell && FMantleCellStreamPlan::IsReleased(InfoOf(CellIndex), Path, Settings))
+			FMantleCellPartClock WaitingClock(TickReport, FMantleCellTickReport::PlanWaiting);
+			const TArray<int32> Waiting = [this]() { TArray<int32> All = LoadingCells; All.Append(AssetCells); All.Append(ReadyCells); return All; }();
+			for (const int32 CellIndex : Waiting)
 			{
-				LoadingCells.RemoveSingle(CellIndex);
-				AssetCells.RemoveSingle(CellIndex);
-				ReadyCells.RemoveSingle(CellIndex);
-				Cell.Content = FMantleCellContent();
-				Cell.Cursor = 0;
-				if (Cell.Actors.IsEmpty())
+				FCell& Cell = Cells.FindChecked(CellIndex);
+				if (!Settings.bKeepEveryCell && FMantleCellStreamPlan::IsReleased(InfoOf(CellIndex), Path, Settings))
 				{
-					ReleaseAssets(CellIndex);
-					Cells.Remove(CellIndex);
-				}
-				else
-				{
-					// Half built: what stands comes down like any cell.
-					BuiltCells.AddUnique(CellIndex);
-					QueueRemoval(CellIndex);
+					LoadingCells.RemoveSingle(CellIndex);
+					AssetCells.RemoveSingle(CellIndex);
+					ReadyCells.RemoveSingle(CellIndex);
+					Cell.Content = FMantleCellContent();
+					Cell.Cursor = 0;
+					if (Cell.Actors.IsEmpty())
+					{
+						ReleaseAssets(CellIndex);
+						Cells.Remove(CellIndex);
+					}
+					else
+					{
+						// Half built: what stands comes down like any cell.
+						BuiltCells.AddUnique(CellIndex);
+						QueueRemoval(CellIndex);
+					}
 				}
 			}
 		}
+		FMantleCellPartClock StandingClock(TickReport, FMantleCellTickReport::PlanStanding);
 		const TArray<int32> Standing = Settings.bKeepEveryCell ? TArray<int32>() : BuiltCells;
+		// Handing a cell to its take-down costs milliseconds (the script world forgets its entities, its twins are shown): a teleport lets go of dozens at once, 187 ms in one plan (City Sample
+		// 2026-11-23). They go a few a plan inside the tick's budget, at least one; the rest stand a few ticks longer (still drawn) and the next plan, asked for here, takes them.
+		const double StandingStart = FPlatformTime::Seconds();
+		const double StandingBudget = FMantleCellStreamPlan::BudgetSeconds(Settings, FastestViewSpeed(), bHolding);
+		int32 StandingQueued = 0;
 		for (const int32 CellIndex : Standing)
 		{
 			if (FMantleCellStreamPlan::IsReleased(InfoOf(CellIndex), Path, Settings))
 			{
+				if (StandingQueued > 0 && FPlatformTime::Seconds() - StandingStart >= StandingBudget)
+				{
+					bRefreshNeeded = true;
+					break;
+				}
 				QueueRemoval(CellIndex);
+				++StandingQueued;
 			}
 		}
 	}
 
 	// Who is wanted: the cells that are loading, and cells idle now whose drawDistance the path reaches.
+	double PartMark = FPlatformTime::Seconds();
+	const auto PartLap = [this, &PartMark](const FMantleCellTickReport::EPart Part)
+	{
+		const double Now = FPlatformTime::Seconds();
+		TickReport.PartSeconds[Part] += Now - PartMark;
+		PartMark = Now;
+	};
 	TArray<int32> Candidates;
 	if (Settings.bKeepEveryCell)
 	{
@@ -513,6 +538,7 @@ void FMantleCellStreamer::Refresh()
 	{
 		FMantleCellStreamPlan::CellsNear(Index, LevelOverhangs, LevelRadii, Path, Candidates);
 	}
+	PartLap(FMantleCellTickReport::PlanNear);
 
 	struct FWanted
 	{
@@ -543,6 +569,7 @@ void FMantleCellStreamer::Refresh()
 	{
 		return FMantleCellStreamPlan::BuildsBefore(A.Rank, B.Rank);
 	});
+	PartLap(FMantleCellTickReport::PlanPool);
 
 	// The nearest few are read; the rest wait their turn. Cells read and waiting to be built count against the read-ahead, so memory stays bounded.
 	const int32 Room = FMath::Max(Settings.MaxCellsReadAhead - ReadyCells.Num() - AssetCells.Num(), 0);
@@ -574,12 +601,15 @@ void FMantleCellStreamer::Refresh()
 	}
 	// Loading cells in the order the loader works them.
 	LoadingCells = WantList;
+	PartLap(FMantleCellTickReport::PlanWants);
 	// The far-only cells follow the real flow's in the loader's order.
 	TArray<int32> FarWants;
 	CollectFarWants(Path, WantList, FarWants);
+	PartLap(FMantleCellTickReport::PlanFarWants);
 	TArray<int32> AllWants = WantList;
 	AllWants.Append(FarWants);
 	Loader->SetWanted(AllWants);
+	PartLap(FMantleCellTickReport::PlanLoader);
 
 	// Distances for the cells waiting to be built (the builder takes the nearest first), and the backlog for the stats.
 	PendingCells.Reset();
@@ -599,6 +629,7 @@ void FMantleCellStreamer::Refresh()
 		Cell.Rank = RankFor(CellIndex);
 		PendingCells.Add(CellIndex);
 	}
+	PartLap(FMantleCellTickReport::PlanPending);
 	// A keep-every-cell streamer with nothing left to read or wait for has planned for the last time.
 	bKeepAllSettled = Settings.bKeepEveryCell && Pool.IsEmpty() && LoadingCells.IsEmpty() && AssetCells.IsEmpty() && ReadyCells.IsEmpty();
 	// Which far sets are wanted, which go, which are built next.
@@ -627,13 +658,21 @@ void FMantleCellStreamer::TakeFinishedCells()
 			}
 			continue;
 		}
-		if (!Loader->TakeCell(CellIndex, Cell.Content))
+		bool bTaken = false;
+		{
+			FMantleCellPartClock Clock(TickReport, FMantleCellTickReport::TakeCell);
+			bTaken = Loader->TakeCell(CellIndex, Cell.Content);
+		}
+		if (!bTaken)
 		{
 			continue;
 		}
 		++TickReport.CellsTaken;
 		TickReport.CellEntitiesTaken += Cell.Content.Entities.Num();
-		PrepareCell(CellIndex, Cell);
+		{
+			FMantleCellPartClock Clock(TickReport, FMantleCellTickReport::TakePrepare);
+			PrepareCell(CellIndex, Cell);
+		}
 		Cell.Rank = RankFor(CellIndex);
 		LoadingCells.RemoveSingle(CellIndex);
 		bRefreshNeeded = true;
@@ -652,7 +691,10 @@ void FMantleCellStreamer::TakeFinishedCells()
 		if (bAskForAssets)
 		{
 			// The cell's meshes and materials are asked for now; it is built when they are here.
-			CellAssets->Acquire(CellIndex, Cell.Content.Entities);
+			{
+				FMantleCellPartClock Clock(TickReport, FMantleCellTickReport::TakeAcquire);
+				CellAssets->Acquire(CellIndex, Cell.Content.Entities);
+			}
 			Cell.State = ECellState::Assets;
 			Cell.AssetsAskedAt = FPlatformTime::Seconds();
 			AssetCells.Add(CellIndex);
@@ -886,6 +928,8 @@ void FMantleCellStreamer::RunWork(const double BudgetSeconds)
 			break;
 		}
 	}
+	// The twins' asset asks, a few a tick (the nearest first); then the twins that are ready.
+	AcquireFarSome(Deadline);
 	// Not during a hold: the join and a teleport wait for the real cells, which get all of the budget; the twins come after.
 	while (!bHolding && !FarReadyCells.IsEmpty() && FPlatformTime::Seconds() < Deadline)
 	{
@@ -915,6 +959,7 @@ bool FMantleCellStreamer::RemoveSome(const double Deadline)
 		{
 			if (AActor* Actor = Cell.Actors[Cell.RemoveCursor].Get())
 			{
+				FMantleCellPartClock Clock(TickReport, FMantleCellTickReport::RemoveDestroy);
 				Actor->Destroy();
 			}
 			++Cell.RemoveCursor;
@@ -924,7 +969,10 @@ bool FMantleCellStreamer::RemoveSome(const double Deadline)
 		if (Cell.RemoveCursor >= Cell.Actors.Num())
 		{
 			RemovingCells.RemoveAt(0);
-			ReleaseAssets(CellIndex);
+			{
+				FMantleCellPartClock Clock(TickReport, FMantleCellTickReport::RemoveAssets);
+				ReleaseAssets(CellIndex);
+			}
 			Cells.Remove(CellIndex);
 			++Stats.CellsReleasedEver;
 			bRefreshNeeded = true;
@@ -1394,6 +1442,34 @@ const TCHAR* FMantleCellTickReport::PhaseName(const int32 Phase)
 	}
 }
 
+const TCHAR* FMantleCellTickReport::PartName(const int32 Part)
+{
+	switch (Part)
+	{
+	case PlanPath: return TEXT("plan path");
+	case PlanWaiting: return TEXT("plan waiting cells");
+	case PlanStanding: return TEXT("plan standing cells");
+	case PlanNear: return TEXT("plan cells near");
+	case PlanPool: return TEXT("plan rank and sort");
+	case PlanWants: return TEXT("plan read-ahead list");
+	case PlanFarWants: return TEXT("plan far wants");
+	case PlanLoader: return TEXT("plan loader wants");
+	case PlanPending: return TEXT("plan pending ranks");
+	case FarScan: return TEXT("far change scan");
+	case FarVisibility: return TEXT("far show/hide");
+	case FarRelease: return TEXT("far release");
+	case FarAcquire: return TEXT("far asset ask");
+	case TakeCell: return TEXT("take cell file");
+	case TakePrepare: return TEXT("take prepare cell");
+	case TakeAcquire: return TEXT("take asset ask");
+	case RemoveDestroy: return TEXT("remove destroy");
+	case RemoveAssets: return TEXT("remove assets back");
+	case FarRemoveDestroy: return TEXT("far remove destroy");
+	case FarRemoveAssets: return TEXT("far remove assets back");
+	default: return TEXT("part");
+	}
+}
+
 double FMantleCellTickReport::OtherSeconds() const
 {
 	double Sum = 0.0;
@@ -1441,6 +1517,16 @@ FString FMantleCellTickReport::ToLogLine() const
 	Line += FString::Printf(TEXT(" | ground %.1f (looks %d)"), Ms(Ground), GroundLooks);
 	Line += FString::Printf(TEXT(" | hold %.1f"), Ms(Hold));
 	Line += FString::Printf(TEXT(" | other %.1f"), OtherSeconds() * 1000.0);
+	// The parts of the phases that took a millisecond or more (the time inside refresh, take, remove and far remove).
+	FString Parts;
+	for (int32 Part = 0; Part < PartCount; ++Part)
+	{
+		if (PartSeconds[Part] >= 0.001)
+		{
+			Parts += FString::Printf(TEXT("%s%s %.1f"), Parts.IsEmpty() ? TEXT("") : TEXT(", "), PartName(Part), PartSeconds[Part] * 1000.0);
+		}
+	}
+	Line += FString::Printf(TEXT("; parts (>= 1 ms): %s"), Parts.IsEmpty() ? TEXT("none") : *Parts);
 	Line += FString::Printf(TEXT("; now holding %d, ladder %.2f, cells standing %d ready %d waiting for assets %d loading %d going %d, far sets %d"),
 		bHolding ? 1 : 0, Ladder, CellsStanding, CellsReady, CellsAssetWait, CellsLoading, CellsRemoving, FarSets);
 	return Line;
@@ -1676,6 +1762,7 @@ void FMantleCellStreamer::Stop()
 	FarAssetCells.Reset();
 	FarReadyCells.Reset();
 	FarRemovingCells.Reset();
+	FarAcquireCells.Reset();
 	Cells.Reset();
 	ReadyCells.Reset();
 	AssetCells.Reset();

@@ -190,6 +190,7 @@ void FMantleCellStreamer::RefreshFar(const FMantleCellStreamPlan::FPath& Path)
 	if (bScan)
 	{
 		const double ScanStart = FPlatformTime::Seconds();
+		FMantleCellPartClock ScanClock(TickReport, FMantleCellTickReport::FarScan);
 		DropChangedTwins();
 		const double ScanSeconds = FPlatformTime::Seconds() - ScanStart;
 		++Stats.FarChangeScans;
@@ -213,6 +214,7 @@ void FMantleCellStreamer::RefreshFar(const FMantleCellStreamPlan::FPath& Path)
 			Set.bWanted = bWanted;
 			if (Set.State == EFarState::Built || Set.Cursor > 0)
 			{
+				FMantleCellPartClock VisibilityClock(TickReport, FMantleCellTickReport::FarVisibility);
 				ApplyFarVisibility(CellIndex, Set, bWanted ? TEXT("cell wanted") : TEXT("cell not wanted"));
 			}
 		}
@@ -231,11 +233,12 @@ void FMantleCellStreamer::RefreshFar(const FMantleCellStreamPlan::FPath& Path)
 			Set.Rank = RankFor(CellIndex);
 			if (CellAssets.IsValid())
 			{
-				CellAssets->Acquire(FarHolderBase + CellIndex, Set.Needs);
-				Set.bAssetsHeld = true;
-				Set.State = EFarState::Assets;
-				Set.AssetsAskedAt = FPlatformTime::Seconds();
-				FarAssetCells.Add(CellIndex);
+				// Asking for the assets of one set costs milliseconds (a join finds 140 sets at once: 611 ms in one refresh, City Sample 2026-11-23): the sets wait here and ask a few a tick, nearest first.
+				if (!Set.bAcquireQueued)
+				{
+					Set.bAcquireQueued = true;
+					FarAcquireCells.Add(CellIndex);
+				}
 			}
 			else
 			{
@@ -244,11 +247,14 @@ void FMantleCellStreamer::RefreshFar(const FMantleCellStreamPlan::FPath& Path)
 			}
 		}
 	}
+	FMantleCellPartClock ReleaseClock(TickReport, FMantleCellTickReport::FarRelease);
 	for (const int32 CellIndex : Release)
 	{
 		FFarSet& Set = FarSets.FindChecked(CellIndex);
 		FarAssetCells.RemoveSingle(CellIndex);
 		FarReadyCells.RemoveSingle(CellIndex);
+		FarAcquireCells.RemoveSingle(CellIndex);
+		Set.bAcquireQueued = false;
 		bool bAnyBuilt = false;
 		for (const FFarEntity& Far : Set.Entities)
 		{
@@ -540,6 +546,66 @@ bool FMantleCellStreamer::BuildOneFar()
 	return true;
 }
 
+bool FMantleCellStreamer::AcquireFarSome(const double Deadline)
+{
+	using namespace MantleCellStreamerFarPrivate;
+	// Not during a hold (the join and a teleport wait for the real cells; the plan after it fills the queue again if it was left over).
+	if (FarAcquireCells.IsEmpty() || bHolding || !CellAssets.IsValid())
+	{
+		return false;
+	}
+	const FMantleCellIndex& Index = Loader->GetIndex();
+	bool bAny = false;
+	// At least one a tick, so a budget the builds spent never leaves the queue standing; then until the budget is spent.
+	bool bDidOne = false;
+	while (!FarAcquireCells.IsEmpty() && (!bDidOne || FPlatformTime::Seconds() < Deadline))
+	{
+		// The nearest first; a set that left the queue's world (released, being taken down, no longer needing its twin) is dropped.
+		int32 BestAt = INDEX_NONE;
+		for (int32 At = FarAcquireCells.Num() - 1; At >= 0; --At)
+		{
+			const int32 CellIndex = FarAcquireCells[At];
+			FFarSet* Set = FarSets.Find(CellIndex);
+			if (!Set || Set->bDestroying || Set->State != EFarState::Idle || !FMantleFarSetPlan::NeedsBuilding(Index.Cells[CellIndex], LastPath, Settings.FarSets))
+			{
+				if (Set)
+				{
+					Set->bAcquireQueued = false;
+				}
+				FarAcquireCells.RemoveAt(At);
+				if (BestAt != INDEX_NONE && BestAt > At)
+				{
+					--BestAt;
+				}
+				continue;
+			}
+			if (BestAt == INDEX_NONE || FMantleCellStreamPlan::BuildsBefore(Set->Rank, FarSets.FindChecked(FarAcquireCells[BestAt]).Rank))
+			{
+				BestAt = At;
+			}
+		}
+		if (BestAt == INDEX_NONE)
+		{
+			break;
+		}
+		const int32 CellIndex = FarAcquireCells[BestAt];
+		FarAcquireCells.RemoveAt(BestAt);
+		FFarSet& Set = FarSets.FindChecked(CellIndex);
+		Set.bAcquireQueued = false;
+		{
+			FMantleCellPartClock AcquireClock(TickReport, FMantleCellTickReport::FarAcquire);
+			CellAssets->Acquire(FarHolderBase + CellIndex, Set.Needs);
+		}
+		Set.bAssetsHeld = true;
+		Set.State = EFarState::Assets;
+		Set.AssetsAskedAt = FPlatformTime::Seconds();
+		FarAssetCells.Add(CellIndex);
+		bDidOne = true;
+		bAny = true;
+	}
+	return bAny;
+}
+
 bool FMantleCellStreamer::RemoveFarSome(const double Deadline)
 {
 	using namespace MantleCellStreamerFarPrivate;
@@ -565,6 +631,7 @@ bool FMantleCellStreamer::RemoveFarSome(const double Deadline)
 		{
 			if (AActor* Actor = Set->Entities[Set->DestroyCursor].Actor.Get())
 			{
+				FMantleCellPartClock Clock(TickReport, FMantleCellTickReport::FarRemoveDestroy);
 				Actor->Destroy();
 				++TickReport.TwinsRemoved;
 			}
@@ -573,7 +640,10 @@ bool FMantleCellStreamer::RemoveFarSome(const double Deadline)
 		if (Set->DestroyCursor >= Set->Entities.Num())
 		{
 			FarRemovingCells.RemoveAt(0);
-			ReleaseFarAssets(CellIndex, *Set);
+			{
+				FMantleCellPartClock Clock(TickReport, FMantleCellTickReport::FarRemoveAssets);
+				ReleaseFarAssets(CellIndex, *Set);
+			}
 			FarSets.Remove(CellIndex);
 			++Stats.FarSetsReleased;
 		}

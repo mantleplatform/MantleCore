@@ -2092,6 +2092,96 @@ bool FMantleFarSetReleaseSpreadTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleFarSetAcquireSpreadTest,
+	"Mantle.Runtime.FarSet.Streamer.AssetAsksAreSpreadOverTicks",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleFarSetAcquireSpreadTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	Fixture.CellAssets = MakeShared<FFakeCellAssets>();
+	// A budget of nothing: the twins' asset asks still go, one a tick and not all in the plan that finds them.
+	FMantleCellStreamSettings Settings = FarSettings();
+	Settings.BaseBudgetSeconds = 0.0;
+	Settings.HoldBudgetSeconds = 0.0;
+	Fixture.StartStreamer(Settings);
+	const auto FarAsks = [&Fixture]()
+	{
+		int32 Count = 0;
+		for (const int32 Holder : Fixture.CellAssets->Acquired)
+		{
+			Count += Holder >= FarHolderBaseForTest ? 1 : 0;
+		}
+		return Count;
+	};
+	int32 Last = 0;
+	int32 MostInATick = 0;
+	int32 TicksWithAsk = 0;
+	for (int32 Tick = 0; Tick < 3000 && FarAsks() < 6; ++Tick)
+	{
+		Fixture.Tick();
+		const int32 Now = FarAsks();
+		MostInATick = FMath::Max(MostInATick, Now - Last);
+		TicksWithAsk += Now > Last ? 1 : 0;
+		Last = Now;
+	}
+	// Cells 2 to 7 are the twins' (see StandsPastTheDrawDistance).
+	TestEqual(TEXT("the twins of cells 2 to 7 asked for their assets"), FarAsks(), 6);
+	TestEqual(TEXT("never more than one set's ask a tick"), MostInATick, 1);
+	TestEqual(TEXT("and the six went on six ticks"), TicksWithAsk, 6);
+	for (int32 Cell = 2; Cell <= 7; ++Cell)
+	{
+		TestTrue(FString::Printf(TEXT("cell %d's twin holds its assets"), Cell), Fixture.CellAssets->Held.Contains(FarHolderBaseForTest + Cell));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerRemovalSpreadTest,
+	"Mantle.Runtime.CellStream.Streamer.ReleasesAreSpreadOverPlans",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerRemovalSpreadTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	// A budget of nothing: cells 0 to 2 stand (one piece a tick), then the view jumps a kilometre and all three are past their release distance at once.
+	FMantleCellStreamSettings Settings = SteadySettings();
+	Settings.BaseBudgetSeconds = 0.0;
+	Settings.HoldBudgetSeconds = 0.0;
+	Fixture.StartStreamer(Settings);
+	if (!TestTrue(TEXT("cells 0, 1 and 2 stand"), Fixture.Settle(3000) && Fixture.Built(0) && Fixture.Built(1) && Fixture.Built(2)))
+	{
+		return false;
+	}
+	Fixture.View = FVector(100000.0, 100.0, 100.0);
+	int32 Handed = 0;
+	int32 MostInAPlan = 0;
+	int32 PlansWithRelease = 0;
+	for (int32 Tick = 0; Tick < 300; ++Tick)
+	{
+		Fixture.Tick();
+		const int32 InThisTick = Fixture.Streamer->GetLastTickReport().PlanReleasedCells;
+		Handed += InThisTick;
+		MostInAPlan = FMath::Max(MostInAPlan, InThisTick);
+		PlansWithRelease += InThisTick > 0 ? 1 : 0;
+	}
+	TestEqual(TEXT("all three were handed to their take-down"), Handed, 3);
+	TestEqual(TEXT("never more than one in a plan"), MostInAPlan, 1);
+	TestEqual(TEXT("on three different plans"), PlansWithRelease, 3);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleFarSetSolidStreamerTest,
 	"Mantle.Runtime.FarSet.Streamer.NotForTheSolidStreamer",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -2881,8 +2971,13 @@ bool FMantleCellTickReportLineTest::RunTest(const FString& Parameters)
 	Report.ActorsRemoved = 81;
 	Report.Ladder = 1.0;
 	Report.CellsStanding = 120;
+	// The parts inside the phases: one over a millisecond is named, one under is left out.
+	Report.PartSeconds[FMantleCellTickReport::PlanNear] = 0.0123;
+	Report.PartSeconds[FMantleCellTickReport::RemoveAssets] = 0.0004;
 	const FString Line = Report.ToLogLine();
 	AddInfo(Line);
+	TestTrue(TEXT("a part over a millisecond is named with its time"), Line.Contains(TEXT("; parts (>= 1 ms): plan cells near 12.3;")));
+	TestFalse(TEXT("a part under a millisecond is not"), Line.Contains(TEXT("remove assets back")));
 	TestEqual(TEXT("the build is the slowest phase"), Report.SlowestPhase(), static_cast<int32>(FMantleCellTickReport::Build));
 	TestTrue(TEXT("what no phase holds is the rest: 42 ms"), FMath::IsNearlyEqual(Report.OtherSeconds(), 0.042, 1.0e-9));
 	TestTrue(TEXT("the line starts with its marker, the whole time and the slowest phase"), Line.StartsWith(TEXT("MANTLE_CELLS_SLOW_TICK 754.0 ms (slowest: build 700.0 ms; frame 770.0 ms, work budget 4.0 ms):")));

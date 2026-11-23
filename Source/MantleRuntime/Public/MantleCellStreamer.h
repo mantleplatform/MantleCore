@@ -186,6 +186,40 @@ struct MANTLERUNTIME_API FMantleCellTickReport
 		PhaseCount
 	};
 
+	/**
+	 * The parts of the phases that can be slow (step 1c: a run names what takes the time inside "refresh", "take", "remove" and "far remove"). Each is a clock around one piece of work and
+	 * adds to PartSeconds. The parts of a phase are not all of it (the rest is the phase's own bookkeeping), and none lies inside another.
+	 */
+	enum EPart : uint8
+	{
+		PlanPath,        // refresh: the path the view and the extra views take
+		PlanWaiting,     // refresh: cells loading, waiting for assets or ready that the path has left
+		PlanStanding,    // refresh: standing cells that are released (handed to their take-down)
+		PlanNear,        // refresh: the cells near the path (CellsNear)
+		PlanPool,        // refresh: which are wanted, their rank, the sort
+		PlanWants,       // refresh: the read-ahead list, cells dropped and added
+		PlanFarWants,    // refresh: the far-only cells (CollectFarWants)
+		PlanLoader,      // refresh: the loader told what is wanted (SetWanted)
+		PlanPending,     // refresh: ranks of the cells waiting to be built
+		FarScan,         // refresh: twins asked whether they changed on this machine
+		FarVisibility,   // refresh: far sets shown or hidden as their cell became wanted or not
+		FarRelease,      // refresh: far sets let go or queued
+		FarAcquire,      // refresh: far sets that ask for their assets
+		TakeCell,        // take: a cell's file taken from the loader
+		TakePrepare,     // take: its entities cut and filtered (PrepareCell, with the far set made)
+		TakeAcquire,     // take: its assets asked for
+		RemoveDestroy,   // remove: actors destroyed
+		RemoveAssets,    // remove: a cell's assets given back
+		FarRemoveDestroy, // far remove: twin actors destroyed
+		FarRemoveAssets,  // far remove: a far set's assets given back
+		PartCount
+	};
+
+	/** Seconds each part took in this tick. */
+	double PartSeconds[PartCount] = {};
+	/** The part's short name in the log line. */
+	static const TCHAR* PartName(int32 Part);
+
 	/** Seconds each phase took, and the whole tick (the phases plus what lies between them: Other). */
 	double Seconds[PhaseCount] = {};
 	double TotalSeconds = 0.0;
@@ -249,6 +283,20 @@ struct MANTLERUNTIME_API FMantleCellTickReport
 	int32 SlowestPhase() const;
 	/** The MANTLE_CELLS_SLOW_TICK line: the whole time, the slowest phase, every phase with its counts, and what stood. */
 	FString ToLogLine() const;
+};
+
+/** Adds the time from its making to its end to one part of a tick's report (a scope around one piece of work). */
+struct FMantleCellPartClock
+{
+	FMantleCellPartClock(FMantleCellTickReport& InReport, const FMantleCellTickReport::EPart InPart) : Report(InReport), Part(InPart), Start(FPlatformTime::Seconds()) {}
+	~FMantleCellPartClock() { Report.PartSeconds[Part] += FPlatformTime::Seconds() - Start; }
+	FMantleCellPartClock(const FMantleCellPartClock&) = delete;
+	FMantleCellPartClock& operator=(const FMantleCellPartClock&) = delete;
+
+private:
+	FMantleCellTickReport& Report;
+	const FMantleCellTickReport::EPart Part;
+	const double Start;
 };
 
 /**
@@ -560,6 +608,8 @@ private:
 		FMantleCellStreamPlan::FRank Rank;
 		bool bDestroying = false;
 		int32 DestroyCursor = 0;
+		/** The set waits in FarAcquireCells to ask for its assets (a join's plan finds dozens at once; they are asked for a few a tick, the nearest first). */
+		bool bAcquireQueued = false;
 	};
 
 	/** An extra view as tracked from tick to tick. */
@@ -631,6 +681,7 @@ private:
 	void TakeFinishedFarCells();
 	void TakeFarAssetCells();
 	bool BuildOneFar();
+	bool AcquireFarSome(double Deadline);
 	bool RemoveFarSome(double Deadline);
 	/** A real entity (by base id) of the cell stands: its twin, if it is drawn, is hidden in the same step. */
 	void OnRealEntityStanding(int32 CellIndex, const FString& BaseId);
@@ -709,6 +760,8 @@ private:
 	TArray<int32> FarAssetCells;
 	TArray<int32> FarReadyCells;
 	TArray<int32> FarRemovingCells;
+	/** Idle far sets that the plan found wanted and that ask for their assets one by one inside the work budget (AcquireFarSome). */
+	TArray<int32> FarAcquireCells;
 	/** The last plan's path, for the far sets. */
 	FMantleCellStreamPlan::FPath LastPath;
 	double FarAuditSeconds = 0.0;
