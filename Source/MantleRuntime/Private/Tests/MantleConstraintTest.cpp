@@ -494,6 +494,8 @@ bool FMantleConstraintEditorRoundTripTest::RunTest(const FString& Parameters)
 		{ TEXT("a drive on a ball"), [](FConstraintInstance& Instance)
 			{
 				Instance.SetLinearLimits(LCM_Locked, LCM_Locked, LCM_Locked, 0.0f);
+				Instance.SetAngularSwing1Limit(ACM_Free, 0.0f);
+				Instance.SetAngularSwing2Limit(ACM_Free, 0.0f);
 				Instance.SetAngularDriveMode(EAngularDriveMode::TwistAndSwing);
 				Instance.SetAngularVelocityDriveTwistAndSwing(false, true);
 			}, TEXT("does not publish") },
