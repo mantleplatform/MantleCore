@@ -424,8 +424,23 @@ struct MANTLERUNTIME_API FMantlePlaceLimits
 	/** A rope's length: above 0 and at most this many cm. */
 	static constexpr double MaxRopeLength = 100000.0;
 
+	/** A slider's limits: [min, max] cm with minus this <= min <= 0 <= max <= this; a slider motor's position target is within it too. */
+	static constexpr double MaxSliderTravel = 100000.0;
+
+	/** A ball joint's swingLimit (above 0) and twistLimit (0 or above): at most this many degrees. */
+	static constexpr double MaxBallAngle = 180.0;
+
 	/** A Constraint's breakForce: above 0 and at most this many newtons. */
 	static constexpr double MaxConstraintBreakForce = 10000000.0;
+
+	/** A motor's maxForce: above 0 and at most this many newtons (a slider) or newton-meters (a hinge). */
+	static constexpr double MaxMotorForce = 10000000.0;
+
+	/** A hinge motor's speed: at most this many degrees a second either way (10 turns a second). */
+	static constexpr double MaxMotorAngularSpeed = 3600.0;
+
+	/** A slider motor's speed: at most this many cm a second either way. */
+	static constexpr double MaxMotorLinearSpeed = 10000.0;
 
 	/**
 	 * ReflectionProbe entities in one place: each is a cubemap (about 1 MiB at the project's 128

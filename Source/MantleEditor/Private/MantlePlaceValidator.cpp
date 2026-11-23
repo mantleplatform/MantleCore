@@ -230,7 +230,7 @@ namespace
 	{
 		return TEXT("Supported types are static meshes, instanced meshes and foliage, skeletal meshes playing one animation, groups, "
 					"player starts, point/spot/rect/directional lights, decals, trigger volumes, ambient sounds, Mantle crowd spawners, Mantle vehicle spawns, "
-					"Mantle weapon spawns, Mantle script points, Mantle effects, Mantle scatter volumes, box and sphere reflection captures, text render actors (world text) and physics constraints (a weld, hinge or rope between physics objects).");
+					"Mantle weapon spawns, Mantle script points, Mantle effects, Mantle scatter volumes, box and sphere reflection captures, text render actors (world text) and physics constraints (a weld, hinge, slider, ball-and-socket joint or rope between physics objects).");
 	}
 
 	void ValidatorCheckPrefabParts(const AActor* Actor, const TArray<FMantlePrefabPart>& Parts, FMantleValidationResult& Result);

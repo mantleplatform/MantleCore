@@ -67,7 +67,7 @@ enum class EMantleEntityType : uint8
 	 */
 	Effect,
 	/**
-	 * A joint between two physics entities, or one and the world: weld, hinge or rope. The
+	 * A joint between two physics entities, or one and the world: weld, hinge, rope, slider or ball. The
 	 * server builds it (AMantleConstraint) and simulates it; nothing of it replicates. Added without a
 	 * schema version bump, like InstancedMesh.
 	 */
@@ -174,7 +174,7 @@ enum class EMantleReflectionProbeShape : uint8
 	Sphere
 };
 
-/** A Constraint's kind, the place file's properties.type: "weld", "hinge" or "rope". */
+/** A Constraint's kind, the place file's properties.type: "weld", "hinge", "rope", "slider" or "ball". */
 enum class EMantleConstraintType : uint8
 {
 	/** No movement between the two. */
@@ -182,7 +182,20 @@ enum class EMantleConstraintType : uint8
 	/** entityA turns about one axis through its anchor, and only that. */
 	Hinge,
 	/** The anchors stay within a length of each other; each entity turns freely. */
-	Rope
+	Rope,
+	/** entityA moves along one axis, and only that: it does not turn. */
+	Slider,
+	/** The anchors stay together; entityA turns about them, within a cone and a twist when limited. */
+	Ball
+};
+
+/** A Constraint motor's mode, the place file's properties.motor.mode: "position" or "speed". */
+enum class EMantleMotorMode : uint8
+{
+	/** Drives the joint to Target: degrees (a hinge) or cm (a slider) from where it was made. */
+	Position,
+	/** Drives the joint at Target: degrees a second (a hinge) or cm a second (a slider). */
+	Speed
 };
 
 enum class EMantleAssetKind : uint8
@@ -346,6 +359,8 @@ MANTLERUNTIME_API bool MantleParsePhysicsMaterial(const FString& In, EMantlePhys
 /** "weld", "hinge", "rope"; parsing is case-exact, as the schema's enum is. */
 MANTLERUNTIME_API const TCHAR* MantleConstraintTypeToString(EMantleConstraintType Type);
 MANTLERUNTIME_API bool MantleParseConstraintType(const FString& In, EMantleConstraintType& Out);
+MANTLERUNTIME_API const TCHAR* MantleMotorModeToString(EMantleMotorMode Mode);
+MANTLERUNTIME_API bool MantleParseMotorMode(const FString& In, EMantleMotorMode& Out);
 /** "box", "sphere"; parsing is case-exact, as the schema's enum is. */
 MANTLERUNTIME_API const TCHAR* MantleReflectionProbeShapeToString(EMantleReflectionProbeShape Shape);
 MANTLERUNTIME_API bool MantleParseReflectionProbeShape(const FString& In, EMantleReflectionProbeShape& Out);
@@ -1493,10 +1508,28 @@ struct FMantleEffectProps
 };
 
 /**
+ * A hinge's or a slider's motor: it drives the joint to a position or at a speed, pushing with at
+ * most MaxForce. Degrees and newton-meters for a hinge, cm and newtons for a slider.
+ */
+struct FMantleConstraintMotor
+{
+	EMantleMotorMode Mode = EMantleMotorMode::Position;
+	/** Position: degrees or cm from where the joint was made. Speed: degrees or cm a second. */
+	double Target = 0.0;
+	/** Newton-meters (a hinge) or newtons (a slider); above 0. */
+	double MaxForce = 0.0;
+
+	bool operator==(const FMantleConstraintMotor& Other) const
+	{
+		return Mode == Other.Mode && Target == Other.Target && MaxForce == Other.MaxForce;
+	}
+};
+
+/**
  * A joint: Type between the physics entity EntityA and EntityB, or the world when EntityB is
  * empty. Anchors are in each entity's own space, scale included (the world's for AnchorB without
- * EntityB). Axis, the hinge limits and Length are read for their own type only; the parser refuses
- * them on another.
+ * EntityB). Axis, the limits, SwingLimit, TwistLimit, Motor and Length are read for their own
+ * types only; the parser refuses them on another.
  */
 struct FMantleConstraintProps
 {
@@ -1509,13 +1542,25 @@ struct FMantleConstraintProps
 	FVector AnchorA = FVector::ZeroVector;
 	/** cm, in EntityB's space (or the world's). Unset: wherever AnchorA is when the joint is made. */
 	TOptional<FVector> AnchorB;
-	/** Hinge: the direction EntityA turns about, in its own space (its rotation). Never zero. */
+	/**
+	 * Hinge: the direction EntityA turns about. Slider: the direction it moves along. Ball: its twist
+	 * axis, the middle of its swing cone. In EntityA's own space (its rotation); never zero.
+	 */
 	FVector Axis = FVector(0.0, 0.0, 1.0);
-	/** Hinge: whether MinAngle..MaxAngle limit the turn; false turns freely. */
+	/** Hinge or slider: whether LimitMin..LimitMax limit the joint; false moves freely. */
 	bool bLimited = false;
-	/** Hinge: degrees from the pose as made, -FMantlePlaceLimits::MaxHingeAngle <= MinAngle <= 0 <= MaxAngle <= MaxHingeAngle. */
-	double MinAngle = 0.0;
-	double MaxAngle = 0.0;
+	/**
+	 * From the pose as made, LimitMin <= 0 <= LimitMax. Hinge: degrees, within
+	 * FMantlePlaceLimits::MaxHingeAngle either way. Slider: cm, within MaxSliderTravel either way.
+	 */
+	double LimitMin = 0.0;
+	double LimitMax = 0.0;
+	/** Ball: the most EntityA's axis may tilt from where it was made, degrees (a cone). Unset: it swings freely. */
+	TOptional<double> SwingLimit;
+	/** Ball: the most EntityA may twist about its axis either way, degrees; 0 does not twist. Unset: it twists freely. */
+	TOptional<double> TwistLimit;
+	/** Hinge or slider: its motor. Unset: none. */
+	TOptional<FMantleConstraintMotor> Motor;
 	/** Rope: the most the anchors may be apart, cm. Unset: how far apart they are when the joint is made. */
 	TOptional<double> Length;
 	/** Newtons; unset never breaks. */

@@ -634,8 +634,9 @@ public:
 	static EMantleSurface ReadSurface(const UStaticMeshComponent* Component);
 
 	/**
-	 * #528: an engine Physics Constraint Actor as a Constraint entity: its settings as a weld, a hinge
-	 * or a rope (FMantleConstraints::ReadEditorConstraint), between OutA (its Constraint Actor 1) and
+	 * #528: an engine Physics Constraint Actor as a Constraint entity: its settings as a weld, a hinge,
+	 * a slider, a ball or a rope, a hinge's or a slider's drive as its motor
+	 * (FMantleConstraints::ReadEditorConstraint), between OutA (its Constraint Actor 1) and
 	 * OutB (its Constraint Actor 2, null for the world), each a static mesh actor this level publishes
 	 * as a physics object (Simulate Physics on). False, with OutProblem saying what to change, for any
 	 * other: such a constraint is left out of the place (IsEngineInfrastructure) and named by
