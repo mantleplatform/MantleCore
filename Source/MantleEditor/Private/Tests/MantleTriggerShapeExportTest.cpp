@@ -181,6 +181,7 @@ bool FMantleTriggerShapeExportTest::RunTest(const FString& Parameters)
 	const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(World);
 	TestFalse(TEXT("Check says nothing about the brush trigger"), HasIssue(Validation, TEXT("Door zone"), EMantleIssueSeverity::Warning) || HasIssue(Validation, TEXT("Door zone"), EMantleIssueSeverity::Error));
 	TestFalse(TEXT("nor about the capsules"), HasIssue(Validation, TEXT("Tall capsule"), EMantleIssueSeverity::Error) || HasIssue(Validation, TEXT("Ball capsule"), EMantleIssueSeverity::Error));
+	TestTrue(TEXT("Check says each capsule publishes as another shape"), HasIssue(Validation, TEXT("Tall capsule"), EMantleIssueSeverity::Warning) && HasIssue(Validation, TEXT("Ball capsule"), EMantleIssueSeverity::Warning));
 	TestTrue(TEXT("Check warns about the cylinder"), HasIssue(Validation, TEXT("Round zone"), EMantleIssueSeverity::Warning));
 	return true;
 }
