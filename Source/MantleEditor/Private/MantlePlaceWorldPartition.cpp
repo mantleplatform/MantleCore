@@ -16,6 +16,8 @@
 #include "WorldPartition/WorldPartitionEditorLoaderAdapter.h"
 #include "WorldPartition/WorldPartitionHelpers.h"
 #if WITH_EDITOR
+#include "WorldPartition/DataLayer/DataLayerInstance.h"
+#include "WorldPartition/DataLayer/DataLayerManager.h"
 #include "WorldPartition/HLOD/HLODActor.h"
 #include "WorldPartition/WorldPartitionActorDescInstance.h"
 #endif
@@ -26,7 +28,7 @@ int32 FMantlePlaceWorldPartition::CountUnloaded(const TArray<FActorEntry>& Entri
 	TArray<FString> Labels;
 	for (const FActorEntry& Entry : Entries)
 	{
-		if (Entry.bLoaded || Entry.bRuntimeOnly || Entry.bHLOD)
+		if (Entry.bLoaded || Entry.bRuntimeOnly || Entry.bHLOD || Entry.OffLayers.Num() > 0)
 		{
 			continue;
 		}
@@ -58,8 +60,9 @@ TArray<FMantlePlaceWorldPartition::FActorEntry> FMantlePlaceWorldPartition::Gath
 		return Entries;
 	}
 
+	const UDataLayerManager* DataLayers = WorldPartition->GetDataLayerManager();
 	FWorldPartitionHelpers::ForEachActorDescInstance(WorldPartition,
-		[&Entries](const FWorldPartitionActorDescInstance* Desc)
+		[&Entries, DataLayers](const FWorldPartitionActorDescInstance* Desc)
 		{
 			if (Desc)
 			{
@@ -69,12 +72,120 @@ TArray<FMantlePlaceWorldPartition::FActorEntry> FMantlePlaceWorldPartition::Gath
 				Entry.bLoaded = Desc->IsLoaded();
 				Entry.bRuntimeOnly = Desc->GetActorIsRuntimeOnly();
 				Entry.bHLOD = NativeClass && NativeClass->IsChildOf(AWorldPartitionHLOD::StaticClass());
+				// The layers that keep it out: an actor in a layer that is off in the editor is not loaded, whichever cell it sits in.
+				if (!Entry.bLoaded && DataLayers)
+				{
+					for (const FName& LayerName : Desc->GetDataLayerInstanceNames().ToArray())
+					{
+						const UDataLayerInstance* Layer = DataLayers->GetDataLayerInstanceFromName(LayerName);
+						if (Layer && !Layer->IsEffectiveLoadedInEditor())
+						{
+							Entry.OffLayers.AddUnique(Layer->GetDataLayerShortName());
+						}
+					}
+				}
 				Entries.Add(MoveTemp(Entry));
 			}
 			return true;
 		});
 #endif
 	return Entries;
+}
+
+TArray<FMantlePlaceWorldPartition::FOffLayer> FMantlePlaceWorldPartition::OffLayers(const TArray<FActorEntry>& Entries)
+{
+	TArray<FOffLayer> Layers;
+	for (const FActorEntry& Entry : Entries)
+	{
+		if (Entry.bLoaded || Entry.bRuntimeOnly || Entry.bHLOD)
+		{
+			continue;
+		}
+		for (const FString& Name : Entry.OffLayers)
+		{
+			FOffLayer* Found = Layers.FindByPredicate([&Name](const FOffLayer& Layer) { return Layer.Name == Name; });
+			if (!Found)
+			{
+				Found = &Layers.AddDefaulted_GetRef();
+				Found->Name = Name;
+			}
+			++Found->ActorCount;
+		}
+	}
+	Layers.Sort([](const FOffLayer& A, const FOffLayer& B) { return A.Name < B.Name; });
+	return Layers;
+}
+
+bool FMantlePlaceWorldPartition::DescribeOffLayer(const FOffLayer& Layer, FMantleValidationIssue& OutIssue)
+{
+	OutIssue.Severity = EMantleIssueSeverity::Warning;
+	OutIssue.Actor.Reset();
+	OutIssue.Problem = FString::Printf(TEXT("Data layer '%s' is off in the editor, so its %d actor%s %s left out of the place."),
+		*Layer.Name, Layer.ActorCount, Layer.ActorCount == 1 ? TEXT("") : TEXT("s"), Layer.ActorCount == 1 ? TEXT("is") : TEXT("are"));
+	OutIssue.Remedy = TEXT("Turn the layer on (Load in Editor, in the Data Layers window) to publish them.");
+	return true;
+}
+
+TArray<FMantlePlaceWorldPartition::FLayerEntry> FMantlePlaceWorldPartition::GatherLayers(UWorld* World)
+{
+	TArray<FLayerEntry> Layers;
+#if WITH_EDITOR
+	if (!IsValid(World) || World->IsGameWorld())
+	{
+		return Layers;
+	}
+	UWorldPartition* WorldPartition = World->GetWorldPartition();
+	const UDataLayerManager* DataLayers = WorldPartition && WorldPartition->IsInitialized() ? WorldPartition->GetDataLayerManager() : nullptr;
+	if (!DataLayers)
+	{
+		return Layers;
+	}
+	DataLayers->ForEachDataLayerInstance([&Layers](UDataLayerInstance* Layer)
+	{
+		if (Layer)
+		{
+			FLayerEntry Entry;
+			Entry.Name = Layer->GetDataLayerShortName();
+			Entry.bRuntime = Layer->IsRuntime();
+			if (Entry.bRuntime)
+			{
+				switch (Layer->GetInitialRuntimeState())
+				{
+				case EDataLayerRuntimeState::Activated: Entry.InitialState = TEXT("Activated"); break;
+				case EDataLayerRuntimeState::Loaded: Entry.InitialState = TEXT("Loaded"); break;
+				default: Entry.InitialState = TEXT("Unloaded"); break;
+				}
+			}
+			Layers.Add(MoveTemp(Entry));
+		}
+		return true;
+	});
+	Layers.Sort([](const FLayerEntry& A, const FLayerEntry& B) { return A.Name < B.Name; });
+#endif
+	return Layers;
+}
+
+bool FMantlePlaceWorldPartition::DescribeRuntimeLayers(const TArray<FLayerEntry>& Layers, FMantleValidationIssue& OutIssue)
+{
+	TArray<FString> Named;
+	for (const FLayerEntry& Layer : Layers)
+	{
+		if (Layer.bRuntime)
+		{
+			Named.Add(FString::Printf(TEXT("%s (starts %s)"), *Layer.Name, *Layer.InitialState));
+		}
+	}
+	if (Named.Num() == 0)
+	{
+		return false;
+	}
+	OutIssue.Severity = EMantleIssueSeverity::Warning;
+	OutIssue.Actor.Reset();
+	OutIssue.Problem = FString::Printf(
+		TEXT("This level has runtime Data Layer%s: %s. Mantle doesn't use Data Layers: every actor loaded in the editor publishes as an ordinary actor that is always there, so a layer's Initial Runtime State is ignored and nothing can switch a layer on or off while the place plays."),
+		Named.Num() == 1 ? TEXT("") : TEXT("s"), *FString::Join(Named, TEXT(", ")));
+	OutIssue.Remedy = TEXT("Nothing to do if every layer should be there from the start. Actors that should not show at the start have to come out of the level.");
+	return true;
 }
 
 FString FMantlePlaceWorldPartition::DescribeProblem(int32 Count, const TArray<FString>& Examples)
@@ -100,18 +211,31 @@ FString FMantlePlaceWorldPartition::DescribeRemedy()
 
 void FMantlePlaceWorldPartition::CheckLevel(UWorld* World, TArray<FMantleValidationIssue>& OutIssues)
 {
+	const TArray<FActorEntry> Entries = GatherEntries(World);
 	TArray<FString> Examples;
-	const int32 Count = CountUnloaded(GatherEntries(World), Examples);
-	if (Count == 0)
+	const int32 Count = CountUnloaded(Entries, Examples);
+	if (Count > 0)
 	{
-		return;
+		OutIssues.Add(FMantleValidationIssue{
+			EMantleIssueSeverity::Error,
+			FString(),
+			DescribeProblem(Count, Examples),
+			DescribeRemedy() });
 	}
 
-	OutIssues.Add(FMantleValidationIssue{
-		EMantleIssueSeverity::Error,
-		FString(),
-		DescribeProblem(Count, Examples),
-		DescribeRemedy() });
+	// Actors in a Data Layer that is off in the editor are not shown there, so they are left out of the place, one warning per layer.
+	for (const FOffLayer& Layer : OffLayers(Entries))
+	{
+		FMantleValidationIssue Issue;
+		DescribeOffLayer(Layer, Issue);
+		OutIssues.Add(MoveTemp(Issue));
+	}
+
+	FMantleValidationIssue RuntimeLayers;
+	if (DescribeRuntimeLayers(GatherLayers(World), RuntimeLayers))
+	{
+		OutIssues.Add(MoveTemp(RuntimeLayers));
+	}
 }
 
 void FMantlePlaceWorldPartition::CheckExport(UWorld* World, TArray<FMantleParseError>& OutErrors)
@@ -278,7 +402,7 @@ FString FMantlePlaceWorldPartition::DescribeLoad(const FLoadResult& Result)
 			Result.Loaded(), Result.CommitAfterMB, Result.CommitBeforeMB);
 		if (Result.UnloadedAfter > 0)
 		{
-			Text += FString::Printf(TEXT(" %d actors are still not loaded (a data layer that is off, or a cell that would not load)."), Result.UnloadedAfter);
+			Text += FString::Printf(TEXT(" %d actors are still not loaded (a cell that would not load)."), Result.UnloadedAfter);
 		}
 	}
 	if (Result.LevelInstances.Num() > 0 || Result.LevelInstancesFailed > 0)
