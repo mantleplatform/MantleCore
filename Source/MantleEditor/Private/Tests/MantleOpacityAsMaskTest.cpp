@@ -126,6 +126,15 @@ bool FMantleOpacityAsMaskCopyTest::RunTest(const FString& Parameters)
 		&& Cast<UMaterialExpressionComponentMask>(Data->OpacityMask.Expression) != nullptr);
 	TestEqual(TEXT("the creator's material is still Translucent"), static_cast<int32>(Card->BlendMode), static_cast<int32>(BLEND_Translucent));
 	TestNull(TEXT("and its Opacity Mask untouched"), Card->GetEditorOnlyData()->OpacityMask.Expression);
+
+	// Build 4: City Sample's decal master carries "masked can be assumed opaque", so its Masked copy reported Opaque and baked no alpha.
+	UMaterial* Flagged = NewGradientCard();
+	Flagged->bCanMaskedBeAssumedOpaque = true;
+	const TStrongObjectPtr<UMaterialInterface> FlaggedCopy = FMantlePlaceAssets::OpacityAsMaskCopy(Flagged);
+	if (TestTrue(TEXT("a material carrying the flag gets a copy too"), FlaggedCopy.IsValid()))
+	{
+		TestEqual(TEXT("which reports Masked, not Opaque"), static_cast<int32>(FlaggedCopy->GetBlendMode()), static_cast<int32>(BLEND_Masked));
+	}
 	return true;
 }
 

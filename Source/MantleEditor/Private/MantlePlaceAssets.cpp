@@ -4845,6 +4845,9 @@ TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::OpacityAsMaskCopy(const
 	{
 		UMaterialEditorOnlyData* Data = BaseCopy.GetEditorOnlyData();
 		BaseCopy.BlendMode = BLEND_Masked;
+		// A material can carry "masked can be assumed opaque" from an earlier blend mode (City Sample's decal master does); with it set,
+		// GetBlendMode reports a Masked material as Opaque (Material.cpp, UMaterial::GetBlendMode) and the bake drops its alpha.
+		BaseCopy.bCanMaskedBeAssumedOpaque = false;
 		Data->OpacityMask = Data->Opacity;
 	});
 }
