@@ -12,6 +12,7 @@
 #include "MantleConstraint.h"
 #include "MantleCoverageSurvey.h"
 #include "MantleCrowdSpawner.h"
+#include "MantleDecalBake.h"
 #include "MantleEffect.h"
 #include "MantleEffectExport.h"
 #include "MantleClientFeatures.h"
@@ -3831,9 +3832,12 @@ namespace MantleDecalOpacityPrivate
 	}
 }
 
-UTexture* FMantlePlaceExporter::DecalTextureWithOpacity(const UMaterialInterface* Material, UTexture* BaseColor)
+UTexture* FMantlePlaceExporter::DecalTextureWithOpacity(const UMaterialInterface* Material, UTexture* BaseColor, bool* bOutUnreadable)
 {
 	using namespace MantleDecalOpacityPrivate;
+	bool bUnreadableStore = false;
+	bool& bUnreadable = bOutUnreadable ? *bOutUnreadable : bUnreadableStore;
+	bUnreadable = false;
 	const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
 	const UMaterialEditorOnlyData* Graph = Base ? Base->GetEditorOnlyData() : nullptr;
 	// A material on material attributes reads its Opacity from the Make Material Attributes it ends
@@ -3854,6 +3858,7 @@ UTexture* FMantlePlaceExporter::DecalTextureWithOpacity(const UMaterialInterface
 	const int32 Result = MantleDecalGraphPrivate::Resolve(Root) ? Compile(Material, MoveTemp(Root), Program, 0) : INDEX_NONE;
 	if (Result == INDEX_NONE)
 	{
+		bUnreadable = true;
 		return BaseColor; // a graph Mantle can't run: the colour texture's own alpha stays the shape
 	}
 	// Only the colour texture's own alpha (times constants): that alpha already is the shape.
@@ -3887,6 +3892,7 @@ UTexture* FMantlePlaceExporter::DecalTextureWithOpacity(const UMaterialInterface
 	FImage Colour;
 	if (!BaseColor->Source.IsValid() || BaseColor->Source.GetNumBlocks() > 1 || BaseColor->Source.GetNumSlices() > 1 || !BaseColor->Source.GetMipImage(Colour, 0))
 	{
+		bUnreadable = true;
 		return BaseColor;
 	}
 	if (!ERawImageFormat::IsHDR(Colour.Format))
@@ -3901,6 +3907,7 @@ UTexture* FMantlePlaceExporter::DecalTextureWithOpacity(const UMaterialInterface
 	{
 		if (!Samplers[Index].Load(Program.Textures[Index]))
 		{
+			bUnreadable = true;
 			return BaseColor;
 		}
 	}
@@ -4100,8 +4107,24 @@ bool FMantlePlaceExporter::ReadDecal(const AActor* Actor, FMantleDecalProps& Out
 	}
 	// A pack whose shape is in its Opacity input, not the colour texture's alpha (a damage mask times
 	// the colour): the colour texture is published with that Opacity baked into its alpha.
-	UTexture* const Shaped = bMantleMaster ? BaseColor : DecalTextureWithOpacity(Material, BaseColor);
-	const bool bBaked = Shaped != BaseColor;
+	bool bUnreadOpacity = false;
+	UTexture* Shaped = bMantleMaster ? BaseColor : DecalTextureWithOpacity(Material, BaseColor, &bUnreadOpacity);
+	bool bBaked = Shaped != BaseColor;
+	// A1: an Opacity graph that reader can't run (City Sample's decal master: a Power, cell bombing) is baked by the engine instead, on the
+	// material's surface copy: its Base Color with that Opacity in alpha, over the UVs 0 to 1 the decal projects across its box.
+	if (bUnreadOpacity)
+	{
+		FString BakeWhy;
+		if (UTexture2D* EngineBaked = FMantleDecalBake::BakeShape(Material, BakeWhy))
+		{
+			Shaped = EngineBaked;
+			bBaked = true;
+		}
+		else
+		{
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_DECAL_BAKE %s: its Opacity graph is not one Mantle can run, and the engine bake gave nothing (%s)"), *Material->GetName(), *BakeWhy);
+		}
+	}
 	if (bFollowedGraph && !bBaked)
 	{
 		// The decal's shape is the colour texture's alpha. A pack that keeps its shape in a separate

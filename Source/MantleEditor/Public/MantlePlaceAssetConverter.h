@@ -1013,6 +1013,13 @@ public:
 	 */
 	static bool BakedBaseColorSize(const FMantleGlbDocument& Document, FIntPoint& OutSize, bool& bOutConstant);
 
+	/**
+	 * A1: a bake's first material's base color image over UVs 0 to 1, alpha included, as sRGB BGRA pixels with baseColorFactor applied (a
+	 * Decal Actor's baked shape, FMantleDecalBake). False with the reason, a clause, when it has none (one flat color), when GLTFExporter
+	 * kept a tiled source texture rather than baking the material, or when the image can't be read.
+	 */
+	static bool BakedBaseColorImage(const FMantleGlbDocument& Document, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight, FString& OutWhy);
+
 	/** MeanPixelDifference of the check's two base color bakes (BakeBaseColors), with one of one color (shrunk to one pixel) counted as not moving: 0. */
 	static double MovedCardDifference(const TArray<FColor>& Here, const TArray<FColor>& Moved);
 

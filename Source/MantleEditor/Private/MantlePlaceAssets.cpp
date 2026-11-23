@@ -172,6 +172,32 @@ namespace MantlePlaceAssetsPrivate
 	}
 
 	/**
+	 * A node that has a value only inside a decal: Decal Lifetime Opacity reads 0 anywhere else (MaterialTemplate.ush, so a decal
+	 * that fades by it bakes see-through), and Decal Mipmap Level and Decal Derivative don't compile outside the decal domain
+	 * (HLSLMaterialTranslator.cpp, TextureDecalMipmapLevel and TextureDecalDerivative). Decal Color reads white outside a decal, its default.
+	 * By class name: the engine doesn't export these classes, so their StaticClass can't be linked from here.
+	 */
+	enum class EDecalOnlyNode : uint8 { None, LifetimeOpacity, MipmapLevel, Derivative };
+
+	EDecalOnlyNode DecalOnlyNodeOf(const UMaterialExpression* Expression)
+	{
+		const FName Class = Expression ? Expression->GetClass()->GetFName() : NAME_None;
+		if (Class == TEXT("MaterialExpressionDecalLifetimeOpacity"))
+		{
+			return EDecalOnlyNode::LifetimeOpacity;
+		}
+		if (Class == TEXT("MaterialExpressionDecalMipmapLevel"))
+		{
+			return EDecalOnlyNode::MipmapLevel;
+		}
+		if (Class == TEXT("MaterialExpressionDecalDerivative"))
+		{
+			return EDecalOnlyNode::Derivative;
+		}
+		return EDecalOnlyNode::None;
+	}
+
+	/**
 	 * A node that reads a second UV set (UV1 or higher): a Texture Coordinate with that index, or a node whose UV input is
 	 * unwired and set to that index. The bake card has UV0 only (MakeBakeCard), and the engine's bake fills a missing set
 	 * with the last one it has (MaterialRenderItem.cpp), so what UV1 places is baked by UV0 instead.
@@ -3932,7 +3958,8 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		Out.Losses |= EMantleMaterialLoss::BlendMode;
 		Out.BlendModeName = BlendModeName(Blend);
 	}
-	if (Base->MaterialDomain != MD_Surface)
+	// A1: a decal material is baked as its surface copy (DecalSurfaceCopy), which keeps it as it is: not this loss.
+	if (Base->MaterialDomain != MD_Surface && Base->MaterialDomain != MD_DeferredDecal)
 	{
 		Out.Losses |= EMantleMaterialLoss::NotSurface;
 	}
@@ -4456,17 +4483,25 @@ namespace MantlePlaceAssetsPrivate
 	 * Copies the base material and the functions it calls that hold a per-instance node, replacing each such node by a constant
 	 * and re-pointing everything that read it. Per Instance Custom Data keeps what feeds its Default Value input, else its
 	 * constant default; Per Instance Fade Amount is 1 (the instance fully faded in).
+	 * With bDecalNodes, the nodes replaced are the decal-only ones instead (DecalOnlyNodeOf, for a decal material baked as a surface,
+	 * A1): Decal Lifetime Opacity is 1 (a decal that never fades), Decal Mipmap Level 0 and Decal Derivative 0 (the full-size mip).
 	 */
 	struct FPerInstanceNeutralizer
 	{
 		TMap<const UMaterialFunction*, bool> Contains;
 		TMap<const UMaterialFunction*, UMaterialFunction*> Copies;
+		bool bDecalNodes = false;
+
+		bool IsTarget(const UMaterialExpression* Expression) const
+		{
+			return bDecalNodes ? DecalOnlyNodeOf(Expression) != EDecalOnlyNode::None : IsPerInstanceNode(Expression);
+		}
 
 		bool GraphHasPerInstance(TConstArrayView<TObjectPtr<UMaterialExpression>> Expressions)
 		{
 			for (const TObjectPtr<UMaterialExpression>& Expression : Expressions)
 			{
-				if (IsPerInstanceNode(Expression))
+				if (IsTarget(Expression))
 				{
 					return true;
 				}
@@ -4557,12 +4592,29 @@ namespace MantlePlaceAssetsPrivate
 			};
 			for (UMaterialExpression* Expression : Expressions)
 			{
-				if (!IsPerInstanceNode(Expression))
+				if (!IsTarget(Expression))
 				{
 					continue;
 				}
 				FReplacement Replacement;
-				if (const UMaterialExpressionPerInstanceCustomData* Data = Cast<UMaterialExpressionPerInstanceCustomData>(Expression))
+				if (const EDecalOnlyNode Decal = DecalOnlyNodeOf(Expression); bDecalNodes && Decal != EDecalOnlyNode::None)
+				{
+					if (Decal == EDecalOnlyNode::Derivative)
+					{
+						// Both outputs (DDX, DDY) are float2: zero, so the sample reads its full-size mip.
+						UMaterialExpressionConstant2Vector* Zero = NewObject<UMaterialExpressionConstant2Vector>(Outer);
+						Zero->R = 0.0f;
+						Zero->G = 0.0f;
+						Replacement.Node = Add(Zero);
+					}
+					else
+					{
+						UMaterialExpressionConstant* Constant = NewObject<UMaterialExpressionConstant>(Outer);
+						Constant->R = Decal == EDecalOnlyNode::LifetimeOpacity ? 1.0f : 0.0f;
+						Replacement.Node = Add(Constant);
+					}
+				}
+				else if (const UMaterialExpressionPerInstanceCustomData* Data = Cast<UMaterialExpressionPerInstanceCustomData>(Expression))
 				{
 					if (Data->DefaultValue.Expression)
 					{
@@ -4706,6 +4758,41 @@ TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::NeutralizePerInstanceVa
 	return MantlePlaceAssetsPrivate::CopyForBake(Chain, *Base, [&Neutralizer](UMaterial& BaseCopy) { Neutralizer.Rewrite(&BaseCopy, nullptr); });
 }
 
+TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::DecalSurfaceCopy(const UMaterialInterface* Material)
+{
+	using namespace MantlePlaceAssetsPrivate;
+	if (!Material)
+	{
+		return nullptr;
+	}
+	TArray<const UMaterialInstanceConstant*> Chain;
+	const UMaterialInterface* Link = Material;
+	while (const UMaterialInstanceConstant* Instance = Cast<UMaterialInstanceConstant>(Link))
+	{
+		Chain.Add(Instance);
+		Link = Instance->Parent;
+	}
+	const UMaterial* Base = Cast<UMaterial>(Link);
+	if (!Base || !Base->GetEditorOnlyData() || Base->MaterialDomain != MD_DeferredDecal)
+	{
+		return nullptr;
+	}
+	FPerInstanceNeutralizer DecalNodes;
+	DecalNodes.bDecalNodes = true;
+	const bool bRewrite = DecalNodes.GraphHasPerInstance(Base->GetExpressions());
+	return CopyForBake(Chain, *Base, [&DecalNodes, bRewrite](UMaterial& BaseCopy)
+	{
+		// The surface domain, blend mode and every input as the creator set them: the engine bakes Base Color, Opacity and Normal of a
+		// surface material, where for a decal (with Substrate on) only its Front Material is an active input (Material.cpp,
+		// IsPropertyActive_Internal), so the decal itself bakes blank.
+		BaseCopy.MaterialDomain = MD_Surface;
+		if (bRewrite)
+		{
+			DecalNodes.Rewrite(&BaseCopy, nullptr);
+		}
+	});
+}
+
 TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::ReadsVertexColorCopy(const UMaterialInterface* Material)
 {
 	using namespace MantlePlaceAssetsPrivate;
@@ -4807,7 +4894,7 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 	case EMantleMaterialLoss::BlendMode:
 		return FString::Printf(TEXT("its %s blending becomes ordinary translucency."), *Analysis.BlendModeName);
 	case EMantleMaterialLoss::NotSurface:
-		return TEXT("it is not a surface material (a decal, light function or post-process material), so it is flattened as a plain surface.");
+		return TEXT("it is not a surface material (a light function, post-process or user interface material), so it is flattened as a plain surface.");
 	case EMantleMaterialLoss::SecondUv:
 		return TEXT("it reads a second UV set (UV1 or higher), which the bake does not have, so what that set places is drawn by the first UV set instead: masks such as wet lanes, dirt or stripes can repeat with the first set's tiling or land in the wrong place.");
 	default:

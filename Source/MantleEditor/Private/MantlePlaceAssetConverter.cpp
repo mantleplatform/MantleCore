@@ -4136,9 +4136,13 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	// A masked material never publishes a cut-off of 0 (ResolveMaskCutoff): an earlier conversion that did must not stand in. Only a
 	// masked material's conversion changed, so only its key does; every other material keeps its bake.
 	const bool bMasked = Material && Material->GetBlendMode() == BLEND_Masked;
-	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
+	// A1: a decal material is baked as its surface copy; its earlier bake (blank) must not stand in. Only decal materials' keys change.
+	const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
+	const bool bDecal = Base && Base->MaterialDomain == MD_DeferredDecal;
+	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
-		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""), bMasked ? TEXT(" maskcutoff=2") : TEXT(""));
+		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""), bMasked ? TEXT(" maskcutoff=2") : TEXT(""),
+		bDecal ? TEXT(" decalsurface=1") : TEXT(""));
 }
 
 double FMantlePlaceAssetConverter::MeanPixelDifference(const TArray<FColor>& A, const TArray<FColor>& B)
@@ -4218,6 +4222,55 @@ bool FMantlePlaceAssetConverter::BakedBaseColorSize(const FMantleGlbDocument& Do
 	}
 	OutSize = FIntPoint(static_cast<int32>(Wrapper->GetWidth()), static_cast<int32>(Wrapper->GetHeight()));
 	return OutSize.X > 0 && OutSize.Y > 0;
+}
+
+bool FMantlePlaceAssetConverter::BakedBaseColorImage(const FMantleGlbDocument& Document, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight, FString& OutWhy)
+{
+	using namespace MantlePlaceAssetConverterPrivate;
+	OutPixels.Reset();
+	OutWidth = OutHeight = 0;
+	const TArray<TSharedPtr<FJsonValue>>* Materials = nullptr;
+	if (!Document.Json.IsValid() || !Document.Json->TryGetArrayField(TEXT("materials"), Materials) || Materials->Num() == 0 || !(*Materials)[0].IsValid())
+	{
+		OutWhy = TEXT("the bake has no material");
+		return false;
+	}
+	const TSharedPtr<FJsonObject> Pbr = ObjectField((*Materials)[0]->AsObject(), TEXT("pbrMetallicRoughness"));
+	const FTextureRef Ref = ReadTextureRef(ObjectField(Pbr, TEXT("baseColorTexture")));
+	if (!Ref.IsSet())
+	{
+		OutWhy = TEXT("the bake gave one flat color, no image");
+		return false;
+	}
+	// The image must cover UVs 0 to 1 as it is: GLTFExporter keeps a plain texture as it is, with a transform for its tiling, and that
+	// image alone is not what the material draws over 0 to 1.
+	if (Ref.TexCoord != 0 || !Ref.SameTransform(FTextureRef()))
+	{
+		OutWhy = TEXT("the bake kept a tiled source texture instead of an image of the whole material");
+		return false;
+	}
+	TArray<uint8> Bytes;
+	int32 Source = INDEX_NONE;
+	FString Name;
+	if (!ReadTextureImage(Document, Ref.Texture, Bytes, Source, Name) || !DecodeBgra(Bytes, true, OutPixels, OutWidth, OutHeight))
+	{
+		OutWhy = TEXT("the bake's base color image could not be read");
+		return false;
+	}
+	// glTF multiplies the image by baseColorFactor: color in linear light, alpha as it is.
+	double Factor[4] = { 1.0, 1.0, 1.0, 1.0 };
+	NumberArray(Pbr, TEXT("baseColorFactor"), Factor, 4);
+	if (!FMath::IsNearlyEqual(Factor[0], 1.0) || !FMath::IsNearlyEqual(Factor[1], 1.0) || !FMath::IsNearlyEqual(Factor[2], 1.0) || !FMath::IsNearlyEqual(Factor[3], 1.0))
+	{
+		for (FColor& Pixel : OutPixels)
+		{
+			const FLinearColor Linear = FLinearColor::FromSRGBColor(Pixel);
+			FColor Scaled = FLinearColor(Linear.R * static_cast<float>(Factor[0]), Linear.G * static_cast<float>(Factor[1]), Linear.B * static_cast<float>(Factor[2]), 1.0f).ToFColorSRGB();
+			Scaled.A = static_cast<uint8>(FMath::Clamp(FMath::RoundToInt32(Pixel.A * Factor[3]), 0, 255));
+			Pixel = Scaled;
+		}
+	}
+	return true;
 }
 
 double FMantlePlaceAssetConverter::MovedCardDifference(const TArray<FColor>& Here, const TArray<FColor>& Moved)
@@ -4448,6 +4501,17 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 		}
 	}
 
+	// A1: a decal material drawn on a mesh (a mesh decal: road lines, paint, grime) bakes blank as it is (with Substrate on, only a decal's
+	// Front Material is an active input), so it is baked as its surface copy: the same graph, parameters and blend mode, so it publishes
+	// see-through as the creator marked it, its Base Color with Opacity in alpha, and its Normal, on the mesh's own UVs.
+	const TStrongObjectPtr<UMaterialInterface> DecalSurface = FMantlePlaceAssets::DecalSurfaceCopy(Neutral.IsValid() ? Neutral.Get() : Material);
+	UMaterialInterface* const ToBake = DecalSurface.IsValid() ? DecalSurface.Get() : (Neutral.IsValid() ? Neutral.Get() : Material);
+	if (DecalSurface.IsValid())
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_DECAL_SURFACE %s: a decal material, baked as its surface copy (blend mode %s)"), *Material->GetName(),
+			*UEnum::GetValueAsString(ToBake->GetBlendMode()));
+	}
+
 	++Stats.FlattenerCalls;
 	FMantleGlbDocument Flattened;
 	TArray<FString> Messages;
@@ -4460,7 +4524,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE %s: baked on a card with vertex color %s and UVs 0 to %g%s"), *Material->GetName(), *Surface.VertexColor.ToHex(), Surface.UvRange,
 			Surface.WorldTileCm > 0.0 ? *FString::Printf(TEXT(", %g cm a side for its world mapping"), Surface.WorldTileCm) : TEXT(""));
 	}
-	if (Flattener->Flatten(Neutral.IsValid() ? Neutral.Get() : Material, FlattenSettings, Flattened, Messages, FlattenError))
+	if (Flattener->Flatten(ToBake, FlattenSettings, Flattened, Messages, FlattenError))
 	{
 		ScaleTextureTransforms(Flattened, 0, Surface.UvRange);
 		for (const FString& Message : Messages)
@@ -4498,7 +4562,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 			// second Flatten was a third of City Sample's 4 hours of material conversion).
 			const double CheckStarted = FPlatformTime::Seconds();
 			const double ShiftCm = Surface.WorldTileCm * WorldShiftFraction;
-			UMaterialInterface* Baked = Neutral.IsValid() ? Neutral.Get() : Material;
+			UMaterialInterface* Baked = ToBake;
 			FIntPoint BaseColorSize;
 			bool bConstant = false;
 			double Difference = 1.0;

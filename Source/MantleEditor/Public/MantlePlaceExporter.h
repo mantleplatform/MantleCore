@@ -578,8 +578,10 @@ public:
 	 * Multiply, Add, Subtract, Lerp, One Minus, Saturate, Component Mask, and UV tiling from a
 	 * Texture Coordinate times a constant). A material on material attributes is followed through
 	 * its functions to the Make Material Attributes it ends in, and that node's Opacity.
+	 * bOutUnreadable, when given, says whether BaseColor came back because the Opacity graph could not be run (a node Mantle can't
+	 * run, or a texture it can't read), not because there is nothing to run: ReadDecal then has the engine bake it (FMantleDecalBake).
 	 */
-	static UTexture* DecalTextureWithOpacity(const UMaterialInterface* Material, UTexture* BaseColor);
+	static UTexture* DecalTextureWithOpacity(const UMaterialInterface* Material, UTexture* BaseColor, bool* bOutUnreadable = nullptr);
 
 	/**
 	 * True when Texture's source pixels have any alpha below opaque: a decal shape. Read from the

@@ -1043,6 +1043,15 @@ public:
 	 */
 	static TStrongObjectPtr<UMaterialInterface> ReadsVertexColorCopy(const UMaterialInterface* Material);
 
+	/**
+	 * A1: a transient copy of a decal material (Material Domain: Deferred Decal; its instance chain, with every parameter it sets) with the
+	 * surface domain and the same blend mode, for the bake: the engine's bake of a decal material comes out blank (with Substrate on, only
+	 * a decal's Front Material is an active input), where its surface copy bakes its Base Color with Opacity in alpha, and its Normal. The
+	 * nodes that have a value only inside a decal are made constants: Decal Lifetime Opacity 1, Decal Mipmap Level and Decal Derivative 0.
+	 * Null for any other material, or a chain this cannot copy (a dynamic instance); the source is never touched.
+	 */
+	static TStrongObjectPtr<UMaterialInterface> DecalSurfaceCopy(const UMaterialInterface* Material);
+
 	/** The sentence Check and the converter give a material whose bake averaged its per-instance variation, following "Material 'M_X': ". */
 	static FString DescribePerInstanceVariation();
 
