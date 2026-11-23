@@ -7,11 +7,18 @@
 #include "MantleStreamBudget.h"
 
 /** Which of a cell's entities a streamer builds: all of them, the ones with collision, or the ones without (the pictures). */
+/**
+ * What of a cell's entities a streamer builds. All: everything as the place has it. A standalone game runs two streamers: SolidOnly (every solid entity, drawn and solid, every cell
+ * kept) and PicturesOnly (the rest, by distance). A player's machine also runs two (the collision range, big-map plan): PicturesNoCollision (every entity drawn, none solid, out to
+ * the ring) and CollisionOnly (each solid entity's collision alone, hidden and still blocking sight, out to FMantleCellStreamSettings::MaxReachCm).
+ */
 enum class EMantleCellEntities : uint8
 {
 	All,
 	SolidOnly,
 	PicturesOnly,
+	PicturesNoCollision,
+	CollisionOnly,
 };
 
 /**
@@ -151,6 +158,16 @@ struct MANTLERUNTIME_API FMantleCellStreamSettings
 	 * Farther than the setting's ring, it takes the ring's cells (drawDistance FMantleStreamBudget::RingFromCm or more) out to it; the ladder still shrinks it (RingReach).
 	 */
 	TFunction<double()> WorldLoadDistanceCm;
+	/**
+	 * The farthest any cell is wanted from, cm, whatever its drawDistance and the scales above (0: no cap). A player's machine caps its CollisionOnly streamer at
+	 * ClientCollisionReachCm, so solid things stand only near the player (and ahead of a fast one: the reach is measured from the look-ahead path).
+	 */
+	double MaxReachCm = 0.0;
+	/**
+	 * How far a player's machine builds collision: 256 m, the player's 256 m cell and its neighbors (big-map step 2: collision cost 1.1 to 1.4 GB per 100k solid things
+	 * at 600 m). A dedicated server keeps every cell's collision, so this changes nothing on a server or in a server script.
+	 */
+	static constexpr double ClientCollisionReachCm = 25600.0;
 	/** Set by the streamer with ReachScale (never by the owner): the View Distance setting's scale, the player's raised ring (cm, 0 = none) and how much of it the ladder leaves (RingReach). */
 	double RingViewScale = 1.0;
 	double RaisedReachCm = 0.0;

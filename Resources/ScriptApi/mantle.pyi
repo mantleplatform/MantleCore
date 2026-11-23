@@ -1480,7 +1480,7 @@ class _PointerService:
         """The cursor's spot on screen, 0 to 1 each way. It reads the mouse while the mouse cursor shows, or the pad cursor in 'cursor' mode; in 'snap' mode it is the snapped target's screen point. nil when no cursor shows and nothing is snapped."""
         ...
     def hit(self, params: dict[str, Any] = ..., /) -> Optional[dict[str, Any]]:
-        """Where the cursor hits anything: World:Raycast along GetRay, with the same params (MaxDistance, by default and at most 1 km; Include, Exclude, Tag, IgnorePlayers) and the same result table. Counts toward the 256 spatial queries a frame per script. nil when there is no cursor or nothing is hit. Use it for map pins and click-to-move; picking listed objects is Start's job."""
+        """Where the cursor hits anything: World:Raycast along GetRay, with the same params (MaxDistance, by default and at most 1 km; Include, Exclude, Tag, IgnorePlayers) and the same result table. Counts toward the 256 spatial queries a frame per script. nil when there is no cursor or nothing is hit. Like World:Raycast, it hits the place's scenery only within about 256 m of the player. Use it for map pins and click-to-move; picking listed objects is Start's job."""
         ...
     def set_drag_hint(self, text: Optional[str] = ..., /) -> None:
         """Makes the ghost red with this reason ('Slot full', at most 120 characters). nil makes it valid again. A red drop still fires DragEnded, with Valid false and the text as Reason, so your script decides what that means; the server's check still decides."""
@@ -1925,7 +1925,7 @@ class _WorldService:
     entity_entered_range: Signal
     entity_left_range: Signal
     def blockcast(self, origin: Vector3, size: Vector3, direction: Vector3, params: dict[str, Any] = ..., /) -> Optional[dict[str, Any]]:
-        """Sweep a box of this size (its full width, depth and height, at most 100 m on any side, kept square to the world's axes) from origin along direction and return the first thing it touches, in the same table as World:Raycast, or nil. Takes the same params as World:Raycast."""
+        """Sweep a box of this size (its full width, depth and height, at most 100 m on any side, kept square to the world's axes) from origin along direction and return the first thing it touches, in the same table as World:Raycast, or nil. Takes the same params as World:Raycast, and reaches scenery as far as it does on a player's machine (about 256 m)."""
         ...
     def find_by_tag(self, tag: str, /) -> list[Entity]:
         """Every entity with this actor tag."""
@@ -1937,7 +1937,7 @@ class _WorldService:
         """Every entity and player character touching a box of this size (its full width, depth and height, at most 100 m on any side, kept square to the world's axes) centered on center, nearest first. Takes the same params as World:GetEntitiesInRadius."""
         ...
     def get_entities_in_radius(self, center: Vector3, radius: float, params: dict[str, Any] = ..., /) -> list[Entity]:
-        """Every entity and player character touching a ball of this radius (at most 50 m) around center, nearest first. Overlap-only entities (triggers) count; entities with no collision never do. A character is listed as its Entity; Players:GetPlayerFromCharacter tells whose it is. params: Include, Exclude, Tag, IgnorePlayers, Layers, ExcludeLayers (collision layers, server scripts only), and MaxResults (256 at most, and by default). Runs on this machine only; a script may make 256 spatial queries a frame."""
+        """Every entity and player character touching a ball of this radius (at most 50 m) around center, nearest first. Overlap-only entities (triggers) count; entities with no collision never do. A character is listed as its Entity; Players:GetPlayerFromCharacter tells whose it is. params: Include, Exclude, Tag, IgnorePlayers, Layers, ExcludeLayers (collision layers, server scripts only), and MaxResults (256 at most, and by default). Runs on this machine only; a script may make 256 spatial queries a frame. On a player's machine, the place's scenery counts only within about 256 m of the player; server scripts are unaffected."""
         ...
     def get_voxel_world(self, look: Optional[str] = ..., /) -> Optional[VoxelWorld]:
         """The place's block world, or nil when the place has none. A place may have two, one of each look: give 'blocky' or 'smooth' for that one; with no look, the place's first."""
@@ -1949,10 +1949,10 @@ class _WorldService:
         """Call handler when an entity loses the tag."""
         ...
     def raycast(self, origin: Vector3, direction: Vector3, params: dict[str, Any] = ..., /) -> Optional[dict[str, Any]]:
-        """Cast a ray from origin along direction and return the first thing it hits: a table of Entity, Player, Position, Normal and Distance, or nil. Player is set when the hit is a player's character. The ray is as long as direction, or params.MaxDistance when given, and at most 1 km. It passes through overlap-only entities (triggers) and never hits entities with no collision. params: MaxDistance, Include (only these entities or players count), Exclude, Tag (only entities with this tag count), IgnorePlayers, Layers (only entities on these collision layers count; server scripts only) and ExcludeLayers (look through entities on these layers). Runs on this machine only; a script may make 256 spatial queries a frame."""
+        """Cast a ray from origin along direction and return the first thing it hits: a table of Entity, Player, Position, Normal and Distance, or nil. Player is set when the hit is a player's character. The ray is as long as direction, or params.MaxDistance when given, and at most 1 km. It passes through overlap-only entities (triggers) and never hits entities with no collision. params: MaxDistance, Include (only these entities or players count), Exclude, Tag (only entities with this tag count), IgnorePlayers, Layers (only entities on these collision layers count; server scripts only) and ExcludeLayers (look through entities on these layers). Runs on this machine only; a script may make 256 spatial queries a frame. On a player's machine, rays hit the place's scenery within about 256 m of the player (farther scenery is drawn but has no collision there); server scripts are unaffected."""
         ...
     def spherecast(self, origin: Vector3, radius: float, direction: Vector3, params: dict[str, Any] = ..., /) -> Optional[dict[str, Any]]:
-        """Sweep a ball of this radius (at most 50 m) from origin along direction and return the first thing it touches, in the same table as World:Raycast, or nil. Distance is how far the ball's center traveled. Takes the same params as World:Raycast."""
+        """Sweep a ball of this radius (at most 50 m) from origin along direction and return the first thing it touches, in the same table as World:Raycast, or nil. Distance is how far the ball's center traveled. Takes the same params as World:Raycast, and reaches scenery as far as it does on a player's machine (about 256 m)."""
         ...
 
 World: _WorldService

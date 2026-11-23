@@ -30,6 +30,16 @@ namespace MantleCellStreamerPrivate
 		return Mesh && Mesh->Collision != EMantleCollision::None;
 	}
 
+	FMantleStaticMeshProps* MutableMeshPropsOf(FMantleEntity& Entity)
+	{
+		if (FMantleStaticMeshProps* Mesh = Entity.Props.TryGet<FMantleStaticMeshProps>())
+		{
+			return Mesh;
+		}
+		FMantleInstancedMeshProps* Instanced = Entity.Props.TryGet<FMantleInstancedMeshProps>();
+		return Instanced ? &Instanced->Mesh : nullptr;
+	}
+
 	/**
 	 * The entity a piece belongs to and which piece of it this is: a piece cut from a long list is "<id>~<n>" (see PrepareCell); anything else is its own entity, piece 0.
 	 */
@@ -262,7 +272,7 @@ void FMantleCellStreamer::Tick(const double DeltaSeconds)
 	}
 	// The player's own ground (the collision rule, made general): a character that stands where a solid cell is not built here (a late download, a view that
 	// outran the loader without being a teleport) is held until it stands, as a join or a teleport holds it. A cell that can never be read does not hold it.
-	if (bIndexReady && !bHolding && !Settings.bKeepEveryCell && Settings.Entities != EMantleCellEntities::PicturesOnly)
+	if (bIndexReady && !bHolding && !Settings.bKeepEveryCell && BuildsSolids(Settings.Entities))
 	{
 		FMantleCellAreaQuery OwnGround;
 		OwnGround.Point = View.Location;
@@ -490,7 +500,7 @@ void FMantleCellStreamer::Refresh()
 		Candidates.Reserve(Index.Cells.Num());
 		for (int32 CellIndex = 0; CellIndex < Index.Cells.Num(); ++CellIndex)
 		{
-			if (Settings.Entities != EMantleCellEntities::SolidOnly || Index.Cells[CellIndex].Solid > 0)
+			if (!BuildsOnlySolids(Settings.Entities) || Index.Cells[CellIndex].Solid > 0)
 			{
 				Candidates.Add(CellIndex);
 			}
@@ -760,6 +770,48 @@ void FMantleCellStreamer::ReleaseAssets(const int32 CellIndex)
 	}
 }
 
+bool FMantleCellStreamer::BuildsSolids(const EMantleCellEntities Entities)
+{
+	return Entities == EMantleCellEntities::All || Entities == EMantleCellEntities::SolidOnly || Entities == EMantleCellEntities::CollisionOnly;
+}
+
+bool FMantleCellStreamer::BuildsOnlySolids(const EMantleCellEntities Entities)
+{
+	return Entities == EMantleCellEntities::SolidOnly || Entities == EMantleCellEntities::CollisionOnly;
+}
+
+bool FMantleCellStreamer::FitToEntities(FMantleEntity& Entity, const EMantleCellEntities Entities)
+{
+	FMantleStaticMeshProps* Mesh = MantleCellStreamerPrivate::MutableMeshPropsOf(Entity);
+	if (Entities == EMantleCellEntities::PicturesNoCollision)
+	{
+		if (Mesh && !Mesh->bVisible)
+		{
+			return false; // collision only: the collision streamer's alone
+		}
+		if (Mesh)
+		{
+			Mesh->Collision = EMantleCollision::None;
+		}
+		return true;
+	}
+	if (Entities == EMantleCellEntities::CollisionOnly)
+	{
+		if (!Mesh || Mesh->Collision == EMantleCollision::None)
+		{
+			return false;
+		}
+		// The picture streamer draws it; this copy is its collision alone (MantlePlaceBuilder: hidden in game, never added to the scene). A visible wall still stops sight,
+		// pointer and interaction traces, as it did when it was one piece; no materials, so no texture is fetched for it.
+		Mesh->bBlocksVisibility = Mesh->bBlocksVisibility || Mesh->bVisible;
+		Mesh->bVisible = false;
+		Mesh->bCastShadow = false;
+		Mesh->Materials.Reset();
+		return true;
+	}
+	return true;
+}
+
 void FMantleCellStreamer::PrepareCell(const int32 CellIndex, FCell& Cell)
 {
 	// Long lists of solid instances are cut so that one piece is about one step of the budget; solid things are built before pictures. (A list with no collision is at most 4,096 instances, about 0.5 ms: one piece.)
@@ -771,6 +823,10 @@ void FMantleCellStreamer::PrepareCell(const int32 CellIndex, FCell& Cell)
 	Solid.Reserve(Cell.Content.Entities.Num());
 	for (FMantleEntity& Entity : Cell.Content.Entities)
 	{
+		if (!FitToEntities(Entity, Settings.Entities))
+		{
+			continue; // nothing of it for this streamer
+		}
 		const bool bSolid = MantleCellStreamerPrivate::IsSolidMesh(Entity);
 		if ((Settings.Entities == EMantleCellEntities::SolidOnly && !bSolid) || (Settings.Entities == EMantleCellEntities::PicturesOnly && bSolid))
 		{
