@@ -2,6 +2,7 @@
 #include "MantleCookedPacking.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
+#include "Interfaces/Interface_CollisionDataProvider.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Async/Async.h"
 #include "HAL/PlatformProcess.h"
@@ -1406,6 +1407,26 @@ namespace MantleStreamedAssetsTestPrivate
 		return Parsed.Place;
 	}
 
+	/** Every LOD's position, colour and tangent/UV buffer keeps its CPU copy (1), none does (0), or they differ (-1). */
+	int32 VertexCopyState(const UStaticMesh& Mesh)
+	{
+		const FStaticMeshRenderData* RenderData = Mesh.GetRenderData();
+		if (!RenderData || RenderData->LODResources.IsEmpty())
+		{
+			return -1;
+		}
+		int32 Kept = 0;
+		int32 Total = 0;
+		for (const FStaticMeshLODResources& LOD : RenderData->LODResources)
+		{
+			Kept += LOD.VertexBuffers.PositionVertexBuffer.GetAllowCPUAccess() ? 1 : 0;
+			Kept += LOD.VertexBuffers.ColorVertexBuffer.GetAllowCPUAccess() ? 1 : 0;
+			Kept += LOD.VertexBuffers.StaticMeshVertexBuffer.GetAllowCPUAccess() ? 1 : 0;
+			Total += 3;
+		}
+		return Kept == Total ? 1 : (Kept == 0 ? 0 : -1);
+	}
+
 	/** One StaticMesh entity of the given mesh, with or without collision, for a cell's list. */
 	FMantleEntity MeshEntity(const FString& Id, const FString& Mesh, const bool bCollision)
 	{
@@ -1674,6 +1695,8 @@ bool FMantleStreamedAssetsCollisionAndFailureTest::RunTest(const FString& Parame
 		return false;
 	}
 	TestFalse(TEXT("without collision for the picture"), Before->GetBodySetup() && Before->GetBodySetup()->CollisionTraceFlag == CTF_UseComplexAsSimple);
+	// A picture mesh (a twin's, or a cell's) gives its CPU copies of the vertices back where the process can render; the build with collision below keeps them.
+	TestEqual(TEXT("the picture mesh's vertex copies follow the rule"), VertexCopyState(*Before), FMantleRuntimeStaticMeshBuilder::KeepsVertexCPUCopies(false, true) ? 1 : 0);
 	TestEqual(TEXT("its Nanite file was read once"), Fixture.Assets->GetStreamedCounts().NaniteFilesBuilt, 1);
 	Fixture.Assets->AcquireEntityAssets(21, Solid);
 	TestFalse(TEXT("the solid cell waits: the mesh is built again with collision"), Fixture.Assets->GetHolderAssets(21).IsSettled());
@@ -1695,6 +1718,10 @@ bool FMantleStreamedAssetsCollisionAndFailureTest::RunTest(const FString& Parame
 	{
 		TestTrue(TEXT("with collision"), After->GetBodySetup() && After->GetBodySetup()->CollisionTraceFlag == CTF_UseComplexAsSimple);
 		TestTrue(TEXT("as another object; the picture cell keeps the first"), After != Before);
+		// The rebuild is from the file, so the vertex copies the cook reads come back with it: the upgrade does not depend on the first build's copies.
+		TestEqual(TEXT("the build with collision keeps every vertex copy"), VertexCopyState(*After), 1);
+		FTriMeshCollisionData Triangles;
+		TestTrue(TEXT("and its triangles read back for the collision cook"), After->GetPhysicsTriMeshData(&Triangles, true) && Triangles.Vertices.Num() > 0 && Triangles.Indices.Num() > 0);
 	}
 	// The second build read the Nanite file again (the first build's was freed when it finished), and nothing is held once it has.
 	TestEqual(TEXT("its Nanite file was read again for the second build"), Fixture.Assets->GetStreamedCounts().NaniteFilesBuilt, 2);
@@ -1733,6 +1760,58 @@ bool FMantleStreamedAssetsCollisionAndFailureTest::RunTest(const FString& Parame
 	// Its release drops the failed record too: the next cell that wants it tries again.
 	Fixture.Assets->ReleaseEntityAssets(30);
 	TestTrue(TEXT("the failed record is dropped"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().Meshes == 0; }));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamedAssetsSolidFirstThenPictureTest,
+	"Mantle.Runtime.Place.StreamedAssets.SolidFirstThenPicture",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamedAssetsSolidFirstThenPictureTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamedAssetsTestPrivate;
+	// Meshes the tests before this one built are collected: a live picture mesh would be taken as it is and the order below would not be the order that is tested.
+	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+	FStreamingFixture Fixture(TEXT("StreamedAssets") / FGuid::NewGuid().ToString(), /*bNanite*/ true);
+	if (!TestTrue(TEXT("the root completes"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->IsComplete(); })))
+	{
+		return false;
+	}
+	FString Error;
+	TArray<FMantleEntity> Solid;
+	Solid.Add(MeshEntity(TEXT("ent_s"), FlowMeshA, true));
+	TArray<FMantleEntity> Picture;
+	Picture.Add(MeshEntity(TEXT("ent_p"), FlowMeshA, false));
+
+	// A near cell wants the mesh with collision first; a twin (no collision) wants it while that cell stands. The mesh is not built again and not given back: the twin draws the solid
+	// cell's own object, with the copies the collision needs.
+	Fixture.Assets->AcquireEntityAssets(100, Solid);
+	if (!TestTrue(TEXT("the solid cell's mesh arrives"), Fixture.Settle(100)))
+	{
+		return false;
+	}
+	UStaticMesh* WithCollision = FMantlePlaceAssets::FindLiveMesh(FlowMeshA, Error);
+	if (!TestNotNull(TEXT("A is built"), WithCollision))
+	{
+		return false;
+	}
+	TestEqual(TEXT("with every vertex copy"), VertexCopyState(*WithCollision), 1);
+	const int32 NaniteBefore = Fixture.Assets->GetStreamedCounts().NaniteFilesBuilt;
+	Fixture.Assets->AcquireEntityAssets(101, Picture);
+	TestTrue(TEXT("the twin's cell has the mesh at once"), Fixture.Settle(101));
+	TestTrue(TEXT("it is the same object"), FMantlePlaceAssets::FindLiveMesh(FlowMeshA, Error) == WithCollision);
+	TestEqual(TEXT("nothing was built again"), Fixture.Assets->GetStreamedCounts().NaniteFilesBuilt, NaniteBefore);
+	TestEqual(TEXT("and no upgrade runs"), Fixture.Assets->GetStreamedCounts().UpgradesInFlight, 0);
+	// The solid cell leaves while the twin still draws the mesh: it stays, with collision, and its copies with it.
+	Fixture.Assets->ReleaseEntityAssets(100);
+	Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().DropsWaiting == 0; });
+	UStaticMesh* Still = FMantlePlaceAssets::FindLiveMesh(FlowMeshA, Error);
+	TestTrue(TEXT("the mesh is still there for the twin"), Still == WithCollision);
+	TestEqual(TEXT("the twin's cell is still settled"), Fixture.Assets->GetHolderAssets(101).IsSettled(), true);
+	TestEqual(TEXT("with its copies"), Still ? VertexCopyState(*Still) : -1, 1);
+	Fixture.Assets->ReleaseEntityAssets(101);
+	TestTrue(TEXT("the last holder lets it go"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().Meshes == 0; }));
 	return true;
 }
 
@@ -3268,3 +3347,69 @@ bool FMantleStreamedAssetsWaitingHolderCostsOneLookTest::RunTest(const FString& 
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamedAssetsReleaseIsQueuedTest,
+	"Mantle.Runtime.Place.StreamedAssets.ReleaseIsQueued",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamedAssetsReleaseIsQueuedTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamedAssetsTestPrivate;
+	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+	FStreamingFixture Fixture(TEXT("StreamedAssets") / FGuid::NewGuid().ToString(), /*bNanite*/ false);
+	if (!TestTrue(TEXT("the root completes"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->IsComplete(); })))
+	{
+		return false;
+	}
+	FString Error;
+	TArray<FMantleEntity> Both;
+	Both.Add(MeshEntity(TEXT("ent_a"), FlowMeshA, false));
+	Both.Add(MeshEntity(TEXT("ent_b"), FlowMeshB, false));
+	TArray<FMantleEntity> OnlyA;
+	OnlyA.Add(MeshEntity(TEXT("ent_a2"), FlowMeshA, false));
+
+	Fixture.Assets->AcquireEntityAssets(110, Both);
+	if (!TestTrue(TEXT("the holder's meshes arrive"), Fixture.Settle(110)))
+	{
+		return false;
+	}
+	UStaticMesh* MeshA = FMantlePlaceAssets::FindLiveMesh(FlowMeshA, Error);
+	TestNotNull(TEXT("A is built"), MeshA);
+	TestEqual(TEXT("two meshes are held"), Fixture.Assets->GetStreamedCounts().Meshes, 2);
+
+	// The release ends the holder's needs at once but drops nothing in the call: a holder with dozens of records would stall the tick that released it.
+	Fixture.Assets->ReleaseEntityAssets(110);
+	TestEqual(TEXT("both records wait to be dropped"), Fixture.Assets->GetStreamedCounts().DropsWaiting, 2);
+	TestEqual(TEXT("and both are still there"), Fixture.Assets->GetStreamedCounts().Meshes, 2);
+
+	// Another holder wants one of them before the drop: it takes it back as it is, with no new build, and only the other record goes.
+	Fixture.Assets->AcquireEntityAssets(111, OnlyA);
+	TestEqual(TEXT("A is no longer waiting to be dropped"), Fixture.Assets->GetStreamedCounts().DropsWaiting, 1);
+	TestTrue(TEXT("the new holder has it at once"), Fixture.Settle(111));
+	TestTrue(TEXT("and it is the same object"), FMantlePlaceAssets::FindLiveMesh(FlowMeshA, Error) == MeshA);
+	TestTrue(TEXT("B goes in the pumps that follow"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().Meshes == 1; }));
+	TestEqual(TEXT("nothing waits any more"), Fixture.Assets->GetStreamedCounts().DropsWaiting, 0);
+	TestTrue(TEXT("A is still the same object"), FMantlePlaceAssets::FindLiveMesh(FlowMeshA, Error) == MeshA);
+
+	Fixture.Assets->ReleaseEntityAssets(111);
+	TestTrue(TEXT("the last release drops it too"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().Meshes == 0; }));
+	TestEqual(TEXT("with nothing left waiting"), Fixture.Assets->GetStreamedCounts().DropsWaiting, 0);
+
+	// A near cell holds solid meshes (collision, the build with its triangles): it leaves through the same call (the streamer's ReleaseAssets, the cell adapter's Release), so it is queued the same way.
+	TArray<FMantleEntity> NearCell;
+	NearCell.Add(MeshEntity(TEXT("ent_n1"), FlowMeshA, true));
+	NearCell.Add(MeshEntity(TEXT("ent_n2"), FlowMeshB, true));
+	Fixture.Assets->AcquireEntityAssets(120, NearCell);
+	if (!TestTrue(TEXT("the near cell's solid meshes arrive"), Fixture.Settle(120)))
+	{
+		return false;
+	}
+	TestEqual(TEXT("two solid meshes are held"), Fixture.Assets->GetStreamedCounts().Meshes, 2);
+	Fixture.Assets->ReleaseEntityAssets(120);
+	TestEqual(TEXT("a near cell's release drops nothing in the call"), Fixture.Assets->GetStreamedCounts().Meshes, 2);
+	TestEqual(TEXT("and queues both records"), Fixture.Assets->GetStreamedCounts().DropsWaiting, 2);
+	TestTrue(TEXT("they go in the pumps that follow"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->GetStreamedCounts().Meshes == 0; }));
+	TestEqual(TEXT("with nothing left waiting after the near cell"), Fixture.Assets->GetStreamedCounts().DropsWaiting, 0);
+	return true;
+}

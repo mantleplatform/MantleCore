@@ -13,6 +13,7 @@ class UObject;
 class UStaticMesh;
 struct FMantleMeshLumenData;
 struct FMantleRuntimeMesh;
+struct FStaticMeshVertexBuffers;
 struct FMantleStaticMeshData;
 
 /** One slot per entry of SlotNames, in slot order. */
@@ -216,6 +217,19 @@ public:
 	 * UStaticMesh::InitResources asserts there. The static mesh and terrain builders share this one answer.
 	 */
 	static bool ShouldInitRenderResources(bool bRequested);
+
+	/**
+	 * Whether the mesh's vertex buffers (position, colour, tangent and UV) keep their CPU copies after the GPU upload: when the mesh allows CPU access (collision reads the
+	 * triangles back) or when it gets no render resources (nothing uploads them). A mesh that is only drawn keeps none: about its vertex data again in RAM otherwise (the engine's
+	 * fast build asks for the copy on every buffer, and the index buffer already follows the mesh's flag).
+	 */
+	static bool KeepsVertexCPUCopies(bool bMeshCPUAccess, bool bInitRenderResources);
+
+	/**
+	 * Gives one LOD's position, colour, tangent and UV buffers the CPU-access flag (a buffer that has it keeps its CPU copy after the GPU upload), keeping every value, and cuts the
+	 * UVs to their first AuthoredChannels channels (at least one; never more than the buffer has). Before the LOD's render resources are initialized only. Game thread.
+	 */
+	static void SetVertexCPUAccess(FStaticMeshVertexBuffers& Buffers, int32 AuthoredChannels, bool bNeedsCPUAccess);
 
 	/**
 	 * #189: each slot's UV density (FMantleStaticMeshSlots::UVDensities) from every LOD's triangles, as the engine computes it in the editor (UVChannelDensity.h

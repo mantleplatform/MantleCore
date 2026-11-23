@@ -91,7 +91,10 @@ struct MANTLERUNTIME_API FMantleCellStreamStats
 	int64 FarChangeScans = 0;
 	double FarChangeScanSeconds = 0.0;
 	double WorstFarChangeScanSeconds = 0.0;
+	/** Twin entities left out for want of Nanite data, and how many of those (and of their instances) are see-through meshes (road paint, decals), which are published without it on purpose. */
 	int64 FarLeftOutNoNanite = 0;
+	int64 FarLeftOutSeeThrough = 0;
+	int64 FarLeftOutSeeThroughInstances = 0;
 	int32 FarSetsStanding = 0;
 	int64 FarHandOffs = 0;
 	int64 FarBatchesShown = 0;

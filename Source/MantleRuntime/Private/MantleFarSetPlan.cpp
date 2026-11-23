@@ -95,3 +95,12 @@ bool FMantleFarSetPlan::ShouldShow(const bool bCellWanted, const bool bRealStand
 {
 	return !(bCellWanted && bRealStanding);
 }
+
+FMantleFarSetPlan::ENaniteLeftOut FMantleFarSetPlan::ClassifyNaniteLeftOut(const bool bMeshHasNaniteData, const bool bAnyMaterialSeeThrough)
+{
+	if (bMeshHasNaniteData)
+	{
+		return ENaniteLeftOut::Kept;
+	}
+	return bAnyMaterialSeeThrough ? ENaniteLeftOut::SeeThrough : ENaniteLeftOut::NoNanite;
+}

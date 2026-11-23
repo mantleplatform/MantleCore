@@ -43,4 +43,18 @@ public:
 
 	/** A twin entity is drawn: not when its cell is wanted and the real entity stands (then the real one draws, and the twin would draw the same thing twice); otherwise yes. */
 	static bool ShouldShow(bool bCellWanted, bool bRealStanding);
+
+	/** Why a twin's mesh is left out for want of Nanite data (see ClassifyNaniteLeftOut). */
+	enum class ENaniteLeftOut : uint8
+	{
+		/** The mesh has its Nanite data: the twin is built. */
+		Kept,
+		/** No Nanite data, and nothing see-through about it: a mesh that should have had it (a file that did not arrive, a machine that cannot run it). */
+		NoNanite,
+		/** No Nanite data because a material is see-through (translucent): Nanite draws opaque and cut-out surfaces only, so the converter publishes such a mesh without it (road paint, decals). */
+		SeeThrough,
+	};
+
+	/** A twin's mesh with or without Nanite data, and with or without a see-through material: whether it is built, and if not, which of the two reasons the far-set summary counts it under. */
+	static ENaniteLeftOut ClassifyNaniteLeftOut(bool bMeshHasNaniteData, bool bAnyMaterialSeeThrough);
 };

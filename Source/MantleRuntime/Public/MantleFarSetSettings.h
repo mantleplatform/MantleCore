@@ -18,9 +18,15 @@ struct MANTLERUNTIME_API FMantleFarSetSettings
 	 */
 	double MinDrawDistanceCm = 15000.0;
 
-	/** A cell's far reach is its drawDistance times this, at most MaxReachCm. 600 m cells reach 1.8 km: a 10 m model is still 3 px there. */
-	double ReachFactor = 3.0;
-	double MaxReachCm = 200000.0;
+	/**
+	 * A cell's far reach is its drawDistance times this, at most MaxReachCm: 600 m cells reach 1.5 km, the cap for every cell. A 10 m model is still 3 to 4 px there.
+	 * Joshua chose 1.5 km (2026-11-23) over the 1.8 km the factor 3 gave (cap 2 km). Counted on City Sample (pieces of 30 cm or more, 256 m cells, beyond the 600 m ring, at the spawn):
+	 * 3.11 M twin pieces out to 1.8 km, 2.23 M out to 1.5 km (29% fewer), 1.46 M out to 1.2 km. At the measured cost of a twin instance (step 3, rev 11: about 3.5 GB of working set,
+	 * 1.7 GB of card and 5.3 GB of private memory a million) that is about 3 GB of working set and 1.5 GB of card less. What goes is the ring from 1.5 to 1.8 km: the outline of the tallest
+	 * towers there; nothing nearer changes.
+	 */
+	double ReachFactor = 2.5;
+	double MaxReachCm = 150000.0;
 
 	/** A twin is built only for a cell the view is farther from than this share of the cell's drawDistance (the cells around a join spend nothing on it). */
 	double BuildFromShare = 0.5;

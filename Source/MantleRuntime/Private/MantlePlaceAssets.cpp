@@ -92,6 +92,9 @@ namespace MantlePlaceAssetsPrivate
 			Body->TriMeshGeometries.Num());
 	}
 
+	/** The time a pump spends dropping the records holders have let go (ProcessStreamedRecords), seconds: 2 ms, the same share of a frame as the cell streamer's own work budget. */
+	constexpr double DropSliceSeconds = 0.002;
+
 	/** #189: a texture build's key variant is its role, with this bit when the build is the client's cut of a full file (no low companion on the server). */
 	constexpr int32 TextureCutVariant = 0x10;
 	EMantleTextureRole TextureRoleOf(const uint8 Variant) { return static_cast<EMantleTextureRole>(Variant & 0x0F); }
@@ -4936,8 +4939,10 @@ void FMantlePlaceAssets::ReleaseEntityAssets(const int64 Holder)
 	{
 		const FString Key = RecordKey(Need.Id, Need.bMaterial ? EAssetKind::Material : EAssetKind::Mesh, EMantleTextureRole::Color);
 		const FRecord* Record = Records.Find(Key);
-		// The root's own records stay for as long as the place does.
-		if (Record && Record->bStreamed && !DropRecord(Key))
+		// The root's own records stay for as long as the place does. Not dropped here: a holder (a far set's twins, a cell) ends dozens of records at once and each drop erases builds,
+		// side files and textures, a few milliseconds to tens each (one far set's release was a 355 ms tick, City Sample 2026-11-23). They wait in PendingDrops and go a few a pump
+		// inside a time slice (ProcessStreamedRecords); a holder that wants one again before then takes it back (StartRecordsFor).
+		if (Record && Record->bStreamed)
 		{
 			PendingDrops.Add(Key);
 		}
@@ -5743,11 +5748,19 @@ void FMantlePlaceAssets::ProcessStreamedRecords()
 	}
 	if (!PendingDrops.IsEmpty())
 	{
+		// Inside a time slice, at least one a pump (a record whose build is still in flight stays and costs nothing, so a stuck one never holds the rest up).
+		const double DropDeadline = FPlatformTime::Seconds() + MantlePlaceAssetsPrivate::DropSliceSeconds;
+		bool bDroppedOne = false;
 		for (const FString& Key : PendingDrops.Array())
 		{
+			if (bDroppedOne && FPlatformTime::Seconds() >= DropDeadline)
+			{
+				break;
+			}
 			if (DropRecord(Key))
 			{
 				PendingDrops.Remove(Key);
+				bDroppedOne = true;
 			}
 		}
 	}
