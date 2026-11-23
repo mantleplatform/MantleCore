@@ -171,6 +171,36 @@ namespace MantlePlaceAssetsPrivate
 				|| Expression->IsA<UMaterialExpressionPerInstanceCustomData3Vector>() || Expression->IsA<UMaterialExpressionPerInstanceFadeAmount>());
 	}
 
+	/**
+	 * A node that reads a second UV set (UV1 or higher): a Texture Coordinate with that index, or a node whose UV input is
+	 * unwired and set to that index. The bake card has UV0 only (MakeBakeCard), and the engine's bake fills a missing set
+	 * with the last one it has (MaterialRenderItem.cpp), so what UV1 places is baked by UV0 instead.
+	 */
+	bool ReadsSecondUv(const UMaterialExpression* Expression)
+	{
+		if (const UMaterialExpressionTextureCoordinate* Coordinate = Cast<UMaterialExpressionTextureCoordinate>(Expression))
+		{
+			return Coordinate->CoordinateIndex > 0;
+		}
+		if (const UMaterialExpressionTextureSample* Sample = Cast<UMaterialExpressionTextureSample>(Expression))
+		{
+			return !Sample->Coordinates.Expression && Sample->ConstCoordinate > 0;
+		}
+		if (const UMaterialExpressionPanner* Panner = Cast<UMaterialExpressionPanner>(Expression))
+		{
+			return !Panner->Coordinate.Expression && Panner->ConstCoordinate > 0;
+		}
+		if (const UMaterialExpressionRotator* Rotator = Cast<UMaterialExpressionRotator>(Expression))
+		{
+			return !Rotator->Coordinate.Expression && Rotator->ConstCoordinate > 0;
+		}
+		if (const UMaterialExpressionBumpOffset* Bump = Cast<UMaterialExpressionBumpOffset>(Expression))
+		{
+			return !Bump->Coordinate.Expression && Bump->ConstCoordinate > 0;
+		}
+		return false;
+	}
+
 	struct FWalk
 	{
 		const UMaterialInterface* Context = nullptr;
@@ -314,6 +344,11 @@ namespace MantlePlaceAssetsPrivate
 			const bool bFlattened = Root != ERoot::WorldPositionOffset;
 			if (bFlattened)
 			{
+				// Not part of the chain below: a panner or texture sample reading UV1 is flagged there too (animation, a texture).
+				if (ReadsSecondUv(Expression))
+				{
+					Flag(EMantleMaterialLoss::SecondUv);
+				}
 				if (Expression->IsA<UMaterialExpressionTime>() || Expression->IsA<UMaterialExpressionPanner>() || Expression->IsA<UMaterialExpressionRotator>())
 				{
 					Flag(EMantleMaterialLoss::Animation);
@@ -4773,6 +4808,8 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 		return FString::Printf(TEXT("its %s blending becomes ordinary translucency."), *Analysis.BlendModeName);
 	case EMantleMaterialLoss::NotSurface:
 		return TEXT("it is not a surface material (a decal, light function or post-process material), so it is flattened as a plain surface.");
+	case EMantleMaterialLoss::SecondUv:
+		return TEXT("it reads a second UV set (UV1 or higher), which the bake does not have, so what that set places is drawn by the first UV set instead: masks such as wet lanes, dirt or stripes can repeat with the first set's tiling or land in the wrong place.");
 	default:
 		return FString();
 	}
@@ -5038,7 +5075,7 @@ void FMantlePlaceAssets::CheckMaterial(const UMaterialInterface* Material, const
 	}
 	const FMantleMaterialAnalysis Analysis = AnalyzeMaterial(Material);
 	const FString Subject = WithUsers(TEXT("Material ") + Quoted(Material), UsedBy);
-	for (uint32 Bit = 1; Bit != 0 && Bit <= static_cast<uint32>(EMantleMaterialLoss::NotSurface); Bit <<= 1)
+	for (uint32 Bit = 1; Bit != 0 && Bit <= static_cast<uint32>(EMantleMaterialLoss::Last); Bit <<= 1)
 	{
 		const EMantleMaterialLoss Loss = static_cast<EMantleMaterialLoss>(Bit);
 		if (Analysis.Has(Loss))

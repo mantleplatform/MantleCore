@@ -122,6 +122,10 @@ enum class EMantleMaterialLoss : uint32
 	Unlit = 1 << 11,
 	BlendMode = 1 << 12,
 	NotSurface = 1 << 13,
+	/** A second UV set (UV1 or higher) feeds a baked output; the bake has UV0 only. */
+	SecondUv = 1 << 14,
+	/** The highest loss, for loops over every one. */
+	Last = SecondUv,
 };
 ENUM_CLASS_FLAGS(EMantleMaterialLoss);
 
