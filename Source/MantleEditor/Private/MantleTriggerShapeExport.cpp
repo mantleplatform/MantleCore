@@ -46,11 +46,7 @@ bool FMantleTriggerShapeExport::IsTriggerCapsule(const UActorComponent* Componen
 	{
 		return false; // no query: nothing can overlap it
 	}
-	if (Enabled == ECollisionEnabled::QueryOnly)
-	{
-		return true;
-	}
-	// Query and physics: a trigger only when it blocks nothing.
+	// A trigger only when it blocks nothing: a query-only capsule that blocks still stops a character's sweep, so it is a wall.
 	for (int32 Channel = 0; Channel < ECC_MAX; ++Channel)
 	{
 		if (Capsule->GetCollisionResponseToChannel(static_cast<ECollisionChannel>(Channel)) == ECR_Block)
