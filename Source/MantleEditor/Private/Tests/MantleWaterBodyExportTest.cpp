@@ -822,9 +822,18 @@ bool FMantleShallowDepthFadeSheetStaysMeshTest::RunTest(const FString& Parameter
 	TestTrue(TEXT("the puddle classifies"), FMantlePlaceExporter::ClassifyActor(Puddle, Type));
 	TestEqual(TEXT("as a StaticMesh"), Type, EMantleEntityType::StaticMesh);
 
+	// Gather agrees: the puddle's material is uploaded with it (the pond's is not); the engine plane itself is Mantle's own shape.
+	const FMantlePlaceDependencies Dependencies = FMantlePlaceDependencies::Gather(Fixture.World);
+	TestEqual(TEXT("the puddle's material is gathered, the pond's is not"), Dependencies.Materials.Num(), 1);
+
 	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
 	TestEqual(TEXT("the place has one static mesh (the puddle)"), CountEntities(Result, EMantleEntityType::StaticMesh), 1);
 	TestEqual(TEXT("and one water body (the pond)"), CountEntities(Result, EMantleEntityType::WaterBody), 1);
+	const FMantleEntity* Mesh = Result.Place.Entities.FindByPredicate([](const FMantleEntity& Candidate) { return Candidate.Type == EMantleEntityType::StaticMesh; });
+	if (TestNotNull(TEXT("the puddle is published as an entity"), Mesh))
+	{
+		TestTrue(TEXT("at the puddle's place, not the pond's"), Mesh->Transform.GetLocation().Equals(FVector(0.0, 0.0, 6.0), 1.0));
+	}
 	return true;
 }
 

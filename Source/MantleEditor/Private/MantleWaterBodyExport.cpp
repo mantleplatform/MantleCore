@@ -846,8 +846,9 @@ namespace MantleWaterBodyExportFlat
 
 	/**
 	 * The depth the water material implies, held to the range, and where it came from; the default when the material gives none.
-	 * OutShallow is true when the material itself gives a depth under MinDepth: a puddle or a thin wet film (a depth fade of a few
-	 * centimeters), which is not a body to swim in. Raising it to MinDepth would turn a 6 cm sheet into a 1 m pond.
+	 * OutShallow is true when the material's explicit fade distance (a Depth Fade node's) is under MinDepth: a puddle or a thin wet film
+	 * (a fade of a few centimeters), which is not a body to swim in. Raising it to MinDepth would turn a 6 cm sheet into a 1 m pond. The
+	 * absorption estimate never makes a body shallow: a murky pond is still a pond to swim in.
 	 */
 	double DepthOf(const FMantleWaterBake& Water, const FMantleWaterCoefficients* Volume, FString& OutSource, bool& OutShallow)
 	{
@@ -874,7 +875,6 @@ namespace MantleWaterBodyExportFlat
 		if (Clearest > 0.0)
 		{
 			OutSource = TEXT("the material's absorption and scattering");
-			OutShallow = 3.0 / Clearest < MinDepth;
 			return FMath::Clamp(3.0 / Clearest, MinDepth, MaxDepth);
 		}
 		OutSource = FString::Printf(TEXT("the default %.0f cm, as the material gives none"), DefaultDepth);
