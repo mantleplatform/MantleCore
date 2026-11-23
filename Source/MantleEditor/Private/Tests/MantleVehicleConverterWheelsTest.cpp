@@ -145,7 +145,7 @@ bool FMantleVehicleConverterWheelsFromSetupsTest::RunTest(const FString& Paramet
 	FString FellBack;
 	const TArray<FMantleVehicleWheelSetup> Wrong = { Setup(TEXT("Tyre_A")), Setup(TEXT("Not_A_Bone")) };
 	TestEqual(TEXT("a setup for a bone the car lacks leaves the names to decide"), FMantleVehicleConverter::FindWheelBones(Car->GetRefSkeleton(), Wrong, &FellBack).Num(), 0);
-	TestTrue(TEXT("and says so"), FellBack.Contains(TEXT("names a bone this model does not have")));
+	TestTrue(TEXT("and says so"), FellBack.Contains(TEXT("name a bone this model does not have")));
 
 	MantleVehicleScratchBody::Discard(Car);
 	return true;
