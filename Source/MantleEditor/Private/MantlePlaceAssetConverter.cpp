@@ -4215,6 +4215,40 @@ double FMantlePlaceAssetConverter::CoverageCutoff(const TArray<FColor>& Pixels)
 	return FMath::Clamp((Best - 0.5) / 255.0, 0.5 / 255.0, 1.0);
 }
 
+double FMantlePlaceAssetConverter::DecalMaskCutoff(const FMantleGlbDocument& Document, FString& OutHow)
+{
+	using namespace MantlePlaceAssetConverterPrivate;
+	TArray<FColor> Pixels;
+	int32 Width = 0;
+	int32 Height = 0;
+	FString Why;
+	if (BakedBaseColorImage(Document, Pixels, Width, Height, Why))
+	{
+		OutHow = TEXT("the cut-out covers as much as the see-through decal did");
+		return CoverageCutoff(Pixels);
+	}
+	// No image: the bake is one flat color, its opacity in baseColorFactor's alpha (a stain at 0.3 over its whole card). One alpha
+	// everywhere, so CoverageCutoff's rule: cut at half of it, and all of it shows (build 8: a fixed 0.5 cut the 0.3 stain away).
+	double Alpha = 1.0;
+	const TArray<TSharedPtr<FJsonValue>>* Materials = nullptr;
+	if (Document.Json.IsValid() && Document.Json->TryGetArrayField(TEXT("materials"), Materials) && Materials->Num() > 0 && (*Materials)[0].IsValid())
+	{
+		const TSharedPtr<FJsonObject> Pbr = ObjectField((*Materials)[0]->AsObject(), TEXT("pbrMetallicRoughness"));
+		const TArray<TSharedPtr<FJsonValue>>* Factor = nullptr;
+		if (Pbr.IsValid() && Pbr->TryGetArrayField(TEXT("baseColorFactor"), Factor) && Factor->Num() == 4 && (*Factor)[3].IsValid())
+		{
+			Alpha = FMath::Clamp((*Factor)[3]->AsNumber(), 0.0, 1.0);
+		}
+	}
+	if (Alpha <= 0.0)
+	{
+		OutHow = FString::Printf(TEXT("its baked opacity is 0 everywhere (%s), so nothing shows whatever the cut-off"), *Why);
+		return 0.5;
+	}
+	OutHow = FString::Printf(TEXT("one flat opacity %.2f over the whole decal (%s): cut at half of it, so all of it shows"), Alpha, *Why);
+	return 0.5 * Alpha;
+}
+
 FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& InSettings, const FMantlePlaceAssetLimits& InLimits,
 	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface, const bool bOpaqueInDisguise,
 	const bool bScrollingTint, const bool bOpacityAsMask)
@@ -4236,8 +4270,9 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""), bMasked ? TEXT(" maskcutoff=2") : TEXT(""));
 	if (bDecal)
 	{
-		// decalmask=1: a mesh decal publishes as a cut-out (SetBakeMasked at its CoverageCutoff), no longer see-through.
-		Salt += TEXT(" decalsurface=1 decalmask=1");
+		// decalmask: a mesh decal publishes as a cut-out (SetBakeMasked at its DecalMaskCutoff), no longer see-through. =2: a flat-color
+		// bake is cut at half its factor alpha, where =1 cut it at 0.5 (an even 0.3 stain vanished in build 8).
+		Salt += TEXT(" decalsurface=1 decalmask=2");
 	}
 	// opacityasmask=2: the Masked copy clears "masked can be assumed opaque" (bd10fec); an =1 bake of a material carrying it was opaque.
 	if (bOpacityAsMask)
@@ -4720,15 +4755,10 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 		if (OpacityMask.IsValid() && bDecalMask)
 		{
 			// A mesh decal: a cut-out of its opacity, cut where it covers as much as the see-through decal did.
-			TArray<FColor> Pixels;
-			int32 Width = 0;
-			int32 Height = 0;
-			FString Why;
-			const bool bRead = BakedBaseColorImage(Flattened, Pixels, Width, Height, Why);
-			const double Cutoff = bRead ? CoverageCutoff(Pixels) : 0.5;
+			FString How;
+			const double Cutoff = DecalMaskCutoff(Flattened, How);
 			SetBakeMasked(Flattened, Cutoff);
-			UE_LOG(LogMantle, Log, TEXT("MANTLE_DECAL_MASK %s: published as a cut-out at %.3f (%s)"), *Material->GetName(), Cutoff,
-				bRead ? TEXT("the cut-out covers as much as the see-through decal did") : *FString::Printf(TEXT("0.5: its baked opacity could not be read, %s"), *Why));
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_DECAL_MASK %s: published as a cut-out at %.3f (%s)"), *Material->GetName(), Cutoff, *How);
 		}
 		else if (OpacityMask.IsValid())
 		{

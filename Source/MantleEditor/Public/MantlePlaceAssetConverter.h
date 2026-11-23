@@ -1056,6 +1056,12 @@ public:
 	 */
 	static double CoverageCutoff(const TArray<FColor>& Pixels);
 
+	/**
+	 * A1: a mesh decal's cut-off from its Masked copy's bake: CoverageCutoff of its base color image, or, when the bake is one flat color (no
+	 * image), half its baseColorFactor alpha (the same rule for one alpha everywhere). OutHow says which, for the log.
+	 */
+	static double DecalMaskCutoff(const FMantleGlbDocument& Document, FString& OutHow);
+
 	bool ConvertSound(USoundWave* Sound, FMantlePlaceAssetSet& Out);
 
 	/**

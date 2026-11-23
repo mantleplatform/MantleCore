@@ -209,6 +209,34 @@ bool FMantleDecalMaskCutoffTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("a faint decal is never cut away"), Kept(Faint, FaintCut), 2);
 	TestTrue(TEXT("and the bare part stays bare"), FaintCut > 0.0);
 
+	// Build 8: an even stain (one color, opacity 0.3) bakes as one flat color, no image: cut at half its factor alpha, so it shows.
+	{
+		FMantleGlbDocument Flat;
+		Flat.Json = MakeShared<FJsonObject>();
+		const TSharedRef<FJsonObject> Pbr = MakeShared<FJsonObject>();
+		TArray<TSharedPtr<FJsonValue>> Factor;
+		for (const double Value : { 0.12, 0.08, 0.05, 0.3 })
+		{
+			Factor.Add(MakeShared<FJsonValueNumber>(Value));
+		}
+		Pbr->SetArrayField(TEXT("baseColorFactor"), Factor);
+		const TSharedRef<FJsonObject> FlatEntry = MakeShared<FJsonObject>();
+		FlatEntry->SetStringField(TEXT("alphaMode"), TEXT("MASK"));
+		FlatEntry->SetObjectField(TEXT("pbrMetallicRoughness"), Pbr);
+		TArray<TSharedPtr<FJsonValue>> FlatMaterials;
+		FlatMaterials.Add(MakeShared<FJsonValueObject>(FlatEntry));
+		Flat.Json->SetArrayField(TEXT("materials"), FlatMaterials);
+		FString How;
+		const double FlatCut = FConverter::DecalMaskCutoff(Flat, How);
+		TestEqual(TEXT("a flat 0.3 stain is cut at 0.15"), FlatCut, 0.15, 1.0e-9);
+		TestTrue(TEXT("so it shows (0.3 is at or above its cut-off)"), 0.3 >= FlatCut);
+		TestTrue(TEXT("and the log says why"), How.Contains(TEXT("one flat opacity")));
+
+		// A flat bake with no factor (alpha 1, a solid decal) is cut at 0.5, and shows.
+		Pbr->RemoveField(TEXT("baseColorFactor"));
+		TestEqual(TEXT("a solid flat decal is cut at 0.5"), FConverter::DecalMaskCutoff(Flat, How), 0.5, 1.0e-9);
+	}
+
 	// The bake's alphaMode: MASK with that cut-off.
 	FMantleGlbDocument Doc;
 	Doc.Json = MakeShared<FJsonObject>();
