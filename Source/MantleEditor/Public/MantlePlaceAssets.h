@@ -1052,6 +1052,22 @@ public:
 	 */
 	static TStrongObjectPtr<UMaterialInterface> DecalSurfaceCopy(const UMaterialInterface* Material);
 
+	/**
+	 * A1: whether Material's bake must read its opacity through a Masked copy (OpacityAsMaskCopy). Under Substrate's adaptive GBuffer (the
+	 * engine's default, r.Substrate.ProjectGBufferFormat 1; bAdaptiveGBuffer: Substrate on and its blendable GBuffer off), the engine's bake
+	 * exports a translucent material's Opacity flat (ExportMaterialProxy, SME_Opacity), so a decal's or a cutout card's shape is lost, where a
+	 * Masked material's Opacity Mask keeps its values. True for a Translucent material whose Opacity varies over the surface (connected, and
+	 * not a constant or a scalar parameter), and not water, glass, a material on material attributes or one that does not publish.
+	 */
+	static bool BakesOpacityAsMask(const UMaterialInterface* Material, const FMantleMaterialAnalysis& Analysis, bool bAdaptiveGBuffer);
+
+	/**
+	 * A1: a transient copy of Material (its instance chain and base graph) set to Masked, its Opacity Mask fed what feeds its Opacity, for
+	 * the bake only: the bake then holds the opacity in its base color's alpha, and the material publishes see-through as it is. Null for a
+	 * material on material attributes, or when an instance in its chain overrides the blend mode (the copy could not change it).
+	 */
+	static TStrongObjectPtr<UMaterialInterface> OpacityAsMaskCopy(const UMaterialInterface* Material);
+
 	/** The sentence Check and the converter give a material whose bake averaged its per-instance variation, following "Material 'M_X': ". */
 	static FString DescribePerInstanceVariation();
 

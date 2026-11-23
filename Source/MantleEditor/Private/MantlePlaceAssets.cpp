@@ -4793,6 +4793,62 @@ TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::DecalSurfaceCopy(const 
 	});
 }
 
+bool FMantlePlaceAssets::BakesOpacityAsMask(const UMaterialInterface* Material, const FMantleMaterialAnalysis& Analysis, const bool bAdaptiveGBuffer)
+{
+	using namespace MantlePlaceAssetsPrivate;
+	if (!bAdaptiveGBuffer || !Material || Material->GetBlendMode() != BLEND_Translucent)
+	{
+		return false;
+	}
+	// Water and glass publish their own constants, a flat opacity publishes as one (bOpacityFlat), and a material that does not publish
+	// is not baked at all.
+	if (Analysis.bOpacityFlat || Analysis.bOpaqueInDisguise || Analysis.Fidelity2.Water.bFound || Analysis.Fidelity2.Glass.bFound
+		|| !Analysis.UnpublishableWhy.IsEmpty())
+	{
+		return false;
+	}
+	const UMaterial* Base = Material->GetMaterial();
+	const UMaterialEditorOnlyData* Data = Base ? Base->GetEditorOnlyData() : nullptr;
+	if (!Data || Base->bUseMaterialAttributes)
+	{
+		return false;
+	}
+	// The same test the analysis makes for a lit one (bOpacityFlat), for an unlit one too: nothing connected is 1, a constant is constant.
+	double Flat = 1.0;
+	return Data->Opacity.Expression && !IsFlat(&Data->Opacity) && !ConstantScalar(&Data->Opacity, Material, Flat);
+}
+
+TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::OpacityAsMaskCopy(const UMaterialInterface* Material)
+{
+	using namespace MantlePlaceAssetsPrivate;
+	if (!Material)
+	{
+		return nullptr;
+	}
+	TArray<const UMaterialInstanceConstant*> Chain;
+	const UMaterialInterface* Link = Material;
+	while (const UMaterialInstanceConstant* Instance = Cast<UMaterialInstanceConstant>(Link))
+	{
+		if (Instance->BasePropertyOverrides.bOverride_BlendMode)
+		{
+			return nullptr; // its copy would keep the override, and the base's Masked would not apply
+		}
+		Chain.Add(Instance);
+		Link = Instance->Parent;
+	}
+	const UMaterial* Base = Cast<UMaterial>(Link);
+	if (!Base || !Base->GetEditorOnlyData() || Base->bUseMaterialAttributes)
+	{
+		return nullptr;
+	}
+	return CopyForBake(Chain, *Base, [](UMaterial& BaseCopy)
+	{
+		UMaterialEditorOnlyData* Data = BaseCopy.GetEditorOnlyData();
+		BaseCopy.BlendMode = BLEND_Masked;
+		Data->OpacityMask = Data->Opacity;
+	});
+}
+
 TStrongObjectPtr<UMaterialInterface> FMantlePlaceAssets::ReadsVertexColorCopy(const UMaterialInterface* Material)
 {
 	using namespace MantlePlaceAssetsPrivate;

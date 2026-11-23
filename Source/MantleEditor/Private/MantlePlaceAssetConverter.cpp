@@ -69,6 +69,7 @@
 #include "PhysicsEngine/BodySetup.h"
 #include "Policies/CondensedJsonPrintPolicy.h"
 #include "RHIGlobals.h"
+#include "RenderUtils.h"
 #include "Sound/SoundWave.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -4126,8 +4127,20 @@ FMantleBakeSurface FMantlePlaceAssetConverter::EffectiveBakeSurface(const FMantl
 	return Effective;
 }
 
+void FMantlePlaceAssetConverter::SetBakeBlended(FMantleGlbDocument& Document)
+{
+	using namespace MantlePlaceAssetConverterPrivate;
+	const TArray<TSharedPtr<FJsonValue>>* Materials = nullptr;
+	if (Document.Json.IsValid() && Document.Json->TryGetArrayField(TEXT("materials"), Materials) && Materials->Num() > 0 && (*Materials)[0].IsValid())
+	{
+		const TSharedPtr<FJsonObject> First = (*Materials)[0]->AsObject();
+		First->SetStringField(TEXT("alphaMode"), TEXT("BLEND"));
+		First->RemoveField(TEXT("alphaCutoff"));
+	}
+}
+
 FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& InSettings, const FMantlePlaceAssetLimits& InLimits,
-	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface, const bool bOpaqueInDisguise)
+	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface, const bool bOpaqueInDisguise, const bool bOpacityAsMask)
 {
 	// #628: a per-instance node is baked at a representative value; the salt keeps an earlier bake (which read it as 0) from standing in.
 	// A bake on anything but the plain surface (a vertex color, a landscape's UV range) adds its tag, so a different color is not served
@@ -4142,7 +4155,7 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
 		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""), bMasked ? TEXT(" maskcutoff=2") : TEXT(""),
-		bDecal ? TEXT(" decalsurface=1") : TEXT(""));
+		bDecal ? TEXT(" decalsurface=1") : TEXT("")) + (bOpacityAsMask ? TEXT(" opacityasmask=1") : TEXT(""));
 }
 
 double FMantlePlaceAssetConverter::MeanPixelDifference(const TArray<FColor>& A, const TArray<FColor>& B)
@@ -4500,7 +4513,11 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	}
 
 	const FMantleBakeSurface Surface = EffectiveBakeSurface(Analysis, InSurface);
-	const FString Salt = MaterialCacheSalt(Flattener->Describe(), Settings, Limits, Material, Analysis.bPerInstanceVariation, Surface, Analysis.bOpaqueInDisguise);
+	// A1: under Substrate's adaptive GBuffer the bake reads a varying opacity through a Masked copy (FMantlePlaceAssets::BakesOpacityAsMask).
+	const bool bAdaptiveGBuffer = Substrate::IsSubstrateEnabled() && !Substrate::IsSubstrateBlendableGBufferEnabled(GMaxRHIShaderPlatform);
+	const bool bOpacityAsMask = FMantlePlaceAssets::BakesOpacityAsMask(Material, Analysis, bAdaptiveGBuffer);
+	const FString Salt = MaterialCacheSalt(Flattener->Describe(), Settings, Limits, Material, Analysis.bPerInstanceVariation, Surface, Analysis.bOpaqueInDisguise,
+		bOpacityAsMask);
 	FString CacheKey, WhyNot;
 	const bool bCacheable = ComputeCacheKey(Salt, Objects, CacheKey, WhyNot);
 	{
@@ -4549,11 +4566,26 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	// Front Material is an active input), so it is baked as its surface copy: the same graph, parameters and blend mode, so it publishes
 	// see-through as the creator marked it, its Base Color with Opacity in alpha, and its Normal, on the mesh's own UVs.
 	const TStrongObjectPtr<UMaterialInterface> DecalSurface = FMantlePlaceAssets::DecalSurfaceCopy(Neutral.IsValid() ? Neutral.Get() : Material);
-	UMaterialInterface* const ToBake = DecalSurface.IsValid() ? DecalSurface.Get() : (Neutral.IsValid() ? Neutral.Get() : Material);
+	UMaterialInterface* ToBake = DecalSurface.IsValid() ? DecalSurface.Get() : (Neutral.IsValid() ? Neutral.Get() : Material);
 	if (DecalSurface.IsValid())
 	{
 		UE_LOG(LogMantle, Log, TEXT("MANTLE_DECAL_SURFACE %s: a decal material, baked as its surface copy (blend mode %s)"), *Material->GetName(),
 			*UEnum::GetValueAsString(ToBake->GetBlendMode()));
+	}
+	// A1: under Substrate's adaptive GBuffer (the engine's default) the bake exports a translucent material's Opacity flat, so its shape (a
+	// decal's, a cutout card's) was lost; a Masked copy's Opacity Mask keeps its values in the base color's alpha. Only the bake's copy is
+	// Masked: the published material stays see-through (the bake's alphaMode is set back to BLEND below), and the creator's is never touched.
+	TStrongObjectPtr<UMaterialInterface> OpacityMask;
+	if (bOpacityAsMask)
+	{
+		OpacityMask = FMantlePlaceAssets::OpacityAsMaskCopy(ToBake);
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_OPACITY_AS_MASK %s: %s"), *Material->GetName(), OpacityMask.IsValid()
+			? TEXT("its opacity is baked through a Masked copy (Substrate's adaptive GBuffer bakes a translucent material's opacity flat)")
+			: TEXT("no Masked copy could be made (an instance overrides its blend mode, or it is on material attributes); baked as it is"));
+		if (OpacityMask.IsValid())
+		{
+			ToBake = OpacityMask.Get();
+		}
 	}
 
 	++Stats.FlattenerCalls;
@@ -4570,6 +4602,11 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	}
 	if (Flattener->Flatten(ToBake, FlattenSettings, Flattened, Messages, FlattenError))
 	{
+		if (OpacityMask.IsValid())
+		{
+			// The Masked copy's bake: its base color alpha is the opacity. It publishes see-through, as the material is.
+			SetBakeBlended(Flattened);
+		}
 		ScaleTextureTransforms(Flattened, 0, Surface.UvRange);
 		for (const FString& Message : Messages)
 		{
