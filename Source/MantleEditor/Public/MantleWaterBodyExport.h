@@ -257,6 +257,14 @@ struct MANTLEEDITOR_API FMantleWaterBodyExport
 	 */
 	static void Check(const AActor* Actor, EMantleEntityType Type, FMantleValidationResult& Result);
 
+	/**
+	 * Whether Actor is something the Water plugin or the editor adds beside a water body and that the export reads another way or does not
+	 * need: the Water Zone (its settings are read by Read and published as the place's water zone, not as an actor) and the Water Brush
+	 * Manager (the editor's landscape-carving helper). Export and Check leave them out silently, as they do other engine infrastructure;
+	 * a lake or river placed in a level makes the engine add both, so refusing them would stop every place with water.
+	 */
+	static bool IsWaterInfrastructure(const AActor* Actor);
+
 	/** The data as one JSON object ({ "bodies": [...], "zones": [...] }), for the harness and for the writer to come. */
 	static TSharedRef<FJsonObject> ToJson(const FMantleWaterBodies& Water);
 	static FString ToJsonString(const FMantleWaterBodies& Water);

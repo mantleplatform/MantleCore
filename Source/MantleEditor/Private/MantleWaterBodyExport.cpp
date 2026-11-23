@@ -1016,6 +1016,28 @@ void FMantleWaterBodyExport::Check(const AActor* Actor, EMantleEntityType Type, 
 		TEXT("Nothing to do if it should be a pond. If it should stay a see-through surface, give it a material that is not a Single Layer Water or depth-faded water material.") });
 }
 
+bool FMantleWaterBodyExport::IsWaterInfrastructure(const AActor* Actor)
+{
+	if (!Actor)
+	{
+		return false;
+	}
+	const UClass* ZoneActor = FindObject<UClass>(nullptr, MantleWaterBodyExportPrivate::ZoneActorPath);
+	if (ZoneActor && Actor->IsA(ZoneActor))
+	{
+		return true;
+	}
+	// The brush manager lives in the Water plugin's editor module, so it is matched by its class name, as the other editor helpers are.
+	for (const UClass* Class = Actor->GetClass(); Class; Class = Class->GetSuperClass())
+	{
+		if (Class->GetFName() == TEXT("WaterBrushManager"))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 bool FMantleWaterBodyExport::IsWaterBodyActor(const AActor* Actor)
 {
 	// One class lookup, not the whole set: this runs for every actor of a level.
