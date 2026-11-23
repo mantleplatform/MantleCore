@@ -611,6 +611,67 @@ namespace MantlePlaceAssetsPrivate
 		return false;
 	}
 
+	/**
+	 * The color Input is, when it is one constant color all over the surface: a constant, a scalar or vector parameter as Context sets it,
+	 * or a product of those (a color times an intensity). False for anything that can vary or that it cannot read.
+	 */
+	bool ConstantColor(const FExpressionInput* Input, const UMaterialInterface* Context, double (&Out)[3], const int32 Depth = 0)
+	{
+		if (Depth > 8)
+		{
+			return false;
+		}
+		int32 Output = 0;
+		const UMaterialExpression* Expression = Follow(Input, Output);
+		if (!Expression)
+		{
+			return false;
+		}
+		double Scalar = 0.0;
+		if (ConstantScalar(Input, Context, Scalar))
+		{
+			Out[0] = Out[1] = Out[2] = Scalar;
+			return true;
+		}
+		if (const UMaterialExpressionConstant3Vector* Vector = Cast<UMaterialExpressionConstant3Vector>(Expression))
+		{
+			Out[0] = Vector->Constant.R;
+			Out[1] = Vector->Constant.G;
+			Out[2] = Vector->Constant.B;
+			return true;
+		}
+		if (const UMaterialExpressionVectorParameter* Parameter = Cast<UMaterialExpressionVectorParameter>(Expression))
+		{
+			FLinearColor Value = Parameter->DefaultValue;
+			FLinearColor Set;
+			if (Context && Context->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(Parameter->ParameterName)), Set))
+			{
+				Value = Set;
+			}
+			Out[0] = Value.R;
+			Out[1] = Value.G;
+			Out[2] = Value.B;
+			return true;
+		}
+		if (const UMaterialExpressionMultiply* Multiply = Cast<UMaterialExpressionMultiply>(Expression))
+		{
+			double A[3];
+			double B[3];
+			const bool bA = Multiply->A.Expression ? ConstantColor(&Multiply->A, Context, A, Depth + 1) : (A[0] = A[1] = A[2] = Multiply->ConstA, true);
+			const bool bB = Multiply->B.Expression ? ConstantColor(&Multiply->B, Context, B, Depth + 1) : (B[0] = B[1] = B[2] = Multiply->ConstB, true);
+			if (!bA || !bB)
+			{
+				return false;
+			}
+			for (int32 Channel = 0; Channel < 3; ++Channel)
+			{
+				Out[Channel] = A[Channel] * B[Channel];
+			}
+			return true;
+		}
+		return false;
+	}
+
 	/** Nothing connected, or a constant or parameter value: no texture, nothing that varies over the surface. */
 	bool IsFlat(const FExpressionInput* Input)
 	{
@@ -3963,6 +4024,7 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		Out.UnpublishableWhy = TEXT("is a volume material (volume fog) with no surface Mantle can draw; its bake is a flat white card");
 	}
 	// #628: Additive is carried (alphaMode additive), so it is not a BlendMode loss.
+	Out.Fidelity2.bModulate = Blend == BLEND_Modulate;
 	if (Blend == BLEND_Modulate || Blend == BLEND_AlphaComposite || Blend == BLEND_AlphaHoldout
 		|| Blend == BLEND_TranslucentColoredTransmittance)
 	{
@@ -3979,7 +4041,8 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 	const bool bAdditive = Blend == BLEND_Additive;
 	Out.Fidelity2.bAdditive = bAdditive;
 	Out.Fidelity2.bAdditiveLit = bAdditive && !Models.HasOnlyShadingModel(MSM_Unlit);
-	if (Models.HasShadingModel(MSM_Unlit) && !bAdditive)
+	// A modulate card is unlit too, but it publishes as a darkening sheet, not a glow: its own blend-mode text says so.
+	if (Models.HasShadingModel(MSM_Unlit) && !bAdditive && Blend != BLEND_Modulate)
 	{
 		Out.Losses |= EMantleMaterialLoss::Unlit;
 	}
@@ -4090,6 +4153,20 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		{
 			Carry({ MP_EmissiveColor });
 			Out.Losses &= ~EMantleMaterialLoss::Unlit;
+		}
+
+		// An unlit glow of one constant color with a channel over 1: the bake clips it to 1, so the whole color is read here.
+		if (bCarries && Models.HasShadingModel(MSM_Unlit) && Blend != BLEND_Modulate && Connected(MP_EmissiveColor))
+		{
+			double Glow[3];
+			if (ConstantColor(Roots.Emissive, Material, Glow) && FMath::Max3(Glow[0], Glow[1], Glow[2]) > 1.0 && Glow[0] >= 0.0 && Glow[1] >= 0.0 && Glow[2] >= 0.0)
+			{
+				Fidelity.bGlowOverOne = true;
+				for (int32 Channel = 0; Channel < 3; ++Channel)
+				{
+					Fidelity.GlowColor[Channel] = Glow[Channel];
+				}
+			}
 		}
 
 		// A vehicle light (FMantleVehicleLights::MakeLightMaterial): glows in its kind's color whatever the model set.
@@ -4847,6 +4924,10 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 	case EMantleMaterialLoss::Unlit:
 		return TEXT("it is unlit; Mantle shows it as a glowing material that lighting still touches.");
 	case EMantleMaterialLoss::BlendMode:
+		if (Analysis.Fidelity2.bModulate)
+		{
+			return TEXT("its Modulate blending (it multiplies what is behind it) publishes as a darkening sheet: black, with the opacity that darkens the scene by the same amount as the color's brightness. A colored modulate keeps how much it darkens, not its hue.");
+		}
 		return FString::Printf(TEXT("its %s blending becomes ordinary translucency."), *Analysis.BlendModeName);
 	case EMantleMaterialLoss::NotSurface:
 		return TEXT("it is not a surface material (a decal, light function or post-process material), so it is flattened as a plain surface.");
