@@ -12,7 +12,10 @@
 #include "Materials/MaterialInterface.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/Parse.h"
+#include "HAL/FileManager.h"
 #include "Misc/PackageName.h"
+#include "UObject/Package.h"
+#include "UObject/SavePackage.h"
 #include "Model.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -172,7 +175,16 @@ bool FMantleBspBayDevTest::RunTest(const FString& Parameters)
 
 	// Build the BSP the editor's way, then save.
 	GEditor->RebuildMap(World, UEditorEngine::MRT_Current);
-	TestTrue(TEXT("the level saved"), UEditorLoadingAndSavingUtils::SaveCurrentLevel());
+	// Saved by its package, straight to its file: SaveCurrentLevel answers false in an unattended, no-render run, with nothing in the log.
+	UPackage* Package = World->GetOutermost();
+	Package->MarkPackageDirty();
+	const FString Filename = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetMapPackageExtension());
+	IFileManager::Get().SetReadOnly(*Filename, false);
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	SaveArgs.SaveFlags = SAVE_NoError;
+	const FSavePackageResultStruct Saved = UPackage::Save(Package, World, *Filename, SaveArgs);
+	TestTrue(*FString::Printf(TEXT("the level saved to %s"), *Filename), Saved.IsSuccessful());
 	AddInfo(FString::Printf(TEXT("BSP bay built in %s at %s: Brush_Z_Wall, Brush_M_Room, Brush_S_Sheet, Brush_A_Door"), *MapPath, *Origin.ToString()));
 	return true;
 }
