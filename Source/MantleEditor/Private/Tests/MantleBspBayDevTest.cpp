@@ -12,7 +12,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/Parse.h"
-#include "HAL/FileManager.h"
+#include "HAL/PlatformFileManager.h"
 #include "Misc/PackageName.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
@@ -179,7 +179,7 @@ bool FMantleBspBayDevTest::RunTest(const FString& Parameters)
 	UPackage* Package = World->GetOutermost();
 	Package->MarkPackageDirty();
 	const FString Filename = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetMapPackageExtension());
-	IFileManager::Get().SetReadOnly(*Filename, false);
+	FPlatformFileManager::Get().GetPlatformFile().SetReadOnly(*Filename, false);
 	FSavePackageArgs SaveArgs;
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	SaveArgs.SaveFlags = SAVE_NoError;
