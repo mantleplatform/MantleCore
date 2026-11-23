@@ -4166,6 +4166,12 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	{
 		Salt += TEXT(" unlitglowstrength=1");
 	}
+	// A Single Layer Water material with no output node now publishes the clear lake's color, not its base color: only Single Layer
+	// Water materials changed, so only their keys do.
+	if (Material && Material->GetShadingModels().HasShadingModel(MSM_SingleLayerWater))
+	{
+		Salt += TEXT(" singlelayerwaterclear=1");
+	}
 	return Salt;
 }
 
