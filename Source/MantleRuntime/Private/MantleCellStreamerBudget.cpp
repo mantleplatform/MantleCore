@@ -263,11 +263,11 @@ void FMantleCellStreamer::UpdateBudget(const double DeltaSeconds)
 	if (FMath::FloorToInt(Ladder * 10.0) != FMath::FloorToInt(Before * 10.0))
 	{
 		UE_LOG(LogMantle, Log,
-			TEXT("MANTLE_CELLS_BUDGET ladder %.2f -> %.2f (far reach x%.2f, cell reach x%.2f), pressure %.2f (memory %.2f, card %.2f: %.0f of %.0f MB the driver gives): instances %lld of %lld, solid %lld of %lld, far instances %lld of %lld, Nanite root pages %lld of %lld, textures %.0f of %s MB, process memory %.3f of %.2f of the machine, %.0f of %s MB (working set %.0f MB, private %.0f MB)"),
+			TEXT("MANTLE_CELLS_BUDGET ladder %.2f -> %.2f (far reach x%.2f, cell reach x%.2f), pressure %.2f (memory %.2f, card %.2f: %.0f of %.0f MB the driver gives): instances %lld of %lld, solid %lld of %lld, far instances %lld of %lld, Nanite root pages %lld of %lld, textures %.0f of %s MB, process memory %.3f of %.2f of the machine, %.0f of %s MB (working set %.0f MB, private %.0f MB); now %s"),
 			Before, Ladder, Settings.FarSets.ReachScale, Settings.ReachScale, Pressure, MemoryPressure, VideoPressure, Use.VideoUsedBytes / (1024.0 * 1024.0),
 			Use.VideoBudgetBytes / (1024.0 * 1024.0), Use.Instances, Limits.Instances, Use.SolidThings, Limits.SolidThings, Use.FarInstances, Limits.FarInstances,
 			Use.NaniteRootPages, Limits.NaniteRootPages, Use.TextureBytes / (1024.0 * 1024.0), *MantleCellStreamerBudgetPrivate::MegabytesOrNone(Limits.TextureBytes), Use.ProcessMemoryShare, Limits.ProcessMemoryShare,
 			Use.ProcessMemoryBytes / (1024.0 * 1024.0), *MantleCellStreamerBudgetPrivate::MegabytesOrNone(Limits.ProcessMemoryBytes),
-			FPlatformMemory::GetStats().UsedPhysical / (1024.0 * 1024.0), FPlatformMemory::GetStats().UsedVirtual / (1024.0 * 1024.0));
+			FPlatformMemory::GetStats().UsedPhysical / (1024.0 * 1024.0), FPlatformMemory::GetStats().UsedVirtual / (1024.0 * 1024.0), *CountActors().ToLogText());
 	}
 }

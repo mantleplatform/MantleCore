@@ -323,6 +323,8 @@ void FMantleCellStreamer::TakeFinishedFarCells()
 			continue;
 		}
 		FarLoadingCells.RemoveSingle(CellIndex);
+		++TickReport.FarCellsTaken;
+		TickReport.FarCellEntitiesTaken += Content.Entities.Num();
 		MakeFarSet(CellIndex, Content.Entities);
 		bRefreshNeeded = true;
 	}
@@ -336,6 +338,7 @@ void FMantleCellStreamer::TakeFarAssetCells()
 		return;
 	}
 	const double Now = FPlatformTime::Seconds();
+	TickReport.FarAssetCellsWaiting += FarAssetCells.Num();
 	for (const int32 CellIndex : TArray<int32>(FarAssetCells))
 	{
 		FFarSet* Set = FarSets.Find(CellIndex);
@@ -365,6 +368,7 @@ void FMantleCellStreamer::TakeFarAssetCells()
 			Failed.Append(Pending);
 		}
 		FarAssetCells.RemoveSingle(CellIndex);
+		++TickReport.FarAssetCellsDone;
 		if (!Failed.IsEmpty())
 		{
 			// The cell's real entities named the same assets and said so once (MANTLE_CELLS_ASSET_MISSING); the twins that use them are left out.
@@ -533,6 +537,7 @@ bool FMantleCellStreamer::RemoveFarSome(const double Deadline)
 			if (AActor* Actor = Set->Entities[Set->DestroyCursor].Actor.Get())
 			{
 				Actor->Destroy();
+				++TickReport.TwinsRemoved;
 			}
 			bAny = true;
 		}
