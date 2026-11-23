@@ -766,16 +766,15 @@ bool FMantleCellStreamerCollisionModesTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("the picture streamer does not"), FMantleCellStreamer::BuildsSolids(EMantleCellEntities::PicturesNoCollision));
 	TestTrue(TEXT("the collision streamer builds only solids"), FMantleCellStreamer::BuildsOnlySolids(EMantleCellEntities::CollisionOnly));
 
-	// The cap: a 600 m cell is wanted from just inside it, not from just past it.
+	// The cap: a 600 m cell is wanted from 200 m, not from 300 m.
 	FMantleCellInfo Cell;
 	Cell.Bounds = FBox(FVector(0.0, 0.0, 0.0), FVector(25600.0, 25600.0, 500.0));
 	Cell.DrawDistance = 60000.0;
 	FMantleCellStreamSettings Settings;
 	Settings.MaxReachCm = FMantleCellStreamSettings::ClientCollisionReachCm;
-	const double Cap = FMantleCellStreamSettings::ClientCollisionReachCm;
-	TestEqual(TEXT("the cap is the reach"), FMantleCellStreamPlan::ReachOf(Cell, Settings), Cap);
-	TestTrue(TEXT("wanted from 10 m inside it"), FMantleCellStreamPlan::IsWanted(Cell, { FVector(-(Cap - 1000.0), 100.0, 100.0) }, Settings));
-	TestFalse(TEXT("not from 10 m past it"), FMantleCellStreamPlan::IsWanted(Cell, { FVector(-(Cap + 1000.0), 100.0, 100.0) }, Settings));
+	TestEqual(TEXT("the cap is the reach"), FMantleCellStreamPlan::ReachOf(Cell, Settings), 25600.0);
+	TestTrue(TEXT("wanted from 200 m"), FMantleCellStreamPlan::IsWanted(Cell, { FVector(-20000.0, 100.0, 100.0) }, Settings));
+	TestFalse(TEXT("not from 300 m"), FMantleCellStreamPlan::IsWanted(Cell, { FVector(-30000.0, 100.0, 100.0) }, Settings));
 	Settings.MaxReachCm = 0.0;
 	TestEqual(TEXT("no cap: the drawDistance"), FMantleCellStreamPlan::ReachOf(Cell, Settings), 60000.0);
 	return true;
