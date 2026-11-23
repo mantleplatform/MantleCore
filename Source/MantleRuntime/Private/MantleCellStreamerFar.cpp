@@ -259,9 +259,16 @@ void FMantleCellStreamer::RefreshFar(const FMantleCellStreamPlan::FPath& Path)
 			Set.DestroyCursor = 0;
 			FarRemovingCells.Add(CellIndex);
 		}
+		else if (Set.bAssetsHeld)
+		{
+			// Nothing of it is drawn (so it can double no draw and leave no gap), but giving its assets back drops their records, which costs a few milliseconds to tens a set: a ladder step
+			// lets go of dozens at once (925 ms in one refresh, City Sample 2026-11-22). They wait in the removal queue and go a few a tick inside the work budget, like a twin that stands.
+			Set.bDestroying = true;
+			Set.DestroyCursor = Set.Entities.Num();
+			FarRemovingCells.Add(CellIndex);
+		}
 		else
 		{
-			ReleaseFarAssets(CellIndex, Set);
 			FarSets.Remove(CellIndex);
 			++Stats.FarSetsReleased;
 		}
@@ -523,8 +530,11 @@ bool FMantleCellStreamer::RemoveFarSome(const double Deadline)
 	}
 	const double Start = FPlatformTime::Seconds();
 	bool bAny = false;
-	while (!FarRemovingCells.IsEmpty() && FPlatformTime::Seconds() < Deadline)
+	// At least one step a tick, so a tick whose budget the builds spent never leaves the queue standing; then steps until the budget is spent (a set's release is one step).
+	bool bDidOne = false;
+	while (!FarRemovingCells.IsEmpty() && (!bDidOne || FPlatformTime::Seconds() < Deadline))
 	{
+		bDidOne = true;
 		const int32 CellIndex = FarRemovingCells[0];
 		FFarSet* Set = FarSets.Find(CellIndex);
 		if (!Set)
