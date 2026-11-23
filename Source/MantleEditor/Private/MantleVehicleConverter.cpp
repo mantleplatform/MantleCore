@@ -188,8 +188,6 @@ namespace MantleVehicleConverterPrivate
 	const TCHAR* const VehicleDamperWords[] = { TEXT("damper"), TEXT("shock"), TEXT("strut"), TEXT("coilover"), TEXT("spring") };
 	/** Words a brake's bone carries (SUV04's B_SUV04_FLBrake): the caliper rides it, so it is the wheel's hub (DetectLinkage). */
 	const TCHAR* const VehicleBrakeWords[] = { TEXT("brake"), TEXT("caliper") };
-	/** How near a wheel's bone a brake's bone sits to belong to that wheel, cm: a brake sits at the wheel's center. */
-	constexpr double VehicleBrakeAtWheelCm = 10.0;
 	const TCHAR* const VehicleAxleWords[] = { TEXT("axle"), TEXT("beam") };
 	const TCHAR* const VehicleWheelWords[] = { TEXT("wheel") };
 
@@ -1040,6 +1038,16 @@ FString FMantleVehicleConverter::CornerOf(const FString& Bone)
 	return FString();
 }
 
+bool FMantleVehicleConverter::IsHubBoneName(const FString& Bone)
+{
+	return MantleVehicleConverterPrivate::VehicleNameHas(FName(*Bone), MakeArrayView(MantleVehicleConverterPrivate::VehicleHubWords));
+}
+
+bool FMantleVehicleConverter::IsBrakeBoneName(const FString& Bone)
+{
+	return MantleVehicleConverterPrivate::VehicleNameHas(FName(*Bone), MakeArrayView(MantleVehicleConverterPrivate::VehicleBrakeWords));
+}
+
 TArray<FMantleVehicleSourceLinkage> FMantleVehicleConverter::DetectLinkage(const FReferenceSkeleton& Skeleton, const TConstArrayView<FName> WheelBones,
 	TArray<FString>& OutNotes)
 {
@@ -1121,7 +1129,7 @@ TArray<FMantleVehicleSourceLinkage> FMantleVehicleConverter::DetectLinkage(const
 		for (int32 Bone = 1; Bone < Num; ++Bone)
 		{
 			const FString BoneCorner = CornerOf(Info[Bone].Name.ToString());
-			const bool bBrake = VehicleNameHas(Info[Bone].Name, MakeArrayView(VehicleBrakeWords)) && FVector::Dist(At(Bone), At(Wheel)) <= VehicleBrakeAtWheelCm
+			const bool bBrake = IsBrakeBoneName(Info[Bone].Name.ToString()) && FVector::Dist(At(Bone), At(Wheel)) <= BrakeAtWheelCm
 				&& (BoneCorner.IsEmpty() || BoneCorner == Corner);
 			if (Free(Bone) && !Wheels.Contains(Bone) && ((BoneCorner == Corner && (VehicleNameHas(Info[Bone].Name, MakeArrayView(VehicleHubWords)) || VehicleNamedHelper(Info[Bone].Name))) || bBrake))
 			{
@@ -2963,6 +2971,25 @@ FMantleVehicleConverter::FPaintLayerGuess FMantleVehicleConverter::GuessPaintLay
 const TCHAR* FMantleVehicleConverter::PaintFinishDocumentName(const EMantleVehicleSourcePaintFinish Finish)
 {
 	return MantleVehicleConverterPrivate::PaintFinishName(Finish);
+}
+
+bool FMantleVehicleConverter::ParsePaintFinish(const FString& Name, EMantleVehicleSourcePaintFinish& OutFinish)
+{
+	for (int32 Each = 0; Each <= static_cast<int32>(EMantleVehicleSourcePaintFinish::SoftRubber); ++Each)
+	{
+		const EMantleVehicleSourcePaintFinish Finish = static_cast<EMantleVehicleSourcePaintFinish>(Each);
+		if (Name.Equals(MantleVehicleConverterPrivate::PaintFinishName(Finish), ESearchCase::IgnoreCase))
+		{
+			OutFinish = Finish;
+			return true;
+		}
+	}
+	return false;
+}
+
+const TCHAR* FMantleVehicleConverter::PaintLayerDocumentName(const EMantleVehicleSourcePaintLayer Layer)
+{
+	return MantleVehicleConverterPrivate::PaintLayerName(Layer);
 }
 
 bool FMantleVehicleConverter::IsGtaTintLayer(const FString& Name, const UMaterialInterface* Material)

@@ -195,6 +195,16 @@ public:
 	static TArray<FMantleVehicleSourceLinkage> DetectLinkage(const FReferenceSkeleton& Skeleton, TConstArrayView<FName> WheelBones, TArray<FString>& OutNotes);
 
 	/**
+	 * Whether a bone's name says it is a wheel's hub (a word with hub, knuckle, upright, spindle or carrier) or its brake (brake or caliper): what turns with the wheel's steering
+	 * and travels with it but does not spin. DetectLinkage's hub rule reads them (a brake only when it sits at the wheel's place, within VehicleBrakeAtWheelCm), and the builder's
+	 * Skin reads them the same way (FMantleVehicleChassisSkin::Skin), so a model on a chassis and a model that keeps its skeleton get the same hubs.
+	 */
+	static bool IsHubBoneName(const FString& Bone);
+	static bool IsBrakeBoneName(const FString& Bone);
+	/** How near a wheel's bone a brake's bone must sit to be that wheel's hub, cm. */
+	static constexpr double BrakeAtWheelCm = 10.0;
+
+	/**
 	 * Measures a wheel from Body's geometry: the vertices weighted to Bone alone, radius half the larger of their X and
 	 * Z extent, width their Y extent (the cook's rule). False when fewer than WheelMinVertices are.
 	 */
@@ -355,6 +365,12 @@ public:
 
 	/** The name the vehicle document writes for a paint finish ("gloss", ..., "plastic_smooth", "soft_rubber"). Exposed for tests. */
 	static const TCHAR* PaintFinishDocumentName(EMantleVehicleSourcePaintFinish Finish);
+
+	/** The finish a document name ("chrome") says, any case; false when it is none of them. */
+	static bool ParsePaintFinish(const FString& Name, EMantleVehicleSourcePaintFinish& OutFinish);
+
+	/** The name the vehicle document writes for a paint layer: "secondary", "wheels", "interior", "dashboard". */
+	static const TCHAR* PaintLayerDocumentName(EMantleVehicleSourcePaintLayer Layer);
 
 	/**
 	 * Whether the body section Section drawn with Material publishes its picture as a tint mask: it is painted (in Source's paint sections or one of its layers), it is a GTA tint layer

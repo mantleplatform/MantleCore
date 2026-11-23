@@ -220,6 +220,18 @@ struct FMantleVehicleSkinnedHinge
 	double Yaw = 0.0;
 };
 
+/**
+ * A wheel's hub on a model worn as a skin: the model's hub, knuckle or brake bone (hub_lf, a B_FLBrake with the caliper skinned to it), given a bone of its own under the root at
+ * the chassis's wheel center, with the model's vertices on it. It is to travel and steer with the wheel and not spin (a linkage rule: FMantleVehicleBuilder::ApplyHubs).
+ */
+struct FMantleVehicleSkinnedHub
+{
+	/** The bone Skin added for it (named as the model's bone, suffixed when a chassis bone has the name). */
+	FName Bone;
+	/** The chassis's wheel bone it follows. */
+	FName Wheel;
+};
+
 /** The result of putting a model on a chassis as its skin. */
 struct FMantleVehicleSkinned
 {
@@ -233,6 +245,8 @@ struct FMantleVehicleSkinned
 	FMantleVehicleBodyExtras Extras;
 	/** The doors, hood and trunk of the model that open (Map.Hinges), each on a bone of its own under the root, with the vertices of the part weighted to it. */
 	TArray<FMantleVehicleSkinnedHinge> Hinges;
+	/** The model's hub and brake bones that sit at a wheel Skin moved onto the chassis's: each on a bone of its own under the root, with the vertices of the model bone and its children. */
+	TArray<FMantleVehicleSkinnedHub> Hubs;
 };
 
 /** Where a proposed collision came from. */
@@ -319,7 +333,9 @@ struct MANTLEEDITOR_API FMantleVehicleChassisSkin
 	 * wheel center when it is within MaxWheelMove cm of it (a wheel further off stays on the body, still, and is said so: moving it would tear it from its strut,
 	 * and turning it about the chassis's wheel would swing it round that point). Each door, the hood and the trunk in Map.Hinges whose bone the model has gets a new bone
 	 * under the root, last in the table (named as the model's bone, suffixed when a chassis bone has the name), posed at the part's hinge, with the vertices of that model bone and
-	 * its children weighted to it; the hinges are in Out.Hinges (HingeFor). The sections and material slots are the model's (named uniquely). False, with the
+	 * its children weighted to it; the hinges are in Out.Hinges (HingeFor). Each hub or brake bone of the model (FMantleVehicleConverter::IsHubBoneName, IsBrakeBoneName) at a
+	 * wheel that was moved onto the chassis's (within 25 cm of the model's wheel center) gets a bone of its own the same way, at the chassis's wheel center, with its
+	 * vertices and its children's moved with that wheel; they are in Out.Hubs, to follow the wheel's steering and travel without its spin. The sections and material slots are the model's (named uniquely). False, with the
 	 * reason in OutError, when the model has nothing to skin.
 	 */
 	static bool Skin(const FMantleSkinnedMesh& Chassis, TConstArrayView<FMantleVehiclePartSlot> Slots, const FMantleVehicleModel& Model,

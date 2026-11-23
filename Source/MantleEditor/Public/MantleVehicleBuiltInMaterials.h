@@ -39,8 +39,15 @@ struct MANTLEEDITOR_API FMantleVehicleBuiltInMaterials
 	static FText Label(const FString& Id);
 
 	/**
+	 * Whether a lens is red or amber: a word of its section's or material's name (red, amber, orange, yellow), else its own base color reads red through amber (red the strongest
+	 * of the three, then green, then blue, and clearly a color). The shared light lens is clear, so such a lens (a taillight, a signal) is not replaced by it and keeps its own
+	 * material; a clear, white, blue or green one is the shared lens. Material may be null (the name alone is read).
+	 */
+	static bool IsColoredLens(const UMaterialInterface* Material, const FString& SectionName);
+
+	/**
 	 * The built-in material a body section or part slot gets, or empty (it keeps the creator's material). Material is what it draws with. In order: a light section the
-	 * builder found is a light lens; the name of the section, else of the material (Suggest); a lit Translucent material with one flat opacity under 0.95 is glass (a
+	 * builder found is a light lens, unless it is a red or amber one (IsColoredLens), which keeps its own; the name of the section, else of the material (Suggest); a lit Translucent material with one flat opacity under 0.95 is glass (a
 	 * cutout or a decal, whose opacity comes from a texture, is not). A painted section or slot (the vehicle's color) is never replaced.
 	 */
 	static FString Detect(const UMaterialInterface* Material, const FString& SectionName, bool bLight);
