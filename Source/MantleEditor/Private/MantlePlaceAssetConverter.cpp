@@ -3683,6 +3683,23 @@ double FMantlePlaceAssetConverter::GlassOpacityFromIor(const double Ior, const d
 	return FMath::Clamp(FMath::Max(Opacity, MinGlassOpacity) + (F0 - 0.04), 0.0, 1.0);
 }
 
+double FMantlePlaceAssetConverter::ModulateOpacity(const double (&Color)[3])
+{
+	const double Brightness = 0.2126 * Color[0] + 0.7152 * Color[1] + 0.0722 * Color[2];
+	return FMath::Clamp(1.0 - Brightness, 0.0, 1.0);
+}
+
+void FMantlePlaceAssetConverter::ModulateSheet(const TArray<FColor>& Pixels, const double (&Factor)[3], TArray<FColor>& OutSheet)
+{
+	OutSheet.SetNumUninitialized(Pixels.Num());
+	for (int32 Index = 0; Index < Pixels.Num(); ++Index)
+	{
+		const FLinearColor Linear = FLinearColor::FromSRGBColor(Pixels[Index]);
+		const double Color[3] = { Linear.R * Factor[0], Linear.G * Factor[1], Linear.B * Factor[2] };
+		OutSheet[Index] = FColor(0, 0, 0, static_cast<uint8>(FMath::RoundToInt(ModulateOpacity(Color) * 255.0)));
+	}
+}
+
 FString FMantlePlaceAssetConverter::MeshCacheSalt(const FMantlePlaceAssetLimits& Limits, const UStaticMesh& Mesh, int32 FromLOD, const FString& ReducedTag, const bool bNanite)
 {
 	// The LOD and collision caps change what is written, so they are part of the key.
@@ -4136,9 +4153,20 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	// A masked material never publishes a cut-off of 0 (ResolveMaskCutoff): an earlier conversion that did must not stand in. Only a
 	// masked material's conversion changed, so only its key does; every other material keeps its bake.
 	const bool bMasked = Material && Material->GetBlendMode() == BLEND_Masked;
-	return FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
+	FString Salt = FString::Printf(TEXT("material %s bake=%d max=%d bytes=%lld %s%s%s%s%s"), *Describe, InSettings.DefaultBakeSize,
 		InLimits.MaxTextureSize, InLimits.MaxTextureBytes, Material ? *Material->GetPathName() : TEXT(""), bPerInstanceVariation ? TEXT(" perinstance=0.5") : TEXT(""),
 		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""), bMasked ? TEXT(" maskcutoff=2") : TEXT(""));
+	// A Modulate material publishes as a darkening sheet and an unlit one keeps a glow over 1 as its emissive strength: only those two
+	// kinds changed, so only their keys do. An earlier conversion (a card with opacity 0, a glow clipped to 1) must not stand in.
+	if (Material && Material->GetBlendMode() == BLEND_Modulate)
+	{
+		Salt += TEXT(" modulatesheet=1");
+	}
+	if (Material && Material->GetShadingModels().HasShadingModel(MSM_Unlit))
+	{
+		Salt += TEXT(" unlitglowstrength=1");
+	}
+	return Salt;
 }
 
 double FMantlePlaceAssetConverter::MeanPixelDifference(const TArray<FColor>& A, const TArray<FColor>& B)
@@ -4887,6 +4915,79 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		return Doc;
 	}
 
+	// An unlit glow brighter than 1 (an emissive of 3.0, 0.4, 0.1 on a sign): the bake clipped the base color it came from to 1, so the
+	// whole color comes from the graph (Fidelity.GlowColor) and the part over 1 is the emissive strength, as a lit emissive's is. Only for a
+	// glow of one flat color: a textured glow's pixels were clipped one by one, and nothing recovers them.
+	auto KeepGlowOverOne = [&]()
+	{
+		if (!Fidelity.bGlowOverOne || BaseColor.IsSet() || HasSource(EMantlePlaceTextureSlot::Emissive))
+		{
+			return;
+		}
+		const double Brightest = FMath::Max3(Fidelity.GlowColor[0], Fidelity.GlowColor[1], Fidelity.GlowColor[2]);
+		for (int32 Channel = 0; Channel < 3; ++Channel)
+		{
+			Doc.EmissiveFactor[Channel] = Fidelity.GlowColor[Channel] / Brightest;
+		}
+		Doc.EmissiveStrength = Brightest;
+		if (Brightest > 100.0)
+		{
+			Warn(FString::Printf(TEXT("its glow strength of %s is capped at 100."), *Number(Brightest)));
+		}
+	};
+
+	// Modulate (it multiplies what is behind it by its color): a black sheet whose opacity darkens the scene as much, per pixel for a
+	// textured color (the bake wrote its opacity as 0 everywhere, so it published invisible). A colored modulate keeps how much it
+	// darkens, not its hue; Check says so.
+	if (Fidelity.bModulate && bUnlit)
+	{
+		double Factor[3] = { Doc.BaseColorFactor[0], Doc.BaseColorFactor[1], Doc.BaseColorFactor[2] };
+		Doc.AlphaMode = TEXT("blend");
+		Doc.BaseColorFactor[0] = Doc.BaseColorFactor[1] = Doc.BaseColorFactor[2] = 0.0;
+		Doc.EmissiveFactor[0] = Doc.EmissiveFactor[1] = Doc.EmissiveFactor[2] = 0.0;
+		Doc.EmissiveStrength = 1.0;
+		Doc.MetallicFactor = 0.0;
+		Doc.RoughnessFactor = 1.0;
+		bool bSheetImage = false;
+		if (BaseColor.IsSet())
+		{
+			TArray<uint8> Bytes;
+			int32 Source = INDEX_NONE;
+			FString TextureName;
+			TArray<FColor> Pixels;
+			int32 Width = 0;
+			int32 Height = 0;
+			if (ReadTextureImage(Document, BaseColor.Texture, Bytes, Source, TextureName) && DecodeBgra(Bytes, true, Pixels, Width, Height))
+			{
+				TArray<FColor> Sheet;
+				ModulateSheet(Pixels, Factor, Sheet);
+				TArray64<uint8> Png;
+				if (FImageUtils::CompressImage(Png, TEXT("png"), FImageView(Sheet.GetData(), Width, Height, EGammaSpace::sRGB)) && Png.Num() > 0)
+				{
+					const TArray<uint8> PngBytes(Png.GetData(), static_cast<int32>(Png.Num()));
+					const FString What = FString::Printf(TEXT("%s (darkening sheet of material '%s')"), TextureName.IsEmpty() ? TEXT("baked texture") : *TextureName, *MaterialName);
+					FMantleConvertedTexture Texture;
+					if (PrepareTexture(PngBytes, EMantlePlaceTextureSlot::BaseColor, true, Limits, What, !bSourceTexturesReported, Texture, OutSet.Issues, false))
+					{
+						Doc.Textures.Add(FMantlePlaceMaterialDocument::SlotName(EMantlePlaceTextureSlot::BaseColor), OutSet.AddTexture(MoveTemp(Texture)));
+						KeepSlotTransform(EMantlePlaceTextureSlot::BaseColor, BaseColor);
+						Doc.BaseColorFactor[3] = 1.0;
+						bSheetImage = true;
+					}
+				}
+			}
+			if (!bSheetImage)
+			{
+				Warn(TEXT("its modulate color image could not be read, so the sheet darkens by its constant color only."));
+			}
+		}
+		if (!bSheetImage)
+		{
+			Doc.BaseColorFactor[3] = ModulateOpacity(Factor);
+		}
+		return Doc;
+	}
+
 	// #628: additive blending (alphaMode additive): emissive-driven, so the glow is all there is of it. An unlit source (GLTFExporter
 	// keeps its glow as the base color) and a lit one (its glow is the emissive) end up the same: emissive factor, strength and texture,
 	// the emissive slot's own transform and pan. A constant opacity scales the glow (additive adds color x opacity); the base color
@@ -4901,6 +5002,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 			Doc.EmissiveFactor[1] = Doc.BaseColorFactor[1];
 			Doc.EmissiveFactor[2] = Doc.BaseColorFactor[2];
 			Doc.EmissiveStrength = 1.0;
+			KeepGlowOverOne();
 		}
 		const double Opacity = Doc.BaseColorFactor[3];
 		if (Opacity > 0.0 && Opacity < 1.0)
@@ -4937,6 +5039,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		Doc.EmissiveFactor[1] = Doc.BaseColorFactor[1];
 		Doc.EmissiveFactor[2] = Doc.BaseColorFactor[2];
 		Doc.EmissiveStrength = 1.0;
+		KeepGlowOverOne();
 		Doc.BaseColorFactor[0] = Doc.BaseColorFactor[1] = Doc.BaseColorFactor[2] = 0.0;
 		Doc.MetallicFactor = 0.0;
 		Doc.RoughnessFactor = 1.0;
