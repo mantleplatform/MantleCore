@@ -124,8 +124,18 @@ enum class EMantleMaterialLoss : uint32
 	NotSurface = 1 << 13,
 	/** A second UV set (UV1 or higher) feeds a baked output; the bake has UV0 only. */
 	SecondUv = 1 << 14,
+	/** A Material Parameter Collection node feeds a baked output: the bake reads the collection's saved values, so a runtime change is lost. */
+	ParameterCollection = 1 << 15,
+	/** A cooked material (no editor graph in this project): nothing in it can be read, so none of the losses above is known. */
+	CookedMaterial = 1 << 16,
+	/** The graph is bigger than the walk's step budget: it stopped reading, so losses past that point are not reported. */
+	LargeGraph = 1 << 17,
+	/** A UDIM, cube or array texture is sampled: the bake sees one image, not every tile or slice. */
+	MultiTileTexture = 1 << 18,
+	/** A render target is sampled: it has no saved pixels, so the bake shows it blank or frozen. */
+	RenderTarget = 1 << 19,
 	/** The highest loss, for loops over every one. */
-	Last = SecondUv,
+	Last = RenderTarget,
 };
 ENUM_CLASS_FLAGS(EMantleMaterialLoss);
 
