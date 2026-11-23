@@ -196,8 +196,19 @@ namespace MantleCellStreamerTestPrivate
 			EntitiesAsked += Entities.Num();
 		}
 
+		/** How often the streamer read a cell's lists (GetState), and how often it only asked whether the cell had settled (IsSettled). */
+		int32 GetStateCalls = 0;
+		int32 IsSettledCalls = 0;
+
+		virtual bool IsSettled(int32 CellIndex) override
+		{
+			++IsSettledCalls;
+			return bReady && !SlowCells.Contains(CellIndex);
+		}
+
 		virtual void GetState(int32 CellIndex, TArray<FString>& OutPending, TArray<FString>& OutFailed) override
 		{
+			++GetStateCalls;
 			OutPending.Reset();
 			OutFailed.Reset();
 			if (!bReady || SlowCells.Contains(CellIndex))
@@ -2516,5 +2527,45 @@ bool FMantleCellStreamerBudgetNeverLimitsKeepEveryCellTest::RunTest(const FStrin
 	return true;
 }
 
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerWaitingCellsLookCheaplyTest,
+	"Mantle.Runtime.CellStream.Streamer.WaitingCellsLookCheaply",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerWaitingCellsLookCheaplyTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// City Sample (2026-11-22): every tick read the lists of every cell still waiting for its assets, each list as long as the cell's needs; with 160 far sets waiting that
+	// was 125 ms a frame. A waiting cell now gets one cheap look a tick (IsSettled), and its lists are read once, when it has settled.
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	Fixture.CellAssets = MakeShared<FFakeCellAssets>();
+	Fixture.CellAssets->bReady = false;
+	Fixture.CellAssets->bDownloadsMoving = true;
+	FMantleCellStreamSettings Settings = SteadySettings();
+	Settings.FarSets.bEnabled = false;
+	Fixture.StartStreamer(Settings);
+	for (int32 Tick = 0; Tick < 120; ++Tick)
+	{
+		Fixture.Tick();
+	}
+	TestEqual(TEXT("the three cells wait for their assets"), Fixture.Streamer->GetStats().CellsAssetWait, 3);
+	TestEqual(TEXT("no waiting cell's lists were read while its downloads were moving"), Fixture.CellAssets->GetStateCalls, 0);
+	TestTrue(TEXT("each was asked cheaply whether it had settled"), Fixture.CellAssets->IsSettledCalls >= 3);
+	TestEqual(TEXT("the join still holds"), Fixture.Streamer->IsHolding(), true);
+
+	Fixture.CellAssets->bReady = true;
+	if (!TestTrue(TEXT("the streamer settles once the assets are here"), Fixture.Settle()))
+	{
+		return false;
+	}
+	TestTrue(TEXT("the three cells stand"), Fixture.Built(0) && Fixture.Built(1) && Fixture.Built(2) && !Fixture.Streamer->IsHolding());
+	TestEqual(TEXT("each cell's lists were read once, when it had settled"), Fixture.CellAssets->GetStateCalls, 3);
+	return true;
+}
 
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -344,6 +344,12 @@ void FMantleCellStreamer::TakeFarAssetCells()
 			FarAssetCells.RemoveSingle(CellIndex);
 			continue;
 		}
+		// As for a real cell (TakeAssetCells): one cheap look a tick while it waits, the lists once it has settled or stalled. Before, every waiting set's every
+		// need was looked up each tick: 160 far sets took 125 ms a frame (City Sample, 2026-11-22).
+		if (!CellAssets->IsSettled(FarHolderBase + CellIndex) && !FMantleCellStreamPlan::HasStalled(Now, Set->AssetsAskedAt, LastAssetProgressSeconds, Settings.AssetIdleTimeoutSeconds))
+		{
+			continue;
+		}
 		TArray<FString> Pending;
 		TArray<FString> Failed;
 		CellAssets->GetState(FarHolderBase + CellIndex, Pending, Failed);
