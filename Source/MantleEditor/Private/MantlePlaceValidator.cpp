@@ -1322,14 +1322,6 @@ namespace
 	}
 
 	/**
-	 * The cap on a directional light's intensity, for the lights that publish at the level's own brightness. Of the level's directional
-	 * lights Mantle publishes the first as the sun, at the game's own brightness (or Place Settings' Sun Brightness), so the level's is
-	 * kept only for a sealed level (no direct sun: Place Settings' Direct Sun Never, or Automatic with the sun reaching no spawn point,
-	 * as the export's own probe finds) with no Sun Brightness set. The others are left out. In an interior, which has no sun, every
-	 * directional light is a lamp of the creator's and keeps its brightness. Lights are the level's directional lights in the
-	 * exporter's order and SpawnPoints where its players start.
-	 */
-	/**
 	 * A light's light function material and IES profile: the exporter reads a light's color, brightness, reach, cones, shadow and
 	 * source shape (FMantlePlaceExporter::ReadComponentValueProperties), never these, so the light publishes without them. Said for
 	 * every light the actor shows (a light actor's own, and a prefab's light parts).
@@ -1366,6 +1358,14 @@ namespace
 		}
 	}
 
+	/**
+	 * The cap on a directional light's intensity, for the lights that publish at the level's own brightness. Of the level's directional
+	 * lights Mantle publishes the first as the sun, at the game's own brightness (or Place Settings' Sun Brightness), so the level's is
+	 * kept only for a sealed level (no direct sun: Place Settings' Direct Sun Never, or Automatic with the sun reaching no spawn point,
+	 * as the export's own probe finds) with no Sun Brightness set. The others are left out. In an interior, which has no sun, every
+	 * directional light is a lamp of the creator's and keeps its brightness. Lights are the level's directional lights in the
+	 * exporter's order and SpawnPoints where its players start.
+	 */
 	void CheckDirectionalLightRanges(UWorld* World, const TArray<const AActor*>& Lights, const TArray<FVector>& SpawnPoints, FMantleValidationResult& Result)
 	{
 		if (Lights.Num() == 0)
