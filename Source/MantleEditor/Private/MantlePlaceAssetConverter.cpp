@@ -283,6 +283,12 @@ namespace MantlePlaceAssetConverterPrivate
 		Fields.Add(FString::Printf(TEXT("\"emissiveFactor\":[%s,%s,%s]"), *Number(Unit(Doc.EmissiveFactor[0])), *Number(Unit(Doc.EmissiveFactor[1])),
 			*Number(Unit(Doc.EmissiveFactor[2]))));
 		Fields.Add(TEXT("\"emissiveStrength\":") + Number(FMath::Clamp(Doc.EmissiveStrength, 0.0, 100.0)));
+		if (Doc.bRim)
+		{
+			Fields.Add(FString::Printf(TEXT("\"rim\":{\"color\":[%s,%s,%s],\"strength\":%s,\"power\":%s}"), *Number(Unit(Doc.RimColor[0])),
+				*Number(Unit(Doc.RimColor[1])), *Number(Unit(Doc.RimColor[2])), *Number(FMath::Clamp(Doc.RimStrength, 0.0, 100.0)),
+				*Number(FMath::Clamp(Doc.RimPower, 0.0, FMantleRimGlow::MaxPower))));
+		}
 		Fields.Add(FString::Printf(TEXT("\"uvScale\":[%s,%s]"), *Number(Uv(Doc.UvScale[0])), *Number(Uv(Doc.UvScale[1]))));
 		Fields.Add(FString::Printf(TEXT("\"uvOffset\":[%s,%s]"), *Number(Uv(Doc.UvOffset[0])), *Number(Uv(Doc.UvOffset[1]))));
 
@@ -1123,6 +1129,13 @@ bool FMantlePlaceMaterialDocument::FromTemplateJson(const FString& Json, FMantle
 	Out.RoughnessFactor = NumberField(Object, TEXT("roughnessFactor"), 1.0);
 	NumberArray(Object, TEXT("emissiveFactor"), Out.EmissiveFactor, 3);
 	Out.EmissiveStrength = NumberField(Object, TEXT("emissiveStrength"), 1.0);
+	if (const TSharedPtr<FJsonObject> Rim = ObjectField(Object, TEXT("rim")))
+	{
+		Out.bRim = true;
+		NumberArray(Rim, TEXT("color"), Out.RimColor, 3);
+		Out.RimStrength = NumberField(Rim, TEXT("strength"), 1.0);
+		Out.RimPower = NumberField(Rim, TEXT("power"), 5.0);
+	}
 	NumberArray(Object, TEXT("uvScale"), Out.UvScale, 2);
 	NumberArray(Object, TEXT("uvOffset"), Out.UvOffset, 2);
 	if (const TSharedPtr<FJsonObject> Transforms = ObjectField(Object, TEXT("uvTransforms")))
@@ -4300,6 +4313,13 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	{
 		Salt += TEXT(" singlelayerwaterclear=1");
 	}
+	// F4: an additive material with a Fresnel in its glow or opacity now publishes its rim glow: an earlier conversion (no rim key)
+	// must not stand in. Only such materials' keys change.
+	if (Material && Material->GetBlendMode() == BLEND_Additive && Base && Base->GetEditorOnlyData()
+		&& (FMantleGlowMaterial::HasFresnel(&Base->GetEditorOnlyData()->EmissiveColor) || FMantleGlowMaterial::HasFresnel(&Base->GetEditorOnlyData()->Opacity)))
+	{
+		Salt += TEXT(" additiverim=1");
+	}
 	return Salt;
 }
 
@@ -5339,6 +5359,24 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		if (bVertexColorTintsBaseColor)
 		{
 			Warn(TEXT("its vertex-color tint is dropped: additive blending shows the glow only, and vertex color does not reach it."));
+		}
+		// F4: the Fresnel rim glow, the part of the Fresnel the face-on bake lacks (FMantleRimGlow, read from the graph with its
+		// opacity in it). A color over 1 publishes its brightest channel as the strength, as the glow does.
+		if (Fidelity.Rim.bFound)
+		{
+			const double Brightest = FMath::Max3(Fidelity.Rim.Color[0], Fidelity.Rim.Color[1], Fidelity.Rim.Color[2]);
+			const double Strength = FMath::Max(Brightest, 1.0);
+			for (int32 Channel = 0; Channel < 3; ++Channel)
+			{
+				Doc.RimColor[Channel] = Fidelity.Rim.Color[Channel] / Strength;
+			}
+			Doc.RimStrength = FMath::Min(Strength, 100.0);
+			Doc.RimPower = FMath::Clamp(Fidelity.Rim.Power, 0.0, FMantleRimGlow::MaxPower);
+			Doc.bRim = true;
+			if (Strength > 100.0)
+			{
+				Warn(FString::Printf(TEXT("its rim glow strength of %s is capped at 100."), *Number(Strength)));
+			}
 		}
 		KeepPanningAndWind();
 		return Doc;

@@ -14,12 +14,18 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
+#include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionFresnel.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
+#include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionOneMinus.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionSceneColor.h"
+#include "Materials/MaterialExpressionTextureSample.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
+#include "Materials/MaterialExpressionVertexColor.h"
+#include "Materials/MaterialFunctionInterface.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/Package.h"
 
@@ -125,6 +131,31 @@ namespace MantleGlowMaterialTestPrivate
 		}
 		Material->GetEditorOnlyData()->EmissiveColor.Connect(0, Emissive);
 		return Material;
+	}
+
+	/** A Fresnel node with its exponent and base reflect fraction set (the engine's defaults are 5 and 0.04). */
+	UMaterialExpressionFresnel* AddFresnel(UMaterial* Material, const float Exponent = 5.0f, const float BaseReflect = 0.04f)
+	{
+		UMaterialExpressionFresnel* Fresnel = AddNode<UMaterialExpressionFresnel>(Material);
+		Fresnel->Exponent = Exponent;
+		Fresnel->BaseReflectFraction = BaseReflect;
+		return Fresnel;
+	}
+
+	/** An unlit additive material whose rim the key cannot carry: a Fresnel times the vertex color (which changes across the surface). */
+	UMaterial* NewDroppedRim()
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor::White);
+		Material->GetEditorOnlyData()->EmissiveColor.Connect(0, AddMultiply(Material, AddFresnel(Material), AddNode<UMaterialExpressionVertexColor>(Material)));
+		return Material;
+	}
+
+	/** FMantleGlowMaterial::ReadRim on Material's emissive and opacity, as AnalyzeMaterial reads them. */
+	FMantleRimGlow RimOf(UMaterial* Material)
+	{
+		FMantleRimGlow Rim;
+		FMantleGlowMaterial::ReadRim(Material, &Material->GetEditorOnlyData()->EmissiveColor, &Material->GetEditorOnlyData()->Opacity, Rim);
+		return Rim;
 	}
 
 	TArray<TSharedPtr<FJsonValue>> NumberValues(std::initializer_list<double> Values)
@@ -424,9 +455,13 @@ bool FMantleGlowAdditiveAnalysisTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("and is lit"), Lit.Fidelity2.bAdditiveLit);
 	TestFalse(TEXT("its blend mode is still not a loss"), Lit.Has(EMantleMaterialLoss::BlendMode));
 
-	// A Fresnel in the emissive is a rim glow, dropped and said.
+	// A Fresnel in the emissive is a rim glow (F4): a color times a Fresnel is carried by the rim key; one it cannot carry is dropped.
 	const FMantleMaterialAnalysis Rim = FMantlePlaceAssets::AnalyzeMaterial(NewAdditive(false, FLinearColor::White, true));
-	TestTrue(TEXT("a Fresnel in the emissive is a rim"), Rim.Fidelity2.bAdditiveRim);
+	TestTrue(TEXT("a Fresnel times a color is a rim the key carries"), Rim.Fidelity2.Rim.bFound);
+	TestFalse(TEXT("so it is not dropped"), Rim.Fidelity2.bAdditiveRim);
+	const FMantleMaterialAnalysis Dropped = FMantlePlaceAssets::AnalyzeMaterial(NewDroppedRim());
+	TestFalse(TEXT("a Fresnel times the vertex color is not carried"), Dropped.Fidelity2.Rim.bFound);
+	TestTrue(TEXT("so it is dropped"), Dropped.Fidelity2.bAdditiveRim);
 	UMaterial* Plain = NewAdditive(false, FLinearColor::White);
 	TestFalse(TEXT("no Fresnel, no rim"), FMantleGlowMaterial::HasFresnel(&Plain->GetEditorOnlyData()->EmissiveColor));
 	TestFalse(TEXT("nothing connected, no rim"), FMantleGlowMaterial::HasFresnel(nullptr));
@@ -451,7 +486,9 @@ bool FMantleGlowAdditiveAnalysisTest::RunTest(const FString& Parameters)
 		return Issues.ContainsByPredicate([Phrase](const FMantleValidationIssue& Issue) { return Issue.Problem.Contains(Phrase); });
 	};
 	TestTrue(TEXT("a lit additive material is warned about"), Says(NewAdditive(false, FLinearColor::White), TEXT("lit additive")));
-	TestTrue(TEXT("a rim is warned about"), Says(NewAdditive(true, FLinearColor::White, true), TEXT("Fresnel rim glow")));
+	TestFalse(TEXT("a carried rim is not warned about"), Says(NewAdditive(true, FLinearColor::White, true), TEXT("Fresnel")));
+	TestTrue(TEXT("a dropped rim is warned about, with its reason"),
+		Says(NewDroppedRim(), TEXT("its Fresnel rim glow is dropped because the rim is multiplied by a texture or another value that changes across the surface")));
 	TestFalse(TEXT("an unlit additive material is not"), Says(NewAdditive(true, FLinearColor::White), TEXT("additive")));
 	return true;
 }
@@ -662,14 +699,241 @@ bool FMantleGlowAdditiveCoverageTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("and that additive blending is recognized"), Example->Detail.Contains(TEXT("additive blending")));
 		}
 	}
-	// A rim glow is dropped, and said.
+	// A rim glow the rim key carries is kept, and said (F4).
 	{
 		FMantleCoverage Coverage;
-		const FMantleCoverageExample* Example = SurveyExample(NewAdditive(true, FLinearColor::White, true), Coverage, EMantleCoverageOutcome::Approximated);
-		if (TestNotNull(TEXT("a rimmed additive material is approximated"), Example))
+		const FMantleCoverageExample* Example = SurveyExample(NewAdditive(true, FLinearColor::White, true), Coverage, EMantleCoverageOutcome::Kept);
+		if (TestNotNull(TEXT("an additive material with a carried rim is kept"), Example))
 		{
-			TestTrue(TEXT("it says the rim is dropped"), Example->Detail.Contains(TEXT("Fresnel rim glow dropped")));
+			TestTrue(TEXT("it lists the rim glow"), Example->Detail.Contains(TEXT("Fresnel rim glow (brightest where the surface is seen edge-on)")));
 		}
+	}
+	// One it cannot carry is dropped, with its reason.
+	{
+		FMantleCoverage Coverage;
+		const FMantleCoverageExample* Example = SurveyExample(NewDroppedRim(), Coverage, EMantleCoverageOutcome::Approximated);
+		if (TestNotNull(TEXT("an additive material with a dropped rim is approximated"), Example))
+		{
+			TestTrue(TEXT("it says the rim is dropped, and why"), Example->Detail.Contains(TEXT("Fresnel rim glow dropped (the rim is multiplied by a texture")));
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleGlowRimReadTest,
+	"Mantle.Editor.Glow.RimIsRead",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleGlowRimReadTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleGlowMaterialTestPrivate;
+	auto Emissive = [](UMaterial* Material, UMaterialExpression* Node) { Material->GetEditorOnlyData()->EmissiveColor.Connect(0, Node); };
+
+	// Bay A12's material: a lit additive Fresnel (exponent 3, base reflect 0.04) times (0.1, 2, 3). The bake holds 0.04 of the color;
+	// the rim is the other 0.96, at power 3.
+	{
+		UMaterial* Material = NewAdditive(false, FLinearColor::Black);
+		Emissive(Material, AddMultiply(Material, AddFresnel(Material, 3.0f), AddColor(Material, FLinearColor(0.1f, 2.0f, 3.0f))));
+		const FMantleRimGlow Rim = RimOf(Material);
+		TestTrue(TEXT("a color times a Fresnel is a rim"), Rim.bFound);
+		TestEqual(TEXT("red is 0.96 of the color"), Rim.Color[0], 0.096, 1.0e-6);
+		TestEqual(TEXT("green passes 1"), Rim.Color[1], 1.92, 1.0e-6);
+		TestEqual(TEXT("blue"), Rim.Color[2], 2.88, 1.0e-6);
+		TestEqual(TEXT("its power is the exponent"), Rim.Power, 3.0, 1.0e-6);
+		TestFalse(TEXT("no Normal pin"), Rim.bNormalPin);
+	}
+	// A base reflect fraction of 0.2: the rim is 0.8 of the color.
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor::Black);
+		Emissive(Material, AddMultiply(Material, AddColor(Material, FLinearColor(1.0f, 0.5f, 0.0f)), AddFresnel(Material, 5.0f, 0.2f)));
+		const FMantleRimGlow Rim = RimOf(Material);
+		TestTrue(TEXT("found"), Rim.bFound);
+		TestEqual(TEXT("0.8 of red"), Rim.Color[0], 0.8, 1.0e-6);
+		TestEqual(TEXT("0.8 of green"), Rim.Color[1], 0.4, 1.0e-6);
+	}
+	// The force-field bubble (bay A12b): Lerp(dim, bright, Fresnel 5, base reflect 0.1) is dim + (bright - dim) x Fresnel.
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor::Black);
+		UMaterialExpressionLinearInterpolate* Mix = AddNode<UMaterialExpressionLinearInterpolate>(Material);
+		Mix->A.Connect(0, AddColor(Material, FLinearColor(0.02f, 0.08f, 0.12f)));
+		Mix->B.Connect(0, AddColorParameter(Material, TEXT("EdgeColor"), FLinearColor(0.2f, 0.9f, 1.0f)));
+		Mix->Alpha.Connect(0, AddFresnel(Material, 5.0f, 0.1f));
+		Emissive(Material, Mix);
+		const FMantleRimGlow Rim = RimOf(Material);
+		TestTrue(TEXT("a Lerp by a Fresnel is a rim"), Rim.bFound);
+		TestEqual(TEXT("(bright - dim) x 0.9, green"), Rim.Color[1], (0.9 - 0.08) * 0.9, 1.0e-6);
+		TestEqual(TEXT("blue"), Rim.Color[2], (1.0 - 0.12) * 0.9, 1.0e-6);
+		TestEqual(TEXT("power 5"), Rim.Power, 5.0, 1.0e-6);
+	}
+	// A Fresnel in the opacity (bay A12c): additive adds emissive x opacity, so the rim is the color times the Fresnel's part.
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor(0.0f, 0.5f, 1.0f));
+		Material->GetEditorOnlyData()->Opacity.Connect(0, AddFresnel(Material, 4.0f, 0.0f));
+		const FMantleRimGlow Rim = RimOf(Material);
+		TestTrue(TEXT("a Fresnel opacity is a rim"), Rim.bFound);
+		TestEqual(TEXT("green"), Rim.Color[1], 0.5, 1.0e-6);
+		TestEqual(TEXT("blue"), Rim.Color[2], 1.0, 1.0e-6);
+		TestEqual(TEXT("power 4"), Rim.Power, 4.0, 1.0e-6);
+	}
+	// A texture beside the rim (a pattern plus an edge glow) is the bake's; the rim is still read. Its exponent from a Scalar Parameter.
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor::Black);
+		UMaterialExpressionFresnel* Fresnel = AddFresnel(Material);
+		Fresnel->ExponentIn.Connect(0, AddNumberParameter(Material, TEXT("RimPower"), 8.0f));
+		UMaterialExpressionAdd* Sum = AddNode<UMaterialExpressionAdd>(Material);
+		Sum->A.Connect(0, AddNode<UMaterialExpressionTextureSample>(Material));
+		Sum->B.Connect(0, AddMultiply(Material, Fresnel, AddNumber(Material, 2.0f)));
+		Emissive(Material, Sum);
+		const FMantleRimGlow Rim = RimOf(Material);
+		TestTrue(TEXT("a texture added beside the rim leaves it readable"), Rim.bFound);
+		TestEqual(TEXT("its rim is 2 x 0.96"), Rim.Color[0], 1.92, 1.0e-6);
+		TestEqual(TEXT("its power from the parameter"), Rim.Power, 8.0, 1.0e-6);
+	}
+	// The Normal pin wired: still read, and said.
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor::Black);
+		UMaterialExpressionFresnel* Fresnel = AddFresnel(Material);
+		Fresnel->Normal.Connect(0, AddColor(Material, FLinearColor(0.0f, 0.0f, 1.0f)));
+		Emissive(Material, AddMultiply(Material, Fresnel, AddColor(Material, FLinearColor::White)));
+		const FMantleRimGlow Rim = RimOf(Material);
+		TestTrue(TEXT("a Fresnel with a Normal input is read"), Rim.bFound);
+		TestTrue(TEXT("and its Normal pin is noted"), Rim.bNormalPin);
+	}
+
+	// What the key cannot carry, each with its own reason.
+	auto Dropped = [this](const TCHAR* What, UMaterial* Material, const TCHAR* Reason)
+	{
+		const FMantleRimGlow Rim = RimOf(Material);
+		TestFalse(FString::Printf(TEXT("%s is not carried"), What), Rim.bFound);
+		TestTrue(FString::Printf(TEXT("%s says why (%s): %s"), What, Reason, *Rim.Why), Rim.Why.Contains(Reason));
+	};
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor::Black);
+		Emissive(Material, AddMultiply(Material, AddFresnel(Material), AddNode<UMaterialExpressionTextureSample>(Material)));
+		Dropped(TEXT("a Fresnel times a texture (a scanline hologram)"), Material, TEXT("the rim is multiplied by a texture"));
+	}
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor::Black);
+		UMaterialExpressionOneMinus* Inverse = AddNode<UMaterialExpressionOneMinus>(Material);
+		Inverse->Input.Connect(0, AddFresnel(Material));
+		Emissive(Material, AddMultiply(Material, Inverse, AddColor(Material, FLinearColor::White)));
+		Dropped(TEXT("1 - Fresnel"), Material, TEXT("its edges are darker than its face"));
+	}
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor::Black);
+		UMaterialExpressionMaterialFunctionCall* Call = AddNode<UMaterialExpressionMaterialFunctionCall>(Material);
+		Call->MaterialFunction = LoadObject<UMaterialFunctionInterface>(nullptr, TEXT("/Engine/Functions/Engine_MaterialFunctions02/Fresnel_Function.Fresnel_Function"));
+		TestNotNull(TEXT("the engine's Fresnel_Function loads"), Call->MaterialFunction.Get());
+		Emissive(Material, AddMultiply(Material, Call, AddColor(Material, FLinearColor::White)));
+		Dropped(TEXT("the Fresnel_Function"), Material, TEXT("its Fresnel is inside a material function (Fresnel_Function)"));
+	}
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor::Black);
+		UMaterialExpressionAdd* Sum = AddNode<UMaterialExpressionAdd>(Material);
+		Sum->A.Connect(0, AddMultiply(Material, AddFresnel(Material, 3.0f), AddColor(Material, FLinearColor::White)));
+		Sum->B.Connect(0, AddMultiply(Material, AddFresnel(Material, 8.0f), AddColor(Material, FLinearColor::Red)));
+		Dropped(TEXT("two Fresnels of different exponents"), Material, TEXT("two Fresnels with different settings"));
+	}
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor::Black);
+		UMaterialExpressionFresnel* Fresnel = AddFresnel(Material);
+		Fresnel->ExponentIn.Connect(0, AddNode<UMaterialExpressionVertexColor>(Material));
+		Emissive(Material, AddMultiply(Material, Fresnel, AddColor(Material, FLinearColor::White)));
+		Dropped(TEXT("an exponent that changes"), Material, TEXT("exponent is not a constant"));
+	}
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor::White, true);
+		Material->GetEditorOnlyData()->Opacity.Connect(0, AddNode<UMaterialExpressionTextureSample>(Material));
+		Dropped(TEXT("a textured opacity"), Material, TEXT("its opacity changes across the surface"));
+	}
+
+	// No Fresnel, nothing to read or say.
+	const FMantleRimGlow None = RimOf(NewAdditive(true, FLinearColor::White));
+	TestFalse(TEXT("no Fresnel, no rim"), None.bFound);
+	TestTrue(TEXT("and nothing to say"), None.Why.IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleGlowRimDocumentTest,
+	"Mantle.Editor.Glow.RimPublishes",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleGlowRimDocumentTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleGlowMaterialTestPrivate;
+
+	// White x Fresnel (5, 0.04), unlit: the bake sees 0.04 of white; the rim key carries the other 0.96.
+	{
+		FMantlePlaceAssetSet Set;
+		const FMantlePlaceMaterialDocument Doc = Convert(NewAdditive(true, FLinearColor::White, true), Baked(TEXT("BLEND"), { 0.04, 0.04, 0.04, 1.0 }, true, {}, 1.0, true), Set);
+		TestTrue(TEXT("the document has a rim"), Doc.bRim);
+		TestEqual(TEXT("its color"), Doc.RimColor[0], 0.96, 1.0e-6);
+		TestEqual(TEXT("strength 1"), Doc.RimStrength, 1.0, 1.0e-6);
+		TestEqual(TEXT("power 5"), Doc.RimPower, 5.0, 1.0e-6);
+		TestEqual(TEXT("the face-on glow is the bake's"), Doc.EmissiveFactor[0], 0.04, 1.0e-6);
+		const FString Json = JsonOf(Doc);
+		TestTrue(FString::Printf(TEXT("it writes the rim: %s"), *Json), Json.Contains(TEXT("\"rim\":{\"color\":[0.96,0.96,0.96],\"strength\":1,\"power\":5}")));
+		FMantlePlaceMaterialDesc Desc;
+		FString Error;
+		const bool bRead = Readable(Json, Desc, Error);
+		TestTrue(FString::Printf(TEXT("the client reads it: %s"), *Error), bRead);
+		TestEqual(TEXT("with its rim strength"), Desc.Rim.Strength, 1.0f);
+		TestEqual(TEXT("and power"), Desc.Rim.Power, 5.0f);
+		TestEqual(TEXT("and color"), Desc.Rim.Color.R, 0.96f, 1.0e-6f);
+
+		// The conversion cache's template keeps it.
+		FMantlePlaceMaterialDocument Back;
+		TestTrue(TEXT("the template reads back"), FMantlePlaceMaterialDocument::FromTemplateJson(Doc.ToTemplateJson(), Back));
+		TestTrue(TEXT("with its rim"), Back.bRim);
+		TestEqual(TEXT("the template is the same text"), Back.ToTemplateJson(), Doc.ToTemplateJson());
+	}
+
+	// Bay A12: lit, (0.1, 2, 3) x Fresnel 3. Its brightest channel is the strength, as the glow's is.
+	{
+		UMaterial* Material = NewAdditive(false, FLinearColor::Black);
+		Material->GetEditorOnlyData()->EmissiveColor.Connect(0, AddMultiply(Material, AddFresnel(Material, 3.0f), AddColor(Material, FLinearColor(0.1f, 2.0f, 3.0f))));
+		FMantlePlaceAssetSet Set;
+		const FMantlePlaceMaterialDocument Doc = Convert(Material, Baked(TEXT("BLEND"), { 0.0, 0.0, 0.0, 1.0 }, false, { 0.004, 0.08, 0.12 }, 1.0, false), Set);
+		TestTrue(TEXT("a rim"), Doc.bRim);
+		TestEqual(TEXT("strength is the brightest channel"), Doc.RimStrength, 2.88, 1.0e-6);
+		TestEqual(TEXT("blue is 1"), Doc.RimColor[2], 1.0, 1.0e-6);
+		TestEqual(TEXT("green is 1.92 / 2.88"), Doc.RimColor[1], 1.92 / 2.88, 1.0e-6);
+		TestEqual(TEXT("power 3"), Doc.RimPower, 3.0, 1.0e-6);
+	}
+
+	// A dropped rim writes no rim key.
+	{
+		FMantlePlaceAssetSet Set;
+		const FMantlePlaceMaterialDocument Doc = Convert(NewDroppedRim(), Baked(TEXT("BLEND"), { 0.04, 0.04, 0.04, 1.0 }, true, {}, 1.0, true), Set);
+		TestFalse(TEXT("no rim"), Doc.bRim);
+		TestFalse(TEXT("none written"), JsonOf(Doc).Contains(TEXT("\"rim\"")));
+	}
+
+	// An older client (no materialAdditive) gets blend, which has no rim.
+	{
+		FMantlePlaceAssetSet Set;
+		FMantlePlaceMaterialDocument Doc = Convert(NewAdditive(true, FLinearColor::White, true), Baked(TEXT("BLEND"), { 0.04, 0.04, 0.04, 1.0 }, true, {}, 1.0, true), Set);
+		TestTrue(TEXT("downgraded"), FMantleTargetFeatures::None().DowngradeMaterial(Doc));
+		TestFalse(TEXT("with no rim"), Doc.bRim);
+		TestFalse(TEXT("and none written"), JsonOf(Doc).Contains(TEXT("\"rim\"")));
+	}
+
+	// Only an additive material with a Fresnel changes its cache key.
+	{
+		const FMantleFlattenSettings Settings;
+		const FMantlePlaceAssetLimits Limits;
+		const FMantleBakeSurface Plain;
+		auto Salt = [&](UMaterial* Material) { return FMantlePlaceAssetConverter::MaterialCacheSalt(TEXT("flattener"), Settings, Limits, Material, false, Plain); };
+		TestTrue(TEXT("an additive Fresnel material's key has the rim tag"), Salt(NewAdditive(true, FLinearColor::White, true)).Contains(TEXT(" additiverim=1")));
+		UMaterial* InOpacity = NewAdditive(true, FLinearColor::White);
+		InOpacity->GetEditorOnlyData()->Opacity.Connect(0, AddFresnel(InOpacity));
+		TestTrue(TEXT("so does one with a Fresnel opacity"), Salt(InOpacity).Contains(TEXT(" additiverim=1")));
+		TestFalse(TEXT("an additive material without a Fresnel keeps its key"), Salt(NewAdditive(true, FLinearColor::White)).Contains(TEXT("additiverim")));
+		UMaterial* Translucent = NewUnlitTranslucent();
+		Translucent->GetEditorOnlyData()->EmissiveColor.Connect(0, AddMultiply(Translucent, AddFresnel(Translucent), AddColor(Translucent, FLinearColor::White)));
+		TestFalse(TEXT("a translucent Fresnel material keeps its key"), Salt(Translucent).Contains(TEXT("additiverim")));
 	}
 	return true;
 }

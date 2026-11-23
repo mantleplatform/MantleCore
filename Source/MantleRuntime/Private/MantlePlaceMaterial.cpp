@@ -180,7 +180,7 @@ namespace MantlePlaceMaterialPrivate
 		TEXT("metallicFactor"), TEXT("roughnessFactor"), TEXT("emissiveFactor"), TEXT("emissiveStrength"), TEXT("uvScale"),
 		TEXT("uvOffset"), TEXT("textures"), TEXT("shading"), TEXT("carPaint"), TEXT("uvTransforms"), TEXT("normalScale"),
 		TEXT("occlusionStrength"), TEXT("occlusionUV"), TEXT("vertexColor"), TEXT("uvPanning"), TEXT("wind"),
-		TEXT("worldAligned"), TEXT("layerBlend"), TEXT("foliage"), TEXT("water"),
+		TEXT("worldAligned"), TEXT("layerBlend"), TEXT("foliage"), TEXT("water"), TEXT("rim"),
 	};
 
 	const TCHAR* const CarPaintKeys[] = {
@@ -217,6 +217,13 @@ namespace MantlePlaceMaterialPrivate
 	const TCHAR* const FoliageKeys[] = {
 		TEXT("tint"), TEXT("strength"), TEXT("vertexColorWeight"),
 	};
+
+	const TCHAR* const RimKeys[] = {
+		TEXT("color"), TEXT("strength"), TEXT("power"),
+	};
+
+	/** The schema's rim.power maximum. */
+	constexpr double MaxRimPower = 64.0;
 
 	/** The schema's foliage.strength maximum. */
 	constexpr double MaxFoliageStrength = 4.0;
@@ -968,6 +975,49 @@ bool FMantlePlaceMaterials::ParseMaterial(const TConstArrayView<uint8> Bytes, FM
 		}
 		Desc.bHasFoliage = true;
 	}
+	// The rim glow (F4): additive only, its color, strength and power all required.
+	if (const TSharedPtr<FJsonValue> Field = Root->TryGetField(TEXT("rim")))
+	{
+		if (Desc.AlphaMode != EMantlePlaceAlphaMode::Additive)
+		{
+			return FailMaterial(Out, OutError, TEXT("/rim is only allowed when alphaMode is additive"));
+		}
+		if (Field->Type != EJson::Object || !Field->AsObject().IsValid())
+		{
+			return FailMaterial(Out, OutError, TEXT("/rim must be an object"));
+		}
+		const TSharedPtr<FJsonObject> Rim = Field->AsObject();
+		for (const auto& Pair : Rim->Values)
+		{
+			const FString Key(Pair.Key.ToView());
+			if (!IsOneOf(Key, RimKeys))
+			{
+				return FailMaterial(Out, OutError, FString::Printf(TEXT("/rim/%s is not a rim property"), *Key));
+			}
+		}
+		const TSharedPtr<FJsonValue> Color = Rim->TryGetField(TEXT("color"));
+		const TSharedPtr<FJsonValue> Strength = Rim->TryGetField(TEXT("strength"));
+		const TSharedPtr<FJsonValue> Power = Rim->TryGetField(TEXT("power"));
+		if (!Color.IsValid() || !Strength.IsValid() || !Power.IsValid())
+		{
+			return FailMaterial(Out, OutError, TEXT("/rim needs color, strength and power"));
+		}
+		if (!ReadRangedArray(Color, 3, 0.0, 1.0, Values, Why))
+		{
+			return FailMaterial(Out, OutError, TEXT("/rim/color ") + Why);
+		}
+		Desc.Rim.Color = FLinearColor(static_cast<float>(Values[0]), static_cast<float>(Values[1]), static_cast<float>(Values[2]), 1.0f);
+		if (!ReadRangedNumber(Strength, 0.0, 100.0, Number, Why))
+		{
+			return FailMaterial(Out, OutError, TEXT("/rim/strength ") + Why);
+		}
+		Desc.Rim.Strength = static_cast<float>(Number);
+		if (!ReadRangedNumber(Power, 0.0, MaxRimPower, Number, Why))
+		{
+			return FailMaterial(Out, OutError, TEXT("/rim/power ") + Why);
+		}
+		Desc.Rim.Power = static_cast<float>(Number);
+	}
 	// Water shading, on a master of its own; it stands alone.
 	if (const TSharedPtr<FJsonValue> Field = Root->TryGetField(TEXT("water")))
 	{
@@ -1578,6 +1628,12 @@ void FMantlePlaceMaterials::ApplyExtended(UMaterialInstanceDynamic* Instance, co
 		Instance->SetVectorParameterValue(P::LayerBaseColorFactor, FLinearColor(Factor.R, Factor.G, Factor.B, 1.0f));
 		break;
 	}
+	case EMantlePlaceExtendedVariant::Additive:
+		// The rim glow, under the Additive instances' AdditiveRim switch; a document with no rim key adds nothing (black).
+		Instance->SetVectorParameterValue(P::RimColor, FLinearColor(Desc.Rim.Color.R, Desc.Rim.Color.G, Desc.Rim.Color.B, 1.0f));
+		Instance->SetScalarParameterValue(P::RimStrength, Desc.Rim.Strength);
+		Instance->SetScalarParameterValue(P::RimPower, Desc.Rim.Power);
+		break;
 	case EMantlePlaceExtendedVariant::Foliage:
 	case EMantlePlaceExtendedVariant::Plain:
 	default:

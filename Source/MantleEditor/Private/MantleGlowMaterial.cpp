@@ -3,13 +3,19 @@
 
 #include "Materials/Material.h"
 #include "Materials/MaterialExpression.h"
+#include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
+#include "Materials/MaterialExpressionConstant4Vector.h"
+#include "Materials/MaterialExpressionDivide.h"
 #include "Materials/MaterialExpressionFresnel.h"
 #include "Materials/MaterialExpressionFunctionInput.h"
 #include "Materials/MaterialExpressionFunctionOutput.h"
+#include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionOneMinus.h"
+#include "Materials/MaterialExpressionSubtract.h"
 #include "Materials/MaterialExpressionReroute.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionSceneColor.h"
@@ -389,6 +395,312 @@ namespace MantleGlowMaterialPrivate
 		}
 		return false;
 	}
+
+	/** Why a rim is dropped when what multiplies its Fresnel is not one constant (F4). */
+	const TCHAR* const RimVaries = TEXT("the rim is multiplied by a texture or another value that changes across the surface, and Mantle's rim glow is one flat color");
+
+	/** One value of an additive output as the rim reader sees it (F4): Base + K x F with F the Fresnel, or a known constant, or neither. */
+	struct FRimValue
+	{
+		/** The value depends on the Fresnel; K is what multiplies it (the rest, Base, is the bake's). */
+		bool bFresnel = false;
+		double K[3] = { 0.0, 0.0, 0.0 };
+
+		/** Without bFresnel: the value is one known constant, C, all over the surface. */
+		bool bConstant = false;
+		double C[3] = { 0.0, 0.0, 0.0 };
+
+		static FRimValue Constant(const double Value)
+		{
+			FRimValue Out;
+			Out.bConstant = true;
+			Out.C[0] = Out.C[1] = Out.C[2] = Value;
+			return Out;
+		}
+	};
+
+	/** Reads an additive output as Base + K x F (FMantleGlowMaterial::ReadRim). The first reason it cannot is kept in Why. */
+	struct FRimReader
+	{
+		const UMaterialInterface* Context = nullptr;
+		const UMaterialExpressionFresnel* Fresnel = nullptr;
+		double Exponent = 5.0;
+		double BaseReflect = 0.04;
+		bool bNormalPin = false;
+		FString Why;
+		int32 Budget = NodeBudget;
+		TMap<const UMaterialExpression*, bool> FresnelBelow;
+
+		bool Fail(const FString& Reason)
+		{
+			if (Why.IsEmpty())
+			{
+				Why = Reason;
+			}
+			return false;
+		}
+
+		/** Whether the node Input reads has a Fresnel at or below it (into the functions it calls), remembered per node. */
+		bool ReachesFresnel(const FExpressionInput* Input, const UMaterialExpression* Expression)
+		{
+			if (const bool* Known = FresnelBelow.Find(Expression))
+			{
+				return *Known;
+			}
+			FGraphScan Scan;
+			Scan.ScanInput(Input, 0);
+			FresnelBelow.Add(Expression, Scan.bFresnel);
+			return Scan.bFresnel;
+		}
+
+		/** A constant node's value at Output (0 the color, 1..3 one channel, 4 alpha), as Context sets it. */
+		bool ConstantOf(const UMaterialExpression* Expression, const int32 Output, double (&Out)[3]) const
+		{
+			double Scalar = 0.0;
+			if (ScalarOf(Expression, Context, Scalar))
+			{
+				Out[0] = Out[1] = Out[2] = Scalar;
+				return true;
+			}
+			FLinearColor Color;
+			if (!ColorOf(Expression, Context, Color))
+			{
+				const UMaterialExpressionConstant4Vector* Four = Cast<UMaterialExpressionConstant4Vector>(Expression);
+				if (!Four)
+				{
+					return false;
+				}
+				Color = Four->Constant;
+			}
+			if (Output == 0)
+			{
+				Out[0] = Color.R;
+				Out[1] = Color.G;
+				Out[2] = Color.B;
+				return true;
+			}
+			if (Output < 1 || Output > 4)
+			{
+				return false;
+			}
+			const float Channel = Output == 1 ? Color.R : Output == 2 ? Color.G : Output == 3 ? Color.B : Color.A;
+			Out[0] = Out[1] = Out[2] = Channel;
+			return true;
+		}
+
+		/** A scalar pin of the Fresnel node: its constant (or Scalar Parameter) when wired, else Default. */
+		bool FresnelSetting(const FExpressionInput& Pin, const float Default, double& Out) const
+		{
+			if (!Pin.Expression)
+			{
+				Out = Default;
+				return true;
+			}
+			int32 Output = 0;
+			double Value[3];
+			const UMaterialExpression* Expression = ThroughPin(&Pin, Output);
+			if (!Expression || !ConstantOf(Expression, Output, Value))
+			{
+				return false;
+			}
+			Out = Value[0];
+			return true;
+		}
+
+		bool ReadFresnel(const UMaterialExpressionFresnel* Node, FRimValue& Out)
+		{
+			double NodeExponent = 0.0;
+			double NodeBaseReflect = 0.0;
+			if (!FresnelSetting(Node->ExponentIn, Node->Exponent, NodeExponent))
+			{
+				return Fail(TEXT("its Fresnel's exponent is not a constant"));
+			}
+			if (!FresnelSetting(Node->BaseReflectFractionIn, Node->BaseReflectFraction, NodeBaseReflect))
+			{
+				return Fail(TEXT("its Fresnel's base reflect fraction is not a constant"));
+			}
+			if (Fresnel && Fresnel != Node && (!FMath::IsNearlyEqual(Exponent, NodeExponent) || !FMath::IsNearlyEqual(BaseReflect, NodeBaseReflect)))
+			{
+				return Fail(TEXT("it has two Fresnels with different settings, and Mantle's rim glow has one"));
+			}
+			Fresnel = Node;
+			Exponent = NodeExponent;
+			BaseReflect = NodeBaseReflect;
+			bNormalPin = bNormalPin || Node->Normal.Expression != nullptr;
+			Out = FRimValue();
+			Out.bFresnel = true;
+			Out.K[0] = Out.K[1] = Out.K[2] = 1.0;
+			return true;
+		}
+
+		/** A pin with nothing connected reads Fallback (a node's ConstA, ConstB or ConstAlpha). */
+		bool Read(const FExpressionInput* Input, const double Fallback, FRimValue& Out)
+		{
+			if (!Input || !Input->Expression)
+			{
+				Out = FRimValue::Constant(Fallback);
+				return true;
+			}
+			return Read(Input, Out);
+		}
+
+		bool Read(const FExpressionInput* Input, FRimValue& Out)
+		{
+			Out = FRimValue();
+			if (--Budget < 0)
+			{
+				return Fail(TEXT("its glow graph is too large to read"));
+			}
+			int32 Pin = 0;
+			const UMaterialExpression* Expression = ThroughPin(Input, Pin);
+			if (!Expression)
+			{
+				Out = FRimValue::Constant(0.0);
+				return true;
+			}
+			if (!ReachesFresnel(Input, Expression))
+			{
+				Out.bConstant = ConstantOf(Expression, Pin, Out.C);
+				return true;
+			}
+			if (const UMaterialExpressionFresnel* Node = Cast<UMaterialExpressionFresnel>(Expression))
+			{
+				return ReadFresnel(Node, Out);
+			}
+			FRimValue A;
+			FRimValue B;
+			if (const UMaterialExpressionMultiply* Multiply = Cast<UMaterialExpressionMultiply>(Expression))
+			{
+				return Read(&Multiply->A, Multiply->ConstA, A) && Read(&Multiply->B, Multiply->ConstB, B) && Product(A, B, Out);
+			}
+			if (const UMaterialExpressionDivide* Divide = Cast<UMaterialExpressionDivide>(Expression))
+			{
+				if (!Read(&Divide->A, Divide->ConstA, A) || !Read(&Divide->B, Divide->ConstB, B))
+				{
+					return false;
+				}
+				if (B.bFresnel)
+				{
+					return Fail(TEXT("its glow is divided by a Fresnel"));
+				}
+				if (!B.bConstant || B.C[0] == 0.0 || B.C[1] == 0.0 || B.C[2] == 0.0)
+				{
+					return Fail(RimVaries);
+				}
+				Out.bFresnel = true;
+				for (int32 Channel = 0; Channel < 3; ++Channel)
+				{
+					Out.K[Channel] = A.K[Channel] / B.C[Channel];
+				}
+				return true;
+			}
+			const UMaterialExpressionAdd* Add = Cast<UMaterialExpressionAdd>(Expression);
+			const UMaterialExpressionSubtract* Subtract = Cast<UMaterialExpressionSubtract>(Expression);
+			if (Add || Subtract)
+			{
+				// Whatever has no Fresnel is the bake's (its K is 0), so a texture beside the rim is fine.
+				const bool bRead = Add ? Read(&Add->A, Add->ConstA, A) && Read(&Add->B, Add->ConstB, B)
+					: Read(&Subtract->A, Subtract->ConstA, A) && Read(&Subtract->B, Subtract->ConstB, B);
+				if (!bRead)
+				{
+					return false;
+				}
+				Out.bFresnel = true;
+				for (int32 Channel = 0; Channel < 3; ++Channel)
+				{
+					Out.K[Channel] = Add ? A.K[Channel] + B.K[Channel] : A.K[Channel] - B.K[Channel];
+				}
+				return true;
+			}
+			if (const UMaterialExpressionOneMinus* OneMinus = Cast<UMaterialExpressionOneMinus>(Expression))
+			{
+				if (!Read(&OneMinus->Input, 0.0, A))
+				{
+					return false;
+				}
+				Out.bFresnel = true;
+				for (int32 Channel = 0; Channel < 3; ++Channel)
+				{
+					Out.K[Channel] = -A.K[Channel];
+				}
+				return true;
+			}
+			if (const UMaterialExpressionLinearInterpolate* Lerp = Cast<UMaterialExpressionLinearInterpolate>(Expression))
+			{
+				FRimValue Alpha;
+				if (!Read(&Lerp->A, Lerp->ConstA, A) || !Read(&Lerp->B, Lerp->ConstB, B) || !Read(&Lerp->Alpha, Lerp->ConstAlpha, Alpha))
+				{
+					return false;
+				}
+				Out.bFresnel = true;
+				if (Alpha.bFresnel)
+				{
+					// A + (B - A) x Alpha: the rim is (B - A) times the Fresnel's part of Alpha.
+					if (A.bFresnel || B.bFresnel)
+					{
+						return Fail(TEXT("it blends a Fresnel by a Fresnel"));
+					}
+					if (!A.bConstant || !B.bConstant)
+					{
+						return Fail(RimVaries);
+					}
+					for (int32 Channel = 0; Channel < 3; ++Channel)
+					{
+						Out.K[Channel] = (B.C[Channel] - A.C[Channel]) * Alpha.K[Channel];
+					}
+					return true;
+				}
+				if (!Alpha.bConstant)
+				{
+					return Fail(RimVaries);
+				}
+				for (int32 Channel = 0; Channel < 3; ++Channel)
+				{
+					Out.K[Channel] = A.K[Channel] * (1.0 - Alpha.C[Channel]) + B.K[Channel] * Alpha.C[Channel];
+				}
+				return true;
+			}
+			if (const UMaterialExpressionMaterialFunctionCall* Call = Cast<UMaterialExpressionMaterialFunctionCall>(Expression))
+			{
+				return Fail(FString::Printf(TEXT("its Fresnel is inside a material function (%s), which Mantle does not read"),
+					Call->MaterialFunction ? *Call->MaterialFunction->GetName() : TEXT("none set")));
+			}
+			FString Kind = Expression->GetClass()->GetName();
+			Kind.RemoveFromStart(TEXT("MaterialExpression"));
+			return Fail(FString::Printf(TEXT("its Fresnel goes through a %s node, which Mantle does not read"), *Kind));
+		}
+
+		/** A x B, one of them the Fresnel's and the other a constant. */
+		bool Product(const FRimValue& A, const FRimValue& B, FRimValue& Out)
+		{
+			Out = FRimValue();
+			if (!A.bFresnel && !B.bFresnel)
+			{
+				Out.bConstant = A.bConstant && B.bConstant;
+				for (int32 Channel = 0; Channel < 3; ++Channel)
+				{
+					Out.C[Channel] = A.C[Channel] * B.C[Channel];
+				}
+				return true;
+			}
+			if (A.bFresnel && B.bFresnel)
+			{
+				return Fail(TEXT("its Fresnel is multiplied by another Fresnel"));
+			}
+			const FRimValue& WithFresnel = A.bFresnel ? A : B;
+			const FRimValue& Other = A.bFresnel ? B : A;
+			if (!Other.bConstant)
+			{
+				return Fail(RimVaries);
+			}
+			Out.bFresnel = true;
+			for (int32 Channel = 0; Channel < 3; ++Channel)
+			{
+				Out.K[Channel] = WithFresnel.K[Channel] * Other.C[Channel];
+			}
+			return true;
+		}
+	};
 }
 
 void FMantleSeeThroughGlass::Glow(double (&Out)[3]) const
@@ -456,6 +768,76 @@ bool FMantleGlowMaterial::HasFresnel(const FExpressionInput* Emissive)
 	FGraphScan Scan;
 	Scan.ScanInput(Emissive, 0);
 	return Scan.bFresnel;
+}
+
+bool FMantleGlowMaterial::ReadRim(const UMaterialInterface* Context, const FExpressionInput* Emissive, const FExpressionInput* Opacity, FMantleRimGlow& Out)
+{
+	using namespace MantleGlowMaterialPrivate;
+
+	Out = FMantleRimGlow();
+	const bool bInGlow = HasFresnel(Emissive);
+	const bool bInOpacity = HasFresnel(Opacity);
+	if (!bInGlow && !bInOpacity)
+	{
+		return false;
+	}
+	if (bInGlow && bInOpacity)
+	{
+		Out.Why = TEXT("it has a Fresnel in both its glow and its opacity, and Mantle's rim glow reads one");
+		return false;
+	}
+
+	// Additive adds emissive x opacity, so the rim is the Fresnel's part of that product.
+	FRimReader Reader;
+	Reader.Context = Context;
+	FRimValue Glow;
+	FRimValue Fade;
+	if (!Reader.Read(Emissive, 0.0, Glow) || !Reader.Read(Opacity, 1.0, Fade))
+	{
+		Out.Why = Reader.Why;
+		return false;
+	}
+	if (bInGlow && !Fade.bConstant)
+	{
+		Out.Why = TEXT("its opacity changes across the surface (a texture), and Mantle's rim glow is one flat color");
+		return false;
+	}
+	FRimValue Total;
+	if (!Reader.Product(Glow, Fade, Total))
+	{
+		Out.Why = Reader.Why;
+		return false;
+	}
+
+	// What the face-on bake lacks: K x (1 - BRF). A base reflect fraction of 1 makes the Fresnel a constant 1, all of it baked.
+	const double Missing = 1.0 - Reader.BaseReflect;
+	double Color[3];
+	bool bDarker = false;
+	bool bAny = false;
+	for (int32 Channel = 0; Channel < 3; ++Channel)
+	{
+		Color[Channel] = Total.K[Channel] * Missing;
+		bDarker = bDarker || Color[Channel] < -1e-6;
+		bAny = bAny || Color[Channel] > 1e-6;
+	}
+	if (bDarker)
+	{
+		Out.Why = TEXT("its edges are darker than its face (a 1 - Fresnel, or a fade toward the edges), and Mantle's rim glow can only brighten them");
+		return false;
+	}
+	if (!bAny || !FMath::IsFinite(Reader.Exponent))
+	{
+		// Nothing past the face-on value: the bake holds all of it, and nothing is lost.
+		return false;
+	}
+	for (int32 Channel = 0; Channel < 3; ++Channel)
+	{
+		Out.Color[Channel] = FMath::Max(Color[Channel], 0.0);
+	}
+	Out.Power = Reader.Exponent;
+	Out.bNormalPin = Reader.bNormalPin;
+	Out.bFound = true;
+	return true;
 }
 
 bool FMantleMaterialGlow::Read(const UMaterialInterface* Material, FMantleMaterialGlow& Out)
