@@ -4782,7 +4782,7 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 	case EMantleMaterialLoss::WorldPositionOffset:
 		return TEXT("world position offset (wind or vertex animation) is dropped, so the mesh will not sway or move (only the engine's SimpleGrassWind with constant intensity and speed is kept).");
 	case EMantleMaterialLoss::WorldAligned:
-		return TEXT("world-aligned or triplanar mapping is baked as one 4 m tile that repeats by world position, so patterns larger than 4 m repeat and may show faint seams (the engine's WorldAlignedTexture and WorldAlignedNormal straight into an opaque material's outputs, with constant sizes, are kept exactly; a see-through material is baked onto the mesh's own UVs).");
+		return TEXT("world-aligned or triplanar mapping is baked as one 4 m tile that repeats by world position, so patterns larger than 4 m repeat and may show faint seams (the engine's WorldAlignedTexture and WorldAlignedNormal are kept exactly when their XYZ Texture output goes straight into an opaque material's outputs with constant sizes; their XY Texture and Z Texture outputs are baked like this; a see-through material is baked onto the mesh's own UVs).");
 	case EMantleMaterialLoss::Refraction:
 		return TEXT("refraction is approximated: it publishes as smooth, tinted glass that is a little more reflective and opaque (by its index of refraction), but the scene behind it is not bent.");
 	case EMantleMaterialLoss::Subsurface:
