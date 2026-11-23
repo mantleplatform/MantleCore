@@ -167,7 +167,7 @@ struct MANTLERUNTIME_API FMantleCellStreamSettings
 	 * How far a player's machine builds collision: 256 m, the player's 256 m cell and its neighbors (big-map step 2: collision cost 1.1 to 1.4 GB per 100k solid things
 	 * at 600 m). A dedicated server keeps every cell's collision, so this changes nothing on a server or in a server script.
 	 */
-	static constexpr double ClientCollisionReachCm = 25600.0;
+	static constexpr double ClientCollisionReachCm = 38400.0;
 	/** Set by the streamer with ReachScale (never by the owner): the View Distance setting's scale, the player's raised ring (cm, 0 = none) and how much of it the ladder leaves (RingReach). */
 	double RingViewScale = 1.0;
 	double RaisedReachCm = 0.0;
