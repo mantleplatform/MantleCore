@@ -4216,7 +4216,8 @@ double FMantlePlaceAssetConverter::CoverageCutoff(const TArray<FColor>& Pixels)
 }
 
 FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& InSettings, const FMantlePlaceAssetLimits& InLimits,
-	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface, const bool bOpaqueInDisguise, const bool bOpacityAsMask)
+	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface, const bool bOpaqueInDisguise,
+	const bool bScrollingTint, const bool bOpacityAsMask)
 {
 	// #628: a per-instance node is baked at a representative value; the salt keeps an earlier bake (which read it as 0) from standing in.
 	// A bake on anything but the plain surface (a vertex color, a landscape's UV range) adds its tag, so a different color is not served
@@ -4224,6 +4225,8 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	// A translucent material whose opacity is always 1 publishes opaque: an earlier conversion of it (as see-through) must not stand in.
 	// A masked material never publishes a cut-off of 0 (ResolveMaskCutoff): an earlier conversion that did must not stand in. Only a
 	// masked material's conversion changed, so only its key does; every other material keeps its bake.
+	// A scrolling texture times a constant tint (F3 case A) now keeps scrolling, with its tint beside the texture: an earlier conversion
+	// of it (frozen at time 0) must not stand in. Only such a material's key changes.
 	const bool bMasked = Material && Material->GetBlendMode() == BLEND_Masked;
 	// A1: a decal material is baked as its surface copy; its earlier bake (blank) must not stand in. Only decal materials' keys change.
 	const UMaterial* Base = Material ? Material->GetMaterial() : nullptr;
@@ -4240,6 +4243,11 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 	if (bOpacityAsMask)
 	{
 		Salt += TEXT(" opacityasmask=2");
+	}
+	// A scrolling texture times a constant tint (F3 case A) keeps scrolling: an earlier conversion of it (frozen) must not stand in.
+	if (bScrollingTint)
+	{
+		Salt += TEXT(" scrollingtint=1");
 	}
 	// A Modulate material publishes as a darkening sheet and an unlit one keeps a glow over 1 as its emissive strength: only those two
 	// kinds changed, so only their keys do. An earlier conversion (a card with opacity 0, a glow clipped to 1) must not stand in.
@@ -4619,7 +4627,7 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	const bool bAdaptiveGBuffer = Substrate::IsSubstrateEnabled() && !Substrate::IsSubstrateBlendableGBufferEnabled(GMaxRHIShaderPlatform);
 	const bool bOpacityAsMask = FMantlePlaceAssets::BakesOpacityAsMask(Material, Analysis, bAdaptiveGBuffer);
 	const FString Salt = MaterialCacheSalt(Flattener->Describe(), Settings, Limits, Material, Analysis.bPerInstanceVariation, Surface, Analysis.bOpaqueInDisguise,
-		bOpacityAsMask);
+		Analysis.Fidelity2.bSourceTint[0] || Analysis.Fidelity2.bSourceTint[3], bOpacityAsMask);
 	FString CacheKey, WhyNot;
 	const bool bCacheable = ComputeCacheKey(Salt, Objects, CacheKey, WhyNot);
 	{
@@ -5095,6 +5103,42 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		}
 		Doc.UvTransforms.Add(FMantlePlaceMaterialDocument::SlotName(Slot), Transform);
 	};
+	// A source slot whose sample the graph multiplies by a constant tint or strength (F3): the tint rides beside the source texture, as the
+	// base color's factor, or as the emissive's color and strength (a tint past 1 is strength, so the color stays in 0..1). Scale is
+	// what the caller already scaled the glow by (an additive material's constant opacity).
+	auto KeepSourceTint = [&](EMantlePlaceTextureSlot Slot, double Scale = 1.0)
+	{
+		const int32 Source = static_cast<int32>(Slot);
+		if (Source >= 4 || !Fidelity.bSourceTint[Source] || !Doc.Textures.Contains(FMantlePlaceMaterialDocument::SlotName(Slot)))
+		{
+			return;
+		}
+		const double* Tint = Fidelity.SourceTint[Source];
+		if (Slot == EMantlePlaceTextureSlot::BaseColor)
+		{
+			for (int32 Channel = 0; Channel < 3; ++Channel)
+			{
+				Doc.BaseColorFactor[Channel] = FMath::Clamp(Tint[Channel], 0.0, 1.0);
+			}
+			if (Tint[0] > 1.0 || Tint[1] > 1.0 || Tint[2] > 1.0)
+			{
+				Warn(TEXT("its base color is multiplied by more than 1, which Mantle caps at 1."));
+			}
+		}
+		else if (Slot == EMantlePlaceTextureSlot::Emissive)
+		{
+			const double Strength = FMath::Max3(1.0, FMath::Max3(Tint[0], Tint[1], Tint[2]), 0.0);
+			Doc.EmissiveStrength = FMath::Min(Strength, 100.0);
+			for (int32 Channel = 0; Channel < 3; ++Channel)
+			{
+				Doc.EmissiveFactor[Channel] = FMath::Clamp(Tint[Channel] / Doc.EmissiveStrength, 0.0, 1.0) * Scale;
+			}
+			if (Strength > 100.0)
+			{
+				Warn(FString::Printf(TEXT("its glow strength of %s is capped at 100."), *Number(Strength)));
+			}
+		}
+	};
 	// Every slot that made it in with a pan keeps it; wind rides on any lit or unlit material.
 	auto KeepPanningAndWind = [&]()
 	{
@@ -5256,6 +5300,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		if (HasSource(EMantlePlaceTextureSlot::Emissive) && AddSource(EMantlePlaceTextureSlot::Emissive, false))
 		{
 			KeepSourceTransform(EMantlePlaceTextureSlot::Emissive);
+			KeepSourceTint(EMantlePlaceTextureSlot::Emissive, Opacity > 0.0 && Opacity < 1.0 ? Opacity : 1.0);
 		}
 		else if (Glow.IsSet() && AddImage(Glow, EMantlePlaceTextureSlot::Emissive, false))
 		{
@@ -5284,6 +5329,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		if (HasSource(EMantlePlaceTextureSlot::Emissive) && AddSource(EMantlePlaceTextureSlot::Emissive, false))
 		{
 			KeepSourceTransform(EMantlePlaceTextureSlot::Emissive);
+			KeepSourceTint(EMantlePlaceTextureSlot::Emissive);
 			if (BaseColor.IsSet() && Doc.AlphaMode != TEXT("opaque"))
 			{
 				AddImage(BaseColor, EMantlePlaceTextureSlot::BaseColor, true);
@@ -5453,6 +5499,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		if (AddSource(EMantlePlaceTextureSlot::BaseColor, Doc.AlphaMode != TEXT("opaque") && Fidelity.bSourceAlpha))
 		{
 			KeepSourceTransform(EMantlePlaceTextureSlot::BaseColor);
+			KeepSourceTint(EMantlePlaceTextureSlot::BaseColor);
 		}
 	}
 	else if (BaseColor.IsSet() && !(bWater && Fidelity.Water.bColor))
@@ -5524,6 +5571,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		if (AddSource(EMantlePlaceTextureSlot::Emissive, false))
 		{
 			KeepSourceTransform(EMantlePlaceTextureSlot::Emissive);
+			KeepSourceTint(EMantlePlaceTextureSlot::Emissive);
 		}
 	}
 	else if (Emissive.IsSet())

@@ -10,6 +10,7 @@
 #include "MantleSnapSockets.h"
 #include "MantleApiManifest.h"
 #include "MantleAssetLibrary.h"
+#include "MantleBrushBake.h"
 #include "MantleCableBake.h"
 #include "MantleConstraint.h"
 #include "MantleCoverageSurvey.h"
@@ -2000,8 +2001,13 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 		{
 			return false;
 		}
-		OutWhat = TEXT("is BSP geometry, which Mantle does not publish.");
-		OutRemedy = TEXT("Rebuild it from Mantle library meshes; the brush would be dropped.");
+		// A static brush bakes into static meshes at export (FMantleBrushBake, F23): nothing of it is lost.
+		if (FMantleBrushBake::IsBakeSource(Brush))
+		{
+			return false;
+		}
+		OutWhat = TEXT("is a movable brush, which Mantle does not publish: only static BSP brushes are baked into meshes.");
+		OutRemedy = TEXT("Set the brush's Mobility to Static, or rebuild it from Mantle library meshes; the brush would be dropped.");
 		return true;
 	}
 	if (Actor->IsA(APawn::StaticClass()))
@@ -6143,8 +6149,30 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 					Report.Components);
 			}
 		}
+
+		// BSP brushes (F23) are baked into the same kind of mesh by FMantleBrushBake: the level's static brushes cut against each other
+		// as the editor's Build does, with each surface's material and mapping, and written the same way.
+		const FMantleSplineBakeResult BrushBake = FMantleBrushBake::Bake(World, Uploads.Limits);
+		for (const FMantleSplineBakeProblem& Problem : BrushBake.Problems)
+		{
+			Result.Errors.Add(FMantleParseError{
+				FString::Printf(TEXT("/actors/%s"), *Problem.OwnerName),
+				FString::Printf(TEXT("'%s' %s %s"), *Problem.OwnerLabel, *Problem.What, *Problem.Remedy) });
+			Result.Coverage.Add(MantleCoverageCategory::Bsp, EMantleCoverageOutcome::Dropped, Problem.OwnerLabel, Problem.What);
+		}
+		for (const FMantleSplineBakeReport& Report : BrushBake.Reports)
+		{
+			if (Report.Components > 0)
+			{
+				Result.Coverage.Add(MantleCoverageCategory::Bsp, EMantleCoverageOutcome::Approximated, Report.OwnerLabel,
+					FString::Printf(TEXT("baked into %d static mesh%s, merged by material, cut as the editor builds it: no BSP lightmaps."),
+						Report.Meshes, Report.Meshes == 1 ? TEXT("") : TEXT("es")),
+					Report.Components);
+			}
+		}
 		TArray<FMantleBakedSplineMesh> BakedMeshes = Bake.Meshes;
 		BakedMeshes.Append(CableBake.Meshes);
+		BakedMeshes.Append(BrushBake.Meshes);
 		for (const FMantleBakedSplineMesh& Baked : BakedMeshes)
 		{
 			const FString Path = FString::Printf(TEXT("/entities/%d"), Place.Entities.Num());
