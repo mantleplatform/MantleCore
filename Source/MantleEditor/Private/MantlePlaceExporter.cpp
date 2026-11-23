@@ -2408,7 +2408,7 @@ namespace MantlePlaceExporterPrefab
 			}
 			return false;
 		}
-		if ((Component->IsA(UBoxComponent::StaticClass()) || Component->IsA(USphereComponent::StaticClass()) || FMantleTriggerShapeExport::IsCapsule(Component))
+		if ((Component->IsA(UBoxComponent::StaticClass()) || Component->IsA(USphereComponent::StaticClass()) || FMantleTriggerShapeExport::IsTriggerCapsule(Component))
 			&& ExporterIsGameContent(Component))
 		{
 			OutType = EMantleEntityType::TriggerVolume;
@@ -2915,7 +2915,8 @@ bool FMantlePlaceExporter::ClassifyActor(const AActor* Actor, EMantleEntityType&
 	// class, so both engine trigger actors and plain actors round-trip.
 	if (const USceneComponent* Root = Actor->GetRootComponent())
 	{
-		if (Root->IsA(UBoxComponent::StaticClass()) || Root->IsA(USphereComponent::StaticClass()) || FMantleTriggerShapeExport::IsCapsule(Root))
+		if (Root->IsA(UBoxComponent::StaticClass()) || Root->IsA(USphereComponent::StaticClass())
+			|| (FMantleTriggerShapeExport::IsTriggerCapsule(Root) && !Actor->IsA(APawn::StaticClass())))
 		{
 			// A trigger with parts beside it is a prefab (#468): a Group, the trigger one of its parts.
 			OutType = MantlePlaceExporterPrefab::HasPart(Actor, Root) ? EMantleEntityType::Group : EMantleEntityType::TriggerVolume;

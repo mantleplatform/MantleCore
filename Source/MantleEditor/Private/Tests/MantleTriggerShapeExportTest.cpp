@@ -10,6 +10,7 @@
 #include "Components/BrushComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/TriggerCapsule.h"
+#include "GameFramework/Character.h"
 #include "Engine/TriggerVolume.h"
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
@@ -183,6 +184,64 @@ bool FMantleTriggerShapeExportTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("nor about the capsules"), HasIssue(Validation, TEXT("Tall capsule"), EMantleIssueSeverity::Error) || HasIssue(Validation, TEXT("Ball capsule"), EMantleIssueSeverity::Error));
 	TestTrue(TEXT("Check says each capsule publishes as another shape"), HasIssue(Validation, TEXT("Tall capsule"), EMantleIssueSeverity::Warning) && HasIssue(Validation, TEXT("Ball capsule"), EMantleIssueSeverity::Warning));
 	TestTrue(TEXT("Check warns about the cylinder"), HasIssue(Validation, TEXT("Round zone"), EMantleIssueSeverity::Warning));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleTriggerCapsuleGuardTest,
+	"Mantle.Editor.TriggerShapes.OnlyAnOverlappingCapsuleIsATrigger",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleTriggerCapsuleGuardTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleTriggerShapeExportTestPrivate;
+	FTriggerWorld Fixture;
+	UWorld* World = Fixture.World;
+	if (!TestNotNull(TEXT("a test world"), World))
+	{
+		return false;
+	}
+
+	// A placed Character: its root is a capsule that blocks. It classifies as it did before (not at all), and is no trigger.
+	ACharacter* Character = World->SpawnActor<ACharacter>(FVector(0.0, 0.0, 200.0), FRotator::ZeroRotator);
+	// A plain actor whose root is a blocking capsule (a Blueprint prop's collision).
+	AActor* Prop = World->SpawnActor<AActor>(FVector(1000.0, 0.0, 0.0), FRotator::ZeroRotator);
+	UCapsuleComponent* PropCapsule = Prop ? NewObject<UCapsuleComponent>(Prop, TEXT("Collision")) : nullptr;
+	// A capsule that overlaps but generates no overlap events.
+	AActor* Silent = World->SpawnActor<AActor>(FVector(2000.0, 0.0, 0.0), FRotator::ZeroRotator);
+	UCapsuleComponent* SilentCapsule = Silent ? NewObject<UCapsuleComponent>(Silent, TEXT("Collision")) : nullptr;
+	ATriggerCapsule* Real = SpawnTriggerCapsule(World, TEXT("Real trigger"), FVector(3000.0, 0.0, 0.0), 50.0f, 150.0f);
+	if (!TestNotNull(TEXT("the character"), Character) || !TestNotNull(TEXT("the prop capsule"), PropCapsule)
+		|| !TestNotNull(TEXT("the silent capsule"), SilentCapsule) || !TestNotNull(TEXT("the trigger"), Real))
+	{
+		return false;
+	}
+	Prop->SetRootComponent(PropCapsule);
+	PropCapsule->SetCollisionProfileName(TEXT("BlockAll"));
+	PropCapsule->RegisterComponent();
+	Prop->SetActorLabel(TEXT("Blocking prop"));
+	Silent->SetRootComponent(SilentCapsule);
+	SilentCapsule->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+	SilentCapsule->SetGenerateOverlapEvents(false);
+	SilentCapsule->RegisterComponent();
+	Silent->SetActorLabel(TEXT("Silent capsule"));
+
+	TestFalse(TEXT("a character's capsule is not a trigger"), FMantleTriggerShapeExport::IsTriggerCapsule(Character->GetCapsuleComponent()));
+	TestFalse(TEXT("nor a blocking prop's"), FMantleTriggerShapeExport::IsTriggerCapsule(PropCapsule));
+	TestFalse(TEXT("nor one that makes no overlap events"), FMantleTriggerShapeExport::IsTriggerCapsule(SilentCapsule));
+	TestTrue(TEXT("a Trigger Capsule is"), FMantleTriggerShapeExport::IsTriggerCapsule(Real->GetCollisionComponent()));
+
+	EMantleEntityType Type;
+	TestFalse(TEXT("a Character does not classify (as before)"), FMantlePlaceExporter::ClassifyActor(Character, Type));
+	TestFalse(TEXT("a blocking capsule actor does not classify as a trigger (as before)"), FMantlePlaceExporter::ClassifyActor(Prop, Type));
+	TestFalse(TEXT("a capsule with no overlap events does not either"), FMantlePlaceExporter::ClassifyActor(Silent, Type));
+	TestTrue(TEXT("a Trigger Capsule does"), FMantlePlaceExporter::ClassifyActor(Real, Type) && Type == EMantleEntityType::TriggerVolume);
+
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(World, FMantleExportOptions());
+	TestNull(TEXT("the character is not published"), MantleExportedEntities::Named(Result, Character->GetActorLabel()));
+	TestNull(TEXT("the blocking prop is not published as a trigger"), TriggerPropsOf(Result, TEXT("Blocking prop")));
+	TestNull(TEXT("the silent capsule is not published as a trigger"), TriggerPropsOf(Result, TEXT("Silent capsule")));
+	TestNotNull(TEXT("the real trigger is"), TriggerPropsOf(Result, TEXT("Real trigger")));
 	return true;
 }
 

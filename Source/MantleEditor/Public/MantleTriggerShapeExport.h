@@ -33,6 +33,12 @@ public:
 	/** Whether Component is a capsule collision shape. */
 	static bool IsCapsule(const UActorComponent* Component);
 
+	/**
+	 * Whether Component is a capsule that acts as a trigger: it generates overlap events, and it only overlaps (collision query only, or
+	 * no channel it blocks). A capsule that blocks is a character's or a prop's collision, not a trigger, and stays what it is today.
+	 */
+	static bool IsTriggerCapsule(const UActorComponent* Component);
+
 	/** A capsule's trigger: Box around it, or Sphere when it is no taller than it is wide, with the unscaled extent either uses. */
 	static void ReadCapsule(const UCapsuleComponent* Capsule, EMantleTriggerShape& OutShape, FVector& OutExtent);
 };

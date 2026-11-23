@@ -34,6 +34,33 @@ bool FMantleTriggerShapeExport::IsCapsule(const UActorComponent* Component)
 	return Component && Component->IsA(UCapsuleComponent::StaticClass());
 }
 
+bool FMantleTriggerShapeExport::IsTriggerCapsule(const UActorComponent* Component)
+{
+	const UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Component);
+	if (!Capsule || !Capsule->GetGenerateOverlapEvents())
+	{
+		return false;
+	}
+	const ECollisionEnabled::Type Enabled = Capsule->GetCollisionEnabled();
+	if (!CollisionEnabledHasQuery(Enabled))
+	{
+		return false; // no query: nothing can overlap it
+	}
+	if (Enabled == ECollisionEnabled::QueryOnly)
+	{
+		return true;
+	}
+	// Query and physics: a trigger only when it blocks nothing.
+	for (int32 Channel = 0; Channel < ECC_MAX; ++Channel)
+	{
+		if (Capsule->GetCollisionResponseToChannel(static_cast<ECollisionChannel>(Channel)) == ECR_Block)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 void FMantleTriggerShapeExport::ReadCapsule(const UCapsuleComponent* Capsule, EMantleTriggerShape& OutShape, FVector& OutExtent)
 {
 	const double Radius = Capsule->GetUnscaledCapsuleRadius();
