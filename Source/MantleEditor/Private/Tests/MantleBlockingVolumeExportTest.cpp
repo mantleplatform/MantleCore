@@ -103,7 +103,7 @@ bool FMantleBlockingVolumeExportTest::RunTest(const FString& Parameters)
 	}
 
 	ABlockingVolume* Wall = SpawnVolume(World, TEXT("Map edge wall"), FVector(1000.0, 200.0, 50.0));
-	ABlockingVolume* Turned = SpawnVolume(World, TEXT("Turned wall"), FVector(0.0, 3000.0, 0.0), FRotator(0.0, 90.0, 0.0));
+	ABlockingVolume* Turned = SpawnVolume(World, TEXT("Turned wall"), FVector(0.0, 3000.0, 0.0), FRotator(0.0, 40.0, 0.0));
 	ABlockingVolume* Round = SpawnVolume(World, TEXT("Round pillar"), FVector(-2000.0, 0.0, 0.0));
 	ABlockingVolume* Loose = SpawnVolume(World, TEXT("Loose volume"), FVector(-3000.0, 0.0, 0.0));
 	ABlockingVolume* Ghost = SpawnVolume(World, TEXT("Ghost box"), FVector(-4000.0, 0.0, 0.0));
@@ -157,8 +157,9 @@ bool FMantleBlockingVolumeExportTest::RunTest(const FString& Parameters)
 	if (TestNotNull(TEXT("the turned wall is published"), TurnedEntity))
 	{
 		TestTrue(TEXT("its scale is the box's size times the actor's: 20 by 1 by 5"), TurnedEntity->Transform.GetScale3D().Equals(FVector(20.0, 1.0, 5.0), 0.01));
+		// Along the actor's own axes: a 40 degree turn keeps the size (an axis-aligned world box would have grown).
 		const FVector Along = TurnedEntity->Transform.GetRotation().RotateVector(FVector::XAxisVector);
-		TestTrue(TEXT("and it is turned a quarter"), Along.Equals(FVector::YAxisVector, 0.01));
+		TestTrue(TEXT("and it is turned 40 degrees"), Along.Equals(FVector(FMath::Cos(FMath::DegreesToRadians(40.0)), FMath::Sin(FMath::DegreesToRadians(40.0)), 0.0), 0.01));
 	}
 
 	// Left out, and said: the cylinder and the shapeless volume warn; the one that collides with nothing does not.
