@@ -113,10 +113,11 @@ namespace
 	 * A hinge's drive is the engine's twist drive in TwistAndSwing mode: SLERP does not work with any
 	 * angular axis locked, which a hinge's swings are (FAngularDriveConstraint::AngularDriveMode).
 	 *
-	 * The engine drives entityB's frame relative to entityA's (Frame2 in Frame1's space: the solver's
-	 * ConnectorXs[1] against ConnectorXs[0] + ConnectorRs[0] * the target), and entityA is Frame1. So
-	 * the frames' offset is the middle of the limits minus entityA's own turn or travel from where it
-	 * was made, and its speed the opposite of entityA's.
+	 * The target is entityA's frame (Frame1) relative to entityB's (Frame2), measured in a world the
+	 * engine runs (Mantle.Runtime.Constraint.World.MotorsLimitsAndCones). entityB's frame sits at the
+	 * middle of the limits, so the target is entityA's own turn or travel from where it was made, less
+	 * the middle, and the speed is entityA's own. An Unreal drive's target is the same number as a
+	 * Mantle motor's for a joint centered on where it starts.
 	 */
 	void ApplyConstraintMotor(FConstraintInstance& Instance, const FMantleConstraintProps& Props, const FMantleConstraintFrames& Frames, double Inertia)
 	{
@@ -139,14 +140,14 @@ namespace
 				static_cast<float>(Motor.MaxForce * FMantleConstraints::UnrealTorquePerNewtonMeter));
 			if (bPosition)
 			{
-				Instance.SetAngularOrientationTarget(FQuat(FVector::XAxisVector, FMath::DegreesToRadians(Frames.Middle - Motor.Target)));
+				Instance.SetAngularOrientationTarget(FQuat(FVector::XAxisVector, FMath::DegreesToRadians(Motor.Target - Frames.Middle)));
 				Instance.SetAngularVelocityTarget(FVector::ZeroVector);
 				Instance.SetOrientationDriveTwistAndSwing(true, false);
 			}
 			else
 			{
 				// The engine's angular velocity target is in turns a second.
-				Instance.SetAngularVelocityTarget(FVector(-Motor.Target / 360.0, 0.0, 0.0));
+				Instance.SetAngularVelocityTarget(FVector(Motor.Target / 360.0, 0.0, 0.0));
 				Instance.SetAngularVelocityDriveTwistAndSwing(true, false);
 			}
 		}
@@ -157,13 +158,13 @@ namespace
 				static_cast<float>(Motor.MaxForce * FMantleConstraints::UnrealForcePerNewton));
 			if (bPosition)
 			{
-				Instance.SetLinearPositionTarget(FVector(Frames.Middle - Motor.Target, 0.0, 0.0));
+				Instance.SetLinearPositionTarget(FVector(Motor.Target - Frames.Middle, 0.0, 0.0));
 				Instance.SetLinearVelocityTarget(FVector::ZeroVector);
 				Instance.SetLinearPositionDrive(true, false, false);
 			}
 			else
 			{
-				Instance.SetLinearVelocityTarget(FVector(-Motor.Target, 0.0, 0.0));
+				Instance.SetLinearVelocityTarget(FVector(Motor.Target, 0.0, 0.0));
 				Instance.SetLinearVelocityDrive(true, false, false);
 			}
 		}
@@ -715,18 +716,18 @@ bool FMantleConstraints::ReadEditorConstraint(const UPhysicsConstraintComponent*
 		// No Max Force is no cap in Unreal: the most a Mantle motor may have.
 		Motor.MaxForce = Drive->MaxForce > 0.0f ? FMath::Min(Drive->MaxForce / MaxForceUnits, FMantlePlaceLimits::MaxMotorForce)
 			: FMantlePlaceLimits::MaxMotorForce;
-		// The engine drives entityB's frame relative to entityA's, so entityA's own position or speed is
-		// the opposite, measured from the middle of the limits (see ApplyConstraintMotor).
+		// The drive's target is entityA's own turn or travel less the middle of the limits, and its speed
+		// entityA's own (see ApplyConstraintMotor).
 		if (bSlider)
 		{
-			Motor.Target = Motor.Mode == EMantleMotorMode::Position ? -LinearDrive.PositionTarget[SliderAxis] : -LinearDrive.VelocityTarget[SliderAxis];
+			Motor.Target = Motor.Mode == EMantleMotorMode::Position ? LinearDrive.PositionTarget[SliderAxis] : LinearDrive.VelocityTarget[SliderAxis];
 		}
 		else
 		{
 			const FVector& TurnAxis = LocalAxes[Turning->Index];
 			Motor.Target = Motor.Mode == EMantleMotorMode::Position
-				? OffsetAbout(TurnAxis) - FMath::RadiansToDegrees(AngularDrive.OrientationTarget.Quaternion().GetTwistAngle(TurnAxis))
-				: -AngularDrive.AngularVelocityTarget[Turning->Index] * 360.0;
+				? OffsetAbout(TurnAxis) + FMath::RadiansToDegrees(AngularDrive.OrientationTarget.Quaternion().GetTwistAngle(TurnAxis))
+				: AngularDrive.AngularVelocityTarget[Turning->Index] * 360.0;
 		}
 		Motor.Target = FMath::Abs(Motor.Target) < ConstraintReadTolerance ? 0.0 : Motor.Target;
 		OutProps.Motor = Motor;

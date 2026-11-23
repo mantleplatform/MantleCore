@@ -557,7 +557,7 @@ bool FMantleConstraintEditorRoundTripTest::RunTest(const FString& Parameters)
 			Instance.SetAngularSwing2Limit(ACM_Locked, 0.0f);
 			Instance.SetAngularTwistLimit(ACM_Locked, 0.0f);
 			Instance.SetLinearDriveParams(0.0f, 50.0f, 0.0f);
-			Instance.SetLinearVelocityTarget(FVector(-120.0, 0.0, 0.0));
+			Instance.SetLinearVelocityTarget(FVector(120.0, 0.0, 0.0));
 			Instance.SetLinearVelocityDrive(true, false, false);
 			if (TestTrue(TEXT("an uncapped slider drive reads back"), FMantleConstraints::ReadEditorConstraint(Editor->GetConstraintComp(), A, B, Read, Problem)))
 			{

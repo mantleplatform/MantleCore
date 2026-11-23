@@ -154,8 +154,8 @@ bool FMantleConstraintPublishTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	// A slider: it moves along X, up to 100 cm either way, driven to -30 cm (Unreal's target is entityB's
-	// frame relative to entityA's, so +30 there) with up to 250 N.
+	// A slider: it moves along X, up to 100 cm either way, driven to 30 cm with up to 250 N (Unreal's
+	// target is the same number as Mantle's for a joint centered on where it starts).
 	{
 		FConstraintInstance& Instance = Slider->GetConstraintComp()->ConstraintInstance;
 		Instance.SetLinearLimits(LCM_Limited, LCM_Locked, LCM_Locked, 100.0f);
@@ -171,15 +171,14 @@ bool FMantleConstraintPublishTest::RunTest(const FString& Parameters)
 		Instance.SetAngularSwing2Limit(ACM_Limited, 45.0f);
 		Instance.SetAngularTwistLimit(ACM_Limited, 20.0f);
 	}
-	// A hinge (its twist free) spinning at a quarter turn a second (Unreal: -0.25 turns a second, entityB's
-	// frame against entityA's) with up to 40 N*m, in force mode.
+	// A hinge (its twist free) spinning at a quarter turn a second with up to 40 N*m, in force mode.
 	{
 		FConstraintInstance& Instance = Door->GetConstraintComp()->ConstraintInstance;
 		Instance.SetAngularTwistLimit(ACM_Free, 0.0f);
 		Instance.SetAngularDriveMode(EAngularDriveMode::TwistAndSwing);
 		Instance.SetAngularDriveAccelerationMode(false);
 		Instance.SetAngularDriveParams(0.0f, 100.0f, 40.0f * 10000.0f);
-		Instance.SetAngularVelocityTarget(FVector(-0.25, 0.0, 0.0));
+		Instance.SetAngularVelocityTarget(FVector(0.25, 0.0, 0.0));
 		Instance.SetAngularVelocityDriveTwistAndSwing(true, false);
 	}
 	// The control: a plain hinge.
@@ -217,8 +216,8 @@ bool FMantleConstraintPublishTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("along X"), SliderProps->Axis.Equals(FVector::XAxisVector, 1e-4));
 		TestTrue(TEXT("limited -100..100"), SliderProps->bLimited && FMath::IsNearlyEqual(SliderProps->LimitMin, -100.0, 1e-3)
 			&& FMath::IsNearlyEqual(SliderProps->LimitMax, 100.0, 1e-3));
-		TestTrue(TEXT("with a position motor to -30 cm of 250 N"), SliderProps->Motor.IsSet() && SliderProps->Motor->Mode == EMantleMotorMode::Position
-			&& FMath::IsNearlyEqual(SliderProps->Motor->Target, -30.0, 1e-3) && FMath::IsNearlyEqual(SliderProps->Motor->MaxForce, 250.0, 1e-3));
+		TestTrue(TEXT("with a position motor to 30 cm of 250 N"), SliderProps->Motor.IsSet() && SliderProps->Motor->Mode == EMantleMotorMode::Position
+			&& FMath::IsNearlyEqual(SliderProps->Motor->Target, 30.0, 1e-3) && FMath::IsNearlyEqual(SliderProps->Motor->MaxForce, 250.0, 1e-3));
 	}
 	const FMantleConstraintProps* BallProps = PublishedConstraint(Result, TEXT("Ball joint"));
 	if (TestNotNull(TEXT("the ball joint publishes"), BallProps))
