@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "MantlePlaceLimits.h"
 #include "MantlePlaceTypes.h"
 
 class UStaticMesh;
@@ -35,10 +36,9 @@ struct MANTLEEDITOR_API FMantleDrawDistanceSource
  * an instance set over the last fifth of it and ends shadows by its own rule, so the editor writes nothing else.
  *
  * The component's own cull distance wins: LDMaxDrawDistance (else CachedMaxDrawDistance) for a mesh, InstanceEndCullDistance
- * for instances and painted foliage. Without one, a size-based default by
- * the mesh's bounding sphere radius (Bands): small clutter culls near, and a mesh of NeverCullRadius or more is never culled.
- * The bands are set so nothing visibly pops at normal play distances: a mesh is still about a dozen pixels across where it culls.
- * A component with Never Distance Cull publishes no draw distance.
+ * for instances and painted foliage. Without one, by the mesh's bounding sphere radius: small clutter (Bands, under NoCutOffRadius)
+ * culls near; a bigger mesh gets NoCutOff, so it draws as long as its cell stands (the cell decides, never the piece); and a mesh of
+ * NeverCullRadius or more is never culled. A component with Never Distance Cull publishes no draw distance.
  *
  * 0 is never written (the schema refuses it): a mesh that is never culled has no key.
  */
@@ -51,11 +51,25 @@ struct MANTLEEDITOR_API FMantleDrawDistance
 		double Draw;
 	};
 
-	/** The size-based defaults, smallest first. A mesh past the last band's MaxRadius gets none. */
+	/** The size-based defaults, smallest first: small clutter only. A mesh past the last band's MaxRadius gets NoCutOff. */
 	static TConstArrayView<FBand> Bands();
 
-	/** The radius at and above which a mesh gets no default draw distance: architecture and other large pieces. */
+	/**
+	 * The draw distance of a mesh with no cut-off of its own: the schema's largest (10 km), which a creator's own distance never
+	 * publishes as (one that far is no cull at all). The cell planner reads it as "the cell decides": such a mesh goes to the grid's
+	 * NoCutOffLevel and its cell loads out to that level's MaxDrawDistance (FMantleCellGrid). The game cuts nothing in reach of it,
+	 * whatever the view distance setting (0.4 on Low still leaves 4 km).
+	 */
+	static constexpr double NoCutOff = FMantlePlaceLimits::MaxDrawDistance;
+
+	/** The radius (cm) at and above which a mesh with no distance of its own gets NoCutOff: the end of the last band, 30 cm. */
+	static double NoCutOffRadius();
+
+	/** The radius at and above which a mesh gets no default draw distance at all and is always loaded: ground and decks of 100 m radius. */
 	static double NeverCullRadius();
+
+	/** Whether a published draw distance is NoCutOff. */
+	static bool IsNoCutOff(double DrawDistance);
 
 	/** Sets Source's draw distance on Props (0 for none), or 0 when the target client does not read drawDistance. True when one was set. */
 	static bool Apply(const FMantleDrawDistanceSource& Source, const FMantleTargetFeatures& Target, FMantleStaticMeshProps& Props);

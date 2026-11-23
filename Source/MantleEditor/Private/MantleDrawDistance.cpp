@@ -13,26 +13,25 @@
 namespace MantleDrawDistancePrivate
 {
 	/**
-	 * Radius below (cm), draw distance. A prop at the top of a band (30 cm radius) is still about 12 pixels across at
-	 * its 60 m on a 1080p screen, and one at 3 m radius at 250 m, so nothing pops where a player looks.
+	 * Radius below (cm), draw distance: the one size band left (the big-map plan, step 3). Small clutter under 30 cm radius culls at
+	 * 60 m, where it is still about 12 pixels across on a 1080p screen. It streams in the grid's 64 m cells, as before.
 	 *
-	 * The last band is the big scenery of a large place: ground tiles, whole-building collision, roofs and freeway decks of 10 to
-	 * 100 m radius. They draw to 2.5 km, the default cell grid's farthest level (FMantleCellGrid::Default), so they stream in its
-	 * 1 km cells instead of all loading with the root. Without it City Sample's Big City kept ~183,000 of them in the root, which
-	 * holds at most 100,000 instanced meshes and 8 MiB. A mesh of 100 m radius or more is still never culled.
+	 * Every bigger piece, up to NeverCullRadius, has no cut-off of its own (NoCutOff): it goes to the 256 m cells and draws as long as
+	 * its cell stands, so a building's pieces come and go together with the ground they stand on (fable-review.md 4.1, 4.2). Before,
+	 * four more bands (120 m, 250 m, 600 m and 2.5 km) cut each piece at its own distance and put it in a cell level by that distance,
+	 * which split buildings across levels and left a ring between a piece's distance and its cell's where nothing drew it.
 	 */
 	const FMantleDrawDistance::FBand GBands[] = {
 		{ 30.0, 6000.0 },
-		{ 100.0, 12000.0 },
-		{ 300.0, 25000.0 },
-		{ 1000.0, 60000.0 },
-		{ 10000.0, 250000.0 },
 	};
 
-	/** The distance in cm; 0 past MaxDrawDistance (then the mesh is never culled). */
+	/** A mesh of this radius (cm) or more is never culled: ground tiles and freeway decks of a whole district, always loaded. */
+	constexpr double GNeverCullRadius = 10000.0;
+
+	/** The distance in cm; 0 at or past MaxDrawDistance (then the mesh is never culled), so that number only ever means NoCutOff. */
 	double InRange(const double Distance)
 	{
-		return Distance > FMantlePlaceLimits::MaxDrawDistance ? 0.0 : Distance;
+		return Distance >= FMantlePlaceLimits::MaxDrawDistance ? 0.0 : Distance;
 	}
 }
 
@@ -43,7 +42,17 @@ TConstArrayView<FMantleDrawDistance::FBand> FMantleDrawDistance::Bands()
 
 double FMantleDrawDistance::NeverCullRadius()
 {
+	return MantleDrawDistancePrivate::GNeverCullRadius;
+}
+
+double FMantleDrawDistance::NoCutOffRadius()
+{
 	return MantleDrawDistancePrivate::GBands[UE_ARRAY_COUNT(MantleDrawDistancePrivate::GBands) - 1].MaxRadius;
+}
+
+bool FMantleDrawDistance::IsNoCutOff(const double DrawDistance)
+{
+	return DrawDistance >= NoCutOff;
 }
 
 bool FMantleDrawDistance::Apply(const FMantleDrawDistanceSource& Source, const FMantleTargetFeatures& Target, FMantleStaticMeshProps& Props)
@@ -76,7 +85,7 @@ bool FMantleDrawDistance::Apply(const FMantleDrawDistanceSource& Source, const F
 	}
 	else
 	{
-		// The size band, by the mesh's bounding sphere; a mesh past the last one has none.
+		// The size band, by the mesh's bounding sphere; a bigger mesh has no cut-off of its own (its cell decides), and a huge one none at all.
 		for (const FBand& Band : Bands())
 		{
 			if (Source.SphereRadius < Band.MaxRadius)
@@ -84,6 +93,10 @@ bool FMantleDrawDistance::Apply(const FMantleDrawDistanceSource& Source, const F
 				Props.DrawDistance = Band.Draw;
 				break;
 			}
+		}
+		if (Props.DrawDistance <= 0.0 && Source.SphereRadius < NeverCullRadius())
+		{
+			Props.DrawDistance = NoCutOff;
 		}
 	}
 	return Props.DrawDistance > 0.0;
