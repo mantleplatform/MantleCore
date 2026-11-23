@@ -1956,12 +1956,14 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 	if (FMantleBlockingVolumeExport::IsBlockingVolume(Actor))
 	{
 		FMantleBlockingWall Wall;
-		if (FMantleBlockingVolumeExport::ReadWall(Actor, Wall) || FMantleBlockingVolumeExport::HasNoCollision(Actor))
+		// A box is one hidden cube; any other shape with a volume is baked into hidden collision (FMantleBrushBake, F17b).
+		if (FMantleBlockingVolumeExport::ReadWall(Actor, Wall) || FMantleBlockingVolumeExport::HasNoCollision(Actor)
+			|| FMantleBrushBake::IsVolumeSource(Cast<ABrush>(Actor)))
 		{
 			return false;
 		}
-		OutWhat = TEXT("is a Blocking Volume that is not a box, which Mantle does not publish: only a box can be an invisible wall.");
-		OutRemedy = TEXT("Build the wall from box-shaped Blocking Volumes. This volume would be dropped.");
+		OutWhat = TEXT("is a Blocking Volume with no shape, which Mantle does not publish.");
+		OutRemedy = TEXT("Shape the volume (Geometry or the brush builders). It would be dropped.");
 		return true;
 	}
 	// A Trigger Volume that is a box publishes as a Box trigger (FMantleTriggerShapeExport); any other brush shape is named here.
@@ -6090,9 +6092,30 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 					Report.Components);
 			}
 		}
+
+		// Blocking Volumes of a shape a cube cannot stand for (F17b): hidden collision, baked the same way and written the same way.
+		const FMantleSplineBakeResult VolumeBake = FMantleBrushBake::BakeVolumes(World, Uploads.Limits);
+		for (const FMantleSplineBakeProblem& Problem : VolumeBake.Problems)
+		{
+			Result.Errors.Add(FMantleParseError{
+				FString::Printf(TEXT("/actors/%s"), *Problem.OwnerName),
+				FString::Printf(TEXT("'%s' %s %s"), *Problem.OwnerLabel, *Problem.What, *Problem.Remedy) });
+			Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Dropped, Problem.OwnerLabel, Problem.What);
+		}
+		for (const FMantleSplineBakeReport& Report : VolumeBake.Reports)
+		{
+			if (Report.Components > 0)
+			{
+				Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept, Report.OwnerLabel,
+					FString::Printf(TEXT("Blocking Volumes that are not boxes, published as hidden collision meshes (%d mesh%s): nothing is drawn, players and objects are stopped."),
+						Report.Meshes, Report.Meshes == 1 ? TEXT("") : TEXT("es")),
+					Report.Components);
+			}
+		}
 		TArray<FMantleBakedSplineMesh> BakedMeshes = Bake.Meshes;
 		BakedMeshes.Append(CableBake.Meshes);
 		BakedMeshes.Append(BrushBake.Meshes);
+		BakedMeshes.Append(VolumeBake.Meshes);
 		for (const FMantleBakedSplineMesh& Baked : BakedMeshes)
 		{
 			const FString Path = FString::Printf(TEXT("/entities/%d"), Place.Entities.Num());

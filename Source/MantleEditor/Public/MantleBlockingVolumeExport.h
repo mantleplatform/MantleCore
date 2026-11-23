@@ -52,6 +52,12 @@ public:
 	/** The box a brush's polygons make, in the brush component's space: false unless they make an axis-aligned box. */
 	static bool ReadLocalBox(const AActor* Actor, FVector& OutCenter, FVector& OutSize);
 
+	/**
+	 * A Blocking Volume's collision as the place says it: OutCollision from its collision setting, and whether it stops sight traces. False
+	 * for a volume that collides with nothing.
+	 */
+	static bool ReadCollision(const AActor* Actor, EMantleCollision& OutCollision, bool& bOutBlocksVisibility);
+
 	/** The bounds of a brush's polygons, in the brush component's space, whatever its shape: false for a brush with no volume. */
 	static bool ReadLocalBounds(const AActor* Actor, FVector& OutCenter, FVector& OutSize);
 };

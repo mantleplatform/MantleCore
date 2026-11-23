@@ -97,7 +97,7 @@ bool FMantleBlockingVolumeExport::HasNoCollision(const AActor* Actor)
 	return Component && Component->GetCollisionEnabled() == ECollisionEnabled::NoCollision;
 }
 
-bool FMantleBlockingVolumeExport::ReadWall(const AActor* Actor, FMantleBlockingWall& OutWall)
+bool FMantleBlockingVolumeExport::ReadCollision(const AActor* Actor, EMantleCollision& OutCollision, bool& bOutBlocksVisibility)
 {
 	const ABrush* Brush = IsBlockingVolume(Actor) ? Cast<ABrush>(Actor) : nullptr;
 	const UBrushComponent* Component = Brush ? Brush->GetBrushComponent() : nullptr;
@@ -105,14 +105,27 @@ bool FMantleBlockingVolumeExport::ReadWall(const AActor* Actor, FMantleBlockingW
 	{
 		return false;
 	}
-
 	// The same reading a mesh's collision gets (ExporterReadMeshComponent): query only is overlap, and none is no wall.
-	EMantleCollision Collision = EMantleCollision::Blocking;
+	OutCollision = EMantleCollision::Blocking;
 	switch (Component->GetCollisionEnabled())
 	{
 	case ECollisionEnabled::NoCollision: return false;
-	case ECollisionEnabled::QueryOnly:   Collision = EMantleCollision::Overlap; break;
+	case ECollisionEnabled::QueryOnly:   OutCollision = EMantleCollision::Overlap; break;
 	default: break;
+	}
+	bOutBlocksVisibility = FMantlePlaceExporter::BlocksVisibility(Component);
+	return true;
+}
+
+bool FMantleBlockingVolumeExport::ReadWall(const AActor* Actor, FMantleBlockingWall& OutWall)
+{
+	const ABrush* Brush = IsBlockingVolume(Actor) ? Cast<ABrush>(Actor) : nullptr;
+	const UBrushComponent* Component = Brush ? Brush->GetBrushComponent() : nullptr;
+	EMantleCollision Collision = EMantleCollision::Blocking;
+	bool bBlocksVisibility = true;
+	if (!Component || !ReadCollision(Actor, Collision, bBlocksVisibility))
+	{
+		return false;
 	}
 
 	FVector Center = FVector::ZeroVector;
@@ -129,6 +142,6 @@ bool FMantleBlockingVolumeExport::ReadWall(const AActor* Actor, FMantleBlockingW
 	OutWall.Actor = Actor;
 	OutWall.Transform = FTransform(World.GetRotation(), World.TransformPosition(Center), Scale * Size / 100.0);
 	OutWall.Collision = Collision;
-	OutWall.bBlocksVisibility = FMantlePlaceExporter::BlocksVisibility(Component);
+	OutWall.bBlocksVisibility = bBlocksVisibility;
 	return true;
 }
