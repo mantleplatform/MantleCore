@@ -14,6 +14,7 @@
 #include "ImageUtils.h"
 #include "MaterialDomain.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialExpression.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "Materials/MaterialExpressionMultiply.h"
@@ -72,13 +73,30 @@ namespace MantleDecalSurfaceBakeTestPrivate
 		return Material;
 	}
 
-	bool GraphHasClass(const UMaterial* Material, const UClass* Class)
+	/** Whether anything Opacity reads (however deep) is of Class: a node replaced in a bake copy stays in its graph, read by nothing. */
+	bool OpacityReaches(const UMaterial* Material, const UClass* Class)
 	{
-		for (const TObjectPtr<UMaterialExpression>& Expression : Material->GetExpressions())
+		TArray<UMaterialExpression*> Open;
+		TSet<UMaterialExpression*> Seen;
+		if (UMaterialExpression* Start = Material->GetEditorOnlyData()->Opacity.Expression)
 		{
-			if (Expression && Expression->GetClass() == Class)
+			Open.Add(Start);
+		}
+		while (Open.Num() > 0)
+		{
+			UMaterialExpression* Expression = Open.Pop();
+			if (!Expression || Seen.Contains(Expression))
+			{
+				continue;
+			}
+			Seen.Add(Expression);
+			if (Expression->GetClass() == Class)
 			{
 				return true;
+			}
+			for (FExpressionInputIterator It{ Expression }; It; ++It)
+			{
+				Open.Add(It.Input->Expression);
 			}
 		}
 		return false;
@@ -157,7 +175,7 @@ namespace MantleDecalSurfaceBakeTestPrivate
 			}
 			SeenDomain = Base->MaterialDomain;
 			SeenBlend = Material->GetBlendMode();
-			bSawLifetimeOpacity = LifetimeOpacityClass() && GraphHasClass(Base, LifetimeOpacityClass());
+			bSawLifetimeOpacity = LifetimeOpacityClass() && OpacityReaches(Base, LifetimeOpacityClass());
 			TArray<FColor> Pixels;
 			Pixels.Init(FColor(230, 225, 210, 128), 4);
 			TArray<FColor> Normal;
@@ -227,7 +245,7 @@ bool FMantleDecalSurfaceCopyTest::RunTest(const FString& Parameters)
 	float Fade = 0.0f;
 	TestTrue(TEXT("the instance's parameter is kept"), Copy->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Fade")), Fade));
 	TestEqual(TEXT("at the instance's value"), Fade, 0.7f, 1.0e-4f);
-	TestFalse(TEXT("Decal Lifetime Opacity (0 outside a decal) is gone from the copy"), GraphHasClass(CopyBase, LifetimeOpacityClass()));
+	TestFalse(TEXT("nothing in the copy's Opacity reads Decal Lifetime Opacity (0 outside a decal)"), OpacityReaches(CopyBase, LifetimeOpacityClass()));
 	const UMaterialExpressionMultiply* Multiply = Cast<UMaterialExpressionMultiply>(CopyBase->GetEditorOnlyData()->Opacity.Expression);
 	const UMaterialExpressionConstant* One = Multiply ? Cast<UMaterialExpressionConstant>(Multiply->B.Expression) : nullptr;
 	if (TestNotNull(TEXT("it is a constant in the copy's Opacity"), One))
@@ -237,7 +255,7 @@ bool FMantleDecalSurfaceCopyTest::RunTest(const FString& Parameters)
 
 	// The creator's material is untouched.
 	TestEqual(TEXT("the source is still a decal"), static_cast<int32>(Decal->MaterialDomain), static_cast<int32>(MD_DeferredDecal));
-	TestTrue(TEXT("and still has its Decal Lifetime Opacity"), GraphHasClass(Decal, LifetimeOpacityClass()));
+	TestTrue(TEXT("and its Opacity still reads Decal Lifetime Opacity"), OpacityReaches(Decal, LifetimeOpacityClass()));
 
 	// A surface material has nothing to copy.
 	UMaterial* Surface = NewObject<UMaterial>(GetTransientPackage());
