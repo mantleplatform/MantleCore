@@ -1021,7 +1021,8 @@ public:
 
 	/** The salt a material's cache key is made with (Describe is the flattener's): Surface's CacheTag is empty for the plain surface. */
 	static FString MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& Settings, const FMantlePlaceAssetLimits& Limits,
-		const UMaterialInterface* Material, bool bPerInstanceVariation, const FMantleBakeSurface& Surface, bool bOpaqueInDisguise = false);
+		const UMaterialInterface* Material, bool bPerInstanceVariation, const FMantleBakeSurface& Surface, bool bOpaqueInDisguise = false,
+		bool bScrollingTint = false);
 
 	bool ConvertSound(USoundWave* Sound, FMantlePlaceAssetSet& Out);
 
