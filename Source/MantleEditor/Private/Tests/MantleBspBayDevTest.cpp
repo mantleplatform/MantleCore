@@ -30,6 +30,7 @@
 //   MANTLE_LANE_D_BSP_ORIGIN  where the room goes, "X,Y,Z" in cm (default 0,0,0)
 //   MANTLE_LANE_D_BSP_MAT_A   optional material for two faces of the wall (an object path)
 //   MANTLE_LANE_D_BSP_MAT_B   optional material for its other faces
+//   MANTLE_LANE_D_BSP_MAT_C   optional material for the hollow's faces (the room's inner walls)
 //
 // It makes, in this actor order (so the doorway, placed last, has a name that sorts before the wall's):
 //   Brush_Z_Wall   Add cube 800 cm, the room's wall
@@ -169,6 +170,20 @@ bool FMantleBspBayDevTest::RunTest(const FString& Parameters)
 			if (Material)
 			{
 				Polys[Index].Material = Material;
+			}
+		}
+	}
+
+	// The hollow's faces become the room's inner walls: a UV-mapped material there can be compared with the editor's directly.
+	const FString PathC = FPlatformMisc::GetEnvironmentVariable(TEXT("MANTLE_LANE_D_BSP_MAT_C"));
+	if (!PathC.IsEmpty())
+	{
+		UMaterialInterface* MaterialC = LoadObject<UMaterialInterface>(nullptr, *PathC);
+		if (TestNotNull(TEXT("material C loaded"), MaterialC))
+		{
+			for (FPoly& Poly : Room->Brush->Polys->Element)
+			{
+				Poly.Material = MaterialC;
 			}
 		}
 	}
