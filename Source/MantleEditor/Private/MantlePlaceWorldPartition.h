@@ -30,16 +30,55 @@ public:
 		bool bRuntimeOnly = false;
 		/** HLOD proxies are generated from the level's own actors, not placed content. */
 		bool bHLOD = false;
+		/** The Data Layers this actor is in that are switched off in the editor: while one is off the actor is not loaded, whatever its cell does. */
+		TArray<FString> OffLayers;
+	};
+
+	/** One Data Layer of the level, reduced to what a creator expects it to do and what Mantle does instead. */
+	struct FLayerEntry
+	{
+		FString Name;
+		/** A runtime layer is one a game can switch while it plays; an editor layer only organizes the editor. */
+		bool bRuntime = false;
+		/** The runtime layer's Initial Runtime State: "Unloaded", "Loaded" or "Activated". Empty for an editor layer. */
+		FString InitialState;
+	};
+
+	/** One Data Layer that is switched off in the editor, and how many of the level's actors it keeps out of the place. */
+	struct FOffLayer
+	{
+		FString Name;
+		int32 ActorCount = 0;
 	};
 
 	/** How many examples a message names before it stops listing. */
 	static constexpr int32 MaxNamedExamples = 5;
 
 	/**
-	 * The actors among Entries whose absence would lose content: the count, and up to
+	 * The actors among Entries whose absence would lose content (not the ones a Data Layer that is off in the editor leaves out, which
+	 * OffLayers reports): the count, and up to
 	 * MaxNamedExamples labels in a stable (sorted) order.
 	 */
 	static int32 CountUnloaded(const TArray<FActorEntry>& Entries, TArray<FString>& OutExamples);
+
+	/**
+	 * The Data Layers that are off in the editor among Entries' unloaded actors, sorted by name, each with its actor count. An actor in
+	 * an off layer is not shown in the editor, so it is left out of the place (CountUnloaded does not count it, and nothing loads it).
+	 */
+	static TArray<FOffLayer> OffLayers(const TArray<FActorEntry>& Entries);
+
+	/** The warning for one off layer: its name and how many actors are left out, and how to publish them. Always true. */
+	static bool DescribeOffLayer(const FOffLayer& Layer, FMantleValidationIssue& OutIssue);
+
+	/** World's Data Layers; empty for a level without a World Partition, or a game world. */
+	static TArray<FLayerEntry> GatherLayers(UWorld* World);
+
+	/**
+	 * One warning when Layers holds a runtime Data Layer: Mantle has no Data Layers, so every actor loaded in the editor publishes as
+	 * an ordinary actor that is always there, a layer's Initial Runtime State is not used, and nothing can switch a layer at run time.
+	 * False, adding nothing, for no layers or only editor layers (they only organize the editor).
+	 */
+	static bool DescribeRuntimeLayers(const TArray<FLayerEntry>& Layers, FMantleValidationIssue& OutIssue);
 
 	/** The actor descriptors of World's World Partition; empty for a level without one, or a game world. */
 	static TArray<FActorEntry> GatherEntries(UWorld* World);
@@ -59,7 +98,7 @@ public:
 	/** What LoadAll did. */
 	struct FLoadResult
 	{
-		/** Actors in unloaded cells before, and still unloaded after (a data layer that is off, or a cell that would not load). */
+		/** Actors in unloaded cells before, and still unloaded after (a cell that would not load). */
 		int32 UnloadedBefore = 0;
 		int32 UnloadedAfter = 0;
 
