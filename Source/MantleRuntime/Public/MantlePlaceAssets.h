@@ -418,6 +418,17 @@ public:
 	};
 	FHolderAssets GetHolderAssets(int64 Holder) const;
 
+	/**
+	 * Whether nothing Holder needs is pending: GetHolderAssets(Holder).IsSettled(), for a streamer that asks every tick while a cell waits (City Sample, 2026-11-22:
+	 * 160 waiting far sets of thousands of needs each took 125 ms a frame through GetHolderAssets). It picks up at the need that was pending when it last looked,
+	 * so a waiting holder costs about one lookup a call however many needs it has; once that walk reaches the end, every need is looked at again (one may have gone
+	 * back to pending: a material wanted at full detail as the view comes near, a mesh to be built again with collision), so the answer is always GetHolderAssets'.
+	 */
+	bool IsHolderSettled(int64 Holder) const;
+
+	/** Needs IsHolderSettled has looked at, ever (tests: what a waiting holder costs). */
+	int64 GetSettleLookups() const { return SettleLookups; }
+
 	/** Holder gives its assets back: an id nobody else wants is dropped from the set (its object, its Nanite and Lumen data, its textures), as soon as its build is not in flight. */
 	void ReleaseEntityAssets(int64 Holder);
 
@@ -916,6 +927,19 @@ private:
 
 	/** The wanted meshes and materials: who uses what. Streaming sets only. */
 	FMantleCellAssetUse CellUse;
+
+	/** Where one of a holder's needs stands (GetHolderAssets, IsHolderSettled). */
+	enum class ENeedState : uint8
+	{
+		Ready,
+		Pending,
+		Failed
+	};
+	ENeedState NeedStateOf(const FMantleCellAssetNeed& Need) const;
+
+	/** IsHolderSettled's place in each holder's needs: the first one it found pending. A holder's entry goes when it acquires or releases. */
+	mutable TMap<int64, int32> SettleCursors;
+	mutable int64 SettleLookups = 0;
 
 	/** The root's asset list, kept so that a cell's meshes can find their Lumen and Nanite entries; by id. */
 	TArray<FMantleAssetRef> StreamManifest;

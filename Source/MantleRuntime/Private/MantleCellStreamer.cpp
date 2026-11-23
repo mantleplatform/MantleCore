@@ -577,6 +577,11 @@ void FMantleCellStreamer::TakeAssetCells()
 	for (const int32 CellIndex : TArray<int32>(AssetCells))
 	{
 		FCell& Cell = Cells.FindChecked(CellIndex);
+		// A cell that waits costs one cheap look a tick (IsSettled); its lists are read once it has settled or its wait has stalled.
+		if (!CellAssets->IsSettled(CellIndex) && !FMantleCellStreamPlan::HasStalled(Now, Cell.AssetsAskedAt, LastAssetProgressSeconds, Settings.AssetIdleTimeoutSeconds))
+		{
+			continue;
+		}
 		TArray<FString> Pending;
 		TArray<FString> Failed;
 		CellAssets->GetState(CellIndex, Pending, Failed);
