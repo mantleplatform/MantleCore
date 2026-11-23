@@ -3918,6 +3918,12 @@ FString FMantleBakeSurface::CacheTag() const
 	{
 		Held += FString::Printf(TEXT("%s%.4f,%.4f"), Held.IsEmpty() ? TEXT(" uv1held=") : TEXT(";"), Point.X, Point.Y);
 	}
+	// A4 try 2: such a material's world tile is judged on its bake before the hold; a bake judged after it (with the same points) must not
+	// stand in.
+	if (!Held.IsEmpty() && WorldTileCm > 0.0)
+	{
+		Held += TEXT(" worldtile=beforehold");
+	}
 	if (IsPlain() && !bTintMask)
 	{
 		return Held;

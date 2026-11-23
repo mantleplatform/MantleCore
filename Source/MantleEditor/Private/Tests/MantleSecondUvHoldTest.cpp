@@ -417,4 +417,28 @@ bool FMantleSecondUvWorldTileTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleSecondUvCacheTagTest,
+	"Mantle.Editor.SecondUv.WorldTileJudgementIsInTheCacheKey",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleSecondUvCacheTagTest::RunTest(const FString& Parameters)
+{
+	// Build 3 reused build 2's bake of the road: the world tile is now judged before the hold, but its key (the same held points) had not
+	// changed. A held material judged for a world tile says so in its key; every other material keeps the key it had.
+	FMantleBakeSurface Held;
+	Held.SecondUvPoints = { FVector2D(0.25, 0.5), FVector2D(0.5, 0.5), FVector2D(0.75, 0.5) };
+	Held.WorldTileCm = FMantleBakeSurface::DefaultWorldTileCm;
+	TestTrue(TEXT("a held, world-judged material's key names the judgement"), Held.CacheTag().Contains(TEXT("worldtile=beforehold")));
+
+	FMantleBakeSurface WorldOnly;
+	WorldOnly.WorldTileCm = FMantleBakeSurface::DefaultWorldTileCm;
+	TestFalse(TEXT("a world-mapped material that reads no second UV set keeps its key"), WorldOnly.CacheTag().Contains(TEXT("beforehold")));
+
+	FMantleBakeSurface HeldOnly;
+	HeldOnly.SecondUvPoints = Held.SecondUvPoints;
+	TestFalse(TEXT("a held material with no world tile to judge keeps its key"), HeldOnly.CacheTag().Contains(TEXT("beforehold")));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
