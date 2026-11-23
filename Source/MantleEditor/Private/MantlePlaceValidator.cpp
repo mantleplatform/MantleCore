@@ -2170,6 +2170,14 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 		CheckComponents(Actor, Type, Result);
 		CheckAssetsAndTextures(Actor, Type, Result);
 		CheckSound(Actor, Type, Result);
+		if (Type == EMantleEntityType::SoundEmitter)
+		{
+			const FString Mixing = DescribeUnpublishedSoundMixing(Actor);
+			if (!Mixing.IsEmpty())
+			{
+				MixedSounds.Add(FString::Printf(TEXT("'%s' (%s)"), *LabelOf(Actor), *Mixing));
+			}
+		}
 		ValidatorCheckSkeletalMesh(Actor, Type, Result);
 		CheckDecal(Actor, Type, Result);
 		CheckCrowdSpawner(Actor, Type, Result);
@@ -2231,14 +2239,6 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 		CheckPublishedSizeLimits(Actor, Type, Result);
 		CheckPublishedRanges(Actor, Type, Result);
 		CheckDroppedBehaviorForCheck(Actor, Result);
-		if (Type == EMantleEntityType::SoundEmitter)
-		{
-			const FString Mixing = DescribeUnpublishedSoundMixing(Actor);
-			if (!Mixing.IsEmpty())
-			{
-				MixedSounds.Add(FString::Printf(TEXT("'%s' (%s)"), *LabelOf(Actor), *Mixing));
-			}
-		}
 		PhysicsObjects += CheckPhysicsForCheck(Actor, Type, Result) ? 1 : 0;
 	}
 
