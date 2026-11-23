@@ -718,6 +718,7 @@ namespace MantleBrushBakePrivate
 
 		UMaterialInterface* Material = UMaterial::GetDefaultMaterial(MD_Surface);
 		TArray<FGroup> Groups;
+		TArray<TArray<FString>> LabelsByGroup;
 		TMap<FString, int32> GroupByTag;
 		for (const ABrush* Volume : Volumes)
 		{
@@ -739,7 +740,9 @@ namespace MantleBrushBakePrivate
 				Added.bBlocksVisibility = bBlocksVisibility;
 				Added.Collision = Collision;
 				Added.NamePrefix = TEXT("Blocking volumes");
+				LabelsByGroup.AddDefaulted();
 			}
+			LabelsByGroup[GroupIndex].Add(Volume->GetActorLabel());
 			const FTransform& World = Volume->GetBrushComponent()->GetComponentTransform();
 			for (const FPoly& Source : Volume->Brush->Polys->Element)
 			{
@@ -766,6 +769,17 @@ namespace MantleBrushBakePrivate
 				Surface.Triangles = (Poly.Vertices.Num() - 2) * 2;
 				Groups[GroupIndex].Surfaces.Add(Surface);
 			}
+		}
+		// The meshes say which volumes they are: "Blocking volumes: Cylinder pillar, Stairs".
+		for (int32 Index = 0; Index < Groups.Num(); ++Index)
+		{
+			const TArray<FString>& Labels = LabelsByGroup[Index];
+			TArray<FString> Shown;
+			for (int32 Label = 0; Label < Labels.Num() && Label < 3; ++Label)
+			{
+				Shown.Add(Labels[Label]);
+			}
+			Groups[Index].NamePrefix = FString::Printf(TEXT("Blocking volumes: %s%s"), *FString::Join(Shown, TEXT(", ")), Labels.Num() > 3 ? TEXT(", ...") : TEXT(""));
 		}
 		return BakeGroups(Groups, LevelKey, TriangleCap, VertexCap, OutChunks, OutWhy);
 	}
@@ -815,8 +829,8 @@ FMantleSplineBakeResult FMantleBrushBake::BakeVolumeBrushes(TConstArrayView<ABru
 			EMantleCollision Collision = EMantleCollision::Blocking;
 			bool bBlocksVisibility = true;
 			FMantleBlockingVolumeExport::ReadCollision(Volume, Collision, bBlocksVisibility);
-			Signature += TEXT("\n") + BrushMd5Hex(BrushSignature(Volume) + FString::Printf(TEXT("|%d|%d|%s"), static_cast<int32>(Collision),
-				bBlocksVisibility ? 1 : 0, *BrushVector(Volume->GetBrushComponent()->GetComponentTransform().GetScale3D())));
+			Signature += TEXT("\n") + BrushMd5Hex(BrushSignature(Volume) + FString::Printf(TEXT("|%d|%d|%s|%s"), static_cast<int32>(Collision),
+				bBlocksVisibility ? 1 : 0, *BrushVector(Volume->GetBrushComponent()->GetComponentTransform().GetScale3D()), *Volume->GetActorLabel()));
 		}
 		const FString CacheKey = TEXT("vol|") + LevelKey + TEXT("#") + BrushMd5Hex(Signature);
 		Used.Add(CacheKey);

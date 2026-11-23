@@ -6102,15 +6102,12 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 				FString::Printf(TEXT("'%s' %s %s"), *Problem.OwnerLabel, *Problem.What, *Problem.Remedy) });
 			Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Dropped, Problem.OwnerLabel, Problem.What);
 		}
-		for (const FMantleSplineBakeReport& Report : VolumeBake.Reports)
+		// Each volume is named, so none is lost without a word: its hidden collision mesh is named after it (the meshes are merged by
+		// level, collision and sight rule).
+		for (const ABrush* Volume : FMantleBrushBake::CollectVolumes(World))
 		{
-			if (Report.Components > 0)
-			{
-				Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept, Report.OwnerLabel,
-					FString::Printf(TEXT("Blocking Volumes that are not boxes, published as hidden collision meshes (%d mesh%s): nothing is drawn, players and objects are stopped."),
-						Report.Meshes, Report.Meshes == 1 ? TEXT("") : TEXT("es")),
-					Report.Components);
-			}
+			Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept, ExporterLabelOf(Volume),
+				TEXT("a Blocking Volume that is not a box, published as part of a hidden collision mesh named \"Blocking volumes: ...\": nothing is drawn, players and objects are stopped."));
 		}
 		TArray<FMantleBakedSplineMesh> BakedMeshes = Bake.Meshes;
 		BakedMeshes.Append(CableBake.Meshes);

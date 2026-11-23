@@ -192,6 +192,7 @@ bool FMantleBlockingVolumeExportTest::RunTest(const FString& Parameters)
 			TestFalse(TEXT("an invisible wall lets sight traces through"), Props->bBlocksVisibility);
 		}
 		TestTrue(TEXT("placed at the cylinder"), BakedEntity->Transform.GetLocation().Equals(Round->GetActorLocation(), 2.0));
+		TestTrue(TEXT("named after the volume it is"), BakedEntity->Name.Contains(TEXT("Round pillar")));
 	}
 	// A volume with no shape is left out and said; one that collides with nothing is not.
 	TestNull(TEXT("a shapeless volume is not published"), MantleExportedEntities::Named(Result, TEXT("Loose volume")));
