@@ -30,6 +30,29 @@ public:
 		bool bRuntimeOnly = false;
 		/** HLOD proxies are generated from the level's own actors, not placed content. */
 		bool bHLOD = false;
+		/** The Data Layers this actor is in that are switched off in the editor: while one is off the actor is not loaded, whatever its cell does. */
+		TArray<FString> OffLayers;
+	};
+
+	/** One Data Layer of the level, reduced to what a creator expects it to do and what Mantle does instead. */
+	struct FLayerEntry
+	{
+		FString Name;
+		/** A runtime layer is one a game can switch while it plays; an editor layer only organizes the editor. */
+		bool bRuntime = false;
+		/** The runtime layer's Initial Runtime State: "Unloaded", "Loaded" or "Activated". Empty for an editor layer. */
+		FString InitialState;
+	};
+
+	/** The unloaded actors of a level, split by why: a cell the editor has not loaded, or a Data Layer that is off. */
+	struct FUnloadedSplit
+	{
+		int32 CellCount = 0;
+		TArray<FString> CellExamples;
+		int32 LayerCount = 0;
+		TArray<FString> LayerExamples;
+		/** The off layers that hold them, sorted, each once. */
+		TArray<FString> LayerNames;
 	};
 
 	/** How many examples a message names before it stops listing. */
@@ -40,6 +63,23 @@ public:
 	 * MaxNamedExamples labels in a stable (sorted) order.
 	 */
 	static int32 CountUnloaded(const TArray<FActorEntry>& Entries, TArray<FString>& OutExamples);
+
+	/** The unloaded actors among Entries (CountUnloaded's rule), split by whether a Data Layer that is off keeps them out or an unloaded cell does. */
+	static FUnloadedSplit SplitUnloaded(const TArray<FActorEntry>& Entries);
+
+	/** The sentence for the actors a Data Layer that is off keeps out of the place, and its remedy. */
+	static FString DescribeLayerProblem(const FUnloadedSplit& Split);
+	static FString DescribeLayerRemedy();
+
+	/** World's Data Layers; empty for a level without a World Partition, or a game world. */
+	static TArray<FLayerEntry> GatherLayers(UWorld* World);
+
+	/**
+	 * One warning when Layers holds a runtime Data Layer: Mantle has no Data Layers, so every actor loaded in the editor publishes as
+	 * an ordinary actor that is always there, a layer's Initial Runtime State is not used, and nothing can switch a layer at run time.
+	 * False, adding nothing, for no layers or only editor layers (they only organize the editor).
+	 */
+	static bool DescribeRuntimeLayers(const TArray<FLayerEntry>& Layers, FMantleValidationIssue& OutIssue);
 
 	/** The actor descriptors of World's World Partition; empty for a level without one, or a game world. */
 	static TArray<FActorEntry> GatherEntries(UWorld* World);

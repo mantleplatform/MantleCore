@@ -16,6 +16,8 @@
 #include "WorldPartition/WorldPartitionEditorLoaderAdapter.h"
 #include "WorldPartition/WorldPartitionHelpers.h"
 #if WITH_EDITOR
+#include "WorldPartition/DataLayer/DataLayerInstance.h"
+#include "WorldPartition/DataLayer/DataLayerManager.h"
 #include "WorldPartition/HLOD/HLODActor.h"
 #include "WorldPartition/WorldPartitionActorDescInstance.h"
 #endif
@@ -58,8 +60,9 @@ TArray<FMantlePlaceWorldPartition::FActorEntry> FMantlePlaceWorldPartition::Gath
 		return Entries;
 	}
 
+	const UDataLayerManager* DataLayers = WorldPartition->GetDataLayerManager();
 	FWorldPartitionHelpers::ForEachActorDescInstance(WorldPartition,
-		[&Entries](const FWorldPartitionActorDescInstance* Desc)
+		[&Entries, DataLayers](const FWorldPartitionActorDescInstance* Desc)
 		{
 			if (Desc)
 			{
@@ -69,12 +72,146 @@ TArray<FMantlePlaceWorldPartition::FActorEntry> FMantlePlaceWorldPartition::Gath
 				Entry.bLoaded = Desc->IsLoaded();
 				Entry.bRuntimeOnly = Desc->GetActorIsRuntimeOnly();
 				Entry.bHLOD = NativeClass && NativeClass->IsChildOf(AWorldPartitionHLOD::StaticClass());
+				// The layers that keep it out: an actor in a layer that is off in the editor is not loaded, whichever cell it sits in.
+				if (!Entry.bLoaded && DataLayers)
+				{
+					for (const FName& LayerName : Desc->GetDataLayerInstanceNames().ToArray())
+					{
+						const UDataLayerInstance* Layer = DataLayers->GetDataLayerInstanceFromName(LayerName);
+						if (Layer && !Layer->IsEffectiveLoadedInEditor())
+						{
+							Entry.OffLayers.AddUnique(Layer->GetDataLayerShortName());
+						}
+					}
+				}
 				Entries.Add(MoveTemp(Entry));
 			}
 			return true;
 		});
 #endif
 	return Entries;
+}
+
+FMantlePlaceWorldPartition::FUnloadedSplit FMantlePlaceWorldPartition::SplitUnloaded(const TArray<FActorEntry>& Entries)
+{
+	FUnloadedSplit Split;
+	TArray<FString> CellLabels;
+	TArray<FString> LayerLabels;
+	for (const FActorEntry& Entry : Entries)
+	{
+		if (Entry.bLoaded || Entry.bRuntimeOnly || Entry.bHLOD)
+		{
+			continue;
+		}
+		if (Entry.OffLayers.Num() > 0)
+		{
+			LayerLabels.Add(Entry.Label);
+			for (const FString& Name : Entry.OffLayers)
+			{
+				Split.LayerNames.AddUnique(Name);
+			}
+		}
+		else
+		{
+			CellLabels.Add(Entry.Label);
+		}
+	}
+	CellLabels.Sort();
+	LayerLabels.Sort();
+	Split.LayerNames.Sort();
+	Split.CellCount = CellLabels.Num();
+	Split.LayerCount = LayerLabels.Num();
+	for (int32 Index = 0; Index < MaxNamedExamples; ++Index)
+	{
+		if (CellLabels.IsValidIndex(Index))
+		{
+			Split.CellExamples.Add(CellLabels[Index]);
+		}
+		if (LayerLabels.IsValidIndex(Index))
+		{
+			Split.LayerExamples.Add(LayerLabels[Index]);
+		}
+	}
+	return Split;
+}
+
+FString FMantlePlaceWorldPartition::DescribeLayerProblem(const FUnloadedSplit& Split)
+{
+	return FString::Printf(
+		TEXT("%d actor%s (%s%s) %s in %s that %s switched off in the editor (%s), so %s not loaded and would be left out of the place."),
+		Split.LayerCount, Split.LayerCount == 1 ? TEXT("") : TEXT("s"),
+		*FString::Join(Split.LayerExamples, TEXT(", ")), Split.LayerCount > Split.LayerExamples.Num() ? TEXT(", and others") : TEXT(""),
+		Split.LayerCount == 1 ? TEXT("is") : TEXT("are"),
+		Split.LayerNames.Num() == 1 ? TEXT("a Data Layer") : TEXT("Data Layers"), Split.LayerNames.Num() == 1 ? TEXT("is") : TEXT("are"),
+		*FString::Join(Split.LayerNames, TEXT(", ")),
+		Split.LayerCount == 1 ? TEXT("it is") : TEXT("they are"));
+}
+
+FString FMantlePlaceWorldPartition::DescribeLayerRemedy()
+{
+	return TEXT("Mantle publishes what is loaded. To publish them, switch the layer on: in the Data Layers window, turn on Load in Editor for it. To leave them out, take the actors out of the layer or delete them.");
+}
+
+TArray<FMantlePlaceWorldPartition::FLayerEntry> FMantlePlaceWorldPartition::GatherLayers(UWorld* World)
+{
+	TArray<FLayerEntry> Layers;
+#if WITH_EDITOR
+	if (!IsValid(World) || World->IsGameWorld())
+	{
+		return Layers;
+	}
+	UWorldPartition* WorldPartition = World->GetWorldPartition();
+	const UDataLayerManager* DataLayers = WorldPartition && WorldPartition->IsInitialized() ? WorldPartition->GetDataLayerManager() : nullptr;
+	if (!DataLayers)
+	{
+		return Layers;
+	}
+	DataLayers->ForEachDataLayerInstance([&Layers](UDataLayerInstance* Layer)
+	{
+		if (Layer)
+		{
+			FLayerEntry Entry;
+			Entry.Name = Layer->GetDataLayerShortName();
+			Entry.bRuntime = Layer->IsRuntime();
+			if (Entry.bRuntime)
+			{
+				switch (Layer->GetInitialRuntimeState())
+				{
+				case EDataLayerRuntimeState::Activated: Entry.InitialState = TEXT("Activated"); break;
+				case EDataLayerRuntimeState::Loaded: Entry.InitialState = TEXT("Loaded"); break;
+				default: Entry.InitialState = TEXT("Unloaded"); break;
+				}
+			}
+			Layers.Add(MoveTemp(Entry));
+		}
+		return true;
+	});
+	Layers.Sort([](const FLayerEntry& A, const FLayerEntry& B) { return A.Name < B.Name; });
+#endif
+	return Layers;
+}
+
+bool FMantlePlaceWorldPartition::DescribeRuntimeLayers(const TArray<FLayerEntry>& Layers, FMantleValidationIssue& OutIssue)
+{
+	TArray<FString> Named;
+	for (const FLayerEntry& Layer : Layers)
+	{
+		if (Layer.bRuntime)
+		{
+			Named.Add(FString::Printf(TEXT("%s (starts %s)"), *Layer.Name, *Layer.InitialState));
+		}
+	}
+	if (Named.Num() == 0)
+	{
+		return false;
+	}
+	OutIssue.Severity = EMantleIssueSeverity::Warning;
+	OutIssue.Actor.Reset();
+	OutIssue.Problem = FString::Printf(
+		TEXT("This level has runtime Data Layer%s: %s. Mantle doesn't use Data Layers: every actor loaded in the editor publishes as an ordinary actor that is always there, so a layer's Initial Runtime State is ignored and nothing can switch a layer on or off while the place plays."),
+		Named.Num() == 1 ? TEXT("") : TEXT("s"), *FString::Join(Named, TEXT(", ")));
+	OutIssue.Remedy = TEXT("Nothing to do if every layer should be there from the start. Actors that should not show at the start have to come out of the level.");
+	return true;
 }
 
 FString FMantlePlaceWorldPartition::DescribeProblem(int32 Count, const TArray<FString>& Examples)
@@ -100,33 +237,48 @@ FString FMantlePlaceWorldPartition::DescribeRemedy()
 
 void FMantlePlaceWorldPartition::CheckLevel(UWorld* World, TArray<FMantleValidationIssue>& OutIssues)
 {
-	TArray<FString> Examples;
-	const int32 Count = CountUnloaded(GatherEntries(World), Examples);
-	if (Count == 0)
+	const FUnloadedSplit Split = SplitUnloaded(GatherEntries(World));
+	if (Split.CellCount > 0)
 	{
-		return;
+		OutIssues.Add(FMantleValidationIssue{
+			EMantleIssueSeverity::Error,
+			FString(),
+			DescribeProblem(Split.CellCount, Split.CellExamples),
+			DescribeRemedy() });
+	}
+	if (Split.LayerCount > 0)
+	{
+		OutIssues.Add(FMantleValidationIssue{
+			EMantleIssueSeverity::Error,
+			FString(),
+			DescribeLayerProblem(Split),
+			DescribeLayerRemedy() });
 	}
 
-	OutIssues.Add(FMantleValidationIssue{
-		EMantleIssueSeverity::Error,
-		FString(),
-		DescribeProblem(Count, Examples),
-		DescribeRemedy() });
+	FMantleValidationIssue RuntimeLayers;
+	if (DescribeRuntimeLayers(GatherLayers(World), RuntimeLayers))
+	{
+		OutIssues.Add(MoveTemp(RuntimeLayers));
+	}
 }
 
 void FMantlePlaceWorldPartition::CheckExport(UWorld* World, TArray<FMantleParseError>& OutErrors)
 {
-	TArray<FString> Examples;
-	const int32 Count = CountUnloaded(GatherEntries(World), Examples);
-	if (Count == 0)
+	const FUnloadedSplit Split = SplitUnloaded(GatherEntries(World));
+	if (Split.CellCount > 0)
 	{
-		return;
+		UE_LOG(LogMantle, Warning, TEXT("Export refused: %d World Partition actor(s) are not loaded."), Split.CellCount);
+		OutErrors.Add(FMantleParseError{
+			TEXT("/worldPartition"),
+			DescribeProblem(Split.CellCount, Split.CellExamples) + TEXT(" ") + DescribeRemedy() });
 	}
-
-	UE_LOG(LogMantle, Warning, TEXT("Export refused: %d World Partition actor(s) are not loaded."), Count);
-	OutErrors.Add(FMantleParseError{
-		TEXT("/worldPartition"),
-		DescribeProblem(Count, Examples) + TEXT(" ") + DescribeRemedy() });
+	if (Split.LayerCount > 0)
+	{
+		UE_LOG(LogMantle, Warning, TEXT("Export refused: %d actor(s) are in Data Layers that are off in the editor."), Split.LayerCount);
+		OutErrors.Add(FMantleParseError{
+			TEXT("/worldPartition/dataLayers"),
+			DescribeLayerProblem(Split) + TEXT(" ") + DescribeLayerRemedy() });
+	}
 }
 
 FMantlePlaceWorldPartition::FLoadResult FMantlePlaceWorldPartition::LoadAll(UWorld* World)
