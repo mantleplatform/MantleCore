@@ -54,19 +54,18 @@ namespace MantleTriggerShapePrivate
 		return false;
 	}
 
-	/** Generates overlap events, and only overlaps: collision query only, or no channel it blocks. */
+	/** Generates overlap events, can be queried, and blocks no channel. (A query-only shape that blocks still stops a character's sweep: a wall.) */
 	bool ActsAsTrigger(const UPrimitiveComponent* Shape)
 	{
 		if (!Shape || !Shape->GetGenerateOverlapEvents())
 		{
 			return false;
 		}
-		const ECollisionEnabled::Type Enabled = Shape->GetCollisionEnabled();
-		if (!CollisionEnabledHasQuery(Enabled))
+		if (!CollisionEnabledHasQuery(Shape->GetCollisionEnabled()))
 		{
 			return false; // no query: nothing can overlap it
 		}
-		return Enabled == ECollisionEnabled::QueryOnly || !BlocksAnyChannel(Shape);
+		return !BlocksAnyChannel(Shape);
 	}
 }
 

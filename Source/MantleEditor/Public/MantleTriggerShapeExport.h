@@ -35,8 +35,8 @@ public:
 	static bool IsCapsule(const UActorComponent* Component);
 
 	/**
-	 * Whether Component is a box, sphere or capsule that acts as a trigger: it generates overlap events, and it only overlaps (collision
-	 * query only, or no channel it blocks). A shape that blocks is collision (a wall, a prop's hit box), not a trigger.
+	 * Whether Component is a box, sphere or capsule that acts as a trigger: it generates overlap events, and it only overlaps (it blocks
+	 * no channel). A shape that blocks is collision (a wall, a prop's hit box), not a trigger.
 	 */
 	static bool IsTriggerShape(const UActorComponent* Component);
 
