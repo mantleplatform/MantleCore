@@ -142,7 +142,7 @@ bool FMantleTriggerShapeExportTest::RunTest(const FString& Parameters)
 	Cylinder->Build(World, Round);
 
 	TestTrue(TEXT("a box brush is a published trigger"), FMantleTriggerShapeExport::IsBoxTriggerBrush(Box));
-	TestFalse(TEXT("a cylinder brush is not"), FMantleTriggerShapeExport::IsBoxTriggerBrush(Round));
+	TestTrue(TEXT("a cylinder brush is one too, as the box around its bounds"), FMantleTriggerShapeExport::IsBoxTriggerBrush(Round));
 
 	const FMantleExportResult Result = FMantlePlaceExporter::Export(World, FMantleExportOptions());
 
@@ -174,21 +174,27 @@ bool FMantleTriggerShapeExportTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("of radius 80"), BallProps->Extent.Equals(FVector(80.0, 80.0, 80.0), 0.01));
 	}
 
-	// The cylinder brush is left out with a warning.
-	TestNull(TEXT("a cylinder brush is not published"), MantleExportedEntities::Named(Result, TEXT("Round zone")));
+	// The cylinder brush publishes as a box around its bounds (radius 100, height 300: about 100 by 100 by 150 half-size).
+	const FMantleTriggerVolumeProps* RoundProps = TriggerPropsOf(Result, TEXT("Round zone"));
+	if (TestNotNull(TEXT("a cylinder brush is published as a trigger"), RoundProps))
+	{
+		TestTrue(TEXT("a box"), RoundProps->Shape == EMantleTriggerShape::Box);
+		TestTrue(TEXT("about the cylinder's width each way"), RoundProps->Extent.X > 80.0 && RoundProps->Extent.X <= 100.5 && RoundProps->Extent.Y > 80.0 && RoundProps->Extent.Y <= 100.5);
+		TestEqual(TEXT("and half its height up"), RoundProps->Extent.Z, 150.0, 0.5);
+	}
 	TestFalse(TEXT("Export refuses nothing here"), Result.Errors.ContainsByPredicate([](const FMantleParseError& Error)
 	{
 		return Error.Message.Contains(TEXT("Door zone")) || Error.Message.Contains(TEXT("capsule")) || Error.Message.Contains(TEXT("Round zone"));
 	}));
-	TestEqual(TEXT("one volume is named as dropped"), Result.Coverage.Count(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Dropped), static_cast<int64>(1));
+	TestEqual(TEXT("no volume is dropped"), Result.Coverage.Count(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Dropped), static_cast<int64>(0));
 	TestEqual(TEXT("one is kept"), Result.Coverage.Count(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept), static_cast<int64>(1));
-	TestEqual(TEXT("both capsules are approximated"), Result.Coverage.Count(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Approximated), static_cast<int64>(2));
+	TestEqual(TEXT("both capsules and the cylinder are approximated"), Result.Coverage.Count(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Approximated), static_cast<int64>(3));
 
 	const FMantleValidationResult Validation = FMantlePlaceValidator::Validate(World);
 	TestFalse(TEXT("Check says nothing about the brush trigger"), HasIssue(Validation, TEXT("Door zone"), EMantleIssueSeverity::Warning) || HasIssue(Validation, TEXT("Door zone"), EMantleIssueSeverity::Error));
 	TestFalse(TEXT("nor about the capsules"), HasIssue(Validation, TEXT("Tall capsule"), EMantleIssueSeverity::Error) || HasIssue(Validation, TEXT("Ball capsule"), EMantleIssueSeverity::Error));
 	TestTrue(TEXT("Check says each capsule publishes as another shape"), HasIssue(Validation, TEXT("Tall capsule"), EMantleIssueSeverity::Warning) && HasIssue(Validation, TEXT("Ball capsule"), EMantleIssueSeverity::Warning));
-	TestTrue(TEXT("Check warns about the cylinder"), HasIssue(Validation, TEXT("Round zone"), EMantleIssueSeverity::Warning));
+	TestTrue(TEXT("Check says the cylinder publishes as a box around it"), HasIssue(Validation, TEXT("Round zone"), EMantleIssueSeverity::Warning));
 	return true;
 }
 

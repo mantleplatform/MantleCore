@@ -1447,6 +1447,41 @@ bool FMantleWaterPluginChainTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleWaterSingleLayerWithoutOutputIsClearTest,
+	"Mantle.Editor.Water.SingleLayerWithoutOutputNodeIsClearWater",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleWaterSingleLayerWithoutOutputIsClearTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWaterMaterialTestPrivate;
+
+	// The publish test's B4 pond: Single Layer Water, a dark base color and no output node. The engine gives it no scattering or
+	// absorption (clear water); its base color must not become the deep color and make a black slab.
+	UMaterial* Pond = NewObject<UMaterial>(GetTransientPackage());
+	Pond->SetShadingModel(MSM_SingleLayerWater);
+	Pond->GetEditorOnlyData()->BaseColor.Connect(0, AddColor(Pond, FLinearColor(0.02f, 0.08f, 0.12f)));
+	const FMantleWaterBake& Clear = FMantlePlaceAssets::AnalyzeMaterial(Pond).Fidelity2.Water;
+	TestTrue(TEXT("it is found as Single Layer Water"), Clear.bFound && Clear.bSingleLayer);
+	TestTrue(TEXT("with a color"), Clear.bColor);
+	for (int32 Channel = 0; Channel < 3; ++Channel)
+	{
+		TestEqual(TEXT("the color is a clear lake's, not the base color"), Clear.Color[Channel], FMantleWaterMaterial::ClearLakeColor[Channel], 1.0e-6);
+	}
+	TestFalse(TEXT("and it has no coefficients of its own"), Clear.bVolume);
+
+	// With an output node the base color is still read: it is the deep color of that water (unchanged).
+	UMaterial* Deep = NewObject<UMaterial>(GetTransientPackage());
+	Deep->SetShadingModel(MSM_SingleLayerWater);
+	UMaterialExpressionSingleLayerWaterMaterialOutput* Output = AddExpression<UMaterialExpressionSingleLayerWaterMaterialOutput>(Deep);
+	Output->ScatteringCoefficients.Connect(0, AddColor(Deep, FLinearColor(0.01f, 0.02f, 0.03f)));
+	Output->AbsorptionCoefficients.Connect(0, AddColor(Deep, FLinearColor(0.2f, 0.1f, 0.05f)));
+	Deep->GetEditorOnlyData()->BaseColor.Connect(0, AddColor(Deep, FLinearColor(0.0f, 0.2f, 0.25f)));
+	const FMantleWaterBake& Tinted = FMantlePlaceAssets::AnalyzeMaterial(Deep).Fidelity2.Water;
+	TestEqual(TEXT("an output node keeps the base color as the albedo"), Tinted.Color[2], 0.25, 1.0e-4);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleWaterMmWaterTest,
 	"Mantle.Editor.Water.MmWaterRead",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

@@ -1982,8 +1982,8 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 		{
 			return false;
 		}
-		OutWhat = TEXT("is a Trigger Volume that is not a box, which Mantle does not publish: a trigger is a box or a sphere.");
-		OutRemedy = TEXT("Replace it with a Trigger Box or a Trigger Sphere, or shape the volume as a box. The volume would be dropped.");
+		OutWhat = TEXT("is a Trigger Volume with no shape, which Mantle does not publish.");
+		OutRemedy = TEXT("Shape the volume (Geometry or the brush builders), or use a Trigger Box. The volume would be dropped.");
 		return true;
 	}
 	if (Actor->IsA(AVolume::StaticClass()))
@@ -2420,10 +2420,16 @@ namespace MantlePlaceExporterPrefab
 			}
 			return false;
 		}
-		if ((Component->IsA(UBoxComponent::StaticClass()) || Component->IsA(USphereComponent::StaticClass()) || FMantleTriggerShapeExport::IsTriggerCapsule(Component))
-			&& ExporterIsGameContent(Component))
+		// A box, sphere or capsule is a trigger only when it overlaps and blocks nothing. A box or sphere that blocks is collision: a part
+		// published as a hidden library cube or sphere (FMantleTriggerShapeExport::ReadCollisionShape).
+		if (FMantleTriggerShapeExport::IsTriggerShape(Component) && ExporterIsGameContent(Component))
 		{
 			OutType = EMantleEntityType::TriggerVolume;
+			return true;
+		}
+		if (FMantleTriggerShapeExport::IsCollisionShape(Component))
+		{
+			OutType = EMantleEntityType::StaticMesh;
 			return true;
 		}
 		if (const UAudioComponent* Audio = Cast<UAudioComponent>(Component))
@@ -2513,6 +2519,25 @@ namespace MantlePlaceExporterPrefab
 		{
 		case EMantleEntityType::StaticMesh:
 		{
+			// A blocking box or sphere is a hidden library cube or sphere the size of the shape.
+			FMantleStaticMeshProps ShapeProps;
+			FVector ShapeScale = FVector::OneVector;
+			if (FMantleTriggerShapeExport::ReadCollisionShape(Part.Component, ShapeProps, ShapeScale))
+			{
+				ReferencedAssets.Add(ShapeProps.Mesh);
+				if (!Uploads.MeshBounds.Contains(ShapeProps.Mesh))
+				{
+					Uploads.MeshBounds.Add(ShapeProps.Mesh, FBox(FVector(-50.0), FVector(50.0)));
+				}
+				Entity.Transform.SetScale3D(Entity.Transform.GetScale3D() * ShapeScale);
+				Entity.Props.Set<FMantleStaticMeshProps>(ShapeProps);
+				if (OutSplitParts)
+				{
+					OutSplitParts->Reset();
+					OutSplitParts->Add(ShapeProps);
+				}
+				break;
+			}
 			TArray<FMantleStaticMeshProps> AllParts;
 			if (const UStaticMeshComponent* Mesh = Cast<UStaticMeshComponent>(Part.Component))
 			{
@@ -2936,8 +2961,8 @@ bool FMantlePlaceExporter::ClassifyActor(const AActor* Actor, EMantleEntityType&
 	// class, so both engine trigger actors and plain actors round-trip.
 	if (const USceneComponent* Root = Actor->GetRootComponent())
 	{
-		if (Root->IsA(UBoxComponent::StaticClass()) || Root->IsA(USphereComponent::StaticClass())
-			|| (FMantleTriggerShapeExport::IsTriggerCapsule(Root) && !Actor->IsA(APawn::StaticClass())))
+		// A Pawn's capsule is its collision, never a trigger; a box or sphere root that blocks is not a trigger either (it is a part of a Group).
+		if (FMantleTriggerShapeExport::IsTriggerShape(Root) && !Actor->IsA(APawn::StaticClass()))
 		{
 			// A trigger with parts beside it is a prefab (#468): a Group, the trigger one of its parts.
 			OutType = MantlePlaceExporterPrefab::HasPart(Actor, Root) ? EMantleEntityType::Group : EMantleEntityType::TriggerVolume;
@@ -5720,8 +5745,18 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		if (FVector BrushCenter, BrushExtent; Entity.Type == EMantleEntityType::TriggerVolume && FMantleTriggerShapeExport::ReadBoxBrush(Actor, BrushCenter, BrushExtent))
 		{
 			Entity.Transform = FTransform(BrushCenter) * Entity.Transform;
-			Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept, ExporterLabelOf(Actor),
-				TEXT("a Trigger Volume published as a box trigger."));
+			bool bApproximated = false;
+			FMantleTriggerShapeExport::ReadBoxBrush(Actor, BrushCenter, BrushExtent, &bApproximated);
+			if (bApproximated)
+			{
+				Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
+					TEXT("a Trigger Volume that is not a box, published as the box trigger around its bounds: it fires a little earlier at the corners."));
+			}
+			else
+			{
+				Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept, ExporterLabelOf(Actor),
+					TEXT("a Trigger Volume published as a box trigger."));
+			}
 		}
 		else if (Entity.Type == EMantleEntityType::TriggerVolume && FMantleTriggerShapeExport::IsCapsule(Actor->GetRootComponent()))
 		{

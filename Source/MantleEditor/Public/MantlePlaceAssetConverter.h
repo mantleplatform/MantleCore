@@ -1209,6 +1209,19 @@ public:
 	static constexpr double MinGlassOpacity = 0.1;
 
 	/**
+	 * A Modulate material multiplies what is behind it by its color (scene x c). A black sheet of opacity a gives scene x (1 - a), so
+	 * the sheet that darkens as much is a = 1 - brightness(c): exact for a grey color, and a colored one keeps how much it darkens, not
+	 * its hue. Brightness is the color's luminance (linear, Rec. 709). Returns the opacity, 0..1.
+	 */
+	static double ModulateOpacity(const double (&Color)[3]);
+
+	/**
+	 * A modulate color texture (BGRA8, sRGB) times its factor, as the darkening sheet's image: black, with the alpha ModulateOpacity
+	 * gives each pixel. Pixels is the texture as stored; the result has the same size.
+	 */
+	static void ModulateSheet(const TArray<FColor>& Pixels, const double (&Factor)[3], TArray<FColor>& OutSheet);
+
+	/**
 	 * Maps materials[Index] of a flattened GLB to the material document, preparing its textures
 	 * (added to OutSet) and reporting what did not carry over. MaterialName names the Unreal
 	 * material in messages. bSourceTexturesReported: the material's oversized source textures

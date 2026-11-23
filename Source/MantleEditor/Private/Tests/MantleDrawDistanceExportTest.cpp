@@ -179,6 +179,54 @@ bool FMantleDrawDistanceHugeTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleDrawDistanceTallPieceTest,
+	"Mantle.Editor.DrawDistance.TallNarrowPieceGoesToItsCell",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleDrawDistanceTallPieceTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleDrawDistanceExportTestPrivate;
+
+	// City Sample's SM_arbitrary_roof_694: bounds extent (5695, 2941, 20891) cm. Its sphere is 218 m round (so the old rule left it in the root, over a tower
+	// that was not loaded), its footprint 64 m across: one building's piece, no cut-off of its own, in its cell.
+	FMantleDrawDistanceSource Roof = Source(21852.0);
+	Roof.FootprintRadius = FMath::Sqrt(FMath::Square(5695.0) + FMath::Square(2941.0));
+	TestTrue(TEXT("its sphere is past the never-cull radius"), Roof.SphereRadius > FMantleDrawDistance::NeverCullRadius());
+	TestTrue(TEXT("its footprint is not"), Roof.FootprintRadius < FMantleDrawDistance::NeverCullRadius());
+	TestEqual(TEXT("a tall narrow piece has no cut-off of its own"), Apply(Roof).DrawDistance, FMantleDrawDistance::NoCutOff);
+
+	// A mast or a tower far taller than wide is the same.
+	FMantleDrawDistanceSource Mast = Source(60000.0);
+	Mast.FootprintRadius = 500.0;
+	TestEqual(TEXT("a 600 m mast too"), Apply(Mast).DrawDistance, FMantleDrawDistance::NoCutOff);
+
+	// Wide and low stays always loaded: a district's ground tile, a freeway deck.
+	FMantleDrawDistanceSource Ground = Source(50000.0);
+	Ground.FootprintRadius = 49990.0;
+	TestEqual(TEXT("a ground tile has no draw distance"), Apply(Ground).DrawDistance, 0.0);
+	FMantleDrawDistanceSource Deck = Source(30000.0);
+	Deck.FootprintRadius = 29990.0;
+	TestEqual(TEXT("a freeway deck has none"), Apply(Deck).DrawDistance, 0.0);
+
+	// The footprint decides at the edge, whatever the sphere.
+	FMantleDrawDistanceSource Edge = Source(FMantleDrawDistance::NeverCullRadius() * 3.0);
+	Edge.FootprintRadius = FMantleDrawDistance::NeverCullRadius();
+	TestEqual(TEXT("a footprint of exactly the radius is wide"), Apply(Edge).DrawDistance, 0.0);
+	Edge.FootprintRadius = FMantleDrawDistance::NeverCullRadius() - 1.0;
+	TestEqual(TEXT("one cm under is a piece of a cell"), Apply(Edge).DrawDistance, FMantleDrawDistance::NoCutOff);
+
+	// A piece that was not measured sideways is judged by its sphere, as before.
+	TestEqual(TEXT("unmeasured and big: none"), Apply(Source(21852.0)).DrawDistance, 0.0);
+
+	// The component's own distance and Never Distance Cull still come first.
+	Roof.LDMaxDrawDistance = 90000.0;
+	TestEqual(TEXT("its own distance wins"), Apply(Roof).DrawDistance, 90000.0);
+	Roof.bNeverDistanceCull = true;
+	TestEqual(TEXT("and never cull wins over that"), Apply(Roof).DrawDistance, 0.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleDrawDistanceFoliageTest,
 	"Mantle.Editor.DrawDistance.InstanceEndCullDistance",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

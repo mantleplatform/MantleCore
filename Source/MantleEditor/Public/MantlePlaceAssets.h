@@ -233,6 +233,27 @@ struct MANTLEEDITOR_API FMantleMaterialFidelity2
 	bool bAdditiveLit = false;
 	bool bAdditiveRim = false;
 
+	/**
+	 * Modulate blending: published as a darkening sheet (black, opacity = 1 minus the color's brightness; MaterialFromGltf), which
+	 * darkens what is behind it as much as the modulate color does but keeps no hue.
+	 */
+	bool bModulate = false;
+
+	/**
+	 * An unlit glow whose color is a constant with a channel over 1 (an emissive of 3.0, 0.4, 0.1): GLTFExporter clips the base color it
+	 * bakes an unlit material to into 0..1, so the part over 1 is read from the graph here and published as the emissive strength, as a
+	 * lit emissive's is. GlowColor is the whole color, unclipped.
+	 */
+	bool bGlowOverOne = false;
+	double GlowColor[3] = { 0.0, 0.0, 0.0 };
+
+	/**
+	 * An unlit glow brighter than 1 that a texture drives (a texture times an intensity of 4): the bake clipped each pixel to 1 and nothing
+	 * recovers them, so it publishes dimmer than in the editor. TexturedGlowGain is the intensity the graph multiplies it by.
+	 */
+	bool bGlowTexturedOverOne = false;
+	double TexturedGlowGain = 1.0;
+
 	/** see-through glass (#628): an unlit translucent material whose emissive is the scene behind it, published as tinted glass. */
 	FMantleSeeThroughGlass Glass;
 
