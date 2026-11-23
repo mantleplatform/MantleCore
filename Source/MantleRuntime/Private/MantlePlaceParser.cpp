@@ -3004,7 +3004,7 @@ namespace
 			Ctx.Fail(WaterPath, TEXT("must be an object"));
 			return;
 		}
-		RequireNoUnknownKeys(Ctx, *Water, { TEXT("zoneExtent"), TEXT("zoneLocation"), TEXT("zoneYawDeg") }, WaterPath);
+		RequireNoUnknownKeys(Ctx, *Water, { TEXT("zoneExtent"), TEXT("zoneLocation"), TEXT("zoneYawDeg"), TEXT("textureResolution") }, WaterPath);
 		FMantleWaterZone Zone;
 		TOptional<FVector2D> Extent;
 		ReadWaterExtent2(Ctx, *Water, TEXT("zoneExtent"), WaterPath, Extent);
@@ -3017,6 +3017,24 @@ namespace
 			ReadWaterVector(Ctx, *Water, TEXT("zoneLocation"), WaterPath, Zone.ZoneLocation);
 		}
 		ReadProbeNumber(Ctx, *Water, TEXT("zoneYawDeg"), WaterPath, -180.0, 180.0, Zone.ZoneYawDeg);
+		// The water info texture: [x, y], each a whole number of pixels.
+		if ((*Water)->HasField(TEXT("textureResolution")))
+		{
+			TArray<double> Size;
+			if (ReadNumberArray(Ctx, *Water, TEXT("textureResolution"), 2, WaterPath, Size))
+			{
+				const FString SizePath = Join(WaterPath, TEXT("textureResolution"));
+				FIntPoint Resolution = Zone.TextureResolution;
+				const bool bX = ReadBoundedInt(Ctx, Size[0], FMantlePlaceLimits::MinWaterTextureResolution, FMantlePlaceLimits::MaxWaterTextureResolution,
+					Index(SizePath, 0), Resolution.X);
+				const bool bY = ReadBoundedInt(Ctx, Size[1], FMantlePlaceLimits::MinWaterTextureResolution, FMantlePlaceLimits::MaxWaterTextureResolution,
+					Index(SizePath, 1), Resolution.Y);
+				if (bX && bY)
+				{
+					Zone.TextureResolution = Resolution;
+				}
+			}
+		}
 		Out = Zone;
 	}
 

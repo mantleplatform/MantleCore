@@ -493,6 +493,8 @@ struct FMantleWaterZone
 	FVector ZoneLocation = FVector::ZeroVector;
 	/** -180 to 180 degrees. */
 	double ZoneYawDeg = 0.0;
+	/** The water info texture's size, pixels, each axis FMantlePlaceLimits::MinWaterTextureResolution to MaxWaterTextureResolution. */
+	FIntPoint TextureResolution = FIntPoint(FMantlePlaceLimits::DefaultWaterTextureResolution, FMantlePlaceLimits::DefaultWaterTextureResolution);
 };
 
 /** settings.boundary: the box, in cm, a player may stay inside; a character past any side falls out of the world (dies and respawns). */

@@ -115,7 +115,7 @@ bool FMantleWaterBodyParseTest::RunTest(const FString& Parameters)
 	// An ocean with every ocean-only key and waves.
 	const FMantleParseResult Ocean = ParseWater(
 		TEXT("\"bodyType\":\"ocean\",") + Spline(3)
-		+ TEXT(",\"collisionExtent\":[200000,200000,10000],\"oceanExtent\":[409600,409600],\"centerOnZone\":true,")
+		+ TEXT(",\"collisionExtent\":[200000,200000,10000],\"oceanExtent\":[614400,614400],\"centerOnZone\":true,")
 		  TEXT("\"waves\":{\"list\":[{\"wavelength\":1500,\"amplitude\":40,\"steepness\":0.5,\"directionDeg\":-180},")
 		  TEXT("{\"wavelength\":700,\"amplitude\":0,\"steepness\":1,\"directionDeg\":180,\"phaseOffset\":2.5}]},")
 		  TEXT("\"look\":{\"albedo\":[0.1,0.2,0.3],\"absorption\":[1,0,0]},\"collision\":false,\"collisionHeightOffset\":-20"));
@@ -123,7 +123,7 @@ bool FMantleWaterBodyParseTest::RunTest(const FString& Parameters)
 	{
 		const FMantleWaterBodyProps* Props = WaterOf(Ocean);
 		TestTrue(TEXT("collision extent"), Props->CollisionExtent.IsSet() && Props->CollisionExtent->Equals(FVector(200000.0, 200000.0, 10000.0)));
-		TestTrue(TEXT("ocean extent"), Props->OceanExtent.IsSet() && Props->OceanExtent->X == 409600.0);
+		TestTrue(TEXT("ocean extent"), Props->OceanExtent.IsSet() && Props->OceanExtent->X == 614400.0);
 		TestTrue(TEXT("centered on the zone"), Props->CenterOnZone.IsSet() && Props->CenterOnZone.GetValue());
 		TestEqual(TEXT("two waves"), Props->Waves.Num(), 2);
 		TestEqual(TEXT("phase offset"), Props->Waves[1].PhaseOffset, 2.5);
@@ -200,7 +200,7 @@ bool FMantleWaterBodyRefusalsTest::RunTest(const FString& Parameters)
 			TEXT("/entities/0/properties/waves/list/0/directionDeg") },
 		{ TEXT("an empty wave list"), TEXT("\"bodyType\":\"lake\",") + Spline(4) + TEXT(",\"waves\":{\"list\":[]}"), TEXT("/entities/0/properties/waves/list") },
 		{ TEXT("an ocean extent past the limit"),
-			TEXT("\"bodyType\":\"ocean\",") + Spline(4) + TEXT(",\"oceanExtent\":[409601,1000]"), TEXT("/entities/0/properties/oceanExtent/0") },
+			TEXT("\"bodyType\":\"ocean\",") + Spline(4) + TEXT(",\"oceanExtent\":[614401,1000]"), TEXT("/entities/0/properties/oceanExtent/0") },
 		{ TEXT("a look color past 1"), TEXT("\"bodyType\":\"lake\",") + Spline(4) + TEXT(",\"look\":{\"albedo\":[0,2,0]}"),
 			TEXT("/entities/0/properties/look/albedo/1") },
 		{ TEXT("a collision that is not a boolean"), TEXT("\"bodyType\":\"lake\",") + Spline(4) + TEXT(",\"collision\":\"yes\""),
@@ -278,22 +278,29 @@ bool FMantleWaterZoneParseTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("extent Y defaults to 51200"), Empty.Place.Settings.Water->ZoneExtent.Y, 51200.0);
 		TestTrue(TEXT("location defaults to the origin"), Empty.Place.Settings.Water->ZoneLocation.IsZero());
 		TestEqual(TEXT("yaw defaults to 0"), Empty.Place.Settings.Water->ZoneYawDeg, 0.0);
+		TestEqual(TEXT("the water info texture defaults to the plugin's 512"), Empty.Place.Settings.Water->TextureResolution, FIntPoint(512, 512));
 	}
 
-	const FMantleParseResult Full = ParsePlace(TEXT("\"water\":{\"zoneExtent\":[409600,1],\"zoneLocation\":[10,-20,30],\"zoneYawDeg\":-180}"), TEXT(""));
+	const FMantleParseResult Full = ParsePlace(
+		TEXT("\"water\":{\"zoneExtent\":[614400,1],\"zoneLocation\":[10,-20,30],\"zoneYawDeg\":-180,\"textureResolution\":[2048,1]}"), TEXT(""));
 	if (TestTrue(TEXT("every key at an edge parses"), Full.bSuccess) && Full.Place.Settings.Water.IsSet())
 	{
-		TestEqual(TEXT("extent"), Full.Place.Settings.Water->ZoneExtent.X, 409600.0);
+		TestEqual(TEXT("extent"), Full.Place.Settings.Water->ZoneExtent.X, 614400.0);
 		TestTrue(TEXT("location"), Full.Place.Settings.Water->ZoneLocation.Equals(FVector(10.0, -20.0, 30.0)));
 		TestEqual(TEXT("yaw"), Full.Place.Settings.Water->ZoneYawDeg, -180.0);
+		TestEqual(TEXT("water info texture"), Full.Place.Settings.Water->TextureResolution, FIntPoint(2048, 1));
 	}
 
 	const TCHAR* const Refused[][2] = {
-		{ TEXT("\"water\":{\"zoneExtent\":[409601,1000]}"), TEXT("/settings/water/zoneExtent/0") },
+		{ TEXT("\"water\":{\"zoneExtent\":[614401,1000]}"), TEXT("/settings/water/zoneExtent/0") },
 		{ TEXT("\"water\":{\"zoneExtent\":[1000]}"), TEXT("/settings/water/zoneExtent") },
 		{ TEXT("\"water\":{\"zoneYawDeg\":181}"), TEXT("/settings/water/zoneYawDeg") },
 		{ TEXT("\"water\":{\"zoneLocation\":[0,0]}"), TEXT("/settings/water/zoneLocation") },
 		{ TEXT("\"water\":{\"zoneHeight\":100}"), TEXT("/settings/water/zoneHeight") },
+		{ TEXT("\"water\":{\"textureResolution\":[1024,2049]}"), TEXT("/settings/water/textureResolution/1") },
+		{ TEXT("\"water\":{\"textureResolution\":[0,1024]}"), TEXT("/settings/water/textureResolution/0") },
+		{ TEXT("\"water\":{\"textureResolution\":[1024,512.5]}"), TEXT("/settings/water/textureResolution/1") },
+		{ TEXT("\"water\":{\"textureResolution\":[1024]}"), TEXT("/settings/water/textureResolution") },
 	};
 	for (const TCHAR* const (&Case)[2] : Refused)
 	{

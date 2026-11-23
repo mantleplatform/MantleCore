@@ -227,7 +227,7 @@ struct MANTLEEDITOR_API FMantleWaterBodyExport
 	 */
 	static bool BuildProps(const FMantleWaterBodyData& Body, FMantleWaterBodyProps& Props, FString& OutWhy, TArray<FString>& OutNotes);
 
-	/** Zone as settings.water, its extent held to the format's range. */
+	/** Zone as settings.water, its extent and its Render Target Resolution (the water info texture) held to the format's ranges. */
 	static FMantleWaterZone BuildZone(const FMantleWaterZoneData& Zone);
 
 	/**

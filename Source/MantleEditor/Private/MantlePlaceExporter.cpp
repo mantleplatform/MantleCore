@@ -8305,6 +8305,14 @@ FString FMantlePlaceExporter::ToJson(const FMantlePlace& Place, const FMantleCel
 		Writer->WriteArrayEnd();
 		WriteVector(Writer, TEXT("zoneLocation"), Zone.ZoneLocation);
 		Writer->WriteValue(TEXT("zoneYawDeg"), Zone.ZoneYawDeg);
+		// The water info texture, only when it is not the plugin's default: clients from before the key refuse it.
+		if (Zone.TextureResolution != FIntPoint(FMantlePlaceLimits::DefaultWaterTextureResolution, FMantlePlaceLimits::DefaultWaterTextureResolution))
+		{
+			Writer->WriteArrayStart(TEXT("textureResolution"));
+			Writer->WriteValue(Zone.TextureResolution.X);
+			Writer->WriteValue(Zone.TextureResolution.Y);
+			Writer->WriteArrayEnd();
+		}
 		Writer->WriteObjectEnd();
 	}
 	Writer->WriteObjectEnd();

@@ -1192,6 +1192,15 @@ bool FMantleWaterBodyExport::BuildProps(const FMantleWaterBodyData& Body, FMantl
 				Clamp(Body.OceanExtents.Y, FMantlePlaceLimits::MinWaterExtent, FMantlePlaceLimits::MaxWaterExtent));
 		}
 		Props.CenterOnZone = Body.bOceanCentersOnZone;
+		// The engine's new ocean keeps a 1 km collision box (UWaterBodyOceanComponent's CollisionExtents, half extents) whatever it draws:
+		// water past the box is drawn but not swum in.
+		if (Props.CollisionExtent.IsSet() && Props.OceanExtent.IsSet()
+			&& (2.0 * Props.CollisionExtent->X < Props.OceanExtent->X || 2.0 * Props.CollisionExtent->Y < Props.OceanExtent->Y))
+		{
+			OutNotes.Add(FString::Printf(TEXT("its collision box covers %.0f by %.0f m of the %.0f by %.0f m of ocean it draws, so players can swim only in "
+				"the middle; set its Collision Extents to half its Ocean Extents to swim in all of it"),
+				2.0 * Props.CollisionExtent->X / 100.0, 2.0 * Props.CollisionExtent->Y / 100.0, Props.OceanExtent->X / 100.0, Props.OceanExtent->Y / 100.0));
+		}
 	}
 	if (bClamped)
 	{
@@ -1207,6 +1216,12 @@ FMantleWaterZone FMantleWaterBodyExport::BuildZone(const FMantleWaterZoneData& Z
 	{
 		Out.ZoneExtent = FVector2D(FMath::Clamp(Zone.Extent.X, FMantlePlaceLimits::MinWaterExtent, FMantlePlaceLimits::MaxWaterExtent),
 			FMath::Clamp(Zone.Extent.Y, FMantlePlaceLimits::MinWaterExtent, FMantlePlaceLimits::MaxWaterExtent));
+	}
+	if (Zone.RenderTargetResolution.X > 0 && Zone.RenderTargetResolution.Y > 0)
+	{
+		Out.TextureResolution = FIntPoint(
+			FMath::Clamp(Zone.RenderTargetResolution.X, FMantlePlaceLimits::MinWaterTextureResolution, FMantlePlaceLimits::MaxWaterTextureResolution),
+			FMath::Clamp(Zone.RenderTargetResolution.Y, FMantlePlaceLimits::MinWaterTextureResolution, FMantlePlaceLimits::MaxWaterTextureResolution));
 	}
 	Out.ZoneLocation = Zone.Transform.GetLocation();
 	Out.ZoneYawDeg = FRotator::NormalizeAxis(Zone.Transform.Rotator().Yaw);
