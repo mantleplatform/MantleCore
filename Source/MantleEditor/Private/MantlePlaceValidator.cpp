@@ -2182,6 +2182,21 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 					: TEXT("is a capsule trigger, which publishes as a box around it, so it fires a little earlier at the corners."),
 				TEXT("Nothing to change. To choose the shape yourself, use a Trigger Box or a Trigger Sphere.") });
 		}
+		// F18: a Trigger Volume that is not a box publishes as the box around its bounds.
+		if (Type == EMantleEntityType::TriggerVolume && FMantleTriggerShapeExport::IsTriggerBrush(Actor))
+		{
+			FVector BrushCenter;
+			FVector BrushExtent;
+			bool bApproximated = false;
+			if (FMantleTriggerShapeExport::ReadBoxBrush(Actor, BrushCenter, BrushExtent, &bApproximated) && bApproximated)
+			{
+				Result.Issues.Add(FMantleValidationIssue{
+					EMantleIssueSeverity::Warning,
+					LabelOf(Actor),
+					TEXT("is a Trigger Volume that is not a box, which publishes as a box trigger around its bounds, so it fires a little earlier at the corners."),
+					TEXT("Nothing to change. To choose the shape yourself, use a Trigger Box or a Trigger Sphere.") });
+			}
+		}
 		PlayerStarts += (Type == EMantleEntityType::PlayerStart) ? 1 : 0;
 		if (Type == EMantleEntityType::PlayerStart)
 		{

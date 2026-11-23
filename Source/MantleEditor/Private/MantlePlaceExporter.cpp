@@ -1982,8 +1982,8 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 		{
 			return false;
 		}
-		OutWhat = TEXT("is a Trigger Volume that is not a box, which Mantle does not publish: a trigger is a box or a sphere.");
-		OutRemedy = TEXT("Replace it with a Trigger Box or a Trigger Sphere, or shape the volume as a box. The volume would be dropped.");
+		OutWhat = TEXT("is a Trigger Volume with no shape, which Mantle does not publish.");
+		OutRemedy = TEXT("Shape the volume (Geometry or the brush builders), or use a Trigger Box. The volume would be dropped.");
 		return true;
 	}
 	if (Actor->IsA(AVolume::StaticClass()))
@@ -5720,8 +5720,18 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		if (FVector BrushCenter, BrushExtent; Entity.Type == EMantleEntityType::TriggerVolume && FMantleTriggerShapeExport::ReadBoxBrush(Actor, BrushCenter, BrushExtent))
 		{
 			Entity.Transform = FTransform(BrushCenter) * Entity.Transform;
-			Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept, ExporterLabelOf(Actor),
-				TEXT("a Trigger Volume published as a box trigger."));
+			bool bApproximated = false;
+			FMantleTriggerShapeExport::ReadBoxBrush(Actor, BrushCenter, BrushExtent, &bApproximated);
+			if (bApproximated)
+			{
+				Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
+					TEXT("a Trigger Volume that is not a box, published as the box trigger around its bounds: it fires a little earlier at the corners."));
+			}
+			else
+			{
+				Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept, ExporterLabelOf(Actor),
+					TEXT("a Trigger Volume published as a box trigger."));
+			}
 		}
 		else if (Entity.Type == EMantleEntityType::TriggerVolume && FMantleTriggerShapeExport::IsCapsule(Actor->GetRootComponent()))
 		{
