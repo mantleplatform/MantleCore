@@ -1545,6 +1545,10 @@ bool FMantleStreamedAssetsFetchTiersTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	Fixture.Assets->SetUrgentHolderSlot(2);
+	// Bytes no earlier test built: a mesh already built in this process is reused, never fetched, and so could not show the order.
+	const float Fresh = 40.0f + static_cast<float>(FPlatformTime::Cycles() % 1000) / 100.0f;
+	Fixture.Server->Assets[FlowMeshA].Bytes = MakeSizedBox(Fresh);
+	Fixture.Server->Assets[FlowMeshB].Bytes = MakeSizedBox(Fresh + 11.0f);
 	TArray<FMantleEntity> FarB;
 	FarB.Add(MeshEntity(TEXT("ent_far_b"), FlowMeshB, false));
 	TArray<FMantleEntity> PictureF;
