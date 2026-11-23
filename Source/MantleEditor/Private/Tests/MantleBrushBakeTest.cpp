@@ -352,6 +352,25 @@ bool FMantleBrushBakeTwoSidedTest::RunTest(const FString& Parameters)
 	// Each face twice: the front, and the same triangle reversed. The reversed ones are in the mesh, so the collision (the mesh's
 	// triangles) stops a player coming from either side as well.
 	TestEqual(TEXT("a two-sided cube has a reversed triangle for each"), Triangles(TwoSided), 24);
+
+	// A not-solid sheet (PF_NotSolid: a player walks through it) is drawn, both sides, but the mesh it is in has no collision.
+	ABrush* Sheet = SpawnCubeBrush(World, TEXT("Not-solid sheet"), FVector(10000.0, 0.0, 0.0), 400.0f, Brush_Add, nullptr, PF_TwoSided | PF_NotSolid);
+	if (!TestNotNull(TEXT("the not-solid sheet"), Sheet))
+	{
+		return false;
+	}
+	const TArray<ABrush*> Both = { OneSided, Sheet };
+	const FMantleSplineBakeResult Mixed = FMantleBrushBake::BakeBrushes(Both, Limits);
+	int32 SolidTriangles = 0;
+	int32 NotSolidTriangles = 0;
+	for (const FMantleBakedSplineMesh& Mesh : Mixed.Meshes)
+	{
+		(Mesh.Collision == EMantleCollision::None ? NotSolidTriangles : SolidTriangles) += Mesh.Triangles;
+		TestTrue(TEXT("every baked mesh is drawn"), Mesh.bVisible);
+	}
+	TestEqual(TEXT("the solid cube still blocks: 12 triangles with collision"), SolidTriangles, 12);
+	TestEqual(TEXT("the not-solid sheet draws both sides: 24 triangles"), NotSolidTriangles, 24);
+	TestTrue(TEXT("and it has no collision"), Mixed.Meshes.ContainsByPredicate([](const FMantleBakedSplineMesh& Mesh) { return Mesh.Collision == EMantleCollision::None; }));
 	return true;
 }
 
