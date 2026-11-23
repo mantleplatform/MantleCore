@@ -1624,6 +1624,21 @@ void FMantleVehicleConverter::AddHinges(const FMantleVehicleModel& Model, const 
 			Refused.AddUnique(Candidate.Key);
 		}
 	}
+	// A vehicle that hides its riders (no interior) has no enter animation and no swinging front doors: it stays as it is, with the rider hidden.
+	TArray<FString> Hiding;
+	for (const TPair<EMantleVehicleHingePart, FName>& Candidate : Wanted.Bones)
+	{
+		const bool bHidden = (Candidate.Key == EMantleVehicleHingePart::DriverDoor && T.bHideDriver) || (Candidate.Key == EMantleVehicleHingePart::PassengerDoor && T.bHidePassenger);
+		if (bHidden && !Refused.Contains(Candidate.Key))
+		{
+			Refused.AddUnique(Candidate.Key);
+			Hiding.Add(FMantleVehicleChassisSkin::HingeLabel(Candidate.Key).ToString().ToLower());
+		}
+	}
+	if (Hiding.Num() > 0)
+	{
+		Notes.Add(FString::Printf(TEXT("Front doors stay shut: this vehicle hides its riders (no interior), so the %s will not open."), *FString::Join(Hiding, TEXT(" or the "))));
+	}
 	for (const EMantleVehicleHingePart Part : Refused)
 	{
 		Wanted.Bones.Remove(Part);
