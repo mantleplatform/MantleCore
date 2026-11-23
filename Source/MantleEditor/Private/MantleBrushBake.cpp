@@ -38,7 +38,7 @@ namespace MantleBrushBakePrivate
 	constexpr int32 SoftMaxVertices = 400000;
 
 	/** Bumped when what a bake writes changes, so a cached bake from before is not reused. */
-	const TCHAR* const BakeVersion = TEXT("brushbake-1");
+	const TCHAR* const BakeVersion = TEXT("brushbake-2");
 
 	/** The one name of the single material slot every baked BSP mesh has. */
 	const TCHAR* const SlotName = TEXT("MantleBrushMaterial_0");
@@ -383,9 +383,10 @@ namespace MantleBrushBakePrivate
 		}
 		GEditor->bspBuildFPolys(Model, /*SurfLinks*/ true, /*iNode*/ 0);
 
-		// The visible, solid surfaces, by material.
+		// The visible surfaces, by material, the not-solid ones (a sheet a player walks through) apart from the solid: they draw, but the mesh
+		// they are in has no collision.
 		TArray<FGroup> Groups;
-		TMap<UMaterialInterface*, int32> GroupByMaterial;
+		TMap<FString, int32> GroupByMaterial;
 		for (const FPoly& Poly : Model->Polys->Element)
 		{
 			if (Poly.Vertices.Num() < 3 || (Poly.PolyFlags & (PF_Invisible | PF_Portal)))
@@ -393,11 +394,18 @@ namespace MantleBrushBakePrivate
 				continue;
 			}
 			UMaterialInterface* Material = Poly.Material ? Poly.Material.Get() : UMaterial::GetDefaultMaterial(MD_Surface);
-			int32& GroupIndex = GroupByMaterial.FindOrAdd(Material, INDEX_NONE);
+			const bool bNotSolid = (Poly.PolyFlags & PF_NotSolid) != 0;
+			int32& GroupIndex = GroupByMaterial.FindOrAdd(Material->GetPathName() + (bNotSolid ? TEXT("|notsolid") : TEXT("")), INDEX_NONE);
 			if (GroupIndex == INDEX_NONE)
 			{
 				GroupIndex = Groups.Num();
-				Groups.AddDefaulted_GetRef().Material = Material;
+				FGroup& Added = Groups.AddDefaulted_GetRef();
+				Added.Material = Material;
+				if (bNotSolid)
+				{
+					Added.Tag = TEXT("notsolid");
+					Added.Collision = EMantleCollision::None;
+				}
 			}
 			FSurface Surface;
 			Surface.Poly = &Poly;
@@ -615,7 +623,7 @@ FMantleSplineBakeResult FMantleBrushBake::BakeBrushes(TConstArrayView<ABrush*> B
 			Baked.OwnerLabel = Report.OwnerLabel;
 			Baked.OwnerName = TEXT("BSP");
 			Baked.Transform = FTransform(Chunk.Pivot);
-			Baked.Collision = EMantleCollision::Blocking;
+			Baked.Collision = Chunk.Collision;
 			Baked.Surface = EMantleSurface::Default;
 			Baked.bCastShadow = true;
 			Baked.SourceComponents = Entry->Brushes;
