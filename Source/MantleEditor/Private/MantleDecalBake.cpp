@@ -7,6 +7,8 @@
 #include "MantlePlaceAssets.h"
 
 #include "Engine/Texture2D.h"
+#include "RHIGlobals.h"
+#include "RenderUtils.h"
 #include "HAL/PlatformTime.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/SecureHash.h"
@@ -86,7 +88,11 @@ bool FMantleDecalBake::Bake(const UMaterialInterface* Material, UTexture2D*& Out
 	{
 		Objects.Add(Dependency.Get());
 	}
-	const FString Salt = FString::Printf(TEXT("decal shape 2 %s max=%d %s"), *Engine.Describe(), Limits.MaxTextureSize, *Material->GetPathName());
+	// A1: under Substrate's adaptive GBuffer (the engine's default) the bake exports a translucent opacity flat: it is read through a Masked copy.
+	const bool bAdaptiveGBuffer = Substrate::IsSubstrateEnabled() && !Substrate::IsSubstrateBlendableGBufferEnabled(GMaxRHIShaderPlatform);
+	const bool bOpacityAsMask = FMantlePlaceAssets::BakesOpacityAsMask(Material, Analysis, bAdaptiveGBuffer);
+	const FString Salt = FString::Printf(TEXT("decal shape 2 %s max=%d %s%s"), *Engine.Describe(), Limits.MaxTextureSize, *Material->GetPathName(),
+		bOpacityAsMask ? TEXT(" opacityasmask=1") : TEXT(""));
 	FString Key, WhyNot;
 	if (!FMantlePlaceAssetConverter::ComputeCacheKey(Salt, Objects, Key, WhyNot))
 	{
@@ -127,12 +133,14 @@ bool FMantleDecalBake::Bake(const UMaterialInterface* Material, UTexture2D*& Out
 		OutWhy = TEXT("it is not a decal material Mantle can copy (a dynamic material instance, or not Deferred Decal)");
 		return Keep();
 	}
+	// Its base color's alpha is then the opacity, whatever the bake's alphaMode (BakedBaseColorImage reads the image).
+	const TStrongObjectPtr<UMaterialInterface> OpacityMask = bOpacityAsMask ? FMantlePlaceAssets::OpacityAsMaskCopy(Surface.Get()) : TStrongObjectPtr<UMaterialInterface>();
 	FMantleFlattenSettings Settings;
 	Settings.MaxBakeSize = Limits.MaxTextureSize;
 	FMantleGlbDocument Document;
 	TArray<FString> Messages;
 	FString Error;
-	const bool bFlattened = Engine.Flatten(Surface.Get(), Settings, Document, Messages, Error);
+	const bool bFlattened = Engine.Flatten(OpacityMask.IsValid() ? OpacityMask.Get() : Surface.Get(), Settings, Document, Messages, Error);
 	TArray<FColor> Pixels;
 	int32 Width = 0;
 	int32 Height = 0;
