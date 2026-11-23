@@ -470,10 +470,18 @@ double FMantleStreamBudget::CurrentProcessMemoryShare()
 	return Physical > 0 ? static_cast<double>(CurrentProcessMemoryBytes()) / static_cast<double>(Physical) : 0.0;
 }
 
+int64 FMantleStreamBudget::ProcessMemoryBytes(const int64 PrivateBytes, const int64 CardUsedBytes)
+{
+	return FMath::Max<int64>(0, PrivateBytes - FMath::Max<int64>(0, CardUsedBytes));
+}
+
 int64 FMantleStreamBudget::CurrentProcessMemoryBytes()
 {
-	// #189: the larger of the working set and the private (committed) bytes. Windows trims the working set while what the process has committed keeps growing: City
-	// Sample's join crashed at a 36.4 GB working set with 46.7 GB private, so the working set alone can miss real pressure.
-	const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
-	return static_cast<int64>(FMath::Max(Stats.UsedPhysical, Stats.UsedVirtual));
+	// Private bytes, not the working set: Windows trims the working set while what the process has committed keeps growing (City Sample's join crashed at a 36.4 GB
+	// working set with 46.7 GB private). Less the card's use, which private also holds. The card's use is what the card budget reads (DXGI, else Vulkan's numbers);
+	// when neither can say it is 0 and the whole private counts.
+	int64 CardUsedBytes = 0;
+	int64 CardBudgetBytes = 0;
+	CurrentVideoMemory(CardUsedBytes, CardBudgetBytes);
+	return ProcessMemoryBytes(static_cast<int64>(FPlatformMemory::GetStats().UsedVirtual), CardUsedBytes);
 }

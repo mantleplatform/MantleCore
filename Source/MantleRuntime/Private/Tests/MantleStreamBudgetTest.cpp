@@ -361,6 +361,29 @@ bool FMantleStreamBudgetTexturesAndMemoryCapTest::RunTest(const FString& Paramet
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamBudgetProcessMemoryTest,
+	"Mantle.Runtime.StreamBudget.ProcessMemory",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamBudgetProcessMemoryTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamBudgetTestPrivate;
+	constexpr int64 MB = 1024ll * 1024;
+	// Big-map step 2's run B (rev 10, -MantleBudgetRamGB=16 -MantleBudgetVideoGB=8): 21,297 MB private with 7,658 MB on the card, 13,023 MB working set.
+	TestEqual(TEXT("the card's use comes off the private bytes"), FMantleStreamBudget::ProcessMemoryBytes(21297 * MB, 7658 * MB), 13639 * MB);
+	// The same run's baseline, at the join hold before any cell: 12,124 MB private, 4,104 MB on the card. Against the 9 GB cap of a 16 GB machine it was over (1.32)
+	// with the card counted twice; less the card it is under.
+	const int64 Baseline = FMantleStreamBudget::ProcessMemoryBytes(12124 * MB, 4104 * MB);
+	TestEqual(TEXT("baseline less the card"), Baseline, 8020 * MB);
+	TestTrue(TEXT("and under a 16 GB machine's cap"), Baseline < FMantleStreamBudget::ProcessMemoryCapBytes(16 * GiB));
+	TestEqual(TEXT("the card's use unknown (0): the whole private counts"), FMantleStreamBudget::ProcessMemoryBytes(12124 * MB, 0), 12124 * MB);
+	TestEqual(TEXT("a negative card reading counts as unknown"), FMantleStreamBudget::ProcessMemoryBytes(12124 * MB, -1), 12124 * MB);
+	TestEqual(TEXT("never below 0"), FMantleStreamBudget::ProcessMemoryBytes(1000 * MB, 2000 * MB), 0ll);
+	TestEqual(TEXT("private unknown (0): 0, so the memory is not read"), FMantleStreamBudget::ProcessMemoryBytes(0, 4104 * MB), 0ll);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleStreamBudgetTextureDetailTest,
 	"Mantle.Runtime.StreamBudget.TextureDetailReach",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
