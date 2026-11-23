@@ -16,7 +16,7 @@ namespace MantleDrawDistancePrivate
 	 * Radius below (cm), draw distance: the one size band left (the big-map plan, step 3). Small clutter under 30 cm radius culls at
 	 * 60 m, where it is still about 12 pixels across on a 1080p screen. It streams in the grid's 64 m cells, as before.
 	 *
-	 * Every bigger piece, up to NeverCullRadius, has no cut-off of its own (NoCutOff): it goes to the 256 m cells and draws as long as
+	 * Every bigger piece, up to NeverCullRadius of footprint, has no cut-off of its own (NoCutOff): it goes to the 256 m cells and draws as long as
 	 * its cell stands, so a building's pieces come and go together with the ground they stand on (fable-review.md 4.1, 4.2). Before,
 	 * four more bands (120 m, 250 m, 600 m and 2.5 km) cut each piece at its own distance and put it in a cell level by that distance,
 	 * which split buildings across levels and left a ring between a piece's distance and its cell's where nothing drew it.
@@ -25,7 +25,10 @@ namespace MantleDrawDistancePrivate
 		{ 30.0, 6000.0 },
 	};
 
-	/** A mesh of this radius (cm) or more is never culled: ground tiles and freeway decks of a whole district, always loaded. */
+	/**
+	 * A mesh whose footprint (not its sphere: a tall roof is 218 m round and 64 m across) reaches this far (cm) is never culled: ground tiles and freeway decks of a whole
+	 * district, always loaded. Rev 11 of City Sample kept 84 tower roofs in the root by their sphere: they stood in the sky over towers that were not loaded.
+	 */
 	constexpr double GNeverCullRadius = 10000.0;
 
 	/** The distance in cm; 0 at or past MaxDrawDistance (then the mesh is never culled), so that number only ever means NoCutOff. */
@@ -94,7 +97,8 @@ bool FMantleDrawDistance::Apply(const FMantleDrawDistanceSource& Source, const F
 				break;
 			}
 		}
-		if (Props.DrawDistance <= 0.0 && Source.SphereRadius < NeverCullRadius())
+		const double Footprint = Source.FootprintRadius > 0.0 ? Source.FootprintRadius : Source.SphereRadius;
+		if (Props.DrawDistance <= 0.0 && Footprint < NeverCullRadius())
 		{
 			Props.DrawDistance = NoCutOff;
 		}
@@ -135,7 +139,12 @@ FMantleDrawDistanceSource FMantleDrawDistance::ReadComponent(const UStaticMeshCo
 		}
 		Scale *= FMath::Max(LargestInstance, KINDA_SMALL_NUMBER);
 	}
-	Source.SphereRadius = Mesh ? Mesh->GetBounds().SphereRadius * Scale : 0.0;
+	if (Mesh)
+	{
+		const FBoxSphereBounds Bounds = Mesh->GetBounds();
+		Source.SphereRadius = Bounds.SphereRadius * Scale;
+		Source.FootprintRadius = FMath::Sqrt(FMath::Square(Bounds.BoxExtent.X) + FMath::Square(Bounds.BoxExtent.Y)) * Scale;
+	}
 	return Source;
 }
 
