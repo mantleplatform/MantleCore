@@ -708,6 +708,166 @@ bool FMantleCellStreamerLongFrameTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerCollisionModesTest,
+	"Mantle.Runtime.CellStream.Streamer.CollisionModes",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerCollisionModesTest::RunTest(const FString& Parameters)
+{
+	// The collision range (big-map plan): what a player's two streamers make of one entity, and the collision streamer's reach cap.
+	const auto Make = [](const EMantleCollision Collision, const bool bVisible, const bool bBlocksVisibility)
+	{
+		FMantleEntity Entity;
+		Entity.Id = TEXT("ent_wall");
+		FMantleStaticMeshProps Mesh;
+		Mesh.Mesh = TEXT("ast_u00000000000000000000000000000abc");
+		Mesh.Materials = { TEXT("ast_u00000000000000000000000000000def") };
+		Mesh.Collision = Collision;
+		Mesh.bVisible = bVisible;
+		Mesh.bBlocksVisibility = bBlocksVisibility;
+		Entity.Props.Emplace<FMantleStaticMeshProps>(MoveTemp(Mesh));
+		return Entity;
+	};
+	const auto MeshOf = [](const FMantleEntity& Entity) { return *Entity.Props.TryGet<FMantleStaticMeshProps>(); };
+
+	// Pictures with no collision: a wall is drawn and not solid; a collision-only wall is not this streamer's.
+	FMantleEntity Wall = Make(EMantleCollision::Blocking, true, true);
+	TestTrue(TEXT("pictures: the wall is drawn"), FMantleCellStreamer::FitToEntities(Wall, EMantleCellEntities::PicturesNoCollision));
+	TestTrue(TEXT("pictures: with no collision"), MeshOf(Wall).Collision == EMantleCollision::None);
+	TestTrue(TEXT("pictures: still visible, its materials kept"), MeshOf(Wall).bVisible && MeshOf(Wall).Materials.Num() == 1);
+	FMantleEntity Invisible = Make(EMantleCollision::Blocking, false, false);
+	TestFalse(TEXT("pictures: an invisible wall is nothing to draw"), FMantleCellStreamer::FitToEntities(Invisible, EMantleCellEntities::PicturesNoCollision));
+
+	// Collision only: the wall's collision alone, hidden, no materials, still stopping sight; a picture with no collision is not this streamer's.
+	FMantleEntity Copy = Make(EMantleCollision::Blocking, true, true);
+	TestTrue(TEXT("collision: the wall is built"), FMantleCellStreamer::FitToEntities(Copy, EMantleCellEntities::CollisionOnly));
+	TestTrue(TEXT("collision: still blocking"), MeshOf(Copy).Collision == EMantleCollision::Blocking);
+	TestFalse(TEXT("collision: hidden in game"), MeshOf(Copy).bVisible);
+	TestTrue(TEXT("collision: still stops sight traces, as the wall did"), MeshOf(Copy).bBlocksVisibility);
+	TestFalse(TEXT("collision: no shadow"), MeshOf(Copy).bCastShadow);
+	TestEqual(TEXT("collision: no materials, so no texture is fetched"), MeshOf(Copy).Materials.Num(), 0);
+	FMantleEntity InvisibleCopy = Make(EMantleCollision::Blocking, false, false);
+	TestTrue(TEXT("collision: an invisible wall is built"), FMantleCellStreamer::FitToEntities(InvisibleCopy, EMantleCellEntities::CollisionOnly));
+	TestFalse(TEXT("collision: and keeps letting sight through"), MeshOf(InvisibleCopy).bBlocksVisibility);
+	FMantleEntity Water = Make(EMantleCollision::Overlap, true, true);
+	TestTrue(TEXT("collision: an overlap volume is built too"), FMantleCellStreamer::FitToEntities(Water, EMantleCellEntities::CollisionOnly));
+	TestTrue(TEXT("collision: and stays an overlap"), MeshOf(Water).Collision == EMantleCollision::Overlap);
+	FMantleEntity Picture = Make(EMantleCollision::None, true, true);
+	TestFalse(TEXT("collision: a picture is not built"), FMantleCellStreamer::FitToEntities(Picture, EMantleCellEntities::CollisionOnly));
+
+	// The other modes leave the entity as it is.
+	for (const EMantleCellEntities Mode : { EMantleCellEntities::All, EMantleCellEntities::SolidOnly, EMantleCellEntities::PicturesOnly })
+	{
+		FMantleEntity Same = Make(EMantleCollision::Blocking, true, true);
+		TestTrue(TEXT("other modes: kept"), FMantleCellStreamer::FitToEntities(Same, Mode));
+		TestTrue(TEXT("other modes: unchanged"), MeshOf(Same).Collision == EMantleCollision::Blocking && MeshOf(Same).bVisible && MeshOf(Same).Materials.Num() == 1);
+	}
+	TestTrue(TEXT("the collision streamer builds solids"), FMantleCellStreamer::BuildsSolids(EMantleCellEntities::CollisionOnly));
+	TestFalse(TEXT("the picture streamer does not"), FMantleCellStreamer::BuildsSolids(EMantleCellEntities::PicturesNoCollision));
+	TestTrue(TEXT("the collision streamer builds only solids"), FMantleCellStreamer::BuildsOnlySolids(EMantleCellEntities::CollisionOnly));
+
+	// The cap: a 600 m cell is wanted from 200 m, not from 300 m.
+	FMantleCellInfo Cell;
+	Cell.Bounds = FBox(FVector(0.0, 0.0, 0.0), FVector(25600.0, 25600.0, 500.0));
+	Cell.DrawDistance = 60000.0;
+	FMantleCellStreamSettings Settings;
+	Settings.MaxReachCm = FMantleCellStreamSettings::ClientCollisionReachCm;
+	TestEqual(TEXT("the cap is the reach"), FMantleCellStreamPlan::ReachOf(Cell, Settings), 25600.0);
+	TestTrue(TEXT("wanted from 200 m"), FMantleCellStreamPlan::IsWanted(Cell, { FVector(-20000.0, 100.0, 100.0) }, Settings));
+	TestFalse(TEXT("not from 300 m"), FMantleCellStreamPlan::IsWanted(Cell, { FVector(-30000.0, 100.0, 100.0) }, Settings));
+	Settings.MaxReachCm = 0.0;
+	TestEqual(TEXT("no cap: the drawDistance"), FMantleCellStreamPlan::ReachOf(Cell, Settings), 60000.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCellStreamerClientCollisionRangeTest,
+	"Mantle.Runtime.CellStream.Streamer.ClientCollisionRange",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCellStreamerClientCollisionRangeTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	// A player's machine: one streamer draws every cell to its drawDistance (150 m here) with no collision, the other builds the solid things' collision alone, nearer (70 m here,
+	// 256 m in play). Each cell holds three cubes and a list of 250 instances with collision, and one model with none.
+	FFixture Fixture(/*bPictures*/ true);
+	struct FKinds
+	{
+		int32 SolidShown = 0;
+		int32 SolidHidden = 0;
+		int32 Pictures = 0;
+	};
+	const auto Kinds = [&Fixture]()
+	{
+		FKinds Out;
+		for (TActorIterator<AActor> It(Fixture.World); It; ++It)
+		{
+			TInlineComponentArray<UStaticMeshComponent*> Meshes;
+			It->GetComponents(Meshes);
+			for (const UStaticMeshComponent* Mesh : Meshes)
+			{
+				const bool bSolid = Mesh->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
+				Out.SolidShown += bSolid && !Mesh->bHiddenInGame ? 1 : 0;
+				Out.SolidHidden += bSolid && Mesh->bHiddenInGame ? 1 : 0;
+				Out.Pictures += !bSolid && !Mesh->bHiddenInGame ? 1 : 0;
+			}
+		}
+		return Out;
+	};
+	const FKinds Before = Kinds();
+	FMantleCellStreamSettings Pictures = SteadySettings();
+	Pictures.Entities = EMantleCellEntities::PicturesNoCollision;
+	Fixture.StartStreamer(Pictures);
+	FMantleCellStreamSettings Collision = SteadySettings();
+	Collision.Entities = EMantleCellEntities::CollisionOnly;
+	Collision.MaxReachCm = 7000.0;
+	Fixture.StartOther(Collision);
+	TestTrue(TEXT("both hold at the join"), Fixture.Streamer->IsHolding() && Fixture.Other->IsHolding());
+
+	const auto Wait = [&Fixture]()
+	{
+		for (int32 Tick = 0; Tick < 3000; ++Tick)
+		{
+			Fixture.Tick();
+			const FMantleCellStreamStats& P = Fixture.Streamer->GetStats();
+			const FMantleCellStreamStats& C = Fixture.Other->GetStats();
+			if (P.CellsPending == 0 && P.CellsLoading == 0 && P.CellsReady == 0 && P.CellsRemoving == 0 && !Fixture.Streamer->IsHolding()
+				&& C.CellsPending == 0 && C.CellsLoading == 0 && C.CellsReady == 0 && C.CellsRemoving == 0 && !Fixture.Other->IsHolding())
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	if (!TestTrue(TEXT("both settle"), Wait()))
+	{
+		return false;
+	}
+	// The view is at x = 1 m: cells 0 to 2 are within 150 m (pictures), cells 0 and 1 within 70 m (collision).
+	TestEqual(TEXT("the pictures of the three cells near the view"), Fixture.Streamer->GetStats().CellsBuilt, 3);
+	TestEqual(TEXT("the collision of the two nearest"), Fixture.Other->GetStats().CellsBuilt, 2);
+	TestEqual(TEXT("250 drawn instances in each of 3 cells, 250 collision ones in each of 2"), Fixture.CountInstances(), 3 * 250 + 2 * 250);
+	FKinds Now = Kinds();
+	TestEqual(TEXT("nothing drawn is solid"), Now.SolidShown, Before.SolidShown);
+	TestTrue(TEXT("the collision is hidden"), Now.SolidHidden > Before.SolidHidden);
+	TestTrue(TEXT("and the pictures are drawn"), Now.Pictures > Before.Pictures);
+	const int32 HiddenNear = Now.SolidHidden - Before.SolidHidden;
+
+	// The view moves on to x = 400 m: collision of cells 5 to 7 (16 m, 0 m and 48 m away); cells 0 and 1 are far past its release distance (95 m) and let theirs go.
+	// Pictures of cells 3 to 8 (within 150 m); cells 0 to 2 are past theirs (180 m).
+	Fixture.View = FVector(40000.0, 100.0, 100.0);
+	TestTrue(TEXT("the cells settle"), Wait());
+	TestEqual(TEXT("the collision follows the view: three cells"), Fixture.Other->GetStats().CellsBuilt, 3);
+	TestTrue(TEXT("cells 0 and 1 let go of theirs"), !Fixture.Other->IsCellBuilt(0) && !Fixture.Other->IsCellBuilt(1));
+	TestTrue(TEXT("cells 5, 6 and 7 have theirs"), Fixture.Other->IsCellBuilt(5) && Fixture.Other->IsCellBuilt(6) && Fixture.Other->IsCellBuilt(7));
+	TestEqual(TEXT("the pictures follow too: six cells"), Fixture.Streamer->GetStats().CellsBuilt, 6);
+	Now = Kinds();
+	TestEqual(TEXT("still nothing drawn is solid"), Now.SolidShown, Before.SolidShown);
+	TestEqual(TEXT("a cell's collision is the same pieces wherever it stands"), (Now.SolidHidden - Before.SolidHidden) * 2, HiddenNear * 3);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleCellStreamerStandaloneTest,
 	"Mantle.Runtime.CellStream.Streamer.SolidAndPictures",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

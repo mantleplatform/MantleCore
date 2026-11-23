@@ -26,6 +26,11 @@ void FMantleCellStreamer::AddCellToUse(const FMantleCellInfo& Info, FMantleBudge
 		// models, which are not instances, so it counts a little low: the lenient side.
 		Use.Instances += FMath::Max<int64>(Info.Instances - Info.Solid, 0);
 	}
+	else if (Settings.Entities == EMantleCellEntities::PicturesNoCollision)
+	{
+		// A player's picture streamer draws every instance and makes nothing solid (its collision streamer does, nearer).
+		Use.Instances += Info.Instances;
+	}
 	else
 	{
 		Use.Instances += Info.Instances;

@@ -59,7 +59,7 @@ namespace MantleCellStreamerFarPrivate
 
 bool FMantleCellStreamer::FarEnabled() const
 {
-	return Settings.FarSets.bEnabled && !Settings.bKeepEveryCell && Settings.Entities != EMantleCellEntities::SolidOnly;
+	return Settings.FarSets.bEnabled && !Settings.bKeepEveryCell && !BuildsOnlySolids(Settings.Entities);
 }
 
 void FMantleCellStreamer::MakeFarSet(const int32 CellIndex, const TArray<FMantleEntity>& Source)

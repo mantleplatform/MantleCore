@@ -480,6 +480,17 @@ public:
 	/** The extra views (see FExtraView): what is wanted is every cell any of them, or the player, wants; none of them holds or teleports. */
 	void SetExtraViewsProvider(FExtraViewsProvider InProvider) { ExtraViewsProvider = MoveTemp(InProvider); }
 
+	/**
+	 * One entity as a streamer with these Entities builds it, changed in place: PicturesNoCollision takes its collision off (false for a collision-only entity: nothing to draw);
+	 * CollisionOnly makes a solid entity its collision alone, hidden in game, no shadow or materials, still blocking sight (false for one with no collision); the others leave it.
+	 * True when the streamer builds it at all, before the SolidOnly/PicturesOnly split. Pure.
+	 */
+	static bool FitToEntities(FMantleEntity& Entity, EMantleCellEntities Entities);
+	/** The streamer builds solid things (All, SolidOnly, CollisionOnly): it holds the player's own ground and answers solid area queries. */
+	static bool BuildsSolids(EMantleCellEntities Entities);
+	/** The streamer builds nothing but solid things (SolidOnly, CollisionOnly): a cell with none is nothing to it. */
+	static bool BuildsOnlySolids(EMantleCellEntities Entities);
+
 private:
 	enum class ECellState : uint8 { Loading, Assets, Ready, Built, Removing };
 
