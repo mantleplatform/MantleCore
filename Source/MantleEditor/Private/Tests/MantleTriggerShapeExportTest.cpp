@@ -63,6 +63,8 @@ namespace MantleTriggerShapeExportTestPrivate
 			Volume->Brush = NewObject<UModel>(Volume, NAME_None, RF_Transactional);
 			Volume->Brush->Initialize(Volume, /*InRootOutside*/ true);
 			Volume->GetBrushComponent()->Brush = Volume->Brush;
+			// UModel::Initialize puts the actor back at the origin (ABrush::InitPosRotScale): it goes where it was spawned again.
+			Volume->SetActorLocation(Location, false);
 		}
 		return Volume;
 	}
