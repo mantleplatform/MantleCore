@@ -123,6 +123,12 @@ struct MANTLERUNTIME_API FMantleCellStreamSettings
 	/** The streamer ticks itself from the engine's core ticker. Tests turn it off and tick by hand. */
 	bool bAutoTick = true;
 
+	/**
+	 * A tick that takes this long or more (seconds) is logged as one MANTLE_CELLS_SLOW_TICK line: its time phase by phase and what each phase handled (FMantleCellTickReport). Only a log line;
+	 * nothing waits or is cut for it. Tests set it to 0 to see every tick's line.
+	 */
+	double SlowTickLogSeconds = 0.100;
+
 	/** Far sets: the twins of a cell's big entities, drawn past the cell's drawDistance (stage 3a). Off unless the owner turns them on. */
 	FMantleFarSetSettings FarSets;
 
