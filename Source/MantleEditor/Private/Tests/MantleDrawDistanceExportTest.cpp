@@ -99,6 +99,15 @@ bool FMantleDrawDistanceSourceTest::RunTest(const FString& Parameters)
 	FMantleDrawDistanceSource Far = Source(20.0);
 	Far.LDMaxDrawDistance = FMantlePlaceLimits::MaxDrawDistance * 2.0;
 	TestEqual(TEXT("a distance past the limit is no cull"), Apply(Far).DrawDistance, 0.0);
+
+	// Exactly the schema's largest is no cull too: that number only ever means "no cut-off of its own" (the cell decides).
+	Far.LDMaxDrawDistance = FMantlePlaceLimits::MaxDrawDistance;
+	TestEqual(TEXT("the largest distance a creator sets is no cull"), Apply(Far).DrawDistance, 0.0);
+
+	// A creator's own distance on a big mesh is kept as it is, below the ring's reach or past it.
+	FMantleDrawDistanceSource Wall = Source(500.0);
+	Wall.LDMaxDrawDistance = 20000.0;
+	TestEqual(TEXT("a big mesh's own short distance"), Apply(Wall).DrawDistance, 20000.0);
 	return true;
 }
 
@@ -111,32 +120,34 @@ bool FMantleDrawDistanceDefaultTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleDrawDistanceExportTestPrivate;
 
-	// Each band: a radius inside it gets its draw distance, and a bigger mesh a longer one.
-	double Previous = 0.0;
-	for (const FMantleDrawDistance::FBand& Band : FMantleDrawDistance::Bands())
-	{
-		TestEqual(*FString::Printf(TEXT("draw distance below radius %g"), Band.MaxRadius), Apply(Source(Band.MaxRadius * 0.5)).DrawDistance, Band.Draw);
-		TestTrue(TEXT("a bigger band culls farther"), Band.Draw > Previous);
-		TestTrue(TEXT("and within the limit"), Band.Draw <= FMantlePlaceLimits::MaxDrawDistance);
-		Previous = Band.Draw;
-	}
+	// The big-map plan, step 3: one band is left, small clutter under 30 cm radius at 60 m.
+	TestEqual(TEXT("one size band"), FMantleDrawDistance::Bands().Num(), 1);
+	TestEqual(TEXT("under 30 cm"), FMantleDrawDistance::NoCutOffRadius(), 30.0);
+	TestEqual(TEXT("a 10 cm prop culls at 60 m"), Apply(Source(10.0)).DrawDistance, 6000.0);
+	TestEqual(TEXT("just under 30 cm too"), Apply(Source(29.9)).DrawDistance, 6000.0);
 
-	// The edge of a band belongs to the next one.
-	TestEqual(TEXT("the edge goes to the bigger band"), Apply(Source(FMantleDrawDistance::Bands()[0].MaxRadius)).DrawDistance,
-		FMantleDrawDistance::Bands()[1].Draw);
-
-	// An unmeasured mesh (no radius) is the smallest band, never an unculled one by accident of 0.
+	// An unmeasured mesh (no radius) is the small band, never an unculled one by accident of 0.
 	TestEqual(TEXT("a mesh with no bounds is treated as small"), Apply(Source(0.0)).DrawDistance, FMantleDrawDistance::Bands()[0].Draw);
 
-	// Every band's distance fits a level of the default cell grid, so banded scenery streams in cells and never stays in the root
-	// for being drawn too far (City Sample's 10 to 100 m ground, collision and roofs go to the farthest level).
-	const FMantleCellGrid Grid = FMantleCellGrid::Default();
-	for (const FMantleDrawDistance::FBand& Band : FMantleDrawDistance::Bands())
+	// Every piece of 30 cm or more, a wall module, a window, a tower floor or a 50 m roof, has no cut-off of its own: no size picks a
+	// distance any more, so no building is split by the size of its pieces.
+	for (const double Radius : { 30.0, 99.0, 150.0, 375.0, 999.0, 1000.0, 5000.0, 9999.0 })
 	{
-		TestTrue(*FString::Printf(TEXT("band to %g cm fits a cell level"), Band.Draw), Grid.LevelFor(Band.Draw) != INDEX_NONE);
+		TestEqual(*FString::Printf(TEXT("radius %g cm has no cut-off of its own"), Radius), Apply(Source(Radius)).DrawDistance, FMantleDrawDistance::NoCutOff);
 	}
-	TestEqual(TEXT("a 50 m radius mesh draws to 2.5 km"), Apply(Source(5000.0)).DrawDistance, 250000.0);
-	TestEqual(TEXT("which is the grid's farthest level"), Grid.LevelFor(250000.0), Grid.Levels.Num() - 1);
+	TestTrue(TEXT("which is the schema's largest"), FMantleDrawDistance::NoCutOff == FMantlePlaceLimits::MaxDrawDistance);
+	TestTrue(TEXT("and it reads as no cut-off"), FMantleDrawDistance::IsNoCutOff(Apply(Source(150.0)).DrawDistance));
+	TestFalse(TEXT("the small band does not"), FMantleDrawDistance::IsNoCutOff(Apply(Source(10.0)).DrawDistance));
+
+	// In the default grid the small band streams in the 64 m cells as before, and no cut-off in the 256 m cells with one 600 m reach.
+	const FMantleCellGrid Grid = FMantleCellGrid::Default();
+	TestEqual(TEXT("the small band is level 0"), Grid.LevelFor(FMantleDrawDistance::Bands()[0].Draw), 0);
+	const int32 Ring = Grid.LevelFor(FMantleDrawDistance::NoCutOff);
+	if (TestEqual(TEXT("no cut-off is level 1"), Ring, 1))
+	{
+		TestEqual(TEXT("its cells are 256 m"), Grid.Levels[Ring].CellSize, static_cast<int64>(25600));
+		TestEqual(TEXT("and load out to 600 m"), Grid.CellDrawDistanceFor(Ring, FMantleDrawDistance::NoCutOff), 60000.0);
+	}
 	return true;
 }
 
@@ -190,12 +201,12 @@ bool FMantleDrawDistanceFoliageTest::RunTest(const FString& Parameters)
 	Foliage.InstanceEndCullDistance = 0;
 	TestEqual(TEXT("then the max draw distance"), Apply(Foliage).DrawDistance, 3000.0);
 	Foliage.LDMaxDrawDistance = 0.0;
-	TestEqual(TEXT("then the band"), Apply(Foliage).DrawDistance, FMantleDrawDistance::Bands()[2].Draw);
+	TestEqual(TEXT("then by size: no cut-off of its own"), Apply(Foliage).DrawDistance, FMantleDrawDistance::NoCutOff);
 
 	// An end cull distance means nothing on a plain mesh component.
 	FMantleDrawDistanceSource Plain = Source(150.0);
 	Plain.InstanceEndCullDistance = 12000;
-	TestEqual(TEXT("a plain mesh ignores it"), Apply(Plain).DrawDistance, FMantleDrawDistance::Bands()[2].Draw);
+	TestEqual(TEXT("a plain mesh ignores it"), Apply(Plain).DrawDistance, FMantleDrawDistance::NoCutOff);
 	return true;
 }
 
