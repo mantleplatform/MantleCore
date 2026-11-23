@@ -41,12 +41,16 @@ bool FMantleTriggerShapeExport::IsCapsule(const UActorComponent* Component)
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleTriggerShapePrivate
 {
-	/** Whether Shape answers any channel with Block. */
+	/**
+	 * Whether Shape blocks a channel a player or an object moves on. The engine's trigger profiles leave every other channel (the custom
+	 * and engine trace channels) at its default response, often Block, and that is no wall, so only these count.
+	 */
 	bool BlocksAnyChannel(const UPrimitiveComponent* Shape)
 	{
-		for (int32 Channel = 0; Channel < ECC_MAX; ++Channel)
+		static const ECollisionChannel Solid[] = { ECC_WorldStatic, ECC_WorldDynamic, ECC_Pawn, ECC_PhysicsBody, ECC_Vehicle, ECC_Destructible };
+		for (const ECollisionChannel Channel : Solid)
 		{
-			if (Shape->GetCollisionResponseToChannel(static_cast<ECollisionChannel>(Channel)) == ECR_Block)
+			if (Shape->GetCollisionResponseToChannel(Channel) == ECR_Block)
 			{
 				return true;
 			}
