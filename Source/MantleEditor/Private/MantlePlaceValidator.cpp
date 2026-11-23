@@ -45,6 +45,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/DecalComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/LightComponent.h"
 #include "Components/LightComponentBase.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SplineMeshComponent.h"
@@ -58,6 +59,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/Texture2D.h"
+#include "Engine/TextureLightProfile.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Internationalization/Regex.h"
@@ -1327,6 +1329,43 @@ namespace
 	 * directional light is a lamp of the creator's and keeps its brightness. Lights are the level's directional lights in the
 	 * exporter's order and SpawnPoints where its players start.
 	 */
+	/**
+	 * A light's light function material and IES profile: the exporter reads a light's color, brightness, reach, cones, shadow and
+	 * source shape (FMantlePlaceExporter::ReadComponentValueProperties), never these, so the light publishes without them. Said for
+	 * every light the actor shows (a light actor's own, and a prefab's light parts).
+	 */
+	void CheckLightExtrasForCheck(const AActor* Actor, FMantleValidationResult& Result)
+	{
+		TArray<ULightComponent*> Lights;
+		Actor->GetComponents(Lights);
+		for (const ULightComponent* Light : Lights)
+		{
+			if (!Light || !Light->IsVisible() || Light->bHiddenInGame)
+			{
+				continue;
+			}
+			TArray<FString> Dropped;
+			if (const UMaterialInterface* Function = Light->LightFunctionMaterial.Get())
+			{
+				Dropped.Add(FString::Printf(TEXT("its light function material '%s' (the pattern the light casts)"), *Function->GetName()));
+			}
+			if (const UTextureLightProfile* Profile = Light->IESTexture.Get())
+			{
+				Dropped.Add(FString::Printf(TEXT("its IES profile '%s' (the shape of its beam)"), *Profile->GetName()));
+			}
+			if (Dropped.Num() == 0)
+			{
+				continue;
+			}
+			Result.Issues.Add(FMantleValidationIssue{
+				EMantleIssueSeverity::Warning,
+				LabelOf(Actor),
+				FString::Printf(TEXT("light '%s' has %s, which Mantle doesn't publish: the light shines plain, with its color, brightness and cone only."),
+					*Light->GetName(), *FString::Join(Dropped, TEXT(" and "))),
+				TEXT("Nothing to do unless the effect matters to how your place looks.") });
+		}
+	}
+
 	void CheckDirectionalLightRanges(UWorld* World, const TArray<const AActor*>& Lights, const TArray<FVector>& SpawnPoints, FMantleValidationResult& Result)
 	{
 		if (Lights.Num() == 0)
@@ -2135,6 +2174,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 		CheckPublishedSizeLimits(Actor, Type, Result);
 		CheckPublishedRanges(Actor, Type, Result);
 		CheckDroppedBehaviorForCheck(Actor, Result);
+		CheckLightExtrasForCheck(Actor, Result);
 		PhysicsObjects += CheckPhysicsForCheck(Actor, Type, Result) ? 1 : 0;
 	}
 
