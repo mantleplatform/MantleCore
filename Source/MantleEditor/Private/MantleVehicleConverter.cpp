@@ -1624,20 +1624,23 @@ void FMantleVehicleConverter::AddHinges(const FMantleVehicleModel& Model, const 
 			Refused.AddUnique(Candidate.Key);
 		}
 	}
-	// A vehicle that hides its riders (no interior) has no enter animation and no swinging front doors: it stays as it is, with the rider hidden.
-	TArray<FString> Hiding;
-	for (const TPair<EMantleVehicleHingePart, FName>& Candidate : Wanted.Bones)
+	// A vehicle that hides its riders (no interior) has no enter animation and no swinging doors: it stays as it is, with the rider hidden. Its hood and trunk still open.
+	if (T.bHideDriver || T.bHidePassenger)
 	{
-		const bool bHidden = (Candidate.Key == EMantleVehicleHingePart::DriverDoor && T.bHideDriver) || (Candidate.Key == EMantleVehicleHingePart::PassengerDoor && T.bHidePassenger);
-		if (bHidden && !Refused.Contains(Candidate.Key))
+		bool bDoorsLeft = false;
+		for (const TPair<EMantleVehicleHingePart, FName>& Candidate : Wanted.Bones)
 		{
-			Refused.AddUnique(Candidate.Key);
-			Hiding.Add(FMantleVehicleChassisSkin::HingeLabel(Candidate.Key).ToString().ToLower());
+			const bool bDoor = Candidate.Key != EMantleVehicleHingePart::Hood && Candidate.Key != EMantleVehicleHingePart::Trunk;
+			if (bDoor && !Refused.Contains(Candidate.Key))
+			{
+				Refused.AddUnique(Candidate.Key);
+				bDoorsLeft = true;
+			}
 		}
-	}
-	if (Hiding.Num() > 0)
-	{
-		Notes.Add(FString::Printf(TEXT("Front doors stay shut: this vehicle hides its riders (no interior), so the %s will not open."), *FString::Join(Hiding, TEXT(" or the "))));
+		if (bDoorsLeft)
+		{
+			Notes.Add(TEXT("Doors stay shut: this vehicle hides its riders (no interior). The hood and trunk still open."));
+		}
 	}
 	for (const EMantleVehicleHingePart Part : Refused)
 	{

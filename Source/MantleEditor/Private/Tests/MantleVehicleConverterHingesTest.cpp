@@ -293,14 +293,14 @@ bool FMantleVehicleConverterHingesAfterSeatsTest::RunTest(const FString& Paramet
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleVehicleConverterHingesNoInteriorTest,
-	"Mantle.Vehicle.Convert.HingesNoInteriorKeepsFrontDoorsShut",
+	"Mantle.Vehicle.Convert.HingesNoInteriorKeepsDoorsShut",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FMantleVehicleConverterHingesNoInteriorTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleConverterHingesTestPrivate;
 
-	// A car with no interior hides its riders: it has seats, but its front doors do not swing. The rear doors and the tailgate still open.
+	// A car with no interior hides its riders: it has seats, but none of its four doors swings. The hood and the tailgate still open.
 	const FMantleVehicleModel Model = Suv04Joined();
 	UMantleVehicleSource* Source = NewSource();
 	Source->Tuning.bSeatLocation = true;
@@ -310,23 +310,26 @@ bool FMantleVehicleConverterHingesNoInteriorTest::RunTest(const FString& Paramet
 	TArray<FString> Notes;
 	FMantleVehicleConverter::AddHinges(Model, FMantleVehicleHingeEvidence(), Suv04Wheels(), *Source, Notes);
 	const FMantleVehicleSourceTuning& T = Source->Tuning;
-	TestFalse(TEXT("the driver door stays empty"), T.bHasDriverDoor);
-	TestFalse(TEXT("and the passenger door"), T.bHasPassengerDoor);
-	TestTrue(TEXT("the rear doors and the tailgate are written"), T.bRearLeftDoor && T.bRearRightDoor && T.bTrunk);
-	TestTrue(TEXT("the notes say why the front doors stay shut"), AnyNote(Notes, TEXT("Front doors stay shut: this vehicle hides its riders (no interior)")));
+	TestFalse(TEXT("all four doors stay empty"), T.bHasDriverDoor || T.bHasPassengerDoor || T.bRearLeftDoor || T.bRearRightDoor);
+	TestTrue(TEXT("the tailgate is written"), T.bTrunk && T.TrunkLid.Bone == FName(TEXT("B_SUV04_RearDoor")));
+	TestTrue(TEXT("the notes say why the doors stay shut"), AnyNote(Notes, TEXT("Doors stay shut: this vehicle hides its riders (no interior). The hood and trunk still open.")));
 	TestTrue(TEXT("the seats and the hide settings are as they were"), T.bSeatLocation && T.bPassengerSeat && T.bHideDriver && T.bHidePassenger);
 
-	// Only the driver hidden: the passenger door still opens.
+	// The hood is written as well when the car has one (a model with a Hood bone), while every door stays empty; either flag alone is enough.
+	FMantleVehicleModel WithHood = Model;
+	WithHood.Bones.Add({ FName(TEXT("Hood")), 0 });
+	WithHood.BonePositions.Add(FVector(110, 0, 106));
+	AddBox(WithHood, FVector(110, -70, 100), FVector(220, 70, 106), WithHood.Bones.Num() - 1);
 	UMantleVehicleSource* Half = NewSource();
 	Half->Tuning.bSeatLocation = true;
 	Half->Tuning.bPassengerSeat = true;
 	Half->Tuning.bHideDriver = true;
 	TArray<FString> HalfNotes;
-	FMantleVehicleConverter::AddHinges(Model, FMantleVehicleHingeEvidence(), Suv04Wheels(), *Half, HalfNotes);
-	TestFalse(TEXT("the hidden driver's door stays empty"), Half->Tuning.bHasDriverDoor);
-	TestTrue(TEXT("the passenger door opens"), Half->Tuning.bHasPassengerDoor);
+	FMantleVehicleConverter::AddHinges(WithHood, FMantleVehicleHingeEvidence(), Suv04Wheels(), *Half, HalfNotes);
+	TestFalse(TEXT("with only the driver hidden no door opens either"), Half->Tuning.bHasDriverDoor || Half->Tuning.bHasPassengerDoor || Half->Tuning.bRearLeftDoor || Half->Tuning.bRearRightDoor);
+	TestTrue(TEXT("and the hood and the tailgate do"), Half->Tuning.bHood && Half->Tuning.bTrunk);
 
-	// A front door hinge the creator set is kept all the same.
+	// A door hinge the creator set is kept all the same.
 	UMantleVehicleSource* Own = NewSource();
 	Own->Tuning.bSeatLocation = true;
 	Own->Tuning.bHideDriver = true;
