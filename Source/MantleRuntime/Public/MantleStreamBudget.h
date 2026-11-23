@@ -224,6 +224,45 @@ public:
 	/** The far sets' reach scale: the ladder's (FarScale) times the View Distance setting's, so a twin is wanted no farther than the engine will draw it. */
 	static double FarReachScale(double Ladder, double ViewScale);
 
+	// ---- The player's World load distance (Settings > Graphics > Advanced) ----
+
+	/** Epic's ring, the near ring's drawDistance (600 m): a cell drawn this far or farther is the ring's, and the player's World load distance can take it farther. */
+	static constexpr double RingFromCm = 60000.0;
+
+	/** Past this a raise asks first: the warning in the settings screen. Epic's own ring. */
+	static constexpr int32 WarnAboveM = 600;
+
+	/**
+	 * The World load distance steps offered above the View Distance setting's own ring, metres. The top (2,000 m) is a PLACEHOLDER awaiting Joshua's approval:
+	 * the real one is to come from step 3's measured memory and frame rate for the near ring.
+	 */
+	static constexpr int32 WorldLoadDistanceStepsM[] = { 400, 600, 800, 1000, 1200, 1500, 2000 };
+
+	/** The most the World load distance can be, cm: the last step. Anything larger (a hand-edited file, the console) is held to it. */
+	static constexpr double MaxWorldLoadDistanceCm = 200000.0;
+
+	/** The View Distance setting's own ring, cm: RingFromCm x ViewScale (Low 240 m, Balanced 360, High 480, Epic 600). */
+	static double PresetRingCm(double ViewScale);
+
+	/** The steps the settings screen offers above the preset ring (PresetRingCm), metres, smallest first. Auto (0, the preset ring itself) comes before them. */
+	static TArray<int32> WorldLoadDistanceChoicesM(double PresetRingCm);
+
+	/** A raise to ToM from FromM (both metres; 0 is Auto, read as AutoM) asks first: it ends above WarnAboveM and is farther than before. Lowering never asks. */
+	static bool WorldLoadDistanceNeedsWarning(int32 FromM, int32 ToM, int32 AutoM);
+
+	/** The ring the player raised it to, cm, or 0 when the choice (cm, 0 = Auto) is no farther than the preset ring. At most MaxWorldLoadDistanceCm. */
+	static double RaisedReachCm(double ChosenCm, double PresetRingCm);
+
+	/** How much of a raise stands at a ladder: all of it from 1 down to 0.5 (the far sets give way first), then down to none at 0, where the ring is what it would be with no raise. */
+	static double RaiseShare(double Ladder);
+
+	/**
+	 * How far a cell is wanted from, cm, with the player's raise. A cell of the ring (DrawDistanceCm at RingFromCm or more) is wanted RaiseShare of the way from its reach
+	 * without the raise (ScaledReach(DrawDistance, ReachScale, Floor)) out to RaisedReachCm, the rest as ScaledReach. With no raise (0) it is ScaledReach. The ladder shrinks it
+	 * below the player's choice, at 0 as far as it would without one.
+	 */
+	static double RingReach(double DrawDistanceCm, double ReachScale, double FloorCm, double ViewScale, double RaisedReachCm, double RaiseShare);
+
 	// ---- Engine readers (game thread) ----
 
 	/** The View Distance and Textures settings now, as preset levels. Epic when the engine cannot say. */
@@ -231,6 +270,9 @@ public:
 
 	/** The engine's view-distance scale now (the one its renderer multiplies draw distances by); 1 when the engine has none (no scalability state yet). */
 	static double CurrentEngineViewDistanceScale();
+
+	/** The player's World load distance now, cm (mantle.Cells.WorldLoadDistance, metres, which the settings screen sets); 0 is Auto. */
+	static double CurrentWorldLoadDistanceCm();
 
 	/**
 	 * The card's and the machine's size now (zero where the engine has no answer: a process with no RHI, a server). A test switch pretends to be another machine:

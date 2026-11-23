@@ -40,7 +40,7 @@ bool FMantleCellStreamPlan::IsWanted(const FMantleCellInfo& Cell, const FPath& P
 
 double FMantleCellStreamPlan::ReachOf(const FMantleCellInfo& Cell, const FMantleCellStreamSettings& Settings)
 {
-	return FMantleStreamBudget::ScaledReach(Cell.DrawDistance, Settings.ReachScale, Settings.BudgetTuning.MinReachCm);
+	return FMantleStreamBudget::RingReach(Cell.DrawDistance, Settings.ReachScale, Settings.BudgetTuning.MinReachCm, Settings.RingViewScale, Settings.RaisedReachCm, Settings.RaiseShare);
 }
 
 bool FMantleCellStreamPlan::IsWanted(const FMantleCellInfo& Cell, const FPath& Path, const FMantleCellStreamSettings& Settings)

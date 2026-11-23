@@ -119,11 +119,7 @@ void FMantleCellStreamer::OnIndexReady()
 {
 	const FMantleCellIndex& Index = Loader->GetIndex();
 	FMantleCellStreamPlan::LevelOverhangs(Index, LevelOverhangs);
-	LevelRadii.Reset();
-	for (const FMantleCellGridLevel& Level : Index.Levels)
-	{
-		LevelRadii.Add(Level.MaxDrawDistance);
-	}
+	RefreshLevelRadii();
 	FarLevelRadii.Reset();
 	for (const FMantleCellGridLevel& Level : Index.Levels)
 	{

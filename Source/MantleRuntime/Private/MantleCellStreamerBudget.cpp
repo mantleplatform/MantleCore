@@ -85,6 +85,7 @@ double FMantleCellStreamer::ProjectedCountPressure(const FMantleBudgetLimits& Li
 		FMantleCellStreamSettings Next = Settings;
 		Next.ReachScale = FMantleStreamBudget::CellReachScale(NextLadder, ViewScale, Settings.BudgetTuning);
 		Next.FarSets.ReachScale = FMantleStreamBudget::FarReachScale(NextLadder, ViewScale);
+		Next.RaiseShare = FMantleStreamBudget::RaiseShare(NextLadder);
 		const FMantleCellIndex& Index = Loader->GetIndex();
 		// The cells the longer reach would newly want (the ones already standing or on their way are in Use).
 		TArray<int32> Candidates;
@@ -283,27 +284,56 @@ void FMantleCellStreamer::ApplyReachScales()
 {
 	Settings.ReachScale = FMantleStreamBudget::CellReachScale(Ladder, ViewScale, Settings.BudgetTuning);
 	Settings.FarSets.ReachScale = FMantleStreamBudget::FarReachScale(Ladder, ViewScale);
+	Settings.RingViewScale = ViewScale;
+	Settings.RaisedReachCm = FMantleStreamBudget::RaisedReachCm(WorldLoadDistanceCm, FMantleStreamBudget::PresetRingCm(ViewScale));
+	Settings.RaiseShare = FMantleStreamBudget::RaiseShare(Ladder);
+	Stats.RaisedReachCm = Settings.RaisedReachCm;
+}
+
+void FMantleCellStreamer::RefreshLevelRadii()
+{
+	LevelRadii.Reset();
+	if (!Loader.IsValid())
+	{
+		return;
+	}
+	for (const FMantleCellGridLevel& Level : Loader->GetIndex().Levels)
+	{
+		LevelRadii.Add(Level.MaxDrawDistance >= FMantleStreamBudget::RingFromCm ? FMath::Max(Level.MaxDrawDistance, Settings.RaisedReachCm) : Level.MaxDrawDistance);
+	}
 }
 
 void FMantleCellStreamer::UpdateViewScale()
 {
 	// A keep-every-cell streamer (a server's, a standalone game's solid things) keeps every cell whatever the setting.
-	if (!Settings.ViewDistanceScale || Settings.bKeepEveryCell)
+	if ((!Settings.ViewDistanceScale && !Settings.WorldLoadDistanceCm) || Settings.bKeepEveryCell)
 	{
 		return;
 	}
-	const double EngineScale = Settings.ViewDistanceScale();
-	const double Next = FMantleStreamBudget::ViewScale(EngineScale);
-	if (Next == ViewScale)
+	const double EngineScale = Settings.ViewDistanceScale ? Settings.ViewDistanceScale() : 1.0;
+	const double NextScale = FMantleStreamBudget::ViewScale(EngineScale);
+	const double NextLoadCm = Settings.WorldLoadDistanceCm ? FMath::Max(Settings.WorldLoadDistanceCm(), 0.0) : 0.0;
+	if (NextScale == ViewScale && NextLoadCm == WorldLoadDistanceCm)
 	{
 		return;
 	}
-	const double Before = ViewScale;
-	ViewScale = Next;
+	const double BeforeScale = ViewScale;
+	const double BeforeRaisedCm = Settings.RaisedReachCm;
+	ViewScale = NextScale;
+	WorldLoadDistanceCm = NextLoadCm;
 	Stats.ViewScale = ViewScale;
 	ApplyReachScales();
+	// Before the index is read OnIndexReady sets them, with this raise.
+	if (bIndexReady && Settings.RaisedReachCm != BeforeRaisedCm)
+	{
+		RefreshLevelRadii();
+	}
 	// What is beyond the new ring goes the usual way (a far set built, a cell released after its margin); a longer one is loaded.
 	bRefreshNeeded = true;
-	UE_LOG(LogMantle, Log, TEXT("MANTLE_CELLS_SETTINGS ring x%.2f -> x%.2f (the View Distance setting, the engine's view distance scale %.2f): cell reach x%.2f, far reach x%.2f (ladder %.2f)"),
-		Before, ViewScale, EngineScale, Settings.ReachScale, Settings.FarSets.ReachScale, Ladder);
+	const double BeforeRingCm = FMath::Max(BeforeRaisedCm, FMantleStreamBudget::PresetRingCm(BeforeScale));
+	const double RingCm = FMath::Max(Settings.RaisedReachCm, FMantleStreamBudget::PresetRingCm(ViewScale));
+	const FString LoadDistance = WorldLoadDistanceCm > 0.0 ? FString::Printf(TEXT("%.0f m"), WorldLoadDistanceCm / 100.0) : FString(TEXT("Auto"));
+	UE_LOG(LogMantle, Log,
+		TEXT("MANTLE_CELLS_SETTINGS ring %.0f m -> %.0f m (View Distance x%.2f -> x%.2f, the engine's scale %.2f; World load distance %s): cell reach x%.2f, far reach x%.2f, ladder %.2f"),
+		BeforeRingCm / 100.0, RingCm / 100.0, BeforeScale, ViewScale, EngineScale, *LoadDistance, Settings.ReachScale, Settings.FarSets.ReachScale, Ladder);
 }

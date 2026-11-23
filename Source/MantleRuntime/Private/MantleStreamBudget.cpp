@@ -25,6 +25,11 @@
 
 namespace MantleStreamBudgetPrivate
 {
+	// The player's World load distance, metres (0: Auto, the View Distance setting's own ring). Set by Settings > Graphics > Advanced (FMantleDeviceSettings::Apply); the cell
+	// streamer reads it every tick, so a change applies at once.
+	TAutoConsoleVariable<int32> CVarWorldLoadDistance(TEXT("mantle.Cells.WorldLoadDistance"), 0,
+		TEXT("How far the world loads around the player, metres. 0 (the default) follows the View Distance setting (Epic 600 m). Set by Settings > Graphics > Advanced."), ECVF_Default);
+
 #if PLATFORM_WINDOWS
 	/** The card the game draws on, found once: the DXGI adapter with the RHI's vendor and device id (the largest, if there are two alike), or null when there is none. */
 	IDXGIAdapter3* FindDxgiAdapter()
@@ -349,6 +354,55 @@ double FMantleStreamBudget::FarReachScale(const double Ladder, const double InVi
 	return FarScale(Ladder) * InViewScale;
 }
 
+double FMantleStreamBudget::PresetRingCm(const double InViewScale)
+{
+	return RingFromCm * InViewScale;
+}
+
+TArray<int32> FMantleStreamBudget::WorldLoadDistanceChoicesM(const double InPresetRingCm)
+{
+	TArray<int32> Choices;
+	for (const int32 Step : WorldLoadDistanceStepsM)
+	{
+		if (Step * 100.0 > InPresetRingCm + 1.0)
+		{
+			Choices.Add(Step);
+		}
+	}
+	return Choices;
+}
+
+bool FMantleStreamBudget::WorldLoadDistanceNeedsWarning(const int32 FromM, const int32 ToM, const int32 AutoM)
+{
+	const int32 From = FromM > 0 ? FromM : AutoM;
+	const int32 To = ToM > 0 ? ToM : AutoM;
+	return To > WarnAboveM && To > From;
+}
+
+double FMantleStreamBudget::RaisedReachCm(const double ChosenCm, const double InPresetRingCm)
+{
+	const double Chosen = FMath::Min(ChosenCm, MaxWorldLoadDistanceCm);
+	return Chosen > InPresetRingCm ? Chosen : 0.0;
+}
+
+double FMantleStreamBudget::RaiseShare(const double Ladder)
+{
+	return FMath::Clamp(Ladder * 2.0, 0.0, 1.0);
+}
+
+double FMantleStreamBudget::RingReach(const double DrawDistanceCm, const double ReachScale, const double FloorCm, const double InViewScale, const double InRaisedReachCm,
+	const double InRaiseShare)
+{
+	const double Reach = ScaledReach(DrawDistanceCm, ReachScale, FloorCm);
+	if (InRaisedReachCm <= 0.0 || DrawDistanceCm < RingFromCm)
+	{
+		return Reach;
+	}
+	// The raise is what the player added past the setting's own reach for this cell; the ladder takes it back in step with the rest of the ring.
+	const double Raise = FMath::Max(0.0, InRaisedReachCm - DrawDistanceCm * InViewScale);
+	return Reach + FMath::Clamp(InRaiseShare, 0.0, 1.0) * Raise;
+}
+
 FMantleBudgetLevels FMantleStreamBudget::CurrentLevels()
 {
 	// The sg.* levels as the settings screen last applied them (MantleClientState: UGameUserSettings::ApplySettings), read fresh at each look, so a change applies at once.
@@ -365,6 +419,11 @@ double FMantleStreamBudget::CurrentEngineViewDistanceScale()
 	// the very number SceneVisibility.cpp multiplies each primitive's draw distance by. Read rather than the View Distance level, so the ring matches what is drawn whatever set it.
 	const FCachedSystemScalabilityCVars& Cached = GetCachedScalabilityCVars();
 	return Cached.bInitialized ? static_cast<double>(Cached.ViewDistanceScale) : 1.0;
+}
+
+double FMantleStreamBudget::CurrentWorldLoadDistanceCm()
+{
+	return FMath::Max(MantleStreamBudgetPrivate::CVarWorldLoadDistance.GetValueOnGameThread(), 0) * 100.0;
 }
 
 FMantleBudgetMachine FMantleStreamBudget::CurrentMachine()

@@ -136,6 +136,8 @@ struct MANTLERUNTIME_API FMantleCellStreamStats
 	/** The View Distance setting's scale on the reach now (FMantleStreamBudget::ViewScale; 1 without Settings.ViewDistanceScale), and the textures' share of the card at the last look. */
 	double ViewScale = 1.0;
 	double BudgetTextureShare = 0.0;
+	/** The player's raised ring now, cm (0 when the World load distance is Auto or no farther than the View Distance setting's ring). */
+	double RaisedReachCm = 0.0;
 };
 
 /** What a whole-grid look at the twins found: each built twin entity is drawn exactly when it should be (FMantleFarSetPlan::ShouldShow). */
@@ -589,10 +591,18 @@ private:
 	double ProjectedCountPressure(const FMantleBudgetLimits& Limits, const FMantleBudgetUse& Use, double NextLadder) const;
 	/** Every Settings.BudgetTuning.StepSeconds (not while holding): looks at the pressure and moves the ladder; a move re-plans at once. */
 	void UpdateBudget(double DeltaSeconds);
-	/** Every tick: reads the View Distance setting's scale (Settings.ViewDistanceScale); a change sets the reach scales again, re-plans at once and logs one line. */
+	/**
+	 * Every tick: reads the View Distance setting's scale (Settings.ViewDistanceScale) and the player's World load distance (Settings.WorldLoadDistanceCm); a change sets the
+	 * reach scales again, widens or narrows the cell search, re-plans at once and logs one line.
+	 */
 	void UpdateViewScale();
-	/** Settings.ReachScale and Settings.FarSets.ReachScale from the ladder and the View Distance setting (FMantleStreamBudget::CellReachScale, FarReachScale): the one place both are set. */
+	/**
+	 * Settings.ReachScale, Settings.FarSets.ReachScale and the raise (RingViewScale, RaisedReachCm, RaiseShare) from the ladder, the View Distance setting and the player's World
+	 * load distance (FMantleStreamBudget::CellReachScale, FarReachScale, RaisedReachCm, RaiseShare): the one place they are set.
+	 */
 	void ApplyReachScales();
+	/** LevelRadii: each level's widest drawDistance, or the raised ring where that is farther and the level holds ring cells (FMantleStreamBudget::RingFromCm). */
+	void RefreshLevelRadii();
 
 	// ---- Far sets (MantleCellStreamerFar.cpp) ----
 	bool FarEnabled() const;
@@ -652,6 +662,8 @@ private:
 	double Ladder = 1.0;
 	/** The View Distance setting's scale on the reach (FMantleStreamBudget::ViewScale), as UpdateViewScale last read it. */
 	double ViewScale = 1.0;
+	/** The player's World load distance, cm, as UpdateViewScale last read it (0 = Auto). */
+	double WorldLoadDistanceCm = 0.0;
 	/** The textures' share of the card at the last budget look (FMantleBudgetLimits::TextureShare); -1 before the first, so the first is logged. */
 	double TextureShare = -1.0;
 	double SecondsSinceBudgetLook = 0.0;

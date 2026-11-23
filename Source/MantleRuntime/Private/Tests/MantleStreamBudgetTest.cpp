@@ -401,6 +401,77 @@ bool FMantleStreamBudgetSettingsDriveTheRingTest::RunTest(const FString& Paramet
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamBudgetWorldLoadDistanceTest,
+	"Mantle.Runtime.StreamBudget.WorldLoadDistance",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamBudgetWorldLoadDistanceTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamBudgetTestPrivate;
+	// Big-map step 3b: the player's World load distance takes the ring past the View Distance setting's own; the ladder still shrinks it.
+	TestEqual(TEXT("Epic's own ring: 600 m"), FMantleStreamBudget::PresetRingCm(1.0), 60000.0);
+	TestEqual(TEXT("Low's: 240 m"), FMantleStreamBudget::PresetRingCm(0.4), 24000.0);
+
+	// What the settings screen offers above Auto: only steps farther than the setting's own ring.
+	TestTrue(TEXT("on Epic: 800 m and up"), FMantleStreamBudget::WorldLoadDistanceChoicesM(60000.0) == TArray<int32>({ 800, 1000, 1200, 1500, 2000 }));
+	TestTrue(TEXT("on Low: 400 m and up"), FMantleStreamBudget::WorldLoadDistanceChoicesM(24000.0) == TArray<int32>({ 400, 600, 800, 1000, 1200, 1500, 2000 }));
+	TestTrue(TEXT("on High (480 m): 600 m and up"), FMantleStreamBudget::WorldLoadDistanceChoicesM(48000.0) == TArray<int32>({ 600, 800, 1000, 1200, 1500, 2000 }));
+	TestEqual(TEXT("the placeholder top (awaiting approval) is the last step"), FMantleStreamBudget::MaxWorldLoadDistanceCm,
+		FMantleStreamBudget::WorldLoadDistanceStepsM[UE_ARRAY_COUNT(FMantleStreamBudget::WorldLoadDistanceStepsM) - 1] * 100.0);
+
+	// The warning: a raise that ends past 600 m, once per change; lowering never asks.
+	TestTrue(TEXT("Auto (600 m) to 800 m asks"), FMantleStreamBudget::WorldLoadDistanceNeedsWarning(0, 800, 600));
+	TestTrue(TEXT("800 m to 1,000 m asks again: another raise"), FMantleStreamBudget::WorldLoadDistanceNeedsWarning(800, 1000, 600));
+	TestFalse(TEXT("1,000 m to 800 m does not: lower"), FMantleStreamBudget::WorldLoadDistanceNeedsWarning(1000, 800, 600));
+	TestFalse(TEXT("back to Auto does not"), FMantleStreamBudget::WorldLoadDistanceNeedsWarning(1000, 0, 600));
+	TestFalse(TEXT("Low's Auto (240 m) to 400 m does not: not past 600 m"), FMantleStreamBudget::WorldLoadDistanceNeedsWarning(0, 400, 240));
+	TestFalse(TEXT("400 m to 600 m does not"), FMantleStreamBudget::WorldLoadDistanceNeedsWarning(400, 600, 240));
+	TestTrue(TEXT("600 m to 800 m does"), FMantleStreamBudget::WorldLoadDistanceNeedsWarning(600, 800, 240));
+
+	// The raise the streamer applies: none unless farther than the setting's ring, never past the top.
+	TestEqual(TEXT("Auto: no raise"), FMantleStreamBudget::RaisedReachCm(0.0, 60000.0), 0.0);
+	TestEqual(TEXT("a choice no farther than the setting's ring: no raise"), FMantleStreamBudget::RaisedReachCm(40000.0, 60000.0), 0.0);
+	TestEqual(TEXT("1 km on Epic"), FMantleStreamBudget::RaisedReachCm(100000.0, 60000.0), 100000.0);
+	TestEqual(TEXT("a hand-edited 5 km is held to the top"), FMantleStreamBudget::RaisedReachCm(500000.0, 60000.0), FMantleStreamBudget::MaxWorldLoadDistanceCm);
+
+	// The ring with a raise to 1 km on Epic, a 600 m ring cell, the 200 m floor.
+	const FMantleBudgetTuning Tuning;
+	const auto Ring = [&Tuning](const double DrawDistanceCm, const double Ladder, const double View, const double ChosenCm)
+	{
+		const double Raised = FMantleStreamBudget::RaisedReachCm(ChosenCm, FMantleStreamBudget::PresetRingCm(View));
+		return FMantleStreamBudget::RingReach(DrawDistanceCm, FMantleStreamBudget::CellReachScale(Ladder, View, Tuning), Tuning.MinReachCm, View, Raised,
+			FMantleStreamBudget::RaiseShare(Ladder));
+	};
+	TestEqual(TEXT("ladder 1: the player's 1 km"), Ring(60000.0, 1.0, 1.0, 100000.0), 100000.0);
+	TestEqual(TEXT("ladder 0.5: still 1 km (the far sets give way first)"), Ring(60000.0, 0.5, 1.0, 100000.0), 100000.0);
+	TestEqual(TEXT("ladder 0.25: half way from today's 375 m to 1 km, 575 m"), Ring(60000.0, 0.25, 1.0, 100000.0), 57500.0);
+	TestEqual(TEXT("ladder 0: below the player's choice, to the 200 m floor as before"), Ring(60000.0, 0.0, 1.0, 100000.0), 20000.0);
+	for (const double Ladder : { 0.0, 0.1, 0.25, 0.4, 0.5, 0.75, 1.0 })
+	{
+		TestTrue(*FString::Printf(TEXT("the ladder never takes it past the choice: ladder %.2f"), Ladder), Ring(60000.0, Ladder, 1.0, 100000.0) <= 100000.0);
+		TestTrue(*FString::Printf(TEXT("and never below where it would be with no raise: ladder %.2f"), Ladder),
+			Ring(60000.0, Ladder, 1.0, 100000.0) >= Ring(60000.0, Ladder, 1.0, 0.0));
+	}
+	TestEqual(TEXT("Low with 800 m chosen: 800 m"), Ring(60000.0, 1.0, 0.4, 80000.0), 80000.0);
+	TestEqual(TEXT("a small-piece cell (60 m) is not the ring's: unchanged"), Ring(6000.0, 1.0, 1.0, 100000.0), 6000.0);
+	TestEqual(TEXT("a 2.5 km cell already reaches past 1 km: unchanged"), Ring(250000.0, 1.0, 1.0, 100000.0), 250000.0);
+	TestEqual(TEXT("Auto: today's ring"), Ring(60000.0, 1.0, 1.0, 0.0), 60000.0);
+
+	// The plan with it: a 600 m cell whose bounds start 900 m from the view.
+	const FMantleCellInfo Cell = CellAt(90000.0, 96400.0, 60000.0);
+	const FMantleCellStreamPlan::FPath Path = PathAt(FVector(0.0, 100.0, 100.0));
+	FMantleCellStreamSettings Settings;
+	TestFalse(TEXT("no raise: not wanted from 900 m"), FMantleCellStreamPlan::IsWanted(Cell, Path, Settings));
+	Settings.RaisedReachCm = 100000.0;
+	TestTrue(TEXT("raised to 1 km: wanted"), FMantleCellStreamPlan::IsWanted(Cell, Path, Settings));
+	TestEqual(TEXT("and let go past 1.2 km"), FMantleCellStreamPlan::ReleaseDistance(Cell, Settings), 120000.0);
+	Settings.RaiseShare = 0.0;
+	Settings.ReachScale = FMantleStreamBudget::CellReachScale(0.0, 1.0, Tuning);
+	TestFalse(TEXT("ladder 0 takes the raise back: not wanted"), FMantleCellStreamPlan::IsWanted(Cell, Path, Settings));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleStreamBudgetTexturesFollowTheirSettingTest,
 	"Mantle.Runtime.StreamBudget.TexturesFollowTheirSetting",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
