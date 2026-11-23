@@ -504,6 +504,7 @@ namespace MantleCoverageSurveyPrivate
 		case EMantleMaterialLoss::Unlit: return TEXT("unlit");
 		case EMantleMaterialLoss::BlendMode: return FString::Printf(TEXT("%s blending"), *Analysis.BlendModeName);
 		case EMantleMaterialLoss::NotSurface: return TEXT("not a surface material");
+		case EMantleMaterialLoss::SecondUv: return TEXT("second UV set read as the first");
 		default: return FString();
 		}
 	}
@@ -631,7 +632,7 @@ namespace MantleCoverageSurveyPrivate
 			}
 			const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Material);
 			TArray<FString> Losses;
-			for (uint32 Bit = 1; Bit != 0 && Bit <= static_cast<uint32>(EMantleMaterialLoss::NotSurface); Bit <<= 1)
+			for (uint32 Bit = 1; Bit != 0 && Bit <= static_cast<uint32>(EMantleMaterialLoss::Last); Bit <<= 1)
 			{
 				const EMantleMaterialLoss Loss = static_cast<EMantleMaterialLoss>(Bit);
 				if (Analysis.Has(Loss))
