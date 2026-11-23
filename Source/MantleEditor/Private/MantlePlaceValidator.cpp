@@ -36,6 +36,7 @@
 #include "MantleVehicleSource.h"
 #include "MantleVehicleSpawnPoint.h"
 #include "MantleVoxelWorldActor.h"
+#include "MantleWaterBodyExport.h"
 #include "MantleWeaponSpawnPoint.h"
 #include "HAL/FileManager.h"
 #include "Misc/PackageName.h"
@@ -2114,6 +2115,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 		}
 		FMantleReflectionProbeExport::Check(Actor, Type, ReflectionProbes, Result);
 		FMantleTextExport::Check(Actor, Type, Texts, Result);
+		FMantleWaterBodyExport::Check(Actor, Type, Result);
 		if (const AMantleCrowdSpawner* Spawner = Type == EMantleEntityType::CrowdSpawner ? Cast<AMantleCrowdSpawner>(Actor) : nullptr)
 		{
 			// The per-place totals, counted in the exporter's order so the same spawner is named.
