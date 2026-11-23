@@ -1650,7 +1650,8 @@ void FMantleVehicleConverter::AddHinges(const FMantleVehicleModel& Model, const 
 	if (Wanted.IsEmpty())
 	{
 		OutNotes.Append(Notes);
-		if (Kept.Num() > 0)
+		// Parts were found but are set, left shut or cannot open (each said above): not "no bone is named like a door".
+		if (Kept.Num() > 0 || Refused.Num() > 0)
 		{
 			return;
 		}
