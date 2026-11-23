@@ -1668,6 +1668,77 @@ namespace MantlePlaceAssetsPrivate
 		return IsConnected(Input) && RecognizeSample(Walk, Input, true, Out) && ReadsColor(Out);
 	}
 
+	/**
+	 * Input as a panned sample, or a panned sample multiplied by a constant tint or strength (a constant, a parameter, or a product of
+	 * those, through Multiply nodes and function calls): the sample, and the tint per channel (1 when there is none). The tint is
+	 * not part of the sample's texture, so the converter publishes it beside the source texture (the base color's factor, the
+	 * emissive's color and strength). A tint that is not a constant (a node that changes with time, a texture) is refused.
+	 */
+	bool RecognizePannedTinted(const FWalk& Walk, const FExpressionInput* Input, FRecognizedSample& Out, double (&OutTint)[3])
+	{
+		OutTint[0] = OutTint[1] = OutTint[2] = 1.0;
+		if (!IsConnected(Input))
+		{
+			return false;
+		}
+		if (RecognizePanned(Walk, Input, Out))
+		{
+			return true;
+		}
+		FGraphReader Reader;
+		Reader.Context = Walk.Context;
+		FGraphNode Node;
+		if (!Reader.Resolve(Input, FCallStack(), Node))
+		{
+			return false;
+		}
+		bool bMultiplied = false;
+		for (int32 Depth = 0; Depth < 6; ++Depth)
+		{
+			const UMaterialExpressionMultiply* Multiply = Cast<UMaterialExpressionMultiply>(Node.Expression);
+			if (!Multiply)
+			{
+				break;
+			}
+			const FExpressionInput* Operands[2] = { &Multiply->A, &Multiply->B };
+			const double Constants[2] = { Multiply->ConstA, Multiply->ConstB };
+			bool bFound = false;
+			for (int32 Side = 0; Side < 2 && !bFound; ++Side)
+			{
+				FUvValue Value;
+				if (!Reader.Number(Operands[Side], true, Constants[Side], Node.Calls, Value))
+				{
+					continue;
+				}
+				double Tint[3];
+				bool bConstant = true;
+				for (int32 Channel = 0; Channel < 3; ++Channel)
+				{
+					const FUvLane Lane = Value.Lane(Channel);
+					Tint[Channel] = Lane.C;
+					bConstant = bConstant && Lane.IsConstant() && Lane.C >= 0.0 && Lane.C <= 1000.0;
+				}
+				FGraphNode Other;
+				if (!bConstant || !Reader.Resolve(Operands[1 - Side], Node.Calls, Other))
+				{
+					continue;
+				}
+				for (int32 Channel = 0; Channel < 3; ++Channel)
+				{
+					OutTint[Channel] *= Tint[Channel];
+				}
+				Node = Other;
+				bFound = true;
+				bMultiplied = true;
+			}
+			if (!bFound)
+			{
+				return false;
+			}
+		}
+		return bMultiplied && PlainSampleClass(Node.Expression) && RecognizeMovingSample(Walk, Reader, Node, Out) && ReadsColor(Out);
+	}
+
 	/** A flat tangent-space normal: the constant (0, 0, 1), or a Transform of one. */
 	bool IsFlatNormal(FGraphReader& Reader, const FExpressionInput* Input, const FCallStack& Calls)
 	{
@@ -4315,8 +4386,16 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		}
 
 		// Panning, on each output nothing above carried.
-		auto CarryPanned = [&](const int32 Slot, const FRecognizedSample& Sample)
+		auto CarryPanned = [&](const int32 Slot, const FRecognizedSample& Sample, const double* Tint = nullptr)
 		{
+			if (Tint && (Tint[0] != 1.0 || Tint[1] != 1.0 || Tint[2] != 1.0))
+			{
+				Fidelity.bSourceTint[Slot] = true;
+				for (int32 Channel = 0; Channel < 3; ++Channel)
+				{
+					Fidelity.SourceTint[Slot][Channel] = Tint[Channel];
+				}
+			}
 			Fidelity.SourceTextures[Slot] = Sample.Texture;
 			Fidelity.SourceTiling[Slot][0] = Sample.Tiling[0];
 			Fidelity.SourceTiling[Slot][1] = Sample.Tiling[1];
@@ -4331,14 +4410,15 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 			}
 		};
 		FRecognizedSample Panned;
-		if (bLit && !IsCarried(MP_BaseColor) && RecognizePanned(Walk, Roots.BaseColor, Panned))
+		double PannedTint[3] = { 1.0, 1.0, 1.0 };
+		if (bLit && !IsCarried(MP_BaseColor) && RecognizePannedTinted(Walk, Roots.BaseColor, Panned, PannedTint))
 		{
 			// On a masked or translucent material the opacity must be the same sample's alpha (it moves with it).
 			FRecognizedSample Alpha;
 			const bool bAlphaMoves = !bOpaque && RecognizeSample(Walk, Roots.Opacity, true, Alpha) && Alpha.Sample == Panned.Sample && Alpha.Channel == TEXT('a');
 			if (bOpaque || bAlphaMoves)
 			{
-				CarryPanned(0, Panned);
+				CarryPanned(0, Panned, PannedTint);
 				Fidelity.bSourceAlpha = bAlphaMoves;
 				Carry({ MP_BaseColor });
 				if (bAlphaMoves)
@@ -4361,9 +4441,9 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 			Fidelity.bNormalLayersMerged = bNormalMerged;
 			Carry({ MP_Normal });
 		}
-		if (bCarries && !IsCarried(MP_EmissiveColor) && RecognizePanned(Walk, Roots.Emissive, Panned))
+		if (bCarries && !IsCarried(MP_EmissiveColor) && RecognizePannedTinted(Walk, Roots.Emissive, Panned, PannedTint))
 		{
-			CarryPanned(3, Panned);
+			CarryPanned(3, Panned, PannedTint);
 			Carry({ MP_EmissiveColor });
 		}
 		if (bLit && !IsCarried(MP_Roughness))
