@@ -2420,10 +2420,16 @@ namespace MantlePlaceExporterPrefab
 			}
 			return false;
 		}
-		if ((Component->IsA(UBoxComponent::StaticClass()) || Component->IsA(USphereComponent::StaticClass()) || FMantleTriggerShapeExport::IsTriggerCapsule(Component))
-			&& ExporterIsGameContent(Component))
+		// A box, sphere or capsule is a trigger only when it overlaps and blocks nothing. A box or sphere that blocks is collision: a part
+		// published as a hidden library cube or sphere (FMantleTriggerShapeExport::ReadCollisionShape).
+		if (FMantleTriggerShapeExport::IsTriggerShape(Component) && ExporterIsGameContent(Component))
 		{
 			OutType = EMantleEntityType::TriggerVolume;
+			return true;
+		}
+		if (FMantleTriggerShapeExport::IsCollisionShape(Component))
+		{
+			OutType = EMantleEntityType::StaticMesh;
 			return true;
 		}
 		if (const UAudioComponent* Audio = Cast<UAudioComponent>(Component))
@@ -2513,6 +2519,25 @@ namespace MantlePlaceExporterPrefab
 		{
 		case EMantleEntityType::StaticMesh:
 		{
+			// A blocking box or sphere is a hidden library cube or sphere the size of the shape.
+			FMantleStaticMeshProps ShapeProps;
+			FVector ShapeScale = FVector::OneVector;
+			if (FMantleTriggerShapeExport::ReadCollisionShape(Part.Component, ShapeProps, ShapeScale))
+			{
+				ReferencedAssets.Add(ShapeProps.Mesh);
+				if (!Uploads.MeshBounds.Contains(ShapeProps.Mesh))
+				{
+					Uploads.MeshBounds.Add(ShapeProps.Mesh, FBox(FVector(-50.0), FVector(50.0)));
+				}
+				Entity.Transform.SetScale3D(Entity.Transform.GetScale3D() * ShapeScale);
+				Entity.Props.Set<FMantleStaticMeshProps>(ShapeProps);
+				if (OutSplitParts)
+				{
+					OutSplitParts->Reset();
+					OutSplitParts->Add(ShapeProps);
+				}
+				break;
+			}
 			TArray<FMantleStaticMeshProps> AllParts;
 			if (const UStaticMeshComponent* Mesh = Cast<UStaticMeshComponent>(Part.Component))
 			{
@@ -2936,8 +2961,8 @@ bool FMantlePlaceExporter::ClassifyActor(const AActor* Actor, EMantleEntityType&
 	// class, so both engine trigger actors and plain actors round-trip.
 	if (const USceneComponent* Root = Actor->GetRootComponent())
 	{
-		if (Root->IsA(UBoxComponent::StaticClass()) || Root->IsA(USphereComponent::StaticClass())
-			|| (FMantleTriggerShapeExport::IsTriggerCapsule(Root) && !Actor->IsA(APawn::StaticClass())))
+		// A Pawn's capsule is its collision, never a trigger; a box or sphere root that blocks is not a trigger either (it is a part of a Group).
+		if (FMantleTriggerShapeExport::IsTriggerShape(Root) && !Actor->IsA(APawn::StaticClass()))
 		{
 			// A trigger with parts beside it is a prefab (#468): a Group, the trigger one of its parts.
 			OutType = MantlePlaceExporterPrefab::HasPart(Actor, Root) ? EMantleEntityType::Group : EMantleEntityType::TriggerVolume;
