@@ -4156,6 +4156,69 @@ void FMantlePlaceAssetConverter::SetBakeBlended(FMantleGlbDocument& Document)
 	}
 }
 
+void FMantlePlaceAssetConverter::SetBakeMasked(FMantleGlbDocument& Document, const double Cutoff)
+{
+	using namespace MantlePlaceAssetConverterPrivate;
+	const TArray<TSharedPtr<FJsonValue>>* Materials = nullptr;
+	if (Document.Json.IsValid() && Document.Json->TryGetArrayField(TEXT("materials"), Materials) && Materials->Num() > 0 && (*Materials)[0].IsValid())
+	{
+		const TSharedPtr<FJsonObject> First = (*Materials)[0]->AsObject();
+		First->SetStringField(TEXT("alphaMode"), TEXT("MASK"));
+		First->SetNumberField(TEXT("alphaCutoff"), Cutoff);
+	}
+}
+
+double FMantlePlaceAssetConverter::CoverageCutoff(const TArray<FColor>& Pixels)
+{
+	if (Pixels.Num() == 0)
+	{
+		return 0.5;
+	}
+	int64 Histogram[256] = {};
+	int64 AlphaSum = 0;
+	for (const FColor& Pixel : Pixels)
+	{
+		++Histogram[Pixel.A];
+		AlphaSum += Pixel.A;
+	}
+	const double Total = static_cast<double>(Pixels.Num());
+	const double Coverage = static_cast<double>(AlphaSum) / (255.0 * Total);
+	if (Histogram[Pixels[0].A] == Pixels.Num())
+	{
+		return 0.5;
+	}
+	// Gap[Level]: how far the share of pixels with alpha >= Level is from the coverage, for Level 1..255 (level 0 keeps everything). A
+	// level above the image's highest alpha would cut the whole decal away, so it is never chosen: a faint decal is kept, at full strength.
+	double Gap[256];
+	double BestGap = TNumericLimits<double>::Max();
+	int64 Above = 0;
+	for (int32 Level = 255; Level >= 1; --Level)
+	{
+		Above += Histogram[Level];
+		Gap[Level] = Above > 0 ? FMath::Abs(static_cast<double>(Above) / Total - Coverage) : TNumericLimits<double>::Max();
+		BestGap = FMath::Min(BestGap, Gap[Level]);
+	}
+	if (BestGap == TNumericLimits<double>::Max())
+	{
+		return 0.5; // every alpha is 0: nothing shows whatever the cut-off
+	}
+	// Levels between two alphas the image doesn't hold give the same share: take the middle of those, away from both (a hard-edged decal
+	// of alphas 0 and 255 is cut at about 0.5, not right under 255, where block compression could drop its edge).
+	int32 Low = INDEX_NONE;
+	int32 High = INDEX_NONE;
+	for (int32 Level = 1; Level <= 255; ++Level)
+	{
+		if (Gap[Level] <= BestGap + 1.0e-12)
+		{
+			Low = Low == INDEX_NONE ? Level : Low;
+			High = Level;
+		}
+	}
+	const double Best = 0.5 * (Low + High);
+	// Midway below the level, so a pixel at exactly that alpha is kept however the renderer rounds.
+	return FMath::Clamp((Best - 0.5) / 255.0, 0.5 / 255.0, 1.0);
+}
+
 FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& InSettings, const FMantlePlaceAssetLimits& InLimits,
 	const UMaterialInterface* Material, const bool bPerInstanceVariation, const FMantleBakeSurface& Surface, const bool bOpaqueInDisguise, const bool bOpacityAsMask)
 {
@@ -4174,7 +4237,8 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 		*Surface.CacheTag(), bOpaqueInDisguise ? TEXT(" opaqueinsteadoftranslucent=1") : TEXT(""), bMasked ? TEXT(" maskcutoff=2") : TEXT(""));
 	if (bDecal)
 	{
-		Salt += TEXT(" decalsurface=1");
+		// decalmask=1: a mesh decal publishes as a cut-out (SetBakeMasked at its CoverageCutoff), no longer see-through.
+		Salt += TEXT(" decalsurface=1 decalmask=1");
 	}
 	// opacityasmask=2: the Masked copy clears "masked can be assumed opaque" (bd10fec); an =1 bake of a material carrying it was opaque.
 	if (bOpacityAsMask)
@@ -4605,8 +4669,8 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	}
 
 	// A1: a decal material drawn on a mesh (a mesh decal: road lines, paint, grime) bakes blank as it is (with Substrate on, only a decal's
-	// Front Material is an active input), so it is baked as its surface copy: the same graph, parameters and blend mode, so it publishes
-	// see-through as the creator marked it, its Base Color with Opacity in alpha, and its Normal, on the mesh's own UVs.
+	// Front Material is an active input), so it is baked as its surface copy: the same graph and parameters, its Base Color with Opacity
+	// in alpha, and its Normal, on the mesh's own UVs.
 	const TStrongObjectPtr<UMaterialInterface> DecalSurface = FMantlePlaceAssets::DecalSurfaceCopy(Neutral.IsValid() ? Neutral.Get() : Material);
 	UMaterialInterface* ToBake = DecalSurface.IsValid() ? DecalSurface.Get() : (Neutral.IsValid() ? Neutral.Get() : Material);
 	if (DecalSurface.IsValid())
@@ -4617,13 +4681,18 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	// A1: under Substrate's adaptive GBuffer (the engine's default) the bake exports a translucent material's Opacity flat, so its shape (a
 	// decal's, a cutout card's) was lost; a Masked copy's Opacity Mask keeps its values in the base color's alpha. Only the bake's copy is
 	// Masked: the published material stays see-through (the bake's alphaMode is set back to BLEND below), and the creator's is never touched.
+	// A mesh decal always bakes through its Masked copy, whatever the GBuffer, and publishes as that cut-out (Joshua, A1): Unreal draws a
+	// see-through surface with a decal's textures dark (the publish test's editor A/B: 28 against the decal's 81), where a decal is lit
+	// with the surface under it, as a cut-out is (63).
 	TStrongObjectPtr<UMaterialInterface> OpacityMask;
-	if (bOpacityAsMask)
+	const bool bDecalMask = DecalSurface.IsValid();
+	if (bOpacityAsMask || bDecalMask)
 	{
 		OpacityMask = FMantlePlaceAssets::OpacityAsMaskCopy(ToBake);
-		UE_LOG(LogMantle, Log, TEXT("MANTLE_OPACITY_AS_MASK %s: %s"), *Material->GetName(), OpacityMask.IsValid()
-			? TEXT("its opacity is baked through a Masked copy (Substrate's adaptive GBuffer bakes a translucent material's opacity flat)")
-			: TEXT("no Masked copy could be made (an instance overrides its blend mode, or it is on material attributes); baked as it is"));
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_OPACITY_AS_MASK %s: %s"), *Material->GetName(), !OpacityMask.IsValid()
+			? TEXT("no Masked copy could be made (an instance overrides its blend mode, or it is on material attributes); baked as it is")
+			: bDecalMask ? TEXT("a mesh decal: baked through its Masked copy, and published as that cut-out")
+			: TEXT("its opacity is baked through a Masked copy (Substrate's adaptive GBuffer bakes a translucent material's opacity flat)"));
 		if (OpacityMask.IsValid())
 		{
 			ToBake = OpacityMask.Get();
@@ -4644,7 +4713,20 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	}
 	if (Flattener->Flatten(ToBake, FlattenSettings, Flattened, Messages, FlattenError))
 	{
-		if (OpacityMask.IsValid())
+		if (OpacityMask.IsValid() && bDecalMask)
+		{
+			// A mesh decal: a cut-out of its opacity, cut where it covers as much as the see-through decal did.
+			TArray<FColor> Pixels;
+			int32 Width = 0;
+			int32 Height = 0;
+			FString Why;
+			const bool bRead = BakedBaseColorImage(Flattened, Pixels, Width, Height, Why);
+			const double Cutoff = bRead ? CoverageCutoff(Pixels) : 0.5;
+			SetBakeMasked(Flattened, Cutoff);
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_DECAL_MASK %s: published as a cut-out at %.3f (%s)"), *Material->GetName(), Cutoff,
+				bRead ? TEXT("the cut-out covers as much as the see-through decal did") : *FString::Printf(TEXT("0.5: its baked opacity could not be read, %s"), *Why));
+		}
+		else if (OpacityMask.IsValid())
 		{
 			// The Masked copy's bake: its base color alpha is the opacity. It publishes see-through, as the material is.
 			SetBakeBlended(Flattened);

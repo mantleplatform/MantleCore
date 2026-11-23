@@ -163,4 +163,64 @@ bool FMantleOpacityAsMaskBlendedTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleDecalMaskCutoffTest,
+	"Mantle.Editor.OpacityAsMask.MeshDecalCutOffKeepsItsCoverage",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleDecalMaskCutoffTest::RunTest(const FString& Parameters)
+{
+	// A1 (Joshua: cut-outs): a mesh decal publishes as a cut-out, cut where it covers as much as the see-through decal did.
+	auto Alphas = [](std::initializer_list<uint8> Values)
+	{
+		TArray<FColor> Pixels;
+		for (const uint8 Value : Values)
+		{
+			Pixels.Add(FColor(200, 190, 170, Value));
+		}
+		return Pixels;
+	};
+	auto Kept = [](const TArray<FColor>& Pixels, double Cutoff)
+	{
+		int32 Count = 0;
+		for (const FColor& Pixel : Pixels)
+		{
+			Count += Pixel.A / 255.0 >= Cutoff ? 1 : 0;
+		}
+		return Count;
+	};
+	using FConverter = FMantlePlaceAssetConverter;
+	TestEqual(TEXT("one alpha everywhere: the middle"), FConverter::CoverageCutoff(Alphas({ 128, 128, 128, 128 })), 0.5, 1.0e-9);
+	TestEqual(TEXT("a hard-edged decal (0 and 255) is cut midway, not under 255"), FConverter::CoverageCutoff(Alphas({ 0, 0, 255, 255 })), 127.5 / 255.0, 1.0e-9);
+
+	// A soft-edged line: a quarter solid, a quarter edge at 0.4, half bare. Mean alpha 0.35: keeping the solid quarter (0.25) is closest,
+	// so the edge is cut and the solid part kept.
+	const TArray<FColor> Soft = Alphas({ 255, 102, 0, 0 });
+	const double SoftCut = FConverter::CoverageCutoff(Soft);
+	TestEqual(TEXT("a soft edge keeps the solid part"), Kept(Soft, SoftCut), 1);
+
+	// A faint decal (grime at 0.3 over half its card): cutting it to its 0.15 coverage would drop all of it, so it is kept whole.
+	const TArray<FColor> Faint = Alphas({ 77, 77, 0, 0 });
+	const double FaintCut = FConverter::CoverageCutoff(Faint);
+	TestEqual(TEXT("a faint decal is never cut away"), Kept(Faint, FaintCut), 2);
+	TestTrue(TEXT("and the bare part stays bare"), FaintCut > 0.0);
+
+	// The bake's alphaMode: MASK with that cut-off.
+	FMantleGlbDocument Doc;
+	Doc.Json = MakeShared<FJsonObject>();
+	const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+	Entry->SetStringField(TEXT("alphaMode"), TEXT("BLEND"));
+	TArray<TSharedPtr<FJsonValue>> Materials;
+	Materials.Add(MakeShared<FJsonValueObject>(Entry));
+	Doc.Json->SetArrayField(TEXT("materials"), Materials);
+	FConverter::SetBakeMasked(Doc, 0.742);
+	FString Mode;
+	TestTrue(TEXT("alphaMode is set"), Entry->TryGetStringField(TEXT("alphaMode"), Mode));
+	TestEqual(TEXT("to MASK"), Mode, FString(TEXT("MASK")));
+	double Cutoff = 0.0;
+	TestTrue(TEXT("with a cut-off"), Entry->TryGetNumberField(TEXT("alphaCutoff"), Cutoff));
+	TestEqual(TEXT("the one given"), Cutoff, 0.742, 1.0e-9);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

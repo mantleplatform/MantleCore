@@ -285,13 +285,34 @@ bool FMantleMeshDecalBakesItsSurfaceCopyTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("the flattener ran once"), Flattener->Calls, 1);
 	TestEqual(TEXT("it was handed a surface material"), static_cast<int32>(Flattener->SeenDomain), static_cast<int32>(MD_Surface));
-	TestEqual(TEXT("still translucent"), static_cast<int32>(Flattener->SeenBlend), static_cast<int32>(BLEND_Translucent));
+	// A1 (Joshua: cut-outs): a mesh decal always bakes through its Masked copy, whatever the GBuffer, and publishes as that cut-out.
+	TestEqual(TEXT("its Masked copy"), static_cast<int32>(Flattener->SeenBlend), static_cast<int32>(BLEND_Masked));
 	TestFalse(TEXT("with no Decal Lifetime Opacity in it"), Flattener->bSawLifetimeOpacity);
 
 	const FMantleConvertedMaterial* Converted = Set.FindMaterial(FMantlePlaceAssets::MaterialKey(Decal));
 	if (TestNotNull(TEXT("the material is in the set"), Converted))
 	{
-		TestEqual(TEXT("it publishes see-through, as the creator marked it"), Converted->Document.AlphaMode, FString(TEXT("blend")));
+		TestEqual(TEXT("it publishes as a cut-out, lit like the decal"), Converted->Document.AlphaMode, FString(TEXT("mask")));
+		// The scripted bake is one alpha (128) everywhere: no level to choose from, so the middle.
+		TestEqual(TEXT("cut at 0.5 (one alpha in the whole bake)"), Converted->Document.AlphaCutoff, 0.5, 1.0e-6);
+	}
+
+	// A see-through material that is not a decal still publishes see-through.
+	UMaterial* Sheet = NewObject<UMaterial>(GetTransientPackage());
+	Sheet->BlendMode = BLEND_Translucent;
+	UMaterialExpressionScalarParameter* SheetOpacity = AddNode<UMaterialExpressionScalarParameter>(Sheet);
+	SheetOpacity->ParameterName = TEXT("Opacity");
+	SheetOpacity->DefaultValue = 0.4f;
+	Sheet->GetEditorOnlyData()->Opacity.Connect(0, SheetOpacity);
+	Sheet->UpdateCachedExpressionData();
+	FMantlePlaceAssetSet SheetSet;
+	if (TestTrue(TEXT("a translucent surface material converts"), Converter.ConvertMaterial(Sheet, SheetSet)))
+	{
+		const FMantleConvertedMaterial* SheetConverted = SheetSet.FindMaterial(FMantlePlaceAssets::MaterialKey(Sheet));
+		if (TestNotNull(TEXT("it is in the set"), SheetConverted))
+		{
+			TestEqual(TEXT("and stays see-through"), SheetConverted->Document.AlphaMode, FString(TEXT("blend")));
+		}
 	}
 	TestFalse(TEXT("the converter gives no 'not a surface material' warning"), Set.Issues.ContainsByPredicate([](const FMantleValidationIssue& Issue)
 	{
