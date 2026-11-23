@@ -4,6 +4,7 @@
 #include "MantleBlockingVolumeExport.h"
 #include "MantleMirrorBake.h"
 #include "MantleSlotSplit.h"
+#include "MantleTriggerShapeExport.h"
 #include "MantleMeshLumenData.h"
 #include "MantleNaniteSideFile.h"
 #include "MantleSnapSockets.h"
@@ -84,6 +85,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/RectLightComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/SplineMeshComponent.h"
@@ -1775,7 +1777,7 @@ namespace MantlePlaceExporterInfrastructure
 	{
 		return Actor->IsA(AInfo::StaticClass())
 			|| FMantleActorDecompose::IsUnpublishedReflectionCapture(Actor)
-			|| Actor->IsA(ABrush::StaticClass())
+			|| (Actor->IsA(ABrush::StaticClass()) && !FMantleTriggerShapeExport::IsBoxTriggerBrush(Actor))
 			|| Actor->IsA(AController::StaticClass())
 			|| Actor->IsA(APawn::StaticClass())
 			|| Actor->IsA(ACameraActor::StaticClass())
@@ -1959,6 +1961,17 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 		}
 		OutWhat = TEXT("is a Blocking Volume that is not a box, which Mantle does not publish: only a box can be an invisible wall.");
 		OutRemedy = TEXT("Build the wall from box-shaped Blocking Volumes. This volume would be dropped.");
+		return true;
+	}
+	// A Trigger Volume that is a box publishes as a Box trigger (FMantleTriggerShapeExport); any other brush shape is named here.
+	if (FMantleTriggerShapeExport::IsTriggerBrush(Actor))
+	{
+		if (FMantleTriggerShapeExport::IsBoxTriggerBrush(Actor))
+		{
+			return false;
+		}
+		OutWhat = TEXT("is a Trigger Volume that is not a box, which Mantle does not publish: a trigger is a box or a sphere.");
+		OutRemedy = TEXT("Replace it with a Trigger Box or a Trigger Sphere, or shape the volume as a box. The volume would be dropped.");
 		return true;
 	}
 	if (Actor->IsA(AVolume::StaticClass()))
@@ -2395,7 +2408,8 @@ namespace MantlePlaceExporterPrefab
 			}
 			return false;
 		}
-		if ((Component->IsA(UBoxComponent::StaticClass()) || Component->IsA(USphereComponent::StaticClass())) && ExporterIsGameContent(Component))
+		if ((Component->IsA(UBoxComponent::StaticClass()) || Component->IsA(USphereComponent::StaticClass()) || FMantleTriggerShapeExport::IsCapsule(Component))
+			&& ExporterIsGameContent(Component))
 		{
 			OutType = EMantleEntityType::TriggerVolume;
 			return true;
@@ -2875,6 +2889,8 @@ bool FMantlePlaceExporter::ClassifyActor(const AActor* Actor, EMantleEntityType&
 	if (FMantleReflectionProbeExport::IsProbeActor(Actor)) { OutType = EMantleEntityType::ReflectionProbe; return true; }
 	// GhzGarage/mantle#724: a placed Text Render Actor (the engine's own class) is a Text entity where the target reads it.
 	if (FMantleTextExport::IsTextActor(Actor) && FMantleTargetFeatures::Current().Reads(MantleClientFeatures::WorldText)) { OutType = EMantleEntityType::Text; return true; }
+	// F18: a Trigger Volume (a brush) whose brush is a box is a Box trigger. Its root is a brush component, not a box one.
+	if (FMantleTriggerShapeExport::IsBoxTriggerBrush(Actor)) { OutType = EMantleEntityType::TriggerVolume; return true; }
 	if (Actor->IsA(AStaticMeshActor::StaticClass()))  { OutType = EMantleEntityType::StaticMesh;       return true; }
 	if (Actor->IsA(APlayerStart::StaticClass()))      { OutType = EMantleEntityType::PlayerStart;      return true; }
 	if (Actor->IsA(APointLight::StaticClass()))       { OutType = EMantleEntityType::PointLight;       return true; }
@@ -2899,7 +2915,7 @@ bool FMantlePlaceExporter::ClassifyActor(const AActor* Actor, EMantleEntityType&
 	// class, so both engine trigger actors and plain actors round-trip.
 	if (const USceneComponent* Root = Actor->GetRootComponent())
 	{
-		if (Root->IsA(UBoxComponent::StaticClass()) || Root->IsA(USphereComponent::StaticClass()))
+		if (Root->IsA(UBoxComponent::StaticClass()) || Root->IsA(USphereComponent::StaticClass()) || FMantleTriggerShapeExport::IsCapsule(Root))
 		{
 			// A trigger with parts beside it is a prefab (#468): a Group, the trigger one of its parts.
 			OutType = MantlePlaceExporterPrefab::HasPart(Actor, Root) ? EMantleEntityType::Group : EMantleEntityType::TriggerVolume;
@@ -4197,8 +4213,19 @@ bool FMantlePlaceExporter::ReadValueProperties(const AActor* Actor, EMantleEntit
 		break;
 	}
 	case EMantleEntityType::TriggerVolume:
+	{
+		// A Trigger Volume brush that is a box (F18): a Box trigger of its half-size. Its center is written by the entity's transform.
+		FVector BrushCenter;
+		FMantleTriggerVolumeProps BrushProps;
+		if (FMantleTriggerShapeExport::ReadBoxBrush(Actor, BrushCenter, BrushProps.Extent))
+		{
+			BrushProps.Shape = EMantleTriggerShape::Box;
+			OutEntity.Props.Set<FMantleTriggerVolumeProps>(BrushProps);
+			return true;
+		}
 		Source = Actor->GetRootComponent();
 		break;
+	}
 	default:
 		return false;
 	}
@@ -4302,6 +4329,11 @@ bool FMantlePlaceExporter::ReadComponentValueProperties(const USceneComponent* C
 			Props.Shape = EMantleTriggerShape::Sphere;
 			const double Radius = Sphere->GetUnscaledSphereRadius();
 			Props.Extent = FVector(Radius, Radius, Radius);
+		}
+		else if (const UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Component))
+		{
+			// A capsule is not a trigger shape of its own: a box around it, or a sphere (FMantleTriggerShapeExport).
+			FMantleTriggerShapeExport::ReadCapsule(Capsule, Props.Shape, Props.Extent);
 		}
 		OutEntity.Props.Set<FMantleTriggerVolumeProps>(Props);
 		return true;
@@ -5661,6 +5693,19 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		}
 		TArray<FMantleStaticMeshProps> SplitParts;
 		ExtractProperties(Actor, Entity.Type, Path, Entity, ReferencedAssets, Uploads, Result.Errors, ActorMirror ? ActorMirror->Mesh : nullptr, &SplitParts);
+
+		// A Trigger Volume brush (F18) is a box about its own center, which need not be the actor's pivot: the entity sits at the center.
+		if (FVector BrushCenter, BrushExtent; Entity.Type == EMantleEntityType::TriggerVolume && FMantleTriggerShapeExport::ReadBoxBrush(Actor, BrushCenter, BrushExtent))
+		{
+			Entity.Transform = FTransform(BrushCenter) * Entity.Transform;
+			Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept, ExporterLabelOf(Actor),
+				TEXT("a Trigger Volume published as a box trigger."));
+		}
+		else if (Entity.Type == EMantleEntityType::TriggerVolume && FMantleTriggerShapeExport::IsCapsule(Actor->GetRootComponent()))
+		{
+			Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
+				TEXT("a capsule trigger published as a box (or a sphere) around it: its rounded ends are square."));
+		}
 
 		// The crowd budgets span the level (#477), so they are counted here, at the paths the
 		// parser reports them. So do points of interest (#513): the actors they name have ids now.
