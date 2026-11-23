@@ -505,6 +505,11 @@ namespace MantleCoverageSurveyPrivate
 		case EMantleMaterialLoss::BlendMode: return FString::Printf(TEXT("%s blending"), *Analysis.BlendModeName);
 		case EMantleMaterialLoss::NotSurface: return TEXT("not a surface material");
 		case EMantleMaterialLoss::SecondUv: return TEXT("second UV set read as the first");
+		case EMantleMaterialLoss::ParameterCollection: return TEXT("parameter collection read at its saved values");
+		case EMantleMaterialLoss::CookedMaterial: return TEXT("cooked material, losses not readable");
+		case EMantleMaterialLoss::LargeGraph: return TEXT("very large graph, losses past the walk's limit not listed");
+		case EMantleMaterialLoss::MultiTileTexture: return TEXT("UDIM, cube or array texture seen as one image");
+		case EMantleMaterialLoss::RenderTarget: return TEXT("render target baked blank");
 		default: return FString();
 		}
 	}
