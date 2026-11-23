@@ -1858,6 +1858,77 @@ bool FMantleFarSetHandOffTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleFarSetReleaseSpreadTest,
+	"Mantle.Runtime.FarSet.Streamer.ReleaseIsSpreadOverTicks",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleFarSetReleaseSpreadTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCellStreamerTestPrivate;
+	FFixture Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	Fixture.CellAssets = MakeShared<FFakeCellAssets>();
+	// The twins of cells 2 to 7 ask for their assets and wait for them: each holds assets and draws nothing.
+	for (int32 Cell = 2; Cell <= 7; ++Cell)
+	{
+		Fixture.CellAssets->SlowCells.Add(FarHolderBaseForTest + Cell);
+	}
+	// A budget of nothing: the work is spread over the frames however little time they give it (a ladder step's release has no more than one set a tick).
+	FMantleCellStreamSettings Settings = FarSettings();
+	Settings.BaseBudgetSeconds = 0.0;
+	Settings.HoldBudgetSeconds = 0.0;
+	Fixture.StartStreamer(Settings);
+	int32 DoubleDraws = 0;
+	int32 Gaps = 0;
+	const bool bHeld = TickAuditing(Fixture, [&Fixture]()
+	{
+		bool bAll = !Fixture.Streamer->IsHolding();
+		for (int32 Cell = 2; Cell <= 7; ++Cell)
+		{
+			bAll = bAll && Fixture.CellAssets->Held.Contains(FarHolderBaseForTest + Cell);
+		}
+		return bAll;
+	}, 3000, DoubleDraws, Gaps);
+	if (!TestTrue(TEXT("the twins of cells 2 to 7 hold their assets and none is built"), bHeld))
+	{
+		return false;
+	}
+	TestEqual(TEXT("no twin is drawn"), Fixture.Streamer->GetStats().FarEntitiesBuilt, static_cast<int64>(0));
+
+	// A long way off (1 km): the twins of cells 3 to 6 are past their release distance (450 x 1.2 = 540 m from the cell's box) at once. Cell 7 ends at 512 m, 488 m off, so it stays, and cell 2 is under a standing real cell.
+	Fixture.View = FVector(100000.0, 100.0, 100.0);
+	int64 Last = Fixture.Streamer->GetStats().FarSetsReleased;
+	int64 MostInATick = 0;
+	int32 TicksWithRelease = 0;
+	for (int32 Tick = 0; Tick < 400; ++Tick)
+	{
+		Fixture.Tick();
+		const FMantleFarAudit Audit = Fixture.Streamer->AuditFarSets(TEXT("test"));
+		DoubleDraws += Audit.DoubleDraws;
+		Gaps += Audit.Gaps;
+		const int64 Now = Fixture.Streamer->GetStats().FarSetsReleased;
+		MostInATick = FMath::Max(MostInATick, Now - Last);
+		TicksWithRelease += Now > Last ? 1 : 0;
+		Last = Now;
+	}
+	for (int32 Cell = 3; Cell <= 6; ++Cell)
+	{
+		TestFalse(FString::Printf(TEXT("cell %d's twin gave its assets back"), Cell), Fixture.CellAssets->Held.Contains(FarHolderBaseForTest + Cell));
+		TestFalse(FString::Printf(TEXT("cell %d's twin is gone"), Cell), Fixture.Streamer->GetFarSetView(Cell).bExists);
+	}
+	TestTrue(TEXT("cell 2's twin stays: a real cell stands there"), Fixture.CellAssets->Held.Contains(FarHolderBaseForTest + 2));
+	TestTrue(TEXT("cell 7's twin stays: it is inside its release distance"), Fixture.CellAssets->Held.Contains(FarHolderBaseForTest + 7));
+	TestEqual(TEXT("never more than one twin's release a tick"), MostInATick, static_cast<int64>(1));
+	TestEqual(TEXT("the four went on four different ticks"), TicksWithRelease, 4);
+	TestEqual(TEXT("no double draw at any tick"), DoubleDraws, 0);
+	TestEqual(TEXT("no gap at any tick"), Gaps, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleFarSetSolidStreamerTest,
 	"Mantle.Runtime.FarSet.Streamer.NotForTheSolidStreamer",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
