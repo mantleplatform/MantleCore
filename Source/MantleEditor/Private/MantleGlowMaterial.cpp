@@ -406,7 +406,10 @@ namespace MantleGlowMaterialPrivate
 		bool bFresnel = false;
 		double K[3] = { 0.0, 0.0, 0.0 };
 
-		/** Without bFresnel: the value is one known constant, C, all over the surface. */
+		/**
+		 * The part of the value that is not times the Fresnel (all of it without bFresnel) is one known constant, C, all over the
+		 * surface. With bFresnel, C + K x BRF is the value the face-on bake sees.
+		 */
 		bool bConstant = false;
 		double C[3] = { 0.0, 0.0, 0.0 };
 
@@ -529,6 +532,7 @@ namespace MantleGlowMaterialPrivate
 			bNormalPin = bNormalPin || Node->Normal.Expression != nullptr;
 			Out = FRimValue();
 			Out.bFresnel = true;
+			Out.bConstant = true;
 			Out.K[0] = Out.K[1] = Out.K[2] = 1.0;
 			return true;
 		}
@@ -588,9 +592,11 @@ namespace MantleGlowMaterialPrivate
 					return Fail(RimVaries);
 				}
 				Out.bFresnel = true;
+				Out.bConstant = A.bConstant;
 				for (int32 Channel = 0; Channel < 3; ++Channel)
 				{
 					Out.K[Channel] = A.K[Channel] / B.C[Channel];
+					Out.C[Channel] = A.C[Channel] / B.C[Channel];
 				}
 				return true;
 			}
@@ -606,9 +612,11 @@ namespace MantleGlowMaterialPrivate
 					return false;
 				}
 				Out.bFresnel = true;
+				Out.bConstant = A.bConstant && B.bConstant;
 				for (int32 Channel = 0; Channel < 3; ++Channel)
 				{
 					Out.K[Channel] = Add ? A.K[Channel] + B.K[Channel] : A.K[Channel] - B.K[Channel];
+					Out.C[Channel] = Add ? A.C[Channel] + B.C[Channel] : A.C[Channel] - B.C[Channel];
 				}
 				return true;
 			}
@@ -619,9 +627,11 @@ namespace MantleGlowMaterialPrivate
 					return false;
 				}
 				Out.bFresnel = true;
+				Out.bConstant = A.bConstant;
 				for (int32 Channel = 0; Channel < 3; ++Channel)
 				{
 					Out.K[Channel] = -A.K[Channel];
+					Out.C[Channel] = 1.0 - A.C[Channel];
 				}
 				return true;
 			}
@@ -644,9 +654,11 @@ namespace MantleGlowMaterialPrivate
 					{
 						return Fail(RimVaries);
 					}
+					Out.bConstant = Alpha.bConstant;
 					for (int32 Channel = 0; Channel < 3; ++Channel)
 					{
 						Out.K[Channel] = (B.C[Channel] - A.C[Channel]) * Alpha.K[Channel];
+						Out.C[Channel] = A.C[Channel] + (B.C[Channel] - A.C[Channel]) * Alpha.C[Channel];
 					}
 					return true;
 				}
@@ -654,9 +666,11 @@ namespace MantleGlowMaterialPrivate
 				{
 					return Fail(RimVaries);
 				}
+				Out.bConstant = A.bConstant && B.bConstant;
 				for (int32 Channel = 0; Channel < 3; ++Channel)
 				{
 					Out.K[Channel] = A.K[Channel] * (1.0 - Alpha.C[Channel]) + B.K[Channel] * Alpha.C[Channel];
+					Out.C[Channel] = A.C[Channel] * (1.0 - Alpha.C[Channel]) + B.C[Channel] * Alpha.C[Channel];
 				}
 				return true;
 			}
@@ -694,9 +708,11 @@ namespace MantleGlowMaterialPrivate
 				return Fail(RimVaries);
 			}
 			Out.bFresnel = true;
+			Out.bConstant = WithFresnel.bConstant;
 			for (int32 Channel = 0; Channel < 3; ++Channel)
 			{
 				Out.K[Channel] = WithFresnel.K[Channel] * Other.C[Channel];
+				Out.C[Channel] = WithFresnel.C[Channel] * Other.C[Channel];
 			}
 			return true;
 		}
@@ -801,6 +817,11 @@ bool FMantleGlowMaterial::ReadRim(const UMaterialInterface* Context, const FExpr
 	{
 		Out.Why = TEXT("its opacity changes across the surface (a texture), and Mantle's rim glow is one flat color");
 		return false;
+	}
+	// A Fresnel opacity bakes as no constant, so its face-on value (C + K x BRF) is read here for the converter to scale the glow by.
+	if (bInOpacity && Fade.bFresnel && Fade.bConstant)
+	{
+		Out.FaceOnOpacity = FMath::Clamp(Fade.C[0] + Fade.K[0] * Reader.BaseReflect, 0.0, 1.0);
 	}
 	FRimValue Total;
 	if (!Reader.Product(Glow, Fade, Total))

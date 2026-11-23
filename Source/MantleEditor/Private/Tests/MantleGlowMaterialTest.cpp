@@ -775,6 +775,24 @@ bool FMantleGlowRimReadTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("green"), Rim.Color[1], 0.5, 1.0e-6);
 		TestEqual(TEXT("blue"), Rim.Color[2], 1.0, 1.0e-6);
 		TestEqual(TEXT("power 4"), Rim.Power, 4.0, 1.0e-6);
+		TestEqual(TEXT("its face-on opacity is the base reflect fraction, 0 here"), Rim.FaceOnOpacity, 0.0, 1.0e-6);
+	}
+	// A Fresnel opacity of 0.2 + 0.5 x Fresnel (base reflect 0.04): face-on, 0.2 + 0.5 x 0.04.
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor::White);
+		UMaterialExpressionAdd* Sum = AddNode<UMaterialExpressionAdd>(Material);
+		Sum->A.Connect(0, AddNumber(Material, 0.2f));
+		Sum->B.Connect(0, AddMultiply(Material, AddFresnel(Material), AddNumber(Material, 0.5f)));
+		Material->GetEditorOnlyData()->Opacity.Connect(0, Sum);
+		const FMantleRimGlow Rim = RimOf(Material);
+		TestTrue(TEXT("a constant plus a Fresnel opacity is a rim"), Rim.bFound);
+		TestEqual(TEXT("its face-on opacity"), Rim.FaceOnOpacity, 0.2 + 0.5 * 0.04, 1.0e-6);
+		TestEqual(TEXT("its rim is 0.5 x 0.96"), Rim.Color[0], 0.48, 1.0e-6);
+	}
+	// A Fresnel in the glow leaves the opacity to the bake.
+	{
+		const FMantleRimGlow Rim = RimOf(NewAdditive(true, FLinearColor::White, true));
+		TestTrue(TEXT("no face-on opacity for a Fresnel glow"), Rim.FaceOnOpacity < 0.0);
 	}
 	// A texture beside the rim (a pattern plus an edge glow) is the bake's; the rim is still read. Its exponent from a Scalar Parameter.
 	{
@@ -906,6 +924,20 @@ bool FMantleGlowRimDocumentTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("power 3"), Doc.RimPower, 3.0, 1.0e-6);
 	}
 
+	// Bay A12c: a flat orange glow with a Fresnel (4, 0.04) opacity. The bake carries no constant opacity, so the face-on glow is the
+	// color times the Fresnel's face-on value, 0.04; the rim is the other 0.96.
+	{
+		UMaterial* Material = NewAdditive(true, FLinearColor(1.0f, 0.35f, 0.05f));
+		Material->GetEditorOnlyData()->Opacity.Connect(0, AddFresnel(Material, 4.0f));
+		FMantlePlaceAssetSet Set;
+		const FMantlePlaceMaterialDocument Doc = Convert(Material, Baked(TEXT("BLEND"), { 1.0, 0.35, 0.05, 1.0 }, true, {}, 1.0, false), Set);
+		TestEqual(TEXT("the face-on glow is 0.04 of the color (red)"), Doc.EmissiveFactor[0], 0.04, 1.0e-6);
+		TestEqual(TEXT("(green)"), Doc.EmissiveFactor[1], 0.35 * 0.04, 1.0e-6);
+		TestTrue(TEXT("with a rim"), Doc.bRim);
+		TestEqual(TEXT("of 0.96 of the color"), Doc.RimColor[0], 0.96, 1.0e-6);
+		TestEqual(TEXT("at power 4"), Doc.RimPower, 4.0, 1.0e-6);
+	}
+
 	// A dropped rim writes no rim key.
 	{
 		FMantlePlaceAssetSet Set;
@@ -929,10 +961,10 @@ bool FMantleGlowRimDocumentTest::RunTest(const FString& Parameters)
 		const FMantlePlaceAssetLimits Limits;
 		const FMantleBakeSurface Plain;
 		auto Salt = [&](UMaterial* Material) { return FMantlePlaceAssetConverter::MaterialCacheSalt(TEXT("flattener"), Settings, Limits, Material, false, Plain); };
-		TestTrue(TEXT("an additive Fresnel material's key has the rim tag"), Salt(NewAdditive(true, FLinearColor::White, true)).Contains(TEXT(" additiverim=1")));
+		TestTrue(TEXT("an additive Fresnel material's key has the rim tag"), Salt(NewAdditive(true, FLinearColor::White, true)).Contains(TEXT(" additiverim=2")));
 		UMaterial* InOpacity = NewAdditive(true, FLinearColor::White);
 		InOpacity->GetEditorOnlyData()->Opacity.Connect(0, AddFresnel(InOpacity));
-		TestTrue(TEXT("so does one with a Fresnel opacity"), Salt(InOpacity).Contains(TEXT(" additiverim=1")));
+		TestTrue(TEXT("so does one with a Fresnel opacity"), Salt(InOpacity).Contains(TEXT(" additiverim=2")));
 		TestFalse(TEXT("an additive material without a Fresnel keeps its key"), Salt(NewAdditive(true, FLinearColor::White)).Contains(TEXT("additiverim")));
 		UMaterial* Translucent = NewUnlitTranslucent();
 		Translucent->GetEditorOnlyData()->EmissiveColor.Connect(0, AddMultiply(Translucent, AddFresnel(Translucent), AddColor(Translucent, FLinearColor::White)));

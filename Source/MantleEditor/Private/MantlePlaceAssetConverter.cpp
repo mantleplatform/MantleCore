@@ -4314,11 +4314,11 @@ FString FMantlePlaceAssetConverter::MaterialCacheSalt(const FString& Describe, c
 		Salt += TEXT(" singlelayerwaterclear=1");
 	}
 	// F4: an additive material with a Fresnel in its glow or opacity now publishes its rim glow: an earlier conversion (no rim key)
-	// must not stand in. Only such materials' keys change.
+	// must not stand in. Only such materials' keys change. =2: a Fresnel opacity scales the face-on glow (=1 left it at full).
 	if (Material && Material->GetBlendMode() == BLEND_Additive && Base && Base->GetEditorOnlyData()
 		&& (FMantleGlowMaterial::HasFresnel(&Base->GetEditorOnlyData()->EmissiveColor) || FMantleGlowMaterial::HasFresnel(&Base->GetEditorOnlyData()->Opacity)))
 	{
-		Salt += TEXT(" additiverim=1");
+		Salt += TEXT(" additiverim=2");
 	}
 	return Salt;
 }
@@ -5335,8 +5335,11 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 			Doc.EmissiveStrength = 1.0;
 			KeepGlowOverOne();
 		}
-		const double Opacity = Doc.BaseColorFactor[3];
-		if (Opacity > 0.0 && Opacity < 1.0)
+		// F4: a Fresnel opacity does not bake to a constant, so its face-on value (the rim reader's) scales the glow instead.
+		const bool bFresnelOpacity = Fidelity.Rim.FaceOnOpacity >= 0.0;
+		const double Opacity = bFresnelOpacity ? Fidelity.Rim.FaceOnOpacity : Doc.BaseColorFactor[3];
+		const bool bScaled = bFresnelOpacity ? Opacity < 1.0 : (Opacity > 0.0 && Opacity < 1.0);
+		if (bScaled)
 		{
 			for (int32 Channel = 0; Channel < 3; ++Channel)
 			{
@@ -5350,7 +5353,7 @@ FMantlePlaceMaterialDocument FMantlePlaceAssetConverter::MaterialFromGltf(const 
 		if (HasSource(EMantlePlaceTextureSlot::Emissive) && AddSource(EMantlePlaceTextureSlot::Emissive, false))
 		{
 			KeepSourceTransform(EMantlePlaceTextureSlot::Emissive);
-			KeepSourceTint(EMantlePlaceTextureSlot::Emissive, Opacity > 0.0 && Opacity < 1.0 ? Opacity : 1.0);
+			KeepSourceTint(EMantlePlaceTextureSlot::Emissive, bScaled ? Opacity : 1.0);
 		}
 		else if (Glow.IsSet() && AddImage(Glow, EMantlePlaceTextureSlot::Emissive, false))
 		{

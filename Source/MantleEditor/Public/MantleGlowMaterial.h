@@ -71,6 +71,13 @@ struct MANTLEEDITOR_API FMantleRimGlow
 	/** The Fresnel's Normal pin is wired (a normal map): the client's rim follows the mesh's own normals instead. */
 	bool bNormalPin = false;
 
+	/**
+	 * With the Fresnel in the opacity: the opacity the surface has face-on (its constant part plus K x BRF, 0..1), which the glow is
+	 * scaled by. The bake carries none (a Fresnel opacity does not bake to a constant), so without it the face publishes at full glow.
+	 * -1 when the opacity holds no Fresnel or its face-on value cannot be read.
+	 */
+	double FaceOnOpacity = -1.0;
+
 	/** Without bFound, why the rim cannot be published (it starts lower-case, to follow "because"); empty when the graph has no Fresnel. */
 	FString Why;
 };
