@@ -303,7 +303,8 @@ bool FMantleDecomposeUnknownComponentTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	AddMesh(Actor, TEXT("Body"), Cube, FVector::ZeroVector);
-	AddScene<UCapsuleComponent>(Actor, TEXT("Capsule"), FVector::ZeroVector);
+	// A capsule that blocks (collision, not a trigger: one that only overlaps is a trigger part now, F18).
+	AddScene<UCapsuleComponent>(Actor, TEXT("Capsule"), FVector::ZeroVector)->SetCollisionProfileName(TEXT("BlockAll"));
 	URotatingMovementComponent* Spin = NewObject<URotatingMovementComponent>(Actor, TEXT("Spin"));
 	Spin->RegisterComponent();
 
