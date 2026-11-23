@@ -428,6 +428,8 @@ namespace MantleNaniteSideFileTestPrivate
 		TSharedPtr<FServingResolver> Source;
 		/** How often each url was fetched. */
 		TMap<FString, int32> Fetched;
+		/** Every url in the order it was asked for. */
+		TArray<FString> Order;
 
 		virtual void Fetch(const FString& Url, const TSharedRef<FArchive>& Sink, TFunction<void(const FMantleAssetFetchResult&)> OnDone) override
 		{
@@ -435,6 +437,7 @@ namespace MantleNaniteSideFileTestPrivate
 			Result.bConnected = true;
 			Result.StatusCode = 404;
 			++Fetched.FindOrAdd(Url);
+			Order.Add(Url);
 			const bool bLow = Url.EndsWith(TEXT("#low"));
 			const FServedAsset* Served = Source->Assets.Find(bLow ? Url.RightChop(7).LeftChop(4) : Url.RightChop(7));
 			const TArray<uint8>* Bytes = Served ? (bLow ? &Served->LowBytes : &Served->Bytes) : nullptr;
@@ -1421,8 +1424,9 @@ namespace MantleStreamedAssetsTestPrivate
 		TSharedRef<FServingResolver> Server = MakeShared<FMaterialAnswerResolver>();
 		TSharedPtr<FMantleAssetStore> Store;
 		TSharedPtr<FMantlePlaceAssets> Assets;
+		TSharedPtr<FServingFetcher> Fetcher;
 
-		explicit FStreamingFixture(const FString& StoreName, const bool bNanite = true)
+		explicit FStreamingFixture(const FString& StoreName, const bool bNanite = true, TFunction<void(FMantlePlaceAssetSettings&)> Adjust = nullptr)
 		{
 			FServedAsset A;
 			A.Kind = TEXT("mesh");
@@ -1464,7 +1468,7 @@ namespace MantleStreamedAssetsTestPrivate
 			FMantleAssetStoreSettings StoreSettings;
 			StoreSettings.RootDir = FPaths::AutomationTransientDir() / StoreName;
 			StoreSettings.MaxAttempts = 1;
-			const TSharedRef<FServingFetcher> Fetcher = MakeShared<FServingFetcher>();
+			Fetcher = MakeShared<FServingFetcher>();
 			Fetcher->Source = Server;
 			FMantlePlaceAssetSettings Settings;
 			Settings.bAutoPump = false;
@@ -1472,8 +1476,12 @@ namespace MantleStreamedAssetsTestPrivate
 			Settings.bLoadNanite = bNanite;
 			Settings.bAsyncCollisionCook = false;
 			Settings.Resolver = Server;
-			Store = FMantleAssetStore::Create(StoreSettings, Fetcher);
+			Store = FMantleAssetStore::Create(StoreSettings, Fetcher.ToSharedRef());
 			Settings.Store = Store;
+			if (Adjust)
+			{
+				Adjust(Settings);
+			}
 			Assets = FMantlePlaceAssets::PrepareStreaming(MakeCellsOnlyPlace(), Settings, FMantlePlaceAssetsDone());
 		}
 
@@ -1497,6 +1505,65 @@ namespace MantleStreamedAssetsTestPrivate
 
 		bool Settle(const int64 Holder) { return PumpUntil([this, Holder]() { return Assets->GetHolderAssets(Holder).IsSettled(); }); }
 	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleStreamedAssetsFetchTiersTest,
+	"Mantle.Runtime.Place.StreamedAssets.FetchTiers",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleStreamedAssetsFetchTiersTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleStreamedAssetsTestPrivate;
+	// Which holder's tier (MantleAssetTiers): a far set's is last whatever its slot, an urgent slot's cell first, any other cell's in between.
+	const TSet<int32> Urgent = { 2 };
+	const auto HolderOf = [](const int64 Slot, const int32 Cell) { return (Slot << 32) | static_cast<int64>(static_cast<uint32>(Cell)); };
+	TestEqual(TEXT("a picture cell: normal"), static_cast<int32>(MantleAssetTiers::TierOfHolder(HolderOf(1, 7), Urgent)), static_cast<int32>(MantleAssetTiers::Normal));
+	TestEqual(TEXT("a collision cell: urgent"), static_cast<int32>(MantleAssetTiers::TierOfHolder(HolderOf(2, 7), Urgent)), static_cast<int32>(MantleAssetTiers::Urgent));
+	TestEqual(TEXT("a far set: last"), static_cast<int32>(MantleAssetTiers::TierOfHolder(HolderOf(1, MantleAssetTiers::FarHolderBase + 7), Urgent)), static_cast<int32>(MantleAssetTiers::Last));
+	TestEqual(TEXT("a far set of an urgent slot: still last"), static_cast<int32>(MantleAssetTiers::TierOfHolder(HolderOf(2, MantleAssetTiers::FarHolderBase + 7), Urgent)), static_cast<int32>(MantleAssetTiers::Last));
+	TestEqual(TEXT("no urgent slot set: normal"), static_cast<int32>(MantleAssetTiers::TierOfHolder(HolderOf(2, 7), TSet<int32>())), static_cast<int32>(MantleAssetTiers::Normal));
+
+	// The order: soonest tier first, first asked first within a tier.
+	TArray<TPair<int32, uint8>> Queue = { { 0, 2 }, { 1, 1 }, { 2, 0 }, { 3, 1 }, { 4, 2 }, { 5, 0 } };
+	MantleAssetTiers::OrderByTier(Queue, [](const TPair<int32, uint8>& Item) { return Item.Value; });
+	TArray<int32> Asked;
+	for (const TPair<int32, uint8>& Item : Queue)
+	{
+		Asked.Add(Item.Key);
+	}
+	TestTrue(TEXT("urgent 2 and 5, normal 1 and 3, last 0 and 4"), Asked == TArray<int32>({ 2, 5, 1, 3, 0, 4 }));
+
+	// The set itself, one download at a time: a far set asks for B first, a picture cell for F, then the collision cell for A. A (with its Nanite file) is fetched first,
+	// then F, then B: a join's far ask never queues ahead of the near cells.
+	FStreamingFixture Fixture(TEXT("StreamedTiers") / FGuid::NewGuid().ToString(), true, [](FMantlePlaceAssetSettings& Settings)
+	{
+		Settings.MaxOutstandingFetches = 1;
+	});
+	if (!TestTrue(TEXT("the root completes"), Fixture.PumpUntil([&Fixture]() { return Fixture.Assets->IsComplete(); })))
+	{
+		return false;
+	}
+	Fixture.Assets->SetUrgentHolderSlot(2);
+	TArray<FMantleEntity> FarB;
+	FarB.Add(MeshEntity(TEXT("ent_far_b"), FlowMeshB, false));
+	TArray<FMantleEntity> PictureF;
+	PictureF.Add(MeshEntity(TEXT("ent_pic_f"), MeshF, false));
+	TArray<FMantleEntity> SolidA;
+	SolidA.Add(MeshEntity(TEXT("ent_col_a"), FlowMeshA, true));
+	const int64 FarHolder = HolderOf(1, MantleAssetTiers::FarHolderBase + 1);
+	const int64 PictureHolder = HolderOf(1, 2);
+	const int64 CollisionHolder = HolderOf(2, 3);
+	Fixture.Assets->AcquireEntityAssets(FarHolder, FarB);
+	Fixture.Assets->AcquireEntityAssets(PictureHolder, PictureF);
+	Fixture.Assets->AcquireEntityAssets(CollisionHolder, SolidA);
+	Fixture.PumpUntil([&Fixture]() { return Fixture.Fetcher->Order.Num() >= 4; }, 10.0);
+	const auto At = [&Fixture](const TCHAR* Id) { return Fixture.Fetcher->Order.IndexOfByKey(FString(TEXT("test://")) + Id); };
+	TestTrue(TEXT("A, B and F were all fetched"), At(FlowMeshA) != INDEX_NONE && At(FlowMeshB) != INDEX_NONE && At(MeshF) != INDEX_NONE);
+	TestTrue(TEXT("the collision cell's A first"), At(FlowMeshA) < At(MeshF) && At(FlowMeshA) < At(FlowMeshB));
+	TestTrue(TEXT("its Nanite file comes with it, before the picture's"), At(FlowNaniteA) != INDEX_NONE && At(FlowNaniteA) < At(MeshF));
+	TestTrue(TEXT("the picture cell's F before the far set's B, though B was asked for first"), At(MeshF) < At(FlowMeshB));
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
