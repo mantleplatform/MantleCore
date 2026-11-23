@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "MantlePlaceCells.h"
 #include "MantlePlaceTypes.h"
 
 struct FMantleInstancedMeshGroup;
@@ -223,14 +224,6 @@ struct FMantleCellFileBlob
 	int32 Entities = 0;
 	int64 Instances = 0;
 	int64 Solid = 0;
-};
-
-/** What one cell's files are called once uploaded, for the index (6.1). */
-struct FMantleCellFileRef
-{
-	FString Id;
-	FString Hash;
-	int64 Bytes = 0;
 };
 
 struct FMantleCellIndexEntry
