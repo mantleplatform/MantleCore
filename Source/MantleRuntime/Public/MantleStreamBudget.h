@@ -58,7 +58,7 @@ struct MANTLERUNTIME_API FMantleBudgetUse
 	double ProcessMemoryShare = 0.0;
 	/** The place's textures' video memory, bytes. */
 	int64 TextureBytes = 0;
-	/** The game's process memory, bytes (FMantleStreamBudget::CurrentProcessMemoryBytes: the larger of working set and private bytes); 0 when unknown. */
+	/** The game's process memory, bytes (FMantleStreamBudget::CurrentProcessMemoryBytes: private bytes less the card's use); 0 when unknown. */
 	int64 ProcessMemoryBytes = 0;
 	/** #189: the video memory the driver says the game uses now, and the budget it gives the game (FMantleStreamBudget::CurrentVideoMemory); 0 when unknown. */
 	int64 VideoUsedBytes = 0;
@@ -139,6 +139,13 @@ public:
 	static int64 ProcessMemoryCapBytes(int64 PhysicalBytes);
 
 	/**
+	 * The process memory the budget counts against the RAM cap: the private (committed) bytes less what this process holds on the card. On Windows the card's own memory is
+	 * committed to the process too, so private counts it a second time (big-map step 2: private minus working set followed the card's use, correlation 0.99), and the card has
+	 * its own budget. CardUsedBytes 0 (the card's use unknown: no DXGI, no Vulkan numbers, no RHI) counts the whole private: high, never low. Never below 0. Pure.
+	 */
+	static int64 ProcessMemoryBytes(int64 PrivateBytes, int64 CardUsedBytes);
+
+	/**
 	 * The highest of used / limit over the counts only, the textures' bytes included (a limit of 0 or less, or none, is not checked); 0 when nothing is limited. The counts that
 	 * stand in for memory press only while that memory is not read: solid things and far instances (RAM) while IsMemoryRead is false, instances (RAM and video) while either
 	 * reading is missing. Nanite root pages always count, but once the card is read only against the asset set's own ceiling (FMantleNaniteRootPages::BudgetPages,
@@ -205,7 +212,7 @@ public:
 	/** The game's process memory (CurrentProcessMemoryBytes) over the machine's RAM (CurrentMachine's, so the test switch counts), 0 when unknown. */
 	static double CurrentProcessMemoryShare();
 
-	/** The game's process memory, bytes: the larger of its working set and its private (committed) bytes (Windows trims the first while the second grows). */
+	/** The game's process memory, bytes: its private (committed) bytes less its use of the card (ProcessMemoryBytes with CurrentVideoMemory's use). */
 	static int64 CurrentProcessMemoryBytes();
 
 	/**
