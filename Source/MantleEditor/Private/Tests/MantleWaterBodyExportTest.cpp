@@ -18,6 +18,8 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionDepthFade.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/Package.h"
 #include "UObject/UnrealType.h"
@@ -603,6 +605,28 @@ namespace MantleFlatWaterTestPrivate
 		return Material;
 	}
 
+	/** A translucent material faded by scene depth over the distance given (opacity 0.8): water as a Fab pond or a puddle makes it. */
+	UMaterial* NewDepthFadeMaterial(const float FadeDistanceCm)
+	{
+		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
+		Material->BlendMode = BLEND_Translucent;
+		auto AddConstant = [Material](const float Value)
+		{
+			UMaterialExpressionConstant* Constant = NewObject<UMaterialExpressionConstant>(Material);
+			Constant->Material = Material;
+			Constant->R = Value;
+			Material->GetExpressionCollection().AddExpression(Constant);
+			return Constant;
+		};
+		UMaterialExpressionDepthFade* Fade = NewObject<UMaterialExpressionDepthFade>(Material);
+		Fade->Material = Material;
+		Material->GetExpressionCollection().AddExpression(Fade);
+		Fade->InOpacity.Connect(0, AddConstant(0.8f));
+		Fade->FadeDistance.Connect(0, AddConstant(FadeDistanceCm));
+		Material->GetEditorOnlyData()->Opacity.Connect(0, Fade);
+		return Material;
+	}
+
 	AStaticMeshActor* SpawnMeshActor(UWorld* World, UStaticMesh* Mesh, UMaterialInterface* Material, const FTransform& Transform)
 	{
 		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>();
@@ -812,6 +836,68 @@ bool FMantleFlatWaterMeshIsWarnedAboutTest::RunTest(const FString& Parameters)
 	// The whole Check reaches it too.
 	const FMantleValidationResult Whole = FMantlePlaceValidator::Validate(Fixture.World);
 	TestEqual(TEXT("the level's Check carries the warning"), PondWarnings(Whole, TEXT("Water")), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleShallowDepthFadeSheetStaysMeshTest,
+	"Mantle.Editor.Water.ThinDepthFadedSheetStaysASeeThroughMesh",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleShallowDepthFadeSheetStaysMeshTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleFlatWaterTestPrivate;
+	using namespace MantleWaterBodyExportTestPrivate;
+
+	UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, PlanePath);
+	if (!Plane)
+	{
+		AddWarning(TEXT("the engine plane did not load; skipped"));
+		return true;
+	}
+	FWaterTestWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	// The publish test's A15 puddle: a thin depth-faded sheet whose fade is 40 cm. It is not a body to swim in, and was published as a 1 m lake.
+	AStaticMeshActor* Puddle = SpawnMeshActor(Fixture.World, Plane, NewDepthFadeMaterial(40.f),
+		FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, 6.0), FVector(4.0, 4.0, 1.0)));
+	// The same sheet with a deep fade (a Fab pond's): still a pond.
+	AStaticMeshActor* Pond = SpawnMeshActor(Fixture.World, Plane, NewDepthFadeMaterial(300.f),
+		FTransform(FRotator::ZeroRotator, FVector(5000.0, 0.0, 6.0), FVector(4.0, 4.0, 1.0)));
+	if (!TestNotNull(TEXT("the puddle"), Puddle) || !TestNotNull(TEXT("the pond"), Pond))
+	{
+		return false;
+	}
+	TestFalse(TEXT("a 40 cm fade is not a flat water mesh"), FMantleWaterBodyExport::IsFlatWaterMesh(Puddle));
+	TestTrue(TEXT("a 300 cm fade is"), FMantleWaterBodyExport::IsFlatWaterMesh(Pond));
+
+	EMantleEntityType Type = EMantleEntityType::WaterBody;
+	TestTrue(TEXT("the puddle classifies"), FMantlePlaceExporter::ClassifyActor(Puddle, Type));
+	TestEqual(TEXT("as a StaticMesh"), Type, EMantleEntityType::StaticMesh);
+
+	// Gather agrees: the puddle's material is uploaded with it (the pond's is not); the engine plane itself is Mantle's own shape.
+	const FMantlePlaceDependencies Dependencies = FMantlePlaceDependencies::Gather(Fixture.World);
+	TestEqual(TEXT("the puddle's material is gathered, the pond's is not"), Dependencies.Materials.Num(), 1);
+
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	TestEqual(TEXT("the place has one static mesh (the puddle)"), CountEntities(Result, EMantleEntityType::StaticMesh), 1);
+	TestEqual(TEXT("and one water body (the pond)"), CountEntities(Result, EMantleEntityType::WaterBody), 1);
+	// Entities may sit in cells, not only in the place's root list: look through all of them, as CountEntities does.
+	const FMantleEntity* Mesh = nullptr;
+	for (const FMantleEntity* Candidate : MantleExportedEntities::All(Result))
+	{
+		if (Candidate->Type == EMantleEntityType::StaticMesh)
+		{
+			Mesh = Candidate;
+			break;
+		}
+	}
+	if (TestNotNull(TEXT("the puddle is published as an entity"), Mesh))
+	{
+		TestTrue(TEXT("at the puddle's place, not the pond's"), Mesh->Transform.GetLocation().Equals(FVector(0.0, 0.0, 6.0), 1.0));
+	}
 	return true;
 }
 
