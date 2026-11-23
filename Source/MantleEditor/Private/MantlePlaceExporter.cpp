@@ -1,8 +1,10 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceExporter.h"
 #include "MantleActorDecompose.h"
+#include "MantleBlockingVolumeExport.h"
 #include "MantleMirrorBake.h"
 #include "MantleSlotSplit.h"
+#include "MantleTriggerShapeExport.h"
 #include "MantleMeshLumenData.h"
 #include "MantleNaniteSideFile.h"
 #include "MantleSnapSockets.h"
@@ -84,6 +86,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/RectLightComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/SplineMeshComponent.h"
@@ -1775,7 +1778,7 @@ namespace MantlePlaceExporterInfrastructure
 	{
 		return Actor->IsA(AInfo::StaticClass())
 			|| FMantleActorDecompose::IsUnpublishedReflectionCapture(Actor)
-			|| Actor->IsA(ABrush::StaticClass())
+			|| (Actor->IsA(ABrush::StaticClass()) && !FMantleTriggerShapeExport::IsBoxTriggerBrush(Actor))
 			|| Actor->IsA(AController::StaticClass())
 			|| Actor->IsA(APawn::StaticClass())
 			|| Actor->IsA(ACameraActor::StaticClass())
@@ -1792,6 +1795,13 @@ bool FMantlePlaceExporter::IsEngineInfrastructure(const AActor* Actor)
 	}
 
 	if (!Actor->GetRootComponent())
+	{
+		return true;
+	}
+
+	// The Water Zone and Water Brush Manager the engine adds when a lake or river is placed: the zone's settings are published as the
+	// place's water zone (FMantleWaterBodyExport::Read), the manager is the editor's own helper. Not content, not an error.
+	if (FMantleWaterBodyExport::IsWaterInfrastructure(Actor))
 	{
 		return true;
 	}
@@ -1875,6 +1885,11 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 	{
 		return false;
 	}
+	// The Water Zone and Water Brush Manager the engine adds beside a water body: infrastructure, said nothing about.
+	if (FMantleWaterBodyExport::IsWaterInfrastructure(Actor))
+	{
+		return false;
+	}
 	// A Physics Constraint Actor that is not a weld, a hinge or a rope between published physics
 	// objects (#528): left out of the place, with what to change.
 	if (Actor->IsA(APhysicsConstraintActor::StaticClass()))
@@ -1947,6 +1962,30 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 		{ return Component && IsOrDerivesFromClassNamed(Component->GetClass(), TEXT("PCGComponent")); }))
 	{
 		return false;
+	}
+	// A Blocking Volume that is a box publishes as an invisible wall (FMantleBlockingVolumeExport); one that collides with nothing has
+	// nothing to lose. Any other shape is named here, with what fits.
+	if (FMantleBlockingVolumeExport::IsBlockingVolume(Actor))
+	{
+		FMantleBlockingWall Wall;
+		if (FMantleBlockingVolumeExport::ReadWall(Actor, Wall) || FMantleBlockingVolumeExport::HasNoCollision(Actor))
+		{
+			return false;
+		}
+		OutWhat = TEXT("is a Blocking Volume that is not a box, which Mantle does not publish: only a box can be an invisible wall.");
+		OutRemedy = TEXT("Build the wall from box-shaped Blocking Volumes. This volume would be dropped.");
+		return true;
+	}
+	// A Trigger Volume that is a box publishes as a Box trigger (FMantleTriggerShapeExport); any other brush shape is named here.
+	if (FMantleTriggerShapeExport::IsTriggerBrush(Actor))
+	{
+		if (FMantleTriggerShapeExport::IsBoxTriggerBrush(Actor))
+		{
+			return false;
+		}
+		OutWhat = TEXT("is a Trigger Volume with no shape, which Mantle does not publish.");
+		OutRemedy = TEXT("Shape the volume (Geometry or the brush builders), or use a Trigger Box. The volume would be dropped.");
+		return true;
 	}
 	if (Actor->IsA(AVolume::StaticClass()))
 	{
@@ -2382,9 +2421,16 @@ namespace MantlePlaceExporterPrefab
 			}
 			return false;
 		}
-		if ((Component->IsA(UBoxComponent::StaticClass()) || Component->IsA(USphereComponent::StaticClass())) && ExporterIsGameContent(Component))
+		// A box, sphere or capsule is a trigger only when it overlaps and blocks nothing. A box or sphere that blocks is collision: a part
+		// published as a hidden library cube or sphere (FMantleTriggerShapeExport::ReadCollisionShape).
+		if (FMantleTriggerShapeExport::IsTriggerShape(Component) && ExporterIsGameContent(Component))
 		{
 			OutType = EMantleEntityType::TriggerVolume;
+			return true;
+		}
+		if (FMantleTriggerShapeExport::IsCollisionShape(Component))
+		{
+			OutType = EMantleEntityType::StaticMesh;
 			return true;
 		}
 		if (const UAudioComponent* Audio = Cast<UAudioComponent>(Component))
@@ -2474,6 +2520,25 @@ namespace MantlePlaceExporterPrefab
 		{
 		case EMantleEntityType::StaticMesh:
 		{
+			// A blocking box or sphere is a hidden library cube or sphere the size of the shape.
+			FMantleStaticMeshProps ShapeProps;
+			FVector ShapeScale = FVector::OneVector;
+			if (FMantleTriggerShapeExport::ReadCollisionShape(Part.Component, ShapeProps, ShapeScale))
+			{
+				ReferencedAssets.Add(ShapeProps.Mesh);
+				if (!Uploads.MeshBounds.Contains(ShapeProps.Mesh))
+				{
+					Uploads.MeshBounds.Add(ShapeProps.Mesh, FBox(FVector(-50.0), FVector(50.0)));
+				}
+				Entity.Transform.SetScale3D(Entity.Transform.GetScale3D() * ShapeScale);
+				Entity.Props.Set<FMantleStaticMeshProps>(ShapeProps);
+				if (OutSplitParts)
+				{
+					OutSplitParts->Reset();
+					OutSplitParts->Add(ShapeProps);
+				}
+				break;
+			}
 			TArray<FMantleStaticMeshProps> AllParts;
 			if (const UStaticMeshComponent* Mesh = Cast<UStaticMeshComponent>(Part.Component))
 			{
@@ -2642,6 +2707,15 @@ bool FMantlePlaceExporter::DescribeSkippedActor(const AActor* Actor, FSkippedAct
 		return false;
 	}
 	const UClass* Class = Actor->GetClass();
+
+	// A Water Body Island (a landscape-carving helper placed beside a water body): the bodies publish without it, and it is said, not refused.
+	if (IsOrDerivesFromClassNamed(Class, TEXT("WaterBodyIsland")))
+	{
+		Out.What = FString::Printf(TEXT("is a Water Body Island (%s), which Mantle does not publish: the water bodies publish without it."), *Class->GetName());
+		Out.Remedy = TEXT("Nothing to change: the rest of the place publishes without it.");
+		Out.Category = MantleCoverageCategory::OtherActors;
+		return true;
+	}
 
 	// Editor-only and cinematic actors: nothing a player sees or touches.
 	if (const FNonVisualClass* NonVisual = FindNonVisual(Actor))
@@ -2862,6 +2936,8 @@ bool FMantlePlaceExporter::ClassifyActor(const AActor* Actor, EMantleEntityType&
 	if (FMantleReflectionProbeExport::IsProbeActor(Actor)) { OutType = EMantleEntityType::ReflectionProbe; return true; }
 	// GhzGarage/mantle#724: a placed Text Render Actor (the engine's own class) is a Text entity where the target reads it.
 	if (FMantleTextExport::IsTextActor(Actor) && FMantleTargetFeatures::Current().Reads(MantleClientFeatures::WorldText)) { OutType = EMantleEntityType::Text; return true; }
+	// F18: a Trigger Volume (a brush) whose brush is a box is a Box trigger. Its root is a brush component, not a box one.
+	if (FMantleTriggerShapeExport::IsBoxTriggerBrush(Actor)) { OutType = EMantleEntityType::TriggerVolume; return true; }
 	if (Actor->IsA(AStaticMeshActor::StaticClass()))  { OutType = EMantleEntityType::StaticMesh;       return true; }
 	if (Actor->IsA(APlayerStart::StaticClass()))      { OutType = EMantleEntityType::PlayerStart;      return true; }
 	if (Actor->IsA(APointLight::StaticClass()))       { OutType = EMantleEntityType::PointLight;       return true; }
@@ -2886,7 +2962,8 @@ bool FMantlePlaceExporter::ClassifyActor(const AActor* Actor, EMantleEntityType&
 	// class, so both engine trigger actors and plain actors round-trip.
 	if (const USceneComponent* Root = Actor->GetRootComponent())
 	{
-		if (Root->IsA(UBoxComponent::StaticClass()) || Root->IsA(USphereComponent::StaticClass()))
+		// A Pawn's capsule is its collision, never a trigger; a box or sphere root that blocks is not a trigger either (it is a part of a Group).
+		if (FMantleTriggerShapeExport::IsTriggerShape(Root) && !Actor->IsA(APawn::StaticClass()))
 		{
 			// A trigger with parts beside it is a prefab (#468): a Group, the trigger one of its parts.
 			OutType = MantlePlaceExporterPrefab::HasPart(Actor, Root) ? EMantleEntityType::Group : EMantleEntityType::TriggerVolume;
@@ -4217,8 +4294,19 @@ bool FMantlePlaceExporter::ReadValueProperties(const AActor* Actor, EMantleEntit
 		break;
 	}
 	case EMantleEntityType::TriggerVolume:
+	{
+		// A Trigger Volume brush that is a box (F18): a Box trigger of its half-size. Its center is written by the entity's transform.
+		FVector BrushCenter;
+		FMantleTriggerVolumeProps BrushProps;
+		if (FMantleTriggerShapeExport::ReadBoxBrush(Actor, BrushCenter, BrushProps.Extent))
+		{
+			BrushProps.Shape = EMantleTriggerShape::Box;
+			OutEntity.Props.Set<FMantleTriggerVolumeProps>(BrushProps);
+			return true;
+		}
 		Source = Actor->GetRootComponent();
 		break;
+	}
 	default:
 		return false;
 	}
@@ -4322,6 +4410,11 @@ bool FMantlePlaceExporter::ReadComponentValueProperties(const USceneComponent* C
 			Props.Shape = EMantleTriggerShape::Sphere;
 			const double Radius = Sphere->GetUnscaledSphereRadius();
 			Props.Extent = FVector(Radius, Radius, Radius);
+		}
+		else if (const UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Component))
+		{
+			// A capsule is not a trigger shape of its own: a box around it, or a sphere (FMantleTriggerShapeExport).
+			FMantleTriggerShapeExport::ReadCapsule(Capsule, Props.Shape, Props.Extent);
 		}
 		OutEntity.Props.Set<FMantleTriggerVolumeProps>(Props);
 		return true;
@@ -5364,6 +5457,7 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 	int32 Texts = 0;
 	int32 WaterBodies = 0;
 	int32 WaterSplinePoints = 0;
+	TArray<FMantleBlockingWall> Walls;
 
 	// Cells-format 5.5: ids come from the actors' guids, and two actors sharing a guid (a level instance loaded twice) get their
 	// suffixes in a fixed order, not the order the engine happens to iterate in: guid, then full path name.
@@ -5401,6 +5495,16 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 					FString::Printf(TEXT("/actors/%s"), *Actor->GetName()),
 					FString::Printf(TEXT("'%s' %s %s"), *ExporterLabelOf(Actor), *Part.What, *Part.Remedy) });
 			}
+		}
+
+		// A box-shaped Blocking Volume is an invisible wall (F17): its id is taken here, in guid order like every actor's, and it is
+		// written as a hidden library cube after the meshes (pass 2b). A brush is infrastructure, so it would be skipped below.
+		FMantleBlockingWall Wall;
+		if (FMantleBlockingVolumeExport::ReadWall(Actor, Wall))
+		{
+			Wall.Id = MakeEntityId(Actor, UsedIds);
+			Walls.Add(MoveTemp(Wall));
+			continue;
 		}
 
 		if (IsEngineInfrastructure(Actor) || IsProvidedByMantle(Actor))
@@ -5670,6 +5774,29 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 		}
 		TArray<FMantleStaticMeshProps> SplitParts;
 		ExtractProperties(Actor, Entity.Type, Path, Entity, ReferencedAssets, Uploads, Result.Errors, ActorMirror ? ActorMirror->Mesh : nullptr, &SplitParts);
+
+		// A Trigger Volume brush (F18) is a box about its own center, which need not be the actor's pivot: the entity sits at the center.
+		if (FVector BrushCenter, BrushExtent; Entity.Type == EMantleEntityType::TriggerVolume && FMantleTriggerShapeExport::ReadBoxBrush(Actor, BrushCenter, BrushExtent))
+		{
+			Entity.Transform = FTransform(BrushCenter) * Entity.Transform;
+			bool bApproximated = false;
+			FMantleTriggerShapeExport::ReadBoxBrush(Actor, BrushCenter, BrushExtent, &bApproximated);
+			if (bApproximated)
+			{
+				Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
+					TEXT("a Trigger Volume that is not a box, published as the box trigger around its bounds: it fires a little earlier at the corners."));
+			}
+			else
+			{
+				Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept, ExporterLabelOf(Actor),
+					TEXT("a Trigger Volume published as a box trigger."));
+			}
+		}
+		else if (Entity.Type == EMantleEntityType::TriggerVolume && FMantleTriggerShapeExport::IsCapsule(Actor->GetRootComponent()))
+		{
+			Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Approximated, ExporterLabelOf(Actor),
+				TEXT("a capsule trigger published as a box (or a sphere) around it: its rounded ends are square."));
+		}
 
 		// The crowd budgets span the level (#477), so they are counted here, at the paths the
 		// parser reports them. So do points of interest (#513): the actors they name have ids now.
@@ -6071,6 +6198,45 @@ FMantleExportResult FMantlePlaceExporter::Export(UWorld* World, const FMantleExp
 			Entity.Transform = Baked.Transform;
 			Entity.Props.Set<FMantleStaticMeshProps>(MoveTemp(Props));
 			Place.Entities.Add(MoveTemp(Entity));
+		}
+	}
+
+	// Pass 2b-2 — Blocking Volumes as invisible walls (F17): a hidden, blocking library cube stretched over each box volume. Nothing
+	// of them uploads: the cube is the library's own, and a mesh nobody sees names no material.
+	if (Walls.Num() > 0)
+	{
+		const FString CubeId = FMantleAssetLibrary::Get().FindIdByPath(FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")));
+		for (const FMantleBlockingWall& Wall : Walls)
+		{
+			if (CubeId.IsEmpty())
+			{
+				Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Dropped, ExporterLabelOf(Wall.Actor),
+					TEXT("a Blocking Volume left out: the library has no cube to stretch into its wall."));
+				continue;
+			}
+			ReferencedAssets.Add(CubeId);
+			// A big place's cells are sized from their meshes' bounds: the engine cube is 100 cm, centered.
+			if (!Uploads.MeshBounds.Contains(CubeId))
+			{
+				Uploads.MeshBounds.Add(CubeId, FBox(FVector(-50.0), FVector(50.0)));
+			}
+
+			FMantleStaticMeshProps Props;
+			Props.Mesh = CubeId;
+			Props.Collision = Wall.Collision;
+			Props.bVisible = false;
+			Props.bCastShadow = false;
+			Props.bBlocksVisibility = Wall.bBlocksVisibility;
+
+			FMantleEntity Entity;
+			Entity.Id = Wall.Id;
+			Entity.Type = EMantleEntityType::StaticMesh;
+			Entity.Name = ExporterLabelOf(Wall.Actor).Left(FMantlePlaceLimits::MaxEntityNameLength);
+			Entity.Transform = Wall.Transform;
+			Entity.Props.Set<FMantleStaticMeshProps>(MoveTemp(Props));
+			Place.Entities.Add(MoveTemp(Entity));
+			Result.Coverage.Add(MantleCoverageCategory::Volumes, EMantleCoverageOutcome::Kept, ExporterLabelOf(Wall.Actor),
+				TEXT("a Blocking Volume published as an invisible wall: a hidden box that stops players and objects."));
 		}
 	}
 

@@ -40,6 +40,11 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/Texture.h"
 #include "Engine/Texture2D.h"
+#include "Engine/Texture2DArray.h"
+#include "Engine/TextureCube.h"
+#include "Engine/TextureCubeArray.h"
+#include "Engine/TextureRenderTarget.h"
+#include "Engine/VolumeTexture.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "MaterialDomain.h"
@@ -51,6 +56,7 @@
 #include "Materials/MaterialExpressionAdd.h"
 #include "Materials/MaterialExpressionBreakMaterialAttributes.h"
 #include "Materials/MaterialExpressionAppendVector.h"
+#include "Materials/MaterialExpressionCollectionParameter.h"
 #include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionConstant2Vector.h"
@@ -227,6 +233,20 @@ namespace MantlePlaceAssetsPrivate
 		return false;
 	}
 
+	/** The material walk's step budget: a graph with more nodes than this is not read to the end (LargeGraph). */
+	constexpr int32 WalkBudget = 50000;
+
+	/**
+	 * A texture the bake sees as one image though it holds several: a UDIM (more than one block), a cube, an array or a volume
+	 * texture. The converter refuses these as plain textures for the same reason (SourceTexturePng).
+	 */
+	bool IsMultiTileTexture(const UTexture* Texture)
+	{
+		return Texture
+			&& (Texture->IsA<UTexture2DArray>() || Texture->IsA<UTextureCube>() || Texture->IsA<UTextureCubeArray>() || Texture->IsA<UVolumeTexture>()
+				|| (Texture->Source.IsValid() && (Texture->Source.GetNumBlocks() > 1 || Texture->Source.GetNumSlices() > 1)));
+	}
+
 	struct FWalk
 	{
 		const UMaterialInterface* Context = nullptr;
@@ -236,7 +256,7 @@ namespace MantlePlaceAssetsPrivate
 		TSet<const UObject*> Dependencies;
 		TSet<const UTexture*> Textures;
 		TSet<const UTexture*> NormalTextures;
-		int32 Budget = 50000;
+		int32 Budget = WalkBudget;
 
 		/** Vertex Color's RGB reached from the base color through Multiply and reroute nodes only (#471). */
 		bool bBaseColorTint = false;
@@ -375,6 +395,11 @@ namespace MantlePlaceAssetsPrivate
 				{
 					Flag(EMantleMaterialLoss::SecondUv);
 				}
+				// A Material Parameter Collection value: the bake reads the collection's saved value, not what a Blueprint sets at runtime.
+				if (Expression->IsA<UMaterialExpressionCollectionParameter>())
+				{
+					Flag(EMantleMaterialLoss::ParameterCollection);
+				}
 				if (Expression->IsA<UMaterialExpressionTime>() || Expression->IsA<UMaterialExpressionPanner>() || Expression->IsA<UMaterialExpressionRotator>())
 				{
 					Flag(EMantleMaterialLoss::Animation);
@@ -401,6 +426,14 @@ namespace MantlePlaceAssetsPrivate
 					if (UTexture* Texture = ResolveTexture(Sample))
 					{
 						AddTexture(Texture);
+						if (Texture->IsA<UTextureRenderTarget>())
+						{
+							Flag(EMantleMaterialLoss::RenderTarget);
+						}
+						else if (IsMultiTileTexture(Texture))
+						{
+							Flag(EMantleMaterialLoss::MultiTileTexture);
+						}
 						if (Root == ERoot::Normal && Texture->IsNormalMap())
 						{
 							NormalTextures.Add(Texture);
@@ -602,6 +635,86 @@ namespace MantlePlaceAssetsPrivate
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * The color Input is, when it is one constant color all over the surface: a constant, a scalar or vector parameter as Context sets it,
+	 * or a product of those (a color times an intensity). False for anything that can vary or that it cannot read.
+	 */
+	bool ConstantColor(const FExpressionInput* Input, const UMaterialInterface* Context, double (&Out)[3], const int32 Depth = 0)
+	{
+		if (Depth > 8)
+		{
+			return false;
+		}
+		int32 Output = 0;
+		const UMaterialExpression* Expression = Follow(Input, Output);
+		if (!Expression)
+		{
+			return false;
+		}
+		double Scalar = 0.0;
+		if (ConstantScalar(Input, Context, Scalar))
+		{
+			Out[0] = Out[1] = Out[2] = Scalar;
+			return true;
+		}
+		if (const UMaterialExpressionConstant3Vector* Vector = Cast<UMaterialExpressionConstant3Vector>(Expression))
+		{
+			Out[0] = Vector->Constant.R;
+			Out[1] = Vector->Constant.G;
+			Out[2] = Vector->Constant.B;
+			return true;
+		}
+		if (const UMaterialExpressionVectorParameter* Parameter = Cast<UMaterialExpressionVectorParameter>(Expression))
+		{
+			FLinearColor Value = Parameter->DefaultValue;
+			FLinearColor Set;
+			if (Context && Context->GetVectorParameterValue(FHashedMaterialParameterInfo(FMaterialParameterInfo(Parameter->ParameterName)), Set))
+			{
+				Value = Set;
+			}
+			Out[0] = Value.R;
+			Out[1] = Value.G;
+			Out[2] = Value.B;
+			return true;
+		}
+		if (const UMaterialExpressionMultiply* Multiply = Cast<UMaterialExpressionMultiply>(Expression))
+		{
+			double A[3];
+			double B[3];
+			const bool bA = Multiply->A.Expression ? ConstantColor(&Multiply->A, Context, A, Depth + 1) : (A[0] = A[1] = A[2] = Multiply->ConstA, true);
+			const bool bB = Multiply->B.Expression ? ConstantColor(&Multiply->B, Context, B, Depth + 1) : (B[0] = B[1] = B[2] = Multiply->ConstB, true);
+			if (!bA || !bB)
+			{
+				return false;
+			}
+			for (int32 Channel = 0; Channel < 3; ++Channel)
+			{
+				Out[Channel] = A[Channel] * B[Channel];
+			}
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * The most Input multiplies what it carries by: the product of the constant colors and intensities on its Multiply chain (a texture
+	 * times 4 is 4), looking through reroutes. 1 for anything it cannot read, so it only ever reports what it sees.
+	 */
+	double MultiplyGain(const FExpressionInput* Input, const UMaterialInterface* Context, const int32 Depth = 0)
+	{
+		int32 Output = 0;
+		const UMaterialExpression* Expression = Depth > 8 ? nullptr : Follow(Input, Output);
+		const UMaterialExpressionMultiply* Multiply = Cast<UMaterialExpressionMultiply>(Expression);
+		if (!Multiply)
+		{
+			double Color[3];
+			return ConstantColor(Input, Context, Color) ? FMath::Max(1.0, FMath::Max3(Color[0], Color[1], Color[2])) : 1.0;
+		}
+		const double A = Multiply->A.Expression ? MultiplyGain(&Multiply->A, Context, Depth + 1) : FMath::Max(1.0, static_cast<double>(Multiply->ConstA));
+		const double B = Multiply->B.Expression ? MultiplyGain(&Multiply->B, Context, Depth + 1) : FMath::Max(1.0, static_cast<double>(Multiply->ConstB));
+		return A * B;
 	}
 
 	/** Nothing connected, or a constant or parameter value: no texture, nothing that varies over the surface. */
@@ -3940,7 +4053,11 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 	const UMaterial* Base = Material->GetMaterial();
 	if (!Base || !Base->GetEditorOnlyData())
 	{
-		// No graph to read (a cooked material): nothing can be said about its losses.
+		// No graph to read (a cooked material): nothing can be said about its losses, and Check says so.
+		if (Base)
+		{
+			Out.Losses |= EMantleMaterialLoss::CookedMaterial;
+		}
 		return Out;
 	}
 	Walk.AddDependency(Base);
@@ -3952,6 +4069,7 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		Out.UnpublishableWhy = TEXT("is a volume material (volume fog) with no surface Mantle can draw; its bake is a flat white card");
 	}
 	// #628: Additive is carried (alphaMode additive), so it is not a BlendMode loss.
+	Out.Fidelity2.bModulate = Blend == BLEND_Modulate;
 	if (Blend == BLEND_Modulate || Blend == BLEND_AlphaComposite || Blend == BLEND_AlphaHoldout
 		|| Blend == BLEND_TranslucentColoredTransmittance)
 	{
@@ -3969,7 +4087,8 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 	const bool bAdditive = Blend == BLEND_Additive;
 	Out.Fidelity2.bAdditive = bAdditive;
 	Out.Fidelity2.bAdditiveLit = bAdditive && !Models.HasOnlyShadingModel(MSM_Unlit);
-	if (Models.HasShadingModel(MSM_Unlit) && !bAdditive)
+	// A modulate card is unlit too, but it publishes as a darkening sheet, not a glow: its own blend-mode text says so.
+	if (Models.HasShadingModel(MSM_Unlit) && !bAdditive && Blend != BLEND_Modulate)
 	{
 		Out.Losses |= EMantleMaterialLoss::Unlit;
 	}
@@ -4080,6 +4199,26 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		{
 			Carry({ MP_EmissiveColor });
 			Out.Losses &= ~EMantleMaterialLoss::Unlit;
+		}
+
+		// An unlit glow of one constant color with a channel over 1: the bake clips it to 1, so the whole color is read here.
+		if (bCarries && Models.HasShadingModel(MSM_Unlit) && Blend != BLEND_Modulate && !Fidelity.Glass.bFound && Connected(MP_EmissiveColor))
+		{
+			double Glow[3];
+			if (ConstantColor(Roots.Emissive, Material, Glow) && FMath::Max3(Glow[0], Glow[1], Glow[2]) > 1.0 && Glow[0] >= 0.0 && Glow[1] >= 0.0 && Glow[2] >= 0.0)
+			{
+				Fidelity.bGlowOverOne = true;
+				for (int32 Channel = 0; Channel < 3; ++Channel)
+				{
+					Fidelity.GlowColor[Channel] = Glow[Channel];
+				}
+			}
+			else if (const double Gain = MultiplyGain(Roots.Emissive, Material); Gain > 1.0 && !IsFlat(Roots.Emissive))
+			{
+				// A texture (or anything that varies) times an intensity over 1: the bake clipped each pixel, which cannot be undone.
+				Fidelity.bGlowTexturedOverOne = true;
+				Fidelity.TexturedGlowGain = Gain;
+			}
 		}
 
 		// A vehicle light (FMantleVehicleLights::MakeLightMaterial): glows in its kind's color whatever the model set.
@@ -4310,6 +4449,11 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 	if (Walk.NormalTextures.Num() >= 2)
 	{
 		Out.Losses |= EMantleMaterialLoss::DetailNormal;
+	}
+	// The walk counts one step per node it reaches and stops at WalkBudget: past it nothing was read, so no loss there is reported.
+	if (Walk.Budget < 0)
+	{
+		Out.Losses |= EMantleMaterialLoss::LargeGraph;
 	}
 	// #471: a pure base-color tint is carried; any other vertex color use is the loss, and then the tint is not carried either.
 	Out.bVertexColorTintsBaseColor = Walk.bBaseColorTint && !Out.Has(EMantleMaterialLoss::VertexColor);
@@ -4951,11 +5095,25 @@ FString FMantlePlaceAssets::DescribeLoss(EMantleMaterialLoss Loss, const FMantle
 	case EMantleMaterialLoss::Unlit:
 		return TEXT("it is unlit; Mantle shows it as a glowing material that lighting still touches.");
 	case EMantleMaterialLoss::BlendMode:
+		if (Analysis.Fidelity2.bModulate)
+		{
+			return TEXT("its Modulate blending (it multiplies what is behind it) publishes as a darkening sheet: black, with the opacity that darkens the scene by the same amount as the color's brightness. A colored modulate keeps how much it darkens, not its hue.");
+		}
 		return FString::Printf(TEXT("its %s blending becomes ordinary translucency."), *Analysis.BlendModeName);
 	case EMantleMaterialLoss::NotSurface:
 		return TEXT("it is not a surface material (a light function, post-process or user interface material), so it is flattened as a plain surface.");
 	case EMantleMaterialLoss::SecondUv:
 		return TEXT("it reads a second UV set (UV1 or higher), which the bake does not have, so what that set places is drawn by the first UV set instead: masks such as wet lanes, dirt or stripes can repeat with the first set's tiling or land in the wrong place.");
+	case EMantleMaterialLoss::ParameterCollection:
+		return TEXT("it reads a Material Parameter Collection, which the bake reads at its saved values, so anything a Blueprint or script changes at runtime (time of day, wetness, a tint) is lost and the published material keeps the saved look.");
+	case EMantleMaterialLoss::CookedMaterial:
+		return TEXT("it is a cooked material with no graph in this project, so Check cannot read what the bake loses (animation, wind, vertex colors, special shading, parameter collections); look at it in the published place.");
+	case EMantleMaterialLoss::LargeGraph:
+		return FString::Printf(TEXT("its graph has more than %d nodes, so Check stopped reading it: any animation, wind, vertex color or other loss past that point is not listed here."), MantlePlaceAssetsPrivate::WalkBudget);
+	case EMantleMaterialLoss::MultiTileTexture:
+		return TEXT("it samples a UDIM, cube or array texture, which the bake sees as one flat image, so its tiles, slices or cube faces may not land where they do in the editor (in the publish test a UDIM's two tiles came out as thin stripes at the wrong scale, and a cube map read by direction came out a different color).");
+	case EMantleMaterialLoss::RenderTarget:
+		return TEXT("it samples a render target, which has no saved pixels, so the bake shows it blank or frozen and what the target draws at runtime never appears.");
 	default:
 		return FString();
 	}
@@ -5243,6 +5401,13 @@ void FMantlePlaceAssets::CheckMaterial(const UMaterialInterface* Material, const
 			FString::Printf(TEXT("%s: %s"), *Subject, *DescribePerInstanceVariation()), LossRemedy });
 	}
 	// #628: notes, not losses of a feature: what an additive or see-through surface gives up in becoming Mantle's.
+	if (Analysis.Fidelity2.bGlowTexturedOverOne)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("%s: its unlit glow is a texture times an intensity of about %.1f, brighter than 1; Mantle publishes it at no more than 1, so it looks dimmer than in the editor, and its light spill is weaker."),
+				*Subject, Analysis.Fidelity2.TexturedGlowGain),
+			LossRemedy });
+	}
 	if (Analysis.Fidelity2.bAdditiveLit)
 	{
 		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),

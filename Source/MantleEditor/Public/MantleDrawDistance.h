@@ -19,6 +19,12 @@ struct MANTLEEDITOR_API FMantleDrawDistanceSource
 	/** The mesh's bounding sphere radius in cm at the scale it is placed: for instances, at the largest instance's scale. */
 	double SphereRadius = 0.0;
 
+	/**
+	 * How far the mesh's bounding box reaches sideways, in cm, at the same scale: the half-diagonal of its footprint (x and y), whatever its height. 0 when it was not
+	 * measured; then the sphere radius is the footprint's too. A tower's roof is 60 m across and 400 m tall: its sphere is 218 m, its footprint 64 m.
+	 */
+	double FootprintRadius = 0.0;
+
 	/** The component's Desired Max Draw Distance and Current Max Draw Distance (cull distance volumes), 0 for none. */
 	double LDMaxDrawDistance = 0.0;
 	double CachedMaxDrawDistance = 0.0;
@@ -37,8 +43,10 @@ struct MANTLEEDITOR_API FMantleDrawDistanceSource
  *
  * The component's own cull distance wins: LDMaxDrawDistance (else CachedMaxDrawDistance) for a mesh, InstanceEndCullDistance
  * for instances and painted foliage. Without one, by the mesh's bounding sphere radius: small clutter (Bands, under NoCutOffRadius)
- * culls near; a bigger mesh gets NoCutOff, so it draws as long as its cell stands (the cell decides, never the piece); and a mesh of
- * NeverCullRadius or more is never culled. A component with Never Distance Cull publishes no draw distance.
+ * culls near; a bigger mesh gets NoCutOff, so it draws as long as its cell stands (the cell decides, never the piece); and a mesh whose
+ * footprint reaches NeverCullRadius or more is never culled (ground tiles and freeway decks: wide). Height does not count: a tower's
+ * roof or a mast is tall and narrow, one building's piece, and goes to its cell with the rest of the building. A component with Never
+ * Distance Cull publishes no draw distance.
  *
  * 0 is never written (the schema refuses it): a mesh that is never culled has no key.
  */
@@ -65,7 +73,10 @@ struct MANTLEEDITOR_API FMantleDrawDistance
 	/** The radius (cm) at and above which a mesh with no distance of its own gets NoCutOff: the end of the last band, 30 cm. */
 	static double NoCutOffRadius();
 
-	/** The radius at and above which a mesh gets no default draw distance at all and is always loaded: ground and decks of 100 m radius. */
+	/**
+	 * The footprint radius (FMantleDrawDistanceSource::FootprintRadius) at and above which a mesh gets no default draw distance at all and is always loaded:
+	 * ground and decks of 100 m radius. A narrower piece, however tall, is a building's and goes to its cell.
+	 */
 	static double NeverCullRadius();
 
 	/** Whether a published draw distance is NoCutOff. */

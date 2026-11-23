@@ -4,6 +4,7 @@
 #include "MantleExportedEntities.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceParser.h"
+#include "MantlePlaceValidator.h"
 #include "MantleTargetFeatures.h"
 #include "MantleTerrainExport.h"
 #include "MantleWaterBodyExport.h"
@@ -17,6 +18,8 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionDepthFade.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/Package.h"
 #include "UObject/UnrealType.h"
@@ -602,6 +605,28 @@ namespace MantleFlatWaterTestPrivate
 		return Material;
 	}
 
+	/** A translucent material faded by scene depth over the distance given (opacity 0.8): water as a Fab pond or a puddle makes it. */
+	UMaterial* NewDepthFadeMaterial(const float FadeDistanceCm)
+	{
+		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage());
+		Material->BlendMode = BLEND_Translucent;
+		auto AddConstant = [Material](const float Value)
+		{
+			UMaterialExpressionConstant* Constant = NewObject<UMaterialExpressionConstant>(Material);
+			Constant->Material = Material;
+			Constant->R = Value;
+			Material->GetExpressionCollection().AddExpression(Constant);
+			return Constant;
+		};
+		UMaterialExpressionDepthFade* Fade = NewObject<UMaterialExpressionDepthFade>(Material);
+		Fade->Material = Material;
+		Material->GetExpressionCollection().AddExpression(Fade);
+		Fade->InOpacity.Connect(0, AddConstant(0.8f));
+		Fade->FadeDistance.Connect(0, AddConstant(FadeDistanceCm));
+		Material->GetEditorOnlyData()->Opacity.Connect(0, Fade);
+		return Material;
+	}
+
 	AStaticMeshActor* SpawnMeshActor(UWorld* World, UStaticMesh* Mesh, UMaterialInterface* Material, const FTransform& Transform)
 	{
 		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>();
@@ -701,6 +726,178 @@ bool FMantleFlatWaterMeshExportsAsWaterBodyTest::RunTest(const FString& Paramete
 	const FMantleCoverageExample* Line = Water ? Water->Get(EMantleCoverageOutcome::Approximated).Examples.FindByPredicate(
 		[](const FMantleCoverageExample& Example) { return Example.Detail.Contains(TEXT("is a flat mesh with a water material, published as a water body")); }) : nullptr;
 	TestNotNull(TEXT("in words"), Line);
+	return true;
+}
+
+// Placing a lake or river makes the engine add a Water Zone (and, in the editor, a Water Brush Manager). Both were refused as "cannot
+// publish", which stopped the export of every place with water.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleWaterZoneDoesNotStopThePublishTest,
+	"Mantle.Editor.Water.WaterZoneAndHelpersDoNotStopThePublish",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleWaterZoneDoesNotStopThePublishTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleWaterBodyExportTestPrivate;
+
+	if (!FMantleWaterBodyExport::IsWaterPluginLoaded())
+	{
+		AddInfo(TEXT("The Water plugin is not loaded in this editor, so there is no water zone to spawn; skipped."));
+		return true;
+	}
+	FWaterTestWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	AActor* Lake = SpawnWaterActor(Fixture.World, TEXT("/Script/Water.WaterBodyLake"), FVector(0.0, 0.0, 100.0));
+	AActor* Zone = SpawnWaterActor(Fixture.World, TEXT("/Script/Water.WaterZone"), FVector::ZeroVector);
+	if (!TestTrue(TEXT("the lake and the zone spawn"), Lake && Zone))
+	{
+		return false;
+	}
+	TestTrue(TEXT("the zone is water infrastructure"), FMantleWaterBodyExport::IsWaterInfrastructure(Zone));
+	TestFalse(TEXT("the lake is not"), FMantleWaterBodyExport::IsWaterInfrastructure(Lake));
+	TestTrue(TEXT("the exporter leaves the zone out as infrastructure"), FMantlePlaceExporter::IsEngineInfrastructure(Zone));
+	FString What;
+	FString Remedy;
+	TestFalse(TEXT("and says nothing about it"), FMantlePlaceExporter::DescribeUnpublishedContent(Zone, What, Remedy));
+
+	// Check has no error about the zone (nor any warning naming it), and the lake still publishes.
+	const FMantleValidationResult Check = FMantlePlaceValidator::Validate(Fixture.World);
+	for (const FMantleValidationIssue& Issue : Check.Issues)
+	{
+		TestFalse(*FString::Printf(TEXT("Check does not mention the zone: %s"), *Issue.ToString()), Issue.Problem.Contains(TEXT("WaterZone")));
+	}
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	for (const FMantleParseError& Error : Result.Errors)
+	{
+		TestFalse(*FString::Printf(TEXT("Export does not refuse the zone: %s"), *Error.Message), Error.Message.Contains(TEXT("WaterZone")));
+	}
+	int32 Lakes = 0;
+	for (const FMantleEntity* Entity : MantleExportedEntities::All(Result))
+	{
+		Lakes += Entity->Type == EMantleEntityType::WaterBody ? 1 : 0;
+	}
+	TestEqual(TEXT("the lake is published as a water body"), Lakes, 1);
+	TestTrue(TEXT("and the place has its water zone settings"), Result.Place.Settings.Water.IsSet());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleFlatWaterMeshIsWarnedAboutTest,
+	"Mantle.Editor.Water.FlatMeshBecomingAPondIsWarnedInCheck",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleFlatWaterMeshIsWarnedAboutTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleFlatWaterTestPrivate;
+	using namespace MantleWaterBodyExportTestPrivate;
+
+	UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, PlanePath);
+	if (!Plane)
+	{
+		AddWarning(TEXT("the engine plane did not load; skipped"));
+		return true;
+	}
+	FWaterTestWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	AStaticMeshActor* Pond = SpawnMeshActor(Fixture.World, Plane, NewWaterMaterial(),
+		FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, 300.0), FVector(112.0, 72.0, 22.0)));
+	AStaticMeshActor* Floor = SpawnMeshActor(Fixture.World, Plane, NewObject<UMaterial>(GetTransientPackage()),
+		FTransform(FRotator::ZeroRotator, FVector(5000.0, 0.0, 300.0), FVector(112.0, 72.0, 22.0)));
+	if (!TestNotNull(TEXT("the pond"), Pond) || !TestNotNull(TEXT("the floor"), Floor))
+	{
+		return false;
+	}
+	Floor->SetActorLabel(TEXT("Floor"));
+
+	auto PondWarnings = [](const FMantleValidationResult& Result, const TCHAR* Label)
+	{
+		int32 Count = 0;
+		for (const FMantleValidationIssue& Issue : Result.Issues)
+		{
+			Count += Issue.Severity == EMantleIssueSeverity::Warning && Issue.Actor == Label && Issue.Problem.Contains(TEXT("publishes as a still water body")) ? 1 : 0;
+		}
+		return Count;
+	};
+
+	FMantleValidationResult PondResult;
+	FMantleWaterBodyExport::Check(Pond, EMantleEntityType::WaterBody, PondResult);
+	TestEqual(TEXT("Check warns once that the mesh becomes a pond"), PondWarnings(PondResult, TEXT("Water")), 1);
+
+	FMantleValidationResult FloorResult;
+	FMantleWaterBodyExport::Check(Floor, EMantleEntityType::StaticMesh, FloorResult);
+	TestEqual(TEXT("and says nothing for a floor"), FloorResult.Issues.Num(), 0);
+
+	// The whole Check reaches it too.
+	const FMantleValidationResult Whole = FMantlePlaceValidator::Validate(Fixture.World);
+	TestEqual(TEXT("the level's Check carries the warning"), PondWarnings(Whole, TEXT("Water")), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleShallowDepthFadeSheetStaysMeshTest,
+	"Mantle.Editor.Water.ThinDepthFadedSheetStaysASeeThroughMesh",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleShallowDepthFadeSheetStaysMeshTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleFlatWaterTestPrivate;
+	using namespace MantleWaterBodyExportTestPrivate;
+
+	UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, PlanePath);
+	if (!Plane)
+	{
+		AddWarning(TEXT("the engine plane did not load; skipped"));
+		return true;
+	}
+	FWaterTestWorld Fixture;
+	if (!TestNotNull(TEXT("a world"), Fixture.World))
+	{
+		return false;
+	}
+	// The publish test's A15 puddle: a thin depth-faded sheet whose fade is 40 cm. It is not a body to swim in, and was published as a 1 m lake.
+	AStaticMeshActor* Puddle = SpawnMeshActor(Fixture.World, Plane, NewDepthFadeMaterial(40.f),
+		FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, 6.0), FVector(4.0, 4.0, 1.0)));
+	// The same sheet with a deep fade (a Fab pond's): still a pond.
+	AStaticMeshActor* Pond = SpawnMeshActor(Fixture.World, Plane, NewDepthFadeMaterial(300.f),
+		FTransform(FRotator::ZeroRotator, FVector(5000.0, 0.0, 6.0), FVector(4.0, 4.0, 1.0)));
+	if (!TestNotNull(TEXT("the puddle"), Puddle) || !TestNotNull(TEXT("the pond"), Pond))
+	{
+		return false;
+	}
+	TestFalse(TEXT("a 40 cm fade is not a flat water mesh"), FMantleWaterBodyExport::IsFlatWaterMesh(Puddle));
+	TestTrue(TEXT("a 300 cm fade is"), FMantleWaterBodyExport::IsFlatWaterMesh(Pond));
+
+	EMantleEntityType Type = EMantleEntityType::WaterBody;
+	TestTrue(TEXT("the puddle classifies"), FMantlePlaceExporter::ClassifyActor(Puddle, Type));
+	TestEqual(TEXT("as a StaticMesh"), Type, EMantleEntityType::StaticMesh);
+
+	// Gather agrees: the puddle's material is uploaded with it (the pond's is not); the engine plane itself is Mantle's own shape.
+	const FMantlePlaceDependencies Dependencies = FMantlePlaceDependencies::Gather(Fixture.World);
+	TestEqual(TEXT("the puddle's material is gathered, the pond's is not"), Dependencies.Materials.Num(), 1);
+
+	const FMantleExportResult Result = FMantlePlaceExporter::Export(Fixture.World, FMantleExportOptions());
+	TestEqual(TEXT("the place has one static mesh (the puddle)"), CountEntities(Result, EMantleEntityType::StaticMesh), 1);
+	TestEqual(TEXT("and one water body (the pond)"), CountEntities(Result, EMantleEntityType::WaterBody), 1);
+	// Entities may sit in cells, not only in the place's root list: look through all of them, as CountEntities does.
+	const FMantleEntity* Mesh = nullptr;
+	for (const FMantleEntity* Candidate : MantleExportedEntities::All(Result))
+	{
+		if (Candidate->Type == EMantleEntityType::StaticMesh)
+		{
+			Mesh = Candidate;
+			break;
+		}
+	}
+	if (TestNotNull(TEXT("the puddle is published as an entity"), Mesh))
+	{
+		TestTrue(TEXT("at the puddle's place, not the pond's"), Mesh->Transform.GetLocation().Equals(FVector(0.0, 0.0, 6.0), 1.0));
+	}
 	return true;
 }
 

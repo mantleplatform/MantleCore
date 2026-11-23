@@ -31,11 +31,13 @@
 #include "MantleSplineMeshBake.h"
 #include "MantleTargetFeatures.h"
 #include "MantleTextExport.h"
+#include "MantleTriggerShapeExport.h"
 #include "MantleTerrainExport.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
 #include "MantleVehicleSpawnPoint.h"
 #include "MantleVoxelWorldActor.h"
+#include "MantleWaterBodyExport.h"
 #include "MantleWeaponSpawnPoint.h"
 #include "HAL/FileManager.h"
 #include "Misc/PackageName.h"
@@ -45,6 +47,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/DecalComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/LightComponent.h"
 #include "Components/LightComponentBase.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SplineMeshComponent.h"
@@ -58,13 +61,18 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/Texture2D.h"
+#include "Engine/TextureLightProfile.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Internationalization/Regex.h"
 #include "Materials/MaterialInterface.h"
+#include "Misc/App.h"
 #include "Misc/Paths.h"
 #include "PhysicsEngine/BodySetup.h"
+#include "RHIGlobals.h"
 #include "Sound/AmbientSound.h"
+#include "Sound/SoundAttenuation.h"
+#include "Sound/SoundClass.h"
 #include "Sound/SoundBase.h"
 #include "Sound/SoundCue.h"
 #include "UObject/SoftObjectPath.h"
@@ -140,19 +148,22 @@ namespace
 	/**
 	 * Components of a kind that carries content — geometry or light — whether or not a player could see or touch this one.
 	 */
+	/**
+	 * Spline meshes (#628) and cables (FMantleCableBake): baked into static meshes on their own and checked with the level's
+	 * bakes, so neither is an extra component of its actor, and neither is dropped with it.
+	 */
+	bool IsBakedOnItsOwn(const UActorComponent* Component)
+	{
+		return Component->IsA(USplineMeshComponent::StaticClass()) || FMantleCableBake::IsCableComponent(Component);
+	}
+
 	bool IsContentKind(const UActorComponent* Component)
 	{
 		if (FMantleActorDecompose::IsVisualization(Component))
 		{
 			return false;
 		}
-		// Baked into static meshes on its own (#628), checked with the level's spline meshes; not also an extra component.
-		if (Component->IsA(USplineMeshComponent::StaticClass()))
-		{
-			return false;
-		}
-		// Cables too (FMantleCableBake).
-		if (FMantleCableBake::IsCableComponent(Component))
+		if (IsBakedOnItsOwn(Component))
 		{
 			return false;
 		}
@@ -356,8 +367,8 @@ namespace
 			// The root is what ClassifyActor published the actor as (an AmbientSound's audio
 			// component included); content is CheckComponents' business; a plain scene
 			// component carries only a transform; transient ones are the engine's own. And what
-			// Export writes as entities of their own is not dropped: instance sources (#467) and a
-			// prefab's parts (#468).
+			// Export writes as entities of their own is not dropped: instance sources (#467), a
+			// prefab's parts (#468), and spline meshes and cables, which are baked into meshes.
 			// A prefab's audio component with a sound that can't publish has its own note, with the
 			// reason (FMantlePlaceExporter::CollectPrefabParts).
 			const UInstancedStaticMeshComponent* Instanced = Cast<UInstancedStaticMeshComponent>(Component);
@@ -367,6 +378,7 @@ namespace
 				|| (Component == Root && !bPrefab)
 				|| FMantleActorDecompose::IsVisualization(Component)
 				|| IsContentKind(Component)
+				|| IsBakedOnItsOwn(Component)
 				|| Component->GetClass() == USceneComponent::StaticClass()
 				|| Component->HasAnyFlags(RF_Transient)
 				|| (Instanced && FMantlePlaceExporter::IsExportedInstanceSource(Instanced))
@@ -429,6 +441,80 @@ namespace
 				TEXT("Use a place script under the level's Scripts/Server or Scripts/Client folder (a .luau, .js, .ts or .py file).") });
 		}
 #endif
+	}
+
+	/**
+	 * What an actor's audio components set that Mantle doesn't publish, in plain words, or empty (support list row 126). The place
+	 * file carries a sound's wave, volume, looping, autoplay and the distance it reaches (FMantlePlaceExporter::ReadSoundEmitter);
+	 * a sound class that changes volume or pitch (its own and its parents'), a concurrency limit and a reverb send are never read.
+	 */
+	FString DescribeUnpublishedSoundMixing(const AActor* Actor)
+	{
+		TArray<UAudioComponent*> Audios;
+		Actor->GetComponents(Audios);
+		TArray<FString> Parts;
+		for (const UAudioComponent* Audio : Audios)
+		{
+			const USoundBase* Sound = Audio ? Audio->Sound.Get() : nullptr;
+			if (!Sound)
+			{
+				continue;
+			}
+
+			// The class the sound plays in: the component's choice, else the sound's own. Volume and pitch multiply down the parent chain.
+			const USoundClass* Class = Audio->SoundClassOverride ? Audio->SoundClassOverride.Get() : Sound->GetSoundClass();
+			const USoundClass* Named = Class;
+			float Volume = 1.0f;
+			float Pitch = 1.0f;
+			for (int32 Depth = 0; Class && Depth < 32; ++Depth, Class = Class->ParentClass.Get())
+			{
+				Volume *= Class->Properties.Volume;
+				Pitch *= Class->Properties.Pitch;
+			}
+			if (Named && (!FMath::IsNearlyEqual(Volume, 1.0f, 0.005f) || !FMath::IsNearlyEqual(Pitch, 1.0f, 0.005f)))
+			{
+				Parts.AddUnique(FString::Printf(TEXT("sound class '%s' (volume x%g, pitch x%g)"), *Named->GetName(), Volume, Pitch));
+			}
+
+			if (Audio->ConcurrencySet.Num() > 0 || Sound->ConcurrencySet.Num() > 0 || Sound->bOverrideConcurrency)
+			{
+				Parts.AddUnique(TEXT("a concurrency limit"));
+			}
+
+			const FSoundAttenuationSettings* Attenuation = Audio->GetAttenuationSettingsToApply();
+			if (Attenuation && Attenuation->bAttenuate && Attenuation->bEnableReverbSend)
+			{
+				Parts.AddUnique(TEXT("a reverb send"));
+			}
+		}
+		return FString::Join(Parts, TEXT(", "));
+	}
+
+	/**
+	 * One place-wide warning for the level's sounds that set a sound class volume or pitch, a concurrency limit or a reverb send
+	 * (support list row 126): Mantle reads none of them, and no other line says so. Sound mixes, which a script or Blueprint pushes
+	 * at run time, are not in the level to find; the remedy names them. Up to five sounds are named, then a count.
+	 */
+	void CheckSoundMixingForCheck(const TArray<FString>& MixedSounds, FMantleValidationResult& Result)
+	{
+		if (MixedSounds.Num() == 0)
+		{
+			return;
+		}
+		constexpr int32 MaxNamed = 5;
+		TArray<FString> Named;
+		for (int32 Index = 0; Index < MixedSounds.Num() && Index < MaxNamed; ++Index)
+		{
+			Named.Add(MixedSounds[Index]);
+		}
+		const int32 More = MixedSounds.Num() - Named.Num();
+		Result.Issues.Add(FMantleValidationIssue{
+			EMantleIssueSeverity::Warning,
+			FString(),
+			FString::Printf(TEXT("%d sound%s in this level set a sound class volume or pitch, a concurrency limit or a reverb send, which Mantle doesn't publish: %s%s. They play at their own volume and distance, without those settings."),
+				MixedSounds.Num(), MixedSounds.Num() == 1 ? TEXT("") : TEXT("s"), *FString::Join(Named, TEXT("; ")),
+				More > 0 ? *FString::Printf(TEXT("; and %d more"), More) : TEXT("")),
+			TEXT("Set the Volume Multiplier on each sound to the loudness you want. Sound mixes that a Blueprint or script pushes aren't published either.") });
 	}
 
 	void CheckAssetsAndTextures(const AActor* Actor, EMantleEntityType Type, FMantleValidationResult& Result)
@@ -1320,6 +1406,43 @@ namespace
 	}
 
 	/**
+	 * A light's light function material and IES profile: the exporter reads a light's color, brightness, reach, cones, shadow and
+	 * source shape (FMantlePlaceExporter::ReadComponentValueProperties), never these, so the light publishes without them. Said for
+	 * every light the actor shows (a light actor's own, and a prefab's light parts).
+	 */
+	void CheckLightExtrasForCheck(const AActor* Actor, FMantleValidationResult& Result)
+	{
+		TArray<ULightComponent*> Lights;
+		Actor->GetComponents(Lights);
+		for (const ULightComponent* Light : Lights)
+		{
+			if (!Light || !Light->IsVisible() || Light->bHiddenInGame)
+			{
+				continue;
+			}
+			TArray<FString> Dropped;
+			if (const UMaterialInterface* Function = Light->LightFunctionMaterial.Get())
+			{
+				Dropped.Add(FString::Printf(TEXT("its light function material '%s' (the pattern the light casts)"), *Function->GetName()));
+			}
+			if (const UTextureLightProfile* Profile = Light->IESTexture.Get())
+			{
+				Dropped.Add(FString::Printf(TEXT("its IES profile '%s' (the shape of its beam)"), *Profile->GetName()));
+			}
+			if (Dropped.Num() == 0)
+			{
+				continue;
+			}
+			Result.Issues.Add(FMantleValidationIssue{
+				EMantleIssueSeverity::Warning,
+				LabelOf(Actor),
+				FString::Printf(TEXT("light '%s' has %s, which Mantle doesn't publish: the light shines plain, with its color, brightness and cone only."),
+					*Light->GetName(), *FString::Join(Dropped, TEXT(" and "))),
+				TEXT("Nothing to do unless the effect matters to how your place looks.") });
+		}
+	}
+
+	/**
 	 * The cap on a directional light's intensity, for the lights that publish at the level's own brightness. Of the level's directional
 	 * lights Mantle publishes the first as the sun, at the game's own brightness (or Place Settings' Sun Brightness), so the level's is
 	 * kept only for a sealed level (no direct sun: Place Settings' Direct Sun Never, or Automatic with the sun reaching no spawn point,
@@ -1882,6 +2005,22 @@ namespace
 	}
 }
 
+bool FMantlePlaceValidator::DescribeNoRenderer(int32 UploadedMaterials, FMantleValidationIssue& OutIssue)
+{
+	if (UploadedMaterials <= 0)
+	{
+		return false;
+	}
+	OutIssue.Severity = EMantleIssueSeverity::Warning;
+	OutIssue.Actor.Reset();
+	OutIssue.Problem = FString::Printf(
+		TEXT("This editor has no renderer (it is running without a window or graphics), so publishing from it can't bake the textures of the %d material%s this level uploads: %s publish%s with plain colors and values only, without %s textures."),
+		UploadedMaterials, UploadedMaterials == 1 ? TEXT("") : TEXT("s"), UploadedMaterials == 1 ? TEXT("it") : TEXT("they"),
+		UploadedMaterials == 1 ? TEXT("es") : TEXT(""), UploadedMaterials == 1 ? TEXT("its") : TEXT("their"));
+	OutIssue.Remedy = TEXT("Publish from the editor with a window open to get the textures.");
+	return true;
+}
+
 void FMantlePlaceValidator::CheckRevisionNotes(const FString& Notes, FMantleValidationResult& Result)
 {
 	const int32 Length = FMantlePlaceParser::CodePointLength(Notes);
@@ -1943,6 +2082,8 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 	int32 VoxelWorlds = 0;
 	int32 VoxelWorldsOfLook[2] = { 0, 0 };
 	bool bWarnedSun = false;
+	// Sounds that set what the place file can't carry (support list row 126), one line each, said once after the loop.
+	TArray<FString> MixedSounds;
 	TArray<const AActor*> DirectionalLights;
 	TArray<FVector> SpawnPoints;
 	// #838: checked after the loop, once the level's packages and storage are known.
@@ -2026,6 +2167,36 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 		}
 
 		++Publishable;
+		// F18: a capsule trigger publishes as a box (or a sphere) around it; say so, since it fires a little earlier at the corners.
+		if (Type == EMantleEntityType::TriggerVolume && FMantleTriggerShapeExport::IsCapsule(Actor->GetRootComponent()))
+		{
+			const UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Actor->GetRootComponent());
+			EMantleTriggerShape Shape = EMantleTriggerShape::Box;
+			FVector Extent = FVector::OneVector;
+			FMantleTriggerShapeExport::ReadCapsule(Capsule, Shape, Extent);
+			Result.Issues.Add(FMantleValidationIssue{
+				EMantleIssueSeverity::Warning,
+				LabelOf(Actor),
+				Shape == EMantleTriggerShape::Sphere
+					? TEXT("is a capsule trigger, which publishes as a sphere around it, so it fires a little earlier at the edges.")
+					: TEXT("is a capsule trigger, which publishes as a box around it, so it fires a little earlier at the corners."),
+				TEXT("Nothing to change. To choose the shape yourself, use a Trigger Box or a Trigger Sphere.") });
+		}
+		// F18: a Trigger Volume that is not a box publishes as the box around its bounds.
+		if (Type == EMantleEntityType::TriggerVolume && FMantleTriggerShapeExport::IsTriggerBrush(Actor))
+		{
+			FVector BrushCenter;
+			FVector BrushExtent;
+			bool bApproximated = false;
+			if (FMantleTriggerShapeExport::ReadBoxBrush(Actor, BrushCenter, BrushExtent, &bApproximated) && bApproximated)
+			{
+				Result.Issues.Add(FMantleValidationIssue{
+					EMantleIssueSeverity::Warning,
+					LabelOf(Actor),
+					TEXT("is a Trigger Volume that is not a box, which publishes as a box trigger around its bounds, so it fires a little earlier at the corners."),
+					TEXT("Nothing to change. To choose the shape yourself, use a Trigger Box or a Trigger Sphere.") });
+			}
+		}
 		PlayerStarts += (Type == EMantleEntityType::PlayerStart) ? 1 : 0;
 		if (Type == EMantleEntityType::PlayerStart)
 		{
@@ -2074,6 +2245,14 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 		CheckComponents(Actor, Type, Result);
 		CheckAssetsAndTextures(Actor, Type, Result);
 		CheckSound(Actor, Type, Result);
+		if (Type == EMantleEntityType::SoundEmitter)
+		{
+			const FString Mixing = DescribeUnpublishedSoundMixing(Actor);
+			if (!Mixing.IsEmpty())
+			{
+				MixedSounds.Add(FString::Printf(TEXT("'%s' (%s)"), *LabelOf(Actor), *Mixing));
+			}
+		}
 		ValidatorCheckSkeletalMesh(Actor, Type, Result);
 		CheckDecal(Actor, Type, Result);
 		CheckCrowdSpawner(Actor, Type, Result);
@@ -2114,6 +2293,7 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 		}
 		FMantleReflectionProbeExport::Check(Actor, Type, ReflectionProbes, Result);
 		FMantleTextExport::Check(Actor, Type, Texts, Result);
+		FMantleWaterBodyExport::Check(Actor, Type, Result);
 		if (const AMantleCrowdSpawner* Spawner = Type == EMantleEntityType::CrowdSpawner ? Cast<AMantleCrowdSpawner>(Actor) : nullptr)
 		{
 			// The per-place totals, counted in the exporter's order so the same spawner is named.
@@ -2135,8 +2315,11 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 		CheckPublishedSizeLimits(Actor, Type, Result);
 		CheckPublishedRanges(Actor, Type, Result);
 		CheckDroppedBehaviorForCheck(Actor, Result);
+		CheckLightExtrasForCheck(Actor, Result);
 		PhysicsObjects += CheckPhysicsForCheck(Actor, Type, Result) ? 1 : 0;
 	}
+
+	CheckSoundMixingForCheck(MixedSounds, Result);
 
 	CheckDirectionalLightRanges(World, DirectionalLights, SpawnPoints, Result);
 
@@ -2242,6 +2425,18 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 	// Meshes and materials from the creator's project (a Fab pack): limits as errors, and every
 	// loss flattening a material brings as a warning, each asset once however many actors use it.
 	FMantlePlaceAssets::CheckLevel(World, Result.Issues);
+
+	// Support list row W4: a process without a renderer (a headless editor) can't bake a material's textures, so every material this
+	// level uploads would publish without them. Said once, first in the list, rather than once per material while publishing.
+	// (The converter's own test is FMantleGltfMaterialFlattener::CanBakeTextures; gathering is only worth doing where it says no.)
+	if (!(FApp::CanEverRender() && !GUsingNullRHI))
+	{
+		FMantleValidationIssue NoRenderer;
+		if (FMantlePlaceValidator::DescribeNoRenderer(FMantlePlaceDependencies::Gather(World).Materials.Num(), NoRenderer))
+		{
+			Result.Issues.Insert(MoveTemp(NoRenderer), 0);
+		}
+	}
 
 	// The Script Assets (Mantle Place Settings): CheckLevel above gathered them with the level's own
 	// uploads, so their mesh limits, material losses and share of the sound budget are checked there.

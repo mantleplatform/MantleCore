@@ -3,6 +3,7 @@
 
 #include "MantleCoverage.h"
 #include "MantlePlaceAssets.h"
+#include "MantlePlaceValidator.h"
 #include "MantleWaterMaterial.h"
 
 #include "Components/PrimitiveComponent.h"
@@ -843,12 +844,19 @@ namespace MantleWaterBodyExportFlat
 	constexpr double MinDepth = 100.0;
 	constexpr double MaxDepth = 2000.0;
 
-	/** The depth the water material implies, held to the range, and where it came from; the default when the material gives none. */
-	double DepthOf(const FMantleWaterBake& Water, const FMantleWaterCoefficients* Volume, FString& OutSource)
+	/**
+	 * The depth the water material implies, held to the range, and where it came from; the default when the material gives none.
+	 * OutShallow is true when the material's explicit fade distance (a Depth Fade node's) is under MinDepth: a puddle or a thin wet film
+	 * (a fade of a few centimeters), which is not a body to swim in. Raising it to MinDepth would turn a 6 cm sheet into a 1 m pond. The
+	 * absorption estimate never makes a body shallow: a murky pond is still a pond to swim in.
+	 */
+	double DepthOf(const FMantleWaterBake& Water, const FMantleWaterCoefficients* Volume, FString& OutSource, bool& OutShallow)
 	{
+		OutShallow = false;
 		if (Water.bFadeDistance && Water.FadeDistanceCm > 0.0)
 		{
 			OutSource = FString::Printf(TEXT("the material's %.0f cm fade distance"), Water.FadeDistanceCm);
+			OutShallow = Water.FadeDistanceCm < MinDepth;
 			return FMath::Clamp(Water.FadeDistanceCm, MinDepth, MaxDepth);
 		}
 		// Coefficients ties the fade distance to about three extinction lengths (sigma = 3 / D), so the clearest channel gives D back.
@@ -960,7 +968,14 @@ bool FMantleWaterBodyExport::ReadFlatWaterMesh(const AActor* Actor, FTransform& 
 	OutProps.BodyType = EMantleWaterBodyType::Lake;
 	const FMantleWaterCoefficients Derived = FMantleWaterMaterial::Coefficients(Water.Color, Water.bFadeDistance ? Water.FadeDistanceCm : 0.0);
 	const FMantleWaterCoefficients* Volume = Water.bVolume ? &Water.Volume : (Water.bColor ? &Derived : nullptr);
-	const double Depth = Flat::DepthOf(Water, Volume, OutDepthSource);
+	bool bShallow = false;
+	const double Depth = Flat::DepthOf(Water, Volume, OutDepthSource, bShallow);
+	if (bShallow)
+	{
+		// A puddle (a depth fade of a few centimeters over a thin sheet) is a see-through surface, not a pond: it stays a mesh, drawn
+		// with the water material's own look (see-through, tinted), instead of becoming a 1 m deep volume to swim in.
+		return false;
+	}
 	const double HalfWidth = Width * 0.5;
 	const double HalfLength = Length * 0.5;
 	const FVector2D Corners[] = { FVector2D(-HalfWidth, -HalfLength), FVector2D(HalfWidth, -HalfLength), FVector2D(HalfWidth, HalfLength), FVector2D(-HalfWidth, HalfLength) };
@@ -989,6 +1004,52 @@ bool FMantleWaterBodyExport::ReadFlatWaterMesh(const AActor* Actor, FTransform& 
 	// A mesh with no collision is decoration; one with collision is water to swim in.
 	OutProps.bCollision = Component->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
 	return true;
+}
+
+void FMantleWaterBodyExport::Check(const AActor* Actor, EMantleEntityType Type, FMantleValidationResult& Result)
+{
+	FTransform Transform;
+	FMantleWaterBodyProps Props;
+	FString DepthSource;
+	if (Type != EMantleEntityType::WaterBody || !Actor || !ReadFlatWaterMesh(Actor, Transform, Props, DepthSource))
+	{
+		return;
+	}
+	const FString Label =
+#if WITH_EDITOR
+		Actor->GetActorLabel();
+#else
+		Actor->GetName();
+#endif
+	Result.Issues.Add(FMantleValidationIssue{
+		EMantleIssueSeverity::Warning,
+		Label,
+		FString::Printf(TEXT("is a flat mesh with a water material, so it publishes as a still water body (a pond with the mesh's footprint, its top as the surface, "
+			"a depth of %s, and %s), not as a mesh; the water material's other settings (foam, caustics, flow maps) are not carried."),
+			*DepthSource, Props.bCollision ? TEXT("collision, so players can swim in it") : TEXT("no collision")),
+		TEXT("Nothing to do if it should be a pond. If it should stay a see-through surface, give it a material that is not a Single Layer Water or depth-faded water material.") });
+}
+
+bool FMantleWaterBodyExport::IsWaterInfrastructure(const AActor* Actor)
+{
+	if (!Actor)
+	{
+		return false;
+	}
+	const UClass* ZoneActor = FindObject<UClass>(nullptr, MantleWaterBodyExportPrivate::ZoneActorPath);
+	if (ZoneActor && Actor->IsA(ZoneActor))
+	{
+		return true;
+	}
+	// The brush manager lives in the Water plugin's editor module, so it is matched by its class name, as the other editor helpers are.
+	for (const UClass* Class = Actor->GetClass(); Class; Class = Class->GetSuperClass())
+	{
+		if (Class->GetFName() == TEXT("WaterBrushManager"))
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 bool FMantleWaterBodyExport::IsWaterBodyActor(const AActor* Actor)
