@@ -140,19 +140,22 @@ namespace
 	/**
 	 * Components of a kind that carries content — geometry or light — whether or not a player could see or touch this one.
 	 */
+	/**
+	 * Spline meshes (#628) and cables (FMantleCableBake): baked into static meshes on their own and checked with the level's
+	 * bakes, so neither is an extra component of its actor, and neither is dropped with it.
+	 */
+	bool IsBakedOnItsOwn(const UActorComponent* Component)
+	{
+		return Component->IsA(USplineMeshComponent::StaticClass()) || FMantleCableBake::IsCableComponent(Component);
+	}
+
 	bool IsContentKind(const UActorComponent* Component)
 	{
 		if (FMantleActorDecompose::IsVisualization(Component))
 		{
 			return false;
 		}
-		// Baked into static meshes on its own (#628), checked with the level's spline meshes; not also an extra component.
-		if (Component->IsA(USplineMeshComponent::StaticClass()))
-		{
-			return false;
-		}
-		// Cables too (FMantleCableBake).
-		if (FMantleCableBake::IsCableComponent(Component))
+		if (IsBakedOnItsOwn(Component))
 		{
 			return false;
 		}
@@ -356,8 +359,8 @@ namespace
 			// The root is what ClassifyActor published the actor as (an AmbientSound's audio
 			// component included); content is CheckComponents' business; a plain scene
 			// component carries only a transform; transient ones are the engine's own. And what
-			// Export writes as entities of their own is not dropped: instance sources (#467) and a
-			// prefab's parts (#468).
+			// Export writes as entities of their own is not dropped: instance sources (#467), a
+			// prefab's parts (#468), and spline meshes and cables, which are baked into meshes.
 			// A prefab's audio component with a sound that can't publish has its own note, with the
 			// reason (FMantlePlaceExporter::CollectPrefabParts).
 			const UInstancedStaticMeshComponent* Instanced = Cast<UInstancedStaticMeshComponent>(Component);
@@ -367,6 +370,7 @@ namespace
 				|| (Component == Root && !bPrefab)
 				|| FMantleActorDecompose::IsVisualization(Component)
 				|| IsContentKind(Component)
+				|| IsBakedOnItsOwn(Component)
 				|| Component->GetClass() == USceneComponent::StaticClass()
 				|| Component->HasAnyFlags(RF_Transient)
 				|| (Instanced && FMantlePlaceExporter::IsExportedInstanceSource(Instanced))
