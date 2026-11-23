@@ -23,9 +23,10 @@ public:
 
 	/**
 	 * Reads a Trigger Volume whose brush is a box: OutCenter is the box's center and OutExtent its half-size, both in the actor's
-	 * own space (as a Trigger Box's unscaled extent is; the actor's scale stretches them). False for any other brush.
+	 * own space (as a Trigger Box's unscaled extent is; the actor's scale stretches them). A brush that is not a box is read as the box
+	 * around its bounds, and bOutApproximated says so. False for a brush with no volume.
 	 */
-	static bool ReadBoxBrush(const AActor* Actor, FVector& OutCenter, FVector& OutExtent);
+	static bool ReadBoxBrush(const AActor* Actor, FVector& OutCenter, FVector& OutExtent, bool* bOutApproximated = nullptr);
 
 	/** Whether Actor is a Trigger Volume Export publishes (ReadBoxBrush). */
 	static bool IsBoxTriggerBrush(const AActor* Actor);

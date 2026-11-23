@@ -11,12 +11,21 @@ bool FMantleTriggerShapeExport::IsTriggerBrush(const AActor* Actor)
 	return Actor && Actor->IsA(ATriggerVolume::StaticClass());
 }
 
-bool FMantleTriggerShapeExport::ReadBoxBrush(const AActor* Actor, FVector& OutCenter, FVector& OutExtent)
+bool FMantleTriggerShapeExport::ReadBoxBrush(const AActor* Actor, FVector& OutCenter, FVector& OutExtent, bool* bOutApproximated)
 {
 	FVector Size = FVector::ZeroVector;
-	if (!IsTriggerBrush(Actor) || !FMantleBlockingVolumeExport::ReadLocalBox(Actor, OutCenter, Size))
+	if (!IsTriggerBrush(Actor))
 	{
 		return false;
+	}
+	const bool bBox = FMantleBlockingVolumeExport::ReadLocalBox(Actor, OutCenter, Size);
+	if (!bBox && !FMantleBlockingVolumeExport::ReadLocalBounds(Actor, OutCenter, Size))
+	{
+		return false;
+	}
+	if (bOutApproximated)
+	{
+		*bOutApproximated = !bBox;
 	}
 	OutExtent = Size * 0.5;
 	return true;
