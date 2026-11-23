@@ -32,6 +32,7 @@
 #include "MantleSplineMeshBake.h"
 #include "MantleTargetFeatures.h"
 #include "MantleTextExport.h"
+#include "MantleTriggerShapeExport.h"
 #include "MantleTerrainExport.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleSource.h"
@@ -2027,6 +2028,36 @@ FMantleValidationResult FMantlePlaceValidator::Validate(UWorld* World)
 		}
 
 		++Publishable;
+		// F18: a capsule trigger publishes as a box (or a sphere) around it; say so, since it fires a little earlier at the corners.
+		if (Type == EMantleEntityType::TriggerVolume && FMantleTriggerShapeExport::IsCapsule(Actor->GetRootComponent()))
+		{
+			const UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Actor->GetRootComponent());
+			EMantleTriggerShape Shape = EMantleTriggerShape::Box;
+			FVector Extent = FVector::OneVector;
+			FMantleTriggerShapeExport::ReadCapsule(Capsule, Shape, Extent);
+			Result.Issues.Add(FMantleValidationIssue{
+				EMantleIssueSeverity::Warning,
+				LabelOf(Actor),
+				Shape == EMantleTriggerShape::Sphere
+					? TEXT("is a capsule trigger, which publishes as a sphere around it, so it fires a little earlier at the edges.")
+					: TEXT("is a capsule trigger, which publishes as a box around it, so it fires a little earlier at the corners."),
+				TEXT("Nothing to change. To choose the shape yourself, use a Trigger Box or a Trigger Sphere.") });
+		}
+		// F18: a Trigger Volume that is not a box publishes as the box around its bounds.
+		if (Type == EMantleEntityType::TriggerVolume && FMantleTriggerShapeExport::IsTriggerBrush(Actor))
+		{
+			FVector BrushCenter;
+			FVector BrushExtent;
+			bool bApproximated = false;
+			if (FMantleTriggerShapeExport::ReadBoxBrush(Actor, BrushCenter, BrushExtent, &bApproximated) && bApproximated)
+			{
+				Result.Issues.Add(FMantleValidationIssue{
+					EMantleIssueSeverity::Warning,
+					LabelOf(Actor),
+					TEXT("is a Trigger Volume that is not a box, which publishes as a box trigger around its bounds, so it fires a little earlier at the corners."),
+					TEXT("Nothing to change. To choose the shape yourself, use a Trigger Box or a Trigger Sphere.") });
+			}
+		}
 		PlayerStarts += (Type == EMantleEntityType::PlayerStart) ? 1 : 0;
 		if (Type == EMantleEntityType::PlayerStart)
 		{
