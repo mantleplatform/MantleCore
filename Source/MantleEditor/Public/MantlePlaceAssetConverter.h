@@ -1013,6 +1013,19 @@ public:
 	 */
 	static bool BakedBaseColorSize(const FMantleGlbDocument& Document, FIntPoint& OutSize, bool& bOutConstant);
 
+	/**
+	 * A1: a bake's first material's base color image over UVs 0 to 1, alpha included, as sRGB BGRA pixels with baseColorFactor applied (a
+	 * Decal Actor's baked shape, FMantleDecalBake). False with the reason, a clause, when it has none (one flat color), when GLTFExporter
+	 * kept a tiled source texture rather than baking the material, or when the image can't be read.
+	 */
+	static bool BakedBaseColorImage(const FMantleGlbDocument& Document, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight, FString& OutWhy);
+
+	/**
+	 * A1: a bake's first material's normal map over UVs 0 to 1, as the image holds it (glTF's green-up convention, bAdjustNormalmaps).
+	 * False when it has none (bOutFlat: the material's normal is flat), or with the reason, a clause, when it can't be used as it is.
+	 */
+	static bool BakedNormalImage(const FMantleGlbDocument& Document, TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight, bool& bOutFlat, FString& OutWhy);
+
 	/** MeanPixelDifference of the check's two base color bakes (BakeBaseColors), with one of one color (shrunk to one pixel) counted as not moving: 0. */
 	static double MovedCardDifference(const TArray<FColor>& Here, const TArray<FColor>& Moved);
 
@@ -1022,7 +1035,32 @@ public:
 	/** The salt a material's cache key is made with (Describe is the flattener's): Surface's CacheTag is empty for the plain surface. */
 	static FString MaterialCacheSalt(const FString& Describe, const FMantleFlattenSettings& Settings, const FMantlePlaceAssetLimits& Limits,
 		const UMaterialInterface* Material, bool bPerInstanceVariation, const FMantleBakeSurface& Surface, bool bOpaqueInDisguise = false,
-		bool bScrollingTint = false);
+		bool bScrollingTint = false, bool bOpacityAsMask = false);
+
+	/** A1: sets a bake's first material back to see-through (alphaMode BLEND, no cut-off): a translucent material baked through its Masked copy. */
+	static void SetBakeBlended(FMantleGlbDocument& Document);
+
+	/**
+	 * A1: sets a bake's first material to a cut-out (alphaMode MASK) at Cutoff: a mesh decal baked through its Masked copy. Unreal draws a
+	 * see-through surface with a decal's textures dark (lit through the translucency volume), where the decal itself is lit with the surface
+	 * under it; a cut-out is lit like that.
+	 */
+	static void SetBakeMasked(FMantleGlbDocument& Document, double Cutoff);
+
+	/**
+	 * A1: the cut-off at which a mesh decal's cut-out covers as much as the see-through decal did: the alpha level whose share of pixels at
+	 * or above it is closest to the mean alpha (a decal at alpha 0.5 covers half its texel). Never above the image's highest alpha, so a
+	 * faint decal (grime at alpha 0.3) is kept, at full strength, where a fixed 0.5 would drop it whole. Between two alphas the image doesn't
+	 * hold it cuts midway: one alpha everywhere (a stain at 0.3 over its whole card) is cut at half that alpha, so all of it shows. 0.5 when
+	 * every alpha is 0.
+	 */
+	static double CoverageCutoff(const TArray<FColor>& Pixels);
+
+	/**
+	 * A1: a mesh decal's cut-off from its Masked copy's bake: CoverageCutoff of its base color image, or, when the bake is one flat color (no
+	 * image), half its baseColorFactor alpha (the same rule for one alpha everywhere). OutHow says which, for the log.
+	 */
+	static double DecalMaskCutoff(const FMantleGlbDocument& Document, FString& OutHow);
 
 	bool ConvertSound(USoundWave* Sound, FMantlePlaceAssetSet& Out);
 
