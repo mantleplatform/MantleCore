@@ -4,7 +4,7 @@
 
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
-#include "Materials/MaterialExpressionStaticSwitch.h"
+#include "Materials/MaterialExpressionStaticSwitchParameter.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "Misc/AutomationTest.h"
 #include "UObject/Package.h"
@@ -27,9 +27,11 @@ namespace MantleMaterialCompileCheckTestPrivate
 		Material->GetExpressionCollection().AddExpression(Constant);
 		if (bBrokenStaticSwitch)
 		{
-			// A Static Switch whose B input is left empty: the case the Showcase's High_Tech_Base master has.
-			UMaterialExpressionStaticSwitch* Switch = NewObject<UMaterialExpressionStaticSwitch>(Material);
+			// A Static Switch Parameter whose B input is left empty: the case the Showcase's High_Tech_Base master has.
+			// (A plain Static Switch only reads the branch it picks, so it would not complain.)
+			UMaterialExpressionStaticSwitchParameter* Switch = NewObject<UMaterialExpressionStaticSwitchParameter>(Material);
 			Switch->Material = Material;
+			Switch->ParameterName = TEXT("UseDetail");
 			Switch->DefaultValue = true;
 			Switch->A.Connect(0, Constant);
 			Material->GetExpressionCollection().AddExpression(Switch);
