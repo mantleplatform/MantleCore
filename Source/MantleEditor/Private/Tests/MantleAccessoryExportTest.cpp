@@ -490,4 +490,134 @@ bool FMantleShoulderRestTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// The small slots each export a mesh sized for them, and each reduces to its own triangle cap (a nose stud's is not a hat's).
+namespace MantleAccessoryExportTestPrivate
+{
+	struct FSmallSlot { const TCHAR* Slot; float RadiusCm; int32 Cap; };
+
+	/** Each small slot with a disc that fits its box (limits.json boundsPerSlot) and the slot's triangle cap. */
+	const FSmallSlot SmallSlots[] = { { TEXT("acc_eyes"), 10.0f, 3000 }, { TEXT("acc_ear_l"), 5.0f, 1500 }, { TEXT("acc_ear_r"), 5.0f, 1500 },
+		{ TEXT("acc_nose"), 2.0f, 800 }, { TEXT("acc_wrist_l"), 6.0f, 2000 }, { TEXT("acc_wrist_r"), 6.0f, 2000 }, { TEXT("acc_ring"), 2.5f, 1000 } };
+
+	FMantleCosmeticDraft SlotDraft(UStaticMesh* Mesh, const TCHAR* Slot)
+	{
+		FMantleCosmeticDraft Draft = NeckDraft(Mesh);
+		Draft.Slot = Slot;
+		return Draft;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleAccessorySmallSlotsExportTest, "Mantle.Cosmetics.Accessory.SmallSlotsExport",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMantleAccessorySmallSlotsExportTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleAccessoryExportTestPrivate;
+	FString ContractError;
+	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get(&ContractError);
+	if (!TestNotNull(TEXT("the avatar contract loads"), Contract))
+	{
+		AddError(ContractError);
+		return false;
+	}
+	FMantleMeshReduce::ClearCache();
+	ON_SCOPE_EXIT { FMantleMeshReduce::ClearCache(); };
+	TStrongObjectPtr<UMaterialInterface> Material(LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")));
+	for (const FSmallSlot& Entry : SmallSlots)
+	{
+		const FString Slot(Entry.Slot);
+		TestEqual(FString::Printf(TEXT("%s: the contract's triangle cap"), *Slot), Contract->AccessoryMaxTriangles(Slot), Entry.Cap);
+		TestEqual(FString::Printf(TEXT("%s: its class carries the cap"), *Slot), Contract->AccessoryClassFor(Slot).MaxTriangles, Entry.Cap);
+		// Under the cap, sized for the slot: 10 x 10 quads, 200 triangles. Exported as it is.
+		TStrongObjectPtr<UStaticMesh> Fits(MakeDisc(10, 10, Material.Get(), FVector3f::ZeroVector, Entry.RadiusCm));
+		const FMantleCosmeticPackage Kept = FMantleCosmeticExport::BuildCore(SlotDraft(Fits.Get(), Entry.Slot), *Contract);
+		for (const FMantleCosmeticIssue& Issue : Kept.Issues)
+		{
+			if (Issue.Severity == EMantleCosmeticSeverity::Error) AddError(FString::Printf(TEXT("%s: %s"), *Slot, *Issue.ToString()));
+		}
+		TestFalse(FString::Printf(TEXT("%s: a mesh sized for the slot exports"), *Slot), Kept.HasErrors());
+		TestFalse(FString::Printf(TEXT("%s: under the cap it is not reduced"), *Slot), HasNote(Kept, TEXT("reduced from")));
+		// Over the cap: a 40 x 40 grid of quads is 3,200 triangles, over every small slot's cap. It is reduced and the note names the real cap.
+		TStrongObjectPtr<UStaticMesh> Dense(MakeDisc(40, 40, Material.Get(), FVector3f::ZeroVector, Entry.RadiusCm));
+		TestTrue(FString::Printf(TEXT("%s: the dense mesh is over the cap"), *Slot), Triangles(*Dense) > Entry.Cap);
+		const FMantleCosmeticPackage Reduced = FMantleCosmeticExport::BuildCore(SlotDraft(Dense.Get(), Entry.Slot), *Contract);
+		TestFalse(FString::Printf(TEXT("%s: an over-cap mesh exports"), *Slot), Reduced.HasErrors());
+		TestTrue(FString::Printf(TEXT("%s: the note names the %d limit"), *Slot, Entry.Cap), HasNote(Reduced, *FString::Printf(TEXT("to fit the %d limit"), Entry.Cap)));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleAccessoryPerSlotCapTest, "Mantle.Cosmetics.Accessory.PerSlotTriangleCap",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMantleAccessoryPerSlotCapTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleAccessoryExportTestPrivate;
+	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get();
+	if (!TestNotNull(TEXT("the avatar contract loads"), Contract)) return false;
+	TestEqual(TEXT("a slot without its own cap keeps the class limit"), Contract->AccessoryMaxTriangles(TEXT("acc_hat")), 4000);
+	FMantleMeshReduce::ClearCache();
+	ON_SCOPE_EXIT { FMantleMeshReduce::ClearCache(); };
+	TStrongObjectPtr<UMaterialInterface> Material(LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")));
+	// One source mesh, 6,000 triangles, uploaded as a nose stud and as a hat: the reduced copy made for one is never reused for the other.
+	TStrongObjectPtr<UStaticMesh> Dense(MakeDisc(60, 50, Material.Get()));
+	const int32 Before = Triangles(*Dense);
+	const UStaticMesh* AsNose = FMantleAccessorySettings::UploadMesh(Dense.Get(), Contract->AccessoryClassFor(TEXT("acc_nose")));
+	const UStaticMesh* AsHat = FMantleAccessorySettings::UploadMesh(Dense.Get(), Contract->AccessoryClassFor(TEXT("acc_hat")));
+	TestTrue(TEXT("a nose stud is reduced to 800 or fewer"), AsNose && Triangles(*AsNose) > 0 && Triangles(*AsNose) <= 800);
+	TestTrue(TEXT("a hat keeps up to 4000, not the nose's 800"), AsHat && Triangles(*AsHat) > 2000 && Triangles(*AsHat) <= 4000);
+	TestTrue(TEXT("they are different copies"), AsNose != AsHat);
+	TestEqual(TEXT("the creator's mesh is untouched"), Triangles(*Dense), Before);
+	// 1,200 triangles: over the nose's cap, under the hat's.
+	TStrongObjectPtr<UStaticMesh> Middle(MakeDisc(30, 20, Material.Get(), FVector3f::ZeroVector, 2.0f));
+	TestEqual(TEXT("the middle mesh has 1,200 triangles"), Triangles(*Middle), 1200);
+	const UStaticMesh* MiddleNose = FMantleAccessorySettings::UploadMesh(Middle.Get(), Contract->AccessoryClassFor(TEXT("acc_nose")));
+	TestTrue(TEXT("over the nose cap it is reduced to 800 or fewer"), MiddleNose != Middle.Get() && Triangles(*MiddleNose) <= 800);
+	TestTrue(TEXT("under the hat cap it uploads as it is"), FMantleAccessorySettings::UploadMesh(Middle.Get(), Contract->AccessoryClassFor(TEXT("acc_hat"))) == Middle.Get());
+	return true;
+}
+
+// Where a small accessory is seated by default: its bounds' center on the socket (ring, wrist, nose, glasses), an earring's hook on it.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FMantleAccessoryAnchorTest, "Mantle.Cosmetics.Accessory.SmallSlotPlacementAnchor",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FMantleAccessoryAnchorTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleAccessoryExportTestPrivate;
+	for (const TCHAR* Slot : { TEXT("acc_ring"), TEXT("acc_wrist_l"), TEXT("acc_wrist_r"), TEXT("acc_nose"), TEXT("acc_eyes") })
+	{
+		TestTrue(FString::Printf(TEXT("%s is seated by its center"), Slot), FMantleAccessorySettings::DefaultAnchor(Slot) == EMantleAccessoryAnchor::Center);
+	}
+	for (const TCHAR* Slot : { TEXT("acc_ear_l"), TEXT("acc_ear_r") })
+	{
+		TestTrue(FString::Printf(TEXT("%s is seated by its hook (the top)"), Slot), FMantleAccessorySettings::DefaultAnchor(Slot) == EMantleAccessoryAnchor::TopCenter);
+	}
+	for (const TCHAR* Slot : { TEXT("acc_hat"), TEXT("acc_face"), TEXT("acc_neck"), TEXT("acc_shoulder_l"), TEXT("acc_front"), TEXT("acc_back"), TEXT("acc_waist") })
+	{
+		TestTrue(FString::Printf(TEXT("%s keeps its pivot on the socket"), Slot), FMantleAccessorySettings::DefaultAnchor(Slot) == EMantleAccessoryAnchor::Pivot);
+	}
+	const FBox3f Box(FVector3f(0.0f, 0.0f, 0.0f), FVector3f(2.0f, 4.0f, 6.0f));
+	TestTrue(TEXT("the center anchor is the box's center"), FMantleAccessorySettings::AnchorPoint(EMantleAccessoryAnchor::Center, Box).Equals(FVector3f(1.0f, 2.0f, 3.0f), 1e-4f));
+	TestTrue(TEXT("the top anchor is the top face's center"), FMantleAccessorySettings::AnchorPoint(EMantleAccessoryAnchor::TopCenter, Box).Equals(FVector3f(1.0f, 2.0f, 6.0f), 1e-4f));
+
+	// Seating a mesh made 6 cm above its pivot: the attach location brings the anchor back onto the socket (rotation zero, scale 1).
+	TStrongObjectPtr<UMaterialInterface> Material(LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")));
+	for (const TCHAR* Slot : { TEXT("acc_eyes"), TEXT("acc_ear_l") })
+	{
+		TStrongObjectPtr<UStaticMesh> Raised(MakeDisc(10, 10, Material.Get(), FVector3f(0.0f, 0.0f, 6.0f), 3.0f));
+		FMantleCosmeticDraft Draft = SlotDraft(Raised.Get(), Slot);
+		Draft.AttachRotation = FVector3f::ZeroVector;
+		Draft.AttachScale = FVector3f::OneVector;
+		FString Error;
+		const EMantleAccessoryAnchor Anchor = FMantleAccessorySettings::DefaultAnchor(Slot);
+		TestTrue(FString::Printf(TEXT("%s: it is seated (%s)"), Slot, *Error), FMantleAccessorySettings::SeatOnSocket(Draft, Anchor, Error));
+		const FVector3f Expected = -FMantleAccessorySettings::AnchorPoint(Anchor, FBox3f(Raised->GetBoundingBox()));
+		TestTrue(FString::Printf(TEXT("%s: the anchor lands on the socket (offset %s, wanted %s)"), Slot, *Draft.AttachLocation.ToString(), *Expected.ToString()),
+			Draft.AttachLocation.Equals(Expected, 0.01f));
+		TestTrue(FString::Printf(TEXT("%s: and is within the panel's range"), Slot), Draft.AttachLocation.GetAbsMax() <= 50.0f);
+		TestTrue(FString::Printf(TEXT("%s: the placement is on"), Slot), Draft.bAttach);
+	}
+	return true;
+}
+
 #endif

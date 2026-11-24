@@ -92,6 +92,56 @@ bool FMantleAccessorySettings::ApplyDefaultPlacement(FMantleCosmeticDraft& Draft
 		FString Ignored;
 		RestOnShoulders(Draft, Body, Ignored, Face);
 	}
+	const EMantleAccessoryAnchor Anchor = DefaultAnchor(Draft.Slot);
+	if (Anchor != EMantleAccessoryAnchor::Pivot)
+	{
+		FString Ignored;
+		SeatOnSocket(Draft, Anchor, Ignored);
+	}
+	return true;
+}
+
+EMantleAccessoryAnchor FMantleAccessorySettings::DefaultAnchor(const FString& Slot)
+{
+	if (Slot == TEXT("acc_ear_l") || Slot == TEXT("acc_ear_r")) return EMantleAccessoryAnchor::TopCenter;
+	if (Slot == TEXT("acc_eyes") || Slot == TEXT("acc_nose") || Slot == TEXT("acc_ring") || Slot == TEXT("acc_wrist_l") || Slot == TEXT("acc_wrist_r")) return EMantleAccessoryAnchor::Center;
+	return EMantleAccessoryAnchor::Pivot;
+}
+
+FVector3f FMantleAccessorySettings::AnchorPoint(const EMantleAccessoryAnchor Anchor, const FBox3f& Bounds)
+{
+	const FVector3f Center = Bounds.GetCenter();
+	return Anchor == EMantleAccessoryAnchor::TopCenter ? FVector3f(Center.X, Center.Y, Bounds.Max.Z) : Center;
+}
+
+bool FMantleAccessorySettings::SeatOnSocket(FMantleCosmeticDraft& Draft, const EMantleAccessoryAnchor Anchor, FString& OutError)
+{
+	OutError.Reset();
+	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get(&OutError);
+	const UStaticMesh* Mesh = Cast<UStaticMesh>(Draft.Source.Get());
+	if (!Contract || !Mesh || Anchor == EMantleAccessoryAnchor::Pivot)
+	{
+		if (OutError.IsEmpty()) OutError = TEXT("Choose a static mesh and a small accessory slot to seat it on its socket.");
+		return false;
+	}
+	FBox3f Bounds(Mesh->GetBoundingBox());
+	if (!Bounds.IsValid)
+	{
+		OutError = TEXT("The accessory has no bounds to seat on its socket.");
+		return false;
+	}
+	// The upload centers a mesh whose pivot is out of the slot's reach (RecenterOffset); seat what uploads.
+	if (const FMantleContractAccessoryBounds* Limits = Contract->AccessoryBounds.Find(Draft.Slot))
+	{
+		Bounds = Bounds.ShiftBy(-RecenterOffset(Bounds, *Limits));
+	}
+	// The worn mesh is the attach rotation, scale and offset on the socket bone. The rotation turns the mesh's axes into the avatar's
+	// (AlignToAvatarAxes), so the anchor in the avatar's axes is the scaled anchor, and the offset in the bone's frame is minus
+	// the attach rotation applied to it.
+	const FVector Point = FVector(AnchorPoint(Anchor, Bounds) * Draft.AttachScale);
+	const FQuat Rotation = FRotator(Draft.AttachRotation.X, Draft.AttachRotation.Y, Draft.AttachRotation.Z).Quaternion();
+	Draft.AttachLocation = FMantleCosmeticPackage::ClampAttachLocation(FVector3f(-Rotation.RotateVector(Point)));
+	Draft.bAttach = true;
 	return true;
 }
 
@@ -156,7 +206,7 @@ bool FMantleAccessorySettings::RestOnShoulders(FMantleCosmeticDraft& Draft, cons
 	{
 		return false;
 	}
-	Mesh = UploadMesh(Mesh, Contract->RigidAccessory);
+	Mesh = UploadMesh(Mesh, Contract->AccessoryClassFor(Draft.Slot));
 	const FReferenceSkeleton& Reference = Body->GetRefSkeleton();
 	const TArray<FTransform>& Pose = Reference.GetRefBonePose();
 	int32 Bone = Reference.FindBoneIndex(FName(*Point->SocketBone));

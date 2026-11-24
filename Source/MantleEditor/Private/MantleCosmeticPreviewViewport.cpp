@@ -249,7 +249,7 @@ bool SMantleCosmeticPreviewViewport::ShowAccessory(UStaticMesh* Mesh, const FStr
 	AccessoryComponent->AttachToComponent(BodyComponent, FAttachmentTransformRules::KeepRelativeTransform, Bone);
 	// The creator sees what uploads: the reduced copy when the mesh is over the triangle limit, and centered on the socket
 	// when its pivot is out of reach (the export does both).
-	Mesh = const_cast<UStaticMesh*>(FMantleAccessorySettings::UploadMesh(Mesh, Contract->RigidAccessory));
+	Mesh = const_cast<UStaticMesh*>(FMantleAccessorySettings::UploadMesh(Mesh, Contract->AccessoryClassFor(Slot)));
 	AccessoryComponent->SetStaticMesh(Mesh);
 	FTransform Placed = MantleAccessoryPlacement::ClampedAttach(Attach);
 	const FMantleContractAccessoryBounds* Limits = Contract->AccessoryBounds.Find(Slot);

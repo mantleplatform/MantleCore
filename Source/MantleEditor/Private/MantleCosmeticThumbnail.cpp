@@ -523,6 +523,12 @@ bool FMantleCosmeticThumbnail::Capture(const FMantleThumbnailSubject& Subject, i
 			CaptureWarmUpRounds);
 	}
 
+	// A dev picture asks for frames to settle after the camera is placed: one capture and flush per frame.
+	for (int32 Settled = 0; Settled < Subject.SettleFrames; ++Settled)
+	{
+		Camera->CaptureScene();
+		FlushRenderingCommands();
+	}
 	Camera->CaptureScene();
 	FlushRenderingCommands();
 

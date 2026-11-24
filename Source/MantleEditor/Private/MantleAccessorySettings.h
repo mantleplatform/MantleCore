@@ -5,6 +5,17 @@
 #include "MantleAvatarContract.h"
 #include "MantleCosmeticExport.h"
 
+/** The point of an accessory's own bounds that a slot's default placement puts on the slot's socket. */
+enum class EMantleAccessoryAnchor : uint8
+{
+	/** Not seated by default: the mesh's pivot sits on the socket (every slot before the small ones). */
+	Pivot,
+	/** The bounds' center (a ring on its finger, a watch on the wrist, a stud in the nose, glasses on the face). */
+	Center,
+	/** The top of the bounds, centered (an earring's hook on the ear). */
+	TopCenter,
+};
+
 /** Creator corrections, keyed by source object path and accessory slot; never alter the source mesh. */
 struct FMantleAccessorySettings
 {
@@ -16,10 +27,24 @@ struct FMantleAccessorySettings
 	static bool AlignToAvatarAxes(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError);
 
 	/**
-	 * The placement a new accessory starts with: AlignToAvatarAxes, and for a neck slot also RestOnShoulders. Saved placements
+	 * The placement a new accessory starts with: AlignToAvatarAxes, and for a neck slot also RestOnShoulders, and for a small slot
+	 * (eyes, ears, nose, wrists, ring) SeatOnSocket with its DefaultAnchor. Saved placements
 	 * (Load) are never passed through here, so a creator's own always wins.
 	 */
 	static bool ApplyDefaultPlacement(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError, const USkeletalMesh* Face = nullptr);
+
+	/** Which point of its bounds a slot's default placement seats on the socket. Pivot for every slot but the small ones. Pure (tested). */
+	static EMantleAccessoryAnchor DefaultAnchor(const FString& Slot);
+
+	/** The point of Bounds (the mesh's box after axis alignment, avatar axes: Z up) that Anchor names. The box's center for Pivot. Pure (tested). */
+	static FVector3f AnchorPoint(EMantleAccessoryAnchor Anchor, const FBox3f& Bounds);
+
+	/**
+	 * Moves an axis-aligned accessory (the draft's rotation already set by AlignToAvatarAxes) so the slot's anchor point of its
+	 * bounds, as the upload centers them on the socket (RecenterOffset), sits on the slot's socket: only the attach location
+	 * changes, within the panel's range. False, with OutError, when the draft has no static mesh or the mesh has no bounds.
+	 */
+	static bool SeatOnSocket(FMantleCosmeticDraft& Draft, EMantleAccessoryAnchor Anchor, FString& OutError);
 
 	/**
 	 * Lowers a neck accessory (already aligned) along the avatar's up axis until its upper half rests on the skin of Body and

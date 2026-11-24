@@ -1311,9 +1311,9 @@ bool FMantleParametricOutfit::PrepareRigid(const FMantleCosmeticDraft& Draft, co
 	TOptional<TArray<int32>> KeepSlots;
 	int32 Kept = 0;
 	int32 After = 0;
-	USkeletalMesh* Garment = ExportGarment(*Asset, *Single, Draft.KeepSlots, Draft.Slot, Contract.RigidAccessory.MaxTriangles, KeepSlots, Kept, After, KeepAlive, OutError);
+	USkeletalMesh* Garment = ExportGarment(*Asset, *Single, Draft.KeepSlots, Draft.Slot, Contract.AccessoryMaxTriangles(Draft.Slot), KeepSlots, Kept, After, KeepAlive, OutError);
 	if (!Garment) { return false; }
-	if (After != Kept) { Notes.Add(FString::Printf(TEXT("Reduced from %d to %d triangles to fit the %d limit."), Kept, After, Contract.RigidAccessory.MaxTriangles)); }
+	if (After != Kept) { Notes.Add(FString::Printf(TEXT("Reduced from %d to %d triangles to fit the %d limit."), Kept, After, Contract.AccessoryMaxTriangles(Draft.Slot))); }
 
 	FMantleGlbMesh Glb;
 	TArray<UMaterialInterface*> GlbMaterials;
