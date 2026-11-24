@@ -1970,7 +1970,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		// The light sections stay on the body, where the game switches them.
 		const FMantleVehicleSourceLights& LightsWanted = Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights;
 		// So do the body paint (the sections ticked, else what reads as the body color) and the rims (sections named for one): a wheel swap hides them, and only the body's
-		// sections can be hidden. When they are more than a body may draw: the paint first, then each kind of light, then the rims.
+		// sections can be hidden. When they are more than a body may draw: the paint first, then each kind of light's first section, then the rims, then the lights' other sections.
 		TSet<int32> LightSlots;
 		TMap<int32, int32> KeepRank;
 		FMantleVehicleConverter::BodyKeep(Skinned.Materials, LightsWanted, PaintedTicks.IsSet() ? &PaintedTicks.GetValue() : nullptr, LightSlots, KeepRank);

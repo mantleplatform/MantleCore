@@ -88,7 +88,7 @@ struct MANTLEEDITOR_API FMantleVehicleBodySplit
 	 * the body still draws, in their order) and Extras (kept in step with the body's vertices) are rewritten. False, with Body untouched and OutResult.Problem
 	 * set, when the pieces would be more than MaxPieces. True with no pieces when Body was within the cap. KeepInBody: slots that stay on the body before any other
 	 * (the car paint and the light sections, which the game switches on the body), as many as MaxBodyMaterials allows. When there are more of them than the body may draw,
-	 * KeepRank (a slot to its rank, the lowest first; a slot it does not list ranks 0) says which stay: the body paint, then each kind of light, then the rims. Within a rank
+	 * KeepRank (a slot to its rank, the lowest first; a slot it does not list ranks 0) says which stay: the body paint, then each kind of light's first section, then the rims, then the lights' other sections. Within a rank
 	 * the slot with the most triangles stays.
 	 */
 	static bool Split(FMantleSkinnedMesh& Body, TArray<FSkeletalMaterial>& Materials, FMantleVehicleBodyExtras& Extras, int32 MaxBodyMaterials, int32 MaxPieceMaterials,

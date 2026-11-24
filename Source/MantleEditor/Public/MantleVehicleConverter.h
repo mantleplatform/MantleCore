@@ -244,8 +244,8 @@ public:
 	/**
 	 * Which of a model's slots the split keeps on the body when it must send some to parts (FMantleVehicleBodySplit::Split's KeepInBody and KeepRank), for the converter and the
 	 * builder alike. The body paint comes first (rank 0): PaintedSections, by name, or when it is null the slots that read as the body color (GuessPaintLayer's primary). Then the
-	 * lights, which the game switches on the body, each kind's first section before any kind's second (ranks 1, 2, ...). Then the rims, which a wheel swap hides (rank 1000). A slot
-	 * that is none of them goes to a part first: glass, the interior, seats, tires.
+	 * lights, which the game switches on the body: each kind's first section (rank 1). Then the rims, which a wheel swap hides (rank 2). Then each kind's second and later light
+	 * sections (ranks 3, 4, ...). A slot that is none of them goes to a part first: glass, the interior, seats, tires.
 	 */
 	static void BodyKeep(const TArray<FSkeletalMaterial>& Materials, const FMantleVehicleSourceLights& Lights, const TArray<FString>* PaintedSections, TSet<int32>& OutKeep,
 		TMap<int32, int32>& OutRank);

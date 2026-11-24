@@ -2009,7 +2009,8 @@ void FMantleVehicleConverter::BodyKeep(const TArray<FSkeletalMaterial>& Material
 	OutKeep.Reset();
 	OutRank.Reset();
 	const TArray<FString> Sections = FMantleVehicleLights::SectionNames(Materials);
-	// The lights: each kind's first section is rank 1, its second rank 2, so a body with room for few keeps one of every kind before two of one.
+	// The lights: each kind's first section is rank 1, and its second and later ones rank 3, 4, ... (after the rims, rank 2), so a body with room for few keeps the paint, one
+	// section of every kind of light and the rims a wheel swap needs before a second glow of any kind.
 	TSet<int32> LightSlots;
 	for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse, EMantleLightKind::Left, EMantleLightKind::Right })
 	{
@@ -2023,7 +2024,7 @@ void FMantleVehicleConverter::BodyKeep(const TArray<FSkeletalMaterial>& Material
 				LightSlots.Add(Slot);
 				if (!OutRank.Contains(Slot))
 				{
-					OutRank.Add(Slot, 1 + Index);
+					OutRank.Add(Slot, Index == 0 ? 1 : 2 + Index);
 				}
 			}
 		}
@@ -2052,7 +2053,7 @@ void FMantleVehicleConverter::BodyKeep(const TArray<FSkeletalMaterial>& Material
 		else if (FMantleVehicleRims::NameIsRim(Sections[Slot]))
 		{
 			OutKeep.Add(Slot);
-			OutRank.Add(Slot, 1000);
+			OutRank.Add(Slot, 2);
 		}
 	}
 }
@@ -2148,7 +2149,7 @@ bool FMantleVehicleConverter::SplitExtraMaterials(USkeletalMesh& Mesh, const UMa
 	Extras.Colors = Model.Colors;
 
 	// The body paint, the light sections and the rims stay on the body, where the game paints and switches them and a wheel swap hides them; when they are more than a body may
-	// draw, the paint first, then each kind of light, then the rims (BodyKeep). Glass, the interior, seats and tires go to parts first.
+	// draw, the paint first, then each kind of light's first section, then the rims, then the lights' other sections (BodyKeep). Glass, the interior, seats and tires go to parts first.
 	TSet<int32> KeepInBody;
 	TMap<int32, int32> KeepRank;
 	BodyKeep(Materials, Source.Lights, Source.Paint.Sections.IsEmpty() ? nullptr : &Source.Paint.Sections, KeepInBody, KeepRank);

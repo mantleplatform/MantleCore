@@ -487,39 +487,46 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FMantleVehicleBodySplitKeepRankTest::RunTest(const FString& Parameters)
 {
 	using namespace MantleVehicleBuilderHubsLightsTestPrivate;
-	// Twelve slots, the more of them the more triangles: so the paint (the first three) and the lights have the fewest, and a split that went by triangles alone sent them to parts.
-	TArray<FString> Names = { TEXT("paint"), TEXT("paint2"), TEXT("paint3"), TEXT("headlight_lens"), TEXT("taillight_lens"), TEXT("reverselight_lens"), TEXT("signal_left"), TEXT("signal_right"),
-		TEXT("WheelSet_05"), TEXT("headlight_lens2"), TEXT("glass"), TEXT("seats") };
+	// SUV04's shape: one paint slot, two glow groups of each of the five kinds of light, the rim section, glass and seats. The later the slot the more triangles it has, so the
+	// paint, the first lights and the rim have the fewest, and a split that went by triangles alone sent them to parts.
+	TArray<FString> Names = { TEXT("paint"), TEXT("headlight_lens"), TEXT("taillight_lens"), TEXT("reverselight_lens"), TEXT("signal_left"), TEXT("signal_right"),
+		TEXT("headlight_lens2"), TEXT("taillight_lens2"), TEXT("reverselight_lens2"), TEXT("signal_left2"), TEXT("signal_right2"), TEXT("WheelSet_07"), TEXT("glass"), TEXT("seats") };
 	FMantleSkinnedMesh Body;
 	TArray<FSkeletalMaterial> Materials;
 	MakeSlotBody(Body, Materials, Names, {}, [](const int32 Slot) { return Slot + 1; });
 
 	FMantleVehicleSourceLights Lights;
 	Lights.Head = { TEXT("headlight_lens"), TEXT("headlight_lens2") };
-	Lights.Rear = { TEXT("taillight_lens") };
-	Lights.Reverse = { TEXT("reverselight_lens") };
-	Lights.Left = { TEXT("signal_left") };
-	Lights.Right = { TEXT("signal_right") };
-	const TArray<FString> Painted = { TEXT("paint"), TEXT("paint2"), TEXT("paint3") };
+	Lights.Rear = { TEXT("taillight_lens"), TEXT("taillight_lens2") };
+	Lights.Reverse = { TEXT("reverselight_lens"), TEXT("reverselight_lens2") };
+	Lights.Left = { TEXT("signal_left"), TEXT("signal_left2") };
+	Lights.Right = { TEXT("signal_right"), TEXT("signal_right2") };
+	const TArray<FString> Painted = { TEXT("paint") };
 	TSet<int32> Keep;
 	TMap<int32, int32> Rank;
 	FMantleVehicleConverter::BodyKeep(Materials, Lights, &Painted, Keep, Rank);
-	TestTrue(TEXT("the paint is rank 0"), Rank.FindRef(0) == 0 && Rank.FindRef(1) == 0 && Rank.FindRef(2) == 0 && Keep.Contains(0));
-	TestTrue(TEXT("each kind's first light is rank 1"), Rank.FindRef(3) == 1 && Rank.FindRef(4) == 1 && Rank.FindRef(5) == 1 && Rank.FindRef(6) == 1 && Rank.FindRef(7) == 1);
-	TestTrue(TEXT("a kind's second light is rank 2"), Rank.FindRef(9) == 2);
-	TestTrue(TEXT("a rim is kept last"), Rank.FindRef(8) == 1000);
-	TestTrue(TEXT("glass and seats are not kept"), !Keep.Contains(10) && !Keep.Contains(11));
+	TestTrue(TEXT("the paint is rank 0"), Rank.FindRef(0) == 0 && Keep.Contains(0));
+	TestTrue(TEXT("each kind's first light is rank 1"), Rank.FindRef(1) == 1 && Rank.FindRef(2) == 1 && Rank.FindRef(3) == 1 && Rank.FindRef(4) == 1 && Rank.FindRef(5) == 1);
+	TestTrue(TEXT("the rim is rank 2, before any kind's second light"), Rank.FindRef(11) == 2);
+	TestTrue(TEXT("a kind's second light is rank 3 or later"), Rank.FindRef(6) >= 3 && Rank.FindRef(7) >= 3 && Rank.FindRef(8) >= 3 && Rank.FindRef(9) >= 3 && Rank.FindRef(10) >= 3);
+	TestTrue(TEXT("glass and seats are not kept"), !Keep.Contains(12) && !Keep.Contains(13));
 
 	FMantleVehicleBodyExtras Extras;
 	FMantleVehicleBodySplitResult Split;
 	TestTrue(TEXT("the body splits"), FMantleVehicleBodySplit::Split(Body, Materials, Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials, FMantleVehicleLimits::MaxParts, Split, Keep, &Rank));
 	const TArray<FString> Left = FMantleVehicleLights::SectionNames(Materials);
 	TestEqual(TEXT("the body draws what it may"), Left.Num(), FMantleVehicleLimits::MaxSections);
-	TestTrue(TEXT("the paint is on it"), Left.Contains(TEXT("paint")) && Left.Contains(TEXT("paint2")) && Left.Contains(TEXT("paint3")));
+	TestTrue(TEXT("the paint is on it"), Left.Contains(TEXT("paint")));
 	TestTrue(TEXT("so is each kind of light"), Left.Contains(TEXT("headlight_lens")) && Left.Contains(TEXT("taillight_lens")) && Left.Contains(TEXT("reverselight_lens"))
 		&& Left.Contains(TEXT("signal_left")) && Left.Contains(TEXT("signal_right")));
-	TestTrue(TEXT("the second headlight and the rim did not fit, and went to parts with the glass and the seats"),
-		!Left.Contains(TEXT("headlight_lens2")) && !Left.Contains(TEXT("WheelSet_05")) && !Left.Contains(TEXT("glass")) && !Left.Contains(TEXT("seats")));
+	TestTrue(TEXT("and the rim, so the wheels can be swapped"), Left.Contains(TEXT("WheelSet_07")));
+	TestTrue(TEXT("glass and seats went to parts"), !Left.Contains(TEXT("glass")) && !Left.Contains(TEXT("seats")));
+	int32 SecondLights = 0;
+	for (const FString& Second : { TEXT("headlight_lens2"), TEXT("taillight_lens2"), TEXT("reverselight_lens2"), TEXT("signal_left2"), TEXT("signal_right2") })
+	{
+		SecondLights += Left.Contains(Second) ? 1 : 0;
+	}
+	TestEqual(TEXT("one second light fits in the slot left over; the other four went to parts"), SecondLights, 1);
 	return true;
 }
 
