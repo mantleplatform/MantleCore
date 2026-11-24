@@ -250,7 +250,7 @@ namespace MantleDevRenderHairRulePrivate
 		while ((Bone = Reference.GetParentIndex(Bone)) != INDEX_NONE) BoneComponent = BoneComponent * Pose[Bone];
 		const USkeletalMeshSocket* Own = HatOn->FindSocket(FName(*Point->Socket));
 		const FTransform Socket = Own && Own->BoneName == FName(*Point->SocketBone) ? Own->GetSocketLocalTransform() * BoneComponent : BoneComponent;
-		const FTransform Worn = Recentered * Attach * Socket;
+		const FTransform HatWorn = Recentered * Attach * Socket;
 
 		TArray<FVector3f> HatPositions;
 		TArray<uint32> HatIndices;
@@ -259,7 +259,7 @@ namespace MantleDevRenderHairRulePrivate
 			UE_LOG(LogMantleRenderHairRule, Error, TEXT("MANTLE_RENDER_HAIRRULE failed: the hat's triangles could not be read"));
 			return;
 		}
-		for (FVector3f& P : HatPositions) P = FVector3f(Worn.TransformPosition(FVector(P)));
+		for (FVector3f& P : HatPositions) P = FVector3f(HatWorn.TransformPosition(FVector(P)));
 
 		FBox Frame(ForceInit);
 		for (const FVector3f& P : Meshes.HeadPositions) Frame += FVector(P);
