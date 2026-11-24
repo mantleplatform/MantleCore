@@ -848,6 +848,40 @@ TSharedPtr<FMantlePlaceAssets> FMantlePlaceAssets::PrepareManifestOnlyForThisPro
 	}));
 }
 
+TSharedRef<FMantlePlaceAssets> FMantlePlaceAssets::PrepareTextures(const TArray<FString>& Ids, const FMantlePlaceAssetSettings& Settings,
+	FMantlePlaceAssetsDone OnDone)
+{
+	check(IsInGameThread());
+	TSharedRef<FMantlePlaceAssets> Set = MakeShareable(new FMantlePlaceAssets(Settings, MoveTemp(OnDone)));
+	Set->StartTextures(Ids);
+	if (Set->Settings.bAutoPump)
+	{
+		const TWeakPtr<FMantlePlaceAssets> Weak = Set;
+		Set->TickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Weak](float)
+		{
+			if (const TSharedPtr<FMantlePlaceAssets> Pinned = Weak.Pin())
+			{
+				Pinned->Pump();
+				return !Pinned->IsComplete() || !Pinned->AreSoundsSettled();
+			}
+			return false;
+		}));
+	}
+	return Set;
+}
+
+TSharedPtr<FMantlePlaceAssets> FMantlePlaceAssets::PrepareTexturesForThisProcess(const TArray<FString>& Ids)
+{
+	return PrepareTextures(Ids, FMantlePlaceAssetSettings::ForThisProcess(), FMantlePlaceAssetsDone::CreateLambda([](const FMantlePlaceAssetsResult& Result)
+	{
+		// Nothing waits on this set: a tile that failed only means that part of the map is not drawn, so it is logged, never fatal.
+		if (!Result.bSuccess)
+		{
+			UE_LOG(LogMantle, Warning, TEXT("MANTLE_PLACE_ASSETS on-demand textures: %d did not load:\n%s"), Result.Errors.Num(), *Result.ErrorSummary());
+		}
+	}));
+}
+
 TSharedRef<FMantlePlaceAssets> FMantlePlaceAssets::PrepareWith(const FMantlePlace& Place, const FMantlePlaceAssetSettings& Settings,
 	FMantlePlaceAssetsDone OnDone, const EStartKind StartKind)
 {
@@ -1915,6 +1949,30 @@ void FMantlePlaceAssets::StartManifestMeshes(const FMantlePlace& Place)
 	UE_LOG(LogMantle, Log,
 		TEXT("MANTLE_PLACE_ASSETS manifest meshes of place %s: %d uploaded meshes (about %.1f MB as uploaded), built with collision while the cells are read"),
 		*Place.PlaceId, Taken, Megabytes(TakenBytes));
+	bStarted = true;
+}
+
+void FMantlePlaceAssets::StartTextures(const TArray<FString>& Ids)
+{
+	using namespace MantlePlaceAssetsPrivate;
+
+	StartSeconds = FPlatformTime::Seconds();
+	NextProgressLogAt = StartSeconds + Settings.ProgressLogSeconds;
+
+	// Only what is asked for, and only where something draws: a dedicated server shows no map. A record that is already here (the id given twice) is the same one.
+	int32 Taken = 0;
+	int32 Skipped = 0;
+	for (const FString& Id : Ids)
+	{
+		if (!Settings.bRenderAssets || !IsUploadedId(Id))
+		{
+			++Skipped;
+			continue;
+		}
+		EnsureRecord(Id, EAssetKind::Texture, EMantleTextureRole::Color);
+		++Taken;
+	}
+	UE_LOG(LogMantle, Log, TEXT("MANTLE_PLACE_ASSETS on-demand textures: %d asked for, %d skipped (not an uploaded id, or nothing draws here)"), Taken, Skipped);
 	bStarted = true;
 }
 
