@@ -82,7 +82,7 @@ namespace MantleDevRenderLayersPrivate
 			TArray<FMantleSkinnedMeshSection> Sections;
 			for (const FMantleSkinnedMeshSection& Section : LOD.Sections)
 			{
-				if (!KeepSlots.GetValue().Contains(Section.MaterialIndex)) continue;
+				if (!KeepSlots.GetValue().Contains(Section.MaterialIndex) || Section.IndexCount <= 0) continue;
 				FMantleSkinnedMeshSection Kept = Section;
 				Kept.FirstIndex = Indices.Num();
 				Indices.Append(&LOD.Indices[Section.FirstIndex], Section.IndexCount);
