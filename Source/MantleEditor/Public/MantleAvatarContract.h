@@ -65,13 +65,13 @@ struct MANTLEEDITOR_API FMantleContractClass
 	TArray<FString> Skeletons;
 };
 
-/** #136: one finger a ring may be worn on (limits.json acc_ring's fingerSockets). */
-struct MANTLEEDITOR_API FMantleContractFingerSocket
+/** #136: one finger a ring may be worn on (limits.json acc_ring's fingerBones): the ring hangs straight from Bone, at identity. */
+struct MANTLEEDITOR_API FMantleContractFingerBone
 {
 	/** The worn entry's finger: thumb_l .. pinky_r. */
 	FString Finger;
-	FString Socket;
-	FString SocketBone;
+	/** The body bone: index_01_l ..., thumb_02_l for the thumbs (thumb_01 is in the palm). */
+	FString Bone;
 };
 
 /** One slot of limits.json's slot table. */
@@ -81,21 +81,26 @@ struct MANTLEEDITOR_API FMantleContractSlot
 	FString Group;
 	FString ItemClass;
 	/**
-	 * The socket and bone the item hangs from. A slot with FingerSockets (acc_ring) has none of its own in limits.json:
-	 * these are then the preview finger's (FMantleAvatarContract::PreviewFinger), so placing, previewing and rendering
-	 * a ring use that finger. The worn entry picks the finger in the game.
+	 * The socket the item hangs from (limits.json "socket"): the older slots (acc_hat ... acc_waist), whose sockets sit at
+	 * identity on SocketBone and which an avatar may override. Empty for the #136 slots ("mechanism": "bone"), which hang
+	 * straight from a bone and have no socket.
 	 */
 	FString Socket;
+	/**
+	 * The bone the item hangs from: limits.json "socketBone" for a socket slot, "bone" for a bone slot. A slot with
+	 * FingerBones (acc_ring) has none of its own: this is then the preview finger's (FMantleAvatarContract::PreviewFinger),
+	 * so placing, previewing and rendering a ring use that finger. The worn entry picks the finger in the game.
+	 */
 	FString SocketBone;
 	/**
 	 * #136: which mesh SocketBone is on: "body" (the default) or "face" (ears, eyes and nose hang from the MetaHuman face
-	 * skeleton's FACIAL_* bones, on the face mesh). Sockets sit at identity on their bone either way.
+	 * skeleton's FACIAL_* bones, on the face mesh). Items sit at identity on the bone either way.
 	 */
 	FString Mesh = TEXT("body");
 	bool IsOnFace() const { return Mesh == TEXT("face"); }
 	int32 Cap = 1;
-	/** #136: the fingers a ring may be worn on, in limits.json's order; empty for every other slot. */
-	TArray<FMantleContractFingerSocket> FingerSockets;
+	/** #136: the fingers a ring may be worn on and their bones, in limits.json's order; empty for every other slot. */
+	TArray<FMantleContractFingerBone> FingerBones;
 };
 
 /**
@@ -313,12 +318,12 @@ public:
 	TArray<FString> SlotsOfClass(const FString& ItemClass) const;
 
 	/**
-	 * The accessory sockets (limits.json slots[].socket and acc_ring's fingerSockets), each once, in the slot table's
+	 * The accessory sockets (limits.json slots[].socket; the #136 bone slots and ring fingers have none), each once, in the slot table's
 	 * order: the names an avatar's "sockets" overrides may use (the API's avatar.Contract.IsSocket).
 	 */
 	TArray<FString> AccessorySockets() const;
 
-	/** The bone an accessory socket (a slot's socket or a finger socket) hangs from; empty for an unknown socket. */
+	/** The bone an accessory socket (a slot's socket) hangs from; empty for an unknown socket. */
 	FString AccessorySocketBone(const FString& Socket) const;
 
 	/** A tool socket an avatar may also override (limits.json toolSockets, #585), or null. */

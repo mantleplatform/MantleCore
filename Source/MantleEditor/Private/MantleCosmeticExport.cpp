@@ -3897,7 +3897,7 @@ TArray<FMantleCosmeticSocketOverride> FMantleCosmeticExport::DefaultSocketOverri
 	TArray<TPair<FString, FString>> Sockets;
 	for (const FString& Socket : Contract.AccessorySockets())
 	{
-		// Includes the ten finger sockets of acc_ring, which no slot lists as its own.
+		// Socket slots only: the #136 bone slots and acc_ring's fingers hang straight from bones and have no socket to override.
 		Sockets.Emplace(Socket, Contract.AccessorySocketBone(Socket));
 	}
 	for (const FMantleContractToolSocket& Tool : Contract.ToolSockets)

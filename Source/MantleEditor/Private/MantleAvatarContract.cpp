@@ -259,41 +259,43 @@ bool FMantleAvatarContract::LoadFromDirectory(const FString& Directory, FMantleA
 		Slot->TryGetStringField(TEXT("id"), Entry.Id);
 		Slot->TryGetStringField(TEXT("group"), Entry.Group);
 		Slot->TryGetStringField(TEXT("itemClass"), Entry.ItemClass);
+		// A socket slot names its socket and the socket's bone; a #136 bone slot ("mechanism": "bone") only the bone it hangs from.
 		Slot->TryGetStringField(TEXT("socket"), Entry.Socket);
-		Slot->TryGetStringField(TEXT("socketBone"), Entry.SocketBone);
-		// #136: the mesh the socket bone is on. Absent: the body, as every slot before the face ones.
+		if (!Slot->TryGetStringField(TEXT("socketBone"), Entry.SocketBone))
+		{
+			Slot->TryGetStringField(TEXT("bone"), Entry.SocketBone);
+		}
+		// #136: the mesh the bone is on. Absent: the body, as every slot before the face ones.
 		if (Slot->HasField(TEXT("mesh")) && (!Slot->TryGetStringField(TEXT("mesh"), Entry.Mesh) || (Entry.Mesh != TEXT("body") && Entry.Mesh != TEXT("face"))))
 		{
 			OutError = FString::Printf(TEXT("limits.json slot %s has a mesh that is not \"body\" or \"face\""), *Entry.Id);
 			return false;
 		}
 		Entry.Cap = IntField(Slot, TEXT("cap"), 1);
-		// #136: a ring's fingers. The slot has no socket of its own: the editor places and shows it on the preview finger.
-		if (const TSharedPtr<FJsonObject> Fingers = ObjectField(Slot, TEXT("fingerSockets")))
+		// #136: a ring's fingers, each a finger name and the body bone it hangs from. The slot has no bone of its own: the editor
+		// places and shows it on the preview finger.
+		if (const TSharedPtr<FJsonObject> Fingers = ObjectField(Slot, TEXT("fingerBones")))
 		{
 			for (const auto& Pair : Fingers->Values) // keyed by UE::TSharedString in 5.8, not FString
 			{
-				const TSharedPtr<FJsonObject> Finger = Pair.Value.IsValid() ? Pair.Value->AsObject() : nullptr;
-				FMantleContractFingerSocket FingerSocket;
-				FingerSocket.Finger = FString(Pair.Key.ToView());
-				if (!Finger.IsValid() || !Finger->TryGetStringField(TEXT("socket"), FingerSocket.Socket) || !Finger->TryGetStringField(TEXT("socketBone"), FingerSocket.SocketBone)
-					|| FingerSocket.Socket.IsEmpty() || FingerSocket.SocketBone.IsEmpty())
+				FMantleContractFingerBone Finger;
+				Finger.Finger = FString(Pair.Key.ToView());
+				if (!Pair.Value.IsValid() || !Pair.Value->TryGetString(Finger.Bone) || Finger.Bone.IsEmpty())
 				{
-					OutError = FString::Printf(TEXT("limits.json slot %s has a fingerSockets entry without a socket and socketBone"), *Entry.Id);
+					OutError = FString::Printf(TEXT("limits.json slot %s has a fingerBones entry (%s) that is not a bone name"), *Entry.Id, *Finger.Finger);
 					return false;
 				}
-				Entry.FingerSockets.Add(MoveTemp(FingerSocket));
+				Entry.FingerBones.Add(MoveTemp(Finger));
 			}
-			const FMantleContractFingerSocket* Preview = Entry.FingerSockets.FindByPredicate([](const FMantleContractFingerSocket& Finger)
+			const FMantleContractFingerBone* Preview = Entry.FingerBones.FindByPredicate([](const FMantleContractFingerBone& Finger)
 				{ return Finger.Finger == FMantleAvatarContract::PreviewFinger(); });
-			if (!Preview && Entry.FingerSockets.Num() > 0)
+			if (!Preview && Entry.FingerBones.Num() > 0)
 			{
-				Preview = &Entry.FingerSockets[0];
+				Preview = &Entry.FingerBones[0];
 			}
-			if (Preview && Entry.Socket.IsEmpty() && Entry.SocketBone.IsEmpty())
+			if (Preview && Entry.SocketBone.IsEmpty())
 			{
-				Entry.Socket = Preview->Socket;
-				Entry.SocketBone = Preview->SocketBone;
+				Entry.SocketBone = Preview->Bone;
 			}
 		}
 	}
@@ -755,13 +757,10 @@ TArray<FString> FMantleAvatarContract::AccessorySockets() const
 	TArray<FString> Out;
 	for (const FMantleContractSlot& Slot : Slots)
 	{
+		// The #136 bone slots (and the ring's fingers) have no socket, so an avatar has nothing of theirs to override.
 		if (!Slot.Socket.IsEmpty())
 		{
 			Out.AddUnique(Slot.Socket);
-		}
-		for (const FMantleContractFingerSocket& Finger : Slot.FingerSockets)
-		{
-			Out.AddUnique(Finger.Socket);
 		}
 	}
 	return Out;
@@ -771,13 +770,6 @@ FString FMantleAvatarContract::AccessorySocketBone(const FString& Socket) const
 {
 	for (const FMantleContractSlot& Slot : Slots)
 	{
-		for (const FMantleContractFingerSocket& Finger : Slot.FingerSockets)
-		{
-			if (Finger.Socket == Socket)
-			{
-				return Finger.SocketBone;
-			}
-		}
 		if (!Slot.Socket.IsEmpty() && Slot.Socket == Socket)
 		{
 			return Slot.SocketBone;

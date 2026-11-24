@@ -32,13 +32,14 @@ bool FMantleClothingLayersContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("outerwear goes over the top"), Contract->ClothingRank(TEXT("outerwear")) > Contract->ClothingRank(TEXT("top")));
 	TestEqual(TEXT("hair has no clothing rank"), Contract->ClothingRank(TEXT("hair")), static_cast<int32>(INDEX_NONE));
 
-	// The new accessory slots, their sockets and caps.
+	// The new accessory slots: straight on a bone (no socket), and their caps.
 	for (const TCHAR* Slot : { TEXT("acc_eyes"), TEXT("acc_ear_l"), TEXT("acc_ear_r"), TEXT("acc_nose"), TEXT("acc_wrist_l"), TEXT("acc_wrist_r"), TEXT("acc_ring") })
 	{
 		const FMantleContractSlot* Entry = Contract->FindSlot(Slot);
 		if (!TestNotNull(FString::Printf(TEXT("%s is in the slot table"), Slot), Entry)) { continue; }
 		TestEqual(FString::Printf(TEXT("%s is an accessory"), Slot), Entry->ItemClass, FString(TEXT("rigid_accessory")));
-		TestFalse(FString::Printf(TEXT("%s has a socket bone the editor can place it on"), Slot), Entry->SocketBone.IsEmpty());
+		TestFalse(FString::Printf(TEXT("%s has a bone the editor can place it on"), Slot), Entry->SocketBone.IsEmpty());
+		TestTrue(FString::Printf(TEXT("%s has no socket of its own"), Slot), Entry->Socket.IsEmpty());
 		TestNotNull(FString::Printf(TEXT("%s has size limits"), Slot), Contract->AccessoryBounds.Find(Slot));
 		TestTrue(FString::Printf(TEXT("%s has its own, smaller triangle cap"), Slot),
 			Contract->AccessoryMaxTriangles(Slot) > 0 && Contract->AccessoryMaxTriangles(Slot) < Contract->RigidAccessory.MaxTriangles);
@@ -46,16 +47,36 @@ bool FMantleClothingLayersContractTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("a hat keeps the shared accessory cap"), Contract->AccessoryMaxTriangles(TEXT("acc_hat")), Contract->RigidAccessory.MaxTriangles);
 
-	// A ring: ten fingers; the editor uses the left ring finger.
+	// The face slots hang from the MetaHuman face's bones; the wrists and the ring from the body's.
+	const TPair<const TCHAR*, const TCHAR*> FaceSlots[] = { { TEXT("acc_eyes"), TEXT("FACIAL_C_NoseBridge") }, { TEXT("acc_ear_l"), TEXT("FACIAL_L_Ear") },
+		{ TEXT("acc_ear_r"), TEXT("FACIAL_R_Ear") }, { TEXT("acc_nose"), TEXT("FACIAL_C_Nose") } };
+	for (const TPair<const TCHAR*, const TCHAR*>& Pair : FaceSlots)
+	{
+		const FMantleContractSlot* Entry = Contract->FindSlot(Pair.Key);
+		TestTrue(FString::Printf(TEXT("%s is on the face, on %s"), Pair.Key, Pair.Value), Entry && Entry->IsOnFace() && Entry->SocketBone == Pair.Value);
+	}
+	for (const TPair<const TCHAR*, const TCHAR*>& Pair : { TPair<const TCHAR*, const TCHAR*>(TEXT("acc_wrist_l"), TEXT("hand_l")), TPair<const TCHAR*, const TCHAR*>(TEXT("acc_wrist_r"), TEXT("hand_r")) })
+	{
+		const FMantleContractSlot* Entry = Contract->FindSlot(Pair.Key);
+		TestTrue(FString::Printf(TEXT("%s is on the body, on %s"), Pair.Key, Pair.Value), Entry && !Entry->IsOnFace() && Entry->SocketBone == Pair.Value);
+	}
+
+	// A ring: ten finger bones (the thumbs on thumb_02, thumb_01 being in the palm); the editor uses the left ring finger.
 	if (const FMantleContractSlot* Ring = Contract->FindSlot(TEXT("acc_ring")))
 	{
-		TestEqual(TEXT("a ring can go on ten fingers"), Ring->FingerSockets.Num(), 10);
-		TestEqual(TEXT("the editor places a ring on the left ring finger"), Ring->Socket, FString(TEXT("acc_ring_ring_l")));
-		TestEqual(TEXT("which hangs from ring_01_l"), Ring->SocketBone, FString(TEXT("ring_01_l")));
+		TestEqual(TEXT("a ring can go on ten fingers"), Ring->FingerBones.Num(), 10);
+		TestFalse(TEXT("a ring is on the body"), Ring->IsOnFace());
+		TestEqual(TEXT("the editor places a ring on the left ring finger, ring_01_l"), Ring->SocketBone, FString(TEXT("ring_01_l")));
+		const FMantleContractFingerBone* Thumb = Ring->FingerBones.FindByPredicate([](const FMantleContractFingerBone& Finger) { return Finger.Finger == TEXT("thumb_r"); });
+		TestTrue(TEXT("the right thumb's ring is on thumb_02_r"), Thumb && Thumb->Bone == TEXT("thumb_02_r"));
+		const FMantleContractFingerBone* Index = Ring->FingerBones.FindByPredicate([](const FMantleContractFingerBone& Finger) { return Finger.Finger == TEXT("index_r"); });
+		TestTrue(TEXT("the right index finger's ring is on index_01_r"), Index && Index->Bone == TEXT("index_01_r"));
 	}
+	// Only the socket slots have sockets an avatar may override; the bone slots and the fingers have none.
 	const TArray<FString> Sockets = Contract->AccessorySockets();
-	TestTrue(TEXT("an avatar may place every finger socket"), Sockets.Contains(TEXT("acc_ring_thumb_r")) && Sockets.Contains(TEXT("acc_ring_pinky_l")));
-	TestEqual(TEXT("a finger socket's bone"), Contract->AccessorySocketBone(TEXT("acc_ring_index_r")), FString(TEXT("index_01_r")));
+	TestTrue(TEXT("the hat and the neck are sockets"), Sockets.Contains(TEXT("acc_hat")) && Sockets.Contains(TEXT("acc_neck")));
+	TestFalse(TEXT("no finger or ear is a socket"), Sockets.Contains(TEXT("acc_ring_thumb_r")) || Sockets.Contains(TEXT("acc_ear_l")) || Sockets.Contains(TEXT("acc_wrist_l")));
+	TestTrue(TEXT("a finger has no socket bone"), Contract->AccessorySocketBone(TEXT("acc_ring_index_r")).IsEmpty());
 	TestEqual(TEXT("a slot socket's bone"), Contract->AccessorySocketBone(TEXT("acc_neck")), FString(TEXT("neck_01")));
 	TestTrue(TEXT("an unknown socket has no bone"), Contract->AccessorySocketBone(TEXT("acc_tail")).IsEmpty());
 

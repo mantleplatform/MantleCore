@@ -37,9 +37,8 @@ bool FMantleRigidOutfitSocketBoneTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("acc_face has a pivot"), FMantleParametricOutfit::RigidPivot(*Contract, TEXT("acc_face"), Face, Error));
 	TestFalse(TEXT("only the hat socket is fitted per avatar"), Face.bHeadFit);
 	TestFalse(TEXT("a clothing slot is not an accessory"), FMantleParametricOutfit::RigidPivot(*Contract, TEXT("top"), Top, Error));
-	// The small slots hang from their own bones; none of them is fitted per avatar (only the hat socket is).
-	const TPair<const TCHAR*, const TCHAR*> SmallSlots[] = { { TEXT("acc_eyes"), TEXT("head") }, { TEXT("acc_ear_l"), TEXT("head") }, { TEXT("acc_ear_r"), TEXT("head") },
-		{ TEXT("acc_nose"), TEXT("head") }, { TEXT("acc_wrist_l"), TEXT("lowerarm_twist_01_l") }, { TEXT("acc_wrist_r"), TEXT("lowerarm_twist_01_r") },
+	// The small body slots hang from their own bones; none of them is fitted per avatar (only the hat socket is).
+	const TPair<const TCHAR*, const TCHAR*> SmallSlots[] = { { TEXT("acc_wrist_l"), TEXT("hand_l") }, { TEXT("acc_wrist_r"), TEXT("hand_r") },
 		{ TEXT("acc_ring"), TEXT("ring_01_l") } };
 	for (const TPair<const TCHAR*, const TCHAR*>& Entry : SmallSlots)
 	{
@@ -47,6 +46,14 @@ bool FMantleRigidOutfitSocketBoneTest::RunTest(const FString& Parameters)
 		TestTrue(FString::Printf(TEXT("%s has a pivot"), Entry.Key), FMantleParametricOutfit::RigidPivot(*Contract, Entry.Key, Pivot, Error));
 		TestEqual(FString::Printf(TEXT("%s hangs from %s"), Entry.Key, Entry.Value), Pivot.Bone, FString(Entry.Value));
 		TestFalse(FString::Printf(TEXT("%s keeps its size"), Entry.Key), Pivot.bHeadFit);
+	}
+	// The face slots hang from the MetaHuman face's bones, which an Outfit's body does not have: an Outfit piece there is refused.
+	for (const TCHAR* Slot : { TEXT("acc_eyes"), TEXT("acc_ear_l"), TEXT("acc_ear_r"), TEXT("acc_nose") })
+	{
+		FMantleParametricOutfit::FRigidPivot Pivot;
+		FString Refusal;
+		TestFalse(FString::Printf(TEXT("an Outfit piece on %s is refused"), Slot), FMantleParametricOutfit::RigidPivot(*Contract, Slot, Pivot, Refusal));
+		TestTrue(FString::Printf(TEXT("saying it is a face slot (%s)"), *Refusal), Refusal.Contains(TEXT("MetaHuman face")));
 	}
 
 	// A MetaHuman-like bind pose: the pelvis 95 cm up, the head 165 cm up, each with its own rotation.
