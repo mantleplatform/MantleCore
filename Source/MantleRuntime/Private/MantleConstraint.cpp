@@ -291,10 +291,11 @@ FMantleMotorGains FMantleConstraints::MotorGains(EMantleConstraintType Type, EMa
 	FMantleMotorGains Gains;
 	if (Mode == EMantleMotorMode::Position)
 	{
-		// A critically damped spring at MotorPositionResponseHz: it reaches its target without swinging past.
+		// A spring at MotorPositionResponseHz, damped by MotorDampingRatio: what Chaos makes of it reaches its
+		// target without swinging past (see MotorDampingRatio).
 		const double Omega = 2.0 * UE_DOUBLE_PI * MotorPositionResponseHz;
 		Gains.Stiffness = Moved * Omega * Omega;
-		Gains.Damping = 2.0 * Moved * Omega;
+		Gains.Damping = 2.0 * MotorDampingRatio * Moved * Omega;
 	}
 	else
 	{

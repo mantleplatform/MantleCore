@@ -78,6 +78,15 @@ struct MANTLERUNTIME_API FMantleConstraints
 	static constexpr double MotorPositionResponseHz = 2.0;
 	static constexpr double MotorSpeedResponse = 20.0;
 
+	/**
+	 * A position motor's damping, as a ratio of a critically damped spring's. Chaos applies a drive's damper in its
+	 * velocity phase (FPBDJointCachedSolver::ApplyAxisPositionVelocityDrive), where it takes about a third of what it
+	 * is given: the joints world test's gate followed a 30 degree-a-second setpoint 1.7 degrees behind where a
+	 * critically damped spring is 4.8 behind, and swung past its target (2026-11-23). Three times critical lands near
+	 * critical in the solver.
+	 */
+	static constexpr double MotorDampingRatio = 3.0;
+
 	/** The share of a position motor's MaxForce its spring uses to follow a setpoint at the default top speed (MotorDefaultSpeed). */
 	static constexpr double MotorDefaultSpeedShare = 0.25;
 

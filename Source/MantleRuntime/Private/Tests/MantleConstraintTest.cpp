@@ -305,7 +305,8 @@ bool FMantleConstraintValuesTest::RunTest(const FString& Parameters)
 	const double Omega = 2.0 * UE_DOUBLE_PI * FMantleConstraints::MotorPositionResponseHz;
 	const FMantleMotorGains Linear = FMantleConstraints::MotorGains(EMantleConstraintType::Slider, EMantleMotorMode::Position, 10.0);
 	TestEqual(TEXT("a slider's spring"), Linear.Stiffness, 10.0 * Omega * Omega / Chaos::ConstraintSettings::LinearDriveStiffnessScale(), 1e-6);
-	TestEqual(TEXT("a slider's damper"), Linear.Damping, 2.0 * 10.0 * Omega / Chaos::ConstraintSettings::LinearDriveDampingScale(), 1e-6);
+	TestEqual(TEXT("a slider's damper"), Linear.Damping,
+		2.0 * FMantleConstraints::MotorDampingRatio * 10.0 * Omega / Chaos::ConstraintSettings::LinearDriveDampingScale(), 1e-6);
 	const FMantleMotorGains Angular = FMantleConstraints::MotorGains(EMantleConstraintType::Hinge, EMantleMotorMode::Position, 1000.0);
 	TestEqual(TEXT("a hinge's spring"), Angular.Stiffness, 1000.0 * Omega * Omega / Chaos::ConstraintSettings::AngularDriveStiffnessScale(), 1e-3);
 	const FMantleMotorGains Speed = FMantleConstraints::MotorGains(EMantleConstraintType::Hinge, EMantleMotorMode::Speed, 1000.0);
