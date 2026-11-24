@@ -568,9 +568,10 @@ bool FMantleAccessoryPerSlotCapTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a hat keeps up to 4000, not the nose's 800"), AsHat && Triangles(*AsHat) > 2000 && Triangles(*AsHat) <= 4000);
 	TestTrue(TEXT("they are different copies"), AsNose != AsHat);
 	TestEqual(TEXT("the creator's mesh is untouched"), Triangles(*Dense), Before);
-	// 1,200 triangles: over the nose's cap, under the hat's.
+	// About 1,200 triangles (the disc's center ring folds to a point and its 20 empty triangles are dropped): over the nose's cap, under the hat's.
 	TStrongObjectPtr<UStaticMesh> Middle(MakeDisc(30, 20, Material.Get(), FVector3f::ZeroVector, 2.0f));
-	TestEqual(TEXT("the middle mesh has 1,200 triangles"), Triangles(*Middle), 1200);
+	const int32 MiddleTriangles = Triangles(*Middle);
+	TestTrue(FString::Printf(TEXT("the middle mesh (%d triangles) is over the nose's 800 and under the hat's 4000"), MiddleTriangles), MiddleTriangles > 800 && MiddleTriangles <= 4000);
 	const UStaticMesh* MiddleNose = FMantleAccessorySettings::UploadMesh(Middle.Get(), Contract->AccessoryClassFor(TEXT("acc_nose")));
 	TestTrue(TEXT("over the nose cap it is reduced to 800 or fewer"), MiddleNose != Middle.Get() && Triangles(*MiddleNose) <= 800);
 	TestTrue(TEXT("under the hat cap it uploads as it is"), FMantleAccessorySettings::UploadMesh(Middle.Get(), Contract->AccessoryClassFor(TEXT("acc_hat"))) == Middle.Get());
