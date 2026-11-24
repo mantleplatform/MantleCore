@@ -2160,4 +2160,77 @@ bool FMantlePublishCellsCancelTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleConvertCollectsGarbageTest,
+	"Mantle.Editor.PublishMemory.ConvertCollectsGarbageBetweenStepsAndKeepsWhatItGathered",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleConvertCollectsGarbageTest::RunTest(const FString& Parameters)
+{
+	// The preview export's one-shot Convert (London's bake memory): sounds made here that only the gathered list names, weakly, as a
+	// level's are. Each converts to an issue (no imported audio), so the steps cost nothing; what matters is who is alive at each step.
+	constexpr int32 Steps = 3;
+	struct FRun
+	{
+		TArray<TWeakObjectPtr<USoundWave>> Gathered;
+		TWeakObjectPtr<UStaticMesh> Loose;
+		int32 DeadAtAStep = 0;
+		int32 Collections = 0;
+		bool bLooseCollected = false;
+	};
+	auto Run = [](const int32 EveryStepsCount)
+	{
+		FRun Result;
+		UObject* Outer = GetTransientPackage();
+		FMantlePlaceDependencies Dependencies;
+		for (int32 Index = 0; Index < Steps; ++Index)
+		{
+			USoundWave* Sound = NewObject<USoundWave>(Outer, MakeUniqueObjectName(Outer, USoundWave::StaticClass(), FName(TEXT("ConvertCollectsGathered"))), RF_Transient);
+			Result.Gathered.Add(Sound);
+			FMantleGatheredSound& Gathered = Dependencies.Sounds.AddDefaulted_GetRef();
+			Gathered.Sound = Sound;
+			Gathered.Name = Sound->GetName();
+		}
+		// What a bake leaves behind: nothing references it, so only a collection frees it.
+		Result.Loose = NewObject<UStaticMesh>(Outer, MakeUniqueObjectName(Outer, UStaticMesh::StaticClass(), FName(TEXT("ConvertCollectsLoose"))), RF_Transient);
+		FMantlePlaceAssetConverter Converter;
+		Converter.CollectGarbageEverySteps = EveryStepsCount;
+		Converter.CollectGarbageFreeRamDropBytes = 0;
+		Converter.OnProgress = [&Result](int32, int32, const FString&)
+		{
+			for (const TWeakObjectPtr<USoundWave>& Sound : Result.Gathered)
+			{
+				Result.DeadAtAStep += Sound.IsValid() ? 0 : 1;
+			}
+			return true;
+		};
+		FMantlePlaceAssetSet Set;
+		Converter.Convert(Dependencies, Set);
+		Result.Collections = Converter.GetStats().GarbageCollections;
+		Result.bLooseCollected = !Result.Loose.IsValid();
+		return Result;
+	};
+
+	{
+		const FRun Collecting = Run(1);
+		TestEqual(TEXT("every step after the first, and once at the end, collects garbage"), Collecting.Collections, Steps);
+		TestTrue(TEXT("and frees what nothing references"), Collecting.bLooseCollected);
+		TestEqual(TEXT("but every gathered object is alive at each step"), Collecting.DeadAtAStep, 0);
+		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+		int32 Alive = 0;
+		for (const TWeakObjectPtr<USoundWave>& Sound : Collecting.Gathered)
+		{
+			Alive += Sound.IsValid() ? 1 : 0;
+		}
+		TestEqual(TEXT("and none is held once Convert returns"), Alive, 0);
+	}
+	{
+		const FRun Default = Run(0);
+		TestEqual(TEXT("control: a cadence of 0 never collects"), Default.Collections, 0);
+		TestFalse(TEXT("so what nothing references is still there"), Default.bLooseCollected);
+		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+	}
+	return true;
+}
+
 #endif

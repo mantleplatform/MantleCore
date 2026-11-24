@@ -17,6 +17,7 @@
 #include "MantlePreviewAvatarExport.h"
 #include "MantlePreviewLaunch.h"
 #include "MantlePublishCaches.h"
+#include "MantlePublisher.h"
 #include "MantleRuntime.h"
 #include "MantleQuickJSRuntime.h"
 #include "MantlePlaceLimits.h"
@@ -994,6 +995,9 @@ namespace MantlePreviewExportPrivate
 			Dependencies.AddSkeletalMesh(Loaded.Mesh, FString::Printf(TEXT("weapon %s"), *Loaded.Weapon->Name));
 		}
 		FMantlePlaceAssetConverter Converter;
+		// The export blocks the editor, so nothing else collects garbage while it converts, and each material bake leaves render targets
+		// only a collection frees: London's 534 materials took the free memory from 30 GB to 8 GB. As the blocking publish does.
+		Converter.CollectGarbageEverySteps = FMantlePublisher::CollectGarbageEverySteps;
 		FMantlePlaceAssetSet Set;
 		Converter.Convert(Dependencies, Set);
 

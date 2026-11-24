@@ -920,6 +920,12 @@ struct MANTLEEDITOR_API FMantlePlaceConversionStats
 
 	/** Stage N: time spent baking meshes' Nanite data (FMantleMeshNaniteBake), which a mesh from the cache does not repeat. */
 	double NaniteSeconds = 0.0;
+
+	/** Materials ConvertMaterial was asked for that the set did not have yet, from the cache or baked. Every 50th logs MANTLE_BAKE_MEMORY. */
+	int32 MaterialsSeen = 0;
+
+	/** Garbage collections Convert ran between its steps (FMantlePlaceAssetConverter::CollectGarbageEverySteps). */
+	int32 GarbageCollections = 0;
 };
 
 /**
@@ -1205,6 +1211,18 @@ public:
 	 * session does it when its last step is done). Off by default: ConvertMesh on its own returns with the mesh complete.
 	 */
 	bool bDeferLumenBakes = false;
+
+	/**
+	 * Collect garbage between Convert's steps: after every this many steps (0 never, the default), and sooner once the computer's free
+	 * memory has fallen by CollectGarbageFreeRamDropBytes since the last collection. Each material bake leaves memory only a collection
+	 * frees: GLTFExporter draws every texture it writes out into a render target of its own, never reused (FGLTFDelayedTexture2DTask::Process,
+	 * 64 MB for a 4096 texture), and the material baking module keeps each material's compiled proxies until the next collection
+	 * (FMaterialBakingModule::OnPreGarbageCollect). A caller that blocks the editor never lets it collect: the preview export of London's
+	 * 534 materials took the free memory from 30 GB to 8 GB in 334 of them. While it collects, Convert holds what it gathered
+	 * (FMantleDependencyPins), as the publish session does between the same steps. Frees memory only: what is baked does not change.
+	 */
+	int32 CollectGarbageEverySteps = 0;
+	int64 CollectGarbageFreeRamDropBytes = 2LL * 1024 * 1024 * 1024;
 
 	const FMantlePlaceConversionStats& GetStats() const { return Stats; }
 	const FString& GetCacheDirectory() const { return CacheDirectory; }

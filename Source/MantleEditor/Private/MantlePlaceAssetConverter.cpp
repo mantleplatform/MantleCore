@@ -8,6 +8,7 @@
 #include "MantleMeshNaniteBake.h"
 #include "MantleMeshReduce.h"
 #include "MantlePlaceLimits.h"
+#include "MantlePlacePublishSession.h"
 #include "MantlePng.h"
 #include "MantleProvenance.h"
 #include "MantleRuntime.h"
@@ -71,6 +72,8 @@
 #include "RHIGlobals.h"
 #include "RenderUtils.h"
 #include "Sound/SoundWave.h"
+#include "UObject/GarbageCollection.h"
+#include "UObject/UObjectGlobals.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -1993,6 +1996,15 @@ void FMantlePlaceAssetSet::ReleaseBytes()
 
 namespace MantlePlaceAssetConverterPrivate
 {
+	/** The computer's free memory and this editor's, for MANTLE_BAKE_MEMORY lines. */
+	FString DescribeMemory()
+	{
+		const FPlatformMemoryStats Memory = FPlatformMemory::GetStats();
+		constexpr double GiB = 1024.0 * 1024.0 * 1024.0;
+		return FString::Printf(TEXT("free RAM %.1f GB, this editor %.1f GB in RAM (%.1f GB committed)"), static_cast<double>(Memory.AvailablePhysical) / GiB,
+			static_cast<double>(Memory.UsedPhysical) / GiB, static_cast<double>(Memory.UsedVirtual) / GiB);
+	}
+
 	/**
 	 * The card a material is baked on when the bake surface is not GLTFExporter's own: one quad, 1 m (or Surface.WorldTileCm) a side, facing up, its UVs 0 to
 	 * Surface.UvRange and every corner Surface.VertexColor, drawn with Material in its only slot. Transient; null when it cannot be built.
@@ -2441,11 +2453,43 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 	using namespace MantlePlaceAssetConverterPrivate;
 	const int32 Total = NumDependencySteps(Dependencies);
 	int32 Done = 0;
+	// CollectGarbageEverySteps: between two steps nothing of the step just done is on the stack, and the pins hold what later steps still
+	// read, since the gathered dependencies are only weak (FMantleDependencyPins). Declared before the Lumen join below, so let go after it.
+	FMantleDependencyPins Pins;
+	if (CollectGarbageEverySteps > 0)
+	{
+		Pins.Pin(Dependencies);
+	}
 	// #149: the meshes' Lumen bakes run side by side with the rest of the conversion, and are joined before this returns (also when canceled).
 	const TGuardValue<bool> DeferLumen(bDeferLumenBakes, true);
 	ON_SCOPE_EXIT { Out.FinishLumen(); };
-	auto Continue = [this, &Done, Total, &Out](const FString& Name)
+	uint64 FreeAtLastCollection = FPlatformMemory::GetStats().AvailablePhysical;
+	auto CollectIfDue = [this, &Done, Total, &FreeAtLastCollection](const bool bLast)
 	{
+		if (CollectGarbageEverySteps <= 0 || Done == 0)
+		{
+			return;
+		}
+		const uint64 Free = FPlatformMemory::GetStats().AvailablePhysical;
+		const bool bDueByCount = Done % CollectGarbageEverySteps == 0;
+		const bool bDueByDrop = CollectGarbageFreeRamDropBytes > 0 && FreeAtLastCollection > Free
+			&& static_cast<int64>(FreeAtLastCollection - Free) >= CollectGarbageFreeRamDropBytes;
+		if (!bLast && !bDueByCount && !bDueByDrop)
+		{
+			return;
+		}
+		const double Started = FPlatformTime::Seconds();
+		// GARBAGE_COLLECTION_KEEPFLAGS, never RF_NoFlags: in the editor that frees standalone assets, such as a creator's unsaved edits.
+		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+		++Stats.GarbageCollections;
+		FreeAtLastCollection = FPlatformMemory::GetStats().AvailablePhysical;
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE_MEMORY collected garbage after step %d of %d (%s): free RAM %.1f GB before, now %s, %.2f s"), Done, Total,
+			bLast ? TEXT("the last") : bDueByCount ? TEXT("every so many steps") : TEXT("free RAM fell"), static_cast<double>(Free) / (1024.0 * 1024.0 * 1024.0),
+			*MantlePlaceAssetConverterPrivate::DescribeMemory(), FPlatformTime::Seconds() - Started);
+	};
+	auto Continue = [this, &Done, Total, &Out, &CollectIfDue](const FString& Name)
+	{
+		CollectIfDue(/*bLast*/ false);
 		if (OnProgress && !OnProgress(Done, Total, Name))
 		{
 			Out.Issues.Add(ErrorIssue(TEXT("Preparing this place's meshes and materials was canceled."), TEXT("Publish again to carry on; what was already converted is kept.")));
@@ -2553,6 +2597,8 @@ bool FMantlePlaceAssetConverter::Convert(const FMantlePlaceDependencies& Depende
 		OnProgress(Done, Total, FString());
 	}
 	Out.FinishLumen();
+	// What the last steps left behind is freed before the caller goes on (the preview export's cook holds its own share of memory).
+	CollectIfDue(/*bLast*/ true);
 	int32 LumenFiles = 0;
 	int64 LumenBytes = 0;
 	for (const FMantleConvertedMesh& Mesh : Out.Meshes)
@@ -4661,6 +4707,11 @@ bool FMantlePlaceAssetConverter::ConvertMaterial(UMaterialInterface* Material, c
 	if (Out.FindMaterial(Key))
 	{
 		return true;
+	}
+	if (++Stats.MaterialsSeen % 50 == 0)
+	{
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_BAKE_MEMORY material %d: %s, %d garbage collection(s) by Convert so far"), Stats.MaterialsSeen, *DescribeMemory(),
+			Stats.GarbageCollections);
 	}
 
 	const FMantleMaterialAnalysis Analysis = FMantlePlaceAssets::AnalyzeMaterial(Material);
