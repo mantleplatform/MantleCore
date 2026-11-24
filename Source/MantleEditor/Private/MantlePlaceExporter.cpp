@@ -5272,9 +5272,9 @@ void FMantlePlaceExporter::CheckInstanceSource(const UInstancedStaticMeshCompone
 		if (WrittenSlots > FMantlePlaceLimits::MaxMaterialSlots)
 		{
 			OutParts.Add(FMantleUnpublishedPart{
-				FString::Printf(TEXT("overrides material slot %d on its instances of %s; Mantle publishes overrides on slots 0 to 15 only."),
-					WrittenSlots - 1, *Mesh->GetName()),
-				TEXT("Clear the material overrides on slot 16 and above.") });
+				FString::Printf(TEXT("overrides material slot %d on its instances of %s; Mantle publishes overrides on slots 0 to %d only."),
+					WrittenSlots - 1, *Mesh->GetName(), FMantlePlaceLimits::MaxMaterialSlots - 1),
+				FString::Printf(TEXT("Clear the material overrides on slot %d and above."), FMantlePlaceLimits::MaxMaterialSlots) });
 		}
 	}
 

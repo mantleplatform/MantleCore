@@ -1159,9 +1159,10 @@ namespace
 				EMantleIssueSeverity::Error,
 				Label,
 				Subject + FString::Printf(
-					TEXT("overrides material slot %d; Mantle publishes overrides on slots 0 to 15 only."),
-					WrittenSlots - 1),
-				TEXT("Clear the material overrides on slot 16 and above, or use a mesh with 16 material slots or fewer.") });
+					TEXT("overrides material slot %d; Mantle publishes overrides on slots 0 to %d only."),
+					WrittenSlots - 1, FMantlePlaceLimits::MaxMaterialSlots - 1),
+				FString::Printf(TEXT("Clear the material overrides on slot %d and above, or use a mesh with %d material slots or fewer."),
+					FMantlePlaceLimits::MaxMaterialSlots, FMantlePlaceLimits::MaxMaterialSlots) });
 		}
 	}
 
