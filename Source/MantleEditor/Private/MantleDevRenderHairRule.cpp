@@ -55,11 +55,13 @@ namespace MantleDevRenderHairRulePrivate
 		if (!Description) return false;
 		const FStaticMeshConstAttributes Attributes(*Description);
 		const TVertexAttributesConstRef<FVector3f> Positions = Attributes.GetVertexPositions();
+		// The source geometry is before the asset's build scale; the built mesh (bounds, placement) is after it.
+		const FVector3f BuildScale = Mesh->GetNumSourceModels() > 0 ? FVector3f(Mesh->GetSourceModel(0).BuildSettings.BuildScale3D) : FVector3f::OneVector;
 		TMap<FVertexID, uint32> Remap;
 		for (const FVertexID Vertex : Description->Vertices().GetElementIDs())
 		{
 			Remap.Add(Vertex, static_cast<uint32>(OutPositions.Num()));
-			OutPositions.Add(Positions[Vertex]);
+			OutPositions.Add(Positions[Vertex] * BuildScale);
 		}
 		for (const FTriangleID Triangle : Description->Triangles().GetElementIDs())
 		{

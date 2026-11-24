@@ -644,6 +644,12 @@ bool FMantleCosmeticPackage::MakeItemPatchJson(const TMap<FString, FString>& Ids
 			Item->SetObjectField(Field, MakeShared<FJsonObject>());
 		}
 	};
+	// #136: a pair id the new version leaves out (a paired earring updated as a single one) is cleared: the backend's
+	// ItemPatch clears pairId on "" (backend avatar/items.go).
+	if (const FMantleAvatarContract* SettingsContract = FMantleAvatarContract::Get(); SettingsContract && SettingsContract->SettingAllowed(FMantleItemSettings::PairIdField(), Slot))
+	{
+		ClearString(FMantleItemSettings::PairIdField());
+	}
 	switch (Class)
 	{
 	case EMantleCosmeticClass::Avatar:

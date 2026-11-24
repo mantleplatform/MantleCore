@@ -7,6 +7,7 @@
 
 #include "Dom/JsonObject.h"
 #include "Engine/StaticMesh.h"
+#include "Math/ScaleMatrix.h"
 #include "Misc/AutomationTest.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -273,6 +274,25 @@ bool FMantleItemSettingsPairHelpersTest::RunTest(const FString& Parameters)
 	FMantleItemSettings::MirrorAttach(Location, Rotation, Scale, BackLocation, BackRotation, BackScale);
 	TestTrue(TEXT("the mirror of the mirror is the original location"), BackLocation.Equals(StartLocation, 0.01f));
 	TestTrue(TEXT("and the original rotation"), BackRotation.Equals(StartRotation, 0.01f));
+
+	// Worn: with the right ear's socket the left one mirrored across the body (the socket step's convention: acc_ear_r =
+	// X flip * acc_ear_l * X flip, so its frame is a proper rotation), the right earring (the mirrored mesh on the mirrored
+	// offset) is the mirror image of the left one wherever the socket points, not only for an unturned socket.
+	const FMatrix Flip = FScaleMatrix(FVector(-1.0, 1.0, 1.0));
+	const FMatrix SocketLeft = FTransform(FRotator(15.0, -40.0, 70.0), FVector(8.0, 3.0, 160.0)).ToMatrixWithScale();
+	const FMatrix SocketRight = Flip * SocketLeft * Flip;
+	const FMatrix AttachLeft = FTransform(FRotator(StartRotation.X, StartRotation.Y, StartRotation.Z), FVector(StartLocation)).ToMatrixWithScale();
+	FMantleItemSettings::MirrorAttach(StartLocation, StartRotation, FVector3f::OneVector, Location, Rotation, Scale);
+	const FMatrix AttachRight = FTransform(FRotator(Rotation.X, Rotation.Y, Rotation.Z), FVector(Location), FVector(Scale)).ToMatrixWithScale();
+	for (const FVector& Point : { FVector(1.0, 0.0, 0.0), FVector(0.0, 2.0, -1.0), FVector(0.5, -0.25, 3.0) })
+	{
+		const FVector WornLeft = AttachLeft.TransformPosition(Point);
+		const FVector Left = SocketLeft.TransformPosition(WornLeft);
+		const FVector MirroredPoint = Point * FVector(-1.0, 1.0, 1.0);
+		const FVector Right = SocketRight.TransformPosition(AttachRight.TransformPosition(MirroredPoint));
+		TestTrue(FString::Printf(TEXT("the right earring's %s is the left one's mirrored across the body"), *Point.ToString()),
+			Right.Equals(Left * FVector(-1.0, 1.0, 1.0), 0.01));
+	}
 	return true;
 }
 

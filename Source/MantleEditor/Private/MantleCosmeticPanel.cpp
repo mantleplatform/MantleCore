@@ -2306,6 +2306,8 @@ bool SMantleCosmeticPanel::BuildPackage()
 		if (FMantleItemSettings::MakeRightDraft(Draft, RightDraft, PairWhy))
 		{
 			PairPackage = FMantleCosmeticExport::Build(RightDraft, *Contract);
+			// Its source is a transient mirrored copy: the item records the creator's own asset, as the left one does.
+			PairPackage->Provenance = Package->Provenance;
 			// The right earring's problems show with the left's, named, so the upload waits for both.
 			for (const FMantleCosmeticIssue& Issue : PairPackage->Issues)
 			{
