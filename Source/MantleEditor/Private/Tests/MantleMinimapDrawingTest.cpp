@@ -118,6 +118,9 @@ bool FMantleMinimapClassifyTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a guard rail is no railway"), FMantleMinimapCanvas::Classify(TEXT("SM_GuardRail_01")) == EMantleMinimapSurface::None);
 	TestTrue(TEXT("a word inside another is not it"), FMantleMinimapCanvas::Classify(TEXT("SM_Broadcast_Seat")) == EMantleMinimapSurface::None);
 	TestTrue(TEXT("nothing said"), FMantleMinimapCanvas::Classify(TEXT("SM_Chair_02")) == EMantleMinimapSurface::None);
+	TestTrue(TEXT("the last word decides: ground by the water"), FMantleMinimapCanvas::Classify(TEXT("B4_WaterGround")) == EMantleMinimapSurface::Ground);
+	TestTrue(TEXT("and water under the ground's name"), FMantleMinimapCanvas::Classify(TEXT("Ground_Water")) == EMantleMinimapSurface::Water);
+	TestTrue(TEXT("a name after the word does not hide it"), FMantleMinimapCanvas::Classify(TEXT("Road_Main_01")) == EMantleMinimapSurface::Road);
 	return true;
 }
 

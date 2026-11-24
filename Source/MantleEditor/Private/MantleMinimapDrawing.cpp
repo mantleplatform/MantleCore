@@ -408,37 +408,54 @@ FColor FMantleMinimapCanvas::ColorOf(EMantleMinimapSurface Surface)
 EMantleMinimapSurface FMantleMinimapCanvas::Classify(const FString& Name)
 {
 	using namespace MantleMinimapDrawingPrivate;
-	const TArray<FString> W = Words(Name);
-	if (HasWord(W, { TEXT("water"), TEXT("river"), TEXT("ocean"), TEXT("lake"), TEXT("sea"), TEXT("pond"), TEXT("canal") }))
-	{
-		return EMantleMinimapSurface::Water;
-	}
+	const TArray<FString> All = Words(Name);
 	// A guard rail or a hand rail is a fence, not a railway.
-	if (HasWord(W, { TEXT("rail"), TEXT("railway"), TEXT("railroad"), TEXT("tram"), TEXT("train") })
-		&& !HasWord(W, { TEXT("guard"), TEXT("hand"), TEXT("railing") }))
+	const bool bFence = HasWord(All, { TEXT("guard"), TEXT("hand"), TEXT("railing") });
+	auto SurfaceOfWord = [bFence](const FString& Word)
 	{
-		return EMantleMinimapSurface::Rail;
-	}
-	if (HasWord(W, { TEXT("road"), TEXT("roadway"), TEXT("street"), TEXT("asphalt"), TEXT("tarmac"), TEXT("highway"), TEXT("freeway"),
-		TEXT("motorway"), TEXT("crosswalk"), TEXT("avenue"), TEXT("bridge") }))
+		const TArray<FString> One = { Word };
+		if (HasWord(One, { TEXT("water"), TEXT("river"), TEXT("ocean"), TEXT("lake"), TEXT("sea"), TEXT("pond"), TEXT("canal") }))
+		{
+			return EMantleMinimapSurface::Water;
+		}
+		if (!bFence && HasWord(One, { TEXT("rail"), TEXT("railway"), TEXT("railroad"), TEXT("tram"), TEXT("train") }))
+		{
+			return EMantleMinimapSurface::Rail;
+		}
+		if (HasWord(One, { TEXT("road"), TEXT("roadway"), TEXT("street"), TEXT("asphalt"), TEXT("tarmac"), TEXT("highway"), TEXT("freeway"),
+			TEXT("motorway"), TEXT("crosswalk"), TEXT("avenue") }))
+		{
+			return EMantleMinimapSurface::Road;
+		}
+		if (HasWord(One, { TEXT("building"), TEXT("bldg"), TEXT("house"), TEXT("wall"), TEXT("roof"), TEXT("tower"), TEXT("skyscraper"),
+			TEXT("apartment"), TEXT("shop"), TEXT("store"), TEXT("facade"), TEXT("office"), TEXT("warehouse"), TEXT("garage"), TEXT("church"),
+			TEXT("hut"), TEXT("cabin"), TEXT("scaffold"), TEXT("construction") }))
+		{
+			return EMantleMinimapSurface::Building;
+		}
+		if (HasWord(One, { TEXT("green"), TEXT("greenspace"), TEXT("grass"), TEXT("park"), TEXT("lawn"), TEXT("foliage"), TEXT("tree"),
+			TEXT("leaf"), TEXT("leaves"), TEXT("bush"), TEXT("hedge"), TEXT("shrub"), TEXT("plant"), TEXT("moss"), TEXT("garden"), TEXT("forest") }))
+		{
+			return EMantleMinimapSurface::Green;
+		}
+		if (HasWord(One, { TEXT("terrain"), TEXT("ground"), TEXT("landscape"), TEXT("sidewalk"), TEXT("pavement"), TEXT("plaza"), TEXT("surface"),
+			TEXT("floor") }))
+		{
+			return EMantleMinimapSurface::Ground;
+		}
+		return EMantleMinimapSurface::None;
+	};
+	// The last word that says something decides, as in English: "WaterGround" is ground by the water, "RoadMain" a road. A bridge is
+	// what it carries ("RAIL_BRIDGE" rail), so it is a road only when no other word says.
+	bool bBridge = false;
+	for (int32 Index = All.Num() - 1; Index >= 0; --Index)
 	{
-		return EMantleMinimapSurface::Road;
+		const EMantleMinimapSurface Surface = SurfaceOfWord(All[Index]);
+		if (Surface != EMantleMinimapSurface::None)
+		{
+			return Surface;
+		}
+		bBridge |= HasWord({ All[Index] }, { TEXT("bridge") });
 	}
-	if (HasWord(W, { TEXT("building"), TEXT("bldg"), TEXT("house"), TEXT("wall"), TEXT("roof"), TEXT("tower"), TEXT("skyscraper"),
-		TEXT("apartment"), TEXT("shop"), TEXT("store"), TEXT("facade"), TEXT("office"), TEXT("warehouse"), TEXT("garage"), TEXT("church"),
-		TEXT("hut"), TEXT("cabin"), TEXT("scaffold"), TEXT("construction") }))
-	{
-		return EMantleMinimapSurface::Building;
-	}
-	if (HasWord(W, { TEXT("green"), TEXT("greenspace"), TEXT("grass"), TEXT("park"), TEXT("lawn"), TEXT("foliage"), TEXT("tree"),
-		TEXT("leaf"), TEXT("leaves"), TEXT("bush"), TEXT("hedge"), TEXT("shrub"), TEXT("plant"), TEXT("moss"), TEXT("garden"), TEXT("forest") }))
-	{
-		return EMantleMinimapSurface::Green;
-	}
-	if (HasWord(W, { TEXT("terrain"), TEXT("ground"), TEXT("landscape"), TEXT("sidewalk"), TEXT("pavement"), TEXT("plaza"), TEXT("surface"),
-		TEXT("floor") }))
-	{
-		return EMantleMinimapSurface::Ground;
-	}
-	return EMantleMinimapSurface::None;
+	return bBridge ? EMantleMinimapSurface::Road : EMantleMinimapSurface::None;
 }
