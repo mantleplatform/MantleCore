@@ -20,11 +20,47 @@
 // #136: the face slots (ears, eyes, nose) hang from the MetaHuman face skeleton's FACIAL_* bones on the face mesh, at identity.
 // There is no fallback: an avatar whose skeleton (or face) lacks a slot's bone does not have that slot, so the face slots exist
 // only with a MetaHuman face, while wrist and ring are on every body skeleton. On a copy of the plugin's own contract; no assets.
-// The bone names here (FACIAL_L_Ear, hand_l) stand in until the lead's list lands in limits.json.
+// The copy is given the approved bone list (FaceBones, BodyBones, ring thumbs on thumb_02: thumb_01 is the palm on all four rigs)
+// until it reaches the synced limits.json.
 
 // Named, not anonymous: MantleEditor builds as a unity build.
 namespace MantleAccessoryFaceBoneTestPrivate
 {
+	/** The face slots and their MetaHuman face bones. */
+	const TPair<const TCHAR*, const TCHAR*> FaceBones[] = { { TEXT("acc_eyes"), TEXT("FACIAL_C_NoseBridge") }, { TEXT("acc_ear_l"), TEXT("FACIAL_L_Ear") },
+		{ TEXT("acc_ear_r"), TEXT("FACIAL_R_Ear") }, { TEXT("acc_nose"), TEXT("FACIAL_C_Nose") } };
+	/** The wrists and their body bones. */
+	const TPair<const TCHAR*, const TCHAR*> BodyBones[] = { { TEXT("acc_wrist_l"), TEXT("hand_l") }, { TEXT("acc_wrist_r"), TEXT("hand_r") } };
+	/** The four body skeletons an avatar can be. */
+	const TCHAR* const BodySkeletons[] = { TEXT("metahuman"), TEXT("ue5mannequin"), TEXT("ue4mannequin"), TEXT("uefnmannequin") };
+
+	/** The approved bone list on one limits.json slot. */
+	void ApplyBoneList(const TSharedPtr<FJsonObject>& Slot, const FString& Id)
+	{
+		for (const TPair<const TCHAR*, const TCHAR*>& Entry : FaceBones)
+		{
+			if (Id != Entry.Key) continue;
+			Slot->SetStringField(TEXT("mesh"), TEXT("face"));
+			Slot->SetStringField(TEXT("socketBone"), Entry.Value);
+		}
+		for (const TPair<const TCHAR*, const TCHAR*>& Entry : BodyBones)
+		{
+			if (Id == Entry.Key) Slot->SetStringField(TEXT("socketBone"), Entry.Value);
+		}
+		const TSharedPtr<FJsonObject>* Fingers = nullptr;
+		if (Id == TEXT("acc_ring") && Slot->TryGetObjectField(TEXT("fingerSockets"), Fingers))
+		{
+			for (const TCHAR* Side : { TEXT("l"), TEXT("r") })
+			{
+				const TSharedPtr<FJsonObject>* Thumb = nullptr;
+				if ((*Fingers)->TryGetObjectField(FString::Printf(TEXT("thumb_%s"), Side), Thumb))
+				{
+					(*Thumb)->SetStringField(TEXT("socketBone"), FString::Printf(TEXT("thumb_02_%s"), Side));
+				}
+			}
+		}
+	}
+
 	/** The plugin's contract copied to a fresh folder, with Edit applied to each limits.json slot. Empty on failure. */
 	FString CopyContract(const TFunctionRef<void(const TSharedPtr<FJsonObject>& Slot, const FString& Id)>& Edit)
 	{
@@ -65,15 +101,7 @@ bool FMantleAccessoryFaceBoneTest::RunTest(const FString& Parameters)
 	const FName EarBone(TEXT("FACIAL_L_Ear"));
 
 	// limits.json's "mesh": "face" puts a slot's bone on the face; a slot without it is on the body.
-	const FString Directory = CopyContract([](const TSharedPtr<FJsonObject>& Slot, const FString& Id)
-	{
-		if (Id == TEXT("acc_ear_l"))
-		{
-			Slot->SetStringField(TEXT("mesh"), TEXT("face"));
-			Slot->SetStringField(TEXT("socketBone"), TEXT("FACIAL_L_Ear"));
-		}
-		if (Id == TEXT("acc_wrist_l")) Slot->SetStringField(TEXT("socketBone"), TEXT("hand_l"));
-	});
+	const FString Directory = CopyContract([](const TSharedPtr<FJsonObject>& Slot, const FString& Id) { ApplyBoneList(Slot, Id); });
 	if (!TestFalse(TEXT("the contract copies"), Directory.IsEmpty())) return false;
 	ON_SCOPE_EXIT { IFileManager::Get().DeleteDirectory(*Directory, false, true); };
 	FMantleAvatarContract Contract;
@@ -117,6 +145,55 @@ bool FMantleAccessoryFaceBoneTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(FString::Printf(TEXT("the wrist is offered on %s"), Skeleton), FMantleAccessorySettings::SlotOffered(Contract, *Wrist, Skeleton));
 		TestTrue(FString::Printf(TEXT("the hat is offered on %s"), Skeleton), FMantleAccessorySettings::SlotOffered(Contract, *Hat, Skeleton));
+	}
+
+	// The whole approved list: every face slot's bone is on the MetaHuman face (offered on a MetaHuman, hidden on the mannequins);
+	// every wrist and ring-finger bone, the thumbs on thumb_02, is on all four body skeletons.
+	const FMantleContractSkeleton* FaceFixture = Contract.FindSkeleton(TEXT("metahuman_face"));
+	if (!TestNotNull(TEXT("the MetaHuman face skeleton is in the contract"), FaceFixture)) return false;
+	for (const TPair<const TCHAR*, const TCHAR*>& Entry : FaceBones)
+	{
+		const FMantleContractSlot* Slot = Contract.FindSlot(Entry.Key);
+		if (!TestNotNull(FString::Printf(TEXT("%s is there"), Entry.Key), Slot)) continue;
+		TestTrue(FString::Printf(TEXT("%s is on the face, on %s"), Entry.Key, Entry.Value), Slot->IsOnFace() && Slot->SocketBone == Entry.Value);
+		TestTrue(FString::Printf(TEXT("%s is a bone of the MetaHuman face"), Entry.Value), FaceFixture->Find(FName(Entry.Value)) != INDEX_NONE);
+		for (const TCHAR* Skeleton : BodySkeletons)
+		{
+			TestTrue(FString::Printf(TEXT("%s is offered on %s only if it is the MetaHuman"), Entry.Key, Skeleton),
+				FMantleAccessorySettings::SlotOffered(Contract, *Slot, Skeleton) == (FCString::Strcmp(Skeleton, TEXT("metahuman")) == 0));
+		}
+	}
+	TArray<FString> BodyBoneNames;
+	for (const TPair<const TCHAR*, const TCHAR*>& Entry : BodyBones)
+	{
+		const FMantleContractSlot* Slot = Contract.FindSlot(Entry.Key);
+		if (TestNotNull(FString::Printf(TEXT("%s is there"), Entry.Key), Slot))
+		{
+			TestTrue(FString::Printf(TEXT("%s is on the body, on %s"), Entry.Key, Entry.Value), !Slot->IsOnFace() && Slot->SocketBone == Entry.Value);
+		}
+		BodyBoneNames.Add(Entry.Value);
+	}
+	const FMantleContractSlot* Ring = Contract.FindSlot(TEXT("acc_ring"));
+	if (TestNotNull(TEXT("acc_ring is there"), Ring))
+	{
+		TestEqual(TEXT("a ring has ten fingers"), Ring->FingerSockets.Num(), 10);
+		for (const FMantleContractFingerSocket& Finger : Ring->FingerSockets)
+		{
+			if (Finger.Finger.StartsWith(TEXT("thumb")))
+			{
+				TestTrue(FString::Printf(TEXT("the %s ring is on thumb_02, not the palm's thumb_01 (%s)"), *Finger.Finger, *Finger.SocketBone), Finger.SocketBone.StartsWith(TEXT("thumb_02_")));
+			}
+			BodyBoneNames.Add(Finger.SocketBone);
+		}
+	}
+	for (const TCHAR* Skeleton : BodySkeletons)
+	{
+		const FMantleContractSkeleton* Fixture = Contract.FindSkeleton(Skeleton);
+		if (!TestNotNull(FString::Printf(TEXT("%s is in the contract"), Skeleton), Fixture)) continue;
+		for (const FString& Bone : BodyBoneNames)
+		{
+			TestTrue(FString::Printf(TEXT("%s has %s"), Skeleton, *Bone), Fixture->Find(FName(*Bone)) != INDEX_NONE);
+		}
 	}
 
 	// The panel's slot list follows it: the ear is in the MetaHuman list and not in a mannequin's.
