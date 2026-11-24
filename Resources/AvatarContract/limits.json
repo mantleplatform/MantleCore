@@ -493,12 +493,11 @@
   ],
   "accessoryTotalCap": 15,
   "garmentLayers": {
-    "comment": "#65: the order clothes are worn in, as data for the client's fit (each garment is fitted over the body and the garments under it) and for the editor. order lists the wear slots from the body outward: a later slot is worn over an earlier one. Not in order: gloves, which are always under the sleeves of the slots in gloves.alwaysUnder, and the wear slots that are not clothing layers (hair, eyebrows, eyelashes, facial_hair, nails). Two switches reorder it before the fit: tuck (a worn top whose worn entry sets tucked goes under the bottom, unless its item sets tuckable false) and tallBoots (a footwear item that sets tallBoots goes over the bottom). maxLayersPerArea is how many garments may cover one body area: one under and one over. No cloth simulation.",
+    "comment": "#65: the order clothes are worn in, as data for the client's fit (each garment is fitted over the body and the garments under it) and for the editor. order lists the wear slots from the body outward: a later slot is worn over an earlier one. Not in order: gloves, which are always under the sleeves of the slots in gloves.alwaysUnder, and the wear slots that are not clothing layers (hair, eyebrows, eyelashes, facial_hair, nails). Two switches reorder it before the fit: tuck (a worn top whose worn entry sets tucked goes under the bottom, unless its item sets tuckable false) and tallBoots (a footwear item that sets tallBoots goes over the bottom). The order is fixed: no item or worn entry overrides it (Joshua, 2026-11-24). No cloth simulation.",
     "order": ["socks", "legwear", "footwear", "bottom", "top", "outerwear"],
     "gloves": {"slot": "gloves", "alwaysUnder": ["top", "outerwear"]},
     "tuck": {"slot": "top", "goesUnder": "bottom", "wornField": "tucked", "itemField": "tuckable"},
-    "tallBoots": {"slot": "footwear", "goesOver": "bottom", "itemField": "tallBoots"},
-    "maxLayersPerArea": 2
+    "tallBoots": {"slot": "footwear", "goesOver": "bottom", "itemField": "tallBoots"}
   },
   "itemSettings": {
     "comment": "#65, #136, #389: creator-set fields on an avatar item, plain top-level fields beside its other ones. Each is allowed only on the slots it lists and refused with a clear message on any other. default is what an item that does not set it means.",

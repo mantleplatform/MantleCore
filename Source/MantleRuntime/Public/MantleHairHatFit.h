@@ -54,7 +54,8 @@ struct FMantleHairHatFitParams
 {
 	EMantleHairHatRule Rule = EMantleHairHatRule::UnderIt;
 
-	/** Eyebrows, lashes, beards: the poke test with drop only (nothing is pulled in), and HideAll never hides them whole. */
+	/** Beards: the poke test with drop only (nothing is pulled in), and HideAll never hides them whole. Eyebrows and lashes are
+	 *  never fitted under a hat (the caller leaves them out). */
 	bool bFacialHair = false;
 
 	/** The point every ray starts from, in the hair's space (see FMantleHairHatFit::HeadCentreFromSkin). */
