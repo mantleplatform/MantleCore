@@ -472,16 +472,17 @@ bool FMantleVehicleConverterSplitPaintTest::RunTest(const FString& Parameters)
 	// What the creator set on a split part is kept by a later Convert: a slot unticked stays unticked.
 	if (Split.Num() > 0)
 	{
-		const FString Name = Split[0].Mesh.GetAssetName();
+		const auto KeyOf = [](const FMantleVehicleSourcePart& Part) { const FString Asset = Part.Mesh.GetAssetName(); int32 At = INDEX_NONE; return Asset.FindLastChar(TEXT('_'), At) ? Asset.RightChop(At) : Asset; };
+		const FString Name = KeyOf(Split[0]);
 		for (FMantleVehicleSourcePart& Part : Source->Parts)
 		{
-			if (Part.FoundOn == FMantleVehicleBodySplit::FoundOn() && Part.Mesh.GetAssetName() == Name)
+			if (Part.FoundOn == FMantleVehicleBodySplit::FoundOn() && KeyOf(Part) == Name)
 			{
 				Part.PaintSlots = { 0 };
 			}
 		}
 		FMantleVehicleConverter::Convert(Car, *Source);
-		const FMantleVehicleSourcePart* Again = Source->Parts.FindByPredicate([&Name](const FMantleVehicleSourcePart& Part) { return Part.Mesh.GetAssetName() == Name; });
+		const FMantleVehicleSourcePart* Again = Source->Parts.FindByPredicate([&Name, &KeyOf](const FMantleVehicleSourcePart& Part) { return KeyOf(Part) == Name; });
 		TestTrue(TEXT("the slots the creator set on a split part are kept"), Again && Again->PaintSlots.Num() == 1 && Again->PaintSlots[0] == 0);
 	}
 	if (USkeletalMesh* Body = Source->Body.LoadSynchronous(); Body && Body != Car)

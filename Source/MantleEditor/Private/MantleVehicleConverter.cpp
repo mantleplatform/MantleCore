@@ -1599,7 +1599,14 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 		for (int32 SplitIndex = 0; SplitIndex < SplitParts.Num(); ++SplitIndex)
 		{
 			FMantleVehicleSourcePart& Part = SplitParts[SplitIndex];
-			const FMantleVehicleSourcePart* Earlier = EarlierSplitParts.FindByPredicate([&Part](const FMantleVehicleSourcePart& Has) { return Has.Mesh.GetAssetName() == Part.Mesh.GetAssetName(); });
+			// By its number among the split's parts (_Part2): a body that is split again is the same pieces in the same order, and a throwaway one is named afresh each time.
+			const auto PieceKey = [](const FMantleVehicleSourcePart& Each)
+			{
+				const FString AssetName = Each.Mesh.GetAssetName();
+				int32 At = INDEX_NONE;
+				return AssetName.FindLastChar(TEXT('_'), At) ? AssetName.RightChop(At) : AssetName;
+			};
+			const FMantleVehicleSourcePart* Earlier = EarlierSplitParts.FindByPredicate([&Part, &PieceKey](const FMantleVehicleSourcePart& Has) { return PieceKey(Has) == PieceKey(Part); });
 			const UStaticMesh* PartMesh = Part.Mesh.LoadSynchronous();
 			if (!Earlier || !PartMesh || (Earlier->PaintSlots.IsEmpty() && Earlier->LayerSlots.IsEmpty()))
 			{
