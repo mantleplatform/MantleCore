@@ -1,6 +1,6 @@
 // Copyright Joshua Eger. All Rights Reserved.
 //
-// Maintainer command: Mantle.Dev.RenderHairRule <HatStaticMesh> <HairCardsMesh> <Body> <Face> <Directory> <Label> [slot=acc_hat] [size]
+// Maintainer command: Mantle.Dev.RenderHairRule <HatStaticMesh> <HairCardsMesh> <Body> <Face> <Directory> <Label> [slot=acc_hat] [size] [rule=a|b]
 // Shows what a hat's hairRule does to long hair, as a player wearing both sees it. The hair is exported as the upload makes it, on the
 // head it was authored on (FMantleHairSourceDiscovery::FindHead: for MetaHuman's own grooms SKM_Groom_Head_Legacy01; else Face), then
 // moved onto Face, the wearer's, by the client's own step (FMantleHairHeadFit::Fit, MetaHuman UV correspondence); the head drawn is
@@ -13,7 +13,8 @@
 // each from the front, the side and the back, as the catalog thumbnail is drawn (FMantleCosmeticThumbnail, the engine's thumbnail
 // scene; the head gray, the hair brown, the hat blue: one mesh, one section per part, each on its own flat color of the engine's
 // BasicShapeMaterial), 30 frames after the
-// camera is placed, into <Directory>/<Label>_{underIt,hideAll,leaveAlone}_{front,side,back}.png. Nothing is saved or uploaded.
+// camera is placed, into <Directory>/<Label>_{underIt_<rule>,hideAll,leaveAlone}_{front,side,back}.png. rule=a (the default, the game's) or rule=b picks
+// what underIt aims at (FMantleHairHatFitParams::Aim: hair poking through the hat, or whole cards mostly under it), for Joshua's choice 1. Nothing is saved or uploaded.
 // Logs MANTLE_RENDER_HAIRRULE lines: a start marker, the fit's notes, each picture and "done" (or "failed").
 #include "MantleAccessoryPlacement.h"
 #include "MantleAccessorySettings.h"
@@ -124,12 +125,23 @@ namespace MantleDevRenderHairRulePrivate
 		return Mesh;
 	}
 
-	void Run(const TArray<FString>& Args)
+	void Run(const TArray<FString>& AllArgs)
 	{
 		UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE start"));
+		// rule=a (the game's: what pokes through is pulled in, a triangle goes when it is wholly through) or rule=b (whole cards mostly
+		// under the hat hidden; FMantleHairHatFitParams::Aim, EMantleHairHatAim), anywhere after the six required arguments.
+		EMantleHairHatAim Aim = EMantleHairHatAim::PokingThrough;
+		TArray<FString> Args;
+		for (const FString& Arg : AllArgs)
+		{
+			if (Arg.Equals(TEXT("rule=a"), ESearchCase::IgnoreCase)) Aim = EMantleHairHatAim::PokingThrough;
+			else if (Arg.Equals(TEXT("rule=b"), ESearchCase::IgnoreCase)) Aim = EMantleHairHatAim::UnderHatCards;
+			else Args.Add(Arg);
+		}
+		const TCHAR* RuleName = Aim == EMantleHairHatAim::UnderHatCards ? TEXT("b") : TEXT("a");
 		if (Args.Num() < 6)
 		{
-			UE_LOG(LogMantleRenderHairRule, Error, TEXT("MANTLE_RENDER_HAIRRULE failed: usage: Mantle.Dev.RenderHairRule <HatStaticMesh> <HairCardsMesh> <Body> <Face> <Directory> <Label> [slot=acc_hat] [size]"));
+			UE_LOG(LogMantleRenderHairRule, Error, TEXT("MANTLE_RENDER_HAIRRULE failed: usage: Mantle.Dev.RenderHairRule <HatStaticMesh> <HairCardsMesh> <Body> <Face> <Directory> <Label> [slot=acc_hat] [size] [rule=a|b]"));
 			return;
 		}
 		const FMantleAvatarContract* Contract = FMantleAvatarContract::Get();
@@ -272,11 +284,12 @@ namespace MantleDevRenderHairRulePrivate
 		HairLOD.Sections.Add(Section);
 		FMantleHairHatFitParams Params;
 		Params.Rule = EMantleHairHatRule::UnderIt;
+		Params.Aim = Aim;
 		Params.HeadCentre = FMantleHairHatFit::HeadCentreFromSkin(Meshes.HeadPositions, Meshes.HeadTriangles);
 		FMantleHairHatFitResult Fitted;
 		FMantleHairHatFit::Fit(HairLOD, HatPositions, HatIndices, Meshes.HeadPositions, Meshes.HeadTriangles, Params, Fitted);
-		UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE underIt: %d points pulled in, %d of %d triangles cut out (%.1f ms)"),
-			Fitted.PointsPulled, Fitted.TrianglesDropped, Meshes.HairTriangles.Num() / 3, Fitted.Ms);
+		UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE underIt rule %s: %d points pulled in, %d of %d triangles cut out, %d cards hidden whole (%.1f ms)"),
+			RuleName, Fitted.PointsPulled, Fitted.TrianglesDropped, Meshes.HairTriangles.Num() / 3, Fitted.CardsHidden, Fitted.Ms);
 		TSet<int32> Dropped(Fitted.DroppedTriangles);
 		TArray<uint32> TuckedIndices;
 		for (int32 Triangle = 0; Triangle * 3 + 2 < Meshes.HairTriangles.Num(); ++Triangle)
@@ -287,7 +300,8 @@ namespace MantleDevRenderHairRulePrivate
 		struct FRule { const TCHAR* Name; const TArray<FVector3f>* Positions; const TArray<uint32>* Indices; };
 		const TArray<FVector3f> NoPositions;
 		const TArray<uint32> NoIndices;
-		const FRule Rules[] = { { TEXT("underIt"), &Fitted.Positions, &TuckedIndices }, { TEXT("hideAll"), &NoPositions, &NoIndices },
+		const FString UnderItName = FString::Printf(TEXT("underIt_%s"), RuleName);
+		const FRule Rules[] = { { *UnderItName, &Fitted.Positions, &TuckedIndices }, { TEXT("hideAll"), &NoPositions, &NoIndices },
 			{ TEXT("leaveAlone"), &Meshes.AfterPositions, &Meshes.HairTriangles } };
 		struct FView { const TCHAR* Name; float Yaw; };
 		const FView Views[] = { { TEXT("front"), FMantleHairFitPictures::FrontYaw }, { TEXT("side"), FMantleHairFitPictures::SideYaw }, { TEXT("back"), FMantleHairFitPictures::BackYaw } };
@@ -321,7 +335,7 @@ namespace MantleDevRenderHairRulePrivate
 
 	FAutoConsoleCommand GMantleDevRenderHairRuleCommand(
 		TEXT("Mantle.Dev.RenderHairRule"),
-		TEXT("Mantle.Dev.RenderHairRule <HatStaticMesh> <HairCardsMesh> <Body> <Face> <Directory> <Label> [slot=acc_hat] [size] -- draws a hat worn over long hair three ways ")
+		TEXT("Mantle.Dev.RenderHairRule <HatStaticMesh> <HairCardsMesh> <Body> <Face> <Directory> <Label> [slot=acc_hat] [size] [rule=a|b] -- draws a hat worn over long hair three ways ")
 		TEXT("(underIt, hideAll, leaveAlone), each from the front, side and back, 30 frames after the camera is placed. Saves and uploads nothing."),
 		FConsoleCommandWithArgsDelegate::CreateStatic(&Run));
 }
