@@ -200,7 +200,7 @@ bool FMantleVehicleBuilderHubsTest::RunTest(const FString& Parameters)
 		if (TestTrue(*FString::Printf(TEXT("%s has a bone of its own in the body"), Hubs[Corner]), HubBone > 0 && WheelBone > 0))
 		{
 			TestEqual(TEXT("under the root"), Skinned.Body.Bones[HubBone].ParentIndex, 0);
-			TestTrue(*FString::Printf(TEXT("at the wheel's center"), Hubs[Corner]), ComponentLocation(Skinned.Body, HubBone).Equals(ComponentLocation(Skinned.Body, WheelBone), 0.5));
+			TestTrue(*FString::Printf(TEXT("%s is at the wheel's center"), Hubs[Corner]),ComponentLocation(Skinned.Body, HubBone).Equals(ComponentLocation(Skinned.Body, WheelBone), 0.5));
 			TestEqual(TEXT("with the caliper's vertices on it (a box of six faces)"), VerticesOn(Skinned.Body, HubBone), 24);
 			TestEqual(TEXT("and the wheel's own box still on the wheel"), VerticesOn(Skinned.Body, WheelBone), 24);
 		}
