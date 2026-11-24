@@ -1460,7 +1460,7 @@ namespace
 		}
 		const AMantlePlaceSettingsActor* Settings = World ? AMantlePlaceSettingsActor::Find(World) : nullptr;
 		const bool bReadsLighting = FMantleTargetFeatures::Current().Reads(MantleClientFeatures::EnvironmentLighting);
-		const bool bInterior = bReadsLighting && Settings && Settings->Outdoors == EMantlePlaceOutdoors::Interior;
+		const bool bInterior = bReadsLighting && Settings && Settings->IndoorOutdoor == EMantlePlaceIndoorOutdoor::Indoor;
 		const bool bSunBrightnessSet = Settings && Settings->bSetSunBrightness;
 		const EMantlePlaceDirectSun DirectSun = Settings ? Settings->DirectSun : EMantlePlaceDirectSun::Automatic;
 

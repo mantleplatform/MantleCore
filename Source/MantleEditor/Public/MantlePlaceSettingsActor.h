@@ -110,18 +110,16 @@ enum class EMantlePlaceDirectSun : uint8
 };
 
 /**
- * Whether the place has an outdoor environment (the place file's settings.environment.outdoors). Automatic and Outdoors both
- * leave the key out; Interior writes false.
+ * Whether the place is outdoors or indoors (the place file's settings.environment.outdoors). Outdoor leaves the key out;
+ * Indoor writes false. Nothing about the level changes it: it is what the creator chooses, Outdoor unless they say Indoor.
  */
 UENUM()
-enum class EMantlePlaceOutdoors : uint8
+enum class EMantlePlaceIndoorOutdoor : uint8
 {
-	/** The export decides: an interior when the level has no sun, sky light, atmosphere, clouds or fog of its own. */
-	Automatic,
-	/** Mantle's own sky, sun, clouds and fog, whatever the export finds. */
-	Outdoors,
-	/** No outdoor environment: only the level's own lights, no default sun, sky or fog, and no weather. */
-	Interior,
+	/** Mantle's own sky, sun, clouds, fog and weather, with its day and night. */
+	Outdoor,
+	/** Only the level's own lights: no Mantle sun, sky, clouds or fog, and the weather stays clear. */
+	Indoor,
 };
 
 /**
@@ -486,12 +484,15 @@ public:
 	EMantlePlaceDirectSun DirectSun = EMantlePlaceDirectSun::Automatic;
 
 	/**
-	 * Whether the place has the outdoor environment Mantle adds to a level: a sun, sky, clouds, fog and weather. Automatic makes
-	 * a level with none of its own (no sun, sky light, atmosphere, clouds or fog) an interior; Outdoors and Interior decide it yourself.
-	 * Places that make an interior need a Mantle client that reads the sky light setting to load.
+	 * Whether the place is outdoors or indoors. Outdoor (the default) gets Mantle's own sky, sun, clouds, fog, weather and day and night.
+	 * Indoor is lit only by the level's own lights: Mantle adds no sun, sky, clouds or fog, and the weather stays clear. Nothing in
+	 * the level changes this, so a level with no sun or sky of its own is still outdoors unless you choose Indoor.
+	 * Choose Indoor only for a place that should have no Mantle sky, sun or weather at all. Inside areas of an outdoor place look
+	 * right as long as their ceilings and walls block the sun: the camera adjusts its exposure on its own.
+	 * Indoor places need a Mantle client that reads the sky light setting to load.
 	 */
-	UPROPERTY(EditAnywhere, Category = "Mantle|Environment")
-	EMantlePlaceOutdoors Outdoors = EMantlePlaceOutdoors::Automatic;
+	UPROPERTY(EditAnywhere, Category = "Mantle|Environment", meta = (DisplayName = "Indoor or Outdoor"))
+	EMantlePlaceIndoorOutdoor IndoorOutdoor = EMantlePlaceIndoorOutdoor::Outdoor;
 
 	/** A color multiplied over the whole picture. White leaves it unchanged. */
 	UPROPERTY(EditAnywhere, Category = "Mantle|Environment", meta = (HideAlphaChannel))
