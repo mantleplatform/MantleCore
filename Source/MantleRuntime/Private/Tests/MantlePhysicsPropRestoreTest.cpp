@@ -209,8 +209,11 @@ bool FMantlePhysicsPropReplicationModeTest::RunTest(const FString&)
 	// (AActor::PostActorConstruction), and that is where AStaticMeshActor applies the mode.
 	World->InitializeActorsForPlay(FURL());
 	AMantlePhysicsProp* Prop = World->SpawnActor<AMantlePhysicsProp>(FVector(0, 0, 500), FRotator::ZeroRotator);
-	if (TestNotNull(TEXT("a prop"), Prop))
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (TestNotNull(TEXT("a prop"), Prop) && TestNotNull(TEXT("the engine's cube"), Cube))
 	{
+		// A body (its owner is what the engine asks for the mode) only once the prop has a mesh.
+		Prop->GetStaticMeshComponent()->SetStaticMesh(Cube);
 		TestTrue(TEXT("its actor replicates physics by predictive interpolation"),
 			Prop->GetPhysicsReplicationMode() == EPhysicsReplicationMode::PredictiveInterpolation);
 		TestTrue(TEXT("and so does its body"),
