@@ -21,6 +21,7 @@
 #include "MantleBodyCoverage.h"
 #include "MantleCosmeticExport.h"
 #include "MantleCosmeticThumbnail.h"
+#include "MantleDevPictureBudget.h"
 #include "MantleEditorActions.h"
 #include "MantleFitBodies.h"
 #include "MantleLayerFit.h"
@@ -144,6 +145,15 @@ namespace MantleDevRenderLayersPrivate
 		const FString& Directory = Args[0];
 		const FString& Label = Args[1];
 		const FString& BodyId = Args[2];
+		// The launch's picture cap (FMantleDevPictureBudget): past it, no body is made and the runner relaunches the editor.
+		if (!FMantleDevPictureBudget::Allows(TEXT("RenderLayers"), Label))
+		{
+			UE_LOG(LogMantleRenderLayers, Warning, TEXT("MANTLE_RENDER_LAYERS stopped at the picture cap: %s not drawn"), *Label);
+			return;
+		}
+		// Declared before the body and the built meshes, so it runs after they are released: what the command made goes before
+		// the next command.
+		ON_SCOPE_EXIT { FMantleDevPictureBudget::CollectAfterCommand(TEXT("RenderLayers")); };
 		int32 Size = 1024;
 		EMetaHumanBodyType Type;
 		EMantleFitSex Sex = EMantleFitSex::Auto;
@@ -154,12 +164,13 @@ namespace MantleDevRenderLayersPrivate
 		}
 		FMantleFitBody Body;
 		FString Error;
+		// Declared before Make, so a body that fails half made is released too.
+		ON_SCOPE_EXIT { FMantleFitBodies::Release(Body); };
 		if (!FMantleFitBodies::Make(BodyId, Type, Body, Error) || !Body.BodyMesh.IsValid())
 		{
 			UE_LOG(LogMantleRenderLayers, Error, TEXT("MANTLE_RENDER_LAYERS failed: the body %s could not be made (%s)"), *BodyId, *Error);
 			return;
 		}
-		ON_SCOPE_EXIT { FMantleFitBodies::Release(Body); };
 		FMantleSkinnedMesh BodyMesh;
 		TArray<FSkeletalMaterial> BodyMaterials;
 		if (!FMantleSkinnedMesh::ExtractFromSkeletalMesh(Body.BodyMesh.Get(), BodyMesh, &Error, &BodyMaterials) || BodyMesh.LODs.IsEmpty())
@@ -328,7 +339,13 @@ namespace MantleDevRenderLayersPrivate
 			Shot.View.Yaw += View.Value;
 			TArray<FColor> Pixels;
 			const FString File = FPaths::Combine(Directory, FString::Printf(TEXT("%s_%s.png"), *Label, View.Key));
+			if (!FMantleDevPictureBudget::Begin(TEXT("RenderLayers"), File))
+			{
+				UE_LOG(LogMantleRenderLayers, Warning, TEXT("MANTLE_RENDER_LAYERS stopped at the picture cap: %s and the rest of %s not drawn"), *File, *Label);
+				return;
+			}
 			const bool bWritten = FMantleCosmeticThumbnail::Capture(Shot, Size, Pixels, Error) && FFileHelper::SaveArrayToFile(FMantlePng::EncodeRGBA8(Size, Size, Pixels), *File);
+			FMantleDevPictureBudget::End(TEXT("RenderLayers"), File);
 			Failed += bWritten ? 0 : 1;
 			UE_LOG(LogMantleRenderLayers, Display, TEXT("MANTLE_RENDER_LAYERS %s %s %s"), View.Key, bWritten ? *File : TEXT("FAILED"), bWritten ? TEXT("") : *Error);
 		}

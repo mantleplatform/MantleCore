@@ -21,6 +21,7 @@
 #include "MantleAvatarContract.h"
 #include "MantleCosmeticExport.h"
 #include "MantleCosmeticThumbnail.h"
+#include "MantleDevPictureBudget.h"
 #include "MantleEditorActions.h"
 #include "MantleHairFitPictures.h"
 #include "MantleHairHatFit.h"
@@ -39,6 +40,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
+#include "Misc/ScopeExit.h"
 #include "ReferenceSkeleton.h"
 #include "StaticMeshAttributes.h"
 #include "StaticMeshDescription.h"
@@ -165,6 +167,15 @@ namespace MantleDevRenderHairRulePrivate
 			UE_LOG(LogMantleRenderHairRule, Error, TEXT("MANTLE_RENDER_HAIRRULE failed: %s is not an accessory slot"), *HatSlot);
 			return;
 		}
+		// The launch's picture cap (FMantleDevPictureBudget): past it, nothing is drawn and the runner relaunches the editor.
+		if (!FMantleDevPictureBudget::Allows(TEXT("RenderHairRule"), Label))
+		{
+			UE_LOG(LogMantleRenderHairRule, Warning, TEXT("MANTLE_RENDER_HAIRRULE stopped at the picture cap: %s not drawn"), *Label);
+			return;
+		}
+		// Declared before the export and the built scenes, so it runs after they are released: what the command made goes before
+		// the next command.
+		ON_SCOPE_EXIT { FMantleDevPictureBudget::CollectAfterCommand(TEXT("RenderHairRule")); };
 
 		// The hair as the upload makes it, on the head it was authored on: found as the upload finds it (FindHead; MetaHuman's own
 		// grooms name SKM_Groom_Head_Legacy01 in their binding), else Face (bought cards, fitted to it by the export).
@@ -319,8 +330,14 @@ namespace MantleDevRenderHairRulePrivate
 				TArray<FColor> Pixels;
 				FString Error;
 				const FString File = FPaths::Combine(Directory, FString::Printf(TEXT("%s_%s_%s.png"), *Label, Rule.Name, View.Name));
+				if (!FMantleDevPictureBudget::Begin(TEXT("RenderHairRule"), File))
+				{
+					UE_LOG(LogMantleRenderHairRule, Warning, TEXT("MANTLE_RENDER_HAIRRULE stopped at the picture cap: %s and the rest of %s not drawn"), *File, *Label);
+					return;
+				}
 				const bool bWritten = FMantleCosmeticThumbnail::Capture(Shot, Size, Pixels, Error)
 					&& FFileHelper::SaveArrayToFile(FMantlePng::EncodeRGBA8(Size, Size, Pixels), *File);
+				FMantleDevPictureBudget::End(TEXT("RenderHairRule"), File);
 				Failed += bWritten ? 0 : 1;
 				UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE %s %s %s %s"), Rule.Name, View.Name, bWritten ? *File : TEXT("FAILED"), bWritten ? TEXT("") : *Error);
 			}

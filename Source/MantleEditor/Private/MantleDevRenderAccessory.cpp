@@ -8,12 +8,15 @@
 // "body" it also draws the accessory worn: whole-body views {worn_front,worn_back,worn_side} and, for the small slots (acc_eyes,
 // acc_ear_l/r, acc_nose, acc_wrist_l/r, acc_ring), close-ups framed on the socket {worn_close_front,worn_close_side,worn_close_side_other}
 // (the two sides, so the left or right item shows). Every worn picture waits 30 frames after its camera is placed
-// (FMantleThumbnailSubject::SettleFrames). Nothing is saved or uploaded. Logs MANTLE_RENDER_ACCESSORY lines.
+// (FMantleThumbnailSubject::SettleFrames). Nothing is saved or uploaded. Logs MANTLE_RENDER_ACCESSORY lines. Each picture counts
+// toward the launch's picture cap and logs its memory (FMantleDevPictureBudget); the body is released and a collection runs when
+// the command ends.
 #include "MantleAccessorySettings.h"
 #include "MantleAccessoryPlacement.h"
 #include "MantleAvatarContract.h"
 #include "MantleEditorActions.h"
 #include "MantleCosmeticThumbnail.h"
+#include "MantleDevPictureBudget.h"
 #include "MantleFitBodies.h"
 #include "MantlePng.h"
 
@@ -24,6 +27,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
+#include "Misc/ScopeExit.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogMantleRenderAccessory, Log, All);
 
@@ -39,19 +43,26 @@ namespace MantleDevRenderAccessoryPrivate
 
 	/**
 	 * The accessory on one of Epic's standard bodies (made in memory, as the garment fits are) in the reference pose, on the slot's
-	 * bone at the body's own socket when it has one, in the catalog thumbnail's scene. Placed is the upload's recentring.
+	 * bone at the body's own socket when it has one, in the catalog thumbnail's scene. Placed is the upload's recentring. False
+	 * when the launch's picture cap stopped it (FMantleDevPictureBudget), so the command does not log "done".
 	 */
-	void RunWorn(UStaticMesh* Shown, const FTransform& Placed, const FTransform& Attach, const FMantleAvatarContract& Contract, const FString& Slot, const FString& BodyId, const FString& Directory,
+	bool RunWorn(UStaticMesh* Shown, const FTransform& Placed, const FTransform& Attach, const FMantleAvatarContract& Contract, const FString& Slot, const FString& BodyId, const FString& Directory,
 		const FString& Label, const int32 Size)
 	{
+		if (!FMantleDevPictureBudget::Allows(TEXT("RenderAccessory"), FString::Printf(TEXT("%s worn"), *Label)))
+		{
+			return false;
+		}
 		EMetaHumanBodyType Type;
 		FMantleFitBody Body;
 		FString Error;
+		// Released however this returns: the body is a whole MetaHuman character, registered for editing until Release.
+		ON_SCOPE_EXIT { FMantleFitBodies::Release(Body); };
 		const FMantleContractSlot* Point = Contract.Slots.FindByPredicate([&Slot](const FMantleContractSlot& Entry) { return Entry.Id == Slot && Entry.Group == TEXT("accessory"); });
 		if (!Point || !FMantleFitBodies::ParseBodyType(BodyId, Type) || !FMantleFitBodies::Make(BodyId, Type, Body, Error))
 		{
 			UE_LOG(LogMantleRenderAccessory, Error, TEXT("MANTLE_RENDER_ACCESSORY worn FAILED: %s"), Point ? (Error.IsEmpty() ? TEXT("unknown body type") : *Error) : TEXT("not an accessory slot"));
-			return;
+			return true;
 		}
 		// The slot's socket, at identity on its bone as the panel preview attaches it: a face slot's FACIAL_* bone on the face (the
 		// body's head when the face lacks it), every other slot's on the body.
@@ -61,7 +72,7 @@ namespace MantleDevRenderAccessoryPrivate
 		{
 			UE_LOG(LogMantleRenderAccessory, Error, TEXT("MANTLE_RENDER_ACCESSORY worn FAILED: %s's %s has no %s bone, so %s is not offered on it"), *BodyId,
 				Resolved.bOnFace ? TEXT("face") : TEXT("body"), *Resolved.Bone.ToString(), *Slot);
-			return;
+			return true;
 		}
 		UE_LOG(LogMantleRenderAccessory, Display, TEXT("MANTLE_RENDER_ACCESSORY %s hangs from %s on the %s"), *Slot, *Resolved.Bone.ToString(),
 			Resolved.bOnFace ? TEXT("face") : TEXT("body"));
@@ -99,10 +110,17 @@ namespace MantleDevRenderAccessoryPrivate
 			Shot.View.Yaw += View.Yaw;
 			TArray<FColor> Pixels;
 			const FString File = FPaths::Combine(Directory, FString::Printf(TEXT("%s_worn_%s.png"), *Label, View.Name));
+			if (!FMantleDevPictureBudget::Begin(TEXT("RenderAccessory"), File))
+			{
+				UE_LOG(LogMantleRenderAccessory, Warning, TEXT("MANTLE_RENDER_ACCESSORY stopped at the picture cap: %s and the rest of %s's worn pictures not drawn"), *File, *Label);
+				return false;
+			}
 			const bool bWritten = FMantleCosmeticThumbnail::Capture(Shot, Size, Pixels, Error)
 				&& FFileHelper::SaveArrayToFile(FMantlePng::EncodeRGBA8(Size, Size, Pixels), *File);
+			FMantleDevPictureBudget::End(TEXT("RenderAccessory"), File);
 			UE_LOG(LogMantleRenderAccessory, Display, TEXT("MANTLE_RENDER_ACCESSORY worn %s %s %s"), View.Name, bWritten ? *File : TEXT("FAILED"), bWritten ? TEXT("") : *Error);
 		}
+		return true;
 	}
 
 	void Run(const TArray<FString>& Args)
@@ -125,6 +143,14 @@ namespace MantleDevRenderAccessoryPrivate
 			UE_LOG(LogMantleRenderAccessory, Error, TEXT("MANTLE_RENDER_ACCESSORY failed: %s is not a static mesh, there is no contract, or nothing can render (%s)"), *Path, *WhyNot);
 			return;
 		}
+		// The launch's picture cap (FMantleDevPictureBudget): past it, nothing is drawn and the runner relaunches the editor.
+		if (!FMantleDevPictureBudget::Allows(TEXT("RenderAccessory"), Args[2]))
+		{
+			UE_LOG(LogMantleRenderAccessory, Warning, TEXT("MANTLE_RENDER_ACCESSORY stopped at the picture cap: %s not drawn"), *Args[2]);
+			return;
+		}
+		// When the command ends (its body already released): what it made goes before the next command.
+		ON_SCOPE_EXIT { FMantleDevPictureBudget::CollectAfterCommand(TEXT("RenderAccessory")); };
 		const FString Slot = Args.Num() > 3 ? Args[3] : FString(TEXT("acc_neck"));
 		const int32 Size = Args.Num() > 4 ? FMath::Clamp(FCString::Atoi(*Args[4]), 128, 2048) : 1024;
 		const bool bUpload = Args.Num() > 5 && Args[5] == TEXT("upload");
@@ -171,13 +197,20 @@ namespace MantleDevRenderAccessoryPrivate
 			TArray<FColor> Pixels;
 			FString Error;
 			const FString File = FPaths::Combine(Args[1], FString::Printf(TEXT("%s_%s.png"), *Args[2], View));
+			if (!FMantleDevPictureBudget::Begin(TEXT("RenderAccessory"), File))
+			{
+				UE_LOG(LogMantleRenderAccessory, Warning, TEXT("MANTLE_RENDER_ACCESSORY stopped at the picture cap: %s and the rest of %s not drawn"), *File, *Args[2]);
+				return;
+			}
 			const bool bWritten = FMantleCosmeticThumbnail::Capture(Shot, Size, Pixels, Error)
 				&& FFileHelper::SaveArrayToFile(FMantlePng::EncodeRGBA8(Size, Size, Pixels), *File);
+			FMantleDevPictureBudget::End(TEXT("RenderAccessory"), File);
 			UE_LOG(LogMantleRenderAccessory, Display, TEXT("MANTLE_RENDER_ACCESSORY %s %s %s"), View, bWritten ? *File : TEXT("FAILED"), bWritten ? TEXT("") : *Error);
 		}
-		if (bBody)
+		if (bBody && !RunWorn(Shown, Placed, Attach, *Contract, Slot, BodyArg.StartsWith(TEXT("body:")) ? BodyArg.Mid(5) : FString(TEXT("f_med_nrw")), Args[1], Args[2], Size))
 		{
-			RunWorn(Shown, Placed, Attach, *Contract, Slot, BodyArg.StartsWith(TEXT("body:")) ? BodyArg.Mid(5) : FString(TEXT("f_med_nrw")), Args[1], Args[2], Size);
+			UE_LOG(LogMantleRenderAccessory, Warning, TEXT("MANTLE_RENDER_ACCESSORY stopped at the picture cap, not done: %s"), *Args[2]);
+			return;
 		}
 		UE_LOG(LogMantleRenderAccessory, Display, TEXT("MANTLE_RENDER_ACCESSORY done"));
 	}
