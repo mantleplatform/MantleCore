@@ -485,9 +485,9 @@ struct FMantleEnvironmentSettings
 	 */
 	bool bNoDirectSun = false;
 	/**
-	 * outdoors: false when the place has no outdoor environment of its own (no sun, sky light, atmosphere, clouds or fog:
-	 * an interior lit by its own lights). The client then spawns no default sun, sky light, atmosphere, clouds, fog or night
-	 * sky, and holds the natural weather at Clear. Only false is written; true is Mantle's own sky.
+	 * outdoors: false when the creator chose Indoor (an interior lit by its own lights). The client then spawns no default sun,
+	 * sky light, atmosphere, clouds, fog or night sky, and holds the natural weather at Clear. Missing means outdoor, Mantle's
+	 * own sky; only false is written.
 	 */
 	bool bNoOutdoors = false;
 
