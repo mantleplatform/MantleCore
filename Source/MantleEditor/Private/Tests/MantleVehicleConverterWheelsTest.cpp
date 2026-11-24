@@ -822,4 +822,141 @@ bool FMantleVehicleConverterMergedSlotsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleConverterRenumberedPartsTest,
+	"Mantle.Vehicle.Convert.SplitPartPaintFollowsTheMaterial",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleConverterRenumberedPartsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleConverterWheelsTestPrivate;
+
+	// SUV04's front-left door got a brake's paint: the split numbers its parts afresh each Convert, and what an earlier Convert set on "Part8" (a brake, on the wheels layer) was
+	// put on the new Part8 (a door), so its glass wore the wheels' white. What was set follows the material each slot draws, whatever number its part has now.
+	const auto NewPart = [](const TCHAR* MeshName, const TArray<UMaterialInterface*>& Materials)
+	{
+		UStaticMesh* Mesh = NewObject<UStaticMesh>(GetTransientPackage(), FName(MeshName), RF_Transient);
+		for (int32 Slot = 0; Slot < Materials.Num(); ++Slot)
+		{
+			Mesh->GetStaticMaterials().Add(FStaticMaterial(Materials[Slot], FName(*FString::Printf(TEXT("slot%d"), Slot))));
+		}
+		FMantleVehicleSourcePart Part;
+		Part.Mesh = Mesh;
+		Part.Bone = FName(TEXT("B_Car_Main"));
+		Part.FoundOn = FMantleVehicleBodySplit::FoundOn();
+		return Part;
+	};
+	UMaterial* Brake = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+	UMaterial* Glass = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+	UMaterial* DoorPaint = NewPaintTintMaterial();
+	UMaterial* Interior = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+
+	// The last Convert: Part8 was a brake on the wheels layer; Part1 held the door paint (painted) and an interior (on the interior layer); Part3 was glass, with nothing set.
+	TArray<FMantleVehicleSourcePart> Earlier;
+	FMantleVehicleSourcePart OldBrake = NewPart(TEXT("SM_Old_Part8"), { Brake });
+	FMantleVehicleSourcePartLayerSlots& OnWheels = OldBrake.LayerSlots.AddDefaulted_GetRef();
+	OnWheels.Layer = EMantleVehicleSourcePaintLayer::Wheels;
+	OnWheels.Slots = { 0 };
+	Earlier.Add(OldBrake);
+	FMantleVehicleSourcePart OldDoor = NewPart(TEXT("SM_Old_Part1"), { DoorPaint, Interior });
+	OldDoor.PaintSlots = { 0 };
+	FMantleVehicleSourcePartLayerSlots& OnInterior = OldDoor.LayerSlots.AddDefaulted_GetRef();
+	OnInterior.Layer = EMantleVehicleSourcePaintLayer::Interior;
+	OnInterior.Slots = { 1 };
+	Earlier.Add(OldDoor);
+	Earlier.Add(NewPart(TEXT("SM_Old_Part3"), { Glass }));
+	const TArray<FMantleVehicleConverter::FEarlierPartSlot> Before = FMantleVehicleConverter::CaptureSplitPartPaint(Earlier);
+	TestEqual(TEXT("the slots of the parts that had something set are read (1 + 2), not the glass part's"), Before.Num(), 3);
+
+	// This Convert: Part8 is a door (glass, paint), Part1 an interior and a brake.
+	TArray<FMantleVehicleSourcePart> Now;
+	Now.Add(NewPart(TEXT("SM_New_Part8"), { Glass, DoorPaint }));
+	Now.Add(NewPart(TEXT("SM_New_Part1"), { Interior, Brake }));
+	TMap<int32, TSet<int32>> Known;
+	FMantleVehicleConverter::RestoreSplitPartPaint(Before, Now, Known);
+
+	TestTrue(TEXT("the door's paint slot is painted, though a brake had its number"), Now[0].PaintSlots == TArray<int32>({ 1 }));
+	TestTrue(TEXT("the door's glass wears no layer"), Now[0].LayerSlots.IsEmpty());
+	TestTrue(TEXT("the door's paint is known (kept), its glass is not (the paint step suggests it)"), Known.Contains(0) && Known[0].Contains(1) && !Known[0].Contains(0));
+	const FMantleVehicleSourcePartLayerSlots* InteriorLayer = Now[1].LayerSlots.FindByPredicate([](const FMantleVehicleSourcePartLayerSlots& Has) { return Has.Layer == EMantleVehicleSourcePaintLayer::Interior; });
+	const FMantleVehicleSourcePartLayerSlots* WheelsLayer = Now[1].LayerSlots.FindByPredicate([](const FMantleVehicleSourcePartLayerSlots& Has) { return Has.Layer == EMantleVehicleSourcePaintLayer::Wheels; });
+	TestTrue(TEXT("the interior is on the interior layer where it moved to"), InteriorLayer && InteriorLayer->Slots == TArray<int32>({ 0 }));
+	TestTrue(TEXT("and the brake on the wheels layer"), WheelsLayer && WheelsLayer->Slots == TArray<int32>({ 1 }));
+	TestTrue(TEXT("nothing is painted on a part that had no painted material"), Now[1].PaintSlots.IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleConverterLayersOnlyWhatTheModelMarksTest,
+	"Mantle.Vehicle.Convert.LayersOnlyForWhatTheModelMarks",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleConverterLayersOnlyWhatTheModelMarksTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleConverterWheelsTestPrivate;
+
+	// SUV04's cargo area came out flat white: its interior was suggested the interior layer, which wears Mantle's paint (white, trim finish) instead of the model's own material.
+	// A converted car looks as the model does: a seat, an interior or a dashboard named like one keeps its material, and only what the model marks as a tint layer (a GTA
+	// model's PRIMARY, SECONDARY and WHEEL) is given a layer, in a body section and in a part's slot alike.
+	FString Error;
+	{
+		TArray<FString> Names = { TEXT("SUV_Body"), TEXT("SUV_Interior"), TEXT("SUV_Seats"), TEXT("SUV_Dashboard"), TEXT("leather_1__SECONDARY_") };
+		TArray<UMaterialInterface*> Materials = { NewPaintTintMaterial(), NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient), NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient),
+			NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient), NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient) };
+		USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), 5, Error, nullptr, Names, Materials);
+		if (!TestNotNull(*FString::Printf(TEXT("the car is made (%s)"), *Error), Car))
+		{
+			return false;
+		}
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+		const FMantleVehicleConversion Result = FMantleVehicleConverter::Convert(Car, *Source);
+		TestTrue(*FString::Printf(TEXT("it converts (%s)"), *FString::Join(Result.Problems, TEXT(" "))), Result.bSuccess);
+		TestTrue(TEXT("the body's paint is the car paint"), Source->Paint.Sections.Contains(TEXT("SUV_Body")));
+		const auto LayerSections = [&Source](const EMantleVehicleSourcePaintLayer Layer)
+		{
+			const FMantleVehicleSourcePaintLayer* Found = Source->Paint.Layers.FindByPredicate([Layer](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer == Layer; });
+			return Found ? Found->Sections : TArray<FString>();
+		};
+		TestTrue(TEXT("the interior, the seats and the dashboard are on no layer"), LayerSections(EMantleVehicleSourcePaintLayer::Interior).IsEmpty() && LayerSections(EMantleVehicleSourcePaintLayer::Dashboard).IsEmpty());
+		TestTrue(TEXT("the model's SECONDARY is the second paint"), LayerSections(EMantleVehicleSourcePaintLayer::Secondary).Contains(TEXT("leather_1__SECONDARY_")));
+		const FString Notes = FString::Join(Result.Notes, TEXT("\n"));
+		TestTrue(TEXT("and the notes say they keep the model's material"), Notes.Contains(TEXT("SUV_Interior (it keeps the model's own material")));
+		MantleVehicleScratchBody::Discard(Car);
+	}
+
+	// A split car: the interior materials ride on parts, and no slot of a part is given the interior layer either.
+	{
+		TArray<FString> Names;
+		TArray<UMaterialInterface*> Materials;
+		for (int32 Slot = 0; Slot < 12; ++Slot)
+		{
+			Names.Add(Slot < 4 ? FString::Printf(TEXT("Interior_%d"), Slot) : FString::Printf(TEXT("mat%d"), Slot));
+			Materials.Add(Slot < 4 ? NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient) : NewPaintTintMaterial());
+		}
+		USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), 12, Error, nullptr, Names, Materials);
+		if (!TestNotNull(*FString::Printf(TEXT("the split car is made (%s)"), *Error), Car))
+		{
+			return false;
+		}
+		UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+		const FMantleVehicleConversion Result = FMantleVehicleConverter::Convert(Car, *Source);
+		TestTrue(*FString::Printf(TEXT("it converts (%s)"), *FString::Join(Result.Problems, TEXT(" "))), Result.bSuccess);
+		int32 SplitParts = 0;
+		bool bAnyLayerSlot = false;
+		for (const FMantleVehicleSourcePart& Part : Source->Parts)
+		{
+			if (Part.FoundOn == FMantleVehicleBodySplit::FoundOn())
+			{
+				++SplitParts;
+				bAnyLayerSlot = bAnyLayerSlot || !Part.LayerSlots.IsEmpty();
+			}
+		}
+		TestTrue(TEXT("the interiors are split-off parts"), SplitParts > 0);
+		TestFalse(TEXT("none of their slots is on a paint layer"), bAnyLayerSlot);
+		TestFalse(TEXT("and the vehicle has no interior layer"), Source->Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Has) { return Has.Layer == EMantleVehicleSourcePaintLayer::Interior; }));
+		MantleVehicleScratchBody::Discard(Car);
+	}
+	return true;
+}
+
 #endif

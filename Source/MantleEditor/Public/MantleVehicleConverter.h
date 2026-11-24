@@ -412,7 +412,28 @@ public:
 	/** The same for the upload slot Slot of the part's mesh. */
 	static bool PartSlotIsTintMask(const FMantleVehicleSourcePart& Part, const UStaticMesh* PartMesh, int32 Slot);
 
-	/** The slots of Part's mesh that wear a paint layer other than the primary, by the mesh's slot index, found with GuessPaintLayer from each slot's name and material. */
+	/** One slot of an earlier Convert's split part that had paint set on it: the material it draws (a part's number says nothing about what it holds now) and what it wore. */
+	struct FEarlierPartSlot
+	{
+		const UMaterialInterface* Material = nullptr;
+		bool bPaint = false;
+		bool bLayer = false;
+		EMantleVehicleSourcePaintLayer Layer = EMantleVehicleSourcePaintLayer::Secondary;
+	};
+
+	/**
+	 * What the paint was on the parts the split made last time, read before they are made again: for each part that had paint slots or layer slots set, every slot's material and what
+	 * it wore (nothing, the body's paint, or a layer). A slot is kept for its material, not for its part's number: the split numbers its parts afresh each Convert.
+	 */
+	static TArray<FEarlierPartSlot> CaptureSplitPartPaint(const TArray<FMantleVehicleSourcePart>& Earlier);
+
+	/**
+	 * Sets the paint slots and layer slots of each of Parts from Earlier: a slot whose material an earlier part had a slot of wears what that slot wore. OutKnown names, for each
+	 * part (by its index in Parts), the slots that took their setting from Earlier (worn or left bare on purpose); the others are the paint step's to suggest.
+	 */
+	static void RestoreSplitPartPaint(const TArray<FEarlierPartSlot>& Earlier, TArray<FMantleVehicleSourcePart>& Parts, TMap<int32, TSet<int32>>& OutKnown);
+
+	/** The slots of Part's mesh that wear a paint layer other than the primary, by the mesh's slot index: the slots the model marks as a tint layer (IsGtaTintLayer) that GuessPaintLayer reads as a layer. A slot only named like an interior or a rim keeps its own material. */
 	static TArray<FMantleVehicleSourcePartLayerSlots> SuggestPartLayerSlots(const FMantleVehicleSourcePart& Part);
 
 	/** A part's layer slots as its upload counts them, as PartUploadPaintSlots does the primary's. */

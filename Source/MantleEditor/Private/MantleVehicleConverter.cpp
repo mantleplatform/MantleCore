@@ -1479,6 +1479,8 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 			EarlierSplitParts.Add(Part);
 		}
 	}
+	// Read now: the split below makes its parts afresh, in the same assets when they are saved.
+	const TArray<FEarlierPartSlot> EarlierPaint = CaptureSplitPartPaint(EarlierSplitParts);
 	Source.Parts.RemoveAll([](const FMantleVehicleSourcePart& Part) { return Part.FoundOn == FMantleVehicleBodySplit::FoundOn(); });
 	TArray<FMantleVehicleSourcePart> SplitParts;
 	TArray<FString> SplitNotes;
@@ -1572,7 +1574,7 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	TArray<FString> PartNotes;
 	// The parts that were there before this Convert are the creator's (their paint slots are kept); the ones found or split off now are fresh and get theirs suggested.
 	const int32 KeptParts = Source.Parts.Num();
-	TSet<int32> RestoredParts;
+	TMap<int32, TSet<int32>> RestoredSlots;
 	if (Around.Attached.Num() > 0)
 	{
 		TMap<FName, double> Measured;
@@ -1594,33 +1596,14 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	}
 	if (SplitParts.Num() > 0)
 	{
-		// A part a Convert made before, made again with the same name: it keeps the slots that were set on it, so converting again (after the seats are set, say) does not unpaint it.
+		// A part a Convert made before is made again, numbered afresh: what was set on its slots follows the material each slot draws (not the part's number, which may hold
+		// other materials now), so converting again (after the seats are set, say) does not unpaint it and does not paint what was never painted.
 		const int32 SplitBase = Source.Parts.Num();
-		for (int32 SplitIndex = 0; SplitIndex < SplitParts.Num(); ++SplitIndex)
+		TMap<int32, TSet<int32>> Known;
+		RestoreSplitPartPaint(EarlierPaint, SplitParts, Known);
+		for (const TPair<int32, TSet<int32>>& Each : Known)
 		{
-			FMantleVehicleSourcePart& Part = SplitParts[SplitIndex];
-			// By its number among the split's parts (_Part2): a body that is split again is the same pieces in the same order, and a throwaway one is named afresh each time.
-			const auto PieceKey = [](const FMantleVehicleSourcePart& Each)
-			{
-				const FString AssetName = Each.Mesh.GetAssetName();
-				int32 At = INDEX_NONE;
-				return AssetName.FindLastChar(TEXT('_'), At) ? AssetName.RightChop(At) : AssetName;
-			};
-			const FMantleVehicleSourcePart* Earlier = EarlierSplitParts.FindByPredicate([&Part, &PieceKey](const FMantleVehicleSourcePart& Has) { return PieceKey(Has) == PieceKey(Part); });
-			const UStaticMesh* PartMesh = Part.Mesh.LoadSynchronous();
-			if (!Earlier || !PartMesh || (Earlier->PaintSlots.IsEmpty() && Earlier->LayerSlots.IsEmpty()))
-			{
-				continue;
-			}
-			const int32 Slots = PartMesh->GetStaticMaterials().Num();
-			const auto Fits = [Slots](const int32 Slot) { return Slot >= 0 && Slot < Slots; };
-			if (!Algo::AllOf(Earlier->PaintSlots, Fits) || !Algo::AllOf(Earlier->LayerSlots, [&Fits](const FMantleVehicleSourcePartLayerSlots& Layer) { return Algo::AllOf(Layer.Slots, Fits); }))
-			{
-				continue;
-			}
-			Part.PaintSlots = Earlier->PaintSlots;
-			Part.LayerSlots = Earlier->LayerSlots;
-			RestoredParts.Add(SplitBase + SplitIndex);
+			RestoredSlots.Add(SplitBase + Each.Key, Each.Value);
 		}
 		Source.Parts.Append(SplitParts);
 		PartNotes.Append(SplitNotes);
@@ -1748,6 +1731,13 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 				{
 					continue;
 				}
+				// A layer replaces the section's look with Mantle's paint (white until a script recolors it), so the converter gives one only to what the model marks as a tint layer
+				// (a GTA model's PRIMARY, SECONDARY and WHEEL): a seat, a dashboard or a rim that is merely named like one keeps its own material, as the model draws it.
+				if (!IsGtaTintLayer(Sections[Index], SectionMaterial))
+				{
+					LeftOut.Add(FString::Printf(TEXT("%s (it keeps the model's own material, so the car looks as the model does; to recolor it, add it under Paint > Layers)"), *Sections[Index]));
+					continue;
+				}
 				MantleVehicleConverterPrivate::EnsurePaintLayer(Source.Paint, Guess.Layer).Sections.Add(Sections[Index]);
 			}
 			else if (!Guess.LeftOut.IsEmpty())
@@ -1816,14 +1806,43 @@ FMantleVehicleConversion FMantleVehicleConverter::Convert(USkeletalMesh* Mesh, U
 	for (int32 PartIndex = 0; PartIndex < Source.Parts.Num(); ++PartIndex)
 	{
 		FMantleVehicleSourcePart& Part = Source.Parts[PartIndex];
-		const bool bFreshPart = PartIndex >= KeptParts && !RestoredParts.Contains(PartIndex);
-		if (bFreshPart && Part.PaintSlots.IsEmpty())
+		const bool bFreshPart = PartIndex >= KeptParts;
+		const TSet<int32>* Restored = RestoredSlots.Find(PartIndex);
+		if (bFreshPart && !Restored && Part.PaintSlots.IsEmpty())
 		{
 			Part.PaintSlots = SuggestPartPaintSlots(Part, BodyPaintMaterials);
 		}
-		if (bFreshPart && Part.LayerSlots.IsEmpty())
+		else if (bFreshPart && Restored)
+		{
+			// The slots whose material an earlier part had are as that part left them; the others are suggested.
+			for (const int32 Slot : SuggestPartPaintSlots(Part, BodyPaintMaterials))
+			{
+				if (!Restored->Contains(Slot))
+				{
+					Part.PaintSlots.AddUnique(Slot);
+				}
+			}
+		}
+		if (bFreshPart && !Restored && Part.LayerSlots.IsEmpty())
 		{
 			Part.LayerSlots = SuggestPartLayerSlots(Part);
+		}
+		else if (bFreshPart && Restored)
+		{
+			TArray<FMantleVehicleSourcePartLayerSlots> Merged = Part.LayerSlots;
+			for (const FMantleVehicleSourcePartLayerSlots& Suggested : SuggestPartLayerSlots(Part))
+			{
+				FMantleVehicleSourcePartLayerSlots& Entry = Merged.AddDefaulted_GetRef();
+				Entry.Layer = Suggested.Layer;
+				for (const int32 Slot : Suggested.Slots)
+				{
+					if (!Restored->Contains(Slot) && !Part.PaintSlots.Contains(Slot))
+					{
+						Entry.Slots.AddUnique(Slot);
+					}
+				}
+			}
+			Part.LayerSlots = MergeLayerSlots(Merged).FilterByPredicate([](const FMantleVehicleSourcePartLayerSlots& Layer) { return Layer.Slots.Num() > 0; });
 		}
 		for (const FMantleVehicleSourcePartLayerSlots& LayerSlots : Part.LayerSlots)
 		{
@@ -3362,6 +3381,90 @@ bool FMantleVehicleConverter::TakesTint(const UMaterialInterface* Material, FStr
 	return true;
 }
 
+TArray<FMantleVehicleConverter::FEarlierPartSlot> FMantleVehicleConverter::CaptureSplitPartPaint(const TArray<FMantleVehicleSourcePart>& Earlier)
+{
+	TArray<FEarlierPartSlot> Out;
+	for (const FMantleVehicleSourcePart& Part : Earlier)
+	{
+		if (Part.PaintSlots.IsEmpty() && Part.LayerSlots.IsEmpty())
+		{
+			continue;
+		}
+		const UStaticMesh* Mesh = Part.Mesh.LoadSynchronous();
+		if (!Mesh)
+		{
+			continue;
+		}
+		for (int32 Slot = 0; Slot < Mesh->GetStaticMaterials().Num(); ++Slot)
+		{
+			const UMaterialInterface* Material = PartSlotMaterial(Part, Mesh, Slot);
+			if (!Material)
+			{
+				continue;
+			}
+			FEarlierPartSlot& Entry = Out.AddDefaulted_GetRef();
+			Entry.Material = Material;
+			for (const FMantleVehicleSourcePartLayerSlots& Layer : Part.LayerSlots)
+			{
+				if (Layer.Slots.Contains(Slot))
+				{
+					Entry.bLayer = true;
+					Entry.Layer = Layer.Layer;
+				}
+			}
+			// A slot that wore the body's paint wears no layer: the paint is the stronger.
+			if (Part.PaintSlots.Contains(Slot))
+			{
+				Entry.bLayer = false;
+			}
+			Entry.bPaint = Part.PaintSlots.Contains(Slot);
+		}
+	}
+	return Out;
+}
+
+void FMantleVehicleConverter::RestoreSplitPartPaint(const TArray<FEarlierPartSlot>& Earlier, TArray<FMantleVehicleSourcePart>& Parts, TMap<int32, TSet<int32>>& OutKnown)
+{
+	OutKnown.Reset();
+	if (Earlier.IsEmpty())
+	{
+		return;
+	}
+	for (int32 PartIndex = 0; PartIndex < Parts.Num(); ++PartIndex)
+	{
+		FMantleVehicleSourcePart& Part = Parts[PartIndex];
+		const UStaticMesh* Mesh = Part.Mesh.LoadSynchronous();
+		if (!Mesh)
+		{
+			continue;
+		}
+		for (int32 Slot = 0; Slot < Mesh->GetStaticMaterials().Num(); ++Slot)
+		{
+			const UMaterialInterface* Material = PartSlotMaterial(Part, Mesh, Slot);
+			const FEarlierPartSlot* Was = Material ? Earlier.FindByPredicate([Material](const FEarlierPartSlot& Each) { return Each.Material == Material; }) : nullptr;
+			if (!Was)
+			{
+				continue;
+			}
+			OutKnown.FindOrAdd(PartIndex).Add(Slot);
+			if (Was->bPaint)
+			{
+				Part.PaintSlots.AddUnique(Slot);
+			}
+			else if (Was->bLayer)
+			{
+				FMantleVehicleSourcePartLayerSlots* Entry = Part.LayerSlots.FindByPredicate([Was](const FMantleVehicleSourcePartLayerSlots& Has) { return Has.Layer == Was->Layer; });
+				if (!Entry)
+				{
+					Entry = &Part.LayerSlots.AddDefaulted_GetRef();
+					Entry->Layer = Was->Layer;
+				}
+				Entry->Slots.AddUnique(Slot);
+			}
+		}
+	}
+}
+
 TArray<FMantleVehicleSourcePartLayerSlots> FMantleVehicleConverter::SuggestPartLayerSlots(const FMantleVehicleSourcePart& Part)
 {
 	TArray<FMantleVehicleSourcePartLayerSlots> Out;
@@ -3382,7 +3485,8 @@ TArray<FMantleVehicleSourcePartLayerSlots> FMantleVehicleConverter::SuggestPartL
 			continue;
 		}
 		const FPaintLayerGuess Guess = GuessPaintLayer(PartMesh->GetStaticMaterials()[Slot].MaterialSlotName.ToString(), Material);
-		if (!Guess.bPainted || Guess.bPrimary)
+		// Only what the model marks as a tint layer (see the section layers in Convert): a slot named like an interior keeps its own material.
+		if (!Guess.bPainted || Guess.bPrimary || !IsGtaTintLayer(PartMesh->GetStaticMaterials()[Slot].MaterialSlotName.ToString(), Material))
 		{
 			continue;
 		}
