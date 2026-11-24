@@ -1365,7 +1365,8 @@ void FMantleCosmeticPreviewSession::StartFit(const FString& FitKey, const TShare
 	const TSharedPtr<const FMantleBodyShape> Shape = WeightedShape.IsValid() ? WeightedShape : Garment.SourceShape;
 	const TSharedPtr<const FMantleSkinnedMesh> SourceFace = Garment.SourceFace;
 	const bool bTracksBody = FMantleCatalogGarmentFit::TracksBody(Garment.Slot);
-	const bool bFootwear = Garment.Slot.Equals(TEXT("footwear"), ESearchCase::CaseSensitive);
+	// Footwear and socks cover the foot, so they keep the same short skin border.
+	const bool bFootwear = Garment.Slot.Equals(TEXT("footwear"), ESearchCase::CaseSensitive) || Garment.Slot.Equals(TEXT("socks"), ESearchCase::CaseSensitive);
 	const int32 WarpPoints = Garment.WarpPointCount;
 	const int32 TopologyVertices = Garment.TopologyVertexCount;
 	const FString GarmentKey = Garment.Key;

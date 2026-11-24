@@ -407,7 +407,7 @@ bool FMantleAvatarAssemblyFixer::Scan(const FString& InFolder, FMantleAssemblySc
 				Slots.Add(Slot);
 			}
 		}
-		const TArray<FString> Order = { TEXT("top"), TEXT("bottom"), TEXT("footwear") };
+		const TArray<FString> Order = FMantleAvatarContract::ClothingSlotsOrDefault();
 		Slots.Sort([&Order](const FString& A, const FString& B) { return Order.IndexOfByKey(A) < Order.IndexOfByKey(B); });
 		if (Slots.Num() == 0)
 		{

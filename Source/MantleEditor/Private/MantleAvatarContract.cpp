@@ -707,6 +707,32 @@ int32 FMantleAvatarContract::ClothingRank(const FString& Slot) const
 	return Slot.IsEmpty() ? INDEX_NONE : ClothingSlots().IndexOfByKey(Slot);
 }
 
+namespace MantleAvatarContractPrivate
+{
+	/** The contract, or a default one (top, bottom, footwear) when the plugin's copy cannot be read. */
+	const FMantleAvatarContract& ContractOrDefault()
+	{
+		static FMantleAvatarContract Fallback;
+		const FMantleAvatarContract* Contract = FMantleAvatarContract::Get();
+		return Contract ? *Contract : Fallback;
+	}
+}
+
+bool FMantleAvatarContract::IsClothingSlotOrDefault(const FString& Slot)
+{
+	return MantleAvatarContractPrivate::ContractOrDefault().IsClothingSlot(Slot);
+}
+
+int32 FMantleAvatarContract::ClothingRankOrDefault(const FString& Slot)
+{
+	return MantleAvatarContractPrivate::ContractOrDefault().ClothingRank(Slot);
+}
+
+TArray<FString> FMantleAvatarContract::ClothingSlotsOrDefault()
+{
+	return MantleAvatarContractPrivate::ContractOrDefault().ClothingSlots();
+}
+
 const FMantleContractItemSetting* FMantleAvatarContract::FindItemSetting(const FString& Name) const
 {
 	return ItemSettings.FindByPredicate([&Name](const FMantleContractItemSetting& Setting) { return Setting.Name == Name; });

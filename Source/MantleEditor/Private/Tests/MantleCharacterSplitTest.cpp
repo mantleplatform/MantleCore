@@ -65,6 +65,43 @@ bool FMantleCharacterSplitSeparateMeshesTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleCharacterSplitClothingSlotsTest,
+	"Mantle.Editor.CharacterSplit.ClothingSlots",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantleCharacterSplitClothingSlotsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleCharacterSplitTestPrivate;
+	// Socks, legwear, outerwear and gloves are clothing slots, proposed by their names.
+	const TArray<FMantleSplitSource> Meshes = {
+		SplitTestMesh(TEXT("SK_Girl_Nude"), { TEXT("M_Body_Skin") }),
+		SplitTestMesh(TEXT("SK_Socks"), { TEXT("M_Fabric") }),
+		SplitTestMesh(TEXT("SK_Tights"), { TEXT("M_Fabric") }),
+		SplitTestMesh(TEXT("SK_Jacket"), { TEXT("M_Fabric") }),
+		SplitTestMesh(TEXT("SK_Gloves"), { TEXT("M_Fabric") }),
+		SplitTestMesh(TEXT("SK_Hoodie"), { TEXT("M_Fabric") }),
+	};
+	const FMantleSplitProposal Proposal = FMantleCharacterSplit::Propose(Meshes);
+	TestTrue(TEXT("a bare body and clothing split"), Proposal.bSplittable);
+	TestNotNull(TEXT("socks"), SplitFind(Proposal, EMantleSplitRole::Garment, TEXT("socks")));
+	TestNotNull(TEXT("tights are legwear"), SplitFind(Proposal, EMantleSplitRole::Garment, TEXT("legwear")));
+	TestNotNull(TEXT("a jacket is outerwear"), SplitFind(Proposal, EMantleSplitRole::Garment, TEXT("outerwear")));
+	TestNotNull(TEXT("gloves are clothing now, not an accessory"), SplitFind(Proposal, EMantleSplitRole::Garment, TEXT("gloves")));
+	TestNull(TEXT("no accessory in this pack"), SplitFind(Proposal, EMantleSplitRole::Accessory, TEXT("accessory")));
+	TestNotNull(TEXT("a hoodie stays a top"), SplitFind(Proposal, EMantleSplitRole::Garment, TEXT("top")));
+	const FMantleSplitPiece* Socks = SplitFind(Proposal, EMantleSplitRole::Garment, TEXT("socks"));
+	const FMantleSplitPiece* Hoodie = SplitFind(Proposal, EMantleSplitRole::Garment, TEXT("top"));
+	const FMantleSplitPiece* Jacket = SplitFind(Proposal, EMantleSplitRole::Garment, TEXT("outerwear"));
+	TestTrue(TEXT("socks are drawn under a top, a jacket over it"), Socks && Hoodie && Jacket && Socks->Layer < Hoodie->Layer && Hoodie->Layer < Jacket->Layer);
+
+	// Whole words only: a string is no ring, and a ring or an earring is an accessory by name.
+	TestFalse(TEXT("a string is not a ring"), FMantleCharacterSplit::NamesAccessory(TEXT("SK_String")));
+	TestTrue(TEXT("an earring is an accessory"), FMantleCharacterSplit::NamesAccessory(TEXT("SK_Earring")));
+	TestFalse(TEXT("gloves are not an accessory name now"), FMantleCharacterSplit::NamesAccessory(TEXT("SK_Gloves")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMantleCharacterSplitSectionsTest,
 	"Mantle.Editor.CharacterSplit.Sections",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

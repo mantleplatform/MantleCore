@@ -1630,7 +1630,7 @@ namespace MantleGarmentOutfitPrivate
 		return Shared * 2 < Bones.GetRawBoneNum() ? FString::Printf(TEXT("Isn't rigged to %s's skeleton, so it can't be posed the way the body is."), *Body.GetName()) : FString();
 	}
 
-	/** The reason every piece gets when Body wears clothing (Worn), naming BareBody to convert instead; then tops, bottoms, footwear. */
+	/** The reason every piece gets when Body wears clothing (Worn), naming BareBody to convert instead; then the clothing slots in wearing order. */
 	void GarmentsSettle(const USkeletalMesh& Body, const FString& Worn, const FString& BareBody, TArray<FMantleConvertGarment>& OutGarments)
 	{
 		// The clothing was made for a bare body, not one that wears clothing (Convert would make the MetaHuman of what Strip leaves).
@@ -1646,10 +1646,11 @@ namespace MantleGarmentOutfitPrivate
 				}
 			}
 		}
-		// Tops, bottoms, footwear, then merged clothing; within each, the pieces that can be Outfits first.
+		// The clothing slots in wearing order, then merged clothing; within each, the pieces that can be Outfits first.
 		auto Rank = [](const FMantleConvertGarment& Garment)
 		{
-			return Garment.Slot == TEXT("top") ? 0 : Garment.Slot == TEXT("bottom") ? 1 : Garment.Slot == TEXT("footwear") ? 2 : 3;
+			const int32 ClothingRank = FMantleAvatarContract::ClothingRankOrDefault(Garment.Slot);
+			return ClothingRank != INDEX_NONE ? ClothingRank : FMantleAvatarContract::ClothingSlotsOrDefault().Num();
 		};
 		OutGarments.StableSort([&Rank](const FMantleConvertGarment& A, const FMantleConvertGarment& B)
 		{

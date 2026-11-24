@@ -170,6 +170,13 @@ public:
 	TArray<FString> ClothingSlots() const;
 	/** Slot's place in ClothingSlots(); INDEX_NONE when it is not a clothing slot. */
 	int32 ClothingRank(const FString& Slot) const;
+	/**
+	 * The same three questions from the plugin's contract, or from the old top, bottom and footwear when the contract cannot be read.
+	 * For helpers that have no contract in hand.
+	 */
+	static bool IsClothingSlotOrDefault(const FString& Slot);
+	static int32 ClothingRankOrDefault(const FString& Slot);
+	static TArray<FString> ClothingSlotsOrDefault();
 
 	/** #65, #136, #389, limits.json itemSettings, in its order. */
 	TArray<FMantleContractItemSetting> ItemSettings;

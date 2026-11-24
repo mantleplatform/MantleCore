@@ -390,7 +390,13 @@ bool FMantleGarmentOutfitSlotTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("hair has no why"), Why.IsEmpty());
 	TestEqual(TEXT("a body is not clothing"), FMantleGarmentOutfit::GarmentSlot(TEXT("SK_Girl_Body"), { Section(TEXT("Body"), TEXT("M_Skin")) }, Why), FString());
 	TestTrue(TEXT("a body has no why"), Why.IsEmpty());
-	TestEqual(TEXT("gloves are not offered"), FMantleGarmentOutfit::GarmentSlot(TEXT("SK_MECHANICGIRL_GLOVES"), {}, Why), FString());
+	TestEqual(TEXT("gloves are the gloves slot"), FMantleGarmentOutfit::GarmentSlot(TEXT("SK_MECHANICGIRL_GLOVES"), {}, Why), FString(TEXT("gloves")));
+	TestEqual(TEXT("socks are the socks slot"), FMantleGarmentOutfit::GarmentSlot(TEXT("SK_Socks"), {}, Why), FString(TEXT("socks")));
+	TestEqual(TEXT("tights are the legwear slot"), FMantleGarmentOutfit::GarmentSlot(TEXT("SK_Tights"), {}, Why), FString(TEXT("legwear")));
+	TestEqual(TEXT("a jacket is the outerwear slot"), FMantleGarmentOutfit::GarmentSlot(TEXT("SK_Jacket"), {}, Why), FString(TEXT("outerwear")));
+	TestEqual(TEXT("a hoodie stays a top"), FMantleGarmentOutfit::GarmentSlot(TEXT("SK_Hoodie"), {}, Why), FString(TEXT("top")));
+	TestEqual(TEXT("a jacket section is outerwear when the name says nothing"), FMantleGarmentOutfit::GarmentSlot(TEXT("SK_Clothes"),
+		{ Section(TEXT("Jacket"), TEXT("M_Jacket")) }, Why), FString(TEXT("outerwear")));
 	// Clothing that can't be one Outfit says why.
 	TestEqual(TEXT("a dressed body is merged"), FMantleGarmentOutfit::GarmentSlot(TEXT("SK_MechanicGirl_01"),
 		{ Section(TEXT("Body"), TEXT("M_Skin")), Section(TEXT("Shirt"), TEXT("M_Shirt")), Section(TEXT("Pants"), TEXT("M_Pants")) }, Why), FString());

@@ -4753,9 +4753,16 @@ void SMantleCosmeticPanel::AddPackReviewRows()
 	// One row per piece, grouped by where it goes; the pieces that go into one shown under it.
 	auto Order = [](const FString& Slot)
 	{
-		return Slot == TEXT("top") ? 0 : Slot == TEXT("bottom") ? 1 : Slot == TEXT("footwear") ? 2 : Slot == TEXT("accessory") ? 3 : Slot.IsEmpty() ? 5 : 4;
+		// The clothing slots in wearing order, then accessory, hair, not used.
+		const int32 Rank = FMantleAvatarContract::ClothingRankOrDefault(Slot);
+		if (Rank != INDEX_NONE)
+		{
+			return Rank;
+		}
+		const int32 Clothing = FMantleAvatarContract::ClothingSlotsOrDefault().Num();
+		return Slot == TEXT("accessory") ? Clothing : Slot.IsEmpty() ? Clothing + 2 : Clothing + 1;
 	};
-	auto IsGarment = [](const FString& Slot) { return Slot == TEXT("top") || Slot == TEXT("bottom") || Slot == TEXT("footwear"); };
+	auto IsGarment = [](const FString& Slot) { return FMantleAvatarContract::IsClothingSlotOrDefault(Slot); };
 	TArray<int32> Heads;
 	for (int32 Index = 0; Index < Review.Pieces.Num(); ++Index)
 	{
@@ -4781,9 +4788,11 @@ void SMantleCosmeticPanel::AddPackReviewRows()
 				Current = Move;
 			}
 		};
-		AddMove(TEXT("Top"), TEXT("top"), INDEX_NONE);
-		AddMove(TEXT("Bottom"), TEXT("bottom"), INDEX_NONE);
-		AddMove(TEXT("Footwear"), TEXT("footwear"), INDEX_NONE);
+		// Every clothing slot in wearing order: Socks, Legwear, Footwear, Bottom, Top, Outerwear, Gloves.
+		for (const FString& ClothingSlot : FMantleAvatarContract::ClothingSlotsOrDefault())
+		{
+			AddMove(ClothingSlot.Left(1).ToUpper() + ClothingSlot.Mid(1), ClothingSlot, INDEX_NONE);
+		}
 		AddMove(TEXT("Accessory"), TEXT("accessory"), INDEX_NONE);
 		AddMove(TEXT("Hair"), TEXT("hair"), INDEX_NONE);
 		if (bUsed && Piece.PartOf == INDEX_NONE && !Current.IsValid())

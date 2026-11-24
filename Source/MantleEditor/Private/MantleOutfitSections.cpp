@@ -6,22 +6,28 @@ namespace MantleOutfitSectionsPrivate
 {
 	// Lower-case whole words, plurals spelled out.
 	const TCHAR* const TopWords[] = {
-		TEXT("shirt"), TEXT("shirts"), TEXT("tshirt"), TEXT("top"), TEXT("tops"), TEXT("vest"), TEXT("jacket"), TEXT("coat"), TEXT("hoodie"),
-		TEXT("sweater"), TEXT("jumper"), TEXT("blouse"), TEXT("lapel"), TEXT("lapels"), TEXT("shawl"), TEXT("collar"), TEXT("cardigan"),
-		TEXT("tunic"), TEXT("cape"), TEXT("cloak"), TEXT("sleeve"), TEXT("sleeves"), TEXT("blazer"), TEXT("corset"), TEXT("corsets"),
+		TEXT("shirt"), TEXT("shirts"), TEXT("tshirt"), TEXT("top"), TEXT("tops"), TEXT("hoodie"),
+		TEXT("sweater"), TEXT("jumper"), TEXT("blouse"), TEXT("lapel"), TEXT("lapels"), TEXT("shawl"), TEXT("collar"),
+		TEXT("tunic"), TEXT("cape"), TEXT("cloak"), TEXT("sleeve"), TEXT("sleeves"), TEXT("corset"), TEXT("corsets"),
 		TEXT("bustier"), TEXT("bodice"), TEXT("camisole"),
 	};
 	const TCHAR* const BottomWords[] = {
 		TEXT("pants"), TEXT("pant"), TEXT("trousers"), TEXT("trouser"), TEXT("short"), TEXT("shorts"), TEXT("skirt"), TEXT("jeans"),
-		TEXT("legging"), TEXT("leggings"), TEXT("bottom"), TEXT("bottoms"), TEXT("kilt"), TEXT("cargo"), TEXT("cargos"), TEXT("slacks"),
+		TEXT("bottom"), TEXT("bottoms"), TEXT("kilt"), TEXT("cargo"), TEXT("cargos"), TEXT("slacks"),
 	};
 	const TCHAR* const FootwearWords[] = {
 		TEXT("shoe"), TEXT("shoes"), TEXT("boot"), TEXT("boots"), TEXT("sneaker"), TEXT("sneakers"), TEXT("sandal"), TEXT("sandals"),
-		TEXT("heel"), TEXT("heels"), TEXT("footwear"), TEXT("sock"), TEXT("socks"), TEXT("slipper"), TEXT("slippers"), TEXT("loafer"), TEXT("loafers"),
+		TEXT("heel"), TEXT("heels"), TEXT("footwear"), TEXT("slipper"), TEXT("slippers"), TEXT("loafer"), TEXT("loafers"),
 	};
+	const TCHAR* const SocksWords[] = { TEXT("sock"), TEXT("socks"), TEXT("stocking"), TEXT("stockings") };
+	const TCHAR* const LegwearWords[] = { TEXT("tights"), TEXT("leggings"), TEXT("legging"), TEXT("pantyhose") };
+	const TCHAR* const OuterwearWords[] = {
+		TEXT("jacket"), TEXT("coat"), TEXT("overcoat"), TEXT("raincoat"), TEXT("parka"), TEXT("blazer"), TEXT("cardigan"), TEXT("windbreaker"), TEXT("vest"),
+	};
+	const TCHAR* const GlovesWords[] = { TEXT("glove"), TEXT("gloves"), TEXT("mitten"), TEXT("mittens"), TEXT("gauntlet"), TEXT("gauntlets") };
 	// Worn, but not one garment slot: never mistaken for skin ("HeadWear", "BodySuit").
 	const TCHAR* const WornWords[] = {
-		TEXT("wear"), TEXT("hat"), TEXT("cap"), TEXT("helmet"), TEXT("hood"), TEXT("glove"), TEXT("gloves"), TEXT("belt"), TEXT("gem"),
+		TEXT("wear"), TEXT("hat"), TEXT("cap"), TEXT("helmet"), TEXT("hood"), TEXT("belt"), TEXT("gem"),
 		TEXT("button"), TEXT("buttons"), TEXT("buckle"), TEXT("jewel"), TEXT("suit"), TEXT("bodysuit"), TEXT("jumpsuit"), TEXT("dress"),
 		TEXT("gown"), TEXT("robe"), TEXT("overall"), TEXT("overalls"), TEXT("uniform"), TEXT("armor"), TEXT("armour"),
 	};
@@ -57,13 +63,18 @@ namespace MantleOutfitSectionsPrivate
 		const bool bTop = HasAny(Words, MakeArrayView(TopWords));
 		const bool bBottom = HasAny(Words, MakeArrayView(BottomWords));
 		const bool bFootwear = HasAny(Words, MakeArrayView(FootwearWords));
-		const int32 Count = (bTop ? 1 : 0) + (bBottom ? 1 : 0) + (bFootwear ? 1 : 0);
+		const bool bSocks = HasAny(Words, MakeArrayView(SocksWords));
+		const bool bLegwear = HasAny(Words, MakeArrayView(LegwearWords));
+		const bool bOuterwear = HasAny(Words, MakeArrayView(OuterwearWords));
+		const bool bGloves = HasAny(Words, MakeArrayView(GlovesWords));
+		const int32 Count = (bTop ? 1 : 0) + (bBottom ? 1 : 0) + (bFootwear ? 1 : 0) + (bSocks ? 1 : 0) + (bLegwear ? 1 : 0) + (bOuterwear ? 1 : 0) + (bGloves ? 1 : 0);
 		bNamed = Count > 0;
 		if (Count != 1)
 		{
 			return EMantleOutfitPiece::Unknown;
 		}
-		return bTop ? EMantleOutfitPiece::Top : bBottom ? EMantleOutfitPiece::Bottom : EMantleOutfitPiece::Footwear;
+		return bTop ? EMantleOutfitPiece::Top : bBottom ? EMantleOutfitPiece::Bottom : bFootwear ? EMantleOutfitPiece::Footwear
+			: bSocks ? EMantleOutfitPiece::Socks : bLegwear ? EMantleOutfitPiece::Legwear : bOuterwear ? EMantleOutfitPiece::Outerwear : EMantleOutfitPiece::Gloves;
 	}
 }
 
@@ -164,6 +175,10 @@ const TCHAR* FMantleOutfitSections::PieceName(EMantleOutfitPiece Piece)
 	case EMantleOutfitPiece::Top: return TEXT("top");
 	case EMantleOutfitPiece::Bottom: return TEXT("bottom");
 	case EMantleOutfitPiece::Footwear: return TEXT("footwear");
+	case EMantleOutfitPiece::Socks: return TEXT("socks");
+	case EMantleOutfitPiece::Legwear: return TEXT("legwear");
+	case EMantleOutfitPiece::Outerwear: return TEXT("outerwear");
+	case EMantleOutfitPiece::Gloves: return TEXT("gloves");
 	case EMantleOutfitPiece::Skin: return TEXT("skin");
 	default: return TEXT("unknown");
 	}
@@ -171,8 +186,7 @@ const TCHAR* FMantleOutfitSections::PieceName(EMantleOutfitPiece Piece)
 
 FString FMantleOutfitSections::PieceSlot(EMantleOutfitPiece Piece)
 {
-	return Piece == EMantleOutfitPiece::Top || Piece == EMantleOutfitPiece::Bottom || Piece == EMantleOutfitPiece::Footwear
-		? FString(PieceName(Piece)) : FString();
+	return Piece != EMantleOutfitPiece::Skin && Piece != EMantleOutfitPiece::Unknown ? FString(PieceName(Piece)) : FString();
 }
 
 TArray<bool> FMantleOutfitSections::DefaultKeep(TConstArrayView<FMantleOutfitSection> Sections, const FString& Slot)
@@ -211,9 +225,10 @@ TArray<bool> FMantleOutfitSections::InitialKeep(TConstArrayView<FMantleOutfitSec
 
 void FMantleOutfitSections::CheckGarmentSections(TConstArrayView<FMantleOutfitSection> Sections, const FString& Slot, TArray<FMantleCosmeticIssue>& OutIssues)
 {
-	// Section names per garment piece, in Top, Bottom, Footwear order.
-	constexpr int32 NumGarments = 3;
-	const EMantleOutfitPiece Garments[NumGarments] = { EMantleOutfitPiece::Top, EMantleOutfitPiece::Bottom, EMantleOutfitPiece::Footwear };
+	// Section names per garment piece, in Top, Bottom, Footwear, Socks, Legwear, Outerwear, Gloves order.
+	constexpr int32 NumGarments = 7;
+	const EMantleOutfitPiece Garments[NumGarments] = { EMantleOutfitPiece::Top, EMantleOutfitPiece::Bottom, EMantleOutfitPiece::Footwear,
+		EMantleOutfitPiece::Socks, EMantleOutfitPiece::Legwear, EMantleOutfitPiece::Outerwear, EMantleOutfitPiece::Gloves };
 	TArray<FString> NamesOf[NumGarments];
 	for (const FMantleOutfitSection& Section : Sections)
 	{
