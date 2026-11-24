@@ -88,7 +88,15 @@ namespace
 	const TCHAR* const GConstraintTypeNames[] = {
 		TEXT("weld"),
 		TEXT("hinge"),
-		TEXT("rope")
+		TEXT("rope"),
+		TEXT("slider"),
+		TEXT("ball")
+	};
+
+	// In EMantleMotorMode order; a Constraint motor's mode.
+	const TCHAR* const GMotorModeNames[] = {
+		TEXT("position"),
+		TEXT("speed")
 	};
 
 	const TCHAR* const GAssetKindNames[] = {
@@ -315,6 +323,17 @@ const TCHAR* MantleConstraintTypeToString(EMantleConstraintType Type)
 bool MantleParseConstraintType(const FString& In, EMantleConstraintType& Out)
 {
 	return ParseEnum(In, GConstraintTypeNames, Out);
+}
+
+const TCHAR* MantleMotorModeToString(EMantleMotorMode Mode)
+{
+	const int32 Index = static_cast<int32>(Mode);
+	return (Index >= 0 && Index < UE_ARRAY_COUNT(GMotorModeNames)) ? GMotorModeNames[Index] : TEXT("position");
+}
+
+bool MantleParseMotorMode(const FString& In, EMantleMotorMode& Out)
+{
+	return ParseEnum(In, GMotorModeNames, Out);
 }
 
 const TCHAR* MantleReflectionProbeShapeToString(EMantleReflectionProbeShape Shape)

@@ -1831,9 +1831,9 @@ bool FMantlePlaceExporter::IsEngineInfrastructure(const AActor* Actor)
 		return true;
 	}
 
-	// A Physics Constraint Actor (#528) publishes as a Constraint when it is a weld, a hinge or a rope
-	// between physics objects this level publishes; any other is left out, and
-	// DescribeUnpublishedContent names it with the reason.
+	// A Physics Constraint Actor (#528) publishes as a Constraint when it is a weld, a hinge, a slider,
+	// a ball or a rope (a hinge or a slider with its motor) between physics objects this level
+	// publishes; any other is left out, and DescribeUnpublishedContent names it with the reason.
 	if (Actor->IsA(APhysicsConstraintActor::StaticClass()))
 	{
 		FMantleConstraintProps Props;
@@ -1891,8 +1891,8 @@ bool FMantlePlaceExporter::DescribeUnpublishedContent(const AActor* Actor, FStri
 	{
 		return false;
 	}
-	// A Physics Constraint Actor that is not a weld, a hinge or a rope between published physics
-	// objects (#528): left out of the place, with what to change.
+	// A Physics Constraint Actor that is not a weld, a hinge, a slider, a ball or a rope between
+	// published physics objects (#528): left out of the place, with what to change.
 	if (Actor->IsA(APhysicsConstraintActor::StaticClass()))
 	{
 		FMantleConstraintProps Props;
@@ -7942,8 +7942,8 @@ namespace
 	}
 	else if (const FMantleConstraintProps* P14 = Entity.Props.TryGet<FMantleConstraintProps>())
 	{
-		// A new type (#528): its keys ship with it. A hinge's and a rope's own keys only for that
-		// type, as the schema holds them; the optional ones only when set.
+		// A new type (#528): its keys ship with it. Each type's own keys only for that type, as the
+		// schema holds them; the optional ones only when set.
 		Writer->WriteValue(TEXT("type"), MantleConstraintTypeToString(P14->Type));
 		Writer->WriteValue(TEXT("entityA"), P14->EntityA);
 		if (!P14->EntityB.IsEmpty())
@@ -7955,16 +7955,41 @@ namespace
 		{
 			WriteVector(Writer, TEXT("anchorB"), P14->AnchorB.GetValue());
 		}
-		if (P14->Type == EMantleConstraintType::Hinge)
+		const bool bHingeOrSlider = P14->Type == EMantleConstraintType::Hinge || P14->Type == EMantleConstraintType::Slider;
+		if (bHingeOrSlider || P14->Type == EMantleConstraintType::Ball)
 		{
 			WriteVector(Writer, TEXT("axis"), P14->Axis);
-			if (P14->bLimited)
+		}
+		if (bHingeOrSlider && P14->bLimited)
+		{
+			Writer->WriteArrayStart(TEXT("limits"));
+			Writer->WriteValue(P14->LimitMin);
+			Writer->WriteValue(P14->LimitMax);
+			Writer->WriteArrayEnd();
+		}
+		if (P14->Type == EMantleConstraintType::Ball)
+		{
+			if (P14->SwingLimit.IsSet())
 			{
-				Writer->WriteArrayStart(TEXT("limits"));
-				Writer->WriteValue(P14->MinAngle);
-				Writer->WriteValue(P14->MaxAngle);
-				Writer->WriteArrayEnd();
+				Writer->WriteValue(TEXT("swingLimit"), P14->SwingLimit.GetValue());
 			}
+			if (P14->TwistLimit.IsSet())
+			{
+				Writer->WriteValue(TEXT("twistLimit"), P14->TwistLimit.GetValue());
+			}
+		}
+		if (bHingeOrSlider && P14->Motor.IsSet())
+		{
+			const FMantleConstraintMotor& Motor = P14->Motor.GetValue();
+			Writer->WriteObjectStart(TEXT("motor"));
+			Writer->WriteValue(TEXT("mode"), FString(MantleMotorModeToString(Motor.Mode)));
+			Writer->WriteValue(TEXT("target"), Motor.Target);
+			Writer->WriteValue(TEXT("maxForce"), Motor.MaxForce);
+			if (Motor.Mode == EMantleMotorMode::Position && Motor.MaxSpeed.IsSet())
+			{
+				Writer->WriteValue(TEXT("maxSpeed"), Motor.MaxSpeed.GetValue());
+			}
+			Writer->WriteObjectEnd();
 		}
 		if (P14->Type == EMantleConstraintType::Rope && P14->Length.IsSet())
 		{

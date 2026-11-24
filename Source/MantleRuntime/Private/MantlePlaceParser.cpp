@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantlePlaceParser.h"
 #include "MantleMemoryTags.h"
+#include "MantleConstraint.h"
 #include "MantleEnvironmentOverride.h"
 #include "MantlePlaceAssets.h"
 #include "MantlePlaceLimits.h"
@@ -2457,23 +2458,27 @@ namespace
 	}
 
 	/**
-	 * A Constraint's properties: the schema's branch, including its if/else (axis and limits
-	 * are a hinge's alone, length a rope's), reported at the paths the backend and validate.py use.
-	 * What entityA and entityB name is checked once every entity is read.
+	 * A Constraint's properties: the schema's branch, including its if/else (axis for a hinge, a
+	 * slider or a ball; limits and motor for a hinge or a slider; swingLimit and twistLimit for a
+	 * ball; length for a rope), reported at the paths the backend and validate.py use. A motor's
+	 * position target inside the limits spans keys, so the schema says it in prose; it is checked
+	 * here. What entityA and entityB name is checked once every entity is read.
 	 */
 	void ParseConstraint(FParseContext& Ctx, const TSharedPtr<FJsonObject>& Props, const FString& Path, FMantleConstraintProps& P)
 	{
 		RequireNoUnknownKeys(
 			Ctx, Props,
 			{ TEXT("type"), TEXT("entityA"), TEXT("entityB"), TEXT("anchorA"), TEXT("anchorB"), TEXT("axis"), TEXT("limits"),
-			  TEXT("length"), TEXT("breakForce") },
+			  TEXT("swingLimit"), TEXT("twistLimit"), TEXT("motor"), TEXT("length"), TEXT("breakForce") },
 			Path);
 
 		FString Type;
 		const bool bHasType = Props->HasField(TEXT("type"));
-		if (RequireString(Ctx, Props, TEXT("type"), Path, Type) && !MantleParseConstraintType(Type, P.Type))
+		const bool bTypeString = RequireString(Ctx, Props, TEXT("type"), Path, Type);
+		const bool bKnownType = bTypeString && MantleParseConstraintType(Type, P.Type);
+		if (bTypeString && !bKnownType)
 		{
-			Ctx.Fail(Join(Path, TEXT("type")), FString::Printf(TEXT("'%s' is not a constraint type (weld, hinge, rope)"), *Type));
+			Ctx.Fail(Join(Path, TEXT("type")), FString::Printf(TEXT("'%s' is not a constraint type (weld, hinge, rope, slider, ball)"), *Type));
 		}
 		RequireString(Ctx, Props, TEXT("entityA"), Path, P.EntityA);
 		if (Props->HasField(TEXT("entityB")) && !Props->TryGetStringField(TEXT("entityB"), P.EntityB))
@@ -2487,41 +2492,123 @@ namespace
 			P.AnchorB = AnchorB;
 		}
 
-		// The schema's if/else: another type refuses a hinge's or a rope's keys. A missing type is
-		// reported above and restricts nothing, as in the schema.
-		auto OnlyFor = [&Ctx, &Props, &Path, &Type, bHasType](const TCHAR* Key, const TCHAR* Owner)
+		// The schema's if/else: a type refuses another type's keys. A missing type is reported above
+		// and restricts nothing, as in the schema.
+		auto OnlyFor = [&Ctx, &Props, &Path, &Type, bHasType](const TCHAR* Key, std::initializer_list<const TCHAR*> Owners, const TCHAR* OwnersText)
 		{
 			if (!Props->HasField(Key))
 			{
 				return false;
 			}
-			if (bHasType && !Type.Equals(Owner, ESearchCase::CaseSensitive))
+			if (bHasType)
 			{
-				Ctx.Fail(Join(Path, Key), FString::Printf(TEXT("is only for a %s"), Owner));
-				return false;
+				bool bOwned = false;
+				for (const TCHAR* Owner : Owners)
+				{
+					bOwned = bOwned || Type.Equals(Owner, ESearchCase::CaseSensitive);
+				}
+				if (!bOwned)
+				{
+					Ctx.Fail(Join(Path, Key), FString::Printf(TEXT("is only for %s"), OwnersText));
+					return false;
+				}
 			}
 			return true;
 		};
-		if (OnlyFor(TEXT("axis"), TEXT("hinge")) && ReadOptionalVector(Ctx, Props, TEXT("axis"), Path, P.Axis) && P.Axis.IsZero())
+		if (OnlyFor(TEXT("axis"), { TEXT("hinge"), TEXT("slider"), TEXT("ball") }, TEXT("a hinge, a slider or a ball"))
+			&& ReadOptionalVector(Ctx, Props, TEXT("axis"), Path, P.Axis) && P.Axis.IsZero())
 		{
-			Ctx.Fail(Join(Path, TEXT("axis")), TEXT("must not be [0, 0, 0]; give the direction the hinge turns about"));
+			Ctx.Fail(Join(Path, TEXT("axis")), TEXT("must not be [0, 0, 0]; give the direction the joint turns about or moves along"));
 		}
 		TArray<double> Limits;
-		if (OnlyFor(TEXT("limits"), TEXT("hinge")) && ReadNumberArray(Ctx, Props, TEXT("limits"), 2, Path, Limits))
+		if (OnlyFor(TEXT("limits"), { TEXT("hinge"), TEXT("slider") }, TEXT("a hinge or a slider"))
+			&& ReadNumberArray(Ctx, Props, TEXT("limits"), 2, Path, Limits))
 		{
+			const double Most = P.Type == EMantleConstraintType::Slider ? FMantlePlaceLimits::MaxSliderTravel : FMantlePlaceLimits::MaxHingeAngle;
 			const FString LimitsPath = Join(Path, TEXT("limits"));
 			const int32 ErrorsBefore = Ctx.Errors.Num();
-			RangeCheck(Ctx, Limits[0], -FMantlePlaceLimits::MaxHingeAngle, 0.0, Index(LimitsPath, 0));
-			RangeCheck(Ctx, Limits[1], 0.0, FMantlePlaceLimits::MaxHingeAngle, Index(LimitsPath, 1));
+			RangeCheck(Ctx, Limits[0], -Most, 0.0, Index(LimitsPath, 0));
+			RangeCheck(Ctx, Limits[1], 0.0, Most, Index(LimitsPath, 1));
 			if (Ctx.Errors.Num() == ErrorsBefore)
 			{
 				P.bLimited = true;
-				P.MinAngle = Limits[0];
-				P.MaxAngle = Limits[1];
+				P.LimitMin = Limits[0];
+				P.LimitMax = Limits[1];
 			}
 		}
 		double Number = 0.0;
-		if (OnlyFor(TEXT("length"), TEXT("rope")) && RequireNumber(Ctx, Props, TEXT("length"), Path, Number))
+		if (OnlyFor(TEXT("swingLimit"), { TEXT("ball") }, TEXT("a ball")) && RequireNumber(Ctx, Props, TEXT("swingLimit"), Path, Number))
+		{
+			if (Number <= 0.0 || Number > FMantlePlaceLimits::MaxBallAngle)
+			{
+				Ctx.Fail(Join(Path, TEXT("swingLimit")), FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), Number, FMantlePlaceLimits::MaxBallAngle));
+			}
+			P.SwingLimit = Number;
+		}
+		if (OnlyFor(TEXT("twistLimit"), { TEXT("ball") }, TEXT("a ball")) && RequireNumber(Ctx, Props, TEXT("twistLimit"), Path, Number))
+		{
+			RangeCheck(Ctx, Number, 0.0, FMantlePlaceLimits::MaxBallAngle, Join(Path, TEXT("twistLimit")));
+			P.TwistLimit = Number;
+		}
+		if (OnlyFor(TEXT("motor"), { TEXT("hinge"), TEXT("slider") }, TEXT("a hinge or a slider")))
+		{
+			const FString MotorPath = Join(Path, TEXT("motor"));
+			const TSharedPtr<FJsonObject>* MotorObject = nullptr;
+			if (!Props->TryGetObjectField(TEXT("motor"), MotorObject))
+			{
+				Ctx.Fail(MotorPath, TEXT("must be an object"));
+			}
+			else
+			{
+				RequireNoUnknownKeys(Ctx, *MotorObject, { TEXT("mode"), TEXT("target"), TEXT("maxForce"), TEXT("maxSpeed") }, MotorPath);
+				FMantleConstraintMotor Motor;
+				FString Mode;
+				const int32 ErrorsBefore = Ctx.Errors.Num();
+				if (RequireString(Ctx, *MotorObject, TEXT("mode"), MotorPath, Mode) && !MantleParseMotorMode(Mode, Motor.Mode))
+				{
+					Ctx.Fail(Join(MotorPath, TEXT("mode")), FString::Printf(TEXT("'%s' is not a motor mode (position, speed)"), *Mode));
+				}
+				const bool bModeRead = Ctx.Errors.Num() == ErrorsBefore;
+				if (RequireNumber(Ctx, *MotorObject, TEXT("maxForce"), MotorPath, Motor.MaxForce)
+					&& (Motor.MaxForce <= 0.0 || Motor.MaxForce > FMantlePlaceLimits::MaxMotorForce))
+				{
+					Ctx.Fail(Join(MotorPath, TEXT("maxForce")),
+						FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), Motor.MaxForce, FMantlePlaceLimits::MaxMotorForce));
+				}
+				if (RequireNumber(Ctx, *MotorObject, TEXT("target"), MotorPath, Motor.Target) && bModeRead && bKnownType)
+				{
+					const FString TargetPath = Join(MotorPath, TEXT("target"));
+					const double Most = FMantleConstraints::MotorTargetMost(P.Type, Motor.Mode);
+					const int32 TargetErrorsBefore = Ctx.Errors.Num();
+					RangeCheck(Ctx, Motor.Target, -Most, Most, TargetPath);
+					if (Ctx.Errors.Num() == TargetErrorsBefore && Motor.Mode == EMantleMotorMode::Position && P.bLimited
+						&& (Motor.Target < P.LimitMin || Motor.Target > P.LimitMax))
+					{
+						Ctx.Fail(TargetPath, FString::Printf(TEXT("%g is outside the joint's limits [%g, %g]"), Motor.Target, P.LimitMin, P.LimitMax));
+					}
+				}
+				if ((*MotorObject)->HasField(TEXT("maxSpeed")))
+				{
+					const FString SpeedPath = Join(MotorPath, TEXT("maxSpeed"));
+					double MaxSpeed = 0.0;
+					if (bModeRead && Motor.Mode != EMantleMotorMode::Position)
+					{
+						Ctx.Fail(SpeedPath, TEXT("is only for a position motor"));
+					}
+					else if (RequireNumber(Ctx, *MotorObject, TEXT("maxSpeed"), MotorPath, MaxSpeed) && bKnownType)
+					{
+						const double Most = FMantleConstraints::MotorTargetMost(P.Type, EMantleMotorMode::Speed);
+						if (MaxSpeed <= 0.0 || MaxSpeed > Most)
+						{
+							Ctx.Fail(SpeedPath, FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), MaxSpeed, Most));
+						}
+						Motor.MaxSpeed = MaxSpeed;
+					}
+				}
+				P.Motor = Motor;
+			}
+		}
+		if (OnlyFor(TEXT("length"), { TEXT("rope") }, TEXT("a rope")) && RequireNumber(Ctx, Props, TEXT("length"), Path, Number))
 		{
 			if (Number <= 0.0 || Number > FMantlePlaceLimits::MaxRopeLength)
 			{
