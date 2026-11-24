@@ -257,7 +257,9 @@ bool FMantleConstraintMotorWorldTest::RunTest(const FString& Parameters)
 		GateLeast = FMath::Min(GateLeast, PositionOf(GateHinge));
 	}
 	TestEqual(TEXT("the sleeping gate turned to -45 degrees"), PositionOf(GateHinge), -45.0, 2.0);
-	TestTrue(FString::Printf(TEXT("without swinging more than 3 degrees past it (it reached %.1f)"), GateLeast), GateLeast > -48.0);
+	// The gate swings 3.8 degrees past, more than the door and lift's 3: Joshua accepted that on 2026-11-23 and the test
+	// allows 5. Why it swings further is still open, a follow-up (more damping did not change it).
+	TestTrue(FString::Printf(TEXT("without swinging more than 5 degrees past it (it reached %.1f)"), GateLeast), GateLeast > -50.0);
 	// A top speed of its own: 30 degrees a second takes the gate from -45 to 0 in 1.5 s, not sooner.
 	FMantleConstraintMotor Slow{ EMantleMotorMode::Position, 0.0, 300.0 };
 	Slow.MaxSpeed = 30.0;
