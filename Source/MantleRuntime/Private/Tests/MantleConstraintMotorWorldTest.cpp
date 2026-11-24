@@ -191,10 +191,21 @@ bool FMantleConstraintMotorWorldTest::RunTest(const FString& Parameters)
 	Drawer->SetPhysicsLinearVelocity(FVector(300.0, 0.0, 0.0));
 	Lantern->SetPhysicsLinearVelocity(FVector(0.0, 600.0, 0.0));
 	double MostTilt = 0.0;
+	// How far past their targets the position motors go: the play test's door swung 56 degrees past 90 when its
+	// motor's whole push was the spring's (the cap took the braking too). Its setpoint now moves at the motor's
+	// top speed, so it arrives without swinging past.
+	double DoorMost = -TNumericLimits<double>::Max();
+	double LiftMost = -TNumericLimits<double>::Max();
+	auto Follow = [&]()
+	{
+		DoorMost = FMath::Max(DoorMost, PositionOf(DoorHinge));
+		LiftMost = FMath::Max(LiftMost, PositionOf(LiftRail));
+	};
 	const FVector HookPoint = Lantern->GetComponentTransform().TransformPosition(Hook.AnchorA);
 	for (int32 Step = 0; Step < 120; ++Step)
 	{
 		Physics.Run(StepSeconds);
+		Follow();
 		// The lantern hangs straight down from the hook at first: its tilt is the angle off that.
 		const FVector Down = (Lantern->GetComponentLocation() - HookPoint).GetSafeNormal();
 		MostTilt = FMath::Max(MostTilt, FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Down | -FVector::ZAxisVector, -1.0, 1.0))));
@@ -204,8 +215,14 @@ bool FMantleConstraintMotorWorldTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("the drawer stops at its upper limit, 40"), PositionOf(DrawerSlide), 40.0, 2.0);
 	Drawer->SetPhysicsLinearVelocity(FVector(-300.0, 0.0, 0.0));
 
-	Physics.Run(2.0f);
+	for (int32 Step = 0; Step < 120; ++Step)
+	{
+		Physics.Run(StepSeconds);
+		Follow();
+	}
 	TestEqual(TEXT("the door turned to 90 degrees"), PositionOf(DoorHinge), 90.0, 2.0);
+	TestTrue(FString::Printf(TEXT("without swinging more than 3 degrees past it (it reached %.1f)"), DoorMost), DoorMost < 93.0);
+	TestTrue(FString::Printf(TEXT("the lift went no more than 3 cm past 500 (it reached %.1f)"), LiftMost), LiftMost < 503.0);
 	const FVector DoorFacing = Door->GetComponentQuat().GetAxisX();
 	TestTrue(FString::Printf(TEXT("a positive turn about Z is a positive yaw (facing %s)"), *DoorFacing.ToString()),
 		DoorFacing.Equals(FVector::YAxisVector, 0.05));
@@ -232,8 +249,28 @@ bool FMantleConstraintMotorWorldTest::RunTest(const FString& Parameters)
 	Physics.Run(0.1f);
 	FString Error;
 	TestTrue(TEXT("the gate takes a new target"), GateHinge->SetMotor(FMantleConstraintMotor{ EMantleMotorMode::Position, -45.0, 300.0 }, Error));
-	Physics.Run(2.0f);
+	double GateLeast = TNumericLimits<double>::Max();
+	for (int32 Step = 0; Step < 120; ++Step)
+	{
+		Physics.Run(StepSeconds);
+		GateLeast = FMath::Min(GateLeast, PositionOf(GateHinge));
+	}
 	TestEqual(TEXT("the sleeping gate turned to -45 degrees"), PositionOf(GateHinge), -45.0, 2.0);
+	TestTrue(FString::Printf(TEXT("without swinging more than 3 degrees past it (it reached %.1f)"), GateLeast), GateLeast > -48.0);
+	// A top speed of its own: 30 degrees a second takes the gate from -45 to 0 in 1.5 s, not sooner.
+	FMantleConstraintMotor Slow{ EMantleMotorMode::Position, 0.0, 300.0 };
+	Slow.MaxSpeed = 30.0;
+	TestTrue(TEXT("the gate takes a top speed"), GateHinge->SetMotor(Slow, Error));
+	Physics.Run(0.75f);
+	// Its setpoint is half way; a critically damped spring follows a moving setpoint 2 v / omega behind.
+	const double Lag = 2.0 * 30.0 / Omega;
+	TestEqual(FString::Printf(TEXT("half way at 30 degrees a second, %.1f degrees behind its setpoint"), Lag), PositionOf(GateHinge), -22.5 - Lag, 2.0);
+	Physics.Run(1.5f);
+	TestEqual(TEXT("and there after 1.5 s"), PositionOf(GateHinge), 0.0, 2.0);
+	FMantleConstraintMotor Spinning{ EMantleMotorMode::Speed, 90.0, 300.0 };
+	Spinning.MaxSpeed = 30.0;
+	TestFalse(TEXT("a speed motor takes no top speed"), GateHinge->SetMotor(Spinning, Error));
+	TestTrue(TEXT("naming MaxSpeed"), Error.StartsWith(TEXT("MaxSpeed")));
 	TestFalse(TEXT("a target past 180 is refused"), GateHinge->SetMotor(FMantleConstraintMotor{ EMantleMotorMode::Position, 200.0, 300.0 }, Error));
 	TestTrue(TEXT("naming Target"), Error.StartsWith(TEXT("Target")));
 	TestTrue(TEXT("the motor can be removed"), GateHinge->SetMotor(TOptional<FMantleConstraintMotor>(), Error));

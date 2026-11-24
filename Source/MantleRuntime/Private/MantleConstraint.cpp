@@ -118,8 +118,24 @@ namespace
 	 * middle of the limits, so the target is entityA's own turn or travel from where it was made, less
 	 * the middle, and the speed is entityA's own. An Unreal drive's target is the same number as a
 	 * Mantle motor's for a joint centered on where it starts.
+	 *
+	 * A position motor is driven to PositionSetpoint, which AMantleConstraint moves toward the motor's
+	 * Target at its top speed (Tick); an authoring build's engine constraint is given the Target itself.
 	 */
-	void ApplyConstraintMotor(FConstraintInstance& Instance, const FMantleConstraintProps& Props, const FMantleConstraintFrames& Frames, double Inertia)
+	void SetMotorPositionTarget(FConstraintInstance& Instance, const FMantleConstraintProps& Props, const FMantleConstraintFrames& Frames, double Setpoint)
+	{
+		if (IsAngularMotorType(Props.Type))
+		{
+			Instance.SetAngularOrientationTarget(FQuat(FVector::XAxisVector, FMath::DegreesToRadians(Setpoint - Frames.Middle)));
+		}
+		else
+		{
+			Instance.SetLinearPositionTarget(FVector(Setpoint - Frames.Middle, 0.0, 0.0));
+		}
+	}
+
+	void ApplyConstraintMotor(FConstraintInstance& Instance, const FMantleConstraintProps& Props, const FMantleConstraintFrames& Frames, double Inertia,
+		double PositionSetpoint)
 	{
 		Instance.SetLinearPositionDrive(false, false, false);
 		Instance.SetLinearVelocityDrive(false, false, false);
@@ -140,7 +156,7 @@ namespace
 				static_cast<float>(Motor.MaxForce * FMantleConstraints::UnrealTorquePerNewtonMeter));
 			if (bPosition)
 			{
-				Instance.SetAngularOrientationTarget(FQuat(FVector::XAxisVector, FMath::DegreesToRadians(Motor.Target - Frames.Middle)));
+				SetMotorPositionTarget(Instance, Props, Frames, PositionSetpoint);
 				Instance.SetAngularVelocityTarget(FVector::ZeroVector);
 				Instance.SetOrientationDriveTwistAndSwing(true, false);
 			}
@@ -158,7 +174,7 @@ namespace
 				static_cast<float>(Motor.MaxForce * FMantleConstraints::UnrealForcePerNewton));
 			if (bPosition)
 			{
-				Instance.SetLinearPositionTarget(FVector(Motor.Target - Frames.Middle, 0.0, 0.0));
+				SetMotorPositionTarget(Instance, Props, Frames, PositionSetpoint);
 				Instance.SetLinearVelocityTarget(FVector::ZeroVector);
 				Instance.SetLinearPositionDrive(true, false, false);
 			}
@@ -294,6 +310,19 @@ FMantleMotorGains FMantleConstraints::MotorGains(EMantleConstraintType Type, EMa
 	return Gains;
 }
 
+double FMantleConstraints::MotorDefaultSpeed(EMantleConstraintType Type, double MaxForce, double Inertia)
+{
+	// The damper of a position motor (MotorGains, before Chaos's scale) at this speed pushes with the whole
+	// MaxForce. A setpoint moving at that speed is followed with the spring and the damper cancelling, and
+	// stopping it takes about a fifth of MaxForce, so the motor never meets its cap and never swings past.
+	const bool bHinge = IsAngularMotorType(Type);
+	const double Moved = Inertia > 0.0 ? Inertia : 1.0;
+	const double Damping = 2.0 * Moved * 2.0 * UE_DOUBLE_PI * MotorPositionResponseHz;
+	const double Force = MaxForce * (bHinge ? UnrealTorquePerNewtonMeter : UnrealForcePerNewton);
+	const double Speed = Force / Damping;
+	return FMath::Clamp(bHinge ? FMath::RadiansToDegrees(Speed) : Speed, 1.0, MotorTargetMost(Type, EMantleMotorMode::Speed));
+}
+
 bool FMantleConstraints::CheckMotor(EMantleConstraintType Type, bool bLimited, double LimitMin, double LimitMax, const FMantleConstraintMotor& Motor,
 	FString& OutError)
 {
@@ -316,6 +345,21 @@ bool FMantleConstraints::CheckMotor(EMantleConstraintType Type, bool bLimited, d
 	{
 		OutError = FString::Printf(TEXT("Target %g is outside the joint's limits {%g, %g}"), Motor.Target, LimitMin, LimitMax);
 		return false;
+	}
+	if (Motor.MaxSpeed.IsSet())
+	{
+		const double MostSpeed = MotorTargetMost(Type, EMantleMotorMode::Speed);
+		if (!bPosition)
+		{
+			OutError = TEXT("MaxSpeed is only for a position motor; a speed motor's Target is its speed");
+			return false;
+		}
+		if (!(Motor.MaxSpeed.GetValue() > 0.0 && Motor.MaxSpeed.GetValue() <= MostSpeed))
+		{
+			OutError = FString::Printf(TEXT("MaxSpeed must be above 0 and at most %g %s, got %g"), MostSpeed,
+				bHinge ? TEXT("degrees a second") : TEXT("cm a second"), Motor.MaxSpeed.GetValue());
+			return false;
+		}
 	}
 	return true;
 }
@@ -464,9 +508,17 @@ void FMantleConstraints::ConfigureEditorConstraint(UPhysicsConstraintComponent* 
 	Instance.AngularRotationOffset = (Props.Type == EMantleConstraintType::Hinge && Props.bLimited)
 		? FQuat(FVector::XAxisVector, FMath::DegreesToRadians(Frames.Middle)).Rotator()
 		: FRotator::ZeroRotator;
+	// An engine drive has no top speed, so the editor's constraint drives straight to the Target; the
+	// runtime joint (AMantleConstraint) moves its target at the motor's MaxSpeed.
+	if (Props.Motor.IsSet() && Props.Motor->MaxSpeed.IsSet())
+	{
+		UE_LOG(LogMantle, Warning, TEXT("MANTLE_CONSTRAINT_EDITOR %s: the motor's maxSpeed (%g) has no Unreal drive setting; the editor's Physics Constraint drives straight to its target."),
+			*ActorA->GetActorNameOrLabel(), Props.Motor->MaxSpeed.GetValue());
+	}
 	ApplyConstraintMotor(Instance, Props, Frames,
 		MotorInertia(Props.Type, Frames, Cast<UPrimitiveComponent>(ActorA->GetRootComponent()),
-			ActorB ? Cast<UPrimitiveComponent>(ActorB->GetRootComponent()) : nullptr));
+			ActorB ? Cast<UPrimitiveComponent>(ActorB->GetRootComponent()) : nullptr),
+		Props.Motor.IsSet() ? Props.Motor->Target : 0.0);
 }
 
 bool FMantleConstraints::ReadEditorConstraint(const UPhysicsConstraintComponent* Component, const AActor* ActorA, const AActor* ActorB,
@@ -764,7 +816,10 @@ bool FMantleConstraints::ReadEditorConstraint(const UPhysicsConstraintComponent*
 
 AMantleConstraint::AMantleConstraint()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// Ticks only while a position motor's setpoint moves toward its target (StartMotor), before physics.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+	PrimaryActorTick.TickGroup = TG_PrePhysics;
 	// Server only: players see the props move, which is their own replicated movement.
 	bReplicates = false;
 	Constraint = CreateDefaultSubobject<UPhysicsConstraintComponent>(TEXT("Constraint"));
@@ -837,7 +892,8 @@ bool AMantleConstraint::Join(UPrimitiveComponent* A, UPrimitiveComponent* B, FSt
 		OutError = TEXT("the physics engine refused the joint");
 		return false;
 	}
-	ApplyConstraintMotor(Instance, Props, Frames, MotorInertia(Props.Type, Frames, A, B));
+	// The joint is made where both stand now: a position motor sets out from 0.
+	StartMotor(A, B, 0.0);
 
 	JoinedA = A;
 	JoinedB = B;
@@ -867,7 +923,7 @@ FString AMantleConstraint::DescribeMotor() const
 		return TEXT("none");
 	}
 	const FMantleConstraintMotor& Motor = Props.Motor.GetValue();
-	return FString::Printf(TEXT("%s:%.2f:%.2f"), MantleMotorModeToString(Motor.Mode), Motor.Target, Motor.MaxForce);
+	return FString::Printf(TEXT("%s:%.2f:%.2f:speed=%.2f"), MantleMotorModeToString(Motor.Mode), Motor.Target, Motor.MaxForce, MotorSpeed);
 }
 
 bool AMantleConstraint::SetMotor(const TOptional<FMantleConstraintMotor>& Motor, FString& OutError)
@@ -887,9 +943,11 @@ bool AMantleConstraint::SetMotor(const TOptional<FMantleConstraintMotor>& Motor,
 	{
 		return false;
 	}
+	// A new position target sets out from where the joint is now, not from the old setpoint.
+	const double From = GetPosition().Get(MotorSetpoint);
 	Props.Motor = Motor;
 	UPrimitiveComponent* B = JoinedB.Get();
-	ApplyConstraintMotor(Constraint->ConstraintInstance, Props, Frames, MotorInertia(Props.Type, Frames, A, B));
+	StartMotor(A, B, From);
 	// A new target does not wake a sleeping body by itself (FConstraintInstance's drive setters only
 	// pass the drive on), and a sleeping body does not move.
 	for (UPrimitiveComponent* Joined : { A, B })
@@ -902,6 +960,34 @@ bool AMantleConstraint::SetMotor(const TOptional<FMantleConstraintMotor>& Motor,
 	UE_LOG(LogMantle, Log, TEXT("MANTLE_CONSTRAINT_MOTOR entity=%s type=%s a=%s motor=%s"), EntityId.IsEmpty() ? TEXT("-") : *EntityId,
 		MantleConstraintTypeToString(Props.Type), *Props.EntityA, *DescribeMotor());
 	return true;
+}
+
+void AMantleConstraint::StartMotor(UPrimitiveComponent* A, UPrimitiveComponent* B, double From)
+{
+	const double Inertia = MotorInertia(Props.Type, Frames, A, B);
+	const bool bPosition = Props.Motor.IsSet() && Props.Motor->Mode == EMantleMotorMode::Position;
+	MotorSetpoint = bPosition ? From : 0.0;
+	MotorSpeed = bPosition ? Props.Motor->MaxSpeed.Get(FMantleConstraints::MotorDefaultSpeed(Props.Type, Props.Motor->MaxForce, Inertia)) : 0.0;
+	ApplyConstraintMotor(Constraint->ConstraintInstance, Props, Frames, Inertia, MotorSetpoint);
+	SetActorTickEnabled(bPosition && MotorSetpoint != Props.Motor->Target);
+}
+
+void AMantleConstraint::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (!bJoined || bBroken || !Props.Motor.IsSet() || Props.Motor->Mode != EMantleMotorMode::Position)
+	{
+		SetActorTickEnabled(false);
+		return;
+	}
+	const double Target = Props.Motor->Target;
+	const double Step = MotorSpeed * DeltaSeconds;
+	MotorSetpoint = FMath::Abs(Target - MotorSetpoint) <= Step ? Target : MotorSetpoint + FMath::Sign(Target - MotorSetpoint) * Step;
+	SetMotorPositionTarget(Constraint->ConstraintInstance, Props, Frames, MotorSetpoint);
+	if (MotorSetpoint == Target)
+	{
+		SetActorTickEnabled(false);
+	}
 }
 
 TOptional<double> AMantleConstraint::GetPosition() const

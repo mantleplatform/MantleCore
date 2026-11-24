@@ -1518,10 +1518,15 @@ struct FMantleConstraintMotor
 	double Target = 0.0;
 	/** Newton-meters (a hinge) or newtons (a slider); above 0. */
 	double MaxForce = 0.0;
+	/**
+	 * Position: the fastest it moves the joint toward Target, degrees or cm a second. Unset: the speed at which
+	 * stopping takes the whole MaxForce (FMantleConstraints::MotorDefaultSpeed), so it arrives without swinging past.
+	 */
+	TOptional<double> MaxSpeed;
 
 	bool operator==(const FMantleConstraintMotor& Other) const
 	{
-		return Mode == Other.Mode && Target == Other.Target && MaxForce == Other.MaxForce;
+		return Mode == Other.Mode && Target == Other.Target && MaxForce == Other.MaxForce && MaxSpeed == Other.MaxSpeed;
 	}
 };
 

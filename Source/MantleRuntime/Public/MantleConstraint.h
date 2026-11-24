@@ -78,6 +78,15 @@ struct MANTLERUNTIME_API FMantleConstraints
 	static constexpr double MotorPositionResponseHz = 2.0;
 	static constexpr double MotorSpeedResponse = 20.0;
 
+	/**
+	 * A position motor's top speed when its MaxSpeed is unset, degrees or cm a second: the speed at which its
+	 * damper pushes with the whole MaxForce (newtons or newton-meters) on Inertia (as MotorGains takes it), so
+	 * following a setpoint at it, and stopping, stay well under MaxForce. Chaos caps a drive's whole push, the
+	 * spring's and the damper's together (FPBDJointCachedSolver::ApplyAxisPositionDrive, ApplyMaxLambda), so a
+	 * capped spring cannot brake in time; a setpoint moving at this speed never asks it to.
+	 */
+	static double MotorDefaultSpeed(EMantleConstraintType Type, double MaxForce, double Inertia);
+
 	/** The most a motor's Target may be either way for Type and Mode: degrees, cm, degrees a second or cm a second. */
 	static double MotorTargetMost(EMantleConstraintType Type, EMantleMotorMode Mode);
 
@@ -88,8 +97,8 @@ struct MANTLERUNTIME_API FMantleConstraints
 	static FMantleMotorGains MotorGains(EMantleConstraintType Type, EMantleMotorMode Mode, double Inertia);
 
 	/**
-	 * False, with OutError naming the value ("MaxForce ...", "Target ..."), when Motor breaks the
-	 * place parser's ranges for a joint of Type with those limits (bLimited, LimitMin..LimitMax).
+	 * False, with OutError naming the value ("MaxForce ...", "Target ...", "MaxSpeed ..."), when Motor breaks
+	 * the place parser's ranges for a joint of Type with those limits (bLimited, LimitMin..LimitMax).
 	 */
 	static bool CheckMotor(EMantleConstraintType Type, bool bLimited, double LimitMin, double LimitMax, const FMantleConstraintMotor& Motor,
 		FString& OutError);
@@ -185,6 +194,7 @@ public:
 	FMantleConstraintBrokenDelegate OnBroken;
 
 	//~ Begin AActor
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void Destroyed() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	//~ End AActor
@@ -203,8 +213,19 @@ private:
 	/** Stops HandleActorDestroyed (this constraint is going). */
 	void StopWatchingJoinedActors();
 
-	/** The motor for the log: "mode:target:maxForce", or "none". */
+	/** The motor for the log: "mode:target:maxForce:speed=", or "none". */
 	FString DescribeMotor() const;
+
+	/**
+	 * Applies the motor between A and B (null: the world). A position motor's setpoint starts at From (its
+	 * turn or travel now) and Tick moves it toward Target at MaxSpeed (or MotorDefaultSpeed); a speed motor
+	 * runs at once.
+	 */
+	void StartMotor(UPrimitiveComponent* A, UPrimitiveComponent* B, double From);
+
+	/** A position motor: where its drive is aimed now, degrees or cm, and how fast that moves toward Target. */
+	double MotorSetpoint = 0.0;
+	double MotorSpeed = 0.0;
 
 	FDelegateHandle ActorDestroyedHandle;
 	TWeakObjectPtr<AActor> JoinedActorA;

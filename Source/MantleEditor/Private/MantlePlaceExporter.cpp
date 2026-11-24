@@ -7985,6 +7985,10 @@ namespace
 			Writer->WriteValue(TEXT("mode"), FString(MantleMotorModeToString(Motor.Mode)));
 			Writer->WriteValue(TEXT("target"), Motor.Target);
 			Writer->WriteValue(TEXT("maxForce"), Motor.MaxForce);
+			if (Motor.Mode == EMantleMotorMode::Position && Motor.MaxSpeed.IsSet())
+			{
+				Writer->WriteValue(TEXT("maxSpeed"), Motor.MaxSpeed.GetValue());
+			}
 			Writer->WriteObjectEnd();
 		}
 		if (P14->Type == EMantleConstraintType::Rope && P14->Length.IsSet())

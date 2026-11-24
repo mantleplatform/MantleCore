@@ -2560,7 +2560,7 @@ namespace
 			}
 			else
 			{
-				RequireNoUnknownKeys(Ctx, *MotorObject, { TEXT("mode"), TEXT("target"), TEXT("maxForce") }, MotorPath);
+				RequireNoUnknownKeys(Ctx, *MotorObject, { TEXT("mode"), TEXT("target"), TEXT("maxForce"), TEXT("maxSpeed") }, MotorPath);
 				FMantleConstraintMotor Motor;
 				FString Mode;
 				const int32 ErrorsBefore = Ctx.Errors.Num();
@@ -2585,6 +2585,24 @@ namespace
 						&& (Motor.Target < P.LimitMin || Motor.Target > P.LimitMax))
 					{
 						Ctx.Fail(TargetPath, FString::Printf(TEXT("%g is outside the joint's limits [%g, %g]"), Motor.Target, P.LimitMin, P.LimitMax));
+					}
+				}
+				if ((*MotorObject)->HasField(TEXT("maxSpeed")))
+				{
+					const FString SpeedPath = Join(MotorPath, TEXT("maxSpeed"));
+					double MaxSpeed = 0.0;
+					if (bModeRead && Motor.Mode != EMantleMotorMode::Position)
+					{
+						Ctx.Fail(SpeedPath, TEXT("is only for a position motor"));
+					}
+					else if (RequireNumber(Ctx, *MotorObject, TEXT("maxSpeed"), MotorPath, MaxSpeed) && bKnownType)
+					{
+						const double Most = FMantleConstraints::MotorTargetMost(P.Type, EMantleMotorMode::Speed);
+						if (MaxSpeed <= 0.0 || MaxSpeed > Most)
+						{
+							Ctx.Fail(SpeedPath, FString::Printf(TEXT("%g is outside the permitted range (0, %g]"), MaxSpeed, Most));
+						}
+						Motor.MaxSpeed = MaxSpeed;
 					}
 				}
 				P.Motor = Motor;

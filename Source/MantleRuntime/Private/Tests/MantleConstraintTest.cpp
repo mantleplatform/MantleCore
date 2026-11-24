@@ -167,6 +167,13 @@ bool FMantleConstraintParseTest::RunTest(const FString& Parameters)
 		"\"type\":\"slider\",\"entityA\":\"ent_crate_a\",\"limits\":[-100000,100000]")).bSuccess);
 	TestTrue(TEXT("a hinge's motor at the edge of its limits parses"), ParseJoint(TEXT(
 		"\"type\":\"hinge\",\"entityA\":\"ent_crate_a\",\"limits\":[-30,60],\"motor\":{\"mode\":\"position\",\"target\":-30,\"maxForce\":5}")).bSuccess);
+	const FMantleParseResult Paced = ParseJoint(TEXT(
+		"\"type\":\"hinge\",\"entityA\":\"ent_crate_a\",\"motor\":{\"mode\":\"position\",\"target\":90,\"maxForce\":5,\"maxSpeed\":3600}"));
+	TestTrue(TEXT("a position motor with a top speed parses"), Paced.bSuccess);
+	if (const FMantleConstraintProps* Props = JointOf(Paced))
+	{
+		TestTrue(TEXT("its top speed"), Props->Motor.IsSet() && Props->Motor->MaxSpeed.Get(0.0) == 3600.0);
+	}
 	TestTrue(TEXT("a speed motor is not held to the limits"), ParseJoint(TEXT(
 		"\"type\":\"hinge\",\"entityA\":\"ent_crate_a\",\"limits\":[0,10],\"motor\":{\"mode\":\"speed\",\"target\":720,\"maxForce\":5}")).bSuccess);
 
@@ -213,6 +220,15 @@ bool FMantleConstraintParseTest::RunTest(const FString& Parameters)
 			TEXT("/entities/0/properties/motor/target") },
 		{ TEXT("a slider speed past 10000"), TEXT("\"type\":\"slider\",\"entityA\":\"ent_crate_a\",\"motor\":{\"mode\":\"speed\",\"target\":-10001,\"maxForce\":1}"),
 			TEXT("/entities/0/properties/motor/target") },
+		{ TEXT("a top speed on a speed motor"),
+			TEXT("\"type\":\"hinge\",\"entityA\":\"ent_crate_a\",\"motor\":{\"mode\":\"speed\",\"target\":90,\"maxForce\":1,\"maxSpeed\":30}"),
+			TEXT("/entities/0/properties/motor/maxSpeed") },
+		{ TEXT("a top speed of 0"),
+			TEXT("\"type\":\"slider\",\"entityA\":\"ent_crate_a\",\"motor\":{\"mode\":\"position\",\"target\":0,\"maxForce\":1,\"maxSpeed\":0}"),
+			TEXT("/entities/0/properties/motor/maxSpeed") },
+		{ TEXT("a slider top speed past 10000"),
+			TEXT("\"type\":\"slider\",\"entityA\":\"ent_crate_a\",\"motor\":{\"mode\":\"position\",\"target\":0,\"maxForce\":1,\"maxSpeed\":10001}"),
+			TEXT("/entities/0/properties/motor/maxSpeed") },
 		{ TEXT("a position target outside the limits"),
 			TEXT("\"type\":\"slider\",\"entityA\":\"ent_crate_a\",\"limits\":[0,40],\"motor\":{\"mode\":\"position\",\"target\":-5,\"maxForce\":1}"),
 			TEXT("/entities/0/properties/motor/target") },
@@ -297,6 +313,24 @@ bool FMantleConstraintValuesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("a speed motor's damper"), Speed.Damping,
 		1000.0 * FMantleConstraints::MotorSpeedResponse / Chaos::ConstraintSettings::AngularDriveDampingScale(), 1e-3);
 	TestTrue(TEXT("nothing to move still drives"), FMantleConstraints::MotorGains(EMantleConstraintType::Slider, EMantleMotorMode::Position, 0.0).Stiffness > 0.0);
+
+	// The top speed when none is given: the speed at which the (unscaled) damper pushes with the whole max force.
+	// The play test's door: 500 N*m on about 100250 kg*cm^2 about its hinge line, which is about 114 degrees a second.
+	TestEqual(TEXT("the door's top speed"), FMantleConstraints::MotorDefaultSpeed(EMantleConstraintType::Hinge, 500.0, 100250.0),
+		FMath::RadiansToDegrees(500.0 * FMantleConstraints::UnrealTorquePerNewtonMeter / (2.0 * 100250.0 * Omega)), 1e-6);
+	TestEqual(TEXT("a 50 kg lift's at 5000 N"), FMantleConstraints::MotorDefaultSpeed(EMantleConstraintType::Slider, 5000.0, 50.0),
+		5000.0 * FMantleConstraints::UnrealForcePerNewton / (2.0 * 50.0 * Omega), 1e-6);
+	TestEqual(TEXT("never above a slider's top speed"), FMantleConstraints::MotorDefaultSpeed(EMantleConstraintType::Slider, 10000000.0, 1.0),
+		FMantlePlaceLimits::MaxMotorLinearSpeed);
+	FMantleConstraintMotor Paced{ EMantleMotorMode::Position, 10.0, 1.0 };
+	Paced.MaxSpeed = 3600.0;
+	TestTrue(TEXT("a hinge's top speed may be 3600"), FMantleConstraints::CheckMotor(EMantleConstraintType::Hinge, false, 0.0, 0.0, Paced, Error));
+	Paced.MaxSpeed = 3601.0;
+	TestFalse(TEXT("but no more"), FMantleConstraints::CheckMotor(EMantleConstraintType::Hinge, false, 0.0, 0.0, Paced, Error));
+	TestTrue(TEXT("naming MaxSpeed"), Error.StartsWith(TEXT("MaxSpeed")));
+	Paced.Mode = EMantleMotorMode::Speed;
+	Paced.MaxSpeed = 30.0;
+	TestFalse(TEXT("a speed motor takes none"), FMantleConstraints::CheckMotor(EMantleConstraintType::Hinge, false, 0.0, 0.0, Paced, Error));
 	return true;
 }
 
