@@ -12,6 +12,7 @@
 #include "MantleMeshReduce.h"
 #include "MantlePlaceExporter.h"
 #include "MantlePlaceSettingsActor.h"
+#include "MantleRuntime.h"
 #include "MantlePlaceLimits.h"
 #include "MantleScatterVolume.h"
 #include "MantleSlotSplit.h"
@@ -100,6 +101,9 @@
 #include "Materials/MaterialInstanceConstant.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "RHIGlobals.h"
+#include "RHIShaderPlatform.h"
+#include "RHIStrings.h"
 #include "ShaderCompiler.h"
 #include "Misc/FileHelper.h"
 #include "Misc/SecureHash.h"
@@ -5662,10 +5666,14 @@ void FMantlePlaceAssets::CheckMaterialsCompile(const TArray<FMantleGatheredMater
 		return;
 	}
 
-	// This is the compile the editor itself would run to draw the material, which a headless (-nullrhi) editor never starts. Every
-	// material is translated for the PC target here and its shaders queued together; the shader worker then compiles them side by side,
-	// and a shader map already in memory or in the shared derived data cache is found instead of compiled again.
-	constexpr EShaderPlatform Platform = SP_PCD3D_SM5;
+	// This is the compile the editor itself would run to draw the material, which a headless (-nullrhi) editor never starts. The publish
+	// bake draws each material in the creator's editor, so it is compiled for that editor's shader platform; with no rendering RHI
+	// (-nullrhi) it is compiled for SM6, the first shader format the PC client targets (DefaultEngine.ini D3D12TargetedShaderFormats).
+	// Every material is translated here and its shaders queued together; the shader worker then compiles them side by side, and a
+	// shader map already in memory or in the shared derived data cache is found instead of compiled again.
+	const EShaderPlatform Platform = FApp::CanEverRender() ? GMaxRHIShaderPlatform : SP_PCD3D_SM6;
+	const FString PlatformName = LegacyShaderPlatformToShaderFormat(Platform).ToString();
+	UE_LOG(LogMantle, Display, TEXT("Compiling %d material(s) for %s, to check each one compiles..."), Jobs.Num(), *PlatformName);
 	for (FCompileJob& Job : Jobs)
 	{
 		// The same resource the engine makes when it caches a material's shaders (UMaterial::GetNewResources, UMaterialInstance::CacheResourceShadersForCooking).
@@ -5746,7 +5754,7 @@ void FMantlePlaceAssets::CheckMaterialsCompile(const TArray<FMantleGatheredMater
 				Through.Num() > 4 ? *FString::Printf(TEXT(" and %d more"), Through.Num() - 4) : TEXT(""));
 		}
 
-		FString What = FString::Printf(TEXT("Material %s does not compile, so Unreal draws its grey checkerboard in its place and Mantle would publish that checkerboard"), *Quoted(Owner));
+		FString What = FString::Printf(TEXT("Unreal cannot compile material %s, so it would publish as a grey checkerboard"), *Quoted(Owner));
 		if (!Instances.IsEmpty() || UsedBy.Num() > 0)
 		{
 			What += TEXT(" (");
@@ -5761,7 +5769,7 @@ void FMantlePlaceAssets::CheckMaterialsCompile(const TArray<FMantleGatheredMater
 		What += TEXT(".");
 		if (Errors.Num() > 0)
 		{
-			What += TEXT(" Unreal says: ");
+			What += FString::Printf(TEXT(" Unreal says (%s): "), *PlatformName);
 			What += FString::Join(TArray<FString>(Errors.GetData(), FMath::Min(Errors.Num(), 3)), TEXT(" | "));
 			if (Errors.Num() > 3)
 			{
