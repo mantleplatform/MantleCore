@@ -2,7 +2,8 @@
 //
 // Maintainer command: Mantle.Dev.RenderHairRule <HatStaticMesh> <HairCardsMesh> <Body> <Face> <Directory> <Label> [slot=acc_hat] [size]
 // Shows what a hat's hairRule does to long hair. The hair cards are fitted to the standard head as the plugin does (as
-// Mantle.Dev.RenderHairFit: FMantleEditorActions::MakeCosmeticDraft, then FMantleCosmeticExport::Build); the hat is placed on the
+// Mantle.Dev.RenderHairFit: FMantleEditorActions::MakeCosmeticDraft, then FMantleCosmeticExport::Build; cards the export keeps where
+// they are, such as MetaHuman's own, are drawn as they are on the face's skin); the hat is placed on the
 // slot's bone of Body as Mantle.Dev.RenderAccessory places it (the panel's default placement). Then the hair is drawn three ways:
 //   underIt    - the runtime's hair-under-hats step (FMantleHairHatFit::Fit on the fitted hair, the hat and the head skin): what pokes
 //                through the hat is pulled in under it, what is wholly through is cut out
@@ -24,6 +25,7 @@
 
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
+#include "Engine/SkinnedAssetCommon.h"
 #include "Engine/StaticMesh.h"
 #include "HAL/IConsoleManager.h"
 #include "Materials/Material.h"
@@ -32,6 +34,8 @@
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "ReferenceSkeleton.h"
+#include "Rendering/SkeletalMeshLODRenderData.h"
+#include "Rendering/SkeletalMeshRenderData.h"
 #include "StaticMeshAttributes.h"
 #include "StaticMeshDescription.h"
 #include "UObject/StrongObjectPtr.h"
@@ -68,6 +72,43 @@ namespace MantleDevRenderHairRulePrivate
 			const auto Corners = Description->GetTriangleVertices(Triangle);
 			for (int32 Corner = 0; Corner < 3; ++Corner) OutIndices.Add(Remap[Corners[Corner]]);
 		}
+		return OutIndices.Num() >= 3;
+	}
+
+	/**
+	 * The face's skin as a triangle list in its reference pose, from its render data (as the export reads it): LOD 3 when there is one
+	 * (the LOD the hair export authors on), else its last. Only sections whose slot reads as skin or head; all of them when none does.
+	 */
+	bool ReadHeadSkin(const USkeletalMesh* Face, TArray<FVector3f>& OutPositions, TArray<uint32>& OutIndices)
+	{
+		const FSkeletalMeshRenderData* RenderData = Face ? Face->GetResourceForRendering() : nullptr;
+		if (!RenderData || RenderData->LODRenderData.IsEmpty()) return false;
+		const int32 LODIndex = FMath::Min(3, RenderData->LODRenderData.Num() - 1);
+		const FSkeletalMeshLODRenderData& LOD = RenderData->LODRenderData[LODIndex];
+		const FPositionVertexBuffer& PositionBuffer = LOD.StaticVertexBuffers.PositionVertexBuffer;
+		TArray<uint32> Indices;
+		LOD.MultiSizeIndexContainer.GetIndexBuffer(Indices);
+		const TArray<FSkeletalMaterial>& Slots = Face->GetMaterials();
+		const FSkeletalMeshLODInfo* LODInfo = Face->GetLODInfo(LODIndex);
+		TArray<uint32> Skin, All;
+		for (int32 SectionIndex = 0; SectionIndex < LOD.RenderSections.Num(); ++SectionIndex)
+		{
+			const FSkelMeshRenderSection& Section = LOD.RenderSections[SectionIndex];
+			int32 Slot = Section.MaterialIndex;
+			if (LODInfo && LODInfo->LODMaterialMap.IsValidIndex(SectionIndex) && Slots.IsValidIndex(LODInfo->LODMaterialMap[SectionIndex])) Slot = LODInfo->LODMaterialMap[SectionIndex];
+			const FString Name = Slots.IsValidIndex(Slot) ? Slots[Slot].MaterialSlotName.ToString().ToLower() : FString();
+			const bool bSkin = Name.Contains(TEXT("skin")) || Name.Contains(TEXT("head"));
+			for (uint32 I = 0; I < Section.NumTriangles * 3; ++I)
+			{
+				const uint32 Index = Indices[Section.BaseIndex + I];
+				All.Add(Index);
+				if (bSkin) Skin.Add(Index);
+			}
+		}
+		const TArray<uint32>& Chosen = Skin.IsEmpty() ? All : Skin;
+		OutPositions.SetNumUninitialized(PositionBuffer.GetNumVertices());
+		for (uint32 Vertex = 0; Vertex < PositionBuffer.GetNumVertices(); ++Vertex) OutPositions[Vertex] = PositionBuffer.VertexPosition(Vertex);
+		OutIndices = Chosen;
 		return OutIndices.Num() >= 3;
 	}
 
@@ -155,11 +196,19 @@ namespace MantleDevRenderHairRulePrivate
 		const FMantleCosmeticPackage Package = FMantleCosmeticExport::Build(HairDraft, *Contract);
 		for (const FString& Note : Package.Notes) UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE note: %s"), *Note);
 		for (const FMantleCosmeticIssue& Issue : Package.Issues) UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE issue: %s"), *Issue.ToString());
-		const FMantleHairFitMeshes& Meshes = Package.HairHeadFitMeshes;
+		// Fitted hair: the fit's own geometry. Hair the export keeps where it is (MetaHuman's own cards): the cards as they are, on the
+		// face's skin, both in the face's reference pose (the same space the fit uses).
+		FMantleHairFitMeshes Meshes = Package.HairHeadFitMeshes;
 		if (!Package.bHairHeadFitted || !Meshes.IsValid())
 		{
-			UE_LOG(LogMantleRenderHairRule, Error, TEXT("MANTLE_RENDER_HAIRRULE failed: no hair fit to draw (errors=%d)"), Package.HasErrors());
-			return;
+			Meshes = FMantleHairFitMeshes();
+			if (Package.HasErrors() || !ReadTriangles(Hair, Meshes.AfterPositions, Meshes.HairTriangles) || !ReadHeadSkin(Face, Meshes.HeadPositions, Meshes.HeadTriangles))
+			{
+				UE_LOG(LogMantleRenderHairRule, Error, TEXT("MANTLE_RENDER_HAIRRULE failed: no hair to draw (errors=%d)"), Package.HasErrors());
+				return;
+			}
+			UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE hair kept as it is (not refitted): %d hair and %d head triangles"),
+				Meshes.HairTriangles.Num() / 3, Meshes.HeadTriangles.Num() / 3);
 		}
 
 		// The hat where the panel's default placement puts it, on the slot's bone in Body's reference pose (Mantle.Dev.RenderAccessory).
@@ -218,7 +267,9 @@ namespace MantleDevRenderHairRulePrivate
 		for (const FVector3f& P : HatPositions) HatBox += FVector(P);
 		FBox HeadBox(ForceInit);
 		for (const FVector3f& P : Meshes.HeadPositions) HeadBox += FVector(P);
-		UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE hat=%s hatBounds=%s headBounds=%s"), *HatShown->GetName(), *HatBox.ToString(), *HeadBox.ToString());
+		FBox HairBox(ForceInit);
+		for (const FVector3f& P : Meshes.AfterPositions) HairBox += FVector(P);
+		UE_LOG(LogMantleRenderHairRule, Display, TEXT("MANTLE_RENDER_HAIRRULE hat=%s hatBounds=%s headBounds=%s hairBounds=%s"), *HatShown->GetName(), *HatBox.ToString(), *HeadBox.ToString(), *HairBox.ToString());
 
 		// underIt: the runtime's hair-under-hats step on the fitted hair (the hat and the head skin in the hair's space).
 		FMantleSkinnedMeshLOD HairLOD;
