@@ -221,11 +221,31 @@ UMantlePhysicsMeshComponent* AMantlePhysicsProp::GetPhysicsMeshComponent() const
 	return Cast<UMantlePhysicsMeshComponent>(GetStaticMeshComponent());
 }
 
+FMantlePhysicsPropSettings FMantlePhysicsPropSettings::From(const FMantlePhysicsProps& InPhysics)
+{
+	FMantlePhysicsPropSettings Settings;
+	Settings.MassKg = InPhysics.Mass.IsSet() ? static_cast<float>(InPhysics.Mass.GetValue()) : 0.0f;
+	Settings.LinearDamping = static_cast<float>(InPhysics.LinearDamping);
+	Settings.AngularDamping = static_cast<float>(InPhysics.AngularDamping);
+	Settings.bGravity = InPhysics.bGravity;
+	return Settings;
+}
+
+void FMantlePhysicsPropSettings::ApplyTo(FMantlePhysicsProps& InPhysics) const
+{
+	InPhysics.Mass = MassKg > 0.0f ? TOptional<double>(MassKg) : TOptional<double>();
+	InPhysics.LinearDamping = LinearDamping;
+	InPhysics.AngularDamping = AngularDamping;
+	InPhysics.bGravity = bGravity;
+}
+
 void AMantlePhysicsProp::InitFromPlace(const FString& InEntityId, const FMantlePhysicsProps& InPhysics)
 {
 	EntityId = InEntityId;
 	Physics = InPhysics;
 	PhysicsMaterial = static_cast<uint8>(Physics.Material);
+	ReplicatedSettings = FMantlePhysicsPropSettings::From(Physics);
+	bWaitingForMesh = false;
 	UMantlePhysicsMeshComponent* Component = GetPhysicsMeshComponent();
 	if (!Component)
 	{
@@ -236,11 +256,92 @@ void AMantlePhysicsProp::InitFromPlace(const FString& InEntityId, const FMantleP
 	ApplyBodySettings(Component, Physics);
 }
 
+void AMantlePhysicsProp::InitWithoutMesh(const FString& InEntityId, const FMantlePhysicsProps& InPhysics)
+{
+	EntityId = InEntityId;
+	Physics = InPhysics;
+	PhysicsMaterial = static_cast<uint8>(Physics.Material);
+	ReplicatedSettings = FMantlePhysicsPropSettings::From(Physics);
+	bWaitingForMesh = true;
+}
+
+void AMantlePhysicsProp::InitAsCopyOf(const AMantlePhysicsProp& Source, const FString& InEntityId)
+{
+	UMantlePhysicsMeshComponent* To = GetPhysicsMeshComponent();
+	const UStaticMeshComponent* From = Source.GetStaticMeshComponent();
+	if (!To || !From)
+	{
+		return;
+	}
+	// Scale first: a mass computed from the collision is computed at the scale the body is made at.
+	SetActorScale3D(Source.GetActorScale3D());
+	To->SetStaticMesh(From->GetStaticMesh());
+	for (int32 Slot = 0; Slot < From->GetNumOverrideMaterials(); ++Slot)
+	{
+		if (UMaterialInterface* Material = From->OverrideMaterials[Slot])
+		{
+			To->SetMaterial(Slot, Material);
+		}
+	}
+	To->SetCastShadow(From->CastShadow);
+	To->SetCullDistance(From->LDMaxDrawDistance);
+	To->SetCollisionProfileName(UCollisionProfile::CustomCollisionProfileName);
+	To->SetCollisionEnabled(From->GetCollisionEnabled());
+	To->SetCollisionResponseToChannels(From->GetCollisionResponseToChannels());
+	SetActorHiddenInGame(Source.IsHidden());
+	bGrabbable = Source.bGrabbable;
+
+	// As Source is now: simulating, or anchored (a Source still waiting for its ground or its mesh is going to simulate).
+	FMantlePhysicsProps Copy = Source.Physics;
+	Copy.bSimulate = Source.IsSimulating() || ((Source.bWaitingForGround || Source.bWaitingForMesh) && Source.Physics.bSimulate);
+	if (From->GetStaticMesh())
+	{
+		InitFromPlace(InEntityId, Copy);
+	}
+	else
+	{
+		InitWithoutMesh(InEntityId, Copy);
+	}
+}
+
+void AMantlePhysicsProp::MeshArrived()
+{
+	UMantlePhysicsMeshComponent* Component = GetPhysicsMeshComponent();
+	if (!Component || !Component->GetStaticMesh())
+	{
+		return;
+	}
+	BodySource = Component->PrepareSimulationBody(Component->GetStaticMesh());
+	Component->RecreatePhysicsState();
+	ApplyBodySettings(Component, Physics);
+	if (bWaitingForMesh)
+	{
+		bWaitingForMesh = false;
+		if (bBeginWhenMeshed)
+		{
+			bBeginWhenMeshed = false;
+			BeginSimulation(bWaitForGroundWhenMeshed);
+		}
+	}
+	else if (bAdopted && !HasAuthority() && !CollisionGate.IsClosed())
+	{
+		TakeServerPhysicsState(*Component);
+	}
+}
+
 void AMantlePhysicsProp::BeginSimulation(const bool bWaitForGround)
 {
 	if (GetAttachParentActor())
 	{
 		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	}
+	if (bWaitingForMesh)
+	{
+		// No shape to simulate yet: held, with no body, until the mesh is here (MeshArrived starts it then).
+		bBeginWhenMeshed = true;
+		bWaitForGroundWhenMeshed = bWaitForGround;
+		UE_LOG(LogMantle, Log, TEXT("MANTLE_PHYSICS_PROP entity=%s simulate=0 waiting_for_mesh=1"), *EntityId);
+		return;
 	}
 	UStaticMeshComponent* Component = GetStaticMeshComponent();
 	if (Component && Physics.bSimulate && bWaitForGround)
@@ -309,7 +410,12 @@ bool AMantlePhysicsProp::AdoptPlaceholder(AActor* Placeholder)
 	SetActorScale3D(Placeholder->GetActorScale3D());
 
 	UStaticMesh* Mesh = From->GetStaticMesh();
-	BodySource = To->PrepareSimulationBody(Mesh);
+	// A stand-in whose uploaded mesh is still downloading here has none: no body until it does (MeshArrived), rather than a box
+	// of a guessed size that players would bump into.
+	if (Mesh)
+	{
+		BodySource = To->PrepareSimulationBody(Mesh);
+	}
 	if (!To->SetStaticMesh(Mesh))
 	{
 		To->RecreatePhysicsState();
@@ -343,7 +449,14 @@ bool AMantlePhysicsProp::AdoptPlaceholder(AActor* Placeholder)
 	Placeholder->Destroy();
 
 	// The engine keeps this in step with the server from here on (AActor::SyncReplicatedPhysicsSimulation).
-	To->SetSimulatePhysics(GetReplicatedMovement().bRepPhysics);
+	TakeServerPhysicsState(*To);
+	bAdopted = true;
+	return true;
+}
+
+void AMantlePhysicsProp::TakeServerPhysicsState(UStaticMeshComponent& Component)
+{
+	Component.SetSimulatePhysics(GetReplicatedMovement().bRepPhysics);
 	if (GetReplicatedMovement().bRepPhysics)
 	{
 		// The pose that arrived before this client built the place reached a body that was not
@@ -354,11 +467,37 @@ bool AMantlePhysicsProp::AdoptPlaceholder(AActor* Placeholder)
 		OnRep_ReplicatedMovement();
 		if (GetReplicatedMovement().bSimulatedPhysicSleep)
 		{
-			To->PutRigidBodyToSleep();
+			Component.PutRigidBodyToSleep();
 		}
 	}
-	bAdopted = true;
-	return true;
+}
+
+AStaticMeshActor* AMantlePhysicsProp::SpawnPlainCopy(UWorld& World, const UStaticMeshComponent& From, const FTransform& Transform)
+{
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AStaticMeshActor* Copy = World.SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), Transform, Params);
+	UStaticMeshComponent* To = Copy ? Copy->GetStaticMeshComponent() : nullptr;
+	if (!To)
+	{
+		return nullptr;
+	}
+	To->SetMobility(EComponentMobility::Movable);
+	To->SetStaticMesh(From.GetStaticMesh());
+	for (int32 Slot = 0; Slot < From.GetNumOverrideMaterials(); ++Slot)
+	{
+		if (UMaterialInterface* Material = From.OverrideMaterials[Slot])
+		{
+			To->SetMaterial(Slot, Material);
+		}
+	}
+	To->SetCastShadow(From.CastShadow);
+	To->SetCullDistance(From.LDMaxDrawDistance);
+	To->SetCollisionProfileName(UCollisionProfile::CustomCollisionProfileName);
+	To->SetCollisionEnabled(From.GetCollisionEnabled());
+	To->SetCollisionResponseToChannels(From.GetCollisionResponseToChannels());
+	Copy->SetActorScale3D(Transform.GetScale3D());
+	return Copy;
 }
 
 AStaticMeshActor* AMantlePhysicsProp::RestorePlaceholder()
@@ -375,32 +514,14 @@ AStaticMeshActor* AMantlePhysicsProp::RestorePlaceholder()
 		return nullptr; // the entity's actor is already something else (a clone's, or a placeholder made already): nothing to stand in for
 	}
 
-	FActorSpawnParameters Params;
-	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AStaticMeshActor* Placeholder = World->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), GetActorTransform(), Params);
-	UStaticMeshComponent* To = Placeholder ? Placeholder->GetStaticMeshComponent() : nullptr;
-	if (!To)
+	AStaticMeshActor* Placeholder = SpawnPlainCopy(*World, *From, GetActorTransform());
+	if (!Placeholder)
 	{
 		return nullptr;
 	}
 #if WITH_EDITOR
 	Placeholder->SetActorLabel(GetActorLabel());
 #endif
-	To->SetMobility(EComponentMobility::Movable);
-	To->SetStaticMesh(From->GetStaticMesh());
-	for (int32 Slot = 0; Slot < From->GetNumOverrideMaterials(); ++Slot)
-	{
-		if (UMaterialInterface* Material = From->OverrideMaterials[Slot])
-		{
-			To->SetMaterial(Slot, Material);
-		}
-	}
-	To->SetCastShadow(From->CastShadow);
-	To->SetCullDistance(From->LDMaxDrawDistance);
-	To->SetCollisionProfileName(UCollisionProfile::CustomCollisionProfileName);
-	To->SetCollisionEnabled(From->GetCollisionEnabled());
-	To->SetCollisionResponseToChannels(From->GetCollisionResponseToChannels());
-	Placeholder->SetActorScale3D(GetActorScale3D());
 	Placeholder->SetActorHiddenInGame(IsHidden());
 
 	// What was last seen of this prop, for a script that asks about it while it is far.
@@ -459,6 +580,39 @@ TArray<AMantlePhysicsProp*>& AMantlePhysicsProp::ServerProps()
 {
 	static TArray<AMantlePhysicsProp*> Props;
 	return Props;
+}
+
+TArray<AMantlePhysicsProp*>& AMantlePhysicsProp::WaitingProps()
+{
+	static TArray<AMantlePhysicsProp*> Props;
+	return Props;
+}
+
+void AMantlePhysicsProp::AdoptWaiting(UWorld* World, const FString& InEntityId)
+{
+	// Copied out first: adopting takes a copy off the list.
+	TArray<AMantlePhysicsProp*, TInlineAllocator<2>> Matches;
+	for (AMantlePhysicsProp* Prop : WaitingProps())
+	{
+		if (IsValid(Prop) && Prop->GetWorld() == World && Prop->EntityId.Equals(InEntityId, ESearchCase::CaseSensitive))
+		{
+			Matches.Add(Prop);
+		}
+	}
+	for (AMantlePhysicsProp* Prop : Matches)
+	{
+		Prop->TryAdopt();
+	}
+}
+
+void AMantlePhysicsProp::ReturnToWaiting()
+{
+	if (HasAuthority() || !bAdopted)
+	{
+		return;
+	}
+	bAdopted = false;
+	WaitingProps().AddUnique(this);
 }
 
 bool AMantlePhysicsProp::IsSimulating() const
@@ -548,7 +702,9 @@ double AMantlePhysicsProp::GetMassKg() const
 	}
 	if (const FBodyInstance* Body = Component->GetBodyInstance(); Body && Body->IsValidBodyInstance())
 	{
-		return Component->GetMass();
+		// The body's own mass: what UPrimitiveComponent::GetMass returns, without its warning (development builds) for a body that is not
+		// simulating, which an anchored prop is not.
+		return Body->GetBodyMass();
 	}
 	return Physics.Mass.IsSet() ? Physics.Mass.GetValue() : 0.0;
 }
@@ -587,6 +743,8 @@ void AMantlePhysicsProp::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME_CONDITION(AMantlePhysicsProp, EntityId, COND_InitialOnly);
 	DOREPLIFETIME(AMantlePhysicsProp, PhysicsMaterial);
+	// Sent with the entity id, in the same first state, so a copy has its settings when it adopts (OnRep_EntityId runs once the whole state is in).
+	DOREPLIFETIME_CONDITION(AMantlePhysicsProp, ReplicatedSettings, COND_InitialOnly);
 }
 
 FMantlePhysicsPropPlaceResolver AMantlePhysicsProp::PlaceForWorld = nullptr;
@@ -649,15 +807,7 @@ void AMantlePhysicsProp::UpdateCollisionGate()
 	}
 	// Ground again: from the server's pose, in the server's simulate and sleep state (as adopting the placeholder did).
 	FollowServerPose();
-	Component->SetSimulatePhysics(GetReplicatedMovement().bRepPhysics);
-	if (GetReplicatedMovement().bRepPhysics)
-	{
-		OnRep_ReplicatedMovement();
-		if (GetReplicatedMovement().bSimulatedPhysicSleep)
-		{
-			Component->PutRigidBodyToSleep();
-		}
-	}
+	TakeServerPhysicsState(*Component);
 }
 
 void AMantlePhysicsProp::OnRep_ReplicatedMovement()
@@ -680,6 +830,7 @@ void AMantlePhysicsProp::OnRep_ReplicatedMovement()
 void AMantlePhysicsProp::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ServerProps().RemoveSingleSwap(this);
+	WaitingProps().RemoveSingleSwap(this);
 	if (PlaceRetainedHandle.IsValid())
 	{
 		if (IMantlePhysicsPropPlace* Loaded = PlaceForWorld ? PlaceForWorld(GetWorld()) : nullptr)
@@ -738,27 +889,30 @@ void AMantlePhysicsProp::TryAdopt()
 		return;
 	}
 
-	const FMantleEntity* Entity = Loaded->GetPlace().Entities.FindByPredicate([this](const FMantleEntity& Candidate)
-	{
-		return Candidate.Id.Equals(EntityId, ESearchCase::CaseSensitive);
-	});
-	const FMantlePhysicsProps* PlacePhysics = Entity ? MantlePhysicsOf(*Entity) : nullptr;
-	if (!PlacePhysics)
-	{
-		UE_LOG(LogMantle, Warning, TEXT("MANTLE_PHYSICS_ADOPT entity=%s: this client's place has no such physics entity"), *EntityId);
-		return;
-	}
-	Physics = *PlacePhysics;
-	// The server's preset, not the place's: a server script may have changed it before this client
-	// joined. It arrives with the entity id, in the prop's initial state.
+	// The settings came with this copy, so a place entity and a script's alike adopt without the place file. The server's preset,
+	// not the place's: a server script may have changed it before this client joined (it arrives with the entity id).
+	ReplicatedSettings.ApplyTo(Physics);
 	Physics.Material = PhysicsMaterialFromByte(PhysicsMaterial);
 
 	AActor* Placeholder = Loaded->FindActor(EntityId);
 	if (Placeholder == this)
 	{
+		WaitingProps().RemoveSingleSwap(this);
 		bAdopted = true;
 		return;
 	}
+	if (!Placeholder)
+	{
+		// A script-made entity whose stand-in is not built here yet (its spawn item comes on the script replicator's own channel, and
+		// may come after this copy): taken over when it is (AdoptWaiting).
+		if (!WaitingProps().Contains(this))
+		{
+			WaitingProps().Add(this);
+			UE_LOG(LogMantle, Log, TEXT("MANTLE_PHYSICS_ADOPT entity=%s waiting for its stand-in"), *EntityId);
+		}
+		return;
+	}
+	WaitingProps().RemoveSingleSwap(this);
 	if (!AdoptPlaceholder(Placeholder))
 	{
 		UE_LOG(LogMantle, Warning, TEXT("MANTLE_PHYSICS_ADOPT entity=%s: no placeholder mesh to take over; the prop stays invisible"), *EntityId);
