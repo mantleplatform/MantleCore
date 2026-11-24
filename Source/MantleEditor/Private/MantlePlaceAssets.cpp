@@ -4297,8 +4297,14 @@ FMantleMaterialAnalysis FMantlePlaceAssets::AnalyzeMaterial(const UMaterialInter
 		{
 			Carry({ MP_WorldPositionOffset });
 		}
-		// #628: an additive material's Fresnel (a rim glow) is dropped, and says so; the bake sees the surface face-on, where it is 0.
-		Fidelity.bAdditiveRim = Fidelity.bAdditive && FMantleGlowMaterial::HasFresnel(Roots.Emissive);
+		// F4: an additive material's Fresnel (a rim glow, in its emissive or opacity) publishes as the rim key: the bake sees the
+		// surface face-on, where a Fresnel is its base reflect fraction, and the rim is the rest of it (FMantleRimGlow). A rim the
+		// key cannot carry is dropped, and says why.
+		if (Fidelity.bAdditive)
+		{
+			FMantleGlowMaterial::ReadRim(Material, Roots.Emissive, Roots.Opacity, Fidelity.Rim);
+			Fidelity.bAdditiveRim = !Fidelity.Rim.bFound && !Fidelity.Rim.Why.IsEmpty();
+		}
 
 		// #628: an unlit translucent material whose emissive is the scene behind it (fake refraction) publishes as tinted see-through
 		// glass: the bake sees black there, an opaque solid. The whole emissive graph is replaced by the tint, so it is walked no more.
@@ -5531,10 +5537,26 @@ void FMantlePlaceAssets::CheckMaterial(const UMaterialInterface* Material, const
 			FString::Printf(TEXT("%s: it is a lit additive material; Mantle draws additive blending unlit (the glow, with no lighting on the surface), so its lighting is lost."), *Subject),
 			LossRemedy });
 	}
+	// F4: a rim glow the rim key cannot carry is dropped, with its reason; a carried one says what it does not carry.
+	const FMantleRimGlow& Rim = Analysis.Fidelity2.Rim;
 	if (Analysis.Fidelity2.bAdditiveRim)
 	{
 		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
-			FString::Printf(TEXT("%s: its Fresnel rim glow is dropped, so the edges no longer glow brighter than the face (the baked glow is seen face-on, where a Fresnel is 0)."), *Subject),
+			FString::Printf(TEXT("%s: its Fresnel rim glow is dropped because %s, so its edges no longer glow brighter than its face (the face-on glow is kept)."),
+				*Subject, *Rim.Why),
+			LossRemedy });
+	}
+	if (Rim.bFound && Rim.bNormalPin)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("%s: its Fresnel's Normal input is not carried, so the rim glow follows the mesh's own normals."), *Subject),
+			LossRemedy });
+	}
+	if (Rim.bFound && (Rim.Power < 0.0 || Rim.Power > FMantleRimGlow::MaxPower))
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("%s: its Fresnel exponent of %.2f is held to 0..%.0f, the most the rim glow takes."), *Subject, Rim.Power,
+				FMantleRimGlow::MaxPower),
 			LossRemedy });
 	}
 	if (Analysis.Fidelity2.bNormalFoamDropped)

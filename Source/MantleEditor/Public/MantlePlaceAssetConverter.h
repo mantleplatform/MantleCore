@@ -113,6 +113,16 @@ struct MANTLEEDITOR_API FMantlePlaceMaterialDocument
 	double RoughnessFactor = 1.0;
 	double EmissiveFactor[3] = { 0.0, 0.0, 0.0 };
 	double EmissiveStrength = 1.0;
+
+	/**
+	 * rim (F4): an additive document's Fresnel rim glow, color x strength x pow(1 - N dot V, power) on top of the glow (FMantleRimGlow).
+	 * Color 0..1 each, strength 0..100, power 0..64; written only when bRim and the document is written additive.
+	 */
+	bool bRim = false;
+	double RimColor[3] = { 0.0, 0.0, 0.0 };
+	double RimStrength = 1.0;
+	double RimPower = 5.0;
+
 	double UvScale[2] = { 1.0, 1.0 };
 	double UvOffset[2] = { 0.0, 0.0 };
 

@@ -119,6 +119,22 @@ struct FMantlePlaceFoliage
 	float VertexColorWeight = 0.0f;
 };
 
+/**
+ * An additive material's Fresnel rim glow (the rim key, F4): the surface adds Color x Strength x pow(1 - max(0, N dot V), Power) on
+ * top of its emissive glow, brightest where it is seen edge-on (force fields, holograms, energy barriers, ghost props).
+ */
+struct FMantlePlaceRim
+{
+	/** Linear RGB, 0..1 each. Black (the default) adds nothing. */
+	FLinearColor Color = FLinearColor::Black;
+
+	/** 0..100. */
+	float Strength = 0.0f;
+
+	/** 0..64: the Fresnel exponent (Unreal's Fresnel node defaults to 5). */
+	float Power = 5.0f;
+};
+
 /** Where a water normal map is laid out (water.normal's and water.normal2's space). */
 enum class EMantlePlaceWaterSpace : uint8
 {
@@ -358,6 +374,9 @@ struct FMantlePlaceMaterialDesc
 	bool bHasWater = false;
 	FMantlePlaceWater Water;
 
+	/** The rim glow; additive only (the parser refuses it on any other alpha mode). Black with no rim key. */
+	FMantlePlaceRim Rim;
+
 	const FString& TextureFor(EMantlePlaceTextureSlot Slot) const { return Textures[static_cast<int32>(Slot)]; }
 
 	/** True when any slot pans (a non-zero uvPanning entry). */
@@ -516,6 +535,15 @@ namespace MantlePlaceMaterialParameters
 	constexpr const TCHAR* LayerORM = TEXT("LayerORM");
 	constexpr const TCHAR* LayerBaseColorFactor = TEXT("LayerBaseColorFactor");
 	constexpr const TCHAR* LayerChannel = TEXT("LayerChannel");
+
+	/**
+	 * M_MantlePlace_Extended, under its AdditiveRim static switch (on in the two Additive instances, off in every other permutation):
+	 * the rim glow added to the emissive, RimColor (linear RGB) x RimStrength x the engine Fresnel node's pow(1 - max(0, N dot V), RimPower)
+	 * with a base reflect fraction of 0.
+	 */
+	constexpr const TCHAR* RimColor = TEXT("RimColor");
+	constexpr const TCHAR* RimStrength = TEXT("RimStrength");
+	constexpr const TCHAR* RimPower = TEXT("RimPower");
 }
 
 /**
@@ -550,7 +578,7 @@ public:
 	 * The water pair: Water (23) and WaterNormal2 (24), instances of M_MantlePlace_Water (Single Layer Water; opaque, and one
 	 * instance for either sidedness).
 	 * The additive pair: Additive (25) and Additive two-sided (26), instances of M_MantlePlace_Extended with the Additive blend
-	 * mode and the Unlit shading model.
+	 * mode, the Unlit shading model and the AdditiveRim static switch on (the rim glow, F4).
 	 */
 	static constexpr int32 PermutationCount = 27;
 	static constexpr int32 CarPaintPermutationIndex = 6;

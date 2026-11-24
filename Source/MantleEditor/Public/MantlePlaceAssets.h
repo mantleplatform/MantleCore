@@ -226,12 +226,14 @@ struct MANTLEEDITOR_API FMantleMaterialFidelity2
 
 	/**
 	 * additive (#628): Unreal's Additive blending, published as alphaMode additive (emissive-driven, unlit; exact from the blend
-	 * mode). bAdditiveLit: the source was lit, so lighting on the surface is dropped; bAdditiveRim: a Fresnel in its emissive
-	 * (a rim glow) is dropped (FMantleGlowMaterial::HasFresnel).
+	 * mode). bAdditiveLit: the source was lit, so lighting on the surface is dropped. Rim (F4): a Fresnel rim glow in its emissive
+	 * or opacity, read by FMantleGlowMaterial::ReadRim; Rim.bFound publishes it as the rim key. bAdditiveRim: a rim glow is there
+	 * but dropped, for the reason in Rim.Why.
 	 */
 	bool bAdditive = false;
 	bool bAdditiveLit = false;
 	bool bAdditiveRim = false;
+	FMantleRimGlow Rim;
 
 	/**
 	 * Modulate blending: published as a darkening sheet (black, opacity = 1 minus the color's brightness; MaterialFromGltf), which
