@@ -413,13 +413,16 @@ namespace
 		return true;
 	}
 
-	/** Avatar descriptor v2's wear- and accessory-group slots (schema/avatar/limits.json). */
+	/** Avatar descriptor v2's wear- and accessory-group slots (schema/avatar/limits.json), less nails and acc_ring
+	 *  (a ring's worn entry needs a finger a crowd entry cannot carry); place.schema.json's crowdLook wearing[].slot. */
 	bool IsCrowdWornSlot(const FString& Slot)
 	{
 		static const TCHAR* const Slots[] = {
 			TEXT("hair"), TEXT("eyebrows"), TEXT("eyelashes"), TEXT("facial_hair"), TEXT("top"), TEXT("bottom"),
-			TEXT("footwear"), TEXT("acc_hat"), TEXT("acc_face"), TEXT("acc_neck"),
-			TEXT("acc_shoulder_l"), TEXT("acc_shoulder_r"), TEXT("acc_front"), TEXT("acc_back"), TEXT("acc_waist")
+			TEXT("footwear"), TEXT("socks"), TEXT("legwear"), TEXT("outerwear"), TEXT("gloves"),
+			TEXT("acc_hat"), TEXT("acc_face"), TEXT("acc_neck"),
+			TEXT("acc_shoulder_l"), TEXT("acc_shoulder_r"), TEXT("acc_front"), TEXT("acc_back"), TEXT("acc_waist"),
+			TEXT("acc_eyes"), TEXT("acc_ear_l"), TEXT("acc_ear_r"), TEXT("acc_nose"), TEXT("acc_wrist_l"), TEXT("acc_wrist_r")
 		};
 		for (const TCHAR* Known : Slots)
 		{

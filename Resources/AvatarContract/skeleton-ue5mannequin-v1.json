@@ -882,6 +882,70 @@
       "bone": "pelvis"
     },
     {
+      "name": "acc_eyes",
+      "bone": "head"
+    },
+    {
+      "name": "acc_ear_l",
+      "bone": "head"
+    },
+    {
+      "name": "acc_ear_r",
+      "bone": "head"
+    },
+    {
+      "name": "acc_nose",
+      "bone": "head"
+    },
+    {
+      "name": "acc_wrist_l",
+      "bone": "lowerarm_twist_01_l"
+    },
+    {
+      "name": "acc_wrist_r",
+      "bone": "lowerarm_twist_01_r"
+    },
+    {
+      "name": "acc_ring_thumb_l",
+      "bone": "thumb_01_l"
+    },
+    {
+      "name": "acc_ring_index_l",
+      "bone": "index_01_l"
+    },
+    {
+      "name": "acc_ring_middle_l",
+      "bone": "middle_01_l"
+    },
+    {
+      "name": "acc_ring_ring_l",
+      "bone": "ring_01_l"
+    },
+    {
+      "name": "acc_ring_pinky_l",
+      "bone": "pinky_01_l"
+    },
+    {
+      "name": "acc_ring_thumb_r",
+      "bone": "thumb_01_r"
+    },
+    {
+      "name": "acc_ring_index_r",
+      "bone": "index_01_r"
+    },
+    {
+      "name": "acc_ring_middle_r",
+      "bone": "middle_01_r"
+    },
+    {
+      "name": "acc_ring_ring_r",
+      "bone": "ring_01_r"
+    },
+    {
+      "name": "acc_ring_pinky_r",
+      "bone": "pinky_01_r"
+    },
+    {
       "name": "hand_rSocket",
       "bone": "hand_r"
     }

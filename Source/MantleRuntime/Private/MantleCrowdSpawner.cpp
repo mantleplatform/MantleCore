@@ -18,11 +18,14 @@ static_assert(FMantlePlaceLimits::MinCrowdPointLingerSeconds == 1.0 && FMantlePl
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleCrowdSpawnerPrivate
 {
-	/** Avatar descriptor v2's wear- and accessory-group slots, the parser's and the schema's list. */
+	/** Avatar descriptor v2's wear- and accessory-group slots, the parser's and the schema's list (place.schema.json
+	 *  crowdLook wearing[].slot): not nails, and not acc_ring, whose worn entry needs a finger a crowd entry cannot carry. */
 	const TCHAR* const CrowdWornSlots[] = {
 		TEXT("hair"), TEXT("eyebrows"), TEXT("eyelashes"), TEXT("facial_hair"), TEXT("top"), TEXT("bottom"),
-		TEXT("footwear"), TEXT("acc_hat"), TEXT("acc_face"), TEXT("acc_neck"),
-		TEXT("acc_shoulder_l"), TEXT("acc_shoulder_r"), TEXT("acc_front"), TEXT("acc_back"), TEXT("acc_waist")
+		TEXT("footwear"), TEXT("socks"), TEXT("legwear"), TEXT("outerwear"), TEXT("gloves"),
+		TEXT("acc_hat"), TEXT("acc_face"), TEXT("acc_neck"),
+		TEXT("acc_shoulder_l"), TEXT("acc_shoulder_r"), TEXT("acc_front"), TEXT("acc_back"), TEXT("acc_waist"),
+		TEXT("acc_eyes"), TEXT("acc_ear_l"), TEXT("acc_ear_r"), TEXT("acc_nose"), TEXT("acc_wrist_l"), TEXT("acc_wrist_r")
 	};
 
 	bool IsCrowdWornSlotName(const FString& Slot)

@@ -7,17 +7,23 @@ namespace MantleHairHeadFitPrivate
 	constexpr int32 GridSize = 64;
 	/** Vertices within this card coordinate of a card's minimum count as its root (the root edge has several vertices). */
 	constexpr float RootCoordTolerance = 1.e-3f;
-	bool SkinSurface(const FMantleSkinnedMesh& Face, FMantleSkinnedMeshLOD& Out)
+	/** The triangles of Face's LOD0 sections that are skin or head (not eyes, teeth, tongue or lashes). */
+	bool SkinIndices(const FMantleSkinnedMesh& Face, TArray<uint32>& OutIndices)
 	{
 		if (Face.LODs.IsEmpty()) return false;
-		Out = Face.LODs[0]; Out.Indices.Reset(); Out.Sections.Reset();
 		for (const auto& Section : Face.LODs[0].Sections)
 		{
 			const FString Name = Section.MaterialName.ToString().ToLower();
 			if (!(Name.Contains(TEXT("skin")) || Name.Contains(TEXT("head"))) || Name.Contains(TEXT("eye")) || Name.Contains(TEXT("teeth")) || Name.Contains(TEXT("tongue")) || Name.Contains(TEXT("lash"))) continue;
-			Out.Indices.Append(&Face.LODs[0].Indices[Section.FirstIndex], Section.IndexCount);
+			OutIndices.Append(&Face.LODs[0].Indices[Section.FirstIndex], Section.IndexCount);
 		}
-		return !Out.Indices.IsEmpty();
+		return !OutIndices.IsEmpty();
+	}
+	bool SkinSurface(const FMantleSkinnedMesh& Face, FMantleSkinnedMeshLOD& Out)
+	{
+		if (Face.LODs.IsEmpty()) return false;
+		Out = Face.LODs[0]; Out.Indices.Reset(); Out.Sections.Reset();
+		return SkinIndices(Face, Out.Indices);
 	}
 	int32 Cell(float V) { return FMath::Clamp(FMath::FloorToInt(V * GridSize), 0, GridSize - 1); }
 	struct FUVEdgeKey
@@ -187,6 +193,15 @@ namespace MantleHairHeadFitPrivate
 		}
 		L.InfluenceWeights[Vertex * 8] += static_cast<uint8>(255 - Used);
 	}
+}
+
+bool FMantleHairHeadFit::HeadSkin(const FMantleSkinnedMesh& Face, TArray<FVector3f>& OutPositions, TArray<uint32>& OutIndices)
+{
+	OutPositions.Reset();
+	OutIndices.Reset();
+	if (!MantleHairHeadFitPrivate::SkinIndices(Face, OutIndices)) return false;
+	OutPositions = Face.LODs[0].Positions;
+	return true;
 }
 
 bool FMantleHairHeadFit::IsFaceSkinned(const FMantleSkinnedMesh& Mesh)

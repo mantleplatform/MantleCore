@@ -160,7 +160,8 @@ namespace MantleBodyCoveragePrivate
 // ---------------------------------------------------------------------------------------------------------------
 
 bool FMantleGarmentCoverage::Compute(const FMantleGarmentSurface& Garment, TConstArrayView<FVector3f> BodyPositions, TConstArrayView<FVector3f> BodyNormals,
-	FMantleGarmentCoverage& Out, const float ReachCm, FString* OutError, TConstArrayView<uint32> BodyIndices, const float NearShare, const float EdgeTolerance)
+	FMantleGarmentCoverage& Out, const float ReachCm, FString* OutError, TConstArrayView<uint32> BodyIndices, const float NearShare, const float EdgeTolerance,
+	const bool bSameFacingOnly)
 {
 	using namespace MantleGarmentGeometry;
 	using namespace MantleBodyCoveragePrivate;
@@ -274,7 +275,8 @@ bool FMantleGarmentCoverage::Compute(const FMantleGarmentSurface& Garment, TCons
 					bBand = true;
 				}
 			}
-			else if (Hits[Index].T <= ReachT && (Nearest == INDEX_NONE || Hits[Index].T < Hits[Nearest].T))
+			else if (Hits[Index].T <= ReachT && (Nearest == INDEX_NONE || Hits[Index].T < Hits[Nearest].T)
+				&& (!bSameFacingOnly || FVector3f::DotProduct(Normal, TriNormals[Hits[Index].Triangle]) > 0.0f))
 			{
 				Nearest = Index;
 			}
@@ -688,24 +690,37 @@ bool FMantleBodySink::Compute(TConstArrayView<FVector3f> BodyPositions, TConstAr
 			return;
 		}
 		Hits.Sort([](const FSinkHit& L, const FSinkHit& R) { return L.T < R.T; });
-		float OuterT = -1.0f;
+		// Each garment's own outermost outward hit (the hits are sorted by height: its last outward one). With one garment this is
+		// the outermost outward hit of the ray, as before. With several, the skin is sunk under the LOWEST of them: a jacket over a
+		// tee would otherwise be the outermost and leave the skin under the tee's edge unsunk.
+		TArray<FSinkHit, TInlineAllocator<4>> Outer;
 		for (const FSinkHit& RayHit : Hits)
 		{
-			if (RayHit.bOut)
+			if (!RayHit.bOut)
 			{
-				OuterT = RayHit.T;
+				continue;
+			}
+			FSinkHit* Own = Outer.FindByPredicate([&RayHit](const FSinkHit& Other) { return Other.Garment == RayHit.Garment; });
+			if (Own)
+			{
+				*Own = RayHit;
+			}
+			else
+			{
+				Outer.Add(RayHit);
 			}
 		}
-		if (OuterT < 0.0f)
+		if (Outer.Num() == 0)
 		{
 			return;
 		}
-		const float Height = OuterT - RayBackCm;
-		if (bAcrossBody && Height < RayUnderCm && Height < 0.0f)
+		Outer.Sort([](const FSinkHit& L, const FSinkHit& R) { return L.T < R.T; });
+
+		// Is there body surface between a hit (under the skin) and the vertex? Then the garment belongs to another part seen
+		// through a thin one, not under this skin.
+		const auto BodyBetween = [&](const float HitT)
 		{
-			// Is there body surface between the hit (under the skin) and the vertex? Then the garment belongs to
-			// another part seen through a thin one, not under this skin.
-			const float SegLo = OuterT + AcrossBodyEpsilonCm;
+			const float SegLo = HitT + AcrossBodyEpsilonCm;
 			const float SegHi = RayBackCm - AcrossBodyEpsilonCm;
 			bool bBetween = false;
 			if (SegHi > SegLo)
@@ -733,18 +748,38 @@ bool FMantleBodySink::Compute(TConstArrayView<FVector3f> BodyPositions, TConstAr
 					}
 				}
 			}
-			if (bBetween)
-			{
-				Across[BodyVertex] = 1;
-				return;
-			}
-		}
-		// A hit under the skin past the middle of a thin part (a sandal's footbed under a toe) is the far side's.
-		if (bNearHalf && Height < 0.0f && Body.ThinnerThan(BodyVertex, Normal, -Height / Params.NearShare))
+			return bBetween;
+		};
+
+		// The lowest garment whose hit is this skin's own. A hit refused as another part's (across the body, or past the middle of a
+		// thin part) is passed over for the next garment up; with none left the vertex takes the first refusal, as a lone garment did.
+		bool bAccepted = false;
+		float OuterT = 0.0f;
+		uint8 Refusal = 0;
+		for (const FSinkHit& Candidate : Outer)
 		{
-			FarSide[BodyVertex] = 1;
+			const float CandidateHeight = Candidate.T - RayBackCm;
+			if (bAcrossBody && CandidateHeight < RayUnderCm && CandidateHeight < 0.0f && BodyBetween(Candidate.T))
+			{
+				Refusal = Refusal != 0 ? Refusal : 1;
+				continue;
+			}
+			// A hit under the skin past the middle of a thin part (a sandal's footbed under a toe) is the far side's.
+			if (bNearHalf && CandidateHeight < 0.0f && Body.ThinnerThan(BodyVertex, Normal, -CandidateHeight / Params.NearShare))
+			{
+				Refusal = Refusal != 0 ? Refusal : 2;
+				continue;
+			}
+			bAccepted = true;
+			OuterT = Candidate.T;
+			break;
+		}
+		if (!bAccepted)
+		{
+			(Refusal == 1 ? Across : FarSide)[BodyVertex] = 1;
 			return;
 		}
+		const float Height = OuterT - RayBackCm;
 		Kind[BodyVertex] = Height < 0.0f ? SinkInside : SinkOutside;
 		// Skin not under cloth on this wearer is measured (the skin-poke counts) but never moved.
 		if (Height < RayUnderCm && (!SinkOnly || (*SinkOnly)[BodyVertex]))

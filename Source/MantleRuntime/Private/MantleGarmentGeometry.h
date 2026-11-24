@@ -370,6 +370,59 @@ namespace MantleGarmentGeometry
 	}
 
 	/**
+	 * LOD's seams between sections: OutSeams gets per vertex its seam id when it shares its position (quantized to
+	 * WeldQuantumCm) with a vertex of another section, else INDEX_NONE; copies of one position in different sections
+	 * share an id. The restores push each seam's copies as one (FMantleClearanceRestore::Restore). Adds the number of
+	 * seams to OutGroups and the vertices on them to OutCopies.
+	 */
+	inline void SectionSeams(const FMantleSkinnedMeshLOD& LOD, TArray<int32>& OutSeams, int32& OutGroups, int32& OutCopies)
+	{
+		TArray<int32> Points;
+		const int32 NumPoints = WeldByPosition(LOD.Positions, Points);
+		TArray<int32> Sections;
+		VertexSections(LOD, Sections);
+		TArray<int32> PointSection;
+		PointSection.Init(INDEX_NONE, NumPoints);
+		TBitArray<> Across(false, NumPoints);
+		for (int32 Vertex = 0; Vertex < Points.Num(); ++Vertex)
+		{
+			const int32 Point = Points[Vertex];
+			const int32 Section = Sections[Vertex];
+			if (Section == INDEX_NONE)
+			{
+				continue;
+			}
+			if (PointSection[Point] == INDEX_NONE)
+			{
+				PointSection[Point] = Section;
+			}
+			else if (PointSection[Point] != Section)
+			{
+				Across[Point] = true;
+			}
+		}
+		TArray<int32> SeamOf;
+		SeamOf.Init(INDEX_NONE, NumPoints);
+		int32 NumSeams = 0;
+		OutSeams.Init(INDEX_NONE, Points.Num());
+		for (int32 Vertex = 0; Vertex < Points.Num(); ++Vertex)
+		{
+			const int32 Point = Points[Vertex];
+			if (!Across[Point])
+			{
+				continue;
+			}
+			if (SeamOf[Point] == INDEX_NONE)
+			{
+				SeamOf[Point] = NumSeams++;
+			}
+			OutSeams[Vertex] = SeamOf[Point];
+			++OutCopies;
+		}
+		OutGroups += NumSeams;
+	}
+
+	/**
 	 * WeldByPosition within each section: one id per (section, quantized position), so split copies of a
 	 * vertex share an id and two sections never do. Returns the id count.
 	 */
