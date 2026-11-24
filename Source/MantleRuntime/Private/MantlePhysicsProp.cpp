@@ -702,7 +702,9 @@ double AMantlePhysicsProp::GetMassKg() const
 	}
 	if (const FBodyInstance* Body = Component->GetBodyInstance(); Body && Body->IsValidBodyInstance())
 	{
-		return Component->GetMass();
+		// The body's own mass: what UPrimitiveComponent::GetMass returns, without its warning (development builds) for a body that is not
+		// simulating, which an anchored prop is not.
+		return Body->GetBodyMass();
 	}
 	return Physics.Mass.IsSet() ? Physics.Mass.GetValue() : 0.0;
 }
