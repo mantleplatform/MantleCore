@@ -25,6 +25,8 @@ struct FMantleVehicleSourceSeatContacts;
 struct FMantleVehicleSourceTuning;
 struct FReferenceSkeleton;
 struct FSkeletalMaterial;
+struct FMantleSkinnedMesh;
+struct FMantleVehicleSlotMerge;
 
 /**
  * A static mesh found riding a vehicle's body (#435 item 2): attached to AttachTo (a socket or bone of the body; None for the
@@ -263,6 +265,18 @@ public:
 	 * Run before the split, so the split keeps them on the body.
 	 */
 	static USkeletalMesh* FindLights(USkeletalMesh& Mesh, UMantleVehicleSource& Source, const FString& SplitFolder, TArray<FString>& OutNotes);
+
+	/**
+	 * Merges the slots of a model's body that are drawn with the same material into one section each (FMantleVehicleBodySplit::MergeIdenticalMaterials), unless what the finders read
+	 * off their names differs (the kind of light, a rim, the paint layer, a built-in material): SUV04's 25 slots are 9 materials. A merged slot is named as the first of them.
+	 * OutMergedInto maps each slot's old section name that changed to the name it has now; OutNotes says how many slots became how many sections. Body and Materials are changed
+	 * in place: call it on a copy, never the creator's own mesh. The builder runs the same on the model it wears on a chassis.
+	 */
+	static FMantleVehicleSlotMerge MergeIdenticalSlots(FMantleSkinnedMesh& Body, TArray<FSkeletalMaterial>& Materials, const FString& ModelName, TMap<FString, FString>& OutMergedInto,
+		TArray<FString>& OutNotes);
+
+	/** Changes the section names Source's paint, paint layers, lights and wheels' rims list by MergedInto (an old section name to the one it was merged into), each name once. */
+	static void ApplyRenames(UMantleVehicleSource& Source, const TMap<FString, FString>& MergedInto);
 
 	/**
 	 * Convert, into <Mesh>_Vehicle beside the mesh (made, or updated keeping its tuning, parts and the collision and center of

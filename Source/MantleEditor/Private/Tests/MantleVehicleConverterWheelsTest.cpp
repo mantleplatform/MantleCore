@@ -509,22 +509,27 @@ bool FMantleVehicleConverterPublishableSplitTest::RunTest(const FString& Paramet
 	// that sent the paint to parts, or named a light or a paint section the body does not have, was refused by the publish check (20 errors, nothing uploaded).
 	TArray<FString> Names;
 	TArray<UMaterialInterface*> Materials;
-	UMaterial* Paint = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
-	UMaterialExpressionVectorParameter* Tint = NewObject<UMaterialExpressionVectorParameter>(Paint);
-	Tint->Material = Paint;
-	Tint->ParameterName = TEXT("Paint Tint");
-	Tint->DefaultValue = FLinearColor(0.1f, 0.2f, 0.7f);
-	Tint->UpdateParameterGuid(true, false);
-	Paint->GetExpressionCollection().AddExpression(Tint);
-	Paint->UpdateCachedExpressionData();
+	// Three paint materials, each its own (three slots of one material would be merged: that is the next test).
+	const auto NewPaint = []()
+	{
+		UMaterial* Paint = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+		UMaterialExpressionVectorParameter* Tint = NewObject<UMaterialExpressionVectorParameter>(Paint);
+		Tint->Material = Paint;
+		Tint->ParameterName = TEXT("Paint Tint");
+		Tint->DefaultValue = FLinearColor(0.1f, 0.2f, 0.7f);
+		Tint->UpdateParameterGuid(true, false);
+		Paint->GetExpressionCollection().AddExpression(Tint);
+		Paint->UpdateCachedExpressionData();
+		return Paint;
+	};
 	const auto Slot = [&Names, &Materials](const TCHAR* Name, UMaterialInterface* Material = nullptr)
 	{
 		Names.Add(Name);
 		Materials.Add(Material);
 	};
-	Slot(TEXT("SUV04_Body"), Paint);
-	Slot(TEXT("SUV04_Body2"), Paint);
-	Slot(TEXT("SUV04_Body3"), Paint);
+	Slot(TEXT("SUV04_Body"), NewPaint());
+	Slot(TEXT("SUV04_Body2"), NewPaint());
+	Slot(TEXT("SUV04_Body3"), NewPaint());
 	for (const TCHAR* Glass : { TEXT("SUV04_Glass"), TEXT("SUV04_Glass2"), TEXT("SUV04_Glass3"), TEXT("SUV04_Glass4"), TEXT("SUV04_Glass5"), TEXT("SUV04_Glass6") })
 	{
 		Slot(Glass);
@@ -594,6 +599,194 @@ bool FMantleVehicleConverterPublishableSplitTest::RunTest(const FString& Paramet
 		TestTrue(TEXT("and so do its lights (the stale names are gone)"), bLightsOnBody && !Source->Lights.Head.Contains(TEXT("Headlights")) && !Source->Lights.Rear.Contains(TEXT("RearLights5")));
 
 		// The converter's own pre-upload check: no section the body does not have.
+		TArray<FMantleValidationIssue> Issues;
+		FMantleVehicleConverter::CheckSource(Source, FString(), Issues);
+		TArray<FString> SectionErrors;
+		for (const FMantleValidationIssue& Issue : Issues)
+		{
+			if (Issue.Severity == EMantleIssueSeverity::Error && (Issue.Problem.Contains(TEXT("which its body does not have")) || Issue.Problem.Contains(TEXT("but its body has no such section"))))
+			{
+				SectionErrors.Add(Issue.Problem);
+			}
+		}
+		TestTrue(*FString::Printf(TEXT("run %d: the publish check finds no section the body lacks (%s)"), Run, *FString::Join(SectionErrors, TEXT(" | "))), SectionErrors.IsEmpty());
+	}
+	if (USkeletalMesh* Last = Source->Body.LoadSynchronous(); Last && Last != Car)
+	{
+		MantleVehicleScratchBody::Discard(Last);
+	}
+	MantleVehicleScratchBody::Discard(Car);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleConverterMergedSlotsTest,
+	"Mantle.Vehicle.Convert.SameMaterialSlotsMergeAndKeepPaintLightsAndARim",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleConverterMergedSlotsTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleConverterWheelsTestPrivate;
+
+	// SUV04: 25 material slots that are 9 materials (the body paint, the glass and the interior are one material each under six names, and so on). A body may draw 8, so a convert
+	// that kept every slot sent the paint and the rim to parts, and rim swapping was lost. Merged first, the paint, each light and the rims fit on the body.
+	const auto NewMaterial = [](const bool bPaint)
+	{
+		UMaterial* Material = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+		if (bPaint)
+		{
+			UMaterialExpressionVectorParameter* Tint = NewObject<UMaterialExpressionVectorParameter>(Material);
+			Tint->Material = Material;
+			Tint->ParameterName = TEXT("Paint Tint");
+			Tint->DefaultValue = FLinearColor(0.1f, 0.2f, 0.7f);
+			Tint->UpdateParameterGuid(true, false);
+			Material->GetExpressionCollection().AddExpression(Tint);
+			Material->UpdateCachedExpressionData();
+		}
+		return Material;
+	};
+	UMaterial* PaintMaterial = NewMaterial(true);
+	UMaterial* GlassMaterial = NewMaterial(false);
+	UMaterial* InteriorMaterial = NewMaterial(false);
+	UMaterial* SeatsMaterial = NewMaterial(false);
+	UMaterial* RimMaterial = NewMaterial(false);
+
+	struct FSlot
+	{
+		FString Name;
+		UMaterialInterface* Material;
+		int32 Bone;
+	};
+	TArray<FSlot> Slots;
+	for (const TCHAR* Body : { TEXT("SUV04_Body"), TEXT("SUV04_Body2"), TEXT("SUV04_Body3"), TEXT("SUV04_Body4"), TEXT("SUV04_Body5") })
+	{
+		Slots.Add({ Body, PaintMaterial, 0 });
+	}
+	for (const TCHAR* Glass : { TEXT("SUV04_Glass"), TEXT("SUV04_Glass2"), TEXT("SUV04_Glass3"), TEXT("SUV04_Glass4"), TEXT("SUV04_Glass5"), TEXT("SUV04_Glass6") })
+	{
+		Slots.Add({ Glass, GlassMaterial, 0 });
+	}
+	for (const TCHAR* Interior : { TEXT("SUV04_Interior"), TEXT("SUV04_Interior2"), TEXT("SUV04_Interior3"), TEXT("SUV04_Interior4"), TEXT("SUV04_Interior5"), TEXT("SUV04_Interior6") })
+	{
+		Slots.Add({ Interior, InteriorMaterial, 0 });
+	}
+	Slots.Add({ TEXT("SUV04_Seats"), SeatsMaterial, 0 });
+	for (const TCHAR* Lamp : { TEXT("headlight_lens"), TEXT("taillight_lens"), TEXT("reverselight_lens") })
+	{
+		Slots.Add({ Lamp, nullptr, 0 });
+	}
+	// WheelSet_07 is the rim of each wheel (its vertices are the wheel's own, weighted to its bone); the others are one material with it and not the wheel's.
+	const int32 RimSlot = Slots.Num();
+	Slots.Add({ TEXT("WheelSet_07"), RimMaterial, 1 });
+	Slots.Add({ TEXT("WheelSet_06"), RimMaterial, 0 });
+	Slots.Add({ TEXT("WheelSet_05"), RimMaterial, 0 });
+	Slots.Add({ TEXT("Fbx_Default_Material_17"), nullptr, 0 });
+	if (!TestEqual(TEXT("25 slots"), Slots.Num(), 25))
+	{
+		return false;
+	}
+
+	FMantleSkinnedMesh Skin;
+	Skin.Bones.Add({ FName(TEXT("B_Car_Main")), INDEX_NONE });
+	Skin.ReferencePose.Add(FTransform::Identity);
+	const FVector Centers[4] = { FVector(130, -80, 35), FVector(130, 80, 35), FVector(-130, -80, 35), FVector(-130, 80, 35) };
+	const TCHAR* const WheelBones[4] = { TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel") };
+	for (int32 Wheel = 0; Wheel < 4; ++Wheel)
+	{
+		Skin.Bones.Add({ FName(WheelBones[Wheel]), 0 });
+		Skin.ReferencePose.Add(FTransform(Centers[Wheel]));
+	}
+	FMantleSkinnedMeshLOD& LOD = Skin.LODs.AddDefaulted_GetRef();
+	LOD.NumInfluences = 1;
+	TArray<FSkeletalMaterial> Materials;
+	float X = -200.f;
+	for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)
+	{
+		Materials.Add(FSkeletalMaterial(Slots[Slot].Material, FName(*Slots[Slot].Name)));
+		FMantleSkinnedMeshSection& Section = LOD.Sections.AddDefaulted_GetRef();
+		Section.MaterialIndex = Slot;
+		Section.MaterialName = FName(*Slots[Slot].Name);
+		Section.FirstIndex = LOD.Indices.Num();
+		const auto Quad = [&LOD](const FVector& At, const int32 Bone)
+		{
+			const uint32 First = static_cast<uint32>(LOD.Positions.Num());
+			// A diamond in the plane the wheel turns in (X and Z), 6 cm out from its center.
+			for (const FVector& Corner : { FVector(6, 0, 0), FVector(0, 0, 6), FVector(-6, 0, 0), FVector(0, 0, -6) })
+			{
+				LOD.Positions.Add(FVector3f(At + Corner));
+				LOD.Normals.Add(FVector3f(0.f, 1.f, 0.f));
+				LOD.UVs.Add(FVector2f(0.f, 0.f));
+				LOD.InfluenceBones.Add(static_cast<uint16>(Bone));
+				LOD.InfluenceWeights.Add(255);
+			}
+			LOD.Indices.Append({ First, First + 1, First + 2, First, First + 2, First + 3 });
+		};
+		if (Slot == RimSlot)
+		{
+			for (int32 Wheel = 0; Wheel < 4; ++Wheel)
+			{
+				for (int32 Each = 0; Each < 3; ++Each)
+				{
+					Quad(Centers[Wheel] + FVector(0, 2.f * (Each - 1), 0), 1 + Wheel);
+				}
+			}
+		}
+		else
+		{
+			// A few quads up the car, on the root, each slot at its own place.
+			for (int32 Each = 0; Each < 2 + Slot % 3; ++Each)
+			{
+				Quad(FVector(X, 0, 90), 0);
+				X += 15.f;
+			}
+		}
+		Section.IndexCount = LOD.Indices.Num() - Section.FirstIndex;
+	}
+	FString Error;
+	USkeletalMesh* Car = FMantleVehicleChassisMesh::Create(Skin, TEXT("/Temp/MantleConvertWheelsTest"), FString::Printf(TEXT("SuvShape%s"), *FGuid::NewGuid().ToString(EGuidFormats::Digits).Left(8)), Error, &Materials);
+	if (!TestNotNull(*FString::Printf(TEXT("the car is made (%s)"), *Error), Car))
+	{
+		return false;
+	}
+
+	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	// What an earlier convert left: three paint sections (now one), and lights naming sections that are not there.
+	Source->Paint.Sections = { TEXT("SUV04_Body"), TEXT("SUV04_Body2"), TEXT("SUV04_Body3") };
+	Source->Lights.Head = { TEXT("Headlights2") };
+	for (int32 Run = 1; Run <= 2; ++Run)
+	{
+		const FMantleVehicleConversion Conversion = FMantleVehicleConverter::Convert(Car, *Source);
+		TestTrue(*FString::Printf(TEXT("run %d converts (%s)"), Run, *FString::Join(Conversion.Problems, TEXT(" "))), Conversion.bSuccess);
+		TestTrue(TEXT("the notes say 25 slots use 9 materials, and what was merged"), Conversion.Notes.ContainsByPredicate([](const FString& Note)
+		{
+			return Note.Contains(TEXT("25 material slots use 9 different materials")) && Note.Contains(TEXT("SUV04_Body: 5 slots")) && Note.Contains(TEXT("your own model was not changed"));
+		}));
+		USkeletalMesh* Body = Source->Body.LoadSynchronous();
+		if (!TestTrue(TEXT("its body is a copy of the car"), Body && Body != Car))
+		{
+			break;
+		}
+		const TArray<FString> BodySections = FMantleVehicleLights::SectionNames(Body->GetMaterials());
+		const auto OnBody = [&BodySections](const FString& Section) { return BodySections.Contains(Section); };
+		TestTrue(*FString::Printf(TEXT("run %d: the body draws at most %d materials (%d)"), Run, FMantleVehicleLimits::MaxSections, BodySections.Num()), BodySections.Num() <= FMantleVehicleLimits::MaxSections);
+		TestTrue(TEXT("the car paint is one section on the body"), OnBody(TEXT("SUV04_Body")) && !OnBody(TEXT("SUV04_Body2")) && Source->Paint.Sections.Num() == 1 && Source->Paint.Sections[0] == TEXT("SUV04_Body"));
+		TestTrue(TEXT("each light is on the body"), OnBody(TEXT("headlight_lens")) && OnBody(TEXT("taillight_lens")) && OnBody(TEXT("reverselight_lens")));
+		TestTrue(TEXT("and the rim is on the body"), OnBody(TEXT("WheelSet_07")));
+		TestTrue(TEXT("the interior and the glass are not (one section each, on a part)"), !OnBody(TEXT("SUV04_Glass")) || !OnBody(TEXT("SUV04_Interior")) || !OnBody(TEXT("SUV04_Seats")));
+		bool bRimSwap = Source->Wheels.Num() == 4;
+		for (const FMantleVehicleSourceWheel& Wheel : Source->Wheels)
+		{
+			bRimSwap = bRimSwap && Wheel.RimSections.Contains(TEXT("WheelSet_07"));
+		}
+		TestTrue(TEXT("every wheel's rim is WheelSet_07, so wheel swapping is on"), bRimSwap);
+		TestTrue(TEXT("Paint names the body's sections only"), Algo::AllOf(Source->Paint.Sections, OnBody));
+		bool bLightsOnBody = Source->Lights.Head.Num() > 0 && Source->Lights.Rear.Num() > 0 && Source->Lights.Reverse.Num() > 0;
+		for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse, EMantleLightKind::Left, EMantleLightKind::Right })
+		{
+			bLightsOnBody = bLightsOnBody && Algo::AllOf(FMantleVehicleLights::Sections(Source->Lights, Kind), OnBody);
+		}
+		TestTrue(TEXT("each kind of light is set, and on the body"), bLightsOnBody);
+
 		TArray<FMantleValidationIssue> Issues;
 		FMantleVehicleConverter::CheckSource(Source, FString(), Issues);
 		TArray<FString> SectionErrors;

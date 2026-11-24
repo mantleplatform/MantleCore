@@ -143,6 +143,11 @@ struct FMantleVehicleOnChassis
 	 * them by kind, with the headlight beams. Empty lists for a model with no glow and no light named.
 	 */
 	FMantleVehicleSourceLights Lights;
+	/**
+	 * The model's slots drawn with the same material are one section on the body (FMantleVehicleConverter::MergeIdenticalSlots): each old section name that changed, to the name it
+	 * has now. The sections a creator ticked as paint, by the model's own names, are read through it.
+	 */
+	TMap<FString, FString> MergedInto;
 	/** What Mantle chose and what the creator should look at, in the order BuildFromModel has always said it. */
 	TArray<FString> Notes;
 };

@@ -1842,6 +1842,9 @@ bool FMantleVehicleBuilder::PrepareFromModel(UObject* ModelAsset, const FString&
 		return false;
 	}
 	Out.Notes.Append(Skinned.Notes);
+	// The slots drawn with the same material are one section, before the lights, the paint and the rims read the sections: a vehicle's body may draw only a few materials, and a model
+	// usually has far more slots than materials. Skin made the body from the model, so the model itself is not touched.
+	FMantleVehicleConverter::MergeIdenticalSlots(Skinned.Body, Skinned.Materials, Model.Name, Out.MergedInto, Out.Notes);
 	// The lights: the spots of the model that glow (or are named for a light) are cut into sections of their own, so the game can switch each one.
 	const FMantleVehicleLightGuess LightGuess = FMantleVehicleLights::Find(Skinned.Body, Skinned.Materials, Spec.bCenterline);
 	FMantleVehicleLights::Cut(Skinned.Body, Skinned.Materials, LightGuess, Out.Lights);
@@ -1879,6 +1882,18 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 	const FMantleChassisSpec& Spec = Prepared.Spec;
 	const TArray<FMantleVehiclePartSlot>& Slots = Prepared.Slots;
 	const FMantleVehicleModelMap& Map = Prepared.Map;
+	// The sections the creator ticked as paint are by the model's own names; the slots merged into one section are ticked as that section.
+	const auto Merged = [&Prepared](const FString& Name) { const FString* To = Prepared.MergedInto.Find(Name); return To ? *To : Name; };
+	TOptional<TArray<FString>> PaintedTicks;
+	if (Options.PaintedSections.IsSet())
+	{
+		TArray<FString> Now;
+		for (const FString& Ticked : Options.PaintedSections.GetValue())
+		{
+			Now.AddUnique(Merged(Ticked));
+		}
+		PaintedTicks = MoveTemp(Now);
+	}
 	const double Yaw = Prepared.Yaw;
 	FMantleVehicleSkinned& Skinned = Prepared.Skinned;
 	const FMantleVehicleSkinCollision& Collision = Prepared.Collision;
@@ -1958,7 +1973,7 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		// sections can be hidden. When they are more than a body may draw: the paint first, then each kind of light, then the rims.
 		TSet<int32> LightSlots;
 		TMap<int32, int32> KeepRank;
-		FMantleVehicleConverter::BodyKeep(Skinned.Materials, LightsWanted, Options.PaintedSections.IsSet() ? &Options.PaintedSections.GetValue() : nullptr, LightSlots, KeepRank);
+		FMantleVehicleConverter::BodyKeep(Skinned.Materials, LightsWanted, PaintedTicks.IsSet() ? &PaintedTicks.GetValue() : nullptr, LightSlots, KeepRank);
 		if (!FMantleVehicleBodySplit::Split(Skinned.Body, Skinned.Materials, Skinned.Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials,
 			FMantleVehicleLimits::MaxParts, Split, LightSlots, &KeepRank))
 		{
@@ -2070,12 +2085,12 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		for (int32 Index = 0; Index < ModelSections.Num(); ++Index)
 		{
 			Layers.Add(0);
-			if (Options.PaintedSections.IsSet())
+			if (PaintedTicks.IsSet())
 			{
-				Painted.Add(Options.PaintedSections.GetValue().ContainsByPredicate([&ModelSections, Index](const FString& Ticked) { return Ticked.Equals(ModelSections[Index], ESearchCase::IgnoreCase); }));
+				Painted.Add(PaintedTicks.GetValue().ContainsByPredicate([&ModelSections, Index](const FString& Ticked) { return Ticked.Equals(ModelSections[Index], ESearchCase::IgnoreCase); }));
 				for (const TPair<FString, EMantleVehicleSourcePaintLayer>& Pair : Options.PaintLayers)
 				{
-					if (Pair.Key.Equals(ModelSections[Index], ESearchCase::IgnoreCase))
+					if (Merged(Pair.Key).Equals(ModelSections[Index], ESearchCase::IgnoreCase))
 					{
 						Layers[Index] = PaintPick(Pair.Value);
 					}

@@ -523,4 +523,46 @@ bool FMantleVehicleBodySplitKeepRankTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleBodySplitMergeTest,
+	"Mantle.Vehicle.BuildModel.SlotsOfOneMaterialMergeIntoOneSection",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleBodySplitMergeTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleBuilderHubsLightsTestPrivate;
+	UMaterial* A = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+	UMaterial* B = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+
+	// Slots 0, 1 and 4 are drawn with A, slot 2 with B, slots 3 and 5 with no material; slot 4 reads differently (its role), so it is its own section.
+	TArray<FString> Names = { TEXT("body"), TEXT("body2"), TEXT("glass"), TEXT("lamp"), TEXT("rim"), TEXT("lamp2") };
+	FMantleSkinnedMesh Body;
+	TArray<FSkeletalMaterial> Materials;
+	MakeSlotBody(Body, Materials, Names, { A, A, B, nullptr, A, nullptr }, [](const int32 Slot) { return Slot + 1; });
+	const int32 TrianglesBefore = Body.LODs[0].Indices.Num() / 3;
+	const FMantleVehicleSlotMerge Merge = FMantleVehicleBodySplit::MergeIdenticalMaterials(Body, Materials, [](const int32 Slot) { return Slot == 4 ? FString(TEXT("rim")) : FString(TEXT("plain")); });
+	TestTrue(TEXT("the slots were merged"), Merge.bMerged());
+	TestEqual(TEXT("six slots are five"), Materials.Num(), 5);
+	TestTrue(TEXT("the first slot of a material keeps its name"), Materials[0].MaterialSlotName == FName(TEXT("body")) && Materials[1].MaterialSlotName == FName(TEXT("glass")));
+	TestTrue(TEXT("slot 1 went into slot 0, and the rest moved up"), Merge.NewSlotOfOld.Num() == 6 && Merge.NewSlotOfOld[0] == 0 && Merge.NewSlotOfOld[1] == 0 && Merge.NewSlotOfOld[2] == 1 && Merge.NewSlotOfOld[4] == 3);
+	TestTrue(TEXT("slots with no material are never merged (3 and 5 stay)"), Merge.NewSlotOfOld[3] == 2 && Merge.NewSlotOfOld[5] == 4);
+	const FMantleSkinnedMeshLOD& LOD = Body.LODs[0];
+	TestEqual(TEXT("one section a slot"), LOD.Sections.Num(), 5);
+	TestEqual(TEXT("no triangle is lost"), LOD.Indices.Num() / 3, TrianglesBefore);
+	int32 Merged = 0;
+	for (const FMantleSkinnedMeshSection& Section : LOD.Sections)
+	{
+		Merged += Section.MaterialIndex == 0 ? Section.IndexCount / 3 : 0;
+	}
+	TestEqual(TEXT("the merged section holds both slots' triangles (1 + 2 quads, two triangles each)"), Merged, 6);
+
+	// Nothing to merge: nothing changes.
+	FMantleSkinnedMesh Plain;
+	TArray<FSkeletalMaterial> PlainMaterials;
+	MakeSlotBody(Plain, PlainMaterials, { TEXT("a"), TEXT("b") }, { A, B }, [](int32) { return 1; });
+	TestFalse(TEXT("two different materials are not merged"), FMantleVehicleBodySplit::MergeIdenticalMaterials(Plain, PlainMaterials, [](int32) { return FString(); }).bMerged());
+	TestEqual(TEXT("and both slots stay"), PlainMaterials.Num(), 2);
+	return true;
+}
+
 #endif

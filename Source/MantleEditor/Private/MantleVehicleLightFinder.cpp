@@ -12,6 +12,7 @@
 #include "MantleRuntime.h"
 #include "MantleSkinnedMesh.h"
 #include "MantleVehicleChassisMesh.h"
+#include "MantleVehicleBodySplit.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleLightData.h"
 #include "Materials/MaterialInstanceConstant.h"
@@ -1038,6 +1039,8 @@ void FMantleVehicleLights::Cut(FMantleSkinnedMesh& Body, TArray<FSkeletalMateria
 			}
 			LOD.Indices = MoveTemp(Indices);
 			LOD.Sections = MoveTemp(Sections);
+			// A cut piece that joined a whole slot is a second section of it: one section a slot, so a name is on one section only.
+			FMantleVehicleBodySplit::CoalesceSections(LOD);
 		}
 	}
 	const TArray<FString> Names = SectionNames(Materials);

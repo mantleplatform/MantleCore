@@ -102,6 +102,114 @@ namespace MantleVehicleBodySplitPrivate
 	}
 }
 
+void FMantleVehicleBodySplit::CoalesceSections(FMantleSkinnedMeshLOD& LOD)
+{
+	TArray<int32> Order;
+	TMap<int32, TArray<int32>> SectionsOfSlot;
+	for (int32 Section = 0; Section < LOD.Sections.Num(); ++Section)
+	{
+		const int32 Slot = LOD.Sections[Section].MaterialIndex;
+		if (!SectionsOfSlot.Contains(Slot))
+		{
+			Order.Add(Slot);
+		}
+		SectionsOfSlot.FindOrAdd(Slot).Add(Section);
+	}
+	if (Order.Num() == LOD.Sections.Num())
+	{
+		return;
+	}
+	TArray<uint32> Indices;
+	Indices.Reserve(LOD.Indices.Num());
+	TArray<FMantleSkinnedMeshSection> Sections;
+	for (const int32 Slot : Order)
+	{
+		FMantleSkinnedMeshSection Gathered = LOD.Sections[SectionsOfSlot[Slot][0]];
+		Gathered.FirstIndex = Indices.Num();
+		for (const int32 Section : SectionsOfSlot[Slot])
+		{
+			const FMantleSkinnedMeshSection& Each = LOD.Sections[Section];
+			if (Each.FirstIndex >= 0 && Each.FirstIndex + Each.IndexCount <= LOD.Indices.Num())
+			{
+				Indices.Append(&LOD.Indices[Each.FirstIndex], Each.IndexCount);
+			}
+		}
+		Gathered.IndexCount = Indices.Num() - Gathered.FirstIndex;
+		Sections.Add(Gathered);
+	}
+	LOD.Indices = MoveTemp(Indices);
+	LOD.Sections = MoveTemp(Sections);
+}
+
+FMantleVehicleSlotMerge FMantleVehicleBodySplit::MergeIdenticalMaterials(FMantleSkinnedMesh& Body, TArray<FSkeletalMaterial>& Materials, const TFunctionRef<FString(int32)> Role)
+{
+	FMantleVehicleSlotMerge Out;
+	Out.SlotsBefore = Materials.Num();
+	Out.SlotsAfter = Materials.Num();
+	if (Body.LODs.Num() == 0 || Materials.Num() < 2)
+	{
+		return Out;
+	}
+	TMap<FString, int32> FirstOf;
+	TArray<int32> Target;
+	Target.SetNum(Materials.Num());
+	for (int32 Slot = 0; Slot < Materials.Num(); ++Slot)
+	{
+		Target[Slot] = Slot;
+		const UMaterialInterface* Material = Materials[Slot].MaterialInterface.Get();
+		if (!Material)
+		{
+			continue;
+		}
+		const FString Key = FString::Printf(TEXT("%llu|%s"), reinterpret_cast<uint64>(Material), *Role(Slot));
+		if (const int32* First = FirstOf.Find(Key))
+		{
+			Target[Slot] = *First;
+		}
+		else
+		{
+			FirstOf.Add(Key, Slot);
+		}
+	}
+	// The slots that stay, in order, and where every old slot is now.
+	TArray<int32> Kept;
+	TArray<int32> NewIndex;
+	NewIndex.Init(INDEX_NONE, Materials.Num());
+	for (int32 Slot = 0; Slot < Materials.Num(); ++Slot)
+	{
+		if (Target[Slot] == Slot)
+		{
+			NewIndex[Slot] = Kept.Num();
+			Kept.Add(Slot);
+		}
+	}
+	if (Kept.Num() == Materials.Num())
+	{
+		return Out;
+	}
+	Out.NewSlotOfOld.SetNum(Materials.Num());
+	for (int32 Slot = 0; Slot < Materials.Num(); ++Slot)
+	{
+		Out.NewSlotOfOld[Slot] = NewIndex[Target[Slot]];
+	}
+	FMantleSkinnedMeshLOD& LOD = Body.LODs[0];
+	TArray<FSkeletalMaterial> KeptMaterials;
+	for (const int32 Slot : Kept)
+	{
+		KeptMaterials.Add(Materials[Slot]);
+	}
+	for (FMantleSkinnedMeshSection& Section : LOD.Sections)
+	{
+		const int32 Now = Out.NewSlotOfOld.IsValidIndex(Section.MaterialIndex) ? Out.NewSlotOfOld[Section.MaterialIndex] : 0;
+		Section.MaterialIndex = Now;
+		Section.MaterialName = KeptMaterials.IsValidIndex(Now) ? KeptMaterials[Now].MaterialSlotName : FName();
+	}
+	Materials = MoveTemp(KeptMaterials);
+	CoalesceSections(LOD);
+	Out.SlotsAfter = Materials.Num();
+	return Out;
+}
+
 int32 FMantleVehicleBodySplit::CountMaterials(const FMantleSkinnedMesh& Body)
 {
 	using namespace MantleVehicleBodySplitPrivate;
