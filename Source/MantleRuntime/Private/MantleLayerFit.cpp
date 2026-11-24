@@ -11,24 +11,35 @@
 namespace MantleLayerFitPrivate
 {
 	/**
+	 * How far from Under a vertex is looked for to know it is deep inside it: the smoothing of a push reaches several points
+	 * (4 passes of the push, 4 of its vectors), a few cm each.
+	 */
+	constexpr float DeepReachCm = 4.0f * FMantleLayerFit::MaxDepthCm;
+
+	/**
 	 * Target for Restore over Under: every Outer vertex whose nearest point on Under lies less than MaxDepthCm inside it
 	 * or off it (not on its open edge) is tracked with the clearance it should have, GapCm; vertices MaxDepthCm or more
-	 * inside are not tracked. OutNeeding is how many tracked vertices are less than GapCm off Under now.
+	 * inside are not tracked. OutNeeding is how many tracked vertices are less than GapCm off Under now. OutFrozen (one per
+	 * vertex, 1 where set) marks the vertices MaxDepthCm or more inside Under, within DeepReachCm of it (not on its open
+	 * edge): they are not this garment's to fix, so Restore holds them where they are.
 	 */
-	bool MeasureLOD(const FMantleSkinnedMeshLOD& Outer, const FMantleSkinnedMeshLOD& Under, FMantleGarmentClearance& OutTarget, int32& OutNeeding, FString* OutError)
+	bool MeasureLOD(const FMantleSkinnedMeshLOD& Outer, const FMantleSkinnedMeshLOD& Under, FMantleGarmentClearance& OutTarget, int32& OutNeeding, TArray<uint8>& OutFrozen, FString* OutError)
 	{
 		OutNeeding = 0;
+		OutFrozen.Reset();
 		if (Outer.NumVertices() == 0 || Outer.NumTriangles() == 0)
 		{
 			OutTarget = FMantleGarmentClearance();
 			return true;
 		}
-		if (!FMantleGarmentClearance::Compute(Outer.Positions, Under, OutTarget, FMantleLayerFit::MaxDepthCm, OutError))
+		if (!FMantleGarmentClearance::Compute(Outer.Positions, Under, OutTarget, DeepReachCm, OutError))
 		{
 			return false;
 		}
 		// A vertex whose nearest point is on the under-garment's hem, cuff or collar edge is beside it, not over it.
 		OutTarget.UntrackBoundary(Under);
+		OutFrozen.SetNumZeroed(Outer.NumVertices());
+		int32 NumFrozen = 0;
 		for (int32 Vertex = 0; Vertex < Outer.NumVertices(); ++Vertex)
 		{
 			if (!OutTarget.IsTracked(Vertex))
@@ -38,24 +49,39 @@ namespace MantleLayerFitPrivate
 			const float Clearance = OutTarget.ClearanceCm[Vertex];
 			if (Clearance <= -FMantleLayerFit::MaxDepthCm)
 			{
+				OutFrozen[Vertex] = 1;
+				++NumFrozen;
+				OutTarget.Untrack(Vertex);
+				continue;
+			}
+			// Tracked only within MaxDepthCm of Under (the search reached further, to see the deep ones).
+			const uint32* Corner = &OutTarget.SurfaceIndices[OutTarget.Triangle[Vertex] * 3];
+			const FVector3f& Weights = OutTarget.Barycentrics[Vertex];
+			const FVector3f Nearest = Under.Positions[Corner[0]] * Weights.X + Under.Positions[Corner[1]] * Weights.Y + Under.Positions[Corner[2]] * Weights.Z;
+			if (FVector3f::DistSquared(Outer.Positions[Vertex], Nearest) > FMath::Square(FMantleLayerFit::MaxDepthCm))
+			{
 				OutTarget.Untrack(Vertex);
 				continue;
 			}
 			OutNeeding += Clearance < FMantleLayerFit::GapCm ? 1 : 0;
 			OutTarget.ClearanceCm[Vertex] = FMantleLayerFit::GapCm;
 		}
+		if (NumFrozen == 0)
+		{
+			OutFrozen.Reset();
+		}
 		return true;
 	}
 
-	/** Pushes Outer out of Under to Target's clearance (Restore with no slack, no floor and no authored garment); adds to Stats. */
-	bool PushLOD(FMantleSkinnedMeshLOD& Outer, const FMantleGarmentClearance& Target, const FMantleSkinnedMeshLOD& Under, FMantleLayerFitStats& Stats, FString* OutError)
+	/** Pushes Outer out of Under to Target's clearance (Restore with no slack, no floor and no authored garment), holding Frozen's vertices; adds to Stats. */
+	bool PushLOD(FMantleSkinnedMeshLOD& Outer, const FMantleGarmentClearance& Target, const TArray<uint8>& Frozen, const FMantleSkinnedMeshLOD& Under, FMantleLayerFitStats& Stats, FString* OutError)
 	{
 		TArray<int32> Seams;
 		int32 Groups = 0;
 		int32 Copies = 0;
 		MantleGarmentGeometry::SectionSeams(Outer, Seams, Groups, Copies);
 		FMantleClearanceRestoreStats RestoreStats;
-		if (!FMantleClearanceRestore::Restore(Outer, Target, Under.Positions, nullptr, 0.0f, 0.0f, FMantleGarmentClearance::DefaultSmoothIters, &RestoreStats, OutError, Seams))
+		if (!FMantleClearanceRestore::Restore(Outer, Target, Under.Positions, nullptr, 0.0f, 0.0f, FMantleGarmentClearance::DefaultSmoothIters, &RestoreStats, OutError, Seams, Frozen))
 		{
 			return false;
 		}
@@ -533,8 +559,9 @@ void FMantleLayerFit::Apply(const TConstArrayView<FMantleLayerGarment> Garments,
 			++OutStats.Pairs;
 			FString Error;
 			FMantleGarmentClearance Target;
+			TArray<uint8> Frozen;
 			int32 Needing = 0;
-			if (!MeasureLOD(Current.LODs[0], UnderMesh.LODs[0], Target, Needing, &Error))
+			if (!MeasureLOD(Current.LODs[0], UnderMesh.LODs[0], Target, Needing, Frozen, &Error))
 			{
 				UE_LOG(LogMantle, Warning, TEXT("MANTLE_LAYERFIT garment %d (rank %d) left as it is: %s"), Index, Garments[Index].Rank, *Error);
 				bFailed = true;
@@ -550,13 +577,14 @@ void FMantleLayerFit::Apply(const TConstArrayView<FMantleLayerGarment> Garments,
 				Work = MakeShared<FMantleSkinnedMesh>(Source);
 			}
 			// Every LOD against the under-garment's LOD0 (LOD0's target is the one just measured).
-			bool bPushed = PushLOD(Work->LODs[0], Target, UnderMesh.LODs[0], OutStats, &Error);
+			bool bPushed = PushLOD(Work->LODs[0], Target, Frozen, UnderMesh.LODs[0], OutStats, &Error);
 			for (int32 LODIndex = 1; bPushed && LODIndex < Work->LODs.Num(); ++LODIndex)
 			{
 				FMantleGarmentClearance LODTarget;
+				TArray<uint8> LODFrozen;
 				int32 LODNeeding = 0;
-				bPushed = MeasureLOD(Work->LODs[LODIndex], UnderMesh.LODs[0], LODTarget, LODNeeding, &Error)
-					&& (LODNeeding == 0 || PushLOD(Work->LODs[LODIndex], LODTarget, UnderMesh.LODs[0], OutStats, &Error));
+				bPushed = MeasureLOD(Work->LODs[LODIndex], UnderMesh.LODs[0], LODTarget, LODNeeding, LODFrozen, &Error)
+					&& (LODNeeding == 0 || PushLOD(Work->LODs[LODIndex], LODTarget, LODFrozen, UnderMesh.LODs[0], OutStats, &Error));
 			}
 			if (!bPushed)
 			{

@@ -341,7 +341,7 @@ int32 FMantleFaceFlips::CountAdded(const FMantleFaceFlips& Before, const FMantle
 
 bool FMantleClearanceRestore::Restore(FMantleSkinnedMeshLOD& Garment, const FMantleGarmentClearance& Target, const TConstArrayView<FVector3f> Surface,
 	const FMantleSkinnedMeshLOD* Authored, const float SlackCm, const float MinKeptCm, int32 SmoothIters,
-	FMantleClearanceRestoreStats* OutStats, FString* OutError, const TConstArrayView<int32> Seams)
+	FMantleClearanceRestoreStats* OutStats, FString* OutError, const TConstArrayView<int32> Seams, const TConstArrayView<uint8> Frozen)
 {
 	using namespace MantleGarmentClearancePrivate;
 	using namespace MantleGarmentGeometry;
@@ -349,10 +349,10 @@ bool FMantleClearanceRestore::Restore(FMantleSkinnedMeshLOD& Garment, const FMan
 	const double Start = NowMs();
 	const int32 N = Garment.NumVertices();
 	if (Target.Triangle.Num() != N || Target.Barycentrics.Num() != N || Target.ClearanceCm.Num() != N || Surface.Num() != Target.NumSurfaceVertices
-		|| Garment.Normals.Num() != N || !IndicesInRange(Garment.Indices, N) || (Seams.Num() != 0 && Seams.Num() != N))
+		|| Garment.Normals.Num() != N || !IndicesInRange(Garment.Indices, N) || (Seams.Num() != 0 && Seams.Num() != N) || (Frozen.Num() != 0 && Frozen.Num() != N))
 	{
-		return MantleGarmentGeometry::RefuseFit(TEXT("restore"), FString::Printf(TEXT("%d garment vertices vs %d tracked entries (%d normals, %d seam entries), surface %d vertices vs %d: not restored"),
-			N, Target.Triangle.Num(), Garment.Normals.Num(), Seams.Num(), Surface.Num(), Target.NumSurfaceVertices), OutError);
+		return MantleGarmentGeometry::RefuseFit(TEXT("restore"), FString::Printf(TEXT("%d garment vertices vs %d tracked entries (%d normals, %d seam entries, %d frozen entries), surface %d vertices vs %d: not restored"),
+			N, Target.Triangle.Num(), Garment.Normals.Num(), Seams.Num(), Frozen.Num(), Surface.Num(), Target.NumSurfaceVertices), OutError);
 	}
 	SmoothIters = FMath::Clamp(SmoothIters, 0, FMantleGarmentClearance::MaxSmoothIters);
 	bool bAuthored = Authored != nullptr && Authored->NumVertices() == N && Authored->Indices.Num() == Garment.Indices.Num();
@@ -411,6 +411,18 @@ bool FMantleClearanceRestore::Restore(FMantleSkinnedMeshLOD& Garment, const FMan
 		}
 	}
 
+	// A frozen vertex needs no push, whatever its twin does: it stays where it is.
+	if (Frozen.Num() == N)
+	{
+		for (int32 Vertex = 0; Vertex < N; ++Vertex)
+		{
+			if (Frozen[Vertex])
+			{
+				Required[Vertex] = 0.0f;
+			}
+		}
+	}
+
 	// 2. Points: split copies welded within their section (they move together or the seam opens). A
 	// point needs the largest push of its copies; its normal is the sum of its copies' garment normals,
 	// its surface normal that of its tracked copies'.
@@ -452,6 +464,18 @@ bool FMantleClearanceRestore::Restore(FMantleSkinnedMeshLOD& Garment, const FMan
 	}
 	FPointNeighbors Neighbors;
 	PointNeighbors(Garment.Indices, Weld, NumPoints, Neighbors);
+	// The points held in place (any copy frozen): zero in the push field and the push vectors through every smoothing pass.
+	TBitArray<> PointFrozen(false, NumPoints);
+	if (Frozen.Num() == N)
+	{
+		for (int32 Vertex = 0; Vertex < N; ++Vertex)
+		{
+			if (Frozen[Vertex])
+			{
+				PointFrozen[Weld[Vertex]] = true;
+			}
+		}
+	}
 
 	// 3. The push field, smoothed; never below a point's own requirement, so the clearance is still
 	// restored everywhere.
@@ -463,8 +487,13 @@ bool FMantleClearanceRestore::Restore(FMantleSkinnedMeshLOD& Garment, const FMan
 		Next.SetNumZeroed(NumPoints);
 		for (int32 Pass = 0; Pass < SmoothIters; ++Pass)
 		{
-			ParallelFor(NumPoints, [&Push, &Next, &Neighbors, &PointRequired](const int32 Point)
+			ParallelFor(NumPoints, [&Push, &Next, &Neighbors, &PointRequired, &PointFrozen](const int32 Point)
 			{
+				if (PointFrozen[Point])
+				{
+					Next[Point] = 0.0f;
+					return;
+				}
 				float Smoothed = Push[Point];
 				const TArray<int32, TInlineAllocator<8>>& Around = Neighbors[Point];
 				if (Around.Num() > 0)
@@ -545,8 +574,13 @@ bool FMantleClearanceRestore::Restore(FMantleSkinnedMeshLOD& Garment, const FMan
 		NextDisp.SetNumUninitialized(NumPoints);
 		for (int32 Pass = 0; Pass < SmoothIters; ++Pass)
 		{
-			ParallelFor(NumPoints, [&Disp, &NextDisp, &Neighbors](const int32 Point)
+			ParallelFor(NumPoints, [&Disp, &NextDisp, &Neighbors, &PointFrozen](const int32 Point)
 			{
+				if (PointFrozen[Point])
+				{
+					NextDisp[Point] = FVector3f::ZeroVector;
+					return;
+				}
 				const TArray<int32, TInlineAllocator<8>>& Around = Neighbors[Point];
 				if (Around.Num() == 0)
 				{

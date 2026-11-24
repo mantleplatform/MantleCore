@@ -181,6 +181,7 @@ class Player:
     position: Optional[Vector3]
     regen_delay: Optional[float]
     regen_rate: Optional[float]
+    ring_finger: Optional[str]
     shield: Optional[float]
     shield_regen_rate: Optional[float]
     sprint_enabled: Optional[bool]
@@ -192,6 +193,7 @@ class Player:
     stamina_regen: Optional[float]
     stamina_regen_delay: Optional[float]
     team: Optional[str]
+    top_tucked: bool
     user_id: str
     walk_speed: Optional[float]
     wall_jump: Optional[bool]
@@ -681,7 +683,7 @@ class _AvatarService:
         """Whether the avatar editor is open on this client, whoever opened it."""
         ...
     def open_editor(self, options: Optional[dict[str, Any]] = ..., /) -> bool:
-        """Open the avatar editor over the running place, where the player changes their own look while the world goes on behind it. options.Categories limits what it offers: any of 'body' (the avatar, skin tone, eye color, height and the rest of Body), 'hair' (hair, eyebrows, eyelashes, facial hair), 'clothes' (top, bottom, footwear), 'accessories', 'emotes' or 'all', or slot names such as 'top' or 'acc_hat'. Leave it out for everything (only then are outfits offered). options.Title is a heading over the panel ('Barber'), up to 40 characters. options.FreezeCharacter (default true) holds the character still and turns the camera onto it; false leaves the player in control and the camera where it is. The player sees only items they own or that are free, and Save puts the look on their account exactly as Mantle's own avatar screen does. Esc, the pad's B or Close shut it, asking first about unsaved changes. Returns false, opening nothing, when there is no local character, or the editor or another Mantle screen is already open. An unknown category is an error."""
+        """Open the avatar editor over the running place, where the player changes their own look while the world goes on behind it. options.Categories limits what it offers: any of 'body' (the avatar, skin tone, eye color, height and the rest of Body), 'hair' (hair, eyebrows, eyelashes, facial hair), 'clothes' (top, bottom, footwear, socks, legwear, outerwear, gloves), 'accessories' (hats, face, neck, shoulders, front, back, waist, eyewear, earrings, nose, wrists, rings), 'emotes' or 'all', or slot names such as 'top', 'socks' or 'acc_hat'. Leave it out for everything (only then are outfits offered). options.Title is a heading over the panel ('Barber'), up to 40 characters. options.FreezeCharacter (default true) holds the character still and turns the camera onto it; false leaves the player in control and the camera where it is. The player sees only items they own or that are free, and Save puts the look on their account exactly as Mantle's own avatar screen does. Esc, the pad's B or Close shut it, asking first about unsaved changes. Returns false, opening nothing, when there is no local character, or the editor or another Mantle screen is already open. An unknown category is an error."""
         ...
     def play_emote(self, itemId: str, /) -> bool:
         """Play one of the local player's equipped emotes, by its item id (an emote on their emote wheel). Returns false, and plays nothing, when itemId is not one of their equipped emotes, when they have no character, or when called again too soon. true means the request went to the server, which checks it again and can still refuse it (the player is moving, in the air, seated or dead)."""
@@ -1320,7 +1322,7 @@ class _NPCsService:
         """The NPC an Entity is (a World:Raycast hit, or NPC:GetEntity()), or nil when it is not a live NPC."""
         ...
     def spawn(self, position: Vector3, look: Optional[dict[str, Any]] = ..., yaw: Optional[float] = ..., /) -> NPC:
-        """Spawn a character standing at position (its feet), facing yaw degrees (0 faces +X), and return it as an NPC. Every player sees it. look.AvatarItemId optionally selects a published avatar body; omit it to spawn an NPC with no rendered body. SkinTone and EyeColor are avatar palette ids ('tone_05'), Height is a percent from 95 to 105. Wearing dresses the NPC the way a crowd member is dressed: a list of {Slot, ItemId} entries naming published clothing and hair items the place owner has acquired (Slot is hair, eyebrows, eyelashes, facial_hair, top, bottom, footwear or nails; one item per slot, at most 24). It needs AvatarItemId, and a body that cannot wear clothing shows none. An unknown slot, a repeated slot or a malformed item id fails the call. Every player sees the outfit, players who join later included. A place holds at most 50 NPCs at once; Destroy one to make room."""
+        """Spawn a character standing at position (its feet), facing yaw degrees (0 faces +X), and return it as an NPC. Every player sees it. look.AvatarItemId optionally selects a published avatar body; omit it to spawn an NPC with no rendered body. SkinTone and EyeColor are avatar palette ids ('tone_05'), Height is a percent from 95 to 105. Wearing dresses the NPC the way a crowd member is dressed: a list of {Slot, ItemId} entries naming published clothing and hair items the place owner has acquired (Slot is hair, eyebrows, eyelashes, facial_hair, top, bottom, footwear, socks, legwear, outerwear, gloves or nails; one item per slot, at most 27). It needs AvatarItemId, and a body that cannot wear clothing shows none. An unknown slot, a repeated slot or a malformed item id fails the call. Every player sees the outfit, players who join later included. A place holds at most 50 NPCs at once; Destroy one to make room."""
         ...
 
 NPCs: _NPCsService

@@ -72,8 +72,8 @@ struct MANTLERUNTIME_API FMantleLayerFitStats
  * under-garment's open edge, a hem or a cuff, are not over it and are left out). A vertex less than MaxDepthCm inside
  * it, or less than GapCm off it, is pushed out to GapCm by FMantleClearanceRestore::Restore, unchanged, with no
  * slack and no floor, so its smoothing and flip limiter, and the section seams staying closed, are the fit's own.
- * Vertices MaxDepthCm or more inside are not this garment's to fix: nothing measures them, so they stay unless the
- * smoothing of a push beside them reaches them.
+ * Vertices MaxDepthCm or more inside are not this garment's to fix: Restore holds them where they are (its Frozen), the
+ * smoothing of a push beside them included.
  *
  * Then, for the look that is merged (OutShown given), each garment is edited against the garments over it, in the reference
  * pose (the garments slide against each other about as cloth on skin, so the kept band is wider than the body's 2.5 cm):

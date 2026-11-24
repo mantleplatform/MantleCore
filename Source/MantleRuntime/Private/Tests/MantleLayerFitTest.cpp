@@ -165,6 +165,7 @@ bool FMantleLayerFitTightJacketTest::RunTest(const FString& Parameters)
 	FMantleLayerFitStats Stats;
 	FMantleLayerFit::Apply(Garments, Placed, Stats);
 
+	AddInfo(Stats.ToString());
 	TestEqual(TEXT("both garments are layers"), Stats.Garments, 2);
 	TestEqual(TEXT("one garment was pushed"), Stats.Pushed, 1);
 	TestEqual(TEXT("none refused"), Stats.Failed, 0);
@@ -218,7 +219,13 @@ bool FMantleLayerFitTightJacketTest::RunTest(const FString& Parameters)
 			else if (InDeepZone(Z))
 			{
 				++Deep;
-				DeepMoved += Now.Positions[Vertex] == Before.Positions[Vertex] ? 0 : 1;
+				if (Now.Positions[Vertex] != Before.Positions[Vertex])
+				{
+					if (++DeepMoved <= 6)
+					{
+						AddInfo(FString::Printf(TEXT("LOD%d deep point %d moved: %s -> %s"), LODIndex, Vertex, *Before.Positions[Vertex].ToString(), *Now.Positions[Vertex].ToString()));
+					}
+				}
 			}
 			Inward += Radial(Now.Positions[Vertex]) < Radial(Before.Positions[Vertex]) - 0.001f ? 1 : 0;
 		}

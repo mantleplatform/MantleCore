@@ -14,7 +14,9 @@
 //
 // Distances from the jacket's edges (3 cm kept band, the 0.35 cm stand-off included): ring -7 is 3.2 cm from the bottom hem (outside
 // the band), ring -8 is 2.2 (inside); ring 6 is 3.8 from the top hem, ring 7 is 2.8; step 4 is 4.9 cm from the front edge, step 2 is
-// 2.3; step 31 is 5.6 from the back edge, step 34 is 1.6. Rings and steps in between are not asserted.
+// 2.35; the arc's back edge is at step 36.25 (it has 37 vertices a ring, steps 0.25 to 36.25), so step 31 is 6.9 cm from it, step 34 is
+// 3.006 (just outside the band: the shirt's circle and the jacket's, 0.35 cm out, are 3.006 cm apart there), step 35 is 1.7 and step 36
+// is 0.5 (covered, under the jacket's last column). Rings and steps in between are not asserted.
 
 // Named, not anonymous: MantleRuntime builds as a unity build.
 namespace MantleLayerHideTestPrivate
@@ -243,7 +245,7 @@ bool FMantleLayerHideCoveredTest::RunTest(const FString& Parameters)
 				const int32 Step = StepOf(P, ShirtAround);
 				bAllRingsDeep &= Ring >= -7 && Ring <= 6;
 				bAllStepsDeep &= Step >= 4 && Step <= 31;
-				bNearAnEdge |= Ring <= -8 || Ring >= 7 || Step <= 2 || Step >= 34;
+				bNearAnEdge |= Ring <= -8 || Ring >= 7 || Step <= 2 || Step >= 35;
 			}
 			const bool bKept = Kept.Contains(Triple(Before, Triangle));
 			Cut += bKept ? 0 : 1;
@@ -304,7 +306,7 @@ bool FMantleLayerHideCoveredTest::RunTest(const FString& Parameters)
 				const int32 Step = StepOf(P, ShirtAround / 2);
 				bAllRingsDeep &= Ring >= -7 && Ring <= 5;
 				bAllStepsDeep &= Step >= 2 && Step <= 15;
-				bNearAnEdge |= Ring <= -9 || Ring >= 7 || Step <= 1 || Step >= 17;
+				bNearAnEdge |= Ring <= -9 || Ring >= 7 || Step <= 1 || Step >= 18;
 			}
 			const bool bKept = Kept.Contains(Triple(Before, Triangle));
 			Cut += bKept ? 0 : 1;
@@ -399,7 +401,8 @@ bool FMantleLayerHideSinkTest::RunTest(const FString& Parameters)
 	using namespace MantleLayerHideTestPrivate;
 	// The covered points of the shirt that stay (the band at the jacket's edges, and the ring beside the cut) end 0.5 cm under the
 	// jacket: the jacket is 0.35 cm out, so about 0.17 cm in from the shirt's 10 cm, whatever the quarter-step sag of the jacket's
-	// sides makes it; never 1 cm. Points the jacket does not cover, and points no triangle uses any more, do not move.
+	// sides makes it; never 1 cm. Points the jacket does not cover, and points no triangle uses any more, do not move. Step 36 is the
+	// one column the jacket's last column covers (the arc's back edge is at step 36.25): it sinks too, its depth not asserted.
 	FShirtUnderJacket Look;
 	if (!Look.Run(*this))
 	{
@@ -421,7 +424,12 @@ bool FMantleLayerHideSinkTest::RunTest(const FString& Parameters)
 		const int32 Step = StepOf(Before.Positions[Vertex], ShirtAround);
 		const int32 Ring = RingOf(Before.Positions[Vertex]);
 		const bool bCovered = Step >= 1 && Step <= 35 && Ring >= -10 && Ring <= 9;
-		if (bCovered && Used[Vertex])
+		const bool bLastColumn = Step == 36 && Ring >= -10 && Ring <= 9;
+		if (bLastColumn)
+		{
+			DeepestSink = FMath::Max(DeepestSink, ShirtRadius - Radial(After.Positions[Vertex]));
+		}
+		else if (bCovered && Used[Vertex])
 		{
 			++SunkChecked;
 			const float Radius = Radial(After.Positions[Vertex]);
@@ -430,7 +438,13 @@ bool FMantleLayerHideSinkTest::RunTest(const FString& Parameters)
 		}
 		else
 		{
-			MovedButNotMeant += After.Positions[Vertex] != Before.Positions[Vertex] ? 1 : 0;
+			if (After.Positions[Vertex] != Before.Positions[Vertex])
+			{
+				if (++MovedButNotMeant <= 6)
+				{
+					AddInfo(FString::Printf(TEXT("moved without being covered: ring %d step %d (%s -> %s)"), Ring, Step, *Before.Positions[Vertex].ToString(), *After.Positions[Vertex].ToString()));
+				}
+			}
 		}
 	}
 	TestTrue(TEXT("covered points of kept triangles exist (the premise)"), SunkChecked > 100);
