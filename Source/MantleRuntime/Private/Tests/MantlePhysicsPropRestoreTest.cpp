@@ -35,6 +35,23 @@ namespace MantlePhysicsPropRestoreTestPrivate
 	FStubPlace* GStub = nullptr;
 	IMantlePhysicsPropPlace* StubResolver(UWorld*) { return GStub; }
 
+	/** Points every prop at Stub for one test and gives the resolver that was there back after: the place module sets the game's at startup, and
+	    other tests' props (a script host's, in a world with a retained place) adopt through it. */
+	struct FStubResolverScope
+	{
+		FMantlePhysicsPropPlaceResolver Previous = AMantlePhysicsProp::PlaceForWorld;
+		explicit FStubResolverScope(FStubPlace& Stub)
+		{
+			GStub = &Stub;
+			AMantlePhysicsProp::PlaceForWorld = &StubResolver;
+		}
+		~FStubResolverScope()
+		{
+			AMantlePhysicsProp::PlaceForWorld = Previous;
+			GStub = nullptr;
+		}
+	};
+
 	UWorld* MakeWorld()
 	{
 		if (!GEngine)
@@ -92,12 +109,11 @@ bool FMantlePhysicsPropRestoreTest::RunTest(const FString&)
 	UWorld* World = MakeWorld();
 	if (!TestNotNull(TEXT("a world"), World)) { return false; }
 	FStubPlace Stub;
-	GStub = &Stub;
-	AMantlePhysicsProp::PlaceForWorld = &StubResolver;
+	FStubResolverScope Resolver(Stub);
 
 	const FVector Pose(4000.0, -300.0, 120.0);
 	AMantlePhysicsProp* Prop = SpawnClientProp(World, Pose, /*bServerSimulates*/ true);
-	if (!TestNotNull(TEXT("the prop"), Prop)) { AMantlePhysicsProp::PlaceForWorld = nullptr; GStub = nullptr; DestroyWorld(World); return false; }
+	if (!TestNotNull(TEXT("the prop"), Prop)) { DestroyWorld(World); return false; }
 	Prop->SetActorHiddenInGame(true);
 	Prop->SetActorScale3D(FVector(2.0, 2.0, 2.0));
 	AStaticMeshActor* Child = World->SpawnActor<AStaticMeshActor>(Pose + FVector(0, 0, 100), FRotator::ZeroRotator);
@@ -149,8 +165,6 @@ bool FMantlePhysicsPropRestoreTest::RunTest(const FString&)
 	TestNull(TEXT("and makes none"), Waiting->RestorePlaceholder());
 	TestEqual(TEXT("and the place was told of none of them"), Stub.Replaced.Num(), 0);
 
-	AMantlePhysicsProp::PlaceForWorld = nullptr;
-	GStub = nullptr;
 	DestroyWorld(World);
 	return true;
 }
@@ -221,6 +235,94 @@ bool FMantlePhysicsPropReplicationModeTest::RunTest(const FString&)
 		TestTrue(TEXT("at 30 updates a second"), FMath::IsNearlyEqual(Prop->GetNetUpdateFrequency(), 30.0f));
 		Prop->Destroy();
 	}
+	DestroyWorld(World);
+	return true;
+}
+
+// Script API 1.95: a server script's physics object (Assets:Spawn with Anchored = false, Entity:Clone of a physics entity) has no place entity. A client's copy
+// takes over the stand-in its script host built from the spawn item, whichever came first, with the settings it was sent (none are looked up in the place,
+// for a placed prop either). The stub place has no entities at all.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantlePhysicsPropRuntimeAdoptTest,
+	"Mantle.Runtime.PhysicsProp.AdoptsAScriptStandInInEitherOrder",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FMantlePhysicsPropRuntimeAdoptTest::RunTest(const FString&)
+{
+	UWorld* World = MakeWorld();
+	if (!TestNotNull(TEXT("a world"), World)) { return false; }
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!TestNotNull(TEXT("the engine's cube"), Cube)) { DestroyWorld(World); return false; }
+	FStubPlace Stub;
+	FStubResolverScope Resolver(Stub);
+
+	FMantlePhysicsProps Sent;
+	Sent.Mass = 12.0;
+	Sent.LinearDamping = 0.5;
+	Sent.Material = EMantlePhysicsMaterial::Ice;
+
+	/** A plain stand-in with the cube, as a script host builds one (twice the size, so taking its scale over shows). */
+	auto StandIn = [&](const FVector& At)
+	{
+		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(At, FRotator::ZeroRotator);
+		Actor->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+		Actor->GetStaticMeshComponent()->SetStaticMesh(Cube);
+		Actor->SetActorScale3D(FVector(2.0));
+		return Actor;
+	};
+	/** A client's copy of the prop for Id, as it arrives: its id and settings, no mesh, not the authority; then it begins play (where it first tries to adopt). */
+	auto Arrive = [&](const TCHAR* Id)
+	{
+		AMantlePhysicsProp* Prop = World->SpawnActor<AMantlePhysicsProp>(FVector(0, 0, 300), FRotator::ZeroRotator);
+		Prop->SetReplicatedStateForTest(Id, Sent);
+		Prop->SetRole(ROLE_SimulatedProxy);
+		Prop->DispatchBeginPlay();
+		return Prop;
+	};
+	auto CheckAdopted = [&](const TCHAR* What, AMantlePhysicsProp* Prop, AStaticMeshActor* Was, const TCHAR* Id)
+	{
+		TestTrue(FString::Printf(TEXT("%s: adopted"), What), Prop->IsAdopted());
+		TestTrue(FString::Printf(TEXT("%s: the entity's actor is the prop"), What), Stub.FindActor(Id) == Prop);
+		TestTrue(FString::Printf(TEXT("%s: the stand-in is gone"), What), !IsValid(Was) || Was->IsActorBeingDestroyed());
+		TestTrue(FString::Printf(TEXT("%s: with its mesh"), What), Prop->GetStaticMeshComponent()->GetStaticMesh() == Cube);
+		TestTrue(FString::Printf(TEXT("%s: and its scale"), What), Prop->GetActorScale3D().Equals(FVector(2.0), 0.001));
+		TestEqual(FString::Printf(TEXT("%s: the mass it was sent"), What), Prop->GetMassKg(), 12.0, 0.01);
+		TestEqual(FString::Printf(TEXT("%s: the damping it was sent"), What), static_cast<double>(Prop->GetStaticMeshComponent()->GetLinearDamping()), 0.5, 0.001);
+		TestEqual(FString::Printf(TEXT("%s: the surface it was sent"), What), static_cast<int32>(Prop->GetPhysicsMaterial()), static_cast<int32>(EMantlePhysicsMaterial::Ice));
+	};
+
+	// The stand-in first: the copy takes it over as it begins play.
+	AStaticMeshActor* First = StandIn(FVector(0, 0, 300));
+	Stub.Actors.Add(TEXT("mesh_1"), First);
+	AMantlePhysicsProp* Early = Arrive(TEXT("mesh_1"));
+	CheckAdopted(TEXT("stand-in first"), Early, First, TEXT("mesh_1"));
+
+	// The copy first: it waits (nothing to take over, and no place entity to complain about), then takes the stand-in over when it is registered.
+	AMantlePhysicsProp* Waiting = Arrive(TEXT("clone_1"));
+	TestFalse(TEXT("copy first: waits"), Waiting->IsAdopted());
+	AStaticMeshActor* Second = StandIn(FVector(0, 0, 300));
+	Stub.Actors.Add(TEXT("clone_1"), Second);
+	AMantlePhysicsProp::AdoptWaiting(World, TEXT("mesh_1")); // another entity's stand-in: not this copy's
+	TestFalse(TEXT("copy first: not another entity's stand-in"), Waiting->IsAdopted());
+	AMantlePhysicsProp::AdoptWaiting(World, TEXT("clone_1"));
+	CheckAdopted(TEXT("copy first"), Waiting, Second, TEXT("clone_1"));
+
+	// The entity goes here while the server still sends the copy (its spawn's area went away): the copy waits again, and takes the next stand-in over
+	// rather than being drawn beside it.
+	Waiting->ReturnToWaiting();
+	TestFalse(TEXT("returned: waits"), Waiting->IsAdopted());
+	AStaticMeshActor* Third = StandIn(FVector(0, 0, 300));
+	Stub.Actors.Add(TEXT("clone_1"), Third);
+	AMantlePhysicsProp::AdoptWaiting(World, TEXT("clone_1"));
+	TestTrue(TEXT("returned: takes the new stand-in over"), Waiting->IsAdopted() && Stub.FindActor(TEXT("clone_1")) == Waiting);
+	TestTrue(TEXT("returned: and the new stand-in is gone"), !IsValid(Third) || Third->IsActorBeingDestroyed());
+
+	// A copy whose entity this machine has forgotten (destroyed here) leaves no stand-in when the engine takes it away.
+	Stub.Actors.Remove(TEXT("mesh_1"));
+	Stub.Replaced.Reset();
+	TestNull(TEXT("a forgotten entity's copy leaves no stand-in"), Early->RestorePlaceholder());
+	TestEqual(TEXT("and the place is told of none"), Stub.Replaced.Num(), 0);
+
 	DestroyWorld(World);
 	return true;
 }
