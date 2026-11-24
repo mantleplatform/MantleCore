@@ -866,7 +866,7 @@
       "format": "MRM2",
       "maxTriangles": 500000,
       "maxVertices": 1500000,
-      "maxSections": 8,
+      "maxSections": 64,
       "lods": {
         "maxLods": 3,
         "maxTriangles": [
@@ -889,7 +889,7 @@
         "maxTotalHullVertices": 8192,
         "comment": "Simple collision (#470): the mesh's boxes, spheres and capsules (maxPrimitives together) and convex hulls, in the GLB's MANTLE_static_mesh extension and MRM2's COLL block, which the client builds into the body setup in place of complex-as-simple. The plugin leaves a mesh's simple collision off with a warning when it is past these caps (the mesh then collides with its triangles, as before #470); the worker refuses it. A mesh whose collision complexity is Use Complex As Simple sends none."
       },
-      "comment": "One uploaded static mesh: LOD0 plus up to two authored LODs, and its simple collision when it has one. maxTriangles and maxVertices equal the cook's MaxTriangles and MaxVertices (backend/internal/cook/gltf.go, held equal by a Go test) and apply to every LOD; maxSections is the number of material slots, i.e. MRM2 section table entries (the format's own structural cap is 64)."
+      "comment": "One uploaded static mesh: LOD0 plus up to two authored LODs, and its simple collision when it has one. maxTriangles and maxVertices equal the cook's MaxTriangles and MaxVertices (backend/internal/cook/gltf.go, held equal by a Go test) and apply to every LOD; maxSections is the number of material slots, i.e. MRM2 section table entries (the format's own structural cap is 64). Raised from 8 to 64 (#material-limit): the 8 was a placeholder from the first commit with no reason recorded. Nothing technical needs it: the section table allows 64 and the skinned reader 256, and anything over 8 was only split into extra pieces by the plugin, which still draws every material, so the cap saved no draws and caused real bugs on cars (lights on pieces that could not switch on, paint on the wrong pieces). The plugin's Check this place warns above a comfort number of materials and never refuses below 64. Avatars stay at their own 4, 8 and 12 (the atlas fixer really merges there, and avatars multiply by players)."
     },
     "sound": {
       "format": "MAU1",
@@ -911,10 +911,10 @@
       "format": "MSK1",
       "role": 3,
       "maxTriangles": 100000,
-      "maxSections": 8,
+      "maxSections": 64,
       "maxBones": 256,
       "maxInfluencesPerVertex": 8,
-      "comment": "One uploaded skeletal mesh on its own skeleton (#469): a skinned GLB cooked to MSK1 with role 3 (place skeletal mesh), its bone table and reference pose embedded, and its skeleton hash (cook.SkeletonHash: skel_ + 16 hex digits of the SHA-256 over each bone's lower-cased name, a zero byte and its parent index) in the skeleton field. One LOD. The plugin keeps the eight heaviest influences of a vertex and renormalizes them (#484); the cook refuses more. maxTriangles is a starting value the owner may retune."
+      "comment": "One uploaded skeletal mesh on its own skeleton (#469): a skinned GLB cooked to MSK1 with role 3 (place skeletal mesh), its bone table and reference pose embedded, and its skeleton hash (cook.SkeletonHash: skel_ + 16 hex digits of the SHA-256 over each bone's lower-cased name, a zero byte and its parent index) in the skeleton field. One LOD. The plugin keeps the eight heaviest influences of a vertex and renormalizes them (#484); the cook refuses more. maxTriangles is a starting value the owner may retune. Raised from 8 to 64 (#material-limit): the 8 was a placeholder from the first commit with no reason recorded. Nothing technical needs it: the section table allows 64 and the skinned reader 256, and anything over 8 was only split into extra pieces by the plugin, which still draws every material, so the cap saved no draws and caused real bugs on cars (lights on pieces that could not switch on, paint on the wrong pieces). The plugin's Check this place warns above a comfort number of materials and never refuses below 64. Avatars stay at their own 4, 8 and 12 (the atlas fixer really merges there, and avatars multiply by players)."
     },
     "animClip": {
       "format": "MAN1",
@@ -1006,7 +1006,7 @@
         "role": 4,
         "skeleton": "vehicle",
         "maxTriangles": 200000,
-        "maxSections": 8,
+        "maxSections": 64,
         "maxBones": 128,
         "maxInfluencesPerVertex": 4
       },
@@ -1145,8 +1145,8 @@
         "parts/*/location/*": [-1000, 1000],
         "parts/*/rotation/*": [-1, 1],
         "parts/*/scale/*": [-100, 100],
-        "parts/*/paintSlots/*": [0, 7],
-        "parts/*/layerSlots/*/slots/*": [0, 7],
+        "parts/*/paintSlots/*": [0, 63],
+        "parts/*/layerSlots/*/slots/*": [0, 63],
         "seat/exitSideDistance": [0, 1000],
         "seat/rider/handlebar/left/location/*": [-1000, 1000],
         "seat/rider/handlebar/right/location/*": [-1000, 1000],
@@ -1230,7 +1230,7 @@
         "hover/damping/maxSkirtBrakeAccel": [0, 5000],
         "hover/angularDamping": [0, 5]
       },
-      "comment": "A creator-published vehicle (#435): one binary glTF whose skinned body has a bone at every wheel center, with the vehicle document (schema/vehicle.schema.json) at extras.mantleVehicle. The cook worker writes MVH1 (backend/internal/cook/vehicle.go): the resolved document, then the body as MSK1 role 4 on its own bone table (skeleton 'vehicle', reference pose included; distinct from the place skeletal mesh role 3). body caps the mesh; minWheels to maxWheels, maxTorqueCurvePoints, maxGears and maxCollisionBoxes are the document's array sizes; ranges is every number the document may hold, by path (* for any array item), and each is the schema's minimum and maximum there (validate.py checks both ways). A wheel's radius and width come from the body vertices weighted only to its bone when there are at least wheelMinVertices of them; otherwise the document gives them. maxLinkageRules caps the document's linkage (the aim, stretch and copy rules that move a body's suspension bones after its wheels, #435 b). maxParts caps the document's parts (#435 item 2: static meshes uploaded beside the vehicle, each riding a bone of the body, drawn only): a body shell, glass, an interior, lights and bumpers, and a tire each on up to eight wheels fit in 16; each part is one more mesh component per car, and a place may park 32 cars. A part's materials list is at most placeAssets.staticMesh.maxSections long, one per slot of its mesh. A seat's contact points (#612: pelvis, hands, feet and exits, in the vehicle's own space) hold at most maxSeatExits exits; a pelvis, hand or foot target in the body's space (no bone) is at most contactReach cm from its seat's location, and a hand holding the steering wheel (hands.kind wheel) is within wheelHandTolerance cm of the rim. maxAerofoils, maxThrusters, maxSpinBones (a flight or helicopter block), maxRotors and minHoverPads to maxHoverPads (a hover block) cap the non-wheeled kinds' arrays (#821); every number in those blocks, the rider's and the camera boom's has its ranges entry like any other. The plugin's Convert vehicle command applies the same numbers."
+      "comment": "A creator-published vehicle (#435): one binary glTF whose skinned body has a bone at every wheel center, with the vehicle document (schema/vehicle.schema.json) at extras.mantleVehicle. The cook worker writes MVH1 (backend/internal/cook/vehicle.go): the resolved document, then the body as MSK1 role 4 on its own bone table (skeleton 'vehicle', reference pose included; distinct from the place skeletal mesh role 3). body caps the mesh; minWheels to maxWheels, maxTorqueCurvePoints, maxGears and maxCollisionBoxes are the document's array sizes; ranges is every number the document may hold, by path (* for any array item), and each is the schema's minimum and maximum there (validate.py checks both ways). A wheel's radius and width come from the body vertices weighted only to its bone when there are at least wheelMinVertices of them; otherwise the document gives them. maxLinkageRules caps the document's linkage (the aim, stretch and copy rules that move a body's suspension bones after its wheels, #435 b). maxParts caps the document's parts (#435 item 2: static meshes uploaded beside the vehicle, each riding a bone of the body, drawn only): a body shell, glass, an interior, lights and bumpers, and a tire each on up to eight wheels fit in 16; each part is one more mesh component per car, and a place may park 32 cars. A part's materials list is at most placeAssets.staticMesh.maxSections long, one per slot of its mesh. A seat's contact points (#612: pelvis, hands, feet and exits, in the vehicle's own space) hold at most maxSeatExits exits; a pelvis, hand or foot target in the body's space (no bone) is at most contactReach cm from its seat's location, and a hand holding the steering wheel (hands.kind wheel) is within wheelHandTolerance cm of the rim. maxAerofoils, maxThrusters, maxSpinBones (a flight or helicopter block), maxRotors and minHoverPads to maxHoverPads (a hover block) cap the non-wheeled kinds' arrays (#821); every number in those blocks, the rider's and the camera boom's has its ranges entry like any other. The plugin's Convert vehicle command applies the same numbers. A body may have up to 64 materials (sections); the 8 it had before was a placeholder that split cars into extra pieces with lights that could not switch on (see staticMesh.comment)."
     },
     "livery": {
       "maxLiveries": 8,

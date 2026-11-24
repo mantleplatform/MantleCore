@@ -3962,6 +3962,12 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		AddError(FString::Printf(TEXT("has %d materials with its tires; a vehicle has at most %d."), Body.MaterialNames.Num(), FMantleVehicleLimits::MaxSections),
 			TEXT("Merge some of its materials, or give the tires one of the body's. Build a vehicle on a Mantle chassis carries a model's extra materials as parts for you."));
 	}
+	else if (Body.MaterialNames.Num() > FMantlePlaceAssetLimits::MaterialsComfort)
+	{
+		OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+			FString::Printf(TEXT("%s: its body draws %d materials."), *Subject, Body.MaterialNames.Num()),
+			TEXT("It publishes as it is. Each material is a separate draw on every copy of the vehicle, so fewer materials keep a crowded place lighter.") });
+	}
 	for (int32 Index = 0; Index < Materials.Num(); ++Index)
 	{
 		if (Materials[Index] && FMantlePlaceAssets::IsLibraryAsset(Materials[Index]))
@@ -4234,6 +4240,12 @@ void FMantleVehicleConverter::CheckSource(const UMantleVehicleSource* Authored, 
 		{
 			AddError(FString::Printf(TEXT("has %s with %d materials; a part's mesh has at most %d."), *What, Slots.Num(), FMantleVehicleLimits::MaxPartMaterials),
 				TEXT("Merge some of the mesh's materials and re-import it."));
+		}
+		else if (Slots.Num() > FMantlePlaceAssetLimits::MaterialsComfort)
+		{
+			OutIssues.Add(FMantleValidationIssue{ EMantleIssueSeverity::Warning, FString(),
+				FString::Printf(TEXT("%s: %s draws %d materials."), *Subject, *What, Slots.Num()),
+				TEXT("It publishes as it is. Each material is a separate draw on every copy of the vehicle, so fewer materials keep a crowded place lighter.") });
 		}
 		for (const int32 Slot : Slots)
 		{

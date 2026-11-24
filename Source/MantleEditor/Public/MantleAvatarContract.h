@@ -193,7 +193,7 @@ public:
 	/** limits.json placeAssets.staticMesh (F1 #335): one uploaded place mesh, what Check this place and the cook both enforce. */
 	int32 PlaceMeshMaxTriangles = 500000;
 	int32 PlaceMeshMaxVertices = 1500000;
-	int32 PlaceMeshMaxSections = 8;
+	int32 PlaceMeshMaxSections = 64;
 
 	/** limits.json placeAssets.sound (#324): one uploaded place sound, and the place's decoded audio budget. */
 	int32 PlaceSoundMinSampleRate = 22050;
@@ -214,7 +214,7 @@ public:
 
 	/** limits.json placeAssets.skeletalMesh and animClip (#469): a place skeletal mesh on its own skeleton, and a clip for it. */
 	int32 PlaceSkeletalMaxTriangles = 100000;
-	int32 PlaceSkeletalMaxSections = 8;
+	int32 PlaceSkeletalMaxSections = 64;
 	int32 PlaceSkeletalMaxBones = 256;
 	double PlaceClipMaxSeconds = 60.0;
 	double PlaceClipMaxFrameRate = 60.0;
