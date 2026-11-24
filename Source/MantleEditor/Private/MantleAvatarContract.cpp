@@ -261,6 +261,12 @@ bool FMantleAvatarContract::LoadFromDirectory(const FString& Directory, FMantleA
 		Slot->TryGetStringField(TEXT("itemClass"), Entry.ItemClass);
 		Slot->TryGetStringField(TEXT("socket"), Entry.Socket);
 		Slot->TryGetStringField(TEXT("socketBone"), Entry.SocketBone);
+		// #136: the mesh the socket bone is on. Absent: the body, as every slot before the face ones.
+		if (Slot->HasField(TEXT("mesh")) && (!Slot->TryGetStringField(TEXT("mesh"), Entry.Mesh) || (Entry.Mesh != TEXT("body") && Entry.Mesh != TEXT("face"))))
+		{
+			OutError = FString::Printf(TEXT("limits.json slot %s has a mesh that is not \"body\" or \"face\""), *Entry.Id);
+			return false;
+		}
 		Entry.Cap = IntField(Slot, TEXT("cap"), 1);
 		// #136: a ring's fingers. The slot has no socket of its own: the editor places and shows it on the preview finger.
 		if (const TSharedPtr<FJsonObject> Fingers = ObjectField(Slot, TEXT("fingerSockets")))

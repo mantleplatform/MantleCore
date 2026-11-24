@@ -16,15 +16,47 @@ enum class EMantleAccessoryAnchor : uint8
 	TopCenter,
 };
 
+/** #136: the bone an accessory slot's item hangs from, and on which mesh. Its socket sits at identity on that bone. */
+struct FMantleAccessoryBone
+{
+	/** On the face mesh (a face slot whose bone the face has); otherwise on the body. */
+	bool bOnFace = false;
+	FName Bone;
+	/** A face slot hung from the body's head bone instead: there is no face, or the face lacks the slot's bone (not a MetaHuman face). */
+	bool bFellBack = false;
+};
+
 /** Creator corrections, keyed by source object path and accessory slot; never alter the source mesh. */
 struct FMantleAccessorySettings
 {
+	/** Where a face slot hangs when the slot's face bone is missing: the body's head, as before the face slots. */
+	static const TCHAR* FaceFallbackBone() { return TEXT("head"); }
+
+	/**
+	 * Where Slot's item hangs. A body slot: its bone on the body. A face slot (limits.json "mesh": "face": ears, eyes, nose): its
+	 * FACIAL_* bone on the face when FaceHasBone says the face has it, else the body's head (bFellBack). Pure (tested).
+	 */
+	static FMantleAccessoryBone ResolveBone(const FMantleContractSlot& Slot, TFunctionRef<bool(FName)> FaceHasBone);
+
+	/** ResolveBone against a face mesh's own bones; Face may be null (no face: a face slot falls back to the head). */
+	static FMantleAccessoryBone ResolveBone(const FMantleContractSlot& Slot, const USkeletalMesh* Face);
+
+	/**
+	 * The bone Slot's item hangs from (ResolveBone), in component space in the reference pose: on Face for a face slot, on Body
+	 * otherwise (a MetaHuman's face and body share component space). False when that mesh lacks the bone.
+	 */
+	static bool BoneInComponent(const FMantleContractSlot& Slot, const USkeletalMesh* Body, const USkeletalMesh* Face, FTransform& Out,
+		FMantleAccessoryBone* OutResolved = nullptr);
+
 	static FString DefaultConfigFile();
 	/** Returns whether this exact source/slot has saved settings, including an explicitly disabled correction. */
 	static bool Load(FMantleCosmeticDraft& Draft, const FString& ConfigFile);
 	static void Save(const FMantleCosmeticDraft& Draft, const FString& ConfigFile);
-	/** Align standard Unreal component-space mesh axes to this avatar's neutral anchor, preserving location and scale. */
-	static bool AlignToAvatarAxes(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError);
+	/**
+	 * Align standard Unreal component-space mesh axes to this avatar's neutral anchor, preserving location and scale. The anchor
+	 * is the slot's bone (BoneInComponent: a face slot's FACIAL_* bone on Face, else the head).
+	 */
+	static bool AlignToAvatarAxes(FMantleCosmeticDraft& Draft, const USkeletalMesh* Body, FString& OutError, const USkeletalMesh* Face = nullptr);
 
 	/**
 	 * The placement a new accessory starts with: AlignToAvatarAxes, and for a neck slot also RestOnShoulders, and for a small slot

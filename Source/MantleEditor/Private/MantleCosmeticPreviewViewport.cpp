@@ -237,16 +237,19 @@ bool SMantleCosmeticPreviewViewport::ShowAccessory(UStaticMesh* Mesh, const FStr
 	const FMantleAvatarContract* Contract = FMantleAvatarContract::Get();
 	const FMantleContractSlot* Point = Contract ? Contract->Slots.FindByPredicate([&Slot](const FMantleContractSlot& Entry) { return Entry.Id == Slot && Entry.Group == TEXT("accessory"); }) : nullptr;
 	const USkeletalMesh* Body = GetShownBody();
-	const FName Bone = Point ? FName(*Point->SocketBone) : NAME_None;
-	if (!Mesh || !Point || !Body || BodyComponent->GetBoneIndex(Bone) == INDEX_NONE)
+	// #136: the slot's bone, and on which mesh: a face slot (ears, eyes, nose) on the shown face's FACIAL_* bone, or on the
+	// body's head when the face lacks it or none is shown; every other slot on the body, as before.
+	const FMantleAccessoryBone Resolved = Point ? FMantleAccessorySettings::ResolveBone(*Point, GetShownFace()) : FMantleAccessoryBone();
+	USkeletalMeshComponent* Carrier = Resolved.bOnFace ? FaceComponent.Get() : BodyComponent.Get();
+	if (!Mesh || !Point || !Body || Carrier->GetBoneIndex(Resolved.Bone) == INDEX_NONE)
 	{
 		AccessoryComponent->SetVisibility(false);
 		OutError = TEXT("Choose an accessory mesh and a MetaHuman body with the selected attachment bone.");
 		return false;
 	}
-	// Mantle's standardized accessory sockets sit at identity on these bones. An imported MetaHuman need not
-	// contain Mantle sockets to preview: attaching to the contract bone reproduces the published anchor.
-	AccessoryComponent->AttachToComponent(BodyComponent, FAttachmentTransformRules::KeepRelativeTransform, Bone);
+	// Mantle's standardized accessory sockets sit at identity on these bones (the face slots' on the face's). An imported
+	// MetaHuman need not contain Mantle sockets to preview: attaching to the contract bone reproduces the published anchor.
+	AccessoryComponent->AttachToComponent(Carrier, FAttachmentTransformRules::KeepRelativeTransform, Resolved.Bone);
 	// The creator sees what uploads: the reduced copy when the mesh is over the triangle limit, and centered on the socket
 	// when its pivot is out of reach (the export does both).
 	Mesh = const_cast<UStaticMesh*>(FMantleAccessorySettings::UploadMesh(Mesh, Contract->AccessoryClassFor(Slot)));

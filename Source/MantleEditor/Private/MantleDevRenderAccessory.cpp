@@ -53,17 +53,17 @@ namespace MantleDevRenderAccessoryPrivate
 			UE_LOG(LogMantleRenderAccessory, Error, TEXT("MANTLE_RENDER_ACCESSORY worn FAILED: %s"), Point ? (Error.IsEmpty() ? TEXT("unknown body type") : *Error) : TEXT("not an accessory slot"));
 			return;
 		}
-		const FReferenceSkeleton& Skeleton = Body.BodyMesh->GetRefSkeleton();
-		const int32 Bone = Skeleton.FindRawBoneIndex(FName(*Point->SocketBone));
-		if (Bone == INDEX_NONE)
+		// The slot's socket, at identity on its bone as the panel preview attaches it: a face slot's FACIAL_* bone on the face (the
+		// body's head when the face lacks it), every other slot's on the body.
+		FTransform Socket;
+		FMantleAccessoryBone Resolved;
+		if (!FMantleAccessorySettings::BoneInComponent(*Point, Body.BodyMesh.Get(), Body.FaceMesh.Get(), Socket, &Resolved))
 		{
-			UE_LOG(LogMantleRenderAccessory, Error, TEXT("MANTLE_RENDER_ACCESSORY worn FAILED: %s has no %s bone"), *BodyId, *Point->SocketBone);
+			UE_LOG(LogMantleRenderAccessory, Error, TEXT("MANTLE_RENDER_ACCESSORY worn FAILED: %s has no %s bone"), *BodyId, *Resolved.Bone.ToString());
 			return;
 		}
-		FTransform Pose = FTransform::Identity;
-		for (int32 Index = Bone; Index != INDEX_NONE; Index = Skeleton.GetRawParentIndex(Index)) { Pose = Pose * Skeleton.GetRawRefBonePose()[Index]; }
-		const USkeletalMeshSocket* Own = Body.BodyMesh->FindSocket(FName(*Point->Socket));
-		const FTransform Socket = Own && Own->BoneName == FName(*Point->SocketBone) ? Own->GetSocketLocalTransform() * Pose : Pose;
+		UE_LOG(LogMantleRenderAccessory, Display, TEXT("MANTLE_RENDER_ACCESSORY %s hangs from %s on the %s%s"), *Slot, *Resolved.Bone.ToString(),
+			Resolved.bOnFace ? TEXT("face") : TEXT("body"), Resolved.bFellBack ? TEXT(" (its face bone is missing, so the head)") : TEXT(""));
 		const FTransform Worn = Placed * Attach * Socket;
 		const FBox WornBox = Shown->GetBoundingBox().TransformBy(Worn);
 		// The small slots also get close-ups framed on the socket: a box a little over the slot's reach around it, with the worn mesh.

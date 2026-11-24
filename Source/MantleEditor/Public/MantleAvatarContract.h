@@ -87,6 +87,12 @@ struct MANTLEEDITOR_API FMantleContractSlot
 	 */
 	FString Socket;
 	FString SocketBone;
+	/**
+	 * #136: which mesh SocketBone is on: "body" (the default) or "face" (ears, eyes and nose hang from the MetaHuman face
+	 * skeleton's FACIAL_* bones, on the face mesh). Sockets sit at identity on their bone either way.
+	 */
+	FString Mesh = TEXT("body");
+	bool IsOnFace() const { return Mesh == TEXT("face"); }
 	int32 Cap = 1;
 	/** #136: the fingers a ring may be worn on, in limits.json's order; empty for every other slot. */
 	TArray<FMantleContractFingerSocket> FingerSockets;
