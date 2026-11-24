@@ -424,6 +424,42 @@ bool FMantleWaterBodyBuildPropsTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("no collision is written as off"), Props.bCollision);
 	}
 
+	// An ocean ringing a 4 km island: 6.14 km, the format's largest, is carried whole; past it, held to it and said.
+	{
+		FMantleWaterBodyData Ocean;
+		Ocean.Type = EMantleWaterBodyKind::Ocean;
+		Ocean.bHasMetadata = true;
+		Ocean.Points = { Point(FVector(0.0, 0.0, 0.0), 500.f), Point(FVector(100.0, 0.0, 0.0), 500.f), Point(FVector(0.0, 100.0, 0.0), 500.f) };
+		Ocean.OceanExtents = FVector2D(614400.0, 614400.0);
+		Ocean.Collision.OceanCollisionExtents = FVector(307200.0, 307200.0, 10000.0);
+		Ocean.bOceanCentersOnZone = true;
+		FMantleWaterBodyProps Props;
+		FString Why;
+		TArray<FString> Notes;
+		TestTrue(TEXT("a 6.14 km ocean builds"), FMantleWaterBodyExport::BuildProps(Ocean, Props, Why, Notes));
+		TestTrue(TEXT("its extent is carried whole"), Props.OceanExtent.IsSet() && Props.OceanExtent->Equals(FVector2D(614400.0, 614400.0)));
+		TestTrue(TEXT("its collision box too"), Props.CollisionExtent.IsSet() && Props.CollisionExtent->Equals(FVector(307200.0, 307200.0, 10000.0)));
+		TestEqual(TEXT("with nothing to say"), Notes.Num(), 0);
+
+		Ocean.OceanExtents = FVector2D(800000.0, 614400.0);
+		Ocean.Collision.OceanCollisionExtents = FVector(400000.0, 650000.0, 10000.0);
+		Notes.Reset();
+		TestTrue(TEXT("an 8 km ocean builds"), FMantleWaterBodyExport::BuildProps(Ocean, Props, Why, Notes));
+		TestEqual(TEXT("its extent is held to the format's largest"), Props.OceanExtent->X, FMantlePlaceLimits::MaxWaterExtent);
+		TestEqual(TEXT("and its collision box"), Props.CollisionExtent->Y, FMantlePlaceLimits::MaxWaterExtent);
+		TestTrue(TEXT("and says values were held"), Notes.ContainsByPredicate([](const FString& Note) { return Note.Contains(TEXT("held")); }));
+
+		// The engine's own collision box on a new ocean: 1 km across, whatever the ocean draws.
+		Ocean.OceanExtents = FVector2D(614400.0, 614400.0);
+		Ocean.Collision.OceanCollisionExtents = FVector(50000.0, 50000.0, 10000.0);
+		Notes.Reset();
+		TestTrue(TEXT("an ocean with the engine's collision box builds"), FMantleWaterBodyExport::BuildProps(Ocean, Props, Why, Notes));
+		TestTrue(TEXT("and says only its middle can be swum in"), Notes.ContainsByPredicate([](const FString& Note)
+		{
+			return Note.Contains(TEXT("covers 1000 by 1000 m of the 6144 by 6144 m")) && Note.Contains(TEXT("half its Ocean Extents"));
+		}));
+	}
+
 	// What cannot be carried says why.
 	{
 		FMantleWaterBodyData Custom;
@@ -493,8 +529,8 @@ bool FMantleWaterBodyPlaceFileTest::RunTest(const FString& Parameters)
 	FMantleWaterBodyData Ocean = Lake;
 	Ocean.Type = EMantleWaterBodyKind::Ocean;
 	Ocean.Points = Square(100000.0, 500.0);
-	Ocean.OceanExtents = FVector2D(409600.0, 409600.0);
-	Ocean.Collision.OceanCollisionExtents = FVector(200000.0, 200000.0, 10000.0);
+	Ocean.OceanExtents = FVector2D(614400.0, 614400.0);
+	Ocean.Collision.OceanCollisionExtents = FVector(307200.0, 307200.0, 10000.0);
 	Ocean.bOceanCentersOnZone = true;
 
 	FMantlePlace Place;
@@ -523,6 +559,8 @@ bool FMantleWaterBodyPlaceFileTest::RunTest(const FString& Parameters)
 	FMantleWaterZoneData Zone;
 	Zone.Extent = FVector2D(102400.0, 102400.0);
 	Zone.Transform = FTransform(FRotator(0.0, 45.0, 0.0), FVector(10.0, 20.0, 30.0));
+	Zone.RenderTargetResolution = FIntPoint(1024, 1024);
+	Zone.bFarDistanceMesh = true;
 	Place.Settings.Water = FMantleWaterBodyExport::BuildZone(Zone);
 
 	const FString Json = FMantlePlaceExporter::ToJson(Place);
@@ -538,7 +576,26 @@ bool FMantleWaterBodyPlaceFileTest::RunTest(const FString& Parameters)
 	{
 		TestEqual(TEXT("with its yaw"), Parsed.Place.Settings.Water->ZoneYawDeg, 45.0);
 		TestEqual(TEXT("and extent"), Parsed.Place.Settings.Water->ZoneExtent.X, 102400.0);
+		TestEqual(TEXT("and its water info texture"), Parsed.Place.Settings.Water->TextureResolution, FIntPoint(1024, 1024));
+		TestTrue(TEXT("and its far sea"), Parsed.Place.Settings.Water->bFarSea);
 	}
+	if (const FMantleWaterBodyProps* Back = Parsed.Place.Entities.Num() == 3 ? Parsed.Place.Entities[2].Props.TryGet<FMantleWaterBodyProps>() : nullptr)
+	{
+		TestTrue(TEXT("the 6.14 km ocean is read back whole"), Back->OceanExtent.IsSet() && Back->OceanExtent->Equals(FVector2D(614400.0, 614400.0)));
+	}
+
+	// The zone's texture: the plugin's default is not written (a client from before the key refuses it); past the format's largest, held to it.
+	// Nor is a far sea the zone does not draw.
+	Zone.RenderTargetResolution = FIntPoint(512, 512);
+	Zone.bFarDistanceMesh = false;
+	Place.Settings.Water = FMantleWaterBodyExport::BuildZone(Zone);
+	const FString Plain = FMantlePlaceExporter::ToJson(Place);
+	TestFalse(TEXT("the default texture is not written"), Plain.Contains(TEXT("textureResolution")));
+	TestFalse(TEXT("no far sea is written"), Plain.Contains(TEXT("farSea")));
+	Zone.RenderTargetResolution = FIntPoint(4096, 2048);
+	TestEqual(TEXT("a 4096 texture is held to 2048"), FMantleWaterBodyExport::BuildZone(Zone).TextureResolution, FIntPoint(2048, 2048));
+	Zone.RenderTargetResolution = FIntPoint::ZeroValue;
+	TestEqual(TEXT("a zone that gave none keeps the default"), FMantleWaterBodyExport::BuildZone(Zone).TextureResolution, FIntPoint(512, 512));
 	if (const FMantleWaterBodyProps* Back = Parsed.Place.Entities.Num() == 3 ? Parsed.Place.Entities[2].Props.TryGet<FMantleWaterBodyProps>() : nullptr)
 	{
 		TestTrue(TEXT("the ocean keeps its centring"), Back->CenterOnZone.IsSet() && *Back->CenterOnZone);

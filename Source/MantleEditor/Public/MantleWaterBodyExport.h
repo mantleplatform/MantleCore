@@ -170,6 +170,9 @@ struct MANTLEEDITOR_API FMantleWaterZoneData
 	float LodScale = 1.f;
 	int32 ForceCollapseDensityLevel = -1;
 
+	/** The water mesh's far-distance sea: whether it has a Far Distance Material and a Far Distance Mesh Extent above 0. */
+	bool bFarDistanceMesh = false;
+
 	/** Tessellation only around the viewer, and the size of that window. */
 	bool bLocalTessellation = false;
 	FVector LocalTessellationExtent = FVector::ZeroVector;
@@ -227,7 +230,10 @@ struct MANTLEEDITOR_API FMantleWaterBodyExport
 	 */
 	static bool BuildProps(const FMantleWaterBodyData& Body, FMantleWaterBodyProps& Props, FString& OutWhy, TArray<FString>& OutNotes);
 
-	/** Zone as settings.water, its extent held to the format's range. */
+	/**
+	 * Zone as settings.water, its extent and its Render Target Resolution (the water info texture) held to the format's ranges, and farSea
+	 * on when its water mesh draws a far-distance sea (the game draws its own plain far sea, whatever material the zone names).
+	 */
 	static FMantleWaterZone BuildZone(const FMantleWaterZoneData& Zone);
 
 	/**
