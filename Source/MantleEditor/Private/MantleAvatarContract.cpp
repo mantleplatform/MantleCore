@@ -262,6 +262,82 @@ bool FMantleAvatarContract::LoadFromDirectory(const FString& Directory, FMantleA
 		Slot->TryGetStringField(TEXT("socket"), Entry.Socket);
 		Slot->TryGetStringField(TEXT("socketBone"), Entry.SocketBone);
 		Entry.Cap = IntField(Slot, TEXT("cap"), 1);
+		// #136: a ring's fingers. The slot has no socket of its own: the editor places and shows it on the preview finger.
+		if (const TSharedPtr<FJsonObject> Fingers = ObjectField(Slot, TEXT("fingerSockets")))
+		{
+			for (const auto& Pair : Fingers->Values) // keyed by UE::TSharedString in 5.8, not FString
+			{
+				const TSharedPtr<FJsonObject> Finger = Pair.Value.IsValid() ? Pair.Value->AsObject() : nullptr;
+				FMantleContractFingerSocket FingerSocket;
+				FingerSocket.Finger = FString(Pair.Key.ToView());
+				if (!Finger.IsValid() || !Finger->TryGetStringField(TEXT("socket"), FingerSocket.Socket) || !Finger->TryGetStringField(TEXT("socketBone"), FingerSocket.SocketBone)
+					|| FingerSocket.Socket.IsEmpty() || FingerSocket.SocketBone.IsEmpty())
+				{
+					OutError = FString::Printf(TEXT("limits.json slot %s has a fingerSockets entry without a socket and socketBone"), *Entry.Id);
+					return false;
+				}
+				Entry.FingerSockets.Add(MoveTemp(FingerSocket));
+			}
+			const FMantleContractFingerSocket* Preview = Entry.FingerSockets.FindByPredicate([](const FMantleContractFingerSocket& Finger)
+				{ return Finger.Finger == FMantleAvatarContract::PreviewFinger(); });
+			if (!Preview && Entry.FingerSockets.Num() > 0)
+			{
+				Preview = &Entry.FingerSockets[0];
+			}
+			if (Preview && Entry.Socket.IsEmpty() && Entry.SocketBone.IsEmpty())
+			{
+				Entry.Socket = Preview->Socket;
+				Entry.SocketBone = Preview->SocketBone;
+			}
+		}
+	}
+
+	// #65: the order clothes are worn in. Absent in an older copy: top, bottom and footwear, no gloves.
+	if (const TSharedPtr<FJsonObject> Layers = ObjectField(Limits, TEXT("garmentLayers")))
+	{
+		TArray<FString> Order = StringArray(Layers, TEXT("order"));
+		if (!Order.IsEmpty())
+		{
+			Out.GarmentLayerOrder = MoveTemp(Order);
+		}
+		if (const TSharedPtr<FJsonObject> Gloves = ObjectField(Layers, TEXT("gloves")))
+		{
+			Gloves->TryGetStringField(TEXT("slot"), Out.GlovesSlot);
+		}
+	}
+
+	// #65, #136, #389: item settings. Absent in an older copy: none.
+	if (const TSharedPtr<FJsonObject> Settings = ObjectField(Limits, TEXT("itemSettings")))
+	{
+		for (const auto& Pair : Settings->Values) // keyed by UE::TSharedString in 5.8, not FString
+		{
+			if (!Pair.Value.IsValid() || Pair.Value->Type != EJson::Object) // "comment"
+			{
+				continue;
+			}
+			const TSharedPtr<FJsonObject> Setting = Pair.Value->AsObject();
+			FMantleContractItemSetting Entry;
+			Entry.Name = FString(Pair.Key.ToView());
+			Setting->TryGetStringField(TEXT("type"), Entry.Type);
+			Entry.Slots = StringArray(Setting, TEXT("slots"));
+			Entry.Values = StringArray(Setting, TEXT("values"));
+			Setting->TryGetStringField(TEXT("pattern"), Entry.Pattern);
+			if (Entry.Type == TEXT("bool"))
+			{
+				Setting->TryGetBoolField(TEXT("default"), Entry.bDefault);
+			}
+			else
+			{
+				Setting->TryGetStringField(TEXT("default"), Entry.DefaultValue);
+			}
+			if (Entry.Slots.IsEmpty() || (Entry.Type != TEXT("bool") && Entry.Type != TEXT("enum") && Entry.Type != TEXT("string"))
+				|| (Entry.Type == TEXT("enum") && (Entry.Values.IsEmpty() || !Entry.Values.Contains(Entry.DefaultValue))))
+			{
+				OutError = FString::Printf(TEXT("limits.json itemSettings.%s needs slots and a bool, enum (with values and a default) or string type"), *Entry.Name);
+				return false;
+			}
+			Out.ItemSettings.Add(MoveTemp(Entry));
+		}
 	}
 
 	// Sockets an avatar may override besides the accessory sockets (hand_rSocket). Absent in an older copy: none.
@@ -348,6 +424,18 @@ bool FMantleAvatarContract::LoadFromDirectory(const FString& Directory, FMantleA
 			SlotBounds.MaxDimensionCm = FloatField(Entry, TEXT("maxDimensionCm"), 0.0f);
 			SlotBounds.MaxReachCm = FloatField(Entry, TEXT("maxReachCm"), 0.0f);
 			Out.AccessoryBounds.Add(FString(Pair.Key.ToView()), SlotBounds);
+		}
+	}
+	// #136: the small accessory slots' own triangle caps. Absent in an older copy: every slot takes maxTriangles.
+	if (const TSharedPtr<FJsonObject> PerSlot = ObjectField(Rigid, TEXT("maxTrianglesPerSlot")))
+	{
+		for (const auto& Pair : PerSlot->Values) // keyed by UE::TSharedString in 5.8, not FString
+		{
+			double Cap = 0.0;
+			if (Pair.Value.IsValid() && Pair.Value->TryGetNumber(Cap) && Cap > 0.0)
+			{
+				Out.AccessoryMaxTrianglesPerSlot.Add(FString(Pair.Key.ToView()), static_cast<int32>(Cap));
+			}
 		}
 	}
 
@@ -586,6 +674,50 @@ int32 FMantleAvatarContract::SkinnedMaxTriangles(const FString& Slot) const
 	return Cap ? *Cap : SkinnedGarment.MaxTriangles;
 }
 
+int32 FMantleAvatarContract::AccessoryMaxTriangles(const FString& Slot) const
+{
+	const int32* Cap = AccessoryMaxTrianglesPerSlot.Find(Slot);
+	return Cap ? *Cap : RigidAccessory.MaxTriangles;
+}
+
+FMantleContractClass FMantleAvatarContract::AccessoryClassFor(const FString& Slot) const
+{
+	FMantleContractClass Class = RigidAccessory;
+	Class.MaxTriangles = AccessoryMaxTriangles(Slot);
+	return Class;
+}
+
+bool FMantleAvatarContract::IsClothingSlot(const FString& Slot) const
+{
+	return !Slot.IsEmpty() && (GarmentLayerOrder.Contains(Slot) || Slot == GlovesSlot);
+}
+
+TArray<FString> FMantleAvatarContract::ClothingSlots() const
+{
+	TArray<FString> Out = GarmentLayerOrder;
+	if (!GlovesSlot.IsEmpty())
+	{
+		Out.AddUnique(GlovesSlot);
+	}
+	return Out;
+}
+
+int32 FMantleAvatarContract::ClothingRank(const FString& Slot) const
+{
+	return Slot.IsEmpty() ? INDEX_NONE : ClothingSlots().IndexOfByKey(Slot);
+}
+
+const FMantleContractItemSetting* FMantleAvatarContract::FindItemSetting(const FString& Name) const
+{
+	return ItemSettings.FindByPredicate([&Name](const FMantleContractItemSetting& Setting) { return Setting.Name == Name; });
+}
+
+bool FMantleAvatarContract::SettingAllowed(const FString& Name, const FString& Slot) const
+{
+	const FMantleContractItemSetting* Setting = FindItemSetting(Name);
+	return Setting && Setting->Slots.Contains(Slot);
+}
+
 TArray<FString> FMantleAvatarContract::AccessorySockets() const
 {
 	TArray<FString> Out;
@@ -595,8 +727,31 @@ TArray<FString> FMantleAvatarContract::AccessorySockets() const
 		{
 			Out.AddUnique(Slot.Socket);
 		}
+		for (const FMantleContractFingerSocket& Finger : Slot.FingerSockets)
+		{
+			Out.AddUnique(Finger.Socket);
+		}
 	}
 	return Out;
+}
+
+FString FMantleAvatarContract::AccessorySocketBone(const FString& Socket) const
+{
+	for (const FMantleContractSlot& Slot : Slots)
+	{
+		for (const FMantleContractFingerSocket& Finger : Slot.FingerSockets)
+		{
+			if (Finger.Socket == Socket)
+			{
+				return Finger.SocketBone;
+			}
+		}
+		if (!Slot.Socket.IsEmpty() && Slot.Socket == Socket)
+		{
+			return Slot.SocketBone;
+		}
+	}
+	return FString();
 }
 
 const FMantleContractToolSocket* FMantleAvatarContract::FindToolSocket(const FString& Socket) const
