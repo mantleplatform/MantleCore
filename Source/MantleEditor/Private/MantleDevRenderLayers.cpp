@@ -8,8 +8,9 @@
 // for that body's fit), and then the look is assembled as the client's dressed body does it (mantle client
 // MantleAvatarGarments.cpp StartDressed): FMantleLayerFit::Apply over the garments from the skin outward (each pushed out of the ones
 // under it; the covered parts of the ones under it cut and their edges sunk), then FMantleDressedBody::Compute on the body under the
-// pushed garments, with each garment's skin mask (FMantleSkinMask::Derive on the body it was fitted to, as the upload makes it;
-// FMantleDressedBodyParams::SkinMaskDefaults, the client's default Mantle.Avatar.SkinMask 1).
+// pushed garments, with each garment's skin mask (FMantleSkinMask::Derive on its source body, here the body it was fitted to, as the
+// client derives it in FMantleCatalogGarmentFit, MantleCatalogGarmentFit.cpp:56; FMantleDressedBodyParams::SkinMaskDefaults, the
+// client's default Mantle.Avatar.SkinMask 1). The garments are drawn in layer order (the merged look sorts by layer).
 // The layer order is the contract's (limits.json garmentLayers.order from the skin outward, FMantleAvatarContract::ClothingRank),
 // with its two switches: ":tucked" puts a top just under the bottom (tuck), ":tallboots" puts footwear just over it.
 // Drawn as the catalog thumbnail draws a garment (FMantleCosmeticThumbnail: the dressed body, its face and every garment as shown,
@@ -29,6 +30,7 @@
 #include "MantleSkinMask.h"
 #include "MantleSkinnedMesh.h"
 
+#include "Algo/StableSort.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkinnedAssetCommon.h"
 #include "HAL/IConsoleManager.h"
@@ -232,7 +234,7 @@ namespace MantleDevRenderLayersPrivate
 				return;
 			}
 			KeepSections(*Worn.Fitted, Prepared.KeepSlots);
-			// Its skin mask, made on the body it was fitted to, as the upload makes one on the garment's source body.
+			// Its skin mask on its source body (here the body it was fitted to), as the client derives it (MantleCatalogGarmentFit.cpp:56).
 			Worn.Mask = MakeUnique<FMantleSkinMask>();
 			FString MaskError;
 			if (!FMantleSkinMask::Derive(FMantleGarmentSurface(Worn.Fitted->LODs[0]), BodyMesh.LODs[0].Positions, BodyMesh.LODs[0].Normals, BodyMesh.LODs[0].Indices,
@@ -251,6 +253,8 @@ namespace MantleDevRenderLayersPrivate
 			UE_LOG(LogMantleRenderLayers, Error, TEXT("MANTLE_RENDER_LAYERS failed: no garments"));
 			return;
 		}
+		// From the skin outward, as the merged look orders them (ties keep the order given).
+		Algo::StableSortBy(Look, [](const FWorn& Worn) { return Worn.Rank; });
 
 		// The client's layer pass (MantleAvatarGarments.cpp StartDressed): placed from the skin outward, then the body under the placed
 		// garments, then the garments as shown (their covered parts cut).
