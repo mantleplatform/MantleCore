@@ -1954,29 +1954,13 @@ FMantleVehicleBuildResult FMantleVehicleBuilder::BuildFromModel(UObject* ModelAs
 		FString SplitProblem;
 		// The light sections stay on the body, where the game switches them.
 		const FMantleVehicleSourceLights& LightsWanted = Options.Lights.IsSet() ? Options.Lights.GetValue() : Prepared.Lights;
-		const TArray<FString> SectionsBefore = FMantleVehicleLights::SectionNames(Skinned.Materials);
+		// So do the body paint (the sections ticked, else what reads as the body color) and the rims (sections named for one): a wheel swap hides them, and only the body's
+		// sections can be hidden. When they are more than a body may draw: the paint first, then each kind of light, then the rims.
 		TSet<int32> LightSlots;
-		for (int32 Slot = 0; Slot < SectionsBefore.Num(); ++Slot)
-		{
-			for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse,
-				EMantleLightKind::Left, EMantleLightKind::Right })
-			{
-				if (FMantleVehicleLights::Sections(LightsWanted, Kind).Contains(SectionsBefore[Slot]))
-				{
-					LightSlots.Add(Slot);
-				}
-			}
-		}
-		// So do the rims (sections named for one): a wheel swap hides them, and only the body's sections can be hidden.
-		for (int32 Slot = 0; Slot < SectionsBefore.Num(); ++Slot)
-		{
-			if (FMantleVehicleRims::NameIsRim(SectionsBefore[Slot]))
-			{
-				LightSlots.Add(Slot);
-			}
-		}
+		TMap<int32, int32> KeepRank;
+		FMantleVehicleConverter::BodyKeep(Skinned.Materials, LightsWanted, Options.PaintedSections.IsSet() ? &Options.PaintedSections.GetValue() : nullptr, LightSlots, KeepRank);
 		if (!FMantleVehicleBodySplit::Split(Skinned.Body, Skinned.Materials, Skinned.Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials,
-			FMantleVehicleLimits::MaxParts, Split, LightSlots))
+			FMantleVehicleLimits::MaxParts, Split, LightSlots, &KeepRank))
 		{
 			SplitProblem = Split.Problem;
 		}

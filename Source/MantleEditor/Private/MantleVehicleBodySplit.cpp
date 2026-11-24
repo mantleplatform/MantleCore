@@ -126,7 +126,7 @@ int32 FMantleVehicleBodySplit::CountMaterials(const FMantleSkinnedMesh& Body)
 }
 
 bool FMantleVehicleBodySplit::Split(FMantleSkinnedMesh& Body, TArray<FSkeletalMaterial>& Materials, FMantleVehicleBodyExtras& Extras, const int32 MaxBodyMaterials,
-	const int32 MaxPieceMaterials, const int32 MaxPieces, FMantleVehicleBodySplitResult& OutResult, const TSet<int32>& KeepInBody)
+	const int32 MaxPieceMaterials, const int32 MaxPieces, FMantleVehicleBodySplitResult& OutResult, const TSet<int32>& KeepInBody, const TMap<int32, int32>* KeepRank)
 {
 	using namespace MantleVehicleBodySplitPrivate;
 	OutResult = FMantleVehicleBodySplitResult();
@@ -149,12 +149,21 @@ bool FMantleVehicleBodySplit::Split(FMantleSkinnedMesh& Body, TArray<FSkeletalMa
 	}
 	TArray<int32> ByWeight;
 	Triangles.GetKeys(ByWeight);
-	ByWeight.Sort([&Triangles, &KeepInBody](const int32 A, const int32 B)
+	const auto RankOf = [KeepRank](const int32 Slot)
+	{
+		const int32* Ranked = KeepRank ? KeepRank->Find(Slot) : nullptr;
+		return Ranked ? *Ranked : 0;
+	};
+	ByWeight.Sort([&Triangles, &KeepInBody, &RankOf](const int32 A, const int32 B)
 	{
 		const bool bKeepA = KeepInBody.Contains(A);
 		if (bKeepA != KeepInBody.Contains(B))
 		{
 			return bKeepA;
+		}
+		if (bKeepA && RankOf(A) != RankOf(B))
+		{
+			return RankOf(A) < RankOf(B);
 		}
 		return Triangles[A] != Triangles[B] ? Triangles[A] > Triangles[B] : A < B;
 	});

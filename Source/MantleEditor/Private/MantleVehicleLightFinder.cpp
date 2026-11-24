@@ -43,6 +43,29 @@ namespace MantleVehicleLightsPrivate
 	/** Which way a new beam points: forward and a little down, at the road ahead. */
 	const FVector BeamDirection(1.0, 0.0, -0.05);
 
+	/**
+	 * What two slots share for their light pieces to be one section (Cut): the glow they read (the same emissive texture or textures and lens-color texture), or, where there is none
+	 * to read, the same material. Slots of a model that are one material under different names (SUV04's seven body slots) are one.
+	 */
+	FString GlowIdentity(const UMaterialInterface* Material)
+	{
+		if (!Material)
+		{
+			return TEXT("none");
+		}
+		FMantleMaterialGlow Glow;
+		if (FMantleMaterialGlow::Read(Material, Glow) && Glow.bGlows && (Glow.Texture || Glow.Textures.Num() > 0))
+		{
+			FString Key = FString::Printf(TEXT("glow:%llu:%llu"), reinterpret_cast<uint64>(Glow.Texture), reinterpret_cast<uint64>(Glow.BaseTexture));
+			for (const FMantleGlowTexture& Each : Glow.Textures)
+			{
+				Key += FString::Printf(TEXT(":%llu"), reinterpret_cast<uint64>(Each.Texture));
+			}
+			return Key;
+		}
+		return FString::Printf(TEXT("material:%llu"), reinterpret_cast<uint64>(Material));
+	}
+
 	/** The brightest of a color's red, green and blue (not its alpha, which FLinearColor::GetMax counts). */
 	float Brightest(const FLinearColor& Color)
 	{
@@ -917,9 +940,25 @@ void FMantleVehicleLights::Cut(FMantleSkinnedMesh& Body, TArray<FSkeletalMateria
 		}
 		if (KindOfTriangle.Num() > 0)
 		{
-			// The triangles each kind takes from each slot, in the order they were drawn.
-			TMap<TPair<int32, int32>, TArray<int32>> Moved;
-			TArray<TPair<int32, int32>> MovedOrder;
+			// The triangles each kind takes, grouped by the glow they come from (GlowIdentity: slots drawn with the same material, or the same glow texture, are one group), in the
+			// order they were drawn: one section for each kind and glow, however many slots the pieces were in.
+			TMap<int32, FString> IdentityOfSlot;
+			const auto IdentityOf = [&IdentityOfSlot, &Materials](const int32 Slot) -> const FString&
+			{
+				if (!IdentityOfSlot.Contains(Slot))
+				{
+					IdentityOfSlot.Add(Slot, GlowIdentity(Materials.IsValidIndex(Slot) ? Materials[Slot].MaterialInterface.Get() : nullptr));
+				}
+				return IdentityOfSlot[Slot];
+			};
+			struct FMovedGroup
+			{
+				int32 Kind = 0;
+				int32 FirstSlot = 0;
+				FString Identity;
+				TArray<int32> Triangles;
+			};
+			TArray<FMovedGroup> Groups;
 			TArray<uint32> Indices;
 			Indices.Reserve(LOD.Indices.Num());
 			TArray<FMantleSkinnedMeshSection> Sections;
@@ -936,43 +975,62 @@ void FMantleVehicleLights::Cut(FMantleSkinnedMesh& Body, TArray<FSkeletalMateria
 				{
 					if (const int32* Kind = KindOfTriangle.Find(Triangle))
 					{
-						const TPair<int32, int32> Key(*Kind, Section.MaterialIndex);
-						if (!Moved.Contains(Key))
+						const FString& Identity = IdentityOf(Section.MaterialIndex);
+						FMovedGroup* Group = Groups.FindByPredicate([Kind, &Identity](const FMovedGroup& Each) { return Each.Kind == *Kind && Each.Identity == Identity; });
+						if (!Group)
 						{
-							MovedOrder.Add(Key);
+							Group = &Groups.AddDefaulted_GetRef();
+							Group->Kind = *Kind;
+							Group->FirstSlot = Section.MaterialIndex;
+							Group->Identity = Identity;
 						}
-						Moved.FindOrAdd(Key).Add(Triangle);
+						Group->Triangles.Add(Triangle);
 						continue;
 					}
 					Indices.Append(&LOD.Indices[Triangle * 3], 3);
 					Kept.IndexCount += 3;
 				}
 			}
-			MovedOrder.Sort([](const TPair<int32, int32>& A, const TPair<int32, int32>& B) { return A.Key != B.Key ? A.Key < B.Key : A.Value < B.Value; });
+			Groups.StableSort([](const FMovedGroup& A, const FMovedGroup& B) { return A.Kind != B.Kind ? A.Kind < B.Kind : A.FirstSlot < B.FirstSlot; });
 			TSet<FString> Taken;
 			for (const FSkeletalMaterial& Material : Materials)
 			{
 				Taken.Add(Material.MaterialSlotName.ToString().ToLower());
 			}
-			for (const TPair<int32, int32>& Key : MovedOrder)
+			for (const FMovedGroup& Group : Groups)
 			{
-				const EMantleLightKind Kind = static_cast<EMantleLightKind>(Key.Key);
+				// A slot the finder took whole for this kind with the same glow already is the kind's light section: the cut pieces join it, and no slot is added.
+				const int32* Whole = Guess.WholeSlots[Group.Kind].FindByPredicate([&IdentityOf, &Group](const int32 Slot) { return IdentityOf(Slot) == Group.Identity; });
+				if (Whole)
+				{
+					FMantleSkinnedMeshSection& Joined = Sections.AddDefaulted_GetRef();
+					Joined.MaterialIndex = *Whole;
+					Joined.MaterialName = Materials.IsValidIndex(*Whole) ? Materials[*Whole].MaterialSlotName : FName();
+					Joined.FirstIndex = Indices.Num();
+					for (const int32 Triangle : Group.Triangles)
+					{
+						Indices.Append(&LOD.Indices[Triangle * 3], 3);
+					}
+					Joined.IndexCount = Indices.Num() - Joined.FirstIndex;
+					continue;
+				}
+				const EMantleLightKind Kind = static_cast<EMantleLightKind>(Group.Kind);
 				FString Name = SectionName(Kind);
 				for (int32 Number = 2; Taken.Contains(Name.ToLower()); ++Number)
 				{
 					Name = FString::Printf(TEXT("%s%d"), *SectionName(Kind), Number);
 				}
 				Taken.Add(Name.ToLower());
-				FSkeletalMaterial Slot = Materials.IsValidIndex(Key.Value) ? Materials[Key.Value] : FSkeletalMaterial();
+				FSkeletalMaterial Slot = Materials.IsValidIndex(Group.FirstSlot) ? Materials[Group.FirstSlot] : FSkeletalMaterial();
 				Slot.MaterialSlotName = FName(*Name);
 				Slot.ImportedMaterialSlotName = Slot.MaterialSlotName;
 				const int32 NewSlot = Materials.Add(Slot);
-				NewSlots[Key.Key].Add(NewSlot);
+				NewSlots[Group.Kind].Add(NewSlot);
 				FMantleSkinnedMeshSection& Added = Sections.AddDefaulted_GetRef();
 				Added.MaterialIndex = NewSlot;
 				Added.MaterialName = Slot.MaterialSlotName;
 				Added.FirstIndex = Indices.Num();
-				for (const int32 Triangle : Moved[Key])
+				for (const int32 Triangle : Group.Triangles)
 				{
 					Indices.Append(&LOD.Indices[Triangle * 3], 3);
 				}

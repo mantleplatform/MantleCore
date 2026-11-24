@@ -75,10 +75,12 @@ struct MANTLEEDITOR_API FMantleVehicleBodySplit
 	 * Splits Body (LOD 0) in place when it draws more than MaxBodyMaterials: its geometry, sections and Materials (the model's slots, which keep only the ones
 	 * the body still draws, in their order) and Extras (kept in step with the body's vertices) are rewritten. False, with Body untouched and OutResult.Problem
 	 * set, when the pieces would be more than MaxPieces. True with no pieces when Body was within the cap. KeepInBody: slots that stay on the body before any other
-	 * (the light sections, which the game switches on the body), as many as MaxBodyMaterials allows.
+	 * (the car paint and the light sections, which the game switches on the body), as many as MaxBodyMaterials allows. When there are more of them than the body may draw,
+	 * KeepRank (a slot to its rank, the lowest first; a slot it does not list ranks 0) says which stay: the body paint, then each kind of light, then the rims. Within a rank
+	 * the slot with the most triangles stays.
 	 */
 	static bool Split(FMantleSkinnedMesh& Body, TArray<FSkeletalMaterial>& Materials, FMantleVehicleBodyExtras& Extras, int32 MaxBodyMaterials, int32 MaxPieceMaterials,
-		int32 MaxPieces, FMantleVehicleBodySplitResult& OutResult, const TSet<int32>& KeepInBody = TSet<int32>());
+		int32 MaxPieces, FMantleVehicleBodySplitResult& OutResult, const TSet<int32>& KeepInBody = TSet<int32>(), const TMap<int32, int32>* KeepRank = nullptr);
 
 	/** FMantleVehicleSourcePart::FoundOn of a part made from a piece: how the paint step tells the parts the split made from the ones a creator added. */
 	static const TCHAR* FoundOn() { return TEXT("split off the model's extra materials"); }

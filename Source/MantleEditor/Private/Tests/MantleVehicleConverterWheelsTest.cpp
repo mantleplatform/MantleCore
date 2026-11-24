@@ -5,12 +5,15 @@
 #include "MantleVehicleChassisMesh.h"
 #include "MantleVehicleConverter.h"
 #include "MantleVehicleLightFinder.h"
+#include "MantlePlaceValidator.h"
 #include "MantleVehicleSource.h"
 #include "MantleVehicleScratchBody.h"
 
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/Material.h"
+#include "Algo/AllOf.h"
+#include "Materials/MaterialExpressionVectorParameter.h"
 #include "Misc/AutomationTest.h"
 #include "ReferenceSkeleton.h"
 
@@ -31,7 +34,7 @@ namespace MantleVehicleConverterWheelsTestPrivate
 
 	/** A car's skeleton: a root, then each wheel at its place; material m is m + 1 quads, riding bone m modulo the bones. */
 	USkeletalMesh* MakeCar(const TArray<FCarWheel>& Wheels, const int32 NumMaterials, FString& OutError, UMaterialInterface* WithMaterial = nullptr,
-		const TArray<FString>& SlotNames = TArray<FString>())
+		const TArray<FString>& SlotNames = TArray<FString>(), const TArray<UMaterialInterface*>& SlotMaterials = TArray<UMaterialInterface*>())
 	{
 		FMantleSkinnedMesh Body;
 		Body.Bones.Add({ FName(TEXT("B_Car_Main")), INDEX_NONE });
@@ -49,7 +52,7 @@ namespace MantleVehicleConverterWheelsTestPrivate
 		{
 			const FString NameText = SlotNames.IsValidIndex(Material) && !SlotNames[Material].IsEmpty() ? SlotNames[Material] : FString::Printf(TEXT("mat%d"), Material);
 			const FName MaterialName(*NameText);
-			Materials.Add(FSkeletalMaterial(WithMaterial, MaterialName));
+			Materials.Add(FSkeletalMaterial(SlotMaterials.IsValidIndex(Material) ? SlotMaterials[Material] : WithMaterial, MaterialName));
 			FMantleSkinnedMeshSection& Section = LOD.Sections.AddDefaulted_GetRef();
 			Section.MaterialIndex = Material;
 			Section.MaterialName = MaterialName;
@@ -488,6 +491,124 @@ bool FMantleVehicleConverterSplitPaintTest::RunTest(const FString& Parameters)
 	if (USkeletalMesh* Body = Source->Body.LoadSynchronous(); Body && Body != Car)
 	{
 		MantleVehicleScratchBody::Discard(Body);
+	}
+	MantleVehicleScratchBody::Discard(Car);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleConverterPublishableSplitTest,
+	"Mantle.Vehicle.Convert.SplitCarNamesOnlySectionsItHas",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleConverterPublishableSplitTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleConverterWheelsTestPrivate;
+
+	// SUV04's shape: 25 material slots where a body may draw 8. The body paint is three of them with the fewest triangles, and the lights, rims, glass and interior have more. A convert
+	// that sent the paint to parts, or named a light or a paint section the body does not have, was refused by the publish check (20 errors, nothing uploaded).
+	TArray<FString> Names;
+	TArray<UMaterialInterface*> Materials;
+	UMaterial* Paint = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+	UMaterialExpressionVectorParameter* Tint = NewObject<UMaterialExpressionVectorParameter>(Paint);
+	Tint->Material = Paint;
+	Tint->ParameterName = TEXT("Paint Tint");
+	Tint->DefaultValue = FLinearColor(0.1f, 0.2f, 0.7f);
+	Tint->UpdateParameterGuid(true, false);
+	Paint->GetExpressionCollection().AddExpression(Tint);
+	Paint->UpdateCachedExpressionData();
+	const auto Slot = [&Names, &Materials](const TCHAR* Name, UMaterialInterface* Material = nullptr)
+	{
+		Names.Add(Name);
+		Materials.Add(Material);
+	};
+	Slot(TEXT("SUV04_Body"), Paint);
+	Slot(TEXT("SUV04_Body2"), Paint);
+	Slot(TEXT("SUV04_Body3"), Paint);
+	for (const TCHAR* Glass : { TEXT("SUV04_Glass"), TEXT("SUV04_Glass2"), TEXT("SUV04_Glass3"), TEXT("SUV04_Glass4"), TEXT("SUV04_Glass5"), TEXT("SUV04_Glass6") })
+	{
+		Slot(Glass);
+	}
+	for (const TCHAR* Interior : { TEXT("SUV04_Interior"), TEXT("SUV04_Interior2"), TEXT("SUV04_Interior3"), TEXT("SUV04_Interior4"), TEXT("SUV04_Interior5"), TEXT("SUV04_Interior6") })
+	{
+		Slot(Interior);
+	}
+	Slot(TEXT("SUV04_Seats"));
+	for (const TCHAR* Lamp : { TEXT("headlight_lens"), TEXT("headlight_lens2"), TEXT("taillight_lens"), TEXT("taillight_lens2"), TEXT("reverselight_lens") })
+	{
+		Slot(Lamp);
+	}
+	for (const TCHAR* Rim : { TEXT("WheelSet_05"), TEXT("WheelSet_06"), TEXT("WheelSet_07") })
+	{
+		Slot(Rim);
+	}
+	Slot(TEXT("Fbx_Default_Material_17"));
+	if (!TestEqual(TEXT("25 slots"), Names.Num(), 25))
+	{
+		return false;
+	}
+	FString Error;
+	USkeletalMesh* Car = MakeCar(FourWheels(TEXT("B_FLWheel"), TEXT("B_FRWheel"), TEXT("B_RLWheel"), TEXT("B_RRWheel")), Names.Num(), Error, nullptr, Names, Materials);
+	if (!TestNotNull(*FString::Printf(TEXT("the car is made (%s)"), *Error), Car))
+	{
+		return false;
+	}
+
+	UMantleVehicleSource* Source = NewObject<UMantleVehicleSource>(GetTransientPackage(), NAME_None, RF_Transient);
+	// What an earlier convert left (SUV04's v1): paint sections, an interior layer, and lights naming sections the model does not have.
+	Source->Paint.Sections = { TEXT("SUV04_Body"), TEXT("SUV04_Body2"), TEXT("SUV04_Body3") };
+	FMantleVehicleSourcePaintLayer& InteriorLayer = Source->Paint.Layers.AddDefaulted_GetRef();
+	InteriorLayer.Layer = EMantleVehicleSourcePaintLayer::Interior;
+	InteriorLayer.Sections = { TEXT("SUV04_Interior"), TEXT("SUV04_Seats") };
+	Source->Lights.Head = { TEXT("Headlights"), TEXT("Headlights2") };
+	Source->Lights.Rear = { TEXT("RearLights5") };
+
+	for (int32 Run = 1; Run <= 2; ++Run)
+	{
+		const FMantleVehicleConversion Conversion = FMantleVehicleConverter::Convert(Car, *Source);
+		TestTrue(*FString::Printf(TEXT("run %d converts (%s)"), Run, *FString::Join(Conversion.Problems, TEXT(" "))), Conversion.bSuccess);
+		USkeletalMesh* Body = Source->Body.LoadSynchronous();
+		if (!TestTrue(TEXT("its body is a copy of the car"), Body && Body != Car))
+		{
+			break;
+		}
+		const TArray<FString> BodySections = FMantleVehicleLights::SectionNames(Body->GetMaterials());
+		const auto OnBody = [&BodySections](const FString& Section) { return BodySections.Contains(Section); };
+		TestTrue(*FString::Printf(TEXT("run %d: the body draws at most %d materials (%d)"), Run, FMantleVehicleLimits::MaxSections, BodySections.Num()), BodySections.Num() <= FMantleVehicleLimits::MaxSections);
+		TestTrue(TEXT("the three car paint sections are on the body"), OnBody(TEXT("SUV04_Body")) && OnBody(TEXT("SUV04_Body2")) && OnBody(TEXT("SUV04_Body3")));
+		TestTrue(TEXT("and each kind of light has a section on it"), Source->Lights.Head.Num() > 0 && Source->Lights.Rear.Num() > 0 && Source->Lights.Reverse.Num() > 0);
+		TestTrue(TEXT("glass and the interior went to parts first, not the paint or the lights"), !OnBody(TEXT("SUV04_Glass")) && !OnBody(TEXT("SUV04_Seats")));
+		TestTrue(TEXT("Paint names the body's sections only"), Algo::AllOf(Source->Paint.Sections, OnBody) && Source->Paint.Sections.Num() >= 3);
+		bool bLayersOnBody = true;
+		for (const FMantleVehicleSourcePaintLayer& Layer : Source->Paint.Layers)
+		{
+			bLayersOnBody = bLayersOnBody && Algo::AllOf(Layer.Sections, OnBody);
+		}
+		TestTrue(TEXT("so do its paint layers (the interior layer's sections went to parts, and the layer with them)"), bLayersOnBody
+			&& !Source->Paint.Layers.ContainsByPredicate([](const FMantleVehicleSourcePaintLayer& Layer) { return Layer.Layer == EMantleVehicleSourcePaintLayer::Interior && Layer.Sections.Contains(TEXT("SUV04_Interior")); }));
+		bool bLightsOnBody = true;
+		for (const EMantleLightKind Kind : { EMantleLightKind::Head, EMantleLightKind::Rear, EMantleLightKind::Reverse, EMantleLightKind::Left, EMantleLightKind::Right })
+		{
+			bLightsOnBody = bLightsOnBody && Algo::AllOf(FMantleVehicleLights::Sections(Source->Lights, Kind), OnBody);
+		}
+		TestTrue(TEXT("and so do its lights (the stale names are gone)"), bLightsOnBody && !Source->Lights.Head.Contains(TEXT("Headlights")) && !Source->Lights.Rear.Contains(TEXT("RearLights5")));
+
+		// The converter's own pre-upload check: no section the body does not have.
+		TArray<FMantleValidationIssue> Issues;
+		FMantleVehicleConverter::CheckSource(Source, FString(), Issues);
+		TArray<FString> SectionErrors;
+		for (const FMantleValidationIssue& Issue : Issues)
+		{
+			if (Issue.Severity == EMantleIssueSeverity::Error && (Issue.Problem.Contains(TEXT("which its body does not have")) || Issue.Problem.Contains(TEXT("but its body has no such section"))))
+			{
+				SectionErrors.Add(Issue.Problem);
+			}
+		}
+		TestTrue(*FString::Printf(TEXT("run %d: the publish check finds no section the body lacks (%s)"), Run, *FString::Join(SectionErrors, TEXT(" | "))), SectionErrors.IsEmpty());
+	}
+	if (USkeletalMesh* Last = Source->Body.LoadSynchronous(); Last && Last != Car)
+	{
+		MantleVehicleScratchBody::Discard(Last);
 	}
 	MantleVehicleScratchBody::Discard(Car);
 	return true;

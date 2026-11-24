@@ -1,6 +1,7 @@
 // Copyright Joshua Eger. All Rights Reserved.
 #include "MantleSkinnedMesh.h"
 #include "MantleVehicleAsset.h"
+#include "MantleVehicleBodySplit.h"
 #include "MantleVehicleBuilder.h"
 #include "MantleVehicleBuiltInMaterials.h"
 #include "MantleVehicleChassisBuilder.h"
@@ -378,6 +379,147 @@ bool FMantleVehicleBuilderLayerFinishTest::RunTest(const FString& Parameters)
 	FMantleVehicleBuilder::ApplyLayerFinishes(*Source, Finishes, Notes);
 	TestEqual(TEXT("a wheels layer was not added"), Source->Paint.Layers.Num(), 2);
 	TestTrue(TEXT("and it is said"), Notes.ContainsByPredicate([](const FString& Note) { return Note.StartsWith(TEXT("No section of the model is in the wheels paint layer")); }));
+	return true;
+}
+
+// What the light cut and the body split do for a car with more materials than a body may draw (SUV04): a kind's light pieces are one section, and the split keeps the body paint,
+// then each kind of light, then the rims.
+namespace MantleVehicleBuilderHubsLightsTestPrivate
+{
+	/** A body of Slots slots: slot s has Quads(s) quads (two triangles each, in order), on the root; Materials[s] is Names[s] drawn with Material[s]. */
+	void MakeSlotBody(FMantleSkinnedMesh& Body, TArray<FSkeletalMaterial>& Materials, const TArray<FString>& Names, const TArray<UMaterialInterface*>& Drawn, const TFunction<int32(int32)>& Quads)
+	{
+		Body.Bones.Add({ FName(TEXT("root")), INDEX_NONE });
+		Body.ReferencePose.Add(FTransform::Identity);
+		FMantleSkinnedMeshLOD& LOD = Body.LODs.AddDefaulted_GetRef();
+		LOD.NumInfluences = 1;
+		float X = 0.f;
+		for (int32 Slot = 0; Slot < Names.Num(); ++Slot)
+		{
+			Materials.Add(FSkeletalMaterial(Drawn.IsValidIndex(Slot) ? Drawn[Slot] : nullptr, FName(*Names[Slot])));
+			FMantleSkinnedMeshSection& Section = LOD.Sections.AddDefaulted_GetRef();
+			Section.MaterialIndex = Slot;
+			Section.MaterialName = FName(*Names[Slot]);
+			Section.FirstIndex = LOD.Indices.Num();
+			for (int32 Quad = 0; Quad < Quads(Slot); ++Quad)
+			{
+				const uint32 First = static_cast<uint32>(LOD.Positions.Num());
+				for (const FVector2f Corner : { FVector2f(0, 0), FVector2f(10, 0), FVector2f(10, 10), FVector2f(0, 10) })
+				{
+					LOD.Positions.Add(FVector3f(X + Corner.X, Corner.Y, 0.f));
+					LOD.Normals.Add(FVector3f(0.f, 0.f, 1.f));
+					LOD.UVs.Add(FVector2f(0.f, 0.f));
+					LOD.InfluenceBones.Add(0);
+					LOD.InfluenceWeights.Add(255);
+				}
+				LOD.Indices.Append({ First, First + 1, First + 2, First, First + 2, First + 3 });
+				X += 20.f;
+			}
+			Section.IndexCount = LOD.Indices.Num() - Section.FirstIndex;
+		}
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleLightsCutMergesTest,
+	"Mantle.Vehicle.Lights.CutMakesOneSectionForEachKindAndGlow",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleLightsCutMergesTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleBuilderHubsLightsTestPrivate;
+	UMaterial* A = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+	UMaterial* B = NewObject<UMaterial>(GetTransientPackage(), NAME_None, RF_Transient);
+
+	// Three slots drawn with one material hold the rear lights' pieces: one section for the rear lights, not one for each slot.
+	{
+		FMantleSkinnedMesh Body;
+		TArray<FSkeletalMaterial> Materials;
+		MakeSlotBody(Body, Materials, { TEXT("body"), TEXT("body2"), TEXT("body3") }, { A, A, A }, [](int32) { return 2; });
+		FMantleVehicleLightGuess Guess;
+		Guess.Triangles[static_cast<int32>(EMantleLightKind::Rear)] = { 0, 1, 4, 5, 8, 9 };
+		FMantleVehicleSourceLights Lights;
+		FMantleVehicleLights::Cut(Body, Materials, Guess, Lights);
+		TestEqual(TEXT("one new slot for the three pieces"), Materials.Num(), 4);
+		TestEqual(TEXT("one rear light section"), Lights.Rear.Num(), 1);
+		const FMantleSkinnedMeshSection* Cut = Body.LODs[0].Sections.FindByPredicate([](const FMantleSkinnedMeshSection& Section) { return Section.MaterialIndex == 3; });
+		TestTrue(TEXT("with all six triangles in it"), Cut && Cut->IndexCount == 18);
+		TestEqual(TEXT("no triangle is lost"), Body.LODs[0].Indices.Num(), 36);
+	}
+	// Slots drawn with different materials (a different glow) are different sections: a picture cannot be laid over another's.
+	{
+		FMantleSkinnedMesh Body;
+		TArray<FSkeletalMaterial> Materials;
+		MakeSlotBody(Body, Materials, { TEXT("body"), TEXT("lights") }, { A, B }, [](int32) { return 2; });
+		FMantleVehicleLightGuess Guess;
+		Guess.Triangles[static_cast<int32>(EMantleLightKind::Head)] = { 0, 1, 4, 5 };
+		FMantleVehicleSourceLights Lights;
+		FMantleVehicleLights::Cut(Body, Materials, Guess, Lights);
+		TestEqual(TEXT("one section for each material"), Lights.Head.Num(), 2);
+	}
+	// A slot the finder took whole for the kind, drawn with the same material, takes the cut pieces in: no slot is added.
+	{
+		FMantleSkinnedMesh Body;
+		TArray<FSkeletalMaterial> Materials;
+		MakeSlotBody(Body, Materials, { TEXT("body"), TEXT("lights") }, { A, A }, [](int32) { return 2; });
+		FMantleVehicleLightGuess Guess;
+		Guess.Triangles[static_cast<int32>(EMantleLightKind::Rear)] = { 0, 1 };
+		Guess.WholeSlots[static_cast<int32>(EMantleLightKind::Rear)] = { 1 };
+		FMantleVehicleSourceLights Lights;
+		FMantleVehicleLights::Cut(Body, Materials, Guess, Lights);
+		TestEqual(TEXT("no slot is added"), Materials.Num(), 2);
+		TestTrue(TEXT("the whole slot is the one rear light section"), Lights.Rear.Num() == 1 && Lights.Rear[0] == TEXT("lights"));
+		int32 InLights = 0;
+		for (const FMantleSkinnedMeshSection& Section : Body.LODs[0].Sections)
+		{
+			InLights += Section.MaterialIndex == 1 ? Section.IndexCount : 0;
+		}
+		TestEqual(TEXT("and holds its own four triangles and the two cut ones"), InLights, 18);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMantleVehicleBodySplitKeepRankTest,
+	"Mantle.Vehicle.BuildModel.SplitKeepsPaintThenLightsThenRims",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FMantleVehicleBodySplitKeepRankTest::RunTest(const FString& Parameters)
+{
+	using namespace MantleVehicleBuilderHubsLightsTestPrivate;
+	// Twelve slots, the more of them the more triangles: so the paint (the first three) and the lights have the fewest, and a split that went by triangles alone sent them to parts.
+	TArray<FString> Names = { TEXT("paint"), TEXT("paint2"), TEXT("paint3"), TEXT("headlight_lens"), TEXT("taillight_lens"), TEXT("reverselight_lens"), TEXT("signal_left"), TEXT("signal_right"),
+		TEXT("WheelSet_05"), TEXT("headlight_lens2"), TEXT("glass"), TEXT("seats") };
+	FMantleSkinnedMesh Body;
+	TArray<FSkeletalMaterial> Materials;
+	MakeSlotBody(Body, Materials, Names, {}, [](const int32 Slot) { return Slot + 1; });
+
+	FMantleVehicleSourceLights Lights;
+	Lights.Head = { TEXT("headlight_lens"), TEXT("headlight_lens2") };
+	Lights.Rear = { TEXT("taillight_lens") };
+	Lights.Reverse = { TEXT("reverselight_lens") };
+	Lights.Left = { TEXT("signal_left") };
+	Lights.Right = { TEXT("signal_right") };
+	const TArray<FString> Painted = { TEXT("paint"), TEXT("paint2"), TEXT("paint3") };
+	TSet<int32> Keep;
+	TMap<int32, int32> Rank;
+	FMantleVehicleConverter::BodyKeep(Materials, Lights, &Painted, Keep, Rank);
+	TestTrue(TEXT("the paint is rank 0"), Rank.FindRef(0) == 0 && Rank.FindRef(1) == 0 && Rank.FindRef(2) == 0 && Keep.Contains(0));
+	TestTrue(TEXT("each kind's first light is rank 1"), Rank.FindRef(3) == 1 && Rank.FindRef(4) == 1 && Rank.FindRef(5) == 1 && Rank.FindRef(6) == 1 && Rank.FindRef(7) == 1);
+	TestTrue(TEXT("a kind's second light is rank 2"), Rank.FindRef(9) == 2);
+	TestTrue(TEXT("a rim is kept last"), Rank.FindRef(8) == 1000);
+	TestTrue(TEXT("glass and seats are not kept"), !Keep.Contains(10) && !Keep.Contains(11));
+
+	FMantleVehicleBodyExtras Extras;
+	FMantleVehicleBodySplitResult Split;
+	TestTrue(TEXT("the body splits"), FMantleVehicleBodySplit::Split(Body, Materials, Extras, FMantleVehicleLimits::MaxSections, FMantleVehicleLimits::MaxPartMaterials, FMantleVehicleLimits::MaxParts, Split, Keep, &Rank));
+	const TArray<FString> Left = FMantleVehicleLights::SectionNames(Materials);
+	TestEqual(TEXT("the body draws what it may"), Left.Num(), FMantleVehicleLimits::MaxSections);
+	TestTrue(TEXT("the paint is on it"), Left.Contains(TEXT("paint")) && Left.Contains(TEXT("paint2")) && Left.Contains(TEXT("paint3")));
+	TestTrue(TEXT("so is each kind of light"), Left.Contains(TEXT("headlight_lens")) && Left.Contains(TEXT("taillight_lens")) && Left.Contains(TEXT("reverselight_lens"))
+		&& Left.Contains(TEXT("signal_left")) && Left.Contains(TEXT("signal_right")));
+	TestTrue(TEXT("the second headlight and the rim did not fit, and went to parts with the glass and the seats"),
+		!Left.Contains(TEXT("headlight_lens2")) && !Left.Contains(TEXT("WheelSet_05")) && !Left.Contains(TEXT("glass")) && !Left.Contains(TEXT("seats")));
 	return true;
 }
 

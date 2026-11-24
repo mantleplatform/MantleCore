@@ -24,6 +24,7 @@ struct FMantleVehicleSourcePart;
 struct FMantleVehicleSourceSeatContacts;
 struct FMantleVehicleSourceTuning;
 struct FReferenceSkeleton;
+struct FSkeletalMaterial;
 
 /**
  * A static mesh found riding a vehicle's body (#435 item 2): attached to AttachTo (a socket or bone of the body; None for the
@@ -237,6 +238,22 @@ public:
 	 */
 	static bool SplitExtraMaterials(USkeletalMesh& Mesh, const UMantleVehicleSource& Source, const FString& SplitFolder, USkeletalMesh*& OutBody, TArray<FMantleVehicleSourcePart>& OutParts,
 		TArray<FString>& OutNotes, FString& OutProblem);
+
+	/**
+	 * Which of a model's slots the split keeps on the body when it must send some to parts (FMantleVehicleBodySplit::Split's KeepInBody and KeepRank), for the converter and the
+	 * builder alike. The body paint comes first (rank 0): PaintedSections, by name, or when it is null the slots that read as the body color (GuessPaintLayer's primary). Then the
+	 * lights, which the game switches on the body, each kind's first section before any kind's second (ranks 1, 2, ...). Then the rims, which a wheel swap hides (rank 1000). A slot
+	 * that is none of them goes to a part first: glass, the interior, seats, tires.
+	 */
+	static void BodyKeep(const TArray<FSkeletalMaterial>& Materials, const FMantleVehicleSourceLights& Lights, const TArray<FString>* PaintedSections, TSet<int32>& OutKeep,
+		TMap<int32, int32>& OutRank);
+
+	/**
+	 * Makes Source's lists name only what its body has, as the publish check asks: the body paint sections, each paint layer's sections and the light sections that are not among
+	 * BodySections (the sections of the body as it is now, FMantleVehicleLights::SectionNames) are taken out, a paint layer left with no section and no part slot is taken out, and
+	 * OutNotes says what was dropped and why (it went to an extra part, which keeps the paint on its slots; a light on a part cannot be switched). Returns whether anything was.
+	 */
+	static bool NameOnlyBodySections(UMantleVehicleSource& Source, const TArray<FString>& BodySections, TArray<FString>& OutNotes);
 
 	/**
 	 * Lights, found as the builder finds them on a model of its own (FMantleVehicleLights): Source's Lights are filled from where each section of Mesh glows and its color, or
