@@ -482,12 +482,31 @@ private:
 	TSharedPtr<FMantleCosmeticUploadSession> Session;
 	FString ContractError;
 
+	/**
+	 * #389, earrings worn as a Pair: the right earring (a mirrored copy of the left one's mesh, slot acc_ear_r), built next to
+	 * Package by BuildPackage. Package is then the left earring. Unset for every other upload.
+	 */
+	TOptional<FMantleCosmeticPackage> PairPackage;
+	/** The left earring uploaded; the right one starts when its session finishes (TickUpload). */
+	bool bPairRightPending = false;
+	/** The session running is the right earring's. */
+	bool bUploadingRight = false;
+	FString PairRightResumeFile;
+
+	/** Setting Name (limits.json itemSettings) is allowed on the chosen slot: the row for it is shown. */
+	bool SettingShown(const TCHAR* Name) const;
+	/** The earrings' Wear on choice. */
+	bool IsEarringPair() const;
+	void SetEarringSide(FMantleCosmeticDraft::EEarringSide Side);
+
 	/** What the last Test locally said (launched, or why not), shown under the buttons; empty before the first. */
 	FText TestLocallyResult;
 	bool bTestLocallyError = false;
 
 	TArray<TSharedPtr<EMantleCosmeticClass>> ClassOptions;
 	TArray<TSharedPtr<FString>> SlotOptions;
+	/** #65: the hair rule values (limits.json itemSettings.hairRule.values); the combo shows their public labels. */
+	TArray<TSharedPtr<FString>> HairRuleOptions;
 	TArray<TSharedPtr<FString>> CardsOptions;
 	TArray<TSharedPtr<FString>> SectionOptions;
 	TArray<TSharedPtr<FString>> OutfitSizeOptions;

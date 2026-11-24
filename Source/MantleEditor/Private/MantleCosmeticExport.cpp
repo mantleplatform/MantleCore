@@ -3897,8 +3897,8 @@ TArray<FMantleCosmeticSocketOverride> FMantleCosmeticExport::DefaultSocketOverri
 	TArray<TPair<FString, FString>> Sockets;
 	for (const FString& Socket : Contract.AccessorySockets())
 	{
-		const FMantleContractSlot* Slot = Contract.Slots.FindByPredicate([&Socket](const FMantleContractSlot& Entry) { return Entry.Socket == Socket; });
-		Sockets.Emplace(Socket, Slot ? Slot->SocketBone : FString());
+		// Includes the ten finger sockets of acc_ring, which no slot lists as its own.
+		Sockets.Emplace(Socket, Contract.AccessorySocketBone(Socket));
 	}
 	for (const FMantleContractToolSocket& Tool : Contract.ToolSockets)
 	{
@@ -5162,7 +5162,7 @@ void FMantleCosmeticExport::AddDetectedClothingColors(FMantleCosmeticPackage& Pa
 {
 	using namespace MantleCosmeticExportPrivate;
 	Package.DetectedClothingColors.Reset();
-	const bool bClothing = Draft.Class == EMantleCosmeticClass::Garment && (Draft.Slot == TEXT("top") || Draft.Slot == TEXT("bottom") || Draft.Slot == TEXT("footwear"));
+	const bool bClothing = Draft.Class == EMantleCosmeticClass::Garment && Contract.IsClothingSlot(Draft.Slot);
 	if (!Draft.bDetectClothingColors || !Draft.ClothingColors.IsEmpty() || (!bClothing && Draft.Class != EMantleCosmeticClass::Accessory))
 	{
 		return;
@@ -5542,6 +5542,11 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 	Package.Slot = Draft.Slot;
 	Package.Name = Draft.Name.TrimStartAndEnd();
 	Package.Description = Draft.Description.TrimStartAndEnd();
+	// #65, #136, #389: the creator's item settings; MakeItemJson sends each only on the slots the contract allows it on.
+	Package.bTuckable = Draft.bTuckable;
+	Package.bTallBoots = Draft.bTallBoots;
+	Package.HairRule = Draft.HairRule;
+	Package.PairId = Draft.PairId.TrimStartAndEnd();
 	TArray<FMantleCosmeticIssue>& Issues = Package.Issues;
 
 	FMantleCosmeticChecks::CheckNameAndDescription(Draft.Name, Draft.Description, Issues);
@@ -6100,7 +6105,8 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 					}
 				}
 				// Long garments are accepted and marked as ones that may clip in motion.
-				if (Mesh.Bounds.IsValid && Mesh.Bounds.Min.Z < Shape.KneeZ && Draft.Slot != TEXT("footwear"))
+				if (Mesh.Bounds.IsValid && Mesh.Bounds.Min.Z < Shape.KneeZ
+						&& Draft.Slot != TEXT("footwear") && Draft.Slot != TEXT("socks") && Draft.Slot != TEXT("legwear"))
 				{
 					Issues.Add(FMantleCosmeticChecks::Warning(TEXT("this garment hangs below the knee, so it may clip through the legs when the wearer moves."),
 						TEXT("It can still be published: Mantle marks it \"may clip in motion\" so players know.")));
@@ -6319,7 +6325,7 @@ FMantleCosmeticPackage FMantleCosmeticExport::BuildPrepared(const FMantleCosmeti
 				Issues.Add(FMantleCosmeticChecks::Error(Error));
 				return Package;
 			}
-			const FMantleContractClass& Class = Contract.RigidAccessory;
+			const FMantleContractClass Class = Contract.AccessoryClassFor(Draft.Slot);
 			// An accessory over the triangle limit is reduced automatically, as an over-limit place mesh is:
 			// a transient copy with the same material slot stands in and is what uploads. The creator's asset is never
 			// touched. A copy has one LOD, so the source's authored LODs are left off with it.

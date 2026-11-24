@@ -3,6 +3,7 @@
 #include "MantleCosmeticItem.h"
 #include "MantleAvatarContract.h"
 #include "MantleHairColor.h"
+#include "MantleItemSettings.h"
 #include "MantleOverlayChecks.h"
 #include "MantleSha256.h"
 
@@ -249,8 +250,8 @@ bool FMantleCosmeticPackage::MakeItemJson(const TMap<FString, FString>& IdsByKey
 		{
 			if (!ValidateNativeHairRef(Ref, Class, &Refs == &FaceMaterials, OutError)) return false;
 			if (Ref.ColorRegions.IsEmpty() && Ref.ColorMaskKey.IsEmpty()) continue;
-			// Clothing (top, bottom, footwear) and rigid accessories (a hat) carry color areas.
-			const bool bColorClass = (Class == EMantleCosmeticClass::Garment && (Slot == TEXT("top") || Slot == TEXT("bottom") || Slot == TEXT("footwear")))
+			// Clothing (every clothing slot) and rigid accessories (a hat) carry color areas.
+			const bool bColorClass = (Class == EMantleCosmeticClass::Garment && FMantleAvatarContract::IsClothingSlotOrDefault(Slot))
 				|| Class == EMantleCosmeticClass::Accessory;
 			if (!bColorClass || Ref.ColorMaskKey.IsEmpty() || Ref.ColorRegions.IsEmpty() || !MantleClothingColor::ValidateRegions(Ref.ColorRegions, OutError))
 			{ OutError = TEXT("Color declarations need a clothing or accessory material, mask and measured regions."); return false; }
@@ -522,6 +523,40 @@ bool FMantleCosmeticPackage::MakeItemJson(const TMap<FString, FString>& IdsByKey
 		Item->SetStringField(TEXT("textureAssetId"), IdOf(MaskKey));
 		SetOptional(TEXT("normalAssetId"), OverlayNormalKey);
 		break;
+	}
+
+	// #65, #136, #389: the creator's item settings, each a plain top-level field written explicitly (also at its default), and only
+	// where the contract allows it: the server refuses a setting on any other slot (field_not_allowed).
+	if (const FMantleAvatarContract* SettingsContract = FMantleAvatarContract::Get())
+	{
+		if (SettingsContract->SettingAllowed(FMantleItemSettings::Tuckable(), Slot))
+		{
+			Item->SetBoolField(FMantleItemSettings::Tuckable(), bTuckable);
+		}
+		if (SettingsContract->SettingAllowed(FMantleItemSettings::TallBoots(), Slot))
+		{
+			Item->SetBoolField(FMantleItemSettings::TallBoots(), bTallBoots);
+		}
+		if (SettingsContract->SettingAllowed(FMantleItemSettings::HairRule(), Slot))
+		{
+			const FMantleContractItemSetting* Rule = SettingsContract->FindItemSetting(FMantleItemSettings::HairRule());
+			if (!Rule || !Rule->Values.Contains(HairRule))
+			{
+				OutError = FString::Printf(TEXT("The hair setting \"%s\" is not one of: %s."), *HairRule,
+					Rule ? *FString::Join(Rule->Values, TEXT(", ")) : TEXT(""));
+				return false;
+			}
+			Item->SetStringField(FMantleItemSettings::HairRule(), HairRule);
+		}
+		if (SettingsContract->SettingAllowed(FMantleItemSettings::PairIdField(), Slot) && !PairId.IsEmpty())
+		{
+			if (!FMantleItemSettings::IsValidPairId(PairId))
+			{
+				OutError = FString::Printf(TEXT("The earring pair id \"%s\" must be 1 to 64 letters, digits, dashes or underscores."), *PairId);
+				return false;
+			}
+			Item->SetStringField(FMantleItemSettings::PairIdField(), PairId);
+		}
 	}
 
 	if (Class == EMantleCosmeticClass::Garment && !GarmentVariants.IsEmpty())

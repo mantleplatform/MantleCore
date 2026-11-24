@@ -219,6 +219,16 @@ struct MANTLEEDITOR_API FMantleCosmeticPackage
 	FVector3f AttachScale = FVector3f::OneVector;
 
 	/**
+	 * #65, #136, #389, creator-set item settings (limits.json itemSettings), each sent as a plain top-level item field only on
+	 * the slots the contract allows it on: tuckable (top), tallBoots (footwear), hairRule (acc_hat, acc_face, outerwear),
+	 * pairId (acc_ear_l, acc_ear_r).
+	 */
+	bool bTuckable = true;
+	bool bTallBoots = false;
+	FString HairRule = TEXT("underIt");
+	FString PairId;
+
+	/**
 	 * Avatars: the body's standing height as the cook will measure it (FMantleCosmeticChecks::AvatarStandingHeightCm:
 	 * its top, or its face's), cm; unset for anything else. The panel's "Plays at X cm" (#581). Not sent: the cook
 	 * measures it itself.
